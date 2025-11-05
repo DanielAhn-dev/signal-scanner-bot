@@ -1,3 +1,4 @@
+// packages/data/search.ts
 import { KRXClient } from "./krx-client";
 
 export type StockLite = {
@@ -5,7 +6,6 @@ export type StockLite = {
   name: string;
   market: "KOSPI" | "KOSDAQ" | "KONEX";
 };
-
 let cache: StockLite[] = [];
 let lastLoaded = 0;
 
@@ -16,10 +16,9 @@ function normalize(s: string) {
     .replace(/\s+/g, "")
     .replace(/[()·\-_.]/g, "");
 }
-
 function scoreName(q: string, name: string) {
-  const nq = normalize(q);
-  const nn = normalize(name);
+  const nq = normalize(q),
+    nn = normalize(name);
   if (nn === nq) return 100;
   if (nn.startsWith(nq)) return 90;
   if (nn.includes(nq)) return 70;
@@ -27,23 +26,22 @@ function scoreName(q: string, name: string) {
 }
 
 async function loadFromSupabase(): Promise<StockLite[]> {
-  const url = process.env.SUPABASE_URL!;
-  const key = process.env.SUPABASE_ANON_KEY!;
-  const resp = await fetch(`${url}/rest/v1/stocks?select=code,name,market`, {
+  const url = process.env.SUPABASE_URL!,
+    key = process.env.SUPABASE_ANON_KEY!;
+  const r = await fetch(`${url}/rest/v1/stocks?select=code,name,market`, {
     headers: { apikey: key, Authorization: `Bearer ${key}` },
   });
-  if (!resp.ok) return [];
-  const rows = (await resp.json()) as any[];
+  if (!r.ok) return [];
+  const rows = (await r.json()) as any[];
   return (rows || []).map((r) => ({
     code: r.code,
     name: r.name,
     market: r.market,
   }));
 }
-
 async function upsertToSupabase(list: StockLite[]) {
-  const url = process.env.SUPABASE_URL!;
-  const key = process.env.SUPABASE_ANON_KEY!;
+  const url = process.env.SUPABASE_URL!,
+    key = process.env.SUPABASE_ANON_KEY!;
   await fetch(`${url}/rest/v1/stocks`, {
     method: "POST",
     headers: {
@@ -88,4 +86,20 @@ export async function searchByNameOrCode(
     .slice(0, limit)
     .map((r) => r.x);
   return scored;
+}
+
+export async function getNamesForCodes(
+  codes: string[]
+): Promise<Record<string, string>> {
+  if (!codes.length) return {};
+  const url = process.env.SUPABASE_URL!,
+    key = process.env.SUPABASE_ANON_KEY!;
+  const inList = codes.map((c) => `"${c}"`).join(",");
+  const r = await fetch(
+    `${url}/rest/v1/stocks?select=code,name&code=in.(${inList})`,
+    { headers: { apikey: key, Authorization: `Bearer ${key}` } }
+  );
+  if (!r.ok) return {};
+  const rows = (await r.json()) as { code: string; name: string }[];
+  return Object.fromEntries(rows.map((r) => [r.code, r.name]));
 }

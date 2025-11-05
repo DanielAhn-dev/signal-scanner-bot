@@ -1,28 +1,28 @@
 // scripts/setCommands.js
+import "dotenv/config";
 const TOKEN = process.env.TELEGRAM_BOT_TOKEN;
-async function main() {
-  if (!TOKEN) throw new Error("Missing TELEGRAM_BOT_TOKEN");
-  const url = `https://api.telegram.org/bot${TOKEN}/setMyCommands`;
-  const body = {
-    // language_code: "ko", // 생략 시 전역 기본 명령
-    commands: [
-      { command: "시작", description: "사용법 안내" },
-      { command: "섹터", description: "유망 섹터 보기" },
-      { command: "종목", description: "섹터별 대장주 보기" },
-      { command: "점수", description: "종목 점수/신호" },
-      { command: "매수", description: "엔트리/손절/익절 제안" },
-    ],
-  };
-  console.log("POST", url, JSON.stringify(body));
-  const res = await fetch(url, {
+if (!TOKEN) throw new Error("Missing TELEGRAM_BOT_TOKEN");
+const api = (m) => `https://api.telegram.org/bot${TOKEN}/${m}`;
+const commands = [
+  { command: "start", description: "사용법 안내" },
+  { command: "sector", description: "유망 섹터 보기" },
+  { command: "stocks", description: "섹터별 대장주 보기" },
+  { command: "score", description: "종목 점수/신호" },
+  { command: "buy", description: "엔트리/손절/익절 제안" },
+];
+async function post(url, body) {
+  const r = await fetch(url, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
   });
-  const text = await res.text();
-  console.log(res.status, res.headers.get("content-type"), text);
+  console.log(await r.text());
 }
-main().catch((e) => {
-  console.error(e);
-  process.exit(1);
+await post(api("deleteMyCommands"), {});
+await post(api("deleteMyCommands"), { scope: { type: "all_private_chats" } });
+await post(api("setMyCommands"), { commands });
+await post(api("setMyCommands"), {
+  scope: { type: "all_private_chats" },
+  commands,
 });
+await post(api("getMyCommands"), {});
