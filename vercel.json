@@ -5,8 +5,21 @@
     ],
     "functions": {
         "api/**/*.{js,ts}": {
-            "memory": 512,
             "maxDuration": 30
         }
-    }
+    },
+    "crons": [
+        {
+            "path": "/api/cron/briefing",
+            "schedule": "30 8 * * 1-5"
+        },
+        {
+            "path": "/api/cron/intraday",
+            "schedule": "*/20 9-15 * * 1-5"
+        },
+        {
+            "path": "/api/cron/close",
+            "schedule": "40 15 * * 1-5"
+        }
+    ]
 }

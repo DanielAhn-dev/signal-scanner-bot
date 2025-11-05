@@ -1,5 +1,6 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { KRXClient } from "../packages/data/krx-client";
+import { searchByNameOrCode } from "../packages/data/search";
 
 // 환경변수
 const SECRET = process.env.TELEGRAM_BOT_SECRET!;
@@ -201,7 +202,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(200).send("OK");
   }
 
-  const message = update?.message;
+  const callback = (update as any).callback_query as
+    | { id: string; data: string; message: { chat: { id: number | string } } }
+    | undefined;
+
+    const message = update?.message;
   if (!message) return res.status(200).send("OK");
 
   const text = message.text || "";
@@ -210,7 +215,78 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   console.log(`[Telegram] ${userId} -> ${text}`);
 
   const krx = new KRXClient();
-  const reply = async (t: string) => sendMessage(chatId, t);
+
+  const reply = async (t: string, extra?: any) => {
+    const chatId = callback ? callback.message.chat.id : message!.chat.id;
+    try {
+      await fetch(`https://api.telegram.org/bot${TOKEN}/sendMessage`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          chat_id: chatId,
+          text: t,
+          parse_mode: "Markdown",
+          reply_markup: extra?.reply_markup,
+        }),
+      });
+    } catch (e) {
+      console.error("[Telegram] send error:", e);
+    }
+  };
+  
+// 기존 명령 분기 대신 아래 추가
+const txt = (text || "").trim();
+const isScore = /^\/?점수\b/.test(txt) || txt.endsWith(" 점수") || txt.startsWith("/score");
+const isSector = /^\/?섹터\b/.test(txt) || txt.startsWith("/sector");
+const isStocks = /^\/?종목\b/.test(txt) || txt.startsWith("/stocks");
+
+if (isScore) {
+  const arg = txt.replace(/^\/?점수\b|\s*점수$/g, "").trim().replace(/^\/score\s*/,"");
+  const q = arg || txt.split(/\s+/)[1] || "";
+  if (!q) {
+    await reply("⚠️ 사용법: /점수 삼성전자  또는  /score 005930");
+  } else {
+    await reply("🔍 분석 중...");
+    await handleScoreFlow(q, reply);
+  }
+  return res.status(200).send("OK");
+}
+
+if (isSector) {
+  // TODO: 실제 섹터 스코어링 결과로 교체
+  const rows = [[{ text: "반도체", data: "sector:반도체" }], [{ text: "이차전지", data: "sector:이차전지" }]];
+  await reply("📊 섹터를 선택하세요:", { reply_markup: toInlineKeyboard(rows) });
+  return res.status(200).send("OK");
+}
+
+if (isStocks) {
+  const sector = txt.split(/\s+/)[1] || "반도체";
+  await handleStocksBySector(sector, reply);
+  return res.status(200).send("OK");
+}
+
+
+  // 콜백이 있을 때 우선 처리
+if (callback) {
+  const { id, data } = callback;
+  await answerCallbackQuery(id);
+  try {
+    if (data.startsWith("score:")) {
+      const code = data.split(":")[1];
+      await handleScoreFlow(code, reply); // 아래 재사용
+    } else if (data.startsWith("sector:")) {
+      const sector = data.split(":")[1];
+      await handleStocksBySector(sector, reply);
+    } else if (data.startsWith("stocks:"))) {
+      const sector = data.split(":")[1];
+      await handleStocksBySector(sector, reply);
+    }
+  } catch (e) {
+    await reply("❌ 콜백 처리 중 오류");
+  }
+  return res.status(200).send("OK");
+}
+
 
   try {
     if (text.startsWith("/start")) {
@@ -299,4 +375,84 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   return res.status(200).send("OK");
+}
+
+// 유틸: 인라인 키보드 생성
+function toInlineKeyboard(rows: { text: string; data: string }[][]) {
+  return {
+    inline_keyboard: rows.map((r) =>
+      r.map((b) => ({ text: b.text, callback_data: b.data }))
+    ),
+  };
+}
+
+// 콜백 응답
+async function answerCallbackQuery(id: string, text?: string) {
+  try {
+    await fetch(`https://api.telegram.org/bot${TOKEN}/answerCallbackQuery`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ callback_query_id: id, text: text || "" }),
+    });
+  } catch {}
+}
+
+async function handleScoreFlow(input: string, reply: (t: string, extra?: any) => Promise<void>) {
+  // 코드 또는 이름 후보 검색
+  const candidates = await searchByNameOrCode(input, 8);
+  if (candidates.length === 0) {
+    await reply(`❌ 종목을 찾지 못했습니다: ${input}\n다시 입력해 주세요.`);
+    return;
+  }
+  if (candidates.length > 1) {
+    const rows = candidates.map((c) => [{ text: `${c.name} (${c.code})`, data: `score:${c.code}` }]);
+    await reply("🔎 종목을 선택하세요:", { reply_markup: toInlineKeyboard(rows) });
+    return;
+  }
+  const code = candidates[0].code;
+
+  // 이하 기존 /score 로직 재사용
+  const krx = new KRXClient();
+  const end = new Date();
+  const start = new Date(end.getTime() - 420 * 24 * 60 * 60 * 1000);
+  const endDate = end.toISOString().slice(0, 10);
+  const startDate = start.toISOString().slice(0, 10);
+
+  let ohlcv = await krx.getMarketOHLCV(code, startDate, endDate);
+  if (ohlcv.length < 220) {
+    const alt = await krx.getMarketOHLCVFromNaver(code, startDate, endDate);
+    if (alt.length > ohlcv.length) ohlcv = alt;
+  }
+  if (ohlcv.length < 200) {
+    await reply(`❌ 데이터 부족(필요 200봉): ${code}`);
+    return;
+  }
+
+  const closes = ohlcv.map((d: any) => d.close);
+  const vols = ohlcv.map((d: any) => d.volume);
+  const result = scoreFromIndicators(closes, vols);
+  const last = ohlcv[ohlcv.length - 1] as any;
+  const emoji = result.signal === "buy" ? "🟢" : result.signal === "sell" ? "🔴" : "🟡";
+  const msg =
+    `${emoji} ${code} 분석 결과\n\n` +
+    `가격: ${last.close.toLocaleString()}원\n` +
+    `점수: ${result.score} / 100\n` +
+    `신호: ${result.signal.toUpperCase()}\n\n` +
+    `세부:\n` +
+    `• 20SMA: ${result.factors.sma20}\n` +
+    `• 50SMA: ${result.factors.sma50}\n` +
+    `• 200SMA: ${result.factors.sma200}\n` +
+    `• RSI14: ${result.factors.rsi14}\n` +
+    `• ROC14: ${result.factors.roc14}\n` +
+    `• ROC21: ${result.factors.roc21}\n\n` +
+    `추천: ${result.recommendation}`;
+  await reply(msg);
+}
+
+// 섹터→종목 후보(여기서는 거래대금 상위 예시)
+async function handleStocksBySector(sector: string, reply: (t: string, extra?: any) => Promise<void>) {
+  const krx = new KRXClient();
+  const top = await krx.getTopVolumeStocks("STK", 10);
+  const rows = top.map((s) => [{ text: `${s.name} (${s.code})`, data: `score:${s.code}` }]);
+  await reply(`📈 ${sector} 후보 종목을 선택하세요:`, { reply_markup: toInlineKeyboard(rows) });
 }
