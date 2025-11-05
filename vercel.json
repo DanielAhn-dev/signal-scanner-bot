@@ -4,8 +4,7 @@
         "icn1"
     ],
     "functions": {
-        "api/telegram.ts": {
-            "runtime": "nodejs20.x",
+        "api/**/*.{js,ts}": {
             "memory": 512,
             "maxDuration": 30
         }
