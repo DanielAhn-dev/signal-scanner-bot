@@ -27,26 +27,68 @@ function scoreName(q: string, name: string) {
   return 0;
 }
 
+async function loadFromSupabase(): Promise<StockLite[]> {
+  const url = process.env.SUPABASE_URL!;
+  const key = process.env.SUPABASE_ANON_KEY!;
+  // fetch 대신 간단 REST 호출로 최소 의존
+  const resp = await fetch(`${url}/rest/v1/stocks?select=code,name,market`, {
+    headers: {
+      apikey: key,
+      Authorization: `Bearer ${key}`,
+    },
+  });
+  if (!resp.ok) return [];
+  const rows = (await resp.json()) as any[];
+  return (rows || []).map((r) => ({
+    code: r.code,
+    name: r.name,
+    market: r.market,
+  }));
+}
+
+async function upsertToSupabase(list: StockLite[]) {
+  const url = process.env.SUPABASE_URL!;
+  const key = process.env.SUPABASE_ANON_KEY!;
+  await fetch(`${url}/rest/v1/stocks`, {
+    method: "POST",
+    headers: {
+      apikey: key,
+      Authorization: `Bearer ${key}`,
+      "Content-Type": "application/json",
+      Prefer: "resolution=merge-duplicates",
+    },
+    body: JSON.stringify(list),
+  }).catch(() => {});
+}
+
 export async function ensureStockList(): Promise<StockLite[]> {
   const now = Date.now();
   if (cache.length && now - lastLoaded < 6 * 60 * 60 * 1000) return cache;
-  const krx = new KRXClient();
-  const list = await krx.getStockList("ALL");
-  cache = list.map((x) => ({ code: x.code, name: x.name, market: x.market }));
+  // 1) Supabase 캐시 시도
+  let list = await loadFromSupabase();
+  if (!list.length) {
+    // 2) KRX 실데이터 조회
+    const krx = new KRXClient();
+    const raw = await krx.getStockList("ALL");
+    list = raw.map((x) => ({ code: x.code, name: x.name, market: x.market }));
+    if (list.length) upsertToSupabase(list).catch(() => {});
+  }
+  cache = list;
   lastLoaded = now;
-  return cache;
+  return list;
 }
 
 export async function searchByNameOrCode(
   q: string,
   limit = 8
 ): Promise<StockLite[]> {
+  // 6자리 숫자는 코드 직행 지원
+  if (/^\d{6}$/.test(q))
+    return [{ code: q, name: q, market: "KOSPI" } as StockLite];
   const list = await ensureStockList();
   const nq = normalize(q);
-  // 코드 완전일치 우선
-  const exactCode = list.find((x) => x.code === q);
-  if (exactCode) return [exactCode];
-  // 이름 점수 기반 정렬
+  const exact = list.find((x) => normalize(x.name) === nq);
+  if (exact) return [exact];
   const scored = list
     .map((x) => ({ x, s: scoreName(nq, x.name) }))
     .filter((r) => r.s > 0)
