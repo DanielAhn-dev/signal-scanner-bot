@@ -30,12 +30,8 @@ function scoreName(q: string, name: string) {
 async function loadFromSupabase(): Promise<StockLite[]> {
   const url = process.env.SUPABASE_URL!;
   const key = process.env.SUPABASE_ANON_KEY!;
-  // fetch 대신 간단 REST 호출로 최소 의존
   const resp = await fetch(`${url}/rest/v1/stocks?select=code,name,market`, {
-    headers: {
-      apikey: key,
-      Authorization: `Bearer ${key}`,
-    },
+    headers: { apikey: key, Authorization: `Bearer ${key}` },
   });
   if (!resp.ok) return [];
   const rows = (await resp.json()) as any[];
@@ -64,10 +60,10 @@ async function upsertToSupabase(list: StockLite[]) {
 export async function ensureStockList(): Promise<StockLite[]> {
   const now = Date.now();
   if (cache.length && now - lastLoaded < 6 * 60 * 60 * 1000) return cache;
-  // 1) Supabase 캐시 시도
+  // 1) Supabase 캐시
   let list = await loadFromSupabase();
+  // 2) 캐시 없으면 KRX → 업서트
   if (!list.length) {
-    // 2) KRX 실데이터 조회
     const krx = new KRXClient();
     const raw = await krx.getStockList("ALL");
     list = raw.map((x) => ({ code: x.code, name: x.name, market: x.market }));
@@ -82,7 +78,6 @@ export async function searchByNameOrCode(
   q: string,
   limit = 8
 ): Promise<StockLite[]> {
-  // 6자리 숫자는 코드 직행 지원
   if (/^\d{6}$/.test(q))
     return [{ code: q, name: q, market: "KOSPI" } as StockLite];
   const list = await ensureStockList();

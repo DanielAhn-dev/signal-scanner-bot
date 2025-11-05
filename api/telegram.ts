@@ -230,7 +230,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
   };
 
-  // 1) update 파싱 직후 콜백 우선 처리
+  // 1) update 파싱 직후 콜백 먼저 처리
   const callback = (update as any).callback_query as
     | { id: string; data: string; message: { chat: { id: number | string } } }
     | undefined;
@@ -245,13 +245,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const sector = data.split(":")[1];
       await handleStocksBySector(sector, reply);
     } else if (data.startsWith("stocks:")) {
+      // 괄호 오탈자 수정
       const sector = data.split(":")[1];
       await handleStocksBySector(sector, reply);
     }
     return res.status(200).send("OK");
   }
 
-  // 2) 한글 명령 라우팅(동일)
+  // 2) 한글 명령 라우팅은 동일
   const txt = (text || "").trim();
   const isScore =
     /^\/?점수\b/.test(txt) || txt.endsWith(" 점수") || txt.startsWith("/score");
@@ -261,13 +262,38 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       .trim()
       .replace(/^\/score\s*/, "");
     const q = arg || txt.split(/\s+/)[1] || "";
-    if (!q) {
-      await reply("⚠️ 사용법: /점수 삼성전자  또는  /score 005930");
-    } else {
+    if (!q) await reply("⚠️ 사용법: /점수 삼성전자  또는  /score 005930");
+    else {
       await reply("🔍 분석 중...");
       await handleScoreFlow(q, reply);
     }
     return res.status(200).send("OK");
+  }
+
+  // 3) 점수 흐름: 숫자코드 직행 + 후보 버튼
+  async function handleScoreFlow(
+    input: string,
+    reply: (t: string, extra?: any) => Promise<void>
+  ) {
+    if (/^\d{6}$/.test(input)) {
+      await analyzeAndReply(input, reply);
+      return;
+    }
+    const candidates = await searchByNameOrCode(input, 8);
+    if (candidates.length === 0) {
+      await reply(`❌ 종목을 찾지 못했습니다: ${input}\n다시 입력해 주세요.`);
+      return;
+    }
+    if (candidates.length > 1) {
+      const rows = candidates.map((c) => [
+        { text: `${c.name} (${c.code})`, data: `score:${c.code}` },
+      ]);
+      await reply("🔎 종목을 선택하세요:", {
+        reply_markup: toInlineKeyboard(rows),
+      });
+      return;
+    }
+    await analyzeAndReply(candidates[0].code, reply);
   }
 
   const isSector = /^\/?섹터\b/.test(txt) || txt.startsWith("/sector");
@@ -398,33 +424,6 @@ async function answerCallbackQuery(id: string, text?: string) {
       body: JSON.stringify({ callback_query_id: id, text: text || "" }),
     });
   } catch {}
-}
-
-// 3) 점수 흐름: 숫자 코드는 직행, 이름은 후보 제시
-async function handleScoreFlow(
-  input: string,
-  reply: (t: string, extra?: any) => Promise<void>
-) {
-  // 숫자 코드 직행
-  if (/^\d{6}$/.test(input)) {
-    await analyzeAndReply(input, reply);
-    return;
-  }
-  const candidates = await searchByNameOrCode(input, 8);
-  if (candidates.length === 0) {
-    await reply(`❌ 종목을 찾지 못했습니다: ${input}\n다시 입력해 주세요.`);
-    return;
-  }
-  if (candidates.length > 1) {
-    const rows = candidates.map((c) => [
-      { text: `${c.name} (${c.code})`, data: `score:${c.code}` },
-    ]);
-    await reply("🔎 종목을 선택하세요:", {
-      reply_markup: toInlineKeyboard(rows),
-    });
-    return;
-  }
-  await analyzeAndReply(candidates[0].code, reply);
 }
 
 async function analyzeAndReply(
