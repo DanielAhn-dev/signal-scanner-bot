@@ -141,3 +141,4 @@ vite.config.ts.timestamp-*
 .ssh
 .env
 .env.example
+.vercel
