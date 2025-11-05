@@ -1,21 +1,13 @@
 {
+    "$schema": "https://openapi.vercel.sh/vercel.json",
+    "regions": [
+        "icn1"
+    ],
     "functions": {
         "api/telegram.ts": {
             "runtime": "nodejs20.x",
             "memory": 512,
-            "maxDuration": 30,
-            "regions": [
-                "hkg1",
-                "icn1"
-            ]
+            "maxDuration": 30
         }
-    },
-    "env": {
-        "TELEGRAM_BOT_TOKEN": "@telegram-bot-token",
-        "TELEGRAM_BOT_SECRET": "@telegram-bot-secret",
-        "TELEGRAM_ADMIN_CHAT_ID": "@telegram-admin-chat-id",
-        "SUPABASE_URL": "@supabase-url",
-        "SUPABASE_ANON_KEY": "@supabase-anon-key",
-        "PUBLIC_BASE_URL": "@public-base-url"
     }
 }
