@@ -1,70 +1,78 @@
+#!/usr/bin/env node
 require("dotenv").config();
 
 const TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 const SECRET = process.env.TELEGRAM_BOT_SECRET;
-const VERCEL_URL = process.env.VERCEL_URL || "signal-scanner-bot.vercel.app";
-
-// 🔍 디버깅: 환경변수 확인
-console.log("🔍 환경변수 체크:");
-console.log("TOKEN:", TOKEN ? `${TOKEN.slice(0, 10)}...` : "❌ 없음");
-console.log("SECRET:", SECRET ? `${SECRET.slice(0, 10)}...` : "❌ 없음");
-console.log("VERCEL_URL:", VERCEL_URL);
-console.log("");
+const VERCEL_URL =
+  process.env.PUBLIC_BASE_URL ||
+  (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "");
+const SUBCOMMAND = (process.argv[2] || "set").toLowerCase();
 
 if (!TOKEN) {
-  console.error("❌ TELEGRAM_BOT_TOKEN이 설정되지 않았습니다!");
-  console.error("   .env 파일을 확인하세요.");
+  console.error("❌ TELEGRAM_BOT_TOKEN 미설정");
+  process.exit(1);
+}
+if (!SECRET) {
+  console.error("❌ TELEGRAM_BOT_SECRET 미설정");
+  process.exit(1);
+}
+if (!VERCEL_URL) {
+  console.error("❌ PUBLIC_BASE_URL 또는 VERCEL_URL 미설정");
   process.exit(1);
 }
 
-const webhookURL = `https://${VERCEL_URL}/api/telegram`;
+const WEBHOOK_URL = `${VERCEL_URL}/api/telegram`;
 
-async function setWebhook() {
-  const url = `https://api.telegram.org/bot${TOKEN}/setWebhook`;
-
-  const params = new URLSearchParams({
-    url: webhookURL,
-    secret_token: SECRET,
-    allowed_updates: JSON.stringify(["message"]),
-    drop_pending_updates: "true",
+async function callTelegram(method, body) {
+  const resp = await fetch(`https://api.telegram.org/bot${TOKEN}/${method}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body || {}),
   });
-
-  console.log("📤 웹훅 등록 URL:", webhookURL);
-
-  try {
-    const response = await fetch(`${url}?${params.toString()}`);
-    const result = await response.json();
-
-    console.log("\n✅ Webhook 설정 결과:");
-    console.log(JSON.stringify(result, null, 2));
-
-    if (result.ok) {
-      console.log(`\n🎉 웹훅 등록 완료: ${webhookURL}`);
-    } else {
-      console.error(`\n❌ 웹훅 등록 실패: ${result.description}`);
-      console.error("   error_code:", result.error_code);
-    }
-  } catch (error) {
-    console.error("❌ 오류 발생:", error);
+  const ct = resp.headers.get("content-type") || "";
+  if (!ct.includes("application/json")) {
+    const text = await resp.text();
+    throw new Error(
+      `Non-JSON response: ${resp.status} ${resp.statusText} :: ${text.slice(
+        0,
+        200
+      )}`
+    );
   }
+  return resp.json();
 }
 
-async function getWebhookInfo() {
-  const url = `https://api.telegram.org/bot${TOKEN}/getWebhookInfo`;
-
-  try {
-    const response = await fetch(url);
-    const result = await response.json();
-
-    console.log("\n📋 현재 웹훅 상태:");
-    console.log(JSON.stringify(result.result, null, 2));
-  } catch (error) {
-    console.error("❌ 상태 조회 실패:", error);
-  }
+async function set() {
+  console.log(`📤 setting webhook to ${WEBHOOK_URL}`);
+  const res = await callTelegram("setWebhook", {
+    url: WEBHOOK_URL,
+    secret_token: SECRET,
+    allowed_updates: ["message"],
+    drop_pending_updates: true,
+  });
+  console.log(JSON.stringify(res, null, 2));
 }
 
-// 실행
+async function del() {
+  console.log("🗑 deleting webhook");
+  const res = await callTelegram("deleteWebhook", {
+    drop_pending_updates: true,
+  });
+  console.log(JSON.stringify(res, null, 2));
+}
+
+async function info() {
+  const res = await callTelegram("getWebhookInfo", {});
+  console.log(JSON.stringify(res, null, 2));
+}
+
 (async () => {
-  await setWebhook();
-  await getWebhookInfo();
+  try {
+    if (SUBCOMMAND === "delete") await del();
+    else if (SUBCOMMAND === "info") await info();
+    else await set();
+  } catch (e) {
+    console.error("❌ error:", e instanceof Error ? e.message : e);
+    process.exit(1);
+  }
 })();
