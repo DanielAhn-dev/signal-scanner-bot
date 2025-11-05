@@ -1,6 +1,7 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
-import { KRXClient } from "./krx-client";
+import { KRXClient } from "../packages/data/krx-client";
 
+// 환경변수
 const SECRET = process.env.TELEGRAM_BOT_SECRET!;
 const TOKEN = process.env.TELEGRAM_BOT_TOKEN!;
 const ADMIN = process.env.TELEGRAM_ADMIN_CHAT_ID;
@@ -10,10 +11,12 @@ const BASE_URL =
     ? `https://${process.env.VERCEL_URL}`
     : "http://localhost:3000");
 
+// Vercel: Raw body 필요
 export const config = {
   api: { bodyParser: false },
 };
 
+// Telegram Update 타입
 type Update = {
   message?: {
     text?: string;
@@ -22,6 +25,19 @@ type Update = {
   };
 };
 
+// OHLCV 로컬 타입(외부 타입 파일 없이 사용 가능)
+type OHLCV = {
+  date: string;
+  code: string;
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+  volume: number;
+  amount: number;
+};
+
+// Raw body 읽기
 async function readRawBody(req: VercelRequest): Promise<string> {
   return new Promise((resolve, reject) => {
     let data = "";
@@ -31,6 +47,7 @@ async function readRawBody(req: VercelRequest): Promise<string> {
   });
 }
 
+// Telegram 메시지 전송(unknown → 명시적 타입)
 async function sendMessage(chatId: number | string, text: string) {
   try {
     const resp = await fetch(
@@ -51,13 +68,14 @@ async function sendMessage(chatId: number | string, text: string) {
       );
       return;
     }
-    const json = await resp.json();
+    const json = (await resp.json()) as { ok: boolean; description?: string };
     if (!json.ok) console.error("[Telegram] send failed:", json.description);
   } catch (e) {
     console.error("[Telegram] send error:", e);
   }
 }
 
+// 지표 계산
 function sma(arr: number[], n: number): number[] {
   const out: number[] = [];
   let sum = 0;
@@ -162,6 +180,7 @@ function scoreFromIndicators(closes: number[], vols: number[]) {
   };
 }
 
+// 메인 핸들러
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== "POST") {
     return res.status(405).send("Method Not Allowed");
@@ -191,7 +210,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   console.log(`[Telegram] ${userId} -> ${text}`);
 
   const krx = new KRXClient();
-
   const reply = async (t: string) => sendMessage(chatId, t);
 
   try {
@@ -244,11 +262,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         return res.status(200).send("OK");
       }
 
-      const closes = ohlcv.map((d) => d.close);
-      const vols = ohlcv.map((d) => d.volume);
+      const closes = ohlcv.map((d: OHLCV) => d.close);
+      const vols = ohlcv.map((d: OHLCV) => d.volume);
       const result = scoreFromIndicators(closes, vols);
 
-      const last = ohlcv[ohlcv.length - 1];
+      const last = ohlcv[ohlcv.length - 1] as OHLCV;
       const emoji =
         result.signal === "buy" ? "🟢" : result.signal === "sell" ? "🔴" : "🟡";
       const msg =
