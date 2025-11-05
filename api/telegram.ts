@@ -213,40 +213,51 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   const krx = new KRXClient();
 
-  const reply = async (t: string, extra?: any) => {
-    const chatId = callback ? callback.message.chat.id : message!.chat.id;
-    try {
-      await fetch(`https://api.telegram.org/bot${TOKEN}/sendMessage`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          chat_id: chatId,
-          text: t,
-          parse_mode: "Markdown",
-          reply_markup: extra?.reply_markup,
-        }),
-      });
-    } catch (e) {
-      console.error("[Telegram] send error:", e);
-    }
-  };
-
   // 콜백 우선 처리
   const callback = (update as any).callback_query as
-    | { id: string; data: string; message: { chat: { id: number | string } } }
+    | { id: string; data?: string; message: { chat: { id: number | string } } }
     | undefined;
 
+  const baseChatId = callback ? callback.message.chat.id : message!.chat.id;
+  const reply = async (
+    t: string,
+    extra?: any,
+    chatOverride?: number | string
+  ) => {
+    const cid = chatOverride ?? baseChatId;
+    await fetch(`https://api.telegram.org/bot${TOKEN}/sendMessage`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        chat_id: cid,
+        text: t,
+        parse_mode: "Markdown",
+        reply_markup: extra?.reply_markup,
+      }),
+    });
+  };
+
   if (callback) {
-    const { id, data } = callback;
-    await answerCallbackQuery(id);
-    if (data.startsWith("score:")) {
-      const code = data.split(":")[1];
+    const cb = callback.data || "";
+    await answerCallbackQuery(callback.id);
+
+    if (cb.startsWith("sector:")) {
+      const sector = cb.slice("sector:".length);
+      const codes = await getLeadersForSector(sector);
+      const nameMap = await getNamesForCodes(codes);
+      const rows = codes
+        .slice(0, 10)
+        .map((code) => [
+          { text: `${nameMap[code] || code} (${code})`, data: `score:${code}` },
+        ]);
+      await reply(`📈 ${sector} 대장주 후보를 선택하세요:`, {
+        reply_markup: toInlineKeyboard(rows),
+      });
+    } else if (cb.startsWith("score:")) {
+      const code = cb.slice("score:".length);
       await handleScoreFlow(code, reply);
-    } else if (data.startsWith("sector:")) {
-      const sector = data.split(":")[1];
-      await handleStocksBySector(sector, reply);
-    } else if (data.startsWith("stocks:")) {
-      const sector = data.split(":")[1];
+    } else if (cb.startsWith("stocks:")) {
+      const sector = cb.slice("stocks:".length);
       await handleStocksBySector(sector, reply);
     }
     return res.status(200).send("OK");
@@ -296,7 +307,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     await analyzeAndReply(candidates[0].code, reply);
   }
 
-  const isSector = /^\/?섹터\b/.test(txt) || txt.startsWith("/sector");
+  const isSector = /^\/?섹터\b/.test(txt);
   const isStocks = /^\/?종목\b/.test(txt) || txt.startsWith("/stocks");
 
   if (isSector) {
@@ -315,19 +326,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       reply_markup: toInlineKeyboard(rows),
     });
     return res.status(200).send("OK");
-  } else if (data.startsWith("sector:")) {
-    const sector = data.split(":")[1];
-    const codes = await getLeadersForSector(sector);
-    const nameMap = await getNamesForCodes(codes);
-
-    const rows = codes
-      .slice(0, 10)
-      .map((code) => [
-        { text: `${nameMap[code] || code} (${code})`, data: `score:${code}` },
-      ]);
-    await reply(`📈 ${sector} 대장주 후보를 선택하세요:`, {
-      reply_markup: toInlineKeyboard(rows),
-    });
   }
 
   if (isStocks) {
@@ -410,11 +408,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     } else {
       await reply(
         "📱 명령어:\n" +
-          "/start - 시작\n" +
-          "/sector - 섹터\n" +
-          "/stocks - 종목\n" +
-          "/score <코드> - 점수\n" +
-          "/buy <코드> - 매수"
+          "/시작 - 시작\n" +
+          "/섹터 - 유망 섹터\n" +
+          "/종목 <섹터> - 대장주 후보\n" +
+          "/점수 <이름|코드> - 점수/신호\n" +
+          "/매수 <코드> - 엔트리 제안"
       );
     }
   } catch (e) {
@@ -497,12 +495,14 @@ async function handleStocksBySector(
   sector: string,
   reply: (t: string, extra?: any) => Promise<void>
 ) {
-  const krx = new KRXClient();
-  const top = await krx.getTopVolumeStocks("STK", 10);
-  const rows = top.map((s) => [
-    { text: `${s.name} (${s.code})`, data: `score:${s.code}` },
-  ]);
-  await reply(`📈 ${sector} 후보 종목을 선택하세요:`, {
+  const codes = await getLeadersForSector(sector);
+  const nameMap = await getNamesForCodes(codes);
+  const rows = codes
+    .slice(0, 10)
+    .map((code) => [
+      { text: `${nameMap[code] || code} (${code})`, data: `score:${code}` },
+    ]);
+  await reply(`📈 ${sector} 대장주 후보를 선택하세요:`, {
     reply_markup: toInlineKeyboard(rows),
   });
 }
