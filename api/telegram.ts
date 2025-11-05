@@ -1,6 +1,7 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { KRXClient } from "../packages/data/krx-client";
-import { searchByNameOrCode } from "../packages/data/search";
+import { searchByNameOrCode, getNamesForCodes } from "../packages/data/search";
+import { getTopSectors, getLeadersForSector } from "../packages/data/sector";
 
 // 환경변수
 const SECRET = process.env.TELEGRAM_BOT_SECRET!;
@@ -299,15 +300,34 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const isStocks = /^\/?종목\b/.test(txt) || txt.startsWith("/stocks");
 
   if (isSector) {
-    // TODO: 실제 섹터 스코어링 결과로 교체
-    const rows = [
-      [{ text: "반도체", data: "sector:반도체" }],
-      [{ text: "이차전지", data: "sector:이차전지" }],
-    ];
-    await reply("📊 섹터를 선택하세요:", {
+    const tops = await getTopSectors(6);
+    if (!tops.length) {
+      await reply("⚠️ 섹터 데이터가 부족합니다. stocks.sector를 채워주세요.");
+      return res.status(200).send("OK");
+    }
+    const rows = tops.map((s) => [
+      {
+        text: `${s.sector} (점수 ${Math.round(s.score)})`,
+        data: `sector:${s.sector}`,
+      },
+    ]);
+    await reply("📊 유망 섹터를 선택하세요:", {
       reply_markup: toInlineKeyboard(rows),
     });
     return res.status(200).send("OK");
+  } else if (data.startsWith("sector:")) {
+    const sector = data.split(":")[1];
+    const codes = await getLeadersForSector(sector);
+    const nameMap = await getNamesForCodes(codes);
+
+    const rows = codes
+      .slice(0, 10)
+      .map((code) => [
+        { text: `${nameMap[code] || code} (${code})`, data: `score:${code}` },
+      ]);
+    await reply(`📈 ${sector} 대장주 후보를 선택하세요:`, {
+      reply_markup: toInlineKeyboard(rows),
+    });
   }
 
   if (isStocks) {
@@ -449,11 +469,15 @@ async function analyzeAndReply(
   const vols = ohlcv.map((d: any) => d.volume);
   const result = scoreFromIndicators(closes, vols);
 
+  const nameMap = await getNamesForCodes([code]);
+  const title = `${nameMap[code] || code} (${code})`;
   const last = ohlcv[ohlcv.length - 1] as any;
   const emoji =
     result.signal === "buy" ? "🟢" : result.signal === "sell" ? "🔴" : "🟡";
+  const msgHeader = `${emoji} ${title} 분석 결과\n\n`;
+
   const msg =
-    `${emoji} ${code} 분석 결과\n\n` +
+    `${msgHeader}` +
     `가격: ${last.close.toLocaleString()}원\n` +
     `점수: ${result.score} / 100\n` +
     `신호: ${result.signal.toUpperCase()}\n\n` +
