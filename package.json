@@ -1,0 +1,34 @@
+{
+  "name": "signal-scanner-bot",
+  "version": "1.0.0",
+  "description": "Telegram Stock Signal Scanner Bot with Vercel Functions",
+  "main": "api/telegram.ts",
+  "scripts": {
+    "dev": "vercel dev",
+    "build": "tsc",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/DanielAhn-dev/signal-scanner-bot.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/DanielAhn-dev/signal-scanner-bot/issues"
+  },
+  "homepage": "https://github.com/DanielAhn-dev/signal-scanner-bot#readme",
+  "dependencies": {
+    "@supabase/supabase-js": "^2.45.0",
+    "@vercel/node": "^3.0.0",
+    "cheerio": "^1.1.2",
+    "dotenv": "^16.3.1",
+    "technicalindicators": "^3.1.0"
+  },
+  "devDependencies": {
+    "@types/cheerio": "^0.22.31",
+    "@types/node": "^20.10.0",
+    "typescript": "^5.3.3"
+  }
+}
