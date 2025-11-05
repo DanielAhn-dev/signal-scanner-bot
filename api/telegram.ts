@@ -230,7 +230,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
   };
 
-  // 1) update 파싱 직후 콜백 먼저 처리
+  // 콜백 우선 처리
   const callback = (update as any).callback_query as
     | { id: string; data: string; message: { chat: { id: number | string } } }
     | undefined;
@@ -245,14 +245,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const sector = data.split(":")[1];
       await handleStocksBySector(sector, reply);
     } else if (data.startsWith("stocks:")) {
-      // 괄호 오탈자 수정
       const sector = data.split(":")[1];
       await handleStocksBySector(sector, reply);
     }
     return res.status(200).send("OK");
   }
 
-  // 2) 한글 명령 라우팅은 동일
+  // 명령 라우팅(한글/영문)
   const txt = (text || "").trim();
   const isScore =
     /^\/?점수\b/.test(txt) || txt.endsWith(" 점수") || txt.startsWith("/score");
@@ -270,7 +269,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(200).send("OK");
   }
 
-  // 3) 점수 흐름: 숫자코드 직행 + 후보 버튼
+  // 점수 흐름
   async function handleScoreFlow(
     input: string,
     reply: (t: string, extra?: any) => Promise<void>

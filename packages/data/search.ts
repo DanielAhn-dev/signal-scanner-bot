@@ -1,4 +1,3 @@
-// packages/data/search.ts
 import { KRXClient } from "./krx-client";
 
 export type StockLite = {
@@ -60,9 +59,7 @@ async function upsertToSupabase(list: StockLite[]) {
 export async function ensureStockList(): Promise<StockLite[]> {
   const now = Date.now();
   if (cache.length && now - lastLoaded < 6 * 60 * 60 * 1000) return cache;
-  // 1) Supabase 캐시
   let list = await loadFromSupabase();
-  // 2) 캐시 없으면 KRX → 업서트
   if (!list.length) {
     const krx = new KRXClient();
     const raw = await krx.getStockList("ALL");
