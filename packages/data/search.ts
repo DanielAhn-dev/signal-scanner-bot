@@ -6,19 +6,22 @@ export type StockLite = {
   name: string;
   market: "KOSPI" | "KOSDAQ" | "KONEX";
 };
+
 let cache: StockLite[] = [];
 let lastLoaded = 0;
+let loadingPromise: Promise<StockLite[]> | null = null;
 
-function normalize(s: string) {
+function normalize(s: string): string {
   return s
     .trim()
     .toLowerCase()
     .replace(/\s+/g, "")
     .replace(/[()·\-_.]/g, "");
 }
-function scoreName(q: string, name: string) {
-  const nq = normalize(q),
-    nn = normalize(name);
+
+function scoreName(q: string, name: string): number {
+  const nq = normalize(q);
+  const nn = normalize(name);
   if (nn === nq) return 100;
   if (nn.startsWith(nq)) return 90;
   if (nn.includes(nq)) return 70;
@@ -26,8 +29,8 @@ function scoreName(q: string, name: string) {
 }
 
 async function loadFromSupabase(): Promise<StockLite[]> {
-  const url = process.env.SUPABASE_URL!,
-    key = process.env.SUPABASE_ANON_KEY!;
+  const url = process.env.SUPABASE_URL!;
+  const key = process.env.SUPABASE_ANON_KEY!;
   const r = await fetch(`${url}/rest/v1/stocks?select=code,name,market`, {
     headers: { apikey: key, Authorization: `Bearer ${key}` },
   });
@@ -39,9 +42,10 @@ async function loadFromSupabase(): Promise<StockLite[]> {
     market: r.market,
   }));
 }
-async function upsertToSupabase(list: StockLite[]) {
-  const url = process.env.SUPABASE_URL!,
-    key = process.env.SUPABASE_ANON_KEY!;
+
+async function upsertToSupabase(list: StockLite[]): Promise<void> {
+  const url = process.env.SUPABASE_URL!;
+  const key = process.env.SUPABASE_ANON_KEY!;
   await fetch(`${url}/rest/v1/stocks`, {
     method: "POST",
     headers: {
@@ -57,34 +61,49 @@ async function upsertToSupabase(list: StockLite[]) {
 export async function ensureStockList(): Promise<StockLite[]> {
   const now = Date.now();
   if (cache.length && now - lastLoaded < 6 * 60 * 60 * 1000) return cache;
-  let list = await loadFromSupabase();
-  if (!list.length) {
-    const krx = new KRXClient();
-    const raw = await krx.getStockList("ALL");
-    list = raw.map((x) => ({ code: x.code, name: x.name, market: x.market }));
-    if (list.length) upsertToSupabase(list).catch(() => {});
+
+  if (!loadingPromise) {
+    loadingPromise = (async () => {
+      let list = await loadFromSupabase();
+      if (!list.length) {
+        const krx = new KRXClient();
+        const raw = await krx.getStockList("ALL");
+        list = raw.map((x: any) => ({
+          code: x.code,
+          name: x.name,
+          market: x.market,
+        }));
+        if (list.length) upsertToSupabase(list).catch(() => {});
+      }
+      cache = list;
+      lastLoaded = now;
+      loadingPromise = null;
+      return list;
+    })();
   }
-  cache = list;
-  lastLoaded = now;
-  return list;
+  return loadingPromise;
 }
 
 export async function searchByNameOrCode(
   q: string,
   limit = 8
 ): Promise<StockLite[]> {
-  if (/^\d{6}$/.test(q))
+  if (/^\d{6}$/.test(q)) {
     return [{ code: q, name: q, market: "KOSPI" } as StockLite];
+  }
   const list = await ensureStockList();
   const nq = normalize(q);
+
   const exact = list.find((x) => normalize(x.name) === nq);
   if (exact) return [exact];
+
   const scored = list
     .map((x) => ({ x, s: scoreName(nq, x.name) }))
     .filter((r) => r.s > 0)
     .sort((a, b) => b.s - a.s)
     .slice(0, limit)
     .map((r) => r.x);
+
   return scored;
 }
 
@@ -92,8 +111,8 @@ export async function getNamesForCodes(
   codes: string[]
 ): Promise<Record<string, string>> {
   if (!codes.length) return {};
-  const url = process.env.SUPABASE_URL!,
-    key = process.env.SUPABASE_ANON_KEY!;
+  const url = process.env.SUPABASE_URL!;
+  const key = process.env.SUPABASE_ANON_KEY!;
   const inList = codes.map((c) => `"${c}"`).join(",");
   const r = await fetch(
     `${url}/rest/v1/stocks?select=code,name&code=in.(${inList})`,
