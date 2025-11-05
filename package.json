@@ -4,8 +4,6 @@
   "description": "Telegram Stock Signal Scanner Bot with Vercel Functions",
   "main": "api/telegram.ts",
   "scripts": {
-    "dev": "vercel dev",
-    "build": "tsc",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "repository": {
