@@ -197,21 +197,29 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   };
 
   // ---- callback queries ----
+  // api/telegram.ts (핵심만 발췌)
   if (callback) {
     const cb = callback.data || "";
-    await answerCallbackQuery(callback.id);
-    if (cb.startsWith("sector:")) {
-      const sector = cb.slice("sector:".length);
-      await handleStocksBySector(sector, reply);
-    } else if (cb.startsWith("score:")) {
-      const code = cb.slice("score:".length);
-      try {
-        await analyzeAndReply(code, reply);
-      } catch (e: any) {
-        await reply(`❌ 분석 실패: ${String(e?.message || e)}`);
+    // 1) 즉시 응답
+    answerCallbackQuery(callback.id).catch(() => {});
+    reply("⏳ 불러오는 중...").catch(() => {});
+    // 2) 웹훅 즉시 종료
+    res.status(200).send("OK");
+    // 3) 비동기 작업
+    (async () => {
+      if (cb.startsWith("sector:")) {
+        const sector = cb.slice("sector:".length);
+        await handleStocksBySector(sector, reply).catch((e) =>
+          reply(`⚠️ 실패: ${String(e).slice(0, 80)}`)
+        );
+      } else if (cb.startsWith("score:")) {
+        const code = cb.slice("score:".length);
+        await analyzeAndReply(code, reply).catch((e) =>
+          reply(`⚠️ 실패: ${String(e).slice(0, 80)}`)
+        );
       }
-    }
-    return res.status(200).send("OK");
+    })();
+    return;
   }
 
   if (!message) return res.status(200).send("OK");
@@ -429,22 +437,28 @@ async function analyzeAndReply(code: string, reply: ReplyFn) {
 }
 
 async function handleStocksBySector(sector: string, reply: ReplyFn) {
-  await reply(`⏳ [${sector}] 후보를 불러오는 중...`);
-  const codes = await getLeadersForSector(sector, 12);
+  const timeout = (p: Promise<string[]>, ms = 3000) =>
+    Promise.race([
+      p,
+      new Promise<string[]>((r) => setTimeout(() => r([]), ms)),
+    ]);
+
+  let codes = await timeout(getLeadersForSector(sector, 12));
   if (!codes.length) {
-    await reply(
-      `⚠️ '${sector}' 섹터 종목을 찾지 못했습니다. 실시간 거래대금 상위로 대체합니다.`
-    );
+    const krx = new KRXClient();
+    const [ks, kq] = await Promise.all([
+      krx.getTopVolumeStocks("STK", 100),
+      krx.getTopVolumeStocks("KSQ", 100),
+    ]);
+    codes = [...ks, ...kq].slice(0, 10).map((x) => x.code);
+    await reply(`⚠️ '${sector}' 섹터 조회가 느려 거래대금 상위로 대체합니다.`);
   }
-  const use = codes.length
-    ? codes.slice(0, 10)
-    : (await new KRXClient().getTopVolumeStocks("STK", 5))
-        .concat(await new KRXClient().getTopVolumeStocks("KSQ", 5))
-        .map((x) => x.code);
-  const nameMap = await getNamesForCodes(use);
-  const rows = use.map((code) => [
-    { text: `${nameMap[code] || code} (${code})`, data: `score:${code}` },
-  ]);
+  const nameMap = await getNamesForCodes(codes);
+  const rows = codes
+    .slice(0, 10)
+    .map((code) => [
+      { text: `${nameMap[code] || code} (${code})`, data: `score:${code}` },
+    ]);
   await reply(`📈 [${sector}] 대장주 후보를 선택하세요:\n\n(유동성 상위 순)`, {
     reply_markup: toInlineKeyboard(rows),
   });
