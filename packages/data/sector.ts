@@ -4,6 +4,7 @@ import { KRXClient } from "./krx-client";
 export type SectorRow = {
   id?: string;
   name: string;
+  category?: string;
   metrics?: any;
   score?: number;
 };
@@ -11,107 +12,23 @@ type TopSector = { sector: string; score: number; leaders: string[] };
 
 function toArray<T>(x: any): T[] {
   return Array.isArray(x) ? x : [];
-} //
+}
 function supa() {
   return {
     url: process.env.SUPABASE_URL!,
     key: process.env.SUPABASE_ANON_KEY!,
   };
-} //
-
-// 간단한 동시성 제한
-async function mapLimit<T, R>(
-  arr: T[],
-  n: number,
-  fn: (x: T) => Promise<R>
-): Promise<R[]> {
-  const ret: R[] = [];
-  let i = 0;
-  const workers = Array(Math.min(n, arr.length))
-    .fill(0)
-    .map(async () => {
-      while (i < arr.length) {
-        const idx = i++;
-        ret[idx] = await fn(arr[idx]);
-      }
-    });
-  await Promise.all(workers);
-  return ret;
 }
 
-// 코드→섹터 매핑(주 DB)
-export async function loadCodeToSector(): Promise<Record<string, string>> {
-  const { url, key } = supa();
-  const r = await fetch(`${url}/rest/v1/stocks?select=code,sector`, {
-    headers: { apikey: key, Authorization: `Bearer ${key}` },
-  }).catch(() => null);
-  if (!r || !r.ok) return {};
-  const rows = toArray<{ code: string; sector?: string }>(
-    await r.json().catch(() => null)
-  );
-  const map: Record<string, string> = {};
-  for (const it of rows) if (it?.code && it?.sector) map[it.code] = it.sector;
-  return map;
-}
-
-// 네이버에서 업종명 폴백 추출
-async function fetchSectorFromNaver(code: string): Promise<string> {
-  try {
-    const resp = await fetch(
-      `https://finance.naver.com/item/main.naver?code=${code}`,
-      { headers: { "User-Agent": "Mozilla/5.0" } }
-    );
-    if (!resp.ok) return "";
-    const html = await resp.text();
-    // 업종 셀의 앵커 텍스트
-    const m = html.match(/업종<\/th>\s*<td[^>]*>\s*<a[^>]*>([^<]+)<\/a>/i);
-    return m ? m[1].trim() : "";
-  } catch {
-    return "";
-  }
-}
-
-// 부족 매핑 보강: 상위 코드 집합에 대해 네이버 폴백 후 DB 업서트
-async function enrichSectorsIfNeeded(
-  codes: string[]
-): Promise<Record<string, string>> {
-  const base = await loadCodeToSector();
-  const missing = codes.filter((c) => !base[c]);
-  if (!missing.length) return base;
-
-  const pairs = await mapLimit(missing, 6, async (c) => {
-    const s = await fetchSectorFromNaver(c);
-    // 분류 불가인 경우 빈 문자열으로 남겨두기 (DB에는 null 또는 ''로 저장하는 것이 좋음)
-    return { code: c, sector: s ? s : "" };
-  });
-
-  const valid = pairs.filter((p) => p.sector && p.sector !== "");
-  if (valid.length) {
-    const { url, key } = supa();
-    await fetch(`${url}/rest/v1/stocks`, {
-      method: "POST",
-      headers: {
-        apikey: key,
-        Authorization: `Bearer ${key}`,
-        "Content-Type": "application/json",
-        Prefer: "resolution=merge-duplicates",
-      },
-      body: JSON.stringify(
-        valid.map((v) => ({ code: v.code, sector: v.sector }))
-      ),
-    }).catch(() => {});
-  }
-  const out = { ...base };
-  for (const v of valid) out[v.code] = v.sector;
-  return out;
-}
-
-// 정적 섹터 맵
+// ---- 핵심 변경 1: sector_id 기반 조회 ----
 export async function loadSectorMap(): Promise<Record<string, SectorRow>> {
   const { url, key } = supa();
-  const r = await fetch(`${url}/rest/v1/sectors?select=id,name,metrics,score`, {
-    headers: { apikey: key, Authorization: `Bearer ${key}` },
-  }).catch(() => null);
+  const r = await fetch(
+    `${url}/rest/v1/sectors?select=id,name,category,metrics,score&order=id`,
+    {
+      headers: { apikey: key, Authorization: `Bearer ${key}` },
+    }
+  ).catch(() => null);
   if (!r || !r.ok) return {};
   const rows = toArray<SectorRow>(await r.json().catch(() => null));
   const out: Record<string, SectorRow> = {};
@@ -119,36 +36,56 @@ export async function loadSectorMap(): Promise<Record<string, SectorRow>> {
   return out;
 }
 
-// 정적 우선→없으면 실시간
 export async function getTopSectors(
   limit = 5
 ): Promise<{ sector: string; score: number }[]> {
   const map = await loadSectorMap();
   const items = Object.entries(map).map(([name, v]) => {
     const m = v?.metrics || {};
-    const s = Number.isFinite(v?.score)
+    const score = Number.isFinite(v?.score)
       ? Number(v?.score)
       : Number(m?.score ?? m?.roc21 ?? 0);
-    return { sector: name, score: Number.isFinite(s) ? s : 0 };
+    return { sector: name, score: Number.isFinite(score) ? score : 0 };
   });
   const ranked = items.sort((a, b) => b.score - a.score).slice(0, limit);
   if (ranked.length) return ranked;
-  const rt = await getTopSectorsRealtime(limit);
-  return rt.map((x) => ({ sector: x.sector, score: x.score }));
+  return (await getTopSectorsRealtime(limit)).map((x) => ({
+    sector: x.sector,
+    score: x.score,
+  }));
 }
 
-// 실시간 섹터 산출(거래대금 상위 기반)
+// ---- 실시간 섹터(거래대금 기반) ----
 export async function getTopSectorsRealtime(limit = 5): Promise<TopSector[]> {
   const krx = new KRXClient();
   const [ks, kq] = await Promise.all([
-    krx.getTopVolumeStocks("STK", 120),
-    krx.getTopVolumeStocks("KSQ", 120),
+    krx.getTopVolumeStocks("STK", 100),
+    krx.getTopVolumeStocks("KSQ", 100),
   ]);
   const hot = [...ks, ...kq];
   const hotCodes = hot.map((x) => x.code);
-  // 코드→섹터 보강
-  const codeToSector = await enrichSectorsIfNeeded(hotCodes);
 
+  // 핵심 변경 2: stocks의 sector_id + sectors.name 조인으로 섹터명 매핑
+  const { url, key } = supa();
+  const inList = hotCodes.map((c) => `"${c}"`).join(",");
+  const resp = await fetch(
+    `${url}/rest/v1/stocks?select=code,sector_id,sectors(name)&code=in.(${inList})`,
+    { headers: { apikey: key, Authorization: `Bearer ${key}` } }
+  ).catch(() => null);
+
+  const codeToSector: Record<string, string> = {};
+  if (resp?.ok) {
+    const rows = toArray<{
+      code: string;
+      sector_id?: number;
+      sectors?: { name: string };
+    }>(await resp.json().catch(() => null));
+    for (const r of rows) {
+      if (r?.code && r?.sectors?.name) codeToSector[r.code] = r.sectors.name;
+    }
+  }
+
+  // 거래대금 기준으로 섹터별 bucket 생성
   const bucket = new Map<
     string,
     {
@@ -159,7 +96,7 @@ export async function getTopSectorsRealtime(limit = 5): Promise<TopSector[]> {
     }
   >();
   for (const it of hot) {
-    const s = codeToSector[it.code] || "기타";
+    const s = codeToSector[it.code] || "미분류";
     const cell = bucket.get(s) || {
       amount: 0,
       sumChg: 0,
@@ -173,11 +110,7 @@ export async function getTopSectorsRealtime(limit = 5): Promise<TopSector[]> {
     bucket.set(s, cell);
   }
 
-  // 커버리지 체크: '기타' 비중이 60% 넘으면 상위 섹터 노출 억제
   const totalAmt = [...bucket.values()].reduce((a, b) => a + b.amount, 0) || 1;
-  const etcAmt = bucket.get("기타")?.amount || 0;
-  const etcShare = etcAmt / totalAmt;
-
   const values = [...bucket.values()].map((b) => b.amount);
   const mean = values.reduce((a, b) => a + b, 0) / Math.max(values.length, 1);
   const sd =
@@ -196,78 +129,66 @@ export async function getTopSectorsRealtime(limit = 5): Promise<TopSector[]> {
       .map((x) => x.code);
     return { sector, score, leaders };
   });
-  const hasNonEtc = entries.some((e) => e.sector !== "기타");
-  const ranked = entries
-    .sort((a, b) => b.score - a.score)
-    .filter((x) => (hasNonEtc ? x.sector !== "기타" : true))
-    .slice(0, limit);
 
-  return ranked;
+  const hasNonMisc = entries.some((e) => e.sector !== "미분류");
+  return entries
+    .sort((a, b) => b.score - a.score)
+    .filter((x) => (hasNonMisc ? x.sector !== "미분류" : true))
+    .slice(0, limit);
 }
 
-// 리더
+// ---- 핵심 변경 3: sector_id 기반 종목 조회 ----
 export async function getLeadersForSector(
   sector: string,
   limit = 10
 ): Promise<string[]> {
-  const rt = await getTopSectorsRealtime(20);
+  const rt = await getTopSectorsRealtime(30);
   const found = rt.find((s) => s.sector === sector);
   if (found?.leaders?.length) return found.leaders.slice(0, limit);
 
   const { url, key } = supa();
-  let resp;
-  if (!sector || sector === "기타") {
-    // '기타' 혹은 빈값: sector 조건 없이 모두 가져온 후, sector가 비어있는(또는 '기타'로 마킹된) 것만 필터
-    resp = await fetch(
-      `${url}/rest/v1/stocks?select=code,sector,liquidity&limit=10000`,
-      { headers: { apikey: key, Authorization: `Bearer ${key}` } }
-    );
-    if (!resp || !resp.ok) return [];
-    const rows: { code: string; sector?: string; liquidity?: number }[] =
-      toArray(await resp.json().catch(() => null));
-    // 섹터가 비어있거나 빈 문자열 혹은 '기타'로 표기된 것들만 선택
-    const filtered = rows.filter(
-      (r) =>
-        r?.code && (!r.sector || r.sector.trim() === "" || r.sector === "기타")
-    );
-    return filtered
-      .sort((a, b) => Number(b?.liquidity ?? 0) - Number(a?.liquidity ?? 0))
-      .slice(0, limit)
-      .map((r) => r.code);
-  } else {
-    // 기존 동작 (특정 섹터)
-    resp = await fetch(
-      `${url}/rest/v1/stocks?select=code,sector,liquidity&sector=eq.${encodeURIComponent(
-        sector
-      )}`,
-      { headers: { apikey: key, Authorization: `Bearer ${key}` } }
-    );
-    if (!resp || !resp.ok) return [];
-    const rows = toArray<{ code: string; liquidity?: number }>(
-      await resp.json().catch(() => null)
-    );
-    return rows
-      .filter((r) => r?.code)
-      .sort((a, b) => Number(b?.liquidity ?? 0) - Number(a?.liquidity ?? 0))
-      .slice(0, limit)
-      .map((r) => r.code);
-  }
+
+  // 섹터명으로 sector id 조회
+  const sr = await fetch(
+    `${url}/rest/v1/sectors?select=id&name=eq.${encodeURIComponent(
+      sector
+    )}&limit=1`,
+    { headers: { apikey: key, Authorization: `Bearer ${key}` } }
+  ).catch(() => null);
+
+  if (!sr?.ok) return [];
+  const sectorRows = toArray<{ id: string }>(await sr.json().catch(() => null));
+  if (!sectorRows.length) return [];
+  const sectorId = sectorRows[0].id;
+
+  // sector_id로 stocks 조회
+  const resp = await fetch(
+    `${url}/rest/v1/stocks?select=code,liquidity&sector_id=eq.${sectorId}&order=liquidity.desc&limit=${limit}`,
+    { headers: { apikey: key, Authorization: `Bearer ${key}` } }
+  ).catch(() => null);
+
+  if (!resp?.ok) return [];
+  const rows = toArray<{ code: string; liquidity?: number }>(
+    await resp.json().catch(() => null)
+  );
+  return rows.map((r) => r.code);
 }
 
-// 코드→이름
 export async function getNamesForCodes(
   codes: string[]
 ): Promise<Record<string, string>> {
   if (!codes.length) return {};
   const { url, key } = supa();
   const inList = codes.map((c) => `"${c}"`).join(",");
-  const resp = await fetch(
+  const r = await fetch(
     `${url}/rest/v1/stocks?select=code,name&code=in.(${inList})`,
-    { headers: { apikey: key, Authorization: `Bearer ${key}` } }
+    {
+      headers: { apikey: key, Authorization: `Bearer ${key}` },
+    }
   ).catch(() => null);
-  if (!resp || !resp?.ok) return {};
+  if (!r?.ok) return {};
   const rows = toArray<{ code: string; name: string }>(
-    await resp.json().catch(() => null)
+    await r.json().catch(() => null)
   );
   return Object.fromEntries(rows.map((r) => [r.code, r.name]));
 }

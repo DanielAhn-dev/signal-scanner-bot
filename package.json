@@ -1,5 +1,6 @@
 {
   "name": "signal-scanner-bot",
+  "type": "module",
   "version": "1.0.1",
   "description": "Telegram Stock Signal Scanner Bot with Vercel Functions",
   "main": "api/telegram.ts",
