@@ -11,13 +11,13 @@ type TopSector = { sector: string; score: number; leaders: string[] };
 
 function toArray<T>(x: any): T[] {
   return Array.isArray(x) ? x : [];
-} // [attached_file:4]
+} //
 function supa() {
   return {
     url: process.env.SUPABASE_URL!,
     key: process.env.SUPABASE_ANON_KEY!,
   };
-} // [attached_file:4]
+} //
 
 // 간단한 동시성 제한
 async function mapLimit<T, R>(
@@ -37,7 +37,7 @@ async function mapLimit<T, R>(
     });
   await Promise.all(workers);
   return ret;
-} // [attached_file:4]
+}
 
 // 코드→섹터 매핑(주 DB)
 export async function loadCodeToSector(): Promise<Record<string, string>> {
@@ -45,46 +45,47 @@ export async function loadCodeToSector(): Promise<Record<string, string>> {
   const r = await fetch(`${url}/rest/v1/stocks?select=code,sector`, {
     headers: { apikey: key, Authorization: `Bearer ${key}` },
   }).catch(() => null);
-  if (!r || !r.ok) return {}; // [attached_file:4]
+  if (!r || !r.ok) return {};
   const rows = toArray<{ code: string; sector?: string }>(
     await r.json().catch(() => null)
   );
   const map: Record<string, string> = {};
   for (const it of rows) if (it?.code && it?.sector) map[it.code] = it.sector;
-  return map; // [attached_file:4]
+  return map;
 }
 
 // 네이버에서 업종명 폴백 추출
 async function fetchSectorFromNaver(code: string): Promise<string> {
   try {
     const resp = await fetch(
-      `https://finance.naver.com/item/main.nhn?code=${code}`,
-      { headers: { "User-Agent": "Mozilla/5.0" } }
+      `https://finance.naver.com/item/coinfo.naver?code=${code}`,
+      {
+        headers: { "User-Agent": "Mozilla/5.0" },
+      }
     );
-    if (!resp.ok) return ""; // [web:10]
+    if (!resp.ok) return "";
     const html = await resp.text();
-    // '업종' 셀의 앵커 텍스트 추출 (classic PC 페이지 패턴)
     const m = html.match(/업종<\/th>\s*<td[^>]*>\s*<a[^>]*>([^<]+)<\/a>/i);
-    return m ? m[1].trim() : ""; // [web:10]
+    return m ? m[1].trim() : "";
   } catch {
     return "";
   }
-} // [web:10]
+}
 
 // 부족 매핑 보강: 상위 코드 집합에 대해 네이버 폴백 후 DB 업서트
 async function enrichSectorsIfNeeded(
   codes: string[]
 ): Promise<Record<string, string>> {
-  const base = await loadCodeToSector(); // [attached_file:4]
-  const missing = codes.filter((c) => !base[c]); // [attached_file:4]
-  if (!missing.length) return base; // [attached_file:4]
+  const base = await loadCodeToSector();
+  const missing = codes.filter((c) => !base[c]);
+  if (!missing.length) return base;
 
   const pairs = await mapLimit(missing, 6, async (c) => {
     const s = await fetchSectorFromNaver(c);
     return { code: c, sector: s || "기타" };
-  }); // [web:10]
+  });
 
-  const valid = pairs.filter((p) => p.sector && p.sector !== ""); // [attached_file:4]
+  const valid = pairs.filter((p) => p.sector && p.sector !== "");
   if (valid.length) {
     const { url, key } = supa();
     await fetch(`${url}/rest/v1/stocks`, {
@@ -99,10 +100,10 @@ async function enrichSectorsIfNeeded(
         valid.map((v) => ({ code: v.code, sector: v.sector }))
       ),
     }).catch(() => {});
-  } // [attached_file:4]
+  }
   const out = { ...base };
   for (const v of valid) out[v.code] = v.sector;
-  return out; // [attached_file:4]
+  return out;
 }
 
 // 정적 섹터 맵
@@ -111,29 +112,29 @@ export async function loadSectorMap(): Promise<Record<string, SectorRow>> {
   const r = await fetch(`${url}/rest/v1/sectors?select=id,name,metrics,score`, {
     headers: { apikey: key, Authorization: `Bearer ${key}` },
   }).catch(() => null);
-  if (!r || !r.ok) return {}; // [attached_file:4]
+  if (!r || !r.ok) return {};
   const rows = toArray<SectorRow>(await r.json().catch(() => null));
   const out: Record<string, SectorRow> = {};
   for (const row of rows) if (row?.name) out[row.name] = row;
-  return out; // [attached_file:4]
+  return out;
 }
 
 // 정적 우선→없으면 실시간
 export async function getTopSectors(
   limit = 5
 ): Promise<{ sector: string; score: number }[]> {
-  const map = await loadSectorMap(); // [attached_file:4]
+  const map = await loadSectorMap();
   const items = Object.entries(map).map(([name, v]) => {
     const m = v?.metrics || {};
     const s = Number.isFinite(v?.score)
       ? Number(v?.score)
       : Number(m?.score ?? m?.roc21 ?? 0);
     return { sector: name, score: Number.isFinite(s) ? s : 0 };
-  }); // [attached_file:4]
-  const ranked = items.sort((a, b) => b.score - a.score).slice(0, limit); // [attached_file:4]
-  if (ranked.length) return ranked; // [attached_file:4]
+  });
+  const ranked = items.sort((a, b) => b.score - a.score).slice(0, limit);
+  if (ranked.length) return ranked;
   const rt = await getTopSectorsRealtime(limit);
-  return rt.map((x) => ({ sector: x.sector, score: x.score })); // [attached_file:4]
+  return rt.map((x) => ({ sector: x.sector, score: x.score }));
 }
 
 // 실시간 섹터 산출(거래대금 상위 기반)
@@ -142,11 +143,11 @@ export async function getTopSectorsRealtime(limit = 5): Promise<TopSector[]> {
   const [ks, kq] = await Promise.all([
     krx.getTopVolumeStocks("STK", 120),
     krx.getTopVolumeStocks("KSQ", 120),
-  ]); // [web:21]
+  ]);
   const hot = [...ks, ...kq];
-  const hotCodes = hot.map((x) => x.code); // [web:21]
+  const hotCodes = hot.map((x) => x.code);
   // 코드→섹터 보강
-  const codeToSector = await enrichSectorsIfNeeded(hotCodes); // [attached_file:4]
+  const codeToSector = await enrichSectorsIfNeeded(hotCodes);
 
   const bucket = new Map<
     string,
@@ -156,9 +157,9 @@ export async function getTopSectorsRealtime(limit = 5): Promise<TopSector[]> {
       count: number;
       leaders: { code: string; amount: number }[];
     }
-  >(); // [attached_file:4]
+  >();
   for (const it of hot) {
-    const s = codeToSector[it.code] || "기타"; // [attached_file:4]
+    const s = codeToSector[it.code] || "기타";
     const cell = bucket.get(s) || {
       amount: 0,
       sumChg: 0,
@@ -170,12 +171,12 @@ export async function getTopSectorsRealtime(limit = 5): Promise<TopSector[]> {
     cell.count += 1;
     cell.leaders.push({ code: it.code, amount: it.amount || 0 });
     bucket.set(s, cell);
-  } // [attached_file:4]
+  } //
 
   // 커버리지 체크: '기타' 비중이 60% 넘으면 상위 섹터 노출 억제
-  const totalAmt = [...bucket.values()].reduce((a, b) => a + b.amount, 0) || 1; // [attached_file:4]
+  const totalAmt = [...bucket.values()].reduce((a, b) => a + b.amount, 0) || 1;
   const etcAmt = bucket.get("기타")?.amount || 0;
-  const etcShare = etcAmt / totalAmt; // [attached_file:4]
+  const etcShare = etcAmt / totalAmt;
 
   const values = [...bucket.values()].map((b) => b.amount);
   const mean = values.reduce((a, b) => a + b, 0) / Math.max(values.length, 1);
@@ -183,7 +184,7 @@ export async function getTopSectorsRealtime(limit = 5): Promise<TopSector[]> {
     Math.sqrt(
       values.reduce((s, v) => s + Math.pow(v - mean, 2), 0) /
         Math.max(values.length, 1)
-    ) || 1; // [attached_file:4]
+    ) || 1;
 
   const ranked: TopSector[] = [...bucket.entries()]
     .map(([sector, b]) => {
@@ -198,9 +199,9 @@ export async function getTopSectorsRealtime(limit = 5): Promise<TopSector[]> {
     })
     .sort((a, b) => b.score - a.score)
     .filter((x) => x.sector !== "기타" || etcShare < 0.6) // 기타 과대 시 숨김
-    .slice(0, limit); // [attached_file:4]
+    .slice(0, limit);
 
-  return ranked; // [attached_file:4]
+  return ranked;
 }
 
 // 리더
@@ -210,15 +211,15 @@ export async function getLeadersForSector(
 ): Promise<string[]> {
   const rt = await getTopSectorsRealtime(20);
   const found = rt.find((s) => s.sector === sector);
-  if (found?.leaders?.length) return found.leaders.slice(0, limit); // [attached_file:4][web:21]
+  if (found?.leaders?.length) return found.leaders.slice(0, limit);
   const { url, key } = supa();
   const resp = await fetch(
     `${url}/rest/v1/stocks?select=code,sector,liquidity&sector=eq.${encodeURIComponent(
       sector
     )}`,
     { headers: { apikey: key, Authorization: `Bearer ${key}` } }
-  ).catch(() => null);
-  if (!resp || !resp.ok) return []; // [attached_file:4]
+  );
+  if (!resp || !resp.ok) return [];
   const rows = toArray<{ code: string; liquidity?: number }>(
     await resp.json().catch(() => null)
   );
@@ -226,7 +227,7 @@ export async function getLeadersForSector(
     .filter((r) => r?.code)
     .sort((a, b) => Number(b?.liquidity ?? 0) - Number(a?.liquidity ?? 0))
     .slice(0, limit)
-    .map((r) => r.code); // [attached_file:4]
+    .map((r) => r.code);
 }
 
 // 코드→이름
@@ -240,9 +241,9 @@ export async function getNamesForCodes(
     `${url}/rest/v1/stocks?select=code,name&code=in.(${inList})`,
     { headers: { apikey: key, Authorization: `Bearer ${key}` } }
   ).catch(() => null);
-  if (!resp || !resp?.ok) return {}; // [attached_file:4]
+  if (!resp || !resp?.ok) return {};
   const rows = toArray<{ code: string; name: string }>(
     await resp.json().catch(() => null)
   );
-  return Object.fromEntries(rows.map((r) => [r.code, r.name])); // [attached_file:4]
+  return Object.fromEntries(rows.map((r) => [r.code, r.name]));
 }

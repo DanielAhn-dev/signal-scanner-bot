@@ -398,6 +398,12 @@ async function analyzeAndReply(code: string, reply: ReplyFn) {
 
 async function handleStocksBySector(sector: string, reply: ReplyFn) {
   const codes = await getLeadersForSector(sector);
+  if (!codes.length) {
+    await reply(
+      `⚠️ '${sector}' 섹터 종목을 찾지 못했습니다. 잠시 후 다시 시도하세요.`
+    );
+    return;
+  }
   const nameMap = await getNamesForCodes(codes);
   const rows = codes
     .slice(0, 10)

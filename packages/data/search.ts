@@ -65,7 +65,11 @@ export async function ensureStockList(): Promise<StockLite[]> {
   if (!loadingPromise) {
     loadingPromise = (async () => {
       let list = await loadFromSupabase();
-      if (!list.length) {
+      const MIN = 2000;
+      const incomplete =
+        !list.length || list.length < MIN || list.some((x) => !x?.name);
+
+      if (incomplete) {
         const krx = new KRXClient();
         const raw = await krx.getStockList("ALL");
         list = raw.map((x: any) => ({
@@ -73,38 +77,34 @@ export async function ensureStockList(): Promise<StockLite[]> {
           name: x.name,
           market: x.market,
         }));
-        if (list.length) upsertToSupabase(list).catch(() => {});
+        if (list.length) await upsertToSupabase(list);
       }
+
       cache = list;
       lastLoaded = now;
       loadingPromise = null;
       return list;
     })();
   }
-  return loadingPromise;
+  return loadingPromise!;
 }
 
 export async function searchByNameOrCode(
   q: string,
   limit = 8
 ): Promise<StockLite[]> {
-  if (/^\d{6}$/.test(q)) {
+  if (/^\d{6}$/.test(q))
     return [{ code: q, name: q, market: "KOSPI" } as StockLite];
-  }
-  const list = await ensureStockList();
+  const list = (await ensureStockList()).filter((x) => x?.name && x?.code);
   const nq = normalize(q);
-
   const exact = list.find((x) => normalize(x.name) === nq);
   if (exact) return [exact];
-
-  const scored = list
+  return list
     .map((x) => ({ x, s: scoreName(nq, x.name) }))
     .filter((r) => r.s > 0)
     .sort((a, b) => b.s - a.s)
     .slice(0, limit)
     .map((r) => r.x);
-
-  return scored;
 }
 
 export async function getNamesForCodes(
