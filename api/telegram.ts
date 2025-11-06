@@ -186,39 +186,64 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   const reply: ReplyFn = async (t, extra, chatOverride) => {
     const cid = chatOverride ?? baseChatId!;
-    await fetch(`https://api.telegram.org/bot${TOKEN}/sendMessage`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        chat_id: cid,
-        text: t,
-        reply_markup: extra?.reply_markup,
-      }),
-    }).catch(() => {});
+    try {
+      const resp = await fetch(
+        `https://api.telegram.org/bot${TOKEN}/sendMessage`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            chat_id: cid,
+            text: t,
+            reply_markup: extra?.reply_markup,
+          }),
+        }
+      );
+      if (!resp.ok) {
+        const err = await resp.text();
+        console.error(
+          `Reply failed: ${resp.status} ${err} for chat ${cid}, text: ${t.slice(
+            0,
+            50
+          )}`
+        );
+      }
+    } catch (e) {
+      console.error(`Reply network error: ${String(e)} for chat ${cid}`);
+    }
   };
 
   // ---- callback queries ----
   if (callback) {
     const cb = callback.data ?? "";
+    console.log(`Callback received: ${cb}, chat: ${baseChatId}`); // 수신 확인
 
-    // 1) 콜백 즉시 확인(<= 1초)
-    await answerCallbackQuery(callback.id, "처리중..."); // 반드시 먼저 끝냄
+    await answerCallbackQuery(callback.id, "처리중...");
+    console.log("ACK sent");
 
-    // 2) 웹훅 즉시 종료(ACK 보장)
     res.status(200).send("OK");
 
-    // 3) 후속 작업은 응답 뒤에도 계속 실행
     waitUntil(
       (async () => {
+        console.log("waitUntil started");
         try {
-          await reply("⏳ 불러오는 중..."); // 채팅 안내
+          await reply("⏳ 불러오는 중...");
+          console.log("Reply 'loading' sent");
+
           if (cb.startsWith("sector:")) {
+            console.log(`Processing sector: ${cb.slice(7)}`);
             await handleStocksBySector(cb.slice(7), reply);
+            console.log("Sector handling done");
           } else if (cb.startsWith("score:")) {
+            console.log(`Processing score: ${cb.slice(6)}`);
             await analyzeAndReply(cb.slice(6), reply);
+            console.log("Score handling done");
           }
         } catch (e) {
-          await reply(`⚠️ 실패: ${String(e).slice(0, 80)}`);
+          console.error(
+            `waitUntil error: ${String(e)} | stack: ${e?.stack?.slice(0, 200)}`
+          );
+          await reply(`⚠️ 실패: ${String(e).slice(0, 80)}`); // 에러 메시지 강제 전송 시도
         }
       })()
     );
