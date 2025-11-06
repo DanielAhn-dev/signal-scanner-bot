@@ -236,7 +236,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       .replace(/^\/score\s*/, "");
     const q = arg || txt.split(/\s+/)[1] || "";
     if (!q) {
-      await reply("⚠️ 사용법: /점수 삼성전자 또는 /score 005930");
+      await reply("⚠️ 사용법: /score 삼성전자 또는 /score 005930");
       return res.status(200).send("OK");
     }
     await reply("🔍 분석 중...");
@@ -288,11 +288,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     await reply(
       [
         "📱 명령어:",
-        "/시작 - 시작",
-        "/섹터 - 유망 섹터",
-        "/종목 <섹터> - 대장주 후보",
-        "/점수 <이름|코드> - 점수/신호",
-        "/매수 <코드> - 엔트리 제안",
+        "/score - 시작",
+        "/sector - 유망 섹터",
+        "/stocks <섹터> - 대장주 후보",
+        "/score <이름|코드> - 점수/신호",
+        "/buy <코드> - 엔트리 제안",
       ].join("\n")
     );
     return res.status(200).send("OK");
