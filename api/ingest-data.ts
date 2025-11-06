@@ -1,4 +1,5 @@
 // api/ingest-data.ts
+import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { createClient } from "@supabase/supabase-js";
 import { KRXClient } from "../packages/data/krx-client";
 
@@ -8,7 +9,7 @@ const supabase = createClient(
 );
 const krx = new KRXClient();
 
-export default async function handler(req, res) {
+export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (
     req.method !== "POST" ||
     req.headers["x-ingest-secret"] !== process.env.INGEST_SECRET

@@ -1,5 +1,6 @@
 // packages/data/krx-client.ts
 import type { StockOHLCV, StockInfo, TopStock } from "./types";
+import fetch from "node-fetch";
 
 // 내부 유틸
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -20,6 +21,15 @@ type RequestOpts = {
   backoffStartMs?: number; // 최초 백오프
   timeoutMs?: number; // 요청 타임아웃
 };
+
+function withTimeout<T>(p: Promise<T>, ms: number, label = "op"): Promise<T> {
+  return Promise.race([
+    p,
+    new Promise<never>((_, rej) =>
+      setTimeout(() => rej(new Error("timeout:" + label)), ms)
+    ),
+  ]) as Promise<T>;
+}
 
 export class KRXClient {
   private krxURL = "https://data.krx.co.kr/comm/bldAttendant/getJsonData.cmd";

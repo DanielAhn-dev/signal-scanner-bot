@@ -1,4 +1,4 @@
-// api/telegram.ts
+// api/telegram.ts (전체 수정 버전, 이전 수정 유지 + 에러 픽스)
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { waitUntil } from "@vercel/functions";
 import { KRXClient } from "../packages/data/krx-client";
@@ -239,12 +239,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             await analyzeAndReply(cb.slice(6), reply);
             console.log("Score handling done");
           }
-        } catch (e) {
+        } catch (e: unknown) {
           console.error(
             "waitUntil error: " +
               String(e) +
               " | stack: " +
-              (e?.stack?.slice(0, 200) || "")
+              ((e as Error)?.stack?.slice(0, 200) || "")
           );
           await reply("⚠️ 실패: " + String(e).slice(0, 80));
         }
@@ -286,7 +286,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     try {
       // 데이터 부족 시 ingestion 트리거
       const { count } = await supabase.from("sectors").select("*").limit(1);
-      if (count < 20) {
+      if ((count ?? 0) < 20) {
         await reply("📊 데이터 업데이트 중...");
         await fetch(process.env.VERCEL_URL + "/api/ingest-data", {
           method: "POST",
