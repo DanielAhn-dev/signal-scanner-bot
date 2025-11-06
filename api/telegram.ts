@@ -201,12 +201,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (callback) {
     const cb = callback.data || "";
     // 1) 즉시 응답
-    answerCallbackQuery(callback.id).catch(() => {});
-    reply("⏳ 불러오는 중...").catch(() => {});
+    await answerCallbackQuery(callback.id, "처리중...");
     // 2) 웹훅 즉시 종료
     res.status(200).send("OK");
     // 3) 비동기 작업
     (async () => {
+      await reply("⏳ 불러오는 중...").catch(() => {});
       if (cb.startsWith("sector:")) {
         const sector = cb.slice("sector:".length);
         await handleStocksBySector(sector, reply).catch((e) =>
