@@ -1,199 +1,105 @@
 // packages/data/sector.ts
-import { KRXClient } from "./krx-client";
+import { createClient } from "@supabase/supabase-js";
 
-export type SectorRow = {
-  id?: string;
-  name: string;
-  category?: string;
-  metrics?: any;
-  score?: number;
-};
-type TopSector = { sector: string; score: number; leaders: string[] };
+const supabase = createClient(
+  process.env.SUPABASE_URL!,
+  process.env.SUPABASE_ANON_KEY!
+);
 
-function toArray<T>(x: any): T[] {
-  return Array.isArray(x) ? x : [];
-}
-function supa() {
-  return {
-    url: process.env.SUPABASE_URL!,
-    key: process.env.SUPABASE_ANON_KEY!,
-  };
-}
-
-// ---- 핵심 변경 1: sector_id 기반 조회 ----
-export async function loadSectorMap(): Promise<Record<string, SectorRow>> {
-  const { url, key } = supa();
-  const r = await fetch(
-    `${url}/rest/v1/sectors?select=id,name,category,metrics,score&order=id`,
-    {
-      headers: { apikey: key, Authorization: `Bearer ${key}` },
+export async function getLeadersForSector(
+  sector: string,
+  limit = 12
+): Promise<string[]> {
+  try {
+    // 섹터 이름 → ID 매핑 (이름 ILIKE로 fuzzy)
+    const { data: sectorRow, error: sectorError } = await supabase
+      .from("sectors")
+      .select("id")
+      .ilike("name", `%${sector}%`) // "반도체" → 정확/부분 매칭
+      .limit(1);
+    if (sectorError || !sectorRow?.[0]?.id) {
+      console.error("Sector ID not found for:", sector, sectorError);
+      return []; // 매칭 실패
     }
-  ).catch(() => null);
-  if (!r || !r.ok) return {};
-  const rows = toArray<SectorRow>(await r.json().catch(() => null));
-  const out: Record<string, SectorRow> = {};
-  for (const row of rows) if (row?.name) out[row.name] = row;
-  return out;
+    const sectorId = sectorRow[0].id;
+
+    // liquidity DESC 상위 code만 (문제 1 해결: order 명시)
+    const { data, error } = await supabase
+      .from("stocks")
+      .select("code")
+      .eq("sector_id", sectorId)
+      .eq("is_active", true) // 활성만
+      .order("liquidity", { ascending: false }) // 유동성 상위 순 (DESC)
+      .limit(limit);
+    if (error) {
+      console.error("getLeadersForSector error for " + sector + ":", error);
+      return [];
+    }
+    const codes = (data || []).map((r: { code: string }) => r.code);
+    console.log(
+      `Found ${codes.length} leaders for ${sector}:`,
+      codes.slice(0, 3)
+    ); // 디버그 로그
+    return codes;
+  } catch (e) {
+    console.error("getLeadersForSector exception:", e);
+    return [];
+  }
 }
 
 export async function getTopSectors(
-  limit = 5
+  topN = 8
 ): Promise<{ sector: string; score: number }[]> {
-  const map = await loadSectorMap();
-  const items = Object.entries(map).map(([name, v]) => {
-    const m = v?.metrics || {};
-    const score = Number.isFinite(v?.score)
-      ? Number(v?.score)
-      : Number(m?.score ?? m?.roc21 ?? 0);
-    return { sector: name, score: Number.isFinite(score) ? score : 0 };
-  });
-  const ranked = items.sort((a, b) => b.score - a.score).slice(0, limit);
-  if (ranked.length) return ranked;
-  return (await getTopSectorsRealtime(limit)).map((x) => ({
-    sector: x.sector,
-    score: x.score,
-  }));
+  try {
+    const { data, error } = await supabase
+      .from("sectors")
+      .select("name, score")
+      .eq("is_active", true)
+      .order("score", { ascending: false })
+      .limit(topN);
+    if (error) throw error;
+    return (data || []).map((r: { name: string; score: number }) => ({
+      sector: r.name,
+      score: r.score || 0,
+    }));
+  } catch (e) {
+    console.error("getTopSectors error:", e);
+    return [];
+  }
 }
 
-// ---- 실시간 섹터(거래대금 기반) ----
-export async function getTopSectorsRealtime(limit = 5): Promise<TopSector[]> {
-  const krx = new KRXClient();
-  const [ks, kq] = await Promise.all([
-    krx.getTopVolumeStocks("STK", 100),
-    krx.getTopVolumeStocks("KSQ", 100),
-  ]);
-  const hot = [...ks, ...kq];
-  const hotCodes = hot.map((x) => x.code);
-
-  // 핵심 변경 2: stocks의 sector_id + sectors.name 조인으로 섹터명 매핑
-  const { url, key } = supa();
-  const inList = hotCodes.map((c) => `"${c}"`).join(",");
-  const resp = await fetch(
-    `${url}/rest/v1/stocks?select=code,sector_id,sectors(name)&code=in.(${inList})`,
-    { headers: { apikey: key, Authorization: `Bearer ${key}` } }
-  ).catch(() => null);
-
-  const codeToSector: Record<string, string> = {};
-  if (resp?.ok) {
-    const rows = toArray<{
-      code: string;
-      sector_id?: number;
-      sectors?: { name: string };
-    }>(await resp.json().catch(() => null));
-    for (const r of rows) {
-      if (r?.code && r?.sectors?.name) codeToSector[r.code] = r.sectors.name;
-    }
+export async function getTopSectorsRealtime(
+  topN = 8
+): Promise<{ sector: string; score: number }[]> {
+  // 실시간: 최신 score 사용 (ingest-data 업데이트 후)
+  try {
+    const { data } = await supabase
+      .from("sectors")
+      .select("name, score")
+      .order("updated_at", { ascending: false })
+      .limit(topN);
+    return (data || []).map((r: any) => ({
+      sector: r.name,
+      score: r.score || 0,
+    }));
+  } catch (e) {
+    console.error("getTopSectorsRealtime error:", e);
+    return [];
   }
-
-  // 거래대금 기준으로 섹터별 bucket 생성
-  const bucket = new Map<
-    string,
-    {
-      amount: number;
-      sumChg: number;
-      count: number;
-      leaders: { code: string; amount: number }[];
-    }
-  >();
-  for (const it of hot) {
-    const s = codeToSector[it.code] || "미분류";
-    const cell = bucket.get(s) || {
-      amount: 0,
-      sumChg: 0,
-      count: 0,
-      leaders: [],
-    };
-    cell.amount += it.amount || 0;
-    cell.sumChg += it.change || 0;
-    cell.count += 1;
-    cell.leaders.push({ code: it.code, amount: it.amount || 0 });
-    bucket.set(s, cell);
-  }
-
-  const totalAmt = [...bucket.values()].reduce((a, b) => a + b.amount, 0) || 1;
-  const values = [...bucket.values()].map((b) => b.amount);
-  const mean = values.reduce((a, b) => a + b, 0) / Math.max(values.length, 1);
-  const sd =
-    Math.sqrt(
-      values.reduce((s, v) => s + Math.pow(v - mean, 2), 0) /
-        Math.max(values.length, 1)
-    ) || 1;
-
-  const entries = [...bucket.entries()].map(([sector, b]) => {
-    const z = (b.amount - mean) / sd;
-    const avgChg = b.sumChg / Math.max(b.count, 1);
-    const score = z * 70 + avgChg * 30;
-    const leaders = b.leaders
-      .sort((a, b) => b.amount - a.amount)
-      .slice(0, 10)
-      .map((x) => x.code);
-    return { sector, score, leaders };
-  });
-
-  const hasNonMisc = entries.some((e) => e.sector !== "미분류");
-  return entries
-    .sort((a, b) => b.score - a.score)
-    .filter((x) => (hasNonMisc ? x.sector !== "미분류" : true))
-    .slice(0, limit);
 }
 
-// ---- 핵심 변경 3: sector_id 기반 종목 조회 ----
-export async function getLeadersForSector(
-  sector: string,
-  limit = 10
-): Promise<string[]> {
-  // 1) 실시간 섹터 집계에서 바로 leaders
-  const rt = await getTopSectorsRealtime(30);
-  const found = rt.find((s) => s.sector === sector);
-  if (found?.leaders?.length) return found.leaders.slice(0, limit);
-
-  // 2) DB 조인 한 번으로 섹터명 필터 + 유동성 정렬
-  const { url, key } = supa();
-  const r = await fetch(
-    `${url}/rest/v1/stocks?select=code,liquidity,sectors!inner(name)&sectors.name=eq.${encodeURIComponent(
-      sector
-    )}&order=liquidity.desc&limit=${limit}`,
-    { headers: { apikey: key, Authorization: `Bearer ${key}` } }
-  ).catch(() => null);
-  if (r?.ok) {
-    const rows = toArray<{ code: string }>(await r.json().catch(() => null));
-    if (rows.length) return rows.map((x) => x.code);
+export async function loadSectorMap(): Promise<
+  Record<string, { category: string }>
+> {
+  try {
+    const { data } = await supabase.from("sectors").select("name, category");
+    return Object.fromEntries(
+      (data || []).map((r: any) => [
+        r.name,
+        { category: r.category || "Other" },
+      ])
+    );
+  } catch {
+    return {};
   }
-
-  // 3) 최후 폴백: 거래대금 상위에서 섹터 매핑으로 필터
-  const krx = new KRXClient();
-  const [ks, kq] = await Promise.all([
-    krx.getTopVolumeStocks("STK", 200),
-    krx.getTopVolumeStocks("KSQ", 200),
-  ]);
-  const hotCodes = [...ks, ...kq].map((x) => x.code);
-  const inList = hotCodes.map((c) => `"${c}"`).join(",");
-  const resp = await fetch(
-    `${url}/rest/v1/stocks?select=code,sectors!inner(name)&code=in.(${inList})&sectors.name=eq.${encodeURIComponent(
-      sector
-    )}`,
-    { headers: { apikey: key, Authorization: `Bearer ${key}` } }
-  ).catch(() => null);
-  if (!resp?.ok) return [];
-  const rows = toArray<{ code: string }>(await resp.json().catch(() => null));
-  return rows.slice(0, limit).map((r) => r.code);
-}
-
-export async function getNamesForCodes(
-  codes: string[]
-): Promise<Record<string, string>> {
-  if (!codes.length) return {};
-  const { url, key } = supa();
-  const inList = codes.map((c) => `"${c}"`).join(",");
-  const r = await fetch(
-    `${url}/rest/v1/stocks?select=code,name&code=in.(${inList})`,
-    {
-      headers: { apikey: key, Authorization: `Bearer ${key}` },
-    }
-  ).catch(() => null);
-  if (!r?.ok) return {};
-  const rows = toArray<{ code: string; name: string }>(
-    await r.json().catch(() => null)
-  );
-  return Object.fromEntries(rows.map((r) => [r.code, r.name]));
 }
