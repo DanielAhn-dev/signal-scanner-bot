@@ -198,26 +198,28 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   // ---- callback queries ----
   if (callback) {
-    const cb = callback.data || "";
-    // 1) 즉시 확인 + 즉시 안내 (둘 다 기다림)
+    const cb = callback.data ?? "";
+    // 1) 즉시 ACK + 안내 (둘 다 기다림)
     await Promise.allSettled([
-      answerCallbackQuery(callback.id, "처리중..."),
+      fetch(`https://api.telegram.org/bot${TOKEN}/answerCallbackQuery`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          callback_query_id: callback.id,
+          text: "처리중...",
+        }),
+      }),
       reply("⏳ 불러오는 중..."),
-    ]);
+    ]); // <= 여기까지 1~2초 내 끝내기 [web:3][web:47]
 
-    // 2) 가벼운 작업은 즉시 처리(3~5초 내 끝나도록 타임아웃)
-    if (cb.startsWith("sector:")) {
-      const sector = cb.slice("sector:".length);
-      await handleStocksBySector(sector, reply); // 내부 timeout 유지
-    } else if (cb.startsWith("score:")) {
-      const code = cb.slice("score:".length);
-      await analyzeAndReply(code, reply);
-    }
+    // 2) 짧은 처리
+    if (cb.startsWith("sector:"))
+      await handleStocksBySector(cb.slice(7), reply); // ≤3~5초 [web:47]
+    else if (cb.startsWith("score:")) await analyzeAndReply(cb.slice(6), reply); // 데이터 부족 시 즉시 실패 응답 [web:47]
 
-    // 3) 처리 후 응답 종료
-    return res.status(200).send("OK");
+    // 3) 마무리
+    return res.status(200).send("OK"); // 웹훅을 빠르게 종료 [web:47][web:54]
   }
-
   if (!message) return res.status(200).send("OK");
 
   const txt = (message.text || "").trim();
