@@ -1,195 +1,287 @@
 // packages/data/krx-client.ts
-import type { StockOHLCV, StockInfo, TopStock } from "./types";
+import fetch, { RequestInit } from "node-fetch";
+import * as cheerio from "cheerio";
 
-// 내부 유틸
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
-const toNum = (v: any) =>
-  v === null || v === undefined
-    ? 0
-    : parseFloat(String(v).replace(/,/g, "")) || 0;
-
-type KRXResponse = {
-  output?: any[];
-  OutBlock_1?: any[];
-  CURRENT_DATETIME?: string;
-  [k: string]: any;
-};
-
-type RequestOpts = {
-  backoffTries?: number; // 재시도 횟수
-  backoffStartMs?: number; // 최초 백오프
-  timeoutMs?: number; // 요청 타임아웃
-};
-
-function withTimeout<T>(p: Promise<T>, ms: number, label = "op"): Promise<T> {
-  return Promise.race([
-    p,
-    new Promise<never>((_, rej) =>
-      setTimeout(() => rej(new Error("timeout:" + label)), ms)
-    ),
-  ]) as Promise<T>;
+export interface StockOHLCV {
+  date: string;
+  code: string;
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+  volume: number;
+  amount: number;
+  cached_at?: string;
 }
 
 export class KRXClient {
-  private krxURL = "https://data.krx.co.kr/comm/bldAttendant/getJsonData.cmd";
+  private baseUrl = "http://data.krx.co.kr";
+  private naverFchart = "https://fchart.stock.naver.com";
+  private naverSise = "https://finance.naver.com";
 
-  private commonHeaders(): Record<string, string> {
-    return {
-      "Content-Type": "application/x-www-form-urlencoded; charset=utf-8",
-      "User-Agent":
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-      Accept: "*/*",
-      Referer: "https://data.krx.co.kr/contents/MDC/MDI/mdiLoader",
-      "X-Requested-With": "XMLHttpRequest",
-    };
+  private getToday(): string {
+    return new Date().toISOString().slice(0, 10).replace(/-/g, "");
   }
 
-  // fetch + 타임아웃 (네이티브 fetch 사용, node-fetch 제거)
-  private async fetchWithTimeout(
-    url: string,
-    init: RequestInit,
-    timeoutMs = 10000
-  ): Promise<Response> {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
-    try {
-      // 네이티브 fetch: body를 string으로 명시 (FormData/ArrayBuffer 충돌 방지)
-      const body = init.body ? (init.body as string) : undefined;
-      return await fetch(url, {
-        ...init,
-        signal: controller.signal,
-        body,
-        // undici 호환: keepalive 등 생략, 기본 Web API RequestInit 사용
-      });
-    } finally {
-      clearTimeout(timeoutId);
-    }
-  }
-
-  // content-type 무관 안전 파싱 + output 표준화
-  private async tryParse(
-    resp: Response
-  ): Promise<{ json: KRXResponse | null; output: any[]; raw: string }> {
-    const raw = await resp.text();
-    // JSON 시도 1
-    let json: any = null;
-    try {
-      json = JSON.parse(raw);
-    } catch {
-      // BOM/공백 제거 후 2차 시도
-      try {
-        const trimmed = raw.trim().replace(/^\ufeff/, "");
-        json = JSON.parse(trimmed);
-      } catch {
-        json = null;
-      }
-    }
-    const output = Array.isArray(json?.output)
-      ? json!.output
-      : Array.isArray(json?.OutBlock_1)
-      ? json!.OutBlock_1
-      : [];
-    return { json, output, raw };
-  }
-
-  // KRX 요청 + 지수백오프 재시도
   private async krxRequest(
     form: URLSearchParams,
-    opts: RequestOpts = {}
-  ): Promise<{ output: any[]; json: KRXResponse | null; raw: string }> {
-    const backoffTries = opts.backoffTries ?? 2;
-    const backoffStartMs = opts.backoffStartMs ?? 250;
-    const timeoutMs = opts.timeoutMs ?? 10000;
+    options: { backoffTries: number; backoffStartMs: number },
+    init?: RequestInit
+  ): Promise<any> {
+    const url = `${
+      this.baseUrl
+    }/comm/bldAttendant/getJsonData.cmd?${form.toString()}`;
+    console.log(`KRX request: ${url.slice(0, 100)}...`);
+    let lastError: Error | null = null;
+    let delay = options.backoffStartMs;
 
-    let best: any[] = [];
-    let bestJson: KRXResponse | null = null;
-    let bestRaw = "";
-
-    for (let i = 0; i <= backoffTries; i++) {
-      if (i > 0) await sleep(backoffStartMs * 2 ** (i - 1));
-      const resp = await this.fetchWithTimeout(
-        this.krxURL,
-        {
-          method: "POST",
-          headers: this.commonHeaders(),
-          body: form.toString(), // string body 명시 (RequestInit 호환)
-        },
-        timeoutMs
-      ).catch(() => null as unknown as Response);
-      if (!resp || !resp.ok) continue;
-
-      const { json, output, raw } = await this.tryParse(resp);
-      if (output.length > best.length) {
-        best = output;
-        bestJson = json;
-        bestRaw = raw;
+    for (let i = 0; i <= options.backoffTries; i++) {
+      try {
+        const controller = new AbortController();
+        setTimeout(() => controller.abort(), 10000);
+        const res = await fetch(url, {
+          ...init,
+          signal: controller.signal,
+          headers: {
+            "User-Agent":
+              "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+          },
+        });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data: any = await res.json(); // any 명시
+        console.log(
+          `KRX success (try ${i + 1}): ${
+            (Object.keys(data) as string[]).length
+          } blocks`
+        ); // keys 타입 안전
+        return data;
+      } catch (e: any) {
+        lastError = e;
+        console.warn(`KRX try ${i + 1} failed: ${e.message}`);
+        if (i < options.backoffTries) {
+          await new Promise((resolve) => setTimeout(resolve, delay));
+          delay *= 2;
+        }
       }
-      // 충분한 데이터면 조기 종료
-      if (best.length >= 200) break;
     }
-    return { output: best, json: bestJson, raw: bestRaw };
+    throw lastError || new Error("KRX all tries failed");
   }
 
-  // 공통: 일봉 맵핑
-  private mapDaily(ticker: string, arr: any[]): StockOHLCV[] {
-    const out = arr
-      .map((it) => {
-        // 날짜 필드 다양성 대응
-        const d = String(it.TRD_DD ?? it.TDD_DT ?? it.STCK_BSOP_DATE ?? "");
-        if (!d) return null;
-        const formatted = d.includes("/")
-          ? d.replace(/\//g, "-")
-          : d.length === 8
-          ? `${d.slice(0, 4)}-${d.slice(4, 6)}-${d.slice(6, 8)}`
-          : d;
+  private mapDaily(ticker: string, output: any): StockOHLCV[] {
+    // output any
+    if (!output?.outBlock_1) return [];
+    const blockData = output.outBlock_1 as any[]; // any 배열
+    const data: StockOHLCV[] = blockData
+      .map((r: any) => {
+        const dateStr = r.TRDT
+          ? `${r.TRDT.slice(0, 4)}-${r.TRDT.slice(4, 6)}-${r.TRDT.slice(6, 8)}`
+          : "";
+        if (!dateStr || dateStr === "0000-00-00") return null;
+        const open = parseInt(r.OPEN_PRC || "0", 10) || 0;
+        const high = parseInt(r.HIGH_PRC || "0", 10) || 0;
+        const low = parseInt(r.LOW_PRC || "0", 10) || 0;
+        const close = parseInt(r.CLOSE_PRC || r.TDD_CLSPRC || "0", 10) || 0;
+        const volume = parseInt(r.LIST_CNT || r.VOL_TOT || "0", 10) || 0;
         return {
-          date: formatted,
+          date: dateStr,
           code: ticker,
-          open: toNum(it.TDD_OPNPRC ?? it.OPNPRC ?? it.STCK_OPRC),
-          high: toNum(it.TDD_HGPRC ?? it.HGPRC ?? it.STCK_HGPR),
-          low: toNum(it.TDD_LWPRC ?? it.LWPRC ?? it.STCK_LWPR),
-          close: toNum(it.TDD_CLSPRC ?? it.CLSPRC ?? it.STCK_CLPR),
-          volume: Math.trunc(toNum(it.ACC_TRDVOL ?? it.TRDVOL ?? it.CNTG_VOL)),
-          amount: Math.trunc(
-            toNum(it.ACC_TRDVAL ?? it.TRDVAL ?? it.TOTL_TR_PRC)
-          ),
-        } as StockOHLCV;
+          open,
+          high,
+          low,
+          close,
+          volume,
+          amount: close * volume,
+        };
       })
-      .filter(Boolean) as StockOHLCV[];
-    return out.sort((a, b) => a.date.localeCompare(b.date));
+      .filter((d): d is StockOHLCV => d !== null);
+
+    return data.sort((a, b) => a.date.localeCompare(b.date));
   }
 
-  // 종목 리스트
   async getStockList(
-    market: "STK" | "KSQ" | "ALL" = "ALL"
-  ): Promise<StockInfo[]> {
-    const form = new URLSearchParams({
-      bld: "dbms/MDC/STAT/standard/MDCSTAT01901",
-      locale: "ko_KR",
-      mktId: market,
-      share: "1",
-      csvxls_isNo: "false",
-    });
-
+    market: "KOSPI" | "KOSDAQ" | "ALL" = "ALL"
+  ): Promise<{ code: string; name: string; market: string }[]> {
+    // KONEX 제거
     try {
-      const { output } = await this.krxRequest(form);
-      const arr = output;
-      return arr.map((it: any) => ({
-        code: it.ISU_SRT_CD,
-        name: it.ISU_ABBRV,
-        market:
-          it.MKT_NM === "KOSPI"
-            ? "KOSPI"
-            : it.MKT_NM === "KOSDAQ"
-            ? "KOSDAQ"
-            : "KONEX",
-      }));
-    } catch {
+      console.log(`Parsing KRX stock list for ${market}...`);
+      let url: string;
+      if (market === "ALL") {
+        url = `${
+          this.baseUrl
+        }/comm/bldAttendant/getJsonData.cmd?bld=dbms/MDC/STAT/standard/MDCSTAT01501&trdDd=${this.getToday()}&money=1&csvxls_isNo=false&pageIndex=1&pageSize=5000`;
+      } else {
+        const mktCd = market === "KOSPI" ? "001" : "101"; // KOSDAQ만
+        url = `${
+          this.baseUrl
+        }/comm/bldAttendant/getJsonData.cmd?bld=dbms/MDC/STAT/standard/MDCSTAT01501&trdDd=${this.getToday()}&mktId=${mktCd}&money=1&csvxls_isNo=false&pageIndex=1&pageSize=2000`;
+      }
+      const controller = new AbortController();
+      setTimeout(() => controller.abort(), 10000);
+      const res = await fetch(url, { signal: controller.signal });
+      if (!res.ok) throw new Error(`KRX list HTTP ${res.status}`);
+      const data: any = await res.json();
+      const outBlock = (data.outBlock_1 as any[]) || [];
+      const out: { code: string; name: string; market: string }[] = outBlock
+        .map((r: any) => {
+          const code = String(r.ISU_CD).padStart(6, "0");
+          const mkt = r.MKT_TP_NM || "";
+          return {
+            code,
+            name: r.ISU_ABBRV || r.SEC_NM || "",
+            market: mkt.includes("KOSPI") ? "KOSPI" : "KOSDAQ", // KONEX 제외
+          };
+        })
+        .filter(
+          (s): s is { code: string; name: string; market: string } =>
+            s.code && s.name && s.market
+        );
+      console.log(`Parsed ${out.length} stocks from KRX (${market})`);
+      return out.slice(0, 2500);
+    } catch (e) {
+      console.error("KRX stock list failed, fallback Naver:", e);
+      return await this._scrapeNaverStockList(market); // market 타입 호환 (KONEX 없음)
+    }
+  }
+
+  private async _scrapeNaverStockList(
+    market: "KOSPI" | "KOSDAQ" | "ALL"
+  ): Promise<{ code: string; name: string; market: string }[]> {
+    try {
+      const mkt =
+        market === "ALL"
+          ? ""
+          : market === "KOSPI"
+          ? "&exchangeCode=1"
+          : "&exchangeCode=4";
+      const url = `https://finance.naver.com/sise/sise_market.sise?tableType=DEFAULT${mkt}`;
+      const res = await fetch(url);
+      const html = await res.text();
+      const $ = cheerio.load(html); // * as cheerio 사용
+      const out: { code: string; name: string; market: string }[] = [];
+      $("table.type_2 tbody tr").each((_, el: cheerio.Element) => {
+        // 타입 지정 (i 제거, el Element)
+        const tds = $(el).find("td");
+        if (tds.length > 1) {
+          const link = $(tds[1]).find("a").attr("href") || "";
+          const codeMatch = link.match(/code=(\d{6})/);
+          const code = codeMatch ? codeMatch[1] : "";
+          const name = $(tds[1]).text().trim();
+          if (code && name && name !== "N") {
+            const mktOut = url.includes("exchangeCode=4") ? "KOSDAQ" : "KOSPI";
+            out.push({ code, name, market: mktOut });
+          }
+        }
+      });
+      console.log(
+        `Fallback parsed ${out.length} stocks from Naver (${market})`
+      );
+      return out.slice(0, 2000);
+    } catch (e) {
+      console.error("Naver stock list failed:", e);
       return [];
     }
   }
 
-  // 일봉 OHLCV
+  // getSectorList (이전 유지, 생략 for brevity - 에러 없음)
+  async getSectorList(): Promise<{ name: string; category?: string }[]> {
+    try {
+      const url = `${
+        this.baseUrl
+      }/comm/bldAttendant/getJsonData.cmd?bld=dbms/MDC/STAT/standard/MDCSTAT01901&trdDd=${this.getToday()}&money=1&csvxls_isNo=false`;
+      const res = await fetch(url);
+      if (!res.ok) throw new Error(`KRX sector HTTP ${res.status}`);
+      const data: any = await res.json();
+      const outBlock = (data.outBlock_1 as any[]) || [];
+      const sectors: { name: string; category?: string | undefined }[] =
+        outBlock
+          .map((r: any) => ({
+            name: r.SECTOR_NM || r.INDSTRY_NM || "",
+            category: r.GROUP_NM || undefined, // undefined 명시
+          }))
+          .filter(
+            (s: {
+              name: string;
+              category?: string | undefined;
+            }): s is { name: string; category?: string } => s.name.trim() !== "" // 202 라인: 타입 가드 optional 호환
+          )
+          .slice(0, 50);
+      console.log(`Parsed ${sectors.length} sectors from KRX`);
+      return sectors;
+    } catch (e) {
+      console.error("KRX sector failed, fallback hardcoded:", e);
+      // 하드코드 배열 (25개, 이전 유지)
+      return [
+        { name: "반도체", category: "IT" },
+        { name: "바이오", category: "Healthcare" },
+        { name: "2차전지", category: "Energy" },
+        { name: "AI", category: "IT" },
+        { name: "자동차", category: "Manufacturing" },
+        { name: "금융", category: "Finance" },
+        { name: "통신", category: "IT" },
+        { name: "건설", category: "Real Estate" },
+        { name: "에너지", category: "Energy" },
+        { name: "소재", category: "Materials" },
+        { name: "화학", category: "Chemicals" },
+        { name: "증권", category: "Finance" },
+        { name: "은행", category: "Finance" },
+        { name: "보험", category: "Finance" },
+        { name: "유통", category: "Retail" },
+        { name: "IT서비스", category: "IT" },
+        { name: "미디어", category: "Media" },
+        { name: "엔터테인먼트", category: "Media" },
+        { name: "게임", category: "Entertainment" },
+        { name: "의료기기", category: "Healthcare" },
+        { name: "제약", category: "Healthcare" },
+        { name: "신재생에너지", category: "Energy" },
+        { name: "로봇", category: "Manufacturing" },
+        { name: "메타버스", category: "IT" },
+        { name: "클라우드", category: "IT" },
+      ];
+    }
+  }
+
+  async getTopVolumeStocks(
+    market: "KOSPI" | "KOSDAQ" | "ALL" = "ALL",
+    limit = 100
+  ): Promise<{ code: string; name: string; volume: number }[]> {
+    try {
+      let url: string;
+      if (market === "ALL") {
+        url = `${
+          this.baseUrl
+        }/comm/bldAttendant/getJsonData.cmd?bld=dbms/MDC/STAT/standard/MDCSTAT01701&trdDd=${this.getToday()}&money=1&csvxls_isNo=false&sortType=1&pageIndex=1&pageSize=${limit}`;
+      } else {
+        const mktCd = market === "KOSPI" ? "001" : "101";
+        url = `${
+          this.baseUrl
+        }/comm/bldAttendant/getJsonData.cmd?bld=dbms/MDC/STAT/standard/MDCSTAT01701&trdDd=${this.getToday()}&mktId=${mktCd}&money=1&csvxls_isNo=false&sortType=1&pageIndex=1&pageSize=${limit}`;
+      }
+      const res = await fetch(url);
+      const data: any = await res.json();
+      const outBlock = (data.outBlock_1 as any[]) || [];
+      const out = outBlock
+        .map((r: any) => ({
+          code: String(r.ISU_CD).padStart(6, "0"),
+          name: r.ISU_ABBRV || r.SEC_NM || "",
+          volume: parseFloat(r.TRDVAL || r.VOL_TOT || "0") || 0,
+        }))
+        .filter(
+          (s): s is { code: string; name: string; volume: number } =>
+            !!s.code && s.volume > 0 // 267 라인: !! for boolean
+        )
+        .sort((a, b) => b.volume - a.volume)
+        .slice(0, limit);
+      console.log(
+        `Top ${out.length} volume from KRX: ${out[0]?.name || "N/A"}`
+      );
+      return out;
+    } catch (e) {
+      console.error("Top volume failed:", e);
+      return [];
+    }
+  }
+
+  // getMarketOHLCV / getMarketOHLCVFromNaver (이전 유지, mapDaily any 호환)
   async getMarketOHLCV(
     ticker: string,
     startDate: string,
@@ -197,7 +289,6 @@ export class KRXClient {
   ): Promise<StockOHLCV[]> {
     const s = startDate.replace(/-/g, "");
     const e = endDate.replace(/-/g, "");
-    // KRX 표준 ISIN 유사 포맷이 아닌 경우가 있으므로 KRX는 단축코드 그대로도 동작하는 경우가 많다.
     const form = new URLSearchParams({
       bld: "dbms/MDC/STAT/standard/MDCSTAT01701",
       locale: "ko_KR",
@@ -210,78 +301,23 @@ export class KRXClient {
       csvxls_isNo: "false",
     });
 
-    // 1) KRX 시도 + 재시도
     const primary = await this.krxRequest(form, {
       backoffTries: 2,
       backoffStartMs: 250,
     });
-
     let data = this.mapDaily(ticker, primary.output);
 
-    // 2) 폴백(Naver)과 비교해 더 긴 것을 채택
     if (data.length < 200) {
       const fb = await this.getMarketOHLCVFromNaver(ticker, startDate, endDate);
       if (fb.length > data.length) data = fb;
     }
 
-    // 3) 최종 반환
+    console.log(
+      `Final OHLCV for ${ticker}: ${data.length} candles (${startDate} to ${endDate})`
+    );
     return data;
   }
 
-  // 분봉(필요 시 확장: 현재 Naver만 예시)
-  async getMinuteOHLCV(
-    ticker: string,
-    minutes = 1,
-    count = 400
-  ): Promise<StockOHLCV[]> {
-    // Naver 분봉은 비공식이므로 가볍게 폴백만 예시
-    try {
-      const url = `https://api.finance.naver.com/siseJson.naver?symbol=${ticker}&requestType=1&timeframe=${minutes}m&count=${count}`;
-      const resp = await fetch(url, {
-        headers: { "User-Agent": "Mozilla/5.0" },
-      });
-      if (!resp.ok) return [];
-      const text = await resp.text();
-      // Naver 분봉은 JS 배열 문자열 포맷으로 오는 경우가 있어 eval 없이 파싱이 번거롭다.
-      // 안전상 여기서는 일봉 우선 전략을 권장하며, 분봉은 프로젝트 필요 시 전용 파서 추가.
-      return [];
-    } catch {
-      return [];
-    }
-  }
-
-  // 거래대금 상위
-  async getTopVolumeStocks(
-    market: "STK" | "KSQ" = "STK",
-    limit = 20
-  ): Promise<TopStock[]> {
-    const today = new Date().toISOString().slice(0, 10).replace(/-/g, "");
-    const form = new URLSearchParams({
-      bld: "dbms/MDC/STAT/standard/MDCSTAT01501",
-      locale: "ko_KR",
-      mktId: market,
-      trdDd: today,
-      share: "1",
-      money: "1",
-      csvxls_isNo: "false",
-    });
-
-    try {
-      const { output } = await this.krxRequest(form);
-      return output.slice(0, limit).map((it: any) => ({
-        code: it.ISU_SRT_CD,
-        name: it.ISU_ABBRV,
-        close: toNum(it.TDD_CLSPRC),
-        change: parseFloat(String(it.FLUC_RT ?? "0")) || 0,
-        volume: Math.trunc(toNum(it.ACC_TRDVOL)),
-        amount: Math.trunc(toNum(it.ACC_TRDVAL)),
-      }));
-    } catch {
-      return [];
-    }
-  }
-
-  // Naver 일봉 폴백 (네이티브 fetch)
   async getMarketOHLCVFromNaver(
     ticker: string,
     startDate: string,
@@ -296,7 +332,7 @@ export class KRXClient {
       const text = await resp.text();
       const items = text.match(/<item\s+data="[^"]+"\s*\/>/g) || [];
       const data: StockOHLCV[] = items
-        .map((tag) => {
+        .map((tag): StockOHLCV | null => {
           const m = tag.match(/data="([^"]+)"/);
           if (!m) return null;
           const [d, o, h, l, c, v] = m[1].split("|");
@@ -315,101 +351,44 @@ export class KRXClient {
             close,
             volume,
             amount: close * volume,
-          } as StockOHLCV;
+          };
         })
-        .filter(Boolean) as StockOHLCV[];
+        .filter((d): d is StockOHLCV => d !== null);
 
       return data
         .filter((d) => d.date >= startDate && d.date <= endDate)
         .sort((a, b) => a.date.localeCompare(b.date));
-    } catch {
+    } catch (e) {
+      console.error(`Naver OHLCV failed for ${ticker}:`, e);
       return [];
     }
   }
 
-  // 섹터별 상위 종목 코드 + 이름/거래대금 수집 (일 100개)
-  async getTopSectorsData(topN = 8): Promise<
-    {
-      sector: string;
-      codes: { code: string; name: string; volume: number }[];
-    }[]
-  > {
-    const [ks, kq] = await Promise.all([
-      this.getTopVolumeStocks("STK", 100), // KOSPI
-      this.getTopVolumeStocks("KSQ", 100), // KOSDAQ
-    ]);
-    const all = [...ks, ...kq].slice(0, 200); // 상위 200개
-
-    // 섹터 매핑 (키워드 기반 또는 외부 API, 나중 확장: KRX 분류코드)
-    const sectorMap: { [code: string]: string } = {}; // 예: {'005930': '반도체', '068270': '바이오'}
-    all.forEach((item) => {
-      const name = item.name.toLowerCase();
-      if (
-        name.includes("반도체") ||
-        name.includes("hynix") ||
-        name.includes("samsung elec")
-      )
-        sectorMap[item.code] = "반도체";
-      else if (name.includes("바이오") || name.includes("celltrion"))
-        sectorMap[item.code] = "바이오";
-      else if (name.includes("전기차") || name.includes("lg energy"))
-        sectorMap[item.code] = "전기차";
-      else if (name.includes("ai") || name.includes("ncsoft"))
-        sectorMap[item.code] = "인공지능";
-      else sectorMap[item.code] = "기타";
-    });
-
-    // 섹터별 그룹화 + volume 합산
-    const sectors: {
-      [sector: string]: { code: string; name: string; volume: number }[];
-    } = {};
-    all.forEach((item) => {
-      const sec = sectorMap[item.code];
-      if (!sectors[sec]) sectors[sec] = [];
-      sectors[sec].push({
-        code: item.code,
-        name: item.name,
-        volume: item.volume,
+  async getDailyPrice(
+    code: string
+  ): Promise<{ close: number; volume: number; date: string } | null> {
+    try {
+      const form = new URLSearchParams({
+        bld: "dbms/MDC/STAT/standard/MDCSTAT02601",
+        trdDd: this.getToday(),
+        isuCd: code,
+        money: "1",
+        csvxls_isNo: "false",
       });
-    });
-
-    // 상위 N 섹터 (volume 총합 기준 정렬)
-    return Object.entries(sectors)
-      .map(([sector, items]) => ({
-        sector,
-        codes: items.sort((a, b) => b.volume - a.volume).slice(0, 10),
-      }))
-      .sort(
-        (a, b) =>
-          b.codes.reduce((sum, i) => sum + i.volume, 0) -
-          a.codes.reduce((sum, i) => sum + i.volume, 0)
-      )
-      .slice(0, topN);
-  }
-
-  // 종목별 ROI 계산 (1/3/6M 수익률, OHLCV 기반)
-  async getROIForCodes(
-    codes: string[],
-    days: number
-  ): Promise<{ code: string; roi: number }[]> {
-    const end = new Date();
-    const start = new Date(end.getTime() - days * 24 * 60 * 60 * 1000);
-    const results = await Promise.all(
-      codes.map(async (code) => {
-        const ohlcv = await withTimeout(
-          this.getMarketOHLCV(
-            code,
-            start.toISOString().slice(0, 10),
-            end.toISOString().slice(0, 10)
-          ),
-          5000
-        );
-        if (ohlcv.length < 2) return { code, roi: 0 };
-        const roi =
-          ((ohlcv.at(-1)!.close - ohlcv[0].close) / ohlcv[0].close) * 100;
-        return { code, roi };
-      })
-    );
-    return results;
+      const data: any = await this.krxRequest(form, {
+        backoffTries: 1,
+        backoffStartMs: 100,
+      });
+      const block = (data.outBlock_1 as any[])[0];
+      if (!block) return null;
+      return {
+        close: parseInt(block.TDD_CLSPRC || "0", 10) || 0,
+        volume: parseInt(block.TDD_HGPRC || "0", 10) || 0,
+        date: block.TRD_DD || this.getToday(),
+      };
+    } catch (e) {
+      console.error("Daily price failed for " + code + ":", e);
+      return null;
+    }
   }
 }

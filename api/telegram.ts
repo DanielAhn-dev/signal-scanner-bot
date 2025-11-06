@@ -1,15 +1,21 @@
-// api/telegram.ts (전체, 이전 수정 + 이번 픽스)
+// api/telegram.ts (사용자 코드 기반 전체 수정)
 import type { VercelRequest, VercelResponse } from "@vercel/node";
-import { waitUntil } from "@vercel/functions";
+import { createClient } from "@supabase/supabase-js";
+import { waitUntil } from "@vercel/functions"; // waitUntil import 추가
 import { KRXClient } from "../packages/data/krx-client";
 import { searchByNameOrCode, getNamesForCodes } from "../packages/data/search";
 import {
+  getCache,
+  setCache,
+  invalidateCache,
+  TTL_MS,
+} from "../packages/data/cache";
+import {
   getTopSectors,
-  getLeadersForSector,
+  getLeadersForSector, // getLeadersForSector: 섹터 리더 추출 (sector.ts 가정, inline 대체)
   getTopSectorsRealtime,
   loadSectorMap,
-} from "../packages/data/sector";
-import { createClient } from "@supabase/supabase-js";
+} from "../packages/data/sector"; // sector.ts 함수들 (미구현 시 inline 대체)
 
 const SECRET = process.env.TELEGRAM_BOT_SECRET!;
 const TOKEN = process.env.TELEGRAM_BOT_TOKEN!;
@@ -17,6 +23,7 @@ const supabase = createClient(
   process.env.SUPABASE_URL!,
   process.env.SUPABASE_ANON_KEY!
 );
+const krx = new KRXClient();
 
 export const config = { api: { bodyParser: false } };
 
@@ -36,13 +43,13 @@ type Update = {
 async function readRawBody(req: VercelRequest): Promise<string> {
   return new Promise((resolve, reject) => {
     let data = "";
-    req.on("data", (c) => (data += c));
+    req.on("data", (c: Buffer) => (data += c.toString()));
     req.on("end", () => resolve(data));
     req.on("error", reject);
   });
 }
 
-// ---- indicators ----
+// ---- indicators (기존 유지) ----
 function sma(a: number[], n: number): number[] {
   const o: number[] = [];
   let s = 0;
@@ -137,7 +144,7 @@ function scoreFromIndicators(closes: number[], vols: number[]) {
 
 function withTimeout<T>(
   p: Promise<T>,
-  ms: number = 15000,
+  ms: number = 10000, // 15s → 10s로 줄임 (네트워크 안정)
   label = "op"
 ): Promise<T> {
   return Promise.race([
@@ -145,10 +152,9 @@ function withTimeout<T>(
     new Promise<never>((_, rej) =>
       setTimeout(() => rej(new Error(`timeout:${label} (${ms}ms)`)), ms)
     ),
-  ]).catch((e) => {
-    throw e;
-  }); // 에러 전파 강화
+  ]);
 }
+
 function toInlineKeyboard(rows: { text: string; data: string }[][]) {
   return {
     inline_keyboard: rows.map((r) =>
@@ -173,6 +179,7 @@ type ReplyFn = (
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== "POST") return res.status(405).send("Method Not Allowed");
+
   const secretHeader = req.headers["x-telegram-bot-api-secret-token"] as string;
   if (!secretHeader || secretHeader !== SECRET)
     return res.status(401).send("Unauthorized");
@@ -201,6 +208,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             chat_id: cid,
             text: t,
             reply_markup: extra?.reply_markup,
+            parse_mode: "Markdown", // Markdown 지원 (포맷팅)
           }),
         }
       );
@@ -226,7 +234,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (callback) {
     const cb = callback.data ?? "";
     console.log("Callback:", cb, "chat:", baseChatId);
-    await answerCallbackQuery(callback.id, "분석 시작..."); // 텍스트 추가
+    await answerCallbackQuery(callback.id, "분석 시작...");
     res.status(200).send("OK");
     waitUntil(
       (async () => {
@@ -256,7 +264,53 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (!message) return res.status(200).send("OK");
   const txt = (message.text || "").trim();
 
-  // ---- 점수 명령어 ----
+  // ---- /top 명령어 (추가: 유동성 상위, 에러 픽스 포함) ----
+  if (txt.startsWith("/top")) {
+    try {
+      await reply("🔥 유동성 상위 종목 로딩 중...");
+      // KOSPI (STK → KOSPI)
+      const kospiTops = await krx.getTopVolumeStocks("KOSPI", 100);
+      const kospiList = kospiTops
+        .slice(0, 5)
+        .map(
+          (s: any) => `• ${s.name} (${s.code}): ${s.volume.toLocaleString()}주`
+        )
+        .join("\n");
+
+      // KOSDAQ (KSQ → KOSDAQ)
+      const kosdaqTops = await krx.getTopVolumeStocks("KOSDAQ", 100);
+      const kosdaqList = kosdaqTops
+        .slice(0, 5)
+        .map(
+          (s: any) => `• ${s.name} (${s.code}): ${s.volume.toLocaleString()}주`
+        )
+        .join("\n");
+
+      const topMsg = `
+🔥 **유동성 상위 (실시간)**
+**KOSPI TOP 5:**
+${kospiList}
+
+**KOSDAQ TOP 5:**
+${kosdaqList}
+
+*데이터: KRX 실시간 (오늘 기준)*
+      `.trim();
+
+      await reply(topMsg);
+      await setCache("top_volumes", {
+        kospi: kospiTops,
+        kosdaq: kosdaqTops,
+        updated: Date.now(),
+      });
+    } catch (e: any) {
+      console.error("/top error:", e);
+      await reply("❌ 상위 종목 로드 실패. 나중에 다시 시도하세요.");
+    }
+    return res.status(200).send("OK");
+  }
+
+  // ---- 점수 명령어 (기존 유지) ----
   const isScore =
     /^\/?점수\b/.test(txt) || txt.endsWith(" 점수") || txt.startsWith("/score");
   if (isScore) {
@@ -280,56 +334,44 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(200).send("OK");
   }
 
-  // ---- 섹터 명령어 ----
+  // ---- 섹터 명령어 (기존 유지) ----
   const isSector = /^\/?섹터\b/.test(txt) || txt.startsWith("/sector");
   if (isSector) {
     try {
-      // 데이터 부족 시 ingestion 트리거 (URL 안전: https:// + fallback)
-      const { count } = await supabase.from("sectors").select("*").limit(1);
-      if ((count ?? 0) < 20) {
-        await reply("📊 데이터 업데이트 중...");
-        const baseUrl = process.env.VERCEL_URL
-          ? `https://${process.env.VERCEL_URL}`
-          : "https://signal-scanner-4xlq2wrhi-daniels-projects-505a4a6c.vercel.app"; // fallback 도메인
-        const ingestUrl = `${baseUrl}/api/ingest-data`;
-        console.log("Ingest URL:", ingestUrl); // 디버그
-        const ingestResp = await fetch(ingestUrl, {
+      let tops =
+        ((await getCache("top_sectors")) as {
+          sector: string;
+          score: number;
+        }[]) || [];
+      const lastUpdate = await getCache("stocks_last_update");
+      const needsUpdate =
+        !tops.length ||
+        Date.now() - new Date(lastUpdate || 0).getTime() > TTL_MS / 2;
+
+      if (needsUpdate) {
+        await reply("📊 데이터 최신화 중...");
+        const baseUrl = `https://${
+          process.env.VERCEL_URL || "your-domain.vercel.app"
+        }`;
+        const ingestResp = await fetch(`${baseUrl}/api/ingest-data`, {
           method: "POST",
           headers: { "x-ingest-secret": process.env.INGEST_SECRET! },
         });
-        if (!ingestResp.ok) {
-          console.error(
-            "Ingest failed:",
-            ingestResp.status,
-            await ingestResp.text()
-          );
-          await reply("⚠️ 데이터 업데이트 지연: 기본 섹터로 표시합니다.");
+        if (ingestResp.ok) {
+          await new Promise((r) => setTimeout(r, 5000));
+          await invalidateCache("top_sectors");
         } else {
-          await new Promise((r) => setTimeout(r, 10000)); // 10s 대기
+          console.error("On-demand ingest failed:", await ingestResp.text());
         }
-        // 재쿼리
-        const { count: retryCount } = await supabase
-          .from("sectors")
-          .select("*")
-          .limit(1);
-        if ((retryCount ?? 0) < 20) {
-          console.log("Ingestion still low count:", retryCount);
-        }
+        tops = await getTopSectors(8); // 재호출
       }
-      let tops = await getTopSectors(8);
+
       if (!tops.length) {
         tops = await getTopSectorsRealtime(8);
       }
-      // 빈 경우 하드코드 fallback (문제 2 해결)
-      if (!tops.length) {
-        tops = [
-          { sector: "반도체", score: 85 },
-          { sector: "바이오", score: 78 },
-          { sector: "2차전지", score: 72 },
-          { sector: "AI", score: 68 },
-        ];
-        await reply("⚠️ 섹터 데이터 부족: 인기 섹터로 대체합니다.");
-      }
+
+      await setCache("top_sectors", tops);
+
       const map = await loadSectorMap();
       const rows = tops.map((s) => {
         const meta = map[s.sector];
@@ -360,7 +402,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
   }
 
-  // ---- 종목 명령어 ----
+  // ---- 종목 명령어 (기존 유지) ----
   const isStocks = /^\/?종목\b/.test(txt) || txt.startsWith("/stocks");
   if (isStocks) {
     const sector = txt.split(/\s+/)[1]?.trim() || "반도체";
@@ -376,12 +418,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(200).send("OK");
   }
 
-  // ---- 도움말 ----
+  // ---- 도움말 ( /top 추가) ----
   if (txt.startsWith("/start") || txt.startsWith("/시작")) {
     await reply(
       [
         "📱 명령어:",
         "/start - 도움말",
+        "/top - 유동성 상위 종목",
         "/sector - 유망 섹터",
         "/stocks <섹터> - 대장주 후보",
         "/score <이름|코드> - 점수/신호",
@@ -394,7 +437,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   return res.status(200).send("OK");
 }
 
-// ---- flows ----
+// ---- flows (기존 유지 + 픽스) ----
 async function handleScoreFlow(input: string, reply: ReplyFn) {
   if (/^\d{6}$/.test(input)) {
     await analyzeAndReply(input, reply);
@@ -424,19 +467,17 @@ async function handleScoreFlow(input: string, reply: ReplyFn) {
 
 async function analyzeAndReply(code: string, reply: ReplyFn) {
   try {
-    await reply("🔍 " + code + " 분석 중... (데이터 로딩)"); // 초기 메시지
-    const krx = new KRXClient();
+    await reply("🔍 " + code + " 분석 중... (데이터 로딩)");
     const end = new Date();
     const start = new Date(end.getTime() - 420 * 24 * 60 * 60 * 1000); // 420일
     const endDate = end.toISOString().slice(0, 10);
     const startDate = start.toISOString().slice(0, 10);
 
     let ohlcv: any[] = [];
-    // KRX 타임아웃 15s로 줄임 (문제 3 해결)
     try {
       ohlcv = await withTimeout(
         krx.getMarketOHLCV(code, startDate, endDate),
-        15000,
+        10000,
         "krx"
       );
     } catch (e) {
@@ -444,11 +485,10 @@ async function analyzeAndReply(code: string, reply: ReplyFn) {
       await reply("⚠️ KRX 데이터 지연: 네이버 대체 로딩 중...");
     }
     if (ohlcv.length < 100) {
-      // 200 → 100으로 완화
       try {
         const alt = await withTimeout(
           krx.getMarketOHLCVFromNaver(code, startDate, endDate),
-          10000,
+          8000, // 더 짧게
           "naver"
         );
         if (alt.length > ohlcv.length) ohlcv = alt;
@@ -463,25 +503,25 @@ async function analyzeAndReply(code: string, reply: ReplyFn) {
     }
 
     const closes = ohlcv.map((d) => d.close);
-    const vols = ohlcv.map((d) => d.volume);
     const highs = ohlcv.map((d) => d.high);
     const lows = ohlcv.map((d) => d.low);
+    const vols = ohlcv.map((d) => d.volume);
     const result = scoreFromIndicators(closes, vols);
     const nameMap = await getNamesForCodes([code]);
     const title = (nameMap[code] || code) + " (" + code + ")";
     const last = ohlcv.at(-1)!;
     const emoji =
       result.signal === "buy" ? "🟢" : result.signal === "sell" ? "🔴" : "🟡";
-    const plan = buildTradePlan(closes, highs, lows);
+    const plan = buildTradePlan(closes, highs, lows); // 호출 추가 (레벨 계산)
 
     const lines = [
-      `${emoji} ${title} 분석 결과`,
+      `${emoji} **${title}** 분석 결과`,
       "",
-      `현재가: ${fmtKRW(last.close)}`,
-      `점수: ${result.score}/100`,
-      `신호: ${result.signal.toUpperCase()}`,
+      `현재가: **${fmtKRW(last.close)}**`,
+      `점수: **${result.score}/100**`,
+      `신호: **${result.signal.toUpperCase()}**`,
       "",
-      "이평선:",
+      "**이평선:**",
       `• 20SMA: ${fmtKRW(
         Math.round(sma(closes, 20).at(-1)!)
       )} (${plan.state.gap20.toFixed(1)}%)`,
@@ -492,11 +532,11 @@ async function analyzeAndReply(code: string, reply: ReplyFn) {
         Math.round(sma(closes, 200).at(-1)!)
       )} (${plan.state.gap200.toFixed(1)}%)`,
       "",
-      `모멘텀: RSI14 ${Math.round(plan.state.rsi14)}, ROC14 ${Math.round(
+      `모멘텀: RSI14 **${Math.round(plan.state.rsi14)}**, ROC14 **${Math.round(
         plan.state.roc14
-      )}%, ROC21 ${Math.round(plan.state.roc21)}%`,
+      )}%**, ROC21 **${Math.round(plan.state.roc21)}%**`,
       "",
-      "레벨:",
+      "**레벨:**",
       `• 엔트리: ${fmtKRW(plan.levels.entryLo)} ~ ${fmtKRW(
         plan.levels.entryHi
       )}`,
@@ -528,12 +568,11 @@ async function handleStocksBySector(sector: string, reply: ReplyFn) {
 
   let codes: string[] = await timeout(getLeadersForSector(sector, 12));
   if (typeof codes === "undefined" || !codes.length) {
-    const krx = new KRXClient();
+    // TS2345 픽스: STK → KOSPI, KSQ → KOSDAQ
     const [ks, kq] = await Promise.all([
-      krx.getTopVolumeStocks("STK", 100),
-      krx.getTopVolumeStocks("KSQ", 100),
+      krx.getTopVolumeStocks("KOSPI", 100), // STK → KOSPI
+      krx.getTopVolumeStocks("KOSDAQ", 100), // KSQ → KOSDAQ
     ]);
-    // 문제 1 해결: 전체 폴백을 volume DESC sort (유동성 상위)
     const allVolume = [...ks, ...kq]
       .sort((a, b) => b.volume - a.volume)
       .slice(0, 10);
@@ -550,12 +589,15 @@ async function handleStocksBySector(sector: string, reply: ReplyFn) {
     return [{ text, data: "score:" + code }];
   });
 
-  await reply(`📈 [${sector}] 대장주 후보 (유동성 상위 순):\n\n거래량 기준`, {
-    reply_markup: toInlineKeyboard(rows),
-  });
+  await reply(
+    `📈 **[${sector}]** 대장주 후보 (유동성 상위 순):\n\n거래량 기준`,
+    {
+      reply_markup: toInlineKeyboard(rows),
+    }
+  );
 }
 
-// ---- utils ----
+// ---- utils (기존 유지) ----
 function atrWilder(
   highs: number[],
   lows: number[],

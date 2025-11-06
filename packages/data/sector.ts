@@ -1,5 +1,6 @@
 // packages/data/sector.ts
 import { createClient } from "@supabase/supabase-js";
+import { getCache, setCache } from "./cache";
 
 const supabase = createClient(
   process.env.SUPABASE_URL!,
@@ -50,22 +51,22 @@ export async function getLeadersForSector(
 export async function getTopSectors(
   topN = 8
 ): Promise<{ sector: string; score: number }[]> {
-  try {
-    const { data, error } = await supabase
-      .from("sectors")
-      .select("name, score")
-      .eq("is_active", true)
-      .order("score", { ascending: false })
-      .limit(topN);
-    if (error) throw error;
-    return (data || []).map((r: { name: string; score: number }) => ({
-      sector: r.name,
-      score: r.score || 0,
-    }));
-  } catch (e) {
-    console.error("getTopSectors error:", e);
-    return [];
-  }
+  const cached = await getCache("top_sectors");
+  if (cached) return cached;
+
+  const { data } = await supabase
+    .from("sectors")
+    .select("name, score")
+    .order("score", { ascending: false })
+    .limit(topN);
+
+  const tops = (data || []).map((r: any) => ({
+    sector: r.name,
+    score: r.score || 0,
+  }));
+
+  await setCache("top_sectors", tops); // 65 라인: import로 해결
+  return tops;
 }
 
 export async function getTopSectorsRealtime(
