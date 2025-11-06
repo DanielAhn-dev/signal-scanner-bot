@@ -58,13 +58,12 @@ export async function loadCodeToSector(): Promise<Record<string, string>> {
 async function fetchSectorFromNaver(code: string): Promise<string> {
   try {
     const resp = await fetch(
-      `https://finance.naver.com/item/coinfo.naver?code=${code}`,
-      {
-        headers: { "User-Agent": "Mozilla/5.0" },
-      }
+      `https://finance.naver.com/item/main.naver?code=${code}`,
+      { headers: { "User-Agent": "Mozilla/5.0" } }
     );
     if (!resp.ok) return "";
     const html = await resp.text();
+    // 업종 셀의 앵커 텍스트
     const m = html.match(/업종<\/th>\s*<td[^>]*>\s*<a[^>]*>([^<]+)<\/a>/i);
     return m ? m[1].trim() : "";
   } catch {
@@ -171,7 +170,7 @@ export async function getTopSectorsRealtime(limit = 5): Promise<TopSector[]> {
     cell.count += 1;
     cell.leaders.push({ code: it.code, amount: it.amount || 0 });
     bucket.set(s, cell);
-  } //
+  }
 
   // 커버리지 체크: '기타' 비중이 60% 넘으면 상위 섹터 노출 억제
   const totalAmt = [...bucket.values()].reduce((a, b) => a + b.amount, 0) || 1;
@@ -186,19 +185,20 @@ export async function getTopSectorsRealtime(limit = 5): Promise<TopSector[]> {
         Math.max(values.length, 1)
     ) || 1;
 
-  const ranked: TopSector[] = [...bucket.entries()]
-    .map(([sector, b]) => {
-      const z = (b.amount - mean) / sd;
-      const avgChg = b.sumChg / Math.max(b.count, 1);
-      const score = z * 70 + avgChg * 30;
-      const leaders = b.leaders
-        .sort((a, b) => b.amount - a.amount)
-        .slice(0, 10)
-        .map((x) => x.code);
-      return { sector, score, leaders };
-    })
+  const entries = [...bucket.entries()].map(([sector, b]) => {
+    const z = (b.amount - mean) / sd;
+    const avgChg = b.sumChg / Math.max(b.count, 1);
+    const score = z * 70 + avgChg * 30;
+    const leaders = b.leaders
+      .sort((a, b) => b.amount - a.amount)
+      .slice(0, 10)
+      .map((x) => x.code);
+    return { sector, score, leaders };
+  });
+  const hasNonEtc = entries.some((e) => e.sector !== "기타");
+  const ranked = entries
     .sort((a, b) => b.score - a.score)
-    .filter((x) => x.sector !== "기타" || etcShare < 0.6) // 기타 과대 시 숨김
+    .filter((x) => (hasNonEtc ? x.sector !== "기타" : true))
     .slice(0, limit);
 
   return ranked;

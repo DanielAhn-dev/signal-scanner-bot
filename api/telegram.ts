@@ -2,7 +2,11 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { KRXClient } from "../packages/data/krx-client";
 import { searchByNameOrCode, getNamesForCodes } from "../packages/data/search";
-import { getTopSectors, getLeadersForSector } from "../packages/data/sector";
+import {
+  getTopSectors,
+  getLeadersForSector,
+  getTopSectorsRealtime,
+} from "../packages/data/sector";
 
 const SECRET = process.env.TELEGRAM_BOT_SECRET!;
 const TOKEN = process.env.TELEGRAM_BOT_TOKEN!;
@@ -236,13 +240,23 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   try {
     if (isSector) {
       const tops = await getTopSectors(5);
+      let use = tops;
+      if (!use.length)
+        use = (await getTopSectorsRealtime(5)).map((x) => ({
+          sector: x.sector,
+          score: x.score,
+        }));
+      if (!use.length) {
+        await reply("⚠️ 섹터 데이터가 부족합니다. 잠시 후 다시 시도해 주세요.");
+        return res.status(200).send("OK");
+      }
       if (!tops.length) {
         await reply(
           "⚠️ 섹터 데이터가 부족합니다. 실시간 집계를 시도 중입니다. 다시 시도해 주세요."
         );
         return res.status(200).send("OK");
       }
-      const rows = tops.map((s: any) => [
+      const rows = use.map((s) => [
         {
           text: `${s.sector} (점수 ${Math.round(s.score)})`,
           data: `sector:${s.sector}`,
