@@ -429,19 +429,23 @@ async function analyzeAndReply(code: string, reply: ReplyFn) {
 }
 
 async function handleStocksBySector(sector: string, reply: ReplyFn) {
+  await reply(`⏳ [${sector}] 후보를 불러오는 중...`);
   const codes = await getLeadersForSector(sector, 12);
   if (!codes.length) {
-    await reply(`⚠️ '${sector}' 섹터 종목을 찾지 못했습니다.`);
-    return;
+    await reply(
+      `⚠️ '${sector}' 섹터 종목을 찾지 못했습니다. 실시간 거래대금 상위로 대체합니다.`
+    );
   }
-
-  const nameMap = await getNamesForCodes(codes);
-  const top10 = codes.slice(0, 10);
-  const rows = top10.map((code) => [
+  const use = codes.length
+    ? codes.slice(0, 10)
+    : (await new KRXClient().getTopVolumeStocks("STK", 5))
+        .concat(await new KRXClient().getTopVolumeStocks("KSQ", 5))
+        .map((x) => x.code);
+  const nameMap = await getNamesForCodes(use);
+  const rows = use.map((code) => [
     { text: `${nameMap[code] || code} (${code})`, data: `score:${code}` },
   ]);
-
-  await reply(`📈 [${sector}] 대장주 후보를 선택하세요:\n\n(거래량 상위 순)`, {
+  await reply(`📈 [${sector}] 대장주 후보를 선택하세요:\n\n(유동성 상위 순)`, {
     reply_markup: toInlineKeyboard(rows),
   });
 }

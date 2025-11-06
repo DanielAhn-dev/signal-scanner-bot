@@ -142,36 +142,41 @@ export async function getLeadersForSector(
   sector: string,
   limit = 10
 ): Promise<string[]> {
+  // 1) 실시간 섹터 집계에서 바로 leaders
   const rt = await getTopSectorsRealtime(30);
   const found = rt.find((s) => s.sector === sector);
   if (found?.leaders?.length) return found.leaders.slice(0, limit);
 
+  // 2) DB 조인 한 번으로 섹터명 필터 + 유동성 정렬
   const { url, key } = supa();
-
-  // 섹터명으로 sector id 조회
-  const sr = await fetch(
-    `${url}/rest/v1/sectors?select=id&name=eq.${encodeURIComponent(
+  const r = await fetch(
+    `${url}/rest/v1/stocks?select=code,liquidity,sectors!inner(name)&sectors.name=eq.${encodeURIComponent(
       sector
-    )}&limit=1`,
+    )}&order=liquidity.desc&limit=${limit}`,
     { headers: { apikey: key, Authorization: `Bearer ${key}` } }
   ).catch(() => null);
+  if (r?.ok) {
+    const rows = toArray<{ code: string }>(await r.json().catch(() => null));
+    if (rows.length) return rows.map((x) => x.code);
+  }
 
-  if (!sr?.ok) return [];
-  const sectorRows = toArray<{ id: string }>(await sr.json().catch(() => null));
-  if (!sectorRows.length) return [];
-  const sectorId = sectorRows[0].id;
-
-  // sector_id로 stocks 조회
+  // 3) 최후 폴백: 거래대금 상위에서 섹터 매핑으로 필터
+  const krx = new KRXClient();
+  const [ks, kq] = await Promise.all([
+    krx.getTopVolumeStocks("STK", 200),
+    krx.getTopVolumeStocks("KSQ", 200),
+  ]);
+  const hotCodes = [...ks, ...kq].map((x) => x.code);
+  const inList = hotCodes.map((c) => `"${c}"`).join(",");
   const resp = await fetch(
-    `${url}/rest/v1/stocks?select=code,liquidity&sector_id=eq.${sectorId}&order=liquidity.desc&limit=${limit}`,
+    `${url}/rest/v1/stocks?select=code,sectors!inner(name)&code=in.(${inList})&sectors.name=eq.${encodeURIComponent(
+      sector
+    )}`,
     { headers: { apikey: key, Authorization: `Bearer ${key}` } }
   ).catch(() => null);
-
   if (!resp?.ok) return [];
-  const rows = toArray<{ code: string; liquidity?: number }>(
-    await resp.json().catch(() => null)
-  );
-  return rows.map((r) => r.code);
+  const rows = toArray<{ code: string }>(await resp.json().catch(() => null));
+  return rows.slice(0, limit).map((r) => r.code);
 }
 
 export async function getNamesForCodes(
