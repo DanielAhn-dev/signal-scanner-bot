@@ -10,11 +10,7 @@
     "esModuleInterop": false,
     "resolveJsonModule": true,
     "skipLibCheck": true,
-    "forceConsistentCasingInFileNames": true,
-    "baseUrl": "./",
-    "paths": {
-      "@/data/*": ["packages/data/*"]
-    }
+    "forceConsistentCasingInFileNames": true
   },
   "include": ["api/**/*.ts", "packages/**/*.ts"],
   "exclude": ["node_modules", "scripts"]

@@ -1,13 +1,13 @@
 // api/telegram.ts
 import type { VercelRequest, VercelResponse } from "@vercel/node";
-import { KRXClient } from "@/data/krx-client";
-import { searchByNameOrCode, getNamesForCodes } from "@/data/search";
+import { KRXClient } from "../packages/data/krx-client";
+import { searchByNameOrCode, getNamesForCodes } from "../packages/data/search";
 import {
   getTopSectors,
   getLeadersForSector,
   getTopSectorsRealtime,
   loadSectorMap,
-} from "@/data/sector";
+} from "../packages/data/sector";
 
 const SECRET = process.env.TELEGRAM_BOT_SECRET!;
 const TOKEN = process.env.TELEGRAM_BOT_TOKEN!;
