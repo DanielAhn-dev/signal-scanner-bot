@@ -197,29 +197,25 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   };
 
   // ---- callback queries ----
-  // api/telegram.ts (핵심만 발췌)
   if (callback) {
     const cb = callback.data || "";
-    // 1) 즉시 응답
-    await answerCallbackQuery(callback.id, "처리중...");
-    // 2) 웹훅 즉시 종료
-    res.status(200).send("OK");
-    // 3) 비동기 작업
-    (async () => {
-      await reply("⏳ 불러오는 중...").catch(() => {});
-      if (cb.startsWith("sector:")) {
-        const sector = cb.slice("sector:".length);
-        await handleStocksBySector(sector, reply).catch((e) =>
-          reply(`⚠️ 실패: ${String(e).slice(0, 80)}`)
-        );
-      } else if (cb.startsWith("score:")) {
-        const code = cb.slice("score:".length);
-        await analyzeAndReply(code, reply).catch((e) =>
-          reply(`⚠️ 실패: ${String(e).slice(0, 80)}`)
-        );
-      }
-    })();
-    return;
+    // 1) 즉시 확인 + 즉시 안내 (둘 다 기다림)
+    await Promise.allSettled([
+      answerCallbackQuery(callback.id, "처리중..."),
+      reply("⏳ 불러오는 중..."),
+    ]);
+
+    // 2) 가벼운 작업은 즉시 처리(3~5초 내 끝나도록 타임아웃)
+    if (cb.startsWith("sector:")) {
+      const sector = cb.slice("sector:".length);
+      await handleStocksBySector(sector, reply); // 내부 timeout 유지
+    } else if (cb.startsWith("score:")) {
+      const code = cb.slice("score:".length);
+      await analyzeAndReply(code, reply);
+    }
+
+    // 3) 처리 후 응답 종료
+    return res.status(200).send("OK");
   }
 
   if (!message) return res.status(200).send("OK");
