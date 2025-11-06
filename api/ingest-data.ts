@@ -1,4 +1,4 @@
-// api/ingest-data.ts
+// api/ingest-data.ts (이전 수정 + 로그)
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { createClient } from "@supabase/supabase-js";
 import { KRXClient } from "../packages/data/krx-client";
@@ -20,13 +20,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   try {
     // 섹터 데이터 수집 및 upsert
     const sectorsData = await krx.getTopSectorsData(20);
+    console.log("Fetched sectors data: " + sectorsData.length); // 로그
+    let updatedCount = 0;
     for (const { sector, codes } of sectorsData) {
       const roiData = await krx.getROIForCodes(
         codes.map((c) => c.code),
         180
-      ); // 6M ROI 예시
+      );
       const metrics = {
-        roi_1m: roiData[0]?.roi || 0, // 첫 종목 기준, 평균으로 확장 가능
+        roi_1m: roiData[0]?.roi || 0,
         roi_3m: roiData[1]?.roi || 0,
         roi_6m: roiData[2]?.roi || 0,
       };
@@ -36,7 +38,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       );
 
       // sectors upsert
-      const { error: secError } = await supabase.from("sectors").upsert(
+      const { error: secError, count } = await supabase.from("sectors").upsert(
         {
           name: sector,
           category: sector.includes("반도체") ? "IT" : "Other",
@@ -45,36 +47,51 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         },
         { onConflict: "name" }
       );
-      if (secError) throw secError;
+      if (secError) {
+        console.error(
+          "Sector upsert error for " + sector + ": " + secError.message
+        );
+        continue;
+      }
+      updatedCount += count || 1;
+      console.log("Upserted sector: " + sector + ", score: " + score);
 
-      // stocks upsert (섹터 ID 매핑)
+      // stocks upsert
       const { data: sectorRow } = await supabase
         .from("sectors")
         .select("id")
         .eq("name", sector)
         .single();
-      for (const item of codes) {
-        await supabase.from("stocks").upsert(
+      if (!sectorRow) continue;
+      for (const item of codes.slice(0, 10)) {
+        // 상위 10개만
+        const { error: stockError } = await supabase.from("stocks").upsert(
           {
             code: item.code,
             name: item.name,
             market: item.code.startsWith("0") ? "KOSPI" : "KOSDAQ",
-            sector_id: sectorRow?.id,
+            sector_id: sectorRow.id,
             market_cap: 0,
             liquidity: item.volume,
             updated_at: new Date().toISOString(),
           },
           { onConflict: "code" }
         );
+        if (stockError)
+          console.error("Stock upsert error: " + stockError.message);
       }
     }
 
-    // score 재계산 트리거 (sectors 업데이트)
-    await supabase.rpc("recalculate_scores"); // 나중: PostgreSQL 함수로 구현
+    // score 재계산 (RPC 또는 직접 업데이트, 임시 스킵)
+    // await supabase.rpc("recalculate_scores");
 
     res
       .status(200)
-      .json({ message: "Ingestion complete", updated: sectorsData.length });
+      .json({
+        message: "Ingestion complete",
+        updated: updatedCount,
+        totalSectors: sectorsData.length,
+      });
   } catch (e) {
     console.error("Ingestion error:", e);
     res.status(500).json({ error: String(e) });

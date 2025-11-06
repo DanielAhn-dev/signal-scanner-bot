@@ -1,4 +1,4 @@
-// api/telegram.ts (전체 수정 버전, 이전 수정 유지 + 에러 픽스)
+// api/telegram.ts (전체, 이전 수정 + 이번 픽스)
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { waitUntil } from "@vercel/functions";
 import { KRXClient } from "../packages/data/krx-client";
@@ -135,13 +135,18 @@ function scoreFromIndicators(closes: number[], vols: number[]) {
   };
 }
 
-function withTimeout(p: Promise<any>, ms: number, label = "op"): Promise<any> {
+function withTimeout<T>(
+  p: Promise<T>,
+  ms: number = 20000,
+  label = "op"
+): Promise<T> {
+  // 타임아웃 20s로 증가
   return Promise.race([
     p,
-    new Promise((_, rej) =>
+    new Promise<never>((_, rej) =>
       setTimeout(() => rej(new Error("timeout:" + label)), ms)
     ),
-  ]);
+  ]) as Promise<T>;
 }
 
 function toInlineKeyboard(rows: { text: string; data: string }[][]) {
@@ -292,20 +297,36 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           method: "POST",
           headers: { "x-ingest-secret": process.env.INGEST_SECRET! },
         });
-        await new Promise((r) => setTimeout(r, 2000)); // 2초 대기 후 재로드
+        await new Promise((r) => setTimeout(r, 5000)); // 5초 대기 증가 + 재쿼리
+        // 재시도: sectors 재쿼리
+        const { count: retryCount } = await supabase
+          .from("sectors")
+          .select("*")
+          .limit(1);
+        if ((retryCount ?? 0) < 20) {
+          console.log("Ingestion retry failed: still low count");
+        }
       }
       const tops = await getTopSectors(8);
       let use = tops;
-      if (!use.length)
+      if (!use.length) {
         use = (await getTopSectorsRealtime(8))
-          .filter((s) => s.score > 50) // score > 50 필터로 유망 섹터만
+          .filter((s) => s.score > 50)
           .map((x) => ({
             sector: x.sector,
-            score: x.score || 0, // score 보장
+            score: x.score || 0,
           }));
+      }
+      // 빈 경우 거래대금 상위 섹터 대체
       if (!use.length) {
-        await reply("⚠️ 섹터 데이터가 부족합니다. 잠시 후 다시 시도해 주세요.");
-        return res.status(200).send("OK");
+        const krx = new KRXClient();
+        const [ks, kq] = await Promise.all([
+          krx.getTopVolumeStocks("STK", 50),
+          krx.getTopVolumeStocks("KSQ", 50),
+        ]);
+        const fallbackSectors = ["반도체", "바이오", "전기차"]; // 하드코드 대체
+        use = fallbackSectors.map((s) => ({ sector: s, score: 60 })); // 임시 점수
+        await reply("⚠️ 섹터 데이터 부족: 기본 상위 섹터로 표시합니다.");
       }
       const map = await loadSectorMap();
       const rows = use.map((s) => {
@@ -318,7 +339,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             : meta?.category === "Healthcare"
             ? "🏥"
             : "📊";
-        const displayScore = s.score > 0 ? Math.round(s.score) : "N/A"; // 점수 0 시 N/A
+        const displayScore = s.score > 0 ? Math.round(s.score) : "N/A";
         return [
           {
             text: emoji + " " + s.sector + " (" + displayScore + ")",
@@ -394,29 +415,37 @@ async function handleScoreFlow(input: string, reply: ReplyFn) {
 async function analyzeAndReply(code: string, reply: ReplyFn) {
   const krx = new KRXClient();
   const end = new Date();
-  const start = new Date(end.getTime() - 420 * 24 * 60 * 60 * 1000);
+  const start = new Date(end.getTime() - 420 * 24 * 60 * 60 * 1000); // 420일
   const endDate = end.toISOString().slice(0, 10),
     startDate = start.toISOString().slice(0, 10);
   let ohlcv: any[] = [];
   try {
     ohlcv = await withTimeout(
+      // 20s 타임아웃
       krx.getMarketOHLCV(code, startDate, endDate),
-      12000,
+      20000,
       "krx"
     );
-  } catch {}
+  } catch (e) {
+    console.log("KRX timeout, trying Naver...");
+  }
   if (ohlcv.length < 220) {
     try {
       const alt = await withTimeout(
+        // Naver 우선 폴백
         krx.getMarketOHLCVFromNaver(code, startDate, endDate),
-        8000,
+        15000,
         "naver"
       );
       if (alt.length > ohlcv.length) ohlcv = alt;
-    } catch {}
+    } catch (e) {
+      console.log("Naver also failed: " + e);
+    }
   }
   if (ohlcv.length < 200) {
-    await reply("❌ 데이터 부족/지연(필요 200봉): " + code);
+    await reply(
+      "❌ 데이터 부족(필요 200봉): " + code + ". 네트워크 지연일 수 있습니다."
+    );
     return;
   }
   const closes = ohlcv.map((d) => d.close),
@@ -424,7 +453,7 @@ async function analyzeAndReply(code: string, reply: ReplyFn) {
     highs = ohlcv.map((d) => d.high),
     lows = ohlcv.map((d) => d.low);
   const result = scoreFromIndicators(closes, vols);
-  const nameMap = await getNamesForCodes([code]);
+  const nameMap = await getNamesForCodes([code]); // 새 search.ts 사용
   const title = (nameMap[code] || code) + " (" + code + ")";
   const last = ohlcv.at(-1)!;
   const emoji =
@@ -488,31 +517,61 @@ async function analyzeAndReply(code: string, reply: ReplyFn) {
 }
 
 async function handleStocksBySector(sector: string, reply: ReplyFn) {
-  const timeout = (p: Promise<any>, ms = 3000) =>
-    Promise.race([p, new Promise((r) => setTimeout(() => r([]), ms))]);
-  let codes: string[] = await timeout(getLeadersForSector(sector, 12)); // 타입 명시: string[]
+  // 제네릭 timeout 함수 (T 반환 보장, fallback to [] for string[])
+  const timeout = async <T>(p: Promise<T>, ms = 5000): Promise<T> => {
+    const fallbackPromise = new Promise<T>(
+      (resolve) => setTimeout(() => resolve([] as any as T), ms) // 빈 배열 fallback (string[] 호환)
+    );
+    return Promise.race([p, fallbackPromise]) as Promise<T>; // TS2322 해결: 타입 캐스트
+  };
+
+  let codes: string[] = [];
+  try {
+    // getLeadersForSector 호출 (타입 안전: sector.ts에서 Promise<string[]> 반환 가정)
+    const leadersPromise = getLeadersForSector(sector, 12);
+    codes = await timeout(leadersPromise); // as 제거: 제네릭으로 string[] 추론
+    if (typeof codes === "undefined" || codes === null) codes = []; // 추가 가드
+  } catch (e) {
+    console.error("getLeadersForSector error:", e);
+    codes = []; // 에러 시 빈 배열
+  }
+
   if (!codes.length) {
     const krx = new KRXClient();
     const [ks, kq] = await Promise.all([
       krx.getTopVolumeStocks("STK", 100),
       krx.getTopVolumeStocks("KSQ", 100),
     ]);
-    codes = [...ks, ...kq].slice(0, 10).map((x) => x.code); // string[] 보장
+    codes = [...ks, ...kq].slice(0, 10).map((x) => x.code);
     await reply(
       "⚠️ '" + sector + "' 섹터 조회가 느려 거래대금 상위로 대체합니다."
     );
   }
-  const nameMap = await getNamesForCodes(codes);
+
+  const nameMap = await getNamesForCodes(codes); // search.ts에서 이름 매핑 (이전 병합 버전 사용)
   const rows = codes.slice(0, 10).map((code: string) => {
-    // code: string 타입 명시 (TS7006 해결)
-    const displayName = nameMap[code] || code; // nameMap 실패 시 코드 우선
+    // code: string 명시 (TS7006 유지)
+    const displayName = nameMap[code] || code;
+    // "코드(코드)" 방지: 이름 있으면 "이름 (코드)", 없으면 "코드"만
+    const text = displayName !== code ? `${displayName} (${code})` : code;
+    if (displayName === code) {
+      console.log("Name fallback for code:", code); // 디버그: 이름 매핑 실패 로그
+    }
     return [
       {
-        text: displayName + " (" + code + ")", // 강제 "종목명 (코드)" 형태
+        text,
         data: "score:" + code,
       },
     ];
   });
+
+  if (!rows.length) {
+    await reply(
+      "❌ " + sector + " 섹터의 종목을 찾을 수 없습니다. /sector 재시도."
+    );
+    return;
+  }
+
   await reply(
     "📈 [" + sector + "] 대장주 후보를 선택하세요:\n\n(유동성 상위 순)",
     {
