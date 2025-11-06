@@ -11,7 +11,6 @@ import {
 
 const SECRET = process.env.TELEGRAM_BOT_SECRET!;
 const TOKEN = process.env.TELEGRAM_BOT_TOKEN!;
-const ADMIN = process.env.TELEGRAM_ADMIN_CHAT_ID;
 
 export const config = { api: { bodyParser: false } };
 
@@ -164,8 +163,10 @@ type ReplyFn = (
   chatOverride?: number | string
 ) => Promise<void>;
 
+// ✅ ES Module export (기본 export)
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== "POST") return res.status(405).send("Method Not Allowed");
+
   const secretHeader = req.headers["x-telegram-bot-api-secret-token"] as string;
   if (!secretHeader || secretHeader !== SECRET)
     return res.status(401).send("Unauthorized");
@@ -258,7 +259,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         return res.status(200).send("OK");
       }
 
-      // 카테고리/메트릭스 정보 포함
       const map = await loadSectorMap();
       const rows = use.map((s) => {
         const meta = map[s.sector];
@@ -446,7 +446,7 @@ async function handleStocksBySector(sector: string, reply: ReplyFn) {
   });
 }
 
-// ---- utils: ATR, pct, fmtKRW, buildTradePlan ----
+// ---- utils ----
 function atrWilder(
   highs: number[],
   lows: number[],
