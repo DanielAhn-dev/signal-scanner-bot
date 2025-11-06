@@ -43,15 +43,14 @@ function sma(a: number[], n: number): number[] {
   }
   return o;
 }
-
 function rsiWilder(closes: number[], n = 14): number[] {
   const r: number[] = [];
   let g = 0,
     l = 0;
   for (let i = 1; i < closes.length; i++) {
-    const ch = closes[i] - closes[i - 1];
-    const gg = Math.max(ch, 0);
-    const ll = Math.max(-ch, 0);
+    const ch = closes[i] - closes[i - 1],
+      gg = Math.max(ch, 0),
+      ll = Math.max(-ch, 0);
     if (i <= n) {
       g += gg;
       l += ll;
@@ -59,8 +58,8 @@ function rsiWilder(closes: number[], n = 14): number[] {
       continue;
     }
     if (i === n + 1) {
-      let ag = g / n;
-      let al = l / n;
+      let ag = g / n,
+        al = l / n;
       const rs = al === 0 ? 100 : ag / al;
       r.push(100 - 100 / (1 + rs));
       g = ag;
@@ -72,12 +71,10 @@ function rsiWilder(closes: number[], n = 14): number[] {
     const rs = l === 0 ? 100 : g / l;
     r.push(100 - 100 / (1 + rs));
   }
-  // 앞부분 길이 맞추기
   const pad = Math.max(0, closes.length - r.length);
   r.unshift(...Array(pad).fill(NaN));
   return r;
 }
-
 function roc(closes: number[], n: number): number[] {
   return closes.map((v, i) =>
     i >= n ? ((v - closes[i - n]) / closes[i - n]) * 100 : NaN
@@ -85,24 +82,21 @@ function roc(closes: number[], n: number): number[] {
 }
 
 function scoreFromIndicators(closes: number[], vols: number[]) {
-  const s20 = sma(closes, 20);
-  const s50 = sma(closes, 50);
-  const s200 = sma(closes, 200);
-  const r14 = rsiWilder(closes, 14);
-
-  const c = closes.at(-1)!;
-  const s20l = s20.at(-1)!;
-  const s50l = s50.at(-1)!;
-  const s200l = s200.at(-1)!;
-  const s200Prev = s200.at(-2)!;
-
+  const s20 = sma(closes, 20),
+    s50 = sma(closes, 50),
+    s200 = sma(closes, 200),
+    r14 = rsiWilder(closes, 14);
+  const c = closes.at(-1)!,
+    s20l = s20.at(-1)!,
+    s50l = s50.at(-1)!,
+    s200l = s200.at(-1)!,
+    s200Prev = s200.at(-2)!;
   const s200Slope = !isNaN(s200l) && !isNaN(s200Prev) ? s200l - s200Prev : 0;
-
-  const roc14 = roc(closes, 14);
-  const roc21 = roc(closes, 21);
-  const r14Last = r14.at(-1)!;
-  const roc14Last = roc14.at(-1)!;
-  const roc21Last = roc21.at(-1)!;
+  const roc14 = roc(closes, 14),
+    roc21 = roc(closes, 21);
+  const r14Last = r14.at(-1)!,
+    roc14Last = roc14.at(-1)!,
+    roc21Last = roc21.at(-1)!;
 
   let score = 0;
   if (!isNaN(s20l) && c > s20l) score += 3;
@@ -117,17 +111,9 @@ function scoreFromIndicators(closes: number[], vols: number[]) {
   if (score >= 12) signal = "buy";
   else if (score <= 2) signal = "sell";
 
-  const recommendation =
-    signal === "buy"
-      ? "엔트리는 20SMA 근처 눌림 재돌파, 손절 −7~−8%, 익절 +20~25% 분할 제안"
-      : signal === "sell"
-      ? "50일선·AVWAP 하회 시 청산 고려"
-      : "보유, 50일선 하회 시 트레일링 스탑 검토";
-
   return {
     score,
     signal,
-    recommendation,
     factors: {
       sma20: isNaN(s20l) ? 0 : c > s20l ? 3 : -3,
       sma50: isNaN(s50l) ? 0 : c > s50l ? 4 : -4,
@@ -136,7 +122,6 @@ function scoreFromIndicators(closes: number[], vols: number[]) {
       rsi14: isNaN(r14Last) ? 0 : Math.round(r14Last),
       roc14: isNaN(roc14Last) ? 0 : Math.round(roc14Last),
       roc21: isNaN(roc21Last) ? 0 : Math.round(roc21Last),
-      avwap_support: 0, // TODO: AVWAP 다중 앵커 계산 모듈 연계
     },
   };
 }
@@ -149,7 +134,6 @@ function withTimeout<T>(p: Promise<T>, ms: number, label = "op"): Promise<T> {
     ),
   ]) as Promise<T>;
 }
-
 function toInlineKeyboard(rows: { text: string; data: string }[][]) {
   return {
     inline_keyboard: rows.map((r) =>
@@ -157,7 +141,6 @@ function toInlineKeyboard(rows: { text: string; data: string }[][]) {
     ),
   };
 }
-
 async function answerCallbackQuery(id: string, text?: string) {
   await fetch(`https://api.telegram.org/bot${TOKEN}/answerCallbackQuery`, {
     method: "POST",
@@ -186,8 +169,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(200).send("OK");
   }
 
-  const message = update?.message;
-  const callback = update?.callback_query;
+  const message = update?.message,
+    callback = update?.callback_query;
   const baseChatId = callback ? callback.message.chat.id : message?.chat.id;
 
   const reply: ReplyFn = async (t, extra, chatOverride) => {
@@ -198,13 +181,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       body: JSON.stringify({
         chat_id: cid,
         text: t,
-        parse_mode: "Markdown",
-        reply_markup: extra?.reply_markup,
+        /* parse_mode: "Markdown",*/ reply_markup: extra?.reply_markup,
       }),
     }).catch(() => {});
   };
 
-  // Callback query first
+  // callback
   if (callback) {
     const cb = callback.data || "";
     await answerCallbackQuery(callback.id);
@@ -221,7 +203,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
     return res.status(200).send("OK");
   }
-
   if (!message) return res.status(200).send("OK");
 
   const txt = (message.text || "").trim();
@@ -254,9 +235,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const isSector = /^\/?섹터\b/.test(txt) || txt.startsWith("/sector");
   try {
     if (isSector) {
-      const tops = await getTopSectors(6);
+      const tops = await getTopSectors(5);
       if (!tops.length) {
-        await reply("⚠️ 섹터 데이터가 부족합니다. sectors를 채워주세요.");
+        await reply(
+          "⚠️ 섹터 데이터가 부족합니다. 실시간 집계를 시도 중입니다. 다시 시도해 주세요."
+        );
         return res.status(200).send("OK");
       }
       const rows = tops.map((s: any) => [
@@ -265,7 +248,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           data: `sector:${s.sector}`,
         },
       ]);
-      await reply("📊 유망 섹터를 선택하세요:", {
+      await reply("📊 지금 유망한 섹터입니다. 선택하세요:", {
         reply_markup: toInlineKeyboard(rows),
       });
       return res.status(200).send("OK");
@@ -288,7 +271,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     await reply(
       [
         "📱 명령어:",
-        "/score - 시작",
+        "/start - 도움말",
         "/sector - 유망 섹터",
         "/stocks <섹터> - 대장주 후보",
         "/score <이름|코드> - 점수/신호",
@@ -298,7 +281,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(200).send("OK");
   }
 
-  await reply("❓ 알 수 없는 명령입니다. /시작 으로 도움말을 확인하세요.");
+  await reply("❓ 알 수 없는 명령입니다. /start 로 도움말을 확인하세요.");
   return res.status(200).send("OK");
 }
 
@@ -329,8 +312,8 @@ async function analyzeAndReply(code: string, reply: ReplyFn) {
   const krx = new KRXClient();
   const end = new Date();
   const start = new Date(end.getTime() - 420 * 24 * 60 * 60 * 1000);
-  const endDate = end.toISOString().slice(0, 10);
-  const startDate = start.toISOString().slice(0, 10);
+  const endDate = end.toISOString().slice(0, 10),
+    startDate = start.toISOString().slice(0, 10);
 
   let ohlcv: any[] = [];
   try {
@@ -355,30 +338,62 @@ async function analyzeAndReply(code: string, reply: ReplyFn) {
     return;
   }
 
-  const closes = ohlcv.map((d) => d.close);
-  const vols = ohlcv.map((d) => d.volume);
+  const closes = ohlcv.map((d) => d.close),
+    vols = ohlcv.map((d) => d.volume);
+  const highs = ohlcv.map((d) => d.high),
+    lows = ohlcv.map((d) => d.low);
   const result = scoreFromIndicators(closes, vols);
   const nameMap = await getNamesForCodes([code]);
   const title = `${nameMap[code] || code} (${code})`;
   const last = ohlcv.at(-1)!;
   const emoji =
     result.signal === "buy" ? "🟢" : result.signal === "sell" ? "🔴" : "🟡";
+  const plan = buildTradePlan(closes, highs, lows);
 
-  const msg =
-    `${emoji} ${title} 분석 결과\n\n` +
-    `가격: ${last.close.toLocaleString()}원\n` +
-    `점수: ${result.score} / 100\n` +
-    `신호: ${result.signal.toUpperCase()}\n\n` +
-    `세부:\n` +
-    `• 20SMA: ${result.factors.sma20}\n` +
-    `• 50SMA: ${result.factors.sma50}\n` +
-    `• 200SMA: ${result.factors.sma200}\n` +
-    `• RSI14: ${result.factors.rsi14}\n` +
-    `• ROC14: ${result.factors.roc14}\n` +
-    `• ROC21: ${result.factors.roc21}\n\n` +
-    `추천: ${result.recommendation}`;
+  const lines = [
+    `${emoji} ${title} 분석 결과`,
+    "",
+    `가격: ${fmtKRW(last.close)}`,
+    `점수: ${result.score} / 100`,
+    `신호: ${result.signal.toUpperCase()}`,
+    "",
+    `이평선 상태:`,
+    `• 20SMA ${fmtKRW(
+      Math.round(sma(closes, 20).at(-1)!)
+    )} (${plan.state.gap20.toFixed(1)}%) — 현재가가 ${
+      plan.state.gap20 >= 0 ? "위" : "아래"
+    }입니다`,
+    `• 50SMA ${fmtKRW(
+      Math.round(sma(closes, 50).at(-1)!)
+    )} (${plan.state.gap50.toFixed(1)}%)`,
+    `• 200SMA ${fmtKRW(
+      Math.round(sma(closes, 200).at(-1)!)
+    )} (${plan.state.gap200.toFixed(1)}%)`,
+    "",
+    `모멘텀: RSI14 ${Math.round(
+      plan.state.rsi14
+    )} (40~60 중립, 60↑ 강세), ROC14 ${Math.round(
+      plan.state.roc14
+    )}%, ROC21 ${Math.round(plan.state.roc21)}%`,
+    "",
+    `제안 레벨(설명 포함):`,
+    `• 엔트리 구간: ${fmtKRW(plan.levels.entryLo)} ~ ${fmtKRW(
+      plan.levels.entryHi
+    )} (20SMA ±3%)`,
+    `• 손절: ${fmtKRW(plan.levels.stop)} (리스크 ${(
+      ((plan.levels.entry - plan.levels.stop) / plan.levels.entry) *
+      100
+    ).toFixed(1)}%, ATR14 1.5배/7% 중 큰 값)`,
+    `• 목표가: 1차 ${fmtKRW(plan.levels.t1)}(1R), 2차 ${fmtKRW(
+      plan.levels.t2
+    )}(2R), 보조 ${fmtKRW(plan.levels.t20)}~${fmtKRW(
+      plan.levels.t25
+    )}(+20~25%)`,
+    "",
+    `주의: 거래량은 20일 평균 대비 +50% 이상일 때 신뢰도가 높습니다`,
+  ].join("\n");
 
-  await reply(msg);
+  await reply(lines);
 }
 
 async function handleStocksBySector(sector: string, reply: ReplyFn) {
@@ -392,4 +407,79 @@ async function handleStocksBySector(sector: string, reply: ReplyFn) {
   await reply(`📈 ${sector} 대장주 후보를 선택하세요:`, {
     reply_markup: toInlineKeyboard(rows),
   });
+}
+
+// utils: ATR14, pct, fmtKRW, buildTradePlan
+function atrWilder(
+  highs: number[],
+  lows: number[],
+  closes: number[],
+  n = 14
+): number[] {
+  const tr: number[] = [];
+  for (let i = 0; i < highs.length; i++) {
+    const hc = i > 0 ? Math.abs(highs[i] - closes[i - 1]) : 0;
+    const lc = i > 0 ? Math.abs(lows[i] - closes[i - 1]) : 0;
+    tr.push(Math.max(highs[i] - lows[i], hc, lc));
+  }
+  const out: number[] = [];
+  let avg = 0;
+  for (let i = 0; i < tr.length; i++) {
+    if (i < n) {
+      avg += tr[i];
+      out.push(NaN);
+      continue;
+    }
+    if (i === n) {
+      avg = avg / n;
+      out.push(avg);
+      continue;
+    }
+    avg = (avg * (n - 1) + tr[i]) / n;
+    out.push(avg);
+  }
+  return out;
+}
+function pct(a: number, b: number) {
+  return b ? ((a - b) / b) * 100 : NaN;
+}
+function fmtKRW(x: number) {
+  return Math.round(x).toLocaleString() + "원";
+}
+function buildTradePlan(closes: number[], highs: number[], lows: number[]) {
+  const s20 = sma(closes, 20),
+    s50 = sma(closes, 50),
+    s200 = sma(closes, 200);
+  const r14 = rsiWilder(closes, 14),
+    roc14 = roc(closes, 14),
+    roc21 = roc(closes, 21);
+  const atr14 = atrWilder(highs, lows, closes, 14);
+  const c = closes.at(-1)!,
+    s20l = s20.at(-1)!,
+    s50l = s50.at(-1)!,
+    s200l = s200.at(-1)!;
+  const atr = atr14.at(-1)!;
+  const boxLo = isNaN(s20l) ? c * 0.97 : s20l * 0.97;
+  const boxHi = isNaN(s20l) ? c * 1.03 : s20l * 1.03;
+  const entry = Math.min(Math.max(c, boxLo), boxHi);
+  const pctRisk = entry * 0.07;
+  const atrRisk = isNaN(atr) ? 0 : 1.5 * atr;
+  const risk = Math.max(pctRisk, atrRisk || 0);
+  const stop = Math.max(entry - risk, isNaN(s50l) ? 0 : s50l * 0.97);
+  const R = entry - stop;
+  const t1 = entry + 1 * R;
+  const t2 = entry + 2 * R;
+  const t20 = entry * 1.2;
+  const t25 = entry * 1.25;
+  return {
+    levels: { entryLo: boxLo, entryHi: boxHi, entry, stop, t1, t2, t20, t25 },
+    state: {
+      gap20: pct(c, s20l),
+      gap50: pct(c, s50l),
+      gap200: pct(c, s200l),
+      rsi14: r14.at(-1)!,
+      roc14: roc14.at(-1)!,
+      roc21: roc21.at(-1)!,
+    },
+  };
 }
