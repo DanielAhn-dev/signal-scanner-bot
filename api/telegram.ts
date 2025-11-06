@@ -56,7 +56,8 @@ function sma(a: number[], n: number): number[] {
 
 function rsiWilder(closes: number[], n = 14): number[] {
   const r: number[] = [];
-  let g = 0, l = 0;
+  let g = 0,
+    l = 0;
   for (let i = 1; i < closes.length; i++) {
     const ch = closes[i] - closes[i - 1],
       gg = Math.max(ch, 0),
@@ -68,7 +69,8 @@ function rsiWilder(closes: number[], n = 14): number[] {
       continue;
     }
     if (i === n + 1) {
-      let ag = g / n, al = l / n;
+      let ag = g / n,
+        al = l / n;
       const rs = al === 0 ? 100 : ag / al;
       r.push(100 - 100 / (1 + rs));
       g = ag;
@@ -137,7 +139,7 @@ function withTimeout(p: Promise<any>, ms: number, label = "op"): Promise<any> {
   return Promise.race([
     p,
     new Promise((_, rej) =>
-      setTimeout(() => rej(new Error(`timeout:${label}`)), ms)
+      setTimeout(() => rej(new Error("timeout:" + label)), ms)
     ),
   ]);
 }
@@ -151,7 +153,7 @@ function toInlineKeyboard(rows: { text: string; data: string }[][]) {
 }
 
 async function answerCallbackQuery(id: string, text?: string) {
-  await fetch(`https://api.telegram.org/bot${TOKEN}/answerCallbackQuery`, {
+  await fetch("https://api.telegram.org/bot" + TOKEN + "/answerCallbackQuery", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ callback_query_id: id, text: text || "" }),
@@ -186,7 +188,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const cid = chatOverride ?? baseChatId!;
     try {
       const resp = await fetch(
-        `https://api.telegram.org/bot${TOKEN}/sendMessage`,
+        "https://api.telegram.org/bot" + TOKEN + "/sendMessage",
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -200,21 +202,25 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       if (!resp.ok) {
         const err = await resp.text();
         console.error(
-          `Reply failed: ${resp.status} ${err} for chat ${cid}, text: ${t.slice(
-            0,
-            50
-          )}`
+          "Reply failed: " +
+            resp.status +
+            " " +
+            err +
+            " for chat " +
+            cid +
+            ", text: " +
+            t.slice(0, 50)
         );
       }
     } catch (e) {
-      console.error(`Reply network error: ${String(e)} for chat ${cid}`);
+      console.error("Reply network error: " + String(e) + " for chat " + cid);
     }
   };
 
   // ---- callback queries ----
   if (callback) {
     const cb = callback.data ?? "";
-    console.log(`Callback received: ${cb}, chat: ${baseChatId}`);
+    console.log("Callback received: " + cb + ", chat: " + baseChatId);
     await answerCallbackQuery(callback.id, "처리중...");
     console.log("ACK sent");
     res.status(200).send("OK");
@@ -225,19 +231,22 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           await reply("⏳ 불러오는 중...");
           console.log("Reply 'loading' sent");
           if (cb.startsWith("sector:")) {
-            console.log(`Processing sector: ${cb.slice(7)}`);
+            console.log("Processing sector: " + cb.slice(7));
             await handleStocksBySector(cb.slice(7), reply);
             console.log("Sector handling done");
           } else if (cb.startsWith("score:")) {
-            console.log(`Processing score: ${cb.slice(6)}`);
+            console.log("Processing score: " + cb.slice(6));
             await analyzeAndReply(cb.slice(6), reply);
             console.log("Score handling done");
           }
         } catch (e) {
           console.error(
-            `waitUntil error: ${String(e)} | stack: ${e?.stack?.slice(0, 200)}`
+            "waitUntil error: " +
+              String(e) +
+              " | stack: " +
+              (e?.stack?.slice(0, 200) || "")
           );
-          await reply(`⚠️ 실패: ${String(e).slice(0, 80)}`); // 에러 메시지 강제 전송
+          await reply("⚠️ 실패: " + String(e).slice(0, 80));
         }
       })()
     );
@@ -249,12 +258,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   // ---- 점수 명령어 ----
   const isScore =
-    /^\\/?점수\b/.test(txt) || txt.endsWith(" 점수") || txt.startsWith("/score");
+    /^\/?점수\b/.test(txt) || txt.endsWith(" 점수") || txt.startsWith("/score");
   if (isScore) {
     const arg = txt
-      .replace(/^\\/?점수\b|\s*점수$/g, "")
+      .replace(/^\/?점수\b|\s*점수$/g, "")
       .trim()
-      .replace(/^\\/score\s*/, "");
+      .replace(/^\/score\s*/, "");
     const q = arg || txt.split(/\s+/)[1] || "";
     if (!q) {
       await reply("⚠️ 사용법: /score 삼성전자 또는 /score 005930");
@@ -265,31 +274,31 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       await handleScoreFlow(q, reply);
     } catch (e: any) {
       await reply(
-        `❌ 데이터 수집 실패: ${String(e?.message || e).slice(0, 120)}`
+        "❌ 데이터 수집 실패: " + String(e?.message || e).slice(0, 120)
       );
     }
     return res.status(200).send("OK");
   }
 
   // ---- 섹터 명령어 ----
-  const isSector = /^\\/?섹터\b/.test(txt) || txt.startsWith("/sector");
+  const isSector = /^\/?섹터\b/.test(txt) || txt.startsWith("/sector");
   if (isSector) {
     try {
       // 데이터 부족 시 ingestion 트리거
       const { count } = await supabase.from("sectors").select("*").limit(1);
       if (count < 20) {
         await reply("📊 데이터 업데이트 중...");
-        await fetch(`${process.env.VERCEL_URL}/api/ingest-data`, {
+        await fetch(process.env.VERCEL_URL + "/api/ingest-data", {
           method: "POST",
           headers: { "x-ingest-secret": process.env.INGEST_SECRET! },
         });
-        await new Promise(r => setTimeout(r, 2000)); // 2초 대기 후 재로드
+        await new Promise((r) => setTimeout(r, 2000)); // 2초 대기 후 재로드
       }
       const tops = await getTopSectors(8);
       let use = tops;
       if (!use.length)
         use = (await getTopSectorsRealtime(8))
-          .filter(s => s.score > 50) // score > 50 필터로 유망 섹터만
+          .filter((s) => s.score > 50) // score > 50 필터로 유망 섹터만
           .map((x) => ({
             sector: x.sector,
             score: x.score || 0, // score 보장
@@ -312,8 +321,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         const displayScore = s.score > 0 ? Math.round(s.score) : "N/A"; // 점수 0 시 N/A
         return [
           {
-            text: `${emoji} ${s.sector} (${displayScore})`,
-            data: `sector:${s.sector}`,
+            text: emoji + " " + s.sector + " (" + displayScore + ")",
+            data: "sector:" + s.sector,
           },
         ];
       });
@@ -322,14 +331,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       });
       return res.status(200).send("OK");
     } catch (e: any) {
-      console.error("Sector error:", e); // 로그 추가
-      await reply(`❌ 섹터 계산 실패: ${String(e?.message || e).slice(0, 80)}`);
+      console.error("Sector error:", e);
+      await reply("❌ 섹터 계산 실패: " + String(e?.message || e).slice(0, 80));
       return res.status(200).send("OK");
     }
   }
 
   // ---- 종목 명령어 ----
-  const isStocks = /^\\/?종목\b/.test(txt) || txt.startsWith("/stocks");
+  const isStocks = /^\/?종목\b/.test(txt) || txt.startsWith("/stocks");
   if (isStocks) {
     const sector = txt.split(/\s+/)[1] || "반도체";
     await handleStocksBySector(sector, reply);
@@ -362,14 +371,16 @@ async function handleScoreFlow(input: string, reply: ReplyFn) {
   }
   const candidates = await searchByNameOrCode(input, 10);
   if (candidates.length === 0) {
-    await reply(`❌ 종목을 찾지 못했습니다: ${input}\n다시 입력해 주세요.`);
+    await reply(
+      "❌ 종목을 찾지 못했습니다: " + input + "\n다시 입력해 주세요."
+    );
     return;
   }
   if (candidates.length > 1) {
     const rows = candidates.map((c) => [
       {
-        text: `${c.name} (${c.code}) [${c.sector || "미분류"} ]`,
-        data: `score:${c.code}`,
+        text: c.name + " (" + c.code + ") [" + (c.sector || "미분류") + "]",
+        data: "score:" + c.code,
       },
     ]);
     await reply("🔎 종목을 선택하세요:", {
@@ -405,7 +416,7 @@ async function analyzeAndReply(code: string, reply: ReplyFn) {
     } catch {}
   }
   if (ohlcv.length < 200) {
-    await reply(`❌ 데이터 부족/지연(필요 200봉): ${code}`);
+    await reply("❌ 데이터 부족/지연(필요 200봉): " + code);
     return;
   }
   const closes = ohlcv.map((d) => d.close),
@@ -414,56 +425,71 @@ async function analyzeAndReply(code: string, reply: ReplyFn) {
     lows = ohlcv.map((d) => d.low);
   const result = scoreFromIndicators(closes, vols);
   const nameMap = await getNamesForCodes([code]);
-  const title = `${nameMap[code] || code} (${code})`;
+  const title = (nameMap[code] || code) + " (" + code + ")";
   const last = ohlcv.at(-1)!;
   const emoji =
     result.signal === "buy" ? "🟢" : result.signal === "sell" ? "🔴" : "🟡";
   const plan = buildTradePlan(closes, highs, lows);
   const lines = [
-    `${emoji} ${title} 분석 결과`,
+    emoji + " " + title + " 분석 결과",
     "",
-    `가격: ${fmtKRW(last.close)}`,
-    `점수: ${result.score} / 100`,
-    `신호: ${result.signal.toUpperCase()}`,
+    "가격: " + fmtKRW(last.close),
+    "점수: " + result.score + " / 100",
+    "신호: " + result.signal.toUpperCase(),
     "",
-    `이평선 상태:`,
-    `• 20SMA ${fmtKRW(
-      Math.round(sma(closes, 20).at(-1)!)
-    )} (${plan.state.gap20.toFixed(1)}%) — 현재가가 ${
-      plan.state.gap20 >= 0 ? "위" : "아래"
-    }입니다`,
-    `• 50SMA ${fmtKRW(
-      Math.round(sma(closes, 50).at(-1)!)
-    )} (${plan.state.gap50.toFixed(1)}%)`,
-    `• 200SMA ${fmtKRW(
-      Math.round(sma(closes, 200).at(-1)!)
-    )} (${plan.state.gap200.toFixed(1)}%)`,
+    "이평선 상태:",
+    "• 20SMA " +
+      fmtKRW(Math.round(sma(closes, 20).at(-1)!)) +
+      " (" +
+      plan.state.gap20.toFixed(1) +
+      "%) — 현재가가 " +
+      (plan.state.gap20 >= 0 ? "위" : "아래") +
+      "입니다",
+    "• 50SMA " +
+      fmtKRW(Math.round(sma(closes, 50).at(-1)!)) +
+      " (" +
+      plan.state.gap50.toFixed(1) +
+      "%)",
+    "• 200SMA " +
+      fmtKRW(Math.round(sma(closes, 200).at(-1)!)) +
+      " (" +
+      plan.state.gap200.toFixed(1) +
+      "%)",
     "",
-    `모멘텀: RSI14 ${Math.round(
-      plan.state.rsi14
-    )} (40~60 중립), ROC14 ${Math.round(plan.state.roc14)}%, ROC21 ${Math.round(
-      plan.state.roc21
-    )}%`,
+    "모멘텀: RSI14 " +
+      Math.round(plan.state.rsi14) +
+      " (40~60 중립), ROC14 " +
+      Math.round(plan.state.roc14) +
+      "%, ROC21 " +
+      Math.round(plan.state.roc21) +
+      "%",
     "",
-    `제안 레벨:`,
-    `• 엔트리: ${fmtKRW(plan.levels.entryLo)} ~ ${fmtKRW(plan.levels.entryHi)}`,
-    `• 손절: ${fmtKRW(plan.levels.stop)} (리스크 ${(
-      ((plan.levels.entry - plan.levels.stop) / plan.levels.entry) *
-      100
-    ).toFixed(1)}%)`,
-    `• 목표가: ${fmtKRW(plan.levels.t1)} / ${fmtKRW(plan.levels.t2)} / ${fmtKRW(
-      plan.levels.t20
-    )}`,
+    "제안 레벨:",
+    "• 엔트리: " +
+      fmtKRW(plan.levels.entryLo) +
+      " ~ " +
+      fmtKRW(plan.levels.entryHi),
+    "• 손절: " +
+      fmtKRW(plan.levels.stop) +
+      " (리스크 " +
+      (
+        ((plan.levels.entry - plan.levels.stop) / plan.levels.entry) *
+        100
+      ).toFixed(1) +
+      "%)",
+    "• 목표가: " +
+      fmtKRW(plan.levels.t1) +
+      " / " +
+      fmtKRW(plan.levels.t2) +
+      " / " +
+      fmtKRW(plan.levels.t20),
   ].join("\n");
   await reply(lines);
 }
 
 async function handleStocksBySector(sector: string, reply: ReplyFn) {
   const timeout = (p: Promise<any>, ms = 3000) =>
-    Promise.race([
-      p,
-      new Promise((r) => setTimeout(() => r([]), ms)),
-    ]);
+    Promise.race([p, new Promise((r) => setTimeout(() => r([]), ms))]);
   let codes = await timeout(getLeadersForSector(sector, 12));
   if (!codes.length) {
     const krx = new KRXClient();
@@ -472,23 +498,26 @@ async function handleStocksBySector(sector: string, reply: ReplyFn) {
       krx.getTopVolumeStocks("KSQ", 100),
     ]);
     codes = [...ks, ...kq].slice(0, 10).map((x) => x.code);
-    await reply(`⚠️ '${sector}' 섹터 조회가 느려 거래대금 상위로 대체합니다.`);
+    await reply(
+      "⚠️ '" + sector + "' 섹터 조회가 느려 거래대금 상위로 대체합니다."
+    );
   }
   const nameMap = await getNamesForCodes(codes);
-  const rows = codes
-    .slice(0, 10)
-    .map((code) => {
-      const displayName = nameMap[code] || code; // nameMap 실패 시 코드 우선
-      return [
-        {
-          text: `${displayName} (${code})`, // 강제 "종목명 (코드)" 형태
-          data: `score:${code}`,
-        },
-      ];
-    });
-  await reply(`📈 [${sector}] 대장주 후보를 선택하세요:\n\n(유동성 상위 순)`, {
-    reply_markup: toInlineKeyboard(rows),
+  const rows = codes.slice(0, 10).map((code) => {
+    const displayName = nameMap[code] || code; // nameMap 실패 시 코드 우선
+    return [
+      {
+        text: displayName + " (" + code + ")", // 강제 "종목명 (코드)" 형태
+        data: "score:" + code,
+      },
+    ];
   });
+  await reply(
+    "📈 [" + sector + "] 대장주 후보를 선택하세요:\n\n(유동성 상위 순)",
+    {
+      reply_markup: toInlineKeyboard(rows),
+    }
+  );
 }
 
 // ---- utils ----
