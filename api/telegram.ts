@@ -1,5 +1,6 @@
 // api/telegram.ts
 import type { VercelRequest, VercelResponse } from "@vercel/node";
+import { waitUntil } from "@vercel/functions";
 import { KRXClient } from "../packages/data/krx-client";
 import { searchByNameOrCode, getNamesForCodes } from "../packages/data/search";
 import {
@@ -199,27 +200,31 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   // ---- callback queries ----
   if (callback) {
     const cb = callback.data ?? "";
-    // 1) 즉시 ACK + 안내 (둘 다 기다림)
-    await Promise.allSettled([
-      fetch(`https://api.telegram.org/bot${TOKEN}/answerCallbackQuery`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          callback_query_id: callback.id,
-          text: "처리중...",
-        }),
-      }),
-      reply("⏳ 불러오는 중..."),
-    ]); // <= 여기까지 1~2초 내 끝내기 [web:3][web:47]
 
-    // 2) 짧은 처리
-    if (cb.startsWith("sector:"))
-      await handleStocksBySector(cb.slice(7), reply); // ≤3~5초 [web:47]
-    else if (cb.startsWith("score:")) await analyzeAndReply(cb.slice(6), reply); // 데이터 부족 시 즉시 실패 응답 [web:47]
+    // 1) 콜백 즉시 확인(<= 1초)
+    await answerCallbackQuery(callback.id, "처리중..."); // 반드시 먼저 끝냄
 
-    // 3) 마무리
-    return res.status(200).send("OK"); // 웹훅을 빠르게 종료 [web:47][web:54]
+    // 2) 웹훅 즉시 종료(ACK 보장)
+    res.status(200).send("OK");
+
+    // 3) 후속 작업은 응답 뒤에도 계속 실행
+    waitUntil(
+      (async () => {
+        try {
+          await reply("⏳ 불러오는 중..."); // 채팅 안내
+          if (cb.startsWith("sector:")) {
+            await handleStocksBySector(cb.slice(7), reply);
+          } else if (cb.startsWith("score:")) {
+            await analyzeAndReply(cb.slice(6), reply);
+          }
+        } catch (e) {
+          await reply(`⚠️ 실패: ${String(e).slice(0, 80)}`);
+        }
+      })()
+    );
+    return;
   }
+
   if (!message) return res.status(200).send("OK");
 
   const txt = (message.text || "").trim();
