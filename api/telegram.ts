@@ -490,20 +490,21 @@ async function analyzeAndReply(code: string, reply: ReplyFn) {
 async function handleStocksBySector(sector: string, reply: ReplyFn) {
   const timeout = (p: Promise<any>, ms = 3000) =>
     Promise.race([p, new Promise((r) => setTimeout(() => r([]), ms))]);
-  let codes = await timeout(getLeadersForSector(sector, 12));
+  let codes: string[] = await timeout(getLeadersForSector(sector, 12)); // 타입 명시: string[]
   if (!codes.length) {
     const krx = new KRXClient();
     const [ks, kq] = await Promise.all([
       krx.getTopVolumeStocks("STK", 100),
       krx.getTopVolumeStocks("KSQ", 100),
     ]);
-    codes = [...ks, ...kq].slice(0, 10).map((x) => x.code);
+    codes = [...ks, ...kq].slice(0, 10).map((x) => x.code); // string[] 보장
     await reply(
       "⚠️ '" + sector + "' 섹터 조회가 느려 거래대금 상위로 대체합니다."
     );
   }
   const nameMap = await getNamesForCodes(codes);
-  const rows = codes.slice(0, 10).map((code) => {
+  const rows = codes.slice(0, 10).map((code: string) => {
+    // code: string 타입 명시 (TS7006 해결)
     const displayName = nameMap[code] || code; // nameMap 실패 시 코드 우선
     return [
       {

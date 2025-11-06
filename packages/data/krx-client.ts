@@ -1,6 +1,5 @@
 // packages/data/krx-client.ts
 import type { StockOHLCV, StockInfo, TopStock } from "./types";
-import fetch from "node-fetch";
 
 // 내부 유틸
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -45,18 +44,25 @@ export class KRXClient {
     };
   }
 
-  // fetch + 타임아웃
+  // fetch + 타임아웃 (네이티브 fetch 사용, node-fetch 제거)
   private async fetchWithTimeout(
     url: string,
     init: RequestInit,
     timeoutMs = 10000
   ): Promise<Response> {
-    const ctrl = new AbortController();
-    const id = setTimeout(() => ctrl.abort(), timeoutMs);
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
     try {
-      return await fetch(url, { ...init, signal: ctrl.signal });
+      // 네이티브 fetch: body를 string으로 명시 (FormData/ArrayBuffer 충돌 방지)
+      const body = init.body ? (init.body as string) : undefined;
+      return await fetch(url, {
+        ...init,
+        signal: controller.signal,
+        body,
+        // undici 호환: keepalive 등 생략, 기본 Web API RequestInit 사용
+      });
     } finally {
-      clearTimeout(id);
+      clearTimeout(timeoutId);
     }
   }
 
@@ -106,7 +112,7 @@ export class KRXClient {
         {
           method: "POST",
           headers: this.commonHeaders(),
-          body: form.toString(),
+          body: form.toString(), // string body 명시 (RequestInit 호환)
         },
         timeoutMs
       ).catch(() => null as unknown as Response);
@@ -275,7 +281,7 @@ export class KRXClient {
     }
   }
 
-  // Naver 일봉 폴백
+  // Naver 일봉 폴백 (네이티브 fetch)
   async getMarketOHLCVFromNaver(
     ticker: string,
     startDate: string,
@@ -322,9 +328,7 @@ export class KRXClient {
   }
 
   // 섹터별 상위 종목 코드 + 이름/거래대금 수집 (일 100개)
-  async getTopSectorsData(
-    topN = 8
-  ): Promise<
+  async getTopSectorsData(topN = 8): Promise<
     {
       sector: string;
       codes: { code: string; name: string; volume: number }[];
