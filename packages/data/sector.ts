@@ -81,7 +81,8 @@ async function enrichSectorsIfNeeded(
 
   const pairs = await mapLimit(missing, 6, async (c) => {
     const s = await fetchSectorFromNaver(c);
-    return { code: c, sector: s || "기타" };
+    // 분류 불가인 경우 빈 문자열으로 남겨두기 (DB에는 null 또는 ''로 저장하는 것이 좋음)
+    return { code: c, sector: s ? s : "" };
   });
 
   const valid = pairs.filter((p) => p.sector && p.sector !== "");
@@ -212,22 +213,45 @@ export async function getLeadersForSector(
   const rt = await getTopSectorsRealtime(20);
   const found = rt.find((s) => s.sector === sector);
   if (found?.leaders?.length) return found.leaders.slice(0, limit);
+
   const { url, key } = supa();
-  const resp = await fetch(
-    `${url}/rest/v1/stocks?select=code,sector,liquidity&sector=eq.${encodeURIComponent(
-      sector
-    )}`,
-    { headers: { apikey: key, Authorization: `Bearer ${key}` } }
-  );
-  if (!resp || !resp.ok) return [];
-  const rows = toArray<{ code: string; liquidity?: number }>(
-    await resp.json().catch(() => null)
-  );
-  return rows
-    .filter((r) => r?.code)
-    .sort((a, b) => Number(b?.liquidity ?? 0) - Number(a?.liquidity ?? 0))
-    .slice(0, limit)
-    .map((r) => r.code);
+  let resp;
+  if (!sector || sector === "기타") {
+    // '기타' 혹은 빈값: sector 조건 없이 모두 가져온 후, sector가 비어있는(또는 '기타'로 마킹된) 것만 필터
+    resp = await fetch(
+      `${url}/rest/v1/stocks?select=code,sector,liquidity&limit=10000`,
+      { headers: { apikey: key, Authorization: `Bearer ${key}` } }
+    );
+    if (!resp || !resp.ok) return [];
+    const rows: { code: string; sector?: string; liquidity?: number }[] =
+      toArray(await resp.json().catch(() => null));
+    // 섹터가 비어있거나 빈 문자열 혹은 '기타'로 표기된 것들만 선택
+    const filtered = rows.filter(
+      (r) =>
+        r?.code && (!r.sector || r.sector.trim() === "" || r.sector === "기타")
+    );
+    return filtered
+      .sort((a, b) => Number(b?.liquidity ?? 0) - Number(a?.liquidity ?? 0))
+      .slice(0, limit)
+      .map((r) => r.code);
+  } else {
+    // 기존 동작 (특정 섹터)
+    resp = await fetch(
+      `${url}/rest/v1/stocks?select=code,sector,liquidity&sector=eq.${encodeURIComponent(
+        sector
+      )}`,
+      { headers: { apikey: key, Authorization: `Bearer ${key}` } }
+    );
+    if (!resp || !resp.ok) return [];
+    const rows = toArray<{ code: string; liquidity?: number }>(
+      await resp.json().catch(() => null)
+    );
+    return rows
+      .filter((r) => r?.code)
+      .sort((a, b) => Number(b?.liquidity ?? 0) - Number(a?.liquidity ?? 0))
+      .slice(0, limit)
+      .map((r) => r.code);
+  }
 }
 
 // 코드→이름
