@@ -2,24 +2,25 @@
   "name": "signal-scanner-bot",
   "type": "module",
   "version": "1.0.1",
-  "description": "Telegram Stock Signal Scanner Bot with Vercel Functions",
-  "main": "api/telegram.ts",
+  "main": "dist/api/telegram.js",
   "scripts": {
-    "build": "tsc",
+    "clean": "rm -rf dist",
+    "build": "npm run clean && tsc && tsc-alias",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.45.0",
     "@vercel/node": "^3.0.0",
-    "cheerio": "^1.1.2",
+    "cheerio": "^1.0.0-rc.12",
     "dotenv": "^16.3.1",
-    "technicalindicators": "^3.1.0",
+    "iconv-lite": "^0.6.3",
     "node-fetch": "^3.3.0",
-    "iconv-lite": "^0.6.3"
+    "technicalindicators": "^3.1.0"
   },
   "devDependencies": {
     "@types/cheerio": "^0.22.31",
     "@types/node": "^20.10.0",
+    "tsc-alias": "^1.8.10",
     "typescript": "^5.3.3"
   }
 }
