@@ -252,21 +252,26 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   // 섹터
   const isSector = /^\/?섹터\b/.test(txt) || txt.startsWith("/sector");
-  if (isSector) {
-    const tops = await getTopSectors(6);
-    if (!tops.length) {
-      await reply("⚠️ 섹터 데이터가 부족합니다. stocks.sector를 채워주세요.");
+  try {
+    if (isSector) {
+      const tops = await getTopSectors(6);
+      if (!tops.length) {
+        await reply("⚠️ 섹터 데이터가 부족합니다. sectors를 채워주세요.");
+        return res.status(200).send("OK");
+      }
+      const rows = tops.map((s: any) => [
+        {
+          text: `${s.sector} (점수 ${Math.round(s.score)})`,
+          data: `sector:${s.sector}`,
+        },
+      ]);
+      await reply("📊 유망 섹터를 선택하세요:", {
+        reply_markup: toInlineKeyboard(rows),
+      });
       return res.status(200).send("OK");
     }
-    const rows = tops.map((s: any) => [
-      {
-        text: `${s.sector} (점수 ${Math.round(s.score)})`,
-        data: `sector:${s.sector}`,
-      },
-    ]);
-    await reply("📊 유망 섹터를 선택하세요:", {
-      reply_markup: toInlineKeyboard(rows),
-    });
+  } catch (e: any) {
+    await reply(`❌ 섹터 계산 실패: ${String(e?.message || e)}`);
     return res.status(200).send("OK");
   }
 
