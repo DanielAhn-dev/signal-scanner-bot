@@ -310,4 +310,92 @@ export class KRXClient {
       return [];
     }
   }
+
+  // 섹터별 상위 종목 코드 + 이름/거래대금 수집 (일 100개)
+  async getTopSectorsData(
+    topN = 8
+  ): Promise<
+    {
+      sector: string;
+      codes: { code: string; name: string; volume: number }[];
+    }[]
+  > {
+    const [ks, kq] = await Promise.all([
+      this.getTopVolumeStocks("STK", 100), // KOSPI
+      this.getTopVolumeStocks("KSQ", 100), // KOSDAQ
+    ]);
+    const all = [...ks, ...kq].slice(0, 200); // 상위 200개
+
+    // 섹터 매핑 (키워드 기반 또는 외부 API, 나중 확장: KRX 분류코드)
+    const sectorMap: { [code: string]: string } = {}; // 예: {'005930': '반도체', '068270': '바이오'}
+    all.forEach((item) => {
+      const name = item.name.toLowerCase();
+      if (
+        name.includes("반도체") ||
+        name.includes("hynix") ||
+        name.includes("samsung elec")
+      )
+        sectorMap[item.code] = "반도체";
+      else if (name.includes("바이오") || name.includes("celltrion"))
+        sectorMap[item.code] = "바이오";
+      else if (name.includes("전기차") || name.includes("lg energy"))
+        sectorMap[item.code] = "전기차";
+      else if (name.includes("ai") || name.includes("ncsoft"))
+        sectorMap[item.code] = "인공지능";
+      else sectorMap[item.code] = "기타";
+    });
+
+    // 섹터별 그룹화 + volume 합산
+    const sectors: {
+      [sector: string]: { code: string; name: string; volume: number }[];
+    } = {};
+    all.forEach((item) => {
+      const sec = sectorMap[item.code];
+      if (!sectors[sec]) sectors[sec] = [];
+      sectors[sec].push({
+        code: item.code,
+        name: item.name,
+        volume: item.volume,
+      });
+    });
+
+    // 상위 N 섹터 (volume 총합 기준 정렬)
+    return Object.entries(sectors)
+      .map(([sector, items]) => ({
+        sector,
+        codes: items.sort((a, b) => b.volume - a.volume).slice(0, 10),
+      }))
+      .sort(
+        (a, b) =>
+          b.codes.reduce((sum, i) => sum + i.volume, 0) -
+          a.codes.reduce((sum, i) => sum + i.volume, 0)
+      )
+      .slice(0, topN);
+  }
+
+  // 종목별 ROI 계산 (1/3/6M 수익률, OHLCV 기반)
+  async getROIForCodes(
+    codes: string[],
+    days: number
+  ): Promise<{ code: string; roi: number }[]> {
+    const end = new Date();
+    const start = new Date(end.getTime() - days * 24 * 60 * 60 * 1000);
+    const results = await Promise.all(
+      codes.map(async (code) => {
+        const ohlcv = await withTimeout(
+          this.getMarketOHLCV(
+            code,
+            start.toISOString().slice(0, 10),
+            end.toISOString().slice(0, 10)
+          ),
+          5000
+        );
+        if (ohlcv.length < 2) return { code, roi: 0 };
+        const roi =
+          ((ohlcv.at(-1)!.close - ohlcv[0].close) / ohlcv[0].close) * 100;
+        return { code, roi };
+      })
+    );
+    return results;
+  }
 }

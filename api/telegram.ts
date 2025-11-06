@@ -9,9 +9,14 @@ import {
   getTopSectorsRealtime,
   loadSectorMap,
 } from "../packages/data/sector";
+import { createClient } from "@supabase/supabase-js";
 
 const SECRET = process.env.TELEGRAM_BOT_SECRET!;
 const TOKEN = process.env.TELEGRAM_BOT_TOKEN!;
+const supabase = createClient(
+  process.env.SUPABASE_URL!,
+  process.env.SUPABASE_ANON_KEY!
+);
 
 export const config = { api: { bodyParser: false } };
 
@@ -51,8 +56,7 @@ function sma(a: number[], n: number): number[] {
 
 function rsiWilder(closes: number[], n = 14): number[] {
   const r: number[] = [];
-  let g = 0,
-    l = 0;
+  let g = 0, l = 0;
   for (let i = 1; i < closes.length; i++) {
     const ch = closes[i] - closes[i - 1],
       gg = Math.max(ch, 0),
@@ -64,8 +68,7 @@ function rsiWilder(closes: number[], n = 14): number[] {
       continue;
     }
     if (i === n + 1) {
-      let ag = g / n,
-        al = l / n;
+      let ag = g / n, al = l / n;
       const rs = al === 0 ? 100 : ag / al;
       r.push(100 - 100 / (1 + rs));
       g = ag;
@@ -104,7 +107,6 @@ function scoreFromIndicators(closes: number[], vols: number[]) {
   const r14Last = r14.at(-1)!,
     roc14Last = roc14.at(-1)!,
     roc21Last = roc21.at(-1)!;
-
   let score = 0;
   if (!isNaN(s20l) && c > s20l) score += 3;
   if (!isNaN(s50l) && c > s50l) score += 4;
@@ -113,11 +115,9 @@ function scoreFromIndicators(closes: number[], vols: number[]) {
   if (!isNaN(r14Last)) score += r14Last > 50 ? 2 : r14Last < 40 ? -2 : 0;
   if (!isNaN(roc14Last)) score += roc14Last > 0 ? 2 : -2;
   if (!isNaN(roc21Last)) score += Math.abs(roc21Last) < 2 ? 1 : 0;
-
   let signal: "buy" | "hold" | "sell" = "hold";
   if (score >= 12) signal = "buy";
   else if (score <= 2) signal = "sell";
-
   return {
     score,
     signal,
@@ -133,13 +133,13 @@ function scoreFromIndicators(closes: number[], vols: number[]) {
   };
 }
 
-function withTimeout<T>(p: Promise<T>, ms: number, label = "op"): Promise<T> {
+function withTimeout(p: Promise<any>, ms: number, label = "op"): Promise<any> {
   return Promise.race([
     p,
-    new Promise<never>((_, rej) =>
+    new Promise((_, rej) =>
       setTimeout(() => rej(new Error(`timeout:${label}`)), ms)
     ),
-  ]) as Promise<T>;
+  ]);
 }
 
 function toInlineKeyboard(rows: { text: string; data: string }[][]) {
@@ -164,10 +164,8 @@ type ReplyFn = (
   chatOverride?: number | string
 ) => Promise<void>;
 
-// ✅ ES Module export (기본 export)
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== "POST") return res.status(405).send("Method Not Allowed");
-
   const secretHeader = req.headers["x-telegram-bot-api-secret-token"] as string;
   if (!secretHeader || secretHeader !== SECRET)
     return res.status(401).send("Unauthorized");
@@ -216,20 +214,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   // ---- callback queries ----
   if (callback) {
     const cb = callback.data ?? "";
-    console.log(`Callback received: ${cb}, chat: ${baseChatId}`); // 수신 확인
-
+    console.log(`Callback received: ${cb}, chat: ${baseChatId}`);
     await answerCallbackQuery(callback.id, "처리중...");
     console.log("ACK sent");
-
     res.status(200).send("OK");
-
     waitUntil(
       (async () => {
         console.log("waitUntil started");
         try {
           await reply("⏳ 불러오는 중...");
           console.log("Reply 'loading' sent");
-
           if (cb.startsWith("sector:")) {
             console.log(`Processing sector: ${cb.slice(7)}`);
             await handleStocksBySector(cb.slice(7), reply);
@@ -243,7 +237,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           console.error(
             `waitUntil error: ${String(e)} | stack: ${e?.stack?.slice(0, 200)}`
           );
-          await reply(`⚠️ 실패: ${String(e).slice(0, 80)}`); // 에러 메시지 강제 전송 시도
+          await reply(`⚠️ 실패: ${String(e).slice(0, 80)}`); // 에러 메시지 강제 전송
         }
       })()
     );
@@ -251,17 +245,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   if (!message) return res.status(200).send("OK");
-
   const txt = (message.text || "").trim();
 
   // ---- 점수 명령어 ----
   const isScore =
-    /^\/?점수\b/.test(txt) || txt.endsWith(" 점수") || txt.startsWith("/score");
+    /^\\/?점수\b/.test(txt) || txt.endsWith(" 점수") || txt.startsWith("/score");
   if (isScore) {
     const arg = txt
-      .replace(/^\/?점수\b|\s*점수$/g, "")
+      .replace(/^\\/?점수\b|\s*점수$/g, "")
       .trim()
-      .replace(/^\/score\s*/, "");
+      .replace(/^\\/score\s*/, "");
     const q = arg || txt.split(/\s+/)[1] || "";
     if (!q) {
       await reply("⚠️ 사용법: /score 삼성전자 또는 /score 005930");
@@ -279,22 +272,32 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   // ---- 섹터 명령어 ----
-  const isSector = /^\/?섹터\b/.test(txt) || txt.startsWith("/sector");
+  const isSector = /^\\/?섹터\b/.test(txt) || txt.startsWith("/sector");
   if (isSector) {
     try {
+      // 데이터 부족 시 ingestion 트리거
+      const { count } = await supabase.from("sectors").select("*").limit(1);
+      if (count < 20) {
+        await reply("📊 데이터 업데이트 중...");
+        await fetch(`${process.env.VERCEL_URL}/api/ingest-data`, {
+          method: "POST",
+          headers: { "x-ingest-secret": process.env.INGEST_SECRET! },
+        });
+        await new Promise(r => setTimeout(r, 2000)); // 2초 대기 후 재로드
+      }
       const tops = await getTopSectors(8);
       let use = tops;
       if (!use.length)
-        use = (await getTopSectorsRealtime(8)).map((x) => ({
-          sector: x.sector,
-          score: x.score,
-        }));
-
+        use = (await getTopSectorsRealtime(8))
+          .filter(s => s.score > 50) // score > 50 필터로 유망 섹터만
+          .map((x) => ({
+            sector: x.sector,
+            score: x.score || 0, // score 보장
+          }));
       if (!use.length) {
         await reply("⚠️ 섹터 데이터가 부족합니다. 잠시 후 다시 시도해 주세요.");
         return res.status(200).send("OK");
       }
-
       const map = await loadSectorMap();
       const rows = use.map((s) => {
         const meta = map[s.sector];
@@ -306,26 +309,27 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             : meta?.category === "Healthcare"
             ? "🏥"
             : "📊";
+        const displayScore = s.score > 0 ? Math.round(s.score) : "N/A"; // 점수 0 시 N/A
         return [
           {
-            text: `${emoji} ${s.sector} (${Math.round(s.score)})`,
+            text: `${emoji} ${s.sector} (${displayScore})`,
             data: `sector:${s.sector}`,
           },
         ];
       });
-
       await reply("📊 실시간 유망 섹터입니다. 선택하세요:", {
         reply_markup: toInlineKeyboard(rows),
       });
       return res.status(200).send("OK");
     } catch (e: any) {
+      console.error("Sector error:", e); // 로그 추가
       await reply(`❌ 섹터 계산 실패: ${String(e?.message || e).slice(0, 80)}`);
       return res.status(200).send("OK");
     }
   }
 
   // ---- 종목 명령어 ----
-  const isStocks = /^\/?종목\b/.test(txt) || txt.startsWith("/stocks");
+  const isStocks = /^\\/?종목\b/.test(txt) || txt.startsWith("/stocks");
   if (isStocks) {
     const sector = txt.split(/\s+/)[1] || "반도체";
     await handleStocksBySector(sector, reply);
@@ -356,17 +360,15 @@ async function handleScoreFlow(input: string, reply: ReplyFn) {
     await analyzeAndReply(input, reply);
     return;
   }
-
   const candidates = await searchByNameOrCode(input, 10);
   if (candidates.length === 0) {
     await reply(`❌ 종목을 찾지 못했습니다: ${input}\n다시 입력해 주세요.`);
     return;
   }
-
   if (candidates.length > 1) {
     const rows = candidates.map((c) => [
       {
-        text: `${c.name} (${c.code}) [${c.sector || "미분류"}]`,
+        text: `${c.name} (${c.code}) [${c.sector || "미분류"} ]`,
         data: `score:${c.code}`,
       },
     ]);
@@ -375,7 +377,6 @@ async function handleScoreFlow(input: string, reply: ReplyFn) {
     });
     return;
   }
-
   await analyzeAndReply(candidates[0].code, reply);
 }
 
@@ -385,7 +386,6 @@ async function analyzeAndReply(code: string, reply: ReplyFn) {
   const start = new Date(end.getTime() - 420 * 24 * 60 * 60 * 1000);
   const endDate = end.toISOString().slice(0, 10),
     startDate = start.toISOString().slice(0, 10);
-
   let ohlcv: any[] = [];
   try {
     ohlcv = await withTimeout(
@@ -394,7 +394,6 @@ async function analyzeAndReply(code: string, reply: ReplyFn) {
       "krx"
     );
   } catch {}
-
   if (ohlcv.length < 220) {
     try {
       const alt = await withTimeout(
@@ -405,17 +404,14 @@ async function analyzeAndReply(code: string, reply: ReplyFn) {
       if (alt.length > ohlcv.length) ohlcv = alt;
     } catch {}
   }
-
   if (ohlcv.length < 200) {
     await reply(`❌ 데이터 부족/지연(필요 200봉): ${code}`);
     return;
   }
-
   const closes = ohlcv.map((d) => d.close),
     vols = ohlcv.map((d) => d.volume),
     highs = ohlcv.map((d) => d.high),
     lows = ohlcv.map((d) => d.low);
-
   const result = scoreFromIndicators(closes, vols);
   const nameMap = await getNamesForCodes([code]);
   const title = `${nameMap[code] || code} (${code})`;
@@ -423,7 +419,6 @@ async function analyzeAndReply(code: string, reply: ReplyFn) {
   const emoji =
     result.signal === "buy" ? "🟢" : result.signal === "sell" ? "🔴" : "🟡";
   const plan = buildTradePlan(closes, highs, lows);
-
   const lines = [
     `${emoji} ${title} 분석 결과`,
     "",
@@ -460,17 +455,15 @@ async function analyzeAndReply(code: string, reply: ReplyFn) {
       plan.levels.t20
     )}`,
   ].join("\n");
-
   await reply(lines);
 }
 
 async function handleStocksBySector(sector: string, reply: ReplyFn) {
-  const timeout = (p: Promise<string[]>, ms = 3000) =>
+  const timeout = (p: Promise<any>, ms = 3000) =>
     Promise.race([
       p,
-      new Promise<string[]>((r) => setTimeout(() => r([]), ms)),
+      new Promise((r) => setTimeout(() => r([]), ms)),
     ]);
-
   let codes = await timeout(getLeadersForSector(sector, 12));
   if (!codes.length) {
     const krx = new KRXClient();
@@ -484,9 +477,15 @@ async function handleStocksBySector(sector: string, reply: ReplyFn) {
   const nameMap = await getNamesForCodes(codes);
   const rows = codes
     .slice(0, 10)
-    .map((code) => [
-      { text: `${nameMap[code] || code} (${code})`, data: `score:${code}` },
-    ]);
+    .map((code) => {
+      const displayName = nameMap[code] || code; // nameMap 실패 시 코드 우선
+      return [
+        {
+          text: `${displayName} (${code})`, // 강제 "종목명 (코드)" 형태
+          data: `score:${code}`,
+        },
+      ];
+    });
   await reply(`📈 [${sector}] 대장주 후보를 선택하세요:\n\n(유동성 상위 순)`, {
     reply_markup: toInlineKeyboard(rows),
   });
@@ -557,7 +556,6 @@ function buildTradePlan(closes: number[], highs: number[], lows: number[]) {
   const t2 = entry + 2 * R;
   const t20 = entry * 1.2;
   const t25 = entry * 1.25;
-
   return {
     levels: { entryLo: boxLo, entryHi: boxHi, entry, stop, t1, t2, t20, t25 },
     state: {
