@@ -5,13 +5,13 @@ import type { StockOHLCV } from "../data/types";
 const krx = new KRXClient();
 
 function fmt(d: Date): string {
-  const y = d.getFullYear(),
-    m = String(d.getMonth() + 1).padStart(2, "0"),
-    day = String(d.getDate()).padStart(2, "0");
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
   return `${y}-${m}-${day}`;
 }
 
-// 일봉 420봉 보장(휴일 대비 여유폭 조회 후 슬라이스)
+// 휴일 여유 포함 조회 후 bars만 슬라이스
 export async function getDailySeries(
   code: string,
   bars = 420
