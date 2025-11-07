@@ -14,10 +14,6 @@
         {
             "path": "/api/cron/briefing",
             "schedule": "30 23 * * *"
-        },
-        {
-            "path": "/api/cron/close",
-            "schedule": "40 6 * * *"
         }
     ]
 }
