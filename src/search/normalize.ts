@@ -46,7 +46,6 @@ async function loadUniverse(): Promise<Hit[]> {
   const cached = await getCache<Hit[]>("universe:all");
   if (cached?.length) return cached;
 
-  // 1) DB 우선
   const { data: dbRows } = await supabase
     .from("stocks")
     .select("code,name")
@@ -56,12 +55,11 @@ async function loadUniverse(): Promise<Hit[]> {
     name: r.name,
   }));
 
-  if (USE_DB_ONLY) {
-    if (items.length) await setCache("universe:all", items, TTL_24H);
-    return items; // 비어있으면 캐시하지 않음
+  // DB가 비어 있지 않으면 DB만 사용, 비어 있으면 예외적으로 외부 폴백
+  if (USE_DB_ONLY && items.length) {
+    await setCache("universe:all", items, TTL_24H);
+    return items;
   }
-
-  // 2) 외부 어댑터 폴백
   if (!items.length) {
     const list = await getUniverse("ALL");
     items = (list || []).map((x: any) => ({ code: x.code, name: x.name }));
@@ -75,12 +73,7 @@ async function loadUniverse(): Promise<Hit[]> {
 export async function getNamesForCodes(
   codes: string[]
 ): Promise<Record<string, string>> {
-  const key = `nameMap:${codes.join(",")}`;
-  const cached = await getCache<Record<string, string>>(key);
-  if (cached) return cached;
-
   const out: Record<string, string> = {};
-
   if (codes.length) {
     const { data } = await supabase
       .from("stocks")
@@ -90,8 +83,6 @@ export async function getNamesForCodes(
       out[r.code] = r.name;
     });
   }
-
-  // 부족분은 유니버스에서 보강
   const missing = codes.filter((c) => !out[c]);
   if (missing.length) {
     const uni = await loadUniverse();
@@ -101,8 +92,6 @@ export async function getNamesForCodes(
       if (n) out[c] = n;
     });
   }
-
-  await setCache(key, out, 10 * 60 * 1000);
   return out;
 }
 
