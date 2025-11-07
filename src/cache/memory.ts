@@ -1,60 +1,81 @@
-// packages/data/cache.ts (첨부 기반 + 수정)
+// src/cache/memory.ts (교체)
+// 제네릭 + TTL(ms) + Supabase 영속 폴백 캐시
 import { createClient } from "@supabase/supabase-js";
 import type { StockOHLCV } from "../data/types";
 
-const supabase = createClient(
-  process.env.SUPABASE_URL!,
-  process.env.SUPABASE_ANON_KEY!
-);
-const MEMORY_CACHE: Map<string, { data: any; expires: number }> = new Map();
-export const TTL_MS = 24 * 60 * 60 * 1000;
+const supabase =
+  process.env.SUPABASE_URL && process.env.SUPABASE_ANON_KEY
+    ? createClient(process.env.SUPABASE_URL, process.env.SUPABASE_ANON_KEY)
+    : (null as any);
 
-export async function getCache(key: string): Promise<any | null> {
-  const mem = MEMORY_CACHE.get(key);
-  if (mem && Date.now() < mem.expires) return mem.data;
+type Entry<T> = { value: T; expiresAt: number | null };
+const MEM = new Map<string, Entry<any>>();
 
-  const { data } = await supabase
+export async function getCache<T = any>(key: string): Promise<T | null> {
+  const hit = MEM.get(key);
+  if (hit && (hit.expiresAt === null || Date.now() <= hit.expiresAt)) {
+    return hit.value as T;
+  }
+  if (!supabase) return null;
+
+  const { data, error } = await supabase
     .from("cache")
     .select("value")
     .eq("key", key)
-    .single();
-  if (data?.value && Date.now() < (data.value.expires || 0)) {
-    const cached = data.value;
-    MEMORY_CACHE.set(key, { data: cached.data, expires: cached.expires });
-    return cached.data;
-  }
-  return null;
+    .maybeSingle();
+  if (error || !data?.value) return null;
+
+  const { data: v, expires } = data.value as {
+    data: T;
+    expires?: number | null;
+  };
+  if (typeof expires === "number" && Date.now() > expires) return null;
+
+  MEM.set(key, {
+    value: v,
+    expiresAt: typeof expires === "number" ? expires : null,
+  });
+  return v as T;
 }
 
-export async function setCache(key: string, data: any): Promise<void> {
-  const entry = { data, expires: Date.now() + TTL_MS };
-  MEMORY_CACHE.set(key, entry);
-
+export async function setCache<T = any>(
+  key: string,
+  value: T,
+  ttlMs?: number
+): Promise<void> {
+  const expiresAt =
+    typeof ttlMs === "number" && ttlMs > 0 ? Date.now() + ttlMs : null;
+  MEM.set(key, { value, expiresAt });
+  if (!supabase) return;
   await supabase
     .from("cache")
-    .upsert([{ key, value: entry }], { onConflict: "key" });
+    .upsert([{ key, value: { data: value, expires: expiresAt } }], {
+      onConflict: "key",
+    });
 }
 
 export async function invalidateCache(key?: string): Promise<void> {
-  if (key) {
-    MEMORY_CACHE.delete(key);
-    await supabase.from("cache").delete().eq("key", key);
-  } else {
-    MEMORY_CACHE.clear();
-    await supabase.from("cache").delete();
+  if (!key) {
+    MEM.clear();
+    if (supabase) await supabase.from("cache").delete();
+    return;
   }
+  MEM.delete(key);
+  if (supabase) await supabase.from("cache").delete().eq("key", key);
 }
 
+// 선택: OHLCV 영속 캐시 유틸 (시그니처 유지)
 export async function getCachedOHLCV(
   ticker: string,
   startDate: string,
   endDate: string
 ): Promise<StockOHLCV[]> {
-  const key = `${ticker}_${startDate}_${endDate}`;
-  const cached = await getCache(key);
-  if (cached && Array.isArray(cached)) return cached;
+  const key = `ohlcv:${ticker}:${startDate}:${endDate}`;
+  const cached = await getCache<StockOHLCV[]>(key);
+  if (cached?.length) return cached;
 
-  const { data: rows } = await supabase
+  if (!supabase) return [];
+  const { data: row } = await supabase
     .from("ohlcv_cache")
     .select("data")
     .eq("ticker", ticker)
@@ -62,73 +83,46 @@ export async function getCachedOHLCV(
     .lte("end_date", endDate)
     .order("cached_at", { ascending: false })
     .limit(1)
-    .single();
+    .maybeSingle();
 
-  if (rows?.data && Array.isArray(rows.data)) {
-    const ohlcv: StockOHLCV[] = rows.data.filter(
-      (d: any): d is StockOHLCV =>
-        d.date >= startDate && d.date <= endDate && typeof d.close === "number"
-    );
-    await setCache(key, ohlcv);
-    return ohlcv;
-  }
-  return [];
+  const list = (row?.data as StockOHLCV[] | undefined) || [];
+  const ohlcv = list.filter(
+    (d) => d.date >= startDate && d.date <= endDate && Number.isFinite(d.close)
+  );
+  await setCache(key, ohlcv, 24 * 60 * 60 * 1000);
+  return ohlcv;
 }
 
 export async function setCachedOHLCV(data: StockOHLCV[]): Promise<void> {
-  if (data.length === 0) return;
-
+  if (!data?.length || !supabase) return;
   const ticker = data[0].code;
   const startDate = data[0].date;
   const endDate = data[data.length - 1].date;
 
-  // enrichedData: cached_at 추가 + 숫자/날짜 검증 (JSONB 안전화)
-  const enrichedData: StockOHLCV[] = data.map((d: StockOHLCV) => ({
+  const cleaned: StockOHLCV[] = data.map((d) => ({
     ...d,
     cached_at: new Date().toISOString(),
-    // 안전화: NaN/inf → 0, date 형식 확인
-    open: isNaN(d.open) ? 0 : d.open,
-    high: isNaN(d.high) ? 0 : d.high,
-    low: isNaN(d.low) ? 0 : d.low,
-    close: isNaN(d.close) ? 0 : d.close,
-    volume: isNaN(d.volume) ? 0 : d.volume,
-    amount: isNaN(d.amount) ? 0 : d.amount,
+    open: Number.isFinite(d.open) ? d.open : 0,
+    high: Number.isFinite(d.high) ? d.high : 0,
+    low: Number.isFinite(d.low) ? d.low : 0,
+    close: Number.isFinite(d.close) ? d.close : 0,
+    volume: Number.isFinite(d.volume) ? d.volume : 0,
+    amount: Number.isFinite(d.amount) ? d.amount : 0,
   }));
 
-  const upsertPayload = [
+  const upsert = [
     {
       ticker,
       start_date: startDate,
       end_date: endDate,
-      data: enrichedData, // JSONB 배열 (Supabase 자동 직렬화)
+      data: cleaned,
     },
   ];
 
-  // TS2769 해결: onConflict를 제약명 string으로 (배열 X, UNIQUE 제약 가정)
-  const options = {
-    onConflict: "ohlcv_unique", // 복합 키 제약명 (SQL로 생성)
-  };
-
-  const { error } = await supabase
+  await supabase
     .from("ohlcv_cache")
-    .upsert(upsertPayload, options);
+    .upsert(upsert, { onConflict: "ohlcv_unique" });
 
-  if (error) {
-    console.error("OHLCV upsert error:", error.message || error);
-    // 제약 위반 시 구체 로그 (Free 플랜 디버그)
-    if (error.code === "23505") {
-      // unique_violation
-      console.warn(
-        `Duplicate OHLCV for ${ticker} (${startDate}-${endDate}): Skipping or update manually.`
-      );
-    }
-  } else {
-    console.log(
-      `Upserted OHLCV for ${ticker}: ${enrichedData.length} candles (${startDate} to ${endDate})`
-    );
-  }
-
-  // 메모리 캐시 동기화 (기존)
-  const key = `${ticker}_${startDate}_${endDate}`;
-  await setCache(key, enrichedData);
+  const key = `ohlcv:${ticker}:${startDate}:${endDate}`;
+  await setCache(key, cleaned, 24 * 60 * 60 * 1000);
 }

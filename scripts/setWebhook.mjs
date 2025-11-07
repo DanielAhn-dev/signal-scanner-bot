@@ -1,4 +1,5 @@
 // scripts/setWebhook.mjs
+import "dotenv/config"; // ← 추가
 const token = process.env.TELEGRAM_BOT_TOKEN || "";
 const secret = process.env.TELEGRAM_BOT_SECRET || "";
 const arg = process.argv[2];

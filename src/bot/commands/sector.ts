@@ -1,8 +1,11 @@
-// src/bot/commands/sector.ts
+// src/bot/commands/sector.ts (교체)
 import type { ChatContext } from "../router";
 import { createMultiRowKeyboard } from "../../telegram/keyboards";
-import { getTopSectorsRealtime, getTopSectors } from "../../data/sector";
-// import { KO_MESSAGES } from "../messages/ko";
+import {
+  getTopSectorsRealtime,
+  getTopSectors,
+  computeSectorTrends,
+} from "../../data/sector";
 
 export async function handleSectorCommand(
   ctx: ChatContext,
@@ -10,6 +13,7 @@ export async function handleSectorCommand(
 ): Promise<void> {
   let tops = await getTopSectorsRealtime(8);
   if (!tops?.length) tops = await getTopSectors(8);
+  if (!tops?.length) tops = await computeSectorTrends(10);
   if (!tops?.length) {
     await tgSend("sendMessage", {
       chat_id: ctx.chatId,

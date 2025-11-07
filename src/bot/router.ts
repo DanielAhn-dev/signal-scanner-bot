@@ -3,6 +3,7 @@ import { KO_MESSAGES } from "./messages/ko";
 import { handleSectorCommand } from "./commands/sector";
 import { handleStocksCommand } from "./commands/stocks";
 import { handleScoreCommand } from "./commands/score";
+import { setCommandsKo } from "../telegram/api";
 
 export type ChatContext = { chatId: number; messageId?: number };
 
@@ -14,11 +15,14 @@ export async function routeMessage(
   const t = text.trim();
 
   // 기본
-  if (t === "/start")
+
+  if (t === "/start") {
+    await setCommandsKo();
     return tgSend("sendMessage", {
       chat_id: ctx.chatId,
       text: KO_MESSAGES.START,
     });
+  }
   if (t === "/help")
     return tgSend("sendMessage", {
       chat_id: ctx.chatId,
