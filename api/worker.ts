@@ -6,6 +6,7 @@ export const config = { api: { bodyParser: false } };
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || "";
 const INTERNAL_SECRET = process.env.CRON_SECRET || "";
 
+type TGApiResponse = { ok?: boolean; result?: any; description?: string };
 type TGUpdate = {
   update_id: number;
   message?: {
@@ -34,7 +35,7 @@ async function readRawBody(req: any): Promise<Buffer> {
 async function tgFetch(method: string, body: any) {
   if (!TELEGRAM_BOT_TOKEN) {
     console.error("Telegram token missing");
-    return { ok: false, error: "TOKEN_MISSING" };
+    return { ok: false, error: "TOKEN_MISSING" } as TGApiResponse;
   }
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 5000);
@@ -48,12 +49,12 @@ async function tgFetch(method: string, body: any) {
         signal: controller.signal,
       }
     );
-    const json = await res.json();
-    if (!json?.ok) console.error("Telegram API error:", json); // 실패 로깅
+    const json = (await res.json()) as TGApiResponse;
+    if (!json?.ok) console.error("Telegram API error:", json);
     return json;
   } catch (e) {
     console.error("Telegram fetch failed:", e);
-    return { ok: false, error: String(e) };
+    return { ok: false, description: String(e) } as TGApiResponse;
   } finally {
     clearTimeout(timer);
   }

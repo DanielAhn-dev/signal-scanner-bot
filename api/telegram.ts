@@ -58,6 +58,8 @@ export default async function handler(req: any, res: any) {
   try {
     const controller = new AbortController();
     const t = setTimeout(() => controller.abort(), 800); // 워커 트리거만 빠르게
+    res.status(200).json({ ok: true }); // 즉시 ACK
+
     await fetch(`${BASE_URL}/api/worker`, {
       method: "POST",
       headers: {
@@ -65,7 +67,6 @@ export default async function handler(req: any, res: any) {
         "x-internal-secret": INTERNAL_SECRET,
       },
       body: JSON.stringify(update),
-      signal: controller.signal,
     }).catch(() => {});
     clearTimeout(t);
   } catch {}
