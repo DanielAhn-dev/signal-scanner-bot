@@ -1,13 +1,12 @@
-// api/cron/briefing.ts
+// api/intraday.ts
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { sendMessage } from "../../lib/telegram";
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.headers["x-cron-secret"] !== process.env.CRON_SECRET)
     return res.status(403).send("Forbidden");
-  // TODO: 섹터 1/3/6/12M 수익률, 20SMA 상회비중, ROC(21) 기울기 상위 테마 계산
   await sendMessage(
     process.env.TELEGRAM_ADMIN_CHAT_ID!,
-    "08:30 브리핑: 상위 테마/종목·신규 '밑에서' 후보"
+    "장중 신호: VWAP 재돌파·RSI·ROC 동시 충족 종목 알림"
   );
   res.status(200).json({ ok: true });
 }

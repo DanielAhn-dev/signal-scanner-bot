@@ -1,17 +1,6 @@
 // packages/data/krx-client.ts (전체: TS7006/TS2552 Fix + All Implicit Any Resolved)
+import { StockOHLCV } from "@/data/types";
 import * as cheerio from "cheerio";
-
-export interface StockOHLCV {
-  date: string;
-  code: string;
-  open: number;
-  high: number;
-  low: number;
-  close: number;
-  volume: number;
-  amount: number;
-  cached_at?: string;
-}
 
 interface Sector {
   name: string;

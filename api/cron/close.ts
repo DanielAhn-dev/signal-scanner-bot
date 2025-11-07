@@ -10,7 +10,7 @@ export default async function handler(req: any, res: any) {
     res.end("unauthorized");
     return;
   }
-  // TODO: 마감 요약 생성 및 텔레그램 전송(다음 단계)
+  // TODO: 마감 요약 전송(다음 단계)
   res.statusCode = 200;
   res.end("close ok");
 }
