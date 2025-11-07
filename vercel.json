@@ -1,5 +1,14 @@
 {
     "$schema": "https://openapi.vercel.sh/vercel.json",
+    "framework": null,
+    "buildCommand": null,
+    "devCommand": null,
+    "installCommand": null,
+    "functions": {
+        "api/**/*.ts": {
+            "maxDuration": 10
+        }
+    },
     "outputDirectory": ".",
     "crons": [
         {
