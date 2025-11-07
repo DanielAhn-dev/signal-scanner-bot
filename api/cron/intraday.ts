@@ -1,12 +1,23 @@
-// api/intraday.ts
-import type { VercelRequest, VercelResponse } from "@vercel/node";
-import { sendMessage } from "../../lib/telegram";
-export default async function handler(req: VercelRequest, res: VercelResponse) {
-  if (req.headers["x-cron-secret"] !== process.env.CRON_SECRET)
-    return res.status(403).send("Forbidden");
-  await sendMessage(
-    process.env.TELEGRAM_ADMIN_CHAT_ID!,
-    "장중 신호: VWAP 재돌파·RSI·ROC 동시 충족 종목 알림"
-  );
-  res.status(200).json({ ok: true });
+// api/cron/intraday.ts
+import { sendMessage } from "../../src/telegram/api";
+
+export default async function handler(req: any, res: any) {
+  const secret = process.env.CRON_SECRET || "";
+  const got =
+    (req.headers["x-cron-secret"] as string) ||
+    (req.query?.secret as string) ||
+    "";
+  if (!secret || got !== secret) {
+    res.statusCode = 401;
+    res.end("unauthorized");
+    return;
+  }
+
+  const admin = process.env.TELEGRAM_ADMIN_CHAT_ID;
+  if (admin) {
+    await sendMessage(Number(admin), "장중 스텁 실행");
+  }
+
+  res.statusCode = 200;
+  res.end("intraday ok");
 }

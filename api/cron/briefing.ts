@@ -1,13 +1,23 @@
 // api/cron/briefing.ts
-import type { VercelRequest, VercelResponse } from "@vercel/node";
-import { sendMessage } from "../../lib/telegram";
-export default async function handler(req: VercelRequest, res: VercelResponse) {
-  if (req.headers["x-cron-secret"] !== process.env.CRON_SECRET)
-    return res.status(403).send("Forbidden");
-  // TODO: 섹터 1/3/6/12M 수익률, 20SMA 상회비중, ROC(21) 기울기 상위 테마 계산
-  await sendMessage(
-    process.env.TELEGRAM_ADMIN_CHAT_ID!,
-    "08:30 브리핑: 상위 테마/종목·신규 '밑에서' 후보"
-  );
-  res.status(200).json({ ok: true });
+import { sendMessage } from "../../src/telegram/api";
+
+export default async function handler(req: any, res: any) {
+  const secret = process.env.CRON_SECRET || "";
+  const got =
+    (req.headers["x-cron-secret"] as string) ||
+    (req.query?.secret as string) ||
+    "";
+  if (!secret || got !== secret) {
+    res.statusCode = 401;
+    res.end("unauthorized");
+    return;
+  }
+
+  const admin = process.env.TELEGRAM_ADMIN_CHAT_ID;
+  if (admin) {
+    await sendMessage(Number(admin), "08:30 브리핑 스텁 실행");
+  }
+
+  res.statusCode = 200;
+  res.end("briefing ok");
 }

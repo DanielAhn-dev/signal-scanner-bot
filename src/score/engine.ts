@@ -50,9 +50,16 @@ export function calculateScore(data: StockOHLCV[]): StockScore | null {
     const anchors = [0.2, 0.5, 0.8].map((p) =>
       Math.max(0, Math.floor(sorted.length * p) - 1)
     );
-    const avwaps = anchors.map((a) => avwap(sorted, a));
-    const avwap_support =
-      (avwaps.filter((v) => lastClose >= v).length / avwaps.length) * 100;
+
+    const avwaps = anchors.map((a) => avwap(closes, vols, a));
+    const avwap_support = avwaps.length
+      ? (avwaps.filter((series) => {
+          const lastAvwap = series[series.length - 1];
+          return Number.isFinite(lastAvwap) && lastClose >= lastAvwap;
+        }).length /
+          avwaps.length) *
+        100
+      : 0;
 
     let score = 0;
     if (lastClose > s20) score += 3;
