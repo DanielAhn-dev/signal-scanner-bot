@@ -1,15 +1,14 @@
 {
     "$schema": "https://openapi.vercel.sh/vercel.json",
-    "buildCommand": "npm run build",
-    "installCommand": "npm ci",
-    "outputDirectory": "dist",
-    "regions": [
-        "icn1"
-    ],
+    "outputDirectory": ".",
     "crons": [
         {
             "path": "/api/cron/briefing",
-            "schedule": "30 8 * * 1-5"
+            "schedule": "30 23 * * *"
+        },
+        {
+            "path": "/api/cron/close",
+            "schedule": "40 6  * * *"
         }
     ]
 }

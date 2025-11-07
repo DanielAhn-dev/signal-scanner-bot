@@ -4,7 +4,7 @@
   "description": "Telegram Stock Signal Scanner Bot with Vercel Functions",
   "private": true,
   "scripts": {
-    "dev": "vercel dev",
+    "local": "vercel dev",
     "build": "tsc --noEmit",
     "deploy": "vercel --prod"
   },

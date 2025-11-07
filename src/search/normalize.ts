@@ -1,7 +1,7 @@
 // packages/data/search.ts
-import { KRXClient } from "./krx-client";
+import { KRXClient } from "../adapters/krx/client";
 import { createClient } from "@supabase/supabase-js";
-import { getCache } from "./cache";
+// import { getCache } from "./cache";
 
 export type StockLite = {
   code: string;

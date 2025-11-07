@@ -1,6 +1,6 @@
 // packages/data/cache.ts (첨부 기반 + 수정)
 import { createClient } from "@supabase/supabase-js";
-import type { StockOHLCV } from "./krx-client";
+import type { StockOHLCV } from "../data/types";
 
 const supabase = createClient(
   process.env.SUPABASE_URL!,

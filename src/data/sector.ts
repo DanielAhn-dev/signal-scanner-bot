@@ -1,6 +1,6 @@
 // packages/data/sector.ts
 import { createClient } from "@supabase/supabase-js";
-import { getCache, setCache } from "./cache";
+import { getCache, setCache } from "../cache/memory";
 
 const supabase = createClient(
   process.env.SUPABASE_URL!,

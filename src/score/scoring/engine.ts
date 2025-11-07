@@ -1,8 +1,9 @@
-import { sma } from "../indicators/sma";
-import { rsiWilder } from "../indicators/rsi";
-import { roc } from "../indicators/roc";
-import { avwap } from "../indicators/avwap";
-import type { StockOHLCV } from "../data/types";
+// src/score/scoring/enginge.ts
+import { sma } from "../../indicators/sma";
+import { rsiWilder } from "../../indicators/rsi";
+import { roc } from "../../indicators/roc";
+import { avwap } from "../../indicators/avwap";
+import type { StockOHLCV } from "../../data/types";
 
 export interface ScoreFactors {
   sma20: number;

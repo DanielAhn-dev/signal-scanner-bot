@@ -1,16 +1,61 @@
-import { KO_MESSAGES } from './messages/ko';
-import { handleSectorCommand } from './commands/sector';
-export async function routeMessage(text: string, ctx: { chatId: number }, tgSend: any) {
+// src/bot/router.ts
+import { KO_MESSAGES } from "./messages/ko";
+import { handleSectorCommand } from "./commands/sector";
+
+export type ChatContext = { chatId: number; messageId?: number };
+
+export async function routeMessage(
+  text: string,
+  ctx: ChatContext,
+  tgSend: any
+): Promise<void> {
   const t = text.trim();
-  if (t === '/start') return tgSend('sendMessage', { chat_id: ctx.chatId, text: KO_MESSAGES.START });
-  if (t === '/help') return tgSend('sendMessage', { chat_id: ctx.chatId, text: KO_MESSAGES.HELP });
-  if (t === '/sector') return handleSectorCommand(ctx, tgSend);
-  return tgSend('sendMessage', { chat_id: ctx.chatId, text: KO_MESSAGES.UNKNOWN_COMMAND });
-}
-export async function routeCallback(data: string, ctx: { chatId: number }, tgSend: any) {
-  if (data.startsWith('sector:')) {
-    const name = data.split(':').slice(1).join(':');
-    return tgSend('sendMessage', { chat_id: ctx.chatId, text: `섹터 "${name}" 선택됨 (다음 단계에서 /stocks 연결)` });
+  if (t === "/start") {
+    await tgSend("sendMessage", {
+      chat_id: ctx.chatId,
+      text: KO_MESSAGES.START,
+    });
+    return;
   }
-  return tgSend('sendMessage', { chat_id: ctx.chatId, text: '알 수 없는 버튼입니다.' });
+  if (t === "/help") {
+    await tgSend("sendMessage", {
+      chat_id: ctx.chatId,
+      text: KO_MESSAGES.HELP,
+    });
+    return;
+  }
+  if (t === "/sector") {
+    try {
+      await handleSectorCommand(ctx, tgSend);
+    } catch {
+      await tgSend("sendMessage", {
+        chat_id: ctx.chatId,
+        text: KO_MESSAGES.SECTOR_ERROR,
+      });
+    }
+    return;
+  }
+  await tgSend("sendMessage", {
+    chat_id: ctx.chatId,
+    text: KO_MESSAGES.UNKNOWN_COMMAND,
+  });
+}
+
+export async function routeCallback(
+  data: string,
+  ctx: ChatContext,
+  tgSend: any
+): Promise<void> {
+  if (data.startsWith("sector:")) {
+    const name = data.split(":").slice(1).join(":");
+    await tgSend("sendMessage", {
+      chat_id: ctx.chatId,
+      text: `섹터 "${name}" 선택됨 (다음 단계에서 종목 리스트 표시)`,
+    });
+    return;
+  }
+  await tgSend("sendMessage", {
+    chat_id: ctx.chatId,
+    text: "알 수 없는 버튼입니다.",
+  });
 }
