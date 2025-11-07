@@ -1,16 +1,8 @@
 // api/cron/close.ts
-export default async function handler(req: any, res: any) {
-  const secret = process.env.CRON_SECRET || "";
-  const got =
-    (req.headers["x-cron-secret"] as string) ||
-    (req.query?.secret as string) ||
-    "";
-  if (!secret || got !== secret) {
-    res.statusCode = 401;
-    res.end("unauthorized");
-    return;
-  }
-  // TODO: 마감 요약 전송(다음 단계)
-  res.statusCode = 200;
-  res.end("close ok");
+import type { VercelRequest, VercelResponse } from "@vercel/node";
+import { allowCron } from "../../src/utils/cron";
+
+export default async function handler(req: VercelRequest, res: VercelResponse) {
+  if (!allowCron(req)) return res.status(401).send("unauthorized");
+  return res.status(200).send("close ok");
 }

@@ -1,23 +1,13 @@
 // api/cron/intraday.ts
+import type { VercelRequest, VercelResponse } from "@vercel/node";
+import { allowCron } from "../../src/utils/cron";
 import { sendMessage } from "../../src/telegram/api";
 
-export default async function handler(req: any, res: any) {
-  const secret = process.env.CRON_SECRET || "";
-  const got =
-    (req.headers["x-cron-secret"] as string) ||
-    (req.query?.secret as string) ||
-    "";
-  if (!secret || got !== secret) {
-    res.statusCode = 401;
-    res.end("unauthorized");
-    return;
-  }
+export default async function handler(req: VercelRequest, res: VercelResponse) {
+  if (!allowCron(req)) return res.status(401).send("unauthorized");
 
   const admin = process.env.TELEGRAM_ADMIN_CHAT_ID;
-  if (admin) {
-    await sendMessage(Number(admin), "장중 스텁 실행");
-  }
+  if (admin) await sendMessage(Number(admin), "장중 스텁 실행");
 
-  res.statusCode = 200;
-  res.end("intraday ok");
+  return res.status(200).send("intraday ok");
 }
