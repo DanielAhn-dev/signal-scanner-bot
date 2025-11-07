@@ -17,7 +17,7 @@
         },
         {
             "path": "/api/cron/close",
-            "schedule": "40 6  * * *"
+            "schedule": "40 6 * * *"
         }
     ]
 }
