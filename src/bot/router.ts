@@ -1,9 +1,7 @@
 // src/bot/router.ts
 import { KO_MESSAGES } from "./messages/ko";
 import { handleSectorCommand } from "./commands/sector";
-import { handleStocksCommand } from "./commands/stocks";
-import { handleScoreCommand } from "./commands/score";
-import { setCommandsKo } from "../telegram/api";
+import { handleScoreCommand } from "./commands/score"; // 추가
 
 export type ChatContext = { chatId: number; messageId?: number };
 
@@ -14,53 +12,40 @@ export async function routeMessage(
 ): Promise<void> {
   const t = text.trim();
 
-  // 기본
-
   if (t === "/start") {
-    await setCommandsKo();
-    return tgSend("sendMessage", {
+    await tgSend("sendMessage", {
       chat_id: ctx.chatId,
       text: KO_MESSAGES.START,
     });
+    return;
   }
-  if (t === "/help")
-    return tgSend("sendMessage", {
+  if (t === "/help") {
+    await tgSend("sendMessage", {
       chat_id: ctx.chatId,
       text: KO_MESSAGES.HELP,
     });
-
-  // 섹터(한글 별칭 포함)
-  if (t === "/sector" || t === "/섹터") return handleSectorCommand(ctx, tgSend);
-
-  // 종목 리스트(섹터 인자) - 영어/한글
-  if (t.startsWith("/stocks ") || t.startsWith("/종목 ")) {
-    const sectorName = t.replace(/^\/(stocks|종목)\s+/, "").trim();
-    if (!sectorName)
-      return tgSend("sendMessage", {
+    return;
+  }
+  if (t === "/sector") {
+    try {
+      await handleSectorCommand(ctx, tgSend);
+    } catch {
+      await tgSend("sendMessage", {
         chat_id: ctx.chatId,
-        text: "사용법: /stocks <섹터명>",
+        text: KO_MESSAGES.SECTOR_ERROR,
       });
-    return handleStocksCommand(sectorName, ctx, tgSend);
+    }
+    return;
   }
 
-  // 점수(영어/한글, 인자 없는 케이스 처리)
-  if (t === "/score" || t === "/점수") {
-    return tgSend("sendMessage", {
-      chat_id: ctx.chatId,
-      text: "사용법: /score <이름|코드>",
-    });
-  }
-  if (t.startsWith("/score ") || t.startsWith("/점수 ")) {
-    const q = t.replace(/^\/(score|점수)\s+/, "").trim();
-    if (!q)
-      return tgSend("sendMessage", {
-        chat_id: ctx.chatId,
-        text: "사용법: /score <이름|코드>",
-      });
-    return handleScoreCommand(q, ctx, tgSend);
+  // /score, /점수 매핑 (띄어쓰기/인자 없는 경우 안내)
+  const m = t.match(/^\/(score|점수)\s+(.+)$/);
+  if (m) {
+    await handleScoreCommand(m[2], ctx, tgSend);
+    return;
   }
 
-  return tgSend("sendMessage", {
+  await tgSend("sendMessage", {
     chat_id: ctx.chatId,
     text: KO_MESSAGES.UNKNOWN_COMMAND,
   });
@@ -73,13 +58,20 @@ export async function routeCallback(
 ): Promise<void> {
   if (data.startsWith("sector:")) {
     const name = data.split(":").slice(1).join(":");
-    return handleStocksCommand(name, ctx, tgSend);
+    await tgSend("sendMessage", {
+      chat_id: ctx.chatId,
+      text: `섹터 "${name}" 선택됨 (다음 단계에서 종목 리스트 표시)`,
+    });
+    return;
   }
-  if (data.startsWith("stocks:") || data.startsWith("score:")) {
-    const code = data.split(":").slice(1).join(":");
-    return handleScoreCommand(code, ctx, tgSend);
+  // score 재계산 콜백
+  if (data.startsWith("score:")) {
+    const code = data.split(":")[1] || "";
+    if (code) await handleScoreCommand(code, ctx, tgSend);
+    return;
   }
-  return tgSend("sendMessage", {
+
+  await tgSend("sendMessage", {
     chat_id: ctx.chatId,
     text: "알 수 없는 버튼입니다.",
   });

@@ -32,7 +32,10 @@ async function readRawBody(req: any): Promise<Buffer> {
 }
 
 async function tgFetch(method: string, body: any) {
-  if (!TELEGRAM_BOT_TOKEN) return { ok: false };
+  if (!TELEGRAM_BOT_TOKEN) {
+    console.error("Telegram token missing");
+    return { ok: false, error: "TOKEN_MISSING" };
+  }
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 5000);
   try {
@@ -45,8 +48,11 @@ async function tgFetch(method: string, body: any) {
         signal: controller.signal,
       }
     );
-    return await res.json();
+    const json = await res.json();
+    if (!json?.ok) console.error("Telegram API error:", json); // 실패 로깅
+    return json;
   } catch (e) {
+    console.error("Telegram fetch failed:", e);
     return { ok: false, error: String(e) };
   } finally {
     clearTimeout(timer);
@@ -87,7 +93,7 @@ export default async function handler(req: any, res: any) {
       const chatId = update.callback_query.message.chat.id;
       await tgFetch("answerCallbackQuery", {
         callback_query_id: update.callback_query.id,
-        text: "처리 중…",
+        text: "처리 중…🥲",
       });
       await withTimeout(
         routeCallback(update.callback_query.data, { chatId }, tgFetch)
