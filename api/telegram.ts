@@ -33,16 +33,18 @@ async function readRawBody(req: any): Promise<Buffer> {
 
 async function tgFetch(method: string, body: any) {
   if (!TELEGRAM_BOT_TOKEN) return { ok: false };
-  const url = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/${method}`;
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 5000); // 하드 5s
+  const timer = setTimeout(() => controller.abort(), 5000);
   try {
-    const res = await fetch(url, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(body),
-      signal: controller.signal,
-    });
+    const res = await fetch(
+      `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/${method}`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(body),
+        signal: controller.signal,
+      }
+    );
     return await res.json();
   } catch (e) {
     return { ok: false, error: String(e) };
@@ -51,7 +53,7 @@ async function tgFetch(method: string, body: any) {
   }
 }
 
-// 보호 타임아웃 래퍼(최대 8.5s)
+// 보호 타임아웃(최대 8.5s)
 function withTimeout<T>(
   p: Promise<T>,
   ms = 8500,
@@ -72,50 +74,6 @@ function withTimeout<T>(
   });
 }
 
-async function processUpdate(update: TGUpdate) {
-  try {
-    if (
-      update?.callback_query?.data &&
-      update.callback_query.message?.chat?.id
-    ) {
-      // 콜백은 즉시 응답
-      await tgFetch("answerCallbackQuery", {
-        callback_query_id: update.callback_query.id,
-        text: "처리 중입니다…",
-      });
-      await withTimeout(
-        routeCallback(
-          update.callback_query.data,
-          { chatId: update.callback_query.message.chat.id },
-          tgFetch
-        ),
-        8500,
-        () =>
-          tgFetch("sendMessage", {
-            chat_id: update.callback_query!.message!.chat.id,
-            text: "서버가 혼잡합니다. 잠시 후 다시 시도해주세요.",
-          })
-      );
-      return;
-    }
-    if (update?.message?.text) {
-      const chatId = update.message.chat.id;
-      await withTimeout(
-        routeMessage(update.message.text.trim(), { chatId }, tgFetch),
-        8500,
-        () =>
-          tgFetch("sendMessage", {
-            chat_id: chatId,
-            text: "요청 처리 시간이 길어 다음에 다시 시도해주세요.",
-          })
-      );
-    }
-  } catch (e) {
-    // 조용히 로깅 후 종료
-    console.error("Routing error:", e);
-  }
-}
-
 export default async function handler(req: any, res: any) {
   if (req.method !== "POST") {
     res.setHeader("Allow", "POST");
@@ -131,15 +89,47 @@ export default async function handler(req: any, res: any) {
     const raw = await readRawBody(req);
     update = JSON.parse(raw.toString("utf8"));
   } catch {
-    // 잘못된 바디도 OK로 끝내 Telegram 재시도 루프 방지
-    return res.status(200).json({ ok: true });
+    return res.status(200).json({ ok: true }); // 바디 파싱 실패도 재시도 방지를 위해 200
   }
 
-  // 1) 즉시 ACK로 10초 제한 회피
-  res.status(200).json({ ok: true });
+  try {
+    if (
+      update?.callback_query?.data &&
+      update.callback_query.message?.chat?.id
+    ) {
+      const chatId = update.callback_query.message.chat.id;
+      // 즉시 진행 안내(저비용)
+      await tgFetch("answerCallbackQuery", {
+        callback_query_id: update.callback_query.id,
+        text: "처리 중…",
+      });
+      await withTimeout(
+        routeCallback(update.callback_query.data, { chatId }, tgFetch),
+        8500,
+        () =>
+          tgFetch("sendMessage", {
+            chat_id: chatId,
+            text: "서버가 혼잡합니다. 잠시 후 다시 시도해주세요.",
+          })
+      );
+    } else if (update?.message?.text) {
+      const chatId = update.message.chat.id;
+      // 가벼운 타이핑 표시로 사용자 대기 인지
+      await tgFetch("sendChatAction", { chat_id: chatId, action: "typing" });
+      await withTimeout(
+        routeMessage(update.message.text.trim(), { chatId }, tgFetch),
+        8500,
+        () =>
+          tgFetch("sendMessage", {
+            chat_id: chatId,
+            text: "요청 처리 시간이 길어 다음에 다시 시도해주세요.",
+          })
+      );
+    }
+  } catch (e) {
+    console.error("Routing error:", e);
+  }
 
-  // 2) 비동기 처리(응답 후 실행)
-  setImmediate(() => {
-    processUpdate(update!).catch(() => {});
-  });
+  // 처리 완료 후 응답(전체가 10s 이내여야 함)
+  return res.status(200).json({ ok: true });
 }
