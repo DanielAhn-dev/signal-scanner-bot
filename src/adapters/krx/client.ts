@@ -206,6 +206,10 @@ export class KRXClient {
         form.append("mktId", market === "KOSPI" ? "001" : "101"); // mktId 앞당김
       const days = this.getRecentTradingDays();
       let data: any = null;
+      if (!data?.outBlock_1) {
+        console.warn("KRX stock list empty for all probed days");
+        return []; // throw 대신 빈 배열
+      }
       for (const day of days) {
         form.set("trdDd", day);
         try {
@@ -226,7 +230,11 @@ export class KRXClient {
             );
             break;
           }
-        } catch {}
+        } catch (e) {
+          console.error("KRX stock list failed, fallback Naver:", e);
+          const fb = await this._scrapeNaverStockList(market);
+          return Array.isArray(fb) ? fb : []; // 안전 반환
+        }
       }
       if (!data?.outBlock_1) throw new Error("All days empty");
       const outBlock = Array.isArray(data.outBlock_1)

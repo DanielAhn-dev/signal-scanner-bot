@@ -45,35 +45,22 @@ async function tgFetch(method: string, body: any) {
 export default async function handler(req: any, res: any) {
   if (req.method !== "POST") {
     res.setHeader("Allow", "POST");
-    res.statusCode = 405;
-    res.end(
-      JSON.stringify({
-        ok: false,
-        error: "메서드가 허용되지 않습니다 (POST만 허용).",
-      })
-    );
-    return;
+    return res.status(405).json({ ok: false, error: "POST only" });
   }
-
   const headerSecret = req.headers["x-telegram-bot-api-secret-token"];
-  if (!TELEGRAM_BOT_SECRET || headerSecret !== TELEGRAM_BOT_SECRET) {
-    res.statusCode = 401;
-    res.end(
-      JSON.stringify({ ok: false, error: "시크릿 토큰이 유효하지 않습니다." })
-    );
-    return;
+  if (
+    !process.env.TELEGRAM_BOT_SECRET ||
+    headerSecret !== process.env.TELEGRAM_BOT_SECRET
+  ) {
+    return res.status(401).json({ ok: false, error: "invalid secret" });
   }
-
   let update: TGUpdate | null = null;
   try {
     const raw = await readRawBody(req);
     update = JSON.parse(raw.toString("utf8"));
   } catch {
-    res.statusCode = 200;
-    res.end(JSON.stringify({ ok: true }));
-    return;
+    return res.status(200).json({ ok: true });
   }
-
   try {
     if (update?.message?.text) {
       await routeMessage(
@@ -81,27 +68,22 @@ export default async function handler(req: any, res: any) {
         { chatId: update.message.chat.id },
         tgFetch
       );
-    } else if (update?.callback_query) {
+    } else if (
+      update?.callback_query?.data &&
+      update.callback_query.message?.chat?.id
+    ) {
       await tgFetch("answerCallbackQuery", {
         callback_query_id: update.callback_query.id,
         text: "처리 중입니다…",
-        show_alert: false,
       });
-      if (
-        update.callback_query.data &&
-        update.callback_query.message?.chat?.id
-      ) {
-        await routeCallback(
-          update.callback_query.data,
-          { chatId: update.callback_query.message.chat.id },
-          tgFetch
-        );
-      }
+      await routeCallback(
+        update.callback_query.data,
+        { chatId: update.callback_query.message.chat.id },
+        tgFetch
+      );
     }
-  } catch (err) {
-    console.error("Routing error:", err);
+  } catch (e) {
+    console.error("Routing error:", e);
   }
-
-  res.statusCode = 200;
-  res.end(JSON.stringify({ ok: true }));
+  return res.status(200).json({ ok: true });
 }
