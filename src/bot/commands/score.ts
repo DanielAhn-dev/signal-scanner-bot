@@ -53,6 +53,12 @@ export async function handleScoreCommand(
   }
   let { code, name } = hit[0];
 
+  // 이름 보강(확정적으로 매핑)
+  if (!name || name === code) {
+    const map = await getNamesForCodes([code]);
+    name = map[code] || name || code;
+  }
+
   const series: StockOHLCV[] = await getDailySeries(code, 420);
   if (!series || series.length < 200) {
     await tgSend("sendMessage", {
