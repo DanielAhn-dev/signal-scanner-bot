@@ -114,17 +114,16 @@ export default async function handler(req: any, res: any) {
       );
     } else if (update?.message?.text) {
       const chatId = update.message.chat.id;
-      // 가벼운 타이핑 표시로 사용자 대기 인지
-      await tgFetch("sendChatAction", { chat_id: chatId, action: "typing" });
-      await withTimeout(
-        routeMessage(update.message.text.trim(), { chatId }, tgFetch),
-        8500,
-        () =>
-          tgFetch("sendMessage", {
-            chat_id: chatId,
-            text: "요청 처리 시간이 길어 다음에 다시 시도해주세요.",
-          })
-      );
+      await tgFetch("sendChatAction", { chat_id: chatId, action: "typing" }); // 즉시 반응
+      const p = routeMessage(update.message.text.trim(), { chatId }, tgFetch);
+      try {
+        await withTimeout(p, 6500, () => {}); // 타임아웃 단축(6.5s)
+      } catch {
+        await tgFetch("sendMessage", {
+          chat_id: chatId,
+          text: "데이터 지연으로 결과가 늦어지고 있어요. 잠시 후 다시 시도해주세요.",
+        });
+      }
     }
   } catch (e) {
     console.error("Routing error:", e);
