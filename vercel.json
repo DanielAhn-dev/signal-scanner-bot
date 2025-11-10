@@ -9,5 +9,11 @@
             "maxDuration": 10
         }
     },
-    "outputDirectory": "."
+    "outputDirectory": ".",
+    "crons": [
+        {
+            "path": "/api/cron/briefing",
+            "schedule": "30 8 * * 1-5"
+        }
+    ]
 }

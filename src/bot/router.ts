@@ -38,6 +38,29 @@ export async function routeMessage(
     return;
   }
 
+  if (t === "/seed" || t.startsWith("/seed ")) {
+    // 관리자만 허용: TELEGRAM_ADMIN_CHAT_ID 비교
+    if (String(ctx.chatId) !== process.env.TELEGRAM_ADMIN_CHAT_ID) {
+      await tgSend.sendMessage({
+        chat_id: ctx.chatId,
+        text: "권한이 없습니다.",
+      });
+      return;
+    }
+    // 비동기 트리거
+    await tgSend.sendMessage({ chat_id: ctx.chatId, text: "시드 시작..." });
+    fetch(`${process.env.BASE_URL}/api/seed/stocks`, {
+      method: "POST",
+      headers: { "x-internal-secret": process.env.CRON_SECRET! },
+    });
+    fetch(`${process.env.BASE_URL}/api/seed/sectors`, {
+      method: "POST",
+      headers: { "x-internal-secret": process.env.CRON_SECRET! },
+    });
+    await tgSend.sendMessage({ chat_id: ctx.chatId, text: "시드 트리거 완료" });
+    return;
+  }
+
   // /score, /점수 매핑 (띄어쓰기/인자 없는 경우 안내)
   const m = t.match(/^\/(score|점수)\s+(.+)$/);
   if (m) {
