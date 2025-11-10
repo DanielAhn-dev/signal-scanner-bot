@@ -41,7 +41,7 @@ export async function routeMessage(
 
   const call = async (path: string) => {
     try {
-      const r = await fetch(`${process.env.BASE_URL}${path}`, {
+      const r = await fetch(`${process.env.VERCEL_URL}${path}`, {
         method: "POST",
         headers: { "x-internal-secret": process.env.CRON_SECRET! },
       });

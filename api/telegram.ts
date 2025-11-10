@@ -5,7 +5,7 @@ export const config = { api: { bodyParser: false } };
 
 const TELEGRAM_BOT_SECRET = process.env.TELEGRAM_BOT_SECRET || "";
 const INTERNAL_SECRET = process.env.CRON_SECRET || ""; // /api/worker 보호
-const EXPLICIT_BASE_URL = process.env.BASE_URL || ""; // 예: https://signal-scanner-bot.vercel.app
+const EXPLICIT_BASE_URL = process.env.VERCEL_URL || ""; // 예: https://signal-scanner-bot.vercel.app
 
 type TGUpdate = {
   update_id: number;
