@@ -1,7 +1,8 @@
 // api/seed/stocks.ts
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { supa } from "../../src/lib/supa";
-import { fetchAllKRX, StockRow } from "../../src/adapters/stocks";
+import { fetchAllKRX } from "../../src/adapters/stocks";
+import { StockRow } from "../../src/types/db";
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== "POST") return res.status(405).json({ ok: false });
