@@ -39,7 +39,6 @@ export async function routeMessage(
   }
 
   if (t === "/seed" || t.startsWith("/seed ")) {
-    // 관리자만 허용: TELEGRAM_ADMIN_CHAT_ID 비교
     if (String(ctx.chatId) !== process.env.TELEGRAM_ADMIN_CHAT_ID) {
       await tgSend.sendMessage({
         chat_id: ctx.chatId,
@@ -47,17 +46,35 @@ export async function routeMessage(
       });
       return;
     }
-    // 비동기 트리거
-    await tgSend.sendMessage({ chat_id: ctx.chatId, text: "시드 시작..." });
-    fetch(`${process.env.BASE_URL}/api/seed/stocks`, {
-      method: "POST",
-      headers: { "x-internal-secret": process.env.CRON_SECRET! },
-    });
-    fetch(`${process.env.BASE_URL}/api/seed/sectors`, {
-      method: "POST",
-      headers: { "x-internal-secret": process.env.CRON_SECRET! },
-    });
-    await tgSend.sendMessage({ chat_id: ctx.chatId, text: "시드 트리거 완료" });
+
+    const call = async (path: string) => {
+      try {
+        const r = await fetch(`${process.env.BASE_URL}${path}`, {
+          method: "POST",
+          headers: { "x-internal-secret": process.env.CRON_SECRET! },
+        });
+        const body = await r.json().catch(() => ({}));
+        return { status: r.status, body };
+      } catch (e: any) {
+        return { status: 0, body: { ok: false, error: e?.message } };
+      }
+    };
+
+    const [s1, s2] = await Promise.all([
+      call("/api/seed/stocks"),
+      call("/api/seed/sectors"),
+    ]);
+
+    const msg =
+      `/seed 결과\n` +
+      `stocks: ${s1.status} count=${s1.body?.count ?? "-"} ${
+        s1.body?.error ? `err=${s1.body.error}` : ""
+      }\n` +
+      `sectors: ${s2.status} count=${s2.body?.count ?? "-"} ${
+        s2.body?.error ? `err=${s2.body.error}` : ""
+      }`;
+
+    await tgSend.sendMessage({ chat_id: ctx.chatId, text: msg.trim() });
     return;
   }
 
