@@ -4,6 +4,7 @@ import { handleSectorCommand } from "./commands/sector";
 import { handleScoreCommand } from "./commands/score"; // 추가
 
 export type ChatContext = { chatId: number; messageId?: number };
+type SeedResp = { ok: boolean; count?: number; error?: string };
 
 export async function routeMessage(
   text: string,
@@ -38,45 +39,34 @@ export async function routeMessage(
     return;
   }
 
-  if (t === "/seed" || t.startsWith("/seed ")) {
-    if (String(ctx.chatId) !== process.env.TELEGRAM_ADMIN_CHAT_ID) {
-      await tgSend.sendMessage({
-        chat_id: ctx.chatId,
-        text: "권한이 없습니다.",
+  const call = async (path: string) => {
+    try {
+      const r = await fetch(`${process.env.BASE_URL}${path}`, {
+        method: "POST",
+        headers: { "x-internal-secret": process.env.CRON_SECRET! },
       });
-      return;
+      const body = (await r.json().catch(() => ({}))) as Partial<SeedResp>;
+      return { status: r.status, body };
+    } catch (e: any) {
+      return { status: 0, body: { ok: false, error: e?.message } as SeedResp };
     }
+  };
 
-    const call = async (path: string) => {
-      try {
-        const r = await fetch(`${process.env.BASE_URL}${path}`, {
-          method: "POST",
-          headers: { "x-internal-secret": process.env.CRON_SECRET! },
-        });
-        const body = await r.json().catch(() => ({}));
-        return { status: r.status, body };
-      } catch (e: any) {
-        return { status: 0, body: { ok: false, error: e?.message } };
-      }
-    };
+  const [s1, s2] = await Promise.all([
+    call("/api/seed/stocks"),
+    call("/api/seed/sectors"),
+  ]);
 
-    const [s1, s2] = await Promise.all([
-      call("/api/seed/stocks"),
-      call("/api/seed/sectors"),
-    ]);
+  const msg =
+    `/seed 결과\n` +
+    `stocks: ${s1.status} count=${s1.body.count ?? "-"} ${
+      s1.body.error ? `err=${s1.body.error}` : ""
+    }\n` +
+    `sectors: ${s2.status} count=${s2.body.count ?? "-"} ${
+      s2.body.error ? `err=${s2.body.error}` : ""
+    }`;
 
-    const msg =
-      `/seed 결과\n` +
-      `stocks: ${s1.status} count=${s1.body?.count ?? "-"} ${
-        s1.body?.error ? `err=${s1.body.error}` : ""
-      }\n` +
-      `sectors: ${s2.status} count=${s2.body?.count ?? "-"} ${
-        s2.body?.error ? `err=${s2.body.error}` : ""
-      }`;
-
-    await tgSend.sendMessage({ chat_id: ctx.chatId, text: msg.trim() });
-    return;
-  }
+  await tgSend.sendMessage({ chat_id: ctx.chatId, text: msg.trim() });
 
   // /score, /점수 매핑 (띄어쓰기/인자 없는 경우 안내)
   const m = t.match(/^\/(score|점수)\s+(.+)$/);
