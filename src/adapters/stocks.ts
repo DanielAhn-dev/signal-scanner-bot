@@ -1,21 +1,21 @@
 // src/adapters/stocks.ts
-import type { StockRow } from "../types/db";
+import fetch from "node-fetch";
 
-// TODO: 실제 구현 시 PyKRX/스크래퍼/외부 API를 호출해 반환
+export type StockRow = {
+  code: string;
+  name: string;
+  market?: string;
+  liquidity?: number;
+};
+
 export async function fetchAllKRX(): Promise<StockRow[]> {
-  // 임시 스텁: 최소 1~2개로 빌드 통과 확인
-  return [
-    {
-      code: "005930",
-      name: "삼성전자",
-      market: "KOSPI",
-      updated_at: new Date().toISOString(),
-    },
-    {
-      code: "000660",
-      name: "SK하이닉스",
-      market: "KOSPI",
-      updated_at: new Date().toISOString(),
-    },
-  ];
+  // TODO: 실제 구현. 임시로 외부 JSON/CSV에서 전체 목록을 가져오는 형태로 대체 가능.
+  // 예: 사전 생성한 all_krx.json을 Storage/Repo에서 받아 파싱
+  const r = await fetch(process.env.ALL_KRX_JSON_URL!);
+  const list = (await r.json()) as Array<{
+    code: string;
+    name: string;
+    market: string;
+  }>;
+  return list.map((x) => ({ code: x.code, name: x.name, market: x.market }));
 }

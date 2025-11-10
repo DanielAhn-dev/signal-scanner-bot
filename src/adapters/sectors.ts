@@ -1,21 +1,30 @@
 // src/adapters/sectors.ts
-import type { SectorRow } from "../types/db";
+export type SectorRow = {
+  id: string;
+  name: string;
+  metrics?: any;
+  updated_at?: string;
+};
 
-// 실제 구현 전 스텁: 최소 1~2개 예시를 반환
-export async function fetchAllSectorsWithMetrics(): Promise<SectorRow[]> {
-  // TODO: PyKRX 또는 내부 계산으로 대체
-  return [
-    {
-      id: "KRX:IT",
-      name: "정보기술",
-      metrics: { r1m: 3.2, r3m: 8.1 },
-      updated_at: new Date().toISOString(),
-    },
-    {
-      id: "KRX:HLTH",
-      name: "헬스케어",
-      metrics: { r1m: -1.1, r3m: 5.4 },
-      updated_at: new Date().toISOString(),
-    },
+/**
+ * KRX 업종/테마 전체를 반환.
+ * 1차 버전: 정적 목록 또는 저장소의 JSON에서 불러오기.
+ * 2차 버전: 지표 계산 잡이 metrics를 주기적으로 갱신.
+ */
+export async function fetchAllSectors(): Promise<SectorRow[]> {
+  // TODO: 실제 목록으로 교체. 우선 예시 (필요 시 Storage JSON을 fetch)
+  const base: SectorRow[] = [
+    { id: "KRX:IT", name: "정보기술" },
+    { id: "KRX:HLTH", name: "헬스케어" },
+    { id: "KRX:FIN", name: "금융" },
+    { id: "KRX:IND", name: "산업재" },
+    { id: "KRX:CSTM", name: "필수소비재" },
+    { id: "KRX:DSCR", name: "임의소비재" },
+    { id: "KRX:ENRG", name: "에너지" },
+    { id: "KRX:MATR", name: "소재" },
+    { id: "KRX:UTIL", name: "유틸리티" },
+    { id: "KRX:COMM", name: "커뮤니케이션" },
   ];
+  const now = new Date().toISOString();
+  return base.map((s) => ({ ...s, metrics: s.metrics ?? {}, updated_at: now }));
 }

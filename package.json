@@ -12,7 +12,8 @@
     "@supabase/supabase-js": "^2.45.0",
     "cheerio": "^1.1.2",
     "dotenv": "^16.3.1",
-    "iconv-lite": "^0.6.3"
+    "iconv-lite": "^0.6.3",
+    "node-fetch": "^3.3.2"
   },
   "devDependencies": {
     "@types/node": "^20.10.0",
