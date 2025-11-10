@@ -15,19 +15,32 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (secret !== process.env.CRON_SECRET)
     return res.status(401).json({ ok: false });
 
-  const sectors: SectorRow[] = await fetchAllSectorsWithMetrics();
+  try {
+    const sectors: SectorRow[] = await fetchAllSectorsWithMetrics();
+    if (!sectors?.length) {
+      console.warn("seed sectors: empty list");
+      return res.status(200).json({ ok: true, count: 0 });
+    }
 
-  const { data, error } = await supabase
-    .from("sectors")
-    .upsert<SectorRow>( // 제네릭으로 반환 타입 지정
-      sectors.map((s: SectorRow) => ({
-        ...s,
-        updated_at: new Date().toISOString(),
-      })),
-      { onConflict: "id" }
-    )
-    .select(); // data를 반환받아 length 사용 가능
+    const { data, error } = await supabase
+      .from("sectors")
+      .upsert<SectorRow>(
+        sectors.map((s) => ({ ...s, updated_at: new Date().toISOString() })),
+        { onConflict: "id" }
+      )
+      .select();
 
-  if (error) return res.status(500).json({ ok: false, error: error.message });
-  return res.json({ ok: true, count: data?.length ?? 0 });
+    if (error) return res.status(500).json({ ok: false, error: error.message });
+
+    console.log("seed sectors result", {
+      count: data?.length,
+      sample: data?.slice(0, 3),
+    });
+    return res.json({ ok: true, count: data?.length ?? 0 });
+  } catch (e: any) {
+    console.error("seed sectors error", e);
+    return res
+      .status(500)
+      .json({ ok: false, error: e?.message || "unknown error" });
+  }
 }
