@@ -2,14 +2,27 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import * as cheerio from "cheerio";
+import iconv from "iconv-lite";
 
 const UA =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120 Safari/537.36";
 
+// 네이버는 EUC-KR 응답이 섞여 있으므로 ArrayBuffer로 받고 수동 디코딩
 async function fetchPage(url) {
   const r = await fetch(url, { headers: { "user-agent": UA } });
   if (!r.ok) throw new Error(`Fetch failed ${r.status} for ${url}`);
-  const html = await r.text();
+  const ab = await r.arrayBuffer();
+  // 우선순위: EUC-KR로 시도 후, 실패/가비지면 UTF-8 재시도
+  let html = "";
+  try {
+    html = iconv.decode(Buffer.from(ab), "euc-kr");
+    // 간단 검증: 디코딩 후 비정상 제어문자 과다하면 UTF-8로 재디코딩
+    if ((html.match(/\uFFFD/g) || []).length > 10) {
+      html = new TextDecoder("utf-8").decode(ab);
+    }
+  } catch {
+    html = new TextDecoder("utf-8").decode(ab);
+  }
   return cheerio.load(html);
 }
 
@@ -36,7 +49,7 @@ async function crawlMarket(market, sosok, maxPages = 40) {
       const rows = parseTable($, market);
       if (!rows || rows.length === 0) break;
       all.push(...rows);
-      await new Promise((r) => setTimeout(r, 300)); // rate limit
+      await new Promise((r) => setTimeout(r, 250)); // 살짝 더 보수적인 rate limit
     } catch (e) {
       console.error("page error", market, page, e.message);
       break;

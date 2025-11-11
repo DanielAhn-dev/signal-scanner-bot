@@ -147,3 +147,5 @@ vite.config.ts.timestamp-*
 !package-lock.json
 !vercel.json
 !tsconfig.json
+!data/all_krx.json
+!data/sectors.json

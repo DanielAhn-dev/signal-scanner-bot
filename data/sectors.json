@@ -1,0 +1,52 @@
+[
+    {
+        "id": "KRX:IT",
+        "name": "정보기술",
+        "metrics": {}
+    },
+    {
+        "id": "KRX:HLTH",
+        "name": "헬스케어",
+        "metrics": {}
+    },
+    {
+        "id": "KRX:FIN",
+        "name": "금융",
+        "metrics": {}
+    },
+    {
+        "id": "KRX:IND",
+        "name": "산업재",
+        "metrics": {}
+    },
+    {
+        "id": "KRX:DSCR",
+        "name": "임의소비재",
+        "metrics": {}
+    },
+    {
+        "id": "KRX:CSTM",
+        "name": "필수소비재",
+        "metrics": {}
+    },
+    {
+        "id": "KRX:MATR",
+        "name": "소재",
+        "metrics": {}
+    },
+    {
+        "id": "KRX:ENRG",
+        "name": "에너지",
+        "metrics": {}
+    },
+    {
+        "id": "KRX:UTIL",
+        "name": "유틸리티",
+        "metrics": {}
+    },
+    {
+        "id": "KRX:COMM",
+        "name": "커뮤니케이션",
+        "metrics": {}
+    }
+]
