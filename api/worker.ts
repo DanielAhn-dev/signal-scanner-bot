@@ -1,42 +1,21 @@
 // api/worker.ts
+import type { VercelRequest, VercelResponse } from "@vercel/node";
+import { createClient } from "@supabase/supabase-js";
 import { routeMessage, routeCallback } from "../src/bot/router";
 
-export const config = { api: { bodyParser: false } };
+export const config = { api: { bodyParser: true } };
 
-const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || "";
+const supa = () =>
+  createClient(process.env.SUPABASE_URL!, process.env.SUPABASE_ANON_KEY!, {
+    auth: { persistSession: false },
+  });
+
 const INTERNAL_SECRET = process.env.CRON_SECRET || "";
+const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || "";
 
 type TGApiResponse = { ok?: boolean; result?: any; description?: string };
-type TGUpdate = {
-  update_id: number;
-  message?: {
-    message_id: number;
-    chat: { id: number; type: string };
-    text?: string;
-  };
-  callback_query?: {
-    id: string;
-    data?: string;
-    message?: { chat: { id: number }; message_id: number };
-  };
-};
 
-async function readRawBody(req: any): Promise<Buffer> {
-  return await new Promise((resolve, reject) => {
-    const chunks: Buffer[] = [];
-    req.on("data", (c: any) =>
-      chunks.push(Buffer.isBuffer(c) ? c : Buffer.from(c))
-    );
-    req.on("end", () => resolve(Buffer.concat(chunks)));
-    req.on("error", reject);
-  });
-}
-
-async function tgFetch(method: string, body: any) {
-  if (!TELEGRAM_BOT_TOKEN) {
-    console.error("Telegram token missing");
-    return { ok: false, error: "TOKEN_MISSING" } as TGApiResponse;
-  }
+async function tgFetch(method: string, body: any): Promise<TGApiResponse> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 5000);
   try {
@@ -49,12 +28,9 @@ async function tgFetch(method: string, body: any) {
         signal: controller.signal,
       }
     );
-    const json = (await res.json()) as TGApiResponse;
-    if (!json?.ok) console.error("Telegram API error:", json);
-    return json;
+    return (await res.json()) as TGApiResponse;
   } catch (e) {
-    console.error("Telegram fetch failed:", e);
-    return { ok: false, description: String(e) } as TGApiResponse;
+    return { ok: false, description: String(e) };
   } finally {
     clearTimeout(timer);
   }
@@ -73,47 +49,50 @@ function withTimeout<T>(p: Promise<T>, ms = 7800): Promise<T> {
   });
 }
 
-export default async function handler(req: any, res: any) {
+export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== "POST") return res.status(405).json({ ok: false });
   if ((req.headers["x-internal-secret"] || "") !== INTERNAL_SECRET)
     return res.status(401).json({ ok: false });
 
-  let update: TGUpdate | null = null;
-  try {
-    const raw = await readRawBody(req);
-    update = JSON.parse(raw.toString("utf8"));
-  } catch {
-    return res.status(200).json({ ok: true });
+  // 큐에서 batch로 가져오기
+  const { data: items } = await supa()
+    .from("jobs")
+    .select("*")
+    .eq("type", "telegram_update")
+    .eq("status", "queued")
+    .order("created_at", { ascending: true })
+    .limit(25);
+
+  for (const job of items || []) {
+    try {
+      const u = job.payload || {};
+      if (u?.callback_query?.data && u?.callback_query?.message?.chat?.id) {
+        const chatId = u.callback_query.message.chat.id;
+        await tgFetch("answerCallbackQuery", {
+          callback_query_id: u.callback_query.id,
+          text: "처리 중…",
+        });
+        await withTimeout(
+          routeCallback(u.callback_query.data, { chatId }, tgFetch)
+        );
+      } else if (u?.message?.text && u?.message?.chat?.id) {
+        const chatId = u.message.chat.id;
+        await tgFetch("sendChatAction", { chat_id: chatId, action: "typing" });
+        await withTimeout(
+          routeMessage(u.message.text.trim(), { chatId }, tgFetch)
+        );
+      }
+      await supa()
+        .from("jobs")
+        .update({ status: "done", done_at: new Date().toISOString() })
+        .eq("id", job.id);
+    } catch (e) {
+      await supa()
+        .from("jobs")
+        .update({ status: "error", error: String(e) })
+        .eq("id", job.id);
+    }
   }
 
-  try {
-    if (
-      update?.callback_query?.data &&
-      update.callback_query.message?.chat?.id
-    ) {
-      const chatId = update.callback_query.message.chat.id;
-      await tgFetch("answerCallbackQuery", {
-        callback_query_id: update.callback_query.id,
-        text: "처리 중…🥲",
-      });
-      await withTimeout(
-        routeCallback(update.callback_query.data, { chatId }, tgFetch)
-      );
-    } else if (update?.message?.text) {
-      const chatId = update.message.chat.id;
-      await tgFetch("sendChatAction", { chat_id: chatId, action: "typing" });
-      await withTimeout(
-        routeMessage(update.message.text.trim(), { chatId }, tgFetch)
-      );
-    }
-  } catch (e) {
-    // 최후 안내
-    if (update?.message?.chat?.id) {
-      await tgFetch("sendMessage", {
-        chat_id: update.message.chat.id,
-        text: "서버가 혼잡합니다. 잠시 후 다시 시도해주세요.",
-      });
-    }
-  }
-  return res.status(200).json({ ok: true });
+  return res.status(200).json({ ok: true, processed: items?.length || 0 });
 }
