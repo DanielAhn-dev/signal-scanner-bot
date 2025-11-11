@@ -1,7 +1,9 @@
-// api/seed/sectors.ts
+// api/update/sectors.ts
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { supa } from "../../src/lib/supa";
-import { fetchAllSectors, SectorRow } from "../../src/adapters/sectors";
+import { loadAllSectors } from "../../src/lib/snapshot";
+import { diffSectors } from "../../src/lib/diff";
+import { SectorRow } from "../../src/types/db";
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== "POST") return res.status(405).json({ ok: false });
@@ -9,27 +11,38 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(401).json({ ok: false });
 
   try {
-    const sectors = await fetchAllSectors();
-    if (!sectors?.length) return res.status(200).json({ ok: true, count: 0 });
+    const snap = await loadAllSectors();
+    const { data: cur, error: qErr } = await supa()
+      .from("sectors")
+      .select("id,name,metrics");
+    if (qErr) return res.status(500).json({ ok: false, error: qErr.message });
 
-    const chunk = 500;
-    let total = 0;
-    for (let i = 0; i < sectors.length; i += chunk) {
-      const part = sectors
-        .slice(i, i + chunk)
-        .map((s) => ({ ...s, updated_at: new Date().toISOString() }));
+    const { inserted, updated, total } = diffSectors(snap, cur || []);
+    const payload = [...inserted, ...updated].map((x) => ({
+      ...x,
+      updated_at: new Date().toISOString(),
+    }));
+
+    let changed = 0;
+    if (payload.length) {
       const { data, error } = await supa()
         .from("sectors")
-        .upsert<SectorRow>(part, { onConflict: "id" })
+        .upsert<SectorRow>(payload, { onConflict: "id" })
         .select();
       if (error)
         return res.status(500).json({ ok: false, error: error.message });
-      total += data?.length ?? 0;
+      changed = data?.length ?? 0;
     }
-    return res.json({ ok: true, count: total });
+    return res.json({
+      ok: true,
+      total,
+      inserted: inserted.length,
+      updated: updated.length,
+      changed,
+    });
   } catch (e: any) {
     return res
       .status(500)
-      .json({ ok: false, error: e?.message || "seed failed" });
+      .json({ ok: false, error: e?.message || "update failed" });
   }
 }

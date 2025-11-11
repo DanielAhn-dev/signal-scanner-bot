@@ -6,14 +6,19 @@ import { resolveBase } from "../lib/base";
 
 export type ChatContext = { chatId: number; messageId?: number };
 
-// 시드 응답 바디 타입
+// 응답 타입
 type SeedResp = { ok?: boolean; count?: number; error?: string };
+type UpdateResp = {
+  ok?: boolean;
+  total?: number;
+  inserted?: number;
+  updated?: number;
+  changed?: number;
+  error?: string;
+};
 
 // 내부 POST 호출(강제 타임아웃 포함)
-async function callInternal(
-  path: string,
-  ms = 5000
-): Promise<{ status: number; body: SeedResp }> {
+async function callInternal(path: string, ms = 8000) {
   const base = resolveBase(process.env);
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), ms);
@@ -23,7 +28,7 @@ async function callInternal(
       headers: { "x-internal-secret": process.env.CRON_SECRET! },
       signal: ctrl.signal,
     });
-    const body = (await r.json().catch(() => ({}))) as SeedResp;
+    const body = await r.json().catch(() => ({}));
     return { status: r.status, body };
   } catch (e: any) {
     return { status: 0, body: { ok: false, error: e?.message || "timeout" } };
@@ -32,15 +37,31 @@ async function callInternal(
   }
 }
 
+// 권한 체크
+function isAdmin(ctx: ChatContext) {
+  return String(ctx.chatId) === process.env.TELEGRAM_ADMIN_CHAT_ID;
+}
+
+// 명령어 패턴(한/영 동시 지원)
+const CMD = {
+  START: /^\/start$/,
+  HELP: /^\/help$/,
+  SECTOR: /^\/(sector|sectors|섹터)\b(?:\s+.*)?$/i,
+  SCORE: /^\/(score|점수)\s+(.+)$/i,
+  STOCKS: /^\/(stocks|종목)\b(?:\s+.*)?$/i, // 확장용 훅
+  SEED: /^\/(seed|시드)\b$/i,
+  UPDATE: /^\/(update|업데이트)\b$/i,
+};
+
 export async function routeMessage(
   text: string,
   ctx: ChatContext,
   tgSend: any
 ): Promise<void> {
-  const t = text.trim();
+  const t = (text || "").trim();
 
   // /start
-  if (t === "/start") {
+  if (CMD.START.test(t)) {
     await tgSend("sendMessage", {
       chat_id: ctx.chatId,
       text: KO_MESSAGES.START,
@@ -49,7 +70,7 @@ export async function routeMessage(
   }
 
   // /help
-  if (t === "/help") {
+  if (CMD.HELP.test(t)) {
     await tgSend("sendMessage", {
       chat_id: ctx.chatId,
       text: KO_MESSAGES.HELP,
@@ -57,8 +78,8 @@ export async function routeMessage(
     return;
   }
 
-  // /sector
-  if (t === "/sector") {
+  // /sector | /sectors | /섹터
+  if (CMD.SECTOR.test(t)) {
     try {
       await handleSectorCommand(ctx, tgSend);
     } catch {
@@ -70,42 +91,75 @@ export async function routeMessage(
     return;
   }
 
-  // /seed
-  if (t === "/seed" || t.startsWith("/seed ")) {
-    if (String(ctx.chatId) !== process.env.TELEGRAM_ADMIN_CHAT_ID) {
+  // /stocks | /종목 (향후 확장 지점)
+  if (CMD.STOCKS.test(t)) {
+    await tgSend("sendMessage", {
+      chat_id: ctx.chatId,
+      text: "종목 리스트/검색은 곧 제공됩니다. /score <이름|코드>를 이용하세요.",
+    });
+    return;
+  }
+
+  // /seed | /시드
+  if (CMD.SEED.test(t)) {
+    if (!isAdmin(ctx)) {
       await tgSend("sendMessage", {
         chat_id: ctx.chatId,
         text: "권한이 없습니다.",
       });
       return;
     }
-
-    // 즉시 시작 알림
+    await tgSend("sendMessage", { chat_id: ctx.chatId, text: "시드 시작…" });
+    // stocks와 sectors를 병렬 시드하려면 아래 2개 호출 사용
+    // const [st, sc] = await Promise.all([callInternal('/api/seed/stocks'), callInternal('/api/seed/sectors')]);
+    const st = await callInternal("/api/seed/stocks");
+    const b = st.body as SeedResp;
     await tgSend("sendMessage", {
       chat_id: ctx.chatId,
-      text: "시드 시작… (최대 수 초)",
+      text: `stocks: ${st.status} count=${b.count ?? "-"} ${
+        b.error ? `err=${b.error}` : ""
+      }`.trim(),
     });
-
-    const [s1, s2] = await Promise.all([
-      callInternal("/api/seed/stocks"),
-      callInternal("/api/seed/sectors"),
-    ]);
-
-    const msg =
-      `/seed 결과\n` +
-      `stocks: ${s1.status} count=${s1.body.count ?? "-"} ${
-        s1.body.error ? `err=${s1.body.error}` : ""
-      }\n` +
-      `sectors: ${s2.status} count=${s2.body.count ?? "-"} ${
-        s2.body.error ? `err=${s2.body.error}` : ""
-      }`;
-
-    await tgSend("sendMessage", { chat_id: ctx.chatId, text: msg.trim() });
     return;
   }
 
-  // /score or /점수 <쿼리>
-  const m = t.match(/^\/(score|점수)\s+(.+)$/);
+  // /update | /업데이트
+  if (CMD.UPDATE.test(t)) {
+    if (!isAdmin(ctx)) {
+      await tgSend("sendMessage", {
+        chat_id: ctx.chatId,
+        text: "권한이 없습니다.",
+      });
+      return;
+    }
+    await tgSend("sendMessage", { chat_id: ctx.chatId, text: "갱신 시작…" });
+    // stocks와 sectors 변경분 갱신(병렬 가능)
+    const [st, sc] = await Promise.all([
+      callInternal("/api/update/stocks"),
+      callInternal("/api/update/sectors"),
+    ]);
+    const b1 = st.body as UpdateResp;
+    const b2 = sc.body as UpdateResp;
+    await tgSend("sendMessage", {
+      chat_id: ctx.chatId,
+      text:
+        `/update 결과\n` +
+        `stocks: ${st.status} total=${b1.total ?? "-"} ins=${
+          b1.inserted ?? 0
+        } upd=${b1.updated ?? 0} chg=${b1.changed ?? 0} ${
+          b1.error ? `err=${b1.error}` : ""
+        }\n` +
+        `sectors: ${sc.status} total=${b2.total ?? "-"} ins=${
+          b2.inserted ?? 0
+        } upd=${b2.updated ?? 0} chg=${b2.changed ?? 0} ${
+          b2.error ? `err=${b2.error}` : ""
+        }`,
+    });
+    return;
+  }
+
+  // /score | /점수 <쿼리>
+  const m = t.match(CMD.SCORE);
   if (m) {
     await handleScoreCommand(m[2], ctx, tgSend);
     return;

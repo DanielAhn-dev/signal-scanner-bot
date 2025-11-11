@@ -1,7 +1,8 @@
-// api/seed/stocks.ts
+// api/update/stocks.ts
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { supa } from "../../src/lib/supa";
-import { fetchAllKRX } from "../../src/adapters/stocks";
+import { loadAllKRXStocks } from "../../src/lib/snapshot";
+import { diffStocks } from "../../src/lib/diff";
 import { StockRow } from "../../src/types/db";
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
@@ -10,27 +11,38 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(401).json({ ok: false });
 
   try {
-    const rows = await fetchAllKRX(); // 전체 KRX
-    if (!rows?.length) return res.status(200).json({ ok: true, count: 0 });
+    const snap = await loadAllKRXStocks();
+    const { data: cur, error: qErr } = await supa()
+      .from("stocks")
+      .select("code,name,market,liquidity");
+    if (qErr) return res.status(500).json({ ok: false, error: qErr.message });
 
-    const chunk = 500;
-    let total = 0;
-    for (let i = 0; i < rows.length; i += chunk) {
-      const part = rows
-        .slice(i, i + chunk)
-        .map((r) => ({ ...r, updated_at: new Date().toISOString() }));
+    const { inserted, updated, total } = diffStocks(snap, cur || []);
+    const payload = [...inserted, ...updated].map((x) => ({
+      ...x,
+      updated_at: new Date().toISOString(),
+    }));
+
+    let changed = 0;
+    if (payload.length) {
       const { data, error } = await supa()
         .from("stocks")
-        .upsert<StockRow>(part, { onConflict: "code" })
+        .upsert<StockRow>(payload, { onConflict: "code" })
         .select();
       if (error)
         return res.status(500).json({ ok: false, error: error.message });
-      total += data?.length ?? 0;
+      changed = data?.length ?? 0;
     }
-    return res.json({ ok: true, count: total });
+    return res.json({
+      ok: true,
+      total,
+      inserted: inserted.length,
+      updated: updated.length,
+      changed,
+    });
   } catch (e: any) {
     return res
       .status(500)
-      .json({ ok: false, error: e?.message || "seed failed" });
+      .json({ ok: false, error: e?.message || "update failed" });
   }
 }

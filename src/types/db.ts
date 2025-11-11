@@ -1,15 +1,16 @@
 // src/types/db.ts
 export type StockRow = {
-  code: string; // 예: '005930'
-  name: string; // 예: '삼성전자'
-  market?: string; // KOSPI | KOSDAQ | KONEX 등
-  liquidity?: number; // 선택: 최근 20D 평균 거래대금
+  code: string;
+  name: string;
+  market?: string;
+  liquidity?: number;
+  sector_id?: string | null;
   updated_at?: string;
 };
 
 export type SectorRow = {
-  id: string; // 예: 'KRX:IT'
-  name: string; // 섹터명
-  metrics?: any; // JSONB
+  id: string; // e.g., "KRX:IT"
+  name: string;
+  metrics?: any;
   updated_at?: string;
 };
