@@ -68,7 +68,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     .order("created_at", { ascending: true })
     .limit(25);
 
-  if (error) return res.status(500).json({ ok: false, error: String(error) });
+  // if (error) return res.status(500).json({ ok:false, error: String(error) });
+  if (error)
+    return res
+      .status(500)
+      .json({
+        ok: false,
+        error,
+        details: (error as any)?.message || (error as any)?.hint || error,
+      });
 
   for (const job of items || []) {
     try {
