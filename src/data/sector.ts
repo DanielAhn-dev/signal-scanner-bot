@@ -1,12 +1,40 @@
 // src/data/sector.ts
+import "dotenv/config";
 import { createClient } from "@supabase/supabase-js";
 import { getCache, setCache } from "../cache/memory";
 import { getDailySeries } from "../adapters";
 
-const supabase = createClient(
-  process.env.SUPABASE_URL!,
-  process.env.SUPABASE_ANON_KEY!
-);
+const url = process.env.SUPABASE_URL;
+const key = process.env.SUPABASE_ANON_KEY;
+if (!url || !key) {
+  throw new Error(
+    `Missing Supabase env. Got SUPABASE_URL=${
+      url ? "set" : "missing"
+    }, SUPABASE_ANON_KEY=${key ? "set" : "missing"}`
+  );
+}
+const supabase = createClient(url, key);
+
+// 간단한 동시성 제한 유틸
+async function mapWithConcurrency<T, R>(
+  items: T[],
+  limit: number,
+  fn: (x: T) => Promise<R>
+): Promise<R[]> {
+  const out: R[] = [];
+  let idx = 0;
+  const workers = Array.from(
+    { length: Math.min(limit, items.length) },
+    async () => {
+      while (idx < items.length) {
+        const i = idx++;
+        out[i] = await fn(items[i]);
+      }
+    }
+  );
+  await Promise.all(workers);
+  return out;
+}
 
 export async function getLeadersForSector(
   sector: string,
@@ -16,7 +44,7 @@ export async function getLeadersForSector(
     const { data: sectorRow, error: sectorError } = await supabase
       .from("sectors")
       .select("id")
-      .or(`name.ilike.%${sector}%,alias.ilike.%${sector}%`)
+      .ilike("name", `%${sector}%`)
       .limit(1);
 
     if (sectorError || !sectorRow?.[0]?.id) {
@@ -37,9 +65,7 @@ export async function getLeadersForSector(
       console.error("getLeadersForSector error for " + sector + ":", error);
       return [];
     }
-
-    const codes = (data || []).map((r: { code: string }) => r.code);
-    return codes;
+    return (data || []).map((r: { code: string }) => r.code);
   } catch (e) {
     console.error("getLeadersForSector exception:", e);
     return [];
@@ -54,10 +80,8 @@ export async function getTopSectors(
     .select("name, score, metrics")
     .order("updated_at", { ascending: false })
     .limit(topN);
-
   if (error) return [];
-
-  const tops = (data || [])
+  return (data || [])
     .map((r: any) => ({
       sector: r.name,
       score: Number.isFinite(r?.score)
@@ -65,8 +89,6 @@ export async function getTopSectors(
         : Number(r?.metrics?.score ?? 0),
     }))
     .filter((x) => x.sector);
-
-  return tops;
 }
 
 export async function getTopSectorsRealtime(
@@ -78,9 +100,7 @@ export async function getTopSectorsRealtime(
       .select("name, score")
       .order("updated_at", { ascending: false })
       .limit(topN);
-
     if (error) return [];
-
     return (data || []).map((r: any) => ({
       sector: r.name,
       score: r.score || 0,
@@ -152,12 +172,20 @@ export async function computeSectorTrends(
       above20 = 0,
       spikes = 0;
 
-    for (const s of arr) {
-      const series = await getDailySeries(s.code, 260); // 약 1년치
+    // 병렬 처리(동시 6개)
+    const seriesList = await mapWithConcurrency(arr, 6, async (s) => {
+      try {
+        return await getDailySeries(s.code, 260);
+      } catch {
+        return [];
+      }
+    });
+
+    for (const series of seriesList) {
       if (!series?.length) continue;
       cnt++;
 
-      const closes = series.map((x) => x.close);
+      const closes = series.map((x: any) => x.close);
       const last = closes[closes.length - 1];
       const m1 = closes[closes.length - 21];
       const m3 = closes[closes.length - 63];
@@ -169,16 +197,18 @@ export async function computeSectorTrends(
       const ret6 = (last - m6) / m6;
       const ret12 = (last - m12) / m12;
 
-      const s20 = closes.slice(-20).reduce((a, b) => a + b, 0) / 20;
+      const s20 =
+        closes.slice(-20).reduce((a: number, b: number) => a + b, 0) / 20;
       if (last > s20) above20++;
 
-      const vols = series.map((x) => x.volume);
-      const v20 = vols.slice(-21, -1).reduce((a, b) => a + b, 0) / 20;
+      const vols = series.map((x: any) => x.volume);
+      const v20 =
+        vols.slice(-21, -1).reduce((a: number, b: number) => a + b, 0) / 20;
       const today = series[series.length - 1];
       const range = (today.high - today.low) / today.close;
       if (today.volume >= v20 * 2 && range <= 0.02) spikes++;
 
-      // 가중치: 1/3/6/12M = 0.4/0.3/0.2/0.1 (합 1.0)
+      // 가중치: 1/3/6/12M = 0.4/0.3/0.2/0.1
       pts += 0.4 * ret1 + 0.3 * ret3 + 0.2 * ret6 + 0.1 * ret12;
     }
 
@@ -186,7 +216,6 @@ export async function computeSectorTrends(
     const pctAbove20 = above20 / cnt;
     const spikeShare = spikes / cnt;
 
-    // 점수 0~100 근사
     const score = Math.max(
       0,
       Math.min(100, pts * 100 + pctAbove20 * 20 + spikeShare * 30)
@@ -199,13 +228,53 @@ export async function computeSectorTrends(
   return results.slice(0, 12);
 }
 
+// id 매칭 방식으로 확정 업데이트
 export async function syncSectorScoresToDB() {
+  console.log("[sync] 시작: computeSectorTrends() 결과를 DB에 반영 중...");
+
   const trends = await computeSectorTrends();
+  if (!trends?.length) {
+    console.warn("[sync] 섹터 트렌드 데이터가 비어있습니다.");
+    return;
+  }
+
+  // 선조회: name -> id 매핑
+  const { data: sectorRows, error: qerr } = await supabase
+    .from("sectors")
+    .select("id,name");
+  if (qerr) {
+    console.error("[sync] sector list query error:", qerr.message);
+    return;
+  }
+  const nameToId = new Map((sectorRows || []).map((r: any) => [r.name, r.id]));
+
+  let updated = 0;
   for (const { sector, score } of trends) {
-    await supabase
+    let sectorId = nameToId.get(sector);
+    if (!sectorId) {
+      for (const [nm, id] of nameToId.entries()) {
+        if (nm.includes(sector)) {
+          sectorId = id;
+          break;
+        }
+      }
+    }
+    if (!sectorId) {
+      console.warn(`[sync] 매칭 실패: '${sector}'`);
+      continue;
+    }
+
+    const { error } = await supabase
       .from("sectors")
       .update({ score })
-      .ilike("name", `%${sector}%`);
+      .eq("id", sectorId);
+    if (error)
+      console.error(`[sync] '${sector}' 업데이트 실패:`, error.message);
+    else {
+      updated++;
+      console.log(`[sync] '${sector}' → 점수 ${score} 업데이트 완료`);
+    }
   }
-  console.log("[sync] sector scores updated to DB");
+
+  console.log(`[sync] 모든 섹터 점수 동기화 완료 ✅ (updated=${updated})`);
 }
