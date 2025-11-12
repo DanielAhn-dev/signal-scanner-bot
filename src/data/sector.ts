@@ -15,6 +15,13 @@ if (!url || !key) {
 }
 const supabase = createClient(url, key);
 
+function clamp(x: number, lo: number, hi: number) {
+  return Math.min(hi, Math.max(lo, x));
+}
+function squash(x: number) {
+  return Math.tanh(x * 2);
+} // ±50% ≈ ±0.76
+
 // 간단한 동시성 제한 유틸
 async function mapWithConcurrency<T, R>(
   items: T[],
@@ -139,7 +146,6 @@ export async function computeSectorTrends(
   const cached = await getCache<{ sector: string; score: number }[]>(cacheKey);
   if (cached?.length) return cached;
 
-  // 섹터/종목 메타 로드
   const { data: sectors } = await supabase.from("sectors").select("id,name");
   const { data: stocks } = await supabase
     .from("stocks")
@@ -165,14 +171,17 @@ export async function computeSectorTrends(
       if (arr.length < limitPerSector) arr.push(s);
     });
 
-  const results: { sector: string; score: number }[] = [];
+  const results: Array<{ sector: string; score: number; score_raw?: number }> =
+    [];
+  const spikeWeight = 12;
+  const above20Weight = 15;
+
   for (const [sec, arr] of bySector.entries()) {
     let pts = 0,
       cnt = 0,
       above20 = 0,
       spikes = 0;
 
-    // 병렬 처리(동시 6개)
     const seriesList = await mapWithConcurrency(arr, 6, async (s) => {
       try {
         return await getDailySeries(s.code, 260);
@@ -192,10 +201,12 @@ export async function computeSectorTrends(
       const m6 = closes[closes.length - 126];
       const m12 = closes[0];
 
-      const ret1 = (last - m1) / m1;
-      const ret3 = (last - m3) / m3;
-      const ret6 = (last - m6) / m6;
-      const ret12 = (last - m12) / m12;
+      const ret1s = squash((last - m1) / m1);
+      const ret3s = squash((last - m3) / m3);
+      const ret6s = squash((last - m6) / m6);
+      const ret12s = squash((last - m12) / m12);
+
+      pts += 0.35 * ret1s + 0.3 * ret3s + 0.2 * ret6s + 0.15 * ret12s;
 
       const s20 =
         closes.slice(-20).reduce((a: number, b: number) => a + b, 0) / 20;
@@ -205,26 +216,35 @@ export async function computeSectorTrends(
       const v20 =
         vols.slice(-21, -1).reduce((a: number, b: number) => a + b, 0) / 20;
       const today = series[series.length - 1];
-      const range = (today.high - today.low) / today.close;
+      const range = (today.high - today.low) / Math.max(1, today.close);
       if (today.volume >= v20 * 2 && range <= 0.02) spikes++;
-
-      // 가중치: 1/3/6/12M = 0.4/0.3/0.2/0.1
-      pts += 0.4 * ret1 + 0.3 * ret3 + 0.2 * ret6 + 0.1 * ret12;
     }
 
     if (cnt === 0) continue;
-    const pctAbove20 = above20 / cnt;
-    const spikeShare = spikes / cnt;
 
-    const score = Math.max(
-      0,
-      Math.min(100, pts * 100 + pctAbove20 * 20 + spikeShare * 30)
-    );
-    results.push({ sector: sec, score: Math.round(score) });
+    // 섹터별 원시 점수
+    const score_raw =
+      pts * 100 +
+      (above20 / cnt) * above20Weight +
+      (spikes / cnt) * spikeWeight;
+
+    results.push({ sector: sec, score: 0, score_raw });
+  }
+
+  // 섹터 간 min–max 정규화
+  const rawScores = results.map((r) => r.score_raw ?? 0);
+  const min = Math.min(...rawScores);
+  const max = Math.max(...rawScores);
+  const span = Math.max(1e-6, max - min);
+
+  for (const r of results) {
+    const base = r.score_raw ?? 0;
+    r.score = Math.round(clamp(((base - min) / span) * 100, 0, 100));
+    delete r.score_raw;
   }
 
   results.sort((a, b) => b.score - a.score);
-  await setCache(cacheKey, results, 600_000); // 10분 TTL
+  await setCache(cacheKey, results, 600_000);
   return results.slice(0, 12);
 }
 
