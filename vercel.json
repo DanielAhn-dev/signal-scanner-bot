@@ -18,7 +18,7 @@
     "crons": [
         {
             "path": "/api/worker?token=${CRON_SECRET}",
-            "schedule": "*/2 * * * *"
+            "schedule": "30 8 * * 1-5"
         }
     ]
 }
