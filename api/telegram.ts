@@ -43,5 +43,22 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   } catch {
     // 에러여도 ACK로 재시도 방지
   }
+
+  try {
+    const base = (
+      process.env.BASE_URL || `https://${process.env.VERCEL_URL || ""}`
+    ).replace(/\/+$/, "");
+    if (base && process.env.CRON_SECRET) {
+      fetch(
+        `${base}/api/worker?token=${encodeURIComponent(
+          process.env.CRON_SECRET
+        )}`,
+        {
+          method: "POST",
+          keepalive: true,
+        }
+      ).catch(() => void 0);
+    }
+  } catch {}
   return res.status(200).end();
 }
