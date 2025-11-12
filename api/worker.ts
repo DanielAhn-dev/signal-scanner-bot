@@ -50,18 +50,25 @@ function withTimeout<T>(p: Promise<T>, ms = 7800): Promise<T> {
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
-  if (req.method !== "POST") return res.status(405).json({ ok: false });
-  if ((req.headers["x-internal-secret"] || "") !== INTERNAL_SECRET)
-    return res.status(401).json({ ok: false });
+  if (req.method !== "POST" && req.method !== "GET")
+    return res.status(405).json({ ok: false });
 
-  // 큐에서 batch로 가져오기
-  const { data: items } = await supa()
+  const token =
+    (req.headers["x-internal-secret"] as string) ||
+    (req.query?.token as string) ||
+    "";
+
+  if (token !== INTERNAL_SECRET) return res.status(401).json({ ok: false });
+
+  const { data: items, error } = await supa()
     .from("jobs")
     .select("*")
     .eq("type", "telegram_update")
     .eq("status", "queued")
     .order("created_at", { ascending: true })
     .limit(25);
+
+  if (error) return res.status(500).json({ ok: false, error: String(error) });
 
   for (const job of items || []) {
     try {

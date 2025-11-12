@@ -23,8 +23,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     res.setHeader("Allow", "POST");
     return res.status(405).end();
   }
-
-  // Telegram secret token 검증
   const secret = req.headers["x-telegram-bot-api-secret-token"] || "";
   if (
     !process.env.TELEGRAM_BOT_SECRET ||
@@ -36,8 +34,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   try {
     const raw = await readRawBody(req);
     const payload = raw ? JSON.parse(raw) : null;
-
-    // 업데이트를 큐에 적재
     await supa().from("jobs").insert({
       type: "telegram_update",
       payload,
@@ -45,9 +41,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       created_at: new Date().toISOString(),
     });
   } catch {
-    // 재시도 루프를 막기 위해 에러여도 200 반환
+    // 에러여도 ACK로 재시도 방지
   }
-
-  // 즉시 종료(절대 블로킹 금지)
   return res.status(200).end();
 }
