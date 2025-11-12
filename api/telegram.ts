@@ -49,12 +49,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       process.env.BASE_URL || `https://${process.env.VERCEL_URL || ""}`
     ).replace(/\/+$/, "");
     if (base && process.env.CRON_SECRET) {
-      fetch(
+      await fetch(
         `${base}/api/worker?token=${encodeURIComponent(
-          process.env.CRON_SECRET
+          process.env.CRON_SECRET!
         )}`,
         {
           method: "POST",
+          headers: { "x-internal-secret": process.env.CRON_SECRET! },
           keepalive: true,
         }
       ).catch(() => void 0);

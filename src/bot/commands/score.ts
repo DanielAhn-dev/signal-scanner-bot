@@ -1,4 +1,3 @@
-// src/bot/commands/score.ts
 import type { ChatContext } from "../router";
 import { createMultiRowKeyboard } from "../../telegram/keyboards";
 import { calculateScore } from "../../score/engine";
@@ -96,10 +95,24 @@ export async function handleScoreCommand(
     f.avwap_support
   );
 
+  const levels = [
+    `엔트리: ${int(scored.entry?.buy ?? last.close)}원` +
+      (scored.entry?.add ? `, 추가: ${int(scored.entry.add)}원` : ""),
+    `손절: ${int(scored.stops?.hard ?? 0)}원 (≈-7~8%), 트레일: 50SMA(${int(
+      scored.stops?.trail50 ?? 0
+    )})`,
+    `익절: 1차 ${int(scored.targets?.t1 ?? 0)}원(+20%), 2차 ${int(
+      scored.targets?.t2 ?? 0
+    )}원(+25%)`,
+    `포지션 크기: x${one(scored.sizeFactor ?? 1)} (기준 대비)`,
+  ].join("\n");
+
   const text =
     `종목: ${name} (${code})\n` +
     `일자: ${scored.date}\n` +
     `가격: ${int(last.close)}원, 거래량: ${int(last.volume)}\n\n` +
+    levels +
+    "\n\n" +
     `점수: ${one(scored.score)}점, 시그널: ${scored.signal}\n` +
     `- SMA20/50/200: ${int(f.sma20)} / ${int(f.sma50)} / ${int(f.sma200)}\n` +
     `- 200일 기울기: ${int(f.sma200_slope)}\n` +

@@ -1,4 +1,4 @@
-// packages/data/sector.ts (또는 src/data/sector.ts)
+// src/data/sector.ts
 import { createClient } from "@supabase/supabase-js";
 import { getCache, setCache } from "../cache/memory";
 import { getDailySeries } from "../adapters";
@@ -49,23 +49,23 @@ export async function getLeadersForSector(
 export async function getTopSectors(
   topN = 8
 ): Promise<{ sector: string; score: number }[]> {
-  const cached = await getCache("top_sectors");
-  if (cached) return cached as { sector: string; score: number }[];
-
   const { data, error } = await supabase
     .from("sectors")
-    .select("name, score")
-    .order("score", { ascending: false })
+    .select("name, score, metrics")
+    .order("updated_at", { ascending: false })
     .limit(topN);
 
   if (error) return [];
 
-  const tops = (data || []).map((r: any) => ({
-    sector: r.name,
-    score: r.score || 0,
-  }));
+  const tops = (data || [])
+    .map((r: any) => ({
+      sector: r.name,
+      score: Number.isFinite(r?.score)
+        ? r.score
+        : Number(r?.metrics?.score ?? 0),
+    }))
+    .filter((x) => x.sector);
 
-  await setCache("top_sectors", tops); // 구현에 따라 TTL 매개변수 생략 가능
   return tops;
 }
 
@@ -128,6 +128,14 @@ export async function computeSectorTrends(
 
   const id2name = new Map((sectors || []).map((s: any) => [s.id, s.name]));
   const bySector = new Map<string, any[]>();
+
+  if (!sectors?.length || !stocks?.length) {
+    return [
+      { sector: "정보기술", score: 50 },
+      { sector: "헬스케어", score: 48 },
+    ];
+  }
+
   (stocks || [])
     .sort((a: any, b: any) => (b.liquidity || 0) - (a.liquidity || 0))
     .forEach((s: any) => {
@@ -187,6 +195,6 @@ export async function computeSectorTrends(
   }
 
   results.sort((a, b) => b.score - a.score);
-  await setCache(cacheKey, results); // 구현에 TTL이 있다면 10분(600000) 권장
+  await setCache(cacheKey, results, 600_000); // 10분 TTL
   return results.slice(0, 12);
 }
