@@ -11,9 +11,7 @@
     "outDir": "./dist",
     "rootDir": "./",
     "baseUrl": "./",
-    "paths": {
-      "@/*": ["src/*"]
-    }
+    "paths": { "@/*": ["src/*"] }
   },
   "include": ["api/**/*", "src/**/*", "scripts/**/*"],
   "exclude": ["node_modules", "dist"]

@@ -1,4 +1,4 @@
-// src/bot/commands/sector.ts (교체)
+// src/bot/commands/sector.ts
 import type { ChatContext } from "../router";
 import { createMultiRowKeyboard } from "../../telegram/keyboards";
 import {

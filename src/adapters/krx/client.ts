@@ -1,10 +1,6 @@
-// src/adapters/krx/client.ts
-// - KRX 빈 outBlock_1/INVALIDPERIOD2 안전화
-// - ISIN 규칙 조립 보정(KR7 + 6자리 + 0003) + finder 실패 시 폴백
-// - 기간 초과 시 3년 청크 분할 재시도
-// - 빈 결과는 즉시 네이버로 폴백
-
 import * as cheerio from "cheerio";
+
+type StockMeta = { name: string | null; market: string | null };
 
 export interface StockOHLCV {
   date: string;
@@ -210,6 +206,7 @@ export default class KRXClient {
       });
       if (market !== "ALL")
         form.append("mktId", market === "KOSPI" ? "001" : "101");
+
       let data: any = null;
       for (const day of this.getRecentTradingDays()) {
         form.set("trdDd", day);
@@ -226,6 +223,7 @@ export default class KRXClient {
         } catch {}
       }
       if (!data?.outBlock_1) return await this._scrapeNaverStockList(market);
+
       const rows = Array.isArray(data.outBlock_1)
         ? data.outBlock_1
         : [data.outBlock_1];
@@ -307,10 +305,11 @@ export default class KRXClient {
         csvxls_isNo: "false",
       };
       const form = new URLSearchParams({
-        ...baseForm,
+        ...(baseForm as any),
         strtDd: s,
         endDd: e,
       } as any);
+
       let data: any;
       try {
         data = await this.krxRequest(form, {
@@ -318,10 +317,10 @@ export default class KRXClient {
           backoffStartMs: 400,
         });
       } catch (err: any) {
-        // 기간 오류는 청크 분할
         const msg = String(err?.message ?? "");
         if (!/INVALIDPERIOD/i.test(msg)) throw err;
       }
+
       let ohlcv = this.mapDaily(code6, data ?? {});
       if (ohlcv.length === 0) {
         const parts = this.splitPeriods(s, e, 3);
@@ -329,7 +328,7 @@ export default class KRXClient {
           parts.map((p) =>
             this.krxRequest(
               new URLSearchParams({
-                ...baseForm,
+                ...(baseForm as any),
                 strtDd: p.from,
                 endDd: p.to,
               } as any),
@@ -339,6 +338,7 @@ export default class KRXClient {
         );
         ohlcv = chunks.flatMap((c) => this.mapDaily(code6, c));
       }
+
       if (ohlcv.length < 50) {
         const fb = await this.getMarketOHLCVFromNaver(
           code6,
@@ -347,6 +347,7 @@ export default class KRXClient {
         );
         if (fb.length > ohlcv.length) ohlcv = fb;
       }
+
       return ohlcv
         .filter((d) => d.date >= startDate && d.date <= endDate)
         .sort((a, b) => a.date.localeCompare(b.date));
@@ -382,8 +383,8 @@ export default class KRXClient {
           if (!/^\d{8}$/.test(d)) return null;
           const date = `${d.slice(0, 4)}-${d.slice(4, 6)}-${d.slice(6, 8)}`;
           if (date < startDate || date > endDate) return null;
-          const close = parseFloat(c) || 0,
-            volume = parseFloat(v) || 0;
+          const close = parseFloat(c) || 0;
+          const volume = parseFloat(v) || 0;
           return {
             date,
             code: code6,
@@ -436,3 +437,5 @@ export default class KRXClient {
     }
   }
 }
+
+// 하단의 전역 loadMetaFromAdapters / loadIndustryLabel 중복 정의는 제거했습니다.

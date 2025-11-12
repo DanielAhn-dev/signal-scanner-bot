@@ -16,7 +16,7 @@ export async function getLeadersForSector(
     const { data: sectorRow, error: sectorError } = await supabase
       .from("sectors")
       .select("id")
-      .ilike("name", `%${sector}%`)
+      .or(`name.ilike.%${sector}%,alias.ilike.%${sector}%`)
       .limit(1);
 
     if (sectorError || !sectorRow?.[0]?.id) {
@@ -197,4 +197,15 @@ export async function computeSectorTrends(
   results.sort((a, b) => b.score - a.score);
   await setCache(cacheKey, results, 600_000); // 10분 TTL
   return results.slice(0, 12);
+}
+
+export async function syncSectorScoresToDB() {
+  const trends = await computeSectorTrends();
+  for (const { sector, score } of trends) {
+    await supabase
+      .from("sectors")
+      .update({ score })
+      .ilike("name", `%${sector}%`);
+  }
+  console.log("[sync] sector scores updated to DB");
 }

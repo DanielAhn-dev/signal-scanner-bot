@@ -149,3 +149,5 @@ vite.config.ts.timestamp-*
 !tsconfig.json
 !data/all_krx.json
 !data/sectors.json
+!data/sector_aliases.json
+!data/sectors.kr.json
