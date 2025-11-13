@@ -3,6 +3,7 @@ import { KO_MESSAGES } from "./messages/ko";
 import { handleSectorCommand } from "./commands/sector";
 import { handleScoreCommand } from "./commands/score";
 import { resolveBase } from "../lib/base";
+import { getLeadersForSectorById } from "@/data/sector";
 
 export type ChatContext = { chatId: number; messageId?: number };
 
@@ -178,18 +179,28 @@ export async function routeCallback(
   tgSend: any
 ): Promise<void> {
   if (data.startsWith("sector:")) {
-    const name = data.split(":").slice(1).join(":");
-    await tgSend("sendMessage", {
-      chat_id: ctx.chatId,
-      text: `섹터 "${name}" 선택됨 (다음 단계에서 종목 리스트 표시)`,
-    });
+    const sectorId = data.slice("sector:".length);
+
+    const codes = await getLeadersForSectorById(sectorId, 30);
+    if (!codes.length) {
+      await tgSend("sendMessage", {
+        chat_id: ctx.chatId,
+        text: "해당 섹터 종목이 없습니다.",
+      });
+      return;
+    }
+
+    const text = `상위 종목\n${codes.slice(0, 30).join(", ")}`;
+    await tgSend("sendMessage", { chat_id: ctx.chatId, text });
     return;
   }
+
   if (data.startsWith("score:")) {
     const code = data.split(":")[1] || "";
     if (code) await handleScoreCommand(code, ctx, tgSend);
     return;
   }
+
   await tgSend("sendMessage", {
     chat_id: ctx.chatId,
     text: "알 수 없는 버튼입니다.",

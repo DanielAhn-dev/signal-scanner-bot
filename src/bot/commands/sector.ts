@@ -23,8 +23,9 @@ export async function handleSectorCommand(
   }
   const buttons = tops.map((s) => ({
     text: `${s.sector} (${s.score}점)`,
-    callback_data: `sector:${s.sector}`,
+    callback_data: `sector:${s.id}`, // 이름 대신 id
   }));
+
   await tgSend("sendMessage", {
     chat_id: ctx.chatId,
     text: "유망 섹터:",

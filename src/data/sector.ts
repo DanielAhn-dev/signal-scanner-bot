@@ -43,6 +43,30 @@ async function mapWithConcurrency<T, R>(
   return out;
 }
 
+export async function getLeadersForSectorById(
+  sectorId: string,
+  limit = 12
+): Promise<string[]> {
+  try {
+    const { data, error } = await supabase
+      .from("stocks")
+      .select("code")
+      .eq("sector_id", sectorId)
+      .eq("is_active", true)
+      .order("liquidity", { ascending: false })
+      .limit(limit);
+
+    if (error) {
+      console.error("getLeadersForSectorById error:", error);
+      return [];
+    }
+    return (data || []).map((r: { code: string }) => r.code);
+  } catch (e) {
+    console.error("getLeadersForSectorById exception:", e);
+    return [];
+  }
+}
+
 export async function getLeadersForSector(
   sector: string,
   limit = 12
@@ -58,64 +82,41 @@ export async function getLeadersForSector(
       console.error("Sector ID not found for:", sector, sectorError);
       return [];
     }
-    const sectorId = sectorRow[0].id;
-
-    const { data, error } = await supabase
-      .from("stocks")
-      .select("code")
-      .eq("sector_id", sectorId)
-      .eq("is_active", true)
-      .order("liquidity", { ascending: false })
-      .limit(limit);
-
-    if (error) {
-      console.error("getLeadersForSector error for " + sector + ":", error);
-      return [];
-    }
-    return (data || []).map((r: { code: string }) => r.code);
+    return getLeadersForSectorById(sectorRow[0].id, limit);
   } catch (e) {
     console.error("getLeadersForSector exception:", e);
     return [];
   }
 }
 
-export async function getTopSectors(
-  topN = 8
-): Promise<{ sector: string; score: number }[]> {
+export async function getTopSectors(topN = 8) {
   const { data, error } = await supabase
     .from("sectors")
-    .select("name, score, metrics")
+    .select("id, name, score, metrics")
+    .order("score", { ascending: false }) // 변경: score 기준
     .order("updated_at", { ascending: false })
     .limit(topN);
   if (error) return [];
-  return (data || [])
-    .map((r: any) => ({
-      sector: r.name,
-      score: Number.isFinite(r?.score)
-        ? r.score
-        : Number(r?.metrics?.score ?? 0),
-    }))
-    .filter((x) => x.sector);
+  return (data || []).map((r: any) => ({
+    id: r.id,
+    sector: r.name,
+    score: Number.isFinite(r?.score) ? r.score : Number(r?.metrics?.score ?? 0),
+  }));
 }
 
-export async function getTopSectorsRealtime(
-  topN = 8
-): Promise<{ sector: string; score: number }[]> {
-  try {
-    const { data, error } = await supabase
-      .from("sectors")
-      .select("name, score")
-      .order("updated_at", { ascending: false })
-      .limit(topN);
-    if (error) return [];
-    return (data || []).map((r: any) => ({
-      sector: r.name,
-      score: r.score || 0,
-    }));
-  } catch (e) {
-    console.error("getTopSectorsRealtime error:", e);
-    return [];
-  }
+export async function getTopSectorsRealtime(topN = 8) {
+  const { data, error } = await supabase
+    .from("sectors")
+    .select("id, name, score")
+    .order("score", { ascending: false }) // 변경
+    .order("updated_at", { ascending: false })
+    .limit(topN);
+  if (error) return [];
+  return (data || []).map((r: any) => ({
+    id: r.id,
+    sector: r.name,
+    score: r.score || 0,
+  }));
 }
 
 export async function loadSectorMap(): Promise<
@@ -141,12 +142,15 @@ export async function loadSectorMap(): Promise<
  */
 export async function computeSectorTrends(
   limitPerSector = 10
-): Promise<{ sector: string; score: number }[]> {
+): Promise<{ id: string; sector: string; score: number }[]> {
+  type TrendRow = { id: string; sector: string; score: number };
   const cacheKey = `sector:trends:${limitPerSector}`;
-  const cached = await getCache<{ sector: string; score: number }[]>(cacheKey);
+  const cached = await getCache<TrendRow[]>(cacheKey);
   if (cached?.length) return cached;
 
   const { data: sectors } = await supabase.from("sectors").select("id,name");
+  const nameToId = new Map((sectors || []).map((r: any) => [r.name, r.id]));
+
   const { data: stocks } = await supabase
     .from("stocks")
     .select("code,sector_id,liquidity,is_active")
@@ -157,8 +161,8 @@ export async function computeSectorTrends(
 
   if (!sectors?.length || !stocks?.length) {
     return [
-      { sector: "정보기술", score: 50 },
-      { sector: "헬스케어", score: 48 },
+      { id: "1", sector: "정보기술", score: 50 },
+      { id: "2", sector: "헬스케어", score: 48 },
     ];
   }
 
@@ -171,8 +175,13 @@ export async function computeSectorTrends(
       if (arr.length < limitPerSector) arr.push(s);
     });
 
-  const results: Array<{ sector: string; score: number; score_raw?: number }> =
-    [];
+  const results: Array<{
+    id: string;
+    sector: string;
+    score: number;
+    score_raw?: number;
+  }> = [];
+
   const spikeWeight = 12;
   const above20Weight = 15;
 
@@ -228,7 +237,8 @@ export async function computeSectorTrends(
       (above20 / cnt) * above20Weight +
       (spikes / cnt) * spikeWeight;
 
-    results.push({ sector: sec, score: 0, score_raw });
+    const secId = nameToId.get(sec) || "";
+    results.push({ id: secId, sector: sec, score: 0, score_raw });
   }
 
   // 섹터 간 min–max 정규화
@@ -243,9 +253,11 @@ export async function computeSectorTrends(
     delete r.score_raw;
   }
 
-  results.sort((a, b) => b.score - a.score);
   await setCache(cacheKey, results, 600_000);
-  return results.slice(0, 12);
+  return results
+    .sort((a, b) => b.score - a.score)
+    .slice(0, 12)
+    .map(({ id, sector, score }) => ({ id, sector, score }));
 }
 
 // id 매칭 방식으로 확정 업데이트
