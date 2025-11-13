@@ -3,7 +3,7 @@ import { KO_MESSAGES } from "./messages/ko";
 import { handleSectorCommand } from "./commands/sector";
 import { handleScoreCommand } from "./commands/score";
 import { resolveBase } from "../lib/base";
-import { getLeadersForSectorById } from "@/data/sector";
+import { getLeadersForSectorById } from "../data/sector";
 
 export type ChatContext = { chatId: number; messageId?: number };
 
