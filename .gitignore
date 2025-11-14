@@ -151,3 +151,5 @@ vite.config.ts.timestamp-*
 !data/sectors.json
 !data/sector_aliases.json
 !data/sectors.kr.json
+
+.venv
