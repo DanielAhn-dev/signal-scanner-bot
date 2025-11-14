@@ -15,8 +15,8 @@
     "outputDirectory": ".",
     "crons": [
         {
-            "path": "/api/worker?token=${CRON_SECRET}",
-            "schedule": "30 8 * * 1-5"
+            "path": "/api/worker?type=realtime&token=${CRON_SECRET}",
+            "schedule": "* * * * *"
         }
     ]
 }

@@ -156,7 +156,66 @@ def upsert_investor_daily():
         supabase.table("investor_daily").upsert(chunk).execute()
     print(f"[investor_daily] upsert rows={len(all_rows)}")
 
+def upsert_stock_daily():
+    """
+    stocks 테이블에 있는 모든 종목의 일봉/거래대금을
+    stock_daily 테이블에 upsert.
+    """
+    try:
+        res = supabase.table("stocks").select("code").execute()
+        tickers = [row["code"] for row in res.data or []]
+    except Exception as e:
+        print(f"[stock_daily] stocks 목록 조회 실패: {e}")
+        return
+
+    today = date.today()
+    start = today - timedelta(days=260) # 약 1년치
+    start_str = start.strftime("%Y%m%d")
+    end_str = today.strftime("%Y%m%d")
+    
+    all_rows: List[dict] = []
+
+    for i, ticker in enumerate(tickers):
+        # 너무 많은 로그를 막기 위해 100개 단위로만 출력
+        if (i + 1) % 100 == 0:
+            print(f"[stock_daily] fetching {i+1}/{len(tickers)}: {ticker}")
+        try:
+            df = stock.get_market_ohlcv(start_str, end_str, ticker)
+            if df.empty:
+                continue
+
+            for ds, row in df.iterrows():
+                d = date.fromisoformat(str(ds)[:10])
+                all_rows.append({
+                    "ticker": ticker,
+                    "date": d.isoformat(),
+                    "open": float(row["시가"]),
+                    "high": float(row["고가"]),
+                    "low": float(row["저가"]),
+                    "close": float(row["종가"]),
+                    "volume": float(row["거래량"]),
+                    "value": float(row.get("거래대금", 0)), # ✅ 수정된 부분
+                })
+        except Exception as e:
+            # 모든 종목 에러를 다 찍으면 너무 많으므로, 특정 에러만 출력
+            if "'거래대금'" not in str(e):
+                print(f"[stock_daily] get_market_ohlcv error ticker={ticker}: {e}")
+            continue
+
+    if not all_rows:
+        print("[stock_daily] 적재할 row가 없습니다.")
+        return
+
+    print(f"[stock_daily] 총 {len(all_rows)}개의 시세 데이터를 upsert 합니다...")
+    BATCH = 100
+    for i in range(0, len(all_rows), BATCH):
+        chunk = all_rows[i : i + BATCH]
+        supabase.table("stock_daily").upsert(chunk).execute()
+        print(f"[stock_daily] ... {i+len(chunk)}/{len(all_rows)} 완료")
+        
+    print(f"[stock_daily] upsert 완료. 총 rows={len(all_rows)}")
 
 if __name__ == "__main__":
     upsert_sector_daily()
     upsert_investor_daily()
+    upsert_stock_daily()

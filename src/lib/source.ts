@@ -10,6 +10,19 @@ const supa = () =>
   );
 
 // --- 타입 정의 ---
+
+export type StockPriceRow = {
+  date: string;
+  close: number;
+  sma20?: number;
+  sma50?: number;
+  sma200?: number;
+};
+export type StockPriceSeries = {
+  code: string;
+  name: string;
+  series: StockPriceRow[];
+};
 export type SectorSeriesRow = {
   date: string;
   close: number;
@@ -140,4 +153,59 @@ export async function fetchTickerMetaInSector(
     name: r.name,
     sectorId: r.sector_id,
   }));
+}
+
+export async function fetchStockPriceSeries(
+  today: string,
+  sectorId: string
+): Promise<StockPriceSeries[]> {
+  // 1. 해당 섹터에 속한 종목 목록을 가져온다.
+  const { data: stocks } = await supa()
+    .from("stocks")
+    .select("code, name")
+    .eq("sector_id", sectorId);
+  if (!stocks?.length) return [];
+
+  const tickers = stocks.map((s) => s.code);
+
+  // 2. 해당 종목들의 시세 데이터를 가져온다.
+  const from = `${new Date(today).getFullYear() - 1}-01-01`;
+  const { data: rows } = await supa()
+    .from("stock_daily") // 'stock_daily' 테이블 사용
+    .select("ticker, date, close")
+    .in("ticker", tickers)
+    .gte("date", from)
+    .lte("date", today);
+
+  if (!rows?.length) return [];
+
+  // 3. 종목별로 시세 데이터를 묶고 SMA 계산
+  const byTicker: Record<string, { date: string; close: number }[]> = {};
+  for (const r of rows) {
+    if (!byTicker[r.ticker]) byTicker[r.ticker] = [];
+    byTicker[r.ticker].push({ date: r.date, close: Number(r.close) });
+  }
+
+  const out: StockPriceSeries[] = [];
+  for (const s of stocks) {
+    const seriesRaw = (byTicker[s.code] || []).sort((a, b) =>
+      a.date.localeCompare(b.date)
+    );
+    if (!seriesRaw.length) continue;
+
+    const closes = seriesRaw.map((r) => r.close);
+    const sma20 = sma(closes, 20);
+    const sma50 = sma(closes, 50);
+    const sma200 = sma(closes, 200);
+
+    const series: StockPriceRow[] = seriesRaw.map((r, i) => ({
+      date: r.date,
+      close: r.close,
+      sma20: sma20[i],
+      sma50: sma50[i],
+      sma200: sma200[i],
+    }));
+    out.push({ code: s.code, name: s.name, series });
+  }
+  return out;
 }
