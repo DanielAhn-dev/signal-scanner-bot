@@ -60,7 +60,8 @@ export async function handleSectorCommand(
   // 4. (JOBS 등록) 점수 상위 5개 섹터를 'WATCH_SECTOR' 잡으로 등록
   const topSectors = sectors.slice(0, 5);
   const now = new Date();
-  const jobsToInsert = topSectors.map((sector) => ({
+  const jobsToUpsert = topSectors.map((sector) => ({
+    // 변수명 변경
     type: "WATCH_SECTOR",
     payload: {
       sectorId: sector.id,
@@ -69,13 +70,23 @@ export async function handleSectorCommand(
     },
     status: "queued",
     created_at: now,
-    started_at: now,
+    // dedup_key는 unique 제약조건이므로 upsert의 기준이 됨
     dedup_key: `${sector.id}-${today}`,
   }));
 
-  const { error: jobError } = await supa().from("jobs").insert(jobsToInsert);
-  if (jobError) console.error("Failed to insert sector watch jobs:", jobError);
-  else console.log(`Inserted ${topSectors.length} sector watch jobs.`);
+  // ✅ insert -> upsert 로 변경
+  const { error: jobError } = await supa().from("jobs").upsert(jobsToUpsert, {
+    onConflict: "type, dedup_key", // 중복 검사 기준 컬럼 명시
+  });
+
+  if (jobError) {
+    // 중복 에러는 무시하고, 다른 에러만 로깅
+    if (jobError.code !== "23505") {
+      console.error("Failed to upsert sector watch jobs:", jobError);
+    }
+  } else {
+    console.log(`Upserted ${topSectors.length} sector watch jobs.`);
+  }
 
   // 5. 텔레그램 메시지 생성 및 전송
   const allZero = sectors.every((s) => s.score === 0);
