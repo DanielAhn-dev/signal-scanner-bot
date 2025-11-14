@@ -12,11 +12,5 @@
             "maxDuration": 10
         }
     },
-    "outputDirectory": ".",
-    "crons": [
-        {
-            "path": "/api/worker?type=realtime&token=${CRON_SECRET}",
-            "schedule": "* * * * *"
-        }
-    ]
+    "outputDirectory": "."
 }
