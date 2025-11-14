@@ -158,9 +158,35 @@ def upsert_investor_daily():
 
 def upsert_stock_daily():
     """
-    stocks 테이블에 있는 모든 종목의 일봉/거래대금을
-    stock_daily 테이블에 upsert.
+    stocks 테이블의 모든 종목에 대해,
+    stock_daily에 없는 최신 날짜 데이터만 추가.
     """
+    try:
+        # 1. DB에서 가장 마지막으로 수집된 날짜를 찾는다.
+        res = supabase.table("stock_daily").select("date").order("date", desc=True).limit(1).execute()
+        last_date_str = (res.data[0]["date"] if res.data else None)
+        
+        # 마지막 날짜가 있으면 그 다음 날부터, 없으면 1년 전부터
+        if last_date_str:
+            start = date.fromisoformat(last_date_str) + timedelta(days=1)
+        else:
+            start = date.today() - timedelta(days=365) # 최초 실행 시 1년치
+
+    except Exception as e:
+        print(f"[stock_daily] 마지막 날짜 조회 실패, 1년 전부터 시작: {e}")
+        start = date.today() - timedelta(days=365)
+
+    today = date.today()
+    if start > today:
+        print("[stock_daily] 이미 모든 데이터가 최신입니다.")
+        return
+
+    start_str = start.strftime("%Y%m%d")
+    end_str = today.strftime("%Y%m%d")
+    
+    print(f"[stock_daily] {start_str}~{end_str} 기간의 데이터를 수집합니다.")
+
+    # 이하 로직은 동일
     try:
         res = supabase.table("stocks").select("code").execute()
         tickers = [row["code"] for row in res.data or []]
@@ -168,15 +194,8 @@ def upsert_stock_daily():
         print(f"[stock_daily] stocks 목록 조회 실패: {e}")
         return
 
-    today = date.today()
-    start = today - timedelta(days=260) # 약 1년치
-    start_str = start.strftime("%Y%m%d")
-    end_str = today.strftime("%Y%m%d")
-    
     all_rows: List[dict] = []
-
     for i, ticker in enumerate(tickers):
-        # 너무 많은 로그를 막기 위해 100개 단위로만 출력
         if (i + 1) % 100 == 0:
             print(f"[stock_daily] fetching {i+1}/{len(tickers)}: {ticker}")
         try:
