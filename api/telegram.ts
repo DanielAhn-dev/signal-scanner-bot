@@ -34,12 +34,24 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   try {
     const raw = await readRawBody(req);
     const payload = raw ? JSON.parse(raw) : null;
-    await supa().from("jobs").insert({
-      type: "telegram_update",
-      payload,
-      status: "queued",
-      created_at: new Date().toISOString(),
-    });
+    const dedup = payload?.update_id
+      ? String(payload.update_id)
+      : payload?.callback_query?.id
+      ? `cb:${payload.callback_query.id}`
+      : payload?.message?.message_id
+      ? `${payload.message.chat.id}:${payload.message.message_id}`
+      : null;
+
+    await supa().from("jobs").upsert(
+      {
+        type: "telegram_update",
+        payload,
+        status: "queued",
+        created_at: new Date().toISOString(),
+        dedup_key: dedup,
+      },
+      { onConflict: "type,dedup_key" }
+    );
   } catch {
     // 에러여도 ACK로 재시도 방지
   }

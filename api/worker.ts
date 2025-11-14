@@ -49,6 +49,21 @@ function withTimeout<T>(p: Promise<T>, ms = 7800): Promise<T> {
   });
 }
 
+// queued -> processing 원자 전환으로 집기
+async function pickJobs(n = 25) {
+  const now = new Date().toISOString();
+  const { data, error } = await supa()
+    .from("jobs")
+    .update({ status: "processing", started_at: now })
+    .eq("type", "telegram_update")
+    .eq("status", "queued")
+    .order("created_at", { ascending: true })
+    .limit(n)
+    .select("*");
+  if (error) throw error;
+  return data || [];
+}
+
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== "POST" && req.method !== "GET")
     return res.status(405).json({ ok: false });
@@ -57,28 +72,20 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     (req.headers["x-internal-secret"] as string) ||
     (req.query?.token as string) ||
     "";
-
   if (token !== INTERNAL_SECRET) return res.status(401).json({ ok: false });
 
-  const { data: items, error } = await supa()
-    .from("jobs")
-    .select("*")
-    .eq("type", "telegram_update")
-    .eq("status", "queued")
-    .order("created_at", { ascending: true })
-    .limit(25);
+  let items: any[] = [];
+  try {
+    items = await pickJobs(25);
+  } catch (error: any) {
+    return res.status(500).json({
+      ok: false,
+      error,
+      details: error?.message || error?.hint || String(error),
+    });
+  }
 
-  // if (error) return res.status(500).json({ ok:false, error: String(error) });
-  if (error)
-    return res
-      .status(500)
-      .json({
-        ok: false,
-        error,
-        details: (error as any)?.message || (error as any)?.hint || error,
-      });
-
-  for (const job of items || []) {
+  for (const job of items) {
     try {
       const u = job.payload || {};
       if (u?.callback_query?.data && u?.callback_query?.message?.chat?.id) {
@@ -99,9 +106,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       }
       await supa()
         .from("jobs")
-        .update({ status: "done", done_at: new Date().toISOString() })
+        .update({ status: "done", done_at: new Date().toISOString(), ok: true })
         .eq("id", job.id);
-    } catch (e) {
+    } catch (e: any) {
       await supa()
         .from("jobs")
         .update({ status: "error", error: String(e) })
@@ -109,5 +116,5 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
   }
 
-  return res.status(200).json({ ok: true, processed: items?.length || 0 });
+  return res.status(200).json({ ok: true, processed: items.length });
 }
