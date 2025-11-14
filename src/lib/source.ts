@@ -1,11 +1,15 @@
 // src/lib/source.ts
 import { createClient } from "@supabase/supabase-js";
 
+// Vercel 환경에서 Supabase 클라이언트 초기화
 const supa = () =>
-  createClient(process.env.SUPABASE_URL!, process.env.SUPABASE_ANON_KEY!, {
-    auth: { persistSession: false },
-  });
+  createClient(
+    process.env.SUPABASE_URL!,
+    process.env.SUPABASE_ANON_KEY!, // anon key 사용
+    { auth: { persistSession: false } }
+  );
 
+// --- 타입 정의 ---
 export type SectorSeriesRow = {
   date: string;
   close: number;
@@ -27,7 +31,7 @@ export type InvestorRow = {
 };
 export type TickerMeta = { code: string; name: string; sectorId?: string };
 
-// 단순 SMA 계산
+// --- 유틸리티 함수: SMA 계산 ---
 function sma(values: number[], period: number): (number | undefined)[] {
   const out: (number | undefined)[] = new Array(values.length).fill(undefined);
   let sum = 0;
@@ -39,19 +43,24 @@ function sma(values: number[], period: number): (number | undefined)[] {
   return out;
 }
 
+// --- 데이터 소스 어댑터: Supabase 기반 구현 ---
+
 export async function fetchSectorPriceSeries(
   today: string
 ): Promise<SectorSeries[]> {
-  const { data: sectors } = await supa().from("sectors").select("id,name");
-  if (!sectors || !sectors.length) return [];
+  const { data: sectors } = await supa().from("sectors").select("id, name");
+  if (!sectors?.length) return [];
+
+  // 약 1년간의 데이터 조회
+  const from = `${new Date(today).getFullYear() - 1}-01-01`;
 
   const { data: rows } = await supa()
     .from("sector_daily")
-    .select("sector_id,date,close")
-    .lte("date", today)
-    .gte("date", today.slice(0, 4) + "-01-01"); // 올해 것만 예시
+    .select("sector_id, date, close")
+    .gte("date", from)
+    .lte("date", today);
 
-  if (!rows || !rows.length) return [];
+  if (!rows?.length) return [];
 
   const bySector: Record<string, { date: string; close: number }[]> = {};
   for (const r of rows) {
@@ -65,10 +74,12 @@ export async function fetchSectorPriceSeries(
       a.date.localeCompare(b.date)
     );
     if (!seriesRaw.length) continue;
+
     const closes = seriesRaw.map((r) => r.close);
     const sma20 = sma(closes, 20);
     const sma50 = sma(closes, 50);
     const sma200 = sma(closes, 200);
+
     const series: SectorSeriesRow[] = seriesRaw.map((r, i) => ({
       date: r.date,
       close: r.close,
@@ -84,11 +95,13 @@ export async function fetchSectorPriceSeries(
 export async function fetchSectorVolumeSeries(
   today: string
 ): Promise<Record<string, VolumeRow[]>> {
+  const from = `${new Date(today).getFullYear() - 1}-01-01`;
   const { data } = await supa()
     .from("sector_daily")
-    .select("sector_id,date,value")
-    .lte("date", today)
-    .gte("date", today.slice(0, 4) + "-01-01");
+    .select("sector_id, date, value")
+    .gte("date", from)
+    .lte("date", today);
+
   const out: Record<string, VolumeRow[]> = {};
   for (const r of data || []) {
     if (!out[r.sector_id]) out[r.sector_id] = [];
@@ -103,12 +116,13 @@ export async function fetchInvestorNetByTicker(
 ): Promise<InvestorRow[]> {
   const { data } = await supa()
     .from("investor_daily")
-    .select("date,ticker,foreign,institution")
+    .select('ticker, date, "foreign", institution') // "foreign"은 예약어라 큰따옴표
     .gte("date", from)
     .lte("date", to);
+
   return (data || []).map((r) => ({
-    date: r.date,
     ticker: r.ticker,
+    date: r.date,
     foreign: Number(r.foreign || 0),
     institution: Number(r.institution || 0),
   }));
@@ -119,7 +133,7 @@ export async function fetchTickerMetaInSector(
 ): Promise<TickerMeta[]> {
   const { data } = await supa()
     .from("stocks")
-    .select("code,name,sector_id")
+    .select("code, name, sector_id")
     .eq("sector_id", sectorId);
   return (data || []).map((r) => ({
     code: r.code,
