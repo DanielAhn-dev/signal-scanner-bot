@@ -81,15 +81,18 @@ export async function handleSectorCommand(
   const allZero = sectors.every((s) => s.score === 0);
   const header = allZero ? "📊 섹터 랭킹(완화모드)" : "📊 섹터 랭킹 (TOP 10)";
   const lines = sectors.slice(0, 10).map((s) => {
-    const flow = `외인 ${fmtKRW(s.flowF5, 0)}/${fmtKRW(
+    // 5일/20일 외인/기관 순매수 (억원 단위)
+    const flow = `\n  └ 수급: 외인(${fmtKRW(s.flowF5, 0)}/${fmtKRW(
       s.flowF20,
       0
-    )} · 기관 ${fmtKRW(s.flowI5, 0)}/${fmtKRW(s.flowI20, 0)}`;
+    )}) · 기관(${fmtKRW(s.flowI5, 0)}/${fmtKRW(s.flowI20, 0)})`;
+
+    // ✅ return 문에 flow 추가
     return `${badge(s.grade)} ${s.name} · 점수 ${
       s.score
     } · RS(1/3/6/12M) ${fmtPct(s.rs1M)},${fmtPct(s.rs3M)},${fmtPct(
       s.rs6M
-    )},${fmtPct(s.rs12M)}`;
+    )},${fmtPct(s.rs12M)}, ${flow}`; // 여기에 flow 변수 추가
   });
 
   const buttons = topSectors.map((s) => ({

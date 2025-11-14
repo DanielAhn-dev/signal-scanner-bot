@@ -164,32 +164,52 @@ export async function routeCallback(
   ctx: ChatContext,
   tgSend: any
 ): Promise<void> {
+  // "sector:" 콜백 처리
   if (data.startsWith("sector:")) {
     const sectorId = data.slice("sector:".length);
-    const leaders = await getLeadersForSectorById(sectorId, 30); // codes -> leaders
+
+    // ✅ name을 함께 가져오는 getLeadersForSectorById 호출
+    const leaders = await getLeadersForSectorById(sectorId, 30);
 
     if (!leaders.length) {
       await tgSend("sendMessage", {
         chat_id: ctx.chatId,
-        text: "해당 섹터 종목이 없습니다.",
+        text: "해당 섹터에 속한 종목이 없습니다.",
       });
       return;
     }
 
-    // "이름(코드)" 형태로 텍스트 만들기
+    // ✅ "{이름}({코드})" 형태로 텍스트 포맷팅
     const stockLines = leaders.map((s) => `${s.name}(${s.code})`);
 
-    const text = `상위 종목\n${stockLines.join(", ")}`;
-    await tgSend("sendMessage", { chat_id: ctx.chatId, text });
+    const text = `상위 종목\n${stockLines.join("\n")}`;
+
+    // ✅ 종목별로 /score 명령을 실행할 수 있는 버튼 추가
+    const keyboard = {
+      inline_keyboard: leaders.map((s) => [
+        { text: `${s.name}`, callback_data: `score:${s.code}` },
+      ]),
+    };
+
+    await tgSend("sendMessage", {
+      chat_id: ctx.chatId,
+      text,
+      reply_markup: keyboard,
+    });
     return;
   }
 
+  // "score:" 콜백 처리
   if (data.startsWith("score:")) {
     const code = data.split(":")[1] || "";
-    if (code) await handleScoreCommand(code, ctx, tgSend);
+    if (code) {
+      // '/score' 명령어를 실행하는 것처럼 handleScoreCommand 호출
+      await handleScoreCommand(code, ctx, tgSend);
+    }
     return;
   }
 
+  // 그 외의 경우
   await tgSend("sendMessage", {
     chat_id: ctx.chatId,
     text: "알 수 없는 버튼입니다.",
