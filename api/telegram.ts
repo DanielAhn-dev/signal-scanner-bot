@@ -1,135 +1,106 @@
-// api/worker.ts
+// api/telegram.ts
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { createClient } from "@supabase/supabase-js";
-import { routeMessage, routeCallback } from "../src/bot/router";
-import { scoreSectors } from "../src/lib/sectors";
 
-export const config = { api: { bodyParser: true } };
+// Telegram Webhook는 원문 보존을 위해 raw body 필요
+export const config = { api: { bodyParser: false } };
 
 const supa = () =>
   createClient(process.env.SUPABASE_URL!, process.env.SUPABASE_ANON_KEY!, {
     auth: { persistSession: false },
   });
 
-const INTERNAL_SECRET = process.env.CRON_SECRET || "";
-const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || "";
-
-type TGApiResponse = { ok?: boolean; result?: any; description?: string };
-
-async function tgFetch(method: string, body: any): Promise<TGApiResponse> {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 5000);
-  try {
-    const res = await fetch(
-      `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/${method}`,
-      {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify(body),
-        signal: controller.signal,
-      }
-    );
-    return (await res.json()) as TGApiResponse;
-  } catch (e) {
-    return { ok: false, description: String(e) };
-  } finally {
-    clearTimeout(timer);
-  }
-}
-
-function withTimeout<T>(p: Promise<T>, ms = 7800): Promise<T> {
-  return new Promise((resolve, reject) => {
-    const t = setTimeout(() => reject(new Error("TIMEOUT")), ms);
-    p.then((v) => {
-      clearTimeout(t);
-      resolve(v);
-    }).catch((e) => {
-      clearTimeout(t);
-      reject(e);
-    });
+async function readRawBody(req: VercelRequest): Promise<string> {
+  return await new Promise((resolve, reject) => {
+    let data = "";
+    req.on("data", (c) => (data += c));
+    req.on("end", () => resolve(data));
+    req.on("error", reject);
   });
 }
 
-// queued -> processing 전환하며 집기(낙관적 잠금)
-async function pickJobs(n = 25) {
-  const now = new Date().toISOString();
-  const { data, error } = await supa()
-    .from("jobs")
-    .update({ status: "processing", started_at: now })
-    .eq("type", "telegram_update")
-    .eq("status", "queued")
-    .order("created_at", { ascending: true })
-    .limit(n)
-    .select("*");
-  if (error) throw error;
-  return data || [];
+function resolveBase(): string {
+  const base = (
+    process.env.BASE_URL || `https://${process.env.VERCEL_URL || ""}`
+  ).replace(/\/+$/, "");
+  return base;
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
-  if (req.method !== "POST" && req.method !== "GET")
-    return res.status(405).json({ ok: false });
+  // 메서드 가드
+  if (req.method !== "POST") {
+    res.setHeader("Allow", "POST");
+    return res.status(405).end();
+  }
 
-  const token =
-    (req.headers["x-internal-secret"] as string) ||
-    (req.query?.token as string) ||
+  // Telegram secret header 검증(표준 키: x-telegram-bot-api-secret-token)
+  const headerSecret =
+    (req.headers["x-telegram-bot-api-secret-token"] as string) ||
+    (req.headers["x-telegram-bot-secret-token"] as string) || // 호환
     "";
-  if (token !== INTERNAL_SECRET) return res.status(401).json({ ok: false });
+  if (
+    !process.env.TELEGRAM_BOT_SECRET ||
+    headerSecret !== process.env.TELEGRAM_BOT_SECRET
+  ) {
+    // 비밀 불일치 시 바로 401
+    return res.status(401).end();
+  }
 
-  let items: any[] = [];
+  // 원문 읽기 및 파싱
+  let payload: any = null;
   try {
-    items = await pickJobs(25);
-  } catch (error: any) {
-    return res.status(500).json({
-      ok: false,
-      error,
-      details: error?.message || error?.hint || String(error),
-    });
+    const raw = await readRawBody(req);
+    payload = raw ? JSON.parse(raw) : null;
+  } catch {
+    // 파싱 실패해도 ACK로 재시도 방지
   }
 
-  for (const job of items) {
-    try {
-      const u = job.payload || {};
-      if (u?.callback_query?.data && u?.callback_query?.message?.chat?.id) {
-        const chatId = u.callback_query.message.chat.id;
-        await tgFetch("answerCallbackQuery", {
-          callback_query_id: u.callback_query.id,
-          text: "처리 중…",
-        });
-        await withTimeout(
-          routeCallback(u.callback_query.data, { chatId }, tgFetch)
-        );
-      } else if (u?.message?.text && u?.message?.chat?.id) {
-        const chatId = u.message.chat.id;
-        await tgFetch("sendChatAction", { chat_id: chatId, action: "typing" });
-        await withTimeout(
-          routeMessage(u.message.text.trim(), { chatId }, tgFetch)
-        );
-      }
-      await supa()
-        .from("jobs")
-        .update({ status: "done", done_at: new Date().toISOString(), ok: true })
-        .eq("id", job.id);
-    } catch (e: any) {
-      await supa()
-        .from("jobs")
-        .update({ status: "error", error: String(e) })
-        .eq("id", job.id);
+  // 중복 방지용 dedup key 구성
+  const dedup = payload?.update_id
+    ? String(payload.update_id)
+    : payload?.callback_query?.id
+    ? `cb:${payload.callback_query.id}`
+    : payload?.message?.message_id
+    ? `${payload.message.chat.id}:${payload.message.message_id}`
+    : undefined;
+
+  // 잡 큐에 적재(Upsert로 중복 방지)
+  try {
+    await supa()
+      .from("jobs")
+      .upsert(
+        {
+          type: "telegram_update",
+          payload,
+          status: "queued",
+          created_at: new Date().toISOString(),
+          dedup_key: dedup || null,
+        },
+        { onConflict: "type,dedup_key" }
+      );
+  } catch {
+    // 저장 실패여도 ACK
+  }
+
+  // 비동기 워커 트리거(내부 호출)
+  try {
+    const base = resolveBase();
+    if (base && process.env.CRON_SECRET) {
+      await fetch(
+        `${base}/api/worker?token=${encodeURIComponent(
+          process.env.CRON_SECRET!
+        )}`,
+        {
+          method: "POST",
+          headers: { "x-internal-secret": process.env.CRON_SECRET! },
+          keepalive: true,
+        }
+      ).catch(() => void 0);
     }
+  } catch {
+    // 워커 트리거 실패 무시
   }
 
-  return res.status(200).json({ ok: true, processed: items.length });
-}
-
-// 08:30 브리핑용 유틸(선택 사용)
-export async function morningBriefing(send: (t: string) => Promise<void>) {
-  const today = new Date().toISOString().slice(0, 10);
-  const list = await scoreSectors(today);
-  const topA = list.filter((x) => x.grade === "A").slice(0, 5);
-  const lines = topA.map(
-    (s) =>
-      `⭐ ${s.name} ${s.score}점 · RS1M ${(s.rs1M * 100).toFixed(
-        1
-      )}% · 외인5D ${(s.flowF5 / 1e8).toFixed(1)}억`
-  );
-  await send(["[08:30] 섹터 Top5", ...lines].join("\n"));
+  // 즉시 ACK
+  return res.status(200).end();
 }
