@@ -166,15 +166,20 @@ export async function routeCallback(
 ): Promise<void> {
   if (data.startsWith("sector:")) {
     const sectorId = data.slice("sector:".length);
-    const codes = await getLeadersForSectorById(sectorId, 30);
-    if (!codes.length) {
+    const leaders = await getLeadersForSectorById(sectorId, 30); // codes -> leaders
+
+    if (!leaders.length) {
       await tgSend("sendMessage", {
         chat_id: ctx.chatId,
         text: "해당 섹터 종목이 없습니다.",
       });
       return;
     }
-    const text = `상위 종목\n${codes.slice(0, 30).join(", ")}`;
+
+    // "이름(코드)" 형태로 텍스트 만들기
+    const stockLines = leaders.map((s) => `${s.name}(${s.code})`);
+
+    const text = `상위 종목\n${stockLines.join(", ")}`;
     await tgSend("sendMessage", { chat_id: ctx.chatId, text });
     return;
   }

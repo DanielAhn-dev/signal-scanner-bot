@@ -46,11 +46,12 @@ async function mapWithConcurrency<T, R>(
 export async function getLeadersForSectorById(
   sectorId: string,
   limit = 12
-): Promise<string[]> {
+): Promise<{ code: string; name: string }[]> {
+  // 반환 타입 변경
   try {
     const { data, error } = await supabase
       .from("stocks")
-      .select("code")
+      .select("code, name") // name도 같이 select
       .eq("sector_id", sectorId)
       .eq("is_active", true)
       .order("liquidity", { ascending: false })
@@ -60,7 +61,7 @@ export async function getLeadersForSectorById(
       console.error("getLeadersForSectorById error:", error);
       return [];
     }
-    return (data || []).map((r: { code: string }) => r.code);
+    return data || []; // { code, name } 객체 배열을 그대로 반환
   } catch (e) {
     console.error("getLeadersForSectorById exception:", e);
     return [];
