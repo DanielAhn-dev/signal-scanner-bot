@@ -4,6 +4,7 @@ from __future__ import annotations
 from datetime import date, timedelta
 import os
 from typing import Dict, List, Tuple
+import time
 
 from pykrx import stock
 from supabase import create_client, Client
@@ -15,7 +16,6 @@ SUPABASE_KEY = os.environ["SUPABASE_SERVICE_ROLE_KEY"]
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 # ===== 섹터 이름 키워드 → KRX 업종 지수 코드 매핑 규칙 =====
-# 우선순위가 높은 규칙을 위에 적는다.
 NAME_TO_INDEX_RULES: List[Tuple[str, str]] = [
     ("반도체", "1014"),
     ("전자장비", "1013"),
@@ -30,19 +30,13 @@ NAME_TO_INDEX_RULES: List[Tuple[str, str]] = [
     ("금융", "1027"),
 ]
 
-
 def infer_index_code_from_name(name: str) -> str | None:
     for kw, code in NAME_TO_INDEX_RULES:
         if kw in name:
             return code
     return None
 
-
 def get_sector_index_map() -> Dict[str, str]:
-    """
-    1. sectors.metrics.krx_index 에서 명시적 매핑 사용
-    2. name 키워드(NAME_TO_INDEX_RULES)로 추론
-    """
     try:
         res = supabase.table("sectors").select("id,name,metrics").execute()
         rows = res.data or []
@@ -57,11 +51,9 @@ def get_sector_index_map() -> Dict[str, str]:
         sid = row["id"]
         name = row.get("name") or ""
         metrics = row.get("metrics") or {}
-
         code = metrics.get("krx_index")
         if not code:
             code = infer_index_code_from_name(name)
-
         if code:
             mapping[sid] = str(code)
         else:
@@ -71,17 +63,6 @@ def get_sector_index_map() -> Dict[str, str]:
     if missing_names:
         print(f"[sector_map] 코드 매핑 실패 섹터 예시(상위 5개): {missing_names[:5]}")
     return mapping
-
-
-def bizdays(start: date, end: date) -> List[date]:
-    d = start
-    out: List[date] = []
-    while d <= end:
-        if d.weekday() < 5:
-            out.append(d)
-        d += timedelta(days=1)
-    return out
-
 
 def upsert_sector_daily():
     today = date.today()
@@ -98,6 +79,7 @@ def upsert_sector_daily():
     for sector_id, index_code in sector_index_map.items():
         try:
             df = stock.get_index_ohlcv(start_str, end_str, index_code)
+            time.sleep(0.1) # KRX 서버 부하 방지를 위한 약간의 딜레이
         except Exception as e:
             print(f"[sector_daily] get_index_ohlcv error sector={sector_id} code={index_code}: {e}")
             continue
@@ -113,65 +95,86 @@ def upsert_sector_daily():
         return
 
     BATCH = 200
+    print(f"[sector_daily] 총 {len(rows)}개의 섹터 시세 데이터를 upsert 합니다...")
     for i in range(0, len(rows), BATCH):
         chunk = rows[i : i + BATCH]
         supabase.table("sector_daily").upsert(chunk).execute()
-    print(f"[sector_daily] upsert rows={len(rows)}")
+    print(f"[sector_daily] upsert 완료. 총 rows={len(rows)}")
 
-
+# ✅✅✅ --- 수정된 upsert_investor_daily 함수 --- ✅✅✅
 def upsert_investor_daily():
+    """
+    최신 날짜부터 과거 30일까지 하루씩 순회하며,
+    '개별 종목'의 외인/기관 순매수 데이터를 investor_daily 테이블에 저장.
+    """
     today = date.today()
-    start = today - timedelta(days=30)
     all_rows: List[dict] = []
 
-    from_str = start.strftime("%Y%m%d")
-    to_str = today.strftime("%Y%m%d")
+    print("="*40)
+    print("수급 데이터 수집 시작 (개별 종목 기준)")
+    print("="*40)
 
-    for market in ["KOSPI", "KOSDAQ"]:
-        try:
-            df = stock.get_market_net_purchases_of_equities_by_ticker(
-                fromdate=from_str, todate=to_str, market=market
-            )
-        except Exception as e:
-            print(f"[investor] error {from_str}~{to_str} {market}: {e}")
+    for i in range(35): # 약 25 영업일
+        d = today - timedelta(days=i)
+        if d.weekday() >= 5:
             continue
+            
+        day_str = d.strftime("%Y%m%d")
+        print(f"[investor_daily] fetching data for {day_str}")
 
-        for code, row in df.iterrows():
-            # 이 함수는 구간 조회를 하므로, date 컬럼이 따로 없음
-            # 가장 마지막 날짜로 저장하거나, 더 정확히 하려면 하루 단위로 호출 필요
-            # 우선은 구간 마지막 날짜로 저장
-            foreign = float(row.get("외국인", 0))
-            inst = float(row.get("기관합계", row.get("기관", 0)))
-            date_iso = today.isoformat() # 오늘 날짜 기준.
+        try:
+            # 올바른 함수 사용! 시장("ALL")을 대상으로 개별 종목 데이터 조회
+            df = stock.get_market_net_purchases_of_equities_by_ticker(day_str, day_str, "ALL")
+            time.sleep(0.1)
 
-            all_rows.append({"date": date_iso, "ticker": code, "foreign": foreign, "institution": inst})
+            if df.empty:
+                print(f"  -> {day_str} 데이터 없음")
+                continue
 
+            # DataFrame의 인덱스가 ticker 이므로, reset_index()로 컬럼으로 변환
+            df = df.reset_index()
+            
+            print(f"  -> {day_str} 데이터 {len(df)}건 조회 성공")
+
+            for _, row in df.iterrows():
+                ticker = row['티커']
+                inst_net = float(row.get("기관", row.get("기관합계", 0)))
+                foreign_net = float(row.get("외국인", row.get("외국인합계", 0)))
+
+                if foreign_net == 0 and inst_net == 0:
+                    continue
+
+                all_rows.append({
+                    "date": d.isoformat(),
+                    "ticker": ticker,
+                    "foreign": foreign_net,
+                    "institution": inst_net,
+                })
+        except Exception as e:
+            print(f"[ERROR] {day_str} 데이터 조회 중 에러 발생: {e}")
+            continue
+    
     if not all_rows:
-        print("[investor_daily] 적재할 row 가 없습니다.")
+        print("[investor_daily] 최종적으로 적재할 데이터가 없습니다.")
         return
 
+    print(f"\n[investor_daily] 총 {len(all_rows)}개의 투자자별 거래 데이터를 upsert 합니다...")
     BATCH = 200
     for i in range(0, len(all_rows), BATCH):
         chunk = all_rows[i : i + BATCH]
         supabase.table("investor_daily").upsert(chunk).execute()
-    print(f"[investor_daily] upsert rows={len(all_rows)}")
+    
+    print(f"[investor_daily] upsert 완료. 총 rows={len(all_rows)}")
+# ✅✅✅ --- 함수 수정 끝 --- ✅✅✅
 
 def upsert_stock_daily():
-    """
-    stocks 테이블의 모든 종목에 대해,
-    stock_daily에 없는 최신 날짜 데이터만 추가.
-    """
     try:
-        # 1. DB에서 가장 마지막으로 수집된 날짜를 찾는다.
         res = supabase.table("stock_daily").select("date").order("date", desc=True).limit(1).execute()
         last_date_str = (res.data[0]["date"] if res.data else None)
-        
-        # 마지막 날짜가 있으면 그 다음 날부터, 없으면 1년 전부터
         if last_date_str:
             start = date.fromisoformat(last_date_str) + timedelta(days=1)
         else:
-            start = date.today() - timedelta(days=365) # 최초 실행 시 1년치
-
+            start = date.today() - timedelta(days=365)
     except Exception as e:
         print(f"[stock_daily] 마지막 날짜 조회 실패, 1년 전부터 시작: {e}")
         start = date.today() - timedelta(days=365)
@@ -183,10 +186,8 @@ def upsert_stock_daily():
 
     start_str = start.strftime("%Y%m%d")
     end_str = today.strftime("%Y%m%d")
-    
     print(f"[stock_daily] {start_str}~{end_str} 기간의 데이터를 수집합니다.")
 
-    # 이하 로직은 동일
     try:
         res = supabase.table("stocks").select("code").execute()
         tickers = [row["code"] for row in res.data or []]
@@ -200,23 +201,18 @@ def upsert_stock_daily():
             print(f"[stock_daily] fetching {i+1}/{len(tickers)}: {ticker}")
         try:
             df = stock.get_market_ohlcv(start_str, end_str, ticker)
-            if df.empty:
-                continue
+            time.sleep(0.1)
+            if df.empty: continue
 
             for ds, row in df.iterrows():
                 d = date.fromisoformat(str(ds)[:10])
                 all_rows.append({
-                    "ticker": ticker,
-                    "date": d.isoformat(),
-                    "open": float(row["시가"]),
-                    "high": float(row["고가"]),
-                    "low": float(row["저가"]),
-                    "close": float(row["종가"]),
-                    "volume": float(row["거래량"]),
-                    "value": float(row.get("거래대금", 0)), # ✅ 수정된 부분
+                    "ticker": ticker, "date": d.isoformat(),
+                    "open": float(row["시가"]), "high": float(row["고가"]),
+                    "low": float(row["저가"]), "close": float(row["종가"]),
+                    "volume": float(row["거래량"]), "value": float(row.get("거래대금", 0)),
                 })
         except Exception as e:
-            # 모든 종목 에러를 다 찍으면 너무 많으므로, 특정 에러만 출력
             if "'거래대금'" not in str(e):
                 print(f"[stock_daily] get_market_ohlcv error ticker={ticker}: {e}")
             continue
@@ -238,3 +234,4 @@ if __name__ == "__main__":
     upsert_sector_daily()
     upsert_investor_daily()
     upsert_stock_daily()
+

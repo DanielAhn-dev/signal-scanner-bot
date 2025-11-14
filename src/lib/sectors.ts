@@ -127,6 +127,7 @@ export async function scoreSectors(today: string): Promise<SectorScore[]> {
     }
 
     const sigmoid = (x: number) => 1 / (1 + Math.exp(-x));
+    const sigmoid = (x: number) => 1 / (1 + Math.exp(-x));
     const sRS =
       0.4 *
       (0.25 * sigmoid(rs1M * 5) +
@@ -137,14 +138,8 @@ export async function scoreSectors(today: string): Promise<SectorScore[]> {
       0.15 * (0.5 * sigmoid(tv5dChg * 2) + 0.5 * sigmoid(tv20dChg * 2));
     const sSMA = 0.1 * sma20AboveRatio;
     const sROC = 0.1 * sigmoid(roc21 * 10);
-    const sFlow =
-      0.2 *
-      (0.25 * sigmoid(flowF5 / 1e11) +
-        0.25 * sigmoid(flowI5 / 1e11) +
-        0.25 * sigmoid(flowF20 / 1e11) +
-        0.25 * sigmoid(flowI20 / 1e11));
     const sVolP = 0.05 * (1 - extVolPenalty);
-    const rawScore = (sRS + sTV + sSMA + sROC + sFlow + sVolP) * 100;
+    const rawScore = ((sRS + sTV + sSMA + sROC + sVolP) * 100) / 0.8;
 
     out.push({
       id,
