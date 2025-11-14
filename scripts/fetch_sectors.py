@@ -105,41 +105,52 @@ def upsert_sector_daily():
 def upsert_investor_daily():
     """
     최신 날짜부터 과거 30일까지 하루씩 순회하며,
-    '개별 종목'의 외인/기관 순매수 데이터를 investor_daily 테이블에 저장.
+    '기관'과 '외국인'의 '개별 종목' 순매수 데이터를 investor_daily 테이블에 저장.
     """
+    # ✅✅✅ 누락되었던 pandas import 추가 ✅✅✅
+    import pandas as pd
+
     today = date.today()
     all_rows: List[dict] = []
 
     print("="*40)
-    print("수급 데이터 수집 시작 (개별 종목 기준)")
+    print("수급 데이터 수집 시작 (기관/외국인)")
     print("="*40)
 
     for i in range(35): # 약 25 영업일
         d = today - timedelta(days=i)
-        if d.weekday() >= 5:
-            continue
+        if d.weekday() >= 5: continue
             
         day_str = d.strftime("%Y%m%d")
         print(f"[investor_daily] fetching data for {day_str}")
 
         try:
-            # 올바른 함수 사용! 시장("ALL")을 대상으로 개별 종목 데이터 조회
-            df = stock.get_market_net_purchases_of_equities_by_ticker(day_str, day_str, "ALL")
-            time.sleep(0.1)
+            # 1. 기관 데이터 조회
+            df_inst = stock.get_market_net_purchases_of_equities_by_ticker(day_str, day_str, "ALL", "기관합계")
+            time.sleep(0.2) # 서버 부하 방지
+            
+            # 2. 외국인 데이터 조회
+            df_foreign = stock.get_market_net_purchases_of_equities_by_ticker(day_str, day_str, "ALL", "외국인")
+            time.sleep(0.2)
 
-            if df.empty:
-                print(f"  -> {day_str} 데이터 없음")
+            if df_inst.empty or df_foreign.empty:
+                print(f"  -> {day_str} 기관 또는 외국인 데이터 없음")
                 continue
 
-            # DataFrame의 인덱스가 ticker 이므로, reset_index()로 컬럼으로 변환
-            df = df.reset_index()
+            # 두 데이터프레임을 '티커' 기준으로 합치기
+            df_merged = pd.merge(
+                df_inst.reset_index(),
+                df_foreign.reset_index(),
+                on='티커',
+                suffixes=('_기관', '_외국인')
+            )
             
-            print(f"  -> {day_str} 데이터 {len(df)}건 조회 성공")
+            print(f"  -> {day_str} 데이터 {len(df_merged)}건 조회 및 병합 성공")
 
-            for _, row in df.iterrows():
+            for _, row in df_merged.iterrows():
                 ticker = row['티커']
-                inst_net = float(row.get("기관", row.get("기관합계", 0)))
-                foreign_net = float(row.get("외국인", row.get("외국인합계", 0)))
+                inst_net = float(row.get("순매수거래대금_기관", 0))
+                foreign_net = float(row.get("순매수거래대금_외국인", 0))
 
                 if foreign_net == 0 and inst_net == 0:
                     continue
