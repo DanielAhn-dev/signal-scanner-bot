@@ -2,6 +2,7 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { createClient } from "@supabase/supabase-js";
 import { routeMessage, routeCallback } from "../src/bot/router";
+import { scoreSectors } from "../src/lib/sectors";
 
 export const config = { api: { bodyParser: true } };
 
@@ -117,4 +118,17 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   return res.status(200).json({ ok: true, processed: items.length });
+}
+
+export async function morningBriefing(send: (t: string) => Promise<void>) {
+  const today = new Date().toISOString().slice(0, 10);
+  const list = await scoreSectors(today);
+  const topA = list.filter((x) => x.grade === "A").slice(0, 5);
+  const lines = topA.map(
+    (s) =>
+      `⭐ ${s.name} ${s.score}점 · RS1M ${(s.rs1M * 100).toFixed(
+        1
+      )}% · 외인5D ${(s.flowF5 / 1e8).toFixed(1)}억`
+  );
+  await send(["[08:30] 섹터 Top5", ...lines].join("\n"));
 }

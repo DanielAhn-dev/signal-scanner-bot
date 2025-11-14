@@ -7,17 +7,6 @@ import { getLeadersForSectorById } from "../data/sector";
 
 export type ChatContext = { chatId: number; messageId?: number };
 
-// 응답 타입
-type SeedResp = { ok?: boolean; count?: number; error?: string };
-type UpdateResp = {
-  ok?: boolean;
-  total?: number;
-  inserted?: number;
-  updated?: number;
-  changed?: number;
-  error?: string;
-};
-
 // 내부 POST 호출(강제 타임아웃 포함)
 async function callInternal(path: string, ms = 8000) {
   const base = resolveBase(process.env);
@@ -43,13 +32,13 @@ function isAdmin(ctx: ChatContext) {
   return String(ctx.chatId) === process.env.TELEGRAM_ADMIN_CHAT_ID;
 }
 
-// 명령어 패턴(한/영 동시 지원)
+// 명령어 패턴(한/영)
 const CMD = {
   START: /^\/start$/,
   HELP: /^\/help$/,
   SECTOR: /^\/(sector|sectors|섹터)\b(?:\s+.*)?$/i,
   SCORE: /^\/(score|점수)\s+(.+)$/i,
-  STOCKS: /^\/(stocks|종목)\b(?:\s+.*)?$/i, // 확장용 훅
+  STOCKS: /^\/(stocks|종목)\b(?:\s+.*)?$/i,
   SEED: /^\/(seed|시드)\b$/i,
   UPDATE: /^\/(update|업데이트)\b$/i,
 };
@@ -92,7 +81,7 @@ export async function routeMessage(
     return;
   }
 
-  // /stocks | /종목 (향후 확장 지점)
+  // /stocks | /종목 (향후 확장)
   if (CMD.STOCKS.test(t)) {
     await tgSend("sendMessage", {
       chat_id: ctx.chatId,
@@ -101,7 +90,7 @@ export async function routeMessage(
     return;
   }
 
-  // /seed | /시드
+  // /seed | /시드 (관리자)
   if (CMD.SEED.test(t)) {
     if (!isAdmin(ctx)) {
       await tgSend("sendMessage", {
@@ -111,10 +100,8 @@ export async function routeMessage(
       return;
     }
     await tgSend("sendMessage", { chat_id: ctx.chatId, text: "시드 시작…" });
-    // stocks와 sectors를 병렬 시드하려면 아래 2개 호출 사용
-    // const [st, sc] = await Promise.all([callInternal('/api/seed/stocks'), callInternal('/api/seed/sectors')]);
     const st = await callInternal("/api/seed/stocks");
-    const b = st.body as SeedResp;
+    const b = st.body as { ok?: boolean; count?: number; error?: string };
     await tgSend("sendMessage", {
       chat_id: ctx.chatId,
       text: `stocks: ${st.status} count=${b.count ?? "-"} ${
@@ -124,7 +111,7 @@ export async function routeMessage(
     return;
   }
 
-  // /update | /업데이트
+  // /update | /업데이트 (관리자)
   if (CMD.UPDATE.test(t)) {
     if (!isAdmin(ctx)) {
       await tgSend("sendMessage", {
@@ -134,13 +121,12 @@ export async function routeMessage(
       return;
     }
     await tgSend("sendMessage", { chat_id: ctx.chatId, text: "갱신 시작…" });
-    // stocks와 sectors 변경분 갱신(병렬 가능)
     const [st, sc] = await Promise.all([
       callInternal("/api/update/stocks"),
       callInternal("/api/update/sectors"),
     ]);
-    const b1 = st.body as UpdateResp;
-    const b2 = sc.body as UpdateResp;
+    const b1 = st.body as any;
+    const b2 = sc.body as any;
     await tgSend("sendMessage", {
       chat_id: ctx.chatId,
       text:
@@ -180,7 +166,6 @@ export async function routeCallback(
 ): Promise<void> {
   if (data.startsWith("sector:")) {
     const sectorId = data.slice("sector:".length);
-
     const codes = await getLeadersForSectorById(sectorId, 30);
     if (!codes.length) {
       await tgSend("sendMessage", {
@@ -189,7 +174,6 @@ export async function routeCallback(
       });
       return;
     }
-
     const text = `상위 종목\n${codes.slice(0, 30).join(", ")}`;
     await tgSend("sendMessage", { chat_id: ctx.chatId, text });
     return;
