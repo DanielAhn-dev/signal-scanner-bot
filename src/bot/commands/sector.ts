@@ -86,7 +86,6 @@ export async function handleSectorCommand(
       s.flowF20,
       0
     )}) · 기관(${fmtKRW(s.flowI5, 0)}/${fmtKRW(s.flowI20, 0)})`;
-    console.log(`sectors Data: ${sectors}`);
 
     // ✅ return 문에 flow 추가
     return `${badge(s.grade)} ${s.name} · 점수 ${

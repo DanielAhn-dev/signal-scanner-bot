@@ -6,10 +6,10 @@
     "installCommand": null,
     "functions": {
         "api/telegram.ts": {
-            "maxDuration": 10
+            "maxDuration": 15
         },
         "api/worker.ts": {
-            "maxDuration": 10
+            "maxDuration": 15
         }
     },
     "outputDirectory": "."
