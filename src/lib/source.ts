@@ -141,13 +141,9 @@ export async function fetchInvestorNetByTicker(
   }));
 }
 
-export async function fetchTickerMetaInSector(
-  sectorId: string
-): Promise<TickerMeta[]> {
-  const { data } = await supa()
-    .from("stocks")
-    .select("code, name, sector_id")
-    .eq("sector_id", sectorId);
+export async function fetchTickerMetaInSector(): Promise<TickerMeta[]> {
+  const { data } = await supa().from("stocks").select("code, name, sector_id"); // ✅ where 조건 없이 전체 조회
+
   return (data || []).map((r) => ({
     code: r.code,
     name: r.name,
