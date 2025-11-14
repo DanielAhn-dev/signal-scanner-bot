@@ -71,7 +71,7 @@ export async function getLeadersForSectorById(
 export async function getLeadersForSector(
   sector: string,
   limit = 12
-): Promise<string[]> {
+): Promise<{ code: string; name: string }[]> {
   try {
     const { data: sectorRow, error: sectorError } = await supabase
       .from("sectors")
