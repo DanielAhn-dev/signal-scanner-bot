@@ -1,28 +1,29 @@
-name: Fetch KRX Data
+name: Daily Sector & Investor Data Fetch
 
 on:
   schedule:
-    - cron: "0 21 * * 0-4" # KST 06:00 (UTC 21:00)
-  workflow_dispatch: {} # 수동 실행도 가능
+    - cron: "00 8 * * 1-5" # 평일 08:00 자동 실행
+  workflow_dispatch:
 
 jobs:
-  fetch:
+  fetch-sectors:
     runs-on: ubuntu-latest
+
+    env:
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout repo
+        uses: actions/checkout@v4
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v4
         with:
-          python-version: "3.11"
+          python-version: "3.10"
 
-      - name: Install deps
-        run: |
-          pip install pykrx supabase
+      - name: Install dependencies
+        run: pip install -r requirements.txt
 
-      - name: Run fetcher
-        env:
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-        run: |
-          python scripts/fetch_sectors.py
+      - name: Run sector/investor/stock data fetch
+        run: python3 scripts/fetch_sectors.py
