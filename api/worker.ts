@@ -10,15 +10,22 @@ const supa = () =>
     process.env.SUPABASE_URL!,
     process.env.SUPABASE_SERVICE_ROLE_KEY!
   );
+
 const INTERNAL_SECRET = process.env.CRON_SECRET || "";
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || "";
 
-// --- 기존 tgFetch, withTimeout 함수는 그대로 ... ---
+// ---- Telegram 호출 유틸 ----
+
 type TGApiResponse = { ok?: boolean; result?: any; description?: string };
+
 async function tgFetch(method: string, body: any): Promise<TGApiResponse> {
-  // (기존 코드와 동일)
+  if (!TELEGRAM_BOT_TOKEN) {
+    return { ok: false, description: "TELEGRAM_BOT_TOKEN missing" };
+  }
+
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 5000);
+
   try {
     const res = await fetch(
       `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/${method}`,
@@ -36,8 +43,8 @@ async function tgFetch(method: string, body: any): Promise<TGApiResponse> {
     clearTimeout(timer);
   }
 }
+
 function withTimeout<T>(p: Promise<T>, ms = 7800): Promise<T> {
-  // (기존 코드와 동일)
   return new Promise((resolve, reject) => {
     const t = setTimeout(() => reject(new Error("TIMEOUT")), ms);
     p.then((v) => {
@@ -50,58 +57,79 @@ function withTimeout<T>(p: Promise<T>, ms = 7800): Promise<T> {
   });
 }
 
-// --- 잡 처리 로직들 (통합) ---
+// ---- 잡 핸들러들 ----
 
 async function handleWatchSectorJob(job: any) {
-  const { sectorId, sectorName, score } = job.payload;
-  if (!sectorId) throw new Error("sectorId is missing in WATCH_SECTOR job");
+  const { sectorId, sectorName, score } = job.payload || {};
+  if (!sectorId) {
+    throw new Error("sectorId is missing in WATCH_SECTOR job");
+  }
 
   const stocks: StockScore[] = await scoreStocksInSector(sectorId);
   const promisingStocks = stocks.filter((s) => s.score >= 80).slice(0, 3);
 
   if (promisingStocks.length > 0) {
-    const chatId = process.env.TELEGRAM_ADMIN_CHAT_ID!;
+    const chatId = Number(process.env.TELEGRAM_ADMIN_CHAT_ID);
+    if (!chatId) return;
+
     const text = [
       `📈 섹터 [${sectorName}] (점수: ${score}) 에서 유망 종목 발견!`,
       ...promisingStocks.map(
         (s: StockScore) => `- ${s.name} (${s.code}): ${s.score}점`
       ),
     ].join("\n");
+
     await tgFetch("sendMessage", { chat_id: chatId, text });
   }
 }
 
 async function handleTelegramUpdateJob(job: any) {
   const u = job.payload || {};
+
+  // 콜백 버튼
   if (u?.callback_query?.data && u?.callback_query?.message?.chat?.id) {
-    const chatId = u.callback_query.message.chat.id;
+    const chatId = u.callback_query.message.chat.id as number;
+
     await tgFetch("answerCallbackQuery", {
       callback_query_id: u.callback_query.id,
       text: "처리 중…",
+      show_alert: false,
     });
+
     await withTimeout(
       routeCallback(u.callback_query.data, { chatId }, tgFetch)
     );
-  } else if (u?.message?.text && u?.message?.chat?.id) {
-    const chatId = u.message.chat.id;
+    return;
+  }
+
+  // 일반 텍스트 메시지
+  if (u?.message?.text && u?.message?.chat?.id) {
+    const chatId = u.message.chat.id as number;
+    const text = String(u.message.text || "").trim();
+    if (!text) return;
+
     await tgFetch("sendChatAction", { chat_id: chatId, action: "typing" });
-    await withTimeout(routeMessage(u.message.text.trim(), { chatId }, tgFetch));
+    await withTimeout(routeMessage(text, { chatId }, tgFetch));
   }
 }
 
-// --- 메인 워커 핸들러 ---
+// ---- 메인 워커 핸들러 ----
+
 export default async function handler(req: VercelRequest, res: VercelResponse) {
-  if (req.method !== "POST" && req.method !== "GET")
+  if (req.method !== "POST" && req.method !== "GET") {
     return res.status(405).json({ ok: false });
+  }
 
   const token =
     (req.headers["x-internal-secret"] as string) ||
     (req.query?.token as string) ||
     "";
-  if (INTERNAL_SECRET && token !== INTERNAL_SECRET)
-    return res.status(401).json({ ok: false });
 
-  // 모든 'queued' 잡을 가져오도록 수정
+  if (INTERNAL_SECRET && token !== INTERNAL_SECRET) {
+    return res.status(401).json({ ok: false });
+  }
+
+  // status = 'queued' 인 잡들만 처리
   const { data: jobs, error } = await supa()
     .from("jobs")
     .select("*")
@@ -109,13 +137,19 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     .order("created_at", { ascending: true })
     .limit(10);
 
-  if (error || !jobs) return res.status(500).send("Failed to fetch jobs");
-  if (jobs.length === 0) return res.status(200).send("No pending jobs.");
+  if (error || !jobs) {
+    console.error("worker: failed to fetch jobs", error);
+    return res.status(500).send("Failed to fetch jobs");
+  }
+
+  if (jobs.length === 0) {
+    return res.status(200).send("No pending jobs.");
+  }
 
   for (const job of jobs) {
     await supa()
       .from("jobs")
-      .update({ status: "running", started_at: new Date() })
+      .update({ status: "running", started_at: new Date().toISOString() })
       .eq("id", job.id);
 
     try {
@@ -127,18 +161,25 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
       await supa()
         .from("jobs")
-        .update({ status: "done", finished_at: new Date(), ok: true })
+        .update({
+          status: "done",
+          finished_at: new Date().toISOString(),
+          ok: true,
+        })
         .eq("id", job.id);
     } catch (e: any) {
+      console.error("worker: job failed", job.type, e);
       await supa()
         .from("jobs")
-        .update({ status: "failed", error: e.message })
+        .update({
+          status: "failed",
+          finished_at: new Date().toISOString(),
+          ok: false,
+          error: e?.message || String(e),
+        })
         .eq("id", job.id);
     }
   }
 
   res.status(200).send(`Processed ${jobs.length} jobs.`);
 }
-
-// morningBriefing 함수는 별도의 /api/briefing 같은 엔드포인트로 분리하는 것이 좋음
-// export async function morningBriefing...

@@ -74,6 +74,7 @@ export async function routeMessage(
 
   // /sector | /sectors | /섹터 : 통합 점수 기반 현재 유망 섹터
   if (CMD.SECTOR.test(t)) {
+    console.log("SECTOR CMD", t);
     try {
       await handleSectorCommand(ctx, tgSend);
     } catch (e) {

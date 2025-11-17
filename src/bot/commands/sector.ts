@@ -24,9 +24,10 @@ export async function handleSectorCommand(
 ): Promise<void> {
   const today = new Date().toISOString().slice(0, 10);
   let sectors: SectorScore[] = [];
-
+  console.log("before handleSectorCommand");
   try {
     sectors = (await scoreSectors(today)) || [];
+    console.log("sector count", sectors.length);
   } catch (e) {
     console.error("handleSectorCommand / scoreSectors failed:", e);
     await tgSend("sendMessage", {
@@ -37,6 +38,7 @@ export async function handleSectorCommand(
   }
 
   if (sectors.length === 0) {
+    console.log("sector count", sectors.length);
     await tgSend("sendMessage", {
       chat_id: ctx.chatId,
       text: "섹터 데이터가 없습니다. 데이터 수집 상태를 확인해주세요.",
@@ -65,7 +67,7 @@ export async function handleSectorCommand(
     text: `${s.name} (${s.score})`,
     callback_data: `sector:${s.id}`,
   }));
-
+  console.log("after handleSectorCommand");
   await tgSend("sendMessage", {
     chat_id: ctx.chatId,
     text: [header, ...lines].join("\n\n"),
