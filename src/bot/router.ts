@@ -1,6 +1,9 @@
 // src/bot/router.ts
 import { KO_MESSAGES } from "./messages/ko";
-import { handleSectorCommand } from "./commands/sector";
+import {
+  handleSectorCommand,
+  handleNextSectorCommand,
+} from "./commands/sector";
 import { handleScoreCommand } from "./commands/score";
 import { resolveBase } from "../lib/base";
 import { getLeadersForSectorById } from "../data/sector";
@@ -37,6 +40,7 @@ const CMD = {
   START: /^\/start$/,
   HELP: /^\/help$/,
   SECTOR: /^\/(sector|sectors|섹터)\b(?:\s+.*)?$/i,
+  NEXT_SECTOR: /^\/(nextsector|flowsector|다음섹터)\b(?:\s+.*)?$/i,
   SCORE: /^\/(score|점수)\s+(.+)$/i,
   STOCKS: /^\/(stocks|종목)\b(?:\s+.*)?$/i,
   SEED: /^\/(seed|시드)\b$/i,
@@ -68,14 +72,29 @@ export async function routeMessage(
     return;
   }
 
-  // /sector | /sectors | /섹터
+  // /sector | /sectors | /섹터 : 통합 점수 기반 현재 유망 섹터
   if (CMD.SECTOR.test(t)) {
     try {
       await handleSectorCommand(ctx, tgSend);
-    } catch {
+    } catch (e) {
+      console.error("handleSectorCommand failed:", e);
       await tgSend("sendMessage", {
         chat_id: ctx.chatId,
         text: KO_MESSAGES.SECTOR_ERROR,
+      });
+    }
+    return;
+  }
+
+  // /nextsector | /flowsector | /다음섹터 : 수급 유입 기반 전망 섹터
+  if (CMD.NEXT_SECTOR.test(t)) {
+    try {
+      await handleNextSectorCommand(ctx, tgSend);
+    } catch (e) {
+      console.error("handleNextSectorCommand failed:", e);
+      await tgSend("sendMessage", {
+        chat_id: ctx.chatId,
+        text: "섹터 수급 분석 중 오류가 발생했습니다.",
       });
     }
     return;
@@ -99,9 +118,11 @@ export async function routeMessage(
       });
       return;
     }
+
     await tgSend("sendMessage", { chat_id: ctx.chatId, text: "시드 시작…" });
     const st = await callInternal("/api/seed/stocks");
     const b = st.body as { ok?: boolean; count?: number; error?: string };
+
     await tgSend("sendMessage", {
       chat_id: ctx.chatId,
       text: `stocks: ${st.status} count=${b.count ?? "-"} ${
@@ -120,13 +141,16 @@ export async function routeMessage(
       });
       return;
     }
+
     await tgSend("sendMessage", { chat_id: ctx.chatId, text: "갱신 시작…" });
+
     const [st, sc] = await Promise.all([
       callInternal("/api/update/stocks"),
       callInternal("/api/update/sectors"),
     ]);
     const b1 = st.body as any;
     const b2 = sc.body as any;
+
     await tgSend("sendMessage", {
       chat_id: ctx.chatId,
       text:
@@ -164,11 +188,10 @@ export async function routeCallback(
   ctx: ChatContext,
   tgSend: any
 ): Promise<void> {
-  // "sector:" 콜백 처리
-  if (data.startsWith("sector:")) {
-    const sectorId = data.slice("sector:".length);
+  // "sector:" 콜백 처리 (현재 섹터 랭킹에서 눌렀을 때)
+  if (data.startsWith("sector:") || data.startsWith("nextsector:")) {
+    const [, sectorId] = data.split(":"); // "sector:<id>" or "nextsector:<id>"
 
-    // ✅ name을 함께 가져오는 getLeadersForSectorById 호출
     const leaders = await getLeadersForSectorById(sectorId, 30);
 
     if (!leaders.length) {
@@ -179,12 +202,9 @@ export async function routeCallback(
       return;
     }
 
-    // ✅ "{이름}({코드})" 형태로 텍스트 포맷팅
     const stockLines = leaders.map((s) => `${s.name}(${s.code})`);
-
     const text = `상위 종목\n${stockLines.join("\n")}`;
 
-    // ✅ 종목별로 /score 명령을 실행할 수 있는 버튼 추가
     const keyboard = {
       inline_keyboard: leaders.map((s) => [
         { text: `${s.name}`, callback_data: `score:${s.code}` },
@@ -201,9 +221,8 @@ export async function routeCallback(
 
   // "score:" 콜백 처리
   if (data.startsWith("score:")) {
-    const code = data.split(":")[1] || "";
+    const [, code] = data.split(":");
     if (code) {
-      // '/score' 명령어를 실행하는 것처럼 handleScoreCommand 호출
       await handleScoreCommand(code, ctx, tgSend);
     }
     return;

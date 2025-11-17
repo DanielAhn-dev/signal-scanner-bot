@@ -1,18 +1,23 @@
+// src/bot/commands/sector.ts
+
 import type { ChatContext } from "../router";
-import { scoreSectors, SectorScore } from "../../lib/sectors";
+import {
+  scoreSectors,
+  SectorScore,
+  getTopSectors,
+  getNextSectorCandidates,
+} from "../../lib/sectors";
 import { fmtPct, fmtKRW } from "../../lib/normalize";
 import { createMultiRowKeyboard } from "../../telegram/keyboards";
-import { createClient } from "@supabase/supabase-js";
-
-const supa = () =>
-  createClient(process.env.SUPABASE_URL!, process.env.SUPABASE_ANON_KEY!, {
-    auth: { persistSession: false },
-  });
 
 function badge(grade: "A" | "B" | "C" | undefined) {
   return grade === "A" ? "🟢A" : grade === "B" ? "🟡B" : "⚪C";
 }
 
+/**
+ * /sector
+ * - 기술 + 모멘텀 + 수급을 모두 반영한 통합 점수 상위 섹터 랭킹
+ */
 export async function handleSectorCommand(
   ctx: ChatContext,
   tgSend: any
@@ -23,10 +28,10 @@ export async function handleSectorCommand(
   try {
     sectors = (await scoreSectors(today)) || [];
   } catch (e) {
-    console.error("scoreSectors failed:", e);
+    console.error("handleSectorCommand / scoreSectors failed:", e);
     await tgSend("sendMessage", {
       chat_id: ctx.chatId,
-      text: "섹터 점수 계산 중 오류가 발생했습니다.",
+      text: "섹터 점수 계산 오류가 발생했습니다.",
     });
     return;
   }
@@ -34,81 +39,99 @@ export async function handleSectorCommand(
   if (sectors.length === 0) {
     await tgSend("sendMessage", {
       chat_id: ctx.chatId,
-      text: "현재 유의미한 섹터 데이터가 없습니다. 데이터 수집 상태를 확인해주세요.",
+      text: "섹터 데이터가 없습니다. 데이터 수집 상태를 확인해주세요.",
     });
     return;
   }
 
-  // 3. (DB 업데이트) 계산된 점수를 public.sectors 테이블에 업데이트
-  const updates = sectors.map((s) =>
-    supa()
-      .from("sectors")
-      .update({ score: s.score, updated_at: new Date().toISOString() })
-      .eq("id", s.id)
-  );
+  // 통합 스코어 기준 Top 섹터
+  const top = getTopSectors(sectors); // 기본 minScore=50, 필요하면 조정
 
-  try {
-    const results = await Promise.all(updates);
-    results.forEach((result) => {
-      if (result.error)
-        console.error("Failed to update a sector score:", result.error);
-    });
-  } catch (e) {
-    console.error("Exception during Promise.all for sector updates:", e);
-  }
-
-  // 4. (JOBS 등록) 점수 상위 5개 섹터를 'WATCH_SECTOR' 잡으로 등록
-  const topSectors = sectors.slice(0, 5);
-  const now = new Date();
-  const jobsToUpsert = topSectors.map((sector) => ({
-    // 변수명 변경
-    type: "WATCH_SECTOR",
-    payload: {
-      sectorId: sector.id,
-      sectorName: sector.name,
-      score: sector.score,
-    },
-    status: "queued",
-    created_at: now,
-    // dedup_key는 unique 제약조건이므로 upsert의 기준이 됨
-    dedup_key: `${sector.id}-${today}`,
-  }));
-
-  // ✅ insert -> upsert 로 변경
-  const { error: jobError } = await supa().from("jobs").upsert(jobsToUpsert, {
-    onConflict: "type, dedup_key", // 중복 검사 기준 컬럼 명시
-  });
-
-  if (jobError) {
-    // 중복 에러는 무시하고, 다른 에러만 로깅
-    if (jobError.code !== "23505") {
-      console.error("Failed to upsert sector watch jobs:", jobError);
-    }
-  } else {
-    console.log(`Upserted ${topSectors.length} sector watch jobs.`);
-  }
-
-  // 5. 텔레그램 메시지 생성 및 전송
-  const allZero = sectors.every((s) => s.score === 0);
-  const header = allZero ? "📊 섹터 랭킹(완화모드)" : "📊 섹터 랭킹 (TOP 10)";
-  const lines = sectors.slice(0, 10).map((s) => {
-    // 5일/20일 외인/기관 순매수 (억원 단위)
-    const flow = `\n  └ 수급: 외인(${fmtKRW(s.flowF5, 0)}/${fmtKRW(
-      s.flowF20,
+  const header = "📊 섹터 랭킹 (TOP 10)";
+  const lines = top.slice(0, 10).map((s) => {
+    const rsLine = `RS(1/3/6/12M) ${fmtPct(s.rs1M)}, ${fmtPct(
+      s.rs3M
+    )}, ${fmtPct(s.rs6M)}, ${fmtPct(s.rs12M)}`;
+    const flowLine = `수급: 외인5일 ${fmtKRW(s.flowF5, 0)} / 기관5일 ${fmtKRW(
+      s.flowI5,
       0
-    )}) · 기관(${fmtKRW(s.flowI5, 0)}/${fmtKRW(s.flowI20, 0)})`;
-
-    // ✅ return 문에 flow 추가
+    )}`;
     return `${badge(s.grade)} ${s.name} · 점수 ${
       s.score
-    } · RS(1/3/6/12M) ${fmtPct(s.rs1M)},${fmtPct(s.rs3M)},${fmtPct(
-      s.rs6M
-    )},${fmtPct(s.rs12M)}, ${flow}`; // 여기에 flow 변수 추가
+    }\n  └ ${rsLine}\n  └ ${flowLine}`;
   });
 
-  const buttons = topSectors.map((s) => ({
+  const buttons = top.slice(0, 10).map((s) => ({
     text: `${s.name} (${s.score})`,
     callback_data: `sector:${s.id}`,
+  }));
+
+  await tgSend("sendMessage", {
+    chat_id: ctx.chatId,
+    text: [header, ...lines].join("\n\n"),
+    reply_markup: createMultiRowKeyboard(2, buttons),
+  });
+}
+
+/**
+ * /nextsector
+ * - 최근 외인/기관 수급 유입(5일 기준)이 강한 섹터 랭킹
+ * - minFlow 기준은 필요에 따라 튜닝(현재는 기본값 사용)
+ */
+export async function handleNextSectorCommand(
+  ctx: ChatContext,
+  tgSend: any,
+  minFlow: number = 10_000_000_000 // 필요하면 낮춰서 테스트
+): Promise<void> {
+  const today = new Date().toISOString().slice(0, 10);
+  let sectors: SectorScore[] = [];
+
+  try {
+    sectors = (await scoreSectors(today)) || [];
+  } catch (e) {
+    console.error("handleNextSectorCommand / scoreSectors failed:", e);
+    await tgSend("sendMessage", {
+      chat_id: ctx.chatId,
+      text: "섹터 수급 분석 오류가 발생했습니다.",
+    });
+    return;
+  }
+
+  if (sectors.length === 0) {
+    await tgSend("sendMessage", {
+      chat_id: ctx.chatId,
+      text: "섹터 데이터가 없습니다. 데이터 수집 상태를 확인해주세요.",
+    });
+    return;
+  }
+
+  const next = getNextSectorCandidates(sectors, minFlow);
+
+  if (next.length === 0) {
+    await tgSend("sendMessage", {
+      chat_id: ctx.chatId,
+      text:
+        "현재 설정된 수급 기준(minFlow) 이상으로 자금 유입이 강한 섹터가 없습니다.\n" +
+        "기준을 낮추거나 기간을 조정해보세요.",
+    });
+    return;
+  }
+
+  const header = "🚀 자금유입(수급) 전망 섹터 TOP";
+  const lines = next.slice(0, 10).map((s) => {
+    const flowLine = `외인5일 ${fmtKRW(s.flowF5, 0)} / 기관5일 ${fmtKRW(
+      s.flowI5,
+      0
+    )}`;
+    const rsLine = `RS(1/3/6/12M) ${fmtPct(s.rs1M)}, ${fmtPct(
+      s.rs3M
+    )}, ${fmtPct(s.rs6M)}, ${fmtPct(s.rs12M)}`;
+    return `${s.name} · 점수 ${s.score}\n  └ ${flowLine}\n  └ ${rsLine}`;
+  });
+
+  const buttons = next.slice(0, 10).map((s) => ({
+    text: s.name,
+    callback_data: `nextsector:${s.id}`,
   }));
 
   await tgSend("sendMessage", {
