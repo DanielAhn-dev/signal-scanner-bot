@@ -10,8 +10,10 @@ type TelegramResponse = {
 
 const commands = [
   { command: "sector", description: "유망 섹터 랭킹 보기" },
+  { command: "nextsector", description: "수급 유입 섹터 흐름 보기" },
   { command: "stocks", description: "섹터별 주도주 보기" },
-  { command: "score", description: "개별 종목 점수 분석" },
+  { command: "score", description: "개별 종목 점수/시그널 보기" },
+  { command: "buy", description: "엔트리/손절/익절 레벨 보기" },
   { command: "start", description: "사용법 안내" },
 ];
 
