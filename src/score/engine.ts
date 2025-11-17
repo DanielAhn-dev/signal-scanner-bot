@@ -1,3 +1,4 @@
+// score/engine.ts
 import { sma } from "../indicators/sma";
 import { rsiWilder } from "../indicators/rsi";
 import { roc } from "../indicators/roc";
@@ -12,7 +13,8 @@ export interface ScoreFactors {
   rsi14: number;
   roc14: number;
   roc21: number;
-  avwap_support: number; // 0~100 (%)
+  avwap_support: number; // 0~100 (%), 다중 앵커 AVWAP 위에 있는 비율
+  avwap_regime?: "buyers" | "sellers" | "neutral"; // AVWAP 기준 매수/매도 레짐
 }
 
 export interface StockScore {
@@ -22,7 +24,8 @@ export interface StockScore {
   signal: "buy" | "hold" | "sell" | "none";
   factors: ScoreFactors;
   recommendation: string;
-  // 추가: 실행 레벨/크기
+
+  // 실행 레벨/크기
   entry?: { buy: number; add?: number };
   stops?: { hard: number; trail50?: number; trailPct?: number };
   targets?: { t1: number; t2: number };
@@ -44,6 +47,7 @@ function roundTo(n: number, step = 1): number {
 export function calculateScore(data: StockOHLCV[]): StockScore | null {
   try {
     if (!data || data.length < 200) return null;
+
     const sorted = [...data].sort(
       (a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()
     );
@@ -76,6 +80,7 @@ export function calculateScore(data: StockOHLCV[]): StockScore | null {
       Math.max(0, Math.floor(sorted.length * p) - 1)
     );
     const avwaps = anchors.map((a) => avwap(closes, vols, a));
+
     const avwap_support = avwaps.length
       ? (avwaps.filter((series) => {
           const v = series[series.length - 1];
@@ -85,9 +90,24 @@ export function calculateScore(data: StockOHLCV[]): StockScore | null {
         100
       : 0;
 
+    // 대표 AVWAP(중간 앵커) 기준 매수/매도 레짐
+    let avwap_regime: ScoreFactors["avwap_regime"] = "neutral";
+    if (avwaps.length > 0) {
+      const midSeries = avwaps[Math.floor(avwaps.length / 2)];
+      const vNow = midSeries[lastIdx];
+      const vPrev = midSeries[lastIdx - 1];
+      if (Number.isFinite(vNow) && Number.isFinite(vPrev)) {
+        const rising = vNow >= vPrev;
+        if (lastClose > vNow && rising) avwap_regime = "buyers";
+        else if (lastClose < vNow && !rising) avwap_regime = "sellers";
+      }
+    }
+
     // 보조 플래그
     const near20 = s20 > 0 && Math.abs((lastClose - s20) / s20) <= 0.03;
+    const near50 = s50 > 0 && Math.abs((lastClose - s50) / s50) <= 0.03;
     const above50 = lastClose > s50;
+
     const vol20 =
       vols.slice(-20).reduce((a, b) => a + (b || 0), 0) /
       Math.max(1, Math.min(20, vols.length));
@@ -96,16 +116,22 @@ export function calculateScore(data: StockOHLCV[]): StockScore | null {
 
     // 점수 가중 (0~100)
     let score = 0;
+
     // AVWAP 지지 0~12점
     score += lin(avwap_support, 0, 100, 0, 12);
+
     // RSI 50~65 구간 0~10점
     score += lin(rsi14, 50, 65, 0, 10);
+
     // ROC21 0~6 → 0~8점
     score += lin(roc21, 0, 6, 0, 8);
+
     // ROC14 0~4 → 0~5점
     score += lin(roc14, 0, 4, 0, 5);
+
     // 50SMA 상회 기본 가점 5점
     score += above50 ? 5 : 0;
+
     // 200일 기울기: 양수면 최소 3점, 기울기 커질수록 6점까지
     const slopeScale = lin(s200Slope, 0, s200 * 0.005, 3, 6);
     score += Math.max(0, slopeScale);
@@ -118,6 +144,7 @@ export function calculateScore(data: StockOHLCV[]): StockScore | null {
       (rsi14 >= 55 ? 1 : 0) +
       (roc21 > 0 ? 1 : 0) +
       (volSpike20 ? 1 : 0);
+
     if (combo >= 5) score += 10;
     else if (combo === 4) score += 7;
     else if (combo === 3) score += 4;
@@ -126,6 +153,7 @@ export function calculateScore(data: StockOHLCV[]): StockScore | null {
     const breakoutBuy =
       near20 && avwap_support >= 66 && volSpike20 && rsi14 >= 50 && roc14 >= 0;
     const trendBuy = above50 && rsi14 >= 55 && roc21 >= 0;
+
     let signal: StockScore["signal"] = "none";
     if (breakoutBuy || trendBuy) signal = "buy";
     else if (score >= 35) signal = "hold";
@@ -134,16 +162,34 @@ export function calculateScore(data: StockOHLCV[]): StockScore | null {
     // 포지션 크기(기준 대비 0.6~1.3배)
     const sizeFactor = lin(score, 20, 60, 0.6, 1.3);
 
-    // 실행 레벨 산출
-    const buyPrice = near20 ? Math.min(lastClose, s20 * 1.03) : lastClose;
-    const addPrice = above50 ? s50 : undefined;
-    const hardStop = Math.min(s50 * 0.93, lastClose * 0.93);
+    // === 실행 레벨 산출 (엔트리/손절/익절을 현재가가 아닌 기준가로 계산) ===
+
+    // 기준 엔트리 가격: 조건에 따라 "어디에서 사야 좋은지" 제안
+    let baseEntry = lastClose;
+
+    if (breakoutBuy && s20 > 0) {
+      // 돌파 매수: 20SMA 근처에서 진입 권장 (너무 멀리 가 있으면 20SMA+2% 수준 제안)
+      const ideal = s20 * 1.02;
+      baseEntry = near20 ? lastClose : Math.min(lastClose, ideal);
+    } else if (trendBuy && s50 > 0) {
+      // 추세 추종: 50SMA 되돌림에서 진입 권장
+      const ideal = s50 * 1.01;
+      baseEntry = near50 ? lastClose : Math.min(lastClose, ideal);
+    }
+
+    // 손절: 엔트리 기준 약 -7~8% 또는 50SMA 하회 중 더 보수적인 쪽
+    const hardStop = Math.min(baseEntry * 0.93, s50 * 0.93 || baseEntry * 0.93);
+
+    // 트레일링 기준은 50SMA
     const trail50 = s50;
-    const t1 = lastClose * 1.2;
-    const t2 = lastClose * 1.25;
+
+    // 익절: 엔트리 기준 +20%, +25%
+    const t1 = baseEntry * 1.2;
+    const t2 = baseEntry * 1.25;
 
     const recommendation =
-      "엔트리(20SMA±3% AVWAP 재돌파·거래량+50% 또는 추세 기준), 손절(−7~−8% 또는 50SMA/AVWAP 이탈), 익절(+20~25% 분할·트레일링)";
+      "엔트리(20SMA±3% AVWAP 재돌파·거래량+50% 또는 추세 기준), " +
+      "손절(−7~−8% 또는 50SMA/AVWAP 이탈), 익절(+20~25% 분할·트레일링)";
 
     return {
       code: lastBar.code,
@@ -159,11 +205,12 @@ export function calculateScore(data: StockOHLCV[]): StockScore | null {
         roc14,
         roc21,
         avwap_support,
+        avwap_regime,
       },
       recommendation,
       entry: {
-        buy: roundTo(buyPrice),
-        add: addPrice ? roundTo(addPrice) : undefined,
+        buy: roundTo(baseEntry),
+        add: above50 ? roundTo(s50) : undefined,
       },
       stops: {
         hard: roundTo(hardStop),
