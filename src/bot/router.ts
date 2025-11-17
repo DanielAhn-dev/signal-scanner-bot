@@ -7,6 +7,8 @@ import {
 import { handleScoreCommand } from "./commands/score";
 import { resolveBase } from "../lib/base";
 import { getLeadersForSectorById } from "../data/sector";
+import { createMultiRowKeyboard } from "../telegram/keyboards";
+import { setCommandsKo } from "../telegram/api";
 
 export type ChatContext = { chatId: number; messageId?: number };
 
@@ -45,6 +47,7 @@ const CMD = {
   STOCKS: /^\/(stocks|종목)\b(?:\s+.*)?$/i,
   SEED: /^\/(seed|시드)\b$/i,
   UPDATE: /^\/(update|업데이트)\b$/i,
+  COMMANDS: /^\/(commands|admin_commands)\b$/i,
 };
 
 export async function routeMessage(
@@ -68,6 +71,30 @@ export async function routeMessage(
     await tgSend("sendMessage", {
       chat_id: ctx.chatId,
       text: KO_MESSAGES.HELP,
+    });
+    return;
+  }
+
+  // /commands | /admin_commands (관리자 전용, 텔레그램 명령어 갱신)
+  if (CMD.COMMANDS.test(t)) {
+    if (!isAdmin(ctx)) {
+      await tgSend("sendMessage", {
+        chat_id: ctx.chatId,
+        text: "권한이 없습니다.",
+      });
+      return;
+    }
+
+    await tgSend("sendMessage", {
+      chat_id: ctx.chatId,
+      text: "텔레그램 명령어를 갱신합니다…",
+    });
+
+    const res = await setCommandsKo();
+
+    await tgSend("sendMessage", {
+      chat_id: ctx.chatId,
+      text: res?.ok ? "명령어 갱신 완료 ✅" : "명령어 갱신 실패 ❌",
     });
     return;
   }
@@ -203,19 +230,19 @@ export async function routeCallback(
     }
 
     const stockLines = leaders.map((s) => `${s.name}(${s.code})`);
-    const text = `상위 종목\n${stockLines.join("\n")}`;
 
-    const keyboard = {
-      inline_keyboard: leaders.map((s) => [
-        { text: `${s.name}`, callback_data: `score:${s.code}` },
-      ]),
-    };
+    // ✅ 종목 리스트는 텍스트로 나열하지 않고 간단 설명만
+    const text =
+      "상위 종목 버튼을 눌러 점수(/score)를 확인하세요.\n" +
+      "(각 버튼은 해당 종목의 점수/매매 시그널을 바로 조회합니다.)";
 
-    if (data.startsWith("score:")) {
-      const [, code] = data.split(":");
-      if (code) await handleScoreCommand(code, ctx, tgSend);
-      return;
-    }
+    // ✅ 2×N 배열 버튼 생성
+    const btns = leaders.map((s) => ({
+      text: s.name,
+      callback_data: `score:${s.code}`,
+    }));
+
+    const keyboard = createMultiRowKeyboard(2, btns);
 
     await tgSend("sendMessage", {
       chat_id: ctx.chatId,
@@ -225,12 +252,9 @@ export async function routeCallback(
     return;
   }
 
-  // "score:" 콜백 처리 (기존 그대로)
   if (data.startsWith("score:")) {
     const [, code] = data.split(":");
-    if (code) {
-      await handleScoreCommand(code, ctx, tgSend);
-    }
+    if (code) await handleScoreCommand(code, ctx, tgSend);
     return;
   }
 
