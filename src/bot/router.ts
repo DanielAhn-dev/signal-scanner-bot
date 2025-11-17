@@ -5,6 +5,7 @@ import {
   handleNextSectorCommand,
 } from "./commands/sector";
 import { handleScoreCommand } from "./commands/score";
+import { handleBuyCommand } from "./commands/buy";
 import { resolveBase } from "../lib/base";
 import { getLeadersForSectorById } from "../data/sector";
 import { createMultiRowKeyboard } from "../telegram/keyboards";
@@ -48,6 +49,7 @@ const CMD = {
   SEED: /^\/(seed|시드)\b$/i,
   UPDATE: /^\/(update|업데이트)\b$/i,
   COMMANDS: /^\/(commands|admin_commands)\b$/i,
+  BUY: /^\/(buy|매수)\b(?:\s+(.+))?$/i,
 };
 
 export async function routeMessage(
@@ -194,6 +196,14 @@ export async function routeMessage(
           b2.error ? `err=${b2.error}` : ""
         }`,
     });
+    return;
+  }
+
+  // /buy | /매수 <쿼리>
+  const mb = t.match(CMD.BUY);
+  if (mb) {
+    // mb[2] 에 종목 쿼리(있으면)가 들어감
+    await handleBuyCommand(mb[2] || "", ctx, tgSend);
     return;
   }
 
