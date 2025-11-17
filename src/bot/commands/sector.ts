@@ -13,6 +13,8 @@ function badge(grade: "A" | "B" | "C" | undefined) {
   return grade === "A" ? "🟢A" : grade === "B" ? "🟡B" : "⚪C";
 }
 
+const CALLBACK_MAX = 60; // 여유 있게 60자로 제한
+
 export async function handleSectorCommand(
   ctx: ChatContext,
   tgSend: any
@@ -70,13 +72,26 @@ export async function handleSectorCommand(
     }\n  └ ${rsLine}\n  └ ${flowLine}`;
   });
 
-  // 👉 callback_data 를 sector id 그대로 사용 (예: "KRX:IT")
-  const buttons = top.slice(0, 10).map((s) => ({
+  // callback_data 로 쓸 수 없는 섹터는 버튼에서 제외
+  const safeTop = top.slice(0, 10).filter((s) => {
+    const ok =
+      typeof s.id === "string" &&
+      s.id.length > 0 &&
+      Buffer.byteLength(s.id, "utf8") <= CALLBACK_MAX;
+    if (!ok) {
+      console.warn("[sector] skip invalid callback_data id", s.id);
+    }
+    return ok;
+  });
+
+  const buttons = safeTop.map((s) => ({
     text: `${s.name} (${s.score})`,
-    callback_data: s.id,
+    callback_data: s.id, // 예: "KRX:IT"
   }));
 
-  console.log("[sector] before sendMessage");
+  console.log("[sector] before sendMessage", {
+    buttonCount: buttons.length,
+  });
 
   const res = await tgSend("sendMessage", {
     chat_id: ctx.chatId,
@@ -87,11 +102,7 @@ export async function handleSectorCommand(
   console.log("[sector] sendMessage result", res);
 }
 
-/**
- * /nextsector
- * - 최근 외인/기관 수급 유입(5일 기준)이 강한 섹터 랭킹
- * - minFlow 기준은 필요에 따라 튜닝(현재는 기본값 사용)
- */
+// /nextsector
 export async function handleNextSectorCommand(
   ctx: ChatContext,
   tgSend: any,
@@ -102,6 +113,7 @@ export async function handleNextSectorCommand(
 
   try {
     sectors = (await scoreSectors(today)) || [];
+    console.log("[nextsector] scoreSectors ok", { count: sectors.length });
   } catch (e) {
     console.error("handleNextSectorCommand / scoreSectors failed:", e);
     await tgSend("sendMessage", {
@@ -120,6 +132,7 @@ export async function handleNextSectorCommand(
   }
 
   const next = getNextSectorCandidates(sectors, minFlow);
+  console.log("[nextsector] candidates", { count: next.length });
 
   if (next.length === 0) {
     await tgSend("sendMessage", {
@@ -143,15 +156,27 @@ export async function handleNextSectorCommand(
     return `${s.name} · 점수 ${s.score}\n  └ ${flowLine}\n  └ ${rsLine}`;
   });
 
-  // 👉 /sector와 동일하게 섹터 id 자체를 callback_data 로 사용
-  const buttons = next.slice(0, 10).map((s) => ({
+  const safeNext = next.slice(0, 10).filter((s) => {
+    const ok =
+      typeof s.id === "string" &&
+      s.id.length > 0 &&
+      Buffer.byteLength(s.id, "utf8") <= CALLBACK_MAX;
+    if (!ok) {
+      console.warn("[nextsector] skip invalid callback_data id", s.id);
+    }
+    return ok;
+  });
+
+  const buttons = safeNext.map((s) => ({
     text: s.name,
-    callback_data: s.id, // 예: "KRX:IT"
+    callback_data: s.id,
   }));
 
-  await tgSend("sendMessage", {
+  const res = await tgSend("sendMessage", {
     chat_id: ctx.chatId,
     text: [header, ...lines].join("\n\n"),
     reply_markup: createMultiRowKeyboard(2, buttons),
   });
+
+  console.log("[nextsector] sendMessage result", res);
 }
