@@ -189,10 +189,9 @@ export async function routeCallback(
   ctx: ChatContext,
   tgSend: any
 ): Promise<void> {
-  // "sector:" 콜백 처리 (현재 섹터 랭킹에서 눌렀을 때)
-  if (data.startsWith("sector:") || data.startsWith("nextsector:")) {
-    const [, sectorId] = data.split(":"); // "sector:<id>" or "nextsector:<id>"
-
+  // 섹터 버튼: data 가 곧 sectorId (예: "KRX:IT")
+  if (data.startsWith("KRX:")) {
+    const sectorId = data;
     const leaders = await getLeadersForSectorById(sectorId, 30);
 
     if (!leaders.length) {
@@ -212,6 +211,12 @@ export async function routeCallback(
       ]),
     };
 
+    if (data.startsWith("score:")) {
+      const [, code] = data.split(":");
+      if (code) await handleScoreCommand(code, ctx, tgSend);
+      return;
+    }
+
     await tgSend("sendMessage", {
       chat_id: ctx.chatId,
       text,
@@ -220,7 +225,7 @@ export async function routeCallback(
     return;
   }
 
-  // "score:" 콜백 처리
+  // "score:" 콜백 처리 (기존 그대로)
   if (data.startsWith("score:")) {
     const [, code] = data.split(":");
     if (code) {
@@ -229,7 +234,6 @@ export async function routeCallback(
     return;
   }
 
-  // 그 외의 경우
   await tgSend("sendMessage", {
     chat_id: ctx.chatId,
     text: "알 수 없는 버튼입니다.",

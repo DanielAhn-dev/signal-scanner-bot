@@ -43,7 +43,7 @@ export async function handleSectorCommand(
     return;
   }
 
-  const top = getTopSectors(sectors); // minScore 기본값 사용
+  const top = getTopSectors(sectors);
   console.log("[sector] top sectors", { topCount: top.length });
 
   if (!top.length) {
@@ -70,9 +70,10 @@ export async function handleSectorCommand(
     }\n  └ ${rsLine}\n  └ ${flowLine}`;
   });
 
+  // 👉 callback_data 를 sector id 그대로 사용 (예: "KRX:IT")
   const buttons = top.slice(0, 10).map((s) => ({
     text: `${s.name} (${s.score})`,
-    callback_data: `sector:${s.id}`,
+    callback_data: s.id,
   }));
 
   console.log("[sector] before sendMessage");
@@ -94,7 +95,7 @@ export async function handleSectorCommand(
 export async function handleNextSectorCommand(
   ctx: ChatContext,
   tgSend: any,
-  minFlow: number = 10_000_000_000 // 필요하면 낮춰서 테스트
+  minFlow: number = 10_000_000_000
 ): Promise<void> {
   const today = new Date().toISOString().slice(0, 10);
   let sectors: SectorScore[] = [];
@@ -142,9 +143,10 @@ export async function handleNextSectorCommand(
     return `${s.name} · 점수 ${s.score}\n  └ ${flowLine}\n  └ ${rsLine}`;
   });
 
+  // 👉 /sector와 동일하게 섹터 id 자체를 callback_data 로 사용
   const buttons = next.slice(0, 10).map((s) => ({
     text: s.name,
-    callback_data: `nextsector:${s.id}`,
+    callback_data: s.id, // 예: "KRX:IT"
   }));
 
   await tgSend("sendMessage", {
