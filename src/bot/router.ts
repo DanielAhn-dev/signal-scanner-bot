@@ -18,12 +18,23 @@ async function callInternal(path: string, ms = 8000) {
   const base = resolveBase(process.env);
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), ms);
+
   try {
+    const secret = process.env.CRON_SECRET!; // 또는 TELEGRAM_BOT_SECRET
+
     const r = await fetch(`${base}${path}`, {
       method: "POST",
-      headers: { "x-internal-secret": process.env.CRON_SECRET! },
+      headers: {
+        // 기존 seed 등에서 쓰던 헤더 유지
+        "x-internal-secret": secret,
+        // update API에서 검사하는 헤더 추가
+        "x-cron-secret": secret,
+        // 만약 isAuthorized가 x-telegram-bot-secret만 본다면 이 것도 추가
+        "x-telegram-bot-secret": process.env.TELEGRAM_BOT_SECRET ?? secret,
+      },
       signal: ctrl.signal,
     });
+
     const body = await r.json().catch(() => ({}));
     return { status: r.status, body };
   } catch (e: any) {
