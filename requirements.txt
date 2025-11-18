@@ -1,5 +1,9 @@
-pykrx>=1.0.0
-supabase-py>=2.0.0
-pandas>=2.0.0
-python-dateutil>=2.8.2
-requests>=2.31.0
+pykrx==1.0.51
+supabase==2.24.0
+
+pandas==2.3.3
+numpy==2.3.4
+python-dateutil==2.9.0.post0
+pytz==2025.2
+tzdata==2025.2
+requests==2.32.5
