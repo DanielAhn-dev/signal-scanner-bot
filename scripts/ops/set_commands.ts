@@ -1,9 +1,11 @@
-// scripts/ops/set_commands.cjs
-require("dotenv/config");
+// scripts/ops/set_commands.ts
+import "dotenv/config";
 
-/** @typedef {{ ok: boolean; result?: any; description?: string }} TelegramResponse */
-
-const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || "";
+type TelegramResponse = {
+  ok: boolean;
+  result?: any;
+  description?: string;
+};
 
 const commands = [
   { command: "sector", description: "유망 섹터 랭킹 보기" },
@@ -14,12 +16,14 @@ const commands = [
   { command: "start", description: "사용법 안내" },
 ];
 
+const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || "";
+
 if (!TELEGRAM_BOT_TOKEN) {
-  console.error("TELEGRAM_BOT_TOKEN is not defined in env.");
+  console.error("TELEGRAM_BOT_TOKEN is not defined in .env file.");
   process.exit(1);
 }
 
-async function main() {
+async function setCommands() {
   const url = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/setMyCommands`;
 
   try {
@@ -29,8 +33,8 @@ async function main() {
       body: JSON.stringify({ commands }),
     });
 
-    /** @type {TelegramResponse} */
-    const json = await res.json();
+    // 🔧 res.json() 결과를 명시적으로 TelegramResponse로 단언
+    const json = (await res.json()) as TelegramResponse;
 
     if (json.ok) {
       console.log("✅ Telegram bot commands updated successfully!");
@@ -42,7 +46,7 @@ async function main() {
   }
 }
 
-main().catch((e) => {
+setCommands().catch((e) => {
   console.error(e);
   process.exit(1);
 });
