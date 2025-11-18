@@ -1,3 +1,4 @@
+// scripts/seedSectors.ts
 import "dotenv/config";
 import { createClient } from "@supabase/supabase-js";
 import fs from "node:fs/promises";
@@ -7,6 +8,29 @@ import * as iconv from "iconv-lite";
 const UA =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120 Safari/537.36";
 const BATCH = 500;
+
+// ✅ KRX 업종 지수 코드 매핑 (fetch_sectors.py 와 동일한 룰 유지)
+const NAME_TO_INDEX_RULES: Array<[string, string]> = [
+  ["반도체", "1014"],
+  ["전자장비", "1013"],
+  ["전기전자", "1013"],
+  ["화학", "1010"],
+  ["철강", "1011"],
+  ["철강및금속", "1011"],
+  ["기계", "1012"],
+  ["조선", "1017"],
+  ["운수장비", "1017"],
+  ["은행", "1027"],
+  ["보험", "1027"],
+  ["금융", "1027"],
+];
+
+function inferIndexCodeFromName(name: string): string | null {
+  for (const [kw, code] of NAME_TO_INDEX_RULES) {
+    if (name.includes(kw)) return code;
+  }
+  return null;
+}
 
 function getScriptDir(): string {
   const byArg = process.argv?.[1];
@@ -122,42 +146,48 @@ async function main() {
 
   // 2) 새로 생성할 rows (슬러그 고유화 적용)
   const usedSlugs = new Set<string>();
-  // 이미 DB에 존재하는 id들(슬러그 부분)을 used에 추가하면 같은 id 재생성 방지 가능
   for (const id of existingMap.keys()) {
-    // 만약 기존 id 형식이 "SECTOR:KRX:..."라면 슬러그 부분을 usedSlugs에 넣어 중복생성 방지
     const parts = id.split(":");
-    const possibleSlug = parts.slice(2).join(":"); // works whether id has prefix or not
+    const possibleSlug = parts.slice(2).join(":");
     if (possibleSlug) usedSlugs.add(possibleSlug.toUpperCase());
   }
 
   const rows: SectorRow[] = names
     .sort((a, b) => a.localeCompare(b, "ko"))
     .map((name) => {
-      const slug = generateUniqueSlug(name, usedSlugs); // 예: "화학" -> "화학" 또는 "화학_1"
-      const id = `KRX:${slug}`; // 기존 코드와 호환되는 prefix 사용(원하면 수정 가능)
+      const slug = generateUniqueSlug(name, usedSlugs);
+      const id = `KRX:${slug}`;
+      const krxIndex = inferIndexCodeFromName(name); // ✅ 이름 기반 지수 코드 추론
+
       return {
         id,
         name,
         metrics: {
           sources: ["NAVER_UPJONG"],
           fetched_at: new Date().toISOString(),
+          ...(krxIndex ? { krx_index: krxIndex } : {}),
         },
         score: 0,
       };
     });
 
-  // 3) 기존 DB와 병합: existingMap을 기반으로, 새 항목은 추가/갱신(메트릭 병합)
+  // 3) 기존 DB와 병합: 기존 metrics.krx_index는 보존하고, 없으면 새 값 채움
   for (const r of rows) {
     if (existingMap.has(r.id)) {
       const prev = existingMap.get(r.id)!;
+      const prevMetrics = (prev.metrics ?? {}) as Record<string, unknown>;
+      const nextMetrics = {
+        ...prevMetrics,
+        ...(r.metrics ?? {}),
+        // 기존에 krx_index가 있었다면 그대로 유지
+        ...(prevMetrics.krx_index ? { krx_index: prevMetrics.krx_index } : {}),
+      };
+
       existingMap.set(r.id, {
         ...prev,
         name: r.name || prev.name,
         score: r.score ?? prev.score,
-        metrics: {
-          ...(prev.metrics ?? {}),
-          ...(r.metrics ?? {}),
-        },
+        metrics: nextMetrics,
       });
     } else {
       existingMap.set(r.id, r);

@@ -8,11 +8,9 @@
     "local": "vercel dev",
     "build": "tsc --noEmit",
     "deploy": "vercel --prod",
-    "sync:sectors": "tsx scripts/syncSectors.ts",
-    "sync:sectorstostocks": "tsx scripts/syncSectorsToStocks.ts",
     "seed:sectors": "tsx scripts/seedSectors.ts",
-    "fix:stocks": "tsx scripts/fixStocksAndMapSectors.ts",
-    "gen:sectors": "tsx scripts/generateSectorsJson.ts"
+    "gen:sectors": "tsx scripts/generateSectorsJson.ts",
+    "set:commands": "node scripts/ops/set_commands.cjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.45.0",

@@ -37,6 +37,13 @@ def infer_index_code_from_name(name: str) -> str | None:
     return None
 
 def get_sector_index_map() -> Dict[str, str]:
+    """
+    Supabase.sectors 에서 id/name/metrics.krx_index 를 읽어
+    sector_id -> KRX 지수 코드 맵을 만든다.
+
+    metrics.krx_index 가 비어 있는 섹터는 이름으로 코드 추론 후
+    sectors.metrics.krx_index 를 채워 넣어 다음 실행부터는 DB만 참조하도록 한다.
+    """
     try:
         res = supabase.table("sectors").select("id,name,metrics").execute()
         rows = res.data or []
@@ -46,60 +53,51 @@ def get_sector_index_map() -> Dict[str, str]:
 
     mapping: Dict[str, str] = {}
     missing_names: List[str] = []
+    updates: List[dict] = []
 
     for row in rows:
         sid = row["id"]
         name = row.get("name") or ""
         metrics = row.get("metrics") or {}
+
         code = metrics.get("krx_index")
+        inferred = False
         if not code:
             code = infer_index_code_from_name(name)
+            inferred = code is not None
+
         if code:
-            mapping[sid] = str(code)
+            code_str = str(code)
+            mapping[sid] = code_str
+
+            # 새로 추론한 경우에는 sectors.metrics.krx_index 를 업데이트 큐에 넣는다.
+            if inferred:
+                new_metrics = dict(metrics)
+                new_metrics["krx_index"] = code_str
+                updates.append({"id": sid, "metrics": new_metrics})
         else:
             missing_names.append(name)
 
-    print(f"[sector_map] 사용 가능한 섹터 수={len(mapping)}")
+    print(f"[sector_map] 사용 가능한 섹터 수 = {len(mapping)}")
     if missing_names:
-        print(f"[sector_map] 코드 매핑 실패 섹터 예시(상위 5개): {missing_names[:5]}")
+        print(
+            f"[sector_map] 코드 매핑 실패 섹터 예시(상위 5개): {missing_names[:5]}"
+        )
+
+    # 필요 시 sectors.metrics.krx_index 보정
+    if updates:
+        print(
+            f"[sector_map] 이름 기반으로 krx_index 를 보정할 섹터 수 = {len(updates)}"
+        )
+        BATCH = 100
+        for i in range(0, len(updates), BATCH):
+            chunk = updates[i : i + BATCH]
+            try:
+                supabase.table("sectors").upsert(chunk).execute()
+            except Exception as e:
+                print(f"[sector_map] sectors.krx_index upsert 실패: {e}")
+
     return mapping
-
-def upsert_sector_daily():
-    today = date.today()
-    start = today - timedelta(days=260)
-    start_str = start.strftime("%Y%m%d")
-    end_str = today.strftime("%Y%m%d")
-
-    sector_index_map = get_sector_index_map()
-    if not sector_index_map:
-        print("[sector_daily] 매핑된 섹터가 없습니다. 작업을 건너뜁니다.")
-        return
-
-    rows: List[dict] = []
-    for sector_id, index_code in sector_index_map.items():
-        try:
-            df = stock.get_index_ohlcv(start_str, end_str, index_code)
-            time.sleep(0.1) # KRX 서버 부하 방지를 위한 약간의 딜레이
-        except Exception as e:
-            print(f"[sector_daily] get_index_ohlcv error sector={sector_id} code={index_code}: {e}")
-            continue
-
-        for ds, row in df.iterrows():
-            d = date.fromisoformat(str(ds)[:10])
-            rows.append(
-                {"sector_id": sector_id, "date": d.isoformat(), "close": float(row["종가"]), "value": float(row["거래대금"])}
-            )
-
-    if not rows:
-        print("[sector_daily] 적재할 row 가 없습니다.")
-        return
-
-    BATCH = 200
-    print(f"[sector_daily] 총 {len(rows)}개의 섹터 시세 데이터를 upsert 합니다...")
-    for i in range(0, len(rows), BATCH):
-        chunk = rows[i : i + BATCH]
-        supabase.table("sector_daily").upsert(chunk).execute()
-    print(f"[sector_daily] upsert 완료. 총 rows={len(rows)}")
 
 # ✅✅✅ --- 수정된 upsert_investor_daily 함수 --- ✅✅✅
 def upsert_investor_daily():
@@ -240,6 +238,50 @@ def upsert_stock_daily():
         print(f"[stock_daily] ... {i+len(chunk)}/{len(all_rows)} 완료")
         
     print(f"[stock_daily] upsert 완료. 총 rows={len(all_rows)}")
+
+def upsert_sector_daily():
+    today = date.today()
+    start = today - timedelta(days=260)
+    start_str = start.strftime("%Y%m%d")
+    end_str = today.strftime("%Y%m%d")
+
+    sector_index_map = get_sector_index_map()
+    if not sector_index_map:
+        print("[sector_daily] 매핑된 섹터가 없습니다. 작업을 건너뜁니다.")
+        return
+
+    rows: List[dict] = []
+    for sector_id, index_code in sector_index_map.items():
+        try:
+            df = stock.get_index_ohlcv(start_str, end_str, index_code)
+            time.sleep(0.1)  # KRX 서버 부하 방지를 위한 약간의 딜레이
+        except Exception as e:
+            print(
+                f"[sector_daily] get_index_ohlcv error sector={sector_id} code={index_code}: {e}"
+            )
+            continue
+
+        for ds, row in df.iterrows():
+            d = date.fromisoformat(str(ds)[:10])
+            rows.append(
+                {
+                    "sector_id": sector_id,
+                    "date": d.isoformat(),
+                    "close": float(row["종가"]),
+                    "value": float(row["거래대금"]),
+                }
+            )
+
+    if not rows:
+        print("[sector_daily] 적재할 row 가 없습니다.")
+        return
+
+    BATCH = 200
+    print(f"[sector_daily] 총 {len(rows)}개의 섹터 시세 데이터를 upsert 합니다...")
+    for i in range(0, len(rows), BATCH):
+        chunk = rows[i : i + BATCH]
+        supabase.table("sector_daily").upsert(chunk).execute()
+    print(f"[sector_daily] upsert 완료. 총 rows={len(rows)}")
 
 if __name__ == "__main__":
     upsert_sector_daily()

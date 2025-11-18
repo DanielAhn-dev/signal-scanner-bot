@@ -1,871 +1,881 @@
 [
-    {
-        "id": "KRX:가구",
-        "name": "가구",
-        "metrics": {
-            "sources": [
-                "NAVER_UPJONG"
-            ],
-            "fetched_at": "2025-11-12T06:11:38.614Z"
-        },
-        "score": 0
-    },
-    {
-        "id": "KRX:가스유틸리티",
-        "name": "가스유틸리티",
-        "metrics": {
-            "sources": [
-                "NAVER_UPJONG"
-            ],
-            "fetched_at": "2025-11-12T06:11:38.615Z"
-        },
-        "score": 0
-    },
-    {
-        "id": "KRX:가정용기기와용품",
-        "name": "가정용기기와용품",
-        "metrics": {
-            "sources": [
-                "NAVER_UPJONG"
-            ],
-            "fetched_at": "2025-11-12T06:11:38.615Z"
-        },
-        "score": 0
-    },
-    {
-        "id": "KRX:가정용품",
-        "name": "가정용품",
-        "metrics": {
-            "sources": [
-                "NAVER_UPJONG"
-            ],
-            "fetched_at": "2025-11-12T06:11:38.615Z"
-        },
-        "score": 0
-    },
-    {
-        "id": "KRX:건강관리기술",
-        "name": "건강관리기술",
-        "metrics": {
-            "sources": [
-                "NAVER_UPJONG"
-            ],
-            "fetched_at": "2025-11-12T06:11:38.615Z"
-        },
-        "score": 0
-    },
-    {
-        "id": "KRX:건강관리업체및서비스",
-        "name": "건강관리업체및서비스",
-        "metrics": {
-            "sources": [
-                "NAVER_UPJONG"
-            ],
-            "fetched_at": "2025-11-12T06:11:38.615Z"
-        },
-        "score": 0
-    },
-    {
-        "id": "KRX:건강관리장비와용품",
-        "name": "건강관리장비와용품",
-        "metrics": {
-            "sources": [
-                "NAVER_UPJONG"
-            ],
-            "fetched_at": "2025-11-12T06:11:38.615Z"
-        },
-        "score": 0
-    },
-    {
-        "id": "KRX:건설",
-        "name": "건설",
-        "metrics": {
-            "sources": [
-                "NAVER_UPJONG"
-            ],
-            "fetched_at": "2025-11-12T06:11:38.615Z"
-        },
-        "score": 0
-    },
-    {
-        "id": "KRX:건축자재",
-        "name": "건축자재",
-        "metrics": {
-            "sources": [
-                "NAVER_UPJONG"
-            ],
-            "fetched_at": "2025-11-12T06:11:38.615Z"
-        },
-        "score": 0
-    },
-    {
-        "id": "KRX:건축제품",
-        "name": "건축제품",
-        "metrics": {
-            "sources": [
-                "NAVER_UPJONG"
-            ],
-            "fetched_at": "2025-11-12T06:11:38.615Z"
-        },
-        "score": 0
-    },
-    {
-        "id": "KRX:게임엔터테인먼트",
-        "name": "게임엔터테인먼트",
-        "metrics": {
-            "sources": [
-                "NAVER_UPJONG"
-            ],
-            "fetched_at": "2025-11-12T06:11:38.615Z"
-        },
-        "score": 0
-    },
-    {
-        "id": "KRX:광고",
-        "name": "광고",
-        "metrics": {
-            "sources": [
-                "NAVER_UPJONG"
-            ],
-            "fetched_at": "2025-11-12T06:11:38.615Z"
-        },
-        "score": 0
-    },
-    {
-        "id": "KRX:교육서비스",
-        "name": "교육서비스",
-        "metrics": {
-            "sources": [
-                "NAVER_UPJONG"
-            ],
-            "fetched_at": "2025-11-12T06:11:38.615Z"
-        },
-        "score": 0
-    },
-    {
-        "id": "KRX:기계",
-        "name": "기계",
-        "metrics": {
-            "sources": [
-                "NAVER_UPJONG"
-            ],
-            "fetched_at": "2025-11-12T06:11:38.615Z"
-        },
-        "score": 0
-    },
-    {
-        "id": "KRX:기타",
-        "name": "기타",
-        "metrics": {
-            "sources": [
-                "NAVER_UPJONG"
-            ],
-            "fetched_at": "2025-11-12T06:11:38.615Z"
-        },
-        "score": 0
-    },
-    {
-        "id": "KRX:기타금융",
-        "name": "기타금융",
-        "metrics": {
-            "sources": [
-                "NAVER_UPJONG"
-            ],
-            "fetched_at": "2025-11-12T06:11:38.615Z"
-        },
-        "score": 0
-    },
-    {
-        "id": "KRX:다각화된소비자서비스",
-        "name": "다각화된소비자서비스",
-        "metrics": {
-            "sources": [
-                "NAVER_UPJONG"
-            ],
-            "fetched_at": "2025-11-12T06:11:38.615Z"
-        },
-        "score": 0
-    },
-    {
-        "id": "KRX:다각화된통신서비스",
-        "name": "다각화된통신서비스",
-        "metrics": {
-            "sources": [
-                "NAVER_UPJONG"
-            ],
-            "fetched_at": "2025-11-12T06:11:38.615Z"
-        },
-        "score": 0
-    },
-    {
-        "id": "KRX:담배",
-        "name": "담배",
-        "metrics": {
-            "sources": [
-                "NAVER_UPJONG"
-            ],
-            "fetched_at": "2025-11-12T06:11:38.615Z"
-        },
-        "score": 0
-    },
-    {
-        "id": "KRX:도로와철도운송",
-        "name": "도로와철도운송",
-        "metrics": {
-            "sources": [
-                "NAVER_UPJONG"
-            ],
-            "fetched_at": "2025-11-12T06:11:38.615Z"
-        },
-        "score": 0
-    },
-    {
-        "id": "KRX:디스플레이장비및부품",
-        "name": "디스플레이장비및부품",
-        "metrics": {
-            "sources": [
-                "NAVER_UPJONG"
-            ],
-            "fetched_at": "2025-11-12T06:11:38.615Z"
-        },
-        "score": 0
-    },
-    {
-        "id": "KRX:디스플레이패널",
-        "name": "디스플레이패널",
-        "metrics": {
-            "sources": [
-                "NAVER_UPJONG"
-            ],
-            "fetched_at": "2025-11-12T06:11:38.615Z"
-        },
-        "score": 0
-    },
-    {
-        "id": "KRX:레저용장비와제품",
-        "name": "레저용장비와제품",
-        "metrics": {
-            "sources": [
-                "NAVER_UPJONG"
-            ],
-            "fetched_at": "2025-11-12T06:11:38.615Z"
-        },
-        "score": 0
-    },
-    {
-        "id": "KRX:무선통신서비스",
-        "name": "무선통신서비스",
-        "metrics": {
-            "sources": [
-                "NAVER_UPJONG"
-            ],
-            "fetched_at": "2025-11-12T06:11:38.615Z"
-        },
-        "score": 0
-    },
-    {
-        "id": "KRX:무역회사와판매업체",
-        "name": "무역회사와판매업체",
-        "metrics": {
-            "sources": [
-                "NAVER_UPJONG"
-            ],
-            "fetched_at": "2025-11-12T06:11:38.615Z"
-        },
-        "score": 0
-    },
-    {
-        "id": "KRX:문구류",
-        "name": "문구류",
-        "metrics": {
-            "sources": [
-                "NAVER_UPJONG"
-            ],
-            "fetched_at": "2025-11-12T06:11:38.615Z"
-        },
-        "score": 0
-    },
-    {
-        "id": "KRX:반도체와반도체장비",
-        "name": "반도체와반도체장비",
-        "metrics": {
-            "sources": [
-                "NAVER_UPJONG"
-            ],
-            "fetched_at": "2025-11-12T06:11:38.615Z"
-        },
-        "score": 0
-    },
-    {
-        "id": "KRX:방송과엔터테인먼트",
-        "name": "방송과엔터테인먼트",
-        "metrics": {
-            "sources": [
-                "NAVER_UPJONG"
-            ],
-            "fetched_at": "2025-11-12T06:11:38.615Z"
-        },
-        "score": 0
-    },
-    {
-        "id": "KRX:백화점과일반상점",
-        "name": "백화점과일반상점",
-        "metrics": {
-            "sources": [
-                "NAVER_UPJONG"
-            ],
-            "fetched_at": "2025-11-12T06:11:38.615Z"
-        },
-        "score": 0
-    },
-    {
-        "id": "KRX:복합기업",
-        "name": "복합기업",
-        "metrics": {
-            "sources": [
-                "NAVER_UPJONG"
-            ],
-            "fetched_at": "2025-11-12T06:11:38.615Z"
-        },
-        "score": 0
-    },
-    {
-        "id": "KRX:복합유틸리티",
-        "name": "복합유틸리티",
-        "metrics": {
-            "sources": [
-                "NAVER_UPJONG"
-            ],
-            "fetched_at": "2025-11-12T06:11:38.615Z"
-        },
-        "score": 0
-    },
-    {
-        "id": "KRX:부동산",
-        "name": "부동산",
-        "metrics": {
-            "sources": [
-                "NAVER_UPJONG"
-            ],
-            "fetched_at": "2025-11-12T06:11:38.615Z"
-        },
-        "score": 0
-    },
-    {
-        "id": "KRX:비철금속",
-        "name": "비철금속",
-        "metrics": {
-            "sources": [
-                "NAVER_UPJONG"
-            ],
-            "fetched_at": "2025-11-12T06:11:38.615Z"
-        },
-        "score": 0
-    },
-    {
-        "id": "KRX:사무용전자제품",
-        "name": "사무용전자제품",
-        "metrics": {
-            "sources": [
-                "NAVER_UPJONG"
-            ],
-            "fetched_at": "2025-11-12T06:11:38.615Z"
-        },
-        "score": 0
-    },
-    {
-        "id": "KRX:상업서비스와공급품",
-        "name": "상업서비스와공급품",
-        "metrics": {
-            "sources": [
-                "NAVER_UPJONG"
-            ],
-            "fetched_at": "2025-11-12T06:11:38.615Z"
-        },
-        "score": 0
-    },
-    {
-        "id": "KRX:생명과학도구및서비스",
-        "name": "생명과학도구및서비스",
-        "metrics": {
-            "sources": [
-                "NAVER_UPJONG"
-            ],
-            "fetched_at": "2025-11-12T06:11:38.615Z"
-        },
-        "score": 0
-    },
-    {
-        "id": "KRX:생명보험",
-        "name": "생명보험",
-        "metrics": {
-            "sources": [
-                "NAVER_UPJONG"
-            ],
-            "fetched_at": "2025-11-12T06:11:38.615Z"
-        },
-        "score": 0
-    },
-    {
-        "id": "KRX:생물공학",
-        "name": "생물공학",
-        "metrics": {
-            "sources": [
-                "NAVER_UPJONG"
-            ],
-            "fetched_at": "2025-11-12T06:11:38.615Z"
-        },
-        "score": 0
-    },
-    {
-        "id": "KRX:석유와가스",
-        "name": "석유와가스",
-        "metrics": {
-            "sources": [
-                "NAVER_UPJONG"
-            ],
-            "fetched_at": "2025-11-12T06:11:38.615Z"
-        },
-        "score": 0
-    },
-    {
-        "id": "KRX:섬유_의류_신발_호화품",
-        "name": "섬유,의류,신발,호화품",
-        "metrics": {
-            "sources": [
-                "NAVER_UPJONG"
-            ],
-            "fetched_at": "2025-11-12T06:11:38.615Z"
-        },
-        "score": 0
-    },
-    {
-        "id": "KRX:소프트웨어",
-        "name": "소프트웨어",
-        "metrics": {
-            "sources": [
-                "NAVER_UPJONG"
-            ],
-            "fetched_at": "2025-11-12T06:11:38.615Z"
-        },
-        "score": 0
-    },
-    {
-        "id": "KRX:손해보험",
-        "name": "손해보험",
-        "metrics": {
-            "sources": [
-                "NAVER_UPJONG"
-            ],
-            "fetched_at": "2025-11-12T06:11:38.615Z"
-        },
-        "score": 0
-    },
-    {
-        "id": "KRX:식품",
-        "name": "식품",
-        "metrics": {
-            "sources": [
-                "NAVER_UPJONG"
-            ],
-            "fetched_at": "2025-11-12T06:11:38.615Z"
-        },
-        "score": 0
-    },
-    {
-        "id": "KRX:식품과기본식료품소매",
-        "name": "식품과기본식료품소매",
-        "metrics": {
-            "sources": [
-                "NAVER_UPJONG"
-            ],
-            "fetched_at": "2025-11-12T06:11:38.615Z"
-        },
-        "score": 0
-    },
-    {
-        "id": "KRX:양방향미디어와서비스",
-        "name": "양방향미디어와서비스",
-        "metrics": {
-            "sources": [
-                "NAVER_UPJONG"
-            ],
-            "fetched_at": "2025-11-12T06:11:38.615Z"
-        },
-        "score": 0
-    },
-    {
-        "id": "KRX:에너지장비및서비스",
-        "name": "에너지장비및서비스",
-        "metrics": {
-            "sources": [
-                "NAVER_UPJONG"
-            ],
-            "fetched_at": "2025-11-12T06:11:38.615Z"
-        },
-        "score": 0
-    },
-    {
-        "id": "KRX:우주항공과국방",
-        "name": "우주항공과국방",
-        "metrics": {
-            "sources": [
-                "NAVER_UPJONG"
-            ],
-            "fetched_at": "2025-11-12T06:11:38.615Z"
-        },
-        "score": 0
-    },
-    {
-        "id": "KRX:운송인프라",
-        "name": "운송인프라",
-        "metrics": {
-            "sources": [
-                "NAVER_UPJONG"
-            ],
-            "fetched_at": "2025-11-12T06:11:38.615Z"
-        },
-        "score": 0
-    },
-    {
-        "id": "KRX:은행",
-        "name": "은행",
-        "metrics": {
-            "sources": [
-                "NAVER_UPJONG"
-            ],
-            "fetched_at": "2025-11-12T06:11:38.615Z"
-        },
-        "score": 0
-    },
-    {
-        "id": "KRX:음료",
-        "name": "음료",
-        "metrics": {
-            "sources": [
-                "NAVER_UPJONG"
-            ],
-            "fetched_at": "2025-11-12T06:11:38.615Z"
-        },
-        "score": 0
-    },
-    {
-        "id": "KRX:인터넷과카탈로그소매",
-        "name": "인터넷과카탈로그소매",
-        "metrics": {
-            "sources": [
-                "NAVER_UPJONG"
-            ],
-            "fetched_at": "2025-11-12T06:11:38.615Z"
-        },
-        "score": 0
-    },
-    {
-        "id": "KRX:자동차",
-        "name": "자동차",
-        "metrics": {
-            "sources": [
-                "NAVER_UPJONG"
-            ],
-            "fetched_at": "2025-11-12T06:11:38.615Z"
-        },
-        "score": 0
-    },
-    {
-        "id": "KRX:자동차부품",
-        "name": "자동차부품",
-        "metrics": {
-            "sources": [
-                "NAVER_UPJONG"
-            ],
-            "fetched_at": "2025-11-12T06:11:38.615Z"
-        },
-        "score": 0
-    },
-    {
-        "id": "KRX:전기유틸리티",
-        "name": "전기유틸리티",
-        "metrics": {
-            "sources": [
-                "NAVER_UPJONG"
-            ],
-            "fetched_at": "2025-11-12T06:11:38.615Z"
-        },
-        "score": 0
-    },
-    {
-        "id": "KRX:전기장비",
-        "name": "전기장비",
-        "metrics": {
-            "sources": [
-                "NAVER_UPJONG"
-            ],
-            "fetched_at": "2025-11-12T06:11:38.615Z"
-        },
-        "score": 0
-    },
-    {
-        "id": "KRX:전기제품",
-        "name": "전기제품",
-        "metrics": {
-            "sources": [
-                "NAVER_UPJONG"
-            ],
-            "fetched_at": "2025-11-12T06:11:38.615Z"
-        },
-        "score": 0
-    },
-    {
-        "id": "KRX:전문소매",
-        "name": "전문소매",
-        "metrics": {
-            "sources": [
-                "NAVER_UPJONG"
-            ],
-            "fetched_at": "2025-11-12T06:11:38.615Z"
-        },
-        "score": 0
-    },
-    {
-        "id": "KRX:전자장비와기기",
-        "name": "전자장비와기기",
-        "metrics": {
-            "sources": [
-                "NAVER_UPJONG"
-            ],
-            "fetched_at": "2025-11-12T06:11:38.615Z"
-        },
-        "score": 0
-    },
-    {
-        "id": "KRX:전자제품",
-        "name": "전자제품",
-        "metrics": {
-            "sources": [
-                "NAVER_UPJONG"
-            ],
-            "fetched_at": "2025-11-12T06:11:38.615Z"
-        },
-        "score": 0
-    },
-    {
-        "id": "KRX:제약",
-        "name": "제약",
-        "metrics": {
-            "sources": [
-                "NAVER_UPJONG"
-            ],
-            "fetched_at": "2025-11-12T06:11:38.615Z"
-        },
-        "score": 0
-    },
-    {
-        "id": "KRX:조선",
-        "name": "조선",
-        "metrics": {
-            "sources": [
-                "NAVER_UPJONG"
-            ],
-            "fetched_at": "2025-11-12T06:11:38.615Z"
-        },
-        "score": 0
-    },
-    {
-        "id": "KRX:종이와목재",
-        "name": "종이와목재",
-        "metrics": {
-            "sources": [
-                "NAVER_UPJONG"
-            ],
-            "fetched_at": "2025-11-12T06:11:38.615Z"
-        },
-        "score": 0
-    },
-    {
-        "id": "KRX:증권",
-        "name": "증권",
-        "metrics": {
-            "sources": [
-                "NAVER_UPJONG"
-            ],
-            "fetched_at": "2025-11-12T06:11:38.615Z"
-        },
-        "score": 0
-    },
-    {
-        "id": "KRX:창업투자",
-        "name": "창업투자",
-        "metrics": {
-            "sources": [
-                "NAVER_UPJONG"
-            ],
-            "fetched_at": "2025-11-12T06:11:38.615Z"
-        },
-        "score": 0
-    },
-    {
-        "id": "KRX:철강",
-        "name": "철강",
-        "metrics": {
-            "sources": [
-                "NAVER_UPJONG"
-            ],
-            "fetched_at": "2025-11-12T06:11:38.615Z"
-        },
-        "score": 0
-    },
-    {
-        "id": "KRX:출판",
-        "name": "출판",
-        "metrics": {
-            "sources": [
-                "NAVER_UPJONG"
-            ],
-            "fetched_at": "2025-11-12T06:11:38.615Z"
-        },
-        "score": 0
-    },
-    {
-        "id": "KRX:카드",
-        "name": "카드",
-        "metrics": {
-            "sources": [
-                "NAVER_UPJONG"
-            ],
-            "fetched_at": "2025-11-12T06:11:38.615Z"
-        },
-        "score": 0
-    },
-    {
-        "id": "KRX:컴퓨터와주변기기",
-        "name": "컴퓨터와주변기기",
-        "metrics": {
-            "sources": [
-                "NAVER_UPJONG"
-            ],
-            "fetched_at": "2025-11-12T06:11:38.615Z"
-        },
-        "score": 0
-    },
-    {
-        "id": "KRX:통신장비",
-        "name": "통신장비",
-        "metrics": {
-            "sources": [
-                "NAVER_UPJONG"
-            ],
-            "fetched_at": "2025-11-12T06:11:38.615Z"
-        },
-        "score": 0
-    },
-    {
-        "id": "KRX:판매업체",
-        "name": "판매업체",
-        "metrics": {
-            "sources": [
-                "NAVER_UPJONG"
-            ],
-            "fetched_at": "2025-11-12T06:11:38.615Z"
-        },
-        "score": 0
-    },
-    {
-        "id": "KRX:포장재",
-        "name": "포장재",
-        "metrics": {
-            "sources": [
-                "NAVER_UPJONG"
-            ],
-            "fetched_at": "2025-11-12T06:11:38.615Z"
-        },
-        "score": 0
-    },
-    {
-        "id": "KRX:항공사",
-        "name": "항공사",
-        "metrics": {
-            "sources": [
-                "NAVER_UPJONG"
-            ],
-            "fetched_at": "2025-11-12T06:11:38.615Z"
-        },
-        "score": 0
-    },
-    {
-        "id": "KRX:항공화물운송과물류",
-        "name": "항공화물운송과물류",
-        "metrics": {
-            "sources": [
-                "NAVER_UPJONG"
-            ],
-            "fetched_at": "2025-11-12T06:11:38.615Z"
-        },
-        "score": 0
-    },
-    {
-        "id": "KRX:해운사",
-        "name": "해운사",
-        "metrics": {
-            "sources": [
-                "NAVER_UPJONG"
-            ],
-            "fetched_at": "2025-11-12T06:11:38.615Z"
-        },
-        "score": 0
-    },
-    {
-        "id": "KRX:핸드셋",
-        "name": "핸드셋",
-        "metrics": {
-            "sources": [
-                "NAVER_UPJONG"
-            ],
-            "fetched_at": "2025-11-12T06:11:38.615Z"
-        },
-        "score": 0
-    },
-    {
-        "id": "KRX:호텔_레스토랑_레저",
-        "name": "호텔,레스토랑,레저",
-        "metrics": {
-            "sources": [
-                "NAVER_UPJONG"
-            ],
-            "fetched_at": "2025-11-12T06:11:38.615Z"
-        },
-        "score": 0
-    },
-    {
-        "id": "KRX:화장품",
-        "name": "화장품",
-        "metrics": {
-            "sources": [
-                "NAVER_UPJONG"
-            ],
-            "fetched_at": "2025-11-12T06:11:38.615Z"
-        },
-        "score": 0
-    },
-    {
-        "id": "KRX:화학",
-        "name": "화학",
-        "metrics": {
-            "sources": [
-                "NAVER_UPJONG"
-            ],
-            "fetched_at": "2025-11-12T06:11:38.615Z"
-        },
-        "score": 0
-    },
-    {
-        "id": "KRX:IT서비스",
-        "name": "IT서비스",
-        "metrics": {
-            "sources": [
-                "NAVER_UPJONG"
-            ],
-            "fetched_at": "2025-11-12T06:11:38.615Z"
-        },
-        "score": 0
-    }
+  {
+    "id": "KRX:건강관리기술",
+    "name": "건강관리기술",
+    "metrics": {
+      "sources": [
+        "NAVER_UPJONG"
+      ],
+      "fetched_at": "2025-11-18T09:21:34.158Z"
+    },
+    "score": 0
+  },
+  {
+    "id": "KRX:건강관리업체및서비스",
+    "name": "건강관리업체및서비스",
+    "metrics": {
+      "sources": [
+        "NAVER_UPJONG"
+      ],
+      "fetched_at": "2025-11-18T09:21:34.158Z"
+    },
+    "score": 0
+  },
+  {
+    "id": "KRX:건설",
+    "name": "건설",
+    "metrics": {
+      "sources": [
+        "NAVER_UPJONG"
+      ],
+      "fetched_at": "2025-11-18T09:21:34.158Z"
+    },
+    "score": 0
+  },
+  {
+    "id": "KRX:건축자재",
+    "name": "건축자재",
+    "metrics": {
+      "sources": [
+        "NAVER_UPJONG"
+      ],
+      "fetched_at": "2025-11-18T09:21:34.158Z"
+    },
+    "score": 0
+  },
+  {
+    "id": "KRX:건축제품",
+    "name": "건축제품",
+    "metrics": {
+      "sources": [
+        "NAVER_UPJONG"
+      ],
+      "fetched_at": "2025-11-18T09:21:34.158Z"
+    },
+    "score": 0
+  },
+  {
+    "id": "KRX:게임엔터테인먼트",
+    "name": "게임엔터테인먼트",
+    "metrics": {
+      "sources": [
+        "NAVER_UPJONG"
+      ],
+      "fetched_at": "2025-11-18T09:21:34.158Z"
+    },
+    "score": 0
+  },
+  {
+    "id": "KRX:광고",
+    "name": "광고",
+    "metrics": {
+      "sources": [
+        "NAVER_UPJONG"
+      ],
+      "fetched_at": "2025-11-18T09:21:34.158Z"
+    },
+    "score": 0
+  },
+  {
+    "id": "KRX:교육서비스",
+    "name": "교육서비스",
+    "metrics": {
+      "sources": [
+        "NAVER_UPJONG"
+      ],
+      "fetched_at": "2025-11-18T09:21:34.158Z"
+    },
+    "score": 0
+  },
+  {
+    "id": "KRX:기타",
+    "name": "기타",
+    "metrics": {
+      "sources": [
+        "NAVER_UPJONG"
+      ],
+      "fetched_at": "2025-11-18T09:21:34.158Z"
+    },
+    "score": 0
+  },
+  {
+    "id": "KRX:다각화된소비자서비스",
+    "name": "다각화된소비자서비스",
+    "metrics": {
+      "sources": [
+        "NAVER_UPJONG"
+      ],
+      "fetched_at": "2025-11-18T09:21:34.158Z"
+    },
+    "score": 0
+  },
+  {
+    "id": "KRX:다각화된통신서비스",
+    "name": "다각화된통신서비스",
+    "metrics": {
+      "sources": [
+        "NAVER_UPJONG"
+      ],
+      "fetched_at": "2025-11-18T09:21:34.158Z"
+    },
+    "score": 0
+  },
+  {
+    "id": "KRX:담배",
+    "name": "담배",
+    "metrics": {
+      "sources": [
+        "NAVER_UPJONG"
+      ],
+      "fetched_at": "2025-11-18T09:21:34.158Z"
+    },
+    "score": 0
+  },
+  {
+    "id": "KRX:도로와철도운송",
+    "name": "도로와철도운송",
+    "metrics": {
+      "sources": [
+        "NAVER_UPJONG"
+      ],
+      "fetched_at": "2025-11-18T09:21:34.158Z"
+    },
+    "score": 0
+  },
+  {
+    "id": "KRX:디스플레이장비및부품",
+    "name": "디스플레이장비및부품",
+    "metrics": {
+      "sources": [
+        "NAVER_UPJONG"
+      ],
+      "fetched_at": "2025-11-18T09:21:34.158Z"
+    },
+    "score": 0
+  },
+  {
+    "id": "KRX:디스플레이패널",
+    "name": "디스플레이패널",
+    "metrics": {
+      "sources": [
+        "NAVER_UPJONG"
+      ],
+      "fetched_at": "2025-11-18T09:21:34.158Z"
+    },
+    "score": 0
+  },
+  {
+    "id": "KRX:레저용장비와제품",
+    "name": "레저용장비와제품",
+    "metrics": {
+      "sources": [
+        "NAVER_UPJONG"
+      ],
+      "fetched_at": "2025-11-18T09:21:34.158Z"
+    },
+    "score": 0
+  },
+  {
+    "id": "KRX:무선통신서비스",
+    "name": "무선통신서비스",
+    "metrics": {
+      "sources": [
+        "NAVER_UPJONG"
+      ],
+      "fetched_at": "2025-11-18T09:21:34.158Z"
+    },
+    "score": 0
+  },
+  {
+    "id": "KRX:무역회사와판매업체",
+    "name": "무역회사와판매업체",
+    "metrics": {
+      "sources": [
+        "NAVER_UPJONG"
+      ],
+      "fetched_at": "2025-11-18T09:21:34.158Z"
+    },
+    "score": 0
+  },
+  {
+    "id": "KRX:문구류",
+    "name": "문구류",
+    "metrics": {
+      "sources": [
+        "NAVER_UPJONG"
+      ],
+      "fetched_at": "2025-11-18T09:21:34.158Z"
+    },
+    "score": 0
+  },
+  {
+    "id": "KRX:방송과엔터테인먼트",
+    "name": "방송과엔터테인먼트",
+    "metrics": {
+      "sources": [
+        "NAVER_UPJONG"
+      ],
+      "fetched_at": "2025-11-18T09:21:34.158Z"
+    },
+    "score": 0
+  },
+  {
+    "id": "KRX:백화점과일반상점",
+    "name": "백화점과일반상점",
+    "metrics": {
+      "sources": [
+        "NAVER_UPJONG"
+      ],
+      "fetched_at": "2025-11-18T09:21:34.158Z"
+    },
+    "score": 0
+  },
+  {
+    "id": "KRX:복합유틸리티",
+    "name": "복합유틸리티",
+    "metrics": {
+      "sources": [
+        "NAVER_UPJONG"
+      ],
+      "fetched_at": "2025-11-18T09:21:34.158Z"
+    },
+    "score": 0
+  },
+  {
+    "id": "KRX:부동산",
+    "name": "부동산",
+    "metrics": {
+      "sources": [
+        "NAVER_UPJONG"
+      ],
+      "fetched_at": "2025-11-18T09:21:34.158Z"
+    },
+    "score": 0
+  },
+  {
+    "id": "KRX:비철금속",
+    "name": "비철금속",
+    "metrics": {
+      "sources": [
+        "NAVER_UPJONG"
+      ],
+      "fetched_at": "2025-11-18T09:21:34.158Z"
+    },
+    "score": 0
+  },
+  {
+    "id": "KRX:사무용전자제품",
+    "name": "사무용전자제품",
+    "metrics": {
+      "sources": [
+        "NAVER_UPJONG"
+      ],
+      "fetched_at": "2025-11-18T09:21:34.158Z"
+    },
+    "score": 0
+  },
+  {
+    "id": "KRX:상업서비스와공급품",
+    "name": "상업서비스와공급품",
+    "metrics": {
+      "sources": [
+        "NAVER_UPJONG"
+      ],
+      "fetched_at": "2025-11-18T09:21:34.158Z"
+    },
+    "score": 0
+  },
+  {
+    "id": "KRX:생명과학도구및서비스",
+    "name": "생명과학도구및서비스",
+    "metrics": {
+      "sources": [
+        "NAVER_UPJONG"
+      ],
+      "fetched_at": "2025-11-18T09:21:34.158Z"
+    },
+    "score": 0
+  },
+  {
+    "id": "KRX:생물공학",
+    "name": "생물공학",
+    "metrics": {
+      "sources": [
+        "NAVER_UPJONG"
+      ],
+      "fetched_at": "2025-11-18T09:21:34.158Z"
+    },
+    "score": 0
+  },
+  {
+    "id": "KRX:섬유_의류_신발_호화품",
+    "name": "섬유,의류,신발,호화품",
+    "metrics": {
+      "sources": [
+        "NAVER_UPJONG"
+      ],
+      "fetched_at": "2025-11-18T09:21:34.158Z"
+    },
+    "score": 0
+  },
+  {
+    "id": "KRX:식품",
+    "name": "식품",
+    "metrics": {
+      "sources": [
+        "NAVER_UPJONG"
+      ],
+      "fetched_at": "2025-11-18T09:21:34.158Z"
+    },
+    "score": 0
+  },
+  {
+    "id": "KRX:식품과기본식료품소매",
+    "name": "식품과기본식료품소매",
+    "metrics": {
+      "sources": [
+        "NAVER_UPJONG"
+      ],
+      "fetched_at": "2025-11-18T09:21:34.158Z"
+    },
+    "score": 0
+  },
+  {
+    "id": "KRX:양방향미디어와서비스",
+    "name": "양방향미디어와서비스",
+    "metrics": {
+      "sources": [
+        "NAVER_UPJONG"
+      ],
+      "fetched_at": "2025-11-18T09:21:34.158Z"
+    },
+    "score": 0
+  },
+  {
+    "id": "KRX:생명보험",
+    "name": "생명보험",
+    "metrics": {
+      "sources": [
+        "NAVER_UPJONG"
+      ],
+      "fetched_at": "2025-11-18T09:21:34.158Z",
+      "krx_index": "1027"
+    },
+    "score": 0
+  },
+  {
+    "id": "KRX:석유와가스",
+    "name": "석유와가스",
+    "metrics": {
+      "sources": [
+        "NAVER_UPJONG"
+      ],
+      "fetched_at": "2025-11-18T09:21:34.158Z"
+    },
+    "score": 0
+  },
+  {
+    "id": "KRX:복합기업",
+    "name": "복합기업",
+    "metrics": {
+      "sources": [
+        "NAVER_UPJONG"
+      ],
+      "fetched_at": "2025-11-18T09:21:34.158Z"
+    },
+    "score": 0
+  },
+  {
+    "id": "KRX:기계",
+    "name": "기계",
+    "metrics": {
+      "sources": [
+        "NAVER_UPJONG"
+      ],
+      "fetched_at": "2025-11-18T09:21:34.158Z",
+      "krx_index": "1012"
+    },
+    "score": 0
+  },
+  {
+    "id": "KRX:기타금융",
+    "name": "기타금융",
+    "metrics": {
+      "sources": [
+        "NAVER_UPJONG"
+      ],
+      "fetched_at": "2025-11-18T09:21:34.158Z",
+      "krx_index": "1027"
+    },
+    "score": 0
+  },
+  {
+    "id": "KRX:반도체와반도체장비",
+    "name": "반도체와반도체장비",
+    "metrics": {
+      "sources": [
+        "NAVER_UPJONG"
+      ],
+      "fetched_at": "2025-11-18T09:21:34.158Z",
+      "krx_index": "1014"
+    },
+    "score": 0
+  },
+  {
+    "id": "KRX:가구",
+    "name": "가구",
+    "metrics": {
+      "sources": [
+        "NAVER_UPJONG"
+      ],
+      "fetched_at": "2025-11-18T09:21:34.157Z"
+    },
+    "score": 0
+  },
+  {
+    "id": "KRX:가스유틸리티",
+    "name": "가스유틸리티",
+    "metrics": {
+      "sources": [
+        "NAVER_UPJONG"
+      ],
+      "fetched_at": "2025-11-18T09:21:34.158Z"
+    },
+    "score": 0
+  },
+  {
+    "id": "KRX:가정용기기와용품",
+    "name": "가정용기기와용품",
+    "metrics": {
+      "sources": [
+        "NAVER_UPJONG"
+      ],
+      "fetched_at": "2025-11-18T09:21:34.158Z"
+    },
+    "score": 0
+  },
+  {
+    "id": "KRX:가정용품",
+    "name": "가정용품",
+    "metrics": {
+      "sources": [
+        "NAVER_UPJONG"
+      ],
+      "fetched_at": "2025-11-18T09:21:34.158Z"
+    },
+    "score": 0
+  },
+  {
+    "id": "KRX:소프트웨어",
+    "name": "소프트웨어",
+    "metrics": {
+      "sources": [
+        "NAVER_UPJONG"
+      ],
+      "fetched_at": "2025-11-18T09:21:34.158Z"
+    },
+    "score": 0
+  },
+  {
+    "id": "KRX:전문소매",
+    "name": "전문소매",
+    "metrics": {
+      "sources": [
+        "NAVER_UPJONG"
+      ],
+      "fetched_at": "2025-11-18T09:21:34.159Z"
+    },
+    "score": 0
+  },
+  {
+    "id": "KRX:전자제품",
+    "name": "전자제품",
+    "metrics": {
+      "sources": [
+        "NAVER_UPJONG"
+      ],
+      "fetched_at": "2025-11-18T09:21:34.159Z"
+    },
+    "score": 0
+  },
+  {
+    "id": "KRX:제약",
+    "name": "제약",
+    "metrics": {
+      "sources": [
+        "NAVER_UPJONG"
+      ],
+      "fetched_at": "2025-11-18T09:21:34.159Z"
+    },
+    "score": 0
+  },
+  {
+    "id": "KRX:종이와목재",
+    "name": "종이와목재",
+    "metrics": {
+      "sources": [
+        "NAVER_UPJONG"
+      ],
+      "fetched_at": "2025-11-18T09:21:34.159Z"
+    },
+    "score": 0
+  },
+  {
+    "id": "KRX:창업투자",
+    "name": "창업투자",
+    "metrics": {
+      "sources": [
+        "NAVER_UPJONG"
+      ],
+      "fetched_at": "2025-11-18T09:21:34.159Z"
+    },
+    "score": 0
+  },
+  {
+    "id": "KRX:출판",
+    "name": "출판",
+    "metrics": {
+      "sources": [
+        "NAVER_UPJONG"
+      ],
+      "fetched_at": "2025-11-18T09:21:34.159Z"
+    },
+    "score": 0
+  },
+  {
+    "id": "KRX:카드",
+    "name": "카드",
+    "metrics": {
+      "sources": [
+        "NAVER_UPJONG"
+      ],
+      "fetched_at": "2025-11-18T09:21:34.159Z"
+    },
+    "score": 0
+  },
+  {
+    "id": "KRX:컴퓨터와주변기기",
+    "name": "컴퓨터와주변기기",
+    "metrics": {
+      "sources": [
+        "NAVER_UPJONG"
+      ],
+      "fetched_at": "2025-11-18T09:21:34.159Z"
+    },
+    "score": 0
+  },
+  {
+    "id": "KRX:판매업체",
+    "name": "판매업체",
+    "metrics": {
+      "sources": [
+        "NAVER_UPJONG"
+      ],
+      "fetched_at": "2025-11-18T09:21:34.159Z"
+    },
+    "score": 0
+  },
+  {
+    "id": "KRX:포장재",
+    "name": "포장재",
+    "metrics": {
+      "sources": [
+        "NAVER_UPJONG"
+      ],
+      "fetched_at": "2025-11-18T09:21:34.159Z"
+    },
+    "score": 0
+  },
+  {
+    "id": "KRX:항공사",
+    "name": "항공사",
+    "metrics": {
+      "sources": [
+        "NAVER_UPJONG"
+      ],
+      "fetched_at": "2025-11-18T09:21:34.159Z"
+    },
+    "score": 0
+  },
+  {
+    "id": "KRX:항공화물운송과물류",
+    "name": "항공화물운송과물류",
+    "metrics": {
+      "sources": [
+        "NAVER_UPJONG"
+      ],
+      "fetched_at": "2025-11-18T09:21:34.159Z"
+    },
+    "score": 0
+  },
+  {
+    "id": "KRX:해운사",
+    "name": "해운사",
+    "metrics": {
+      "sources": [
+        "NAVER_UPJONG"
+      ],
+      "fetched_at": "2025-11-18T09:21:34.159Z"
+    },
+    "score": 0
+  },
+  {
+    "id": "KRX:핸드셋",
+    "name": "핸드셋",
+    "metrics": {
+      "sources": [
+        "NAVER_UPJONG"
+      ],
+      "fetched_at": "2025-11-18T09:21:34.159Z"
+    },
+    "score": 0
+  },
+  {
+    "id": "KRX:호텔_레스토랑_레저",
+    "name": "호텔,레스토랑,레저",
+    "metrics": {
+      "sources": [
+        "NAVER_UPJONG"
+      ],
+      "fetched_at": "2025-11-18T09:21:34.159Z"
+    },
+    "score": 0
+  },
+  {
+    "id": "KRX:화장품",
+    "name": "화장품",
+    "metrics": {
+      "sources": [
+        "NAVER_UPJONG"
+      ],
+      "fetched_at": "2025-11-18T09:21:34.159Z"
+    },
+    "score": 0
+  },
+  {
+    "id": "KRX:IT서비스",
+    "name": "IT서비스",
+    "metrics": {
+      "sources": [
+        "NAVER_UPJONG"
+      ],
+      "fetched_at": "2025-11-18T09:21:34.159Z"
+    },
+    "score": 0
+  },
+  {
+    "id": "KRX:손해보험",
+    "name": "손해보험",
+    "metrics": {
+      "sources": [
+        "NAVER_UPJONG"
+      ],
+      "fetched_at": "2025-11-18T09:21:34.158Z",
+      "krx_index": "1027"
+    },
+    "score": 0
+  },
+  {
+    "id": "KRX:건강관리장비와용품",
+    "name": "건강관리장비와용품",
+    "metrics": {
+      "sources": [
+        "NAVER_UPJONG"
+      ],
+      "fetched_at": "2025-11-18T09:21:34.158Z"
+    },
+    "score": 0
+  },
+  {
+    "id": "KRX:증권",
+    "name": "증권",
+    "metrics": {
+      "sources": [
+        "NAVER_UPJONG"
+      ],
+      "fetched_at": "2025-11-18T09:21:34.159Z"
+    },
+    "score": 0
+  },
+  {
+    "id": "KRX:전기제품",
+    "name": "전기제품",
+    "metrics": {
+      "sources": [
+        "NAVER_UPJONG"
+      ],
+      "fetched_at": "2025-11-18T09:21:34.159Z"
+    },
+    "score": 0
+  },
+  {
+    "id": "KRX:통신장비",
+    "name": "통신장비",
+    "metrics": {
+      "sources": [
+        "NAVER_UPJONG"
+      ],
+      "fetched_at": "2025-11-18T09:21:34.159Z"
+    },
+    "score": 0
+  },
+  {
+    "id": "KRX:조선",
+    "name": "조선",
+    "metrics": {
+      "sources": [
+        "NAVER_UPJONG"
+      ],
+      "fetched_at": "2025-11-18T09:21:34.159Z",
+      "krx_index": "1017"
+    },
+    "score": 0
+  },
+  {
+    "id": "KRX:전자장비와기기",
+    "name": "전자장비와기기",
+    "metrics": {
+      "sources": [
+        "NAVER_UPJONG"
+      ],
+      "fetched_at": "2025-11-18T09:21:34.159Z",
+      "krx_index": "1013"
+    },
+    "score": 0
+  },
+  {
+    "id": "KRX:철강",
+    "name": "철강",
+    "metrics": {
+      "sources": [
+        "NAVER_UPJONG"
+      ],
+      "fetched_at": "2025-11-18T09:21:34.159Z",
+      "krx_index": "1011"
+    },
+    "score": 0
+  },
+  {
+    "id": "KRX:화학",
+    "name": "화학",
+    "metrics": {
+      "sources": [
+        "NAVER_UPJONG"
+      ],
+      "fetched_at": "2025-11-18T09:21:34.159Z",
+      "krx_index": "1010"
+    },
+    "score": 0
+  },
+  {
+    "id": "KRX:전기장비",
+    "name": "전기장비",
+    "metrics": {
+      "sources": [
+        "NAVER_UPJONG"
+      ],
+      "fetched_at": "2025-11-18T09:21:34.158Z"
+    },
+    "score": 0
+  },
+  {
+    "id": "KRX:자동차",
+    "name": "자동차",
+    "metrics": {
+      "sources": [
+        "NAVER_UPJONG"
+      ],
+      "fetched_at": "2025-11-18T09:21:34.158Z"
+    },
+    "score": 0
+  },
+  {
+    "id": "KRX:자동차부품",
+    "name": "자동차부품",
+    "metrics": {
+      "sources": [
+        "NAVER_UPJONG"
+      ],
+      "fetched_at": "2025-11-18T09:21:34.158Z"
+    },
+    "score": 0
+  },
+  {
+    "id": "KRX:은행",
+    "name": "은행",
+    "metrics": {
+      "sources": [
+        "NAVER_UPJONG"
+      ],
+      "fetched_at": "2025-11-18T09:21:34.158Z",
+      "krx_index": "1027"
+    },
+    "score": 0
+  },
+  {
+    "id": "KRX:에너지장비및서비스",
+    "name": "에너지장비및서비스",
+    "metrics": {
+      "sources": [
+        "NAVER_UPJONG"
+      ],
+      "fetched_at": "2025-11-18T09:21:34.158Z"
+    },
+    "score": 0
+  },
+  {
+    "id": "KRX:우주항공과국방",
+    "name": "우주항공과국방",
+    "metrics": {
+      "sources": [
+        "NAVER_UPJONG"
+      ],
+      "fetched_at": "2025-11-18T09:21:34.158Z"
+    },
+    "score": 0
+  },
+  {
+    "id": "KRX:운송인프라",
+    "name": "운송인프라",
+    "metrics": {
+      "sources": [
+        "NAVER_UPJONG"
+      ],
+      "fetched_at": "2025-11-18T09:21:34.158Z"
+    },
+    "score": 0
+  },
+  {
+    "id": "KRX:음료",
+    "name": "음료",
+    "metrics": {
+      "sources": [
+        "NAVER_UPJONG"
+      ],
+      "fetched_at": "2025-11-18T09:21:34.158Z"
+    },
+    "score": 0
+  },
+  {
+    "id": "KRX:인터넷과카탈로그소매",
+    "name": "인터넷과카탈로그소매",
+    "metrics": {
+      "sources": [
+        "NAVER_UPJONG"
+      ],
+      "fetched_at": "2025-11-18T09:21:34.158Z"
+    },
+    "score": 0
+  },
+  {
+    "id": "KRX:전기유틸리티",
+    "name": "전기유틸리티",
+    "metrics": {
+      "sources": [
+        "NAVER_UPJONG"
+      ],
+      "fetched_at": "2025-11-18T09:21:34.158Z"
+    },
+    "score": 0
+  }
 ]
