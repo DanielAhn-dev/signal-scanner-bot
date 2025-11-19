@@ -13,6 +13,12 @@ from supabase import create_client, Client
 SUPABASE_URL = os.environ["SUPABASE_URL"]
 SUPABASE_KEY = os.environ["SUPABASE_SERVICE_ROLE_KEY"]
 
+if not SUPABASE_URL or not SUPABASE_KEY:
+    raise RuntimeError(
+        f"Missing Supabase env: SUPABASE_URL={bool(SUPABASE_URL)}, "
+        f"SUPABASE_SERVICE_ROLE_KEY={bool(SUPABASE_KEY)}"
+    )
+
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 # ===== 섹터 이름 키워드 → KRX 업종 지수 코드 매핑 규칙 =====
