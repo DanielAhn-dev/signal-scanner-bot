@@ -2,7 +2,7 @@ name: Daily Sector & Investor Data Fetch
 
 on:
   schedule:
-    - cron: "00 8 * * 1-5"
+    - cron: "30 8 * * 1-5"
   workflow_dispatch:
 
 jobs:
