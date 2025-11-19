@@ -63,6 +63,8 @@ export async function scoreSectors(today: string): Promise<SectorScore[]> {
   const inv20Map = new Map(inv20.map((i: any) => [i.ticker, i]));
   const out: (SectorScore & { rawScore: number })[] = [];
 
+  const isNum = (x: unknown): x is number => Number.isFinite(x as number);
+
   for (const s of sectors) {
     const { id, name, series: px } = s;
     const vol = volMap[id] || [];
@@ -78,14 +80,15 @@ export async function scoreSectors(today: string): Promise<SectorScore[]> {
     const p6 = toNumberSafe(px, d6M);
     const p12 = toNumberSafe(px, d12M);
 
-    const rs1M = pT && p1 ? pT / p1 - 1 : 0;
-    const rs3M = pT && p3 ? pT / p3 - 1 : 0;
-    const rs6M = pT && p6 ? pT / p6 - 1 : 0;
-    const rs12M = pT && p12 ? pT / p12 - 1 : 0;
+    const rs1M = isNum(pT) && isNum(p1) ? pT / p1 - 1 : NaN;
+    const rs3M = isNum(pT) && isNum(p3) ? pT / p3 - 1 : NaN;
+    const rs6M = isNum(pT) && isNum(p6) ? pT / p6 - 1 : NaN;
+    const rs12M = isNum(pT) && isNum(p12) ? pT / p12 - 1 : NaN;
 
     const p21 = toNumberSafe(px, getBizDaysAgo(today, 21));
-    const roc21 = pT && p21 ? (pT - p21) / p21 : 0;
+    const roc21 = isNum(pT) && isNum(p21) ? (pT - p21) / p21 : NaN;
 
+    // 이하 SMA, TV, 변동성 등은 그대로 사용
     const last20 = px.slice(-20);
     const above = last20.filter(
       (r: any) => r.close && r.sma20 && r.close >= r.sma20
@@ -137,18 +140,18 @@ export async function scoreSectors(today: string): Promise<SectorScore[]> {
     }
 
     const sigmoid = (x: number) => 1 / (1 + Math.exp(-x));
+    const sig = (x: number) => (Number.isFinite(x) ? sigmoid(x) : 0.5); // 데이터 없으면 중립점
 
     const sRS =
       0.4 *
-      (0.25 * sigmoid(rs1M * 5) +
-        0.25 * sigmoid(rs3M * 2) +
-        0.25 * sigmoid(rs6M) +
-        0.25 * sigmoid(rs12M * 0.5));
+      (0.25 * sig(rs1M * 5) +
+        0.25 * sig(rs3M * 2) +
+        0.25 * sig(rs6M) +
+        0.25 * sig(rs12M * 0.5));
 
-    const sTV =
-      0.15 * (0.5 * sigmoid(tv5dChg * 2) + 0.5 * sigmoid(tv20dChg * 2));
+    const sTV = 0.15 * (0.5 * sig(tv5dChg * 2) + 0.5 * sig(tv20dChg * 2));
     const sSMA = 0.1 * sma20AboveRatio;
-    const sROC = 0.1 * sigmoid(roc21 * 10);
+    const sROC = 0.1 * sig(roc21 * 10);
     const sVolP = 0.05 * (1 - extVolPenalty);
 
     const rawScore = ((sRS + sTV + sSMA + sROC + sVolP) * 100) / 0.8;
@@ -156,11 +159,11 @@ export async function scoreSectors(today: string): Promise<SectorScore[]> {
     out.push({
       id,
       name,
-      rs1M,
-      rs3M,
-      rs6M,
-      rs12M,
-      roc21,
+      rs1M: rs1M || 0,
+      rs3M: rs3M || 0,
+      rs6M: rs6M || 0,
+      rs12M: rs12M || 0,
+      roc21: roc21 || 0,
       sma20AboveRatio,
       tv5dChg,
       tv20dChg,

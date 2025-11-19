@@ -127,17 +127,36 @@ export async function fetchInvestorNetByTicker(
   from: string,
   to: string
 ): Promise<InvestorRow[]> {
-  const { data } = await supa()
+  const { data, error } = await supa()
     .from("investor_daily")
-    .select('ticker, date, "foreign", institution') // "foreign"은 예약어라 큰따옴표
+    .select("ticker, date, foreign, institution")
     .gte("date", from)
     .lte("date", to);
 
-  return (data || []).map((r) => ({
-    ticker: r.ticker,
-    date: r.date,
-    foreign: Number(r.foreign || 0),
-    institution: Number(r.institution || 0),
+  if (error) {
+    console.error("fetchInvestorNetByTicker error:", error);
+    return [];
+  }
+
+  // ticker 기준으로 5일/20일 합산
+  const agg = new Map<string, { foreign: number; institution: number }>();
+
+  for (const r of data ?? []) {
+    const ticker = r.ticker as string;
+    if (!agg.has(ticker)) {
+      agg.set(ticker, { foreign: 0, institution: 0 });
+    }
+    const cur = agg.get(ticker)!;
+    cur.foreign += Number(r.foreign ?? 0);
+    cur.institution += Number(r.institution ?? 0);
+  }
+
+  // date는 구간 마지막 날(to)로 통일
+  return Array.from(agg.entries()).map(([ticker, v]) => ({
+    ticker,
+    date: to,
+    foreign: v.foreign,
+    institution: v.institution,
   }));
 }
 

@@ -32,8 +32,8 @@ type BuyDecision = {
   reasons: string[]; // 미충족/참고 사유
   tags: string[]; // 충족된 트리거 요약
   volumeRatio: number;
-  rr1: number | NaN;
-  rr2: number | NaN;
+  rr1: number; // NaN 허용 (값으로만)
+  rr2: number; // NaN 허용 (값으로만)
 };
 
 function evaluateBuyDecision(
@@ -47,6 +47,7 @@ function evaluateBuyDecision(
     sma20: number;
     sma50: number;
     sma200: number;
+    sma200_slope?: number;
     rsi14: number;
     roc14: number;
     roc21: number;
@@ -74,7 +75,8 @@ function evaluateBuyDecision(
   const near20 = f.sma20 > 0 && Math.abs((close - f.sma20) / f.sma20) <= 0.03;
   const above20 = f.sma20 > 0 && close >= f.sma20;
   const above50 = f.sma50 > 0 && close >= f.sma50;
-  const trendUp200 = f.sma200_slope ? f.sma200_slope > 0 : true;
+  const trendUp200 =
+    typeof f.sma200_slope === "number" ? f.sma200_slope > 0 : true;
 
   const hasAvwapSupport = f.avwap_regime === "buyers" && f.avwap_support >= 50; // 매수자 우위 + 지지
 
@@ -210,14 +212,13 @@ export async function handleBuyCommand(
       sma20: f.sma20,
       sma50: f.sma50,
       sma200: f.sma200,
+      sma200_slope: f.sma200_slope,
       rsi14: f.rsi14,
       roc14: f.roc14,
       roc21: f.roc21,
       avwap_support: f.avwap_support,
       avwap_regime: f.avwap_regime,
-      // @ts-expect-error: slope는 score 엔진에서 제공된다고 가정
-      sma200_slope: f.sma200_slope,
-    } as any
+    }
   );
 
   const header = [
