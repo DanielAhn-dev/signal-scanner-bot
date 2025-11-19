@@ -221,6 +221,22 @@ export async function handleBuyCommand(
     }
   );
 
+  const message = buildBuyMessage({
+    name,
+    code,
+    last,
+    decision,
+    entryPrice,
+    addPrice,
+    hardStop,
+    t1,
+    t2,
+    riskPct,
+    reward1Pct,
+    reward2Pct,
+    sizeFactor: scored.sizeFactor,
+  });
+
   const header = [
     `종목: ${name} (${code})`,
     `현재가: ${int(last.close)}원, 거래량: ${int(
@@ -296,6 +312,116 @@ export async function handleBuyCommand(
 
   await tgSend("sendMessage", {
     chat_id: ctx.chatId,
-    text: okLines.join("\n"),
+    text: message,
   });
+}
+
+function buildBuyMessage(params: {
+  name: string;
+  code: string;
+  last: StockOHLCV;
+  decision: BuyDecision;
+  entryPrice: number;
+  addPrice?: number;
+  hardStop: number;
+  t1: number;
+  t2: number;
+  riskPct: number;
+  reward1Pct: number;
+  reward2Pct: number;
+  sizeFactor?: number;
+}): string {
+  const {
+    name,
+    code,
+    last,
+    decision,
+    entryPrice,
+    addPrice,
+    hardStop,
+    t1,
+    t2,
+    riskPct,
+    reward1Pct,
+    reward2Pct,
+    sizeFactor,
+  } = params;
+
+  const header = [
+    `📌 종목: ${name} (${code})`,
+    `현재가: ${int(last.close)}원`,
+    `거래량: ${int(last.volume)} (20일 평균 대비 ×${one(
+      decision.volumeRatio
+    )})`,
+  ];
+
+  const levelLines = [
+    `📈 매매 레벨`,
+    `• 엔트리: ${int(entryPrice)}원${
+      addPrice ? `, 추가 매수: ${int(addPrice)}원` : ""
+    }`,
+    `• 손절가: ${int(hardStop)}원 (약 ${one(riskPct)}%)`,
+    `• 익절가: 1차 ${int(t1)}원 (${one(reward1Pct)}%), 2차 ${int(t2)}원 (${one(
+      reward2Pct
+    )}%)`,
+  ];
+
+  const rrText =
+    Number.isFinite(decision.rr1) && Number.isFinite(decision.rr2)
+      ? `• 손익비: 1:${one(decision.rr1)} ~ 1:${one(decision.rr2)}`
+      : Number.isFinite(decision.rr1)
+      ? `• 손익비: 1:${one(decision.rr1)}`
+      : "";
+
+  const sizeText =
+    Number.isFinite(sizeFactor) && sizeFactor! > 0
+      ? `• 추천 포지션 크기: 기준 대비 ×${one(
+          sizeFactor!
+        )} (계좌 1~2% 리스크 가정)`
+      : "";
+
+  const ruleText = [
+    `📏 운영 규칙`,
+    "• 손절: -7% ~ -8%",
+    "• 익절: +20% ~ +25% 분할 청산",
+    "• 50일선 / AVWAP 이탈 시 청산",
+    "• 3주 내 +20% 급등 시 8주 보유 예외",
+    "• 트레일링 스탑 참고",
+  ];
+
+  if (!decision.canBuy) {
+    const body = [
+      "⛔ 시스템 매수 조건: 미충족 (관망 권장)",
+      decision.tags.length ? `• 참고 트리거: ${decision.tags.join(" / ")}` : "",
+      decision.reasons.length
+        ? ["", "🔍 미충족 사유", ...decision.reasons.map((r) => `• ${r}`)].join(
+            "\n"
+          )
+        : "",
+    ];
+
+    return [...header, "", ...body, "", ...levelLines, rrText, "", ...ruleText]
+      .filter(Boolean)
+      .join("\n");
+  }
+
+  // 매수 허용 케이스
+  const body = [
+    "✅ 시스템 매수 조건: 충족 (매수 허용)",
+    decision.tags.length ? `• 트리거: ${decision.tags.join(" / ")}` : "",
+  ];
+
+  return [
+    ...header,
+    "",
+    ...body,
+    "",
+    ...levelLines,
+    rrText,
+    sizeText,
+    "",
+    ...ruleText,
+  ]
+    .filter(Boolean)
+    .join("\n");
 }
