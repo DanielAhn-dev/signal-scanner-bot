@@ -289,6 +289,12 @@ export async function routeCallback(
     return;
   }
 
+  if (data.startsWith("buy:")) {
+    const [, code] = data.split(":");
+    if (code) await handleBuyCommand(code, ctx, tgSend);
+    return;
+  }
+
   await tgSend("sendMessage", {
     chat_id: ctx.chatId,
     text: "알 수 없는 버튼입니다.",
