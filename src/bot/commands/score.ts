@@ -1,4 +1,3 @@
-// src/bot/commands/score.ts
 import type { ChatContext } from "../router";
 import { createMultiRowKeyboard } from "../../telegram/keyboards";
 import { calculateScore } from "../../score/engine";
@@ -7,163 +6,174 @@ import { searchByNameOrCode, getNamesForCodes } from "../../search/normalize";
 import type { StockOHLCV } from "../../data/types";
 import { KO_MESSAGES } from "../messages/ko";
 
-const int = (n: number) =>
+// --- 유틸리티 ---
+const fmtInt = (n: number) =>
   Number.isFinite(n) ? Math.round(n).toLocaleString("ko-KR") : "-";
+const fmtOne = (n: number) => (Number.isFinite(n) ? n.toFixed(1) : "-");
+const fmtPct = (n: number) =>
+  Number.isFinite(n) ? `${n > 0 ? "+" : ""}${n.toFixed(1)}%` : "-";
 
-const one = (n: number) =>
-  Number.isFinite(n) ? Number(n.toFixed(1)).toLocaleString("ko-KR") : "-";
-
-const pct = (from: number, to: number) => {
-  if (!Number.isFinite(from) || from === 0 || !Number.isFinite(to)) return NaN;
-  return ((to - from) / from) * 100;
-};
-
-function makeAdvice(
+// --- 전략 코멘트 생성기 ---
+function makeStrategyComment(
   last: number,
-  s20: number,
-  s50: number,
-  s200: number,
-  rsi14: number,
-  roc14: number,
-  roc21: number,
-  avwapSupportPct: number
-) {
-  const adv: string[] = [];
+  f: {
+    sma20: number;
+    sma50: number;
+    rsi14: number;
+    roc14: number;
+    roc21: number;
+    avwap_support: number;
+  }
+): string {
+  const tips: string[] = [];
 
-  const near20 = s20 > 0 && Math.abs((last - s20) / s20) <= 0.03;
+  // 1. 위치 분석
+  if (f.sma20 > 0 && Math.abs((last - f.sma20) / f.sma20) <= 0.03) {
+    tips.push("• 20일선 근접: 지지 후 반등 또는 돌파 여부 관찰");
+  }
+  if (last > f.sma50 && f.rsi14 >= 55) {
+    tips.push("• 추세 양호: 50일선 위 상승 흐름 유지 중");
+  } else if (last < f.sma50) {
+    tips.push("• 추세 약세: 50일선 아래, 저항 돌파 확인 필요");
+  }
 
-  if (near20 && avwapSupportPct >= 66 && rsi14 >= 50 && roc14 >= 0)
-    adv.push(
-      "돌파 매수 후보: 20SMA±3% 구간·AVWAP 상회·거래량 확대 시 /buy로 진입 여부 점검"
-    );
+  // 2. 모멘텀 조언
+  if (f.rsi14 >= 70) tips.push("• 과매수 구간: 단기 조정 가능성 주의");
+  else if (f.rsi14 <= 30) tips.push("• 과매도 구간: 기술적 반등 가능성");
+  else if (f.rsi14 >= 45 && f.rsi14 <= 55)
+    tips.push("• 변곡점: 방향성 탐색 구간");
 
-  if (last > s50 && rsi14 >= 55 && roc21 >= 0)
-    adv.push(
-      "추세 추종 후보: 50SMA 위·RSI55+·ROC21 양의 구간, 분할 매수는 /buy 참고"
-    );
+  // 3. 기본 원칙
+  tips.push("• 손절 -7% 준수, 분할 매수/매도 권장");
 
-  if (rsi14 >= 40 && rsi14 < 50 && roc14 >= -1)
-    adv.push("되돌림 후보: RSI 40→50 재진입 시 /buy로 재확인");
+  return tips.join("\n");
+}
 
-  if (adv.length === 0)
-    adv.push("관망: 50SMA/AVWAP 지지 재확인 또는 거래량 증가 신호 대기");
+// --- 메시지 빌더 ---
+function buildScoreMessage(
+  name: string,
+  code: string,
+  date: string,
+  last: StockOHLCV,
+  scored: any
+): string {
+  const f = scored.factors;
+  const entry = scored.entry?.buy ?? last.close;
+  const stop = scored.stops?.hard ?? 0;
+  const t1 = scored.targets?.t1 ?? 0;
+  const t2 = scored.targets?.t2 ?? 0;
+  const riskPct = stop && entry ? ((stop - entry) / entry) * 100 : 0;
 
-  adv.push(
-    "리스크 기준: 손절 −7~−8% 또는 50SMA/AVWAP 이탈, 익절 +20~25% 분할·트레일링 (레벨은 참고용)"
+  // 헤더
+  const header = `📊 *${name}* \`(${code})\`\n🕒 ${date} 기준`;
+
+  // 가격 정보
+  const priceLine = `💰 현재가: *${fmtInt(last.close)}원* (거래량 ${fmtInt(
+    last.volume
+  )})`;
+
+  // 점수 및 시그널
+  const scoreIcon =
+    scored.score >= 70 ? "🟢" : scored.score >= 40 ? "🟡" : "⚪";
+  const scoreLine = `${scoreIcon} *종합 점수: ${fmtOne(
+    scored.score
+  )}점* (Signal: \`${scored.signal}\`)`;
+
+  // 매매 레벨 (표 형태)
+  const levels = [
+    `🎯 *매매 기준 (Reference)*`,
+    `  • 진입: \`${fmtInt(entry)}원\``,
+    `  • 손절: \`${fmtInt(stop)}원\` (${fmtPct(riskPct)})`,
+    `  • 목표: 1차 \`${fmtInt(t1)}\` / 2차 \`${fmtInt(t2)}\``,
+  ].join("\n");
+
+  // 기술적 지표 (그룹화)
+  const trendIcon = f.sma200_slope > 0 ? "📈" : "📉";
+  const avwapIcon =
+    f.avwap_regime === "buyers"
+      ? "🐂"
+      : f.avwap_regime === "sellers"
+      ? "🐻"
+      : "⚖️";
+
+  const indicators = [
+    `🔍 *핵심 지표 분석*`,
+    `  ${trendIcon} *추세*: 200일선 ${
+      f.sma200_slope > 0 ? "우상향" : "우하향"
+    }`,
+    `     └ 20/50/200: ${fmtInt(f.sma20)} / ${fmtInt(f.sma50)} / ${fmtInt(
+      f.sma200
+    )}`,
+    `  ⚡ *모멘텀*: RSI ${fmtOne(f.rsi14)} / ROC ${fmtOne(f.roc14)}`,
+    `  ${avwapIcon} *AVWAP*: ${
+      f.avwap_regime === "buyers" ? "매수우위" : "매도우위"
+    } (지지 ${f.avwap_support}%)`,
+  ].join("\n");
+
+  // 코멘트
+  const advice = [`💡 *전략 코멘트*`, makeStrategyComment(last.close, f)].join(
+    "\n"
   );
 
-  return adv.join("\n");
+  return [header, priceLine, scoreLine, levels, indicators, advice].join(
+    "\n\n"
+  );
 }
 
-function formatAvwapRegime(
-  regime: "buyers" | "sellers" | "neutral" | undefined
-): string {
-  if (regime === "buyers") return "매수자 우위 (AVWAP 위·상승)";
-  if (regime === "sellers") return "매도자 우위 (AVWAP 아래·하락)";
-  return "중립";
-}
-
+// --- 메인 핸들러 ---
 export async function handleScoreCommand(
   input: string,
   ctx: ChatContext,
   tgSend: any
 ): Promise<void> {
-  let hit = await searchByNameOrCode(input, 1);
-  if (!hit?.length) {
-    await tgSend("sendMessage", {
+  const hits = await searchByNameOrCode(input, 1);
+  if (!hits?.length) {
+    return tgSend("sendMessage", {
       chat_id: ctx.chatId,
       text: KO_MESSAGES.SCORE_NOT_FOUND,
     });
-    return;
   }
 
-  let { code, name } = hit[0];
-
-  // 이름 보강
+  let { code, name } = hits[0];
+  // 이름 보강 로직
   if (!name || name === code) {
     const map = await getNamesForCodes([code]);
-    name = map[code] || name || code;
+    name = map[code] || code;
   }
 
-  const series: StockOHLCV[] = await getDailySeries(code, 420);
+  const series = await getDailySeries(code, 420);
   if (!series || series.length < 200) {
-    await tgSend("sendMessage", {
+    return tgSend("sendMessage", {
       chat_id: ctx.chatId,
       text: KO_MESSAGES.INSUFFICIENT,
     });
-    return;
   }
 
   const scored = calculateScore(series);
   if (!scored) {
-    await tgSend("sendMessage", {
+    return tgSend("sendMessage", {
       chat_id: ctx.chatId,
       text: KO_MESSAGES.SCORE_NOT_FOUND,
     });
-    return;
   }
 
-  // 코드만 있었던 경우 이름 보강
-  if (!name || name === code) {
-    const m = await getNamesForCodes([code]);
-    name = m[code] || code;
-  }
-
-  const last = series[series.length - 1];
-  const f = scored.factors;
-
-  const advice = makeAdvice(
-    last.close,
-    f.sma20,
-    f.sma50,
-    f.sma200,
-    f.rsi14,
-    f.roc14,
-    f.roc21,
-    f.avwap_support
+  const message = buildScoreMessage(
+    name,
+    code,
+    scored.date,
+    series[series.length - 1],
+    scored
   );
 
-  // "기준" 레벨만 간단히 노출(실제 매수 여부는 /buy가 담당)
-  const entryPrice = scored.entry?.buy ?? last.close;
-  const hardStop = scored.stops?.hard ?? 0;
-  const t1 = scored.targets?.t1 ?? 0;
-  const t2 = scored.targets?.t2 ?? 0;
-
-  const riskPct = pct(entryPrice, hardStop); // 음수(손실)
-  const reward1Pct = pct(entryPrice, t1);
-  const reward2Pct = pct(entryPrice, t2);
-
-  const levels =
-    `기준 레벨(참고용)\n` +
-    `- 엔트리: ${int(entryPrice)}원\n` +
-    `- 손절: ${int(hardStop)}원 (≈${one(riskPct)}%)\n` +
-    `- 익절: 1차 ${int(t1)}원(${one(reward1Pct)}%), 2차 ${int(t2)}원(${one(
-      reward2Pct
-    )}%)`;
-
-  const avwapRegimeText = formatAvwapRegime(f.avwap_regime);
-
-  const text =
-    `종목: ${name} (${code})\n` +
-    `일자: ${scored.date}\n` +
-    `가격: ${int(last.close)}원, 거래량: ${int(last.volume)}\n\n` +
-    `점수: ${one(scored.score)}점, 시그널: ${scored.signal}\n\n` +
-    levels +
-    "\n\n" +
-    "지표 요약\n" +
-    `- SMA20/50/200: ${int(f.sma20)} / ${int(f.sma50)} / ${int(f.sma200)}\n` +
-    `- 200일 기울기: ${int(f.sma200_slope)}\n` +
-    `- RSI14: ${one(f.rsi14)}\n` +
-    `- ROC14/21: ${one(f.roc14)} / ${one(f.roc21)}\n` +
-    `- AVWAP 지지강도: ${one(f.avwap_support)}%\n` +
-    `- AVWAP 레짐: ${avwapRegimeText}\n\n` +
-    "관점/전략\n" +
-    advice;
-
   const kb = createMultiRowKeyboard(2, [
-    { text: "재계산", callback_data: `score:${code}` },
-    { text: "매수 체크", callback_data: `buy:${code}` },
+    { text: "🔄 재계산", callback_data: `score:${code}` },
+    { text: "✅ 매수 체크", callback_data: `buy:${code}` },
   ]);
 
-  await tgSend("sendMessage", { chat_id: ctx.chatId, text, reply_markup: kb });
+  await tgSend("sendMessage", {
+    chat_id: ctx.chatId,
+    text: message,
+    parse_mode: "Markdown", // 필수
+    reply_markup: kb,
+  });
 }

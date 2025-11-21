@@ -70,15 +70,10 @@ export async function routeMessage(
 ): Promise<void> {
   let t = (text || "").trim();
 
-  console.log("[routeMessage] raw text:", JSON.stringify(text));
-  console.log("[routeMessage] trimmed:", JSON.stringify(t));
-
   t = t
     .replace(/\u00A0/g, " ") // non‑breaking space
     .replace(/\u200B/g, "") // zero‑width space
     .replace(/\s+/g, " "); // 여러 공백 → 하나
-
-  console.log("[routeMessage] normalized:", JSON.stringify(t));
 
   // /start
   if (CMD.START.test(t)) {
