@@ -1,4 +1,3 @@
-// src/bot/commands/buy.ts
 import type { ChatContext } from "../router";
 import { calculateScore } from "../../score/engine";
 import { getDailySeries } from "../../adapters";
@@ -6,36 +5,29 @@ import { searchByNameOrCode, getNamesForCodes } from "../../search/normalize";
 import type { StockOHLCV } from "../../data/types";
 import { KO_MESSAGES } from "../messages/ko";
 
-const int = (n: number) =>
+// --- 유틸리티 함수 ---
+const fmt = (n: number) =>
   Number.isFinite(n) ? Math.round(n).toLocaleString("ko-KR") : "-";
-
-const one = (n: number) =>
-  Number.isFinite(n) ? Number(n.toFixed(1)).toLocaleString("ko-KR") : "-";
-
-const pct = (from: number, to: number) => {
-  if (!Number.isFinite(from) || from === 0 || !Number.isFinite(to)) return NaN;
-  return ((to - from) / from) * 100;
-};
-
-function calcVolumeRatio(series: StockOHLCV[]): number {
+const fmtPct = (n: number) =>
+  Number.isFinite(n) ? `${n > 0 ? "+" : ""}${n.toFixed(1)}%` : "-";
+const calcVolumeRatio = (series: StockOHLCV[]): number => {
   const n = Math.min(20, series.length);
   if (n <= 1) return NaN;
   const slice = series.slice(-n);
-  const sum = slice.reduce((acc, c) => acc + (c.volume || 0), 0);
-  const avg = sum / n;
-  const last = slice[slice.length - 1];
-  return avg > 0 ? last.volume / avg : NaN;
-}
+  const avg = slice.reduce((acc, c) => acc + (c.volume || 0), 0) / n;
+  return avg > 0 ? slice[slice.length - 1].volume / avg : NaN;
+};
 
+// --- 데이터 타입 ---
 type BuyDecision = {
   canBuy: boolean;
   reasons: string[];
   tags: string[];
   volumeRatio: number;
-  rr1: number;
-  rr2: number;
+  rr: string; // 손익비 문자열 미리 포맷팅
 };
 
+// --- 핵심 로직 분리 (평가) ---
 function evaluateBuyDecision(
   last: StockOHLCV,
   volumeRatio: number,
@@ -43,275 +35,170 @@ function evaluateBuyDecision(
   hardStop: number,
   t1: number,
   t2: number,
-  f: {
-    sma20: number;
-    sma50: number;
-    sma200: number;
-    sma200_slope?: number;
-    rsi14: number;
-    roc14: number;
-    roc21: number;
-    avwap_support: number;
-    avwap_regime?: "buyers" | "sellers" | "neutral";
-  }
+  f: any // factor 객체
 ): BuyDecision {
   const reasons: string[] = [];
   const tags: string[] = [];
 
-  const riskPct = pct(entryPrice, hardStop);
-  const reward1Pct = pct(entryPrice, t1);
-  const reward2Pct = pct(entryPrice, t2);
-
-  const rr1 =
-    Number.isFinite(riskPct) && riskPct < 0 && Number.isFinite(reward1Pct)
-      ? Math.abs(reward1Pct / riskPct)
-      : NaN;
-  const rr2 =
-    Number.isFinite(riskPct) && riskPct < 0 && Number.isFinite(reward2Pct)
-      ? Math.abs(reward2Pct / riskPct)
-      : NaN;
-
+  // 조건 계산
   const close = last.close;
-  const near20 = f.sma20 > 0 && Math.abs((close - f.sma20) / f.sma20) <= 0.03;
-  const above20 = f.sma20 > 0 && close >= f.sma20;
-  const above50 = f.sma50 > 0 && close >= f.sma50;
-  const trendUp200 =
+  const isNear20 = f.sma20 > 0 && Math.abs((close - f.sma20) / f.sma20) <= 0.03;
+  const isAbove20 = f.sma20 > 0 && close >= f.sma20;
+  const isAbove50 = f.sma50 > 0 && close >= f.sma50;
+  const isTrendUp200 =
     typeof f.sma200_slope === "number" ? f.sma200_slope > 0 : true;
-
   const hasAvwapSupport = f.avwap_regime === "buyers" && f.avwap_support >= 50;
 
-  const volOk = Number.isFinite(volumeRatio) && volumeRatio >= 1.5;
-  const rsiOk = f.rsi14 >= 50;
-  const rocOk = f.roc14 >= 0 && f.roc21 >= -5;
+  const isVolOk = Number.isFinite(volumeRatio) && volumeRatio >= 1.5;
+  const isRsiOk = f.rsi14 >= 50;
+  const isRocOk = f.roc14 >= 0 && f.roc21 >= -5;
 
-  const breakoutTrigger =
-    near20 && above20 && hasAvwapSupport && volOk && rsiOk && rocOk;
+  // 트리거 정의
+  const triggerBreakout =
+    isNear20 && isAbove20 && hasAvwapSupport && isVolOk && isRsiOk && isRocOk;
+  const triggerTrend =
+    isAbove50 && isTrendUp200 && hasAvwapSupport && isRsiOk && isRocOk;
 
-  if (breakoutTrigger) tags.push("20SMA·AVWAP 돌파 + 거래량/모멘텀 동시 충족");
+  if (triggerBreakout) tags.push("🚀 20SMA·AVWAP 돌파");
+  if (triggerTrend) tags.push("📈 50일선 위 추세 추종");
 
-  const trendTrigger =
-    above50 && trendUp200 && hasAvwapSupport && rsiOk && rocOk;
+  // 미충족 사유
+  if (!isVolOk)
+    reasons.push(`거래량 부족 (${volumeRatio.toFixed(1)}배 < 1.5배)`);
+  if (!hasAvwapSupport) reasons.push("AVWAP 지지력 약함");
+  if (!isRsiOk) reasons.push(`모멘텀 약세 (RSI ${f.rsi14.toFixed(0)} < 50)`);
+  if (!isRocOk) reasons.push("단기 추세 약세 (ROC 음수)");
+  if (!triggerBreakout && !triggerTrend)
+    reasons.push("주요 이평선/매물대 조건 미달");
 
-  if (trendTrigger) tags.push("상승 추세 50일선 위 추세 추종");
+  // 손익비 계산
+  const risk = Math.abs(entryPrice - hardStop);
+  const reward = Math.abs(t1 - entryPrice);
+  const rrVal = risk > 0 ? reward / risk : 0;
+  const isRrOk = rrVal >= 2;
 
-  const rrOk = Number.isFinite(rr1) && rr1 >= 2;
+  if (!isRrOk) reasons.push(`손익비 부족 (1:${rrVal.toFixed(1)} < 1:2.0)`);
 
-  if (!volOk) reasons.push("거래량이 20일 평균의 1.5배 미만");
-  if (!hasAvwapSupport)
-    reasons.push("AVWAP 상회·매수자 우위 레짐이 아니거나 지지강도 부족");
-  if (!rsiOk) reasons.push("RSI14가 50 미만");
-  if (!rocOk) reasons.push("ROC14/21 모멘텀이 약하거나 음수");
-  if (!near20 && !trendTrigger)
-    reasons.push("20SMA ±3% 구간이 아니고, 50일선 기반 추세 트리거도 아님");
-  if (!rrOk) reasons.push("손익비가 1:2 미만 (리스크 대비 기대수익 부족)");
-
-  const canBuy = breakoutTrigger || trendTrigger;
-  if (!canBuy && reasons.length === 0) {
-    reasons.push("시스템 매수 트리거가 충족되지 않음");
-  }
+  const canBuy = (triggerBreakout || triggerTrend) && isRrOk;
 
   return {
-    canBuy: canBuy && rrOk,
-    reasons: rrOk ? reasons : [...reasons, "손익비 필터(1:2 이상) 미충족"],
+    canBuy,
+    reasons,
     tags,
     volumeRatio,
-    rr1,
-    rr2,
+    rr: `1:${rrVal.toFixed(1)}`,
   };
 }
 
+// --- 메시지 빌더 (Markdown 포맷 적용) ---
 function buildBuyMessage(params: {
   name: string;
   code: string;
   last: StockOHLCV;
   decision: BuyDecision;
-  entryPrice: number;
-  addPrice?: number;
-  hardStop: number;
+  entry: number;
+  stop: number;
   t1: number;
   t2: number;
-  riskPct: number;
-  reward1Pct: number;
-  reward2Pct: number;
-  sizeFactor?: number;
 }): string {
-  const {
-    name,
-    code,
-    last,
-    decision,
-    entryPrice,
-    addPrice,
-    hardStop,
-    t1,
-    t2,
-    riskPct,
-    reward1Pct,
-    reward2Pct,
-    sizeFactor,
-  } = params;
+  const { name, code, last, decision, entry, stop, t1, t2 } = params;
+  const closeFmt = fmt(last.close);
+  const stopPct = fmtPct(((stop - entry) / entry) * 100);
 
+  // 1. 헤더: 종목명과 현재가 강조
   const header = [
-    `📌 종목: ${name} (${code})`,
-    `현재가: ${int(last.close)}원`,
-    `거래량: ${int(last.volume)} (20일 평균 대비 ×${one(
-      decision.volumeRatio
-    )})`,
-  ];
+    `📌 *${name}* \`(${code})\``,
+    `현재가: *${closeFmt}원*`,
+    `거래량: 전일대비 ${decision.volumeRatio.toFixed(1)}배`,
+  ].join("\n");
 
-  const levelLines = [
-    `📈 매매 레벨`,
-    `• 엔트리: ${int(entryPrice)}원${
-      addPrice ? `, 추가 매수: ${int(addPrice)}원` : ""
-    }`,
-    `• 손절가: ${int(hardStop)}원 (약 ${one(riskPct)}%)`,
-    `• 익절가: 1차 ${int(t1)}원 (${one(reward1Pct)}%), 2차 ${int(t2)}원 (${one(
-      reward2Pct
-    )}%)`,
-  ];
-
-  const rrText =
-    Number.isFinite(decision.rr1) && Number.isFinite(decision.rr2)
-      ? `• 손익비: 1:${one(decision.rr1)} ~ 1:${one(decision.rr2)}`
-      : Number.isFinite(decision.rr1)
-      ? `• 손익비: 1:${one(decision.rr1)}`
-      : "";
-
-  const sizeText =
-    Number.isFinite(sizeFactor) && sizeFactor! > 0
-      ? `• 추천 포지션 크기: 기준 대비 ×${one(
-          sizeFactor!
-        )} (계좌 1~2% 리스크 가정)`
-      : "";
-
-  const ruleText = [
-    `📏 운영 규칙`,
-    "• 손절: -7% ~ -8%",
-    "• 익절: +20% ~ +25% 분할 청산",
-    "• 50일선 / AVWAP 이탈 시 청산",
-    "• 3주 내 +20% 급등 시 8주 보유 예외",
-    "• 트레일링 스탑 참고",
-  ];
-
-  if (!decision.canBuy) {
-    const body = [
-      "⛔ 시스템 매수 조건: 미충족 (관망 권장)",
-      decision.tags.length ? `• 참고 트리거: ${decision.tags.join(" / ")}` : "",
-      decision.reasons.length
-        ? ["", "🔍 미충족 사유", ...decision.reasons.map((r) => `• ${r}`)].join(
-            "\n"
-          )
-        : "",
-    ];
-
-    return [...header, "", ...body, "", ...levelLines, rrText, "", ...ruleText]
-      .filter(Boolean)
-      .join("\n");
+  // 2. 진단 결과: 이모지와 볼드체로 명확히 구분
+  let verdict = "";
+  if (decision.canBuy) {
+    verdict = [`✅ *매수 시그널 포착*`, `└ ${decision.tags.join(", ")}`].join(
+      "\n"
+    );
+  } else {
+    verdict = [
+      `⛔ *관망 권장* (조건 미충족)`,
+      `👇 *주요 원인*:`,
+      ...decision.reasons.map((r) => `  • ${r}`),
+    ].join("\n");
   }
 
-  const body = [
-    "✅ 시스템 매수 조건: 충족 (매수 허용)",
-    decision.tags.length ? `• 트리거: ${decision.tags.join(" / ")}` : "",
-  ];
+  // 3. 매매 전략: 수치를 코드블록(`)으로 감싸 눈에 띄게 함
+  const strategy = [
+    `📐 *매매 전략* (손익비 ${decision.rr})`,
+    `  🎯 진입: \`${fmt(entry)}원\``,
+    `  🛡 손절: \`${fmt(stop)}원\` (${stopPct})`,
+    `  💰 익절: \`${fmt(t1)}\` / \`${fmt(t2)}원\``,
+  ].join("\n");
 
-  return [
-    ...header,
-    "",
-    ...body,
-    "",
-    ...levelLines,
-    rrText,
-    sizeText,
-    "",
-    ...ruleText,
-  ]
-    .filter(Boolean)
-    .join("\n");
+  // 4. 풋터: 긴 규칙을 짧은 팁으로 요약
+  const footer = `💡 _손절 -7% 원칙, 분할 매도로 수익 보존_`;
+
+  return [header, verdict, strategy, footer].join("\n\n");
 }
 
+// --- 메인 핸들러 ---
 export async function handleBuyCommand(
   input: string,
   ctx: ChatContext,
   tgSend: any
 ): Promise<void> {
   const query = (input || "").trim();
-
   if (!query) {
-    await tgSend("sendMessage", {
+    return tgSend("sendMessage", {
       chat_id: ctx.chatId,
-      text:
-        "사용법: /buy <종목명 또는 코드>\n\n" +
-        "예) /buy 삼성전자\n" +
-        "예) /buy 005930",
+      text: "사용법: /buy <종목명/코드>\n예) /buy 삼성전자",
     });
-    return;
   }
 
-  let hit = await searchByNameOrCode(query, 1);
-  if (!hit?.length) {
-    await tgSend("sendMessage", {
+  // 1. 종목 검색
+  const hits = await searchByNameOrCode(query, 1);
+  if (!hits?.length) {
+    return tgSend("sendMessage", {
       chat_id: ctx.chatId,
       text: KO_MESSAGES.SCORE_NOT_FOUND,
     });
-    return;
   }
 
-  let { code, name } = hit[0];
-
+  let { code, name } = hits[0];
   if (!name || name === code) {
     const map = await getNamesForCodes([code]);
-    name = map[code] || name || code;
+    name = map[code] || code;
   }
 
-  const series: StockOHLCV[] = await getDailySeries(code, 420);
+  // 2. 데이터 조회
+  const series = await getDailySeries(code, 300);
   if (!series || series.length < 200) {
-    await tgSend("sendMessage", {
+    return tgSend("sendMessage", {
       chat_id: ctx.chatId,
       text: KO_MESSAGES.INSUFFICIENT,
     });
-    return;
   }
 
+  // 3. 분석 및 점수화
   const scored = calculateScore(series);
   if (!scored) {
-    await tgSend("sendMessage", {
+    return tgSend("sendMessage", {
       chat_id: ctx.chatId,
       text: KO_MESSAGES.SCORE_NOT_FOUND,
     });
-    return;
-  }
-
-  if (!name || name === code) {
-    const m = await getNamesForCodes([code]);
-    name = m[code] || code;
   }
 
   const last = series[series.length - 1];
   const f = scored.factors;
-
-  const entryPrice = scored.entry?.buy ?? last.close;
-  const addPrice = scored.entry?.add;
-  const hardStop = scored.stops?.hard ?? 0;
-  const t1 = scored.targets?.t1 ?? 0;
-  const t2 = scored.targets?.t2 ?? 0;
-
-  const riskPct = pct(entryPrice, hardStop);
-  const reward1Pct = pct(entryPrice, t1);
-  const reward2Pct = pct(entryPrice, t2);
-
-  const volumeRatio = calcVolumeRatio(series);
-
   const decision = evaluateBuyDecision(
     last,
-    volumeRatio,
-    entryPrice,
-    hardStop,
-    t1,
-    t2,
+    calcVolumeRatio(series),
+    scored.entry?.buy ?? last.close,
+    scored.stops?.hard ?? 0,
+    scored.targets?.t1 ?? 0,
+    scored.targets?.t2 ?? 0,
     {
       sma20: f.sma20,
       sma50: f.sma50,
-      sma200: f.sma200,
       sma200_slope: f.sma200_slope,
       rsi14: f.rsi14,
       roc14: f.roc14,
@@ -321,24 +208,21 @@ export async function handleBuyCommand(
     }
   );
 
-  const message = buildBuyMessage({
+  // 4. 메시지 전송
+  const msg = buildBuyMessage({
     name,
     code,
     last,
     decision,
-    entryPrice,
-    addPrice,
-    hardStop,
-    t1,
-    t2,
-    riskPct,
-    reward1Pct,
-    reward2Pct,
-    sizeFactor: scored.sizeFactor,
+    entry: scored.entry?.buy ?? last.close,
+    stop: scored.stops?.hard ?? 0,
+    t1: scored.targets?.t1 ?? 0,
+    t2: scored.targets?.t2 ?? 0,
   });
 
   await tgSend("sendMessage", {
     chat_id: ctx.chatId,
-    text: message,
+    text: msg,
+    parse_mode: "Markdown", // 필수: 마크다운 적용
   });
 }

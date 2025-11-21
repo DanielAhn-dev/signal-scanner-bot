@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from datetime import date, timedelta
 import os
+import sys
 from typing import Dict, List, Tuple
 import time
 
@@ -14,6 +15,9 @@ SUPABASE_URL = os.environ["SUPABASE_URL"]
 SUPABASE_KEY = os.environ["SUPABASE_SERVICE_ROLE_KEY"]
 
 if not SUPABASE_URL or not SUPABASE_KEY:
+    print("환경 변수 SUPABASE_URL / SUPABASE_ANON_KEY 가 설정되지 않았습니다. .env 또는 셸 export 를 확인하세요.", file=sys.stderr)
+    sys.exit(1)
+    
     raise RuntimeError(
         f"Missing Supabase env: SUPABASE_URL={bool(SUPABASE_URL)}, "
         f"SUPABASE_SERVICE_ROLE_KEY={bool(SUPABASE_KEY)}"

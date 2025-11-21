@@ -53,14 +53,14 @@ function isAdmin(ctx: ChatContext) {
 const CMD = {
   START: /^\/start$/,
   HELP: /^\/help$/,
-  SECTOR: /^\/(sector|sectors|섹터)\b(?:\s+.*)?$/i,
-  NEXT_SECTOR: /^\/(nextsector|flowsector|다음섹터)\b(?:\s+.*)?$/i,
+  SECTOR: /^\/(sector|sectors|섹터)(?:\s+|$)(?:.*)?$/i,
+  NEXT_SECTOR: /^\/(nextsector|flowsector|다음섹터)(?:\s+|$)(?:.*)?$/i,
   SCORE: /^\/(score|점수)\s+(.+)$/i,
-  STOCKS: /^\/(stocks|종목)\b(?:\s+.*)?$/i,
-  SEED: /^\/(seed|시드)\b$/i,
-  UPDATE: /^\/(update|업데이트)\b$/i,
-  COMMANDS: /^\/(commands|admin_commands)\b$/i,
-  BUY: /^\/(buy|매수)\b(?:\s+(.+))?$/i,
+  STOCKS: /^\/(stocks|종목)(?:\s+|$)(?:.*)?$/i,
+  SEED: /^\/seed$/,
+  UPDATE: /^\/update$/,
+  COMMANDS: /^\/(commands|admin_commands)$/i,
+  BUY: /^\/(buy|매수)(?:\s+(.+))?$/i,
 };
 
 export async function routeMessage(
