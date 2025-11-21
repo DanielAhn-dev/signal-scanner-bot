@@ -1,4 +1,3 @@
-// src/bot/router.ts
 import { KO_MESSAGES } from "./messages/ko";
 import {
   handleSectorCommand,
@@ -6,6 +5,7 @@ import {
 } from "./commands/sector";
 import { handleScoreCommand } from "./commands/score";
 import { handleBuyCommand } from "./commands/buy";
+import { handleStocksCommand } from "./commands/stocks";
 import { resolveBase } from "../lib/base";
 import { getLeadersForSectorById } from "../data/sector";
 import { createMultiRowKeyboard } from "../telegram/keyboards";
@@ -25,11 +25,8 @@ async function callInternal(path: string, ms = 8000) {
     const r = await fetch(`${base}${path}`, {
       method: "POST",
       headers: {
-        // 기존 seed 등에서 쓰던 헤더 유지
         "x-internal-secret": secret,
-        // update API에서 검사하는 헤더 추가
         "x-cron-secret": secret,
-        // 만약 isAuthorized가 x-telegram-bot-secret만 본다면 이 것도 추가
         "x-telegram-bot-secret": process.env.TELEGRAM_BOT_SECRET ?? secret,
       },
       signal: ctrl.signal,
@@ -50,13 +47,14 @@ function isAdmin(ctx: ChatContext) {
 }
 
 // 명령어 패턴(한/영)
+// ✅ 정규식 개선: 인수 캡처 그룹 추가
 const CMD = {
   START: /^\/start$/,
   HELP: /^\/help$/,
   SECTOR: /^\/(sector|sectors|섹터)(?:\s+|$)(?:.*)?$/i,
   NEXT_SECTOR: /^\/(nextsector|flowsector|다음섹터)(?:\s+|$)(?:.*)?$/i,
   SCORE: /^\/(score|점수)\s+(.+)$/i,
-  STOCKS: /^\/(stocks|종목)(?:\s+|$)(?:.*)?$/i,
+  STOCKS: /^\/(stocks|종목)(?:\s+(.+))?$/i, // ✅ 수정: (선택적 인수 캡처)
   SEED: /^\/seed$/,
   UPDATE: /^\/update$/,
   COMMANDS: /^\/(commands|admin_commands)$/i,
@@ -71,9 +69,9 @@ export async function routeMessage(
   let t = (text || "").trim();
 
   t = t
-    .replace(/\u00A0/g, " ") // non‑breaking space
-    .replace(/\u200B/g, "") // zero‑width space
-    .replace(/\s+/g, " "); // 여러 공백 → 하나
+    .replace(/\u00A0/g, " ")
+    .replace(/\u200B/g, "")
+    .replace(/\s+/g, " ");
 
   // /start
   if (CMD.START.test(t)) {
@@ -93,7 +91,7 @@ export async function routeMessage(
     return;
   }
 
-  // /commands | /admin_commands (관리자 전용, 텔레그램 명령어 갱신)
+  // /commands | /admin_commands (관리자 전용)
   if (CMD.COMMANDS.test(t)) {
     if (!isAdmin(ctx)) {
       await tgSend("sendMessage", {
@@ -117,9 +115,8 @@ export async function routeMessage(
     return;
   }
 
-  // /sector | /sectors | /섹터 : 통합 점수 기반 현재 유망 섹터
+  // /sector | /sectors | /섹터
   if (CMD.SECTOR.test(t)) {
-    console.log("SECTOR CMD", t);
     try {
       await handleSectorCommand(ctx, tgSend);
     } catch (e) {
@@ -132,7 +129,7 @@ export async function routeMessage(
     return;
   }
 
-  // /nextsector | /flowsector | /다음섹터 : 수급 유입 기반 전망 섹터
+  // /nextsector | /flowsector | /다음섹터
   if (CMD.NEXT_SECTOR.test(t)) {
     try {
       await handleNextSectorCommand(ctx, tgSend);
@@ -146,12 +143,28 @@ export async function routeMessage(
     return;
   }
 
-  // /stocks | /종목 (향후 확장)
-  if (CMD.STOCKS.test(t)) {
-    await tgSend("sendMessage", {
-      chat_id: ctx.chatId,
-      text: "종목 리스트/검색은 곧 제공됩니다. /score <이름|코드>를 이용하세요.",
-    });
+  // ✅ /stocks | /종목 (기능 구현 연결)
+  const ms = t.match(CMD.STOCKS);
+  if (ms) {
+    const sectorName = (ms[2] || "").trim(); // 캡처된 인수 (섹터명)
+
+    if (!sectorName) {
+      await tgSend("sendMessage", {
+        chat_id: ctx.chatId,
+        text: "사용법: /stocks <섹터명>\n예) /stocks 반도체\n예) /종목 자동차",
+      });
+      return;
+    }
+
+    try {
+      await handleStocksCommand(sectorName, ctx, tgSend);
+    } catch (e) {
+      console.error("handleStocksCommand failed:", e);
+      await tgSend("sendMessage", {
+        chat_id: ctx.chatId,
+        text: "종목 조회 중 오류가 발생했습니다.",
+      });
+    }
     return;
   }
 
@@ -218,7 +231,6 @@ export async function routeMessage(
   // /buy | /매수 <쿼리>
   const mb = t.match(CMD.BUY);
   if (mb) {
-    // mb[2] 에 종목 쿼리(있으면)가 들어감
     await handleBuyCommand(mb[2] || "", ctx, tgSend);
     return;
   }
@@ -243,9 +255,13 @@ export async function routeCallback(
   tgSend: any
 ): Promise<void> {
   // 섹터 버튼: data 가 곧 sectorId (예: "KRX:IT")
+  // ✅ 여기서도 getLeadersForSectorById를 사용하는 대신 handleStocksCommand를 재사용할 수도 있지만,
+  // handleStocksCommand는 '이름' 기반이고, 여기는 'ID' 기반이므로
+  // 기존 로직(getLeadersForSectorById)을 유지하거나 stocks.ts에 ID 기반 함수를 추가하는 것이 좋습니다.
+  // 일단 기존 로직 유지 (가장 안전함)
   if (data.startsWith("KRX:")) {
     const sectorId = data;
-    const leaders = await getLeadersForSectorById(sectorId, 30);
+    const leaders = await getLeadersForSectorById(sectorId, 10); // 30 -> 10개로 축소 추천
 
     if (!leaders.length) {
       await tgSend("sendMessage", {
@@ -255,15 +271,11 @@ export async function routeCallback(
       return;
     }
 
-    const stockLines = leaders.map((s) => `${s.name}(${s.code})`);
+    // 리팩토링된 stocks.ts의 포맷을 따르고 싶다면 여기서도
+    // handleStocksCommand 유사한 포맷팅 로직을 적용해야 함.
+    // 하지만 여기서는 버튼 클릭 응답이므로 기존처럼 버튼 목록만 보여주는 것이 UX상 깔끔할 수 있음.
 
-    // ✅ 종목 리스트는 텍스트로 나열하지 않고 간단 설명만
-    const text =
-      "상위 종목 버튼을 눌러 점수(/score)를 확인하세요.\n" +
-      "(각 버튼은 해당 종목의 점수/매매 시그널을 바로 조회합니다.)";
-
-    // ✅ 2×N 배열 버튼 생성
-    const btns = leaders.map((s) => ({
+    const btns = leaders.slice(0, 10).map((s) => ({
       text: s.name,
       callback_data: `score:${s.code}`,
     }));
@@ -272,7 +284,7 @@ export async function routeCallback(
 
     await tgSend("sendMessage", {
       chat_id: ctx.chatId,
-      text,
+      text: "종목을 선택하여 점수를 확인하세요.",
       reply_markup: keyboard,
     });
     return;
