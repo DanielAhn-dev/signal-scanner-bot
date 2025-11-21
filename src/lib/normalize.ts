@@ -24,4 +24,6 @@ export function getBizDaysAgo(iso: string, n: number) {
 }
 
 export const fmtPct = (x: number) => `${(x * 100).toFixed(1)}%`;
+export const fmtPctSafe = (x: number) =>
+  Number.isFinite(x) ? `${(x * 100).toFixed(1)}%` : "-";
 export const fmtKRW = (x: number, d = 1) => `${(x / 1e8).toFixed(d)}억`;

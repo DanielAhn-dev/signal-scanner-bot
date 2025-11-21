@@ -6,7 +6,7 @@ import {
   getTopSectors,
   getNextSectorCandidates,
 } from "../../lib/sectors";
-import { fmtPct, fmtKRW } from "../../lib/normalize";
+import { fmtPct, fmtPctSafe, fmtKRW } from "../../lib/normalize";
 import { createMultiRowKeyboard } from "../../telegram/keyboards";
 
 function badge(grade: "A" | "B" | "C" | undefined) {
@@ -60,9 +60,9 @@ export async function handleSectorCommand(
 
   const header = "📊 섹터 랭킹 (TOP 10)";
   const lines = top.slice(0, 10).map((s) => {
-    const rsLine = `RS(1/3/6/12M) ${fmtPct(s.rs1M)}, ${fmtPct(
+    const rsLine = `RS(1/3/6/12M) ${fmtPctSafe(s.rs1M)}, ${fmtPctSafe(
       s.rs3M
-    )}, ${fmtPct(s.rs6M)}, ${fmtPct(s.rs12M)}`;
+    )}, ${fmtPctSafe(s.rs6M)}, ${fmtPctSafe(s.rs12M)}`;
     const flowLine = `수급: 외인5일 ${fmtKRW(s.flowF5, 0)} / 기관5일 ${fmtKRW(
       s.flowI5,
       0
@@ -150,9 +150,9 @@ export async function handleNextSectorCommand(
       s.flowI5,
       0
     )}`;
-    const rsLine = `RS(1/3/6/12M) ${fmtPct(s.rs1M)}, ${fmtPct(
+    const rsLine = `RS(1/3/6/12M) ${fmtPctSafe(s.rs1M)}, ${fmtPctSafe(
       s.rs3M
-    )}, ${fmtPct(s.rs6M)}, ${fmtPct(s.rs12M)}`;
+    )}, ${fmtPctSafe(s.rs6M)}, ${fmtPctSafe(s.rs12M)}`;
     return `${s.name} · 점수 ${s.score}\n  └ ${flowLine}\n  └ ${rsLine}`;
   });
 
