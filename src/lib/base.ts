@@ -6,3 +6,10 @@ export function resolveBase(env: NodeJS.ProcessEnv, fallbackHost?: string) {
   if (fallbackHost) return `https://${fallbackHost}`;
   return "http://localhost:3000";
 }
+
+// export function resolveBase(): string {
+//   const base = (
+//     process.env.BASE_URL || `https://${process.env.VERCEL_URL || ""}`
+//   ).replace(/\/+$/, "");
+//   return base;
+// }

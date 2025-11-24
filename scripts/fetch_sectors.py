@@ -1,4 +1,3 @@
-# scripts/fetch_sectors.py
 from __future__ import annotations
 
 from datetime import date, timedelta
@@ -6,26 +5,23 @@ import os
 import sys
 from typing import Dict, List, Tuple
 import time
+import pandas as pd
+import numpy as np
 
 from pykrx import stock
 from supabase import create_client, Client
 
 # ===== 환경 변수 =====
-SUPABASE_URL = os.environ["SUPABASE_URL"]
-SUPABASE_KEY = os.environ["SUPABASE_SERVICE_ROLE_KEY"]
+SUPABASE_URL = os.environ.get("SUPABASE_URL")
+SUPABASE_KEY = os.environ.get("SUPABASE_SERVICE_ROLE_KEY")
 
 if not SUPABASE_URL or not SUPABASE_KEY:
-    print("환경 변수 SUPABASE_URL / SUPABASE_ANON_KEY 가 설정되지 않았습니다. .env 또는 셸 export 를 확인하세요.", file=sys.stderr)
+    print("환경 변수 에러: SUPABASE_URL / SERVICE_ROLE_KEY 누락", file=sys.stderr)
     sys.exit(1)
-    
-    raise RuntimeError(
-        f"Missing Supabase env: SUPABASE_URL={bool(SUPABASE_URL)}, "
-        f"SUPABASE_SERVICE_ROLE_KEY={bool(SUPABASE_KEY)}"
-    )
 
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-# ===== 섹터 이름 키워드 → KRX 업종 지수 코드 매핑 규칙 =====
+# ===== 섹터 매핑 규칙 =====
 NAME_TO_INDEX_RULES: List[Tuple[str, str]] = [
     ("반도체", "1014"),
     ("전자장비", "1013"),
@@ -47,77 +43,48 @@ def infer_index_code_from_name(name: str) -> str | None:
     return None
 
 def get_sector_index_map() -> Dict[str, str]:
-    """
-    Supabase.sectors 에서 id/name/metrics.krx_index 를 읽어
-    sector_id -> KRX 지수 코드 맵을 만든다.
-
-    metrics.krx_index 가 비어 있는 섹터는 이름으로 코드 추론 후
-    sectors.metrics.krx_index 를 채워 넣어 다음 실행부터는 DB만 참조하도록 한다.
-    """
     try:
         res = supabase.table("sectors").select("id,name,metrics").execute()
         rows = res.data or []
     except Exception as e:
-        print(f"[sector_map] sectors 조회 실패: {e}")
+        print(f"[sector_map] 조회 실패: {e}")
         return {}
 
     mapping: Dict[str, str] = {}
-    missing_names: List[str] = []
     updates: List[dict] = []
 
     for row in rows:
         sid = row["id"]
         name = row.get("name") or ""
         metrics = row.get("metrics") or {}
-
         code = metrics.get("krx_index")
+        
         inferred = False
         if not code:
             code = infer_index_code_from_name(name)
             inferred = code is not None
 
         if code:
-            code_str = str(code)
-            mapping[sid] = code_str
-
-            # 새로 추론한 경우에는 sectors.metrics.krx_index 를 업데이트 큐에 넣는다.
+            mapping[sid] = str(code)
             if inferred:
                 new_metrics = dict(metrics)
-                new_metrics["krx_index"] = code_str
+                new_metrics["krx_index"] = str(code)
                 updates.append({"id": sid, "metrics": new_metrics})
-        else:
-            missing_names.append(name)
 
-    print(f"[sector_map] 사용 가능한 섹터 수 = {len(mapping)}")
-    if missing_names:
-        print(
-            f"[sector_map] 코드 매핑 실패 섹터 예시(상위 5개): {missing_names[:5]}"
-        )
-
-    # 필요 시 sectors.metrics.krx_index 보정
     if updates:
-        print(
-            f"[sector_map] 이름 기반으로 krx_index 를 보정할 섹터 수 = {len(updates)}"
-        )
         BATCH = 100
         for i in range(0, len(updates), BATCH):
-            chunk = updates[i : i + BATCH]
             try:
-                supabase.table("sectors").upsert(chunk).execute()
-            except Exception as e:
-                print(f"[sector_map] sectors.krx_index upsert 실패: {e}")
-
+                supabase.table("sectors").upsert(updates[i : i + BATCH]).execute()
+            except Exception:
+                pass
+    
     return mapping
 
-# ✅✅✅ --- 수정된 upsert_investor_daily 함수 --- ✅✅✅
+# ==========================================
+# 1. 투자자별(기관/외국인) 수급 저장
+# ==========================================
 def upsert_investor_daily():
-    """
-    최신 날짜부터 과거 30일까지 하루씩 순회하며,
-    '기관'과 '외국인'의 '개별 종목' 순매수 데이터를 investor_daily 테이블에 저장.
-    """
-    # ✅✅✅ 누락되었던 pandas import 추가 ✅✅✅
-    import pandas as pd
-
     today = date.today()
     all_rows: List[dict] = []
 
@@ -125,43 +92,33 @@ def upsert_investor_daily():
     print("수급 데이터 수집 시작 (기관/외국인)")
     print("="*40)
 
-    for i in range(35): # 약 25 영업일
+    for i in range(35):
         d = today - timedelta(days=i)
         if d.weekday() >= 5: continue
-            
         day_str = d.strftime("%Y%m%d")
-        print(f"[investor_daily] fetching data for {day_str}")
+        print(f"[investor_daily] fetching {day_str}")
 
         try:
-            # 1. 기관 데이터 조회
             df_inst = stock.get_market_net_purchases_of_equities_by_ticker(day_str, day_str, "ALL", "기관합계")
-            time.sleep(0.2) # 서버 부하 방지
-            
-            # 2. 외국인 데이터 조회
+            time.sleep(0.1)
             df_foreign = stock.get_market_net_purchases_of_equities_by_ticker(day_str, day_str, "ALL", "외국인")
-            time.sleep(0.2)
+            time.sleep(0.1)
 
-            if df_inst.empty or df_foreign.empty:
-                print(f"  -> {day_str} 기관 또는 외국인 데이터 없음")
-                continue
+            if df_inst.empty or df_foreign.empty: continue
 
-            # 두 데이터프레임을 '티커' 기준으로 합치기
             df_merged = pd.merge(
                 df_inst.reset_index(),
                 df_foreign.reset_index(),
                 on='티커',
                 suffixes=('_기관', '_외국인')
             )
-            
-            print(f"  -> {day_str} 데이터 {len(df_merged)}건 조회 및 병합 성공")
 
             for _, row in df_merged.iterrows():
                 ticker = row['티커']
                 inst_net = float(row.get("순매수거래대금_기관", 0))
                 foreign_net = float(row.get("순매수거래대금_외국인", 0))
-
-                if foreign_net == 0 and inst_net == 0:
-                    continue
+                
+                if foreign_net == 0 and inst_net == 0: continue
 
                 all_rows.append({
                     "date": d.isoformat(),
@@ -169,132 +126,237 @@ def upsert_investor_daily():
                     "foreign": foreign_net,
                     "institution": inst_net,
                 })
-        except Exception as e:
-            print(f"[ERROR] {day_str} 데이터 조회 중 에러 발생: {e}")
+        except Exception:
             continue
     
-    if not all_rows:
-        print("[investor_daily] 최종적으로 적재할 데이터가 없습니다.")
-        return
+    if all_rows:
+        print(f"[investor_daily] {len(all_rows)}건 저장 중...")
+        BATCH = 500
+        for i in range(0, len(all_rows), BATCH):
+            try:
+                supabase.table("investor_daily").upsert(all_rows[i : i + BATCH]).execute()
+            except Exception:
+                pass
+    print("[investor_daily] 완료")
 
-    print(f"\n[investor_daily] 총 {len(all_rows)}개의 투자자별 거래 데이터를 upsert 합니다...")
-    BATCH = 200
-    for i in range(0, len(all_rows), BATCH):
-        chunk = all_rows[i : i + BATCH]
-        supabase.table("investor_daily").upsert(chunk).execute()
-    
-    print(f"[investor_daily] upsert 완료. 총 rows={len(all_rows)}")
-# ✅✅✅ --- 함수 수정 끝 --- ✅✅✅
-
+# ==========================================
+# 2. 개별 종목 시세 (Stock Daily)
+# ==========================================
 def upsert_stock_daily():
     try:
         res = supabase.table("stock_daily").select("date").order("date", desc=True).limit(1).execute()
-        last_date_str = (res.data[0]["date"] if res.data else None)
-        if last_date_str:
-            start = date.fromisoformat(last_date_str) + timedelta(days=1)
-        else:
-            start = date.today() - timedelta(days=365)
-    except Exception as e:
-        print(f"[stock_daily] 마지막 날짜 조회 실패, 1년 전부터 시작: {e}")
+        last = res.data[0]["date"] if res.data else None
+        start = date.fromisoformat(last) + timedelta(days=1) if last else date.today() - timedelta(days=365)
+    except:
         start = date.today() - timedelta(days=365)
 
-    today = date.today()
-    if start > today:
-        print("[stock_daily] 이미 모든 데이터가 최신입니다.")
+    if start > date.today():
+        print("[stock_daily] 최신 상태입니다.")
         return
 
     start_str = start.strftime("%Y%m%d")
-    end_str = today.strftime("%Y%m%d")
-    print(f"[stock_daily] {start_str}~{end_str} 기간의 데이터를 수집합니다.")
+    end_str = date.today().strftime("%Y%m%d")
+    print(f"[stock_daily] {start_str}~{end_str} 수집")
 
     try:
         res = supabase.table("stocks").select("code").execute()
         tickers = [row["code"] for row in res.data or []]
-    except Exception as e:
-        print(f"[stock_daily] stocks 목록 조회 실패: {e}")
+    except:
         return
 
-    all_rows: List[dict] = []
+    all_rows = []
     for i, ticker in enumerate(tickers):
-        if (i + 1) % 100 == 0:
-            print(f"[stock_daily] fetching {i+1}/{len(tickers)}: {ticker}")
+        if (i+1) % 200 == 0: print(f"  -> {i+1}/{len(tickers)} 진행중")
         try:
             df = stock.get_market_ohlcv(start_str, end_str, ticker)
-            time.sleep(0.1)
+            time.sleep(0.05)
             if df.empty: continue
+            
+            # 컬럼 처리
+            df = df.rename(columns={"시가":"open","고가":"high","저가":"low","종가":"close","거래량":"volume","거래대금":"value"})
+            if 'value' not in df.columns: df['value'] = df['close'] * df['volume']
 
             for ds, row in df.iterrows():
                 d = date.fromisoformat(str(ds)[:10])
                 all_rows.append({
                     "ticker": ticker, "date": d.isoformat(),
-                    "open": float(row["시가"]), "high": float(row["고가"]),
-                    "low": float(row["저가"]), "close": float(row["종가"]),
-                    "volume": float(row["거래량"]), "value": float(row.get("거래대금", 0)),
+                    "open": float(row["open"]), "high": float(row["high"]),
+                    "low": float(row["low"]), "close": float(row["close"]),
+                    "volume": float(row["volume"]), "value": float(row["value"]),
                 })
-        except Exception as e:
-            if "'거래대금'" not in str(e):
-                print(f"[stock_daily] get_market_ohlcv error ticker={ticker}: {e}")
+        except:
             continue
 
-    if not all_rows:
-        print("[stock_daily] 적재할 row가 없습니다.")
-        return
+    if all_rows:
+        BATCH = 500
+        for i in range(0, len(all_rows), BATCH):
+            try:
+                supabase.table("stock_daily").upsert(all_rows[i : i + BATCH]).execute()
+            except:
+                pass
+    print("[stock_daily] 완료")
 
-    print(f"[stock_daily] 총 {len(all_rows)}개의 시세 데이터를 upsert 합니다...")
-    BATCH = 100
-    for i in range(0, len(all_rows), BATCH):
-        chunk = all_rows[i : i + BATCH]
-        supabase.table("stock_daily").upsert(chunk).execute()
-        print(f"[stock_daily] ... {i+len(chunk)}/{len(all_rows)} 완료")
-        
-    print(f"[stock_daily] upsert 완료. 총 rows={len(all_rows)}")
-
+# ==========================================
+# 3. 섹터 시세
+# ==========================================
 def upsert_sector_daily():
-    today = date.today()
-    start = today - timedelta(days=260)
-    start_str = start.strftime("%Y%m%d")
-    end_str = today.strftime("%Y%m%d")
+    sector_map = get_sector_index_map()
+    if not sector_map: return
 
-    sector_index_map = get_sector_index_map()
-    if not sector_index_map:
-        print("[sector_daily] 매핑된 섹터가 없습니다. 작업을 건너뜁니다.")
-        return
+    start_str = (date.today() - timedelta(days=260)).strftime("%Y%m%d")
+    end_str = date.today().strftime("%Y%m%d")
+    rows = []
 
-    rows: List[dict] = []
-    for sector_id, index_code in sector_index_map.items():
+    for sid, code in sector_map.items():
         try:
-            df = stock.get_index_ohlcv(start_str, end_str, index_code)
-            time.sleep(0.1)  # KRX 서버 부하 방지를 위한 약간의 딜레이
-        except Exception as e:
-            print(
-                f"[sector_daily] get_index_ohlcv error sector={sector_id} code={index_code}: {e}"
-            )
-            continue
-
-        for ds, row in df.iterrows():
-            d = date.fromisoformat(str(ds)[:10])
-            rows.append(
-                {
-                    "sector_id": sector_id,
-                    "date": d.isoformat(),
+            df = stock.get_index_ohlcv(start_str, end_str, code)
+            time.sleep(0.1)
+            for ds, row in df.iterrows():
+                rows.append({
+                    "sector_id": sid,
+                    "date": str(ds)[:10],
                     "close": float(row["종가"]),
                     "value": float(row["거래대금"]),
-                }
-            )
+                })
+        except:
+            continue
 
-    if not rows:
-        print("[sector_daily] 적재할 row 가 없습니다.")
-        return
+    if rows:
+        for i in range(0, len(rows), 200):
+            try:
+                supabase.table("sector_daily").upsert(rows[i:i+200]).execute()
+            except:
+                pass
+    print("[sector_daily] 완료")
 
-    BATCH = 200
-    print(f"[sector_daily] 총 {len(rows)}개의 섹터 시세 데이터를 upsert 합니다...")
-    for i in range(0, len(rows), BATCH):
-        chunk = rows[i : i + BATCH]
-        supabase.table("sector_daily").upsert(chunk).execute()
-    print(f"[sector_daily] upsert 완료. 총 rows={len(rows)}")
+# ==========================================
+# 4. 지표 계산 및 Daily Indicators (핵심)
+# ==========================================
+def calculate_rsi(series: pd.Series, period: int = 14):
+    delta = series.diff()
+    gain = (delta.where(delta > 0, 0)).fillna(0)
+    loss = (-delta.where(delta < 0, 0)).fillna(0)
+    avg_gain = gain.ewm(alpha=1/period, min_periods=period, adjust=False).mean()
+    avg_loss = loss.ewm(alpha=1/period, min_periods=period, adjust=False).mean()
+    rs = avg_gain / avg_loss
+    return 100 - (100 / (1 + rs))
+
+def calculate_avwap(df: pd.DataFrame, anchor_idx: int):
+    if anchor_idx < 0 or anchor_idx >= len(df): return None
+    subset = df.iloc[anchor_idx:].copy()
+    pv = (subset['close'] * subset['volume']).cumsum()
+    v = subset['volume'].cumsum()
+    return (pv / v).iloc[-1]
+
+def upsert_daily_indicators():
+    print("\n" + "="*40)
+    print("지표 산출 및 daily_indicators 적재")
+    print("="*40)
+
+    today = date.today()
+    start_str = (today - timedelta(days=400)).strftime("%Y%m%d")
+    end_str = today.strftime("%Y%m%d")
+
+    tickers = stock.get_market_ticker_list(market="KOSPI") + stock.get_market_ticker_list(market="KOSDAQ")
+    print(f"대상 종목: {len(tickers)}개")
+    
+    upsert_buffer = []
+    
+    for idx, code in enumerate(tickers):
+        if (idx + 1) % 100 == 0: print(f"  -> {idx + 1}/{len(tickers)}")
+
+        try:
+            df = stock.get_market_ohlcv(start_str, end_str, code)
+            if df.empty or len(df) < 200: continue
+            
+            # 컬럼 표준화
+            df = df.rename(columns={"시가":"open","고가":"high","저가":"low","종가":"close","거래량":"volume","거래대금":"value","등락률":"change"})
+            
+            # 안전장치: 컬럼 누락 시 강제 매핑
+            if 'close' not in df.columns and df.shape[1] >= 5:
+                cols = df.columns.tolist()
+                df = df.rename(columns={cols[0]:'open', cols[1]:'high', cols[2]:'low', cols[3]:'close', cols[4]:'volume'})
+            
+            if 'value' not in df.columns:
+                df['value'] = df['close'] * df['volume']
+
+            # 지표 계산
+            df['sma20'] = df['close'].rolling(20).mean()
+            df['sma50'] = df['close'].rolling(50).mean()
+            df['sma200'] = df['close'].rolling(200).mean()
+            df['slope200'] = df['sma200'].diff(5)
+            df['rsi14'] = calculate_rsi(df['close'])
+            df['roc14'] = df['close'].pct_change(14) * 100
+            df['roc21'] = df['close'].pct_change(21) * 100
+
+            # AVWAP
+            avwap_52w = None
+            try:
+                # 52주 저점
+                window = min(250, len(df))
+                low_idx = df['low'].tail(window).idxmin()
+                avwap_52w = calculate_avwap(df, df.index.get_loc(low_idx))
+            except: pass
+
+            avwap_swing = None
+            try:
+                # 단기 20일 저점
+                swing_idx = df['low'].tail(20).idxmin()
+                avwap_swing = calculate_avwap(df, df.index.get_loc(swing_idx))
+            except: pass
+
+            last = df.iloc[-1]
+            def n(v): return None if pd.isna(v) else float(v)
+
+            data = {
+                "code": code,
+                "trade_date": df.index[-1].strftime("%Y-%m-%d"),
+                "close": n(last['close']),
+                "volume": int(last['volume']),
+                "value_traded": n(last['value']),
+                "sma20": n(last.get('sma20')),
+                "sma50": n(last.get('sma50')),
+                "sma200": n(last.get('sma200')),
+                "slope200": n(last.get('slope200')),
+                "rsi14": n(last.get('rsi14')),
+                "roc14": n(last.get('roc14')),
+                "roc21": n(last.get('roc21')),
+                "avwap_52w_low": n(avwap_52w),
+                "avwap_swing_low": n(avwap_swing),
+                "avwap_breakout": n(avwap_swing)
+            }
+            
+            upsert_buffer.append(data)
+
+            # 100개씩 저장 시도
+            if len(upsert_buffer) >= 100:
+                try:
+                    supabase.table("daily_indicators").upsert(upsert_buffer).execute()
+                except Exception:
+                    # 실패 시 개별 저장 시도 (FK 에러 무시)
+                    for item in upsert_buffer:
+                        try: supabase.table("daily_indicators").upsert(item).execute()
+                        except: pass
+                upsert_buffer = []
+                time.sleep(0.05)
+
+        except Exception:
+            continue
+
+    # 남은 버퍼 처리
+    if upsert_buffer:
+        try:
+            supabase.table("daily_indicators").upsert(upsert_buffer).execute()
+        except Exception:
+            for item in upsert_buffer:
+                try: supabase.table("daily_indicators").upsert(item).execute()
+                except: pass
+
+    print("[daily_indicators] 완료")
 
 if __name__ == "__main__":
+    # 순서대로 실행
     upsert_sector_daily()
     upsert_investor_daily()
     upsert_stock_daily()
-
+    upsert_daily_indicators()

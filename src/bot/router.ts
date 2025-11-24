@@ -54,8 +54,7 @@ const CMD = {
   SECTOR: /^\/(sector|sectors|섹터)(?:\s+|$)(?:.*)?$/i,
   NEXT_SECTOR: /^\/(nextsector|flowsector|다음섹터)(?:\s+|$)(?:.*)?$/i,
   SCORE: /^\/(score|점수)\s+(.+)$/i,
-  STOCKS: /^\/(stocks|종목)(?:\s+(.+))?$/i, // ✅ 수정: (선택적 인수 캡처)
-  SEED: /^\/seed$/,
+  STOCKS: /^\/(stocks|종목)(?:\s+(.+))?$/i,
   UPDATE: /^\/update$/,
   COMMANDS: /^\/(commands|admin_commands)$/i,
   BUY: /^\/(buy|매수)(?:\s+(.+))?$/i,
