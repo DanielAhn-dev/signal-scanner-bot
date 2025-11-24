@@ -1,7 +1,6 @@
 // api/telegram.ts
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { createClient } from "@supabase/supabase-js";
-import { handleScanCommand } from "../src/bot/commands/scan";
 
 // Telegram Webhook는 원문 보존을 위해 raw body 필요
 export const config = { api: { bodyParser: false } };
