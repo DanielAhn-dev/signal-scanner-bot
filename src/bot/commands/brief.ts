@@ -21,7 +21,7 @@ export async function handleBriefCommand(
     // --- 1) 가치주: scores 테이블에서 우선 조건으로 코드 목록 조회 ---
     const { data: valueScoreRows, error: errVs } = await supabase
       .from("scores")
-      .select("stock_code")
+      .select("code")
       .gt("value_score", 60)
       .limit(50);
 
@@ -30,7 +30,7 @@ export async function handleBriefCommand(
       // 에러가 있으면 관리자에게 알리는 수준의 응답도 고려
     }
 
-    const valueCodes = (valueScoreRows || []).map((r: any) => r.stock_code);
+    const valueCodes = (valueScoreRows || []).map((r: any) => r.code);
     // --- stocks에서 가져오기 (universe_level core 조건 적용) ---
     let valueStocks: any[] = [];
     if (valueCodes.length > 0) {
@@ -50,7 +50,7 @@ export async function handleBriefCommand(
     // --- 2) 모멘텀주: 같은 방식으로 scores에서 코드 목록 조회 ---
     const { data: momScoreRows, error: errMs } = await supabase
       .from("scores")
-      .select("stock_code")
+      .select("code")
       .gt("momentum_score", 60)
       .limit(50);
 
@@ -58,7 +58,7 @@ export async function handleBriefCommand(
       console.error("Supabase momentum score 조회 에러:", errMs);
     }
 
-    const momCodes = (momScoreRows || []).map((r: any) => r.stock_code);
+    const momCodes = (momScoreRows || []).map((r: any) => r.code);
     let momentumStocks: any[] = [];
     if (momCodes.length > 0) {
       const { data: ms, error: err } = await supabase
