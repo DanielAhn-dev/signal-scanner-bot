@@ -136,9 +136,14 @@ export async function handleBuyCommand(
     .single();
 
   if (error || !stock) {
+    // 서버 로그에 실제 에러 내용 출력
+    console.error("Supabase query failed in handleBuyCommand:", error);
+
+    // 사용자에게 좀 더 구체적인 에러 메시지 전송 (선택 사항)
+    const errorMessage = error ? error.message : "데이터를 찾을 수 없습니다.";
     return tgSend("sendMessage", {
       chat_id: ctx.chatId,
-      text: "❌ 최신 데이터를 불러올 수 없습니다.",
+      text: `❌ 최신 데이터를 불러올 수 없습니다. (원인: ${errorMessage})`,
     });
   }
 
