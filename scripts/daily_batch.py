@@ -239,28 +239,32 @@ def calculate_indicators():
                 try:
                     window = min(250, len(df))
                     low_idx_date = df['low'].tail(window).idxmin()
-                    # integer index 찾기
                     idx_loc = df.index.get_loc(low_idx_date)
                     avwap_val = calculate_avwap(df, idx_loc)
                 except: pass
                 
                 last = df.iloc[-1]
+                
+                # [수정됨] float 변환 헬퍼
                 def n(v): return None if pd.isna(v) or np.isinf(v) else float(v)
+                # [신규] int 변환 헬퍼 (volume, value_traded용)
+                def n_int(v): return None if pd.isna(v) or np.isinf(v) else int(v)
                 
                 upsert_buffer.append({
                     "code": ticker,
                     "trade_date": last['date'].strftime("%Y-%m-%d"),
                     "close": n(last['close']),
-                    "volume": n(last['volume']),
-                    "value_traded": n(last['value']),
+                    "volume": n_int(last['volume']),      # <-- 여기를 int로 변경 (핵심)
+                    "value_traded": n(last['value']),     # 거래대금은 금액이 커서 float 권장(또는 n_int)
                     "sma20": n(last['sma20']),
                     "sma50": n(last['sma50']),
                     "sma200": n(last['sma200']),
                     "slope200": n(last['slope200']),
                     "rsi14": n(last['rsi14']),
+                    "roc14": n(last['roc14']),
                     "roc21": n(last['roc21']),
                     "avwap_breakout": n(avwap_val),
-                    "updated_at": datetime.now().isoformat()
+                    # "updated_at": datetime.now().isoformat() # DB에 컬럼 추가했으면 주석 해제 가능
                 })
             
             if upsert_buffer:
