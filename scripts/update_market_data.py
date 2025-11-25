@@ -101,7 +101,8 @@ def update_universe_and_fundamentals():
                 "universe_level": universe_level,
                 "per": float(per) if per else None,
                 "pbr": float(pbr) if pbr else None,
-                "avg_volume_20d": int(volume)
+                "avg_volume_20d": int(volume),
+                "close": int(price)
             })
             
             if len(updates) >= 100:
