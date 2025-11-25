@@ -226,6 +226,9 @@ def calculate_indicators():
                 # 지표 계산
                 close = df['close']
                 df['rsi14'] = calculate_rsi(close, 14)
+                
+                # [수정] roc14 계산 로직 추가 (이 부분이 빠져서 에러 발생)
+                df['roc14'] = close.pct_change(14) * 100
                 df['roc21'] = close.pct_change(21) * 100
                 
                 # 이평선
@@ -245,26 +248,24 @@ def calculate_indicators():
                 
                 last = df.iloc[-1]
                 
-                # [수정됨] float 변환 헬퍼
                 def n(v): return None if pd.isna(v) or np.isinf(v) else float(v)
-                # [신규] int 변환 헬퍼 (volume, value_traded용)
                 def n_int(v): return None if pd.isna(v) or np.isinf(v) else int(v)
                 
                 upsert_buffer.append({
                     "code": ticker,
                     "trade_date": last['date'].strftime("%Y-%m-%d"),
                     "close": n(last['close']),
-                    "volume": n_int(last['volume']),      # <-- 여기를 int로 변경 (핵심)
-                    "value_traded": n(last['value']),     # 거래대금은 금액이 커서 float 권장(또는 n_int)
+                    "volume": n_int(last['volume']),
+                    "value_traded": n(last['value']),
                     "sma20": n(last['sma20']),
                     "sma50": n(last['sma50']),
                     "sma200": n(last['sma200']),
                     "slope200": n(last['slope200']),
                     "rsi14": n(last['rsi14']),
-                    "roc14": n(last['roc14']),
+                    "roc14": n(last['roc14']), # 이제 값이 있으므로 에러 안 남
                     "roc21": n(last['roc21']),
                     "avwap_breakout": n(avwap_val),
-                    # "updated_at": datetime.now().isoformat() # DB에 컬럼 추가했으면 주석 해제 가능
+                    "updated_at": datetime.now().isoformat() 
                 })
             
             if upsert_buffer:
@@ -272,6 +273,8 @@ def calculate_indicators():
                 
         except Exception as e:
             print(f"  -> 배치 에러: {e}")
+            # 에러 원인 파악을 위해 더 자세히 출력 (필요시)
+            # traceback.print_exc()
             continue
 
 # ===== 5. 데이터 정리 =====
