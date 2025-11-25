@@ -22,7 +22,7 @@ if not SUPABASE_URL or not SUPABASE_KEY:
 
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-# ===== 섹터 매핑 규칙 (기존 fetch_sectors.py 내용 통합) =====
+# ===== 섹터 매핑 규칙  =====
 NAME_TO_INDEX_RULES: List[Tuple[str, str]] = [
     ("반도체", "1014"), ("전자장비", "1013"), ("전기전자", "1013"),
     ("화학", "1010"), ("철강", "1011"), ("기계", "1012"),
@@ -53,7 +53,7 @@ def calculate_avwap(df: pd.DataFrame, anchor_idx: int):
     pv = (subset['close'] * subset['volume']).cumsum()
     return (pv / v_cumsum).iloc[-1]
 
-# ===== 1. 섹터 정보 업데이트 (기존 로직) =====
+# ===== 1. 섹터 정보 업데이트 =====
 def update_sectors_meta():
     print("\n[1/5] 섹터 메타데이터 업데이트...")
     try:
@@ -81,7 +81,7 @@ def update_sectors_meta():
     except Exception as e:
         print(f"  -> 섹터 업데이트 실패 (무시 가능): {e}")
 
-# ===== 2. 당일 시세 일괄 수집 (최적화됨) =====
+# ===== 2. 당일 시세 일괄 수집  =====
 def fetch_and_save_today_market():
     today_str = date.today().strftime("%Y%m%d")
     print(f"\n[2/5] {today_str} 전 종목 시세 수집...")
@@ -262,7 +262,7 @@ def calculate_indicators():
                     "sma200": n(last['sma200']),
                     "slope200": n(last['slope200']),
                     "rsi14": n(last['rsi14']),
-                    "roc14": n(last['roc14']), # 이제 값이 있으므로 에러 안 남
+                    "roc14": n(last['roc14']),
                     "roc21": n(last['roc21']),
                     "avwap_breakout": n(avwap_val),
                     "updated_at": datetime.now().isoformat() 

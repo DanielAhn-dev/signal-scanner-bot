@@ -1,143 +1,101 @@
 import type { ChatContext } from "../router";
-import { calculateScore } from "../../score/engine";
-import { getDailySeries } from "../../adapters";
+import { createClient } from "@supabase/supabase-js";
 import { searchByNameOrCode, getNamesForCodes } from "../../search/normalize";
-import type { StockOHLCV } from "../../data/types";
 import { KO_MESSAGES } from "../messages/ko";
+
+// Supabase 클라이언트
+const supabase = createClient(
+  process.env.SUPABASE_URL!,
+  process.env.SUPABASE_ANON_KEY!
+);
 
 // --- 유틸리티 함수 ---
 const fmt = (n: number) =>
   Number.isFinite(n) ? Math.round(n).toLocaleString("ko-KR") : "-";
-const fmtPct = (n: number) =>
-  Number.isFinite(n) ? `${n > 0 ? "+" : ""}${n.toFixed(1)}%` : "-";
-const calcVolumeRatio = (series: StockOHLCV[]): number => {
-  const n = Math.min(20, series.length);
-  if (n <= 1) return NaN;
-  const slice = series.slice(-n);
-  const avg = slice.reduce((acc, c) => acc + (c.volume || 0), 0) / n;
-  return avg > 0 ? slice[slice.length - 1].volume / avg : NaN;
-};
 
-// --- 데이터 타입 ---
-type BuyDecision = {
+// --- 매수 판독 로직 ---
+function evaluateBuyCondition(stock: any): {
   canBuy: boolean;
   reasons: string[];
-  tags: string[];
-  volumeRatio: number;
-  rr: string; // 손익비 문자열 미리 포맷팅
-};
-
-// --- 핵심 로직 분리 (평가) ---
-function evaluateBuyDecision(
-  last: StockOHLCV,
-  volumeRatio: number,
-  entryPrice: number,
-  hardStop: number,
-  t1: number,
-  t2: number,
-  f: any // factor 객체
-): BuyDecision {
+} {
   const reasons: string[] = [];
-  const tags: string[] = [];
+  const current = stock.close;
+  const sma20 = stock.sma20 || current;
+  const rsi = stock.rsi14 || 50;
 
-  // 조건 계산
-  const close = last.close;
-  const isNear20 = f.sma20 > 0 && Math.abs((close - f.sma20) / f.sma20) <= 0.03;
-  const isAbove20 = f.sma20 > 0 && close >= f.sma20;
-  const isAbove50 = f.sma50 > 0 && close >= f.sma50;
-  const isTrendUp200 =
-    typeof f.sma200_slope === "number" ? f.sma200_slope > 0 : true;
-  const hasAvwapSupport = f.avwap_regime === "buyers" && f.avwap_support >= 50;
+  // Supabase의 scores가 배열/객체로 올 수 있으므로 안전하게 추출
+  const scoreData = Array.isArray(stock.scores)
+    ? stock.scores[0]
+    : stock.scores;
+  const momentum = scoreData?.momentum_score || 0;
 
-  const isVolOk = Number.isFinite(volumeRatio) && volumeRatio >= 1.5;
-  const isRsiOk = f.rsi14 >= 50;
-  const isRocOk = f.roc14 >= 0 && f.roc21 >= -5;
+  // 1. 이격도 과열 (20일선보다 5% 이상 높으면 추격매수 금지)
+  if (current > sma20 * 1.05) {
+    reasons.push(`🚫 20일선 이격 과대 (눌림목 아님)`);
+  }
 
-  // 트리거 정의
-  const triggerBreakout =
-    isNear20 && isAbove20 && hasAvwapSupport && isVolOk && isRsiOk && isRocOk;
-  const triggerTrend =
-    isAbove50 && isTrendUp200 && hasAvwapSupport && isRsiOk && isRocOk;
+  // 2. RSI 과열
+  if (rsi > 70) {
+    reasons.push(`🚫 RSI 과열권 (${rsi.toFixed(0)}) - 고점 위험`);
+  }
 
-  if (triggerBreakout) tags.push("🚀 20SMA·AVWAP 돌파");
-  if (triggerTrend) tags.push("📈 50일선 위 추세 추종");
+  // 3. 모멘텀 약세 (점수 40점 미만)
+  if (momentum < 40) {
+    reasons.push(`🚫 상승 모멘텀 부족 (추세 미확인)`);
+  }
 
-  // 미충족 사유
-  if (!isVolOk)
-    reasons.push(`거래량 부족 (${volumeRatio.toFixed(1)}배 < 1.5배)`);
-  if (!hasAvwapSupport) reasons.push("AVWAP 지지력 약함");
-  if (!isRsiOk) reasons.push(`모멘텀 약세 (RSI ${f.rsi14.toFixed(0)} < 50)`);
-  if (!isRocOk) reasons.push("단기 추세 약세 (ROC 음수)");
-  if (!triggerBreakout && !triggerTrend)
-    reasons.push("주요 이평선/매물대 조건 미달");
+  // 4. 소형주(Tail)인 경우 더 엄격하게 (RSI 60 이상이어야 매수 인정 등)
+  if (stock.universe_level !== "core" && stock.universe_level !== "extended") {
+    reasons.push(`⚠️ 소형주/변동성 주의 (비중 축소 필수)`);
+    if (momentum < 50) reasons.push(`🚫 소형주는 강한 모멘텀 필수`);
+  }
 
-  // 손익비 계산
-  const risk = Math.abs(entryPrice - hardStop);
-  const reward = Math.abs(t1 - entryPrice);
-  const rrVal = risk > 0 ? reward / risk : 0;
-  const isRrOk = rrVal >= 2;
+  const canBuy =
+    reasons.length === 0 ||
+    (reasons.length === 1 && reasons[0].includes("소형주")); // 소형주 경고만 있으면 매수 가능은 함
 
-  if (!isRrOk) reasons.push(`손익비 부족 (1:${rrVal.toFixed(1)} < 1:2.0)`);
-
-  const canBuy = (triggerBreakout || triggerTrend) && isRrOk;
-
-  return {
-    canBuy,
-    reasons,
-    tags,
-    volumeRatio,
-    rr: `1:${rrVal.toFixed(1)}`,
-  };
+  return { canBuy, reasons };
 }
 
-// --- 메시지 빌더 (Markdown 포맷 적용) ---
-function buildBuyMessage(params: {
-  name: string;
-  code: string;
-  last: StockOHLCV;
-  decision: BuyDecision;
-  entry: number;
-  stop: number;
-  t1: number;
-  t2: number;
-}): string {
-  const { name, code, last, decision, entry, stop, t1, t2 } = params;
-  const closeFmt = fmt(last.close);
-  const stopPct = fmtPct(((stop - entry) / entry) * 100);
+// --- 메시지 빌더 ---
+function buildMessage(
+  stock: any,
+  evaluation: { canBuy: boolean; reasons: string[] }
+): string {
+  const { name, code, close } = stock;
+  const { canBuy, reasons } = evaluation;
 
-  // 1. 헤더: 종목명과 현재가 강조
-  const header = [
-    `📌 *${name}* \`(${code})\``,
-    `현재가: *${closeFmt}원*`,
-    `거래량: 전일대비 ${decision.volumeRatio.toFixed(1)}배`,
-  ].join("\n");
+  // 진입가/손절가 계산 (20일선 기준)
+  const entryPrice = Math.floor((stock.sma20 || close) * 1.01); // 20일선 살짝 위
+  const stopPrice = Math.floor(entryPrice * 0.93); // -7%
+  const targetPrice = Math.floor(entryPrice * 1.1); // +10%
 
-  // 2. 진단 결과: 이모지와 볼드체로 명확히 구분
-  let verdict = "";
-  if (decision.canBuy) {
-    verdict = [`✅ *매수 시그널 포착*`, `└ ${decision.tags.join(", ")}`].join(
-      "\n"
-    );
+  const header = `🛒 *${name}* \`(${code})\` 매수 판독\n현재가: *${fmt(
+    close
+  )}원*`;
+
+  let body = "";
+  if (canBuy) {
+    body = [
+      `✅ **진입 가능 (Entry OK)**`,
+      `• 눌림목 지지 확인됨`,
+      `• 모멘텀 양호`,
+      ``,
+      `📐 *추천 전략*`,
+      `  🎯 진입: \`${fmt(entryPrice)}원\` 부근`,
+      `  🛡 손절: \`${fmt(stopPrice)}원\` (-7% 필) `,
+    ].join("\n");
   } else {
-    verdict = [
-      `⛔ *관망 권장* (조건 미충족)`,
-      `👇 *주요 원인*:`,
-      ...decision.reasons.map((r) => `  • ${r}`),
+    body = [
+      `⛔ **관망 권장 (Wait)**`,
+      `👇 *진입 불가 사유*`,
+      ...reasons.map((r) => `  • ${r}`),
+      ``,
+      `💡 _"급등주는 보내주고, 다음 기회를 기다리세요."_`,
     ].join("\n");
   }
 
-  // 3. 매매 전략: 수치를 코드블록(`)으로 감싸 눈에 띄게 함
-  const strategy = [
-    `📐 *매매 전략* (손익비 ${decision.rr})`,
-    `  🎯 진입: \`${fmt(entry)}원\``,
-    `  🛡 손절: \`${fmt(stop)}원\` (${stopPct})`,
-    `  💰 익절: \`${fmt(t1)}\` / \`${fmt(t2)}원\``,
-  ].join("\n");
-
-  // 4. 풋터: 긴 규칙을 짧은 팁으로 요약
-  const footer = `💡 _손절 -7% 원칙, 분할 매도로 수익 보존_`;
-
-  return [header, verdict, strategy, footer].join("\n\n");
+  return [header, body].join("\n\n");
 }
 
 // --- 메인 핸들러 ---
@@ -154,7 +112,7 @@ export async function handleBuyCommand(
     });
   }
 
-  // 1. 종목 검색
+  // 1. 종목 검색 (이름 -> 코드)
   const hits = await searchByNameOrCode(query, 1);
   if (!hits?.length) {
     return tgSend("sendMessage", {
@@ -163,66 +121,34 @@ export async function handleBuyCommand(
     });
   }
 
-  let { code, name } = hits[0];
-  if (!name || name === code) {
-    const map = await getNamesForCodes([code]);
-    name = map[code] || code;
-  }
+  const { code, name } = hits[0];
 
-  // 2. 데이터 조회
-  const series = await getDailySeries(code, 300);
-  if (!series || series.length < 200) {
+  // 2. Supabase 데이터 직접 조회 (지표 포함)
+  const { data: stock, error } = await supabase
+    .from("stocks")
+    .select(
+      `
+      code, name, close, sma20, rsi14, universe_level,
+      scores ( momentum_score )
+    `
+    )
+    .eq("code", code)
+    .single();
+
+  if (error || !stock) {
     return tgSend("sendMessage", {
       chat_id: ctx.chatId,
-      text: KO_MESSAGES.INSUFFICIENT,
+      text: "❌ 최신 데이터를 불러올 수 없습니다.",
     });
   }
 
-  // 3. 분석 및 점수화
-  const scored = calculateScore(series);
-  if (!scored) {
-    return tgSend("sendMessage", {
-      chat_id: ctx.chatId,
-      text: KO_MESSAGES.SCORE_NOT_FOUND,
-    });
-  }
-
-  const last = series[series.length - 1];
-  const f = scored.factors;
-  const decision = evaluateBuyDecision(
-    last,
-    calcVolumeRatio(series),
-    scored.entry?.buy ?? last.close,
-    scored.stops?.hard ?? 0,
-    scored.targets?.t1 ?? 0,
-    scored.targets?.t2 ?? 0,
-    {
-      sma20: f.sma20,
-      sma50: f.sma50,
-      sma200_slope: f.sma200_slope,
-      rsi14: f.rsi14,
-      roc14: f.roc14,
-      roc21: f.roc21,
-      avwap_support: f.avwap_support,
-      avwap_regime: f.avwap_regime,
-    }
-  );
-
-  // 4. 메시지 전송
-  const msg = buildBuyMessage({
-    name,
-    code,
-    last,
-    decision,
-    entry: scored.entry?.buy ?? last.close,
-    stop: scored.stops?.hard ?? 0,
-    t1: scored.targets?.t1 ?? 0,
-    t2: scored.targets?.t2 ?? 0,
-  });
+  // 3. 평가 및 메시지 전송
+  const evaluation = evaluateBuyCondition(stock);
+  const msg = buildMessage(stock, evaluation);
 
   await tgSend("sendMessage", {
     chat_id: ctx.chatId,
     text: msg,
-    parse_mode: "Markdown", // 필수: 마크다운 적용
+    parse_mode: "Markdown",
   });
 }

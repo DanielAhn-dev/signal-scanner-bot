@@ -10,6 +10,7 @@ import { handleScanCommand } from "./commands/scan";
 import { resolveBase } from "../lib/base";
 import { getLeadersForSectorById } from "../data/sector";
 import { createMultiRowKeyboard } from "../telegram/keyboards";
+import { handleBriefCommand } from "./commands/brief";
 import { setCommandsKo } from "../telegram/api";
 
 export type ChatContext = { chatId: number; messageId?: number };
@@ -59,7 +60,8 @@ const CMD = {
   UPDATE: /^\/update$/,
   COMMANDS: /^\/(commands|admin_commands)$/i,
   BUY: /^\/(buy|매수)(?:\s+(.+))?$/i,
-  SEED: /^\/seed$/i, // 시드 명령어가 정규식 객체에 빠져있어서 추가함
+  SEED: /^\/seed$/i,
+  BRIEF: /^\/(brief|morning|브리핑|장전)$/i, // [신규] 정규식 추가
 };
 
 export async function routeMessage(
@@ -67,11 +69,9 @@ export async function routeMessage(
   ctx: ChatContext,
   tgSend: any
 ): Promise<void> {
-  let t = (text || "").trim();
-
-  t = t
+  let t = (text || "")
+    .trim()
     .replace(/\u00A0/g, " ")
-    .replace(/\u200B/g, "")
     .replace(/\s+/g, " ");
 
   // /start
@@ -80,6 +80,20 @@ export async function routeMessage(
       chat_id: ctx.chatId,
       text: KO_MESSAGES.START,
     });
+    return;
+  }
+
+  // [신규] /brief 장전 브리핑
+  if (CMD.BRIEF.test(t)) {
+    try {
+      await handleBriefCommand(ctx, tgSend);
+    } catch (e) {
+      console.error("handleBriefCommand failed:", e);
+      await tgSend("sendMessage", {
+        chat_id: ctx.chatId,
+        text: "브리핑 생성 실패",
+      });
+    }
     return;
   }
 

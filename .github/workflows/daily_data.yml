@@ -5,7 +5,7 @@ on:
     # 한국 시간 17:50 = UTC 08:50
     # 넉넉하게 UTC 09:00 (한국 18:00)에 실행하여 데이터 누락 방지
     - cron: "0 9 * * 1-5"
-  workflow_dispatch: # 수동 실행 버튼
+  workflow_dispatch:
 
 jobs:
   fetch-and-process:
@@ -13,7 +13,6 @@ jobs:
     env:
       SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
       SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-      # 타임존 설정 (로그 확인용)
       TZ: "Asia/Seoul"
 
     steps:
@@ -32,5 +31,4 @@ jobs:
 
       - name: Run Daily Batch (Market Data & Indicators)
         run: |
-          # 스크립트 위치가 scripts/daily_batch.py 라고 가정
           python scripts/daily_batch.py
