@@ -1,0 +1,36 @@
+name: Daily Market Data Sync
+
+on:
+  schedule:
+    # 한국 시간 17:50 = UTC 08:50
+    # 넉넉하게 UTC 09:00 (한국 18:00)에 실행하여 데이터 누락 방지
+    - cron: "0 9 * * 1-5"
+  workflow_dispatch: # 수동 실행 버튼
+
+jobs:
+  fetch-and-process:
+    runs-on: ubuntu-latest
+    env:
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      # 타임존 설정 (로그 확인용)
+      TZ: "Asia/Seoul"
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install pandas numpy pykrx supabase requests
+
+      - name: Run Daily Batch (Market Data & Indicators)
+        run: |
+          # 스크립트 위치가 scripts/daily_batch.py 라고 가정
+          python scripts/daily_batch.py
