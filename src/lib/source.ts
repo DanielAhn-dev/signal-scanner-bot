@@ -30,9 +30,11 @@ export type SectorSeriesRow = {
   sma50?: number;
   sma200?: number;
 };
+
 export type SectorSeries = {
   id: string;
   name: string;
+  metrics: any;
   series: SectorSeriesRow[];
 };
 export type VolumeRow = { date: string; value: number };
@@ -61,7 +63,9 @@ function sma(values: number[], period: number): (number | undefined)[] {
 export async function fetchSectorPriceSeries(
   today: string
 ): Promise<SectorSeries[]> {
-  const { data: sectors } = await supa().from("sectors").select("id, name");
+  const { data: sectors } = await supa()
+    .from("sectors")
+    .select("id, name, metrics");
   if (!sectors?.length) return [];
 
   // 약 1년간의 데이터 조회
@@ -100,7 +104,7 @@ export async function fetchSectorPriceSeries(
       sma50: sma50[i],
       sma200: sma200[i],
     }));
-    out.push({ id: s.id, name: s.name, series });
+    out.push({ id: s.id, name: s.name, metrics: s.metrics || {}, series });
   }
   return out;
 }

@@ -26,6 +26,13 @@ export interface SectorScore {
   score: number;
   grade: "A" | "B" | "C";
 }
+export interface SectorSeriesRow {
+  date: string;
+  close: number;
+  sma20?: number;
+  sma50?: number;
+  sma200?: number;
+}
 
 let tickerMetaCache: Map<string, { code: string; name: string }[]> | null =
   null;
@@ -54,6 +61,8 @@ export async function scoreSectors(today: string): Promise<SectorScore[]> {
     fetchSectorPriceSeries(today),
     fetchSectorVolumeSeries(today),
   ]);
+
+  console.log("[sectors] sample =", JSON.stringify(sectors[0], null, 2)); // ★ 임시 로그
 
   const out: (SectorScore & { rawScore: number })[] = [];
   const isNum = (x: unknown): x is number => Number.isFinite(x as number);
@@ -138,7 +147,10 @@ export async function scoreSectors(today: string): Promise<SectorScore[]> {
     const sROC = 0.1 * sig(roc21 * 10);
     const sVolP = 0.05 * (1 - extVolPenalty);
 
-    const rawScore = ((sRS + sTV + sSMA + sROC + sVolP) * 100) / 0.8;
+    const flowSum5 = (flowF5 + flowI5) / 1e8; // 1억 단위 정규화
+    const sFlow = 0.2 * sig(flowSum5); // 전체 점수의 20% 반영
+
+    const rawScore = ((sRS + sTV + sSMA + sROC + sVolP + sFlow) * 100) / 0.8;
 
     out.push({
       id,

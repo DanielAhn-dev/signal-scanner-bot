@@ -28,9 +28,8 @@ function buildSectorListMessage(title: string, sectors: SectorScore[]): string {
 
     // 절대값이 10억(1e9) 이상인 경우에만 주요 수급으로 표시하거나,
     // 단순히 0이 아니면 표시하되 너무 작은 값은 필터링
-    if (Math.abs(s.flowF5) >= 100_000_000) flows.push(`외 ${fmtKRW(s.flowF5)}`);
-    if (Math.abs(s.flowI5) >= 100_000_000) flows.push(`기 ${fmtKRW(s.flowI5)}`);
-
+    if (Math.abs(s.flowF5) >= 20_000_000) flows.push(`외 ${fmtKRW(s.flowF5)}`);
+    if (Math.abs(s.flowI5) >= 20_000_000) flows.push(`기 ${fmtKRW(s.flowI5)}`);
     const flowStr = flows.length ? flows.join(", ") : "수급 특이 없음";
 
     // NaN 방지: s.rs1M이 NaN이면 fmtPctSafe가 "-"를 반환함
