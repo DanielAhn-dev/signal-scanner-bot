@@ -51,10 +51,10 @@ export async function getLeadersForSectorById(
   try {
     const { data, error } = await supabase
       .from("stocks")
-      .select("code, name") // name도 같이 select
+      .select("code, name, liquidity")
       .eq("sector_id", sectorId)
       .eq("is_active", true)
-      .order("liquidity", { ascending: false })
+      .order("liquidity", { ascending: false, nullsFirst: false }) // nullsLast
       .limit(limit);
 
     if (error) {
