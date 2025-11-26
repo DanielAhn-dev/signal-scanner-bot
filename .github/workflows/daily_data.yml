@@ -32,7 +32,3 @@ jobs:
       - name: Run Daily Batch (Market Data & Indicators)
         run: |
           python scripts/daily_batch.py
-
-      - name: Run Sector Scores (optional)
-        run: |
-          python scripts/update_sector_scores.py
