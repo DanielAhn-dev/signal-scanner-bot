@@ -320,6 +320,79 @@ def cleanup_old_data():
         supabase.table("investor_daily").delete().lt("date", cutoff).execute()
     except: pass
 
+# ===== 6. 섹터별 수급 =====
+def update_sector_investor_flows():
+    print("\n[3-3] 섹터별 수급(5일) 집계 및 업데이트...")
+    
+    try:
+        # 1. 최근 5일치 수급 데이터 가져오기 (약 1주일치 조회 후 5일 필터링)
+        start_date = (date.today() - timedelta(days=10)).isoformat()
+        
+        # investor_daily 로딩
+        res_inv = supabase.table("investor_daily").select("*").gte("date", start_date).execute()
+        df_inv = pd.DataFrame(res_inv.data)
+        
+        if df_inv.empty:
+            print(" -> 집계할 수급 데이터가 없습니다.")
+            return
+
+        # 최근 5거래일만 필터링
+        top5_dates = sorted(df_inv['date'].unique(), reverse=True)[:5]
+        df_target = df_inv[df_inv['date'].isin(top5_dates)].copy()
+        
+        # 2. 종목-섹터 매핑 정보 가져오기
+        res_stocks = supabase.table("stocks").select("code, sector_id").not_.is_("sector_id", "null").execute()
+        df_stocks = pd.DataFrame(res_stocks.data)
+        
+        # 3. 데이터 병합 (수급 + 섹터ID)
+        # investor_daily.ticker == stocks.code
+        df_merged = pd.merge(df_target, df_stocks, left_on="ticker", right_on="code", how="inner")
+        
+        if df_merged.empty:
+            print(" -> 섹터 매핑된 수급 데이터가 없습니다.")
+            return
+
+        # 4. 섹터별 그룹바이 합계 (외국인, 기관)
+        # 컬럼: institution, foreign
+        df_sector_sum = df_merged.groupby("sector_id")[["institution", "foreign"]].sum().reset_index()
+        
+        # 5. DB 업데이트 (metrics JSONB 필드 병합)
+        updates = []
+        
+        # 기존 섹터 데이터 조회 (기존 metrics 보존 위해)
+        res_sectors = supabase.table("sectors").select("id, metrics").execute()
+        sector_map = {row['id']: row.get('metrics', {}) for row in res_sectors.data}
+        
+        for idx, row in df_sector_sum.iterrows():
+            sid = row['sector_id']
+            inst_sum = int(row['institution'])
+            fore_sum = int(row['foreign'])
+            
+            # 기존 metrics 가져오기
+            current_metrics = sector_map.get(sid, {})
+            if current_metrics is None: current_metrics = {}
+            
+            # 새로운 수급 데이터 추가 (키 이름은 TS 코드와 맞춰야 함)
+            current_metrics['flow_inst_5d'] = inst_sum
+            current_metrics['flow_foreign_5d'] = fore_sum
+            
+            updates.append({
+                "id": sid,
+                "metrics": current_metrics,
+                "updated_at": datetime.now().isoformat()
+            })
+            
+        if updates:
+            print(f" -> {len(updates)}개 섹터 수급 정보(metrics) 업데이트 중...")
+            # 100개씩 나누어 처리
+            for i in range(0, len(updates), 100):
+                supabase.table("sectors").upsert(updates[i:i+100]).execute()
+            print(" ✅ 섹터 수급 집계 완료")
+            
+    except Exception as e:
+        print(f"🚨 섹터 수급 집계 실패: {e}")
+        traceback.print_exc()
+
 if __name__ == "__main__":
     print(f"🚀 Daily Batch Start: {datetime.now()}")
     
@@ -330,6 +403,7 @@ if __name__ == "__main__":
     if fetch_and_save_today_market():
         # 3. 기타 데이터
         fetch_other_market_data()
+        update_sector_investor_flows()
         # 4. 지표 계산
         calculate_indicators()
         # 5. 청소

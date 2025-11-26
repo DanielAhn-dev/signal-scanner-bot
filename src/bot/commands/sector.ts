@@ -6,7 +6,7 @@ import {
   getNextSectorCandidates,
 } from "../../lib/sectors";
 import { createMultiRowKeyboard } from "../../telegram/keyboards";
-// ✅ normalize.ts에서 유틸리티 import (중복 정의 제거)
+// normalize.ts에서 유틸리티 import (중복 정의 제거)
 import { fmtKRW, fmtPctSafe } from "../../lib/normalize";
 
 // --- 아이콘 유틸리티 ---
@@ -33,7 +33,7 @@ function buildSectorListMessage(title: string, sectors: SectorScore[]): string {
 
     const flowStr = flows.length ? flows.join(", ") : "수급 특이 없음";
 
-    // ✅ NaN 방지: s.rs1M이 NaN이면 fmtPctSafe가 "-"를 반환함
+    // NaN 방지: s.rs1M이 NaN이면 fmtPctSafe가 "-"를 반환함
     // 데이터 시작일(2025.2.27)로 인해 RS 12M 등은 없을 수 있으므로 RS 1M/3M 위주 노출 추천
     const rsDisplay = fmtPctSafe(s.rs1M);
 
