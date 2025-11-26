@@ -57,27 +57,36 @@ def calculate_avwap(df: pd.DataFrame, anchor_idx: int):
 def update_sectors_meta():
     print("\n[1/5] 섹터 메타데이터 업데이트...")
     try:
-        res = supabase.table("sectors").select("id,name,metrics").execute()
+        res = supabase.table("sectors").select("*").execute() # '*'로 모든 컬럼 조회
         rows = res.data or []
         
         updates = []
         for row in rows:
             sid = row["id"]
-            name = row.get("name") or ""
+            name = row.get("name") or "" # 기존 name 값 가져오기
             metrics = row.get("metrics") or {}
             
-            # 이미 코드가 있으면 스킵, 없으면 추론
+            # krx_index가 없을 때만 추론 시도
             if not metrics.get("krx_index"):
                 code = infer_index_code_from_name(name)
                 if code:
                     new_metrics = dict(metrics)
                     new_metrics["krx_index"] = str(code)
-                    updates.append({"id": sid, "metrics": new_metrics})
+                    
+                    # [수정] upsert 시 필수 필드인 'name'도 함께 전달해야 에러 안 남
+                    updates.append({
+                        "id": sid, 
+                        "name": name,          # <-- 핵심: 기존 이름 다시 넣어주기
+                        "metrics": new_metrics
+                    })
         
         if updates:
             print(f"  -> {len(updates)}개 섹터 매핑 업데이트")
             for i in range(0, len(updates), 100):
                 supabase.table("sectors").upsert(updates[i:i+100]).execute()
+        else:
+            print("  -> 업데이트할 섹터 없음")
+            
     except Exception as e:
         print(f"  -> 섹터 업데이트 실패 (무시 가능): {e}")
 
@@ -136,7 +145,7 @@ def fetch_other_market_data():
     today_iso = date.today().isoformat()
     print(f"\n[3/5] 투자자 수급 및 섹터 지수 수집...")
 
-    # 3-1. 투자자 수급
+    # 3-1. 투자자 수급 (기존 동일)
     try:
         df_inst = stock.get_market_net_purchases_of_equities_by_ticker(today_str, "ALL", "기관합계")
         time.sleep(0.5)
@@ -160,11 +169,12 @@ def fetch_other_market_data():
     except Exception as e:
         print(f"  -> 투자자 수급 실패: {e}")
 
-    # 3-2. 섹터 지수 (sector_daily)
+    # 3-2. 섹터 지수 및 등락률 업데이트 (수정됨)
     try:
         # 매핑된 섹터 인덱스 가져오기
         res = supabase.table("sectors").select("id, metrics").execute()
         sector_rows = []
+        sector_updates = [] # sectors 테이블 업데이트용
         
         for row in (res.data or []):
             sid = row['id']
@@ -175,19 +185,43 @@ def fetch_other_market_data():
             try:
                 df = stock.get_index_ohlcv(today_str, today_str, code)
                 if df.empty: continue
+                
                 val = df.iloc[0]
+                close_price = float(val["종가"])
+                trade_value = float(val["거래대금"])
+                change_rate = float(val["등락률"]) # 등락률 가져오기
+
+                # 1) sector_daily 테이블용 데이터
                 sector_rows.append({
                     "sector_id": sid, "date": today_iso,
-                    "close": float(val["종가"]), "value": float(val["거래대금"])
+                    "close": close_price, "value": trade_value
                 })
-            except: pass
-            time.sleep(0.1) # API 제한 고려
+
+                # 2) sectors 테이블 업데이트용 (avg_change_rate 반영)
+                # metrics 필드도 업데이트 필요하다면 여기서 같이 처리
+                sector_updates.append({
+                    "id": sid,
+                    "avg_change_rate": change_rate, 
+                    # "momentum_score": ... (필요시 여기서 계산)
+                })
+
+            except Exception as e: 
+                # print(f"err {sid}: {e}")
+                pass
+            time.sleep(0.1) 
             
+        # sector_daily 저장
         if sector_rows:
             supabase.table("sector_daily").upsert(sector_rows).execute()
-            print("  -> 섹터 지수 저장 완료")
+            print("  -> 섹터 일별 지수 저장 완료")
+
+        # sectors 테이블에 등락률(avg_change_rate) 업데이트
+        if sector_updates:
+            supabase.table("sectors").upsert(sector_updates).execute()
+            print("  -> 섹터 등락률(avg_change_rate) 업데이트 완료")
+
     except Exception as e:
-        print(f"  -> 섹터 지수 실패: {e}")
+        print(f"  -> 섹터 지수 처리 실패: {e}")
 
 # ===== 4. 지표 계산 (핵심) =====
 def calculate_indicators():

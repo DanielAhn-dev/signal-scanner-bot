@@ -18,41 +18,52 @@ export async function handleBriefCommand(
   tgSend: any
 ): Promise<void> {
   try {
-    // --- 1) 가치주: Join으로 한 번에 조회 (핵심 수정) ---
-    // stocks 테이블과 scores 테이블을 Join하여,
-    // universe_level이 'core'이면서 value_score가 60 이상인 종목을 직접 찾음
-    const { data: valueStocks, error: errVs } = await supabase
-      .from("stocks")
+    // --- 1) 가치주: scores 테이블 기준 조회 ---
+    const { data: valueData, error: errVs } = await supabase
+      .from("scores")
       .select(
         `
-        code, 
-        name, 
-        close,
-        scores!inner ( value_score )
+        value_score,
+        stock:stocks!inner ( code, name, close, universe_level )
       `
       )
-      .eq("universe_level", "core")
-      .gt("scores.value_score", 60)
+      .eq("stock.universe_level", "core") // [수정] alias를 'stock'으로 줬으므로 stock.universe_level
+      .gt("value_score", 60)
+      .order("value_score", { ascending: false })
       .limit(5);
 
     if (errVs) console.error("가치주 조회 에러:", errVs);
 
-    // --- 2) 모멘텀주: 동일하게 Join으로 조회 ---
-    const { data: momentumStocks, error: errMs } = await supabase
-      .from("stocks")
+    // 데이터 매핑
+    const valueStocks = valueData?.map((item: any) => ({
+      name: item.stock.name,
+      code: item.stock.code,
+      close: item.stock.close,
+      value_score: item.value_score,
+    }));
+
+    // --- 2) 모멘텀주: scores 테이블 기준 조회 ---
+    const { data: momentumData, error: errMs } = await supabase
+      .from("scores")
       .select(
         `
-        code, 
-        name, 
-        close,
-        scores!inner ( momentum_score )
+        momentum_score,
+        stock:stocks!inner ( code, name, close, universe_level )
       `
       )
-      .eq("universe_level", "core")
-      .gt("scores.momentum_score", 60)
+      .eq("stock.universe_level", "core") // [수정] alias 사용
+      .gt("momentum_score", 60)
+      .order("momentum_score", { ascending: false })
       .limit(5);
 
     if (errMs) console.error("모멘텀주 조회 에러:", errMs);
+
+    const momentumStocks = momentumData?.map((item: any) => ({
+      name: item.stock.name,
+      code: item.stock.code,
+      close: item.stock.close,
+      momentum_score: item.momentum_score,
+    }));
 
     // --- 3) 메시지 생성 ---
     let msg = `🌅 *[08:30] 장전 대형주 브리핑*\n_(실패 없는 Core 유니버스)_\n\n`;
