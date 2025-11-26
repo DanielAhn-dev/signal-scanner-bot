@@ -26,12 +26,21 @@ export interface SectorScore {
   score: number;
   grade: "A" | "B" | "C";
 }
+
 export interface SectorSeriesRow {
   date: string;
   close: number;
   sma20?: number;
   sma50?: number;
   sma200?: number;
+}
+
+// fetchSectorPriceSeries 가 반환하는 shape 를 명시적으로 정의
+export interface SectorSeries {
+  id: string;
+  name: string;
+  metrics: any;
+  series: SectorSeriesRow[];
 }
 
 let tickerMetaCache: Map<string, { code: string; name: string }[]> | null =
@@ -58,20 +67,18 @@ async function getTickersInSector(
 
 export async function scoreSectors(today: string): Promise<SectorScore[]> {
   const [sectors, volMap] = await Promise.all([
-    fetchSectorPriceSeries(today),
-    fetchSectorVolumeSeries(today),
+    fetchSectorPriceSeries(today), // SectorSeries[]
+    fetchSectorVolumeSeries(today), // { [sectorId]: { date, value }[] }
   ]);
-
-  console.log("[sectors] sample =", JSON.stringify(sectors[0], null, 2)); // ★ 임시 로그
 
   const out: (SectorScore & { rawScore: number })[] = [];
   const isNum = (x: unknown): x is number => Number.isFinite(x as number);
 
-  for (const s of sectors) {
-    //  metrics 필드 추출 (파이썬 배치가 계산한 값)
-    const { id, name, series: px, metrics } = s as any;
+  for (const s of sectors as SectorSeries[]) {
+    const { id, name, series: px, metrics } = s;
     const vol = volMap[id] || [];
 
+    // 기준일들 (영업일 기준)
     const d1M = getBizDaysAgo(today, 21);
     const d3M = getBizDaysAgo(today, 63);
     const d6M = getBizDaysAgo(today, 126);
@@ -124,11 +131,11 @@ export async function scoreSectors(today: string): Promise<SectorScore[]> {
     );
     const extVolPenalty = clamp((volStd - 0.02) / 0.05, 0, 1);
 
-    // 파이썬 배치가 넣어준 키: flow_foreign_5d, flow_inst_5d
+    // 수급: 파이썬 배치가 sectors.metrics 에 넣어둔 값 사용
     const m = metrics || {};
     const flowF5 = m.flow_foreign_5d || 0;
     const flowI5 = m.flow_inst_5d || 0;
-    const flowF20 = m.flow_foreign_20d || 0; // (현재 배치엔 없지만 확장 대비)
+    const flowF20 = m.flow_foreign_20d || 0; // 향후 확장 대비
     const flowI20 = m.flow_inst_20d || 0;
 
     // 점수 산출
@@ -147,10 +154,11 @@ export async function scoreSectors(today: string): Promise<SectorScore[]> {
     const sROC = 0.1 * sig(roc21 * 10);
     const sVolP = 0.05 * (1 - extVolPenalty);
 
-    const flowSum5 = (flowF5 + flowI5) / 1e8; // 1억 단위 정규화
-    const sFlow = 0.2 * sig(flowSum5); // 전체 점수의 20% 반영
+    // 수급 점수: 5일 누적 순매수(외+기)를 1억 단위로 스케일링
+    const flowSum5 = (flowF5 + flowI5) / 1e8;
+    const sFlow = 0.2 * sig(flowSum5); // 전체 점수의 20%
 
-    const rawScore = ((sRS + sTV + sSMA + sROC + sVolP + sFlow) * 100) / 0.8;
+    const rawScore = (sRS + sTV + sSMA + sROC + sVolP + sFlow) * 100;
 
     out.push({
       id,

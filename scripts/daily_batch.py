@@ -323,132 +323,112 @@ def cleanup_old_data():
 # ===== 6. 섹터별 수급 =====
 def update_sector_investor_flows():
     print("\n[6] 섹터별 수급(5일) 집계 및 업데이트...")
-    
     try:
-        # 1. 최근 5일치 수급 데이터 가져오기
+        # 1. 최근 N일치 수급 데이터
         start_date = (date.today() - timedelta(days=10)).isoformat()
-        res_inv = (
-            supabase.table("investor_daily")
-            .select("ticker, date, foreign, institution")
-            .gte("date", start_date)
-            .execute()
-        )
+        res_inv = supabase.table("investor_daily") \
+            .select("ticker, date, foreign, institution") \
+            .gte("date", start_date).execute()
         df_inv = pd.DataFrame(res_inv.data)
-        
         if df_inv.empty:
             print(" -> 집계할 수급 데이터가 없습니다.")
             return
 
-        # 최근 영업일 N개 선택 (기존 5개 → 10개 등)
-        topN = 10  # 원하는 개수로 조정
+        # 최근 영업일 10개만 사용
+        topN = 10
         topN_dates = sorted(df_inv["date"].unique(), reverse=True)[:topN]
         df_target = df_inv[df_inv["date"].isin(topN_dates)].copy()
 
-        # 2. 종목-섹터 매핑 정보 가져오기
-        res_stocks = (
-            supabase.table("stocks")
-            .select("code, sector_id")
-            .not_.is_("sector_id", "null")
-            .execute()
-        )
+        # 2. 종목-섹터 매핑
+        res_stocks = supabase.table("stocks") \
+            .select("code, sector_id") \
+            .not_.is_("sector_id", "null").execute()
         df_stocks = pd.DataFrame(res_stocks.data)
-        
-        # 3. 데이터 병합
-        df_merged = pd.merge(df_target, df_stocks, left_on="ticker", right_on="code", how="inner")
-        
+
+        # 3. 병합
+        df_merged = pd.merge(df_target, df_stocks,
+                             left_on="ticker", right_on="code", how="inner")
         if df_merged.empty:
             print(" -> 섹터 매핑된 수급 데이터가 없습니다.")
             return
 
-        # 4. 섹터별 그룹바이 합계
-        df_sector_sum = df_merged.groupby("sector_id")[["institution", "foreign"]].sum().reset_index()
-        
-        # ✅ [추가] 상위 업종 → 세부 업종 매핑 (필요한 것만)
+        # 4. 섹터별 합계
+        df_sector_sum = df_merged.groupby("sector_id")[["institution", "foreign"]] \
+                                 .sum().reset_index()
+
+        # 4-1. 상위업종 수급을 세부업종으로 복사
         PARENT_TO_CHILD = {
             "KRX:보험": ["KRX:손해보험", "KRX:생명보험"],
             "KRX:금융": ["KRX:은행", "KRX:기타금융"],
             "KRX:기계·장비": ["KRX:기계"],
-            # ... 필요에 따라 확장
         }
-
-        # df_sector_sum 을 parent 기준으로 copy → child 로 확장
         extra_rows = []
         for _, row in df_sector_sum.iterrows():
             parent_id = row["sector_id"]
-            children = PARENT_TO_CHILD.get(parent_id, [])
-            for cid in children:
+            for cid in PARENT_TO_CHILD.get(parent_id, []):
                 extra_rows.append({
                     "sector_id": cid,
                     "institution": row["institution"],
                     "foreign": row["foreign"],
                 })
-
         if extra_rows:
             df_sector_sum = pd.concat(
                 [df_sector_sum, pd.DataFrame(extra_rows)],
                 ignore_index=True,
             )
 
-        # 5. DB 업데이트 준비
-        updates = []
-        
+        # 5. sectors.metrics 업데이트
         res_sectors = supabase.table("sectors").select("id, name, metrics").execute()
         sector_map = {
-            row["id"]: {
-                "name": row.get("name"),
-                "metrics": row.get("metrics", {}) or {},
+            r["id"]: {
+                "name": r.get("name"),
+                "metrics": r.get("metrics") or {},
             }
-            for row in res_sectors.data
+            for r in res_sectors.data
         }
-        
+
+        updates = []
         for _, row in df_sector_sum.iterrows():
             sid = row["sector_id"]
-            inst_sum = int(row["institution"])
-            fore_sum = int(row["foreign"])
-            
-            existing_sector = sector_map.get(sid)
-            if not existing_sector:
-                continue  # sectors 테이블에 없는 id 는 스킵
+            inst = int(row["institution"])
+            fore = int(row["foreign"])
 
-            current_metrics = dict(existing_sector.get("metrics") or {})
-            current_name = existing_sector.get("name")
+            existing = sector_map.get(sid)
+            if not existing:
+                continue
 
-            # 기존 값이 있으면 누적, 없으면 0에서 시작
-            prev_inst = int(current_metrics.get("flow_inst_5d") or 0)
-            prev_fore = int(current_metrics.get("flow_foreign_5d") or 0)
-
-            current_metrics["flow_inst_5d"] = prev_inst + inst_sum
-            current_metrics["flow_foreign_5d"] = prev_fore + fore_sum
+            m = dict(existing["metrics"] or {})
+            prev_i = int(m.get("flow_inst_5d") or 0)
+            prev_f = int(m.get("flow_foreign_5d") or 0)
+            m["flow_inst_5d"] = prev_i + inst
+            m["flow_foreign_5d"] = prev_f + fore
 
             updates.append({
                 "id": sid,
-                "name": current_name,
-                "metrics": current_metrics,
+                "name": existing["name"],
+                "metrics": m,
                 "updated_at": datetime.now().isoformat(),
             })
 
-        # ✅ 여기서 id 기준으로 중복 제거 (한 row당 한 번만 upsert)
-        unique_updates = {}
+        # id 기준으로 중복 제거
+        unique_updates: dict[str, dict] = {}
         for u in updates:
             sid = u["id"]
             if sid in unique_updates:
-                # 이미 있는 경우 수급만 누적
-                m_prev = unique_updates[sid]["metrics"]
-                m_new = u["metrics"]
-                m_prev["flow_inst_5d"] = int(m_prev.get("flow_inst_5d") or 0) + int(m_new.get("flow_inst_5d") or 0)
-                m_prev["flow_foreign_5d"] = int(m_prev.get("flow_foreign_5d") or 0) + int(m_new.get("flow_foreign_5d") or 0)
+                mp = unique_updates[sid]["metrics"]
+                mn = u["metrics"]
+                mp["flow_inst_5d"] = int(mp.get("flow_inst_5d") or 0) + int(mn.get("flow_inst_5d") or 0)
+                mp["flow_foreign_5d"] = int(mp.get("flow_foreign_5d") or 0) + int(mn.get("flow_foreign_5d") or 0)
             else:
                 unique_updates[sid] = u
 
         final_updates = list(unique_updates.values())
-        
         if final_updates:
             print(f" -> {len(final_updates)}개 섹터 수급 정보(metrics) 업데이트 중...")
-            batch_size = 100
-            for i in range(0, len(final_updates), batch_size):
-                supabase.table("sectors").upsert(final_updates[i:i+batch_size]).execute()
+            for i in range(0, len(final_updates), 100):
+                supabase.table("sectors").upsert(final_updates[i:i+100]).execute()
             print(" ✅ 섹터 수급 집계 완료")
-            
+
     except Exception as e:
         print(f"🚨 섹터 수급 집계 실패: {e}")
         traceback.print_exc()
