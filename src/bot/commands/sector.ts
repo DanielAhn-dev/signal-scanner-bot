@@ -7,7 +7,7 @@ import {
 } from "../../lib/sectors";
 import { createMultiRowKeyboard } from "../../telegram/keyboards";
 // normalize.ts에서 유틸리티 import (중복 정의 제거)
-import { fmtKRW, fmtPctSafe } from "../../lib/normalize";
+import { fmtKRW, fmtPctSafe, getBizDaysAgo } from "../../lib/normalize";
 
 // --- 아이콘 유틸리티 ---
 const getRankIcon = (i: number) =>
@@ -56,11 +56,12 @@ export async function handleSectorCommand(
   ctx: ChatContext,
   tgSend: any
 ): Promise<void> {
-  const today = new Date().toISOString().slice(0, 10);
   let sectors: SectorScore[] = [];
 
   try {
-    sectors = (await scoreSectors(today)) || [];
+    const todayStr = new Date().toISOString().slice(0, 10);
+    const refDate = getBizDaysAgo(todayStr, 1); // 전 영업일
+    sectors = await scoreSectors(refDate); // ✅ 재선언 없이 대입만
   } catch (e) {
     console.error("[sector] error:", e);
     return tgSend("sendMessage", {
@@ -76,7 +77,6 @@ export async function handleSectorCommand(
     });
   }
 
-  // 상위 10개 선정
   const top = getTopSectors(sectors).slice(0, 10);
 
   if (!top.length) {
@@ -86,10 +86,8 @@ export async function handleSectorCommand(
     });
   }
 
-  // 메시지 생성
   const text = buildSectorListMessage("주도 섹터 랭킹", top);
 
-  // 버튼 생성
   const buttons = top
     .filter((s) => s.id && Buffer.byteLength(s.id, "utf8") <= CALLBACK_MAX)
     .map((s) => ({
