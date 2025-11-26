@@ -4,7 +4,6 @@ import { getBizDaysAgo, toNumberSafe, clamp } from "./normalize";
 import {
   fetchSectorPriceSeries,
   fetchSectorVolumeSeries,
-  fetchInvestorNetByTicker,
   fetchTickerMetaInSector,
 } from "./source";
 
@@ -39,7 +38,6 @@ async function getTickersInSector(
     tickerMetaCache = new Map();
     for (const meta of allMetas) {
       const id = meta.sectorId;
-      // id가 undefined가 아닐 경우에만 맵에 추가
       if (id) {
         if (!tickerMetaCache.has(id)) {
           tickerMetaCache.set(id, []);
@@ -52,21 +50,17 @@ async function getTickersInSector(
 }
 
 export async function scoreSectors(today: string): Promise<SectorScore[]> {
-  const [sectors, volMap, inv5, inv20] = await Promise.all([
+  const [sectors, volMap] = await Promise.all([
     fetchSectorPriceSeries(today),
     fetchSectorVolumeSeries(today),
-    fetchInvestorNetByTicker(getBizDaysAgo(today, 5), today),
-    fetchInvestorNetByTicker(getBizDaysAgo(today, 20), today),
   ]);
 
-  const inv5Map = new Map(inv5.map((i: any) => [i.ticker, i]));
-  const inv20Map = new Map(inv20.map((i: any) => [i.ticker, i]));
   const out: (SectorScore & { rawScore: number })[] = [];
-
   const isNum = (x: unknown): x is number => Number.isFinite(x as number);
 
   for (const s of sectors) {
-    const { id, name, series: px } = s;
+    //  metrics 필드 추출 (파이썬 배치가 계산한 값)
+    const { id, name, series: px, metrics } = s as any;
     const vol = volMap[id] || [];
 
     const d1M = getBizDaysAgo(today, 21);
@@ -88,7 +82,7 @@ export async function scoreSectors(today: string): Promise<SectorScore[]> {
     const p21 = toNumberSafe(px, getBizDaysAgo(today, 21));
     const roc21 = isNum(pT) && isNum(p21) ? (pT - p21) / p21 : NaN;
 
-    // 이하 SMA, TV, 변동성 등은 그대로 사용
+    // SMA 및 Volume 지표
     const last20 = px.slice(-20);
     const above = last20.filter(
       (r: any) => r.close && r.sma20 && r.close >= r.sma20
@@ -108,6 +102,7 @@ export async function scoreSectors(today: string): Promise<SectorScore[]> {
     const tv5dChg = tv60d ? tv5d / tv60d - 1 : 0;
     const tv20dChg = tv60d ? tv20d / tv60d - 1 : 0;
 
+    // 변동성 패널티
     const rets = px
       .slice(-60)
       .map((r: any, i: number, arr: any[]) =>
@@ -120,27 +115,16 @@ export async function scoreSectors(today: string): Promise<SectorScore[]> {
     );
     const extVolPenalty = clamp((volStd - 0.02) / 0.05, 0, 1);
 
-    const tickers = await getTickersInSector(id);
-    let flowF5 = 0,
-      flowI5 = 0,
-      flowF20 = 0,
-      flowI20 = 0;
+    // 파이썬 배치가 넣어준 키: flow_foreign_5d, flow_inst_5d
+    const m = metrics || {};
+    const flowF5 = m.flow_foreign_5d || 0;
+    const flowI5 = m.flow_inst_5d || 0;
+    const flowF20 = m.flow_foreign_20d || 0; // (현재 배치엔 없지만 확장 대비)
+    const flowI20 = m.flow_inst_20d || 0;
 
-    for (const t of tickers) {
-      const i5 = inv5Map.get(t.code);
-      if (i5) {
-        flowF5 += i5.foreign || 0;
-        flowI5 += i5.institution || 0;
-      }
-      const i20 = inv20Map.get(t.code);
-      if (i20) {
-        flowF20 += i20.foreign || 0;
-        flowI20 += i20.institution || 0;
-      }
-    }
-
+    // 점수 산출
     const sigmoid = (x: number) => 1 / (1 + Math.exp(-x));
-    const sig = (x: number) => (Number.isFinite(x) ? sigmoid(x) : 0.5); // 데이터 없으면 중립점
+    const sig = (x: number) => (Number.isFinite(x) ? sigmoid(x) : 0.5);
 
     const sRS =
       0.4 *
