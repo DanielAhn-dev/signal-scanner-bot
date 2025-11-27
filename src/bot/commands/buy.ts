@@ -1,7 +1,8 @@
 import type { ChatContext } from "../router";
 import { createClient } from "@supabase/supabase-js";
-import { searchByNameOrCode, getNamesForCodes } from "../../search/normalize";
+import { searchByNameOrCode } from "../../search/normalize";
 import { KO_MESSAGES } from "../messages/ko";
+import { fetchRealtimePrice } from "../../utils/fetchRealtimePrice";
 
 // Supabase 클라이언트
 const supabase = createClient(
@@ -9,18 +10,24 @@ const supabase = createClient(
   process.env.SUPABASE_ANON_KEY!
 );
 
-// --- 유틸리티 함수 ---
+// --- 유틸리티 함수: 숫자 포맷 ---
 const fmt = (n: number) =>
   Number.isFinite(n) ? Math.round(n).toLocaleString("ko-KR") : "-";
 
 // --- 매수 판독 로직 ---
-function evaluateBuyCondition(stock: any): {
+// DB 정보 + 실시간 현재가를 인자로 받음
+function evaluateBuyCondition(
+  stock: any,
+  currentPrice: number
+): {
   canBuy: boolean;
   reasons: string[];
 } {
   const reasons: string[] = [];
-  const current = stock.close;
-  const sma20 = stock.sma20 || current;
+
+  // 지표는 DB에 저장된 과거(어제 종가 기준) 값을 쓰되,
+  // 가격 비교(이격도 등)는 실시간 가격을 씁니다.
+  const sma20 = stock.sma20 || currentPrice;
   const rsi = stock.rsi14 || 50;
 
   // Supabase의 scores가 배열/객체로 올 수 있으므로 안전하게 추출
@@ -29,8 +36,8 @@ function evaluateBuyCondition(stock: any): {
     : stock.scores;
   const momentum = scoreData?.momentum_score || 0;
 
-  // 1. 이격도 과열 (20일선보다 5% 이상 높으면 추격매수 금지)
-  if (current > sma20 * 1.05) {
+  // 1. 이격도 과열 (실시간 가격이 20일선보다 5% 이상 높으면 추격매수 금지)
+  if (currentPrice > sma20 * 1.05) {
     reasons.push(`🚫 20일선 이격 과대 (눌림목 아님)`);
   }
 
@@ -60,18 +67,23 @@ function evaluateBuyCondition(stock: any): {
 // --- 메시지 빌더 ---
 function buildMessage(
   stock: any,
+  currentPrice: number,
   evaluation: { canBuy: boolean; reasons: string[] }
 ): string {
-  const { name, code, close } = stock;
+  const { name, code } = stock;
   const { canBuy, reasons } = evaluation;
 
-  // 진입가/손절가 계산 (20일선 기준)
-  const entryPrice = Math.floor((stock.sma20 || close) * 1.01); // 20일선 살짝 위
+  // 진입가/손절가 계산 (실시간 20일선 기준)
+  // SMA20이 없으면 현재가 기준으로 대략 계산
+  const basePrice = stock.sma20 || currentPrice;
+
+  // 전략: 20일선 근처(1% 위)에서 진입 시도
+  const entryPrice = Math.floor(basePrice * 1.01);
   const stopPrice = Math.floor(entryPrice * 0.93); // -7%
   const targetPrice = Math.floor(entryPrice * 1.1); // +10%
 
   const header = `🛒 *${name}* \`(${code})\` 매수 판독\n현재가: *${fmt(
-    close
+    currentPrice
   )}원*`;
 
   let body = "";
@@ -136,10 +148,7 @@ export async function handleBuyCommand(
     .single();
 
   if (error || !stock) {
-    // 서버 로그에 실제 에러 내용 출력
     console.error("Supabase query failed in handleBuyCommand:", error);
-
-    // 사용자에게 좀 더 구체적인 에러 메시지 전송 (선택 사항)
     const errorMessage = error ? error.message : "데이터를 찾을 수 없습니다.";
     return tgSend("sendMessage", {
       chat_id: ctx.chatId,
@@ -147,9 +156,16 @@ export async function handleBuyCommand(
     });
   }
 
-  // 3. 평가 및 메시지 전송
-  const evaluation = evaluateBuyCondition(stock);
-  const msg = buildMessage(stock, evaluation);
+  // 3. 실시간 가격 조회 (추가된 부분)
+  // Supabase의 'close'는 어제 종가일 가능성이 높으므로 실시간 API를 찌릅니다.
+  const realtimePrice = await fetchRealtimePrice(code);
+
+  // 실시간 가격이 있으면 그걸 쓰고, 없으면 DB의 close 사용
+  const currentPrice = realtimePrice ?? stock.close;
+
+  // 4. 평가 및 메시지 전송 (실시간 가격 기준)
+  const evaluation = evaluateBuyCondition(stock, currentPrice);
+  const msg = buildMessage(stock, currentPrice, evaluation);
 
   await tgSend("sendMessage", {
     chat_id: ctx.chatId,
