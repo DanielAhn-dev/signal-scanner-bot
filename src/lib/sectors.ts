@@ -61,8 +61,22 @@ async function getTickersInSector(
         tickerMetaCache.get(id)!.push({ code: meta.code, name: meta.name });
       }
     }
+    // 캐시 생성 후, 어떤 ID들이 있는지 전체 키를 로그로 확인
+    console.log("Ticker cache created. Available sector IDs:", [
+      ...tickerMetaCache.keys(),
+    ]);
   }
-  return tickerMetaCache.get(sectorId) || [];
+  // 요청된 섹터 ID를 로그로 확인
+  console.log("Requesting tickers for sectorId:", sectorId);
+  const tickers = tickerMetaCache.get(sectorId) || [];
+
+  if (tickers.length === 0) {
+    console.warn(
+      `No tickers found for sectorId '${sectorId}'. Check for potential ID mismatch.`
+    );
+  }
+
+  return tickers;
 }
 
 export async function scoreSectors(today: string): Promise<SectorScore[]> {
