@@ -34,7 +34,7 @@ interface ScoreRow {
   liquidity_score: number | null;
   value_score: number | null;
   factors: Json;
-  asof?: string; // 선택적 속성 추가
+  asof?: string;
 }
 
 // ===== 메인 브리핑 함수 =====
@@ -61,7 +61,6 @@ export async function createBriefingReport(
   const asOf = sectorDateRows[0].date as string;
 
   // 1. 주도 섹터 Top 3
-  // returns<SectorRow[]>()를 사용하여 반환 타입을 명시합니다.
   const { data: topSectors, error: sectorError } = await supabase
     .from("sectors")
     .select("id, name, avg_change_rate, change_rate, score, metrics")
@@ -91,7 +90,6 @@ export async function createBriefingReport(
   const scoreAsOf = scoreDateRows?.[0]?.asof ?? asOf;
 
   // 3. 상위 섹터에 속한 종목들
-  // returns<StockRow[]>() 사용
   const { data: sectorStocks, error: stockError } = await supabase
     .from("stocks")
     .select(
@@ -118,7 +116,6 @@ export async function createBriefingReport(
     throw new Error(`Stock fetch failed: ${stockError.message}`);
   }
 
-  // 이제 TS가 sectorStocks를 StockRow[]로 인식하므로 .map과 .code 접근 가능
   const sectorStockCodes = (sectorStocks ?? []).map((s) => s.code);
 
   // 4. 위 종목들에 대한 score 정보
@@ -139,7 +136,6 @@ export async function createBriefingReport(
     const stocksOfSector =
       sectorStocks?.filter((s) => s.sector_id === sector.id) ?? [];
 
-    // 섹터당 대장 + 후보 2종목 정도 보여주기
     const picked = pickTopStocksForSector(stocksOfSector, scoresByCode, 2);
 
     return formatSectorSection(sector, picked, scoresByCode);
@@ -163,9 +159,10 @@ export async function createBriefingReport(
   let report = `${title}\n\n`;
 
   report += `🚀 **오늘의 주도 테마 (Top 3)**\n`;
-  report += sectorReports.join("\n");
+  // 섹터 사이 간격을 확실히 벌려줌 (\n\n)
+  report += sectorReports.join("\n\n");
 
-  report += `\n👀 **'빈집털이' 후보 (과매도 + 모멘텀 개선)**\n`;
+  report += `\n\n👀 **'빈집털이' 후보 (과매도 + 모멘텀 개선)**\n`;
   report += bottomSectionText;
 
   report += `\n\n📌 기준일: 섹터 ${asOf}, 점수 ${scoreAsOf}\n`;
@@ -176,7 +173,6 @@ export async function createBriefingReport(
 
 // ===== scores 조회 & 후보 조회 유틸 =====
 
-// 특정 코드 집합에 대한 scores를 한 번에 가져와 Map으로 반환
 async function fetchScoresByCodes(
   supabase: SupabaseClient,
   codes: string[],
@@ -186,7 +182,6 @@ async function fetchScoresByCodes(
 
   if (!codes.length) return map;
 
-  // returns<ScoreRow[]>() 사용
   const { data, error } = await supabase
     .from("scores")
     .select(
@@ -214,12 +209,10 @@ async function fetchScoresByCodes(
   return map;
 }
 
-// 과매도 + 모멘텀 개선 후보 찾기
 async function fetchBottomTurnaroundCandidates(
   supabase: SupabaseClient,
   asof: string
 ) {
-  // returns<Pick<StockRow, ...>[]>() 사용
   const { data: lowRsiStocks, error: lowRsiError } = await supabase
     .from("stocks")
     .select("code, name, close, rsi14")
@@ -237,7 +230,6 @@ async function fetchBottomTurnaroundCandidates(
 
   const codes = lowRsiStocks.map((s) => s.code);
 
-  // 2단계: 해당 코드들의 점수/팩터에서 모멘텀 관련 값 확인
   const { data: scoreRows, error: scoresError } = await supabase
     .from("scores")
     .select("code, momentum_score, total_score, factors")
@@ -254,7 +246,6 @@ async function fetchBottomTurnaroundCandidates(
   const byCode = new Map<string, any>();
   (scoreRows ?? []).forEach((row) => byCode.set(row.code, row));
 
-  // factors 안의 roc_21 또는 ret_1m 같은 키로 '모멘텀 개선'을 간단히 판단
   const candidates = lowRsiStocks
     .map((stock) => {
       const score = byCode.get(stock.code);
@@ -271,14 +262,13 @@ async function fetchBottomTurnaroundCandidates(
         roc21,
       };
     })
-    .filter((s) => (s.roc21 ?? 0) > 0) // 모멘텀이 플러스로 돌아선 애들만
+    .filter((s) => (s.roc21 ?? 0) > 0)
     .sort((a, b) => (b.roc21 ?? 0) - (a.roc21 ?? 0))
-    .slice(0, 5); // 상위 5개만
+    .slice(0, 5);
 
   return candidates;
 }
 
-// 섹터별로 보여줄 종목 고르기
 function pickTopStocksForSector(
   stocks: StockRow[],
   scoresByCode: Map<string, ScoreRow>,
@@ -322,6 +312,12 @@ function formatSectorSection(
 
   const lines: string[] = [header];
 
+  // [수정 완료] 종목 없을 때 안내 문구
+  if (!stocks || stocks.length === 0) {
+    lines.push(`  ↳ (집계된 유동성 종목 없음)`);
+    return lines.join("\n");
+  }
+
   stocks.forEach((stock) => {
     const score = scoresByCode.get(stock.code);
     const total = score?.total_score ?? score?.momentum_score ?? null;
@@ -350,7 +346,8 @@ function formatSectorSection(
 }
 
 function formatBottomSection(candidates: any[]) {
-  if (!candidates.length) {
+  // [수정 완료] 후보 없으면 안내 메시지 출력 (주석 해제함)
+  if (!candidates || candidates.length === 0) {
     return "- 감지된 종목이 없습니다.\n";
   }
 
@@ -401,7 +398,6 @@ function changeArrow(v: number | null | undefined): string {
   return "0.0%";
 }
 
-// 섹터 이름에 따른 이모지 매핑
 function getSectorEmoji(name: string): string {
   if (name.includes("반도체")) return "💾";
   if (name.includes("2차전지") || name.includes("배터리")) return "🔋";
