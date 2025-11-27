@@ -1,100 +1,407 @@
-import { SupabaseClient } from "@supabase/supabase-js";
+import type { SupabaseClient } from "@supabase/supabase-js";
 
-/**
- * 브리핑 리포트를 생성하는 메인 함수
- * @param supabase Supabase 클라이언트 인스턴스
- * @param type 브리핑 타입 (pre_market | market_close)
- */
+// JSONB용 느슨한 타입
+type Json = Record<string, any>;
+type BriefingType = "pre_market" | "market_close";
+
+// DB Row 타입 정의
+interface SectorRow {
+  id: string;
+  name: string;
+  score: number | null;
+  change_rate: number | null;
+  avg_change_rate: number | null;
+  metrics: Json | null;
+}
+
+interface StockRow {
+  code: string;
+  name: string;
+  sector_id: string | null;
+  close: number | null;
+  liquidity: number | null;
+  avg_volume_20d: number | null;
+  rsi14: number | null;
+  is_sector_leader: boolean | null;
+  universe_level: string | null;
+  is_active?: boolean | null;
+}
+
+interface ScoreRow {
+  code: string;
+  total_score: number | null;
+  momentum_score: number | null;
+  liquidity_score: number | null;
+  value_score: number | null;
+  factors: Json;
+  asof?: string; // 선택적 속성 추가
+}
+
+// ===== 메인 브리핑 함수 =====
 export async function createBriefingReport(
   supabase: SupabaseClient,
-  type: "pre_market" | "market_close" = "pre_market"
+  type: BriefingType = "pre_market"
 ): Promise<string> {
-  // 1. 주도 섹터 가져오기 (상위 3개)
-  // sectors 테이블에 momentum_score나 roc_1m 같은 지표가 계산되어 있다고 가정
+  // 0. 기준일 잡기: sector_daily 마지막 날짜
+  const { data: sectorDateRows, error: sectorDateError } = await supabase
+    .from("sector_daily")
+    .select("date")
+    .order("date", { ascending: false })
+    .limit(1);
+
+  if (sectorDateError) {
+    throw new Error(`Sector date fetch failed: ${sectorDateError.message}`);
+  }
+  if (!sectorDateRows || sectorDateRows.length === 0) {
+    throw new Error(
+      "sector_daily에 데이터가 없어 브리핑 기준일을 정할 수 없습니다."
+    );
+  }
+
+  const asOf = sectorDateRows[0].date as string;
+
+  // 1. 주도 섹터 Top 3
+  // returns<SectorRow[]>()를 사용하여 반환 타입을 명시합니다.
   const { data: topSectors, error: sectorError } = await supabase
     .from("sectors")
-    .select("id, name, avg_change_rate, momentum_score")
-    .order("momentum_score", { ascending: false }) // 모멘텀 점수 높은 순
-    .limit(3);
+    .select("id, name, avg_change_rate, change_rate, score, metrics")
+    .order("score", { ascending: false })
+    .limit(3)
+    .returns<SectorRow[]>();
 
-  if (sectorError)
+  if (sectorError) {
     throw new Error(`Sector fetch failed: ${sectorError.message}`);
+  }
+  if (!topSectors || topSectors.length === 0) {
+    throw new Error("sectors 테이블에 데이터가 없습니다.");
+  }
 
-  // 2. 섹터별 대장주 및 '밑에서' 잡을 종목 병렬 조회
-  const sectorReports = await Promise.all(
-    (topSectors || []).map(async (sector) => {
-      // 해당 섹터의 대장주 (거래대금 & 점수 상위)
-      const { data: topStocks } = await supabase
-        .from("stocks")
-        .select("name, code, close, change_rate")
-        .eq("sector_id", sector.id)
-        .order("score", { ascending: false }) // 자체 알고리즘 점수
-        .limit(2);
+  const topSectorIds = topSectors.map((s) => s.id);
 
-      return formatSectorSection(sector, topStocks || []);
-    })
+  // 2. 점수 기준일(asof)
+  const { data: scoreDateRows, error: scoreDateError } = await supabase
+    .from("scores")
+    .select("asof")
+    .order("asof", { ascending: false })
+    .limit(1);
+
+  if (scoreDateError) {
+    throw new Error(`Score date fetch failed: ${scoreDateError.message}`);
+  }
+  const scoreAsOf = scoreDateRows?.[0]?.asof ?? asOf;
+
+  // 3. 상위 섹터에 속한 종목들
+  // returns<StockRow[]>() 사용
+  const { data: sectorStocks, error: stockError } = await supabase
+    .from("stocks")
+    .select(
+      [
+        "code",
+        "name",
+        "sector_id",
+        "close",
+        "liquidity",
+        "avg_volume_20d",
+        "rsi14",
+        "is_sector_leader",
+        "universe_level",
+      ].join(", ")
+    )
+    .in("sector_id", topSectorIds)
+    .eq("is_active", true)
+    .order("is_sector_leader", { ascending: false })
+    .order("liquidity", { ascending: false })
+    .limit(80)
+    .returns<StockRow[]>();
+
+  if (stockError) {
+    throw new Error(`Stock fetch failed: ${stockError.message}`);
+  }
+
+  // 이제 TS가 sectorStocks를 StockRow[]로 인식하므로 .map과 .code 접근 가능
+  const sectorStockCodes = (sectorStocks ?? []).map((s) => s.code);
+
+  // 4. 위 종목들에 대한 score 정보
+  const scoresByCode = await fetchScoresByCodes(
+    supabase,
+    sectorStockCodes,
+    scoreAsOf
   );
 
-  // 3. '밑에서' 턴어라운드 후보 (RSI < 35 이면서 ROC 개선)
-  const { data: bottomStocks } = await supabase
-    .from("stocks")
-    .select("name, code, close, rsi_14, roc_21")
-    .lt("rsi_14", 35) // 과매도 구간
-    .gt("roc_21", 0) // 모멘텀은 양수 전환 시도
-    .order("roc_21", { ascending: false })
-    .limit(3);
+  // 5. '밑에서' 턴어라운드 후보
+  const bottomCandidates = await fetchBottomTurnaroundCandidates(
+    supabase,
+    scoreAsOf
+  );
 
-  // 4. 메시지 조합
-  const date = new Date().toLocaleDateString("ko-KR", {
+  // 6. 섹터별 리포트 텍스트 조립
+  const sectorReports = topSectors.map((sector) => {
+    const stocksOfSector =
+      sectorStocks?.filter((s) => s.sector_id === sector.id) ?? [];
+
+    // 섹터당 대장 + 후보 2종목 정도 보여주기
+    const picked = pickTopStocksForSector(stocksOfSector, scoresByCode, 2);
+
+    return formatSectorSection(sector, picked, scoresByCode);
+  });
+
+  // 7. 빈집털이 섹션 텍스트 조립
+  const bottomSectionText = formatBottomSection(bottomCandidates);
+
+  // 8. 최종 메시지 합치기
+  const dateLabel = new Date(asOf).toLocaleDateString("ko-KR", {
     month: "long",
     day: "numeric",
     weekday: "short",
   });
 
-  let report = `☀️ **${date} 장전 브리핑**\n\n`;
+  const title =
+    type === "pre_market"
+      ? `☀️ **${dateLabel} 장전 브리핑**`
+      : `🌙 **${dateLabel} 마감 브리핑**`;
+
+  let report = `${title}\n\n`;
 
   report += `🚀 **오늘의 주도 테마 (Top 3)**\n`;
   report += sectorReports.join("\n");
 
-  report += `\n👀 **'빈집털이' 후보 (과매도+턴)**\n`;
-  if (bottomStocks && bottomStocks.length > 0) {
-    bottomStocks.forEach((stock) => {
-      report += `- ${stock.name} (${stock.code}): RSI ${stock.rsi_14?.toFixed(
-        0
-      )}\n`;
-    });
-  } else {
-    report += `- 감지된 종목이 없습니다.\n`;
-  }
+  report += `\n👀 **'빈집털이' 후보 (과매도 + 모멘텀 개선)**\n`;
+  report += bottomSectionText;
 
-  report += `\n💡 /start 명령어로 알림 설정을 확인하세요.`;
+  report += `\n\n📌 기준일: 섹터 ${asOf}, 점수 ${scoreAsOf}\n`;
+  report += `💡 /start 명령어로 알림 설정을 확인하세요.`;
 
   return report;
 }
 
-// 헬퍼: 섹터 섹션 포맷팅
-function formatSectorSection(sector: any, stocks: any[]) {
-  const sectorEmoji = getSectorEmoji(sector.name);
-  let text = `\n${sectorEmoji} **${sector.name}** (모멘텀 ${
-    sector.momentum_score?.toFixed(0) ?? 0
-  }점)\n`;
+// ===== scores 조회 & 후보 조회 유틸 =====
 
-  stocks.forEach((stock) => {
-    const arrow =
-      stock.change_rate > 0 ? "🔺" : stock.change_rate < 0 ? "🔹" : "-";
-    const price = stock.close.toLocaleString();
-    const rate =
-      stock.change_rate > 0
-        ? `+${stock.change_rate}%`
-        : `${stock.change_rate}%`;
+// 특정 코드 집합에 대한 scores를 한 번에 가져와 Map으로 반환
+async function fetchScoresByCodes(
+  supabase: SupabaseClient,
+  codes: string[],
+  asof: string
+) {
+  const map = new Map<string, ScoreRow>();
 
-    text += `  └ ${stock.name}: ${price}원 (${arrow}${rate})\n`;
+  if (!codes.length) return map;
+
+  // returns<ScoreRow[]>() 사용
+  const { data, error } = await supabase
+    .from("scores")
+    .select(
+      [
+        "code",
+        "total_score",
+        "momentum_score",
+        "liquidity_score",
+        "value_score",
+        "factors",
+      ].join(", ")
+    )
+    .eq("asof", asof)
+    .in("code", codes)
+    .returns<ScoreRow[]>();
+
+  if (error) {
+    throw new Error(`Scores fetch failed: ${error.message}`);
+  }
+
+  (data ?? []).forEach((row) => {
+    map.set(row.code, row);
   });
 
-  return text;
+  return map;
 }
 
-// 헬퍼: 섹터 이름에 따른 이모지 매핑 (단순화)
+// 과매도 + 모멘텀 개선 후보 찾기
+async function fetchBottomTurnaroundCandidates(
+  supabase: SupabaseClient,
+  asof: string
+) {
+  // returns<Pick<StockRow, ...>[]>() 사용
+  const { data: lowRsiStocks, error: lowRsiError } = await supabase
+    .from("stocks")
+    .select("code, name, close, rsi14")
+    .lt("rsi14", 35)
+    .eq("is_active", true)
+    .order("rsi14", { ascending: true })
+    .limit(100)
+    .returns<Pick<StockRow, "code" | "name" | "close" | "rsi14">[]>();
+
+  if (lowRsiError) {
+    throw new Error(`Low-RSI stocks fetch failed: ${lowRsiError.message}`);
+  }
+
+  if (!lowRsiStocks || lowRsiStocks.length === 0) return [];
+
+  const codes = lowRsiStocks.map((s) => s.code);
+
+  // 2단계: 해당 코드들의 점수/팩터에서 모멘텀 관련 값 확인
+  const { data: scoreRows, error: scoresError } = await supabase
+    .from("scores")
+    .select("code, momentum_score, total_score, factors")
+    .eq("asof", asof)
+    .in("code", codes)
+    .returns<
+      Pick<ScoreRow, "code" | "momentum_score" | "total_score" | "factors">[]
+    >();
+
+  if (scoresError) {
+    throw new Error(`Bottom scores fetch failed: ${scoresError.message}`);
+  }
+
+  const byCode = new Map<string, any>();
+  (scoreRows ?? []).forEach((row) => byCode.set(row.code, row));
+
+  // factors 안의 roc_21 또는 ret_1m 같은 키로 '모멘텀 개선'을 간단히 판단
+  const candidates = lowRsiStocks
+    .map((stock) => {
+      const score = byCode.get(stock.code);
+      const factors = (score?.factors ?? {}) as Json;
+
+      const roc21 = toNumber(
+        factors.roc_21 ?? factors.roc21 ?? factors.ret_1m ?? factors.return_1m
+      );
+
+      return {
+        ...stock,
+        momentum_score: score?.momentum_score ?? null,
+        total_score: score?.total_score ?? null,
+        roc21,
+      };
+    })
+    .filter((s) => (s.roc21 ?? 0) > 0) // 모멘텀이 플러스로 돌아선 애들만
+    .sort((a, b) => (b.roc21 ?? 0) - (a.roc21 ?? 0))
+    .slice(0, 5); // 상위 5개만
+
+  return candidates;
+}
+
+// 섹터별로 보여줄 종목 고르기
+function pickTopStocksForSector(
+  stocks: StockRow[],
+  scoresByCode: Map<string, ScoreRow>,
+  limit: number
+) {
+  const scored = stocks.map((s) => {
+    const score = scoresByCode.get(s.code);
+    const total = toNumber(score?.total_score ?? score?.momentum_score ?? 0);
+
+    return {
+      ...s,
+      total_score: total,
+    };
+  });
+
+  scored.sort((a, b) => (b.total_score ?? 0) - (a.total_score ?? 0));
+
+  return scored.slice(0, limit);
+}
+
+// ===== 포맷팅 =====
+
+function formatSectorSection(
+  sector: SectorRow,
+  stocks: any[],
+  scoresByCode: Map<string, ScoreRow>
+) {
+  const sectorEmoji = getSectorEmoji(sector.name);
+  const metrics = (sector.metrics ?? {}) as Json;
+
+  const ret1m = toNumber(metrics.ret_1m ?? metrics.return_1m);
+  const ret3m = toNumber(metrics.ret_3m ?? metrics.return_3m);
+  const change = sector.change_rate as number | null;
+
+  let header = `\n${sectorEmoji} **${sector.name}**`;
+  header += ` | 점수 ${fmtInt(sector.score)}`;
+  header += ` | 일간 ${fmtPct(change)}`;
+  if (ret1m != null) header += ` | 1M ${fmtPct(ret1m)}`;
+  if (ret3m != null) header += ` | 3M ${fmtPct(ret3m)}`;
+  header += "\n";
+
+  const lines: string[] = [header];
+
+  stocks.forEach((stock) => {
+    const score = scoresByCode.get(stock.code);
+    const total = score?.total_score ?? score?.momentum_score ?? null;
+    const rsi = stock.rsi14 != null ? Math.round(stock.rsi14) : null;
+    const price =
+      stock.close != null ? Number(stock.close).toLocaleString("ko-KR") : "-";
+
+    const arrow = changeArrow(change);
+    const tags: string[] = [];
+    if (stock.is_sector_leader) tags.push("리더");
+    if (stock.universe_level && stock.universe_level !== "tail")
+      tags.push(stock.universe_level);
+
+    const tagStr = tags.length ? ` (${tags.join(",")})` : "";
+
+    const parts = [
+      `${stock.name}${tagStr}`,
+      total != null ? `T${total}` : undefined,
+      rsi != null ? `RSI${rsi}` : undefined,
+    ].filter(Boolean);
+
+    lines.push(`  └ ${parts.join(" / ")} | ${price}원 ${arrow}`);
+  });
+
+  return lines.join("\n");
+}
+
+function formatBottomSection(candidates: any[]) {
+  if (!candidates.length) {
+    return "- 감지된 종목이 없습니다.\n";
+  }
+
+  return (
+    candidates
+      .map((s) => {
+        const price =
+          s.close != null ? Number(s.close).toLocaleString("ko-KR") : "-";
+        const rsi = s.rsi14 != null ? Math.round(s.rsi14) : null;
+        const rsiText = rsi != null ? `RSI ${rsi}` : "RSI N/A";
+
+        return `- ${s.name} (${
+          s.code
+        }): ${price}원 / ${rsiText} / 모멘텀 ${fmtInt(s.momentum_score)}`;
+      })
+      .join("\n") + "\n"
+  );
+}
+
+// ===== 공통 헬퍼 =====
+
+function toNumber(v: any): number | null {
+  if (v === null || v === undefined) return null;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : null;
+}
+
+function fmtPct(v: number | null | undefined): string {
+  if (v === null || v === undefined || !Number.isFinite(Number(v))) {
+    return "N/A";
+  }
+  const n = Number(v);
+  return `${n >= 0 ? "+" : ""}${n.toFixed(1)}%`;
+}
+
+function fmtInt(v: number | null | undefined): string {
+  if (v === null || v === undefined || !Number.isFinite(Number(v))) {
+    return "-";
+  }
+  return String(Math.round(Number(v)));
+}
+
+function changeArrow(v: number | null | undefined): string {
+  if (v == null || !Number.isFinite(Number(v))) return "-";
+  const n = Number(v);
+  if (n > 0) return `🔺${n.toFixed(1)}%`;
+  if (n < 0) return `🔹${n.toFixed(1)}%`;
+  return "0.0%";
+}
+
+// 섹터 이름에 따른 이모지 매핑
 function getSectorEmoji(name: string): string {
   if (name.includes("반도체")) return "💾";
   if (name.includes("2차전지") || name.includes("배터리")) return "🔋";
