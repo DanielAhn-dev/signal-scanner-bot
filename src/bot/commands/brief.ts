@@ -1,12 +1,13 @@
 import type { ChatContext } from "../router";
 import { createClient } from "@supabase/supabase-js";
+import { esc, fmtInt, LINE } from "../messages/format";
 
 const supabase = createClient(
   process.env.SUPABASE_URL!,
   process.env.SUPABASE_ANON_KEY!
 );
 
-function safeNumberFormat(n: any) {
+function safeFmt(n: any) {
   if (n == null) return "-";
   const num = Number(n);
   if (Number.isNaN(num)) return String(n);
@@ -119,48 +120,47 @@ export async function handleBriefCommand(
       }));
     }
 
-    // --- 4) 메시지 생성 ---
-    let msg = `🌅 *[08:30] 장전 대형주 브리핑*\n_(실패 없는 Core 유니버스)_\n\n`;
+    // --- 4) 메시지 생성 (HTML) ---
+    let msg = `<b>장전 브리핑</b>  Core 유니버스\n${LINE}\n\n`;
 
-    msg += `💎 *저평가 가치주 (Value)*\n`;
+    msg += `<b>저평가 가치주</b>\n`;
     if (!valueStocks || valueStocks.length === 0) {
-      msg += `_추천 종목이 없습니다._\n`;
+      msg += `<i>추천 종목 없음</i>\n`;
     } else {
       valueStocks.forEach((s: any) => {
-        msg += `- ${s.name} (${s.code}): ${safeNumberFormat(s.close)}원\n`;
+        msg += `▸ ${esc(s.name)} (${s.code})  <code>${safeFmt(s.close)}원</code>\n`;
       });
     }
 
-    msg += `\n🚀 *수급 주도주 (Momentum)*\n`;
+    msg += `\n<b>수급 주도주</b>\n`;
     if (!momentumStocks || momentumStocks.length === 0) {
-      msg += `_추천 종목이 없습니다._\n`;
+      msg += `<i>추천 종목 없음</i>\n`;
     } else {
       momentumStocks.forEach((s: any) => {
-        msg += `- ${s.name} (${s.code}): ${safeNumberFormat(s.close)}원\n`;
+        msg += `▸ ${esc(s.name)} (${s.code})  <code>${safeFmt(s.close)}원</code>\n`;
       });
     }
 
-    msg += `\n🎯 *눌림목 매집 후보 (Pullback)*\n`;
+    msg += `\n<b>눌림목 매집 후보</b>\n`;
     if (!pullbackStocks || pullbackStocks.length === 0) {
-      msg += `_매집 조건 충족 종목 없음_\n`;
+      msg += `<i>매집 조건 충족 종목 없음</i>\n`;
     } else {
-      const ge: Record<string, string> = { A: "🟢", B: "🟡" };
-      const we: Record<string, string> = { SAFE: "✅", WATCH: "👀", WARN: "⚠️" };
+      const gl: Record<string, string> = { A: "●", B: "◐" };
+      const wl: Record<string, string> = { SAFE: "안전", WATCH: "관찰", WARN: "주의" };
       pullbackStocks.forEach((s: any) => {
-        const eg = ge[s.entry_grade] ?? "";
-        const wg = we[s.warn_grade] ?? "";
-        msg += `${eg} ${s.name} (${s.code}) ${s.entry_grade}(${s.entry_score}/4) ${wg}\n`;
+        const g = gl[s.entry_grade] ?? "";
+        const w = wl[s.warn_grade] ?? "";
+        msg += `${g} ${esc(s.name)} (${s.code}) ${s.entry_grade}(${s.entry_score}/4) ${w}\n`;
       });
     }
 
-    msg += `\n👇 종목명을 클릭하거나 \`/score <종목코드>\` 명령어로 상세 확인\n`;
-    msg += `📊 눌림목 전체 목록: /pullback`;
+    msg += `\n${LINE}\n/점수 종목코드 로 상세 확인\n/눌림목 으로 전체 목록`;
 
     // --- 4) Telegram 전송 ---
     await tgSend("sendMessage", {
       chat_id: ctx.chatId,
       text: msg,
-      parse_mode: "Markdown",
+      parse_mode: "HTML",
       disable_web_page_preview: true,
     });
   } catch (e) {

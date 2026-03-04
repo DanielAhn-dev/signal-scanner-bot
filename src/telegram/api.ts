@@ -26,16 +26,19 @@ export const answerCallback = (
 ) => tg("answerCallbackQuery", { callback_query_id, text, show_alert: false });
 
 export async function setCommandsKo(): Promise<TgResponse> {
+  // 텔레그램 Bot API는 command에 한글을 지원하지 않으므로
+  // 한글 별칭은 router에서 처리하고, 메뉴에는 로마자 축약 + 한글 설명을 사용
   const commands = [
-    { command: "sector", description: "유망 섹터 랭킹 보기" },
-    { command: "nextsector", description: "수급 유입 섹터 흐름 보기" },
-    { command: "stocks", description: "섹터별 주도주 보기" },
-    { command: "scan", description: "눌림목 스캐너 (정배열+20일선)" },
-    { command: "score", description: "개별 종목 점수/시그널 보기" },
-    { command: "buy", description: "엔트리/손절/익절 레벨 보기" },
-    { command: "brief", description: "장전 브리핑 (가치주/모멘텀)" },
-    { command: "pullback", description: "눌림목 매집 후보 종목" },
     { command: "start", description: "사용법 안내" },
+    { command: "sector", description: "주도 섹터 랭킹 (/섹터)" },
+    { command: "nextsector", description: "수급 유입 섹터 (/다음섹터)" },
+    { command: "stocks", description: "섹터별 대장주 (/종목)" },
+    { command: "scan", description: "눌림목 스캐너 (/스캔)" },
+    { command: "score", description: "종목 점수·시그널 (/점수)" },
+    { command: "buy", description: "매수 판독 (/매수)" },
+    { command: "brief", description: "장전 브리핑 (/브리핑)" },
+    { command: "pullback", description: "눌림목 매집 후보 (/눌림목)" },
+    { command: "watchlist", description: "관심종목 포트폴리오 (/관심)" },
   ];
 
   const r1 = await tg("setMyCommands", { commands });

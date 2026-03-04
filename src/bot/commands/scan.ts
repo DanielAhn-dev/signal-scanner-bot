@@ -21,7 +21,7 @@ export async function handleScanCommand(
 ) {
   await tgSend("sendMessage", {
     chat_id: ctx.chatId,
-    text: `🔍 ${query ? `'${query}' 섹터` : "전체 시장"} 스캔 중...`,
+    text: `${query ? `'${query}' 섹터` : "전체 시장"} 스캔 중...`,
   });
 
   // 0. 최신 trade_date 확인 (가장 최근 데이터 기준)
@@ -35,7 +35,7 @@ export async function handleScanCommand(
   if (!latestDate) {
     await tgSend("sendMessage", {
       chat_id: ctx.chatId,
-      text: "⚠️ 지표 데이터가 아직 없습니다. 데이터 수집 후 다시 시도해주세요.",
+      text: "지표 데이터가 아직 없습니다. 데이터 수집 후 다시 시도해주세요.",
     });
     return;
   }
@@ -54,7 +54,7 @@ export async function handleScanCommand(
     } else {
       await tgSend("sendMessage", {
         chat_id: ctx.chatId,
-        text: `❌ '${query}' 관련 섹터를 찾지 못했습니다.`,
+        text: `'${query}' 관련 섹터를 찾지 못했습니다.`,
       });
       return;
     }
@@ -135,21 +135,18 @@ export async function handleScanCommand(
   }
 
   // 5. 결과 메시지 포맷팅
-  let msg = `📊 <b>${
-    sectorId ? query + " 섹터" : "전체 시장"
-  } 스캔 결과</b>\n`;
-  msg += `(기준일: ${latestDate} | 정배열, RSI 40-70, 20일선 눌림)\n\n`;
+  const LINE = "─────────────────";
+  let msg = `<b>${sectorId ? query + " 섹터" : "전체 시장"} 스캔 결과</b>\n`;
+  msg += `<i>${latestDate} · 정배열, RSI 40-70, 20일선 눌림</i>\n${LINE}\n`;
 
   topPicks.forEach((stock: any, i: number) => {
     const name = stock.stocks?.name || stock.code;
-    const gap20 = (((stock.close - stock.sma20) / stock.sma20) * 100).toFixed(
-      1
-    );
+    const gap20 = (((stock.close - stock.sma20) / stock.sma20) * 100).toFixed(1);
     const rsi = stock.rsi14?.toFixed(1);
-    const vol = Math.round(stock.value_traded / 100000000); // 억 단위
+    const vol = Math.round(stock.value_traded / 100000000);
 
-    msg += `${i + 1}. <b>${name}</b> (${stock.close.toLocaleString()}원)\n`;
-    msg += `   └ RSI: ${rsi} | 20일선: ${gap20}% | 거래: ${vol}억\n`;
+    msg += `${i + 1}. <b>${name}</b>  <code>${stock.close.toLocaleString()}원</code>\n`;
+    msg += `   RSI ${rsi} · 20일선 ${gap20}% · ${vol}억\n`;
   });
 
   await tgSend("sendMessage", {

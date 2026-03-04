@@ -3,6 +3,7 @@ import { createClient } from "@supabase/supabase-js";
 import { searchByNameOrCode } from "../../search/normalize";
 import { KO_MESSAGES } from "../messages/ko";
 import { fetchRealtimePrice } from "../../utils/fetchRealtimePrice";
+import { esc, fmtInt, LINE } from "../messages/format";
 
 // Supabase 클라이언트
 const supabase = createClient(
@@ -10,12 +11,7 @@ const supabase = createClient(
   process.env.SUPABASE_ANON_KEY!
 );
 
-// --- 유틸리티 함수: 숫자 포맷 ---
-const fmt = (n: number) =>
-  Number.isFinite(n) ? Math.round(n).toLocaleString("ko-KR") : "-";
-
 // --- 매수 판독 로직 ---
-// DB 정보 + 실시간 현재가를 인자로 받음
 function evaluateBuyCondition(
   stock: any,
   currentPrice: number
@@ -25,46 +21,39 @@ function evaluateBuyCondition(
 } {
   const reasons: string[] = [];
 
-  // 지표는 DB에 저장된 과거(어제 종가 기준) 값을 쓰되,
-  // 가격 비교(이격도 등)는 실시간 가격을 씁니다.
   const sma20 = stock.sma20 || currentPrice;
   const rsi = stock.rsi14 || 50;
 
-  // Supabase의 scores가 배열/객체로 올 수 있으므로 안전하게 추출
   const scoreData = Array.isArray(stock.scores)
     ? stock.scores[0]
     : stock.scores;
   const momentum = scoreData?.momentum_score || 0;
 
-  // 1. 이격도 과열 (실시간 가격이 20일선보다 5% 이상 높으면 추격매수 금지)
   if (currentPrice > sma20 * 1.05) {
-    reasons.push(`🚫 20일선 이격 과대 (눌림목 아님)`);
+    reasons.push("20일선 이격 과대 (눌림목 아님)");
   }
 
-  // 2. RSI 과열
   if (rsi > 70) {
-    reasons.push(`🚫 RSI 과열권 (${rsi.toFixed(0)}) - 고점 위험`);
+    reasons.push(`RSI 과열권 (${rsi.toFixed(0)}) — 고점 위험`);
   }
 
-  // 3. 모멘텀 약세 (점수 40점 미만)
   if (momentum < 40) {
-    reasons.push(`🚫 상승 모멘텀 부족 (추세 미확인)`);
+    reasons.push("상승 모멘텀 부족 (추세 미확인)");
   }
 
-  // 4. 소형주(Tail)인 경우 더 엄격하게 (RSI 60 이상이어야 매수 인정 등)
   if (stock.universe_level !== "core" && stock.universe_level !== "extended") {
-    reasons.push(`⚠️ 소형주/변동성 주의 (비중 축소 필수)`);
-    if (momentum < 50) reasons.push(`🚫 소형주는 강한 모멘텀 필수`);
+    reasons.push("소형주/변동성 주의 (비중 축소)");
+    if (momentum < 50) reasons.push("소형주는 강한 모멘텀 필수");
   }
 
   const canBuy =
     reasons.length === 0 ||
-    (reasons.length === 1 && reasons[0].includes("소형주")); // 소형주 경고만 있으면 매수 가능은 함
+    (reasons.length === 1 && reasons[0].includes("소형주"));
 
   return { canBuy, reasons };
 }
 
-// --- 메시지 빌더 ---
+// --- 메시지 빌더 (HTML) ---
 function buildMessage(
   stock: any,
   currentPrice: number,
@@ -73,41 +62,36 @@ function buildMessage(
   const { name, code } = stock;
   const { canBuy, reasons } = evaluation;
 
-  // 진입가/손절가 계산 (실시간 20일선 기준)
-  // SMA20이 없으면 현재가 기준으로 대략 계산
   const basePrice = stock.sma20 || currentPrice;
-
-  // 전략: 20일선 근처(1% 위)에서 진입 시도
   const entryPrice = Math.floor(basePrice * 1.01);
-  const stopPrice = Math.floor(entryPrice * 0.93); // -7%
-  const targetPrice = Math.floor(entryPrice * 1.1); // +10%
+  const stopPrice = Math.floor(entryPrice * 0.93);
 
-  const header = `🛒 *${name}* \`(${code})\` 매수 판독\n현재가: *${fmt(
-    currentPrice
-  )}원*`;
+  const header = [
+    `<b>${esc(name)}</b>  <code>${code}</code>  매수 판독`,
+    `현재가  <code>${fmtInt(currentPrice)}원</code>`,
+  ].join("\n");
 
   let body = "";
   if (canBuy) {
     body = [
-      `✅ **진입 가능 (Entry OK)**`,
-      `• 눌림목 지지 확인됨`,
-      `• 모멘텀 양호`,
+      LINE,
+      `<b>▸ 진입 가능</b>`,
+      `  눌림목 지지 확인 · 모멘텀 양호`,
       ``,
-      `📐 *추천 전략*`,
-      `  🎯 진입: \`${fmt(entryPrice)}원\` 부근`,
-      `  🛡 손절: \`${fmt(stopPrice)}원\` (-7% 필) `,
+      `▸ 진입  <code>${fmtInt(entryPrice)}원</code> 부근`,
+      `▸ 손절  <code>${fmtInt(stopPrice)}원</code> (-7%)`,
     ].join("\n");
   } else {
     body = [
-      `⛔ **관망 권장 (Wait)**`,
-      `👇 *진입 불가 사유*`,
-      ...reasons.map((r) => `  • ${r}`),
+      LINE,
+      `<b>▸ 관망 권장</b>`,
+      ...reasons.map((r) => `  · ${r}`),
       ``,
-      `💡 _"급등주는 보내주고, 다음 기회를 기다리세요."_`,
+      `<i>급등주는 보내주고, 다음 기회를 기다리세요.</i>`,
     ].join("\n");
   }
 
-  return [header, body].join("\n\n");
+  return [header, body].join("\n");
 }
 
 // --- 메인 핸들러 ---
@@ -120,11 +104,11 @@ export async function handleBuyCommand(
   if (!query) {
     return tgSend("sendMessage", {
       chat_id: ctx.chatId,
-      text: "사용법: /buy <종목명/코드>\n예) /buy 삼성전자",
+      text: "사용법: /매수 종목명 또는 코드\n예) /매수 삼성전자",
     });
   }
 
-  // 1. 종목 검색 (이름 -> 코드, 복수 결과 시 선택)
+  // 1. 종목 검색
   const hits = await searchByNameOrCode(query, 5);
   if (!hits?.length) {
     return tgSend("sendMessage", {
@@ -142,7 +126,8 @@ export async function handleBuyCommand(
     const keyboard = createMultiRowKeyboard(1, btns);
     await tgSend("sendMessage", {
       chat_id: ctx.chatId,
-      text: `🔍 '${query}' 검색 결과 ${hits.length}건\n종목을 선택해주세요:`,
+      text: `'${esc(query)}' 검색 결과 ${hits.length}건 — 종목을 선택하세요`,
+      parse_mode: "HTML",
       reply_markup: keyboard,
     });
     return;
@@ -185,6 +170,6 @@ export async function handleBuyCommand(
   await tgSend("sendMessage", {
     chat_id: ctx.chatId,
     text: msg,
-    parse_mode: "Markdown",
+    parse_mode: "HTML",
   });
 }

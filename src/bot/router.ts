@@ -12,6 +12,7 @@ import { getLeadersForSectorById } from "../data/sector";
 import { createMultiRowKeyboard } from "../telegram/keyboards";
 import { handleBriefCommand } from "./commands/brief";
 import { handlePullbackCommand } from "./commands/pullback";
+import { handleWatchlistCommand, handleWatchlistAdd, handleWatchlistRemove } from "./commands/watchlist";
 import { setCommandsKo } from "../telegram/api";
 
 export type ChatContext = { chatId: number; messageId?: number };
@@ -62,8 +63,11 @@ const CMD = {
   COMMANDS: /^\/(commands|admin_commands)$/i,
   BUY: /^\/(buy|매수)(?:\s+(.+))?$/i,
   SEED: /^\/seed$/i,
-  BRIEF: /^\/(brief|morning|브리핑|장전)$/i, // [신규] 정규식 추가
+  BRIEF: /^\/(brief|morning|브리핑|장전)$/i,
   PULLBACK: /^\/(pullback|눌림목|매집)$/i,
+  WATCHLIST: /^\/(watchlist|관심)$/i,
+  WATCHLIST_ADD: /^\/(watchlistadd|관심추가)(?:\s+(.+))?$/i,
+  WATCHLIST_DEL: /^\/(watchlistdel|관심삭제)(?:\s+(.+))?$/i,
 };
 
 export async function routeMessage(
@@ -265,6 +269,26 @@ export async function routeMessage(
   const m = t.match(CMD.SCORE);
   if (m) {
     await handleScoreCommand(m[2], ctx, tgSend);
+    return;
+  }
+
+  // /watchlist 관심종목
+  if (CMD.WATCHLIST.test(t)) {
+    await handleWatchlistCommand(ctx, tgSend);
+    return;
+  }
+
+  // /watchlistadd 관심추가
+  const mwa = t.match(CMD.WATCHLIST_ADD);
+  if (mwa) {
+    await handleWatchlistAdd(mwa[2] || "", ctx, tgSend);
+    return;
+  }
+
+  // /watchlistdel 관심삭제
+  const mwd = t.match(CMD.WATCHLIST_DEL);
+  if (mwd) {
+    await handleWatchlistRemove(mwd[2] || "", ctx, tgSend);
     return;
   }
 

@@ -2,6 +2,7 @@ import type { ChatContext } from "../router";
 import { createMultiRowKeyboard } from "../../telegram/keyboards";
 import { createClient } from "@supabase/supabase-js";
 import { fmtKRW } from "../../lib/normalize";
+import { esc, fmtInt, LINE } from "../messages/format";
 
 const supabase = createClient(
   process.env.SUPABASE_URL!,
@@ -9,11 +10,6 @@ const supabase = createClient(
 );
 
 const fmtPrice = (n: number) => n.toLocaleString("ko-KR");
-const fmtChange = (n: number) => {
-  if (n > 0) return `🔴 +${n.toFixed(1)}%`;
-  if (n < 0) return `🔵 ${n.toFixed(1)}%`;
-  return `⚪ 0.0%`;
-};
 
 export async function handleStocksCommand(
   sectorKeyword: string,
@@ -30,8 +26,7 @@ export async function handleStocksCommand(
   if (!sectorRows || sectorRows.length === 0) {
     await tgSend("sendMessage", {
       chat_id: ctx.chatId,
-      text: `🔍 '${sectorKeyword}' 섹터를 찾을 수 없습니다.\n(검색어가 정확한지 확인해주세요)`,
-      parse_mode: "Markdown",
+      text: `'${sectorKeyword}' 섹터를 찾을 수 없습니다.\n검색어가 정확한지 확인해주세요.`,
     });
     return;
   }
@@ -65,8 +60,7 @@ export async function handleStocksCommand(
     if (!fallback || fallback.length === 0) {
       await tgSend("sendMessage", {
         chat_id: ctx.chatId,
-        text: `🔍 '${sectorKeyword}' 섹터의 종목을 찾을 수 없습니다.`,
-        parse_mode: "Markdown",
+        text: `'${sectorKeyword}' 섹터의 종목을 찾을 수 없습니다.`,
       });
       return;
     }
@@ -93,21 +87,20 @@ export async function handleStocksCommand(
     }
   }
 
-  // 4. 리스트 생성
+  // 4. 리스트 생성 (HTML)
   const top5 = finalStocks.slice(0, 5);
 
   const listText = top5
     .map((s: any, idx: number) => {
       const rank = idx + 1;
-      const icon = s.universe_level === "core" ? "💎" : "🏢";
 
       const scoreData = Array.isArray(s.scores) ? s.scores[0] : s.scores;
       const ind = indicatorsMap[s.code] || {};
 
       const tags: string[] = [];
       if (scoreData) {
-        if ((scoreData.value_score || 0) >= 30) tags.push("🟢V");
-        if ((scoreData.momentum_score || 0) >= 30) tags.push("🚀M");
+        if ((scoreData.value_score || 0) >= 30) tags.push("V");
+        if ((scoreData.momentum_score || 0) >= 30) tags.push("M");
       }
       const tagStr = tags.length ? ` [${tags.join("+")}]` : "";
 
@@ -116,19 +109,19 @@ export async function handleStocksCommand(
       const rsi = ind.rsi14 ? `RSI ${Number(ind.rsi14).toFixed(0)}` : "";
 
       return [
-        `${rank}. ${icon} *${s.name}*${tagStr}`,
-        `   └ \`${fmtPrice(price)}원\` ${rsi ? `| ${rsi}` : ""}`,
-        valTraded ? `   └ 💰 거래대금: ${fmtKRW(valTraded)}` : "",
+        `${rank}. <b>${esc(s.name)}</b>${tagStr}`,
+        `   <code>${fmtPrice(price)}원</code> ${rsi ? `· ${rsi}` : ""}`,
+        valTraded ? `   거래대금 ${fmtKRW(valTraded)}` : "",
       ]
         .filter(Boolean)
         .join("\n");
     })
     .join("\n\n");
 
-  const header = `🏭 *${sectorName}* 주도주 현황\n💡 _대형주(Core) 및 유동성 상위 종목_`;
-  const footer = `👇 *버튼을 눌러 상세 진단(매수 타점)을 확인하세요.*`;
+  const header = `<b>${esc(sectorName)}</b> 주도주 현황\n<i>대형주(Core) 및 유동성 상위 종목</i>`;
+  const footer = `\n${LINE}\n버튼을 눌러 상세 진단을 확인하세요`;
 
-  const message = [header, "", listText, "", footer].join("\n");
+  const message = [header, LINE, listText, footer].join("\n");
 
   // 5. 버튼 생성
   const buttons = finalStocks.slice(0, 10).map((s: any) => ({
@@ -139,7 +132,7 @@ export async function handleStocksCommand(
   await tgSend("sendMessage", {
     chat_id: ctx.chatId,
     text: message,
-    parse_mode: "Markdown",
+    parse_mode: "HTML",
     reply_markup: createMultiRowKeyboard(2, buttons),
   });
 }
