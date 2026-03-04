@@ -82,43 +82,42 @@ export async function handleBriefCommand(
       momentum_score: item.momentum_score,
     }));
 
-    // --- 3) 눌림목 매집 후보: factors.entry_grade A/B ---
-    const { data: pullbackData, error: errPb } = await supabase
-      .from("scores")
-      .select(
+    // --- 3) 눌림목 매집 후보: pullback_signals 테이블 ---
+    const { data: latestPbDate } = await supabase
+      .from("pullback_signals")
+      .select("trade_date")
+      .order("trade_date", { ascending: false })
+      .limit(1);
+
+    const pbDate = latestPbDate?.[0]?.trade_date;
+    let pullbackStocks: any[] = [];
+
+    if (pbDate) {
+      const { data: pullbackData, error: errPb } = await supabase
+        .from("pullback_signals")
+        .select(
+          `
+          code, entry_grade, entry_score, warn_grade,
+          stock:stocks!inner ( name, close )
         `
-        code, factors,
-        stock:stocks!inner ( name, close, universe_level )
-      `
-      )
-      .eq("asof", latestAsof)
-      .not("factors", "is", null);
+        )
+        .eq("trade_date", pbDate)
+        .in("entry_grade", ["A", "B"])
+        .neq("warn_grade", "SELL")
+        .order("entry_score", { ascending: false })
+        .limit(5);
 
-    if (errPb) console.error("눌림목 조회 에러:", errPb);
+      if (errPb) console.error("눌림목 조회 에러:", errPb);
 
-    const pullbackStocks = (pullbackData || [])
-      .filter((item: any) => {
-        const f = item.factors;
-        if (!f || !f.entry_grade) return false;
-        if (f.entry_grade !== "A" && f.entry_grade !== "B") return false;
-        if (f.warn_grade === "SELL") return false;
-        return true;
-      })
-      .sort((a: any, b: any) => {
-        const ga = a.factors.entry_grade === "A" ? 0 : 1;
-        const gb = b.factors.entry_grade === "A" ? 0 : 1;
-        if (ga !== gb) return ga - gb;
-        return (b.factors.entry_score ?? 0) - (a.factors.entry_score ?? 0);
-      })
-      .slice(0, 5)
-      .map((item: any) => ({
+      pullbackStocks = (pullbackData || []).map((item: any) => ({
         name: item.stock.name,
         code: item.code,
         close: item.stock.close,
-        entry_grade: item.factors.entry_grade,
-        entry_score: item.factors.entry_score,
-        warn_grade: item.factors.warn_grade,
+        entry_grade: item.entry_grade,
+        entry_score: item.entry_score,
+        warn_grade: item.warn_grade,
       }));
+    }
 
     // --- 4) 메시지 생성 ---
     let msg = `🌅 *[08:30] 장전 대형주 브리핑*\n_(실패 없는 Core 유니버스)_\n\n`;

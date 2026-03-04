@@ -859,7 +859,7 @@ def _compute_pullback_signal(rows: list) -> dict:
 def calculate_stock_scores(trading_date: str):
     trading_iso = to_iso(trading_date)
     asof = date.today().isoformat()
-    print(f"\n[5/6] 종목 스코어 계산 + 눌림목 매집 시그널...")
+    print(f"\n[5/7] 종목 스코어 계산...")
 
     try:
         res = supabase.table("stocks") \
@@ -882,27 +882,6 @@ def calculate_stock_scores(trading_date: str):
                 indicators_map[row["code"]] = row
 
         print(f"  -> {len(indicators_map)}개 종목 지표 로드됨")
-
-        # 눌림목 시그널 계산을 위해 stock_daily 이력도 로드
-        print(f"  -> 눌림목 매집 시그널 계산 중...")
-        pullback_map: dict = {}
-        from_date_hist = (date.today() - timedelta(days=100)).isoformat()
-        for i in range(0, len(codes), 10):
-            batch = codes[i:i+10]
-            for code in batch:
-                try:
-                    h_res = supabase.table("stock_daily") \
-                        .select("date, open, high, low, close, volume, value") \
-                        .eq("ticker", code) \
-                        .gte("date", from_date_hist) \
-                        .order("date", desc=False) \
-                        .limit(100).execute()
-                    if h_res.data and len(h_res.data) >= 21:
-                        pullback_map[code] = _compute_pullback_signal(h_res.data)
-                except:
-                    pass
-
-        print(f"  -> {len(pullback_map)}개 종목 시그널 계산 완료")
 
         sec_res = supabase.table("sectors").select("id, score, change_rate").execute()
         sector_score_map = {
@@ -968,7 +947,6 @@ def calculate_stock_scores(trading_date: str):
                 "factors": {
                     "rsi14": round(rsi, 2), "roc14": round(roc14, 2),
                     "roc21": round(roc21, 2), "sector_change": round(sec_change, 2),
-                    **(pullback_map.get(code, {})),
                 },
                 "value_score": int(value_score),
                 "momentum_score": int(momentum_score),
@@ -996,15 +974,79 @@ def calculate_stock_scores(trading_date: str):
 
 
 # =============================================
-# STEP 6: 오래된 데이터 정리
+# STEP 6: 눌림목 매집 시그널 계산 (pullback_signals 테이블)
+# =============================================
+def save_pullback_signals(trading_date: str):
+    trading_iso = to_iso(trading_date)
+    print(f"\n[6/7] 눌림목 매집 시그널 계산...")
+
+    try:
+        res = supabase.table("stocks") \
+            .select("code") \
+            .in_("universe_level", ["core", "extended"]).execute()
+        codes = [s["code"] for s in (res.data or [])]
+        if not codes:
+            print("  ⚠️ 대상 종목 없음")
+            return
+
+        from_date_hist = (date.today() - timedelta(days=100)).isoformat()
+        upserts = []
+        fail_count = 0
+
+        for idx, code in enumerate(codes):
+            try:
+                h_res = supabase.table("stock_daily") \
+                    .select("date, open, high, low, close, volume, value") \
+                    .eq("ticker", code) \
+                    .gte("date", from_date_hist) \
+                    .order("date", desc=False) \
+                    .limit(100).execute()
+                if h_res.data and len(h_res.data) >= 21:
+                    sig = _compute_pullback_signal(h_res.data)
+                    if sig:
+                        upserts.append({
+                            "code": code,
+                            "trade_date": trading_iso,
+                            **sig,
+                        })
+            except:
+                fail_count += 1
+
+            if (idx + 1) % 100 == 0:
+                print(f"  -> 진행: {idx + 1}/{len(codes)}")
+
+        print(f"  -> {len(upserts)}개 시그널 계산 완료 (실패: {fail_count})")
+
+        if upserts:
+            for i in range(0, len(upserts), 200):
+                batch = upserts[i:i+200]
+                try:
+                    supabase.table("pullback_signals").upsert(batch).execute()
+                except Exception as e:
+                    print(f"  ⚠️ 시그널 배치 실패: {e}")
+                    for j in range(0, len(batch), 50):
+                        try:
+                            supabase.table("pullback_signals").upsert(batch[j:j+50]).execute()
+                        except:
+                            pass
+            print(f"  ✅ {len(upserts)}개 시그널 pullback_signals 저장 완료")
+
+    except Exception as e:
+        print(f"  ❌ 눌림목 시그널 계산 실패: {e}")
+        traceback.print_exc()
+
+
+# =============================================
+# STEP 7: 오래된 데이터 정리
 # =============================================
 def cleanup_old_data():
-    print(f"\n[6/6] 오래된 데이터 정리...")
+    print(f"\n[7/7] 오래된 데이터 정리...")
     cutoff = (date.today() - timedelta(days=400)).isoformat()
     try:
         supabase.table("stock_daily").delete().lt("date", cutoff).execute()
         supabase.table("investor_daily").delete().lt("date", cutoff).execute()
         supabase.table("sector_daily").delete().lt("date", cutoff).execute()
+        supabase.table("pullback_signals").delete().lt("trade_date", cutoff).execute()
         try:
             jobs_cutoff = (date.today() - timedelta(days=30)).isoformat()
             supabase.table("jobs").delete() \
@@ -1046,7 +1088,8 @@ if __name__ == "__main__":
         time.sleep(1)
         calculate_sector_scores()                # Step 4
         calculate_stock_scores(trading_date)     # Step 5
-        cleanup_old_data()                       # Step 6
+        save_pullback_signals(trading_date)       # Step 6
+        cleanup_old_data()                       # Step 7
     else:
         print("⚠️ OHLCV 수집 실패 — 나머지 단계 스킵")
 
