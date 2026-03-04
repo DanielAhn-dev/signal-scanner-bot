@@ -18,6 +18,21 @@ export async function handleBriefCommand(
   tgSend: any
 ): Promise<void> {
   try {
+    // 최신 asof 날짜 조회 (scores 테이블에 여러 날짜 데이터 존재 가능)
+    const { data: latestScoreDate } = await supabase
+      .from("scores")
+      .select("asof")
+      .order("asof", { ascending: false })
+      .limit(1);
+    const latestAsof = latestScoreDate?.[0]?.asof;
+    if (!latestAsof) {
+      await tgSend("sendMessage", {
+        chat_id: ctx.chatId,
+        text: "\u26a0\ufe0f 스코어 데이터가 아직 없습니다. 데이터 수집 후 다시 시도해주세요.",
+      });
+      return;
+    }
+
     // --- 1) 가치주: scores 테이블 기준 조회 ---
     const { data: valueData, error: errVs } = await supabase
       .from("scores")
@@ -27,7 +42,8 @@ export async function handleBriefCommand(
         stock:stocks!inner ( code, name, close, universe_level )
       `
       )
-      .eq("stock.universe_level", "core") // [수정] alias를 'stock'으로 줬으므로 stock.universe_level
+      .eq("asof", latestAsof)
+      .eq("stock.universe_level", "core")
       .gt("value_score", 60)
       .order("value_score", { ascending: false })
       .limit(5);
@@ -51,7 +67,8 @@ export async function handleBriefCommand(
         stock:stocks!inner ( code, name, close, universe_level )
       `
       )
-      .eq("stock.universe_level", "core") // [수정] alias 사용
+      .eq("asof", latestAsof)
+      .eq("stock.universe_level", "core")
       .gt("momentum_score", 60)
       .order("momentum_score", { ascending: false })
       .limit(5);

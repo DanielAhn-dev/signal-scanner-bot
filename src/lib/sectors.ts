@@ -5,6 +5,7 @@ import {
   fetchSectorPriceSeries,
   fetchSectorVolumeSeries,
   fetchTickerMetaInSector,
+  fetchPrecomputedSectorScores,
 } from "./source";
 
 export interface SectorScore {
@@ -84,6 +85,20 @@ export async function scoreSectors(today: string): Promise<SectorScore[]> {
     fetchSectorPriceSeries(today), // SectorSeries[]
     fetchSectorVolumeSeries(today), // { [sectorId]: { date, value }[] }
   ]);
+
+  // sector_daily 데이터가 최근 5영업일 이내 데이터를 포함하는지 확인
+  const recentCutoff = getBizDaysAgo(today, 5);
+  const hasRecentData = (sectors as SectorSeries[]).some((s) => {
+    const last = s.series?.[s.series.length - 1];
+    return last && last.date >= recentCutoff;
+  });
+
+  if (!hasRecentData) {
+    console.warn(
+      `[scoreSectors] sector_daily stale (cutoff: ${recentCutoff}). Using pre-computed scores from sectors table.`
+    );
+    return scoreSectorsFromPrecomputed();
+  }
 
   const out: (SectorScore & { rawScore: number })[] = [];
   const isNum = (x: unknown): x is number => Number.isFinite(x as number);
@@ -212,23 +227,59 @@ export async function scoreSectors(today: string): Promise<SectorScore[]> {
   return out as SectorScore[];
 }
 
+/**
+ * sector_daily가 stale할 때 sectors 테이블의 사전계산 점수를 사용하는 fallback.
+ * Python batch 스크립트가 sectors.score, change_rate, metrics를 업데이트함.
+ */
+async function scoreSectorsFromPrecomputed(): Promise<SectorScore[]> {
+  const rows = await fetchPrecomputedSectorScores();
+  if (!rows.length) return [];
+
+  return rows
+    .filter((r) => r.score > 0)
+    .map((r) => {
+      const m = r.metrics || {};
+      return {
+        id: r.id,
+        name: r.name,
+        rs1M: r.change_rate / 100, // 등락률% → 비율
+        rs3M: NaN,
+        rs6M: NaN,
+        rs12M: NaN,
+        roc21: r.change_rate / 100,
+        sma20AboveRatio: 0,
+        tv5dChg: 0,
+        tv20dChg: 0,
+        extVolPenalty: 0,
+        flowF5: Number(m.flow_foreign_5d ?? 0),
+        flowF20: Number(m.flow_foreign_20d ?? 0),
+        flowI5: Number(m.flow_inst_5d ?? 0),
+        flowI20: Number(m.flow_inst_20d ?? 0),
+        score: r.score,
+        grade: (r.score >= 80 ? "A" : r.score >= 65 ? "B" : "C") as
+          | "A"
+          | "B"
+          | "C",
+      };
+    })
+    .sort((a, b) => b.score - a.score);
+}
+
 // /nextsector 명령용: 수급 유입 & 순환매 후보 섹터
 // 순환매 = "아직 주가 안 올랐지만 수급이 들어오는" 패턴
+// 수급 데이터 미수집 시에도 모멘텀/점수 기반으로 후보 추출
 export function getNextSectorCandidates(
   sectorScores: SectorScore[],
   minFlow: number
 ): SectorScore[] {
-  // 1단계: 수급이 양수인 섹터 모두 선별
-  const withFlow = sectorScores.filter(
-    (s) => s.flowF5 + s.flowI5 > 0
+  // 수급 or 모멘텀 기반 후보 선별
+  const candidates = sectorScores.filter(
+    (s) => s.flowF5 + s.flowI5 > 0 || (Number.isFinite(s.rs1M) && s.rs1M < 0.05)
   );
 
-  // 2단계: 순환매 점수 계산
-  //   - 수급 강도가 높을수록 점수 ↑
-  //   - RS(1M)이 낮을수록(아직 덜 올랐으면) 순환매 점수 ↑
-  //   - 기존 종합점수가 낮을수록 "저평가+수급유입" 패턴
-  const scored = withFlow.map((s) => {
-    const flowTotal = (s.flowF5 + s.flowI5) / 1e8; // 억 단위
+  // 순환매 점수 계산
+  const scored = candidates.map((s) => {
+    const flowTotal = (s.flowF5 + s.flowI5) / 1e8;
     const flowScore = Math.min(50, Math.max(0, flowTotal * 0.5));
 
     // RS가 낮을수록 보너스 (아직 덜 오른 섹터 = 순환매 대상)
@@ -242,9 +293,9 @@ export function getNextSectorCandidates(
     return { ...s, nextScore, flowTotal };
   });
 
-  // 3단계: 최소 수급 필터 + 정렬
+  // 최소 수급 or 순환매 점수 기준 필터 + 정렬
   return scored
-    .filter((s) => s.flowF5 + s.flowI5 > minFlow || s.nextScore > 25)
+    .filter((s) => s.flowF5 + s.flowI5 > minFlow || s.nextScore > 20)
     .sort((a, b) => b.nextScore - a.nextScore);
 }
 

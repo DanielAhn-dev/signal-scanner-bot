@@ -174,6 +174,32 @@ export async function fetchTickerMetaInSector(): Promise<TickerMeta[]> {
   }));
 }
 
+/**
+ * sector_daily 데이터가 부족할 때 sectors 테이블의 사전 계산된 점수를 사용하는 fallback
+ */
+export async function fetchPrecomputedSectorScores(): Promise<
+  {
+    id: string;
+    name: string;
+    score: number;
+    change_rate: number;
+    metrics: any;
+  }[]
+> {
+  const { data } = await supa()
+    .from("sectors")
+    .select("id, name, score, change_rate, avg_change_rate, metrics")
+    .order("score", { ascending: false });
+
+  return (data || []).map((s) => ({
+    id: s.id,
+    name: s.name,
+    score: Number(s.score ?? 0),
+    change_rate: Number(s.change_rate ?? s.avg_change_rate ?? 0),
+    metrics: s.metrics || {},
+  }));
+}
+
 export async function fetchStockPriceSeries(
   today: string,
   sectorId: string
