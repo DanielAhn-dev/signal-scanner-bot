@@ -124,13 +124,28 @@ export async function handleBuyCommand(
     });
   }
 
-  // 1. 종목 검색 (이름 -> 코드)
-  const hits = await searchByNameOrCode(query, 1);
+  // 1. 종목 검색 (이름 -> 코드, 복수 결과 시 선택)
+  const hits = await searchByNameOrCode(query, 5);
   if (!hits?.length) {
     return tgSend("sendMessage", {
       chat_id: ctx.chatId,
       text: KO_MESSAGES.SCORE_NOT_FOUND,
     });
+  }
+
+  if (hits.length > 1 && !/^\d{6}$/.test(query.trim())) {
+    const btns = hits.slice(0, 5).map((h) => ({
+      text: `${h.name} (${h.code})`,
+      callback_data: `buy:${h.code}`,
+    }));
+    const { createMultiRowKeyboard } = await import("../../telegram/keyboards");
+    const keyboard = createMultiRowKeyboard(1, btns);
+    await tgSend("sendMessage", {
+      chat_id: ctx.chatId,
+      text: `🔍 '${query}' 검색 결과 ${hits.length}건\n종목을 선택해주세요:`,
+      reply_markup: keyboard,
+    });
+    return;
   }
 
   const { code, name } = hits[0];

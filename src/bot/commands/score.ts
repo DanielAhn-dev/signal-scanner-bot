@@ -126,12 +126,28 @@ export async function handleScoreCommand(
   ctx: ChatContext,
   tgSend: any
 ): Promise<void> {
-  const hits = await searchByNameOrCode(input, 1);
+  // 복수 결과를 위해 최대 5개 검색
+  const hits = await searchByNameOrCode(input, 5);
   if (!hits?.length) {
     return tgSend("sendMessage", {
       chat_id: ctx.chatId,
       text: KO_MESSAGES.SCORE_NOT_FOUND,
     });
+  }
+
+  // 여러 결과가 나오면 선택 키보드 제시
+  if (hits.length > 1 && !/^\d{6}$/.test(input.trim())) {
+    const btns = hits.slice(0, 5).map((h) => ({
+      text: `${h.name} (${h.code})`,
+      callback_data: `score:${h.code}`,
+    }));
+    const keyboard = createMultiRowKeyboard(1, btns);
+    await tgSend("sendMessage", {
+      chat_id: ctx.chatId,
+      text: `🔍 '${input}' 검색 결과 ${hits.length}건\n종목을 선택해주세요:`,
+      reply_markup: keyboard,
+    });
+    return;
   }
 
   let { code, name } = hits[0];
