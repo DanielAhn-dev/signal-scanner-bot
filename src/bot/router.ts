@@ -11,6 +11,7 @@ import { resolveBase } from "../lib/base";
 import { getLeadersForSectorById } from "../data/sector";
 import { createMultiRowKeyboard } from "../telegram/keyboards";
 import { handleBriefCommand } from "./commands/brief";
+import { handlePullbackCommand } from "./commands/pullback";
 import { setCommandsKo } from "../telegram/api";
 
 export type ChatContext = { chatId: number; messageId?: number };
@@ -62,6 +63,7 @@ const CMD = {
   BUY: /^\/(buy|매수)(?:\s+(.+))?$/i,
   SEED: /^\/seed$/i,
   BRIEF: /^\/(brief|morning|브리핑|장전)$/i, // [신규] 정규식 추가
+  PULLBACK: /^\/(pullback|눌림목|매집)$/i,
 };
 
 export async function routeMessage(
@@ -92,6 +94,20 @@ export async function routeMessage(
       await tgSend("sendMessage", {
         chat_id: ctx.chatId,
         text: "브리핑 생성 실패",
+      });
+    }
+    return;
+  }
+
+  // /pullback 눌림목 매집 시그널
+  if (CMD.PULLBACK.test(t)) {
+    try {
+      await handlePullbackCommand(ctx, tgSend);
+    } catch (e) {
+      console.error("handlePullbackCommand failed:", e);
+      await tgSend("sendMessage", {
+        chat_id: ctx.chatId,
+        text: "눌림목 분석 실패",
       });
     }
     return;

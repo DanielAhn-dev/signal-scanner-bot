@@ -9,7 +9,8 @@ export const KO_MESSAGES = {
     "/scan [섹터] — 눌림목 스캐너\n" +
     "/score <이름|코드> — 점수·레벨\n" +
     "/buy <이름|코드> — 엔트리/손절/익절 제안\n" +
-    "/brief — 장전 브리핑",
+    "/brief — 장전 브리핑\n" +
+    "/pullback — 눌림목 매집 후보",
   HELP:
     "도움말:\n" +
     "/sector — 유망 섹터 랭킹\n" +
@@ -18,10 +19,11 @@ export const KO_MESSAGES = {
     "/scan [섹터] — 눌림목 스캐너\n" +
     "/score <이름|코드> — 점수·시그널\n" +
     "/buy <이름|코드> — 매수 가이드\n" +
-    "/brief — 장전 브리핑",
+    "/brief — 장전 브리핑\n" +
+    "/pullback — 눌림목 매집 후보",
   UNKNOWN_COMMAND:
     "알 수 없는 명령입니다.\n" +
-    "사용 가능: /sector, /nextsector, /stocks, /scan, /score, /buy, /brief",
+    "사용 가능: /sector, /nextsector, /stocks, /scan, /score, /buy, /brief, /pullback",
   SECTOR_ERROR:
     "섹터 데이터 수집 오류가 발생했습니다.\n잠시 후 다시 시도해주세요.",
   STOCKS_EMPTY: "해당 섹터의 종목이 없습니다.\n전체 상위 종목을 표시합니다.",

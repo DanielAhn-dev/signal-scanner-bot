@@ -82,7 +82,45 @@ export async function handleBriefCommand(
       momentum_score: item.momentum_score,
     }));
 
-    // --- 3) 메시지 생성 ---
+    // --- 3) 눌림목 매집 후보: factors.entry_grade A/B ---
+    const { data: pullbackData, error: errPb } = await supabase
+      .from("scores")
+      .select(
+        `
+        code, factors,
+        stock:stocks!inner ( name, close, universe_level )
+      `
+      )
+      .eq("asof", latestAsof)
+      .not("factors", "is", null);
+
+    if (errPb) console.error("눌림목 조회 에러:", errPb);
+
+    const pullbackStocks = (pullbackData || [])
+      .filter((item: any) => {
+        const f = item.factors;
+        if (!f || !f.entry_grade) return false;
+        if (f.entry_grade !== "A" && f.entry_grade !== "B") return false;
+        if (f.warn_grade === "SELL") return false;
+        return true;
+      })
+      .sort((a: any, b: any) => {
+        const ga = a.factors.entry_grade === "A" ? 0 : 1;
+        const gb = b.factors.entry_grade === "A" ? 0 : 1;
+        if (ga !== gb) return ga - gb;
+        return (b.factors.entry_score ?? 0) - (a.factors.entry_score ?? 0);
+      })
+      .slice(0, 5)
+      .map((item: any) => ({
+        name: item.stock.name,
+        code: item.code,
+        close: item.stock.close,
+        entry_grade: item.factors.entry_grade,
+        entry_score: item.factors.entry_score,
+        warn_grade: item.factors.warn_grade,
+      }));
+
+    // --- 4) 메시지 생성 ---
     let msg = `🌅 *[08:30] 장전 대형주 브리핑*\n_(실패 없는 Core 유니버스)_\n\n`;
 
     msg += `💎 *저평가 가치주 (Value)*\n`;
@@ -103,7 +141,21 @@ export async function handleBriefCommand(
       });
     }
 
-    msg += `\n👇 종목명을 클릭하거나 \`/score <종목코드>\` 명령어로 상세 확인`;
+    msg += `\n🎯 *눌림목 매집 후보 (Pullback)*\n`;
+    if (!pullbackStocks || pullbackStocks.length === 0) {
+      msg += `_매집 조건 충족 종목 없음_\n`;
+    } else {
+      const ge: Record<string, string> = { A: "🟢", B: "🟡" };
+      const we: Record<string, string> = { SAFE: "✅", WATCH: "👀", WARN: "⚠️" };
+      pullbackStocks.forEach((s: any) => {
+        const eg = ge[s.entry_grade] ?? "";
+        const wg = we[s.warn_grade] ?? "";
+        msg += `${eg} ${s.name} (${s.code}) ${s.entry_grade}(${s.entry_score}/4) ${wg}\n`;
+      });
+    }
+
+    msg += `\n👇 종목명을 클릭하거나 \`/score <종목코드>\` 명령어로 상세 확인\n`;
+    msg += `📊 눌림목 전체 목록: /pullback`;
 
     // --- 4) Telegram 전송 ---
     await tgSend("sendMessage", {

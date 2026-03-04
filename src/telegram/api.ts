@@ -34,6 +34,7 @@ export async function setCommandsKo(): Promise<TgResponse> {
     { command: "score", description: "개별 종목 점수/시그널 보기" },
     { command: "buy", description: "엔트리/손절/익절 레벨 보기" },
     { command: "brief", description: "장전 브리핑 (가치주/모멘텀)" },
+    { command: "pullback", description: "눌림목 매집 후보 종목" },
     { command: "start", description: "사용법 안내" },
   ];
 
