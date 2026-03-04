@@ -212,14 +212,40 @@ export async function scoreSectors(today: string): Promise<SectorScore[]> {
   return out as SectorScore[];
 }
 
-// /nextsector 명령용: 수급 상위 섹터
+// /nextsector 명령용: 수급 유입 & 순환매 후보 섹터
+// 순환매 = "아직 주가 안 올랐지만 수급이 들어오는" 패턴
 export function getNextSectorCandidates(
   sectorScores: SectorScore[],
   minFlow: number
 ): SectorScore[] {
-  return sectorScores
-    .filter((s) => s.flowF5 > minFlow || s.flowI5 > minFlow)
-    .sort((a, b) => b.flowF5 + b.flowI5 - (a.flowF5 + a.flowI5));
+  // 1단계: 수급이 양수인 섹터 모두 선별
+  const withFlow = sectorScores.filter(
+    (s) => s.flowF5 + s.flowI5 > 0
+  );
+
+  // 2단계: 순환매 점수 계산
+  //   - 수급 강도가 높을수록 점수 ↑
+  //   - RS(1M)이 낮을수록(아직 덜 올랐으면) 순환매 점수 ↑
+  //   - 기존 종합점수가 낮을수록 "저평가+수급유입" 패턴
+  const scored = withFlow.map((s) => {
+    const flowTotal = (s.flowF5 + s.flowI5) / 1e8; // 억 단위
+    const flowScore = Math.min(50, Math.max(0, flowTotal * 0.5));
+
+    // RS가 낮을수록 보너스 (아직 덜 오른 섹터 = 순환매 대상)
+    const rs = Number.isFinite(s.rs1M) ? s.rs1M : 0;
+    const rotationBonus = rs < 0.03 ? 20 : rs < 0.08 ? 10 : 0;
+
+    // 현재 종합 점수가 중간 이하면 추가 보너스
+    const undervaluedBonus = s.score < 60 ? 15 : s.score < 70 ? 5 : 0;
+
+    const nextScore = flowScore + rotationBonus + undervaluedBonus;
+    return { ...s, nextScore, flowTotal };
+  });
+
+  // 3단계: 최소 수급 필터 + 정렬
+  return scored
+    .filter((s) => s.flowF5 + s.flowI5 > minFlow || s.nextScore > 25)
+    .sort((a, b) => b.nextScore - a.nextScore);
 }
 
 // /sector 명령용: 통합 점수 상위 섹터

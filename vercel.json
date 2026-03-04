@@ -16,7 +16,7 @@
     "crons": [
         {
             "path": "/api/cron/briefing",
-            "schedule": "00 23 * * 0-4"
+            "schedule": "30 22 * * 0-4"
         }
     ]
 }

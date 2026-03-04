@@ -30,8 +30,10 @@ export async function setCommandsKo(): Promise<TgResponse> {
     { command: "sector", description: "유망 섹터 랭킹 보기" },
     { command: "nextsector", description: "수급 유입 섹터 흐름 보기" },
     { command: "stocks", description: "섹터별 주도주 보기" },
+    { command: "scan", description: "눌림목 스캐너 (정배열+20일선)" },
     { command: "score", description: "개별 종목 점수/시그널 보기" },
     { command: "buy", description: "엔트리/손절/익절 레벨 보기" },
+    { command: "brief", description: "장전 브리핑 (가치주/모멘텀)" },
     { command: "start", description: "사용법 안내" },
   ];
 

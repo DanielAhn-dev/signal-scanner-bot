@@ -1,7 +1,6 @@
 // src/bot/commands/scan.ts
 
 import { createClient } from "@supabase/supabase-js";
-// import { resolveBase } from "../../lib/base";
 
 const url = process.env.SUPABASE_URL;
 const key = process.env.SUPABASE_ANON_KEY;
@@ -25,6 +24,22 @@ export async function handleScanCommand(
     text: `🔍 ${query ? `'${query}' 섹터` : "전체 시장"} 스캔 중...`,
   });
 
+  // 0. 최신 trade_date 확인 (가장 최근 데이터 기준)
+  const { data: latestDateRow } = await supabase
+    .from("daily_indicators")
+    .select("trade_date")
+    .order("trade_date", { ascending: false })
+    .limit(1);
+
+  const latestDate = latestDateRow?.[0]?.trade_date;
+  if (!latestDate) {
+    await tgSend("sendMessage", {
+      chat_id: ctx.chatId,
+      text: "⚠️ 지표 데이터가 아직 없습니다. 데이터 수집 후 다시 시도해주세요.",
+    });
+    return;
+  }
+
   // 1. 섹터 필터링이 있는 경우 섹터 ID 찾기
   let sectorId: string | null = null;
   if (query) {
@@ -45,14 +60,7 @@ export async function handleScanCommand(
     }
   }
 
-  // 2. 스캔 쿼리 실행 (오늘자 지표 기준)
-  // 조건:
-  // - 거래대금 5억 이상
-  // - RSI 40~70 (건강한 상승)
-  // - 정배열 (50일선 > 200일선)
-  // - 200일선 위 (장기 상승 추세)
-  // - 눌림목 (20일선 근처 3% 이내 OR AVWAP 지지)
-
+  // 2. 스캔 쿼리 실행 (최신 날짜 기준 — 항상 가장 최근 데이터 사용)
   let dbQuery = supabase
     .from("daily_indicators")
     .select(
@@ -65,11 +73,12 @@ export async function handleScanCommand(
       sma20,
       sma50,
       sma200,
+      trade_date,
       stocks!inner(name, sector_id)
     `
     )
-    .order("trade_date", { ascending: false }) // 최신 날짜 우선
-    .limit(500); // 전체 스캔 시 너무 많이 가져오지 않도록 1차 필터
+    .eq("trade_date", latestDate)
+    .limit(500);
 
   // 필수 조건 필터링
   dbQuery = dbQuery
@@ -95,7 +104,6 @@ export async function handleScanCommand(
   }
 
   // 3. 정밀 필터링 (Javascript 레벨에서 수행)
-  // SQL로 표현하기 복잡한 '눌림목' 로직 등은 여기서 처리
   const candidates = (data || []).filter((row: any) => {
     const price = row.close;
 
@@ -103,10 +111,9 @@ export async function handleScanCommand(
     const isTrendUp = row.sma50 > row.sma200 && price > row.sma200;
     if (!isTrendUp) return false;
 
-    // (2) 눌림목 (20일선에서 -3% ~ +3% 사이)
-    // 너무 높게 뜬 건 추격매수라 제외, 너무 떨어진 건 추세 이탈이라 제외
+    // (2) 눌림목 (20일선에서 -3% ~ +5% 사이)
     const gap20 = (price - row.sma20) / row.sma20;
-    const isPullback = gap20 > -0.03 && gap20 < 0.05; // -3% ~ +5% 허용
+    const isPullback = gap20 > -0.03 && gap20 < 0.05;
 
     // (3) 모멘텀 살아있음 (ROC 양수)
     const isMomentum = row.roc14 > 0;
@@ -115,22 +122,23 @@ export async function handleScanCommand(
   });
 
   // 4. 점수순 정렬 및 상위 10개 추출
-  // (간단히 RSI가 50에 가까운 순서 or 거래대금 순 등으로 정렬)
   const topPicks = candidates
-    .sort((a: any, b: any) => b.value_traded - a.value_traded) // 거래대금 많은 순
+    .sort((a: any, b: any) => b.value_traded - a.value_traded)
     .slice(0, 10);
 
   if (topPicks.length === 0) {
     await tgSend("sendMessage", {
       chat_id: ctx.chatId,
-      text: "조건에 맞는 종목이 없습니다. (눌림목/거래량 조건 미달)",
+      text: `조건에 맞는 종목이 없습니다.\n(기준일: ${latestDate})\n(눌림목/거래량 조건 미달)`,
     });
     return;
   }
 
   // 5. 결과 메시지 포맷팅
-  let msg = `📊 <b>${sectorId ? query + " 섹터" : "전체 시장"} 스캔 결과</b>\n`;
-  msg += `(기준: 정배열, RSI 40-70, 20일선 눌림)\n\n`;
+  let msg = `📊 <b>${
+    sectorId ? query + " 섹터" : "전체 시장"
+  } 스캔 결과</b>\n`;
+  msg += `(기준일: ${latestDate} | 정배열, RSI 40-70, 20일선 눌림)\n\n`;
 
   topPicks.forEach((stock: any, i: number) => {
     const name = stock.stocks?.name || stock.code;

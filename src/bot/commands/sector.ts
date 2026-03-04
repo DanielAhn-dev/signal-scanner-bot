@@ -107,7 +107,7 @@ export async function handleSectorCommand(
 export async function handleNextSectorCommand(
   ctx: ChatContext,
   tgSend: any,
-  minFlow: number = 10_000_000_000 // 기본 100억
+  minFlow: number = 5_000_000_000 // 기본 50억 (순환매 초기에는 수급 작을 수 있음)
 ): Promise<void> {
   const today = new Date().toISOString().slice(0, 10);
   let sectors: SectorScore[] = [];
@@ -126,7 +126,7 @@ export async function handleNextSectorCommand(
   if (!next.length) {
     return tgSend("sendMessage", {
       chat_id: ctx.chatId,
-      text: "⚠️ 현재 강한 수급(100억↑)이 유입되는 섹터가 없습니다.",
+      text: "⚠️ 현재 수급이 유입되는 순환매 후보 섹터가 없습니다.",
     });
   }
 
