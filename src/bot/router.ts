@@ -78,7 +78,7 @@ function isAdmin(ctx: ChatContext) {
 
 // 명령어 패턴
 const CMD = {
-  START: /^\/start$/,
+  START: /^\/(start|메뉴)$/,
   HELP: /^\/help$/,
   SECTOR: /^\/(sector|sectors|섹터)(?:\s+|$)(?:.*)?$/i,
   NEXT_SECTOR: /^\/(nextsector|flowsector|다음섹터)(?:\s+|$)(?:.*)?$/i,
@@ -131,38 +131,33 @@ export async function routeMessage(
     const greeting = name ? `안녕하세요, ${name}님! ` : "";
     const msg =
       `${greeting}<b>Signal Scanner Bot</b>\n` +
-      `아래 버튼을 눌러 시작하세요.`;
+      `버튼을 눌러 시작하거나 메뉴 버튼을 이용하세요.`;
 
     const btns = [
-      // 1열: 핵심 분석
       [
-        { text: "📊 섹터", callback_data: "cmd:sector" },
-        { text: "🔍 스캔", callback_data: "cmd:scan" },
-        { text: "📋 브리핑", callback_data: "cmd:brief" },
+        { text: "섹터", callback_data: "cmd:sector" },
+        { text: "스캔", callback_data: "cmd:scan" },
+        { text: "브리핑", callback_data: "cmd:brief" },
       ],
-      // 2열: 종목별 (인자 필요)
       [
-        { text: "💯 점수", callback_data: "prompt:score" },
-        { text: "💰 매수", callback_data: "prompt:buy" },
-        { text: "📰 뉴스", callback_data: "prompt:news" },
+        { text: "점수", callback_data: "prompt:score" },
+        { text: "매수", callback_data: "prompt:buy" },
+        { text: "뉴스", callback_data: "prompt:news" },
       ],
-      // 3열: 시장/수급
       [
-        { text: "🌍 경제", callback_data: "cmd:economy" },
-        { text: "🏥 시장", callback_data: "cmd:market" },
-        { text: "💹 수급", callback_data: "prompt:flow" },
+        { text: "경제", callback_data: "cmd:economy" },
+        { text: "시장", callback_data: "cmd:market" },
+        { text: "수급", callback_data: "prompt:flow" },
       ],
-      // 4열: 관심종목/소셜
       [
-        { text: "⭐ 관심종목", callback_data: "cmd:watchlist" },
-        { text: "🏆 랭킹", callback_data: "cmd:ranking" },
-        { text: "📡 피드", callback_data: "cmd:feed" },
+        { text: "관심종목", callback_data: "cmd:watchlist" },
+        { text: "랭킹", callback_data: "cmd:ranking" },
+        { text: "피드", callback_data: "cmd:feed" },
       ],
-      // 5열: 기타
       [
-        { text: "🔄 다음섹터", callback_data: "cmd:nextsector" },
-        { text: "📉 눌림목", callback_data: "cmd:pullback" },
-        { text: "👤 프로필", callback_data: "cmd:profile" },
+        { text: "다음섹터", callback_data: "cmd:nextsector" },
+        { text: "눌림목", callback_data: "cmd:pullback" },
+        { text: "프로필", callback_data: "cmd:profile" },
       ],
     ];
 

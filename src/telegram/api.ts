@@ -28,23 +28,23 @@ export const answerCallback = (
 // 봇 명령어 목록 (텔레그램 메뉴 버튼에 노출)
 const BOT_COMMANDS = [
   { command: "start", description: "시작 · 메뉴" },
-  { command: "sector", description: "📊 주도 섹터 랭킹" },
-  { command: "scan", description: "🔍 눌림목 스캐너" },
-  { command: "score", description: "💯 종목 점수·시그널" },
-  { command: "buy", description: "💰 매수 판독" },
-  { command: "brief", description: "📋 장전 브리핑" },
-  { command: "economy", description: "🌍 글로벌 경제지표" },
-  { command: "news", description: "📰 시장·종목 뉴스" },
-  { command: "market", description: "🏥 종합 시장 진단" },
-  { command: "watchlist", description: "⭐ 관심종목 포트폴리오" },
-  { command: "flow", description: "💹 외국인·기관 수급" },
-  { command: "nextsector", description: "🔄 수급 유입 섹터" },
-  { command: "pullback", description: "📉 눌림목 매집 후보" },
-  { command: "ranking", description: "🏆 포트폴리오 랭킹" },
-  { command: "profile", description: "👤 내 프로필" },
-  { command: "follow", description: "👥 트레이더 팔로우" },
-  { command: "feed", description: "📡 팔로잉 피드" },
-  { command: "help", description: "❓ 도움말" },
+  { command: "sector", description: "주도 섹터 랭킹" },
+  { command: "scan", description: "눌림목 스캐너" },
+  { command: "score", description: "종목 점수·시그널" },
+  { command: "buy", description: "매수 판독" },
+  { command: "brief", description: "장전 브리핑" },
+  { command: "economy", description: "글로벌 경제지표" },
+  { command: "news", description: "시장·종목 뉴스" },
+  { command: "market", description: "종합 시장 진단" },
+  { command: "watchlist", description: "관심종목 포트폴리오" },
+  { command: "flow", description: "외국인·기관 수급" },
+  { command: "nextsector", description: "수급 유입 섹터" },
+  { command: "pullback", description: "눌림목 매집 후보" },
+  { command: "ranking", description: "포트폴리오 랭킹" },
+  { command: "profile", description: "내 프로필" },
+  { command: "follow", description: "트레이더 팔로우" },
+  { command: "feed", description: "팔로잉 피드" },
+  { command: "help", description: "도움말" },
 ];
 
 /** 텔레그램에 봇 명령어 + 메뉴 버튼 + 설명 등록 */
@@ -69,11 +69,11 @@ export async function setCommandsKo(): Promise<TgResponse> {
   // 추가: 봇 설명 (채팅 시작 전 프로필에서 보이는 텍스트)
   await tg("setMyDescription", {
     description:
-      "📊 한국 주식 시그널 스캐너 봇\n\n" +
-      "• 주도 섹터 · 눌림목 스캔 · 종목 점수\n" +
-      "• 글로벌 경제지표 · 실시간 뉴스\n" +
-      "• 관심종목 포트폴리오 · 수익률 랭킹\n" +
-      "• 외국인/기관 수급 · 매수 판독\n\n" +
+      "한국 주식 시그널 스캐너 봇\n\n" +
+      "- 주도 섹터 · 눌림목 스캔 · 종목 점수\n" +
+      "- 글로벌 경제지표 · 실시간 뉴스\n" +
+      "- 관심종목 포트폴리오 · 수익률 랭킹\n" +
+      "- 외국인/기관 수급 · 매수 판독\n\n" +
       "/start 를 눌러 시작하세요!",
     language_code: "ko",
   });

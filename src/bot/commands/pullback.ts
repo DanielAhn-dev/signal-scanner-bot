@@ -95,7 +95,16 @@ export async function handlePullbackCommand(
       SELL: "매도",
     };
 
-    let msg = `<b>눌림목 매집 후보</b>  ${latestDate}\n`;
+    // 조회일(KST 오늘) vs 기준일(DB 최신 데이터) 구분
+    const nowKST = new Date(Date.now() + 9 * 60 * 60 * 1000);
+    const todayStr = nowKST.toISOString().slice(0, 10);
+    const dateNote =
+      todayStr === latestDate
+        ? `기준일 ${latestDate}`
+        : `조회일 ${todayStr}  ·  기준일 ${latestDate} (전거래일 데이터)`;
+
+    let msg = `<b>눌림목 매집 후보</b>\n`;
+    msg += `<i>${dateNote}</i>\n`;
     msg += `<i>A/B 등급, 매도경고 제외</i>\n${LINE}\n`;
 
     for (const s of candidates) {

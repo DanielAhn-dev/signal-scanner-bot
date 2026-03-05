@@ -168,57 +168,66 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(401).json({ ok: false });
   }
 
-  // status = 'queued' 인 잡들만 처리
-  const { data: jobs, error } = await supa()
-    .from("jobs")
-    .select("*")
-    .eq("status", "queued")
-    .order("created_at", { ascending: true })
-    .limit(10);
+  // Vercel 함수 타임아웃을 고려해 최대 처리 시간 제한 (8초)
+  const WORKER_DEADLINE = Date.now() + 8000;
+  let totalProcessed = 0;
 
-  if (error || !jobs) {
-    console.error("worker: failed to fetch jobs", error);
-    return res.status(500).send("Failed to fetch jobs");
-  }
-
-  if (jobs.length === 0) {
-    return res.status(200).send("No pending jobs.");
-  }
-
-  for (const job of jobs) {
-    await supa()
+  // 큐가 빌 때까지 반복 처리 (처리 중 도착한 잡도 놓치지 않음)
+  while (Date.now() < WORKER_DEADLINE) {
+    const { data: jobs, error } = await supa()
       .from("jobs")
-      .update({ status: "running", started_at: new Date().toISOString() })
-      .eq("id", job.id);
+      .select("*")
+      .eq("status", "queued")
+      .order("created_at", { ascending: true })
+      .limit(5);
 
-    try {
-      if (job.type === "WATCH_SECTOR") {
-        await handleWatchSectorJob(job);
-      } else if (job.type === "telegram_update") {
-        await handleTelegramUpdateJob(job);
+    if (error || !jobs) {
+      console.error("worker: failed to fetch jobs", error);
+      break;
+    }
+
+    if (jobs.length === 0) break; // 큐 비었으면 종료
+
+    for (const job of jobs) {
+      await supa()
+        .from("jobs")
+        .update({ status: "running", started_at: new Date().toISOString() })
+        .eq("id", job.id);
+
+      try {
+        if (job.type === "WATCH_SECTOR") {
+          await handleWatchSectorJob(job);
+        } else if (job.type === "telegram_update") {
+          await handleTelegramUpdateJob(job);
+        }
+
+        await supa()
+          .from("jobs")
+          .update({
+            status: "done",
+            finished_at: new Date().toISOString(),
+            ok: true,
+          })
+          .eq("id", job.id);
+        totalProcessed++;
+      } catch (e: any) {
+        console.error("worker: job failed", job.type, e);
+        await supa()
+          .from("jobs")
+          .update({
+            status: "failed",
+            finished_at: new Date().toISOString(),
+            ok: false,
+            error: e?.message || String(e),
+          })
+          .eq("id", job.id);
+        totalProcessed++;
       }
-
-      await supa()
-        .from("jobs")
-        .update({
-          status: "done",
-          finished_at: new Date().toISOString(),
-          ok: true,
-        })
-        .eq("id", job.id);
-    } catch (e: any) {
-      console.error("worker: job failed", job.type, e);
-      await supa()
-        .from("jobs")
-        .update({
-          status: "failed",
-          finished_at: new Date().toISOString(),
-          ok: false,
-          error: e?.message || String(e),
-        })
-        .eq("id", job.id);
     }
   }
 
-  res.status(200).send(`Processed ${jobs.length} jobs.`);
+  if (totalProcessed === 0) {
+    return res.status(200).send("No pending jobs.");
+  }
+  res.status(200).send(`Processed ${totalProcessed} jobs.`);
 }
