@@ -69,7 +69,7 @@ const CMD = {
   SCORE: /^\/(score|점수)\s+(.+)$/i,
   STOCKS: /^\/(stocks|종목)(?:\s+(.+))?$/i,
   SCAN: /^\/(scan|스캔)(?:\s+(.+))?$/i,
-  UPDATE: /^\/update$/,
+  UPDATE: /^\/(update|갱신)$/i,
   COMMANDS: /^\/(commands|admin_commands)$/i,
   BUY: /^\/(buy|매수)(?:\s+(.+))?$/i,
   SEED: /^\/seed$/i,
@@ -250,7 +250,7 @@ export async function routeMessage(
     return;
   }
 
-  // /update
+  // /update — 종목/섹터 메타데이터 갱신
   if (CMD.UPDATE.test(t)) {
     if (!isAdmin(ctx)) {
       await tgSend("sendMessage", {
@@ -259,16 +259,54 @@ export async function routeMessage(
       });
       return;
     }
-    await tgSend("sendMessage", { chat_id: ctx.chatId, text: "갱신 시작…" });
-    const [st, sc] = await Promise.all([
-      callInternal("/api/update/stocks"),
-      callInternal("/api/update/sectors"),
-    ]);
-    const b1 = st.body as any;
-    const b2 = sc.body as any;
     await tgSend("sendMessage", {
       chat_id: ctx.chatId,
-      text: `/update 결과\nstocks: ${st.status}\nsectors: ${sc.status}`,
+      text: "📡 종목/섹터 메타데이터 갱신 시작…\n(KRX 다운로드 포함, 최대 30초 소요)",
+    });
+
+    const startMs = Date.now();
+    const [st, sc] = await Promise.all([
+      callInternal("/api/update/stocks", 30000),
+      callInternal("/api/update/sectors", 15000),
+    ]);
+
+    const elapsed = ((Date.now() - startMs) / 1000).toFixed(1);
+    const b1 = st.body as any;
+    const b2 = sc.body as any;
+
+    const lines: string[] = [`<b>📋 /update 결과</b> (${elapsed}s)\n`];
+
+    // Stocks 결과
+    if (st.status === 200 && !b1.error) {
+      lines.push(`<b>종목</b> ✅ ${b1.total ?? 0}개`);
+      if (b1.inserted > 0 || b1.updated > 0) {
+        lines.push(`  신규 ${b1.inserted ?? 0} · 변경 ${b1.updated ?? 0}`);
+      } else {
+        lines.push(`  변경 없음 (최신 상태)`);
+      }
+    } else {
+      lines.push(`<b>종목</b> ❌ ${b1.error || `HTTP ${st.status}`}`);
+    }
+
+    // Sectors 결과
+    if (sc.status === 200 && !b2.error) {
+      lines.push(`\n<b>섹터</b> ✅ ${b2.total ?? 0}개`);
+      if (b2.inserted > 0 || b2.updated > 0) {
+        lines.push(`  신규 ${b2.inserted ?? 0} · 변경 ${b2.updated ?? 0}`);
+      } else {
+        lines.push(`  변경 없음 (최신 상태)`);
+      }
+    } else {
+      lines.push(`\n<b>섹터</b> ❌ ${b2.error || `HTTP ${sc.status}`}`);
+    }
+
+    // 안내
+    lines.push(`\n<i>💡 시세/지표/점수 갱신은 GitHub Actions daily_batch 참조</i>`);
+
+    await tgSend("sendMessage", {
+      chat_id: ctx.chatId,
+      text: lines.join("\n"),
+      parse_mode: "HTML",
     });
     return;
   }

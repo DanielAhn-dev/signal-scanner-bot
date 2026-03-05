@@ -87,6 +87,37 @@ export async function handleEconomyCommand(
     msg += `  ${arrow(data.us10y.change)} ${fmtRate(data.us10y.changeRate)}\n`;
   }
 
+  // 원자재
+  if (data.gold || data.silver || data.copper) {
+    msg += `\n<b>🥇 원자재</b>\n`;
+    if (data.gold) {
+      msg += `  금(Gold)   <code>$${data.gold.price.toLocaleString()}</code>`;
+      msg += `  ${arrow(data.gold.change)} ${fmtRate(data.gold.changeRate)}\n`;
+    }
+    if (data.silver) {
+      msg += `  은(Silver)  <code>$${data.silver.price.toFixed(2)}</code>`;
+      msg += `  ${arrow(data.silver.change)} ${fmtRate(data.silver.changeRate)}\n`;
+    }
+    if (data.copper) {
+      msg += `  구리(Copper) <code>$${data.copper.price.toFixed(4)}</code>`;
+      msg += `  ${arrow(data.copper.change)} ${fmtRate(data.copper.changeRate)}\n`;
+    }
+  }
+
+  // 에너지
+  if (data.wtiOil) {
+    msg += `\n<b>🛢 에너지</b>\n`;
+    msg += `  WTI 원유  <code>$${data.wtiOil.price.toFixed(2)}</code>`;
+    msg += `  ${arrow(data.wtiOil.change)} ${fmtRate(data.wtiOil.changeRate)}\n`;
+  }
+
+  // 암호화폐
+  if (data.bitcoin) {
+    msg += `\n<b>₿ 암호화폐</b>\n`;
+    msg += `  비트코인  <code>$${data.bitcoin.price.toLocaleString()}</code>`;
+    msg += `  ${arrow(data.bitcoin.change)} ${fmtRate(data.bitcoin.changeRate)}\n`;
+  }
+
   // 시장 코멘트
   msg += `\n${LINE}\n`;
   const comments: string[] = [];
@@ -105,6 +136,17 @@ export async function handleEconomyCommand(
 
   if (data.us10y && data.us10y.price >= 5.0)
     comments.push("📉 미국 10년물 5%↑ — 긴축 우려");
+
+  if (data.gold && data.gold.changeRate >= 2)
+    comments.push("🥇 금 가격 급등 — 안전자산 선호 심리");
+
+  if (data.wtiOil && data.wtiOil.price >= 100)
+    comments.push("🛢 유가 $100↑ — 인플레이션 · 비용 부담 확대");
+
+  if (data.bitcoin && data.bitcoin.changeRate <= -5)
+    comments.push("₿ 비트코인 급락 — 위험자산 회피 심리");
+  else if (data.bitcoin && data.bitcoin.changeRate >= 5)
+    comments.push("₿ 비트코인 급등 — 위험선호 강화");
 
   msg += comments.length
     ? comments.join("\n")

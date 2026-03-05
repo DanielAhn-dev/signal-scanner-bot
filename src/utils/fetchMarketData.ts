@@ -30,6 +30,11 @@ export interface MarketOverview {
   sp500?: MarketIndex;
   nasdaq?: MarketIndex;
   us10y?: MarketIndex;
+  gold?: MarketIndex;
+  silver?: MarketIndex;
+  copper?: MarketIndex;
+  wtiOil?: MarketIndex;
+  bitcoin?: MarketIndex;
 }
 
 const UA = { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)" };
@@ -64,23 +69,17 @@ async function fetchNaverIndex(
 export const fetchKOSPI = () => fetchNaverIndex("KOSPI");
 export const fetchKOSDAQ = () => fetchNaverIndex("KOSDAQ");
 
-// ─── 환율 (Dunamu forex API) ───
+// ─── 환율 (Yahoo Finance) ───
 export async function fetchUSDKRW(): Promise<ExchangeRate | null> {
   try {
-    const res = await fetch(
-      "https://quotation-api-cdn.dunamu.com/v1/forex/recent?codes=FRX.KRWUSD",
-      { headers: UA }
-    );
-    if (!res.ok) return null;
-    const arr = await res.json();
-    if (!Array.isArray(arr) || !arr[0]) return null;
-    const d = arr[0];
+    const idx = await fetchYahoo("USDKRW=X", "달러/원");
+    if (!idx) return null;
     return {
       code: "FX_USDKRW",
       name: "달러/원",
-      price: d.basePrice || 0,
-      change: d.changePrice || 0,
-      changeRate: (d.changeRate || 0) * 100,
+      price: idx.price,
+      change: idx.change,
+      changeRate: idx.changeRate,
     };
   } catch {
     return null;
@@ -123,6 +122,13 @@ export const fetchSP500 = () => fetchYahoo("^GSPC", "S&P 500");
 export const fetchNASDAQ = () => fetchYahoo("^IXIC", "NASDAQ");
 export const fetchUS10Y = () => fetchYahoo("^TNX", "US 10Y");
 
+// ─── 원자재 · 에너지 · 암호화폐 ───
+export const fetchGold = () => fetchYahoo("GC=F", "Gold");
+export const fetchSilver = () => fetchYahoo("SI=F", "Silver");
+export const fetchCopper = () => fetchYahoo("HG=F", "Copper");
+export const fetchWTI = () => fetchYahoo("CL=F", "WTI Oil");
+export const fetchBitcoin = () => fetchYahoo("BTC-USD", "Bitcoin");
+
 // ─── CNN Fear & Greed ───
 export async function fetchFearGreed(): Promise<FearGreedData | null> {
   try {
@@ -145,17 +151,25 @@ export async function fetchFearGreed(): Promise<FearGreedData | null> {
 
 // ─── 한번에 전부 조회 ───
 export async function fetchAllMarketData(): Promise<MarketOverview> {
-  const [kospi, kosdaq, usdkrw, vix, fearGreed, sp500, nasdaq, us10y] =
-    await Promise.all([
-      fetchKOSPI(),
-      fetchKOSDAQ(),
-      fetchUSDKRW(),
-      fetchVIX(),
-      fetchFearGreed(),
-      fetchSP500(),
-      fetchNASDAQ(),
-      fetchUS10Y(),
-    ]);
+  const [
+    kospi, kosdaq, usdkrw, vix, fearGreed,
+    sp500, nasdaq, us10y,
+    gold, silver, copper, wtiOil, bitcoin,
+  ] = await Promise.all([
+    fetchKOSPI(),
+    fetchKOSDAQ(),
+    fetchUSDKRW(),
+    fetchVIX(),
+    fetchFearGreed(),
+    fetchSP500(),
+    fetchNASDAQ(),
+    fetchUS10Y(),
+    fetchGold(),
+    fetchSilver(),
+    fetchCopper(),
+    fetchWTI(),
+    fetchBitcoin(),
+  ]);
 
   return {
     kospi: kospi ?? undefined,
@@ -166,5 +180,10 @@ export async function fetchAllMarketData(): Promise<MarketOverview> {
     sp500: sp500 ?? undefined,
     nasdaq: nasdaq ?? undefined,
     us10y: us10y ?? undefined,
+    gold: gold ?? undefined,
+    silver: silver ?? undefined,
+    copper: copper ?? undefined,
+    wtiOil: wtiOil ?? undefined,
+    bitcoin: bitcoin ?? undefined,
   };
 }
