@@ -4,6 +4,7 @@
 import type { ChatContext } from "../router";
 import { createClient } from "@supabase/supabase-js";
 import { esc, fmtInt, LINE, gradeLabel } from "../messages/format";
+import { fetchRealtimePriceBatch } from "../../utils/fetchRealtimePrice";
 
 const supabase = createClient(
   process.env.SUPABASE_URL!,
@@ -82,6 +83,10 @@ export async function handlePullbackCommand(
       return (b.entry_score ?? 0) - (a.entry_score ?? 0);
     });
 
+    // 실시간 가격 일괄 조회
+    const codes = candidates.map((c: any) => c.code);
+    const realtimeMap = await fetchRealtimePriceBatch(codes);
+
     // 경고 라벨
     const warnLabel: Record<string, string> = {
       SAFE: "안전",
@@ -98,12 +103,15 @@ export async function handlePullbackCommand(
       const gl = gradeLabel[s.entry_grade] ?? "";
       const wl = warnLabel[s.warn_grade] ?? "";
 
-      const close = stock.close
-        ? Number(stock.close).toLocaleString()
-        : "-";
+      const rt = realtimeMap[s.code];
+      const price = rt?.price ?? (stock.close ? Number(stock.close) : 0);
+      const close = price ? price.toLocaleString() : "-";
+      const changeStr = rt
+        ? ` ${rt.change >= 0 ? "▲" : "▼"}${Math.abs(rt.changeRate).toFixed(1)}%`
+        : "";
 
       msg += `\n${gl} <b>${esc(stock.name)}</b> (${s.code})`;
-      msg += `  <code>${close}원</code>\n`;
+      msg += `  <code>${close}원</code>${changeStr}\n`;
       msg += `   진입 ${s.entry_grade}(${s.entry_score}/4)`;
       msg += ` · 경고 ${wl}(${s.warn_score}/6)\n`;
 

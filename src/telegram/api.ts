@@ -39,6 +39,10 @@ export async function setCommandsKo(): Promise<TgResponse> {
     { command: "brief", description: "장전 브리핑 (/브리핑)" },
     { command: "pullback", description: "눌림목 매집 후보 (/눌림목)" },
     { command: "watchlist", description: "관심종목 포트폴리오 (/관심)" },
+    { command: "flow", description: "외국인·기관 매매동향 (/수급)" },
+    { command: "economy", description: "글로벌 경제지표 (/경제)" },
+    { command: "news", description: "시장·종목 뉴스 (/뉴스)" },
+    { command: "market", description: "종합 시장 진단 (/시장)" },
   ];
 
   const r1 = await tg("setMyCommands", { commands });

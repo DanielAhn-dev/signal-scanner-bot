@@ -1,0 +1,60 @@
+name: Telegram Briefing (장전/마감)
+
+on:
+  schedule:
+    # 장전 브리핑: KST 08:30 = UTC 23:30 (전날) — 일~목
+    - cron: "30 23 * * 0-4"
+    # 마감 브리핑: KST 15:40 = UTC 06:40 — 월~금
+    - cron: "40 6 * * 1-5"
+  workflow_dispatch:
+    inputs:
+      type:
+        description: "Briefing type"
+        required: false
+        default: "pre_market"
+        type: choice
+        options:
+          - pre_market
+          - market_close
+
+jobs:
+  send-briefing:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      TZ: "Asia/Seoul"
+
+    steps:
+      - name: Determine briefing type
+        id: type
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "briefing_type=${{ github.event.inputs.type }}" >> $GITHUB_OUTPUT
+          else
+            HOUR=$(date -u +%H)
+            # UTC 23시대 → 장전, UTC 06시대 → 마감
+            if [ "$HOUR" -ge 20 ]; then
+              echo "briefing_type=pre_market" >> $GITHUB_OUTPUT
+            else
+              echo "briefing_type=market_close" >> $GITHUB_OUTPUT
+            fi
+          fi
+
+      - name: Call Vercel Briefing API
+        run: |
+          TYPE="${{ steps.type.outputs.briefing_type }}"
+          echo "📤 Sending ${TYPE} briefing..."
+
+          HTTP_CODE=$(curl -s -o /tmp/response.txt -w "%{http_code}" \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
+            "${{ secrets.VERCEL_APP_URL }}/api/cron/briefing?type=${TYPE}")
+
+          echo "HTTP Status: ${HTTP_CODE}"
+          cat /tmp/response.txt
+
+          if [ "$HTTP_CODE" != "200" ]; then
+            echo "::error::Briefing API returned ${HTTP_CODE}"
+            exit 1
+          fi
+
+          echo "✅ ${TYPE} briefing sent successfully"

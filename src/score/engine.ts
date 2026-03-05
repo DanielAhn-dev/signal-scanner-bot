@@ -15,6 +15,13 @@ export interface ScoreFactors {
   roc21: number;
   avwap_support: number; // 0~100 (%), 다중 앵커 AVWAP 위에 있는 비율
   avwap_regime?: "buyers" | "sellers" | "neutral"; // AVWAP 기준 매수/매도 레짐
+  vol_ratio?: number; // 최근 거래량 / 20MA 거래량
+}
+
+export interface MarketEnv {
+  vix?: number;
+  fearGreed?: number;
+  usdkrw?: number;
 }
 
 export interface StockScore {
@@ -44,7 +51,10 @@ function roundTo(n: number, step = 1): number {
   return Math.round(n / step) * step;
 }
 
-export function calculateScore(data: StockOHLCV[]): StockScore | null {
+export function calculateScore(
+  data: StockOHLCV[],
+  marketEnv?: MarketEnv
+): StockScore | null {
   try {
     if (!data || data.length < 200) return null;
 
@@ -113,6 +123,10 @@ export function calculateScore(data: StockOHLCV[]): StockScore | null {
       Math.max(1, Math.min(20, vols.length));
     const volSpike20 =
       Number.isFinite(vol20) && (vols[lastIdx] || 0) >= vol20 * 1.5;
+    const vol_ratio =
+      Number.isFinite(vol20) && vol20 > 0
+        ? (vols[lastIdx] || 0) / vol20
+        : undefined;
 
     // 점수 가중 (0~100)
     let score = 0;
@@ -148,6 +162,34 @@ export function calculateScore(data: StockOHLCV[]): StockScore | null {
     if (combo >= 5) score += 10;
     else if (combo === 4) score += 7;
     else if (combo === 3) score += 4;
+
+    // ── 시장 환경 보정 (MarketEnv) ──
+    let marketAdj = 0;
+    if (marketEnv) {
+      const { vix, fearGreed, usdkrw } = marketEnv;
+      // VIX: 30+ → -12, 25-30 → -7, 20-25 → -3
+      if (vix != null && Number.isFinite(vix)) {
+        if (vix >= 30) marketAdj -= 12;
+        else if (vix >= 25) marketAdj -= 7;
+        else if (vix >= 20) marketAdj -= 3;
+      }
+      // CNN Fear & Greed: 극단적 공포(<=20) → 역발상 +5, 공포(<=35) → +2
+      //                   극단적 탐욕(>=80) → -7, 탐욕(>=65) → -3
+      if (fearGreed != null && Number.isFinite(fearGreed)) {
+        if (fearGreed <= 20) marketAdj += 5;
+        else if (fearGreed <= 35) marketAdj += 2;
+        else if (fearGreed >= 80) marketAdj -= 7;
+        else if (fearGreed >= 65) marketAdj -= 3;
+      }
+      // USD/KRW: 1400+ → 외국인 이탈 압력 -5, 1350+ → -2
+      if (usdkrw != null && Number.isFinite(usdkrw)) {
+        if (usdkrw >= 1400) marketAdj -= 5;
+        else if (usdkrw >= 1350) marketAdj -= 2;
+      }
+    }
+    score += marketAdj;
+    // 0~100 으로 클램프
+    score = Math.max(0, Math.min(100, score));
 
     // 시그널
     const breakoutBuy =
@@ -206,6 +248,7 @@ export function calculateScore(data: StockOHLCV[]): StockScore | null {
         roc21,
         avwap_support,
         avwap_regime,
+        vol_ratio,
       },
       recommendation,
       entry: {

@@ -3,6 +3,7 @@ import { createMultiRowKeyboard } from "../../telegram/keyboards";
 import { createClient } from "@supabase/supabase-js";
 import { fmtKRW } from "../../lib/normalize";
 import { esc, fmtInt, LINE } from "../messages/format";
+import { fetchRealtimePriceBatch } from "../../utils/fetchRealtimePrice";
 
 const supabase = createClient(
   process.env.SUPABASE_URL!,
@@ -68,8 +69,9 @@ export async function handleStocksCommand(
 
   const finalStocks = stocks && stocks.length > 0 ? stocks : [];
 
-  // 3. daily_indicators에서 최신 지표 보강
+  // 3. 실시간 가격 + daily_indicators 보강
   const topCodes = finalStocks.slice(0, 5).map((s: any) => s.code);
+  const realtimeMap = topCodes.length ? await fetchRealtimePriceBatch(topCodes) : {};
   let indicatorsMap: Record<string, any> = {};
 
   if (topCodes.length > 0) {
@@ -104,13 +106,17 @@ export async function handleStocksCommand(
       }
       const tagStr = tags.length ? ` [${tags.join("+")}]` : "";
 
-      const price = ind.close || s.close || 0;
+      const rt = realtimeMap[s.code];
+      const price = rt?.price || ind.close || s.close || 0;
+      const changeStr = rt
+        ? ` ${rt.change >= 0 ? "▲" : "▼"}${Math.abs(rt.changeRate).toFixed(1)}%`
+        : "";
       const valTraded = ind.value_traded || 0;
       const rsi = ind.rsi14 ? `RSI ${Number(ind.rsi14).toFixed(0)}` : "";
 
       return [
         `${rank}. <b>${esc(s.name)}</b>${tagStr}`,
-        `   <code>${fmtPrice(price)}원</code> ${rsi ? `· ${rsi}` : ""}`,
+        `   <code>${fmtPrice(price)}원</code>${changeStr} ${rsi ? `· ${rsi}` : ""}`,
         valTraded ? `   거래대금 ${fmtKRW(valTraded)}` : "",
       ]
         .filter(Boolean)

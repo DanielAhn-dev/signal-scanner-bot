@@ -12,7 +12,17 @@ import { getLeadersForSectorById } from "../data/sector";
 import { createMultiRowKeyboard } from "../telegram/keyboards";
 import { handleBriefCommand } from "./commands/brief";
 import { handlePullbackCommand } from "./commands/pullback";
-import { handleWatchlistCommand, handleWatchlistAdd, handleWatchlistRemove } from "./commands/watchlist";
+import {
+  handleWatchlistCommand,
+  handleWatchlistAdd,
+  handleWatchlistRemove,
+  handleWatchlistEdit,
+  handleWatchlistQuickAdd,
+} from "./commands/watchlist";
+import { handleFlowCommand } from "./commands/flow";
+import { handleEconomyCommand } from "./commands/economy";
+import { handleNewsCommand } from "./commands/news";
+import { handleMarketCommand } from "./commands/market";
 import { setCommandsKo } from "../telegram/api";
 
 export type ChatContext = { chatId: number; messageId?: number };
@@ -68,6 +78,11 @@ const CMD = {
   WATCHLIST: /^\/(watchlist|관심)$/i,
   WATCHLIST_ADD: /^\/(watchlistadd|관심추가)(?:\s+(.+))?$/i,
   WATCHLIST_DEL: /^\/(watchlistdel|관심삭제)(?:\s+(.+))?$/i,
+  WATCHLIST_EDIT: /^\/(watchlistedit|관심수정)(?:\s+(.+))?$/i,
+  FLOW: /^\/(flow|수급)(?:\s+(.+))?$/i,
+  ECONOMY: /^\/(economy|경제|지표)$/i,
+  NEWS: /^\/(news|뉴스)(?:\s+(.+))?$/i,
+  MARKET: /^\/(market|시장|진단)$/i,
 };
 
 export async function routeMessage(
@@ -292,6 +307,71 @@ export async function routeMessage(
     return;
   }
 
+  // /watchlistedit 관심수정
+  const mwe = t.match(CMD.WATCHLIST_EDIT);
+  if (mwe) {
+    await handleWatchlistEdit(mwe[2] || "", ctx, tgSend);
+    return;
+  }
+
+  // /flow 수급
+  const mFlow = t.match(CMD.FLOW);
+  if (mFlow) {
+    try {
+      await handleFlowCommand(mFlow[2] || "", ctx, tgSend);
+    } catch (e) {
+      console.error("handleFlowCommand failed:", e);
+      await tgSend("sendMessage", {
+        chat_id: ctx.chatId,
+        text: "수급 조회 중 오류가 발생했습니다.",
+      });
+    }
+    return;
+  }
+
+  // /economy 경제
+  if (CMD.ECONOMY.test(t)) {
+    try {
+      await handleEconomyCommand(ctx, tgSend);
+    } catch (e) {
+      console.error("handleEconomyCommand failed:", e);
+      await tgSend("sendMessage", {
+        chat_id: ctx.chatId,
+        text: "경제지표 조회 중 오류가 발생했습니다.",
+      });
+    }
+    return;
+  }
+
+  // /news 뉴스
+  const mNews = t.match(CMD.NEWS);
+  if (mNews) {
+    try {
+      await handleNewsCommand(mNews[2] || "", ctx, tgSend);
+    } catch (e) {
+      console.error("handleNewsCommand failed:", e);
+      await tgSend("sendMessage", {
+        chat_id: ctx.chatId,
+        text: "뉴스 조회 중 오류가 발생했습니다.",
+      });
+    }
+    return;
+  }
+
+  // /market 시장진단
+  if (CMD.MARKET.test(t)) {
+    try {
+      await handleMarketCommand(ctx, tgSend);
+    } catch (e) {
+      console.error("handleMarketCommand failed:", e);
+      await tgSend("sendMessage", {
+        chat_id: ctx.chatId,
+        text: "시장 진단 중 오류가 발생했습니다.",
+      });
+    }
+    return;
+  }
+
   // unknown
   await tgSend("sendMessage", {
     chat_id: ctx.chatId,
@@ -340,6 +420,24 @@ export async function routeCallback(
   if (data.startsWith("buy:")) {
     const [, code] = data.split(":");
     if (code) await handleBuyCommand(code, ctx, tgSend);
+    return;
+  }
+
+  if (data.startsWith("watchadd:")) {
+    const [, code] = data.split(":");
+    if (code) await handleWatchlistQuickAdd(code, ctx, tgSend);
+    return;
+  }
+
+  if (data.startsWith("news:")) {
+    const [, code] = data.split(":");
+    if (code) await handleNewsCommand(code, ctx, tgSend);
+    return;
+  }
+
+  if (data.startsWith("flow:")) {
+    const [, code] = data.split(":");
+    if (code) await handleFlowCommand(code, ctx, tgSend);
     return;
   }
 

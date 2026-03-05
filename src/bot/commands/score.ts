@@ -6,6 +6,8 @@ import { searchByNameOrCode, getNamesForCodes } from "../../search/normalize";
 import type { StockOHLCV } from "../../data/types";
 import { KO_MESSAGES } from "../messages/ko";
 import { esc, fmtInt, fmtOne, fmtPct, LINE } from "../messages/format";
+import { fetchRealtimeStockData } from "../../utils/fetchRealtimePrice";
+import { fetchAllMarketData } from "../../utils/fetchMarketData";
 
 // --- 전략 코멘트 생성기 ---
 function makeStrategyComment(
@@ -45,10 +47,12 @@ function buildScoreMessage(
   code: string,
   date: string,
   last: StockOHLCV,
-  scored: any
+  scored: any,
+  realtimePrice?: number
 ): string {
   const f = scored.factors;
-  const entry = scored.entry?.buy ?? last.close;
+  const currentPrice = realtimePrice ?? last.close;
+  const entry = scored.entry?.buy ?? currentPrice;
   const stop = scored.stops?.hard ?? 0;
   const t1 = scored.targets?.t1 ?? 0;
   const t2 = scored.targets?.t2 ?? 0;
@@ -61,24 +65,46 @@ function buildScoreMessage(
   const avwapDir =
     f.avwap_regime === "buyers" ? "매수우위" : "매도우위";
 
+  // 이평선 대비 이격도 표시
+  const dist20 = f.sma20 > 0 ? ((currentPrice - f.sma20) / f.sma20 * 100) : 0;
+  const dist50 = f.sma50 > 0 ? ((currentPrice - f.sma50) / f.sma50 * 100) : 0;
+
+  // 실시간 가격 vs DB 가격 비교  
+  const priceLabel = realtimePrice
+    ? `<b>실시간</b>  <code>${fmtInt(realtimePrice)}원</code>`
+    : `${fmtInt(last.close)}원`;
+
+  // 이동평균 기반 진입 가이드
+  let entryGuide = "";
+  if (Math.abs(dist20) <= 3) {
+    entryGuide = "20일선 근접 — 현재가 진입 가능";
+  } else if (dist20 > 5) {
+    entryGuide = `20일선 +${dist20.toFixed(1)}% 이격 — 눌림 대기`;
+  } else if (dist20 < -3 && Math.abs(dist50) <= 3) {
+    entryGuide = "50일선 지지 확인 후 진입";
+  } else if (dist20 < -3) {
+    entryGuide = "이평선 하회 — 관망 권장";
+  }
+
   return [
     `<b>${esc(name)}</b>  <code>${code}</code>`,
-    `${date} 기준 · ${fmtInt(last.close)}원`,
+    `${date} 기준 · ${priceLabel}`,
     LINE,
     `<b>종합  ${fmtOne(scored.score)}점</b>  (${signalTag})`,
     ``,
-    `▸ 진입  <code>${fmtInt(entry)}원</code>`,
+    `▸ 진입  <code>${fmtInt(entry)}원</code>  <i>${entryGuide}</i>`,
     `▸ 손절  <code>${fmtInt(stop)}원</code> (${fmtPct(riskPct)})`,
     `▸ 목표  1차 <code>${fmtInt(t1)}</code> / 2차 <code>${fmtInt(t2)}</code>`,
     LINE,
     `<b>지표</b>`,
     `▸ 추세  200일선 ${trendDir}`,
     `  MA 20/50/200: ${fmtInt(f.sma20)} / ${fmtInt(f.sma50)} / ${fmtInt(f.sma200)}`,
+    `  이격도  20MA ${dist20 >= 0 ? "+" : ""}${dist20.toFixed(1)}% · 50MA ${dist50 >= 0 ? "+" : ""}${dist50.toFixed(1)}%`,
     `▸ RSI ${fmtOne(f.rsi14)}  ROC₁₄ ${fmtPct(f.roc14)}`,
     `▸ AVWAP ${avwapDir} (지지 ${f.avwap_support}%)`,
     LINE,
     `<b>전략</b>`,
-    makeStrategyComment(last.close, f),
+    makeStrategyComment(currentPrice, f),
   ].join("\n");
 }
 
@@ -120,7 +146,13 @@ export async function handleScoreCommand(
     name = map[code] || code;
   }
 
-  const series = await getDailySeries(code, 420);
+  // 실시간 가격 + 시계열 데이터 + 시장 환경 동시 조회
+  const [series, realtimeData, mktData] = await Promise.all([
+    getDailySeries(code, 420),
+    fetchRealtimeStockData(code),
+    fetchAllMarketData().catch(() => null),
+  ]);
+
   if (!series || series.length < 200) {
     return tgSend("sendMessage", {
       chat_id: ctx.chatId,
@@ -128,7 +160,10 @@ export async function handleScoreCommand(
     });
   }
 
-  const scored = calculateScore(series);
+  const marketEnv = mktData
+    ? { vix: mktData.vix?.price, fearGreed: mktData.fearGreed?.score, usdkrw: mktData.usdkrw?.price }
+    : undefined;
+  const scored = calculateScore(series, marketEnv);
   if (!scored) {
     return tgSend("sendMessage", {
       chat_id: ctx.chatId,
@@ -136,17 +171,23 @@ export async function handleScoreCommand(
     });
   }
 
+  const realtimePrice = realtimeData?.price ?? undefined;
+
   const message = buildScoreMessage(
     name,
     code,
     scored.date,
     series[series.length - 1],
-    scored
+    scored,
+    realtimePrice
   );
 
-  const kb = createMultiRowKeyboard(2, [
+  const kb = createMultiRowKeyboard(3, [
     { text: "재계산", callback_data: `score:${code}` },
     { text: "매수 판독", callback_data: `buy:${code}` },
+    { text: "관심추가", callback_data: `watchadd:${code}` },
+    { text: "뉴스", callback_data: `news:${code}` },
+    { text: "수급", callback_data: `flow:${code}` },
   ]);
 
   await tgSend("sendMessage", {

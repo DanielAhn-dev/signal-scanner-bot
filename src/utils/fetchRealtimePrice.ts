@@ -1,36 +1,106 @@
 // src/utils/fetchRealtimePrice.ts
+// Enhanced real-time stock data fetching with batch support
 
-// 1. 네이버 API 응답 형식을 정의합니다.
-interface NaverStockResponse {
-  closePrice: string; // "6,030" 처럼 문자열로 옴
-  compareToPreviousClosePrice: string;
-  fluctuationsRatio: string;
-  // 필요한 필드가 더 있다면 여기에 추가
+interface NaverStockBasic {
+  stockName?: string;
+  closePrice?: string;
+  compareToPreviousClosePrice?: string;
+  fluctuationsRatio?: string;
+  marketStatus?: string;
+  accumulatedTradingVolume?: string;
+  accumulatedTradingValue?: string;
+  high52wPrice?: string;
+  low52wPrice?: string;
+  per?: string;
+  pbr?: string;
+  foreignerHoldingRatio?: string;
 }
 
+export interface RealtimeStockData {
+  price: number;
+  change: number;
+  changeRate: number;
+  name?: string;
+  volume?: number;
+  tradingValue?: number;
+  marketStatus?: string;
+  high52w?: number;
+  low52w?: number;
+  per?: number;
+  pbr?: number;
+  foreignRatio?: number;
+}
+
+const parseNum = (s?: string): number | undefined => {
+  if (!s) return undefined;
+  const n = parseFloat(s.replace(/,/g, ""));
+  return Number.isFinite(n) ? n : undefined;
+};
+
+const parseInt2 = (s?: string): number | undefined => {
+  if (!s) return undefined;
+  const n = parseInt(s.replace(/,/g, ""), 10);
+  return Number.isFinite(n) ? n : undefined;
+};
+
+/** 하위 호환: 실시간 가격만 반환 */
 export async function fetchRealtimePrice(code: string): Promise<number | null> {
+  const data = await fetchRealtimeStockData(code);
+  return data?.price ?? null;
+}
+
+/** 실시간 종합 데이터 반환 */
+export async function fetchRealtimeStockData(
+  code: string
+): Promise<RealtimeStockData | null> {
   try {
-    // 네이버 모바일 증권 페이지가 가볍고 파싱하기 쉬움
     const response = await fetch(
-      `https://m.stock.naver.com/api/stock/${code}/basic`
+      `https://m.stock.naver.com/api/stock/${code}/basic`,
+      { headers: { "User-Agent": "Mozilla/5.0" } }
     );
+    if (!response.ok) return null;
 
-    if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`);
-    }
+    const data = (await response.json()) as NaverStockBasic;
+    if (!data?.closePrice) return null;
 
-    // 2. 여기서 'as NaverStockResponse'로 타입을 강제합니다.
-    //    (response.json()은 기본적으로 any 또는 unknown을 반환하므로)
-    const data = (await response.json()) as NaverStockResponse;
+    const price = parseInt(data.closePrice.replace(/,/g, ""), 10);
+    if (!Number.isFinite(price)) return null;
 
-    // 3. 이제 TS가 data.closePrice를 인식합니다.
-    if (data && data.closePrice) {
-      return parseInt(data.closePrice.replace(/,/g, ""), 10);
-    }
-
-    return null;
+    return {
+      price,
+      change: parseInt2(data.compareToPreviousClosePrice) ?? 0,
+      changeRate: parseNum(data.fluctuationsRatio) ?? 0,
+      name: data.stockName,
+      volume: parseInt2(data.accumulatedTradingVolume),
+      tradingValue: parseInt2(data.accumulatedTradingValue),
+      marketStatus: data.marketStatus,
+      high52w: parseInt2(data.high52wPrice),
+      low52w: parseInt2(data.low52wPrice),
+      per: parseNum(data.per),
+      pbr: parseNum(data.pbr),
+      foreignRatio: parseNum(data.foreignerHoldingRatio),
+    };
   } catch (e) {
-    console.error(`실시간 가격 조회 실패 (${code}):`, e);
+    console.error(`실시간 데이터 조회 실패 (${code}):`, e);
     return null;
   }
+}
+
+/** 여러 종목 병렬 조회 (10개씩 청크) */
+export async function fetchRealtimePriceBatch(
+  codes: string[]
+): Promise<Record<string, RealtimeStockData>> {
+  const result: Record<string, RealtimeStockData> = {};
+  const chunks: string[][] = [];
+  for (let i = 0; i < codes.length; i += 10) {
+    chunks.push(codes.slice(i, i + 10));
+  }
+  for (const chunk of chunks) {
+    const promises = chunk.map(async (code) => {
+      const data = await fetchRealtimeStockData(code);
+      if (data) result[code] = data;
+    });
+    await Promise.all(promises);
+  }
+  return result;
 }

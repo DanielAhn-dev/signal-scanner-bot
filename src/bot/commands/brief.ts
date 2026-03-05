@@ -1,6 +1,8 @@
 import type { ChatContext } from "../router";
 import { createClient } from "@supabase/supabase-js";
 import { esc, fmtInt, LINE } from "../messages/format";
+import { fetchRealtimePriceBatch } from "../../utils/fetchRealtimePrice";
+import { fetchAllMarketData } from "../../utils/fetchMarketData";
 
 const supabase = createClient(
   process.env.SUPABASE_URL!,
@@ -120,43 +122,91 @@ export async function handleBriefCommand(
       }));
     }
 
-    // --- 4) 메시지 생성 (HTML) ---
-    let msg = `<b>장전 브리핑</b>  Core 유니버스\n${LINE}\n\n`;
+    // --- 4) 글로벌 지표 요약 ---
+    const marketData = await fetchAllMarketData();
 
-    msg += `<b>저평가 가치주</b>\n`;
+    // 실시간 가격 조회 (모든 종목)
+    const allCodes: string[] = [];
+    valueStocks?.forEach((s: any) => allCodes.push(s.code));
+    momentumStocks?.forEach((s: any) => allCodes.push(s.code));
+    pullbackStocks?.forEach((s: any) => allCodes.push(s.code));
+    const realtimeMap = allCodes.length
+      ? await fetchRealtimePriceBatch([...new Set(allCodes)])
+      : {};
+
+    // --- 5) 메시지 생성 (HTML) ---
+    const now = new Date();
+    const kst = new Date(now.getTime() + 9 * 60 * 60 * 1000);
+    const today = kst.toLocaleDateString("ko-KR", {
+      month: "long",
+      day: "numeric",
+      weekday: "short",
+    });
+
+    let msg = `<b>☀️ ${today} 장전 브리핑</b>\n${LINE}\n\n`;
+
+    // 글로벌 환경 요약
+    msg += `<b>🌍 글로벌 환경</b>\n`;
+    if (marketData.kospi) {
+      const k = marketData.kospi;
+      msg += `  KOSPI ${k.price.toLocaleString()} (${k.changeRate >= 0 ? "+" : ""}${k.changeRate.toFixed(1)}%)\n`;
+    }
+    if (marketData.vix) {
+      const v = marketData.vix;
+      const label = v.price >= 30 ? "⚠️ 공포" : v.price >= 20 ? "주의" : "안정";
+      msg += `  VIX ${v.price.toFixed(1)} ${label}\n`;
+    }
+    if (marketData.usdkrw) {
+      msg += `  환율 ${marketData.usdkrw.price.toLocaleString()}원\n`;
+    }
+
+    msg += `\n<b>📈 저평가 가치주</b>  Core 유니버스\n`;
     if (!valueStocks || valueStocks.length === 0) {
-      msg += `<i>추천 종목 없음</i>\n`;
+      msg += `  <i>추천 종목 없음</i>\n`;
     } else {
       valueStocks.forEach((s: any) => {
-        msg += `▸ ${esc(s.name)} (${s.code})  <code>${safeFmt(s.close)}원</code>\n`;
+        const rt = realtimeMap[s.code];
+        const price = rt?.price ?? s.close;
+        const changeStr = rt
+          ? ` ${rt.change >= 0 ? "▲" : "▼"}${Math.abs(rt.changeRate).toFixed(1)}%`
+          : "";
+        msg += `  ▸ ${esc(s.name)} (${s.code})  <code>${safeFmt(price)}원</code>${changeStr}\n`;
       });
     }
 
-    msg += `\n<b>수급 주도주</b>\n`;
+    msg += `\n<b>🚀 수급 주도주</b>\n`;
     if (!momentumStocks || momentumStocks.length === 0) {
-      msg += `<i>추천 종목 없음</i>\n`;
+      msg += `  <i>추천 종목 없음</i>\n`;
     } else {
       momentumStocks.forEach((s: any) => {
-        msg += `▸ ${esc(s.name)} (${s.code})  <code>${safeFmt(s.close)}원</code>\n`;
+        const rt = realtimeMap[s.code];
+        const price = rt?.price ?? s.close;
+        const changeStr = rt
+          ? ` ${rt.change >= 0 ? "▲" : "▼"}${Math.abs(rt.changeRate).toFixed(1)}%`
+          : "";
+        msg += `  ▸ ${esc(s.name)} (${s.code})  <code>${safeFmt(price)}원</code>${changeStr}\n`;
       });
     }
 
-    msg += `\n<b>눌림목 매집 후보</b>\n`;
+    msg += `\n<b>📉 눌림목 매집 후보</b>\n`;
     if (!pullbackStocks || pullbackStocks.length === 0) {
-      msg += `<i>매집 조건 충족 종목 없음</i>\n`;
+      msg += `  <i>매집 조건 충족 종목 없음</i>\n`;
     } else {
       const gl: Record<string, string> = { A: "●", B: "◐" };
       const wl: Record<string, string> = { SAFE: "안전", WATCH: "관찰", WARN: "주의" };
       pullbackStocks.forEach((s: any) => {
         const g = gl[s.entry_grade] ?? "";
         const w = wl[s.warn_grade] ?? "";
-        msg += `${g} ${esc(s.name)} (${s.code}) ${s.entry_grade}(${s.entry_score}/4) ${w}\n`;
+        const rt = realtimeMap[s.code];
+        const price = rt?.price ?? s.close;
+        msg += `  ${g} ${esc(s.name)} (${s.code}) <code>${safeFmt(price)}원</code>\n`;
+        msg += `     ${s.entry_grade}(${s.entry_score}/4) · ${w}\n`;
       });
     }
 
-    msg += `\n${LINE}\n/점수 종목코드 로 상세 확인\n/눌림목 으로 전체 목록`;
+    msg += `\n${LINE}\n/점수 종목코드 · /눌림목 · /경제 · /시장`;
 
-    // --- 4) Telegram 전송 ---
+    // --- 6) Telegram 전송 ---
     await tgSend("sendMessage", {
       chat_id: ctx.chatId,
       text: msg,

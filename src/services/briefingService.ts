@@ -1,4 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { fetchRealtimePriceBatch } from "../utils/fetchRealtimePrice";
+import { fetchAllMarketData, type MarketOverview } from "../utils/fetchMarketData";
 
 // JSONB용 느슨한 타입
 type Json = Record<string, any>;
@@ -131,42 +133,86 @@ export async function createBriefingReport(
     scoreAsOf
   );
 
-  // 6. 섹터별 리포트 텍스트 조립
+  // 6. 실시간 가격 일괄 조회
+  const allCodes = (sectorStocks ?? []).map((s) => s.code);
+  const bottomCodes = bottomCandidates.map((s) => s.code);
+  const uniqueCodes = [...new Set([...allCodes, ...bottomCodes])];
+  const realtimeMap = uniqueCodes.length
+    ? await fetchRealtimePriceBatch(uniqueCodes).catch(() => ({} as Record<string, any>))
+    : {};
+
+  // 7. 글로벌 시장 데이터
+  const marketData = await fetchAllMarketData().catch(() => ({} as MarketOverview));
+
+  // 8. 섹터별 리포트 텍스트 조립
   const sectorReports = topSectors.map((sector) => {
     const stocksOfSector =
       sectorStocks?.filter((s) => s.sector_id === sector.id) ?? [];
 
-    const picked = pickTopStocksForSector(stocksOfSector, scoresByCode, 2);
+    const picked = pickTopStocksForSector(stocksOfSector, scoresByCode, 3);
 
-    return formatSectorSection(sector, picked, scoresByCode);
+    return formatSectorSection(sector, picked, scoresByCode, realtimeMap);
   });
 
-  // 7. 빈집털이 섹션 텍스트 조립
-  const bottomSectionText = formatBottomSection(bottomCandidates);
+  // 9. 빈집털이 섹션 텍스트 조립
+  const bottomSectionText = formatBottomSection(bottomCandidates, realtimeMap);
 
-  // 8. 최종 메시지 합치기
-  const dateLabel = new Date(asOf).toLocaleDateString("ko-KR", {
+  // 10. 최종 메시지 합치기
+  // 장전 브리핑: 오늘(발송일) 날짜, 마감 브리핑: 오늘 날짜
+  const now = new Date();
+  const kst = new Date(now.getTime() + 9 * 60 * 60 * 1000); // UTC → KST
+  const briefingDate = kst.toLocaleDateString("ko-KR", {
     month: "long",
     day: "numeric",
     weekday: "short",
   });
 
-  const title =
-    type === "pre_market"
-      ? `☀️ **${dateLabel} 장전 브리핑**`
-      : `🌙 **${dateLabel} 마감 브리핑**`;
+  const dataDate = new Date(asOf).toLocaleDateString("ko-KR", {
+    month: "numeric",
+    day: "numeric",
+  });
 
-  let report = `${title}\n\n`;
+  const emoji = type === "pre_market" ? "☀️" : "🌙";
+  const typeLabel = type === "pre_market" ? "장전 브리핑" : "마감 브리핑";
+  const title = `${emoji} <b>${briefingDate} ${typeLabel}</b>`;
 
-  report += `🚀 **오늘의 주도 테마 (Top 3)**\n`;
-  // 섹터 사이 간격을 확실히 벌려줌 (\n\n)
+  let report = `${title}\n─────────────────\n\n`;
+
+  // 글로벌 환경 요약
+  report += `<b>🌍 시장 환경</b>\n`;
+  const mktLines: string[] = [];
+  if (marketData.kospi) {
+    const k = marketData.kospi;
+    mktLines.push(`  KOSPI  <b>${k.price.toLocaleString()}</b> ${fmtChange(k.changeRate)}`);
+  }
+  if (marketData.kosdaq) {
+    const kd = marketData.kosdaq;
+    mktLines.push(`  KOSDAQ <b>${kd.price.toLocaleString()}</b> ${fmtChange(kd.changeRate)}`);
+  }
+  if (marketData.vix) {
+    const v = marketData.vix;
+    const tag = v.price >= 30 ? "⚠️ 공포" : v.price >= 20 ? "🟡 주의" : "🟢 안정";
+    mktLines.push(`  VIX   <b>${v.price.toFixed(1)}</b> ${tag}`);
+  }
+  if (marketData.usdkrw) {
+    const fx = marketData.usdkrw;
+    mktLines.push(`  환율  <b>${fx.price.toLocaleString()}원</b> ${fmtChange(fx.changeRate)}`);
+  }
+  if (marketData.fearGreed) {
+    const fg = marketData.fearGreed;
+    mktLines.push(`  공포·탐욕  <b>${fg.score}</b> (${fg.rating})`);
+  }
+  report += mktLines.length > 0 ? mktLines.join("\n") + "\n" : "  (조회 불가)\n";
+
+  report += `\n<b>🚀 주도 테마 Top 3</b>\n`;
   report += sectorReports.join("\n\n");
 
-  report += `\n\n👀 **'빈집털이' 후보 (과매도 + 모멘텀 개선)**\n`;
+  report += `\n\n<b>👀 빈집털이 후보</b> <i>과매도 + 모멘텀 개선</i>\n`;
   report += bottomSectionText;
 
-  report += `\n\n📌 기준일: 섹터 ${asOf}, 점수 ${scoreAsOf}\n`;
-  report += `💡 /start 명령어로 알림 설정을 확인하세요.`;
+  report += `\n─────────────────\n`;
+  report += `<i>📊 데이터 기준: ${dataDate} | 점수 기준: ${scoreAsOf}</i>\n`;
+  report += `/점수 종목코드 · /눌림목 · /경제 · /시장`;
 
   return report;
 }
@@ -294,27 +340,24 @@ function pickTopStocksForSector(
 function formatSectorSection(
   sector: SectorRow,
   stocks: any[],
-  scoresByCode: Map<string, ScoreRow>
+  scoresByCode: Map<string, ScoreRow>,
+  realtimeMap: Record<string, any>
 ) {
   const sectorEmoji = getSectorEmoji(sector.name);
   const metrics = (sector.metrics ?? {}) as Json;
 
   const ret1m = toNumber(metrics.ret_1m ?? metrics.return_1m);
-  const ret3m = toNumber(metrics.ret_3m ?? metrics.return_3m);
   const change = sector.change_rate as number | null;
 
-  let header = `\n${sectorEmoji} **${sector.name}**`;
-  header += ` | 점수 ${fmtInt(sector.score)}`;
-  header += ` | 일간 ${fmtPct(change)}`;
-  if (ret1m != null) header += ` | 1M ${fmtPct(ret1m)}`;
-  if (ret3m != null) header += ` | 3M ${fmtPct(ret3m)}`;
-  header += "\n";
+  let header = `${sectorEmoji} <b>${sector.name}</b>`;
+  header += `  점수 <b>${fmtInt(sector.score)}</b>`;
+  header += `  ${fmtChange(change)}`;
+  if (ret1m != null) header += `  1M ${fmtPct(ret1m)}`;
 
   const lines: string[] = [header];
 
-  // [수정 완료] 종목 없을 때 안내 문구
   if (!stocks || stocks.length === 0) {
-    lines.push(`  ↳ (집계된 유동성 종목 없음)`);
+    lines.push(`  <i>집계된 유동성 종목 없음</i>`);
     return lines.join("\n");
   }
 
@@ -322,46 +365,54 @@ function formatSectorSection(
     const score = scoresByCode.get(stock.code);
     const total = score?.total_score ?? score?.momentum_score ?? null;
     const rsi = stock.rsi14 != null ? Math.round(stock.rsi14) : null;
-    const price =
-      stock.close != null ? Number(stock.close).toLocaleString("ko-KR") : "-";
 
-    const arrow = changeArrow(change);
+    // 실시간 가격 우선, 없으면 DB 가격
+    const rt = realtimeMap[stock.code];
+    const price = rt?.price ?? stock.close;
+    const priceStr = price != null ? Number(price).toLocaleString("ko-KR") : "-";
+    const changeStr = rt ? ` ${fmtChange(rt.changeRate)}` : "";
+
     const tags: string[] = [];
-    if (stock.is_sector_leader) tags.push("리더");
+    if (stock.is_sector_leader) tags.push("🏅");
+    const tagStr = tags.length ? tags.join("") + " " : "  ";
+
+    lines.push(
+      `${tagStr}<b>${stock.name}</b> <code>${priceStr}원</code>${changeStr}`
+    );
+
+    const details: string[] = [];
+    if (total != null) details.push(`점수 ${total}`);
+    if (rsi != null) details.push(`RSI ${rsi}`);
     if (stock.universe_level && stock.universe_level !== "tail")
-      tags.push(stock.universe_level);
-
-    const tagStr = tags.length ? ` (${tags.join(",")})` : "";
-
-    const parts = [
-      `${stock.name}${tagStr}`,
-      total != null ? `T${total}` : undefined,
-      rsi != null ? `RSI${rsi}` : undefined,
-    ].filter(Boolean);
-
-    lines.push(`  └ ${parts.join(" / ")} | ${price}원 ${arrow}`);
+      details.push(stock.universe_level);
+    if (details.length) {
+      lines.push(`     ${details.join(" · ")}`);
+    }
   });
 
   return lines.join("\n");
 }
 
-function formatBottomSection(candidates: any[]) {
-  // [수정 완료] 후보 없으면 안내 메시지 출력 (주석 해제함)
+function formatBottomSection(candidates: any[], realtimeMap: Record<string, any>) {
   if (!candidates || candidates.length === 0) {
-    return "- 감지된 종목이 없습니다.\n";
+    return "  <i>감지된 종목이 없습니다.</i>\n";
   }
 
   return (
     candidates
       .map((s) => {
-        const price =
-          s.close != null ? Number(s.close).toLocaleString("ko-KR") : "-";
+        const rt = realtimeMap[s.code];
+        const price = rt?.price ?? s.close;
+        const priceStr = price != null ? Number(price).toLocaleString("ko-KR") : "-";
+        const changeStr = rt ? ` ${fmtChange(rt.changeRate)}` : "";
         const rsi = s.rsi14 != null ? Math.round(s.rsi14) : null;
-        const rsiText = rsi != null ? `RSI ${rsi}` : "RSI N/A";
 
-        return `- ${s.name} (${
-          s.code
-        }): ${price}원 / ${rsiText} / 모멘텀 ${fmtInt(s.momentum_score)}`;
+        let line = `  ▸ <b>${s.name}</b> <code>${priceStr}원</code>${changeStr}`;
+        const info: string[] = [];
+        if (rsi != null) info.push(`RSI ${rsi}`);
+        if (s.momentum_score != null) info.push(`모멘텀 ${fmtInt(s.momentum_score)}`);
+        if (info.length) line += `\n     ${info.join(" · ")}`;
+        return line;
       })
       .join("\n") + "\n"
   );
@@ -383,19 +434,20 @@ function fmtPct(v: number | null | undefined): string {
   return `${n >= 0 ? "+" : ""}${n.toFixed(1)}%`;
 }
 
+/** 등락률 화살표 포맷 (▲/▼ + 색상 느낌) */
+function fmtChange(v: number | null | undefined): string {
+  if (v == null || !Number.isFinite(Number(v))) return "";
+  const n = Number(v);
+  if (n > 0) return `▲${n.toFixed(1)}%`;
+  if (n < 0) return `▼${Math.abs(n).toFixed(1)}%`;
+  return "0.0%";
+}
+
 function fmtInt(v: number | null | undefined): string {
   if (v === null || v === undefined || !Number.isFinite(Number(v))) {
     return "-";
   }
   return String(Math.round(Number(v)));
-}
-
-function changeArrow(v: number | null | undefined): string {
-  if (v == null || !Number.isFinite(Number(v))) return "-";
-  const n = Number(v);
-  if (n > 0) return `🔺${n.toFixed(1)}%`;
-  if (n < 0) return `🔹${n.toFixed(1)}%`;
-  return "0.0%";
 }
 
 function getSectorEmoji(name: string): string {
@@ -404,5 +456,10 @@ function getSectorEmoji(name: string): string {
   if (name.includes("바이오") || name.includes("제약")) return "💊";
   if (name.includes("자동차")) return "🚗";
   if (name.includes("로봇") || name.includes("AI")) return "🤖";
+  if (name.includes("건설") || name.includes("인프라")) return "🏗️";
+  if (name.includes("금융") || name.includes("은행")) return "🏦";
+  if (name.includes("에너지") || name.includes("석유")) return "⛽";
+  if (name.includes("방산") || name.includes("우주")) return "🚀";
+  if (name.includes("엔터") || name.includes("미디어")) return "🎬";
   return "📊";
 }
