@@ -23,9 +23,25 @@ import { handleFlowCommand } from "./commands/flow";
 import { handleEconomyCommand } from "./commands/economy";
 import { handleNewsCommand } from "./commands/news";
 import { handleMarketCommand } from "./commands/market";
+import { handleProfileCommand } from "./commands/profile";
+import { handleRankingCommand } from "./commands/ranking";
+import {
+  handleFollowCommand,
+  handleUnfollowCommand,
+  handleFeedCommand,
+} from "./commands/follow";
 import { setCommandsKo } from "../telegram/api";
+import {
+  ensureUser,
+  logActivity,
+  type TelegramFrom,
+} from "../services/userService";
 
-export type ChatContext = { chatId: number; messageId?: number };
+export type ChatContext = {
+  chatId: number;
+  messageId?: number;
+  from?: TelegramFrom;
+};
 
 // 내부 POST 호출(강제 타임아웃 포함)
 async function callInternal(path: string, ms = 8000) {
@@ -83,6 +99,11 @@ const CMD = {
   ECONOMY: /^\/(economy|경제|지표)$/i,
   NEWS: /^\/(news|뉴스)(?:\s+(.+))?$/i,
   MARKET: /^\/(market|시장|진단)$/i,
+  PROFILE: /^\/(profile|프로필)$/i,
+  RANKING: /^\/(ranking|랭킹)$/i,
+  FOLLOW: /^\/(follow|팔로우)(?:\s+(.+))?$/i,
+  UNFOLLOW: /^\/(unfollow|언팔로우)(?:\s+(.+))?$/i,
+  FEED: /^\/(feed|피드)$/i,
 };
 
 export async function routeMessage(
@@ -95,11 +116,22 @@ export async function routeMessage(
     .replace(/\u00A0/g, " ")
     .replace(/\s+/g, " ");
 
-  // /start
+  // 사용자 추적 (fire & forget)
+  if (ctx.from) {
+    const cmd = (t.match(/^\/([^\s@]+)/) || [])[1] || "msg";
+    Promise.all([
+      ensureUser(ctx.from),
+      logActivity(ctx.from.id, cmd),
+    ]).catch(() => {});
+  }
+
+  // /start — 환영 + 사용자 등록 (ensureUser는 middleware에서 이미 호출)
   if (CMD.START.test(t)) {
+    const name = ctx.from?.first_name || "";
+    const greeting = name ? `안녕하세요, ${name}님! ` : "";
     await tgSend("sendMessage", {
       chat_id: ctx.chatId,
-      text: KO_MESSAGES.START,
+      text: `${greeting}${KO_MESSAGES.START}`,
     });
     return;
   }
@@ -405,6 +437,78 @@ export async function routeMessage(
       await tgSend("sendMessage", {
         chat_id: ctx.chatId,
         text: "시장 진단 중 오류가 발생했습니다.",
+      });
+    }
+    return;
+  }
+
+  // /프로필
+  if (CMD.PROFILE.test(t)) {
+    try {
+      await handleProfileCommand(ctx, tgSend);
+    } catch (e) {
+      console.error("handleProfileCommand failed:", e);
+      await tgSend("sendMessage", {
+        chat_id: ctx.chatId,
+        text: "프로필 조회 중 오류가 발생했습니다.",
+      });
+    }
+    return;
+  }
+
+  // /랭킹
+  if (CMD.RANKING.test(t)) {
+    try {
+      await handleRankingCommand(ctx, tgSend);
+    } catch (e) {
+      console.error("handleRankingCommand failed:", e);
+      await tgSend("sendMessage", {
+        chat_id: ctx.chatId,
+        text: "랭킹 조회 중 오류가 발생했습니다.",
+      });
+    }
+    return;
+  }
+
+  // /팔로우
+  const mFollow = t.match(CMD.FOLLOW);
+  if (mFollow) {
+    try {
+      await handleFollowCommand(mFollow[2] || "", ctx, tgSend);
+    } catch (e) {
+      console.error("handleFollowCommand failed:", e);
+      await tgSend("sendMessage", {
+        chat_id: ctx.chatId,
+        text: "팔로우 처리 중 오류가 발생했습니다.",
+      });
+    }
+    return;
+  }
+
+  // /언팔로우
+  const mUnfollow = t.match(CMD.UNFOLLOW);
+  if (mUnfollow) {
+    try {
+      await handleUnfollowCommand(mUnfollow[2] || "", ctx, tgSend);
+    } catch (e) {
+      console.error("handleUnfollowCommand failed:", e);
+      await tgSend("sendMessage", {
+        chat_id: ctx.chatId,
+        text: "언팔로우 처리 중 오류가 발생했습니다.",
+      });
+    }
+    return;
+  }
+
+  // /피드
+  if (CMD.FEED.test(t)) {
+    try {
+      await handleFeedCommand(ctx, tgSend);
+    } catch (e) {
+      console.error("handleFeedCommand failed:", e);
+      await tgSend("sendMessage", {
+        chat_id: ctx.chatId,
+        text: "피드 조회 중 오류가 발생했습니다.",
       });
     }
     return;

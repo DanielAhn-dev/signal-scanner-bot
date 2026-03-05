@@ -15,6 +15,33 @@ export type SectorRow = {
   updated_at?: string;
 };
 
+export type UserRow = {
+  id: string;
+  tg_id: number;
+  username?: string | null;
+  first_name?: string | null;
+  language_code?: string;
+  prefs?: any;
+  last_active_at?: string;
+  is_active?: boolean;
+  created_at?: string;
+};
+
+export type UserActivityRow = {
+  id: number;
+  tg_id: number;
+  command: string;
+  args?: string | null;
+  created_at?: string;
+};
+
+export type FollowRow = {
+  id: number;
+  follower_tg_id: number;
+  following_tg_id: number;
+  created_at?: string;
+};
+
 export type PullbackSignalRow = {
   code: string;
   trade_date: string;

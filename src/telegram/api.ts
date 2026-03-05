@@ -43,6 +43,10 @@ export async function setCommandsKo(): Promise<TgResponse> {
     { command: "economy", description: "글로벌 경제지표 (/경제)" },
     { command: "news", description: "시장·종목 뉴스 (/뉴스)" },
     { command: "market", description: "종합 시장 진단 (/시장)" },
+    { command: "profile", description: "내 프로필 (/프로필)" },
+    { command: "ranking", description: "포트폴리오 랭킹 (/랭킹)" },
+    { command: "follow", description: "트레이더 팔로우 (/팔로우)" },
+    { command: "feed", description: "팔로잉 피드 (/피드)" },
   ];
 
   const r1 = await tg("setMyCommands", { commands });

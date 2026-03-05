@@ -89,15 +89,16 @@ async function handleTelegramUpdateJob(job: any) {
   // 콜백 버튼
   if (u?.callback_query?.data && u?.callback_query?.message?.chat?.id) {
     const chatId = u.callback_query.message.chat.id as number;
+    const from = u.callback_query.from;
 
     await tgFetch("answerCallbackQuery", {
       callback_query_id: u.callback_query.id,
-      text: "처리 중…",
+      text: "처리 중\u2026",
       show_alert: false,
     });
 
     await withTimeout(
-      routeCallback(u.callback_query.data, { chatId }, tgFetch)
+      routeCallback(u.callback_query.data, { chatId, from }, tgFetch)
     );
     return;
   }
@@ -105,11 +106,12 @@ async function handleTelegramUpdateJob(job: any) {
   // 일반 텍스트 메시지
   if (u?.message?.text && u?.message?.chat?.id) {
     const chatId = u.message.chat.id as number;
+    const from = u.message.from;
     const text = String(u.message.text || "").trim();
     if (!text) return;
 
     await tgFetch("sendChatAction", { chat_id: chatId, action: "typing" });
-    await withTimeout(routeMessage(text, { chatId }, tgFetch));
+    await withTimeout(routeMessage(text, { chatId, from }, tgFetch));
   }
 }
 
