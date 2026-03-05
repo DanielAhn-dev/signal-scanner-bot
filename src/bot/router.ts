@@ -129,9 +129,48 @@ export async function routeMessage(
   if (CMD.START.test(t)) {
     const name = ctx.from?.first_name || "";
     const greeting = name ? `안녕하세요, ${name}님! ` : "";
+    const msg =
+      `${greeting}<b>Signal Scanner Bot</b>\n` +
+      `아래 버튼을 눌러 시작하세요.`;
+
+    const btns = [
+      // 1열: 핵심 분석
+      [
+        { text: "📊 섹터", callback_data: "cmd:sector" },
+        { text: "🔍 스캔", callback_data: "cmd:scan" },
+        { text: "📋 브리핑", callback_data: "cmd:brief" },
+      ],
+      // 2열: 종목별 (인자 필요)
+      [
+        { text: "💯 점수", callback_data: "prompt:score" },
+        { text: "💰 매수", callback_data: "prompt:buy" },
+        { text: "📰 뉴스", callback_data: "prompt:news" },
+      ],
+      // 3열: 시장/수급
+      [
+        { text: "🌍 경제", callback_data: "cmd:economy" },
+        { text: "🏥 시장", callback_data: "cmd:market" },
+        { text: "💹 수급", callback_data: "prompt:flow" },
+      ],
+      // 4열: 관심종목/소셜
+      [
+        { text: "⭐ 관심종목", callback_data: "cmd:watchlist" },
+        { text: "🏆 랭킹", callback_data: "cmd:ranking" },
+        { text: "📡 피드", callback_data: "cmd:feed" },
+      ],
+      // 5열: 기타
+      [
+        { text: "🔄 다음섹터", callback_data: "cmd:nextsector" },
+        { text: "📉 눌림목", callback_data: "cmd:pullback" },
+        { text: "👤 프로필", callback_data: "cmd:profile" },
+      ],
+    ];
+
     await tgSend("sendMessage", {
       chat_id: ctx.chatId,
-      text: `${greeting}${KO_MESSAGES.START}`,
+      text: msg,
+      parse_mode: "HTML",
+      reply_markup: { inline_keyboard: btns },
     });
     return;
   }
@@ -526,6 +565,60 @@ export async function routeCallback(
   ctx: ChatContext,
   tgSend: any
 ): Promise<void> {
+  // ─── /start 메뉴 버튼: 인자 불필요 명령어 직접 실행 ───
+  if (data.startsWith("cmd:")) {
+    const cmd = data.slice(4);
+    const directMap: Record<string, () => Promise<void>> = {
+      sector: () => handleSectorCommand(ctx, tgSend),
+      nextsector: () => handleNextSectorCommand(ctx, tgSend),
+      scan: () => handleScanCommand("", ctx, tgSend),
+      brief: () => handleBriefCommand(ctx, tgSend),
+      economy: () => handleEconomyCommand(ctx, tgSend),
+      market: () => handleMarketCommand(ctx, tgSend),
+      pullback: () => handlePullbackCommand(ctx, tgSend),
+      watchlist: () => handleWatchlistCommand(ctx, tgSend),
+      ranking: () => handleRankingCommand(ctx, tgSend),
+      feed: () => handleFeedCommand(ctx, tgSend),
+      profile: () => handleProfileCommand(ctx, tgSend),
+    };
+    const handler = directMap[cmd];
+    if (handler) {
+      try { await handler(); } catch (e) {
+        console.error(`cmd:${cmd} failed:`, e);
+        await tgSend("sendMessage", {
+          chat_id: ctx.chatId,
+          text: "처리 중 오류가 발생했습니다.",
+        });
+      }
+    }
+    return;
+  }
+
+  // ─── /start 메뉴 버튼: 인자 필요 명령어 → 종목명 입력 프롬프트 ───
+  if (data.startsWith("prompt:")) {
+    const cmd = data.slice(7);
+    const promptMap: Record<string, { label: string; hint: string }> = {
+      score: { label: "💯 점수 조회", hint: "예) 삼성전자, 005930" },
+      buy: { label: "💰 매수 판독", hint: "예) SK하이닉스" },
+      news: { label: "📰 종목 뉴스", hint: "예) 카카오" },
+      flow: { label: "💹 수급 조회", hint: "예) LG에너지솔루션" },
+    };
+    const info = promptMap[cmd];
+    if (info) {
+      await tgSend("sendMessage", {
+        chat_id: ctx.chatId,
+        text: `<b>${info.label}</b>\n종목명 또는 코드를 입력하세요.\n<i>${info.hint}</i>`,
+        parse_mode: "HTML",
+        reply_markup: {
+          force_reply: true,
+          selective: true,
+          input_field_placeholder: `[${cmd}] 종목명 입력…`,
+        },
+      });
+    }
+    return;
+  }
+
   // 섹터 버튼
   if (data.startsWith("KRX:")) {
     const sectorId = data;

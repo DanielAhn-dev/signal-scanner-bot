@@ -107,8 +107,45 @@ async function handleTelegramUpdateJob(job: any) {
   if (u?.message?.text && u?.message?.chat?.id) {
     const chatId = u.message.chat.id as number;
     const from = u.message.from;
-    const text = String(u.message.text || "").trim();
+    let text = String(u.message.text || "").trim();
     if (!text) return;
+
+    // force_reply 응답 → reply_to_message에서 명령어 컨텍스트 추출
+    const replyText = u.message.reply_to_message?.text || "";
+    const placeholderMatch = (
+      u.message.reply_to_message?.reply_markup?.force_reply
+        ? (u.message.reply_to_message?.reply_markup?.input_field_placeholder || "")
+        : ""
+    ).match(/^\[(\w+)\]/);
+
+    if (!text.startsWith("/") && (placeholderMatch || replyText)) {
+      // placeholder에서 명령어 추출: "[score] 종목명 입력…"
+      const cmdFromPlaceholder = placeholderMatch?.[1];
+      // 혹은 메시지 텍스트에서 추출: "💯 점수 조회" 등
+      const cmdMap: Record<string, string> = {
+        score: "/점수",
+        buy: "/매수",
+        news: "/뉴스",
+        flow: "/수급",
+      };
+      const prefix = cmdFromPlaceholder
+        ? cmdMap[cmdFromPlaceholder]
+        : null;
+
+      // reply 텍스트 패턴으로도 매칭 시도
+      const fallbackCmd = !prefix
+        ? replyText.includes("점수") ? "/점수"
+        : replyText.includes("매수") ? "/매수"
+        : replyText.includes("뉴스") ? "/뉴스"
+        : replyText.includes("수급") ? "/수급"
+        : null
+        : null;
+
+      const resolvedPrefix = prefix || fallbackCmd;
+      if (resolvedPrefix) {
+        text = `${resolvedPrefix} ${text}`;
+      }
+    }
 
     await tgFetch("sendChatAction", { chat_id: chatId, action: "typing" });
     await withTimeout(routeMessage(text, { chatId, from }, tgFetch));
