@@ -6,6 +6,7 @@ import { fetchRealtimePrice } from "../../utils/fetchRealtimePrice";
 import { esc, fmtInt, LINE } from "../messages/format";
 import { getUserInvestmentPrefs } from "../../services/userService";
 import { getFundamentalSnapshot } from "../../services/fundamentalService";
+import { actionButtons, ACTIONS } from "../messages/layout";
 
 // Supabase 클라이언트
 const supabase = createClient(
@@ -282,8 +283,7 @@ export async function handleBuyCommand(
       text: `${h.name} (${h.code})`,
       callback_data: `buy:${h.code}`,
     }));
-    const { createMultiRowKeyboard } = await import("../../telegram/keyboards");
-    const keyboard = createMultiRowKeyboard(1, btns);
+    const keyboard = actionButtons(btns, 1);
     await tgSend("sendMessage", {
       chat_id: ctx.chatId,
       text: `'${esc(query)}' 검색 결과 ${hits.length}건 — 종목을 선택하세요`,
@@ -374,14 +374,7 @@ export async function handleBuyCommand(
     investPlan
   );
 
-  const { createMultiRowKeyboard } = await import("../../telegram/keyboards");
-  const kb = createMultiRowKeyboard(3, [
-    { text: "점수 조회", callback_data: `score:${code}` },
-    { text: "재무", callback_data: `finance:${code}` },
-    { text: "관심추가", callback_data: `watchadd:${code}` },
-    { text: "뉴스", callback_data: `news:${code}` },
-    { text: "수급", callback_data: `flow:${code}` },
-  ]);
+  const kb = actionButtons(ACTIONS.analyzeStock(code), 3);
 
   await tgSend("sendMessage", {
     chat_id: ctx.chatId,

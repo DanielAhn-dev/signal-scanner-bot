@@ -5,17 +5,22 @@ import {
   getTopSectors,
   getNextSectorCandidates,
 } from "../../lib/sectors";
-import { createMultiRowKeyboard } from "../../telegram/keyboards";
 import { fmtKRW, fmtPctSafe, getBizDaysAgo } from "../../lib/normalize";
-import { esc, LINE } from "../messages/format";
+import { esc } from "../messages/format";
+import {
+  header,
+  section,
+  divider,
+  buildMessage,
+  actionButtons,
+  ACTIONS,
+} from "../messages/layout";
 
 // --- 메시지 빌더 (HTML) ---
 function buildSectorListMessage(title: string, sectors: SectorScore[]): string {
   if (!sectors.length) return "데이터가 없습니다.";
 
-  const header = `<b>${esc(title)}</b>  TOP ${sectors.length}\n<i>수급(5일) · 단기 모멘텀(RS) 기준</i>`;
-
-  const lines = sectors.map((s, idx) => {
+  const topLines = sectors.map((s, idx) => {
     const rank = idx + 1;
     const flows: string[] = [];
     if (s.flowF5 !== 0) flows.push(`외 ${fmtKRW(s.flowF5)}`);
@@ -23,13 +28,14 @@ function buildSectorListMessage(title: string, sectors: SectorScore[]): string {
     const flowStr = flows.length ? flows.join(", ") : "수급 특이 없음";
     const rsDisplay = fmtPctSafe(s.rs1M);
 
-    return [
-      `${rank}. <b>${esc(s.name)}</b>  <code>${s.score.toFixed(0)}점</code>`,
-      `   ${flowStr} · RS(1M) ${rsDisplay}`,
-    ].join("\n");
+    return `${rank}. <b>${esc(s.name)}</b>  <code>${s.score.toFixed(0)}점</code>\n${flowStr} · RS(1M) ${rsDisplay}`;
   });
 
-  return [header, LINE, ...lines].join("\n");
+  return buildMessage([
+    header(`${title} TOP ${sectors.length}`, "수급(5일) · 단기 모멘텀(RS) 기준"),
+    section("섹터 랭킹", topLines),
+    divider(),
+  ]);
 }
 
 const CALLBACK_MAX = 60;
@@ -82,7 +88,7 @@ export async function handleSectorCommand(
     chat_id: ctx.chatId,
     text,
     parse_mode: "HTML",
-    reply_markup: createMultiRowKeyboard(2, buttons),
+    reply_markup: actionButtons([...buttons, ...ACTIONS.marketHub], 2),
   });
 }
 
@@ -126,6 +132,6 @@ export async function handleNextSectorCommand(
     chat_id: ctx.chatId,
     text,
     parse_mode: "HTML",
-    reply_markup: createMultiRowKeyboard(2, buttons),
+    reply_markup: actionButtons([...buttons, ...ACTIONS.marketHub], 2),
   });
 }

@@ -1,10 +1,10 @@
 import * as cheerio from "cheerio";
 import type { ChatContext } from "../router";
-import { createMultiRowKeyboard } from "../../telegram/keyboards";
 import { searchByNameOrCode } from "../../search/normalize";
 import { fetchRealtimeStockData } from "../../utils/fetchRealtimePrice";
 import { esc, fmtInt, LINE } from "../messages/format";
 import { getFundamentalSnapshot } from "../../services/fundamentalService";
+import { actionButtons, ACTIONS } from "../messages/layout";
 
 function interpretFinance(input: {
   per?: number;
@@ -75,7 +75,7 @@ export async function handleFinanceCommand(
       chat_id: ctx.chatId,
       text: `'${esc(query)}' 검색 결과 ${hits.length}건 — 종목을 선택하세요`,
       parse_mode: "HTML",
-      reply_markup: createMultiRowKeyboard(1, btns),
+      reply_markup: actionButtons(btns, 1),
     });
   }
 
@@ -141,12 +141,6 @@ export async function handleFinanceCommand(
     chat_id: ctx.chatId,
     text: msg,
     parse_mode: "HTML",
-    reply_markup: createMultiRowKeyboard(3, [
-      { text: "점수", callback_data: `score:${code}` },
-      { text: "매수", callback_data: `buy:${code}` },
-      { text: "수급", callback_data: `flow:${code}` },
-      { text: "뉴스", callback_data: `news:${code}` },
-      { text: "관심추가", callback_data: `watchadd:${code}` },
-    ]),
+    reply_markup: actionButtons(ACTIONS.analyzeStock(code), 3),
   });
 }

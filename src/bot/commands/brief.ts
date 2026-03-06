@@ -3,7 +3,7 @@ import { createClient } from "@supabase/supabase-js";
 import { esc, fmtInt, LINE } from "../messages/format";
 import { fetchRealtimePriceBatch } from "../../utils/fetchRealtimePrice";
 import { fetchAllMarketData } from "../../utils/fetchMarketData";
-import { createMultiRowKeyboard } from "../../telegram/keyboards";
+import { actionButtons, ACTIONS } from "../messages/layout";
 
 const supabase = createClient(
   process.env.SUPABASE_URL!,
@@ -222,14 +222,7 @@ export async function handleBriefCommand(
       text: picks,
       parse_mode: "HTML",
       disable_web_page_preview: true,
-      reply_markup: createMultiRowKeyboard(3, [
-        { text: "점수", callback_data: "prompt:score" },
-        { text: "매수", callback_data: "prompt:buy" },
-        { text: "뉴스", callback_data: "prompt:news" },
-        { text: "수급", callback_data: "prompt:flow" },
-        { text: "눌림목", callback_data: "cmd:pullback" },
-        { text: "시장", callback_data: "cmd:market" },
-      ]),
+      reply_markup: actionButtons(ACTIONS.briefing, 3),
     });
   } catch (e) {
     console.error("handleBriefCommand 실패:", e);

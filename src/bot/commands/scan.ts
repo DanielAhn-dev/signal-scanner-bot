@@ -4,6 +4,7 @@
 import { createClient } from "@supabase/supabase-js";
 import { fetchRealtimePriceBatch } from "../../utils/fetchRealtimePrice";
 import { getFundamentalSnapshot } from "../../services/fundamentalService";
+import { header, section, divider, buildMessage, actionButtons, ACTIONS } from "../messages/layout";
 
 const url = process.env.SUPABASE_URL;
 const key = process.env.SUPABASE_ANON_KEY;
@@ -234,10 +235,8 @@ export async function handleScanCommand(
   }
 
   // 5. 결과 메시지
-  const LINE = "─────────────────";
   const modeTag = live ? "📡 실시간" : `📊 ${latestDate}`;
-  let msg = `<b>${sectorId ? query + " 섹터" : "전체 시장"} 스캔 결과</b>\n`;
-  msg += `<i>${modeTag} · 정배열, RSI 40-70, 20일선 눌림</i>\n${LINE}\n`;
+  const resultLines: string[] = [];
 
   // 6. 2차 재무 리랭크 (상위 후보만, 지연 최소화)
   const rerankPool = topPicks.slice(0, 12);
@@ -277,20 +276,36 @@ export async function handleScanCommand(
     if (live && stock._rtChange != null) {
       const chg = stock._rtChange >= 0 ? `▲${stock._rtChange.toFixed(1)}%` : `▼${Math.abs(stock._rtChange).toFixed(1)}%`;
       const vol = fmtKorMoney(stock._rtVolume ?? stock.value_traded);
-      msg += `${i + 1}. <b>${name}</b>  <code>${stock.close.toLocaleString()}원</code>  ${chg}\n`;
-      msg += `   RSI ${rsi} · ${valueLabel} · ${fLabel}\n`;
-      msg += `   20일선 ${gap20}% · 거래대금 ${vol}\n\n`;
+      resultLines.push(
+        `${i + 1}. <b>${name}</b>  <code>${stock.close.toLocaleString()}원</code>  ${chg}\n` +
+          `RSI ${rsi} · ${valueLabel} · ${fLabel}\n` +
+          `20일선 ${gap20}% · 거래대금 ${vol}`
+      );
     } else {
       const vol = fmtKorMoney(stock.value_traded);
-      msg += `${i + 1}. <b>${name}</b>  <code>${stock.close.toLocaleString()}원</code>\n`;
-      msg += `   RSI ${rsi} · ${valueLabel} · ${fLabel}\n`;
-      msg += `   20일선 ${gap20}% · 거래대금 ${vol}\n\n`;
+      resultLines.push(
+        `${i + 1}. <b>${name}</b>  <code>${stock.close.toLocaleString()}원</code>\n` +
+          `RSI ${rsi} · ${valueLabel} · ${fLabel}\n` +
+          `20일선 ${gap20}% · 거래대금 ${vol}`
+      );
     }
   });
+
+  const msg = buildMessage([
+    header(`${sectorId ? query + " 섹터" : "전체 시장"} 스캔 결과`, `${modeTag} · 정배열, RSI 40-70, 20일선 눌림`),
+    section("상위 후보", resultLines),
+    divider(),
+  ]);
 
   await tgSend("sendMessage", {
     chat_id: ctx.chatId,
     text: msg,
     parse_mode: "HTML",
+    reply_markup: actionButtons([
+      { text: "점수", callback_data: "prompt:score" },
+      { text: "매수", callback_data: "prompt:buy" },
+      { text: "재무", callback_data: "prompt:finance" },
+      ...ACTIONS.marketHub,
+    ], 3),
   });
 }

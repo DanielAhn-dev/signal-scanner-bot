@@ -1,9 +1,9 @@
 import type { ChatContext } from "../router";
-import { createMultiRowKeyboard } from "../../telegram/keyboards";
 import { createClient } from "@supabase/supabase-js";
 import { fmtKRW } from "../../lib/normalize";
-import { esc, fmtInt, LINE } from "../messages/format";
+import { esc, fmtInt } from "../messages/format";
 import { fetchRealtimePriceBatch } from "../../utils/fetchRealtimePrice";
+import { header, section, divider, buildMessage, actionButtons } from "../messages/layout";
 
 const supabase = createClient(
   process.env.SUPABASE_URL!,
@@ -124,10 +124,11 @@ export async function handleStocksCommand(
     })
     .join("\n\n");
 
-  const header = `<b>${esc(sectorName)}</b> 주도주 현황\n<i>대형주(Core) 및 유동성 상위 종목</i>`;
-  const footer = `\n${LINE}\n버튼을 눌러 상세 진단을 확인하세요`;
-
-  const message = [header, LINE, listText, footer].join("\n");
+  const message = buildMessage([
+    header(`${sectorName} 주도주 현황`, "대형주(Core) 및 유동성 상위 종목"),
+    section("상위 종목", [listText]),
+    divider(),
+  ]);
 
   // 5. 버튼 생성
   const buttons = finalStocks.slice(0, 10).map((s: any) => ({
@@ -139,6 +140,6 @@ export async function handleStocksCommand(
     chat_id: ctx.chatId,
     text: message,
     parse_mode: "HTML",
-    reply_markup: createMultiRowKeyboard(2, buttons),
+    reply_markup: actionButtons(buttons, 2),
   });
 }

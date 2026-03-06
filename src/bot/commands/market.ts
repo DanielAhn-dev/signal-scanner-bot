@@ -14,7 +14,7 @@ import {
   type SectorScore,
 } from "../../lib/sectors";
 import { esc, LINE } from "../messages/format";
-import { createMultiRowKeyboard } from "../../telegram/keyboards";
+import { actionButtons, ACTIONS } from "../messages/layout";
 
 const supabase = createClient(
   process.env.SUPABASE_URL!,
@@ -235,11 +235,6 @@ export async function handleMarketCommand(
     text: msg,
     parse_mode: "HTML",
     disable_web_page_preview: true,
-    reply_markup: createMultiRowKeyboard(2, [
-      { text: "경제", callback_data: "cmd:economy" },
-      { text: "수급", callback_data: "cmd:flow" },
-      { text: "섹터", callback_data: "cmd:sector" },
-      { text: "스캔", callback_data: "cmd:scan" },
-    ]),
+    reply_markup: actionButtons(ACTIONS.marketHub, 2),
   });
 }

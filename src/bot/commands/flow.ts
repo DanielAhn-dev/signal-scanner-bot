@@ -9,7 +9,7 @@ import {
   type RealtimeStockData,
 } from "../../utils/fetchRealtimePrice";
 import { esc, fmtInt, LINE } from "../messages/format";
-import { createMultiRowKeyboard } from "../../telegram/keyboards";
+import { actionButtons, ACTIONS } from "../messages/layout";
 import * as cheerio from "cheerio";
 
 const supabase = createClient(
@@ -144,13 +144,7 @@ export async function handleFlowCommand(
     chat_id: ctx.chatId,
     text: msg,
     parse_mode: "HTML",
-    reply_markup: createMultiRowKeyboard(3, [
-      { text: "점수", callback_data: `score:${code}` },
-      { text: "매수", callback_data: `buy:${code}` },
-      { text: "재무", callback_data: `finance:${code}` },
-      { text: "뉴스", callback_data: `news:${code}` },
-      { text: "관심추가", callback_data: `watchadd:${code}` },
-    ]),
+    reply_markup: actionButtons(ACTIONS.analyzeStock(code), 3),
   });
 }
 
@@ -194,10 +188,9 @@ async function handleMarketFlowSummary(
     chat_id: ctx.chatId,
     text: msg,
     parse_mode: "HTML",
-    reply_markup: createMultiRowKeyboard(2, [
-      { text: "종목 수급", callback_data: "prompt:flow" },
-      { text: "시장 진단", callback_data: "cmd:market" },
-      { text: "경제", callback_data: "cmd:economy" },
-    ]),
+    reply_markup: actionButtons(
+      [{ text: "종목 수급", callback_data: "prompt:flow" }, ...ACTIONS.marketFlow],
+      2
+    ),
   });
 }

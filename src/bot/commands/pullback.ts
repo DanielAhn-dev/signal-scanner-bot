@@ -3,9 +3,9 @@
 
 import type { ChatContext } from "../router";
 import { createClient } from "@supabase/supabase-js";
-import { esc, fmtInt, LINE, gradeLabel } from "../messages/format";
+import { esc, gradeLabel } from "../messages/format";
 import { fetchRealtimePriceBatch } from "../../utils/fetchRealtimePrice";
-import { createMultiRowKeyboard } from "../../telegram/keyboards";
+import { header, section, divider, buildMessage, actionButtons, ACTIONS } from "../messages/layout";
 
 const supabase = createClient(
   process.env.SUPABASE_URL!,
@@ -107,9 +107,7 @@ export async function handlePullbackCommand(
         ? `기준일 ${latestDate}`
         : `조회일 ${todayStr}  ·  기준일 ${latestDate} (전거래일 데이터)`;
 
-    let msg = `<b>눌림목 매집 후보</b>\n`;
-    msg += `<i>${dateNote}</i>\n`;
-    msg += `<i>전체 종목 스캔 · A/B 등급, 매도경고 제외</i>\n${LINE}\n`;
+    const candidateLines: string[] = [];
 
     for (const s of topCandidates) {
       const stock = s.stock as any;
@@ -123,10 +121,8 @@ export async function handlePullbackCommand(
         ? ` ${rt.change >= 0 ? "▲" : "▼"}${Math.abs(rt.changeRate).toFixed(1)}%`
         : "";
 
-      msg += `\n${gl} <b>${esc(stock.name)}</b> (${s.code})`;
-      msg += `  <code>${close}원</code>${changeStr}\n`;
-      msg += `   진입 ${s.entry_grade}(${s.entry_score}/4)`;
-      msg += ` · 경고 ${wl}(${s.warn_score}/6)\n`;
+      let line = `${gl} <b>${esc(stock.name)}</b> (${s.code})  <code>${close}원</code>${changeStr}\n`;
+      line += `진입 ${s.entry_grade}(${s.entry_score}/4) · 경고 ${wl}(${s.warn_score}/6)`;
 
       // 세부 등급
       const details: string[] = [];
@@ -135,23 +131,30 @@ export async function handlePullbackCommand(
         details.push(`이격:${s.dist_grade}(${s.dist_pct ?? "-"}%)`);
       if (s.pivot_grade) details.push(`피봇:${s.pivot_grade}`);
       if (s.vol_atr_grade) details.push(`변동:${s.vol_atr_grade}`);
-      if (details.length) msg += `   ${details.join(" · ")}\n`;
+      if (details.length) line += `\n${details.join(" · ")}`;
+      candidateLines.push(line);
     }
 
-    msg += `\n${LINE}\n전체 후보 ${candidates.length}개 중 상위 ${topCandidates.length}개`;
+    const msg = buildMessage([
+      header("눌림목 매집 후보", dateNote),
+      section("스캔 기준", ["전체 종목 스캔 · A/B 등급, 매도경고 제외"]),
+      section("상위 후보", candidateLines),
+      divider(),
+      `전체 후보 ${candidates.length}개 중 상위 ${topCandidates.length}개`,
+    ]);
 
     await tgSend("sendMessage", {
       chat_id: ctx.chatId,
       text: msg,
       parse_mode: "HTML",
       disable_web_page_preview: true,
-      reply_markup: createMultiRowKeyboard(3, [
+      reply_markup: actionButtons([
         { text: "점수", callback_data: "prompt:score" },
         { text: "매수", callback_data: "prompt:buy" },
         { text: "재무", callback_data: "prompt:finance" },
         { text: "뉴스", callback_data: "prompt:news" },
-        { text: "수급", callback_data: "prompt:flow" },
-      ]),
+        ...ACTIONS.marketFlow,
+      ], 3),
     });
   } catch (e) {
     console.error("handlePullbackCommand error:", e);

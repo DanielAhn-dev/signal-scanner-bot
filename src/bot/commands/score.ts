@@ -1,5 +1,5 @@
 import type { ChatContext } from "../router";
-import { createMultiRowKeyboard } from "../../telegram/keyboards";
+import { actionButtons, ACTIONS } from "../messages/layout";
 import { calculateScore } from "../../score/engine";
 import { getDailySeries } from "../../adapters";
 import { searchByNameOrCode, getNamesForCodes } from "../../search/normalize";
@@ -174,7 +174,7 @@ export async function handleScoreCommand(
       text: `${h.name} (${h.code})`,
       callback_data: `score:${h.code}`,
     }));
-    const keyboard = createMultiRowKeyboard(1, btns);
+    const keyboard = actionButtons(btns, 1);
     await tgSend("sendMessage", {
       chat_id: ctx.chatId,
       text: `'${esc(input)}' 검색 결과 ${hits.length}건 — 종목을 선택하세요`,
@@ -245,14 +245,10 @@ export async function handleScoreCommand(
       : undefined
   );
 
-  const kb = createMultiRowKeyboard(3, [
-    { text: "재계산", callback_data: `score:${code}` },
-    { text: "매수 판독", callback_data: `buy:${code}` },
-    { text: "재무", callback_data: `finance:${code}` },
-    { text: "관심추가", callback_data: `watchadd:${code}` },
-    { text: "뉴스", callback_data: `news:${code}` },
-    { text: "수급", callback_data: `flow:${code}` },
-  ]);
+  const kb = actionButtons(
+    [{ text: "재계산", callback_data: `score:${code}` }, ...ACTIONS.analyzeStock(code)],
+    3
+  );
 
   await tgSend("sendMessage", {
     chat_id: ctx.chatId,
