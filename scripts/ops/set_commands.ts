@@ -9,6 +9,7 @@ type TelegramResponse = {
 
 const commands = [
   { command: "start", description: "시작 · 메뉴" },
+  { command: "onboarding", description: "초보자 온보딩 가이드" },
   { command: "sector", description: "주도 섹터 랭킹" },
   { command: "scan", description: "눌림목 스캐너" },
   { command: "score", description: "종목 점수·시그널" },
@@ -16,6 +17,7 @@ const commands = [
   { command: "finance", description: "재무 요약" },
   { command: "capital", description: "투자금 설정" },
   { command: "brief", description: "장전 브리핑" },
+  { command: "alert", description: "이상징후 점검" },
   { command: "economy", description: "글로벌 경제지표" },
   { command: "news", description: "시장·종목 뉴스" },
   { command: "market", description: "종합 시장 진단" },

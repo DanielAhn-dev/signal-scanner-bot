@@ -25,8 +25,10 @@ import { handleFlowCommand } from "./commands/flow";
 import { handleEconomyCommand } from "./commands/economy";
 import { handleNewsCommand } from "./commands/news";
 import { handleMarketCommand } from "./commands/market";
+import { handleAlertCommand } from "./commands/alert";
 import { handleProfileCommand } from "./commands/profile";
 import { handleRankingCommand } from "./commands/ranking";
+import { handleOnboardingCommand } from "./commands/onboarding";
 import {
   handleFollowCommand,
   handleUnfollowCommand,
@@ -103,11 +105,13 @@ const CMD = {
   ECONOMY: /^\/(economy|경제|지표)$/i,
   NEWS: /^\/(news|뉴스)(?:\s+(.+))?$/i,
   MARKET: /^\/(market|시장|진단)$/i,
+  ALERT: /^\/(alert|알림|이상징후)$/i,
   PROFILE: /^\/(profile|프로필)$/i,
   RANKING: /^\/(ranking|랭킹)$/i,
   FOLLOW: /^\/(follow|팔로우)(?:\s+(.+))?$/i,
   UNFOLLOW: /^\/(unfollow|언팔로우)(?:\s+(.+))?$/i,
   FEED: /^\/(feed|피드)$/i,
+  ONBOARDING: /^\/(onboarding|온보딩|가이드)$/i,
 };
 
 export async function routeMessage(
@@ -139,9 +143,14 @@ export async function routeMessage(
 
     const btns = [
       [
+        { text: "온보딩", callback_data: "cmd:onboarding" },
+        { text: "투자금", callback_data: "cmd:capital" },
+        { text: "브리핑", callback_data: "cmd:brief" },
+      ],
+      [
         { text: "섹터", callback_data: "cmd:sector" },
         { text: "스캔", callback_data: "cmd:scan" },
-        { text: "브리핑", callback_data: "cmd:brief" },
+        { text: "경제", callback_data: "cmd:economy" },
       ],
       [
         { text: "점수", callback_data: "prompt:score" },
@@ -149,9 +158,10 @@ export async function routeMessage(
         { text: "뉴스", callback_data: "prompt:news" },
       ],
       [
-        { text: "경제", callback_data: "cmd:economy" },
         { text: "시장", callback_data: "cmd:market" },
+        { text: "알림", callback_data: "cmd:alert" },
         { text: "수급", callback_data: "prompt:flow" },
+        { text: "재무", callback_data: "prompt:finance" },
       ],
       [
         { text: "관심종목", callback_data: "cmd:watchlist" },
@@ -208,6 +218,12 @@ export async function routeMessage(
       chat_id: ctx.chatId,
       text: KO_MESSAGES.HELP,
     });
+    return;
+  }
+
+  // /onboarding 온보딩 가이드
+  if (CMD.ONBOARDING.test(t)) {
+    await handleOnboardingCommand(ctx, tgSend);
     return;
   }
 
@@ -494,6 +510,20 @@ export async function routeMessage(
     return;
   }
 
+  // /alert 이상징후
+  if (CMD.ALERT.test(t)) {
+    try {
+      await handleAlertCommand(ctx, tgSend);
+    } catch (e) {
+      console.error("handleAlertCommand failed:", e);
+      await tgSend("sendMessage", {
+        chat_id: ctx.chatId,
+        text: "이상징후 점검 중 오류가 발생했습니다.",
+      });
+    }
+    return;
+  }
+
   // /프로필
   if (CMD.PROFILE.test(t)) {
     try {
@@ -589,6 +619,9 @@ export async function routeCallback(
       flow: () => handleFlowCommand("", ctx, tgSend),
       economy: () => handleEconomyCommand(ctx, tgSend),
       market: () => handleMarketCommand(ctx, tgSend),
+      alert: () => handleAlertCommand(ctx, tgSend),
+      onboarding: () => handleOnboardingCommand(ctx, tgSend),
+      capital: () => handleCapitalCommand("", ctx, tgSend),
       pullback: () => handlePullbackCommand(ctx, tgSend),
       watchlist: () => handleWatchlistCommand(ctx, tgSend),
       ranking: () => handleRankingCommand(ctx, tgSend),
