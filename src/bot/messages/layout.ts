@@ -51,8 +51,37 @@ export const ACTIONS = {
     { text: "눌림목", callback_data: "cmd:pullback" },
     { text: "시장", callback_data: "cmd:market" },
   ] as InlineButton[],
+  promptAnalyze: [
+    { text: "점수", callback_data: "prompt:score" },
+    { text: "매수", callback_data: "prompt:buy" },
+    { text: "재무", callback_data: "prompt:finance" },
+    { text: "뉴스", callback_data: "prompt:news" },
+  ] as InlineButton[],
+  marketFlowWithPromptFlow: [
+    { text: "종목 수급", callback_data: "prompt:flow" },
+    { text: "시장", callback_data: "cmd:market" },
+    { text: "수급", callback_data: "cmd:flow" },
+    { text: "경제", callback_data: "cmd:economy" },
+    { text: "브리핑", callback_data: "cmd:brief" },
+  ] as InlineButton[],
+  marketFlowWithPromptNews: [
+    { text: "종목 뉴스", callback_data: "prompt:news" },
+    { text: "시장", callback_data: "cmd:market" },
+    { text: "수급", callback_data: "cmd:flow" },
+    { text: "경제", callback_data: "cmd:economy" },
+    { text: "브리핑", callback_data: "cmd:brief" },
+  ] as InlineButton[],
   analyzeStock: (code: string) =>
     [
+      { text: "점수", callback_data: `score:${code}` },
+      { text: "매수", callback_data: `buy:${code}` },
+      { text: "재무", callback_data: `finance:${code}` },
+      { text: "뉴스", callback_data: `news:${code}` },
+      { text: "관심추가", callback_data: `watchadd:${code}` },
+    ] as InlineButton[],
+  analyzeStockWithRecalc: (code: string) =>
+    [
+      { text: "재계산", callback_data: `score:${code}` },
       { text: "점수", callback_data: `score:${code}` },
       { text: "매수", callback_data: `buy:${code}` },
       { text: "재무", callback_data: `finance:${code}` },

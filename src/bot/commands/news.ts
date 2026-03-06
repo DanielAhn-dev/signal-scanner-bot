@@ -40,10 +40,7 @@ export async function handleNewsCommand(
       text: msg,
       parse_mode: "HTML",
       disable_web_page_preview: true,
-      reply_markup: actionButtons(
-        [{ text: "종목 뉴스", callback_data: "prompt:news" }, ...ACTIONS.marketFlow],
-        2
-      ),
+      reply_markup: actionButtons(ACTIONS.marketFlowWithPromptNews, 2),
     });
   }
 

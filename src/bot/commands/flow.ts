@@ -188,9 +188,6 @@ async function handleMarketFlowSummary(
     chat_id: ctx.chatId,
     text: msg,
     parse_mode: "HTML",
-    reply_markup: actionButtons(
-      [{ text: "종목 수급", callback_data: "prompt:flow" }, ...ACTIONS.marketFlow],
-      2
-    ),
+    reply_markup: actionButtons(ACTIONS.marketFlowWithPromptFlow, 2),
   });
 }

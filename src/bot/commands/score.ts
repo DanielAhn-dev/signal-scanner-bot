@@ -245,10 +245,7 @@ export async function handleScoreCommand(
       : undefined
   );
 
-  const kb = actionButtons(
-    [{ text: "재계산", callback_data: `score:${code}` }, ...ACTIONS.analyzeStock(code)],
-    3
-  );
+  const kb = actionButtons(ACTIONS.analyzeStockWithRecalc(code), 3);
 
   await tgSend("sendMessage", {
     chat_id: ctx.chatId,

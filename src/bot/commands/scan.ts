@@ -301,11 +301,6 @@ export async function handleScanCommand(
     chat_id: ctx.chatId,
     text: msg,
     parse_mode: "HTML",
-    reply_markup: actionButtons([
-      { text: "점수", callback_data: "prompt:score" },
-      { text: "매수", callback_data: "prompt:buy" },
-      { text: "재무", callback_data: "prompt:finance" },
-      ...ACTIONS.marketHub,
-    ], 3),
+    reply_markup: actionButtons([...ACTIONS.promptAnalyze, ...ACTIONS.marketHub], 3),
   });
 }

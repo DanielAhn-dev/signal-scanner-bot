@@ -148,13 +148,7 @@ export async function handlePullbackCommand(
       text: msg,
       parse_mode: "HTML",
       disable_web_page_preview: true,
-      reply_markup: actionButtons([
-        { text: "점수", callback_data: "prompt:score" },
-        { text: "매수", callback_data: "prompt:buy" },
-        { text: "재무", callback_data: "prompt:finance" },
-        { text: "뉴스", callback_data: "prompt:news" },
-        ...ACTIONS.marketFlow,
-      ], 3),
+      reply_markup: actionButtons([...ACTIONS.promptAnalyze, ...ACTIONS.marketFlow], 3),
     });
   } catch (e) {
     console.error("handlePullbackCommand error:", e);
