@@ -3,6 +3,7 @@
 
 import { createClient } from "@supabase/supabase-js";
 import { fetchRealtimePriceBatch } from "../../utils/fetchRealtimePrice";
+import { getFundamentalSnapshot } from "../../services/fundamentalService";
 
 const url = process.env.SUPABASE_URL;
 const key = process.env.SUPABASE_ANON_KEY;
@@ -15,6 +16,21 @@ if (!url || !key) {
 }
 
 const supabase = createClient(url, key);
+
+function fmtKorMoney(n: number): string {
+  const safe = Number(n || 0);
+  if (!Number.isFinite(safe) || safe <= 0) return "-";
+
+  const eok = Math.floor(safe / 100_000_000);
+  const jo = Math.floor(eok / 10_000);
+  const restEok = eok % 10_000;
+
+  if (jo > 0) {
+    if (restEok > 0) return `${jo}조 ${restEok.toLocaleString("ko-KR")}억`;
+    return `${jo}조`;
+  }
+  return `${eok.toLocaleString("ko-KR")}억`;
+}
 
 /** KST 기준 장중 여부 (09:00~15:30, 평일) */
 function isMarketOpen(): boolean {
@@ -162,16 +178,50 @@ export async function handleScanCommand(
     return true;
   });
 
+  // 3-1. 최신 재무/종합 점수 맵 조회 (전체 스캔 우선순위 반영)
+  const codes = candidates.map((c: any) => c.code as string);
+  const scoreMap = new Map<string, { total?: number; value?: number }>();
+  if (codes.length) {
+    const { data: latestScoreDate } = await supabase
+      .from("scores")
+      .select("asof")
+      .order("asof", { ascending: false })
+      .limit(1);
+
+    const asof = latestScoreDate?.[0]?.asof;
+    if (asof) {
+      const { data: scoreRows } = await supabase
+        .from("scores")
+        .select("code, total_score, value_score")
+        .eq("asof", asof)
+        .in("code", codes);
+
+      for (const row of scoreRows || []) {
+        scoreMap.set(row.code, {
+          total: Number(row.total_score ?? 0) || undefined,
+          value: Number(row.value_score ?? 0) || undefined,
+        });
+      }
+    }
+  }
+
   // 4. 정렬: 장중은 거래대금 + 등락률 가중, 장외는 거래대금 순
   const topPicks = candidates
     .sort((a: any, b: any) => {
+      const sa = scoreMap.get(a.code);
+      const sb = scoreMap.get(b.code);
+      const fundA = (sa?.total ?? 0) * 0.6 + (sa?.value ?? 0) * 0.8;
+      const fundB = (sb?.total ?? 0) * 0.6 + (sb?.value ?? 0) * 0.8;
+
       if (live) {
         // 실시간: 등락률 높은 순 → 거래대금 순
-        const scoreA = (a._rtChange ?? 0) * 2 + (a._rtVolume ?? a.value_traded) / 1e9;
-        const scoreB = (b._rtChange ?? 0) * 2 + (b._rtVolume ?? b.value_traded) / 1e9;
+        const scoreA =
+          (a._rtChange ?? 0) * 2 + (a._rtVolume ?? a.value_traded) / 1e9 + fundA;
+        const scoreB =
+          (b._rtChange ?? 0) * 2 + (b._rtVolume ?? b.value_traded) / 1e9 + fundB;
         return scoreB - scoreA;
       }
-      return b.value_traded - a.value_traded;
+      return b.value_traded + fundB * 1e8 - (a.value_traded + fundA * 1e8);
     })
     .slice(0, 10);
 
@@ -189,20 +239,52 @@ export async function handleScanCommand(
   let msg = `<b>${sectorId ? query + " 섹터" : "전체 시장"} 스캔 결과</b>\n`;
   msg += `<i>${modeTag} · 정배열, RSI 40-70, 20일선 눌림</i>\n${LINE}\n`;
 
-  topPicks.forEach((stock: any, i: number) => {
+  // 6. 2차 재무 리랭크 (상위 후보만, 지연 최소화)
+  const rerankPool = topPicks.slice(0, 12);
+  const fundamentals = await Promise.all(
+    rerankPool.map(async (s: any) => ({
+      code: s.code,
+      fundamental: await getFundamentalSnapshot(s.code).catch(() => null),
+    }))
+  );
+  const fundMap = new Map(
+    fundamentals
+      .filter((x) => x.fundamental)
+      .map((x) => [x.code, x.fundamental!])
+  );
+
+  const finalPicks = [...topPicks]
+    .sort((a: any, b: any) => {
+      const fa = fundMap.get(a.code)?.qualityScore ?? 50;
+      const fb = fundMap.get(b.code)?.qualityScore ?? 50;
+      const sa = scoreMap.get(a.code);
+      const sb = scoreMap.get(b.code);
+      const baseA = Number(sa?.total ?? 0);
+      const baseB = Number(sb?.total ?? 0);
+      return fb * 0.45 + baseB * 0.55 - (fa * 0.45 + baseA * 0.55);
+    })
+    .slice(0, 10);
+
+  finalPicks.forEach((stock: any, i: number) => {
     const name = stock.stocks?.name || stock.code;
     const gap20 = (((stock.close - stock.sma20) / stock.sma20) * 100).toFixed(1);
     const rsi = stock.rsi14?.toFixed(1);
+    const s = scoreMap.get(stock.code);
+    const valueLabel = s?.value != null ? `가치 ${Number(s.value).toFixed(0)}` : "가치 -";
+    const fq = fundMap.get(stock.code)?.qualityScore;
+    const fLabel = fq != null ? `재무 ${fq}` : "재무 -";
 
     if (live && stock._rtChange != null) {
       const chg = stock._rtChange >= 0 ? `▲${stock._rtChange.toFixed(1)}%` : `▼${Math.abs(stock._rtChange).toFixed(1)}%`;
-      const vol = Math.round((stock._rtVolume ?? stock.value_traded) / 100000000);
+      const vol = fmtKorMoney(stock._rtVolume ?? stock.value_traded);
       msg += `${i + 1}. <b>${name}</b>  <code>${stock.close.toLocaleString()}원</code>  ${chg}\n`;
-      msg += `   RSI ${rsi} · 20일선 ${gap20}% · ${vol}억\n`;
+      msg += `   RSI ${rsi} · ${valueLabel} · ${fLabel}\n`;
+      msg += `   20일선 ${gap20}% · 거래대금 ${vol}\n\n`;
     } else {
-      const vol = Math.round(stock.value_traded / 100000000);
+      const vol = fmtKorMoney(stock.value_traded);
       msg += `${i + 1}. <b>${name}</b>  <code>${stock.close.toLocaleString()}원</code>\n`;
-      msg += `   RSI ${rsi} · 20일선 ${gap20}% · ${vol}억\n`;
+      msg += `   RSI ${rsi} · ${valueLabel} · ${fLabel}\n`;
+      msg += `   20일선 ${gap20}% · 거래대금 ${vol}\n\n`;
     }
   });
 

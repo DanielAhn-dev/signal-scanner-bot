@@ -144,26 +144,28 @@ export async function handleBriefCommand(
       weekday: "short",
     });
 
-    let msg = `<b>☀️ ${today} 장전 브리핑</b>\n${LINE}\n\n`;
+    let overview = `<b>${today} 장전 브리핑</b>\n${LINE}\n\n`;
 
     // 글로벌 환경 요약
-    msg += `<b>🌍 글로벌 환경</b>\n`;
+    overview += `<b>시장 환경</b>\n`;
     if (marketData.kospi) {
       const k = marketData.kospi;
-      msg += `  KOSPI ${k.price.toLocaleString()} (${k.changeRate >= 0 ? "+" : ""}${k.changeRate.toFixed(1)}%)\n`;
+      overview += `KOSPI ${k.price.toLocaleString()} (${k.changeRate >= 0 ? "+" : ""}${k.changeRate.toFixed(1)}%)\n`;
     }
     if (marketData.vix) {
       const v = marketData.vix;
-      const label = v.price >= 30 ? "⚠️ 공포" : v.price >= 20 ? "주의" : "안정";
-      msg += `  VIX ${v.price.toFixed(1)} ${label}\n`;
+      const label = v.price >= 30 ? "고위험" : v.price >= 20 ? "주의" : "안정";
+      overview += `VIX ${v.price.toFixed(1)} (${label})\n`;
     }
     if (marketData.usdkrw) {
-      msg += `  환율 ${marketData.usdkrw.price.toLocaleString()}원\n`;
+      overview += `USD/KRW ${marketData.usdkrw.price.toLocaleString()}원\n`;
     }
 
-    msg += `\n<b>📈 저평가 가치주</b>  Core 유니버스\n`;
+    let picks = `<b>핵심 종목</b>\n${LINE}\n\n`;
+
+    picks += `<b>저평가 가치주</b>\n`;
     if (!valueStocks || valueStocks.length === 0) {
-      msg += `  <i>추천 종목 없음</i>\n`;
+      picks += `<i>추천 종목 없음</i>\n`;
     } else {
       valueStocks.forEach((s: any) => {
         const rt = realtimeMap[s.code];
@@ -171,13 +173,13 @@ export async function handleBriefCommand(
         const changeStr = rt
           ? ` ${rt.change >= 0 ? "▲" : "▼"}${Math.abs(rt.changeRate).toFixed(1)}%`
           : "";
-        msg += `  ▸ ${esc(s.name)} (${s.code})  <code>${safeFmt(price)}원</code>${changeStr}\n`;
+        picks += `• ${esc(s.name)} (${s.code})  <code>${safeFmt(price)}원</code>${changeStr}\n`;
       });
     }
 
-    msg += `\n<b>🚀 수급 주도주</b>\n`;
+    picks += `\n<b>수급 주도주</b>\n`;
     if (!momentumStocks || momentumStocks.length === 0) {
-      msg += `  <i>추천 종목 없음</i>\n`;
+      picks += `<i>추천 종목 없음</i>\n`;
     } else {
       momentumStocks.forEach((s: any) => {
         const rt = realtimeMap[s.code];
@@ -185,13 +187,13 @@ export async function handleBriefCommand(
         const changeStr = rt
           ? ` ${rt.change >= 0 ? "▲" : "▼"}${Math.abs(rt.changeRate).toFixed(1)}%`
           : "";
-        msg += `  ▸ ${esc(s.name)} (${s.code})  <code>${safeFmt(price)}원</code>${changeStr}\n`;
+        picks += `• ${esc(s.name)} (${s.code})  <code>${safeFmt(price)}원</code>${changeStr}\n`;
       });
     }
 
-    msg += `\n<b>📉 눌림목 매집 후보</b>\n`;
+    picks += `\n<b>눌림목 후보</b>\n`;
     if (!pullbackStocks || pullbackStocks.length === 0) {
-      msg += `  <i>매집 조건 충족 종목 없음</i>\n`;
+      picks += `<i>조건 충족 종목 없음</i>\n`;
     } else {
       const gl: Record<string, string> = { A: "●", B: "◐" };
       const wl: Record<string, string> = { SAFE: "안전", WATCH: "관찰", WARN: "주의" };
@@ -200,17 +202,24 @@ export async function handleBriefCommand(
         const w = wl[s.warn_grade] ?? "";
         const rt = realtimeMap[s.code];
         const price = rt?.price ?? s.close;
-        msg += `  ${g} ${esc(s.name)} (${s.code}) <code>${safeFmt(price)}원</code>\n`;
-        msg += `     ${s.entry_grade}(${s.entry_score}/4) · ${w}\n`;
+        picks += `${g} ${esc(s.name)} (${s.code}) <code>${safeFmt(price)}원</code>\n`;
+        picks += `  ${s.entry_grade}(${s.entry_score}/4) · ${w}\n`;
       });
     }
 
-    msg += `\n${LINE}\n아래 버튼으로 바로 조회하세요.`;
+    picks += `\n${LINE}`;
 
     // --- 6) Telegram 전송 ---
     await tgSend("sendMessage", {
       chat_id: ctx.chatId,
-      text: msg,
+      text: overview,
+      parse_mode: "HTML",
+      disable_web_page_preview: true,
+    });
+
+    await tgSend("sendMessage", {
+      chat_id: ctx.chatId,
+      text: picks,
       parse_mode: "HTML",
       disable_web_page_preview: true,
       reply_markup: createMultiRowKeyboard(3, [

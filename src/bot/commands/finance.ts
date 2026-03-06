@@ -4,32 +4,7 @@ import { createMultiRowKeyboard } from "../../telegram/keyboards";
 import { searchByNameOrCode } from "../../search/normalize";
 import { fetchRealtimeStockData } from "../../utils/fetchRealtimePrice";
 import { esc, fmtInt, LINE } from "../messages/format";
-
-type FinanceSnapshot = {
-  sales?: number;
-  opIncome?: number;
-  netIncome?: number;
-  debtRatio?: number;
-  roe?: number;
-};
-
-const UA =
-  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36";
-
-function parseNum(text: string): number | undefined {
-  const t = (text || "").replace(/,/g, "").trim();
-  if (!t || t === "-" || t === "N/A") return undefined;
-  const n = Number(t);
-  return Number.isFinite(n) ? n : undefined;
-}
-
-function findLatestValue(row: string[]): number | undefined {
-  for (const cell of row) {
-    const v = parseNum(cell);
-    if (v !== undefined) return v;
-  }
-  return undefined;
-}
+import { getFundamentalSnapshot } from "../../services/fundamentalService";
 
 function interpretFinance(input: {
   per?: number;
@@ -68,57 +43,6 @@ function interpretFinance(input: {
   return `${notes.join(" · ")}\n재무지표는 업종 평균과 함께 비교하는 것이 정확합니다.`;
 }
 
-async function fetchNaverFinanceSnapshot(code: string): Promise<FinanceSnapshot> {
-  try {
-    const url = `https://finance.naver.com/item/main.naver?code=${code}`;
-    const html = await fetch(url, { headers: { "User-Agent": UA } }).then((r) =>
-      r.text()
-    );
-
-    const $ = cheerio.load(html);
-    const rows = new Map<string, string[]>();
-
-    $("div.section.cop_analysis table tbody tr").each((_, tr) => {
-      const key = $(tr)
-        .find("th")
-        .first()
-        .text()
-        .replace(/\s+/g, "")
-        .trim();
-      if (!key) return;
-
-      const vals: string[] = [];
-      $(tr)
-        .find("td")
-        .each((__, td) => {
-          const txt = $(td).text().replace(/\s+/g, "").trim();
-          if (txt) vals.push(txt);
-        });
-
-      if (vals.length) rows.set(key, vals);
-    });
-
-    const sales = findLatestValue(rows.get("매출액") || []);
-    const opIncome = findLatestValue(rows.get("영업이익") || []);
-    const netIncome = findLatestValue(rows.get("당기순이익") || []);
-
-    const debtRow =
-      rows.get("부채비율") || rows.get("부채비율(%)") || rows.get("부채비율연결") || [];
-    const roeRow =
-      rows.get("ROE(지배주주)") || rows.get("ROE") || rows.get("ROE(%)") || [];
-
-    return {
-      sales,
-      opIncome,
-      netIncome,
-      debtRatio: findLatestValue(debtRow),
-      roe: findLatestValue(roeRow),
-    };
-  } catch (e) {
-    console.error(`fetchNaverFinanceSnapshot failed (${code}):`, e);
-    return {};
-  }
-}
 
 export async function handleFinanceCommand(
   input: string,
@@ -159,12 +83,12 @@ export async function handleFinanceCommand(
 
   const [rt, fin] = await Promise.all([
     fetchRealtimeStockData(code),
-    fetchNaverFinanceSnapshot(code),
+    getFundamentalSnapshot(code),
   ]);
 
   const price = rt?.price;
-  const per = rt?.per;
-  const pbr = rt?.pbr;
+  const per = rt?.per ?? fin.per;
+  const pbr = rt?.pbr ?? fin.pbr;
 
   const comment = interpretFinance({
     per,
@@ -179,7 +103,7 @@ export async function handleFinanceCommand(
     msg += `현재가 <code>${fmtInt(price)}원</code>  ${sign} ${Math.abs(rt?.changeRate || 0).toFixed(2)}%\n`;
   }
 
-  msg += `${LINE}\n`;
+  msg += `\n${LINE}\n`;
   msg += `<b>핵심 지표</b>\n`;
   msg += `PER <code>${per !== undefined ? per.toFixed(2) : "-"}</code> · `;
   msg += `PBR <code>${pbr !== undefined ? pbr.toFixed(2) : "-"}</code> · `;
@@ -187,14 +111,31 @@ export async function handleFinanceCommand(
   msg += `부채비율 <code>${
     fin.debtRatio !== undefined ? `${fin.debtRatio.toFixed(2)}%` : "-"
   }</code>\n\n`;
+  msg += `재무건강도 <code>${fin.qualityScore}점</code>\n\n`;
 
   msg += `<b>실적(최근 기준)</b>\n`;
-  msg += `매출 <code>${fin.sales !== undefined ? fmtInt(fin.sales) : "-"}</code>\n`;
-  msg += `영업이익 <code>${fin.opIncome !== undefined ? fmtInt(fin.opIncome) : "-"}</code>\n`;
-  msg += `당기순이익 <code>${fin.netIncome !== undefined ? fmtInt(fin.netIncome) : "-"}</code>\n`;
+  msg += `매출 <code>${fin.sales !== undefined ? `${fmtInt(fin.sales)}원` : "-"}</code>\n`;
+  msg += `영업이익 <code>${fin.opIncome !== undefined ? `${fmtInt(fin.opIncome)}원` : "-"}</code>\n`;
+  msg += `당기순이익 <code>${fin.netIncome !== undefined ? `${fmtInt(fin.netIncome)}원` : "-"}</code>\n`;
+  msg += `\n`; 
+  msg += `<b>성장률(직전 대비)</b>\n`;
+  msg += `매출 <code>${
+    fin.salesGrowthPct !== undefined ? `${fin.salesGrowthPct.toFixed(2)}%` : "-"
+  }</code> · `;
+  msg += `영업이익 <code>${
+    fin.opIncomeGrowthPct !== undefined
+      ? `${fin.opIncomeGrowthPct.toFixed(2)}%`
+      : "-"
+  }</code> · `;
+  msg += `순이익 <code>${
+    fin.netIncomeGrowthPct !== undefined
+      ? `${fin.netIncomeGrowthPct.toFixed(2)}%`
+      : "-"
+  }</code>\n`;
 
   msg += `\n${LINE}\n<b>해석 코멘트</b>\n`;
-  msg += `${esc(comment)}`;
+  msg += `${esc(comment)}\n`;
+  msg += `${esc(fin.commentary)}`;
 
   await tgSend("sendMessage", {
     chat_id: ctx.chatId,

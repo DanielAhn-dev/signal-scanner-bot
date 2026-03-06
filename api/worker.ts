@@ -125,6 +125,7 @@ async function handleTelegramUpdateJob(job: any) {
       const cmdMap: Record<string, string> = {
         score: "/점수",
         buy: "/매수",
+        finance: "/재무",
         news: "/뉴스",
         flow: "/수급",
       };
@@ -136,6 +137,7 @@ async function handleTelegramUpdateJob(job: any) {
       const fallbackCmd = !prefix
         ? replyText.includes("점수") ? "/점수"
         : replyText.includes("매수") ? "/매수"
+        : replyText.includes("재무") ? "/재무"
         : replyText.includes("뉴스") ? "/뉴스"
         : replyText.includes("수급") ? "/수급"
         : null

@@ -586,6 +586,7 @@ export async function routeCallback(
       nextsector: () => handleNextSectorCommand(ctx, tgSend),
       scan: () => handleScanCommand("", ctx, tgSend),
       brief: () => handleBriefCommand(ctx, tgSend),
+      flow: () => handleFlowCommand("", ctx, tgSend),
       economy: () => handleEconomyCommand(ctx, tgSend),
       market: () => handleMarketCommand(ctx, tgSend),
       pullback: () => handlePullbackCommand(ctx, tgSend),

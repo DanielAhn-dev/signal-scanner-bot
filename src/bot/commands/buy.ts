@@ -5,6 +5,7 @@ import { KO_MESSAGES } from "../messages/ko";
 import { fetchRealtimePrice } from "../../utils/fetchRealtimePrice";
 import { esc, fmtInt, LINE } from "../messages/format";
 import { getUserInvestmentPrefs } from "../../services/userService";
+import { getFundamentalSnapshot } from "../../services/fundamentalService";
 
 // Supabase 클라이언트
 const supabase = createClient(
@@ -15,7 +16,8 @@ const supabase = createClient(
 // --- 매수 판독 로직 ---
 function evaluateBuyCondition(
   stock: any,
-  currentPrice: number
+  currentPrice: number,
+  fundamentalQuality?: number
 ): {
   canBuy: boolean;
   reasons: string[];
@@ -56,9 +58,18 @@ function evaluateBuyCondition(
     reasons.push("50일선 하회 — 추세 약화 주의");
   }
 
+  if (fundamentalQuality !== undefined) {
+    if (fundamentalQuality < 40) {
+      reasons.push(`재무건강도 낮음 (${fundamentalQuality}점) — 보수적 접근`);
+    } else if (fundamentalQuality >= 70) {
+      reasons.push(`재무건강도 우수 (${fundamentalQuality}점) — 중장기 보유 적합`);
+    }
+  }
+
   const canBuy =
     reasons.length === 0 ||
-    (reasons.length === 1 && reasons[0].includes("소형주"));
+    (reasons.length === 1 &&
+      (reasons[0].includes("소형주") || reasons[0].includes("재무건강도 우수")));
 
   return { canBuy, reasons };
 }
@@ -127,6 +138,16 @@ function buildMessage(
   stock: any,
   currentPrice: number,
   evaluation: { canBuy: boolean; reasons: string[] },
+  fundamental?: {
+    qualityScore: number;
+    per?: number;
+    pbr?: number;
+    roe?: number;
+    debtRatio?: number;
+    salesGrowthPct?: number;
+    opIncomeGrowthPct?: number;
+    netIncomeGrowthPct?: number;
+  },
   investPlan?: {
     capital: number;
     splitCount: number;
@@ -198,7 +219,39 @@ function buildMessage(
       ].join("\n")
     : "";
 
-  return [header, body, planBlock].filter(Boolean).join("\n");
+  const fundamentalBlock = fundamental
+    ? [
+        "",
+        LINE,
+        "<b>▸ 재무 건강도</b>",
+        `  ${fundamental.qualityScore}점 (PER ${
+          fundamental.per !== undefined ? fundamental.per.toFixed(2) : "-"
+        } · PBR ${
+          fundamental.pbr !== undefined ? fundamental.pbr.toFixed(2) : "-"
+        } · ROE ${
+          fundamental.roe !== undefined ? `${fundamental.roe.toFixed(2)}%` : "-"
+        } · 부채 ${
+          fundamental.debtRatio !== undefined
+            ? `${fundamental.debtRatio.toFixed(2)}%`
+            : "-"
+        })`,
+        `  성장률  매출 ${
+          fundamental.salesGrowthPct !== undefined
+            ? `${fundamental.salesGrowthPct.toFixed(1)}%`
+            : "-"
+        } · 영업 ${
+          fundamental.opIncomeGrowthPct !== undefined
+            ? `${fundamental.opIncomeGrowthPct.toFixed(1)}%`
+            : "-"
+        } · 순익 ${
+          fundamental.netIncomeGrowthPct !== undefined
+            ? `${fundamental.netIncomeGrowthPct.toFixed(1)}%`
+            : "-"
+        }`,
+      ].join("\n")
+    : "";
+
+  return [header, body, fundamentalBlock, planBlock].filter(Boolean).join("\n");
 }
 
 // --- 메인 핸들러 ---
@@ -278,7 +331,12 @@ export async function handleBuyCommand(
   };
 
   // 4. 평가 및 메시지 전송 (실시간 가격 기준)
-  const evaluation = evaluateBuyCondition(enrichedStock, currentPrice);
+  const fundamental = await getFundamentalSnapshot(code).catch(() => null);
+  const evaluation = evaluateBuyCondition(
+    enrichedStock,
+    currentPrice,
+    fundamental?.qualityScore
+  );
   const prefs = await getUserInvestmentPrefs(ctx.from?.id ?? ctx.chatId);
 
   const capital = prefs.capital_krw ?? 0;
@@ -297,7 +355,24 @@ export async function handleBuyCommand(
         }
       : undefined;
 
-  const msg = buildMessage(enrichedStock, currentPrice, evaluation, investPlan);
+  const msg = buildMessage(
+    enrichedStock,
+    currentPrice,
+    evaluation,
+    fundamental
+      ? {
+          qualityScore: fundamental.qualityScore,
+          per: fundamental.per,
+          pbr: fundamental.pbr,
+          roe: fundamental.roe,
+          debtRatio: fundamental.debtRatio,
+          salesGrowthPct: fundamental.salesGrowthPct,
+          opIncomeGrowthPct: fundamental.opIncomeGrowthPct,
+          netIncomeGrowthPct: fundamental.netIncomeGrowthPct,
+        }
+      : undefined,
+    investPlan
+  );
 
   const { createMultiRowKeyboard } = await import("../../telegram/keyboards");
   const kb = createMultiRowKeyboard(3, [

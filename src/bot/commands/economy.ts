@@ -4,10 +4,23 @@
 import type { ChatContext } from "../router";
 import { fetchAllMarketData } from "../../utils/fetchMarketData";
 import { LINE } from "../messages/format";
+import { createMultiRowKeyboard } from "../../telegram/keyboards";
 
 const arrow = (n: number) => (n > 0 ? "▲" : n < 0 ? "▼" : "―");
 
 const fmtRate = (n: number) => `${n >= 0 ? "+" : ""}${n.toFixed(2)}%`;
+
+function riskTag(vix?: number, fearGreed?: number): string {
+  if (vix != null) {
+    if (vix >= 30) return "고위험";
+    if (vix >= 20) return "주의";
+  }
+  if (fearGreed != null) {
+    if (fearGreed <= 25) return "공포";
+    if (fearGreed >= 80) return "과열";
+  }
+  return "중립";
+}
 
 function fearLabel(score: number): string {
   if (score <= 25) return "극단적 공포 😱";
@@ -36,85 +49,88 @@ export async function handleEconomyCommand(
 
   let msg = `<b>글로벌 경제지표</b>\n${LINE}\n\n`;
 
+  msg += `<b>요약</b>\n`;
+  msg += `시장 온도: <code>${riskTag(data.vix?.price, data.fearGreed?.score)}</code>\n\n`;
+
   // 국내 증시
-  msg += `<b>🇰🇷 국내 증시</b>\n`;
+  msg += `<b>국내 증시</b>\n`;
   if (data.kospi) {
-    msg += `  KOSPI  <code>${data.kospi.price.toLocaleString()}</code>`;
+    msg += `KOSPI  <code>${data.kospi.price.toLocaleString()}</code>`;
     msg += `  ${arrow(data.kospi.change)} ${fmtRate(data.kospi.changeRate)}\n`;
   } else {
-    msg += `  KOSPI  <i>데이터 없음</i>\n`;
+    msg += `KOSPI  <i>데이터 없음</i>\n`;
   }
   if (data.kosdaq) {
-    msg += `  KOSDAQ <code>${data.kosdaq.price.toLocaleString()}</code>`;
+    msg += `KOSDAQ <code>${data.kosdaq.price.toLocaleString()}</code>`;
     msg += `  ${arrow(data.kosdaq.change)} ${fmtRate(data.kosdaq.changeRate)}\n`;
   }
 
   // 미국 증시
-  msg += `\n<b>🇺🇸 미국 증시</b>\n`;
+  msg += `\n<b>미국 증시</b>\n`;
   if (data.sp500) {
-    msg += `  S&P 500  <code>${data.sp500.price.toLocaleString()}</code>`;
+    msg += `S&P 500  <code>${data.sp500.price.toLocaleString()}</code>`;
     msg += `  ${arrow(data.sp500.change)} ${fmtRate(data.sp500.changeRate)}\n`;
   }
   if (data.nasdaq) {
-    msg += `  NASDAQ   <code>${data.nasdaq.price.toLocaleString()}</code>`;
+    msg += `NASDAQ   <code>${data.nasdaq.price.toLocaleString()}</code>`;
     msg += `  ${arrow(data.nasdaq.change)} ${fmtRate(data.nasdaq.changeRate)}\n`;
   }
 
   // 환율
-  msg += `\n<b>💱 환율</b>\n`;
+  msg += `\n<b>환율</b>\n`;
   if (data.usdkrw) {
-    msg += `  USD/KRW  <code>${data.usdkrw.price.toLocaleString()}원</code>`;
+    msg += `USD/KRW  <code>${data.usdkrw.price.toLocaleString()}원</code>`;
     msg += `  ${arrow(data.usdkrw.change)} ${fmtRate(data.usdkrw.changeRate)}\n`;
   } else {
-    msg += `  USD/KRW  <i>데이터 없음</i>\n`;
+    msg += `USD/KRW  <i>데이터 없음</i>\n`;
   }
 
   // 심리 지표
-  msg += `\n<b>📊 심리 지표</b>\n`;
+  msg += `\n<b>심리 지표</b>\n`;
   if (data.vix) {
-    msg += `  VIX (공포지수)  <code>${data.vix.price.toFixed(2)}</code>`;
+    msg += `VIX  <code>${data.vix.price.toFixed(2)}</code>`;
     msg += `  ${vixLabel(data.vix.price)}\n`;
   }
   if (data.fearGreed) {
-    msg += `  CNN 공포·탐욕  <code>${data.fearGreed.score}</code>`;
+    msg += `공포·탐욕  <code>${data.fearGreed.score}</code>`;
     msg += `  ${fearLabel(data.fearGreed.score)}\n`;
   }
 
   // 금리
   if (data.us10y) {
-    msg += `\n<b>📈 금리</b>\n`;
-    msg += `  미국 10년물  <code>${data.us10y.price.toFixed(2)}%</code>`;
+    msg += `\n<b>금리</b>\n`;
+    msg += `미국 10년물  <code>${data.us10y.price.toFixed(2)}%</code>`;
     msg += `  ${arrow(data.us10y.change)} ${fmtRate(data.us10y.changeRate)}\n`;
   }
 
   // 원자재
   if (data.gold || data.silver || data.copper) {
-    msg += `\n<b>🥇 원자재</b>\n`;
+    msg += `\n<b>원자재</b>\n`;
     if (data.gold) {
-      msg += `  금(Gold)   <code>$${data.gold.price.toLocaleString()}</code>`;
+      msg += `Gold   <code>$${data.gold.price.toLocaleString()}</code>`;
       msg += `  ${arrow(data.gold.change)} ${fmtRate(data.gold.changeRate)}\n`;
     }
     if (data.silver) {
-      msg += `  은(Silver)  <code>$${data.silver.price.toFixed(2)}</code>`;
+      msg += `Silver <code>$${data.silver.price.toFixed(2)}</code>`;
       msg += `  ${arrow(data.silver.change)} ${fmtRate(data.silver.changeRate)}\n`;
     }
     if (data.copper) {
-      msg += `  구리(Copper) <code>$${data.copper.price.toFixed(4)}</code>`;
+      msg += `Copper <code>$${data.copper.price.toFixed(4)}</code>`;
       msg += `  ${arrow(data.copper.change)} ${fmtRate(data.copper.changeRate)}\n`;
     }
   }
 
   // 에너지
   if (data.wtiOil) {
-    msg += `\n<b>🛢 에너지</b>\n`;
-    msg += `  WTI 원유  <code>$${data.wtiOil.price.toFixed(2)}</code>`;
+    msg += `\n<b>에너지</b>\n`;
+    msg += `WTI 원유  <code>$${data.wtiOil.price.toFixed(2)}</code>`;
     msg += `  ${arrow(data.wtiOil.change)} ${fmtRate(data.wtiOil.changeRate)}\n`;
   }
 
   // 암호화폐
   if (data.bitcoin) {
-    msg += `\n<b>₿ 암호화폐</b>\n`;
-    msg += `  비트코인  <code>$${data.bitcoin.price.toLocaleString()}</code>`;
+    msg += `\n<b>암호화폐</b>\n`;
+    msg += `비트코인  <code>$${data.bitcoin.price.toLocaleString()}</code>`;
     msg += `  ${arrow(data.bitcoin.change)} ${fmtRate(data.bitcoin.changeRate)}\n`;
   }
 
@@ -122,42 +138,49 @@ export async function handleEconomyCommand(
   msg += `\n${LINE}\n`;
   const comments: string[] = [];
   if (data.vix && data.vix.price >= 30)
-    comments.push("⚠️ VIX 30↑ — 변동성 극대, 보수적 접근 권장");
+    comments.push("VIX 30↑ — 변동성 극대, 보수적 접근 권장");
   else if (data.vix && data.vix.price >= 20)
-    comments.push("⚠️ VIX 20~30 — 불안정, 리스크 관리 강화");
+    comments.push("VIX 20~30 — 불안정, 리스크 관리 강화");
 
   if (data.fearGreed && data.fearGreed.score <= 25)
-    comments.push("💡 극단적 공포 — 역발상 매수 기회 탐색");
+    comments.push("극단적 공포 — 역발상 매수 기회 탐색");
   else if (data.fearGreed && data.fearGreed.score >= 80)
-    comments.push("⚠️ 극단적 탐욕 — 차익실현 고려");
+    comments.push("극단적 탐욕 — 차익실현 고려");
 
   if (data.usdkrw && data.usdkrw.price >= 1400)
-    comments.push("💵 원화 약세 (1,400↑) — 외국인 매도 압력 가능");
+    comments.push("원화 약세 (1,400↑) — 외국인 매도 압력 가능");
 
   if (data.us10y && data.us10y.price >= 5.0)
-    comments.push("📉 미국 10년물 5%↑ — 긴축 우려");
+    comments.push("미국 10년물 5%↑ — 긴축 우려");
 
   if (data.gold && data.gold.changeRate >= 2)
-    comments.push("🥇 금 가격 급등 — 안전자산 선호 심리");
+    comments.push("금 가격 급등 — 안전자산 선호 심리");
 
   if (data.wtiOil && data.wtiOil.price >= 100)
-    comments.push("🛢 유가 $100↑ — 인플레이션 · 비용 부담 확대");
+    comments.push("유가 $100↑ — 인플레이션 · 비용 부담 확대");
 
   if (data.bitcoin && data.bitcoin.changeRate <= -5)
-    comments.push("₿ 비트코인 급락 — 위험자산 회피 심리");
+    comments.push("비트코인 급락 — 위험자산 회피 심리");
   else if (data.bitcoin && data.bitcoin.changeRate >= 5)
-    comments.push("₿ 비트코인 급등 — 위험선호 강화");
+    comments.push("비트코인 급등 — 위험선호 강화");
 
+  msg += `<b>코멘트</b>\n`;
   msg += comments.length
-    ? comments.join("\n")
-    : "시장 특이사항 없음";
+    ? comments.map((c) => `• ${c}`).join("\n")
+    : "• 시장 특이사항 없음";
 
-  msg += `\n\n/시장 — 종합 시장 진단\n/수급 — 수급 동향`;
+  msg += `\n\n${LINE}`;
 
   await tgSend("sendMessage", {
     chat_id: ctx.chatId,
     text: msg,
     parse_mode: "HTML",
     disable_web_page_preview: true,
+    reply_markup: createMultiRowKeyboard(2, [
+      { text: "시장", callback_data: "cmd:market" },
+      { text: "수급", callback_data: "cmd:flow" },
+      { text: "브리핑", callback_data: "cmd:brief" },
+      { text: "스캔", callback_data: "cmd:scan" },
+    ]),
   });
 }

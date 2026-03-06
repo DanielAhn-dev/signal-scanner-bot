@@ -8,6 +8,7 @@ import { KO_MESSAGES } from "../messages/ko";
 import { esc, fmtInt, fmtOne, fmtPct, LINE } from "../messages/format";
 import { fetchRealtimeStockData } from "../../utils/fetchRealtimePrice";
 import { fetchAllMarketData } from "../../utils/fetchMarketData";
+import { getFundamentalSnapshot } from "../../services/fundamentalService";
 
 // --- 전략 코멘트 생성기 ---
 function makeStrategyComment(
@@ -48,7 +49,17 @@ function buildScoreMessage(
   date: string,
   last: StockOHLCV,
   scored: any,
-  realtimePrice?: number
+  realtimePrice?: number,
+  fundamental?: {
+    qualityScore: number;
+    per?: number;
+    pbr?: number;
+    roe?: number;
+    debtRatio?: number;
+    salesGrowthPct?: number;
+    opIncomeGrowthPct?: number;
+    netIncomeGrowthPct?: number;
+  }
 ): string {
   const f = scored.factors;
   const currentPrice = realtimePrice ?? last.close;
@@ -58,8 +69,9 @@ function buildScoreMessage(
   const t2 = scored.targets?.t2 ?? 0;
   const riskPct = stop && entry ? ((stop - entry) / entry) * 100 : 0;
 
+  const finalScore = Number(scored.finalScore ?? scored.score);
   const signalTag =
-    scored.score >= 70 ? "BUY" : scored.score >= 40 ? "HOLD" : "WAIT";
+    finalScore >= 70 ? "BUY" : finalScore >= 40 ? "HOLD" : "WAIT";
 
   const trendDir = f.sma200_slope > 0 ? "우상향" : "우하향";
   const avwapDir =
@@ -90,7 +102,12 @@ function buildScoreMessage(
     `<b>${esc(name)}</b>  <code>${code}</code>`,
     `${date} 기준 · ${priceLabel}`,
     LINE,
-    `<b>종합  ${fmtOne(scored.score)}점</b>  (${signalTag})`,
+    `<b>종합  ${fmtOne(finalScore)}점</b>  (${signalTag})`,
+    fundamental
+      ? `<i>기술 ${fmtOne(scored.score)} + 재무 ${fmtOne(
+          fundamental.qualityScore
+        )} 반영</i>`
+      : "",
     ``,
     `▸ 진입  <code>${fmtInt(entry)}원</code>  <i>${entryGuide}</i>`,
     `▸ 손절  <code>${fmtInt(stop)}원</code> (${fmtPct(riskPct)})`,
@@ -102,6 +119,34 @@ function buildScoreMessage(
     `  이격도  20MA ${dist20 >= 0 ? "+" : ""}${dist20.toFixed(1)}% · 50MA ${dist50 >= 0 ? "+" : ""}${dist50.toFixed(1)}%`,
     `▸ RSI ${fmtOne(f.rsi14)}  ROC₁₄ ${fmtPct(f.roc14)}`,
     `▸ AVWAP ${avwapDir} (지지 ${Number(f.avwap_support ?? 0).toFixed(2)}%)`,
+    fundamental
+      ? `▸ 재무  ${fundamental.qualityScore}점 (PER ${
+          fundamental.per !== undefined ? fundamental.per.toFixed(2) : "-"
+        } · PBR ${
+          fundamental.pbr !== undefined ? fundamental.pbr.toFixed(2) : "-"
+        } · ROE ${
+          fundamental.roe !== undefined ? `${fundamental.roe.toFixed(2)}%` : "-"
+        } · 부채 ${
+          fundamental.debtRatio !== undefined
+            ? `${fundamental.debtRatio.toFixed(2)}%`
+            : "-"
+        })`
+      : "",
+    fundamental
+      ? `  성장  매출 ${
+          fundamental.salesGrowthPct !== undefined
+            ? `${fundamental.salesGrowthPct.toFixed(1)}%`
+            : "-"
+        } · 영업 ${
+          fundamental.opIncomeGrowthPct !== undefined
+            ? `${fundamental.opIncomeGrowthPct.toFixed(1)}%`
+            : "-"
+        } · 순익 ${
+          fundamental.netIncomeGrowthPct !== undefined
+            ? `${fundamental.netIncomeGrowthPct.toFixed(1)}%`
+            : "-"
+        }`
+      : "",
     LINE,
     `<b>전략</b>`,
     makeStrategyComment(currentPrice, f),
@@ -147,10 +192,11 @@ export async function handleScoreCommand(
   }
 
   // 실시간 가격 + 시계열 데이터 + 시장 환경 동시 조회
-  const [series, realtimeData, mktData] = await Promise.all([
+  const [series, realtimeData, mktData, fundamental] = await Promise.all([
     getDailySeries(code, 420),
     fetchRealtimeStockData(code),
     fetchAllMarketData().catch(() => null),
+    getFundamentalSnapshot(code).catch(() => null),
   ]);
 
   if (!series || series.length < 200) {
@@ -171,6 +217,11 @@ export async function handleScoreCommand(
     });
   }
 
+  const finalScore = fundamental
+    ? Number((scored.score * 0.8 + fundamental.qualityScore * 0.2).toFixed(1))
+    : scored.score;
+  const scoreWithFund = { ...scored, finalScore };
+
   const realtimePrice = realtimeData?.price ?? undefined;
 
   const message = buildScoreMessage(
@@ -178,8 +229,20 @@ export async function handleScoreCommand(
     code,
     scored.date,
     series[series.length - 1],
-    scored,
-    realtimePrice
+    scoreWithFund,
+    realtimePrice,
+    fundamental
+      ? {
+          qualityScore: fundamental.qualityScore,
+          per: fundamental.per,
+          pbr: fundamental.pbr,
+          roe: fundamental.roe,
+          debtRatio: fundamental.debtRatio,
+          salesGrowthPct: fundamental.salesGrowthPct,
+          opIncomeGrowthPct: fundamental.opIncomeGrowthPct,
+          netIncomeGrowthPct: fundamental.netIncomeGrowthPct,
+        }
+      : undefined
   );
 
   const kb = createMultiRowKeyboard(3, [
