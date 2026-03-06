@@ -101,7 +101,7 @@ function buildScoreMessage(
     `  MA 20/50/200: ${fmtInt(f.sma20)} / ${fmtInt(f.sma50)} / ${fmtInt(f.sma200)}`,
     `  이격도  20MA ${dist20 >= 0 ? "+" : ""}${dist20.toFixed(1)}% · 50MA ${dist50 >= 0 ? "+" : ""}${dist50.toFixed(1)}%`,
     `▸ RSI ${fmtOne(f.rsi14)}  ROC₁₄ ${fmtPct(f.roc14)}`,
-    `▸ AVWAP ${avwapDir} (지지 ${f.avwap_support}%)`,
+    `▸ AVWAP ${avwapDir} (지지 ${Number(f.avwap_support ?? 0).toFixed(2)}%)`,
     LINE,
     `<b>전략</b>`,
     makeStrategyComment(currentPrice, f),
@@ -185,6 +185,7 @@ export async function handleScoreCommand(
   const kb = createMultiRowKeyboard(3, [
     { text: "재계산", callback_data: `score:${code}` },
     { text: "매수 판독", callback_data: `buy:${code}` },
+    { text: "재무", callback_data: `finance:${code}` },
     { text: "관심추가", callback_data: `watchadd:${code}` },
     { text: "뉴스", callback_data: `news:${code}` },
     { text: "수급", callback_data: `flow:${code}` },

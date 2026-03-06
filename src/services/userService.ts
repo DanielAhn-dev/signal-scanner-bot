@@ -20,6 +20,12 @@ export interface TelegramFrom {
   language_code?: string;
 }
 
+export type InvestmentPrefs = {
+  capital_krw?: number;
+  split_count?: number;
+  target_profit_pct?: number;
+};
+
 // ─── 사용자 등록/업데이트 ───
 
 /** 모든 명령어 실행 시 호출 — upsert + last_active 갱신 */
@@ -39,6 +45,68 @@ export async function ensureUser(from: TelegramFrom): Promise<void> {
   } catch (e) {
     console.error("ensureUser error:", e);
   }
+}
+
+export async function getUserInvestmentPrefs(
+  tgId: number
+): Promise<InvestmentPrefs> {
+  const { data } = await supabaseRead
+    .from("users")
+    .select("prefs")
+    .eq("tg_id", tgId)
+    .single();
+
+  const prefs = (data?.prefs || {}) as Record<string, unknown>;
+  const out: InvestmentPrefs = {};
+
+  const cap = Number(prefs.capital_krw);
+  const split = Number(prefs.split_count);
+  const target = Number(prefs.target_profit_pct);
+
+  if (Number.isFinite(cap) && cap > 0) out.capital_krw = cap;
+  if (Number.isFinite(split) && split > 0) out.split_count = Math.floor(split);
+  if (Number.isFinite(target) && target > 0) out.target_profit_pct = target;
+
+  return out;
+}
+
+export async function setUserInvestmentPrefs(
+  tgId: number,
+  patch: InvestmentPrefs
+): Promise<{ ok: boolean; prefs?: InvestmentPrefs; message?: string }> {
+  const { data: userRow } = await supabase
+    .from("users")
+    .select("prefs")
+    .eq("tg_id", tgId)
+    .single();
+
+  const currentPrefs = ((userRow?.prefs as Record<string, unknown>) || {}) as Record<
+    string,
+    unknown
+  >;
+  const merged = {
+    ...currentPrefs,
+    ...patch,
+  };
+
+  const { error } = await supabase
+    .from("users")
+    .update({ prefs: merged, last_active_at: new Date().toISOString() })
+    .eq("tg_id", tgId);
+
+  if (error) {
+    console.error("setUserInvestmentPrefs error:", error);
+    return { ok: false, message: "투자금 설정 저장 중 오류가 발생했습니다." };
+  }
+
+  return {
+    ok: true,
+    prefs: {
+      capital_krw: Number(merged.capital_krw || 0) || undefined,
+      split_count: Number(merged.split_count || 0) || undefined,
+      target_profit_pct: Number(merged.target_profit_pct || 0) || undefined,
+    },
+  };
 }
 
 /** 명령어 사용 로그 */

@@ -9,6 +9,7 @@ import {
   type RealtimeStockData,
 } from "../../utils/fetchRealtimePrice";
 import { esc, fmtInt, LINE } from "../messages/format";
+import { createMultiRowKeyboard } from "../../telegram/keyboards";
 import * as cheerio from "cheerio";
 
 const supabase = createClient(
@@ -122,12 +123,19 @@ export async function handleFlowCommand(
     msg += `  기관 ${i5 >= 0 ? "▲" : "▼"} ${fmtInt(Math.abs(i5))}주`;
   }
 
-  msg += `\n\n${LINE}\n/점수 ${code} · /매수 ${code} · /뉴스 ${name}`;
+  msg += `\n\n${LINE}\n아래 버튼으로 상세 분석을 이어가세요.`;
 
   await tgSend("sendMessage", {
     chat_id: ctx.chatId,
     text: msg,
     parse_mode: "HTML",
+    reply_markup: createMultiRowKeyboard(3, [
+      { text: "점수", callback_data: `score:${code}` },
+      { text: "매수", callback_data: `buy:${code}` },
+      { text: "재무", callback_data: `finance:${code}` },
+      { text: "뉴스", callback_data: `news:${code}` },
+      { text: "관심추가", callback_data: `watchadd:${code}` },
+    ]),
   });
 }
 

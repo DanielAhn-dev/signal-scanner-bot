@@ -5,8 +5,10 @@ import {
 } from "./commands/sector";
 import { handleScoreCommand } from "./commands/score";
 import { handleBuyCommand } from "./commands/buy";
+import { handleCapitalCommand } from "./commands/capital";
 import { handleStocksCommand } from "./commands/stocks";
 import { handleScanCommand } from "./commands/scan";
+import { handleFinanceCommand } from "./commands/finance";
 import { resolveBase } from "../lib/base";
 import { getLeadersForSectorById } from "../data/sector";
 import { createMultiRowKeyboard } from "../telegram/keyboards";
@@ -88,6 +90,8 @@ const CMD = {
   UPDATE: /^\/(update|갱신)$/i,
   COMMANDS: /^\/(commands|admin_commands)$/i,
   BUY: /^\/(buy|매수)(?:\s+(.+))?$/i,
+  CAPITAL: /^\/(capital|투자금)(?:\s+(.+))?$/i,
+  FINANCE: /^\/(finance|재무)(?:\s+(.+))?$/i,
   SEED: /^\/seed$/i,
   BRIEF: /^\/(brief|morning|브리핑|장전)$/i,
   PULLBACK: /^\/(pullback|눌림목|매집)$/i,
@@ -384,6 +388,20 @@ export async function routeMessage(
     return;
   }
 
+  // /capital
+  const mCap = t.match(CMD.CAPITAL);
+  if (mCap) {
+    await handleCapitalCommand(mCap[2] || "", ctx, tgSend);
+    return;
+  }
+
+  // /finance
+  const mFin = t.match(CMD.FINANCE);
+  if (mFin) {
+    await handleFinanceCommand(mFin[2] || "", ctx, tgSend);
+    return;
+  }
+
   // /score
   const m = t.match(CMD.SCORE);
   if (m) {
@@ -595,6 +613,7 @@ export async function routeCallback(
     const promptMap: Record<string, { label: string; hint: string }> = {
       score: { label: "💯 점수 조회", hint: "예) 삼성전자, 005930" },
       buy: { label: "💰 매수 판독", hint: "예) SK하이닉스" },
+      finance: { label: "📊 재무 요약", hint: "예) 삼성전자" },
       news: { label: "📰 종목 뉴스", hint: "예) 카카오" },
       flow: { label: "💹 수급 조회", hint: "예) LG에너지솔루션" },
     };
@@ -650,6 +669,12 @@ export async function routeCallback(
   if (data.startsWith("buy:")) {
     const [, code] = data.split(":");
     if (code) await handleBuyCommand(code, ctx, tgSend);
+    return;
+  }
+
+  if (data.startsWith("finance:")) {
+    const [, code] = data.split(":");
+    if (code) await handleFinanceCommand(code, ctx, tgSend);
     return;
   }
 

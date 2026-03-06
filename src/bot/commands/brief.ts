@@ -3,6 +3,7 @@ import { createClient } from "@supabase/supabase-js";
 import { esc, fmtInt, LINE } from "../messages/format";
 import { fetchRealtimePriceBatch } from "../../utils/fetchRealtimePrice";
 import { fetchAllMarketData } from "../../utils/fetchMarketData";
+import { createMultiRowKeyboard } from "../../telegram/keyboards";
 
 const supabase = createClient(
   process.env.SUPABASE_URL!,
@@ -204,7 +205,7 @@ export async function handleBriefCommand(
       });
     }
 
-    msg += `\n${LINE}\n/점수 종목코드 · /눌림목 · /경제 · /시장`;
+    msg += `\n${LINE}\n아래 버튼으로 바로 조회하세요.`;
 
     // --- 6) Telegram 전송 ---
     await tgSend("sendMessage", {
@@ -212,6 +213,14 @@ export async function handleBriefCommand(
       text: msg,
       parse_mode: "HTML",
       disable_web_page_preview: true,
+      reply_markup: createMultiRowKeyboard(3, [
+        { text: "점수", callback_data: "prompt:score" },
+        { text: "매수", callback_data: "prompt:buy" },
+        { text: "뉴스", callback_data: "prompt:news" },
+        { text: "수급", callback_data: "prompt:flow" },
+        { text: "눌림목", callback_data: "cmd:pullback" },
+        { text: "시장", callback_data: "cmd:market" },
+      ]),
     });
   } catch (e) {
     console.error("handleBriefCommand 실패:", e);

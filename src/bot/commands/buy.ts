@@ -4,6 +4,7 @@ import { searchByNameOrCode } from "../../search/normalize";
 import { KO_MESSAGES } from "../messages/ko";
 import { fetchRealtimePrice } from "../../utils/fetchRealtimePrice";
 import { esc, fmtInt, LINE } from "../messages/format";
+import { getUserInvestmentPrefs } from "../../services/userService";
 
 // Supabase 클라이언트
 const supabase = createClient(
@@ -125,7 +126,15 @@ function calculateEntryPrice(
 function buildMessage(
   stock: any,
   currentPrice: number,
-  evaluation: { canBuy: boolean; reasons: string[] }
+  evaluation: { canBuy: boolean; reasons: string[] },
+  investPlan?: {
+    capital: number;
+    splitCount: number;
+    perSplitAmount: number;
+    targetProfitPct: number;
+    expectedProfit: number;
+    expectedTotal: number;
+  }
 ): string {
   const { name, code } = stock;
   const { canBuy, reasons } = evaluation;
@@ -174,7 +183,22 @@ function buildMessage(
       .join("\n");
   }
 
-  return [header, body].join("\n");
+  const planBlock = investPlan
+    ? [
+        "",
+        LINE,
+        "<b>▸ 내 투자금 기준 계획</b>",
+        `  투자금  <code>${fmtInt(investPlan.capital)}원</code>`,
+        `  분할매수  <code>${investPlan.splitCount}회</code> (회당 ${fmtInt(
+          investPlan.perSplitAmount
+        )}원)`,
+        `  목표가정  +${investPlan.targetProfitPct.toFixed(1)}%`,
+        `  예상수익  <code>${fmtInt(investPlan.expectedProfit)}원</code>`,
+        `  목표도달시  <code>${fmtInt(investPlan.expectedTotal)}원</code>`,
+      ].join("\n")
+    : "";
+
+  return [header, body, planBlock].filter(Boolean).join("\n");
 }
 
 // --- 메인 핸들러 ---
@@ -255,13 +279,33 @@ export async function handleBuyCommand(
 
   // 4. 평가 및 메시지 전송 (실시간 가격 기준)
   const evaluation = evaluateBuyCondition(enrichedStock, currentPrice);
-  const msg = buildMessage(enrichedStock, currentPrice, evaluation);
+  const prefs = await getUserInvestmentPrefs(ctx.from?.id ?? ctx.chatId);
+
+  const capital = prefs.capital_krw ?? 0;
+  const splitCount = prefs.split_count ?? 3;
+  const targetProfitPct = prefs.target_profit_pct ?? 8;
+
+  const investPlan =
+    capital > 0 && splitCount > 0
+      ? {
+          capital,
+          splitCount,
+          perSplitAmount: Math.floor(capital / splitCount),
+          targetProfitPct,
+          expectedProfit: Math.floor(capital * (targetProfitPct / 100)),
+          expectedTotal: Math.floor(capital * (1 + targetProfitPct / 100)),
+        }
+      : undefined;
+
+  const msg = buildMessage(enrichedStock, currentPrice, evaluation, investPlan);
 
   const { createMultiRowKeyboard } = await import("../../telegram/keyboards");
   const kb = createMultiRowKeyboard(3, [
     { text: "점수 조회", callback_data: `score:${code}` },
+    { text: "재무", callback_data: `finance:${code}` },
     { text: "관심추가", callback_data: `watchadd:${code}` },
     { text: "뉴스", callback_data: `news:${code}` },
+    { text: "수급", callback_data: `flow:${code}` },
   ]);
 
   await tgSend("sendMessage", {

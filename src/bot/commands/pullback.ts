@@ -5,6 +5,7 @@ import type { ChatContext } from "../router";
 import { createClient } from "@supabase/supabase-js";
 import { esc, fmtInt, LINE, gradeLabel } from "../messages/format";
 import { fetchRealtimePriceBatch } from "../../utils/fetchRealtimePrice";
+import { createMultiRowKeyboard } from "../../telegram/keyboards";
 
 const supabase = createClient(
   process.env.SUPABASE_URL!,
@@ -40,7 +41,7 @@ export async function handlePullbackCommand(
       return;
     }
 
-    // A/B 등급 후보 조회
+    // 전체 종목 중 A/B 등급 후보 조회 (상위 추출은 앱에서 수행)
     const { data: candidates, error } = await supabase
       .from("pullback_signals")
       .select(
@@ -54,8 +55,7 @@ export async function handlePullbackCommand(
       .eq("trade_date", latestDate)
       .in("entry_grade", ["A", "B"])
       .neq("warn_grade", "SELL")
-      .order("entry_score", { ascending: false })
-      .limit(15);
+      .order("entry_score", { ascending: false });
 
     if (error) {
       console.error("pullback query error:", error);
@@ -76,15 +76,19 @@ export async function handlePullbackCommand(
       return;
     }
 
-    // A등급 먼저, 같은 등급이면 entry_score 내림차순
+    // A등급 우선 + 경고점수 낮은 순으로 정렬 후 상위 노출
     candidates.sort((a: any, b: any) => {
       if (a.entry_grade !== b.entry_grade)
         return a.entry_grade === "A" ? -1 : 1;
+      if ((a.warn_score ?? 0) !== (b.warn_score ?? 0))
+        return (a.warn_score ?? 0) - (b.warn_score ?? 0);
       return (b.entry_score ?? 0) - (a.entry_score ?? 0);
     });
 
+    const topCandidates = candidates.slice(0, 15);
+
     // 실시간 가격 일괄 조회
-    const codes = candidates.map((c: any) => c.code);
+    const codes = topCandidates.map((c: any) => c.code);
     const realtimeMap = await fetchRealtimePriceBatch(codes);
 
     // 경고 라벨
@@ -105,9 +109,9 @@ export async function handlePullbackCommand(
 
     let msg = `<b>눌림목 매집 후보</b>\n`;
     msg += `<i>${dateNote}</i>\n`;
-    msg += `<i>A/B 등급, 매도경고 제외</i>\n${LINE}\n`;
+    msg += `<i>전체 종목 스캔 · A/B 등급, 매도경고 제외</i>\n${LINE}\n`;
 
-    for (const s of candidates) {
+    for (const s of topCandidates) {
       const stock = s.stock as any;
       const gl = gradeLabel[s.entry_grade] ?? "";
       const wl = warnLabel[s.warn_grade] ?? "";
@@ -134,13 +138,20 @@ export async function handlePullbackCommand(
       if (details.length) msg += `   ${details.join(" · ")}\n`;
     }
 
-    msg += `\n${LINE}\n총 ${candidates.length}개 종목 · /점수 코드 로 상세 확인`;
+    msg += `\n${LINE}\n전체 후보 ${candidates.length}개 중 상위 ${topCandidates.length}개`;
 
     await tgSend("sendMessage", {
       chat_id: ctx.chatId,
       text: msg,
       parse_mode: "HTML",
       disable_web_page_preview: true,
+      reply_markup: createMultiRowKeyboard(3, [
+        { text: "점수", callback_data: "prompt:score" },
+        { text: "매수", callback_data: "prompt:buy" },
+        { text: "재무", callback_data: "prompt:finance" },
+        { text: "뉴스", callback_data: "prompt:news" },
+        { text: "수급", callback_data: "prompt:flow" },
+      ]),
     });
   } catch (e) {
     console.error("handlePullbackCommand error:", e);

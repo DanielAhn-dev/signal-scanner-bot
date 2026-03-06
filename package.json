@@ -10,7 +10,7 @@
     "deploy": "vercel --prod",
     "seed:sectors": "tsx scripts/seedSectors.ts",
     "gen:sectors": "tsx scripts/generateSectorsJson.ts",
-    "set:commands": "node scripts/ops/set_commands.cjs"
+    "set:commands": "tsx scripts/ops/set_commands.ts"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.45.0",

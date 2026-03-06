@@ -32,6 +32,8 @@ const BOT_COMMANDS = [
   { command: "scan", description: "눌림목 스캐너" },
   { command: "score", description: "종목 점수·시그널" },
   { command: "buy", description: "매수 판독" },
+  { command: "finance", description: "재무 요약" },
+  { command: "capital", description: "투자금 설정" },
   { command: "brief", description: "장전 브리핑" },
   { command: "economy", description: "글로벌 경제지표" },
   { command: "news", description: "시장·종목 뉴스" },

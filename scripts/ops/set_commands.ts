@@ -8,12 +8,26 @@ type TelegramResponse = {
 };
 
 const commands = [
-  { command: "sector", description: "유망 섹터 랭킹 보기" },
-  { command: "nextsector", description: "수급 유입 섹터 흐름 보기" },
-  { command: "stocks", description: "섹터별 주도주 보기" },
-  { command: "score", description: "개별 종목 점수/시그널 보기" },
-  { command: "buy", description: "엔트리/손절/익절 레벨 보기" },
-  { command: "start", description: "사용법 안내" },
+  { command: "start", description: "시작 · 메뉴" },
+  { command: "sector", description: "주도 섹터 랭킹" },
+  { command: "scan", description: "눌림목 스캐너" },
+  { command: "score", description: "종목 점수·시그널" },
+  { command: "buy", description: "매수 판독" },
+  { command: "finance", description: "재무 요약" },
+  { command: "capital", description: "투자금 설정" },
+  { command: "brief", description: "장전 브리핑" },
+  { command: "economy", description: "글로벌 경제지표" },
+  { command: "news", description: "시장·종목 뉴스" },
+  { command: "market", description: "종합 시장 진단" },
+  { command: "watchlist", description: "관심종목 포트폴리오" },
+  { command: "flow", description: "외국인·기관 수급" },
+  { command: "nextsector", description: "수급 유입 섹터" },
+  { command: "pullback", description: "눌림목 매집 후보" },
+  { command: "ranking", description: "포트폴리오 랭킹" },
+  { command: "profile", description: "내 프로필" },
+  { command: "follow", description: "트레이더 팔로우" },
+  { command: "feed", description: "팔로잉 피드" },
+  { command: "help", description: "도움말" },
 ];
 
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || "";

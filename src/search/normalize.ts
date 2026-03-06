@@ -11,6 +11,7 @@ const USE_DB_ONLY = (process.env.USE_DB_ONLY || "").toLowerCase() === "true";
 // ── 영문 종목의 한글 별칭 맵 ──
 // 사용자가 한글로 검색할 때 영문 이름 종목도 찾을 수 있도록
 const KO_ALIASES: Record<string, string[]> = {
+  "000270": ["기아", "KIA", "기아자동차"],
   "035420": ["네이버", "NAVER"],
   "003550": ["엘지", "LG"],
   "034730": ["에스케이", "SK"],
