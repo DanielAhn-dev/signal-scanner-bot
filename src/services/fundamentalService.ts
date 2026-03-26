@@ -199,9 +199,31 @@ async function fetchNaverFinanceRows(code: string): Promise<Record<string, strin
       (detailText.match(/PBR[^\d-]*(-?\d+(?:,\d{3})*(?:\.\d+)?)/i) || [])[1] || ""
     );
 
+    // 전체 HTML에서 PER/PBR을 추가 추출 (페이지 구조가 다른 경우 대비)
+    const perFromHtml = findFirstNumberInText(
+      (html.match(/PER[^\d-]*(-?\d+(?:,\d{3})*(?:\.\d+)?)/i) || [])[1] || ""
+    );
+    const pbrFromHtml = findFirstNumberInText(
+      (html.match(/PBR[^\d-]*(-?\d+(?:,\d{3})*(?:\.\d+)?)/i) || [])[1] || ""
+    );
+
+    const perFallback = perFromBlind ?? perFromHtml;
+    const pbrFallback = pbrFromBlind ?? pbrFromHtml;
+
     const out: Record<string, string[]> = Object.fromEntries(rows.entries());
-    if (perFromBlind !== undefined) out.__PER_FALLBACK__ = [String(perFromBlind)];
-    if (pbrFromBlind !== undefined) out.__PBR_FALLBACK__ = [String(pbrFromBlind)];
+    if (perFallback !== undefined) out.__PER_FALLBACK__ = [String(perFallback)];
+    if (pbrFallback !== undefined) out.__PBR_FALLBACK__ = [String(pbrFallback)];
+
+    if (perFallback === undefined && pbrFallback === undefined) {
+      // 디버깅 용도: 둘 다 못 구하면 짧게 로그 남김
+      try {
+        const snippet = html.slice(0, 600).replace(/\s+/g, " ");
+        console.info(`fundamental: PER/PBR 미발견 (${code}) snippet: ${snippet}`);
+      } catch (e) {
+        console.info(`fundamental: PER/PBR 미발견 (${code})`);
+      }
+    }
+
     return out;
   } catch (e) {
     console.error(`fetchNaverFinanceRows failed (${code}):`, e);
