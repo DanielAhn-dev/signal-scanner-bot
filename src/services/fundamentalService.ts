@@ -161,8 +161,8 @@ async function fetchNaverFinanceRows(code: string): Promise<Record<string, strin
     const rows = new Map<string, string[]>();
 
     // 기본 표 구조 우선 시도
-    function parseTableRows(tableSel: cheerio.Cheerio) {
-      tableSel.find("tbody tr").each((_, tr) => {
+    function parseTableRows(tableSel: any) {
+      tableSel.find("tbody tr").each((_: any, tr: any) => {
         const th = $(tr).find("th").first();
         let key = th.text() || "";
         key = key.replace(/\s+/g, "").trim();
@@ -171,7 +171,7 @@ async function fetchNaverFinanceRows(code: string): Promise<Record<string, strin
         const vals: string[] = [];
         $(tr)
           .find("td")
-          .each((__, td) => {
+          .each((__: any, td: any) => {
             const txt = $(td).text().replace(/\s+/g, "").trim();
             if (txt) vals.push(txt);
           });
@@ -184,7 +184,7 @@ async function fetchNaverFinanceRows(code: string): Promise<Record<string, strin
 
     // 페이지 구조 변경 시 전체 테이블을 스캔해서 필요한 행을 찾음
     if (rows.size === 0) {
-      $("table").each((_, table) => {
+      $("table").each((_: any, table: any) => {
         parseTableRows($(table));
       });
     }
@@ -199,6 +199,25 @@ async function fetchNaverFinanceRows(code: string): Promise<Record<string, strin
       (detailText.match(/PBR[^\d-]*(-?\d+(?:,\d{3})*(?:\.\d+)?)/i) || [])[1] || ""
     );
 
+    // 표(row)에서 명시적으로 PER/PBR 라벨을 찾아 추출 (우선순위: table > blind > html)
+    let perFromTable: number | undefined;
+    let pbrFromTable: number | undefined;
+    for (const [k, vals] of rows.entries()) {
+      try {
+        const key = (k || "").toString();
+        if (/PER/i.test(key)) {
+          const v = parseNum((vals && vals[0]) || "");
+          if (v !== undefined) perFromTable = v;
+        }
+        if (/PBR/i.test(key)) {
+          const v = parseNum((vals && vals[0]) || "");
+          if (v !== undefined) pbrFromTable = v;
+        }
+      } catch (e) {
+        /* ignore */
+      }
+    }
+
     // 전체 HTML에서 PER/PBR을 추가 추출 (페이지 구조가 다른 경우 대비)
     const perFromHtml = findFirstNumberInText(
       (html.match(/PER[^\d-]*(-?\d+(?:,\d{3})*(?:\.\d+)?)/i) || [])[1] || ""
@@ -207,8 +226,12 @@ async function fetchNaverFinanceRows(code: string): Promise<Record<string, strin
       (html.match(/PBR[^\d-]*(-?\d+(?:,\d{3})*(?:\.\d+)?)/i) || [])[1] || ""
     );
 
-    const perFallback = perFromBlind ?? perFromHtml;
-    const pbrFallback = pbrFromBlind ?? pbrFromHtml;
+    // 우선순위: 표(table) > blind text > 전체 HTML
+    const perFallback = perFromTable ?? perFromBlind ?? perFromHtml;
+    const pbrFallback = pbrFromTable ?? pbrFromBlind ?? pbrFromHtml;
+
+    if (perFromTable !== undefined) console.info(`fundamental: PER from table (${code}) -> ${perFromTable}`);
+    if (pbrFromTable !== undefined) console.info(`fundamental: PBR from table (${code}) -> ${pbrFromTable}`);
 
     const out: Record<string, string[]> = Object.fromEntries(rows.entries());
     if (perFallback !== undefined) out.__PER_FALLBACK__ = [String(perFallback)];
@@ -250,8 +273,20 @@ export async function getFundamentalSnapshot(code: string): Promise<FundamentalS
     rows["ROE(지배주주)"] || rows["ROE"] || rows["ROE(%)"] || []
   );
 
-  const per = rt?.per ?? parseNum((rows.__PER_FALLBACK__ || [])[0] || "");
-  const pbr = rt?.pbr ?? parseNum((rows.__PBR_FALLBACK__ || [])[0] || "");
+  const perRaw = rt?.per ?? parseNum((rows.__PER_FALLBACK__ || [])[0] || "");
+  const pbrRaw = rt?.pbr ?? parseNum((rows.__PBR_FALLBACK__ || [])[0] || "");
+
+  // Sanity checks: filter out clearly invalid parse results (e.g. very large integers or zero PBR)
+  let per: number | undefined = perRaw;
+  let pbr: number | undefined = pbrRaw;
+  if (per !== undefined && (per > 1000 || per <= 0)) {
+    console.info(`fundamental: sanitized PER for ${code} (raw=${per}) -> undefined`);
+    per = undefined;
+  }
+  if (pbr !== undefined && (pbr <= 0 || pbr > 1000)) {
+    console.info(`fundamental: sanitized PBR for ${code} (raw=${pbr}) -> undefined`);
+    pbr = undefined;
+  }
 
   const quality = evaluateFundamentalQuality({
     per,
