@@ -160,27 +160,38 @@ async function fetchNaverFinanceRows(code: string): Promise<Record<string, strin
     const $ = cheerio.load(html);
     const rows = new Map<string, string[]>();
 
-    $("div.section.cop_analysis table tbody tr").each((_, tr) => {
-      const key = $(tr)
-        .find("th")
-        .first()
-        .text()
-        .replace(/\s+/g, "")
-        .trim();
-      if (!key) return;
+    // 기본 표 구조 우선 시도
+    function parseTableRows(tableSel: cheerio.Cheerio) {
+      tableSel.find("tbody tr").each((_, tr) => {
+        const th = $(tr).find("th").first();
+        let key = th.text() || "";
+        key = key.replace(/\s+/g, "").trim();
+        if (!key) return;
 
-      const vals: string[] = [];
-      $(tr)
-        .find("td")
-        .each((__, td) => {
-          const txt = $(td).text().replace(/\s+/g, "").trim();
-          if (txt) vals.push(txt);
-        });
+        const vals: string[] = [];
+        $(tr)
+          .find("td")
+          .each((__, td) => {
+            const txt = $(td).text().replace(/\s+/g, "").trim();
+            if (txt) vals.push(txt);
+          });
 
-      if (vals.length) rows.set(key, vals);
-    });
+        if (vals.length) rows.set(key, vals);
+      });
+    }
 
-    const detailText = $("dl.blind dd").text();
+    parseTableRows($("div.section.cop_analysis table"));
+
+    // 페이지 구조 변경 시 전체 테이블을 스캔해서 필요한 행을 찾음
+    if (rows.size === 0) {
+      $("table").each((_, table) => {
+        parseTableRows($(table));
+      });
+    }
+
+    // 상세 텍스트(투자지표 요약)를 여러 위치에서 시도해 추출
+    const detailText =
+      $("dl.blind dd").text() || $(".wrap_company .blind").text() || $(".rate_info .blind").text() || "";
     const perFromBlind = findFirstNumberInText(
       (detailText.match(/PER[^\d-]*(-?\d+(?:,\d{3})*(?:\.\d+)?)/i) || [])[1] || ""
     );

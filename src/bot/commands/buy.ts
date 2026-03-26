@@ -149,13 +149,10 @@ function buildMessage(
     opIncomeGrowthPct?: number;
     netIncomeGrowthPct?: number;
   },
-  investPlan?: {
+  investPrefs?: {
     capital: number;
     splitCount: number;
-    perSplitAmount: number;
     targetProfitPct: number;
-    expectedProfit: number;
-    expectedTotal: number;
   }
 ): string {
   const { name, code } = stock;
@@ -205,20 +202,30 @@ function buildMessage(
       .join("\n");
   }
 
-  const planBlock = investPlan
-    ? [
-        "",
-        LINE,
-        "<b>▸ 내 투자금 기준 계획</b>",
-        `  투자금  <code>${fmtInt(investPlan.capital)}원</code>`,
-        `  분할매수  <code>${investPlan.splitCount}회</code> (회당 ${fmtInt(
-          investPlan.perSplitAmount
-        )}원)`,
-        `  목표가정  +${investPlan.targetProfitPct.toFixed(1)}%`,
-        `  예상수익  <code>${fmtInt(investPlan.expectedProfit)}원</code>`,
-        `  목표도달시  <code>${fmtInt(investPlan.expectedTotal)}원</code>`,
-      ].join("\n")
-    : "";
+  let planBlock = "";
+  if (investPrefs && investPrefs.capital > 0 && investPrefs.splitCount > 0) {
+    const capital = investPrefs.capital;
+    const splitCount = investPrefs.splitCount;
+    const perSplitAmount = Math.floor(capital / splitCount);
+    const targetProfitPct = investPrefs.targetProfitPct ?? 0;
+
+    // entry.entryPrice 기준으로 실제 매수 가능한 수량을 계산하여 예상 수익을 동적으로 계산
+    const entryPrice = entry.entryPrice > 0 ? entry.entryPrice : currentPrice;
+    const totalShares = entryPrice > 0 ? Math.floor(capital / entryPrice) : 0;
+    const expectedProfit = Math.floor(totalShares * entryPrice * (targetProfitPct / 100));
+    const expectedTotal = Math.floor(totalShares * entryPrice + expectedProfit);
+
+    planBlock = [
+      "",
+      LINE,
+      "<b>▸ 내 투자금 기준 계획</b>",
+      `  투자금  <code>${fmtInt(capital)}원</code>`,
+      `  분할매수  <code>${splitCount}회</code> (회당 ${fmtInt(perSplitAmount)}원)`,
+      `  목표가정  +${targetProfitPct.toFixed(1)}%`,
+      `  예상수익  <code>${fmtInt(expectedProfit)}원</code>`,
+      `  목표도달시  <code>${fmtInt(expectedTotal)}원</code>`,
+    ].join("\n");
+  }
 
   const fundamentalBlock = fundamental
     ? [
@@ -343,17 +350,9 @@ export async function handleBuyCommand(
   const splitCount = prefs.split_count ?? 3;
   const targetProfitPct = prefs.target_profit_pct ?? 8;
 
-  const investPlan =
-    capital > 0 && splitCount > 0
-      ? {
-          capital,
-          splitCount,
-          perSplitAmount: Math.floor(capital / splitCount),
-          targetProfitPct,
-          expectedProfit: Math.floor(capital * (targetProfitPct / 100)),
-          expectedTotal: Math.floor(capital * (1 + targetProfitPct / 100)),
-        }
-      : undefined;
+  const investPrefs = capital > 0 && splitCount > 0
+    ? { capital, splitCount, targetProfitPct }
+    : undefined;
 
   const msg = buildMessage(
     enrichedStock,
@@ -371,7 +370,7 @@ export async function handleBuyCommand(
           netIncomeGrowthPct: fundamental.netIncomeGrowthPct,
         }
       : undefined,
-    investPlan
+    investPrefs
   );
 
   const kb = actionButtons(ACTIONS.analyzeStock(code), 3);
