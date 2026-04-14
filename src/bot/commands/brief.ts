@@ -1,234 +1,30 @@
 import type { ChatContext } from "../router";
 import { createClient } from "@supabase/supabase-js";
-import { esc, fmtInt, LINE } from "../messages/format";
-import { fetchRealtimePriceBatch } from "../../utils/fetchRealtimePrice";
-import { fetchAllMarketData } from "../../utils/fetchMarketData";
-import { actionButtons, ACTIONS } from "../messages/layout";
+import { createBriefingReport } from "../../services/briefingService";
 
 const supabase = createClient(
   process.env.SUPABASE_URL!,
   process.env.SUPABASE_ANON_KEY!
 );
 
-function safeFmt(n: any) {
-  if (n == null) return "-";
-  const num = Number(n);
-  if (Number.isNaN(num)) return String(n);
-  return num.toLocaleString();
-}
-
+// /brief 명령 처리 — briefingService의 고도화된 로직을 그대로 사용하여
+// 자동 브리핑(cron)과 수동 브리핑(/brief)의 내용이 항상 동일하게 유지됩니다.
 export async function handleBriefCommand(
   ctx: ChatContext,
   tgSend: any
 ): Promise<void> {
-  try {
-    // 최신 asof 날짜 조회 (scores 테이블에 여러 날짜 데이터 존재 가능)
-    const { data: latestScoreDate } = await supabase
-      .from("scores")
-      .select("asof")
-      .order("asof", { ascending: false })
-      .limit(1);
-    const latestAsof = latestScoreDate?.[0]?.asof;
-    if (!latestAsof) {
-      await tgSend("sendMessage", {
-        chat_id: ctx.chatId,
-        text: "\u26a0\ufe0f 스코어 데이터가 아직 없습니다. 데이터 수집 후 다시 시도해주세요.",
-      });
-      return;
-    }
+  // 로딩 중 메시지 (브리핑 생성에 시간이 걸릴 수 있으므로)
+  await tgSend("sendMessage", {
+    chat_id: ctx.chatId,
+    text: "☀️ 브리핑 생성 중...",
+  });
 
-    // --- 1) 가치주: scores 테이블 기준 조회 ---
-    const { data: valueData, error: errVs } = await supabase
-      .from("scores")
-      .select(
-        `
-        value_score,
-        stock:stocks!inner ( code, name, close, universe_level )
-      `
-      )
-      .eq("asof", latestAsof)
-      .eq("stock.universe_level", "core")
-      .gt("value_score", 60)
-      .order("value_score", { ascending: false })
-      .limit(5);
+  const report = await createBriefingReport(supabase, "pre_market");
 
-    if (errVs) console.error("가치주 조회 에러:", errVs);
-
-    // 데이터 매핑
-    const valueStocks = valueData?.map((item: any) => ({
-      name: item.stock.name,
-      code: item.stock.code,
-      close: item.stock.close,
-      value_score: item.value_score,
-    }));
-
-    // --- 2) 모멘텀주: scores 테이블 기준 조회 ---
-    const { data: momentumData, error: errMs } = await supabase
-      .from("scores")
-      .select(
-        `
-        momentum_score,
-        stock:stocks!inner ( code, name, close, universe_level )
-      `
-      )
-      .eq("asof", latestAsof)
-      .eq("stock.universe_level", "core")
-      .gt("momentum_score", 60)
-      .order("momentum_score", { ascending: false })
-      .limit(5);
-
-    if (errMs) console.error("모멘텀주 조회 에러:", errMs);
-
-    const momentumStocks = momentumData?.map((item: any) => ({
-      name: item.stock.name,
-      code: item.stock.code,
-      close: item.stock.close,
-      momentum_score: item.momentum_score,
-    }));
-
-    // --- 3) 눌림목 매집 후보: pullback_signals 테이블 ---
-    const { data: latestPbDate } = await supabase
-      .from("pullback_signals")
-      .select("trade_date")
-      .order("trade_date", { ascending: false })
-      .limit(1);
-
-    const pbDate = latestPbDate?.[0]?.trade_date;
-    let pullbackStocks: any[] = [];
-
-    if (pbDate) {
-      const { data: pullbackData, error: errPb } = await supabase
-        .from("pullback_signals")
-        .select(
-          `
-          code, entry_grade, entry_score, warn_grade,
-          stock:stocks!inner ( name, close )
-        `
-        )
-        .eq("trade_date", pbDate)
-        .in("entry_grade", ["A", "B"])
-        .neq("warn_grade", "SELL")
-        .order("entry_score", { ascending: false })
-        .limit(5);
-
-      if (errPb) console.error("눌림목 조회 에러:", errPb);
-
-      pullbackStocks = (pullbackData || []).map((item: any) => ({
-        name: item.stock.name,
-        code: item.code,
-        close: item.stock.close,
-        entry_grade: item.entry_grade,
-        entry_score: item.entry_score,
-        warn_grade: item.warn_grade,
-      }));
-    }
-
-    // --- 4) 글로벌 지표 요약 ---
-    const marketData = await fetchAllMarketData();
-
-    // 실시간 가격 조회 (모든 종목)
-    const allCodes: string[] = [];
-    valueStocks?.forEach((s: any) => allCodes.push(s.code));
-    momentumStocks?.forEach((s: any) => allCodes.push(s.code));
-    pullbackStocks?.forEach((s: any) => allCodes.push(s.code));
-    const realtimeMap = allCodes.length
-      ? await fetchRealtimePriceBatch([...new Set(allCodes)])
-      : {};
-
-    // --- 5) 메시지 생성 (HTML) ---
-    const now = new Date();
-    const kst = new Date(now.getTime() + 9 * 60 * 60 * 1000);
-    const today = kst.toLocaleDateString("ko-KR", {
-      month: "long",
-      day: "numeric",
-      weekday: "short",
-    });
-
-    let overview = `<b>${today} 장전 브리핑</b>\n${LINE}\n\n`;
-
-    // 글로벌 환경 요약
-    overview += `<b>시장 환경</b>\n`;
-    if (marketData.kospi) {
-      const k = marketData.kospi;
-      overview += `KOSPI ${k.price.toLocaleString()} (${k.changeRate >= 0 ? "+" : ""}${k.changeRate.toFixed(1)}%)\n`;
-    }
-    if (marketData.vix) {
-      const v = marketData.vix;
-      const label = v.price >= 30 ? "고위험" : v.price >= 20 ? "주의" : "안정";
-      overview += `VIX ${v.price.toFixed(1)} (${label})\n`;
-    }
-    if (marketData.usdkrw) {
-      overview += `USD/KRW ${marketData.usdkrw.price.toLocaleString()}원\n`;
-    }
-
-    let picks = `<b>핵심 종목</b>\n${LINE}\n\n`;
-
-    picks += `<b>저평가 가치주</b>\n`;
-    if (!valueStocks || valueStocks.length === 0) {
-      picks += `<i>추천 종목 없음</i>\n`;
-    } else {
-      valueStocks.forEach((s: any) => {
-        const rt = realtimeMap[s.code];
-        const price = rt?.price ?? s.close;
-        const changeStr = rt
-          ? ` ${rt.change >= 0 ? "▲" : "▼"}${Math.abs(rt.changeRate).toFixed(1)}%`
-          : "";
-        picks += `• ${esc(s.name)} (${s.code})  <code>${safeFmt(price)}원</code>${changeStr}\n`;
-      });
-    }
-
-    picks += `\n<b>수급 주도주</b>\n`;
-    if (!momentumStocks || momentumStocks.length === 0) {
-      picks += `<i>추천 종목 없음</i>\n`;
-    } else {
-      momentumStocks.forEach((s: any) => {
-        const rt = realtimeMap[s.code];
-        const price = rt?.price ?? s.close;
-        const changeStr = rt
-          ? ` ${rt.change >= 0 ? "▲" : "▼"}${Math.abs(rt.changeRate).toFixed(1)}%`
-          : "";
-        picks += `• ${esc(s.name)} (${s.code})  <code>${safeFmt(price)}원</code>${changeStr}\n`;
-      });
-    }
-
-    picks += `\n<b>눌림목 후보</b>\n`;
-    if (!pullbackStocks || pullbackStocks.length === 0) {
-      picks += `<i>조건 충족 종목 없음</i>\n`;
-    } else {
-      const gl: Record<string, string> = { A: "●", B: "◐" };
-      const wl: Record<string, string> = { SAFE: "안전", WATCH: "관찰", WARN: "주의" };
-      pullbackStocks.forEach((s: any) => {
-        const g = gl[s.entry_grade] ?? "";
-        const w = wl[s.warn_grade] ?? "";
-        const rt = realtimeMap[s.code];
-        const price = rt?.price ?? s.close;
-        picks += `${g} ${esc(s.name)} (${s.code}) <code>${safeFmt(price)}원</code>\n`;
-        picks += `  ${s.entry_grade}(${s.entry_score}/4) · ${w}\n`;
-      });
-    }
-
-    picks += `\n${LINE}`;
-
-    // --- 6) Telegram 전송 ---
-    await tgSend("sendMessage", {
-      chat_id: ctx.chatId,
-      text: overview,
-      parse_mode: "HTML",
-      disable_web_page_preview: true,
-    });
-
-    await tgSend("sendMessage", {
-      chat_id: ctx.chatId,
-      text: picks,
-      parse_mode: "HTML",
-      disable_web_page_preview: true,
-      reply_markup: actionButtons(ACTIONS.briefing, 3),
-    });
-  } catch (e) {
-    console.error("handleBriefCommand 실패:", e);
-    await tgSend("sendMessage", {
-      chat_id: ctx.chatId,
-      text: "⚠️ 브리핑 중 오류가 발생했습니다.",
-    });
-  }
+  await tgSend("sendMessage", {
+    chat_id: ctx.chatId,
+    text: report,
+    parse_mode: "HTML",
+    disable_web_page_preview: true,
+  });
 }
