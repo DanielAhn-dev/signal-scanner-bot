@@ -8,10 +8,11 @@ import { handlePullbackCommand } from "./commands/pullback";
 import { handleEconomyCommand } from "./commands/economy";
 import { handleMarketCommand } from "./commands/market";
 
-export type ChatContext = {
-  chatId: number;
-  messageId?: number;
-};
+  export type ChatContext = {
+    chatId: number;
+    messageId?: number;
+    from?: any;
+  };
 
 // 텍스트 명령 패턴 (한글/영문 모두 지원)
 const CMD = {

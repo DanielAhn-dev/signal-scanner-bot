@@ -1,7 +1,7 @@
 // api/worker.ts
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { createClient } from "@supabase/supabase-js";
-import { routeMessage, routeCallback } from "../src/bot/router";
+import { routeMessage } from "../src/bot/router";
 import { scoreStocksInSector, StockScore } from "../src/lib/stocks";
 
 // supa 클라이언트는 service_role 키를 사용해야 함
@@ -97,9 +97,9 @@ async function handleTelegramUpdateJob(job: any) {
       show_alert: false,
     });
 
-    await withTimeout(
-      routeCallback(u.callback_query.data, { chatId, from }, tgFetch)
-    );
+    // await withTimeout(
+    //   routeCallback(u.callback_query.data, { chatId, from }, tgFetch)
+    // );
     return;
   }
 
