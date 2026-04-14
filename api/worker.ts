@@ -150,7 +150,15 @@ async function handleTelegramUpdateJob(job: any) {
     }
 
     await tgFetch("sendChatAction", { chat_id: chatId, action: "typing" });
-    await withTimeout(routeMessage(text, { chatId, from }, tgFetch));
+    console.log("[worker] routeMessage 호출", { text, chatId, from });
+    await withTimeout(
+      routeMessage(text, { chatId, from }, async (method: string, body: any) => {
+        const resp = await tgFetch(method, body);
+        console.log("[worker] tgSend 호출", { method, body, resp });
+        return resp;
+      })
+    );
+    console.log("[worker] routeMessage 완료");
   }
 }
 
