@@ -11,7 +11,7 @@
     "seed:sectors": "tsx scripts/seedSectors.ts",
     "gen:sectors": "tsx scripts/generateSectorsJson.ts",
     "set:commands": "tsx scripts/ops/set_commands.ts",
-    "setWebhook": "node scripts/ops/setWebhook.mjs %WEBHOOK_URL%"
+    "setWebhook": "node scripts/ops/setWebhook.mjs https://signal-scanner-bot.vercel.app/api/worker"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.45.0",
