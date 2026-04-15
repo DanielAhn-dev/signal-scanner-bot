@@ -20,6 +20,8 @@ const DEFAULT_TARGET_POSITIONS = 10;
 const DEFAULT_FEE_RATE = 0.00015;
 const DEFAULT_TAX_RATE = 0.0018;
 
+type AutoAction = "HOLD" | "TAKE_PROFIT" | "STOP_LOSS";
+
 const supabase = createClient(
   process.env.SUPABASE_URL!,
   process.env.SUPABASE_SERVICE_ROLE_KEY!
@@ -50,6 +52,50 @@ function toPositiveNumber(value: unknown): number | null {
 function toSafeNumber(value: unknown, fallback = 0): number {
   const n = Number(value);
   return Number.isFinite(n) ? n : fallback;
+}
+
+function isKstMarketOpen(now = new Date()): boolean {
+  const kst = new Date(now.getTime() + 9 * 60 * 60 * 1000);
+  const day = kst.getUTCDay();
+  if (day === 0 || day === 6) return false;
+  const minutes = kst.getUTCHours() * 60 + kst.getUTCMinutes();
+  const open = 9 * 60;
+  const close = 15 * 60 + 30;
+  return minutes >= open && minutes <= close;
+}
+
+function resolveAutoAction(payload: {
+  close: number;
+  buyPrice: number;
+  plan: ReturnType<typeof buildInvestmentPlan>;
+}): { action: AutoAction; reason: string; pnlPct: number } {
+  const { close, buyPrice, plan } = payload;
+  const pnlPct = buyPrice > 0 ? ((close - buyPrice) / buyPrice) * 100 : 0;
+
+  if (close <= plan.stopPrice) {
+    return {
+      action: "STOP_LOSS",
+      reason: `손절 기준(${fmtInt(plan.stopPrice)}원) 하회`,
+      pnlPct,
+    };
+  }
+
+  if (close >= plan.target1) {
+    return {
+      action: "TAKE_PROFIT",
+      reason: `1차 목표가(${fmtInt(plan.target1)}원) 도달`,
+      pnlPct,
+    };
+  }
+
+  return {
+    action: "HOLD",
+    reason:
+      plan.status === "buy-on-pullback"
+        ? `눌림 대기(${fmtInt(plan.entryLow)}~${fmtInt(plan.entryHigh)}원)`
+        : `보유 유지(손절 ${fmtInt(plan.stopPrice)}원 / 목표 ${fmtInt(plan.target1)}원)`,
+    pnlPct,
+  };
 }
 
 async function appendVirtualTradeLog(payload: {
@@ -321,6 +367,7 @@ export async function handleWatchlistCommand(
     "",
     `/관심추가 종목 [매수가] · /관심삭제 종목`,
     `/관심수정 종목 매수가`,
+    `/관심자동 · /관심대응`,
     `/기록`,
   ].join("\n");
 
@@ -439,7 +486,8 @@ export async function handleWatchlistAdd(
 export async function handleWatchlistRemove(
   input: string,
   ctx: ChatContext,
-  tgSend: any
+  tgSend: any,
+  options?: { sellMemo?: string }
 ): Promise<void> {
   const raw = (input || "").trim();
   const tokens = raw.split(/\s+/).filter(Boolean);
@@ -589,7 +637,9 @@ export async function handleWatchlistRemove(
       feeAmount,
       taxAmount,
       pnlAmount: pnl,
-      memo: isFullExit ? "watchlist-full-exit" : "watchlist-partial-exit",
+      memo:
+        options?.sellMemo ??
+        (isFullExit ? "watchlist-full-exit" : "watchlist-partial-exit"),
     });
 
     const remainQtyNote = qty - sellQty;
@@ -605,6 +655,210 @@ export async function handleWatchlistRemove(
   await tgSend("sendMessage", {
     chat_id: ctx.chatId,
     text: `${esc(name)} (${code}) 관심종목에서 삭제 완료\n/관심 으로 목록 확인\n/기록 으로 가상 거래 내역 확인`,
+    parse_mode: "HTML",
+  });
+}
+
+// ─── /관심자동 (기계적 자동 판정·기록) ──────
+export async function handleWatchlistAutoCommand(
+  ctx: ChatContext,
+  tgSend: any
+): Promise<void> {
+  const { data: items, error } = await supabaseRead
+    .from("watchlist")
+    .select(
+      `
+      code, buy_price, quantity,
+      stock:stocks!inner ( name, close, rsi14 )
+    `
+    )
+    .eq("chat_id", ctx.chatId)
+    .order("created_at", { ascending: true });
+
+  if (error) {
+    console.error("watchlist auto query error:", error);
+    return tgSend("sendMessage", {
+      chat_id: ctx.chatId,
+      text: "관심자동 처리 중 오류가 발생했습니다.",
+    });
+  }
+
+  if (!items || items.length === 0) {
+    return tgSend("sendMessage", {
+      chat_id: ctx.chatId,
+      text: "관심종목이 없어 자동 점검할 항목이 없습니다.\n/관심추가 후 다시 실행해주세요.",
+    });
+  }
+
+  const codes = items.map((it: any) => it.code);
+  const realtimeMap = await fetchRealtimePriceBatch(codes);
+
+  const holdLines: string[] = [];
+  const sellTargets: Array<{ name: string; code: string; qty: number; reason: string; action: AutoAction; pnlPct: number }> = [];
+
+  for (const item of items) {
+    const stock = item.stock as any;
+    const code = String(item.code);
+    const name = String(stock?.name ?? code);
+    const buyPrice = Number(item.buy_price ?? 0);
+    const qty = Math.max(0, Math.floor(Number(item.quantity ?? 0)));
+    if (qty <= 0 || buyPrice <= 0) continue;
+
+    const dbClose = Number(stock?.close ?? 0);
+    const rt = realtimeMap[code];
+    const close = toPositiveNumber(rt?.price) ?? dbClose;
+    if (close <= 0) {
+      holdLines.push(`- ${esc(name)} (${code}) 데이터 부족으로 보유 유지`);
+      continue;
+    }
+
+    const plan = buildInvestmentPlan({
+      currentPrice: close,
+      factors: { rsi14: stock?.rsi14 ?? undefined },
+    });
+    const decision = resolveAutoAction({ close, buyPrice, plan });
+
+    if (decision.action === "HOLD") {
+      holdLines.push(
+        `- ${esc(name)} (${code}) 보유 · 손익 ${fmtPct(decision.pnlPct)} · ${decision.reason}`
+      );
+      continue;
+    }
+
+    sellTargets.push({
+      name,
+      code,
+      qty,
+      reason: decision.reason,
+      action: decision.action,
+      pnlPct: decision.pnlPct,
+    });
+  }
+
+  let executed = 0;
+  const executedLines: string[] = [];
+  for (const target of sellTargets) {
+    await handleWatchlistRemove(
+      `${target.code} ${target.qty}`,
+      ctx,
+      tgSend,
+      {
+        sellMemo:
+          target.action === "TAKE_PROFIT"
+            ? "watchlist-auto-take-profit (자동)"
+            : "watchlist-auto-stop-loss (자동)",
+      }
+    );
+    executed += 1;
+    executedLines.push(
+      `- ${esc(target.name)} (${target.code}) 자동매도 · ${target.reason} · 손익 ${fmtPct(target.pnlPct)}`
+    );
+  }
+
+  const msg = [
+    "<b>관심자동 결과</b>",
+    LINE,
+    `실행 시점 ${isKstMarketOpen() ? "장중" : "장마감/비개장"} 기준`,
+    `자동매도 ${executed}건 · 보유유지 ${holdLines.length}건`,
+    "",
+    ...(executedLines.length ? executedLines : ["- 자동매도 조건 충족 종목이 없습니다."]),
+    "",
+    ...(holdLines.length ? holdLines : ["- 보유 유지 종목이 없습니다."]),
+    "",
+    "자동 실행 건은 /기록 에 (자동)으로 남습니다.",
+  ].join("\n");
+
+  await tgSend("sendMessage", {
+    chat_id: ctx.chatId,
+    text: msg,
+    parse_mode: "HTML",
+  });
+}
+
+// ─── /관심대응 (익일 액션 플랜) ───────────
+export async function handleWatchlistResponseCommand(
+  ctx: ChatContext,
+  tgSend: any
+): Promise<void> {
+  const { data: items, error } = await supabaseRead
+    .from("watchlist")
+    .select(
+      `
+      code, buy_price, quantity,
+      stock:stocks!inner ( name, close, rsi14 )
+    `
+    )
+    .eq("chat_id", ctx.chatId)
+    .order("created_at", { ascending: true });
+
+  if (error) {
+    console.error("watchlist response query error:", error);
+    return tgSend("sendMessage", {
+      chat_id: ctx.chatId,
+      text: "관심대응 생성 중 오류가 발생했습니다.",
+    });
+  }
+
+  if (!items || items.length === 0) {
+    return tgSend("sendMessage", {
+      chat_id: ctx.chatId,
+      text: "관심종목이 없어 대응 계획을 만들 수 없습니다.\n/관심추가 후 다시 실행해주세요.",
+    });
+  }
+
+  const marketOpen = isKstMarketOpen();
+  const lines: string[] = [];
+
+  for (const item of items) {
+    const stock = item.stock as any;
+    const code = String(item.code);
+    const name = String(stock?.name ?? code);
+    const close = Number(stock?.close ?? 0);
+    const buyPrice = Number(item.buy_price ?? 0);
+    const qty = Math.max(0, Math.floor(Number(item.quantity ?? 0)));
+    if (qty <= 0 || close <= 0 || buyPrice <= 0) continue;
+
+    const plan = buildInvestmentPlan({
+      currentPrice: close,
+      factors: { rsi14: stock?.rsi14 ?? undefined },
+    });
+    const decision = resolveAutoAction({ close, buyPrice, plan });
+    const recommended =
+      decision.action === "TAKE_PROFIT"
+        ? "익절 고려"
+        : decision.action === "STOP_LOSS"
+          ? "손절 우선"
+          : "보유 관찰";
+
+    lines.push(
+      [
+        `- <b>${esc(name)}</b> (${code}) · ${qty}주`,
+        `  기준가 ${fmtInt(close)}원 · 손익 ${fmtPct(decision.pnlPct)}`,
+        `  계획 진입 ${fmtInt(plan.entryLow)}~${fmtInt(plan.entryHigh)}원`,
+        `  손절 ${fmtInt(plan.stopPrice)}원 · 1차목표 ${fmtInt(plan.target1)}원`,
+        `  내일 대응: ${recommended} (${decision.reason})`,
+      ].join("\n")
+    );
+  }
+
+  if (!lines.length) {
+    lines.push("- 보유 수량/매수가가 없는 항목만 있어 대응안을 생성하지 못했습니다.");
+  }
+
+  const msg = [
+    "<b>관심대응 플랜</b>",
+    LINE,
+    marketOpen
+      ? "장중 조회: 현재 종가 기반 참고 플랜입니다."
+      : "장마감 이후: 최신 종가 기준 내일 대응안입니다.",
+    "실제 매매/기록은 하지 않습니다.",
+    "",
+    ...lines,
+  ].join("\n");
+
+  await tgSend("sendMessage", {
+    chat_id: ctx.chatId,
+    text: msg,
     parse_mode: "HTML",
   });
 }
@@ -785,7 +1039,7 @@ export async function handleWatchlistHistoryCommand(
 
   let query = supabaseRead
     .from("virtual_trades")
-    .select("code, side, price, quantity, gross_amount, net_amount, fee_amount, tax_amount, pnl_amount, traded_at")
+    .select("code, side, price, quantity, gross_amount, net_amount, fee_amount, tax_amount, pnl_amount, memo, traded_at")
     .eq("chat_id", ctx.chatId)
     .order("traded_at", { ascending: false })
     .limit(30);
@@ -828,17 +1082,18 @@ export async function handleWatchlistHistoryCommand(
     const qty = Math.max(0, Math.floor(Number(r.quantity ?? 0)));
     const price = Number(r.price ?? 0);
     const base = `${idx + 1}. (${d}) ${side} ${r.code} ${qty}주 @ ${fmtInt(price)}원`;
+    const autoTag = String(r.memo ?? "").includes("(자동)") ? " (자동)" : "";
 
     if ((r.side as string) === "SELL") {
       const pnl = Number(r.pnl_amount ?? 0);
       const fee = Number(r.fee_amount ?? 0);
       const tax = Number(r.tax_amount ?? 0);
       const pnlSign = pnl >= 0 ? "+" : "";
-      return `${base}\n    실현손익 ${pnlSign}${fmtInt(pnl)}원 · 비용 ${fmtInt(fee + tax)}원`;
+      return `${base}${autoTag}\n    실현손익 ${pnlSign}${fmtInt(pnl)}원 · 비용 ${fmtInt(fee + tax)}원`;
     }
 
     const gross = Number(r.gross_amount ?? 0);
-    return `${base}\n    매수금액 ${fmtInt(gross)}원`;
+    return `${base}${autoTag}\n    매수금액 ${fmtInt(gross)}원`;
   });
 
   const sellRows = rows.filter((r: any) => String(r.side) === "SELL");
