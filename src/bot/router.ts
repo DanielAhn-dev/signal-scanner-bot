@@ -13,6 +13,7 @@ import { handleScanCommand } from "./commands/scan";
 import { handleFlowCommand } from "./commands/flow";
 import { handleNextSectorCommand } from "./commands/sector";
 import { handleCapitalCommand } from "./commands/capital";
+import { handleReportCommand } from "./commands/report";
 import {
   handleKospiCommand,
   handleKosdaqCommand,
@@ -43,6 +44,7 @@ const CMD = {
   START:       /^\/(start|시작|메뉴)$/i,
   HELP:        /^\/help$/i,
   BRIEF:       /^\/(brief|morning|브리핑|장전)$/i,
+  REPORT:      /^\/(report|리포트)$/i,
   SCORE:       /^\/(score|점수)\s+(.+)$/i,
   BUY:         /^\/(buy|매수)\s+(.+)$/i,
   SECTOR:      /^\/(sector|업종|테마)$/i,
@@ -128,6 +130,7 @@ export async function routeMessage(
       reply_markup: hasSetup
         ? actionButtons([
             { text: "브리핑", callback_data: "cmd:brief" },
+            { text: "주간 리포트", callback_data: "cmd:report" },
             { text: "관심종목", callback_data: "cmd:watchlist" },
             { text: "섹터", callback_data: "cmd:sector" },
             { text: "투자금 수정", callback_data: "prompt:capital" },
@@ -154,6 +157,19 @@ export async function routeMessage(
       await tgSend("sendMessage", {
         chat_id: ctx.chatId,
         text: SEND_ERR("브리핑"),
+      });
+    }
+    return;
+  }
+
+  // /report — 주간 PDF 리포트
+  if (CMD.REPORT.test(t)) {
+    try {
+      await handleReportCommand(ctx, tgSend);
+    } catch (e) {
+      await tgSend("sendMessage", {
+        chat_id: ctx.chatId,
+        text: SEND_ERR("리포트"),
       });
     }
     return;

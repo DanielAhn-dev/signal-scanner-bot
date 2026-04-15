@@ -17,6 +17,10 @@
         {
             "path": "/api/cron/briefing",
             "schedule": "30 23 * * 0-4"
+        },
+        {
+            "path": "/api/cron/report",
+            "schedule": "35 23 * * 5"
         }
     ]
 }

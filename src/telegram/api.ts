@@ -6,10 +6,21 @@ type TgResponse = { ok?: boolean; result?: any; description?: string };
 
 export async function tg(method: string, body: any): Promise<TgResponse> {
   if (!token) return { ok: false };
-  const res = await fetch(`${base}/${method}`, {
+
+  const isMultipart = typeof FormData !== "undefined" && body instanceof FormData;
+  const req: RequestInit = {
     method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify(body),
+  };
+
+  if (isMultipart) {
+    req.body = body;
+  } else {
+    req.headers = { "content-type": "application/json" };
+    req.body = JSON.stringify(body);
+  }
+
+  const res = await fetch(`${base}/${method}`, {
+    ...req,
   });
   return (await res.json()) as TgResponse;
 }
@@ -25,6 +36,19 @@ export const answerCallback = (
   text = "처리 중입니다…"
 ) => tg("answerCallbackQuery", { callback_query_id, text, show_alert: false });
 
+export async function sendDocument(payload: {
+  chat_id: number;
+  bytes: Uint8Array;
+  filename: string;
+  caption?: string;
+}): Promise<TgResponse> {
+  const form = new FormData();
+  form.set("chat_id", String(payload.chat_id));
+  if (payload.caption) form.set("caption", payload.caption);
+  form.set("document", new Blob([payload.bytes], { type: "application/pdf" }), payload.filename);
+  return tg("sendDocument", form);
+}
+
 // 봇 명령어 목록 (텔레그램 메뉴 버튼에 노출)
 const BOT_COMMANDS = [
   { command: "start", description: "시작 · 메뉴" },
@@ -36,6 +60,7 @@ const BOT_COMMANDS = [
   { command: "finance", description: "재무 요약" },
   { command: "capital", description: "투자금 설정" },
   { command: "brief", description: "장전 브리핑" },
+  { command: "report", description: "주간 PDF 리포트" },
   { command: "alert", description: "이상징후 점검" },
   { command: "economy", description: "글로벌 경제지표" },
   { command: "news", description: "시장·종목 뉴스" },

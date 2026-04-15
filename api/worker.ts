@@ -42,14 +42,22 @@ async function tgFetch(method: string, body: any): Promise<TGApiResponse> {
   const timer = setTimeout(() => controller.abort(), 5000);
 
   try {
+    const isMultipart = typeof FormData !== "undefined" && body instanceof FormData;
+    const req: RequestInit = {
+      method: "POST",
+      signal: controller.signal,
+    };
+
+    if (isMultipart) {
+      req.body = body;
+    } else {
+      req.headers = { "content-type": "application/json" };
+      req.body = JSON.stringify(body);
+    }
+
     const res = await fetch(
       `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/${method}`,
-      {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify(body),
-        signal: controller.signal,
-      }
+      req
     );
     return (await res.json()) as TGApiResponse;
   } catch (e) {
@@ -140,6 +148,7 @@ async function routeCallback(
     const cmd = data.slice(4);
 
     if (cmd === "brief") return handleBriefCommand(ctx, tgSend);
+    if (cmd === "report") return routeMessage("/report", ctx, tgSend);
     if (cmd === "market") return handleMarketCommand(ctx, tgSend);
     if (cmd === "economy") return handleEconomyCommand(ctx, tgSend);
     if (cmd === "sector") return handleSectorCommand(ctx, tgSend);

@@ -16,12 +16,14 @@
     "backtest:market-picks": "tsx scripts/backtest_market_picks.ts"
   },
   "dependencies": {
+    "@pdf-lib/fontkit": "^1.1.1",
     "@supabase/supabase-js": "^2.45.0",
     "cheerio": "^1.1.2",
     "csv-parse": "^6.1.0",
     "dayjs": "^1.11.19",
     "dotenv": "^16.3.1",
     "iconv-lite": "^0.6.3",
+    "pdf-lib": "^1.17.1",
     "xlsx": "^0.18.5"
   },
   "devDependencies": {
