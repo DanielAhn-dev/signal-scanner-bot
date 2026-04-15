@@ -42,6 +42,9 @@ importers:
       '@types/xlsx':
         specifier: ^0.0.35
         version: 0.0.35
+      '@vercel/node':
+        specifier: ^5.7.7
+        version: 5.7.7
       tsx:
         specifier: ^4.20.6
         version: 4.21.0
