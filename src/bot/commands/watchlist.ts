@@ -47,6 +47,11 @@ function toPositiveNumber(value: unknown): number | null {
   return n;
 }
 
+function toSafeNumber(value: unknown, fallback = 0): number {
+  const n = Number(value);
+  return Number.isFinite(n) ? n : fallback;
+}
+
 async function appendVirtualTradeLog(payload: {
   chatId: number;
   code: string;
@@ -80,11 +85,82 @@ async function appendVirtualTradeLog(payload: {
   }
 }
 
+async function allocateVirtualBuy(payload: {
+  chatId: number;
+  tgId: number;
+  code: string;
+  buyPrice: number | null;
+  currentHoldingCount: number;
+}): Promise<{ quantity: number | null; investedAmount: number | null; walletNote: string }> {
+  const buyPrice = toPositiveNumber(payload.buyPrice);
+  if (!buyPrice) return { quantity: null, investedAmount: null, walletNote: "" };
+
+  const prefs = await getUserInvestmentPrefs(payload.tgId);
+  const cap = toPositiveNumber(prefs.capital_krw) ?? 0;
+  if (cap <= 0) return { quantity: null, investedAmount: null, walletNote: "" };
+
+  const seedCapital = toPositiveNumber(prefs.virtual_seed_capital) ?? cap;
+  const targetPositions = Math.max(
+    1,
+    Math.floor(toPositiveNumber(prefs.virtual_target_positions) ?? DEFAULT_TARGET_POSITIONS)
+  );
+  const currentCash =
+    toPositiveNumber(prefs.virtual_cash) ?? (seedCapital > 0 ? seedCapital : cap);
+
+  if (currentCash <= 0) {
+    return {
+      quantity: null,
+      investedAmount: null,
+      walletNote: "\n가상매수 미반영: 잔액이 부족합니다. /투자금으로 원금을 조정해 주세요.",
+    };
+  }
+
+  const slotsLeft = Math.max(targetPositions - payload.currentHoldingCount, 1);
+  const budgetPerPosition = Math.floor(currentCash / slotsLeft);
+  const qty = Math.floor(budgetPerPosition / buyPrice);
+
+  if (qty < 1) {
+    return {
+      quantity: null,
+      investedAmount: null,
+      walletNote: "\n가상매수 미반영: 현재 잔액 기준 1주 매수가 어려워요.",
+    };
+  }
+
+  const investedAmount = qty * buyPrice;
+  const nextCash = Math.max(0, currentCash - investedAmount);
+  await setUserInvestmentPrefs(payload.tgId, {
+    virtual_seed_capital: seedCapital || cap,
+    virtual_cash: nextCash,
+    virtual_target_positions: targetPositions,
+  });
+
+  await appendVirtualTradeLog({
+    chatId: payload.chatId,
+    code: payload.code,
+    side: "BUY",
+    price: buyPrice,
+    quantity: qty,
+    grossAmount: investedAmount,
+    netAmount: investedAmount,
+    memo: "watchlist-add",
+  });
+
+  return {
+    quantity: qty,
+    investedAmount,
+    walletNote: `\n가상매수 ${qty}주 · 사용 ${fmtInt(investedAmount)}원 · 잔액 ${fmtInt(nextCash)}원`,
+  };
+}
+
 // ─── /관심 (목록 조회) ───────────────────
 export async function handleWatchlistCommand(
   ctx: ChatContext,
   tgSend: any
 ): Promise<void> {
+  const tgId = ctx.from?.id ?? ctx.chatId;
+  const prefs = await getUserInvestmentPrefs(tgId);
+
   const { data: scoreDateRows } = await supabaseRead
     .from("scores")
     .select("asof")
@@ -215,6 +291,25 @@ export async function handleWatchlistCommand(
     summaryLine = `\n${LINE}\n${items.length}/${MAX_ITEMS}종목`;
   }
 
+  const seedCapital = toSafeNumber(
+    prefs.virtual_seed_capital ?? prefs.capital_krw,
+    0
+  );
+  const cash = toSafeNumber(prefs.virtual_cash, seedCapital);
+  const realized = toSafeNumber(prefs.virtual_realized_pnl, 0);
+  const evalValue = totalValue;
+  const totalAsset = cash + evalValue;
+  const totalPnl = totalAsset - seedCapital;
+  const walletSummary =
+    seedCapital > 0
+      ? [
+          LINE,
+          `<b>가상지갑</b> 원금 ${fmtInt(seedCapital)}원 · 잔액 ${fmtInt(cash)}원`,
+          `평가자산 ${fmtInt(evalValue)}원 · 총자산 ${fmtInt(totalAsset)}원`,
+          `총손익 ${totalPnl >= 0 ? "+" : ""}${fmtInt(totalPnl)}원 · 실현 ${realized >= 0 ? "+" : ""}${fmtInt(realized)}원`,
+        ].join("\n")
+      : "";
+
   const msg = [
     `<b>관심종목 포트폴리오</b>`,
     LINE,
@@ -222,6 +317,7 @@ export async function handleWatchlistCommand(
     "",
     ...lines,
     summaryLine,
+    walletSummary,
     "",
     `/관심추가 종목 [매수가] · /관심삭제 종목`,
     `/관심수정 종목 매수가`,
@@ -298,48 +394,16 @@ export async function handleWatchlistAdd(
     toPositiveNumber(realtimePrice);
 
   const tgId = ctx.from?.id ?? ctx.chatId;
-  const prefs = await getUserInvestmentPrefs(tgId);
-  const cap = toPositiveNumber(prefs.capital_krw) ?? 0;
-  const seedCapital = toPositiveNumber(prefs.virtual_seed_capital) ?? cap;
-  const targetPositions =
-    Math.max(1, Math.floor(toPositiveNumber(prefs.virtual_target_positions) ?? DEFAULT_TARGET_POSITIONS));
-  const currentCash = toPositiveNumber(prefs.virtual_cash) ?? (seedCapital > 0 ? seedCapital : cap);
-
-  let quantity: number | null = null;
-  let investedAmount: number | null = null;
-  let walletNote = "";
-
-  if (buyPrice && cap > 0 && currentCash > 0) {
-    const holdingCount = count ?? 0;
-    const slotsLeft = Math.max(targetPositions - holdingCount, 1);
-    const budgetPerPosition = Math.floor(currentCash / slotsLeft);
-
-    const qty = Math.floor(budgetPerPosition / buyPrice);
-    if (qty >= 1) {
-      quantity = qty;
-      investedAmount = qty * buyPrice;
-
-      const nextCash = Math.max(0, currentCash - investedAmount);
-      await setUserInvestmentPrefs(tgId, {
-        virtual_seed_capital: seedCapital || cap,
-        virtual_cash: nextCash,
-        virtual_target_positions: targetPositions,
-      });
-
-      walletNote = `\n가상매수 ${quantity}주 · 사용 ${fmtInt(investedAmount)}원 · 잔액 ${fmtInt(nextCash)}원`;
-
-      await appendVirtualTradeLog({
-        chatId: ctx.chatId,
-        code,
-        side: "BUY",
-        price: buyPrice,
-        quantity,
-        grossAmount: investedAmount,
-        netAmount: investedAmount,
-        memo: "watchlist-add",
-      });
-    }
-  }
+  const alloc = await allocateVirtualBuy({
+    chatId: ctx.chatId,
+    tgId,
+    code,
+    buyPrice,
+    currentHoldingCount: count ?? 0,
+  });
+  const quantity = alloc.quantity;
+  const investedAmount = alloc.investedAmount;
+  const walletNote = alloc.walletNote;
 
   // 중복 확인 & 업서트
   const { error } = await supabase
@@ -540,9 +604,17 @@ export async function handleWatchlistEdit(
     });
   }
 
+  const { data: row } = await supabaseRead
+    .from("watchlist")
+    .select("quantity")
+    .eq("chat_id", ctx.chatId)
+    .eq("code", code)
+    .maybeSingle();
+  const qty = Math.max(0, Math.floor(Number((row as any)?.quantity ?? 0)));
+
   const { error } = await supabase
     .from("watchlist")
-    .update({ buy_price: newPrice })
+    .update({ buy_price: newPrice, invested_amount: qty > 0 ? qty * newPrice : null })
     .eq("chat_id", ctx.chatId)
     .eq("code", code);
 
@@ -605,6 +677,15 @@ export async function handleWatchlistQuickAdd(
     });
   }
 
+  const tgId = ctx.from?.id ?? ctx.chatId;
+  const alloc = await allocateVirtualBuy({
+    chatId: ctx.chatId,
+    tgId,
+    code,
+    buyPrice: toPositiveNumber(price),
+    currentHoldingCount: count ?? 0,
+  });
+
   const { error } = await supabase
     .from("watchlist")
     .insert({
@@ -612,8 +693,8 @@ export async function handleWatchlistQuickAdd(
       code,
       buy_price: price && Number.isFinite(price) ? price : null,
       buy_date: new Date().toISOString().slice(0, 10),
-      quantity: null,
-      invested_amount: null,
+      quantity: alloc.quantity,
+      invested_amount: alloc.investedAmount,
     });
 
   if (error) {
@@ -627,7 +708,7 @@ export async function handleWatchlistQuickAdd(
   const priceNote = price ? `  매수가 ${fmtInt(price)}원 (현재가 자동저장)` : "";
   await tgSend("sendMessage", {
     chat_id: ctx.chatId,
-    text: `${esc(name)} (${code}) 관심종목 추가 완료${priceNote}\n/관심 으로 목록 확인\n/브리핑 에서 함께 점검\n/관심수정 ${name} 가격 — 매수가 변경`,
+    text: `${esc(name)} (${code}) 관심종목 추가 완료${priceNote}${alloc.walletNote}\n/관심 으로 목록 확인\n/브리핑 에서 함께 점검\n/관심수정 ${name} 가격 — 매수가 변경`,
     parse_mode: "HTML",
   });
 }
@@ -689,12 +770,19 @@ export async function handleWatchlistHistoryCommand(
     return `${base}\n    매수금액 ${fmtInt(gross)}원`;
   });
 
+  const sellRows = rows.filter((r: any) => String(r.side) === "SELL");
+  const winCount = sellRows.filter((r: any) => Number(r.pnl_amount ?? 0) > 0).length;
+  const loseCount = sellRows.filter((r: any) => Number(r.pnl_amount ?? 0) < 0).length;
+  const totalSell = sellRows.length;
+  const winRate = totalSell > 0 ? (winCount / totalSell) * 100 : 0;
+
   const msg = [
     "<b>가상 매매 기록</b>",
     LINE,
     ...lines,
     "",
     LINE,
+    `매도 ${totalSell}건 · 승 ${winCount} · 패 ${loseCount} · 승률 ${winRate.toFixed(1)}%`,
     `가상 잔액 <code>${fmtInt(cash)}원</code>`,
     `누적 실현손익 <code>${realized >= 0 ? "+" : ""}${fmtInt(realized)}원</code>`,
   ].join("\n");
