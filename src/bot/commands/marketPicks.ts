@@ -3,6 +3,7 @@ import { createClient } from "@supabase/supabase-js";
 import { getDailySeries } from "../../adapters";
 import { calculateScore } from "../../score/engine";
 import { fetchRealtimePriceBatch } from "../../utils/fetchRealtimePrice";
+import { fetchAllMarketData, type MarketOverview } from "../../utils/fetchMarketData";
 import { fmtKRW } from "../../lib/normalize";
 import { getUserInvestmentPrefs } from "../../services/userService";
 import { getSafetyPreferenceScore, type RiskProfile } from "../../lib/investableUniverse";
@@ -62,9 +63,58 @@ type Candidate = {
   preScore: number;
   finalScore: number;
   avwapSupport: number;
+  safetyScore: number;
+  trendScore: number;
+  liquidityScore: number;
 };
 
 const TOP_N = 5;
+
+type RegimeMode = "risk_on" | "neutral" | "defensive";
+
+type RegimeSettings = {
+  mode: RegimeMode;
+  label: string;
+  maxRsi: number;
+  minLiquidityKrw: number;
+  scoreBias: number;
+};
+
+type ScoreWeights = {
+  technical: number;
+  momentum: number;
+  value: number;
+  safety: number;
+  trend: number;
+  liquidity: number;
+};
+
+const MARKET_WEIGHTS: Record<MarketKind, ScoreWeights> = {
+  KOSPI: {
+    technical: 0.39,
+    momentum: 0.18,
+    value: 0.1,
+    safety: 0.2,
+    trend: 0.08,
+    liquidity: 0.05,
+  },
+  KOSDAQ: {
+    technical: 0.33,
+    momentum: 0.22,
+    value: 0.08,
+    safety: 0.2,
+    trend: 0.1,
+    liquidity: 0.07,
+  },
+  ETF: {
+    technical: 0.26,
+    momentum: 0.2,
+    value: 0.04,
+    safety: 0.24,
+    trend: 0.12,
+    liquidity: 0.14,
+  },
+};
 
 const supabase = createClient(
   process.env.SUPABASE_URL!,
@@ -118,11 +168,47 @@ function getLiquidityScore(valueTraded: number): number {
   return 10;
 }
 
+function detectRegime(overview?: MarketOverview | null): RegimeSettings {
+  const vix = Number(overview?.vix?.price ?? 0);
+  const fearGreed = Number(overview?.fearGreed?.score ?? 50);
+  const usdKrwChange = Number(overview?.usdkrw?.changeRate ?? 0);
+
+  if ((vix > 0 && vix >= 28) || fearGreed <= 30 || usdKrwChange >= 0.8) {
+    return {
+      mode: "defensive",
+      label: "방어",
+      maxRsi: 62,
+      minLiquidityKrw: 20_000_000_000,
+      scoreBias: -4,
+    };
+  }
+
+  if ((vix > 0 && vix <= 18) && fearGreed >= 60 && usdKrwChange <= 0.3) {
+    return {
+      mode: "risk_on",
+      label: "리스크온",
+      maxRsi: 69,
+      minLiquidityKrw: 8_000_000_000,
+      scoreBias: 2,
+    };
+  }
+
+  return {
+    mode: "neutral",
+    label: "중립",
+    maxRsi: 66,
+    minLiquidityKrw: 12_000_000_000,
+    scoreBias: 0,
+  };
+}
+
 function isUnsafeEtfName(name: string): boolean {
   return EXCLUDED_ETF_PATTERNS.some((pattern) => pattern.test(name));
 }
 
-function getEtfSafetyScore(c: Omit<Candidate, "preScore" | "finalScore" | "avwapSupport">): number {
+function getEtfSafetyScore(
+  c: Omit<Candidate, "preScore" | "finalScore" | "avwapSupport" | "safetyScore" | "trendScore" | "liquidityScore">
+): number {
   let score = 45;
 
   if (c.valueTraded >= 100_000_000_000) score += 24;
@@ -153,6 +239,10 @@ function buildTrendLabel(price: number, sma20: number, sma50: number, sma200: nu
 
 function sortByDesc<T>(items: T[], scoreFn: (item: T) => number): T[] {
   return [...items].sort((a, b) => scoreFn(b) - scoreFn(a));
+}
+
+function buildReasonLine(c: Candidate): string {
+  return `사유 기술 ${fmtOne(c.totalScore)} · 안전 ${fmtOne(c.safetyScore)} · 추세 ${fmtOne(c.trendScore)} · 유동 ${fmtOne(c.liquidityScore)}`;
 }
 
 async function fetchCandidateStocks(kind: MarketKind): Promise<StockRow[]> {
@@ -229,8 +319,10 @@ function buildCandidates(
   scoreMap: Map<string, ScoreRow>,
   indicatorMap: Map<string, IndicatorRow>,
   profile: RiskProfile,
-  kind: MarketKind
+  kind: MarketKind,
+  regime: RegimeSettings
 ): Candidate[] {
+  const weights = MARKET_WEIGHTS[kind];
   const filtered = stocks.filter((s) => {
     const name = (s.name ?? "").trim();
     if (!name || !s.code) return false;
@@ -240,8 +332,8 @@ function buildCandidates(
     }
 
     const liquidity = Number(s.liquidity ?? 0);
-    if (kind === "KOSDAQ" && liquidity < 30_000_000_000) return false;
-    if (kind === "KOSPI" && liquidity < 10_000_000_000) return false;
+    if (kind === "KOSDAQ" && liquidity < Math.max(30_000_000_000, regime.minLiquidityKrw)) return false;
+    if (kind === "KOSPI" && liquidity < Math.max(10_000_000_000, regime.minLiquidityKrw)) return false;
     return true;
   });
 
@@ -256,8 +348,9 @@ function buildCandidates(
     const valueTraded = Number(ind?.value_traded ?? s.liquidity ?? 0);
     const rsi14 = Number(ind?.rsi14 ?? 50);
     const roc14 = Number(ind?.roc14 ?? 0);
+    if (rsi14 > regime.maxRsi) return null;
 
-    const candidate: Omit<Candidate, "preScore" | "finalScore" | "avwapSupport"> = {
+    const candidate: Omit<Candidate, "preScore" | "finalScore" | "avwapSupport" | "safetyScore" | "trendScore" | "liquidityScore"> = {
       code: s.code,
       name: s.name ?? s.code,
       market: s.market ?? "",
@@ -277,11 +370,11 @@ function buildCandidates(
       sma200,
     };
 
-    const trend = getTrendScore(close, sma20, sma50, sma200);
+    const trendScore = getTrendScore(close, sma20, sma50, sma200);
     const liquidityScore = getLiquidityScore(valueTraded);
     const rsiAdj = getRsiAdjust(rsi14);
 
-    const safety = kind === "ETF"
+    const safetyScore = kind === "ETF"
       ? getEtfSafetyScore(candidate)
       : clamp(getSafetyPreferenceScore({
           code: candidate.code,
@@ -297,14 +390,17 @@ function buildCandidates(
           market_cap: candidate.marketCap,
         }, profile), 0, 100);
 
+    if (valueTraded < regime.minLiquidityKrw) return null;
+
     const preScore = clamp(
-      candidate.totalScore * 0.42 +
-        candidate.momentumScore * 0.18 +
-        candidate.valueScore * 0.08 +
-        safety * 0.2 +
-        trend * 0.08 +
-        liquidityScore * 0.04 +
-        rsiAdj,
+      candidate.totalScore * weights.technical +
+        candidate.momentumScore * weights.momentum +
+        candidate.valueScore * weights.value +
+        safetyScore * weights.safety +
+        trendScore * weights.trend +
+        liquidityScore * weights.liquidity +
+        rsiAdj +
+        regime.scoreBias,
       0,
       100
     );
@@ -314,10 +410,13 @@ function buildCandidates(
       preScore,
       finalScore: preScore,
       avwapSupport: 50,
+      safetyScore,
+      trendScore,
+      liquidityScore,
     };
   });
 
-  return base.filter((c) => c.close > 0);
+  return base.filter((c): c is Candidate => Boolean(c && c.close > 0));
 }
 
 async function attachDeepTechnicalScores(candidates: Candidate[]): Promise<Candidate[]> {
@@ -366,7 +465,12 @@ function commandLabel(kind: MarketKind): string {
   return "ETF";
 }
 
-function buildResultMessage(kind: MarketKind, picks: Candidate[], realtimeMap: Record<string, any>): string {
+function buildResultMessage(
+  kind: MarketKind,
+  picks: Candidate[],
+  realtimeMap: Record<string, any>,
+  regime: RegimeSettings
+): string {
   const label = commandLabel(kind);
   const lines = picks.map((c, idx) => {
     const rt = realtimeMap[c.code];
@@ -382,6 +486,7 @@ function buildResultMessage(kind: MarketKind, picks: Candidate[], realtimeMap: R
     return [
       `${idx + 1}. <b>${esc(c.name)}</b> <code>${c.code}</code> <code>${fmtInt(price)}원</code>${changeTag}`,
       `   점수 ${fmtOne(c.finalScore)} · ${trend} · AVWAP ${fmtOne(c.avwapSupport)} · RSI ${fmtOne(c.rsi14)}`,
+      `   ${buildReasonLine(c)}`,
       `   거래대금 ${fmtKRW(c.valueTraded)} · 유동성 ${fmtKRW(c.liquidity)}`,
     ].join("\n");
   });
@@ -391,7 +496,7 @@ function buildResultMessage(kind: MarketKind, picks: Candidate[], realtimeMap: R
     : "참고: 결과는 보수형 필터 기반 우선순위이며, 분할 진입·손절 규칙과 함께 확인하세요.";
 
   return buildMessage([
-    header(`${label} 보수형 추천 TOP ${picks.length}`, "추세·AVWAP·유동성·RSI 종합"),
+    header(`${label} 보수형 추천 TOP ${picks.length}`, `레짐 ${regime.label} · 추세·AVWAP·유동성·RSI 종합`),
     section("오늘의 후보", lines),
     divider(),
     notice,
@@ -401,6 +506,8 @@ function buildResultMessage(kind: MarketKind, picks: Candidate[], realtimeMap: R
 async function runMarketPickCommand(kind: MarketKind, ctx: ChatContext, tgSend: any): Promise<void> {
   const prefs = await getUserInvestmentPrefs(ctx.from?.id ?? ctx.chatId);
   const riskProfile = (prefs.risk_profile ?? "safe") as RiskProfile;
+  const marketOverview = await fetchAllMarketData().catch(() => null);
+  const regime = detectRegime(marketOverview);
 
   const stocks = await fetchCandidateStocks(kind);
   if (!stocks.length) {
@@ -417,7 +524,7 @@ async function runMarketPickCommand(kind: MarketKind, ctx: ChatContext, tgSend: 
     fetchIndicatorsByCodes(codes),
   ]);
 
-  const preCandidates = buildCandidates(stocks, scoreMap, indicatorMap, riskProfile, kind);
+  const preCandidates = buildCandidates(stocks, scoreMap, indicatorMap, riskProfile, kind, regime);
   if (!preCandidates.length) {
     await tgSend("sendMessage", {
       chat_id: ctx.chatId,
@@ -430,7 +537,7 @@ async function runMarketPickCommand(kind: MarketKind, ctx: ChatContext, tgSend: 
   const top = sortByDesc(enriched, (c) => c.finalScore).slice(0, TOP_N);
   const realtimeMap = await fetchRealtimePriceBatch(top.map((c) => c.code)).catch(() => ({} as Record<string, any>));
 
-  const text = buildResultMessage(kind, top, realtimeMap);
+  const text = buildResultMessage(kind, top, realtimeMap, regime);
   const buttons = [
     ...top.map((c) => ({ text: c.name, callback_data: `score:${c.code}` })),
     { text: "코스피", callback_data: "cmd:kospi" },
