@@ -14,6 +14,26 @@ function resolveBase(): string {
   return base;
 }
 
+async function triggerWorker(base: string, secret: string): Promise<void> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 8000);
+
+  try {
+    await fetch(
+      `${base}/api/worker?token=${encodeURIComponent(secret)}`,
+      {
+        method: "POST",
+        headers: { "x-internal-secret": secret },
+        signal: controller.signal,
+      }
+    );
+  } catch (e) {
+    console.error("[telegram] worker trigger failed:", e);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   // 어떤 오류가 발생해도 반드시 200 ACK를 반환해 Telegram 재시도를 방지
   try {
@@ -63,13 +83,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     // 비동기 워커 트리거(내부 호출, fire-and-forget)
     const base = resolveBase();
     if (base && process.env.CRON_SECRET) {
-      fetch(
-        `${base}/api/worker?token=${encodeURIComponent(process.env.CRON_SECRET)}`,
-        {
-          method: "POST",
-          headers: { "x-internal-secret": process.env.CRON_SECRET },
-        }
-      ).catch(() => void 0);
+      await triggerWorker(base, process.env.CRON_SECRET);
     }
   } catch (e) {
     // 내부 오류는 로그만 남기고 200 ACK
