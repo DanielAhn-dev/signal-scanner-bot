@@ -4,10 +4,7 @@
 import type { ChatContext } from "../router";
 import { createClient } from "@supabase/supabase-js";
 import { searchByNameOrCode } from "../../search/normalize";
-import {
-  fetchRealtimeStockData,
-  type RealtimeStockData,
-} from "../../utils/fetchRealtimePrice";
+import { fetchRealtimeStockData } from "../../utils/fetchRealtimePrice";
 import { esc, fmtInt, LINE } from "../messages/format";
 import { actionButtons, ACTIONS } from "../messages/layout";
 import * as cheerio from "cheerio";
@@ -42,40 +39,59 @@ function fmtKorMoney(n: number): string {
 const UA =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36";
 
+async function fetchWithTimeout(url: string, timeoutMs = 5500): Promise<string> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const res = await fetch(url, {
+      headers: { "User-Agent": UA },
+      signal: controller.signal,
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    return await res.text();
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 /** 네이버 금융 외국인/기관 일별 데이터 스크래핑 */
 async function fetchInvestorData(code: string): Promise<InvestorRow[]> {
-  try {
-    const url = `https://finance.naver.com/item/frgn.naver?code=${code}`;
-    const html = await fetch(url, { headers: { "User-Agent": UA } }).then(
-      (r) => r.text()
-    );
-    const $ = cheerio.load(html);
-    const rows: InvestorRow[] = [];
+  const url = `https://finance.naver.com/item/frgn.naver?code=${code}`;
 
-    $("table.type2 tr").each((_, el) => {
-      const tds = $(el).find("td");
-      if (tds.length < 9) return;
+  for (let attempt = 1; attempt <= 2; attempt++) {
+    try {
+      const html = await fetchWithTimeout(url, 5500 + attempt * 1000);
+      const $ = cheerio.load(html);
+      const rows: InvestorRow[] = [];
 
-      const dateText = $(tds[0]).text().trim();
-      if (!/\d{4}\.\d{2}\.\d{2}/.test(dateText)) return;
+      $("table.type2 tr").each((_, el) => {
+        const tds = $(el).find("td");
+        if (tds.length < 9) return;
 
-      const parse = (idx: number) => {
-        const t = $(tds[idx]).text().trim().replace(/,/g, "");
-        return parseInt(t, 10) || 0;
-      };
+        const dateText = $(tds[0]).text().trim();
+        if (!/\d{4}\.\d{2}\.\d{2}/.test(dateText)) return;
 
-      rows.push({
-        date: dateText.replace(/\./g, "-"),
-        foreignNet: parse(5),
-        instNet: parse(6),
+        const parse = (idx: number) => {
+          const t = $(tds[idx]).text().trim().replace(/,/g, "");
+          return parseInt(t, 10) || 0;
+        };
+
+        rows.push({
+          date: dateText.replace(/\./g, "-"),
+          foreignNet: parse(5),
+          instNet: parse(6),
+        });
       });
-    });
 
-    return rows.slice(0, 10);
-  } catch (e) {
-    console.error(`수급 스크래핑 실패 (${code}):`, e);
-    return [];
+      if (rows.length > 0) return rows.slice(0, 10);
+    } catch (e) {
+      if (attempt === 2) {
+        console.error(`수급 스크래핑 실패 (${code}):`, e);
+      }
+    }
   }
+
+  return [];
 }
 
 /** /수급 [종목명] */
@@ -120,7 +136,7 @@ export async function handleFlowCommand(
 
   if (!investors.length) {
     msg += "\n<i>수급 데이터를 조회할 수 없습니다.</i>\n";
-    msg += "<i>장중 또는 최근 거래일 데이터가 없을 수 있습니다.</i>";
+    msg += "<i>외부 데이터 지연 또는 최근 거래일 반영 지연일 수 있습니다.</i>";
   } else {
     // 일별 테이블
     msg += `<b>최근 5거래일</b>\n`;
@@ -163,7 +179,7 @@ async function handleMarketFlowSummary(
   msg += `<i>섹터별 외국인·기관 순매수 (5일)</i>\n${LINE}\n\n`;
 
   if (!sectors?.length) {
-    msg += "데이터가 없습니다.";
+    msg += "섹터 데이터가 없습니다. 잠시 후 다시 시도해주세요.";
   } else {
     let shown = 0;
     for (const s of sectors) {
@@ -179,7 +195,12 @@ async function handleMarketFlowSummary(
       msg += `${total > 0 ? "▲" : "▼"} <b>${esc(s.name)}</b>  ${fStr}  ${iStr}\n`;
       shown++;
     }
-    if (!shown) msg += "수급 데이터가 수집되지 않았습니다.";
+    if (!shown) {
+      msg += [
+        "수급 집계 데이터가 아직 수집되지 않았습니다.",
+        "종목 단위 분석은 /flow [종목명] 으로 이용할 수 있습니다.",
+      ].join("\n");
+    }
   }
 
   msg += `\n${LINE}`;

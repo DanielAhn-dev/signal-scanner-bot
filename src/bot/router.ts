@@ -238,8 +238,15 @@ export async function routeMessage(
 
   // /scan — 눌림목 스캐너
   if (CMD.SCAN.test(t)) {
-    const mscan = t.match(CMD.SCAN);
-    await handleScanCommand(mscan?.[2] ?? "", ctx, tgSend);
+    try {
+      const mscan = t.match(CMD.SCAN);
+      await handleScanCommand(mscan?.[2] ?? "", ctx, tgSend);
+    } catch (e) {
+      await tgSend("sendMessage", {
+        chat_id: ctx.chatId,
+        text: SEND_ERR("스캔"),
+      });
+    }
     return;
   }
 
@@ -252,8 +259,15 @@ export async function routeMessage(
 
   // /flow — 외국인·기관 수급
   if (CMD.FLOW.test(t)) {
-    const mflow = t.match(CMD.FLOW);
-    await handleFlowCommand(mflow?.[2] ?? "", ctx, tgSend);
+    try {
+      const mflow = t.match(CMD.FLOW);
+      await handleFlowCommand(mflow?.[2] ?? "", ctx, tgSend);
+    } catch (e) {
+      await tgSend("sendMessage", {
+        chat_id: ctx.chatId,
+        text: SEND_ERR("수급"),
+      });
+    }
     return;
   }
 
