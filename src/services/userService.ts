@@ -25,6 +25,12 @@ export type InvestmentPrefs = {
   split_count?: number;
   target_profit_pct?: number;
   risk_profile?: "safe" | "balanced" | "active";
+  virtual_seed_capital?: number;
+  virtual_cash?: number;
+  virtual_realized_pnl?: number;
+  virtual_target_positions?: number;
+  virtual_fee_rate?: number;
+  virtual_tax_rate?: number;
 };
 
 // ─── 사용자 등록/업데이트 ───
@@ -64,6 +70,12 @@ export async function getUserInvestmentPrefs(
   const split = Number(prefs.split_count);
   const target = Number(prefs.target_profit_pct);
   const riskProfile = typeof prefs.risk_profile === "string" ? prefs.risk_profile : undefined;
+  const virtualSeed = Number(prefs.virtual_seed_capital);
+  const virtualCash = Number(prefs.virtual_cash);
+  const virtualRealizedPnl = Number(prefs.virtual_realized_pnl);
+  const virtualTargetPositions = Number(prefs.virtual_target_positions);
+  const virtualFeeRate = Number(prefs.virtual_fee_rate);
+  const virtualTaxRate = Number(prefs.virtual_tax_rate);
 
   if (Number.isFinite(cap) && cap > 0) out.capital_krw = cap;
   if (Number.isFinite(split) && split > 0) out.split_count = Math.floor(split);
@@ -71,6 +83,14 @@ export async function getUserInvestmentPrefs(
   if (riskProfile === "safe" || riskProfile === "balanced" || riskProfile === "active") {
     out.risk_profile = riskProfile;
   }
+  if (Number.isFinite(virtualSeed) && virtualSeed >= 0) out.virtual_seed_capital = virtualSeed;
+  if (Number.isFinite(virtualCash) && virtualCash >= 0) out.virtual_cash = virtualCash;
+  if (Number.isFinite(virtualRealizedPnl)) out.virtual_realized_pnl = virtualRealizedPnl;
+  if (Number.isFinite(virtualTargetPositions) && virtualTargetPositions > 0) {
+    out.virtual_target_positions = Math.floor(virtualTargetPositions);
+  }
+  if (Number.isFinite(virtualFeeRate) && virtualFeeRate >= 0) out.virtual_fee_rate = virtualFeeRate;
+  if (Number.isFinite(virtualTaxRate) && virtualTaxRate >= 0) out.virtual_tax_rate = virtualTaxRate;
 
   return out;
 }
@@ -115,6 +135,30 @@ export async function setUserInvestmentPrefs(
         merged.risk_profile === "balanced" ||
         merged.risk_profile === "active"
           ? (merged.risk_profile as "safe" | "balanced" | "active")
+          : undefined,
+      virtual_seed_capital:
+        Number.isFinite(Number(merged.virtual_seed_capital))
+          ? Number(merged.virtual_seed_capital)
+          : undefined,
+      virtual_cash:
+        Number.isFinite(Number(merged.virtual_cash))
+          ? Number(merged.virtual_cash)
+          : undefined,
+      virtual_realized_pnl:
+        Number.isFinite(Number(merged.virtual_realized_pnl))
+          ? Number(merged.virtual_realized_pnl)
+          : undefined,
+      virtual_target_positions:
+        Number.isFinite(Number(merged.virtual_target_positions))
+          ? Math.floor(Number(merged.virtual_target_positions))
+          : undefined,
+      virtual_fee_rate:
+        Number.isFinite(Number(merged.virtual_fee_rate))
+          ? Number(merged.virtual_fee_rate)
+          : undefined,
+      virtual_tax_rate:
+        Number.isFinite(Number(merged.virtual_tax_rate))
+          ? Number(merged.virtual_tax_rate)
           : undefined,
     },
   };
