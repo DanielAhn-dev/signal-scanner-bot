@@ -45,6 +45,7 @@ export async function sendDocument(payload: {
   const form = new FormData();
   form.set("chat_id", String(payload.chat_id));
   if (payload.caption) form.set("caption", payload.caption);
+  form.set("disable_content_type_detection", "true");
   form.set("document", new Blob([payload.bytes], { type: "application/pdf" }), payload.filename);
   return tg("sendDocument", form);
 }

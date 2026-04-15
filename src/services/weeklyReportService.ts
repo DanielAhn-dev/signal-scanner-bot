@@ -153,13 +153,21 @@ function splitWindows(rows: TradeRow[], now: Date) {
 // ─── 폰트 로드 ────────────────────────────────────────────────────────────
 async function loadKoreanFontBytes(): Promise<Uint8Array> {
   const fontPath = path.join(process.cwd(), "assets", "fonts", "NotoSansCJKkr-Regular.otf");
-  return readFile(fontPath);
+  try {
+    return await readFile(fontPath);
+  } catch (err: any) {
+    const reason = err?.code === "ENOENT"
+      ? `폰트 파일을 찾을 수 없습니다: ${fontPath}`
+      : `폰트 로드 실패: ${err?.message ?? String(err)}`;
+    throw new Error(`[PDF] ${reason}. 배포 산출물에 assets/fonts 포함 여부를 확인하세요.`);
+  }
 }
 
 // ─── 텍스트 래핑 (페이지 폭 초과 방지) ──────────────────────────────────
 function wrapText(text: string, maxWidth: number, font: PDFFont, size: number): string[] {
+  const normalizedText = text.normalize("NFC");
   // 문자 단위 래핑 (한글 혼용 대응)
-  const chars = text.split("");
+  const chars = normalizedText.split("");
   const lines: string[] = [];
   let current = "";
 
@@ -486,7 +494,8 @@ export async function createWeeklyReportPdf(
   const pdf = await PDFDocument.create();
   pdf.registerFontkit(fontkit);
   const fontBytes = await loadKoreanFontBytes();
-  const font = await pdf.embedFont(fontBytes, { subset: true });
+  // iOS 뷰어에서 일부 한글 글리프 누락을 방지하기 위해 subset을 비활성화
+  const font = await pdf.embedFont(fontBytes, { subset: false });
   const ctx = new ReportContext(pdf, font);
 
   // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -739,7 +748,8 @@ export async function createWeeklyReportPdf(
   drawFooter(ctx, ymd);
 
   // ── 캡션 및 반환 ────────────────────────────────────────────────────────
-  const bytes = await pdf.save();
+  // 구형/모바일 PDF 렌더러 호환성을 높이기 위해 object stream을 비활성화
+  const bytes = await pdf.save({ useObjectStreams: false });
   const caption = [
     `주간 포트폴리오 리포트 — ${krDate}`,
     `거래 ${curr.tradeCount}건 · 실현손익 ${fmtSignedInt(curr.realizedPnl)} · 보유평가 ${fmtSignedInt(totalUnrealized)}`,

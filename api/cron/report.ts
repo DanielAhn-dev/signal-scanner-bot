@@ -1,6 +1,6 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { createClient } from "@supabase/supabase-js";
-import { tg } from "../../src/telegram/api";
+import { sendDocument, tg } from "../../src/telegram/api";
 import { createWeeklyReportPdf } from "../../src/services/weeklyReportService";
 
 const ADMIN_CHAT_ID = process.env.TELEGRAM_ADMIN_CHAT_ID;
@@ -49,12 +49,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     for (const chatId of recipients) {
       try {
         const report = await createWeeklyReportPdf(supabase, { chatId });
-        const form = new FormData();
-        form.set("chat_id", String(chatId));
-        form.set("caption", report.caption);
-        form.set("document", new Blob([report.bytes], { type: "application/pdf" }), report.fileName);
-
-        const docResp = await tg("sendDocument", form);
+        const docResp = await sendDocument({
+          chat_id: chatId,
+          bytes: report.bytes,
+          filename: report.fileName,
+          caption: report.caption,
+        });
         if (!docResp.ok) {
           throw new Error(docResp.description || "sendDocument failed");
         }
