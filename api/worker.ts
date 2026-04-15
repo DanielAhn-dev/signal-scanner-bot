@@ -3,6 +3,21 @@ import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { createClient } from "@supabase/supabase-js";
 import { routeMessage } from "../src/bot/router";
 import { scoreStocksInSector, StockScore } from "../src/lib/stocks";
+import { handleBriefCommand } from "../src/bot/commands/brief";
+import { handleScoreCommand } from "../src/bot/commands/score";
+import { handleBuyCommand } from "../src/bot/commands/buy";
+import { handleFinanceCommand } from "../src/bot/commands/finance";
+import { handleNewsCommand } from "../src/bot/commands/news";
+import {
+  handleSectorCommand,
+  handleNextSectorCommand,
+  handleSectorDetailCommand,
+} from "../src/bot/commands/sector";
+import { handlePullbackCommand } from "../src/bot/commands/pullback";
+import { handleEconomyCommand } from "../src/bot/commands/economy";
+import { handleMarketCommand } from "../src/bot/commands/market";
+import { handleWatchlistQuickAdd } from "../src/bot/commands/watchlist";
+import { handleRiskProfileSelection } from "../src/bot/commands/onboarding";
 
 // supa 클라이언트는 service_role 키를 사용해야 함
 const supa = () =>
@@ -83,6 +98,86 @@ async function handleWatchSectorJob(job: any) {
   }
 }
 
+async function sendPromptForCommand(
+  kind: string,
+  chatId: number,
+  tgSend: any
+): Promise<void> {
+  const presets: Record<string, { title: string; placeholder: string }> = {
+    score: { title: "점수 조회", placeholder: "[score] 종목명 또는 코드 입력" },
+    buy: { title: "매수 전략 조회", placeholder: "[buy] 종목명 또는 코드 입력" },
+    finance: { title: "재무 조회", placeholder: "[finance] 종목명 또는 코드 입력" },
+    news: { title: "뉴스 조회", placeholder: "[news] 종목명 또는 코드 입력" },
+    flow: { title: "수급 조회", placeholder: "[flow] 종목명 또는 코드 입력" },
+    capital: { title: "투자금 설정", placeholder: "[capital] 300만원 3 8 안전형" },
+  };
+
+  const preset = presets[kind];
+  if (!preset) {
+    await tgSend("sendMessage", {
+      chat_id: chatId,
+      text: "지원하지 않는 입력 요청입니다.",
+    });
+    return;
+  }
+
+  await tgSend("sendMessage", {
+    chat_id: chatId,
+    text: `${preset.title}할 종목을 입력하세요.`,
+    reply_markup: {
+      force_reply: true,
+      input_field_placeholder: preset.placeholder,
+    },
+  });
+}
+
+async function routeCallback(
+  data: string,
+  ctx: { chatId: number; from?: any },
+  tgSend: any
+): Promise<void> {
+  if (data.startsWith("cmd:")) {
+    const cmd = data.slice(4);
+
+    if (cmd === "brief") return handleBriefCommand(ctx, tgSend);
+    if (cmd === "market") return handleMarketCommand(ctx, tgSend);
+    if (cmd === "economy") return handleEconomyCommand(ctx, tgSend);
+    if (cmd === "sector") return handleSectorCommand(ctx, tgSend);
+    if (cmd === "nextsector") return handleNextSectorCommand(ctx, tgSend);
+    if (cmd === "pullback") return handlePullbackCommand(ctx, tgSend);
+
+    return routeMessage(`/${cmd}`, ctx, tgSend);
+  }
+
+  if (data.startsWith("prompt:")) {
+    return sendPromptForCommand(data.slice(7), ctx.chatId, tgSend);
+  }
+
+  if (data.startsWith("risk:")) {
+    const profile = data.slice(5);
+    if (profile === "safe" || profile === "balanced" || profile === "active") {
+      return handleRiskProfileSelection(profile, ctx, tgSend);
+    }
+  }
+
+  if (data.startsWith("score:")) return handleScoreCommand(data.slice(6), ctx, tgSend);
+  if (data.startsWith("buy:")) return handleBuyCommand(data.slice(4), ctx, tgSend);
+  if (data.startsWith("finance:")) return handleFinanceCommand(data.slice(8), ctx, tgSend);
+  if (data.startsWith("news:")) return handleNewsCommand(data.slice(5), ctx, tgSend);
+
+  if (data.startsWith("watchadd:")) {
+    return handleWatchlistQuickAdd(data.slice(9), ctx, tgSend);
+  }
+
+  if (data.startsWith("sector:")) return handleSectorDetailCommand(data.slice(7), ctx, tgSend);
+  if (data.startsWith("KRX:")) return handleSectorDetailCommand(data, ctx, tgSend);
+
+  await tgSend("sendMessage", {
+    chat_id: ctx.chatId,
+    text: "버튼 동작을 처리하지 못했습니다. 다시 시도해주세요.",
+  });
+}
+
 async function handleTelegramUpdateJob(job: any) {
   const u = job.payload || {};
 
@@ -97,9 +192,7 @@ async function handleTelegramUpdateJob(job: any) {
       show_alert: false,
     });
 
-    // await withTimeout(
-    //   routeCallback(u.callback_query.data, { chatId, from }, tgFetch)
-    // );
+    await withTimeout(routeCallback(u.callback_query.data, { chatId, from }, tgFetch));
     return;
   }
 
@@ -128,6 +221,7 @@ async function handleTelegramUpdateJob(job: any) {
         finance: "/재무",
         news: "/뉴스",
         flow: "/수급",
+        capital: "/투자금",
       };
       const prefix = cmdFromPlaceholder
         ? cmdMap[cmdFromPlaceholder]
@@ -140,6 +234,7 @@ async function handleTelegramUpdateJob(job: any) {
         : replyText.includes("재무") ? "/재무"
         : replyText.includes("뉴스") ? "/뉴스"
         : replyText.includes("수급") ? "/수급"
+        : replyText.includes("투자금") ? "/투자금"
         : null
         : null;
 

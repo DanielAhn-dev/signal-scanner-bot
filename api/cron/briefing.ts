@@ -2,11 +2,12 @@ import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { createBriefingReport } from "../../src/services/briefingService";
 import { tg } from "../../src/telegram/api";
 import { createClient } from "@supabase/supabase-js";
+import { getUserInvestmentPrefs } from "../../src/services/userService";
 
 const ADMIN_CHAT_ID = process.env.TELEGRAM_ADMIN_CHAT_ID;
 const CRON_SECRET = process.env.CRON_SECRET;
 const SUPABASE_URL = process.env.SUPABASE_URL!;
-const SUPABASE_KEY = process.env.SUPABASE_ANON_KEY!;
+const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY!;
 
 export const config = {
   maxDuration: 60,
@@ -34,29 +35,36 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const briefingType =
       req.query.type === "market_close" ? "market_close" : "pre_market";
 
-    // 브리핑 리포트 생성 (한 번만 생성 후 모든 사용자에게 동일 내용 발송)
-    const report = await createBriefingReport(supabase, briefingType);
-
     // 활성 사용자 목록 조회
     const { data: users, error: usersError } = await supabase
       .from("users")
-      .select("tg_id")
+      .select("tg_id, prefs")
       .eq("is_active", true);
 
     if (usersError) {
       console.error("사용자 조회 실패:", usersError);
     }
 
-    const recipientIds: number[] =
+    const recipients =
       users && users.length > 0
-        ? users.map((u: { tg_id: number }) => u.tg_id)
-        : [Number(ADMIN_CHAT_ID)]; // 등록된 사용자 없으면 관리자에게만 발송
+        ? users.map((u: { tg_id: number; prefs?: Record<string, unknown> | null }) => ({
+            chatId: u.tg_id,
+            prefs: u.prefs || {},
+          }))
+        : [{ chatId: Number(ADMIN_CHAT_ID), prefs: {} }];
 
     let sent = 0;
     let failed = 0;
 
-    for (const chatId of recipientIds) {
+    for (const recipient of recipients) {
+      const chatId = recipient.chatId;
       try {
+        const prefs = await getUserInvestmentPrefs(chatId);
+        const report = await createBriefingReport(supabase, briefingType, {
+          chatId,
+          riskProfile: prefs.risk_profile ?? "safe",
+        });
+
         await tg("sendMessage", {
           chat_id: chatId,
           text: report,

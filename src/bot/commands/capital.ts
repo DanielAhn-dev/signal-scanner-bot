@@ -5,6 +5,21 @@ import {
   setUserInvestmentPrefs,
 } from "../../services/userService";
 
+function parseRiskProfile(raw?: string): "safe" | "balanced" | "active" | null {
+  if (!raw) return null;
+  const value = raw.trim().toLowerCase();
+  if (["safe", "안전", "안전형", "보수", "보수형"].includes(value)) return "safe";
+  if (["balanced", "균형", "균형형"].includes(value)) return "balanced";
+  if (["active", "aggressive", "공격", "공격형"].includes(value)) return "active";
+  return null;
+}
+
+function riskProfileLabel(profile?: "safe" | "balanced" | "active"): string {
+  if (profile === "balanced") return "균형형";
+  if (profile === "active") return "공격형";
+  return "안전형";
+}
+
 function parseKrwAmount(raw: string): number | null {
   const v = raw.replace(/\s+/g, "").toLowerCase();
   if (!v) return null;
@@ -45,6 +60,7 @@ export async function handleCapitalCommand(
     const cap = prefs.capital_krw ?? 0;
     const split = prefs.split_count ?? 3;
     const target = prefs.target_profit_pct ?? 8;
+    const profile = prefs.risk_profile ?? "safe";
 
     return tgSend("sendMessage", {
       chat_id: ctx.chatId,
@@ -54,11 +70,12 @@ export async function handleCapitalCommand(
         `투자금 <code>${fmtInt(cap)}원</code>`,
         `분할매수 <code>${split}회</code>`,
         `목표수익률 <code>${target.toFixed(1)}%</code>`,
+        `투자성향 <code>${riskProfileLabel(profile)}</code>`,
         "",
         "설정 예시:",
         "• /투자금 300만원",
-        "• /투자금 5000000 4 10",
-        "  (투자금 분할횟수 목표수익률%)",
+        "• /투자금 5000000 4 10 안전형",
+        "  (투자금 분할횟수 목표수익률% 투자성향)",
       ].join("\n"),
       parse_mode: "HTML",
     });
@@ -76,11 +93,12 @@ export async function handleCapitalCommand(
 
   const splitCount = parts[1] ? parsePositiveInt(parts[1]) : 3;
   const targetPct = parts[2] ? parsePositiveFloat(parts[2]) : 8;
+  const riskProfile = parseRiskProfile(parts[3]) ?? "safe";
 
   if (!splitCount || !targetPct) {
     return tgSend("sendMessage", {
       chat_id: ctx.chatId,
-      text: "분할횟수/목표수익률이 올바르지 않습니다.\n예) /투자금 300만원 3 8",
+      text: "분할횟수/목표수익률이 올바르지 않습니다.\n예) /투자금 300만원 3 8 안전형",
     });
   }
 
@@ -88,6 +106,7 @@ export async function handleCapitalCommand(
     capital_krw: amount,
     split_count: splitCount,
     target_profit_pct: targetPct,
+    risk_profile: riskProfile,
   });
 
   if (!saved.ok || !saved.prefs) {
@@ -105,8 +124,9 @@ export async function handleCapitalCommand(
       `투자금 <code>${fmtInt(saved.prefs.capital_krw || 0)}원</code>`,
       `분할매수 <code>${saved.prefs.split_count || 3}회</code>`,
       `목표수익률 <code>${(saved.prefs.target_profit_pct || 8).toFixed(1)}%</code>`,
+      `투자성향 <code>${riskProfileLabel(saved.prefs.risk_profile)}</code>`,
       "",
-      "이제 /매수 종목명 조회 시 분할매수/예상수익을 함께 안내합니다.",
+      "이제 /매수와 추천 후보가 이 성향 기준으로 더 보수적 또는 적극적으로 바뀝니다.",
     ].join("\n"),
     parse_mode: "HTML",
   });

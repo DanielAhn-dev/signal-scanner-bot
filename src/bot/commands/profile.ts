@@ -27,6 +27,13 @@ export async function handleProfileCommand(
   const lastActive = p.user.last_active_at
     ? timeAgo(new Date(p.user.last_active_at))
     : "—";
+  const prefs = (p.user.prefs || {}) as Record<string, unknown>;
+  const riskProfile =
+    prefs.risk_profile === "balanced"
+      ? "균형형"
+      : prefs.risk_profile === "active"
+        ? "공격형"
+        : "안전형";
 
   const msg = [
     `<b>👤 ${esc(name)} 프로필</b>`,
@@ -35,6 +42,7 @@ export async function handleProfileCommand(
     `  사용자명  ${esc(username)}`,
     `  가입일    ${joined}`,
     `  최근활동  ${lastActive}`,
+    `  투자성향  ${riskProfile}`,
     "",
     `  📊 명령어 사용  <code>${p.commandCount}</code>회`,
     `  ⭐ 관심종목     <code>${p.watchlistCount}</code>개`,

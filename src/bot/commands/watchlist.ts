@@ -9,6 +9,7 @@ import {
   fetchRealtimePrice,
   fetchRealtimePriceBatch,
 } from "../../utils/fetchRealtimePrice";
+import { buildInvestmentPlan } from "../../lib/investPlan";
 
 const MAX_ITEMS = 20; // 사용자당 최대 관심종목 수
 
@@ -28,12 +29,19 @@ export async function handleWatchlistCommand(
   ctx: ChatContext,
   tgSend: any
 ): Promise<void> {
+  const { data: scoreDateRows } = await supabaseRead
+    .from("scores")
+    .select("asof")
+    .order("asof", { ascending: false })
+    .limit(1);
+  const scoreAsOf = scoreDateRows?.[0]?.asof ?? null;
+
   const { data: items, error } = await supabaseRead
     .from("watchlist")
     .select(
       `
       code, buy_price, buy_date, memo,
-      stock:stocks!inner ( name, close )
+      stock:stocks!inner ( name, close, rsi14 )
     `
     )
     .eq("chat_id", ctx.chatId)
@@ -55,6 +63,7 @@ export async function handleWatchlistCommand(
         "",
         "/관심추가 종목명 [매수가]",
         "예) /관심추가 삼성전자 72000",
+        "추가한 종목은 /브리핑에서 함께 점검됩니다.",
       ].join("\n"),
     });
   }
@@ -62,9 +71,28 @@ export async function handleWatchlistCommand(
   // 실시간 가격 일괄 조회
   const codes = items.map((it: any) => it.code);
   const realtimeMap = await fetchRealtimePriceBatch(codes);
+  const scoresByCode = new Map<string, { total_score?: number | null; momentum_score?: number | null }>();
+
+  if (scoreAsOf && codes.length) {
+    const { data: scoreRows } = await supabaseRead
+      .from("scores")
+      .select("code, total_score, momentum_score")
+      .eq("asof", scoreAsOf)
+      .in("code", codes);
+
+    for (const row of scoreRows ?? []) {
+      scoresByCode.set(row.code as string, {
+        total_score: Number((row as any).total_score ?? 0),
+        momentum_score: Number((row as any).momentum_score ?? 0),
+      });
+    }
+  }
 
   let totalCost = 0;
   let totalValue = 0;
+  let actionable = 0;
+  let pullback = 0;
+  let wait = 0;
 
   const lines = items.map((item: any, idx: number) => {
     const stock = item.stock as any;
@@ -74,6 +102,16 @@ export async function handleWatchlistCommand(
     const close = rt?.price ?? dbClose;
     const buyPrice = Number(item.buy_price ?? 0);
     const hasBuy = buyPrice > 0;
+    const score = scoresByCode.get(item.code);
+    const plan = buildInvestmentPlan({
+      currentPrice: close,
+      factors: { rsi14: stock?.rsi14 ?? undefined },
+      technicalScore: score?.total_score ?? score?.momentum_score ?? undefined,
+    });
+
+    if (plan.status === "buy-now") actionable += 1;
+    else if (plan.status === "buy-on-pullback") pullback += 1;
+    else wait += 1;
 
     // 등락 표시
     const changeStr = rt
@@ -93,12 +131,17 @@ export async function handleWatchlistCommand(
     const buyStr = hasBuy
       ? `\n    매수 <code>${fmtInt(buyPrice)}원</code>`
       : "";
+    const actionStr =
+      plan.status === "buy-on-pullback"
+        ? `\n    액션 ${plan.statusLabel} · 진입 ${fmtInt(plan.entryLow)}~${fmtInt(plan.entryHigh)}`
+        : `\n    액션 ${plan.statusLabel} · 손절 ${fmtInt(plan.stopPrice)} · 1차 ${fmtPct(plan.target1Pct * 100)}`;
 
     return (
       `${idx + 1}. <b>${esc(name)}</b> (${item.code})\n` +
       `    현재 <code>${fmtInt(close)}원</code>  ${changeStr}` +
       buyStr +
-      plStr
+      plStr +
+      actionStr
     );
   });
 
@@ -115,6 +158,7 @@ export async function handleWatchlistCommand(
   const msg = [
     `<b>관심종목 포트폴리오</b>`,
     LINE,
+    `오늘 액션 ${actionable}건 · 눌림 대기 ${pullback}건 · 관망 ${wait}건`,
     "",
     ...lines,
     summaryLine,
@@ -196,7 +240,7 @@ export async function handleWatchlistAdd(
   const priceNote = buyPrice ? `  매수가 ${fmtInt(buyPrice)}원` : "";
   await tgSend("sendMessage", {
     chat_id: ctx.chatId,
-    text: `${esc(name)} (${code}) 관심종목 추가 완료${priceNote}\n/관심 으로 목록 확인`,
+    text: `${esc(name)} (${code}) 관심종목 추가 완료${priceNote}\n/관심 으로 목록 확인\n/브리핑 에서 추천 후보와 함께 점검`,
     parse_mode: "HTML",
   });
 }
@@ -380,7 +424,7 @@ export async function handleWatchlistQuickAdd(
   const priceNote = price ? `  매수가 ${fmtInt(price)}원 (현재가 자동저장)` : "";
   await tgSend("sendMessage", {
     chat_id: ctx.chatId,
-    text: `${esc(name)} (${code}) 관심종목 추가 완료${priceNote}\n/관심 으로 목록 확인\n/관심수정 ${name} 가격 — 매수가 변경`,
+    text: `${esc(name)} (${code}) 관심종목 추가 완료${priceNote}\n/관심 으로 목록 확인\n/브리핑 에서 함께 점검\n/관심수정 ${name} 가격 — 매수가 변경`,
     parse_mode: "HTML",
   });
 }

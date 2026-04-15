@@ -1,6 +1,7 @@
 import type { ChatContext } from "../router";
 import { createClient } from "@supabase/supabase-js";
 import { createBriefingReport } from "../../services/briefingService";
+import { getUserInvestmentPrefs } from "../../services/userService";
 
 const supabase = createClient(
   process.env.SUPABASE_URL!,
@@ -19,7 +20,11 @@ export async function handleBriefCommand(
     text: "☀️ 브리핑 생성 중...",
   });
 
-  const report = await createBriefingReport(supabase, "pre_market");
+  const prefs = await getUserInvestmentPrefs(ctx.from?.id ?? ctx.chatId);
+  const report = await createBriefingReport(supabase, "pre_market", {
+    chatId: ctx.chatId,
+    riskProfile: prefs.risk_profile ?? "safe",
+  });
 
   await tgSend("sendMessage", {
     chat_id: ctx.chatId,

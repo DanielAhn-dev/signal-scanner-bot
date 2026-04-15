@@ -24,6 +24,7 @@ export type InvestmentPrefs = {
   capital_krw?: number;
   split_count?: number;
   target_profit_pct?: number;
+  risk_profile?: "safe" | "balanced" | "active";
 };
 
 // ─── 사용자 등록/업데이트 ───
@@ -62,10 +63,14 @@ export async function getUserInvestmentPrefs(
   const cap = Number(prefs.capital_krw);
   const split = Number(prefs.split_count);
   const target = Number(prefs.target_profit_pct);
+  const riskProfile = typeof prefs.risk_profile === "string" ? prefs.risk_profile : undefined;
 
   if (Number.isFinite(cap) && cap > 0) out.capital_krw = cap;
   if (Number.isFinite(split) && split > 0) out.split_count = Math.floor(split);
   if (Number.isFinite(target) && target > 0) out.target_profit_pct = target;
+  if (riskProfile === "safe" || riskProfile === "balanced" || riskProfile === "active") {
+    out.risk_profile = riskProfile;
+  }
 
   return out;
 }
@@ -105,6 +110,12 @@ export async function setUserInvestmentPrefs(
       capital_krw: Number(merged.capital_krw || 0) || undefined,
       split_count: Number(merged.split_count || 0) || undefined,
       target_profit_pct: Number(merged.target_profit_pct || 0) || undefined,
+      risk_profile:
+        merged.risk_profile === "safe" ||
+        merged.risk_profile === "balanced" ||
+        merged.risk_profile === "active"
+          ? (merged.risk_profile as "safe" | "balanced" | "active")
+          : undefined,
     },
   };
 }

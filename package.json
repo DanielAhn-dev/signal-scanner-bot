@@ -11,7 +11,7 @@
     "seed:sectors": "tsx scripts/seedSectors.ts",
     "gen:sectors": "tsx scripts/generateSectorsJson.ts",
     "set:commands": "tsx scripts/ops/set_commands.ts",
-    "setWebhook": "node scripts/ops/setWebhook.mjs https://signal-scanner-bot.vercel.app/api/worker"
+    "setWebhook": "node scripts/ops/setWebhook.mjs https://signal-scanner-bot.vercel.app/api/telegram"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.45.0",
@@ -27,6 +27,6 @@
     "@types/xlsx": "^0.0.35",
     "tsx": "^4.20.6",
     "typescript": "^5.3.3",
-    "vercel": "^33.0.0"
+    "vercel": "^51.2.1"
   }
 }

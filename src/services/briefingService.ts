@@ -1,6 +1,8 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { fetchRealtimePriceBatch } from "../utils/fetchRealtimePrice";
 import { fetchAllMarketData, type MarketOverview } from "../utils/fetchMarketData";
+import { buildInvestmentPlan } from "../lib/investPlan";
+import { pickSaferCandidates, type RiskProfile } from "../lib/investableUniverse";
 
 // JSONB용 느슨한 타입
 type Json = Record<string, any>;
@@ -19,6 +21,7 @@ interface SectorRow {
 interface StockRow {
   code: string;
   name: string;
+  market?: string | null;
   sector_id: string | null;
   close: number | null;
   liquidity: number | null;
@@ -39,11 +42,31 @@ interface ScoreRow {
   asof?: string;
 }
 
+interface WatchlistRow {
+  code: string;
+  buy_price: number | null;
+  stock: StockRow | StockRow[] | null;
+}
+
+interface WatchlistViewItem {
+  code: string;
+  name: string;
+  sectorId: string | null;
+  currentPrice: number;
+  changeRate: number | null;
+  buyPrice: number | null;
+  profitPct: number | null;
+  totalScore: number;
+  plan: ReturnType<typeof buildInvestmentPlan>;
+}
+
 // ===== 메인 브리핑 함수 =====
 export async function createBriefingReport(
   supabase: SupabaseClient,
-  type: BriefingType = "pre_market"
+  type: BriefingType = "pre_market",
+  options?: { riskProfile?: RiskProfile; chatId?: number }
 ): Promise<string> {
+  const riskProfile = options?.riskProfile ?? "safe";
   // 0. 기준일 잡기: sector_daily 마지막 날짜
   const { data: sectorDateRows, error: sectorDateError } = await supabase
     .from("sector_daily")
@@ -98,6 +121,7 @@ export async function createBriefingReport(
       [
         "code",
         "name",
+        "market",
         "sector_id",
         "close",
         "liquidity",
@@ -109,6 +133,8 @@ export async function createBriefingReport(
     )
     .in("sector_id", topSectorIds)
     .eq("is_active", true)
+    .in("market", ["KOSPI", "KOSDAQ"])
+    .in("universe_level", ["core", "extended"])
     .order("is_sector_leader", { ascending: false })
     .order("liquidity", { ascending: false })
     .limit(80)
@@ -127,16 +153,24 @@ export async function createBriefingReport(
     scoreAsOf
   );
 
+  const watchlistItems = options?.chatId
+    ? await fetchWatchlistItems(supabase, options.chatId)
+    : [];
+  const watchlistCodes = watchlistItems.map((item) => item.code);
+  const watchlistScores = await fetchScoresByCodes(supabase, watchlistCodes, scoreAsOf);
+  watchlistScores.forEach((value, key) => scoresByCode.set(key, value));
+
   // 5. '밑에서' 턴어라운드 후보
   const bottomCandidates = await fetchBottomTurnaroundCandidates(
     supabase,
-    scoreAsOf
+    scoreAsOf,
+    riskProfile
   );
 
   // 6. 실시간 가격 일괄 조회
   const allCodes = (sectorStocks ?? []).map((s) => s.code);
   const bottomCodes = bottomCandidates.map((s) => s.code);
-  const uniqueCodes = [...new Set([...allCodes, ...bottomCodes])];
+  const uniqueCodes = [...new Set([...allCodes, ...bottomCodes, ...watchlistCodes])];
   const realtimeMap = uniqueCodes.length
     ? await fetchRealtimePriceBatch(uniqueCodes).catch(() => ({} as Record<string, any>))
     : {};
@@ -149,10 +183,17 @@ export async function createBriefingReport(
     const stocksOfSector =
       sectorStocks?.filter((s) => s.sector_id === sector.id) ?? [];
 
-    const picked = pickTopStocksForSector(stocksOfSector, scoresByCode, 3);
+    const picked = pickTopStocksForSector(stocksOfSector, scoresByCode, 3, riskProfile);
 
     return formatSectorSection(sector, picked, scoresByCode, realtimeMap);
   });
+
+  const watchlistSection = formatWatchlistSection(
+    watchlistItems,
+    scoresByCode,
+    realtimeMap,
+    topSectors
+  );
 
   // 9. 빈집털이 섹션 텍스트 조립
   const bottomSectionText = formatBottomSection(bottomCandidates, realtimeMap);
@@ -172,14 +213,13 @@ export async function createBriefingReport(
     day: "numeric",
   });
 
-  const emoji = type === "pre_market" ? "☀️" : "🌙";
   const typeLabel = type === "pre_market" ? "장전 브리핑" : "마감 브리핑";
-  const title = `${emoji} <b>${briefingDate} ${typeLabel}</b>`;
+  const title = `<b>${briefingDate} ${typeLabel}</b>`;
 
   let report = `${title}\n─────────────────\n\n`;
 
   // 글로벌 환경 요약
-  report += `<b>🌍 시장 환경</b>\n`;
+  report += `<b>시장 환경</b>\n`;
   const mktLines: string[] = [];
   if (marketData.kospi) {
     const k = marketData.kospi;
@@ -204,10 +244,13 @@ export async function createBriefingReport(
   }
   report += mktLines.length > 0 ? mktLines.join("\n") + "\n" : "  (조회 불가)\n";
 
-  report += `\n<b>🚀 주도 테마 Top 3</b>\n`;
+  report += `\n<b>주도 테마 Top 3</b>\n`;
   report += sectorReports.join("\n\n");
 
-  report += `\n\n<b>👀 빈집털이 후보</b> <i>과매도 + 모멘텀 개선</i>\n`;
+  report += `\n\n<b>내 관심종목 체크</b>\n`;
+  report += watchlistSection;
+
+  report += `\n\n<b>눌림 대기 후보</b> <i>과매도 + 모멘텀 개선</i>\n`;
   report += bottomSectionText;
 
   report += `\n─────────────────\n`;
@@ -257,16 +300,19 @@ async function fetchScoresByCodes(
 
 async function fetchBottomTurnaroundCandidates(
   supabase: SupabaseClient,
-  asof: string
+  asof: string,
+  riskProfile: RiskProfile
 ) {
   const { data: lowRsiStocks, error: lowRsiError } = await supabase
     .from("stocks")
-    .select("code, name, close, rsi14")
+    .select("code, name, market, close, liquidity, rsi14, universe_level")
     .lt("rsi14", 35)
     .eq("is_active", true)
+    .in("market", ["KOSPI", "KOSDAQ"])
+    .in("universe_level", ["core", "extended"])
     .order("rsi14", { ascending: true })
     .limit(100)
-    .returns<Pick<StockRow, "code" | "name" | "close" | "rsi14">[]>();
+    .returns<Pick<StockRow, "code" | "name" | "market" | "close" | "liquidity" | "rsi14" | "universe_level">[]>();
 
   if (lowRsiError) {
     throw new Error(`Low-RSI stocks fetch failed: ${lowRsiError.message}`);
@@ -308,17 +354,41 @@ async function fetchBottomTurnaroundCandidates(
         roc21,
       };
     })
-    .filter((s) => (s.roc21 ?? 0) > 0)
-    .sort((a, b) => (b.roc21 ?? 0) - (a.roc21 ?? 0))
-    .slice(0, 5);
+    .filter((s) => (s.roc21 ?? 0) > 0);
 
-  return candidates;
+  return pickSaferCandidates(candidates, 5, riskProfile);
+}
+
+async function fetchWatchlistItems(
+  supabase: SupabaseClient,
+  chatId: number
+) {
+  const { data, error } = await supabase
+    .from("watchlist")
+    .select(
+      [
+        "code",
+        "buy_price",
+        "stock:stocks!inner(code, name, market, sector_id, close, liquidity, avg_volume_20d, rsi14, is_sector_leader, universe_level)",
+      ].join(", ")
+    )
+    .eq("chat_id", chatId)
+    .order("created_at", { ascending: true })
+    .limit(6)
+    .returns<WatchlistRow[]>();
+
+  if (error) {
+    throw new Error(`Watchlist fetch failed: ${error.message}`);
+  }
+
+  return data ?? [];
 }
 
 function pickTopStocksForSector(
   stocks: StockRow[],
   scoresByCode: Map<string, ScoreRow>,
-  limit: number
+  limit: number,
+  riskProfile: RiskProfile
 ) {
   const scored = stocks.map((s) => {
     const score = scoresByCode.get(s.code);
@@ -330,9 +400,7 @@ function pickTopStocksForSector(
     };
   });
 
-  scored.sort((a, b) => (b.total_score ?? 0) - (a.total_score ?? 0));
-
-  return scored.slice(0, limit);
+  return pickSaferCandidates(scored, limit, riskProfile);
 }
 
 // ===== 포맷팅 =====
@@ -343,13 +411,12 @@ function formatSectorSection(
   scoresByCode: Map<string, ScoreRow>,
   realtimeMap: Record<string, any>
 ) {
-  const sectorEmoji = getSectorEmoji(sector.name);
   const metrics = (sector.metrics ?? {}) as Json;
 
   const ret1m = toNumber(metrics.ret_1m ?? metrics.return_1m);
   const change = sector.change_rate as number | null;
 
-  let header = `${sectorEmoji} <b>${sector.name}</b>`;
+  let header = `<b>${sector.name}</b>`;
   header += `  점수 <b>${fmtInt(sector.score)}</b>`;
   header += `  ${fmtChange(change)}`;
   if (ret1m != null) header += `  1M ${fmtPct(ret1m)}`;
@@ -364,7 +431,6 @@ function formatSectorSection(
   stocks.forEach((stock) => {
     const score = scoresByCode.get(stock.code);
     const total = score?.total_score ?? score?.momentum_score ?? null;
-    const rsi = stock.rsi14 != null ? Math.round(stock.rsi14) : null;
 
     // 실시간 가격 우선, 없으면 DB 가격
     const rt = realtimeMap[stock.code];
@@ -372,22 +438,19 @@ function formatSectorSection(
     const priceStr = price != null ? Number(price).toLocaleString("ko-KR") : "-";
     const changeStr = rt ? ` ${fmtChange(rt.changeRate)}` : "";
 
-    const tags: string[] = [];
-    if (stock.is_sector_leader) tags.push("🏅");
-    const tagStr = tags.length ? tags.join("") + " " : "  ";
+    const plan = buildInvestmentPlan({
+      currentPrice: Number(price ?? 0),
+      factors: { rsi14: stock.rsi14 ?? undefined },
+      technicalScore: total ?? undefined,
+    });
 
     lines.push(
-      `${tagStr}<b>${stock.name}</b> <code>${priceStr}원</code>${changeStr}`
+      `  <b>${stock.name}</b> <code>${priceStr}원</code>${changeStr}`
     );
 
-    const details: string[] = [];
-    if (total != null) details.push(`점수 ${total}`);
-    if (rsi != null) details.push(`RSI ${rsi}`);
-    if (stock.universe_level && stock.universe_level !== "tail")
-      details.push(stock.universe_level);
-    if (details.length) {
-      lines.push(`     ${details.join(" · ")}`);
-    }
+    lines.push(
+      `     ${plan.statusLabel} · 진입 ${fmtInt(plan.entryLow)}~${fmtInt(plan.entryHigh)} · 1차 ${fmtPct(plan.target1Pct * 100)}`
+    );
   });
 
   return lines.join("\n");
@@ -405,17 +468,134 @@ function formatBottomSection(candidates: any[], realtimeMap: Record<string, any>
         const price = rt?.price ?? s.close;
         const priceStr = price != null ? Number(price).toLocaleString("ko-KR") : "-";
         const changeStr = rt ? ` ${fmtChange(rt.changeRate)}` : "";
-        const rsi = s.rsi14 != null ? Math.round(s.rsi14) : null;
+        const plan = buildInvestmentPlan({
+          currentPrice: Number(price ?? 0),
+          factors: { rsi14: s.rsi14 ?? undefined },
+          technicalScore: s.total_score ?? s.momentum_score ?? undefined,
+        });
 
         let line = `  ▸ <b>${s.name}</b> <code>${priceStr}원</code>${changeStr}`;
-        const info: string[] = [];
-        if (rsi != null) info.push(`RSI ${rsi}`);
-        if (s.momentum_score != null) info.push(`모멘텀 ${fmtInt(s.momentum_score)}`);
-        if (info.length) line += `\n     ${info.join(" · ")}`;
+        line += `\n     ${plan.statusLabel} · 진입 ${fmtInt(plan.entryLow)}~${fmtInt(plan.entryHigh)} · 1차 ${fmtPct(plan.target1Pct * 100)}`;
         return line;
       })
       .join("\n") + "\n"
   );
+}
+
+function formatWatchlistSection(
+  items: WatchlistRow[],
+  scoresByCode: Map<string, ScoreRow>,
+  realtimeMap: Record<string, any>,
+  topSectors: SectorRow[]
+) {
+  if (!items.length) {
+    return "  <i>등록된 관심종목이 없습니다. /관심추가 종목명 으로 후보를 저장하세요.</i>\n";
+  }
+
+  const statusRank: Record<string, number> = {
+    "buy-now": 0,
+    "buy-on-pullback": 1,
+    wait: 2,
+  };
+
+  const viewItems = items
+    .map((item) => {
+      const stock = Array.isArray(item.stock) ? item.stock[0] : item.stock;
+      if (!stock) return null;
+
+      const score = scoresByCode.get(item.code);
+      const total = score?.total_score ?? score?.momentum_score ?? 0;
+      const rt = realtimeMap[item.code];
+      const price = Number(rt?.price ?? stock.close ?? 0);
+      const plan = buildInvestmentPlan({
+        currentPrice: price,
+        factors: { rsi14: stock.rsi14 ?? undefined },
+        technicalScore: total || undefined,
+      });
+      const buyPrice = Number(item.buy_price ?? 0);
+      const profitPct = buyPrice > 0 && price > 0
+        ? ((price - buyPrice) / buyPrice) * 100
+        : null;
+
+      return {
+        code: item.code,
+        name: stock.name,
+        sectorId: stock.sector_id ?? null,
+        currentPrice: price,
+        changeRate: rt?.changeRate ?? null,
+        buyPrice: buyPrice > 0 ? buyPrice : null,
+        profitPct,
+        totalScore: Number(total) || 0,
+        plan,
+      };
+    })
+    .filter((item): item is WatchlistViewItem => Boolean(item));
+
+  if (!viewItems.length) {
+    return "  <i>등록된 관심종목을 불러오지 못했습니다.</i>\n";
+  }
+
+  const sortedItems = viewItems
+    .slice()
+    .sort(
+      (a, b) =>
+        (statusRank[a.plan.status] ?? 9) - (statusRank[b.plan.status] ?? 9) ||
+        b.totalScore - a.totalScore
+    );
+
+  const actionable = sortedItems.filter((item) => item.plan.status === "buy-now").length;
+  const pullback = sortedItems.filter((item) => item.plan.status === "buy-on-pullback").length;
+  const wait = sortedItems.filter((item) => item.plan.status === "wait").length;
+
+  const topSectorNameById = new Map(topSectors.map((sector) => [sector.id, sector.name]));
+  const overlappingThemes = Array.from(
+    new Set(
+      sortedItems
+        .map((item) => item.sectorId)
+        .filter((sectorId): sectorId is string => Boolean(sectorId && topSectorNameById.has(sectorId)))
+        .map((sectorId) => topSectorNameById.get(sectorId) as string)
+    )
+  );
+
+  const topGainer = sortedItems
+    .filter((item) => item.profitPct !== null)
+    .sort((a, b) => Number(b.profitPct) - Number(a.profitPct))[0];
+  const topLoser = sortedItems
+    .filter((item) => item.profitPct !== null)
+    .sort((a, b) => Number(a.profitPct) - Number(b.profitPct))[0];
+
+  const summaryLines = [
+    `  오늘 액션 ${actionable}건 · 눌림 대기 ${pullback}건 · 관망 ${wait}건`,
+  ];
+
+  if (overlappingThemes.length) {
+    summaryLines.push(`  주도 테마와 겹침: ${overlappingThemes.slice(0, 2).join(", ")}`);
+  }
+  if (topGainer && Number(topGainer.profitPct) >= 3) {
+    summaryLines.push(`  상대적 강세: ${topGainer.name} ${fmtPct(topGainer.profitPct)}`);
+  }
+  if (topLoser && Number(topLoser.profitPct) <= -3) {
+    summaryLines.push(`  손절 재점검: ${topLoser.name} ${fmtPct(topLoser.profitPct)}`);
+  }
+
+  const lines = sortedItems.slice(0, 5).map((item) => {
+    const changeStr = item.changeRate != null ? ` ${fmtChange(item.changeRate)}` : "";
+    const buyBase = item.buyPrice ? ` · 기준 ${fmtPct(item.profitPct)}` : "";
+    const todayAction =
+      item.plan.status === "buy-now"
+        ? `오늘 액션: ${item.plan.summary}`
+        : item.plan.status === "buy-on-pullback"
+          ? `오늘 액션: 20일선 부근 ${fmtInt(item.plan.entryLow)}~${fmtInt(item.plan.entryHigh)} 대기`
+          : `오늘 액션: ${item.plan.summary}`;
+
+    return [
+      `  ▸ <b>${item.name}</b> <code>${fmtInt(item.currentPrice)}원</code>${changeStr}${buyBase}`,
+      `     ${item.plan.statusLabel} · 손절 ${fmtInt(item.plan.stopPrice)} · 1차 ${fmtPct(item.plan.target1Pct * 100)}`,
+      `     ${todayAction}`,
+    ].join("\n");
+  });
+
+  return `${summaryLines.join("\n")}\n${lines.join("\n")}\n`;
 }
 
 // ===== 공통 헬퍼 =====
@@ -450,16 +630,3 @@ function fmtInt(v: number | null | undefined): string {
   return String(Math.round(Number(v)));
 }
 
-function getSectorEmoji(name: string): string {
-  if (name.includes("반도체")) return "💾";
-  if (name.includes("2차전지") || name.includes("배터리")) return "🔋";
-  if (name.includes("바이오") || name.includes("제약")) return "💊";
-  if (name.includes("자동차")) return "🚗";
-  if (name.includes("로봇") || name.includes("AI")) return "🤖";
-  if (name.includes("건설") || name.includes("인프라")) return "🏗️";
-  if (name.includes("금융") || name.includes("은행")) return "🏦";
-  if (name.includes("에너지") || name.includes("석유")) return "⛽";
-  if (name.includes("방산") || name.includes("우주")) return "🚀";
-  if (name.includes("엔터") || name.includes("미디어")) return "🎬";
-  return "📊";
-}

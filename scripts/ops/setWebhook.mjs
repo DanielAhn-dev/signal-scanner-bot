@@ -3,6 +3,7 @@ import "dotenv/config";
 const token = process.env.TELEGRAM_BOT_TOKEN || "";
 const secret = process.env.TELEGRAM_BOT_SECRET || "";
 const arg = process.argv[2];
+const baseUrl = (process.env.BASE_URL || "").replace(/\/+$/, "");
 
 if (!token) {
   console.error("TELEGRAM_BOT_TOKEN 누락");
@@ -60,12 +61,18 @@ async function main() {
     return;
   }
 
-  const webhookUrl = arg;
+  const webhookUrl = arg || (baseUrl ? `${baseUrl}/api/telegram` : "");
   if (!webhookUrl || !secret) {
     console.error("사용법:");
     console.error("  node setWebhook.mjs <WEBHOOK_URL>  -- 웹훅 설정");
     console.error("  node setWebhook.mjs commands        -- 메뉴 명령어 등록");
     console.error("  node setWebhook.mjs delete           -- 웹훅 삭제");
+    process.exit(1);
+  }
+
+  if (!/\/api\/telegram$/i.test(webhookUrl)) {
+    console.error("Telegram 웹훅은 /api/telegram 엔드포인트로만 설정해야 합니다.");
+    console.error(`입력값: ${webhookUrl}`);
     process.exit(1);
   }
 

@@ -2,11 +2,14 @@ import type { ChatContext } from "../router";
 import { createClient } from "@supabase/supabase-js";
 import { searchByNameOrCode } from "../../search/normalize";
 import { KO_MESSAGES } from "../messages/ko";
-import { fetchRealtimePrice } from "../../utils/fetchRealtimePrice";
-import { esc, fmtInt, LINE } from "../messages/format";
+import { esc, fmtInt, fmtPct, LINE } from "../messages/format";
 import { getUserInvestmentPrefs } from "../../services/userService";
 import { getFundamentalSnapshot } from "../../services/fundamentalService";
 import { actionButtons, ACTIONS } from "../messages/layout";
+import { getDailySeries } from "../../adapters";
+import { fetchAllMarketData } from "../../utils/fetchMarketData";
+import { calculateScore } from "../../score/engine";
+import { buildInvestmentPlan } from "../../lib/investPlan";
 
 // Supabase 클라이언트
 const supabase = createClient(
@@ -14,131 +17,12 @@ const supabase = createClient(
   process.env.SUPABASE_ANON_KEY!
 );
 
-// --- 매수 판독 로직 ---
-function evaluateBuyCondition(
-  stock: any,
-  currentPrice: number,
-  fundamentalQuality?: number
-): {
-  canBuy: boolean;
-  reasons: string[];
-} {
-  const reasons: string[] = [];
-
-  const sma20 = stock.sma20 || currentPrice;
-  const sma50 = stock.sma50 || 0;
-  const rsi = stock.rsi14 || 50;
-
-  const scoreData = Array.isArray(stock.scores)
-    ? stock.scores[0]
-    : stock.scores;
-  const momentum = scoreData?.momentum_score || 0;
-
-  // 20일선 이격도 계산
-  const dist20 = ((currentPrice - sma20) / sma20) * 100;
-
-  if (dist20 > 5) {
-    reasons.push(`20일선 +${dist20.toFixed(1)}% 이격 — 눌림 대기`);
-  }
-
-  if (rsi > 70) {
-    reasons.push(`RSI 과열권 (${rsi.toFixed(0)}) — 고점 위험`);
-  }
-
-  if (momentum < 40) {
-    reasons.push("상승 모멘텀 부족 (추세 미확인)");
-  }
-
-  if (stock.universe_level !== "core" && stock.universe_level !== "extended") {
-    reasons.push("소형주/변동성 주의 (비중 축소)");
-    if (momentum < 50) reasons.push("소형주는 강한 모멘텀 필수");
-  }
-
-  // 50일선 하회 시 추가 경고
-  if (sma50 > 0 && currentPrice < sma50 * 0.97) {
-    reasons.push("50일선 하회 — 추세 약화 주의");
-  }
-
-  if (fundamentalQuality !== undefined) {
-    if (fundamentalQuality < 40) {
-      reasons.push(`재무건강도 낮음 (${fundamentalQuality}점) — 보수적 접근`);
-    } else if (fundamentalQuality >= 70) {
-      reasons.push(`재무건강도 우수 (${fundamentalQuality}점) — 중장기 보유 적합`);
-    }
-  }
-
-  const canBuy =
-    reasons.length === 0 ||
-    (reasons.length === 1 &&
-      (reasons[0].includes("소형주") || reasons[0].includes("재무건강도 우수")));
-
-  return { canBuy, reasons };
-}
-
-// --- 이동평균 기반 진입가 계산 ---
-function calculateEntryPrice(
-  currentPrice: number,
-  sma20: number,
-  sma50: number
-): { entryPrice: number; comment: string } {
-  if (!sma20 || sma20 <= 0) {
-    return { entryPrice: currentPrice, comment: "현재가 기준" };
-  }
-
-  const dist20 = ((currentPrice - sma20) / sma20) * 100;
-
-  // 20일선 근접 (-3% ~ +3%) — 좋은 진입 지점
-  if (dist20 >= -3 && dist20 <= 3) {
-    return {
-      entryPrice: currentPrice,
-      comment: "20일선 근접 — 현재가 진입 가능",
-    };
-  }
-
-  // 20일선보다 5% 이상 위 — 너무 높음, 20일선 부근 대기
-  if (dist20 > 5) {
-    return {
-      entryPrice: Math.floor(sma20 * 1.01),
-      comment: "20일선 +1% 부근 눌림 대기",
-    };
-  }
-
-  // 20일선보다 3%~5% 위 — 분할 진입 가능
-  if (dist20 > 3) {
-    return {
-      entryPrice: Math.floor((currentPrice + sma20) / 2),
-      comment: "중간 가격대 분할 진입",
-    };
-  }
-
-  // 20일선 -3% 아래 — 50일선 지지 확인
-  if (sma50 > 0) {
-    const dist50 = ((currentPrice - sma50) / sma50) * 100;
-    if (dist50 >= -3 && dist50 <= 3) {
-      return {
-        entryPrice: currentPrice,
-        comment: "50일선 지지 확인 — 현재가 진입 가능",
-      };
-    }
-    if (dist50 > 0) {
-      return {
-        entryPrice: Math.floor(sma50 * 1.01),
-        comment: "50일선 +1% 부근 분할 매수",
-      };
-    }
-  }
-
-  return {
-    entryPrice: Math.floor(sma20 * 0.99),
-    comment: "20일선 하회 — 반등 확인 후 진입",
-  };
-}
-
 // --- 메시지 빌더 (HTML) ---
 function buildMessage(
-  stock: any,
+  stock: { name: string; code: string },
   currentPrice: number,
-  evaluation: { canBuy: boolean; reasons: string[] },
+  realtimeData: { change?: number; changeRate?: number } | null,
+  plan: ReturnType<typeof buildInvestmentPlan>,
   fundamental?: {
     qualityScore: number;
     per?: number;
@@ -148,82 +32,56 @@ function buildMessage(
     salesGrowthPct?: number;
     opIncomeGrowthPct?: number;
     netIncomeGrowthPct?: number;
+    commentary?: string;
   },
   investPrefs?: {
     capital: number;
     splitCount: number;
-    targetProfitPct: number;
   }
 ): string {
   const { name, code } = stock;
-  const { canBuy, reasons } = evaluation;
 
-  const sma20 = stock.sma20 || currentPrice;
-  const sma50 = stock.sma50 || 0;
-  const entry = calculateEntryPrice(currentPrice, sma20, sma50);
-  const stopPrice = Math.floor(entry.entryPrice * 0.93);
-
-  // 등락 표시
-  const changeStr = stock._realtimeChange !== undefined
-    ? `${stock._realtimeChange >= 0 ? "▲" : "▼"} ${Math.abs(stock._realtimeChangeRate ?? 0).toFixed(2)}%`
+  const changeStr = realtimeData?.changeRate !== undefined
+    ? `${(realtimeData.change ?? 0) >= 0 ? "▲" : "▼"} ${Math.abs(realtimeData.changeRate ?? 0).toFixed(2)}%`
     : "";
 
   const header = [
-    `<b>${esc(name)}</b>  <code>${code}</code>  매수 판독`,
+    `<b>${esc(name)}</b>  <code>${code}</code>`,
     `현재가  <code>${fmtInt(currentPrice)}원</code>  ${changeStr}`,
   ].join("\n");
 
-  let body = "";
-  if (canBuy) {
-    body = [
-      LINE,
-      `<b>▸ 진입 가능</b>`,
-      `  ${entry.comment}`,
-      ``,
-      `▸ 진입  <code>${fmtInt(entry.entryPrice)}원</code>`,
-      `▸ 손절  <code>${fmtInt(stopPrice)}원</code> (-7%)`,
-      `▸ 20MA  <code>${fmtInt(sma20)}원</code>`,
-      sma50 > 0 ? `▸ 50MA  <code>${fmtInt(sma50)}원</code>` : "",
-    ]
-      .filter(Boolean)
-      .join("\n");
-  } else {
-    body = [
-      LINE,
-      `<b>▸ 관망 권장</b>`,
-      ...reasons.map((r) => `  · ${r}`),
-      ``,
-      `▸ 20MA  <code>${fmtInt(sma20)}원</code>`,
-      sma50 > 0 ? `▸ 50MA  <code>${fmtInt(sma50)}원</code>` : "",
-      ``,
-      `<i>급등주는 보내주고, 다음 기회를 기다리세요.</i>`,
-    ]
-      .filter(Boolean)
-      .join("\n");
-  }
+  const body = [
+    LINE,
+    `<b>${plan.statusLabel}</b>`,
+    plan.summary,
+    ``,
+    `진입구간  <code>${fmtInt(plan.entryLow)}원</code> ~ <code>${fmtInt(plan.entryHigh)}원</code>`,
+    `손절기준  <code>${fmtInt(plan.stopPrice)}원</code> (${fmtPct(-plan.stopPct * 100)})`,
+    `목표구간  1차 <code>${fmtInt(plan.target1)}원</code> (${fmtPct(plan.target1Pct * 100)}) · 2차 <code>${fmtInt(plan.target2)}원</code> (${fmtPct(plan.target2Pct * 100)})`,
+    `보유시야  ${plan.holdDays[0]}~${plan.holdDays[1]}거래일 · 손익비 ${plan.riskReward}:1`,
+    ``,
+    `<b>판단 근거</b>`,
+    ...plan.rationale.map((line) => `· ${line}`),
+    ...(plan.warnings.length ? ["", `<b>주의</b>`, ...plan.warnings.map((line) => `· ${line}`)] : []),
+  ].join("\n");
 
   let planBlock = "";
   if (investPrefs && investPrefs.capital > 0 && investPrefs.splitCount > 0) {
     const capital = investPrefs.capital;
     const splitCount = investPrefs.splitCount;
     const perSplitAmount = Math.floor(capital / splitCount);
-    const targetProfitPct = investPrefs.targetProfitPct ?? 0;
-
-    // entry.entryPrice 기준으로 실제 매수 가능한 수량을 계산하여 예상 수익을 동적으로 계산
-    const entryPrice = entry.entryPrice > 0 ? entry.entryPrice : currentPrice;
-    const totalShares = entryPrice > 0 ? Math.floor(capital / entryPrice) : 0;
-    const expectedProfit = Math.floor(totalShares * entryPrice * (targetProfitPct / 100));
-    const expectedTotal = Math.floor(totalShares * entryPrice + expectedProfit);
+    const entryPrice = Math.max(1, Math.round((plan.entryLow + plan.entryHigh) / 2));
+    const totalShares = Math.floor(capital / entryPrice);
+    const perSplitShares = Math.max(1, Math.floor(totalShares / splitCount));
+    const expectedProfit = Math.floor(totalShares * entryPrice * plan.target1Pct);
 
     planBlock = [
       "",
       LINE,
-      "<b>▸ 내 투자금 기준 계획</b>",
+      "<b>내 투자금 기준</b>",
       `  투자금  <code>${fmtInt(capital)}원</code>`,
-      `  분할매수  <code>${splitCount}회</code> (회당 ${fmtInt(perSplitAmount)}원)`,
-      `  목표가정  +${targetProfitPct.toFixed(1)}%`,
-      `  예상수익  <code>${fmtInt(expectedProfit)}원</code>`,
-      `  목표도달시  <code>${fmtInt(expectedTotal)}원</code>`,
+      `  분할매수  <code>${splitCount}회</code> (회당 ${fmtInt(perSplitAmount)}원 / 약 ${perSplitShares}주)`,
+      `  1차목표 수익  <code>${fmtInt(expectedProfit)}원</code>`,
     ].join("\n");
   }
 
@@ -231,31 +89,15 @@ function buildMessage(
     ? [
         "",
         LINE,
-        "<b>▸ 재무 건강도</b>",
-        `  ${fundamental.qualityScore}점 (PER ${
+        "<b>재무 요약</b>",
+        `  ${fundamental.qualityScore}점 · PER ${
           fundamental.per !== undefined ? fundamental.per.toFixed(2) : "-"
         } · PBR ${
           fundamental.pbr !== undefined ? fundamental.pbr.toFixed(2) : "-"
         } · ROE ${
           fundamental.roe !== undefined ? `${fundamental.roe.toFixed(2)}%` : "-"
-        } · 부채 ${
-          fundamental.debtRatio !== undefined
-            ? `${fundamental.debtRatio.toFixed(2)}%`
-            : "-"
-        })`,
-        `  성장률  매출 ${
-          fundamental.salesGrowthPct !== undefined
-            ? `${fundamental.salesGrowthPct.toFixed(1)}%`
-            : "-"
-        } · 영업 ${
-          fundamental.opIncomeGrowthPct !== undefined
-            ? `${fundamental.opIncomeGrowthPct.toFixed(1)}%`
-            : "-"
-        } · 순익 ${
-          fundamental.netIncomeGrowthPct !== undefined
-            ? `${fundamental.netIncomeGrowthPct.toFixed(1)}%`
-            : "-"
         }`,
+        fundamental.commentary ? `  ${esc(fundamental.commentary)}` : "",
       ].join("\n")
     : "";
 
@@ -290,7 +132,7 @@ export async function handleBuyCommand(
       text: `${h.name} (${h.code})`,
       callback_data: `buy:${h.code}`,
     }));
-    const keyboard = actionButtons(btns, 1);
+    const keyboard = actionButtons(btns, 2);
     await tgSend("sendMessage", {
       chat_id: ctx.chatId,
       text: `'${esc(query)}' 검색 결과 ${hits.length}건 — 종목을 선택하세요`,
@@ -302,7 +144,6 @@ export async function handleBuyCommand(
 
   const { code, name } = hits[0];
 
-  // 2. Supabase 데이터 직접 조회 (지표 포함)
   const { data: stock, error } = await supabase
     .from("stocks")
     .select(
@@ -323,41 +164,54 @@ export async function handleBuyCommand(
     });
   }
 
-  // 3. 실시간 가격 조회
   const { fetchRealtimeStockData } = await import("../../utils/fetchRealtimePrice");
-  const realtimeData = await fetchRealtimeStockData(code);
+  const [realtimeData, series, marketData, fundamental, prefs] = await Promise.all([
+    fetchRealtimeStockData(code),
+    getDailySeries(code, 420).catch(() => []),
+    fetchAllMarketData().catch(() => null),
+    getFundamentalSnapshot(code).catch(() => null),
+    getUserInvestmentPrefs(ctx.from?.id ?? ctx.chatId),
+  ]);
 
-  // 실시간 가격이 있으면 그걸 쓰고, 없으면 DB의 close 사용
   const currentPrice = realtimeData?.price ?? stock.close;
-
-  // 실시간 변동 정보를 stock 객체에 첨부
-  const enrichedStock = {
-    ...stock,
-    _realtimeChange: realtimeData?.change,
-    _realtimeChangeRate: realtimeData?.changeRate,
-  };
-
-  // 4. 평가 및 메시지 전송 (실시간 가격 기준)
-  const fundamental = await getFundamentalSnapshot(code).catch(() => null);
-  const evaluation = evaluateBuyCondition(
-    enrichedStock,
+  const marketEnv = marketData
+    ? {
+        vix: marketData.vix?.price,
+        fearGreed: marketData.fearGreed?.score,
+        usdkrw: marketData.usdkrw?.price,
+      }
+    : undefined;
+  const scored = series && series.length >= 200 ? calculateScore(series, marketEnv) : null;
+  const rawMomentumScore = Array.isArray(stock.scores)
+    ? (stock.scores[0] as { momentum_score?: number } | undefined)?.momentum_score
+    : (stock.scores as { momentum_score?: number } | null | undefined)?.momentum_score;
+  const plan = buildInvestmentPlan({
     currentPrice,
-    fundamental?.qualityScore
-  );
-  const prefs = await getUserInvestmentPrefs(ctx.from?.id ?? ctx.chatId);
+    factors: scored?.factors ?? {
+      sma20: stock.sma20,
+      sma50: stock.sma50,
+      rsi14: stock.rsi14,
+      roc14: 0,
+      roc21: 0,
+      avwap_support: 50,
+    },
+    technicalScore: scored?.score ?? rawMomentumScore,
+    fundamental,
+    marketEnv,
+  });
 
   const capital = prefs.capital_krw ?? 0;
   const splitCount = prefs.split_count ?? 3;
-  const targetProfitPct = prefs.target_profit_pct ?? 8;
 
   const investPrefs = capital > 0 && splitCount > 0
-    ? { capital, splitCount, targetProfitPct }
+    ? { capital, splitCount }
     : undefined;
 
   const msg = buildMessage(
-    enrichedStock,
+    { name, code },
     currentPrice,
-    evaluation,
+    realtimeData,
+    plan,
     fundamental
       ? {
           qualityScore: fundamental.qualityScore,
@@ -368,6 +222,7 @@ export async function handleBuyCommand(
           salesGrowthPct: fundamental.salesGrowthPct,
           opIncomeGrowthPct: fundamental.opIncomeGrowthPct,
           netIncomeGrowthPct: fundamental.netIncomeGrowthPct,
+          commentary: fundamental.commentary,
         }
       : undefined,
     investPrefs

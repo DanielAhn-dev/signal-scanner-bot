@@ -1,6 +1,8 @@
 import type { ChatContext } from "../router";
 import { createClient } from "@supabase/supabase-js";
 import { fmtKRW } from "../../lib/normalize";
+import { pickSaferCandidates, type RiskProfile } from "../../lib/investableUniverse";
+import { getUserInvestmentPrefs } from "../../services/userService";
 import { esc, fmtInt } from "../messages/format";
 import { fetchRealtimePriceBatch } from "../../utils/fetchRealtimePrice";
 import { header, section, divider, buildMessage, actionButtons } from "../messages/layout";
@@ -17,6 +19,8 @@ export async function handleStocksCommand(
   ctx: ChatContext,
   tgSend: any
 ): Promise<void> {
+  const prefs = await getUserInvestmentPrefs(ctx.from?.id ?? ctx.chatId);
+  const riskProfile = (prefs.risk_profile ?? "safe") as RiskProfile;
   // 1. 섹터 ID 찾기 (sector_id는 "KRX:반도체" 형식)
   const { data: sectorRows } = await supabase
     .from("sectors")
@@ -40,23 +44,28 @@ export async function handleStocksCommand(
     .from("stocks")
     .select(
       `
-      code, name, close, market_cap, universe_level, sector_id,
+      code, name, close, market, liquidity, is_sector_leader, market_cap, universe_level, sector_id,
       scores ( value_score, momentum_score, total_score )
     `
     )
     .in("sector_id", sectorIds)
+    .in("market", ["KOSPI", "KOSDAQ"])
     .in("universe_level", ["core", "extended"])
     .order("market_cap", { ascending: false })
     .limit(10);
 
+  let fallbackStocks: any[] = [];
   if (error || !stocks || stocks.length === 0) {
     // sector_id 필터 실패 시 이름 포함 폴백
     const { data: fallback } = await supabase
       .from("stocks")
-      .select(`code, name, close, market_cap, universe_level, scores ( value_score, momentum_score, total_score )`)
+      .select(`code, name, close, market, liquidity, is_sector_leader, market_cap, universe_level, scores ( value_score, momentum_score, total_score )`)
+      .in("market", ["KOSPI", "KOSDAQ"])
       .in("universe_level", ["core", "extended"])
       .order("market_cap", { ascending: false })
       .limit(10);
+
+    fallbackStocks = fallback || [];
 
     if (!fallback || fallback.length === 0) {
       await tgSend("sendMessage", {
@@ -67,7 +76,21 @@ export async function handleStocksCommand(
     }
   }
 
-  const finalStocks = stocks && stocks.length > 0 ? stocks : [];
+  const sourceStocks = stocks && stocks.length > 0 ? stocks : fallbackStocks;
+
+  const finalStocks = pickSaferCandidates(
+    sourceStocks.map((s: any) => {
+      const scoreData = Array.isArray(s.scores) ? s.scores[0] : s.scores;
+      return {
+        ...s,
+        total_score: scoreData?.total_score,
+        momentum_score: scoreData?.momentum_score,
+        value_score: scoreData?.value_score,
+      };
+    }),
+    10,
+    riskProfile
+  );
 
   // 3. 실시간 가격 + daily_indicators 보강
   const topCodes = finalStocks.slice(0, 5).map((s: any) => s.code);

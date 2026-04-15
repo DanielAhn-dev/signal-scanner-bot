@@ -9,6 +9,7 @@ import { esc, fmtInt, fmtOne, fmtPct, LINE } from "../messages/format";
 import { fetchRealtimeStockData } from "../../utils/fetchRealtimePrice";
 import { fetchAllMarketData } from "../../utils/fetchMarketData";
 import { getFundamentalSnapshot } from "../../services/fundamentalService";
+import { buildInvestmentPlan } from "../../lib/investPlan";
 
 // --- 전략 코멘트 생성기 ---
 function makeStrategyComment(
@@ -59,44 +60,25 @@ function buildScoreMessage(
     salesGrowthPct?: number;
     opIncomeGrowthPct?: number;
     netIncomeGrowthPct?: number;
+    commentary?: string;
   }
 ): string {
   const f = scored.factors;
   const currentPrice = realtimePrice ?? last.close;
-  const entry = scored.entry?.buy ?? currentPrice;
-  const stop = scored.stops?.hard ?? 0;
-  const t1 = scored.targets?.t1 ?? 0;
-  const t2 = scored.targets?.t2 ?? 0;
-  const riskPct = stop && entry ? ((stop - entry) / entry) * 100 : 0;
+  const plan = buildInvestmentPlan({
+    currentPrice,
+    factors: f,
+    technicalScore: Number(scored.finalScore ?? scored.score),
+    fundamental,
+  });
 
   const finalScore = Number(scored.finalScore ?? scored.score);
   const signalTag =
     finalScore >= 70 ? "BUY" : finalScore >= 40 ? "HOLD" : "WAIT";
 
-  const trendDir = f.sma200_slope > 0 ? "우상향" : "우하향";
-  const avwapDir =
-    f.avwap_regime === "buyers" ? "매수우위" : "매도우위";
-
-  // 이평선 대비 이격도 표시
-  const dist20 = f.sma20 > 0 ? ((currentPrice - f.sma20) / f.sma20 * 100) : 0;
-  const dist50 = f.sma50 > 0 ? ((currentPrice - f.sma50) / f.sma50 * 100) : 0;
-
-  // 실시간 가격 vs DB 가격 비교  
   const priceLabel = realtimePrice
     ? `<b>실시간</b>  <code>${fmtInt(realtimePrice)}원</code>`
     : `${fmtInt(last.close)}원`;
-
-  // 이동평균 기반 진입 가이드
-  let entryGuide = "";
-  if (Math.abs(dist20) <= 3) {
-    entryGuide = "20일선 근접 — 현재가 진입 가능";
-  } else if (dist20 > 5) {
-    entryGuide = `20일선 +${dist20.toFixed(1)}% 이격 — 눌림 대기`;
-  } else if (dist20 < -3 && Math.abs(dist50) <= 3) {
-    entryGuide = "50일선 지지 확인 후 진입";
-  } else if (dist20 < -3) {
-    entryGuide = "이평선 하회 — 관망 권장";
-  }
 
   return [
     `<b>${esc(name)}</b>  <code>${code}</code>`,
@@ -109,18 +91,18 @@ function buildScoreMessage(
         )} 반영</i>`
       : "",
     ``,
-    `▸ 진입  <code>${fmtInt(entry)}원</code>  <i>${entryGuide}</i>`,
-    `▸ 손절  <code>${fmtInt(stop)}원</code> (${fmtPct(riskPct)})`,
-    `▸ 목표  1차 <code>${fmtInt(t1)}</code> / 2차 <code>${fmtInt(t2)}</code>`,
+    `<b>${plan.statusLabel}</b>`,
+    `${plan.summary}`,
+    `진입구간  <code>${fmtInt(plan.entryLow)}원</code> ~ <code>${fmtInt(plan.entryHigh)}원</code>`,
+    `손절기준  <code>${fmtInt(plan.stopPrice)}원</code> (${fmtPct(-plan.stopPct * 100)})`,
+    `목표구간  1차 <code>${fmtInt(plan.target1)}원</code> (${fmtPct(plan.target1Pct * 100)}) · 2차 <code>${fmtInt(plan.target2)}원</code> (${fmtPct(plan.target2Pct * 100)})`,
+    `보유시야  ${plan.holdDays[0]}~${plan.holdDays[1]}거래일 · 손익비 ${plan.riskReward}:1`,
     LINE,
-    `<b>지표</b>`,
-    `▸ 추세  200일선 ${trendDir}`,
-    `  MA 20/50/200: ${fmtInt(f.sma20)} / ${fmtInt(f.sma50)} / ${fmtInt(f.sma200)}`,
-    `  이격도  20MA ${dist20 >= 0 ? "+" : ""}${dist20.toFixed(1)}% · 50MA ${dist50 >= 0 ? "+" : ""}${dist50.toFixed(1)}%`,
-    `▸ RSI ${fmtOne(f.rsi14)}  ROC₁₄ ${fmtPct(f.roc14)}`,
-    `▸ AVWAP ${avwapDir} (지지 ${Number(f.avwap_support ?? 0).toFixed(2)}%)`,
+    `<b>핵심 근거</b>`,
+    ...plan.rationale.map((line) => `· ${line}`),
+    ...(plan.warnings.length ? ["", `<b>주의</b>`, ...plan.warnings.map((line) => `· ${line}`)] : []),
     fundamental
-      ? `▸ 재무  ${fundamental.qualityScore}점 (PER ${
+      ? `\n<b>재무 요약</b>\n${fundamental.qualityScore}점 · PER ${
           fundamental.per !== undefined ? fundamental.per.toFixed(2) : "-"
         } · PBR ${
           fundamental.pbr !== undefined ? fundamental.pbr.toFixed(2) : "-"
@@ -130,26 +112,9 @@ function buildScoreMessage(
           fundamental.debtRatio !== undefined
             ? `${fundamental.debtRatio.toFixed(2)}%`
             : "-"
-        })`
-      : "",
-    fundamental
-      ? `  성장  매출 ${
-          fundamental.salesGrowthPct !== undefined
-            ? `${fundamental.salesGrowthPct.toFixed(1)}%`
-            : "-"
-        } · 영업 ${
-          fundamental.opIncomeGrowthPct !== undefined
-            ? `${fundamental.opIncomeGrowthPct.toFixed(1)}%`
-            : "-"
-        } · 순익 ${
-          fundamental.netIncomeGrowthPct !== undefined
-            ? `${fundamental.netIncomeGrowthPct.toFixed(1)}%`
-            : "-"
         }`
       : "",
-    LINE,
-    `<b>전략</b>`,
-    makeStrategyComment(currentPrice, f),
+    fundamental?.commentary ? fundamental.commentary : "",
   ].join("\n");
 }
 
@@ -174,7 +139,7 @@ export async function handleScoreCommand(
       text: `${h.name} (${h.code})`,
       callback_data: `score:${h.code}`,
     }));
-    const keyboard = actionButtons(btns, 1);
+    const keyboard = actionButtons(btns, 2);
     await tgSend("sendMessage", {
       chat_id: ctx.chatId,
       text: `'${esc(input)}' 검색 결과 ${hits.length}건 — 종목을 선택하세요`,
@@ -241,6 +206,7 @@ export async function handleScoreCommand(
           salesGrowthPct: fundamental.salesGrowthPct,
           opIncomeGrowthPct: fundamental.opIncomeGrowthPct,
           netIncomeGrowthPct: fundamental.netIncomeGrowthPct,
+          commentary: fundamental.commentary,
         }
       : undefined
   );

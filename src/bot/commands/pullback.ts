@@ -5,6 +5,8 @@ import type { ChatContext } from "../router";
 import { createClient } from "@supabase/supabase-js";
 import { esc, gradeLabel } from "../messages/format";
 import { fetchRealtimePriceBatch } from "../../utils/fetchRealtimePrice";
+import { pickSaferCandidates, type RiskProfile } from "../../lib/investableUniverse";
+import { getUserInvestmentPrefs } from "../../services/userService";
 import { header, section, divider, buildMessage, actionButtons, ACTIONS } from "../messages/layout";
 
 const supabase = createClient(
@@ -20,6 +22,8 @@ export async function handlePullbackCommand(
   tgSend: any
 ): Promise<void> {
   try {
+    const prefs = await getUserInvestmentPrefs(ctx.from?.id ?? ctx.chatId);
+    const riskProfile = (prefs.risk_profile ?? "safe") as RiskProfile;
     await tgSend("sendMessage", {
       chat_id: ctx.chatId,
       text: "눌림목 매집 후보 분석 중...",
@@ -49,7 +53,7 @@ export async function handlePullbackCommand(
         code, entry_grade, entry_score,
         trend_grade, dist_grade, dist_pct, pivot_grade, vol_atr_grade,
         warn_grade, warn_score, ma21, ma50,
-        stock:stocks!inner ( name, close )
+        stock:stocks!inner ( name, close, market, liquidity, universe_level )
       `
       )
       .eq("trade_date", latestDate)
@@ -85,7 +89,17 @@ export async function handlePullbackCommand(
       return (b.entry_score ?? 0) - (a.entry_score ?? 0);
     });
 
-    const topCandidates = candidates.slice(0, 15);
+    const topCandidates = pickSaferCandidates(
+      candidates.map((item: any) => ({
+        ...item,
+        name: item.stock?.name,
+        market: item.stock?.market,
+        liquidity: item.stock?.liquidity,
+        universe_level: item.stock?.universe_level,
+      })),
+      12,
+      riskProfile
+    );
 
     // 실시간 가격 일괄 조회
     const codes = topCandidates.map((c: any) => c.code);
@@ -137,7 +151,7 @@ export async function handlePullbackCommand(
 
     const msg = buildMessage([
       header("눌림목 매집 후보", dateNote),
-      section("스캔 기준", ["전체 종목 스캔 · A/B 등급, 매도경고 제외"]),
+      section("스캔 기준", ["코스피 중심 · core/extended · A/B 등급 · 매도경고 제외"]),
       section("상위 후보", candidateLines),
       divider(),
       `전체 후보 ${candidates.length}개 중 상위 ${topCandidates.length}개`,

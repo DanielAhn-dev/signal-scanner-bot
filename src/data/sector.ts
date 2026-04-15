@@ -46,14 +46,23 @@ async function mapWithConcurrency<T, R>(
 export async function getLeadersForSectorById(
   sectorId: string,
   limit = 12
-): Promise<{ code: string; name: string }[]> {
-  // 반환 타입 변경
+): Promise<{
+  code: string;
+  name: string;
+  market?: string | null;
+  liquidity?: number | null;
+  universe_level?: string | null;
+  is_sector_leader?: boolean | null;
+}[]> {
   try {
     const { data, error } = await supabase
       .from("stocks")
-      .select("code, name, liquidity")
+      .select("code, name, market, liquidity, universe_level, is_sector_leader")
       .eq("sector_id", sectorId)
       .eq("is_active", true)
+      .in("market", ["KOSPI", "KOSDAQ"])
+      .in("universe_level", ["core", "extended"])
+      .order("is_sector_leader", { ascending: false })
       .order("liquidity", { ascending: false, nullsFirst: false }) // nullsLast
       .limit(limit);
 
@@ -61,7 +70,7 @@ export async function getLeadersForSectorById(
       console.error("getLeadersForSectorById error:", error);
       return [];
     }
-    return data || []; // { code, name } 객체 배열을 그대로 반환
+    return data || [];
   } catch (e) {
     console.error("getLeadersForSectorById exception:", e);
     return [];
@@ -71,7 +80,14 @@ export async function getLeadersForSectorById(
 export async function getLeadersForSector(
   sector: string,
   limit = 12
-): Promise<{ code: string; name: string }[]> {
+): Promise<{
+  code: string;
+  name: string;
+  market?: string | null;
+  liquidity?: number | null;
+  universe_level?: string | null;
+  is_sector_leader?: boolean | null;
+}[]> {
   try {
     const { data: sectorRow, error: sectorError } = await supabase
       .from("sectors")

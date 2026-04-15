@@ -154,3 +154,4 @@ vite.config.ts.timestamp-*
 
 .venv
 scripts/fundamental_results.json
+.env*.local

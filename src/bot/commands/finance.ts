@@ -75,7 +75,7 @@ export async function handleFinanceCommand(
       chat_id: ctx.chatId,
       text: `'${esc(query)}' 검색 결과 ${hits.length}건 — 종목을 선택하세요`,
       parse_mode: "HTML",
-      reply_markup: actionButtons(btns, 1),
+      reply_markup: actionButtons(btns, 2),
     });
   }
 
