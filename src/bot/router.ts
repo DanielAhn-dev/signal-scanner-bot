@@ -10,6 +10,7 @@ import { handleMarketCommand } from "./commands/market";
 import { handleFinanceCommand } from "./commands/finance";
 import { handleNewsCommand } from "./commands/news";
 import { handleScanCommand } from "./commands/scan";
+import { handleStocksCommand } from "./commands/stocks";
 import { handleFlowCommand } from "./commands/flow";
 import { handleNextSectorCommand } from "./commands/sector";
 import { handleCapitalCommand } from "./commands/capital";
@@ -30,6 +31,11 @@ import {
 } from "./commands/watchlist";
 import { handleProfileCommand } from "./commands/profile";
 import { handleRankingCommand } from "./commands/ranking";
+import {
+  handleFollowCommand,
+  handleUnfollowCommand,
+  handleFeedCommand,
+} from "./commands/follow";
 import { getUserInvestmentPrefs } from "../services/userService";
 import { actionButtons } from "./messages/layout";
 
@@ -42,16 +48,17 @@ import { actionButtons } from "./messages/layout";
 // 텍스트 명령 패턴 (한글/영문 모두 지원)
 const CMD = {
   START:       /^\/(start|시작|메뉴)$/i,
-  HELP:        /^\/help$/i,
+  HELP:        /^\/(help|도움말)$/i,
   BRIEF:       /^\/(brief|morning|브리핑|장전)$/i,
   REPORT:      /^\/(report|리포트)$/i,
   SCORE:       /^\/(score|점수)\s+(.+)$/i,
   BUY:         /^\/(buy|매수)\s+(.+)$/i,
-  SECTOR:      /^\/(sector|업종|테마)$/i,
+  SECTOR:      /^\/(sector|섹터|업종|테마)$/i,
+  STOCKS:      /^\/(stocks|종목)\s+(.+)$/i,
   PULLBACK:    /^\/(pullback|눌림목)$/i,
   ECONOMY:     /^\/(economy|경제)$/i,
   MARKET:      /^\/(market|시장)$/i,
-  ONBOARDING:  /^\/(onboarding|시작하기|가이드)$/i,
+  ONBOARDING:  /^\/(onboarding|온보딩|시작하기|가이드)$/i,
   SCAN:        /^\/(scan|스캔)(?:\s+(.+))?$/i,
   NEWS:        /^\/(news|뉴스)(?:\s+(.+))?$/i,
   FLOW:        /^\/(flow|수급)(?:\s+(.+))?$/i,
@@ -68,6 +75,7 @@ const CMD = {
   RANKING:     /^\/(ranking|랭킹|순위)$/i,
   PROFILE:     /^\/(profile|프로필|내정보)$/i,
   FOLLOW:      /^\/(follow|팔로우)(?:\s+(.+))?$/i,
+  UNFOLLOW:    /^\/(unfollow|언팔로우)(?:\s+(.+))?$/i,
   FEED:        /^\/(feed|피드)$/i,
   NEXTSECTOR:  /^\/(nextsector|다음섹터|수급섹터)$/i,
   KOSPI:       /^\/(kospi|코스피)$/i,
@@ -175,7 +183,7 @@ export async function routeMessage(
     return;
   }
 
-  // /help
+  // /help | /도움말
   if (CMD.HELP.test(t)) {
     await tgSend("sendMessage", {
       chat_id: ctx.chatId,
@@ -253,6 +261,20 @@ export async function routeMessage(
   const mb = t.match(CMD.BUY);
   if (mb) {
     await handleBuyCommand(mb[2], ctx, tgSend);
+    return;
+  }
+
+  // /stocks [섹터명] — 섹터별 대표 종목
+  const mstocks = t.match(CMD.STOCKS);
+  if (mstocks) {
+    try {
+      await handleStocksCommand(mstocks[2], ctx, tgSend);
+    } catch (e) {
+      await tgSend("sendMessage", {
+        chat_id: ctx.chatId,
+        text: SEND_ERR("종목"),
+      });
+    }
     return;
   }
 
@@ -364,14 +386,22 @@ export async function routeMessage(
   }
 
   // /follow — 트레이더 팔로우
-  if (CMD.FOLLOW.test(t)) {
-    await tgSend("sendMessage", { chat_id: ctx.chatId, text: "🔧 /follow 팔로우 기능은 현재 준비 중입니다." });
+  const mfollow = t.match(CMD.FOLLOW);
+  if (mfollow) {
+    await handleFollowCommand(mfollow[2] ?? "", ctx, tgSend);
+    return;
+  }
+
+  // /unfollow — 트레이더 언팔로우
+  const munfollow = t.match(CMD.UNFOLLOW);
+  if (munfollow) {
+    await handleUnfollowCommand(munfollow[2] ?? "", ctx, tgSend);
     return;
   }
 
   // /feed — 팔로잉 피드
   if (CMD.FEED.test(t)) {
-    await tgSend("sendMessage", { chat_id: ctx.chatId, text: "🔧 /feed 팔로잉 피드 기능은 현재 준비 중입니다." });
+    await handleFeedCommand(ctx, tgSend);
     return;
   }
 
