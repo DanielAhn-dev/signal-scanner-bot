@@ -9,6 +9,8 @@ import { handleEconomyCommand } from "./commands/economy";
 import { handleMarketCommand } from "./commands/market";
 import { handleFinanceCommand } from "./commands/finance";
 import { handleNewsCommand } from "./commands/news";
+import { handleScanCommand } from "./commands/scan";
+import { handleFlowCommand } from "./commands/flow";
 import { handleNextSectorCommand } from "./commands/sector";
 import { handleCapitalCommand } from "./commands/capital";
 import {
@@ -21,6 +23,7 @@ import {
   handleWatchlistAdd,
   handleWatchlistRemove,
   handleWatchlistEdit,
+  handleWatchlistHistoryCommand,
 } from "./commands/watchlist";
 import { handleProfileCommand } from "./commands/profile";
 import { handleRankingCommand } from "./commands/ranking";
@@ -53,6 +56,7 @@ const CMD = {
   WATCHADD:    /^\/(watchadd|관심추가)(?:\s+(.+))?$/i,
   WATCHREMOVE: /^\/(watchremove|관심삭제)(?:\s+(.+))?$/i,
   WATCHEDIT:   /^\/(watchedit|관심수정)(?:\s+(.+))?$/i,
+  RECORD:      /^\/(record|기록)$/i,
   ALERT:       /^\/(alert|이상징후|알림)$/i,
   WATCHLIST:   /^\/(watchlist|관심종목|관심)$/i,
   RANKING:     /^\/(ranking|랭킹|순위)$/i,
@@ -234,7 +238,8 @@ export async function routeMessage(
 
   // /scan — 눌림목 스캐너
   if (CMD.SCAN.test(t)) {
-    await tgSend("sendMessage", { chat_id: ctx.chatId, text: "🔧 /scan 눌림목 스캐너 기능은 현재 준비 중입니다." });
+    const mscan = t.match(CMD.SCAN);
+    await handleScanCommand(mscan?.[2] ?? "", ctx, tgSend);
     return;
   }
 
@@ -247,7 +252,8 @@ export async function routeMessage(
 
   // /flow — 외국인·기관 수급
   if (CMD.FLOW.test(t)) {
-    await tgSend("sendMessage", { chat_id: ctx.chatId, text: "🔧 /flow 수급 분석 기능은 현재 준비 중입니다." });
+    const mflow = t.match(CMD.FLOW);
+    await handleFlowCommand(mflow?.[2] ?? "", ctx, tgSend);
     return;
   }
 
@@ -280,6 +286,11 @@ export async function routeMessage(
   const mwe = t.match(CMD.WATCHEDIT);
   if (mwe) {
     await handleWatchlistEdit(mwe[2] ?? "", ctx, tgSend);
+    return;
+  }
+
+  if (CMD.RECORD.test(t)) {
+    await handleWatchlistHistoryCommand(ctx, tgSend);
     return;
   }
 
