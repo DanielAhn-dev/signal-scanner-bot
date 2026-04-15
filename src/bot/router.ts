@@ -12,6 +12,11 @@ import { handleNewsCommand } from "./commands/news";
 import { handleNextSectorCommand } from "./commands/sector";
 import { handleCapitalCommand } from "./commands/capital";
 import {
+  handleKospiCommand,
+  handleKosdaqCommand,
+  handleEtfCommand,
+} from "./commands/marketPicks";
+import {
   handleWatchlistCommand,
   handleWatchlistAdd,
   handleWatchlistRemove,
@@ -55,6 +60,9 @@ const CMD = {
   FOLLOW:      /^\/(follow|팔로우)(?:\s+(.+))?$/i,
   FEED:        /^\/(feed|피드)$/i,
   NEXTSECTOR:  /^\/(nextsector|다음섹터|수급섹터)$/i,
+  KOSPI:       /^\/(kospi|코스피)$/i,
+  KOSDAQ:      /^\/(kosdaq|코스닥)$/i,
+  ETF:         /^\/(etf)$/i,
 };
 
 const SEND_ERR = (cmd: string) =>
@@ -314,6 +322,45 @@ export async function routeMessage(
   // /nextsector — 수급 유입 섹터
   if (CMD.NEXTSECTOR.test(t)) {
     await handleNextSectorCommand(ctx, tgSend);
+    return;
+  }
+
+  // /kospi — 코스피 보수형 추천
+  if (CMD.KOSPI.test(t)) {
+    try {
+      await handleKospiCommand(ctx, tgSend);
+    } catch (e) {
+      await tgSend("sendMessage", {
+        chat_id: ctx.chatId,
+        text: SEND_ERR("코스피"),
+      });
+    }
+    return;
+  }
+
+  // /kosdaq — 코스닥 보수형 추천
+  if (CMD.KOSDAQ.test(t)) {
+    try {
+      await handleKosdaqCommand(ctx, tgSend);
+    } catch (e) {
+      await tgSend("sendMessage", {
+        chat_id: ctx.chatId,
+        text: SEND_ERR("코스닥"),
+      });
+    }
+    return;
+  }
+
+  // /etf — ETF 보수형 추천
+  if (CMD.ETF.test(t)) {
+    try {
+      await handleEtfCommand(ctx, tgSend);
+    } catch (e) {
+      await tgSend("sendMessage", {
+        chat_id: ctx.chatId,
+        text: SEND_ERR("ETF"),
+      });
+    }
     return;
   }
 
