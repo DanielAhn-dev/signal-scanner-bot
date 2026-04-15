@@ -441,12 +441,17 @@ export async function handleWatchlistRemove(
   ctx: ChatContext,
   tgSend: any
 ): Promise<void> {
-  const query = (input || "").trim();
+  const raw = (input || "").trim();
+  const tokens = raw.split(/\s+/).filter(Boolean);
+  const maybeQty = tokens.length >= 2 ? Number(tokens[tokens.length - 1].replace(/,/g, "")) : NaN;
+  const hasQtyArg = Number.isFinite(maybeQty) && maybeQty > 0;
+  const sellQtyRequested = hasQtyArg ? Math.floor(maybeQty) : null;
+  const query = hasQtyArg ? tokens.slice(0, -1).join(" ") : raw;
 
   if (!query) {
     return tgSend("sendMessage", {
       chat_id: ctx.chatId,
-      text: "사용법: /관심삭제 종목명 또는 코드\n예) /관심삭제 삼성전자",
+      text: "사용법: /관심삭제 종목명 [수량]\n예) /관심삭제 삼성전자 3",
     });
   }
 
@@ -478,21 +483,61 @@ export async function handleWatchlistRemove(
   const buyPrice = Number((row as any)?.buy_price ?? 0);
   const invested = toPositiveNumber((row as any)?.invested_amount) ?? (qty > 0 && buyPrice > 0 ? qty * buyPrice : 0);
 
-  const { error, count } = await supabase
-    .from("watchlist")
-    .delete({ count: "exact" })
-    .eq("chat_id", ctx.chatId)
-    .eq("code", code);
-
-  if (error) {
-    console.error("watchlist delete error:", error);
+  if (sellQtyRequested !== null && qty > 0 && sellQtyRequested > qty) {
     return tgSend("sendMessage", {
       chat_id: ctx.chatId,
-      text: "관심종목 삭제 중 오류가 발생했습니다.",
+      text: `${esc(name)} (${code}) 보유수량은 ${qty}주입니다.\n/관심삭제 ${name} ${qty} 처럼 입력해주세요.`,
+      parse_mode: "HTML",
     });
   }
 
-  if (!count) {
+  const sellQty = qty > 0 ? (sellQtyRequested ?? qty) : 0;
+
+  if (qty > 0 && sellQty <= 0) {
+    return tgSend("sendMessage", {
+      chat_id: ctx.chatId,
+      text: "매도 수량은 1주 이상이어야 합니다.",
+    });
+  }
+
+  const isFullExit = qty <= 0 || sellQty >= qty;
+  let dbError: any = null;
+  let affectedCount = 0;
+
+  if (qty > 0 && !isFullExit) {
+    const remainQty = qty - sellQty;
+    const avgCost = invested > 0 && qty > 0 ? invested / qty : buyPrice;
+    const remainInvested = Math.max(0, Math.round(remainQty * avgCost));
+    const { error: updateError, count: updateCount } = await supabase
+      .from("watchlist")
+      .update({
+        quantity: remainQty,
+        invested_amount: remainInvested,
+        status: "holding",
+      }, { count: "exact" })
+      .eq("chat_id", ctx.chatId)
+      .eq("code", code);
+    dbError = updateError;
+    affectedCount = updateCount ?? 0;
+  } else {
+    const { error: deleteError, count: deleteCount } = await supabase
+      .from("watchlist")
+      .delete({ count: "exact" })
+      .eq("chat_id", ctx.chatId)
+      .eq("code", code);
+    dbError = deleteError;
+    affectedCount = deleteCount ?? 0;
+  }
+
+  if (dbError) {
+    console.error("watchlist sell/delete error:", dbError);
+    return tgSend("sendMessage", {
+      chat_id: ctx.chatId,
+      text: "관심종목 정리 중 오류가 발생했습니다.",
+    });
+  }
+
+  if (!affectedCount) {
     return tgSend("sendMessage", {
       chat_id: ctx.chatId,
       text: `${esc(name)} (${code})은 관심종목에 없습니다.`,
@@ -500,18 +545,20 @@ export async function handleWatchlistRemove(
     });
   }
 
-  if (qty > 0 && invested > 0) {
+  if (qty > 0 && invested > 0 && sellQty > 0) {
     const rt = await fetchRealtimePrice(code);
     const fallbackClose = Number(((row as any)?.stock as any)?.close ?? 0);
     const exitPrice = toPositiveNumber(rt) ?? toPositiveNumber(fallbackClose) ?? buyPrice;
 
     const feeRate = toPositiveNumber(prefs.virtual_fee_rate) ?? DEFAULT_FEE_RATE;
     const taxRate = toPositiveNumber(prefs.virtual_tax_rate) ?? DEFAULT_TAX_RATE;
-    const gross = qty * exitPrice;
+    const gross = sellQty * exitPrice;
     const feeAmount = Math.round(gross * feeRate);
     const taxAmount = Math.round(gross * taxRate);
     const net = Math.max(0, gross - feeAmount - taxAmount);
-    const pnl = net - invested;
+    const avgCost = invested > 0 && qty > 0 ? invested / qty : buyPrice;
+    const soldCost = Math.round(avgCost * sellQty);
+    const pnl = net - soldCost;
 
     const baseCash = toPositiveNumber(prefs.virtual_cash) ?? (toPositiveNumber(prefs.virtual_seed_capital) ?? toPositiveNumber(prefs.capital_krw) ?? 0);
     const baseRealized = Number(prefs.virtual_realized_pnl ?? 0);
@@ -536,13 +583,22 @@ export async function handleWatchlistRemove(
       code,
       side: "SELL",
       price: exitPrice,
-      quantity: qty,
+      quantity: sellQty,
       grossAmount: gross,
       netAmount: net,
       feeAmount,
       taxAmount,
       pnlAmount: pnl,
-      memo: "watchlist-remove",
+      memo: isFullExit ? "watchlist-full-exit" : "watchlist-partial-exit",
+    });
+
+    const remainQtyNote = qty - sellQty;
+    return tgSend("sendMessage", {
+      chat_id: ctx.chatId,
+      text: isFullExit
+        ? `${esc(name)} (${code}) ${sellQty}주 매도 후 관심종목에서 제거되었습니다.\n정산금 ${fmtInt(net)}원 · 실현손익 ${pnl >= 0 ? "+" : ""}${fmtInt(pnl)}원\n/기록 으로 가상 거래 내역 확인`
+        : `${esc(name)} (${code}) ${sellQty}주 부분매도 완료 (잔여 ${remainQtyNote}주)\n정산금 ${fmtInt(net)}원 · 실현손익 ${pnl >= 0 ? "+" : ""}${fmtInt(pnl)}원\n/관심 으로 잔여 포지션 확인`,
+      parse_mode: "HTML",
     });
   }
 
@@ -715,15 +771,30 @@ export async function handleWatchlistQuickAdd(
 
 // ─── /기록 (가상 매매 내역) ───────────────
 export async function handleWatchlistHistoryCommand(
+  input: string,
   ctx: ChatContext,
   tgSend: any
 ): Promise<void> {
-  const { data: rows, error } = await supabaseRead
+  const raw = (input || "").trim();
+  const parsedDays = Number(raw);
+  const days = Number.isFinite(parsedDays) && parsedDays > 0 ? Math.floor(parsedDays) : null;
+  const maxDays = days ? Math.min(days, 365) : null;
+  const sinceIso = maxDays
+    ? new Date(Date.now() - maxDays * 24 * 60 * 60 * 1000).toISOString()
+    : null;
+
+  let query = supabaseRead
     .from("virtual_trades")
     .select("code, side, price, quantity, gross_amount, net_amount, fee_amount, tax_amount, pnl_amount, traded_at")
     .eq("chat_id", ctx.chatId)
     .order("traded_at", { ascending: false })
-    .limit(20);
+    .limit(30);
+
+  if (sinceIso) {
+    query = query.gte("traded_at", sinceIso);
+  }
+
+  const { data: rows, error } = await query;
 
   if (error) {
     console.error("virtual_trades query error:", error);
@@ -745,7 +816,7 @@ export async function handleWatchlistHistoryCommand(
         "<b>가상 매매 기록</b>",
         LINE,
         "아직 기록이 없습니다.",
-        "/관심추가 로 가상 매수를 시작해보세요.",
+        maxDays ? `최근 ${maxDays}일 내 기록이 없습니다.` : "/관심추가 로 가상 매수를 시작해보세요.",
       ].join("\n"),
       parse_mode: "HTML",
     });
@@ -779,6 +850,8 @@ export async function handleWatchlistHistoryCommand(
   const msg = [
     "<b>가상 매매 기록</b>",
     LINE,
+    maxDays ? `조회 기간 최근 ${maxDays}일` : "조회 기간 전체",
+    "",
     ...lines,
     "",
     LINE,

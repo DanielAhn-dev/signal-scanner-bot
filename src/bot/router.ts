@@ -56,7 +56,7 @@ const CMD = {
   WATCHADD:    /^\/(watchadd|관심추가)(?:\s+(.+))?$/i,
   WATCHREMOVE: /^\/(watchremove|관심삭제)(?:\s+(.+))?$/i,
   WATCHEDIT:   /^\/(watchedit|관심수정)(?:\s+(.+))?$/i,
-  RECORD:      /^\/(record|기록)$/i,
+  RECORD:      /^\/(record|기록)(?:\s+(.+))?$/i,
   ALERT:       /^\/(alert|이상징후|알림)$/i,
   WATCHLIST:   /^\/(watchlist|관심종목|관심)$/i,
   RANKING:     /^\/(ranking|랭킹|순위)$/i,
@@ -303,8 +303,9 @@ export async function routeMessage(
     return;
   }
 
-  if (CMD.RECORD.test(t)) {
-    await handleWatchlistHistoryCommand(ctx, tgSend);
+  const mrecord = t.match(CMD.RECORD);
+  if (mrecord) {
+    await handleWatchlistHistoryCommand(mrecord[2] ?? "", ctx, tgSend);
     return;
   }
 
