@@ -32,6 +32,13 @@ const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || "";
 // ---- Telegram 호출 유틸 ----
 
 type TGApiResponse = { ok?: boolean; result?: any; description?: string };
+type TGRequest = {
+  method: string;
+  signal: AbortSignal;
+  headers?: Record<string, string>;
+  body?: string | FormData;
+};
+type TGFetchResponse = { json(): Promise<TGApiResponse> };
 
 async function tgFetch(method: string, body: any): Promise<TGApiResponse> {
   if (!TELEGRAM_BOT_TOKEN) {
@@ -43,7 +50,7 @@ async function tgFetch(method: string, body: any): Promise<TGApiResponse> {
 
   try {
     const isMultipart = typeof FormData !== "undefined" && body instanceof FormData;
-    const req: RequestInit = {
+    const req: TGRequest = {
       method: "POST",
       signal: controller.signal,
     };
@@ -55,11 +62,11 @@ async function tgFetch(method: string, body: any): Promise<TGApiResponse> {
       req.body = JSON.stringify(body);
     }
 
-    const res = await fetch(
+    const res = (await fetch(
       `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/${method}`,
-      req
-    );
-    return (await res.json()) as TGApiResponse;
+      req as RequestInit
+    )) as TGFetchResponse;
+    return await res.json();
   } catch (e) {
     return { ok: false, description: String(e) };
   } finally {
