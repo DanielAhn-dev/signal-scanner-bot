@@ -9,6 +9,32 @@ import { pickSaferCandidates, type RiskProfile } from "../../lib/investableUnive
 import { getUserInvestmentPrefs } from "../../services/userService";
 import { header, section, divider, buildMessage, actionButtons, ACTIONS } from "../messages/layout";
 
+type PullbackStock = {
+  name?: string | null;
+  close?: number | null;
+  market?: string | null;
+  liquidity?: number | null;
+  universe_level?: string | null;
+};
+
+type PullbackSignalRow = {
+  code: string;
+  entry_grade?: "A" | "B" | "C" | null;
+  entry_score?: number | null;
+  trend_grade?: string | null;
+  dist_grade?: string | null;
+  dist_pct?: number | null;
+  pivot_grade?: string | null;
+  vol_atr_grade?: string | null;
+  warn_grade?: "SAFE" | "WATCH" | "WARN" | "SELL" | null;
+  warn_score?: number | null;
+  stock?: PullbackStock | null;
+  name?: string | null;
+  market?: string | null;
+  liquidity?: number | null;
+  universe_level?: string | null;
+};
+
 const supabase = createClient(
   process.env.SUPABASE_URL!,
   process.env.SUPABASE_ANON_KEY!
@@ -81,7 +107,17 @@ export async function handlePullbackCommand(
     }
 
     // A등급 우선 + 경고점수 낮은 순으로 정렬 후 상위 노출
-    candidates.sort((a: any, b: any) => {
+    const normalizedCandidates: PullbackSignalRow[] = (candidates || []).map(
+      (item: any) => ({
+        ...item,
+        name: item.stock?.name,
+        market: item.stock?.market,
+        liquidity: item.stock?.liquidity,
+        universe_level: item.stock?.universe_level,
+      })
+    );
+
+    normalizedCandidates.sort((a, b) => {
       if (a.entry_grade !== b.entry_grade)
         return a.entry_grade === "A" ? -1 : 1;
       if ((a.warn_score ?? 0) !== (b.warn_score ?? 0))
@@ -89,20 +125,16 @@ export async function handlePullbackCommand(
       return (b.entry_score ?? 0) - (a.entry_score ?? 0);
     });
 
-    const topCandidates = pickSaferCandidates(
-      candidates.map((item: any) => ({
-        ...item,
-        name: item.stock?.name,
-        market: item.stock?.market,
-        liquidity: item.stock?.liquidity,
-        universe_level: item.stock?.universe_level,
-      })),
+    const topCandidates = pickSaferCandidates<PullbackSignalRow>(
+      normalizedCandidates,
       12,
       riskProfile
     );
 
     // 실시간 가격 일괄 조회
-    const codes = topCandidates.map((c: any) => c.code);
+    const codes = topCandidates
+      .map((c) => c.code)
+      .filter((code): code is string => Boolean(code));
     const realtimeMap = await fetchRealtimePriceBatch(codes);
 
     // 경고 라벨
@@ -124,18 +156,18 @@ export async function handlePullbackCommand(
     const candidateLines: string[] = [];
 
     for (const s of topCandidates) {
-      const stock = s.stock as any;
-      const gl = gradeLabel[s.entry_grade] ?? "";
-      const wl = warnLabel[s.warn_grade] ?? "";
+      const stock = s.stock;
+      const gl = s.entry_grade ? (gradeLabel[s.entry_grade] ?? "") : "";
+      const wl = s.warn_grade ? (warnLabel[s.warn_grade] ?? "") : "";
 
-      const rt = realtimeMap[s.code];
-      const price = rt?.price ?? (stock.close ? Number(stock.close) : 0);
+      const rt = s.code ? realtimeMap[s.code] : undefined;
+      const price = rt?.price ?? (stock?.close ? Number(stock.close) : 0);
       const close = price ? price.toLocaleString() : "-";
       const changeStr = rt
         ? ` ${rt.change >= 0 ? "▲" : "▼"}${Math.abs(rt.changeRate).toFixed(1)}%`
         : "";
 
-      let line = `${gl} <b>${esc(stock.name)}</b> (${s.code})  <code>${close}원</code>${changeStr}\n`;
+      let line = `${gl} <b>${esc(stock?.name || "이름없음")}</b> (${s.code})  <code>${close}원</code>${changeStr}\n`;
       line += `진입 ${s.entry_grade}(${s.entry_score}/4) · 경고 ${wl}(${s.warn_score}/6)`;
 
       // 세부 등급

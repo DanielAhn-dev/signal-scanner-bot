@@ -13,7 +13,8 @@
     "gen:sectors": "tsx scripts/generateSectorsJson.ts",
     "set:commands": "tsx scripts/ops/set_commands.ts",
     "setWebhook": "node scripts/ops/setWebhook.mjs https://signal-scanner-bot.vercel.app/api/telegram",
-    "backtest:market-picks": "tsx scripts/backtest_market_picks.ts"
+    "backtest:market-picks": "tsx scripts/backtest_market_picks.ts",
+    "prepare": "husky"
   },
   "dependencies": {
     "@pdf-lib/fontkit": "^1.1.1",
@@ -30,6 +31,7 @@
     "@types/node": "^20.10.0",
     "@types/xlsx": "^0.0.35",
     "@vercel/node": "^5.7.7",
+    "husky": "^9.1.7",
     "tsx": "^4.20.6",
     "typescript": "^5.3.3",
     "vercel": "^51.2.1"
