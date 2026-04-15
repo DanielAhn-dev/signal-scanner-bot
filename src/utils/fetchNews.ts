@@ -13,6 +13,12 @@ export interface NewsItem {
 const UA =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36";
 
+type FetchLikeResponse = {
+  ok: boolean;
+  json(): Promise<unknown>;
+  text(): Promise<string>;
+};
+
 /** 개별 종목 뉴스 — 네이버 모바일 주식 API */
 export async function fetchStockNews(
   code: string,
@@ -20,9 +26,11 @@ export async function fetchStockNews(
 ): Promise<NewsItem[]> {
   try {
     const url = `https://m.stock.naver.com/api/news/stock/${code}?pageSize=${limit}`;
-    const res = await fetch(url, { headers: { "User-Agent": UA } });
+    const res = (await fetch(url, {
+      headers: { "User-Agent": UA },
+    })) as FetchLikeResponse;
     if (!res.ok) return [];
-    const data: any = await res.json();
+    const data = await res.json();
     if (!Array.isArray(data)) return [];
 
     const items: NewsItem[] = [];
@@ -56,7 +64,9 @@ export async function fetchStockNews(
 export async function fetchMarketNews(limit = 7): Promise<NewsItem[]> {
   try {
     const url = "https://finance.naver.com/news/mainnews.naver";
-    const res = await fetch(url, { headers: { "User-Agent": UA } });
+    const res = (await fetch(url, {
+      headers: { "User-Agent": UA },
+    })) as FetchLikeResponse;
     if (!res.ok) return [];
     const html = await res.text();
     const $ = cheerio.load(html);

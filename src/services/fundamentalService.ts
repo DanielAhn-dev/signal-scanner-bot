@@ -4,6 +4,10 @@ import { fetchRealtimeStockData } from "../utils/fetchRealtimePrice";
 const UA =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36";
 
+type FetchLikeResponse = {
+  text(): Promise<string>;
+};
+
 export type FundamentalSnapshot = {
   per?: number;
   pbr?: number;
@@ -153,9 +157,10 @@ export function evaluateFundamentalQuality(input: {
 async function fetchNaverFinanceRows(code: string): Promise<Record<string, string[]>> {
   try {
     const url = `https://finance.naver.com/item/main.naver?code=${code}`;
-    const html = await fetch(url, { headers: { "User-Agent": UA } }).then((r) =>
-      r.text()
-    );
+    const res = (await fetch(url, {
+      headers: { "User-Agent": UA },
+    })) as FetchLikeResponse;
+    const html = await res.text();
 
     const $ = cheerio.load(html);
     const rows = new Map<string, string[]>();

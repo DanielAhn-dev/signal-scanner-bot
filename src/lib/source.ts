@@ -45,6 +45,16 @@ export type InvestorRow = {
   institution?: number;
 };
 export type TickerMeta = { code: string; name: string; sectorId?: string };
+type StockMetaRow = { code: string; name: string; sector_id?: string | null };
+type SectorScoreRow = {
+  id: string;
+  name: string;
+  score?: number | null;
+  change_rate?: number | null;
+  avg_change_rate?: number | null;
+  metrics?: any;
+};
+type StockBasicRow = { code: string; name: string };
 
 // --- 유틸리티 함수: SMA 계산 ---
 function sma(values: number[], period: number): (number | undefined)[] {
@@ -167,10 +177,11 @@ export async function fetchInvestorNetByTicker(
 export async function fetchTickerMetaInSector(): Promise<TickerMeta[]> {
   const { data } = await supa().from("stocks").select("code, name, sector_id"); // ✅ where 조건 없이 전체 조회
 
-  return (data || []).map((r) => ({
+  const rows = (data || []) as StockMetaRow[];
+  return rows.map((r) => ({
     code: r.code,
     name: r.name,
-    sectorId: r.sector_id,
+    sectorId: r.sector_id ?? undefined,
   }));
 }
 
@@ -191,7 +202,8 @@ export async function fetchPrecomputedSectorScores(): Promise<
     .select("id, name, score, change_rate, avg_change_rate, metrics")
     .order("score", { ascending: false });
 
-  return (data || []).map((s) => ({
+  const rows = (data || []) as SectorScoreRow[];
+  return rows.map((s) => ({
     id: s.id,
     name: s.name,
     score: Number(s.score ?? 0),
@@ -209,9 +221,10 @@ export async function fetchStockPriceSeries(
     .from("stocks")
     .select("code, name")
     .eq("sector_id", sectorId);
-  if (!stocks?.length) return [];
+  const stockRows = (stocks || []) as StockBasicRow[];
+  if (!stockRows.length) return [];
 
-  const tickers = stocks.map((s) => s.code);
+  const tickers = stockRows.map((s) => s.code);
 
   // 2. 해당 종목들의 시세 데이터를 가져온다.
   const from = `${new Date(today).getFullYear() - 1}-01-01`;
@@ -232,7 +245,7 @@ export async function fetchStockPriceSeries(
   }
 
   const out: StockPriceSeries[] = [];
-  for (const s of stocks) {
+  for (const s of stockRows) {
     const seriesRaw = (byTicker[s.code] || []).sort((a, b) =>
       a.date.localeCompare(b.date)
     );

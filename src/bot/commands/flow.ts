@@ -20,6 +20,12 @@ interface InvestorRow {
   instNet: number;
 }
 
+type FetchLikeResponse = {
+  ok: boolean;
+  status: number;
+  text(): Promise<string>;
+};
+
 function fmtKorMoney(n: number): string {
   const safe = Number(n || 0);
   if (!Number.isFinite(safe) || safe === 0) return "0억";
@@ -43,10 +49,10 @@ async function fetchWithTimeout(url: string, timeoutMs = 5500): Promise<string> 
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
-    const res = await fetch(url, {
+    const res = (await fetch(url, {
       headers: { "User-Agent": UA },
       signal: controller.signal,
-    });
+    })) as FetchLikeResponse;
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     return await res.text();
   } finally {

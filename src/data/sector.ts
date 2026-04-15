@@ -15,6 +15,14 @@ if (!url || !key) {
 }
 const supabase = createClient(url, key);
 
+type SectorRow = { id: string; name: string };
+type StockRow = {
+  code: string;
+  sector_id: string | null;
+  liquidity?: number | null;
+  is_active?: boolean | null;
+};
+
 function clamp(x: number, lo: number, hi: number) {
   return Math.min(hi, Math.max(lo, x));
 }
@@ -166,27 +174,29 @@ export async function computeSectorTrends(
   if (cached?.length) return cached;
 
   const { data: sectors } = await supabase.from("sectors").select("id,name");
-  const nameToId = new Map((sectors || []).map((r: any) => [r.name, r.id]));
+  const sectorRows = (sectors || []) as SectorRow[];
+  const nameToId = new Map<string, string>(sectorRows.map((r) => [r.name, r.id]));
 
   const { data: stocks } = await supabase
     .from("stocks")
     .select("code,sector_id,liquidity,is_active")
     .eq("is_active", true);
+  const stockRows = (stocks || []) as StockRow[];
 
-  const id2name = new Map((sectors || []).map((s: any) => [s.id, s.name]));
-  const bySector = new Map<string, any[]>();
+  const id2name = new Map<string, string>(sectorRows.map((s) => [s.id, s.name]));
+  const bySector = new Map<string, StockRow[]>();
 
-  if (!sectors?.length || !stocks?.length) {
+  if (!sectorRows.length || !stockRows.length) {
     return [
       { id: "1", sector: "정보기술", score: 50 },
       { id: "2", sector: "헬스케어", score: 48 },
     ];
   }
 
-  (stocks || [])
-    .sort((a: any, b: any) => (b.liquidity || 0) - (a.liquidity || 0))
-    .forEach((s: any) => {
-      const sec = id2name.get(s.sector_id) || "기타";
+  stockRows
+    .sort((a, b) => (b.liquidity || 0) - (a.liquidity || 0))
+    .forEach((s) => {
+      const sec = (s.sector_id ? id2name.get(s.sector_id) : undefined) || "기타";
       if (!bySector.has(sec)) bySector.set(sec, []);
       const arr = bySector.get(sec)!;
       if (arr.length < limitPerSector) arr.push(s);
@@ -208,7 +218,7 @@ export async function computeSectorTrends(
       above20 = 0,
       spikes = 0;
 
-    const seriesList = await mapWithConcurrency(arr, 6, async (s) => {
+    const seriesList = await mapWithConcurrency(arr, 6, async (s: StockRow) => {
       try {
         return await getDailySeries(s.code, 260);
       } catch {
@@ -295,7 +305,10 @@ export async function syncSectorScoresToDB() {
     console.error("[sync] sector list query error:", qerr.message);
     return;
   }
-  const nameToId = new Map((sectorRows || []).map((r: any) => [r.name, r.id]));
+  const mappedSectorRows = (sectorRows || []) as SectorRow[];
+  const nameToId = new Map<string, string>(
+    mappedSectorRows.map((r) => [r.name, r.id])
+  );
 
   let updated = 0;
   for (const { sector, score } of trends) {
