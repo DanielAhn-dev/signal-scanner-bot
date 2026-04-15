@@ -57,8 +57,7 @@ updated_watchlist AS (
         THEN (r.new_qty * COALESCE(w.buy_price, r.ref_price))::bigint
       ELSE w.invested_amount
     END,
-    status = 'holding',
-    updated_at = now()
+    status = 'holding'
   FROM rebalanced r
   WHERE w.id = r.id
   RETURNING
