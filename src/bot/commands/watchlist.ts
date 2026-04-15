@@ -11,6 +11,11 @@ import {
 } from "../../utils/fetchRealtimePrice";
 import { buildInvestmentPlan } from "../../lib/investPlan";
 import {
+  fetchWatchMicroSignalsByCodes,
+  resolveWatchDecision,
+  type ResponseAction,
+} from "../../lib/watchlistSignals";
+import {
   getUserInvestmentPrefs,
   setUserInvestmentPrefs,
 } from "../../services/userService";
@@ -19,8 +24,6 @@ const MAX_ITEMS = 20; // 사용자당 최대 관심종목 수
 const DEFAULT_TARGET_POSITIONS = 10;
 const DEFAULT_FEE_RATE = 0.00015;
 const DEFAULT_TAX_RATE = 0.0018;
-
-type AutoAction = "HOLD" | "TAKE_PROFIT" | "STOP_LOSS";
 
 const supabase = createClient(
   process.env.SUPABASE_URL!,
@@ -62,40 +65,6 @@ function isKstMarketOpen(now = new Date()): boolean {
   const open = 9 * 60;
   const close = 15 * 60 + 30;
   return minutes >= open && minutes <= close;
-}
-
-function resolveAutoAction(payload: {
-  close: number;
-  buyPrice: number;
-  plan: ReturnType<typeof buildInvestmentPlan>;
-}): { action: AutoAction; reason: string; pnlPct: number } {
-  const { close, buyPrice, plan } = payload;
-  const pnlPct = buyPrice > 0 ? ((close - buyPrice) / buyPrice) * 100 : 0;
-
-  if (close <= plan.stopPrice) {
-    return {
-      action: "STOP_LOSS",
-      reason: `손절 기준(${fmtInt(plan.stopPrice)}원) 하회`,
-      pnlPct,
-    };
-  }
-
-  if (close >= plan.target1) {
-    return {
-      action: "TAKE_PROFIT",
-      reason: `1차 목표가(${fmtInt(plan.target1)}원) 도달`,
-      pnlPct,
-    };
-  }
-
-  return {
-    action: "HOLD",
-    reason:
-      plan.status === "buy-on-pullback"
-        ? `눌림 대기(${fmtInt(plan.entryLow)}~${fmtInt(plan.entryHigh)}원)`
-        : `보유 유지(손절 ${fmtInt(plan.stopPrice)}원 / 목표 ${fmtInt(plan.target1)}원)`,
-    pnlPct,
-  };
 }
 
 async function appendVirtualTradeLog(payload: {
@@ -692,9 +661,19 @@ export async function handleWatchlistAutoCommand(
 
   const codes = items.map((it: any) => it.code);
   const realtimeMap = await fetchRealtimePriceBatch(codes);
+  const microByCode = await fetchWatchMicroSignalsByCodes(supabaseRead, codes);
 
   const holdLines: string[] = [];
-  const sellTargets: Array<{ name: string; code: string; qty: number; reason: string; action: AutoAction; pnlPct: number }> = [];
+  const sellTargets: Array<{
+    name: string;
+    code: string;
+    qty: number;
+    reason: string;
+    action: ResponseAction;
+    pnlPct: number;
+    triggers: string[];
+    confidence: number;
+  }> = [];
 
   for (const item of items) {
     const stock = item.stock as any;
@@ -716,11 +695,18 @@ export async function handleWatchlistAutoCommand(
       currentPrice: close,
       factors: { rsi14: stock?.rsi14 ?? undefined },
     });
-    const decision = resolveAutoAction({ close, buyPrice, plan });
+    const decision = resolveWatchDecision({
+      close,
+      buyPrice,
+      plan,
+      microSignal: microByCode.get(code),
+    });
 
     if (decision.action === "HOLD") {
       holdLines.push(
-        `- ${esc(name)} (${code}) 보유 · 손익 ${fmtPct(decision.pnlPct)} · ${decision.reason}`
+        `- ${esc(name)} (${code}) 보유 · 손익 ${fmtPct(decision.pnlPct)} · ${decision.reason}${
+          decision.triggerReasons.length ? ` · 트리거 ${decision.triggerReasons.join(", ")}` : ""
+        }`
       );
       continue;
     }
@@ -732,6 +718,8 @@ export async function handleWatchlistAutoCommand(
       reason: decision.reason,
       action: decision.action,
       pnlPct: decision.pnlPct,
+      triggers: decision.triggerReasons,
+      confidence: decision.confidence,
     });
   }
 
@@ -751,7 +739,9 @@ export async function handleWatchlistAutoCommand(
     );
     executed += 1;
     executedLines.push(
-      `- ${esc(target.name)} (${target.code}) 자동매도 · ${target.reason} · 손익 ${fmtPct(target.pnlPct)}`
+      `- ${esc(target.name)} (${target.code}) 자동매도 · ${target.reason} · 손익 ${fmtPct(target.pnlPct)} · 신뢰도 ${target.confidence}%${
+        target.triggers.length ? ` · 트리거 ${target.triggers.join(", ")}` : ""
+      }`
     );
   }
 
@@ -808,6 +798,8 @@ export async function handleWatchlistResponseCommand(
 
   const marketOpen = isKstMarketOpen();
   const lines: string[] = [];
+  const codes = items.map((it: any) => String(it.code));
+  const microByCode = await fetchWatchMicroSignalsByCodes(supabaseRead, codes);
 
   for (const item of items) {
     const stock = item.stock as any;
@@ -822,7 +814,12 @@ export async function handleWatchlistResponseCommand(
       currentPrice: close,
       factors: { rsi14: stock?.rsi14 ?? undefined },
     });
-    const decision = resolveAutoAction({ close, buyPrice, plan });
+    const decision = resolveWatchDecision({
+      close,
+      buyPrice,
+      plan,
+      microSignal: microByCode.get(code),
+    });
     const recommended =
       decision.action === "TAKE_PROFIT"
         ? "익절 고려"
@@ -837,6 +834,7 @@ export async function handleWatchlistResponseCommand(
         `  계획 진입 ${fmtInt(plan.entryLow)}~${fmtInt(plan.entryHigh)}원`,
         `  손절 ${fmtInt(plan.stopPrice)}원 · 1차목표 ${fmtInt(plan.target1)}원`,
         `  내일 대응: ${recommended} (${decision.reason})`,
+        `  트리거: ${decision.triggerReasons.length ? decision.triggerReasons.join(", ") : "대기"} · 신뢰도 ${decision.confidence}%`,
       ].join("\n")
     );
   }

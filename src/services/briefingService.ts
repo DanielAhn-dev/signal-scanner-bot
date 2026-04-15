@@ -3,6 +3,10 @@ import { fetchRealtimePriceBatch } from "../utils/fetchRealtimePrice";
 import { fetchAllMarketData, type MarketOverview } from "../utils/fetchMarketData";
 import { buildInvestmentPlan } from "../lib/investPlan";
 import { pickSaferCandidates, type RiskProfile } from "../lib/investableUniverse";
+import {
+  fetchWatchMicroSignalsByCodes,
+  type WatchMicroSignal,
+} from "../lib/watchlistSignals";
 
 // JSONB용 느슨한 타입
 type Json = Record<string, any>;
@@ -188,11 +192,14 @@ export async function createBriefingReport(
     return formatSectorSection(sector, picked, scoresByCode, realtimeMap);
   });
 
-  const watchlistSection = formatWatchlistSection(
+  const watchlistMicro = await fetchWatchMicroSignalsByCodes(supabase, watchlistCodes);
+
+  const watchlistSection = await formatWatchlistSection(
     watchlistItems,
     scoresByCode,
     realtimeMap,
-    topSectors
+    topSectors,
+    watchlistMicro
   );
 
   // 9. 빈집털이 섹션 텍스트 조립
@@ -482,11 +489,12 @@ function formatBottomSection(candidates: any[], realtimeMap: Record<string, any>
   );
 }
 
-function formatWatchlistSection(
+async function formatWatchlistSection(
   items: WatchlistRow[],
   scoresByCode: Map<string, ScoreRow>,
   realtimeMap: Record<string, any>,
-  topSectors: SectorRow[]
+  topSectors: SectorRow[],
+  microByCode: Map<string, WatchMicroSignal>
 ) {
   if (!items.length) {
     return "  <i>등록된 관심종목이 없습니다. /관심추가 종목명 으로 후보를 저장하세요.</i>\n";
@@ -568,6 +576,14 @@ function formatWatchlistSection(
     `  오늘 액션 ${actionable}건 · 눌림 대기 ${pullback}건 · 관망 ${wait}건`,
   ];
 
+  const microTriggered = sortedItems.filter((item) => {
+    const micro = microByCode.get(item.code);
+    return Boolean(micro?.valueAnomaly || micro?.flowShift);
+  }).length;
+  if (microTriggered > 0) {
+    summaryLines.push(`  이상 트리거 감지 ${microTriggered}건 (거래대금/수급)`);
+  }
+
   if (overlappingThemes.length) {
     summaryLines.push(`  주도 테마와 겹침: ${overlappingThemes.slice(0, 2).join(", ")}`);
   }
@@ -579,6 +595,10 @@ function formatWatchlistSection(
   }
 
   const lines = sortedItems.slice(0, 5).map((item) => {
+    const micro = microByCode.get(item.code);
+    const triggerLine = micro?.triggerReasons?.length
+      ? `     트리거 ${micro.triggerReasons.join(", ")}`
+      : "     트리거 없음 (조건 대기)";
     const changeStr = item.changeRate != null ? ` ${fmtChange(item.changeRate)}` : "";
     const buyBase = item.buyPrice ? ` · 기준 ${fmtPct(item.profitPct)}` : "";
     const todayAction =
@@ -592,6 +612,7 @@ function formatWatchlistSection(
       `  ▸ <b>${item.name}</b> <code>${fmtInt(item.currentPrice)}원</code>${changeStr}${buyBase}`,
       `     ${item.plan.statusLabel} · 손절 ${fmtInt(item.plan.stopPrice)} · 1차 ${fmtPct(item.plan.target1Pct * 100)}`,
       `     ${todayAction}`,
+      triggerLine,
     ].join("\n");
   });
 
