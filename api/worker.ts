@@ -28,6 +28,14 @@ const supa = () =>
 
 const INTERNAL_SECRET = process.env.CRON_SECRET || "";
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || "";
+const DEFAULT_TG_TIMEOUT_MS = 5000;
+const DOCUMENT_TG_TIMEOUT_MS = 20000;
+const DEFAULT_JOB_TIMEOUT_MS = 7800;
+const REPORT_JOB_TIMEOUT_MS = 30000;
+
+export const config = {
+  maxDuration: 60,
+};
 
 // ---- Telegram 호출 유틸 ----
 
@@ -46,7 +54,8 @@ async function tgFetch(method: string, body: any): Promise<TGApiResponse> {
   }
 
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 5000);
+  const timeoutMs = method === "sendDocument" ? DOCUMENT_TG_TIMEOUT_MS : DEFAULT_TG_TIMEOUT_MS;
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
 
   try {
     const isMultipart = typeof FormData !== "undefined" && body instanceof FormData;
@@ -74,7 +83,7 @@ async function tgFetch(method: string, body: any): Promise<TGApiResponse> {
   }
 }
 
-function withTimeout<T>(p: Promise<T>, ms = 7800): Promise<T> {
+function withTimeout<T>(p: Promise<T>, ms = DEFAULT_JOB_TIMEOUT_MS): Promise<T> {
   return new Promise((resolve, reject) => {
     const t = setTimeout(() => reject(new Error("TIMEOUT")), ms);
     p.then((v) => {
@@ -194,6 +203,12 @@ async function routeCallback(
   });
 }
 
+function resolveJobTimeout(text: string): number {
+  return /^\/(report|리포트)\b/i.test(text.trim())
+    ? REPORT_JOB_TIMEOUT_MS
+    : DEFAULT_JOB_TIMEOUT_MS;
+}
+
 async function handleTelegramUpdateJob(job: any) {
   const u = job.payload || {};
 
@@ -208,7 +223,10 @@ async function handleTelegramUpdateJob(job: any) {
       show_alert: false,
     });
 
-    await withTimeout(routeCallback(u.callback_query.data, { chatId, from }, tgFetch));
+    const callbackTimeout = u.callback_query.data === "cmd:report"
+      ? REPORT_JOB_TIMEOUT_MS
+      : DEFAULT_JOB_TIMEOUT_MS;
+    await withTimeout(routeCallback(u.callback_query.data, { chatId, from }, tgFetch), callbackTimeout);
     return;
   }
 
@@ -267,7 +285,8 @@ async function handleTelegramUpdateJob(job: any) {
         const resp = await tgFetch(method, body);
         console.log("[worker] tgSend 호출", { method, body, resp });
         return resp;
-      })
+      }),
+      resolveJobTimeout(text)
     );
     console.log("[worker] routeMessage 완료");
   }
@@ -290,7 +309,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   // Vercel 함수 타임아웃을 고려해 최대 처리 시간 제한 (8초)
-  const WORKER_DEADLINE = Date.now() + 8000;
+  const WORKER_DEADLINE = Date.now() + 55000;
   let totalProcessed = 0;
 
   // 큐가 빌 때까지 반복 처리 (처리 중 도착한 잡도 놓치지 않음)

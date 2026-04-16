@@ -38,32 +38,46 @@ export interface MarketOverview {
 }
 
 const UA = { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)" };
+const FETCH_TIMEOUT_MS = 3000;
 
 const parsePrice = (s?: string): number => {
   if (!s) return 0;
   return parseFloat(s.replace(/,/g, "")) || 0;
 };
 
+async function fetchJsonWithTimeout(url: string): Promise<any | null> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+
+  try {
+    const res = await fetch(url, {
+      headers: UA,
+      signal: controller.signal,
+    });
+    if (!res.ok) return null;
+    return await res.json();
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 // ─── Naver 국내 지수 ───
 async function fetchNaverIndex(
   indexCode: string
 ): Promise<MarketIndex | null> {
-  try {
-    const res = await fetch(
-      `https://m.stock.naver.com/api/index/${indexCode}/basic`,
-      { headers: UA }
-    );
-    if (!res.ok) return null;
-    const d: any = await res.json();
-    return {
-      name: d.indexName || d.stockName || indexCode,
-      price: parsePrice(d.closePrice),
-      change: parsePrice(d.compareToPreviousClosePrice),
-      changeRate: parseFloat(d.fluctuationsRatio || "0"),
-    };
-  } catch {
-    return null;
-  }
+  const d = await fetchJsonWithTimeout(
+    `https://m.stock.naver.com/api/index/${indexCode}/basic`
+  );
+  if (!d) return null;
+
+  return {
+    name: d.indexName || d.stockName || indexCode,
+    price: parsePrice(d.closePrice),
+    change: parsePrice(d.compareToPreviousClosePrice),
+    changeRate: parseFloat(d.fluctuationsRatio || "0"),
+  };
 }
 
 export const fetchKOSPI = () => fetchNaverIndex("KOSPI");
@@ -91,30 +105,23 @@ async function fetchYahoo(
   symbol: string,
   label: string
 ): Promise<MarketIndex | null> {
-  try {
-    const enc = encodeURIComponent(symbol);
-    const res = await fetch(
-      `https://query1.finance.yahoo.com/v8/finance/chart/${enc}?range=1d&interval=1d`,
-      { headers: UA }
-    );
-    if (!res.ok) return null;
-    const body: any = await res.json();
-    const meta = body?.chart?.result?.[0]?.meta;
-    if (!meta) return null;
-    const price = meta.regularMarketPrice || 0;
-    const prev =
-      meta.chartPreviousClose || meta.previousClose || price;
-    return {
-      name: label,
-      price,
-      change: +(price - prev).toFixed(2),
-      changeRate: prev
-        ? +(((price - prev) / prev) * 100).toFixed(2)
-        : 0,
-    };
-  } catch {
-    return null;
-  }
+  const enc = encodeURIComponent(symbol);
+  const body = await fetchJsonWithTimeout(
+    `https://query1.finance.yahoo.com/v8/finance/chart/${enc}?range=1d&interval=1d`
+  );
+  const meta = body?.chart?.result?.[0]?.meta;
+  if (!meta) return null;
+
+  const price = meta.regularMarketPrice || 0;
+  const prev = meta.chartPreviousClose || meta.previousClose || price;
+  return {
+    name: label,
+    price,
+    change: +(price - prev).toFixed(2),
+    changeRate: prev
+      ? +(((price - prev) / prev) * 100).toFixed(2)
+      : 0,
+  };
 }
 
 export const fetchVIX = () => fetchYahoo("^VIX", "VIX");
@@ -131,22 +138,34 @@ export const fetchBitcoin = () => fetchYahoo("BTC-USD", "Bitcoin");
 
 // ─── CNN Fear & Greed ───
 export async function fetchFearGreed(): Promise<FearGreedData | null> {
-  try {
-    const res = await fetch(
-      "https://production.dataviz.cnn.io/index/fearandgreed/graphdata",
-      { headers: UA }
-    );
-    if (!res.ok) return null;
-    const d: any = await res.json();
-    const fg = d?.fear_and_greed;
-    if (!fg) return null;
-    return {
-      score: Math.round(fg.score || 0),
-      rating: fg.rating || "Unknown",
-    };
-  } catch {
-    return null;
-  }
+  const d = await fetchJsonWithTimeout(
+    "https://production.dataviz.cnn.io/index/fearandgreed/graphdata"
+  );
+  const fg = d?.fear_and_greed;
+  if (!fg) return null;
+
+  return {
+    score: Math.round(fg.score || 0),
+    rating: fg.rating || "Unknown",
+  };
+}
+
+export async function fetchReportMarketData(): Promise<MarketOverview> {
+  const [kospi, kosdaq, usdkrw, vix, fearGreed] = await Promise.all([
+    fetchKOSPI(),
+    fetchKOSDAQ(),
+    fetchUSDKRW(),
+    fetchVIX(),
+    fetchFearGreed(),
+  ]);
+
+  return {
+    kospi: kospi ?? undefined,
+    kosdaq: kosdaq ?? undefined,
+    usdkrw: usdkrw ?? undefined,
+    vix: vix ?? undefined,
+    fearGreed: fearGreed ?? undefined,
+  };
 }
 
 // ─── 한번에 전부 조회 ───

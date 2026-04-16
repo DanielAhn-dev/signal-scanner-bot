@@ -43,6 +43,8 @@ const parseInt2 = (s?: string): number | undefined => {
   return Number.isFinite(n) ? n : undefined;
 };
 
+const FETCH_TIMEOUT_MS = 2500;
+
 /** 하위 호환: 실시간 가격만 반환 */
 export async function fetchRealtimePrice(code: string): Promise<number | null> {
   const data = await fetchRealtimeStockData(code);
@@ -53,10 +55,16 @@ export async function fetchRealtimePrice(code: string): Promise<number | null> {
 export async function fetchRealtimeStockData(
   code: string
 ): Promise<RealtimeStockData | null> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+
   try {
     const response = await fetch(
       `https://m.stock.naver.com/api/stock/${code}/basic`,
-      { headers: { "User-Agent": "Mozilla/5.0" } }
+      {
+        headers: { "User-Agent": "Mozilla/5.0" },
+        signal: controller.signal,
+      }
     );
     if (!response.ok) return null;
 
@@ -83,6 +91,8 @@ export async function fetchRealtimeStockData(
   } catch (e) {
     console.error(`실시간 데이터 조회 실패 (${code}):`, e);
     return null;
+  } finally {
+    clearTimeout(timer);
   }
 }
 
@@ -91,16 +101,21 @@ export async function fetchRealtimePriceBatch(
   codes: string[]
 ): Promise<Record<string, RealtimeStockData>> {
   const result: Record<string, RealtimeStockData> = {};
-  const chunks: string[][] = [];
-  for (let i = 0; i < codes.length; i += 10) {
-    chunks.push(codes.slice(i, i + 10));
-  }
-  for (const chunk of chunks) {
-    const promises = chunk.map(async (code) => {
-      const data = await fetchRealtimeStockData(code);
-      if (data) result[code] = data;
-    });
-    await Promise.all(promises);
+  const chunkSize = 20;
+  for (let i = 0; i < codes.length; i += chunkSize) {
+    const chunk = codes.slice(i, i + chunkSize);
+    const settled = await Promise.allSettled(
+      chunk.map(async (code) => {
+        const data = await fetchRealtimeStockData(code);
+        if (data) result[code] = data;
+      })
+    );
+
+    for (const item of settled) {
+      if (item.status === "rejected") {
+        console.error("실시간 배치 조회 실패:", item.reason);
+      }
+    }
   }
   return result;
 }

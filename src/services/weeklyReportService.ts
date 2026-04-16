@@ -3,7 +3,7 @@ import path from "node:path";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { PDFDocument, PDFPage, PDFFont, rgb, RGB } from "pdf-lib";
 import fontkit from "@pdf-lib/fontkit";
-import { fetchAllMarketData } from "../utils/fetchMarketData";
+import { fetchReportMarketData } from "../utils/fetchMarketData";
 import { fetchRealtimePriceBatch } from "../utils/fetchRealtimePrice";
 
 // ─── 색상 팔레트 (증권사 리포트 스타일) ─────────────────────────────────
@@ -573,7 +573,7 @@ export async function createWeeklyReportPdf(
   if (tradeRes.error) throw new Error(`virtual_trades 조회 실패: ${tradeRes.error.message}`);
   if (watchRes.error) throw new Error(`watchlist 조회 실패: ${watchRes.error.message}`);
 
-  const market = await fetchAllMarketData().catch(() => ({} as any));
+  const market = await fetchReportMarketData().catch(() => ({} as any));
 
   const rows = tradeRes.data ?? [];
   const windows = splitWindows(rows, now);
@@ -620,7 +620,7 @@ export async function createWeeklyReportPdf(
   const pdf = await PDFDocument.create();
   pdf.registerFontkit(fontkit);
   const fontBytes = await loadKoreanFontBytes();
-  const font = await pdf.embedFont(fontBytes, { subset: false });
+  const font = await pdf.embedFont(fontBytes);
   const ctx = new ReportContext(pdf, font);
 
   // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -917,7 +917,7 @@ export async function createWeeklyReportPdf(
   drawFooter(ctx, ymd);
 
   // ── 반환 ────────────────────────────────────────────────────────────────
-  const bytes = await pdf.save({ useObjectStreams: false });
+  const bytes = await pdf.save();
 
   const caption = [
     `주간 포트폴리오 리포트 — ${krDate}`,
