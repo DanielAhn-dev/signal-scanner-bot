@@ -848,8 +848,8 @@ const SECTION_H = 20;
 function drawSectionHeader(ctx: ReportContext, label: string, sub?: string) {
   ctx.ensureSpace(SECTION_H + 18);
   const { ML, MR, W } = ctx;
-  // 1pt accent 상단 룰
-  ctx.line(ML, ctx.y, W - MR, ctx.y, ctx.theme.accent, 1);
+  // 0.75pt gray 상단 룰 (섹션 구분선)
+  ctx.line(ML, ctx.y, W - MR, ctx.y, C.rule, 0.75);
   const textY = ctx.y - 8;
   ctx.textBold(label, ML, textY, 8.5, C.ink);
   if (sub) ctx.textRight(sub, W - MR, textY, 6.5, C.dim);
@@ -863,7 +863,7 @@ function drawKpiGrid(ctx: ReportContext, cards: KpiCard[], cols = 4) {
   const { ML, W } = ctx;
   const totalW = W - ML - ctx.MR;
   const cardW  = totalW / cols;
-  const cardH  = 44;
+  const cardH  = 56;  // label(6.5)+gap+value(14)+gap+sub(6.5) 상하 10pt 일치
   const padX   = 10;
   const maxW   = cardW - padX * 2;
   const rows   = Math.ceil(cards.length / cols);
@@ -891,9 +891,9 @@ function drawKpiGrid(ctx: ReportContext, cards: KpiCard[], cols = 4) {
 
     if (!card.label && !card.value) return;
 
-    ctx.textLight(card.label,     x + padX, y - 9,  6.5, C.dim,                    maxW);
-    ctx.textBold(card.value,      x + padX, y - 23, 14,  card.valueColor ?? C.ink, maxW);
-    if (card.sub) ctx.textLight(card.sub, x + padX, y - 39, 6.5, C.subtle,         maxW);
+    ctx.textLight(card.label,     x + padX, y - 10, 6.5, C.dim,                    maxW);
+    ctx.textBold(card.value,      x + padX, y - 21, 14,  card.valueColor ?? C.ink, maxW);
+    if (card.sub) ctx.textLight(card.sub, x + padX, y - 40, 6.5, C.subtle,         maxW);
   });
 
   ctx.y -= rows * cardH + 6;
@@ -1095,8 +1095,8 @@ function drawTopicHero(ctx: ReportContext, title: string, subtitle: string) {
   const subLines = ctx.textLight(subtitle, x, ctx.y, 8.5, C.dim, bodyW);
   ctx.y -= subLines * Math.round(8.5 * 1.45) + 10;
 
-  // 1pt accent 하단 룰
-  ctx.line(x, ctx.y, x + bodyW, ctx.y, ctx.theme.accent, 1);
+  // 1pt black 하단 룰 (히어로 블럭 경계)
+  ctx.line(x, ctx.y, x + bodyW, ctx.y, C.black, 1);
   ctx.y -= 14;
 }
 
@@ -1592,7 +1592,9 @@ export async function renderReportPdf(input: RenderReportInput): Promise<WeeklyP
     drawCoverPage(ctx, krDate, chatId, coverHeadline);
   }
 
-  ctx.addPage(topicMeta.title);
+  // 히어로 페이지는 타이틀 밴드 없이 히어로만 제목 표시, 이후 페이지는 밴드 유지
+  ctx.addPage(null);
+  ctx.pageTitle = topicMeta.title;
   drawTopicHero(ctx, topicMeta.title, heroSummary);
 
   if (topicMeta.topic === "economy") {
