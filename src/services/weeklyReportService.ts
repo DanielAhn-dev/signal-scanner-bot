@@ -320,6 +320,8 @@ function drawKpiGrid(ctx: ReportContext, cards: KpiCard[], cols = 4) {
   const totalW = W - ML - MR;
   const cardW = (totalW - gap * (cols - 1)) / cols;
   const cardH = 52;
+  const contentPadX = 12;
+  const contentMaxW = cardW - contentPadX * 2;
   const rows = Math.ceil(cards.length / cols);
 
   ctx.ensureSpace(cardH * rows + gap * (rows - 1) + 10);
@@ -344,14 +346,53 @@ function drawKpiGrid(ctx: ReportContext, cards: KpiCard[], cols = 4) {
     if (!card.label && !card.value) return; // 빈 패딩 카드
 
     // [FIX] 라벨: 카드 상단에서 14px
-    ctx.text(card.label, x + 6, y - 10, 7.5, C.muted, cardW - 10);
+    ctx.text(card.label, x + contentPadX, y - 10, 7.5, C.muted, contentMaxW);
     // [FIX] 값: 카드 상단에서 30px (라벨 아래 적절한 간격)
-    ctx.text(card.value, x + 6, y - 26, 12, card.valueColor ?? C.text, cardW - 10);
+    ctx.text(card.value, x + contentPadX, y - 26, 12, card.valueColor ?? C.text, contentMaxW);
     // [FIX] 서브: 카드 하단에서 8px
-    if (card.sub) ctx.text(card.sub, x + 6, y - 42, 7.5, C.muted, cardW - 10);
+    if (card.sub) ctx.text(card.sub, x + contentPadX, y - 42, 7.5, C.muted, contentMaxW);
   });
 
   ctx.y -= rows * (cardH + gap) - gap + 8;
+}
+
+function drawPortfolioSummaryRow(
+  ctx: ReportContext,
+  label: string,
+  leftText: string,
+  rightText: string,
+  rightColor: RGB
+) {
+  const padX = 12;
+  const labelW = 44;
+  const safeGap = 20;
+  const fontSize = 9;
+  const baseH = 22;
+  const leftX = ctx.ML + padX + labelW;
+  const rightEdge = ctx.ML + ctx.BODY_W - padX;
+  const leftW = ctx.font.widthOfTextAtSize(leftText, fontSize);
+  const rightW = ctx.font.widthOfTextAtSize(rightText, fontSize);
+  const needsWrap = leftX + leftW + safeGap > rightEdge - rightW;
+  const rowH = needsWrap ? 34 : baseH;
+
+  ctx.ensureSpace(rowH + 4);
+  ctx.rect(ctx.ML, ctx.y - rowH, ctx.BODY_W, rowH, rgb(0.90, 0.92, 0.97));
+  ctx.line(ctx.ML, ctx.y, ctx.ML + ctx.BODY_W, ctx.y, C.border);
+  ctx.line(ctx.ML, ctx.y - rowH, ctx.ML + ctx.BODY_W, ctx.y - rowH, C.border);
+
+  const labelY = needsWrap ? ctx.y - 11 : ctx.y - rowH / 2 + 5;
+  ctx.text(label, ctx.ML + padX, labelY, fontSize, C.navyLight);
+
+  if (needsWrap) {
+    ctx.text(leftText, leftX, ctx.y - 11, fontSize, C.text);
+    ctx.textRight(rightText, rightEdge, ctx.y - 23, fontSize, rightColor);
+  } else {
+    const lineY = ctx.y - rowH / 2 + 5;
+    ctx.text(leftText, leftX, lineY, fontSize, C.text);
+    ctx.textRight(rightText, rightEdge, lineY, fontSize, rightColor);
+  }
+
+  ctx.y -= rowH + 6;
 }
 
 // ─── 테이블 렌더러 ────────────────────────────────────────────────────────
@@ -818,24 +859,13 @@ export async function createWeeklyReportPdf(
       watchItems.slice(0, 20).map((item) => pnlColor(item.unrealized))
     );
 
-    // [FIX] 합계 행 — 높이와 텍스트 수직 정렬 통일
-    const sumH = 22;
-    ctx.ensureSpace(sumH + 4);
-    ctx.rect(ctx.ML, ctx.y - sumH, ctx.BODY_W, sumH, rgb(0.90, 0.92, 0.97));
-    ctx.line(ctx.ML, ctx.y,        ctx.ML + ctx.BODY_W, ctx.y,        C.border);
-    ctx.line(ctx.ML, ctx.y - sumH, ctx.ML + ctx.BODY_W, ctx.y - sumH, C.border);
-
-    const sumMidY = ctx.y - sumH / 2 + 5;
-    ctx.text("합계", ctx.ML + 6, sumMidY, 9, C.navyLight);
-    ctx.textRight(
-      `원금  ${fmtInt(totalInvested)}원`,
-      ctx.ML + 390, sumMidY, 9, C.text
+    drawPortfolioSummaryRow(
+      ctx,
+      "합계",
+      `원금 ${fmtInt(totalInvested)}원`,
+      `평가손익 ${fmtSignedInt(totalUnrealized)} (${fmtPct(totalUnrealizedPct)})`,
+      pnlColor(totalUnrealized)
     );
-    ctx.textRight(
-      `평가손익  ${fmtSignedInt(totalUnrealized)}  (${fmtPct(totalUnrealizedPct)})`,
-      ctx.ML + ctx.BODY_W - 2, sumMidY, 9, pnlColor(totalUnrealized)
-    );
-    ctx.y -= sumH + 6;
   } else {
     ctx.y -= 8;
     ctx.text("등록된 관심종목이 없습니다.", ctx.ML + 8, ctx.y, 9, C.muted);
