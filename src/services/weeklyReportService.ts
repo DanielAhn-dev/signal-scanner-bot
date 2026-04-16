@@ -424,11 +424,24 @@ function buildTopicClosingSummary(input: {
   const { topic, curr, prev, totalUnrealized, totalUnrealizedPct, watchItems, sectors, market } = input;
 
   if (topic === "economy") {
-    const vix = toNum((market as any).vix?.price);
-    const us10y = toNum((market as any).us10y?.price);
-    return vix >= 20 || us10y >= 5
-      ? "거시 환경은 아직 공격적으로 보기 어렵습니다. 금리와 변동성이 진정될 때까지 분할 진입과 현금 비중 관리가 우선입니다."
-      : "거시 리스크는 과열 구간이 아닙니다. 시장 방향 확인 후 주도 업종 중심 접근이 유효합니다.";
+    const vix    = toNum((market as any).vix?.price);
+    const us10y  = toNum((market as any).us10y?.price);
+    const fg     = toNum((market as any).fearGreed?.score ?? 50);
+    const usdkrw = toNum((market as any).usdkrw?.price);
+    const gold   = toNum((market as any).gold?.price);
+    if (vix >= 30) {
+      return `VIX ${vix.toFixed(1)} · 미국 10년물 ${us10y.toFixed(2)}% 구간으로 시장 변동성이 위험 수준에 도달했습니다. 신규 매수는 분할 진입 원칙을 철저히 지키고, 포트폴리오 내 현금 비중을 20% 이상으로 유지하며 손절 라인을 사전에 설정하는 대응이 필요합니다.`;
+    }
+    if (vix >= 20 || us10y >= 5) {
+      return `변동성(VIX ${vix.toFixed(1)})과 금리(미국 10년물 ${us10y.toFixed(2)}%) 가운데 하나 이상이 경계 수준입니다. 공격적 비중 확대보다는 주도 섹터 중심 선별 매수를 유지하고, 금리 방향 전환 신호가 나올 때까지 포지션 규모를 제한하는 것이 안전합니다.`;
+    }
+    if (fg >= 75) {
+      return `공포·탐욕 지수 ${fg}로 시장 과열 신호가 나오고 있습니다. 추격 매수보다 수익 실현과 비중 조정 타이밍을 점검하세요. 조정 발생 시 재진입 계획을 미리 세워두는 것이 효과적입니다.`;
+    }
+    if (usdkrw >= 1400 && gold >= 2500) {
+      return `원화 약세(${fmtInt(usdkrw)}원)와 금 강세($${fmtInt(Math.round(gold))})가 동시에 나타나 안전자산 선호도가 높아진 구간입니다. 국내 증시 외국인 수급 변동성을 주시하며 방어적 비중을 유지하세요.`;
+    }
+    return `현재 거시 지표는 전반적으로 안정 범위에 위치합니다. VIX ${vix.toFixed(1)}, 미국 10년물 ${us10y.toFixed(2)}%, 공포·탐욕 ${fg} 모두 과열·위기 임계치를 벗어나 있습니다. 시장 방향 확인 후 주도 업종·섹터 중심으로 비중을 점진적으로 늘리는 전략이 유효하며, 단기 모멘텀과 거래량 추이를 함께 모니터링하세요.`;
   }
 
   if (topic === "flow") {
@@ -848,16 +861,16 @@ function drawFooter(ctx: ReportContext, today: string) {
 }
 
 // ─── 섹션 헤더 ──────────────────────────────────────────────────────
-const SECTION_H = 20;
+const SECTION_H = 22;
 
 function drawSectionHeader(ctx: ReportContext, label: string, sub?: string) {
   ctx.ensureSpace(SECTION_H + 18);
   const { ML, MR, W } = ctx;
   // 0.75pt gray 상단 룰 (섹션 구분선)
   ctx.line(ML, ctx.y, W - MR, ctx.y, C.rule, 0.75);
-  const textY = ctx.y - 8;
-  ctx.textBold(label, ML, textY, 8.5, C.ink);
-  if (sub) ctx.textRightLight(sub, W - MR - 6, textY, 6.5, C.dim);
+  const textY = ctx.y - 9;
+  ctx.textBold(label, ML, textY, 10.5, C.ink);
+  if (sub) ctx.textRightLight(sub, W - MR - 24, textY, 6.5, C.dim);
   ctx.y -= SECTION_H + 3;
 }
 
@@ -881,7 +894,8 @@ function drawKpiGrid(ctx: ReportContext, cards: KpiCard[], cols = 4) {
   // 행 구분선 (0.75pt 상/하단, 0.25pt 중간)
   for (let r = 0; r <= rows; r++) {
     const ry = startY - r * cardH;
-    ctx.line(ML, ry, ML + totalW, ry, C.rule, r === 0 || r === rows ? 0.75 : 0.25);
+    const thickness = r === 0 ? 0.75 : r === rows ? 1.5 : 0.25;
+    ctx.line(ML, ry, ML + totalW, ry, C.rule, thickness);
   }
   // 열 담백 — 새로 비교 (0.25pt)
   for (let c = 1; c < cols; c++) {
@@ -1102,7 +1116,7 @@ function drawTopicHero(ctx: ReportContext, title: string, subtitle: string) {
 
   // 1pt black 하단 룰 (히어로 블럭 경계)
   ctx.line(x, ctx.y, x + bodyW, ctx.y, C.black, 1);
-  ctx.y -= 40;
+  ctx.y -= 24;
 }
 
 function drawClosingHighlight(ctx: ReportContext, title: string, body: string) {
@@ -1138,14 +1152,15 @@ function drawCommentBlock(
   title: string,
   body: string,
   color: RGB,
-  font: PDFFont
+  font: PDFFont,
+  showTopRule = true
 ) {
   const fontSize      = 8.5;
   const titleFontSize = 9;
   const lh            = Math.round(fontSize * 1.45);
   const maxW          = ctx.BODY_W;
   const bodyLines     = wrapText(body, maxW, font, fontSize);
-  // 0.25pt 상단 룰, 타이틀 Bold 액센트 색, 본문 Regular
+  // 0.25pt 상단 룰 (옵션), 타이틀 Bold 액센트 색, 본문 Regular
   const blockH = 9 + titleFontSize + 5 + bodyLines.length * lh + 9;
 
   ctx.ensureSpace(blockH + 5);
@@ -1153,7 +1168,7 @@ function drawCommentBlock(
   const bx = ctx.ML;
   const by = ctx.y;
 
-  ctx.line(bx, by, bx + ctx.BODY_W, by, C.rule, 0.25);
+  if (showTopRule) ctx.line(bx, by, bx + ctx.BODY_W, by, C.rule, 0.25);
 
   ctx.textBold(title, bx, by - 9, titleFontSize, color, maxW);
   bodyLines.forEach((line, li) => {
@@ -1506,9 +1521,9 @@ function drawEconomySection(
   market: Awaited<ReturnType<typeof fetchAllMarketData>>,
   ymd: string
 ) {
-  ctx.y -= 18;  // 히어로 → 섹션 헤더 추가 여백
+  ctx.y -= 6;   // 히어로 → 섹션 헤더 추가 여백 (소폭)
   drawSectionHeader(ctx, "거시 환경 요약", `기준: ${ymd}`);
-  ctx.y -= 12;  // 섹션 헤더 → KPI 그리드 여백
+  ctx.y -= 6;   // 섹션 헤더 → KPI 그리드 여백
 
   const cards: KpiCard[] = [];
   // ── Row 1: 주요 증시 ──
@@ -1529,25 +1544,44 @@ function drawEconomySection(
 
   while (cards.length % 4 !== 0) cards.push({ label: "", value: "" });
   if (cards.length > 0) drawKpiGrid(ctx, cards, 4);
-  ctx.y -= 20;  // KPI 그리드 → 거시 해석 여백
+  ctx.y -= 10;  // KPI 그리드 → 거시 해석 여백
+
+  const vixVal  = market.vix      ? toNum(market.vix.price)      : 0;
+  const fgVal   = market.fearGreed ? toNum(market.fearGreed.score) : 50;
+  const us10yVal = market.us10y   ? toNum(market.us10y.price)    : 0;
+  const usdkrwVal = market.usdkrw ? toNum(market.usdkrw.price)   : 0;
+  const wtiVal  = market.wtiOil   ? toNum(market.wtiOil.price)   : 0;
+  const goldVal = market.gold     ? toNum(market.gold.price)      : 0;
+  const copperVal = market.copper ? toNum(market.copper.price)    : 0;
 
   const comments: string[] = [];
-  if (market.vix      && toNum(market.vix.price)           >= 30)   comments.push("VIX 30 이상으로 변동성 확대 구간입니다. 보수적 비중 조절이 유효합니다.");
-  if (market.fearGreed && toNum(market.fearGreed.score)    <= 25)   comments.push("공포 심리가 극단 구간입니다. 급락 시 분할 접근 여부를 점검할 시점입니다.");
-  if (market.us10y    && toNum(market.us10y.price)         >= 5)    comments.push("미국 10년물 금리가 높아 성장주 할인율 부담이 지속될 수 있습니다.");
-  if (market.usdkrw   && toNum(market.usdkrw.price)        >= 1400) comments.push("원화 약세가 이어지면 외국인 수급 변동성이 커질 수 있습니다.");
-  if (market.wtiOil   && toNum(market.wtiOil.price)        >= 90)   comments.push("유가가 배럴당 90달러를 넘어 에너지 비용 부담이 높아진 구간입니다.");
-  if (market.gold     && toNum(market.gold.price)          >= 2500)  comments.push("금값 강세는 안전자산 선호 심리가 지속되고 있음을 나타냅니다.");
-  if (market.copper   && toNum(market.copper.price)        <= 3.5)   comments.push("구리 약세는 글로벌 경기 둔화 우려를 반영할 수 있습니다.");
+  if (vixVal >= 30)     comments.push(`VIX ${vixVal.toFixed(1)}로 변동성 위험 수준입니다. 옵션 헤지 비용이 높아진 구간으로 신규 진입 시 포지션 규모를 평소의 50~70% 이하로 제한하는 것이 좋습니다.`);
+  else if (vixVal >= 20) comments.push(`VIX ${vixVal.toFixed(1)}로 경계 구간에 진입했습니다. 단기 급등락 가능성을 열어두고 손절·목표가 기준을 사전에 정해 두는 대응이 필요합니다.`);
+  if (fgVal <= 20)      comments.push(`공포·탐욕 지수 ${fgVal}로 극단적 공포 구간입니다. 과거 사례상 이 구간은 중기 저점 형성 가능성이 높아 분할 매수를 고려할 만합니다.`);
+  else if (fgVal <= 30) comments.push(`공포·탐욕 지수 ${fgVal}로 공포 심리가 우세합니다. 낙폭 과대 우량주의 기술적 반등 대응이 유효할 수 있습니다.`);
+  else if (fgVal >= 75) comments.push(`공포·탐욕 지수 ${fgVal}로 탐욕 구간이 과열 중입니다. 추격 매수보다 보유 종목 수익 실현과 포지션 비중 조절을 우선 검토하세요.`);
+  if (us10yVal >= 5)    comments.push(`미국 10년물 금리가 ${us10yVal.toFixed(2)}%로 부담 수준입니다. 높은 할인율은 성장주·기술주 밸류에이션 압박 요인으로 작용하며, 금융·에너지 등 가치주 상대 강세가 지속될 가능성이 있습니다.`);
+  else if (us10yVal >= 4.5) comments.push(`미국 10년물 금리 ${us10yVal.toFixed(2)}%는 중립~경계 구간입니다. 금리 방향성과 연준 발언을 주시하며 성장주 비중을 조율하는 전략이 적절합니다.`);
+  if (usdkrwVal >= 1400) comments.push(`원·달러가 ${fmtInt(usdkrwVal)}원으로 약세입니다. 외국인 환차익 메리트 감소로 코스피 수급 이탈 압력이 높아질 수 있으며, 수출주보다 내수·방어주 비중 확대가 유리할 수 있습니다.`);
+  if (wtiVal >= 90)     comments.push(`WTI 유가 $${wtiVal.toFixed(1)}로 공급 비용 부담이 높습니다. 항공·운송·화학 등 원가 민감 업종에 불리하며 정유·에너지 섹터의 영업이익 확대 수혜를 참고하세요.`);
+  if (goldVal >= 2500)  comments.push(`금 $${fmtInt(Math.round(goldVal))}로 안전자산 선호가 강합니다. 인플레이션 헤지 수요와 지정학적 불확실성이 복합적으로 작용 중이며, 포트폴리오 내 금·달러 방어 자산 비중을 점검할 필요가 있습니다.`);
+  if (copperVal <= 3.5) comments.push(`구리 $${copperVal.toFixed(2)}로 경기 선행 신호가 약화됐습니다. 건설·인프라 수요 감소 우려가 내포된 신호로, 산업재 및 소재 섹터 비중 축소를 검토할 만합니다.`);
+
+  const defaultComment = [
+    `현재 핵심 거시 변수는 전반적으로 중립 범위에 위치합니다.`,
+    `VIX ${vixVal.toFixed(1)}, 공포·탐욕 ${fgVal}, 미국 10년물 ${us10yVal.toFixed(2)}% 모두 과열·위기 임계치를 벗어나 있어 단기 시스템 리스크는 제한적입니다.`,
+    `다만 금리·환율 방향성이 바뀌는 시점에서 노출 포지션을 신속하게 재조정할 수 있도록 손절·비중 기준을 사전 설정해 두는 것을 권장합니다.`,
+  ].join(" ");
 
   drawCommentBlock(
     ctx,
     "거시 해석",
-    comments.join(" ") || "현재 핵심 거시 지표는 중립 범위입니다. 추세 변화 여부만 점검하면 됩니다.",
+    comments.join(" ") || defaultComment,
     C.navyLight,
-    font
+    font,
+    false  // 거시 환경 요약과 바로 이어지므로 상단 룰 제거
   );
-  ctx.y -= 20;  // 거시 해석 → 최종 결론 여백
+  ctx.y -= 10;  // 거시 해석 → 최종 결론 여백
 }
 
 export async function renderReportPdf(input: RenderReportInput): Promise<WeeklyPdfReport> {
