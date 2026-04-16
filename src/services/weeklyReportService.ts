@@ -230,7 +230,7 @@ function fmtKorMoney(v: number): string {
 function parseReportTopic(raw?: string | null): ReportTopicMeta {
   const token = String(raw ?? "").trim().toLowerCase();
 
-  if (!token || ["기본", "전체", "종합", "시장", "full", "all", "weekly", "week", "관심", "관심종목", "watch", "watchlist"].includes(token)) {
+  if (!token || ["기본", "전체", "종합", "주간", "시장", "full", "all", "weekly", "week"].includes(token)) {
     return {
       topic: "full",
       title: "주간 증시 리포트",
@@ -274,13 +274,42 @@ function parseReportTopic(raw?: string | null): ReportTopicMeta {
     };
   }
 
+  if (["관심", "관심종목", "포트폴리오", "watch", "watchlist", "portfolio"].includes(token)) {
+    return {
+      topic: "watchlist",
+      title: "관심종목 리포트",
+      fileSlug: "watchlist_report",
+      includeCover: false,
+      progressText: "관심종목 리포트 PDF 생성 중입니다. 잠시만 기다려주세요...",
+      captionTitle: "관심종목 리포트",
+    };
+  }
+
   return {
-    topic: "watchlist",
-    title: "관심종목 리포트",
-    fileSlug: "watchlist_report",
-    includeCover: false,
-    progressText: "관심종목 리포트 PDF 생성 중입니다. 잠시만 기다려주세요...",
-    captionTitle: "관심종목 리포트",
+    topic: "full",
+    title: "주간 증시 리포트",
+    fileSlug: "weekly_market_report",
+    includeCover: true,
+    progressText: "주간 증시 리포트 PDF 생성 중입니다. 잠시만 기다려주세요...",
+    captionTitle: "주간 증시 리포트",
+  };
+}
+
+function createReportTheme(input: {
+  pageBand: RGB;
+  accent: RGB;
+  heroLabel: string;
+  heroSummary: string;
+}): ReportTheme {
+  return {
+    pageBand: input.pageBand,
+    sectionBand: rgb(0.18, 0.20, 0.24),
+    accent: input.accent,
+    softBg: rgb(0.97, 0.97, 0.98),
+    border: rgb(0.82, 0.83, 0.86),
+    subtitle: rgb(0.41, 0.43, 0.47),
+    heroLabel: input.heroLabel,
+    heroSummary: input.heroSummary,
   };
 }
 
@@ -534,67 +563,47 @@ function buildReportSummaryText(input: {
 
 function getReportTheme(topic: ReportTopic): ReportTheme {
   if (topic === "economy") {
-    return {
+    return createReportTheme({
       pageBand: rgb(0.22, 0.17, 0.11),
-      sectionBand: rgb(0.34, 0.25, 0.15),
       accent: rgb(0.80, 0.58, 0.18),
-      softBg: rgb(0.98, 0.96, 0.91),
-      border: rgb(0.85, 0.79, 0.68),
-      subtitle: rgb(0.56, 0.46, 0.30),
       heroLabel: "MACRO SNAPSHOT",
       heroSummary: "금리, 환율, 변동성, 글로벌 위험선호를 한 페이지 감도로 정리합니다.",
-    };
+    });
   }
 
   if (topic === "flow") {
-    return {
+    return createReportTheme({
       pageBand: rgb(0.06, 0.27, 0.40),
-      sectionBand: rgb(0.08, 0.40, 0.54),
       accent: rgb(0.00, 0.70, 0.76),
-      softBg: rgb(0.92, 0.98, 0.99),
-      border: rgb(0.68, 0.84, 0.87),
-      subtitle: rgb(0.28, 0.49, 0.55),
       heroLabel: "FLOW MONITOR",
       heroSummary: "외국인·기관 자금 방향을 중심으로 강한 섹터와 약한 섹터를 분리합니다.",
-    };
+    });
   }
 
   if (topic === "sector") {
-    return {
+    return createReportTheme({
       pageBand: rgb(0.40, 0.17, 0.09),
-      sectionBand: rgb(0.58, 0.25, 0.12),
       accent: rgb(0.95, 0.46, 0.18),
-      softBg: rgb(0.99, 0.95, 0.92),
-      border: rgb(0.90, 0.76, 0.68),
-      subtitle: rgb(0.60, 0.34, 0.22),
       heroLabel: "SECTOR ROTATION",
       heroSummary: "점수와 수익률을 동시에 보며 현재 시장의 중심 테마를 압축합니다.",
-    };
+    });
   }
 
   if (topic === "watchlist") {
-    return {
+    return createReportTheme({
       pageBand: rgb(0.06, 0.32, 0.24),
-      sectionBand: rgb(0.10, 0.46, 0.35),
       accent: rgb(0.24, 0.73, 0.49),
-      softBg: rgb(0.93, 0.98, 0.95),
-      border: rgb(0.70, 0.86, 0.77),
-      subtitle: rgb(0.26, 0.50, 0.40),
       heroLabel: "PORTFOLIO CHECK",
       heroSummary: "보유 종목의 손익, 거래 흐름, 대응 포인트를 빠르게 확인할 수 있게 정리합니다.",
-    };
+    });
   }
 
-  return {
+  return createReportTheme({
     pageBand: C.navy,
-    sectionBand: C.navyLight,
     accent: C.accent,
-    softBg: rgb(0.95, 0.96, 0.98),
-    border: C.border,
-    subtitle: rgb(0.38, 0.46, 0.62),
     heroLabel: "WEEKLY OUTLOOK",
     heroSummary: "시장 환경, 포트폴리오 상태, 최근 거래와 주간 대응 전략을 한 번에 묶습니다.",
-  };
+  });
 }
 
 // ─── 데이터 집계 유틸 ─────────────────────────────────────────────────────
@@ -1020,16 +1029,19 @@ function drawCoverPage(
     ctx.text(t, ML + 10, tocY - 26 - i * 21, 9, C.text);
   });
 
-  // 하단 면책 문구
-  ctx.rect(0, 0, W, 64, C.bg);
-  ctx.line(0, 64, W, 64, C.border);
+  // 하단 면책 문구: 모바일 PDF 뷰어 오버레이와 겹치지 않도록 상단으로 이동
+  const disclaimerBottom = 72;
+  const disclaimerH = 72;
+  const disclaimerTop = disclaimerBottom + disclaimerH;
+  ctx.rect(0, disclaimerBottom, W, disclaimerH, C.bg);
+  ctx.line(0, disclaimerTop, W, disclaimerTop, C.border);
   ctx.textCenter(
     "본 리포트는 가상 포트폴리오 및 시장 데이터 기준 요약 자료이며, 실제 투자 결과를 보증하지 않습니다.",
-    W / 2, 48, 7.5, C.muted
+    W / 2, disclaimerTop - 18, 7.5, C.muted
   );
   ctx.textCenter(
     "투자 판단의 최종 책임은 투자자 본인에게 있으며, 본 자료는 투자 권유 목적이 아닙니다.",
-    W / 2, 32, 7.5, C.muted
+    W / 2, disclaimerTop - 34, 7.5, C.muted
   );
 }
 

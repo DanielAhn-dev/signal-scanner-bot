@@ -138,7 +138,7 @@ export async function routeMessage(
       reply_markup: hasSetup
         ? actionButtons([
             { text: "브리핑", callback_data: "cmd:brief" },
-            { text: "주간 리포트", callback_data: "cmd:report" },
+            { text: "리포트 메뉴", callback_data: "cmd:report" },
             { text: "관심종목", callback_data: "cmd:watchlist" },
             { text: "섹터", callback_data: "cmd:sector" },
             { text: "투자금 수정", callback_data: "prompt:capital" },
@@ -170,7 +170,7 @@ export async function routeMessage(
     return;
   }
 
-  // /report — 주간 PDF 리포트
+  // /report — 리포트 메뉴 및 PDF 생성
   const reportMatch = t.match(CMD.REPORT);
   if (reportMatch) {
     try {

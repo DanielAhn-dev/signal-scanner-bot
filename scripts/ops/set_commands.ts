@@ -17,7 +17,7 @@ const commands = [
   { command: "finance", description: "재무 요약" },
   { command: "capital", description: "투자금 설정" },
   { command: "brief", description: "장전 브리핑" },
-  { command: "report", description: "주간 PDF 리포트" },
+  { command: "report", description: "리포트 도움말 · /리포트 주간" },
   { command: "alert", description: "이상징후 점검" },
   { command: "economy", description: "글로벌 경제지표" },
   { command: "news", description: "시장·종목 뉴스" },

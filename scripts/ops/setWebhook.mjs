@@ -20,6 +20,7 @@ const api = (method, body) =>
 async function registerCommands() {
   const commands = [
     { command: "start", description: "시작 · 메뉴" },
+    { command: "report", description: "🗂️ 리포트 도움말 · /리포트 주간" },
     { command: "sector", description: "📊 주도 섹터 랭킹" },
     { command: "scan", description: "🔍 눌림목 스캐너" },
     { command: "score", description: "💯 종목 점수·시그널" },

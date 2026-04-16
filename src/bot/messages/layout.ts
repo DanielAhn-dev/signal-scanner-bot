@@ -32,8 +32,8 @@ export function actionButtons(buttons: InlineButton[], cols = 2) {
 
 export const ACTIONS = {
   reportMenu: [
-    { text: "종합", callback_data: "cmd:report:full" },
-    { text: "포트폴리오", callback_data: "cmd:report:watchlist" },
+    { text: "주간", callback_data: "cmd:report:full" },
+    { text: "포트폴리오", callback_data: "cmd:report:portfolio" },
     { text: "거시", callback_data: "cmd:report:economy" },
     { text: "수급", callback_data: "cmd:report:flow" },
     { text: "섹터", callback_data: "cmd:report:sector" },

@@ -6,6 +6,37 @@ import {
 } from "../../services/weeklyReportService";
 import { ACTIONS, actionButtons } from "../messages/layout";
 
+const REPORT_TOPIC_GUIDE = [
+  { command: "주간", aliases: ["주간", "종합", "전체", "full", "weekly"], description: "시장과 포트폴리오를 함께 보는 종합 PDF" },
+  { command: "포트폴리오", aliases: ["포트폴리오", "관심", "관심종목", "watchlist", "portfolio"], description: "보유 종목과 최근 거래 중심 PDF" },
+  { command: "거시", aliases: ["거시", "경제", "매크로", "economy", "macro"], description: "금리·환율·변동성 중심 PDF" },
+  { command: "수급", aliases: ["수급", "자금", "flow"], description: "외국인·기관 자금 흐름 PDF" },
+  { command: "섹터", aliases: ["섹터", "업종", "테마", "sector"], description: "섹터 강도 랭킹 PDF" },
+] as const;
+
+function normalizeReportTopicInput(topicInput?: string | null): string | null {
+  const token = String(topicInput ?? "").trim().toLowerCase();
+  if (!token) return null;
+  if (["menu", "메뉴", "선택", "list", "목록", "도움", "도움말", "help"].includes(token)) {
+    return null;
+  }
+
+  const found = REPORT_TOPIC_GUIDE.find((item) => item.aliases.some((alias) => alias === token));
+  return found?.command ?? "";
+}
+
+function buildReportMenuText(): string {
+  return [
+    "가능한 리포트 종류입니다.",
+    "/리포트 는 이 메뉴를 다시 보여줍니다.",
+    "/리포트 주간 — 시장 + 포트폴리오 종합 PDF",
+    "/리포트 포트폴리오 — 보유 종목/거래 중심 PDF",
+    "/리포트 거시 — 금리·환율·변동성 PDF",
+    "/리포트 수급 — 외국인·기관 자금 흐름 PDF",
+    "/리포트 섹터 — 섹터 강도 랭킹 PDF",
+  ].join("\n");
+}
+
 const supabase = createClient(
   process.env.SUPABASE_URL!,
   process.env.SUPABASE_SERVICE_ROLE_KEY!
@@ -17,11 +48,7 @@ export async function handleReportMenu(
 ): Promise<void> {
   await tgSend("sendMessage", {
     chat_id: ctx.chatId,
-    text: [
-      "리포트 종류를 선택하세요.",
-      "종합 리포트는 표지 포함, 개별 리포트는 주제만 PDF로 출력됩니다.",
-      "텍스트 명령으로는 /리포트 종합, /리포트 포트폴리오, /리포트 거시, /리포트 수급, /리포트 섹터 형태도 가능합니다.",
-    ].join("\n"),
+    text: buildReportMenuText(),
     reply_markup: actionButtons(ACTIONS.reportMenu, 2),
   });
 }
@@ -31,14 +58,28 @@ export async function handleReportCommand(
   tgSend: any,
   topicInput?: string | null
 ): Promise<void> {
-  const topicLabel = String(topicInput ?? "").trim();
+  const normalizedTopic = normalizeReportTopicInput(topicInput);
 
-  if (["menu", "메뉴", "선택", "list"].includes(topicLabel.toLowerCase())) {
+  if (normalizedTopic === null) {
     await handleReportMenu(ctx, tgSend);
     return;
   }
 
-  const progressLabel = topicLabel ? `${topicLabel} 리포트` : "주간 증시 리포트";
+  if (!normalizedTopic) {
+    await tgSend("sendMessage", {
+      chat_id: ctx.chatId,
+      text: [
+        "지원하지 않는 리포트 종류입니다.",
+        "아래 메뉴에서 가능한 리포트를 선택하세요.",
+        "",
+        buildReportMenuText(),
+      ].join("\n"),
+      reply_markup: actionButtons(ACTIONS.reportMenu, 2),
+    });
+    return;
+  }
+
+  const progressLabel = `${normalizedTopic} 리포트`;
 
   await tgSend("sendMessage", {
     chat_id: ctx.chatId,
@@ -50,7 +91,7 @@ export async function handleReportCommand(
   try {
     const report = await createWeeklyReportPdf(supabase, {
       chatId: ctx.chatId,
-      topic: topicInput,
+      topic: normalizedTopic,
     });
 
     console.log("[report] pdf created", {
