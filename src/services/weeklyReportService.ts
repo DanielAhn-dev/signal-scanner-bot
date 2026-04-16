@@ -1717,3 +1717,98 @@ export async function createWeeklyReportPdf(
     topic: topicMeta.topic,
   };
 }
+
+// ─── 로컬 프리뷰용 렌더 함수 (Supabase 없이 mock 데이터로 생성) ────────────
+export async function createPreviewReportPdf(topicStr = "economy"): Promise<Uint8Array> {
+  const topicMeta = parseReportTopic(topicStr);
+  const theme     = getReportTheme(topicMeta.topic);
+  const ymd       = "2025-01-24";
+  const krDate    = "2025년 1월 24일";
+  const chatId    = 0;
+
+  const curr: WindowSummary = { buyCount: 3, sellCount: 2, tradeCount: 5, realizedPnl: 120000, winRate: 66.7 };
+  const prev: WindowSummary = { buyCount: 2, sellCount: 1, tradeCount: 3, realizedPnl: -50000, winRate: 50 };
+  const windows = { current14: [] as TradeRow[], prev14: [] as TradeRow[], recent: [] as TradeRow[] };
+
+  const watchItems: WatchItem[] = [
+    { code: "005930", name: "삼성전자",  qty: 10, buyPrice: 68000,  currentPrice: 71000,  invested: 680000,  value: 710000,  unrealized: 30000,  pnlPct: 4.41  },
+    { code: "000660", name: "SK하이닉스", qty:  5, buyPrice: 182000, currentPrice: 175000, invested: 910000,  value: 875000,  unrealized: -35000, pnlPct: -3.85 },
+    { code: "373220", name: "LG에너지솔루션", qty: 2, buyPrice: 412000, currentPrice: 430000, invested: 824000, value: 860000, unrealized: 36000, pnlPct: 4.37 },
+  ];
+  const totalInvested      = watchItems.reduce((s, i) => s + i.invested, 0);
+  const totalValue         = watchItems.reduce((s, i) => s + i.value, 0);
+  const totalUnrealized    = totalValue - totalInvested;
+  const totalUnrealizedPct = totalInvested > 0 ? (totalUnrealized / totalInvested) * 100 : 0;
+
+  const sectors: SectorRow[] = [
+    { name: "반도체",    score: 85, change_rate:  2.1, metrics: { flow_foreign_5d: 300,  flow_inst_5d: 150 } },
+    { name: "2차전지",   score: 72, change_rate: -1.3, metrics: { flow_foreign_5d: -200, flow_inst_5d:  50 } },
+    { name: "바이오",    score: 68, change_rate:  0.8, metrics: { flow_foreign_5d: 100,  flow_inst_5d: -30 } },
+    { name: "자동차",    score: 61, change_rate:  1.5, metrics: { flow_foreign_5d:  50,  flow_inst_5d:  80 } },
+    { name: "금융",      score: 55, change_rate: -0.5, metrics: { flow_foreign_5d: -100, flow_inst_5d: -60 } },
+    { name: "철강/소재", score: 49, change_rate: -0.2, metrics: { flow_foreign_5d:  20,  flow_inst_5d:  10 } },
+  ];
+
+  // mock 시장 데이터 (fetchAllMarketData 호환 구조)
+  const market = {
+    kospi:     { price: 2520.31, changeRate:  0.82 },
+    kosdaq:    { price:  742.18, changeRate:  1.24 },
+    sp500:     { price: 5875.42, changeRate:  0.35 },
+    nasdaq:    { price: 19280.16,changeRate:  0.61 },
+    vix:       { price:   18.32, changeRate: -5.20 },
+    usdkrw:    { price: 1388,    changeRate: -0.24 },
+    us10y:     { price:    4.58, changeRate:  0.03 },
+    us2y:      { price:    4.32, changeRate:  0.01 },
+    fearGreed: { score: 52, rating: "Neutral" },
+    wtiOil:    { price:   78.4,  changeRate:  1.10 },
+    gold:      { price: 2642,    changeRate:  0.40 },
+    btc:       { price: 105280,  changeRate:  3.20 },
+    dxy:       { price:  107.2,  changeRate: -0.20 },
+    hyg:       { price:   79.1,  changeRate:  0.10 },
+    tnx:       { price:    4.58, changeRate:  0.03 },
+    em:        { price: 1090,    changeRate:  0.50 },
+  } as unknown as Awaited<ReturnType<typeof fetchAllMarketData>>;
+
+  const coverHeadline = buildCoverHeadline({ curr, totalUnrealized, totalUnrealizedPct, sectors, market: market as Awaited<ReturnType<typeof fetchReportMarketData>> });
+  const heroSummary   = buildTopicHeroSummary({ topic: topicMeta.topic, defaultSummary: theme.heroSummary, curr, totalUnrealized, totalUnrealizedPct, watchItems, sectors, market });
+  const closingSummary = buildTopicClosingSummary({ topic: topicMeta.topic, curr, prev, totalUnrealized, totalUnrealizedPct, watchItems, sectors, market });
+
+  const pdf = await PDFDocument.create();
+  pdf.registerFontkit(fontkit);
+  const fontBytesData = await loadFontBytes();
+  const font     = await pdf.embedFont(fontBytesData.regular);
+  const fontBold = await pdf.embedFont(fontBytesData.bold);
+  const ctx = new ReportContext(pdf, font, fontBold, theme);
+  ctx.footerLabel = ymd;
+
+  if (topicMeta.includeCover) {
+    ctx.addPage(null);
+    drawCoverPage(ctx, krDate, chatId, coverHeadline);
+  }
+
+  ctx.addPage(topicMeta.title);
+  drawTopicHero(ctx, topicMeta.title, heroSummary);
+
+  if (topicMeta.topic === "economy") {
+    drawEconomySection(ctx, font, market as Awaited<ReturnType<typeof fetchAllMarketData>>, ymd);
+  } else if (topicMeta.topic === "flow") {
+    drawFlowSection(ctx, sectors);
+  } else if (topicMeta.topic === "sector") {
+    drawSectorSection(ctx, sectors, ymd);
+  } else if (topicMeta.topic === "watchlist") {
+    drawPortfolioSection(ctx, totalInvested, totalValue, totalUnrealized, totalUnrealizedPct, watchItems, curr, prev);
+    drawWatchlistSection(ctx, watchItems, totalInvested, totalUnrealized, totalUnrealizedPct);
+    drawTradesSection(ctx, windows);
+  } else {
+    drawMarketOverviewSection(ctx, ymd, market as Awaited<ReturnType<typeof fetchReportMarketData>>, sectors.slice(0, 3));
+    drawPortfolioSection(ctx, totalInvested, totalValue, totalUnrealized, totalUnrealizedPct, watchItems, curr, prev);
+    drawTradesSection(ctx, windows);
+    drawWatchlistSection(ctx, watchItems, totalInvested, totalUnrealized, totalUnrealizedPct);
+    drawCommentarySection(ctx, font, curr, prev, totalUnrealized, totalUnrealizedPct, watchItems, sectors);
+  }
+
+  drawClosingHighlight(ctx, "최종 결론", closingSummary);
+  ctx.finalizePage();
+
+  return pdf.save();
+}
