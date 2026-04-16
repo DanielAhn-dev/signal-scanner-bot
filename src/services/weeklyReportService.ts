@@ -809,6 +809,11 @@ class ReportContext {
     this.page.drawText(s, { x: rightEdge - w, y: y - size * 0.80, size, font: this.fontBold, color });
   }
 
+  textRightLight(s: string, rightEdge: number, y: number, size: number, color: RGB = C.ink) {
+    const w = this.fontLight.widthOfTextAtSize(s, size);
+    this.page.drawText(s, { x: rightEdge - w, y: y - size * 0.80, size, font: this.fontLight, color });
+  }
+
   textCenter(s: string, cx: number, y: number, size: number, color: RGB = C.ink) {
     const w = this.font.widthOfTextAtSize(s, size);
     this.page.drawText(s, { x: cx - w / 2, y: y - size * 0.80, size, font: this.font, color });
@@ -852,7 +857,7 @@ function drawSectionHeader(ctx: ReportContext, label: string, sub?: string) {
   ctx.line(ML, ctx.y, W - MR, ctx.y, C.rule, 0.75);
   const textY = ctx.y - 8;
   ctx.textBold(label, ML, textY, 8.5, C.ink);
-  if (sub) ctx.textRight(sub, W - MR, textY, 6.5, C.dim);
+  if (sub) ctx.textRightLight(sub, W - MR - 6, textY, 6.5, C.dim);
   ctx.y -= SECTION_H + 3;
 }
 
@@ -1097,7 +1102,7 @@ function drawTopicHero(ctx: ReportContext, title: string, subtitle: string) {
 
   // 1pt black 하단 룰 (히어로 블럭 경계)
   ctx.line(x, ctx.y, x + bodyW, ctx.y, C.black, 1);
-  ctx.y -= 14;
+  ctx.y -= 40;
 }
 
 function drawClosingHighlight(ctx: ReportContext, title: string, body: string) {
@@ -1501,26 +1506,39 @@ function drawEconomySection(
   market: Awaited<ReturnType<typeof fetchAllMarketData>>,
   ymd: string
 ) {
+  ctx.y -= 18;  // 히어로 → 섹션 헤더 추가 여백
   drawSectionHeader(ctx, "거시 환경 요약", `기준: ${ymd}`);
+  ctx.y -= 12;  // 섹션 헤더 → KPI 그리드 여백
 
   const cards: KpiCard[] = [];
-  if (market.kospi) cards.push({ label: "KOSPI", value: fmtInt(toNum(market.kospi.price)), sub: fmtPct(toNum(market.kospi.changeRate)), valueColor: pnlColor(toNum(market.kospi.changeRate)) });
-  if (market.kosdaq) cards.push({ label: "KOSDAQ", value: fmtInt(toNum(market.kosdaq.price)), sub: fmtPct(toNum(market.kosdaq.changeRate)), valueColor: pnlColor(toNum(market.kosdaq.changeRate)) });
-  if (market.sp500) cards.push({ label: "S&P 500", value: fmtInt(toNum(market.sp500.price)), sub: fmtPct(toNum(market.sp500.changeRate)), valueColor: pnlColor(toNum(market.sp500.changeRate)) });
-  if (market.nasdaq) cards.push({ label: "NASDAQ", value: fmtInt(toNum(market.nasdaq.price)), sub: fmtPct(toNum(market.nasdaq.changeRate)), valueColor: pnlColor(toNum(market.nasdaq.changeRate)) });
-  if (market.usdkrw) cards.push({ label: "USD/KRW", value: `${fmtInt(toNum(market.usdkrw.price))}원`, sub: fmtPct(toNum(market.usdkrw.changeRate)), valueColor: C.text });
-  if (market.us10y) cards.push({ label: "미국 10년물", value: `${toNum(market.us10y.price).toFixed(2)}%`, sub: fmtPct(toNum(market.us10y.changeRate)), valueColor: pnlColor(toNum(market.us10y.changeRate)) });
-  if (market.vix) cards.push({ label: "VIX", value: toNum(market.vix.price).toFixed(2), sub: toNum(market.vix.price) >= 30 ? "고위험" : toNum(market.vix.price) >= 20 ? "주의" : "안정", valueColor: toNum(market.vix.price) >= 30 ? C.up : C.text });
-  if (market.fearGreed) cards.push({ label: "공포·탐욕", value: String(toNum(market.fearGreed.score)), sub: market.fearGreed.rating ?? "", valueColor: C.text });
+  // ── Row 1: 주요 증시 ──
+  if (market.kospi)    cards.push({ label: "KOSPI",    value: fmtInt(toNum(market.kospi.price)),    sub: fmtPct(toNum(market.kospi.changeRate)),    valueColor: pnlColor(toNum(market.kospi.changeRate)) });
+  if (market.kosdaq)   cards.push({ label: "KOSDAQ",   value: fmtInt(toNum(market.kosdaq.price)),   sub: fmtPct(toNum(market.kosdaq.changeRate)),   valueColor: pnlColor(toNum(market.kosdaq.changeRate)) });
+  if (market.sp500)    cards.push({ label: "S&P 500",  value: fmtInt(toNum(market.sp500.price)),    sub: fmtPct(toNum(market.sp500.changeRate)),    valueColor: pnlColor(toNum(market.sp500.changeRate)) });
+  if (market.nasdaq)   cards.push({ label: "NASDAQ",   value: fmtInt(toNum(market.nasdaq.price)),   sub: fmtPct(toNum(market.nasdaq.changeRate)),   valueColor: pnlColor(toNum(market.nasdaq.changeRate)) });
+  // ── Row 2: 금리·환율·심리 ──
+  if (market.usdkrw)   cards.push({ label: "USD/KRW",   value: `${fmtInt(toNum(market.usdkrw.price))}원`, sub: fmtPct(toNum(market.usdkrw.changeRate)),   valueColor: C.text });
+  if (market.us10y)    cards.push({ label: "미국 10년물", value: `${toNum(market.us10y.price).toFixed(2)}%`, sub: fmtPct(toNum(market.us10y.changeRate)),    valueColor: pnlColor(toNum(market.us10y.changeRate)) });
+  if (market.vix)      cards.push({ label: "VIX",        value: toNum(market.vix.price).toFixed(2),   sub: toNum(market.vix.price) >= 30 ? "고위험" : toNum(market.vix.price) >= 20 ? "주의" : "안정", valueColor: toNum(market.vix.price) >= 30 ? C.up : C.text });
+  if (market.fearGreed) cards.push({ label: "공포·탐욕",  value: String(toNum(market.fearGreed.score)), sub: market.fearGreed.rating ?? "",               valueColor: C.text });
+  // ── Row 3: 원자재 ──
+  if (market.gold)     cards.push({ label: "금 Gold",    value: `$${fmtInt(Math.round(toNum(market.gold.price)))}`,       sub: fmtPct(toNum(market.gold.changeRate)),    valueColor: pnlColor(toNum(market.gold.changeRate)) });
+  if (market.wtiOil)   cards.push({ label: "WTI 원유",   value: `$${toNum(market.wtiOil.price).toFixed(1)}`,               sub: fmtPct(toNum(market.wtiOil.changeRate)),  valueColor: pnlColor(toNum(market.wtiOil.changeRate)) });
+  if (market.copper)   cards.push({ label: "구리 Copper", value: `$${toNum(market.copper.price).toFixed(2)}`,              sub: fmtPct(toNum(market.copper.changeRate)),  valueColor: pnlColor(toNum(market.copper.changeRate)) });
+  if (market.silver)   cards.push({ label: "은 Silver",  value: `$${toNum(market.silver.price).toFixed(2)}`,               sub: fmtPct(toNum(market.silver.changeRate)),  valueColor: pnlColor(toNum(market.silver.changeRate)) });
+
   while (cards.length % 4 !== 0) cards.push({ label: "", value: "" });
   if (cards.length > 0) drawKpiGrid(ctx, cards, 4);
+  ctx.y -= 20;  // KPI 그리드 → 거시 해석 여백
 
   const comments: string[] = [];
-  if (market.vix && toNum(market.vix.price) >= 30) comments.push("VIX 30 이상으로 변동성 확대 구간입니다. 보수적 비중 조절이 유효합니다.");
-  if (market.fearGreed && toNum(market.fearGreed.score) <= 25) comments.push("공포 심리가 극단 구간입니다. 급락 시 분할 접근 여부를 점검할 시점입니다.");
-  if (market.us10y && toNum(market.us10y.price) >= 5) comments.push("미국 10년물 금리가 높아 성장주 할인율 부담이 지속될 수 있습니다.");
-  if (market.usdkrw && toNum(market.usdkrw.price) >= 1400) comments.push("원화 약세가 이어지면 외국인 수급 변동성이 커질 수 있습니다.");
-  if (market.wtiOil && toNum(market.wtiOil.price) >= 100) comments.push("유가 부담이 높아져 비용 민감 업종에 불리할 수 있습니다.");
+  if (market.vix      && toNum(market.vix.price)           >= 30)   comments.push("VIX 30 이상으로 변동성 확대 구간입니다. 보수적 비중 조절이 유효합니다.");
+  if (market.fearGreed && toNum(market.fearGreed.score)    <= 25)   comments.push("공포 심리가 극단 구간입니다. 급락 시 분할 접근 여부를 점검할 시점입니다.");
+  if (market.us10y    && toNum(market.us10y.price)         >= 5)    comments.push("미국 10년물 금리가 높아 성장주 할인율 부담이 지속될 수 있습니다.");
+  if (market.usdkrw   && toNum(market.usdkrw.price)        >= 1400) comments.push("원화 약세가 이어지면 외국인 수급 변동성이 커질 수 있습니다.");
+  if (market.wtiOil   && toNum(market.wtiOil.price)        >= 90)   comments.push("유가가 배럴당 90달러를 넘어 에너지 비용 부담이 높아진 구간입니다.");
+  if (market.gold     && toNum(market.gold.price)          >= 2500)  comments.push("금값 강세는 안전자산 선호 심리가 지속되고 있음을 나타냅니다.");
+  if (market.copper   && toNum(market.copper.price)        <= 3.5)   comments.push("구리 약세는 글로벌 경기 둔화 우려를 반영할 수 있습니다.");
 
   drawCommentBlock(
     ctx,
@@ -1529,6 +1547,7 @@ function drawEconomySection(
     C.navyLight,
     font
   );
+  ctx.y -= 20;  // 거시 해석 → 최종 결론 여백
 }
 
 export async function renderReportPdf(input: RenderReportInput): Promise<WeeklyPdfReport> {
@@ -1821,6 +1840,8 @@ export async function createPreviewReportPdf(topicStr = "economy"): Promise<Uint
     fearGreed: { score: 52, rating: "Neutral" },
     wtiOil:    { price:   78.4,  changeRate:  1.10 },
     gold:      { price: 2642,    changeRate:  0.40 },
+    silver:    { price:  29.85,  changeRate:  0.30 },
+    copper:    { price:   4.12,  changeRate: -0.50 },
     btc:       { price: 105280,  changeRate:  3.20 },
     dxy:       { price:  107.2,  changeRate: -0.20 },
     hyg:       { price:   79.1,  changeRate:  0.10 },
