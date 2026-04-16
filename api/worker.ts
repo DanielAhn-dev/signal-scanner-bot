@@ -29,9 +29,9 @@ const supa = () =>
 const INTERNAL_SECRET = process.env.CRON_SECRET || "";
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || "";
 const DEFAULT_TG_TIMEOUT_MS = 5000;
-const DOCUMENT_TG_TIMEOUT_MS = 20000;
+const DOCUMENT_TG_TIMEOUT_MS = 30000;
 const DEFAULT_JOB_TIMEOUT_MS = 7800;
-const REPORT_JOB_TIMEOUT_MS = 30000;
+const REPORT_JOB_TIMEOUT_MS = 45000;
 
 export const config = {
   maxDuration: 60,
@@ -83,9 +83,17 @@ async function tgFetch(method: string, body: any): Promise<TGApiResponse> {
   }
 }
 
-function withTimeout<T>(p: Promise<T>, ms = DEFAULT_JOB_TIMEOUT_MS): Promise<T> {
+function withTimeout<T>(
+  p: Promise<T>,
+  ms = DEFAULT_JOB_TIMEOUT_MS,
+  label = "job"
+): Promise<T> {
   return new Promise((resolve, reject) => {
-    const t = setTimeout(() => reject(new Error("TIMEOUT")), ms);
+    const t = setTimeout(() => {
+      const error = new Error(`TIMEOUT: ${label} (${ms}ms)`);
+      error.name = "TimeoutError";
+      reject(error);
+    }, ms);
     p.then((v) => {
       clearTimeout(t);
       resolve(v);
@@ -226,7 +234,11 @@ async function handleTelegramUpdateJob(job: any) {
     const callbackTimeout = u.callback_query.data === "cmd:report"
       ? REPORT_JOB_TIMEOUT_MS
       : DEFAULT_JOB_TIMEOUT_MS;
-    await withTimeout(routeCallback(u.callback_query.data, { chatId, from }, tgFetch), callbackTimeout);
+    await withTimeout(
+      routeCallback(u.callback_query.data, { chatId, from }, tgFetch),
+      callbackTimeout,
+      `callback ${u.callback_query.data}`
+    );
     return;
   }
 
@@ -286,7 +298,8 @@ async function handleTelegramUpdateJob(job: any) {
         console.log("[worker] tgSend 호출", { method, body, resp });
         return resp;
       }),
-      resolveJobTimeout(text)
+      resolveJobTimeout(text),
+      `routeMessage ${text}`
     );
     console.log("[worker] routeMessage 완료");
   }

@@ -76,6 +76,73 @@ export type WeeklyPdfReport = {
   summaryText: string;
 };
 
+export type WeeklyReportFailureStep =
+  | "trade_query"
+  | "watchlist_query"
+  | "sector_query"
+  | "market_data"
+  | "realtime_price"
+  | "font_load"
+  | "pdf_render"
+  | "pdf_save";
+
+const WEEKLY_REPORT_STEP_LABEL: Record<WeeklyReportFailureStep, string> = {
+  trade_query: "거래 내역 조회",
+  watchlist_query: "보유 종목 조회",
+  sector_query: "섹터 데이터 조회",
+  market_data: "시장 데이터 조회",
+  realtime_price: "실시간 가격 조회",
+  font_load: "PDF 폰트 로드",
+  pdf_render: "PDF 렌더링",
+  pdf_save: "PDF 저장",
+};
+
+export class WeeklyReportError extends Error {
+  readonly step: WeeklyReportFailureStep;
+  readonly detail: string;
+  readonly cause?: unknown;
+
+  constructor(step: WeeklyReportFailureStep, detail: string, cause?: unknown) {
+    super(`[WeeklyReport:${step}] ${detail}`);
+    this.name = "WeeklyReportError";
+    this.step = step;
+    this.detail = detail;
+    this.cause = cause;
+  }
+}
+
+function errorMessage(error: unknown): string {
+  if (error instanceof Error && error.message) return error.message;
+  return String(error);
+}
+
+async function runReportStep<T>(
+  step: WeeklyReportFailureStep,
+  fn: () => PromiseLike<T> | T
+): Promise<T> {
+  try {
+    return await fn();
+  } catch (error) {
+    if (error instanceof WeeklyReportError) throw error;
+    throw new WeeklyReportError(
+      step,
+      `${WEEKLY_REPORT_STEP_LABEL[step]} 중 오류가 발생했습니다. ${errorMessage(error)}`,
+      error
+    );
+  }
+}
+
+export function describeWeeklyReportFailure(error: unknown): string {
+  if (error instanceof WeeklyReportError) {
+    return `${WEEKLY_REPORT_STEP_LABEL[error.step]} 실패: ${error.detail}`;
+  }
+  if (error instanceof Error && /^TIMEOUT:/i.test(error.message)) {
+    return `처리 시간 초과: ${error.message.replace(/^TIMEOUT:\s*/i, "")}`;
+  }
+  if (error instanceof Error) return error.message;
+  return String(error);
+}
+
 // ─── 포맷 유틸 ────────────────────────────────────────────────────────────
 function toNum(v: unknown): number {
   const n = Number(v);
@@ -590,31 +657,50 @@ export async function createWeeklyReportPdf(
   const tradeSince = shiftDays(now, -28).toISOString();
 
   const [tradeRes, watchRes, sectorRes] = await Promise.all([
-    supabase
-      .from("virtual_trades")
-      .select("side, code, price, quantity, pnl_amount, traded_at")
-      .eq("chat_id", chatId)
-      .gte("traded_at", tradeSince)
-      .order("traded_at", { ascending: false })
-      .limit(300)
-      .returns<TradeRow[]>(),
-    supabase
-      .from("watchlist")
-      .select("code, buy_price, quantity, invested_amount, status, stock:stocks(code,name,close)")
-      .eq("chat_id", chatId)
-      .returns<WatchlistRow[]>(),
-    supabase
-      .from("sectors")
-      .select("name, score, change_rate")
-      .order("score", { ascending: false })
-      .limit(3)
-      .returns<SectorRow[]>(),
+    runReportStep("trade_query", () =>
+      supabase
+        .from("virtual_trades")
+        .select("side, code, price, quantity, pnl_amount, traded_at")
+        .eq("chat_id", chatId)
+        .gte("traded_at", tradeSince)
+        .order("traded_at", { ascending: false })
+        .limit(300)
+        .returns<TradeRow[]>()
+    ),
+    runReportStep("watchlist_query", () =>
+      supabase
+        .from("watchlist")
+        .select("code, buy_price, quantity, invested_amount, status, stock:stocks(code,name,close)")
+        .eq("chat_id", chatId)
+        .returns<WatchlistRow[]>()
+    ),
+    runReportStep("sector_query", () =>
+      supabase
+        .from("sectors")
+        .select("name, score, change_rate")
+        .order("score", { ascending: false })
+        .limit(3)
+        .returns<SectorRow[]>()
+    ),
   ]);
 
-  if (tradeRes.error) throw new Error(`virtual_trades 조회 실패: ${tradeRes.error.message}`);
-  if (watchRes.error) throw new Error(`watchlist 조회 실패: ${watchRes.error.message}`);
+  if (tradeRes.error) {
+    throw new WeeklyReportError("trade_query", `virtual_trades 조회 실패: ${tradeRes.error.message}`, tradeRes.error);
+  }
+  if (watchRes.error) {
+    throw new WeeklyReportError("watchlist_query", `watchlist 조회 실패: ${watchRes.error.message}`, watchRes.error);
+  }
+  if (sectorRes.error) {
+    throw new WeeklyReportError("sector_query", `sectors 조회 실패: ${sectorRes.error.message}`, sectorRes.error);
+  }
 
-  const market = await fetchReportMarketData().catch(() => ({} as any));
+  const market = await runReportStep("market_data", async () => {
+    try {
+      return await fetchReportMarketData();
+    } catch {
+      return {} as any;
+    }
+  });
 
   const rows = tradeRes.data ?? [];
   const windows = splitWindows(rows, now);
@@ -623,7 +709,13 @@ export async function createWeeklyReportPdf(
 
   const codes = (watchRes.data ?? []).map((r) => r.code);
   const realtimeMap = codes.length
-    ? await fetchRealtimePriceBatch(codes).catch(() => ({} as Record<string, any>))
+    ? await runReportStep("realtime_price", async () => {
+        try {
+          return await fetchRealtimePriceBatch(codes);
+        } catch {
+          return {} as Record<string, any>;
+        }
+      })
     : {};
 
   const watchItems: WatchItem[] = (watchRes.data ?? []).map((row) => {
@@ -658,10 +750,10 @@ export async function createWeeklyReportPdf(
   const totalUnrealizedPct = totalInvested > 0 ? (totalUnrealized / totalInvested) * 100 : 0;
 
   // ── PDF 문서 초기화 ──────────────────────────────────────────────────────
-  const pdf = await PDFDocument.create();
+  const pdf = await runReportStep("pdf_render", () => PDFDocument.create());
   pdf.registerFontkit(fontkit);
-  const fontBytes = await loadKoreanFontBytes();
-  const font = await pdf.embedFont(fontBytes);
+  const fontBytes = await runReportStep("font_load", () => loadKoreanFontBytes());
+  const font = await runReportStep("pdf_render", () => pdf.embedFont(fontBytes));
   const ctx = new ReportContext(pdf, font);
 
   // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -947,7 +1039,7 @@ export async function createWeeklyReportPdf(
   drawFooter(ctx, ymd);
 
   // ── 반환 ────────────────────────────────────────────────────────────────
-  const bytes = await pdf.save();
+  const bytes = await runReportStep("pdf_save", () => pdf.save());
 
   const caption = [
     `주간 포트폴리오 리포트 — ${krDate}`,
