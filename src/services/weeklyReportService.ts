@@ -100,6 +100,23 @@ type ReportTopicMeta = {
   captionTitle: string;
 };
 
+type RenderReportInput = {
+  topicMeta: ReportTopicMeta;
+  chatId: number;
+  ymd: string;
+  krDate: string;
+  curr: WindowSummary;
+  prev: WindowSummary;
+  windows: ReturnType<typeof splitWindows>;
+  watchItems: WatchItem[];
+  totalInvested: number;
+  totalValue: number;
+  totalUnrealized: number;
+  totalUnrealizedPct: number;
+  sectors: SectorRow[];
+  market: Awaited<ReturnType<typeof fetchReportMarketData>> | Awaited<ReturnType<typeof fetchAllMarketData>>;
+};
+
 type ReportTheme = {
   pageBand: RGB;
   sectionBand: RGB;
@@ -650,10 +667,11 @@ function splitWindows(rows: TradeRow[], now: Date) {
 }
 
 // ─── 폰트 로드 ────────────────────────────────────────────────────────────
-async function loadFontBytes(): Promise<{ regular: Uint8Array; bold: Uint8Array }> {
+async function loadFontBytes(): Promise<{ light: Uint8Array; regular: Uint8Array; bold: Uint8Array }> {
   const base = path.join(process.cwd(), "assets", "fonts");
-  const regularPath = path.join(base, "Pretendard-Regular.otf");
-  const boldPath    = path.join(base, "Pretendard-Bold.otf");
+  const lightPath   = path.join(base, "Pretendard-Light.ttf");
+  const regularPath = path.join(base, "Pretendard-Regular.ttf");
+  const boldPath    = path.join(base, "Pretendard-Bold.ttf");
   const fallback    = path.join(base, "NotoSansCJKkr-Regular.otf");
   async function tryLoad(...paths: string[]): Promise<Uint8Array> {
     for (const p of paths) {
@@ -663,7 +681,8 @@ async function loadFontBytes(): Promise<{ regular: Uint8Array; bold: Uint8Array 
   }
   const regular = await tryLoad(regularPath, fallback);
   const bold    = await tryLoad(boldPath, regularPath, fallback);
-  return { regular, bold };
+  const light   = await tryLoad(lightPath, regularPath, fallback);
+  return { light, regular, bold };
 }
 
 /** @deprecated use loadFontBytes */
@@ -703,6 +722,7 @@ function wrapText(text: string, maxWidth: number, font: PDFFont, size: number): 
 class ReportContext {
   pdf: PDFDocument;
   page!: PDFPage;
+  fontLight: PDFFont; // Pretendard Light
   font: PDFFont;      // Pretendard Regular
   fontBold: PDFFont;  // Pretendard Bold
   theme: ReportTheme;
@@ -719,12 +739,13 @@ class ReportContext {
   pageTitle: string | null = null;
   private pageFinalized = false;
 
-  constructor(pdf: PDFDocument, font: PDFFont, fontBold: PDFFont, theme: ReportTheme) {
-    this.pdf      = pdf;
-    this.font     = font;
-    this.fontBold = fontBold;
-    this.theme    = theme;
-    this.BODY_W   = this.W - this.ML - this.MR;
+  constructor(pdf: PDFDocument, fontLight: PDFFont, font: PDFFont, fontBold: PDFFont, theme: ReportTheme) {
+    this.pdf       = pdf;
+    this.fontLight = fontLight;
+    this.font      = font;
+    this.fontBold  = fontBold;
+    this.theme     = theme;
+    this.BODY_W    = this.W - this.ML - this.MR;
   }
 
   addPage(pageTitle?: string | null) {
@@ -765,6 +786,15 @@ class ReportContext {
     const lines = wrapText(s, maxW ?? this.BODY_W, this.fontBold, size);
     for (let i = 0; i < lines.length; i++) {
       this.page.drawText(lines[i], { x, y: y - size * 0.80 - i * lh, size, font: this.fontBold, color });
+    }
+    return lines.length;
+  }
+
+  textLight(s: string, x: number, y: number, size: number, color: RGB = C.ink, maxW?: number): number {
+    const lh = this.lh(size);
+    const lines = wrapText(s, maxW ?? this.BODY_W, this.fontLight, size);
+    for (let i = 0; i < lines.length; i++) {
+      this.page.drawText(lines[i], { x, y: y - size * 0.80 - i * lh, size, font: this.fontLight, color });
     }
     return lines.length;
   }
@@ -812,58 +842,61 @@ function drawFooter(ctx: ReportContext, today: string) {
   ctx.textRight(`${today}  /  ${ctx.pageNum}`, W - MR, textY, 6.5, C.subtle);
 }
 
-// ─── 섹션 헤더 밴드 ──────────────────────────────────────────────────────
+// ─── 섹션 헤더 ──────────────────────────────────────────────────────
 const SECTION_H = 20;
 
 function drawSectionHeader(ctx: ReportContext, label: string, sub?: string) {
   ctx.ensureSpace(SECTION_H + 18);
   const { ML, MR, W } = ctx;
+  // 1pt accent 상단 룰
   ctx.line(ML, ctx.y, W - MR, ctx.y, ctx.theme.accent, 1);
-  ctx.rect(ML, ctx.y - SECTION_H, W - ML - MR, SECTION_H, C.black);
-  ctx.rect(ML, ctx.y - SECTION_H, 3, SECTION_H, ctx.theme.accent);
-  const textY = vCenterTopY(ctx.y, SECTION_H, 8.5);
-  ctx.textBold(label, ML + 10, textY, 8.5, C.white);
-  if (sub) ctx.textRight(sub, W - MR - 6, textY, 7, C.subtle);
+  const textY = ctx.y - 8;
+  ctx.textBold(label, ML, textY, 8.5, C.ink);
+  if (sub) ctx.textRight(sub, W - MR, textY, 6.5, C.dim);
   ctx.y -= SECTION_H + 3;
 }
 
-// ─── KPI 카드 그리드 ─────────────────────────────────────────────────────
+// ─── KPI 그리드 ─────────────────────────────────────────────────────────
 type KpiCard = { label: string; value: string; sub?: string; valueColor?: RGB };
 
 function drawKpiGrid(ctx: ReportContext, cards: KpiCard[], cols = 4) {
   const { ML, W } = ctx;
-  const gap    = 5;
   const totalW = W - ML - ctx.MR;
-  const cardW  = (totalW - gap * (cols - 1)) / cols;
-  const cardH  = 46;
+  const cardW  = totalW / cols;
+  const cardH  = 44;
   const padX   = 10;
   const maxW   = cardW - padX * 2;
   const rows   = Math.ceil(cards.length / cols);
 
-  ctx.ensureSpace(cardH * rows + gap * (rows - 1) + 8);
+  ctx.ensureSpace(cardH * rows + 8);
 
   const startX = ML;
   const startY = ctx.y;
 
+  // 행 구분선 (0.75pt 상/하단, 0.25pt 중간)
+  for (let r = 0; r <= rows; r++) {
+    const ry = startY - r * cardH;
+    ctx.line(ML, ry, ML + totalW, ry, C.rule, r === 0 || r === rows ? 0.75 : 0.25);
+  }
+  // 열 담백 — 새로 비교 (0.25pt)
+  for (let c = 1; c < cols; c++) {
+    ctx.line(ML + c * cardW, startY, ML + c * cardW, startY - rows * cardH, C.rule, 0.25);
+  }
+
   cards.forEach((card, i) => {
     const col = i % cols;
     const row = Math.floor(i / cols);
-    const x = startX + col * (cardW + gap);
-    const y = startY - row * (cardH + gap);
-
-    ctx.rect(x, y - cardH, cardW, cardH, ctx.theme.softBg);
-    ctx.rect(x, y - cardH, 3, cardH, ctx.theme.accent);
-    ctx.line(x, y - cardH, x + cardW, y - cardH, C.rule, 0.25);
-    ctx.line(x, y,         x + cardW, y,          C.rule, 0.5);
+    const x   = startX + col * cardW;
+    const y   = startY - row * cardH;
 
     if (!card.label && !card.value) return;
 
-    ctx.text(card.label,       x + padX, y - 9,  7,  C.dim,                    maxW);
-    ctx.textBold(card.value,   x + padX, y - 22, 13, card.valueColor ?? C.ink, maxW);
-    if (card.sub) ctx.text(card.sub, x + padX, y - 37, 7, C.subtle,             maxW);
+    ctx.textLight(card.label,     x + padX, y - 9,  6.5, C.dim,                    maxW);
+    ctx.textBold(card.value,      x + padX, y - 23, 14,  card.valueColor ?? C.ink, maxW);
+    if (card.sub) ctx.textLight(card.sub, x + padX, y - 39, 6.5, C.subtle,         maxW);
   });
 
-  ctx.y -= rows * (cardH + gap) - gap + 6;
+  ctx.y -= rows * cardH + 6;
 }
 
 function drawPortfolioSummaryRow(
@@ -884,7 +917,6 @@ function drawPortfolioSummaryRow(
   const rowH     = needsWrap ? 32 : baseH;
 
   ctx.ensureSpace(rowH + 4);
-  ctx.rect(ctx.ML, ctx.y - rowH, ctx.BODY_W, rowH, C.surface);
   ctx.line(ctx.ML, ctx.y,        ctx.ML + ctx.BODY_W, ctx.y,        C.rule, 0.5);
   ctx.line(ctx.ML, ctx.y - rowH, ctx.ML + ctx.BODY_W, ctx.y - rowH, C.rule, 0.25);
 
@@ -920,30 +952,27 @@ function drawTable(
   const totalW   = cols.reduce((s, c) => s + c.width, 0);
   const hTextY   = vCenterTopY(ctx.y, HEADER_H, fontSize);
 
-  // 헤더 (검정 배경, 상단 accent 룰)
+  // 헤더 (타이포만, 배경 없음)
   ctx.ensureSpace(HEADER_H + ROW_H * 2);
-  ctx.rect(ML, ctx.y - HEADER_H, totalW, HEADER_H, C.black);
-  ctx.line(ML, ctx.y, ML + totalW, ctx.y, ctx.theme.accent, 1);
+  ctx.line(ML, ctx.y, ML + totalW, ctx.y, C.rule, 0.75);
   let hx = ML;
   for (const col of cols) {
     const tH = truncate(col.header, 18);
     if (col.align === "right") {
-      ctx.textRightBold(tH, hx + col.width - CELL_PAD, hTextY, fontSize, C.white);
+      ctx.textRightBold(tH, hx + col.width - CELL_PAD, hTextY, fontSize, C.ink);
     } else if (col.align === "center") {
-      ctx.textCenterBold(tH, hx + col.width / 2, hTextY, fontSize, C.white);
+      ctx.textCenterBold(tH, hx + col.width / 2, hTextY, fontSize, C.ink);
     } else {
-      ctx.textBold(tH, hx + CELL_PAD, hTextY, fontSize, C.white);
+      ctx.textBold(tH, hx + CELL_PAD, hTextY, fontSize, C.ink);
     }
     hx += col.width;
   }
+  ctx.line(ML, ctx.y - HEADER_H, ML + totalW, ctx.y - HEADER_H, C.rule, 0.5);
   ctx.y -= HEADER_H;
 
-  // 데이터 행 (수직선 없음, 수평 hairline만)
+  // 데이터 행 (배경 없음, 수평 hairline만)
   rows.forEach((row, ri) => {
     ctx.ensureSpace(ROW_H + 4);
-    const bg = ri % 2 === 0 ? C.white : C.alt;
-    ctx.rect(ML, ctx.y - ROW_H, totalW, ROW_H, bg);
-
     const rowTextY = vCenterTopY(ctx.y, ROW_H, fontSize);
     let rx = ML;
     row.forEach((cell, ci) => {
@@ -966,10 +995,7 @@ function drawTable(
     ctx.y -= ROW_H;
   });
 
-  // 외곽: 상/하 0.75pt, 좌/우 0.5pt
-  const tableTop = ctx.y + ROW_H * rows.length + HEADER_H;
-  ctx.line(ML,          tableTop, ML,          ctx.y, C.rule, 0.5);
-  ctx.line(ML + totalW, tableTop, ML + totalW, ctx.y, C.rule, 0.5);
+  // 하단 룰
   ctx.line(ML, ctx.y, ML + totalW, ctx.y, C.rule, 0.75);
 
   ctx.y -= 5;
@@ -1042,41 +1068,42 @@ function drawCoverPage(
 }
 
 // ─── 페이지 타이틀 바 ────────────────────────────────────────────────────
-const PAGE_TITLE_H = 22;
+const PAGE_TITLE_H = 20;
 
 function drawPageTitle(ctx: ReportContext, title: string) {
   ctx.rect(ctx.ML, ctx.y - PAGE_TITLE_H, ctx.BODY_W, PAGE_TITLE_H, ctx.theme.pageBand);
   ctx.line(ctx.ML, ctx.y, ctx.ML + ctx.BODY_W, ctx.y, ctx.theme.accent, 1);
-  const tY = vCenterTopY(ctx.y, PAGE_TITLE_H, 10);
-  ctx.textCenterBold(title, ctx.W / 2, tY, 10, C.white);
+  const tY = vCenterTopY(ctx.y, PAGE_TITLE_H, 9);
+  ctx.textCenterBold(title, ctx.W / 2, tY, 9, C.white);
   ctx.y -= PAGE_TITLE_H + 6;
 }
 
 function drawTopicHero(ctx: ReportContext, title: string, subtitle: string) {
-  const heroH = 80;
-  ctx.ensureSpace(heroH + 8);
-  const x = ctx.ML;
-  const y = ctx.y;
+  const bodyW = ctx.BODY_W;
+  const x     = ctx.ML;
+  ctx.ensureSpace(80);
 
-  ctx.rect(x, y - heroH, ctx.BODY_W, heroH, C.surface);
-  ctx.rect(x, y - heroH, 4, heroH, ctx.theme.accent);
-  ctx.line(x, y,        x + ctx.BODY_W, y,        C.rule, 0.5);
-  ctx.line(x, y - heroH, x + ctx.BODY_W, y - heroH, C.rule, 0.75);
+  // heroLabel: 6.5pt Light, accent
+  ctx.textLight(ctx.theme.heroLabel, x, ctx.y, 6.5, ctx.theme.accent);
+  ctx.y -= Math.round(6.5 * 1.45) + 5;
 
-  // heroLabel: 7pt accent caps
-  ctx.text(ctx.theme.heroLabel, x + 14, y - 12, 7.5, ctx.theme.accent, ctx.BODY_W - 28);
-  // title: 16pt bold black
-  ctx.textBold(title, x + 14, y - 28, 16, C.black, ctx.BODY_W - 28);
-  // subtitle: 8pt dim
-  ctx.text(subtitle, x + 14, y - 52, 8.5, C.dim, ctx.BODY_W - 28);
+  // title: 20pt Bold
+  ctx.textBold(title, x, ctx.y, 20, C.ink, bodyW);
+  ctx.y -= Math.round(20 * 1.45) + 4;
 
-  ctx.y -= heroH + 8;
+  // subtitle: 8.5pt Light dim
+  const subLines = ctx.textLight(subtitle, x, ctx.y, 8.5, C.dim, bodyW);
+  ctx.y -= subLines * Math.round(8.5 * 1.45) + 10;
+
+  // 1pt accent 하단 룰
+  ctx.line(x, ctx.y, x + bodyW, ctx.y, ctx.theme.accent, 1);
+  ctx.y -= 14;
 }
 
 function drawClosingHighlight(ctx: ReportContext, title: string, body: string) {
   const fontSize  = 8.5;
   const titleSize = 9.5;
-  const maxW      = ctx.BODY_W - 26;
+  const maxW      = ctx.BODY_W;
   const lh        = Math.round(fontSize * 1.45);
   const lines     = wrapText(body, maxW, ctx.font, fontSize);
   const blockH    = 10 + titleSize + 6 + lines.length * lh + 10;
@@ -1085,18 +1112,19 @@ function drawClosingHighlight(ctx: ReportContext, title: string, body: string) {
 
   const x = ctx.ML;
   const y = ctx.y;
-  // 배경: surface, 상단 accent 2pt 룰
-  ctx.rect(x, y - blockH, ctx.BODY_W, blockH, C.surface);
-  ctx.rect(x, y - blockH, ctx.BODY_W, 2, ctx.theme.accent);
-  ctx.line(x, y - blockH, x + ctx.BODY_W, y - blockH, C.rule, 0.5);
-  ctx.line(x, y,          x + ctx.BODY_W, y,           C.rule, 0.5);
 
-  ctx.textBold(title, x + 12, y - 11, titleSize, ctx.theme.accent, maxW);
+  // 1pt accent 상단 룰
+  ctx.line(x, y, x + ctx.BODY_W, y, ctx.theme.accent, 1);
+
+  ctx.textBold(title, x, y - 10, titleSize, ctx.theme.accent, maxW);
   lines.forEach((line, idx) => {
-    ctx.text(line, x + 12, y - 11 - titleSize - 6 - idx * lh, fontSize, C.ink, maxW);
+    ctx.text(line, x, y - 10 - titleSize - 6 - idx * lh, fontSize, C.ink, maxW);
   });
 
-  ctx.y -= blockH + 8;
+  // hairline 하단
+  ctx.line(x, y - blockH, x + ctx.BODY_W, y - blockH, C.rule, 0.25);
+
+  ctx.y = y - blockH - 8;
 }
 
 // ─── 코멘트 블록 ─────────────────────────────────────────────────────────
@@ -1110,9 +1138,9 @@ function drawCommentBlock(
   const fontSize      = 8.5;
   const titleFontSize = 9;
   const lh            = Math.round(fontSize * 1.45);
-  const maxW          = ctx.BODY_W - 22;
+  const maxW          = ctx.BODY_W;
   const bodyLines     = wrapText(body, maxW, font, fontSize);
-  // 배경 흰색, 좌측 2.5pt 컬러 룰, 하단 0.5pt hairline
+  // 0.25pt 상단 룰, 타이틀 Bold 액센트 색, 본문 Regular
   const blockH = 9 + titleFontSize + 5 + bodyLines.length * lh + 9;
 
   ctx.ensureSpace(blockH + 5);
@@ -1120,14 +1148,11 @@ function drawCommentBlock(
   const bx = ctx.ML;
   const by = ctx.y;
 
-  ctx.rect(bx, by - blockH, ctx.BODY_W, blockH, C.white);
-  ctx.rect(bx, by - blockH, 2.5, blockH, color);
-  ctx.line(bx, by - blockH, bx + ctx.BODY_W, by - blockH, C.rule, 0.25);
-  ctx.line(bx, by,          bx + ctx.BODY_W, by,           C.rule, 0.5);
+  ctx.line(bx, by, bx + ctx.BODY_W, by, C.rule, 0.25);
 
-  ctx.textBold(title, bx + 10, by - 9, titleFontSize, color, maxW);
+  ctx.textBold(title, bx, by - 9, titleFontSize, color, maxW);
   bodyLines.forEach((line, li) => {
-    ctx.text(line, bx + 10, by - 9 - titleFontSize - 5 - li * lh, fontSize, C.ink, maxW);
+    ctx.text(line, bx, by - 9 - titleFontSize - 5 - li * lh, fontSize, C.ink, maxW);
   });
 
   ctx.y -= blockH + 5;
@@ -1506,6 +1531,123 @@ function drawEconomySection(
   );
 }
 
+export async function renderReportPdf(input: RenderReportInput): Promise<WeeklyPdfReport> {
+  const {
+    topicMeta,
+    chatId,
+    ymd,
+    krDate,
+    curr,
+    prev,
+    windows,
+    watchItems,
+    totalInvested,
+    totalValue,
+    totalUnrealized,
+    totalUnrealizedPct,
+    sectors,
+    market,
+  } = input;
+
+  const theme = getReportTheme(topicMeta.topic);
+  const coverHeadline = buildCoverHeadline({
+    curr,
+    totalUnrealized,
+    totalUnrealizedPct,
+    sectors,
+    market: market as Awaited<ReturnType<typeof fetchReportMarketData>>,
+  });
+  const heroSummary = buildTopicHeroSummary({
+    topic: topicMeta.topic,
+    defaultSummary: theme.heroSummary,
+    curr,
+    totalUnrealized,
+    totalUnrealizedPct,
+    watchItems,
+    sectors,
+    market,
+  });
+  const closingSummary = buildTopicClosingSummary({
+    topic: topicMeta.topic,
+    curr,
+    prev,
+    totalUnrealized,
+    totalUnrealizedPct,
+    watchItems,
+    sectors,
+    market,
+  });
+
+  const pdf = await PDFDocument.create();
+  pdf.registerFontkit(fontkit);
+  const fontBytes = await loadFontBytes();
+  const fontLight = await pdf.embedFont(fontBytes.light);
+  const font      = await pdf.embedFont(fontBytes.regular);
+  const fontBold  = await pdf.embedFont(fontBytes.bold);
+  const ctx = new ReportContext(pdf, fontLight, font, fontBold, theme);
+  ctx.footerLabel = ymd;
+
+  if (topicMeta.includeCover) {
+    ctx.addPage(null);
+    drawCoverPage(ctx, krDate, chatId, coverHeadline);
+  }
+
+  ctx.addPage(topicMeta.title);
+  drawTopicHero(ctx, topicMeta.title, heroSummary);
+
+  if (topicMeta.topic === "economy") {
+    drawEconomySection(ctx, font, market as Awaited<ReturnType<typeof fetchAllMarketData>>, ymd);
+  } else if (topicMeta.topic === "flow") {
+    drawFlowSection(ctx, sectors);
+  } else if (topicMeta.topic === "sector") {
+    drawSectorSection(ctx, sectors, ymd);
+  } else if (topicMeta.topic === "watchlist") {
+    drawPortfolioSection(ctx, totalInvested, totalValue, totalUnrealized, totalUnrealizedPct, watchItems, curr, prev);
+    drawWatchlistSection(ctx, watchItems, totalInvested, totalUnrealized, totalUnrealizedPct);
+    drawTradesSection(ctx, windows);
+  } else {
+    drawMarketOverviewSection(ctx, ymd, market as Awaited<ReturnType<typeof fetchReportMarketData>>, sectors.slice(0, 3));
+    drawPortfolioSection(ctx, totalInvested, totalValue, totalUnrealized, totalUnrealizedPct, watchItems, curr, prev);
+    drawTradesSection(ctx, windows);
+    drawWatchlistSection(ctx, watchItems, totalInvested, totalUnrealized, totalUnrealizedPct);
+    drawCommentarySection(ctx, font, curr, prev, totalUnrealized, totalUnrealizedPct, watchItems, sectors);
+  }
+
+  drawClosingHighlight(ctx, "최종 결론", closingSummary);
+  ctx.finalizePage();
+
+  const bytes = await pdf.save();
+  const caption = buildReportCaption({
+    title: topicMeta.captionTitle,
+    topic: topicMeta.topic,
+    krDate,
+    curr,
+    totalUnrealized,
+    totalUnrealizedPct,
+    sectors,
+    market,
+  });
+  const summaryText = buildReportSummaryText({
+    title: topicMeta.title,
+    topic: topicMeta.topic,
+    ymd,
+    curr,
+    totalUnrealized,
+    totalUnrealizedPct,
+    sectors,
+    market,
+  });
+
+  return {
+    bytes,
+    fileName: `${topicMeta.fileSlug}_${chatId}_${ymd}.pdf`,
+    caption,
+    summaryText,
+    title: topicMeta.title,
+    topic: topicMeta.topic,
+  };
+}
+
 // ─── 메인 export ──────────────────────────────────────────────────────────
 export async function createWeeklyReportPdf(
   supabase: SupabaseClient,
@@ -1513,7 +1655,6 @@ export async function createWeeklyReportPdf(
 ): Promise<WeeklyPdfReport> {
   const chatId = options.chatId;
   const topicMeta = parseReportTopic(options.topic);
-  const theme = getReportTheme(topicMeta.topic);
   const now = new Date();
   const kstNow = asKstDate(now);
   const ymd = toYmd(kstNow);
@@ -1615,113 +1756,29 @@ export async function createWeeklyReportPdf(
   const totalUnrealized = totalValue - totalInvested;
   const totalUnrealizedPct = totalInvested > 0 ? (totalUnrealized / totalInvested) * 100 : 0;
 
-  // ── PDF 문서 초기화 ──────────────────────────────────────────────────────
-  const pdf = await runReportStep("pdf_render", () => PDFDocument.create());
-  pdf.registerFontkit(fontkit);
-  const fontBytes = await runReportStep("font_load", () => loadFontBytes());
-  const font = await runReportStep("pdf_render", () => pdf.embedFont(fontBytes.regular));
-  const fontBold = await runReportStep("pdf_render", () => pdf.embedFont(fontBytes.bold));
-  const ctx = new ReportContext(pdf, font, fontBold, theme);
-  ctx.footerLabel = ymd;
-
-  const sectors = sectorRes.data ?? [];
-  const coverHeadline = buildCoverHeadline({
-    curr,
-    totalUnrealized,
-    totalUnrealizedPct,
-    sectors,
-    market: market as Awaited<ReturnType<typeof fetchReportMarketData>>,
-  });
-  const heroSummary = buildTopicHeroSummary({
-    topic: topicMeta.topic,
-    defaultSummary: theme.heroSummary,
-    curr,
-    totalUnrealized,
-    totalUnrealizedPct,
-    watchItems,
-    sectors,
-    market,
-  });
-  const closingSummary = buildTopicClosingSummary({
-    topic: topicMeta.topic,
-    curr,
-    prev,
-    totalUnrealized,
-    totalUnrealizedPct,
-    watchItems,
-    sectors,
-    market,
-  });
-
-  if (topicMeta.includeCover) {
-    ctx.addPage(null);
-    drawCoverPage(ctx, krDate, chatId, coverHeadline);
-  }
-
-  ctx.addPage(topicMeta.title);
-  drawTopicHero(ctx, topicMeta.title, heroSummary);
-
-  if (topicMeta.topic === "economy") {
-    drawEconomySection(ctx, font, market as Awaited<ReturnType<typeof fetchAllMarketData>>, ymd);
-  } else if (topicMeta.topic === "flow") {
-    drawFlowSection(ctx, sectors);
-  } else if (topicMeta.topic === "sector") {
-    drawSectorSection(ctx, sectors, ymd);
-  } else if (topicMeta.topic === "watchlist") {
-    drawPortfolioSection(ctx, totalInvested, totalValue, totalUnrealized, totalUnrealizedPct, watchItems, curr, prev);
-    drawWatchlistSection(ctx, watchItems, totalInvested, totalUnrealized, totalUnrealizedPct);
-    drawTradesSection(ctx, windows);
-  } else {
-    drawMarketOverviewSection(ctx, ymd, market as Awaited<ReturnType<typeof fetchReportMarketData>>, sectors.slice(0, 3));
-    drawPortfolioSection(ctx, totalInvested, totalValue, totalUnrealized, totalUnrealizedPct, watchItems, curr, prev);
-    drawTradesSection(ctx, windows);
-    drawWatchlistSection(ctx, watchItems, totalInvested, totalUnrealized, totalUnrealizedPct);
-    drawCommentarySection(ctx, font, curr, prev, totalUnrealized, totalUnrealizedPct, watchItems, sectors);
-  }
-
-  drawClosingHighlight(ctx, "최종 결론", closingSummary);
-
-  ctx.finalizePage();
-
-  // ── 반환 ────────────────────────────────────────────────────────────────
-  const bytes = await runReportStep("pdf_save", () => pdf.save());
-
-  const caption = buildReportCaption({
-    title: topicMeta.captionTitle,
-    topic: topicMeta.topic,
-    krDate,
-    curr,
-    totalUnrealized,
-    totalUnrealizedPct,
-    sectors,
-    market,
-  });
-
-  const summaryText = buildReportSummaryText({
-    title: topicMeta.title,
-    topic: topicMeta.topic,
-    ymd,
-    curr,
-    totalUnrealized,
-    totalUnrealizedPct,
-    sectors,
-    market,
-  });
-
-  return {
-    bytes,
-    fileName: `${topicMeta.fileSlug}_${chatId}_${ymd}.pdf`,
-    caption,
-    summaryText,
-    title: topicMeta.title,
-    topic: topicMeta.topic,
-  };
+  return runReportStep("pdf_render", () =>
+    renderReportPdf({
+      topicMeta,
+      chatId,
+      ymd,
+      krDate,
+      curr,
+      prev,
+      windows,
+      watchItems,
+      totalInvested,
+      totalValue,
+      totalUnrealized,
+      totalUnrealizedPct,
+      sectors: sectorRes.data ?? [],
+      market,
+    })
+  );
 }
 
 // ─── 로컬 프리뷰용 렌더 함수 (Supabase 없이 mock 데이터로 생성) ────────────
 export async function createPreviewReportPdf(topicStr = "economy"): Promise<Uint8Array> {
   const topicMeta = parseReportTopic(topicStr);
-  const theme     = getReportTheme(topicMeta.topic);
   const ymd       = "2025-01-24";
   const krDate    = "2025년 1월 24일";
   const chatId    = 0;
@@ -1769,46 +1826,22 @@ export async function createPreviewReportPdf(topicStr = "economy"): Promise<Uint
     em:        { price: 1090,    changeRate:  0.50 },
   } as unknown as Awaited<ReturnType<typeof fetchAllMarketData>>;
 
-  const coverHeadline = buildCoverHeadline({ curr, totalUnrealized, totalUnrealizedPct, sectors, market: market as Awaited<ReturnType<typeof fetchReportMarketData>> });
-  const heroSummary   = buildTopicHeroSummary({ topic: topicMeta.topic, defaultSummary: theme.heroSummary, curr, totalUnrealized, totalUnrealizedPct, watchItems, sectors, market });
-  const closingSummary = buildTopicClosingSummary({ topic: topicMeta.topic, curr, prev, totalUnrealized, totalUnrealizedPct, watchItems, sectors, market });
+  const rendered = await renderReportPdf({
+    topicMeta,
+    chatId,
+    ymd,
+    krDate,
+    curr,
+    prev,
+    windows,
+    watchItems,
+    totalInvested,
+    totalValue,
+    totalUnrealized,
+    totalUnrealizedPct,
+    sectors,
+    market,
+  });
 
-  const pdf = await PDFDocument.create();
-  pdf.registerFontkit(fontkit);
-  const fontBytesData = await loadFontBytes();
-  const font     = await pdf.embedFont(fontBytesData.regular);
-  const fontBold = await pdf.embedFont(fontBytesData.bold);
-  const ctx = new ReportContext(pdf, font, fontBold, theme);
-  ctx.footerLabel = ymd;
-
-  if (topicMeta.includeCover) {
-    ctx.addPage(null);
-    drawCoverPage(ctx, krDate, chatId, coverHeadline);
-  }
-
-  ctx.addPage(topicMeta.title);
-  drawTopicHero(ctx, topicMeta.title, heroSummary);
-
-  if (topicMeta.topic === "economy") {
-    drawEconomySection(ctx, font, market as Awaited<ReturnType<typeof fetchAllMarketData>>, ymd);
-  } else if (topicMeta.topic === "flow") {
-    drawFlowSection(ctx, sectors);
-  } else if (topicMeta.topic === "sector") {
-    drawSectorSection(ctx, sectors, ymd);
-  } else if (topicMeta.topic === "watchlist") {
-    drawPortfolioSection(ctx, totalInvested, totalValue, totalUnrealized, totalUnrealizedPct, watchItems, curr, prev);
-    drawWatchlistSection(ctx, watchItems, totalInvested, totalUnrealized, totalUnrealizedPct);
-    drawTradesSection(ctx, windows);
-  } else {
-    drawMarketOverviewSection(ctx, ymd, market as Awaited<ReturnType<typeof fetchReportMarketData>>, sectors.slice(0, 3));
-    drawPortfolioSection(ctx, totalInvested, totalValue, totalUnrealized, totalUnrealizedPct, watchItems, curr, prev);
-    drawTradesSection(ctx, windows);
-    drawWatchlistSection(ctx, watchItems, totalInvested, totalUnrealized, totalUnrealizedPct);
-    drawCommentarySection(ctx, font, curr, prev, totalUnrealized, totalUnrealizedPct, watchItems, sectors);
-  }
-
-  drawClosingHighlight(ctx, "최종 결론", closingSummary);
-  ctx.finalizePage();
-
-  return pdf.save();
+  return rendered.bytes;
 }
