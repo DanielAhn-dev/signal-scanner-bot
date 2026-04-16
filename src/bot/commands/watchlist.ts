@@ -744,7 +744,12 @@ export async function handleWatchlistAutoCommand(
     const rt = realtimeMap[code];
     const close = toPositiveNumber(rt?.price) ?? dbClose;
     if (close <= 0) {
-      holdLines.push(`- ${esc(name)} (${code}) 데이터 부족으로 보유 유지`);
+      holdLines.push(
+        [
+          `- <b>${esc(name)}</b> (${code}) · 보유 유지`,
+          "  -> 사유: 데이터 부족",
+        ].join("\n")
+      );
       continue;
     }
 
@@ -761,9 +766,12 @@ export async function handleWatchlistAutoCommand(
 
     if (decision.action === "HOLD") {
       holdLines.push(
-        `- ${esc(name)} (${code}) 보유 · 손익 ${fmtPct(decision.pnlPct)} · ${decision.reason}${
-          decision.triggerReasons.length ? ` · 트리거 ${decision.triggerReasons.join(", ")}` : ""
-        }`
+        [
+          `- <b>${esc(name)}</b> (${code}) · 보유 유지`,
+          `  -> 손익: ${fmtPct(decision.pnlPct)}`,
+          `  -> 판단: ${decision.reason}`,
+          `  -> 트리거: ${decision.triggerReasons.length ? decision.triggerReasons.join(", ") : "대기"}`,
+        ].join("\n")
       );
       continue;
     }
@@ -796,9 +804,12 @@ export async function handleWatchlistAutoCommand(
     );
     executed += 1;
     executedLines.push(
-      `- ${esc(target.name)} (${target.code}) 자동매도 · ${target.reason} · 손익 ${fmtPct(target.pnlPct)} · 신뢰도 ${target.confidence}%${
-        target.triggers.length ? ` · 트리거 ${target.triggers.join(", ")}` : ""
-      }`
+      [
+        `- <b>${esc(target.name)}</b> (${target.code}) · 자동매도`,
+        `  -> 사유: ${target.reason}`,
+        `  -> 손익: ${fmtPct(target.pnlPct)} · 신뢰도 ${target.confidence}%`,
+        `  -> 트리거: ${target.triggers.length ? target.triggers.join(", ") : "대기"}`,
+      ].join("\n")
     );
   }
 
@@ -808,9 +819,11 @@ export async function handleWatchlistAutoCommand(
     `실행 시점 ${isKstMarketOpen() ? "장중" : "장마감/비개장"} 기준`,
     `자동매도 ${executed}건 · 보유유지 ${holdLines.length}건`,
     "",
-    ...(executedLines.length ? executedLines : ["- 자동매도 조건 충족 종목이 없습니다."]),
+    "<b>자동매도</b>",
+    ...(executedLines.length ? executedLines : ["- 조건 충족 종목이 없습니다."]),
     "",
-    ...(holdLines.length ? holdLines : ["- 보유 유지 종목이 없습니다."]),
+    "<b>보유 유지</b>",
+    ...(holdLines.length ? holdLines : ["- 해당 종목이 없습니다."]),
     "",
     "자동 실행 건은 /기록 에 (자동)으로 남습니다.",
   ].join("\n");

@@ -8,17 +8,17 @@ import { fetchRealtimePriceBatch } from "../utils/fetchRealtimePrice";
 
 // ─── 색상 팔레트 (증권사 리포트 스타일) ─────────────────────────────────
 const C = {
-  navy:    rgb(0.06, 0.14, 0.35),   // 헤더·섹션 배경
-  navyLight: rgb(0.10, 0.20, 0.50), // 서브 헤더
-  accent:  rgb(0.96, 0.38, 0.07),   // 강조 오렌지
-  up:      rgb(0.80, 0.08, 0.08),   // 상승 빨강
-  down:    rgb(0.10, 0.45, 0.75),   // 하락 파랑
-  neutral: rgb(0.35, 0.35, 0.35),   // 중립 회색
-  white:   rgb(1.00, 1.00, 1.00),
-  bg:      rgb(0.97, 0.97, 0.98),   // 테이블 행 교차 배경
-  border:  rgb(0.80, 0.82, 0.86),   // 테이블 구분선
-  text:    rgb(0.10, 0.10, 0.12),   // 본문
-  muted:   rgb(0.50, 0.50, 0.55),   // 주석
+  navy:      rgb(0.06, 0.14, 0.35),
+  navyLight: rgb(0.10, 0.20, 0.50),
+  accent:    rgb(0.96, 0.38, 0.07),
+  up:        rgb(0.80, 0.08, 0.08),
+  down:      rgb(0.10, 0.45, 0.75),
+  neutral:   rgb(0.35, 0.35, 0.35),
+  white:     rgb(1.00, 1.00, 1.00),
+  bg:        rgb(0.96, 0.96, 0.97),
+  border:    rgb(0.78, 0.80, 0.84),
+  text:      rgb(0.10, 0.10, 0.12),
+  muted:     rgb(0.50, 0.50, 0.55),
 } as const;
 
 // ─── 타입 정의 ────────────────────────────────────────────────────────────
@@ -163,21 +163,28 @@ async function loadKoreanFontBytes(): Promise<Uint8Array> {
   }
 }
 
-// ─── 텍스트 래핑 (페이지 폭 초과 방지) ──────────────────────────────────
+// ─── 텍스트 래핑 ─────────────────────────────────────────────────────────
+// [FIX] NFC 정규화 후 Unicode 코드포인트 단위로 분리해 한글 자모 분리 방지
 function wrapText(text: string, maxWidth: number, font: PDFFont, size: number): string[] {
-  const normalizedText = text.normalize("NFC");
-  // 문자 단위 래핑 (한글 혼용 대응)
-  const chars = normalizedText.split("");
+  if (!text) return [""];
+  const normalized = text.normalize("NFC");
+  // 코드포인트 단위 분리 (서로게이트 페어 포함 안전 처리)
+  const chars = [...normalized];
   const lines: string[] = [];
   let current = "";
 
   for (const ch of chars) {
     const candidate = current + ch;
-    if (font.widthOfTextAtSize(candidate, size) <= maxWidth) {
+    try {
+      if (font.widthOfTextAtSize(candidate, size) <= maxWidth) {
+        current = candidate;
+      } else {
+        if (current) lines.push(current);
+        current = ch;
+      }
+    } catch {
+      // 폰트에 없는 글리프는 그냥 추가
       current = candidate;
-    } else {
-      if (current) lines.push(current);
-      current = ch;
     }
   }
   if (current) lines.push(current);
@@ -191,10 +198,11 @@ class ReportContext {
   font: PDFFont;
   readonly W = 595;
   readonly H = 842;
-  readonly ML = 44;          // 왼쪽 여백
-  readonly MR = 44;          // 오른쪽 여백
-  readonly MT = 36;          // 상단 여백
-  readonly MB = 44;          // 하단 여백 (풋터 공간)
+  readonly ML = 44;
+  readonly MR = 44;
+  readonly MT = 36;
+  // [FIX] 하단 여백을 늘려 풋터가 잘리지 않도록
+  readonly MB = 52;
   readonly BODY_W: number;
   y = 0;
   pageNum = 0;
@@ -211,10 +219,13 @@ class ReportContext {
     this.pageNum++;
   }
 
-  ensureSpace(h: number) {
-    if (this.y < this.MB + h) this.addPage();
+  // [FIX] ensureSpace: 여유 버퍼를 추가해 경계 직전 요소가 잘리지 않도록
+  ensureSpace(h: number, buffer = 8) {
+    if (this.y < this.MB + h + buffer) this.addPage();
   }
 
+  // [FIX] text: y는 "이 요소의 상단 기준"으로 통일. 내부에서 ascender 보정
+  // size 기준 ascender ≈ size * 0.72 (NotoSansCJK 실측 근사값)
   text(
     s: string,
     x: number,
@@ -222,25 +233,43 @@ class ReportContext {
     size: number,
     color: RGB = C.text,
     maxW?: number
-  ) {
+  ): number {
+    const lineH = size + 4;
     const effectiveMax = maxW ?? this.BODY_W;
     const lines = wrapText(s, effectiveMax, this.font, size);
     for (let i = 0; i < lines.length; i++) {
-      this.page.drawText(lines[i], { x, y: y - i * (size + 3), size, font: this.font, color });
+      this.page.drawText(lines[i], {
+        x,
+        // pdf-lib의 y는 텍스트 baseline 기준이므로 상단 기준에서 변환
+        y: y - size * 0.82 - i * lineH,
+        size,
+        font: this.font,
+        color,
+      });
     }
     return lines.length;
   }
 
-  /** 오른쪽 정렬 텍스트 */
   textRight(s: string, rightEdge: number, y: number, size: number, color: RGB = C.text) {
     const w = this.font.widthOfTextAtSize(s, size);
-    this.page.drawText(s, { x: rightEdge - w, y, size, font: this.font, color });
+    this.page.drawText(s, {
+      x: rightEdge - w,
+      y: y - size * 0.82,
+      size,
+      font: this.font,
+      color,
+    });
   }
 
-  /** 중앙 정렬 텍스트 */
   textCenter(s: string, cx: number, y: number, size: number, color: RGB = C.text) {
     const w = this.font.widthOfTextAtSize(s, size);
-    this.page.drawText(s, { x: cx - w / 2, y, size, font: this.font, color });
+    this.page.drawText(s, {
+      x: cx - w / 2,
+      y: y - size * 0.82,
+      size,
+      font: this.font,
+      color,
+    });
   }
 
   rect(x: number, y: number, w: number, h: number, color: RGB) {
@@ -255,32 +284,45 @@ class ReportContext {
 // ─── 페이지 풋터 ─────────────────────────────────────────────────────────
 function drawFooter(ctx: ReportContext, today: string) {
   const { ML, MR, W, MB } = ctx;
-  const fy = MB - 18;
-  ctx.rect(ML, fy - 4, W - ML - MR, 0.5, C.border);
-  ctx.text("Signal Scanner Bot  |  가상 포트폴리오 기준 · 실제 투자 결과와 다를 수 있습니다.", ML, fy - 10, 7, C.muted);
-  ctx.textRight(`발행: ${today}  |  ${ctx.pageNum}페이지`, W - MR, fy - 10, 7, C.muted);
+  // [FIX] 풋터를 MB 기준에서 그림 — 항상 고정 위치
+  const lineY = MB - 2;
+  const textY = MB - 16;
+  ctx.line(ML, lineY, W - MR, lineY, C.border);
+  ctx.text(
+    "Signal Scanner Bot  |  가상 포트폴리오 기준 · 실제 투자 결과와 다를 수 있습니다.",
+    ML, textY, 7, C.muted
+  );
+  ctx.textRight(`발행: ${today}  |  ${ctx.pageNum}페이지`, W - MR, textY, 7, C.muted);
 }
 
 // ─── 섹션 헤더 밴드 ──────────────────────────────────────────────────────
+// [FIX] 섹션 헤더 높이와 텍스트 수직 중앙 정렬 통일
+const SECTION_H = 24;
+
 function drawSectionHeader(ctx: ReportContext, label: string, sub?: string) {
-  ctx.ensureSpace(32);
+  ctx.ensureSpace(SECTION_H + 20);
   const { ML, MR, W } = ctx;
-  ctx.rect(ML, ctx.y - 20, W - ML - MR, 22, C.navy);
-  ctx.text(label, ML + 8, ctx.y - 6, 11, C.white);
-  if (sub) ctx.textRight(sub, W - MR - 6, ctx.y - 6, 9, rgb(0.75, 0.82, 0.95));
-  ctx.y -= 26;
+  ctx.rect(ML, ctx.y - SECTION_H, W - ML - MR, SECTION_H, C.navy);
+  // 텍스트를 배경 수직 중앙에 배치: y_top = ctx.y, 중앙 = ctx.y - SECTION_H/2
+  const midY = ctx.y - SECTION_H / 2;
+  ctx.text(label, ML + 8, midY + 5, 10, C.white);
+  if (sub) ctx.textRight(sub, W - MR - 6, midY + 5, 8.5, rgb(0.75, 0.82, 0.95));
+  ctx.y -= SECTION_H + 4;
 }
 
-// ─── KPI 카드 그리드 (n열) ────────────────────────────────────────────────
+// ─── KPI 카드 그리드 ─────────────────────────────────────────────────────
 type KpiCard = { label: string; value: string; sub?: string; valueColor?: RGB };
 
+// [FIX] 카드 내 텍스트 수직 배치를 고정 오프셋으로 통일
 function drawKpiGrid(ctx: ReportContext, cards: KpiCard[], cols = 4) {
   const { ML, MR, W } = ctx;
   const gap = 6;
   const totalW = W - ML - MR;
   const cardW = (totalW - gap * (cols - 1)) / cols;
-  const cardH = 46;
-  ctx.ensureSpace(cardH + 8);
+  const cardH = 52;
+  const rows = Math.ceil(cards.length / cols);
+
+  ctx.ensureSpace(cardH * rows + gap * (rows - 1) + 10);
 
   const startX = ML;
   const startY = ctx.y;
@@ -289,25 +331,42 @@ function drawKpiGrid(ctx: ReportContext, cards: KpiCard[], cols = 4) {
     const col = i % cols;
     const row = Math.floor(i / cols);
     const x = startX + col * (cardW + gap);
+    // y = 카드 상단 y 좌표
     const y = startY - row * (cardH + gap);
 
+    // 배경 및 테두리
     ctx.rect(x, y - cardH, cardW, cardH, C.bg);
     ctx.rect(x, y - cardH, 3, cardH, C.navyLight);
-    ctx.line(x, y - cardH, x + cardW, y - cardH, C.border);
-    ctx.line(x + cardW, y - cardH, x + cardW, y, C.border);
-    ctx.line(x, y, x + cardW, y, C.border);
+    ctx.line(x,          y - cardH, x + cardW, y - cardH, C.border);
+    ctx.line(x + cardW,  y - cardH, x + cardW, y,          C.border);
+    ctx.line(x,          y,         x + cardW, y,           C.border);
 
-    ctx.text(card.label, x + 6, y - 13, 8, C.muted);
-    ctx.text(card.value, x + 6, y - 30, 13, card.valueColor ?? C.text);
-    if (card.sub) ctx.text(card.sub, x + 6, y - 43, 8, C.muted);
+    if (!card.label && !card.value) return; // 빈 패딩 카드
+
+    // [FIX] 라벨: 카드 상단에서 14px
+    ctx.text(card.label, x + 6, y - 10, 7.5, C.muted, cardW - 10);
+    // [FIX] 값: 카드 상단에서 30px (라벨 아래 적절한 간격)
+    ctx.text(card.value, x + 6, y - 26, 12, card.valueColor ?? C.text, cardW - 10);
+    // [FIX] 서브: 카드 하단에서 8px
+    if (card.sub) ctx.text(card.sub, x + 6, y - 42, 7.5, C.muted, cardW - 10);
   });
 
-  const rows = Math.ceil(cards.length / cols);
-  ctx.y -= rows * (cardH + gap) + 6;
+  ctx.y -= rows * (cardH + gap) - gap + 8;
 }
 
 // ─── 테이블 렌더러 ────────────────────────────────────────────────────────
 type ColDef = { header: string; width: number; align?: "left" | "right" | "center" };
+
+// [FIX] 행 높이와 텍스트 baseline 오프셋을 일관되게 재계산
+const ROW_H   = 20;
+const HEADER_H = 22;
+const CELL_PAD = 4;
+// 텍스트 상단 기준 y에서 셀 수직 중앙까지의 오프셋 (행 높이의 절반 + 폰트 절반)
+// 실제 drawText는 ctx.text() 내부에서 baseline 변환하므로 여기선 "상단에서 몇 px"만 계산
+function cellTextTopOffset(rowH: number, fontSize: number): number {
+  // 텍스트를 행 수직 중앙에 배치: (rowH - fontSize) / 2
+  return (rowH - fontSize) / 2;
+}
 
 function drawTable(
   ctx: ReportContext,
@@ -316,51 +375,62 @@ function drawTable(
   rowColors?: (RGB | null)[]
 ) {
   const { ML } = ctx;
+  const fontSize = 8.5;
   const totalW = cols.reduce((s, c) => s + c.width, 0);
-  const rowH = 18;
-  const headerH = 20;
+  const topOffset = cellTextTopOffset(ROW_H, fontSize);
+  const headerTopOffset = cellTextTopOffset(HEADER_H, fontSize);
 
   // 헤더
-  ctx.ensureSpace(headerH + rowH);
-  ctx.rect(ML, ctx.y - headerH, totalW, headerH, C.navyLight);
+  ctx.ensureSpace(HEADER_H + ROW_H * 2);
+  ctx.rect(ML, ctx.y - HEADER_H, totalW, HEADER_H, C.navyLight);
   let hx = ML;
   for (const col of cols) {
-    ctx.text(col.header, hx + 4, ctx.y - 6, 8.5, C.white);
+    ctx.text(col.header, hx + CELL_PAD, ctx.y - headerTopOffset, fontSize, C.white, col.width - CELL_PAD * 2);
     hx += col.width;
   }
-  ctx.y -= headerH;
+  ctx.y -= HEADER_H;
+
+  // 테이블 상단 구분선
+  ctx.line(ML, ctx.y, ML + totalW, ctx.y, C.border);
 
   // 데이터 행
   rows.forEach((row, ri) => {
-    ctx.ensureSpace(rowH + 4);
+    ctx.ensureSpace(ROW_H + 4);
+
     const bg = ri % 2 === 0 ? C.white : C.bg;
-    ctx.rect(ML, ctx.y - rowH, totalW, rowH, bg);
+    ctx.rect(ML, ctx.y - ROW_H, totalW, ROW_H, bg);
 
     let rx = ML;
     row.forEach((cell, ci) => {
       const col = cols[ci];
       if (!col) return;
       const cellColor = rowColors?.[ri] ?? C.text;
-      const maxCellW = col.width - 8;
-      const truncated = truncate(cell, 18);
+      const truncated = truncate(cell, 20);
+      const maxCellW = col.width - CELL_PAD * 2;
 
       if (col.align === "right") {
-        ctx.textRight(truncated, rx + col.width - 4, ctx.y - 13, 8.5, cellColor);
+        ctx.textRight(truncated, rx + col.width - CELL_PAD, ctx.y - topOffset, fontSize, cellColor);
       } else if (col.align === "center") {
-        ctx.textCenter(truncated, rx + col.width / 2, ctx.y - 13, 8.5, cellColor);
+        ctx.textCenter(truncated, rx + col.width / 2, ctx.y - topOffset, fontSize, cellColor);
       } else {
-        ctx.text(truncated, rx + 4, ctx.y - 13, 8.5, cellColor, maxCellW);
+        ctx.text(truncated, rx + CELL_PAD, ctx.y - topOffset, fontSize, cellColor, maxCellW);
       }
       rx += col.width;
     });
 
-    // 행 구분선
-    ctx.line(ML, ctx.y - rowH, ML + totalW, ctx.y - rowH, C.border);
-    ctx.y -= rowH;
+    // 행 하단 구분선
+    ctx.line(ML, ctx.y - ROW_H, ML + totalW, ctx.y - ROW_H, C.border);
+    ctx.y -= ROW_H;
   });
 
-  // 테이블 외곽선
+  // 테이블 좌/우 외곽선
+  const tableTop = ctx.y + ROW_H * rows.length + HEADER_H;
+  ctx.line(ML,           tableTop, ML,           ctx.y, C.border);
+  ctx.line(ML + totalW,  tableTop, ML + totalW,  ctx.y, C.border);
+  // 하단 마감선
   ctx.line(ML, ctx.y, ML + totalW, ctx.y, C.border);
+
+  ctx.y -= 6; // 테이블 하단 여백
 }
 
 // ─── 커버 페이지 ─────────────────────────────────────────────────────────
@@ -371,26 +441,26 @@ function drawCoverPage(ctx: ReportContext, ymd: string, chatId: number) {
   ctx.rect(0, H - 160, W, 160, C.navy);
 
   // 서비스명
-  ctx.textCenter("SIGNAL  SCANNER  BOT", W / 2, H - 60, 11, rgb(0.65, 0.75, 0.92));
+  ctx.textCenter("SIGNAL  SCANNER  BOT", W / 2, H - 48, 11, rgb(0.65, 0.75, 0.92));
 
   // 리포트 제목
-  ctx.textCenter("주  간  포  트  폴  리  오  리  포  트", W / 2, H - 100, 18, C.white);
+  ctx.textCenter("주  간  포  트  폴  리  오  리  포  트", W / 2, H - 88, 18, C.white);
 
   // 오렌지 강조선
-  ctx.rect(ML, H - 164, W - ML - MR, 3, C.accent);
+  ctx.rect(ML, H - 163, W - ML - MR, 3, C.accent);
 
   // 발행 정보
-  ctx.text(`기준일: ${ymd}`, ML, H - 196, 10, C.text);
-  ctx.text(`계좌 ID: ${String(chatId).slice(-4).padStart(4, "*")}`, ML, H - 212, 10, C.muted);
+  ctx.text(`기준일: ${ymd}`, ML, H - 188, 10, C.text);
+  ctx.text(`계좌 ID: ${String(chatId).slice(-4).padStart(4, "*")}`, ML, H - 204, 10, C.muted);
 
   // 바코드 스타일 장식선
   for (let i = 0; i < 28; i++) {
     const bx = W - MR - 90 + i * (i % 3 === 0 ? 5 : 3);
     const bh = 8 + (i % 4) * 4;
-    ctx.rect(bx, H - 220, 2, bh, rgb(0.15, 0.25, 0.55));
+    ctx.rect(bx, H - 215, 2, bh, rgb(0.15, 0.25, 0.55));
   }
 
-  // 리포트 구성 목차
+  // 목차
   const toc = [
     "I.   시장 개요 및 주요 지표",
     "II.  포트폴리오 요약",
@@ -398,24 +468,70 @@ function drawCoverPage(ctx: ReportContext, ymd: string, chatId: number) {
     "IV.  보유 종목 상세",
     "V.   주간 코멘트 및 대응 전략",
   ];
-  const tocY = H - 300;
-  ctx.rect(ML, tocY - (toc.length * 22) - 12, (W - ML - MR) * 0.55, toc.length * 22 + 24, C.bg);
-  ctx.text("목차", ML + 10, tocY - 2, 10, C.navyLight);
+  const tocBoxH = toc.length * 22 + 28;
+  const tocY = H - 290;
+  ctx.rect(ML, tocY - tocBoxH, (W - ML - MR) * 0.58, tocBoxH, C.bg);
+  ctx.text("목차", ML + 10, tocY - 8, 10, C.navyLight);
   toc.forEach((t, i) => {
-    ctx.text(t, ML + 10, tocY - 22 - i * 20, 9, C.text);
+    ctx.text(t, ML + 10, tocY - 26 - i * 21, 9, C.text);
   });
 
   // 하단 면책 문구
-  ctx.rect(0, 0, W, 60, C.bg);
-  ctx.line(0, 60, W, 60, C.border);
+  ctx.rect(0, 0, W, 64, C.bg);
+  ctx.line(0, 64, W, 64, C.border);
   ctx.textCenter(
     "본 리포트는 Signal Scanner Bot이 생성한 가상 포트폴리오 정보이며, 실제 투자 결과를 보증하지 않습니다.",
-    W / 2, 40, 7.5, C.muted
+    W / 2, 48, 7.5, C.muted
   );
   ctx.textCenter(
     "투자 판단의 최종 책임은 투자자 본인에게 있으며, 본 자료는 투자 권유 목적이 아닙니다.",
-    W / 2, 28, 7.5, C.muted
+    W / 2, 32, 7.5, C.muted
   );
+}
+
+// ─── 페이지 타이틀 바 ────────────────────────────────────────────────────
+const PAGE_TITLE_H = 26;
+
+function drawPageTitle(ctx: ReportContext, title: string) {
+  ctx.rect(ctx.ML, ctx.y - PAGE_TITLE_H, ctx.BODY_W, PAGE_TITLE_H, C.navy);
+  ctx.textCenter(title, ctx.W / 2, ctx.y - PAGE_TITLE_H / 2 + 5, 12, C.white);
+  ctx.y -= PAGE_TITLE_H + 8;
+}
+
+// ─── 코멘트 블록 ─────────────────────────────────────────────────────────
+// [FIX] 코멘트 블록 높이를 내용 길이에 따라 동적으로 계산
+function drawCommentBlock(
+  ctx: ReportContext,
+  title: string,
+  body: string,
+  color: RGB,
+  font: PDFFont
+) {
+  const fontSize = 9;
+  const titleFontSize = 10;
+  const maxW = ctx.BODY_W - 24;
+  const bodyLines = wrapText(body, maxW, font, fontSize);
+  // 블록 높이: 상단 패딩 + 타이틀 + 간격 + 바디 라인들 + 하단 패딩
+  const blockH = 12 + titleFontSize + 6 + bodyLines.length * (fontSize + 4) + 10;
+
+  ctx.ensureSpace(blockH + 6);
+
+  const bx = ctx.ML;
+  const by = ctx.y;
+
+  ctx.rect(bx,     by - blockH, ctx.BODY_W, blockH, C.bg);
+  ctx.rect(bx,     by - blockH, 4,          blockH, color);
+  ctx.line(bx,     by - blockH, bx + ctx.BODY_W, by - blockH, C.border);
+  ctx.line(bx,     by,          bx + ctx.BODY_W, by,          C.border);
+
+  // 타이틀
+  ctx.text(title, bx + 12, by - 10, titleFontSize, color, maxW);
+  // 바디 라인
+  bodyLines.forEach((line, li) => {
+    ctx.text(line, bx + 12, by - 10 - titleFontSize - 6 - li * (fontSize + 4), fontSize, C.text, maxW);
+  });
+
+  ctx.y -= blockH + 6;
 }
 
 // ─── 메인 export ──────────────────────────────────────────────────────────
@@ -482,7 +598,17 @@ export async function createWeeklyReportPdf(
     const value = currentPrice && qty > 0 ? currentPrice * qty : 0;
     const unrealized = cost > 0 ? value - cost : 0;
     const pnlPct = buyPrice && currentPrice ? ((currentPrice - buyPrice) / buyPrice) * 100 : null;
-    return { code: row.code, name: stock?.name ?? row.code, qty, buyPrice, currentPrice, invested: cost, value, unrealized, pnlPct };
+    return {
+      code: row.code,
+      name: stock?.name ?? row.code,
+      qty,
+      buyPrice,
+      currentPrice,
+      invested: cost,
+      value,
+      unrealized,
+      pnlPct,
+    };
   }).sort((a, b) => Math.abs(b.unrealized) - Math.abs(a.unrealized));
 
   const totalInvested = watchItems.reduce((s, i) => s + i.invested, 0);
@@ -494,7 +620,6 @@ export async function createWeeklyReportPdf(
   const pdf = await PDFDocument.create();
   pdf.registerFontkit(fontkit);
   const fontBytes = await loadKoreanFontBytes();
-  // iOS 뷰어에서 일부 한글 글리프 누락을 방지하기 위해 subset을 비활성화
   const font = await pdf.embedFont(fontBytes, { subset: false });
   const ctx = new ReportContext(pdf, font);
 
@@ -509,47 +634,68 @@ export async function createWeeklyReportPdf(
   // [2] 시장 개요 + 포트폴리오 요약 페이지
   // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
   ctx.addPage();
-
-  // 페이지 상단 타이틀 바
-  ctx.rect(ctx.ML, ctx.y - 24, ctx.BODY_W, 24, C.navy);
-  ctx.textCenter("I.  시장 개요 및 포트폴리오 요약", ctx.W / 2, ctx.y - 9, 12, C.white);
-  ctx.y -= 30;
+  drawPageTitle(ctx, "I.  시장 개요 및 포트폴리오 요약");
 
   // 시장 지표 KPI 카드
   const mktCards: KpiCard[] = [];
   if (market.kospi) {
-    mktCards.push({ label: "KOSPI", value: fmtInt(toNum(market.kospi.price)), sub: fmtPct(toNum(market.kospi.changeRate)), valueColor: pnlColor(toNum(market.kospi.changeRate)) });
+    mktCards.push({
+      label: "KOSPI",
+      value: fmtInt(toNum(market.kospi.price)),
+      sub: fmtPct(toNum(market.kospi.changeRate)),
+      valueColor: pnlColor(toNum(market.kospi.changeRate)),
+    });
   }
   if (market.kosdaq) {
-    mktCards.push({ label: "KOSDAQ", value: fmtInt(toNum(market.kosdaq.price)), sub: fmtPct(toNum(market.kosdaq.changeRate)), valueColor: pnlColor(toNum(market.kosdaq.changeRate)) });
+    mktCards.push({
+      label: "KOSDAQ",
+      value: fmtInt(toNum(market.kosdaq.price)),
+      sub: fmtPct(toNum(market.kosdaq.changeRate)),
+      valueColor: pnlColor(toNum(market.kosdaq.changeRate)),
+    });
   }
   if (market.usdkrw) {
-    mktCards.push({ label: "USD/KRW", value: `${fmtInt(toNum(market.usdkrw.price))}원`, sub: fmtPct(toNum(market.usdkrw.changeRate)), valueColor: C.text });
+    mktCards.push({
+      label: "USD/KRW",
+      value: `${fmtInt(toNum(market.usdkrw.price))}원`,
+      sub: fmtPct(toNum(market.usdkrw.changeRate)),
+      valueColor: C.text,
+    });
   }
   if (market.vix) {
     const vixVal = toNum(market.vix.price);
-    mktCards.push({ label: "VIX (공포지수)", value: vixVal.toFixed(1), sub: vixVal >= 30 ? "⚠ 고공포" : vixVal >= 20 ? "주의" : "안정", valueColor: vixVal >= 30 ? C.up : C.text });
+    mktCards.push({
+      label: "VIX (공포지수)",
+      value: vixVal.toFixed(1),
+      sub: vixVal >= 30 ? "⚠ 고공포" : vixVal >= 20 ? "주의" : "안정",
+      valueColor: vixVal >= 30 ? C.up : C.text,
+    });
   }
   if (market.fearGreed) {
-    mktCards.push({ label: "공포·탐욕", value: String(toNum(market.fearGreed.score)), sub: market.fearGreed.rating ?? "", valueColor: C.text });
+    mktCards.push({
+      label: "공포·탐욕",
+      value: String(toNum(market.fearGreed.score)),
+      sub: market.fearGreed.rating ?? "",
+      valueColor: C.text,
+    });
   }
-  // 카드가 4의 배수가 되도록 빈 패딩
-  while (mktCards.length % 4 !== 0) mktCards.push({ label: "", value: "", sub: "" });
+  // 4의 배수로 패딩
+  while (mktCards.length % 4 !== 0) mktCards.push({ label: "", value: "" });
   if (mktCards.length > 0) drawKpiGrid(ctx, mktCards, 4);
 
   // 주도 섹터
   const sectors = sectorRes.data ?? [];
   if (sectors.length > 0) {
-    ctx.y -= 8;
+    ctx.y -= 4;
     drawSectionHeader(ctx, "주도 섹터 Top 3", `기준: ${ymd}`);
     drawTable(
       ctx,
       [
-        { header: "순위", width: 36, align: "center" },
-        { header: "섹터명", width: 180 },
-        { header: "점수", width: 70, align: "right" },
+        { header: "순위", width: 40,  align: "center" },
+        { header: "섹터명", width: 200 },
+        { header: "점수", width: 70,  align: "right" },
         { header: "수익률", width: 80, align: "right" },
-        { header: "상태", width: 80, align: "center" },
+        { header: "상태", width: 117, align: "center" },
       ],
       sectors.map((s, idx) => {
         const cr = toNum(s.change_rate);
@@ -565,18 +711,18 @@ export async function createWeeklyReportPdf(
     );
   }
 
-  // 포트폴리오 요약 KPI
-  ctx.y -= 12;
+  // 포트폴리오 요약
+  ctx.y -= 6;
   drawSectionHeader(ctx, "II.  포트폴리오 요약");
   const pfCards: KpiCard[] = [
-    { label: "총 원금", value: `${fmtInt(totalInvested)}원`, valueColor: C.text },
-    { label: "평가금액", value: `${fmtInt(totalValue)}원`, valueColor: C.text },
-    { label: "평가손익", value: fmtSignedInt(totalUnrealized), sub: fmtPct(totalUnrealizedPct), valueColor: pnlColor(totalUnrealized) },
-    { label: "보유 종목수", value: `${watchItems.length}개`, valueColor: C.text },
-    { label: "거래 (최근 2주)", value: `${curr.tradeCount}건`, sub: `매수 ${curr.buyCount} / 매도 ${curr.sellCount}`, valueColor: C.text },
-    { label: "실현손익 (2주)", value: fmtSignedInt(curr.realizedPnl), valueColor: pnlColor(curr.realizedPnl) },
-    { label: "승률 (2주)", value: `${curr.winRate.toFixed(1)}%`, sub: curr.sellCount > 0 ? `${curr.sellCount}건 매도 기준` : "매도 없음", valueColor: curr.winRate >= 50 ? C.up : C.down },
-    { label: "이전 2주 대비", value: fmtSignedInt(curr.realizedPnl - prev.realizedPnl), sub: "실현손익 증감", valueColor: pnlColor(curr.realizedPnl - prev.realizedPnl) },
+    { label: "총 원금",            value: `${fmtInt(totalInvested)}원`,      valueColor: C.text },
+    { label: "평가금액",           value: `${fmtInt(totalValue)}원`,          valueColor: C.text },
+    { label: "평가손익",           value: fmtSignedInt(totalUnrealized),      sub: fmtPct(totalUnrealizedPct), valueColor: pnlColor(totalUnrealized) },
+    { label: "보유 종목수",        value: `${watchItems.length}개`,           valueColor: C.text },
+    { label: "거래 (최근 2주)",    value: `${curr.tradeCount}건`,             sub: `매수 ${curr.buyCount} / 매도 ${curr.sellCount}`, valueColor: C.text },
+    { label: "실현손익 (2주)",     value: fmtSignedInt(curr.realizedPnl),     valueColor: pnlColor(curr.realizedPnl) },
+    { label: "승률 (2주)",         value: `${curr.winRate.toFixed(1)}%`,      sub: curr.sellCount > 0 ? `${curr.sellCount}건 매도 기준` : "매도 없음", valueColor: curr.winRate >= 50 ? C.up : C.down },
+    { label: "이전 2주 대비",      value: fmtSignedInt(curr.realizedPnl - prev.realizedPnl), sub: "실현손익 증감", valueColor: pnlColor(curr.realizedPnl - prev.realizedPnl) },
   ];
   drawKpiGrid(ctx, pfCards, 4);
   drawFooter(ctx, ymd);
@@ -585,38 +731,34 @@ export async function createWeeklyReportPdf(
   // [3] 매매 기록 상세 페이지
   // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
   ctx.addPage();
-  ctx.rect(ctx.ML, ctx.y - 24, ctx.BODY_W, 24, C.navy);
-  ctx.textCenter("III.  매매 기록 및 성과 분석", ctx.W / 2, ctx.y - 9, 12, C.white);
-  ctx.y -= 30;
+  drawPageTitle(ctx, "III.  매매 기록 및 성과 분석");
 
-  // 성과 비교 KPI
   const perfCards: KpiCard[] = [
-    { label: "이전 2주 거래", value: `${prev.tradeCount}건`, sub: `매수 ${prev.buyCount} / 매도 ${prev.sellCount}` },
-    { label: "이번 2주 거래", value: `${curr.tradeCount}건`, sub: `매수 ${curr.buyCount} / 매도 ${curr.sellCount}`, valueColor: C.navyLight },
-    { label: "이전 2주 승률", value: `${prev.winRate.toFixed(1)}%`, sub: "전분기", valueColor: pnlColor(prev.winRate - 50) },
-    { label: "이번 2주 승률", value: `${curr.winRate.toFixed(1)}%`, sub: "당분기", valueColor: pnlColor(curr.winRate - 50) },
-    { label: "이전 실현손익", value: fmtSignedInt(prev.realizedPnl), valueColor: pnlColor(prev.realizedPnl) },
-    { label: "이번 실현손익", value: fmtSignedInt(curr.realizedPnl), valueColor: pnlColor(curr.realizedPnl) },
-    { label: "손익 증감", value: fmtSignedInt(curr.realizedPnl - prev.realizedPnl), sub: "이전 대비", valueColor: pnlColor(curr.realizedPnl - prev.realizedPnl) },
-    { label: "승률 변화", value: fmtPct(curr.winRate - prev.winRate), valueColor: pnlColor(curr.winRate - prev.winRate) },
+    { label: "이전 2주 거래",  value: `${prev.tradeCount}건`,               sub: `매수 ${prev.buyCount} / 매도 ${prev.sellCount}` },
+    { label: "이번 2주 거래",  value: `${curr.tradeCount}건`,               sub: `매수 ${curr.buyCount} / 매도 ${curr.sellCount}`, valueColor: C.navyLight },
+    { label: "이전 2주 승률",  value: `${prev.winRate.toFixed(1)}%`,        sub: "전분기", valueColor: pnlColor(prev.winRate - 50) },
+    { label: "이번 2주 승률",  value: `${curr.winRate.toFixed(1)}%`,        sub: "당분기", valueColor: pnlColor(curr.winRate - 50) },
+    { label: "이전 실현손익",  value: fmtSignedInt(prev.realizedPnl),       valueColor: pnlColor(prev.realizedPnl) },
+    { label: "이번 실현손익",  value: fmtSignedInt(curr.realizedPnl),       valueColor: pnlColor(curr.realizedPnl) },
+    { label: "손익 증감",       value: fmtSignedInt(curr.realizedPnl - prev.realizedPnl), sub: "이전 대비", valueColor: pnlColor(curr.realizedPnl - prev.realizedPnl) },
+    { label: "승률 변화",       value: fmtPct(curr.winRate - prev.winRate), valueColor: pnlColor(curr.winRate - prev.winRate) },
   ];
   drawKpiGrid(ctx, perfCards, 4);
 
-  // 매매 내역 테이블
-  ctx.y -= 8;
+  ctx.y -= 4;
   drawSectionHeader(ctx, "최근 거래 내역", "최근 10건");
 
   if (windows.recent.length > 0) {
     drawTable(
       ctx,
       [
-        { header: "일자", width: 56, align: "center" },
-        { header: "구분", width: 40, align: "center" },
-        { header: "종목코드", width: 64, align: "center" },
-        { header: "수량", width: 50, align: "right" },
-        { header: "단가 (원)", width: 90, align: "right" },
-        { header: "금액 (원)", width: 90, align: "right" },
-        { header: "실현손익", width: 97, align: "right" },
+        { header: "일자",      width: 58,  align: "center" },
+        { header: "구분",      width: 42,  align: "center" },
+        { header: "종목코드",  width: 64,  align: "center" },
+        { header: "수량",      width: 50,  align: "right" },
+        { header: "단가 (원)", width: 88,  align: "right" },
+        { header: "금액 (원)", width: 88,  align: "right" },
+        { header: "실현손익",  width: 117, align: "right" },
       ],
       windows.recent.map((r) => {
         const qty = Math.max(0, Math.floor(toNum(r.quantity)));
@@ -632,12 +774,14 @@ export async function createWeeklyReportPdf(
           pnl,
         ];
       }),
-      windows.recent.map((r) => (r.side === "SELL" ? pnlColor(toNum(r.pnl_amount)) : C.down))
+      windows.recent.map((r) =>
+        r.side === "SELL" ? pnlColor(toNum(r.pnl_amount)) : C.down
+      )
     );
   } else {
-    ctx.y -= 10;
+    ctx.y -= 4;
     ctx.text("최근 2주 거래 기록이 없습니다.", ctx.ML + 8, ctx.y, 9, C.muted);
-    ctx.y -= 16;
+    ctx.y -= 20;
   }
 
   drawFooter(ctx, ymd);
@@ -646,49 +790,56 @@ export async function createWeeklyReportPdf(
   // [4] 보유 종목 상세 페이지
   // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
   ctx.addPage();
-  ctx.rect(ctx.ML, ctx.y - 24, ctx.BODY_W, 24, C.navy);
-  ctx.textCenter("IV.  보유 종목 상세", ctx.W / 2, ctx.y - 9, 12, C.white);
-  ctx.y -= 30;
+  drawPageTitle(ctx, "IV.  보유 종목 상세");
 
   if (watchItems.length > 0) {
-    // 비중 헤더
-    ctx.y -= 4;
+    ctx.y -= 2;
     drawSectionHeader(ctx, "종목별 현황", `총 ${watchItems.length}개 종목`);
     drawTable(
       ctx,
       [
-        { header: "종목명", width: 110 },
-        { header: "코드", width: 52, align: "center" },
-        { header: "수량", width: 46, align: "right" },
-        { header: "평균단가", width: 78, align: "right" },
-        { header: "현재가", width: 78, align: "right" },
-        { header: "평가손익", width: 78, align: "right" },
-        { header: "수익률", width: 65, align: "right" },
+        { header: "종목명",   width: 112, align: "left" },
+        { header: "코드",     width: 54,  align: "center" },
+        { header: "수량",     width: 46,  align: "right" },
+        { header: "평균단가", width: 78,  align: "right" },
+        { header: "현재가",   width: 78,  align: "right" },
+        { header: "평가손익", width: 80,  align: "right" },
+        { header: "수익률",   width: 59,  align: "right" },
       ],
-      watchItems.slice(0, 18).map((item) => [
+      watchItems.slice(0, 20).map((item) => [
         truncate(item.name, 10),
         item.code,
         `${item.qty}주`,
-        item.buyPrice ? `${fmtInt(item.buyPrice)}` : "-",
-        item.currentPrice ? `${fmtInt(item.currentPrice)}` : "-",
+        item.buyPrice    ? fmtInt(item.buyPrice)    : "-",
+        item.currentPrice ? fmtInt(item.currentPrice) : "-",
         item.invested > 0 ? fmtSignedInt(item.unrealized) : "-",
         item.pnlPct != null ? fmtPct(item.pnlPct) : "-",
       ]),
-      watchItems.slice(0, 18).map((item) => pnlColor(item.unrealized))
+      watchItems.slice(0, 20).map((item) => pnlColor(item.unrealized))
     );
 
-    // 합계 행
-    ctx.y -= 2;
-    ctx.rect(ctx.ML, ctx.y - 20, ctx.BODY_W, 20, rgb(0.92, 0.94, 0.98));
-    ctx.text("합계", ctx.ML + 4, ctx.y - 7, 9, C.navyLight);
-    ctx.textRight(`원금 ${fmtInt(totalInvested)}원`, ctx.ML + 390, ctx.y - 7, 9, C.text);
-    ctx.textRight(`평가손익 ${fmtSignedInt(totalUnrealized)}`, ctx.ML + 466, ctx.y - 7, 9, pnlColor(totalUnrealized));
-    ctx.textRight(`(${fmtPct(totalUnrealizedPct)})`, ctx.ML + 507, ctx.y - 7, 9, pnlColor(totalUnrealizedPct));
-    ctx.y -= 24;
+    // [FIX] 합계 행 — 높이와 텍스트 수직 정렬 통일
+    const sumH = 22;
+    ctx.ensureSpace(sumH + 4);
+    ctx.rect(ctx.ML, ctx.y - sumH, ctx.BODY_W, sumH, rgb(0.90, 0.92, 0.97));
+    ctx.line(ctx.ML, ctx.y,        ctx.ML + ctx.BODY_W, ctx.y,        C.border);
+    ctx.line(ctx.ML, ctx.y - sumH, ctx.ML + ctx.BODY_W, ctx.y - sumH, C.border);
+
+    const sumMidY = ctx.y - sumH / 2 + 5;
+    ctx.text("합계", ctx.ML + 6, sumMidY, 9, C.navyLight);
+    ctx.textRight(
+      `원금  ${fmtInt(totalInvested)}원`,
+      ctx.ML + 390, sumMidY, 9, C.text
+    );
+    ctx.textRight(
+      `평가손익  ${fmtSignedInt(totalUnrealized)}  (${fmtPct(totalUnrealizedPct)})`,
+      ctx.ML + ctx.BODY_W - 2, sumMidY, 9, pnlColor(totalUnrealized)
+    );
+    ctx.y -= sumH + 6;
   } else {
-    ctx.y -= 10;
+    ctx.y -= 8;
     ctx.text("등록된 관심종목이 없습니다.", ctx.ML + 8, ctx.y, 9, C.muted);
-    ctx.y -= 16;
+    ctx.y -= 20;
   }
 
   drawFooter(ctx, ymd);
@@ -697,59 +848,77 @@ export async function createWeeklyReportPdf(
   // [5] 주간 코멘트 페이지
   // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
   ctx.addPage();
-  ctx.rect(ctx.ML, ctx.y - 24, ctx.BODY_W, 24, C.navy);
-  ctx.textCenter("V.  주간 코멘트 및 대응 전략", ctx.W / 2, ctx.y - 9, 12, C.white);
-  ctx.y -= 38;
+  drawPageTitle(ctx, "V.  주간 코멘트 및 대응 전략");
 
-  const comments: Array<{ title: string; body: string; color: RGB }> = [];
+  const tradeMom =
+    curr.tradeCount > prev.tradeCount
+      ? `이번 주 거래 횟수(${curr.tradeCount}건)가 이전 주(${prev.tradeCount}건) 대비 증가했습니다. 포지션 진입이 늘어난 구간으로, 개별 리스크 관리가 중요합니다.`
+      : curr.tradeCount < prev.tradeCount
+      ? `이번 주 거래 횟수(${curr.tradeCount}건)가 이전 주(${prev.tradeCount}건)보다 감소했습니다. 신중한 관망 기조를 유지 중입니다.`
+      : "이번 주 거래 횟수는 이전 주와 동일합니다.";
 
-  const tradeMom = curr.tradeCount > prev.tradeCount
-    ? `이번 주 거래 횟수(${curr.tradeCount}건)가 이전 주(${prev.tradeCount}건) 대비 증가했습니다. 포지션 진입이 늘어난 구간으로, 개별 리스크 관리가 중요합니다.`
-    : curr.tradeCount < prev.tradeCount
-    ? `이번 주 거래 횟수(${curr.tradeCount}건)가 이전 주(${prev.tradeCount}건)보다 감소했습니다. 신중한 관망 기조를 유지 중입니다.`
-    : "이번 주 거래 횟수는 이전 주와 동일합니다.";
-  comments.push({ title: "매매 활동", body: tradeMom, color: C.navyLight });
+  drawCommentBlock(ctx, "매매 활동", tradeMom, C.navyLight, font);
 
-  const winNote = curr.winRate >= prev.winRate
-    ? `승률이 ${prev.winRate.toFixed(1)}%→${curr.winRate.toFixed(1)}%로 개선되었습니다. 매도 타이밍이 양호했습니다.`
-    : `승률이 ${prev.winRate.toFixed(1)}%→${curr.winRate.toFixed(1)}%로 하락했습니다. 손절 기준 재점검을 권고합니다.`;
-  comments.push({ title: "승률 분석", body: winNote, color: curr.winRate >= prev.winRate ? C.up : C.down });
+  const winNote =
+    curr.winRate >= prev.winRate
+      ? `승률이 ${prev.winRate.toFixed(1)}%→${curr.winRate.toFixed(1)}%로 개선되었습니다. 매도 타이밍이 양호했습니다.`
+      : `승률이 ${prev.winRate.toFixed(1)}%→${curr.winRate.toFixed(1)}%로 하락했습니다. 손절 기준 재점검을 권고합니다.`;
+  drawCommentBlock(
+    ctx,
+    "승률 분석",
+    winNote,
+    curr.winRate >= prev.winRate ? C.up : C.down,
+    font
+  );
 
-  const pfNote = totalUnrealized >= 0
-    ? `현재 포트폴리오 평가손익은 ${fmtSignedInt(totalUnrealized)}(${fmtPct(totalUnrealizedPct)})로 양호합니다.`
-    : `현재 포트폴리오 평가손익은 ${fmtSignedInt(totalUnrealized)}(${fmtPct(totalUnrealizedPct)})로 미실현 손실 구간입니다. 개별 종목 비중 점검이 필요합니다.`;
-  comments.push({ title: "포트폴리오 평가", body: pfNote, color: pnlColor(totalUnrealized) });
+  const pfNote =
+    totalUnrealized >= 0
+      ? `현재 포트폴리오 평가손익은 ${fmtSignedInt(totalUnrealized)}(${fmtPct(totalUnrealizedPct)})로 양호합니다.`
+      : `현재 포트폴리오 평가손익은 ${fmtSignedInt(totalUnrealized)}(${fmtPct(totalUnrealizedPct)})로 미실현 손실 구간입니다. 개별 종목 비중 점검이 필요합니다.`;
+  drawCommentBlock(ctx, "포트폴리오 평가", pfNote, pnlColor(totalUnrealized), font);
 
   const topLoss = watchItems.filter((i) => (i.pnlPct ?? 0) < -5);
   if (topLoss.length > 0) {
-    const names = topLoss.slice(0, 3).map((i) => `${i.name}(${fmtPct(i.pnlPct ?? 0)})`).join(", ");
-    comments.push({ title: "손절 재점검 대상", body: `평가손실 -5% 초과 종목: ${names}. 손절 기준일 재확인 후 비중 축소를 고려하세요.`, color: C.up });
+    const names = topLoss
+      .slice(0, 3)
+      .map((i) => `${i.name}(${fmtPct(i.pnlPct ?? 0)})`)
+      .join(", ");
+    drawCommentBlock(
+      ctx,
+      "손절 재점검 대상",
+      `평가손실 -5% 초과 종목: ${names}. 손절 기준일 재확인 후 비중 축소를 고려하세요.`,
+      C.up,
+      font
+    );
   }
 
-  const sectorNames = (sectorRes.data ?? []).slice(0, 2).map((s) => s.name).join(", ");
+  const sectorNames = (sectorRes.data ?? [])
+    .slice(0, 2)
+    .map((s) => s.name)
+    .join(", ");
   if (sectorNames) {
-    comments.push({ title: "주도 섹터 대응", body: `이번 주 주도 섹터는 ${sectorNames}입니다. 해당 섹터 편입 종목의 비중 확대를 모니터링하세요.`, color: C.navyLight });
+    drawCommentBlock(
+      ctx,
+      "주도 섹터 대응",
+      `이번 주 주도 섹터는 ${sectorNames}입니다. 해당 섹터 편입 종목의 비중 확대를 모니터링하세요.`,
+      C.navyLight,
+      font
+    );
   }
 
-  comments.push({ title: "유의 사항", body: "본 리포트는 가상 포트폴리오 기준입니다. 실제 거래에 적용 시 세금·수수료·시장 유동성을 반드시 고려하십시오.", color: C.muted });
-
-  comments.forEach((c) => {
-    ctx.ensureSpace(58);
-    ctx.rect(ctx.ML, ctx.y - 50, ctx.BODY_W, 50, C.bg);
-    ctx.rect(ctx.ML, ctx.y - 50, 4, 50, c.color);
-    ctx.text(c.title, ctx.ML + 12, ctx.y - 10, 10, c.color);
-    const bodyLines = wrapText(c.body, ctx.BODY_W - 20, font, 9);
-    bodyLines.forEach((line, li) => {
-      ctx.text(line, ctx.ML + 12, ctx.y - 26 - li * 13, 9, C.text);
-    });
-    ctx.y -= 56;
-  });
+  drawCommentBlock(
+    ctx,
+    "유의 사항",
+    "본 리포트는 가상 포트폴리오 기준입니다. 실제 거래에 적용 시 세금·수수료·시장 유동성을 반드시 고려하십시오.",
+    C.muted,
+    font
+  );
 
   drawFooter(ctx, ymd);
 
-  // ── 캡션 및 반환 ────────────────────────────────────────────────────────
-  // 구형/모바일 PDF 렌더러 호환성을 높이기 위해 object stream을 비활성화
+  // ── 반환 ────────────────────────────────────────────────────────────────
   const bytes = await pdf.save({ useObjectStreams: false });
+
   const caption = [
     `주간 포트폴리오 리포트 — ${krDate}`,
     `거래 ${curr.tradeCount}건 · 실현손익 ${fmtSignedInt(curr.realizedPnl)} · 보유평가 ${fmtSignedInt(totalUnrealized)}`,
