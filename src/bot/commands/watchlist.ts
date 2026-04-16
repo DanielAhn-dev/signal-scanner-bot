@@ -19,6 +19,11 @@ import {
   getUserInvestmentPrefs,
   setUserInvestmentPrefs,
 } from "../../services/userService";
+import {
+  normalizeWatchlistHolding,
+  syncVirtualPortfolio,
+  type VirtualTradeSide,
+} from "../../services/portfolioService";
 
 const MAX_ITEMS = 20; // 사용자당 최대 관심종목 수
 const DEFAULT_TARGET_POSITIONS = 10;
@@ -70,7 +75,7 @@ function isKstMarketOpen(now = new Date()): boolean {
 async function appendVirtualTradeLog(payload: {
   chatId: number;
   code: string;
-  side: "BUY" | "SELL";
+  side: VirtualTradeSide;
   price: number;
   quantity: number;
   grossAmount: number;
@@ -98,6 +103,40 @@ async function appendVirtualTradeLog(payload: {
   } catch (e) {
     console.error("appendVirtualTradeLog error:", e);
   }
+}
+
+function buildAdjustmentMemo(input: {
+  prevPrice: number | null;
+  nextPrice: number;
+  prevQty: number;
+  nextQty: number;
+}): string {
+  return `watchlist-adjust:buy=${input.prevPrice ?? 0}->${input.nextPrice};qty=${input.prevQty}->${input.nextQty}`;
+}
+
+function parseAdjustmentMemo(raw?: string | null): {
+  prevPrice: number | null;
+  nextPrice: number | null;
+  prevQty: number | null;
+  nextQty: number | null;
+} | null {
+  const memo = String(raw ?? "");
+  const match = memo.match(/watchlist-adjust:buy=([^;]+);qty=([^;]+)/i);
+  if (!match) return null;
+
+  const [prevPriceRaw, nextPriceRaw] = match[1].split("->");
+  const [prevQtyRaw, nextQtyRaw] = match[2].split("->");
+  const prevPrice = Number(prevPriceRaw);
+  const nextPrice = Number(nextPriceRaw);
+  const prevQty = Number(prevQtyRaw);
+  const nextQty = Number(nextQtyRaw);
+
+  return {
+    prevPrice: Number.isFinite(prevPrice) && prevPrice > 0 ? prevPrice : null,
+    nextPrice: Number.isFinite(nextPrice) && nextPrice > 0 ? nextPrice : null,
+    prevQty: Number.isFinite(prevQty) && prevQty > 0 ? Math.floor(prevQty) : null,
+    nextQty: Number.isFinite(nextQty) && nextQty > 0 ? Math.floor(nextQty) : null,
+  };
 }
 
 async function allocateVirtualBuy(payload: {
@@ -335,7 +374,7 @@ export async function handleWatchlistCommand(
     walletSummary,
     "",
     `/관심추가 종목 [매수가] · /관심삭제 종목`,
-    `/관심수정 종목 매수가`,
+    `/관심수정 종목 매수가 [수량]`,
     `/관심자동 · /관심대응`,
     `/기록`,
   ].join("\n");
@@ -399,7 +438,7 @@ export async function handleWatchlistAdd(
   if (existing) {
     return tgSend("sendMessage", {
       chat_id: ctx.chatId,
-      text: `${esc(name)} (${code})은 이미 관심종목에 있습니다.\n/관심수정 ${name} 매수가 로 수정해주세요.`,
+      text: `${esc(name)} (${code})은 이미 관심종목에 있습니다.\n/관심수정 ${name} 매수가 수량 으로 수정해주세요.`,
       parse_mode: "HTML",
     });
   }
@@ -441,6 +480,12 @@ export async function handleWatchlistAdd(
       chat_id: ctx.chatId,
       text: "관심종목 추가 중 오류가 발생했습니다.",
     });
+  }
+
+  try {
+    await syncVirtualPortfolio(ctx.chatId, tgId);
+  } catch (syncError) {
+    console.error("watchlist add sync error:", syncError);
   }
 
   const priceNote = buyPrice ? `  매수가 ${fmtInt(buyPrice)}원` : "";
@@ -611,6 +656,12 @@ export async function handleWatchlistRemove(
         (isFullExit ? "watchlist-full-exit" : "watchlist-partial-exit"),
     });
 
+    try {
+      await syncVirtualPortfolio(ctx.chatId, tgId);
+    } catch (syncError) {
+      console.error("watchlist sell sync error:", syncError);
+    }
+
     const remainQtyNote = qty - sellQty;
     return tgSend("sendMessage", {
       chat_id: ctx.chatId,
@@ -619,6 +670,12 @@ export async function handleWatchlistRemove(
         : `${esc(name)} (${code}) ${sellQty}주 부분매도 완료 (잔여 ${remainQtyNote}주)\n정산금 ${fmtInt(net)}원 · 실현손익 ${pnl >= 0 ? "+" : ""}${fmtInt(pnl)}원\n/관심 으로 잔여 포지션 확인`,
       parse_mode: "HTML",
     });
+  }
+
+  try {
+    await syncVirtualPortfolio(ctx.chatId, tgId);
+  } catch (syncError) {
+    console.error("watchlist delete sync error:", syncError);
   }
 
   await tgSend("sendMessage", {
@@ -870,11 +927,12 @@ export async function handleWatchlistEdit(
   const parts = (input || "").trim().split(/\s+/);
   const query = parts[0];
   const rawPrice = parts[1];
+  const rawQty = parts[2];
 
   if (!query || !rawPrice) {
     return tgSend("sendMessage", {
       chat_id: ctx.chatId,
-      text: "사용법: /관심수정 종목명 매수가\n예) /관심수정 삼성전자 72000",
+      text: "사용법: /관심수정 종목명 매수가 [수량]\n예) /관심수정 삼성전자 72000 5",
     });
   }
 
@@ -892,14 +950,22 @@ export async function handleWatchlistEdit(
   if (!Number.isFinite(newPrice) || newPrice <= 0) {
     return tgSend("sendMessage", {
       chat_id: ctx.chatId,
-      text: "유효한 매수가를 입력해주세요.\n예) /관심수정 삼성전자 72000",
+      text: "유효한 매수가를 입력해주세요.\n예) /관심수정 삼성전자 72000 5",
+    });
+  }
+
+  const parsedQtyValue = rawQty ? Number(rawQty.replace(/,/g, "")) : null;
+  if (rawQty && (!Number.isFinite(parsedQtyValue) || (parsedQtyValue ?? 0) <= 0)) {
+    return tgSend("sendMessage", {
+      chat_id: ctx.chatId,
+      text: "수량은 1주 이상 정수로 입력해주세요.\n예) /관심수정 삼성전자 72000 5",
     });
   }
 
   // 기존 관심종목인지 확인
   const { data: existing } = await supabaseRead
     .from("watchlist")
-    .select("id")
+    .select("id, quantity, buy_price, invested_amount")
     .eq("chat_id", ctx.chatId)
     .eq("code", code)
     .single();
@@ -912,17 +978,23 @@ export async function handleWatchlistEdit(
     });
   }
 
-  const { data: row } = await supabaseRead
-    .from("watchlist")
-    .select("quantity")
-    .eq("chat_id", ctx.chatId)
-    .eq("code", code)
-    .maybeSingle();
-  const qty = Math.max(0, Math.floor(Number((row as any)?.quantity ?? 0)));
+  const previous = normalizeWatchlistHolding({
+    id: Number((existing as any).id),
+    quantity: (existing as any).quantity,
+    buyPrice: (existing as any).buy_price,
+    investedAmount: (existing as any).invested_amount,
+  });
+  const nextQty = rawQty ? Math.floor(parsedQtyValue ?? 0) : Math.max(previous.quantity, 1);
+  const nextInvested = Math.round(nextQty * newPrice);
 
   const { error } = await supabase
     .from("watchlist")
-    .update({ buy_price: newPrice, invested_amount: qty > 0 ? qty * newPrice : null })
+    .update({
+      buy_price: newPrice,
+      quantity: nextQty,
+      invested_amount: nextInvested,
+      status: "holding",
+    })
     .eq("chat_id", ctx.chatId)
     .eq("code", code);
 
@@ -934,9 +1006,40 @@ export async function handleWatchlistEdit(
     });
   }
 
+  await appendVirtualTradeLog({
+    chatId: ctx.chatId,
+    code,
+    side: "ADJUST",
+    price: newPrice,
+    quantity: nextQty,
+    grossAmount: nextInvested,
+    netAmount: nextInvested,
+    memo: buildAdjustmentMemo({
+      prevPrice: previous.buyPrice,
+      nextPrice: newPrice,
+      prevQty: previous.quantity,
+      nextQty,
+    }),
+  });
+
+  const tgId = ctx.from?.id ?? ctx.chatId;
+  let syncedCash: number | null = null;
+  try {
+    const synced = await syncVirtualPortfolio(ctx.chatId, tgId);
+    syncedCash = synced.cashBalance;
+  } catch (syncError) {
+    console.error("watchlist edit sync error:", syncError);
+  }
+
   await tgSend("sendMessage", {
     chat_id: ctx.chatId,
-    text: `${esc(name)} (${code}) 매수가 → <code>${fmtInt(newPrice)}원</code> 수정 완료\n/관심 으로 확인`,
+    text: [
+      `${esc(name)} (${code}) 수정 완료`,
+      `매수가 <code>${fmtInt(previous.buyPrice ?? 0)}원</code> → <code>${fmtInt(newPrice)}원</code>`,
+      `수량 <code>${previous.quantity}주</code> → <code>${nextQty}주</code>`,
+      `원금 <code>${fmtInt(nextInvested)}원</code>${syncedCash !== null ? ` · 잔액 <code>${fmtInt(syncedCash)}원</code>` : ""}`,
+      `/관심 · /기록 으로 확인`,
+    ].join("\n"),
     parse_mode: "HTML",
   });
 }
@@ -1013,10 +1116,16 @@ export async function handleWatchlistQuickAdd(
     });
   }
 
+  try {
+    await syncVirtualPortfolio(ctx.chatId, tgId);
+  } catch (syncError) {
+    console.error("watchlist quick-add sync error:", syncError);
+  }
+
   const priceNote = price ? `  매수가 ${fmtInt(price)}원 (현재가 자동저장)` : "";
   await tgSend("sendMessage", {
     chat_id: ctx.chatId,
-    text: `${esc(name)} (${code}) 관심종목 추가 완료${priceNote}${alloc.walletNote}\n/관심 으로 목록 확인\n/브리핑 에서 함께 점검\n/관심수정 ${name} 가격 — 매수가 변경`,
+    text: `${esc(name)} (${code}) 관심종목 추가 완료${priceNote}${alloc.walletNote}\n/관심 으로 목록 확인\n/브리핑 에서 함께 점검\n/관심수정 ${name} 가격 수량 — 매수가/수량 변경`,
     parse_mode: "HTML",
   });
 }
@@ -1076,13 +1185,23 @@ export async function handleWatchlistHistoryCommand(
 
   const lines = rows.map((r: any, idx: number) => {
     const d = formatShortDate(r.traded_at as string | null | undefined);
-    const side = (r.side as string) === "SELL" ? "매도" : "매수";
+    const sideValue = String(r.side ?? "").toUpperCase();
+    const side = sideValue === "SELL" ? "매도" : sideValue === "ADJUST" ? "수정" : "매수";
     const qty = Math.max(0, Math.floor(Number(r.quantity ?? 0)));
     const price = Number(r.price ?? 0);
     const base = `${idx + 1}. (${d}) ${side} ${r.code} ${qty}주 @ ${fmtInt(price)}원`;
     const autoTag = String(r.memo ?? "").includes("(자동)") ? " (자동)" : "";
 
-    if ((r.side as string) === "SELL") {
+    if (sideValue === "ADJUST") {
+      const parsed = parseAdjustmentMemo(r.memo as string | null | undefined);
+      if (parsed) {
+        return `${idx + 1}. (${d}) 수정 ${r.code}${autoTag}\n    매수가 ${fmtInt(parsed.prevPrice ?? 0)}원 -> ${fmtInt(parsed.nextPrice ?? 0)}원 · 수량 ${parsed.prevQty ?? 0}주 -> ${parsed.nextQty ?? 0}주`;
+      }
+      const gross = Number(r.gross_amount ?? 0);
+      return `${base}${autoTag}\n    보유원금 ${fmtInt(gross)}원으로 재동기화`;
+    }
+
+    if (sideValue === "SELL") {
       const pnl = Number(r.pnl_amount ?? 0);
       const fee = Number(r.fee_amount ?? 0);
       const tax = Number(r.tax_amount ?? 0);
