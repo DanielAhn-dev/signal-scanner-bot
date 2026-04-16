@@ -106,6 +106,9 @@ export async function createBriefingReport(
 
   const topSectorIds = topSectors.map((s) => s.id);
 
+  // 1-b. 섹터 5일 모멘텀 (sector_daily 기반)
+  const sectorMomentumMap = await fetchSectorMomentum(supabase, topSectorIds, asOf);
+
   // 2. 점수 기준일(asof)
   const { data: scoreDateRows, error: scoreDateError } = await supabase
     .from("scores")
@@ -188,8 +191,9 @@ export async function createBriefingReport(
       sectorStocks?.filter((s) => s.sector_id === sector.id) ?? [];
 
     const picked = pickTopStocksForSector(stocksOfSector, scoresByCode, 3, riskProfile);
+    const momentum5d = sectorMomentumMap.get(sector.id) ?? null;
 
-    return formatSectorSection(sector, picked, scoresByCode, realtimeMap);
+    return formatSectorSection(sector, picked, scoresByCode, realtimeMap, momentum5d);
   });
 
   const watchlistMicro = await fetchWatchMicroSignalsByCodes(supabase, watchlistCodes);
@@ -416,19 +420,35 @@ function formatSectorSection(
   sector: SectorRow,
   stocks: any[],
   scoresByCode: Map<string, ScoreRow>,
-  realtimeMap: Record<string, any>
+  realtimeMap: Record<string, any>,
+  momentum5d?: number | null
 ) {
   const metrics = (sector.metrics ?? {}) as Json;
 
   const ret1m = toNumber(metrics.ret_1m ?? metrics.return_1m);
   const change = sector.change_rate as number | null;
 
+  // 5일 모멘텀 태그
+  let momTag = "";
+  if (momentum5d != null && Number.isFinite(momentum5d)) {
+    const icon = momentum5d >= 1 ? "📈" : momentum5d <= -1 ? "📉" : "➡️";
+    momTag = `  ${icon} 5일 ${fmtPct(momentum5d)}`;
+  }
+
   let header = `<b>${sector.name}</b>`;
   header += `  점수 <b>${fmtInt(sector.score)}</b>`;
   header += `  ${fmtChange(change)}`;
+  header += momTag;
   if (ret1m != null) header += `  1M ${fmtPct(ret1m)}`;
 
   const lines: string[] = [header];
+
+  // 섹터 하락 추세 경고 (-2% 이상 하락 시)
+  if (momentum5d != null && momentum5d < -2) {
+    lines.push(
+      `  ⚠️ <i>섹터 하락 추세 (5일 ${fmtPct(momentum5d)}) — 신규 진입 주의</i>`
+    );
+  }
 
   if (!stocks || stocks.length === 0) {
     lines.push(`  <i>집계된 유동성 종목 없음</i>`);
@@ -617,6 +637,54 @@ async function formatWatchlistSection(
   });
 
   return `${summaryLines.join("\n")}\n${lines.join("\n")}\n`;
+}
+
+// ===== 섹터 5일 모멘텀 헬퍼 =====
+
+async function fetchSectorMomentum(
+  supabase: SupabaseClient,
+  sectorIds: string[],
+  asOf: string
+): Promise<Map<string, number>> {
+  const map = new Map<string, number>();
+  if (!sectorIds.length) return map;
+
+  // 최근 10 캘린더일 조회 (영업일 5개 확보)
+  const from = new Date(asOf);
+  from.setDate(from.getDate() - 10);
+  const fromStr = from.toISOString().slice(0, 10);
+
+  const { data } = await supabase
+    .from("sector_daily")
+    .select("sector_id, date, close")
+    .in("sector_id", sectorIds)
+    .gte("date", fromStr)
+    .lte("date", asOf)
+    .order("date", { ascending: true });
+
+  if (!data?.length) return map;
+
+  // 섹터별로 그룹핑
+  const bySector = new Map<string, { date: string; close: number }[]>();
+  for (const row of data) {
+    const list = bySector.get(row.sector_id) ?? [];
+    list.push({ date: row.date as string, close: Number(row.close) });
+    bySector.set(row.sector_id, list);
+  }
+
+  // 5영업일 ROC 계산
+  for (const [id, series] of bySector) {
+    if (series.length < 2) continue;
+    const latest = series[series.length - 1].close;
+    // 5봉 전(또는 가능한 가장 이른 봉) 기준
+    const refIdx = series.length >= 6 ? series.length - 6 : 0;
+    const refClose = series[refIdx].close;
+    if (refClose > 0) {
+      map.set(id, ((latest - refClose) / refClose) * 100);
+    }
+  }
+
+  return map;
 }
 
 // ===== 공통 헬퍼 =====

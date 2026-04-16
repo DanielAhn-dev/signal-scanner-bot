@@ -3,3 +3,5 @@ export * from "./sma";
 export * from "./rsi";
 export * from "./roc";
 export * from "./avwap";
+export * from "./macd";
+export * from "./atr";

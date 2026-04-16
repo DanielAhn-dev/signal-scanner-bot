@@ -3,6 +3,9 @@ import { sma } from "../indicators/sma";
 import { rsiWilder } from "../indicators/rsi";
 import { roc } from "../indicators/roc";
 import { avwap } from "../indicators/avwap";
+import { macd, detectMACDCross, detectMACDDivergence } from "../indicators/macd";
+import { calcATR, atrSizeAdjustment } from "../indicators/atr";
+import { sanitizeOHLCV } from "../lib/validateOHLCV";
 import type { StockOHLCV } from "../data/types";
 
 export interface ScoreFactors {
@@ -16,6 +19,13 @@ export interface ScoreFactors {
   avwap_support: number; // 0~100 (%), 다중 앵커 AVWAP 위에 있는 비율
   avwap_regime?: "buyers" | "sellers" | "neutral"; // AVWAP 기준 매수/매도 레짐
   vol_ratio?: number; // 최근 거래량 / 20MA 거래량
+  // MACD
+  macd_cross?: "golden" | "dead" | null; // 최근 5봉 크로스
+  macd_divergence_bullish?: boolean;     // 상승 다이버전스 (바닥 반전 신호)
+  macd_divergence_bearish?: boolean;     // 하락 다이버전스
+  // ATR 변동성
+  atr14?: number;   // ATR 절대값
+  atr_pct?: number; // ATR / 종가 * 100
 }
 
 export interface MarketEnv {
@@ -58,9 +68,9 @@ export function calculateScore(
   try {
     if (!data || data.length < 200) return null;
 
-    const sorted = [...data].sort(
-      (a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()
-    );
+    // OHLCV 이상값 제거 후 날짜순 정렬
+    const sorted = sanitizeOHLCV(data);
+    if (sorted.length < 200) return null;
     const closes = sorted.map((d) => d.close);
     const vols = sorted.map((d) => d.volume);
     const lastIdx = closes.length - 1;
@@ -128,6 +138,18 @@ export function calculateScore(
         ? (vols[lastIdx] || 0) / vol20
         : undefined;
 
+    // ── MACD ──
+    const macdResult = macd(closes);
+    const macd_cross = detectMACDCross(macdResult, 5);
+    const macdDiv = detectMACDDivergence(closes, macdResult.histogram, 20);
+    const macd_divergence_bullish = macdDiv.bullish;
+    const macd_divergence_bearish = macdDiv.bearish;
+
+    // ── ATR (변동성) ──
+    const atrCalc = calcATR(sorted, 14);
+    const atr14 = atrCalc?.atr14 ?? undefined;
+    const atr_pct = atrCalc?.atrPct ?? undefined;
+
     // 점수 가중 (0~100)
     let score = 0;
 
@@ -163,6 +185,15 @@ export function calculateScore(
     else if (combo === 4) score += 7;
     else if (combo === 3) score += 4;
 
+    // ── MACD 보정 ──
+    // 골든 크로스: +5점, 데드 크로스: -5점
+    if (macd_cross === "golden") score += 5;
+    else if (macd_cross === "dead") score -= 5;
+    // 상승 다이버전스 (바닥 반전 감지): +4점 — 저점 탈출 신호
+    if (macd_divergence_bullish) score += 4;
+    // 하락 다이버전스 (고점 반전 감지): -4점
+    if (macd_divergence_bearish) score -= 4;
+
     // ── 시장 환경 보정 (MarketEnv) ──
     let marketAdj = 0;
     if (marketEnv) {
@@ -194,15 +225,18 @@ export function calculateScore(
     // 시그널
     const breakoutBuy =
       near20 && avwap_support >= 66 && volSpike20 && rsi14 >= 50 && roc14 >= 0;
-    const trendBuy = above50 && rsi14 >= 55 && roc21 >= 0;
+    // 데드 크로스가 최근 발생했으면 추세 매수 억제
+    const trendBuy = above50 && rsi14 >= 55 && roc21 >= 0 && macd_cross !== "dead";
 
     let signal: StockScore["signal"] = "none";
     if (breakoutBuy || trendBuy) signal = "buy";
     else if (score >= 35) signal = "hold";
     else if (score <= 15) signal = "sell";
 
-    // 포지션 크기(기준 대비 0.6~1.3배)
-    const sizeFactor = lin(score, 20, 60, 0.6, 1.3);
+    // 포지션 크기: 점수 기반 × ATR 변동성 조정
+    const baseSize = lin(score, 20, 60, 0.6, 1.3);
+    const atrAdj = atr_pct != null ? atrSizeAdjustment(atr_pct) : 1.0;
+    const sizeFactor = Math.max(0.4, Math.min(1.5, baseSize * atrAdj));
 
     // === 실행 레벨 산출 (엔트리/손절/익절을 현재가가 아닌 기준가로 계산) ===
 
@@ -219,8 +253,13 @@ export function calculateScore(
       baseEntry = near50 ? lastClose : Math.min(lastClose, ideal);
     }
 
-    // 손절: 엔트리 기준 약 -7~8% 또는 50SMA 하회 중 더 보수적인 쪽
-    const hardStop = Math.min(baseEntry * 0.93, s50 * 0.93 || baseEntry * 0.93);
+    // 손절: ATR×2 기반 동적 손절 vs 고정 -7% vs 50SMA 중 가장 보수적(높은 값)
+    const atrStop =
+      atr14 != null && atr14 > 0 ? baseEntry - atr14 * 2 : baseEntry * 0.93;
+    const fixedStop = baseEntry * 0.93;
+    const smaStop = s50 > 0 ? s50 * 0.99 : baseEntry * 0.93;
+    // 세 값 중 가장 높은 것(= 가장 촘촘한 손절)을 채택
+    const hardStop = Math.max(atrStop, fixedStop, smaStop);
 
     // 트레일링 기준은 50SMA
     const trail50 = s50;
@@ -249,6 +288,11 @@ export function calculateScore(
         avwap_support,
         avwap_regime,
         vol_ratio,
+        macd_cross,
+        macd_divergence_bullish,
+        macd_divergence_bearish,
+        atr14,
+        atr_pct,
       },
       recommendation,
       entry: {
