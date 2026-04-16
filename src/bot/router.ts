@@ -50,7 +50,7 @@ const CMD = {
   START:       /^\/(start|시작|메뉴)$/i,
   HELP:        /^\/(help|도움말)$/i,
   BRIEF:       /^\/(brief|morning|브리핑|장전)$/i,
-  REPORT:      /^\/(report|리포트)$/i,
+  REPORT:      /^\/(report|리포트)(?:\s+(.+))?$/i,
   SCORE:       /^\/(score|점수)\s+(.+)$/i,
   BUY:         /^\/(buy|매수)\s+(.+)$/i,
   SECTOR:      /^\/(sector|섹터|업종|테마)$/i,
@@ -171,9 +171,10 @@ export async function routeMessage(
   }
 
   // /report — 주간 PDF 리포트
-  if (CMD.REPORT.test(t)) {
+  const reportMatch = t.match(CMD.REPORT);
+  if (reportMatch) {
     try {
-      await handleReportCommand(ctx, tgSend);
+      await handleReportCommand(ctx, tgSend, reportMatch[2]);
     } catch (e) {
       await tgSend("sendMessage", {
         chat_id: ctx.chatId,

@@ -18,6 +18,7 @@ import { handleEconomyCommand } from "../src/bot/commands/economy";
 import { handleMarketCommand } from "../src/bot/commands/market";
 import { handleWatchlistQuickAdd } from "../src/bot/commands/watchlist";
 import { handleRiskProfileSelection } from "../src/bot/commands/onboarding";
+import { handleReportMenu } from "../src/bot/commands/report";
 
 // supa 클라이언트는 service_role 키를 사용해야 함
 const supa = () =>
@@ -172,7 +173,8 @@ async function routeCallback(
     const cmd = data.slice(4);
 
     if (cmd === "brief") return handleBriefCommand(ctx, tgSend);
-    if (cmd === "report") return routeMessage("/report", ctx, tgSend);
+    if (cmd === "report") return handleReportMenu(ctx, tgSend);
+    if (cmd.startsWith("report:")) return routeMessage(`/report ${cmd.slice(7)}`, ctx, tgSend);
     if (cmd === "market") return handleMarketCommand(ctx, tgSend);
     if (cmd === "economy") return handleEconomyCommand(ctx, tgSend);
     if (cmd === "sector") return handleSectorCommand(ctx, tgSend);
@@ -231,7 +233,7 @@ async function handleTelegramUpdateJob(job: any) {
       show_alert: false,
     });
 
-    const callbackTimeout = u.callback_query.data === "cmd:report"
+    const callbackTimeout = u.callback_query.data === "cmd:report" || u.callback_query.data.startsWith("cmd:report:")
       ? REPORT_JOB_TIMEOUT_MS
       : DEFAULT_JOB_TIMEOUT_MS;
     await withTimeout(
