@@ -111,7 +111,7 @@ function buildAdjustmentMemo(input: {
   prevQty: number;
   nextQty: number;
 }): string {
-  return `watchlist-adjust:buy=${input.prevPrice ?? 0}->${input.nextPrice};qty=${input.prevQty}->${input.nextQty}`;
+  return `watchlist-adjust:buy=${input.prevPrice ?? 0}→${input.nextPrice};qty=${input.prevQty}→${input.nextQty}`;
 }
 
 function parseAdjustmentMemo(raw?: string | null): {
@@ -124,8 +124,8 @@ function parseAdjustmentMemo(raw?: string | null): {
   const match = memo.match(/watchlist-adjust:buy=([^;]+);qty=([^;]+)/i);
   if (!match) return null;
 
-  const [prevPriceRaw, nextPriceRaw] = match[1].split("->");
-  const [prevQtyRaw, nextQtyRaw] = match[2].split("->");
+  const [prevPriceRaw, nextPriceRaw] = match[1].split("→");
+  const [prevQtyRaw, nextQtyRaw] = match[2].split("→");
   const prevPrice = Number(prevPriceRaw);
   const nextPrice = Number(nextPriceRaw);
   const prevQty = Number(prevQtyRaw);
@@ -747,7 +747,7 @@ export async function handleWatchlistAutoCommand(
       holdLines.push(
         [
           `- <b>${esc(name)}</b> (${code}) · 보유 유지`,
-          "  -> 사유: 데이터 부족",
+          "  → 사유: 데이터 부족",
         ].join("\n")
       );
       continue;
@@ -768,9 +768,9 @@ export async function handleWatchlistAutoCommand(
       holdLines.push(
         [
           `- <b>${esc(name)}</b> (${code}) · 보유 유지`,
-          `  -> 손익: ${fmtPct(decision.pnlPct)}`,
-          `  -> 판단: ${decision.reason}`,
-          `  -> 트리거: ${decision.triggerReasons.length ? decision.triggerReasons.join(", ") : "대기"}`,
+          `  → 손익: ${fmtPct(decision.pnlPct)}`,
+          `  → 판단: ${decision.reason}`,
+          `  → 트리거: ${decision.triggerReasons.length ? decision.triggerReasons.join(", ") : "대기"}`,
         ].join("\n")
       );
       continue;
@@ -806,9 +806,9 @@ export async function handleWatchlistAutoCommand(
     executedLines.push(
       [
         `- <b>${esc(target.name)}</b> (${target.code}) · 자동매도`,
-        `  -> 사유: ${target.reason}`,
-        `  -> 손익: ${fmtPct(target.pnlPct)} · 신뢰도 ${target.confidence}%`,
-        `  -> 트리거: ${target.triggers.length ? target.triggers.join(", ") : "대기"}`,
+        `  → 사유: ${target.reason}`,
+        `  → 손익: ${fmtPct(target.pnlPct)} · 신뢰도 ${target.confidence}%`,
+        `  → 트리거: ${target.triggers.length ? target.triggers.join(", ") : "대기"}`,
       ].join("\n")
     );
   }
@@ -1208,7 +1208,7 @@ export async function handleWatchlistHistoryCommand(
     if (sideValue === "ADJUST") {
       const parsed = parseAdjustmentMemo(r.memo as string | null | undefined);
       if (parsed) {
-        return `${idx + 1}. (${d}) 수정 ${r.code}${autoTag}\n    매수가 ${fmtInt(parsed.prevPrice ?? 0)}원 -> ${fmtInt(parsed.nextPrice ?? 0)}원 · 수량 ${parsed.prevQty ?? 0}주 -> ${parsed.nextQty ?? 0}주`;
+        return `${idx + 1}. (${d}) 수정 ${r.code}${autoTag}\n    매수가 ${fmtInt(parsed.prevPrice ?? 0)}원 → ${fmtInt(parsed.nextPrice ?? 0)}원 · 수량 ${parsed.prevQty ?? 0}주 → ${parsed.nextQty ?? 0}주`;
       }
       const gross = Number(r.gross_amount ?? 0);
       return `${base}${autoTag}\n    보유원금 ${fmtInt(gross)}원으로 재동기화`;
