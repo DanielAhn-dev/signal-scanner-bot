@@ -10,6 +10,8 @@ interface StockData {
   above_sma200: boolean;
   close: number;
   low_52w: number;
+  /** 뉴스 감성 점수 (-10 ~ +10). 전달 시 totalScore에 합산 (±10 캡) */
+  newsScore?: number;
 }
 
 export function calculateScore(stock: StockData) {
@@ -45,13 +47,19 @@ export function calculateScore(stock: StockData) {
   // ROC 상승 추세
   if (stock.roc_14 > 0) momentumScore += 5;
 
+  // 뉴스 감성 보정 (±10점 캡 적용)
+  const newsBias = stock.newsScore != null
+    ? Math.max(-10, Math.min(10, stock.newsScore))
+    : 0;
+
   // 최종 합산 (100점 만점 + 알파)
-  const totalScore = valueScore + momentumScore + universeBonus;
+  const totalScore = valueScore + momentumScore + universeBonus + newsBias;
 
   return {
     totalScore,
     valueScore,
     momentumScore,
     universeBonus,
+    newsBias,
   };
 }

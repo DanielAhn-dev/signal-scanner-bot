@@ -7,6 +7,8 @@ import {
   fetchWatchMicroSignalsByCodes,
   type WatchMicroSignal,
 } from "../lib/watchlistSignals";
+import { fetchStockNews } from "../utils/fetchNews";
+import { analyzeNewsSentiment, sentimentEmoji, type SentimentResult } from "../lib/newsSentiment";
 
 // JSONB용 느슨한 타입
 type Json = Record<string, any>;
@@ -198,12 +200,29 @@ export async function createBriefingReport(
 
   const watchlistMicro = await fetchWatchMicroSignalsByCodes(supabase, watchlistCodes);
 
+  // buy-now 상태 종목(최대 3개)에 대해서만 뉴스 감성 수집
+  const buyNowCodes = watchlistCodes.slice(0, 3);
+  const newsSentimentByCode = new Map<string, SentimentResult>();
+  await Promise.all(
+    buyNowCodes.map(async (code) => {
+      try {
+        const news = await fetchStockNews(code, 5);
+        if (news.length) {
+          newsSentimentByCode.set(code, analyzeNewsSentiment(news.map((n) => n.title)));
+        }
+      } catch {
+        // 뉴스 조회 실패는 브리핑을 차단하지 않음
+      }
+    })
+  );
+
   const watchlistSection = await formatWatchlistSection(
     watchlistItems,
     scoresByCode,
     realtimeMap,
     topSectors,
-    watchlistMicro
+    watchlistMicro,
+    newsSentimentByCode
   );
 
   // 9. 빈집털이 섹션 텍스트 조립
@@ -514,7 +533,8 @@ async function formatWatchlistSection(
   scoresByCode: Map<string, ScoreRow>,
   realtimeMap: Record<string, any>,
   topSectors: SectorRow[],
-  microByCode: Map<string, WatchMicroSignal>
+  microByCode: Map<string, WatchMicroSignal>,
+  newsSentimentByCode: Map<string, SentimentResult> = new Map()
 ) {
   if (!items.length) {
     return "  <i>등록된 관심종목이 없습니다. /관심추가 종목명 으로 후보를 저장하세요.</i>\n";
@@ -628,11 +648,25 @@ async function formatWatchlistSection(
           ? `오늘 액션: 20일선 부근 ${fmtInt(item.plan.entryLow)}~${fmtInt(item.plan.entryHigh)} 대기`
           : `오늘 액션: ${item.plan.summary}`;
 
+    // 뉴스 감성 라벨 (buy-now 또는 감성 주목할 만한 종목만)
+    const sentimentResult = newsSentimentByCode.get(item.code);
+    const newsTag = sentimentResult
+      ? (() => {
+          const emoji = sentimentEmoji(sentimentResult.score);
+          if (!emoji) return null;
+          const matches = sentimentResult.score > 0
+            ? sentimentResult.positiveMatches
+            : sentimentResult.negativeMatches;
+          return `     뉴스 ${emoji} ${matches.slice(0, 2).join(", ")}`;
+        })()
+      : null;
+
     return [
       `  ▸ <b>${item.name}</b> <code>${fmtInt(item.currentPrice)}원</code>${changeStr}${buyBase}`,
       `     ${item.plan.statusLabel} · 손절 ${fmtInt(item.plan.stopPrice)} · 1차 ${fmtPct(item.plan.target1Pct * 100)}`,
       `     ${todayAction}`,
       triggerLine,
+      ...newsTag ? [newsTag] : [],
     ].join("\n");
   });
 

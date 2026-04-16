@@ -6,19 +6,29 @@ import fontkit from "@pdf-lib/fontkit";
 import { fetchAllMarketData, fetchReportMarketData } from "../utils/fetchMarketData";
 import { fetchRealtimePriceBatch } from "../utils/fetchRealtimePrice";
 
-// ─── 색상 팔레트 (증권사 리포트 스타일) ─────────────────────────────────
+// ─── 색상 팔레트 (모던 B&W + 주제별 포인트) ─────────────────────────────
 const C = {
-  navy:      rgb(0.06, 0.14, 0.35),
-  navyLight: rgb(0.10, 0.20, 0.50),
-  accent:    rgb(0.96, 0.38, 0.07),
-  up:        rgb(0.80, 0.08, 0.08),
-  down:      rgb(0.10, 0.45, 0.75),
-  neutral:   rgb(0.35, 0.35, 0.35),
-  white:     rgb(1.00, 1.00, 1.00),
+  // ── 뉴트럴 ──
+  black:   rgb(0.06, 0.06, 0.07),   // 배너/섹션 배경
+  ink:     rgb(0.12, 0.12, 0.14),   // 본문 텍스트
+  dim:     rgb(0.40, 0.40, 0.44),   // 보조 텍스트
+  subtle:  rgb(0.60, 0.60, 0.64),   // 캡션·플레이스홀더
+  rule:    rgb(0.83, 0.83, 0.86),   // 구분선 (가는 선)
+  surface: rgb(0.96, 0.96, 0.97),   // 카드 배경
+  alt:     rgb(0.91, 0.91, 0.93),   // 테이블 교대 행
+  white:   rgb(1.00, 1.00, 1.00),
+  // ── 시맨틱 ──
+  up:      rgb(0.82, 0.10, 0.10),   // 상승 (적색)
+  down:    rgb(0.08, 0.40, 0.72),   // 하락 (청색)
+  // ── 레거시 alias (호환) ──
+  navy:      rgb(0.06, 0.06, 0.07),
+  navyLight: rgb(0.22, 0.22, 0.26),
+  accent:    rgb(0.06, 0.06, 0.07),
+  neutral:   rgb(0.40, 0.40, 0.44),
+  text:      rgb(0.12, 0.12, 0.14),
+  muted:     rgb(0.60, 0.60, 0.64),
   bg:        rgb(0.96, 0.96, 0.97),
-  border:    rgb(0.78, 0.80, 0.84),
-  text:      rgb(0.10, 0.10, 0.12),
-  muted:     rgb(0.50, 0.50, 0.55),
+  border:    rgb(0.83, 0.83, 0.86),
 } as const;
 
 // ─── 타입 정의 ────────────────────────────────────────────────────────────
@@ -208,7 +218,12 @@ function lineDate(raw: string): string {
 function pnlColor(v: number): RGB {
   if (v > 0) return C.up;
   if (v < 0) return C.down;
-  return C.neutral;
+  return C.dim;
+}
+
+// 수직 중앙 정렬 유틸: 박스 상단 y에서 fontSize가 정중앙이 되는 topY 반환
+function vCenterTopY(boxTopY: number, boxH: number, fontSize: number): number {
+  return boxTopY - boxH / 2 + fontSize * 0.50;
 }
 function truncate(s: string, max: number): string {
   return s.length > max ? s.slice(0, max - 1) + "…" : s;
@@ -303,11 +318,11 @@ function createReportTheme(input: {
 }): ReportTheme {
   return {
     pageBand: input.pageBand,
-    sectionBand: rgb(0.18, 0.20, 0.24),
+    sectionBand: C.black,
     accent: input.accent,
-    softBg: rgb(0.97, 0.97, 0.98),
-    border: rgb(0.82, 0.83, 0.86),
-    subtitle: rgb(0.41, 0.43, 0.47),
+    softBg: C.surface,
+    border: C.rule,
+    subtitle: C.dim,
     heroLabel: input.heroLabel,
     heroSummary: input.heroSummary,
   };
@@ -564,8 +579,8 @@ function buildReportSummaryText(input: {
 function getReportTheme(topic: ReportTopic): ReportTheme {
   if (topic === "economy") {
     return createReportTheme({
-      pageBand: rgb(0.22, 0.17, 0.11),
-      accent: rgb(0.80, 0.58, 0.18),
+      pageBand: rgb(0.06, 0.06, 0.08),
+      accent: rgb(0.26, 0.28, 0.88),           // indigo
       heroLabel: "MACRO SNAPSHOT",
       heroSummary: "금리, 환율, 변동성, 글로벌 위험선호를 한 페이지 감도로 정리합니다.",
     });
@@ -573,8 +588,8 @@ function getReportTheme(topic: ReportTopic): ReportTheme {
 
   if (topic === "flow") {
     return createReportTheme({
-      pageBand: rgb(0.06, 0.27, 0.40),
-      accent: rgb(0.00, 0.70, 0.76),
+      pageBand: C.black,
+      accent: rgb(0.04, 0.62, 0.44),            // emerald
       heroLabel: "FLOW MONITOR",
       heroSummary: "외국인·기관 자금 방향을 중심으로 강한 섹터와 약한 섹터를 분리합니다.",
     });
@@ -582,8 +597,8 @@ function getReportTheme(topic: ReportTopic): ReportTheme {
 
   if (topic === "sector") {
     return createReportTheme({
-      pageBand: rgb(0.40, 0.17, 0.09),
-      accent: rgb(0.95, 0.46, 0.18),
+      pageBand: C.black,
+      accent: rgb(0.92, 0.56, 0.04),            // amber
       heroLabel: "SECTOR ROTATION",
       heroSummary: "점수와 수익률을 동시에 보며 현재 시장의 중심 테마를 압축합니다.",
     });
@@ -591,16 +606,16 @@ function getReportTheme(topic: ReportTopic): ReportTheme {
 
   if (topic === "watchlist") {
     return createReportTheme({
-      pageBand: rgb(0.06, 0.32, 0.24),
-      accent: rgb(0.24, 0.73, 0.49),
+      pageBand: C.black,
+      accent: rgb(0.04, 0.50, 0.72),            // sky blue
       heroLabel: "PORTFOLIO CHECK",
       heroSummary: "보유 종목의 손익, 거래 흐름, 대응 포인트를 빠르게 확인할 수 있게 정리합니다.",
     });
   }
 
   return createReportTheme({
-    pageBand: C.navy,
-    accent: C.accent,
+    pageBand: C.black,
+    accent: C.black,
     heroLabel: "WEEKLY OUTLOOK",
     heroSummary: "시장 환경, 포트폴리오 상태, 최근 거래와 주간 대응 전략을 한 번에 묶습니다.",
   });
@@ -635,16 +650,25 @@ function splitWindows(rows: TradeRow[], now: Date) {
 }
 
 // ─── 폰트 로드 ────────────────────────────────────────────────────────────
-async function loadKoreanFontBytes(): Promise<Uint8Array> {
-  const fontPath = path.join(process.cwd(), "assets", "fonts", "NotoSansCJKkr-Regular.otf");
-  try {
-    return await readFile(fontPath);
-  } catch (err: any) {
-    const reason = err?.code === "ENOENT"
-      ? `폰트 파일을 찾을 수 없습니다: ${fontPath}`
-      : `폰트 로드 실패: ${err?.message ?? String(err)}`;
-    throw new Error(`[PDF] ${reason}. 배포 산출물에 assets/fonts 포함 여부를 확인하세요.`);
+async function loadFontBytes(): Promise<{ regular: Uint8Array; bold: Uint8Array }> {
+  const base = path.join(process.cwd(), "assets", "fonts");
+  const regularPath = path.join(base, "Pretendard-Regular.otf");
+  const boldPath    = path.join(base, "Pretendard-Bold.otf");
+  const fallback    = path.join(base, "NotoSansCJKkr-Regular.otf");
+  async function tryLoad(...paths: string[]): Promise<Uint8Array> {
+    for (const p of paths) {
+      try { return await readFile(p); } catch { /* next */ }
+    }
+    throw new Error(`[PDF] 폰트 파일을 찾을 수 없습니다. 확인 경로: ${paths.join(", ")}`);
   }
+  const regular = await tryLoad(regularPath, fallback);
+  const bold    = await tryLoad(boldPath, regularPath, fallback);
+  return { regular, bold };
+}
+
+/** @deprecated use loadFontBytes */
+async function loadKoreanFontBytes(): Promise<Uint8Array> {
+  return (await loadFontBytes()).regular;
 }
 
 // ─── 텍스트 래핑 ─────────────────────────────────────────────────────────
@@ -679,15 +703,15 @@ function wrapText(text: string, maxWidth: number, font: PDFFont, size: number): 
 class ReportContext {
   pdf: PDFDocument;
   page!: PDFPage;
-  font: PDFFont;
+  font: PDFFont;      // Pretendard Regular
+  fontBold: PDFFont;  // Pretendard Bold
   theme: ReportTheme;
   readonly W = 595;
   readonly H = 842;
-  readonly ML = 44;
-  readonly MR = 44;
-  readonly MT = 36;
-  // [FIX] 하단 여백을 늘려 풋터가 잘리지 않도록
-  readonly MB = 52;
+  readonly ML = 40;
+  readonly MR = 40;
+  readonly MT = 32;
+  readonly MB = 48;
   readonly BODY_W: number;
   y = 0;
   pageNum = 0;
@@ -695,11 +719,12 @@ class ReportContext {
   pageTitle: string | null = null;
   private pageFinalized = false;
 
-  constructor(pdf: PDFDocument, font: PDFFont, theme: ReportTheme) {
-    this.pdf = pdf;
-    this.font = font;
-    this.theme = theme;
-    this.BODY_W = this.W - this.ML - this.MR;
+  constructor(pdf: PDFDocument, font: PDFFont, fontBold: PDFFont, theme: ReportTheme) {
+    this.pdf      = pdf;
+    this.font     = font;
+    this.fontBold = fontBold;
+    this.theme    = theme;
+    this.BODY_W   = this.W - this.ML - this.MR;
   }
 
   addPage(pageTitle?: string | null) {
@@ -712,7 +737,6 @@ class ReportContext {
     if (this.pageTitle) drawPageTitle(this, this.pageTitle);
   }
 
-  // [FIX] ensureSpace: 여유 버퍼를 추가해 경계 직전 요소가 잘리지 않도록
   ensureSpace(h: number, buffer = 8) {
     if (this.y < this.MB + h + buffer) this.addPage();
   }
@@ -723,59 +747,54 @@ class ReportContext {
     this.pageFinalized = true;
   }
 
-  // [FIX] text: y는 "이 요소의 상단 기준"으로 통일. 내부에서 ascender 보정
-  // size 기준 ascender ≈ size * 0.72 (NotoSansCJK 실측 근사값)
-  text(
-    s: string,
-    x: number,
-    y: number,
-    size: number,
-    color: RGB = C.text,
-    maxW?: number
-  ): number {
-    const lineH = size + 4;
-    const effectiveMax = maxW ?? this.BODY_W;
-    const lines = wrapText(s, effectiveMax, this.font, size);
+  // lineH 비례 계산 (고정 +4 대신 size * 1.45)
+  private lh(size: number): number { return Math.round(size * 1.45); }
+
+  // y 는 요소 상단 기준. pdf-lib drawText y 는 baseline 기준이므로 size*0.80 보정
+  text(s: string, x: number, y: number, size: number, color: RGB = C.ink, maxW?: number): number {
+    const lh = this.lh(size);
+    const lines = wrapText(s, maxW ?? this.BODY_W, this.font, size);
     for (let i = 0; i < lines.length; i++) {
-      this.page.drawText(lines[i], {
-        x,
-        // pdf-lib의 y는 텍스트 baseline 기준이므로 상단 기준에서 변환
-        y: y - size * 0.82 - i * lineH,
-        size,
-        font: this.font,
-        color,
-      });
+      this.page.drawText(lines[i], { x, y: y - size * 0.80 - i * lh, size, font: this.font, color });
     }
     return lines.length;
   }
 
-  textRight(s: string, rightEdge: number, y: number, size: number, color: RGB = C.text) {
-    const w = this.font.widthOfTextAtSize(s, size);
-    this.page.drawText(s, {
-      x: rightEdge - w,
-      y: y - size * 0.82,
-      size,
-      font: this.font,
-      color,
-    });
+  textBold(s: string, x: number, y: number, size: number, color: RGB = C.ink, maxW?: number): number {
+    const lh = this.lh(size);
+    const lines = wrapText(s, maxW ?? this.BODY_W, this.fontBold, size);
+    for (let i = 0; i < lines.length; i++) {
+      this.page.drawText(lines[i], { x, y: y - size * 0.80 - i * lh, size, font: this.fontBold, color });
+    }
+    return lines.length;
   }
 
-  textCenter(s: string, cx: number, y: number, size: number, color: RGB = C.text) {
+  textRight(s: string, rightEdge: number, y: number, size: number, color: RGB = C.ink) {
     const w = this.font.widthOfTextAtSize(s, size);
-    this.page.drawText(s, {
-      x: cx - w / 2,
-      y: y - size * 0.82,
-      size,
-      font: this.font,
-      color,
-    });
+    this.page.drawText(s, { x: rightEdge - w, y: y - size * 0.80, size, font: this.font, color });
+  }
+
+  textRightBold(s: string, rightEdge: number, y: number, size: number, color: RGB = C.ink) {
+    const w = this.fontBold.widthOfTextAtSize(s, size);
+    this.page.drawText(s, { x: rightEdge - w, y: y - size * 0.80, size, font: this.fontBold, color });
+  }
+
+  textCenter(s: string, cx: number, y: number, size: number, color: RGB = C.ink) {
+    const w = this.font.widthOfTextAtSize(s, size);
+    this.page.drawText(s, { x: cx - w / 2, y: y - size * 0.80, size, font: this.font, color });
+  }
+
+  textCenterBold(s: string, cx: number, y: number, size: number, color: RGB = C.ink) {
+    const w = this.fontBold.widthOfTextAtSize(s, size);
+    this.page.drawText(s, { x: cx - w / 2, y: y - size * 0.80, size, font: this.fontBold, color });
   }
 
   rect(x: number, y: number, w: number, h: number, color: RGB) {
     this.page.drawRectangle({ x, y, width: w, height: h, color });
   }
 
-  line(x1: number, y1: number, x2: number, y2: number, color: RGB = C.border, thickness = 0.5) {
+  // thickness: hairline=0.25  thin=0.5  medium=1  thick=1.5
+  line(x1: number, y1: number, x2: number, y2: number, color: RGB = C.rule, thickness = 0.5) {
     this.page.drawLine({ start: { x: x1, y: y1 }, end: { x: x2, y: y2 }, thickness, color });
   }
 }
@@ -783,46 +802,45 @@ class ReportContext {
 // ─── 페이지 풋터 ─────────────────────────────────────────────────────────
 function drawFooter(ctx: ReportContext, today: string) {
   const { ML, MR, W, MB } = ctx;
-  const lineY = MB - 2;
-  const textY = MB - 16;
-  ctx.line(ML, lineY, W - MR, lineY, ctx.theme.border);
+  const lineY = MB - 1;
+  const textY = MB - 13;
+  ctx.line(ML, lineY, W - MR, lineY, C.rule, 0.75);
   ctx.text(
     "가상 포트폴리오 기준 · 실제 투자 결과와 다를 수 있습니다.",
-    ML, textY, 7, C.muted, W - ML - MR - 110
+    ML, textY, 6.5, C.subtle, W - ML - MR - 100
   );
-  ctx.textRight(`발행: ${today}  |  ${ctx.pageNum}페이지`, W - MR, textY, 7, C.muted);
+  ctx.textRight(`${today}  /  ${ctx.pageNum}`, W - MR, textY, 6.5, C.subtle);
 }
 
 // ─── 섹션 헤더 밴드 ──────────────────────────────────────────────────────
-// [FIX] 섹션 헤더 높이와 텍스트 수직 중앙 정렬 통일
-const SECTION_H = 24;
+const SECTION_H = 20;
 
 function drawSectionHeader(ctx: ReportContext, label: string, sub?: string) {
-  ctx.ensureSpace(SECTION_H + 20);
+  ctx.ensureSpace(SECTION_H + 18);
   const { ML, MR, W } = ctx;
-  ctx.rect(ML, ctx.y - SECTION_H, W - ML - MR, SECTION_H, ctx.theme.sectionBand);
-  // 텍스트를 배경 수직 중앙에 배치: y_top = ctx.y, 중앙 = ctx.y - SECTION_H/2
-  const midY = ctx.y - SECTION_H / 2;
-  ctx.text(label, ML + 8, midY + 5, 10, C.white);
-  if (sub) ctx.textRight(sub, W - MR - 6, midY + 5, 8.5, rgb(0.75, 0.82, 0.95));
-  ctx.y -= SECTION_H + 4;
+  ctx.line(ML, ctx.y, W - MR, ctx.y, ctx.theme.accent, 1);
+  ctx.rect(ML, ctx.y - SECTION_H, W - ML - MR, SECTION_H, C.black);
+  ctx.rect(ML, ctx.y - SECTION_H, 3, SECTION_H, ctx.theme.accent);
+  const textY = vCenterTopY(ctx.y, SECTION_H, 8.5);
+  ctx.textBold(label, ML + 10, textY, 8.5, C.white);
+  if (sub) ctx.textRight(sub, W - MR - 6, textY, 7, C.subtle);
+  ctx.y -= SECTION_H + 3;
 }
 
 // ─── KPI 카드 그리드 ─────────────────────────────────────────────────────
 type KpiCard = { label: string; value: string; sub?: string; valueColor?: RGB };
 
-// [FIX] 카드 내 텍스트 수직 배치를 고정 오프셋으로 통일
 function drawKpiGrid(ctx: ReportContext, cards: KpiCard[], cols = 4) {
-  const { ML, MR, W } = ctx;
-  const gap = 6;
-  const totalW = W - ML - MR;
-  const cardW = (totalW - gap * (cols - 1)) / cols;
-  const cardH = 52;
-  const contentPadX = 12;
-  const contentMaxW = cardW - contentPadX * 2;
-  const rows = Math.ceil(cards.length / cols);
+  const { ML, W } = ctx;
+  const gap    = 5;
+  const totalW = W - ML - ctx.MR;
+  const cardW  = (totalW - gap * (cols - 1)) / cols;
+  const cardH  = 46;
+  const padX   = 10;
+  const maxW   = cardW - padX * 2;
+  const rows   = Math.ceil(cards.length / cols);
 
-  ctx.ensureSpace(cardH * rows + gap * (rows - 1) + 10);
+  ctx.ensureSpace(cardH * rows + gap * (rows - 1) + 8);
 
   const startX = ML;
   const startY = ctx.y;
@@ -831,27 +849,21 @@ function drawKpiGrid(ctx: ReportContext, cards: KpiCard[], cols = 4) {
     const col = i % cols;
     const row = Math.floor(i / cols);
     const x = startX + col * (cardW + gap);
-    // y = 카드 상단 y 좌표
     const y = startY - row * (cardH + gap);
 
-    // 배경 및 테두리
     ctx.rect(x, y - cardH, cardW, cardH, ctx.theme.softBg);
     ctx.rect(x, y - cardH, 3, cardH, ctx.theme.accent);
-    ctx.line(x,          y - cardH, x + cardW, y - cardH, ctx.theme.border);
-    ctx.line(x + cardW,  y - cardH, x + cardW, y,          ctx.theme.border);
-    ctx.line(x,          y,         x + cardW, y,           ctx.theme.border);
+    ctx.line(x, y - cardH, x + cardW, y - cardH, C.rule, 0.25);
+    ctx.line(x, y,         x + cardW, y,          C.rule, 0.5);
 
-    if (!card.label && !card.value) return; // 빈 패딩 카드
+    if (!card.label && !card.value) return;
 
-    // [FIX] 라벨: 카드 상단에서 14px
-    ctx.text(card.label, x + contentPadX, y - 10, 7.5, ctx.theme.subtitle, contentMaxW);
-    // [FIX] 값: 카드 상단에서 30px (라벨 아래 적절한 간격)
-    ctx.text(card.value, x + contentPadX, y - 26, 12, card.valueColor ?? C.text, contentMaxW);
-    // [FIX] 서브: 카드 하단에서 8px
-    if (card.sub) ctx.text(card.sub, x + contentPadX, y - 42, 7.5, ctx.theme.subtitle, contentMaxW);
+    ctx.text(card.label,       x + padX, y - 9,  7,  C.dim,                    maxW);
+    ctx.textBold(card.value,   x + padX, y - 22, 13, card.valueColor ?? C.ink, maxW);
+    if (card.sub) ctx.text(card.sub, x + padX, y - 37, 7, C.subtle,             maxW);
   });
 
-  ctx.y -= rows * (cardH + gap) - gap + 8;
+  ctx.y -= rows * (cardH + gap) - gap + 6;
 }
 
 function drawPortfolioSummaryRow(
@@ -861,51 +873,41 @@ function drawPortfolioSummaryRow(
   rightText: string,
   rightColor: RGB
 ) {
-  const padX = 12;
-  const labelW = 44;
-  const safeGap = 20;
-  const fontSize = 9;
-  const baseH = 22;
-  const leftX = ctx.ML + padX + labelW;
+  const padX     = 10;
+  const fontSize = 8.5;
+  const baseH    = 20;
+  const leftX    = ctx.ML + padX + 36;
   const rightEdge = ctx.ML + ctx.BODY_W - padX;
-  const leftW = ctx.font.widthOfTextAtSize(leftText, fontSize);
-  const rightW = ctx.font.widthOfTextAtSize(rightText, fontSize);
-  const needsWrap = leftX + leftW + safeGap > rightEdge - rightW;
-  const rowH = needsWrap ? 34 : baseH;
+  const leftW    = ctx.font.widthOfTextAtSize(leftText, fontSize);
+  const rightW   = ctx.font.widthOfTextAtSize(rightText, fontSize);
+  const needsWrap = leftX + leftW + 16 > rightEdge - rightW;
+  const rowH     = needsWrap ? 32 : baseH;
 
   ctx.ensureSpace(rowH + 4);
-  ctx.rect(ctx.ML, ctx.y - rowH, ctx.BODY_W, rowH, ctx.theme.softBg);
-  ctx.line(ctx.ML, ctx.y, ctx.ML + ctx.BODY_W, ctx.y, ctx.theme.border);
-  ctx.line(ctx.ML, ctx.y - rowH, ctx.ML + ctx.BODY_W, ctx.y - rowH, ctx.theme.border);
+  ctx.rect(ctx.ML, ctx.y - rowH, ctx.BODY_W, rowH, C.surface);
+  ctx.line(ctx.ML, ctx.y,        ctx.ML + ctx.BODY_W, ctx.y,        C.rule, 0.5);
+  ctx.line(ctx.ML, ctx.y - rowH, ctx.ML + ctx.BODY_W, ctx.y - rowH, C.rule, 0.25);
 
-  const labelY = needsWrap ? ctx.y - 11 : ctx.y - rowH / 2 + 5;
-  ctx.text(label, ctx.ML + padX, labelY, fontSize, ctx.theme.sectionBand);
+  const lY = vCenterTopY(ctx.y, rowH, fontSize);
+  ctx.textBold(label, ctx.ML + padX, needsWrap ? ctx.y - 10 : lY, fontSize, C.ink);
 
   if (needsWrap) {
-    ctx.text(leftText, leftX, ctx.y - 11, fontSize, C.text);
-    ctx.textRight(rightText, rightEdge, ctx.y - 23, fontSize, rightColor);
+    ctx.text(leftText,  leftX,      ctx.y - 10, fontSize, C.ink);
+    ctx.textRight(rightText, rightEdge, ctx.y - 22, fontSize, rightColor);
   } else {
-    const lineY = ctx.y - rowH / 2 + 5;
-    ctx.text(leftText, leftX, lineY, fontSize, C.text);
-    ctx.textRight(rightText, rightEdge, lineY, fontSize, rightColor);
+    ctx.text(leftText,  leftX,  lY, fontSize, C.ink);
+    ctx.textRight(rightText, rightEdge, lY, fontSize, rightColor);
   }
 
-  ctx.y -= rowH + 6;
+  ctx.y -= rowH + 4;
 }
 
 // ─── 테이블 렌더러 ────────────────────────────────────────────────────────
 type ColDef = { header: string; width: number; align?: "left" | "right" | "center" };
 
-// [FIX] 행 높이와 텍스트 baseline 오프셋을 일관되게 재계산
-const ROW_H   = 20;
-const HEADER_H = 22;
-const CELL_PAD = 4;
-// 텍스트 상단 기준 y에서 셀 수직 중앙까지의 오프셋 (행 높이의 절반 + 폰트 절반)
-// 실제 drawText는 ctx.text() 내부에서 baseline 변환하므로 여기선 "상단에서 몇 px"만 계산
-function cellTextTopOffset(rowH: number, fontSize: number): number {
-  // 텍스트를 행 수직 중앙에 배치: (rowH - fontSize) / 2
-  return (rowH - fontSize) / 2;
-}
+const ROW_H    = 18;
+const HEADER_H = 20;
+const CELL_PAD = 5;
 
 function drawTable(
   ctx: ReportContext,
@@ -914,62 +916,63 @@ function drawTable(
   rowColors?: (RGB | null)[]
 ) {
   const { ML } = ctx;
-  const fontSize = 8.5;
-  const totalW = cols.reduce((s, c) => s + c.width, 0);
-  const topOffset = cellTextTopOffset(ROW_H, fontSize);
-  const headerTopOffset = cellTextTopOffset(HEADER_H, fontSize);
+  const fontSize = 8;
+  const totalW   = cols.reduce((s, c) => s + c.width, 0);
+  const hTextY   = vCenterTopY(ctx.y, HEADER_H, fontSize);
 
-  // 헤더
+  // 헤더 (검정 배경, 상단 accent 룰)
   ctx.ensureSpace(HEADER_H + ROW_H * 2);
-  ctx.rect(ML, ctx.y - HEADER_H, totalW, HEADER_H, ctx.theme.sectionBand);
+  ctx.rect(ML, ctx.y - HEADER_H, totalW, HEADER_H, C.black);
+  ctx.line(ML, ctx.y, ML + totalW, ctx.y, ctx.theme.accent, 1);
   let hx = ML;
   for (const col of cols) {
-    ctx.text(col.header, hx + CELL_PAD, ctx.y - headerTopOffset, fontSize, C.white, col.width - CELL_PAD * 2);
+    const tH = truncate(col.header, 18);
+    if (col.align === "right") {
+      ctx.textRightBold(tH, hx + col.width - CELL_PAD, hTextY, fontSize, C.white);
+    } else if (col.align === "center") {
+      ctx.textCenterBold(tH, hx + col.width / 2, hTextY, fontSize, C.white);
+    } else {
+      ctx.textBold(tH, hx + CELL_PAD, hTextY, fontSize, C.white);
+    }
     hx += col.width;
   }
   ctx.y -= HEADER_H;
 
-  // 테이블 상단 구분선
-  ctx.line(ML, ctx.y, ML + totalW, ctx.y, ctx.theme.border);
-
-  // 데이터 행
+  // 데이터 행 (수직선 없음, 수평 hairline만)
   rows.forEach((row, ri) => {
     ctx.ensureSpace(ROW_H + 4);
-
-    const bg = ri % 2 === 0 ? C.white : ctx.theme.softBg;
+    const bg = ri % 2 === 0 ? C.white : C.alt;
     ctx.rect(ML, ctx.y - ROW_H, totalW, ROW_H, bg);
 
+    const rowTextY = vCenterTopY(ctx.y, ROW_H, fontSize);
     let rx = ML;
     row.forEach((cell, ci) => {
       const col = cols[ci];
       if (!col) return;
-      const cellColor = rowColors?.[ri] ?? C.text;
-      const truncated = truncate(cell, 20);
+      const cellColor = rowColors?.[ri] ?? C.ink;
+      const t = truncate(cell, 20);
       const maxCellW = col.width - CELL_PAD * 2;
-
       if (col.align === "right") {
-        ctx.textRight(truncated, rx + col.width - CELL_PAD, ctx.y - topOffset, fontSize, cellColor);
+        ctx.textRight(t, rx + col.width - CELL_PAD, rowTextY, fontSize, cellColor);
       } else if (col.align === "center") {
-        ctx.textCenter(truncated, rx + col.width / 2, ctx.y - topOffset, fontSize, cellColor);
+        ctx.textCenter(t, rx + col.width / 2, rowTextY, fontSize, cellColor);
       } else {
-        ctx.text(truncated, rx + CELL_PAD, ctx.y - topOffset, fontSize, cellColor, maxCellW);
+        ctx.text(t, rx + CELL_PAD, rowTextY, fontSize, cellColor, maxCellW);
       }
       rx += col.width;
     });
 
-    // 행 하단 구분선
-    ctx.line(ML, ctx.y - ROW_H, ML + totalW, ctx.y - ROW_H, ctx.theme.border);
+    ctx.line(ML, ctx.y - ROW_H, ML + totalW, ctx.y - ROW_H, C.rule, 0.25);
     ctx.y -= ROW_H;
   });
 
-  // 테이블 좌/우 외곽선
+  // 외곽: 상/하 0.75pt, 좌/우 0.5pt
   const tableTop = ctx.y + ROW_H * rows.length + HEADER_H;
-  ctx.line(ML,           tableTop, ML,           ctx.y, ctx.theme.border);
-  ctx.line(ML + totalW,  tableTop, ML + totalW,  ctx.y, ctx.theme.border);
-  // 하단 마감선
-  ctx.line(ML, ctx.y, ML + totalW, ctx.y, ctx.theme.border);
+  ctx.line(ML,          tableTop, ML,          ctx.y, C.rule, 0.5);
+  ctx.line(ML + totalW, tableTop, ML + totalW, ctx.y, C.rule, 0.5);
+  ctx.line(ML, ctx.y, ML + totalW, ctx.y, C.rule, 0.75);
 
-  ctx.y -= 6; // 테이블 하단 여백
+  ctx.y -= 5;
 }
 
 // ─── 커버 페이지 ─────────────────────────────────────────────────────────
@@ -980,131 +983,123 @@ function drawCoverPage(
   headline?: { kicker: string; detail: string }
 ) {
   const { W, H, ML, MR } = ctx;
+  const bodyW = W - ML - MR;
 
-  // 상단 네이비 밴드
-  ctx.rect(0, H - 160, W, 160, C.navy);
+  // 상단 블랙 밴드 (전체 너비)
+  ctx.rect(0, H - 180, W, 180, C.black);
 
-  // 서비스명
-  ctx.textCenter("WEEKLY  MARKET  REPORT", W / 2, H - 48, 11, rgb(0.65, 0.75, 0.92));
+  // accent 컬러 수평 룰 (밴드 하단)
+  ctx.rect(0, H - 181, W, 2.5, ctx.theme.accent);
 
-  // 리포트 제목
-  ctx.textCenter("주  간  증  시  리  포  트", W / 2, H - 88, 18, C.white);
+  // 서비스 레이블: 7pt accent 대문자
+  ctx.textCenter("WEEKLY MARKET REPORT", W / 2, H - 44, 8, ctx.theme.accent);
 
-  // 오렌지 강조선
-  ctx.rect(ML, H - 163, W - ML - MR, 3, C.accent);
+  // 리포트 메인 타이틀
+  ctx.textCenterBold("주간 증시 리포트", W / 2, H - 80, 24, C.white);
 
-  // 발행 정보
-  ctx.text(`기준일: ${ymd}`, ML, H - 188, 10, C.text);
-  ctx.text(`계좌 ID: ${String(chatId).slice(-4).padStart(4, "*")}`, ML, H - 204, 10, C.muted);
+  // 발행 정보: dim 색
+  ctx.textCenter(`${ymd}  ·  ID ${String(chatId).slice(-4).padStart(4, "*")}`, W / 2, H - 118, 8.5, C.subtle);
 
+  // headline 박스
   if (headline) {
-    const boxTop = H - 238;
-    const boxH = 44;
-    ctx.rect(ML, boxTop - boxH, W - ML - MR - 116, boxH, rgb(0.95, 0.96, 0.98));
-    ctx.rect(ML, boxTop - boxH, 4, boxH, C.accent);
-    ctx.text(headline.kicker, ML + 12, boxTop - 10, 9, C.navyLight, W - ML - MR - 150);
-    ctx.text(headline.detail, ML + 12, boxTop - 26, 8.5, C.muted, W - ML - MR - 150);
+    const boxY = H - 148;
+    const boxH = 28;
+    ctx.rect(ML, boxY - boxH, bodyW * 0.76, boxH, rgb(0.10, 0.10, 0.12));
+    ctx.rect(ML, boxY - boxH, 3, boxH, ctx.theme.accent);
+    const hY = vCenterTopY(boxY, boxH, 8.5);
+    ctx.text(headline.kicker,  ML + 10, hY, 8,   C.subtle, bodyW * 0.72);
   }
 
-  // 바코드 스타일 장식선
-  for (let i = 0; i < 28; i++) {
-    const bx = W - MR - 90 + i * (i % 3 === 0 ? 5 : 3);
-    const bh = 8 + (i % 4) * 4;
-    ctx.rect(bx, H - 215, 2, bh, rgb(0.15, 0.25, 0.55));
-  }
-
-  // 목차
+  // 목차 섹션 (흰 배경 위)
+  const tocY = H - 248;
   const toc = [
-    "I.   시장 개요 및 주요 지표",
-    "II.  포트폴리오 요약",
-    "III. 매매 기록 및 성과 분석",
+    "I.    시장 개요 및 주요 지표",
+    "II.   포트폴리오 요약",
+    "III.  매매 기록 및 성과 분석",
     "IV.  보유 종목 상세",
-    "V.   주간 코멘트 및 대응 전략",
+    "V.   주간 코멘트",
   ];
-  const tocBoxH = toc.length * 22 + 28;
-  const tocY = H - 290;
-  ctx.rect(ML, tocY - tocBoxH, (W - ML - MR) * 0.58, tocBoxH, C.bg);
-  ctx.text("목차", ML + 10, tocY - 8, 10, C.navyLight);
+  ctx.text("CONTENTS", ML, tocY, 7, C.dim);
+  ctx.line(ML, tocY - 10, ML + bodyW * 0.55, tocY - 10, C.rule, 0.5);
   toc.forEach((t, i) => {
-    ctx.text(t, ML + 10, tocY - 26 - i * 21, 9, C.text);
+    ctx.text(t, ML, tocY - 16 - i * 17, 8.5, C.ink);
   });
 
-  // 하단 면책 문구: 모바일 PDF 뷰어 오버레이와 겹치지 않도록 상단으로 이동
-  const disclaimerBottom = 72;
-  const disclaimerH = 72;
-  const disclaimerTop = disclaimerBottom + disclaimerH;
-  ctx.rect(0, disclaimerBottom, W, disclaimerH, C.bg);
-  ctx.line(0, disclaimerTop, W, disclaimerTop, C.border);
-  ctx.textCenter(
-    "본 리포트는 가상 포트폴리오 및 시장 데이터 기준 요약 자료이며, 실제 투자 결과를 보증하지 않습니다.",
-    W / 2, disclaimerTop - 18, 7.5, C.muted
-  );
-  ctx.textCenter(
-    "투자 판단의 최종 책임은 투자자 본인에게 있으며, 본 자료는 투자 권유 목적이 아닙니다.",
-    W / 2, disclaimerTop - 34, 7.5, C.muted
+  // 오른쪽 장식 — 가는 수직선들 (모던 타이포 장식)
+  const barX = ML + bodyW * 0.65;
+  for (let i = 0; i < 5; i++) {
+    const bh = 20 + i * 10;
+    ctx.rect(barX + i * 10, tocY - toc.length * 17 - 6, 1.5, bh, i === 2 ? ctx.theme.accent : C.rule);
+  }
+
+  // 하단 면책 (흰 영역)
+  const dY = 76;
+  ctx.line(ML, dY + 1, W - MR, dY + 1, C.rule, 0.5);
+  ctx.text(
+    "본 리포트는 가상 포트폴리오 기준이며 실제 투자 결과를 보증하지 않습니다. 투자 판단의 최종 책임은 투자자 본인에게 있습니다.",
+    ML, dY - 6, 6.5, C.subtle, bodyW
   );
 }
 
 // ─── 페이지 타이틀 바 ────────────────────────────────────────────────────
-const PAGE_TITLE_H = 26;
+const PAGE_TITLE_H = 22;
 
 function drawPageTitle(ctx: ReportContext, title: string) {
   ctx.rect(ctx.ML, ctx.y - PAGE_TITLE_H, ctx.BODY_W, PAGE_TITLE_H, ctx.theme.pageBand);
-  ctx.textCenter(title, ctx.W / 2, ctx.y - PAGE_TITLE_H / 2 + 5, 12, C.white);
-  ctx.y -= PAGE_TITLE_H + 8;
+  ctx.line(ctx.ML, ctx.y, ctx.ML + ctx.BODY_W, ctx.y, ctx.theme.accent, 1);
+  const tY = vCenterTopY(ctx.y, PAGE_TITLE_H, 10);
+  ctx.textCenterBold(title, ctx.W / 2, tY, 10, C.white);
+  ctx.y -= PAGE_TITLE_H + 6;
 }
 
 function drawTopicHero(ctx: ReportContext, title: string, subtitle: string) {
-  const heroH = 92;
-  ctx.ensureSpace(heroH + 10);
+  const heroH = 80;
+  ctx.ensureSpace(heroH + 8);
   const x = ctx.ML;
   const y = ctx.y;
 
-  ctx.rect(x, y - heroH, ctx.BODY_W, heroH, ctx.theme.softBg);
-  ctx.rect(x, y - heroH, 6, heroH, ctx.theme.accent);
-  ctx.line(x, y, x + ctx.BODY_W, y, ctx.theme.border);
-  ctx.line(x, y - heroH, x + ctx.BODY_W, y - heroH, ctx.theme.border);
+  ctx.rect(x, y - heroH, ctx.BODY_W, heroH, C.surface);
+  ctx.rect(x, y - heroH, 4, heroH, ctx.theme.accent);
+  ctx.line(x, y,        x + ctx.BODY_W, y,        C.rule, 0.5);
+  ctx.line(x, y - heroH, x + ctx.BODY_W, y - heroH, C.rule, 0.75);
 
-  ctx.text(ctx.theme.heroLabel, x + 18, y - 14, 8.5, ctx.theme.accent, ctx.BODY_W - 36);
-  ctx.text(title, x + 18, y - 34, 16, ctx.theme.pageBand, ctx.BODY_W - 160);
-  ctx.text(subtitle, x + 18, y - 58, 9, ctx.theme.subtitle, ctx.BODY_W - 160);
+  // heroLabel: 7pt accent caps
+  ctx.text(ctx.theme.heroLabel, x + 14, y - 12, 7.5, ctx.theme.accent, ctx.BODY_W - 28);
+  // title: 16pt bold black
+  ctx.textBold(title, x + 14, y - 28, 16, C.black, ctx.BODY_W - 28);
+  // subtitle: 8pt dim
+  ctx.text(subtitle, x + 14, y - 52, 8.5, C.dim, ctx.BODY_W - 28);
 
-  const pillW = 112;
-  const pillH = 24;
-  const pillX = x + ctx.BODY_W - pillW - 18;
-  const pillY = y - 18;
-  ctx.rect(pillX, pillY - pillH, pillW, pillH, ctx.theme.pageBand);
-  ctx.textCenter("PDF REPORT", pillX + pillW / 2, pillY - 5, 8.5, C.white);
-
-  ctx.y -= heroH + 10;
+  ctx.y -= heroH + 8;
 }
 
 function drawClosingHighlight(ctx: ReportContext, title: string, body: string) {
-  const fontSize = 9;
-  const titleSize = 10;
-  const maxW = ctx.BODY_W - 28;
-  const lines = wrapText(body, maxW, ctx.font, fontSize);
-  const blockH = 14 + titleSize + 8 + lines.length * (fontSize + 4) + 12;
+  const fontSize  = 8.5;
+  const titleSize = 9.5;
+  const maxW      = ctx.BODY_W - 26;
+  const lh        = Math.round(fontSize * 1.45);
+  const lines     = wrapText(body, maxW, ctx.font, fontSize);
+  const blockH    = 10 + titleSize + 6 + lines.length * lh + 10;
 
   ctx.ensureSpace(blockH + 8);
 
   const x = ctx.ML;
   const y = ctx.y;
-  ctx.rect(x, y - blockH, ctx.BODY_W, blockH, ctx.theme.softBg);
-  ctx.rect(x, y - blockH, ctx.BODY_W, 5, ctx.theme.accent);
-  ctx.line(x, y, x + ctx.BODY_W, y, ctx.theme.border);
-  ctx.line(x, y - blockH, x + ctx.BODY_W, y - blockH, ctx.theme.border);
+  // 배경: surface, 상단 accent 2pt 룰
+  ctx.rect(x, y - blockH, ctx.BODY_W, blockH, C.surface);
+  ctx.rect(x, y - blockH, ctx.BODY_W, 2, ctx.theme.accent);
+  ctx.line(x, y - blockH, x + ctx.BODY_W, y - blockH, C.rule, 0.5);
+  ctx.line(x, y,          x + ctx.BODY_W, y,           C.rule, 0.5);
 
-  ctx.text(title, x + 14, y - 12, titleSize, ctx.theme.pageBand, maxW);
-  lines.forEach((line, index) => {
-    ctx.text(line, x + 14, y - 12 - titleSize - 8 - index * (fontSize + 4), fontSize, C.text, maxW);
+  ctx.textBold(title, x + 12, y - 11, titleSize, ctx.theme.accent, maxW);
+  lines.forEach((line, idx) => {
+    ctx.text(line, x + 12, y - 11 - titleSize - 6 - idx * lh, fontSize, C.ink, maxW);
   });
 
   ctx.y -= blockH + 8;
 }
 
 // ─── 코멘트 블록 ─────────────────────────────────────────────────────────
-// [FIX] 코멘트 블록 높이를 내용 길이에 따라 동적으로 계산
 function drawCommentBlock(
   ctx: ReportContext,
   title: string,
@@ -1112,31 +1107,30 @@ function drawCommentBlock(
   color: RGB,
   font: PDFFont
 ) {
-  const fontSize = 9;
-  const titleFontSize = 10;
-  const maxW = ctx.BODY_W - 24;
-  const bodyLines = wrapText(body, maxW, font, fontSize);
-  // 블록 높이: 상단 패딩 + 타이틀 + 간격 + 바디 라인들 + 하단 패딩
-  const blockH = 12 + titleFontSize + 6 + bodyLines.length * (fontSize + 4) + 10;
+  const fontSize      = 8.5;
+  const titleFontSize = 9;
+  const lh            = Math.round(fontSize * 1.45);
+  const maxW          = ctx.BODY_W - 22;
+  const bodyLines     = wrapText(body, maxW, font, fontSize);
+  // 배경 흰색, 좌측 2.5pt 컬러 룰, 하단 0.5pt hairline
+  const blockH = 9 + titleFontSize + 5 + bodyLines.length * lh + 9;
 
-  ctx.ensureSpace(blockH + 6);
+  ctx.ensureSpace(blockH + 5);
 
   const bx = ctx.ML;
   const by = ctx.y;
 
-  ctx.rect(bx,     by - blockH, ctx.BODY_W, blockH, ctx.theme.softBg);
-  ctx.rect(bx,     by - blockH, 4,          blockH, color);
-  ctx.line(bx,     by - blockH, bx + ctx.BODY_W, by - blockH, ctx.theme.border);
-  ctx.line(bx,     by,          bx + ctx.BODY_W, by,          ctx.theme.border);
+  ctx.rect(bx, by - blockH, ctx.BODY_W, blockH, C.white);
+  ctx.rect(bx, by - blockH, 2.5, blockH, color);
+  ctx.line(bx, by - blockH, bx + ctx.BODY_W, by - blockH, C.rule, 0.25);
+  ctx.line(bx, by,          bx + ctx.BODY_W, by,           C.rule, 0.5);
 
-  // 타이틀
-  ctx.text(title, bx + 12, by - 10, titleFontSize, color, maxW);
-  // 바디 라인
+  ctx.textBold(title, bx + 10, by - 9, titleFontSize, color, maxW);
   bodyLines.forEach((line, li) => {
-    ctx.text(line, bx + 12, by - 10 - titleFontSize - 6 - li * (fontSize + 4), fontSize, C.text, maxW);
+    ctx.text(line, bx + 10, by - 9 - titleFontSize - 5 - li * lh, fontSize, C.ink, maxW);
   });
 
-  ctx.y -= blockH + 6;
+  ctx.y -= blockH + 5;
 }
 
 function drawMarketOverviewSection(
@@ -1624,9 +1618,10 @@ export async function createWeeklyReportPdf(
   // ── PDF 문서 초기화 ──────────────────────────────────────────────────────
   const pdf = await runReportStep("pdf_render", () => PDFDocument.create());
   pdf.registerFontkit(fontkit);
-  const fontBytes = await runReportStep("font_load", () => loadKoreanFontBytes());
-  const font = await runReportStep("pdf_render", () => pdf.embedFont(fontBytes));
-  const ctx = new ReportContext(pdf, font, theme);
+  const fontBytes = await runReportStep("font_load", () => loadFontBytes());
+  const font = await runReportStep("pdf_render", () => pdf.embedFont(fontBytes.regular));
+  const fontBold = await runReportStep("pdf_render", () => pdf.embedFont(fontBytes.bold));
+  const ctx = new ReportContext(pdf, font, fontBold, theme);
   ctx.footerLabel = ymd;
 
   const sectors = sectorRes.data ?? [];

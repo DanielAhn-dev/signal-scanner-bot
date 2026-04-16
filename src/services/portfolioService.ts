@@ -7,6 +7,42 @@ import {
 
 export type VirtualTradeSide = "BUY" | "SELL" | "ADJUST";
 
+export type SectorConcentration = {
+  /** 섹터 ID (예: "KRX:IT") */
+  sectorId: string;
+  /** 섹터 표시명 (prefix 제거, 예: "IT") */
+  sectorName: string;
+  /** 투자금 기준 비중 (0~100) */
+  ratio: number;
+};
+
+/**
+ * 보유 종목 목록을 받아 섹터별 투자 집중도를 계산한다.
+ * investedAmount가 없는 종목(미매수 관심종목)은 제외한다.
+ */
+export function calculateSectorConcentration(
+  holdings: Array<{ sectorId: string | null; investedAmount: number | null }>
+): SectorConcentration[] {
+  const sectorTotals = new Map<string, number>();
+  let total = 0;
+
+  for (const h of holdings) {
+    if (!h.sectorId || !h.investedAmount || h.investedAmount <= 0) continue;
+    sectorTotals.set(h.sectorId, (sectorTotals.get(h.sectorId) ?? 0) + h.investedAmount);
+    total += h.investedAmount;
+  }
+
+  if (total <= 0) return [];
+
+  return Array.from(sectorTotals.entries())
+    .map(([sectorId, amount]) => ({
+      sectorId,
+      sectorName: sectorId.replace(/^[^:]+:/, ""),
+      ratio: (amount / total) * 100,
+    }))
+    .sort((a, b) => b.ratio - a.ratio);
+}
+
 type WatchlistHoldingRow = {
   id: number;
   quantity?: number | null;

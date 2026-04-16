@@ -22,6 +22,7 @@ import {
 import {
   normalizeWatchlistHolding,
   syncVirtualPortfolio,
+  calculateSectorConcentration,
   type VirtualTradeSide,
 } from "../../services/portfolioService";
 
@@ -60,6 +61,29 @@ function toPositiveNumber(value: unknown): number | null {
 function toSafeNumber(value: unknown, fallback = 0): number {
   const n = Number(value);
   return Number.isFinite(n) ? n : fallback;
+}
+
+/**
+ * 섹터 집중도 배열을 받아 경고 문자열을 반환한다.
+ * 30% 초과 섹터만 표시. 경고가 없으면 빈 문자열.
+ */
+function buildConcentrationWarning(
+  concentrations: ReturnType<typeof calculateSectorConcentration>
+): string {
+  const warned = concentrations.filter((c) => c.ratio > 30);
+  if (!warned.length) return "";
+
+  const lines = warned.map((c) => {
+    const icon = c.ratio > 50 ? "🔴" : "⚠️";
+    return `  ${icon} ${c.sectorName} ${c.ratio.toFixed(0)}%`;
+  });
+
+  return [
+    LINE,
+    `<b>섹터 집중도 경고</b> (30% 초과)`,
+    ...lines,
+    `<i>특정 섹터 쏠림 — 분산 투자 검토 권장</i>`,
+  ].join("\n");
 }
 
 function isKstMarketOpen(now = new Date()): boolean {
@@ -227,7 +251,7 @@ export async function handleWatchlistCommand(
     .select(
       `
       code, buy_price, buy_date, memo, created_at, quantity, invested_amount,
-      stock:stocks!inner ( name, close, rsi14 )
+      stock:stocks!inner ( name, close, rsi14, sector_id )
     `
     )
     .eq("chat_id", ctx.chatId)
@@ -345,6 +369,16 @@ export async function handleWatchlistCommand(
     summaryLine = `\n${LINE}\n${items.length}/${MAX_ITEMS}종목`;
   }
 
+  // 섹터 집중도 경고
+  const concentrationWarning = buildConcentrationWarning(
+    calculateSectorConcentration(
+      items.map((item: any) => ({
+        sectorId: (item.stock as any)?.sector_id ?? null,
+        investedAmount: toPositiveNumber(item.invested_amount),
+      }))
+    )
+  );
+
   const seedCapital = toSafeNumber(
     prefs.virtual_seed_capital ?? prefs.capital_krw,
     0
@@ -371,6 +405,7 @@ export async function handleWatchlistCommand(
     "",
     ...lines,
     summaryLine,
+    ...concentrationWarning ? [concentrationWarning] : [],
     walletSummary,
     "",
     `/관심추가 종목 [매수가] · /관심삭제 종목`,

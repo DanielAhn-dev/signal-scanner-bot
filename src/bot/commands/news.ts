@@ -13,6 +13,7 @@ import {
   actionButtons,
   ACTIONS,
 } from "../messages/layout";
+import { analyzeNewsSentiment, formatSentimentLine } from "../../lib/newsSentiment";
 
 export async function handleNewsCommand(
   input: string,
@@ -61,6 +62,14 @@ export async function handleNewsCommand(
   if (!items.length) {
     lines.push("관련 뉴스를 찾을 수 없습니다.");
   } else {
+    // 감성 분석 — 제목 전체로 한 번에 처리
+    const sentiment = analyzeNewsSentiment(items.map((it) => it.title));
+    const sentimentLine = formatSentimentLine(sentiment);
+    if (sentimentLine) {
+      lines.push(`<i>${sentimentLine}</i>`);
+      lines.push("");
+    }
+
     items.forEach((item, i) => {
       lines.push(`${i + 1}. <a href="${item.link}">${esc(item.title)}</a>`);
       if (item.source || item.date) {
