@@ -35,6 +35,33 @@ type NarrativeSectorRow = {
 type NarrativeMarket = Awaited<ReturnType<typeof fetchReportMarketData>> | Awaited<ReturnType<typeof fetchAllMarketData>>;
 type CoverMarket = Awaited<ReturnType<typeof fetchReportMarketData>>;
 
+function formatKstDateTimeLabel(iso?: string): string | null {
+  if (!iso) return null;
+  const parsed = new Date(iso);
+  if (Number.isNaN(parsed.getTime())) return null;
+  return parsed.toLocaleString("ko-KR", {
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+    timeZone: "Asia/Seoul",
+  });
+}
+
+function buildMarketDataQualityLine(market: NarrativeMarket): string | null {
+  const meta = market.meta;
+  if (!meta) return null;
+
+  const quality = meta.isPartial ? "부분 수집" : "정상";
+  const fetchedAt = formatKstDateTimeLabel(meta.fetchedAt);
+  const missing = meta.isPartial && meta.missing.length
+    ? ` / 누락: ${meta.missing.join(", ")}`
+    : "";
+
+  return `데이터 상태 ${quality}${fetchedAt ? ` / 조회 ${fetchedAt} KST` : ""}${missing}`;
+}
+
 export function buildTopicHeroSummary(input: {
   topic: ReportTopic;
   defaultSummary: string;
@@ -203,46 +230,57 @@ export function buildReportCaption(input: {
   market: NarrativeMarket;
 }): string {
   const { title, topic, krDate, curr, totalUnrealized, totalUnrealizedPct, sectors, market } = input;
+  const qualityLine = buildMarketDataQualityLine(market);
 
   if (topic === "economy") {
-    return [
+    const lines = [
       `${title} — ${krDate}`,
       `VIX ${market.vix ? toNum(market.vix.price).toFixed(1) : "-"} · 환율 ${market.usdkrw ? `${fmtInt(toNum(market.usdkrw.price))}원` : "-"}`,
       "핵심 거시 변수만 빠르게 점검할 수 있게 정리했습니다.",
-    ].join("\n");
+    ];
+    if (qualityLine) lines.push(qualityLine);
+    return lines.join("\n");
   }
 
   if (topic === "flow") {
     const topSector = sectors[0]?.name ?? "상위 섹터";
-    return [
+    const lines = [
       `${title} — ${krDate}`,
       `${topSector} 중심 수급 흐름과 상위 자금 유입 섹터를 정리했습니다.`,
       "자금 방향 위주로 빠르게 확인하세요.",
-    ].join("\n");
+    ];
+    if (qualityLine) lines.push(qualityLine);
+    return lines.join("\n");
   }
 
   if (topic === "sector") {
     const topSector = sectors[0]?.name ?? "주도 섹터";
-    return [
+    const lines = [
       `${title} — ${krDate}`,
       `${topSector} 포함 상위 강도 섹터를 압축했습니다.`,
       "테마 로테이션 체크용으로 바로 볼 수 있습니다.",
-    ].join("\n");
+    ];
+    if (qualityLine) lines.push(qualityLine);
+    return lines.join("\n");
   }
 
   if (topic === "watchlist") {
-    return [
+    const lines = [
       `${title} — ${krDate}`,
       `최근 거래 ${curr.tradeCount}건 · 보유평가 ${fmtSignedInt(totalUnrealized)} (${fmtPct(totalUnrealizedPct)})`,
       `${FIFO_TRADE_NOTE} · 보유 종목 점검용으로 바로 활용할 수 있습니다.`,
-    ].join("\n");
+    ];
+    if (qualityLine) lines.push(qualityLine);
+    return lines.join("\n");
   }
 
-  return [
+  const lines = [
     `${title} — ${krDate}`,
     `거래 ${curr.tradeCount}건 · ${FIFO_REALIZED_LABEL} ${fmtSignedInt(curr.realizedPnl)} · 보유평가 ${fmtSignedInt(totalUnrealized)}`,
     "다운로드 후 인쇄해서 사용하세요.",
-  ].join("\n");
+  ];
+  if (qualityLine) lines.push(qualityLine);
+  return lines.join("\n");
 }
 
 export function buildReportSummaryText(input: {
@@ -256,42 +294,53 @@ export function buildReportSummaryText(input: {
   market: NarrativeMarket;
 }): string {
   const { title, topic, ymd, curr, totalUnrealized, totalUnrealizedPct, sectors, market } = input;
+  const qualityLine = buildMarketDataQualityLine(market);
 
   if (topic === "economy") {
-    return [
+    const lines = [
       `${title} (${ymd})`,
       `VIX ${market.vix ? toNum(market.vix.price).toFixed(1) : "-"} / 환율 ${market.usdkrw ? `${fmtInt(toNum(market.usdkrw.price))}원` : "-"}`,
       `공포탐욕 ${market.fearGreed ? toNum(market.fearGreed.score) : "-"} / 미국 10년물 ${market.us10y ? `${toNum(market.us10y.price).toFixed(2)}%` : "-"}`,
-    ].join("\n");
+    ];
+    if (qualityLine) lines.push(qualityLine);
+    return lines.join("\n");
   }
 
   if (topic === "flow") {
-    return [
+    const lines = [
       `${title} (${ymd})`,
       `상위 수급 섹터: ${sectors.slice(0, 3).map((sector) => sector.name).join(", ") || "데이터 없음"}`,
       `최근 5거래일 기준 자금 유입 방향을 압축했습니다.`,
-    ].join("\n");
+    ];
+    if (qualityLine) lines.push(qualityLine);
+    return lines.join("\n");
   }
 
   if (topic === "sector") {
-    return [
+    const lines = [
       `${title} (${ymd})`,
       `상위 섹터: ${sectors.slice(0, 3).map((sector) => `${sector.name} ${toNum(sector.score).toFixed(1)}점`).join(" / ") || "데이터 없음"}`,
       `강도와 수익률 중심으로 정리했습니다.`,
-    ].join("\n");
+    ];
+    if (qualityLine) lines.push(qualityLine);
+    return lines.join("\n");
   }
 
   if (topic === "watchlist") {
-    return [
+    const lines = [
       `${title} (${ymd})`,
       `거래 ${curr.tradeCount}건 / ${FIFO_REALIZED_LABEL} ${fmtSignedInt(curr.realizedPnl)} / ${FIFO_WIN_RATE_LABEL} ${curr.winRate.toFixed(1)}%`,
       `보유평가 ${fmtSignedInt(totalUnrealized)} (${fmtPct(totalUnrealizedPct)})`,
-    ].join("\n");
+    ];
+    if (qualityLine) lines.push(qualityLine);
+    return lines.join("\n");
   }
 
-  return [
+  const lines = [
     `${title} (${ymd})`,
     `거래 ${curr.tradeCount}건 / ${FIFO_REALIZED_LABEL} ${fmtSignedInt(curr.realizedPnl)} / ${FIFO_WIN_RATE_LABEL} ${curr.winRate.toFixed(1)}%`,
     `보유평가 ${fmtSignedInt(totalUnrealized)} (${fmtPct(totalUnrealizedPct)})`,
-  ].join("\n");
+  ];
+  if (qualityLine) lines.push(qualityLine);
+  return lines.join("\n");
 }

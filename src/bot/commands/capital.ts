@@ -126,7 +126,7 @@ export async function handleCapitalCommand(
       `목표수익률 <code>${(saved.prefs.target_profit_pct || 8).toFixed(1)}%</code>`,
       `투자성향 <code>${riskProfileLabel(saved.prefs.risk_profile)}</code>`,
       "",
-      "이제 /매수와 추천 후보가 이 성향 기준으로 더 보수적 또는 적극적으로 바뀝니다.",
+      "이제 /매매와 추천 후보가 이 성향 기준으로 더 보수적 또는 적극적으로 바뀝니다.",
     ].join("\n"),
     parse_mode: "HTML",
   });

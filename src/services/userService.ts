@@ -31,6 +31,7 @@ export type InvestmentPrefs = {
   virtual_target_positions?: number;
   virtual_fee_rate?: number;
   virtual_tax_rate?: number;
+  daily_loss_limit_pct?: number;
 };
 
 // ─── 사용자 등록/업데이트 ───
@@ -76,6 +77,7 @@ export async function getUserInvestmentPrefs(
   const virtualTargetPositions = Number(prefs.virtual_target_positions);
   const virtualFeeRate = Number(prefs.virtual_fee_rate);
   const virtualTaxRate = Number(prefs.virtual_tax_rate);
+  const dailyLossLimitPct = Number(prefs.daily_loss_limit_pct);
 
   if (Number.isFinite(cap) && cap > 0) out.capital_krw = cap;
   if (Number.isFinite(split) && split > 0) out.split_count = Math.floor(split);
@@ -91,6 +93,9 @@ export async function getUserInvestmentPrefs(
   }
   if (Number.isFinite(virtualFeeRate) && virtualFeeRate >= 0) out.virtual_fee_rate = virtualFeeRate;
   if (Number.isFinite(virtualTaxRate) && virtualTaxRate >= 0) out.virtual_tax_rate = virtualTaxRate;
+  if (Number.isFinite(dailyLossLimitPct) && dailyLossLimitPct > 0) {
+    out.daily_loss_limit_pct = dailyLossLimitPct;
+  }
 
   return out;
 }
@@ -159,6 +164,10 @@ export async function setUserInvestmentPrefs(
       virtual_tax_rate:
         Number.isFinite(Number(merged.virtual_tax_rate))
           ? Number(merged.virtual_tax_rate)
+          : undefined,
+      daily_loss_limit_pct:
+        Number.isFinite(Number(merged.daily_loss_limit_pct))
+          ? Number(merged.daily_loss_limit_pct)
           : undefined,
     },
   };

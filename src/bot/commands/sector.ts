@@ -279,7 +279,7 @@ export async function handleSectorDetailCommand(
     reply_markup: actionButtons(
       leaders.slice(0, 3).map((item) => ({
         text: item.name,
-        callback_data: `score:${item.code}`,
+        callback_data: `trade:${item.code}`,
       })),
       2
     ),

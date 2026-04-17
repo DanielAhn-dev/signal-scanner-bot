@@ -689,7 +689,7 @@ async function runMarketPickCommand(
 
   const text = buildResultMessage(kind, top, realtimeMap, regime, etfStrategy);
   const buttons = [
-    ...top.map((c) => ({ text: c.name, callback_data: `score:${c.code}` })),
+    ...top.map((c) => ({ text: c.name, callback_data: `trade:${c.code}` })),
     { text: "코스피", callback_data: "cmd:kospi" },
     { text: "코스닥", callback_data: "cmd:kosdaq" },
     { text: "ETF", callback_data: "cmd:etf" },

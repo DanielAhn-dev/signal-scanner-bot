@@ -156,7 +156,7 @@ export async function handleStocksCommand(
   // 5. 버튼 생성
   const buttons = finalStocks.slice(0, 10).map((s: any) => ({
     text: `${s.name}`,
-    callback_data: `score:${s.code}`,
+    callback_data: `trade:${s.code}`,
   }));
 
   await tgSend("sendMessage", {

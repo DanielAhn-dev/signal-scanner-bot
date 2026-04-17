@@ -25,6 +25,50 @@ const supabase = createClient(
   process.env.SUPABASE_ANON_KEY!
 );
 
+const DEFAULT_DAILY_LOSS_LIMIT_PCT = 5;
+
+function getKstDayRange(reference = new Date()): { startIso: string; endIso: string; dayLabel: string } {
+  const dayMs = 24 * 60 * 60 * 1000;
+  const kstOffsetMs = 9 * 60 * 60 * 1000;
+  const kstNowMs = reference.getTime() + kstOffsetMs;
+  const kstStartMs = Math.floor(kstNowMs / dayMs) * dayMs;
+  const utcStartMs = kstStartMs - kstOffsetMs;
+  const utcEndMs = utcStartMs + dayMs;
+
+  const dayLabel = new Date(utcStartMs).toLocaleDateString("ko-KR", {
+    month: "2-digit",
+    day: "2-digit",
+    weekday: "short",
+    timeZone: "Asia/Seoul",
+  });
+
+  return {
+    startIso: new Date(utcStartMs).toISOString(),
+    endIso: new Date(utcEndMs).toISOString(),
+    dayLabel,
+  };
+}
+
+async function getDailyRealizedPnl(chatId: number): Promise<number> {
+  const { startIso, endIso } = getKstDayRange();
+  const { data, error } = await supabase
+    .from("virtual_trades")
+    .select("pnl_amount")
+    .eq("chat_id", chatId)
+    .gte("traded_at", startIso)
+    .lt("traded_at", endIso);
+
+  if (error) {
+    console.error("daily realized pnl query failed:", error);
+    return 0;
+  }
+
+  return (data ?? []).reduce((sum, row: any) => {
+    const pnl = Number(row?.pnl_amount ?? 0);
+    return Number.isFinite(pnl) ? sum + pnl : sum;
+  }, 0);
+}
+
 // --- 메시지 빌더 (HTML) ---
 function buildMessage(
   stock: { name: string; code: string },
@@ -137,8 +181,7 @@ function buildMessage(
 export async function handleBuyCommand(
   input: string,
   ctx: ChatContext,
-  tgSend: any,
-  source: "trade" | "score" | "buy" = "trade"
+  tgSend: any
 ): Promise<void> {
   const query = (input || "").trim();
   if (!query) {
@@ -147,7 +190,6 @@ export async function handleBuyCommand(
       text: [
         "사용법: /매매 종목명 또는 코드",
         "예) /매매 삼성전자",
-        "별칭: /점수, /매수",
       ].join("\n"),
     });
   }
@@ -206,6 +248,35 @@ export async function handleBuyCommand(
     getFundamentalSnapshot(code).catch(() => null),
     getUserInvestmentPrefs(ctx.from?.id ?? ctx.chatId),
   ]);
+
+  const dailyRealizedPnl = await getDailyRealizedPnl(ctx.chatId);
+  const riskBaseCapital = Number(
+    prefs.virtual_seed_capital ?? prefs.capital_krw ?? 0
+  );
+  const dailyLossLimitPct = Number(
+    prefs.daily_loss_limit_pct ?? DEFAULT_DAILY_LOSS_LIMIT_PCT
+  );
+  const dailyLossLimitAmount =
+    riskBaseCapital > 0 && dailyLossLimitPct > 0
+      ? (riskBaseCapital * dailyLossLimitPct) / 100
+      : 0;
+
+  if (dailyLossLimitAmount > 0 && dailyRealizedPnl <= -dailyLossLimitAmount) {
+    const { dayLabel } = getKstDayRange();
+    await tgSend("sendMessage", {
+      chat_id: ctx.chatId,
+      text: [
+        "<b>신규 진입 제한</b>",
+        LINE,
+        `${dayLabel} 실현손익 <code>${fmtInt(dailyRealizedPnl)}원</code>`,
+        `일손실 한도 <code>-${fmtInt(dailyLossLimitAmount)}원</code> (${dailyLossLimitPct.toFixed(1)}%) 도달`,
+        "오늘은 신규 매수 대신 보유 종목 리스크 점검을 권장합니다.",
+        "권장: /관심대응 · /시장 · /리포트",
+      ].join("\n"),
+      parse_mode: "HTML",
+    });
+    return;
+  }
 
   const currentPrice = realtimeData?.price ?? stock.close;
   const normalizedSeries = scaleSeriesToReferencePrice(series, currentPrice);
@@ -293,15 +364,11 @@ export async function handleBuyCommand(
     investPrefs
   );
 
-  const aliasNotice = source === "trade"
-    ? ""
-    : "\n\n<i>안내: /점수, /매수는 통합 명령 /매매로 연결됩니다.</i>";
-
   const kb = actionButtons(ACTIONS.analyzeStock(code), 3);
 
   await tgSend("sendMessage", {
     chat_id: ctx.chatId,
-    text: `${msg}${aliasNotice}`,
+    text: msg,
     parse_mode: "HTML",
     reply_markup: kb,
   });

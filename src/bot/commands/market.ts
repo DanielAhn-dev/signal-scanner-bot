@@ -122,6 +122,20 @@ const regimeLabel: Record<MarketRegime, string> = {
   strong_bear: "하락장 — 현금 확보 우선",
 };
 
+function formatKstDateTimeLabel(iso?: string): string | null {
+  if (!iso) return null;
+  const parsed = new Date(iso);
+  if (Number.isNaN(parsed.getTime())) return null;
+  return parsed.toLocaleString("ko-KR", {
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+    timeZone: "Asia/Seoul",
+  });
+}
+
 function fmtKorMoney(n: number): string {
   const eok = Math.round(n / 100_000_000);
   const jo = Math.floor(Math.abs(eok) / 10_000);
@@ -168,6 +182,18 @@ export async function handleMarketCommand(
     msg += `  VIX ${marketData.vix.price.toFixed(1)}\n`;
   if (marketData.usdkrw)
     msg += `  환율 ${marketData.usdkrw.price.toLocaleString()}원\n`;
+  if (marketData.meta) {
+    const quality = marketData.meta.isPartial ? "⚠️ 부분 수집" : "✅ 정상";
+    const fetchedAt = formatKstDateTimeLabel(marketData.meta.fetchedAt);
+    msg += `  데이터 상태 ${quality}`;
+    if (fetchedAt) {
+      msg += ` (${fetchedAt} KST)`;
+    }
+    msg += "\n";
+    if (marketData.meta.isPartial && marketData.meta.missing.length) {
+      msg += `  누락 지표 ${marketData.meta.missing.join(", ")}\n`;
+    }
+  }
   msg += "\n";
 
   // 시그널

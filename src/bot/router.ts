@@ -58,8 +58,6 @@ const CMD = {
   BRIEF:       /^\/(brief|morning|브리핑|장전)$/i,
   REPORT:      /^\/(report|리포트)(?:\s+(.+))?$/i,
   TRADE:       /^\/(trade|매매)\s+(.+)$/i,
-  SCORE:       /^\/(score|점수)\s+(.+)$/i,
-  BUY:         /^\/(buy|매수)\s+(.+)$/i,
   SECTOR:      /^\/(sector|섹터|업종|테마)$/i,
   STOCKS:      /^\/(stocks|종목)\s+(.+)$/i,
   PULLBACK:    /^\/(pullback|눌림목)$/i,
@@ -268,21 +266,7 @@ export async function routeMessage(
   // /trade | /매매 [종목명/코드] — 통합 실행형 분석
   const mt = t.match(CMD.TRADE);
   if (mt) {
-    await handleBuyCommand(mt[2], ctx, tgSend, "trade");
-    return;
-  }
-
-  // /score [종목명/코드] — 별칭(통합 분석으로 위임)
-  const ms = t.match(CMD.SCORE);
-  if (ms) {
-    await handleBuyCommand(ms[2], ctx, tgSend, "score");
-    return;
-  }
-
-  // /buy [종목명/코드] — 별칭(통합 분석으로 위임)
-  const mb = t.match(CMD.BUY);
-  if (mb) {
-    await handleBuyCommand(mb[2], ctx, tgSend, "buy");
+    await handleBuyCommand(mt[2], ctx, tgSend);
     return;
   }
 
