@@ -16,6 +16,8 @@ interface NaverStockBasic {
   foreignerHoldingRatio?: string;
 }
 
+export type RealtimePriceSource = "naver";
+
 export interface RealtimeStockData {
   price: number;
   change: number;
@@ -29,6 +31,8 @@ export interface RealtimeStockData {
   per?: number;
   pbr?: number;
   foreignRatio?: number;
+  source: RealtimePriceSource;
+  fetchedAt: string;
 }
 
 const parseNum = (s?: string): number | undefined => {
@@ -57,6 +61,7 @@ export async function fetchRealtimeStockData(
 ): Promise<RealtimeStockData | null> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+  const fetchedAt = new Date().toISOString();
 
   try {
     const response = await fetch(
@@ -87,6 +92,8 @@ export async function fetchRealtimeStockData(
       per: parseNum(data.per),
       pbr: parseNum(data.pbr),
       foreignRatio: parseNum(data.foreignerHoldingRatio),
+      source: "naver",
+      fetchedAt,
     };
   } catch (e) {
     console.error(`실시간 데이터 조회 실패 (${code}):`, e);
@@ -101,9 +108,10 @@ export async function fetchRealtimePriceBatch(
   codes: string[]
 ): Promise<Record<string, RealtimeStockData>> {
   const result: Record<string, RealtimeStockData> = {};
+  const uniqueCodes = [...new Set(codes.map((code) => code.trim()).filter(Boolean))];
   const chunkSize = 20;
-  for (let i = 0; i < codes.length; i += chunkSize) {
-    const chunk = codes.slice(i, i + chunkSize);
+  for (let i = 0; i < uniqueCodes.length; i += chunkSize) {
+    const chunk = uniqueCodes.slice(i, i + chunkSize);
     const settled = await Promise.allSettled(
       chunk.map(async (code) => {
         const data = await fetchRealtimeStockData(code);

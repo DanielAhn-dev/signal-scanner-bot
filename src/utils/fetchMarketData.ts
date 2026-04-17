@@ -6,6 +6,8 @@ export interface MarketIndex {
   price: number;
   change: number;
   changeRate: number;
+  source: "naver" | "yahoo";
+  fetchedAt: string;
 }
 
 export interface ExchangeRate {
@@ -14,11 +16,21 @@ export interface ExchangeRate {
   price: number;
   change: number;
   changeRate: number;
+  source: "yahoo";
+  fetchedAt: string;
 }
 
 export interface FearGreedData {
   score: number;
   rating: string;
+  source: "cnn";
+  fetchedAt: string;
+}
+
+export interface MarketOverviewMeta {
+  fetchedAt: string;
+  isPartial: boolean;
+  missing: string[];
 }
 
 export interface MarketOverview {
@@ -35,6 +47,7 @@ export interface MarketOverview {
   copper?: MarketIndex;
   wtiOil?: MarketIndex;
   bitcoin?: MarketIndex;
+  meta?: MarketOverviewMeta;
 }
 
 const UA = { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)" };
@@ -67,6 +80,7 @@ async function fetchJsonWithTimeout(url: string): Promise<any | null> {
 async function fetchNaverIndex(
   indexCode: string
 ): Promise<MarketIndex | null> {
+  const fetchedAt = new Date().toISOString();
   const d = await fetchJsonWithTimeout(
     `https://m.stock.naver.com/api/index/${indexCode}/basic`
   );
@@ -77,6 +91,8 @@ async function fetchNaverIndex(
     price: parsePrice(d.closePrice),
     change: parsePrice(d.compareToPreviousClosePrice),
     changeRate: parseFloat(d.fluctuationsRatio || "0"),
+    source: "naver",
+    fetchedAt,
   };
 }
 
@@ -86,6 +102,7 @@ export const fetchKOSDAQ = () => fetchNaverIndex("KOSDAQ");
 // ─── 환율 (Yahoo Finance) ───
 export async function fetchUSDKRW(): Promise<ExchangeRate | null> {
   try {
+    const fetchedAt = new Date().toISOString();
     const idx = await fetchYahoo("USDKRW=X", "달러/원");
     if (!idx) return null;
     return {
@@ -94,6 +111,8 @@ export async function fetchUSDKRW(): Promise<ExchangeRate | null> {
       price: idx.price,
       change: idx.change,
       changeRate: idx.changeRate,
+      source: "yahoo",
+      fetchedAt,
     };
   } catch {
     return null;
@@ -105,6 +124,7 @@ async function fetchYahoo(
   symbol: string,
   label: string
 ): Promise<MarketIndex | null> {
+  const fetchedAt = new Date().toISOString();
   const enc = encodeURIComponent(symbol);
   const body = await fetchJsonWithTimeout(
     `https://query1.finance.yahoo.com/v8/finance/chart/${enc}?range=1d&interval=1d`
@@ -121,6 +141,8 @@ async function fetchYahoo(
     changeRate: prev
       ? +(((price - prev) / prev) * 100).toFixed(2)
       : 0,
+    source: "yahoo",
+    fetchedAt,
   };
 }
 
@@ -138,6 +160,7 @@ export const fetchBitcoin = () => fetchYahoo("BTC-USD", "Bitcoin");
 
 // ─── CNN Fear & Greed ───
 export async function fetchFearGreed(): Promise<FearGreedData | null> {
+  const fetchedAt = new Date().toISOString();
   const d = await fetchJsonWithTimeout(
     "https://production.dataviz.cnn.io/index/fearandgreed/graphdata"
   );
@@ -147,6 +170,23 @@ export async function fetchFearGreed(): Promise<FearGreedData | null> {
   return {
     score: Math.round(fg.score || 0),
     rating: fg.rating || "Unknown",
+    source: "cnn",
+    fetchedAt,
+  };
+}
+
+function withOverviewMeta<T extends MarketOverview>(overview: T): T {
+  const missing = Object.entries(overview)
+    .filter(([key, value]) => key !== "meta" && value == null)
+    .map(([key]) => key);
+
+  return {
+    ...overview,
+    meta: {
+      fetchedAt: new Date().toISOString(),
+      isPartial: missing.length > 0,
+      missing,
+    },
   };
 }
 
@@ -159,13 +199,13 @@ export async function fetchReportMarketData(): Promise<MarketOverview> {
     fetchFearGreed(),
   ]);
 
-  return {
+  return withOverviewMeta({
     kospi: kospi ?? undefined,
     kosdaq: kosdaq ?? undefined,
     usdkrw: usdkrw ?? undefined,
     vix: vix ?? undefined,
     fearGreed: fearGreed ?? undefined,
-  };
+  });
 }
 
 // ─── 한번에 전부 조회 ───
@@ -190,7 +230,7 @@ export async function fetchAllMarketData(): Promise<MarketOverview> {
     fetchBitcoin(),
   ]);
 
-  return {
+  return withOverviewMeta({
     kospi: kospi ?? undefined,
     kosdaq: kosdaq ?? undefined,
     usdkrw: usdkrw ?? undefined,
@@ -204,5 +244,5 @@ export async function fetchAllMarketData(): Promise<MarketOverview> {
     copper: copper ?? undefined,
     wtiOil: wtiOil ?? undefined,
     bitcoin: bitcoin ?? undefined,
-  };
+  });
 }
