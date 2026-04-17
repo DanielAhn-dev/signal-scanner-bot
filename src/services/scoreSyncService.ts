@@ -12,7 +12,6 @@ type ScoreUpsertRow = {
   momentum_score: number;
   liquidity_score: number;
   value_score: number;
-  signal: "buy" | "hold" | "sell" | "none";
   factors: Record<string, any>;
 };
 
@@ -155,7 +154,6 @@ export async function syncScoresFromEngine(
           momentum_score: momentumScore,
           liquidity_score: liquidityScore,
           value_score: valueScore,
-          signal: scored.signal,
           factors: scored.factors,
         });
         processedCount += 1;
