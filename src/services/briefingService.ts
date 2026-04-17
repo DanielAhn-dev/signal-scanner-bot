@@ -87,6 +87,21 @@ interface WatchlistViewItem {
   etfDistribution: EtfDistributionSummary | null;
 }
 
+function buildEtfBriefingAction(item: WatchlistViewItem): string {
+  const premiumRate = item.etfSnapshot?.premiumRate;
+  const premiumLabel = premiumRate == null
+    ? "괴리율 확인"
+    : Math.abs(premiumRate) >= 1
+      ? `괴리율 ${fmtPct(premiumRate)} 점검`
+      : `괴리율 ${fmtPct(premiumRate)} 안정권`;
+  const payoutLabel = item.etfDistribution?.latestPayoutDate
+    ? `실지급 ${item.etfDistribution.latestPayoutDate}`
+    : item.etfDistribution?.nextExpectedDate
+      ? `다음 예상 ${item.etfDistribution.nextExpectedDate}`
+      : "분배 공시 대기";
+  return `${premiumLabel} · ${payoutLabel}`;
+}
+
 const statusRank: Record<string, number> = {
   "buy-now": 0,
   "buy-on-pullback": 1,
@@ -785,8 +800,12 @@ async function formatWatchlistSection(
     `  오늘 액션 ${actionable}건 · 눌림 대기 ${pullback}건 · 관망 ${wait}건`,
   ];
   const etfCount = sortedItems.filter((item) => item.market === "ETF").length;
+  const stockCount = sortedItems.filter((item) => item.market !== "ETF").length;
+  if (stockCount > 0 || etfCount > 0) {
+    summaryLines.push(`  보유 구성 주식 ${stockCount}건 · ETF ${etfCount}건`);
+  }
   if (etfCount > 0) {
-    summaryLines.push(`  ETF 보유 ${etfCount}건 · NAV/분배락 함께 체크`);
+    summaryLines.push(`  ETF 보유 ${etfCount}건 · NAV/괴리율/분배일 중심으로 체크`);
   }
   summaryLines.push(...buildBriefingConcentrationSummary(items));
 
@@ -816,11 +835,13 @@ async function formatWatchlistSection(
     const changeStr = item.changeRate != null ? ` ${fmtChange(item.changeRate)}` : "";
     const buyBase = item.buyPrice ? ` · 기준 ${fmtPct(item.profitPct)}` : "";
     const todayAction =
-      item.plan.status === "buy-now"
-        ? `오늘 액션: ${item.plan.summary}`
-        : item.plan.status === "buy-on-pullback"
-          ? `오늘 액션: 20일선 부근 ${fmtInt(item.plan.entryLow)}~${fmtInt(item.plan.entryHigh)} 대기`
-          : `오늘 액션: ${item.plan.summary}`;
+      item.market === "ETF"
+        ? `오늘 ETF 체크: ${buildEtfBriefingAction(item)}`
+        : item.plan.status === "buy-now"
+          ? `오늘 액션: ${item.plan.summary}`
+          : item.plan.status === "buy-on-pullback"
+            ? `오늘 액션: 20일선 부근 ${fmtInt(item.plan.entryLow)}~${fmtInt(item.plan.entryHigh)} 대기`
+            : `오늘 액션: ${item.plan.summary}`;
 
     // 뉴스 감성 라벨 (buy-now 또는 감성 주목할 만한 종목만)
     const sentimentResult = newsSentimentByCode.get(item.code);
@@ -840,14 +861,16 @@ async function formatWatchlistSection(
             ? `     ETF NAV ${fmtInt(Number(item.etfSnapshot?.latestNav ?? item.etfSnapshot?.nav ?? 0))}원 · 괴리율 ${item.etfSnapshot?.premiumRate != null ? fmtPct(item.etfSnapshot.premiumRate) : "확인중"}`
             : null,
           item.etfDistribution
-            ? `     분배 ${item.etfDistribution.cadenceLabel} · 월 ${item.etfDistribution.monthList.length ? item.etfDistribution.monthList.map((month) => `${month}월`).join(", ") : "확인 필요"}${item.etfDistribution.nextExpectedDate ? ` · 다음 예상 ${item.etfDistribution.nextExpectedDate}` : ""}`
+            ? `     분배 ${item.etfDistribution.cadenceLabel} · 월 ${item.etfDistribution.monthList.length ? item.etfDistribution.monthList.map((month) => `${month}월`).join(", ") : "확인 필요"}${item.etfDistribution.latestAmount != null ? ` · 최근 ${fmtInt(item.etfDistribution.latestAmount)}원` : ""}${item.etfDistribution.nextExpectedDate ? ` · 다음 예상 ${item.etfDistribution.nextExpectedDate}` : ""}`
             : null,
         ].filter((line): line is string => Boolean(line))
       : [];
 
     return [
       `  ▸ <b>${item.name}</b>${item.market === "ETF" ? " [ETF]" : ""} <code>${fmtInt(item.currentPrice)}원</code>${changeStr}${buyBase}`,
-      `     ${item.plan.statusLabel} · 손절 ${fmtInt(item.plan.stopPrice)} · 1차 ${fmtPct(item.plan.target1Pct * 100)}`,
+      item.market === "ETF"
+        ? `     ${item.plan.statusLabel} · ${buildEtfBriefingAction(item)}`
+        : `     ${item.plan.statusLabel} · 손절 ${fmtInt(item.plan.stopPrice)} · 1차 ${fmtPct(item.plan.target1Pct * 100)}`,
       `     ${todayAction}`,
       triggerLine,
       ...etfTags,

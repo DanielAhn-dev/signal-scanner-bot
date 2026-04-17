@@ -14,7 +14,11 @@ export type EtfDistributionEvent = {
   title: string;
   noticeDate: string;
   applyDate?: string;
+  payoutDate?: string;
   basePrice?: number;
+  amount?: number;
+  taxBaseAmount?: number;
+  yieldPct?: number;
 };
 
 export type EtfDistributionSummary = {
@@ -23,7 +27,9 @@ export type EtfDistributionSummary = {
   cadenceLabel: string;
   monthList: number[];
   latestApplyDate?: string;
+  latestPayoutDate?: string;
   latestBasePrice?: number;
+  latestAmount?: number;
   nextExpectedDate?: string;
   source: string;
 };
@@ -197,7 +203,9 @@ function deriveCadence(events: EtfDistributionEvent[]): Omit<EtfDistributionSumm
     cadenceLabel,
     monthList,
     latestApplyDate,
+    latestPayoutDate: events[0]?.payoutDate,
     latestBasePrice: events[0]?.basePrice,
+    latestAmount: events[0]?.amount,
     nextExpectedDate,
   };
 }
@@ -257,6 +265,7 @@ async function enrichDistributionEvent(code: string, event: EtfDistributionEvent
   return {
     ...event,
     basePrice: parseNum(findRowValue($, "2. 기준가격(원)") ?? findRowValue($, "기준가격(원)")),
+    payoutDate: findRowValue($, "5. 지급일") ?? findRowValue($, "실지급일") ?? findRowValue($, "지급일"),
     applyDate: findRowValue($, "4. 적용일") ?? findRowValue($, "적용일"),
   };
 }

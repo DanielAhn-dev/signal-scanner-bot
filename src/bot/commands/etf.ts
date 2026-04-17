@@ -88,6 +88,11 @@ function formatMonthList(months: number[]): string {
   return months.map((month) => `${month}월`).join(", ");
 }
 
+function formatDistributionAmount(amount?: number): string {
+  if (amount === undefined) return "확인중";
+  return `${fmtInt(amount)}원`;
+}
+
 export async function handleEtfInfoCommand(
   input: string,
   ctx: ChatContext,
@@ -238,7 +243,8 @@ export async function handleEtfDistributionCommand(
   const historyLines = summary.events.slice(0, 4).map((event) => {
     const apply = event.applyDate ?? event.noticeDate;
     const base = event.basePrice ? ` · 기준가격 ${fmtInt(event.basePrice)}원` : "";
-    return `${apply}${base}`;
+    const amount = event.amount !== undefined ? ` · 분배금 ${fmtInt(event.amount)}원` : "";
+    return `${apply}${base}${amount}`;
   });
 
   await tgSend("sendMessage", {
@@ -249,13 +255,17 @@ export async function handleEtfDistributionCommand(
         `주기: ${summary.cadenceLabel}`,
         `주로 받는 월: ${formatMonthList(summary.monthList)}`,
         `최근 배당락 적용일: ${latest.applyDate ?? latest.noticeDate}`,
+        summary.latestPayoutDate ? `최근 실지급일: ${summary.latestPayoutDate}` : "실지급일: 공시 확인 필요",
         summary.nextExpectedDate ? `다음 예상 배당락: ${summary.nextExpectedDate}` : "다음 배당락: 공시 확인 필요",
       ])),
       section("최근 공시", bullets(historyLines)),
       divider(),
       section("안내", bullets([
         latest.basePrice ? `최근 분배락 기준가격은 ${fmtInt(latest.basePrice)}원입니다.` : "최근 기준가격 데이터는 일부 공시에서만 확인됩니다.",
-        "분배금 금액 자체는 현재 공시 본문에서 직접 제공되지 않아 운용사 페이지 연동이 추가로 필요합니다.",
+        `최근 확인된 주당 분배금: ${formatDistributionAmount(summary.latestAmount)}`,
+        summary.latestAmount === undefined
+          ? "운용사 분배금 현황 연동이 아직 제한적이라 일부 ETF는 금액이 공시만으로는 비어 있을 수 있습니다."
+          : "분배금 금액은 확보된 운용사 소스가 있을 때 우선 표시합니다.",
       ])),
       `<i>출처: ${esc(summary.source)}</i>`,
     ]),

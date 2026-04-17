@@ -116,6 +116,25 @@ function formatEtfMonthList(months: number[]): string {
   return months.map((month) => `${month}월`).join(", ");
 }
 
+function buildEtfActionSummary(input: {
+  premiumRate?: number;
+  nextExpectedDate?: string;
+  latestPayoutDate?: string;
+}): string {
+  const premiumRate = input.premiumRate;
+  const premiumLabel = premiumRate == null
+    ? "괴리율 확인"
+    : Math.abs(premiumRate) >= 1
+      ? `괴리율 ${fmtPct(premiumRate)} 점검`
+      : `괴리율 ${fmtPct(premiumRate)} 안정권`;
+  const payoutLabel = input.latestPayoutDate
+    ? `실지급 ${input.latestPayoutDate}`
+    : input.nextExpectedDate
+      ? `다음 예상 ${input.nextExpectedDate}`
+      : "분배 공시 대기";
+  return `${premiumLabel} · ${payoutLabel}`;
+}
+
 async function appendVirtualTradeLog(payload: {
   chatId: number;
   code: string;
@@ -411,11 +430,15 @@ export async function handleWatchlistCommand(
   let actionable = 0;
   let pullback = 0;
   let wait = 0;
+  let etfCount = 0;
+  let stockCount = 0;
 
   const lines = items.map((item: any, idx: number) => {
     const stock = item.stock as any;
     const name = stock?.name ?? item.code;
     const market = String(stock?.market ?? "");
+    if (market === "ETF") etfCount += 1;
+    else stockCount += 1;
     const etfMeta = etfMetaMap.get(String(item.code));
     const dbClose = Number(stock?.close ?? 0);
     const rt = realtimeMap[item.code];
@@ -456,16 +479,22 @@ export async function handleWatchlistCommand(
       : "";
     const addedDate = formatShortDate(item.created_at as string | null | undefined);
     const actionStr =
-      plan.status === "buy-on-pullback"
-        ? `\n    액션 ${plan.statusLabel} · 진입 ${fmtInt(plan.entryLow)}~${fmtInt(plan.entryHigh)}`
-        : `\n    액션 ${plan.statusLabel} · 손절 ${fmtInt(plan.stopPrice)} · 1차 ${fmtPct(plan.target1Pct * 100)}`;
+      market === "ETF"
+        ? `\n    ETF 체크 ${buildEtfActionSummary({
+            premiumRate: etfMeta?.snapshot?.premiumRate,
+            nextExpectedDate: etfMeta?.distribution?.nextExpectedDate,
+            latestPayoutDate: etfMeta?.distribution?.latestPayoutDate,
+          })}`
+        : plan.status === "buy-on-pullback"
+          ? `\n    액션 ${plan.statusLabel} · 진입 ${fmtInt(plan.entryLow)}~${fmtInt(plan.entryHigh)}`
+          : `\n    액션 ${plan.statusLabel} · 손절 ${fmtInt(plan.stopPrice)} · 1차 ${fmtPct(plan.target1Pct * 100)}`;
     const etfStr = market === "ETF"
       ? [
           etfMeta?.snapshot?.latestNav || etfMeta?.snapshot?.nav
             ? `\n    ETF NAV <code>${fmtInt(Number(etfMeta?.snapshot?.latestNav ?? etfMeta?.snapshot?.nav ?? 0))}원</code> · 괴리율 ${etfMeta?.snapshot?.premiumRate != null ? fmtPct(etfMeta.snapshot.premiumRate) : "확인중"}`
             : "",
           etfMeta?.distribution
-            ? `\n    분배 ${etfMeta.distribution.cadenceLabel} · 월 ${formatEtfMonthList(etfMeta.distribution.monthList)}${etfMeta.distribution.nextExpectedDate ? ` · 다음 예상 ${etfMeta.distribution.nextExpectedDate}` : ""}`
+            ? `\n    분배 ${etfMeta.distribution.cadenceLabel} · 월 ${formatEtfMonthList(etfMeta.distribution.monthList)}${etfMeta.distribution.latestAmount != null ? ` · 최근 ${fmtInt(etfMeta.distribution.latestAmount)}원` : ""}${etfMeta.distribution.nextExpectedDate ? ` · 다음 예상 ${etfMeta.distribution.nextExpectedDate}` : ""}`
             : "",
         ].join("")
       : "";
@@ -523,6 +552,7 @@ export async function handleWatchlistCommand(
     `<b>관심종목 포트폴리오</b>`,
     LINE,
     `오늘 액션 ${actionable}건 · 눌림 대기 ${pullback}건 · 관망 ${wait}건`,
+    `주식 ${stockCount}건 · ETF ${etfCount}건`,
     "",
     ...lines,
     summaryLine,
