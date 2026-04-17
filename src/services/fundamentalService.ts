@@ -53,6 +53,59 @@ export type FundamentalSnapshot = {
   commentary: string;
 };
 
+export function getFundamentalWarningTags(
+  snapshot: Pick<
+    FundamentalSnapshot,
+    | "per"
+    | "pbr"
+    | "roe"
+    | "debtRatio"
+    | "netIncome"
+    | "salesGrowthPct"
+    | "opIncomeGrowthPct"
+    | "netIncomeGrowthPct"
+    | "salesGrowthLowBase"
+    | "opIncomeGrowthLowBase"
+    | "opIncomeTurnaround"
+    | "netIncomeGrowthLowBase"
+    | "netIncomeTurnaround"
+  >
+): string[] {
+  const tags: string[] = [];
+
+  if (snapshot.per !== undefined && snapshot.per < 0) {
+    tags.push("적자PER");
+  } else if (snapshot.per === undefined && (snapshot.netIncome ?? 0) > 0) {
+    tags.push("PER검증");
+  }
+
+  if ((snapshot.pbr ?? 0) >= 3 && (snapshot.roe ?? 0) < 8) {
+    tags.push("PBR부담");
+  }
+  if ((snapshot.debtRatio ?? 0) > 200) {
+    tags.push("부채부담");
+  }
+  if (
+    (snapshot.salesGrowthPct ?? 0) <= -10 ||
+    (snapshot.opIncomeGrowthPct ?? 0) <= -15 ||
+    (snapshot.netIncomeGrowthPct ?? 0) <= -20
+  ) {
+    tags.push("역성장주의");
+  }
+  if (snapshot.opIncomeTurnaround || snapshot.netIncomeTurnaround) {
+    tags.push("턴어라운드");
+  }
+  if (
+    snapshot.salesGrowthLowBase ||
+    snapshot.opIncomeGrowthLowBase ||
+    snapshot.netIncomeGrowthLowBase
+  ) {
+    tags.push("기저효과");
+  }
+
+  return tags;
+}
+
 const sectorMetaCache = new Map<string, { name?: string; category?: string }>();
 let supabaseClient: SupabaseClient | null = null;
 

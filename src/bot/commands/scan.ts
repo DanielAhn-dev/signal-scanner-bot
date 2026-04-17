@@ -4,7 +4,10 @@
 import type { ChatContext } from "../router";
 import { createClient } from "@supabase/supabase-js";
 import { fetchRealtimePriceBatch } from "../../utils/fetchRealtimePrice";
-import { getFundamentalSnapshot } from "../../services/fundamentalService";
+import {
+  getFundamentalSnapshot,
+  getFundamentalWarningTags,
+} from "../../services/fundamentalService";
 import { pickSaferCandidates, type RiskProfile } from "../../lib/investableUniverse";
 import { getUserInvestmentPrefs } from "../../services/userService";
 import { analyzeNewsSentiment, formatSentimentLine } from "../../lib/newsSentiment";
@@ -229,8 +232,12 @@ export async function handleScanCommand(
       const rb = realtimeMap[b.code];
       const sa = scoreMap.get(a.code);
       const sb = scoreMap.get(b.code);
-      const qa = fundMap.get(a.code)?.qualityScore ?? 50;
-      const qb = fundMap.get(b.code)?.qualityScore ?? 50;
+      const fundA = fundMap.get(a.code);
+      const fundB = fundMap.get(b.code);
+      const qa = fundA?.qualityScore ?? 50;
+      const qb = fundB?.qualityScore ?? 50;
+      const warnPenaltyA = getFundamentalWarningTags(fundA ?? {}).length * 6;
+      const warnPenaltyB = getFundamentalWarningTags(fundB ?? {}).length * 6;
 
       const scoreA =
         (a.entry_score ?? 0) * 20 +
@@ -238,14 +245,16 @@ export async function handleScanCommand(
         (sa?.total ?? 0) * 0.6 +
         (sa?.value ?? 0) * 0.5 +
         qa * 0.6 +
-        (ra?.changeRate ?? 0) * 1.2;
+        (ra?.changeRate ?? 0) * 1.2 -
+        warnPenaltyA;
       const scoreB =
         (b.entry_score ?? 0) * 20 +
         (6 - (b.warn_score ?? 0)) * 8 +
         (sb?.total ?? 0) * 0.6 +
         (sb?.value ?? 0) * 0.5 +
         qb * 0.6 +
-        (rb?.changeRate ?? 0) * 1.2;
+        (rb?.changeRate ?? 0) * 1.2 -
+        warnPenaltyB;
       return scoreB - scoreA;
     })
     .slice(0, 10);
@@ -289,6 +298,12 @@ export async function handleScanCommand(
     if (item.vol_atr_grade) details.push(`변동 ${item.vol_atr_grade}`);
     const sentiment = sentimentByCode.get(item.code);
     if (sentiment) details.push(`뉴스 ${sentiment}`);
+    const fundamentalWarnings = fundMap.get(item.code)
+      ? getFundamentalWarningTags(fundMap.get(item.code)!).slice(0, 2)
+      : [];
+    if (fundamentalWarnings.length) {
+      details.push(`재무 ${fundamentalWarnings.join(", ")}`);
+    }
 
     return (
       `${idx + 1}. ${grade} <b>${esc(item.stock?.name || item.code)}</b> <code>${price.toLocaleString("ko-KR")}원</code>${chg}\n` +

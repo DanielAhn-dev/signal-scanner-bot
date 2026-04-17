@@ -40,10 +40,18 @@ type AuditEntry = {
   critical: string[];
 };
 
-function resolveReportPath(): string {
+function resolveLatestReportPath(): string {
   const fromEnv = process.env.AUDIT_OUTPUT_PATH?.trim();
   if (fromEnv) return path.resolve(fromEnv);
   return path.resolve(__dirname, "fundamental_audit_latest.json");
+}
+
+function resolveHistoryReportPath(generatedAt: Date): string {
+  const historyDir = process.env.AUDIT_HISTORY_DIR?.trim()
+    ? path.resolve(process.env.AUDIT_HISTORY_DIR)
+    : path.resolve(__dirname, "audit-history");
+  const stamp = `${generatedAt.getFullYear()}${String(generatedAt.getMonth() + 1).padStart(2, "0")}${String(generatedAt.getDate()).padStart(2, "0")}_${String(generatedAt.getHours()).padStart(2, "0")}${String(generatedAt.getMinutes()).padStart(2, "0")}${String(generatedAt.getSeconds()).padStart(2, "0")}`;
+  return path.join(historyDir, `fundamental_audit_${stamp}.json`);
 }
 
 function collectIssues(snapshot: Awaited<ReturnType<typeof getFundamentalSnapshot>>): {
@@ -137,23 +145,27 @@ function collectIssues(snapshot: Awaited<ReturnType<typeof getFundamentalSnapsho
     console.log(JSON.stringify(entry, null, 2));
   }
 
-  const reportPath = resolveReportPath();
-  fs.writeFileSync(
-    reportPath,
-    JSON.stringify(
-      {
-        generatedAt: new Date().toISOString(),
-        codeCount: codes.length,
-        warningCount: warnings.length,
-        criticalCount: criticalIssues.length,
-        entries,
-      },
-      null,
-      2
-    ),
-    "utf8"
+  const generatedAt = new Date();
+  const latestReportPath = resolveLatestReportPath();
+  const historyReportPath = resolveHistoryReportPath(generatedAt);
+  const report = JSON.stringify(
+    {
+      generatedAt: generatedAt.toISOString(),
+      codeCount: codes.length,
+      warningCount: warnings.length,
+      criticalCount: criticalIssues.length,
+      entries,
+    },
+    null,
+    2
   );
-  console.log(`audit report saved to ${reportPath}`);
+
+  fs.mkdirSync(path.dirname(latestReportPath), { recursive: true });
+  fs.mkdirSync(path.dirname(historyReportPath), { recursive: true });
+  fs.writeFileSync(latestReportPath, report, "utf8");
+  fs.writeFileSync(historyReportPath, report, "utf8");
+  console.log(`audit report saved to ${latestReportPath}`);
+  console.log(`audit history saved to ${historyReportPath}`);
 
   if (warnings.length) {
     console.log(`audit completed with ${warnings.length} warning entries`);

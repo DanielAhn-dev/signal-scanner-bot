@@ -4,6 +4,11 @@ import { fetchAllMarketData, type MarketOverview } from "../utils/fetchMarketDat
 import { buildInvestmentPlan } from "../lib/investPlan";
 import { pickSaferCandidates, type RiskProfile } from "../lib/investableUniverse";
 import {
+  getFundamentalSnapshot,
+  getFundamentalWarningTags,
+  type FundamentalSnapshot,
+} from "./fundamentalService";
+import {
   fetchWatchMicroSignalsByCodes,
   type WatchMicroSignal,
 } from "../lib/watchlistSignals";
@@ -189,6 +194,27 @@ export async function createBriefingReport(
     riskProfile
   );
 
+  const briefingFundamentalCandidates = [
+    ...topSectors.flatMap((sector) => {
+      const stocksOfSector =
+        sectorStocks?.filter((s) => s.sector_id === sector.id) ?? [];
+      return pickTopStocksForSector(stocksOfSector, scoresByCode, 5, riskProfile);
+    }),
+    ...bottomCandidates,
+  ];
+  const briefingFundamentalCodes = [...new Set(briefingFundamentalCandidates.map((item) => item.code))];
+  const briefingFundamentals = await Promise.all(
+    briefingFundamentalCodes.map(async (code) => ({
+      code,
+      fundamental: await getFundamentalSnapshot(code).catch(() => null),
+    }))
+  );
+  const fundamentalByCode = new Map<string, FundamentalSnapshot>(
+    briefingFundamentals
+      .filter((item) => item.fundamental)
+      .map((item) => [item.code, item.fundamental as FundamentalSnapshot])
+  );
+
   // 6. 실시간 가격 일괄 조회
   const allCodes = (sectorStocks ?? []).map((s) => s.code);
   const bottomCodes = bottomCandidates.map((s) => s.code);
@@ -205,10 +231,21 @@ export async function createBriefingReport(
     const stocksOfSector =
       sectorStocks?.filter((s) => s.sector_id === sector.id) ?? [];
 
-    const picked = pickTopStocksForSector(stocksOfSector, scoresByCode, 3, riskProfile);
+    const picked = rerankBriefingCandidates(
+      pickTopStocksForSector(stocksOfSector, scoresByCode, 5, riskProfile),
+      fundamentalByCode,
+      3
+    );
     const momentum5d = sectorMomentumMap.get(sector.id) ?? null;
 
-    return formatSectorSection(sector, picked, scoresByCode, realtimeMap, momentum5d);
+    return formatSectorSection(
+      sector,
+      picked,
+      scoresByCode,
+      realtimeMap,
+      momentum5d,
+      fundamentalByCode
+    );
   });
 
   const watchlistMicro = await fetchWatchMicroSignalsByCodes(supabase, watchlistCodes);
@@ -255,7 +292,11 @@ export async function createBriefingReport(
   );
 
   // 9. 빈집털이 섹션 텍스트 조립
-  const bottomSectionText = formatBottomSection(bottomCandidates, realtimeMap);
+  const bottomSectionText = formatBottomSection(
+    rerankBriefingCandidates(bottomCandidates, fundamentalByCode, 5),
+    realtimeMap,
+    fundamentalByCode
+  );
 
   // 10. 최종 메시지 합치기
   // 장전 브리핑: 오늘(발송일) 날짜, 마감 브리핑: 오늘 날짜
@@ -527,6 +568,26 @@ function pickTopStocksForSector(
   return pickSaferCandidates(scored, limit, riskProfile);
 }
 
+function rerankBriefingCandidates(
+  stocks: Array<{ code: string; total_score?: number | null }>,
+  fundamentals: Map<string, FundamentalSnapshot>,
+  limit: number
+) {
+  return [...stocks]
+    .sort((a, b) => {
+      const fa = fundamentals.get(a.code);
+      const fb = fundamentals.get(b.code);
+      const qa = fa?.qualityScore ?? 50;
+      const qb = fb?.qualityScore ?? 50;
+      const wa = getFundamentalWarningTags(fa ?? {}).length;
+      const wb = getFundamentalWarningTags(fb ?? {}).length;
+      const sa = Number(a.total_score ?? 0) + qa * 0.35 - wa * 8;
+      const sb = Number(b.total_score ?? 0) + qb * 0.35 - wb * 8;
+      return sb - sa;
+    })
+    .slice(0, limit);
+}
+
 // ===== 포맷팅 =====
 
 function formatSectorSection(
@@ -534,7 +595,8 @@ function formatSectorSection(
   stocks: any[],
   scoresByCode: Map<string, ScoreRow>,
   realtimeMap: Record<string, any>,
-  momentum5d?: number | null
+  momentum5d?: number | null,
+  fundamentalByCode?: Map<string, FundamentalSnapshot>
 ) {
   const metrics = (sector.metrics ?? {}) as Json;
 
@@ -583,6 +645,9 @@ function formatSectorSection(
       factors: { rsi14: stock.rsi14 ?? undefined },
       technicalScore: total ?? undefined,
     });
+    const fundamentalWarnings = fundamentalByCode?.get(stock.code)
+      ? getFundamentalWarningTags(fundamentalByCode.get(stock.code)!).slice(0, 2)
+      : [];
 
     lines.push(
       `  <b>${stock.name}</b> <code>${priceStr}원</code>${changeStr}`
@@ -591,12 +656,19 @@ function formatSectorSection(
     lines.push(
       `     ${plan.statusLabel} · 진입 ${fmtInt(plan.entryLow)}~${fmtInt(plan.entryHigh)} · 1차 ${fmtPct(plan.target1Pct * 100)}`
     );
+    if (fundamentalWarnings.length) {
+      lines.push(`     재무 ${fundamentalWarnings.join(", ")}`);
+    }
   });
 
   return lines.join("\n");
 }
 
-function formatBottomSection(candidates: any[], realtimeMap: Record<string, any>) {
+function formatBottomSection(
+  candidates: any[],
+  realtimeMap: Record<string, any>,
+  fundamentalByCode?: Map<string, FundamentalSnapshot>
+) {
   if (!candidates || candidates.length === 0) {
     return "  <i>감지된 종목이 없습니다.</i>\n";
   }
@@ -613,9 +685,15 @@ function formatBottomSection(candidates: any[], realtimeMap: Record<string, any>
           factors: { rsi14: s.rsi14 ?? undefined },
           technicalScore: s.total_score ?? s.momentum_score ?? undefined,
         });
+        const fundamentalWarnings = fundamentalByCode?.get(s.code)
+          ? getFundamentalWarningTags(fundamentalByCode.get(s.code)!).slice(0, 2)
+          : [];
 
         let line = `  ▸ <b>${s.name}</b> <code>${priceStr}원</code>${changeStr}`;
         line += `\n     ${plan.statusLabel} · 진입 ${fmtInt(plan.entryLow)}~${fmtInt(plan.entryHigh)} · 1차 ${fmtPct(plan.target1Pct * 100)}`;
+        if (fundamentalWarnings.length) {
+          line += `\n     재무 ${fundamentalWarnings.join(", ")}`;
+        }
         return line;
       })
       .join("\n") + "\n"
