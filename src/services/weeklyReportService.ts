@@ -259,6 +259,10 @@ function fmtKorMoney(v: number): string {
   return `${sign}${Math.abs(eok).toLocaleString("ko-KR")}억`;
 }
 
+const FIFO_REALIZED_LABEL = "실현손익(FIFO)";
+const FIFO_WIN_RATE_LABEL = "승률(FIFO)";
+const FIFO_TRADE_NOTE = "매도 손익은 FIFO 기준";
+
 function parseReportTopic(raw?: string | null): ReportTopicMeta {
   const token = String(raw ?? "").trim().toLowerCase();
 
@@ -397,7 +401,7 @@ function buildTopicHeroSummary(input: {
       const highlight = best && worst && best.code !== worst.code
         ? `상단 점검 ${best.name} ${fmtPct(best.pnlPct ?? 0)}, 하단 점검 ${worst.name} ${fmtPct(worst.pnlPct ?? 0)}`
         : `평가손익 ${fmtSignedInt(totalUnrealized)} (${fmtPct(totalUnrealizedPct)})`;
-      return `보유 ${watchItems.length}종목 기준 ${highlight} 흐름입니다. 최근 2주 거래는 ${curr.tradeCount}건입니다.`;
+      return `보유 ${watchItems.length}종목 기준 ${highlight} 흐름입니다. 최근 2주 거래는 ${curr.tradeCount}건이며 매도 손익은 FIFO 기준입니다.`;
     }
   }
 
@@ -474,8 +478,8 @@ function buildTopicClosingSummary(input: {
   }
 
   return curr.realizedPnl >= prev.realizedPnl
-    ? "최근 실현손익 흐름이 이전 구간보다 개선됐습니다. 주도 섹터와 현재 보유 포지션을 함께 관리하는 현재 전략을 유지할 만합니다."
-    : "최근 실현손익 흐름이 둔화됐습니다. 보유 종목 점검과 함께 진입 빈도를 한 단계 낮춰 리듬을 조절하는 편이 낫습니다.";
+    ? "최근 실현손익(FIFO) 흐름이 이전 구간보다 개선됐습니다. 주도 섹터와 현재 보유 포지션을 함께 관리하는 현재 전략을 유지할 만합니다."
+    : "최근 실현손익(FIFO) 흐름이 둔화됐습니다. 보유 종목 점검과 함께 진입 빈도를 한 단계 낮춰 리듬을 조절하는 편이 낫습니다.";
 }
 
 function buildCoverHeadline(input: {
@@ -544,13 +548,13 @@ function buildReportCaption(input: {
     return [
       `${title} — ${krDate}`,
       `최근 거래 ${curr.tradeCount}건 · 보유평가 ${fmtSignedInt(totalUnrealized)} (${fmtPct(totalUnrealizedPct)})`,
-      "보유 종목 점검용으로 바로 활용할 수 있습니다.",
+      `${FIFO_TRADE_NOTE} · 보유 종목 점검용으로 바로 활용할 수 있습니다.`,
     ].join("\n");
   }
 
   return [
     `${title} — ${krDate}`,
-    `거래 ${curr.tradeCount}건 · 실현손익 ${fmtSignedInt(curr.realizedPnl)} · 보유평가 ${fmtSignedInt(totalUnrealized)}`,
+    `거래 ${curr.tradeCount}건 · ${FIFO_REALIZED_LABEL} ${fmtSignedInt(curr.realizedPnl)} · 보유평가 ${fmtSignedInt(totalUnrealized)}`,
     "다운로드 후 인쇄해서 사용하세요.",
   ].join("\n");
 }
@@ -594,14 +598,14 @@ function buildReportSummaryText(input: {
   if (topic === "watchlist") {
     return [
       `${title} (${ymd})`,
-      `거래 ${curr.tradeCount}건 / 실현손익 ${fmtSignedInt(curr.realizedPnl)} / 승률 ${curr.winRate.toFixed(1)}%`,
+      `거래 ${curr.tradeCount}건 / ${FIFO_REALIZED_LABEL} ${fmtSignedInt(curr.realizedPnl)} / ${FIFO_WIN_RATE_LABEL} ${curr.winRate.toFixed(1)}%`,
       `보유평가 ${fmtSignedInt(totalUnrealized)} (${fmtPct(totalUnrealizedPct)})`,
     ].join("\n");
   }
 
   return [
     `${title} (${ymd})`,
-    `거래 ${curr.tradeCount}건 / 실현손익 ${fmtSignedInt(curr.realizedPnl)} / 승률 ${curr.winRate.toFixed(1)}%`,
+    `거래 ${curr.tradeCount}건 / ${FIFO_REALIZED_LABEL} ${fmtSignedInt(curr.realizedPnl)} / ${FIFO_WIN_RATE_LABEL} ${curr.winRate.toFixed(1)}%`,
     `보유평가 ${fmtSignedInt(totalUnrealized)} (${fmtPct(totalUnrealizedPct)})`,
   ].join("\n");
 }
@@ -1284,16 +1288,16 @@ function drawPortfolioSection(
     { label: "평가손익", value: fmtSignedInt(totalUnrealized), sub: fmtPct(totalUnrealizedPct), valueColor: pnlColor(totalUnrealized) },
     { label: "보유 종목수", value: `${watchItems.length}개`, valueColor: C.text },
     { label: "거래 (최근 2주)", value: `${curr.tradeCount}건`, sub: `매수 ${curr.buyCount} / 매도 ${curr.sellCount}`, valueColor: C.text },
-    { label: "실현손익 (2주)", value: fmtSignedInt(curr.realizedPnl), valueColor: pnlColor(curr.realizedPnl) },
-    { label: "승률 (2주)", value: `${curr.winRate.toFixed(1)}%`, sub: curr.sellCount > 0 ? `${curr.sellCount}건 매도 기준` : "매도 없음", valueColor: curr.winRate >= 50 ? C.up : C.down },
-    { label: "이전 2주 대비", value: fmtSignedInt(curr.realizedPnl - prev.realizedPnl), sub: "실현손익 증감", valueColor: pnlColor(curr.realizedPnl - prev.realizedPnl) },
+    { label: `${FIFO_REALIZED_LABEL} (2주)`, value: fmtSignedInt(curr.realizedPnl), valueColor: pnlColor(curr.realizedPnl) },
+    { label: `${FIFO_WIN_RATE_LABEL} (2주)`, value: `${curr.winRate.toFixed(1)}%`, sub: curr.sellCount > 0 ? `${curr.sellCount}건 매도 기준` : "매도 없음", valueColor: curr.winRate >= 50 ? C.up : C.down },
+    { label: "이전 2주 대비", value: fmtSignedInt(curr.realizedPnl - prev.realizedPnl), sub: `${FIFO_REALIZED_LABEL} 증감`, valueColor: pnlColor(curr.realizedPnl - prev.realizedPnl) },
   ];
   drawKpiGrid(ctx, pfCards, 4);
 }
 
 function drawTradesSection(ctx: ReportContext, windows: ReturnType<typeof splitWindows>) {
   ctx.y -= 6;
-  drawSectionHeader(ctx, "매매 기록 및 성과 분석");
+  drawSectionHeader(ctx, "매매 기록 및 성과 분석", FIFO_TRADE_NOTE);
 
   if (windows.recent.length > 0) {
     drawTable(
@@ -1305,7 +1309,7 @@ function drawTradesSection(ctx: ReportContext, windows: ReturnType<typeof splitW
         { header: "수량", width: 50, align: "right" },
         { header: "단가 (원)", width: 88, align: "right" },
         { header: "금액 (원)", width: 88, align: "right" },
-        { header: "실현손익", width: 117, align: "right" },
+        { header: FIFO_REALIZED_LABEL, width: 117, align: "right" },
       ],
       windows.recent.map((r) => {
         const qty = Math.max(0, Math.floor(toNum(r.quantity)));
@@ -1405,9 +1409,9 @@ function drawCommentarySection(
 
   const winNote =
     curr.winRate >= prev.winRate
-      ? `승률이 ${prev.winRate.toFixed(1)}%→${curr.winRate.toFixed(1)}%로 개선되었습니다. 매도 타이밍이 양호했습니다.`
-      : `승률이 ${prev.winRate.toFixed(1)}%→${curr.winRate.toFixed(1)}%로 하락했습니다. 손절 기준 재점검을 권고합니다.`;
-  drawCommentBlock(ctx, "승률 분석", winNote, curr.winRate >= prev.winRate ? C.up : C.down, font);
+      ? `${FIFO_WIN_RATE_LABEL}이 ${prev.winRate.toFixed(1)}%→${curr.winRate.toFixed(1)}%로 개선되었습니다. 매도 타이밍이 양호했습니다.`
+      : `${FIFO_WIN_RATE_LABEL}이 ${prev.winRate.toFixed(1)}%→${curr.winRate.toFixed(1)}%로 하락했습니다. 손절 기준 재점검을 권고합니다.`;
+  drawCommentBlock(ctx, `${FIFO_WIN_RATE_LABEL} 분석`, winNote, curr.winRate >= prev.winRate ? C.up : C.down, font);
 
   const pfNote =
     totalUnrealized >= 0
