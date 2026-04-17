@@ -3,6 +3,7 @@ import type { ChatContext } from "../router";
 import { searchByNameOrCode } from "../../search/normalize";
 import { fetchRealtimeStockData } from "../../utils/fetchRealtimePrice";
 import { esc, fmtInt, LINE } from "../messages/format";
+import { formatEokAmount, formatFundamentalInline } from "../messages/fundamental";
 import { getFundamentalSnapshot } from "../../services/fundamentalService";
 import { actionButtons, ACTIONS } from "../messages/layout";
 
@@ -25,6 +26,8 @@ function interpretFinance(input: {
       notes.push("ROE 대비 PBR 조합이 양호해 수익성-밸류 균형이 좋음");
     } else if (input.roe < 8 && input.pbr > 1.5) {
       notes.push("ROE가 낮은데 PBR은 높은 편이라 밸류 부담 주의");
+    } else if (input.roe < 10) {
+      notes.push("ROE는 높지 않지만 PBR 부담은 크지 않은 편");
     }
   } else if (input.roe !== undefined) {
     if (input.roe >= 12) notes.push("ROE가 양호해 자본효율이 좋은 편");
@@ -42,7 +45,6 @@ function interpretFinance(input: {
 
   return `${notes.join(" · ")}\n재무지표는 업종 평균과 함께 비교하는 것이 정확합니다.`;
 }
-
 
 export async function handleFinanceCommand(
   input: string,
@@ -111,14 +113,20 @@ export async function handleFinanceCommand(
   msg += `부채비율 <code>${
     fin.debtRatio !== undefined ? `${fin.debtRatio.toFixed(2)}%` : "-"
   }</code>\n\n`;
-  msg += `재무건강도 <code>${fin.qualityScore}점</code>\n\n`;
+  msg += `${formatFundamentalInline({
+    qualityScore: fin.qualityScore,
+    per,
+    pbr,
+    roe: fin.roe,
+    debtRatio: fin.debtRatio,
+  }, { includeDebtRatio: true, htmlCodeForScore: true })}\n\n`;
 
-  msg += `<b>실적(최근 기준)</b>\n`;
-  msg += `매출 <code>${fin.sales !== undefined ? `${fmtInt(fin.sales)}원` : "-"}</code>\n`;
-  msg += `영업이익 <code>${fin.opIncome !== undefined ? `${fmtInt(fin.opIncome)}원` : "-"}</code>\n`;
-  msg += `당기순이익 <code>${fin.netIncome !== undefined ? `${fmtInt(fin.netIncome)}원` : "-"}</code>\n`;
+  msg += `<b>실적(최근 연간 기준)</b>\n`;
+  msg += `매출 <code>${formatEokAmount(fin.sales)}</code>\n`;
+  msg += `영업이익 <code>${formatEokAmount(fin.opIncome)}</code>\n`;
+  msg += `당기순이익 <code>${formatEokAmount(fin.netIncome)}</code>\n`;
   msg += `\n`; 
-  msg += `<b>성장률(직전 대비)</b>\n`;
+  msg += `<b>성장률(전년 대비)</b>\n`;
   msg += `매출 <code>${
     fin.salesGrowthPct !== undefined ? `${fin.salesGrowthPct.toFixed(2)}%` : "-"
   }</code> · `;

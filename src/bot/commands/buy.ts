@@ -3,6 +3,7 @@ import { createClient } from "@supabase/supabase-js";
 import { searchByNameOrCode } from "../../search/normalize";
 import { KO_MESSAGES } from "../messages/ko";
 import { esc, fmtInt, fmtPct, LINE } from "../messages/format";
+import { formatFundamentalInline } from "../messages/fundamental";
 import { getUserInvestmentPrefs } from "../../services/userService";
 import { getFundamentalSnapshot } from "../../services/fundamentalService";
 import { actionButtons, ACTIONS } from "../messages/layout";
@@ -94,13 +95,7 @@ function buildMessage(
         "",
         LINE,
         "<b>재무 요약</b>",
-        `  ${fundamental.qualityScore}점 · PER ${
-          fundamental.per !== undefined ? fundamental.per.toFixed(2) : "-"
-        } · PBR ${
-          fundamental.pbr !== undefined ? fundamental.pbr.toFixed(2) : "-"
-        } · ROE ${
-          fundamental.roe !== undefined ? `${fundamental.roe.toFixed(2)}%` : "-"
-        }`,
+        `  ${formatFundamentalInline(fundamental)}`,
         fundamental.commentary ? `  ${esc(fundamental.commentary)}` : "",
       ].join("\n")
     : "";

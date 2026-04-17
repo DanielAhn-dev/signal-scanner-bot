@@ -1,11 +1,25 @@
 import * as cheerio from "cheerio";
 import { fetchRealtimeStockData } from "../utils/fetchRealtimePrice";
+import {
+  clamp,
+  extractMetricValue,
+  findFirstNumberInText,
+  findLatestActualAnnualValue,
+  growthPctFromRow,
+  parseNum,
+} from "./fundamentalParser";
 
 const UA =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36";
 
 type FetchLikeResponse = {
   text(): Promise<string>;
+};
+
+type NaverFinanceData = {
+  rows: Record<string, string[]>;
+  currentPer?: number;
+  currentPbr?: number;
 };
 
 export type FundamentalSnapshot = {
@@ -23,45 +37,31 @@ export type FundamentalSnapshot = {
   commentary: string;
 };
 
-function parseNum(text: string): number | undefined {
-  const t = (text || "").replace(/,/g, "").trim();
-  if (!t || t === "-" || t === "N/A") return undefined;
-  const n = Number(t);
-  return Number.isFinite(n) ? n : undefined;
-}
+function extractCurrentValuationMetric(
+  $: cheerio.CheerioAPI,
+  labelPattern: RegExp,
+  unit: string
+): number | undefined {
+  let found: number | undefined;
 
-function findLatestValue(row: string[]): number | undefined {
-  for (const cell of row) {
-    const v = parseNum(cell);
-    if (v !== undefined) return v;
-  }
-  return undefined;
-}
+  $("table tr").each((_, tr) => {
+    if (found !== undefined) return;
 
-function takeNumbers(row: string[]): number[] {
-  return (row || [])
-    .map((x) => parseNum(x))
-    .filter((x): x is number => x !== undefined);
-}
+    const cells = $(tr)
+      .find("th, td")
+      .map((__, cell) => $(cell).text().replace(/\s+/g, " ").trim())
+      .get();
 
-function growthPctFromRow(row: string[]): number | undefined {
-  const nums = takeNumbers(row);
-  if (nums.length < 2) return undefined;
+    if (!cells.length) return;
 
-  const latest = nums[0];
-  const prev = nums[1];
-  if (!Number.isFinite(prev) || prev === 0) return undefined;
-  return ((latest - prev) / Math.abs(prev)) * 100;
-}
+    const label = (cells[0] || "").replace(/\s+/g, "");
+    if (!labelPattern.test(label)) return;
 
-function findFirstNumberInText(text: string): number | undefined {
-  const m = (text || "").match(/-?\d+(?:,\d{3})*(?:\.\d+)?/);
-  if (!m) return undefined;
-  return parseNum(m[0]);
-}
+    const value = extractMetricValue(cells.slice(1).join(" "), unit);
+    if (value !== undefined) found = value;
+  });
 
-function clamp(n: number, lo: number, hi: number): number {
-  return Math.min(hi, Math.max(lo, n));
+  return found;
 }
 
 export function evaluateFundamentalQuality(input: {
@@ -154,7 +154,7 @@ export function evaluateFundamentalQuality(input: {
   return { score: final, commentary };
 }
 
-async function fetchNaverFinanceRows(code: string): Promise<Record<string, string[]>> {
+async function fetchNaverFinanceRows(code: string): Promise<NaverFinanceData> {
   try {
     const url = `https://finance.naver.com/item/main.naver?code=${code}`;
     const res = (await fetch(url, {
@@ -178,7 +178,7 @@ async function fetchNaverFinanceRows(code: string): Promise<Record<string, strin
           .find("td")
           .each((__: any, td: any) => {
             const txt = $(td).text().replace(/\s+/g, "").trim();
-            if (txt) vals.push(txt);
+            vals.push(txt);
           });
 
         if (vals.length) rows.set(key, vals);
@@ -193,6 +193,9 @@ async function fetchNaverFinanceRows(code: string): Promise<Record<string, strin
         parseTableRows($(table));
       });
     }
+
+    const currentPer = extractCurrentValuationMetric($, /^PERlEPS/i, "배");
+    const currentPbr = extractCurrentValuationMetric($, /^PBRlBPS/i, "배");
 
     // 상세 텍스트(투자지표 요약)를 여러 위치에서 시도해 추출
     const detailText =
@@ -232,8 +235,8 @@ async function fetchNaverFinanceRows(code: string): Promise<Record<string, strin
     );
 
     // 우선순위: 표(table) > blind text > 전체 HTML
-    const perFallback = perFromTable ?? perFromBlind ?? perFromHtml;
-    const pbrFallback = pbrFromTable ?? pbrFromBlind ?? pbrFromHtml;
+    const perFallback = currentPer ?? perFromTable ?? perFromBlind ?? perFromHtml;
+    const pbrFallback = currentPbr ?? pbrFromTable ?? pbrFromBlind ?? pbrFromHtml;
 
     if (perFromTable !== undefined) console.info(`fundamental: PER from table (${code}) -> ${perFromTable}`);
     if (pbrFromTable !== undefined) console.info(`fundamental: PBR from table (${code}) -> ${pbrFromTable}`);
@@ -252,34 +255,40 @@ async function fetchNaverFinanceRows(code: string): Promise<Record<string, strin
       }
     }
 
-    return out;
+    return {
+      rows: out,
+      currentPer,
+      currentPbr,
+    };
   } catch (e) {
     console.error(`fetchNaverFinanceRows failed (${code}):`, e);
-    return {};
+    return { rows: {} };
   }
 }
 
 export async function getFundamentalSnapshot(code: string): Promise<FundamentalSnapshot> {
-  const [rt, rows] = await Promise.all([
+  const [rt, financeData] = await Promise.all([
     fetchRealtimeStockData(code),
     fetchNaverFinanceRows(code),
   ]);
 
-  const sales = findLatestValue(rows["매출액"] || []);
-  const opIncome = findLatestValue(rows["영업이익"] || []);
-  const netIncome = findLatestValue(rows["당기순이익"] || []);
+  const { rows, currentPer, currentPbr } = financeData;
+
+  const sales = findLatestActualAnnualValue(rows["매출액"] || []);
+  const opIncome = findLatestActualAnnualValue(rows["영업이익"] || []);
+  const netIncome = findLatestActualAnnualValue(rows["당기순이익"] || []);
   const salesGrowthPct = growthPctFromRow(rows["매출액"] || []);
   const opIncomeGrowthPct = growthPctFromRow(rows["영업이익"] || []);
   const netIncomeGrowthPct = growthPctFromRow(rows["당기순이익"] || []);
-  const debtRatio = findLatestValue(
+  const debtRatio = findLatestActualAnnualValue(
     rows["부채비율"] || rows["부채비율(%)"] || rows["부채비율연결"] || []
   );
-  const roe = findLatestValue(
+  const roe = findLatestActualAnnualValue(
     rows["ROE(지배주주)"] || rows["ROE"] || rows["ROE(%)"] || []
   );
 
-  const perRaw = rt?.per ?? parseNum((rows.__PER_FALLBACK__ || [])[0] || "");
-  const pbrRaw = rt?.pbr ?? parseNum((rows.__PBR_FALLBACK__ || [])[0] || "");
+  const perRaw = rt?.per ?? currentPer ?? parseNum((rows.__PER_FALLBACK__ || [])[0] || "");
+  const pbrRaw = rt?.pbr ?? currentPbr ?? parseNum((rows.__PBR_FALLBACK__ || [])[0] || "");
 
   // Sanity checks: filter out clearly invalid parse results (e.g. very large integers or zero PBR)
   let per: number | undefined = perRaw;

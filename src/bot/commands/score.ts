@@ -6,6 +6,7 @@ import { searchByNameOrCode, getNamesForCodes } from "../../search/normalize";
 import type { StockOHLCV } from "../../data/types";
 import { KO_MESSAGES } from "../messages/ko";
 import { esc, fmtInt, fmtOne, fmtPct, LINE } from "../messages/format";
+import { formatFundamentalInline } from "../messages/fundamental";
 import { fetchRealtimeStockData } from "../../utils/fetchRealtimePrice";
 import { fetchAllMarketData } from "../../utils/fetchMarketData";
 import { getFundamentalSnapshot } from "../../services/fundamentalService";
@@ -103,17 +104,9 @@ function buildScoreMessage(
     ...plan.rationale.map((line) => `· ${line}`),
     ...(plan.warnings.length ? ["", `<b>주의</b>`, ...plan.warnings.map((line) => `· ${line}`)] : []),
     fundamental
-      ? `\n<b>재무 요약</b>\n${fundamental.qualityScore}점 · PER ${
-          fundamental.per !== undefined ? fundamental.per.toFixed(2) : "-"
-        } · PBR ${
-          fundamental.pbr !== undefined ? fundamental.pbr.toFixed(2) : "-"
-        } · ROE ${
-          fundamental.roe !== undefined ? `${fundamental.roe.toFixed(2)}%` : "-"
-        } · 부채 ${
-          fundamental.debtRatio !== undefined
-            ? `${fundamental.debtRatio.toFixed(2)}%`
-            : "-"
-        }`
+      ? `\n<b>재무 요약</b>\n${formatFundamentalInline(fundamental, {
+          includeDebtRatio: true,
+        })}`
       : "",
     fundamental?.commentary ? fundamental.commentary : "",
   ].join("\n");
