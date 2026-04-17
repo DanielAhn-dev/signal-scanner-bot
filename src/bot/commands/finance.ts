@@ -13,6 +13,9 @@ import { getFundamentalSnapshot } from "../../services/fundamentalService";
 import { actionButtons, ACTIONS } from "../messages/layout";
 
 function interpretFinance(input: {
+  sectorName?: string;
+  profileLabel?: string;
+  profileNote?: string;
   per?: number;
   pbr?: number;
   roe?: number;
@@ -46,10 +49,24 @@ function interpretFinance(input: {
   }
 
   if (!notes.length) {
-    return "핵심 재무지표가 충분히 확보되지 않아 중립 판단입니다. 분기 실적 발표와 추정치 변화를 함께 확인하세요.";
+    const base = "핵심 재무지표가 충분히 확보되지 않아 중립 판단입니다. 분기 실적 발표와 추정치 변화를 함께 확인하세요.";
+    return input.profileNote ? `${base}\n업종 기준: ${input.profileNote}` : base;
   }
 
-  return `${notes.join(" · ")}\n재무지표는 업종 평균과 함께 비교하는 것이 정확합니다.`;
+  const sectorLine = input.sectorName
+    ? `대상 업종: ${input.sectorName}${input.profileLabel ? ` (${input.profileLabel} 기준)` : ""}`
+    : input.profileLabel
+      ? `적용 기준: ${input.profileLabel}`
+      : "";
+
+  return [
+    notes.join(" · "),
+    sectorLine,
+    input.profileNote ? `업종 기준: ${input.profileNote}` : "",
+    "재무지표는 업종 평균과 함께 비교하는 것이 정확합니다.",
+  ]
+    .filter(Boolean)
+    .join("\n");
 }
 
 export async function handleFinanceCommand(
@@ -99,6 +116,9 @@ export async function handleFinanceCommand(
   const pbr = rt?.pbr ?? fin.pbr;
 
   const comment = interpretFinance({
+    sectorName: fin.sectorName,
+    profileLabel: fin.profileLabel,
+    profileNote: fin.profileNote,
     per,
     pbr,
     roe: fin.roe,
@@ -119,11 +139,18 @@ export async function handleFinanceCommand(
   msg += `부채비율 <code>${formatPctValue(fin.debtRatio)}</code>\n\n`;
   msg += `${formatFundamentalInline({
     qualityScore: fin.qualityScore,
+    profileLabel: fin.profileLabel,
     per,
     pbr,
     roe: fin.roe,
     debtRatio: fin.debtRatio,
   }, { includeDebtRatio: true, htmlCodeForScore: true })}\n\n`;
+  if (fin.sectorName) {
+    msg += `업종 <code>${esc(fin.sectorName)}</code>\n`;
+  }
+  if (fin.profileNote) {
+    msg += `<i>${esc(fin.profileNote)}</i>\n\n`;
+  }
 
   msg += `<b>실적(최근 연간 기준)</b>\n`;
   msg += `매출 <code>${formatEokAmount(fin.sales)}</code>\n`;
@@ -136,6 +163,16 @@ export async function handleFinanceCommand(
   msg += `영업이익 <code>${formatPctValue(fin.opIncomeGrowthPct)}</code> · `;
   msg += `순이익 <code>${formatPctValue(fin.netIncomeGrowthPct)}</code>\n`;
   msg += `<i>현재 PER/PBR은 최근 4분기 기준</i>\n`;
+  const growthHints = [
+    fin.salesGrowthLowBase ? "매출 성장률은 낮은 기저 영향 가능성" : "",
+    fin.opIncomeTurnaround ? "영업이익은 턴어라운드 구간" : "",
+    fin.opIncomeGrowthLowBase ? "영업이익 성장률은 낮은 기저 영향 가능성" : "",
+    fin.netIncomeTurnaround ? "순이익은 턴어라운드 구간" : "",
+    fin.netIncomeGrowthLowBase ? "순이익 성장률은 낮은 기저 영향 가능성" : "",
+  ].filter(Boolean);
+  if (growthHints.length) {
+    msg += `<i>${esc(growthHints.join(" · "))}</i>\n`;
+  }
 
   msg += `\n${LINE}\n<b>해석 코멘트</b>\n`;
   msg += `${esc(comment)}\n`;

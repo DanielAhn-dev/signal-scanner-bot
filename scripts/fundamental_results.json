@@ -1,87 +1,22 @@
 [
   {
-    "code": "035420",
+    "code": "000105",
     "snapshot": {
-      "per": 17.41,
-      "pbr": 1.17,
-      "roe": 7.36,
-      "debtRatio": 41.9,
-      "sales": 120350,
-      "opIncome": 22081,
-      "netIncome": 18187,
-      "salesGrowthPct": 12.08173072445682,
-      "opIncomeGrowthPct": 11.559642297782045,
-      "netIncomeGrowthPct": -5.864389233954451,
-      "qualityScore": 77,
-      "commentary": "PER 중립 구간 · PBR 밸류 매력 · 부채비율 안정 · 실적 개선 흐름"
-    }
-  },
-  {
-    "code": "005930",
-    "snapshot": {
-      "per": 32.98,
-      "pbr": 3.38,
-      "roe": 10.85,
-      "debtRatio": 29.94,
-      "sales": 3336059,
-      "opIncome": 436010,
-      "netIncome": 452068,
-      "salesGrowthPct": 10.880081789232525,
-      "opIncomeGrowthPct": 33.23045896229298,
-      "netIncomeGrowthPct": 31.21905060461984,
-      "qualityScore": 70,
-      "commentary": "PBR 고평가 구간 · 부채비율 안정 · 실적 성장세 강함"
-    }
-  },
-  {
-    "code": "000660",
-    "snapshot": {
-      "per": 19.25,
-      "pbr": 6.5,
-      "roe": 44.15,
-      "debtRatio": 45.95,
-      "sales": 971467,
-      "opIncome": 472063,
-      "netIncome": 429479,
-      "salesGrowthPct": 46.762799691810315,
-      "opIncomeGrowthPct": 101.15778125306277,
-      "netIncomeGrowthPct": 116.94255161161595,
-      "qualityScore": 85,
-      "commentary": "PER 중립 구간 · PBR은 높지만 ROE가 이를 일부 상쇄 · ROE 우수 · 부채비율 안정 · 실적 성장세 강함"
-    }
-  },
-  {
-    "code": "035720",
-    "snapshot": {
-      "per": 44.95,
-      "pbr": 1.95,
-      "roe": 4.59,
-      "debtRatio": 82.49,
-      "sales": 80991,
-      "opIncome": 7320,
-      "netIncome": 5180,
-      "salesGrowthPct": 2.9895727365208544,
-      "opIncomeGrowthPct": 47.789218655360386,
-      "netIncomeGrowthPct": 419.9505867819642,
-      "qualityScore": 45,
-      "commentary": "PER 고평가 부담 · ROE 낮음 · 실적 성장세 강함"
-    }
-  },
-  {
-    "code": "207940",
-    "snapshot": {
-      "per": 60.21,
-      "pbr": 9.94,
-      "roe": 19.44,
-      "debtRatio": 48.44,
-      "sales": 45570,
-      "opIncome": 20692,
-      "netIncome": 17844,
-      "salesGrowthPct": 30.307969460410057,
-      "opIncomeGrowthPct": 56.59149387013773,
-      "netIncomeGrowthPct": 64.71891442813626,
-      "qualityScore": 72,
-      "commentary": "PER 고평가 부담 · PBR은 높지만 ROE가 이를 일부 상쇄 · ROE 우수 · 부채비율 안정 · 실적 성장세 강함"
+      "sectorName": "제약",
+      "profileLabel": "성장주",
+      "profileNote": "인터넷·소프트웨어·콘텐츠·바이오 계열은 성장 기대를 반영해 PER/PBR 허용 폭을 더 넓게 봅니다.",
+      "per": 35.58,
+      "pbr": 2.75,
+      "roe": 8.81,
+      "debtRatio": 36.35,
+      "sales": 21866,
+      "opIncome": 1044,
+      "netIncome": 1853,
+      "salesGrowthPct": 5.74523648321888,
+      "opIncomeGrowthPct": 90.1639344262295,
+      "netIncomeGrowthPct": 235.68840579710147,
+      "qualityScore": 81,
+      "commentary": "부채비율 안정 · 실적 성장세 강함"
     }
   }
 ]

@@ -30,6 +30,8 @@ function buildMessage(
   plan: ReturnType<typeof buildInvestmentPlan>,
   fundamental?: {
     qualityScore: number;
+    profileLabel?: string;
+    profileNote?: string;
     per?: number;
     pbr?: number;
     roe?: number;
@@ -97,6 +99,7 @@ function buildMessage(
         "<b>재무 요약</b>",
         `  ${formatFundamentalInline(fundamental)}`,
         "  <i>현재 PER/PBR은 최근 4분기, 실적은 최근 연간 확정치 기준</i>",
+        ...(fundamental.profileNote ? [`  <i>${esc(fundamental.profileNote)}</i>`] : []),
         fundamental.commentary ? `  ${esc(fundamental.commentary)}` : "",
       ].join("\n")
     : "";
@@ -223,6 +226,8 @@ export async function handleBuyCommand(
     fundamental
       ? {
           qualityScore: fundamental.qualityScore,
+          profileLabel: fundamental.profileLabel,
+          profileNote: fundamental.profileNote,
           per: fundamental.per,
           pbr: fundamental.pbr,
           roe: fundamental.roe,

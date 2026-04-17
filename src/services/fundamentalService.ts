@@ -1,6 +1,8 @@
 import * as cheerio from "cheerio";
+import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { fetchRealtimeStockData } from "../utils/fetchRealtimePrice";
 import {
+  analyzeGrowthRow,
   clamp,
   extractMetricValue,
   findFirstNumberInText,
@@ -8,6 +10,11 @@ import {
   growthPctFromRow,
   parseNum,
 } from "./fundamentalParser";
+import {
+  normalizeSectorCategory,
+  normalizeSectorName,
+  resolveFundamentalProfile,
+} from "./fundamentalProfile";
 
 const UA =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36";
@@ -23,6 +30,10 @@ type NaverFinanceData = {
 };
 
 export type FundamentalSnapshot = {
+  sectorName?: string;
+  sectorCategory?: string;
+  profileLabel?: string;
+  profileNote?: string;
   per?: number;
   pbr?: number;
   roe?: number;
@@ -31,11 +42,79 @@ export type FundamentalSnapshot = {
   opIncome?: number;
   netIncome?: number;
   salesGrowthPct?: number;
+  salesGrowthLowBase?: boolean;
   opIncomeGrowthPct?: number;
+  opIncomeGrowthLowBase?: boolean;
+  opIncomeTurnaround?: boolean;
   netIncomeGrowthPct?: number;
+  netIncomeGrowthLowBase?: boolean;
+  netIncomeTurnaround?: boolean;
   qualityScore: number;
   commentary: string;
 };
+
+const sectorMetaCache = new Map<string, { name?: string; category?: string }>();
+let supabaseClient: SupabaseClient | null = null;
+
+function getOptionalSupabaseClient(): SupabaseClient | null {
+  if (supabaseClient) return supabaseClient;
+  const url = process.env.SUPABASE_URL;
+  const key = process.env.SUPABASE_ANON_KEY;
+  if (!url || !key) return null;
+  supabaseClient = createClient(url, key);
+  return supabaseClient;
+}
+
+async function fetchSectorMetaForCode(
+  code: string
+): Promise<{ name?: string; category?: string }> {
+  if (sectorMetaCache.has(code)) {
+    return sectorMetaCache.get(code) || {};
+  }
+
+  try {
+    const client = getOptionalSupabaseClient();
+    if (!client) {
+      sectorMetaCache.set(code, {});
+      return {};
+    }
+
+    const { data: stockRow } = await client
+      .from("stocks")
+      .select("sector_id")
+      .eq("code", code)
+      .limit(1)
+      .maybeSingle();
+
+    const sectorId = stockRow?.sector_id as string | null | undefined;
+    if (!sectorId) {
+      sectorMetaCache.set(code, {});
+      return {};
+    }
+
+    const { data: sectorRow } = await client
+      .from("sectors")
+      .select("name, category")
+      .eq("id", sectorId)
+      .limit(1)
+      .maybeSingle();
+
+    const meta = {
+      name: normalizeSectorName(
+      (sectorRow?.name as string | undefined) || undefined
+      ),
+      category: normalizeSectorCategory(
+        (sectorRow?.category as string | undefined) || undefined
+      ),
+    };
+    sectorMetaCache.set(code, meta);
+    return meta;
+  } catch (error) {
+    console.error(`fetchSectorMetaForCode failed (${code}):`, error);
+    sectorMetaCache.set(code, {});
+    return {};
+  }
+}
 
 function extractCurrentValuationMetric(
   $: cheerio.CheerioAPI,
@@ -65,14 +144,25 @@ function extractCurrentValuationMetric(
 }
 
 export function evaluateFundamentalQuality(input: {
+  sectorName?: string;
+  sectorCategory?: string;
   per?: number;
   pbr?: number;
   roe?: number;
   debtRatio?: number;
   salesGrowthPct?: number;
+  salesGrowthLowBase?: boolean;
   opIncomeGrowthPct?: number;
+  opIncomeGrowthLowBase?: boolean;
+  opIncomeTurnaround?: boolean;
   netIncomeGrowthPct?: number;
+  netIncomeGrowthLowBase?: boolean;
+  netIncomeTurnaround?: boolean;
 }): { score: number; commentary: string } {
+  const profile = resolveFundamentalProfile({
+    sectorName: input.sectorName,
+    sectorCategory: input.sectorCategory,
+  });
   let score = 50;
   const notes: string[] = [];
 
@@ -80,26 +170,26 @@ export function evaluateFundamentalQuality(input: {
     if (input.per < 0) {
       score -= 12;
       notes.push("적자 구간으로 PER 해석 제한");
-    } else if (input.per <= 12) {
+    } else if (input.per <= profile.per.attractiveMax) {
       score += 10;
       notes.push("PER 저평가 구간");
-    } else if (input.per <= 25) {
+    } else if (input.per <= profile.per.neutralMax) {
       score += 3;
       notes.push("PER 중립 구간");
-    } else if (input.per >= 35) {
+    } else if (input.per >= profile.per.expensiveMin) {
       score -= 10;
       notes.push("PER 고평가 부담");
     }
   }
 
   if (input.pbr !== undefined) {
-    if (input.pbr <= 1.2) {
+    if (input.pbr <= profile.pbr.attractiveMax) {
       score += 8;
       notes.push("PBR 밸류 매력");
-    } else if (input.pbr <= 2.0) {
+    } else if (input.pbr <= profile.pbr.neutralMax) {
       score += 3;
-    } else if (input.pbr >= 3.0) {
-      if ((input.roe ?? 0) >= 15) {
+    } else if (input.pbr >= profile.pbr.expensiveMin) {
+      if ((input.roe ?? 0) >= profile.roe.strongMin) {
         score -= 3;
         notes.push("PBR은 높지만 ROE가 이를 일부 상쇄");
       } else {
@@ -110,12 +200,12 @@ export function evaluateFundamentalQuality(input: {
   }
 
   if (input.roe !== undefined) {
-    if (input.roe >= 15) {
+    if (input.roe >= profile.roe.strongMin) {
       score += 15;
       notes.push("ROE 우수");
-    } else if (input.roe >= 10) {
+    } else if (input.roe >= profile.roe.solidMin) {
       score += 8;
-    } else if (input.roe < 5) {
+    } else if (input.roe < profile.roe.weakMax) {
       score -= 10;
       notes.push("ROE 낮음");
     }
@@ -134,16 +224,40 @@ export function evaluateFundamentalQuality(input: {
   }
 
   const growthSignals = [
-    input.salesGrowthPct,
-    input.opIncomeGrowthPct,
-    input.netIncomeGrowthPct,
-  ]
-    .filter((x): x is number => x !== undefined && Number.isFinite(x));
+    {
+      pct: input.salesGrowthPct,
+      lowBase: input.salesGrowthLowBase ?? false,
+      turnaround: false,
+      label: "매출",
+    },
+    {
+      pct: input.opIncomeGrowthPct,
+      lowBase: input.opIncomeGrowthLowBase ?? false,
+      turnaround: input.opIncomeTurnaround ?? false,
+      label: "영업이익",
+    },
+    {
+      pct: input.netIncomeGrowthPct,
+      lowBase: input.netIncomeGrowthLowBase ?? false,
+      turnaround: input.netIncomeTurnaround ?? false,
+      label: "순이익",
+    },
+  ].filter((item) => item.pct !== undefined || item.turnaround);
 
   if (growthSignals.length) {
-    const strongPositiveCount = growthSignals.filter((x) => x >= 15).length;
-    const positiveCount = growthSignals.filter((x) => x >= 5).length;
-    const negativeCount = growthSignals.filter((x) => x <= -10).length;
+    const strongPositiveCount = growthSignals.filter(
+      (item) => (item.pct ?? 0) >= 15 && !item.lowBase && !item.turnaround
+    ).length;
+    const positiveCount = growthSignals.filter(
+      (item) => (item.pct ?? 0) >= 5 && !item.lowBase && !item.turnaround
+    ).length;
+    const negativeCount = growthSignals.filter(
+      (item) => (item.pct ?? 0) <= -10 && !item.lowBase && !item.turnaround
+    ).length;
+    const turnaroundCount = growthSignals.filter((item) => item.turnaround).length;
+    const lowBaseCount = growthSignals.filter(
+      (item) => item.lowBase && Math.abs(item.pct ?? 0) >= 30
+    ).length;
 
     if (strongPositiveCount >= 2) {
       score += 10;
@@ -151,11 +265,18 @@ export function evaluateFundamentalQuality(input: {
     } else if (positiveCount >= 2) {
       score += 6;
       notes.push("실적 개선 흐름");
+    } else if (turnaroundCount >= 1) {
+      score += 3;
+      notes.push("이익 턴어라운드 조짐");
     } else if (negativeCount >= 2) {
       score -= 12;
       notes.push("실적 역성장 구간");
     } else if (positiveCount >= 1 && negativeCount >= 1) {
       notes.push("실적 흐름 혼조");
+    }
+
+    if (lowBaseCount >= 1) {
+      notes.push("일부 성장률은 낮은 기저 영향 가능성");
     }
   }
 
@@ -280,19 +401,28 @@ async function fetchNaverFinanceRows(code: string): Promise<NaverFinanceData> {
 }
 
 export async function getFundamentalSnapshot(code: string): Promise<FundamentalSnapshot> {
-  const [rt, financeData] = await Promise.all([
+  const [rt, financeData, sectorMeta] = await Promise.all([
     fetchRealtimeStockData(code),
     fetchNaverFinanceRows(code),
+    fetchSectorMetaForCode(code),
   ]);
+
+  const sectorName = sectorMeta.name;
+  const sectorCategory = sectorMeta.category;
+
+  const profile = resolveFundamentalProfile({ sectorName, sectorCategory });
 
   const { rows, currentPer, currentPbr } = financeData;
 
   const sales = findLatestActualAnnualValue(rows["매출액"] || []);
   const opIncome = findLatestActualAnnualValue(rows["영업이익"] || []);
   const netIncome = findLatestActualAnnualValue(rows["당기순이익"] || []);
-  const salesGrowthPct = growthPctFromRow(rows["매출액"] || []);
-  const opIncomeGrowthPct = growthPctFromRow(rows["영업이익"] || []);
-  const netIncomeGrowthPct = growthPctFromRow(rows["당기순이익"] || []);
+  const salesGrowth = analyzeGrowthRow(rows["매출액"] || [], { lowBaseFloor: 3000 });
+  const opIncomeGrowth = analyzeGrowthRow(rows["영업이익"] || [], { lowBaseFloor: 500 });
+  const netIncomeGrowth = analyzeGrowthRow(rows["당기순이익"] || [], { lowBaseFloor: 500 });
+  const salesGrowthPct = salesGrowth.pct ?? growthPctFromRow(rows["매출액"] || []);
+  const opIncomeGrowthPct = opIncomeGrowth.pct ?? growthPctFromRow(rows["영업이익"] || []);
+  const netIncomeGrowthPct = netIncomeGrowth.pct ?? growthPctFromRow(rows["당기순이익"] || []);
   const debtRatio = findLatestActualAnnualValue(
     rows["부채비율"] || rows["부채비율(%)"] || rows["부채비율연결"] || []
   );
@@ -316,16 +446,27 @@ export async function getFundamentalSnapshot(code: string): Promise<FundamentalS
   }
 
   const quality = evaluateFundamentalQuality({
+    sectorName,
+    sectorCategory,
     per,
     pbr,
     roe,
     debtRatio,
     salesGrowthPct,
+    salesGrowthLowBase: salesGrowth.lowBase,
     opIncomeGrowthPct,
+    opIncomeGrowthLowBase: opIncomeGrowth.lowBase,
+    opIncomeTurnaround: opIncomeGrowth.turnaround,
     netIncomeGrowthPct,
+    netIncomeGrowthLowBase: netIncomeGrowth.lowBase,
+    netIncomeTurnaround: netIncomeGrowth.turnaround,
   });
 
   return {
+    sectorName,
+    sectorCategory,
+    profileLabel: profile.label,
+    profileNote: profile.note,
     per,
     pbr,
     roe,
@@ -334,8 +475,13 @@ export async function getFundamentalSnapshot(code: string): Promise<FundamentalS
     opIncome,
     netIncome,
     salesGrowthPct,
+    salesGrowthLowBase: salesGrowth.lowBase,
     opIncomeGrowthPct,
+    opIncomeGrowthLowBase: opIncomeGrowth.lowBase,
+    opIncomeTurnaround: opIncomeGrowth.turnaround,
     netIncomeGrowthPct,
+    netIncomeGrowthLowBase: netIncomeGrowth.lowBase,
+    netIncomeTurnaround: netIncomeGrowth.turnaround,
     qualityScore: quality.score,
     commentary: quality.commentary,
   };

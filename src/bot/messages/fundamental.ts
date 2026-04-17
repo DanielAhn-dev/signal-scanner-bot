@@ -2,6 +2,7 @@ import { fmtInt } from "./format";
 
 export type FundamentalSummaryInput = {
   qualityScore: number;
+  profileLabel?: string;
   per?: number;
   pbr?: number;
   roe?: number;
@@ -37,6 +38,7 @@ export function formatFundamentalInline(
 
   const values = [
     scoreValue,
+    ...(input.profileLabel ? [`기준 ${input.profileLabel}`] : []),
     `PER ${formatPer(input.per)}`,
     `PBR ${input.pbr !== undefined ? input.pbr.toFixed(2) : "-"}`,
     `ROE ${formatPctValue(input.roe)}`,

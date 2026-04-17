@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import {
+  analyzeGrowthRow,
   findLatestActualAnnualValue,
   growthPctFromRow,
   takeActualAnnualNumbers,
@@ -10,6 +11,7 @@ import {
   formatPer,
 } from "../src/bot/messages/fundamental";
 import { evaluateFundamentalQuality } from "../src/services/fundamentalService";
+import { resolveFundamentalProfile } from "../src/services/fundamentalProfile";
 
 function approxEqual(actual: number | undefined, expected: number, tolerance = 0.001) {
   assert.notEqual(actual, undefined, "expected a numeric value");
@@ -56,6 +58,30 @@ assert.equal(
   "재무건강도(내부) 77점 · PER 17.45 · PBR 1.17 · ROE 7.36% · 부채 41.90%"
 );
 
+assert.equal(resolveFundamentalProfile({ sectorName: "인터넷서비스" }).key, "growth");
+assert.equal(resolveFundamentalProfile({ sectorName: "반도체와반도체장비" }).key, "semiconductor");
+assert.equal(resolveFundamentalProfile({ sectorName: "은행" }).key, "assetHeavy");
+assert.equal(resolveFundamentalProfile({ sectorCategory: "Health Care" }).key, "growth");
+
+const lowBaseGrowth = analyzeGrowthRow(["5530", "140", "5909", "0"], {
+  lowBaseFloor: 500,
+});
+assert.equal(lowBaseGrowth.lowBase, true);
+assert.equal(lowBaseGrowth.turnaround, false);
+
+const bankLikeQuality = evaluateFundamentalQuality({
+  sectorName: "은행",
+  per: 8.5,
+  pbr: 0.92,
+  roe: 9.2,
+  debtRatio: 30,
+  salesGrowthPct: 4,
+  opIncomeGrowthPct: 7,
+  netIncomeGrowthPct: 6,
+});
+
+assert.ok(bankLikeQuality.score >= 70, `expected bank-like quality score to be favorable, got ${bankLikeQuality.score}`);
+
 const deficitQuality = evaluateFundamentalQuality({
   per: -23.85,
   pbr: 2.44,
@@ -63,10 +89,13 @@ const deficitQuality = evaluateFundamentalQuality({
   debtRatio: 82.49,
   salesGrowthPct: 2.98,
   opIncomeGrowthPct: 47.78,
+  opIncomeGrowthLowBase: true,
   netIncomeGrowthPct: 419.95,
+  netIncomeGrowthLowBase: true,
 });
 
 assert.match(deficitQuality.commentary, /적자 구간으로 PER 해석 제한/);
+assert.match(deficitQuality.commentary, /낮은 기저 영향 가능성/);
 assert.ok(deficitQuality.score < 50, `expected deficit quality score to stay conservative, got ${deficitQuality.score}`);
 
 console.log("fundamental parser verification passed");

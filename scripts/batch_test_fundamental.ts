@@ -38,7 +38,7 @@ async function loadAllCodes(limit?: number) {
     try {
       console.log(`Fetching ${code}...`);
       const snapshot = await getFundamentalSnapshot(code);
-      console.log(`OK ${code}: PER=${snapshot.per ?? "-"} PBR=${snapshot.pbr ?? "-"} ROE=${snapshot.roe ?? "-"} Q=${snapshot.qualityScore}`);
+      console.log(`OK ${code}: sector=${snapshot.sectorName ?? "-"} profile=${snapshot.profileLabel ?? "-"} PER=${snapshot.per ?? "-"} PBR=${snapshot.pbr ?? "-"} ROE=${snapshot.roe ?? "-"} Q=${snapshot.qualityScore}`);
       results.push({ code, snapshot });
     } catch (e) {
       console.error(`Error ${code}:`, e);
