@@ -31,6 +31,7 @@ import {
   fetchLatestScoresByCodes,
   type ScoreSnapshotRow,
 } from "./scoreSourceService";
+import { PORTFOLIO_TABLES } from "../db/portfolioSchema";
 
 // JSONB용 느슨한 타입
 type Json = Record<string, any>;
@@ -384,7 +385,7 @@ export async function createBriefingReport(
         const utcStartIso = new Date(kstStartMs - kstOffsetMs).toISOString();
         const utcEndIso = new Date(kstStartMs - kstOffsetMs + dayMs).toISOString();
         const { data: tradeRows } = await supabase
-          .from("virtual_trades")
+          .from(PORTFOLIO_TABLES.trades)
           .select("pnl_amount")
           .eq("chat_id", options.chatId)
           .gte("traded_at", utcStartIso)
@@ -542,7 +543,7 @@ async function fetchWatchlistItems(
   chatId: number
 ) {
   const { data, error } = await supabase
-    .from("watchlist")
+    .from(PORTFOLIO_TABLES.positionsLegacy)
     .select(
       [
         "code",

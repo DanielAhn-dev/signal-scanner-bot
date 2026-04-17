@@ -1,4 +1,5 @@
 import { createClient } from "@supabase/supabase-js";
+import { PORTFOLIO_TABLES } from "../db/portfolioSchema";
 
 const supabase = createClient(
   process.env.SUPABASE_URL!,
@@ -99,7 +100,7 @@ function resolveAcquiredAt(input: {
 
 async function fetchOpenLots(chatId: number, code: string): Promise<LotRow[]> {
   const { data, error } = await supabase
-    .from("virtual_trade_lots")
+    .from(PORTFOLIO_TABLES.lots)
     .select("id, remaining_quantity, acquired_quantity, acquired_price, acquired_at")
     .eq("chat_id", chatId)
     .eq("code", code)
@@ -129,7 +130,7 @@ export async function ensureTradeLotsForHolding(
   if (quantity <= 0 || !unitCost) return [];
 
   const nowIso = new Date().toISOString();
-  const { error } = await supabase.from("virtual_trade_lots").insert({
+  const { error } = await supabase.from(PORTFOLIO_TABLES.lots).insert({
     chat_id: input.chatId,
     watchlist_id: input.watchlistId ?? null,
     code: input.code,
@@ -207,7 +208,7 @@ export async function applyFifoSale(input: {
     };
 
     const { error: updateError } = await supabase
-      .from("virtual_trade_lots")
+      .from(PORTFOLIO_TABLES.lots)
       .update(updatePayload)
       .eq("id", allocation.lotId)
       .eq("chat_id", input.chatId)
@@ -231,7 +232,7 @@ export async function applyFifoSale(input: {
   }));
 
   const { error: insertError } = await supabase
-    .from("virtual_trade_lot_matches")
+    .from(PORTFOLIO_TABLES.lotMatches)
     .insert(rows);
 
   if (insertError) throw insertError;
@@ -245,7 +246,7 @@ export async function replaceTradeLotsForHolding(
   const unitCost = resolveUnitCost(input);
 
   const { error: closeError } = await supabase
-    .from("virtual_trade_lots")
+    .from(PORTFOLIO_TABLES.lots)
     .update({
       remaining_quantity: 0,
       closed_at: nowIso,
@@ -260,7 +261,7 @@ export async function replaceTradeLotsForHolding(
   if (quantity <= 0 || !unitCost) return;
 
   const { error: insertError } = await supabase
-    .from("virtual_trade_lots")
+    .from(PORTFOLIO_TABLES.lots)
     .insert({
       chat_id: input.chatId,
       watchlist_id: input.watchlistId ?? null,

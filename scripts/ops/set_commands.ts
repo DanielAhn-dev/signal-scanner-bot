@@ -34,6 +34,7 @@ const commands = [
   { command: "papersell", description: "가상 매도" },
   { command: "holdingedit", description: "보유 단가·수량 수정" },
   { command: "autosellcheck", description: "자동 매도 점검" },
+  { command: "autocycle", description: "자동매매 1회 실행" },
   { command: "holdingplan", description: "보유 대응 플랜" },
   { command: "tradelog", description: "거래 기록" },
   { command: "flow", description: "외국인·기관 수급" },

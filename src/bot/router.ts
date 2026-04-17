@@ -26,6 +26,7 @@ import {
   handleEtfHubCommand,
   handleEtfInfoCommand,
 } from "./commands/etf";
+import { handleAutoCycleCommand } from "./commands/autoCycle";
 import {
   handleWatchlistCommand,
   handleWatchlistAdd,
@@ -77,6 +78,7 @@ const CMD = {
   RECORD:      /^\/(tradelog|거래기록)(?:\s+(.+))?$/i,
   ALERT:       /^\/(alert|이상징후|알림)$/i,
   WATCHLIST:   /^\/(holdings|보유)$/i,
+  AUTOCYCLE:   /^\/(autocycle|자동사이클)(?:\s+(.+))?$/i,
   RANKING:     /^\/(ranking|랭킹|순위)$/i,
   PROFILE:     /^\/(profile|프로필|내정보)$/i,
   FOLLOW:      /^\/(follow|팔로우)(?:\s+(.+))?$/i,
@@ -376,6 +378,12 @@ export async function routeMessage(
   // /holdings | /보유 — 가상 보유 포트폴리오
   if (CMD.WATCHLIST.test(t)) {
     await handleWatchlistCommand(ctx, tgSend);
+    return;
+  }
+
+  const mAutoCycle = t.match(CMD.AUTOCYCLE);
+  if (mAutoCycle) {
+    await handleAutoCycleCommand(mAutoCycle[2] ?? "", ctx, tgSend);
     return;
   }
 

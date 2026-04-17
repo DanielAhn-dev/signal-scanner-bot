@@ -25,6 +25,10 @@
         {
             "path": "/api/cron/report",
             "schedule": "35 23 * * 5"
+        },
+        {
+            "path": "/api/cron/virtualAutoTrade",
+            "schedule": "45 23 * * 0-4"
         }
     ]
 }
