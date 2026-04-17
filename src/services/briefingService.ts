@@ -106,13 +106,34 @@ function formatMissingMetricList(keys: string[] = []): string {
   return keys.join(", ");
 }
 
+function hashSeed(input: string): number {
+  let hash = 0;
+  for (let i = 0; i < input.length; i += 1) {
+    hash = (hash * 31 + input.charCodeAt(i)) | 0;
+  }
+  return Math.abs(hash);
+}
+
+function pickVariant(seed: string, options: string[]): string {
+  if (!options.length) return "";
+  return options[hashSeed(seed) % options.length];
+}
+
 function buildEtfBriefingAction(item: WatchlistViewItem): string {
   const premiumRate = item.etfSnapshot?.premiumRate;
   const premiumLabel = premiumRate == null
-    ? "괴리율 확인"
+    ? pickVariant(`${item.code}|etf|premium|none`, ["괴리율 확인", "괴리율 데이터 확인", "괴리율 공시 체크"])
     : Math.abs(premiumRate) >= 1
-      ? `괴리율 ${fmtPct(premiumRate)} 점검`
-      : `괴리율 ${fmtPct(premiumRate)} 안정권`;
+      ? pickVariant(`${item.code}|etf|premium|wide|${premiumRate.toFixed(2)}`, [
+          `괴리율 ${fmtPct(premiumRate)} 점검`,
+          `괴리율 ${fmtPct(premiumRate)}로 이격 확인`,
+          `괴리율 ${fmtPct(premiumRate)} 구간 점검`,
+        ])
+      : pickVariant(`${item.code}|etf|premium|stable|${premiumRate.toFixed(2)}`, [
+          `괴리율 ${fmtPct(premiumRate)} 안정권`,
+          `괴리율 ${fmtPct(premiumRate)}로 정상 범위`,
+          `괴리율 ${fmtPct(premiumRate)}로 과도한 이격 없음`,
+        ]);
   const payoutLabel = item.etfDistribution?.latestPayoutDate
     ? `실지급 ${item.etfDistribution.latestPayoutDate}`
     : item.etfDistribution?.nextExpectedDate
@@ -703,7 +724,11 @@ function formatSectorSection(
   // 섹터 하락 추세 경고 (-2% 이상 하락 시)
   if (momentum5d != null && momentum5d < -2) {
     lines.push(
-      `  ⚠️ <i>섹터 하락 추세 (5일 ${fmtPct(momentum5d)}) — 신규 진입 주의</i>`
+      `  ⚠️ <i>${pickVariant(`${sector.name}|sector|warning|${momentum5d.toFixed(2)}`, [
+        `섹터 하락 추세 (5일 ${fmtPct(momentum5d)}) — 신규 진입 주의`,
+        `단기 약세 지속 (5일 ${fmtPct(momentum5d)}) — 분할 접근 권장`,
+        `모멘텀 둔화 구간 (5일 ${fmtPct(momentum5d)}) — 추격 진입 자제`,
+      ])}</i>`
     );
   }
 
@@ -831,7 +856,11 @@ async function formatWatchlistSection(
     .sort((a, b) => Number(a.profitPct) - Number(b.profitPct))[0];
 
   const summaryLines = [
-    `  오늘 액션 ${actionable}건 · 눌림 대기 ${pullback}건 · 관망 ${wait}건`,
+    `  ${pickVariant(`${sortedItems.length}|watch|summary|${actionable}|${pullback}|${wait}`, [
+      `오늘 액션 ${actionable}건 · 눌림 대기 ${pullback}건 · 관망 ${wait}건`,
+      `당일 대응 ${actionable}건 · 눌림 체크 ${pullback}건 · 관망 ${wait}건`,
+      `오늘 우선순위 액션 ${actionable}건 · 대기 ${pullback}건 · 관망 ${wait}건`,
+    ])}`,
   ];
   const etfCount = sortedItems.filter((item) => item.market === "ETF").length;
   const stockCount = sortedItems.filter((item) => item.market !== "ETF").length;
@@ -858,7 +887,13 @@ async function formatWatchlistSection(
     summaryLines.push(`  상대적 강세: ${topGainer.name} ${fmtPct(topGainer.profitPct)}`);
   }
   if (topLoser && Number(topLoser.profitPct) <= -3) {
-    summaryLines.push(`  손절 재점검: ${topLoser.name} ${fmtPct(topLoser.profitPct)}`);
+    summaryLines.push(
+      `  ${pickVariant(`${topLoser.code}|watch|loser|${Number(topLoser.profitPct).toFixed(2)}`, [
+        `손절 재점검: ${topLoser.name} ${fmtPct(topLoser.profitPct)}`,
+        `리스크 우선 점검: ${topLoser.name} ${fmtPct(topLoser.profitPct)}`,
+        `방어 체크 대상: ${topLoser.name} ${fmtPct(topLoser.profitPct)}`,
+      ])}`
+    );
   }
 
   const lines = sortedItems.slice(0, 5).map((item) => {

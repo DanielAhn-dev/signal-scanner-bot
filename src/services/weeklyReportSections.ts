@@ -43,6 +43,54 @@ type SectorRow = {
   metrics?: Record<string, unknown> | null;
 };
 
+type SectorProfile = {
+  aliases: string[];
+  description: string;
+  representative: string;
+};
+
+const SECTOR_PROFILES: SectorProfile[] = [
+  { aliases: ["반도체"], description: "메모리·파운드리", representative: "삼성전자" },
+  { aliases: ["2차전지", "이차전지", "배터리"], description: "배터리 셀·소재", representative: "LG에너지솔루션" },
+  { aliases: ["자동차"], description: "완성차·부품", representative: "현대차" },
+  { aliases: ["조선"], description: "LNG·특수선", representative: "HD한국조선해양" },
+  { aliases: ["바이오", "헬스케어"], description: "신약·진단", representative: "삼성바이오로직스" },
+  { aliases: ["인터넷", "플랫폼"], description: "광고·커머스", representative: "NAVER" },
+  { aliases: ["게임"], description: "콘텐츠·퍼블리싱", representative: "크래프톤" },
+  { aliases: ["방산"], description: "항공·지상무기", representative: "한화에어로스페이스" },
+  { aliases: ["은행"], description: "금리민감 대형금융", representative: "KB금융" },
+  { aliases: ["철강"], description: "기초소재·판가", representative: "POSCO홀딩스" },
+  { aliases: ["건설"], description: "주택·인프라", representative: "현대건설" },
+  { aliases: ["화장품", "미용"], description: "브랜드·수출", representative: "아모레퍼시픽" },
+  { aliases: ["유틸리티", "전력"], description: "전기·가스", representative: "한국전력" },
+];
+
+function hashSeed(input: string): number {
+  let hash = 0;
+  for (let i = 0; i < input.length; i += 1) {
+    hash = (hash * 31 + input.charCodeAt(i)) | 0;
+  }
+  return Math.abs(hash);
+}
+
+function pickVariant(seed: string, options: string[]): string {
+  if (options.length === 0) return "";
+  return options[hashSeed(seed) % options.length];
+}
+
+function getSectorProfile(name: string): { description: string; representative: string } {
+  const found = SECTOR_PROFILES.find((profile) =>
+    profile.aliases.some((alias) => name.includes(alias))
+  );
+  if (!found) return { description: "업종 순환 민감", representative: "대표주 확인" };
+  return { description: found.description, representative: found.representative };
+}
+
+function formatSectorInfoCell(name: string): string {
+  const { description, representative } = getSectorProfile(name);
+  return truncate(`${name} · ${description} · 대표 ${representative}`, 28);
+}
+
 export function drawMarketOverviewSection(
   ctx: ReportRenderContext,
   ymd: string,
@@ -91,6 +139,30 @@ export function drawMarketOverviewSection(
       value: String(toNum(market.fearGreed.score)),
       sub: market.fearGreed.rating ?? "",
       valueColor: C.text,
+    });
+  }
+  if (market.us10y) {
+    cards.push({
+      label: "미국 10년물",
+      value: `${toNum(market.us10y.price).toFixed(2)}%`,
+      sub: fmtPct(toNum(market.us10y.changeRate)),
+      valueColor: pnlColor(toNum(market.us10y.changeRate)),
+    });
+  }
+  if (market.sp500) {
+    cards.push({
+      label: "S&P 500",
+      value: fmtInt(toNum(market.sp500.price)),
+      sub: fmtPct(toNum(market.sp500.changeRate)),
+      valueColor: pnlColor(toNum(market.sp500.changeRate)),
+    });
+  }
+  if (market.nasdaq) {
+    cards.push({
+      label: "NASDAQ",
+      value: fmtInt(toNum(market.nasdaq.price)),
+      sub: fmtPct(toNum(market.nasdaq.changeRate)),
+      valueColor: pnlColor(toNum(market.nasdaq.changeRate)),
     });
   }
 
@@ -253,25 +325,55 @@ export function drawCommentarySection(
   ctx.y -= 6;
   drawSectionHeader(ctx, "주간 코멘트 및 대응 전략");
 
+  const seedBase = `${curr.tradeCount}|${prev.tradeCount}|${curr.winRate.toFixed(1)}|${totalUnrealized.toFixed(0)}|${watchItems.length}`;
+
   const tradeMom =
     curr.tradeCount > prev.tradeCount
-      ? `이번 주 거래 횟수(${curr.tradeCount}건)가 이전 주(${prev.tradeCount}건) 대비 증가했습니다. 포지션 진입이 늘어난 구간으로, 개별 리스크 관리가 중요합니다.`
+      ? pickVariant(`${seedBase}|trade|up`, [
+          `이번 주 거래 횟수(${curr.tradeCount}건)가 이전 주(${prev.tradeCount}건)보다 늘었습니다. 진입이 많아진 구간이므로 종목당 손실 한도를 먼저 고정해 두세요.`,
+          `거래 빈도가 ${prev.tradeCount}건에서 ${curr.tradeCount}건으로 증가했습니다. 기회 포착 구간이지만 포지션 크기는 평소보다 보수적으로 운영하는 편이 좋습니다.`,
+          `이번 주는 거래가 활발했습니다(${curr.tradeCount}건). 신규 진입 전 손절·목표가를 먼저 입력해 리듬을 지키는 대응이 유효합니다.`,
+        ])
       : curr.tradeCount < prev.tradeCount
-        ? `이번 주 거래 횟수(${curr.tradeCount}건)가 이전 주(${prev.tradeCount}건)보다 감소했습니다. 신중한 관망 기조를 유지 중입니다.`
-        : "이번 주 거래 횟수는 이전 주와 동일합니다.";
+        ? pickVariant(`${seedBase}|trade|down`, [
+            `이번 주 거래 횟수(${curr.tradeCount}건)가 이전 주(${prev.tradeCount}건)보다 줄었습니다. 관망 비중이 높아진 만큼 확실한 신호 위주로만 대응하세요.`,
+            `거래 빈도가 둔화됐습니다(${prev.tradeCount}건→${curr.tradeCount}건). 무리한 추격보다 체크리스트를 충족한 종목만 선별하는 흐름이 적절합니다.`,
+            `진입 횟수가 감소했습니다. 시장 확인 구간으로 보고, 진입 조건이 맞는 종목만 소수로 압축하는 전략이 안정적입니다.`,
+          ])
+        : pickVariant(`${seedBase}|trade|flat`, [
+            "이번 주 거래 횟수는 이전 주와 유사합니다. 현재 페이스를 유지하면서 손익비가 좋은 구간만 선택하세요.",
+            "거래 빈도가 전주와 동일해 리듬은 안정적입니다. 동일한 규칙을 유지하되 변동성 확대 구간만 별도 경계하면 됩니다.",
+            "매매 건수는 큰 변화가 없습니다. 기존 진입 규칙을 유지하며 포지션 간 상관도를 함께 점검해 주세요.",
+          ]);
 
   drawCommentBlock(ctx, "매매 활동", tradeMom, C.navyLight, font, wrapText);
 
   const winNote =
     curr.winRate >= prev.winRate
-      ? `${FIFO_WIN_RATE_LABEL}이 ${prev.winRate.toFixed(1)}%→${curr.winRate.toFixed(1)}%로 개선되었습니다. 매도 타이밍이 양호했습니다.`
-      : `${FIFO_WIN_RATE_LABEL}이 ${prev.winRate.toFixed(1)}%→${curr.winRate.toFixed(1)}%로 하락했습니다. 손절 기준 재점검을 권고합니다.`;
+      ? pickVariant(`${seedBase}|win|up`, [
+          `${FIFO_WIN_RATE_LABEL}이 ${prev.winRate.toFixed(1)}%에서 ${curr.winRate.toFixed(1)}%로 개선됐습니다. 이익 실현 기준을 유지하고, 수익 구간에서는 분할 익절을 우선하세요.`,
+          `${FIFO_WIN_RATE_LABEL}이 상승했습니다(${prev.winRate.toFixed(1)}%→${curr.winRate.toFixed(1)}%). 현재 매도 리듬이 유효하므로 강한 종목은 추세를 조금 더 보유해도 됩니다.`,
+          `${FIFO_WIN_RATE_LABEL} 개선 흐름입니다. 손익비가 좋은 매매를 유지하되, 급등 종목은 목표가 도달 시 일부 차익 실현을 권장합니다.`,
+        ])
+      : pickVariant(`${seedBase}|win|down`, [
+          `${FIFO_WIN_RATE_LABEL}이 ${prev.winRate.toFixed(1)}%에서 ${curr.winRate.toFixed(1)}%로 하락했습니다. 손절 기준과 진입 타이밍을 먼저 좁혀서 재정렬하세요.`,
+          `${FIFO_WIN_RATE_LABEL} 둔화가 확인됩니다(${prev.winRate.toFixed(1)}%→${curr.winRate.toFixed(1)}%). 추격 진입을 줄이고 눌림 구간 대응 비중을 높이는 편이 안전합니다.`,
+          `${FIFO_WIN_RATE_LABEL}이 낮아졌습니다. 손실 거래의 공통 패턴을 점검하고, 한 번에 투입하는 비중을 한 단계 낮추는 대응이 필요합니다.`,
+        ]);
   drawCommentBlock(ctx, `${FIFO_WIN_RATE_LABEL} 분석`, winNote, curr.winRate >= prev.winRate ? C.up : C.down, font, wrapText);
 
   const pfNote =
     totalUnrealized >= 0
-      ? `현재 포트폴리오 평가손익은 ${fmtSignedInt(totalUnrealized)}(${fmtPct(totalUnrealizedPct)})로 양호합니다.`
-      : `현재 포트폴리오 평가손익은 ${fmtSignedInt(totalUnrealized)}(${fmtPct(totalUnrealizedPct)})로 미실현 손실 구간입니다. 개별 종목 비중 점검이 필요합니다.`;
+      ? pickVariant(`${seedBase}|pf|plus`, [
+          `포트폴리오 평가손익은 ${fmtSignedInt(totalUnrealized)} (${fmtPct(totalUnrealizedPct)})로 우호적입니다. 수익 구간 종목은 추세 훼손 전까지 분할 관리가 유효합니다.`,
+          `현재 보유 평가가 플러스(${fmtSignedInt(totalUnrealized)}, ${fmtPct(totalUnrealizedPct)})를 유지 중입니다. 과열 구간에서 비중을 조금씩 낮춰 변동성 대비를 병행하세요.`,
+          `평가손익이 양수 구간입니다(${fmtSignedInt(totalUnrealized)}). 강한 종목 중심으로 압축하되, 신규 진입은 분할 원칙을 유지하세요.`,
+        ])
+      : pickVariant(`${seedBase}|pf|minus`, [
+          `포트폴리오 평가손익은 ${fmtSignedInt(totalUnrealized)} (${fmtPct(totalUnrealizedPct)})로 손실 구간입니다. 손실 상위 종목부터 비중을 재조정하는 대응이 필요합니다.`,
+          `미실현 손실 상태(${fmtSignedInt(totalUnrealized)})가 이어집니다. 평균단가 낮추기보다 리스크 큰 종목 정리를 우선하는 편이 안전합니다.`,
+          `현재 평가가 음수 구간입니다(${fmtPct(totalUnrealizedPct)}). 종목 수를 줄여 변동성 노출을 낮추고 현금 비중을 일부 확보하세요.`,
+        ]);
   drawCommentBlock(ctx, "포트폴리오 평가", pfNote, pnlColor(totalUnrealized), font, wrapText);
 
   const topLoss = watchItems.filter((item) => (item.pnlPct ?? 0) < -5);
@@ -280,7 +382,11 @@ export function drawCommentarySection(
     drawCommentBlock(
       ctx,
       "손절 재점검 대상",
-      `평가손실 -5% 초과 종목: ${names}. 손절 기준일 재확인 후 비중 축소를 고려하세요.`,
+      pickVariant(`${seedBase}|loss|${topLoss.length}`, [
+        `평가손실 -5% 초과 종목: ${names}. 손절 기준일을 다시 맞추고 반등 실패 시 비중 축소를 우선하세요.`,
+        `리스크 경고 종목: ${names}. 추가 매수보다 손절·축소 순서를 먼저 정해 대응하는 편이 유리합니다.`,
+        `${names}는 손실 방어가 필요한 구간입니다. 대응 기준(보유/축소/정리)을 오늘 안에 확정해 두세요.`,
+      ]),
       C.up,
       font,
       wrapText
@@ -292,7 +398,11 @@ export function drawCommentarySection(
     drawCommentBlock(
       ctx,
       "주도 섹터 대응",
-      `이번 주 주도 섹터는 ${sectorNames}입니다. 해당 섹터 편입 종목의 비중 확대를 모니터링하세요.`,
+      pickVariant(`${seedBase}|sector|${sectorNames}`, [
+        `이번 주 주도 섹터는 ${sectorNames}입니다. 선도 섹터 내 대표주 위주로 우선순위를 두고 눌림 구간을 노려보세요.`,
+        `${sectorNames}가 상대강도를 유지 중입니다. 하위 테마 추격보다 주도 섹터 핵심 종목 중심 대응이 효율적입니다.`,
+        `시장 관심은 ${sectorNames}에 집중됩니다. 편입 비중을 늘릴 때는 거래대금 유지 여부를 함께 확인하세요.`,
+      ]),
       C.navyLight,
       font,
       wrapText
@@ -317,6 +427,7 @@ export function drawFlowSection(ctx: ReportRenderContext, sectors: SectorRow[]) 
       const instFlow = toNum(metrics.flow_inst_5d);
       return {
         name: sector.name,
+        info: formatSectorInfoCell(sector.name),
         score: toNum(sector.score),
         foreignFlow,
         instFlow,
@@ -338,14 +449,14 @@ export function drawFlowSection(ctx: ReportRenderContext, sectors: SectorRow[]) 
   drawTable(
     ctx,
     [
-      { header: "섹터명", width: 177 },
-      { header: "점수", width: 60, align: "right" },
-      { header: "외국인", width: 90, align: "right" },
-      { header: "기관", width: 90, align: "right" },
+      { header: "섹터 정보", width: 260 },
+      { header: "점수", width: 50, align: "right" },
+      { header: "외국인", width: 80, align: "right" },
+      { header: "기관", width: 80, align: "right" },
       { header: "합계", width: 90, align: "right" },
     ],
     rows.map((row) => [
-      row.name,
+      row.info,
       row.score.toFixed(1),
       fmtKorMoney(row.foreignFlow),
       fmtKorMoney(row.instFlow),
@@ -353,6 +464,16 @@ export function drawFlowSection(ctx: ReportRenderContext, sectors: SectorRow[]) 
     ]),
     rows.map((row) => pnlColor(row.totalFlow))
   );
+
+  ctx.y -= 4;
+  ctx.text(
+    "용어 메모: 코스피200 비중상한 20%는 지수 내 한 종목 최대 비중을 20%로 제한한다는 뜻입니다.",
+    ctx.ML + 8,
+    ctx.y,
+    8,
+    C.muted
+  );
+  ctx.y -= 14;
 }
 
 export function drawSectorSection(ctx: ReportRenderContext, sectors: SectorRow[], ymd: string) {
@@ -368,16 +489,16 @@ export function drawSectorSection(ctx: ReportRenderContext, sectors: SectorRow[]
     ctx,
     [
       { header: "순위", width: 40, align: "center" },
-      { header: "섹터명", width: 227 },
-      { header: "점수", width: 70, align: "right" },
-      { header: "수익률", width: 80, align: "right" },
-      { header: "상태", width: 90, align: "center" },
+      { header: "섹터 정보", width: 300 },
+      { header: "점수", width: 60, align: "right" },
+      { header: "수익률", width: 70, align: "right" },
+      { header: "상태", width: 70, align: "center" },
     ],
     sectors.slice(0, 12).map((sector, index) => {
       const rate = toNum(sector.change_rate);
       return [
         String(index + 1),
-        sector.name,
+        formatSectorInfoCell(sector.name),
         toNum(sector.score).toFixed(1),
         fmtPct(rate),
         rate >= 1 ? "강세" : rate >= 0 ? "보합" : "약세",
@@ -385,6 +506,16 @@ export function drawSectorSection(ctx: ReportRenderContext, sectors: SectorRow[]
     }),
     sectors.slice(0, 12).map((sector) => pnlColor(toNum(sector.change_rate)))
   );
+
+  ctx.y -= 4;
+  ctx.text(
+    "해석 팁: 섹터 정보는 업종 성격과 대표 종목을 함께 표시해 초보자도 맥락을 빠르게 파악할 수 있게 구성했습니다.",
+    ctx.ML + 8,
+    ctx.y,
+    8,
+    C.muted
+  );
+  ctx.y -= 14;
 }
 
 export function drawEconomySection(

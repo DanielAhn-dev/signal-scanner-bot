@@ -191,12 +191,15 @@ function withOverviewMeta<T extends MarketOverview>(overview: T): T {
 }
 
 export async function fetchReportMarketData(): Promise<MarketOverview> {
-  const [kospi, kosdaq, usdkrw, vix, fearGreed] = await Promise.all([
+  const [kospi, kosdaq, usdkrw, vix, fearGreed, sp500, nasdaq, us10y] = await Promise.all([
     fetchKOSPI(),
     fetchKOSDAQ(),
     fetchUSDKRW(),
     fetchVIX(),
     fetchFearGreed(),
+    fetchSP500(),
+    fetchNASDAQ(),
+    fetchUS10Y(),
   ]);
 
   return withOverviewMeta({
@@ -205,6 +208,9 @@ export async function fetchReportMarketData(): Promise<MarketOverview> {
     usdkrw: usdkrw ?? undefined,
     vix: vix ?? undefined,
     fearGreed: fearGreed ?? undefined,
+    sp500: sp500 ?? undefined,
+    nasdaq: nasdaq ?? undefined,
+    us10y: us10y ?? undefined,
   });
 }
 

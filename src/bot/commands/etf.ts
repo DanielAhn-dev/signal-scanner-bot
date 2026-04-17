@@ -77,11 +77,46 @@ function buildHubMessage(): string {
   ]);
 }
 
+function hashSeed(input: string): number {
+  let hash = 0;
+  for (let i = 0; i < input.length; i += 1) {
+    hash = (hash * 31 + input.charCodeAt(i)) | 0;
+  }
+  return Math.abs(hash);
+}
+
+function pickVariant(seed: string, options: string[]): string {
+  if (!options.length) return "";
+  return options[hashSeed(seed) % options.length];
+}
+
 function formatPremiumComment(premiumRate?: number): string {
-  if (premiumRate === undefined) return "괴리율 데이터 없음";
-  if (premiumRate >= 1) return "NAV 대비 고평가 구간이라 추격매수는 보수적으로 보는 편이 좋습니다.";
-  if (premiumRate <= -1) return "NAV 대비 저평가 구간입니다. 유동성·스프레드 확인 후 분할 접근이 유리합니다.";
-  return "괴리율이 크지 않아 NAV 대비 가격 괴리는 안정적인 편입니다.";
+  if (premiumRate === undefined) {
+    return pickVariant("premium|none", [
+      "괴리율 데이터가 없어 NAV 공시와 호가 스프레드를 먼저 확인하세요.",
+      "괴리율 데이터가 비어 있습니다. 체결강도와 호가 간격을 함께 점검해 주세요.",
+      "괴리율 값이 아직 없습니다. NAV 업데이트 시점을 확인한 뒤 판단하는 편이 안전합니다.",
+    ]);
+  }
+  if (premiumRate >= 1) {
+    return pickVariant(`premium|high|${premiumRate.toFixed(2)}`, [
+      "NAV 대비 고평가 구간이라 추격매수는 보수적으로 보는 편이 좋습니다.",
+      "괴리율이 높아 가격 이격이 큰 상태입니다. 분할 진입 또는 대기 전략이 유리합니다.",
+      "고평가 신호가 확인됩니다. 단기 진입은 체결량 확인 후 소량 접근을 권장합니다.",
+    ]);
+  }
+  if (premiumRate <= -1) {
+    return pickVariant(`premium|low|${premiumRate.toFixed(2)}`, [
+      "NAV 대비 저평가 구간입니다. 유동성·스프레드 확인 후 분할 접근이 유리합니다.",
+      "괴리율 음수 폭이 커 저평가 해석이 가능합니다. 거래량 확인 뒤 단계적으로 접근하세요.",
+      "가격이 NAV 대비 할인 구간입니다. 단, 유동성 부족 ETF는 호가 공백을 반드시 점검해야 합니다.",
+    ]);
+  }
+  return pickVariant(`premium|neutral|${premiumRate.toFixed(2)}`, [
+    "괴리율이 크지 않아 NAV 대비 가격 괴리는 안정적인 편입니다.",
+    "현재 괴리율은 중립 구간입니다. 기본 진입 규칙대로 대응해도 무리가 없습니다.",
+    "가격과 NAV 간 이격이 제한적입니다. 분배 일정과 추세 신호를 함께 확인하세요.",
+  ]);
 }
 
 function formatMonthList(months: number[]): string {
