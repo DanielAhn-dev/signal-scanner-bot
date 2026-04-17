@@ -1,31 +1,10 @@
 // api/worker.ts
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { createClient } from "@supabase/supabase-js";
+import { routeCallbackData } from "../src/bot/callbackRouter";
 import { routeMessage } from "../src/bot/router";
 import { scoreStocksInSector, StockScore } from "../src/lib/stocks";
-import { handleBriefCommand } from "../src/bot/commands/brief";
-import { handleScoreCommand } from "../src/bot/commands/score";
-import { handleBuyCommand } from "../src/bot/commands/buy";
-import { handleFinanceCommand } from "../src/bot/commands/finance";
-import { handleNewsCommand } from "../src/bot/commands/news";
 import {
-  handleSectorCommand,
-  handleNextSectorCommand,
-  handleSectorDetailCommand,
-} from "../src/bot/commands/sector";
-import { handlePullbackCommand } from "../src/bot/commands/pullback";
-import { handleEconomyCommand } from "../src/bot/commands/economy";
-import { handleMarketCommand } from "../src/bot/commands/market";
-import { handleWatchlistQuickAdd } from "../src/bot/commands/watchlist";
-import { handleRiskProfileSelection } from "../src/bot/commands/onboarding";
-import { handleReportMenu } from "../src/bot/commands/report";
-import {
-  handleEtfDistributionCommand,
-  handleEtfHubCommand,
-  handleEtfInfoCommand,
-} from "../src/bot/commands/etf";
-import {
-  getPromptPreset,
   getReplyPrefixForPromptKind,
   resolveReplyPrefixFromText,
 } from "../src/bot/commandCatalog";
@@ -141,82 +120,6 @@ async function handleWatchSectorJob(job: any) {
   }
 }
 
-async function sendPromptForCommand(
-  kind: string,
-  chatId: number,
-  tgSend: any
-): Promise<void> {
-  const preset = getPromptPreset(kind);
-  if (!preset) {
-    await tgSend("sendMessage", {
-      chat_id: chatId,
-      text: "지원하지 않는 입력 요청입니다.",
-    });
-    return;
-  }
-
-  await tgSend("sendMessage", {
-    chat_id: chatId,
-    text: `${preset.title}할 종목을 입력하세요.`,
-    reply_markup: {
-      force_reply: true,
-      input_field_placeholder: preset.placeholder,
-    },
-  });
-}
-
-async function routeCallback(
-  data: string,
-  ctx: { chatId: number; from?: any },
-  tgSend: any
-): Promise<void> {
-  if (data.startsWith("cmd:")) {
-    const cmd = data.slice(4);
-
-    if (cmd === "brief") return handleBriefCommand(ctx, tgSend);
-    if (cmd === "report") return handleReportMenu(ctx, tgSend);
-    if (cmd.startsWith("report:")) return routeMessage(`/report ${cmd.slice(7)}`, ctx, tgSend);
-    if (cmd === "market") return handleMarketCommand(ctx, tgSend);
-    if (cmd === "economy") return handleEconomyCommand(ctx, tgSend);
-    if (cmd === "sector") return handleSectorCommand(ctx, tgSend);
-    if (cmd === "nextsector") return handleNextSectorCommand(ctx, tgSend);
-    if (cmd === "pullback") return handlePullbackCommand(ctx, tgSend);
-    if (cmd.startsWith("etf:")) return handleEtfHubCommand(cmd.slice(4), ctx, tgSend);
-
-    return routeMessage(`/${cmd}`, ctx, tgSend);
-  }
-
-  if (data.startsWith("prompt:")) {
-    return sendPromptForCommand(data.slice(7), ctx.chatId, tgSend);
-  }
-
-  if (data.startsWith("risk:")) {
-    const profile = data.slice(5);
-    if (profile === "safe" || profile === "balanced" || profile === "active") {
-      return handleRiskProfileSelection(profile, ctx, tgSend);
-    }
-  }
-
-  if (data.startsWith("score:")) return handleScoreCommand(data.slice(6), ctx, tgSend);
-  if (data.startsWith("buy:")) return handleBuyCommand(data.slice(4), ctx, tgSend);
-  if (data.startsWith("finance:")) return handleFinanceCommand(data.slice(8), ctx, tgSend);
-  if (data.startsWith("news:")) return handleNewsCommand(data.slice(5), ctx, tgSend);
-  if (data.startsWith("etfinfo:")) return handleEtfInfoCommand(data.slice(8), ctx, tgSend);
-  if (data.startsWith("etfdiv:")) return handleEtfDistributionCommand(data.slice(7), ctx, tgSend);
-
-  if (data.startsWith("watchadd:")) {
-    return handleWatchlistQuickAdd(data.slice(9), ctx, tgSend);
-  }
-
-  if (data.startsWith("sector:")) return handleSectorDetailCommand(data.slice(7), ctx, tgSend);
-  if (data.startsWith("KRX:")) return handleSectorDetailCommand(data, ctx, tgSend);
-
-  await tgSend("sendMessage", {
-    chat_id: ctx.chatId,
-    text: "버튼 동작을 처리하지 못했습니다. 다시 시도해주세요.",
-  });
-}
-
 function resolveJobTimeout(text: string): number {
   return /^\/(report|리포트)\b/i.test(text.trim())
     ? REPORT_JOB_TIMEOUT_MS
@@ -241,7 +144,7 @@ async function handleTelegramUpdateJob(job: any) {
       ? REPORT_JOB_TIMEOUT_MS
       : DEFAULT_JOB_TIMEOUT_MS;
     await withTimeout(
-      routeCallback(u.callback_query.data, { chatId, from }, tgFetch),
+      routeCallbackData(u.callback_query.data, { chatId, from }, tgFetch),
       callbackTimeout,
       `callback ${u.callback_query.data}`
     );

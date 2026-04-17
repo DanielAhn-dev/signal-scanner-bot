@@ -5,6 +5,7 @@ import { handleBuyCommand } from "./commands/buy";
 import { handleSectorCommand } from "./commands/sector";
 import { handleOnboardingCommand } from "./commands/onboarding";
 import { handlePullbackCommand } from "./commands/pullback";
+import { handleAlertCommand } from "./commands/alert";
 import { handleEconomyCommand } from "./commands/economy";
 import { handleMarketCommand } from "./commands/market";
 import { handleFinanceCommand } from "./commands/finance";
@@ -377,7 +378,7 @@ export async function routeMessage(
 
   // /alert — 이상징후 점검
   if (CMD.ALERT.test(t)) {
-    await tgSend("sendMessage", { chat_id: ctx.chatId, text: "🔧 /alert 이상징후 점검 기능은 현재 준비 중입니다." });
+    await handleAlertCommand(ctx, tgSend);
     return;
   }
 

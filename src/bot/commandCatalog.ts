@@ -21,6 +21,37 @@ export type TelegramBotCommand = {
   description: string;
 };
 
+const CALLBACK_COMMAND_TEXT: Record<string, string> = {
+  brief: "/brief",
+  market: "/market",
+  economy: "/economy",
+  sector: "/sector",
+  nextsector: "/nextsector",
+  pullback: "/pullback",
+  onboarding: "/onboarding",
+  watchlist: "/watchlist",
+  profile: "/profile",
+  scan: "/scan",
+  flow: "/flow",
+  ranking: "/ranking",
+  feed: "/feed",
+  kospi: "/kospi",
+  kosdaq: "/kosdaq",
+  etf: "/etf",
+  alert: "/alert",
+  help: "/help",
+};
+
+const CALLBACK_PREFIX_TEXT: Record<string, string> = {
+  score: "/score",
+  buy: "/buy",
+  finance: "/finance",
+  news: "/news",
+  etfinfo: "/etfinfo",
+  etfdiv: "/etfdiv",
+  watchadd: "/watchadd",
+};
+
 const HELP_SECTIONS = [
   {
     title: "빠른 시작",
@@ -237,6 +268,23 @@ export function resolveReplyPrefixFromText(replyText: string): string | undefine
   )?.replyPrefix;
 }
 
+export function resolveCallbackCommandText(command: string): string | undefined {
+  if (command.startsWith("report:")) return `/report ${command.slice(7)}`;
+  if (command === "etf:core") return "/etfcore";
+  if (command === "etf:theme") return "/etftheme";
+  if (command.startsWith("etf:")) return `/etf ${command.slice(4)}`;
+  return CALLBACK_COMMAND_TEXT[command];
+}
+
+export function resolveCallbackPrefixedCommandText(
+  prefix: string,
+  payload: string
+): string | undefined {
+  const base = CALLBACK_PREFIX_TEXT[prefix];
+  if (!base || !payload.trim()) return undefined;
+  return `${base} ${payload.trim()}`;
+}
+
 export function buildHelpMessage(): string {
   const lines = ["도움말 (/help, /도움말)", "─────────────────"];
 
@@ -246,7 +294,7 @@ export function buildHelpMessage(): string {
     lines.push("");
   }
 
-  lines.push("참고: /알림 기능은 현재 준비 중입니다.");
+  lines.push("참고: 버튼과 텍스트 명령은 같은 동작으로 연결됩니다.");
   return lines.join("\n").trim();
 }
 
