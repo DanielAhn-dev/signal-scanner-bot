@@ -2,7 +2,7 @@
   {
     "code": "035420",
     "snapshot": {
-      "per": 17.45,
+      "per": 17.41,
       "pbr": 1.17,
       "roe": 7.36,
       "debtRatio": 41.9,
@@ -19,8 +19,8 @@
   {
     "code": "005930",
     "snapshot": {
-      "per": 33.02,
-      "pbr": 3.39,
+      "per": 32.98,
+      "pbr": 3.38,
       "roe": 10.85,
       "debtRatio": 29.94,
       "sales": 3336059,
@@ -29,7 +29,7 @@
       "salesGrowthPct": 10.880081789232525,
       "opIncomeGrowthPct": 33.23045896229298,
       "netIncomeGrowthPct": 31.21905060461984,
-      "qualityScore": 72,
+      "qualityScore": 70,
       "commentary": "PBR 고평가 구간 · 부채비율 안정 · 실적 성장세 강함"
     }
   },
@@ -46,14 +46,14 @@
       "salesGrowthPct": 46.762799691810315,
       "opIncomeGrowthPct": 101.15778125306277,
       "netIncomeGrowthPct": 116.94255161161595,
-      "qualityScore": 82,
-      "commentary": "PER 중립 구간 · PBR 고평가 구간 · ROE 우수 · 부채비율 안정 · 실적 성장세 강함"
+      "qualityScore": 85,
+      "commentary": "PER 중립 구간 · PBR은 높지만 ROE가 이를 일부 상쇄 · ROE 우수 · 부채비율 안정 · 실적 성장세 강함"
     }
   },
   {
     "code": "035720",
     "snapshot": {
-      "per": 45.05,
+      "per": 44.95,
       "pbr": 1.95,
       "roe": 4.59,
       "debtRatio": 82.49,
@@ -63,15 +63,15 @@
       "salesGrowthPct": 2.9895727365208544,
       "opIncomeGrowthPct": 47.789218655360386,
       "netIncomeGrowthPct": 419.9505867819642,
-      "qualityScore": 47,
+      "qualityScore": 45,
       "commentary": "PER 고평가 부담 · ROE 낮음 · 실적 성장세 강함"
     }
   },
   {
     "code": "207940",
     "snapshot": {
-      "per": 60.29,
-      "pbr": 9.95,
+      "per": 60.21,
+      "pbr": 9.94,
       "roe": 19.44,
       "debtRatio": 48.44,
       "sales": 45570,
@@ -80,8 +80,8 @@
       "salesGrowthPct": 30.307969460410057,
       "opIncomeGrowthPct": 56.59149387013773,
       "netIncomeGrowthPct": 64.71891442813626,
-      "qualityScore": 69,
-      "commentary": "PER 고평가 부담 · PBR 고평가 구간 · ROE 우수 · 부채비율 안정 · 실적 성장세 강함"
+      "qualityScore": 72,
+      "commentary": "PER 고평가 부담 · PBR은 높지만 ROE가 이를 일부 상쇄 · ROE 우수 · 부채비율 안정 · 실적 성장세 강함"
     }
   }
 ]

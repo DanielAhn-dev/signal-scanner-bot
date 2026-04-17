@@ -3,7 +3,12 @@ import type { ChatContext } from "../router";
 import { searchByNameOrCode } from "../../search/normalize";
 import { fetchRealtimeStockData } from "../../utils/fetchRealtimePrice";
 import { esc, fmtInt, LINE } from "../messages/format";
-import { formatEokAmount, formatFundamentalInline } from "../messages/fundamental";
+import {
+  formatEokAmount,
+  formatFundamentalInline,
+  formatPctValue,
+  formatPer,
+} from "../messages/fundamental";
 import { getFundamentalSnapshot } from "../../services/fundamentalService";
 import { actionButtons, ACTIONS } from "../messages/layout";
 
@@ -16,7 +21,8 @@ function interpretFinance(input: {
   const notes: string[] = [];
 
   if (input.per !== undefined) {
-    if (input.per <= 10) notes.push("PER이 낮아 밸류 부담은 상대적으로 작은 편");
+    if (input.per < 0) notes.push("적자 상태라 PER보다는 PBR·현금흐름·이익 턴어라운드 확인이 우선");
+    else if (input.per <= 10) notes.push("PER이 낮아 밸류 부담은 상대적으로 작은 편");
     else if (input.per >= 25) notes.push("PER이 높은 편이라 성장 기대가 가격에 반영된 구간");
     else notes.push("PER은 중립 구간");
   }
@@ -107,12 +113,10 @@ export async function handleFinanceCommand(
 
   msg += `\n${LINE}\n`;
   msg += `<b>핵심 지표</b>\n`;
-  msg += `PER <code>${per !== undefined ? per.toFixed(2) : "-"}</code> · `;
+  msg += `PER <code>${formatPer(per)}</code> · `;
   msg += `PBR <code>${pbr !== undefined ? pbr.toFixed(2) : "-"}</code> · `;
-  msg += `ROE <code>${fin.roe !== undefined ? `${fin.roe.toFixed(2)}%` : "-"}</code>\n`;
-  msg += `부채비율 <code>${
-    fin.debtRatio !== undefined ? `${fin.debtRatio.toFixed(2)}%` : "-"
-  }</code>\n\n`;
+  msg += `ROE <code>${formatPctValue(fin.roe)}</code>\n`;
+  msg += `부채비율 <code>${formatPctValue(fin.debtRatio)}</code>\n\n`;
   msg += `${formatFundamentalInline({
     qualityScore: fin.qualityScore,
     per,
@@ -125,21 +129,13 @@ export async function handleFinanceCommand(
   msg += `매출 <code>${formatEokAmount(fin.sales)}</code>\n`;
   msg += `영업이익 <code>${formatEokAmount(fin.opIncome)}</code>\n`;
   msg += `당기순이익 <code>${formatEokAmount(fin.netIncome)}</code>\n`;
+  msg += `<i>실적은 최근 연간 확정치 기준</i>\n`;
   msg += `\n`; 
   msg += `<b>성장률(전년 대비)</b>\n`;
-  msg += `매출 <code>${
-    fin.salesGrowthPct !== undefined ? `${fin.salesGrowthPct.toFixed(2)}%` : "-"
-  }</code> · `;
-  msg += `영업이익 <code>${
-    fin.opIncomeGrowthPct !== undefined
-      ? `${fin.opIncomeGrowthPct.toFixed(2)}%`
-      : "-"
-  }</code> · `;
-  msg += `순이익 <code>${
-    fin.netIncomeGrowthPct !== undefined
-      ? `${fin.netIncomeGrowthPct.toFixed(2)}%`
-      : "-"
-  }</code>\n`;
+  msg += `매출 <code>${formatPctValue(fin.salesGrowthPct)}</code> · `;
+  msg += `영업이익 <code>${formatPctValue(fin.opIncomeGrowthPct)}</code> · `;
+  msg += `순이익 <code>${formatPctValue(fin.netIncomeGrowthPct)}</code>\n`;
+  msg += `<i>현재 PER/PBR은 최근 4분기 기준</i>\n`;
 
   msg += `\n${LINE}\n<b>해석 코멘트</b>\n`;
   msg += `${esc(comment)}\n`;

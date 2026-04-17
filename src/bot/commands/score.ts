@@ -106,7 +106,7 @@ function buildScoreMessage(
     fundamental
       ? `\n<b>재무 요약</b>\n${formatFundamentalInline(fundamental, {
           includeDebtRatio: true,
-        })}`
+        })}\n<i>현재 PER/PBR은 최근 4분기, 실적은 최근 연간 확정치 기준</i>`
       : "",
     fundamental?.commentary ? fundamental.commentary : "",
   ].join("\n");

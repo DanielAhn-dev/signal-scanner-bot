@@ -16,6 +16,17 @@ export function formatEokAmount(value?: number): string {
   return `${fmtInt(value)}억원`;
 }
 
+export function formatPer(value?: number): string {
+  if (value === undefined) return "-";
+  if (value < 0) return `적자(${value.toFixed(2)})`;
+  return value.toFixed(2);
+}
+
+export function formatPctValue(value?: number): string {
+  if (value === undefined) return "-";
+  return `${value.toFixed(2)}%`;
+}
+
 export function formatFundamentalInline(
   input: FundamentalSummaryInput,
   options?: { includeDebtRatio?: boolean; htmlCodeForScore?: boolean }
@@ -26,16 +37,14 @@ export function formatFundamentalInline(
 
   const values = [
     scoreValue,
-    `PER ${input.per !== undefined ? input.per.toFixed(2) : "-"}`,
+    `PER ${formatPer(input.per)}`,
     `PBR ${input.pbr !== undefined ? input.pbr.toFixed(2) : "-"}`,
-    `ROE ${input.roe !== undefined ? `${input.roe.toFixed(2)}%` : "-"}`,
+    `ROE ${formatPctValue(input.roe)}`,
   ];
 
   if (options?.includeDebtRatio) {
     values.push(
-      `부채 ${
-        input.debtRatio !== undefined ? `${input.debtRatio.toFixed(2)}%` : "-"
-      }`
+      `부채 ${formatPctValue(input.debtRatio)}`
     );
   }
 

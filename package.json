@@ -8,6 +8,7 @@
     "local": "vercel dev",
     "build": "tsc --noEmit",
     "verify:fundamental-parser": "tsx scripts/verify_fundamental_parser.ts",
+    "audit:fundamental-live": "tsx scripts/audit_fundamental_live.ts",
     "verify:vercel": "pnpm build",
     "deploy": "vercel --prod",
     "seed:sectors": "tsx scripts/seedSectors.ts",

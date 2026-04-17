@@ -7,7 +7,9 @@ import {
 import {
   formatEokAmount,
   formatFundamentalInline,
+  formatPer,
 } from "../src/bot/messages/fundamental";
+import { evaluateFundamentalQuality } from "../src/services/fundamentalService";
 
 function approxEqual(actual: number | undefined, expected: number, tolerance = 0.001) {
   assert.notEqual(actual, undefined, "expected a numeric value");
@@ -44,6 +46,7 @@ assert.equal(findLatestActualAnnualValue(debtRatioRow), 41.9);
 
 assert.equal(formatEokAmount(120350), "12.04조원 (120,350억원)");
 assert.equal(formatEokAmount(7320), "7,320억원");
+assert.equal(formatPer(-23.85), "적자(-23.85)");
 
 assert.equal(
   formatFundamentalInline(
@@ -52,5 +55,18 @@ assert.equal(
   ),
   "재무건강도(내부) 77점 · PER 17.45 · PBR 1.17 · ROE 7.36% · 부채 41.90%"
 );
+
+const deficitQuality = evaluateFundamentalQuality({
+  per: -23.85,
+  pbr: 2.44,
+  roe: 4.59,
+  debtRatio: 82.49,
+  salesGrowthPct: 2.98,
+  opIncomeGrowthPct: 47.78,
+  netIncomeGrowthPct: 419.95,
+});
+
+assert.match(deficitQuality.commentary, /적자 구간으로 PER 해석 제한/);
+assert.ok(deficitQuality.score < 50, `expected deficit quality score to stay conservative, got ${deficitQuality.score}`);
 
 console.log("fundamental parser verification passed");

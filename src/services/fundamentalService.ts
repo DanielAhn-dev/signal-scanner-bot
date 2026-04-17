@@ -77,7 +77,10 @@ export function evaluateFundamentalQuality(input: {
   const notes: string[] = [];
 
   if (input.per !== undefined) {
-    if (input.per <= 12) {
+    if (input.per < 0) {
+      score -= 12;
+      notes.push("적자 구간으로 PER 해석 제한");
+    } else if (input.per <= 12) {
       score += 10;
       notes.push("PER 저평가 구간");
     } else if (input.per <= 25) {
@@ -96,8 +99,13 @@ export function evaluateFundamentalQuality(input: {
     } else if (input.pbr <= 2.0) {
       score += 3;
     } else if (input.pbr >= 3.0) {
-      score -= 8;
-      notes.push("PBR 고평가 구간");
+      if ((input.roe ?? 0) >= 15) {
+        score -= 3;
+        notes.push("PBR은 높지만 ROE가 이를 일부 상쇄");
+      } else {
+        score -= 8;
+        notes.push("PBR 고평가 구간");
+      }
     }
   }
 
@@ -125,24 +133,29 @@ export function evaluateFundamentalQuality(input: {
     }
   }
 
-  const growthAvg = [
+  const growthSignals = [
     input.salesGrowthPct,
     input.opIncomeGrowthPct,
     input.netIncomeGrowthPct,
   ]
     .filter((x): x is number => x !== undefined && Number.isFinite(x));
 
-  if (growthAvg.length) {
-    const g = growthAvg.reduce((s, x) => s + x, 0) / growthAvg.length;
-    if (g >= 15) {
-      score += 12;
+  if (growthSignals.length) {
+    const strongPositiveCount = growthSignals.filter((x) => x >= 15).length;
+    const positiveCount = growthSignals.filter((x) => x >= 5).length;
+    const negativeCount = growthSignals.filter((x) => x <= -10).length;
+
+    if (strongPositiveCount >= 2) {
+      score += 10;
       notes.push("실적 성장세 강함");
-    } else if (g >= 5) {
+    } else if (positiveCount >= 2) {
       score += 6;
       notes.push("실적 개선 흐름");
-    } else if (g <= -10) {
+    } else if (negativeCount >= 2) {
       score -= 12;
       notes.push("실적 역성장 구간");
+    } else if (positiveCount >= 1 && negativeCount >= 1) {
+      notes.push("실적 흐름 혼조");
     }
   }
 
@@ -293,7 +306,7 @@ export async function getFundamentalSnapshot(code: string): Promise<FundamentalS
   // Sanity checks: filter out clearly invalid parse results (e.g. very large integers or zero PBR)
   let per: number | undefined = perRaw;
   let pbr: number | undefined = pbrRaw;
-  if (per !== undefined && (per > 1000 || per <= 0)) {
+  if (per !== undefined && (Math.abs(per) > 1000 || per === 0)) {
     console.info(`fundamental: sanitized PER for ${code} (raw=${per}) -> undefined`);
     per = undefined;
   }
