@@ -1,0 +1,51 @@
+{
+  "generatedAt": "2026-04-17T05:37:00.101Z",
+  "codeCount": 3,
+  "warningCount": 2,
+  "criticalCount": 0,
+  "entries": [
+    {
+      "code": "035420",
+      "profileLabel": "일반주",
+      "per": 17.41,
+      "pbr": 1.17,
+      "roe": 7.36,
+      "debtRatio": 41.9,
+      "sales": 120350,
+      "salesGrowthPct": 12.08173072445682,
+      "qualityScore": 77,
+      "warnings": [],
+      "critical": []
+    },
+    {
+      "code": "000230",
+      "profileLabel": "일반주",
+      "per": 10.98,
+      "pbr": 0.71,
+      "roe": 7.22,
+      "debtRatio": 132.32,
+      "sales": 5909,
+      "salesGrowthPct": -6.900898062076571,
+      "qualityScore": 73,
+      "warnings": [
+        "영업이익 성장률 과대값 가능성: 472.50% (턴어라운드)"
+      ],
+      "critical": []
+    },
+    {
+      "code": "000250",
+      "profileLabel": "일반주",
+      "pbr": 40.74,
+      "roe": 1.94,
+      "debtRatio": 54.36,
+      "sales": 2318,
+      "salesGrowthPct": 9.90990990990991,
+      "qualityScore": 45,
+      "warnings": [
+        "PBR 과대값 가능성: 40.74",
+        "흑자 추정인데 PER 누락"
+      ],
+      "critical": []
+    }
+  ]
+}

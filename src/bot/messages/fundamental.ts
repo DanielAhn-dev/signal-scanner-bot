@@ -9,6 +9,14 @@ export type FundamentalSummaryInput = {
   debtRatio?: number;
 };
 
+export type FundamentalGrowthHintsInput = {
+  salesGrowthLowBase?: boolean;
+  opIncomeGrowthLowBase?: boolean;
+  opIncomeTurnaround?: boolean;
+  netIncomeGrowthLowBase?: boolean;
+  netIncomeTurnaround?: boolean;
+};
+
 export function formatEokAmount(value?: number): string {
   if (value === undefined) return "-";
   if (Math.abs(value) >= 10000) {
@@ -51,4 +59,16 @@ export function formatFundamentalInline(
   }
 
   return values.join(" · ");
+}
+
+export function getFundamentalGrowthHints(
+  input: FundamentalGrowthHintsInput
+): string[] {
+  return [
+    input.salesGrowthLowBase ? "매출 성장률은 낮은 기저 영향 가능성" : "",
+    input.opIncomeTurnaround ? "영업이익은 턴어라운드 구간" : "",
+    input.opIncomeGrowthLowBase ? "영업이익 성장률은 낮은 기저 영향 가능성" : "",
+    input.netIncomeTurnaround ? "순이익은 턴어라운드 구간" : "",
+    input.netIncomeGrowthLowBase ? "순이익 성장률은 낮은 기저 영향 가능성" : "",
+  ].filter(Boolean);
 }

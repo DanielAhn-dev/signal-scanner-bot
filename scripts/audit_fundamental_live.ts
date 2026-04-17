@@ -24,6 +24,28 @@ type Warning = {
   issues: string[];
 };
 
+type AuditEntry = {
+  code: string;
+  sectorName?: string;
+  sectorCategory?: string;
+  profileLabel?: string;
+  per?: number;
+  pbr?: number;
+  roe?: number;
+  debtRatio?: number;
+  sales?: number;
+  salesGrowthPct?: number;
+  qualityScore: number;
+  warnings: string[];
+  critical: string[];
+};
+
+function resolveReportPath(): string {
+  const fromEnv = process.env.AUDIT_OUTPUT_PATH?.trim();
+  if (fromEnv) return path.resolve(fromEnv);
+  return path.resolve(__dirname, "fundamental_audit_latest.json");
+}
+
 function collectIssues(snapshot: Awaited<ReturnType<typeof getFundamentalSnapshot>>): {
   warnings: string[];
   critical: string[];
@@ -89,34 +111,49 @@ function collectIssues(snapshot: Awaited<ReturnType<typeof getFundamentalSnapsho
 
   const warnings: Warning[] = [];
   const criticalIssues: Warning[] = [];
+  const entries: AuditEntry[] = [];
 
   for (const code of codes) {
     const snapshot = await getFundamentalSnapshot(code);
     const { warnings: itemWarnings, critical } = collectIssues(snapshot);
     if (itemWarnings.length) warnings.push({ code, issues: itemWarnings });
     if (critical.length) criticalIssues.push({ code, issues: critical });
-    console.log(
-      JSON.stringify(
-        {
-          code,
-          sectorName: snapshot.sectorName,
-          sectorCategory: snapshot.sectorCategory,
-          profileLabel: snapshot.profileLabel,
-          per: snapshot.per,
-          pbr: snapshot.pbr,
-          roe: snapshot.roe,
-          debtRatio: snapshot.debtRatio,
-          sales: snapshot.sales,
-          salesGrowthPct: snapshot.salesGrowthPct,
-          qualityScore: snapshot.qualityScore,
-          warnings: itemWarnings,
-          critical,
-        },
-        null,
-        2
-      )
-    );
+    const entry: AuditEntry = {
+      code,
+      sectorName: snapshot.sectorName,
+      sectorCategory: snapshot.sectorCategory,
+      profileLabel: snapshot.profileLabel,
+      per: snapshot.per,
+      pbr: snapshot.pbr,
+      roe: snapshot.roe,
+      debtRatio: snapshot.debtRatio,
+      sales: snapshot.sales,
+      salesGrowthPct: snapshot.salesGrowthPct,
+      qualityScore: snapshot.qualityScore,
+      warnings: itemWarnings,
+      critical,
+    };
+    entries.push(entry);
+    console.log(JSON.stringify(entry, null, 2));
   }
+
+  const reportPath = resolveReportPath();
+  fs.writeFileSync(
+    reportPath,
+    JSON.stringify(
+      {
+        generatedAt: new Date().toISOString(),
+        codeCount: codes.length,
+        warningCount: warnings.length,
+        criticalCount: criticalIssues.length,
+        entries,
+      },
+      null,
+      2
+    ),
+    "utf8"
+  );
+  console.log(`audit report saved to ${reportPath}`);
 
   if (warnings.length) {
     console.log(`audit completed with ${warnings.length} warning entries`);

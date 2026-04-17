@@ -6,7 +6,10 @@ import { searchByNameOrCode, getNamesForCodes } from "../../search/normalize";
 import type { StockOHLCV } from "../../data/types";
 import { KO_MESSAGES } from "../messages/ko";
 import { esc, fmtInt, fmtOne, fmtPct, LINE } from "../messages/format";
-import { formatFundamentalInline } from "../messages/fundamental";
+import {
+  formatFundamentalInline,
+  getFundamentalGrowthHints,
+} from "../messages/fundamental";
 import { fetchRealtimeStockData } from "../../utils/fetchRealtimePrice";
 import { fetchAllMarketData } from "../../utils/fetchMarketData";
 import { getFundamentalSnapshot } from "../../services/fundamentalService";
@@ -62,8 +65,13 @@ function buildScoreMessage(
     roe?: number;
     debtRatio?: number;
     salesGrowthPct?: number;
+    salesGrowthLowBase?: boolean;
     opIncomeGrowthPct?: number;
+    opIncomeGrowthLowBase?: boolean;
+    opIncomeTurnaround?: boolean;
     netIncomeGrowthPct?: number;
+    netIncomeGrowthLowBase?: boolean;
+    netIncomeTurnaround?: boolean;
     commentary?: string;
   }
 ): string {
@@ -83,6 +91,7 @@ function buildScoreMessage(
   const priceLabel = realtimePrice
     ? `<b>실시간</b>  <code>${fmtInt(realtimePrice)}원</code>`
     : `${fmtInt(last.close)}원`;
+  const growthHints = fundamental ? getFundamentalGrowthHints(fundamental) : [];
 
   return [
     `<b>${esc(name)}</b>  <code>${code}</code>`,
@@ -112,6 +121,7 @@ function buildScoreMessage(
           fundamental.profileNote ? `\n<i>${esc(fundamental.profileNote)}</i>` : ""
         }`
       : "",
+    ...(growthHints.length ? growthHints.map((hint) => `<i>${esc(hint)}</i>`) : []),
     fundamental?.commentary ? fundamental.commentary : "",
   ].join("\n");
 }
@@ -205,8 +215,13 @@ export async function handleScoreCommand(
           roe: fundamental.roe,
           debtRatio: fundamental.debtRatio,
           salesGrowthPct: fundamental.salesGrowthPct,
+          salesGrowthLowBase: fundamental.salesGrowthLowBase,
           opIncomeGrowthPct: fundamental.opIncomeGrowthPct,
+          opIncomeGrowthLowBase: fundamental.opIncomeGrowthLowBase,
+          opIncomeTurnaround: fundamental.opIncomeTurnaround,
           netIncomeGrowthPct: fundamental.netIncomeGrowthPct,
+          netIncomeGrowthLowBase: fundamental.netIncomeGrowthLowBase,
+          netIncomeTurnaround: fundamental.netIncomeTurnaround,
           commentary: fundamental.commentary,
         }
       : undefined

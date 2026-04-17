@@ -3,7 +3,10 @@ import { createClient } from "@supabase/supabase-js";
 import { searchByNameOrCode } from "../../search/normalize";
 import { KO_MESSAGES } from "../messages/ko";
 import { esc, fmtInt, fmtPct, LINE } from "../messages/format";
-import { formatFundamentalInline } from "../messages/fundamental";
+import {
+  formatFundamentalInline,
+  getFundamentalGrowthHints,
+} from "../messages/fundamental";
 import { getUserInvestmentPrefs } from "../../services/userService";
 import { getFundamentalSnapshot } from "../../services/fundamentalService";
 import { actionButtons, ACTIONS } from "../messages/layout";
@@ -37,8 +40,13 @@ function buildMessage(
     roe?: number;
     debtRatio?: number;
     salesGrowthPct?: number;
+    salesGrowthLowBase?: boolean;
     opIncomeGrowthPct?: number;
+    opIncomeGrowthLowBase?: boolean;
+    opIncomeTurnaround?: boolean;
     netIncomeGrowthPct?: number;
+    netIncomeGrowthLowBase?: boolean;
+    netIncomeTurnaround?: boolean;
     commentary?: string;
   },
   investPrefs?: {
@@ -47,6 +55,7 @@ function buildMessage(
   }
 ): string {
   const { name, code } = stock;
+  const growthHints = fundamental ? getFundamentalGrowthHints(fundamental) : [];
 
   const changeStr = realtimeData?.changeRate !== undefined
     ? `${(realtimeData.change ?? 0) >= 0 ? "▲" : "▼"} ${Math.abs(realtimeData.changeRate ?? 0).toFixed(2)}%`
@@ -100,6 +109,7 @@ function buildMessage(
         `  ${formatFundamentalInline(fundamental)}`,
         "  <i>현재 PER/PBR은 최근 4분기, 실적은 최근 연간 확정치 기준</i>",
         ...(fundamental.profileNote ? [`  <i>${esc(fundamental.profileNote)}</i>`] : []),
+        ...growthHints.map((hint) => `  <i>${esc(hint)}</i>`),
         fundamental.commentary ? `  ${esc(fundamental.commentary)}` : "",
       ].join("\n")
     : "";
@@ -233,8 +243,13 @@ export async function handleBuyCommand(
           roe: fundamental.roe,
           debtRatio: fundamental.debtRatio,
           salesGrowthPct: fundamental.salesGrowthPct,
+          salesGrowthLowBase: fundamental.salesGrowthLowBase,
           opIncomeGrowthPct: fundamental.opIncomeGrowthPct,
+          opIncomeGrowthLowBase: fundamental.opIncomeGrowthLowBase,
+          opIncomeTurnaround: fundamental.opIncomeTurnaround,
           netIncomeGrowthPct: fundamental.netIncomeGrowthPct,
+          netIncomeGrowthLowBase: fundamental.netIncomeGrowthLowBase,
+          netIncomeTurnaround: fundamental.netIncomeTurnaround,
           commentary: fundamental.commentary,
         }
       : undefined,
