@@ -18,8 +18,15 @@ import { handleReportCommand } from "./commands/report";
 import {
   handleKospiCommand,
   handleKosdaqCommand,
+  handleEtfCommand,
+  handleEtfCoreCommand,
+  handleEtfThemeCommand,
 } from "./commands/marketPicks";
-import { handleEtfHubCommand } from "./commands/etf";
+import {
+  handleEtfDistributionCommand,
+  handleEtfHubCommand,
+  handleEtfInfoCommand,
+} from "./commands/etf";
 import {
   handleWatchlistCommand,
   handleWatchlistAdd,
@@ -78,9 +85,14 @@ const CMD = {
   UNFOLLOW:    /^\/(unfollow|언팔로우)(?:\s+(.+))?$/i,
   FEED:        /^\/(feed|피드)$/i,
   NEXTSECTOR:  /^\/(nextsector|다음섹터|수급섹터)$/i,
-  KOSPI:       /^\/(kospi|코스피)$/i,
-  KOSDAQ:      /^\/(kosdaq|코스닥)$/i,
-  ETF:         /^\/(etf|이티에프)(?:\s+(.+))?$/i,
+  KOSPI:       /^(?:\/)?(kospi|코스피)$/i,
+  KOSDAQ:      /^(?:\/)?(kosdaq|코스닥)$/i,
+  ETF:         /^(?:\/)?(etf|이티에프)$/i,
+  ETFHUB:      /^(?:\/)?(etfhub|이티에프허브|etf허브)(?:\s+(.+))?$/i,
+  ETFCORE:     /^\/(etfcore)(?:\s+(.+))?$/i,
+  ETFTHEME:    /^\/(etftheme)(?:\s+(.+))?$/i,
+  ETFINFO:     /^\/(etfinfo)(?:\s+(.+))?$/i,
+  ETFDIV:      /^\/(etfdiv)(?:\s+(.+))?$/i,
 };
 
 const SEND_ERR = (cmd: string) =>
@@ -440,11 +452,73 @@ export async function routeMessage(
     return;
   }
 
-  // /etf — ETF 허브
-  const metf = t.match(CMD.ETF);
-  if (metf) {
+  const metfInfo = t.match(CMD.ETFINFO);
+  if (metfInfo) {
     try {
-      await handleEtfHubCommand(metf[2] ?? "", ctx, tgSend);
+      await handleEtfInfoCommand(metfInfo[2] ?? "", ctx, tgSend);
+    } catch (e) {
+      await tgSend("sendMessage", {
+        chat_id: ctx.chatId,
+        text: SEND_ERR("ETF 정보"),
+      });
+    }
+    return;
+  }
+
+  const metfDiv = t.match(CMD.ETFDIV);
+  if (metfDiv) {
+    try {
+      await handleEtfDistributionCommand(metfDiv[2] ?? "", ctx, tgSend);
+    } catch (e) {
+      await tgSend("sendMessage", {
+        chat_id: ctx.chatId,
+        text: SEND_ERR("ETF 분배금"),
+      });
+    }
+    return;
+  }
+
+  if (CMD.ETFCORE.test(t)) {
+    try {
+      await handleEtfCoreCommand(ctx, tgSend);
+    } catch (e) {
+      await tgSend("sendMessage", {
+        chat_id: ctx.chatId,
+        text: SEND_ERR("ETF 적립형"),
+      });
+    }
+    return;
+  }
+
+  if (CMD.ETFTHEME.test(t)) {
+    try {
+      await handleEtfThemeCommand(ctx, tgSend);
+    } catch (e) {
+      await tgSend("sendMessage", {
+        chat_id: ctx.chatId,
+        text: SEND_ERR("ETF 테마형"),
+      });
+    }
+    return;
+  }
+
+  const metfHub = t.match(CMD.ETFHUB);
+  if (metfHub) {
+    try {
+      await handleEtfHubCommand(metfHub[2] ?? "", ctx, tgSend);
+    } catch (e) {
+      await tgSend("sendMessage", {
+        chat_id: ctx.chatId,
+        text: SEND_ERR("ETF 허브"),
+      });
+    }
+    return;
+  }
+
+  // /etf — ETF 보수형 추천
+  if (CMD.ETF.test(t)) {
+    try {
+      await handleEtfCommand(ctx, tgSend);
     } catch (e) {
       await tgSend("sendMessage", {
         chat_id: ctx.chatId,

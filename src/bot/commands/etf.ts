@@ -58,11 +58,11 @@ function buildHubMessage(): string {
     section(
       "무엇을 할 수 있나",
       bullets([
-        "/ETF 적립 — 장기 분할매수용 안정형 ETF 후보",
-        "/ETF 테마 — 반도체·AI·전력 등 테마형 ETF 후보",
-        "/ETF 정보 종목명 — NAV·괴리율·기초지수·보수 요약",
-        "/ETF 분배금 종목명 — 배당락 주기·최근 기준가격 히스토리",
-        "/ETF 추천 — 기존 보수형 TOP5",
+        "/etf — ETF 보수형 추천 TOP5",
+        "/etfcore — 장기 분할매수용 안정형 ETF 후보",
+        "/etftheme — 반도체·AI·전력 등 테마형 ETF 후보",
+        "/etfinfo 종목명 — NAV·괴리율·기초지수·보수 요약",
+        "/etfdiv 종목명 — 배당락 주기·최근 기준가격 히스토리",
       ])
     ),
     divider(),
@@ -102,7 +102,7 @@ export async function handleEtfInfoCommand(
   if (!query) {
     return tgSend("sendMessage", {
       chat_id: ctx.chatId,
-      text: "사용법: /ETF 정보 ETF명 또는 코드\n예) /ETF 정보 KODEX 200",
+      text: "사용법: /etfinfo ETF명 또는 코드\n예) /etfinfo KODEX 200",
     });
   }
 
@@ -195,7 +195,7 @@ export async function handleEtfDistributionCommand(
   if (!query) {
     return tgSend("sendMessage", {
       chat_id: ctx.chatId,
-      text: "사용법: /ETF 분배금 ETF명 또는 코드\n예) /ETF 분배금 KODEX 200",
+      text: "사용법: /etfdiv ETF명 또는 코드\n예) /etfdiv KODEX 200",
     });
   }
 
