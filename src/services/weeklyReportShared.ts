@@ -184,14 +184,14 @@ export function parseReportTopic(raw?: string | null): ReportTopicMeta {
     };
   }
 
-  if (["관심", "관심종목", "포트폴리오", "watch", "watchlist", "portfolio"].includes(token)) {
+  if (["보유", "포트폴리오", "holdings", "portfolio"].includes(token)) {
     return {
       topic: "watchlist",
-      title: "관심종목 리포트",
+      title: "보유 포트폴리오 리포트",
       fileSlug: "watchlist_report",
       includeCover: false,
-      progressText: "관심종목 리포트 PDF 생성 중입니다. 잠시만 기다려주세요...",
-      captionTitle: "관심종목 리포트",
+      progressText: "보유 포트폴리오 리포트 PDF 생성 중입니다. 잠시만 기다려주세요...",
+      captionTitle: "보유 포트폴리오 리포트",
     };
   }
 

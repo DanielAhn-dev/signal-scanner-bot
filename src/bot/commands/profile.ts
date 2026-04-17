@@ -45,12 +45,12 @@ export async function handleProfileCommand(
     `  투자성향  ${riskProfile}`,
     "",
     `  📊 명령어 사용  <code>${p.commandCount}</code>회`,
-    `  ⭐ 관심종목     <code>${p.watchlistCount}</code>개`,
+    `  ⭐ 보유 종목     <code>${p.watchlistCount}</code>개`,
     `  👥 팔로워       <code>${p.followerCount}</code>명`,
     `  👤 팔로잉       <code>${p.followingCount}</code>명`,
     "",
     LINE,
-    `/랭킹 · /팔로우 @닉네임 · /관심`,
+    `/랭킹 · /팔로우 @닉네임 · /보유`,
   ].join("\n");
 
   await tgSend("sendMessage", {

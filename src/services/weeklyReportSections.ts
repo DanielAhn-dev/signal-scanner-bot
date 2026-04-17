@@ -306,7 +306,7 @@ export function drawWatchlistSection(
     );
   } else {
     ctx.y -= 8;
-    ctx.text("등록된 관심종목이 없습니다.", ctx.ML + 8, ctx.y, 9, C.muted);
+    ctx.text("등록된 보유 종목이 없습니다.", ctx.ML + 8, ctx.y, 9, C.muted);
     ctx.y -= 20;
   }
 }

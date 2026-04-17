@@ -119,7 +119,7 @@ export async function handleCapitalCommand(
         "✅ <b>일손실 한도 설정 완료</b>",
         LINE,
         `일손실 한도 <code>${lossLimitPct.toFixed(1)}%</code>`,
-        "한도 도달 시 /매매 신규 진입은 자동 제한됩니다.",
+        "한도 도달 시 /종목분석 신규 진입 판단은 자동으로 더 보수적으로 조정됩니다.",
       ].join("\n"),
       parse_mode: "HTML",
     });
@@ -173,7 +173,7 @@ export async function handleCapitalCommand(
       `투자성향 <code>${riskProfileLabel(saved.prefs.risk_profile)}</code>`,
       `일손실 한도 <code>${(saved.prefs.daily_loss_limit_pct || 5).toFixed(1)}%</code>`,
       "",
-      "이제 /매매와 추천 후보가 이 성향 기준으로 더 보수적 또는 적극적으로 바뀝니다.",
+      "이제 /종목분석과 추천 후보가 이 성향 기준으로 더 보수적 또는 적극적으로 바뀝니다.",
     ].join("\n"),
     parse_mode: "HTML",
   });

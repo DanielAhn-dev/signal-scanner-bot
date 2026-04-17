@@ -313,7 +313,7 @@ export async function followUser(
   }
 
   const name = target.first_name || target.username || "사용자";
-  return { ok: true, message: `✅ ${name}님을 팔로우합니다.\n/피드 로 관심종목을 확인하세요.` };
+  return { ok: true, message: `✅ ${name}님을 팔로우합니다.\n/피드 로 보유 포트폴리오를 확인하세요.` };
 }
 
 export async function unfollowUser(

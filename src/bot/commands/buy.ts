@@ -192,8 +192,8 @@ export async function handleBuyCommand(
     return tgSend("sendMessage", {
       chat_id: ctx.chatId,
       text: [
-        "사용법: /매매 종목명 또는 코드",
-        "예) /매매 삼성전자",
+        "사용법: /종목분석 종목명 또는 코드",
+        "예) /종목분석 삼성전자",
       ].join("\n"),
     });
   }
@@ -275,7 +275,7 @@ export async function handleBuyCommand(
         `${dayLabel} 실현손익 <code>${fmtInt(dailyRealizedPnl)}원</code>`,
         `일손실 한도 <code>-${fmtInt(dailyLossLimitAmount)}원</code> (${dailyLossLimitPct.toFixed(1)}%) 도달`,
         "오늘은 신규 매수 대신 보유 종목 리스크 점검을 권장합니다.",
-        "권장: /관심대응 · /시장 · /리포트",
+        "권장: /보유대응 · /시장 · /리포트",
       ].join("\n"),
       parse_mode: "HTML",
     });

@@ -66,7 +66,7 @@ export async function setCommandsKo(): Promise<TgResponse> {
     // 봇 짧은 설명 (프로필 옆에 표시)
     tg("setMyShortDescription", {
       short_description:
-        "한국 주식 시그널 스캐너 — 섹터·종목·수급·눌림목·포트폴리오",
+        "한국 주식 시그널 스캐너 — 종목분석·수급·눌림목·가상 포트폴리오",
       language_code: "ko",
     }),
   ]);
@@ -75,10 +75,10 @@ export async function setCommandsKo(): Promise<TgResponse> {
   await tg("setMyDescription", {
     description:
       "한국 주식 시그널 스캐너 봇\n\n" +
-      "- 주도 섹터 · 눌림목 스캔 · 종목 점수\n" +
+      "- 주도 섹터 · 눌림목 스캔 · 종목분석\n" +
       "- 글로벌 경제지표 · 실시간 뉴스\n" +
-      "- 관심종목 포트폴리오 · 수익률 랭킹\n" +
-      "- 외국인/기관 수급 · 매수 판독\n\n" +
+      "- 가상 보유 포트폴리오 · 수익률 랭킹\n" +
+      "- 외국인/기관 수급 · 가상 매수/매도 기록\n\n" +
       "/start 를 눌러 시작하세요!",
     language_code: "ko",
   });

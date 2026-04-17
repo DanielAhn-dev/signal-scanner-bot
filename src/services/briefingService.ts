@@ -462,7 +462,7 @@ export async function createBriefingReport(
   report += `\n<b>주도 테마 Top 3</b>\n`;
   report += sectorReports.join("\n\n");
 
-  report += `\n\n<b>내 관심종목 체크</b>\n`;
+  report += `\n\n<b>내 보유 종목 체크</b>\n`;
   report += watchlistSection;
     report += dailyLossWarning;
 
@@ -476,7 +476,7 @@ export async function createBriefingReport(
     const fetchedAtLabel = formatKstDateTimeLabel(marketData.meta.fetchedAt);
     report += `<i>🌐 시장 데이터: ${quality}${fetchedAtLabel ? ` | 조회 ${fetchedAtLabel} KST` : ""}</i>\n`;
   }
-  report += `/매매 종목코드 · /눌림목 · /경제 · /시장`;
+  report += `/종목분석 종목코드 · /눌림목 · /경제 · /시장`;
 
   return report;
 }
@@ -797,13 +797,13 @@ async function formatWatchlistSection(
   viewItemsInput?: WatchlistViewItem[]
 ) {
   if (!items.length) {
-    return "  <i>등록된 관심종목이 없습니다. /관심추가 종목명 으로 후보를 저장하세요.</i>\n";
+    return "  <i>등록된 보유 종목이 없습니다. /가상매수 종목명 으로 후보를 저장하세요.</i>\n";
   }
 
   const viewItems = viewItemsInput ?? buildWatchlistViewItems(items, scoresByCode, realtimeMap);
 
   if (!viewItems.length) {
-    return "  <i>등록된 관심종목을 불러오지 못했습니다.</i>\n";
+    return "  <i>등록된 보유 종목을 불러오지 못했습니다.</i>\n";
   }
 
   const sortedItems = viewItems

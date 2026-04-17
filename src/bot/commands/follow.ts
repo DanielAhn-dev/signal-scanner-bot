@@ -69,7 +69,7 @@ export async function handleFeedCommand(
         "피드가 비어 있습니다.",
         "",
         "• 아직 아무도 팔로우하지 않았거나",
-        "• 팔로우한 사용자가 관심종목을 등록하지 않았습니다.",
+        "• 팔로우한 사용자가 보유 포트폴리오를 등록하지 않았습니다.",
         "",
         "/팔로우 @사용자명 으로 다른 트레이더를 팔로우하세요!",
       ].join("\n"),
@@ -108,7 +108,7 @@ export async function handleFeedCommand(
     }
   }
 
-  msg += `\n${LINE}\n/랭킹 · /프로필 · /관심`;
+  msg += `\n${LINE}\n/랭킹 · /프로필 · /보유`;
 
   await tgSend("sendMessage", {
     chat_id: ctx.chatId,

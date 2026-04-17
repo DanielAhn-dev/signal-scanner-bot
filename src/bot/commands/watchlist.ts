@@ -1,5 +1,5 @@
 // src/bot/commands/watchlist.ts
-// 관심종목 포트폴리오 — 가상 매매 추적 + 실시간 가격
+// 가상 보유 포트폴리오 — 가상 매매 추적 + 실시간 가격
 
 import type { ChatContext } from "../router";
 import { createClient } from "@supabase/supabase-js";
@@ -344,7 +344,7 @@ async function allocateVirtualBuy(payload: {
   };
 }
 
-// ─── /관심 (목록 조회) ───────────────────
+// ─── /보유 (목록 조회) ─────────────────────
 export async function handleWatchlistCommand(
   ctx: ChatContext,
   tgSend: any
@@ -374,7 +374,7 @@ export async function handleWatchlistCommand(
     console.error("watchlist query error:", error);
     return tgSend("sendMessage", {
       chat_id: ctx.chatId,
-      text: "관심종목 조회 중 오류가 발생했습니다.",
+      text: "보유 포트폴리오 조회 중 오류가 발생했습니다.",
     });
   }
 
@@ -382,10 +382,10 @@ export async function handleWatchlistCommand(
     return tgSend("sendMessage", {
       chat_id: ctx.chatId,
       text: [
-        "관심종목이 비어 있습니다.",
+        "보유 포트폴리오가 비어 있습니다.",
         "",
-        "/관심추가 종목명 [매수가]",
-        "예) /관심추가 삼성전자 72000",
+        "/가상매수 종목명 [매수가]",
+        "예) /가상매수 삼성전자 72000",
         "추가한 종목은 /브리핑에서 함께 점검됩니다.",
       ].join("\n"),
     });
@@ -552,7 +552,7 @@ export async function handleWatchlistCommand(
       : "";
 
   const msg = [
-    `<b>관심종목 포트폴리오</b>`,
+    `<b>가상 보유 포트폴리오</b>`,
     LINE,
     `오늘 액션 ${actionable}건 · 눌림 대기 ${pullback}건 · 관망 ${wait}건`,
     `주식 ${stockCount}건 · ETF ${etfCount}건`,
@@ -562,10 +562,10 @@ export async function handleWatchlistCommand(
     ...concentrationWarning ? [concentrationWarning] : [],
     walletSummary,
     "",
-    `/관심추가 종목 [매수가] · /관심삭제 종목`,
-    `/관심수정 종목 매수가 [수량]`,
-    `/관심자동 · /관심대응`,
-    `/기록`,
+    `/가상매수 종목 [매수가] · /가상매도 종목`,
+    `/보유수정 종목 매수가 [수량]`,
+    `/자동매도점검 · /보유대응`,
+    `/거래기록`,
   ].join("\n");
 
   await tgSend("sendMessage", {
@@ -575,7 +575,7 @@ export async function handleWatchlistCommand(
   });
 }
 
-// ─── /관심추가 <종목> [매수가] ───────────
+// ─── /가상매수 <종목> [매수가] ───────────
 export async function handleWatchlistAdd(
   input: string,
   ctx: ChatContext,
@@ -588,7 +588,7 @@ export async function handleWatchlistAdd(
   if (!query) {
     return tgSend("sendMessage", {
       chat_id: ctx.chatId,
-      text: "사용법: /관심추가 종목명 [매수가]\n예) /관심추가 삼성전자 72000",
+      text: "사용법: /가상매수 종목명 [매수가]\n예) /가상매수 삼성전자 72000",
     });
   }
 
@@ -601,7 +601,7 @@ export async function handleWatchlistAdd(
   if ((count ?? 0) >= MAX_ITEMS) {
     return tgSend("sendMessage", {
       chat_id: ctx.chatId,
-      text: `관심종목은 최대 ${MAX_ITEMS}개까지 등록할 수 있습니다.\n/관심삭제 로 정리 후 추가해주세요.`,
+      text: `보유 포트폴리오는 최대 ${MAX_ITEMS}개까지 등록할 수 있습니다.\n/가상매도 로 정리 후 추가해주세요.`,
     });
   }
 
@@ -627,7 +627,7 @@ export async function handleWatchlistAdd(
   if (existing) {
     return tgSend("sendMessage", {
       chat_id: ctx.chatId,
-      text: `${esc(name)} (${code})은 이미 관심종목에 있습니다.\n/관심수정 ${name} 매수가 수량 으로 수정해주세요.`,
+      text: `${esc(name)} (${code})은 이미 보유 포트폴리오에 있습니다.\n/보유수정 ${name} 매수가 수량 으로 수정해주세요.`,
       parse_mode: "HTML",
     });
   }
@@ -669,7 +669,7 @@ export async function handleWatchlistAdd(
     console.error("watchlist upsert error:", error);
     return tgSend("sendMessage", {
       chat_id: ctx.chatId,
-      text: "관심종목 추가 중 오류가 발생했습니다.",
+      text: "가상 매수 처리 중 오류가 발생했습니다.",
     });
   }
 
@@ -724,12 +724,12 @@ export async function handleWatchlistAdd(
   const priceNote = buyPrice ? `  매수가 ${fmtInt(buyPrice)}원` : "";
   await tgSend("sendMessage", {
     chat_id: ctx.chatId,
-    text: `${esc(name)} (${code}) 관심종목 추가 완료${priceNote}${walletNote}\n/관심 으로 목록 확인\n/브리핑 에서 추천 후보와 함께 점검`,
+    text: `${esc(name)} (${code}) 가상 매수 완료${priceNote}${walletNote}\n/보유 로 목록 확인\n/브리핑 에서 추천 후보와 함께 점검`,
     parse_mode: "HTML",
   });
 }
 
-// ─── /관심삭제 <종목> ────────────────────
+// ─── /가상매도 <종목> ────────────────────
 export async function handleWatchlistRemove(
   input: string,
   ctx: ChatContext,
@@ -746,7 +746,7 @@ export async function handleWatchlistRemove(
   if (!query) {
     return tgSend("sendMessage", {
       chat_id: ctx.chatId,
-      text: "사용법: /관심삭제 종목명 [수량]\n예) /관심삭제 삼성전자 3",
+      text: "사용법: /가상매도 종목명 [수량]\n예) /가상매도 삼성전자 3",
     });
   }
 
@@ -784,7 +784,7 @@ export async function handleWatchlistRemove(
   if (sellQtyRequested !== null && qty > 0 && sellQtyRequested > qty) {
     return tgSend("sendMessage", {
       chat_id: ctx.chatId,
-      text: `${esc(name)} (${code}) 보유수량은 ${qty}주입니다.\n/관심삭제 ${name} ${qty} 처럼 입력해주세요.`,
+      text: `${esc(name)} (${code}) 보유수량은 ${qty}주입니다.\n/가상매도 ${name} ${qty} 처럼 입력해주세요.`,
       parse_mode: "HTML",
     });
   }
@@ -867,14 +867,14 @@ export async function handleWatchlistRemove(
     console.error("watchlist sell/delete error:", dbError);
     return tgSend("sendMessage", {
       chat_id: ctx.chatId,
-      text: "관심종목 정리 중 오류가 발생했습니다.",
+      text: "가상 매도 처리 중 오류가 발생했습니다.",
     });
   }
 
   if (!affectedCount) {
     return tgSend("sendMessage", {
       chat_id: ctx.chatId,
-      text: `${esc(name)} (${code})은 관심종목에 없습니다.`,
+      text: `${esc(name)} (${code})은 보유 포트폴리오에 없습니다.`,
       parse_mode: "HTML",
     });
   }
@@ -969,8 +969,8 @@ export async function handleWatchlistRemove(
     return tgSend("sendMessage", {
       chat_id: ctx.chatId,
       text: isFullExit
-        ? `${esc(name)} (${code}) ${sellQty}주 매도 후 관심종목에서 제거되었습니다.\n정산금 ${fmtInt(net)}원 · 실현손익 ${pnl >= 0 ? "+" : ""}${fmtInt(pnl)}원\n/기록 으로 가상 거래 내역 확인`
-        : `${esc(name)} (${code}) ${sellQty}주 부분매도 완료 (잔여 ${remainQtyNote}주)\n정산금 ${fmtInt(net)}원 · 실현손익 ${pnl >= 0 ? "+" : ""}${fmtInt(pnl)}원\n/관심 으로 잔여 포지션 확인`,
+        ? `${esc(name)} (${code}) ${sellQty}주 가상 매도 완료 후 보유 포트폴리오에서 제거되었습니다.\n정산금 ${fmtInt(net)}원 · 실현손익 ${pnl >= 0 ? "+" : ""}${fmtInt(pnl)}원\n/거래기록 으로 가상 거래 내역 확인`
+        : `${esc(name)} (${code}) ${sellQty}주 부분 가상 매도 완료 (잔여 ${remainQtyNote}주)\n정산금 ${fmtInt(net)}원 · 실현손익 ${pnl >= 0 ? "+" : ""}${fmtInt(pnl)}원\n/보유 로 잔여 포지션 확인`,
       parse_mode: "HTML",
     });
   }
@@ -983,12 +983,12 @@ export async function handleWatchlistRemove(
 
   await tgSend("sendMessage", {
     chat_id: ctx.chatId,
-    text: `${esc(name)} (${code}) 관심종목에서 삭제 완료\n/관심 으로 목록 확인\n/기록 으로 가상 거래 내역 확인`,
+    text: `${esc(name)} (${code}) 보유 포트폴리오에서 제거 완료\n/보유 로 목록 확인\n/거래기록 으로 가상 거래 내역 확인`,
     parse_mode: "HTML",
   });
 }
 
-// ─── /관심자동 (기계적 자동 판정·기록) ──────
+// ─── /자동매도점검 (기계적 자동 판정·기록) ───
 export async function handleWatchlistAutoCommand(
   ctx: ChatContext,
   tgSend: any
@@ -1008,14 +1008,14 @@ export async function handleWatchlistAutoCommand(
     console.error("watchlist auto query error:", error);
     return tgSend("sendMessage", {
       chat_id: ctx.chatId,
-      text: "관심자동 처리 중 오류가 발생했습니다.",
+      text: "자동 매도 점검 중 오류가 발생했습니다.",
     });
   }
 
   if (!items || items.length === 0) {
     return tgSend("sendMessage", {
       chat_id: ctx.chatId,
-      text: "관심종목이 없어 자동 점검할 항목이 없습니다.\n/관심추가 후 다시 실행해주세요.",
+      text: "보유 종목이 없어 자동 점검할 항목이 없습니다.\n/가상매수 후 다시 실행해주세요.",
     });
   }
 
@@ -1151,7 +1151,7 @@ export async function handleWatchlistAutoCommand(
   }
 
   const msg = [
-    "<b>관심자동 결과</b>",
+    "<b>자동매도점검 결과</b>",
     LINE,
     `실행 시점 ${isKstMarketOpen() ? "장중" : "장마감/비개장"} 기준`,
     `자동매도 ${executed}건 · 보유유지 ${holdLines.length}건`,
@@ -1162,7 +1162,7 @@ export async function handleWatchlistAutoCommand(
     "<b>보유 유지</b>",
     ...(holdLines.length ? holdLines : ["- 해당 종목이 없습니다."]),
     "",
-    "자동 실행 건은 /기록 에 (자동)으로 남습니다.",
+    "자동 실행 건은 /거래기록 에 (자동)으로 남습니다.",
     ...(dailyLossGateNote ? [dailyLossGateNote] : []),
   ].join("\n");
 
@@ -1173,7 +1173,7 @@ export async function handleWatchlistAutoCommand(
   });
 }
 
-// ─── /관심대응 (익일 액션 플랜) ───────────
+// ─── /보유대응 (익일 액션 플랜) ───────────
 export async function handleWatchlistResponseCommand(
   ctx: ChatContext,
   tgSend: any
@@ -1193,14 +1193,14 @@ export async function handleWatchlistResponseCommand(
     console.error("watchlist response query error:", error);
     return tgSend("sendMessage", {
       chat_id: ctx.chatId,
-      text: "관심대응 생성 중 오류가 발생했습니다.",
+      text: "보유 대응 플랜 생성 중 오류가 발생했습니다.",
     });
   }
 
   if (!items || items.length === 0) {
     return tgSend("sendMessage", {
       chat_id: ctx.chatId,
-      text: "관심종목이 없어 대응 계획을 만들 수 없습니다.\n/관심추가 후 다시 실행해주세요.",
+      text: "보유 종목이 없어 대응 계획을 만들 수 없습니다.\n/가상매수 후 다시 실행해주세요.",
     });
   }
 
@@ -1279,7 +1279,7 @@ export async function handleWatchlistResponseCommand(
   }
 
   const msg = [
-    "<b>관심대응 플랜</b>",
+    "<b>보유대응 플랜</b>",
     LINE,
     marketOpen
       ? "장중 조회: 현재 종가 기반 참고 플랜입니다."
@@ -1296,7 +1296,7 @@ export async function handleWatchlistResponseCommand(
   });
 }
 
-// ─── /관심수정 <종목> <매수가> ────────────
+// ─── /보유수정 <종목> <매수가> ────────────
 export async function handleWatchlistEdit(
   input: string,
   ctx: ChatContext,
@@ -1310,7 +1310,7 @@ export async function handleWatchlistEdit(
   if (!query || !rawPrice) {
     return tgSend("sendMessage", {
       chat_id: ctx.chatId,
-      text: "사용법: /관심수정 종목명 매수가 [수량]\n예) /관심수정 삼성전자 72000 5",
+      text: "사용법: /보유수정 종목명 매수가 [수량]\n예) /보유수정 삼성전자 72000 5",
     });
   }
 
@@ -1328,7 +1328,7 @@ export async function handleWatchlistEdit(
   if (!Number.isFinite(newPrice) || newPrice <= 0) {
     return tgSend("sendMessage", {
       chat_id: ctx.chatId,
-      text: "유효한 매수가를 입력해주세요.\n예) /관심수정 삼성전자 72000 5",
+      text: "유효한 매수가를 입력해주세요.\n예) /보유수정 삼성전자 72000 5",
     });
   }
 
@@ -1336,7 +1336,7 @@ export async function handleWatchlistEdit(
   if (rawQty && (!Number.isFinite(parsedQtyValue) || (parsedQtyValue ?? 0) <= 0)) {
     return tgSend("sendMessage", {
       chat_id: ctx.chatId,
-      text: "수량은 1주 이상 정수로 입력해주세요.\n예) /관심수정 삼성전자 72000 5",
+      text: "수량은 1주 이상 정수로 입력해주세요.\n예) /보유수정 삼성전자 72000 5",
     });
   }
 
@@ -1351,7 +1351,7 @@ export async function handleWatchlistEdit(
   if (!existing) {
     return tgSend("sendMessage", {
       chat_id: ctx.chatId,
-      text: `${esc(name)} (${code})은 관심종목에 없습니다.\n/관심추가 로 먼저 추가해주세요.`,
+      text: `${esc(name)} (${code})은 보유 포트폴리오에 없습니다.\n/가상매수 로 먼저 추가해주세요.`,
       parse_mode: "HTML",
     });
   }
@@ -1434,14 +1434,14 @@ export async function handleWatchlistEdit(
       `수량 <code>${previous.quantity}주</code> → <code>${nextQty}주</code>`,
       `원금 <code>${fmtInt(nextInvested)}원</code>${syncedCash !== null ? ` · 잔액 <code>${fmtInt(syncedCash)}원</code>` : ""}`,
       tradeLog.ok
-        ? `/관심 · /기록 으로 확인`
-        : `/관심 은 반영됐지만 거래 기록 저장은 실패했습니다.`,
+        ? `/보유 · /거래기록 으로 확인`
+        : `/보유 는 반영됐지만 거래 기록 저장은 실패했습니다.`,
     ].join("\n"),
     parse_mode: "HTML",
   });
 }
 
-// ─── 관심추가 Quick (콜백 버튼에서 사용) ──
+// ─── 가상매수 Quick (콜백 버튼에서 사용) ──
 export async function handleWatchlistQuickAdd(
   code: string,
   ctx: ChatContext,
@@ -1467,7 +1467,7 @@ export async function handleWatchlistQuickAdd(
   if (existing) {
     return tgSend("sendMessage", {
       chat_id: ctx.chatId,
-      text: `${esc(name)} (${code})은 이미 관심종목에 있습니다.`,
+      text: `${esc(name)} (${code})은 이미 보유 포트폴리오에 있습니다.`,
       parse_mode: "HTML",
     });
   }
@@ -1481,7 +1481,7 @@ export async function handleWatchlistQuickAdd(
   if ((count ?? 0) >= MAX_ITEMS) {
     return tgSend("sendMessage", {
       chat_id: ctx.chatId,
-      text: `관심종목은 최대 ${MAX_ITEMS}개까지 등록할 수 있습니다.\n/관심삭제 로 정리 후 추가해주세요.`,
+      text: `보유 포트폴리오는 최대 ${MAX_ITEMS}개까지 등록할 수 있습니다.\n/가상매도 로 정리 후 추가해주세요.`,
     });
   }
 
@@ -1518,7 +1518,7 @@ export async function handleWatchlistQuickAdd(
     console.error("watchlist quick-add error:", error);
     return tgSend("sendMessage", {
       chat_id: ctx.chatId,
-      text: "관심종목 추가 중 오류가 발생했습니다.",
+      text: "가상 매수 처리 중 오류가 발생했습니다.",
     });
   }
 
@@ -1573,12 +1573,12 @@ export async function handleWatchlistQuickAdd(
   const priceNote = price ? `  매수가 ${fmtInt(price)}원 (현재가 자동저장)` : "";
   await tgSend("sendMessage", {
     chat_id: ctx.chatId,
-    text: `${esc(name)} (${code}) 관심종목 추가 완료${priceNote}${alloc.walletNote}\n/관심 으로 목록 확인\n/브리핑 에서 함께 점검\n/관심수정 ${name} 가격 수량 — 매수가/수량 변경`,
+    text: `${esc(name)} (${code}) 가상 매수 완료${priceNote}${alloc.walletNote}\n/보유 로 목록 확인\n/브리핑 에서 함께 점검\n/보유수정 ${name} 가격 수량 — 매수가/수량 변경`,
     parse_mode: "HTML",
   });
 }
 
-// ─── /기록 (가상 매매 내역) ───────────────
+// ─── /거래기록 (가상 매매 내역) ───────────
 export async function handleWatchlistHistoryCommand(
   input: string,
   ctx: ChatContext,
@@ -1652,7 +1652,7 @@ export async function handleWatchlistHistoryCommand(
         "<b>가상 매매 기록</b>",
         LINE,
         "아직 기록이 없습니다.",
-        maxDays ? `최근 ${maxDays}일 내 기록이 없습니다.` : "/관심추가 로 가상 매수를 시작해보세요.",
+        maxDays ? `최근 ${maxDays}일 내 기록이 없습니다.` : "/가상매수 로 가상 매수를 시작해보세요.",
       ].join("\n"),
       parse_mode: "HTML",
     });

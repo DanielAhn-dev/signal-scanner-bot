@@ -57,7 +57,7 @@ const CMD = {
   HELP:        /^\/(help|도움말)$/i,
   BRIEF:       /^\/(brief|morning|브리핑|장전)$/i,
   REPORT:      /^\/(report|리포트)(?:\s+(.+))?$/i,
-  TRADE:       /^\/(trade|매매)\s+(.+)$/i,
+  TRADE:       /^\/(analyze|종목분석)\s+(.+)$/i,
   SECTOR:      /^\/(sector|섹터|업종|테마)$/i,
   STOCKS:      /^\/(stocks|종목)\s+(.+)$/i,
   PULLBACK:    /^\/(pullback|눌림목)$/i,
@@ -69,14 +69,14 @@ const CMD = {
   FLOW:        /^\/(flow|수급)(?:\s+(.+))?$/i,
   FINANCE:     /^\/(finance|재무)(?:\s+(.+))?$/i,
   CAPITAL:     /^\/(capital|투자금)(?:\s+(.+))?$/i,
-  WATCHADD:    /^\/(watchadd|관심추가)(?:\s+(.+))?$/i,
-  WATCHREMOVE: /^\/(watchremove|관심삭제)(?:\s+(.+))?$/i,
-  WATCHEDIT:   /^\/(watchedit|관심수정)(?:\s+(.+))?$/i,
-  WATCHAUTO:   /^\/(watchauto|관심자동)$/i,
-  WATCHRESP:   /^\/(watchrespond|관심대응)$/i,
-  RECORD:      /^\/(record|기록)(?:\s+(.+))?$/i,
+  WATCHADD:    /^\/(paperbuy|가상매수)(?:\s+(.+))?$/i,
+  WATCHREMOVE: /^\/(papersell|가상매도)(?:\s+(.+))?$/i,
+  WATCHEDIT:   /^\/(holdingedit|보유수정)(?:\s+(.+))?$/i,
+  WATCHAUTO:   /^\/(autosellcheck|자동매도점검)$/i,
+  WATCHRESP:   /^\/(holdingplan|보유대응)$/i,
+  RECORD:      /^\/(tradelog|거래기록)(?:\s+(.+))?$/i,
   ALERT:       /^\/(alert|이상징후|알림)$/i,
-  WATCHLIST:   /^\/(watchlist|관심종목|관심)$/i,
+  WATCHLIST:   /^\/(holdings|보유)$/i,
   RANKING:     /^\/(ranking|랭킹|순위)$/i,
   PROFILE:     /^\/(profile|프로필|내정보)$/i,
   FOLLOW:      /^\/(follow|팔로우)(?:\s+(.+))?$/i,
@@ -129,10 +129,10 @@ export async function routeMessage(
             `투자성향: ${riskProfileLabel(prefs.risk_profile)}`,
             `투자금: ${(prefs.capital_krw || 0).toLocaleString("ko-KR")}원`,
             ``,
-            `/brief — 장전 브리핑 + 내 관심종목 점검`,
+            `/brief — 장전 브리핑 + 내 보유 종목 점검`,
             `/sector — 주도 섹터와 대표 후보`,
             `/pullback — 눌림목 대기 후보`,
-            `/watchlist — 관심종목 포트폴리오`,
+            `/보유 — 가상 보유 포트폴리오`,
             ``,
             `도움말: /help`,
           ].join("\n")
@@ -144,14 +144,14 @@ export async function routeMessage(
             `1. 투자성향 저장`,
             `2. 투자금 입력`,
             ``,
-            `설정 후 /brief 에서 관심종목과 추천 후보를 함께 점검할 수 있습니다.`,
+            `설정 후 /brief 에서 보유 종목과 추천 후보를 함께 점검할 수 있습니다.`,
           ].join("\n"),
       parse_mode: "HTML",
       reply_markup: hasSetup
         ? actionButtons([
             { text: "브리핑", callback_data: "cmd:brief" },
             { text: "리포트 메뉴", callback_data: "cmd:report" },
-            { text: "관심종목", callback_data: "cmd:watchlist" },
+            { text: "보유", callback_data: "cmd:watchlist" },
             { text: "섹터", callback_data: "cmd:sector" },
             { text: "투자금 수정", callback_data: "prompt:capital" },
             { text: "가이드", callback_data: "cmd:onboarding" },
@@ -263,7 +263,7 @@ export async function routeMessage(
     return;
   }
 
-  // /trade | /매매 [종목명/코드] — 통합 실행형 분석
+  // /analyze | /종목분석 [종목명/코드] — 종목 분석
   const mt = t.match(CMD.TRADE);
   if (mt) {
     await handleBuyCommand(mt[2], ctx, tgSend);
@@ -373,7 +373,7 @@ export async function routeMessage(
     return;
   }
 
-  // /watchlist — 관심종목
+  // /holdings | /보유 — 가상 보유 포트폴리오
   if (CMD.WATCHLIST.test(t)) {
     await handleWatchlistCommand(ctx, tgSend);
     return;

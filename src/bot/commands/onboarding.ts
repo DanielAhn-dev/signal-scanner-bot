@@ -36,7 +36,7 @@ export async function handleRiskProfileSelection(
     text: [
       `<b>투자성향 저장 완료</b>`,
       `현재 기준은 <code>${riskProfileLabel(profile)}</code>입니다.`,
-      `다음으로 투자금을 입력하면 /브리핑, /섹터, /눌림목 후보가 이 성향에 맞춰 더 보수적 또는 적극적으로 바뀝니다.`,
+      `다음으로 투자금을 입력하면 /브리핑, /섹터, /눌림목 후보와 /종목분석 결과가 이 성향에 맞춰 더 보수적 또는 적극적으로 바뀝니다.`,
       ``,
       `예시: /투자금 300만원 3 8 ${riskProfileLabel(profile)}`,
     ].join("\n"),
@@ -44,7 +44,7 @@ export async function handleRiskProfileSelection(
     reply_markup: actionButtons([
       { text: "투자금 입력", callback_data: "prompt:capital" },
       { text: "브리핑", callback_data: "cmd:brief" },
-      { text: "관심종목", callback_data: "cmd:watchlist" },
+      { text: "보유", callback_data: "cmd:watchlist" },
       { text: "프로필", callback_data: "cmd:profile" },
     ], 2),
   });
@@ -73,21 +73,21 @@ export async function handleOnboardingCommand(
       "1) /경제, /시장으로 리스크 온도 확인",
       "2) /브리핑 또는 /섹터, /다음섹터로 순환매 후보 압축",
       "3) /스캔, /눌림목으로 진입 후보 선별",
-      "4) /매매, /재무, /수급으로 기술·재무·자금흐름 교차검증",
-      "5) /매매로 진입/손절/목표가·수량 확인 후 실행",
-      "6) /관심, /프로필로 사후 복기 및 습관 점검",
+      "4) /종목분석, /재무, /수급으로 기술·재무·자금흐름 교차검증",
+      "5) /종목분석으로 진입/손절/목표가·수량 확인 후 /가상매수 실행",
+      "6) /보유, /거래기록, /프로필로 사후 복기 및 습관 점검",
     ])),
     divider(),
     "투자성향 버튼을 먼저 누르고, 투자금만 입력하면 바로 개인화가 시작됩니다.",
   ]);
 
   const nextSteps = buildMessage([
-    header("바로 할 일", "설정 후 브리핑과 관심종목을 연결"),
+    header("바로 할 일", "설정 후 브리핑과 보유 포트폴리오를 연결"),
     section("권장 순서", bullets([
       "1) 안전형/균형형/공격형 중 하나 저장",
       "2) /투자금 300만원 3 8 형태로 투자금 입력",
-      "3) /관심추가 삼성전자 또는 버튼으로 관심종목 등록",
-      "4) /브리핑 에서 추천 후보와 관심종목을 함께 점검",
+      "3) /가상매수 삼성전자 또는 버튼으로 보유 포트폴리오에 편입",
+      "4) /브리핑 에서 추천 후보와 보유 종목을 함께 점검",
     ])),
     divider(),
     "※ 본 봇은 의사결정 보조 도구이며 수익을 보장하지 않습니다. 리스크 관리는 항상 본인 책임입니다.",
@@ -112,9 +112,9 @@ export async function handleOnboardingCommand(
     parse_mode: "HTML",
     disable_web_page_preview: true,
     reply_markup: actionButtons([
-      { text: "관심종목", callback_data: "cmd:watchlist" },
+      { text: "보유", callback_data: "cmd:watchlist" },
       { text: "브리핑", callback_data: "cmd:brief" },
-      { text: "매매", callback_data: "prompt:trade" },
+      { text: "종목분석", callback_data: "prompt:trade" },
       { text: "재무", callback_data: "prompt:finance" },
     ], 2),
   });

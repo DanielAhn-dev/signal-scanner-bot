@@ -17,8 +17,8 @@ export async function handleRankingCommand(
       text: [
         "아직 랭킹 데이터가 없습니다.",
         "",
-        "관심종목에 매수가를 등록한 사용자가 필요합니다.",
-        "/관심추가 종목명 매수가",
+        "가상 보유 포트폴리오에 매수가를 등록한 사용자가 필요합니다.",
+        "/가상매수 종목명 매수가",
       ].join("\n"),
     });
   }
@@ -47,10 +47,10 @@ export async function handleRankingCommand(
   if (myRank >= 0) {
     msg += `\n\n내 순위: ${myRank + 1}위`;
   } else {
-    msg += `\n\n💡 /관심추가 종목 매수가 로 참여하세요!`;
+    msg += `\n\n💡 /가상매수 종목 매수가 로 참여하세요!`;
   }
 
-  msg += `\n${LINE}\n/프로필 · /관심 · /팔로우 @닉네임`;
+  msg += `\n${LINE}\n/프로필 · /보유 · /팔로우 @닉네임`;
 
   await tgSend("sendMessage", {
     chat_id: ctx.chatId,
