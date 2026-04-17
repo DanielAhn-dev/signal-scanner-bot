@@ -1,0 +1,448 @@
+import type { PDFFont } from "pdf-lib";
+import { fetchAllMarketData, fetchReportMarketData } from "../utils/fetchMarketData";
+import type { TradeWindows, WindowSummary } from "./weeklyReportData";
+import {
+  C,
+  FIFO_REALIZED_LABEL,
+  FIFO_TRADE_NOTE,
+  FIFO_WIN_RATE_LABEL,
+  fmtInt,
+  fmtKorMoney,
+  fmtPct,
+  fmtSignedInt,
+  lineDate,
+  pnlColor,
+  toNum,
+  truncate,
+} from "./weeklyReportShared";
+import {
+  drawCommentBlock,
+  drawKpiGrid,
+  drawPortfolioSummaryRow,
+  drawSectionHeader,
+  drawTable,
+  type KpiCard,
+  type ReportRenderContext,
+} from "./weeklyReportRenderers";
+
+type WatchItem = {
+  code: string;
+  name: string;
+  qty: number;
+  buyPrice: number | null;
+  currentPrice: number | null;
+  invested: number;
+  unrealized: number;
+  pnlPct: number | null;
+};
+
+type SectorRow = {
+  name: string;
+  score: number | null;
+  change_rate: number | null;
+  metrics?: Record<string, unknown> | null;
+};
+
+export function drawMarketOverviewSection(
+  ctx: ReportRenderContext,
+  ymd: string,
+  market: Awaited<ReturnType<typeof fetchReportMarketData>>,
+  sectors: SectorRow[]
+) {
+  drawSectionHeader(ctx, "시장 개요", `기준: ${ymd}`);
+
+  const cards: KpiCard[] = [];
+  if (market.kospi) {
+    cards.push({
+      label: "KOSPI",
+      value: fmtInt(toNum(market.kospi.price)),
+      sub: fmtPct(toNum(market.kospi.changeRate)),
+      valueColor: pnlColor(toNum(market.kospi.changeRate)),
+    });
+  }
+  if (market.kosdaq) {
+    cards.push({
+      label: "KOSDAQ",
+      value: fmtInt(toNum(market.kosdaq.price)),
+      sub: fmtPct(toNum(market.kosdaq.changeRate)),
+      valueColor: pnlColor(toNum(market.kosdaq.changeRate)),
+    });
+  }
+  if (market.usdkrw) {
+    cards.push({
+      label: "USD/KRW",
+      value: `${fmtInt(toNum(market.usdkrw.price))}원`,
+      sub: fmtPct(toNum(market.usdkrw.changeRate)),
+      valueColor: C.text,
+    });
+  }
+  if (market.vix) {
+    const vixVal = toNum(market.vix.price);
+    cards.push({
+      label: "VIX (공포지수)",
+      value: vixVal.toFixed(1),
+      sub: vixVal >= 30 ? "고공포" : vixVal >= 20 ? "주의" : "안정",
+      valueColor: vixVal >= 30 ? C.up : C.text,
+    });
+  }
+  if (market.fearGreed) {
+    cards.push({
+      label: "공포·탐욕",
+      value: String(toNum(market.fearGreed.score)),
+      sub: market.fearGreed.rating ?? "",
+      valueColor: C.text,
+    });
+  }
+
+  while (cards.length % 4 !== 0) cards.push({ label: "", value: "" });
+  if (cards.length > 0) drawKpiGrid(ctx, cards, 4);
+
+  if (sectors.length > 0) {
+    ctx.y -= 4;
+    drawSectionHeader(ctx, "주도 섹터 Top 3", `기준: ${ymd}`);
+    drawTable(
+      ctx,
+      [
+        { header: "순위", width: 40, align: "center" },
+        { header: "섹터명", width: 200 },
+        { header: "점수", width: 70, align: "right" },
+        { header: "수익률", width: 80, align: "right" },
+        { header: "상태", width: 117, align: "center" },
+      ],
+      sectors.map((sector, index) => {
+        const rate = toNum(sector.change_rate);
+        return [
+          String(index + 1),
+          sector.name,
+          toNum(sector.score).toFixed(1),
+          fmtPct(rate),
+          rate >= 1 ? "강세" : rate >= 0 ? "보합" : "약세",
+        ];
+      }),
+      sectors.map((sector) => pnlColor(toNum(sector.change_rate)))
+    );
+  }
+}
+
+export function drawPortfolioSection(
+  ctx: ReportRenderContext,
+  totalInvested: number,
+  totalValue: number,
+  totalUnrealized: number,
+  totalUnrealizedPct: number,
+  watchItems: WatchItem[],
+  curr: WindowSummary,
+  prev: WindowSummary
+) {
+  ctx.y -= 6;
+  drawSectionHeader(ctx, "포트폴리오 요약");
+  const cards: KpiCard[] = [
+    { label: "총 원금", value: `${fmtInt(totalInvested)}원`, valueColor: C.text },
+    { label: "평가금액", value: `${fmtInt(totalValue)}원`, valueColor: C.text },
+    { label: "평가손익", value: fmtSignedInt(totalUnrealized), sub: fmtPct(totalUnrealizedPct), valueColor: pnlColor(totalUnrealized) },
+    { label: "보유 종목수", value: `${watchItems.length}개`, valueColor: C.text },
+    { label: "거래 (최근 2주)", value: `${curr.tradeCount}건`, sub: `매수 ${curr.buyCount} / 매도 ${curr.sellCount}`, valueColor: C.text },
+    { label: `${FIFO_REALIZED_LABEL} (2주)`, value: fmtSignedInt(curr.realizedPnl), valueColor: pnlColor(curr.realizedPnl) },
+    { label: `${FIFO_WIN_RATE_LABEL} (2주)`, value: `${curr.winRate.toFixed(1)}%`, sub: curr.sellCount > 0 ? `${curr.sellCount}건 매도 기준` : "매도 없음", valueColor: curr.winRate >= 50 ? C.up : C.down },
+    { label: "이전 2주 대비", value: fmtSignedInt(curr.realizedPnl - prev.realizedPnl), sub: `${FIFO_REALIZED_LABEL} 증감`, valueColor: pnlColor(curr.realizedPnl - prev.realizedPnl) },
+  ];
+  drawKpiGrid(ctx, cards, 4);
+}
+
+export function drawTradesSection(ctx: ReportRenderContext, windows: TradeWindows) {
+  ctx.y -= 6;
+  drawSectionHeader(ctx, "매매 기록 및 성과 분석", FIFO_TRADE_NOTE);
+
+  if (windows.recent.length > 0) {
+    drawTable(
+      ctx,
+      [
+        { header: "일자", width: 58, align: "center" },
+        { header: "구분", width: 42, align: "center" },
+        { header: "종목코드", width: 64, align: "center" },
+        { header: "수량", width: 50, align: "right" },
+        { header: "단가 (원)", width: 88, align: "right" },
+        { header: "금액 (원)", width: 88, align: "right" },
+        { header: FIFO_REALIZED_LABEL, width: 117, align: "right" },
+      ],
+      windows.recent.map((row) => {
+        const qty = Math.max(0, Math.floor(toNum(row.quantity)));
+        const price = toNum(row.price);
+        const pnl = row.side === "SELL" ? fmtSignedInt(toNum(row.pnl_amount)) : "-";
+        const sideLabel = row.side === "BUY" ? "매수" : row.side === "SELL" ? "매도" : "수정";
+        return [
+          lineDate(row.traded_at),
+          sideLabel,
+          row.code,
+          `${qty}주`,
+          fmtInt(price),
+          fmtInt(price * qty),
+          pnl,
+        ];
+      }),
+      windows.recent.map((row) =>
+        row.side === "SELL" ? pnlColor(toNum(row.pnl_amount)) : row.side === "BUY" ? C.down : C.text
+      )
+    );
+  } else {
+    ctx.y -= 4;
+    ctx.text("최근 2주 거래 기록이 없습니다.", ctx.ML + 8, ctx.y, 9, C.muted);
+    ctx.y -= 20;
+  }
+}
+
+export function drawWatchlistSection(
+  ctx: ReportRenderContext,
+  watchItems: WatchItem[],
+  totalInvested: number,
+  totalUnrealized: number,
+  totalUnrealizedPct: number
+) {
+  ctx.y -= 6;
+  drawSectionHeader(ctx, "보유 종목 상세", `총 ${watchItems.length}개 종목`);
+
+  if (watchItems.length > 0) {
+    drawTable(
+      ctx,
+      [
+        { header: "종목명", width: 112, align: "left" },
+        { header: "코드", width: 54, align: "center" },
+        { header: "수량", width: 46, align: "right" },
+        { header: "평균단가", width: 78, align: "right" },
+        { header: "현재가", width: 78, align: "right" },
+        { header: "평가손익", width: 80, align: "right" },
+        { header: "수익률", width: 59, align: "right" },
+      ],
+      watchItems.slice(0, 20).map((item) => [
+        truncate(item.name, 10),
+        item.code,
+        `${item.qty}주`,
+        item.buyPrice ? fmtInt(item.buyPrice) : "-",
+        item.currentPrice ? fmtInt(item.currentPrice) : "-",
+        item.invested > 0 ? fmtSignedInt(item.unrealized) : "-",
+        item.pnlPct != null ? fmtPct(item.pnlPct) : "-",
+      ]),
+      watchItems.slice(0, 20).map((item) => pnlColor(item.unrealized))
+    );
+
+    drawPortfolioSummaryRow(
+      ctx,
+      "합계",
+      `원금 ${fmtInt(totalInvested)}원`,
+      `평가손익 ${fmtSignedInt(totalUnrealized)} (${fmtPct(totalUnrealizedPct)})`,
+      pnlColor(totalUnrealized)
+    );
+  } else {
+    ctx.y -= 8;
+    ctx.text("등록된 관심종목이 없습니다.", ctx.ML + 8, ctx.y, 9, C.muted);
+    ctx.y -= 20;
+  }
+}
+
+export function drawCommentarySection(
+  ctx: ReportRenderContext,
+  font: PDFFont,
+  curr: WindowSummary,
+  prev: WindowSummary,
+  totalUnrealized: number,
+  totalUnrealizedPct: number,
+  watchItems: WatchItem[],
+  sectors: SectorRow[],
+  wrapText: (text: string, maxWidth: number, font: PDFFont, size: number) => string[]
+) {
+  ctx.y -= 6;
+  drawSectionHeader(ctx, "주간 코멘트 및 대응 전략");
+
+  const tradeMom =
+    curr.tradeCount > prev.tradeCount
+      ? `이번 주 거래 횟수(${curr.tradeCount}건)가 이전 주(${prev.tradeCount}건) 대비 증가했습니다. 포지션 진입이 늘어난 구간으로, 개별 리스크 관리가 중요합니다.`
+      : curr.tradeCount < prev.tradeCount
+        ? `이번 주 거래 횟수(${curr.tradeCount}건)가 이전 주(${prev.tradeCount}건)보다 감소했습니다. 신중한 관망 기조를 유지 중입니다.`
+        : "이번 주 거래 횟수는 이전 주와 동일합니다.";
+
+  drawCommentBlock(ctx, "매매 활동", tradeMom, C.navyLight, font, wrapText);
+
+  const winNote =
+    curr.winRate >= prev.winRate
+      ? `${FIFO_WIN_RATE_LABEL}이 ${prev.winRate.toFixed(1)}%→${curr.winRate.toFixed(1)}%로 개선되었습니다. 매도 타이밍이 양호했습니다.`
+      : `${FIFO_WIN_RATE_LABEL}이 ${prev.winRate.toFixed(1)}%→${curr.winRate.toFixed(1)}%로 하락했습니다. 손절 기준 재점검을 권고합니다.`;
+  drawCommentBlock(ctx, `${FIFO_WIN_RATE_LABEL} 분석`, winNote, curr.winRate >= prev.winRate ? C.up : C.down, font, wrapText);
+
+  const pfNote =
+    totalUnrealized >= 0
+      ? `현재 포트폴리오 평가손익은 ${fmtSignedInt(totalUnrealized)}(${fmtPct(totalUnrealizedPct)})로 양호합니다.`
+      : `현재 포트폴리오 평가손익은 ${fmtSignedInt(totalUnrealized)}(${fmtPct(totalUnrealizedPct)})로 미실현 손실 구간입니다. 개별 종목 비중 점검이 필요합니다.`;
+  drawCommentBlock(ctx, "포트폴리오 평가", pfNote, pnlColor(totalUnrealized), font, wrapText);
+
+  const topLoss = watchItems.filter((item) => (item.pnlPct ?? 0) < -5);
+  if (topLoss.length > 0) {
+    const names = topLoss.slice(0, 3).map((item) => `${item.name}(${fmtPct(item.pnlPct ?? 0)})`).join(", ");
+    drawCommentBlock(
+      ctx,
+      "손절 재점검 대상",
+      `평가손실 -5% 초과 종목: ${names}. 손절 기준일 재확인 후 비중 축소를 고려하세요.`,
+      C.up,
+      font,
+      wrapText
+    );
+  }
+
+  const sectorNames = sectors.slice(0, 2).map((sector) => sector.name).join(", ");
+  if (sectorNames) {
+    drawCommentBlock(
+      ctx,
+      "주도 섹터 대응",
+      `이번 주 주도 섹터는 ${sectorNames}입니다. 해당 섹터 편입 종목의 비중 확대를 모니터링하세요.`,
+      C.navyLight,
+      font,
+      wrapText
+    );
+  }
+
+  drawCommentBlock(
+    ctx,
+    "유의 사항",
+    "본 리포트는 가상 포트폴리오 기준입니다. 실제 거래에 적용 시 세금·수수료·시장 유동성을 반드시 고려하십시오.",
+    C.muted,
+    font,
+    wrapText
+  );
+}
+
+export function drawFlowSection(ctx: ReportRenderContext, sectors: SectorRow[]) {
+  const rows = sectors
+    .map((sector) => {
+      const metrics = (sector.metrics ?? {}) as Record<string, unknown>;
+      const foreignFlow = toNum(metrics.flow_foreign_5d);
+      const instFlow = toNum(metrics.flow_inst_5d);
+      return {
+        name: sector.name,
+        score: toNum(sector.score),
+        foreignFlow,
+        instFlow,
+        totalFlow: foreignFlow + instFlow,
+      };
+    })
+    .filter((row) => row.totalFlow !== 0)
+    .sort((a, b) => Math.abs(b.totalFlow) - Math.abs(a.totalFlow))
+    .slice(0, 12);
+
+  drawSectionHeader(ctx, "수급 상위 섹터", "최근 5거래일");
+
+  if (rows.length === 0) {
+    ctx.text("수급 집계 데이터가 없습니다.", ctx.ML + 8, ctx.y - 2, 9, C.muted);
+    ctx.y -= 22;
+    return;
+  }
+
+  drawTable(
+    ctx,
+    [
+      { header: "섹터명", width: 177 },
+      { header: "점수", width: 60, align: "right" },
+      { header: "외국인", width: 90, align: "right" },
+      { header: "기관", width: 90, align: "right" },
+      { header: "합계", width: 90, align: "right" },
+    ],
+    rows.map((row) => [
+      row.name,
+      row.score.toFixed(1),
+      fmtKorMoney(row.foreignFlow),
+      fmtKorMoney(row.instFlow),
+      fmtKorMoney(row.totalFlow),
+    ]),
+    rows.map((row) => pnlColor(row.totalFlow))
+  );
+}
+
+export function drawSectorSection(ctx: ReportRenderContext, sectors: SectorRow[], ymd: string) {
+  drawSectionHeader(ctx, "섹터 강도 랭킹", `기준: ${ymd}`);
+
+  if (sectors.length === 0) {
+    ctx.text("섹터 데이터가 없습니다.", ctx.ML + 8, ctx.y - 2, 9, C.muted);
+    ctx.y -= 22;
+    return;
+  }
+
+  drawTable(
+    ctx,
+    [
+      { header: "순위", width: 40, align: "center" },
+      { header: "섹터명", width: 227 },
+      { header: "점수", width: 70, align: "right" },
+      { header: "수익률", width: 80, align: "right" },
+      { header: "상태", width: 90, align: "center" },
+    ],
+    sectors.slice(0, 12).map((sector, index) => {
+      const rate = toNum(sector.change_rate);
+      return [
+        String(index + 1),
+        sector.name,
+        toNum(sector.score).toFixed(1),
+        fmtPct(rate),
+        rate >= 1 ? "강세" : rate >= 0 ? "보합" : "약세",
+      ];
+    }),
+    sectors.slice(0, 12).map((sector) => pnlColor(toNum(sector.change_rate)))
+  );
+}
+
+export function drawEconomySection(
+  ctx: ReportRenderContext,
+  font: PDFFont,
+  market: Awaited<ReturnType<typeof fetchAllMarketData>>,
+  ymd: string,
+  wrapText: (text: string, maxWidth: number, font: PDFFont, size: number) => string[]
+) {
+  ctx.y -= 6;
+  drawSectionHeader(ctx, "거시 환경 요약", `기준: ${ymd}`);
+  ctx.y -= 6;
+
+  const cards: KpiCard[] = [];
+  if (market.kospi) cards.push({ label: "KOSPI", value: fmtInt(toNum(market.kospi.price)), sub: fmtPct(toNum(market.kospi.changeRate)), valueColor: pnlColor(toNum(market.kospi.changeRate)) });
+  if (market.kosdaq) cards.push({ label: "KOSDAQ", value: fmtInt(toNum(market.kosdaq.price)), sub: fmtPct(toNum(market.kosdaq.changeRate)), valueColor: pnlColor(toNum(market.kosdaq.changeRate)) });
+  if (market.sp500) cards.push({ label: "S&P 500", value: fmtInt(toNum(market.sp500.price)), sub: fmtPct(toNum(market.sp500.changeRate)), valueColor: pnlColor(toNum(market.sp500.changeRate)) });
+  if (market.nasdaq) cards.push({ label: "NASDAQ", value: fmtInt(toNum(market.nasdaq.price)), sub: fmtPct(toNum(market.nasdaq.changeRate)), valueColor: pnlColor(toNum(market.nasdaq.changeRate)) });
+  if (market.usdkrw) cards.push({ label: "USD/KRW", value: `${fmtInt(toNum(market.usdkrw.price))}원`, sub: fmtPct(toNum(market.usdkrw.changeRate)), valueColor: C.text });
+  if (market.us10y) cards.push({ label: "미국 10년물", value: `${toNum(market.us10y.price).toFixed(2)}%`, sub: fmtPct(toNum(market.us10y.changeRate)), valueColor: pnlColor(toNum(market.us10y.changeRate)) });
+  if (market.vix) cards.push({ label: "VIX", value: toNum(market.vix.price).toFixed(2), sub: toNum(market.vix.price) >= 30 ? "고위험" : toNum(market.vix.price) >= 20 ? "주의" : "안정", valueColor: toNum(market.vix.price) >= 30 ? C.up : C.text });
+  if (market.fearGreed) cards.push({ label: "공포·탐욕", value: String(toNum(market.fearGreed.score)), sub: market.fearGreed.rating ?? "", valueColor: C.text });
+  if (market.gold) cards.push({ label: "금 Gold", value: `$${fmtInt(Math.round(toNum(market.gold.price)))}`, sub: fmtPct(toNum(market.gold.changeRate)), valueColor: pnlColor(toNum(market.gold.changeRate)) });
+  if (market.wtiOil) cards.push({ label: "WTI 원유", value: `$${toNum(market.wtiOil.price).toFixed(1)}`, sub: fmtPct(toNum(market.wtiOil.changeRate)), valueColor: pnlColor(toNum(market.wtiOil.changeRate)) });
+  if (market.copper) cards.push({ label: "구리 Copper", value: `$${toNum(market.copper.price).toFixed(2)}`, sub: fmtPct(toNum(market.copper.changeRate)), valueColor: pnlColor(toNum(market.copper.changeRate)) });
+  if (market.silver) cards.push({ label: "은 Silver", value: `$${toNum(market.silver.price).toFixed(2)}`, sub: fmtPct(toNum(market.silver.changeRate)), valueColor: pnlColor(toNum(market.silver.changeRate)) });
+
+  while (cards.length % 4 !== 0) cards.push({ label: "", value: "" });
+  if (cards.length > 0) drawKpiGrid(ctx, cards, 4);
+  ctx.y -= 10;
+
+  const vixVal = market.vix ? toNum(market.vix.price) : 0;
+  const fgVal = market.fearGreed ? toNum(market.fearGreed.score) : 50;
+  const us10yVal = market.us10y ? toNum(market.us10y.price) : 0;
+  const usdkrwVal = market.usdkrw ? toNum(market.usdkrw.price) : 0;
+  const wtiVal = market.wtiOil ? toNum(market.wtiOil.price) : 0;
+  const goldVal = market.gold ? toNum(market.gold.price) : 0;
+  const copperVal = market.copper ? toNum(market.copper.price) : 0;
+
+  const comments: string[] = [];
+  if (vixVal >= 30) comments.push(`VIX ${vixVal.toFixed(1)}로 변동성 위험 수준입니다. 옵션 헤지 비용이 높아진 구간으로 신규 진입 시 포지션 규모를 평소의 50~70% 이하로 제한하는 것이 좋습니다.`);
+  else if (vixVal >= 20) comments.push(`VIX ${vixVal.toFixed(1)}로 경계 구간에 진입했습니다. 단기 급등락 가능성을 열어두고 손절·목표가 기준을 사전에 정해 두는 대응이 필요합니다.`);
+  if (fgVal <= 20) comments.push(`공포·탐욕 지수 ${fgVal}로 극단적 공포 구간입니다. 과거 사례상 이 구간은 중기 저점 형성 가능성이 높아 분할 매수를 고려할 만합니다.`);
+  else if (fgVal <= 30) comments.push(`공포·탐욕 지수 ${fgVal}로 공포 심리가 우세합니다. 낙폭 과대 우량주의 기술적 반등 대응이 유효할 수 있습니다.`);
+  else if (fgVal >= 75) comments.push(`공포·탐욕 지수 ${fgVal}로 탐욕 구간이 과열 중입니다. 추격 매수보다 보유 종목 수익 실현과 포지션 비중 조절을 우선 검토하세요.`);
+  if (us10yVal >= 5) comments.push(`미국 10년물 금리가 ${us10yVal.toFixed(2)}%로 부담 수준입니다. 높은 할인율은 성장주·기술주 밸류에이션 압박 요인으로 작용하며, 금융·에너지 등 가치주 상대 강세가 지속될 가능성이 있습니다.`);
+  else if (us10yVal >= 4.5) comments.push(`미국 10년물 금리 ${us10yVal.toFixed(2)}%는 중립~경계 구간입니다. 금리 방향성과 연준 발언을 주시하며 성장주 비중을 조율하는 전략이 적절합니다.`);
+  if (usdkrwVal >= 1400) comments.push(`원·달러가 ${fmtInt(usdkrwVal)}원으로 약세입니다. 외국인 환차익 메리트 감소로 코스피 수급 이탈 압력이 높아질 수 있으며, 수출주보다 내수·방어주 비중 확대가 유리할 수 있습니다.`);
+  if (wtiVal >= 90) comments.push(`WTI 유가 $${wtiVal.toFixed(1)}로 공급 비용 부담이 높습니다. 항공·운송·화학 등 원가 민감 업종에 불리하며 정유·에너지 섹터의 영업이익 확대 수혜를 참고하세요.`);
+  if (goldVal >= 2500) comments.push(`금 $${fmtInt(Math.round(goldVal))}로 안전자산 선호가 강합니다. 인플레이션 헤지 수요와 지정학적 불확실성이 복합적으로 작용 중이며, 포트폴리오 내 금·달러 방어 자산 비중을 점검할 필요가 있습니다.`);
+  if (copperVal <= 3.5) comments.push(`구리 $${copperVal.toFixed(2)}로 경기 선행 신호가 약화됐습니다. 건설·인프라 수요 감소 우려가 내포된 신호로, 산업재 및 소재 섹터 비중 축소를 검토할 만합니다.`);
+
+  const defaultComment = [
+    `현재 핵심 거시 변수는 전반적으로 중립 범위에 위치합니다.`,
+    `VIX ${vixVal.toFixed(1)}, 공포·탐욕 ${fgVal}, 미국 10년물 ${us10yVal.toFixed(2)}% 모두 과열·위기 임계치를 벗어나 있어 단기 시스템 리스크는 제한적입니다.`,
+    `다만 금리·환율 방향성이 바뀌는 시점에서 노출 포지션을 신속하게 재조정할 수 있도록 손절·비중 기준을 사전 설정해 두는 것을 권장합니다.`,
+  ].join(" ");
+
+  drawCommentBlock(ctx, "거시 해석", comments.join(" ") || defaultComment, C.navyLight, font, wrapText, false);
+  ctx.y -= 10;
+}
