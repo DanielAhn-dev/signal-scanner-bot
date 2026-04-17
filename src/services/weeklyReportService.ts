@@ -33,7 +33,7 @@ const C = {
 
 // ─── 타입 정의 ────────────────────────────────────────────────────────────
 type TradeRow = {
-  side: "BUY" | "SELL";
+  side: "BUY" | "SELL" | "ADJUST";
   code: string;
   price: number | null;
   quantity: number | null;
@@ -653,12 +653,19 @@ function getReportTheme(topic: ReportTopic): ReportTheme {
 
 // ─── 데이터 집계 유틸 ─────────────────────────────────────────────────────
 function summarizeWindow(rows: TradeRow[]): WindowSummary {
-  const buys = rows.filter((r) => r.side === "BUY");
-  const sells = rows.filter((r) => r.side === "SELL");
+  const executedRows = rows.filter((r) => r.side === "BUY" || r.side === "SELL");
+  const buys = executedRows.filter((r) => r.side === "BUY");
+  const sells = executedRows.filter((r) => r.side === "SELL");
   const realized = sells.reduce((acc, r) => acc + toNum(r.pnl_amount), 0);
   const winCount = sells.filter((r) => toNum(r.pnl_amount) > 0).length;
   const winRate = sells.length ? (winCount / sells.length) * 100 : 0;
-  return { buyCount: buys.length, sellCount: sells.length, tradeCount: rows.length, realizedPnl: realized, winRate };
+  return {
+    buyCount: buys.length,
+    sellCount: sells.length,
+    tradeCount: executedRows.length,
+    realizedPnl: realized,
+    winRate,
+  };
 }
 
 function unwrapStock(
@@ -1304,9 +1311,10 @@ function drawTradesSection(ctx: ReportContext, windows: ReturnType<typeof splitW
         const qty = Math.max(0, Math.floor(toNum(r.quantity)));
         const price = toNum(r.price);
         const pnl = r.side === "SELL" ? fmtSignedInt(toNum(r.pnl_amount)) : "-";
+        const sideLabel = r.side === "BUY" ? "매수" : r.side === "SELL" ? "매도" : "수정";
         return [
           lineDate(r.traded_at),
-          r.side === "BUY" ? "매수" : "매도",
+          sideLabel,
           r.code,
           `${qty}주`,
           fmtInt(price),
@@ -1314,7 +1322,9 @@ function drawTradesSection(ctx: ReportContext, windows: ReturnType<typeof splitW
           pnl,
         ];
       }),
-      windows.recent.map((r) => (r.side === "SELL" ? pnlColor(toNum(r.pnl_amount)) : C.down))
+      windows.recent.map((r) =>
+        r.side === "SELL" ? pnlColor(toNum(r.pnl_amount)) : r.side === "BUY" ? C.down : C.text
+      )
     );
   } else {
     ctx.y -= 4;

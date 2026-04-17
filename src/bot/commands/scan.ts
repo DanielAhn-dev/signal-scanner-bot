@@ -7,6 +7,8 @@ import { fetchRealtimePriceBatch } from "../../utils/fetchRealtimePrice";
 import { getFundamentalSnapshot } from "../../services/fundamentalService";
 import { pickSaferCandidates, type RiskProfile } from "../../lib/investableUniverse";
 import { getUserInvestmentPrefs } from "../../services/userService";
+import { analyzeNewsSentiment, formatSentimentLine } from "../../lib/newsSentiment";
+import { fetchStockNews } from "../../utils/fetchNews";
 import { esc, gradeLabel } from "../messages/format";
 import {
   header,
@@ -248,6 +250,24 @@ export async function handleScanCommand(
     })
     .slice(0, 10);
 
+  const sentimentByCode = new Map<string, string>();
+  await Promise.all(
+    finalPicks.map(async (item) => {
+      try {
+        const news = await fetchStockNews(item.code, 5);
+        if (!news.length) return;
+        const sentiment = formatSentimentLine(
+          analyzeNewsSentiment(news.map((entry) => entry.title))
+        );
+        if (sentiment) {
+          sentimentByCode.set(item.code, sentiment);
+        }
+      } catch {
+        // 뉴스 실패는 스캔을 막지 않음
+      }
+    })
+  );
+
   const lines = finalPicks.map((item, idx) => {
     const rt = realtimeMap[item.code];
     const price = Number(rt?.price ?? item.stock?.close ?? 0);
@@ -267,6 +287,8 @@ export async function handleScanCommand(
     if (item.trend_grade) details.push(`추세 ${item.trend_grade}`);
     if (item.pivot_grade) details.push(`피봇 ${item.pivot_grade}`);
     if (item.vol_atr_grade) details.push(`변동 ${item.vol_atr_grade}`);
+    const sentiment = sentimentByCode.get(item.code);
+    if (sentiment) details.push(`뉴스 ${sentiment}`);
 
     return (
       `${idx + 1}. ${grade} <b>${esc(item.stock?.name || item.code)}</b> <code>${price.toLocaleString("ko-KR")}원</code>${chg}\n` +

@@ -10,6 +10,7 @@ import { fetchRealtimeStockData } from "../../utils/fetchRealtimePrice";
 import { fetchAllMarketData } from "../../utils/fetchMarketData";
 import { getFundamentalSnapshot } from "../../services/fundamentalService";
 import { buildInvestmentPlan } from "../../lib/investPlan";
+import { scaleSeriesToReferencePrice } from "../../lib/priceScale";
 
 // --- 전략 코멘트 생성기 ---
 function makeStrategyComment(
@@ -174,7 +175,8 @@ export async function handleScoreCommand(
   const marketEnv = mktData
     ? { vix: mktData.vix?.price, fearGreed: mktData.fearGreed?.score, usdkrw: mktData.usdkrw?.price }
     : undefined;
-  const scored = calculateScore(series, marketEnv);
+  const normalizedSeries = scaleSeriesToReferencePrice(series, realtimeData?.price);
+  const scored = calculateScore(normalizedSeries, marketEnv);
   if (!scored) {
     return tgSend("sendMessage", {
       chat_id: ctx.chatId,
@@ -193,7 +195,7 @@ export async function handleScoreCommand(
     name,
     code,
     scored.date,
-    series[series.length - 1],
+    normalizedSeries[normalizedSeries.length - 1],
     scoreWithFund,
     realtimePrice,
     fundamental

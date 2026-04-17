@@ -23,8 +23,17 @@ import {
   normalizeWatchlistHolding,
   syncVirtualPortfolio,
   calculateSectorConcentration,
+  getSectorConcentrationWarnings,
+  SECTOR_CONCENTRATION_WARNING_RATIO,
+  SECTOR_CONCENTRATION_DANGER_RATIO,
   type VirtualTradeSide,
 } from "../../services/portfolioService";
+import {
+  applyFifoSale,
+  ensureTradeLotsForHolding,
+  previewFifoSale,
+  replaceTradeLotsForHolding,
+} from "../../services/virtualLotService";
 
 const MAX_ITEMS = 20; // 사용자당 최대 관심종목 수
 const DEFAULT_TARGET_POSITIONS = 10;
@@ -70,19 +79,19 @@ function toSafeNumber(value: unknown, fallback = 0): number {
 function buildConcentrationWarning(
   concentrations: ReturnType<typeof calculateSectorConcentration>
 ): string {
-  const warned = concentrations.filter((c) => c.ratio > 30);
+  const warned = getSectorConcentrationWarnings(concentrations);
   if (!warned.length) return "";
 
   const lines = warned.map((c) => {
-    const icon = c.ratio > 50 ? "🔴" : "⚠️";
+    const icon = c.level === "danger" ? "🔴" : "⚠️";
     return `  ${icon} ${c.sectorName} ${c.ratio.toFixed(0)}%`;
   });
 
   return [
     LINE,
-    `<b>섹터 집중도 경고</b> (30% 초과)`,
+    `<b>섹터 집중도 경고</b> (${SECTOR_CONCENTRATION_WARNING_RATIO}% 초과)` ,
     ...lines,
-    `<i>특정 섹터 쏠림 — 분산 투자 검토 권장</i>`,
+    `<i>${SECTOR_CONCENTRATION_DANGER_RATIO}% 초과는 강한 집중 구간입니다. 분산 투자 검토 권장</i>`,
   ].join("\n");
 }
 
@@ -108,24 +117,36 @@ async function appendVirtualTradeLog(payload: {
   taxAmount?: number;
   pnlAmount?: number;
   memo?: string;
-}): Promise<void> {
+}): Promise<{ ok: boolean; error?: string; id?: number }> {
   try {
-    await supabase.from("virtual_trades").insert({
-      chat_id: payload.chatId,
-      code: payload.code,
-      side: payload.side,
-      price: payload.price,
-      quantity: payload.quantity,
-      gross_amount: payload.grossAmount,
-      net_amount: payload.netAmount,
-      fee_amount: payload.feeAmount ?? 0,
-      tax_amount: payload.taxAmount ?? 0,
-      pnl_amount: payload.pnlAmount ?? 0,
-      memo: payload.memo ?? null,
-      traded_at: new Date().toISOString(),
-    });
+    const { data, error } = await supabase
+      .from("virtual_trades")
+      .insert({
+        chat_id: payload.chatId,
+        code: payload.code,
+        side: payload.side,
+        price: payload.price,
+        quantity: payload.quantity,
+        gross_amount: payload.grossAmount,
+        net_amount: payload.netAmount,
+        fee_amount: payload.feeAmount ?? 0,
+        tax_amount: payload.taxAmount ?? 0,
+        pnl_amount: payload.pnlAmount ?? 0,
+        memo: payload.memo ?? null,
+        traded_at: new Date().toISOString(),
+      })
+      .select("id")
+      .single();
+
+    if (error) {
+      console.error("appendVirtualTradeLog error:", error);
+      return { ok: false, error: error.message };
+    }
+
+    return { ok: true, id: Number((data as any)?.id) || undefined };
   } catch (e) {
     console.error("appendVirtualTradeLog error:", e);
+    return { ok: false, error: e instanceof Error ? e.message : String(e) };
   }
 }
 
@@ -135,7 +156,31 @@ function buildAdjustmentMemo(input: {
   prevQty: number;
   nextQty: number;
 }): string {
-  return `watchlist-adjust:buy=${input.prevPrice ?? 0}→${input.nextPrice};qty=${input.prevQty}→${input.nextQty}`;
+  return [
+    "watchlist-adjust:v2",
+    `prevPrice=${input.prevPrice ?? 0}`,
+    `nextPrice=${input.nextPrice}`,
+    `prevQty=${input.prevQty}`,
+    `nextQty=${input.nextQty}`,
+  ].join(";");
+}
+
+function parseAdjustmentValue(raw?: string | null): number | null {
+  const num = Number(String(raw ?? "").trim());
+  return Number.isFinite(num) && num > 0 ? num : null;
+}
+
+function parseAdjustmentPair(raw?: string | null): [number | null, number | null] {
+  const parts = String(raw ?? "")
+    .split(/(?:→|->|=>|~>|→\uFE0E?)/)
+    .map((part) => part.trim())
+    .filter(Boolean);
+
+  if (parts.length >= 2) {
+    return [parseAdjustmentValue(parts[0]), parseAdjustmentValue(parts[1])];
+  }
+
+  return [null, null];
 }
 
 function parseAdjustmentMemo(raw?: string | null): {
@@ -145,22 +190,42 @@ function parseAdjustmentMemo(raw?: string | null): {
   nextQty: number | null;
 } | null {
   const memo = String(raw ?? "");
-  const match = memo.match(/watchlist-adjust:buy=([^;]+);qty=([^;]+)/i);
-  if (!match) return null;
+  const v2Match = memo.match(
+    /watchlist-adjust:v2;prevPrice=([^;]+);nextPrice=([^;]+);prevQty=([^;]+);nextQty=([^;]+)/i
+  );
+  if (v2Match) {
+    return {
+      prevPrice: parseAdjustmentValue(v2Match[1]),
+      nextPrice: parseAdjustmentValue(v2Match[2]),
+      prevQty: parseAdjustmentValue(v2Match[3]),
+      nextQty: parseAdjustmentValue(v2Match[4]),
+    };
+  }
 
-  const [prevPriceRaw, nextPriceRaw] = match[1].split("→");
-  const [prevQtyRaw, nextQtyRaw] = match[2].split("→");
-  const prevPrice = Number(prevPriceRaw);
-  const nextPrice = Number(nextPriceRaw);
-  const prevQty = Number(prevQtyRaw);
-  const nextQty = Number(nextQtyRaw);
+  const legacyMatch = memo.match(/watchlist-adjust:buy=([^;]+);qty=([^;]+)/i);
+  if (!legacyMatch) return null;
+
+  const [prevPrice, nextPrice] = parseAdjustmentPair(legacyMatch[1]);
+  const [prevQty, nextQty] = parseAdjustmentPair(legacyMatch[2]);
 
   return {
-    prevPrice: Number.isFinite(prevPrice) && prevPrice > 0 ? prevPrice : null,
-    nextPrice: Number.isFinite(nextPrice) && nextPrice > 0 ? nextPrice : null,
-    prevQty: Number.isFinite(prevQty) && prevQty > 0 ? Math.floor(prevQty) : null,
-    nextQty: Number.isFinite(nextQty) && nextQty > 0 ? Math.floor(nextQty) : null,
+    prevPrice,
+    nextPrice,
+    prevQty: prevQty != null ? Math.floor(prevQty) : null,
+    nextQty: nextQty != null ? Math.floor(nextQty) : null,
   };
+}
+
+function formatFifoMatchSummary(
+  matches: Array<{ quantity: number; unitCost: number }>
+): string {
+  if (!matches.length) return "";
+
+  const parts = matches
+    .slice(0, 3)
+    .map((match) => `${match.quantity}주@${fmtInt(match.unitCost)}원`);
+  const extra = matches.length > 3 ? ` 외 ${matches.length - 3}건` : "";
+  return `FIFO ${parts.join(" + ")}${extra}`;
 }
 
 async function allocateVirtualBuy(payload: {
@@ -169,13 +234,38 @@ async function allocateVirtualBuy(payload: {
   code: string;
   buyPrice: number | null;
   currentHoldingCount: number;
-}): Promise<{ quantity: number | null; investedAmount: number | null; walletNote: string }> {
+}): Promise<{
+  quantity: number | null;
+  investedAmount: number | null;
+  walletNote: string;
+  nextCash: number | null;
+  seedCapital: number | null;
+  targetPositions: number;
+}> {
   const buyPrice = toPositiveNumber(payload.buyPrice);
-  if (!buyPrice) return { quantity: null, investedAmount: null, walletNote: "" };
+  if (!buyPrice) {
+    return {
+      quantity: null,
+      investedAmount: null,
+      walletNote: "",
+      nextCash: null,
+      seedCapital: null,
+      targetPositions: DEFAULT_TARGET_POSITIONS,
+    };
+  }
 
   const prefs = await getUserInvestmentPrefs(payload.tgId);
   const cap = toPositiveNumber(prefs.capital_krw) ?? 0;
-  if (cap <= 0) return { quantity: null, investedAmount: null, walletNote: "" };
+  if (cap <= 0) {
+    return {
+      quantity: null,
+      investedAmount: null,
+      walletNote: "",
+      nextCash: null,
+      seedCapital: null,
+      targetPositions: DEFAULT_TARGET_POSITIONS,
+    };
+  }
 
   const seedCapital = toPositiveNumber(prefs.virtual_seed_capital) ?? cap;
   const targetPositions = Math.max(
@@ -190,6 +280,9 @@ async function allocateVirtualBuy(payload: {
       quantity: null,
       investedAmount: null,
       walletNote: "\n가상매수 미반영: 잔액이 부족합니다. /투자금으로 원금을 조정해 주세요.",
+      nextCash: null,
+      seedCapital: seedCapital || cap,
+      targetPositions,
     };
   }
 
@@ -202,32 +295,22 @@ async function allocateVirtualBuy(payload: {
       quantity: null,
       investedAmount: null,
       walletNote: "\n가상매수 미반영: 현재 잔액 기준 1주 매수가 어려워요.",
+      nextCash: null,
+      seedCapital: seedCapital || cap,
+      targetPositions,
     };
   }
 
   const investedAmount = qty * buyPrice;
   const nextCash = Math.max(0, currentCash - investedAmount);
-  await setUserInvestmentPrefs(payload.tgId, {
-    virtual_seed_capital: seedCapital || cap,
-    virtual_cash: nextCash,
-    virtual_target_positions: targetPositions,
-  });
-
-  await appendVirtualTradeLog({
-    chatId: payload.chatId,
-    code: payload.code,
-    side: "BUY",
-    price: buyPrice,
-    quantity: qty,
-    grossAmount: investedAmount,
-    netAmount: investedAmount,
-    memo: "watchlist-add",
-  });
 
   return {
     quantity: qty,
     investedAmount,
     walletNote: `\n가상매수 ${qty}주 · 사용 ${fmtInt(investedAmount)}원 · 잔액 ${fmtInt(nextCash)}원`,
+    nextCash,
+    seedCapital: seedCapital || cap,
+    targetPositions,
   };
 }
 
@@ -496,7 +579,7 @@ export async function handleWatchlistAdd(
   const walletNote = alloc.walletNote;
 
   // 중복 확인 & 업서트
-  const { error } = await supabase
+  const { data: inserted, error } = await supabase
     .from("watchlist")
     .insert(
       {
@@ -507,7 +590,9 @@ export async function handleWatchlistAdd(
         quantity,
         invested_amount: investedAmount,
       },
-    );
+    )
+    .select("id, created_at, buy_date")
+    .single();
 
   if (error) {
     console.error("watchlist upsert error:", error);
@@ -515,6 +600,48 @@ export async function handleWatchlistAdd(
       chat_id: ctx.chatId,
       text: "관심종목 추가 중 오류가 발생했습니다.",
     });
+  }
+
+  if (alloc.nextCash !== null) {
+    await setUserInvestmentPrefs(tgId, {
+      virtual_seed_capital: alloc.seedCapital ?? undefined,
+      virtual_cash: alloc.nextCash,
+      virtual_target_positions: alloc.targetPositions,
+    });
+  }
+
+  let tradeLogId: number | null = null;
+  if (quantity && investedAmount && buyPrice) {
+    const tradeLog = await appendVirtualTradeLog({
+      chatId: ctx.chatId,
+      code,
+      side: "BUY",
+      price: buyPrice,
+      quantity,
+      grossAmount: investedAmount,
+      netAmount: investedAmount,
+      memo: "watchlist-add",
+    });
+    tradeLogId = tradeLog.id ?? null;
+  }
+
+  if (quantity && investedAmount && buyPrice) {
+    try {
+      await replaceTradeLotsForHolding({
+        chatId: ctx.chatId,
+        watchlistId: Number((inserted as any)?.id ?? 0) || null,
+        code,
+        quantity,
+        investedAmount,
+        buyPrice,
+        acquiredAt: String((inserted as any)?.created_at ?? "") || null,
+        buyDate: String((inserted as any)?.buy_date ?? "") || null,
+        note: "watchlist-add",
+        sourceTradeId: tradeLogId,
+      });
+    } catch (lotError) {
+      console.error("watchlist add lot sync error:", lotError);
+    }
   }
 
   try {
@@ -565,7 +692,7 @@ export async function handleWatchlistRemove(
 
   const { data: row, error: rowError } = await supabaseRead
     .from("watchlist")
-    .select("code, buy_price, quantity, invested_amount, stock:stocks!inner(close)")
+    .select("id, code, buy_price, buy_date, created_at, quantity, invested_amount, stock:stocks!inner(close)")
     .eq("chat_id", ctx.chatId)
     .eq("code", code)
     .maybeSingle();
@@ -576,9 +703,12 @@ export async function handleWatchlistRemove(
 
   const tgId = ctx.from?.id ?? ctx.chatId;
   const prefs = await getUserInvestmentPrefs(tgId);
+  const watchlistId = Number((row as any)?.id ?? 0) || null;
   const qty = Math.max(0, Math.floor(Number((row as any)?.quantity ?? 0)));
   const buyPrice = Number((row as any)?.buy_price ?? 0);
   const invested = toPositiveNumber((row as any)?.invested_amount) ?? (qty > 0 && buyPrice > 0 ? qty * buyPrice : 0);
+  const holdingCreatedAt = String((row as any)?.created_at ?? "") || null;
+  const holdingBuyDate = String((row as any)?.buy_date ?? "") || null;
 
   if (sellQtyRequested !== null && qty > 0 && sellQtyRequested > qty) {
     return tgSend("sendMessage", {
@@ -598,17 +728,53 @@ export async function handleWatchlistRemove(
   }
 
   const isFullExit = qty <= 0 || sellQty >= qty;
+  const remainQty = Math.max(0, qty - sellQty);
+  let fifoCost = Math.round(((invested > 0 && qty > 0 ? invested / qty : buyPrice) || 0) * sellQty);
+  let remainInvested = Math.max(0, invested - fifoCost);
+  let nextBuyPrice: number | null = remainQty > 0 && remainInvested > 0
+    ? Number((remainInvested / remainQty).toFixed(4))
+    : null;
+
+  if (qty > 0 && sellQty > 0) {
+    try {
+      await ensureTradeLotsForHolding({
+        chatId: ctx.chatId,
+        watchlistId,
+        code,
+        quantity: qty,
+        investedAmount: invested,
+        buyPrice,
+        acquiredAt: holdingCreatedAt,
+        buyDate: holdingBuyDate,
+      });
+      const fifoPreview = await previewFifoSale({
+        chatId: ctx.chatId,
+        code,
+        quantity: sellQty,
+      });
+      fifoCost = fifoPreview.totalCost;
+      remainInvested = Math.max(0, invested - fifoCost);
+      nextBuyPrice = remainQty > 0 && remainInvested > 0
+        ? Number((remainInvested / remainQty).toFixed(4))
+        : null;
+    } catch (fifoError) {
+      console.error("watchlist FIFO preview error:", fifoError);
+      return tgSend("sendMessage", {
+        chat_id: ctx.chatId,
+        text: "FIFO 원가 계산 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.",
+      });
+    }
+  }
+
   let dbError: any = null;
   let affectedCount = 0;
 
   if (qty > 0 && !isFullExit) {
-    const remainQty = qty - sellQty;
-    const avgCost = invested > 0 && qty > 0 ? invested / qty : buyPrice;
-    const remainInvested = Math.max(0, Math.round(remainQty * avgCost));
     const { error: updateError, count: updateCount } = await supabase
       .from("watchlist")
       .update({
         quantity: remainQty,
+        buy_price: nextBuyPrice,
         invested_amount: remainInvested,
         status: "holding",
       }, { count: "exact" })
@@ -653,8 +819,7 @@ export async function handleWatchlistRemove(
     const feeAmount = Math.round(gross * feeRate);
     const taxAmount = Math.round(gross * taxRate);
     const net = Math.max(0, gross - feeAmount - taxAmount);
-    const avgCost = invested > 0 && qty > 0 ? invested / qty : buyPrice;
-    const soldCost = Math.round(avgCost * sellQty);
+    const soldCost = fifoCost;
     const pnl = net - soldCost;
 
     const baseCash = toPositiveNumber(prefs.virtual_cash) ?? (toPositiveNumber(prefs.virtual_seed_capital) ?? toPositiveNumber(prefs.capital_krw) ?? 0);
@@ -675,7 +840,7 @@ export async function handleWatchlistRemove(
         Math.max(1, Math.floor(toPositiveNumber(prefs.virtual_target_positions) ?? DEFAULT_TARGET_POSITIONS)),
     });
 
-    await appendVirtualTradeLog({
+    const tradeLog = await appendVirtualTradeLog({
       chatId: ctx.chatId,
       code,
       side: "SELL",
@@ -690,6 +855,38 @@ export async function handleWatchlistRemove(
         options?.sellMemo ??
         (isFullExit ? "watchlist-full-exit" : "watchlist-partial-exit"),
     });
+
+    try {
+      const fifoPreview = await previewFifoSale({
+        chatId: ctx.chatId,
+        code,
+        quantity: sellQty,
+      });
+      await applyFifoSale({
+        chatId: ctx.chatId,
+        code,
+        exitPrice,
+        tradeId: tradeLog.id ?? null,
+        allocations: fifoPreview.allocations,
+      });
+    } catch (lotError) {
+      console.error("watchlist FIFO apply error:", lotError);
+      try {
+        await replaceTradeLotsForHolding({
+          chatId: ctx.chatId,
+          watchlistId: isFullExit ? null : watchlistId,
+          code,
+          quantity: remainQty,
+          investedAmount: isFullExit ? 0 : remainInvested,
+          buyPrice: isFullExit ? null : nextBuyPrice,
+          acquiredAt: holdingCreatedAt,
+          buyDate: holdingBuyDate,
+          note: "watchlist-fifo-rebuilt-after-sell",
+        });
+      } catch (rebuildError) {
+        console.error("watchlist FIFO rebuild error:", rebuildError);
+      }
+    }
 
     try {
       await syncVirtualPortfolio(ctx.chatId, tgId);
@@ -1013,7 +1210,7 @@ export async function handleWatchlistEdit(
   // 기존 관심종목인지 확인
   const { data: existing } = await supabaseRead
     .from("watchlist")
-    .select("id, quantity, buy_price, invested_amount")
+    .select("id, quantity, buy_price, invested_amount, buy_date, created_at")
     .eq("chat_id", ctx.chatId)
     .eq("code", code)
     .single();
@@ -1054,7 +1251,7 @@ export async function handleWatchlistEdit(
     });
   }
 
-  await appendVirtualTradeLog({
+  const tradeLog = await appendVirtualTradeLog({
     chatId: ctx.chatId,
     code,
     side: "ADJUST",
@@ -1069,6 +1266,23 @@ export async function handleWatchlistEdit(
       nextQty,
     }),
   });
+
+  try {
+    await replaceTradeLotsForHolding({
+      chatId: ctx.chatId,
+      watchlistId: Number((existing as any).id ?? 0) || null,
+      code,
+      quantity: nextQty,
+      investedAmount: nextInvested,
+      buyPrice: newPrice,
+      acquiredAt: String((existing as any).created_at ?? "") || null,
+      buyDate: String((existing as any).buy_date ?? "") || null,
+      note: "watchlist-adjust-reset",
+      sourceTradeId: tradeLog.id ?? null,
+    });
+  } catch (lotError) {
+    console.error("watchlist edit lot sync error:", lotError);
+  }
 
   const tgId = ctx.from?.id ?? ctx.chatId;
   let syncedCash: number | null = null;
@@ -1086,7 +1300,9 @@ export async function handleWatchlistEdit(
       `매수가 <code>${fmtInt(previous.buyPrice ?? 0)}원</code> → <code>${fmtInt(newPrice)}원</code>`,
       `수량 <code>${previous.quantity}주</code> → <code>${nextQty}주</code>`,
       `원금 <code>${fmtInt(nextInvested)}원</code>${syncedCash !== null ? ` · 잔액 <code>${fmtInt(syncedCash)}원</code>` : ""}`,
-      `/관심 · /기록 으로 확인`,
+      tradeLog.ok
+        ? `/관심 · /기록 으로 확인`
+        : `/관심 은 반영됐지만 거래 기록 저장은 실패했습니다.`,
     ].join("\n"),
     parse_mode: "HTML",
   });
@@ -1145,7 +1361,7 @@ export async function handleWatchlistQuickAdd(
     currentHoldingCount: count ?? 0,
   });
 
-  const { error } = await supabase
+  const { data: inserted, error } = await supabase
     .from("watchlist")
     .insert({
       chat_id: ctx.chatId,
@@ -1155,6 +1371,15 @@ export async function handleWatchlistQuickAdd(
       quantity: alloc.quantity,
       invested_amount: alloc.investedAmount,
     });
+    
+  const insertedRow = !error
+    ? await supabase
+      .from("watchlist")
+      .select("id, created_at, buy_date")
+      .eq("chat_id", ctx.chatId)
+      .eq("code", code)
+      .single()
+    : null;
 
   if (error) {
     console.error("watchlist quick-add error:", error);
@@ -1162,6 +1387,48 @@ export async function handleWatchlistQuickAdd(
       chat_id: ctx.chatId,
       text: "관심종목 추가 중 오류가 발생했습니다.",
     });
+  }
+
+  if (alloc.nextCash !== null) {
+    await setUserInvestmentPrefs(tgId, {
+      virtual_seed_capital: alloc.seedCapital ?? undefined,
+      virtual_cash: alloc.nextCash,
+      virtual_target_positions: alloc.targetPositions,
+    });
+  }
+
+  let tradeLogId: number | null = null;
+  if (alloc.quantity && alloc.investedAmount && price) {
+    const tradeLog = await appendVirtualTradeLog({
+      chatId: ctx.chatId,
+      code,
+      side: "BUY",
+      price,
+      quantity: alloc.quantity,
+      grossAmount: alloc.investedAmount,
+      netAmount: alloc.investedAmount,
+      memo: "watchlist-quick-add",
+    });
+    tradeLogId = tradeLog.id ?? null;
+  }
+
+  if (alloc.quantity && alloc.investedAmount && price) {
+    try {
+      await replaceTradeLotsForHolding({
+        chatId: ctx.chatId,
+        watchlistId: Number((insertedRow?.data as any)?.id ?? 0) || null,
+        code,
+        quantity: alloc.quantity,
+        investedAmount: alloc.investedAmount,
+        buyPrice: price,
+        acquiredAt: String((insertedRow?.data as any)?.created_at ?? "") || null,
+        buyDate: String((insertedRow?.data as any)?.buy_date ?? "") || null,
+        note: "watchlist-quick-add",
+        sourceTradeId: tradeLogId,
+      });
+    } catch (lotError) {
+      console.error("watchlist quick-add lot sync error:", lotError);
+    }
   }
 
   try {
@@ -1194,7 +1461,7 @@ export async function handleWatchlistHistoryCommand(
 
   let query = supabaseRead
     .from("virtual_trades")
-    .select("code, side, price, quantity, gross_amount, net_amount, fee_amount, tax_amount, pnl_amount, memo, traded_at")
+    .select("id, code, side, price, quantity, gross_amount, net_amount, fee_amount, tax_amount, pnl_amount, memo, traded_at")
     .eq("chat_id", ctx.chatId)
     .order("traded_at", { ascending: false })
     .limit(30);
@@ -1217,6 +1484,33 @@ export async function handleWatchlistHistoryCommand(
   const prefs = await getUserInvestmentPrefs(tgId);
   const cash = Number(prefs.virtual_cash ?? 0);
   const realized = Number(prefs.virtual_realized_pnl ?? 0);
+
+  const tradeIds = (rows ?? [])
+    .map((row: any) => Number(row.id ?? 0))
+    .filter((id: number) => Number.isFinite(id) && id > 0);
+  const lotMatchMap = new Map<number, Array<{ quantity: number; unitCost: number }>>();
+
+  if (tradeIds.length) {
+    const { data: lotMatches, error: lotMatchError } = await supabaseRead
+      .from("virtual_trade_lot_matches")
+      .select("trade_id, quantity, unit_cost")
+      .in("trade_id", tradeIds);
+
+    if (lotMatchError) {
+      console.error("virtual_trade_lot_matches query error:", lotMatchError);
+    } else {
+      for (const row of lotMatches ?? []) {
+        const tradeId = Number((row as any).trade_id ?? 0);
+        if (!tradeId) continue;
+        const current = lotMatchMap.get(tradeId) ?? [];
+        current.push({
+          quantity: Math.max(0, Math.floor(Number((row as any).quantity ?? 0))),
+          unitCost: Number((row as any).unit_cost ?? 0),
+        });
+        lotMatchMap.set(tradeId, current);
+      }
+    }
+  }
 
   if (!rows || rows.length === 0) {
     return tgSend("sendMessage", {
@@ -1243,10 +1537,14 @@ export async function handleWatchlistHistoryCommand(
     if (sideValue === "ADJUST") {
       const parsed = parseAdjustmentMemo(r.memo as string | null | undefined);
       if (parsed) {
-        return `${idx + 1}. (${d}) 수정 ${r.code}${autoTag}\n    매수가 ${fmtInt(parsed.prevPrice ?? 0)}원 → ${fmtInt(parsed.nextPrice ?? 0)}원 · 수량 ${parsed.prevQty ?? 0}주 → ${parsed.nextQty ?? 0}주`;
+        const prevPrice = parsed.prevPrice ?? Number(r.price ?? 0);
+        const nextPrice = parsed.nextPrice ?? Number(r.price ?? 0);
+        const prevQty = parsed.prevQty ?? Math.max(0, Math.floor(Number(r.quantity ?? 0)));
+        const nextQty = parsed.nextQty ?? Math.max(0, Math.floor(Number(r.quantity ?? 0)));
+        return `${idx + 1}. (${d}) 수정 ${r.code}${autoTag}\n    매수가 ${fmtInt(prevPrice)}원 → ${fmtInt(nextPrice)}원 · 수량 ${prevQty}주 → ${nextQty}주`;
       }
       const gross = Number(r.gross_amount ?? 0);
-      return `${base}${autoTag}\n    보유원금 ${fmtInt(gross)}원으로 재동기화`;
+      return `${idx + 1}. (${d}) 수정 ${r.code}${autoTag}\n    현재 기준 ${fmtInt(price)}원 · ${qty}주 · 보유원금 ${fmtInt(gross)}원`;
     }
 
     if (sideValue === "SELL") {
@@ -1254,7 +1552,10 @@ export async function handleWatchlistHistoryCommand(
       const fee = Number(r.fee_amount ?? 0);
       const tax = Number(r.tax_amount ?? 0);
       const pnlSign = pnl >= 0 ? "+" : "";
-      return `${base}${autoTag}\n    실현손익 ${pnlSign}${fmtInt(pnl)}원 · 비용 ${fmtInt(fee + tax)}원`;
+      const fifoSummary = formatFifoMatchSummary(
+        lotMatchMap.get(Number(r.id ?? 0)) ?? []
+      );
+      return `${base}${autoTag}\n    실현손익 ${pnlSign}${fmtInt(pnl)}원 · 비용 ${fmtInt(fee + tax)}원${fifoSummary ? `\n    ${fifoSummary}` : ""}`;
     }
 
     const gross = Number(r.gross_amount ?? 0);
@@ -1271,6 +1572,7 @@ export async function handleWatchlistHistoryCommand(
     "<b>가상 매매 기록</b>",
     LINE,
     maxDays ? `조회 기간 최근 ${maxDays}일` : "조회 기간 전체",
+    "매도 손익은 FIFO 기준으로 계산됩니다.",
     "",
     ...lines,
     "",

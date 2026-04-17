@@ -25,6 +25,8 @@ import numpy as np
 from pykrx import stock
 from supabase import create_client, Client
 
+from _price_adjustment import adjust_ohlcv_for_splits
+
 # ===== 환경 변수 설정 =====
 def load_env_file(filepath=".env"):
     try:
@@ -159,6 +161,10 @@ def fetch_ohlcv_per_ticker(trading_date: str) -> bool:
             df = stock.get_market_ohlcv(from_str, trading_date, code)
             if df.empty:
                 continue
+
+            df, split_events = adjust_ohlcv_for_splits(df)
+            if split_events:
+                print(f"    ↳ {code} split-adjust: {', '.join(split_events[:2])}")
 
             for dt_idx, row in df.iterrows():
                 vol = safe_int(row.get("거래량", 0))

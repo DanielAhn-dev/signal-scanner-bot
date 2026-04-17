@@ -6,6 +6,8 @@ from pykrx import stock
 from supabase import create_client
 from datetime import datetime, timedelta
 
+from _price_adjustment import adjust_ohlcv_for_splits
+
 # --- .env 로드 ---
 def load_env_file(filepath=".env"):
     try:
@@ -66,10 +68,14 @@ def update_technical_indicators():
         try:
             # OHLCV 데이터 가져오기
             df = stock.get_market_ohlcv(start_date, end_date, code)
+            df, split_events = adjust_ohlcv_for_splits(df)
             
             if df.empty or len(df) < 20:
                 print(f"⚠️ 데이터 부족: {name}({code})")
                 continue
+
+            if split_events:
+                print(f"↳ {name}({code}) split-adjust: {', '.join(split_events[:2])}")
                 
             # 지표 계산
             close = df['종가']

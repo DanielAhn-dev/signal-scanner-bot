@@ -30,9 +30,15 @@ export async function handleNewsCommand(
     if (!items.length) {
       msg = buildMessage([msg, section("목록", ["뉴스를 불러올 수 없습니다."])]);
     } else {
-      const lines = items.map(
-        (item, i) => `${i + 1}. <a href="${item.link}">${esc(item.title)}</a>`
+      const sentimentLine = formatSentimentLine(
+        analyzeNewsSentiment(items.map((item) => item.title))
       );
+      const lines = [
+        ...sentimentLine ? [`<i>${sentimentLine}</i>`, ""] : [],
+        ...items.map(
+          (item, i) => `${i + 1}. <a href="${item.link}">${esc(item.title)}</a>`
+        ),
+      ];
       msg = buildMessage([msg, section("목록", lines), divider()]);
     }
 

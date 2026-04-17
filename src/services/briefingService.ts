@@ -9,6 +9,12 @@ import {
 } from "../lib/watchlistSignals";
 import { fetchStockNews } from "../utils/fetchNews";
 import { analyzeNewsSentiment, sentimentEmoji, type SentimentResult } from "../lib/newsSentiment";
+import {
+  calculateSectorConcentration,
+  getSectorConcentrationWarnings,
+  SECTOR_CONCENTRATION_DANGER_RATIO,
+  SECTOR_CONCENTRATION_WARNING_RATIO,
+} from "./portfolioService";
 
 // JSONB용 느슨한 타입
 type Json = Record<string, any>;
@@ -51,6 +57,7 @@ interface ScoreRow {
 interface WatchlistRow {
   code: string;
   buy_price: number | null;
+  invested_amount: number | null;
   stock: StockRow | StockRow[] | null;
 }
 
@@ -65,6 +72,12 @@ interface WatchlistViewItem {
   totalScore: number;
   plan: ReturnType<typeof buildInvestmentPlan>;
 }
+
+const statusRank: Record<string, number> = {
+  "buy-now": 0,
+  "buy-on-pullback": 1,
+  wait: 2,
+};
 
 // ===== 메인 브리핑 함수 =====
 export async function createBriefingReport(
@@ -200,11 +213,26 @@ export async function createBriefingReport(
 
   const watchlistMicro = await fetchWatchMicroSignalsByCodes(supabase, watchlistCodes);
 
-  // buy-now 상태 종목(최대 3개)에 대해서만 뉴스 감성 수집
-  const buyNowCodes = watchlistCodes.slice(0, 3);
+  const watchlistViewItems = buildWatchlistViewItems(
+    watchlistItems,
+    scoresByCode,
+    realtimeMap
+  );
+
+  // 액션 우선 + 손익 변동 우선 기준으로 최대 3개 감성 수집
+  const sentimentTargetCodes = watchlistViewItems
+    .slice()
+    .sort(
+      (a, b) =>
+        (statusRank[a.plan.status] ?? 9) - (statusRank[b.plan.status] ?? 9) ||
+        Math.abs(b.profitPct ?? 0) - Math.abs(a.profitPct ?? 0) ||
+        b.totalScore - a.totalScore
+    )
+    .slice(0, 3)
+    .map((item) => item.code);
   const newsSentimentByCode = new Map<string, SentimentResult>();
   await Promise.all(
-    buyNowCodes.map(async (code) => {
+    sentimentTargetCodes.map(async (code) => {
       try {
         const news = await fetchStockNews(code, 5);
         if (news.length) {
@@ -222,7 +250,8 @@ export async function createBriefingReport(
     realtimeMap,
     topSectors,
     watchlistMicro,
-    newsSentimentByCode
+    newsSentimentByCode,
+    watchlistViewItems
   );
 
   // 9. 빈집털이 섹션 텍스트 조립
@@ -399,6 +428,7 @@ async function fetchWatchlistItems(
       [
         "code",
         "buy_price",
+        "invested_amount",
         "stock:stocks!inner(code, name, market, sector_id, close, liquidity, avg_volume_20d, rsi14, is_sector_leader, universe_level)",
       ].join(", ")
     )
@@ -412,6 +442,70 @@ async function fetchWatchlistItems(
   }
 
   return data ?? [];
+}
+
+function buildWatchlistViewItems(
+  items: WatchlistRow[],
+  scoresByCode: Map<string, ScoreRow>,
+  realtimeMap: Record<string, any>
+): WatchlistViewItem[] {
+  return items
+    .map((item) => {
+      const stock = Array.isArray(item.stock) ? item.stock[0] : item.stock;
+      if (!stock) return null;
+
+      const score = scoresByCode.get(item.code);
+      const total = score?.total_score ?? score?.momentum_score ?? 0;
+      const rt = realtimeMap[item.code];
+      const price = Number(rt?.price ?? stock.close ?? 0);
+      const plan = buildInvestmentPlan({
+        currentPrice: price,
+        factors: { rsi14: stock.rsi14 ?? undefined },
+        technicalScore: total || undefined,
+      });
+      const buyPrice = Number(item.buy_price ?? 0);
+      const profitPct = buyPrice > 0 && price > 0
+        ? ((price - buyPrice) / buyPrice) * 100
+        : null;
+
+      return {
+        code: item.code,
+        name: stock.name,
+        sectorId: stock.sector_id ?? null,
+        currentPrice: price,
+        changeRate: rt?.changeRate ?? null,
+        buyPrice: buyPrice > 0 ? buyPrice : null,
+        profitPct,
+        totalScore: Number(total) || 0,
+        plan,
+      };
+    })
+    .filter((item): item is WatchlistViewItem => Boolean(item));
+}
+
+function buildBriefingConcentrationSummary(items: WatchlistRow[]): string[] {
+  const concentrations = calculateSectorConcentration(
+    items.map((item) => {
+      const stock = Array.isArray(item.stock) ? item.stock[0] : item.stock;
+      return {
+        sectorId: stock?.sector_id ?? null,
+        investedAmount: Number(item.invested_amount ?? 0),
+      };
+    })
+  );
+  const warnings = getSectorConcentrationWarnings(concentrations);
+  if (!warnings.length) return [];
+
+  const top = warnings[0];
+  const icon = top.level === "danger" ? "🔴" : "⚠️";
+  const levelText = top.level === "danger"
+    ? `${SECTOR_CONCENTRATION_DANGER_RATIO}% 초과 집중`
+    : `${SECTOR_CONCENTRATION_WARNING_RATIO}% 초과 집중`;
+
+  return [
+    `  ${icon} 섹터 집중 경고: ${top.sectorName} ${top.ratio.toFixed(0)}% (${levelText})`,
+    "  분산 투자 또는 비중 조정 검토",
+  ];
 }
 
 function pickTopStocksForSector(
@@ -534,50 +628,14 @@ async function formatWatchlistSection(
   realtimeMap: Record<string, any>,
   topSectors: SectorRow[],
   microByCode: Map<string, WatchMicroSignal>,
-  newsSentimentByCode: Map<string, SentimentResult> = new Map()
+  newsSentimentByCode: Map<string, SentimentResult> = new Map(),
+  viewItemsInput?: WatchlistViewItem[]
 ) {
   if (!items.length) {
     return "  <i>등록된 관심종목이 없습니다. /관심추가 종목명 으로 후보를 저장하세요.</i>\n";
   }
 
-  const statusRank: Record<string, number> = {
-    "buy-now": 0,
-    "buy-on-pullback": 1,
-    wait: 2,
-  };
-
-  const viewItems = items
-    .map((item) => {
-      const stock = Array.isArray(item.stock) ? item.stock[0] : item.stock;
-      if (!stock) return null;
-
-      const score = scoresByCode.get(item.code);
-      const total = score?.total_score ?? score?.momentum_score ?? 0;
-      const rt = realtimeMap[item.code];
-      const price = Number(rt?.price ?? stock.close ?? 0);
-      const plan = buildInvestmentPlan({
-        currentPrice: price,
-        factors: { rsi14: stock.rsi14 ?? undefined },
-        technicalScore: total || undefined,
-      });
-      const buyPrice = Number(item.buy_price ?? 0);
-      const profitPct = buyPrice > 0 && price > 0
-        ? ((price - buyPrice) / buyPrice) * 100
-        : null;
-
-      return {
-        code: item.code,
-        name: stock.name,
-        sectorId: stock.sector_id ?? null,
-        currentPrice: price,
-        changeRate: rt?.changeRate ?? null,
-        buyPrice: buyPrice > 0 ? buyPrice : null,
-        profitPct,
-        totalScore: Number(total) || 0,
-        plan,
-      };
-    })
-    .filter((item): item is WatchlistViewItem => Boolean(item));
+  const viewItems = viewItemsInput ?? buildWatchlistViewItems(items, scoresByCode, realtimeMap);
 
   if (!viewItems.length) {
     return "  <i>등록된 관심종목을 불러오지 못했습니다.</i>\n";
@@ -615,6 +673,7 @@ async function formatWatchlistSection(
   const summaryLines = [
     `  오늘 액션 ${actionable}건 · 눌림 대기 ${pullback}건 · 관망 ${wait}건`,
   ];
+  summaryLines.push(...buildBriefingConcentrationSummary(items));
 
   const microTriggered = sortedItems.filter((item) => {
     const micro = microByCode.get(item.code);

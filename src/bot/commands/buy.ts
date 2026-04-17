@@ -10,6 +10,10 @@ import { getDailySeries } from "../../adapters";
 import { fetchAllMarketData } from "../../utils/fetchMarketData";
 import { calculateScore } from "../../score/engine";
 import { buildInvestmentPlan } from "../../lib/investPlan";
+import {
+  scaleScoreFactorsToReferencePrice,
+  scaleSeriesToReferencePrice,
+} from "../../lib/priceScale";
 
 // Supabase 클라이언트
 const supabase = createClient(
@@ -174,6 +178,7 @@ export async function handleBuyCommand(
   ]);
 
   const currentPrice = realtimeData?.price ?? stock.close;
+  const normalizedSeries = scaleSeriesToReferencePrice(series, currentPrice);
   const marketEnv = marketData
     ? {
         vix: marketData.vix?.price,
@@ -181,13 +186,14 @@ export async function handleBuyCommand(
         usdkrw: marketData.usdkrw?.price,
       }
     : undefined;
-  const scored = series && series.length >= 200 ? calculateScore(series, marketEnv) : null;
+  const scored = normalizedSeries && normalizedSeries.length >= 200
+    ? calculateScore(normalizedSeries, marketEnv)
+    : null;
   const rawMomentumScore = Array.isArray(stock.scores)
     ? (stock.scores[0] as { momentum_score?: number } | undefined)?.momentum_score
     : (stock.scores as { momentum_score?: number } | null | undefined)?.momentum_score;
-  const plan = buildInvestmentPlan({
-    currentPrice,
-    factors: scored?.factors ?? {
+  const fallbackFactors = scaleScoreFactorsToReferencePrice(
+    {
       sma20: stock.sma20,
       sma50: stock.sma50,
       rsi14: stock.rsi14,
@@ -195,6 +201,12 @@ export async function handleBuyCommand(
       roc21: 0,
       avwap_support: 50,
     },
+    currentPrice,
+    stock.close
+  );
+  const plan = buildInvestmentPlan({
+    currentPrice,
+    factors: scored?.factors ?? fallbackFactors,
     technicalScore: scored?.score ?? rawMomentumScore,
     fundamental,
     marketEnv,

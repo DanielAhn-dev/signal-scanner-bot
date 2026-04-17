@@ -16,6 +16,13 @@ export type SectorConcentration = {
   ratio: number;
 };
 
+export type SectorConcentrationWarning = SectorConcentration & {
+  level: "warning" | "danger";
+};
+
+export const SECTOR_CONCENTRATION_WARNING_RATIO = 30;
+export const SECTOR_CONCENTRATION_DANGER_RATIO = 50;
+
 /**
  * 보유 종목 목록을 받아 섹터별 투자 집중도를 계산한다.
  * investedAmount가 없는 종목(미매수 관심종목)은 제외한다.
@@ -41,6 +48,19 @@ export function calculateSectorConcentration(
       ratio: (amount / total) * 100,
     }))
     .sort((a, b) => b.ratio - a.ratio);
+}
+
+export function getSectorConcentrationWarnings(
+  concentrations: SectorConcentration[],
+  warningRatio = SECTOR_CONCENTRATION_WARNING_RATIO,
+  dangerRatio = SECTOR_CONCENTRATION_DANGER_RATIO
+): SectorConcentrationWarning[] {
+  return concentrations
+    .filter((concentration) => concentration.ratio > warningRatio)
+    .map((concentration) => ({
+      ...concentration,
+      level: concentration.ratio > dangerRatio ? "danger" : "warning",
+    }));
 }
 
 type WatchlistHoldingRow = {
