@@ -1,3 +1,5 @@
+import { TELEGRAM_BOT_COMMANDS } from "../bot/commandCatalog";
+
 // src/telegram/api.ts
 const token = process.env.TELEGRAM_BOT_TOKEN || "";
 const base = `https://api.telegram.org/bot${token}`;
@@ -50,40 +52,13 @@ export async function sendDocument(payload: {
   return tg("sendDocument", form);
 }
 
-// 봇 명령어 목록 (텔레그램 메뉴 버튼에 노출)
-const BOT_COMMANDS = [
-  { command: "start", description: "시작 · 메뉴" },
-  { command: "onboarding", description: "초보자 온보딩 가이드" },
-  { command: "sector", description: "주도 섹터 랭킹" },
-  { command: "scan", description: "눌림목 스캐너" },
-  { command: "score", description: "종목 점수·시그널" },
-  { command: "buy", description: "매수 판독" },
-  { command: "finance", description: "재무 요약" },
-  { command: "capital", description: "투자금 설정" },
-  { command: "brief", description: "장전 브리핑" },
-  { command: "report", description: "리포트 도움말 · /리포트 주간" },
-  { command: "alert", description: "이상징후 점검" },
-  { command: "economy", description: "글로벌 경제지표" },
-  { command: "news", description: "시장·종목 뉴스" },
-  { command: "market", description: "종합 시장 진단" },
-  { command: "watchlist", description: "관심종목 포트폴리오" },
-  { command: "flow", description: "외국인·기관 수급" },
-  { command: "nextsector", description: "수급 유입 섹터" },
-  { command: "pullback", description: "눌림목 매집 후보" },
-  { command: "ranking", description: "포트폴리오 랭킹" },
-  { command: "profile", description: "내 프로필" },
-  { command: "follow", description: "트레이더 팔로우" },
-  { command: "feed", description: "팔로잉 피드" },
-  { command: "help", description: "도움말" },
-];
-
 /** 텔레그램에 봇 명령어 + 메뉴 버튼 + 설명 등록 */
 export async function setCommandsKo(): Promise<TgResponse> {
   const [r1, r2, r3, r4] = await Promise.all([
     // 기본(전체 언어) 명령어
-    tg("setMyCommands", { commands: BOT_COMMANDS }),
+    tg("setMyCommands", { commands: TELEGRAM_BOT_COMMANDS }),
     // 한국어 전용
-    tg("setMyCommands", { commands: BOT_COMMANDS, language_code: "ko" }),
+    tg("setMyCommands", { commands: TELEGRAM_BOT_COMMANDS, language_code: "ko" }),
     // 채팅 입력창 메뉴 버튼 → 명령어 목록 표시
     tg("setChatMenuButton", {
       menu_button: { type: "commands" },

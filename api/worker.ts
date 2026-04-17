@@ -24,6 +24,11 @@ import {
   handleEtfHubCommand,
   handleEtfInfoCommand,
 } from "../src/bot/commands/etf";
+import {
+  getPromptPreset,
+  getReplyPrefixForPromptKind,
+  resolveReplyPrefixFromText,
+} from "../src/bot/commandCatalog";
 
 // supa 클라이언트는 service_role 키를 사용해야 함
 const supa = () =>
@@ -141,18 +146,7 @@ async function sendPromptForCommand(
   chatId: number,
   tgSend: any
 ): Promise<void> {
-  const presets: Record<string, { title: string; placeholder: string }> = {
-    score: { title: "점수 조회", placeholder: "[score] 종목명 또는 코드 입력" },
-    buy: { title: "매수 전략 조회", placeholder: "[buy] 종목명 또는 코드 입력" },
-    finance: { title: "재무 조회", placeholder: "[finance] 종목명 또는 코드 입력" },
-    news: { title: "뉴스 조회", placeholder: "[news] 종목명 또는 코드 입력" },
-    flow: { title: "수급 조회", placeholder: "[flow] 종목명 또는 코드 입력" },
-    capital: { title: "투자금 설정", placeholder: "[capital] 300만원 3 8 안전형" },
-    etfinfo: { title: "ETF NAV 조회", placeholder: "[etfinfo] ETF명 또는 코드 입력" },
-    etfdiv: { title: "ETF 분배금 조회", placeholder: "[etfdiv] ETF명 또는 코드 입력" },
-  };
-
-  const preset = presets[kind];
+  const preset = getPromptPreset(kind);
   if (!preset) {
     await tgSend("sendMessage", {
       chat_id: chatId,
@@ -273,31 +267,13 @@ async function handleTelegramUpdateJob(job: any) {
       // placeholder에서 명령어 추출: "[score] 종목명 입력…"
       const cmdFromPlaceholder = placeholderMatch?.[1];
       // 혹은 메시지 텍스트에서 추출: "💯 점수 조회" 등
-      const cmdMap: Record<string, string> = {
-        score: "/점수",
-        buy: "/매수",
-        finance: "/재무",
-        news: "/뉴스",
-        flow: "/수급",
-        capital: "/투자금",
-        etfinfo: "/ETF 정보",
-        etfdiv: "/ETF 분배금",
-      };
       const prefix = cmdFromPlaceholder
-        ? cmdMap[cmdFromPlaceholder]
+        ? getReplyPrefixForPromptKind(cmdFromPlaceholder)
         : null;
 
       // reply 텍스트 패턴으로도 매칭 시도
       const fallbackCmd = !prefix
-        ? replyText.includes("점수") ? "/점수"
-        : replyText.includes("매수") ? "/매수"
-        : replyText.includes("재무") ? "/재무"
-        : replyText.includes("뉴스") ? "/뉴스"
-        : replyText.includes("수급") ? "/수급"
-        : replyText.includes("투자금") ? "/투자금"
-        : replyText.includes("ETF NAV") ? "/ETF 정보"
-        : replyText.includes("ETF 분배금") ? "/ETF 분배금"
-        : null
+        ? resolveReplyPrefixFromText(replyText) ?? null
         : null;
 
       const resolvedPrefix = prefix || fallbackCmd;
