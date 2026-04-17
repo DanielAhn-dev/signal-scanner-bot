@@ -20,6 +20,12 @@ import {
   SECTOR_CONCENTRATION_DANGER_RATIO,
   SECTOR_CONCENTRATION_WARNING_RATIO,
 } from "./portfolioService";
+import {
+  getEtfDistributionSummary,
+  getEtfSnapshot,
+  type EtfDistributionSummary,
+  type EtfSnapshot,
+} from "./etfService";
 
 // JSONB용 느슨한 타입
 type Json = Record<string, any>;
@@ -69,6 +75,7 @@ interface WatchlistRow {
 interface WatchlistViewItem {
   code: string;
   name: string;
+  market: string | null;
   sectorId: string | null;
   currentPrice: number;
   changeRate: number | null;
@@ -76,6 +83,8 @@ interface WatchlistViewItem {
   profitPct: number | null;
   totalScore: number;
   plan: ReturnType<typeof buildInvestmentPlan>;
+  etfSnapshot: EtfSnapshot | null;
+  etfDistribution: EtfDistributionSummary | null;
 }
 
 const statusRank: Record<string, number> = {
@@ -249,11 +258,30 @@ export async function createBriefingReport(
   });
 
   const watchlistMicro = await fetchWatchMicroSignalsByCodes(supabase, watchlistCodes);
+  const etfWatchlistCodes = watchlistItems
+    .map((item) => Array.isArray(item.stock) ? item.stock[0] : item.stock)
+    .filter((stock): stock is StockRow => Boolean(stock?.market === "ETF"))
+    .map((stock) => stock.code);
+  const etfSnapshotMap = new Map<string, EtfSnapshot | null>();
+  const etfDistributionMap = new Map<string, EtfDistributionSummary | null>();
+
+  await Promise.all(
+    etfWatchlistCodes.map(async (code) => {
+      const [snapshot, distribution] = await Promise.all([
+        getEtfSnapshot(code).catch(() => null),
+        getEtfDistributionSummary(code).catch(() => null),
+      ]);
+      etfSnapshotMap.set(code, snapshot);
+      etfDistributionMap.set(code, distribution);
+    })
+  );
 
   const watchlistViewItems = buildWatchlistViewItems(
     watchlistItems,
     scoresByCode,
-    realtimeMap
+    realtimeMap,
+    etfSnapshotMap,
+    etfDistributionMap
   );
 
   // 액션 우선 + 손익 변동 우선 기준으로 최대 3개 감성 수집
@@ -488,12 +516,13 @@ async function fetchWatchlistItems(
 function buildWatchlistViewItems(
   items: WatchlistRow[],
   scoresByCode: Map<string, ScoreRow>,
-  realtimeMap: Record<string, any>
+  realtimeMap: Record<string, any>,
+  etfSnapshotMap: Map<string, EtfSnapshot | null> = new Map(),
+  etfDistributionMap: Map<string, EtfDistributionSummary | null> = new Map()
 ): WatchlistViewItem[] {
-  return items
-    .map((item) => {
+  return items.reduce<WatchlistViewItem[]>((acc, item) => {
       const stock = Array.isArray(item.stock) ? item.stock[0] : item.stock;
-      if (!stock) return null;
+      if (!stock) return acc;
 
       const score = scoresByCode.get(item.code);
       const total = score?.total_score ?? score?.momentum_score ?? 0;
@@ -509,9 +538,10 @@ function buildWatchlistViewItems(
         ? ((price - buyPrice) / buyPrice) * 100
         : null;
 
-      return {
+      acc.push({
         code: item.code,
         name: stock.name,
+        market: stock.market ?? null,
         sectorId: stock.sector_id ?? null,
         currentPrice: price,
         changeRate: rt?.changeRate ?? null,
@@ -519,9 +549,12 @@ function buildWatchlistViewItems(
         profitPct,
         totalScore: Number(total) || 0,
         plan,
-      };
-    })
-    .filter((item): item is WatchlistViewItem => Boolean(item));
+        etfSnapshot: etfSnapshotMap.get(item.code) ?? null,
+        etfDistribution: etfDistributionMap.get(item.code) ?? null,
+      });
+
+      return acc;
+    }, []);
 }
 
 function buildBriefingConcentrationSummary(items: WatchlistRow[]): string[] {
@@ -751,6 +784,10 @@ async function formatWatchlistSection(
   const summaryLines = [
     `  오늘 액션 ${actionable}건 · 눌림 대기 ${pullback}건 · 관망 ${wait}건`,
   ];
+  const etfCount = sortedItems.filter((item) => item.market === "ETF").length;
+  if (etfCount > 0) {
+    summaryLines.push(`  ETF 보유 ${etfCount}건 · NAV/분배락 함께 체크`);
+  }
   summaryLines.push(...buildBriefingConcentrationSummary(items));
 
   const microTriggered = sortedItems.filter((item) => {
@@ -797,12 +834,23 @@ async function formatWatchlistSection(
           return `     뉴스 ${emoji} ${matches.slice(0, 2).join(", ")}`;
         })()
       : null;
+    const etfTags = item.market === "ETF"
+      ? [
+          item.etfSnapshot?.latestNav || item.etfSnapshot?.nav
+            ? `     ETF NAV ${fmtInt(Number(item.etfSnapshot?.latestNav ?? item.etfSnapshot?.nav ?? 0))}원 · 괴리율 ${item.etfSnapshot?.premiumRate != null ? fmtPct(item.etfSnapshot.premiumRate) : "확인중"}`
+            : null,
+          item.etfDistribution
+            ? `     분배 ${item.etfDistribution.cadenceLabel} · 월 ${item.etfDistribution.monthList.length ? item.etfDistribution.monthList.map((month) => `${month}월`).join(", ") : "확인 필요"}${item.etfDistribution.nextExpectedDate ? ` · 다음 예상 ${item.etfDistribution.nextExpectedDate}` : ""}`
+            : null,
+        ].filter((line): line is string => Boolean(line))
+      : [];
 
     return [
-      `  ▸ <b>${item.name}</b> <code>${fmtInt(item.currentPrice)}원</code>${changeStr}${buyBase}`,
+      `  ▸ <b>${item.name}</b>${item.market === "ETF" ? " [ETF]" : ""} <code>${fmtInt(item.currentPrice)}원</code>${changeStr}${buyBase}`,
       `     ${item.plan.statusLabel} · 손절 ${fmtInt(item.plan.stopPrice)} · 1차 ${fmtPct(item.plan.target1Pct * 100)}`,
       `     ${todayAction}`,
       triggerLine,
+      ...etfTags,
       ...newsTag ? [newsTag] : [],
     ].join("\n");
   });

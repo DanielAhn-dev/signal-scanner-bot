@@ -11,6 +11,7 @@ import { esc, fmtInt, fmtOne } from "../messages/format";
 import { header, section, divider, buildMessage, actionButtons } from "../messages/layout";
 
 type MarketKind = "KOSPI" | "KOSDAQ" | "ETF";
+type EtfStrategy = "default" | "core" | "theme";
 
 type StockRow = {
   code: string;
@@ -133,6 +134,62 @@ const EXCLUDED_ETF_PATTERNS = [
   /회사채/i,
 ];
 
+const ETF_NAME_QUERY_PATTERNS = [
+  "KODEX%",
+  "TIGER%",
+  "KOSEF%",
+  "KBSTAR%",
+  "ACE%",
+  "RISE%",
+  "SOL%",
+  "HANARO%",
+  "ARIRANG%",
+  "PLUS%",
+  "TIMEFOLIO%",
+  "WON%",
+  "WOORI%",
+  "%ETF%",
+];
+
+const ETF_NAME_HINT = /^(ETF|KODEX|TIGER|KOSEF|KBSTAR|ACE|RISE|SOL|HANARO|ARIRANG|PLUS|TIMEFOLIO|WOORI|WON)\b/i;
+
+const CORE_ETF_PATTERNS = [
+  /코스피\s*200/i,
+  /KOSPI\s*200/i,
+  /\b200\b/i,
+  /S&P\s*500/i,
+  /나스닥\s*100/i,
+  /NASDAQ\s*100/i,
+  /고배당/i,
+  /배당성장/i,
+  /퀄리티/i,
+  /QUALITY/i,
+  /VALUE/i,
+  /밸류/i,
+  /우량/i,
+  /미국대표/i,
+  /TOP\s*10/i,
+];
+
+const THEME_ETF_PATTERNS = [
+  /반도체/i,
+  /AI/i,
+  /인공지능/i,
+  /전력/i,
+  /전선/i,
+  /2차전지/i,
+  /로봇/i,
+  /방산/i,
+  /조선/i,
+  /원전/i,
+  /바이오/i,
+  /게임/i,
+  /엔터/i,
+  /우주항공/i,
+  /인터넷/i,
+  /에너지/i,
+];
+
 function clamp(v: number, min: number, max: number): number {
   if (!Number.isFinite(v)) return min;
   return Math.max(min, Math.min(max, v));
@@ -206,6 +263,42 @@ function isUnsafeEtfName(name: string): boolean {
   return EXCLUDED_ETF_PATTERNS.some((pattern) => pattern.test(name));
 }
 
+function isEtfLikeName(name: string): boolean {
+  return ETF_NAME_HINT.test((name ?? "").trim());
+}
+
+function buildEtfOrFilter(): string {
+  return ETF_NAME_QUERY_PATTERNS.map((pattern) => `name.ilike.${pattern}`).join(",");
+}
+
+function getEtfStrategyTag(name: string): EtfStrategy | null {
+  if (CORE_ETF_PATTERNS.some((pattern) => pattern.test(name))) return "core";
+  if (THEME_ETF_PATTERNS.some((pattern) => pattern.test(name))) return "theme";
+  return null;
+}
+
+function resolveWeights(kind: MarketKind, etfStrategy: EtfStrategy): ScoreWeights {
+  if (kind !== "ETF" || etfStrategy === "default") return MARKET_WEIGHTS[kind];
+  if (etfStrategy === "core") {
+    return {
+      technical: 0.2,
+      momentum: 0.12,
+      value: 0.04,
+      safety: 0.34,
+      trend: 0.12,
+      liquidity: 0.18,
+    };
+  }
+  return {
+    technical: 0.3,
+    momentum: 0.27,
+    value: 0.04,
+    safety: 0.14,
+    trend: 0.15,
+    liquidity: 0.1,
+  };
+}
+
 function getEtfSafetyScore(
   c: Omit<Candidate, "preScore" | "finalScore" | "avwapSupport" | "safetyScore" | "trendScore" | "liquidityScore">
 ): number {
@@ -246,22 +339,25 @@ function buildReasonLine(c: Candidate): string {
 }
 
 async function fetchCandidateStocks(kind: MarketKind): Promise<StockRow[]> {
-  const baseQuery = supabase
+  let query = supabase
     .from("stocks")
     .select("code, name, market, close, liquidity, market_cap, universe_level, is_sector_leader")
-    .eq("is_active", true)
-    .order("liquidity", { ascending: false })
-    .limit(220);
+    .eq("is_active", true);
 
   if (kind === "ETF") {
-    const { data, error } = await baseQuery.or("market.eq.ETF,name.ilike.%ETF%");
+    const { data, error } = await query
+      .or(buildEtfOrFilter())
+      .order("market_cap", { ascending: false })
+      .limit(500);
     if (error) throw error;
-    return (data ?? []) as StockRow[];
+    return ((data ?? []) as StockRow[]).filter((row) => isEtfLikeName(row.name ?? ""));
   }
 
-  const { data, error } = await baseQuery
+  const { data, error } = await query
     .eq("market", kind)
-    .in("universe_level", ["core", "extended"]);
+    .in("universe_level", ["core", "extended"])
+    .order("market_cap", { ascending: false })
+    .limit(320);
 
   if (error) throw error;
   return (data ?? []) as StockRow[];
@@ -318,50 +414,57 @@ function buildCandidates(
   stocks: StockRow[],
   scoreMap: Map<string, ScoreRow>,
   indicatorMap: Map<string, IndicatorRow>,
+  realtimeMap: Record<string, any>,
   profile: RiskProfile,
   kind: MarketKind,
-  regime: RegimeSettings
+  regime: RegimeSettings,
+  etfStrategy: EtfStrategy = "default"
 ): Candidate[] {
-  const weights = MARKET_WEIGHTS[kind];
+  const weights = resolveWeights(kind, etfStrategy);
   const filtered = stocks.filter((s) => {
     const name = (s.name ?? "").trim();
     if (!name || !s.code) return false;
 
     if (kind === "ETF") {
-      return !isUnsafeEtfName(name);
+      const strategyTag = getEtfStrategyTag(name);
+      if (isUnsafeEtfName(name)) return false;
+      if (etfStrategy === "core") return strategyTag === "core";
+      if (etfStrategy === "theme") return strategyTag === "theme";
+      return true;
     }
 
-    const liquidity = Number(s.liquidity ?? 0);
-    if (kind === "KOSDAQ" && liquidity < Math.max(30_000_000_000, regime.minLiquidityKrw)) return false;
-    if (kind === "KOSPI" && liquidity < Math.max(10_000_000_000, regime.minLiquidityKrw)) return false;
     return true;
   });
 
   const base = filtered.map((s) => {
     const score = scoreMap.get(s.code);
     const ind = indicatorMap.get(s.code);
+    const rt = realtimeMap[s.code];
 
-    const close = Number(ind?.close ?? s.close ?? 0);
+    const close = Number(ind?.close ?? rt?.price ?? s.close ?? 0);
     const sma20 = Number(ind?.sma20 ?? close);
     const sma50 = Number(ind?.sma50 ?? close);
     const sma200 = Number(ind?.sma200 ?? close);
-    const valueTraded = Number(ind?.value_traded ?? s.liquidity ?? 0);
+    const valueTraded = Number(ind?.value_traded ?? rt?.tradingValue ?? s.liquidity ?? 0);
     const rsi14 = Number(ind?.rsi14 ?? 50);
-    const roc14 = Number(ind?.roc14 ?? 0);
+    const roc14 = Number(ind?.roc14 ?? rt?.changeRate ?? 0);
     if (rsi14 > regime.maxRsi) return null;
+
+    const fallbackTechnicalScore = clamp(50 + roc14 * 5, 20, 90);
+    const fallbackMomentumScore = clamp(50 + roc14 * 7, 20, 90);
 
     const candidate: Omit<Candidate, "preScore" | "finalScore" | "avwapSupport" | "safetyScore" | "trendScore" | "liquidityScore"> = {
       code: s.code,
       name: s.name ?? s.code,
       market: s.market ?? "",
       close,
-      liquidity: Number(s.liquidity ?? 0),
+      liquidity: Number(s.liquidity ?? valueTraded ?? 0),
       marketCap: Number(s.market_cap ?? 0),
       universeLevel: s.universe_level ?? "",
       isSectorLeader: Boolean(s.is_sector_leader),
-      totalScore: normalizeScore(score?.total_score),
-      momentumScore: normalizeScore(score?.momentum_score),
-      valueScore: normalizeScore(score?.value_score),
+      totalScore: normalizeScore(score?.total_score ?? fallbackTechnicalScore),
+      momentumScore: normalizeScore(score?.momentum_score ?? fallbackMomentumScore),
+      valueScore: normalizeScore(score?.value_score ?? (kind === "ETF" ? 40 : 30)),
       valueTraded,
       rsi14,
       roc14,
@@ -371,7 +474,7 @@ function buildCandidates(
     };
 
     const trendScore = getTrendScore(close, sma20, sma50, sma200);
-    const liquidityScore = getLiquidityScore(valueTraded);
+  const liquidityScore = kind === "ETF" && valueTraded <= 0 ? 45 : getLiquidityScore(valueTraded);
     const rsiAdj = getRsiAdjust(rsi14);
 
     const safetyScore = kind === "ETF"
@@ -390,7 +493,21 @@ function buildCandidates(
           market_cap: candidate.marketCap,
         }, profile), 0, 100);
 
-    if (valueTraded < regime.minLiquidityKrw) return null;
+    if (kind === "ETF") {
+      if (valueTraded > 0 && valueTraded < Math.max(5_000_000_000, Math.floor(regime.minLiquidityKrw / 2))) {
+        return null;
+      }
+    } else if (valueTraded < regime.minLiquidityKrw) {
+      return null;
+    }
+
+    const strategyBonus = kind === "ETF"
+      ? etfStrategy === "core"
+        ? candidate.marketCap >= 500_000_000_000 ? 4 : 0
+        : etfStrategy === "theme"
+          ? clamp(candidate.roc14, -4, 8)
+          : 0
+      : 0;
 
     const preScore = clamp(
       candidate.totalScore * weights.technical +
@@ -400,6 +517,7 @@ function buildCandidates(
         trendScore * weights.trend +
         liquidityScore * weights.liquidity +
         rsiAdj +
+        strategyBonus +
         regime.scoreBias,
       0,
       100
@@ -465,13 +583,20 @@ function commandLabel(kind: MarketKind): string {
   return "ETF";
 }
 
+function etfStrategyLabel(strategy: EtfStrategy): string {
+  if (strategy === "core") return "ETF 적립형";
+  if (strategy === "theme") return "ETF 테마형";
+  return "ETF";
+}
+
 function buildResultMessage(
   kind: MarketKind,
   picks: Candidate[],
   realtimeMap: Record<string, any>,
-  regime: RegimeSettings
+  regime: RegimeSettings,
+  etfStrategy: EtfStrategy = "default"
 ): string {
-  const label = commandLabel(kind);
+  const label = kind === "ETF" ? etfStrategyLabel(etfStrategy) : commandLabel(kind);
   const lines = picks.map((c, idx) => {
     const rt = realtimeMap[c.code];
     const price = Number(rt?.price ?? c.close ?? 0);
@@ -492,7 +617,11 @@ function buildResultMessage(
   });
 
   const notice = kind === "ETF"
-    ? "참고: ETF 괴리율/호가스프레드 실시간 값은 미연동이며 거래대금·유동성으로 보수적으로 대체했습니다."
+    ? etfStrategy === "core"
+      ? "참고: 적립형 ETF는 broad index·고배당·우량지수 중심으로 추렸고, NAV·괴리율은 /ETF 정보에서 개별 확인할 수 있습니다."
+      : etfStrategy === "theme"
+        ? "참고: 테마형 ETF는 최근 추세·모멘텀 반영 비중을 높였습니다. 단기 회전은 손절 기준과 함께 보세요."
+        : "참고: ETF 괴리율/호가스프레드 실시간 값은 미연동이며 거래대금·유동성으로 보수적으로 대체했습니다."
     : "참고: 결과는 보수형 필터 기반 우선순위이며, 분할 진입·손절 규칙과 함께 확인하세요.";
 
   return buildMessage([
@@ -503,7 +632,12 @@ function buildResultMessage(
   ]);
 }
 
-async function runMarketPickCommand(kind: MarketKind, ctx: ChatContext, tgSend: any): Promise<void> {
+async function runMarketPickCommand(
+  kind: MarketKind,
+  ctx: ChatContext,
+  tgSend: any,
+  etfStrategy: EtfStrategy = "default"
+): Promise<void> {
   const prefs = await getUserInvestmentPrefs(ctx.from?.id ?? ctx.chatId);
   const riskProfile = (prefs.risk_profile ?? "safe") as RiskProfile;
   const marketOverview = await fetchAllMarketData().catch(() => null);
@@ -524,7 +658,20 @@ async function runMarketPickCommand(kind: MarketKind, ctx: ChatContext, tgSend: 
     fetchIndicatorsByCodes(codes),
   ]);
 
-  const preCandidates = buildCandidates(stocks, scoreMap, indicatorMap, riskProfile, kind, regime);
+  const fallbackRealtimeMap = kind === "ETF"
+    ? await fetchRealtimePriceBatch(codes).catch(() => ({} as Record<string, any>))
+    : ({} as Record<string, any>);
+
+  const preCandidates = buildCandidates(
+    stocks,
+    scoreMap,
+    indicatorMap,
+    fallbackRealtimeMap,
+    riskProfile,
+    kind,
+    regime,
+    etfStrategy
+  );
   if (!preCandidates.length) {
     await tgSend("sendMessage", {
       chat_id: ctx.chatId,
@@ -535,9 +682,12 @@ async function runMarketPickCommand(kind: MarketKind, ctx: ChatContext, tgSend: 
 
   const enriched = await attachDeepTechnicalScores(preCandidates);
   const top = sortByDesc(enriched, (c) => c.finalScore).slice(0, TOP_N);
-  const realtimeMap = await fetchRealtimePriceBatch(top.map((c) => c.code)).catch(() => ({} as Record<string, any>));
+  const realtimeMap = {
+    ...fallbackRealtimeMap,
+    ...(await fetchRealtimePriceBatch(top.map((c) => c.code)).catch(() => ({} as Record<string, any>))),
+  };
 
-  const text = buildResultMessage(kind, top, realtimeMap, regime);
+  const text = buildResultMessage(kind, top, realtimeMap, regime, etfStrategy);
   const buttons = [
     ...top.map((c) => ({ text: c.name, callback_data: `score:${c.code}` })),
     { text: "코스피", callback_data: "cmd:kospi" },
@@ -563,4 +713,12 @@ export async function handleKosdaqCommand(ctx: ChatContext, tgSend: any): Promis
 
 export async function handleEtfCommand(ctx: ChatContext, tgSend: any): Promise<void> {
   await runMarketPickCommand("ETF", ctx, tgSend);
+}
+
+export async function handleEtfCoreCommand(ctx: ChatContext, tgSend: any): Promise<void> {
+  await runMarketPickCommand("ETF", ctx, tgSend, "core");
+}
+
+export async function handleEtfThemeCommand(ctx: ChatContext, tgSend: any): Promise<void> {
+  await runMarketPickCommand("ETF", ctx, tgSend, "theme");
 }

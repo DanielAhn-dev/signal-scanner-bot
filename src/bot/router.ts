@@ -18,8 +18,8 @@ import { handleReportCommand } from "./commands/report";
 import {
   handleKospiCommand,
   handleKosdaqCommand,
-  handleEtfCommand,
 } from "./commands/marketPicks";
+import { handleEtfHubCommand } from "./commands/etf";
 import {
   handleWatchlistCommand,
   handleWatchlistAdd,
@@ -80,7 +80,7 @@ const CMD = {
   NEXTSECTOR:  /^\/(nextsector|다음섹터|수급섹터)$/i,
   KOSPI:       /^\/(kospi|코스피)$/i,
   KOSDAQ:      /^\/(kosdaq|코스닥)$/i,
-  ETF:         /^\/(etf)$/i,
+  ETF:         /^\/(etf|이티에프)(?:\s+(.+))?$/i,
 };
 
 const SEND_ERR = (cmd: string) =>
@@ -440,10 +440,11 @@ export async function routeMessage(
     return;
   }
 
-  // /etf — ETF 보수형 추천
-  if (CMD.ETF.test(t)) {
+  // /etf — ETF 허브
+  const metf = t.match(CMD.ETF);
+  if (metf) {
     try {
-      await handleEtfCommand(ctx, tgSend);
+      await handleEtfHubCommand(metf[2] ?? "", ctx, tgSend);
     } catch (e) {
       await tgSend("sendMessage", {
         chat_id: ctx.chatId,

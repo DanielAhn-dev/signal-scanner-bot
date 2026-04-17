@@ -19,6 +19,11 @@ import { handleMarketCommand } from "../src/bot/commands/market";
 import { handleWatchlistQuickAdd } from "../src/bot/commands/watchlist";
 import { handleRiskProfileSelection } from "../src/bot/commands/onboarding";
 import { handleReportMenu } from "../src/bot/commands/report";
+import {
+  handleEtfDistributionCommand,
+  handleEtfHubCommand,
+  handleEtfInfoCommand,
+} from "../src/bot/commands/etf";
 
 // supa 클라이언트는 service_role 키를 사용해야 함
 const supa = () =>
@@ -143,6 +148,8 @@ async function sendPromptForCommand(
     news: { title: "뉴스 조회", placeholder: "[news] 종목명 또는 코드 입력" },
     flow: { title: "수급 조회", placeholder: "[flow] 종목명 또는 코드 입력" },
     capital: { title: "투자금 설정", placeholder: "[capital] 300만원 3 8 안전형" },
+    etfinfo: { title: "ETF NAV 조회", placeholder: "[etfinfo] ETF명 또는 코드 입력" },
+    etfdiv: { title: "ETF 분배금 조회", placeholder: "[etfdiv] ETF명 또는 코드 입력" },
   };
 
   const preset = presets[kind];
@@ -180,6 +187,7 @@ async function routeCallback(
     if (cmd === "sector") return handleSectorCommand(ctx, tgSend);
     if (cmd === "nextsector") return handleNextSectorCommand(ctx, tgSend);
     if (cmd === "pullback") return handlePullbackCommand(ctx, tgSend);
+    if (cmd.startsWith("etf:")) return handleEtfHubCommand(cmd.slice(4), ctx, tgSend);
 
     return routeMessage(`/${cmd}`, ctx, tgSend);
   }
@@ -199,6 +207,8 @@ async function routeCallback(
   if (data.startsWith("buy:")) return handleBuyCommand(data.slice(4), ctx, tgSend);
   if (data.startsWith("finance:")) return handleFinanceCommand(data.slice(8), ctx, tgSend);
   if (data.startsWith("news:")) return handleNewsCommand(data.slice(5), ctx, tgSend);
+  if (data.startsWith("etfinfo:")) return handleEtfInfoCommand(data.slice(8), ctx, tgSend);
+  if (data.startsWith("etfdiv:")) return handleEtfDistributionCommand(data.slice(7), ctx, tgSend);
 
   if (data.startsWith("watchadd:")) {
     return handleWatchlistQuickAdd(data.slice(9), ctx, tgSend);
@@ -270,6 +280,8 @@ async function handleTelegramUpdateJob(job: any) {
         news: "/뉴스",
         flow: "/수급",
         capital: "/투자금",
+        etfinfo: "/ETF 정보",
+        etfdiv: "/ETF 분배금",
       };
       const prefix = cmdFromPlaceholder
         ? cmdMap[cmdFromPlaceholder]
@@ -283,6 +295,8 @@ async function handleTelegramUpdateJob(job: any) {
         : replyText.includes("뉴스") ? "/뉴스"
         : replyText.includes("수급") ? "/수급"
         : replyText.includes("투자금") ? "/투자금"
+        : replyText.includes("ETF NAV") ? "/ETF 정보"
+        : replyText.includes("ETF 분배금") ? "/ETF 분배금"
         : null
         : null;
 

@@ -31,6 +31,13 @@ export function actionButtons(buttons: InlineButton[], cols = 2) {
 }
 
 export const ACTIONS = {
+  etfHub: [
+    { text: "적립형", callback_data: "cmd:etf:core" },
+    { text: "테마형", callback_data: "cmd:etf:theme" },
+    { text: "NAV/괴리율", callback_data: "prompt:etfinfo" },
+    { text: "분배금", callback_data: "prompt:etfdiv" },
+    { text: "TOP5", callback_data: "cmd:etf:top" },
+  ] as InlineButton[],
   reportMenu: [
     { text: "주간", callback_data: "cmd:report:full" },
     { text: "포트폴리오", callback_data: "cmd:report:portfolio" },
@@ -94,5 +101,13 @@ export const ACTIONS = {
       { text: "재무", callback_data: `finance:${code}` },
       { text: "뉴스", callback_data: `news:${code}` },
       { text: "관심추가", callback_data: `watchadd:${code}` },
+    ] as InlineButton[],
+  analyzeEtf: (code: string) =>
+    [
+      { text: "NAV", callback_data: `etfinfo:${code}` },
+      { text: "분배금", callback_data: `etfdiv:${code}` },
+      { text: "적립형", callback_data: "cmd:etf:core" },
+      { text: "테마형", callback_data: "cmd:etf:theme" },
+      { text: "TOP5", callback_data: "cmd:etf:top" },
     ] as InlineButton[],
 };

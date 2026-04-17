@@ -34,6 +34,12 @@ import {
   previewFifoSale,
   replaceTradeLotsForHolding,
 } from "../../services/virtualLotService";
+import {
+  getEtfDistributionSummary,
+  getEtfSnapshot,
+  type EtfDistributionSummary,
+  type EtfSnapshot,
+} from "../../services/etfService";
 
 const MAX_ITEMS = 20; // 사용자당 최대 관심종목 수
 const DEFAULT_TARGET_POSITIONS = 10;
@@ -103,6 +109,11 @@ function isKstMarketOpen(now = new Date()): boolean {
   const open = 9 * 60;
   const close = 15 * 60 + 30;
   return minutes >= open && minutes <= close;
+}
+
+function formatEtfMonthList(months: number[]): string {
+  if (!months.length) return "확인 필요";
+  return months.map((month) => `${month}월`).join(", ");
 }
 
 async function appendVirtualTradeLog(payload: {
@@ -334,7 +345,7 @@ export async function handleWatchlistCommand(
     .select(
       `
       code, buy_price, buy_date, memo, created_at, quantity, invested_amount,
-      stock:stocks!inner ( name, close, rsi14, sector_id )
+      stock:stocks!inner ( name, market, close, rsi14, sector_id )
     `
     )
     .eq("chat_id", ctx.chatId)
@@ -365,6 +376,20 @@ export async function handleWatchlistCommand(
   const codes = items.map((it: any) => it.code);
   const realtimeMap = await fetchRealtimePriceBatch(codes);
   const scoresByCode = new Map<string, { total_score?: number | null; momentum_score?: number | null }>();
+  const etfCodes = items
+    .filter((item: any) => String((item.stock as any)?.market ?? "") === "ETF")
+    .map((item: any) => String(item.code));
+  const etfMetaMap = new Map<string, { snapshot: EtfSnapshot | null; distribution: EtfDistributionSummary | null }>();
+
+  await Promise.all(
+    etfCodes.map(async (code) => {
+      const [snapshot, distribution] = await Promise.all([
+        getEtfSnapshot(code).catch(() => null),
+        getEtfDistributionSummary(code).catch(() => null),
+      ]);
+      etfMetaMap.set(code, { snapshot, distribution });
+    })
+  );
 
   if (scoreAsOf && codes.length) {
     const { data: scoreRows } = await supabaseRead
@@ -390,6 +415,8 @@ export async function handleWatchlistCommand(
   const lines = items.map((item: any, idx: number) => {
     const stock = item.stock as any;
     const name = stock?.name ?? item.code;
+    const market = String(stock?.market ?? "");
+    const etfMeta = etfMetaMap.get(String(item.code));
     const dbClose = Number(stock?.close ?? 0);
     const rt = realtimeMap[item.code];
     const close = rt?.price ?? dbClose;
@@ -432,13 +459,24 @@ export async function handleWatchlistCommand(
       plan.status === "buy-on-pullback"
         ? `\n    액션 ${plan.statusLabel} · 진입 ${fmtInt(plan.entryLow)}~${fmtInt(plan.entryHigh)}`
         : `\n    액션 ${plan.statusLabel} · 손절 ${fmtInt(plan.stopPrice)} · 1차 ${fmtPct(plan.target1Pct * 100)}`;
+    const etfStr = market === "ETF"
+      ? [
+          etfMeta?.snapshot?.latestNav || etfMeta?.snapshot?.nav
+            ? `\n    ETF NAV <code>${fmtInt(Number(etfMeta?.snapshot?.latestNav ?? etfMeta?.snapshot?.nav ?? 0))}원</code> · 괴리율 ${etfMeta?.snapshot?.premiumRate != null ? fmtPct(etfMeta.snapshot.premiumRate) : "확인중"}`
+            : "",
+          etfMeta?.distribution
+            ? `\n    분배 ${etfMeta.distribution.cadenceLabel} · 월 ${formatEtfMonthList(etfMeta.distribution.monthList)}${etfMeta.distribution.nextExpectedDate ? ` · 다음 예상 ${etfMeta.distribution.nextExpectedDate}` : ""}`
+            : "",
+        ].join("")
+      : "";
 
     return (
-      `${idx + 1}. <b>${esc(name)}</b> (${item.code}) · 추가 (${addedDate})\n` +
+      `${idx + 1}. <b>${esc(name)}</b> (${item.code})${market === "ETF" ? " · ETF" : ""} · 추가 (${addedDate})\n` +
       `    현재 <code>${fmtInt(close)}원</code>  ${changeStr}` +
       buyStr +
       plStr +
-      actionStr
+      actionStr +
+      etfStr
     );
   });
 
