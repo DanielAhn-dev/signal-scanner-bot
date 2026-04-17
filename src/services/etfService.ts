@@ -30,9 +30,22 @@ export type EtfDistributionSummary = {
   latestPayoutDate?: string;
   latestBasePrice?: number;
   latestAmount?: number;
+  annualAmount?: number;
+  annualYieldPct?: number;
+  annualAsOf?: string;
+  annualYear?: number;
   nextExpectedDate?: string;
   source: string;
 };
+
+type EtfAnnualDistribution = {
+  year?: number;
+  asOf?: string;
+  amount?: number;
+  yieldPct?: number;
+};
+
+let tigerAnnualDistributionCache: Promise<Map<string, EtfAnnualDistribution>> | null = null;
 
 export type EtfSnapshot = {
   marketCapText?: string;
@@ -163,6 +176,85 @@ function parseHoldings($: cheerio.CheerioAPI): EtfHolding[] {
   return holdings;
 }
 
+function isTigerEtf(name?: string): boolean {
+  return Boolean(name && /^TIGER\b/i.test(name.trim()));
+}
+
+async function fetchTigerAnnualDistributionMap(): Promise<Map<string, EtfAnnualDistribution>> {
+  const today = new Date().toLocaleDateString("sv-SE").replace(/-/g, ".");
+  const response = await fetch("https://investments.miraeasset.com/tigeretf/ko/distribution/annual/excel.do", {
+    method: "POST",
+    headers: {
+      "User-Agent": UA,
+      "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
+      Referer: "https://investments.miraeasset.com/tigeretf/ko/distribution/annual/list.do",
+    },
+    body: new URLSearchParams({
+      pageIndex: "1",
+      listCnt: "10",
+      orderType: "",
+      orderB: "",
+      orderC: "",
+      q: "",
+      cateNameYn: "Y",
+      gubun: "",
+      clsnPrcStrtDt: today,
+      clsnPrcEndDt: today,
+      fixDate: "",
+    }),
+  });
+
+  if (!response.ok) {
+    throw new Error(`TIGER 분배금 파일 조회 실패 (${response.status})`);
+  }
+
+  const html = await response.text();
+  const $ = cheerio.load(html);
+  const map = new Map<string, EtfAnnualDistribution>();
+  const headerCells = $("table thead th")
+    .map((_, th) => normalizeSpace($(th).text()))
+    .get();
+  const yearMatch = headerCells
+    .map((text) => text.match(/(\d{4})년\s*분배금/))
+    .find(Boolean);
+  const annualYear = yearMatch ? Number(yearMatch[1]) : undefined;
+  const asOf = $("h1")
+    .map((_, node) => normalizeSpace($(node).text()))
+    .get()
+    .map((text) => text.match(/기준일\s*:?\s*(\d{4}\.\d{2}\.\d{2})/))
+    .find(Boolean)?.[1];
+
+  $("table tbody tr").each((_, tr) => {
+    const cells = $(tr)
+      .find("td")
+      .map((__, td) => normalizeSpace($(td).text()))
+      .get();
+    if (cells.length < 4) return;
+
+    const name = cells[0];
+    if (!name) return;
+
+    map.set(name, {
+      year: annualYear,
+      asOf,
+      amount: parseNum(cells[2]),
+      yieldPct: parseNum(cells[3]),
+    });
+  });
+
+  return map;
+}
+
+async function getTigerAnnualDistribution(name?: string): Promise<EtfAnnualDistribution | undefined> {
+  if (!isTigerEtf(name)) return undefined;
+  tigerAnnualDistributionCache ??= fetchTigerAnnualDistributionMap().catch((error) => {
+    tigerAnnualDistributionCache = null;
+    throw error;
+  });
+  const map = await tigerAnnualDistributionCache;
+  return map.get(name!.trim());
+}
+
 function deriveCadence(events: EtfDistributionEvent[]): Omit<EtfDistributionSummary, "events" | "source"> {
   const applied = events
     .map((event) => parseDate(event.applyDate))
@@ -270,7 +362,7 @@ async function enrichDistributionEvent(code: string, event: EtfDistributionEvent
   };
 }
 
-export async function getEtfDistributionSummary(code: string): Promise<EtfDistributionSummary> {
+export async function getEtfDistributionSummary(code: string, etfName?: string): Promise<EtfDistributionSummary> {
   const notices = await fetchDistributionNoticeList(code);
   const recent = notices.slice(0, 6);
   const events = await Promise.all(recent.map((event) => enrichDistributionEvent(code, event)));
@@ -279,11 +371,18 @@ export async function getEtfDistributionSummary(code: string): Promise<EtfDistri
     const db = parseDate(b.applyDate ?? b.noticeDate)?.getTime() ?? 0;
     return db - da;
   });
+  const annual = await getTigerAnnualDistribution(etfName).catch(() => undefined);
 
   return {
     events: sorted,
     ...deriveCadence(sorted),
-    source: "Naver Finance KOSCOM notice",
+    annualAmount: annual?.amount,
+    annualYieldPct: annual?.yieldPct,
+    annualAsOf: annual?.asOf,
+    annualYear: annual?.year,
+    source: annual
+      ? "Naver Finance KOSCOM notice + TIGER annual distribution export"
+      : "Naver Finance KOSCOM notice",
   };
 }
 

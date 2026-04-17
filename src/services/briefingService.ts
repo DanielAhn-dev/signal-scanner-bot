@@ -273,21 +273,21 @@ export async function createBriefingReport(
   });
 
   const watchlistMicro = await fetchWatchMicroSignalsByCodes(supabase, watchlistCodes);
-  const etfWatchlistCodes = watchlistItems
+  const etfWatchlistStocks = watchlistItems
     .map((item) => Array.isArray(item.stock) ? item.stock[0] : item.stock)
-    .filter((stock): stock is StockRow => Boolean(stock?.market === "ETF"))
-    .map((stock) => stock.code);
+    .filter((stock): stock is StockRow => Boolean(stock?.market === "ETF"));
+  const etfWatchlistCodes = etfWatchlistStocks.map((stock) => stock.code);
   const etfSnapshotMap = new Map<string, EtfSnapshot | null>();
   const etfDistributionMap = new Map<string, EtfDistributionSummary | null>();
 
   await Promise.all(
-    etfWatchlistCodes.map(async (code) => {
+    etfWatchlistStocks.map(async (stock) => {
       const [snapshot, distribution] = await Promise.all([
-        getEtfSnapshot(code).catch(() => null),
-        getEtfDistributionSummary(code).catch(() => null),
+        getEtfSnapshot(stock.code).catch(() => null),
+        getEtfDistributionSummary(stock.code, stock.name).catch(() => null),
       ]);
-      etfSnapshotMap.set(code, snapshot);
-      etfDistributionMap.set(code, distribution);
+      etfSnapshotMap.set(stock.code, snapshot);
+      etfDistributionMap.set(stock.code, distribution);
     })
   );
 
@@ -861,7 +861,7 @@ async function formatWatchlistSection(
             ? `     ETF NAV ${fmtInt(Number(item.etfSnapshot?.latestNav ?? item.etfSnapshot?.nav ?? 0))}원 · 괴리율 ${item.etfSnapshot?.premiumRate != null ? fmtPct(item.etfSnapshot.premiumRate) : "확인중"}`
             : null,
           item.etfDistribution
-            ? `     분배 ${item.etfDistribution.cadenceLabel} · 월 ${item.etfDistribution.monthList.length ? item.etfDistribution.monthList.map((month) => `${month}월`).join(", ") : "확인 필요"}${item.etfDistribution.latestAmount != null ? ` · 최근 ${fmtInt(item.etfDistribution.latestAmount)}원` : ""}${item.etfDistribution.nextExpectedDate ? ` · 다음 예상 ${item.etfDistribution.nextExpectedDate}` : ""}`
+            ? `     분배 ${item.etfDistribution.cadenceLabel} · 월 ${item.etfDistribution.monthList.length ? item.etfDistribution.monthList.map((month) => `${month}월`).join(", ") : "확인 필요"}${item.etfDistribution.annualAmount != null ? ` · 올해누적 ${fmtInt(item.etfDistribution.annualAmount)}원` : item.etfDistribution.latestAmount != null ? ` · 최근 ${fmtInt(item.etfDistribution.latestAmount)}원` : ""}${item.etfDistribution.nextExpectedDate ? ` · 다음 예상 ${item.etfDistribution.nextExpectedDate}` : ""}`
             : null,
         ].filter((line): line is string => Boolean(line))
       : [];

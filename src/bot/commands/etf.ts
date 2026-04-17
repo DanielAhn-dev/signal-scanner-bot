@@ -222,7 +222,7 @@ export async function handleEtfDistributionCommand(
   }
 
   const target = hits[0];
-  const summary = await getEtfDistributionSummary(target.code).catch(() => null);
+  const summary = await getEtfDistributionSummary(target.code, target.name).catch(() => null);
 
   if (!summary || !summary.events.length) {
     return tgSend("sendMessage", {
@@ -262,10 +262,14 @@ export async function handleEtfDistributionCommand(
       divider(),
       section("안내", bullets([
         latest.basePrice ? `최근 분배락 기준가격은 ${fmtInt(latest.basePrice)}원입니다.` : "최근 기준가격 데이터는 일부 공시에서만 확인됩니다.",
-        `최근 확인된 주당 분배금: ${formatDistributionAmount(summary.latestAmount)}`,
-        summary.latestAmount === undefined
-          ? "운용사 분배금 현황 연동이 아직 제한적이라 일부 ETF는 금액이 공시만으로는 비어 있을 수 있습니다."
-          : "분배금 금액은 확보된 운용사 소스가 있을 때 우선 표시합니다.",
+        summary.annualAmount !== undefined
+          ? `${summary.annualYear ?? "올해"} 누적 분배금: ${fmtInt(summary.annualAmount)}원${summary.annualYieldPct != null ? ` · 분배율 ${fmtPct(summary.annualYieldPct)}` : ""}`
+          : `최근 확인된 주당 분배금: ${formatDistributionAmount(summary.latestAmount)}`,
+        summary.annualAmount !== undefined
+          ? `TIGER 연간 분배금 공시 기준 ${summary.annualAsOf ?? "최신 기준일"} 누적값입니다.`
+          : summary.latestAmount === undefined
+            ? "운용사 분배금 현황 연동이 아직 제한적이라 일부 ETF는 금액이 공시만으로는 비어 있을 수 있습니다."
+            : "분배금 금액은 확보된 운용사 소스가 있을 때 우선 표시합니다.",
       ])),
       `<i>출처: ${esc(summary.source)}</i>`,
     ]),

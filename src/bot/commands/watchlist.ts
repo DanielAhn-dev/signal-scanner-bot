@@ -402,9 +402,12 @@ export async function handleWatchlistCommand(
 
   await Promise.all(
     etfCodes.map(async (code) => {
+      const matched = items.find((item: any) => String(item.code) === code);
+      const matchedStock = Array.isArray(matched?.stock) ? matched?.stock[0] : matched?.stock;
+      const name = matchedStock?.name;
       const [snapshot, distribution] = await Promise.all([
         getEtfSnapshot(code).catch(() => null),
-        getEtfDistributionSummary(code).catch(() => null),
+        getEtfDistributionSummary(code, name).catch(() => null),
       ]);
       etfMetaMap.set(code, { snapshot, distribution });
     })
@@ -494,7 +497,7 @@ export async function handleWatchlistCommand(
             ? `\n    ETF NAV <code>${fmtInt(Number(etfMeta?.snapshot?.latestNav ?? etfMeta?.snapshot?.nav ?? 0))}원</code> · 괴리율 ${etfMeta?.snapshot?.premiumRate != null ? fmtPct(etfMeta.snapshot.premiumRate) : "확인중"}`
             : "",
           etfMeta?.distribution
-            ? `\n    분배 ${etfMeta.distribution.cadenceLabel} · 월 ${formatEtfMonthList(etfMeta.distribution.monthList)}${etfMeta.distribution.latestAmount != null ? ` · 최근 ${fmtInt(etfMeta.distribution.latestAmount)}원` : ""}${etfMeta.distribution.nextExpectedDate ? ` · 다음 예상 ${etfMeta.distribution.nextExpectedDate}` : ""}`
+            ? `\n    분배 ${etfMeta.distribution.cadenceLabel} · 월 ${formatEtfMonthList(etfMeta.distribution.monthList)}${etfMeta.distribution.annualAmount != null ? ` · 올해누적 ${fmtInt(etfMeta.distribution.annualAmount)}원` : etfMeta.distribution.latestAmount != null ? ` · 최근 ${fmtInt(etfMeta.distribution.latestAmount)}원` : ""}${etfMeta.distribution.nextExpectedDate ? ` · 다음 예상 ${etfMeta.distribution.nextExpectedDate}` : ""}`
             : "",
         ].join("")
       : "";
