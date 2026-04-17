@@ -55,7 +55,7 @@ const HELP_SECTIONS = [
     title: "빠른 시작",
     lines: [
       "/온보딩 — 처음 사용자 가이드",
-      "/투자금 [금액] [분할횟수] [목표수익률] — 매수 계획 설정",
+      "/투자금 [금액] [분할횟수] [목표수익률] [성향] [일손실한도%] — 매수 계획 설정",
       "/브리핑 — 오늘 장전 핵심 요약",
     ],
   },
@@ -186,7 +186,7 @@ const PROMPT_PRESET_LIST: PromptPreset[] = [
   {
     kind: "capital",
     title: "투자금 설정",
-    placeholder: "[capital] 300만원 3 8 안전형",
+    placeholder: "[capital] 300만원 3 8 안전형 5",
     replyPrefix: "/투자금",
     replyHints: ["투자금"],
   },

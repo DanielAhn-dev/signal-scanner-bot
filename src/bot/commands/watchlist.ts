@@ -1193,12 +1193,21 @@ export async function handleWatchlistResponseCommand(
       plan,
       microSignal: microByCode.get(code),
     });
+    const microSignal = microByCode.get(code);
     const recommended =
       decision.action === "TAKE_PROFIT"
         ? "익절 고려"
         : decision.action === "STOP_LOSS"
           ? "손절 우선"
           : "보유 관찰";
+
+    const reentryWatch =
+      decision.action === "HOLD" &&
+      plan.status === "buy-now" &&
+      decision.pnlPct <= -3 &&
+      Boolean(microSignal?.valueAnomaly || microSignal?.flowShift)
+        ? "  재진입 감시: 손실권이지만 수급/거래대금 트리거가 회복돼 1회 분할 재진입 후보입니다."
+        : null;
 
     lines.push(
       [
@@ -1208,6 +1217,7 @@ export async function handleWatchlistResponseCommand(
         `  손절 ${fmtInt(plan.stopPrice)}원 · 1차목표 ${fmtInt(plan.target1)}원`,
         `  내일 대응: ${recommended} (${decision.reason})`,
         `  트리거: ${decision.triggerReasons.length ? decision.triggerReasons.join(", ") : "대기"} · 신뢰도 ${decision.confidence}%`,
+        ...(reentryWatch ? [reentryWatch] : []),
       ].join("\n")
     );
   }
