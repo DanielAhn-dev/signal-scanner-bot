@@ -15,6 +15,10 @@
     "outputDirectory": ".",
     "crons": [
         {
+            "path": "/api/cron/scoreSync",
+            "schedule": "0 23 * * 0-4"
+        },
+        {
             "path": "/api/cron/briefing",
             "schedule": "30 23 * * 0-4"
         },

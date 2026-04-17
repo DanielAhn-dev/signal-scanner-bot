@@ -1,11 +1,11 @@
-# === scripts/update_stock_scores.py ===
 import os
+from datetime import date
 from supabase import create_client
-from datetime import datetime, date
+
 
 def load_env_file(filepath=".env"):
     try:
-        with open(filepath, "r") as f:
+        with open(filepath, "r", encoding="utf-8") as f:
             for line in f:
                 line = line.strip()
                 if not line or line.startswith("#"):
@@ -17,73 +17,94 @@ def load_env_file(filepath=".env"):
     except FileNotFoundError:
         pass
 
-load_env_file()
 
-url = os.environ.get("SUPABASE_URL")
-key = os.environ.get("SUPABASE_SERVICE_ROLE_KEY")
-supabase = create_client(url, key)
+def clamp_int(value, default=0):
+    try:
+        n = int(round(float(value)))
+    except Exception:
+        n = default
+    return max(0, min(100, n))
 
-def calculate_stock_scores():
-    print("🔄 개별 종목 스코어 업데이트 시작...")
-    asof = date.today().isoformat()  # YYYY-MM-DD
 
-    # 1. Core/Extended 종목만 가져오기
-    print("📥 종목 데이터 로딩 중...")
-    res = supabase.table("stocks") \
-        .select("code, universe_level") \
-        .in_("universe_level", ["core", "extended"]) \
+def clamp_float(value, default=0.0):
+    try:
+        n = float(value)
+    except Exception:
+        n = default
+    return max(0.0, min(100.0, n))
+
+
+def normalize_existing_scores(asof=None):
+    print("🔄 score 동기화(정합성 보정) 시작...")
+
+    url = os.environ.get("SUPABASE_URL")
+    key = os.environ.get("SUPABASE_SERVICE_ROLE_KEY") or os.environ.get("SUPABASE_SERVICE_KEY")
+    if not url or not key:
+        raise RuntimeError("Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY")
+
+    supabase = create_client(url, key)
+
+    if not asof:
+        latest = supabase.table("scores").select("asof").order("asof", desc=True).limit(1).execute()
+        asof = (latest.data or [{}])[0].get("asof") if latest.data else None
+
+    if not asof:
+        asof = date.today().isoformat()
+
+    print(f"📅 기준 asof: {asof}")
+
+    rows_res = (
+        supabase.table("scores")
+        .select("code, asof, total_score, momentum_score, liquidity_score, value_score, score, factors")
+        .eq("asof", asof)
+        .limit(20000)
         .execute()
-    stocks = res.data or []
+    )
 
-    if not stocks:
-        print("⚠️ 업데이트할 종목이 없습니다.")
+    rows = rows_res.data or []
+    if not rows:
+        print("⚠️ 해당 asof 점수 데이터가 없습니다.")
+        print("   엔진 기반 동기화를 먼저 실행하세요: pnpm run sync:scores")
         return
 
-    print(f"🚀 {len(stocks)}개 우량주 점수 계산 중...")
-
     upserts = []
-    for s in stocks:
-        code = s.get("code")
+    for row in rows:
+        code = row.get("code")
         if not code:
             continue
 
-        base = 50
-        if s["universe_level"] == "core":
-            base += 20
-        elif s["universe_level"] == "extended":
-            base += 10
+        total = clamp_int(row.get("total_score"), 0)
+        momentum = clamp_int(row.get("momentum_score"), total)
+        liquidity = clamp_int(row.get("liquidity_score"), 50)
+        value = clamp_int(row.get("value_score"), 50)
+        score = clamp_float(row.get("score"), float(total))
+        factors = row.get("factors") if isinstance(row.get("factors"), dict) else {}
 
-        value_score = base
-        momentum_score = base
-        liquidity_score = base   # 임시
-        total_score = base
+        upserts.append(
+            {
+                "code": code,
+                "asof": asof,
+                "total_score": total,
+                "momentum_score": momentum,
+                "liquidity_score": liquidity,
+                "value_score": value,
+                "score": score,
+                "factors": factors,
+            }
+        )
 
-        upserts.append({
-            "code": code,
-            "asof": asof,
-            "score": float(total_score),   # numeric NOT NULL
-            "factors": {},                # jsonb NOT NULL
-            "value_score": int(value_score),
-            "momentum_score": int(momentum_score),
-            "liquidity_score": int(liquidity_score),
-            "total_score": int(total_score),
-        })
-
-    # 2. scores 테이블 upsert
     if not upserts:
-        print("⚠️ upsert 할 데이터가 없습니다.")
+        print("⚠️ 보정 대상 데이터가 없습니다.")
         return
 
-    batch_size = 100
+    batch_size = 200
     for i in range(0, len(upserts), batch_size):
-        batch = upserts[i:i+batch_size]
-        try:
-            supabase.table("scores").upsert(batch).execute()
-            print(f"   ✅ 배치 {i//batch_size + 1} 완료 ({len(batch)}개)")
-        except Exception as e:
-            print(f"⚠️ 점수 저장 실패: {e}")
+        batch = upserts[i : i + batch_size]
+        supabase.table("scores").upsert(batch).execute()
+        print(f"   ✅ 배치 {i // batch_size + 1} 완료 ({len(batch)}건)")
 
-    print("✅ 개별 종목 스코어 업데이트 완료.")
+    print(f"✅ score 정합성 동기화 완료: {len(upserts)}건")
+
 
 if __name__ == "__main__":
-    calculate_stock_scores()
+    normalize_existing_scores()

@@ -1,0 +1,132 @@
+import type { SupabaseClient } from "@supabase/supabase-js";
+
+type Json = Record<string, any>;
+
+export interface ScoreSnapshotRow {
+  code: string;
+  total_score: number | null;
+  momentum_score: number | null;
+  liquidity_score: number | null;
+  value_score: number | null;
+  factors: Json | null;
+  asof: string | null;
+}
+
+export interface ScoreSnapshotResult {
+  latestAsof: string | null;
+  byCode: Map<string, ScoreSnapshotRow>;
+  fallbackCodes: string[];
+}
+
+function uniqCodes(codes: string[]): string[] {
+  return [...new Set(codes.map((code) => code.trim()).filter(Boolean))];
+}
+
+function pickLatestRows(rows: ScoreSnapshotRow[]): Map<string, ScoreSnapshotRow> {
+  const byCode = new Map<string, ScoreSnapshotRow>();
+  for (const row of rows) {
+    if (!row?.code) continue;
+    if (!byCode.has(row.code)) {
+      byCode.set(row.code, row);
+    }
+  }
+  return byCode;
+}
+
+export async function fetchLatestScoresByCodes(
+  supabase: SupabaseClient,
+  codes: string[]
+): Promise<ScoreSnapshotResult> {
+  const targets = uniqCodes(codes);
+  const empty: ScoreSnapshotResult = {
+    latestAsof: null,
+    byCode: new Map<string, ScoreSnapshotRow>(),
+    fallbackCodes: [],
+  };
+
+  if (!targets.length) return empty;
+
+  const { data: latestRows, error: latestError } = await supabase
+    .from("scores")
+    .select("asof")
+    .order("asof", { ascending: false })
+    .limit(1);
+
+  if (latestError) {
+    throw new Error(`Latest score date fetch failed: ${latestError.message}`);
+  }
+
+  const latestAsof = (latestRows?.[0]?.asof as string | undefined) ?? null;
+  const byCode = new Map<string, ScoreSnapshotRow>();
+
+  if (latestAsof) {
+    const { data: currentRows, error: currentError } = await supabase
+      .from("scores")
+      .select(
+        [
+          "code",
+          "total_score",
+          "momentum_score",
+          "liquidity_score",
+          "value_score",
+          "factors",
+          "asof",
+        ].join(", ")
+      )
+      .eq("asof", latestAsof)
+      .in("code", targets)
+      .returns<ScoreSnapshotRow[]>();
+
+    if (currentError) {
+      throw new Error(`Current score fetch failed: ${currentError.message}`);
+    }
+
+    for (const row of currentRows ?? []) {
+      byCode.set(row.code, row);
+    }
+  }
+
+  const missingCodes = targets.filter((code) => !byCode.has(code));
+
+  if (missingCodes.length) {
+    const { data: fallbackRows, error: fallbackError } = await supabase
+      .from("scores")
+      .select(
+        [
+          "code",
+          "total_score",
+          "momentum_score",
+          "liquidity_score",
+          "value_score",
+          "factors",
+          "asof",
+        ].join(", ")
+      )
+      .in("code", missingCodes)
+      .order("asof", { ascending: false })
+      .limit(Math.max(300, missingCodes.length * 20))
+      .returns<ScoreSnapshotRow[]>();
+
+    if (fallbackError) {
+      throw new Error(`Fallback score fetch failed: ${fallbackError.message}`);
+    }
+
+    const latestByCode = pickLatestRows(fallbackRows ?? []);
+    latestByCode.forEach((row, code) => {
+      if (!byCode.has(code)) {
+        byCode.set(code, row);
+      }
+    });
+  }
+
+  const fallbackCodes = targets.filter((code) => {
+    const row = byCode.get(code);
+    return Boolean(row && latestAsof && row.asof !== latestAsof);
+  });
+
+  return {
+    latestAsof,
+    byCode,
+    fallbackCodes,
+  };
+}

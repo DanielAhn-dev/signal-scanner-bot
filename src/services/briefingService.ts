@@ -26,6 +26,10 @@ import {
   type EtfDistributionSummary,
   type EtfSnapshot,
 } from "./etfService";
+import {
+  fetchLatestScoresByCodes,
+  type ScoreSnapshotRow,
+} from "./scoreSourceService";
 
 // JSONB용 느슨한 타입
 type Json = Record<string, any>;
@@ -55,15 +59,7 @@ interface StockRow {
   is_active?: boolean | null;
 }
 
-interface ScoreRow {
-  code: string;
-  total_score: number | null;
-  momentum_score: number | null;
-  liquidity_score: number | null;
-  value_score: number | null;
-  factors: Json;
-  asof?: string;
-}
+type ScoreRow = ScoreSnapshotRow;
 
 interface WatchlistRow {
   code: string;
@@ -193,19 +189,7 @@ export async function createBriefingReport(
   // 1-b. 섹터 5일 모멘텀 (sector_daily 기반)
   const sectorMomentumMap = await fetchSectorMomentum(supabase, topSectorIds, asOf);
 
-  // 2. 점수 기준일(asof)
-  const { data: scoreDateRows, error: scoreDateError } = await supabase
-    .from("scores")
-    .select("asof")
-    .order("asof", { ascending: false })
-    .limit(1);
-
-  if (scoreDateError) {
-    throw new Error(`Score date fetch failed: ${scoreDateError.message}`);
-  }
-  const scoreAsOf = scoreDateRows?.[0]?.asof ?? asOf;
-
-  // 3. 상위 섹터에 속한 종목들
+  // 2. 상위 섹터에 속한 종목들
   const { data: sectorStocks, error: stockError } = await supabase
     .from("stocks")
     .select(
@@ -237,24 +221,23 @@ export async function createBriefingReport(
 
   const sectorStockCodes = (sectorStocks ?? []).map((s) => s.code);
 
-  // 4. 위 종목들에 대한 score 정보
-  const scoresByCode = await fetchScoresByCodes(
-    supabase,
-    sectorStockCodes,
-    scoreAsOf
-  );
+  // 3. 위 종목들에 대한 score 정보 (최신 asof 우선 + 종목별 fallback)
+  const sectorScoreResult = await fetchScoresByCodes(supabase, sectorStockCodes);
+  const scoresByCode = sectorScoreResult.byCode;
 
   const watchlistItems = options?.chatId
     ? await fetchWatchlistItems(supabase, options.chatId)
     : [];
   const watchlistCodes = watchlistItems.map((item) => item.code);
-  const watchlistScores = await fetchScoresByCodes(supabase, watchlistCodes, scoreAsOf);
-  watchlistScores.forEach((value, key) => scoresByCode.set(key, value));
+  const watchlistScoreResult = await fetchScoresByCodes(supabase, watchlistCodes);
+  watchlistScoreResult.byCode.forEach((value, key) => scoresByCode.set(key, value));
 
-  // 5. '밑에서' 턴어라운드 후보
+  const scoreAsOf =
+    sectorScoreResult.latestAsof ?? watchlistScoreResult.latestAsof ?? asOf;
+
+  // 4. '밑에서' 턴어라운드 후보
   const bottomCandidates = await fetchBottomTurnaroundCandidates(
     supabase,
-    scoreAsOf,
     riskProfile
   );
 
@@ -462,43 +445,13 @@ export async function createBriefingReport(
 
 async function fetchScoresByCodes(
   supabase: SupabaseClient,
-  codes: string[],
-  asof: string
+  codes: string[]
 ) {
-  const map = new Map<string, ScoreRow>();
-
-  if (!codes.length) return map;
-
-  const { data, error } = await supabase
-    .from("scores")
-    .select(
-      [
-        "code",
-        "total_score",
-        "momentum_score",
-        "liquidity_score",
-        "value_score",
-        "factors",
-      ].join(", ")
-    )
-    .eq("asof", asof)
-    .in("code", codes)
-    .returns<ScoreRow[]>();
-
-  if (error) {
-    throw new Error(`Scores fetch failed: ${error.message}`);
-  }
-
-  (data ?? []).forEach((row) => {
-    map.set(row.code, row);
-  });
-
-  return map;
+  return fetchLatestScoresByCodes(supabase, codes);
 }
 
 async function fetchBottomTurnaroundCandidates(
   supabase: SupabaseClient,
-  asof: string,
   riskProfile: RiskProfile
 ) {
   const { data: lowRsiStocks, error: lowRsiError } = await supabase
@@ -520,21 +473,8 @@ async function fetchBottomTurnaroundCandidates(
 
   const codes = lowRsiStocks.map((s) => s.code);
 
-  const { data: scoreRows, error: scoresError } = await supabase
-    .from("scores")
-    .select("code, momentum_score, total_score, factors")
-    .eq("asof", asof)
-    .in("code", codes)
-    .returns<
-      Pick<ScoreRow, "code" | "momentum_score" | "total_score" | "factors">[]
-    >();
-
-  if (scoresError) {
-    throw new Error(`Bottom scores fetch failed: ${scoresError.message}`);
-  }
-
-  const byCode = new Map<string, any>();
-  (scoreRows ?? []).forEach((row) => byCode.set(row.code, row));
+  const scoreResult = await fetchScoresByCodes(supabase, codes);
+  const byCode = scoreResult.byCode;
 
   const candidates = lowRsiStocks
     .map((stock) => {

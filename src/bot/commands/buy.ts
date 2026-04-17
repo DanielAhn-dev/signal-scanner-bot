@@ -225,7 +225,7 @@ export async function handleBuyCommand(
     .select(
       `
       code, name, close, sma20, sma50, rsi14, universe_level,
-      scores ( momentum_score )
+      scores ( total_score, momentum_score )
     `
     )
     .eq("code", code)
@@ -290,9 +290,10 @@ export async function handleBuyCommand(
   const scored = normalizedSeries && normalizedSeries.length >= 200
     ? calculateScore(normalizedSeries, marketEnv)
     : null;
-  const rawMomentumScore = Array.isArray(stock.scores)
-    ? (stock.scores[0] as { momentum_score?: number } | undefined)?.momentum_score
-    : (stock.scores as { momentum_score?: number } | null | undefined)?.momentum_score;
+  const rawTechnicalScore = Array.isArray(stock.scores)
+    ? (stock.scores[0] as { total_score?: number; momentum_score?: number } | undefined)
+    : (stock.scores as { total_score?: number; momentum_score?: number } | null | undefined);
+  const fallbackScore = rawTechnicalScore?.total_score ?? rawTechnicalScore?.momentum_score;
   const fallbackFactors = scaleScoreFactorsToReferencePrice(
     {
       sma20: stock.sma20,
@@ -308,11 +309,11 @@ export async function handleBuyCommand(
   const plan = buildInvestmentPlan({
     currentPrice,
     factors: scored?.factors ?? fallbackFactors,
-    technicalScore: scored?.score ?? rawMomentumScore,
+    technicalScore: scored?.score ?? fallbackScore,
     fundamental,
     marketEnv,
   });
-  const technicalScore = scored?.score ?? rawMomentumScore;
+  const technicalScore = scored?.score ?? fallbackScore;
   const fundamentalScore = fundamental?.qualityScore;
   const finalScore = technicalScore !== undefined
     ? Number(

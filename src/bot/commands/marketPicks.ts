@@ -6,6 +6,7 @@ import { fetchRealtimePriceBatch } from "../../utils/fetchRealtimePrice";
 import { fetchAllMarketData, type MarketOverview } from "../../utils/fetchMarketData";
 import { fmtKRW } from "../../lib/normalize";
 import { getUserInvestmentPrefs } from "../../services/userService";
+import { fetchLatestScoresByCodes } from "../../services/scoreSourceService";
 import { getSafetyPreferenceScore, type RiskProfile } from "../../lib/investableUniverse";
 import { esc, fmtInt, fmtOne } from "../messages/format";
 import { header, section, divider, buildMessage, actionButtons } from "../messages/layout";
@@ -364,31 +365,16 @@ async function fetchCandidateStocks(kind: MarketKind): Promise<StockRow[]> {
 }
 
 async function fetchScoresByCodes(codes: string[]): Promise<Map<string, ScoreRow>> {
+  const result = await fetchLatestScoresByCodes(supabase, codes);
   const out = new Map<string, ScoreRow>();
-  if (!codes.length) return out;
-
-  const { data: latestRows } = await supabase
-    .from("scores")
-    .select("asof")
-    .order("asof", { ascending: false })
-    .limit(1);
-
-  const latestAsof = latestRows?.[0]?.asof;
-
-  let query = supabase
-    .from("scores")
-    .select("code, total_score, momentum_score, value_score")
-    .in("code", codes)
-    .limit(Math.max(300, codes.length));
-
-  if (latestAsof) {
-    query = query.eq("asof", latestAsof);
-  }
-
-  const { data } = await query;
-  for (const row of (data ?? []) as ScoreRow[]) {
-    if (!out.has(row.code)) out.set(row.code, row);
-  }
+  result.byCode.forEach((row, code) => {
+    out.set(code, {
+      code,
+      total_score: row.total_score,
+      momentum_score: row.momentum_score,
+      value_score: row.value_score,
+    });
+  });
   return out;
 }
 

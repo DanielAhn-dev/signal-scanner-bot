@@ -13,6 +13,7 @@ import { getUserInvestmentPrefs } from "../../services/userService";
 import { analyzeNewsSentiment, formatSentimentLine } from "../../lib/newsSentiment";
 import { fetchStockNews } from "../../utils/fetchNews";
 import { esc, gradeLabel } from "../messages/format";
+import { fetchLatestScoresByCodes } from "../../services/scoreSourceService";
 import {
   header,
   section,
@@ -190,27 +191,13 @@ export async function handleScanCommand(
   const realtimeMap = await fetchRealtimePriceBatch(codes);
 
   const scoreMap = new Map<string, { total?: number; value?: number }>();
-  const { data: latestScoreDate } = await supabase
-    .from("scores")
-    .select("asof")
-    .order("asof", { ascending: false })
-    .limit(1);
-  const asof = latestScoreDate?.[0]?.asof;
-
-  if (asof && codes.length) {
-    const { data: scoreRows } = await supabase
-      .from("scores")
-      .select("code, total_score, value_score")
-      .eq("asof", asof)
-      .in("code", codes);
-
-    for (const row of scoreRows || []) {
-      scoreMap.set(row.code, {
-        total: Number(row.total_score ?? 0) || undefined,
-        value: Number(row.value_score ?? 0) || undefined,
-      });
-    }
-  }
+  const scoreResult = await fetchLatestScoresByCodes(supabase, codes);
+  scoreResult.byCode.forEach((row, code) => {
+    scoreMap.set(code, {
+      total: Number(row.total_score ?? 0) || undefined,
+      value: Number(row.value_score ?? 0) || undefined,
+    });
+  });
 
   const rerankPool = saferPool.slice(0, 12);
   const fundamentals = await Promise.all(
