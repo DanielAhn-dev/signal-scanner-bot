@@ -99,7 +99,9 @@ export async function routeMessage(
   ctx: ChatContext,
   tgSend: any
 ): Promise<void> {
-  const t = (text || "").trim();
+  const t = (text || "")
+    .trim()
+    .replace(/^\/([^@\s]+)@[^\s]+(?=\s|$)/, "/$1");
 
   // /start — 환영 및 안내
   if (CMD.START.test(t)) {
