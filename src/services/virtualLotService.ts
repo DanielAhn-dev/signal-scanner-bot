@@ -109,12 +109,12 @@ async function fetchOpenLots(chatId: number, code: string): Promise<LotRow[]> {
 
   if (error) throw error;
 
-  return (data ?? []).map((row) => ({
-    id: Number((row as any).id),
-    remaining_quantity: Number((row as any).remaining_quantity ?? 0),
-    acquired_quantity: Number((row as any).acquired_quantity ?? 0),
-    acquired_price: Number((row as any).acquired_price ?? 0),
-    acquired_at: String((row as any).acquired_at ?? ""),
+  return (data ?? []).map((row: Record<string, unknown>) => ({
+    id: Number(row.id),
+    remaining_quantity: Number(row.remaining_quantity ?? 0),
+    acquired_quantity: Number(row.acquired_quantity ?? 0),
+    acquired_price: Number(row.acquired_price ?? 0),
+    acquired_at: String(row.acquired_at ?? ""),
   }));
 }
 

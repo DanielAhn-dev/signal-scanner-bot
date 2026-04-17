@@ -63,10 +63,10 @@ async function fetchJsonWithTimeout(url: string): Promise<any | null> {
   const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
 
   try {
-    const res = await fetch(url, {
+    const res = (await fetch(url, {
       headers: UA,
       signal: controller.signal,
-    });
+    })) as Response & { json(): Promise<any> };
     if (!res.ok) return null;
     return await res.json();
   } catch {

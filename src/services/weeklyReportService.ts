@@ -297,7 +297,7 @@ export async function createWeeklyReportPdf(
       })
     : {};
 
-  const watchItems: WatchItem[] = (watchRes.data ?? []).map((row) => {
+  const watchItems: WatchItem[] = (watchRes.data ?? []).map((row: WatchlistRow) => {
     const stock = unwrapStock(row.stock);
     const buyPrice = row.buy_price != null ? toNum(row.buy_price) : null;
     const qtyRaw = row.quantity != null ? Math.floor(toNum(row.quantity)) : 0;
@@ -321,7 +321,7 @@ export async function createWeeklyReportPdf(
       unrealized,
       pnlPct,
     };
-  }).sort((a, b) => Math.abs(b.unrealized) - Math.abs(a.unrealized));
+  }).sort((a: WatchItem, b: WatchItem) => Math.abs(b.unrealized) - Math.abs(a.unrealized));
 
   const totalInvested = watchItems.reduce((s, i) => s + i.invested, 0);
   const totalValue = watchItems.reduce((s, i) => s + i.value, 0);

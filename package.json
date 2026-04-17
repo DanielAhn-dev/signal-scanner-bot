@@ -2,6 +2,7 @@
   "name": "signal-scanner-bot",
   "type": "commonjs",
   "version": "1.0.2",
+  "packageManager": "pnpm@9.0.0",
   "description": "Telegram Stock Signal Scanner Bot with Vercel Functions",
   "private": true,
   "scripts": {
