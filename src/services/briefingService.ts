@@ -26,6 +26,7 @@ import {
   type EtfDistributionSummary,
   type EtfSnapshot,
 } from "./etfService";
+  import { getUserInvestmentPrefs } from "./userService";
 import {
   fetchLatestScoresByCodes,
   type ScoreSnapshotRow,
@@ -364,6 +365,44 @@ export async function createBriefingReport(
     fundamentalByCode
   );
 
+  // 2-1: 일손실 한도 도달 경고
+  let dailyLossWarning = "";
+  if (options?.chatId) {
+    try {
+      const DEFAULT_DAILY_LOSS_LIMIT_PCT = 5;
+      const prefs = await getUserInvestmentPrefs(options.chatId);
+      const riskBaseCapital = Number(prefs.virtual_seed_capital ?? prefs.capital_krw ?? 0);
+      const dailyLossLimitPct = Number(prefs.daily_loss_limit_pct ?? DEFAULT_DAILY_LOSS_LIMIT_PCT);
+      const dailyLossLimitAmount = riskBaseCapital > 0 && dailyLossLimitPct > 0
+        ? (riskBaseCapital * dailyLossLimitPct) / 100
+        : 0;
+      if (dailyLossLimitAmount > 0) {
+        const dayMs = 24 * 60 * 60 * 1000;
+        const kstOffsetMs = 9 * 60 * 60 * 1000;
+        const kstNowMs = Date.now() + kstOffsetMs;
+        const kstStartMs = Math.floor(kstNowMs / dayMs) * dayMs;
+        const utcStartIso = new Date(kstStartMs - kstOffsetMs).toISOString();
+        const utcEndIso = new Date(kstStartMs - kstOffsetMs + dayMs).toISOString();
+        const { data: tradeRows } = await supabase
+          .from("virtual_trades")
+          .select("pnl_amount")
+          .eq("chat_id", options.chatId)
+          .gte("traded_at", utcStartIso)
+          .lt("traded_at", utcEndIso);
+        const dailyPnl = (tradeRows ?? []).reduce((sum: number, row: any) => {
+          const pnl = Number(row?.pnl_amount ?? 0);
+          return Number.isFinite(pnl) ? sum + pnl : sum;
+        }, 0);
+        if (dailyPnl <= -dailyLossLimitAmount) {
+          dailyLossWarning = `\n\n⛔ <b>오늘 일손실 한도 도달</b> — 추천 확인만 권고\n  실현손익 <code>${dailyPnl.toLocaleString("ko-KR")}원</code> / 한도 <code>-${dailyLossLimitAmount.toLocaleString("ko-KR")}원</code>\n  오늘 신규 진입은 자제하고 보유 종목 리스크 점검을 우선하세요.`;
+        }
+      }
+    } catch {
+      // 일손실 체크 실패는 브리핑을 차단하지 않음
+    }
+  }
+    // 9. 빈집털이 섹션 텍스트 조립
+
   // 10. 최종 메시지 합치기
   // 장전 브리핑: 오늘(발송일) 날짜, 마감 브리핑: 오늘 날짜
   const now = new Date();
@@ -425,6 +464,7 @@ export async function createBriefingReport(
 
   report += `\n\n<b>내 관심종목 체크</b>\n`;
   report += watchlistSection;
+    report += dailyLossWarning;
 
   report += `\n\n<b>눌림 대기 후보</b> <i>과매도 + 모멘텀 개선</i>\n`;
   report += bottomSectionText;

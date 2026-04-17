@@ -33,6 +33,8 @@ export interface WatchDecision {
   triggerReasons: string[];
   executionGuardPassed: boolean;
   confidence: number;
+    /** STOP_LOSS 조건은 충족했지만 수급/거래대금 트리거 미충족으로 억제된 경우 true */
+    blockedStopLoss?: boolean;
 }
 
 function toNum(v: unknown): number {
@@ -173,7 +175,8 @@ export function resolveWatchDecision(payload: {
       pnlPct: base.pnlPct,
       triggerReasons: [],
       executionGuardPassed: false,
-      confidence,
+        confidence,
+        blockedStopLoss: base.action === "STOP_LOSS",
     };
   }
 

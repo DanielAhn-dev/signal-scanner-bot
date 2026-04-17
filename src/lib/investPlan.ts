@@ -36,6 +36,8 @@ export interface InvestmentPlan {
   rationale: string[];
   warnings: string[];
   summary: string;
+  /** VIX/공포탐욕 기반 포지션 크기 조정 계수 (기본 1.0, VIX 높을수록 < 1.0) */
+  sizeFactor: number;
 }
 
 function clamp(n: number, lo: number, hi: number): number {
@@ -71,6 +73,16 @@ function resolveMarketTone(marketEnv?: MarketEnv): MarketTone {
     (marketEnv.fearGreed ?? 50) >= 35 &&
     (marketEnv.fearGreed ?? 50) <= 65;
   return supportive ? "supportive" : "neutral";
+}
+
+function resolveSizeFactor(marketEnv?: MarketEnv): number {
+  if (!marketEnv) return 1.0;
+  const vix = marketEnv.vix ?? 0;
+  const fg = marketEnv.fearGreed;
+  if (vix >= 30) return 0.5;
+  if (vix >= 25) return 0.7;
+  if (fg != null && fg <= 20) return 1.1;
+  return 1.0;
 }
 
 export function buildInvestmentPlan(input: InvestmentPlanInput): InvestmentPlan {
@@ -208,6 +220,14 @@ export function buildInvestmentPlan(input: InvestmentPlanInput): InvestmentPlan 
         ? "추격보다 눌림 대기 후 접근이 더 유리합니다."
         : "당장 진입보다 추세 복원 확인이 우선입니다.";
 
+  const sizeFactor = resolveSizeFactor(input.marketEnv);
+
+  if (sizeFactor < 1.0) {
+    warnings.push(`고변동 장 — 포지션 크기 ${Math.round(sizeFactor * 100)}%로 축소 권장`);
+  } else if (sizeFactor > 1.0) {
+    rationale.push("공포 극단 구간 — 역발상 비중 소폭 확대 허용");
+  }
+
   return {
     status,
     statusLabel,
@@ -226,5 +246,6 @@ export function buildInvestmentPlan(input: InvestmentPlanInput): InvestmentPlan 
     rationale: rationale.slice(0, 3),
     warnings: warnings.slice(0, 3),
     summary,
+    sizeFactor,
   };
 }

@@ -9,6 +9,10 @@ import {
 } from "../messages/fundamental";
 import { getUserInvestmentPrefs } from "../../services/userService";
 import { getFundamentalSnapshot } from "../../services/fundamentalService";
+import {
+  calculateSectorConcentration,
+  getSectorConcentrationWarnings,
+} from "../../services/portfolioService";
 import { actionButtons, ACTIONS } from "../messages/layout";
 import { getDailySeries } from "../../adapters";
 import { fetchAllMarketData } from "../../utils/fetchMarketData";
@@ -224,7 +228,7 @@ export async function handleBuyCommand(
     .from("stocks")
     .select(
       `
-      code, name, close, sma20, sma50, rsi14, universe_level,
+      code, name, close, sma20, sma50, rsi14, universe_level, sector_id,
       scores ( total_score, momentum_score )
     `
     )
@@ -365,11 +369,38 @@ export async function handleBuyCommand(
     investPrefs
   );
 
+  // 2-4: 섹터 과집중 경고 — 현재 관심종목의 섹터 집중도와 비교
+  let sectorWarningBlock = "";
+  const targetSectorId = (stock as any).sector_id as string | null | undefined;
+  if (targetSectorId) {
+    const { data: watchHoldings } = await supabase
+      .from("watchlist")
+      .select("invested_amount, stock:stocks!inner(sector_id)")
+      .eq("chat_id", ctx.chatId);
+
+    if (watchHoldings && watchHoldings.length > 0) {
+      const holdings = watchHoldings.map((h: any) => {
+        const s = Array.isArray(h.stock) ? h.stock[0] : h.stock;
+        return {
+          sectorId: s?.sector_id ?? null,
+          investedAmount: Number(h.invested_amount ?? 0),
+        };
+      });
+      const concentrations = calculateSectorConcentration(holdings);
+      const targetConc = concentrations.find((c) => c.sectorId === targetSectorId);
+      if (targetConc && targetConc.ratio >= 30) {
+        const icon = targetConc.ratio >= 50 ? "🔴" : "⚠️";
+        sectorWarningBlock = `\n\n${icon} <b>섹터 집중 경고</b>\n현재 ${esc(targetConc.sectorName)} 비중 ${targetConc.ratio.toFixed(0)}% — 진입 시 추가 집중됩니다.\n분산 투자 또는 비중 조정을 검토하세요.`;
+      }
+    }
+  }
+
+
   const kb = actionButtons(ACTIONS.analyzeStock(code), 3);
 
   await tgSend("sendMessage", {
     chat_id: ctx.chatId,
-    text: msg,
+    text: msg + sectorWarningBlock,
     parse_mode: "HTML",
     reply_markup: kb,
   });

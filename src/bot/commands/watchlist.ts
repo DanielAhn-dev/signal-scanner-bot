@@ -1116,6 +1116,40 @@ export async function handleWatchlistAutoCommand(
     );
   }
 
+  // 2-1: 일손실 한도 체크 — 신규 매수 진입 억제 상태 안내
+  let dailyLossGateNote = "";
+  try {
+    const DEFAULT_DAILY_LOSS_LIMIT_PCT = 5;
+    const prefs = await getUserInvestmentPrefs(ctx.from?.id ?? ctx.chatId);
+    const riskBaseCapital = Number(prefs.virtual_seed_capital ?? prefs.capital_krw ?? 0);
+    const dailyLossLimitPct = Number(prefs.daily_loss_limit_pct ?? DEFAULT_DAILY_LOSS_LIMIT_PCT);
+    const dailyLossLimitAmount = riskBaseCapital > 0 && dailyLossLimitPct > 0
+      ? (riskBaseCapital * dailyLossLimitPct) / 100 : 0;
+    if (dailyLossLimitAmount > 0) {
+      const dayMs = 24 * 60 * 60 * 1000;
+      const kstOffsetMs = 9 * 60 * 60 * 1000;
+      const kstNowMs = Date.now() + kstOffsetMs;
+      const kstStartMs = Math.floor(kstNowMs / dayMs) * dayMs;
+      const utcStartIso = new Date(kstStartMs - kstOffsetMs).toISOString();
+      const utcEndIso = new Date(kstStartMs - kstOffsetMs + dayMs).toISOString();
+      const { data: tradeRows } = await supabaseRead
+        .from("virtual_trades")
+        .select("pnl_amount")
+        .eq("chat_id", ctx.chatId)
+        .gte("traded_at", utcStartIso)
+        .lt("traded_at", utcEndIso);
+      const dailyPnl = (tradeRows ?? []).reduce((sum: number, row: any) => {
+        const pnl = Number(row?.pnl_amount ?? 0);
+        return Number.isFinite(pnl) ? sum + pnl : sum;
+      }, 0);
+      if (dailyPnl <= -dailyLossLimitAmount) {
+        dailyLossGateNote = `\n⛔ 오늘 일손실 한도 도달 — 신규 매수 진입 자제 권고\n  실현손익 ${fmtInt(dailyPnl)}원 / 한도 -${fmtInt(dailyLossLimitAmount)}원`;
+      }
+    }
+  } catch {
+    // 일손실 체크 실패는 자동매매를 차단하지 않음
+  }
+
   const msg = [
     "<b>관심자동 결과</b>",
     LINE,
@@ -1129,6 +1163,7 @@ export async function handleWatchlistAutoCommand(
     ...(holdLines.length ? holdLines : ["- 해당 종목이 없습니다."]),
     "",
     "자동 실행 건은 /기록 에 (자동)으로 남습니다.",
+    ...(dailyLossGateNote ? [dailyLossGateNote] : []),
   ].join("\n");
 
   await tgSend("sendMessage", {
@@ -1147,7 +1182,7 @@ export async function handleWatchlistResponseCommand(
     .from("watchlist")
     .select(
       `
-      code, buy_price, quantity,
+      code, buy_price, quantity, created_at,
       stock:stocks!inner ( name, close, rsi14 )
     `
     )
@@ -1209,6 +1244,22 @@ export async function handleWatchlistResponseCommand(
         ? "  재진입 감시: 손실권이지만 수급/거래대금 트리거가 회복돼 1회 분할 재진입 후보입니다."
         : null;
 
+    // 2-3: 손절 미이행 경고
+    const blockedStopLossLines: string[] = [];
+    if (decision.blockedStopLoss) {
+      const createdAt: string | null = (item as any).created_at ?? null;
+      let elapsedTradingDays = 0;
+      if (createdAt) {
+        const diffMs = Date.now() - new Date(createdAt).getTime();
+        const diffDays = diffMs / (24 * 60 * 60 * 1000);
+        elapsedTradingDays = Math.max(0, Math.floor(diffDays * 5 / 7));
+      }
+      blockedStopLossLines.push("  ⚠️ <b>손절 미이행 주의</b> — 손절 조건 충족이지만 트리거 미충족으로 억제됨");
+      if (elapsedTradingDays >= 3) {
+        blockedStopLossLines.push(`  🔴 장기 미이행 (약 ${elapsedTradingDays}거래일) — 즉시 점검 권고`);
+      }
+    }
+
     lines.push(
       [
         `- <b>${esc(name)}</b> (${code}) · ${qty}주`,
@@ -1218,6 +1269,7 @@ export async function handleWatchlistResponseCommand(
         `  내일 대응: ${recommended} (${decision.reason})`,
         `  트리거: ${decision.triggerReasons.length ? decision.triggerReasons.join(", ") : "대기"} · 신뢰도 ${decision.confidence}%`,
         ...(reentryWatch ? [reentryWatch] : []),
+        ...blockedStopLossLines,
       ].join("\n")
     );
   }
