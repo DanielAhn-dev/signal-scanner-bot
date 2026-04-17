@@ -54,23 +54,24 @@ async function resolveEtfHits(query: string, limit = 5): Promise<EtfHit[]> {
 
 function buildHubMessage(): string {
   return buildMessage([
-    header("ETF 허브", "적립형·테마형·NAV/괴리율 중심 1차 ETF 도구"),
+    header("ETF 허브", "추천·분배금·NAV/괴리율을 한 번에 보는 ETF 진입점"),
     section(
       "무엇을 할 수 있나",
       bullets([
-        "/etf — ETF 보수형 추천 TOP5",
+        "/etf — ETF 허브 열기",
+        "/etf 추천 — ETF 보수형 추천 TOP5",
         "/etfcore — 장기 분할매수용 안정형 ETF 후보",
         "/etftheme — 반도체·AI·전력 등 테마형 ETF 후보",
-        "/etfinfo 종목명 — NAV·괴리율·기초지수·보수 요약",
-        "/etfdiv 종목명 — 배당락 주기·최근 기준가격 히스토리",
+        "/etf 정보 종목명 — NAV·괴리율·기초지수·보수 요약",
+        "/etf 분배금 종목명 — 최근 회차·연간 누적·히스토리 요약",
       ])
     ),
     divider(),
     section(
       "분배금",
       bullets([
-        "배당락 공시 기준으로 월/분기 패턴과 최근 기준가격 히스토리를 보여줍니다.",
-        "분배금 금액은 운용사 상세 페이지 연동이 필요한 후속 항목입니다.",
+        "배당락 공시 기준으로 월/분기 패턴과 최근 지급일 흐름을 보여줍니다.",
+        "KODEX 최신 회차 금액, TIGER 연간 누적/연도별 추이를 함께 반영합니다.",
       ])
     ),
   ]);
@@ -244,7 +245,13 @@ export async function handleEtfDistributionCommand(
     const apply = event.applyDate ?? event.noticeDate;
     const base = event.basePrice ? ` · 기준가격 ${fmtInt(event.basePrice)}원` : "";
     const amount = event.amount !== undefined ? ` · 분배금 ${fmtInt(event.amount)}원` : "";
-    return `${apply}${base}${amount}`;
+    const payout = event.payoutDate ? ` · 지급 ${event.payoutDate}` : "";
+    return `${apply}${payout}${base}${amount}`;
+  });
+  const annualHistoryLines = (summary.annualHistory ?? []).slice(0, 5).map((item) => {
+    const amount = item.amount !== undefined ? `${fmtInt(item.amount)}원` : "-";
+    const yieldPct = item.yieldPct !== undefined ? ` · ${fmtPct(item.yieldPct)}` : "";
+    return `${item.year}년 ${amount}${yieldPct}`;
   });
 
   await tgSend("sendMessage", {
@@ -259,18 +266,22 @@ export async function handleEtfDistributionCommand(
         summary.nextExpectedDate ? `다음 예상 배당락: ${summary.nextExpectedDate}` : "다음 배당락: 공시 확인 필요",
       ])),
       section("최근 공시", bullets(historyLines)),
+      annualHistoryLines.length ? section("연간 분배금 추이", bullets(annualHistoryLines)) : undefined,
       divider(),
       section("안내", bullets([
         latest.basePrice ? `최근 분배락 기준가격은 ${fmtInt(latest.basePrice)}원입니다.` : "최근 기준가격 데이터는 일부 공시에서만 확인됩니다.",
+        summary.latestAmount !== undefined
+          ? `최근 회차 주당 분배금: ${fmtInt(summary.latestAmount)}원${latest.yieldPct !== undefined ? ` · 분배율 ${fmtPct(latest.yieldPct)}` : ""}`
+          : "최근 회차 주당 분배금은 확인 중입니다.",
         summary.annualAmount !== undefined
           ? `${summary.annualYear ?? "올해"} 누적 분배금: ${fmtInt(summary.annualAmount)}원${summary.annualYieldPct != null ? ` · 분배율 ${fmtPct(summary.annualYieldPct)}` : ""}`
-          : `최근 확인된 주당 분배금: ${formatDistributionAmount(summary.latestAmount)}`,
+          : undefined,
         summary.annualAmount !== undefined
-          ? `TIGER 연간 분배금 공시 기준 ${summary.annualAsOf ?? "최신 기준일"} 누적값입니다.`
+          ? `TIGER 연간 분배금 공시 기준 ${summary.annualAsOf ?? "최신 기준일"} 누적값이며, 아래에 연도별 추이도 함께 보여줍니다.`
           : summary.latestAmount === undefined
             ? "운용사 분배금 현황 연동이 아직 제한적이라 일부 ETF는 금액이 공시만으로는 비어 있을 수 있습니다."
             : "분배금 금액은 확보된 운용사 소스가 있을 때 우선 표시합니다.",
-      ])),
+      ].filter((line): line is string => Boolean(line)))),
       `<i>출처: ${esc(summary.source)}</i>`,
     ]),
     parse_mode: "HTML",

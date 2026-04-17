@@ -18,8 +18,8 @@ export const KO_MESSAGES = {
     "/리포트 주간|포트폴리오|거시|수급|섹터 — PDF 리포트\n" +
     "/kospi 또는 코스피 — 코스피 보수형 추천 TOP5\n" +
     "/kosdaq 또는 코스닥 — 코스닥 보수형 추천 TOP5\n" +
-    "/etf — ETF 보수형 추천 TOP5\n" +
-    "/etfhub — ETF 허브\n" +
+    "/etf — ETF 허브\n" +
+    "/etfhub — ETF 허브 별칭\n" +
     "/알림 — 이상징후 점검(경량)\n" +
     "/눌림목 — 눌림목 매집 후보\n" +
     "/관심 — 관심종목 포트폴리오\n" +
@@ -66,11 +66,13 @@ export const KO_MESSAGES = {
     "시장·리포트·소셜\n" +
     "/kospi /kosdaq — 보수형 추천 TOP5\n" +
     "코스피 / 코스닥 텍스트만 보내도 동일하게 처리\n" +
-    "/etf — ETF 보수형 추천 TOP5\n" +
-    "/etfhub — ETF 허브\n" +
+    "/etf — ETF 허브\n" +
+    "/etf 추천 — ETF 보수형 추천 TOP5\n" +
+    "/etfhub — ETF 허브 별칭\n" +
     "/etfcore /etftheme — ETF 전략형 추천\n" +
-    "/etfinfo 종목명 — ETF NAV·괴리율\n" +
-    "/etfdiv 종목명 — ETF 분배금·배당락\n" +
+    "/etf 정보 종목명 — ETF NAV·괴리율\n" +
+    "/etf 분배금 종목명 — ETF 분배금·배당락\n" +
+    "/etfinfo 종목명 / /etfdiv 종목명 — 직접 명령도 지원\n" +
     "/경제 — 글로벌 경제지표\n" +
     "/시장 — 종합 시장 진단\n" +
     "/리포트 — 가능한 리포트 종류 안내\n" +

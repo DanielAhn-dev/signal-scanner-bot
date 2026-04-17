@@ -21,6 +21,12 @@ export type EtfDistributionEvent = {
   yieldPct?: number;
 };
 
+export type EtfAnnualDistributionPoint = {
+  year: number;
+  amount?: number;
+  yieldPct?: number;
+};
+
 export type EtfDistributionSummary = {
   events: EtfDistributionEvent[];
   cadence: "monthly" | "quarterly" | "irregular" | "unknown";
@@ -34,6 +40,7 @@ export type EtfDistributionSummary = {
   annualYieldPct?: number;
   annualAsOf?: string;
   annualYear?: number;
+  annualHistory?: EtfAnnualDistributionPoint[];
   nextExpectedDate?: string;
   source: string;
 };
@@ -43,9 +50,29 @@ type EtfAnnualDistribution = {
   asOf?: string;
   amount?: number;
   yieldPct?: number;
+  history: EtfAnnualDistributionPoint[];
+};
+
+type KodexDistributionRow = {
+  fNm?: string;
+  stkTicker?: string;
+  fid?: string;
+  gijunYMD?: string;
+  basicD?: string;
+  payD?: string;
+  dividA?: string | number | null;
+  taxDividA?: string | number | null;
+  dividY?: string | number | null;
+  monthlyDividendYn?: string | null;
+};
+
+type KodexDistributionResponse = {
+  dividList?: KodexDistributionRow[];
+  totalCnt?: number;
 };
 
 let tigerAnnualDistributionCache: Promise<Map<string, EtfAnnualDistribution>> | null = null;
+let kodexDistributionCache: Promise<KodexDistributionRow[]> | null = null;
 
 export type EtfSnapshot = {
   marketCapText?: string;
@@ -66,11 +93,24 @@ function normalizeSpace(value: string): string {
   return value.replace(/\s+/g, " ").trim();
 }
 
+function normalizeMatchKey(value?: string): string {
+  return normalizeSpace(value ?? "").replace(/\s+/g, "").toUpperCase();
+}
+
 function parseDate(value?: string): Date | null {
   if (!value) return null;
-  const normalized = value.replace(/\./g, "-").trim();
+  const trimmed = value.trim();
+  const normalized = /^\d{8}$/.test(trimmed)
+    ? `${trimmed.slice(0, 4)}-${trimmed.slice(4, 6)}-${trimmed.slice(6, 8)}`
+    : trimmed.replace(/\./g, "-");
   const date = new Date(normalized);
   return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function normalizeDateText(value?: string): string | undefined {
+  if (!value) return undefined;
+  const parsed = parseDate(value);
+  return parsed ? formatDate(parsed) : normalizeSpace(value);
 }
 
 function formatDate(date: Date): string {
@@ -214,10 +254,17 @@ async function fetchTigerAnnualDistributionMap(): Promise<Map<string, EtfAnnualD
   const headerCells = $("table thead th")
     .map((_, th) => normalizeSpace($(th).text()))
     .get();
-  const yearMatch = headerCells
-    .map((text) => text.match(/(\d{4})년\s*분배금/))
-    .find(Boolean);
-  const annualYear = yearMatch ? Number(yearMatch[1]) : undefined;
+  const yearColumns = headerCells
+    .map((text, index) => {
+      const match = text.match(/(\d{4})년\s*분배금/);
+      if (!match) return null;
+      return {
+        year: Number(match[1]),
+        amountIndex: index,
+        yieldIndex: index + 1,
+      };
+    })
+    .filter((entry): entry is { year: number; amountIndex: number; yieldIndex: number } => Boolean(entry));
   const asOf = $("h1")
     .map((_, node) => normalizeSpace($(node).text()))
     .get()
@@ -234,11 +281,22 @@ async function fetchTigerAnnualDistributionMap(): Promise<Map<string, EtfAnnualD
     const name = cells[0];
     if (!name) return;
 
+    const history = yearColumns
+      .map((column) => ({
+        year: column.year,
+        amount: parseNum(cells[column.amountIndex]),
+        yieldPct: parseNum(cells[column.yieldIndex]),
+      }))
+      .filter((entry) => entry.amount !== undefined || entry.yieldPct !== undefined);
+
+    const latest = history[0];
+
     map.set(name, {
-      year: annualYear,
+      year: latest?.year,
       asOf,
-      amount: parseNum(cells[2]),
-      yieldPct: parseNum(cells[3]),
+      amount: latest?.amount,
+      yieldPct: latest?.yieldPct,
+      history,
     });
   });
 
@@ -322,6 +380,29 @@ async function fetchHtml(url: string): Promise<string> {
   }
 }
 
+async function fetchJson<T>(url: string): Promise<T> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+
+  try {
+    const response = await fetch(url, {
+      headers: {
+        "User-Agent": UA,
+        Accept: "application/json, text/plain, */*",
+      },
+      signal: controller.signal,
+    });
+
+    if (!response.ok) {
+      throw new Error(`ETF JSON 조회 실패 (${response.status})`);
+    }
+
+    return await response.json() as T;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 async function fetchDistributionNoticeList(code: string): Promise<EtfDistributionEvent[]> {
   const html = await fetchHtml(
     `https://finance.naver.com/item/news_notice.naver?code=${encodeURIComponent(code)}`
@@ -335,7 +416,7 @@ async function fetchDistributionNoticeList(code: string): Promise<EtfDistributio
 
     const href = $(anchor).attr("href") ?? "";
     const noticeId = href.match(/no=(\d+)/)?.[1];
-    const noticeDate = normalizeSpace($(anchor).closest("tr").find("td.date").text());
+    const noticeDate = normalizeDateText($(anchor).closest("tr").find("td.date").text());
     if (!noticeId || !noticeDate) return;
 
     events.push({
@@ -357,21 +438,124 @@ async function enrichDistributionEvent(code: string, event: EtfDistributionEvent
   return {
     ...event,
     basePrice: parseNum(findRowValue($, "2. 기준가격(원)") ?? findRowValue($, "기준가격(원)")),
-    payoutDate: findRowValue($, "5. 지급일") ?? findRowValue($, "실지급일") ?? findRowValue($, "지급일"),
-    applyDate: findRowValue($, "4. 적용일") ?? findRowValue($, "적용일"),
+    payoutDate: normalizeDateText(
+      findRowValue($, "5. 지급일") ?? findRowValue($, "실지급일") ?? findRowValue($, "지급일")
+    ),
+    applyDate: normalizeDateText(findRowValue($, "4. 적용일") ?? findRowValue($, "적용일")),
   };
 }
 
+async function fetchKodexDistributionRows(): Promise<KodexDistributionRow[]> {
+  const firstPage = await fetchJson<KodexDistributionResponse>(
+    "https://www.samsungfund.com/api/v1/kodex/distribution.do"
+  );
+  const firstRows = firstPage.dividList ?? [];
+  const totalCnt = firstPage.totalCnt ?? firstRows.length;
+  const pageSize = firstRows.length || 12;
+  const totalPages = Math.max(1, Math.ceil(totalCnt / pageSize));
+
+  if (totalPages <= 1) return firstRows;
+
+  const restPages = await Promise.all(
+    Array.from({ length: totalPages - 1 }, (_, index) =>
+      fetchJson<KodexDistributionResponse>(
+        `https://www.samsungfund.com/api/v1/kodex/distribution.do?pageNo=${index + 2}`
+      )
+    )
+  );
+
+  return [
+    ...firstRows,
+    ...restPages.flatMap((page) => page.dividList ?? []),
+  ];
+}
+
+async function getKodexDistributionRows(): Promise<KodexDistributionRow[]> {
+  kodexDistributionCache ??= fetchKodexDistributionRows().catch((error) => {
+    kodexDistributionCache = null;
+    throw error;
+  });
+  return kodexDistributionCache;
+}
+
+async function getKodexLatestDistribution(code: string, etfName?: string): Promise<EtfDistributionEvent | undefined> {
+  const rows = await getKodexDistributionRows();
+  const normalizedName = normalizeMatchKey(etfName);
+
+  const matched = rows.find((row) => row.stkTicker === code)
+    ?? rows.find((row) => {
+      const rowName = normalizeMatchKey(row.fNm);
+      return Boolean(
+        normalizedName
+        && rowName
+        && (rowName === normalizedName || rowName.includes(normalizedName) || normalizedName.includes(rowName))
+      );
+    });
+
+  if (!matched) return undefined;
+
+  const applyDate = normalizeDateText(matched.basicD);
+  return {
+    noticeId: matched.fid ?? `kodex:${matched.stkTicker ?? code}`,
+    title: "KODEX 분배금 현황",
+    noticeDate: applyDate ?? normalizeDateText(matched.gijunYMD) ?? formatDate(new Date()),
+    applyDate,
+    payoutDate: normalizeDateText(matched.payD),
+    amount: parseNum(String(matched.dividA ?? "")),
+    taxBaseAmount: parseNum(String(matched.taxDividA ?? "")),
+    yieldPct: parseNum(String(matched.dividY ?? "")),
+  };
+}
+
+function mergeIssuerEvent(
+  events: EtfDistributionEvent[],
+  issuerEvent?: EtfDistributionEvent
+): EtfDistributionEvent[] {
+  if (!issuerEvent) return events;
+
+  const merged = [...events];
+  const matchIndex = merged.findIndex((event) =>
+    Boolean(
+      event.applyDate
+      && issuerEvent.applyDate
+      && event.applyDate === issuerEvent.applyDate
+    )
+  );
+
+  if (matchIndex >= 0) {
+    merged[matchIndex] = {
+      ...merged[matchIndex],
+      ...issuerEvent,
+      noticeId: merged[matchIndex].noticeId,
+      title: merged[matchIndex].title,
+      noticeDate: merged[matchIndex].noticeDate,
+    };
+    return merged;
+  }
+
+  merged.push(issuerEvent);
+  return merged;
+}
+
 export async function getEtfDistributionSummary(code: string, etfName?: string): Promise<EtfDistributionSummary> {
-  const notices = await fetchDistributionNoticeList(code);
+  const notices = await fetchDistributionNoticeList(code).catch(() => []);
   const recent = notices.slice(0, 6);
-  const events = await Promise.all(recent.map((event) => enrichDistributionEvent(code, event)));
-  const sorted = events.sort((a, b) => {
+  const enrichedEvents = await Promise.all(recent.map((event) => enrichDistributionEvent(code, event)));
+  const kodexEvent = /^KODEX\b/i.test(etfName?.trim() ?? "")
+    ? await getKodexLatestDistribution(code, etfName).catch(() => undefined)
+    : undefined;
+  const mergedEvents = mergeIssuerEvent(enrichedEvents, kodexEvent);
+  const sorted = mergedEvents.sort((a, b) => {
     const da = parseDate(a.applyDate ?? a.noticeDate)?.getTime() ?? 0;
     const db = parseDate(b.applyDate ?? b.noticeDate)?.getTime() ?? 0;
     return db - da;
   });
   const annual = await getTigerAnnualDistribution(etfName).catch(() => undefined);
+  const sourceParts = [
+    notices.length ? "Naver Finance KOSCOM notice" : undefined,
+    kodexEvent ? "KODEX distribution API" : undefined,
+    annual ? "TIGER annual distribution export" : undefined,
+  ].filter((value): value is string => Boolean(value));
 
   return {
     events: sorted,
@@ -380,9 +564,8 @@ export async function getEtfDistributionSummary(code: string, etfName?: string):
     annualYieldPct: annual?.yieldPct,
     annualAsOf: annual?.asOf,
     annualYear: annual?.year,
-    source: annual
-      ? "Naver Finance KOSCOM notice + TIGER annual distribution export"
-      : "Naver Finance KOSCOM notice",
+    annualHistory: annual?.history,
+    source: sourceParts.join(" + ") || "ETF issuer page",
   };
 }
 
