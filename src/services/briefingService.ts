@@ -87,6 +87,25 @@ interface WatchlistViewItem {
   etfDistribution: EtfDistributionSummary | null;
 }
 
+function formatKstDateTimeLabel(iso?: string | null): string | null {
+  if (!iso) return null;
+  const parsed = new Date(iso);
+  if (Number.isNaN(parsed.getTime())) return null;
+  return parsed.toLocaleString("ko-KR", {
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+    timeZone: "Asia/Seoul",
+  });
+}
+
+function formatMissingMetricList(keys: string[] = []): string {
+  if (!keys.length) return "없음";
+  return keys.join(", ");
+}
+
 function buildEtfBriefingAction(item: WatchlistViewItem): string {
   const premiumRate = item.etfSnapshot?.premiumRate;
   const premiumLabel = premiumRate == null
@@ -387,6 +406,16 @@ export async function createBriefingReport(
   }
   report += mktLines.length > 0 ? mktLines.join("\n") + "\n" : "  (조회 불가)\n";
 
+  if (marketData.meta) {
+    const quality = marketData.meta.isPartial ? "⚠️ 부분 수집" : "✅ 정상";
+    const fetchedAtLabel = formatKstDateTimeLabel(marketData.meta.fetchedAt) ?? "확인 불가";
+    report += `  데이터 상태  <b>${quality}</b>\n`;
+    report += `  조회 시각  ${fetchedAtLabel} KST\n`;
+    if (marketData.meta.isPartial) {
+      report += `  누락 항목  ${formatMissingMetricList(marketData.meta.missing)}\n`;
+    }
+  }
+
   report += `\n<b>주도 테마 Top 3</b>\n`;
   report += sectorReports.join("\n\n");
 
@@ -398,7 +427,12 @@ export async function createBriefingReport(
 
   report += `\n─────────────────\n`;
   report += `<i>📊 데이터 기준: ${dataDate} | 점수 기준: ${scoreAsOf}</i>\n`;
-  report += `/점수 종목코드 · /눌림목 · /경제 · /시장`;
+  if (marketData.meta) {
+    const quality = marketData.meta.isPartial ? "부분 수집" : "정상";
+    const fetchedAtLabel = formatKstDateTimeLabel(marketData.meta.fetchedAt);
+    report += `<i>🌐 시장 데이터: ${quality}${fetchedAtLabel ? ` | 조회 ${fetchedAtLabel} KST` : ""}</i>\n`;
+  }
+  report += `/매매 종목코드 · /눌림목 · /경제 · /시장`;
 
   return report;
 }

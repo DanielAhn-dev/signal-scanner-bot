@@ -1,4 +1,5 @@
 export type PromptKind =
+  | "trade"
   | "score"
   | "buy"
   | "finance"
@@ -43,8 +44,9 @@ const CALLBACK_COMMAND_TEXT: Record<string, string> = {
 };
 
 const CALLBACK_PREFIX_TEXT: Record<string, string> = {
-  score: "/score",
-  buy: "/buy",
+  trade: "/trade",
+  score: "/trade",
+  buy: "/trade",
   finance: "/finance",
   news: "/news",
   etfinfo: "/etfinfo",
@@ -74,8 +76,9 @@ const HELP_SECTIONS = [
   {
     title: "종목 분석",
     lines: [
-      "/점수 <이름|코드> — 종목 점수·시그널",
-      "/매수 <이름|코드> — 진입/손절/익절",
+      "/매매 <이름|코드> — 점수·진입/손절/익절·수량",
+      "/점수 <이름|코드> — 매매 별칭(호환)",
+      "/매수 <이름|코드> — 매매 별칭(호환)",
       "/재무 <이름|코드> — 핵심 재무지표",
       "/수급 [종목] — 외국인·기관 매매동향",
       "/뉴스 [종목] — 시장·종목 뉴스",
@@ -126,6 +129,7 @@ const UNKNOWN_COMMAND_TOKENS = [
   "/다음섹터",
   "/종목",
   "/스캔",
+  "/매매",
   "/점수",
   "/매수",
   "/재무",
@@ -160,17 +164,24 @@ const UNKNOWN_COMMAND_TOKENS = [
 
 const PROMPT_PRESET_LIST: PromptPreset[] = [
   {
+    kind: "trade",
+    title: "매매 분석",
+    placeholder: "[trade] 종목명 또는 코드 입력",
+    replyPrefix: "/매매",
+    replyHints: ["매매"],
+  },
+  {
     kind: "score",
-    title: "점수 조회",
+    title: "매매 분석",
     placeholder: "[score] 종목명 또는 코드 입력",
-    replyPrefix: "/점수",
+    replyPrefix: "/매매",
     replyHints: ["점수"],
   },
   {
     kind: "buy",
-    title: "매수 전략 조회",
+    title: "매매 분석",
     placeholder: "[buy] 종목명 또는 코드 입력",
-    replyPrefix: "/매수",
+    replyPrefix: "/매매",
     replyHints: ["매수"],
   },
   {
@@ -230,6 +241,7 @@ export const TELEGRAM_BOT_COMMANDS: TelegramBotCommand[] = [
   { command: "onboarding", description: "초보자 온보딩 가이드" },
   { command: "sector", description: "주도 섹터 랭킹" },
   { command: "scan", description: "눌림목 스캐너" },
+  { command: "trade", description: "매매 통합 분석" },
   { command: "score", description: "종목 점수·시그널" },
   { command: "buy", description: "매수 판독" },
   { command: "finance", description: "재무 요약" },

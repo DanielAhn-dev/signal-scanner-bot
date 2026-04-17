@@ -31,6 +31,11 @@ function buildMessage(
   currentPrice: number,
   realtimeData: { change?: number; changeRate?: number } | null,
   plan: ReturnType<typeof buildInvestmentPlan>,
+  scores?: {
+    technicalScore?: number;
+    finalScore?: number;
+    fundamentalScore?: number;
+  },
   fundamental?: {
     qualityScore: number;
     profileLabel?: string;
@@ -68,6 +73,17 @@ function buildMessage(
 
   const body = [
     LINE,
+    scores?.finalScore !== undefined
+      ? `<b>종합 점수</b>  <code>${scores.finalScore.toFixed(1)}점</code>${
+          scores.technicalScore !== undefined
+            ? ` <i>(기술 ${scores.technicalScore.toFixed(1)}${
+                scores.fundamentalScore !== undefined
+                  ? ` · 재무 ${scores.fundamentalScore.toFixed(1)}`
+                  : ""
+              })</i>`
+            : ""
+        }`
+      : "",
     `<b>${plan.statusLabel}</b>`,
     plan.summary,
     ``,
@@ -121,13 +137,18 @@ function buildMessage(
 export async function handleBuyCommand(
   input: string,
   ctx: ChatContext,
-  tgSend: any
+  tgSend: any,
+  source: "trade" | "score" | "buy" = "trade"
 ): Promise<void> {
   const query = (input || "").trim();
   if (!query) {
     return tgSend("sendMessage", {
       chat_id: ctx.chatId,
-      text: "사용법: /매수 종목명 또는 코드\n예) /매수 삼성전자",
+      text: [
+        "사용법: /매매 종목명 또는 코드",
+        "예) /매매 삼성전자",
+        "별칭: /점수, /매수",
+      ].join("\n"),
     });
   }
 
@@ -143,7 +164,7 @@ export async function handleBuyCommand(
   if (hits.length > 1 && !/^\d{6}$/.test(query.trim())) {
     const btns = hits.slice(0, 5).map((h) => ({
       text: `${h.name} (${h.code})`,
-      callback_data: `buy:${h.code}`,
+      callback_data: `trade:${h.code}`,
     }));
     const keyboard = actionButtons(btns, 2);
     await tgSend("sendMessage", {
@@ -220,6 +241,17 @@ export async function handleBuyCommand(
     fundamental,
     marketEnv,
   });
+  const technicalScore = scored?.score ?? rawMomentumScore;
+  const fundamentalScore = fundamental?.qualityScore;
+  const finalScore = technicalScore !== undefined
+    ? Number(
+        (
+          fundamentalScore !== undefined
+            ? technicalScore * 0.8 + fundamentalScore * 0.2
+            : technicalScore
+        ).toFixed(1)
+      )
+    : undefined;
 
   const capital = prefs.capital_krw ?? 0;
   const splitCount = prefs.split_count ?? 3;
@@ -233,6 +265,11 @@ export async function handleBuyCommand(
     currentPrice,
     realtimeData,
     plan,
+    {
+      technicalScore: technicalScore !== undefined ? Number(technicalScore) : undefined,
+      finalScore,
+      fundamentalScore,
+    },
     fundamental
       ? {
           qualityScore: fundamental.qualityScore,
@@ -256,11 +293,15 @@ export async function handleBuyCommand(
     investPrefs
   );
 
+  const aliasNotice = source === "trade"
+    ? ""
+    : "\n\n<i>안내: /점수, /매수는 통합 명령 /매매로 연결됩니다.</i>";
+
   const kb = actionButtons(ACTIONS.analyzeStock(code), 3);
 
   await tgSend("sendMessage", {
     chat_id: ctx.chatId,
-    text: msg,
+    text: `${msg}${aliasNotice}`,
     parse_mode: "HTML",
     reply_markup: kb,
   });

@@ -58,16 +58,14 @@ export const ACTIONS = {
     { text: "스캔", callback_data: "cmd:scan" },
   ] as InlineButton[],
   briefing: [
-    { text: "점수", callback_data: "prompt:score" },
-    { text: "매수", callback_data: "prompt:buy" },
+    { text: "매매", callback_data: "prompt:trade" },
     { text: "뉴스", callback_data: "prompt:news" },
     { text: "수급", callback_data: "prompt:flow" },
     { text: "눌림목", callback_data: "cmd:pullback" },
     { text: "시장", callback_data: "cmd:market" },
   ] as InlineButton[],
   promptAnalyze: [
-    { text: "점수", callback_data: "prompt:score" },
-    { text: "매수", callback_data: "prompt:buy" },
+    { text: "매매", callback_data: "prompt:trade" },
     { text: "재무", callback_data: "prompt:finance" },
     { text: "뉴스", callback_data: "prompt:news" },
   ] as InlineButton[],
@@ -87,17 +85,15 @@ export const ACTIONS = {
   ] as InlineButton[],
   analyzeStock: (code: string) =>
     [
-      { text: "점수", callback_data: `score:${code}` },
-      { text: "매수", callback_data: `buy:${code}` },
+      { text: "매매", callback_data: `trade:${code}` },
       { text: "재무", callback_data: `finance:${code}` },
       { text: "뉴스", callback_data: `news:${code}` },
       { text: "관심추가", callback_data: `watchadd:${code}` },
     ] as InlineButton[],
   analyzeStockWithRecalc: (code: string) =>
     [
-      { text: "재계산", callback_data: `score:${code}` },
-      { text: "점수", callback_data: `score:${code}` },
-      { text: "매수", callback_data: `buy:${code}` },
+      { text: "재분석", callback_data: `trade:${code}` },
+      { text: "매매", callback_data: `trade:${code}` },
       { text: "재무", callback_data: `finance:${code}` },
       { text: "뉴스", callback_data: `news:${code}` },
       { text: "관심추가", callback_data: `watchadd:${code}` },

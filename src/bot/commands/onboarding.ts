@@ -73,8 +73,8 @@ export async function handleOnboardingCommand(
       "1) /경제, /시장으로 리스크 온도 확인",
       "2) /브리핑 또는 /섹터, /다음섹터로 순환매 후보 압축",
       "3) /스캔, /눌림목으로 진입 후보 선별",
-      "4) /점수, /재무, /수급으로 기술·재무·자금흐름 교차검증",
-      "5) /매수로 진입/손절/목표가 확인 후 실행",
+      "4) /매매, /재무, /수급으로 기술·재무·자금흐름 교차검증",
+      "5) /매매로 진입/손절/목표가·수량 확인 후 실행",
       "6) /관심, /프로필로 사후 복기 및 습관 점검",
     ])),
     divider(),
@@ -114,8 +114,8 @@ export async function handleOnboardingCommand(
     reply_markup: actionButtons([
       { text: "관심종목", callback_data: "cmd:watchlist" },
       { text: "브리핑", callback_data: "cmd:brief" },
-      { text: "점수", callback_data: "prompt:score" },
-      { text: "매수", callback_data: "prompt:buy" },
+      { text: "매매", callback_data: "prompt:trade" },
+      { text: "재무", callback_data: "prompt:finance" },
     ], 2),
   });
 }

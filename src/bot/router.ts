@@ -1,6 +1,5 @@
 import { KO_MESSAGES } from "./messages/ko";
 import { handleBriefCommand } from "./commands/brief";
-import { handleScoreCommand } from "./commands/score";
 import { handleBuyCommand } from "./commands/buy";
 import { handleSectorCommand } from "./commands/sector";
 import { handleOnboardingCommand } from "./commands/onboarding";
@@ -58,6 +57,7 @@ const CMD = {
   HELP:        /^\/(help|도움말)$/i,
   BRIEF:       /^\/(brief|morning|브리핑|장전)$/i,
   REPORT:      /^\/(report|리포트)(?:\s+(.+))?$/i,
+  TRADE:       /^\/(trade|매매)\s+(.+)$/i,
   SCORE:       /^\/(score|점수)\s+(.+)$/i,
   BUY:         /^\/(buy|매수)\s+(.+)$/i,
   SECTOR:      /^\/(sector|섹터|업종|테마)$/i,
@@ -265,17 +265,24 @@ export async function routeMessage(
     return;
   }
 
-  // /score [종목명/코드]
-  const ms = t.match(CMD.SCORE);
-  if (ms) {
-    await handleScoreCommand(ms[2], ctx, tgSend);
+  // /trade | /매매 [종목명/코드] — 통합 실행형 분석
+  const mt = t.match(CMD.TRADE);
+  if (mt) {
+    await handleBuyCommand(mt[2], ctx, tgSend, "trade");
     return;
   }
 
-  // /buy [종목명/코드]
+  // /score [종목명/코드] — 별칭(통합 분석으로 위임)
+  const ms = t.match(CMD.SCORE);
+  if (ms) {
+    await handleBuyCommand(ms[2], ctx, tgSend, "score");
+    return;
+  }
+
+  // /buy [종목명/코드] — 별칭(통합 분석으로 위임)
   const mb = t.match(CMD.BUY);
   if (mb) {
-    await handleBuyCommand(mb[2], ctx, tgSend);
+    await handleBuyCommand(mb[2], ctx, tgSend, "buy");
     return;
   }
 
