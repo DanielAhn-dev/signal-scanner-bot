@@ -10,6 +10,7 @@ import {
   fetchRealtimePriceBatch,
 } from "../../utils/fetchRealtimePrice";
 import { buildInvestmentPlan } from "../../lib/investPlan";
+import { scaleScoreFactorsToReferencePrice } from "../../lib/priceScale";
 import {
   fetchWatchMicroSignalsByCodes,
   resolveWatchDecision,
@@ -40,6 +41,7 @@ import {
   type EtfDistributionSummary,
   type EtfSnapshot,
 } from "../../services/etfService";
+import { fetchLatestScoresByCodes } from "../../services/scoreSourceService";
 
 const MAX_ITEMS = 20; // 사용자당 최대 관심종목 수
 const DEFAULT_TARGET_POSITIONS = 10;
@@ -76,6 +78,55 @@ function toPositiveNumber(value: unknown): number | null {
 function toSafeNumber(value: unknown, fallback = 0): number {
   const n = Number(value);
   return Number.isFinite(n) ? n : fallback;
+}
+
+function buildPlanFromScoreSnapshot(input: {
+  currentPrice: number;
+  baselinePrice?: number;
+  stockRsi?: number;
+  scoreRow?: {
+    total_score?: number | null;
+    momentum_score?: number | null;
+    factors?: Record<string, any> | null;
+  } | null;
+}) {
+  const currentPrice = toPositiveNumber(input.currentPrice) ?? 0;
+  const baselinePrice = toPositiveNumber(input.baselinePrice) ?? currentPrice;
+  const latestFactors =
+    input.scoreRow?.factors && typeof input.scoreRow.factors === "object"
+      ? input.scoreRow.factors
+      : null;
+
+  const factors = scaleScoreFactorsToReferencePrice(
+    {
+      sma20: Number(latestFactors?.sma20 ?? baselinePrice),
+      sma50: Number(latestFactors?.sma50 ?? baselinePrice),
+      sma200: Number(latestFactors?.sma200 ?? baselinePrice),
+      rsi14: Number(latestFactors?.rsi14 ?? input.stockRsi ?? 50),
+      roc14: Number(latestFactors?.roc14 ?? 0),
+      roc21: Number(latestFactors?.roc21 ?? 0),
+      avwap_support: Number(latestFactors?.avwap_support ?? 50),
+      atr14: Number(latestFactors?.atr14 ?? 0),
+      atr_pct: Number(latestFactors?.atr_pct ?? 0),
+      vol_ratio: Number(latestFactors?.vol_ratio ?? 1),
+      macd_cross:
+        latestFactors?.macd_cross === "golden" || latestFactors?.macd_cross === "dead"
+          ? latestFactors.macd_cross
+          : "none",
+    },
+    currentPrice,
+    baselinePrice
+  );
+
+  const technicalScore =
+    Number(input.scoreRow?.total_score ?? input.scoreRow?.momentum_score ?? 0) ||
+    undefined;
+
+  return buildInvestmentPlan({
+    currentPrice,
+    factors,
+    technicalScore,
+  });
 }
 
 function hasVirtualPosition(item: any): boolean {
@@ -421,7 +472,10 @@ export async function handleWatchOnlyCommand(
   }
 
   const codes = items.map((it: any) => String(it.code));
-  const realtimeMap = await fetchRealtimePriceBatch(codes);
+  const [realtimeMap, scoreResult] = await Promise.all([
+    fetchRealtimePriceBatch(codes),
+    fetchLatestScoresByCodes(supabaseRead, codes).catch(() => null),
+  ]);
 
   const lines = items.map((item: any, idx: number) => {
     const stock = item.stock as any;
@@ -429,9 +483,11 @@ export async function handleWatchOnlyCommand(
     const name = stock?.name ?? code;
     const dbClose = Number(stock?.close ?? 0);
     const close = toPositiveNumber(realtimeMap[code]?.price) ?? dbClose;
-    const plan = buildInvestmentPlan({
+    const plan = buildPlanFromScoreSnapshot({
       currentPrice: close,
-      factors: { rsi14: stock?.rsi14 ?? undefined },
+      baselinePrice: dbClose,
+      stockRsi: stock?.rsi14 ?? undefined,
+      scoreRow: scoreResult?.byCode.get(code),
     });
     const addedDate = formatShortDate(item.created_at as string | null | undefined);
     const changeStr = realtimeMap[code]
@@ -645,7 +701,10 @@ export async function handleWatchOnlyResponseCommand(
   }
 
   const codes = items.map((it: any) => String(it.code));
-  const realtimeMap = await fetchRealtimePriceBatch(codes);
+  const [realtimeMap, scoreResult] = await Promise.all([
+    fetchRealtimePriceBatch(codes),
+    fetchLatestScoresByCodes(supabaseRead, codes).catch(() => null),
+  ]);
 
   const lines = items.map((item: any) => {
     const stock = item.stock as any;
@@ -653,9 +712,11 @@ export async function handleWatchOnlyResponseCommand(
     const name = String(stock?.name ?? code);
     const dbClose = Number(stock?.close ?? 0);
     const close = toPositiveNumber(realtimeMap[code]?.price) ?? dbClose;
-    const plan = buildInvestmentPlan({
+    const plan = buildPlanFromScoreSnapshot({
       currentPrice: close,
-      factors: { rsi14: stock?.rsi14 ?? undefined },
+      baselinePrice: dbClose,
+      stockRsi: stock?.rsi14 ?? undefined,
+      scoreRow: scoreResult?.byCode.get(code),
     });
     const nextAction =
       plan.status === "buy-now"
@@ -734,7 +795,14 @@ export async function handleWatchlistCommand(
   // 실시간 가격 일괄 조회
   const codes = items.map((it: any) => it.code);
   const realtimeMap = await fetchRealtimePriceBatch(codes);
-  const scoresByCode = new Map<string, { total_score?: number | null; momentum_score?: number | null }>();
+  const scoresByCode = new Map<
+    string,
+    {
+      total_score?: number | null;
+      momentum_score?: number | null;
+      factors?: Record<string, any> | null;
+    }
+  >();
   const etfCodes = items
     .filter((item: any) => String((item.stock as any)?.market ?? "") === "ETF")
     .map((item: any) => String(item.code));
@@ -764,6 +832,10 @@ export async function handleWatchlistCommand(
       scoresByCode.set(row.code as string, {
         total_score: Number((row as any).total_score ?? 0),
         momentum_score: Number((row as any).momentum_score ?? 0),
+        factors:
+          (row as any).factors && typeof (row as any).factors === "object"
+            ? ((row as any).factors as Record<string, any>)
+            : null,
       });
     }
   }
@@ -791,10 +863,11 @@ export async function handleWatchlistCommand(
     const invested = toPositiveNumber(item.invested_amount) ?? (qty > 0 && buyPrice > 0 ? qty * buyPrice : 0);
     const hasBuy = buyPrice > 0;
     const score = scoresByCode.get(item.code);
-    const plan = buildInvestmentPlan({
+    const plan = buildPlanFromScoreSnapshot({
       currentPrice: close,
-      factors: { rsi14: stock?.rsi14 ?? undefined },
-      technicalScore: score?.total_score ?? score?.momentum_score ?? undefined,
+      baselinePrice: dbClose,
+      stockRsi: stock?.rsi14 ?? undefined,
+      scoreRow: score,
     });
 
     if (plan.status === "buy-now") actionable += 1;
@@ -1360,8 +1433,11 @@ export async function handleWatchlistAutoCommand(
   }
 
   const codes = items.map((it: any) => it.code);
-  const realtimeMap = await fetchRealtimePriceBatch(codes);
-  const microByCode = await fetchWatchMicroSignalsByCodes(supabaseRead, codes);
+  const [realtimeMap, microByCode, scoreResult] = await Promise.all([
+    fetchRealtimePriceBatch(codes),
+    fetchWatchMicroSignalsByCodes(supabaseRead, codes),
+    fetchLatestScoresByCodes(supabaseRead, codes).catch(() => null),
+  ]);
 
   const holdLines: string[] = [];
   const sellTargets: Array<{
@@ -1396,9 +1472,11 @@ export async function handleWatchlistAutoCommand(
       continue;
     }
 
-    const plan = buildInvestmentPlan({
+    const plan = buildPlanFromScoreSnapshot({
       currentPrice: close,
-      factors: { rsi14: stock?.rsi14 ?? undefined },
+      baselinePrice: dbClose,
+      stockRsi: stock?.rsi14 ?? undefined,
+      scoreRow: scoreResult?.byCode.get(code),
     });
     const decision = resolveWatchDecision({
       close,
@@ -1547,7 +1625,10 @@ export async function handleWatchlistResponseCommand(
   const marketOpen = isKstMarketOpen();
   const lines: string[] = [];
   const codes = items.map((it: any) => String(it.code));
-  const microByCode = await fetchWatchMicroSignalsByCodes(supabaseRead, codes);
+  const [microByCode, scoreResult] = await Promise.all([
+    fetchWatchMicroSignalsByCodes(supabaseRead, codes),
+    fetchLatestScoresByCodes(supabaseRead, codes).catch(() => null),
+  ]);
 
   for (const item of items) {
     const stock = item.stock as any;
@@ -1558,9 +1639,11 @@ export async function handleWatchlistResponseCommand(
     const qty = Math.max(0, Math.floor(Number(item.quantity ?? 0)));
     if (qty <= 0 || close <= 0 || buyPrice <= 0) continue;
 
-    const plan = buildInvestmentPlan({
+    const plan = buildPlanFromScoreSnapshot({
       currentPrice: close,
-      factors: { rsi14: stock?.rsi14 ?? undefined },
+      baselinePrice: close,
+      stockRsi: stock?.rsi14 ?? undefined,
+      scoreRow: scoreResult?.byCode.get(code),
     });
     const acquiredAt: string | null = (item as any).buy_date ?? (item as any).created_at ?? null;
     const elapsedTradingDays = estimateElapsedTradingDays(acquiredAt);
