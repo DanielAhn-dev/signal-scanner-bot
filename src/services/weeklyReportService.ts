@@ -3,6 +3,7 @@ import { PDFDocument } from "pdf-lib";
 import fontkit from "@pdf-lib/fontkit";
 import { fetchAllMarketData, fetchReportMarketData } from "../utils/fetchMarketData";
 import { fetchRealtimePriceBatch } from "../utils/fetchRealtimePrice";
+import { fetchTopStocksBySectors } from "../lib/source";
 import {
   asKstDate,
   getReportTheme,
@@ -35,6 +36,7 @@ import {
   drawSectorSection,
   drawTradesSection,
   drawWatchlistSection,
+  drawWatchOnlySection,
 } from "./weeklyReportSections";
 import {
   splitWindows,
@@ -57,6 +59,7 @@ export { describeWeeklyReportFailure } from "./weeklyReportErrors";
 
 // ─── 타입 정의 ────────────────────────────────────────────────────────────
 type SectorRow = {
+  id: string;
   name: string;
   score: number | null;
   change_rate: number | null;
@@ -98,6 +101,7 @@ type RenderReportInput = {
   totalUnrealized: number;
   totalUnrealizedPct: number;
   sectors: SectorRow[];
+  sectorStocksMap: Record<string, string[]>;
   market: Awaited<ReturnType<typeof fetchReportMarketData>> | Awaited<ReturnType<typeof fetchAllMarketData>>;
 };
 
@@ -116,8 +120,13 @@ export async function renderReportPdf(input: RenderReportInput): Promise<WeeklyP
     totalUnrealized,
     totalUnrealizedPct,
     sectors,
+    sectorStocksMap,
     market,
   } = input;
+
+  // 보유 포지션(qty>0) vs 관심만 항목(qty===0) 분리
+  const holdingItems = watchItems.filter((i) => i.qty > 0);
+  const watchOnlyItems = watchItems.filter((i) => i.qty === 0);
 
   const theme = getReportTheme(topicMeta.topic);
   const coverHeadline = buildCoverHeadline({
@@ -170,18 +179,20 @@ export async function renderReportPdf(input: RenderReportInput): Promise<WeeklyP
   if (topicMeta.topic === "economy") {
     drawEconomySection(ctx, font, market as Awaited<ReturnType<typeof fetchAllMarketData>>, ymd, wrapText);
   } else if (topicMeta.topic === "flow") {
-    drawFlowSection(ctx, sectors);
+    drawFlowSection(ctx, sectors, sectorStocksMap);
   } else if (topicMeta.topic === "sector") {
-    drawSectorSection(ctx, sectors, ymd);
+    drawSectorSection(ctx, sectors, ymd, sectorStocksMap);
   } else if (topicMeta.topic === "watchlist") {
-    drawPortfolioSection(ctx, totalInvested, totalValue, totalUnrealized, totalUnrealizedPct, watchItems, curr, prev);
-    drawWatchlistSection(ctx, watchItems, totalInvested, totalUnrealized, totalUnrealizedPct);
+    drawPortfolioSection(ctx, totalInvested, totalValue, totalUnrealized, totalUnrealizedPct, holdingItems, curr, prev);
+    drawWatchlistSection(ctx, holdingItems, totalInvested, totalUnrealized, totalUnrealizedPct);
     drawTradesSection(ctx, windows);
+  } else if (topicMeta.topic === "watchonly") {
+    drawWatchOnlySection(ctx, watchOnlyItems);
   } else {
     drawMarketOverviewSection(ctx, ymd, market as Awaited<ReturnType<typeof fetchReportMarketData>>, sectors.slice(0, 3));
-    drawPortfolioSection(ctx, totalInvested, totalValue, totalUnrealized, totalUnrealizedPct, watchItems, curr, prev);
+    drawPortfolioSection(ctx, totalInvested, totalValue, totalUnrealized, totalUnrealizedPct, holdingItems, curr, prev);
     drawTradesSection(ctx, windows);
-    drawWatchlistSection(ctx, watchItems, totalInvested, totalUnrealized, totalUnrealizedPct);
+    drawWatchlistSection(ctx, holdingItems, totalInvested, totalUnrealized, totalUnrealizedPct);
     drawCommentarySection(ctx, font, curr, prev, totalUnrealized, totalUnrealizedPct, watchItems, sectors, wrapText);
   }
 
@@ -257,7 +268,7 @@ export async function createWeeklyReportPdf(
     runReportStep("sector_query", () =>
       supabase
         .from("sectors")
-        .select("name, score, change_rate, metrics")
+        .select("id, name, score, change_rate, metrics")
         .order("score", { ascending: false })
         .limit(12)
         .returns<SectorRow[]>()
@@ -329,6 +340,28 @@ export async function createWeeklyReportPdf(
   const totalUnrealized = totalValue - totalInvested;
   const totalUnrealizedPct = totalInvested > 0 ? (totalUnrealized / totalInvested) * 100 : 0;
 
+  // 섹터/수급 리포트에서 구성 종목 표시를 위해 섹터별 상위 종목을 조회한다
+  const sectors = sectorRes.data ?? [];
+  let sectorStocksMap: Record<string, string[]> = {};
+  if (topicMeta.topic === "sector" || topicMeta.topic === "flow") {
+    const sectorIds = sectors.map((s) => s.id).filter(Boolean);
+    sectorStocksMap = await runReportStep("sector_stocks_query", async () => {
+      try {
+        return await fetchTopStocksBySectors(sectorIds);
+      } catch {
+        return {} as Record<string, string[]>;
+      }
+    });
+  }
+
+  // sector name → stock names 매핑으로 변환 (렌더러는 name 기준으로 조회)
+  const sectorStocksNameMap: Record<string, string[]> = {};
+  for (const sector of sectors) {
+    if (sectorStocksMap[sector.id]) {
+      sectorStocksNameMap[sector.name] = sectorStocksMap[sector.id];
+    }
+  }
+
   try {
     const report = await runReportStep("pdf_render", () =>
       renderReportPdf({
@@ -344,7 +377,8 @@ export async function createWeeklyReportPdf(
         totalValue,
         totalUnrealized,
         totalUnrealizedPct,
-        sectors: sectorRes.data ?? [],
+        sectors,
+        sectorStocksMap: sectorStocksNameMap,
         market,
       })
     );
@@ -424,12 +458,12 @@ export async function createPreviewReportPdf(topicStr = "economy"): Promise<Uint
   const totalUnrealizedPct = totalInvested > 0 ? (totalUnrealized / totalInvested) * 100 : 0;
 
   const sectors: SectorRow[] = [
-    { name: "반도체",    score: 85, change_rate:  2.1, metrics: { flow_foreign_5d: 300,  flow_inst_5d: 150 } },
-    { name: "2차전지",   score: 72, change_rate: -1.3, metrics: { flow_foreign_5d: -200, flow_inst_5d:  50 } },
-    { name: "바이오",    score: 68, change_rate:  0.8, metrics: { flow_foreign_5d: 100,  flow_inst_5d: -30 } },
-    { name: "자동차",    score: 61, change_rate:  1.5, metrics: { flow_foreign_5d:  50,  flow_inst_5d:  80 } },
-    { name: "금융",      score: 55, change_rate: -0.5, metrics: { flow_foreign_5d: -100, flow_inst_5d: -60 } },
-    { name: "철강/소재", score: 49, change_rate: -0.2, metrics: { flow_foreign_5d:  20,  flow_inst_5d:  10 } },
+    { id: "sector_001", name: "반도체",    score: 85, change_rate:  2.1, metrics: { flow_foreign_5d: 300,  flow_inst_5d: 150 } },
+    { id: "sector_002", name: "2차전지",   score: 72, change_rate: -1.3, metrics: { flow_foreign_5d: -200, flow_inst_5d:  50 } },
+    { id: "sector_003", name: "바이오",    score: 68, change_rate:  0.8, metrics: { flow_foreign_5d: 100,  flow_inst_5d: -30 } },
+    { id: "sector_004", name: "자동차",    score: 61, change_rate:  1.5, metrics: { flow_foreign_5d:  50,  flow_inst_5d:  80 } },
+    { id: "sector_005", name: "금융",      score: 55, change_rate: -0.5, metrics: { flow_foreign_5d: -100, flow_inst_5d: -60 } },
+    { id: "sector_006", name: "철강/소재", score: 49, change_rate: -0.2, metrics: { flow_foreign_5d:  20,  flow_inst_5d:  10 } },
   ];
 
   // mock 시장 데이터 (fetchAllMarketData 호환 구조)
@@ -468,6 +502,7 @@ export async function createPreviewReportPdf(topicStr = "economy"): Promise<Uint
     totalUnrealized,
     totalUnrealizedPct,
     sectors,
+    sectorStocksMap: {},
     market,
   });
 

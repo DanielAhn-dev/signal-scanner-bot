@@ -427,7 +427,7 @@ export function drawCommentarySection(
   );
 }
 
-export function drawFlowSection(ctx: ReportRenderContext, sectors: SectorRow[]) {
+export function drawFlowSection(ctx: ReportRenderContext, sectors: SectorRow[], sectorStocksMap: Record<string, string[]> = {}) {
   const rows = sectors
     .map((sector) => {
       const metrics = (sector.metrics ?? {}) as Record<string, unknown>;
@@ -482,9 +482,11 @@ export function drawFlowSection(ctx: ReportRenderContext, sectors: SectorRow[]) 
     C.muted
   );
   ctx.y -= 14;
+
+  drawSectorStocksList(ctx, rows.map((r) => ({ name: r.name })), sectorStocksMap);
 }
 
-export function drawSectorSection(ctx: ReportRenderContext, sectors: SectorRow[], ymd: string) {
+export function drawSectorSection(ctx: ReportRenderContext, sectors: SectorRow[], ymd: string, sectorStocksMap: Record<string, string[]> = {}) {
   drawSectionHeader(ctx, "섹터 강도 랭킹", `기준: ${ymd}`);
 
   if (sectors.length === 0) {
@@ -524,6 +526,8 @@ export function drawSectorSection(ctx: ReportRenderContext, sectors: SectorRow[]
     C.muted
   );
   ctx.y -= 14;
+
+  drawSectorStocksList(ctx, sectors.slice(0, 12), sectorStocksMap);
 }
 
 export function drawEconomySection(
@@ -584,4 +588,76 @@ export function drawEconomySection(
 
   drawCommentBlock(ctx, "거시 해석", comments.join(" ") || defaultComment, C.navyLight, font, wrapText, false);
   ctx.y -= 10;
+}
+
+/**
+ * 섹터별 구성 종목 목록을 compact하게 표시한다.
+ * sectorStocksMap이 비어 있으면 아무것도 표시하지 않는다.
+ */
+function drawSectorStocksList(
+  ctx: ReportRenderContext,
+  sectors: { name: string }[],
+  sectorStocksMap: Record<string, string[]>
+) {
+  const entries = sectors
+    .map((s) => ({ name: s.name, stocks: sectorStocksMap[s.name] ?? [] }))
+    .filter((e) => e.stocks.length > 0);
+
+  if (entries.length === 0) return;
+
+  ctx.y -= 6;
+  drawSectionHeader(ctx, "섹터별 주요 종목", "유동성 상위 기준");
+
+  for (const entry of entries) {
+    const label = `${entry.name}`;
+    const stockStr = entry.stocks.join("  ·  ");
+    ctx.text(label, ctx.ML + 8, ctx.y, 8.5, C.navyLight);
+    ctx.text(stockStr, ctx.ML + 70, ctx.y, 8.5, C.ink);
+    ctx.y -= 14;
+  }
+  ctx.y -= 6;
+}
+
+/**
+ * 관심종목(qty=0, 추적 전용) 목록을 표시한다.
+ */
+export function drawWatchOnlySection(ctx: ReportRenderContext, watchOnlyItems: WatchItem[]) {
+  ctx.y -= 6;
+  drawSectionHeader(ctx, "관심 종목 목록", `총 ${watchOnlyItems.length}개`);
+
+  if (watchOnlyItems.length === 0) {
+    ctx.y -= 8;
+    ctx.text("등록된 관심 종목이 없습니다.", ctx.ML + 8, ctx.y, 9, C.muted);
+    ctx.y -= 20;
+    return;
+  }
+
+  drawTable(
+    ctx,
+    [
+      { header: "종목명", width: 160, align: "left" },
+      { header: "코드", width: 70, align: "center" },
+      { header: "기준가 (원)", width: 110, align: "right" },
+      { header: "현재가 (원)", width: 110, align: "right" },
+      { header: "등락", width: 107, align: "right" },
+    ],
+    watchOnlyItems.slice(0, 30).map((item) => [
+      truncate(item.name, 13),
+      item.code,
+      item.buyPrice ? fmtInt(item.buyPrice) : "-",
+      item.currentPrice ? fmtInt(item.currentPrice) : "-",
+      item.pnlPct != null ? fmtPct(item.pnlPct) : "-",
+    ]),
+    watchOnlyItems.slice(0, 30).map((item) => pnlColor(item.pnlPct ?? 0))
+  );
+
+  ctx.y -= 6;
+  ctx.text(
+    "기준가: 종목 등록 시 입력한 참고 가격입니다. 매수 여부와 무관하게 관심 목적으로만 추적 중인 종목입니다.",
+    ctx.ML + 8,
+    ctx.y,
+    8,
+    C.muted
+  );
+  ctx.y -= 14;
 }

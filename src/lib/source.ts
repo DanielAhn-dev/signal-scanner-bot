@@ -186,6 +186,39 @@ export async function fetchTickerMetaInSector(): Promise<TickerMeta[]> {
 }
 
 /**
+ * 섹터 ID 목록을 받아 각 섹터의 유동성 상위 종목 이름 목록을 반환한다.
+ * 반환 키는 sector_id 문자열.
+ */
+export async function fetchTopStocksBySectors(
+  sectorIds: string[],
+  topN = 5
+): Promise<Record<string, string[]>> {
+  if (sectorIds.length === 0) return {};
+
+  const { data } = await supa()
+    .from("stocks")
+    .select("name, sector_id, liquidity")
+    .in("sector_id", sectorIds);
+
+  type StockLiqRow = { name: string; sector_id: string | null; liquidity: number | null };
+  const grouped: Record<string, { name: string; liquidity: number }[]> = {};
+  for (const row of (data || []) as StockLiqRow[]) {
+    if (!row.sector_id) continue;
+    if (!grouped[row.sector_id]) grouped[row.sector_id] = [];
+    grouped[row.sector_id].push({ name: row.name, liquidity: row.liquidity ?? 0 });
+  }
+
+  const result: Record<string, string[]> = {};
+  for (const [id, stocks] of Object.entries(grouped)) {
+    result[id] = stocks
+      .sort((a, b) => b.liquidity - a.liquidity)
+      .slice(0, topN)
+      .map((s) => s.name);
+  }
+  return result;
+}
+
+/**
  * sector_daily 데이터가 부족할 때 sectors 테이블의 사전 계산된 점수를 사용하는 fallback
  */
 export async function fetchPrecomputedSectorScores(): Promise<

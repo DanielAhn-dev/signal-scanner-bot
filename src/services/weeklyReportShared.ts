@@ -21,7 +21,7 @@ export const C = {
   border: rgb(0.83, 0.83, 0.86),
 } as const;
 
-export type ReportTopic = "full" | "watchlist" | "economy" | "flow" | "sector";
+export type ReportTopic = "full" | "watchlist" | "watchonly" | "economy" | "flow" | "sector";
 
 export type ReportTopicMeta = {
   topic: ReportTopic;
@@ -195,6 +195,17 @@ export function parseReportTopic(raw?: string | null): ReportTopicMeta {
     };
   }
 
+  if (["관심", "관심종목", "watchonly", "watch"].includes(token)) {
+    return {
+      topic: "watchonly",
+      title: "관심종목 리포트",
+      fileSlug: "watchonly_report",
+      includeCover: false,
+      progressText: "관심종목 리포트 PDF 생성 중입니다. 잠시만 기다려주세요...",
+      captionTitle: "관심종목 리포트",
+    };
+  }
+
   return {
     topic: "full",
     title: "주간 증시 리포트",
@@ -239,6 +250,15 @@ export function getReportTheme(topic: ReportTopic): ReportTheme {
       accent: rgb(0.04, 0.50, 0.72),
       heroLabel: "PORTFOLIO CHECK",
       heroSummary: "보유 종목의 손익, 거래 흐름, 대응 포인트를 빠르게 확인할 수 있게 정리합니다.",
+    });
+  }
+
+  if (topic === "watchonly") {
+    return createReportTheme({
+      pageBand: C.black,
+      accent: rgb(0.26, 0.60, 0.26),
+      heroLabel: "WATCHLIST",
+      heroSummary: "매수 전 관심 목록에 담아 둔 종목들의 현황을 한눈에 파악합니다.",
     });
   }
 

@@ -144,6 +144,12 @@ export function buildTopicHeroSummary(input: {
     }
   }
 
+  if (topic === "watchonly") {
+    return watchItems.length > 0
+      ? `관심 종목 ${watchItems.length}개를 추적 중입니다. 기준가 대비 등락을 확인하고 매수 타이밍을 점검하세요.`
+      : "등록된 관심 종목이 없습니다. /관심 명령어로 종목을 추가해 보세요.";
+  }
+
   if (topic === "full") {
     const leadSector = sectors[0]?.name;
     if (leadSector) {
@@ -261,6 +267,12 @@ export function buildTopicClosingSummary(input: {
         ]);
   }
 
+  if (topic === "watchonly") {
+    return watchItems.length > 0
+      ? `관심 종목 ${watchItems.length}개 추적 중입니다. 기준가 대비 등락이 유리한 종목부터 진입 시점을 구체화하세요.`
+      : "관심 종목을 추가하면 이 리포트에 목록이 표시됩니다.";
+  }
+
   return curr.realizedPnl >= prev.realizedPnl
     ? pickVariant(`${seedBase}|close|full|up`, [
         `최근 ${FIFO_REALIZED_LABEL} 흐름이 이전 구간보다 개선됐습니다. 현재 전략을 유지하되 주도 섹터 대표주 중심으로 비중을 관리하세요. 수익 종목은 분할 익절 규칙을 함께 적용하면 변동성 대응력이 높아집니다.`,
@@ -353,6 +365,15 @@ export function buildReportCaption(input: {
     return lines.join("\n");
   }
 
+  if (topic === "watchonly") {
+    const lines = [
+      `${title} — ${krDate}`,
+      "매수 전 관심 추적 종목을 정리했습니다.",
+    ];
+    if (qualityLine) lines.push(qualityLine);
+    return lines.join("\n");
+  }
+
   const lines = [
     `${title} — ${krDate}`,
     `거래 ${curr.tradeCount}건 · ${FIFO_REALIZED_LABEL} ${fmtSignedInt(curr.realizedPnl)} · 보유평가 ${fmtSignedInt(totalUnrealized)}`,
@@ -410,6 +431,15 @@ export function buildReportSummaryText(input: {
       `${title} (${ymd})`,
       `거래 ${curr.tradeCount}건 / ${FIFO_REALIZED_LABEL} ${fmtSignedInt(curr.realizedPnl)} / ${FIFO_WIN_RATE_LABEL} ${curr.winRate.toFixed(1)}%`,
       `보유평가 ${fmtSignedInt(totalUnrealized)} (${fmtPct(totalUnrealizedPct)})`,
+    ];
+    if (qualityLine) lines.push(qualityLine);
+    return lines.join("\n");
+  }
+
+  if (topic === "watchonly") {
+    const lines = [
+      `${title} (${ymd})`,
+      "매수 전 관심 추적 종목 목록입니다.",
     ];
     if (qualityLine) lines.push(qualityLine);
     return lines.join("\n");
