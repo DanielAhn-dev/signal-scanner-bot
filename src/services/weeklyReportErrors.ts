@@ -33,6 +33,34 @@ export class WeeklyReportError extends Error {
   }
 }
 
+const DEV_LOG = process.env.NODE_ENV !== "production";
+
+function detectErrorType(error: unknown): string {
+  if (error instanceof WeeklyReportError) return "WeeklyReportError";
+  if (error instanceof Error) {
+    if (error.name) return error.name;
+    if (/timeout/i.test(error.message)) return "TimeoutError";
+  }
+  return "UnknownError";
+}
+
+function logWeeklyReportStep(
+  level: "info" | "error",
+  payload: Record<string, unknown>
+) {
+  const line = JSON.stringify({
+    scope: "weekly_report",
+    ts: new Date().toISOString(),
+    ...payload,
+  });
+
+  if (level === "error") {
+    console.error(line);
+    return;
+  }
+  if (DEV_LOG) console.log(line);
+}
+
 function errorMessage(error: unknown): string {
   if (error instanceof Error && error.message) return error.message;
   return String(error);
@@ -42,9 +70,23 @@ export async function runReportStep<T>(
   step: WeeklyReportFailureStep,
   fn: () => PromiseLike<T> | T
 ): Promise<T> {
+  const startedAt = Date.now();
   try {
-    return await fn();
+    const result = await fn();
+    logWeeklyReportStep("info", {
+      event: "step_done",
+      step,
+      duration_ms: Date.now() - startedAt,
+    });
+    return result;
   } catch (error) {
+    logWeeklyReportStep("error", {
+      event: "step_failed",
+      step,
+      duration_ms: Date.now() - startedAt,
+      error_type: detectErrorType(error),
+      error: errorMessage(error),
+    });
     if (error instanceof WeeklyReportError) throw error;
     throw new WeeklyReportError(
       step,

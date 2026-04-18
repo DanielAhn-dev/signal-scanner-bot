@@ -104,13 +104,28 @@ def try_get_index_ticker_name(ticker):
     except Exception:
         return str(ticker)
 
+def try_get_market_price_change_by_ticker(date, market):
+    try:
+        return retry_call(
+            lambda: stock.get_market_price_change_by_ticker(date, date, market=market),
+            attempts=3,
+            wait=0.5,
+        )
+    except Exception:
+        return pd.DataFrame()
+
 # ---------------------------
 # 수급 데이터 수집 함수
 # ---------------------------
-def get_sector_flows(stocks_df, today_str):
+def get_sector_flows(stocks_df, today_str, stock_change_map=None):
     """
     종목별 투자자 순매수 데이터를 수집하여 섹터별로 집계
-    반환: { sector_name: { flow_foreign_5d: ..., flow_inst_5d: ... } }
+        반환: {
+            sector_name: {
+                flow_foreign_5d, flow_inst_5d, flow_foreign_20d, flow_inst_20d,
+                cap_weighted_flow_5d, breadth_ratio, leader_rs
+            }
+        }
     """
     print("🌊 섹터별 수급 데이터 집계 시작 (시간이 걸릴 수 있습니다)...")
     
@@ -139,6 +154,8 @@ def get_sector_flows(stocks_df, today_str):
         i5_sum = 0
         f20_sum = 0
         i20_sum = 0
+        weighted_flow_5d_sum = 0.0
+        weight_sum = 0.0
         
         for _, row in top_stocks.iterrows():
             code = row['code']
@@ -159,12 +176,18 @@ def get_sector_flows(stocks_df, today_str):
                 )
                 
                 # 5일치 합산
-                if not df_5d.empty:
-                     try:
-                        f5_sum += int(df_5d.loc['외국인', '순매수거래대금'])
-                        i5_sum += int(df_5d.loc['기관합계', '순매수거래대금'])
-                     except KeyError:
-                        pass
+                     if not df_5d.empty:
+                            try:
+                                f5 = int(df_5d.loc['외국인', '순매수거래대금'])
+                                i5 = int(df_5d.loc['기관합계', '순매수거래대금'])
+                                f5_sum += f5
+                                i5_sum += i5
+                                cap = safe_float(row.get('market_cap', 0), 0.0)
+                                if cap > 0:
+                                     weighted_flow_5d_sum += (f5 + i5) * cap
+                                     weight_sum += cap
+                            except KeyError:
+                                pass
 
                 # 20일치 합산
                 try:
@@ -176,11 +199,36 @@ def get_sector_flows(stocks_df, today_str):
             except Exception as e:
                 continue
         
+        cap_weighted_flow_5d = (weighted_flow_5d_sum / weight_sum) if weight_sum > 0 else 0.0
+
+        sector_changes = [
+            safe_float(stock_change_map.get(str(c), 0.0), 0.0)
+            for c in group['code'].tolist()
+            if stock_change_map and str(c) in stock_change_map
+        ]
+        breadth_ratio = (
+            len([chg for chg in sector_changes if chg > 0]) / len(sector_changes)
+            if sector_changes
+            else 0.0
+        )
+
+        leader_changes = []
+        if stock_change_map:
+            leaders = group.sort_values('market_cap', ascending=False).head(3)
+            for _, leader in leaders.iterrows():
+                code = str(leader.get('code', ''))
+                if code in stock_change_map:
+                    leader_changes.append(safe_float(stock_change_map.get(code), 0.0))
+        leader_strength = sum(leader_changes) / len(leader_changes) if leader_changes else 0.0
+
         sector_flows[sector_name] = {
             "flow_foreign_5d": f5_sum,
             "flow_inst_5d": i5_sum,
             "flow_foreign_20d": f20_sum,
-            "flow_inst_20d": i20_sum
+            "flow_inst_20d": i20_sum,
+            "cap_weighted_flow_5d": cap_weighted_flow_5d,
+            "breadth_ratio": breadth_ratio,
+            "leader_strength": leader_strength,
         }
         
     return sector_flows
@@ -294,10 +342,30 @@ def calculate_sector_scores():
         except Exception as e:
             print(f"   ❌ {target_date} 수집 중 에러: {e}")
 
-    # 3) 섹터별 수급 데이터 집계
-    sector_flows = get_sector_flows(stocks_df, today)
+    # 3) 종목 등락률 맵 확보 (breadth / 리더 상대강도 계산용)
+    stock_change_map = {}
+    try:
+        for market in ["KOSPI", "KOSDAQ"]:
+            df_chg = try_get_market_price_change_by_ticker(today, market)
+            if df_chg is None or df_chg.empty:
+                continue
+            for idx, row in df_chg.iterrows():
+                code = str(idx).strip()
+                if not code:
+                    continue
+                val = None
+                for col in ['등락률', '변동률', 'change_rate', 'change']:
+                    if col in df_chg.columns:
+                        val = row.get(col)
+                        break
+                stock_change_map[code] = safe_float(val, 0.0)
+    except Exception:
+        stock_change_map = {}
 
-    # 4) 매칭 및 점수 계산
+    # 4) 섹터별 수급/구성 지표 집계
+    sector_flows = get_sector_flows(stocks_df, today, stock_change_map)
+
+    # 5) 매칭 및 점수 계산
     db_sector_names = stocks_df['sector_name'].unique().tolist()
     
     matches = {}
@@ -341,7 +409,23 @@ def calculate_sector_scores():
         # ✅ [FIXED] 올바른 Pandas 필터링 문법 사용
         core_count = len(group[group['universe_level'] == 'core'])
         
-        score = (change_rate * 10.0) + (core_count * 3.0)
+        breadth_ratio = safe_float(flows.get("breadth_ratio", 0.0), 0.0)
+        cap_weighted_flow_5d = safe_float(flows.get("cap_weighted_flow_5d", 0.0), 0.0)
+        leader_strength = safe_float(flows.get("leader_strength", 0.0), 0.0)
+        leader_rs = leader_strength - change_rate
+
+        flow_norm = cap_weighted_flow_5d / 1e10
+        breadth_score = max(-8.0, min(8.0, (breadth_ratio - 0.5) * 20.0))
+        flow_score = max(-8.0, min(8.0, flow_norm))
+        leader_score = max(-6.0, min(6.0, leader_rs * 1.5))
+
+        score = (
+            (change_rate * 8.0)
+            + (core_count * 2.0)
+            + breadth_score
+            + flow_score
+            + leader_score
+        )
         if score < 0: score = 0
         
         metrics = {
@@ -349,6 +433,17 @@ def calculate_sector_scores():
             "flow_inst_5d": flows.get("flow_inst_5d", 0),
             "flow_foreign_20d": flows.get("flow_foreign_20d", 0),
             "flow_inst_20d": flows.get("flow_inst_20d", 0),
+            "breadth_ratio": breadth_ratio,
+            "cap_weighted_flow_5d": cap_weighted_flow_5d,
+            "leader_strength": leader_strength,
+            "leader_rs": leader_rs,
+            "score_components": {
+                "change_component": round(change_rate * 8.0, 4),
+                "core_component": round(core_count * 2.0, 4),
+                "breadth_component": round(breadth_score, 4),
+                "flow_component": round(flow_score, 4),
+                "leader_component": round(leader_score, 4),
+            },
             "stock_count": len(group),
             "core_count": core_count
         }

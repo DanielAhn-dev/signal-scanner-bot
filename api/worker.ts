@@ -22,10 +22,37 @@ const DEFAULT_TG_TIMEOUT_MS = 5000;
 const DOCUMENT_TG_TIMEOUT_MS = 30000;
 const DEFAULT_JOB_TIMEOUT_MS = 7800;
 const REPORT_JOB_TIMEOUT_MS = 45000;
+const DEV_LOG = process.env.NODE_ENV !== "production";
 
 export const config = {
   maxDuration: 60,
 };
+
+function detectErrorType(error: unknown): string {
+  if (error instanceof Error) {
+    if (error.name) return error.name;
+    if (/timeout/i.test(error.message)) return "TimeoutError";
+  }
+  return "UnknownError";
+}
+
+function logWorker(
+  level: "info" | "error",
+  event: string,
+  payload: Record<string, unknown>
+) {
+  const line = JSON.stringify({
+    scope: "worker",
+    event,
+    ts: new Date().toISOString(),
+    ...payload,
+  });
+  if (level === "error") {
+    console.error(line);
+    return;
+  }
+  if (DEV_LOG) console.log(line);
+}
 
 // ---- Telegram 호출 유틸 ----
 
@@ -133,6 +160,7 @@ async function handleTelegramUpdateJob(job: any) {
   if (u?.callback_query?.data && u?.callback_query?.message?.chat?.id) {
     const chatId = u.callback_query.message.chat.id as number;
     const from = u.callback_query.from;
+    const startedAt = Date.now();
 
     await tgFetch("answerCallbackQuery", {
       callback_query_id: u.callback_query.id,
@@ -143,11 +171,24 @@ async function handleTelegramUpdateJob(job: any) {
     const callbackTimeout = u.callback_query.data === "cmd:report" || u.callback_query.data.startsWith("cmd:report:")
       ? REPORT_JOB_TIMEOUT_MS
       : DEFAULT_JOB_TIMEOUT_MS;
+    logWorker("info", "command_start", {
+      step: "callback_route",
+      command: u.callback_query.data,
+      chat_id: chatId,
+      job_id: job.id,
+    });
     await withTimeout(
       routeCallbackData(u.callback_query.data, { chatId, from }, tgFetch),
       callbackTimeout,
       `callback ${u.callback_query.data}`
     );
+    logWorker("info", "command_done", {
+      step: "callback_route",
+      command: u.callback_query.data,
+      chat_id: chatId,
+      job_id: job.id,
+      duration_ms: Date.now() - startedAt,
+    });
     return;
   }
 
@@ -155,6 +196,7 @@ async function handleTelegramUpdateJob(job: any) {
   if (u?.message?.text && u?.message?.chat?.id) {
     const chatId = u.message.chat.id as number;
     const from = u.message.from;
+    const startedAt = Date.now();
     let text = String(u.message.text || "").trim();
     if (!text) return;
 
@@ -186,17 +228,35 @@ async function handleTelegramUpdateJob(job: any) {
     }
 
     await tgFetch("sendChatAction", { chat_id: chatId, action: "typing" });
-    console.log("[worker] routeMessage 호출", { text, chatId, from });
+    logWorker("info", "command_start", {
+      step: "route_message",
+      command: text,
+      chat_id: chatId,
+      job_id: job.id,
+    });
     await withTimeout(
       routeMessage(text, { chatId, from }, async (method: string, body: any) => {
         const resp = await tgFetch(method, body);
-        console.log("[worker] tgSend 호출", { method, body, resp });
+        if (DEV_LOG) {
+          logWorker("info", "telegram_send", {
+            step: "tg_send",
+            method,
+            chat_id: chatId,
+            ok: Boolean(resp?.ok),
+          });
+        }
         return resp;
       }),
       resolveJobTimeout(text),
       `routeMessage ${text}`
     );
-    console.log("[worker] routeMessage 완료");
+    logWorker("info", "command_done", {
+      step: "route_message",
+      command: text,
+      chat_id: chatId,
+      job_id: job.id,
+      duration_ms: Date.now() - startedAt,
+    });
   }
 }
 
@@ -222,6 +282,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   // 큐가 빌 때까지 반복 처리 (처리 중 도착한 잡도 놓치지 않음)
   while (Date.now() < WORKER_DEADLINE) {
+    const fetchStartedAt = Date.now();
     const { data: jobs, error } = await supa()
       .from("jobs")
       .select("*")
@@ -230,13 +291,24 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       .limit(5);
 
     if (error || !jobs) {
-      console.error("worker: failed to fetch jobs", error);
+      logWorker("error", "jobs_fetch_failed", {
+        step: "fetch_jobs",
+        duration_ms: Date.now() - fetchStartedAt,
+        error_type: detectErrorType(error),
+        error: error?.message || String(error),
+      });
       break;
     }
 
     if (jobs.length === 0) break; // 큐 비었으면 종료
 
     for (const job of jobs) {
+      const jobStartedAt = Date.now();
+      logWorker("info", "job_start", {
+        step: "start_job",
+        job_id: job.id,
+        job_type: job.type,
+      });
       await supa()
         .from("jobs")
         .update({ status: "running", started_at: new Date().toISOString() })
@@ -257,9 +329,22 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             ok: true,
           })
           .eq("id", job.id);
+        logWorker("info", "job_done", {
+          step: "complete_job",
+          job_id: job.id,
+          job_type: job.type,
+          duration_ms: Date.now() - jobStartedAt,
+        });
         totalProcessed++;
       } catch (e: any) {
-        console.error("worker: job failed", job.type, e);
+        logWorker("error", "job_failed", {
+          step: "process_job",
+          job_id: job.id,
+          job_type: job.type,
+          duration_ms: Date.now() - jobStartedAt,
+          error_type: detectErrorType(e),
+          error: e?.message || String(e),
+        });
         await supa()
           .from("jobs")
           .update({

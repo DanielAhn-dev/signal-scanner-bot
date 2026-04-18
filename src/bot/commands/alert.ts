@@ -1,6 +1,8 @@
 import type { ChatContext } from "../router";
 import { createClient } from "@supabase/supabase-js";
 import { fetchAllMarketData } from "../../utils/fetchMarketData";
+import { fetchRealtimePriceBatch } from "../../utils/fetchRealtimePrice";
+import { fetchWatchMicroSignalsByCodes } from "../../lib/watchlistSignals";
 import {
   header,
   section,
@@ -99,6 +101,144 @@ function evaluateRisk(data: any): {
   return { level, marketAlerts, marketWatch, actions };
 }
 
+type WatchlistCandidateRow = {
+  code: string;
+  stock:
+    | { code: string; name: string | null }
+    | { code: string; name: string | null }[]
+    | null;
+};
+
+function unwrapStockName(
+  stock: WatchlistCandidateRow["stock"],
+  fallbackCode: string
+): string {
+  if (!stock) return fallbackCode;
+  if (Array.isArray(stock)) return stock[0]?.name || fallbackCode;
+  return stock.name || fallbackCode;
+}
+
+async function detectWatchlistAnomalies(chatId: number): Promise<string[]> {
+  const { data } = await supabase
+    .from("watchlist")
+    .select("code, stock:stocks(code, name)")
+    .eq("chat_id", chatId)
+    .limit(40)
+    .returns<WatchlistCandidateRow[]>();
+
+  const watchRows = data ?? [];
+  const codes = [...new Set(watchRows.map((row) => row.code).filter(Boolean))];
+  if (!codes.length) return [];
+
+  const [microByCode, realtimeMap] = await Promise.all([
+    fetchWatchMicroSignalsByCodes(supabase as any, codes),
+    fetchRealtimePriceBatch(codes).catch(() => ({} as Record<string, any>)),
+  ]);
+
+  const hits = watchRows
+    .map((row) => {
+      const code = row.code;
+      const micro = microByCode.get(code);
+      const valueRatio = Number(micro?.valueRatio ?? 0);
+      const changeRate = Number(realtimeMap[code]?.changeRate ?? 0);
+      const shocked = valueRatio >= 3 && Math.abs(changeRate) >= 5;
+      if (!shocked) return null;
+
+      const direction = changeRate >= 0 ? "급등" : "급락";
+      return {
+        severity: valueRatio * Math.abs(changeRate),
+        text: `${esc(unwrapStockName(row.stock, code))}(${code}) ${direction} ${changeRate.toFixed(
+          1
+        )}% · 거래대금 ${valueRatio.toFixed(1)}배`,
+      };
+    })
+    .filter((row): row is { severity: number; text: string } => Boolean(row))
+    .sort((a, b) => b.severity - a.severity)
+    .slice(0, 5)
+    .map((row) => row.text);
+
+  return hits;
+}
+
+async function detectSectorRankRotationWarnings(
+  sectorRows: Array<{ id?: string; name?: string }>
+): Promise<string[]> {
+  const sectorIds = sectorRows
+    .map((row: any) => String(row.id || ""))
+    .filter(Boolean);
+  if (!sectorIds.length) return [];
+
+  const from = new Date(Date.now() - 12 * 24 * 60 * 60 * 1000)
+    .toISOString()
+    .slice(0, 10);
+
+  const { data } = await supabase
+    .from("sector_daily")
+    .select("sector_id, date, close")
+    .in("sector_id", sectorIds)
+    .gte("date", from)
+    .order("date", { ascending: true });
+
+  const rows = (data ?? []) as Array<{ sector_id: string; date: string; close: number | null }>;
+  if (!rows.length) return [];
+
+  const dates = [...new Set(rows.map((row) => row.date))].sort();
+  if (dates.length < 4) return [];
+
+  const d0 = dates[dates.length - 4];
+  const d1 = dates[dates.length - 3];
+  const d2 = dates[dates.length - 2];
+  const d3 = dates[dates.length - 1];
+
+  const closeMap = new Map<string, Map<string, number>>();
+  for (const row of rows) {
+    const byDate = closeMap.get(row.sector_id) ?? new Map<string, number>();
+    byDate.set(row.date, Number(row.close ?? 0));
+    closeMap.set(row.sector_id, byDate);
+  }
+
+  const change = (sectorId: string, fromDate: string, toDate: string): number | null => {
+    const byDate = closeMap.get(sectorId);
+    const c0 = Number(byDate?.get(fromDate) ?? 0);
+    const c1 = Number(byDate?.get(toDate) ?? 0);
+    if (!(c0 > 0 && c1 > 0)) return null;
+    return ((c1 - c0) / c0) * 100;
+  };
+
+  const oldStrength = sectorIds
+    .map((id) => ({ id, v: change(id, d0, d1) }))
+    .filter((row): row is { id: string; v: number } => row.v != null)
+    .sort((a, b) => b.v - a.v);
+  const latestStrength = sectorIds
+    .map((id) => ({ id, v: change(id, d2, d3) }))
+    .filter((row): row is { id: string; v: number } => row.v != null)
+    .sort((a, b) => b.v - a.v);
+
+  if (!oldStrength.length || !latestStrength.length) return [];
+
+  const oldRank = new Map(oldStrength.map((row, idx) => [row.id, idx + 1]));
+  const latestRank = new Map(latestStrength.map((row, idx) => [row.id, idx + 1]));
+  const nameById = new Map(
+    sectorRows
+      .map((row: any) => [String(row.id || ""), String(row.name || "")] as const)
+      .filter(([id]) => Boolean(id))
+  );
+
+  return latestStrength
+    .map((row) => {
+      const before = oldRank.get(row.id);
+      const now = latestRank.get(row.id);
+      if (!before || !now) return null;
+      const shift = before - now;
+      if (Math.abs(shift) < 3) return null;
+      const dir = shift > 0 ? "상승" : "하락";
+      const name = esc(nameById.get(row.id) || row.id);
+      return `${name}: 3일 내 강도 순위 ${Math.abs(shift)}단계 ${dir} (${before}위 → ${now}위)`;
+    })
+    .filter((line): line is string => Boolean(line))
+    .slice(0, 5);
+}
+
 export async function handleAlertCommand(
   ctx: ChatContext,
   tgSend: any
@@ -112,7 +252,7 @@ export async function handleAlertCommand(
     fetchAllMarketData(),
     supabase
       .from("sectors")
-      .select("name, score, metrics")
+      .select("id, name, score, metrics")
       .order("score", { ascending: false })
       .limit(15),
   ]);
@@ -121,6 +261,11 @@ export async function handleAlertCommand(
 
   const sectorAlerts: string[] = [];
   const rotationHints: string[] = [];
+
+  const [watchlistAnomalyHits, rankRotationWarnings] = await Promise.all([
+    detectWatchlistAnomalies(ctx.chatId).catch(() => []),
+    detectSectorRankRotationWarnings((sectorRows.data || []) as any[]).catch(() => []),
+  ]);
 
   const rows = sectorRows.data || [];
   for (const row of rows) {
@@ -138,6 +283,8 @@ export async function handleAlertCommand(
       rotationHints.push(`${esc(row.name)}: 5일 수급 ${fmtKorMoney(flow5)} 유입 (순환매 초기 후보)`);
     }
   }
+
+  rotationHints.unshift(...rankRotationWarnings);
 
   const levelLabel =
     market.level === "WARN" ? "경고" : market.level === "WATCH" ? "주의" : "정상";
@@ -159,6 +306,12 @@ export async function handleAlertCommand(
     section(
       "순환매 힌트",
       rotationHints.length ? bullets(rotationHints.slice(0, 5)) : ["• 뚜렷한 초기 유입 섹터 없음"]
+    ),
+    section(
+      `오늘 주의 종목 ${watchlistAnomalyHits.length}건`,
+      watchlistAnomalyHits.length
+        ? bullets(watchlistAnomalyHits)
+        : ["• 관심 목록에서 거래대금 3배·변동률 5% 이상 교차 종목 없음"]
     ),
     divider(),
     section("행동 가이드", bullets(market.actions)),

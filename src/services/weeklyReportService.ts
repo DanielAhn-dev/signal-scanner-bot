@@ -225,6 +225,7 @@ export async function createWeeklyReportPdf(
   supabase: SupabaseClient,
   options: { chatId: number; topic?: string | null }
 ): Promise<WeeklyPdfReport> {
+  const startedAt = Date.now();
   const chatId = options.chatId;
   const topicMeta = parseReportTopic(options.topic);
   const now = new Date();
@@ -328,24 +329,57 @@ export async function createWeeklyReportPdf(
   const totalUnrealized = totalValue - totalInvested;
   const totalUnrealizedPct = totalInvested > 0 ? (totalUnrealized / totalInvested) * 100 : 0;
 
-  return runReportStep("pdf_render", () =>
-    renderReportPdf({
-      topicMeta,
-      chatId,
-      ymd,
-      krDate,
-      curr,
-      prev,
-      windows,
-      watchItems,
-      totalInvested,
-      totalValue,
-      totalUnrealized,
-      totalUnrealizedPct,
-      sectors: sectorRes.data ?? [],
-      market,
-    })
-  );
+  try {
+    const report = await runReportStep("pdf_render", () =>
+      renderReportPdf({
+        topicMeta,
+        chatId,
+        ymd,
+        krDate,
+        curr,
+        prev,
+        windows,
+        watchItems,
+        totalInvested,
+        totalValue,
+        totalUnrealized,
+        totalUnrealizedPct,
+        sectors: sectorRes.data ?? [],
+        market,
+      })
+    );
+
+    if (process.env.NODE_ENV !== "production") {
+      console.log(
+        JSON.stringify({
+          scope: "weekly_report",
+          event: "report_done",
+          step: "create_weekly_report_pdf",
+          duration_ms: Date.now() - startedAt,
+          chat_id: chatId,
+          topic: topicMeta.topic,
+          ts: new Date().toISOString(),
+        })
+      );
+    }
+
+    return report;
+  } catch (error) {
+    console.error(
+      JSON.stringify({
+        scope: "weekly_report",
+        event: "report_failed",
+        step: "create_weekly_report_pdf",
+        duration_ms: Date.now() - startedAt,
+        error_type: error instanceof Error ? error.name || "Error" : "UnknownError",
+        error: error instanceof Error ? error.message : String(error),
+        chat_id: chatId,
+        topic: topicMeta.topic,
+        ts: new Date().toISOString(),
+      })
+    );
+    throw error;
+  }
 }
 
 // ─── 로컬 프리뷰용 렌더 함수 (Supabase 없이 mock 데이터로 생성) ────────────

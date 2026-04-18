@@ -146,12 +146,34 @@ const statusRank: Record<string, number> = {
   wait: 2,
 };
 
+const DEV_LOG = process.env.NODE_ENV !== "production";
+
+function logBriefingStep(
+  event: "step_done" | "step_failed" | "done",
+  payload: Record<string, unknown>
+) {
+  if (!DEV_LOG) return;
+  const line = JSON.stringify({
+    scope: "briefing",
+    event,
+    ts: new Date().toISOString(),
+    ...payload,
+  });
+  if (event === "step_failed") {
+    console.error(line);
+    return;
+  }
+  console.log(line);
+}
+
 // ===== 메인 브리핑 함수 =====
 export async function createBriefingReport(
   supabase: SupabaseClient,
   type: BriefingType = "pre_market",
   options?: { riskProfile?: RiskProfile; chatId?: number }
 ): Promise<string> {
+  const startedAt = Date.now();
+  let stepStartedAt = Date.now();
   const riskProfile = options?.riskProfile ?? "safe";
   // 0. 기준일 잡기: sector_daily 마지막 날짜
   const { data: sectorDateRows, error: sectorDateError } = await supabase
@@ -170,6 +192,13 @@ export async function createBriefingReport(
   }
 
   const asOf = sectorDateRows[0].date as string;
+  logBriefingStep("step_done", {
+    step: "load_asof",
+    duration_ms: Date.now() - stepStartedAt,
+    asof: asOf,
+    chat_id: options?.chatId,
+  });
+  stepStartedAt = Date.now();
 
   // 1. 주도 섹터 Top 3
   const { data: topSectors, error: sectorError } = await supabase
@@ -185,6 +214,12 @@ export async function createBriefingReport(
   if (!topSectors || topSectors.length === 0) {
     throw new Error("sectors 테이블에 데이터가 없습니다.");
   }
+  logBriefingStep("step_done", {
+    step: "load_top_sectors",
+    duration_ms: Date.now() - stepStartedAt,
+    sector_count: topSectors.length,
+  });
+  stepStartedAt = Date.now();
 
   const topSectorIds = topSectors.map((s) => s.id);
 
@@ -236,6 +271,14 @@ export async function createBriefingReport(
 
   const scoreAsOf =
     sectorScoreResult.latestAsof ?? watchlistScoreResult.latestAsof ?? asOf;
+  logBriefingStep("step_done", {
+    step: "load_scores_watchlist",
+    duration_ms: Date.now() - stepStartedAt,
+    score_asof: scoreAsOf,
+    universe_count: sectorStockCodes.length,
+    watch_count: watchlistCodes.length,
+  });
+  stepStartedAt = Date.now();
 
   // 4. '밑에서' 턴어라운드 후보
   const bottomCandidates = await fetchBottomTurnaroundCandidates(
@@ -274,6 +317,12 @@ export async function createBriefingReport(
 
   // 7. 글로벌 시장 데이터
   const marketData = await fetchAllMarketData().catch(() => ({} as MarketOverview));
+  logBriefingStep("step_done", {
+    step: "load_realtime_market",
+    duration_ms: Date.now() - stepStartedAt,
+    realtime_code_count: uniqueCodes.length,
+  });
+  stepStartedAt = Date.now();
 
   // 8. 섹터별 리포트 텍스트 조립
   const sectorReports = topSectors.map((sector) => {
@@ -358,6 +407,10 @@ export async function createBriefingReport(
     newsSentimentByCode,
     watchlistViewItems
   );
+  logBriefingStep("step_done", {
+    step: "compose_sections",
+    duration_ms: Date.now() - stepStartedAt,
+  });
 
   // 9. 빈집털이 섹션 텍스트 조립
   const bottomSectionText = formatBottomSection(
@@ -478,6 +531,13 @@ export async function createBriefingReport(
     report += `<i>🌐 시장 데이터: ${quality}${fetchedAtLabel ? ` | 조회 ${fetchedAtLabel} KST` : ""}</i>\n`;
   }
   report += `/종목분석 종목코드 · /눌림목 · /경제 · /시장`;
+
+  logBriefingStep("done", {
+    step: "create_briefing_report",
+    duration_ms: Date.now() - startedAt,
+    chat_id: options?.chatId,
+    type,
+  });
 
   return report;
 }
