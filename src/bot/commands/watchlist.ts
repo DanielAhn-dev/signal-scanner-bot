@@ -111,6 +111,25 @@ function isKstMarketOpen(now = new Date()): boolean {
   return minutes >= open && minutes <= close;
 }
 
+function estimateElapsedTradingDays(raw?: string | null, now = new Date()): number {
+  if (!raw) return 0;
+  const start = new Date(raw);
+  if (Number.isNaN(start.getTime()) || start.getTime() > now.getTime()) return 0;
+
+  const dayMs = 24 * 60 * 60 * 1000;
+  const startUtcMidnight = Date.UTC(start.getUTCFullYear(), start.getUTCMonth(), start.getUTCDate());
+  const endUtcMidnight = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
+
+  let elapsed = 0;
+  for (let t = startUtcMidnight; t <= endUtcMidnight; t += dayMs) {
+    const day = new Date(t).getUTCDay();
+    if (day !== 0 && day !== 6) elapsed += 1;
+  }
+
+  // 진입 당일은 제외하고 경과 거래일로 계산한다.
+  return Math.max(0, elapsed - 1);
+}
+
 function formatEtfMonthList(months: number[]): string {
   if (!months.length) return "확인 필요";
   return months.map((month) => `${month}월`).join(", ");
@@ -1182,7 +1201,7 @@ export async function handleWatchlistResponseCommand(
     .from("watchlist")
     .select(
       `
-      code, buy_price, quantity, created_at,
+      code, buy_price, buy_date, quantity, created_at,
       stock:stocks!inner ( name, close, rsi14 )
     `
     )
@@ -1222,6 +1241,8 @@ export async function handleWatchlistResponseCommand(
       currentPrice: close,
       factors: { rsi14: stock?.rsi14 ?? undefined },
     });
+    const acquiredAt: string | null = (item as any).buy_date ?? (item as any).created_at ?? null;
+    const elapsedTradingDays = estimateElapsedTradingDays(acquiredAt);
     const decision = resolveWatchDecision({
       close,
       buyPrice,
@@ -1247,18 +1268,15 @@ export async function handleWatchlistResponseCommand(
     // 2-3: 손절 미이행 경고
     const blockedStopLossLines: string[] = [];
     if (decision.blockedStopLoss) {
-      const createdAt: string | null = (item as any).created_at ?? null;
-      let elapsedTradingDays = 0;
-      if (createdAt) {
-        const diffMs = Date.now() - new Date(createdAt).getTime();
-        const diffDays = diffMs / (24 * 60 * 60 * 1000);
-        elapsedTradingDays = Math.max(0, Math.floor(diffDays * 5 / 7));
-      }
       blockedStopLossLines.push("  ⚠️ <b>손절 미이행 주의</b> — 손절 조건 충족이지만 트리거 미충족으로 억제됨");
       if (elapsedTradingDays >= 3) {
         blockedStopLossLines.push(`  🔴 장기 미이행 (약 ${elapsedTradingDays}거래일) — 즉시 점검 권고`);
       }
     }
+
+    const maturityWarningLine = elapsedTradingDays > plan.holdDays[1]
+      ? `  ⏰ 보유기간 상한(${plan.holdDays[1]}거래일) 초과 — 익절·손절 여부 재판단 권고 (현재 약 ${elapsedTradingDays}거래일)`
+      : null;
 
     lines.push(
       [
@@ -1268,6 +1286,7 @@ export async function handleWatchlistResponseCommand(
         `  손절 ${fmtInt(plan.stopPrice)}원 · 1차목표 ${fmtInt(plan.target1)}원`,
         `  내일 대응: ${recommended} (${decision.reason})`,
         `  트리거: ${decision.triggerReasons.length ? decision.triggerReasons.join(", ") : "대기"} · 신뢰도 ${decision.confidence}%`,
+        ...(maturityWarningLine ? [maturityWarningLine] : []),
         ...(reentryWatch ? [reentryWatch] : []),
         ...blockedStopLossLines,
       ].join("\n")

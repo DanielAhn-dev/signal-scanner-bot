@@ -40,6 +40,7 @@ export const ACTIONS = {
   ] as InlineButton[],
   reportMenu: [
     { text: "주간", callback_data: "cmd:report:full" },
+    { text: "월간", callback_data: "cmd:report:monthly" },
     { text: "포트폴리오", callback_data: "cmd:report:portfolio" },
     { text: "거시", callback_data: "cmd:report:economy" },
     { text: "수급", callback_data: "cmd:report:flow" },
@@ -88,7 +89,7 @@ export const ACTIONS = {
       { text: "종목분석", callback_data: `trade:${code}` },
       { text: "재무", callback_data: `finance:${code}` },
       { text: "뉴스", callback_data: `news:${code}` },
-      { text: "가상매수", callback_data: `watchadd:${code}` },
+      { text: "관심추가", callback_data: `watchadd:${code}` },
     ] as InlineButton[],
   analyzeStockWithRecalc: (code: string) =>
     [
@@ -96,7 +97,7 @@ export const ACTIONS = {
       { text: "종목분석", callback_data: `trade:${code}` },
       { text: "재무", callback_data: `finance:${code}` },
       { text: "뉴스", callback_data: `news:${code}` },
-      { text: "가상매수", callback_data: `watchadd:${code}` },
+      { text: "관심추가", callback_data: `watchadd:${code}` },
     ] as InlineButton[],
   analyzeEtf: (code: string) =>
     [

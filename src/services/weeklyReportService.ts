@@ -355,8 +355,28 @@ export async function createPreviewReportPdf(topicStr = "economy"): Promise<Uint
   const krDate    = "2025년 1월 24일";
   const chatId    = 0;
 
-  const curr: WindowSummary = { buyCount: 3, sellCount: 2, tradeCount: 5, realizedPnl: 120000, winRate: 66.7 };
-  const prev: WindowSummary = { buyCount: 2, sellCount: 1, tradeCount: 3, realizedPnl: -50000, winRate: 50 };
+  const curr: WindowSummary = {
+    buyCount: 3,
+    sellCount: 2,
+    tradeCount: 5,
+    realizedPnl: 120000,
+    winRate: 66.7,
+    avgWinPct: 4.2,
+    avgLossPct: 2.1,
+    payoffRatio: 2.0,
+    maxSingleLoss: -30000,
+  };
+  const prev: WindowSummary = {
+    buyCount: 2,
+    sellCount: 1,
+    tradeCount: 3,
+    realizedPnl: -50000,
+    winRate: 50,
+    avgWinPct: 2.8,
+    avgLossPct: 3.5,
+    payoffRatio: 0.8,
+    maxSingleLoss: -50000,
+  };
   const windows = { current14: [] as TradeRow[], prev14: [] as TradeRow[], recent: [] as TradeRow[] };
 
   const watchItems: WatchItem[] = [

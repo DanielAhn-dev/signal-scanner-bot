@@ -215,7 +215,15 @@ export function drawPortfolioSection(
     { label: "보유 종목수", value: `${watchItems.length}개`, valueColor: C.text },
     { label: "거래 (최근 2주)", value: `${curr.tradeCount}건`, sub: `매수 ${curr.buyCount} / 매도 ${curr.sellCount}`, valueColor: C.text },
     { label: `${FIFO_REALIZED_LABEL} (2주)`, value: fmtSignedInt(curr.realizedPnl), valueColor: pnlColor(curr.realizedPnl) },
-    { label: `${FIFO_WIN_RATE_LABEL} (2주)`, value: `${curr.winRate.toFixed(1)}%`, sub: curr.sellCount > 0 ? `${curr.sellCount}건 매도 기준` : "매도 없음", valueColor: curr.winRate >= 50 ? C.up : C.down },
+    {
+      label: `${FIFO_WIN_RATE_LABEL} (2주)`,
+      value: `${curr.winRate.toFixed(1)}%`,
+      sub:
+        curr.sellCount > 0
+          ? `${curr.sellCount}건 매도 · 손익비 ${curr.payoffRatio != null ? `${curr.payoffRatio.toFixed(2)}:1` : "집계불가"}`
+          : "매도 없음",
+      valueColor: curr.winRate >= 50 ? C.up : C.down,
+    },
     { label: "이전 2주 대비", value: fmtSignedInt(curr.realizedPnl - prev.realizedPnl), sub: `${FIFO_REALIZED_LABEL} 증감`, valueColor: pnlColor(curr.realizedPnl - prev.realizedPnl) },
   ];
   drawKpiGrid(ctx, cards, 4);

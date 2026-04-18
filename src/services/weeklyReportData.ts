@@ -7,6 +7,7 @@ export type TradeRow = {
   quantity: number | null;
   pnl_amount: number | null;
   traded_at: string;
+  memo?: string | null;
 };
 
 export type WatchlistRow = {
@@ -27,6 +28,10 @@ export type WindowSummary = {
   tradeCount: number;
   realizedPnl: number;
   winRate: number;
+  avgWinPct: number;
+  avgLossPct: number;
+  payoffRatio: number | null;
+  maxSingleLoss: number;
 };
 
 export type TradeWindows = {
@@ -42,12 +47,40 @@ export function summarizeWindow(rows: TradeRow[]): WindowSummary {
   const realized = sells.reduce((acc, r) => acc + toNum(r.pnl_amount), 0);
   const winCount = sells.filter((r) => toNum(r.pnl_amount) > 0).length;
   const winRate = sells.length ? (winCount / sells.length) * 100 : 0;
+
+  const sellReturnPcts = sells
+    .map((r) => {
+      const price = toNum(r.price);
+      const qty = Math.max(0, Math.floor(toNum(r.quantity)));
+      const notional = price * qty;
+      if (!notional) return null;
+      return (toNum(r.pnl_amount) / notional) * 100;
+    })
+    .filter((v): v is number => Number.isFinite(v));
+
+  const winPcts = sellReturnPcts.filter((v) => v > 0);
+  const lossPctsAbs = sellReturnPcts.filter((v) => v < 0).map((v) => Math.abs(v));
+  const avgWinPct = winPcts.length
+    ? winPcts.reduce((acc, v) => acc + v, 0) / winPcts.length
+    : 0;
+  const avgLossPct = lossPctsAbs.length
+    ? lossPctsAbs.reduce((acc, v) => acc + v, 0) / lossPctsAbs.length
+    : 0;
+  const payoffRatio = avgWinPct > 0 && avgLossPct > 0
+    ? avgWinPct / avgLossPct
+    : null;
+  const maxSingleLoss = sells.reduce((minLoss, row) => Math.min(minLoss, toNum(row.pnl_amount)), 0);
+
   return {
     buyCount: buys.length,
     sellCount: sells.length,
     tradeCount: executedRows.length,
     realizedPnl: realized,
     winRate,
+    avgWinPct,
+    avgLossPct,
+    payoffRatio,
+    maxSingleLoss,
   };
 }
 
