@@ -1,7 +1,5 @@
 import type { ChatContext } from "../router";
 import { createClient } from "@supabase/supabase-js";
-import { getDailySeries } from "../../adapters";
-import { calculateScore } from "../../score/engine";
 import { fetchRealtimePriceBatch } from "../../utils/fetchRealtimePrice";
 import { fetchAllMarketData, type MarketOverview } from "../../utils/fetchMarketData";
 import { fmtKRW } from "../../lib/normalize";
@@ -523,46 +521,6 @@ function buildCandidates(
   return base.filter((c): c is Candidate => Boolean(c && c.close > 0));
 }
 
-async function attachDeepTechnicalScores(candidates: Candidate[]): Promise<Candidate[]> {
-  const deepTargets = sortByDesc(candidates, (c) => c.preScore).slice(0, 20);
-  const deepCodes = new Set(deepTargets.map((c) => c.code));
-
-  const scoreMap = new Map<string, { score: number; avwapSupport: number }>();
-
-  await Promise.all(
-    deepTargets.map(async (c) => {
-      try {
-        const series = await getDailySeries(c.code, 260);
-        if (!series || series.length < 200) return;
-
-        const scored = calculateScore(series);
-        if (!scored) return;
-        scoreMap.set(c.code, {
-          score: Number(scored.score ?? c.preScore),
-          avwapSupport: Number(scored.factors.avwap_support ?? 50),
-        });
-      } catch {
-        // 시계열 실패 시 사전점수 유지
-      }
-    })
-  );
-
-  return candidates.map((c) => {
-    if (!deepCodes.has(c.code)) return c;
-    const deep = scoreMap.get(c.code);
-    if (!deep) return c;
-
-    const avwapSupport = clamp(deep.avwapSupport, 0, 100);
-    const finalScore = clamp(c.preScore * 0.6 + deep.score * 0.25 + avwapSupport * 0.15, 0, 100);
-
-    return {
-      ...c,
-      avwapSupport,
-      finalScore,
-    };
-  });
-}
-
 function commandLabel(kind: MarketKind): string {
   if (kind === "KOSPI") return "코스피";
   if (kind === "KOSDAQ") return "코스닥";
@@ -666,8 +624,7 @@ async function runMarketPickCommand(
     return;
   }
 
-  const enriched = await attachDeepTechnicalScores(preCandidates);
-  const top = sortByDesc(enriched, (c) => c.finalScore).slice(0, TOP_N);
+  const top = sortByDesc(preCandidates, (c) => c.finalScore).slice(0, TOP_N);
   const realtimeMap = {
     ...fallbackRealtimeMap,
     ...(await fetchRealtimePriceBatch(top.map((c) => c.code)).catch(() => ({} as Record<string, any>))),

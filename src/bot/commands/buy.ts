@@ -16,12 +16,12 @@ import {
 import { actionButtons, ACTIONS } from "../messages/layout";
 import { getDailySeries } from "../../adapters";
 import { fetchAllMarketData } from "../../utils/fetchMarketData";
-import { calculateScore } from "../../score/engine";
 import { buildInvestmentPlan } from "../../lib/investPlan";
 import {
   scaleScoreFactorsToReferencePrice,
   scaleSeriesToReferencePrice,
 } from "../../lib/priceScale";
+import { fetchLatestScoresByCodes } from "../../services/scoreSourceService";
 
 // Supabase 클라이언트
 const supabase = createClient(
@@ -228,8 +228,7 @@ export async function handleBuyCommand(
     .from("stocks")
     .select(
       `
-      code, name, close, sma20, sma50, rsi14, universe_level, sector_id,
-      scores ( total_score, momentum_score )
+      code, name, close, sma20, sma50, rsi14, universe_level, sector_id
     `
     )
     .eq("code", code)
@@ -291,33 +290,49 @@ export async function handleBuyCommand(
         usdkrw: marketData.usdkrw?.price,
       }
     : undefined;
-  const scored = normalizedSeries && normalizedSeries.length >= 200
-    ? calculateScore(normalizedSeries, marketEnv)
-    : null;
-  const rawTechnicalScore = Array.isArray(stock.scores)
-    ? (stock.scores[0] as { total_score?: number; momentum_score?: number } | undefined)
-    : (stock.scores as { total_score?: number; momentum_score?: number } | null | undefined);
-  const fallbackScore = rawTechnicalScore?.total_score ?? rawTechnicalScore?.momentum_score;
+
+  const scoreResult = await fetchLatestScoresByCodes(supabase, [code]);
+  const latestScoreRow = scoreResult.byCode.get(code);
+  const latestFactors =
+    latestScoreRow?.factors && typeof latestScoreRow.factors === "object"
+      ? (latestScoreRow.factors as Record<string, any>)
+      : null;
+
+  const fallbackScore = Number(
+    latestScoreRow?.total_score ??
+      latestScoreRow?.momentum_score ??
+      0
+  ) || undefined;
+
   const fallbackFactors = scaleScoreFactorsToReferencePrice(
     {
-      sma20: stock.sma20,
-      sma50: stock.sma50,
-      rsi14: stock.rsi14,
-      roc14: 0,
-      roc21: 0,
-      avwap_support: 50,
+      sma20: Number(latestFactors?.sma20 ?? stock.sma20 ?? currentPrice),
+      sma50: Number(latestFactors?.sma50 ?? stock.sma50 ?? currentPrice),
+      sma200: Number(latestFactors?.sma200 ?? currentPrice),
+      rsi14: Number(latestFactors?.rsi14 ?? stock.rsi14 ?? 50),
+      roc14: Number(latestFactors?.roc14 ?? 0),
+      roc21: Number(latestFactors?.roc21 ?? 0),
+      avwap_support: Number(latestFactors?.avwap_support ?? 50),
+      atr14: Number(latestFactors?.atr14 ?? 0),
+      atr_pct: Number(latestFactors?.atr_pct ?? 0),
+      vol_ratio: Number(latestFactors?.vol_ratio ?? 1),
+      macd_cross:
+        latestFactors?.macd_cross === "golden" || latestFactors?.macd_cross === "dead"
+          ? latestFactors.macd_cross
+          : "none",
     },
     currentPrice,
     stock.close
   );
+
   const plan = buildInvestmentPlan({
     currentPrice,
-    factors: scored?.factors ?? fallbackFactors,
-    technicalScore: scored?.score ?? fallbackScore,
+    factors: fallbackFactors,
+    technicalScore: fallbackScore,
     fundamental,
     marketEnv,
   });
-  const technicalScore = scored?.score ?? fallbackScore;
+  const technicalScore = fallbackScore;
   const fundamentalScore = fundamental?.qualityScore;
   const finalScore = technicalScore !== undefined
     ? Number(
