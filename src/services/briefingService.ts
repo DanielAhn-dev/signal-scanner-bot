@@ -798,7 +798,7 @@ async function formatWatchlistSection(
   viewItemsInput?: WatchlistViewItem[]
 ) {
   if (!items.length) {
-    return "  <i>등록된 보유 종목이 없습니다. /가상매수 종목명 으로 후보를 저장하세요.</i>\n";
+    return "  <i>등록된 관심/보유 종목이 없습니다. /관심추가 종목명 으로 먼저 추이를 저장하세요.</i>\n";
   }
 
   const viewItems = viewItemsInput ?? buildWatchlistViewItems(items, scoresByCode, realtimeMap);

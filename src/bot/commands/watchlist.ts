@@ -78,6 +78,34 @@ function toSafeNumber(value: unknown, fallback = 0): number {
   return Number.isFinite(n) ? n : fallback;
 }
 
+function hasVirtualPosition(item: any): boolean {
+  const buyPrice = toPositiveNumber(item?.buy_price);
+  const qty = Math.max(0, Math.floor(Number(item?.quantity ?? 0)));
+  return Boolean(buyPrice && qty > 0);
+}
+
+function isWatchOnlyItem(item: any): boolean {
+  return !hasVirtualPosition(item);
+}
+
+async function fetchWatchlistRows(chatId: number): Promise<{ items: any[]; error: any }> {
+  const { data, error } = await supabaseRead
+    .from("watchlist")
+    .select(
+      `
+      code, buy_price, buy_date, memo, created_at, quantity, invested_amount,
+      stock:stocks!inner ( name, market, close, rsi14, sector_id )
+    `
+    )
+    .eq("chat_id", chatId)
+    .order("created_at", { ascending: true });
+
+  return {
+    items: (data ?? []) as any[],
+    error,
+  };
+}
+
 /**
  * 섹터 집중도 배열을 받아 경고 문자열을 반환한다.
  * 30% 초과 섹터만 표시. 경고가 없으면 빈 문자열.
@@ -363,6 +391,304 @@ async function allocateVirtualBuy(payload: {
   };
 }
 
+// ─── /관심 (목록 조회) ─────────────────────
+export async function handleWatchOnlyCommand(
+  ctx: ChatContext,
+  tgSend: any
+): Promise<void> {
+  const { items: allItems, error } = await fetchWatchlistRows(ctx.chatId);
+
+  if (error) {
+    console.error("watch-only query error:", error);
+    return tgSend("sendMessage", {
+      chat_id: ctx.chatId,
+      text: "관심 목록 조회 중 오류가 발생했습니다.",
+    });
+  }
+
+  const items = allItems.filter(isWatchOnlyItem);
+  if (!items.length) {
+    return tgSend("sendMessage", {
+      chat_id: ctx.chatId,
+      text: [
+        "관심 목록이 비어 있습니다.",
+        "",
+        "/관심추가 종목명",
+        "예) /관심추가 삼성전자",
+        "추가한 종목은 /관심대응 또는 /브리핑에서 추이를 확인할 수 있습니다.",
+      ].join("\n"),
+    });
+  }
+
+  const codes = items.map((it: any) => String(it.code));
+  const realtimeMap = await fetchRealtimePriceBatch(codes);
+
+  const lines = items.map((item: any, idx: number) => {
+    const stock = item.stock as any;
+    const code = String(item.code);
+    const name = stock?.name ?? code;
+    const dbClose = Number(stock?.close ?? 0);
+    const close = toPositiveNumber(realtimeMap[code]?.price) ?? dbClose;
+    const plan = buildInvestmentPlan({
+      currentPrice: close,
+      factors: { rsi14: stock?.rsi14 ?? undefined },
+    });
+    const addedDate = formatShortDate(item.created_at as string | null | undefined);
+    const changeStr = realtimeMap[code]
+      ? `${realtimeMap[code].change >= 0 ? "▲" : "▼"} ${Math.abs(realtimeMap[code].changeRate).toFixed(1)}%`
+      : "";
+
+    return [
+      `${idx + 1}. <b>${esc(name)}</b> (${code}) · 추가 (${addedDate})`,
+      `    현재 <code>${fmtInt(close)}원</code> ${changeStr}`,
+      `    상태 ${plan.statusLabel} · 진입 ${fmtInt(plan.entryLow)}~${fmtInt(plan.entryHigh)}`,
+      `    손절 ${fmtInt(plan.stopPrice)} · 1차 ${fmtPct(plan.target1Pct * 100)}`,
+    ].join("\n");
+  });
+
+  const msg = [
+    "<b>관심 종목 목록</b>",
+    LINE,
+    `관심 ${items.length}/${MAX_ITEMS}종목 · 가상 체결은 /가상매수 에서 별도 실행`,
+    "",
+    ...lines,
+    "",
+    "/관심추가 종목 · /관심제거 종목",
+    "/관심대응 · /가상매수 종목 [매수가]",
+  ].join("\n");
+
+  await tgSend("sendMessage", {
+    chat_id: ctx.chatId,
+    text: msg,
+    parse_mode: "HTML",
+  });
+}
+
+export async function handleWatchOnlyAdd(
+  input: string,
+  ctx: ChatContext,
+  tgSend: any
+): Promise<void> {
+  const query = (input || "").trim();
+  if (!query) {
+    return tgSend("sendMessage", {
+      chat_id: ctx.chatId,
+      text: "사용법: /관심추가 종목명\n예) /관심추가 삼성전자",
+    });
+  }
+
+  const { count } = await supabaseRead
+    .from("watchlist")
+    .select("id", { count: "exact", head: true })
+    .eq("chat_id", ctx.chatId);
+
+  if ((count ?? 0) >= MAX_ITEMS) {
+    return tgSend("sendMessage", {
+      chat_id: ctx.chatId,
+      text: `최대 ${MAX_ITEMS}개까지 등록할 수 있습니다.\n/관심제거 또는 /가상매도 후 다시 추가해주세요.`,
+    });
+  }
+
+  const hits = await searchByNameOrCode(query, 1);
+  if (!hits?.length) {
+    return tgSend("sendMessage", {
+      chat_id: ctx.chatId,
+      text: "종목을 찾을 수 없습니다. 이름 또는 코드를 확인해주세요.",
+    });
+  }
+
+  const { code, name } = hits[0];
+  const { data: existing } = await supabaseRead
+    .from("watchlist")
+    .select("id, buy_price, quantity")
+    .eq("chat_id", ctx.chatId)
+    .eq("code", code)
+    .maybeSingle();
+
+  if (existing) {
+    if (hasVirtualPosition(existing)) {
+      return tgSend("sendMessage", {
+        chat_id: ctx.chatId,
+        text: `${esc(name)} (${code})은 이미 가상 보유 포트폴리오에 있습니다.\n/보유 에서 확인해주세요.`,
+        parse_mode: "HTML",
+      });
+    }
+    return tgSend("sendMessage", {
+      chat_id: ctx.chatId,
+      text: `${esc(name)} (${code})은 이미 관심 목록에 있습니다.`,
+      parse_mode: "HTML",
+    });
+  }
+
+  const { error } = await supabase
+    .from("watchlist")
+    .insert({
+      chat_id: ctx.chatId,
+      code,
+      buy_price: null,
+      buy_date: null,
+      quantity: null,
+      invested_amount: null,
+      status: "closed",
+      memo: "watch-only",
+    });
+
+  if (error) {
+    console.error("watch-only add error:", error);
+    return tgSend("sendMessage", {
+      chat_id: ctx.chatId,
+      text: "관심추가 처리 중 오류가 발생했습니다.",
+    });
+  }
+
+  await tgSend("sendMessage", {
+    chat_id: ctx.chatId,
+    text: `${esc(name)} (${code}) 관심 목록에 추가했습니다.\n/관심 으로 추이 확인\n진입 시 /가상매수 ${name}`,
+    parse_mode: "HTML",
+  });
+}
+
+export async function handleWatchOnlyRemove(
+  input: string,
+  ctx: ChatContext,
+  tgSend: any
+): Promise<void> {
+  const query = (input || "").trim();
+  if (!query) {
+    return tgSend("sendMessage", {
+      chat_id: ctx.chatId,
+      text: "사용법: /관심제거 종목명\n예) /관심제거 삼성전자",
+    });
+  }
+
+  const hits = await searchByNameOrCode(query, 1);
+  if (!hits?.length) {
+    return tgSend("sendMessage", {
+      chat_id: ctx.chatId,
+      text: "종목을 찾을 수 없습니다.",
+    });
+  }
+
+  const { code, name } = hits[0];
+  const { data: row, error: rowError } = await supabaseRead
+    .from("watchlist")
+    .select("id, buy_price, quantity")
+    .eq("chat_id", ctx.chatId)
+    .eq("code", code)
+    .maybeSingle();
+
+  if (rowError) {
+    console.error("watch-only remove fetch error:", rowError);
+    return tgSend("sendMessage", {
+      chat_id: ctx.chatId,
+      text: "관심제거 조회 중 오류가 발생했습니다.",
+    });
+  }
+
+  if (!row) {
+    return tgSend("sendMessage", {
+      chat_id: ctx.chatId,
+      text: `${esc(name)} (${code})은 관심 목록에 없습니다.`,
+      parse_mode: "HTML",
+    });
+  }
+
+  if (hasVirtualPosition(row)) {
+    return tgSend("sendMessage", {
+      chat_id: ctx.chatId,
+      text: `${esc(name)} (${code})은 가상 보유 종목입니다.\n/가상매도 또는 /보유수정 으로 관리해주세요.`,
+      parse_mode: "HTML",
+    });
+  }
+
+  const { error } = await supabase
+    .from("watchlist")
+    .delete()
+    .eq("chat_id", ctx.chatId)
+    .eq("code", code);
+
+  if (error) {
+    console.error("watch-only remove error:", error);
+    return tgSend("sendMessage", {
+      chat_id: ctx.chatId,
+      text: "관심제거 처리 중 오류가 발생했습니다.",
+    });
+  }
+
+  await tgSend("sendMessage", {
+    chat_id: ctx.chatId,
+    text: `${esc(name)} (${code}) 관심 목록에서 제거했습니다.`,
+    parse_mode: "HTML",
+  });
+}
+
+export async function handleWatchOnlyResponseCommand(
+  ctx: ChatContext,
+  tgSend: any
+): Promise<void> {
+  const { items: allItems, error } = await fetchWatchlistRows(ctx.chatId);
+
+  if (error) {
+    console.error("watch-only response query error:", error);
+    return tgSend("sendMessage", {
+      chat_id: ctx.chatId,
+      text: "관심 대응 플랜 생성 중 오류가 발생했습니다.",
+    });
+  }
+
+  const items = allItems.filter(isWatchOnlyItem);
+  if (!items.length) {
+    return tgSend("sendMessage", {
+      chat_id: ctx.chatId,
+      text: "관심 종목이 없어 대응 계획을 만들 수 없습니다.\n/관심추가 후 다시 실행해주세요.",
+    });
+  }
+
+  const codes = items.map((it: any) => String(it.code));
+  const realtimeMap = await fetchRealtimePriceBatch(codes);
+
+  const lines = items.map((item: any) => {
+    const stock = item.stock as any;
+    const code = String(item.code);
+    const name = String(stock?.name ?? code);
+    const dbClose = Number(stock?.close ?? 0);
+    const close = toPositiveNumber(realtimeMap[code]?.price) ?? dbClose;
+    const plan = buildInvestmentPlan({
+      currentPrice: close,
+      factors: { rsi14: stock?.rsi14 ?? undefined },
+    });
+    const nextAction =
+      plan.status === "buy-now"
+        ? "분할 진입 검토"
+        : plan.status === "buy-on-pullback"
+          ? "눌림 구간 대기"
+          : "관망 유지";
+
+    return [
+      `- <b>${esc(name)}</b> (${code})`,
+      `  기준가 ${fmtInt(close)}원 · 상태 ${plan.statusLabel}`,
+      `  진입 ${fmtInt(plan.entryLow)}~${fmtInt(plan.entryHigh)} · 손절 ${fmtInt(plan.stopPrice)}`,
+      `  1차목표 ${fmtInt(plan.target1)}원 · 대응 ${nextAction}`,
+      `  체결 시: /가상매수 ${name} ${fmtInt(close)}`,
+    ].join("\n");
+  });
+
+  const msg = [
+    "<b>관심대응 플랜</b>",
+    LINE,
+    "관심 종목은 체결 없이 추이만 점검합니다.",
+    "실제 가상매매는 /가상매수 로 별도 실행하세요.",
+    "",
+    ...lines,
+  ].join("\n");
+
+  await tgSend("sendMessage", {
+    chat_id: ctx.chatId,
+    text: msg,
+    parse_mode: "HTML",
+  });
+}
+
 // ─── /보유 (목록 조회) ─────────────────────
 export async function handleWatchlistCommand(
   ctx: ChatContext,
@@ -378,16 +704,7 @@ export async function handleWatchlistCommand(
     .limit(1);
   const scoreAsOf = scoreDateRows?.[0]?.asof ?? null;
 
-  const { data: items, error } = await supabaseRead
-    .from("watchlist")
-    .select(
-      `
-      code, buy_price, buy_date, memo, created_at, quantity, invested_amount,
-      stock:stocks!inner ( name, market, close, rsi14, sector_id )
-    `
-    )
-    .eq("chat_id", ctx.chatId)
-    .order("created_at", { ascending: true });
+  const { items: allItems, error } = await fetchWatchlistRows(ctx.chatId);
 
   if (error) {
     console.error("watchlist query error:", error);
@@ -397,15 +714,19 @@ export async function handleWatchlistCommand(
     });
   }
 
-  if (!items || items.length === 0) {
+  const items = allItems.filter(hasVirtualPosition);
+
+  if (!items.length) {
     return tgSend("sendMessage", {
       chat_id: ctx.chatId,
       text: [
-        "보유 포트폴리오가 비어 있습니다.",
+        "가상 보유 포트폴리오가 비어 있습니다.",
         "",
+        "/관심추가 종목명",
+        "예) /관심추가 삼성전자",
         "/가상매수 종목명 [매수가]",
         "예) /가상매수 삼성전자 72000",
-        "추가한 종목은 /브리핑에서 함께 점검됩니다.",
+        "관심은 /관심, 가상체결은 /보유에서 분리해 점검할 수 있습니다.",
       ].join("\n"),
     });
   }

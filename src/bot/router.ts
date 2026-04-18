@@ -29,6 +29,10 @@ import {
 import { handleAutoCycleCommand } from "./commands/autoCycle";
 import {
   handleWatchlistCommand,
+  handleWatchOnlyCommand,
+  handleWatchOnlyAdd,
+  handleWatchOnlyRemove,
+  handleWatchOnlyResponseCommand,
   handleWatchlistAdd,
   handleWatchlistRemove,
   handleWatchlistEdit,
@@ -70,11 +74,15 @@ const CMD = {
   FLOW:        /^\/(flow|수급)(?:\s+(.+))?$/i,
   FINANCE:     /^\/(finance|재무)(?:\s+(.+))?$/i,
   CAPITAL:     /^\/(capital|투자금)(?:\s+(.+))?$/i,
+  WATCHONLYLIST: /^\/(watchlist|관심)$/i,
+  WATCHONLYADD:  /^\/(watchadd|관심추가)(?:\s+(.+))?$/i,
+  WATCHONLYREMOVE:/^\/(watchremove|관심제거)(?:\s+(.+))?$/i,
+  WATCHONLYRESP: /^\/(watchplan|관심대응)$/i,
   WATCHADD:    /^\/(paperbuy|가상매수)(?:\s+(.+))?$/i,
   WATCHREMOVE: /^\/(papersell|가상매도)(?:\s+(.+))?$/i,
   WATCHEDIT:   /^\/(holdingedit|보유수정)(?:\s+(.+))?$/i,
   WATCHAUTO:   /^\/(autosellcheck|자동매도점검)$/i,
-  WATCHRESP:   /^\/(holdingplan|보유대응)$/i,
+  WATCHRESP:   /^\/(holdingplan|보유대응|관심대응)$/i,
   RECORD:      /^\/(tradelog|거래기록)(?:\s+(.+))?$/i,
   ALERT:       /^\/(alert|이상징후|알림)$/i,
   WATCHLIST:   /^\/(holdings|보유)$/i,
@@ -134,6 +142,7 @@ export async function routeMessage(
             `/brief — 장전 브리핑 + 내 보유 종목 점검`,
             `/sector — 주도 섹터와 대표 후보`,
             `/pullback — 눌림목 대기 후보`,
+            `/관심 — 추이 관찰 종목 목록`,
             `/보유 — 가상 보유 포트폴리오`,
             ``,
             `도움말: /help`,
@@ -153,6 +162,7 @@ export async function routeMessage(
         ? actionButtons([
             { text: "브리핑", callback_data: "cmd:brief" },
             { text: "리포트 메뉴", callback_data: "cmd:report" },
+            { text: "관심", callback_data: "cmd:watchonly" },
             { text: "보유", callback_data: "cmd:watchlist" },
             { text: "섹터", callback_data: "cmd:sector" },
             { text: "투자금 수정", callback_data: "prompt:capital" },
@@ -332,6 +342,28 @@ export async function routeMessage(
   if (CMD.CAPITAL.test(t)) {
     const mc = t.match(CMD.CAPITAL);
     await handleCapitalCommand(mc?.[2] ?? "", ctx, tgSend);
+    return;
+  }
+
+  if (CMD.WATCHONLYLIST.test(t)) {
+    await handleWatchOnlyCommand(ctx, tgSend);
+    return;
+  }
+
+  const mwatchAdd = t.match(CMD.WATCHONLYADD);
+  if (mwatchAdd) {
+    await handleWatchOnlyAdd(mwatchAdd[2] ?? "", ctx, tgSend);
+    return;
+  }
+
+  const mwatchRemove = t.match(CMD.WATCHONLYREMOVE);
+  if (mwatchRemove) {
+    await handleWatchOnlyRemove(mwatchRemove[2] ?? "", ctx, tgSend);
+    return;
+  }
+
+  if (CMD.WATCHONLYRESP.test(t)) {
+    await handleWatchOnlyResponseCommand(ctx, tgSend);
     return;
   }
 
