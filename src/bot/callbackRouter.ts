@@ -76,6 +76,17 @@ export async function routeCallbackData(
       return;
     }
 
+    if (prefix === "strategy") {
+      const { handleStrategyCallback } = await import("./commands/strategySelect");
+      const supabaseModule = await import("@supabase/supabase-js");
+      const { SUPABASE_URL, SUPABASE_KEY } = process.env;
+      if (SUPABASE_URL && SUPABASE_KEY) {
+        const supabase = supabaseModule.createClient(SUPABASE_URL, SUPABASE_KEY);
+        await handleStrategyCallback(ctx, tgSend, supabase, payload);
+        return;
+      }
+    }
+
     const resolved = resolveCallbackPrefixedCommandText(prefix, payload);
     if (resolved) {
       await routeMessage(resolved, ctx, tgSend);

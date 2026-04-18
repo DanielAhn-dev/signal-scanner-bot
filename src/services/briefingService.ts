@@ -513,6 +513,19 @@ export async function createBriefingReport(
     }
   }
 
+  let riskSignalSection = "";
+  try {
+    const { calculateRiskSignals } = await import("./riskSignalService");
+    const riskSignals = await calculateRiskSignals(supabase, marketData as any, { chatId: options?.chatId });
+    riskSignalSection = `\n${riskSignals.html_brief}\n`;
+    if (riskSignals.signal_count > 0) {
+      riskSignalSection += riskSignals.strategy_options + "\n";
+    }
+  } catch (error) {
+    console.error("[briefingService] Error calculating risk signals:", error);
+  }
+  report += riskSignalSection;
+
   report += `\n<b>주도 테마 Top 3</b>\n`;
   report += sectorReports.join("\n\n");
 

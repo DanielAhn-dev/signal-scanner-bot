@@ -27,6 +27,7 @@ import {
   handleEtfInfoCommand,
 } from "./commands/etf";
 import { handleAutoCycleCommand } from "./commands/autoCycle";
+import { handleStrategySelect } from "./commands/strategySelect";
 import {
   handleWatchlistCommand,
   handleWatchOnlyCommand,
@@ -106,6 +107,7 @@ const CMD = {
   ETFTHEME:    /^\/(etftheme)(?:\s+(.+))?$/i,
   ETFINFO:     /^\/(etfinfo)(?:\s+(.+))?$/i,
   ETFDIV:      /^\/(etfdiv)(?:\s+(.+))?$/i,
+  STRATEGY_SELECT: /^\/(전략선택|strategy)$/i,
 };
 
 const SEND_ERR = (cmd: string) =>
@@ -231,6 +233,19 @@ export async function routeMessage(
       chat_id: ctx.chatId,
       text: KO_MESSAGES.HELP,
     });
+    return;
+  }
+
+  // /전략선택 — 위험 대응 전략 선택
+  if (CMD.STRATEGY_SELECT.test(t)) {
+    try {
+      await handleStrategySelect(ctx, tgSend);
+    } catch (e) {
+      await tgSend("sendMessage", {
+        chat_id: ctx.chatId,
+        text: SEND_ERR("전략 선택"),
+      });
+    }
     return;
   }
 

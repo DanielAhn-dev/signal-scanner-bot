@@ -94,6 +94,32 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     console.log(`브리핑 발송 완료: 성공 ${sent}명, 실패 ${failed}명`);
+
+    // 리스크 신호 계산 및 저장
+    try {
+      const { calculateRiskSignals } = await import("../../src/services/riskSignalService");
+      const { fetchAllMarketData } = await import("../../src/utils/fetchMarketData");
+      
+      const marketOverview = await fetchAllMarketData();
+      const riskSignals = await calculateRiskSignals(supabase, marketOverview as any);
+      const today = new Date().toISOString().split("T")[0];
+      
+      const { error: upsertError } = await supabase.from("risk_signals").upsert({
+        signal_date: today,
+        risk_level: riskSignals.risk_level,
+        signal_count: riskSignals.signal_count,
+        factors: riskSignals.factors,
+      });
+      
+      if (upsertError) {
+        console.warn("[briefing-cron] 리스크 신호 저장 실패:", upsertError);
+      } else {
+        console.log(`[briefing-cron] 리스크 신호 저장 완료: ${riskSignals.risk_level} (신호 ${riskSignals.signal_count}개)`);
+      }
+    } catch (error) {
+      console.warn("[briefing-cron] 리스크 신호 계산 중 오류:", error);
+    }
+
     return res.status(200).json({ success: true, sent, failed });
   } catch (error: any) {
     console.error("Briefing Error:", error);

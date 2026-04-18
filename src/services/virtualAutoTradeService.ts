@@ -26,6 +26,7 @@ type AutoTradeSettingRow = {
   stop_loss_pct: number;
   last_monday_buy_at?: string | null;
   last_daily_review_at?: string | null;
+  selected_strategy?: string | null;
 };
 
 const AUTO_TRADE_STRATEGY_ID = "core.autotrade.v1";
@@ -295,8 +296,12 @@ async function runMondayBuyForUser(payload: {
 
   const activeCount = heldCodes.size;
   const maxPositions = toPositiveInt(payload.setting.max_positions, 10);
-  const buySlots = toPositiveInt(payload.setting.monday_buy_slots, 2);
-  const remainSlots = Math.max(0, Math.min(buySlots, maxPositions - activeCount));
+  let remainSlots = Math.max(0, Math.min(toPositiveInt(payload.setting.monday_buy_slots, 2), maxPositions - activeCount));
+
+  // 선택된 전략에 따라 신규 매수 중단
+  if (["HOLD_SAFE", "WAIT_AND_DIP_BUY"].includes(payload.setting.selected_strategy ?? "")) {
+    remainSlots = 0;
+  }
 
   if (remainSlots <= 0) {
     summary.skipped += 1;
@@ -307,7 +312,7 @@ async function runMondayBuyForUser(payload: {
       chatId,
       actionType: "SKIP",
       reason: "no-buy-slots",
-      detail: { activeCount, maxPositions, buySlots },
+      detail: { activeCount, maxPositions, remainSlots },
     });
     return summary;
   }
@@ -457,6 +462,17 @@ async function runDailyReviewForUser(payload: {
     notes: [],
   };
 
+  // 적용된 전략 기록
+  const selectedStrategy = payload.setting.selected_strategy;
+  if (selectedStrategy) {
+    const strategyLabels: Record<string, string> = {
+      HOLD_SAFE: "안전 포지셀",
+      REDUCE_TIGHT: "타이트 손절",
+      WAIT_AND_DIP_BUY: "매수 기회 대기",
+    };
+    summary.notes.push(`전략: ${strategyLabels[selectedStrategy] || selectedStrategy}`);
+  }
+
   const { data: holdingsData, error: holdingsError } = await payload.supabase
     .from(PORTFOLIO_TABLES.positionsLegacy)
     .select("id, code, buy_price, buy_date, created_at, quantity, invested_amount, status")
@@ -506,8 +522,14 @@ async function runDailyReviewForUser(payload: {
   const prefs = await getUserInvestmentPrefs(chatId);
   const feeRate = toNumber(prefs.virtual_fee_rate, 0.00015);
   const taxRate = toNumber(prefs.virtual_tax_rate, 0.0018);
-  const stopLossPct = Math.abs(toNumber(payload.setting.stop_loss_pct, 4));
-  const takeProfitPct = Math.abs(toNumber(payload.setting.take_profit_pct, 8));
+  let stopLossPct = Math.abs(toNumber(payload.setting.stop_loss_pct, 4));
+  let takeProfitPct = Math.abs(toNumber(payload.setting.take_profit_pct, 8));
+
+  // 선택된 전략에 따라 손절/익절 조정
+  if (selectedStrategy === "REDUCE_TIGHT") {
+    stopLossPct = 2;
+    takeProfitPct = 4;
+  }
 
   let realizedDelta = 0;
   let availableCash = Math.max(
@@ -691,7 +713,12 @@ async function runDailyReviewForUser(payload: {
     const room = Math.max(0, maxPositions - currentCount);
     // 기존 monday_buy_slots를 회차당 신규매수 상한으로 재사용한다.
     const maxNewBuysPerRun = toPositiveInt(payload.setting.monday_buy_slots, 2);
-    const buySlots = Math.min(room, maxNewBuysPerRun);
+    let buySlots = Math.min(room, maxNewBuysPerRun);
+
+    // 선택된 전략에 따라 신규 매수 중단
+    if (["HOLD_SAFE", "WAIT_AND_DIP_BUY"].includes(payload.setting.selected_strategy ?? "")) {
+      buySlots = 0;
+    }
 
     if (buySlots > 0 && availableCash > 0) {
       const candidates = await selectMondayCandidates({
