@@ -225,6 +225,7 @@
   - 거래 메모 표준화 유틸 추가: `strategy=...;event=...;note=...`
   - 수동/자동 가상매매 로그에 전략 태그 삽입(`core.plan.v1`, `core.autotrade.v1`)
   - 전략별 라이브 리더보드 스크립트 추가: `pnpm report:strategy-live -- --days 120 --top 10 [--chatId 123456]`
+  - 1회 실실행 스크립트 추가: `pnpm autotrade:run -- --mode=auto --maxUsers=20`
 - **다음 작업**:
   - 리더보드 지표를 `/리포트 월간`에 요약 노출 (상위 전략, PF, MDD)
   - 승격 규칙 초안: 최근 30거래 매도 기준 PF ≥ 1.2, MDD 한도 이내, 규칙 준수율 85%+
