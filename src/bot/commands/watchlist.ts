@@ -1411,6 +1411,107 @@ export async function handleWatchlistRemove(
   });
 }
 
+// ─── /전체매도 [확인] (보유 포지션 일괄 정리) ───
+export async function handleWatchlistLiquidateAllCommand(
+  input: string,
+  ctx: ChatContext,
+  tgSend: any
+): Promise<void> {
+  const token = String(input || "").trim().toLowerCase();
+  const confirmed = ["확인", "yes", "y", "run", "실행"].includes(token);
+
+  if (!confirmed) {
+    return tgSend("sendMessage", {
+      chat_id: ctx.chatId,
+      text: [
+        "<b>전체매도 안내</b>",
+        LINE,
+        "보유 포트폴리오(가상매수 체결 종목)만 전량 매도합니다.",
+        "관심만 등록된 미체결 종목은 유지됩니다.",
+        "",
+        "실행: <code>/전체매도 확인</code>",
+      ].join("\n"),
+      parse_mode: "HTML",
+    });
+  }
+
+  const { data: rows, error } = await supabaseRead
+    .from("watchlist")
+    .select("code, quantity, buy_price, stock:stocks!inner(name)")
+    .eq("chat_id", ctx.chatId)
+    .order("created_at", { ascending: true });
+
+  if (error) {
+    console.error("watchlist liquidate-all query error:", error);
+    return tgSend("sendMessage", {
+      chat_id: ctx.chatId,
+      text: "전체매도 조회 중 오류가 발생했습니다.",
+    });
+  }
+
+  const holdings = (rows ?? [])
+    .map((row: any) => ({
+      code: String(row.code ?? ""),
+      quantity: Math.max(0, Math.floor(Number(row.quantity ?? 0))),
+      buyPrice: Number(row.buy_price ?? 0),
+      name: String((Array.isArray(row.stock) ? row.stock[0] : row.stock)?.name ?? row.code ?? ""),
+    }))
+    .filter((row) => row.code && row.quantity > 0 && row.buyPrice > 0);
+
+  if (!holdings.length) {
+    return tgSend("sendMessage", {
+      chat_id: ctx.chatId,
+      text: "전량 매도할 보유 포지션이 없습니다.\n/관심 은 유지되고 /보유 만 비어 있는 상태입니다.",
+    });
+  }
+
+  await tgSend("sendMessage", {
+    chat_id: ctx.chatId,
+    text: `<b>전체매도 실행</b>\n${LINE}\n대상 ${holdings.length}종목 전량 매도 처리 시작`,
+    parse_mode: "HTML",
+  });
+
+  let success = 0;
+  let failed = 0;
+  const failedCodes: string[] = [];
+
+  for (const holding of holdings) {
+    try {
+      await handleWatchlistRemove(
+        `${holding.code} ${holding.quantity}`,
+        ctx,
+        tgSend,
+        {
+          sellMemo: "watchlist-liquidation-all (수동일괄)",
+        }
+      );
+      success += 1;
+    } catch (e) {
+      failed += 1;
+      failedCodes.push(holding.code);
+      console.error("watchlist liquidate-all sell error:", holding.code, e);
+    }
+  }
+
+  await tgSend("sendMessage", {
+    chat_id: ctx.chatId,
+    text: [
+      "<b>전체매도 완료</b>",
+      LINE,
+      `성공 ${success}건 · 실패 ${failed}건`,
+      failedCodes.length ? `실패 종목: ${failedCodes.join(", ")}` : "",
+      "",
+      "다음 권장 순서",
+      "1) /거래기록 7 로 실현손익 확인",
+      "2) /보유 로 잔여 포지션 확인",
+      "3) /자동사이클 실행 daily 로 새 기준 시작",
+    ]
+      .filter(Boolean)
+      .join("\n"),
+    parse_mode: "HTML",
+  });
+}
+
 // ─── /자동매도점검 (기계적 자동 판정·기록) ───
 export async function handleWatchlistAutoCommand(
   ctx: ChatContext,

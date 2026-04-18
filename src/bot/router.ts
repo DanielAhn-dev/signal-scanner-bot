@@ -39,6 +39,7 @@ import {
   handleWatchlistAutoCommand,
   handleWatchlistResponseCommand,
   handleWatchlistHistoryCommand,
+  handleWatchlistLiquidateAllCommand,
 } from "./commands/watchlist";
 import { handleProfileCommand } from "./commands/profile";
 import { handleRankingCommand } from "./commands/ranking";
@@ -84,6 +85,7 @@ const CMD = {
   WATCHAUTO:   /^\/(autosellcheck|자동매도점검)$/i,
   WATCHRESP:   /^\/(holdingplan|보유대응|관심대응)$/i,
   RECORD:      /^\/(tradelog|거래기록)(?:\s+(.+))?$/i,
+  LIQUIDATEALL:/^\/(liquidateall|전체매도)(?:\s+(.+))?$/i,
   ALERT:       /^\/(alert|이상징후|알림)$/i,
   WATCHLIST:   /^\/(holdings|보유)$/i,
   AUTOCYCLE:   /^\/(autocycle|자동사이클)(?:\s+(.+))?$/i,
@@ -388,6 +390,12 @@ export async function routeMessage(
   const mrecord = t.match(CMD.RECORD);
   if (mrecord) {
     await handleWatchlistHistoryCommand(mrecord[2] ?? "", ctx, tgSend);
+    return;
+  }
+
+  const mLiquidateAll = t.match(CMD.LIQUIDATEALL);
+  if (mLiquidateAll) {
+    await handleWatchlistLiquidateAllCommand(mLiquidateAll[2] ?? "", ctx, tgSend);
     return;
   }
 
