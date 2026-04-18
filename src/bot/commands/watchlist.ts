@@ -11,6 +11,7 @@ import {
 } from "../../utils/fetchRealtimePrice";
 import { buildInvestmentPlan } from "../../lib/investPlan";
 import { scaleScoreFactorsToReferencePrice } from "../../lib/priceScale";
+import { buildStrategyMemo } from "../../lib/strategyMemo";
 import {
   fetchWatchMicroSignalsByCodes,
   resolveWatchDecision,
@@ -47,6 +48,7 @@ const MAX_ITEMS = 20; // 사용자당 최대 관심종목 수
 const DEFAULT_TARGET_POSITIONS = 10;
 const DEFAULT_FEE_RATE = 0.00015;
 const DEFAULT_TAX_RATE = 0.0018;
+const CORE_PLAN_STRATEGY_ID = "core.plan.v1";
 
 const supabase = createClient(
   process.env.SUPABASE_URL!,
@@ -1104,7 +1106,11 @@ export async function handleWatchlistAdd(
       quantity,
       grossAmount: investedAmount,
       netAmount: investedAmount,
-      memo: "watchlist-add",
+      memo: buildStrategyMemo({
+        strategyId: CORE_PLAN_STRATEGY_ID,
+        event: "manual-buy",
+        note: "watchlist-add",
+      }),
     });
     tradeLogId = tradeLog.id ?? null;
   }
@@ -1335,9 +1341,13 @@ export async function handleWatchlistRemove(
       feeAmount,
       taxAmount,
       pnlAmount: pnl,
-      memo:
-        options?.sellMemo ??
-        (isFullExit ? "watchlist-full-exit" : "watchlist-partial-exit"),
+      memo: buildStrategyMemo({
+        strategyId: CORE_PLAN_STRATEGY_ID,
+        event: isFullExit ? "manual-full-exit" : "manual-partial-exit",
+        note:
+          options?.sellMemo ??
+          (isFullExit ? "watchlist-full-exit" : "watchlist-partial-exit"),
+      }),
     });
 
     try {

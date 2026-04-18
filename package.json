@@ -19,6 +19,7 @@
     "set:commands": "tsx scripts/ops/set_commands.ts",
     "autotrade:dry-run": "tsx scripts/ops/virtual_autotrade_dry_run.ts",
     "autotrade:enable": "tsx scripts/ops/virtual_autotrade_enable.ts",
+    "report:strategy-live": "tsx scripts/strategy_leaderboard.ts",
     "setWebhook": "node scripts/ops/setWebhook.mjs https://signal-scanner-bot.vercel.app/api/telegram",
     "backtest:market-picks": "tsx scripts/backtest_market_picks.ts",
     "prepare": "husky"

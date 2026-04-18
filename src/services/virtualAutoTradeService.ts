@@ -10,6 +10,7 @@ import {
   setUserInvestmentPrefs,
 } from "./userService";
 import { syncVirtualPortfolio } from "./portfolioService";
+import { buildStrategyMemo } from "../lib/strategyMemo";
 
 type RunMode = "auto" | "monday" | "daily";
 type RunType = "MONDAY_BUY" | "DAILY_REVIEW" | "MANUAL";
@@ -26,6 +27,8 @@ type AutoTradeSettingRow = {
   last_monday_buy_at?: string | null;
   last_daily_review_at?: string | null;
 };
+
+const AUTO_TRADE_STRATEGY_ID = "core.autotrade.v1";
 
 export type AutoTradeRunMode = RunMode;
 
@@ -380,7 +383,11 @@ async function runMondayBuyForUser(payload: {
         quantity: 1,
         grossAmount: Math.round(candidate.close),
         netAmount: Math.round(candidate.close),
-        memo: "autotrade-monday-buy",
+        memo: buildStrategyMemo({
+          strategyId: AUTO_TRADE_STRATEGY_ID,
+          event: "monday-buy",
+          note: "autotrade-monday-buy",
+        }),
       });
 
       const positionId = Number((upserted as Record<string, unknown> | null)?.id ?? 0) || null;
@@ -603,7 +610,11 @@ async function runDailyReviewForUser(payload: {
         feeAmount,
         taxAmount,
         pnlAmount: pnl,
-        memo: shouldTakeProfit ? "autotrade-take-profit" : "autotrade-stop-loss",
+        memo: buildStrategyMemo({
+          strategyId: AUTO_TRADE_STRATEGY_ID,
+          event: shouldTakeProfit ? "daily-take-profit" : "daily-stop-loss",
+          note: shouldTakeProfit ? "autotrade-take-profit" : "autotrade-stop-loss",
+        }),
       });
 
       const { error: deleteError } = await payload.supabase
@@ -768,7 +779,11 @@ async function runDailyReviewForUser(payload: {
             quantity: qty,
             grossAmount: investedAmount,
             netAmount: investedAmount,
-            memo: "autotrade-rebalance-buy",
+            memo: buildStrategyMemo({
+              strategyId: AUTO_TRADE_STRATEGY_ID,
+              event: "rebalance-buy",
+              note: "autotrade-rebalance-buy",
+            }),
           });
 
           const positionId = Number((upserted as Record<string, unknown> | null)?.id ?? 0) || null;

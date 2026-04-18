@@ -219,9 +219,16 @@
 - **검증**: `pnpm test` 통과, `pnpm build` 통과
 - **파일**: `src/bot/commands/watchlist.ts`
 
-#### ⬜ 6-2. 백테스트 성과지표 확장 (다음)
-- **목표**: 전략 신뢰도를 수치(CAGR, MDD, 승률, 평균손익비, 기대값, 샤프)로 검증
-- **예정 파일**: `scripts/backtest_market_picks.ts`
+#### 🔄 6-2. 라이브 전략 성과 집계 기반 확장 (진행)
+- **목표**: 과거 백테스트와 별개로 라이브 거래를 전략 단위로 기록/비교해 승격·중단 기준을 만든다.
+- **현황(2026-04-18)**:
+  - 거래 메모 표준화 유틸 추가: `strategy=...;event=...;note=...`
+  - 수동/자동 가상매매 로그에 전략 태그 삽입(`core.plan.v1`, `core.autotrade.v1`)
+  - 전략별 라이브 리더보드 스크립트 추가: `pnpm report:strategy-live -- --days 120 --top 10 [--chatId 123456]`
+- **다음 작업**:
+  - 리더보드 지표를 `/리포트 월간`에 요약 노출 (상위 전략, PF, MDD)
+  - 승격 규칙 초안: 최근 30거래 매도 기준 PF ≥ 1.2, MDD 한도 이내, 규칙 준수율 85%+
+- **관련 파일**: `src/lib/strategyMemo.ts`, `src/bot/commands/watchlist.ts`, `src/services/virtualAutoTradeService.ts`, `scripts/strategy_leaderboard.ts`
 
 #### ⬜ 6-3. 포지션 사이징 자동화 (다음)
 - **목표**: conviction·변동성·리스크 한도로 매수 수량 자동 산출
