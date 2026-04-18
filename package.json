@@ -9,6 +9,8 @@
     "local": "vercel dev",
     "build": "tsc --noEmit",
     "test": "tsx --test tests/**/*.test.ts",
+    "docs:guide:pdf": "tsx scripts/export_markdown_pdf.ts --input docs/user-operating-guide.md --output docs/generated/user-operating-guide.pdf --title \"Signal Scanner Bot 운영 가이드\"",
+    "docs:guide:pdf:check": "tsx scripts/export_markdown_pdf.ts --input docs/user-operating-guide.md --output docs/generated/user-operating-guide.pdf --title \"Signal Scanner Bot 운영 가이드\" --check",
     "verify:fundamental-parser": "tsx scripts/verify_fundamental_parser.ts",
     "audit:fundamental-live": "tsx scripts/audit_fundamental_live.ts",
     "verify:vercel": "pnpm build",

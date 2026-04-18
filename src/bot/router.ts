@@ -64,6 +64,7 @@ const CMD = {
   HELP:        /^\/(help|도움말)$/i,
   BRIEF:       /^\/(brief|morning|브리핑|장전)$/i,
   REPORT:      /^\/(report|리포트)(?:\s+(.+))?$/i,
+  GUIDEPDF:    /^\/(guidepdf|가이드pdf|운영가이드pdf)$/i,
   TRADE:       /^\/(analyze|종목분석)\s+(.+)$/i,
   SECTOR:      /^\/(sector|섹터|업종|테마)$/i,
   STOCKS:      /^\/(stocks|종목)\s+(.+)$/i,
@@ -207,6 +208,18 @@ export async function routeMessage(
       await tgSend("sendMessage", {
         chat_id: ctx.chatId,
         text: SEND_ERR("리포트"),
+      });
+    }
+    return;
+  }
+
+  if (CMD.GUIDEPDF.test(t)) {
+    try {
+      await handleReportCommand(ctx, tgSend, "가이드");
+    } catch (e) {
+      await tgSend("sendMessage", {
+        chat_id: ctx.chatId,
+        text: SEND_ERR("가이드 PDF"),
       });
     }
     return;

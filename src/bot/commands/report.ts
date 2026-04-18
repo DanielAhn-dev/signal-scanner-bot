@@ -1,5 +1,7 @@
 import type { ChatContext } from "../router";
 import { createClient } from "@supabase/supabase-js";
+import { readFile } from "node:fs/promises";
+import path from "node:path";
 import {
   createWeeklyReportPdf,
   describeWeeklyReportFailure,
@@ -15,7 +17,9 @@ import { ACTIONS, actionButtons } from "../messages/layout";
 const REPORT_TOPIC_GUIDE = [
   { command: "주간", aliases: ["주간", "종합", "전체", "full", "weekly"], description: "시장과 포트폴리오를 함께 보는 종합 PDF" },
   { command: "월간", aliases: ["월간", "monthly", "month"], description: "월별 성과 요약 텍스트" },
+  { command: "가이드", aliases: ["가이드", "운영가이드", "guide", "guidepdf"], description: "운영 가이드 PDF" },
   { command: "포트폴리오", aliases: ["포트폴리오", "보유", "holdings", "portfolio"], description: "보유 종목과 최근 거래 중심 PDF" },
+  { command: "관심종목", aliases: ["관심종목", "관심", "watchonly", "watch"], description: "수익 추적 중인 관심 종목 목록 PDF" },
   { command: "거시", aliases: ["거시", "경제", "매크로", "economy", "macro"], description: "금리·환율·변동성 중심 PDF" },
   { command: "수급", aliases: ["수급", "자금", "flow"], description: "외국인·기관 자금 흐름 PDF" },
   { command: "섹터", aliases: ["섹터", "업종", "테마", "sector"], description: "섹터 강도 랭킹 PDF" },
@@ -38,7 +42,9 @@ function buildReportMenuText(): string {
     "/리포트 는 이 메뉴를 다시 보여줍니다.",
     "/리포트 주간 — 시장 + 포트폴리오 종합 PDF",
     "/리포트 월간 — 월별 성과 요약 텍스트",
+    "/리포트 가이드 — 기능 활용 운영 가이드 PDF",
     "/리포트 포트폴리오 — 보유 종목/거래 중심 PDF",
+    "/리포트 관심종목 — 관심 추적 종목 목록 PDF",
     "/리포트 거시 — 금리·환율·변동성 PDF",
     "/리포트 수급 — 외국인·기관 자금 흐름 PDF",
     "/리포트 섹터 — 섹터 강도 랭킹 PDF",
@@ -212,6 +218,57 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 );
 
+async function handleGuidePdfCommand(ctx: ChatContext, tgSend: any): Promise<void> {
+  const guidePdfPath = path.join(process.cwd(), "docs", "generated", "user-operating-guide.pdf");
+
+  await tgSend("sendMessage", {
+    chat_id: ctx.chatId,
+    text: "운영 가이드 PDF를 준비 중입니다. 잠시만 기다려주세요...",
+  });
+
+  try {
+    const bytes = await readFile(guidePdfPath);
+    const nowKst = new Date().toLocaleString("ko-KR", { timeZone: "Asia/Seoul", hour12: false });
+    const caption = [
+      "Signal Scanner Bot 운영 가이드",
+      `기준 문서: docs/user-operating-guide.md`,
+      `전송 시각: ${nowKst} KST`,
+      "문서 수정 후 /리포트 가이드 로 최신본을 다시 확인하세요.",
+    ].join("\n");
+
+    const form = new FormData();
+    form.set("chat_id", String(ctx.chatId));
+    form.set("caption", caption);
+    form.set("disable_content_type_detection", "true");
+    form.set("document", new Blob([bytes], { type: "application/pdf" }), "user-operating-guide.pdf");
+
+    const sendResult = await tgSend("sendDocument", form);
+    if (!sendResult?.ok) {
+      const sendError = sendResult?.description || "Telegram sendDocument failed";
+      throw new Error(sendError);
+    }
+
+    await tgSend("sendMessage", {
+      chat_id: ctx.chatId,
+      text: [
+        "운영 가이드 PDF를 보냈습니다.",
+        "핵심 흐름: /경제 → /시장 → /브리핑 → /스캔 → /종목분석",
+      ].join("\n"),
+      reply_markup: actionButtons(ACTIONS.reportMenu, 2),
+    });
+  } catch (e: any) {
+    const detail = e instanceof Error ? e.message : String(e);
+    await tgSend("sendMessage", {
+      chat_id: ctx.chatId,
+      text: [
+        "운영 가이드 PDF 전송에 실패했습니다.",
+        `원인: ${detail}`,
+        "운영팀은 `pnpm docs:guide:pdf` 실행 후 다시 시도해주세요.",
+      ].join("\n"),
+    });
+  }
+}
+
 export async function handleReportMenu(
   ctx: ChatContext,
   tgSend: any
@@ -251,6 +308,11 @@ export async function handleReportCommand(
 
   if (normalizedTopic === "월간") {
     await handleMonthlyReportCommand(ctx, tgSend);
+    return;
+  }
+
+  if (normalizedTopic === "가이드") {
+    await handleGuidePdfCommand(ctx, tgSend);
     return;
   }
 

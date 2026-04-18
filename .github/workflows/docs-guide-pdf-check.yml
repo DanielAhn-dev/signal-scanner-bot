@@ -1,0 +1,48 @@
+name: Docs Guide PDF Check
+
+on:
+  pull_request:
+    paths:
+      - docs/user-operating-guide.md
+      - docs/generated/user-operating-guide.pdf
+      - scripts/export_markdown_pdf.ts
+      - package.json
+      - pnpm-lock.yaml
+      - assets/fonts/**
+  push:
+    branches:
+      - main
+    paths:
+      - docs/user-operating-guide.md
+      - docs/generated/user-operating-guide.pdf
+      - scripts/export_markdown_pdf.ts
+      - package.json
+      - pnpm-lock.yaml
+      - assets/fonts/**
+  workflow_dispatch:
+
+jobs:
+  check-guide-pdf:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Verify guide PDF is up to date
+        run: pnpm docs:guide:pdf:check

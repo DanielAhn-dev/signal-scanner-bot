@@ -41,6 +41,7 @@ export const ACTIONS = {
   reportMenu: [
     { text: "주간", callback_data: "cmd:report:full" },
     { text: "월간", callback_data: "cmd:report:monthly" },
+    { text: "가이드", callback_data: "cmd:report:guide" },
     { text: "포트폴리오", callback_data: "cmd:report:portfolio" },
     { text: "거시", callback_data: "cmd:report:economy" },
     { text: "수급", callback_data: "cmd:report:flow" },
