@@ -32,6 +32,7 @@ import {
   handleWatchOnlyCommand,
   handleWatchOnlyAdd,
   handleWatchOnlyRemove,
+  handleWatchOnlyReset,
   handleWatchOnlyResponseCommand,
   handleWatchlistAdd,
   handleWatchlistRemove,
@@ -78,6 +79,7 @@ const CMD = {
   WATCHONLYLIST: /^\/(watchlist|관심)$/i,
   WATCHONLYADD:  /^\/(watchadd|관심추가)(?:\s+(.+))?$/i,
   WATCHONLYREMOVE:/^\/(watchremove|관심제거)(?:\s+(.+))?$/i,
+  WATCHONLYRESET:/^\/(watchreset|관심초기화)(?:\s+(.+))?$/i,
   WATCHONLYRESP: /^\/(watchplan|관심대응)$/i,
   WATCHADD:    /^\/(paperbuy|가상매수)(?:\s+(.+))?$/i,
   WATCHREMOVE: /^\/(papersell|가상매도)(?:\s+(.+))?$/i,
@@ -361,6 +363,12 @@ export async function routeMessage(
   const mwatchRemove = t.match(CMD.WATCHONLYREMOVE);
   if (mwatchRemove) {
     await handleWatchOnlyRemove(mwatchRemove[2] ?? "", ctx, tgSend);
+    return;
+  }
+
+  const mwatchReset = t.match(CMD.WATCHONLYRESET);
+  if (mwatchReset) {
+    await handleWatchOnlyReset(mwatchReset[2] ?? "", ctx, tgSend);
     return;
   }
 

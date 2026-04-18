@@ -680,6 +680,85 @@ export async function handleWatchOnlyRemove(
   });
 }
 
+export async function handleWatchOnlyReset(
+  input: string,
+  ctx: ChatContext,
+  tgSend: any
+): Promise<void> {
+  const token = String(input || "").trim().toLowerCase();
+  const confirmed = ["확인", "yes", "y", "run", "실행"].includes(token);
+
+  const { items: allItems, error } = await fetchWatchlistRows(ctx.chatId);
+  if (error) {
+    console.error("watch-only reset query error:", error);
+    return tgSend("sendMessage", {
+      chat_id: ctx.chatId,
+      text: "관심 초기화 조회 중 오류가 발생했습니다.",
+    });
+  }
+
+  const watchOnlyItems = allItems.filter(isWatchOnlyItem);
+  if (!watchOnlyItems.length) {
+    return tgSend("sendMessage", {
+      chat_id: ctx.chatId,
+      text: "초기화할 관심 종목이 없습니다.\n/관심 으로 현재 상태를 확인해주세요.",
+    });
+  }
+
+  if (!confirmed) {
+    return tgSend("sendMessage", {
+      chat_id: ctx.chatId,
+      text: [
+        "<b>관심 초기화 안내</b>",
+        LINE,
+        `현재 관심-only ${watchOnlyItems.length}종목을 한 번에 삭제합니다.`,
+        "가상 보유 포지션(/보유)은 삭제되지 않습니다.",
+        "",
+        "실행: <code>/관심초기화 확인</code>",
+      ].join("\n"),
+      parse_mode: "HTML",
+    });
+  }
+
+  const deleteIds = watchOnlyItems
+    .map((item: any) => Number(item.id ?? 0))
+    .filter((id) => Number.isFinite(id) && id > 0);
+
+  if (!deleteIds.length) {
+    return tgSend("sendMessage", {
+      chat_id: ctx.chatId,
+      text: "초기화 대상 식별에 실패했습니다. 잠시 후 다시 시도해주세요.",
+    });
+  }
+
+  const { error: deleteError, count } = await supabase
+    .from("watchlist")
+    .delete({ count: "exact" })
+    .eq("chat_id", ctx.chatId)
+    .in("id", deleteIds);
+
+  if (deleteError) {
+    console.error("watch-only reset delete error:", deleteError);
+    return tgSend("sendMessage", {
+      chat_id: ctx.chatId,
+      text: "관심 초기화 처리 중 오류가 발생했습니다.",
+    });
+  }
+
+  await tgSend("sendMessage", {
+    chat_id: ctx.chatId,
+    text: [
+      "<b>관심 초기화 완료</b>",
+      LINE,
+      `삭제 ${count ?? deleteIds.length}건`,
+      "보유 포지션은 유지되었습니다.",
+      "",
+      "다음: /관심추가 종목명 으로 새 후보를 다시 구성하세요.",
+    ].join("\n"),
+    parse_mode: "HTML",
+  });
+}
+
 export async function handleWatchOnlyResponseCommand(
   ctx: ChatContext,
   tgSend: any
