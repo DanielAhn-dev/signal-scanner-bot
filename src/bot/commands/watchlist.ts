@@ -686,7 +686,8 @@ export async function handleWatchOnlyReset(
   tgSend: any
 ): Promise<void> {
   const token = String(input || "").trim().toLowerCase();
-  const confirmed = ["확인", "yes", "y", "run", "실행"].includes(token);
+  const confirmedFull = ["전체확인", "fullreset", "all"].includes(token);
+  const confirmed = confirmedFull || ["확인", "yes", "y", "run", "실행"].includes(token);
 
   const { items: allItems, error } = await fetchWatchlistRows(ctx.chatId);
   if (error) {
@@ -698,7 +699,45 @@ export async function handleWatchOnlyReset(
   }
 
   const watchOnlyItems = allItems.filter(isWatchOnlyItem);
-  if (!watchOnlyItems.length) {
+  const holdingItems = allItems.filter((item: any) => !isWatchOnlyItem(item));
+
+  // 전체 초기화 (관심 + 보유 모두 삭제, 거래기록 미생성)
+  if (confirmedFull) {
+    if (!allItems.length) {
+      return tgSend("sendMessage", {
+        chat_id: ctx.chatId,
+        text: "관심/보유 목록이 이미 비어 있습니다.",
+      });
+    }
+
+    const { error: deleteError, count } = await supabase
+      .from("watchlist")
+      .delete({ count: "exact" })
+      .eq("chat_id", ctx.chatId);
+
+    if (deleteError) {
+      console.error("full reset delete error:", deleteError);
+      return tgSend("sendMessage", {
+        chat_id: ctx.chatId,
+        text: "전체 초기화 처리 중 오류가 발생했습니다.",
+      });
+    }
+
+    return tgSend("sendMessage", {
+      chat_id: ctx.chatId,
+      text: [
+        "<b>관심/보유 전체 초기화 완료</b>",
+        LINE,
+        `삭제 ${count ?? allItems.length}건 (관심 ${watchOnlyItems.length} + 보유 ${holdingItems.length})`,
+        "⚠️ 보유 포지션도 거래기록 없이 삭제되었습니다.",
+        "",
+        "다음: /관심추가 종목명 또는 /가상매수 종목명 으로 다시 구성하세요.",
+      ].join("\n"),
+      parse_mode: "HTML",
+    });
+  }
+
+  if (!watchOnlyItems.length && !holdingItems.length) {
     return tgSend("sendMessage", {
       chat_id: ctx.chatId,
       text: "초기화할 관심 종목이 없습니다.\n/관심 으로 현재 상태를 확인해주세요.",
@@ -706,16 +745,35 @@ export async function handleWatchOnlyReset(
   }
 
   if (!confirmed) {
+    const lines = [
+      "<b>관심 초기화 안내</b>",
+      LINE,
+      `현재 관심-only ${watchOnlyItems.length}종목을 한 번에 삭제합니다.`,
+      "가상 보유 포지션(/보유)은 삭제되지 않습니다.",
+      "",
+      "실행: <code>/관심초기화 확인</code>",
+    ];
+    if (holdingItems.length) {
+      lines.push("");
+      lines.push(`💡 보유 포지션(${holdingItems.length}종목)까지 모두 지우려면:`);
+      lines.push("<code>/관심초기화 전체확인</code>  ← 거래기록 없이 전체 삭제 (테스트용)");
+    }
+    return tgSend("sendMessage", {
+      chat_id: ctx.chatId,
+      text: lines.join("\n"),
+      parse_mode: "HTML",
+    });
+  }
+
+  if (!watchOnlyItems.length) {
     return tgSend("sendMessage", {
       chat_id: ctx.chatId,
       text: [
-        "<b>관심 초기화 안내</b>",
-        LINE,
-        `현재 관심-only ${watchOnlyItems.length}종목을 한 번에 삭제합니다.`,
-        "가상 보유 포지션(/보유)은 삭제되지 않습니다.",
-        "",
-        "실행: <code>/관심초기화 확인</code>",
-      ].join("\n"),
+        "삭제할 관심-only 종목이 없습니다.",
+        holdingItems.length
+          ? `보유 포지션 ${holdingItems.length}종목도 지우려면 <code>/관심초기화 전체확인</code>`
+          : "",
+      ].filter(Boolean).join("\n"),
       parse_mode: "HTML",
     });
   }
@@ -751,7 +809,9 @@ export async function handleWatchOnlyReset(
       "<b>관심 초기화 완료</b>",
       LINE,
       `삭제 ${count ?? deleteIds.length}건`,
-      "보유 포지션은 유지되었습니다.",
+      holdingItems.length
+        ? `보유 포지션 ${holdingItems.length}종목은 유지되었습니다.\n보유까지 전체 삭제: <code>/관심초기화 전체확인</code>`
+        : "보유 포지션은 유지되었습니다.",
       "",
       "다음: /관심추가 종목명 으로 새 후보를 다시 구성하세요.",
     ].join("\n"),
@@ -1232,7 +1292,7 @@ export async function handleWatchlistRemove(
   input: string,
   ctx: ChatContext,
   tgSend: any,
-  options?: { sellMemo?: string; silentSuccess?: boolean }
+  options?: { sellMemo?: string; silentSuccess?: boolean; resolvedStock?: { code: string; name: string } }
 ): Promise<void> {
   const raw = (input || "").trim();
   const tokens = raw.split(/\s+/).filter(Boolean);
@@ -1241,27 +1301,36 @@ export async function handleWatchlistRemove(
   const sellQtyRequested = hasQtyArg ? Math.floor(maybeQty) : null;
   const query = hasQtyArg ? tokens.slice(0, -1).join(" ") : raw;
 
-  if (!query) {
-    return tgSend("sendMessage", {
-      chat_id: ctx.chatId,
-      text: "사용법: /가상매도 종목명 [수량]\n예) /가상매도 삼성전자 3",
-    });
-  }
+  let code: string;
+  let name: string;
 
-  // 종목 검색
-  const hits = await searchByNameOrCode(query, 1);
-  if (!hits?.length) {
-    return tgSend("sendMessage", {
-      chat_id: ctx.chatId,
-      text: "종목을 찾을 수 없습니다.",
-    });
-  }
+  if (options?.resolvedStock) {
+    // /전체매도 등 강제 일괄 처리 경로: 검색 없이 미리 확인된 코드/이름 사용
+    code = options.resolvedStock.code;
+    name = options.resolvedStock.name;
+  } else {
+    if (!query) {
+      return tgSend("sendMessage", {
+        chat_id: ctx.chatId,
+        text: "사용법: /가상매도 종목명 [수량]\n예) /가상매도 삼성전자 3",
+      });
+    }
 
-  const { code, name } = hits[0];
+    // 종목 검색
+    const hits = await searchByNameOrCode(query, 1);
+    if (!hits?.length) {
+      return tgSend("sendMessage", {
+        chat_id: ctx.chatId,
+        text: "종목을 찾을 수 없습니다.",
+      });
+    }
+    code = hits[0].code;
+    name = hits[0].name;
+  }
 
   const { data: row, error: rowError } = await supabaseRead
     .from("watchlist")
-    .select("id, code, buy_price, buy_date, created_at, quantity, invested_amount, stock:stocks!inner(close)")
+    .select("id, code, buy_price, buy_date, created_at, quantity, invested_amount, stock:stocks(close)")
     .eq("chat_id", ctx.chatId)
     .eq("code", code)
     .maybeSingle();
@@ -1521,7 +1590,7 @@ export async function handleWatchlistLiquidateAllCommand(
 
   const { data: rows, error } = await supabaseRead
     .from("watchlist")
-    .select("code, quantity, buy_price, stock:stocks!inner(name)")
+    .select("code, quantity, buy_price, stock:stocks(name)")
     .eq("chat_id", ctx.chatId)
     .order("created_at", { ascending: true });
 
@@ -1575,6 +1644,7 @@ export async function handleWatchlistLiquidateAllCommand(
         {
           sellMemo: "watchlist-liquidation-all (수동일괄)",
           silentSuccess: true,
+          resolvedStock: { code: holding.code, name: holding.name },
         }
       );
     } catch (e) {
