@@ -1232,7 +1232,7 @@ export async function handleWatchlistRemove(
   input: string,
   ctx: ChatContext,
   tgSend: any,
-  options?: { sellMemo?: string }
+  options?: { sellMemo?: string; silentSuccess?: boolean }
 ): Promise<void> {
   const raw = (input || "").trim();
   const tokens = raw.split(/\s+/).filter(Boolean);
@@ -1467,14 +1467,17 @@ export async function handleWatchlistRemove(
       console.error("watchlist sell sync error:", syncError);
     }
 
-    const remainQtyNote = qty - sellQty;
-    return tgSend("sendMessage", {
-      chat_id: ctx.chatId,
-      text: isFullExit
-        ? `${esc(name)} (${code}) ${sellQty}주 가상 매도 완료 후 보유 포트폴리오에서 제거되었습니다.\n정산금 ${fmtInt(net)}원 · 실현손익 ${pnl >= 0 ? "+" : ""}${fmtInt(pnl)}원\n/거래기록 으로 가상 거래 내역 확인`
-        : `${esc(name)} (${code}) ${sellQty}주 부분 가상 매도 완료 (잔여 ${remainQtyNote}주)\n정산금 ${fmtInt(net)}원 · 실현손익 ${pnl >= 0 ? "+" : ""}${fmtInt(pnl)}원\n/보유 로 잔여 포지션 확인`,
-      parse_mode: "HTML",
-    });
+    if (!options?.silentSuccess) {
+      const remainQtyNote = qty - sellQty;
+      return tgSend("sendMessage", {
+        chat_id: ctx.chatId,
+        text: isFullExit
+          ? `${esc(name)} (${code}) ${sellQty}주 가상 매도 완료 후 보유 포트폴리오에서 제거되었습니다.\n정산금 ${fmtInt(net)}원 · 실현손익 ${pnl >= 0 ? "+" : ""}${fmtInt(pnl)}원\n/거래기록 으로 가상 거래 내역 확인`
+          : `${esc(name)} (${code}) ${sellQty}주 부분 가상 매도 완료 (잔여 ${remainQtyNote}주)\n정산금 ${fmtInt(net)}원 · 실현손익 ${pnl >= 0 ? "+" : ""}${fmtInt(pnl)}원\n/보유 로 잔여 포지션 확인`,
+        parse_mode: "HTML",
+      });
+    }
+    return;
   }
 
   try {
@@ -1483,11 +1486,13 @@ export async function handleWatchlistRemove(
     console.error("watchlist delete sync error:", syncError);
   }
 
-  await tgSend("sendMessage", {
-    chat_id: ctx.chatId,
-    text: `${esc(name)} (${code}) 보유 포트폴리오에서 제거 완료\n/보유 로 목록 확인\n/거래기록 으로 가상 거래 내역 확인`,
-    parse_mode: "HTML",
-  });
+  if (!options?.silentSuccess) {
+    await tgSend("sendMessage", {
+      chat_id: ctx.chatId,
+      text: `${esc(name)} (${code}) 보유 포트폴리오에서 제거 완료\n/보유 로 목록 확인\n/거래기록 으로 가상 거래 내역 확인`,
+      parse_mode: "HTML",
+    });
+  }
 }
 
 // ─── /전체매도 [확인] (보유 포지션 일괄 정리) ───
@@ -1528,7 +1533,8 @@ export async function handleWatchlistLiquidateAllCommand(
     });
   }
 
-  const holdings = (rows ?? [])
+  const allRows = (rows ?? []) as any[];
+  const holdings = allRows
     .map((row: any) => ({
       code: String(row.code ?? ""),
       quantity: Math.max(0, Math.floor(Number(row.quantity ?? 0))),
@@ -1544,15 +1550,21 @@ export async function handleWatchlistLiquidateAllCommand(
     });
   }
 
+  const watchOnlyCount = Math.max(0, allRows.length - holdings.length);
+  const liquidateStartedAt = new Date().toISOString();
+
   await tgSend("sendMessage", {
     chat_id: ctx.chatId,
-    text: `<b>전체매도 실행</b>\n${LINE}\n대상 ${holdings.length}종목 전량 매도 처리 시작`,
+    text: [
+      "<b>전체매도 실행</b>",
+      LINE,
+      `보유 전량 대상 ${holdings.length}종목 매도 처리 시작`,
+      watchOnlyCount > 0 ? `관심-only ${watchOnlyCount}종목은 유지` : "",
+    ]
+      .filter(Boolean)
+      .join("\n"),
     parse_mode: "HTML",
   });
-
-  let success = 0;
-  let failed = 0;
-  const failedCodes: string[] = [];
 
   for (const holding of holdings) {
     try {
@@ -1562,23 +1574,73 @@ export async function handleWatchlistLiquidateAllCommand(
         tgSend,
         {
           sellMemo: "watchlist-liquidation-all (수동일괄)",
+          silentSuccess: true,
         }
       );
-      success += 1;
     } catch (e) {
-      failed += 1;
-      failedCodes.push(holding.code);
       console.error("watchlist liquidate-all sell error:", holding.code, e);
     }
   }
+
+  const holdingMap = new Map(
+    holdings.map((h) => [h.code, h] as const)
+  );
+
+  const { data: soldRows, error: soldRowsError } = await supabaseRead
+    .from("virtual_trades")
+    .select("code, quantity, pnl_amount")
+    .eq("chat_id", ctx.chatId)
+    .eq("side", "SELL")
+    .gte("traded_at", liquidateStartedAt)
+    .like("memo", "%watchlist-liquidation-all%")
+    .order("traded_at", { ascending: true });
+
+  if (soldRowsError) {
+    console.error("watchlist liquidate-all verify query error:", soldRowsError);
+  }
+
+  const soldByCode = new Map<string, { quantity: number; pnl: number }>();
+  for (const row of soldRows ?? []) {
+    const code = String((row as any).code ?? "");
+    if (!code) continue;
+    const prev = soldByCode.get(code) ?? { quantity: 0, pnl: 0 };
+    soldByCode.set(code, {
+      quantity: prev.quantity + Math.max(0, Math.floor(Number((row as any).quantity ?? 0))),
+      pnl: prev.pnl + Number((row as any).pnl_amount ?? 0),
+    });
+  }
+
+  const success = soldByCode.size;
+  const failedHoldings = holdings.filter((h) => !soldByCode.has(h.code));
+  const failed = failedHoldings.length;
+  const totalPnl = Array.from(soldByCode.values()).reduce((acc, cur) => acc + cur.pnl, 0);
+  const resultLines = Array.from(soldByCode.entries())
+    .slice(0, 12)
+    .map(([code, sold]) => {
+      const base = holdingMap.get(code);
+      const name = base?.name ?? code;
+      const pnlSign = sold.pnl >= 0 ? "+" : "";
+      return `- ${esc(name)} (${code}) ${sold.quantity}주 · 실현 ${pnlSign}${fmtInt(sold.pnl)}원`;
+    });
+  const resultMore = soldByCode.size > resultLines.length
+    ? `외 ${soldByCode.size - resultLines.length}종목`
+    : "";
 
   await tgSend("sendMessage", {
     chat_id: ctx.chatId,
     text: [
       "<b>전체매도 완료</b>",
       LINE,
-      `성공 ${success}건 · 실패 ${failed}건`,
-      failedCodes.length ? `실패 종목: ${failedCodes.join(", ")}` : "",
+      `대상 ${holdings.length}종목 · 체결 ${success}종목 · 미체결 ${failed}종목`,
+      `일괄매도 실현손익 ${totalPnl >= 0 ? "+" : ""}${fmtInt(totalPnl)}원`,
+      watchOnlyCount > 0 ? `관심-only ${watchOnlyCount}종목은 유지` : "",
+      "",
+      resultLines.length ? "체결 내역" : "",
+      ...resultLines,
+      resultMore,
+      failedHoldings.length
+        ? `미체결 종목: ${failedHoldings.map((h) => `${h.name}(${h.code})`).join(", ")}`
+        : "",
       "",
       "다음 권장 순서",
       "1) /거래기록 7 로 실현손익 확인",
@@ -2207,7 +2269,7 @@ export async function handleWatchlistHistoryCommand(
 
   let query = supabaseRead
     .from("virtual_trades")
-    .select("id, code, side, price, quantity, gross_amount, net_amount, fee_amount, tax_amount, pnl_amount, memo, traded_at")
+    .select("id, code, side, price, quantity, gross_amount, net_amount, fee_amount, tax_amount, pnl_amount, memo, traded_at, stock:stocks(name)")
     .eq("chat_id", ctx.chatId)
     .order("traded_at", { ascending: false })
     .limit(30);
@@ -2277,7 +2339,9 @@ export async function handleWatchlistHistoryCommand(
     const side = sideValue === "SELL" ? "매도" : sideValue === "ADJUST" ? "수정" : "매수";
     const qty = Math.max(0, Math.floor(Number(r.quantity ?? 0)));
     const price = Number(r.price ?? 0);
-    const base = `${idx + 1}. (${d}) ${side} ${r.code} ${qty}주 @ ${fmtInt(price)}원`;
+    const stockName = String((Array.isArray((r as any).stock) ? (r as any).stock[0] : (r as any).stock)?.name ?? "").trim();
+    const codeLabel = stockName ? `${esc(stockName)} ${r.code}` : String(r.code ?? "");
+    const base = `${idx + 1}. (${d}) ${side} ${codeLabel} ${qty}주 @ ${fmtInt(price)}원`;
     const autoTag = String(r.memo ?? "").includes("(자동)") ? " (자동)" : "";
 
     if (sideValue === "ADJUST") {
@@ -2287,10 +2351,10 @@ export async function handleWatchlistHistoryCommand(
         const nextPrice = parsed.nextPrice ?? Number(r.price ?? 0);
         const prevQty = parsed.prevQty ?? Math.max(0, Math.floor(Number(r.quantity ?? 0)));
         const nextQty = parsed.nextQty ?? Math.max(0, Math.floor(Number(r.quantity ?? 0)));
-        return `${idx + 1}. (${d}) 수정 ${r.code}${autoTag}\n    매수가 ${fmtInt(prevPrice)}원 → ${fmtInt(nextPrice)}원 · 수량 ${prevQty}주 → ${nextQty}주`;
+        return `${idx + 1}. (${d}) 수정 ${codeLabel}${autoTag}\n    매수가 ${fmtInt(prevPrice)}원 → ${fmtInt(nextPrice)}원 · 수량 ${prevQty}주 → ${nextQty}주`;
       }
       const gross = Number(r.gross_amount ?? 0);
-      return `${idx + 1}. (${d}) 수정 ${r.code}${autoTag}\n    현재 기준 ${fmtInt(price)}원 · ${qty}주 · 보유원금 ${fmtInt(gross)}원`;
+      return `${idx + 1}. (${d}) 수정 ${codeLabel}${autoTag}\n    현재 기준 ${fmtInt(price)}원 · ${qty}주 · 보유원금 ${fmtInt(gross)}원`;
     }
 
     if (sideValue === "SELL") {
@@ -2309,6 +2373,8 @@ export async function handleWatchlistHistoryCommand(
   });
 
   const sellRows = rows.filter((r: any) => String(r.side) === "SELL");
+  const buyRows = rows.filter((r: any) => String(r.side) === "BUY");
+  const adjustRows = rows.filter((r: any) => String(r.side) === "ADJUST");
   const winCount = sellRows.filter((r: any) => Number(r.pnl_amount ?? 0) > 0).length;
   const loseCount = sellRows.filter((r: any) => Number(r.pnl_amount ?? 0) < 0).length;
   const totalSell = sellRows.length;
@@ -2318,6 +2384,7 @@ export async function handleWatchlistHistoryCommand(
     "<b>가상 매매 기록</b>",
     LINE,
     maxDays ? `조회 기간 최근 ${maxDays}일` : "조회 기간 전체",
+    `기록 합계 ${rows.length}건 (매수 ${buyRows.length} · 매도 ${totalSell} · 수정 ${adjustRows.length})`,
     "매도 손익은 FIFO 기준으로 계산됩니다.",
     "",
     ...lines,
