@@ -240,6 +240,13 @@ curl -H "Authorization: Bearer $CRON_SECRET" "https://signal-scanner-bot.vercel.
 2. 자동화 결과는 `/보유`, `/거래기록`, `/리포트 포트폴리오`로 다시 점검합니다.
 3. 자동화를 켰더라도 `/경제`, `/시장` 단계는 사람이 계속 봐야 합니다.
 
+### 실전 운용 요약 (월~금)
+
+1. 월요일 개장 전에는 `/자동사이클 테스트 monday`로 점검만 하고, 실집행은 개장 후 1회로 제한합니다.
+2. 화요일부터 금요일까지는 `/자동사이클 실행` 또는 `/자동사이클 실행 daily`를 하루 1회만 고정 실행합니다.
+3. 보유가 0개가 된 주중 재진입은 `/자동사이클 테스트 monday` 확인 후 `monday` 모드 1회 실행을 우선합니다.
+4. 시간대별 체크리스트와 예외 대응은 `docs/virtual-autotrade-weekly-playbook.md`를 기준으로 운용합니다.
+
 ---
 
 ## 7. 운영자가 알아야 할 문서 갱신 규칙
@@ -311,5 +318,6 @@ pnpm docs:guide:pdf
 
 - `docs/onboarding-roadmap.md` : 초보자 온보딩과 기능개선 로드맵
 - `docs/virtual-autotrade-ops.md` : 가상 자동매매 운영 절차
+- `docs/virtual-autotrade-weekly-playbook.md` : 월~금 실전 운용 플레이북
 - `docs/button-presets.md` : 버튼 프리셋 운영 기준
 - `docs/implementation-master-plan.md` : 내부 구현 상태와 기술 계획

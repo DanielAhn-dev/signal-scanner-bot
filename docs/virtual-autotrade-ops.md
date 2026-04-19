@@ -1,5 +1,7 @@
 # 가상 자동매매 운영 가이드
 
+> 월~금 시간대별 실전 운용 체크리스트는 `docs/virtual-autotrade-weekly-playbook.md`를 함께 참고하세요.
+
 ## 1) Dry-run 점검
 
 실주문 없이 판단 로직만 실행합니다.
