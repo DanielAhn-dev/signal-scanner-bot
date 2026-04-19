@@ -11,6 +11,7 @@ import {
 } from "./userService";
 import { syncVirtualPortfolio } from "./portfolioService";
 import { buildStrategyMemo } from "../lib/strategyMemo";
+import { appendVirtualDecisionLog } from "./decisionLogService";
 
 type RunMode = "auto" | "monday" | "daily";
 type RunType = "MONDAY_BUY" | "DAILY_REVIEW" | "MANUAL";
@@ -423,6 +424,19 @@ async function runMondayBuyForUser(payload: {
           tradeId,
         },
       });
+      // 결정로그: 월요일 자동 매수
+      appendVirtualDecisionLog({
+        chatId,
+        code: candidate.code,
+        action: "BUY",
+        strategyId: AUTO_TRADE_STRATEGY_ID,
+        strategyVersion: "v1",
+        confidence: Math.min(100, Math.max(0, candidate.score)),
+        expectedHorizonDays: 5,
+        reasonSummary: `자동 월요일 매수 (점수 ${candidate.score.toFixed(1)})`,
+        reasonDetails: { score: candidate.score, price: candidate.close, trigger: "monday-score-candidate" },
+        linkedTradeId: tradeId ?? undefined,
+      }).catch((err: unknown) => console.error("[autoTrade] decision log BUY failed", err));
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : String(error);
       summary.errors += 1;
@@ -676,6 +690,26 @@ async function runDailyReviewForUser(payload: {
           tradeId,
         },
       });
+      // 결정로그: 일일 자동 매도 (익절/손절)
+      appendVirtualDecisionLog({
+        chatId,
+        code: holding.code,
+        action: "SELL",
+        strategyId: AUTO_TRADE_STRATEGY_ID,
+        strategyVersion: "v1",
+        confidence: shouldTakeProfit ? 80 : 70,
+        reasonSummary: shouldTakeProfit
+          ? `자동 익절 (수익률 +${pnlPct.toFixed(1)}%)`
+          : `자동 손절 (수익률 ${pnlPct.toFixed(1)}%)`,
+        reasonDetails: {
+          trigger: shouldTakeProfit ? "take-profit" : "stop-loss",
+          pnlPct: Number(pnlPct.toFixed(2)),
+          pnl,
+          buyPrice,
+          sellPrice: close,
+        },
+        linkedTradeId: tradeId ?? undefined,
+      }).catch((err: unknown) => console.error("[autoTrade] decision log SELL failed", err));
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : String(error);
       summary.errors += 1;
@@ -845,6 +879,19 @@ async function runDailyReviewForUser(payload: {
               cashAfter: availableCash,
             },
           });
+          // 결정로그: 일일 리밸런싱 재매수
+          appendVirtualDecisionLog({
+            chatId,
+            code: candidate.code,
+            action: "BUY",
+            strategyId: AUTO_TRADE_STRATEGY_ID,
+            strategyVersion: "v1",
+            confidence: Math.min(100, Math.max(0, candidate.score)),
+            expectedHorizonDays: 5,
+            reasonSummary: `자동 리밸런싱 재매수 (점수 ${candidate.score.toFixed(1)})`,
+            reasonDetails: { score: candidate.score, price: candidate.close, qty, trigger: "rebalance-buy" },
+            linkedTradeId: tradeId ?? undefined,
+          }).catch((err: unknown) => console.error("[autoTrade] decision log rebalance BUY failed", err));
         } catch (error: unknown) {
           const message = error instanceof Error ? error.message : String(error);
           summary.errors += 1;

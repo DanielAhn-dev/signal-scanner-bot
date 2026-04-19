@@ -12,6 +12,7 @@ import {
   fetchWatchMicroSignalsByCodes,
   resolveWatchDecision,
 } from "../../lib/watchlistSignals";
+import { getDecisionReliabilitySummary } from "../../services/decisionLogService";
 import { ACTIONS, actionButtons } from "../messages/layout";
 
 const REPORT_TOPIC_GUIDE = [
@@ -168,6 +169,31 @@ async function handleMonthlyReportCommand(
         ? `손익비 ${summary.payoffRatio.toFixed(2)}:1 (평균 수익 +${summary.avgWinPct.toFixed(2)}% / 평균 손실 -${summary.avgLossPct.toFixed(2)}%)`
         : "손익비 집계 불가 (월간 매도 데이터 부족)";
 
+    // 결정로그 신뢰도 조회 (당월 30일 기준)
+    const reliability = await getDecisionReliabilitySummary(ctx.chatId, 30).catch(() => null);
+
+    const reliabilityLines: string[] = [];
+    if (reliability && reliability.totalDecisions > 0) {
+      reliabilityLines.push("");
+      reliabilityLines.push("─────────────────");
+      reliabilityLines.push("<b>판단 신뢰도 요약</b>");
+      reliabilityLines.push(`총 의사결정: ${reliability.totalDecisions}건 (실행 ${reliability.executedDecisions}건)`);
+      reliabilityLines.push(`근거 기록률: ${reliability.explanationCoveragePct.toFixed(1)}%`);
+      if (reliability.averageConfidencePct != null) {
+        reliabilityLines.push(`평균 신뢰도: ${reliability.averageConfidencePct.toFixed(1)}%`);
+      }
+      if (reliability.linkedSellCount > 0) {
+        reliabilityLines.push(`연결 매도 승률: ${reliability.linkedSellWinRatePct != null ? `${reliability.linkedSellWinRatePct.toFixed(1)}%` : "집계중"} (${reliability.linkedSellCount}건)`);
+        reliabilityLines.push(`연결 실현손익: ${fmtSignedWon(reliability.linkedRealizedPnl)}`);
+      }
+      if (reliability.trustScore != null) {
+        reliabilityLines.push(`판단 신뢰점수: <code>${reliability.trustScore}점</code>`);
+      }
+      if (reliability.strategyVersionCount > 1) {
+        reliabilityLines.push(`전략 버전 수: ${reliability.strategyVersionCount}개`);
+      }
+    }
+
     const msg = [
       `<b>${range.label} 월간 성과</b>`,
       "─────────────────",
@@ -177,6 +203,7 @@ async function handleMonthlyReportCommand(
       payoffLine,
       `최대 단일 손실: ${fmtSignedWon(summary.maxSingleLoss)}`,
       `규칙 준수율: ${ruleCompliancePct.toFixed(1)}% (손절 미이행 ${stopLossViolationCount}건)`,
+      ...reliabilityLines,
       "",
       "참고: 규칙 준수율은 현재 보유 종목의 손절 조건 충족 여부 기준입니다.",
     ].join("\n");

@@ -661,3 +661,125 @@ export function drawWatchOnlySection(ctx: ReportRenderContext, watchOnlyItems: W
   );
   ctx.y -= 14;
 }
+
+// ─── 판단 신뢰도 섹션 ──────────────────────────────────────────────────────
+
+export type DecisionReliabilityForSection = {
+  windowDays: number;
+  totalDecisions: number;
+  executedDecisions: number;
+  explanationCoveragePct: number;
+  averageConfidencePct: number | null;
+  linkedSellCount: number;
+  linkedSellWinRatePct: number | null;
+  linkedRealizedPnl: number;
+  strategyVersionCount: number;
+  trustScore: number | null;
+};
+
+/**
+ * 의사결정 신뢰도 요약 섹션을 PDF에 렌더링한다.
+ * portfolio / weekly 토픽에서 포트폴리오 요약 이후 노출한다.
+ */
+export function drawDecisionLogSection(
+  ctx: ReportRenderContext,
+  reliability: DecisionReliabilityForSection
+) {
+  ctx.y -= 6;
+  drawSectionHeader(ctx, "판단 신뢰도 분석", `최근 ${reliability.windowDays}일 기준`);
+
+  if (reliability.totalDecisions === 0) {
+    ctx.y -= 8;
+    ctx.text(
+      "의사결정 기록이 없습니다. 가상매수·가상매도 후 결정 로그가 자동으로 쌓입니다.",
+      ctx.ML + 8,
+      ctx.y,
+      9,
+      C.muted
+    );
+    ctx.y -= 20;
+    return;
+  }
+
+  const trustColor =
+    reliability.trustScore == null
+      ? C.text
+      : reliability.trustScore >= 70
+        ? C.up
+        : reliability.trustScore >= 40
+          ? C.text
+          : C.down;
+
+  const cards: KpiCard[] = [
+    {
+      label: "판단 신뢰점수",
+      value: reliability.trustScore != null ? `${reliability.trustScore}점` : "계산중",
+      sub: "신뢰도 · 근거 · 승률 복합",
+      valueColor: trustColor,
+    },
+    {
+      label: "총 의사결정",
+      value: `${reliability.totalDecisions}건`,
+      sub: `실행 ${reliability.executedDecisions}건`,
+      valueColor: C.text,
+    },
+    {
+      label: "근거 기록률",
+      value: `${reliability.explanationCoveragePct.toFixed(1)}%`,
+      sub: "reason_summary 입력 비율",
+      valueColor: reliability.explanationCoveragePct >= 80 ? C.up : C.text,
+    },
+    {
+      label: "평균 신뢰도",
+      value:
+        reliability.averageConfidencePct != null
+          ? `${reliability.averageConfidencePct.toFixed(1)}%`
+          : "-",
+      sub: "confidence 평균",
+      valueColor: C.text,
+    },
+  ];
+
+  if (reliability.linkedSellCount > 0) {
+    cards.push({
+      label: "연결 매도 승률",
+      value:
+        reliability.linkedSellWinRatePct != null
+          ? `${reliability.linkedSellWinRatePct.toFixed(1)}%`
+          : "집계중",
+      sub: `${reliability.linkedSellCount}건 매도 연결`,
+      valueColor:
+        reliability.linkedSellWinRatePct != null
+          ? pnlColor(reliability.linkedSellWinRatePct - 50)
+          : C.text,
+    });
+    cards.push({
+      label: "연결 실현손익",
+      value: fmtSignedInt(reliability.linkedRealizedPnl),
+      sub: "결정 연결 매도 합산",
+      valueColor: pnlColor(reliability.linkedRealizedPnl),
+    });
+  }
+
+  if (reliability.strategyVersionCount > 0) {
+    cards.push({
+      label: "전략 버전 수",
+      value: `${reliability.strategyVersionCount}개`,
+      sub: "사용된 전략 버전",
+      valueColor: C.text,
+    });
+  }
+
+  while (cards.length % 4 !== 0) cards.push({ label: "", value: "" });
+  drawKpiGrid(ctx, cards, 4);
+
+  ctx.y -= 4;
+  ctx.text(
+    "판단 신뢰점수 = 평균 신뢰도(30%) + 근거 기록률(30%) + 연결 매도 승률(40%) 복합 지수입니다.",
+    ctx.ML + 8,
+    ctx.y,
+    8,
+    C.muted
+  );
+  ctx.y -= 14;
+}

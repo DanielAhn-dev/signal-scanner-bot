@@ -27,8 +27,10 @@ import {
   drawCoverPage,
   drawTopicHero,
 } from "./weeklyReportLayout";
+import { getDecisionReliabilitySummary } from "./decisionLogService";
 import {
   drawCommentarySection,
+  drawDecisionLogSection,
   drawEconomySection,
   drawFlowSection,
   drawMarketOverviewSection,
@@ -37,6 +39,7 @@ import {
   drawTradesSection,
   drawWatchlistSection,
   drawWatchOnlySection,
+  type DecisionReliabilityForSection,
 } from "./weeklyReportSections";
 import {
   splitWindows,
@@ -103,6 +106,7 @@ type RenderReportInput = {
   sectors: SectorRow[];
   sectorStocksMap: Record<string, string[]>;
   market: Awaited<ReturnType<typeof fetchReportMarketData>> | Awaited<ReturnType<typeof fetchAllMarketData>>;
+  reliability: DecisionReliabilityForSection | null;
 };
 
 export async function renderReportPdf(input: RenderReportInput): Promise<WeeklyPdfReport> {
@@ -122,6 +126,7 @@ export async function renderReportPdf(input: RenderReportInput): Promise<WeeklyP
     sectors,
     sectorStocksMap,
     market,
+    reliability,
   } = input;
 
   // 보유 포지션(qty>0) vs 관심만 항목(qty===0) 분리
@@ -186,6 +191,7 @@ export async function renderReportPdf(input: RenderReportInput): Promise<WeeklyP
     drawPortfolioSection(ctx, totalInvested, totalValue, totalUnrealized, totalUnrealizedPct, holdingItems, curr, prev);
     drawWatchlistSection(ctx, holdingItems, totalInvested, totalUnrealized, totalUnrealizedPct);
     drawTradesSection(ctx, windows);
+    if (reliability) drawDecisionLogSection(ctx, reliability);
   } else if (topicMeta.topic === "watchonly") {
     drawWatchOnlySection(ctx, watchOnlyItems);
   } else {
@@ -193,6 +199,7 @@ export async function renderReportPdf(input: RenderReportInput): Promise<WeeklyP
     drawPortfolioSection(ctx, totalInvested, totalValue, totalUnrealized, totalUnrealizedPct, holdingItems, curr, prev);
     drawTradesSection(ctx, windows);
     drawWatchlistSection(ctx, holdingItems, totalInvested, totalUnrealized, totalUnrealizedPct);
+    if (reliability) drawDecisionLogSection(ctx, reliability);
     drawCommentarySection(ctx, font, curr, prev, totalUnrealized, totalUnrealizedPct, watchItems, sectors, wrapText);
   }
 
@@ -362,6 +369,18 @@ export async function createWeeklyReportPdf(
     }
   }
 
+  // 포트폴리오·주간·종합 토픽에서만 판단 신뢰도 조회 (90일 기준)
+  const needsReliability = topicMeta.topic === "watchlist" || topicMeta.topic === "weekly" || topicMeta.topic === "full";
+  const reliability = needsReliability
+    ? await runReportStep("decision_log_query", async () => {
+        try {
+          return await getDecisionReliabilitySummary(chatId, 90);
+        } catch {
+          return null;
+        }
+      })
+    : null;
+
   try {
     const report = await runReportStep("pdf_render", () =>
       renderReportPdf({
@@ -380,6 +399,7 @@ export async function createWeeklyReportPdf(
         sectors,
         sectorStocksMap: sectorStocksNameMap,
         market,
+        reliability: reliability ?? null,
       })
     );
 
