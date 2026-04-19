@@ -8,6 +8,7 @@ export interface InvestmentPlanInput {
   currentPrice: number;
   factors: Partial<ScoreFactors>;
   technicalScore?: number;
+  variantSeed?: string;
   fundamental?: {
     qualityScore: FundamentalSnapshot["qualityScore"];
     per?: FundamentalSnapshot["per"];
@@ -18,6 +19,18 @@ export interface InvestmentPlanInput {
   marketEnv?: MarketEnv;
 }
 
+function hashSeed(input: string): number {
+  let hash = 0;
+  for (let i = 0; i < input.length; i += 1) {
+    hash = (hash * 31 + input.charCodeAt(i)) | 0;
+  }
+  return Math.abs(hash);
+}
+
+function pickVariant(seed: string, options: string[]): string {
+  if (!options.length) return "";
+  return options[hashSeed(seed) % options.length];
+}
 export interface InvestmentPlan {
   status: PlanStatus;
   statusLabel: string;
@@ -125,21 +138,88 @@ export function buildInvestmentPlan(input: InvestmentPlanInput): InvestmentPlan 
     0,
     100
   );
+  const seedBase = [
+    input.variantSeed ?? "global",
+    marketTone,
+    Math.round(conviction),
+    Math.round(rsi14),
+    Math.round(dist20),
+  ].join("|");
 
   const rationale: string[] = [];
   const warnings: string[] = [];
 
-  if (currentPrice >= s50) rationale.push("50일선 위에서 추세가 유지되고 있습니다.");
-  else warnings.push("50일선 아래라 반등 확인 전 추격은 불리합니다.");
+  if (currentPrice >= s50) {
+    rationale.push(
+      pickVariant(`${seedBase}|trend|up`, [
+        "50일선 위에서 추세가 유지되고 있습니다.",
+        "중기 추세선(50일) 위라 하방 방어력이 상대적으로 좋습니다.",
+        "현재는 50일선 상단에서 흐름이 유지되는 구간입니다.",
+      ])
+    );
+  } else {
+    warnings.push(
+      pickVariant(`${seedBase}|trend|down`, [
+        "50일선 아래라 반등 확인 전 추격은 불리합니다.",
+        "중기 추세선 아래라 성급한 진입은 변동성 리스크가 큽니다.",
+        "50일선 회복 신호 전까지는 보수적으로 접근하는 편이 낫습니다.",
+      ])
+    );
+  }
 
-  if (avwapSupport >= 66) rationale.push("중기 매수 평균단가 위에 있어 지지력이 있습니다.");
-  else warnings.push("AVWAP 지지가 약해 흔들림이 커질 수 있습니다.");
+  if (avwapSupport >= 66) {
+    rationale.push(
+      pickVariant(`${seedBase}|avwap|support`, [
+        "중기 매수 평균단가 위에 있어 지지력이 있습니다.",
+        "AVWAP 기준 지지 구간 위에 있어 눌림 대응이 수월한 편입니다.",
+        "체결 평균단가 상단에서 버티고 있어 추세 연장 여지가 있습니다.",
+      ])
+    );
+  } else {
+    warnings.push(
+      pickVariant(`${seedBase}|avwap|weak`, [
+        "AVWAP 지지가 약해 흔들림이 커질 수 있습니다.",
+        "평균단가 지지력이 약해 변동성 확대에 주의가 필요합니다.",
+        "AVWAP 하단 체류 구간이라 손절 기준을 더 엄격히 두는 편이 안전합니다.",
+      ])
+    );
+  }
 
-  if (fundamentalQuality >= 70) rationale.push("재무 체력이 받쳐줘 보유 버티기가 상대적으로 쉽습니다.");
-  else if (fundamentalQuality < 45) warnings.push("재무 체력이 약해 짧게 대응하는 편이 안전합니다.");
+  if (fundamentalQuality >= 70) {
+    rationale.push(
+      pickVariant(`${seedBase}|fund|strong`, [
+        "재무 체력이 받쳐줘 보유 버티기가 상대적으로 쉽습니다.",
+        "재무 퀄리티가 양호해 조정 구간에서도 방어력이 기대됩니다.",
+        "기초 체력이 좋아 추세형 보유 전략과 궁합이 나쁘지 않습니다.",
+      ])
+    );
+  } else if (fundamentalQuality < 45) {
+    warnings.push(
+      pickVariant(`${seedBase}|fund|weak`, [
+        "재무 체력이 약해 짧게 대응하는 편이 안전합니다.",
+        "재무 점수가 낮아 손절 기준을 더 타이트하게 관리해야 합니다.",
+        "기초 체력이 약한 편이라 추세 이탈 시 빠른 대응이 필요합니다.",
+      ])
+    );
+  }
 
-  if (marketTone === "defensive") warnings.push("시장 환경이 방어적이라 목표 수익과 비중을 낮춰야 합니다.");
-  else if (marketTone === "supportive") rationale.push("시장 환경이 중립 이상이라 추세 연장 확률이 높습니다.");
+  if (marketTone === "defensive") {
+    warnings.push(
+      pickVariant(`${seedBase}|mkt|def`, [
+        "시장 환경이 방어적이라 목표 수익과 비중을 낮춰야 합니다.",
+        "방어 장세 구간이라 진입해도 포지션 크기를 줄이는 편이 안전합니다.",
+        "대외 변수 민감 구간이라 수익 목표를 보수적으로 잡는 전략이 유효합니다.",
+      ])
+    );
+  } else if (marketTone === "supportive") {
+    rationale.push(
+      pickVariant(`${seedBase}|mkt|sup`, [
+        "시장 환경이 중립 이상이라 추세 연장 확률이 높습니다.",
+        "시장 체력이 받쳐주는 국면이라 눌림 후 반등 시도가 유리합니다.",
+        "매크로 환경이 과도하게 나쁘지 않아 추세 지속 가능성이 있습니다.",
+      ])
+    );
+  }
 
   let status: PlanStatus = "buy-now";
   let statusLabel = "분할 진입 가능";
@@ -148,7 +228,7 @@ export function buildInvestmentPlan(input: InvestmentPlanInput): InvestmentPlan 
     status = "buy-on-pullback";
     statusLabel = "눌림 대기";
   }
-  if (currentPrice < s50 * 0.97 || conviction < 48 || (marketTone === "defensive" && rsi14 >= 68)) {
+  if (currentPrice < s50 * 0.965 || conviction < 45 || (marketTone === "defensive" && rsi14 >= 70)) {
     status = "wait";
     statusLabel = "관망 우선";
   }
@@ -204,28 +284,64 @@ export function buildInvestmentPlan(input: InvestmentPlanInput): InvestmentPlan 
           : [15, 40];
 
   if (status === "buy-now" && dist20 >= -2 && dist20 <= 3) {
-    rationale.unshift("현재 가격대가 20일선 근처라 첫 진입 위치가 과하지 않습니다.");
+    rationale.unshift(
+      pickVariant(`${seedBase}|entry|ok`, [
+        "현재 가격대가 20일선 근처라 첫 진입 위치가 과하지 않습니다.",
+        "20일선 인접 구간이라 초기 진입 리스크가 상대적으로 낮습니다.",
+        "단기 기준선 근처라 분할 1차 진입 포인트로 무리가 크지 않습니다.",
+      ])
+    );
   }
   if (status === "buy-on-pullback") {
-    warnings.unshift("지금 추격보다 20일선 부근 눌림에서 분할 진입이 낫습니다.");
+    warnings.unshift(
+      pickVariant(`${seedBase}|entry|pullback`, [
+        "지금 추격보다 20일선 부근 눌림에서 분할 진입이 낫습니다.",
+        "단기 과열 구간이라 눌림 확인 후 분할 접근이 유리합니다.",
+        "추격보다 되돌림 진입이 손익비 측면에서 더 안정적입니다.",
+      ])
+    );
   }
   if (status === "wait") {
-    warnings.unshift("추세와 시장 대비 기대수익보다 리스크가 더 큽니다.");
+    warnings.unshift(
+      pickVariant(`${seedBase}|entry|wait`, [
+        "추세와 시장 대비 기대수익보다 리스크가 더 큽니다.",
+        "현재는 기대수익보다 손실 가능성 관리가 우선인 구간입니다.",
+        "진입 근거 대비 하방 리스크가 커 관망이 합리적인 시점입니다.",
+      ])
+    );
   }
 
   const summary =
     status === "buy-now"
-      ? "지금은 분할 진입이 가능한 구간입니다."
+      ? pickVariant(`${seedBase}|summary|now`, [
+          "지금은 분할 진입이 가능한 구간입니다.",
+          "현재 구간은 1차 분할 진입을 검토할 수 있습니다.",
+          "과열이 심하지 않아 단계적 진입이 가능한 상태입니다.",
+        ])
       : status === "buy-on-pullback"
-        ? "추격보다 눌림 대기 후 접근이 더 유리합니다."
-        : "당장 진입보다 추세 복원 확인이 우선입니다.";
+        ? pickVariant(`${seedBase}|summary|pullback`, [
+            "추격보다 눌림 대기 후 접근이 더 유리합니다.",
+            "지금은 추격보다 되돌림 진입 전략이 효율적입니다.",
+            "단기 눌림 확인 뒤 분할 접근이 손익비에 유리합니다.",
+          ])
+        : pickVariant(`${seedBase}|summary|wait`, [
+            "당장 진입보다 추세 복원 확인이 우선입니다.",
+            "지금은 신규 진입보다 추세 회복 신호를 확인할 시점입니다.",
+            "무리한 진입보다 리스크 관리 중심의 관망이 적절합니다.",
+          ]);
 
   const sizeFactor = resolveSizeFactor(input.marketEnv);
 
   if (sizeFactor < 1.0) {
     warnings.push(`고변동 장 — 포지션 크기 ${Math.round(sizeFactor * 100)}%로 축소 권장`);
   } else if (sizeFactor > 1.0) {
-    rationale.push("공포 극단 구간 — 역발상 비중 소폭 확대 허용");
+    rationale.push(
+      pickVariant(`${seedBase}|size|expand`, [
+        "공포 극단 구간 — 역발상 비중 소폭 확대 허용",
+        "심리 과매도 구간으로 제한적 역발상 진입 여지가 있습니다.",
+        "공포 과열 국면이라 소량 분할 확대를 검토할 수 있습니다.",
+      ])
+    );
   }
 
   return {
@@ -243,8 +359,8 @@ export function buildInvestmentPlan(input: InvestmentPlanInput): InvestmentPlan 
     holdDays,
     riskReward,
     conviction: Math.round(conviction),
-    rationale: rationale.slice(0, 3),
-    warnings: warnings.slice(0, 3),
+    rationale: rationale.slice(0, 2),
+    warnings: warnings.slice(0, 2),
     summary,
     sizeFactor,
   };

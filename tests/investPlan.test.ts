@@ -57,3 +57,21 @@ test("buildInvestmentPlan: 추세 훼손 구간은 wait 상태", () => {
   assert.equal(plan.status, "wait");
   assert.ok(plan.warnings.length > 0);
 });
+
+test("buildInvestmentPlan: conviction 경계(46대)는 즉시 관망으로 고정되지 않음", () => {
+  const plan = buildInvestmentPlan({
+    currentPrice: 10000,
+    factors: {
+      sma20: 9950,
+      sma50: 9850,
+      sma200: 9700,
+      rsi14: 54,
+      roc21: 0.3,
+      avwap_support: 62,
+    },
+    technicalScore: 48,
+    marketEnv: { vix: 21, fearGreed: 52, usdkrw: 1340 },
+  });
+
+  assert.notEqual(plan.status, "wait");
+});

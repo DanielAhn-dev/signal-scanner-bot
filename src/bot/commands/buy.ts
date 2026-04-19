@@ -329,6 +329,7 @@ export async function handleBuyCommand(
     currentPrice,
     factors: fallbackFactors,
     technicalScore: fallbackScore,
+    variantSeed: code,
     fundamental,
     marketEnv,
   });
