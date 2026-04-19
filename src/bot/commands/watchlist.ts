@@ -1372,6 +1372,17 @@ export async function handleWatchlistRemove(
   let nextBuyPrice: number | null = remainQty > 0 && remainInvested > 0
     ? Number((remainInvested / remainQty).toFixed(4))
     : null;
+  let fifoPreviewForApply: Awaited<ReturnType<typeof previewFifoSale>> | null = null;
+
+  const failSell = async (message: string) => {
+    if (options?.silentSuccess) {
+      throw new Error(message);
+    }
+    await tgSend("sendMessage", {
+      chat_id: ctx.chatId,
+      text: message,
+    });
+  };
 
   if (qty > 0 && sellQty > 0) {
     try {
@@ -1390,6 +1401,7 @@ export async function handleWatchlistRemove(
         code,
         quantity: sellQty,
       });
+      fifoPreviewForApply = fifoPreview;
       fifoCost = fifoPreview.totalCost;
       remainInvested = Math.max(0, invested - fifoCost);
       nextBuyPrice = remainQty > 0 && remainInvested > 0
@@ -1397,7 +1409,36 @@ export async function handleWatchlistRemove(
         : null;
     } catch (fifoError) {
       console.error("watchlist FIFO preview error:", fifoError);
-      // FIFO 계산 실패 시에도 매도 자체는 계속 진행하고, 기본 원가 추정값을 사용한다.
+      try {
+        await replaceTradeLotsForHolding({
+          chatId: ctx.chatId,
+          watchlistId,
+          code,
+          quantity: qty,
+          investedAmount: invested,
+          buyPrice,
+          acquiredAt: holdingCreatedAt,
+          buyDate: holdingBuyDate,
+          note: "watchlist-fifo-rebuild-before-sell",
+        });
+
+        const repairedPreview = await previewFifoSale({
+          chatId: ctx.chatId,
+          code,
+          quantity: sellQty,
+        });
+
+        fifoPreviewForApply = repairedPreview;
+        fifoCost = repairedPreview.totalCost;
+        remainInvested = Math.max(0, invested - fifoCost);
+        nextBuyPrice = remainQty > 0 && remainInvested > 0
+          ? Number((remainInvested / remainQty).toFixed(4))
+          : null;
+      } catch (repairError) {
+        console.error("watchlist FIFO repair before sell failed:", repairError);
+        await failSell("FIFO 원가 정합성 복구에 실패해 매도를 중단했습니다. /보유수정 후 다시 시도해주세요.");
+        return;
+      }
     }
   }
 
@@ -1496,11 +1537,13 @@ export async function handleWatchlistRemove(
     });
 
     try {
-      const fifoPreview = await previewFifoSale({
-        chatId: ctx.chatId,
-        code,
-        quantity: sellQty,
-      });
+      const fifoPreview =
+        fifoPreviewForApply ??
+        (await previewFifoSale({
+          chatId: ctx.chatId,
+          code,
+          quantity: sellQty,
+        }));
       await applyFifoSale({
         chatId: ctx.chatId,
         code,
