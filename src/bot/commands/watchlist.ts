@@ -55,6 +55,7 @@ const DEFAULT_FEE_RATE = 0.00015;
 const DEFAULT_TAX_RATE = 0.0018;
 const CORE_PLAN_STRATEGY_ID = "core.plan.v1";
 const DECISION_MODEL_VERSION = "2026.04.19-mvp1";
+const ETF_NAME_HINT = /^(ETF|KODEX|TIGER|KOSEF|KBSTAR|ACE|RISE|SOL|HANARO|ARIRANG|PLUS|TIMEFOLIO|WOORI|WON)\b/i;
 
 const supabase = createClient(
   process.env.SUPABASE_URL!,
@@ -92,6 +93,13 @@ function parseLooseNumberToken(token?: string): number | null {
   if (!token) return null;
   const n = Number(String(token).replace(/,/g, "").trim());
   return Number.isFinite(n) ? n : null;
+}
+
+function isEtfLike(input: { market?: unknown; name?: unknown }): boolean {
+  const market = String(input.market ?? "").trim().toUpperCase();
+  if (market === "ETF" || market.includes("ETF")) return true;
+  const name = String(input.name ?? "").trim();
+  return ETF_NAME_HINT.test(name);
 }
 
 function buildPlanFromScoreSnapshot(input: {
@@ -1063,7 +1071,10 @@ export async function handleWatchlistCommand(
     }
   >();
   const etfCodes = items
-    .filter((item: any) => String((item.stock as any)?.market ?? "") === "ETF")
+    .filter((item: any) => {
+      const stock = item.stock as any;
+      return isEtfLike({ market: stock?.market, name: stock?.name });
+    })
     .map((item: any) => String(item.code));
   const etfMetaMap = new Map<string, { snapshot: EtfSnapshot | null; distribution: EtfDistributionSummary | null }>();
 
@@ -1111,7 +1122,8 @@ export async function handleWatchlistCommand(
     const stock = item.stock as any;
     const name = stock?.name ?? item.code;
     const market = String(stock?.market ?? "");
-    if (market === "ETF") etfCount += 1;
+    const isEtf = isEtfLike({ market, name });
+    if (isEtf) etfCount += 1;
     else stockCount += 1;
     const etfMeta = etfMetaMap.get(String(item.code));
     const dbClose = Number(stock?.close ?? 0);
@@ -1154,7 +1166,7 @@ export async function handleWatchlistCommand(
       : "";
     const addedDate = formatShortDate(item.created_at as string | null | undefined);
     const actionStr =
-      market === "ETF"
+      isEtf
         ? `\n    ETF 체크 ${buildEtfActionSummary({
             premiumRate: etfMeta?.snapshot?.premiumRate,
             nextExpectedDate: etfMeta?.distribution?.nextExpectedDate,
@@ -1163,7 +1175,7 @@ export async function handleWatchlistCommand(
         : plan.status === "buy-on-pullback"
           ? `\n    액션 ${plan.statusLabel} · 진입 ${fmtInt(plan.entryLow)}~${fmtInt(plan.entryHigh)}`
           : `\n    액션 ${plan.statusLabel} · 손절 ${fmtInt(plan.stopPrice)} · 1차 ${fmtPct(plan.target1Pct * 100)}`;
-    const etfStr = market === "ETF"
+    const etfStr = isEtf
       ? [
           etfMeta?.snapshot?.latestNav || etfMeta?.snapshot?.nav
             ? `\n    ETF NAV <code>${fmtInt(Number(etfMeta?.snapshot?.latestNav ?? etfMeta?.snapshot?.nav ?? 0))}원</code> · 괴리율 ${etfMeta?.snapshot?.premiumRate != null ? fmtPct(etfMeta.snapshot.premiumRate) : "확인중"}`
@@ -1175,7 +1187,7 @@ export async function handleWatchlistCommand(
       : "";
 
     return (
-      `${idx + 1}. <b>${esc(name)}</b> (${item.code})${market === "ETF" ? " · ETF" : ""} · 추가 (${addedDate})\n` +
+      `${idx + 1}. <b>${esc(name)}</b> (${item.code})${isEtf ? " · ETF" : ""} · 추가 (${addedDate})\n` +
       `    현재 <code>${fmtInt(close)}원</code>  ${changeStr}` +
       buyStr +
       plStr +

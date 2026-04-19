@@ -86,6 +86,15 @@ interface WatchlistViewItem {
   etfDistribution: EtfDistributionSummary | null;
 }
 
+const ETF_NAME_HINT = /^(ETF|KODEX|TIGER|KOSEF|KBSTAR|ACE|RISE|SOL|HANARO|ARIRANG|PLUS|TIMEFOLIO|WOORI|WON)\b/i;
+
+function isEtfLike(input: { market?: unknown; name?: unknown }): boolean {
+  const market = String(input.market ?? "").trim().toUpperCase();
+  if (market === "ETF" || market.includes("ETF")) return true;
+  const name = String(input.name ?? "").trim();
+  return ETF_NAME_HINT.test(name);
+}
+
 function formatKstDateTimeLabel(iso?: string | null): string | null {
   if (!iso) return null;
   const parsed = new Date(iso);
@@ -350,7 +359,7 @@ export async function createBriefingReport(
   const watchlistMicro = await fetchWatchMicroSignalsByCodes(supabase, watchlistCodes);
   const etfWatchlistStocks = watchlistItems
     .map((item) => Array.isArray(item.stock) ? item.stock[0] : item.stock)
-    .filter((stock): stock is StockRow => Boolean(stock?.market === "ETF"));
+    .filter((stock): stock is StockRow => Boolean(stock && isEtfLike({ market: stock.market, name: stock.name })));
   const etfWatchlistCodes = etfWatchlistStocks.map((stock) => stock.code);
   const etfSnapshotMap = new Map<string, EtfSnapshot | null>();
   const etfDistributionMap = new Map<string, EtfDistributionSummary | null>();
@@ -923,8 +932,8 @@ async function formatWatchlistSection(
       `오늘 우선순위 액션 ${actionable}건 · 대기 ${pullback}건 · 관망 ${wait}건`,
     ])}`,
   ];
-  const etfCount = sortedItems.filter((item) => item.market === "ETF").length;
-  const stockCount = sortedItems.filter((item) => item.market !== "ETF").length;
+  const etfCount = sortedItems.filter((item) => isEtfLike({ market: item.market, name: item.name })).length;
+  const stockCount = sortedItems.length - etfCount;
   if (stockCount > 0 || etfCount > 0) {
     summaryLines.push(`  보유 구성 주식 ${stockCount}건 · ETF ${etfCount}건`);
   }
@@ -964,8 +973,9 @@ async function formatWatchlistSection(
       : "     트리거 없음 (조건 대기)";
     const changeStr = item.changeRate != null ? ` ${fmtChange(item.changeRate)}` : "";
     const buyBase = item.buyPrice ? ` · 기준 ${fmtPct(item.profitPct)}` : "";
+    const isEtf = isEtfLike({ market: item.market, name: item.name });
     const todayAction =
-      item.market === "ETF"
+      isEtf
         ? `오늘 ETF 체크: ${buildEtfBriefingAction(item)}`
         : item.plan.status === "buy-now"
           ? `오늘 액션: ${item.plan.summary}`
@@ -985,7 +995,7 @@ async function formatWatchlistSection(
           return `     뉴스 ${emoji} ${matches.slice(0, 2).join(", ")}`;
         })()
       : null;
-    const etfTags = item.market === "ETF"
+    const etfTags = isEtf
       ? [
           item.etfSnapshot?.latestNav || item.etfSnapshot?.nav
             ? `     ETF NAV ${fmtInt(Number(item.etfSnapshot?.latestNav ?? item.etfSnapshot?.nav ?? 0))}원 · 괴리율 ${item.etfSnapshot?.premiumRate != null ? fmtPct(item.etfSnapshot.premiumRate) : "확인중"}`
@@ -997,8 +1007,8 @@ async function formatWatchlistSection(
       : [];
 
     return [
-      `  ▸ <b>${item.name}</b>${item.market === "ETF" ? " [ETF]" : ""} <code>${fmtInt(item.currentPrice)}원</code>${changeStr}${buyBase}`,
-      item.market === "ETF"
+      `  ▸ <b>${item.name}</b>${isEtf ? " [ETF]" : ""} <code>${fmtInt(item.currentPrice)}원</code>${changeStr}${buyBase}`,
+      isEtf
         ? `     ${item.plan.statusLabel} · ${buildEtfBriefingAction(item)}`
         : `     ${item.plan.statusLabel} · 손절 ${fmtInt(item.plan.stopPrice)} · 1차 ${fmtPct(item.plan.target1Pct * 100)}`,
       `     ${todayAction}`,

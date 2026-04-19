@@ -551,6 +551,11 @@ async function runDailyReviewForUser(payload: {
       toNumber(prefs.virtual_seed_capital, toNumber(prefs.capital_krw, 0))
     )
   );
+  let holdCount = 0;
+  let takeProfitCount = 0;
+  let stopLossCount = 0;
+  let rebalanceBuyCount = 0;
+  let insufficientCashCount = 0;
 
   for (const holding of holdings) {
     const qty = Math.max(0, Math.floor(toNumber(holding.quantity, 0)));
@@ -575,6 +580,7 @@ async function runDailyReviewForUser(payload: {
     const shouldStopLoss = pnlPct <= -stopLossPct;
 
     if (!shouldTakeProfit && !shouldStopLoss) {
+      holdCount += 1;
       await writeActionLog({
         supabase: payload.supabase,
         runId: payload.runId,
@@ -598,6 +604,8 @@ async function runDailyReviewForUser(payload: {
 
     try {
       if (payload.dryRun) {
+        if (shouldTakeProfit) takeProfitCount += 1;
+        else if (shouldStopLoss) stopLossCount += 1;
         summary.sells += 1;
         await writeActionLog({
           supabase: payload.supabase,
@@ -669,6 +677,8 @@ async function runDailyReviewForUser(payload: {
         allocations: fifo.allocations,
       });
 
+      if (shouldTakeProfit) takeProfitCount += 1;
+      else if (shouldStopLoss) stopLossCount += 1;
       summary.sells += 1;
       await writeActionLog({
         supabase: payload.supabase,
@@ -767,6 +777,7 @@ async function runDailyReviewForUser(payload: {
         const budgetPerSlot = Math.max(0, Math.floor(availableCash / slotsLeft));
         const qty = Math.max(0, Math.floor(budgetPerSlot / candidate.close));
         if (qty <= 0) {
+          insufficientCashCount += 1;
           summary.skipped += 1;
           await writeActionLog({
             supabase: payload.supabase,
@@ -789,6 +800,7 @@ async function runDailyReviewForUser(payload: {
 
         try {
           if (payload.dryRun) {
+            rebalanceBuyCount += 1;
             summary.buys += 1;
             await writeActionLog({
               supabase: payload.supabase,
@@ -860,6 +872,7 @@ async function runDailyReviewForUser(payload: {
           }
 
           availableCash = Math.max(0, availableCash - investedAmount);
+          rebalanceBuyCount += 1;
           summary.buys += 1;
           await writeActionLog({
             supabase: payload.supabase,
@@ -908,6 +921,13 @@ async function runDailyReviewForUser(payload: {
         slotsLeft -= 1;
       }
     }
+  }
+
+  summary.notes.push(
+    `일일판단 요약: 보유유지 ${holdCount}건 · 익절 ${takeProfitCount}건 · 손절 ${stopLossCount}건 · 신규매수 ${rebalanceBuyCount}건`
+  );
+  if (insufficientCashCount > 0) {
+    summary.notes.push(`현금 부족으로 매수 스킵 ${insufficientCashCount}건`);
   }
 
   if (!payload.dryRun) {

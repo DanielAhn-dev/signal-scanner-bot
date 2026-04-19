@@ -306,7 +306,7 @@ async function handlePlaybookReportCommand(ctx: ChatContext, tgSend: any): Promi
       "─────────────────",
       "월요일: 테스트 후 개장 직후 monday 실집행 1회",
       "화~금: daily/auto 하루 1회 고정",
-      "보유 0개 재진입: monday 테스트 후 1회 실행",
+      "보유 0개 재진입: daily/auto도 점수·현금 조건 충족 시 신규매수 가능",
       "",
       "<b>오늘 체크리스트</b>",
       "1) 테스트 먼저 실행",
