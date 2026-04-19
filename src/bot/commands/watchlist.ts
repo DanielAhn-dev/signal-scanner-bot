@@ -82,6 +82,12 @@ function toSafeNumber(value: unknown, fallback = 0): number {
   return Number.isFinite(n) ? n : fallback;
 }
 
+function parseLooseNumberToken(token?: string): number | null {
+  if (!token) return null;
+  const n = Number(String(token).replace(/,/g, "").trim());
+  return Number.isFinite(n) ? n : null;
+}
+
 function buildPlanFromScoreSnapshot(input: {
   currentPrice: number;
   baselinePrice?: number;
@@ -1188,9 +1194,11 @@ export async function handleWatchlistAdd(
   ctx: ChatContext,
   tgSend: any
 ): Promise<void> {
-  const parts = (input || "").trim().split(/\s+/);
-  const query = parts[0];
-  const rawPrice = parts[1];
+  const tokens = (input || "").trim().split(/\s+/).filter(Boolean);
+  const tailPrice = tokens.length >= 2 ? parseLooseNumberToken(tokens[tokens.length - 1]) : null;
+  const hasTailPrice = tailPrice != null;
+  const query = (hasTailPrice ? tokens.slice(0, -1) : tokens).join(" ");
+  const rawPrice = hasTailPrice ? tokens[tokens.length - 1] : undefined;
 
   if (!query) {
     return tgSend("sendMessage", {
@@ -2153,10 +2161,16 @@ export async function handleWatchlistEdit(
   ctx: ChatContext,
   tgSend: any
 ): Promise<void> {
-  const parts = (input || "").trim().split(/\s+/);
-  const query = parts[0];
-  const rawPrice = parts[1];
-  const rawQty = parts[2];
+  const tokens = (input || "").trim().split(/\s+/).filter(Boolean);
+  const lastNum = parseLooseNumberToken(tokens[tokens.length - 1]);
+  const secondLastNum = parseLooseNumberToken(tokens[tokens.length - 2]);
+  const hasTrailingPriceQty = tokens.length >= 3 && lastNum != null && secondLastNum != null;
+
+  const query = (hasTrailingPriceQty ? tokens.slice(0, -2) : tokens.slice(0, -1)).join(" ");
+  const rawPrice = hasTrailingPriceQty
+    ? tokens[tokens.length - 2]
+    : tokens[tokens.length - 1];
+  const rawQty = hasTrailingPriceQty ? tokens[tokens.length - 1] : undefined;
 
   if (!query || !rawPrice) {
     return tgSend("sendMessage", {
@@ -2315,10 +2329,14 @@ export async function handleWatchlistRestoreCommand(
   ctx: ChatContext,
   tgSend: any
 ): Promise<void> {
-  const parts = (input || "").trim().split(/\s+/).filter(Boolean);
-  const query = parts[0];
-  const rawPrice = parts[1];
-  const rawQty = parts[2];
+  const tokens = (input || "").trim().split(/\s+/).filter(Boolean);
+  const lastNum = parseLooseNumberToken(tokens[tokens.length - 1]);
+  const secondLastNum = parseLooseNumberToken(tokens[tokens.length - 2]);
+  const validTrailingArgs = tokens.length >= 3 && lastNum != null && secondLastNum != null;
+
+  const query = validTrailingArgs ? tokens.slice(0, -2).join(" ") : "";
+  const rawPrice = validTrailingArgs ? tokens[tokens.length - 2] : undefined;
+  const rawQty = validTrailingArgs ? tokens[tokens.length - 1] : undefined;
 
   if (!query || !rawPrice || !rawQty) {
     return tgSend("sendMessage", {
