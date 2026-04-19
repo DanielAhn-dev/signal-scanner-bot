@@ -100,6 +100,10 @@ function toPositiveInt(value: unknown, fallback: number): number {
   return n > 0 ? n : fallback;
 }
 
+function fmtKrw(value: number): string {
+  return `${Math.round(value).toLocaleString("ko-KR")}원`;
+}
+
 function kstNow(base = new Date()): Date {
   return new Date(base.getTime() + 9 * 60 * 60 * 1000);
 }
@@ -368,7 +372,12 @@ async function runMondayBuyForUser(payload: {
   for (const candidate of candidates) {
     try {
       if (payload.dryRun) {
+        const targetPrice = Math.round(candidate.close * (1 + Math.abs(toNumber(payload.setting.take_profit_pct, 8)) / 100));
+        const expectedPnl = Math.max(0, targetPrice - Math.round(candidate.close));
         summary.buys += 1;
+        summary.notes.push(
+          `[테스트 매수안] ${candidate.name}(${candidate.code}) 1주 · 매수가 ${fmtKrw(candidate.close)} · 목표가 ${fmtKrw(targetPrice)} · 기대수익 ${fmtKrw(expectedPnl)} (${Math.abs(toNumber(payload.setting.take_profit_pct, 8)).toFixed(1)}%)`
+        );
         await writeActionLog({
           supabase: payload.supabase,
           runId: payload.runId,
@@ -380,6 +389,8 @@ async function runMondayBuyForUser(payload: {
             price: candidate.close,
             score: candidate.score,
             quantity: 1,
+            targetPrice,
+            expectedPnl,
           },
         });
         continue;
@@ -535,7 +546,7 @@ async function runDailyReviewForUser(payload: {
 
   const holdings = (holdingsData ?? []) as HoldingRow[];
   if (!holdings.length) {
-    summary.notes.push("보유 종목 없음 - 신규 매수 후보 검토 진행");
+    summary.notes.push("보유 종목 없음");
   }
 
   const codeList = holdings.map((row) => row.code);
@@ -570,13 +581,26 @@ async function runDailyReviewForUser(payload: {
   }
 
   let realizedDelta = 0;
-  let availableCash = Math.max(
+  const storedCashRaw = Number(prefs.virtual_cash);
+  const storedCash = Number.isFinite(storedCashRaw) ? Math.max(0, storedCashRaw) : null;
+  const seedCapital = Math.max(
     0,
-    toNumber(
-      prefs.virtual_cash,
-      toNumber(prefs.virtual_seed_capital, toNumber(prefs.capital_krw, 0))
-    )
+    toNumber(prefs.virtual_seed_capital, toNumber(prefs.capital_krw, 0))
   );
+  const realizedPnl = toNumber(prefs.virtual_realized_pnl, 0);
+  const investedFromHoldings = holdings.reduce((sum, row) => {
+    const qty = Math.max(0, Math.floor(toNumber(row.quantity, 0)));
+    const buyPrice = Math.max(0, toNumber(row.buy_price, 0));
+    const investedAmount = Math.max(0, toNumber(row.invested_amount, 0));
+    const fallbackInvested = qty > 0 && buyPrice > 0 ? Math.round(qty * buyPrice) : 0;
+    return sum + Math.max(investedAmount, fallbackInvested);
+  }, 0);
+  const derivedCash = Math.max(0, Math.round(seedCapital + realizedPnl - investedFromHoldings));
+  let availableCash = storedCash ?? derivedCash;
+  if ((storedCash ?? 0) <= 0 && derivedCash > 0) {
+    availableCash = derivedCash;
+    summary.notes.push(`가상현금 보정 적용: ${Math.round(availableCash).toLocaleString("ko-KR")}원`);
+  }
   let holdCount = 0;
   let takeProfitCount = 0;
   let stopLossCount = 0;
@@ -788,13 +812,39 @@ async function runDailyReviewForUser(payload: {
       buySlots = 0;
     }
 
-    if (buySlots > 0 && availableCash > 0) {
+    if (buySlots <= 0) {
+      summary.notes.push("신규 매수 불가: 추가 매수 슬롯 0건");
+      await writeActionLog({
+        supabase: payload.supabase,
+        runId: payload.runId,
+        chatId,
+        actionType: "SKIP",
+        reason: "no-buy-slots",
+        detail: { buySlots, room, maxPositions, currentCount },
+      });
+    } else if (availableCash <= 0) {
+      summary.notes.push("신규 매수 불가: 투자 가능 현금 0원");
+      await writeActionLog({
+        supabase: payload.supabase,
+        runId: payload.runId,
+        chatId,
+        actionType: "SKIP",
+        reason: "no-available-cash",
+        detail: { availableCash, buySlots },
+      });
+    } else {
       const candidates = await selectMondayCandidates({
         supabase: payload.supabase,
         minBuyScore: toPositiveInt(payload.setting.min_buy_score, 72),
         limit: buySlots,
         heldCodes,
       });
+
+      if (!candidates.length) {
+        summary.notes.push(
+          `신규 매수 후보 0건 (min_buy_score ${toPositiveInt(payload.setting.min_buy_score, 72)} · 신호 BUY/STRONG_BUY/WATCH)`
+        );
+      }
 
       let slotsLeft = buySlots;
       for (const candidate of candidates) {
@@ -826,8 +876,14 @@ async function runDailyReviewForUser(payload: {
 
         try {
           if (payload.dryRun) {
+            const targetPct = Math.abs(toNumber(payload.setting.take_profit_pct, 8));
+            const targetPrice = Math.round(candidate.close * (1 + targetPct / 100));
+            const expectedPnl = Math.max(0, Math.round((targetPrice - candidate.close) * qty));
             rebalanceBuyCount += 1;
             summary.buys += 1;
+            summary.notes.push(
+              `[테스트 매수안] ${candidate.name}(${candidate.code}) ${qty}주 · 매수가 ${fmtKrw(candidate.close)} · 목표가 ${fmtKrw(targetPrice)} · 기대수익 ${fmtKrw(expectedPnl)} (${targetPct.toFixed(1)}%)`
+            );
             await writeActionLog({
               supabase: payload.supabase,
               runId: payload.runId,
@@ -840,6 +896,8 @@ async function runDailyReviewForUser(payload: {
                 price: candidate.close,
                 investedAmount,
                 score: candidate.score,
+                targetPrice,
+                expectedPnl,
               },
             });
             slotsLeft -= 1;
