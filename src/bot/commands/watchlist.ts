@@ -978,6 +978,23 @@ export async function handleWatchlistCommand(
   const items = allItems.filter(hasVirtualPosition);
 
   if (!items.length) {
+    const seedCapital = toSafeNumber(
+      prefs.virtual_seed_capital ?? prefs.capital_krw,
+      0
+    );
+    const cash = toSafeNumber(prefs.virtual_cash, seedCapital);
+    const realized = toSafeNumber(prefs.virtual_realized_pnl, 0);
+    const walletSummary =
+      seedCapital > 0
+        ? [
+            "",
+            LINE,
+            `<b>가상지갑</b> 원금 ${fmtInt(seedCapital)}원 · 잔액 ${fmtInt(cash)}원`,
+            `평가자산 0원 · 총자산 ${fmtInt(cash)}원`,
+            `총손익 ${cash - seedCapital >= 0 ? "+" : ""}${fmtInt(cash - seedCapital)}원 · 실현 ${realized >= 0 ? "+" : ""}${fmtInt(realized)}원`,
+          ].join("\n")
+        : "";
+
     return tgSend("sendMessage", {
       chat_id: ctx.chatId,
       text: [
@@ -988,7 +1005,9 @@ export async function handleWatchlistCommand(
         "/가상매수 종목명 [매수가]",
         "예) /가상매수 삼성전자 72000",
         "관심은 /관심, 가상체결은 /보유에서 분리해 점검할 수 있습니다.",
+        walletSummary,
       ].join("\n"),
+      parse_mode: "HTML",
     });
   }
 
