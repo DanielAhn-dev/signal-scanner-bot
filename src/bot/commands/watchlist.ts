@@ -1397,10 +1397,7 @@ export async function handleWatchlistRemove(
         : null;
     } catch (fifoError) {
       console.error("watchlist FIFO preview error:", fifoError);
-      return tgSend("sendMessage", {
-        chat_id: ctx.chatId,
-        text: "FIFO 원가 계산 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.",
-      });
+      // FIFO 계산 실패 시에도 매도 자체는 계속 진행하고, 기본 원가 추정값을 사용한다.
     }
   }
 
@@ -1610,7 +1607,7 @@ export async function handleWatchlistLiquidateAllCommand(
       buyPrice: Number(row.buy_price ?? 0),
       name: String((Array.isArray(row.stock) ? row.stock[0] : row.stock)?.name ?? row.code ?? ""),
     }))
-    .filter((row) => row.code && row.quantity > 0 && row.buyPrice > 0);
+    .filter((row) => row.code && row.quantity > 0);
 
   if (!holdings.length) {
     return tgSend("sendMessage", {
