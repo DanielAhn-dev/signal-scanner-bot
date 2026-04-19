@@ -369,8 +369,8 @@ export async function createWeeklyReportPdf(
     }
   }
 
-  // 포트폴리오·주간·종합 토픽에서만 판단 신뢰도 조회 (90일 기준)
-  const needsReliability = topicMeta.topic === "watchlist" || topicMeta.topic === "weekly" || topicMeta.topic === "full";
+  // 포트폴리오·종합 토픽에서만 판단 신뢰도 조회 (90일 기준)
+  const needsReliability = topicMeta.topic === "watchlist" || topicMeta.topic === "full";
   const reliability = needsReliability
     ? await runReportStep("decision_log_query", async () => {
         try {
@@ -524,6 +524,7 @@ export async function createPreviewReportPdf(topicStr = "economy"): Promise<Uint
     sectors,
     sectorStocksMap: {},
     market,
+    reliability: null,
   });
 
   return rendered.bytes;

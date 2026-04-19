@@ -7,7 +7,8 @@ export type WeeklyReportFailureStep =
   | "realtime_price"
   | "font_load"
   | "pdf_render"
-  | "pdf_save";
+  | "pdf_save"
+  | "decision_log_query";
 
 const WEEKLY_REPORT_STEP_LABEL: Record<WeeklyReportFailureStep, string> = {
   trade_query: "거래 내역 조회",
@@ -19,6 +20,7 @@ const WEEKLY_REPORT_STEP_LABEL: Record<WeeklyReportFailureStep, string> = {
   font_load: "PDF 폰트 로드",
   pdf_render: "PDF 렌더링",
   pdf_save: "PDF 저장",
+  decision_log_query: "판단 신뢰도 조회",
 };
 
 export class WeeklyReportError extends Error {
