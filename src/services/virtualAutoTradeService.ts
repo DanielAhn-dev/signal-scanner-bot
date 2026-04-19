@@ -509,9 +509,7 @@ async function runDailyReviewForUser(payload: {
 
   const holdings = (holdingsData ?? []) as HoldingRow[];
   if (!holdings.length) {
-    summary.skipped += 1;
-    summary.notes.push("보유 종목 없음");
-    return summary;
+    summary.notes.push("보유 종목 없음 - 신규 매수 후보 검토 진행");
   }
 
   const codeList = holdings.map((row) => row.code);
