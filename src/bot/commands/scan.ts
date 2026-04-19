@@ -65,9 +65,10 @@ function hashSeed(input: string): number {
   return Math.abs(hash);
 }
 
-function pickVariant(seed: string, options: string[]): string {
+function pickVariant(seed: string, options: string[], salt?: string): string {
   if (!options.length) return "";
-  return options[hashSeed(seed) % options.length];
+  const mixed = salt ? `${seed}|${salt}` : seed;
+  return options[hashSeed(mixed) % options.length];
 }
 
 function fmtKorMoney(n: number): string {
@@ -91,33 +92,38 @@ function riskProfileLabel(profile?: RiskProfile): string {
   return "안전형";
 }
 
-function buildDetailFallback(item: PullbackRow, hasFundamental: boolean, hasSentiment: boolean): string {
+function buildDetailFallback(
+  item: PullbackRow,
+  hasFundamental: boolean,
+  hasSentiment: boolean,
+  variantSalt: string
+): string {
   if (item.warn_grade === "WATCH" || item.warn_grade === "WARN") {
     return pickVariant(`${item.code}|fallback|warn`, [
       "리스크 경고 항목 우선 점검 필요",
       "경고 시그널이 있어 분할 진입 전 확인이 필요",
       "진입 전 리스크 관리 항목을 먼저 점검하세요",
-    ]);
+    ], variantSalt);
   }
   if (!hasFundamental) {
     return pickVariant(`${item.code}|fallback|fund`, [
       "재무 데이터 업데이트 대기",
       "재무 스냅샷 수집 후 재평가 권장",
       "재무 지표 미수집 상태로 보수적 접근 권장",
-    ]);
+    ], variantSalt);
   }
   if (!hasSentiment) {
     return pickVariant(`${item.code}|fallback|news`, [
       "뉴스 신호 부족 — 기술 신호 중심 점검",
       "최근 뉴스가 적어 가격/수급 신호 우선 확인",
       "뉴스 모멘텀 부재 — 차트 신호 우선 대응",
-    ]);
+    ], variantSalt);
   }
   return pickVariant(`${item.code}|fallback|default`, [
     "핵심 시그널 점검 대기",
     "추가 데이터 반영 후 재평가 예정",
     "기준선 부근에서 신호 확정 대기",
-  ]);
+  ], variantSalt);
 }
 
 export async function handleScanCommand(
@@ -217,6 +223,8 @@ export async function handleScanCommand(
     });
     return;
   }
+
+  const variantSalt = `${Date.now()}|${ctx.chatId}|${query || "all"}`;
 
   const saferPool = pickSaferCandidates(
     candidates.map((item) => ({
@@ -403,7 +411,12 @@ export async function handleScanCommand(
       .map((d) => d.text);
     const detailLine =
       conciseDetails.join(" · ") ||
-      buildDetailFallback(item, Boolean(fundMap.get(item.code)), Boolean(sentiment));
+      buildDetailFallback(
+        item,
+        Boolean(fundMap.get(item.code)),
+        Boolean(sentiment),
+        variantSalt
+      );
 
     return (
       `${idx + 1}. ${grade} <b>${esc(item.stock?.name || item.code)}</b> <code>${price.toLocaleString("ko-KR")}원</code>${chg}\n` +

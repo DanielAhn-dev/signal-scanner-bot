@@ -56,18 +56,31 @@ export async function handleStocksCommand(
 
   let fallbackStocks: any[] = [];
   if (error || !stocks || stocks.length === 0) {
-    // sector_id 필터 실패 시 이름 포함 폴백
-    const { data: fallback } = await supabase
+    // 1차 폴백: universe_level 제약만 완화하되 sector_id 조건은 유지
+    const { data: fallbackBySector } = await supabase
       .from("stocks")
       .select(`code, name, close, market, liquidity, is_sector_leader, market_cap, universe_level, scores ( value_score, momentum_score, total_score )`)
+      .in("sector_id", sectorIds)
       .in("market", ["KOSPI", "KOSDAQ"])
-      .in("universe_level", ["core", "extended"])
       .order("market_cap", { ascending: false })
-      .limit(10);
+      .limit(20);
 
-    fallbackStocks = fallback || [];
+    fallbackStocks = (fallbackBySector || []).slice(0, 10);
 
-    if (!fallback || fallback.length === 0) {
+    // 2차 폴백: 섹터 키워드가 종목명/코드에 직접 포함된 경우만 허용
+    if (!fallbackStocks.length) {
+      const { data: fallbackByKeyword } = await supabase
+        .from("stocks")
+        .select(`code, name, close, market, liquidity, is_sector_leader, market_cap, universe_level, scores ( value_score, momentum_score, total_score )`)
+        .in("market", ["KOSPI", "KOSDAQ"])
+        .ilike("name", `%${sectorKeyword}%`)
+        .order("market_cap", { ascending: false })
+        .limit(10);
+
+      fallbackStocks = fallbackByKeyword || [];
+    }
+
+    if (!fallbackStocks.length) {
       await tgSend("sendMessage", {
         chat_id: ctx.chatId,
         text: `'${sectorKeyword}' 섹터의 종목을 찾을 수 없습니다.`,

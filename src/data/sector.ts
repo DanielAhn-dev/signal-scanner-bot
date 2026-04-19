@@ -15,7 +15,7 @@ if (!url || !key) {
 }
 const supabase = createClient(url, key);
 
-type SectorRow = { id: string; name: string };
+type SectorRow = { id: string; name: string; score?: number | null };
 type StockRow = {
   code: string;
   sector_id: string | null;
@@ -173,7 +173,7 @@ export async function computeSectorTrends(
   const cached = await getCache<TrendRow[]>(cacheKey);
   if (cached?.length) return cached;
 
-  const { data: sectors } = await supabase.from("sectors").select("id,name");
+  const { data: sectors } = await supabase.from("sectors").select("id,name,score");
   const sectorRows = (sectors || []) as SectorRow[];
   const nameToId = new Map<string, string>(sectorRows.map((r) => [r.name, r.id]));
 
@@ -187,10 +187,15 @@ export async function computeSectorTrends(
   const bySector = new Map<string, StockRow[]>();
 
   if (!sectorRows.length || !stockRows.length) {
-    return [
-      { id: "1", sector: "정보기술", score: 50 },
-      { id: "2", sector: "헬스케어", score: 48 },
-    ];
+    // 데이터 공백 시 하드코딩 값을 반환하지 않고 DB 기준 점수를 그대로 노출한다.
+    return sectorRows
+      .map((row) => ({
+        id: row.id,
+        sector: row.name,
+        score: Number.isFinite(row.score) ? Number(row.score) : 0,
+      }))
+      .sort((a, b) => b.score - a.score)
+      .slice(0, 12);
   }
 
   stockRows
