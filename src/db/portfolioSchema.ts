@@ -4,6 +4,9 @@ export const PORTFOLIO_TABLES = {
   // Canonical logical name for gradual migration.
   positions: "virtual_positions",
   trades: "virtual_trades",
+  decisionLogs: "virtual_decision_logs",
+  decisionOutcomes: "virtual_decision_outcomes",
+  strategyVersions: "virtual_strategy_versions",
   lots: "virtual_trade_lots",
   lotMatches: "virtual_trade_lot_matches",
   lotView: "virtual_position_lots",

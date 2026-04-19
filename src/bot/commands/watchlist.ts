@@ -43,12 +43,18 @@ import {
   type EtfSnapshot,
 } from "../../services/etfService";
 import { fetchLatestScoresByCodes } from "../../services/scoreSourceService";
+import {
+  appendVirtualDecisionLog,
+  getDecisionReliabilitySummary,
+  type DecisionAction,
+} from "../../services/decisionLogService";
 
 const MAX_ITEMS = 20; // 사용자당 최대 관심종목 수
 const DEFAULT_TARGET_POSITIONS = 10;
 const DEFAULT_FEE_RATE = 0.00015;
 const DEFAULT_TAX_RATE = 0.0018;
 const CORE_PLAN_STRATEGY_ID = "core.plan.v1";
+const DECISION_MODEL_VERSION = "2026.04.19-mvp1";
 
 const supabase = createClient(
   process.env.SUPABASE_URL!,
@@ -283,6 +289,40 @@ async function appendVirtualTradeLog(payload: {
   } catch (e) {
     console.error("appendVirtualTradeLog error:", e);
     return { ok: false, error: e instanceof Error ? e.message : String(e) };
+  }
+}
+
+async function appendDecisionSnapshot(payload: {
+  chatId: number;
+  code: string;
+  action: DecisionAction;
+  linkedTradeId?: number | null;
+  confidence?: number | null;
+  expectedHorizonDays?: number | null;
+  expectedRr?: number | null;
+  reasonSummary: string;
+  reasonDetails?: Record<string, unknown>;
+  strategyId?: string;
+  strategyVersion?: string;
+  marketRegime?: string;
+}): Promise<void> {
+  const result = await appendVirtualDecisionLog({
+    chatId: payload.chatId,
+    code: payload.code,
+    action: payload.action,
+    linkedTradeId: payload.linkedTradeId ?? null,
+    confidence: payload.confidence ?? null,
+    expectedHorizonDays: payload.expectedHorizonDays ?? null,
+    expectedRr: payload.expectedRr ?? null,
+    reasonSummary: payload.reasonSummary,
+    reasonDetails: payload.reasonDetails ?? null,
+    strategyId: payload.strategyId ?? CORE_PLAN_STRATEGY_ID,
+    strategyVersion: payload.strategyVersion ?? DECISION_MODEL_VERSION,
+    marketRegime: payload.marketRegime ?? null,
+  });
+
+  if (!result.ok) {
+    console.error("appendDecisionSnapshot error:", result.error);
   }
 }
 
@@ -1332,6 +1372,21 @@ export async function handleWatchlistAdd(
       }),
     });
     tradeLogId = tradeLog.id ?? null;
+
+    await appendDecisionSnapshot({
+      chatId: ctx.chatId,
+      code,
+      action: "BUY",
+      linkedTradeId: tradeLog.id ?? null,
+      reasonSummary: "수동 가상매수 진입",
+      reasonDetails: {
+        source: "watchlist-add",
+        explicitPrice: toPositiveNumber(explicitBuyPrice),
+        appliedPrice: buyPrice,
+        quantity,
+        investedAmount,
+      },
+    });
   }
 
   if (quantity && investedAmount && buyPrice) {
@@ -1614,6 +1669,22 @@ export async function handleWatchlistRemove(
           options?.sellMemo ??
           (isFullExit ? "watchlist-full-exit" : "watchlist-partial-exit"),
       }),
+    });
+
+    await appendDecisionSnapshot({
+      chatId: ctx.chatId,
+      code,
+      action: "SELL",
+      linkedTradeId: tradeLog.id ?? null,
+      reasonSummary: isFullExit ? "수동 전량매도 실행" : "수동 부분매도 실행",
+      reasonDetails: {
+        source: options?.sellMemo ?? "watchlist-remove",
+        isFullExit,
+        sellQty,
+        remainQty,
+        exitPrice,
+        pnl,
+      },
     });
 
     try {
@@ -2284,6 +2355,21 @@ export async function handleWatchlistEdit(
     }),
   });
 
+  await appendDecisionSnapshot({
+    chatId: ctx.chatId,
+    code,
+    action: "ADJUST",
+    linkedTradeId: tradeLog.id ?? null,
+    reasonSummary: "보유수정으로 단가/수량 보정",
+    reasonDetails: {
+      source: "watchlist-edit",
+      prevPrice: previous.buyPrice,
+      nextPrice: newPrice,
+      prevQty: previous.quantity,
+      nextQty,
+    },
+  });
+
   try {
     await replaceTradeLotsForHolding({
       chatId: ctx.chatId,
@@ -2454,6 +2540,20 @@ export async function handleWatchlistRestoreCommand(
     memo: `watchlist-restore:v1;buy=${buyPrice};qty=${qty}`,
   });
 
+  await appendDecisionSnapshot({
+    chatId: ctx.chatId,
+    code,
+    action: "ADJUST",
+    linkedTradeId: tradeLog.id ?? null,
+    reasonSummary: "보유복구로 누락 포지션 복원",
+    reasonDetails: {
+      source: "watchlist-restore",
+      restoredPrice: buyPrice,
+      restoredQty: qty,
+      restoredInvested: investedAmount,
+    },
+  });
+
   try {
     await replaceTradeLotsForHolding({
       chatId: ctx.chatId,
@@ -2596,6 +2696,20 @@ export async function handleWatchlistQuickAdd(
       memo: "watchlist-quick-add",
     });
     tradeLogId = tradeLog.id ?? null;
+
+    await appendDecisionSnapshot({
+      chatId: ctx.chatId,
+      code,
+      action: "BUY",
+      linkedTradeId: tradeLog.id ?? null,
+      reasonSummary: "퀵액션 가상매수 진입",
+      reasonDetails: {
+        source: "watchlist-quick-add",
+        appliedPrice: price,
+        quantity: alloc.quantity,
+        investedAmount: alloc.investedAmount,
+      },
+    });
   }
 
   if (alloc.quantity && alloc.investedAmount && price) {
@@ -2670,6 +2784,7 @@ export async function handleWatchlistHistoryCommand(
   const prefs = await getUserInvestmentPrefs(tgId);
   const cash = Number(prefs.virtual_cash ?? 0);
   const realized = Number(prefs.virtual_realized_pnl ?? 0);
+  const reliability = await getDecisionReliabilitySummary(ctx.chatId, maxDays ?? 90);
 
   const tradeIds = (rows ?? [])
     .map((row: any) => Number(row.id ?? 0))
@@ -2771,6 +2886,9 @@ export async function handleWatchlistHistoryCommand(
     `매도 ${totalSell}건 · 승 ${winCount} · 패 ${loseCount} · 승률 ${winRate.toFixed(1)}%`,
     `가상 잔액 <code>${fmtInt(cash)}원</code>`,
     `누적 실현손익 <code>${realized >= 0 ? "+" : ""}${fmtInt(realized)}원</code>`,
+    reliability
+      ? `판단 신뢰도 <code>${reliability.trustScore == null ? "계산중" : `${reliability.trustScore}점`}</code> · 근거기록 ${reliability.explanationCoveragePct.toFixed(1)}% · 정책버전 ${reliability.strategyVersionCount}개`
+      : "판단 신뢰도 집계 불가 (decision log 조회 실패)",
   ].join("\n");
 
   await tgSend("sendMessage", {
