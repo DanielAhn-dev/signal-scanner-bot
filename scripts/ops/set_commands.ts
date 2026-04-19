@@ -37,6 +37,7 @@ const commands = [
   { command: "paperbuy", description: "가상 매수" },
   { command: "papersell", description: "가상 매도" },
   { command: "holdingedit", description: "보유 단가·수량 수정" },
+  { command: "holdingrestore", description: "누락 보유 포지션 복구" },
   { command: "autosellcheck", description: "자동 매도 점검" },
   { command: "autocycle", description: "자동매매 1회 실행" },
   { command: "holdingplan", description: "보유 대응 플랜" },

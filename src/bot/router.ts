@@ -38,6 +38,7 @@ import {
   handleWatchlistAdd,
   handleWatchlistRemove,
   handleWatchlistEdit,
+  handleWatchlistRestoreCommand,
   handleWatchlistAutoCommand,
   handleWatchlistResponseCommand,
   handleWatchlistHistoryCommand,
@@ -86,6 +87,7 @@ const CMD = {
   WATCHADD:    /^\/(paperbuy|가상매수)(?:\s+(.+))?$/i,
   WATCHREMOVE: /^\/(papersell|가상매도)(?:\s+(.+))?$/i,
   WATCHEDIT:   /^\/(holdingedit|보유수정)(?:\s+(.+))?$/i,
+  WATCHRESTORE:/^\/(holdingrestore|보유복구)(?:\s+(.+))?$/i,
   WATCHAUTO:   /^\/(autosellcheck|자동매도점검)$/i,
   WATCHRESP:   /^\/(holdingplan|보유대응|관심대응)$/i,
   RECORD:      /^\/(tradelog|거래기록)(?:\s+(.+))?$/i,
@@ -420,6 +422,12 @@ export async function routeMessage(
   const mwe = t.match(CMD.WATCHEDIT);
   if (mwe) {
     await handleWatchlistEdit(mwe[2] ?? "", ctx, tgSend);
+    return;
+  }
+
+  const mwrRestore = t.match(CMD.WATCHRESTORE);
+  if (mwrRestore) {
+    await handleWatchlistRestoreCommand(mwrRestore[2] ?? "", ctx, tgSend);
     return;
   }
 
