@@ -18,6 +18,7 @@ import { ACTIONS, actionButtons } from "../messages/layout";
 const REPORT_TOPIC_GUIDE = [
   { command: "주간", aliases: ["주간", "종합", "전체", "full", "weekly"], description: "시장과 포트폴리오를 함께 보는 종합 PDF" },
   { command: "월간", aliases: ["월간", "monthly", "month"], description: "월별 성과 요약 텍스트" },
+  { command: "실전운용", aliases: ["실전운용", "실전", "운용", "플레이북", "playbook", "ops"], description: "월~금 자동매매 실전 체크리스트 텍스트" },
   { command: "가이드", aliases: ["가이드", "운영가이드", "guide", "guidepdf"], description: "운영 가이드 PDF" },
   { command: "포트폴리오", aliases: ["포트폴리오", "보유", "holdings", "portfolio"], description: "보유 종목과 최근 거래 중심 PDF" },
   { command: "관심종목", aliases: ["관심종목", "관심", "watchonly", "watch"], description: "수익 추적 중인 관심 종목 목록 PDF" },
@@ -43,6 +44,7 @@ function buildReportMenuText(): string {
     "/리포트 는 이 메뉴를 다시 보여줍니다.",
     "/리포트 주간 — 시장 + 포트폴리오 종합 PDF",
     "/리포트 월간 — 월별 성과 요약 텍스트",
+    "/리포트 실전운용 — 월~금 자동매매 실전 체크리스트 텍스트",
     "/리포트 가이드 — 기능 활용 운영 가이드 PDF",
     "/리포트 포트폴리오 — 보유 종목/거래 중심 PDF",
     "/리포트 관심종목 — 관심 추적 종목 목록 PDF",
@@ -296,6 +298,28 @@ async function handleGuidePdfCommand(ctx: ChatContext, tgSend: any): Promise<voi
   }
 }
 
+async function handlePlaybookReportCommand(ctx: ChatContext, tgSend: any): Promise<void> {
+  await tgSend("sendMessage", {
+    chat_id: ctx.chatId,
+    text: [
+      "<b>실전운용 리포트 (월~금)</b>",
+      "─────────────────",
+      "월요일: 테스트 후 개장 직후 monday 실집행 1회",
+      "화~금: daily/auto 하루 1회 고정",
+      "보유 0개 재진입: monday 테스트 후 1회 실행",
+      "",
+      "<b>오늘 체크리스트</b>",
+      "1) 테스트 먼저 실행",
+      "2) 실집행은 같은 날 같은 모드 반복 금지",
+      "3) 실행 후 /보유, /거래기록으로 결과 확인",
+      "",
+      "출력본(PDF)이 필요하면 /리포트 가이드를 사용하세요.",
+    ].join("\n"),
+    parse_mode: "HTML",
+    reply_markup: actionButtons(ACTIONS.reportMenu, 2),
+  });
+}
+
 export async function handleReportMenu(
   ctx: ChatContext,
   tgSend: any
@@ -335,6 +359,11 @@ export async function handleReportCommand(
 
   if (normalizedTopic === "월간") {
     await handleMonthlyReportCommand(ctx, tgSend);
+    return;
+  }
+
+  if (normalizedTopic === "실전운용") {
+    await handlePlaybookReportCommand(ctx, tgSend);
     return;
   }
 
