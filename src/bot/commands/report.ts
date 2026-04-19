@@ -171,6 +171,32 @@ async function handleMonthlyReportCommand(
         ? `손익비 ${summary.payoffRatio.toFixed(2)}:1 (평균 수익 +${summary.avgWinPct.toFixed(2)}% / 평균 손실 -${summary.avgLossPct.toFixed(2)}%)`
         : "손익비 집계 불가 (월간 매도 데이터 부족)";
 
+    const riskTier =
+      ruleCompliancePct < 80 || (summary.payoffRatio != null && summary.payoffRatio < 1)
+        ? "defensive"
+        : summary.winRate >= 55 && (summary.payoffRatio == null || summary.payoffRatio >= 1.2)
+          ? "offensive"
+          : "neutral";
+
+    const nextActions =
+      riskTier === "defensive"
+        ? [
+            "우선순위: 신규 진입보다 손실 방어를 먼저 적용하세요.",
+            "가이드: 종목당 손실 한도(-4%~-6%)를 고정하고, 손절 미이행 종목부터 정리하세요.",
+            "현금: 단기적으로 현금 비중을 20% 이상 유지해 변동성 재진입 여력을 확보하세요.",
+          ]
+        : riskTier === "offensive"
+          ? [
+              "우선순위: 현재 전략은 유효합니다. 다만 추격 매수보다 눌림 구간 분할 진입을 유지하세요.",
+              "가이드: 수익 구간 종목은 분할 익절(예: 1차 30~50%)로 변동성 리스크를 줄이세요.",
+              "현금: 과열 구간 대비를 위해 현금 10% 이상은 상시 유지하세요.",
+            ]
+          : [
+              "우선순위: 공격/방어 중립 구간입니다. 포지션 수를 늘리기보다 종목 질을 높이세요.",
+              "가이드: 신규 진입은 상위 1~2개 후보로 제한하고, 손익비가 낮은 패턴을 제외하세요.",
+              "현금: 현금 15~20% 구간을 유지해 장중 변동 대응력을 확보하세요.",
+            ];
+
     // 결정로그 신뢰도 조회 (당월 30일 기준)
     const reliability = await getDecisionReliabilitySummary(ctx.chatId, 30).catch(() => null);
 
@@ -206,6 +232,9 @@ async function handleMonthlyReportCommand(
       `최대 단일 손실: ${fmtSignedWon(summary.maxSingleLoss)}`,
       `규칙 준수율: ${ruleCompliancePct.toFixed(1)}% (손절 미이행 ${stopLossViolationCount}건)`,
       ...reliabilityLines,
+      "",
+      "<b>다음 운용 포인트</b>",
+      ...nextActions.map((line, idx) => `${idx + 1}) ${line}`),
       "",
       "참고: 규칙 준수율은 현재 보유 종목의 손절 조건 충족 여부 기준입니다.",
     ].join("\n");
