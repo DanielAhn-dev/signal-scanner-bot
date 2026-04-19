@@ -41,6 +41,38 @@ function formatModeLabel(mode: AutoTradeRunMode): string {
   return "자동(실행 시점 재판단)";
 }
 
+function formatUnknownError(error: unknown): string {
+  if (error instanceof Error) {
+    return error.message || error.name;
+  }
+
+  if (!error || typeof error !== "object") {
+    return String(error);
+  }
+
+  const rec = error as Record<string, unknown>;
+  const messages = [
+    rec.message,
+    rec.description,
+    rec.error,
+    rec.details,
+    rec.hint,
+  ]
+    .filter((v): v is string => typeof v === "string" && v.trim().length > 0)
+    .map((v) => v.trim());
+
+  if (messages.length > 0) {
+    return messages.join(" | ");
+  }
+
+  try {
+    const serialized = JSON.stringify(error);
+    return serialized.length > 300 ? `${serialized.slice(0, 300)}...` : serialized;
+  } catch {
+    return "알 수 없는 객체 오류";
+  }
+}
+
 export async function handleAutoCycleCommand(
   input: string,
   ctx: ChatContext,
@@ -79,7 +111,7 @@ export async function handleAutoCycleCommand(
       parse_mode: "HTML",
     });
   } catch (error: unknown) {
-    const message = error instanceof Error ? error.message : String(error);
+    const message = formatUnknownError(error);
     await tgSend("sendMessage", {
       chat_id: ctx.chatId,
       text: `자동 사이클 실행 실패: ${message}`,
