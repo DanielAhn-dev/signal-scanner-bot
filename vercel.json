@@ -16,6 +16,10 @@
     "crons": [
         {
             "path": "/api/cron/scoreSync",
+            "schedule": "40 6 * * 1-5"
+        },
+        {
+            "path": "/api/cron/scoreSync",
             "schedule": "0 23 * * 0-4"
         },
         {

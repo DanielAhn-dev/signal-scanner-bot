@@ -31,6 +31,7 @@ import {
   fetchLatestScoresByCodes,
   type ScoreSnapshotRow,
 } from "./scoreSourceService";
+import { buildFreshnessLabel, isBusinessStale } from "../utils/dataFreshness";
 import { PORTFOLIO_TABLES } from "../db/portfolioSchema";
 
 // JSONB용 느슨한 타입
@@ -538,6 +539,12 @@ export async function createBriefingReport(
 
   report += `\n─────────────────\n`;
   report += `<i>📊 데이터 기준: ${dataDate} | 점수 기준: ${scoreAsOf}</i>\n`;
+  const staleSector = isBusinessStale(asOf, 1);
+  const staleScore = isBusinessStale(scoreAsOf, 1);
+  if (staleSector || staleScore) {
+    report += `<i>⚠️ 신선도 경고: 시세/지표 스냅샷이 지연되었습니다. (섹터 ${buildFreshnessLabel(asOf, 1)} · 점수 ${buildFreshnessLabel(scoreAsOf, 1)})</i>\n`;
+    report += `<i>권장: 장중에는 /종목분석으로 실시간 가격과 함께 재확인하세요.</i>\n`;
+  }
   if (marketData.meta) {
     const quality = marketData.meta.isPartial ? "부분 수집" : "정상";
     const fetchedAtLabel = formatKstDateTimeLabel(marketData.meta.fetchedAt);

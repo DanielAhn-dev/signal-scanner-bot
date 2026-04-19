@@ -14,6 +14,7 @@ import { analyzeNewsSentiment, formatSentimentLine } from "../../lib/newsSentime
 import { fetchStockNews } from "../../utils/fetchNews";
 import { esc, gradeLabel } from "../messages/format";
 import { fetchLatestScoresByCodes } from "../../services/scoreSourceService";
+import { buildFreshnessLabel, isBusinessStale } from "../../utils/dataFreshness";
 import {
   header,
   section,
@@ -412,11 +413,23 @@ export async function handleScanCommand(
   });
 
   const title = query ? `${sectorName || query} 눌림목 스캔` : "전체 시장 눌림목 스캔";
+  const signalStale = isBusinessStale(latestDate, 1);
+  const scoreStale = isBusinessStale(scoreResult.latestAsof, 1);
+  const freshnessWarnings: string[] = [];
+  if (signalStale || scoreStale) {
+    freshnessWarnings.push(
+      `⚠️ 데이터 지연 감지: 시그널 ${buildFreshnessLabel(latestDate, 1)} · 점수 ${buildFreshnessLabel(scoreResult.latestAsof, 1)}`
+    );
+    freshnessWarnings.push("권장: 장 시작 전 /종목분석으로 실시간 가격을 함께 확인하세요.");
+  }
+
   const msg = buildMessage([
     header(title, `기준일 ${latestDate} · ${riskProfileLabel(riskProfile)} 기준`),
     section("스캔 조건", [
       "A/B 진입등급 · 매도경고 제외 · 코스피 중심 위험성향 필터",
       `후보 ${candidates.length}개 중 상위 ${finalPicks.length}개`,
+      `점수 기준일 ${scoreResult.latestAsof ?? "확인 불가"}`,
+      ...freshnessWarnings,
     ]),
     section("상위 후보", lines),
     divider(),
