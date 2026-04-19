@@ -8,6 +8,7 @@ type ScoreUpsertRow = {
   code: string;
   asof: string;
   score: number;
+  signal: "BUY" | "STRONG_BUY" | "WATCH" | "HOLD" | "SELL" | "NONE";
   total_score: number;
   momentum_score: number;
   liquidity_score: number;
@@ -44,6 +45,14 @@ function deriveLiquidityScore(volRatio?: number): number {
   const ratio = Number.isFinite(Number(volRatio)) ? Number(volRatio) : 1;
   const raw = 40 + ratio * 30;
   return Math.round(clamp(raw, 0, 100));
+}
+
+function deriveSignalFromTotalScore(totalScore: number): ScoreUpsertRow["signal"] {
+  if (totalScore >= 85) return "STRONG_BUY";
+  if (totalScore >= 70) return "BUY";
+  if (totalScore >= 55) return "WATCH";
+  if (totalScore <= 20) return "SELL";
+  return "HOLD";
 }
 
 function resolveMarketEnv(raw: Awaited<ReturnType<typeof fetchAllMarketData>>): MarketEnv {
@@ -145,11 +154,13 @@ export async function syncScoresFromEngine(
         const momentumScore = deriveMomentumScore(scored.factors.rsi14, scored.factors.roc21);
         const liquidityScore = deriveLiquidityScore(scored.factors.vol_ratio);
         const valueScore = existingValueScoreByCode.get(code) ?? 50;
+        const signal = deriveSignalFromTotalScore(totalScore);
 
         upsertRows.push({
           code,
           asof,
           score: Number(scored.score.toFixed(2)),
+          signal,
           total_score: totalScore,
           momentum_score: momentumScore,
           liquidity_score: liquidityScore,

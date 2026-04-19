@@ -120,6 +120,23 @@ def calculate_avwap_support(close, volume):
 
     return float(round(support_pct, 2)), regime
 
+
+def derive_signal(total_score):
+    try:
+        score = int(round(float(total_score)))
+    except Exception:
+        score = 0
+    score = max(0, min(100, score))
+    if score >= 85:
+        return "STRONG_BUY"
+    if score >= 70:
+        return "BUY"
+    if score >= 55:
+        return "WATCH"
+    if score <= 20:
+        return "SELL"
+    return "HOLD"
+
 def update_technical_indicators():
     print("🔄 기술적 지표(SMA, RSI) 업데이트 시작...")
     asof = date.today().isoformat()
@@ -234,6 +251,7 @@ def update_technical_indicators():
                 "asof": asof,
                 "score": float(existing_score.get("score") or 50.0),
                 "total_score": int(existing_score.get("total_score") or 50),
+                "signal": derive_signal(existing_score.get("total_score") or 50),
                 "momentum_score": int(existing_score.get("momentum_score") or 50),
                 "liquidity_score": int(existing_score.get("liquidity_score") or 50),
                 "value_score": int(existing_score.get("value_score") or 50),

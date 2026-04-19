@@ -56,7 +56,7 @@ type HoldingRow = {
 type ScoreCandidateRow = {
   code: string;
   total_score: number | null;
-  signal: string | null;
+  signal?: string | null;
   stock: {
     code: string;
     name: string | null;
@@ -128,6 +128,17 @@ function normalizeStock(input: ScoreCandidateRow["stock"]): {
     name: String(row.name ?? ""),
     close,
   };
+}
+
+function isMissingScoresSignalColumn(error: unknown): boolean {
+  if (!error || typeof error !== "object") return false;
+  const rec = error as Record<string, unknown>;
+  const code = String(rec.code ?? "").trim();
+  const message = String(rec.message ?? rec.details ?? "").toLowerCase();
+  return (
+    code === "42703" ||
+    (message.includes("scores.signal") && message.includes("does not exist"))
+  );
 }
 
 async function appendTradeLog(payload: {
@@ -212,21 +223,36 @@ async function selectMondayCandidates(payload: {
   const latestAsof = await getLatestScoreAsof(payload.supabase);
   if (!latestAsof) return [];
 
-  const { data, error } = await payload.supabase
-    .from("scores")
-    .select(
-      [
-        "code",
-        "total_score",
-        "signal",
-        "stock:stocks!inner(code, name, close)",
-      ].join(",")
-    )
-    .eq("asof", latestAsof)
-    .gte("total_score", payload.minBuyScore)
-    .in("signal", ["BUY", "STRONG_BUY", "WATCH"])
-    .order("total_score", { ascending: false })
-    .limit(Math.max(payload.limit * 5, payload.limit));
+  const queryLimit = Math.max(payload.limit * 5, payload.limit);
+  const selectWithSignal = [
+    "code",
+    "total_score",
+    "signal",
+    "stock:stocks!inner(code, name, close)",
+  ].join(",");
+  const selectWithoutSignal = [
+    "code",
+    "total_score",
+    "stock:stocks!inner(code, name, close)",
+  ].join(",");
+
+  const baseQuery = (selectClause: string) =>
+    payload.supabase
+      .from("scores")
+      .select(selectClause)
+      .eq("asof", latestAsof)
+      .gte("total_score", payload.minBuyScore)
+      .order("total_score", { ascending: false })
+      .limit(queryLimit);
+
+  let data: unknown[] | null = null;
+  let error: unknown = null;
+
+  ({ data, error } = await baseQuery(selectWithSignal).in("signal", ["BUY", "STRONG_BUY", "WATCH"]));
+
+  if (error && isMissingScoresSignalColumn(error)) {
+    ({ data, error } = await baseQuery(selectWithoutSignal));
+  }
 
   if (error) {
     throw error;

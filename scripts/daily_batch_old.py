@@ -69,6 +69,19 @@ def safe_int(x, default=0):
     except:
         return default
 
+
+def derive_signal(total_score: int) -> str:
+    score = max(0, min(100, safe_int(total_score, 0)))
+    if score >= 85:
+        return "STRONG_BUY"
+    if score >= 70:
+        return "BUY"
+    if score >= 55:
+        return "WATCH"
+    if score <= 20:
+        return "SELL"
+    return "HOLD"
+
 def get_last_trading_date() -> str:
     """오늘 또는 가장 최근 거래일을 YYYYMMDD로 반환"""
     today = date.today()
@@ -824,6 +837,7 @@ def calculate_stock_scores(trading_date: str):
                 "code": code,
                 "asof": asof,
                 "score": float(total_score),
+                "signal": derive_signal(total_score),
                 "factors": {
                     "rsi14": round(rsi, 2),
                     "roc14": round(roc14, 2),

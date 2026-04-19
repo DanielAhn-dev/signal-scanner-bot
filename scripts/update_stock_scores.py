@@ -34,6 +34,19 @@ def clamp_float(value, default=0.0):
     return max(0.0, min(100.0, n))
 
 
+def derive_signal(total_score):
+    score = clamp_int(total_score, 0)
+    if score >= 85:
+        return "STRONG_BUY"
+    if score >= 70:
+        return "BUY"
+    if score >= 55:
+        return "WATCH"
+    if score <= 20:
+        return "SELL"
+    return "HOLD"
+
+
 def normalize_existing_scores(asof=None):
     print("🔄 score 동기화(정합성 보정) 시작...")
 
@@ -85,6 +98,7 @@ def normalize_existing_scores(asof=None):
                 "code": code,
                 "asof": asof,
                 "total_score": total,
+                "signal": derive_signal(total),
                 "momentum_score": momentum,
                 "liquidity_score": liquidity,
                 "value_score": value,

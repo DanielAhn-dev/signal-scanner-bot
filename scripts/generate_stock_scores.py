@@ -60,6 +60,19 @@ def to_float_native(x, default=0.0):
     except:
         return default
 
+
+def derive_signal(total_score):
+    score = to_int_round(total_score, 0)
+    if score >= 85:
+        return "STRONG_BUY"
+    if score >= 70:
+        return "BUY"
+    if score >= 55:
+        return "WATCH"
+    if score <= 20:
+        return "SELL"
+    return "HOLD"
+
 def upsert_with_retry(table, data_batch, attempts=3, wait=1.0):
     last_exc = None
     delay = wait
@@ -151,6 +164,7 @@ def main():
         payload = {
             "code": str(code),
             "score": score_numeric,                # numeric
+            "signal": derive_signal(total_score_i),
             "factors": {},                         # jsonb NOT NULL
             "asof": asof_date,                     # YYYY-MM-DD (date)
             "value_score": int(value_score_i),     # integer
