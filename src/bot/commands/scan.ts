@@ -23,6 +23,7 @@ import {
   actionButtons,
   ACTIONS,
 } from "../messages/layout";
+import { buildPersonalizedGuidance } from "../../services/personalizedGuidanceService";
 
 const supabase = createClient(
   process.env.SUPABASE_URL!,
@@ -436,6 +437,11 @@ export async function handleScanCommand(
     freshnessWarnings.push("권장: 장 시작 전 /종목분석으로 실시간 가격을 함께 확인하세요.");
   }
 
+  const personalLines = await buildPersonalizedGuidance({
+    chatId: ctx.chatId,
+    context: "scan",
+  }).catch(() => []);
+
   const msg = buildMessage([
     header(title, `기준일 ${latestDate} · ${riskProfileLabel(riskProfile)} 기준`),
     section("스캔 조건", [
@@ -444,6 +450,9 @@ export async function handleScanCommand(
       `점수 기준일 ${scoreResult.latestAsof ?? "확인 불가"}`,
       ...freshnessWarnings,
     ]),
+    ...(personalLines.length > 0
+      ? [section("내 상황 제안", personalLines)]
+      : []),
     section("상위 후보", lines),
     divider(),
     `거래대금은 장중 추정치가 포함될 수 있습니다.`,

@@ -41,6 +41,27 @@ function formatModeLabel(mode: AutoTradeRunMode): string {
   return "자동(실행 시점 재판단)";
 }
 
+function buildModeGuide(mode: AutoTradeRunMode): string[] {
+  if (mode === "daily") {
+    return [
+      "모드 설명",
+      "- daily 는 항상 일일점검만 실행합니다.",
+      "- 보유 종목 유지/손절/부분익절/추가매수 확인용으로 보면 됩니다.",
+    ];
+  }
+  if (mode === "monday") {
+    return [
+      "모드 설명",
+      "- monday 는 월요일 신규 진입 판단만 강제로 실행합니다.",
+    ];
+  }
+  return [
+    "모드 설명",
+    "- auto 는 실행 시점이 월요일이면 monday, 그 외에는 daily 를 자동 선택합니다.",
+    "- 헷갈리면 보유 점검은 /자동사이클 실행 daily 로 고정해서 보면 됩니다.",
+  ];
+}
+
 function formatUnknownError(error: unknown): string {
   if (error instanceof Error) {
     return error.message || error.name;
@@ -217,6 +238,7 @@ export async function handleAutoCycleCommand(
     const action = result.action;
     const noteLines = prioritizeNotes(action.notes || []);
     const guideLines = buildFriendlyGuide(action, dryRun);
+    const modeGuideLines = buildModeGuide(mode);
 
     await tgSend("sendMessage", {
       chat_id: ctx.chatId,
@@ -226,6 +248,7 @@ export async function handleAutoCycleCommand(
         formatExecutionStatus(action),
         formatActionBreakdown(action),
         noteLines.length ? `\n메모\n- ${noteLines.join("\n- ")}` : "",
+        modeGuideLines.length ? `\n${modeGuideLines.join("\n")}` : "",
         guideLines.length ? `\n${guideLines.join("\n")}` : "",
         "\n재실행 예시:",
         "/자동사이클 테스트",

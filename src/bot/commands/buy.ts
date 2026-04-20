@@ -23,6 +23,7 @@ import {
 } from "../../lib/priceScale";
 import { fetchLatestScoresByCodes } from "../../services/scoreSourceService";
 import { calculateAutoTradeBuySizing } from "../../services/virtualAutoTradeSizing";
+import { buildPersonalizedGuidance } from "../../services/personalizedGuidanceService";
 
 // Supabase 클라이언트
 const supabase = createClient(
@@ -448,10 +449,18 @@ export async function handleBuyCommand(
 
 
   const kb = actionButtons(ACTIONS.analyzeStock(code), 3);
+  const personalLines = await buildPersonalizedGuidance({
+    chatId: ctx.chatId,
+    focusCode: code,
+    context: "buy",
+  }).catch(() => []);
+  const personalBlock = personalLines.length > 0
+    ? `\n\n${LINE}\n<b>내 상황 제안</b>\n- ${personalLines.join("\n- ")}`
+    : "";
 
   await tgSend("sendMessage", {
     chat_id: ctx.chatId,
-    text: msg + sectorWarningBlock,
+    text: msg + sectorWarningBlock + personalBlock,
     parse_mode: "HTML",
     reply_markup: kb,
   });

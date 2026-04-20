@@ -5,6 +5,7 @@ import type { ChatContext } from "../router";
 import { createClient } from "@supabase/supabase-js";
 import { searchByNameOrCode } from "../../search/normalize";
 import { fetchRealtimeStockData } from "../../utils/fetchRealtimePrice";
+import { buildPersonalizedGuidance } from "../../services/personalizedGuidanceService";
 import { esc, fmtInt, LINE } from "../messages/format";
 import { actionButtons, ACTIONS } from "../messages/layout";
 import * as cheerio from "cheerio";
@@ -160,6 +161,17 @@ export async function handleFlowCommand(
     msg += `기관 ${i5 >= 0 ? "▲" : "▼"} ${fmtInt(Math.abs(i5))}주`;
   }
 
+  const personalLines = await buildPersonalizedGuidance({
+    chatId: ctx.chatId,
+    focusCode: code,
+    context: "flow",
+  }).catch(() => []);
+
+  if (personalLines.length > 0) {
+    msg += `\n\n${LINE}\n<b>내 상황 제안</b>\n`;
+    msg += personalLines.map((line) => `- ${line}`).join("\n");
+  }
+
   msg += `\n\n${LINE}\n아래 버튼으로 상세 분석을 이어가세요.`;
 
   await tgSend("sendMessage", {
@@ -207,6 +219,16 @@ async function handleMarketFlowSummary(
         "종목 단위 분석은 /flow [종목명] 으로 이용할 수 있습니다.",
       ].join("\n");
     }
+  }
+
+  const personalLines = await buildPersonalizedGuidance({
+    chatId: ctx.chatId,
+    context: "flow",
+  }).catch(() => []);
+
+  if (personalLines.length > 0) {
+    msg += `\n\n${LINE}\n<b>내 상황 제안</b>\n`;
+    msg += personalLines.map((line) => `- ${line}`).join("\n");
   }
 
   msg += `\n${LINE}`;
