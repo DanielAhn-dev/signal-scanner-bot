@@ -15,6 +15,12 @@ import { buildStrategyMemo } from "../lib/strategyMemo";
 import { appendVirtualDecisionLog } from "./decisionLogService";
 import { calculateAutoTradeBuySizing } from "./virtualAutoTradeSizing";
 import {
+  buildPositionStrategyMemo,
+  parsePositionStrategyState,
+  planAutoTradeExit,
+  resolvePositionTradeProfile,
+} from "./virtualAutoTradePositionStrategy";
+import {
   applyStrategyBuyConstraint,
   pickAutoTradeAddOnCandidates,
   pickAutoTradeCandidates,
@@ -63,6 +69,7 @@ type HoldingRow = {
   quantity: number | null;
   invested_amount: number | null;
   status?: string | null;
+  memo?: string | null;
 };
 
 type ScoreCandidateRow = {
@@ -73,10 +80,14 @@ type ScoreCandidateRow = {
     code: string;
     name: string | null;
     close: number | null;
+    rsi14?: number | null;
+    liquidity?: number | null;
   } | Array<{
     code: string;
     name: string | null;
     close: number | null;
+    rsi14?: number | null;
+    liquidity?: number | null;
   }> | null;
 };
 
@@ -127,6 +138,8 @@ function kstDateKey(base = new Date()): string {
 function normalizeStock(input: ScoreCandidateRow["stock"]): {
   name: string;
   close: number;
+  rsi14?: number | null;
+  liquidity?: number | null;
 } | null {
   const row = Array.isArray(input) ? input[0] : input;
   if (!row) return null;
@@ -135,6 +148,8 @@ function normalizeStock(input: ScoreCandidateRow["stock"]): {
   return {
     name: String(row.name ?? ""),
     close,
+    rsi14: toNumber((row as Record<string, unknown>).rsi14, 0) || null,
+    liquidity: toNumber((row as Record<string, unknown>).liquidity, 0) || null,
   };
 }
 
@@ -238,12 +253,12 @@ async function fetchLatestRankedRows(payload: {
     "code",
     "total_score",
     "signal",
-    "stock:stocks!inner(code, name, close)",
+    "stock:stocks!inner(code, name, close, rsi14, liquidity)",
   ].join(",");
   const selectWithoutSignal = [
     "code",
     "total_score",
-    "stock:stocks!inner(code, name, close)",
+    "stock:stocks!inner(code, name, close, rsi14, liquidity)",
   ].join(",");
 
   const buildQuery = (selectClause: string) => {
@@ -286,6 +301,8 @@ async function fetchLatestRankedRows(payload: {
       score: toNumber(row.total_score, 0),
       name: stock.name || row.code,
       signal: row.signal ?? null,
+      rsi14: stock.rsi14 ?? null,
+      liquidity: stock.liquidity ?? null,
     });
   }
 
@@ -297,6 +314,10 @@ async function selectDailyAddOnCandidates(payload: {
   holdings: HoldingRow[];
   limit: number;
   minBuyScore: number;
+  accountStrategy?: string | null;
+  baseTakeProfitPct: number;
+  baseStopLossPct: number;
+  sellSplitCount: number;
 }): Promise<AutoTradeCandidateSelectionResult> {
   const codes = payload.holdings.map((holding) => holding.code).filter(Boolean);
   const { rows, latestAsof } = await fetchLatestRankedRows({
@@ -306,10 +327,23 @@ async function selectDailyAddOnCandidates(payload: {
   });
 
   const holdingsByCode = new Map(
-    payload.holdings.map((holding) => [
-      holding.code,
-      { code: holding.code, buyPrice: toNumber(holding.buy_price, 0) },
-    ])
+    payload.holdings.map((holding) => {
+      const profile = resolvePositionTradeProfile({
+        accountStrategy: payload.accountStrategy,
+        positionMemo: holding.memo,
+        baseTakeProfitPct: payload.baseTakeProfitPct,
+        baseStopLossPct: payload.baseStopLossPct,
+        sellSplitCount: payload.sellSplitCount,
+      });
+      return [
+        holding.code,
+        {
+          code: holding.code,
+          buyPrice: toNumber(holding.buy_price, 0),
+          allowAddOn: profile.allowAddOn,
+        },
+      ];
+    })
   );
 
   const selection = pickAutoTradeAddOnCandidates({
@@ -404,12 +438,7 @@ async function runMondayBuyForUser(payload: {
 
   const selectedStrategy = payload.setting.selected_strategy;
   if (selectedStrategy) {
-    const strategyLabels: Record<string, string> = {
-      HOLD_SAFE: "안전 포지션",
-      REDUCE_TIGHT: "타이트 손절",
-      WAIT_AND_DIP_BUY: "매수 기회 대기",
-    };
-    summary.notes.push(`전략: ${strategyLabels[selectedStrategy] || selectedStrategy}`);
+    summary.notes.push(`전략: ${getStrategyLabel(selectedStrategy) || selectedStrategy}`);
   }
 
   const activeCount = heldCodes.size;
@@ -627,6 +656,12 @@ async function runMondayBuyForUser(payload: {
             quantity: qty,
             invested_amount: investedAmount,
             status: "holding",
+            memo: buildPositionStrategyMemo({
+              event: "monday-buy",
+              note: "autotrade-monday-buy",
+              profile: selectedStrategy,
+              takeProfitTranchesDone: 0,
+            }),
           },
           { onConflict: "chat_id,code", ignoreDuplicates: true }
         )
@@ -733,6 +768,234 @@ async function runMondayBuyForUser(payload: {
   return summary;
 }
 
+function getStrategyLabel(strategy?: string | null): string | null {
+  if (!strategy) return null;
+  const strategyLabels: Record<string, string> = {
+    HOLD_SAFE: "안전 포지션",
+    REDUCE_TIGHT: "타이트 손절",
+    WAIT_AND_DIP_BUY: "매수 기회 대기",
+    SHORT_SWING: "단기 스윙",
+    SWING: "스윙",
+    POSITION_CORE: "중장기 코어",
+  };
+  return strategyLabels[strategy] || strategy;
+}
+
+async function executeAutoTradeSell(payload: {
+  supabase: SupabaseClientAny;
+  runId: number | null;
+  chatId: number;
+  holding: HoldingRow;
+  close: number;
+  buyPrice: number;
+  feeRate: number;
+  taxRate: number;
+  sellQty: number;
+  reason: "take-profit-partial" | "take-profit-final" | "stop-loss";
+  profileLabel: string;
+  strategyProfile: string;
+  takeProfitTranchesDone: number;
+  nextTakeProfitTranchesDone: number;
+  dryRun: boolean;
+}): Promise<{
+  sold: boolean;
+  partial: boolean;
+  proceeds: number;
+  realizedPnlDelta: number;
+  note: string;
+}> {
+  const qty = Math.max(0, Math.floor(toNumber(payload.holding.quantity, 0)));
+  const invested = Math.max(
+    0,
+    toNumber(payload.holding.invested_amount, qty * payload.buyPrice)
+  );
+  const sellQty = Math.max(0, Math.min(qty, Math.floor(payload.sellQty)));
+  const isFullExit = sellQty >= qty;
+  const remainQty = Math.max(0, qty - sellQty);
+
+  if (qty <= 0 || sellQty <= 0) {
+    return {
+      sold: false,
+      partial: false,
+      proceeds: 0,
+      realizedPnlDelta: 0,
+      note: `${payload.holding.code} 매도 스킵: 수량 계산 오류`,
+    };
+  }
+
+  await ensureTradeLotsForHolding({
+    chatId: payload.chatId,
+    watchlistId: payload.holding.id,
+    code: payload.holding.code,
+    quantity: qty,
+    investedAmount: invested,
+    buyPrice: payload.buyPrice,
+    acquiredAt: payload.holding.created_at,
+    buyDate: payload.holding.buy_date,
+  });
+
+  const fifo = await previewFifoSale({
+    chatId: payload.chatId,
+    code: payload.holding.code,
+    quantity: sellQty,
+  });
+  const soldCost = fifo.totalCost;
+  const remainInvested = Math.max(0, invested - soldCost);
+  const nextBuyPrice =
+    remainQty > 0 && remainInvested > 0
+      ? Number((remainInvested / remainQty).toFixed(4))
+      : null;
+  const gross = Math.round(payload.close * sellQty);
+  const feeAmount = Math.round(gross * payload.feeRate);
+  const taxAmount = Math.round(gross * payload.taxRate);
+  const net = Math.max(0, gross - feeAmount - taxAmount);
+  const pnl = net - soldCost;
+  const isTakeProfit = payload.reason !== "stop-loss";
+
+  if (payload.dryRun) {
+    await writeActionLog({
+      supabase: payload.supabase,
+      runId: payload.runId,
+      chatId: payload.chatId,
+      code: payload.holding.code,
+      actionType: "SELL",
+      reason: `dry-run-${payload.reason}`,
+      detail: {
+        qty: sellQty,
+        remainQty,
+        buyPrice: payload.buyPrice,
+        close: payload.close,
+        pnl,
+        isFullExit,
+        takeProfitTranchesDone: payload.takeProfitTranchesDone,
+        nextTakeProfitTranchesDone: payload.nextTakeProfitTranchesDone,
+      },
+    });
+    return {
+      sold: true,
+      partial: !isFullExit,
+      proceeds: net,
+      realizedPnlDelta: pnl,
+      note: isFullExit
+        ? `[테스트 매도안] ${payload.holding.code} ${sellQty}주 전량매도 · 전략 ${payload.profileLabel} · 손익률 ${(((payload.close - payload.buyPrice) / payload.buyPrice) * 100).toFixed(2)}%`
+        : `[테스트 부분익절안] ${payload.holding.code} ${sellQty}주 매도 · 잔여 ${remainQty}주 · 전략 ${payload.profileLabel}`,
+    };
+  }
+
+  if (isFullExit) {
+    const { error: deleteError } = await payload.supabase
+      .from(PORTFOLIO_TABLES.positionsLegacy)
+      .delete()
+      .eq("chat_id", payload.chatId)
+      .eq("id", payload.holding.id);
+
+    if (deleteError) throw deleteError;
+  } else {
+    const nextMemo = buildPositionStrategyMemo({
+      event: "partial-take-profit",
+      note: "autotrade-partial-take-profit",
+      profile: payload.strategyProfile,
+      takeProfitTranchesDone: payload.nextTakeProfitTranchesDone,
+    });
+    const { error: updateError } = await payload.supabase
+      .from(PORTFOLIO_TABLES.positionsLegacy)
+      .update({
+        quantity: remainQty,
+        invested_amount: remainInvested,
+        buy_price: nextBuyPrice,
+        memo: nextMemo,
+        status: "holding",
+      })
+      .eq("chat_id", payload.chatId)
+      .eq("id", payload.holding.id);
+
+    if (updateError) throw updateError;
+  }
+
+  const tradeId = await appendTradeLog({
+    supabase: payload.supabase,
+    chatId: payload.chatId,
+    code: payload.holding.code,
+    side: "SELL",
+    price: payload.close,
+    quantity: sellQty,
+    grossAmount: gross,
+    netAmount: net,
+    feeAmount,
+    taxAmount,
+    pnlAmount: pnl,
+    memo: buildStrategyMemo({
+      strategyId: AUTO_TRADE_STRATEGY_ID,
+      event: payload.reason,
+      note: payload.reason,
+    }),
+  });
+
+  await applyFifoSale({
+    chatId: payload.chatId,
+    code: payload.holding.code,
+    exitPrice: payload.close,
+    tradeId,
+    allocations: fifo.allocations,
+  });
+
+  await writeActionLog({
+    supabase: payload.supabase,
+    runId: payload.runId,
+    chatId: payload.chatId,
+    code: payload.holding.code,
+    actionType: "SELL",
+    reason: payload.reason,
+    detail: {
+      qty: sellQty,
+      remainQty,
+      buyPrice: payload.buyPrice,
+      close: payload.close,
+      gross,
+      net,
+      pnl,
+      isFullExit,
+      takeProfitTranchesDone: payload.takeProfitTranchesDone,
+      nextTakeProfitTranchesDone: payload.nextTakeProfitTranchesDone,
+      tradeId,
+    },
+  });
+
+  appendVirtualDecisionLog({
+    chatId: payload.chatId,
+    code: payload.holding.code,
+    action: "SELL",
+    strategyId: AUTO_TRADE_STRATEGY_ID,
+    strategyVersion: "v1",
+    confidence: isTakeProfit ? 80 : 70,
+    expectedHorizonDays: isTakeProfit ? 3 : 1,
+    reasonSummary: isTakeProfit
+      ? !isFullExit
+        ? `자동 부분익절 (${payload.profileLabel})`
+        : `자동 익절 완료 (${payload.profileLabel})`
+      : `자동 손절 (${payload.profileLabel})`,
+    reasonDetails: {
+      trigger: payload.reason,
+      sellQty,
+      remainQty,
+      buyPrice: payload.buyPrice,
+      sellPrice: payload.close,
+      pnl,
+    },
+    linkedTradeId: tradeId ?? undefined,
+  }).catch((err: unknown) => console.error("[autoTrade] decision log SELL failed", err));
+
+  return {
+    sold: true,
+    partial: !isFullExit,
+    proceeds: net,
+    realizedPnlDelta: pnl,
+    note: isFullExit
+      ? `[실행 매도] ${payload.holding.code} ${sellQty}주 · 전략 ${payload.profileLabel} · 매도가 ${fmtKrw(payload.close)}`
+      : `[실행 부분익절] ${payload.holding.code} ${sellQty}주 · 잔여 ${remainQty}주 · 전략 ${payload.profileLabel} · 매도가 ${fmtKrw(payload.close)}`,
+  };
+}
+
 async function runDailyReviewForUser(payload: {
   supabase: SupabaseClientAny;
   setting: AutoTradeSettingRow;
@@ -752,17 +1015,12 @@ async function runDailyReviewForUser(payload: {
   // 적용된 전략 기록
   const selectedStrategy = payload.setting.selected_strategy;
   if (selectedStrategy) {
-    const strategyLabels: Record<string, string> = {
-      HOLD_SAFE: "안전 포지셀",
-      REDUCE_TIGHT: "타이트 손절",
-      WAIT_AND_DIP_BUY: "매수 기회 대기",
-    };
-    summary.notes.push(`전략: ${strategyLabels[selectedStrategy] || selectedStrategy}`);
+    summary.notes.push(`기본 전략: ${getStrategyLabel(selectedStrategy) || selectedStrategy}`);
   }
 
   const { data: holdingsData, error: holdingsError } = await payload.supabase
     .from(PORTFOLIO_TABLES.positionsLegacy)
-    .select("id, code, buy_price, buy_date, created_at, quantity, invested_amount, status")
+    .select("id, code, buy_price, buy_date, created_at, quantity, invested_amount, status, memo")
     .eq("chat_id", chatId)
     .eq("status", "holding");
 
@@ -807,14 +1065,9 @@ async function runDailyReviewForUser(payload: {
   const prefs = await getUserInvestmentPrefs(chatId);
   const feeRate = toNumber(prefs.virtual_fee_rate, 0.00015);
   const taxRate = toNumber(prefs.virtual_tax_rate, 0.0018);
-  let stopLossPct = Math.abs(toNumber(payload.setting.stop_loss_pct, 4));
-  let takeProfitPct = Math.abs(toNumber(payload.setting.take_profit_pct, 8));
-
-  // 선택된 전략에 따라 손절/익절 조정
-  if (selectedStrategy === "REDUCE_TIGHT") {
-    stopLossPct = 2;
-    takeProfitPct = 4;
-  }
+  const baseStopLossPct = Math.abs(toNumber(payload.setting.stop_loss_pct, 4));
+  const baseTakeProfitPct = Math.abs(toNumber(payload.setting.take_profit_pct, 8));
+  const sellSplitCount = Math.max(1, Math.min(4, toPositiveInt(prefs.virtual_sell_split_count, 2)));
 
   let realizedDelta = 0;
   const storedCashRaw = Number(prefs.virtual_cash);
@@ -862,11 +1115,25 @@ async function runDailyReviewForUser(payload: {
       continue;
     }
 
+    const strategyState = parsePositionStrategyState(holding.memo, selectedStrategy);
+    const tradeProfile = resolvePositionTradeProfile({
+      accountStrategy: selectedStrategy,
+      positionMemo: holding.memo,
+      baseTakeProfitPct,
+      baseStopLossPct,
+      sellSplitCount,
+    });
     const pnlPct = ((close - buyPrice) / buyPrice) * 100;
-    const shouldTakeProfit = pnlPct >= takeProfitPct;
-    const shouldStopLoss = pnlPct <= -stopLossPct;
+    const exitPlan = planAutoTradeExit({
+      quantity: qty,
+      pnlPct,
+      takeProfitPct: tradeProfile.takeProfitPct,
+      stopLossPct: tradeProfile.stopLossPct,
+      takeProfitSplitCount: tradeProfile.takeProfitSplitCount,
+      takeProfitTranchesDone: strategyState.takeProfitTranchesDone,
+    });
 
-    if (!shouldTakeProfit && !shouldStopLoss) {
+    if (exitPlan.action === "HOLD") {
       holdCount += 1;
       await writeActionLog({
         supabase: payload.supabase,
@@ -876,6 +1143,9 @@ async function runDailyReviewForUser(payload: {
         actionType: "HOLD",
         reason: "within-range",
         detail: {
+          strategyProfile: tradeProfile.profile,
+          takeProfitPct: tradeProfile.takeProfitPct,
+          stopLossPct: tradeProfile.stopLossPct,
           buyPrice,
           close,
           pnlPct: Number(pnlPct.toFixed(2)),
@@ -884,130 +1154,39 @@ async function runDailyReviewForUser(payload: {
       continue;
     }
 
-    const gross = Math.round(close * qty);
-    const feeAmount = Math.round(gross * feeRate);
-    const taxAmount = Math.round(gross * taxRate);
-    const net = Math.max(0, gross - feeAmount - taxAmount);
-
     try {
-      if (payload.dryRun) {
-        if (shouldTakeProfit) takeProfitCount += 1;
-        else if (shouldStopLoss) stopLossCount += 1;
-        summary.sells += 1;
-        await writeActionLog({
-          supabase: payload.supabase,
-          runId: payload.runId,
-          chatId,
-          code: holding.code,
-          actionType: "SELL",
-          reason: shouldTakeProfit ? "dry-run-take-profit" : "dry-run-stop-loss",
-          detail: { qty, buyPrice, close, pnlPct: Number(pnlPct.toFixed(2)) },
-        });
-        continue;
-      }
-
-      await ensureTradeLotsForHolding({
-        chatId,
-        watchlistId: holding.id,
-        code: holding.code,
-        quantity: qty,
-        investedAmount: holding.invested_amount,
-        buyPrice,
-        acquiredAt: holding.created_at,
-        buyDate: holding.buy_date,
-      });
-
-      const fifo = await previewFifoSale({
-        chatId,
-        code: holding.code,
-        quantity: qty,
-      });
-
-      const pnl = net - fifo.totalCost;
-      realizedDelta += pnl;
-      availableCash += net;
-
-      const tradeId = await appendTradeLog({
-        supabase: payload.supabase,
-        chatId,
-        code: holding.code,
-        side: "SELL",
-        price: close,
-        quantity: qty,
-        grossAmount: gross,
-        netAmount: net,
-        feeAmount,
-        taxAmount,
-        pnlAmount: pnl,
-        memo: buildStrategyMemo({
-          strategyId: AUTO_TRADE_STRATEGY_ID,
-          event: shouldTakeProfit ? "daily-take-profit" : "daily-stop-loss",
-          note: shouldTakeProfit ? "autotrade-take-profit" : "autotrade-stop-loss",
-        }),
-      });
-
-      const { error: deleteError } = await payload.supabase
-        .from(PORTFOLIO_TABLES.positionsLegacy)
-        .delete()
-        .eq("chat_id", chatId)
-        .eq("id", holding.id);
-
-      if (deleteError) {
-        throw deleteError;
-      }
-
-      await applyFifoSale({
-        chatId,
-        code: holding.code,
-        exitPrice: close,
-        tradeId,
-        allocations: fifo.allocations,
-      });
-
-      if (shouldTakeProfit) takeProfitCount += 1;
-      else if (shouldStopLoss) stopLossCount += 1;
-      summary.sells += 1;
-      summary.notes.push(
-        `[실행 매도] ${holding.code} ${qty}주 · 매도가 ${fmtKrw(close)} · 손익률 ${pnlPct.toFixed(2)}%`
-      );
-      await writeActionLog({
+      const result = await executeAutoTradeSell({
         supabase: payload.supabase,
         runId: payload.runId,
         chatId,
-        code: holding.code,
-        actionType: "SELL",
-        reason: shouldTakeProfit ? "take-profit" : "stop-loss",
-        detail: {
-          qty,
-          buyPrice,
-          close,
-          gross,
-          net,
-          pnl,
-          pnlPct: Number(pnlPct.toFixed(2)),
-          tradeId,
-        },
+        holding,
+        close,
+        buyPrice,
+        feeRate,
+        taxRate,
+        sellQty: exitPlan.quantityToSell,
+        reason: exitPlan.reason,
+        profileLabel: getStrategyLabel(tradeProfile.profile) || tradeProfile.profile,
+        strategyProfile: tradeProfile.profile,
+        takeProfitTranchesDone: strategyState.takeProfitTranchesDone,
+        nextTakeProfitTranchesDone: exitPlan.nextTakeProfitTranchesDone,
+        dryRun: payload.dryRun,
       });
-      // 결정로그: 일일 자동 매도 (익절/손절)
-      appendVirtualDecisionLog({
-        chatId,
-        code: holding.code,
-        action: "SELL",
-        strategyId: AUTO_TRADE_STRATEGY_ID,
-        strategyVersion: "v1",
-        confidence: shouldTakeProfit ? 80 : 70,
-        reasonSummary: shouldTakeProfit
-          ? `자동 익절 (수익률 +${pnlPct.toFixed(1)}%)`
-          : `자동 손절 (수익률 ${pnlPct.toFixed(1)}%)`,
-        reasonDetails: {
-          trigger: shouldTakeProfit ? "take-profit" : "stop-loss",
-          pnlPct: Number(pnlPct.toFixed(2)),
-          pnl,
-          buyPrice,
-          sellPrice: close,
-        },
-        linkedTradeId: tradeId ?? undefined,
-      }).catch((err: unknown) => console.error("[autoTrade] decision log SELL failed", err));
+
+      if (!result.sold) {
+        holdCount += 1;
+        continue;
+      }
+
+      realizedDelta += result.realizedPnlDelta;
+      availableCash += result.proceeds;
+      if (exitPlan.action === "STOP_LOSS") {
+        stopLossCount += 1;
+      } else {
+        takeProfitCount += 1;
+      }
+      summary.sells += 1;
+      summary.notes.push(`${result.note} · 손익률 ${pnlPct.toFixed(2)}%`);
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : String(error);
       summary.errors += 1;
@@ -1026,14 +1205,14 @@ async function runDailyReviewForUser(payload: {
 
   if (holdCount > 0 && takeProfitCount === 0 && stopLossCount === 0) {
     summary.notes.push(
-      `보유 종목 ${holdCount}건은 익절 ${takeProfitPct.toFixed(1)}% / 손절 ${stopLossPct.toFixed(1)}% 범위 미도달로 유지`
+      `보유 종목 ${holdCount}건은 기본 익절 ${baseTakeProfitPct.toFixed(1)}% / 손절 ${baseStopLossPct.toFixed(1)}% 범위 내에서 유지`
     );
   }
 
   // 매도 이후 재조회 기준으로 추가매수/신규 매수 후보를 판단한다.
   const { data: postHoldings, error: postHoldingsError } = await payload.supabase
     .from(PORTFOLIO_TABLES.positionsLegacy)
-    .select("id, code, status, quantity, buy_price, invested_amount, created_at, buy_date")
+    .select("id, code, status, quantity, buy_price, invested_amount, created_at, buy_date, memo")
     .eq("chat_id", chatId);
 
   if (postHoldingsError) {
@@ -1064,6 +1243,10 @@ async function runDailyReviewForUser(payload: {
         holdings: activeHoldings,
         limit: addOnConstraint.buySlots,
         minBuyScore: addOnConstraint.minBuyScore,
+        accountStrategy: payload.setting.selected_strategy,
+        baseTakeProfitPct,
+        baseStopLossPct,
+        sellSplitCount,
       });
 
       if (addOnSelection.latestAsof) {
@@ -1086,13 +1269,20 @@ async function runDailyReviewForUser(payload: {
           0,
           toNumber(holding.invested_amount, currentQty * currentBuyPrice)
         );
+        const holdingProfile = resolvePositionTradeProfile({
+          accountStrategy: payload.setting.selected_strategy,
+          positionMemo: holding.memo,
+          baseTakeProfitPct,
+          baseStopLossPct,
+          sellSplitCount,
+        });
         const sizing = calculateAutoTradeBuySizing({
           availableCash,
           price: candidate.close,
           slotsLeft: 1,
           currentHoldingCount: Math.max(0, currentCount - 1),
           maxPositions: Math.max(1, maxPositions),
-          stopLossPct,
+          stopLossPct: holdingProfile.stopLossPct,
           prefs,
         });
         const addOnBudget = Math.max(
@@ -1142,6 +1332,12 @@ async function runDailyReviewForUser(payload: {
               quantity: nextQty,
               invested_amount: nextInvested,
               buy_price: nextBuyPrice,
+              memo: buildPositionStrategyMemo({
+                event: "add-on-buy",
+                note: "autotrade-add-on-buy",
+                profile: holdingProfile.profile,
+                takeProfitTranchesDone: 0,
+              }),
               status: "holding",
             })
             .eq("chat_id", chatId)
@@ -1320,6 +1516,12 @@ async function runDailyReviewForUser(payload: {
       let slotsLeft = buySlots;
       let plannedHoldingCount = currentCount;
       let sizingNoteAdded = false;
+      const entryProfile = resolvePositionTradeProfile({
+        accountStrategy: payload.setting.selected_strategy,
+        baseTakeProfitPct,
+        baseStopLossPct,
+        sellSplitCount,
+      });
       for (const candidate of candidates) {
         if (slotsLeft <= 0) break;
 
@@ -1329,7 +1531,7 @@ async function runDailyReviewForUser(payload: {
           slotsLeft,
           currentHoldingCount: plannedHoldingCount,
           maxPositions,
-          stopLossPct,
+          stopLossPct: entryProfile.stopLossPct,
           prefs,
         });
 
@@ -1415,6 +1617,12 @@ async function runDailyReviewForUser(payload: {
                 buy_date: new Date().toISOString().slice(0, 10),
                 quantity: qty,
                 invested_amount: investedAmount,
+                memo: buildPositionStrategyMemo({
+                  event: "rebalance-buy",
+                  note: "autotrade-rebalance-buy",
+                  profile: entryProfile.profile,
+                  takeProfitTranchesDone: 0,
+                }),
                 status: "holding",
               },
               { onConflict: "chat_id,code", ignoreDuplicates: true }

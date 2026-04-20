@@ -23,6 +23,7 @@ export interface TelegramFrom {
 export type InvestmentPrefs = {
   capital_krw?: number;
   split_count?: number;
+  virtual_sell_split_count?: number;
   target_profit_pct?: number;
   risk_profile?: "safe" | "balanced" | "active";
   virtual_seed_capital?: number;
@@ -69,6 +70,7 @@ export async function getUserInvestmentPrefs(
 
   const cap = Number(prefs.capital_krw);
   const split = Number(prefs.split_count);
+  const virtualSellSplitCount = Number(prefs.virtual_sell_split_count);
   const target = Number(prefs.target_profit_pct);
   const riskProfile = typeof prefs.risk_profile === "string" ? prefs.risk_profile : undefined;
   const virtualSeed = Number(prefs.virtual_seed_capital);
@@ -81,6 +83,9 @@ export async function getUserInvestmentPrefs(
 
   if (Number.isFinite(cap) && cap > 0) out.capital_krw = cap;
   if (Number.isFinite(split) && split > 0) out.split_count = Math.floor(split);
+  if (Number.isFinite(virtualSellSplitCount) && virtualSellSplitCount > 0) {
+    out.virtual_sell_split_count = Math.floor(virtualSellSplitCount);
+  }
   if (Number.isFinite(target) && target > 0) out.target_profit_pct = target;
   if (riskProfile === "safe" || riskProfile === "balanced" || riskProfile === "active") {
     out.risk_profile = riskProfile;
@@ -134,6 +139,7 @@ export async function setUserInvestmentPrefs(
     prefs: {
       capital_krw: Number(merged.capital_krw || 0) || undefined,
       split_count: Number(merged.split_count || 0) || undefined,
+      virtual_sell_split_count: Number(merged.virtual_sell_split_count || 0) || undefined,
       target_profit_pct: Number(merged.target_profit_pct || 0) || undefined,
       risk_profile:
         merged.risk_profile === "safe" ||

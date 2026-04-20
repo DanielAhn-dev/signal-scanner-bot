@@ -4,6 +4,8 @@ export type RankedCandidate = {
   score: number;
   name: string;
   signal?: string | null;
+  rsi14?: number | null;
+  liquidity?: number | null;
 };
 
 export type AutoTradeCandidateSelectionMode =
@@ -35,6 +37,7 @@ export type AutoTradeBuyConstraint = {
 export type HeldPositionForAddOn = {
   code: string;
   buyPrice: number;
+  allowAddOn?: boolean;
 };
 
 function toNumber(value: unknown, fallback = 0): number {
@@ -227,13 +230,24 @@ export function pickAutoTradeAddOnCandidates(input: {
     .filter((row) => {
       const holding = input.holdingsByCode.get(row.code);
       if (!holding) return false;
+      if (holding.allowAddOn === false) return false;
 
-      const withinAddOnBand =
-        holding.buyPrice > 0 && row.close <= holding.buyPrice * 1.03;
+      const pullbackPct =
+        holding.buyPrice > 0 ? ((row.close - holding.buyPrice) / holding.buyPrice) * 100 : 0;
+      const withinAddOnBand = pullbackPct >= -6 && pullbackPct <= 3;
       const strongContinuation =
         isPreferredBuySignal(row.signal) && row.score >= preferredMinBuyScore + 3;
+      const rsi14 = toNumber(row.rsi14, 50);
+      const rsiHealthy = rsi14 >= 42 && rsi14 <= 68;
+      const liquidity = toNumber(row.liquidity, 0);
+      const liquiditySafe = liquidity <= 0 || liquidity >= 8_000_000_000;
 
-      return row.score >= adaptiveMinBuyScore && (withinAddOnBand || strongContinuation);
+      return (
+        row.score >= adaptiveMinBuyScore &&
+        liquiditySafe &&
+        rsiHealthy &&
+        (withinAddOnBand || strongContinuation)
+      );
     })
     .slice(0, limit)
     .map(({ code, close, score, name }) => ({

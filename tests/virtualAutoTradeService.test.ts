@@ -7,6 +7,12 @@ import {
   pickAutoTradeCandidates,
   selectRunType,
 } from "../src/services/virtualAutoTradeSelection";
+import {
+  buildPositionStrategyMemo,
+  parsePositionStrategyState,
+  planAutoTradeExit,
+  resolvePositionTradeProfile,
+} from "../src/services/virtualAutoTradePositionStrategy";
 
 test("selectRunType: auto 모드는 KST 월요일에 monday buy를 선택한다", () => {
   const sundayUtc = new Date("2026-04-19T18:00:00.000Z");
@@ -84,4 +90,78 @@ test("pickAutoTradeAddOnCandidates: 보유 종목도 눌림 또는 강한 연속
     result.candidates.map((candidate) => candidate.code),
     ["A"]
   );
+});
+
+test("pickAutoTradeAddOnCandidates: RSI 과열 구간은 추가매수에서 제외한다", () => {
+  const result = pickAutoTradeAddOnCandidates({
+    rows: [
+      { code: "A", close: 10100, score: 79, name: "Alpha", signal: "BUY", rsi14: 74 },
+    ],
+    preferredMinBuyScore: 72,
+    limit: 1,
+    holdingsByCode: new Map([["A", { code: "A", buyPrice: 10000, allowAddOn: true }]]),
+  });
+
+  assert.equal(result.candidates.length, 0);
+  assert.equal(result.selectionMode, "none");
+});
+
+test("buildPositionStrategyMemo/parsePositionStrategyState: 포지션별 전략과 익절 상태를 memo에 저장한다", () => {
+  const memo = buildPositionStrategyMemo({
+    event: "entry",
+    note: "autotrade-entry",
+    profile: "SWING",
+    takeProfitTranchesDone: 1,
+  });
+
+  const parsed = parsePositionStrategyState(memo, "DEFAULT");
+  assert.equal(parsed.profile, "SWING");
+  assert.equal(parsed.takeProfitTranchesDone, 1);
+});
+
+test("resolvePositionTradeProfile: REDUCE_TIGHT 포지션은 전량 익절 구조를 사용한다", () => {
+  const profile = resolvePositionTradeProfile({
+    accountStrategy: "REDUCE_TIGHT",
+    baseTakeProfitPct: 8,
+    baseStopLossPct: 4,
+    sellSplitCount: 3,
+  });
+
+  assert.equal(profile.profile, "REDUCE_TIGHT");
+  assert.equal(profile.takeProfitPct, 4);
+  assert.equal(profile.stopLossPct, 2);
+  assert.equal(profile.takeProfitSplitCount, 1);
+  assert.equal(profile.allowAddOn, false);
+});
+
+test("planAutoTradeExit: 분할 익절은 첫 신호에서 일부만 매도한다", () => {
+  const plan = planAutoTradeExit({
+    quantity: 5,
+    pnlPct: 9,
+    takeProfitPct: 8,
+    stopLossPct: 4,
+    takeProfitSplitCount: 3,
+    takeProfitTranchesDone: 0,
+  });
+
+  assert.equal(plan.action, "TAKE_PROFIT");
+  assert.equal(plan.isPartial, true);
+  assert.equal(plan.quantityToSell, 2);
+  assert.equal(plan.nextTakeProfitTranchesDone, 1);
+});
+
+test("planAutoTradeExit: 마지막 익절 tranche 는 잔량 전부 매도한다", () => {
+  const plan = planAutoTradeExit({
+    quantity: 3,
+    pnlPct: 9,
+    takeProfitPct: 8,
+    stopLossPct: 4,
+    takeProfitSplitCount: 2,
+    takeProfitTranchesDone: 1,
+  });
+
+  assert.equal(plan.action, "TAKE_PROFIT");
+  assert.equal(plan.isPartial, false);
+  assert.equal(plan.quantityToSell, 3);
+  assert.equal(plan.reason, "take-profit-final");
 });
