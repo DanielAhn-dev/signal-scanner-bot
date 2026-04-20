@@ -273,6 +273,6 @@ export async function handleMarketCommand(
     text: msg,
     parse_mode: "HTML",
     disable_web_page_preview: true,
-    reply_markup: actionButtons(ACTIONS.marketHub, 2),
+    reply_markup: actionButtons([...ACTIONS.marketHub, ...ACTIONS.autoCycleQuick], 2),
   });
 }

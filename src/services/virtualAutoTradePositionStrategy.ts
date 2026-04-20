@@ -24,6 +24,13 @@ export type ResolvedPositionTradeProfile = {
   expectedHorizonDays: number;
 };
 
+export type EntryProfileCandidate = {
+  score: number;
+  signal?: string | null;
+  rsi14?: number | null;
+  liquidity?: number | null;
+};
+
 export type PlannedAutoTradeExit =
   | {
       action: "HOLD";
@@ -73,6 +80,10 @@ function clampInt(value: number, min: number, max: number): number {
 
 function sanitizeMemoValue(value: string): string {
   return String(value).replace(/[;\n\r]/g, " ").trim();
+}
+
+function normalizeSignal(signal: unknown): string {
+  return String(signal ?? "").trim().toUpperCase();
 }
 
 function parseMemoMap(raw?: string | null): Map<string, string> {
@@ -136,6 +147,51 @@ export function buildPositionStrategyMemo(input: {
   ];
 
   return parts.join(";");
+}
+
+export function classifyAutoTradeEntryProfile(input: {
+  accountStrategy?: string | null;
+  riskProfile?: string | null;
+  candidate: EntryProfileCandidate;
+}): PositionStrategyProfile {
+  const fixedAccountProfile = normalizePositionStrategyProfile(input.accountStrategy);
+  if (
+    fixedAccountProfile === "SHORT_SWING" ||
+    fixedAccountProfile === "SWING" ||
+    fixedAccountProfile === "POSITION_CORE"
+  ) {
+    return fixedAccountProfile;
+  }
+
+  const signal = normalizeSignal(input.candidate.signal);
+  const score = toNumber(input.candidate.score, 0);
+  const rsi14 = toNumber(input.candidate.rsi14, 50);
+  const liquidity = toNumber(input.candidate.liquidity, 0);
+  const accountStrategy = normalizePositionStrategyProfile(input.accountStrategy);
+  const riskProfile = String(input.riskProfile ?? "").trim().toLowerCase();
+
+  const strongSignal = signal === "BUY" || signal === "STRONG_BUY";
+  const preferredSignal = strongSignal || signal === "WATCH";
+  const calmRsi = rsi14 >= 45 && rsi14 <= 60;
+  const healthyRsi = rsi14 >= 42 && rsi14 <= 68;
+  const highLiquidity = liquidity <= 0 || liquidity >= 15_000_000_000;
+  const conservativeBias = accountStrategy === "HOLD_SAFE" || riskProfile === "safe";
+  const defensiveBias = conservativeBias || accountStrategy === "REDUCE_TIGHT";
+  const aggressiveBias = riskProfile === "active";
+
+  if (score >= 82 && strongSignal && calmRsi && highLiquidity) {
+    return aggressiveBias ? "SWING" : "POSITION_CORE";
+  }
+
+  if (score >= 72 && preferredSignal && healthyRsi) {
+    return conservativeBias ? "SWING" : aggressiveBias ? "SHORT_SWING" : "SWING";
+  }
+
+  if (score >= 62 && (preferredSignal || calmRsi)) {
+    return defensiveBias ? "SWING" : "SHORT_SWING";
+  }
+
+  return defensiveBias ? "DEFAULT" : "SHORT_SWING";
 }
 
 export function resolvePositionTradeProfile(input: {

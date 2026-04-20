@@ -3,6 +3,7 @@ import { createClient } from "@supabase/supabase-js";
 import { createBriefingReport } from "../../services/briefingService";
 import { buildPersonalizedGuidance } from "../../services/personalizedGuidanceService";
 import { getUserInvestmentPrefs } from "../../services/userService";
+import { ACTIONS, actionButtons } from "../messages/layout";
 
 const supabase = createClient(
   process.env.SUPABASE_URL!,
@@ -40,5 +41,6 @@ export async function handleBriefCommand(
     text: finalReport,
     parse_mode: "HTML",
     disable_web_page_preview: true,
+    reply_markup: actionButtons([...ACTIONS.briefing, ...ACTIONS.autoCycleQuick], 3),
   });
 }

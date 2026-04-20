@@ -95,7 +95,8 @@ const HELP_SECTIONS = [
       "/보유수정 <종목> <매수가> [수량] — 보유 단가·수량 수정",
       "/보유복구 <종목> <매수가> <수량> — 누락된 보유 포지션 복구",
       "/자동매도점검 — 기준 충족 시 자동 매도 기록",
-      "/자동사이클 [테스트|실행] [auto|daily|monday] — 자동매매 1회 실행",
+      "/자동사이클 [점검|실행|진입] — 자동매매 1회 실행",
+      "  점검=오늘 기준 시뮬레이션, 실행=오늘 기준 실제 반영, 진입=신규 진입 판단 강제",
       "  현재는 보유 종목 추가매수, 부분 익절, 분할 매도, 포지션별 전략 상태를 함께 반영",
       "/보유대응 — 익일 대응 플랜(무체결)",
       "/거래기록 [이번달|지난달|4월|4월 1주|7|최근 7일|전체] — 가상 매매 기록",
@@ -266,7 +267,7 @@ export const TELEGRAM_BOT_COMMANDS: TelegramBotCommand[] = [
   { command: "holdingedit", description: "보유 단가·수량 수정" },
   { command: "holdingrestore", description: "누락 보유 포지션 복구" },
   { command: "autosellcheck", description: "자동 매도 점검" },
-  { command: "autocycle", description: "자동매매 1회 실행" },
+  { command: "autocycle", description: "자동사이클 점검·실행·진입" },
   { command: "holdingplan", description: "보유 대응 플랜" },
   { command: "tradelog", description: "거래 기록" },
   { command: "flow", description: "외국인·기관 수급" },
@@ -298,6 +299,10 @@ export function resolveReplyPrefixFromText(replyText: string): string | undefine
 
 export function resolveCallbackCommandText(command: string): string | undefined {
   if (command.startsWith("report:")) return `/report ${command.slice(7)}`;
+  if (command === "autocycle:check") return "/자동사이클 점검";
+  if (command === "autocycle:run") return "/자동사이클 실행";
+  if (command === "autocycle:entry-check") return "/자동사이클 점검 진입";
+  if (command === "autocycle:entry-run") return "/자동사이클 실행 진입";
   if (command.startsWith("tradelog:")) {
     const scope = command.slice(9);
     if (scope === "month") return "/거래기록";

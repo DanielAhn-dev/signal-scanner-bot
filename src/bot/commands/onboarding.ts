@@ -6,6 +6,7 @@ import {
   divider,
   buildMessage,
   actionButtons,
+  ACTIONS,
 } from "../messages/layout";
 import { getUserInvestmentPrefs, setUserInvestmentPrefs } from "../../services/userService";
 
@@ -88,6 +89,7 @@ export async function handleOnboardingCommand(
       "2) /투자금 300만원 3 8 형태로 투자금 입력",
       "3) /관심추가 삼성전자 또는 버튼으로 관심 목록에 먼저 저장",
       "4) /브리핑 에서 추천 후보와 관심/보유 종목을 함께 점검",
+      "5) 자동사이클은 /자동사이클 점검 -> /자동사이클 실행 순서로 쓰고, 첫 진입만 /자동사이클 실행 진입으로 별도 확인",
     ])),
     divider(),
     "※ 본 봇은 의사결정 보조 도구이며 수익을 보장하지 않습니다. 리스크 관리는 항상 본인 책임입니다.",
@@ -117,5 +119,18 @@ export async function handleOnboardingCommand(
       { text: "종목분석", callback_data: "prompt:trade" },
       { text: "재무", callback_data: "prompt:finance" },
     ], 2),
+  });
+
+  await tgSend("sendMessage", {
+    chat_id: ctx.chatId,
+    text: [
+      "<b>자동사이클 바로가기</b>",
+      "- 자동 점검: 오늘 기준 시뮬레이션",
+      "- 자동 실행: 오늘 기준 실제 반영",
+      "- 진입 점검/진입 실행: 신규 진입 판단을 강제로 확인",
+    ].join("\n"),
+    parse_mode: "HTML",
+    disable_web_page_preview: true,
+    reply_markup: actionButtons(ACTIONS.autoCycleMenu, 2),
   });
 }

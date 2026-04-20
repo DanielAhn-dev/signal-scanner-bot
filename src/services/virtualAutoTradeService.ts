@@ -15,6 +15,7 @@ import { buildStrategyMemo } from "../lib/strategyMemo";
 import { appendVirtualDecisionLog } from "./decisionLogService";
 import { calculateAutoTradeBuySizing } from "./virtualAutoTradeSizing";
 import {
+  classifyAutoTradeEntryProfile,
   buildPositionStrategyMemo,
   parsePositionStrategyState,
   planAutoTradeExit,
@@ -590,6 +591,18 @@ async function runMondayBuyForUser(payload: {
 
       const qty = sizing.quantity;
       const investedAmount = sizing.investedAmount;
+      const candidateProfile = classifyAutoTradeEntryProfile({
+        accountStrategy: selectedStrategy,
+        riskProfile: prefs.risk_profile,
+        candidate,
+      });
+      const tradeProfile = resolvePositionTradeProfile({
+        accountStrategy: candidateProfile,
+        baseTakeProfitPct: Math.abs(toNumber(payload.setting.take_profit_pct, 8)),
+        baseStopLossPct: Math.abs(toNumber(payload.setting.stop_loss_pct, 4)),
+        sellSplitCount: Math.max(1, Math.min(4, toPositiveInt(prefs.virtual_sell_split_count, 2))),
+      });
+      const profileLabel = getStrategyLabel(tradeProfile.profile) || tradeProfile.profile;
       if (qty <= 0 || investedAmount <= 0) {
         summary.skipped += 1;
         await writeActionLog({
@@ -619,7 +632,7 @@ async function runMondayBuyForUser(payload: {
         const expectedPnl = Math.max(0, Math.round((targetPrice - candidate.close) * qty));
         summary.buys += 1;
         summary.notes.push(
-          `[테스트 매수안] ${candidate.name}(${candidate.code}) ${qty}주 · 매수가 ${fmtKrw(candidate.close)} · 투입 ${fmtKrw(investedAmount)} · 목표가 ${fmtKrw(targetPrice)} · 기대수익 ${fmtKrw(expectedPnl)} (${Math.abs(toNumber(payload.setting.take_profit_pct, 8)).toFixed(1)}%)`
+          `[테스트 매수안] ${candidate.name}(${candidate.code}) ${qty}주 · 전략 ${profileLabel} · 매수가 ${fmtKrw(candidate.close)} · 투입 ${fmtKrw(investedAmount)} · 목표가 ${fmtKrw(targetPrice)} · 기대수익 ${fmtKrw(expectedPnl)} (${Math.abs(toNumber(payload.setting.take_profit_pct, 8)).toFixed(1)}%)`
         );
         await writeActionLog({
           supabase: payload.supabase,
@@ -635,6 +648,7 @@ async function runMondayBuyForUser(payload: {
             investedAmount,
             totalBudget: sizing.totalBudget,
             splitCount: sizing.splitCount,
+            strategyProfile: tradeProfile.profile,
             targetPrice,
             expectedPnl,
           },
@@ -659,7 +673,7 @@ async function runMondayBuyForUser(payload: {
             memo: buildPositionStrategyMemo({
               event: "monday-buy",
               note: "autotrade-monday-buy",
-              profile: selectedStrategy,
+              profile: tradeProfile.profile,
               takeProfitTranchesDone: 0,
             }),
           },
@@ -706,7 +720,7 @@ async function runMondayBuyForUser(payload: {
       plannedHoldingCount += 1;
       availableCash = Math.max(0, availableCash - investedAmount);
       summary.notes.push(
-        `[실행 매수] ${candidate.name}(${candidate.code}) ${qty}주 · 매수가 ${fmtKrw(candidate.close)} · 투입 ${fmtKrw(investedAmount)} · 점수 ${candidate.score.toFixed(1)}`
+        `[실행 매수] ${candidate.name}(${candidate.code}) ${qty}주 · 전략 ${profileLabel} · 매수가 ${fmtKrw(candidate.close)} · 투입 ${fmtKrw(investedAmount)} · 점수 ${candidate.score.toFixed(1)}`
       );
       await writeActionLog({
         supabase: payload.supabase,
@@ -722,6 +736,7 @@ async function runMondayBuyForUser(payload: {
           investedAmount,
           totalBudget: sizing.totalBudget,
           splitCount: sizing.splitCount,
+          strategyProfile: tradeProfile.profile,
           tradeId,
           cashAfter: availableCash,
         },
@@ -734,9 +749,9 @@ async function runMondayBuyForUser(payload: {
         strategyId: AUTO_TRADE_STRATEGY_ID,
         strategyVersion: "v1",
         confidence: Math.min(100, Math.max(0, candidate.score)),
-        expectedHorizonDays: 5,
-        reasonSummary: `자동 월요일 매수 (점수 ${candidate.score.toFixed(1)})`,
-        reasonDetails: { score: candidate.score, price: candidate.close, qty, investedAmount, totalBudget: sizing.totalBudget, splitCount: sizing.splitCount, trigger: "monday-score-candidate" },
+        expectedHorizonDays: tradeProfile.expectedHorizonDays,
+        reasonSummary: `자동 월요일 매수 (${profileLabel}, 점수 ${candidate.score.toFixed(1)})`,
+        reasonDetails: { score: candidate.score, price: candidate.close, qty, investedAmount, totalBudget: sizing.totalBudget, splitCount: sizing.splitCount, strategyProfile: tradeProfile.profile, trigger: "monday-score-candidate" },
         linkedTradeId: tradeId ?? undefined,
       }).catch((err: unknown) => console.error("[autoTrade] decision log BUY failed", err));
       slotsLeft -= 1;
@@ -1516,14 +1531,21 @@ async function runDailyReviewForUser(payload: {
       let slotsLeft = buySlots;
       let plannedHoldingCount = currentCount;
       let sizingNoteAdded = false;
-      const entryProfile = resolvePositionTradeProfile({
-        accountStrategy: payload.setting.selected_strategy,
-        baseTakeProfitPct,
-        baseStopLossPct,
-        sellSplitCount,
-      });
       for (const candidate of candidates) {
         if (slotsLeft <= 0) break;
+
+        const candidateProfile = classifyAutoTradeEntryProfile({
+          accountStrategy: payload.setting.selected_strategy,
+          riskProfile: prefs.risk_profile,
+          candidate,
+        });
+        const entryProfile = resolvePositionTradeProfile({
+          accountStrategy: candidateProfile,
+          baseTakeProfitPct,
+          baseStopLossPct,
+          sellSplitCount,
+        });
+        const profileLabel = getStrategyLabel(entryProfile.profile) || entryProfile.profile;
 
         const sizing = calculateAutoTradeBuySizing({
           availableCash,
@@ -1581,7 +1603,7 @@ async function runDailyReviewForUser(payload: {
             rebalanceBuyCount += 1;
             summary.buys += 1;
             summary.notes.push(
-              `[테스트 매수안] ${candidate.name}(${candidate.code}) ${qty}주 · 매수가 ${fmtKrw(candidate.close)} · 목표가 ${fmtKrw(targetPrice)} · 기대수익 ${fmtKrw(expectedPnl)} (${targetPct.toFixed(1)}%)`
+              `[테스트 매수안] ${candidate.name}(${candidate.code}) ${qty}주 · 전략 ${profileLabel} · 매수가 ${fmtKrw(candidate.close)} · 목표가 ${fmtKrw(targetPrice)} · 기대수익 ${fmtKrw(expectedPnl)} (${targetPct.toFixed(1)}%)`
             );
             await writeActionLog({
               supabase: payload.supabase,
@@ -1597,6 +1619,7 @@ async function runDailyReviewForUser(payload: {
                 totalBudget: sizing.totalBudget,
                 splitCount: sizing.splitCount,
                 score: candidate.score,
+                strategyProfile: entryProfile.profile,
                 targetPrice,
                 expectedPnl,
               },
@@ -1669,7 +1692,7 @@ async function runDailyReviewForUser(payload: {
           rebalanceBuyCount += 1;
           summary.buys += 1;
           summary.notes.push(
-            `[실행 매수] ${candidate.name}(${candidate.code}) ${qty}주 · 매수가 ${fmtKrw(candidate.close)} · 투입 ${fmtKrw(investedAmount)} · 점수 ${candidate.score.toFixed(1)}`
+            `[실행 매수] ${candidate.name}(${candidate.code}) ${qty}주 · 전략 ${profileLabel} · 매수가 ${fmtKrw(candidate.close)} · 투입 ${fmtKrw(investedAmount)} · 점수 ${candidate.score.toFixed(1)}`
           );
           await writeActionLog({
             supabase: payload.supabase,
@@ -1685,6 +1708,7 @@ async function runDailyReviewForUser(payload: {
               totalBudget: sizing.totalBudget,
               splitCount: sizing.splitCount,
               score: candidate.score,
+              strategyProfile: entryProfile.profile,
               tradeId,
               cashAfter: availableCash,
             },
@@ -1697,9 +1721,9 @@ async function runDailyReviewForUser(payload: {
             strategyId: AUTO_TRADE_STRATEGY_ID,
             strategyVersion: "v1",
             confidence: Math.min(100, Math.max(0, candidate.score)),
-            expectedHorizonDays: 5,
-            reasonSummary: `자동 리밸런싱 재매수 (점수 ${candidate.score.toFixed(1)})`,
-            reasonDetails: { score: candidate.score, price: candidate.close, qty, investedAmount, totalBudget: sizing.totalBudget, splitCount: sizing.splitCount, trigger: "rebalance-buy" },
+            expectedHorizonDays: entryProfile.expectedHorizonDays,
+            reasonSummary: `자동 리밸런싱 재매수 (${profileLabel}, 점수 ${candidate.score.toFixed(1)})`,
+            reasonDetails: { score: candidate.score, price: candidate.close, qty, investedAmount, totalBudget: sizing.totalBudget, splitCount: sizing.splitCount, strategyProfile: entryProfile.profile, trigger: "rebalance-buy" },
             linkedTradeId: tradeId ?? undefined,
           }).catch((err: unknown) => console.error("[autoTrade] decision log rebalance BUY failed", err));
         } catch (error: unknown) {

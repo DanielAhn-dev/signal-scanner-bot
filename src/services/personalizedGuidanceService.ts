@@ -79,7 +79,7 @@ function extractRunHint(run?: AutoTradeRunRow | null): string | null {
 }
 
 function buildModeHint(): string {
-  return "참고: /자동사이클 실행 은 실행 시점에 월요일이면 매수, 그 외에는 일일점검을 자동 선택하고, /자동사이클 실행 daily 는 항상 일일점검만 실행합니다.";
+  return "참고: /자동사이클 점검 은 오늘 기준 시뮬레이션, /자동사이클 실행 은 오늘 기준 실제 반영, /자동사이클 실행 진입 은 신규 진입 판단을 강제로 확인할 때 쓰면 됩니다.";
 }
 
 export async function buildPersonalizedGuidance(input: {
@@ -154,7 +154,7 @@ export async function buildPersonalizedGuidance(input: {
     if (latestRunRecent) {
       lines.push("오늘은 브리핑과 최근 자동사이클 결과가 이미 있어, 바로 자동사이클을 다시 돌리지 않아도 판단 기준을 잡을 수 있습니다.");
     } else {
-      lines.push("오늘 판단을 바로 확정해야 하면 브리핑 확인 후 /자동사이클 테스트 또는 /자동사이클 실행 daily 로 최종 점검하면 충분합니다.");
+      lines.push("오늘 판단을 바로 확정해야 하면 브리핑 확인 후 /자동사이클 점검 또는 /자동사이클 실행 으로 최종 점검하면 충분합니다.");
     }
   }
 

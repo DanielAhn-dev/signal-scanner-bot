@@ -18,10 +18,10 @@ function parseInput(rawInput: string): {
     if (["실행", "run", "live", "실매행"].includes(token)) {
       dryRun = false;
     }
-    if (["테스트", "dry", "dryrun", "시험"].includes(token)) {
+    if (["테스트", "dry", "dryrun", "시험", "점검", "리뷰", "check"].includes(token)) {
       dryRun = true;
     }
-    if (["월", "월요일", "monday"].includes(token)) {
+    if (["월", "월요일", "monday", "진입", "entry", "매수"].includes(token)) {
       mode = "monday";
     }
     if (["일", "daily", "주중", "데일리"].includes(token)) {
@@ -45,20 +45,37 @@ function buildModeGuide(mode: AutoTradeRunMode): string[] {
   if (mode === "daily") {
     return [
       "모드 설명",
-      "- daily 는 항상 일일점검만 실행합니다.",
-      "- 보유 종목 유지/손절/부분익절/추가매수 확인용으로 보면 됩니다.",
+      "- daily 는 구버전 별칭입니다.",
+      "- 지금은 /자동사이클 점검 또는 /자동사이클 실행 으로 쓰는 편이 더 명확합니다.",
     ];
   }
   if (mode === "monday") {
     return [
       "모드 설명",
-      "- monday 는 월요일 신규 진입 판단만 강제로 실행합니다.",
+      "- 진입 모드는 신규 진입 판단을 강제로 한 번 실행합니다.",
+      "- 주간 첫 진입이나 재진입 점검이 필요할 때만 쓰면 됩니다.",
     ];
   }
   return [
     "모드 설명",
-    "- auto 는 실행 시점이 월요일이면 monday, 그 외에는 daily 를 자동 선택합니다.",
-    "- 헷갈리면 보유 점검은 /자동사이클 실행 daily 로 고정해서 보면 됩니다.",
+    "- 기본 모드는 오늘 기준 통합판단입니다.",
+    "- /자동사이클 점검은 시뮬레이션, /자동사이클 실행은 실제 반영으로 이해하면 됩니다.",
+  ];
+}
+
+function buildCommandExamples(mode: AutoTradeRunMode): string[] {
+  if (mode === "monday") {
+    return [
+      "/자동사이클 점검 진입",
+      "/자동사이클 실행 진입",
+      "/자동사이클 실행",
+    ];
+  }
+
+  return [
+    "/자동사이클 점검",
+    "/자동사이클 실행",
+    "/자동사이클 실행 진입",
   ];
 }
 
@@ -125,7 +142,7 @@ function prioritizeNotes(notes: string[]): string[] {
   const priorityRules: Array<{ pattern: RegExp; score: number }> = [
     { pattern: /실행 매수|실행 매도|테스트 매수안|테스트 매도/i, score: 120 },
     { pattern: /일일판단 요약|보유 현황|보유 종목 .* 유지/i, score: 110 },
-    { pattern: /전략:|전략 유지|신규 매수 중지|기존 포지션만 관리|최소 진입/i, score: 100 },
+    { pattern: /전략:|전략 유지|신규 매수 중지|기존 포지션만 관리|최소 진입|제한 진입|보수 분산/i, score: 100 },
     { pattern: /후보 없음|후보 0건|상위점수|대체선별|기준 완화/i, score: 90 },
     { pattern: /투자 가능 현금 0원|현금 부족|가상현금 보정/i, score: 80 },
     { pattern: /사이징 기준|분할 1\//i, score: 70 },
@@ -160,7 +177,7 @@ function buildFriendlyGuide(action: {
       "안내",
       "- 이번 회차는 실행 중 오류가 있었습니다.",
       "- 메모에 나온 실패 이유를 먼저 확인해 주세요.",
-      "- 개발 중 점검은 /자동사이클 테스트 로 다시 확인하는 것이 안전합니다.",
+      "- 다시 확인할 때는 /자동사이클 점검 으로 보는 편이 가장 안전합니다.",
     ];
   }
 
@@ -176,7 +193,7 @@ function buildFriendlyGuide(action: {
 
   if (action.skipped > 0) {
     const hasStrategyBlock = notes.some((note) =>
-      /전략|기존 포지션만 관리|신규 매수 중지|최소 진입/.test(note)
+      /전략|기존 포지션만 관리|신규 매수 중지|최소 진입|제한 진입|보수 분산/.test(note)
     );
     const hasNoCandidate = notes.some((note) => /후보 없음|미체결|현금 0원/.test(note));
 
@@ -192,7 +209,7 @@ function buildFriendlyGuide(action: {
       lines.push("- 오늘 점수/현금/후보 조건상 체결 가능한 종목이 없었습니다.");
     }
 
-    lines.push("- 개발 중 확인이라면 /자동사이클 테스트 와 /자동사이클 실행 daily 를 함께 보면 흐름을 파악하기 쉽습니다.");
+    lines.push("- 보통은 /자동사이클 점검 으로 먼저 보고, 괜찮으면 /자동사이클 실행 으로 반영하면 됩니다.");
     return lines;
   }
 
@@ -211,7 +228,7 @@ function buildFriendlyGuide(action: {
   return [
     "안내",
     "- 이번 회차는 점검만 완료됐습니다.",
-    "- 추가 확인이 필요하면 /자동사이클 테스트 로 다시 실행해 보세요.",
+    "- 추가 확인이 필요하면 /자동사이클 점검 으로 다시 보면 됩니다.",
   ];
 }
 
@@ -239,6 +256,7 @@ export async function handleAutoCycleCommand(
     const noteLines = prioritizeNotes(action.notes || []);
     const guideLines = buildFriendlyGuide(action, dryRun);
     const modeGuideLines = buildModeGuide(mode);
+    const commandExamples = buildCommandExamples(mode);
 
     await tgSend("sendMessage", {
       chat_id: ctx.chatId,
@@ -251,9 +269,7 @@ export async function handleAutoCycleCommand(
         modeGuideLines.length ? `\n${modeGuideLines.join("\n")}` : "",
         guideLines.length ? `\n${guideLines.join("\n")}` : "",
         "\n재실행 예시:",
-        "/자동사이클 테스트",
-        "/자동사이클 실행",
-        "/자동사이클 실행 daily",
+        ...commandExamples,
       ].join("\n"),
       parse_mode: "HTML",
     });

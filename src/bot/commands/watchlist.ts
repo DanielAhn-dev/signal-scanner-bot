@@ -1062,6 +1062,7 @@ export async function handleWatchlistCommand(
         walletSummary,
       ].join("\n"),
       parse_mode: "HTML",
+      reply_markup: actionButtons(ACTIONS.autoCycleMenu, 2),
     });
   }
 
@@ -1262,6 +1263,7 @@ export async function handleWatchlistCommand(
     chat_id: ctx.chatId,
     text: msg,
     parse_mode: "HTML",
+    reply_markup: actionButtons(ACTIONS.autoCycleMenu, 2),
   });
 }
 
@@ -1937,7 +1939,7 @@ export async function handleWatchlistLiquidateAllCommand(
       "다음 권장 순서",
       "1) /거래기록 또는 /거래기록 최근 7일 로 실현손익 확인",
       "2) /보유 로 잔여 포지션 확인",
-      "3) /자동사이클 실행 daily 로 새 기준 시작",
+      "3) /자동사이클 실행 으로 새 기준 시작",
     ]
       .filter(Boolean)
       .join("\n"),

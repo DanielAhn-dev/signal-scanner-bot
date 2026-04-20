@@ -339,14 +339,14 @@ async function handlePlaybookReportCommand(ctx: ChatContext, tgSend: any): Promi
       "보유 0개 재진입: daily/auto도 점수·현금 조건 충족 시 신규매수 가능",
       "",
       "<b>오늘 체크리스트</b>",
-      "1) 테스트 먼저 실행",
+      "1) 점검 먼저 실행",
       "2) 실집행은 같은 날 같은 모드 반복 금지",
       "3) 실행 후 /보유, /거래기록으로 결과 확인",
       "",
       "출력본(PDF)이 필요하면 /리포트 가이드를 사용하세요.",
     ].join("\n"),
     parse_mode: "HTML",
-    reply_markup: actionButtons(ACTIONS.reportMenu, 2),
+    reply_markup: actionButtons([...ACTIONS.reportMenu, ...ACTIONS.autoCycleQuick], 2),
   });
 }
 
@@ -357,7 +357,7 @@ export async function handleReportMenu(
   await tgSend("sendMessage", {
     chat_id: ctx.chatId,
     text: buildReportMenuText(),
-    reply_markup: actionButtons(ACTIONS.reportMenu, 2),
+    reply_markup: actionButtons([...ACTIONS.reportMenu, ...ACTIONS.autoCycleQuick], 2),
   });
 }
 
@@ -382,7 +382,7 @@ export async function handleReportCommand(
         "",
         buildReportMenuText(),
       ].join("\n"),
-      reply_markup: actionButtons(ACTIONS.reportMenu, 2),
+      reply_markup: actionButtons([...ACTIONS.reportMenu, ...ACTIONS.autoCycleQuick], 2),
     });
     return;
   }

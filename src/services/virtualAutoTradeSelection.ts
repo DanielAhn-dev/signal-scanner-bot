@@ -16,7 +16,15 @@ export type AutoTradeCandidateSelectionMode =
   | "none";
 
 export type AutoTradeCandidateSelectionResult = {
-  candidates: Array<{ code: string; close: number; score: number; name: string }>;
+  candidates: Array<{
+    code: string;
+    close: number;
+    score: number;
+    name: string;
+    signal?: string | null;
+    rsi14?: number | null;
+    liquidity?: number | null;
+  }>;
   selectionMode: AutoTradeCandidateSelectionMode;
   thresholdUsed: number;
   latestTopScore: number;
@@ -106,25 +114,29 @@ export function applyStrategyBuyConstraint(input: {
   }
 
   if (selectedStrategy === "HOLD_SAFE") {
-    if (activeCount > 0) {
+    const remainingSafeSlots = Math.max(0, 2 - activeCount);
+    if (remainingSafeSlots <= 0) {
       return {
         buySlots: 0,
         minBuyScore: baseMinBuyScore,
         blocked: true,
-        note: "안전 전략 유지: 기존 포지션만 관리",
+        note: "안전 전략 유지: 총 2종목까지 보수 분산 후 기존 포지션만 관리",
         reason: "strategy-blocked-buy",
       };
     }
 
+    const safeSlots = Math.min(requestedSlots, 1, remainingSafeSlots);
     return {
-      buySlots: Math.min(requestedSlots, 1),
+      buySlots: safeSlots,
       minBuyScore: baseMinBuyScore,
-      blocked: requestedSlots <= 0,
+      blocked: safeSlots <= 0,
       note:
-        requestedSlots > 0
-          ? "안전 전략 최소 진입: 무보유 상태에서는 상위 후보 1종목만 진입"
+        safeSlots > 0
+          ? activeCount <= 0
+            ? "안전 전략 최소 진입: 상위 후보 1종목부터 보수적으로 시작"
+            : "안전 전략 제한 진입: 총 2종목까지 보수 분산 허용"
           : "안전 전략 유지: 추가 매수 슬롯 없음",
-      reason: requestedSlots > 0 ? "hold-safe-probe" : "strategy-blocked-buy",
+      reason: safeSlots > 0 ? "hold-safe-probe" : "strategy-blocked-buy",
     };
   }
 
@@ -155,11 +167,14 @@ export function pickAutoTradeCandidates(input: {
   );
 
   const toCandidates = (targetRows: RankedCandidate[]) =>
-    targetRows.slice(0, limit).map(({ code, close, score, name }) => ({
+    targetRows.slice(0, limit).map(({ code, close, score, name, signal, rsi14, liquidity }) => ({
       code,
       close,
       score,
       name,
+      signal: signal ?? null,
+      rsi14: rsi14 ?? null,
+      liquidity: liquidity ?? null,
     }));
 
   const preferredSignalRows = rows.filter(
@@ -250,11 +265,14 @@ export function pickAutoTradeAddOnCandidates(input: {
       );
     })
     .slice(0, limit)
-    .map(({ code, close, score, name }) => ({
+    .map(({ code, close, score, name, signal, rsi14, liquidity }) => ({
       code,
       close,
       score,
       name,
+      signal: signal ?? null,
+      rsi14: rsi14 ?? null,
+      liquidity: liquidity ?? null,
     }));
 
   return {

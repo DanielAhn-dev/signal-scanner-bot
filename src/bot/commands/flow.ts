@@ -237,6 +237,6 @@ async function handleMarketFlowSummary(
     chat_id: ctx.chatId,
     text: msg,
     parse_mode: "HTML",
-    reply_markup: actionButtons(ACTIONS.marketFlowWithPromptFlow, 2),
+    reply_markup: actionButtons([...ACTIONS.marketFlowWithPromptFlow, ...ACTIONS.autoCycleQuick], 2),
   });
 }

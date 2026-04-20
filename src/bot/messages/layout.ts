@@ -31,6 +31,16 @@ export function actionButtons(buttons: InlineButton[], cols = 2) {
 }
 
 export const ACTIONS = {
+  autoCycleMenu: [
+    { text: "자동 점검", callback_data: "cmd:autocycle:check" },
+    { text: "자동 실행", callback_data: "cmd:autocycle:run" },
+    { text: "진입 점검", callback_data: "cmd:autocycle:entry-check" },
+    { text: "진입 실행", callback_data: "cmd:autocycle:entry-run" },
+  ] as InlineButton[],
+  autoCycleQuick: [
+    { text: "자동 점검", callback_data: "cmd:autocycle:check" },
+    { text: "자동 실행", callback_data: "cmd:autocycle:run" },
+  ] as InlineButton[],
   tradeHistoryFilters: [
     { text: "이번 달", callback_data: "cmd:tradelog:month" },
     { text: "지난달", callback_data: "cmd:tradelog:last-month" },
