@@ -14,6 +14,7 @@ import { buildInvestmentPlan } from "../../lib/investPlan";
 import { fetchRealtimePriceBatch } from "../../utils/fetchRealtimePrice";
 import { pickSaferCandidates, type RiskProfile } from "../../lib/investableUniverse";
 import { getUserInvestmentPrefs } from "../../services/userService";
+import { buildSectorInsightLines } from "../../services/marketInsightService";
 import { esc, fmtInt, fmtPct } from "../messages/format";
 import {
   header,
@@ -33,6 +34,8 @@ const supabase = createClient(
 function buildSectorListMessage(title: string, sectors: SectorScore[]): string {
   if (!sectors.length) return "데이터가 없습니다.";
 
+  const insightLines = buildSectorInsightLines(sectors).map((line) => esc(line));
+
   const topLines = sectors.map((s, idx) => {
     const rank = idx + 1;
     const flows: string[] = [];
@@ -46,6 +49,7 @@ function buildSectorListMessage(title: string, sectors: SectorScore[]): string {
 
   return buildMessage([
     header(`${title} TOP ${sectors.length}`, "수급(5일) · 단기 모멘텀(RS) 기준"),
+    ...(insightLines.length > 0 ? [section("해석", insightLines)] : []),
     section("섹터 랭킹", topLines),
     divider(),
   ]);

@@ -6,6 +6,7 @@ import { createClient } from "@supabase/supabase-js";
 import { searchByNameOrCode } from "../../search/normalize";
 import { fetchRealtimeStockData } from "../../utils/fetchRealtimePrice";
 import { buildPersonalizedGuidance } from "../../services/personalizedGuidanceService";
+import { buildFlowInsightLines } from "../../services/marketInsightService";
 import { esc, fmtInt, LINE } from "../messages/format";
 import { actionButtons, ACTIONS } from "../messages/layout";
 import * as cheerio from "cheerio";
@@ -200,12 +201,20 @@ async function handleMarketFlowSummary(
     msg += "섹터 데이터가 없습니다. 잠시 후 다시 시도해주세요.";
   } else {
     let shown = 0;
+    const summaryRows: Array<{ name: string; foreignFlow: number; instFlow: number; totalFlow: number }> = [];
     for (const s of sectors) {
       const m = s.metrics || {};
       const fFlow = Number(m.flow_foreign_5d || 0);
       const iFlow = Number(m.flow_inst_5d || 0);
       const total = fFlow + iFlow;
       if (total === 0) continue;
+
+      summaryRows.push({
+        name: s.name,
+        foreignFlow: fFlow,
+        instFlow: iFlow,
+        totalFlow: total,
+      });
 
       const fStr = fFlow !== 0 ? `외 ${fmtKorMoney(fFlow)}` : "외 0억";
       const iStr = iFlow !== 0 ? `기 ${fmtKorMoney(iFlow)}` : "기 0억";
@@ -218,6 +227,12 @@ async function handleMarketFlowSummary(
         "수급 집계 데이터가 아직 수집되지 않았습니다.",
         "종목 단위 분석은 /flow [종목명] 으로 이용할 수 있습니다.",
       ].join("\n");
+    } else {
+      const insightLines = buildFlowInsightLines(summaryRows);
+      if (insightLines.length > 0) {
+        msg += `\n${LINE}\n<b>해석</b>\n`;
+        msg += insightLines.map((line) => `- ${esc(line)}`).join("\n");
+      }
     }
   }
 

@@ -14,6 +14,7 @@ import {
   type SectorScore,
 } from "../../lib/sectors";
 import { buildPersonalizedGuidance } from "../../services/personalizedGuidanceService";
+import { buildMarketInsightLines } from "../../services/marketInsightService";
 import { esc, LINE } from "../messages/format";
 import { actionButtons, ACTIONS } from "../messages/layout";
 
@@ -230,6 +231,22 @@ export async function handleMarketCommand(
       msg += `  ▸ ${esc(s.name)}`;
       if (flows.length) msg += `  ${flows.join(" ")}`;
       msg += "\n";
+    });
+    msg += "\n";
+  }
+
+  const insightLines = buildMarketInsightLines({
+    market: marketData,
+    riskScore: diagnosis.riskScore,
+    regimeLabel: regimeLabel[diagnosis.regime],
+    topSectors,
+    nextSectors,
+  });
+
+  if (insightLines.length) {
+    msg += `<b>해석</b>\n`;
+    insightLines.forEach((line) => {
+      msg += `• ${esc(line)}\n`;
     });
     msg += "\n";
   }

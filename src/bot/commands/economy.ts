@@ -13,6 +13,7 @@ import {
   ACTIONS,
 } from "../messages/layout";
 import { buildPersonalizedGuidance } from "../../services/personalizedGuidanceService";
+import { buildEconomyInsightLines } from "../../services/marketInsightService";
 
 const arrow = (n: number) => (n > 0 ? "▲" : n < 0 ? "▼" : "―");
 
@@ -198,12 +199,14 @@ export async function handleEconomyCommand(
     chatId: ctx.chatId,
     context: "economy",
   }).catch(() => []);
+  const insightLines = buildEconomyInsightLines(data);
 
   const msg = buildMessage([
     header("글로벌 경제지표", "핵심 거시 지표 요약"),
     section("요약", [
       `시장 온도: <code>${riskTag(data.vix?.price, data.fearGreed?.score)}</code>`,
     ]),
+    ...(insightLines.length > 0 ? [section("해석", insightLines)] : []),
     ...(personalLines.length > 0 ? [section("내 상황 제안", personalLines)] : []),
     section("국내 증시", domestic),
     section("미국 증시", us),

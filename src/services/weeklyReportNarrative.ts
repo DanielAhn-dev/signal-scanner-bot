@@ -10,6 +10,11 @@ import {
   toNum,
   type ReportTopic,
 } from "./weeklyReportShared";
+import {
+  buildEconomyInsightLines,
+  buildFlowInsightLines,
+  buildSectorInsightLines,
+} from "./marketInsightService";
 
 type NarrativeWindowSummary = {
   buyCount: number;
@@ -75,6 +80,35 @@ function pickVariant(seed: string, options: string[]): string {
   return options[hashSeed(seed) % options.length];
 }
 
+function toFlowInsightRows(sectors: NarrativeSectorRow[]) {
+  return sectors.map((sector) => {
+    const metrics = (sector.metrics ?? {}) as Record<string, unknown>;
+    const foreignFlow = toNum(metrics.flow_foreign_5d);
+    const instFlow = toNum(metrics.flow_inst_5d);
+    return {
+      name: sector.name,
+      foreignFlow,
+      instFlow,
+      totalFlow: foreignFlow + instFlow,
+    };
+  });
+}
+
+function toSectorInsightScores(sectors: NarrativeSectorRow[]) {
+  return sectors.map((sector) => {
+    const metrics = (sector.metrics ?? {}) as Record<string, unknown>;
+    return {
+      id: sector.name,
+      name: sector.name,
+      score: toNum(sector.score),
+      change_rate: toNum(sector.change_rate),
+      flowF5: toNum(metrics.flow_foreign_5d),
+      flowI5: toNum(metrics.flow_inst_5d),
+      rs1M: 0,
+    };
+  });
+}
+
 export function buildTopicHeroSummary(input: {
   topic: ReportTopic;
   defaultSummary: string;
@@ -89,6 +123,8 @@ export function buildTopicHeroSummary(input: {
   const seedBase = `${topic}|${curr.tradeCount}|${totalUnrealized.toFixed(0)}|${sectors[0]?.name ?? "none"}`;
 
   if (topic === "economy") {
+    const insight = buildEconomyInsightLines(market)[0];
+    if (insight) return insight;
     const vix = toNum((market as any).vix?.price);
     const usdkrw = toNum((market as any).usdkrw?.price);
     const fearGreed = toNum((market as any).fearGreed?.score);
@@ -104,25 +140,13 @@ export function buildTopicHeroSummary(input: {
   }
 
   if (topic === "flow") {
-    const ranked = sectors
-      .map((sector) => {
-        const metrics = (sector.metrics ?? {}) as Record<string, unknown>;
-        const totalFlow = toNum(metrics.flow_foreign_5d) + toNum(metrics.flow_inst_5d);
-        return { name: sector.name, totalFlow };
-      })
-      .filter((row) => row.totalFlow !== 0)
-      .sort((a, b) => Math.abs(b.totalFlow) - Math.abs(a.totalFlow));
-    if (ranked.length > 0) {
-      const top = ranked[0];
-      return pickVariant(`${seedBase}|hero|flow|${top.name}`, [
-        `${top.name} 섹터에 최근 5거래일 기준 ${fmtKorMoney(top.totalFlow)} 규모의 순유입이 관측돼 자금 집중도가 가장 높습니다.`,
-        `자금은 ${top.name}에 가장 강하게 모였습니다(최근 5거래일 ${fmtKorMoney(top.totalFlow)}). 수급 주도 구간으로 해석할 수 있습니다.`,
-        `최근 수급의 중심은 ${top.name}입니다. 누적 ${fmtKorMoney(top.totalFlow)} 흐름이 확인돼 단기 우선순위가 높습니다.`,
-      ]);
-    }
+    const insight = buildFlowInsightLines(toFlowInsightRows(sectors))[0];
+    if (insight) return insight;
   }
 
   if (topic === "sector") {
+    const insight = buildSectorInsightLines(toSectorInsightScores(sectors) as any)[0];
+    if (insight) return insight;
     const top = sectors[0];
     if (top) {
       return pickVariant(`${seedBase}|hero|sector|${top.name}`, [
@@ -174,6 +198,8 @@ export function buildTopicClosingSummary(input: {
   const seedBase = `${topic}|${curr.tradeCount}|${prev.tradeCount}|${curr.winRate.toFixed(1)}|${totalUnrealized.toFixed(0)}|${sectors[0]?.name ?? "none"}`;
 
   if (topic === "economy") {
+    const insight = buildEconomyInsightLines(market)[0];
+    if (insight) return insight;
     const vix = toNum((market as any).vix?.price);
     const us10y = toNum((market as any).us10y?.price);
     const fg = toNum((market as any).fearGreed?.score ?? 50);
@@ -215,41 +241,27 @@ export function buildTopicClosingSummary(input: {
   }
 
   if (topic === "flow") {
-    const top = sectors
-      .map((sector) => {
-        const metrics = (sector.metrics ?? {}) as Record<string, unknown>;
-        return {
-          name: sector.name,
-          totalFlow: toNum(metrics.flow_foreign_5d) + toNum(metrics.flow_inst_5d),
-        };
-      })
-      .sort((a, b) => Math.abs(b.totalFlow) - Math.abs(a.totalFlow))[0];
-    return top?.name
-      ? pickVariant(`${seedBase}|close|flow|lead|${top.name}`, [
-          `${top.name} 중심 자금 유입이 이어지고 있습니다. 역행 섹터 추격보다 선도 섹터 눌림목 대응이 유리합니다. 유입 강도가 둔화되는 시점에는 비중을 빠르게 조절하세요.`,
-          `수급의 무게 중심은 ${top.name}입니다. 단기 대응은 선도 섹터 대표주에 집중하는 편이 효율적입니다. 다만 5일 누적 흐름이 꺾이면 방어 전환을 바로 실행해야 합니다.`,
-          `${top.name}가 자금을 흡수하는 구간입니다. 주도 섹터 내 종목만 선별해 진입하고, 반대 흐름 섹터는 관찰 리스트로 두세요. 추세 약화 신호가 보이면 신규 진입을 즉시 축소하세요.`,
-        ])
-      : pickVariant(`${seedBase}|close|flow|none`, [
-          "뚜렷한 자금 집중 섹터가 약합니다. 순환매 속도가 빨라 추격 매수의 효율이 낮아질 수 있습니다. 거래대금이 붙는 구간에서만 확인 매수로 접근하세요.",
-          "수급 중심축이 분산된 장세입니다. 섹터 베팅보다 종목별 신호 확인이 더 중요합니다. 매수 빈도를 줄이고 손실 제한 기준을 먼저 점검하세요.",
-          "자금이 한 방향으로 모이지 않는 구간입니다. 성급한 추격보다 눌림 확인 후 짧게 대응하는 전략이 안전합니다. 포지션당 비중도 보수적으로 유지하세요.",
-        ]);
+    const insightLines = buildFlowInsightLines(toFlowInsightRows(sectors));
+    if (insightLines.length > 0) {
+      return insightLines[insightLines.length - 1];
+    }
+    return pickVariant(`${seedBase}|close|flow|none`, [
+      "뚜렷한 자금 집중 섹터가 약합니다. 순환매 속도가 빨라 추격 매수의 효율이 낮아질 수 있습니다. 거래대금이 붙는 구간에서만 확인 매수로 접근하세요.",
+      "수급 중심축이 분산된 장세입니다. 섹터 베팅보다 종목별 신호 확인이 더 중요합니다. 매수 빈도를 줄이고 손실 제한 기준을 먼저 점검하세요.",
+      "자금이 한 방향으로 모이지 않는 구간입니다. 성급한 추격보다 눌림 확인 후 짧게 대응하는 전략이 안전합니다. 포지션당 비중도 보수적으로 유지하세요.",
+    ]);
   }
 
   if (topic === "sector") {
-    const leader = sectors[0]?.name;
-    return leader
-      ? pickVariant(`${seedBase}|close|sector|lead|${leader}`, [
-          `현재 1등 섹터는 ${leader}입니다. 강도가 유지되는 동안은 하위 테마보다 선도 테마 대표주가 상대 우위일 가능성이 높습니다. 강도 점수와 거래대금이 동시에 꺾일 때만 비중 축소를 고려하세요.`,
-          `${leader}가 섹터 리더십을 확보하고 있습니다. 추세가 이어지는 동안은 동일 섹터 내 상위 종목 중심 전략이 유효합니다. 확산 구간이 오면 2~3순위 섹터로 분산을 준비하세요.`,
-          `섹터 강도는 ${leader} 중심입니다. 리더 섹터 내에서 진입 구간을 고르는 편이 승률에 유리합니다. 다만 과열 구간에서는 분할 익절 규칙을 함께 적용하세요.`,
-        ])
-      : pickVariant(`${seedBase}|close|sector|none`, [
-          "섹터 강도 데이터가 고르게 분산돼 주도 테마 확신이 낮습니다. 테마 베팅보다 종목별 신호 확인이 우선입니다. 진입 규모를 줄이고 손실 제한 규칙을 엄격히 적용하세요.",
-          "뚜렷한 리더 섹터가 약한 구간입니다. 성급한 추격보다 거래량과 모멘텀 동시 확인 후 진입하는 편이 안전합니다. 종목 수를 늘리기보다 관망 비중을 높이세요.",
-          "주도 섹터 공백에 가까운 환경입니다. 확률 높은 진입만 선택하고 나머지는 대기 전략으로 두는 것이 낫습니다. 손절 라인은 평소보다 타이트하게 운용하세요.",
-        ]);
+    const insightLines = buildSectorInsightLines(toSectorInsightScores(sectors) as any);
+    if (insightLines.length > 0) {
+      return insightLines[insightLines.length - 1];
+    }
+    return pickVariant(`${seedBase}|close|sector|none`, [
+      "섹터 강도 데이터가 고르게 분산돼 주도 테마 확신이 낮습니다. 테마 베팅보다 종목별 신호 확인이 우선입니다. 진입 규모를 줄이고 손실 제한 규칙을 엄격히 적용하세요.",
+      "뚜렷한 리더 섹터가 약한 구간입니다. 성급한 추격보다 거래량과 모멘텀 동시 확인 후 진입하는 편이 안전합니다. 종목 수를 늘리기보다 관망 비중을 높이세요.",
+      "주도 섹터 공백에 가까운 환경입니다. 확률 높은 진입만 선택하고 나머지는 대기 전략으로 두는 것이 낫습니다. 손절 라인은 평소보다 타이트하게 운용하세요.",
+    ]);
   }
 
   if (topic === "watchlist") {
@@ -324,32 +336,35 @@ export function buildReportCaption(input: {
   const qualityLine = buildMarketDataQualityLine(market);
 
   if (topic === "economy") {
+    const insightLines = buildEconomyInsightLines(market);
     const lines = [
       `${title} — ${krDate}`,
       `VIX ${market.vix ? toNum(market.vix.price).toFixed(1) : "-"} · 환율 ${market.usdkrw ? `${fmtInt(toNum(market.usdkrw.price))}원` : "-"}`,
-      "핵심 거시 변수만 빠르게 점검할 수 있게 정리했습니다.",
+      insightLines[0] ?? "핵심 거시 변수만 빠르게 점검할 수 있게 정리했습니다.",
     ];
     if (qualityLine) lines.push(qualityLine);
     return lines.join("\n");
   }
 
   if (topic === "flow") {
+    const insightLines = buildFlowInsightLines(toFlowInsightRows(sectors));
     const topSector = sectors[0]?.name ?? "상위 섹터";
     const lines = [
       `${title} — ${krDate}`,
       `${topSector} 중심 수급 흐름과 상위 자금 유입 섹터를 정리했습니다.`,
-      "자금 방향 위주로 빠르게 확인하세요.",
+      insightLines[0] ?? "자금 방향 위주로 빠르게 확인하세요.",
     ];
     if (qualityLine) lines.push(qualityLine);
     return lines.join("\n");
   }
 
   if (topic === "sector") {
+    const insightLines = buildSectorInsightLines(toSectorInsightScores(sectors) as any);
     const topSector = sectors[0]?.name ?? "주도 섹터";
     const lines = [
       `${title} — ${krDate}`,
       `${topSector} 포함 상위 강도 섹터를 압축했습니다.`,
-      "테마 로테이션 체크용으로 바로 볼 수 있습니다.",
+      insightLines[0] ?? "테마 로테이션 체크용으로 바로 볼 수 있습니다.",
     ];
     if (qualityLine) lines.push(qualityLine);
     return lines.join("\n");
@@ -397,30 +412,33 @@ export function buildReportSummaryText(input: {
   const qualityLine = buildMarketDataQualityLine(market);
 
   if (topic === "economy") {
+    const insightLines = buildEconomyInsightLines(market);
     const lines = [
       `${title} (${ymd})`,
       `VIX ${market.vix ? toNum(market.vix.price).toFixed(1) : "-"} / 환율 ${market.usdkrw ? `${fmtInt(toNum(market.usdkrw.price))}원` : "-"}`,
-      `공포탐욕 ${market.fearGreed ? toNum(market.fearGreed.score) : "-"} / 미국 10년물 ${market.us10y ? `${toNum(market.us10y.price).toFixed(2)}%` : "-"}`,
+      insightLines[0] ?? `공포탐욕 ${market.fearGreed ? toNum(market.fearGreed.score) : "-"} / 미국 10년물 ${market.us10y ? `${toNum(market.us10y.price).toFixed(2)}%` : "-"}`,
     ];
     if (qualityLine) lines.push(qualityLine);
     return lines.join("\n");
   }
 
   if (topic === "flow") {
+    const insightLines = buildFlowInsightLines(toFlowInsightRows(sectors));
     const lines = [
       `${title} (${ymd})`,
       `상위 수급 섹터: ${sectors.slice(0, 3).map((sector) => sector.name).join(", ") || "데이터 없음"}`,
-      `최근 5거래일 기준 자금 유입 방향을 압축했습니다.`,
+      insightLines[0] ?? `최근 5거래일 기준 자금 유입 방향을 압축했습니다.`,
     ];
     if (qualityLine) lines.push(qualityLine);
     return lines.join("\n");
   }
 
   if (topic === "sector") {
+    const insightLines = buildSectorInsightLines(toSectorInsightScores(sectors) as any);
     const lines = [
       `${title} (${ymd})`,
       `상위 섹터: ${sectors.slice(0, 3).map((sector) => `${sector.name} ${toNum(sector.score).toFixed(1)}점`).join(" / ") || "데이터 없음"}`,
-      `강도와 수익률 중심으로 정리했습니다.`,
+      insightLines[0] ?? `강도와 수익률 중심으로 정리했습니다.`,
     ];
     if (qualityLine) lines.push(qualityLine);
     return lines.join("\n");
