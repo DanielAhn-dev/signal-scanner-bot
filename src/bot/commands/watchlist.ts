@@ -48,6 +48,7 @@ import {
   getDecisionReliabilitySummary,
   type DecisionAction,
 } from "../../services/decisionLogService";
+import { buildPersonalizedGuidance } from "../../services/personalizedGuidanceService";
 import { ACTIONS, actionButtons } from "../messages/layout";
 import {
   buildTradeHistoryInputGuide,
@@ -2255,9 +2256,18 @@ export async function handleWatchlistResponseCommand(
     ...lines,
   ].join("\n");
 
+  const personalLines = await buildPersonalizedGuidance({
+    chatId: ctx.chatId,
+    context: "holding-plan",
+  }).catch(() => []);
+
+  const finalMsg = personalLines.length > 0
+    ? `${msg}\n\n${LINE}\n<b>내 상황 제안</b>\n- ${personalLines.join("\n- ")}`
+    : msg;
+
   await tgSend("sendMessage", {
     chat_id: ctx.chatId,
-    text: msg,
+    text: finalMsg,
     parse_mode: "HTML",
   });
 }

@@ -85,7 +85,7 @@ function buildModeHint(): string {
 export async function buildPersonalizedGuidance(input: {
   chatId: number;
   focusCode?: string | null;
-  context: "brief" | "scan" | "flow" | "buy";
+  context: "brief" | "scan" | "flow" | "buy" | "market" | "holding-plan";
 }): Promise<string[]> {
   const chatId = input.chatId;
   const focusCode = String(input.focusCode ?? "").trim().toUpperCase() || null;
@@ -163,6 +163,23 @@ export async function buildPersonalizedGuidance(input: {
       lines.push("이 종목은 이미 보유 중이므로, 지금 화면은 신규매수보다 추가매수 가능 여부와 부분익절 구간 확인용으로 보는 편이 맞습니다.");
     } else if (holdCount > 0) {
       lines.push("신규 진입을 검토하더라도 현재 보유 포지션과 현금 여력을 함께 비교해서 비중을 정하는 편이 안전합니다.");
+    }
+  }
+
+  if (input.context === "holding-plan") {
+    if (holdCount > 0) {
+      lines.push("보유대응은 자동사이클 실행 전에도 익절·손절·추가매수 우선순위를 읽는 용도로 충분합니다.");
+    }
+    if (latestRunRecent) {
+      lines.push("최근 자동사이클 결과가 있어, 이번 화면은 실행보다 해석과 우선순위 정리에 더 가깝게 보면 됩니다.");
+    }
+  }
+
+  if (input.context === "market") {
+    if (holdCount > 0) {
+      lines.push("시장 화면은 신규 매수 타이밍보다 현재 보유 포지션의 방어/확대 여부를 정하는 기준으로 보는 편이 좋습니다.");
+    } else if (cash > 0) {
+      lines.push("시장 화면에서는 지금이 정찰 진입을 시작할 장인지, 관찰만 할 장인지 먼저 판단하면 됩니다.");
     }
   }
 

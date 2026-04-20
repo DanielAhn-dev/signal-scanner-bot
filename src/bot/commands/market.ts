@@ -13,6 +13,7 @@ import {
   getNextSectorCandidates,
   type SectorScore,
 } from "../../lib/sectors";
+import { buildPersonalizedGuidance } from "../../services/personalizedGuidanceService";
 import { esc, LINE } from "../messages/format";
 import { actionButtons, ACTIONS } from "../messages/layout";
 
@@ -252,6 +253,17 @@ export async function handleMarketCommand(
     msg += `3) 방어주(배당/필수소비) 비중 확대\n`;
     msg += `4) 신규 매수는 분할 (1/3씩)\n`;
     msg += `5) 외국인 순매도 종목 우선 정리\n`;
+  }
+
+  const personalLines = await buildPersonalizedGuidance({
+    chatId: ctx.chatId,
+    context: "market",
+  }).catch(() => []);
+
+  if (personalLines.length > 0) {
+    msg += `\n${LINE}\n<b>내 상황 제안</b>\n`;
+    msg += personalLines.map((line) => `- ${line}`).join("\n");
+    msg += "\n";
   }
 
   msg += `\n${LINE}`;
