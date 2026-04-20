@@ -80,6 +80,19 @@ function pickVariant(seed: string, options: string[]): string {
   return options[hashSeed(seed) % options.length];
 }
 
+function joinNames(items: string[], fallback: string): string {
+  const filtered = items.filter(Boolean).slice(0, 3);
+  return filtered.length ? filtered.join(", ") : fallback;
+}
+
+function buildDetailedClosing(seed: string, lines: string[], extras: string[]): string {
+  const normalizedLines = lines
+    .map((line) => line.trim())
+    .filter(Boolean);
+  const extra = pickVariant(seed, extras).trim();
+  return [...normalizedLines, extra].filter(Boolean).join(" ");
+}
+
 function toFlowInsightRows(sectors: NarrativeSectorRow[]) {
   return sectors.map((sector) => {
     const metrics = (sector.metrics ?? {}) as Record<string, unknown>;
@@ -243,7 +256,16 @@ export function buildTopicClosingSummary(input: {
   if (topic === "flow") {
     const insightLines = buildFlowInsightLines(toFlowInsightRows(sectors));
     if (insightLines.length > 0) {
-      return insightLines[insightLines.length - 1];
+      const topNames = sectors.slice(0, 3).map((sector) => sector.name).filter(Boolean);
+      return buildDetailedClosing(
+        `${seedBase}|close|flow|detail|${topNames.join("|")}`,
+        insightLines.slice(0, 2),
+        [
+          `이번 구간은 ${joinNames(topNames, "상위 수급 섹터")} 대표주만 우선순위를 두고, 나머지는 눌림 확인 뒤 대응하는 편이 좋습니다.`,
+          `매매 초점은 섹터 수를 늘리는 것이 아니라 실제 자금이 반복 유입되는 축을 확인하는 데 있습니다. 거래대금이 유지되는 대표주 1~2개만 선별해 비중을 관리하세요.`,
+          `따라서 추격 매수보다 오전 눌림과 종가 유지 여부를 같이 확인하는 대응이 더 유리합니다. 상단 수급 섹터 안에서도 가장 강한 대표주만 남겨서 보는 편이 실전적입니다.`,
+        ]
+      );
     }
     return pickVariant(`${seedBase}|close|flow|none`, [
       "뚜렷한 자금 집중 섹터가 약합니다. 순환매 속도가 빨라 추격 매수의 효율이 낮아질 수 있습니다. 거래대금이 붙는 구간에서만 확인 매수로 접근하세요.",
@@ -255,7 +277,17 @@ export function buildTopicClosingSummary(input: {
   if (topic === "sector") {
     const insightLines = buildSectorInsightLines(toSectorInsightScores(sectors) as any);
     if (insightLines.length > 0) {
-      return insightLines[insightLines.length - 1];
+      const topNames = sectors.slice(0, 3).map((sector) => sector.name).filter(Boolean);
+      const leader = sectors[0]?.name ?? "상위 섹터";
+      return buildDetailedClosing(
+        `${seedBase}|close|sector|detail|${topNames.join("|")}`,
+        insightLines.slice(0, 2),
+        [
+          `${leader} 안에서도 점수와 거래대금이 동시에 유지되는 대표 종목이 우선입니다. 하위 테마를 넓게 담기보다 상위 섹터를 좁게 압축하는 전략이 수익 대비 위험이 낫습니다.`,
+          `섹터 강도는 결국 종목 선택으로 연결돼야 의미가 있습니다. ${joinNames(topNames, "상위 섹터")} 중 추세가 유지되는 대표주만 남겨서 진입 자리를 기다리는 편이 더 실전적입니다.`,
+          `이번 구간은 테마 확산보다 리더 섹터 압축이 맞습니다. 대표 종목의 고점 추격보다 눌림 후 회복 확인에 맞춰 진입 기준을 세우는 편이 안정적입니다.`,
+        ]
+      );
     }
     return pickVariant(`${seedBase}|close|sector|none`, [
       "섹터 강도 데이터가 고르게 분산돼 주도 테마 확신이 낮습니다. 테마 베팅보다 종목별 신호 확인이 우선입니다. 진입 규모를 줄이고 손실 제한 규칙을 엄격히 적용하세요.",

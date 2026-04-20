@@ -478,13 +478,32 @@ export async function createPreviewReportPdf(topicStr = "economy"): Promise<Uint
   const totalUnrealizedPct = totalInvested > 0 ? (totalUnrealized / totalInvested) * 100 : 0;
 
   const sectors: SectorRow[] = [
-    { id: "sector_001", name: "반도체",    score: 85, change_rate:  2.1, metrics: { flow_foreign_5d: 300,  flow_inst_5d: 150 } },
-    { id: "sector_002", name: "2차전지",   score: 72, change_rate: -1.3, metrics: { flow_foreign_5d: -200, flow_inst_5d:  50 } },
-    { id: "sector_003", name: "바이오",    score: 68, change_rate:  0.8, metrics: { flow_foreign_5d: 100,  flow_inst_5d: -30 } },
-    { id: "sector_004", name: "자동차",    score: 61, change_rate:  1.5, metrics: { flow_foreign_5d:  50,  flow_inst_5d:  80 } },
-    { id: "sector_005", name: "금융",      score: 55, change_rate: -0.5, metrics: { flow_foreign_5d: -100, flow_inst_5d: -60 } },
-    { id: "sector_006", name: "철강/소재", score: 49, change_rate: -0.2, metrics: { flow_foreign_5d:  20,  flow_inst_5d:  10 } },
+    { id: "sector_001", name: "코스피 200 비중상한 20%", score: 92, change_rate: 3.2, metrics: { flow_foreign_5d: 780, flow_inst_5d: 420 } },
+    { id: "sector_002", name: "코스닥 150 정보기술", score: 88, change_rate: 2.6, metrics: { flow_foreign_5d: 460, flow_inst_5d: 180 } },
+    { id: "sector_003", name: "코스닥 150 헬스케어", score: 84, change_rate: 2.1, metrics: { flow_foreign_5d: 310, flow_inst_5d: 220 } },
+    { id: "sector_004", name: "코스닥 기술성장기업부", score: 81, change_rate: 1.8, metrics: { flow_foreign_5d: 260, flow_inst_5d: 120 } },
+    { id: "sector_005", name: "코스피 200 TOP 10", score: 79, change_rate: 1.5, metrics: { flow_foreign_5d: 640, flow_inst_5d: 510 } },
+    { id: "sector_006", name: "코스피200제외 코스피지수", score: 76, change_rate: 1.2, metrics: { flow_foreign_5d: -120, flow_inst_5d: 290 } },
+    { id: "sector_007", name: "코스닥 150 산업재", score: 72, change_rate: 0.9, metrics: { flow_foreign_5d: 110, flow_inst_5d: 140 } },
+    { id: "sector_008", name: "운송·창고", score: 68, change_rate: 0.6, metrics: { flow_foreign_5d: 70, flow_inst_5d: 90 } },
+    { id: "sector_009", name: "전기전자", score: 66, change_rate: 0.4, metrics: { flow_foreign_5d: 180, flow_inst_5d: -20 } },
+    { id: "sector_010", name: "전자장비와기기", score: 63, change_rate: 0.2, metrics: { flow_foreign_5d: 40, flow_inst_5d: 60 } },
+    { id: "sector_011", name: "운송장비·부품", score: 61, change_rate: 0.1, metrics: { flow_foreign_5d: -30, flow_inst_5d: 50 } },
   ];
+
+  const sectorStocksMap: Record<string, string[]> = {
+    "코스피 200 비중상한 20%": ["삼성중공업", "한온시스템", "삼성물산", "HD현대일렉트릭"],
+    "코스닥 150 정보기술": ["엘탑스", "HPSP", "테스", "RFHIC", "제이앤티씨"],
+    "코스닥 150 헬스케어": ["휴젤", "에이비엘바이오", "알테오젠", "보로노이"],
+    "코스닥 기술성장기업부": ["LB제약", "프리시전바이오", "에어레인", "고바이오랩"],
+    "코스피 200 TOP 10": ["LG에너지솔루션", "삼성바이오로직스", "현대차", "기아"],
+    "코스피200제외 코스피지수": ["동화약품", "DH오토넥스", "한진중공업홀딩스"],
+    "코스닥 150 산업재": ["성광벤드", "에코프로비엠", "에코프로에이치엔"],
+    "운송·창고": ["태웅로직스", "선광", "유성티엔에스"],
+    "전기전자": ["성호전자", "모아텍", "서울전자통신", "인지디스플레"],
+    "전자장비와기기": ["삼성전기우", "코리아써우"],
+    "운송장비·부품": ["구영테크", "한일단조", "세원물산", "코다코"],
+  };
 
   // mock 시장 데이터 (fetchAllMarketData 호환 구조)
   const market = {
@@ -522,7 +541,7 @@ export async function createPreviewReportPdf(topicStr = "economy"): Promise<Uint
     totalUnrealized,
     totalUnrealizedPct,
     sectors,
-    sectorStocksMap: {},
+    sectorStocksMap,
     market,
     reliability: null,
   });

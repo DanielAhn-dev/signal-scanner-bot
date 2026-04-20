@@ -608,12 +608,26 @@ function drawSectorStocksList(
   ctx.y -= 6;
   drawSectionHeader(ctx, "섹터별 주요 종목", "유동성 상위 기준");
 
+  const labelFontSize = 8.5;
+  const stockFontSize = 8.5;
+  const lineH = Math.round(stockFontSize * 1.45);
+  const labelX = ctx.ML + 8;
+  const maxLabelW = Math.min(160, Math.max(76, ctx.BODY_W * 0.28));
+  const measuredLabelW = entries.reduce(
+    (maxWidth, entry) => Math.max(maxWidth, ctx.font.widthOfTextAtSize(entry.name, labelFontSize)),
+    0
+  );
+  const labelColumnW = Math.min(maxLabelW, Math.max(76, measuredLabelW + 18));
+  const stockX = labelX + labelColumnW;
+  const stockMaxW = Math.max(120, ctx.ML + ctx.BODY_W - stockX - 8);
+
   for (const entry of entries) {
     const label = `${entry.name}`;
     const stockStr = entry.stocks.join("  ·  ");
-    ctx.text(label, ctx.ML + 8, ctx.y, 8.5, C.navyLight);
-    ctx.text(stockStr, ctx.ML + 70, ctx.y, 8.5, C.ink);
-    ctx.y -= 14;
+    ctx.ensureSpace(lineH + 8);
+    const labelLines = ctx.text(label, labelX, ctx.y, labelFontSize, C.navyLight, labelColumnW - 8);
+    const stockLines = ctx.text(stockStr, stockX, ctx.y, stockFontSize, C.ink, stockMaxW);
+    ctx.y -= Math.max(labelLines, stockLines) * lineH + 4;
   }
   ctx.y -= 6;
 }
