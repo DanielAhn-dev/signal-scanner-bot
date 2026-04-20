@@ -79,6 +79,91 @@ function buildCommandExamples(mode: AutoTradeRunMode): string[] {
   ];
 }
 
+function buildRunModeDifferenceGuide(mode: AutoTradeRunMode, dryRun: boolean): string[] {
+  const runLabel = dryRun ? "점검" : "실행";
+  const modeLabel = mode === "monday"
+    ? "진입(신규 진입 판단 강제)"
+    : mode === "daily"
+      ? "일일 대응(보유 중심)"
+      : "자동(요일 기준 재판단)";
+
+  return [
+    "실행 해석",
+    `- 이번 요청: ${runLabel} + ${modeLabel}`,
+    "- /자동사이클 실행: 오늘 기준으로 실제 반영",
+    "- /자동사이클 실행 진입: 요일과 무관하게 신규 진입 판단을 강제 실행",
+    "- /자동사이클 점검: 실제 반영 없이 동일 로직 시뮬레이션",
+  ];
+}
+
+function buildActionResponseCards(notes: string[]): string[] {
+  const cards: string[] = [];
+  const parseRiskAmount = (note: string): number => {
+    const matched = note.match(/예상손실\s+([0-9,]+)원/);
+    if (!matched) return 0;
+    const value = Number(matched[1].replace(/,/g, ""));
+    return Number.isFinite(value) ? value : 0;
+  };
+
+  const buyNotes = notes.filter((note) => /\[(실행|테스트) 매수안?\]|\[(실행|테스트) 추가매수안?\]/.test(note));
+  const sellNotes = notes.filter((note) => /\[(실행|테스트) 매도안?\]|\[(실행|테스트) 부분익절안?\]/.test(note));
+  const holdNotes = notes.filter((note) => /보유 현황|보유 종목 .* 유지|일일판단 요약/.test(note));
+  const sizingNotes = notes.filter((note) => /사이징 기준|매수가 기준/.test(note));
+  const responseGuides = notes
+    .filter((note) => note.startsWith("[대응가이드]"))
+    .map((note) => {
+      const isNewBuy = note.startsWith("[대응가이드][신규매수]");
+      const isAddOnBuy = note.startsWith("[대응가이드][추가매수]");
+      const priority = isNewBuy ? 300 : isAddOnBuy ? 200 : 100;
+      const riskAmount = parseRiskAmount(note);
+      return {
+        note,
+        priority,
+        riskAmount,
+      };
+    })
+    .sort((a, b) => b.priority - a.priority || b.riskAmount - a.riskAmount)
+    .slice(0, 3)
+    .map((item) => item.note);
+
+  if (buyNotes.length > 0) {
+    cards.push("매수 카드");
+    cards.push(`- 체결/후보: ${buyNotes.length}건`);
+    cards.push(`- ${buyNotes[0]}`);
+    cards.push("- 대응: /보유대응 으로 익절/손절/추가매수 기준 점검");
+  }
+
+  if (sellNotes.length > 0) {
+    cards.push("매도 카드");
+    cards.push(`- 체결/후보: ${sellNotes.length}건`);
+    cards.push(`- ${sellNotes[0]}`);
+    cards.push("- 대응: 남은 포지션은 /자동사이클 점검 으로 재평가");
+  }
+
+  if (holdNotes.length > 0) {
+    cards.push("보유 카드");
+    cards.push(`- ${holdNotes[0]}`);
+    cards.push("- 대응: 급변장에서는 /자동매도점검 우선 실행");
+  }
+
+  if (sizingNotes.length > 0) {
+    cards.push("사이징/가격 카드");
+    cards.push(`- ${sizingNotes[0]}`);
+    cards.push("- 해석: 회당 예산과 가격 기준을 보고 수량 과대진입 여부 확인");
+  }
+
+  if (responseGuides.length > 0) {
+    cards.push("종목 대응 카드");
+    cards.push("- 정렬 기준: 신규매수 우선, 동률이면 예상손실 큰 종목 우선");
+    for (const guide of responseGuides) {
+      cards.push(`- ${guide}`);
+    }
+    cards.push("- 대응 원칙: 기준가 이탈 시 분할 대응, 익절/손절 라인 미리 지정");
+  }
+
+  return cards;
+}
+
 function formatUnknownError(error: unknown): string {
   if (error instanceof Error) {
     return error.message || error.name;
@@ -256,6 +341,8 @@ export async function handleAutoCycleCommand(
     const noteLines = prioritizeNotes(action.notes || []);
     const guideLines = buildFriendlyGuide(action, dryRun);
     const modeGuideLines = buildModeGuide(mode);
+    const modeDifferenceGuide = buildRunModeDifferenceGuide(mode, dryRun);
+    const actionCards = buildActionResponseCards(action.notes || []);
     const commandExamples = buildCommandExamples(mode);
 
     await tgSend("sendMessage", {
@@ -265,7 +352,9 @@ export async function handleAutoCycleCommand(
         `모드: ${formatModeLabel(mode)}`,
         formatExecutionStatus(action),
         formatActionBreakdown(action),
+        modeDifferenceGuide.length ? `\n${modeDifferenceGuide.join("\n")}` : "",
         noteLines.length ? `\n메모\n- ${noteLines.join("\n- ")}` : "",
+        actionCards.length ? `\n${actionCards.join("\n")}` : "",
         modeGuideLines.length ? `\n${modeGuideLines.join("\n")}` : "",
         guideLines.length ? `\n${guideLines.join("\n")}` : "",
         "\n재실행 예시:",

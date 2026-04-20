@@ -2169,11 +2169,12 @@ export async function handleWatchlistResponseCommand(
   }
 
   const marketOpen = isKstMarketOpen();
-  const lines: string[] = [];
+  const plannedCards: Array<{ priority: number; line: string }> = [];
   const codes = items.map((it: any) => String(it.code));
-  const [microByCode, scoreResult] = await Promise.all([
+  const [microByCode, scoreResult, realtimeByCode] = await Promise.all([
     fetchWatchMicroSignalsByCodes(supabaseRead, codes),
     fetchLatestScoresByCodes(supabaseRead, codes).catch(() => null),
+    marketOpen ? fetchRealtimePriceBatch(codes) : Promise.resolve({}),
   ]);
 
   for (const item of items) {
@@ -2181,12 +2182,14 @@ export async function handleWatchlistResponseCommand(
     const code = String(item.code);
     const name = String(stock?.name ?? code);
     const close = Number(stock?.close ?? 0);
+    const realtime = Number((realtimeByCode as Record<string, { price?: number }>)[code]?.price ?? 0);
+    const currentPrice = marketOpen && realtime > 0 ? realtime : close;
     const buyPrice = Number(item.buy_price ?? 0);
     const qty = Math.max(0, Math.floor(Number(item.quantity ?? 0)));
-    if (qty <= 0 || close <= 0 || buyPrice <= 0) continue;
+    if (qty <= 0 || currentPrice <= 0 || buyPrice <= 0) continue;
 
     const plan = buildPlanFromScoreSnapshot({
-      currentPrice: close,
+      currentPrice,
       baselinePrice: close,
       stockRsi: stock?.rsi14 ?? undefined,
       scoreRow: scoreResult?.byCode.get(code),
@@ -2194,7 +2197,7 @@ export async function handleWatchlistResponseCommand(
     const acquiredAt: string | null = (item as any).buy_date ?? (item as any).created_at ?? null;
     const elapsedTradingDays = estimateElapsedTradingDays(acquiredAt);
     const decision = resolveWatchDecision({
-      close,
+      close: currentPrice,
       buyPrice,
       plan,
       microSignal: microByCode.get(code),
@@ -2228,20 +2231,43 @@ export async function handleWatchlistResponseCommand(
       ? `  ⏰ 보유기간 상한(${plan.holdDays[1]}거래일) 초과 — 익절·손절 여부 재판단 권고 (현재 약 ${elapsedTradingDays}거래일)`
       : null;
 
-    lines.push(
-      [
-        `- <b>${esc(name)}</b> (${code}) · ${qty}주`,
-        `  기준가 ${fmtInt(close)}원 · 손익 ${fmtPct(decision.pnlPct)}`,
-        `  계획 진입 ${fmtInt(plan.entryLow)}~${fmtInt(plan.entryHigh)}원`,
-        `  손절 ${fmtInt(plan.stopPrice)}원 · 1차목표 ${fmtInt(plan.target1)}원`,
-        `  내일 대응: ${recommended} (${decision.reason})`,
-        `  트리거: ${decision.triggerReasons.length ? decision.triggerReasons.join(", ") : "대기"} · 신뢰도 ${decision.confidence}%`,
+    const addOnLow = Math.round(buyPrice * 0.94);
+    const addOnHigh = Math.round(buyPrice * 1.03);
+    const trailingArmed = Math.round(buyPrice * 1.05);
+    const trailingExit = Math.round(trailingArmed * 0.98);
+    const stopRiskAmount = Math.max(0, Math.round(Math.max(0, currentPrice - plan.stopPrice) * qty));
+    const urgencyPriority =
+      decision.action === "STOP_LOSS"
+        ? 3000
+        : decision.action === "TAKE_PROFIT"
+          ? 2000
+          : 1000;
+    const priority = urgencyPriority + stopRiskAmount;
+    const priorityLabel =
+      decision.action === "STOP_LOSS"
+        ? "최우선 점검"
+        : decision.action === "TAKE_PROFIT"
+          ? "우선 익절 점검"
+          : "관찰 유지";
+
+    plannedCards.push({
+      priority,
+      line: [
+        `- <b>${esc(name)}</b> (${code}) · ${qty}주 · ${priorityLabel}`,
+        `  [대응카드] 기준가 ${fmtInt(currentPrice)}원 · 손익 ${fmtPct(decision.pnlPct)} · 판단 ${recommended} · 예상손실 ${fmtInt(stopRiskAmount)}원`,
+        `  [대응카드] 손절 ${fmtInt(plan.stopPrice)}원 · 1차목표 ${fmtInt(plan.target1)}원 · 계획 진입 ${fmtInt(plan.entryLow)}~${fmtInt(plan.entryHigh)}원`,
+        `  [대응카드] 추가매수밴드 ${fmtInt(addOnLow)}~${fmtInt(addOnHigh)}원 · 트레일링 +5.0%(${fmtInt(trailingArmed)}원) 후 -2.0% 이탈 시 1차익절(${fmtInt(trailingExit)}원)`,
+        `  [대응카드] 사유 ${decision.reason} · 트리거 ${decision.triggerReasons.length ? decision.triggerReasons.join(", ") : "대기"} · 신뢰도 ${decision.confidence}% · 우선순위 ${priority}`,
         ...(maturityWarningLine ? [maturityWarningLine] : []),
         ...(reentryWatch ? [reentryWatch] : []),
         ...blockedStopLossLines,
-      ].join("\n")
-    );
+      ].join("\n"),
+    });
   }
+
+  const lines = plannedCards
+    .sort((a, b) => b.priority - a.priority)
+    .map((item) => item.line);
 
   if (!lines.length) {
     lines.push("- 보유 수량/매수가가 없는 항목만 있어 대응안을 생성하지 못했습니다.");
@@ -2251,7 +2277,7 @@ export async function handleWatchlistResponseCommand(
     "<b>보유대응 플랜</b>",
     LINE,
     marketOpen
-      ? "장중 조회: 현재 종가 기반 참고 플랜입니다."
+      ? "장중 조회: 실시간가 우선 기준 대응 플랜입니다."
       : "장마감 이후: 최신 종가 기준 내일 대응안입니다.",
     "실제 매매/기록은 하지 않습니다.",
     "",
