@@ -23,15 +23,19 @@ import {
 } from "./virtualAutoTradePositionStrategy";
 import {
   applyStrategyBuyConstraint,
+  detectAutoTradeMarketPolicy,
   pickAutoTradeAddOnCandidates,
   pickAutoTradeCandidates,
+  resolveDeployableCash,
   selectRunType,
   type AutoTradeCandidateSelectionResult,
+  type AutoTradeMarketPolicy,
   type AutoTradeRunMode as SelectionAutoTradeRunMode,
   type AutoTradeRunType,
   type RankedCandidate,
 } from "./virtualAutoTradeSelection";
 import { fetchRealtimePriceBatch } from "../utils/fetchRealtimePrice";
+import { fetchAllMarketData } from "../utils/fetchMarketData";
 
 type RunMode = SelectionAutoTradeRunMode;
 type RunType = AutoTradeRunType;
@@ -92,12 +96,18 @@ type ScoreCandidateRow = {
     close: number | null;
     rsi14?: number | null;
     liquidity?: number | null;
+    market?: string | null;
+    market_cap?: number | null;
+    universe_level?: string | null;
   } | Array<{
     code: string;
     name: string | null;
     close: number | null;
     rsi14?: number | null;
     liquidity?: number | null;
+    market?: string | null;
+    market_cap?: number | null;
+    universe_level?: string | null;
   }> | null;
 };
 
@@ -238,6 +248,9 @@ function normalizeStock(input: ScoreCandidateRow["stock"]): {
   close: number;
   rsi14?: number | null;
   liquidity?: number | null;
+  market?: string | null;
+  marketCap?: number | null;
+  universeLevel?: string | null;
 } | null {
   const row = Array.isArray(input) ? input[0] : input;
   if (!row) return null;
@@ -248,6 +261,9 @@ function normalizeStock(input: ScoreCandidateRow["stock"]): {
     close,
     rsi14: toNumber((row as Record<string, unknown>).rsi14, 0) || null,
     liquidity: toNumber((row as Record<string, unknown>).liquidity, 0) || null,
+    market: String((row as Record<string, unknown>).market ?? "") || null,
+    marketCap: toNumber((row as Record<string, unknown>).market_cap, 0) || null,
+    universeLevel: String((row as Record<string, unknown>).universe_level ?? "") || null,
   };
 }
 
@@ -351,12 +367,12 @@ async function fetchLatestRankedRows(payload: {
     "code",
     "total_score",
     "signal",
-    "stock:stocks!inner(code, name, close, rsi14, liquidity)",
+    "stock:stocks!inner(code, name, close, rsi14, liquidity, market, market_cap, universe_level)",
   ].join(",");
   const selectWithoutSignal = [
     "code",
     "total_score",
-    "stock:stocks!inner(code, name, close, rsi14, liquidity)",
+    "stock:stocks!inner(code, name, close, rsi14, liquidity, market, market_cap, universe_level)",
   ].join(",");
 
   const buildQuery = (selectClause: string) => {
@@ -401,6 +417,9 @@ async function fetchLatestRankedRows(payload: {
       signal: row.signal ?? null,
       rsi14: stock.rsi14 ?? null,
       liquidity: stock.liquidity ?? null,
+      market: stock.market ?? null,
+      marketCap: stock.marketCap ?? null,
+      universeLevel: stock.universeLevel ?? null,
     });
   }
 
@@ -462,10 +481,11 @@ async function selectMondayCandidates(payload: {
   minBuyScore: number;
   limit: number;
   heldCodes: Set<string>;
+  marketPolicy?: AutoTradeMarketPolicy;
 }): Promise<AutoTradeCandidateSelectionResult> {
   const { rows: rankedRows, latestAsof } = await fetchLatestRankedRows({
     supabase: payload.supabase,
-    limit: Math.max(payload.limit * 10, 30),
+    limit: Math.max(payload.limit * 20, 300),
   });
   if (!latestAsof) {
     return {
@@ -482,6 +502,7 @@ async function selectMondayCandidates(payload: {
     preferredMinBuyScore: payload.minBuyScore,
     limit: payload.limit,
     heldCodes: payload.heldCodes,
+    marketPolicy: payload.marketPolicy,
   });
 
   return {
@@ -555,6 +576,17 @@ async function runMondayBuyForUser(payload: {
     summary.notes.push(`가상현금 보정 적용: ${Math.round(availableCash).toLocaleString("ko-KR")}원`);
   }
 
+  const marketOverview = await fetchAllMarketData().catch(() => null);
+  const marketPolicy = detectAutoTradeMarketPolicy({ overview: marketOverview });
+  let deployableCash = resolveDeployableCash({
+    availableCash,
+    seedCapital,
+    minCashReservePct: marketPolicy.minCashReservePct,
+  });
+  summary.notes.push(
+    `시장모드: ${marketPolicy.label} · 최소현금 ${marketPolicy.minCashReservePct}% 유지`
+  );
+
   const buyConstraint = applyStrategyBuyConstraint({
     selectedStrategy,
     requestedSlots: rawRemainSlots,
@@ -610,11 +642,32 @@ async function runMondayBuyForUser(payload: {
     return summary;
   }
 
+  if (deployableCash <= 0) {
+    summary.skipped += 1;
+    summary.notes.push("신규 매수 보류: 현금 하한 유지 구간");
+    await writeActionLog({
+      supabase: payload.supabase,
+      runId: payload.runId,
+      chatId,
+      actionType: "SKIP",
+      reason: "cash-reserve-floor",
+      detail: {
+        availableCash,
+        deployableCash,
+        seedCapital,
+        minCashReservePct: marketPolicy.minCashReservePct,
+        marketMode: marketPolicy.mode,
+      },
+    });
+    return summary;
+  }
+
   const candidateSelection = await selectMondayCandidates({
     supabase: payload.supabase,
     minBuyScore: buyConstraint.minBuyScore,
     limit: remainSlots,
     heldCodes,
+    marketPolicy,
   });
   const candidates = candidateSelection.candidates;
   const buyPriceResolution = await resolveBuyExecutionPrices(candidates);
@@ -680,7 +733,7 @@ async function runMondayBuyForUser(payload: {
       const executionPrice =
         buyPriceResolution.priceByCode.get(candidate.code)?.price ?? candidate.close;
       const sizing = calculateAutoTradeBuySizing({
-        availableCash,
+        availableCash: deployableCash,
         price: executionPrice,
         slotsLeft,
         currentHoldingCount: plannedHoldingCount,
@@ -776,6 +829,7 @@ async function runMondayBuyForUser(payload: {
         });
         plannedHoldingCount += 1;
         availableCash = Math.max(0, availableCash - investedAmount);
+        deployableCash = Math.max(0, deployableCash - investedAmount);
         slotsLeft -= 1;
         continue;
       }
@@ -840,6 +894,7 @@ async function runMondayBuyForUser(payload: {
       summary.buys += 1;
       plannedHoldingCount += 1;
       availableCash = Math.max(0, availableCash - investedAmount);
+      deployableCash = Math.max(0, deployableCash - investedAmount);
       summary.notes.push(
         `[실행 매수] ${candidate.name}(${candidate.code}) ${qty}주 · 전략 ${profileLabel} · 매수가 ${fmtKrw(executionPrice)} · 투입 ${fmtKrw(investedAmount)} · 점수 ${candidate.score.toFixed(1)}`
       );
@@ -871,6 +926,8 @@ async function runMondayBuyForUser(payload: {
           strategyProfile: tradeProfile.profile,
           tradeId,
           cashAfter: availableCash,
+          deployableCashAfter: deployableCash,
+          marketMode: marketPolicy.mode,
         },
       });
       // 결정로그: 월요일 자동 매수

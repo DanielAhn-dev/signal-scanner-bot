@@ -6,6 +6,33 @@ export type RankedCandidate = {
   signal?: string | null;
   rsi14?: number | null;
   liquidity?: number | null;
+  market?: string | null;
+  marketCap?: number | null;
+  universeLevel?: string | null;
+};
+
+export type AutoTradeMarketPolicyMode =
+  | "large-cap-defense"
+  | "balanced"
+  | "rotation";
+
+export type AutoTradeMarketPolicy = {
+  mode: AutoTradeMarketPolicyMode;
+  label: string;
+  minCashReservePct: number;
+  allowedMarkets: Array<"KOSPI" | "KOSDAQ">;
+  kosdaqMaxSlots: number;
+  requireLargeCapKospi: boolean;
+  minLiquidity: number;
+  minMarketCap: number;
+};
+
+type MarketOverviewLike = {
+  kospi?: { changeRate?: number | null } | null;
+  kosdaq?: { changeRate?: number | null } | null;
+  usdkrw?: { changeRate?: number | null } | null;
+  vix?: { price?: number | null } | null;
+  fearGreed?: { score?: number | null } | null;
 };
 
 export type AutoTradeCandidateSelectionMode =
@@ -58,6 +85,11 @@ function toPositiveInt(value: unknown, fallback: number): number {
   return n > 0 ? n : fallback;
 }
 
+function clamp(value: number, min: number, max: number): number {
+  if (!Number.isFinite(value)) return min;
+  return Math.max(min, Math.min(max, value));
+}
+
 function normalizeSignal(signal: unknown): string {
   return String(signal ?? "").trim().toUpperCase();
 }
@@ -73,6 +105,184 @@ export function deriveAdaptiveMinBuyScore(
   const preferred = toPositiveInt(preferredMinBuyScore, 70);
   if (latestTopScore <= 0) return preferred;
   return Math.max(35, Math.min(preferred, Math.floor(latestTopScore) - 3));
+}
+
+export function detectAutoTradeMarketPolicy(input?: {
+  overview?: MarketOverviewLike | null;
+}): AutoTradeMarketPolicy {
+  const overview = input?.overview;
+  const vix = toNumber(overview?.vix?.price, 0);
+  const fearGreed = toNumber(overview?.fearGreed?.score, 50);
+  const usdKrwChange = toNumber(overview?.usdkrw?.changeRate, 0);
+  const kospiChange = toNumber(overview?.kospi?.changeRate, 0);
+  const kosdaqChange = toNumber(overview?.kosdaq?.changeRate, 0);
+  const relativeStrength = kosdaqChange - kospiChange;
+
+  if (
+    (vix > 0 && vix >= 28) ||
+    fearGreed <= 30 ||
+    usdKrwChange >= 0.8 ||
+    kospiChange <= -1.5
+  ) {
+    return {
+      mode: "large-cap-defense",
+      label: "대형주 방어",
+      minCashReservePct: 40,
+      allowedMarkets: ["KOSPI"],
+      kosdaqMaxSlots: 0,
+      requireLargeCapKospi: true,
+      minLiquidity: 20_000_000_000,
+      minMarketCap: 1_000_000_000_000,
+    };
+  }
+
+  if (
+    relativeStrength >= 1 &&
+    fearGreed >= 45 &&
+    (vix <= 0 || vix <= 22) &&
+    usdKrwChange < 0.8
+  ) {
+    return {
+      mode: "rotation",
+      label: "순환매 확장",
+      minCashReservePct: 20,
+      allowedMarkets: ["KOSPI", "KOSDAQ"],
+      kosdaqMaxSlots: 1,
+      requireLargeCapKospi: false,
+      minLiquidity: 8_000_000_000,
+      minMarketCap: 0,
+    };
+  }
+
+  return {
+    mode: "balanced",
+    label: "균형",
+    minCashReservePct: 30,
+    allowedMarkets: ["KOSPI", "KOSDAQ"],
+    kosdaqMaxSlots: 1,
+    requireLargeCapKospi: false,
+    minLiquidity: 12_000_000_000,
+    minMarketCap: 0,
+  };
+}
+
+export function computeDynamicLargeCapFloor(
+  rows: RankedCandidate[],
+  targetCount = 100
+): number {
+  const kospiCaps = rows
+    .filter((row) => row.market === "KOSPI")
+    .map((row) => toNumber(row.marketCap, 0))
+    .filter((value) => value > 0)
+    .sort((a, b) => b - a);
+
+  if (!kospiCaps.length) return 1_000_000_000_000;
+  if (kospiCaps.length < targetCount) {
+    return Math.max(1_000_000_000_000, kospiCaps[kospiCaps.length - 1] ?? 0);
+  }
+
+  return Math.max(1_000_000_000_000, kospiCaps[targetCount - 1] ?? 0);
+}
+
+export function resolveDeployableCash(input: {
+  availableCash: number;
+  seedCapital: number;
+  minCashReservePct: number;
+}): number {
+  const availableCash = Math.max(0, toNumber(input.availableCash, 0));
+  const seedCapital = Math.max(0, toNumber(input.seedCapital, 0));
+  const reservePct = clamp(toNumber(input.minCashReservePct, 0), 0, 95);
+  const reserveAmount = seedCapital > 0 ? seedCapital * (reservePct / 100) : 0;
+  return Math.max(0, availableCash - reserveAmount);
+}
+
+function filterRowsByMarketPolicy(input: {
+  rows: RankedCandidate[];
+  policy?: AutoTradeMarketPolicy;
+}): RankedCandidate[] {
+  if (!input.policy) return input.rows;
+
+  const dynamicLargeCapFloor = input.policy.requireLargeCapKospi
+    ? computeDynamicLargeCapFloor(input.rows)
+    : 0;
+
+  return input.rows.filter((row) => {
+    const market = String(row.market ?? "").toUpperCase();
+    if (!input.policy?.allowedMarkets.includes(market as "KOSPI" | "KOSDAQ")) {
+      return false;
+    }
+
+    const liquidity = toNumber(row.liquidity, 0);
+    if (liquidity > 0 && liquidity < input.policy.minLiquidity) {
+      return false;
+    }
+
+    if (!input.policy.requireLargeCapKospi) {
+      return true;
+    }
+
+    if (market !== "KOSPI") {
+      return false;
+    }
+
+    const marketCap = toNumber(row.marketCap, 0);
+    const universeLevel = String(row.universeLevel ?? "").trim().toLowerCase();
+    const marketCapFloor = Math.max(input.policy.minMarketCap, dynamicLargeCapFloor);
+
+    if (marketCap >= marketCapFloor) {
+      return true;
+    }
+
+    return universeLevel === "core" && marketCap >= input.policy.minMarketCap;
+  });
+}
+
+function prioritizeRowsByMarketPolicy(
+  rows: RankedCandidate[],
+  policy?: AutoTradeMarketPolicy
+): RankedCandidate[] {
+  if (!policy) return rows;
+
+  return [...rows].sort((a, b) => {
+    const scoreDiff = b.score - a.score;
+    if (scoreDiff !== 0) return scoreDiff;
+
+    const marketRank = (row: RankedCandidate) => {
+      if (policy.mode === "large-cap-defense") {
+        return row.market === "KOSPI" ? 0 : 1;
+      }
+      if (policy.mode === "balanced") {
+        return row.market === "KOSPI" ? 0 : 1;
+      }
+      return row.market === "KOSDAQ" ? 0 : 1;
+    };
+
+    return marketRank(a) - marketRank(b);
+  });
+}
+
+function takeRowsWithinMarketPolicy(input: {
+  rows: RankedCandidate[];
+  limit: number;
+  policy?: AutoTradeMarketPolicy;
+}): RankedCandidate[] {
+  const prioritized = prioritizeRowsByMarketPolicy(input.rows, input.policy);
+  if (!input.policy) return prioritized.slice(0, input.limit);
+
+  const result: RankedCandidate[] = [];
+  let kosdaqCount = 0;
+  const kosdaqMaxSlots = clamp(input.policy.kosdaqMaxSlots, 0, input.limit);
+
+  for (const row of prioritized) {
+    if (result.length >= input.limit) break;
+    if (row.market === "KOSDAQ") {
+      if (kosdaqCount >= kosdaqMaxSlots) continue;
+      kosdaqCount += 1;
+    }
+    result.push(row);
+  }
+
+  return result;
 }
 
 function kstNow(base = new Date()): Date {
@@ -153,10 +363,14 @@ export function pickAutoTradeCandidates(input: {
   preferredMinBuyScore: number;
   limit: number;
   heldCodes: Set<string>;
+  marketPolicy?: AutoTradeMarketPolicy;
 }): AutoTradeCandidateSelectionResult {
   const limit = Math.max(1, Math.floor(input.limit));
   const preferredMinBuyScore = toPositiveInt(input.preferredMinBuyScore, 70);
-  const rows = input.rows
+  const rows = filterRowsByMarketPolicy({
+    rows: input.rows,
+    policy: input.marketPolicy,
+  })
     .filter((row) => row.close > 0 && !input.heldCodes.has(row.code))
     .sort((a, b) => b.score - a.score);
 
@@ -167,7 +381,11 @@ export function pickAutoTradeCandidates(input: {
   );
 
   const toCandidates = (targetRows: RankedCandidate[]) =>
-    targetRows.slice(0, limit).map(({ code, close, score, name, signal, rsi14, liquidity }) => ({
+    takeRowsWithinMarketPolicy({
+      rows: targetRows,
+      limit,
+      policy: input.marketPolicy,
+    }).map(({ code, close, score, name, signal, rsi14, liquidity, market, marketCap, universeLevel }) => ({
       code,
       close,
       score,
@@ -175,6 +393,9 @@ export function pickAutoTradeCandidates(input: {
       signal: signal ?? null,
       rsi14: rsi14 ?? null,
       liquidity: liquidity ?? null,
+      market: market ?? null,
+      marketCap: marketCap ?? null,
+      universeLevel: universeLevel ?? null,
     }));
 
   const preferredSignalRows = rows.filter(
