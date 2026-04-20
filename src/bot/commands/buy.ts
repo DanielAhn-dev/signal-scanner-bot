@@ -22,6 +22,7 @@ import {
   scaleSeriesToReferencePrice,
 } from "../../lib/priceScale";
 import { fetchLatestScoresByCodes } from "../../services/scoreSourceService";
+import { calculateAutoTradeBuySizing } from "../../services/virtualAutoTradeSizing";
 
 // Supabase 클라이언트
 const supabase = createClient(
@@ -105,6 +106,12 @@ function buildMessage(
   investPrefs?: {
     capital: number;
     splitCount: number;
+    targetPositions: number;
+    targetWeightPct: number;
+    totalBudget: number;
+    trancheBudget: number;
+    totalShares: number;
+    trancheShares: number;
   }
 ): string {
   const { name, code } = stock;
@@ -149,18 +156,16 @@ function buildMessage(
   if (investPrefs && investPrefs.capital > 0 && investPrefs.splitCount > 0) {
     const capital = investPrefs.capital;
     const splitCount = investPrefs.splitCount;
-    const perSplitAmount = Math.floor(capital / splitCount);
-    const entryPrice = Math.max(1, Math.round((plan.entryLow + plan.entryHigh) / 2));
-    const totalShares = Math.floor(capital / entryPrice);
-    const perSplitShares = Math.max(1, Math.floor(totalShares / splitCount));
-    const expectedProfit = Math.floor(totalShares * entryPrice * plan.target1Pct);
+    const expectedProfit = Math.floor(investPrefs.totalBudget * plan.target1Pct);
 
     planBlock = [
       "",
       LINE,
-      "<b>내 투자금 기준</b>",
+      "<b>내 투자금 기준 추천</b>",
       `  투자금  <code>${fmtInt(capital)}원</code>`,
-      `  분할매수  <code>${splitCount}회</code> (회당 ${fmtInt(perSplitAmount)}원 / 약 ${perSplitShares}주)`,
+      `  권장 비중  <code>${investPrefs.targetWeightPct.toFixed(1)}%</code> (${investPrefs.targetPositions}종목 기준)`,
+      `  권장 총투입  <code>${fmtInt(investPrefs.totalBudget)}원</code> / 약 ${investPrefs.totalShares}주`,
+      `  분할매수  <code>${splitCount}회</code> (1차 ${fmtInt(investPrefs.trancheBudget)}원 / 약 ${investPrefs.trancheShares}주)`,
       `  1차목표 수익  <code>${fmtInt(expectedProfit)}원</code>`,
     ].join("\n");
   }
@@ -348,8 +353,38 @@ export async function handleBuyCommand(
   const capital = prefs.capital_krw ?? 0;
   const splitCount = prefs.split_count ?? 3;
 
+  const autoTradeSizing = capital > 0
+    ? calculateAutoTradeBuySizing({
+        availableCash: capital,
+        price: currentPrice,
+        slotsLeft: 1,
+        currentHoldingCount: 0,
+        maxPositions:
+          prefs.risk_profile === "active"
+            ? 12
+            : prefs.risk_profile === "balanced"
+              ? 10
+              : 8,
+        stopLossPct: Math.abs(plan.stopPct * 100),
+        prefs,
+      })
+    : null;
+
+  const totalShares = autoTradeSizing?.totalBudget
+    ? Math.max(0, Math.floor(autoTradeSizing.totalBudget / Math.max(1, currentPrice)))
+    : 0;
+
   const investPrefs = capital > 0 && splitCount > 0
-    ? { capital, splitCount }
+    ? {
+        capital,
+        splitCount,
+        targetPositions: autoTradeSizing?.targetPositions ?? 0,
+        targetWeightPct: autoTradeSizing?.targetWeightPct ?? 0,
+        totalBudget: autoTradeSizing?.totalBudget ?? 0,
+        trancheBudget: autoTradeSizing?.budget ?? 0,
+        totalShares,
+        trancheShares: autoTradeSizing?.quantity ?? 0,
+      }
     : undefined;
 
   const msg = buildMessage(
