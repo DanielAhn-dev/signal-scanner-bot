@@ -966,6 +966,12 @@ async function runDailyReviewForUser(payload: {
     }
   }
 
+  if (holdCount > 0 && takeProfitCount === 0 && stopLossCount === 0) {
+    summary.notes.push(
+      `보유 종목 ${holdCount}건은 익절 ${takeProfitPct.toFixed(1)}% / 손절 ${stopLossPct.toFixed(1)}% 범위 미도달로 유지`
+    );
+  }
+
   // 매도 이후 재조회 기준으로 신규 매수 후보를 판단한다.
   const { data: postHoldings, error: postHoldingsError } = await payload.supabase
     .from(PORTFOLIO_TABLES.positionsLegacy)
@@ -985,6 +991,7 @@ async function runDailyReviewForUser(payload: {
     const maxPositions = toPositiveInt(payload.setting.max_positions, 10);
     const currentCount = heldCodes.size;
     const room = Math.max(0, maxPositions - currentCount);
+    summary.notes.push(`보유 현황: ${currentCount}/${maxPositions}종목 · 신규 여력 ${room}종목`);
     // 기존 monday_buy_slots를 회차당 신규매수 상한으로 재사용한다.
     const maxNewBuysPerRun = toPositiveInt(payload.setting.monday_buy_slots, 2);
     const rawBuySlots = Math.min(room, maxNewBuysPerRun);

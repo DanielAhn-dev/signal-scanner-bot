@@ -99,6 +99,32 @@ function formatActionBreakdown(action: {
   ].join(" · ");
 }
 
+function prioritizeNotes(notes: string[]): string[] {
+  const uniqueNotes = Array.from(new Set(notes.filter(Boolean)));
+  const priorityRules: Array<{ pattern: RegExp; score: number }> = [
+    { pattern: /실행 매수|실행 매도|테스트 매수안|테스트 매도/i, score: 120 },
+    { pattern: /일일판단 요약|보유 현황|보유 종목 .* 유지/i, score: 110 },
+    { pattern: /전략:|전략 유지|신규 매수 중지|기존 포지션만 관리|최소 진입/i, score: 100 },
+    { pattern: /후보 없음|후보 0건|상위점수|대체선별|기준 완화/i, score: 90 },
+    { pattern: /투자 가능 현금 0원|현금 부족|가상현금 보정/i, score: 80 },
+    { pattern: /사이징 기준|분할 1\//i, score: 70 },
+  ];
+
+  const scored = uniqueNotes.map((note, index) => {
+    const matched = priorityRules.find((rule) => rule.pattern.test(note));
+    return {
+      note,
+      score: matched?.score ?? 10,
+      index,
+    };
+  });
+
+  return scored
+    .sort((a, b) => b.score - a.score || a.index - b.index)
+    .slice(0, 8)
+    .map((item) => item.note);
+}
+
 function buildFriendlyGuide(action: {
   buys: number;
   sells: number;
@@ -149,6 +175,18 @@ function buildFriendlyGuide(action: {
     return lines;
   }
 
+  const hasHoldSummary = notes.some((note) => /보유 종목 .* 유지|일일판단 요약: 보유유지/i.test(note));
+  const hasPositionStatus = notes.some((note) => /보유 현황:/i.test(note));
+
+  if (hasHoldSummary || hasPositionStatus) {
+    return [
+      "안내",
+      "- 이번 회차는 보유 종목이 익절/손절 조건에 닿지 않아 유지 중심으로 끝났습니다.",
+      "- 신규 매수는 후보, 현금, 전략 조건이 함께 맞아야만 실행됩니다.",
+      "- 메모의 보유 현황, 후보 수, 전략 제한 문구를 먼저 확인해 주세요.",
+    ];
+  }
+
   return [
     "안내",
     "- 이번 회차는 점검만 완료됐습니다.",
@@ -177,7 +215,7 @@ export async function handleAutoCycleCommand(
     });
 
     const action = result.action;
-    const noteLines = (action.notes || []).slice(0, 8);
+    const noteLines = prioritizeNotes(action.notes || []);
     const guideLines = buildFriendlyGuide(action, dryRun);
 
     await tgSend("sendMessage", {

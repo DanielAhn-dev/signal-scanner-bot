@@ -55,11 +55,17 @@ export async function handleStrategyCallback(
     const chatId = ctx.chatId;
     const today = new Date().toISOString().split("T")[0];
 
-    // 1. virtual_autotrade_settings 업데이트
+    // 1. virtual_autotrade_settings upsert
     const { error: updateError } = await supabase
       .from("virtual_autotrade_settings")
-      .update({ selected_strategy: strategy })
-      .eq("chat_id", chatId);
+      .upsert(
+        {
+          chat_id: chatId,
+          selected_strategy: strategy,
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: "chat_id" }
+      );
 
     if (updateError) {
       console.error("[strategySelect] Settings 업데이트 실패:", updateError);
