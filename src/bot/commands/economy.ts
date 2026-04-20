@@ -12,6 +12,7 @@ import {
   actionButtons,
   ACTIONS,
 } from "../messages/layout";
+import { buildPersonalizedGuidance } from "../../services/personalizedGuidanceService";
 
 const arrow = (n: number) => (n > 0 ? "▲" : n < 0 ? "▼" : "―");
 
@@ -193,11 +194,17 @@ export async function handleEconomyCommand(
   else if (data.bitcoin && data.bitcoin.changeRate >= 5)
     comments.push("비트코인 급등 — 위험선호 강화");
 
+  const personalLines = await buildPersonalizedGuidance({
+    chatId: ctx.chatId,
+    context: "economy",
+  }).catch(() => []);
+
   const msg = buildMessage([
     header("글로벌 경제지표", "핵심 거시 지표 요약"),
     section("요약", [
       `시장 온도: <code>${riskTag(data.vix?.price, data.fearGreed?.score)}</code>`,
     ]),
+    ...(personalLines.length > 0 ? [section("내 상황 제안", personalLines)] : []),
     section("국내 증시", domestic),
     section("미국 증시", us),
     section("환율", fx),

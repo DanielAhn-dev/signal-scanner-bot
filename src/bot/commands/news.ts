@@ -14,6 +14,7 @@ import {
   ACTIONS,
 } from "../messages/layout";
 import { analyzeNewsSentiment, formatSentimentLine } from "../../lib/newsSentiment";
+import { buildPersonalizedGuidance } from "../../services/personalizedGuidanceService";
 
 export async function handleNewsCommand(
   input: string,
@@ -39,7 +40,16 @@ export async function handleNewsCommand(
           (item, i) => `${i + 1}. <a href="${item.link}">${esc(item.title)}</a>`
         ),
       ];
-      msg = buildMessage([msg, section("목록", lines), divider()]);
+      const personalLines = await buildPersonalizedGuidance({
+        chatId: ctx.chatId,
+        context: "news",
+      }).catch(() => []);
+      msg = buildMessage([
+        msg,
+        ...(personalLines.length > 0 ? [section("내 상황 제안", personalLines)] : []),
+        section("목록", lines),
+        divider(),
+      ]);
     }
 
     return tgSend("sendMessage", {
@@ -84,7 +94,18 @@ export async function handleNewsCommand(
     });
   }
 
-  const msg = buildMessage([head, section("목록", lines), divider()]);
+  const personalLines = await buildPersonalizedGuidance({
+    chatId: ctx.chatId,
+    focusCode: code,
+    context: "news",
+  }).catch(() => []);
+
+  const msg = buildMessage([
+    head,
+    ...(personalLines.length > 0 ? [section("내 상황 제안", personalLines)] : []),
+    section("목록", lines),
+    divider(),
+  ]);
 
   // 관련 명령어 버튼
   await tgSend("sendMessage", {

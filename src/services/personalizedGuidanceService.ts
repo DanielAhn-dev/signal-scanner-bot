@@ -85,7 +85,7 @@ function buildModeHint(): string {
 export async function buildPersonalizedGuidance(input: {
   chatId: number;
   focusCode?: string | null;
-  context: "brief" | "scan" | "flow" | "buy" | "market" | "holding-plan";
+  context: "brief" | "scan" | "flow" | "buy" | "market" | "holding-plan" | "news" | "economy";
 }): Promise<string[]> {
   const chatId = input.chatId;
   const focusCode = String(input.focusCode ?? "").trim().toUpperCase() || null;
@@ -180,6 +180,22 @@ export async function buildPersonalizedGuidance(input: {
       lines.push("시장 화면은 신규 매수 타이밍보다 현재 보유 포지션의 방어/확대 여부를 정하는 기준으로 보는 편이 좋습니다.");
     } else if (cash > 0) {
       lines.push("시장 화면에서는 지금이 정찰 진입을 시작할 장인지, 관찰만 할 장인지 먼저 판단하면 됩니다.");
+    }
+  }
+
+  if (input.context === "news") {
+    if (hasFocusHolding) {
+      lines.push("이 뉴스는 신규 진입 판단보다 현재 보유 종목을 더 들고 갈지, 일부 줄일지 판단하는 재료로 보는 편이 맞습니다.");
+    } else if (holdCount > 0) {
+      lines.push("뉴스가 좋아 보여도 현재 보유 포지션과 충돌하지 않는지 먼저 보고 진입 여부를 판단하는 편이 안전합니다.");
+    }
+  }
+
+  if (input.context === "economy") {
+    if (holdCount > 0) {
+      lines.push("경제 화면은 보유 종목을 더 공격적으로 가져갈지, 방어적으로 줄일지 판단하는 상위 기준으로 보면 됩니다.");
+    } else if (cash > 0) {
+      lines.push("경제 화면에서는 오늘 신규 진입을 서둘러도 되는지, 현금 대기 쪽이 나은지만 먼저 판단하면 충분합니다.");
     }
   }
 
