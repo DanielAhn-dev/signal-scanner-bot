@@ -27,6 +27,7 @@ const PAGE_TITLE_H = 20;
 
 export function drawFooter(ctx: LayoutContext, today: string) {
   const { ML, MR, W, MB } = ctx;
+  const displayDate = String(today ?? "").replace(/-/g, ".");
   const lineY = MB - 1;
   const textY = MB - 13;
   ctx.line(ML, lineY, W - MR, lineY, C.rule, 0.75);
@@ -34,7 +35,7 @@ export function drawFooter(ctx: LayoutContext, today: string) {
     "가상 포트폴리오 기준 · 실제 투자 결과와 다를 수 있습니다.",
     ML, textY, 6.5, C.subtle, W - ML - MR - 100
   );
-  ctx.textRight(`${today}  /  ${ctx.pageNum}`, W - MR, textY, 6.5, C.subtle);
+  ctx.textRight(`${displayDate} / ${ctx.pageNum}`, W - MR, textY, 6.5, C.subtle);
 }
 
 export function drawCoverPage(

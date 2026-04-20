@@ -20,6 +20,7 @@ const REPORT_TOPIC_GUIDE = [
   { command: "월간", aliases: ["월간", "monthly", "month"], description: "월별 성과 요약 텍스트" },
   { command: "실전운용", aliases: ["실전운용", "실전", "운용", "플레이북", "playbook", "ops"], description: "월~금 자동매매 실전 체크리스트 텍스트" },
   { command: "가이드", aliases: ["가이드", "운영가이드", "guide", "guidepdf"], description: "운영 가이드 PDF" },
+    { command: "자동매매", aliases: ["자동매매", "명령어", "command", "automate"], description: "자동매매 명령어 사용 가이드 PDF" },
   { command: "포트폴리오", aliases: ["포트폴리오", "보유", "holdings", "portfolio"], description: "보유 종목과 최근 거래 중심 PDF" },
   { command: "관심종목", aliases: ["관심종목", "관심", "watchonly", "watch"], description: "수익 추적 중인 관심 종목 목록 PDF" },
   { command: "거시", aliases: ["거시", "경제", "매크로", "economy", "macro"], description: "금리·환율·변동성 중심 PDF" },
@@ -47,6 +48,7 @@ function buildReportMenuText(): string {
     "/리포트 실전운용 — 월~금 자동매매 실전 체크리스트 텍스트",
     "  전략 유지 여부, 보유 추가매수, 부분 익절, 분할 매도 점검용",
     "/리포트 가이드 — 기능 활용 운영 가이드 PDF",
+      "/리포트 자동매매 — 자동매매 명령어 사용 방법 PDF",
     "/리포트 포트폴리오 — 보유 종목/거래 중심 PDF",
     "/리포트 관심종목 — 관심 추적 종목 목록 PDF",
     "/리포트 거시 — 금리·환율·변동성 PDF",
@@ -328,6 +330,58 @@ async function handleGuidePdfCommand(ctx: ChatContext, tgSend: any): Promise<voi
   }
 }
 
+  async function handleAutoTradeCommandGuidePdf(ctx: ChatContext, tgSend: any): Promise<void> {
+    const guidePdfPath = path.join(process.cwd(), "docs", "generated", "automate-trade-command-guide.pdf");
+
+    await tgSend("sendMessage", {
+      chat_id: ctx.chatId,
+      text: "자동매매 명령어 가이드 PDF를 준비 중입니다. 잠시만 기다려주세요...",
+    });
+
+    try {
+      const bytes = await readFile(guidePdfPath);
+      const nowKst = new Date().toLocaleString("ko-KR", { timeZone: "Asia/Seoul", hour12: false });
+      const caption = [
+        "Signal Scanner Bot 자동매매 명령어 운영 가이드",
+        `기준 문서: docs/automate-trade-command-guide.md`,
+        `전송 시각: ${nowKst} KST`,
+        "주요 명령어: /자동사이클 점검, /자동사이클 실행, /자동사이클 실행 진입, /보유대응",
+      ].join("\n");
+
+      const form = new FormData();
+      form.set("chat_id", String(ctx.chatId));
+      form.set("caption", caption);
+      form.set("disable_content_type_detection", "true");
+      form.set("document", new Blob([bytes], { type: "application/pdf" }), "automate-trade-command-guide.pdf");
+
+      const sendResult = await tgSend("sendDocument", form);
+      if (!sendResult?.ok) {
+        const sendError = sendResult?.description || "Telegram sendDocument failed";
+        throw new Error(sendError);
+      }
+
+      await tgSend("sendMessage", {
+        chat_id: ctx.chatId,
+        text: [
+          "자동매매 명령어 가이드 PDF를 보냈습니다.",
+          "핵심 흐름: 09:05 점검 → 09:15 필요시 실행 → 장중 모니터링 → 16:00 재판단",
+          "월요일: /자동사이클 실행 진입 으로 신규 포지션 진입",
+        ].join("\n"),
+        reply_markup: actionButtons(ACTIONS.reportMenu, 2),
+      });
+    } catch (e: any) {
+      const detail = e instanceof Error ? e.message : String(e);
+      await tgSend("sendMessage", {
+        chat_id: ctx.chatId,
+        text: [
+          "자동매매 명령어 가이드 PDF 전송에 실패했습니다.",
+          `원인: ${detail}`,
+          "운영팀은 `npx tsx scripts/export_markdown_pdf.ts --input docs/automate-trade-command-guide.md --output docs/generated/automate-trade-command-guide.pdf` 실행 후 다시 시도해주세요.",
+        ].join("\n"),
+      });
+    }
+  }
+
 async function handlePlaybookReportCommand(ctx: ChatContext, tgSend: any): Promise<void> {
   await tgSend("sendMessage", {
     chat_id: ctx.chatId,
@@ -401,6 +455,11 @@ export async function handleReportCommand(
     await handleGuidePdfCommand(ctx, tgSend);
     return;
   }
+
+    if (normalizedTopic === "자동매매") {
+      await handleAutoTradeCommandGuidePdf(ctx, tgSend);
+      return;
+    }
 
   const progressLabel = `${normalizedTopic} 리포트`;
 
