@@ -12,9 +12,18 @@ import {
 import { syncVirtualPortfolio } from "./portfolioService";
 import { buildStrategyMemo } from "../lib/strategyMemo";
 import { appendVirtualDecisionLog } from "./decisionLogService";
+import {
+  applyStrategyBuyConstraint,
+  pickAutoTradeCandidates,
+  selectRunType,
+  type AutoTradeCandidateSelectionResult,
+  type AutoTradeRunMode as SelectionAutoTradeRunMode,
+  type AutoTradeRunType,
+  type RankedCandidate,
+} from "./virtualAutoTradeSelection";
 
-type RunMode = "auto" | "monday" | "daily";
-type RunType = "MONDAY_BUY" | "DAILY_REVIEW" | "MANUAL";
+type RunMode = SelectionAutoTradeRunMode;
+type RunType = AutoTradeRunType;
 type SupabaseClientAny = any;
 
 type AutoTradeSettingRow = {
@@ -32,7 +41,7 @@ type AutoTradeSettingRow = {
 
 const AUTO_TRADE_STRATEGY_ID = "core.autotrade.v1";
 
-export type AutoTradeRunMode = RunMode;
+export type AutoTradeRunMode = SelectionAutoTradeRunMode;
 
 export type ChatAutoTradeRunSummary = {
   mode: RunMode;
@@ -104,20 +113,12 @@ function fmtKrw(value: number): string {
   return `${Math.round(value).toLocaleString("ko-KR")}원`;
 }
 
-function kstNow(base = new Date()): Date {
-  return new Date(base.getTime() + 9 * 60 * 60 * 1000);
-}
-
 function kstDateKey(base = new Date()): string {
-  const d = kstNow(base);
+  const d = new Date(base.getTime() + 9 * 60 * 60 * 1000);
   const y = d.getUTCFullYear();
   const m = String(d.getUTCMonth() + 1).padStart(2, "0");
   const day = String(d.getUTCDate()).padStart(2, "0");
   return `${y}-${m}-${day}`;
-}
-
-function isKstMonday(base = new Date()): boolean {
-  return kstNow(base).getUTCDay() === 1;
 }
 
 function normalizeStock(input: ScoreCandidateRow["stock"]): {
@@ -133,6 +134,7 @@ function normalizeStock(input: ScoreCandidateRow["stock"]): {
     close,
   };
 }
+
 
 function isMissingScoresSignalColumn(error: unknown): boolean {
   if (!error || typeof error !== "object") return false;
@@ -223,11 +225,19 @@ async function selectMondayCandidates(payload: {
   minBuyScore: number;
   limit: number;
   heldCodes: Set<string>;
-}): Promise<Array<{ code: string; close: number; score: number; name: string }>> {
+}): Promise<AutoTradeCandidateSelectionResult> {
   const latestAsof = await getLatestScoreAsof(payload.supabase);
-  if (!latestAsof) return [];
+  if (!latestAsof) {
+    return {
+      candidates: [],
+      selectionMode: "none",
+      thresholdUsed: toPositiveInt(payload.minBuyScore, 70),
+      latestTopScore: 0,
+      latestAsof: null,
+    };
+  }
 
-  const queryLimit = Math.max(payload.limit * 5, payload.limit);
+  const queryLimit = Math.max(payload.limit * 10, 30);
   const selectWithSignal = [
     "code",
     "total_score",
@@ -245,14 +255,13 @@ async function selectMondayCandidates(payload: {
       .from("scores")
       .select(selectClause)
       .eq("asof", latestAsof)
-      .gte("total_score", payload.minBuyScore)
       .order("total_score", { ascending: false })
       .limit(queryLimit);
 
   let data: unknown[] | null = null;
   let error: unknown = null;
 
-  ({ data, error } = await baseQuery(selectWithSignal).in("signal", ["BUY", "STRONG_BUY", "WATCH"]));
+  ({ data, error } = await baseQuery(selectWithSignal));
 
   if (error && isMissingScoresSignalColumn(error)) {
     ({ data, error } = await baseQuery(selectWithoutSignal));
@@ -263,24 +272,32 @@ async function selectMondayCandidates(payload: {
   }
 
   const rows = (data ?? []) as ScoreCandidateRow[];
-  const out: Array<{ code: string; close: number; score: number; name: string }> = [];
+  const rankedRows: RankedCandidate[] = [];
 
   for (const row of rows) {
-    if (payload.heldCodes.has(row.code)) continue;
     const stock = normalizeStock(row.stock);
     if (!stock) continue;
 
-    out.push({
+    rankedRows.push({
       code: row.code,
       close: stock.close,
       score: toNumber(row.total_score, 0),
       name: stock.name || row.code,
+      signal: row.signal ?? null,
     });
-
-    if (out.length >= payload.limit) break;
   }
 
-  return out;
+  const selection = pickAutoTradeCandidates({
+    rows: rankedRows,
+    preferredMinBuyScore: payload.minBuyScore,
+    limit: payload.limit,
+    heldCodes: payload.heldCodes,
+  });
+
+  return {
+    ...selection,
+    latestAsof,
+  };
 }
 
 async function runMondayBuyForUser(payload: {
@@ -325,46 +342,99 @@ async function runMondayBuyForUser(payload: {
       .map((row) => String(row.code))
   );
 
+  const selectedStrategy = payload.setting.selected_strategy;
+  if (selectedStrategy) {
+    const strategyLabels: Record<string, string> = {
+      HOLD_SAFE: "안전 포지션",
+      REDUCE_TIGHT: "타이트 손절",
+      WAIT_AND_DIP_BUY: "매수 기회 대기",
+    };
+    summary.notes.push(`전략: ${strategyLabels[selectedStrategy] || selectedStrategy}`);
+  }
+
   const activeCount = heldCodes.size;
   const maxPositions = toPositiveInt(payload.setting.max_positions, 10);
-  let remainSlots = Math.max(0, Math.min(toPositiveInt(payload.setting.monday_buy_slots, 2), maxPositions - activeCount));
+  const rawRemainSlots = Math.max(0, Math.min(toPositiveInt(payload.setting.monday_buy_slots, 2), maxPositions - activeCount));
+  const buyConstraint = applyStrategyBuyConstraint({
+    selectedStrategy,
+    requestedSlots: rawRemainSlots,
+    baseMinBuyScore: toPositiveInt(payload.setting.min_buy_score, 72),
+    activeCount,
+  });
+  const remainSlots = buyConstraint.buySlots;
 
-  // 선택된 전략에 따라 신규 매수 중단
-  if (["HOLD_SAFE", "WAIT_AND_DIP_BUY"].includes(payload.setting.selected_strategy ?? "")) {
-    remainSlots = 0;
+  if (buyConstraint.note) {
+    summary.notes.push(buyConstraint.note);
   }
 
   if (remainSlots <= 0) {
     summary.skipped += 1;
-    summary.notes.push("추가 매수 슬롯 없음");
+    if (!buyConstraint.note) {
+      summary.notes.push("추가 매수 슬롯 없음");
+    }
     await writeActionLog({
       supabase: payload.supabase,
       runId: payload.runId,
       chatId,
       actionType: "SKIP",
-      reason: "no-buy-slots",
-      detail: { activeCount, maxPositions, remainSlots },
+      reason: buyConstraint.reason === "default"
+        ? "no-buy-slots"
+        : buyConstraint.reason,
+      detail: {
+        activeCount,
+        maxPositions,
+        remainSlots,
+        rawRemainSlots,
+        selectedStrategy,
+      },
     });
     return summary;
   }
 
-  const candidates = await selectMondayCandidates({
+  const candidateSelection = await selectMondayCandidates({
     supabase: payload.supabase,
-    minBuyScore: toPositiveInt(payload.setting.min_buy_score, 72),
+    minBuyScore: buyConstraint.minBuyScore,
     limit: remainSlots,
     heldCodes,
   });
+  const candidates = candidateSelection.candidates;
+
+  if (candidateSelection.latestAsof) {
+    summary.notes.push(`점수 기준일: ${candidateSelection.latestAsof}`);
+  }
+
+  if (candidateSelection.selectionMode === "signal-relaxed") {
+    summary.notes.push(
+      `후보 기준 완화: 최신 상위점수 ${candidateSelection.latestTopScore}점 기준으로 ${candidateSelection.thresholdUsed}점 이상 BUY 계열 종목 선별`
+    );
+  }
+  if (candidateSelection.selectionMode === "top-score-fallback") {
+    summary.notes.push(
+      `후보 대체선별: BUY 신호 부족으로 상위 점수대 ${candidateSelection.thresholdUsed}점 이상 종목 선별`
+    );
+  }
 
   if (!candidates.length) {
     summary.skipped += 1;
-    summary.notes.push("매수 후보 없음");
+    if (candidateSelection.latestTopScore > 0) {
+      summary.notes.push(
+        `매수 후보 없음 (최신 상위점수 ${candidateSelection.latestTopScore}점 · 기준 ${candidateSelection.thresholdUsed}점)`
+      );
+    } else {
+      summary.notes.push("매수 후보 없음");
+    }
     await writeActionLog({
       supabase: payload.supabase,
       runId: payload.runId,
       chatId,
       actionType: "SKIP",
       reason: "no-candidates",
-      detail: { remainSlots },
+      detail: {
+        remainSlots,
+        latestTopScore: candidateSelection.latestTopScore,
+        thresholdUsed: candidateSelection.thresholdUsed,
+        selectionMode: candidateSelection.selectionMode,
+      },
     });
     return summary;
   }
@@ -448,6 +518,9 @@ async function runMondayBuyForUser(payload: {
       }
 
       summary.buys += 1;
+      summary.notes.push(
+        `[실행 매수] ${candidate.name}(${candidate.code}) 1주 · 매수가 ${fmtKrw(candidate.close)} · 점수 ${candidate.score.toFixed(1)}`
+      );
       await writeActionLog({
         supabase: payload.supabase,
         runId: payload.runId,
@@ -730,6 +803,9 @@ async function runDailyReviewForUser(payload: {
       if (shouldTakeProfit) takeProfitCount += 1;
       else if (shouldStopLoss) stopLossCount += 1;
       summary.sells += 1;
+      summary.notes.push(
+        `[실행 매도] ${holding.code} ${qty}주 · 매도가 ${fmtKrw(close)} · 손익률 ${pnlPct.toFixed(2)}%`
+      );
       await writeActionLog({
         supabase: payload.supabase,
         runId: payload.runId,
@@ -805,22 +881,39 @@ async function runDailyReviewForUser(payload: {
     const room = Math.max(0, maxPositions - currentCount);
     // 기존 monday_buy_slots를 회차당 신규매수 상한으로 재사용한다.
     const maxNewBuysPerRun = toPositiveInt(payload.setting.monday_buy_slots, 2);
-    let buySlots = Math.min(room, maxNewBuysPerRun);
+    const rawBuySlots = Math.min(room, maxNewBuysPerRun);
+    const buyConstraint = applyStrategyBuyConstraint({
+      selectedStrategy: payload.setting.selected_strategy,
+      requestedSlots: rawBuySlots,
+      baseMinBuyScore: toPositiveInt(payload.setting.min_buy_score, 72),
+      activeCount: currentCount,
+    });
+    const buySlots = buyConstraint.buySlots;
 
-    // 선택된 전략에 따라 신규 매수 중단
-    if (["HOLD_SAFE", "WAIT_AND_DIP_BUY"].includes(payload.setting.selected_strategy ?? "")) {
-      buySlots = 0;
+    if (buyConstraint.note) {
+      summary.notes.push(buyConstraint.note);
     }
 
     if (buySlots <= 0) {
-      summary.notes.push("신규 매수 불가: 추가 매수 슬롯 0건");
+      if (!buyConstraint.note) {
+        summary.notes.push("신규 매수 불가: 추가 매수 슬롯 0건");
+      }
       await writeActionLog({
         supabase: payload.supabase,
         runId: payload.runId,
         chatId,
         actionType: "SKIP",
-        reason: "no-buy-slots",
-        detail: { buySlots, room, maxPositions, currentCount },
+        reason: buyConstraint.reason === "default"
+          ? "no-buy-slots"
+          : buyConstraint.reason,
+        detail: {
+          buySlots,
+          rawBuySlots,
+          room,
+          maxPositions,
+          currentCount,
+          selectedStrategy: payload.setting.selected_strategy ?? null,
+        },
       });
     } else if (availableCash <= 0) {
       summary.notes.push("신규 매수 불가: 투자 가능 현금 0원");
@@ -833,16 +926,34 @@ async function runDailyReviewForUser(payload: {
         detail: { availableCash, buySlots },
       });
     } else {
-      const candidates = await selectMondayCandidates({
+      const candidateSelection = await selectMondayCandidates({
         supabase: payload.supabase,
-        minBuyScore: toPositiveInt(payload.setting.min_buy_score, 72),
+        minBuyScore: buyConstraint.minBuyScore,
         limit: buySlots,
         heldCodes,
       });
+      const candidates = candidateSelection.candidates;
+
+      if (candidateSelection.latestAsof) {
+        summary.notes.push(`점수 기준일: ${candidateSelection.latestAsof}`);
+      }
+
+      if (candidateSelection.selectionMode === "signal-relaxed") {
+        summary.notes.push(
+          `후보 기준 완화: 최신 상위점수 ${candidateSelection.latestTopScore}점 기준으로 ${candidateSelection.thresholdUsed}점 이상 BUY 계열 종목 선별`
+        );
+      }
+      if (candidateSelection.selectionMode === "top-score-fallback") {
+        summary.notes.push(
+          `후보 대체선별: BUY 신호 부족으로 상위 점수대 ${candidateSelection.thresholdUsed}점 이상 종목 선별`
+        );
+      }
 
       if (!candidates.length) {
         summary.notes.push(
-          `신규 매수 후보 0건 (min_buy_score ${toPositiveInt(payload.setting.min_buy_score, 72)} · 신호 BUY/STRONG_BUY/WATCH)`
+          candidateSelection.latestTopScore > 0
+            ? `신규 매수 후보 0건 (최신 상위점수 ${candidateSelection.latestTopScore}점 · 기준 ${candidateSelection.thresholdUsed}점)`
+            : `신규 매수 후보 0건 (min_buy_score ${toPositiveInt(payload.setting.min_buy_score, 72)} · 신호 BUY/STRONG_BUY/WATCH)`
         );
       }
 
@@ -958,6 +1069,9 @@ async function runDailyReviewForUser(payload: {
           availableCash = Math.max(0, availableCash - investedAmount);
           rebalanceBuyCount += 1;
           summary.buys += 1;
+          summary.notes.push(
+            `[실행 매수] ${candidate.name}(${candidate.code}) ${qty}주 · 매수가 ${fmtKrw(candidate.close)} · 투입 ${fmtKrw(investedAmount)} · 점수 ${candidate.score.toFixed(1)}`
+          );
           await writeActionLog({
             supabase: payload.supabase,
             runId: payload.runId,
@@ -1025,13 +1139,6 @@ async function runDailyReviewForUser(payload: {
   return summary;
 }
 
-function selectRunType(mode: RunMode, now = new Date()): RunType {
-  if (mode === "monday") return "MONDAY_BUY";
-  if (mode === "daily") return "DAILY_REVIEW";
-  // 기본 auto 모드는 요일과 무관하게 매도/신규매수를 함께 판단하는 일일 사이클을 사용한다.
-  return "DAILY_REVIEW";
-}
-
 function buildDefaultSettingForChat(chatId: number, riskProfile?: "safe" | "balanced" | "active"): AutoTradeSettingRow {
   if (riskProfile === "active") {
     return {
@@ -1088,7 +1195,7 @@ export async function runVirtualAutoTradingForChat(input: {
   const { data: settingRow } = await supabase
     .from("virtual_autotrade_settings")
     .select(
-      "chat_id, is_enabled, monday_buy_slots, max_positions, min_buy_score, take_profit_pct, stop_loss_pct, last_monday_buy_at, last_daily_review_at"
+      "chat_id, is_enabled, monday_buy_slots, max_positions, min_buy_score, take_profit_pct, stop_loss_pct, last_monday_buy_at, last_daily_review_at, selected_strategy"
     )
     .eq("chat_id", input.chatId)
     .maybeSingle();
@@ -1234,7 +1341,7 @@ export async function runVirtualAutoTradingCycle(input?: {
   const { data: settingsData, error: settingsError } = await supabase
     .from("virtual_autotrade_settings")
     .select(
-      "chat_id, is_enabled, monday_buy_slots, max_positions, min_buy_score, take_profit_pct, stop_loss_pct, last_monday_buy_at, last_daily_review_at"
+      "chat_id, is_enabled, monday_buy_slots, max_positions, min_buy_score, take_profit_pct, stop_loss_pct, last_monday_buy_at, last_daily_review_at, selected_strategy"
     )
     .eq("is_enabled", true)
     .order("chat_id", { ascending: true })

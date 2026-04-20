@@ -73,6 +73,18 @@ function formatUnknownError(error: unknown): string {
   }
 }
 
+function formatExecutionStatus(action: {
+  buys: number;
+  sells: number;
+  skipped: number;
+  errors: number;
+}): string {
+  if (action.errors > 0) return "판정: 실행 중 오류 발생";
+  if (action.buys + action.sells > 0) return "판정: 정상 실행 완료";
+  if (action.skipped > 0) return "판정: 조건 미충족으로 미체결";
+  return "판정: 점검 완료";
+}
+
 export async function handleAutoCycleCommand(
   input: string,
   ctx: ChatContext,
@@ -94,13 +106,14 @@ export async function handleAutoCycleCommand(
     });
 
     const action = result.action;
-    const noteLines = (action.notes || []).slice(0, 5);
+    const noteLines = (action.notes || []).slice(0, 8);
 
     await tgSend("sendMessage", {
       chat_id: ctx.chatId,
       text: [
         `<b>자동 사이클 ${dryRun ? "테스트" : "실행"} 완료</b>`,
         `모드: ${formatModeLabel(mode)}`,
+        formatExecutionStatus(action),
         `매수 ${action.buys}건 · 매도 ${action.sells}건 · 스킵 ${action.skipped}건 · 오류 ${action.errors}건`,
         noteLines.length ? `\n메모\n- ${noteLines.join("\n- ")}` : "",
         "\n재실행 예시:",
