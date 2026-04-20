@@ -31,6 +31,12 @@ export function actionButtons(buttons: InlineButton[], cols = 2) {
 }
 
 export const ACTIONS = {
+  tradeHistoryFilters: [
+    { text: "이번 달", callback_data: "cmd:tradelog:month" },
+    { text: "지난달", callback_data: "cmd:tradelog:last-month" },
+    { text: "최근 7일", callback_data: "cmd:tradelog:recent-7" },
+    { text: "전체", callback_data: "cmd:tradelog:all" },
+  ] as InlineButton[],
   etfHub: [
     { text: "적립형", callback_data: "cmd:etf:core" },
     { text: "테마형", callback_data: "cmd:etf:theme" },

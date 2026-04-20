@@ -96,7 +96,7 @@ const HELP_SECTIONS = [
       "/자동매도점검 — 기준 충족 시 자동 매도 기록",
       "/자동사이클 [테스트|실행] [auto|daily|monday] — 자동매매 1회 실행",
       "/보유대응 — 익일 대응 플랜(무체결)",
-      "/거래기록 [일수] — 가상 매매 기록",
+      "/거래기록 [이번달|지난달|4월|4월 1주|7|최근 7일|전체] — 가상 매매 기록",
     ],
   },
   {
@@ -295,6 +295,13 @@ export function resolveReplyPrefixFromText(replyText: string): string | undefine
 
 export function resolveCallbackCommandText(command: string): string | undefined {
   if (command.startsWith("report:")) return `/report ${command.slice(7)}`;
+  if (command.startsWith("tradelog:")) {
+    const scope = command.slice(9);
+    if (scope === "month") return "/거래기록";
+    if (scope === "last-month") return "/거래기록 지난달";
+    if (scope === "recent-7") return "/거래기록 최근 7일";
+    if (scope === "all") return "/거래기록 전체";
+  }
   if (command === "etf:core") return "/etfcore";
   if (command === "etf:theme") return "/etftheme";
   if (command.startsWith("etf:")) return `/etf ${command.slice(4)}`;

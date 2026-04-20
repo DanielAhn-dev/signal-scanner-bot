@@ -48,6 +48,11 @@ import {
   getDecisionReliabilitySummary,
   type DecisionAction,
 } from "../../services/decisionLogService";
+import { ACTIONS, actionButtons } from "../messages/layout";
+import {
+  buildTradeHistoryInputGuide,
+  parseTradeHistoryInput,
+} from "./watchlistHistory";
 
 const MAX_ITEMS = 20; // 사용자당 최대 관심종목 수
 const DEFAULT_TARGET_POSITIONS = 10;
@@ -1929,7 +1934,7 @@ export async function handleWatchlistLiquidateAllCommand(
         : "",
       "",
       "다음 권장 순서",
-      "1) /거래기록 7 로 실현손익 확인",
+      "1) /거래기록 또는 /거래기록 최근 7일 로 실현손익 확인",
       "2) /보유 로 잔여 포지션 확인",
       "3) /자동사이클 실행 daily 로 새 기준 시작",
     ]
@@ -2763,26 +2768,36 @@ export async function handleWatchlistHistoryCommand(
   ctx: ChatContext,
   tgSend: any
 ): Promise<void> {
-  const raw = (input || "").trim();
-  const parsedDays = Number(raw);
-  const days = Number.isFinite(parsedDays) && parsedDays > 0 ? Math.floor(parsedDays) : null;
-  const maxDays = days ? Math.min(days, 365) : null;
-  const sinceIso = maxDays
-    ? new Date(Date.now() - maxDays * 24 * 60 * 60 * 1000).toISOString()
-    : null;
+  const parsedRange = parseTradeHistoryInput(input);
+  if (!parsedRange.ok) {
+    return tgSend("sendMessage", {
+      chat_id: ctx.chatId,
+      text: parsedRange.message,
+      reply_markup: actionButtons(ACTIONS.tradeHistoryFilters),
+    });
+  }
+
+  const range = parsedRange.range;
 
   let query = supabaseRead
     .from("virtual_trades")
-    .select("id, code, side, price, quantity, gross_amount, net_amount, fee_amount, tax_amount, pnl_amount, memo, traded_at, stock:stocks(name)")
+    .select(
+      "id, code, side, price, quantity, gross_amount, net_amount, fee_amount, tax_amount, pnl_amount, memo, traded_at, stock:stocks(name)",
+      { count: "exact" }
+    )
     .eq("chat_id", ctx.chatId)
     .order("traded_at", { ascending: false })
     .limit(30);
 
-  if (sinceIso) {
-    query = query.gte("traded_at", sinceIso);
+  if (range.startIso) {
+    query = query.gte("traded_at", range.startIso);
   }
 
-  const { data: rows, error } = await query;
+  if (range.endIso) {
+    query = query.lt("traded_at", range.endIso);
+  }
+
+  const { data: rows, error, count } = await query;
 
   if (error) {
     console.error("virtual_trades query error:", error);
@@ -2796,7 +2811,10 @@ export async function handleWatchlistHistoryCommand(
   const prefs = await getUserInvestmentPrefs(tgId);
   const cash = Number(prefs.virtual_cash ?? 0);
   const realized = Number(prefs.virtual_realized_pnl ?? 0);
-  const reliability = await getDecisionReliabilitySummary(ctx.chatId, maxDays ?? 90);
+  const reliability = await getDecisionReliabilitySummary(
+    ctx.chatId,
+    range.reliabilityDays ?? 90
+  );
 
   const tradeIds = (rows ?? [])
     .map((row: any) => Number(row.id ?? 0))
@@ -2831,10 +2849,16 @@ export async function handleWatchlistHistoryCommand(
       text: [
         "<b>가상 매매 기록</b>",
         LINE,
-        "아직 기록이 없습니다.",
-        maxDays ? `최근 ${maxDays}일 내 기록이 없습니다.` : "/가상매수 로 가상 매수를 시작해보세요.",
+        `조회 범위 ${range.label} (${range.periodText})`,
+        range.emptyText,
+        range.mode === "all"
+          ? "/가상매수 로 가상 매수를 시작해보세요."
+          : "다른 기간은 아래 버튼 또는 /거래기록 4월, /거래기록 전체 로 바로 확인할 수 있습니다.",
+        "",
+        buildTradeHistoryInputGuide(),
       ].join("\n"),
       parse_mode: "HTML",
+      reply_markup: actionButtons(ACTIONS.tradeHistoryFilters),
     });
   }
 
@@ -2884,12 +2908,37 @@ export async function handleWatchlistHistoryCommand(
   const loseCount = sellRows.filter((r: any) => Number(r.pnl_amount ?? 0) < 0).length;
   const totalSell = sellRows.length;
   const winRate = totalSell > 0 ? (winCount / totalSell) * 100 : 0;
+  const scopedRealized = sellRows.reduce(
+    (sum: number, row: any) => sum + Number(row.pnl_amount ?? 0),
+    0
+  );
+  const totalCount = Number(count ?? rows.length);
+  const latestTrade = rows[0] as any;
+  const latestSideValue = String(latestTrade?.side ?? "").toUpperCase();
+  const latestSide = latestSideValue === "SELL"
+    ? "매도"
+    : latestSideValue === "ADJUST"
+      ? "수정"
+      : "매수";
+  const latestTradeStock = String(
+    (Array.isArray(latestTrade?.stock) ? latestTrade.stock[0] : latestTrade?.stock)?.name
+      ?? latestTrade?.code
+      ?? "-"
+  ).trim();
+  const latestTradeLabel = `${formatShortDate(latestTrade.traded_at as string)} ${esc(latestTradeStock)} ${latestSide}`;
+  const displayCountNote = totalCount > rows.length
+    ? `상세 내역은 최근 ${rows.length}건만 표시합니다.`
+    : "상세 내역은 최신순으로 정렬합니다.";
 
   const msg = [
     "<b>가상 매매 기록</b>",
     LINE,
-    maxDays ? `조회 기간 최근 ${maxDays}일` : "조회 기간 전체",
-    `기록 합계 ${rows.length}건 (매수 ${buyRows.length} · 매도 ${totalSell} · 수정 ${adjustRows.length})`,
+    `조회 범위 ${range.label} (${range.periodText})`,
+    `기록 합계 ${totalCount}건 (매수 ${buyRows.length} · 매도 ${totalSell} · 수정 ${adjustRows.length})`,
+    `실현손익(FIFO) <code>${scopedRealized >= 0 ? "+" : ""}${fmtInt(scopedRealized)}원</code>`,
+    `매도 승률 <code>${winRate.toFixed(1)}%</code> (승 ${winCount} · 패 ${loseCount})`,
+    `최근 거래 ${latestTradeLabel}`,
+    displayCountNote,
     "매도 손익은 FIFO 기준으로 계산됩니다.",
     "",
     ...lines,
@@ -2907,5 +2956,6 @@ export async function handleWatchlistHistoryCommand(
     chat_id: ctx.chatId,
     text: msg,
     parse_mode: "HTML",
+    reply_markup: actionButtons(ACTIONS.tradeHistoryFilters),
   });
 }
