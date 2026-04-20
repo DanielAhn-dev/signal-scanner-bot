@@ -435,6 +435,7 @@ async function selectDailyAddOnCandidates(payload: {
   baseTakeProfitPct: number;
   baseStopLossPct: number;
   sellSplitCount: number;
+  marketPolicy?: AutoTradeMarketPolicy;
 }): Promise<AutoTradeCandidateSelectionResult> {
   const codes = payload.holdings.map((holding) => holding.code).filter(Boolean);
   const { rows, latestAsof } = await fetchLatestRankedRows({
@@ -468,6 +469,7 @@ async function selectDailyAddOnCandidates(payload: {
     preferredMinBuyScore: payload.minBuyScore,
     limit: payload.limit,
     holdingsByCode,
+    marketPolicy: payload.marketPolicy,
   });
 
   return {
@@ -584,7 +586,7 @@ async function runMondayBuyForUser(payload: {
     minCashReservePct: marketPolicy.minCashReservePct,
   });
   summary.notes.push(
-    `시장모드: ${marketPolicy.label} · 최소현금 ${marketPolicy.minCashReservePct}% 유지`
+    `시장모드: ${marketPolicy.label} · ${marketPolicy.reason} · 최소현금 ${marketPolicy.minCashReservePct}% 유지`
   );
 
   const buyConstraint = applyStrategyBuyConstraint({
@@ -657,6 +659,7 @@ async function runMondayBuyForUser(payload: {
         seedCapital,
         minCashReservePct: marketPolicy.minCashReservePct,
         marketMode: marketPolicy.mode,
+        marketReason: marketPolicy.reason,
       },
     });
     return summary;
@@ -928,6 +931,7 @@ async function runMondayBuyForUser(payload: {
           cashAfter: availableCash,
           deployableCashAfter: deployableCash,
           marketMode: marketPolicy.mode,
+          marketReason: marketPolicy.reason,
         },
       });
       // 결정로그: 월요일 자동 매수
@@ -1294,6 +1298,16 @@ async function runDailyReviewForUser(payload: {
     availableCash = derivedCash;
     summary.notes.push(`가상현금 보정 적용: ${Math.round(availableCash).toLocaleString("ko-KR")}원`);
   }
+  const marketOverview = await fetchAllMarketData().catch(() => null);
+  const marketPolicy = detectAutoTradeMarketPolicy({ overview: marketOverview });
+  let deployableCash = resolveDeployableCash({
+    availableCash,
+    seedCapital,
+    minCashReservePct: marketPolicy.minCashReservePct,
+  });
+  summary.notes.push(
+    `시장모드: ${marketPolicy.label} · ${marketPolicy.reason} · 최소현금 ${marketPolicy.minCashReservePct}% 유지`
+  );
   let holdCount = 0;
   let takeProfitCount = 0;
   let stopLossCount = 0;
@@ -1451,6 +1465,7 @@ async function runDailyReviewForUser(payload: {
         baseTakeProfitPct,
         baseStopLossPct,
         sellSplitCount,
+        marketPolicy,
       });
 
       if (addOnSelection.latestAsof) {
@@ -1497,7 +1512,7 @@ async function runDailyReviewForUser(payload: {
           sellSplitCount,
         });
         const sizing = calculateAutoTradeBuySizing({
-          availableCash,
+          availableCash: deployableCash,
           price: executionPrice,
           slotsLeft: 1,
           currentHoldingCount: Math.max(0, currentCount - 1),
@@ -1555,6 +1570,7 @@ async function runDailyReviewForUser(payload: {
               },
             });
             availableCash = Math.max(0, availableCash - addOnInvested);
+            deployableCash = Math.max(0, deployableCash - addOnInvested);
             continue;
           }
 
@@ -1608,6 +1624,7 @@ async function runDailyReviewForUser(payload: {
           });
 
           availableCash = Math.max(0, availableCash - addOnInvested);
+          deployableCash = Math.max(0, deployableCash - addOnInvested);
           addOnBuyCount += 1;
           summary.buys += 1;
           summary.notes.push(
@@ -1641,6 +1658,9 @@ async function runDailyReviewForUser(payload: {
               score: candidate.score,
               tradeId,
               cashAfter: availableCash,
+              deployableCashAfter: deployableCash,
+              marketMode: marketPolicy.mode,
+              marketReason: marketPolicy.reason,
             },
           });
           appendVirtualDecisionLog({
@@ -1726,12 +1746,31 @@ async function runDailyReviewForUser(payload: {
         reason: "no-available-cash",
         detail: { availableCash, buySlots },
       });
+    } else if (deployableCash <= 0) {
+      summary.notes.push("신규 매수 보류: 현금 하한 유지 구간");
+      await writeActionLog({
+        supabase: payload.supabase,
+        runId: payload.runId,
+        chatId,
+        actionType: "SKIP",
+        reason: "cash-reserve-floor",
+        detail: {
+          availableCash,
+          deployableCash,
+          seedCapital,
+          minCashReservePct: marketPolicy.minCashReservePct,
+          marketMode: marketPolicy.mode,
+          marketReason: marketPolicy.reason,
+          buySlots,
+        },
+      });
     } else {
       const candidateSelection = await selectMondayCandidates({
         supabase: payload.supabase,
         minBuyScore: buyConstraint.minBuyScore,
         limit: buySlots,
         heldCodes,
+        marketPolicy,
       });
       const candidates = candidateSelection.candidates;
       const rebalanceBuyPriceResolution = await resolveBuyExecutionPrices(candidates);
@@ -1793,7 +1832,7 @@ async function runDailyReviewForUser(payload: {
           rebalanceBuyPriceResolution.priceByCode.get(candidate.code)?.price ?? candidate.close;
 
         const sizing = calculateAutoTradeBuySizing({
-          availableCash,
+          availableCash: deployableCash,
           price: executionPrice,
           slotsLeft,
           currentHoldingCount: plannedHoldingCount,
@@ -1882,6 +1921,7 @@ async function runDailyReviewForUser(payload: {
             });
             plannedHoldingCount += 1;
             availableCash = Math.max(0, availableCash - investedAmount);
+            deployableCash = Math.max(0, deployableCash - investedAmount);
             slotsLeft -= 1;
             continue;
           }
@@ -1944,6 +1984,7 @@ async function runDailyReviewForUser(payload: {
           }
 
           availableCash = Math.max(0, availableCash - investedAmount);
+          deployableCash = Math.max(0, deployableCash - investedAmount);
           plannedHoldingCount += 1;
           rebalanceBuyCount += 1;
           summary.buys += 1;
@@ -1978,6 +2019,9 @@ async function runDailyReviewForUser(payload: {
               strategyProfile: entryProfile.profile,
               tradeId,
               cashAfter: availableCash,
+              deployableCashAfter: deployableCash,
+              marketMode: marketPolicy.mode,
+              marketReason: marketPolicy.reason,
             },
           });
           // 결정로그: 일일 리밸런싱 재매수

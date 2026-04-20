@@ -6,6 +6,11 @@ import { fmtKRW } from "../../lib/normalize";
 import { getUserInvestmentPrefs } from "../../services/userService";
 import { fetchLatestScoresByCodes } from "../../services/scoreSourceService";
 import { getSafetyPreferenceScore, type RiskProfile } from "../../lib/investableUniverse";
+import {
+  computeDynamicLargeCapFloor,
+  detectAutoTradeMarketPolicy,
+  type AutoTradeMarketPolicy,
+} from "../../services/virtualAutoTradeSelection";
 import { esc, fmtInt, fmtOne } from "../messages/format";
 import { header, section, divider, buildMessage, actionButtons } from "../messages/layout";
 
@@ -538,7 +543,8 @@ function buildResultMessage(
   picks: Candidate[],
   realtimeMap: Record<string, any>,
   regime: RegimeSettings,
-  etfStrategy: EtfStrategy = "default"
+  etfStrategy: EtfStrategy = "default",
+  marketPolicy?: AutoTradeMarketPolicy
 ): string {
   const label = kind === "ETF" ? etfStrategyLabel(etfStrategy) : commandLabel(kind);
   const lines = picks.map((c, idx) => {
@@ -569,11 +575,53 @@ function buildResultMessage(
     : "참고: 결과는 보수형 필터 기반 우선순위이며, 분할 진입·손절 규칙과 함께 확인하세요.";
 
   return buildMessage([
-    header(`${label} 보수형 추천 TOP ${picks.length}`, `레짐 ${regime.label} · 추세·AVWAP·유동성·RSI 종합`),
+    header(
+      `${label} 보수형 추천 TOP ${picks.length}`,
+      `레짐 ${regime.label} · 시장모드 ${marketPolicy?.label ?? "기본"} · 추세·AVWAP·유동성·RSI 종합`
+    ),
     section("오늘의 후보", lines),
     divider(),
-    notice,
+    `${notice}\n시장판단: ${marketPolicy?.reason ?? "기본 레짐"}`,
   ]);
+}
+
+function applyMarketPolicyToCandidates(
+  candidates: Candidate[],
+  policy: AutoTradeMarketPolicy,
+  kind: MarketKind
+): Candidate[] {
+  if (kind === "ETF") return candidates;
+
+  const kospiRows = candidates
+    .filter((candidate) => candidate.market === "KOSPI")
+    .map((candidate) => ({
+      code: candidate.code,
+      close: candidate.close,
+      score: candidate.finalScore,
+      name: candidate.name,
+      market: candidate.market,
+      marketCap: candidate.marketCap,
+      liquidity: candidate.liquidity,
+      universeLevel: candidate.universeLevel,
+    }));
+  const largeCapFloor = policy.requireLargeCapKospi
+    ? computeDynamicLargeCapFloor(kospiRows, 100)
+    : 0;
+
+  return candidates.filter((candidate) => {
+    const market = String(candidate.market ?? "").toUpperCase();
+    if (!policy.allowedMarkets.includes(market as "KOSPI" | "KOSDAQ")) {
+      return false;
+    }
+
+    if (candidate.valueTraded < policy.minLiquidity) {
+      return false;
+    }
+
+    if (!policy.requireLargeCapKospi) return true;
+    if (market !== "KOSPI") return false;
+    return candidate.marketCap >= Math.max(policy.minMarketCap, largeCapFloor);
+  });
 }
 
 async function runMarketPickCommand(
@@ -586,6 +634,18 @@ async function runMarketPickCommand(
   const riskProfile = (prefs.risk_profile ?? "safe") as RiskProfile;
   const marketOverview = await fetchAllMarketData().catch(() => null);
   const regime = detectRegime(marketOverview);
+  const marketPolicy = detectAutoTradeMarketPolicy({ overview: marketOverview });
+
+  if (
+    kind === "KOSDAQ" &&
+    !marketPolicy.allowedMarkets.includes("KOSDAQ")
+  ) {
+    await tgSend("sendMessage", {
+      chat_id: ctx.chatId,
+      text: `⚠️ 현재 시장모드 ${marketPolicy.label}(${marketPolicy.reason})에서는 코스닥 신규추천을 제한합니다. /kospi를 확인하세요.`,
+    });
+    return;
+  }
 
   const stocks = await fetchCandidateStocks(kind);
   if (!stocks.length) {
@@ -616,21 +676,22 @@ async function runMarketPickCommand(
     regime,
     etfStrategy
   );
-  if (!preCandidates.length) {
+  const policyCandidates = applyMarketPolicyToCandidates(preCandidates, marketPolicy, kind);
+  if (!policyCandidates.length) {
     await tgSend("sendMessage", {
       chat_id: ctx.chatId,
-      text: `⚠️ ${commandLabel(kind)}에서 기준을 만족하는 종목이 없습니다.`,
+      text: `⚠️ ${commandLabel(kind)}에서 기준을 만족하는 종목이 없습니다. (시장모드 ${marketPolicy.label})`,
     });
     return;
   }
 
-  const top = sortByDesc(preCandidates, (c) => c.finalScore).slice(0, TOP_N);
+  const top = sortByDesc(policyCandidates, (c) => c.finalScore).slice(0, TOP_N);
   const realtimeMap = {
     ...fallbackRealtimeMap,
     ...(await fetchRealtimePriceBatch(top.map((c) => c.code)).catch(() => ({} as Record<string, any>))),
   };
 
-  const text = buildResultMessage(kind, top, realtimeMap, regime, etfStrategy);
+  const text = buildResultMessage(kind, top, realtimeMap, regime, etfStrategy, marketPolicy);
   const buttons = [
     ...top.map((c) => ({ text: c.name, callback_data: `trade:${c.code}` })),
     { text: "코스피", callback_data: "cmd:kospi" },

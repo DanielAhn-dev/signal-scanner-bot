@@ -19,9 +19,10 @@ export type AutoTradeMarketPolicyMode =
 export type AutoTradeMarketPolicy = {
   mode: AutoTradeMarketPolicyMode;
   label: string;
+  reason: string;
   minCashReservePct: number;
   allowedMarkets: Array<"KOSPI" | "KOSDAQ">;
-  kosdaqMaxSlots: number;
+  kosdaqMaxRatio: number;
   requireLargeCapKospi: boolean;
   minLiquidity: number;
   minMarketCap: number;
@@ -127,9 +128,10 @@ export function detectAutoTradeMarketPolicy(input?: {
     return {
       mode: "large-cap-defense",
       label: "대형주 방어",
+      reason: "VIX/환율/심리 악화 또는 지수 급락",
       minCashReservePct: 40,
       allowedMarkets: ["KOSPI"],
-      kosdaqMaxSlots: 0,
+      kosdaqMaxRatio: 0,
       requireLargeCapKospi: true,
       minLiquidity: 20_000_000_000,
       minMarketCap: 1_000_000_000_000,
@@ -145,9 +147,10 @@ export function detectAutoTradeMarketPolicy(input?: {
     return {
       mode: "rotation",
       label: "순환매 확장",
+      reason: "코스닥 상대강도 우위 + 변동성 안정",
       minCashReservePct: 20,
       allowedMarkets: ["KOSPI", "KOSDAQ"],
-      kosdaqMaxSlots: 1,
+      kosdaqMaxRatio: 0.2,
       requireLargeCapKospi: false,
       minLiquidity: 8_000_000_000,
       minMarketCap: 0,
@@ -157,9 +160,10 @@ export function detectAutoTradeMarketPolicy(input?: {
   return {
     mode: "balanced",
     label: "균형",
+    reason: "레짐 중립 구간",
     minCashReservePct: 30,
     allowedMarkets: ["KOSPI", "KOSDAQ"],
-    kosdaqMaxSlots: 1,
+    kosdaqMaxRatio: 0.2,
     requireLargeCapKospi: false,
     minLiquidity: 12_000_000_000,
     minMarketCap: 0,
@@ -271,7 +275,13 @@ function takeRowsWithinMarketPolicy(input: {
 
   const result: RankedCandidate[] = [];
   let kosdaqCount = 0;
-  const kosdaqMaxSlots = clamp(input.policy.kosdaqMaxSlots, 0, input.limit);
+  const ratio = clamp(input.policy.kosdaqMaxRatio, 0, 1);
+  const kosdaqMaxSlots = (() => {
+    if (ratio <= 0) return 0;
+    const raw = Math.floor(input.limit * ratio);
+    if (raw > 0) return raw;
+    return input.policy.mode === "rotation" && input.limit >= 4 ? 1 : 0;
+  })();
 
   for (const row of prioritized) {
     if (result.length >= input.limit) break;
@@ -449,10 +459,14 @@ export function pickAutoTradeAddOnCandidates(input: {
   preferredMinBuyScore: number;
   limit: number;
   holdingsByCode: Map<string, HeldPositionForAddOn>;
+  marketPolicy?: AutoTradeMarketPolicy;
 }): AutoTradeCandidateSelectionResult {
   const limit = Math.max(1, Math.floor(input.limit));
   const preferredMinBuyScore = toPositiveInt(input.preferredMinBuyScore, 70);
-  const rows = input.rows
+  const rows = filterRowsByMarketPolicy({
+    rows: input.rows,
+    policy: input.marketPolicy,
+  })
     .filter((row) => row.close > 0 && input.holdingsByCode.has(row.code))
     .sort((a, b) => b.score - a.score);
 
@@ -462,7 +476,11 @@ export function pickAutoTradeAddOnCandidates(input: {
     latestTopScore
   );
 
-  const candidates = rows
+  const candidates = takeRowsWithinMarketPolicy({
+    rows,
+    limit,
+    policy: input.marketPolicy,
+  })
     .filter((row) => {
       const holding = input.holdingsByCode.get(row.code);
       if (!holding) return false;
@@ -485,7 +503,6 @@ export function pickAutoTradeAddOnCandidates(input: {
         (withinAddOnBand || strongContinuation)
       );
     })
-    .slice(0, limit)
     .map(({ code, close, score, name, signal, rsi14, liquidity }) => ({
       code,
       close,
