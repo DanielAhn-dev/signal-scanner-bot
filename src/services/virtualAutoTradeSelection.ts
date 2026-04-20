@@ -10,6 +10,7 @@ export type AutoTradeCandidateSelectionMode =
   | "signal-preferred"
   | "signal-relaxed"
   | "top-score-fallback"
+  | "held-add-on"
   | "none";
 
 export type AutoTradeCandidateSelectionResult = {
@@ -31,6 +32,11 @@ export type AutoTradeBuyConstraint = {
   reason: "strategy-blocked-buy" | "hold-safe-probe" | "default";
 };
 
+export type HeldPositionForAddOn = {
+  code: string;
+  buyPrice: number;
+};
+
 function toNumber(value: unknown, fallback = 0): number {
   const n = Number(value);
   return Number.isFinite(n) ? n : fallback;
@@ -45,7 +51,7 @@ function normalizeSignal(signal: unknown): string {
   return String(signal ?? "").trim().toUpperCase();
 }
 
-function isPreferredBuySignal(signal: unknown): boolean {
+export function isPreferredBuySignal(signal: unknown): boolean {
   return ["BUY", "STRONG_BUY", "WATCH"].includes(normalizeSignal(signal));
 }
 
@@ -193,6 +199,53 @@ export function pickAutoTradeCandidates(input: {
   return {
     candidates: [],
     selectionMode: "none",
+    thresholdUsed: adaptiveMinBuyScore,
+    latestTopScore,
+    latestAsof: null,
+  };
+}
+
+export function pickAutoTradeAddOnCandidates(input: {
+  rows: RankedCandidate[];
+  preferredMinBuyScore: number;
+  limit: number;
+  holdingsByCode: Map<string, HeldPositionForAddOn>;
+}): AutoTradeCandidateSelectionResult {
+  const limit = Math.max(1, Math.floor(input.limit));
+  const preferredMinBuyScore = toPositiveInt(input.preferredMinBuyScore, 70);
+  const rows = input.rows
+    .filter((row) => row.close > 0 && input.holdingsByCode.has(row.code))
+    .sort((a, b) => b.score - a.score);
+
+  const latestTopScore = rows[0]?.score ?? 0;
+  const adaptiveMinBuyScore = deriveAdaptiveMinBuyScore(
+    preferredMinBuyScore,
+    latestTopScore
+  );
+
+  const candidates = rows
+    .filter((row) => {
+      const holding = input.holdingsByCode.get(row.code);
+      if (!holding) return false;
+
+      const withinAddOnBand =
+        holding.buyPrice > 0 && row.close <= holding.buyPrice * 1.03;
+      const strongContinuation =
+        isPreferredBuySignal(row.signal) && row.score >= preferredMinBuyScore + 3;
+
+      return row.score >= adaptiveMinBuyScore && (withinAddOnBand || strongContinuation);
+    })
+    .slice(0, limit)
+    .map(({ code, close, score, name }) => ({
+      code,
+      close,
+      score,
+      name,
+    }));
+
+  return {
+    candidates,
+    selectionMode: candidates.length > 0 ? "held-add-on" : "none",
     thresholdUsed: adaptiveMinBuyScore,
     latestTopScore,
     latestAsof: null,

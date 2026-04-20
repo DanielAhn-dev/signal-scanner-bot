@@ -2,6 +2,7 @@ import { createClient } from "@supabase/supabase-js";
 import { PORTFOLIO_TABLES } from "../db/portfolioSchema";
 import {
   applyFifoSale,
+  appendTradeLotsForHolding,
   ensureTradeLotsForHolding,
   previewFifoSale,
 } from "./virtualLotService";
@@ -15,6 +16,7 @@ import { appendVirtualDecisionLog } from "./decisionLogService";
 import { calculateAutoTradeBuySizing } from "./virtualAutoTradeSizing";
 import {
   applyStrategyBuyConstraint,
+  pickAutoTradeAddOnCandidates,
   pickAutoTradeCandidates,
   selectRunType,
   type AutoTradeCandidateSelectionResult,
@@ -221,24 +223,17 @@ async function getLatestScoreAsof(
   return (data as { asof?: string } | null)?.asof ?? null;
 }
 
-async function selectMondayCandidates(payload: {
+async function fetchLatestRankedRows(payload: {
   supabase: SupabaseClientAny;
-  minBuyScore: number;
   limit: number;
-  heldCodes: Set<string>;
-}): Promise<AutoTradeCandidateSelectionResult> {
+  codes?: string[];
+}): Promise<{ rows: RankedCandidate[]; latestAsof: string | null }> {
   const latestAsof = await getLatestScoreAsof(payload.supabase);
   if (!latestAsof) {
-    return {
-      candidates: [],
-      selectionMode: "none",
-      thresholdUsed: toPositiveInt(payload.minBuyScore, 70),
-      latestTopScore: 0,
-      latestAsof: null,
-    };
+    return { rows: [], latestAsof: null };
   }
 
-  const queryLimit = Math.max(payload.limit * 10, 30);
+  const queryLimit = Math.max(payload.limit, 30);
   const selectWithSignal = [
     "code",
     "total_score",
@@ -251,31 +246,37 @@ async function selectMondayCandidates(payload: {
     "stock:stocks!inner(code, name, close)",
   ].join(",");
 
-  const baseQuery = (selectClause: string) =>
-    payload.supabase
+  const buildQuery = (selectClause: string) => {
+    let query = payload.supabase
       .from("scores")
       .select(selectClause)
       .eq("asof", latestAsof)
       .order("total_score", { ascending: false })
       .limit(queryLimit);
 
+    if (payload.codes?.length) {
+      query = query.in("code", payload.codes);
+    }
+
+    return query;
+  };
+
   let data: unknown[] | null = null;
   let error: unknown = null;
 
-  ({ data, error } = await baseQuery(selectWithSignal));
+  ({ data, error } = await buildQuery(selectWithSignal));
 
   if (error && isMissingScoresSignalColumn(error)) {
-    ({ data, error } = await baseQuery(selectWithoutSignal));
+    ({ data, error } = await buildQuery(selectWithoutSignal));
   }
 
   if (error) {
     throw error;
   }
 
-  const rows = (data ?? []) as ScoreCandidateRow[];
   const rankedRows: RankedCandidate[] = [];
 
-  for (const row of rows) {
+  for (const row of (data ?? []) as ScoreCandidateRow[]) {
     const stock = normalizeStock(row.stock);
     if (!stock) continue;
 
@@ -286,6 +287,62 @@ async function selectMondayCandidates(payload: {
       name: stock.name || row.code,
       signal: row.signal ?? null,
     });
+  }
+
+  return { rows: rankedRows, latestAsof };
+}
+
+async function selectDailyAddOnCandidates(payload: {
+  supabase: SupabaseClientAny;
+  holdings: HoldingRow[];
+  limit: number;
+  minBuyScore: number;
+}): Promise<AutoTradeCandidateSelectionResult> {
+  const codes = payload.holdings.map((holding) => holding.code).filter(Boolean);
+  const { rows, latestAsof } = await fetchLatestRankedRows({
+    supabase: payload.supabase,
+    limit: Math.max(payload.limit * 5, codes.length || 1),
+    codes,
+  });
+
+  const holdingsByCode = new Map(
+    payload.holdings.map((holding) => [
+      holding.code,
+      { code: holding.code, buyPrice: toNumber(holding.buy_price, 0) },
+    ])
+  );
+
+  const selection = pickAutoTradeAddOnCandidates({
+    rows,
+    preferredMinBuyScore: payload.minBuyScore,
+    limit: payload.limit,
+    holdingsByCode,
+  });
+
+  return {
+    ...selection,
+    latestAsof,
+  };
+}
+
+async function selectMondayCandidates(payload: {
+  supabase: SupabaseClientAny;
+  minBuyScore: number;
+  limit: number;
+  heldCodes: Set<string>;
+}): Promise<AutoTradeCandidateSelectionResult> {
+  const { rows: rankedRows, latestAsof } = await fetchLatestRankedRows({
+    supabase: payload.supabase,
+    limit: Math.max(payload.limit * 10, 30),
+  });
+  if (!latestAsof) {
+    return {
+      candidates: [],
+      selectionMode: "none",
+      thresholdUsed: toPositiveInt(payload.minBuyScore, 70),
+      latestTopScore: 0,
+      latestAsof: null,
+    };
   }
 
   const selection = pickAutoTradeCandidates({
@@ -783,6 +840,7 @@ async function runDailyReviewForUser(payload: {
   let holdCount = 0;
   let takeProfitCount = 0;
   let stopLossCount = 0;
+  let addOnBuyCount = 0;
   let rebalanceBuyCount = 0;
   let insufficientCashCount = 0;
 
@@ -972,26 +1030,215 @@ async function runDailyReviewForUser(payload: {
     );
   }
 
-  // 매도 이후 재조회 기준으로 신규 매수 후보를 판단한다.
+  // 매도 이후 재조회 기준으로 추가매수/신규 매수 후보를 판단한다.
   const { data: postHoldings, error: postHoldingsError } = await payload.supabase
     .from(PORTFOLIO_TABLES.positionsLegacy)
-    .select("code, status")
+    .select("id, code, status, quantity, buy_price, invested_amount, created_at, buy_date")
     .eq("chat_id", chatId);
 
   if (postHoldingsError) {
     summary.errors += 1;
     summary.notes.push(`매도 후 보유 재조회 실패: ${postHoldingsError.message}`);
   } else {
+    const activeHoldings = ((postHoldings ?? []) as HoldingRow[]).filter(
+      (row) => (row.status ?? "holding") !== "closed"
+    );
     const heldCodes = new Set(
-      ((postHoldings ?? []) as Array<{ code: string; status?: string | null }>)
-        .filter((row) => (row.status ?? "holding") !== "closed")
-        .map((row) => String(row.code))
+      activeHoldings.map((row) => String(row.code))
     );
 
     const maxPositions = toPositiveInt(payload.setting.max_positions, 10);
     const currentCount = heldCodes.size;
     const room = Math.max(0, maxPositions - currentCount);
     summary.notes.push(`보유 현황: ${currentCount}/${maxPositions}종목 · 신규 여력 ${room}종목`);
+    const addOnConstraint = applyStrategyBuyConstraint({
+      selectedStrategy: payload.setting.selected_strategy,
+      requestedSlots: toPositiveInt(payload.setting.monday_buy_slots, 2),
+      baseMinBuyScore: toPositiveInt(payload.setting.min_buy_score, 72),
+      activeCount: currentCount,
+    });
+
+    if (availableCash > 0 && addOnConstraint.buySlots > 0 && activeHoldings.length > 0) {
+      const addOnSelection = await selectDailyAddOnCandidates({
+        supabase: payload.supabase,
+        holdings: activeHoldings,
+        limit: addOnConstraint.buySlots,
+        minBuyScore: addOnConstraint.minBuyScore,
+      });
+
+      if (addOnSelection.latestAsof) {
+        summary.notes.push(`보유 추가매수 점수 기준일: ${addOnSelection.latestAsof}`);
+      }
+
+      if (!addOnSelection.candidates.length && addOnSelection.latestTopScore > 0) {
+        summary.notes.push(
+          `보유 추가매수 후보 0건 (최신 상위점수 ${addOnSelection.latestTopScore}점 · 기준 ${addOnSelection.thresholdUsed}점)`
+        );
+      }
+
+      for (const candidate of addOnSelection.candidates) {
+        const holding = activeHoldings.find((item) => item.code === candidate.code);
+        if (!holding) continue;
+
+        const currentQty = Math.max(0, Math.floor(toNumber(holding.quantity, 0)));
+        const currentBuyPrice = Math.max(0, toNumber(holding.buy_price, 0));
+        const currentInvested = Math.max(
+          0,
+          toNumber(holding.invested_amount, currentQty * currentBuyPrice)
+        );
+        const sizing = calculateAutoTradeBuySizing({
+          availableCash,
+          price: candidate.close,
+          slotsLeft: 1,
+          currentHoldingCount: Math.max(0, currentCount - 1),
+          maxPositions: Math.max(1, maxPositions),
+          stopLossPct,
+          prefs,
+        });
+        const addOnBudget = Math.max(
+          0,
+          Math.min(sizing.budget, sizing.totalBudget - currentInvested)
+        );
+        const addOnQty = Math.max(0, Math.floor(addOnBudget / candidate.close));
+        if (addOnQty <= 0) {
+          continue;
+        }
+
+        const addOnInvested = Math.round(addOnQty * candidate.close);
+        const nextQty = currentQty + addOnQty;
+        const nextInvested = currentInvested + addOnInvested;
+        const nextBuyPrice = Number((nextInvested / nextQty).toFixed(4));
+
+        try {
+          if (payload.dryRun) {
+            addOnBuyCount += 1;
+            summary.buys += 1;
+            summary.notes.push(
+              `[테스트 추가매수안] ${candidate.name}(${candidate.code}) +${addOnQty}주 · 총 ${nextQty}주 · 평균단가 ${fmtKrw(nextBuyPrice)} · 투입 ${fmtKrw(addOnInvested)}`
+            );
+            await writeActionLog({
+              supabase: payload.supabase,
+              runId: payload.runId,
+              chatId,
+              code: candidate.code,
+              actionType: "BUY",
+              reason: "dry-run-add-on-buy",
+              detail: {
+                addOnQty,
+                addOnInvested,
+                nextQty,
+                nextInvested,
+                nextBuyPrice,
+                score: candidate.score,
+              },
+            });
+            availableCash = Math.max(0, availableCash - addOnInvested);
+            continue;
+          }
+
+          const { error: updateError } = await payload.supabase
+            .from(PORTFOLIO_TABLES.positionsLegacy)
+            .update({
+              quantity: nextQty,
+              invested_amount: nextInvested,
+              buy_price: nextBuyPrice,
+              status: "holding",
+            })
+            .eq("chat_id", chatId)
+            .eq("id", holding.id);
+
+          if (updateError) {
+            throw updateError;
+          }
+
+          const tradeId = await appendTradeLog({
+            supabase: payload.supabase,
+            chatId,
+            code: candidate.code,
+            side: "BUY",
+            price: candidate.close,
+            quantity: addOnQty,
+            grossAmount: addOnInvested,
+            netAmount: addOnInvested,
+            memo: buildStrategyMemo({
+              strategyId: AUTO_TRADE_STRATEGY_ID,
+              event: "add-on-buy",
+              note: "autotrade-add-on-buy",
+            }),
+          });
+
+          await appendTradeLotsForHolding({
+            chatId,
+            watchlistId: holding.id,
+            code: candidate.code,
+            quantity: addOnQty,
+            investedAmount: addOnInvested,
+            buyPrice: candidate.close,
+            acquiredAt: new Date().toISOString(),
+            note: "autotrade-add-on-buy",
+            sourceTradeId: tradeId,
+          });
+
+          availableCash = Math.max(0, availableCash - addOnInvested);
+          addOnBuyCount += 1;
+          summary.buys += 1;
+          summary.notes.push(
+            `[실행 추가매수] ${candidate.name}(${candidate.code}) +${addOnQty}주 · 총 ${nextQty}주 · 평균단가 ${fmtKrw(nextBuyPrice)} · 투입 ${fmtKrw(addOnInvested)} · 점수 ${candidate.score.toFixed(1)}`
+          );
+          await writeActionLog({
+            supabase: payload.supabase,
+            runId: payload.runId,
+            chatId,
+            code: candidate.code,
+            actionType: "BUY",
+            reason: "add-on-buy",
+            detail: {
+              addOnQty,
+              addOnInvested,
+              nextQty,
+              nextInvested,
+              nextBuyPrice,
+              score: candidate.score,
+              tradeId,
+              cashAfter: availableCash,
+            },
+          });
+          appendVirtualDecisionLog({
+            chatId,
+            code: candidate.code,
+            action: "BUY",
+            strategyId: AUTO_TRADE_STRATEGY_ID,
+            strategyVersion: "v1",
+            confidence: Math.min(100, Math.max(0, candidate.score)),
+            expectedHorizonDays: 5,
+            reasonSummary: `보유 종목 추가매수 (점수 ${candidate.score.toFixed(1)})`,
+            reasonDetails: {
+              trigger: "add-on-buy",
+              addOnQty,
+              addOnInvested,
+              nextQty,
+              nextBuyPrice,
+              score: candidate.score,
+            },
+            linkedTradeId: tradeId ?? undefined,
+          }).catch((err: unknown) => console.error("[autoTrade] decision log add-on BUY failed", err));
+        } catch (error: unknown) {
+          const message = error instanceof Error ? error.message : String(error);
+          summary.errors += 1;
+          summary.notes.push(`${candidate.code} 추가매수 실패: ${message}`);
+          await writeActionLog({
+            supabase: payload.supabase,
+            runId: payload.runId,
+            chatId,
+            code: candidate.code,
+            actionType: "ERROR",
+            reason: "add-on-buy-failed",
+            detail: { error: message },
+          });
+        }
+      }
+    }
+
     // 기존 monday_buy_slots를 회차당 신규매수 상한으로 재사용한다.
     const maxNewBuysPerRun = toPositiveInt(payload.setting.monday_buy_slots, 2);
     const rawBuySlots = Math.min(room, maxNewBuysPerRun);
@@ -1268,7 +1515,7 @@ async function runDailyReviewForUser(payload: {
   }
 
   summary.notes.push(
-    `일일판단 요약: 보유유지 ${holdCount}건 · 익절 ${takeProfitCount}건 · 손절 ${stopLossCount}건 · 신규매수 ${rebalanceBuyCount}건`
+    `일일판단 요약: 보유유지 ${holdCount}건 · 익절 ${takeProfitCount}건 · 손절 ${stopLossCount}건 · 추가매수 ${addOnBuyCount}건 · 신규매수 ${rebalanceBuyCount}건`
   );
   if (insufficientCashCount > 0) {
     summary.notes.push(`현금 부족으로 매수 스킵 ${insufficientCashCount}건`);

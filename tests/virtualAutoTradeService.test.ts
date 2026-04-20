@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {
   applyStrategyBuyConstraint,
   deriveAdaptiveMinBuyScore,
+  pickAutoTradeAddOnCandidates,
   pickAutoTradeCandidates,
   selectRunType,
 } from "../src/services/virtualAutoTradeSelection";
@@ -62,4 +63,25 @@ test("applyStrategyBuyConstraint: HOLD_SAFE 기존 보유가 있으면 신규 �
   assert.equal(result.buySlots, 0);
   assert.equal(result.blocked, true);
   assert.equal(result.reason, "strategy-blocked-buy");
+});
+
+test("pickAutoTradeAddOnCandidates: 보유 종목도 눌림 또는 강한 연속 신호면 추가매수 후보가 된다", () => {
+  const result = pickAutoTradeAddOnCandidates({
+    rows: [
+      { code: "A", close: 10200, score: 76, name: "Alpha", signal: "BUY" },
+      { code: "B", close: 15000, score: 80, name: "Beta", signal: "HOLD" },
+    ],
+    preferredMinBuyScore: 72,
+    limit: 2,
+    holdingsByCode: new Map([
+      ["A", { code: "A", buyPrice: 10000 }],
+      ["B", { code: "B", buyPrice: 12000 }],
+    ]),
+  });
+
+  assert.equal(result.selectionMode, "held-add-on");
+  assert.deepEqual(
+    result.candidates.map((candidate) => candidate.code),
+    ["A"]
+  );
 });

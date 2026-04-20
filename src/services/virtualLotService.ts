@@ -51,6 +51,19 @@ type ReplaceTradeLotsInput = {
   sourceTradeId?: number | null;
 };
 
+type AppendTradeLotsInput = {
+  chatId: number;
+  watchlistId?: number | null;
+  code: string;
+  quantity: number;
+  investedAmount?: number | null;
+  buyPrice?: number | null;
+  acquiredAt?: string | null;
+  buyDate?: string | null;
+  note?: string;
+  sourceTradeId?: number | null;
+};
+
 function toPositiveNumber(value: unknown): number | null {
   const num = Number(value);
   if (!Number.isFinite(num) || num <= 0) return null;
@@ -272,6 +285,34 @@ export async function replaceTradeLotsForHolding(
       acquired_at: resolveAcquiredAt(input),
       source_trade_id: input.sourceTradeId ?? null,
       note: input.note ?? "watchlist-adjust-reset",
+      created_at: nowIso,
+      updated_at: nowIso,
+    });
+
+  if (insertError) throw insertError;
+}
+
+export async function appendTradeLotsForHolding(
+  input: AppendTradeLotsInput
+): Promise<void> {
+  const nowIso = new Date().toISOString();
+  const quantity = toPositiveInteger(input.quantity);
+  const unitCost = resolveUnitCost(input);
+
+  if (quantity <= 0 || !unitCost) return;
+
+  const { error: insertError } = await supabase
+    .from(PORTFOLIO_TABLES.lots)
+    .insert({
+      chat_id: input.chatId,
+      watchlist_id: input.watchlistId ?? null,
+      code: input.code,
+      acquired_price: unitCost,
+      acquired_quantity: quantity,
+      remaining_quantity: quantity,
+      acquired_at: resolveAcquiredAt(input),
+      source_trade_id: input.sourceTradeId ?? null,
+      note: input.note ?? "watchlist-add-on",
       created_at: nowIso,
       updated_at: nowIso,
     });
