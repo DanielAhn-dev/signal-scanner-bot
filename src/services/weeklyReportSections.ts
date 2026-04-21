@@ -446,7 +446,7 @@ export function drawPullbackWeeklySection(
   );
 
   ctx.y -= 6;
-  ctx.text(
+  const tipLineCount = ctx.text(
     "해석 팁: 하이라이트 종목은 최근 5거래일 반복 출현, 진입 등급, 위험성향 적합도를 함께 반영했습니다. 권장비중은 총자금 대비 기준이며 실제 집행은 분할 진입 전제를 권장합니다.",
     ctx.ML + 8,
     ctx.y,
@@ -454,7 +454,7 @@ export function drawPullbackWeeklySection(
     C.muted,
     ctx.BODY_W - 16
   );
-  ctx.y -= 16;
+  ctx.y -= tipLineCount * Math.round(8 * 1.45) + 6;
 }
 
 export function drawCommentarySection(

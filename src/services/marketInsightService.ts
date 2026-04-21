@@ -6,7 +6,8 @@ import { fetchLatestScoresByCodes } from "./scoreSourceService";
 import { getSafetyPreferenceScore, pickSaferCandidates, type RiskProfile } from "../lib/investableUniverse";
 import { computeDynamicLargeCapFloor, detectAutoTradeMarketPolicy, resolveDeployableCash } from "./virtualAutoTradeSelection";
 import type { MarketOverview } from "../utils/fetchMarketData";
-import { fetchAllMarketData } from "../utils/fetchMarketData";
+import { fetchAllMarketData, fetchReportMarketData } from "../utils/fetchMarketData";
+import type { AutoTradeMarketPolicy } from "./virtualAutoTradeSelection";
 
 export type SectorFlowInsightRow = {
   name: string;
@@ -828,10 +829,9 @@ function buildSectorTemplateLines(input: {
 async function fetchMarketPickCandidatesForDailyPlan(
   supabase: SupabaseClient,
   market: "KOSPI" | "KOSDAQ",
-  riskProfile: RiskProfile
+  riskProfile: RiskProfile,
+  marketPolicy: AutoTradeMarketPolicy
 ): Promise<PickCandidate[]> {
-  const marketOverview = await fetchAllMarketData().catch(() => null);
-  const marketPolicy = detectAutoTradeMarketPolicy({ overview: marketOverview });
   if (!marketPolicy.allowedMarkets.includes(market)) {
     return [];
   }
@@ -843,7 +843,7 @@ async function fetchMarketPickCandidatesForDailyPlan(
     .eq("market", market)
     .in("universe_level", ["core", "extended"])
     .order("market_cap", { ascending: false })
-    .limit(320)
+    .limit(220)
     .returns<StockRow[]>();
 
   if (stocksError) {
@@ -1026,7 +1026,7 @@ export async function createDailyCandidatePlanningReportResult(
 ): Promise<DailyCandidatePlanningReportResult> {
   const riskProfile = options?.riskProfile ?? "safe";
   const mode = options?.mode ?? "full";
-  const marketOverview = await fetchAllMarketData().catch(() => null);
+  const marketOverview = await fetchReportMarketData().catch(() => null);
   const marketPolicy = detectAutoTradeMarketPolicy({ overview: marketOverview });
   const planningConstraints = await resolvePlanningConstraints(supabase, {
     chatId: options?.chatId,
@@ -1036,8 +1036,8 @@ export async function createDailyCandidatePlanningReportResult(
 
   const [pullbackResult, kospiPicks, kosdaqPicks] = await Promise.all([
     fetchPullbackCandidatesForDailyPlan(supabase, riskProfile),
-    fetchMarketPickCandidatesForDailyPlan(supabase, "KOSPI", riskProfile),
-    fetchMarketPickCandidatesForDailyPlan(supabase, "KOSDAQ", riskProfile),
+    fetchMarketPickCandidatesForDailyPlan(supabase, "KOSPI", riskProfile, marketPolicy),
+    fetchMarketPickCandidatesForDailyPlan(supabase, "KOSDAQ", riskProfile, marketPolicy),
   ]);
   const orderedPullbackItems = orderPullbackCandidatesByOverlap(pullbackResult.items, sectorOverlapWarnings);
   const orderedKospiPicks = orderMarketCandidatesByOverlap(kospiPicks, sectorOverlapWarnings);
@@ -1181,13 +1181,6 @@ export async function createDailyCandidatePlanningReportResult(
     };
   }
 
-  const planLines = [
-    "1) 장 시작 전 /시장, /경제로 레짐과 환율 먼저 확인",
-    "2) 하단 핵심/섹터대표 버튼 기준으로 2~3개만 압축 재검토",
-    "3) 진입 시에는 분할매수와 손절 기준을 같이 메모",
-    "4) 장중 변동이 커지면 신규 진입보다 기존 보유 관리 우선",
-  ];
-
   return {
     text: [
     `<b>오늘의 투자 후보 리포트</b>`,
@@ -1224,9 +1217,6 @@ export async function createDailyCandidatePlanningReportResult(
         ? "조건에 맞는 코스닥 후보가 없습니다."
         : "현재 시장모드에서는 코스닥 신규 후보를 제한합니다."
     ),
-    "",
-    `<b>오늘 실행 계획</b>`,
-    ...planLines,
   ].join("\n"),
     topAnalyzeCodes,
     sectorLeaderCodes,

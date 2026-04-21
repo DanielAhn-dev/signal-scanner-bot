@@ -663,6 +663,89 @@ export async function createWeeklyReportPdf(
   const ymd = toYmd(kstNow);
   const krDate = toKrDate(now);
 
+  if (topicMeta.topic === "pullback") {
+    const [sectorRes, market, currentHoldingCount] = await Promise.all([
+      runReportStep("sector_query", () =>
+        supabase
+          .from("sectors")
+          .select("id, name, score, change_rate, metrics")
+          .order("score", { ascending: false })
+          .limit(12)
+          .returns<SectorRow[]>()
+      ),
+      runReportStep("market_data", async () => {
+        try {
+          return await fetchReportMarketData();
+        } catch {
+          return {} as Awaited<ReturnType<typeof fetchReportMarketData>>;
+        }
+      }),
+      runReportStep("watchlist_query", async () => {
+        const { data, error } = await supabase
+          .from("watchlist")
+          .select("buy_price, quantity")
+          .eq("chat_id", chatId);
+
+        if (error) {
+          throw new WeeklyReportError("watchlist_query", `watchlist 조회 실패: ${error.message}`, error);
+        }
+
+        return ((data ?? []) as Array<{ buy_price: number | null; quantity: number | null }>).filter((row) => {
+          const buyPrice = toNum(row.buy_price);
+          const quantity = Math.max(0, Math.floor(toNum(row.quantity)));
+          return buyPrice > 0 && quantity > 0;
+        }).length;
+      }),
+    ]);
+
+    if (sectorRes.error) {
+      throw new WeeklyReportError("sector_query", `sectors 조회 실패: ${sectorRes.error.message}`, sectorRes.error);
+    }
+
+    const pullbackReport = await runReportStep("pullback_candidates_query", () =>
+      buildPullbackWeeklyReportData(
+        supabase,
+        chatId,
+        currentHoldingCount,
+        market as Awaited<ReturnType<typeof fetchReportMarketData>>
+      )
+    );
+
+    const emptySummary: WindowSummary = {
+      buyCount: 0,
+      sellCount: 0,
+      tradeCount: 0,
+      realizedPnl: 0,
+      winRate: 0,
+      avgWinPct: 0,
+      avgLossPct: 0,
+      payoffRatio: null,
+      maxSingleLoss: 0,
+    };
+
+    return runReportStep("pdf_render", () =>
+      renderReportPdf({
+        topicMeta,
+        chatId,
+        ymd,
+        krDate,
+        curr: emptySummary,
+        prev: emptySummary,
+        windows: { current14: [], prev14: [], recent: [] },
+        watchItems: [],
+        totalInvested: 0,
+        totalValue: 0,
+        totalUnrealized: 0,
+        totalUnrealizedPct: 0,
+        sectors: sectorRes.data ?? [],
+        sectorStocksMap: {},
+        market,
+        reliability: null,
+        pullbackReport,
+      })
+    );
+  }
+
   // ── 데이터 조회 ─────────────────────────────────────────────────────────
   const tradeSince = shiftDays(now, -28).toISOString();
 
@@ -739,8 +822,7 @@ export async function createWeeklyReportPdf(
   const prev = summarizeWindow(windows.prev14);
 
   const codes = (watchRes.data ?? []).map((r) => r.code);
-  const shouldFetchWatchRealtime = topicMeta.topic !== "pullback";
-  const realtimeMap = shouldFetchWatchRealtime && codes.length
+  const realtimeMap = codes.length
     ? await runReportStep("realtime_price", async () => {
         try {
           return await fetchRealtimePriceBatch(codes);
@@ -782,10 +864,12 @@ export async function createWeeklyReportPdf(
   const totalUnrealizedPct = totalInvested > 0 ? (totalUnrealized / totalInvested) * 100 : 0;
 
   // 섹터/수급 리포트에서 구성 종목 표시를 위해 섹터별 상위 종목을 조회한다
-  const sectors = sectorRes.data ?? [];
+  const sectors: SectorRow[] = sectorRes.data ?? [];
   let sectorStocksMap: Record<string, string[]> = {};
   if (topicMeta.topic === "sector" || topicMeta.topic === "flow") {
-    const sectorIds = sectors.map((s) => s.id).filter(Boolean);
+    const sectorIds = sectors
+      .map((sector: SectorRow) => sector.id)
+      .filter((sectorId: string | null | undefined): sectorId is string => Boolean(sectorId));
     sectorStocksMap = await runReportStep("sector_stocks_query", async () => {
       try {
         return await fetchTopStocksBySectors(sectorIds);
@@ -815,16 +899,7 @@ export async function createWeeklyReportPdf(
       })
     : null;
 
-  const pullbackReport = topicMeta.topic === "pullback"
-    ? await runReportStep("pullback_candidates_query", () =>
-        buildPullbackWeeklyReportData(
-          supabase,
-          chatId,
-          watchItems.filter((item) => item.qty > 0).length,
-          market as Awaited<ReturnType<typeof fetchReportMarketData>>
-        )
-      )
-    : null;
+  const pullbackReport = null;
 
   try {
     const report = await runReportStep("pdf_render", () =>

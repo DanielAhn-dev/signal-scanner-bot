@@ -397,7 +397,8 @@ async function fetchJson<T>(url: string): Promise<T> {
       throw new Error(`ETF JSON 조회 실패 (${response.status})`);
     }
 
-    return await response.json() as T;
+    const text = await response.text();
+    return JSON.parse(text) as T;
   } finally {
     clearTimeout(timer);
   }
