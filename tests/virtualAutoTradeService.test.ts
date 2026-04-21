@@ -26,10 +26,10 @@ test("selectRunType: auto 모드는 KST 월요일에 monday buy를 선택한다"
 test("deriveAdaptiveMinBuyScore: 현재 상위 점수대에 맞춰 기준을 완화한다", () => {
   assert.equal(deriveAdaptiveMinBuyScore(70, 53), 50);
   assert.equal(deriveAdaptiveMinBuyScore(70, 40), 37);
-  assert.equal(deriveAdaptiveMinBuyScore(70, 34), 35);
+  assert.equal(deriveAdaptiveMinBuyScore(70, 34), 31);
 });
 
-test("pickAutoTradeCandidates: BUY 신호가 없어도 상위 점수대 fallback 후보를 반환한다", () => {
+test("pickAutoTradeCandidates: BUY 신호가 없어도 완화 신호(HOLD) 우선으로 후보를 반환한다", () => {
   const result = pickAutoTradeCandidates({
     rows: [
       { code: "A", close: 10000, score: 53, name: "Alpha", signal: "HOLD" },
@@ -41,7 +41,7 @@ test("pickAutoTradeCandidates: BUY 신호가 없어도 상위 점수대 fallback
     heldCodes: new Set<string>(),
   });
 
-  assert.equal(result.selectionMode, "top-score-fallback");
+  assert.equal(result.selectionMode, "signal-relaxed");
   assert.equal(result.thresholdUsed, 50);
   assert.deepEqual(
     result.candidates.map((candidate) => candidate.code),
@@ -61,8 +61,24 @@ test("detectAutoTradeMarketPolicy: 고변동 구간은 대형주 방어 모드�
   });
 
   assert.equal(policy.mode, "large-cap-defense");
-  assert.equal(policy.minCashReservePct, 40);
+  assert.equal(policy.minCashReservePct, 35);
   assert.deepEqual(policy.allowedMarkets, ["KOSPI"]);
+});
+
+test("detectAutoTradeMarketPolicy: breadth 악화도 방어 모드 트리거에 포함한다", () => {
+  const policy = detectAutoTradeMarketPolicy({
+    overview: {
+      vix: { price: 20 },
+      fearGreed: { score: 45 },
+      breadth: { advancingRatio: 28 },
+      usdkrw: { changeRate: 0.2 },
+      kospi: { changeRate: 0.1 },
+      kosdaq: { changeRate: 0.3 },
+    },
+  });
+
+  assert.equal(policy.mode, "large-cap-defense");
+  assert.equal(policy.minCashReservePct, 35);
 });
 
 test("computeDynamicLargeCapFloor: 코스피 시총 상위 기준선을 계산한다", () => {

@@ -34,6 +34,7 @@ type MarketOverviewLike = {
   usdkrw?: { changeRate?: number | null } | null;
   vix?: { price?: number | null } | null;
   fearGreed?: { score?: number | null } | null;
+  breadth?: { advancingRatio?: number | null } | null;
 };
 
 export type AutoTradeCandidateSelectionMode =
@@ -105,7 +106,10 @@ export function deriveAdaptiveMinBuyScore(
 ): number {
   const preferred = toPositiveInt(preferredMinBuyScore, 70);
   if (latestTopScore <= 0) return preferred;
-  return Math.max(35, Math.min(preferred, Math.floor(latestTopScore) - 3));
+
+  const topScore = Math.floor(latestTopScore);
+  const dynamicFloor = Math.max(30, Math.floor(topScore * 0.6));
+  return Math.max(dynamicFloor, Math.min(preferred, topScore - 3));
 }
 
 export function detectAutoTradeMarketPolicy(input?: {
@@ -118,18 +122,20 @@ export function detectAutoTradeMarketPolicy(input?: {
   const kospiChange = toNumber(overview?.kospi?.changeRate, 0);
   const kosdaqChange = toNumber(overview?.kosdaq?.changeRate, 0);
   const relativeStrength = kosdaqChange - kospiChange;
+  const breadthAdvancingRatio = toNumber(overview?.breadth?.advancingRatio, 50);
 
   if (
     (vix > 0 && vix >= 28) ||
     fearGreed <= 30 ||
+    breadthAdvancingRatio <= 30 ||
     usdKrwChange >= 0.8 ||
     kospiChange <= -1.5
   ) {
     return {
       mode: "large-cap-defense",
       label: "대형주 방어",
-      reason: "VIX/환율/심리 악화 또는 지수 급락",
-      minCashReservePct: 40,
+      reason: "VIX/환율/심리/breadth 악화 또는 지수 급락",
+      minCashReservePct: 35,
       allowedMarkets: ["KOSPI"],
       kosdaqMaxRatio: 0,
       requireLargeCapKospi: true,
@@ -427,6 +433,21 @@ export function pickAutoTradeCandidates(input: {
   if (relaxedSignalRows.length > 0) {
     return {
       candidates: toCandidates(relaxedSignalRows),
+      selectionMode: "signal-relaxed",
+      thresholdUsed: adaptiveMinBuyScore,
+      latestTopScore,
+      latestAsof: null,
+    };
+  }
+
+  const expandedSignalRows = rows.filter((row) => {
+    if (row.score < adaptiveMinBuyScore) return false;
+    const normalized = normalizeSignal(row.signal);
+    return normalized === "HOLD" || normalized === "ACCUMULATE";
+  });
+  if (expandedSignalRows.length > 0) {
+    return {
+      candidates: toCandidates(expandedSignalRows),
       selectionMode: "signal-relaxed",
       thresholdUsed: adaptiveMinBuyScore,
       latestTopScore,

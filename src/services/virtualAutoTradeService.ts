@@ -782,8 +782,12 @@ async function runMondayBuyForUser(payload: {
         const riskCapText = sizing.maxBudgetByRisk
           ? ` · 손절기준 상한 ${fmtKrw(sizing.maxBudgetByRisk)}`
           : "";
+        const splitModeText =
+          sizing.splitCount !== sizing.configuredSplitCount
+            ? ` · 분할 자동조정 ${sizing.configuredSplitCount}->${sizing.splitCount}`
+            : "";
         summary.notes.push(
-          `사이징 기준: 목표보유 ${sizing.targetPositions}종목 · 분할 1/${sizing.splitCount} · 회당 ${fmtKrw(sizing.budget)} (총 목표 ${fmtKrw(sizing.totalBudget)})${riskCapText}`
+          `사이징 기준: 목표보유 ${sizing.targetPositions}종목 · 분할 1/${sizing.splitCount}${splitModeText} · 회당 ${fmtKrw(sizing.budget)} (총 목표 ${fmtKrw(sizing.totalBudget)}) · 최소주문 ${fmtKrw(sizing.minOrderAmount)}${riskCapText}`
         );
         sizingNoteAdded = true;
       }
@@ -819,6 +823,8 @@ async function runMondayBuyForUser(payload: {
             budgetPerTargetPosition: sizing.budgetPerTargetPosition,
             maxBudgetByRisk: sizing.maxBudgetByRisk,
             splitCount: sizing.splitCount,
+            configuredSplitCount: sizing.configuredSplitCount,
+            minOrderAmount: sizing.minOrderAmount,
             price: executionPrice,
           },
         });
@@ -1560,6 +1566,9 @@ async function runDailyReviewForUser(payload: {
           0,
           Math.min(sizing.budget, sizing.totalBudget - currentInvested)
         );
+        if (addOnBudget > 0 && addOnBudget < sizing.minOrderAmount) {
+          continue;
+        }
         const addOnQty = Math.max(0, Math.floor(addOnBudget / executionPrice));
         if (addOnQty <= 0) {
           continue;

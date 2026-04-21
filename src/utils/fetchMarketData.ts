@@ -36,6 +36,11 @@ export interface MarketOverviewMeta {
 export interface MarketOverview {
   kospi?: MarketIndex;
   kosdaq?: MarketIndex;
+  breadth?: {
+    advancingRatio?: number;
+    source?: string;
+    fetchedAt?: string;
+  };
   usdkrw?: ExchangeRate;
   vix?: MarketIndex;
   fearGreed?: FearGreedData;
