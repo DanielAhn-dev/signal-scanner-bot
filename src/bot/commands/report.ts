@@ -421,6 +421,7 @@ async function handleDailyCandidateReportCommand(
     const prefs = await getUserInvestmentPrefs(ctx.from?.id ?? ctx.chatId);
     const reportText = await createDailyCandidatePlanningReport(supabase, {
       riskProfile: (prefs.risk_profile ?? "safe") as "safe" | "balanced" | "active",
+      chatId: ctx.chatId,
     });
 
     await tgSend("sendMessage", {

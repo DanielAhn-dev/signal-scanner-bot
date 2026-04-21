@@ -31,6 +31,7 @@ export async function handleBriefCommand(
   const planningBlock = await createDailyCandidatePlanningReport(supabase, {
     riskProfile: prefs.risk_profile ?? "safe",
     mode: "briefing",
+    chatId: ctx.chatId,
   }).catch(() => "");
   const personalLines = await buildPersonalizedGuidance({
     chatId: ctx.chatId,

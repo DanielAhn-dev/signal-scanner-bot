@@ -1,8 +1,9 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { SectorScore } from "../lib/sectors";
+import { getUserInvestmentPrefs } from "./userService";
 import { fetchLatestScoresByCodes } from "./scoreSourceService";
 import { getSafetyPreferenceScore, pickSaferCandidates, type RiskProfile } from "../lib/investableUniverse";
-import { computeDynamicLargeCapFloor, detectAutoTradeMarketPolicy } from "./virtualAutoTradeSelection";
+import { computeDynamicLargeCapFloor, detectAutoTradeMarketPolicy, resolveDeployableCash } from "./virtualAutoTradeSelection";
 import type { MarketOverview } from "../utils/fetchMarketData";
 import { fetchAllMarketData } from "../utils/fetchMarketData";
 
@@ -260,6 +261,30 @@ type SectorNameRow = {
   name: string;
 };
 
+type CandidateGroupRow = {
+  sectorName: string;
+  type: "market" | "pullback";
+  code: string;
+  name: string;
+  score: number;
+  trendLabel?: string;
+  market: string;
+  entryGrade?: string;
+  warnGrade?: string;
+};
+
+type PlanningConstraints = {
+  displayLimit: number;
+  blockedNewEntry: boolean;
+  deployableCash: number;
+  availableCash: number;
+  holdingCount: number;
+  dayLossReached: boolean;
+  statusLines: string[];
+};
+
+const DEFAULT_DAILY_LOSS_LIMIT_PCT = 5;
+
 function clampDailyCandidateValue(value: number, min: number, max: number): number {
   if (!Number.isFinite(value)) return min;
   return Math.max(min, Math.min(max, value));
@@ -282,6 +307,18 @@ function fmtDailyCandidateKrwShort(value: number): string {
   const restEok = eok % 10_000;
   if (jo > 0) return restEok > 0 ? `${jo}조 ${restEok.toLocaleString("ko-KR")}억` : `${jo}조`;
   return `${eok.toLocaleString("ko-KR")}억`;
+}
+
+function getKstDayRangeForPlan(reference = new Date()): { startIso: string; endIso: string } {
+  const dayMs = 24 * 60 * 60 * 1000;
+  const kstOffsetMs = 9 * 60 * 60 * 1000;
+  const kstNowMs = reference.getTime() + kstOffsetMs;
+  const kstStartMs = Math.floor(kstNowMs / dayMs) * dayMs;
+  const utcStartMs = kstStartMs - kstOffsetMs;
+  return {
+    startIso: new Date(utcStartMs).toISOString(),
+    endIso: new Date(utcStartMs + dayMs).toISOString(),
+  };
 }
 
 function riskProfileLabel(profile: RiskProfile): string {
@@ -369,6 +406,184 @@ async function fetchSectorNameMap(
     out.set(row.id, row.name);
   }
   return out;
+}
+
+async function getDailyRealizedPnlForPlan(
+  supabase: SupabaseClient,
+  chatId: number
+): Promise<number> {
+  const { startIso, endIso } = getKstDayRangeForPlan();
+  const { data, error } = await supabase
+    .from("virtual_trades")
+    .select("pnl_amount")
+    .eq("chat_id", chatId)
+    .gte("traded_at", startIso)
+    .lt("traded_at", endIso);
+
+  if (error) {
+    throw new Error(`당일 손익 조회 실패: ${error.message}`);
+  }
+
+  return (data ?? []).reduce((sum, row: any) => {
+    const pnl = Number(row?.pnl_amount ?? 0);
+    return Number.isFinite(pnl) ? sum + pnl : sum;
+  }, 0);
+}
+
+async function getHoldingCountForPlan(
+  supabase: SupabaseClient,
+  chatId: number
+): Promise<number> {
+  const { data, error } = await supabase
+    .from("watchlist")
+    .select("buy_price, quantity")
+    .eq("chat_id", chatId);
+
+  if (error) {
+    throw new Error(`보유 수량 조회 실패: ${error.message}`);
+  }
+
+  return (data ?? []).filter((row: any) => {
+    const buyPrice = Number(row?.buy_price ?? 0);
+    const quantity = Math.max(0, Math.floor(Number(row?.quantity ?? 0)));
+    return buyPrice > 0 && quantity > 0;
+  }).length;
+}
+
+async function resolvePlanningConstraints(
+  supabase: SupabaseClient,
+  input: { chatId?: number; marketReservePct: number }
+): Promise<PlanningConstraints | null> {
+  if (!input.chatId) return null;
+
+  const prefs = await getUserInvestmentPrefs(input.chatId);
+  const seedCapital = Math.max(0, Number(prefs.virtual_seed_capital ?? prefs.capital_krw ?? 0));
+  const availableCash = Math.max(
+    0,
+    Number(prefs.virtual_cash ?? prefs.virtual_seed_capital ?? prefs.capital_krw ?? 0)
+  );
+
+  const [dailyRealizedPnl, holdingCount] = await Promise.all([
+    getDailyRealizedPnlForPlan(supabase, input.chatId).catch(() => 0),
+    getHoldingCountForPlan(supabase, input.chatId).catch(() => 0),
+  ]);
+
+  const dailyLossLimitPct = Number(prefs.daily_loss_limit_pct ?? DEFAULT_DAILY_LOSS_LIMIT_PCT);
+  const dailyLossLimitAmount =
+    seedCapital > 0 && dailyLossLimitPct > 0 ? (seedCapital * dailyLossLimitPct) / 100 : 0;
+  const dayLossReached = dailyLossLimitAmount > 0 && dailyRealizedPnl <= -dailyLossLimitAmount;
+  const deployableCash = resolveDeployableCash({
+    availableCash,
+    seedCapital,
+    minCashReservePct: input.marketReservePct,
+  });
+
+  let displayLimit = 5;
+  if (dayLossReached) {
+    displayLimit = 1;
+  } else if (deployableCash <= 0) {
+    displayLimit = 2;
+  } else if (seedCapital > 0) {
+    const deployableRatio = deployableCash / Math.max(seedCapital, 1);
+    if (deployableRatio < 0.08) displayLimit = 2;
+    else if (deployableRatio < 0.16) displayLimit = 3;
+    else if (deployableRatio < 0.28) displayLimit = 4;
+  }
+
+  if (holdingCount >= 6) displayLimit = Math.min(displayLimit, 2);
+  else if (holdingCount >= 4) displayLimit = Math.min(displayLimit, 3);
+
+  const statusLines: string[] = [];
+  if (dayLossReached) {
+    statusLines.push(
+      `오늘 일손실 한도 도달: 실현손익 ${fmtDailyCandidateInt(dailyRealizedPnl)}원 / 한도 -${fmtDailyCandidateInt(dailyLossLimitAmount)}원`
+    );
+    statusLines.push("오늘은 신규 진입 수를 최소화하고 보유 리스크 점검 위주로 대응하세요.");
+  } else {
+    statusLines.push(`가용현금 ${fmtDailyCandidateInt(availableCash)}원 · 신규 투입 가능 ${fmtDailyCandidateInt(deployableCash)}원`);
+    statusLines.push(`현재 보유 ${holdingCount}종목 기준으로 오늘 검토 후보는 ${displayLimit}개 수준으로 압축합니다.`);
+  }
+
+  return {
+    displayLimit,
+    blockedNewEntry: dayLossReached,
+    deployableCash,
+    availableCash,
+    holdingCount,
+    dayLossReached,
+    statusLines,
+  };
+}
+
+function buildSectorTemplateLines(input: {
+  pullbackItems: PullbackRow[];
+  kospiPicks: PickCandidate[];
+  kosdaqPicks: PickCandidate[];
+}): string[] {
+  const grouped = new Map<string, CandidateGroupRow[]>();
+  const push = (sectorName: string | null | undefined, row: CandidateGroupRow) => {
+    const key = String(sectorName ?? "").trim();
+    if (!key) return;
+    const list = grouped.get(key) ?? [];
+    list.push(row);
+    grouped.set(key, list);
+  };
+
+  input.kospiPicks.forEach((item) =>
+    push(item.sectorName, {
+      sectorName: item.sectorName ?? "",
+      type: "market",
+      code: item.code,
+      name: item.name,
+      score: item.score,
+      trendLabel: item.trendLabel,
+      market: item.market,
+    })
+  );
+  input.kosdaqPicks.forEach((item) =>
+    push(item.sectorName, {
+      sectorName: item.sectorName ?? "",
+      type: "market",
+      code: item.code,
+      name: item.name,
+      score: item.score,
+      trendLabel: item.trendLabel,
+      market: item.market,
+    })
+  );
+  input.pullbackItems.forEach((item) =>
+    push(item.stock?.sector_name, {
+      sectorName: item.stock?.sector_name ?? "",
+      type: "pullback",
+      code: item.code,
+      name: item.stock?.name ?? item.code,
+      score: Number(item.entry_score ?? 0),
+      market: String(item.stock?.market ?? ""),
+      entryGrade: item.entry_grade,
+      warnGrade: item.warn_grade,
+    })
+  );
+
+  return [...grouped.entries()]
+    .map(([sectorName, rows]) => {
+      const representative = rows
+        .filter((row) => row.type === "market")
+        .sort((a, b) => b.score - a.score)[0] ?? [...rows].sort((a, b) => b.score - a.score)[0];
+      const waiting = rows.find((row) => row.type === "pullback" && row.code !== representative?.code)
+        ?? rows.find((row) => row.code !== representative?.code);
+      return { sectorName, count: rows.length, representative, waiting };
+    })
+    .sort((a, b) => b.count - a.count || Number(b.representative?.score ?? 0) - Number(a.representative?.score ?? 0))
+    .slice(0, 3)
+    .map((group, index) => {
+      const rep = group.representative
+        ? `대표 ${group.representative.name}(${group.representative.code}) · ${group.representative.type === "market" ? `${group.representative.trendLabel} · 종합 ${group.representative.score.toFixed(1)}` : `진입 ${group.representative.entryGrade} · 경고 ${group.representative.warnGrade}`}`
+        : "대표 후보 없음";
+      const wait = group.waiting
+        ? `대기 ${group.waiting.name}(${group.waiting.code}) · ${group.waiting.type === "pullback" ? `진입 ${group.waiting.entryGrade} · 경고 ${group.waiting.warnGrade}` : `${group.waiting.trendLabel} · 종합 ${group.waiting.score.toFixed(1)}`}`
+        : "대기 후보 없음";
+      return `${index + 1}. ${group.sectorName}\n   ${rep}\n   ${wait}`;
+    });
 }
 
 async function fetchMarketPickCandidatesForDailyPlan(
@@ -567,12 +782,16 @@ async function fetchPullbackCandidatesForDailyPlan(
 
 export async function createDailyCandidatePlanningReport(
   supabase: SupabaseClient,
-  options?: { riskProfile?: RiskProfile; mode?: "full" | "briefing" }
+  options?: { riskProfile?: RiskProfile; mode?: "full" | "briefing"; chatId?: number }
 ): Promise<string> {
   const riskProfile = options?.riskProfile ?? "safe";
   const mode = options?.mode ?? "full";
   const marketOverview = await fetchAllMarketData().catch(() => null);
   const marketPolicy = detectAutoTradeMarketPolicy({ overview: marketOverview });
+  const planningConstraints = await resolvePlanningConstraints(supabase, {
+    chatId: options?.chatId,
+    marketReservePct: marketPolicy.minCashReservePct,
+  }).catch(() => null);
 
   const [pullbackResult, kospiPicks, kosdaqPicks] = await Promise.all([
     fetchPullbackCandidatesForDailyPlan(supabase, riskProfile),
@@ -613,20 +832,26 @@ export async function createDailyCandidatePlanningReport(
     .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0], "ko"))
     .slice(0, 4)
     .map(([name, count], index) => `${index + 1}. ${name} (${count}건)`);
+  const sectorTemplateLines = buildSectorTemplateLines({
+    pullbackItems: pullbackResult.items,
+    kospiPicks,
+    kosdaqPicks,
+  });
+  const displayLimit = Math.max(1, planningConstraints?.displayLimit ?? 5);
 
   const pullbackLines = pullbackResult.items.length
-    ? pullbackResult.items.map((item, index) => {
+    ? pullbackResult.items.slice(0, displayLimit).map((item, index) => {
         const stock = item.stock;
         return [
           `${index + 1}. <b>${stock?.name ?? item.code}</b> <code>${item.code}</code> <code>${fmtDailyCandidateInt(Number(stock?.close ?? 0))}원</code>`,
-          `   진입 ${item.entry_grade}(${Number(item.entry_score ?? 0).toFixed(1)}/4) · 경고 ${item.warn_grade}(${Number(item.warn_score ?? 0).toFixed(1)}/6) · ${String(stock?.market ?? "-")}`,
+          `   진입 ${item.entry_grade}(${Number(item.entry_score ?? 0).toFixed(1)}/4) · 경고 ${item.warn_grade}(${Number(item.warn_score ?? 0).toFixed(1)}/6) · ${String(stock?.market ?? "-")}${stock?.sector_name ? ` · ${stock.sector_name}` : ""}`,
         ].join("\n");
       })
     : ["오늘 조건에 맞는 눌림목 후보가 없습니다."];
 
   const buildPickLines = (picks: PickCandidate[], fallback: string): string[] => {
     if (!picks.length) return [fallback];
-    return picks.map((pick, index) => [
+    return picks.slice(0, displayLimit).map((pick, index) => [
       `${index + 1}. <b>${pick.name}</b> <code>${pick.code}</code> <code>${fmtDailyCandidateInt(pick.price)}원</code>`,
       `   종합 ${pick.score.toFixed(1)} · ${pick.trendLabel} · RSI ${pick.rsi14.toFixed(1)} · 거래대금 ${fmtDailyCandidateKrwShort(pick.valueTraded)}${pick.sectorName ? ` · ${pick.sectorName}` : ""}`,
       `   점수 기술 ${pick.totalScore.toFixed(1)} · 모멘텀 ${pick.momentumScore.toFixed(1)} · 안전 ${pick.safetyScore.toFixed(1)}`,
@@ -649,6 +874,7 @@ export async function createDailyCandidatePlanningReport(
 
     return [
       `<b>오늘 후보 계획</b>`,
+      ...(planningConstraints?.statusLines.length ? planningConstraints.statusLines.map((line) => `  ${line}`) : []),
       ...(sectorFocusLines.length ? [`  섹터 집중: ${sectorFocusLines.map((line) => line.replace(/^\d+\.\s*/, "")).join(", ")}`] : []),
       `  대응 원칙: ${focusLines[0]}`,
       ...(compactPullback.length ? ["  눌림목", ...compactPullback] : ["  눌림목 후보 없음"]),
@@ -677,8 +903,14 @@ export async function createDailyCandidatePlanningReport(
     "",
     `<b>오늘의 대응 프레임</b>`,
     ...focusLines.map((line) => `• ${line}`),
+    ...(planningConstraints?.statusLines.length
+      ? ["", `<b>자금·리스크 상태</b>`, ...planningConstraints.statusLines.map((line) => `• ${line}`)]
+      : []),
     ...(sectorFocusLines.length
       ? ["", `<b>오늘 볼 섹터</b>`, ...sectorFocusLines]
+      : []),
+    ...(sectorTemplateLines.length
+      ? ["", `<b>섹터별 대표·대기</b>`, ...sectorTemplateLines]
       : []),
     "",
     `<b>눌림목 우선 체크</b>`,

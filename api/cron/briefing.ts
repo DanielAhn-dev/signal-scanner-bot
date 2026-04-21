@@ -69,6 +69,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           ? await createDailyCandidatePlanningReport(supabase, {
               riskProfile: prefs.risk_profile ?? "safe",
               mode: "briefing",
+              chatId,
             }).catch(() => "")
           : "";
 
