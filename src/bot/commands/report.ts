@@ -19,6 +19,7 @@ import { ACTIONS, actionButtons, buildRecommendationActionButtons } from "../mes
 
 const REPORT_TOPIC_GUIDE = [
   { command: "주간", aliases: ["주간", "종합", "전체", "full", "weekly"], description: "시장과 포트폴리오를 함께 보는 종합 PDF" },
+  { command: "눌림목", aliases: ["눌림목", "다음주", "선진입", "pullback", "nextweek"], description: "다음 주 선진입 후보와 진입/비중 가이드 PDF" },
   { command: "월간", aliases: ["월간", "monthly", "month"], description: "월별 성과 요약 텍스트" },
   { command: "실전운용", aliases: ["실전운용", "실전", "운용", "플레이북", "playbook", "ops"], description: "월~금 자동매매 실전 체크리스트 텍스트" },
   { command: "추천", aliases: ["추천", "후보", "daily", "plan", "planning", "ideas"], description: "매일 대응할 투자 후보 텍스트 리포트" },
@@ -47,6 +48,7 @@ function buildReportMenuText(): string {
     "가능한 리포트 종류입니다.",
     "/리포트 는 이 메뉴를 다시 보여줍니다.",
     "/리포트 주간 — 시장 + 포트폴리오 종합 PDF",
+    "/리포트 눌림목 — 다음 주 선진입 후보 PDF",
     "/리포트 월간 — 월별 성과 요약 텍스트",
     "/리포트 실전운용 — 월~금 자동매매 실전 체크리스트 텍스트",
     "  전략 유지 여부, 보유 추가매수, 부분 익절, 분할 매도 점검용",

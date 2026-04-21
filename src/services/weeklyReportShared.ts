@@ -21,7 +21,7 @@ export const C = {
   border: rgb(0.83, 0.83, 0.86),
 } as const;
 
-export type ReportTopic = "full" | "watchlist" | "watchonly" | "economy" | "flow" | "sector";
+export type ReportTopic = "full" | "watchlist" | "watchonly" | "economy" | "flow" | "sector" | "pullback";
 
 export type ReportTopicMeta = {
   topic: ReportTopic;
@@ -184,6 +184,17 @@ export function parseReportTopic(raw?: string | null): ReportTopicMeta {
     };
   }
 
+  if (["눌림목", "다음주", "선진입", "pullback", "nextweek", "weeklysetup"].includes(token)) {
+    return {
+      topic: "pullback",
+      title: "다음 주 눌림목 리포트",
+      fileSlug: "weekly_pullback_report",
+      includeCover: false,
+      progressText: "다음 주 눌림목 리포트 PDF 생성 중입니다. 잠시만 기다려주세요...",
+      captionTitle: "다음 주 눌림목 리포트",
+    };
+  }
+
   if (["보유", "포트폴리오", "holdings", "portfolio"].includes(token)) {
     return {
       topic: "watchlist",
@@ -259,6 +270,15 @@ export function getReportTheme(topic: ReportTopic): ReportTheme {
       accent: rgb(0.26, 0.60, 0.26),
       heroLabel: "WATCHLIST",
       heroSummary: "매수 전 관심 목록에 담아 둔 종목들의 현황을 한눈에 파악합니다.",
+    });
+  }
+
+  if (topic === "pullback") {
+    return createReportTheme({
+      pageBand: C.black,
+      accent: rgb(0.92, 0.74, 0.12),
+      heroLabel: "NEXT WEEK SETUP",
+      heroSummary: "다음 주 선진입 후보를 눌림목 신호와 개인 자금 기준으로 압축합니다.",
     });
   }
 

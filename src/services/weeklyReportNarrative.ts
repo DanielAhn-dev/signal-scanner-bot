@@ -40,6 +40,27 @@ type NarrativeSectorRow = {
 type NarrativeMarket = Awaited<ReturnType<typeof fetchReportMarketData>> | Awaited<ReturnType<typeof fetchAllMarketData>>;
 type CoverMarket = Awaited<ReturnType<typeof fetchReportMarketData>>;
 
+type NarrativePullbackCandidate = {
+  name: string;
+  code: string;
+  appearanceCount: number;
+  entryGrade: string;
+  weeklyScore: number;
+  entryLow: number;
+  entryHigh: number;
+  target1: number;
+  targetWeightPct: number;
+  sectorName: string | null;
+};
+
+type NarrativePullbackMeta = {
+  rangeLabel: string;
+  riskProfileLabel: string;
+  availableCashLabel: string;
+  seedCapitalLabel: string;
+  holdingCount: number;
+};
+
 function formatKstDateTimeLabel(iso?: string): string | null {
   if (!iso) return null;
   const parsed = new Date(iso);
@@ -131,8 +152,10 @@ export function buildTopicHeroSummary(input: {
   watchItems: NarrativeWatchItem[];
   sectors: NarrativeSectorRow[];
   market: NarrativeMarket;
+  pullbackCandidates?: NarrativePullbackCandidate[];
+  pullbackMeta?: NarrativePullbackMeta | null;
 }): string {
-  const { topic, defaultSummary, curr, totalUnrealized, totalUnrealizedPct, watchItems, sectors, market } = input;
+  const { topic, defaultSummary, curr, totalUnrealized, totalUnrealizedPct, watchItems, sectors, market, pullbackCandidates, pullbackMeta } = input;
   const seedBase = `${topic}|${curr.tradeCount}|${totalUnrealized.toFixed(0)}|${sectors[0]?.name ?? "none"}`;
 
   if (topic === "economy") {
@@ -187,6 +210,14 @@ export function buildTopicHeroSummary(input: {
       : "등록된 관심 종목이 없습니다. /관심 명령어로 종목을 추가해 보세요.";
   }
 
+  if (topic === "pullback") {
+    const top = pullbackCandidates?.[0];
+    if (top) {
+      return `${pullbackMeta?.rangeLabel ?? "최근 5거래일"} 기준 ${top.name}(${top.code})가 상위 후보입니다. ${top.entryGrade}등급 ${top.appearanceCount}회 출현, 추천 진입 ${fmtInt(top.entryLow)}~${fmtInt(top.entryHigh)}원, 권장비중 ${top.targetWeightPct.toFixed(1)}% 수준으로 압축했습니다.`;
+    }
+    return "최근 기준으로 다음 주 선진입용 눌림목 후보가 부족해 관망 비중이 우세합니다.";
+  }
+
   if (topic === "full") {
     const leadSector = sectors[0]?.name;
     if (leadSector) {
@@ -206,8 +237,10 @@ export function buildTopicClosingSummary(input: {
   watchItems: NarrativeWatchItem[];
   sectors: NarrativeSectorRow[];
   market: NarrativeMarket;
+  pullbackCandidates?: NarrativePullbackCandidate[];
+  pullbackMeta?: NarrativePullbackMeta | null;
 }): string {
-  const { topic, curr, prev, totalUnrealized, totalUnrealizedPct, watchItems, sectors, market } = input;
+  const { topic, curr, prev, totalUnrealized, totalUnrealizedPct, watchItems, sectors, market, pullbackCandidates, pullbackMeta } = input;
   const seedBase = `${topic}|${curr.tradeCount}|${prev.tradeCount}|${curr.winRate.toFixed(1)}|${totalUnrealized.toFixed(0)}|${sectors[0]?.name ?? "none"}`;
 
   if (topic === "economy") {
@@ -317,6 +350,14 @@ export function buildTopicClosingSummary(input: {
       : "관심 종목을 추가하면 이 리포트에 목록이 표시됩니다.";
   }
 
+  if (topic === "pullback") {
+    const topNames = (pullbackCandidates ?? []).slice(0, 3).map((item) => item.name).filter(Boolean);
+    if (topNames.length > 0) {
+      return `${joinNames(topNames, "상위 후보")}를 다음 주 우선 관찰군으로 두고, ${pullbackMeta?.riskProfileLabel ?? "현재 성향"} 기준 권장비중만큼만 분할 진입하는 편이 안전합니다. 진입은 제시한 밴드 내에서만 접근하고, 1차 매도와 손절 가격을 사전에 고정해 추격 매수를 피하세요.`;
+    }
+    return "다음 주 선진입 후보가 약한 구간입니다. 신규 진입보다 기존 포지션 관리와 주도 섹터 재확인이 우선입니다.";
+  }
+
   return curr.realizedPnl >= prev.realizedPnl
     ? pickVariant(`${seedBase}|close|full|up`, [
         `최근 ${FIFO_REALIZED_LABEL} 흐름이 이전 구간보다 개선됐습니다. 현재 전략을 유지하되 주도 섹터 대표주 중심으로 비중을 관리하세요. 수익 종목은 분할 익절 규칙을 함께 적용하면 변동성 대응력이 높아집니다.`,
@@ -363,8 +404,10 @@ export function buildReportCaption(input: {
   totalUnrealizedPct: number;
   sectors: NarrativeSectorRow[];
   market: NarrativeMarket;
+  pullbackCandidates?: NarrativePullbackCandidate[];
+  pullbackMeta?: NarrativePullbackMeta | null;
 }): string {
-  const { title, topic, krDate, curr, totalUnrealized, totalUnrealizedPct, sectors, market } = input;
+  const { title, topic, krDate, curr, totalUnrealized, totalUnrealizedPct, sectors, market, pullbackCandidates, pullbackMeta } = input;
   const qualityLine = buildMarketDataQualityLine(market);
 
   if (topic === "economy") {
@@ -421,6 +464,17 @@ export function buildReportCaption(input: {
     return lines.join("\n");
   }
 
+  if (topic === "pullback") {
+    const topNames = (pullbackCandidates ?? []).slice(0, 2).map((item) => `${item.name} ${item.targetWeightPct.toFixed(1)}%`).join(" / ");
+    const lines = [
+      `${title} — ${krDate}`,
+      `${pullbackMeta?.rangeLabel ?? "최근 5거래일"} 기준 다음 주 선진입 후보를 개인 맞춤형으로 압축했습니다.`,
+      topNames || "하이라이트 후보가 없어 관망 관점으로 정리했습니다.",
+    ];
+    if (qualityLine) lines.push(qualityLine);
+    return lines.join("\n");
+  }
+
   const lines = [
     `${title} — ${krDate}`,
     `거래 ${curr.tradeCount}건 · ${FIFO_REALIZED_LABEL} ${fmtSignedInt(curr.realizedPnl)} · 보유평가 ${fmtSignedInt(totalUnrealized)}`,
@@ -439,8 +493,10 @@ export function buildReportSummaryText(input: {
   totalUnrealizedPct: number;
   sectors: NarrativeSectorRow[];
   market: NarrativeMarket;
+  pullbackCandidates?: NarrativePullbackCandidate[];
+  pullbackMeta?: NarrativePullbackMeta | null;
 }): string {
-  const { title, topic, ymd, curr, totalUnrealized, totalUnrealizedPct, sectors, market } = input;
+  const { title, topic, ymd, curr, totalUnrealized, totalUnrealizedPct, sectors, market, pullbackCandidates, pullbackMeta } = input;
   const qualityLine = buildMarketDataQualityLine(market);
 
   if (topic === "economy") {
@@ -490,6 +546,16 @@ export function buildReportSummaryText(input: {
     const lines = [
       `${title} (${ymd})`,
       "매수 전 관심 추적 종목 목록입니다.",
+    ];
+    if (qualityLine) lines.push(qualityLine);
+    return lines.join("\n");
+  }
+
+  if (topic === "pullback") {
+    const lines = [
+      `${title} (${ymd})`,
+      `${pullbackMeta?.rangeLabel ?? "최근 5거래일"} 기준 상위 후보: ${(pullbackCandidates ?? []).slice(0, 3).map((item) => `${item.name} ${item.targetWeightPct.toFixed(1)}%`).join(" / ") || "없음"}`,
+      `${pullbackMeta?.riskProfileLabel ?? "현재 성향"} 기준 분할 진입 밴드와 목표가를 함께 정리했습니다.`,
     ];
     if (qualityLine) lines.push(qualityLine);
     return lines.join("\n");

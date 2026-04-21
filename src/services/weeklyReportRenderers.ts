@@ -9,6 +9,7 @@ export type ReportRenderContext = {
   y: number;
   font: PDFFont;
   ensureSpace(height: number, buffer?: number): void;
+  rect(x: number, y: number, w: number, h: number, color: RGB): void;
   line(x1: number, y1: number, x2: number, y2: number, color?: RGB, thickness?: number): void;
   text(s: string, x: number, y: number, size: number, color?: RGB, maxW?: number): number;
   textBold(s: string, x: number, y: number, size: number, color?: RGB, maxW?: number): number;
@@ -170,7 +171,8 @@ export function drawTable(
   ctx: ReportRenderContext,
   cols: ColDef[],
   rows: string[][],
-  rowColors?: (RGB | null)[]
+  rowColors?: (RGB | null)[],
+  rowBgColors?: (RGB | null)[]
 ) {
   const { ML } = ctx;
   const fontSize = 8;
@@ -197,6 +199,10 @@ export function drawTable(
 
   rows.forEach((row, rowIndex) => {
     ctx.ensureSpace(ROW_H + 4);
+    const rowBg = rowBgColors?.[rowIndex] ?? null;
+    if (rowBg) {
+      ctx.rect(ML, ctx.y - ROW_H, totalW, ROW_H, rowBg);
+    }
     const rowTextY = vCenterTopY(ctx.y, ROW_H, fontSize);
     let rx = ML;
     row.forEach((cell, cellIndex) => {

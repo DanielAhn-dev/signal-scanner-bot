@@ -1,6 +1,11 @@
 export type WeeklyReportFailureStep =
   | "trade_query"
   | "trade_name_query"
+  | "pullback_dates_query"
+  | "pullback_candidates_query"
+  | "pullback_scores_query"
+  | "pullback_user_prefs_query"
+  | "pullback_sector_name_query"
   | "watchlist_query"
   | "sector_query"
   | "sector_stocks_query"
@@ -14,6 +19,11 @@ export type WeeklyReportFailureStep =
 const WEEKLY_REPORT_STEP_LABEL: Record<WeeklyReportFailureStep, string> = {
   trade_query: "거래 내역 조회",
   trade_name_query: "거래 종목명 조회",
+  pullback_dates_query: "눌림목 기준일 조회",
+  pullback_candidates_query: "눌림목 후보 조회",
+  pullback_scores_query: "눌림목 점수 조회",
+  pullback_user_prefs_query: "사용자 투자설정 조회",
+  pullback_sector_name_query: "후보 섹터명 조회",
   watchlist_query: "보유 종목 조회",
   sector_query: "섹터 데이터 조회",
   sector_stocks_query: "섹터 구성 종목 조회",

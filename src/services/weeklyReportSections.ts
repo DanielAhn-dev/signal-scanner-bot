@@ -43,6 +43,39 @@ type SectorRow = {
   metrics?: Record<string, unknown> | null;
 };
 
+export type PullbackCandidateSectionItem = {
+  code: string;
+  name: string;
+  market: string;
+  sectorName: string | null;
+  appearanceCount: number;
+  entryGrade: string;
+  weeklyScore: number;
+  currentPrice: number;
+  entryLow: number;
+  entryHigh: number;
+  stopPrice: number;
+  target1: number;
+  target2: number;
+  riskReward: number;
+  statusLabel: string;
+  warnGrade: string;
+  targetWeightPct: number;
+  recommendedBudget: number;
+  trancheBudget: number;
+  quantity: number;
+  highlight: boolean;
+  rationale: string;
+};
+
+export type PullbackSectionMeta = {
+  rangeLabel: string;
+  riskProfileLabel: string;
+  availableCashLabel: string;
+  seedCapitalLabel: string;
+  holdingCount: number;
+};
+
 type SectorProfile = {
   aliases: string[];
   description: string;
@@ -320,6 +353,108 @@ export function drawWatchlistSection(
     ctx.text("등록된 보유 종목이 없습니다.", ctx.ML + 8, ctx.y, 9, C.muted);
     ctx.y -= 20;
   }
+}
+
+function drawPullbackHighlightCards(
+  ctx: ReportRenderContext,
+  candidates: PullbackCandidateSectionItem[]
+) {
+  const items = candidates.slice(0, 3);
+  for (const [index, item] of items.entries()) {
+    const cardH = 58;
+    const topY = ctx.y;
+    const bg = index === 0 ? C.alt : C.surface;
+    const accent = index === 0 ? C.up : C.navyLight;
+    ctx.ensureSpace(cardH + 6);
+    ctx.rect(ctx.ML, topY - cardH, ctx.BODY_W, cardH, bg);
+    ctx.rect(ctx.ML, topY - cardH, 4, cardH, accent);
+    ctx.textLight(`TOP ${index + 1} · ${item.entryGrade}등급 ${item.appearanceCount}회 · ${item.statusLabel}`, ctx.ML + 12, topY - 10, 6.5, C.dim, ctx.BODY_W - 24);
+    ctx.textBold(`${truncate(item.name, 16)} (${item.code})`, ctx.ML + 12, topY - 22, 10.5, C.ink, ctx.BODY_W - 24);
+    ctx.text(
+      `${item.market}${item.sectorName ? ` · ${item.sectorName}` : ""} · 진입 ${fmtInt(item.entryLow)}~${fmtInt(item.entryHigh)}원 · 1차 ${fmtInt(item.target1)}원`,
+      ctx.ML + 12,
+      topY - 35,
+      7.5,
+      C.ink,
+      ctx.BODY_W - 24
+    );
+    ctx.text(
+      `권장비중 ${item.targetWeightPct.toFixed(1)}% (${item.recommendedBudget > 0 ? `${fmtInt(item.recommendedBudget)}원` : "금액 미설정"}) · 1회 ${item.trancheBudget > 0 ? `${fmtInt(item.trancheBudget)}원` : "-"} · 손절 ${fmtInt(item.stopPrice)}원`,
+      ctx.ML + 12,
+      topY - 47,
+      7.5,
+      C.ink,
+      ctx.BODY_W - 24
+    );
+    ctx.y -= cardH + 6;
+  }
+}
+
+export function drawPullbackWeeklySection(
+  ctx: ReportRenderContext,
+  candidates: PullbackCandidateSectionItem[],
+  meta: PullbackSectionMeta
+) {
+  ctx.y -= 6;
+  drawSectionHeader(ctx, "다음 주 선진입 후보", `${meta.rangeLabel} · ${meta.riskProfileLabel}`);
+
+  if (candidates.length === 0) {
+    ctx.text("최근 기준으로 A/B 등급 눌림목 후보가 없습니다. 다음 업데이트 후 다시 확인하세요.", ctx.ML + 8, ctx.y - 2, 9, C.muted);
+    ctx.y -= 22;
+    return;
+  }
+
+  drawKpiGrid(
+    ctx,
+    [
+      { label: "주간 후보", value: `${candidates.length}개`, sub: "상위 8개 압축", valueColor: C.text },
+      { label: "하이라이트", value: `${Math.min(3, candidates.length)}개`, sub: "다음 주 우선 관찰", valueColor: C.up },
+      { label: "가용현금", value: meta.availableCashLabel, sub: `보유 ${meta.holdingCount}종목`, valueColor: C.text },
+      { label: "기준 자금", value: meta.seedCapitalLabel, sub: `${meta.riskProfileLabel} 기준`, valueColor: C.text },
+    ],
+    4
+  );
+
+  ctx.y -= 4;
+  drawSectionHeader(ctx, "하이라이트 3선", "형광펜 우선 표시");
+  drawPullbackHighlightCards(ctx, candidates);
+
+  ctx.y -= 2;
+  drawSectionHeader(ctx, "후보 표", "진입·손절·1차매도·권장비중");
+  drawTable(
+    ctx,
+    [
+      { header: "종목", width: 108, align: "left" },
+      { header: "섹터", width: 70, align: "left" },
+      { header: "진입가", width: 78, align: "right" },
+      { header: "손절가", width: 64, align: "right" },
+      { header: "1차매도", width: 78, align: "right" },
+      { header: "비중", width: 54, align: "right" },
+      { header: "코멘트", width: 105, align: "left" },
+    ],
+    candidates.map((item) => [
+      `${truncate(item.name, 8)} ${item.code}`,
+      truncate(item.sectorName ?? item.market, 10),
+      `${fmtInt(item.entryLow)}~${fmtInt(item.entryHigh)}`,
+      fmtInt(item.stopPrice),
+      fmtInt(item.target1),
+      `${item.targetWeightPct.toFixed(1)}%`,
+      truncate(item.rationale, 20),
+    ]),
+    candidates.map((item) => item.highlight ? C.ink : C.text),
+    candidates.map((item, index) => item.highlight ? (index === 0 ? C.alt : C.surface) : null)
+  );
+
+  ctx.y -= 6;
+  ctx.text(
+    "해석 팁: 하이라이트 종목은 최근 5거래일 반복 출현, 진입 등급, 위험성향 적합도를 함께 반영했습니다. 권장비중은 총자금 대비 기준이며 실제 집행은 분할 진입 전제를 권장합니다.",
+    ctx.ML + 8,
+    ctx.y,
+    8,
+    C.muted,
+    ctx.BODY_W - 16
+  );
+  ctx.y -= 16;
 }
 
 export function drawCommentarySection(

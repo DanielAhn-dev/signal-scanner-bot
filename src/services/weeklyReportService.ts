@@ -4,6 +4,10 @@ import fontkit from "@pdf-lib/fontkit";
 import { fetchAllMarketData, fetchReportMarketData } from "../utils/fetchMarketData";
 import { fetchRealtimePriceBatch } from "../utils/fetchRealtimePrice";
 import { fetchTopStocksBySectors } from "../lib/source";
+import { buildInvestmentPlan } from "../lib/investPlan";
+import { getSafetyPreferenceScore, pickSaferCandidates, type RiskProfile } from "../lib/investableUniverse";
+import { scaleScoreFactorsToReferencePrice } from "../lib/priceScale";
+import { calculateAutoTradeBuySizing } from "./virtualAutoTradeSizing";
 import {
   asKstDate,
   getReportTheme,
@@ -35,11 +39,14 @@ import {
   drawFlowSection,
   drawMarketOverviewSection,
   drawPortfolioSection,
+  drawPullbackWeeklySection,
   drawSectorSection,
   drawTradesSection,
   drawWatchlistSection,
   drawWatchOnlySection,
   type DecisionReliabilityForSection,
+  type PullbackCandidateSectionItem,
+  type PullbackSectionMeta,
 } from "./weeklyReportSections";
 import {
   splitWindows,
@@ -57,6 +64,8 @@ import {
   runReportStep,
   type WeeklyReportFailureStep,
 } from "./weeklyReportErrors";
+import { fetchLatestScoresByCodes } from "./scoreSourceService";
+import { getUserInvestmentPrefs, type InvestmentPrefs } from "./userService";
 
 export { describeWeeklyReportFailure } from "./weeklyReportErrors";
 
@@ -86,6 +95,65 @@ type WatchItem = {
   pnlPct: number | null;
 };
 
+type PullbackSignalWeekRow = {
+  code: string;
+  trade_date: string;
+  entry_grade: "A" | "B" | "C" | "D" | null;
+  entry_score: number | null;
+  warn_grade: "SAFE" | "WATCH" | "WARN" | "SELL" | null;
+  warn_score: number | null;
+  stock:
+    | {
+        name: string;
+        close: number | null;
+        market?: string | null;
+        sector_id?: string | null;
+        liquidity?: number | null;
+        universe_level?: string | null;
+        rsi14?: number | null;
+        sma20?: number | null;
+        sma50?: number | null;
+      }
+    | {
+        name: string;
+        close: number | null;
+        market?: string | null;
+        sector_id?: string | null;
+        liquidity?: number | null;
+        universe_level?: string | null;
+        rsi14?: number | null;
+        sma20?: number | null;
+        sma50?: number | null;
+      }[]
+    | null;
+};
+
+type PullbackAggregateRow = {
+  code: string;
+  name: string;
+  market: string;
+  sectorId: string | null;
+  sectorName: string | null;
+  liquidity: number;
+  universeLevel: string | null;
+  appearanceCount: number;
+  entryGrade: "A" | "B" | "C" | "D";
+  avgEntryScore: number;
+  bestEntryScore: number;
+  latestWarnGrade: "SAFE" | "WATCH" | "WARN" | "SELL";
+  latestWarnScore: number;
+  latestTradeDate: string;
+  close: number;
+  rsi14: number | null;
+  sma20: number | null;
+  sma50: number | null;
+};
+
+type PullbackWeeklyReportData = {
+  candidates: PullbackCandidateSectionItem[];
+  meta: PullbackSectionMeta;
+};
+
 export type WeeklyPdfReport = {
   bytes: Uint8Array;
   fileName: string;
@@ -112,7 +180,308 @@ type RenderReportInput = {
   sectorStocksMap: Record<string, string[]>;
   market: Awaited<ReturnType<typeof fetchReportMarketData>> | Awaited<ReturnType<typeof fetchAllMarketData>>;
   reliability: DecisionReliabilityForSection | null;
+  pullbackReport: PullbackWeeklyReportData | null;
 };
+
+function unwrapJoined<T>(value: T | T[] | null | undefined): T | null {
+  if (!value) return null;
+  return Array.isArray(value) ? value[0] ?? null : value;
+}
+
+function resolveDefaultTargetPositions(riskProfile?: InvestmentPrefs["risk_profile"]): number {
+  if (riskProfile === "active") return 10;
+  if (riskProfile === "balanced") return 8;
+  return 6;
+}
+
+function riskProfileLabel(profile?: RiskProfile): string {
+  if (profile === "balanced") return "균형형";
+  if (profile === "active") return "공격형";
+  return "안전형";
+}
+
+function entryGradeBonus(grade: string): number {
+  if (grade === "A") return 10;
+  if (grade === "B") return 4;
+  return 0;
+}
+
+function warnGradePenalty(grade: string): number {
+  if (grade === "WARN") return 6;
+  if (grade === "WATCH") return 3;
+  if (grade === "SELL") return 10;
+  return 0;
+}
+
+function clampPullbackScore(value: number): number {
+  return Math.max(0, Math.min(100, Number.isFinite(value) ? value : 0));
+}
+
+async function fetchSectorNameMapForPullback(
+  supabase: SupabaseClient,
+  sectorIds: Array<string | null | undefined>
+): Promise<Map<string, string>> {
+  const ids = [...new Set(sectorIds.filter((sectorId): sectorId is string => Boolean(sectorId)))];
+  const out = new Map<string, string>();
+  if (!ids.length) return out;
+
+  const { data, error } = await supabase
+    .from("sectors")
+    .select("id, name")
+    .in("id", ids)
+    .returns<Array<{ id: string; name: string }>>();
+
+  if (error) {
+    throw new Error(`섹터 이름 조회 실패: ${error.message}`);
+  }
+
+  for (const row of data ?? []) {
+    out.set(row.id, row.name);
+  }
+  return out;
+}
+
+async function buildPullbackWeeklyReportData(
+  supabase: SupabaseClient,
+  chatId: number,
+  currentHoldingCount: number,
+  market: Awaited<ReturnType<typeof fetchReportMarketData>>
+): Promise<PullbackWeeklyReportData> {
+  const { data: dateRows, error: dateError } = await supabase
+    .from("pullback_signals")
+    .select("trade_date")
+    .order("trade_date", { ascending: false })
+    .limit(40);
+
+  if (dateError) {
+    throw new Error(`눌림목 기준일 조회 실패: ${dateError.message}`);
+  }
+
+  const recentDates = [...new Set((dateRows ?? []).map((row: any) => row.trade_date).filter(Boolean))].slice(0, 5);
+  if (!recentDates.length) {
+    return {
+      candidates: [],
+      meta: {
+        rangeLabel: "데이터 없음",
+        riskProfileLabel: "안전형",
+        availableCashLabel: "미설정",
+        seedCapitalLabel: "미설정",
+        holdingCount: currentHoldingCount,
+      },
+    };
+  }
+
+  const { data: signalRows, error: signalError } = await supabase
+    .from("pullback_signals")
+    .select(
+      "code, trade_date, entry_grade, entry_score, warn_grade, warn_score, stock:stocks!inner(name, close, market, sector_id, liquidity, universe_level, rsi14, sma20, sma50)"
+    )
+    .in("trade_date", recentDates)
+    .in("entry_grade", ["A", "B"])
+    .neq("warn_grade", "SELL")
+    .order("trade_date", { ascending: false })
+    .returns<PullbackSignalWeekRow[]>();
+
+  if (signalError) {
+    throw new Error(`눌림목 후보 조회 실패: ${signalError.message}`);
+  }
+
+  const normalizedSignals = (signalRows ?? []).map((row) => {
+    const stock = unwrapJoined(row.stock);
+    return {
+      ...row,
+      stock,
+    };
+  }).filter((row) => row.stock && row.code);
+
+  if (!normalizedSignals.length) {
+    const prefs = await getUserInvestmentPrefs(chatId);
+    return {
+      candidates: [],
+      meta: {
+        rangeLabel: recentDates.length > 1 ? `${recentDates[recentDates.length - 1]} ~ ${recentDates[0]}` : recentDates[0],
+        riskProfileLabel: riskProfileLabel((prefs.risk_profile ?? "safe") as RiskProfile),
+        availableCashLabel: `${toNum(prefs.virtual_cash ?? prefs.virtual_seed_capital ?? prefs.capital_krw).toLocaleString("ko-KR")}원`,
+        seedCapitalLabel: `${toNum(prefs.virtual_seed_capital ?? prefs.capital_krw).toLocaleString("ko-KR")}원`,
+        holdingCount: currentHoldingCount,
+      },
+    };
+  }
+
+  const sectorNameMap = await fetchSectorNameMapForPullback(
+    supabase,
+    normalizedSignals.map((row) => row.stock?.sector_id)
+  );
+
+  const grouped = new Map<string, PullbackAggregateRow>();
+  for (const row of normalizedSignals) {
+    const stock = row.stock!;
+    const existing = grouped.get(row.code);
+    const entryScore = toNum(row.entry_score);
+    const warnScore = toNum(row.warn_score);
+    if (!existing) {
+      grouped.set(row.code, {
+        code: row.code,
+        name: stock.name ?? row.code,
+        market: String(stock.market ?? "-"),
+        sectorId: stock.sector_id ?? null,
+        sectorName: stock.sector_id ? sectorNameMap.get(stock.sector_id) ?? null : null,
+        liquidity: toNum(stock.liquidity),
+        universeLevel: stock.universe_level ?? null,
+        appearanceCount: 1,
+        entryGrade: (row.entry_grade ?? "B") as "A" | "B" | "C" | "D",
+        avgEntryScore: entryScore,
+        bestEntryScore: entryScore,
+        latestWarnGrade: (row.warn_grade ?? "SAFE") as "SAFE" | "WATCH" | "WARN" | "SELL",
+        latestWarnScore: warnScore,
+        latestTradeDate: row.trade_date,
+        close: toNum(stock.close),
+        rsi14: stock.rsi14 != null ? toNum(stock.rsi14) : null,
+        sma20: stock.sma20 != null ? toNum(stock.sma20) : null,
+        sma50: stock.sma50 != null ? toNum(stock.sma50) : null,
+      });
+      continue;
+    }
+
+    const totalCount = existing.appearanceCount + 1;
+    existing.appearanceCount = totalCount;
+    existing.avgEntryScore = (existing.avgEntryScore * (totalCount - 1) + entryScore) / totalCount;
+    existing.bestEntryScore = Math.max(existing.bestEntryScore, entryScore);
+    if (entryGradeBonus(row.entry_grade ?? "") > entryGradeBonus(existing.entryGrade)) {
+      existing.entryGrade = (row.entry_grade ?? existing.entryGrade) as "A" | "B" | "C" | "D";
+    }
+  }
+
+  const aggregated = [...grouped.values()];
+  const codes = aggregated.map((item) => item.code);
+  const [realtimeMap, scoreSnapshot, prefs] = await Promise.all([
+    fetchRealtimePriceBatch(codes).catch(() => ({} as Record<string, any>)),
+    fetchLatestScoresByCodes(supabase, codes),
+    getUserInvestmentPrefs(chatId),
+  ]);
+
+  const riskProfile = (prefs.risk_profile ?? "safe") as RiskProfile;
+  const availableCash = Math.max(0, toNum(prefs.virtual_cash ?? prefs.virtual_seed_capital ?? prefs.capital_krw));
+  const seedCapital = Math.max(0, toNum(prefs.virtual_seed_capital ?? prefs.capital_krw ?? availableCash));
+  const maxPositions = Math.max(1, Math.floor(prefs.virtual_target_positions ?? resolveDefaultTargetPositions(riskProfile)));
+  const slotsLeft = Math.max(1, Math.min(3, maxPositions - currentHoldingCount));
+  const marketEnv = {
+    vix: market.vix?.price,
+    fearGreed: market.fearGreed?.score,
+    usdkrw: market.usdkrw?.price,
+  };
+
+  const enriched = aggregated.map((item) => {
+    const realtimePrice = toNum(realtimeMap[item.code]?.price);
+    const currentPrice = realtimePrice > 0 ? realtimePrice : item.close;
+    const snapshot = scoreSnapshot.byCode.get(item.code);
+    const latestFactors = snapshot?.factors && typeof snapshot.factors === "object"
+      ? (snapshot.factors as Record<string, any>)
+      : null;
+    const scaledFactors = scaleScoreFactorsToReferencePrice(
+      {
+        sma20: toNum(latestFactors?.sma20 ?? item.sma20 ?? currentPrice),
+        sma50: toNum(latestFactors?.sma50 ?? item.sma50 ?? currentPrice),
+        sma200: toNum(latestFactors?.sma200 ?? currentPrice),
+        rsi14: toNum(latestFactors?.rsi14 ?? item.rsi14 ?? 50),
+        roc14: toNum(latestFactors?.roc14 ?? 0),
+        roc21: toNum(latestFactors?.roc21 ?? latestFactors?.roc_21 ?? 0),
+        avwap_support: toNum(latestFactors?.avwap_support ?? 50),
+      },
+      currentPrice,
+      item.close || currentPrice
+    );
+    const technicalScore = toNum(snapshot?.total_score ?? snapshot?.momentum_score ?? item.bestEntryScore * 20);
+    const plan = buildInvestmentPlan({
+      currentPrice,
+      factors: scaledFactors,
+      technicalScore,
+      variantSeed: item.code,
+      marketEnv,
+    });
+    const sizing = calculateAutoTradeBuySizing({
+      availableCash: availableCash > 0 ? availableCash : seedCapital,
+      price: Math.max(1, Math.round((plan.entryLow + plan.entryHigh) / 2)),
+      slotsLeft,
+      currentHoldingCount,
+      maxPositions,
+      stopLossPct: plan.stopPct,
+      prefs,
+    });
+    const safetyScore = getSafetyPreferenceScore(
+      {
+        code: item.code,
+        name: item.name,
+        market: item.market,
+        universe_level: item.universeLevel,
+        liquidity: item.liquidity,
+        total_score: snapshot?.total_score ?? technicalScore,
+        momentum_score: snapshot?.momentum_score ?? technicalScore,
+        value_score: snapshot?.value_score ?? null,
+        rsi14: scaledFactors.rsi14,
+      },
+      riskProfile
+    );
+    const weeklyScore = clampPullbackScore(
+      technicalScore * 0.35 +
+      safetyScore * 0.25 +
+      item.avgEntryScore * 10 +
+      item.appearanceCount * 9 +
+      entryGradeBonus(item.entryGrade) -
+      item.latestWarnScore * 3 -
+      warnGradePenalty(item.latestWarnGrade)
+    );
+    return {
+      ...item,
+      currentPrice,
+      technicalScore,
+      safetyScore,
+      weeklyScore,
+      plan,
+      sizing,
+    };
+  });
+
+  const saferPool = pickSaferCandidates(enriched, Math.min(Math.max(enriched.length, 6), 20), riskProfile);
+  const finalCandidates = saferPool
+    .sort((a, b) => b.weeklyScore - a.weeklyScore || b.appearanceCount - a.appearanceCount || b.technicalScore - a.technicalScore)
+    .slice(0, 8)
+    .map((item, index) => ({
+      code: item.code,
+      name: item.name,
+      market: item.market,
+      sectorName: item.sectorName,
+      appearanceCount: item.appearanceCount,
+      entryGrade: item.entryGrade,
+      weeklyScore: Number(item.weeklyScore.toFixed(1)),
+      currentPrice: item.currentPrice,
+      entryLow: item.plan.entryLow,
+      entryHigh: item.plan.entryHigh,
+      stopPrice: item.plan.stopPrice,
+      target1: item.plan.target1,
+      target2: item.plan.target2,
+      riskReward: item.plan.riskReward,
+      statusLabel: item.plan.statusLabel,
+      warnGrade: item.latestWarnGrade,
+      targetWeightPct: item.sizing.targetWeightPct,
+      recommendedBudget: item.sizing.totalBudget,
+      trancheBudget: item.sizing.budget,
+      quantity: item.sizing.quantity,
+      highlight: index < 3,
+      rationale: `${item.entryGrade}등급 ${item.appearanceCount}회 · ${item.plan.statusLabel} · RR ${item.plan.riskReward.toFixed(1)}`,
+    }));
+
+  return {
+    candidates: finalCandidates,
+    meta: {
+      rangeLabel: recentDates.length > 1 ? `${recentDates[recentDates.length - 1]} ~ ${recentDates[0]}` : recentDates[0],
+      riskProfileLabel: riskProfileLabel(riskProfile),
+      availableCashLabel: availableCash > 0 ? `${availableCash.toLocaleString("ko-KR")}원` : "미설정",
+      seedCapitalLabel: seedCapital > 0 ? `${seedCapital.toLocaleString("ko-KR")}원` : "미설정",
+      holdingCount: currentHoldingCount,
+    },
+  };
+}
 
 export async function renderReportPdf(input: RenderReportInput): Promise<WeeklyPdfReport> {
   const {
@@ -132,6 +501,7 @@ export async function renderReportPdf(input: RenderReportInput): Promise<WeeklyP
     sectorStocksMap,
     market,
     reliability,
+    pullbackReport,
   } = input;
 
   // 보유 포지션(qty>0) vs 관심만 항목(qty===0) 분리
@@ -155,6 +525,8 @@ export async function renderReportPdf(input: RenderReportInput): Promise<WeeklyP
     watchItems,
     sectors,
     market,
+    pullbackCandidates: pullbackReport?.candidates,
+    pullbackMeta: pullbackReport?.meta,
   });
   const closingSummary = buildTopicClosingSummary({
     topic: topicMeta.topic,
@@ -165,6 +537,8 @@ export async function renderReportPdf(input: RenderReportInput): Promise<WeeklyP
     watchItems,
     sectors,
     market,
+    pullbackCandidates: pullbackReport?.candidates,
+    pullbackMeta: pullbackReport?.meta,
   });
 
   const pdf = await PDFDocument.create();
@@ -192,6 +566,15 @@ export async function renderReportPdf(input: RenderReportInput): Promise<WeeklyP
     drawFlowSection(ctx, sectors, sectorStocksMap);
   } else if (topicMeta.topic === "sector") {
     drawSectorSection(ctx, sectors, ymd, sectorStocksMap);
+  } else if (topicMeta.topic === "pullback") {
+    drawMarketOverviewSection(ctx, ymd, market as Awaited<ReturnType<typeof fetchReportMarketData>>, sectors.slice(0, 3));
+    drawPullbackWeeklySection(ctx, pullbackReport?.candidates ?? [], pullbackReport?.meta ?? {
+      rangeLabel: krDate,
+      riskProfileLabel: "안전형",
+      availableCashLabel: "미설정",
+      seedCapitalLabel: "미설정",
+      holdingCount: holdingItems.length,
+    });
   } else if (topicMeta.topic === "watchlist") {
     drawPortfolioSection(ctx, totalInvested, totalValue, totalUnrealized, totalUnrealizedPct, holdingItems, curr, prev);
     drawWatchlistSection(ctx, holdingItems, totalInvested, totalUnrealized, totalUnrealizedPct);
@@ -221,6 +604,8 @@ export async function renderReportPdf(input: RenderReportInput): Promise<WeeklyP
     totalUnrealizedPct,
     sectors,
     market,
+    pullbackCandidates: pullbackReport?.candidates,
+    pullbackMeta: pullbackReport?.meta,
   });
   const summaryText = buildReportSummaryText({
     title: topicMeta.title,
@@ -231,6 +616,8 @@ export async function renderReportPdf(input: RenderReportInput): Promise<WeeklyP
     totalUnrealizedPct,
     sectors,
     market,
+    pullbackCandidates: pullbackReport?.candidates,
+    pullbackMeta: pullbackReport?.meta,
   });
 
   return {
@@ -407,6 +794,17 @@ export async function createWeeklyReportPdf(
       })
     : null;
 
+  const pullbackReport = topicMeta.topic === "pullback"
+    ? await runReportStep("pullback_candidates_query", () =>
+        buildPullbackWeeklyReportData(
+          supabase,
+          chatId,
+          watchItems.filter((item) => item.qty > 0).length,
+          market as Awaited<ReturnType<typeof fetchReportMarketData>>
+        )
+      )
+    : null;
+
   try {
     const report = await runReportStep("pdf_render", () =>
       renderReportPdf({
@@ -426,6 +824,7 @@ export async function createWeeklyReportPdf(
         sectorStocksMap: sectorStocksNameMap,
         market,
         reliability: reliability ?? null,
+        pullbackReport,
       })
     );
 
@@ -570,6 +969,7 @@ export async function createPreviewReportPdf(topicStr = "economy"): Promise<Uint
     sectorStocksMap,
     market,
     reliability: null,
+    pullbackReport: null,
   });
 
   return rendered.bytes;

@@ -87,6 +87,7 @@ export const ACTIONS = {
   ] as InlineButton[],
   reportMenu: [
     { text: "주간", callback_data: "cmd:report:full" },
+    { text: "눌림목", callback_data: "cmd:report:pullback" },
     { text: "월간", callback_data: "cmd:report:monthly" },
     { text: "실전운용", callback_data: "cmd:report:playbook" },
     { text: "추천", callback_data: "cmd:report:추천" },
