@@ -88,7 +88,7 @@ function getSectorProfile(name: string): { description: string; representative: 
 
 function formatSectorInfoCell(name: string): string {
   const { description, representative } = getSectorProfile(name);
-  return truncate(`${name} · ${description} · 대표 ${representative}`, 28);
+  return truncate(`${name} · ${description} · 대표 ${representative}`, 36);
 }
 
 export function drawMarketOverviewSection(

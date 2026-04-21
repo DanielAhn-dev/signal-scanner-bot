@@ -28,6 +28,60 @@ const ROW_H = 18;
 const HEADER_H = 20;
 const CELL_PAD = 5;
 
+function ellipsizeToWidth(text: string, maxWidth: number, font: PDFFont, size: number): string {
+  const raw = String(text ?? "");
+  if (!raw) return "";
+  if (font.widthOfTextAtSize(raw, size) <= maxWidth) return raw;
+
+  const ellipsis = "…";
+  let end = raw.length;
+  while (end > 1) {
+    const candidate = raw.slice(0, end - 1) + ellipsis;
+    if (font.widthOfTextAtSize(candidate, size) <= maxWidth) {
+      return candidate;
+    }
+    end -= 1;
+  }
+
+  return ellipsis;
+}
+
+function fitColumnsToWidth(cols: ColDef[], targetWidth: number): ColDef[] {
+  const totalWidth = cols.reduce((sum, col) => sum + col.width, 0);
+  if (totalWidth <= targetWidth) {
+    return cols;
+  }
+
+  const scaled = cols.map((col) => ({
+    ...col,
+    width: Math.max(28, Math.floor((col.width / totalWidth) * targetWidth)),
+  }));
+
+  let scaledTotal = scaled.reduce((sum, col) => sum + col.width, 0);
+  let diff = targetWidth - scaledTotal;
+  let index = 0;
+
+  while (diff !== 0 && scaled.length > 0) {
+    const col = scaled[index % scaled.length];
+    if (diff > 0) {
+      col.width += 1;
+      diff -= 1;
+    } else if (col.width > 28) {
+      col.width -= 1;
+      diff += 1;
+    }
+    index += 1;
+    if (index > scaled.length * 4 && diff < 0) break;
+  }
+
+  scaledTotal = scaled.reduce((sum, col) => sum + col.width, 0);
+  if (scaledTotal !== targetWidth) {
+    scaled[scaled.length - 1].width += targetWidth - scaledTotal;
+  }
+
+  return scaled;
+}
+
 export function drawSectionHeader(ctx: ReportRenderContext, label: string, sub?: string) {
   ctx.ensureSpace(SECTION_H + 18);
   const { ML, MR, W } = ctx;
@@ -120,13 +174,14 @@ export function drawTable(
 ) {
   const { ML } = ctx;
   const fontSize = 8;
-  const totalW = cols.reduce((s, c) => s + c.width, 0);
+  const fittedCols = fitColumnsToWidth(cols, ctx.BODY_W);
+  const totalW = fittedCols.reduce((s, c) => s + c.width, 0);
   const hTextY = vCenterTopY(ctx.y, HEADER_H, fontSize);
 
   ctx.ensureSpace(HEADER_H + ROW_H * 2);
   ctx.line(ML, ctx.y, ML + totalW, ctx.y, C.rule, 0.75);
   let hx = ML;
-  for (const col of cols) {
+  for (const col of fittedCols) {
     const title = truncate(col.header, 18);
     if (col.align === "right") {
       ctx.textRightBold(title, hx + col.width - CELL_PAD, hTextY, fontSize, C.ink);
@@ -145,11 +200,11 @@ export function drawTable(
     const rowTextY = vCenterTopY(ctx.y, ROW_H, fontSize);
     let rx = ML;
     row.forEach((cell, cellIndex) => {
-      const col = cols[cellIndex];
+      const col = fittedCols[cellIndex];
       if (!col) return;
       const cellColor = rowColors?.[rowIndex] ?? C.ink;
-      const value = truncate(cell, 20);
       const maxCellW = col.width - CELL_PAD * 2;
+      const value = ellipsizeToWidth(cell, maxCellW, ctx.font, fontSize);
       if (col.align === "right") {
         ctx.textRight(value, rx + col.width - CELL_PAD, rowTextY, fontSize, cellColor);
       } else if (col.align === "center") {
