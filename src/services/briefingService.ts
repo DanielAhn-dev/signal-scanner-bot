@@ -67,7 +67,11 @@ type ScoreRow = ScoreSnapshotRow;
 interface WatchlistRow {
   code: string;
   buy_price: number | null;
+  buy_date?: string | null;
+  created_at?: string | null;
+  quantity?: number | null;
   invested_amount: number | null;
+  memo?: string | null;
   stock: StockRow | StockRow[] | null;
 }
 
@@ -148,6 +152,16 @@ function buildEtfBriefingAction(item: WatchlistViewItem): string {
       ? `다음 예상 ${item.etfDistribution.nextExpectedDate}`
       : "분배 공시 대기";
   return `${premiumLabel} · ${payoutLabel}`;
+}
+
+function hasVirtualPosition(item: WatchlistRow): boolean {
+  const buyPrice = Number(item.buy_price ?? 0);
+  const quantity = Math.max(0, Math.floor(Number(item.quantity ?? 0)));
+  return buyPrice > 0 && quantity > 0;
+}
+
+function isWatchOnlyItem(item: WatchlistRow): boolean {
+  return !hasVirtualPosition(item);
 }
 
 const statusRank: Record<string, number> = {
@@ -409,13 +423,26 @@ export async function createBriefingReport(
   );
 
   const watchlistSection = await formatWatchlistSection(
-    watchlistItems,
+    watchlistItems.filter(hasVirtualPosition),
     scoresByCode,
     realtimeMap,
     topSectors,
     watchlistMicro,
     newsSentimentByCode,
-    watchlistViewItems
+    watchlistViewItems.filter((item) => {
+      const matched = watchlistItems.find((row) => row.code === item.code);
+      return matched ? hasVirtualPosition(matched) : false;
+    })
+  );
+  const watchOnlySection = await formatWatchOnlySection(
+    watchlistItems.filter(isWatchOnlyItem),
+    scoresByCode,
+    realtimeMap,
+    topSectors,
+    watchlistViewItems.filter((item) => {
+      const matched = watchlistItems.find((row) => row.code === item.code);
+      return matched ? isWatchOnlyItem(matched) : false;
+    })
   );
   logBriefingStep("step_done", {
     step: "compose_sections",
@@ -539,9 +566,12 @@ export async function createBriefingReport(
   report += `\n<b>주도 테마 Top 3</b>\n`;
   report += sectorReports.join("\n\n");
 
+  report += `\n\n<b>관심 종목 요약</b>\n`;
+  report += watchOnlySection;
+
   report += `\n\n<b>내 보유 종목 체크</b>\n`;
   report += watchlistSection;
-    report += dailyLossWarning;
+  report += dailyLossWarning;
 
   report += `\n\n<b>눌림 대기 후보</b> <i>과매도 + 모멘텀 개선</i>\n`;
   report += bottomSectionText;
@@ -637,7 +667,11 @@ async function fetchWatchlistItems(
       [
         "code",
         "buy_price",
+        "buy_date",
+        "created_at",
+        "quantity",
         "invested_amount",
+        "memo",
         "stock:stocks!inner(code, name, market, sector_id, close, liquidity, avg_volume_20d, rsi14, is_sector_leader, universe_level)",
       ].join(", ")
     )
@@ -807,7 +841,7 @@ function formatSectorSection(
     return lines.join("\n");
   }
 
-  stocks.forEach((stock) => {
+  stocks.slice(0, 2).forEach((stock) => {
     const score = scoresByCode.get(stock.code);
     const total = score?.total_score ?? score?.momentum_score ?? null;
 
@@ -852,6 +886,7 @@ function formatBottomSection(
 
   return (
     candidates
+      .slice(0, 2)
       .map((s) => {
         const rt = realtimeMap[s.code];
         const price = rt?.price ?? s.close;
@@ -877,6 +912,80 @@ function formatBottomSection(
   );
 }
 
+function buildSummaryCommandsLine(commands: string[]): string {
+  return `  상세: ${commands.join(" · ")}`;
+}
+
+function sortBriefingViewItems(viewItems: WatchlistViewItem[]): WatchlistViewItem[] {
+  return viewItems
+    .slice()
+    .sort(
+      (a, b) =>
+        (statusRank[a.plan.status] ?? 9) - (statusRank[b.plan.status] ?? 9) ||
+        Math.abs(b.profitPct ?? 0) - Math.abs(a.profitPct ?? 0) ||
+        b.totalScore - a.totalScore
+    );
+}
+
+async function formatWatchOnlySection(
+  items: WatchlistRow[],
+  scoresByCode: Map<string, ScoreRow>,
+  realtimeMap: Record<string, any>,
+  topSectors: SectorRow[],
+  viewItemsInput?: WatchlistViewItem[]
+) {
+  if (!items.length) {
+    return [
+      "  관심 종목 없음",
+      buildSummaryCommandsLine(["/관심", "/관심추가", "/관심대응"]),
+    ].join("\n") + "\n";
+  }
+
+  const viewItems = viewItemsInput ?? buildWatchlistViewItems(items, scoresByCode, realtimeMap);
+  if (!viewItems.length) {
+    return [
+      "  관심 종목을 불러오지 못했습니다.",
+      buildSummaryCommandsLine(["/관심", "/관심대응"]),
+    ].join("\n") + "\n";
+  }
+
+  const sortedItems = sortBriefingViewItems(viewItems);
+  const actionable = sortedItems.filter((item) => item.plan.status === "buy-now").length;
+  const pullback = sortedItems.filter((item) => item.plan.status === "buy-on-pullback").length;
+  const wait = sortedItems.filter((item) => item.plan.status === "wait").length;
+  const topSectorNameById = new Map(topSectors.map((sector) => [sector.id, sector.name]));
+  const overlappingThemes = Array.from(
+    new Set(
+      sortedItems
+        .map((item) => item.sectorId)
+        .filter((sectorId): sectorId is string => Boolean(sectorId && topSectorNameById.has(sectorId)))
+        .map((sectorId) => topSectorNameById.get(sectorId) as string)
+    )
+  );
+
+  const summaryLines = [
+    `  관심 ${sortedItems.length}건 · 즉시 검토 ${actionable}건 · 눌림 대기 ${pullback}건 · 관망 ${wait}건`,
+  ];
+  if (overlappingThemes.length) {
+    summaryLines.push(`  주도 테마와 겹침: ${overlappingThemes.slice(0, 2).join(", ")}`);
+  }
+  summaryLines.push(buildSummaryCommandsLine(["/관심", "/관심대응"]));
+
+  const lines = sortedItems.slice(0, 2).map((item) => {
+    const changeStr = item.changeRate != null ? ` ${fmtChange(item.changeRate)}` : "";
+    return [
+      `  ▸ <b>${item.name}</b> <code>${fmtInt(item.currentPrice)}원</code>${changeStr}`,
+      `     ${item.plan.statusLabel} · 진입 ${fmtInt(item.plan.entryLow)}~${fmtInt(item.plan.entryHigh)} · 1차 ${fmtPct(item.plan.target1Pct * 100)}`,
+    ].join("\n");
+  });
+
+  if (sortedItems.length > 2) {
+    lines.push(`  외 ${sortedItems.length - 2}건은 /관심 또는 /관심대응 에서 확인`);
+  }
+
+  return `${summaryLines.join("\n")}\n${lines.join("\n")}\n`;
+}
+
 async function formatWatchlistSection(
   items: WatchlistRow[],
   scoresByCode: Map<string, ScoreRow>,
@@ -887,7 +996,10 @@ async function formatWatchlistSection(
   viewItemsInput?: WatchlistViewItem[]
 ) {
   if (!items.length) {
-    return "  <i>등록된 관심/보유 종목이 없습니다. /관심추가 종목명 으로 먼저 추이를 저장하세요.</i>\n";
+    return [
+      "  보유 종목 없음",
+      buildSummaryCommandsLine(["/보유", "/가상매수", "/보유대응"]),
+    ].join("\n") + "\n";
   }
 
   const viewItems = viewItemsInput ?? buildWatchlistViewItems(items, scoresByCode, realtimeMap);
@@ -896,13 +1008,7 @@ async function formatWatchlistSection(
     return "  <i>등록된 보유 종목을 불러오지 못했습니다.</i>\n";
   }
 
-  const sortedItems = viewItems
-    .slice()
-    .sort(
-      (a, b) =>
-        (statusRank[a.plan.status] ?? 9) - (statusRank[b.plan.status] ?? 9) ||
-        b.totalScore - a.totalScore
-    );
+  const sortedItems = sortBriefingViewItems(viewItems);
 
   const actionable = sortedItems.filter((item) => item.plan.status === "buy-now").length;
   const pullback = sortedItems.filter((item) => item.plan.status === "buy-on-pullback").length;
@@ -966,7 +1072,9 @@ async function formatWatchlistSection(
     );
   }
 
-  const lines = sortedItems.slice(0, 5).map((item) => {
+  summaryLines.push(buildSummaryCommandsLine(["/보유", "/보유대응"]));
+
+  const lines = sortedItems.slice(0, 2).map((item) => {
     const micro = microByCode.get(item.code);
     const triggerLine = micro?.triggerReasons?.length
       ? `     트리거 ${micro.triggerReasons.join(", ")}`
@@ -995,17 +1103,6 @@ async function formatWatchlistSection(
           return `     뉴스 ${emoji} ${matches.slice(0, 2).join(", ")}`;
         })()
       : null;
-    const etfTags = isEtf
-      ? [
-          item.etfSnapshot?.latestNav || item.etfSnapshot?.nav
-            ? `     ETF NAV ${fmtInt(Number(item.etfSnapshot?.latestNav ?? item.etfSnapshot?.nav ?? 0))}원 · 괴리율 ${item.etfSnapshot?.premiumRate != null ? fmtPct(item.etfSnapshot.premiumRate) : "확인중"}`
-            : null,
-          item.etfDistribution
-            ? `     분배 ${item.etfDistribution.cadenceLabel} · 월 ${item.etfDistribution.monthList.length ? item.etfDistribution.monthList.map((month) => `${month}월`).join(", ") : "확인 필요"}${item.etfDistribution.annualAmount != null ? ` · 올해누적 ${fmtInt(item.etfDistribution.annualAmount)}원` : item.etfDistribution.latestAmount != null ? ` · 최근 ${fmtInt(item.etfDistribution.latestAmount)}원` : ""}${item.etfDistribution.nextExpectedDate ? ` · 다음 예상 ${item.etfDistribution.nextExpectedDate}` : ""}`
-            : null,
-        ].filter((line): line is string => Boolean(line))
-      : [];
-
     return [
       `  ▸ <b>${item.name}</b>${isEtf ? " [ETF]" : ""} <code>${fmtInt(item.currentPrice)}원</code>${changeStr}${buyBase}`,
       isEtf
@@ -1013,10 +1110,13 @@ async function formatWatchlistSection(
         : `     ${item.plan.statusLabel} · 손절 ${fmtInt(item.plan.stopPrice)} · 1차 ${fmtPct(item.plan.target1Pct * 100)}`,
       `     ${todayAction}`,
       triggerLine,
-      ...etfTags,
       ...newsTag ? [newsTag] : [],
     ].join("\n");
   });
+
+  if (sortedItems.length > 2) {
+    lines.push(`  외 ${sortedItems.length - 2}건은 /보유 또는 /보유대응 에서 확인`);
+  }
 
   return `${summaryLines.join("\n")}\n${lines.join("\n")}\n`;
 }

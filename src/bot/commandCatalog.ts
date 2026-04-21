@@ -30,6 +30,8 @@ const CALLBACK_COMMAND_TEXT: Record<string, string> = {
   onboarding: "/onboarding",
   watchonly: "/관심",
   watchlist: "/보유",
+  watchonlyresp: "/관심대응",
+  watchresp: "/보유대응",
   profile: "/profile",
   scan: "/scan",
   flow: "/flow",

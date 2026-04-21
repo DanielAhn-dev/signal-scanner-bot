@@ -77,9 +77,10 @@ export const ACTIONS = {
     { text: "스캔", callback_data: "cmd:scan" },
   ] as InlineButton[],
   briefing: [
-    { text: "종목분석", callback_data: "prompt:trade" },
-    { text: "뉴스", callback_data: "prompt:news" },
-    { text: "수급", callback_data: "prompt:flow" },
+    { text: "관심", callback_data: "cmd:watchonly" },
+    { text: "보유", callback_data: "cmd:watchlist" },
+    { text: "관심대응", callback_data: "cmd:watchonlyresp" },
+    { text: "보유대응", callback_data: "cmd:watchresp" },
     { text: "눌림목", callback_data: "cmd:pullback" },
     { text: "시장", callback_data: "cmd:market" },
   ] as InlineButton[],
