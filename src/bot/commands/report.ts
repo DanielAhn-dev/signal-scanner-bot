@@ -6,6 +6,7 @@ import {
   createWeeklyReportPdf,
   describeWeeklyReportFailure,
 } from "../../services/weeklyReportService";
+import { createDailyCandidatePlanningReport } from "../../services/marketInsightService";
 import { summarizeWindow, type TradeRow } from "../../services/weeklyReportData";
 import { buildInvestmentPlan } from "../../lib/investPlan";
 import {
@@ -13,12 +14,14 @@ import {
   resolveWatchDecision,
 } from "../../lib/watchlistSignals";
 import { getDecisionReliabilitySummary } from "../../services/decisionLogService";
+import { getUserInvestmentPrefs } from "../../services/userService";
 import { ACTIONS, actionButtons } from "../messages/layout";
 
 const REPORT_TOPIC_GUIDE = [
   { command: "주간", aliases: ["주간", "종합", "전체", "full", "weekly"], description: "시장과 포트폴리오를 함께 보는 종합 PDF" },
   { command: "월간", aliases: ["월간", "monthly", "month"], description: "월별 성과 요약 텍스트" },
   { command: "실전운용", aliases: ["실전운용", "실전", "운용", "플레이북", "playbook", "ops"], description: "월~금 자동매매 실전 체크리스트 텍스트" },
+  { command: "추천", aliases: ["추천", "후보", "daily", "plan", "planning", "ideas"], description: "매일 대응할 투자 후보 텍스트 리포트" },
   { command: "가이드", aliases: ["가이드", "운영가이드", "guide", "guidepdf"], description: "운영 가이드 PDF" },
     { command: "자동매매", aliases: ["자동매매", "명령어", "command", "automate"], description: "자동매매 명령어 사용 가이드 PDF" },
   { command: "포트폴리오", aliases: ["포트폴리오", "보유", "holdings", "portfolio"], description: "보유 종목과 최근 거래 중심 PDF" },
@@ -47,6 +50,7 @@ function buildReportMenuText(): string {
     "/리포트 월간 — 월별 성과 요약 텍스트",
     "/리포트 실전운용 — 월~금 자동매매 실전 체크리스트 텍스트",
     "  전략 유지 여부, 보유 추가매수, 부분 익절, 분할 매도 점검용",
+    "/리포트 추천 — 오늘 대응할 투자 후보 텍스트 리포트",
     "/리포트 가이드 — 기능 활용 운영 가이드 PDF",
       "/리포트 자동매매 — 자동매매 명령어 사용 방법 PDF",
     "/리포트 포트폴리오 — 보유 종목/거래 중심 PDF",
@@ -404,6 +408,49 @@ async function handlePlaybookReportCommand(ctx: ChatContext, tgSend: any): Promi
   });
 }
 
+async function handleDailyCandidateReportCommand(
+  ctx: ChatContext,
+  tgSend: any
+): Promise<void> {
+  await tgSend("sendMessage", {
+    chat_id: ctx.chatId,
+    text: "오늘 대응할 투자 후보를 정리 중입니다. 잠시만 기다려주세요...",
+  });
+
+  try {
+    const prefs = await getUserInvestmentPrefs(ctx.from?.id ?? ctx.chatId);
+    const reportText = await createDailyCandidatePlanningReport(supabase, {
+      riskProfile: (prefs.risk_profile ?? "safe") as "safe" | "balanced" | "active",
+    });
+
+    await tgSend("sendMessage", {
+      chat_id: ctx.chatId,
+      text: reportText,
+      parse_mode: "HTML",
+      reply_markup: actionButtons(
+        [
+          { text: "눌림목", callback_data: "cmd:pullback" },
+          { text: "코스피", callback_data: "cmd:kospi" },
+          { text: "코스닥", callback_data: "cmd:kosdaq" },
+          { text: "시장", callback_data: "cmd:market" },
+          ...ACTIONS.reportMenu,
+        ],
+        2
+      ),
+    });
+  } catch (e: any) {
+    const detail = e instanceof Error ? e.message : String(e);
+    await tgSend("sendMessage", {
+      chat_id: ctx.chatId,
+      text: [
+        "추천 리포트 생성에 실패했습니다.",
+        `원인: ${detail}`,
+        "잠시 후 다시 시도해주세요.",
+      ].join("\n"),
+    });
+  }
+}
+
 export async function handleReportMenu(
   ctx: ChatContext,
   tgSend: any
@@ -448,6 +495,11 @@ export async function handleReportCommand(
 
   if (normalizedTopic === "실전운용") {
     await handlePlaybookReportCommand(ctx, tgSend);
+    return;
+  }
+
+  if (normalizedTopic === "추천") {
+    await handleDailyCandidateReportCommand(ctx, tgSend);
     return;
   }
 

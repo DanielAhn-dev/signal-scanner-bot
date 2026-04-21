@@ -1,5 +1,10 @@
+import type { SupabaseClient } from "@supabase/supabase-js";
 import type { SectorScore } from "../lib/sectors";
+import { fetchLatestScoresByCodes } from "./scoreSourceService";
+import { getSafetyPreferenceScore, pickSaferCandidates, type RiskProfile } from "../lib/investableUniverse";
+import { computeDynamicLargeCapFloor, detectAutoTradeMarketPolicy } from "./virtualAutoTradeSelection";
 import type { MarketOverview } from "../utils/fetchMarketData";
+import { fetchAllMarketData } from "../utils/fetchMarketData";
 
 export type SectorFlowInsightRow = {
   name: string;
@@ -191,4 +196,407 @@ export function buildSectorInsightLines(sectors: SectorScore[]): string[] {
 
   lines.push("따라서 지금은 하위 테마를 넓게 추격하기보다, 상위 섹터 대표 종목 안에서 진입 자리를 고르는 편이 더 안정적입니다.");
   return lines.slice(0, 3);
+}
+
+type StockRow = {
+  code: string;
+  name: string;
+  market: string | null;
+  close: number | null;
+  liquidity: number | null;
+  market_cap: number | null;
+  universe_level: string | null;
+  is_sector_leader: boolean | null;
+};
+
+type IndicatorRow = {
+  code: string;
+  close: number | null;
+  value_traded: number | null;
+  rsi14: number | null;
+  roc14: number | null;
+  sma20: number | null;
+  sma50: number | null;
+  sma200: number | null;
+  trade_date: string | null;
+};
+
+type PickCandidate = {
+  code: string;
+  name: string;
+  market: string;
+  price: number;
+  score: number;
+  totalScore: number;
+  momentumScore: number;
+  valueScore: number;
+  safetyScore: number;
+  trendLabel: string;
+  rsi14: number;
+  valueTraded: number;
+};
+
+type PullbackRow = {
+  code: string;
+  entry_grade: "A" | "B" | "C" | "D";
+  entry_score: number;
+  warn_grade: "SAFE" | "WATCH" | "WARN" | "SELL";
+  warn_score: number;
+  stock: {
+    name: string;
+    close: number | null;
+    market?: string | null;
+    liquidity?: number | null;
+    universe_level?: string | null;
+  };
+};
+
+function clampDailyCandidateValue(value: number, min: number, max: number): number {
+  if (!Number.isFinite(value)) return min;
+  return Math.max(min, Math.min(max, value));
+}
+
+function fmtDailyCandidateInt(value: number): string {
+  return Math.round(value || 0).toLocaleString("ko-KR");
+}
+
+function fmtDailyCandidatePct(value: number | null | undefined): string {
+  const safe = Number(value ?? 0);
+  return `${safe >= 0 ? "+" : ""}${safe.toFixed(1)}%`;
+}
+
+function fmtDailyCandidateKrwShort(value: number): string {
+  const safe = Number(value || 0);
+  if (!Number.isFinite(safe) || safe <= 0) return "-";
+  const eok = Math.floor(safe / 100_000_000);
+  const jo = Math.floor(eok / 10_000);
+  const restEok = eok % 10_000;
+  if (jo > 0) return restEok > 0 ? `${jo}조 ${restEok.toLocaleString("ko-KR")}억` : `${jo}조`;
+  return `${eok.toLocaleString("ko-KR")}억`;
+}
+
+function riskProfileLabel(profile: RiskProfile): string {
+  if (profile === "balanced") return "균형형";
+  if (profile === "active") return "공격형";
+  return "안전형";
+}
+
+function getDailyCandidateTrendLabel(price: number, sma20: number, sma50: number, sma200: number): string {
+  if (price > sma20 && sma20 > sma50 && sma50 > sma200 && sma200 > 0) return "정배열 상승";
+  if (price > sma50 && sma50 > sma200 && sma200 > 0) return "상승 우위";
+  if (price > sma20 && sma20 > 0) return "단기 지지";
+  return "추세 확인";
+}
+
+function getDailyCandidateTrendScore(price: number, sma20: number, sma50: number, sma200: number): number {
+  let score = 0;
+  if (price > sma20 && sma20 > 0) score += 22;
+  if (price > sma50 && sma50 > 0) score += 22;
+  if (price > sma200 && sma200 > 0) score += 16;
+  if (sma20 > sma50 && sma50 > sma200 && sma200 > 0) score += 28;
+  return clampDailyCandidateValue(score, 0, 100);
+}
+
+function getDailyCandidateLiquidityScore(valueTraded: number): number {
+  if (valueTraded >= 150_000_000_000) return 100;
+  if (valueTraded >= 80_000_000_000) return 85;
+  if (valueTraded >= 30_000_000_000) return 70;
+  if (valueTraded >= 10_000_000_000) return 55;
+  if (valueTraded >= 3_000_000_000) return 35;
+  return 10;
+}
+
+function getDailyCandidateRsiPenalty(rsi14: number): number {
+  if (rsi14 >= 70) return -8;
+  if (rsi14 <= 30) return -6;
+  if (rsi14 >= 43 && rsi14 <= 66) return 5;
+  return 0;
+}
+
+async function fetchIndicatorsByCodesForDailyCandidates(
+  supabase: SupabaseClient,
+  codes: string[]
+): Promise<Map<string, IndicatorRow>> {
+  const out = new Map<string, IndicatorRow>();
+  if (!codes.length) return out;
+
+  const { data, error } = await supabase
+    .from("daily_indicators")
+    .select("code, close, value_traded, rsi14, roc14, sma20, sma50, sma200, trade_date")
+    .in("code", codes)
+    .order("trade_date", { ascending: false })
+    .limit(Math.max(300, codes.length * 3));
+
+  if (error) {
+    throw new Error(`지표 조회 실패: ${error.message}`);
+  }
+
+  for (const row of (data ?? []) as IndicatorRow[]) {
+    if (!out.has(row.code)) out.set(row.code, row);
+  }
+
+  return out;
+}
+
+async function fetchMarketPickCandidatesForDailyPlan(
+  supabase: SupabaseClient,
+  market: "KOSPI" | "KOSDAQ",
+  riskProfile: RiskProfile
+): Promise<PickCandidate[]> {
+  const marketOverview = await fetchAllMarketData().catch(() => null);
+  const marketPolicy = detectAutoTradeMarketPolicy({ overview: marketOverview });
+  if (!marketPolicy.allowedMarkets.includes(market)) {
+    return [];
+  }
+
+  const { data: stocks, error: stocksError } = await supabase
+    .from("stocks")
+    .select("code, name, market, close, liquidity, market_cap, universe_level, is_sector_leader")
+    .eq("is_active", true)
+    .eq("market", market)
+    .in("universe_level", ["core", "extended"])
+    .order("market_cap", { ascending: false })
+    .limit(320)
+    .returns<StockRow[]>();
+
+  if (stocksError) {
+    throw new Error(`${market} 후보 조회 실패: ${stocksError.message}`);
+  }
+
+  const rows = stocks ?? [];
+  const codes = rows.map((row) => row.code);
+  const [scoreResult, indicatorMap] = await Promise.all([
+    fetchLatestScoresByCodes(supabase, codes),
+    fetchIndicatorsByCodesForDailyCandidates(supabase, codes),
+  ]);
+
+  const ranked = rows
+    .map((row) => {
+      const indicator = indicatorMap.get(row.code);
+      const latestScore = scoreResult.byCode.get(row.code);
+      const price = Number(indicator?.close ?? row.close ?? 0);
+      const rsi14 = Number(indicator?.rsi14 ?? 50);
+      const roc14 = Number(indicator?.roc14 ?? 0);
+      const sma20 = Number(indicator?.sma20 ?? price);
+      const sma50 = Number(indicator?.sma50 ?? price);
+      const sma200 = Number(indicator?.sma200 ?? price);
+      const valueTraded = Number(indicator?.value_traded ?? row.liquidity ?? 0);
+      const totalScore = clampDailyCandidateValue(Number(latestScore?.total_score ?? 50 + roc14 * 5), 0, 100);
+      const momentumScore = clampDailyCandidateValue(Number(latestScore?.momentum_score ?? 50 + roc14 * 7), 0, 100);
+      const valueScore = clampDailyCandidateValue(Number(latestScore?.value_score ?? 30), 0, 100);
+      const safetyScore = clampDailyCandidateValue(
+        getSafetyPreferenceScore(
+          {
+            code: row.code,
+            name: row.name,
+            market: row.market,
+            universe_level: row.universe_level,
+            liquidity: row.liquidity,
+            is_sector_leader: row.is_sector_leader,
+            total_score: totalScore,
+            momentum_score: momentumScore,
+            value_score: valueScore,
+            rsi14,
+            market_cap: row.market_cap,
+          },
+          riskProfile
+        ),
+        0,
+        100
+      );
+      const trendScore = getDailyCandidateTrendScore(price, sma20, sma50, sma200);
+      const liquidityScore = getDailyCandidateLiquidityScore(valueTraded);
+      const score = clampDailyCandidateValue(
+        totalScore * 0.42 +
+          momentumScore * 0.2 +
+          valueScore * 0.08 +
+          safetyScore * 0.18 +
+          trendScore * 0.07 +
+          liquidityScore * 0.05 +
+          getDailyCandidateRsiPenalty(rsi14),
+        0,
+        100
+      );
+
+      return {
+        code: row.code,
+        name: row.name,
+        market: String(row.market ?? market),
+        price,
+        score,
+        totalScore,
+        momentumScore,
+        valueScore,
+        safetyScore,
+        trendLabel: getDailyCandidateTrendLabel(price, sma20, sma50, sma200),
+        rsi14,
+        valueTraded,
+        marketCap: Number(row.market_cap ?? 0),
+        liquidity: Number(row.liquidity ?? 0),
+        universeLevel: row.universe_level,
+      };
+    })
+    .filter((row) => row.price > 0)
+    .filter((row) => row.valueTraded >= marketPolicy.minLiquidity);
+
+  const largeCapFloor = marketPolicy.requireLargeCapKospi
+    ? computeDynamicLargeCapFloor(
+        ranked.map((row) => ({
+          code: row.code,
+          close: row.price,
+          score: row.score,
+          name: row.name,
+          market: row.market,
+          marketCap: row.marketCap,
+          liquidity: row.liquidity,
+          universeLevel: row.universeLevel,
+        })),
+        100
+      )
+    : 0;
+
+  const filtered = ranked.filter((row) => {
+    if (market === "KOSPI" && marketPolicy.requireLargeCapKospi) {
+      return row.marketCap >= Math.max(marketPolicy.minMarketCap, largeCapFloor);
+    }
+    return true;
+  });
+
+  return pickSaferCandidates(filtered, 5, riskProfile).sort((a, b) => b.score - a.score);
+}
+
+async function fetchPullbackCandidatesForDailyPlan(
+  supabase: SupabaseClient,
+  riskProfile: RiskProfile
+): Promise<{ latestDate: string | null; items: PullbackRow[] }> {
+  const { data: latestRows, error: latestError } = await supabase
+    .from("pullback_signals")
+    .select("trade_date")
+    .order("trade_date", { ascending: false })
+    .limit(1);
+
+  if (latestError) {
+    throw new Error(`눌림목 기준일 조회 실패: ${latestError.message}`);
+  }
+
+  const latestDate = latestRows?.[0]?.trade_date ?? null;
+  if (!latestDate) {
+    return { latestDate: null, items: [] };
+  }
+
+  const { data, error } = await supabase
+    .from("pullback_signals")
+    .select("code, entry_grade, entry_score, warn_grade, warn_score, stock:stocks!inner(name, close, market, liquidity, universe_level)")
+    .eq("trade_date", latestDate)
+    .in("entry_grade", ["A", "B"])
+    .neq("warn_grade", "SELL")
+    .order("entry_score", { ascending: false })
+    .limit(200);
+
+  if (error) {
+    throw new Error(`눌림목 후보 조회 실패: ${error.message}`);
+  }
+
+  const items = ((data ?? []) as any[]).map((row) => ({
+    ...row,
+    stock: Array.isArray(row.stock) ? row.stock[0] : row.stock,
+    name: Array.isArray(row.stock) ? row.stock[0]?.name : row.stock?.name,
+    market: Array.isArray(row.stock) ? row.stock[0]?.market : row.stock?.market,
+    liquidity: Array.isArray(row.stock) ? row.stock[0]?.liquidity : row.stock?.liquidity,
+    universe_level: Array.isArray(row.stock) ? row.stock[0]?.universe_level : row.stock?.universe_level,
+  }));
+
+  return {
+    latestDate,
+    items: pickSaferCandidates(items, 5, riskProfile) as PullbackRow[],
+  };
+}
+
+export async function createDailyCandidatePlanningReport(
+  supabase: SupabaseClient,
+  options?: { riskProfile?: RiskProfile }
+): Promise<string> {
+  const riskProfile = options?.riskProfile ?? "safe";
+  const marketOverview = await fetchAllMarketData().catch(() => null);
+  const marketPolicy = detectAutoTradeMarketPolicy({ overview: marketOverview });
+
+  const [pullbackResult, kospiPicks, kosdaqPicks] = await Promise.all([
+    fetchPullbackCandidatesForDailyPlan(supabase, riskProfile),
+    fetchMarketPickCandidatesForDailyPlan(supabase, "KOSPI", riskProfile),
+    fetchMarketPickCandidatesForDailyPlan(supabase, "KOSDAQ", riskProfile),
+  ]);
+
+  const marketLines = [
+    marketOverview?.kospi
+      ? `KOSPI ${fmtDailyCandidateInt(marketOverview.kospi.price)} ${fmtDailyCandidatePct(marketOverview.kospi.changeRate)}`
+      : null,
+    marketOverview?.kosdaq
+      ? `KOSDAQ ${fmtDailyCandidateInt(marketOverview.kosdaq.price)} ${fmtDailyCandidatePct(marketOverview.kosdaq.changeRate)}`
+      : null,
+    marketOverview?.usdkrw
+      ? `달러/원 ${fmtDailyCandidateInt(marketOverview.usdkrw.price)} ${fmtDailyCandidatePct(marketOverview.usdkrw.changeRate)}`
+      : null,
+  ].filter((line): line is string => Boolean(line));
+
+  const focusLines = [
+    `시장모드 ${marketPolicy.label} · ${marketPolicy.reason}`,
+    `신규 후보는 ${marketPolicy.allowedMarkets.join("+")} 중심으로 보고, 현금 최소 ${marketPolicy.minCashReservePct}%는 남기는 전제로 계획하세요.`,
+    marketPolicy.allowedMarkets.includes("KOSDAQ")
+      ? `코스닥은 보조 축으로 유지하고 상위 ${Math.max(1, kosdaqPicks.length)}개만 압축 검토하는 편이 좋습니다.`
+      : "오늘은 코스닥 신규 진입보다 코스피 대형주와 눌림목 확인에 집중하는 편이 좋습니다.",
+  ];
+
+  const pullbackLines = pullbackResult.items.length
+    ? pullbackResult.items.map((item, index) => {
+        const stock = item.stock;
+        return [
+          `${index + 1}. <b>${stock?.name ?? item.code}</b> <code>${item.code}</code> <code>${fmtDailyCandidateInt(Number(stock?.close ?? 0))}원</code>`,
+          `   진입 ${item.entry_grade}(${Number(item.entry_score ?? 0).toFixed(1)}/4) · 경고 ${item.warn_grade}(${Number(item.warn_score ?? 0).toFixed(1)}/6) · ${String(stock?.market ?? "-")}`,
+        ].join("\n");
+      })
+    : ["오늘 조건에 맞는 눌림목 후보가 없습니다."];
+
+  const buildPickLines = (picks: PickCandidate[], fallback: string): string[] => {
+    if (!picks.length) return [fallback];
+    return picks.map((pick, index) => [
+      `${index + 1}. <b>${pick.name}</b> <code>${pick.code}</code> <code>${fmtDailyCandidateInt(pick.price)}원</code>`,
+      `   종합 ${pick.score.toFixed(1)} · ${pick.trendLabel} · RSI ${pick.rsi14.toFixed(1)} · 거래대금 ${fmtDailyCandidateKrwShort(pick.valueTraded)}`,
+      `   점수 기술 ${pick.totalScore.toFixed(1)} · 모멘텀 ${pick.momentumScore.toFixed(1)} · 안전 ${pick.safetyScore.toFixed(1)}`,
+    ].join("\n"));
+  };
+
+  const planLines = [
+    "1) 장 시작 전 /시장, /경제로 레짐과 환율 먼저 확인",
+    "2) 위 후보 중 2~3개만 /종목분석으로 압축 재검토",
+    "3) 진입 시에는 분할매수와 손절 기준을 같이 메모",
+    "4) 장중 변동이 커지면 신규 진입보다 기존 보유 관리 우선",
+  ];
+
+  return [
+    `<b>오늘의 투자 후보 리포트</b>`,
+    "─────────────────",
+    `<i>투자성향 ${riskProfileLabel(riskProfile)} · 레짐 ${marketPolicy.label}</i>`,
+    marketLines.length ? marketLines.join("\n") : "시장 데이터 조회 불가",
+    "",
+    `<b>오늘의 대응 프레임</b>`,
+    ...focusLines.map((line) => `• ${line}`),
+    "",
+    `<b>눌림목 우선 체크</b>`,
+    ...(pullbackResult.latestDate ? [`기준일 ${pullbackResult.latestDate}`] : []),
+    ...pullbackLines,
+    "",
+    `<b>코스피 우선 후보</b>`,
+    ...buildPickLines(kospiPicks, "조건에 맞는 코스피 후보가 없습니다."),
+    "",
+    `<b>코스닥 우선 후보</b>`,
+    ...buildPickLines(
+      kosdaqPicks,
+      marketPolicy.allowedMarkets.includes("KOSDAQ")
+        ? "조건에 맞는 코스닥 후보가 없습니다."
+        : "현재 시장모드에서는 코스닥 신규 후보를 제한합니다."
+    ),
+    "",
+    `<b>오늘 실행 계획</b>`,
+    ...planLines,
+  ].join("\n");
 }
