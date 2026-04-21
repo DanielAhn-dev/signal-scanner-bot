@@ -75,6 +75,18 @@ export type ChatAutoTradeRunSummary = {
   runKey: string;
   dryRun: boolean;
   action: AutoTradeActionSummary;
+  recentMetrics: AutoTradeRecentMetrics | null;
+};
+
+export type AutoTradeRecentMetrics = {
+  windowDays: number;
+  runCount: number;
+  activeDays: number;
+  buyActions: number;
+  sellActions: number;
+  skipActions: number;
+  errorActions: number;
+  topSkipReasons: Array<{ reason: string; count: number }>;
 };
 
 type HoldingRow = {
@@ -368,6 +380,81 @@ async function writeActionLog(payload: {
     reason: payload.reason ?? null,
     detail: payload.detail ?? null,
   });
+}
+
+async function getRecentAutoTradeMetrics(payload: {
+  supabase: SupabaseClientAny;
+  chatId: number;
+  windowDays?: number;
+}): Promise<AutoTradeRecentMetrics | null> {
+  const windowDays = Math.max(1, Math.floor(payload.windowDays ?? 7));
+  const since = new Date(Date.now() - windowDays * 24 * 60 * 60 * 1000).toISOString();
+
+  const [actionsResp, runsResp] = await Promise.all([
+    payload.supabase
+      .from("virtual_autotrade_actions")
+      .select("action_type, reason, created_at")
+      .eq("chat_id", payload.chatId)
+      .gte("created_at", since)
+      .limit(2000),
+    payload.supabase
+      .from("virtual_autotrade_runs")
+      .select("id, started_at")
+      .eq("chat_id", payload.chatId)
+      .gte("started_at", since)
+      .limit(500),
+  ]);
+
+  if (actionsResp.error || runsResp.error) {
+    return null;
+  }
+
+  const actions = (actionsResp.data ?? []) as Array<{
+    action_type?: string | null;
+    reason?: string | null;
+    created_at?: string | null;
+  }>;
+  const runs = (runsResp.data ?? []) as Array<{ id?: number | null; started_at?: string | null }>;
+
+  let buyActions = 0;
+  let sellActions = 0;
+  let skipActions = 0;
+  let errorActions = 0;
+  const skipReasonMap = new Map<string, number>();
+  const activeDayKeys = new Set<string>();
+
+  for (const row of actions) {
+    const actionType = String(row.action_type ?? "").trim().toUpperCase();
+    if (actionType === "BUY") buyActions += 1;
+    if (actionType === "SELL") sellActions += 1;
+    if (actionType === "SKIP") skipActions += 1;
+    if (actionType === "ERROR") errorActions += 1;
+
+    if (actionType === "SKIP") {
+      const reason = String(row.reason ?? "기타").trim() || "기타";
+      skipReasonMap.set(reason, (skipReasonMap.get(reason) ?? 0) + 1);
+    }
+
+    if (row.created_at) {
+      activeDayKeys.add(String(row.created_at).slice(0, 10));
+    }
+  }
+
+  const topSkipReasons = Array.from(skipReasonMap.entries())
+    .map(([reason, count]) => ({ reason, count }))
+    .sort((a, b) => b.count - a.count)
+    .slice(0, 3);
+
+  return {
+    windowDays,
+    runCount: runs.length,
+    activeDays: activeDayKeys.size,
+    buyActions,
+    sellActions,
+    skipActions,
+    errorActions,
+    topSkipReasons,
+  };
 }
 
 async function getLatestScoreAsof(
@@ -2256,12 +2343,19 @@ export async function runVirtualAutoTradingForChat(input: {
     },
   });
 
+  const recentMetrics = await getRecentAutoTradeMetrics({
+    supabase,
+    chatId: input.chatId,
+    windowDays: 7,
+  });
+
   return {
     mode,
     runType,
     runKey,
     dryRun,
     action,
+    recentMetrics,
   };
 }
 

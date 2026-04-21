@@ -2,6 +2,7 @@ import type { ChatContext } from "../router";
 import {
   runVirtualAutoTradingForChat,
   type AutoTradeRunMode,
+  type AutoTradeRecentMetrics,
 } from "../../services/virtualAutoTradeService";
 
 function parseInput(rawInput: string): {
@@ -317,6 +318,26 @@ function buildFriendlyGuide(action: {
   ];
 }
 
+function buildRecentMetricsLines(metrics: AutoTradeRecentMetrics | null): string[] {
+  if (!metrics) return [];
+
+  const lines = [
+    `최근 ${metrics.windowDays}일 지표`,
+    `- 실행 ${metrics.runCount}회 · 액션발생일 ${metrics.activeDays}일`,
+    `- 매수 ${metrics.buyActions}건 · 매도 ${metrics.sellActions}건 · 미체결 ${metrics.skipActions}건 · 오류 ${metrics.errorActions}건`,
+  ];
+
+  if (metrics.topSkipReasons.length > 0) {
+    lines.push(
+      `- 미체결 상위 사유: ${metrics.topSkipReasons
+        .map((item) => `${item.reason} ${item.count}건`)
+        .join(", ")}`
+    );
+  }
+
+  return lines;
+}
+
 export async function handleAutoCycleCommand(
   input: string,
   ctx: ChatContext,
@@ -344,6 +365,7 @@ export async function handleAutoCycleCommand(
     const modeDifferenceGuide = buildRunModeDifferenceGuide(mode, dryRun);
     const actionCards = buildActionResponseCards(action.notes || []);
     const commandExamples = buildCommandExamples(mode);
+    const recentMetricsLines = buildRecentMetricsLines(result.recentMetrics);
 
     await tgSend("sendMessage", {
       chat_id: ctx.chatId,
@@ -352,6 +374,7 @@ export async function handleAutoCycleCommand(
         `모드: ${formatModeLabel(mode)}`,
         formatExecutionStatus(action),
         formatActionBreakdown(action),
+        recentMetricsLines.length ? `\n${recentMetricsLines.join("\n")}` : "",
         modeDifferenceGuide.length ? `\n${modeDifferenceGuide.join("\n")}` : "",
         noteLines.length ? `\n메모\n- ${noteLines.join("\n- ")}` : "",
         actionCards.length ? `\n${actionCards.join("\n")}` : "",
