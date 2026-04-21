@@ -2,9 +2,12 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   applyStrategyBuyConstraint,
+  computeDynamicLargeCapFloor,
+  detectAutoTradeMarketPolicy,
   deriveAdaptiveMinBuyScore,
   pickAutoTradeAddOnCandidates,
   pickAutoTradeCandidates,
+  resolveDeployableCash,
   selectRunType,
 } from "../src/services/virtualAutoTradeSelection";
 import {
@@ -43,6 +46,98 @@ test("pickAutoTradeCandidates: BUY 신호가 없어도 상위 점수대 fallback
   assert.deepEqual(
     result.candidates.map((candidate) => candidate.code),
     ["A", "B"]
+  );
+});
+
+test("detectAutoTradeMarketPolicy: 고변동 구간은 대형주 방어 모드로 전환한다", () => {
+  const policy = detectAutoTradeMarketPolicy({
+    overview: {
+      vix: { price: 31 },
+      fearGreed: { score: 24 },
+      usdkrw: { changeRate: 1.1 },
+      kospi: { changeRate: -2.1 },
+      kosdaq: { changeRate: -2.8 },
+    },
+  });
+
+  assert.equal(policy.mode, "large-cap-defense");
+  assert.equal(policy.minCashReservePct, 40);
+  assert.deepEqual(policy.allowedMarkets, ["KOSPI"]);
+});
+
+test("computeDynamicLargeCapFloor: 코스피 시총 상위 기준선을 계산한다", () => {
+  const rows = [
+    { code: "A", close: 1000, score: 80, name: "A", market: "KOSPI", marketCap: 5_000_000_000_000 },
+    { code: "B", close: 1000, score: 79, name: "B", market: "KOSPI", marketCap: 3_000_000_000_000 },
+    { code: "C", close: 1000, score: 78, name: "C", market: "KOSPI", marketCap: 1_500_000_000_000 },
+  ];
+
+  assert.equal(computeDynamicLargeCapFloor(rows, 2), 3_000_000_000_000);
+});
+
+test("resolveDeployableCash: 최소 현금 하한을 제외한 금액만 신규 매수에 사용한다", () => {
+  const deployableCash = resolveDeployableCash({
+    availableCash: 5_000_000,
+    seedCapital: 10_000_000,
+    minCashReservePct: 30,
+  });
+
+  assert.equal(deployableCash, 2_000_000);
+});
+
+test("pickAutoTradeCandidates: 대형주 방어 모드에서는 코스피 대형주만 남긴다", () => {
+  const policy = detectAutoTradeMarketPolicy({
+    overview: {
+      vix: { price: 30 },
+      fearGreed: { score: 25 },
+    },
+  });
+
+  const result = pickAutoTradeCandidates({
+    rows: [
+      {
+        code: "A",
+        close: 10000,
+        score: 82,
+        name: "Alpha",
+        signal: "BUY",
+        market: "KOSPI",
+        marketCap: 4_000_000_000_000,
+        liquidity: 50_000_000_000,
+        universeLevel: "core",
+      },
+      {
+        code: "B",
+        close: 9000,
+        score: 81,
+        name: "Beta",
+        signal: "BUY",
+        market: "KOSDAQ",
+        marketCap: 5_000_000_000_000,
+        liquidity: 60_000_000_000,
+        universeLevel: "core",
+      },
+      {
+        code: "C",
+        close: 8000,
+        score: 80,
+        name: "Gamma",
+        signal: "BUY",
+        market: "KOSPI",
+        marketCap: 800_000_000_000,
+        liquidity: 60_000_000_000,
+        universeLevel: "extended",
+      },
+    ],
+    preferredMinBuyScore: 70,
+    limit: 3,
+    heldCodes: new Set<string>(),
+    marketPolicy: policy,
+  });
+
+  assert.deepEqual(
+    result.candidates.map((candidate) => candidate.code),
+    ["A"]
   );
 });
 

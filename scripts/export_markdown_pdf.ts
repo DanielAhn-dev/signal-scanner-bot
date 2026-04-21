@@ -2,7 +2,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { PDFDocument, rgb, type PDFFont, type RGB } from "pdf-lib";
 import fontkit from "@pdf-lib/fontkit";
-import { loadFontBytes, wrapText } from "../src/services/weeklyReportPdfCore";
+import { loadFontBytes, sanitizePdfText, wrapText } from "../src/services/weeklyReportPdfCore";
 
 type CliOptions = {
   input: string;
@@ -125,35 +125,54 @@ function parseArgs(argv: string[]): CliOptions {
 }
 
 function parseStableDateFromMarkdown(markdown: string): { label: string; date: Date } {
-  const lineMatch = markdown.match(/^\s*-\s*기준일:\s*(.+)$/m);
-  const label = lineMatch?.[1]?.trim();
+  const normalizeDateLabel = (year: number, month: number, day: number) => {
+    const yyyy = String(year).padStart(4, "0");
+    const mm = String(month).padStart(2, "0");
+    const dd = String(day).padStart(2, "0");
+    return `${yyyy}.${mm}.${dd}`;
+  };
 
-  if (label) {
-    const dateMatch = label.match(/(\d{4})\D(\d{1,2})\D(\d{1,2})/);
-    if (dateMatch) {
-      const year = Number(dateMatch[1]);
-      const month = Number(dateMatch[2]);
-      const day = Number(dateMatch[3]);
-      const parsed = new Date(Date.UTC(year, month - 1, day, 0, 0, 0));
-      if (!Number.isNaN(parsed.getTime())) {
-        return { label, date: parsed };
-      }
-    }
-  }
+  const parseDateFromText = (text?: string | null): { label: string; date: Date } | null => {
+    const raw = String(text ?? "").trim();
+    if (!raw) return null;
+    const dateMatch = raw.match(/(\d{4})\D+(\d{1,2})\D+(\d{1,2})/);
+    if (!dateMatch) return null;
+    const year = Number(dateMatch[1]);
+    const month = Number(dateMatch[2]);
+    const day = Number(dateMatch[3]);
+    const parsed = new Date(Date.UTC(year, month - 1, day, 0, 0, 0));
+    if (Number.isNaN(parsed.getTime())) return null;
+    return { label: normalizeDateLabel(year, month, day), date: parsed };
+  };
 
+  const stableLine = markdown.match(/^\s*-\s*기준일:\s*(.+)$/m)?.[1];
+  const updatedLine = markdown.match(/^\s*\*?마지막\s*업데이트:\s*(.+?)\*?\s*$/m)?.[1];
+  const fromStable = parseDateFromText(stableLine);
+  if (fromStable) return fromStable;
+  const fromUpdated = parseDateFromText(updatedLine);
+  if (fromUpdated) return fromUpdated;
+
+  // 문서에 기준일이 없으면 현재 KST 날짜를 사용한다.
+  const now = new Date();
+  const kstNow = new Date(now.getTime() + 9 * 60 * 60 * 1000);
+  const year = kstNow.getUTCFullYear();
+  const month = kstNow.getUTCMonth() + 1;
+  const day = kstNow.getUTCDate();
   return {
-    label: "2026-01-01",
-    date: new Date(Date.UTC(2026, 0, 1, 0, 0, 0)),
+    label: normalizeDateLabel(year, month, day),
+    date: new Date(Date.UTC(year, month - 1, day, 0, 0, 0)),
   };
 }
 
 function stripInlineMarkdown(text: string): string {
-  return text
+  return sanitizePdfText(
+    text
     .replace(/`([^`]+)`/g, "$1")
     .replace(/\*\*([^*]+)\*\*/g, "$1")
     .replace(/\*([^*]+)\*/g, "$1")
     .replace(/\[([^\]]+)\]\(([^)]+)\)/g, "$1 ($2)")
-    .trim();
+    .trim()
+  );
 }
 
 function parseMarkdown(markdown: string): Block[] {
@@ -261,7 +280,7 @@ function drawWrappedText(args: {
   const lines = wrapText(args.text, args.maxWidth, args.font, args.fontSize);
   const lh = lineHeight(args.fontSize);
   for (let index = 0; index < lines.length; index += 1) {
-    args.page.drawText(lines[index], {
+    args.page.drawText(sanitizePdfText(lines[index]), {
       x: args.x,
       y: args.y - args.fontSize * 0.8 - index * lh,
       size: args.fontSize,
@@ -298,7 +317,7 @@ function blockHeight(block: Block, fonts: Fonts): number {
     const total = Math.max(1, block.lines.length) * lineHeight(9.5, 1.35);
     return total + 18;
   }
-  const markerWidth = 24;
+  const markerWidth = 16;
   let totalHeight = 4;
   for (const item of block.items) {
     const lines = wrapText(item, bodyWidth - markerWidth, fonts.regular, 10.5);
@@ -392,22 +411,30 @@ function renderCover(pdf: PDFDocument, fonts: Fonts, title: string, sourcePath: 
     color: COLORS.text,
   });
   const quickStart = [
-    "1. 장 시작 전에는 /경제, /시장, /브리핑 순서로 먼저 본다.",
-    "2. 후보는 /스캔 또는 /눌림목으로 3~5개만 추린다.",
-    "3. 진입 전에는 /종목분석, /재무, /수급을 함께 확인한다.",
-    "4. 장 마감 후에는 /보유, /관심, /리포트로 복기한다.",
+    "장 시작 전에는 /경제, /시장, /브리핑 순서로 먼저 본다.",
+    "후보는 /스캔 또는 /눌림목으로 3~5개만 추린다.",
+    "진입 전에는 /종목분석, /재무, /수급을 함께 확인한다.",
+    "장 마감 후에는 /보유, /관심, /리포트로 복기한다.",
   ];
   let y = infoY - 146;
-  for (const item of quickStart) {
-    page.drawCircle({ x: PAGE.marginLeft + 4, y: y + 5, size: 2.4, color: COLORS.accent });
+  for (let itemIndex = 0; itemIndex < quickStart.length; itemIndex += 1) {
+    const item = quickStart[itemIndex];
+    const marker = `${itemIndex + 1}.`;
+    page.drawText(marker, {
+      x: PAGE.marginLeft,
+      y: y - 11 * 0.8,
+      size: 11,
+      font: fonts.bold,
+      color: COLORS.accent,
+    });
     const wrapped = drawWrappedText({
       text: item,
-      x: PAGE.marginLeft + 14,
+      x: PAGE.marginLeft + 20,
       y,
       font: fonts.regular,
       fontSize: 11,
       color: COLORS.text,
-      maxWidth: PAGE.width - PAGE.marginLeft - PAGE.marginRight - 14,
+      maxWidth: PAGE.width - PAGE.marginLeft - PAGE.marginRight - 20,
       page,
     });
     y -= wrapped.height + 8;
@@ -629,7 +656,7 @@ function renderBlocks(pdf: PDFDocument, fonts: Fonts, title: string, dateLabel: 
       continue;
     }
 
-    const markerWidth = 24;
+    const markerWidth = 16;
     for (let itemIndex = 0; itemIndex < block.items.length; itemIndex += 1) {
       const item = block.items[itemIndex];
       const marker = block.ordered ? `${itemIndex + 1}.` : "•";

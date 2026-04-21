@@ -33,9 +33,25 @@ export async function loadKoreanFontBytes(): Promise<Uint8Array> {
   return (await loadFontBytes()).regular;
 }
 
+export function sanitizePdfText(text: string): string {
+  return String(text ?? "")
+    .normalize("NFC")
+    .replace(/[\u200B-\u200D\uFEFF]/g, "")
+    .replace(/\u3000/g, " ")
+    .replace(/[\u00A0\u2007\u202F]/g, " ")
+    .replace(/[\uFE0E\uFE0F]/g, "")
+    .replace(/\p{Extended_Pictographic}/gu, "")
+    .replace(/\s+([,.;:!?])/g, "$1")
+    .replace(/:\s+/g, ": ")
+    .replace(/(\d)\s*:\s*(\d)/g, "$1:$2")
+    .replace(/(\d)\s*-\s*(\d)/g, "$1-$2")
+    .replace(/[ \t]{2,}/g, " ")
+    .trim();
+}
+
 export function wrapText(text: string, maxWidth: number, font: PDFFont, size: number): string[] {
   if (!text) return [""];
-  const normalized = text.normalize("NFC");
+  const normalized = sanitizePdfText(text);
   const chars = [...normalized];
   const lines: string[] = [];
   let current = "";
@@ -139,28 +155,33 @@ export class ReportContext {
   }
 
   textRight(s: string, rightEdge: number, y: number, size: number, color: RGB = C.ink) {
-    const width = this.font.widthOfTextAtSize(s, size);
-    this.page.drawText(s, { x: rightEdge - width, y: y - size * 0.8, size, font: this.font, color });
+    const normalized = sanitizePdfText(s);
+    const width = this.font.widthOfTextAtSize(normalized, size);
+    this.page.drawText(normalized, { x: rightEdge - width, y: y - size * 0.8, size, font: this.font, color });
   }
 
   textRightBold(s: string, rightEdge: number, y: number, size: number, color: RGB = C.ink) {
-    const width = this.fontBold.widthOfTextAtSize(s, size);
-    this.page.drawText(s, { x: rightEdge - width, y: y - size * 0.8, size, font: this.fontBold, color });
+    const normalized = sanitizePdfText(s);
+    const width = this.fontBold.widthOfTextAtSize(normalized, size);
+    this.page.drawText(normalized, { x: rightEdge - width, y: y - size * 0.8, size, font: this.fontBold, color });
   }
 
   textRightLight(s: string, rightEdge: number, y: number, size: number, color: RGB = C.ink) {
-    const width = this.fontLight.widthOfTextAtSize(s, size);
-    this.page.drawText(s, { x: rightEdge - width, y: y - size * 0.8, size, font: this.fontLight, color });
+    const normalized = sanitizePdfText(s);
+    const width = this.fontLight.widthOfTextAtSize(normalized, size);
+    this.page.drawText(normalized, { x: rightEdge - width, y: y - size * 0.8, size, font: this.fontLight, color });
   }
 
   textCenter(s: string, cx: number, y: number, size: number, color: RGB = C.ink) {
-    const width = this.font.widthOfTextAtSize(s, size);
-    this.page.drawText(s, { x: cx - width / 2, y: y - size * 0.8, size, font: this.font, color });
+    const normalized = sanitizePdfText(s);
+    const width = this.font.widthOfTextAtSize(normalized, size);
+    this.page.drawText(normalized, { x: cx - width / 2, y: y - size * 0.8, size, font: this.font, color });
   }
 
   textCenterBold(s: string, cx: number, y: number, size: number, color: RGB = C.ink) {
-    const width = this.fontBold.widthOfTextAtSize(s, size);
-    this.page.drawText(s, { x: cx - width / 2, y: y - size * 0.8, size, font: this.fontBold, color });
+    const normalized = sanitizePdfText(s);
+    const width = this.fontBold.widthOfTextAtSize(normalized, size);
+    this.page.drawText(normalized, { x: cx - width / 2, y: y - size * 0.8, size, font: this.fontBold, color });
   }
 
   rect(x: number, y: number, w: number, h: number, color: RGB) {
