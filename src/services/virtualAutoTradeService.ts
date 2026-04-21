@@ -31,6 +31,10 @@ import {
   type AutoTradeRunType,
   type RankedCandidate,
 } from "./virtualAutoTradeSelection";
+import {
+  fetchRealtimePriceBatch,
+  type RealtimeStockData,
+} from "../utils/fetchRealtimePrice";
 
 type RunMode = SelectionAutoTradeRunMode;
 type RunType = AutoTradeRunType;
@@ -126,6 +130,29 @@ function toPositiveInt(value: unknown, fallback: number): number {
 
 function fmtKrw(value: number): string {
   return `${Math.round(value).toLocaleString("ko-KR")}원`;
+}
+
+async function fetchExecutionPriceMap(
+  codes: string[]
+): Promise<Record<string, RealtimeStockData>> {
+  if (!codes.length) return {};
+  try {
+    return await fetchRealtimePriceBatch(codes);
+  } catch {
+    return {};
+  }
+}
+
+function resolveExecutionPrice(input: {
+  code: string;
+  fallbackPrice: number;
+  realtimeMap: Record<string, RealtimeStockData>;
+}): { price: number; source: "realtime" | "snapshot" } {
+  const realtimePrice = toNumber(input.realtimeMap[input.code]?.price, 0);
+  if (realtimePrice > 0) {
+    return { price: realtimePrice, source: "realtime" };
+  }
+  return { price: Math.max(0, input.fallbackPrice), source: "snapshot" };
 }
 
 function kstDateKey(base = new Date()): string {
@@ -520,6 +547,9 @@ async function runMondayBuyForUser(payload: {
     heldCodes,
   });
   const candidates = candidateSelection.candidates;
+  const candidateRealtimeMap = await fetchExecutionPriceMap(
+    candidates.map((candidate) => candidate.code)
+  );
 
   if (candidateSelection.latestAsof) {
     summary.notes.push(`점수 기준일: ${candidateSelection.latestAsof}`);
@@ -569,9 +599,15 @@ async function runMondayBuyForUser(payload: {
     if (slotsLeft <= 0) break;
 
     try {
+      const execution = resolveExecutionPrice({
+        code: candidate.code,
+        fallbackPrice: candidate.close,
+        realtimeMap: candidateRealtimeMap,
+      });
+      const executionPrice = execution.price;
       const sizing = calculateAutoTradeBuySizing({
         availableCash,
-        price: candidate.close,
+        price: executionPrice,
         slotsLeft,
         currentHoldingCount: plannedHoldingCount,
         maxPositions,
@@ -620,7 +656,7 @@ async function runMondayBuyForUser(payload: {
             budgetPerTargetPosition: sizing.budgetPerTargetPosition,
             maxBudgetByRisk: sizing.maxBudgetByRisk,
             splitCount: sizing.splitCount,
-            price: candidate.close,
+            price: executionPrice,
           },
         });
         slotsLeft -= 1;
@@ -628,11 +664,11 @@ async function runMondayBuyForUser(payload: {
       }
 
       if (payload.dryRun) {
-        const targetPrice = Math.round(candidate.close * (1 + Math.abs(toNumber(payload.setting.take_profit_pct, 8)) / 100));
-        const expectedPnl = Math.max(0, Math.round((targetPrice - candidate.close) * qty));
+        const targetPrice = Math.round(executionPrice * (1 + Math.abs(toNumber(payload.setting.take_profit_pct, 8)) / 100));
+        const expectedPnl = Math.max(0, Math.round((targetPrice - executionPrice) * qty));
         summary.buys += 1;
         summary.notes.push(
-          `[테스트 매수안] ${candidate.name}(${candidate.code}) ${qty}주 · 전략 ${profileLabel} · 매수가 ${fmtKrw(candidate.close)} · 투입 ${fmtKrw(investedAmount)} · 목표가 ${fmtKrw(targetPrice)} · 기대수익 ${fmtKrw(expectedPnl)} (${Math.abs(toNumber(payload.setting.take_profit_pct, 8)).toFixed(1)}%)`
+          `[테스트 매수안] ${candidate.name}(${candidate.code}) ${qty}주 · 전략 ${profileLabel} · 매수가 ${fmtKrw(executionPrice)} · 투입 ${fmtKrw(investedAmount)} · 목표가 ${fmtKrw(targetPrice)} · 기대수익 ${fmtKrw(expectedPnl)} (${Math.abs(toNumber(payload.setting.take_profit_pct, 8)).toFixed(1)}%)${execution.source === "realtime" ? " · 실시간 시세" : " · 스냅샷 시세"}`
         );
         await writeActionLog({
           supabase: payload.supabase,
@@ -642,7 +678,8 @@ async function runMondayBuyForUser(payload: {
           actionType: "BUY",
           reason: "dry-run-monday-buy",
           detail: {
-            price: candidate.close,
+            price: executionPrice,
+            priceSource: execution.source,
             score: candidate.score,
             quantity: qty,
             investedAmount,
@@ -665,7 +702,7 @@ async function runMondayBuyForUser(payload: {
           {
             chat_id: chatId,
             code: candidate.code,
-            buy_price: candidate.close,
+              buy_price: executionPrice,
             buy_date: new Date().toISOString().slice(0, 10),
             quantity: qty,
             invested_amount: investedAmount,
@@ -691,7 +728,7 @@ async function runMondayBuyForUser(payload: {
         chatId,
         code: candidate.code,
         side: "BUY",
-        price: candidate.close,
+          price: executionPrice,
         quantity: qty,
         grossAmount: investedAmount,
         netAmount: investedAmount,
@@ -710,7 +747,7 @@ async function runMondayBuyForUser(payload: {
           code: candidate.code,
           quantity: qty,
           investedAmount,
-          buyPrice: candidate.close,
+            buyPrice: executionPrice,
           acquiredAt: String((upserted as Record<string, unknown> | null)?.created_at ?? "") || null,
           buyDate: String((upserted as Record<string, unknown> | null)?.buy_date ?? "") || null,
         });
@@ -720,7 +757,7 @@ async function runMondayBuyForUser(payload: {
       plannedHoldingCount += 1;
       availableCash = Math.max(0, availableCash - investedAmount);
       summary.notes.push(
-        `[실행 매수] ${candidate.name}(${candidate.code}) ${qty}주 · 전략 ${profileLabel} · 매수가 ${fmtKrw(candidate.close)} · 투입 ${fmtKrw(investedAmount)} · 점수 ${candidate.score.toFixed(1)}`
+        `[실행 매수] ${candidate.name}(${candidate.code}) ${qty}주 · 전략 ${profileLabel} · 매수가 ${fmtKrw(executionPrice)} · 투입 ${fmtKrw(investedAmount)} · 점수 ${candidate.score.toFixed(1)}${execution.source === "realtime" ? " · 실시간 시세" : " · 스냅샷 시세"}`
       );
       await writeActionLog({
         supabase: payload.supabase,
@@ -731,7 +768,8 @@ async function runMondayBuyForUser(payload: {
         reason: "monday-score-candidate",
         detail: {
           score: candidate.score,
-          price: candidate.close,
+          price: executionPrice,
+          priceSource: execution.source,
           qty,
           investedAmount,
           totalBudget: sizing.totalBudget,
@@ -751,7 +789,7 @@ async function runMondayBuyForUser(payload: {
         confidence: Math.min(100, Math.max(0, candidate.score)),
         expectedHorizonDays: tradeProfile.expectedHorizonDays,
         reasonSummary: `자동 월요일 매수 (${profileLabel}, 점수 ${candidate.score.toFixed(1)})`,
-        reasonDetails: { score: candidate.score, price: candidate.close, qty, investedAmount, totalBudget: sizing.totalBudget, splitCount: sizing.splitCount, strategyProfile: tradeProfile.profile, trigger: "monday-score-candidate" },
+        reasonDetails: { score: candidate.score, price: executionPrice, priceSource: execution.source, qty, investedAmount, totalBudget: sizing.totalBudget, splitCount: sizing.splitCount, strategyProfile: tradeProfile.profile, trigger: "monday-score-candidate" },
         linkedTradeId: tradeId ?? undefined,
       }).catch((err: unknown) => console.error("[autoTrade] decision log BUY failed", err));
       slotsLeft -= 1;
@@ -1071,9 +1109,15 @@ async function runDailyReviewForUser(payload: {
   }
 
   const closeByCode = new Map<string, number>();
+  const holdingRealtimeMap = await fetchExecutionPriceMap(codeList);
   for (const row of stockRows ?? []) {
     const code = String((row as Record<string, unknown>).code ?? "");
-    const close = toNumber((row as Record<string, unknown>).close, 0);
+    const fallbackClose = toNumber((row as Record<string, unknown>).close, 0);
+    const close = resolveExecutionPrice({
+      code,
+      fallbackPrice: fallbackClose,
+      realtimeMap: holdingRealtimeMap,
+    }).price;
     if (code && close > 0) closeByCode.set(code, close);
   }
 
@@ -1267,6 +1311,9 @@ async function runDailyReviewForUser(payload: {
       if (addOnSelection.latestAsof) {
         summary.notes.push(`보유 추가매수 점수 기준일: ${addOnSelection.latestAsof}`);
       }
+      const addOnRealtimeMap = await fetchExecutionPriceMap(
+        addOnSelection.candidates.map((candidate) => candidate.code)
+      );
 
       if (!addOnSelection.candidates.length && addOnSelection.latestTopScore > 0) {
         summary.notes.push(
@@ -1277,6 +1324,12 @@ async function runDailyReviewForUser(payload: {
       for (const candidate of addOnSelection.candidates) {
         const holding = activeHoldings.find((item) => item.code === candidate.code);
         if (!holding) continue;
+        const execution = resolveExecutionPrice({
+          code: candidate.code,
+          fallbackPrice: candidate.close,
+          realtimeMap: addOnRealtimeMap,
+        });
+        const executionPrice = execution.price;
 
         const currentQty = Math.max(0, Math.floor(toNumber(holding.quantity, 0)));
         const currentBuyPrice = Math.max(0, toNumber(holding.buy_price, 0));
@@ -1293,7 +1346,7 @@ async function runDailyReviewForUser(payload: {
         });
         const sizing = calculateAutoTradeBuySizing({
           availableCash,
-          price: candidate.close,
+          price: executionPrice,
           slotsLeft: 1,
           currentHoldingCount: Math.max(0, currentCount - 1),
           maxPositions: Math.max(1, maxPositions),
@@ -1304,12 +1357,12 @@ async function runDailyReviewForUser(payload: {
           0,
           Math.min(sizing.budget, sizing.totalBudget - currentInvested)
         );
-        const addOnQty = Math.max(0, Math.floor(addOnBudget / candidate.close));
+        const addOnQty = Math.max(0, Math.floor(addOnBudget / executionPrice));
         if (addOnQty <= 0) {
           continue;
         }
 
-        const addOnInvested = Math.round(addOnQty * candidate.close);
+        const addOnInvested = Math.round(addOnQty * executionPrice);
         const nextQty = currentQty + addOnQty;
         const nextInvested = currentInvested + addOnInvested;
         const nextBuyPrice = Number((nextInvested / nextQty).toFixed(4));
@@ -1319,7 +1372,7 @@ async function runDailyReviewForUser(payload: {
             addOnBuyCount += 1;
             summary.buys += 1;
             summary.notes.push(
-              `[테스트 추가매수안] ${candidate.name}(${candidate.code}) +${addOnQty}주 · 총 ${nextQty}주 · 평균단가 ${fmtKrw(nextBuyPrice)} · 투입 ${fmtKrw(addOnInvested)}`
+              `[테스트 추가매수안] ${candidate.name}(${candidate.code}) +${addOnQty}주 · 총 ${nextQty}주 · 평균단가 ${fmtKrw(nextBuyPrice)} · 투입 ${fmtKrw(addOnInvested)}${execution.source === "realtime" ? " · 실시간 시세" : " · 스냅샷 시세"}`
             );
             await writeActionLog({
               supabase: payload.supabase,
@@ -1334,6 +1387,8 @@ async function runDailyReviewForUser(payload: {
                 nextQty,
                 nextInvested,
                 nextBuyPrice,
+                price: executionPrice,
+                priceSource: execution.source,
                 score: candidate.score,
               },
             });
@@ -1367,7 +1422,7 @@ async function runDailyReviewForUser(payload: {
             chatId,
             code: candidate.code,
             side: "BUY",
-            price: candidate.close,
+            price: executionPrice,
             quantity: addOnQty,
             grossAmount: addOnInvested,
             netAmount: addOnInvested,
@@ -1384,7 +1439,7 @@ async function runDailyReviewForUser(payload: {
             code: candidate.code,
             quantity: addOnQty,
             investedAmount: addOnInvested,
-            buyPrice: candidate.close,
+            buyPrice: executionPrice,
             acquiredAt: new Date().toISOString(),
             note: "autotrade-add-on-buy",
             sourceTradeId: tradeId,
@@ -1394,7 +1449,7 @@ async function runDailyReviewForUser(payload: {
           addOnBuyCount += 1;
           summary.buys += 1;
           summary.notes.push(
-            `[실행 추가매수] ${candidate.name}(${candidate.code}) +${addOnQty}주 · 총 ${nextQty}주 · 평균단가 ${fmtKrw(nextBuyPrice)} · 투입 ${fmtKrw(addOnInvested)} · 점수 ${candidate.score.toFixed(1)}`
+            `[실행 추가매수] ${candidate.name}(${candidate.code}) +${addOnQty}주 · 총 ${nextQty}주 · 평균단가 ${fmtKrw(nextBuyPrice)} · 투입 ${fmtKrw(addOnInvested)} · 점수 ${candidate.score.toFixed(1)}${execution.source === "realtime" ? " · 실시간 시세" : " · 스냅샷 시세"}`
           );
           await writeActionLog({
             supabase: payload.supabase,
@@ -1409,6 +1464,8 @@ async function runDailyReviewForUser(payload: {
               nextQty,
               nextInvested,
               nextBuyPrice,
+              price: executionPrice,
+              priceSource: execution.source,
               score: candidate.score,
               tradeId,
               cashAfter: availableCash,
@@ -1429,6 +1486,8 @@ async function runDailyReviewForUser(payload: {
               addOnInvested,
               nextQty,
               nextBuyPrice,
+              price: executionPrice,
+              priceSource: execution.source,
               score: candidate.score,
             },
             linkedTradeId: tradeId ?? undefined,
@@ -1508,6 +1567,9 @@ async function runDailyReviewForUser(payload: {
       if (candidateSelection.latestAsof) {
         summary.notes.push(`점수 기준일: ${candidateSelection.latestAsof}`);
       }
+      const rebalanceRealtimeMap = await fetchExecutionPriceMap(
+        candidates.map((candidate) => candidate.code)
+      );
 
       if (candidateSelection.selectionMode === "signal-relaxed") {
         summary.notes.push(
@@ -1533,6 +1595,12 @@ async function runDailyReviewForUser(payload: {
       let sizingNoteAdded = false;
       for (const candidate of candidates) {
         if (slotsLeft <= 0) break;
+        const execution = resolveExecutionPrice({
+          code: candidate.code,
+          fallbackPrice: candidate.close,
+          realtimeMap: rebalanceRealtimeMap,
+        });
+        const executionPrice = execution.price;
 
         const candidateProfile = classifyAutoTradeEntryProfile({
           accountStrategy: payload.setting.selected_strategy,
@@ -1549,7 +1617,7 @@ async function runDailyReviewForUser(payload: {
 
         const sizing = calculateAutoTradeBuySizing({
           availableCash,
-          price: candidate.close,
+          price: executionPrice,
           slotsLeft,
           currentHoldingCount: plannedHoldingCount,
           maxPositions,
@@ -1586,7 +1654,7 @@ async function runDailyReviewForUser(payload: {
               budgetPerTargetPosition: sizing.budgetPerTargetPosition,
               maxBudgetByRisk: sizing.maxBudgetByRisk,
               splitCount: sizing.splitCount,
-              price: candidate.close,
+              price: executionPrice,
             },
           });
           slotsLeft -= 1;
@@ -1598,12 +1666,12 @@ async function runDailyReviewForUser(payload: {
         try {
           if (payload.dryRun) {
             const targetPct = Math.abs(toNumber(payload.setting.take_profit_pct, 8));
-            const targetPrice = Math.round(candidate.close * (1 + targetPct / 100));
-            const expectedPnl = Math.max(0, Math.round((targetPrice - candidate.close) * qty));
+            const targetPrice = Math.round(executionPrice * (1 + targetPct / 100));
+            const expectedPnl = Math.max(0, Math.round((targetPrice - executionPrice) * qty));
             rebalanceBuyCount += 1;
             summary.buys += 1;
             summary.notes.push(
-              `[테스트 매수안] ${candidate.name}(${candidate.code}) ${qty}주 · 전략 ${profileLabel} · 매수가 ${fmtKrw(candidate.close)} · 목표가 ${fmtKrw(targetPrice)} · 기대수익 ${fmtKrw(expectedPnl)} (${targetPct.toFixed(1)}%)`
+              `[테스트 매수안] ${candidate.name}(${candidate.code}) ${qty}주 · 전략 ${profileLabel} · 매수가 ${fmtKrw(executionPrice)} · 목표가 ${fmtKrw(targetPrice)} · 기대수익 ${fmtKrw(expectedPnl)} (${targetPct.toFixed(1)}%)${execution.source === "realtime" ? " · 실시간 시세" : " · 스냅샷 시세"}`
             );
             await writeActionLog({
               supabase: payload.supabase,
@@ -1614,7 +1682,8 @@ async function runDailyReviewForUser(payload: {
               reason: "dry-run-rebalance-buy",
               detail: {
                 qty,
-                price: candidate.close,
+                price: executionPrice,
+                priceSource: execution.source,
                 investedAmount,
                 totalBudget: sizing.totalBudget,
                 splitCount: sizing.splitCount,
@@ -1636,7 +1705,7 @@ async function runDailyReviewForUser(payload: {
               {
                 chat_id: chatId,
                 code: candidate.code,
-                buy_price: candidate.close,
+                buy_price: executionPrice,
                 buy_date: new Date().toISOString().slice(0, 10),
                 quantity: qty,
                 invested_amount: investedAmount,
@@ -1662,7 +1731,7 @@ async function runDailyReviewForUser(payload: {
             chatId,
             code: candidate.code,
             side: "BUY",
-            price: candidate.close,
+            price: executionPrice,
             quantity: qty,
             grossAmount: investedAmount,
             netAmount: investedAmount,
@@ -1681,7 +1750,7 @@ async function runDailyReviewForUser(payload: {
               code: candidate.code,
               quantity: qty,
               investedAmount,
-              buyPrice: candidate.close,
+              buyPrice: executionPrice,
               acquiredAt: String((upserted as Record<string, unknown> | null)?.created_at ?? "") || null,
               buyDate: String((upserted as Record<string, unknown> | null)?.buy_date ?? "") || null,
             });
@@ -1692,7 +1761,7 @@ async function runDailyReviewForUser(payload: {
           rebalanceBuyCount += 1;
           summary.buys += 1;
           summary.notes.push(
-            `[실행 매수] ${candidate.name}(${candidate.code}) ${qty}주 · 전략 ${profileLabel} · 매수가 ${fmtKrw(candidate.close)} · 투입 ${fmtKrw(investedAmount)} · 점수 ${candidate.score.toFixed(1)}`
+            `[실행 매수] ${candidate.name}(${candidate.code}) ${qty}주 · 전략 ${profileLabel} · 매수가 ${fmtKrw(executionPrice)} · 투입 ${fmtKrw(investedAmount)} · 점수 ${candidate.score.toFixed(1)}${execution.source === "realtime" ? " · 실시간 시세" : " · 스냅샷 시세"}`
           );
           await writeActionLog({
             supabase: payload.supabase,
@@ -1703,7 +1772,8 @@ async function runDailyReviewForUser(payload: {
             reason: "rebalance-buy",
             detail: {
               qty,
-              price: candidate.close,
+              price: executionPrice,
+              priceSource: execution.source,
               investedAmount,
               totalBudget: sizing.totalBudget,
               splitCount: sizing.splitCount,
@@ -1723,7 +1793,7 @@ async function runDailyReviewForUser(payload: {
             confidence: Math.min(100, Math.max(0, candidate.score)),
             expectedHorizonDays: entryProfile.expectedHorizonDays,
             reasonSummary: `자동 리밸런싱 재매수 (${profileLabel}, 점수 ${candidate.score.toFixed(1)})`,
-            reasonDetails: { score: candidate.score, price: candidate.close, qty, investedAmount, totalBudget: sizing.totalBudget, splitCount: sizing.splitCount, strategyProfile: entryProfile.profile, trigger: "rebalance-buy" },
+            reasonDetails: { score: candidate.score, price: executionPrice, priceSource: execution.source, qty, investedAmount, totalBudget: sizing.totalBudget, splitCount: sizing.splitCount, strategyProfile: entryProfile.profile, trigger: "rebalance-buy" },
             linkedTradeId: tradeId ?? undefined,
           }).catch((err: unknown) => console.error("[autoTrade] decision log rebalance BUY failed", err));
         } catch (error: unknown) {
