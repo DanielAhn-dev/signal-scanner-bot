@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { SectorScore } from "../lib/sectors";
 import { getUserInvestmentPrefs } from "./userService";
+import { calculateSectorConcentration, getSectorConcentrationWarnings } from "./portfolioService";
 import { fetchLatestScoresByCodes } from "./scoreSourceService";
 import { getSafetyPreferenceScore, pickSaferCandidates, type RiskProfile } from "../lib/investableUniverse";
 import { computeDynamicLargeCapFloor, detectAutoTradeMarketPolicy, resolveDeployableCash } from "./virtualAutoTradeSelection";
@@ -227,6 +228,7 @@ type PickCandidate = {
   code: string;
   name: string;
   market: string;
+  sectorId: string | null;
   sectorName: string | null;
   price: number;
   score: number;
@@ -262,6 +264,7 @@ type SectorNameRow = {
 };
 
 type CandidateGroupRow = {
+  sectorId: string | null;
   sectorName: string;
   type: "market" | "pullback";
   code: string;
@@ -281,6 +284,13 @@ type PlanningConstraints = {
   holdingCount: number;
   dayLossReached: boolean;
   statusLines: string[];
+};
+
+type SectorOverlapWarning = {
+  sectorId: string;
+  sectorName: string;
+  ratio: number;
+  level: "warning" | "danger";
 };
 
 const DEFAULT_DAILY_LOSS_LIMIT_PCT = 5;
@@ -325,6 +335,27 @@ function riskProfileLabel(profile: RiskProfile): string {
   if (profile === "balanced") return "균형형";
   if (profile === "active") return "공격형";
   return "안전형";
+}
+
+function classifyCandidateStyleTag(input: {
+  market: string;
+  score: number;
+  safetyScore?: number;
+  trendLabel?: string;
+}): "보수" | "중립" | "공격" {
+  const market = String(input.market ?? "").toUpperCase();
+  const trend = String(input.trendLabel ?? "");
+  if (market === "KOSPI" && Number(input.safetyScore ?? 0) >= 72 && trend !== "추세 확인") {
+    return "보수";
+  }
+  if (market === "KOSDAQ" || Number(input.score ?? 0) >= 76) {
+    return "공격";
+  }
+  return "중립";
+}
+
+function formatPriorityTag(rank: number): string {
+  return `${rank}순위`;
 }
 
 function getDailyCandidateTrendLabel(price: number, sma20: number, sma50: number, sma200: number): string {
@@ -450,6 +481,35 @@ async function getHoldingCountForPlan(
   }).length;
 }
 
+async function getSectorOverlapWarningsForPlan(
+  supabase: SupabaseClient,
+  chatId?: number
+): Promise<Map<string, SectorOverlapWarning>> {
+  const out = new Map<string, SectorOverlapWarning>();
+  if (!chatId) return out;
+
+  const { data, error } = await supabase
+    .from("watchlist")
+    .select("invested_amount, stock:stocks!inner(sector_id)")
+    .eq("chat_id", chatId);
+
+  if (error) {
+    throw new Error(`보유 섹터 조회 실패: ${error.message}`);
+  }
+
+  const concentrations = calculateSectorConcentration(
+    ((data ?? []) as any[]).map((row) => ({
+      sectorId: Array.isArray(row.stock) ? row.stock[0]?.sector_id ?? null : row.stock?.sector_id ?? null,
+      investedAmount: Number(row?.invested_amount ?? 0),
+    }))
+  );
+  const warnings = getSectorConcentrationWarnings(concentrations);
+  warnings.forEach((warning) => {
+    out.set(warning.sectorId, warning);
+  });
+  return out;
+}
+
 async function resolvePlanningConstraints(
   supabase: SupabaseClient,
   input: { chatId?: number; marketReservePct: number }
@@ -531,6 +591,7 @@ function buildSectorTemplateLines(input: {
 
   input.kospiPicks.forEach((item) =>
     push(item.sectorName, {
+      sectorId: item.sectorId,
       sectorName: item.sectorName ?? "",
       type: "market",
       code: item.code,
@@ -542,6 +603,7 @@ function buildSectorTemplateLines(input: {
   );
   input.kosdaqPicks.forEach((item) =>
     push(item.sectorName, {
+      sectorId: item.sectorId,
       sectorName: item.sectorName ?? "",
       type: "market",
       code: item.code,
@@ -553,6 +615,7 @@ function buildSectorTemplateLines(input: {
   );
   input.pullbackItems.forEach((item) =>
     push(item.stock?.sector_name, {
+      sectorId: item.stock?.sector_id ?? null,
       sectorName: item.stock?.sector_name ?? "",
       type: "pullback",
       code: item.code,
@@ -576,11 +639,25 @@ function buildSectorTemplateLines(input: {
     .sort((a, b) => b.count - a.count || Number(b.representative?.score ?? 0) - Number(a.representative?.score ?? 0))
     .slice(0, 3)
     .map((group, index) => {
+      const repTag = group.representative
+        ? classifyCandidateStyleTag({
+            market: group.representative.market,
+            score: group.representative.score,
+            trendLabel: group.representative.trendLabel,
+          })
+        : null;
       const rep = group.representative
-        ? `대표 ${group.representative.name}(${group.representative.code}) · ${group.representative.type === "market" ? `${group.representative.trendLabel} · 종합 ${group.representative.score.toFixed(1)}` : `진입 ${group.representative.entryGrade} · 경고 ${group.representative.warnGrade}`}`
+        ? `대표 ${formatPriorityTag(index + 1)} · ${group.representative.name}(${group.representative.code})${repTag ? ` · ${repTag}` : ""} · ${group.representative.type === "market" ? `${group.representative.trendLabel} · 종합 ${group.representative.score.toFixed(1)}` : `진입 ${group.representative.entryGrade} · 경고 ${group.representative.warnGrade}`}`
         : "대표 후보 없음";
+      const waitTag = group.waiting
+        ? classifyCandidateStyleTag({
+            market: group.waiting.market,
+            score: group.waiting.score,
+            trendLabel: group.waiting.trendLabel,
+          })
+        : null;
       const wait = group.waiting
-        ? `대기 ${group.waiting.name}(${group.waiting.code}) · ${group.waiting.type === "pullback" ? `진입 ${group.waiting.entryGrade} · 경고 ${group.waiting.warnGrade}` : `${group.waiting.trendLabel} · 종합 ${group.waiting.score.toFixed(1)}`}`
+        ? `대기 ${group.waiting.name}(${group.waiting.code})${waitTag ? ` · ${waitTag}` : ""} · ${group.waiting.type === "pullback" ? `진입 ${group.waiting.entryGrade} · 경고 ${group.waiting.warnGrade}` : `${group.waiting.trendLabel} · 종합 ${group.waiting.score.toFixed(1)}`}`
         : "대기 후보 없음";
       return `${index + 1}. ${group.sectorName}\n   ${rep}\n   ${wait}`;
     });
@@ -674,6 +751,7 @@ async function fetchMarketPickCandidatesForDailyPlan(
         code: row.code,
         name: row.name,
         market: String(row.market ?? market),
+        sectorId: row.sector_id ?? null,
         sectorName: row.sector_id ? sectorNameMap.get(row.sector_id) ?? null : null,
         price,
         score,
@@ -792,6 +870,7 @@ export async function createDailyCandidatePlanningReport(
     chatId: options?.chatId,
     marketReservePct: marketPolicy.minCashReservePct,
   }).catch(() => null);
+  const sectorOverlapWarnings = await getSectorOverlapWarningsForPlan(supabase, options?.chatId).catch(() => new Map());
 
   const [pullbackResult, kospiPicks, kosdaqPicks] = await Promise.all([
     fetchPullbackCandidatesForDailyPlan(supabase, riskProfile),
@@ -842,9 +921,15 @@ export async function createDailyCandidatePlanningReport(
   const pullbackLines = pullbackResult.items.length
     ? pullbackResult.items.slice(0, displayLimit).map((item, index) => {
         const stock = item.stock;
+        const overlap = stock?.sector_id ? sectorOverlapWarnings.get(stock.sector_id) : undefined;
+        const styleTag = classifyCandidateStyleTag({
+          market: String(stock?.market ?? ""),
+          score: Number(item.entry_score ?? 0) * 20,
+        });
         return [
           `${index + 1}. <b>${stock?.name ?? item.code}</b> <code>${item.code}</code> <code>${fmtDailyCandidateInt(Number(stock?.close ?? 0))}원</code>`,
-          `   진입 ${item.entry_grade}(${Number(item.entry_score ?? 0).toFixed(1)}/4) · 경고 ${item.warn_grade}(${Number(item.warn_score ?? 0).toFixed(1)}/6) · ${String(stock?.market ?? "-")}${stock?.sector_name ? ` · ${stock.sector_name}` : ""}`,
+          `   우선 ${formatPriorityTag(index + 1)} · ${styleTag} · 진입 ${item.entry_grade}(${Number(item.entry_score ?? 0).toFixed(1)}/4) · 경고 ${item.warn_grade}(${Number(item.warn_score ?? 0).toFixed(1)}/6) · ${String(stock?.market ?? "-")}${stock?.sector_name ? ` · ${stock.sector_name}` : ""}`,
+          ...(overlap ? [`   ⚠️ 보유 섹터 중복 ${overlap.sectorName} ${overlap.ratio.toFixed(1)}% (${overlap.level === "danger" ? "강한 집중" : "집중 경고"})`] : []),
         ].join("\n");
       })
     : ["오늘 조건에 맞는 눌림목 후보가 없습니다."];
@@ -853,8 +938,11 @@ export async function createDailyCandidatePlanningReport(
     if (!picks.length) return [fallback];
     return picks.slice(0, displayLimit).map((pick, index) => [
       `${index + 1}. <b>${pick.name}</b> <code>${pick.code}</code> <code>${fmtDailyCandidateInt(pick.price)}원</code>`,
-      `   종합 ${pick.score.toFixed(1)} · ${pick.trendLabel} · RSI ${pick.rsi14.toFixed(1)} · 거래대금 ${fmtDailyCandidateKrwShort(pick.valueTraded)}${pick.sectorName ? ` · ${pick.sectorName}` : ""}`,
+      `   우선 ${formatPriorityTag(index + 1)} · ${classifyCandidateStyleTag({ market: pick.market, score: pick.score, safetyScore: pick.safetyScore, trendLabel: pick.trendLabel })} · 종합 ${pick.score.toFixed(1)} · ${pick.trendLabel} · RSI ${pick.rsi14.toFixed(1)} · 거래대금 ${fmtDailyCandidateKrwShort(pick.valueTraded)}${pick.sectorName ? ` · ${pick.sectorName}` : ""}`,
       `   점수 기술 ${pick.totalScore.toFixed(1)} · 모멘텀 ${pick.momentumScore.toFixed(1)} · 안전 ${pick.safetyScore.toFixed(1)}`,
+      ...(pick.sectorId && sectorOverlapWarnings.has(pick.sectorId)
+        ? [`   ⚠️ 보유 섹터 중복 ${sectorOverlapWarnings.get(pick.sectorId)?.sectorName} ${sectorOverlapWarnings.get(pick.sectorId)?.ratio.toFixed(1)}% (${sectorOverlapWarnings.get(pick.sectorId)?.level === "danger" ? "강한 집중" : "집중 경고"})`]
+        : []),
     ].join("\n"));
   };
 
@@ -905,6 +993,9 @@ export async function createDailyCandidatePlanningReport(
     ...focusLines.map((line) => `• ${line}`),
     ...(planningConstraints?.statusLines.length
       ? ["", `<b>자금·리스크 상태</b>`, ...planningConstraints.statusLines.map((line) => `• ${line}`)]
+      : []),
+    ...(sectorOverlapWarnings.size > 0
+      ? ["", `<b>분산 경고</b>`, ...[...sectorOverlapWarnings.values()].slice(0, 2).map((warning) => `• 보유 섹터 ${warning.sectorName} 비중 ${warning.ratio.toFixed(1)}%로 높습니다. 같은 섹터 신규 진입은 보수적으로 보세요.`)]
       : []),
     ...(sectorFocusLines.length
       ? ["", `<b>오늘 볼 섹터</b>`, ...sectorFocusLines]
