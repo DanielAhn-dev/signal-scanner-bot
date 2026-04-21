@@ -123,6 +123,11 @@ export const ACTIONS = {
     { text: "코스닥", callback_data: "cmd:kosdaq" },
     { text: "시장", callback_data: "cmd:market" },
   ] as InlineButton[],
+  recommendationFollowupCompact: [
+    { text: "추천", callback_data: "cmd:report:추천" },
+    { text: "눌림목", callback_data: "cmd:pullback" },
+    { text: "시장", callback_data: "cmd:market" },
+  ] as InlineButton[],
   promptAnalyze: [
     { text: "종목분석", callback_data: "prompt:trade" },
     { text: "재무", callback_data: "prompt:finance" },

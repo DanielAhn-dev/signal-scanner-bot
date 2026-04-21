@@ -82,7 +82,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           ...(briefingType === "pre_market"
             ? {
                 reply_markup: actionButtons(
-                  buildRecommendationActionButtons(planningResult?.actionItems ?? [], [...ACTIONS.recommendationFollowup, ...ACTIONS.autoCycleQuick]),
+                  buildRecommendationActionButtons(
+                    (planningResult?.actionItems ?? []).slice(0, 2),
+                    [...ACTIONS.recommendationFollowupCompact, ...ACTIONS.autoCycleQuick]
+                  ),
                   3
                 ),
               }
