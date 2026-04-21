@@ -427,6 +427,13 @@ async function handleDailyCandidateReportCommand(
       text: `후보${index + 1} 분석`,
       callback_data: `trade:${code}`,
     }));
+    const usedCodes = new Set(report.topAnalyzeCodes);
+    const sectorLeaderButtons = report.sectorLeaderCodes
+      .filter((code) => !usedCodes.has(code))
+      .map((code, index) => ({
+        text: `섹터대표${index + 1}`,
+        callback_data: `trade:${code}`,
+      }));
 
     await tgSend("sendMessage", {
       chat_id: ctx.chatId,
@@ -435,6 +442,7 @@ async function handleDailyCandidateReportCommand(
       reply_markup: actionButtons(
         [
           ...analyzeButtons,
+          ...sectorLeaderButtons,
           { text: "눌림목", callback_data: "cmd:pullback" },
           { text: "코스피", callback_data: "cmd:kospi" },
           { text: "코스닥", callback_data: "cmd:kosdaq" },

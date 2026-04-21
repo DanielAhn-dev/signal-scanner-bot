@@ -296,6 +296,7 @@ type SectorOverlapWarning = {
 export type DailyCandidatePlanningReportResult = {
   text: string;
   topAnalyzeCodes: string[];
+  sectorLeaderCodes: string[];
 };
 
 const DEFAULT_DAILY_LOSS_LIMIT_PCT = 5;
@@ -368,6 +369,10 @@ function getOverlapPenalty(warning?: SectorOverlapWarning): number {
   return warning.level === "danger" ? 9 : 5;
 }
 
+function shouldHideCandidateByOverlap(warning?: SectorOverlapWarning): boolean {
+  return warning?.level === "danger";
+}
+
 function orderMarketCandidatesByOverlap(
   picks: PickCandidate[],
   warnings: Map<string, SectorOverlapWarning>
@@ -416,6 +421,42 @@ function pickTopAnalyzeCodes(input: {
   ];
 
   return [...new Map(pool.sort((a, b) => b.priority - a.priority).map((item) => [item.code, item])).keys()].slice(0, 2);
+}
+
+function pickSectorLeaderCodes(input: {
+  pullbackItems: PullbackRow[];
+  kospiPicks: PickCandidate[];
+  kosdaqPicks: PickCandidate[];
+}): string[] {
+  const pool = [
+    ...input.pullbackItems.map((item) => ({
+      code: item.code,
+      sectorKey: item.stock?.sector_id ?? item.stock?.sector_name ?? "",
+      priority: Number(item.entry_score ?? 0) * 20,
+    })),
+    ...input.kospiPicks.map((item) => ({
+      code: item.code,
+      sectorKey: item.sectorId ?? item.sectorName ?? "",
+      priority: item.score,
+    })),
+    ...input.kosdaqPicks.map((item) => ({
+      code: item.code,
+      sectorKey: item.sectorId ?? item.sectorName ?? "",
+      priority: item.score,
+    })),
+  ]
+    .filter((item) => item.sectorKey)
+    .sort((a, b) => b.priority - a.priority);
+
+  const sectorKeys = new Set<string>();
+  const codes: string[] = [];
+  for (const item of pool) {
+    if (sectorKeys.has(item.sectorKey)) continue;
+    sectorKeys.add(item.sectorKey);
+    codes.push(item.code);
+    if (codes.length >= 2) break;
+  }
+  return codes;
 }
 
 function getDailyCandidateTrendLabel(price: number, sma20: number, sma50: number, sma200: number): string {
@@ -940,11 +981,29 @@ export async function createDailyCandidatePlanningReportResult(
   const orderedPullbackItems = orderPullbackCandidatesByOverlap(pullbackResult.items, sectorOverlapWarnings);
   const orderedKospiPicks = orderMarketCandidatesByOverlap(kospiPicks, sectorOverlapWarnings);
   const orderedKosdaqPicks = orderMarketCandidatesByOverlap(kosdaqPicks, sectorOverlapWarnings);
+  const visiblePullbackItems = orderedPullbackItems.filter(
+    (item) => !shouldHideCandidateByOverlap(item.stock?.sector_id ? sectorOverlapWarnings.get(item.stock.sector_id) : undefined)
+  );
+  const visibleKospiPicks = orderedKospiPicks.filter(
+    (item) => !shouldHideCandidateByOverlap(item.sectorId ? sectorOverlapWarnings.get(item.sectorId) : undefined)
+  );
+  const visibleKosdaqPicks = orderedKosdaqPicks.filter(
+    (item) => !shouldHideCandidateByOverlap(item.sectorId ? sectorOverlapWarnings.get(item.sectorId) : undefined)
+  );
+  const hiddenByOverlapCount =
+    orderedPullbackItems.length - visiblePullbackItems.length +
+    orderedKospiPicks.length - visibleKospiPicks.length +
+    orderedKosdaqPicks.length - visibleKosdaqPicks.length;
   const topAnalyzeCodes = pickTopAnalyzeCodes({
-    pullbackItems: orderedPullbackItems,
-    kospiPicks: orderedKospiPicks,
-    kosdaqPicks: orderedKosdaqPicks,
+    pullbackItems: visiblePullbackItems,
+    kospiPicks: visibleKospiPicks,
+    kosdaqPicks: visibleKosdaqPicks,
     warnings: sectorOverlapWarnings,
+  });
+  const sectorLeaderCodes = pickSectorLeaderCodes({
+    pullbackItems: visiblePullbackItems,
+    kospiPicks: visibleKospiPicks,
+    kosdaqPicks: visibleKosdaqPicks,
   });
 
   const marketLines = [
@@ -973,22 +1032,22 @@ export async function createDailyCandidatePlanningReportResult(
     if (!name) return;
     sectorCountMap.set(name, (sectorCountMap.get(name) ?? 0) + 1);
   };
-  orderedPullbackItems.forEach((item) => addSectorCount(item.stock?.sector_name));
-  orderedKospiPicks.forEach((item) => addSectorCount(item.sectorName));
-  orderedKosdaqPicks.forEach((item) => addSectorCount(item.sectorName));
+  visiblePullbackItems.forEach((item) => addSectorCount(item.stock?.sector_name));
+  visibleKospiPicks.forEach((item) => addSectorCount(item.sectorName));
+  visibleKosdaqPicks.forEach((item) => addSectorCount(item.sectorName));
   const sectorFocusLines = [...sectorCountMap.entries()]
     .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0], "ko"))
     .slice(0, 4)
     .map(([name, count], index) => `${index + 1}. ${name} (${count}건)`);
   const sectorTemplateLines = buildSectorTemplateLines({
-    pullbackItems: orderedPullbackItems,
-    kospiPicks: orderedKospiPicks,
-    kosdaqPicks: orderedKosdaqPicks,
+    pullbackItems: visiblePullbackItems,
+    kospiPicks: visibleKospiPicks,
+    kosdaqPicks: visibleKosdaqPicks,
   });
   const displayLimit = Math.max(1, planningConstraints?.displayLimit ?? 5);
 
-  const pullbackLines = orderedPullbackItems.length
-    ? orderedPullbackItems.slice(0, displayLimit).map((item, index) => {
+  const pullbackLines = visiblePullbackItems.length
+    ? visiblePullbackItems.slice(0, displayLimit).map((item, index) => {
         const stock = item.stock;
         const overlap = stock?.sector_id ? sectorOverlapWarnings.get(stock.sector_id) : undefined;
         const styleTag = classifyCandidateStyleTag({
@@ -1016,15 +1075,15 @@ export async function createDailyCandidatePlanningReportResult(
   };
 
   if (mode === "briefing") {
-    const compactPullback = orderedPullbackItems.slice(0, 2).map((item) => {
+    const compactPullback = visiblePullbackItems.slice(0, 2).map((item) => {
       const sectorLabel = item.stock?.sector_name ? ` · ${item.stock.sector_name}` : "";
       return `  ▸ ${item.stock?.name ?? item.code}(${item.code})${sectorLabel} · 진입 ${item.entry_grade} · 경고 ${item.warn_grade}`;
     });
-    const compactKospi = orderedKospiPicks.slice(0, 2).map((item) => {
+    const compactKospi = visibleKospiPicks.slice(0, 2).map((item) => {
       const sectorLabel = item.sectorName ? ` · ${item.sectorName}` : "";
       return `  ▸ ${item.name}(${item.code})${sectorLabel} · 종합 ${item.score.toFixed(1)} · ${item.trendLabel}`;
     });
-    const compactKosdaq = orderedKosdaqPicks.slice(0, 1).map((item) => {
+    const compactKosdaq = visibleKosdaqPicks.slice(0, 1).map((item) => {
       const sectorLabel = item.sectorName ? ` · ${item.sectorName}` : "";
       return `  ▸ ${item.name}(${item.code})${sectorLabel} · 종합 ${item.score.toFixed(1)} · ${item.trendLabel}`;
     });
@@ -1033,6 +1092,7 @@ export async function createDailyCandidatePlanningReportResult(
       text: [
       `<b>오늘 후보 계획</b>`,
       ...(planningConstraints?.statusLines.length ? planningConstraints.statusLines.map((line) => `  ${line}`) : []),
+      ...(hiddenByOverlapCount > 0 ? [`  보유 섹터 과집중으로 ${hiddenByOverlapCount}개 후보는 본문에서 제외`] : []),
       ...(sectorFocusLines.length ? [`  섹터 집중: ${sectorFocusLines.map((line) => line.replace(/^\d+\.\s*/, "")).join(", ")}`] : []),
       `  대응 원칙: ${focusLines[0]}`,
       ...(compactPullback.length ? ["  눌림목", ...compactPullback] : ["  눌림목 후보 없음"]),
@@ -1045,6 +1105,7 @@ export async function createDailyCandidatePlanningReportResult(
       `  액션: /종목분석으로 2~3개만 재검토 후 분할 진입 여부 결정`,
     ].join("\n"),
       topAnalyzeCodes,
+      sectorLeaderCodes,
     };
   }
 
@@ -1068,7 +1129,7 @@ export async function createDailyCandidatePlanningReportResult(
       ? ["", `<b>자금·리스크 상태</b>`, ...planningConstraints.statusLines.map((line) => `• ${line}`)]
       : []),
     ...(sectorOverlapWarnings.size > 0
-      ? ["", `<b>분산 경고</b>`, ...[...sectorOverlapWarnings.values()].slice(0, 2).map((warning) => `• 보유 섹터 ${warning.sectorName} 비중 ${warning.ratio.toFixed(1)}%로 높습니다. 같은 섹터 신규 진입은 보수적으로 보세요.`)]
+      ? ["", `<b>분산 경고</b>`, ...[...sectorOverlapWarnings.values()].slice(0, 2).map((warning) => `• 보유 섹터 ${warning.sectorName} 비중 ${warning.ratio.toFixed(1)}%로 높습니다. 같은 섹터 신규 진입은 보수적으로 보세요.`), ...(hiddenByOverlapCount > 0 ? [`• 강한 중복 섹터 후보 ${hiddenByOverlapCount}개는 이번 리포트 본문에서 제외했습니다.`] : [])]
       : []),
     ...(sectorFocusLines.length
       ? ["", `<b>오늘 볼 섹터</b>`, ...sectorFocusLines]
@@ -1082,11 +1143,11 @@ export async function createDailyCandidatePlanningReportResult(
     ...pullbackLines,
     "",
     `<b>코스피 우선 후보</b>`,
-    ...buildPickLines(orderedKospiPicks, "조건에 맞는 코스피 후보가 없습니다."),
+    ...buildPickLines(visibleKospiPicks, "조건에 맞는 코스피 후보가 없습니다."),
     "",
     `<b>코스닥 우선 후보</b>`,
     ...buildPickLines(
-      orderedKosdaqPicks,
+      visibleKosdaqPicks,
       marketPolicy.allowedMarkets.includes("KOSDAQ")
         ? "조건에 맞는 코스닥 후보가 없습니다."
         : "현재 시장모드에서는 코스닥 신규 후보를 제한합니다."
@@ -1096,6 +1157,7 @@ export async function createDailyCandidatePlanningReportResult(
     ...planLines,
   ].join("\n"),
     topAnalyzeCodes,
+    sectorLeaderCodes,
   };
 }
 
