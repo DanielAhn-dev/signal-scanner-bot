@@ -71,6 +71,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
               riskProfile: prefs.risk_profile ?? "safe",
               mode: "briefing",
               chatId,
+              compactActionText: true,
             }).catch(() => null)
           : null;
 

@@ -1022,7 +1022,7 @@ async function fetchPullbackCandidatesForDailyPlan(
 
 export async function createDailyCandidatePlanningReportResult(
   supabase: SupabaseClient,
-  options?: { riskProfile?: RiskProfile; mode?: "full" | "briefing"; chatId?: number }
+  options?: { riskProfile?: RiskProfile; mode?: "full" | "briefing"; chatId?: number; compactActionText?: boolean }
 ): Promise<DailyCandidatePlanningReportResult> {
   const riskProfile = options?.riskProfile ?? "safe";
   const mode = options?.mode ?? "full";
@@ -1143,6 +1143,9 @@ export async function createDailyCandidatePlanningReportResult(
   };
 
   if (mode === "briefing") {
+    const actionLine = options?.compactActionText
+      ? "  액션: 하단 핵심 2개만 먼저 확인하고, 필요 시 추천 리포트에서 후보를 넓혀 보세요"
+      : "  액션: 하단 핵심 후보 버튼으로 2~3개만 재검토 후 분할 진입 여부 결정";
     const compactPullback = visiblePullbackItems.slice(0, 2).map((item) => {
       const sectorLabel = item.stock?.sector_name ? ` · ${item.stock.sector_name}` : "";
       return `  ▸ ${item.stock?.name ?? item.code}(${item.code})${sectorLabel} · 진입 ${item.entry_grade} · 경고 ${item.warn_grade}`;
@@ -1170,7 +1173,7 @@ export async function createDailyCandidatePlanningReportResult(
           ? ["  코스닥", ...compactKosdaq]
           : ["  코스닥 후보 없음"]
         : ["  코스닥 신규 후보 제한"]),
-      `  액션: 하단 핵심 후보 버튼으로 2~3개만 재검토 후 분할 진입 여부 결정`,
+      actionLine,
     ].join("\n"),
       topAnalyzeCodes,
       sectorLeaderCodes,
@@ -1233,7 +1236,7 @@ export async function createDailyCandidatePlanningReportResult(
 
 export async function createDailyCandidatePlanningReport(
   supabase: SupabaseClient,
-  options?: { riskProfile?: RiskProfile; mode?: "full" | "briefing"; chatId?: number }
+  options?: { riskProfile?: RiskProfile; mode?: "full" | "briefing"; chatId?: number; compactActionText?: boolean }
 ): Promise<string> {
   const result = await createDailyCandidatePlanningReportResult(supabase, options);
   return result.text;
