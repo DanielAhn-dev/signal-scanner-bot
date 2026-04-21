@@ -15,7 +15,7 @@ import {
 } from "../../lib/watchlistSignals";
 import { getDecisionReliabilitySummary } from "../../services/decisionLogService";
 import { getUserInvestmentPrefs } from "../../services/userService";
-import { ACTIONS, actionButtons } from "../messages/layout";
+import { ACTIONS, actionButtons, buildRecommendationActionButtons } from "../messages/layout";
 
 const REPORT_TOPIC_GUIDE = [
   { command: "주간", aliases: ["주간", "종합", "전체", "full", "weekly"], description: "시장과 포트폴리오를 함께 보는 종합 PDF" },
@@ -423,32 +423,13 @@ async function handleDailyCandidateReportCommand(
       riskProfile: (prefs.risk_profile ?? "safe") as "safe" | "balanced" | "active",
       chatId: ctx.chatId,
     });
-    const analyzeButtons = report.topAnalyzeCodes.map((code, index) => ({
-      text: `후보${index + 1} 분석`,
-      callback_data: `trade:${code}`,
-    }));
-    const usedCodes = new Set(report.topAnalyzeCodes);
-    const sectorLeaderButtons = report.sectorLeaderCodes
-      .filter((code) => !usedCodes.has(code))
-      .map((code, index) => ({
-        text: `섹터대표${index + 1}`,
-        callback_data: `trade:${code}`,
-      }));
 
     await tgSend("sendMessage", {
       chat_id: ctx.chatId,
       text: report.text,
       parse_mode: "HTML",
       reply_markup: actionButtons(
-        [
-          ...analyzeButtons,
-          ...sectorLeaderButtons,
-          { text: "눌림목", callback_data: "cmd:pullback" },
-          { text: "코스피", callback_data: "cmd:kospi" },
-          { text: "코스닥", callback_data: "cmd:kosdaq" },
-          { text: "시장", callback_data: "cmd:market" },
-          ...ACTIONS.reportMenu,
-        ],
+        buildRecommendationActionButtons(report.actionItems, [...ACTIONS.recommendationFollowup, ...ACTIONS.reportMenu]),
         2
       ),
     });

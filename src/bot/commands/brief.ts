@@ -1,10 +1,10 @@
 import type { ChatContext } from "../router";
 import { createClient } from "@supabase/supabase-js";
 import { createBriefingReport } from "../../services/briefingService";
-import { createDailyCandidatePlanningReport } from "../../services/marketInsightService";
+import { createDailyCandidatePlanningReportResult } from "../../services/marketInsightService";
 import { buildPersonalizedGuidance } from "../../services/personalizedGuidanceService";
 import { getUserInvestmentPrefs } from "../../services/userService";
-import { ACTIONS, actionButtons } from "../messages/layout";
+import { ACTIONS, actionButtons, buildRecommendationActionButtons } from "../messages/layout";
 
 const supabase = createClient(
   process.env.SUPABASE_URL!,
@@ -28,17 +28,17 @@ export async function handleBriefCommand(
     chatId: ctx.chatId,
     riskProfile: prefs.risk_profile ?? "safe",
   });
-  const planningBlock = await createDailyCandidatePlanningReport(supabase, {
+  const planningResult = await createDailyCandidatePlanningReportResult(supabase, {
     riskProfile: prefs.risk_profile ?? "safe",
     mode: "briefing",
     chatId: ctx.chatId,
-  }).catch(() => "");
+  }).catch(() => null);
   const personalLines = await buildPersonalizedGuidance({
     chatId: ctx.chatId,
     context: "brief",
   }).catch(() => []);
 
-  const finalReportBase = planningBlock ? `${report}\n\n${planningBlock}` : report;
+  const finalReportBase = planningResult?.text ? `${report}\n\n${planningResult.text}` : report;
   const finalReport = personalLines.length > 0
     ? `${finalReportBase}\n\n<b>내 상황 제안</b>\n- ${personalLines.join("\n- ")}`
     : finalReportBase;
@@ -48,6 +48,9 @@ export async function handleBriefCommand(
     text: finalReport,
     parse_mode: "HTML",
     disable_web_page_preview: true,
-    reply_markup: actionButtons([...ACTIONS.briefing, ...ACTIONS.autoCycleQuick], 3),
+    reply_markup: actionButtons(
+      buildRecommendationActionButtons(planningResult?.actionItems ?? [], [...ACTIONS.briefing, ...ACTIONS.autoCycleQuick]),
+      3
+    ),
   });
 }

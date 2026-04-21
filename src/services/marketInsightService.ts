@@ -297,6 +297,7 @@ export type DailyCandidatePlanningReportResult = {
   text: string;
   topAnalyzeCodes: string[];
   sectorLeaderCodes: string[];
+  actionItems: Array<{ code: string; label: string }>;
 };
 
 const DEFAULT_DAILY_LOSS_LIMIT_PCT = 5;
@@ -457,6 +458,66 @@ function pickSectorLeaderCodes(input: {
     if (codes.length >= 2) break;
   }
   return codes;
+}
+
+function trimRecommendationActionLabel(value: string, maxLength = 10): string {
+  const normalized = String(value ?? "").trim();
+  if (!normalized) return "후보";
+  return normalized.length > maxLength ? `${normalized.slice(0, maxLength - 1)}…` : normalized;
+}
+
+function buildRecommendationActionItems(input: {
+  pullbackItems: PullbackRow[];
+  kospiPicks: PickCandidate[];
+  kosdaqPicks: PickCandidate[];
+  topAnalyzeCodes: string[];
+  sectorLeaderCodes: string[];
+}): Array<{ code: string; label: string }> {
+  const metaByCode = new Map<string, { name: string; sectorName: string | null }>();
+
+  input.pullbackItems.forEach((item) => {
+    metaByCode.set(item.code, {
+      name: item.stock?.name ?? item.code,
+      sectorName: item.stock?.sector_name ?? null,
+    });
+  });
+  input.kospiPicks.forEach((item) => {
+    metaByCode.set(item.code, {
+      name: item.name,
+      sectorName: item.sectorName,
+    });
+  });
+  input.kosdaqPicks.forEach((item) => {
+    metaByCode.set(item.code, {
+      name: item.name,
+      sectorName: item.sectorName,
+    });
+  });
+
+  const actionItems: Array<{ code: string; label: string }> = [];
+  const usedCodes = new Set<string>();
+
+  input.topAnalyzeCodes.forEach((code, index) => {
+    if (usedCodes.has(code)) return;
+    usedCodes.add(code);
+    const meta = metaByCode.get(code);
+    actionItems.push({
+      code,
+      label: `핵심${index + 1} ${trimRecommendationActionLabel(meta?.name ?? code, 12)}`,
+    });
+  });
+
+  input.sectorLeaderCodes.forEach((code) => {
+    if (usedCodes.has(code)) return;
+    usedCodes.add(code);
+    const meta = metaByCode.get(code);
+    actionItems.push({
+      code,
+      label: `${trimRecommendationActionLabel(meta?.sectorName ?? meta?.name ?? code, 10)} 대표`,
+    });
+  });
+
+  return actionItems.slice(0, 4);
 }
 
 function getDailyCandidateTrendLabel(price: number, sma20: number, sma50: number, sma200: number): string {
@@ -1005,6 +1066,13 @@ export async function createDailyCandidatePlanningReportResult(
     kospiPicks: visibleKospiPicks,
     kosdaqPicks: visibleKosdaqPicks,
   });
+  const actionItems = buildRecommendationActionItems({
+    pullbackItems: visiblePullbackItems,
+    kospiPicks: visibleKospiPicks,
+    kosdaqPicks: visibleKosdaqPicks,
+    topAnalyzeCodes,
+    sectorLeaderCodes,
+  });
 
   const marketLines = [
     marketOverview?.kospi
@@ -1102,16 +1170,17 @@ export async function createDailyCandidatePlanningReportResult(
           ? ["  코스닥", ...compactKosdaq]
           : ["  코스닥 후보 없음"]
         : ["  코스닥 신규 후보 제한"]),
-      `  액션: /종목분석으로 2~3개만 재검토 후 분할 진입 여부 결정`,
+      `  액션: 하단 핵심 후보 버튼으로 2~3개만 재검토 후 분할 진입 여부 결정`,
     ].join("\n"),
       topAnalyzeCodes,
       sectorLeaderCodes,
+      actionItems,
     };
   }
 
   const planLines = [
     "1) 장 시작 전 /시장, /경제로 레짐과 환율 먼저 확인",
-    "2) 위 후보 중 2~3개만 /종목분석으로 압축 재검토",
+    "2) 하단 핵심/섹터대표 버튼 기준으로 2~3개만 압축 재검토",
     "3) 진입 시에는 분할매수와 손절 기준을 같이 메모",
     "4) 장중 변동이 커지면 신규 진입보다 기존 보유 관리 우선",
   ];
@@ -1158,6 +1227,7 @@ export async function createDailyCandidatePlanningReportResult(
   ].join("\n"),
     topAnalyzeCodes,
     sectorLeaderCodes,
+    actionItems,
   };
 }
 

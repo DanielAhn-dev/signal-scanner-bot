@@ -1,6 +1,11 @@
 import { createMultiRowKeyboard, type InlineButton } from "../../telegram/keyboards";
 import { esc, LINE } from "./format";
 
+export type RecommendationActionTarget = {
+  code: string;
+  label: string;
+};
+
 export function header(title: string, subtitle?: string): string {
   const lines = [`<b>${esc(title)}</b>`, LINE];
   if (subtitle) lines.push(`<i>${esc(subtitle)}</i>`);
@@ -28,6 +33,32 @@ export function buildMessage(blocks: Array<string | undefined | null>): string {
 
 export function actionButtons(buttons: InlineButton[], cols = 2) {
   return createMultiRowKeyboard(cols, buttons);
+}
+
+export function buildRecommendationActionButtons(
+  targets: RecommendationActionTarget[],
+  extras: InlineButton[] = []
+): InlineButton[] {
+  const seen = new Set<string>();
+  const out: InlineButton[] = [];
+
+  for (const target of targets) {
+    const code = String(target.code ?? "").trim();
+    if (!code) continue;
+    const callbackData = `trade:${code}`;
+    if (seen.has(callbackData)) continue;
+    seen.add(callbackData);
+    out.push({ text: target.label, callback_data: callbackData });
+  }
+
+  for (const button of extras) {
+    const key = String(button.callback_data ?? button.text ?? "");
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    out.push(button);
+  }
+
+  return out;
 }
 
 export const ACTIONS = {
@@ -84,6 +115,12 @@ export const ACTIONS = {
     { text: "보유대응", callback_data: "cmd:watchresp" },
     { text: "추천", callback_data: "cmd:report:추천" },
     { text: "눌림목", callback_data: "cmd:pullback" },
+    { text: "시장", callback_data: "cmd:market" },
+  ] as InlineButton[],
+  recommendationFollowup: [
+    { text: "눌림목", callback_data: "cmd:pullback" },
+    { text: "코스피", callback_data: "cmd:kospi" },
+    { text: "코스닥", callback_data: "cmd:kosdaq" },
     { text: "시장", callback_data: "cmd:market" },
   ] as InlineButton[],
   promptAnalyze: [

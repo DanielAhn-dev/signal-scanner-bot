@@ -1,9 +1,10 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { createBriefingReport } from "../../src/services/briefingService";
-import { createDailyCandidatePlanningReport } from "../../src/services/marketInsightService";
+import { createDailyCandidatePlanningReportResult } from "../../src/services/marketInsightService";
 import { tg } from "../../src/telegram/api";
 import { createClient } from "@supabase/supabase-js";
 import { getUserInvestmentPrefs } from "../../src/services/userService";
+import { ACTIONS, actionButtons, buildRecommendationActionButtons } from "../../src/bot/messages/layout";
 
 const ADMIN_CHAT_ID = process.env.TELEGRAM_ADMIN_CHAT_ID;
 const CRON_SECRET = process.env.CRON_SECRET;
@@ -65,19 +66,27 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           chatId,
           riskProfile: prefs.risk_profile ?? "safe",
         });
-        const planningBlock = briefingType === "pre_market"
-          ? await createDailyCandidatePlanningReport(supabase, {
+        const planningResult = briefingType === "pre_market"
+          ? await createDailyCandidatePlanningReportResult(supabase, {
               riskProfile: prefs.risk_profile ?? "safe",
               mode: "briefing",
               chatId,
-            }).catch(() => "")
-          : "";
+            }).catch(() => null)
+          : null;
 
         await tg("sendMessage", {
           chat_id: chatId,
-          text: planningBlock ? `${report}\n\n${planningBlock}` : report,
+          text: planningResult?.text ? `${report}\n\n${planningResult.text}` : report,
           parse_mode: "HTML",
           disable_web_page_preview: true,
+          ...(briefingType === "pre_market"
+            ? {
+                reply_markup: actionButtons(
+                  buildRecommendationActionButtons(planningResult?.actionItems ?? [], [...ACTIONS.recommendationFollowup, ...ACTIONS.autoCycleQuick]),
+                  3
+                ),
+              }
+            : {}),
         });
         sent++;
       } catch (e: any) {
