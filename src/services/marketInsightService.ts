@@ -202,6 +202,7 @@ type StockRow = {
   code: string;
   name: string;
   market: string | null;
+  sector_id: string | null;
   close: number | null;
   liquidity: number | null;
   market_cap: number | null;
@@ -225,6 +226,7 @@ type PickCandidate = {
   code: string;
   name: string;
   market: string;
+  sectorName: string | null;
   price: number;
   score: number;
   totalScore: number;
@@ -246,9 +248,16 @@ type PullbackRow = {
     name: string;
     close: number | null;
     market?: string | null;
+    sector_id?: string | null;
+    sector_name?: string | null;
     liquidity?: number | null;
     universe_level?: string | null;
   };
+};
+
+type SectorNameRow = {
+  id: string;
+  name: string;
 };
 
 function clampDailyCandidateValue(value: number, min: number, max: number): number {
@@ -338,6 +347,30 @@ async function fetchIndicatorsByCodesForDailyCandidates(
   return out;
 }
 
+async function fetchSectorNameMap(
+  supabase: SupabaseClient,
+  sectorIds: Array<string | null | undefined>
+): Promise<Map<string, string>> {
+  const ids = [...new Set(sectorIds.filter((sectorId): sectorId is string => Boolean(sectorId)))];
+  const out = new Map<string, string>();
+  if (!ids.length) return out;
+
+  const { data, error } = await supabase
+    .from("sectors")
+    .select("id, name")
+    .in("id", ids)
+    .returns<SectorNameRow[]>();
+
+  if (error) {
+    throw new Error(`섹터 이름 조회 실패: ${error.message}`);
+  }
+
+  for (const row of data ?? []) {
+    out.set(row.id, row.name);
+  }
+  return out;
+}
+
 async function fetchMarketPickCandidatesForDailyPlan(
   supabase: SupabaseClient,
   market: "KOSPI" | "KOSDAQ",
@@ -351,7 +384,7 @@ async function fetchMarketPickCandidatesForDailyPlan(
 
   const { data: stocks, error: stocksError } = await supabase
     .from("stocks")
-    .select("code, name, market, close, liquidity, market_cap, universe_level, is_sector_leader")
+    .select("code, name, market, sector_id, close, liquidity, market_cap, universe_level, is_sector_leader")
     .eq("is_active", true)
     .eq("market", market)
     .in("universe_level", ["core", "extended"])
@@ -364,6 +397,10 @@ async function fetchMarketPickCandidatesForDailyPlan(
   }
 
   const rows = stocks ?? [];
+  const sectorNameMap = await fetchSectorNameMap(
+    supabase,
+    rows.map((row) => row.sector_id)
+  );
   const codes = rows.map((row) => row.code);
   const [scoreResult, indicatorMap] = await Promise.all([
     fetchLatestScoresByCodes(supabase, codes),
@@ -422,6 +459,7 @@ async function fetchMarketPickCandidatesForDailyPlan(
         code: row.code,
         name: row.name,
         market: String(row.market ?? market),
+        sectorName: row.sector_id ? sectorNameMap.get(row.sector_id) ?? null : null,
         price,
         score,
         totalScore,
@@ -486,7 +524,7 @@ async function fetchPullbackCandidatesForDailyPlan(
 
   const { data, error } = await supabase
     .from("pullback_signals")
-    .select("code, entry_grade, entry_score, warn_grade, warn_score, stock:stocks!inner(name, close, market, liquidity, universe_level)")
+    .select("code, entry_grade, entry_score, warn_grade, warn_score, stock:stocks!inner(name, close, market, sector_id, liquidity, universe_level)")
     .eq("trade_date", latestDate)
     .in("entry_grade", ["A", "B"])
     .neq("warn_grade", "SELL")
@@ -497,9 +535,24 @@ async function fetchPullbackCandidatesForDailyPlan(
     throw new Error(`눌림목 후보 조회 실패: ${error.message}`);
   }
 
+  const sectorNameMap = await fetchSectorNameMap(
+    supabase,
+    ((data ?? []) as any[]).map((row) => {
+      const stock = Array.isArray(row.stock) ? row.stock[0] : row.stock;
+      return stock?.sector_id as string | null | undefined;
+    })
+  );
+
   const items = ((data ?? []) as any[]).map((row) => ({
     ...row,
-    stock: Array.isArray(row.stock) ? row.stock[0] : row.stock,
+    stock: (() => {
+      const stock = Array.isArray(row.stock) ? row.stock[0] : row.stock;
+      if (!stock) return stock;
+      return {
+        ...stock,
+        sector_name: stock.sector_id ? sectorNameMap.get(stock.sector_id) ?? null : null,
+      };
+    })(),
     name: Array.isArray(row.stock) ? row.stock[0]?.name : row.stock?.name,
     market: Array.isArray(row.stock) ? row.stock[0]?.market : row.stock?.market,
     liquidity: Array.isArray(row.stock) ? row.stock[0]?.liquidity : row.stock?.liquidity,
@@ -514,9 +567,10 @@ async function fetchPullbackCandidatesForDailyPlan(
 
 export async function createDailyCandidatePlanningReport(
   supabase: SupabaseClient,
-  options?: { riskProfile?: RiskProfile }
+  options?: { riskProfile?: RiskProfile; mode?: "full" | "briefing" }
 ): Promise<string> {
   const riskProfile = options?.riskProfile ?? "safe";
+  const mode = options?.mode ?? "full";
   const marketOverview = await fetchAllMarketData().catch(() => null);
   const marketPolicy = detectAutoTradeMarketPolicy({ overview: marketOverview });
 
@@ -546,6 +600,20 @@ export async function createDailyCandidatePlanningReport(
       : "오늘은 코스닥 신규 진입보다 코스피 대형주와 눌림목 확인에 집중하는 편이 좋습니다.",
   ];
 
+  const sectorCountMap = new Map<string, number>();
+  const addSectorCount = (sectorName?: string | null) => {
+    const name = String(sectorName ?? "").trim();
+    if (!name) return;
+    sectorCountMap.set(name, (sectorCountMap.get(name) ?? 0) + 1);
+  };
+  pullbackResult.items.forEach((item) => addSectorCount(item.stock?.sector_name));
+  kospiPicks.forEach((item) => addSectorCount(item.sectorName));
+  kosdaqPicks.forEach((item) => addSectorCount(item.sectorName));
+  const sectorFocusLines = [...sectorCountMap.entries()]
+    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0], "ko"))
+    .slice(0, 4)
+    .map(([name, count], index) => `${index + 1}. ${name} (${count}건)`);
+
   const pullbackLines = pullbackResult.items.length
     ? pullbackResult.items.map((item, index) => {
         const stock = item.stock;
@@ -560,10 +628,39 @@ export async function createDailyCandidatePlanningReport(
     if (!picks.length) return [fallback];
     return picks.map((pick, index) => [
       `${index + 1}. <b>${pick.name}</b> <code>${pick.code}</code> <code>${fmtDailyCandidateInt(pick.price)}원</code>`,
-      `   종합 ${pick.score.toFixed(1)} · ${pick.trendLabel} · RSI ${pick.rsi14.toFixed(1)} · 거래대금 ${fmtDailyCandidateKrwShort(pick.valueTraded)}`,
+      `   종합 ${pick.score.toFixed(1)} · ${pick.trendLabel} · RSI ${pick.rsi14.toFixed(1)} · 거래대금 ${fmtDailyCandidateKrwShort(pick.valueTraded)}${pick.sectorName ? ` · ${pick.sectorName}` : ""}`,
       `   점수 기술 ${pick.totalScore.toFixed(1)} · 모멘텀 ${pick.momentumScore.toFixed(1)} · 안전 ${pick.safetyScore.toFixed(1)}`,
     ].join("\n"));
   };
+
+  if (mode === "briefing") {
+    const compactPullback = pullbackResult.items.slice(0, 2).map((item) => {
+      const sectorLabel = item.stock?.sector_name ? ` · ${item.stock.sector_name}` : "";
+      return `  ▸ ${item.stock?.name ?? item.code}(${item.code})${sectorLabel} · 진입 ${item.entry_grade} · 경고 ${item.warn_grade}`;
+    });
+    const compactKospi = kospiPicks.slice(0, 2).map((item) => {
+      const sectorLabel = item.sectorName ? ` · ${item.sectorName}` : "";
+      return `  ▸ ${item.name}(${item.code})${sectorLabel} · 종합 ${item.score.toFixed(1)} · ${item.trendLabel}`;
+    });
+    const compactKosdaq = kosdaqPicks.slice(0, 1).map((item) => {
+      const sectorLabel = item.sectorName ? ` · ${item.sectorName}` : "";
+      return `  ▸ ${item.name}(${item.code})${sectorLabel} · 종합 ${item.score.toFixed(1)} · ${item.trendLabel}`;
+    });
+
+    return [
+      `<b>오늘 후보 계획</b>`,
+      ...(sectorFocusLines.length ? [`  섹터 집중: ${sectorFocusLines.map((line) => line.replace(/^\d+\.\s*/, "")).join(", ")}`] : []),
+      `  대응 원칙: ${focusLines[0]}`,
+      ...(compactPullback.length ? ["  눌림목", ...compactPullback] : ["  눌림목 후보 없음"]),
+      ...(compactKospi.length ? ["  코스피", ...compactKospi] : ["  코스피 후보 없음"]),
+      ...(marketPolicy.allowedMarkets.includes("KOSDAQ")
+        ? compactKosdaq.length
+          ? ["  코스닥", ...compactKosdaq]
+          : ["  코스닥 후보 없음"]
+        : ["  코스닥 신규 후보 제한"]),
+      `  액션: /종목분석으로 2~3개만 재검토 후 분할 진입 여부 결정`,
+    ].join("\n");
+  }
 
   const planLines = [
     "1) 장 시작 전 /시장, /경제로 레짐과 환율 먼저 확인",
@@ -580,6 +677,9 @@ export async function createDailyCandidatePlanningReport(
     "",
     `<b>오늘의 대응 프레임</b>`,
     ...focusLines.map((line) => `• ${line}`),
+    ...(sectorFocusLines.length
+      ? ["", `<b>오늘 볼 섹터</b>`, ...sectorFocusLines]
+      : []),
     "",
     `<b>눌림목 우선 체크</b>`,
     ...(pullbackResult.latestDate ? [`기준일 ${pullbackResult.latestDate}`] : []),

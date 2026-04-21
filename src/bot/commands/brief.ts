@@ -1,6 +1,7 @@
 import type { ChatContext } from "../router";
 import { createClient } from "@supabase/supabase-js";
 import { createBriefingReport } from "../../services/briefingService";
+import { createDailyCandidatePlanningReport } from "../../services/marketInsightService";
 import { buildPersonalizedGuidance } from "../../services/personalizedGuidanceService";
 import { getUserInvestmentPrefs } from "../../services/userService";
 import { ACTIONS, actionButtons } from "../messages/layout";
@@ -27,14 +28,19 @@ export async function handleBriefCommand(
     chatId: ctx.chatId,
     riskProfile: prefs.risk_profile ?? "safe",
   });
+  const planningBlock = await createDailyCandidatePlanningReport(supabase, {
+    riskProfile: prefs.risk_profile ?? "safe",
+    mode: "briefing",
+  }).catch(() => "");
   const personalLines = await buildPersonalizedGuidance({
     chatId: ctx.chatId,
     context: "brief",
   }).catch(() => []);
 
+  const finalReportBase = planningBlock ? `${report}\n\n${planningBlock}` : report;
   const finalReport = personalLines.length > 0
-    ? `${report}\n\n<b>내 상황 제안</b>\n- ${personalLines.join("\n- ")}`
-    : report;
+    ? `${finalReportBase}\n\n<b>내 상황 제안</b>\n- ${personalLines.join("\n- ")}`
+    : finalReportBase;
 
   await tgSend("sendMessage", {
     chat_id: ctx.chatId,

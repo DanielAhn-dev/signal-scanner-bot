@@ -82,6 +82,7 @@ export const ACTIONS = {
     { text: "보유", callback_data: "cmd:watchlist" },
     { text: "관심대응", callback_data: "cmd:watchonlyresp" },
     { text: "보유대응", callback_data: "cmd:watchresp" },
+    { text: "추천", callback_data: "cmd:report:추천" },
     { text: "눌림목", callback_data: "cmd:pullback" },
     { text: "시장", callback_data: "cmd:market" },
   ] as InlineButton[],

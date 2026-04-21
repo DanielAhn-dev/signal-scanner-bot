@@ -1,5 +1,6 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { createBriefingReport } from "../../src/services/briefingService";
+import { createDailyCandidatePlanningReport } from "../../src/services/marketInsightService";
 import { tg } from "../../src/telegram/api";
 import { createClient } from "@supabase/supabase-js";
 import { getUserInvestmentPrefs } from "../../src/services/userService";
@@ -64,10 +65,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           chatId,
           riskProfile: prefs.risk_profile ?? "safe",
         });
+        const planningBlock = briefingType === "pre_market"
+          ? await createDailyCandidatePlanningReport(supabase, {
+              riskProfile: prefs.risk_profile ?? "safe",
+              mode: "briefing",
+            }).catch(() => "")
+          : "";
 
         await tg("sendMessage", {
           chat_id: chatId,
-          text: report,
+          text: planningBlock ? `${report}\n\n${planningBlock}` : report,
           parse_mode: "HTML",
           disable_web_page_preview: true,
         });
