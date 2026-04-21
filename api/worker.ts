@@ -148,7 +148,7 @@ async function handleWatchSectorJob(job: any) {
 }
 
 function resolveJobTimeout(text: string): number {
-  return /^\/(report|리포트)\b/i.test(text.trim())
+  return /^\/(report|리포트)(?:\s|$)/i.test(text.trim())
     ? REPORT_JOB_TIMEOUT_MS
     : DEFAULT_JOB_TIMEOUT_MS;
 }
