@@ -237,23 +237,26 @@ export function drawTradesSection(ctx: ReportRenderContext, windows: TradeWindow
     drawTable(
       ctx,
       [
-        { header: "일자", width: 58, align: "center" },
-        { header: "구분", width: 42, align: "center" },
-        { header: "종목코드", width: 64, align: "center" },
-        { header: "수량", width: 50, align: "right" },
-        { header: "단가 (원)", width: 88, align: "right" },
-        { header: "금액 (원)", width: 88, align: "right" },
-        { header: FIFO_REALIZED_LABEL, width: 117, align: "right" },
+        { header: "일자", width: 56, align: "center" },
+        { header: "구분", width: 40, align: "center" },
+        { header: "종목", width: 112, align: "left" },
+        { header: "수량", width: 44, align: "right" },
+        { header: "단가 (원)", width: 82, align: "right" },
+        { header: "금액 (원)", width: 82, align: "right" },
+        { header: FIFO_REALIZED_LABEL, width: 105, align: "right" },
       ],
       windows.recent.map((row) => {
         const qty = Math.max(0, Math.floor(toNum(row.quantity)));
         const price = toNum(row.price);
         const pnl = row.side === "SELL" ? fmtSignedInt(toNum(row.pnl_amount)) : "-";
         const sideLabel = row.side === "BUY" ? "매수" : row.side === "SELL" ? "매도" : "수정";
+        const displayName = row.name && row.name !== row.code
+          ? `${truncate(row.name, 8)} ${row.code}`
+          : row.code;
         return [
           lineDate(row.traded_at),
           sideLabel,
-          row.code,
+          displayName,
           `${qty}주`,
           fmtInt(price),
           fmtInt(price * qty),

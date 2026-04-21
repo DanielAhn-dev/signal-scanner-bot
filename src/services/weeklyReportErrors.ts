@@ -1,5 +1,6 @@
 export type WeeklyReportFailureStep =
   | "trade_query"
+  | "trade_name_query"
   | "watchlist_query"
   | "sector_query"
   | "sector_stocks_query"
@@ -12,6 +13,7 @@ export type WeeklyReportFailureStep =
 
 const WEEKLY_REPORT_STEP_LABEL: Record<WeeklyReportFailureStep, string> = {
   trade_query: "거래 내역 조회",
+  trade_name_query: "거래 종목명 조회",
   watchlist_query: "보유 종목 조회",
   sector_query: "섹터 데이터 조회",
   sector_stocks_query: "섹터 구성 종목 조회",

@@ -3,6 +3,7 @@ import { shiftDays, toNum } from "./weeklyReportShared";
 export type TradeRow = {
   side: "BUY" | "SELL" | "ADJUST";
   code: string;
+  name?: string | null;
   price: number | null;
   quantity: number | null;
   pnl_amount: number | null;

@@ -69,6 +69,11 @@ type SectorRow = {
   metrics?: Record<string, unknown> | null;
 };
 
+type StockNameRow = {
+  code: string;
+  name: string;
+};
+
 type WatchItem = {
   code: string;
   name: string;
@@ -300,7 +305,28 @@ export async function createWeeklyReportPdf(
     }
   });
 
-  const rows = tradeRes.data ?? [];
+  const tradeRows = tradeRes.data ?? [];
+  const tradeCodes = [...new Set(tradeRows.map((row) => row.code).filter(Boolean))];
+  const stockNameMap = tradeCodes.length
+    ? await runReportStep("trade_name_query", async () => {
+        const { data, error } = await supabase
+          .from("stocks")
+          .select("code, name")
+          .in("code", tradeCodes)
+          .returns<StockNameRow[]>();
+
+        if (error) {
+          throw new Error(`stocks 조회 실패: ${error.message}`);
+        }
+
+        return new Map((data ?? []).map((row) => [row.code, row.name]));
+      })
+    : new Map<string, string>();
+
+  const rows = tradeRows.map((row) => ({
+    ...row,
+    name: stockNameMap.get(row.code) ?? row.name ?? row.code,
+  }));
   const windows = splitWindows(rows, now);
   const curr = summarizeWindow(windows.current14);
   const prev = summarizeWindow(windows.prev14);
