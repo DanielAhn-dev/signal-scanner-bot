@@ -6,7 +6,7 @@ import {
   createWeeklyReportPdf,
   describeWeeklyReportFailure,
 } from "../../services/weeklyReportService";
-import { createDailyCandidatePlanningReport } from "../../services/marketInsightService";
+import { createDailyCandidatePlanningReportResult } from "../../services/marketInsightService";
 import { summarizeWindow, type TradeRow } from "../../services/weeklyReportData";
 import { buildInvestmentPlan } from "../../lib/investPlan";
 import {
@@ -419,17 +419,22 @@ async function handleDailyCandidateReportCommand(
 
   try {
     const prefs = await getUserInvestmentPrefs(ctx.from?.id ?? ctx.chatId);
-    const reportText = await createDailyCandidatePlanningReport(supabase, {
+    const report = await createDailyCandidatePlanningReportResult(supabase, {
       riskProfile: (prefs.risk_profile ?? "safe") as "safe" | "balanced" | "active",
       chatId: ctx.chatId,
     });
+    const analyzeButtons = report.topAnalyzeCodes.map((code, index) => ({
+      text: `후보${index + 1} 분석`,
+      callback_data: `trade:${code}`,
+    }));
 
     await tgSend("sendMessage", {
       chat_id: ctx.chatId,
-      text: reportText,
+      text: report.text,
       parse_mode: "HTML",
       reply_markup: actionButtons(
         [
+          ...analyzeButtons,
           { text: "눌림목", callback_data: "cmd:pullback" },
           { text: "코스피", callback_data: "cmd:kospi" },
           { text: "코스닥", callback_data: "cmd:kosdaq" },
