@@ -21,7 +21,7 @@ const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || "";
 const DEFAULT_TG_TIMEOUT_MS = 5000;
 const DOCUMENT_TG_TIMEOUT_MS = 30000;
 const DEFAULT_JOB_TIMEOUT_MS = 7800;
-const REPORT_JOB_TIMEOUT_MS = 45000;
+const REPORT_JOB_TIMEOUT_MS = 52000;
 const DEV_LOG = process.env.NODE_ENV !== "production";
 
 export const config = {
@@ -153,6 +153,28 @@ function resolveJobTimeout(text: string): number {
     : DEFAULT_JOB_TIMEOUT_MS;
 }
 
+function isReportCommandText(text: string): boolean {
+  return /^\/(report|리포트)(?:\s|$)/i.test(text.trim());
+}
+
+async function notifyReportFailure(chatId: number, error: unknown): Promise<void> {
+  const message = error instanceof Error ? error.message : String(error);
+  const text = /^TIMEOUT:/i.test(message)
+    ? [
+        "리포트 생성 시간이 길어져 이번 요청은 중단되었습니다.",
+        "잠시 후 다시 시도해주세요.",
+      ].join("\n")
+    : [
+        "리포트 생성 중 오류가 발생했습니다.",
+        "잠시 후 다시 시도해주세요.",
+      ].join("\n");
+
+  await tgFetch("sendMessage", {
+    chat_id: chatId,
+    text,
+  });
+}
+
 async function handleTelegramUpdateJob(job: any) {
   const u = job.payload || {};
 
@@ -177,11 +199,18 @@ async function handleTelegramUpdateJob(job: any) {
       chat_id: chatId,
       job_id: job.id,
     });
-    await withTimeout(
-      routeCallbackData(u.callback_query.data, { chatId, from }, tgFetch),
-      callbackTimeout,
-      `callback ${u.callback_query.data}`
-    );
+    try {
+      await withTimeout(
+        routeCallbackData(u.callback_query.data, { chatId, from }, tgFetch),
+        callbackTimeout,
+        `callback ${u.callback_query.data}`
+      );
+    } catch (error) {
+      if (u.callback_query.data === "cmd:report" || u.callback_query.data.startsWith("cmd:report:")) {
+        await notifyReportFailure(chatId, error);
+      }
+      throw error;
+    }
     logWorker("info", "command_done", {
       step: "callback_route",
       command: u.callback_query.data,
@@ -234,22 +263,29 @@ async function handleTelegramUpdateJob(job: any) {
       chat_id: chatId,
       job_id: job.id,
     });
-    await withTimeout(
-      routeMessage(text, { chatId, from }, async (method: string, body: any) => {
-        const resp = await tgFetch(method, body);
-        if (DEV_LOG) {
-          logWorker("info", "telegram_send", {
-            step: "tg_send",
-            method,
-            chat_id: chatId,
-            ok: Boolean(resp?.ok),
-          });
-        }
-        return resp;
-      }),
-      resolveJobTimeout(text),
-      `routeMessage ${text}`
-    );
+    try {
+      await withTimeout(
+        routeMessage(text, { chatId, from }, async (method: string, body: any) => {
+          const resp = await tgFetch(method, body);
+          if (DEV_LOG) {
+            logWorker("info", "telegram_send", {
+              step: "tg_send",
+              method,
+              chat_id: chatId,
+              ok: Boolean(resp?.ok),
+            });
+          }
+          return resp;
+        }),
+        resolveJobTimeout(text),
+        `routeMessage ${text}`
+      );
+    } catch (error) {
+      if (isReportCommandText(text)) {
+        await notifyReportFailure(chatId, error);
+      }
+      throw error;
+    }
     logWorker("info", "command_done", {
       step: "route_message",
       command: text,

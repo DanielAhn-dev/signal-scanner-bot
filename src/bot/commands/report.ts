@@ -1,13 +1,21 @@
 import type { ChatContext } from "../router";
 import { createClient } from "@supabase/supabase-js";
+import { PDFDocument } from "pdf-lib";
+import fontkit from "@pdf-lib/fontkit";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import {
   createWeeklyReportPdf,
   describeWeeklyReportFailure,
 } from "../../services/weeklyReportService";
-import { createDailyCandidatePlanningReportResult } from "../../services/marketInsightService";
+import {
+  createDailyCandidatePlanningReportResult,
+  type DailyCandidatePlanningReportResult,
+} from "../../services/marketInsightService";
 import { summarizeWindow, type TradeRow } from "../../services/weeklyReportData";
+import { drawTopicHero } from "../../services/weeklyReportLayout";
+import { ReportContext, loadFontBytes } from "../../services/weeklyReportPdfCore";
+import { asKstDate, getReportTheme, toKrDate, toYmd } from "../../services/weeklyReportShared";
 import { buildInvestmentPlan } from "../../lib/investPlan";
 import {
   fetchWatchMicroSignalsByCodes,
@@ -22,7 +30,7 @@ const REPORT_TOPIC_GUIDE = [
   { command: "눌림목", aliases: ["눌림목", "다음주", "선진입", "pullback", "nextweek"], description: "다음 주 선진입 후보와 진입/비중 가이드 PDF" },
   { command: "월간", aliases: ["월간", "monthly", "month"], description: "월별 성과 요약 텍스트" },
   { command: "실전운용", aliases: ["실전운용", "실전", "운용", "플레이북", "playbook", "ops"], description: "월~금 자동매매 실전 체크리스트 텍스트" },
-  { command: "추천", aliases: ["추천", "후보", "daily", "plan", "planning", "ideas"], description: "매일 대응할 투자 후보 텍스트 리포트" },
+  { command: "추천", aliases: ["추천", "후보", "daily", "plan", "planning", "ideas"], description: "매일 대응할 투자 후보 PDF" },
   { command: "가이드", aliases: ["가이드", "운영가이드", "guide", "guidepdf"], description: "운영 가이드 PDF" },
     { command: "자동매매", aliases: ["자동매매", "명령어", "command", "automate"], description: "자동매매 명령어 사용 가이드 PDF" },
   { command: "포트폴리오", aliases: ["포트폴리오", "보유", "holdings", "portfolio"], description: "보유 종목과 최근 거래 중심 PDF" },
@@ -52,7 +60,7 @@ function buildReportMenuText(): string {
     "/리포트 월간 — 월별 성과 요약 텍스트",
     "/리포트 실전운용 — 월~금 자동매매 실전 체크리스트 텍스트",
     "  전략 유지 여부, 보유 추가매수, 부분 익절, 분할 매도 점검용",
-    "/리포트 추천 — 오늘 대응할 투자 후보 텍스트 리포트",
+    "/리포트 추천 — 오늘 대응할 투자 후보 PDF",
     "/리포트 가이드 — 기능 활용 운영 가이드 PDF",
       "/리포트 자동매매 — 자동매매 명령어 사용 방법 PDF",
     "/리포트 포트폴리오 — 보유 종목/거래 중심 PDF",
@@ -416,7 +424,7 @@ async function handleDailyCandidateReportCommand(
 ): Promise<void> {
   await tgSend("sendMessage", {
     chat_id: ctx.chatId,
-    text: "오늘 대응할 투자 후보를 정리 중입니다. 잠시만 기다려주세요...",
+    text: "오늘 대응할 투자 후보 PDF를 생성 중입니다. 잠시만 기다려주세요...",
   });
 
   try {
@@ -426,10 +434,26 @@ async function handleDailyCandidateReportCommand(
       chatId: ctx.chatId,
     });
 
+    const pdf = await createDailyCandidateReportPdf(ctx.chatId, report);
+    const form = new FormData();
+    form.set("chat_id", String(ctx.chatId));
+    form.set("caption", pdf.caption);
+    form.set("disable_content_type_detection", "true");
+    form.set("document", new Blob([pdf.bytes], { type: "application/pdf" }), pdf.fileName);
+
+    const sendResult = await tgSend("sendDocument", form);
+
+    if (!sendResult?.ok) {
+      const sendError = sendResult?.description || "Telegram sendDocument failed";
+      throw new Error(sendError);
+    }
+
     await tgSend("sendMessage", {
       chat_id: ctx.chatId,
-      text: report.text,
-      parse_mode: "HTML",
+      text: [
+        pdf.summaryText,
+        "핵심 후보는 아래 버튼으로 바로 이어서 확인할 수 있습니다.",
+      ].join("\n"),
       reply_markup: actionButtons(
         buildRecommendationActionButtons(report.actionItems, [...ACTIONS.recommendationFollowup, ...ACTIONS.reportMenu]),
         2
@@ -437,15 +461,132 @@ async function handleDailyCandidateReportCommand(
     });
   } catch (e: any) {
     const detail = e instanceof Error ? e.message : String(e);
-    await tgSend("sendMessage", {
-      chat_id: ctx.chatId,
-      text: [
-        "추천 리포트 생성에 실패했습니다.",
-        `원인: ${detail}`,
-        "잠시 후 다시 시도해주세요.",
-      ].join("\n"),
-    });
+    try {
+      const prefs = await getUserInvestmentPrefs(ctx.from?.id ?? ctx.chatId);
+      const report = await createDailyCandidatePlanningReportResult(supabase, {
+        riskProfile: (prefs.risk_profile ?? "safe") as "safe" | "balanced" | "active",
+        chatId: ctx.chatId,
+      });
+
+      await tgSend("sendMessage", {
+        chat_id: ctx.chatId,
+        text: [
+          "추천 PDF 전송에 실패해 텍스트 리포트로 대체합니다.",
+          `원인: ${detail}`,
+          "",
+          report.text,
+        ].join("\n"),
+        parse_mode: "HTML",
+        reply_markup: actionButtons(
+          buildRecommendationActionButtons(report.actionItems, [...ACTIONS.recommendationFollowup, ...ACTIONS.reportMenu]),
+          2
+        ),
+      });
+    } catch (fallbackError: any) {
+      const fallbackDetail = fallbackError instanceof Error ? fallbackError.message : String(fallbackError);
+      await tgSend("sendMessage", {
+        chat_id: ctx.chatId,
+        text: [
+          "추천 리포트 생성에 실패했습니다.",
+          `원인: ${fallbackDetail}`,
+          "잠시 후 다시 시도해주세요.",
+        ].join("\n"),
+      });
+    }
   }
+}
+
+function stripTelegramHtml(raw: string): string {
+  return String(raw ?? "")
+    .replace(/<\/?(b|i|code)>/g, "")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&amp;/g, "&")
+    .trim();
+}
+
+async function createDailyCandidateReportPdf(
+  chatId: number,
+  report: DailyCandidatePlanningReportResult
+): Promise<{
+  bytes: Uint8Array;
+  fileName: string;
+  caption: string;
+  summaryText: string;
+}> {
+  const now = new Date();
+  const ymd = toYmd(asKstDate(now));
+  const krDate = toKrDate(now);
+  const theme = getReportTheme("full");
+
+  const pdf = await PDFDocument.create();
+  pdf.registerFontkit(fontkit);
+  const fontBytes = await loadFontBytes();
+  const fontLight = await pdf.embedFont(fontBytes.light);
+  const font = await pdf.embedFont(fontBytes.regular);
+  const fontBold = await pdf.embedFont(fontBytes.bold);
+  const ctx = new ReportContext(pdf, fontLight, font, fontBold, theme);
+  ctx.footerLabel = ymd;
+  ctx.addPage(null);
+  ctx.pageTitle = "오늘의 투자 후보 리포트";
+  drawTopicHero(
+    ctx,
+    "오늘의 투자 후보 리포트",
+    "추천 엔진이 고른 당일 후보를 PDF로 묶은 테스트 출력입니다. PDF 전송 경로와 추천 데이터 경로를 함께 검증할 수 있습니다."
+  );
+
+  const rawLines = String(report.text ?? "").split("\n");
+  const sectionFontSize = 10;
+  const bodyFontSize = 8.5;
+  const bodyLineHeight = Math.round(bodyFontSize * 1.45);
+
+  for (const rawLine of rawLines) {
+    const isDivider = /^[-─]{5,}$/.test(rawLine.trim());
+    const isHeading = /<b>.*<\/b>/.test(rawLine);
+    const isMuted = /<i>.*<\/i>/.test(rawLine);
+    const line = stripTelegramHtml(rawLine);
+
+    if (!line) {
+      ctx.y -= 8;
+      continue;
+    }
+
+    if (line === "오늘의 투자 후보 리포트") {
+      continue;
+    }
+
+    if (isDivider) {
+      ctx.ensureSpace(14);
+      ctx.line(ctx.ML, ctx.y, ctx.ML + ctx.BODY_W, ctx.y, theme.border, 0.75);
+      ctx.y -= 12;
+      continue;
+    }
+
+    if (isHeading) {
+      ctx.ensureSpace(20);
+      const count = ctx.textBold(line, ctx.ML, ctx.y, sectionFontSize, theme.accent, ctx.BODY_W);
+      ctx.y -= count * Math.round(sectionFontSize * 1.45) + 4;
+      continue;
+    }
+
+    const count = isMuted
+      ? ctx.textLight(line, ctx.ML, ctx.y, bodyFontSize, theme.subtitle, ctx.BODY_W)
+      : ctx.text(line, ctx.ML, ctx.y, bodyFontSize, undefined, ctx.BODY_W);
+    ctx.y -= count * bodyLineHeight + 2;
+  }
+
+  ctx.finalizePage();
+
+  return {
+    bytes: await pdf.save(),
+    fileName: `daily_candidate_report_${chatId}_${ymd}.pdf`,
+    caption: [
+      "오늘의 투자 후보 리포트",
+      `기준일: ${krDate}`,
+      "추천 엔진 기준 일일 대응 후보 PDF",
+    ].join("\n"),
+    summaryText: "오늘의 투자 후보 리포트 PDF를 보냈습니다.",
+  };
 }
 
 export async function handleReportMenu(

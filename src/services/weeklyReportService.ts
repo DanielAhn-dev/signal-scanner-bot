@@ -217,7 +217,7 @@ function clampPullbackScore(value: number): number {
   return Math.max(0, Math.min(100, Number.isFinite(value) ? value : 0));
 }
 
-const PULLBACK_ENRICHMENT_LIMIT = 24;
+const PULLBACK_ENRICHMENT_LIMIT = 16;
 const PULLBACK_REPORT_LIMIT = 8;
 
 async function fetchSectorNameMapForPullback(
@@ -739,7 +739,8 @@ export async function createWeeklyReportPdf(
   const prev = summarizeWindow(windows.prev14);
 
   const codes = (watchRes.data ?? []).map((r) => r.code);
-  const realtimeMap = codes.length
+  const shouldFetchWatchRealtime = topicMeta.topic !== "pullback";
+  const realtimeMap = shouldFetchWatchRealtime && codes.length
     ? await runReportStep("realtime_price", async () => {
         try {
           return await fetchRealtimePriceBatch(codes);
