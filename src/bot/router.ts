@@ -27,6 +27,7 @@ import {
   handleEtfInfoCommand,
 } from "./commands/etf";
 import { handleAutoCycleCommand } from "./commands/autoCycle";
+import { handlePreMarketPlanCommand } from "./commands/preMarketPlan";
 import { handleStrategySelect } from "./commands/strategySelect";
 import {
   handleWatchlistCommand,
@@ -95,6 +96,7 @@ const CMD = {
   ALERT:       /^\/(alert|이상징후|알림)$/i,
   WATCHLIST:   /^\/(holdings|보유)$/i,
   AUTOCYCLE:   /^\/(autocycle|자동사이클)(?:\s+(.+))?$/i,
+  PREMARKET:   /^\/(premarket|장전플랜|직장인플랜|오늘주문)(?:\s+(.+))?$/i,
   RANKING:     /^\/(ranking|랭킹|순위)$/i,
   PROFILE:     /^\/(profile|프로필|내정보)$/i,
   FOLLOW:      /^\/(follow|팔로우)(?:\s+(.+))?$/i,
@@ -153,6 +155,7 @@ export async function routeMessage(
             `/pullback — 눌림목 대기 후보`,
             `/관심 — 추이 관찰 종목 목록`,
             `/보유 — 가상 보유 포트폴리오`,
+            `/장전플랜 — 9시 전 예약 주문용 후보/수량/매도가`,
             ``,
             `도움말: /help`,
           ].join("\n")
@@ -174,6 +177,7 @@ export async function routeMessage(
             { text: "관심", callback_data: "cmd:watchonly" },
             { text: "보유", callback_data: "cmd:watchlist" },
             { text: "섹터", callback_data: "cmd:sector" },
+            { text: "장전플랜", callback_data: "cmd:premarket" },
             { text: "투자금 수정", callback_data: "prompt:capital" },
             { text: "가이드", callback_data: "cmd:onboarding" },
             { text: "프로필", callback_data: "cmd:profile" },
@@ -198,6 +202,18 @@ export async function routeMessage(
       await tgSend("sendMessage", {
         chat_id: ctx.chatId,
         text: SEND_ERR("브리핑"),
+      });
+    }
+    return;
+  }
+
+  if (CMD.PREMARKET.test(t)) {
+    try {
+      await handlePreMarketPlanCommand("", ctx, tgSend);
+    } catch (e) {
+      await tgSend("sendMessage", {
+        chat_id: ctx.chatId,
+        text: SEND_ERR("장전 주문 플랜"),
       });
     }
     return;

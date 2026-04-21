@@ -22,6 +22,7 @@ export type TelegramBotCommand = {
 
 const CALLBACK_COMMAND_TEXT: Record<string, string> = {
   brief: "/brief",
+  premarket: "/장전플랜",
   market: "/market",
   economy: "/economy",
   sector: "/sector",
@@ -61,6 +62,7 @@ const HELP_SECTIONS = [
       "/투자금 [금액] [분할횟수] [목표수익률] [성향] [일손실한도%] — 매수 계획 설정",
       "/전략선택 — 자동매매 기본 전략 선택",
       "/브리핑 — 오늘 장전 핵심 요약",
+      "/장전플랜 — 9시 전 예약 주문용 종목·수량·매도가",
     ],
   },
   {
@@ -100,6 +102,7 @@ const HELP_SECTIONS = [
       "/자동사이클 점검 — 오늘 기준 시뮬레이션",
       "/자동사이클 실행 — 오늘 기준 실제 반영",
       "/자동사이클 실행 진입 — 요일 무관 신규 진입 판단 강제",
+      "/장전플랜 — 직장인용 장전 주문 카드",
       "  현재는 보유 종목 추가매수, 부분 익절, 분할 매도, 포지션별 전략 상태를 함께 반영",
       "/보유대응 — 익일 대응 플랜(무체결)",
       "/거래기록 [이번달|지난달|4월|4월 1주|7|최근 7일|전체] — 가상 매매 기록",
@@ -172,6 +175,7 @@ const UNKNOWN_COMMAND_TOKENS = [
   "/보유복구",
   "/자동매도점검",
   "/자동사이클",
+  "/장전플랜",
   "/보유대응",
   "/수급",
   "/경제",
@@ -273,6 +277,7 @@ export const TELEGRAM_BOT_COMMANDS: TelegramBotCommand[] = [
   { command: "holdingrestore", description: "누락 보유 포지션 복구" },
   { command: "autosellcheck", description: "자동 매도 점검" },
   { command: "autocycle", description: "자동사이클 점검·실행·진입" },
+  { command: "premarket", description: "장전 주문 플랜" },
   { command: "holdingplan", description: "보유 대응 플랜" },
   { command: "tradelog", description: "거래 기록" },
   { command: "flow", description: "외국인·기관 수급" },
@@ -308,6 +313,7 @@ export function resolveCallbackCommandText(command: string): string | undefined 
   if (command === "autocycle:run") return "/자동사이클 실행";
   if (command === "autocycle:entry-check") return "/자동사이클 점검 진입";
   if (command === "autocycle:entry-run") return "/자동사이클 실행 진입";
+  if (command === "premarket") return "/장전플랜";
   if (command.startsWith("tradelog:")) {
     const scope = command.slice(9);
     if (scope === "month") return "/거래기록";
