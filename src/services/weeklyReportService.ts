@@ -217,6 +217,9 @@ function clampPullbackScore(value: number): number {
   return Math.max(0, Math.min(100, Number.isFinite(value) ? value : 0));
 }
 
+const PULLBACK_ENRICHMENT_LIMIT = 24;
+const PULLBACK_REPORT_LIMIT = 8;
+
 async function fetchSectorNameMapForPullback(
   supabase: SupabaseClient,
   sectorIds: Array<string | null | undefined>
@@ -312,6 +315,8 @@ async function buildPullbackWeeklyReportData(
     supabase,
     normalizedSignals.map((row) => row.stock?.sector_id)
   );
+  const prefs = await getUserInvestmentPrefs(chatId);
+  const riskProfile = (prefs.risk_profile ?? "safe") as RiskProfile;
 
   const grouped = new Map<string, PullbackAggregateRow>();
   for (const row of normalizedSignals) {
@@ -353,14 +358,6 @@ async function buildPullbackWeeklyReportData(
   }
 
   const aggregated = [...grouped.values()];
-  const codes = aggregated.map((item) => item.code);
-  const [realtimeMap, scoreSnapshot, prefs] = await Promise.all([
-    fetchRealtimePriceBatch(codes).catch(() => ({} as Record<string, any>)),
-    fetchLatestScoresByCodes(supabase, codes),
-    getUserInvestmentPrefs(chatId),
-  ]);
-
-  const riskProfile = (prefs.risk_profile ?? "safe") as RiskProfile;
   const availableCash = Math.max(0, toNum(prefs.virtual_cash ?? prefs.virtual_seed_capital ?? prefs.capital_krw));
   const seedCapital = Math.max(0, toNum(prefs.virtual_seed_capital ?? prefs.capital_krw ?? availableCash));
   const maxPositions = Math.max(1, Math.floor(prefs.virtual_target_positions ?? resolveDefaultTargetPositions(riskProfile)));
@@ -371,7 +368,30 @@ async function buildPullbackWeeklyReportData(
     usdkrw: market.usdkrw?.price,
   };
 
-  const enriched = aggregated.map((item) => {
+  const preselected = pickSaferCandidates(
+    aggregated
+      .map((item) => ({
+        ...item,
+        preScore: clampPullbackScore(
+          item.avgEntryScore * 10 +
+          item.appearanceCount * 9 +
+          entryGradeBonus(item.entryGrade) -
+          item.latestWarnScore * 3 -
+          warnGradePenalty(item.latestWarnGrade)
+        ),
+      }))
+      .sort((a, b) => b.preScore - a.preScore || b.appearanceCount - a.appearanceCount || b.avgEntryScore - a.avgEntryScore),
+    Math.min(PULLBACK_ENRICHMENT_LIMIT, Math.max(PULLBACK_REPORT_LIMIT, aggregated.length)),
+    riskProfile
+  );
+
+  const codes = preselected.map((item) => item.code);
+  const [realtimeMap, scoreSnapshot] = await Promise.all([
+    fetchRealtimePriceBatch(codes).catch(() => ({} as Record<string, any>)),
+    fetchLatestScoresByCodes(supabase, codes),
+  ]);
+
+  const enriched = preselected.map((item) => {
     const realtimePrice = toNum(realtimeMap[item.code]?.price);
     const currentPrice = realtimePrice > 0 ? realtimePrice : item.close;
     const snapshot = scoreSnapshot.byCode.get(item.code);
@@ -445,7 +465,7 @@ async function buildPullbackWeeklyReportData(
   const saferPool = pickSaferCandidates(enriched, Math.min(Math.max(enriched.length, 6), 20), riskProfile);
   const finalCandidates = saferPool
     .sort((a, b) => b.weeklyScore - a.weeklyScore || b.appearanceCount - a.appearanceCount || b.technicalScore - a.technicalScore)
-    .slice(0, 8)
+    .slice(0, PULLBACK_REPORT_LIMIT)
     .map((item, index) => ({
       code: item.code,
       name: item.name,
