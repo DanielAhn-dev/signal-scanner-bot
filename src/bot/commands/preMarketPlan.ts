@@ -15,10 +15,16 @@ import { buildInvestmentPlan } from "../../lib/investPlan";
 import { scaleScoreFactorsToReferencePrice } from "../../lib/priceScale";
 import { esc, fmtInt, fmtPct, LINE } from "../messages/format";
 import { actionButtons, buildRecommendationActionButtons } from "../messages/layout";
+import {
+  derivePreMarketAdaptiveProfile,
+  type PreMarketAdaptiveProfile,
+  type RecentPerformanceMetrics,
+} from "./preMarketPlanAdaptive";
 
 const supabase = createClient(
   process.env.SUPABASE_URL!,
-  process.env.SUPABASE_ANON_KEY!
+  process.env.SUPABASE_SERVICE_ROLE_KEY!,
+  { auth: { persistSession: false } }
 );
 
 type ScoreCandidateRow = {
@@ -57,6 +63,7 @@ type AutoTradeSettingLike = {
   selected_strategy?: string | null;
 };
 
+
 function toNumber(value: unknown, fallback = 0): number {
   const num = Number(value);
   return Number.isFinite(num) ? num : fallback;
@@ -65,6 +72,10 @@ function toNumber(value: unknown, fallback = 0): number {
 function toPositiveInt(value: unknown, fallback: number): number {
   const num = Math.floor(toNumber(value, fallback));
   return num > 0 ? num : fallback;
+}
+
+function clampInt(value: number, min: number, max: number): number {
+  return Math.max(min, Math.min(max, Math.floor(value)));
 }
 
 function riskProfileLabel(profile?: "safe" | "balanced" | "active"): string {
@@ -77,6 +88,17 @@ function marketPolicyLabel(mode: string): string {
   if (mode === "large-cap-defense") return "방어";
   if (mode === "rotation") return "확장";
   return "균형";
+}
+
+function formatSignedKrw(value: number): string {
+  const rounded = Math.round(value);
+  if (!Number.isFinite(rounded)) return "0원";
+  return `${rounded > 0 ? "+" : ""}${rounded.toLocaleString("ko-KR")}원`;
+}
+
+function summarizeSkipReasons(items: Array<{ reason: string; count: number }>): string {
+  if (!items.length) return "없음";
+  return items.map((item) => `${item.reason} ${item.count}건`).join(", ");
 }
 
 function normalizeStock(input: ScoreCandidateRow["stock"]) {
@@ -128,24 +150,92 @@ function buildOrderLines(input: {
   quantity: number;
   orderPrice: number;
   investedAmount: number;
+  trancheQty: number;
+  remainingQty: number;
+  expectedProfit1: number;
+  expectedProfit2: number;
 }): string[] {
-  const firstSellQty = input.quantity <= 1 ? input.quantity : Math.max(1, Math.floor(input.quantity / 2));
-  const secondSellQty = Math.max(0, input.quantity - firstSellQty);
   const statusLabel = input.plan.status === "buy-now" ? "즉시" : input.plan.status === "buy-on-pullback" ? "눌림대기" : "관망";
 
   return [
     `<b>${input.rank}. ${esc(input.candidate.name)}</b> <code>${input.candidate.code}</code>`,
-    `- 판단 ${statusLabel} · 점수 <code>${input.candidate.score.toFixed(1)}</code>`,
+    `- 판단 ${statusLabel} · 점수 <code>${input.candidate.score.toFixed(1)}</code> · 손익비 <code>${input.plan.riskReward}:1</code>`,
     `- 매수주문 <code>${input.quantity}주 x ${fmtInt(input.orderPrice)}원</code> = <code>${fmtInt(input.investedAmount)}원</code>`,
     `- 진입구간 <code>${fmtInt(input.plan.entryLow)}원</code> ~ <code>${fmtInt(input.plan.entryHigh)}원</code>`,
     `- 손절 <code>${fmtInt(input.plan.stopPrice)}원</code> (${fmtPct(-input.plan.stopPct * 100)})`,
-    `- 1차매도 <code>${firstSellQty}주 @ ${fmtInt(input.plan.target1)}원</code> (${fmtPct(input.plan.target1Pct * 100)})`,
-    secondSellQty > 0
-      ? `- 2차매도 <code>${secondSellQty}주 @ ${fmtInt(input.plan.target2)}원</code> (${fmtPct(input.plan.target2Pct * 100)})`
+    `- 1차매도 <code>${input.trancheQty}주 @ ${fmtInt(input.plan.target1)}원</code> (${fmtPct(input.plan.target1Pct * 100)}) · 기대 <code>${formatSignedKrw(input.expectedProfit1)}</code>`,
+    input.remainingQty > 0
+      ? `- 2차매도 <code>${input.remainingQty}주 @ ${fmtInt(input.plan.target2)}원</code> (${fmtPct(input.plan.target2Pct * 100)}) · 기대 <code>${formatSignedKrw(input.expectedProfit2)}</code>`
       : `- 2차매도 없음 (1차 전량 정리)`,
-    `- 시야 ${input.plan.holdDays[0]}~${input.plan.holdDays[1]}거래일 · 손익비 ${input.plan.riskReward}:1`,
+    `- 주문메모 시초가 과열 갭 출발 시 추격 금지 · 유효시야 ${input.plan.holdDays[0]}~${input.plan.holdDays[1]}거래일`,
     `- 근거 ${esc(input.plan.summary)}`,
   ];
+}
+
+async function getRecentPerformanceMetrics(chatId: number, windowDays = 14): Promise<RecentPerformanceMetrics | null> {
+  const since = new Date(Date.now() - Math.max(1, windowDays) * 24 * 60 * 60 * 1000).toISOString();
+
+  const [actionsResp, tradesResp] = await Promise.all([
+    supabase
+      .from("virtual_autotrade_actions")
+      .select("action_type, reason")
+      .eq("chat_id", chatId)
+      .gte("created_at", since)
+      .limit(2000),
+    supabase
+      .from(PORTFOLIO_TABLES.trades)
+      .select("side, pnl_amount")
+      .eq("chat_id", chatId)
+      .gte("traded_at", since)
+      .limit(2000),
+  ]);
+
+  if (actionsResp.error || tradesResp.error) {
+    return null;
+  }
+
+  const actions = (actionsResp.data ?? []) as Array<{ action_type?: string | null; reason?: string | null }>;
+  const trades = (tradesResp.data ?? []) as Array<{ side?: string | null; pnl_amount?: number | null }>;
+
+  let buyActions = 0;
+  let skipActions = 0;
+  const skipReasonMap = new Map<string, number>();
+  for (const action of actions) {
+    const type = String(action.action_type ?? "").toUpperCase();
+    if (type === "BUY") buyActions += 1;
+    if (type === "SKIP") {
+      skipActions += 1;
+      const reason = String(action.reason ?? "기타").trim() || "기타";
+      skipReasonMap.set(reason, (skipReasonMap.get(reason) ?? 0) + 1);
+    }
+  }
+
+  let realizedPnl = 0;
+  let sellCount = 0;
+  let winningSellCount = 0;
+  for (const trade of trades) {
+    const side = String(trade.side ?? "").toUpperCase();
+    const pnl = toNumber(trade.pnl_amount, 0);
+    if (side === "SELL") {
+      sellCount += 1;
+      realizedPnl += pnl;
+      if (pnl > 0) winningSellCount += 1;
+    }
+  }
+
+  return {
+    windowDays,
+    realizedPnl,
+    sellCount,
+    winningSellCount,
+    winRate: sellCount > 0 ? Number(((winningSellCount / sellCount) * 100).toFixed(1)) : null,
+    buyActions,
+    skipActions,
+    topSkipReasons: Array.from(skipReasonMap.entries())
+      .map(([reason, count]) => ({ reason, count }))
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 3),
+  };
 }
 
 async function fetchLatestRankedRows(limit: number): Promise<{
@@ -281,6 +371,11 @@ export async function handlePreMarketPlanCommand(
   const availableCash = Math.max(0, toNumber(prefs.virtual_cash, seedCapital));
   const marketOverview = await fetchAllMarketData().catch(() => null);
   const marketPolicy = detectAutoTradeMarketPolicy({ overview: marketOverview });
+  const recentMetrics = await getRecentPerformanceMetrics(tgId, 14);
+  const adaptiveProfile = derivePreMarketAdaptiveProfile({
+    seedCapital,
+    metrics: recentMetrics,
+  });
   let deployableCash = resolveDeployableCash({
     availableCash,
     seedCapital,
@@ -316,9 +411,14 @@ export async function handlePreMarketPlanCommand(
   }
 
   const { latestAsof, rows, factorByCode } = await fetchLatestRankedRows(300);
+  const adjustedMinBuyScore = clampInt(
+    buyConstraint.minBuyScore + adaptiveProfile.scoreAdjustment,
+    35,
+    90
+  );
   const selection = pickAutoTradeCandidates({
     rows,
-    preferredMinBuyScore: buyConstraint.minBuyScore,
+    preferredMinBuyScore: adjustedMinBuyScore,
     limit: Math.max(12, buyConstraint.buySlots * 4),
     heldCodes,
     marketPolicy,
@@ -341,7 +441,7 @@ export async function handlePreMarketPlanCommand(
   }> = [];
 
   let plannedHoldingCount = activeCount;
-  let slotsLeft = Math.min(buyConstraint.buySlots, 3);
+  let slotsLeft = Math.min(buyConstraint.buySlots, adaptiveProfile.maxOrders, 3);
 
   for (const candidate of selection.candidates) {
     if (slotsLeft <= 0) break;
@@ -374,6 +474,7 @@ export async function handlePreMarketPlanCommand(
     });
 
     if (plan.status === "wait") continue;
+  if (plan.riskReward < adaptiveProfile.minRiskReward) continue;
 
     const orderPrice = resolveEntryPrice(plan, candidate.close);
     const sizing = calculateAutoTradeBuySizing({
@@ -404,10 +505,20 @@ export async function handlePreMarketPlanCommand(
     `<b>장전 주문 플랜</b>`,
     LINE,
     `투자성향 <code>${riskProfileLabel(prefs.risk_profile)}</code> · 시장모드 <code>${marketPolicyLabel(marketPolicy.mode)}</code>`,
+    `운용강도 <code>${adaptiveProfile.label}</code> · ${esc(adaptiveProfile.reason)}`,
     `가용현금 <code>${fmtInt(availableCash)}원</code> · 신규주문 가능 <code>${fmtInt(resolveDeployableCash({ availableCash, seedCapital, minCashReservePct: marketPolicy.minCashReservePct }))}원</code>`,
-    `신규 슬롯 <code>${buyConstraint.buySlots}건</code> · 기준점수 <code>${buyConstraint.minBuyScore}점</code>`,
+    `신규 슬롯 <code>${buyConstraint.buySlots}건</code> · 기준점수 <code>${buyConstraint.minBuyScore}점</code> → 적응형 <code>${adjustedMinBuyScore}점</code>`,
     latestAsof ? `점수 기준일 <code>${esc(latestAsof)}</code>` : "점수 기준일 없음",
   ];
+
+  if (recentMetrics) {
+    summaryLines.push(
+      `최근 ${recentMetrics.windowDays}일 실현손익 <code>${formatSignedKrw(recentMetrics.realizedPnl)}</code> · 매도 ${recentMetrics.sellCount}건 · 승률 ${recentMetrics.winRate != null ? `${recentMetrics.winRate.toFixed(1)}%` : "집계없음"}`
+    );
+    summaryLines.push(
+      `최근 미체결 ${recentMetrics.skipActions}건 · 주요사유 <code>${esc(summarizeSkipReasons(recentMetrics.topSkipReasons))}</code>`
+    );
+  }
 
   if (!actionable.length) {
     await tgSend("sendMessage", {
@@ -437,12 +548,17 @@ export async function handlePreMarketPlanCommand(
     quantity: item.quantity,
     orderPrice: item.orderPrice,
     investedAmount: item.investedAmount,
+    trancheQty: item.quantity <= 1 ? item.quantity : Math.max(1, Math.floor(item.quantity / 2)),
+    remainingQty: Math.max(0, item.quantity - (item.quantity <= 1 ? item.quantity : Math.max(1, Math.floor(item.quantity / 2)))),
+    expectedProfit1: Math.max(0, Math.round((item.plan.target1 - item.orderPrice) * (item.quantity <= 1 ? item.quantity : Math.max(1, Math.floor(item.quantity / 2))))),
+    expectedProfit2: Math.max(0, Math.round((item.plan.target2 - item.orderPrice) * Math.max(0, item.quantity - (item.quantity <= 1 ? item.quantity : Math.max(1, Math.floor(item.quantity / 2)))))),
   })]);
 
   const footer = [
     "",
     `<b>주문 원칙</b>`,
     `- 매수는 장전 예약 기준으로 계산했으며 실제 시초가 갭은 반영되지 않습니다.`,
+    `- 적응형 운용은 최근 14일 손익·승률·미체결 패턴에 따라 점수 기준과 주문 수를 보정합니다.`,
     `- 1차 매도 체결 후 잔량은 2차 목표가 또는 보유대응 기준으로 관리합니다.`,
     `- 장이 약하면 /자동사이클 점검으로 먼저 재확인하는 편이 안전합니다.`,
   ];
