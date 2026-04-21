@@ -23,6 +23,7 @@ import {
 } from "../../lib/watchlistSignals";
 import { getDecisionReliabilitySummary } from "../../services/decisionLogService";
 import { getUserInvestmentPrefs } from "../../services/userService";
+import { handlePreMarketPlanCommand } from "./preMarketPlan";
 import { ACTIONS, actionButtons, buildRecommendationActionButtons } from "../messages/layout";
 
 const REPORT_TOPIC_GUIDE = [
@@ -38,6 +39,7 @@ const REPORT_TOPIC_GUIDE = [
   { command: "거시", aliases: ["거시", "경제", "매크로", "economy", "macro"], description: "금리·환율·변동성 중심 PDF" },
   { command: "수급", aliases: ["수급", "자금", "flow"], description: "외국인·기관 자금 흐름 PDF" },
   { command: "섹터", aliases: ["섹터", "업종", "테마", "sector"], description: "섹터 강도 랭킹 PDF" },
+  { command: "장전플랜", aliases: ["장전플랜", "주문플랜", "오늘주문", "premarket", "morningplan"], description: "오늘 적응형 주문 플랜 텍스트" },
 ] as const;
 
 function normalizeReportTopicInput(topicInput?: string | null): string | null {
@@ -68,6 +70,7 @@ function buildReportMenuText(): string {
     "/리포트 거시 — 금리·환율·변동성 PDF",
     "/리포트 수급 — 외국인·기관 자금 흐름 PDF",
     "/리포트 섹터 — 섹터 강도 랭킹 PDF",
+    "/리포트 장전플랜 — 오늘 적응형 주문 플랜 (성과 반영 보수/공격 조정)",
   ].join("\n");
 }
 
@@ -675,6 +678,11 @@ export async function handleReportCommand(
       await handleAutoTradeCommandGuidePdf(ctx, tgSend);
       return;
     }
+
+  if (normalizedTopic === "장전플랜") {
+    await handlePreMarketPlanCommand("", ctx, tgSend);
+    return;
+  }
 
   const progressLabel = `${normalizedTopic} 리포트`;
 

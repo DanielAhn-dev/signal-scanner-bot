@@ -96,6 +96,7 @@ export const ACTIONS = {
     { text: "거시", callback_data: "cmd:report:economy" },
     { text: "수급", callback_data: "cmd:report:flow" },
     { text: "섹터", callback_data: "cmd:report:sector" },
+    { text: "장전플랜", callback_data: "cmd:report:장전플랜" },
   ] as InlineButton[],
   marketFlow: [
     { text: "시장", callback_data: "cmd:market" },
