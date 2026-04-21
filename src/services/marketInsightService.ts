@@ -366,6 +366,12 @@ function formatPriorityTag(rank: number): string {
   return `${rank}순위`;
 }
 
+function formatAttentionBadge(rank: number): string {
+  if (rank <= 2) return "🟥 상";
+  if (rank <= 4) return "🟩 중";
+  return "🟦 하";
+}
+
 function getOverlapPenalty(warning?: SectorOverlapWarning): number {
   if (!warning) return 0;
   return warning.level === "danger" ? 9 : 5;
@@ -1123,7 +1129,7 @@ export async function createDailyCandidatePlanningReportResult(
           score: Number(item.entry_score ?? 0) * 20,
         });
         return [
-          `${index + 1}. <b>${stock?.name ?? item.code}</b> <code>${item.code}</code> <code>${fmtDailyCandidateInt(Number(stock?.close ?? 0))}원</code>`,
+          `${index + 1}. <b>${formatAttentionBadge(index + 1)}</b> <b>${stock?.name ?? item.code}</b> <code>${item.code}</code> <code>${fmtDailyCandidateInt(Number(stock?.close ?? 0))}원</code>`,
           `   우선 ${formatPriorityTag(index + 1)} · ${styleTag} · 진입 ${item.entry_grade}(${Number(item.entry_score ?? 0).toFixed(1)}/4) · 경고 ${item.warn_grade}(${Number(item.warn_score ?? 0).toFixed(1)}/6) · ${String(stock?.market ?? "-")}${stock?.sector_name ? ` · ${stock.sector_name}` : ""}`,
           ...(overlap ? [`   ⚠️ 보유 섹터 중복 ${overlap.sectorName} ${overlap.ratio.toFixed(1)}% (${overlap.level === "danger" ? "강한 집중" : "집중 경고"})`] : []),
         ].join("\n");
@@ -1133,7 +1139,7 @@ export async function createDailyCandidatePlanningReportResult(
   const buildPickLines = (picks: PickCandidate[], fallback: string): string[] => {
     if (!picks.length) return [fallback];
     return picks.slice(0, displayLimit).map((pick, index) => [
-      `${index + 1}. <b>${pick.name}</b> <code>${pick.code}</code> <code>${fmtDailyCandidateInt(pick.price)}원</code>`,
+      `${index + 1}. <b>${formatAttentionBadge(index + 1)}</b> <b>${pick.name}</b> <code>${pick.code}</code> <code>${fmtDailyCandidateInt(pick.price)}원</code>`,
       `   우선 ${formatPriorityTag(index + 1)} · ${classifyCandidateStyleTag({ market: pick.market, score: pick.score, safetyScore: pick.safetyScore, trendLabel: pick.trendLabel })} · 종합 ${pick.score.toFixed(1)} · ${pick.trendLabel} · RSI ${pick.rsi14.toFixed(1)} · 거래대금 ${fmtDailyCandidateKrwShort(pick.valueTraded)}${pick.sectorName ? ` · ${pick.sectorName}` : ""}`,
       `   점수 기술 ${pick.totalScore.toFixed(1)} · 모멘텀 ${pick.momentumScore.toFixed(1)} · 안전 ${pick.safetyScore.toFixed(1)}`,
       ...(pick.sectorId && sectorOverlapWarnings.has(pick.sectorId)
@@ -1146,17 +1152,17 @@ export async function createDailyCandidatePlanningReportResult(
     const actionLine = options?.compactActionText
       ? "  액션: 하단 핵심 2개만 먼저 확인하고, 필요 시 추천 리포트에서 후보를 넓혀 보세요"
       : "  액션: 하단 핵심 후보 버튼으로 2~3개만 재검토 후 분할 진입 여부 결정";
-    const compactPullback = visiblePullbackItems.slice(0, 2).map((item) => {
+    const compactPullback = visiblePullbackItems.slice(0, 2).map((item, index) => {
       const sectorLabel = item.stock?.sector_name ? ` · ${item.stock.sector_name}` : "";
-      return `  ▸ ${item.stock?.name ?? item.code}(${item.code})${sectorLabel} · 진입 ${item.entry_grade} · 경고 ${item.warn_grade}`;
+      return `  ▸ ${formatAttentionBadge(index + 1)} ${item.stock?.name ?? item.code}(${item.code})${sectorLabel} · 진입 ${item.entry_grade} · 경고 ${item.warn_grade}`;
     });
-    const compactKospi = visibleKospiPicks.slice(0, 2).map((item) => {
+    const compactKospi = visibleKospiPicks.slice(0, 2).map((item, index) => {
       const sectorLabel = item.sectorName ? ` · ${item.sectorName}` : "";
-      return `  ▸ ${item.name}(${item.code})${sectorLabel} · 종합 ${item.score.toFixed(1)} · ${item.trendLabel}`;
+      return `  ▸ ${formatAttentionBadge(index + 1)} ${item.name}(${item.code})${sectorLabel} · 종합 ${item.score.toFixed(1)} · ${item.trendLabel}`;
     });
-    const compactKosdaq = visibleKosdaqPicks.slice(0, 1).map((item) => {
+    const compactKosdaq = visibleKosdaqPicks.slice(0, 1).map((item, index) => {
       const sectorLabel = item.sectorName ? ` · ${item.sectorName}` : "";
-      return `  ▸ ${item.name}(${item.code})${sectorLabel} · 종합 ${item.score.toFixed(1)} · ${item.trendLabel}`;
+      return `  ▸ ${formatAttentionBadge(index + 1)} ${item.name}(${item.code})${sectorLabel} · 종합 ${item.score.toFixed(1)} · ${item.trendLabel}`;
     });
 
     return {
@@ -1190,6 +1196,11 @@ export async function createDailyCandidatePlanningReportResult(
     "",
     `<b>오늘의 대응 프레임</b>`,
     ...focusLines.map((line) => `• ${line}`),
+    "",
+    `<b>주목도 표시</b>`,
+    "• 🟥 상: 오늘 바로 다시 볼 핵심 후보",
+    "• 🟩 중: 장중 추적할 후보",
+    "• 🟦 하: 후보군 유지용 체크",
     ...(planningConstraints?.statusLines.length
       ? ["", `<b>자금·리스크 상태</b>`, ...planningConstraints.statusLines.map((line) => `• ${line}`)]
       : []),

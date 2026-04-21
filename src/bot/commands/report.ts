@@ -1,6 +1,6 @@
 import type { ChatContext } from "../router";
 import { createClient } from "@supabase/supabase-js";
-import { PDFDocument } from "pdf-lib";
+import { PDFDocument, rgb, type RGB } from "pdf-lib";
 import fontkit from "@pdf-lib/fontkit";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
@@ -14,7 +14,7 @@ import {
 } from "../../services/marketInsightService";
 import { summarizeWindow, type TradeRow } from "../../services/weeklyReportData";
 import { drawTopicHero } from "../../services/weeklyReportLayout";
-import { ReportContext, loadFontBytes } from "../../services/weeklyReportPdfCore";
+import { ReportContext, loadFontBytes, wrapText } from "../../services/weeklyReportPdfCore";
 import { asKstDate, getReportTheme, toKrDate, toYmd } from "../../services/weeklyReportShared";
 import { buildInvestmentPlan } from "../../lib/investPlan";
 import {
@@ -505,6 +505,20 @@ function stripTelegramHtml(raw: string): string {
     .trim();
 }
 
+function getAttentionHighlight(line: string): { fill: RGB; text: RGB } | null {
+  const normalized = String(line ?? "").trim();
+  if (/^\d+\.\s+🟥\s+상\s+/.test(normalized)) {
+    return { fill: rgb(1.0, 0.93, 0.93), text: rgb(0.72, 0.16, 0.16) };
+  }
+  if (/^\d+\.\s+🟩\s+중\s+/.test(normalized)) {
+    return { fill: rgb(0.92, 0.98, 0.93), text: rgb(0.12, 0.45, 0.24) };
+  }
+  if (/^\d+\.\s+🟦\s+하\s+/.test(normalized)) {
+    return { fill: rgb(0.92, 0.96, 1.0), text: rgb(0.13, 0.34, 0.62) };
+  }
+  return null;
+}
+
 async function createDailyCandidateReportPdf(
   chatId: number,
   report: DailyCandidatePlanningReportResult
@@ -545,6 +559,7 @@ async function createDailyCandidateReportPdf(
     const isHeading = /<b>.*<\/b>/.test(rawLine);
     const isMuted = /<i>.*<\/i>/.test(rawLine);
     const line = stripTelegramHtml(rawLine);
+    const attentionHighlight = getAttentionHighlight(line);
 
     if (!line) {
       ctx.y -= 8;
@@ -566,6 +581,16 @@ async function createDailyCandidateReportPdf(
       ctx.ensureSpace(20);
       const count = ctx.textBold(line, ctx.ML, ctx.y, sectionFontSize, theme.accent, ctx.BODY_W);
       ctx.y -= count * Math.round(sectionFontSize * 1.45) + 4;
+      continue;
+    }
+
+    if (attentionHighlight) {
+      const wrapped = wrapText(line, ctx.BODY_W - 12, ctx.fontBold, bodyFontSize);
+      const highlightHeight = wrapped.length * bodyLineHeight + 4;
+      ctx.ensureSpace(highlightHeight + 4);
+      ctx.rect(ctx.ML - 2, ctx.y - highlightHeight + 2, ctx.BODY_W, highlightHeight, attentionHighlight.fill);
+      ctx.textBold(line, ctx.ML + 4, ctx.y, bodyFontSize, attentionHighlight.text, ctx.BODY_W - 12);
+      ctx.y -= wrapped.length * bodyLineHeight + 2;
       continue;
     }
 
