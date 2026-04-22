@@ -847,6 +847,7 @@ async function runMondayBuyForUser(payload: {
   let plannedHoldingCount = activeCount;
   let sizingNoteAdded = false;
   let slotsLeft = remainSlots;
+  let insufficientCashCount = 0;
 
   for (const candidate of candidates) {
     if (slotsLeft <= 0) break;
@@ -895,6 +896,7 @@ async function runMondayBuyForUser(payload: {
       const profileLabel = getStrategyLabel(tradeProfile.profile) || tradeProfile.profile;
       if (qty <= 0 || investedAmount <= 0) {
         summary.skipped += 1;
+        insufficientCashCount += 1;
         await writeActionLog({
           supabase: payload.supabase,
           runId: payload.runId,
@@ -1091,6 +1093,12 @@ async function runMondayBuyForUser(payload: {
       });
       slotsLeft -= 1;
     }
+  }
+
+  if (insufficientCashCount > 0) {
+    summary.notes.push(
+      `현금 부족으로 매수 스킵 ${insufficientCashCount}건 (회당 예산/종목가격 조합으로 최소주문 500,000원 미달 포함)`
+    );
   }
 
   if (!payload.dryRun) {

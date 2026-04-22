@@ -8,12 +8,14 @@ import {
 function parseInput(rawInput: string): {
   mode: AutoTradeRunMode;
   dryRun: boolean;
+  verbose: boolean;
 } {
   const text = String(rawInput || "").trim().toLowerCase();
   const tokens = text.split(/\s+/).filter(Boolean);
 
   let mode: AutoTradeRunMode = "auto";
   let dryRun = true;
+  let verbose = false;
 
   for (const token of tokens) {
     if (["실행", "run", "live", "실매행"].includes(token)) {
@@ -31,9 +33,38 @@ function parseInput(rawInput: string): {
     if (["auto", "자동", "기본"].includes(token)) {
       mode = "auto";
     }
+    if (["상세", "detail", "verbose", "전체"].includes(token)) {
+      verbose = true;
+    }
   }
 
-  return { mode, dryRun };
+  return { mode, dryRun, verbose };
+}
+
+function buildMetricsComparisonLines(
+  action: { buys: number; sells: number; skipped: number; errors: number },
+  metrics: AutoTradeRecentMetrics | null
+): string[] {
+  if (!metrics || metrics.runCount <= 0) return [];
+
+  const avgBuy = metrics.buyActions / metrics.runCount;
+  const avgSell = metrics.sellActions / metrics.runCount;
+  const avgSkip = metrics.skipActions / metrics.runCount;
+  const avgErr = metrics.errorActions / metrics.runCount;
+
+  const toDiff = (current: number, avg: number): string => {
+    const diff = current - avg;
+    if (Math.abs(diff) < 0.01) return "= 평균";
+    return diff > 0 ? `+${diff.toFixed(2)} (평균 대비)` : `${diff.toFixed(2)} (평균 대비)`;
+  };
+
+  return [
+    "데이터 비교(이번 회차 vs 최근 실행당 평균)",
+    `- 매수 ${action.buys}건 vs ${avgBuy.toFixed(2)}건 (${toDiff(action.buys, avgBuy)})`,
+    `- 매도 ${action.sells}건 vs ${avgSell.toFixed(2)}건 (${toDiff(action.sells, avgSell)})`,
+    `- 미체결 ${action.skipped}건 vs ${avgSkip.toFixed(2)}건 (${toDiff(action.skipped, avgSkip)})`,
+    `- 오류 ${action.errors}건 vs ${avgErr.toFixed(2)}건 (${toDiff(action.errors, avgErr)})`,
+  ];
 }
 
 function formatModeLabel(mode: AutoTradeRunMode): string {
@@ -279,9 +310,9 @@ function buildFriendlyGuide(action: {
 
   if (action.skipped > 0) {
     const hasStrategyBlock = notes.some((note) =>
-      /전략|기존 포지션만 관리|신규 매수 중지|최소 진입|제한 진입|보수 분산/.test(note)
+      /선택 전략으로 신규 매수 중지|기존 포지션만 관리|안전 전략 유지|최소 진입|제한 진입|보수 분산/.test(note)
     );
-    const hasNoCandidate = notes.some((note) => /후보 없음|미체결|현금 0원/.test(note));
+    const hasNoCandidate = notes.some((note) => /후보 없음|미체결|현금 0원|현금 부족으로 매수 스킵|최소주문/.test(note));
 
     const lines = [
       "안내",
@@ -328,9 +359,22 @@ function buildRecentMetricsLines(metrics: AutoTradeRecentMetrics | null): string
   ];
 
   if (metrics.topSkipReasons.length > 0) {
+    const SKIP_REASON_KO: Record<string, string> = {
+      "insufficient-cash": "현금부족",
+      "no-available-cash": "가용현금없음",
+      "cash-reserve-floor": "현금하한도달",
+      "strategy-blocked-buy": "전략차단",
+      "hold-safe-probe": "안전탐색보류",
+      "no-candidates": "후보없음",
+      "invalid-holding-or-price": "보유/가격오류",
+      "within-range": "목표범위내",
+      "stop-loss": "손절",
+      "take-profit-partial": "부분익절",
+      "take-profit-final": "최종익절",
+    };
     lines.push(
       `- 미체결 상위 사유: ${metrics.topSkipReasons
-        .map((item) => `${item.reason} ${item.count}건`)
+        .map((item) => `${SKIP_REASON_KO[item.reason] ?? item.reason} ${item.count}건`)
         .join(", ")}`
     );
   }
@@ -343,7 +387,7 @@ export async function handleAutoCycleCommand(
   ctx: ChatContext,
   tgSend: any
 ): Promise<void> {
-  const { mode, dryRun } = parseInput(input);
+  const { mode, dryRun, verbose } = parseInput(input);
 
   await tgSend("sendMessage", {
     chat_id: ctx.chatId,
@@ -366,23 +410,32 @@ export async function handleAutoCycleCommand(
     const actionCards = buildActionResponseCards(action.notes || []);
     const commandExamples = buildCommandExamples(mode);
     const recentMetricsLines = buildRecentMetricsLines(result.recentMetrics);
+    const metricsComparisonLines = buildMetricsComparisonLines(action, result.recentMetrics);
+
+    const compactLines = [
+      `<b>자동 사이클 ${dryRun ? "테스트" : "실행"} 완료</b>`,
+      `모드: ${formatModeLabel(mode)}`,
+      formatExecutionStatus(action),
+      formatActionBreakdown(action),
+      recentMetricsLines.length ? `\n${recentMetricsLines.join("\n")}` : "",
+      metricsComparisonLines.length ? `\n${metricsComparisonLines.join("\n")}` : "",
+      noteLines.length ? `\n핵심 메모\n- ${noteLines.slice(0, 5).join("\n- ")}` : "",
+      "\n팁: 상세 설명이 필요하면 /자동사이클 점검 상세 또는 /자동사이클 실행 상세",
+    ].filter(Boolean);
+
+    const detailedLines = [
+      ...compactLines,
+      modeDifferenceGuide.length ? `\n${modeDifferenceGuide.join("\n")}` : "",
+      actionCards.length ? `\n${actionCards.join("\n")}` : "",
+      modeGuideLines.length ? `\n${modeGuideLines.join("\n")}` : "",
+      guideLines.length ? `\n${guideLines.join("\n")}` : "",
+      "\n재실행 예시:",
+      ...commandExamples,
+    ].filter(Boolean);
 
     await tgSend("sendMessage", {
       chat_id: ctx.chatId,
-      text: [
-        `<b>자동 사이클 ${dryRun ? "테스트" : "실행"} 완료</b>`,
-        `모드: ${formatModeLabel(mode)}`,
-        formatExecutionStatus(action),
-        formatActionBreakdown(action),
-        recentMetricsLines.length ? `\n${recentMetricsLines.join("\n")}` : "",
-        modeDifferenceGuide.length ? `\n${modeDifferenceGuide.join("\n")}` : "",
-        noteLines.length ? `\n메모\n- ${noteLines.join("\n- ")}` : "",
-        actionCards.length ? `\n${actionCards.join("\n")}` : "",
-        modeGuideLines.length ? `\n${modeGuideLines.join("\n")}` : "",
-        guideLines.length ? `\n${guideLines.join("\n")}` : "",
-        "\n재실행 예시:",
-        ...commandExamples,
-      ].join("\n"),
+      text: (verbose ? detailedLines : compactLines).join("\n"),
       parse_mode: "HTML",
     });
   } catch (error: unknown) {
