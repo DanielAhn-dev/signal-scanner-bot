@@ -16,6 +16,49 @@ function riskProfileLabel(profile?: "safe" | "balanced" | "active"): string {
   return "안전형";
 }
 
+function parseRiskProfileInput(raw?: string): "safe" | "balanced" | "active" | null {
+  if (!raw) return null;
+  const value = raw.trim().toLowerCase();
+  if (["safe", "안전", "안전형", "보수", "보수형"].includes(value)) return "safe";
+  if (["balanced", "균형", "균형형"].includes(value)) return "balanced";
+  if (["active", "aggressive", "공격", "공격형"].includes(value)) return "active";
+  return null;
+}
+
+export async function handleRiskProfileCommand(
+  input: string,
+  ctx: ChatContext,
+  tgSend: any
+): Promise<void> {
+  const parsed = parseRiskProfileInput(input);
+  if (parsed) {
+    await handleRiskProfileSelection(parsed, ctx, tgSend);
+    return;
+  }
+
+  const prefs = await getUserInvestmentPrefs(ctx.from?.id ?? ctx.chatId);
+  await tgSend("sendMessage", {
+    chat_id: ctx.chatId,
+    text: [
+      "<b>투자성향 설정</b>",
+      `현재 성향: <code>${riskProfileLabel(prefs.risk_profile)}</code>`,
+      "",
+      "안전형/균형형/공격형 중 하나를 선택하세요.",
+      "또는 명령으로 바로 설정할 수 있습니다.",
+      "예시: /투자성향 균형형",
+      "",
+      "※ /전략선택은 자동매매의 당일 운용전략(HOLD_SAFE/REDUCE_TIGHT/WAIT_AND_DIP_BUY)을 고르는 별도 기능입니다.",
+    ].join("\n"),
+    parse_mode: "HTML",
+    reply_markup: actionButtons([
+      { text: "안전형", callback_data: "risk:safe" },
+      { text: "균형형", callback_data: "risk:balanced" },
+      { text: "공격형", callback_data: "risk:active" },
+      { text: "전략선택", callback_data: "cmd:strategy" },
+    ], 2),
+  });
+}
+
 export async function handleRiskProfileSelection(
   profile: "safe" | "balanced" | "active",
   ctx: ChatContext,

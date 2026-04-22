@@ -43,6 +43,8 @@ const CALLBACK_COMMAND_TEXT: Record<string, string> = {
   etf: "/etf",
   alert: "/alert",
   help: "/help",
+  riskprofile: "/투자성향",
+  strategy: "/전략선택",
 };
 
 const CALLBACK_PREFIX_TEXT: Record<string, string> = {
@@ -59,6 +61,7 @@ const HELP_SECTIONS = [
     title: "빠른 시작",
     lines: [
       "/온보딩 — 처음 사용자 가이드",
+      "/투자성향 [안전형|균형형|공격형] — 기본 투자성향 설정",
       "/투자금 [금액] [분할횟수] [목표수익률] [성향] [일손실한도%] — 매수 계획 설정",
       "/전략선택 — 자동매매 기본 전략 선택",
       "/브리핑 — 오늘 장전 핵심 요약",
@@ -152,6 +155,8 @@ const UNKNOWN_COMMAND_TOKENS = [
   "/종목분석",
   "/재무",
   "/투자금",
+  "/투자성향",
+  "/전략선택",
   "/kospi",
   "/kosdaq",
   "/etf",

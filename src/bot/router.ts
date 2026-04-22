@@ -2,7 +2,7 @@ import { KO_MESSAGES } from "./messages/ko";
 import { handleBriefCommand } from "./commands/brief";
 import { handleBuyCommand } from "./commands/buy";
 import { handleSectorCommand } from "./commands/sector";
-import { handleOnboardingCommand } from "./commands/onboarding";
+import { handleOnboardingCommand, handleRiskProfileCommand } from "./commands/onboarding";
 import { handlePullbackCommand } from "./commands/pullback";
 import { handleAlertCommand } from "./commands/alert";
 import { handleEconomyCommand } from "./commands/economy";
@@ -80,6 +80,7 @@ const CMD = {
   FLOW:        /^\/(flow|수급)(?:\s+(.+))?$/i,
   FINANCE:     /^\/(finance|재무)(?:\s+(.+))?$/i,
   CAPITAL:     /^\/(capital|투자금)(?:\s+(.+))?$/i,
+  RISK_PROFILE:/^\/(투자성향|성향|risk|riskprofile)(?:\s+(.+))?$/i,
   WATCHONLYLIST: /^\/(watchlist|관심)$/i,
   WATCHONLYADD:  /^\/(watchadd|관심추가)(?:\s+(.+))?$/i,
   WATCHONLYREMOVE:/^\/(watchremove|관심제거)(?:\s+(.+))?$/i,
@@ -178,6 +179,7 @@ export async function routeMessage(
             { text: "보유", callback_data: "cmd:watchlist" },
             { text: "섹터", callback_data: "cmd:sector" },
             { text: "장전플랜", callback_data: "cmd:premarket" },
+          { text: "투자성향", callback_data: "cmd:riskprofile" },
             { text: "투자금 수정", callback_data: "prompt:capital" },
             { text: "가이드", callback_data: "cmd:onboarding" },
             { text: "프로필", callback_data: "cmd:profile" },
@@ -392,6 +394,13 @@ export async function routeMessage(
   if (CMD.CAPITAL.test(t)) {
     const mc = t.match(CMD.CAPITAL);
     await handleCapitalCommand(mc?.[2] ?? "", ctx, tgSend);
+    return;
+  }
+
+  // /투자성향 — 기본 투자성향 설정
+  if (CMD.RISK_PROFILE.test(t)) {
+    const mr = t.match(CMD.RISK_PROFILE);
+    await handleRiskProfileCommand(mr?.[2] ?? "", ctx, tgSend);
     return;
   }
 
