@@ -12,12 +12,17 @@ export async function handleStrategySelect(
     { id: "WAIT_AND_DIP_BUY", label: "매수 기회 대기", description: "현금 보유, 저가 진입 대기" },
   ];
 
+  const strategyLines = strategies
+    .map((s) => `<b>${s.label}</b>\n${s.description}`)
+    .join("\n\n");
+
   const messageText = [
     "<b>위험 대응 전략 선택</b>",
     "",
     "현재 시장 위험도에 따라 자동매매 규칙이 조정됩니다.",
+    "※ 투자성향(안전형/균형형/공격형)과 별개로, 오늘 운용 전략을 선택합니다.",
     "",
-    ...strategies.map((s) => `<b>${s.label}</b>\n${s.description}`).join("\n\n"),
+    strategyLines,
     "",
     "버튼을 선택하세요.",
   ].join("\n");

@@ -77,12 +77,35 @@ export async function routeCallbackData(
     }
 
     if (prefix === "strategy") {
-      const { handleStrategyCallback } = await import("./commands/strategySelect");
-      const supabaseModule = await import("@supabase/supabase-js");
-      const { SUPABASE_URL, SUPABASE_KEY } = process.env;
-      if (SUPABASE_URL && SUPABASE_KEY) {
-        const supabase = supabaseModule.createClient(SUPABASE_URL, SUPABASE_KEY);
+      try {
+        const { handleStrategyCallback } = await import("./commands/strategySelect");
+        const supabaseModule = await import("@supabase/supabase-js");
+        const {
+          SUPABASE_URL,
+          SUPABASE_SERVICE_ROLE_KEY,
+          SUPABASE_ANON_KEY,
+          SUPABASE_KEY,
+        } = process.env;
+        const supabaseKey =
+          SUPABASE_SERVICE_ROLE_KEY || SUPABASE_KEY || SUPABASE_ANON_KEY;
+
+        if (!SUPABASE_URL || !supabaseKey) {
+          await tgSend("sendMessage", {
+            chat_id: ctx.chatId,
+            text: "⚠️ 전략 저장 설정이 누락되었습니다. 관리자에게 문의해주세요.",
+          });
+          return;
+        }
+
+        const supabase = supabaseModule.createClient(SUPABASE_URL, supabaseKey);
         await handleStrategyCallback(ctx, tgSend, supabase, payload);
+        return;
+      } catch (error) {
+        console.error("[callbackRouter] strategy callback 처리 실패:", error);
+        await tgSend("sendMessage", {
+          chat_id: ctx.chatId,
+          text: "⚠️ 전략 선택 처리 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.",
+        });
         return;
       }
     }
