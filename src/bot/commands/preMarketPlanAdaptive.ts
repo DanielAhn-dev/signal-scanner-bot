@@ -63,7 +63,7 @@ export function derivePreMarketAdaptiveProfile(input: {
       reason: "최근 성과 우위로 상위 후보를 조금 더 적극 반영",
       scoreAdjustment: -2,
       maxOrders: 3,
-      minRiskReward: 1.4,
+      minRiskReward: 1.3,
     };
   }
 

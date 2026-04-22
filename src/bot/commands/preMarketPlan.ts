@@ -63,6 +63,16 @@ type AutoTradeSettingLike = {
   selected_strategy?: string | null;
 };
 
+type RiskProfile = "safe" | "balanced" | "active";
+
+type ProfilePlanTuning = {
+  scoreDelta: number;
+  minRiskReward: number;
+  maxOrders: number;
+  allowStrongWait: boolean;
+  waitScoreBuffer: number;
+};
+
 
 function toNumber(value: unknown, fallback = 0): number {
   const num = Number(value);
@@ -96,9 +106,36 @@ function formatSignedKrw(value: number): string {
   return `${rounded > 0 ? "+" : ""}${rounded.toLocaleString("ko-KR")}원`;
 }
 
+const SKIP_REASON_KO: Record<string, string> = {
+  "insufficient-cash": "현금부족",
+  "no-available-cash": "가용현금없음",
+  "cash-reserve-floor": "현금하한도달",
+  "strategy-blocked-buy": "전략차단",
+  "hold-safe-probe": "안전탐색보류",
+  "no-candidates": "후보없음",
+  "invalid-holding-or-price": "보유/가격오류",
+  "within-range": "목표범위내",
+  "holdings-fetch-failed": "보유조회실패",
+  "daily-holdings-fetch-failed": "일간보유조회실패",
+  "daily-sell-failed": "매도실패",
+  "monday-buy-failed": "월요매수실패",
+  "add-on-buy-failed": "추가매수실패",
+  "dry-run-monday-buy": "드라이런-월요매수",
+  "dry-run-add-on-buy": "드라이런-추가매수",
+  "dry-run-rebalance-buy": "드라이런-리밸런싱",
+  "stop-loss": "손절",
+  "take-profit-partial": "부분익절",
+  "take-profit-final": "최종익절",
+  "default": "기본",
+};
+
+function skipReasonLabel(reason: string): string {
+  return SKIP_REASON_KO[reason] ?? reason;
+}
+
 function summarizeSkipReasons(items: Array<{ reason: string; count: number }>): string {
   if (!items.length) return "없음";
-  return items.map((item) => `${item.reason} ${item.count}건`).join(", ");
+  return items.map((item) => `${skipReasonLabel(item.reason)} ${item.count}건`).join(", ");
 }
 
 function normalizeStock(input: ScoreCandidateRow["stock"]) {
@@ -133,6 +170,42 @@ function buildDefaultSetting(profile?: "safe" | "balanced" | "active"): AutoTrad
     return { monday_buy_slots: 2, max_positions: 10, min_buy_score: 72 };
   }
   return { monday_buy_slots: 2, max_positions: 8, min_buy_score: 70 };
+}
+
+function resolveProfilePlanTuning(input: {
+  profile?: RiskProfile;
+  adaptiveProfile: PreMarketAdaptiveProfile;
+}): ProfilePlanTuning {
+  const profile = input.profile ?? "safe";
+  const adaptive = input.adaptiveProfile;
+
+  if (profile === "active") {
+    return {
+      scoreDelta: -1,
+      minRiskReward: Math.max(1.2, adaptive.minRiskReward - 0.1),
+      maxOrders: Math.min(4, adaptive.maxOrders + 1),
+      allowStrongWait: true,
+      waitScoreBuffer: 8,
+    };
+  }
+
+  if (profile === "balanced") {
+    return {
+      scoreDelta: 0,
+      minRiskReward: adaptive.minRiskReward,
+      maxOrders: adaptive.maxOrders,
+      allowStrongWait: false,
+      waitScoreBuffer: 999,
+    };
+  }
+
+  return {
+    scoreDelta: 1,
+    minRiskReward: adaptive.minRiskReward + 0.1,
+    maxOrders: Math.max(1, adaptive.maxOrders - 1),
+    allowStrongWait: false,
+    waitScoreBuffer: 999,
+  };
 }
 
 function resolveEntryPrice(plan: ReturnType<typeof buildInvestmentPlan>, currentPrice: number): number {
@@ -376,6 +449,10 @@ export async function handlePreMarketPlanCommand(
     seedCapital,
     metrics: recentMetrics,
   });
+  const profileTuning = resolveProfilePlanTuning({
+    profile: prefs.risk_profile as RiskProfile | undefined,
+    adaptiveProfile,
+  });
   let deployableCash = resolveDeployableCash({
     availableCash,
     seedCapital,
@@ -412,7 +489,7 @@ export async function handlePreMarketPlanCommand(
 
   const { latestAsof, rows, factorByCode } = await fetchLatestRankedRows(300);
   const adjustedMinBuyScore = clampInt(
-    buyConstraint.minBuyScore + adaptiveProfile.scoreAdjustment,
+    buyConstraint.minBuyScore + adaptiveProfile.scoreAdjustment + profileTuning.scoreDelta,
     35,
     90
   );
@@ -439,9 +516,15 @@ export async function handlePreMarketPlanCommand(
     quantity: number;
     investedAmount: number;
   }> = [];
+  const rejectStats = {
+    wait: 0,
+    waitPromoted: 0,
+    lowRiskReward: 0,
+    sizingFailed: 0,
+  };
 
   let plannedHoldingCount = activeCount;
-  let slotsLeft = Math.min(buyConstraint.buySlots, adaptiveProfile.maxOrders, 3);
+  let slotsLeft = Math.min(buyConstraint.buySlots, profileTuning.maxOrders, 4);
 
   for (const candidate of selection.candidates) {
     if (slotsLeft <= 0) break;
@@ -473,8 +556,20 @@ export async function handlePreMarketPlanCommand(
       marketEnv,
     });
 
-    if (plan.status === "wait") continue;
-  if (plan.riskReward < adaptiveProfile.minRiskReward) continue;
+    if (plan.status === "wait") {
+      const allowStrongWaitOrder =
+        profileTuning.allowStrongWait &&
+        candidate.score >= adjustedMinBuyScore + profileTuning.waitScoreBuffer;
+      if (!allowStrongWaitOrder) {
+        rejectStats.wait += 1;
+        continue;
+      }
+      rejectStats.waitPromoted += 1;
+    }
+    if (plan.riskReward < profileTuning.minRiskReward) {
+      rejectStats.lowRiskReward += 1;
+      continue;
+    }
 
     const orderPrice = resolveEntryPrice(plan, candidate.close);
     const sizing = calculateAutoTradeBuySizing({
@@ -487,7 +582,10 @@ export async function handlePreMarketPlanCommand(
       prefs,
     });
 
-    if (sizing.quantity <= 0 || sizing.investedAmount <= 0) continue;
+    if (sizing.quantity <= 0 || sizing.investedAmount <= 0) {
+      rejectStats.sizingFailed += 1;
+      continue;
+    }
 
     actionable.push({
       candidate,
@@ -506,6 +604,7 @@ export async function handlePreMarketPlanCommand(
     LINE,
     `투자성향 <code>${riskProfileLabel(prefs.risk_profile)}</code> · 시장모드 <code>${marketPolicyLabel(marketPolicy.mode)}</code>`,
     `운용강도 <code>${adaptiveProfile.label}</code> · ${esc(adaptiveProfile.reason)}`,
+    `성향 보정 손익비 <code>${profileTuning.minRiskReward.toFixed(1)} 이상</code> · 주문상한 <code>${profileTuning.maxOrders}건</code>`,
     `가용현금 <code>${fmtInt(availableCash)}원</code> · 신규주문 가능 <code>${fmtInt(resolveDeployableCash({ availableCash, seedCapital, minCashReservePct: marketPolicy.minCashReservePct }))}원</code>`,
     `신규 슬롯 <code>${buyConstraint.buySlots}건</code> · 기준점수 <code>${buyConstraint.minBuyScore}점</code> → 적응형 <code>${adjustedMinBuyScore}점</code>`,
     latestAsof ? `점수 기준일 <code>${esc(latestAsof)}</code>` : "점수 기준일 없음",
@@ -521,6 +620,12 @@ export async function handlePreMarketPlanCommand(
   }
 
   if (!actionable.length) {
+    const rejectSummaryParts: string[] = [];
+    if (rejectStats.wait > 0) rejectSummaryParts.push(`관망 ${rejectStats.wait}건`);
+    if (rejectStats.waitPromoted > 0) rejectSummaryParts.push(`관망허용 ${rejectStats.waitPromoted}건`);
+    if (rejectStats.lowRiskReward > 0) rejectSummaryParts.push(`손익비미달 ${rejectStats.lowRiskReward}건`);
+    if (rejectStats.sizingFailed > 0) rejectSummaryParts.push(`수량미달 ${rejectStats.sizingFailed}건`);
+
     await tgSend("sendMessage", {
       chat_id: ctx.chatId,
       text: [
@@ -530,6 +635,9 @@ export async function handlePreMarketPlanCommand(
         selection.latestTopScore > 0
           ? `상위 점수 <code>${selection.latestTopScore.toFixed(1)}점</code> · 선별기준 <code>${selection.thresholdUsed}점</code> · 모드 <code>${selection.selectionMode}</code>`
           : "점수 후보가 비어 있습니다.",
+        rejectSummaryParts.length > 0
+          ? `후보 제외 사유: <code>${rejectSummaryParts.join(", ")}</code>`
+          : "후보 제외 사유 집계 없음",
         "권장: /자동사이클 점검 또는 /브리핑 으로 시장 상태를 다시 확인하세요.",
       ].join("\n"),
       parse_mode: "HTML",
