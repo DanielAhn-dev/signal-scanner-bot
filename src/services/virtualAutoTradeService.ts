@@ -2223,6 +2223,7 @@ function buildDefaultSettingForChat(chatId: number, riskProfile?: "safe" | "bala
       min_buy_score: 74,
       take_profit_pct: 10,
       stop_loss_pct: 5,
+      selected_strategy: "POSITION_CORE",
     };
   }
   if (riskProfile === "balanced") {
@@ -2234,6 +2235,7 @@ function buildDefaultSettingForChat(chatId: number, riskProfile?: "safe" | "bala
       min_buy_score: 72,
       take_profit_pct: 9,
       stop_loss_pct: 4,
+      selected_strategy: "SWING",
     };
   }
   return {
@@ -2244,6 +2246,7 @@ function buildDefaultSettingForChat(chatId: number, riskProfile?: "safe" | "bala
     min_buy_score: 70,
     take_profit_pct: 8,
     stop_loss_pct: 4,
+    selected_strategy: "HOLD_SAFE",
   };
 }
 
@@ -2294,6 +2297,7 @@ export async function runVirtualAutoTradingForChat(input: {
         min_buy_score: setting.min_buy_score,
         take_profit_pct: setting.take_profit_pct,
         stop_loss_pct: setting.stop_loss_pct,
+        selected_strategy: setting.selected_strategy,
         updated_at: new Date().toISOString(),
       },
       { onConflict: "chat_id" }

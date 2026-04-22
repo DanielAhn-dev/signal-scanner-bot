@@ -35,6 +35,14 @@ export type InvestmentPrefs = {
   daily_loss_limit_pct?: number;
 };
 
+function resolveDefaultAutoTradeStrategy(
+  riskProfile?: InvestmentPrefs["risk_profile"]
+): string {
+  if (riskProfile === "active") return "POSITION_CORE";
+  if (riskProfile === "balanced") return "SWING";
+  return "HOLD_SAFE";
+}
+
 // ─── 사용자 등록/업데이트 ───
 
 /** 모든 명령어 실행 시 호출 — upsert + last_active 갱신 */
@@ -132,6 +140,28 @@ export async function setUserInvestmentPrefs(
   if (error) {
     console.error("setUserInvestmentPrefs error:", error);
     return { ok: false, message: "투자금 설정 저장 중 오류가 발생했습니다." };
+  }
+
+  if (
+    patch.risk_profile === "safe" ||
+    patch.risk_profile === "balanced" ||
+    patch.risk_profile === "active"
+  ) {
+    const selectedStrategy = resolveDefaultAutoTradeStrategy(patch.risk_profile);
+    const { error: strategySyncError } = await supabase
+      .from("virtual_autotrade_settings")
+      .upsert(
+        {
+          chat_id: tgId,
+          selected_strategy: selectedStrategy,
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: "chat_id" }
+      );
+
+    if (strategySyncError) {
+      console.error("setUserInvestmentPrefs strategy sync error:", strategySyncError);
+    }
   }
 
   return {

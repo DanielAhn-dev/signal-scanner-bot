@@ -21,6 +21,7 @@ const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || "";
 const DEFAULT_TG_TIMEOUT_MS = 5000;
 const DOCUMENT_TG_TIMEOUT_MS = 30000;
 const DEFAULT_JOB_TIMEOUT_MS = 7800;
+const AUTO_CYCLE_JOB_TIMEOUT_MS = 30000;
 const REPORT_JOB_TIMEOUT_MS = 52000;
 const DEV_LOG = process.env.NODE_ENV !== "production";
 
@@ -148,9 +149,26 @@ async function handleWatchSectorJob(job: any) {
 }
 
 function resolveJobTimeout(text: string): number {
-  return /^\/(report|리포트)(?:\s|$)/i.test(text.trim())
+  return isAutoCycleCommandText(text)
+    ? AUTO_CYCLE_JOB_TIMEOUT_MS
+    : /^\/(report|리포트)(?:\s|$)/i.test(text.trim())
     ? REPORT_JOB_TIMEOUT_MS
     : DEFAULT_JOB_TIMEOUT_MS;
+}
+
+function isAutoCycleCommandText(text: string): boolean {
+  return /^\/(autocycle|자동사이클)(?:\s|$)/i.test(text.trim());
+}
+
+function describeCommandLabel(commandText?: string, context: "message" | "callback" = "message"): string {
+  const text = String(commandText || "").trim();
+  if (!text) return context === "callback" ? "버튼 요청" : "요청";
+  if (isAutoCycleCommandText(text) || /autocycle/i.test(text)) return "자동사이클 요청";
+  return /^\/(report|리포트)(?:\s|$)/i.test(text.trim())
+    ? "리포트 요청"
+    : context === "callback"
+    ? "버튼 요청"
+    : `${text.split(/\s+/)[0]} 요청`;
 }
 
 function isReportCommandText(text: string): boolean {
@@ -173,6 +191,55 @@ async function notifyReportFailure(chatId: number, error: unknown): Promise<void
     chat_id: chatId,
     text,
   });
+}
+
+async function notifyCommandFailure(
+  chatId: number,
+  error: unknown,
+  commandText?: string,
+  context: "message" | "callback" = "message"
+): Promise<void> {
+  const message = error instanceof Error ? error.message : String(error);
+  const label = describeCommandLabel(commandText, context);
+  const text = /^TIMEOUT:/i.test(message)
+    ? [
+        `${label} 처리 시간이 길어 이번 요청은 중단되었습니다.`,
+        isAutoCycleCommandText(commandText || "")
+          ? "잠시 후 /자동사이클 점검 으로 다시 확인해주세요."
+          : "잠시 후 다시 시도해주세요.",
+      ].join("\n")
+    : [
+        `${label} 처리 중 오류가 발생했습니다.`,
+        "잠시 후 다시 시도해주세요.",
+      ].join("\n");
+
+  await tgFetch("sendMessage", {
+    chat_id: chatId,
+    text,
+  });
+}
+
+async function tgCallOrThrow(
+  method: string,
+  body: any,
+  chatId?: number
+): Promise<TGApiResponse> {
+  const resp = await tgFetch(method, body);
+  if (DEV_LOG) {
+    logWorker("info", "telegram_send", {
+      step: "tg_send",
+      method,
+      chat_id: chatId,
+      ok: Boolean(resp?.ok),
+      description: resp?.ok ? undefined : resp?.description,
+    });
+  }
+
+  if (!resp?.ok && method !== "answerCallbackQuery" && method !== "sendChatAction") {
+    throw new Error(`Telegram ${method} failed: ${resp?.description || "unknown error"}`);
+  }
+
+  return resp;
 }
 
 async function handleTelegramUpdateJob(job: any) {
@@ -201,13 +268,17 @@ async function handleTelegramUpdateJob(job: any) {
     });
     try {
       await withTimeout(
-        routeCallbackData(u.callback_query.data, { chatId, from }, tgFetch),
+        routeCallbackData(u.callback_query.data, { chatId, from }, (method: string, body: any) =>
+          tgCallOrThrow(method, body, chatId)
+        ),
         callbackTimeout,
         `callback ${u.callback_query.data}`
       );
     } catch (error) {
       if (u.callback_query.data === "cmd:report" || u.callback_query.data.startsWith("cmd:report:")) {
         await notifyReportFailure(chatId, error);
+      } else {
+        await notifyCommandFailure(chatId, error, u.callback_query.data, "callback");
       }
       throw error;
     }
@@ -265,24 +336,17 @@ async function handleTelegramUpdateJob(job: any) {
     });
     try {
       await withTimeout(
-        routeMessage(text, { chatId, from }, async (method: string, body: any) => {
-          const resp = await tgFetch(method, body);
-          if (DEV_LOG) {
-            logWorker("info", "telegram_send", {
-              step: "tg_send",
-              method,
-              chat_id: chatId,
-              ok: Boolean(resp?.ok),
-            });
-          }
-          return resp;
-        }),
+        routeMessage(text, { chatId, from }, (method: string, body: any) =>
+          tgCallOrThrow(method, body, chatId)
+        ),
         resolveJobTimeout(text),
         `routeMessage ${text}`
       );
     } catch (error) {
       if (isReportCommandText(text)) {
         await notifyReportFailure(chatId, error);
+      } else {
+        await notifyCommandFailure(chatId, error, text, "message");
       }
       throw error;
     }
