@@ -9,7 +9,7 @@
             "maxDuration": 15
         },
         "api/worker.ts": {
-            "maxDuration": 15
+            "maxDuration": 60
         }
     },
     "outputDirectory": ".",

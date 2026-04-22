@@ -15,22 +15,30 @@ function resolveBase(): string {
 }
 
 async function triggerWorker(base: string, secret: string): Promise<void> {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 8000);
+  for (let attempt = 1; attempt <= 2; attempt += 1) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 12000);
 
-  try {
-    await fetch(
-      `${base}/api/worker?token=${encodeURIComponent(secret)}`,
-      {
-        method: "POST",
-        headers: { "x-internal-secret": secret },
-        signal: controller.signal,
+    try {
+      const response = await fetch(
+        `${base}/api/worker?token=${encodeURIComponent(secret)}`,
+        {
+          method: "POST",
+          headers: { "x-internal-secret": secret },
+          signal: controller.signal,
+        }
+      );
+
+      if (response.ok) {
+        return;
       }
-    );
-  } catch (e) {
-    console.error("[telegram] worker trigger failed:", e);
-  } finally {
-    clearTimeout(timer);
+
+      console.error("[telegram] worker trigger non-2xx:", response.status);
+    } catch (e) {
+      console.error(`[telegram] worker trigger failed (attempt ${attempt}):`, e);
+    } finally {
+      clearTimeout(timer);
+    }
   }
 }
 
