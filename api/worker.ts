@@ -8,6 +8,19 @@ import {
   getReplyPrefixForPromptKind,
   resolveReplyPrefixFromText,
 } from "../src/bot/commandCatalog";
+import {
+  WORKER_TIMEOUTS,
+  resolveJobTimeoutByCategory,
+  isReportCommandText,
+  resolveCommandCategoryFromMessageText,
+  resolveCommandCategoryFromCallbackData,
+  buildFailureMessage,
+  buildWorkerMetricKey,
+  evaluateTimeoutFailureAlert,
+  type FailureAlertConfig,
+  type FailureAlertState,
+  type CommandCategory,
+} from "./workerPolicy";
 
 // supa 클라이언트는 service_role 키를 사용해야 함
 const supa = () =>
@@ -18,15 +31,57 @@ const supa = () =>
 
 const INTERNAL_SECRET = process.env.CRON_SECRET || "";
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || "";
-const DEFAULT_TG_TIMEOUT_MS = 5000;
-const DOCUMENT_TG_TIMEOUT_MS = 30000;
-const DEFAULT_JOB_TIMEOUT_MS = 20000;
-const TRADE_JOB_TIMEOUT_MS = 45000;
-const AUTO_CYCLE_JOB_TIMEOUT_MS = 30000;
-const BRIEFING_JOB_TIMEOUT_MS = 50000;
-const REPORT_JOB_TIMEOUT_MS = 52000;
+const TELEGRAM_ADMIN_CHAT_ID = Number(process.env.TELEGRAM_ADMIN_CHAT_ID || "0");
 const STALE_TELEGRAM_JOB_MS = 3 * 60 * 1000;
 const DEV_LOG = process.env.NODE_ENV !== "production";
+
+type FailureAlertBucketKey = `${"message" | "callback"}.${CommandCategory}.timeout`;
+
+const failureAlertStates = new Map<FailureAlertBucketKey, FailureAlertState>();
+
+function toPositiveInt(value: string | undefined, fallback: number): number {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return fallback;
+  const integer = Math.floor(parsed);
+  return integer > 0 ? integer : fallback;
+}
+
+const FAILURE_ALERT_CONFIG: FailureAlertConfig = {
+  threshold: toPositiveInt(process.env.WORKER_TIMEOUT_ALERT_THRESHOLD, 5),
+  windowMs: toPositiveInt(process.env.WORKER_TIMEOUT_ALERT_WINDOW_MS, 10 * 60 * 1000),
+  cooldownMs: toPositiveInt(process.env.WORKER_TIMEOUT_ALERT_COOLDOWN_MS, 10 * 60 * 1000),
+};
+
+function cleanupFailureAlertStates(nowMs: number): void {
+  const ttl = Math.max(60_000, FAILURE_ALERT_CONFIG.windowMs * 2);
+  for (const [key, state] of failureAlertStates.entries()) {
+    if (nowMs - state.windowStartedAtMs > ttl) {
+      failureAlertStates.delete(key);
+    }
+  }
+}
+
+async function notifyAdminTimeoutAlert(input: {
+  category: CommandCategory;
+  context: "message" | "callback";
+  bucketState: FailureAlertState;
+  metricKey: string;
+}): Promise<void> {
+  if (!TELEGRAM_ADMIN_CHAT_ID) return;
+  const { category, context, bucketState, metricKey } = input;
+  const windowMinutes = Math.max(1, Math.round(FAILURE_ALERT_CONFIG.windowMs / 60000));
+  const text = [
+    "[Worker Timeout Alert]",
+    `category=${category}, context=${context}`,
+    `count=${bucketState.count}, window=${windowMinutes}m`,
+    `metric_key=${metricKey}`,
+  ].join("\n");
+
+  await tgFetch("sendMessage", {
+    chat_id: TELEGRAM_ADMIN_CHAT_ID,
+    text,
+  });
+}
 
 export const config = {
   maxDuration: 60,
@@ -75,7 +130,10 @@ async function tgFetch(method: string, body: any): Promise<TGApiResponse> {
   }
 
   const controller = new AbortController();
-  const timeoutMs = method === "sendDocument" ? DOCUMENT_TG_TIMEOUT_MS : DEFAULT_TG_TIMEOUT_MS;
+  const timeoutMs =
+    method === "sendDocument"
+      ? WORKER_TIMEOUTS.tg.documentMs
+      : WORKER_TIMEOUTS.tg.defaultMs;
   const timer = setTimeout(() => controller.abort(), timeoutMs);
 
   try {
@@ -106,7 +164,7 @@ async function tgFetch(method: string, body: any): Promise<TGApiResponse> {
 
 function withTimeout<T>(
   p: Promise<T>,
-  ms = DEFAULT_JOB_TIMEOUT_MS,
+  ms: number = WORKER_TIMEOUTS.job.defaultMs,
   label = "job"
 ): Promise<T> {
   return new Promise((resolve, reject) => {
@@ -151,53 +209,6 @@ async function handleWatchSectorJob(job: any) {
   }
 }
 
-function resolveJobTimeout(text: string): number {
-  return isAutoCycleCommandText(text)
-    ? AUTO_CYCLE_JOB_TIMEOUT_MS
-    : isBriefCommandText(text)
-    ? BRIEFING_JOB_TIMEOUT_MS
-    : isTradeCommandText(text)
-    ? TRADE_JOB_TIMEOUT_MS
-    : /^\/(report|리포트)(?:\s|$)/i.test(text.trim())
-    ? REPORT_JOB_TIMEOUT_MS
-    : DEFAULT_JOB_TIMEOUT_MS;
-}
-
-function isAutoCycleCommandText(text: string): boolean {
-  return /^\/(autocycle|자동사이클)(?:\s|$)/i.test(text.trim());
-}
-
-function isTradeCommandText(text: string): boolean {
-  return /^\/(analyze|종목분석)(?:\s|$)/i.test(text.trim());
-}
-
-function isBriefCommandText(text: string): boolean {
-  return /^\/(brief|morning|브리핑|장전)(?:\s|$)/i.test(text.trim());
-}
-
-function isTradeCallbackData(data: string): boolean {
-  return /^trade:/i.test(data.trim());
-}
-
-function isBriefCallbackData(data: string): boolean {
-  return data.trim() === "cmd:brief";
-}
-
-function describeCommandLabel(commandText?: string, context: "message" | "callback" = "message"): string {
-  const text = String(commandText || "").trim();
-  if (!text) return context === "callback" ? "버튼 요청" : "요청";
-  if (isAutoCycleCommandText(text) || /autocycle/i.test(text)) return "자동사이클 요청";
-  return /^\/(report|리포트)(?:\s|$)/i.test(text.trim())
-    ? "리포트 요청"
-    : context === "callback"
-    ? "버튼 요청"
-    : `${text.split(/\s+/)[0]} 요청`;
-}
-
-function isReportCommandText(text: string): boolean {
-  return /^\/(report|리포트)(?:\s|$)/i.test(text.trim());
-}
-
 function isStaleTelegramUpdateJob(job: { type?: string; created_at?: string | null }): boolean {
   if (job.type !== "telegram_update") return false;
   const createdAt = Date.parse(String(job.created_at || ""));
@@ -205,48 +216,67 @@ function isStaleTelegramUpdateJob(job: { type?: string; created_at?: string | nu
   return Date.now() - createdAt > STALE_TELEGRAM_JOB_MS;
 }
 
-async function notifyReportFailure(chatId: number, error: unknown): Promise<void> {
+async function notifyJobFailure(input: {
+  chatId: number;
+  error: unknown;
+  category: CommandCategory;
+  commandText?: string;
+  context?: "message" | "callback";
+}): Promise<void> {
+  const { chatId, error, category, commandText, context } = input;
   const message = error instanceof Error ? error.message : String(error);
-  const text = /^TIMEOUT:/i.test(message)
-    ? [
-        "리포트 생성 시간이 길어져 이번 요청은 중단되었습니다.",
-        "잠시 후 다시 시도해주세요.",
-      ].join("\n")
-    : [
-        "리포트 생성 중 오류가 발생했습니다.",
-        "잠시 후 다시 시도해주세요.",
-      ].join("\n");
+  const isTimeout = /^TIMEOUT:/i.test(message);
+  const logContext = context ?? "message";
+  const metricKey = buildWorkerMetricKey({
+    event: "command_failed_notify",
+    category,
+    context: logContext,
+    isTimeout,
+  });
+  logWorker("error", "command_failed_notify", {
+    step: "notify_failure",
+    chat_id: chatId,
+    category,
+    context: logContext,
+    is_timeout: isTimeout,
+    metric_key: metricKey,
+    command: commandText,
+    error_type: detectErrorType(error),
+    error: message,
+  });
 
   await tgFetch("sendMessage", {
     chat_id: chatId,
-    text,
+    text: buildFailureMessage({
+      error,
+      category,
+      commandText,
+      context,
+    }),
   });
-}
 
-async function notifyCommandFailure(
-  chatId: number,
-  error: unknown,
-  commandText?: string,
-  context: "message" | "callback" = "message"
-): Promise<void> {
-  const message = error instanceof Error ? error.message : String(error);
-  const label = describeCommandLabel(commandText, context);
-  const text = /^TIMEOUT:/i.test(message)
-    ? [
-        `${label} 처리 시간이 길어 이번 요청은 중단되었습니다.`,
-        isAutoCycleCommandText(commandText || "")
-          ? "잠시 후 /자동사이클 점검 으로 다시 확인해주세요."
-          : "잠시 후 다시 시도해주세요.",
-      ].join("\n")
-    : [
-        `${label} 처리 중 오류가 발생했습니다.`,
-        "잠시 후 다시 시도해주세요.",
-      ].join("\n");
-
-  await tgFetch("sendMessage", {
-    chat_id: chatId,
-    text,
-  });
+  if (isTimeout) {
+    const nowMs = Date.now();
+    cleanupFailureAlertStates(nowMs);
+    const bucketKey = `${logContext}.${category}.timeout` as FailureAlertBucketKey;
+    const evaluated = evaluateTimeoutFailureAlert({
+      isTimeout,
+      nowMs,
+      state: failureAlertStates.get(bucketKey),
+      config: FAILURE_ALERT_CONFIG,
+    });
+    if (evaluated.nextState) {
+      failureAlertStates.set(bucketKey, evaluated.nextState);
+      if (evaluated.shouldAlert) {
+        await notifyAdminTimeoutAlert({
+          category,
+          context: logContext,
+          bucketState: evaluated.nextState,
+          metricKey,
+        });
+      }
+    }
+  }
 }
 
 async function tgCallOrThrow(
@@ -287,19 +317,20 @@ async function handleTelegramUpdateJob(job: any) {
       show_alert: false,
     });
 
-    const callbackTimeout =
-      u.callback_query.data === "cmd:report" || u.callback_query.data.startsWith("cmd:report:")
-        ? REPORT_JOB_TIMEOUT_MS
-        : isBriefCallbackData(u.callback_query.data)
-        ? BRIEFING_JOB_TIMEOUT_MS
-        : isTradeCallbackData(u.callback_query.data)
-        ? TRADE_JOB_TIMEOUT_MS
-        : DEFAULT_JOB_TIMEOUT_MS;
+    const callbackCategory = resolveCommandCategoryFromCallbackData(u.callback_query.data);
+    const callbackTimeout = resolveJobTimeoutByCategory(callbackCategory);
     logWorker("info", "command_start", {
       step: "callback_route",
       command: u.callback_query.data,
       chat_id: chatId,
       job_id: job.id,
+      category: callbackCategory,
+      timeout_ms: callbackTimeout,
+      metric_key: buildWorkerMetricKey({
+        event: "command_start",
+        category: callbackCategory,
+        context: "callback",
+      }),
     });
     try {
       await withTimeout(
@@ -310,11 +341,13 @@ async function handleTelegramUpdateJob(job: any) {
         `callback ${u.callback_query.data}`
       );
     } catch (error) {
-      if (u.callback_query.data === "cmd:report" || u.callback_query.data.startsWith("cmd:report:")) {
-        await notifyReportFailure(chatId, error);
-      } else {
-        await notifyCommandFailure(chatId, error, u.callback_query.data, "callback");
-      }
+      await notifyJobFailure({
+        chatId,
+        error,
+        category: callbackCategory,
+        commandText: u.callback_query.data,
+        context: "callback",
+      });
       throw error;
     }
     logWorker("info", "command_done", {
@@ -323,6 +356,11 @@ async function handleTelegramUpdateJob(job: any) {
       chat_id: chatId,
       job_id: job.id,
       duration_ms: Date.now() - startedAt,
+      metric_key: buildWorkerMetricKey({
+        event: "command_done",
+        category: callbackCategory,
+        context: "callback",
+      }),
     });
     return;
   }
@@ -363,26 +401,37 @@ async function handleTelegramUpdateJob(job: any) {
     }
 
     await tgFetch("sendChatAction", { chat_id: chatId, action: "typing" });
+    const messageCategory = resolveCommandCategoryFromMessageText(text);
+    const messageTimeout = resolveJobTimeoutByCategory(messageCategory);
     logWorker("info", "command_start", {
       step: "route_message",
       command: text,
       chat_id: chatId,
       job_id: job.id,
+      category: messageCategory,
+      timeout_ms: messageTimeout,
+      metric_key: buildWorkerMetricKey({
+        event: "command_start",
+        category: messageCategory,
+        context: "message",
+      }),
     });
     try {
       await withTimeout(
         routeMessage(text, { chatId, from }, (method: string, body: any) =>
           tgCallOrThrow(method, body, chatId)
         ),
-        resolveJobTimeout(text),
+        messageTimeout,
         `routeMessage ${text}`
       );
     } catch (error) {
-      if (isReportCommandText(text)) {
-        await notifyReportFailure(chatId, error);
-      } else {
-        await notifyCommandFailure(chatId, error, text, "message");
-      }
+      await notifyJobFailure({
+        chatId,
+        error,
+        category: messageCategory,
+        commandText: text,
+        context: "message",
+      });
       throw error;
     }
     logWorker("info", "command_done", {
@@ -391,6 +440,11 @@ async function handleTelegramUpdateJob(job: any) {
       chat_id: chatId,
       job_id: job.id,
       duration_ms: Date.now() - startedAt,
+      metric_key: buildWorkerMetricKey({
+        event: "command_done",
+        category: messageCategory,
+        context: "message",
+      }),
     });
   }
 }
