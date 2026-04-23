@@ -17,19 +17,17 @@ export async function sendStartMessage(ctx: ChatContext, tgSend: any): Promise<v
     text: hasSetup
       ? [
           `<b>Signal Scanner Bot</b>`,
-          `보수적으로 후보를 압축하고, 종목별 진입 구간만 짧게 보여주는 투자 봇입니다.`,
+          `장전 브리핑부터 주간 리포트까지 5단계로 따라가며 운용하는 투자 봇입니다.`,
           ``,
           `현재 설정`,
           `투자성향: ${riskProfileLabel(prefs.risk_profile)}`,
           `투자금: ${(prefs.capital_krw || 0).toLocaleString("ko-KR")}원`,
           ``,
-          `/주간코파일럿 — 이번 주 실행 흐름 한번에 진행`,
-          `/brief — 장전 브리핑 + 내 보유 종목 점검`,
-          `/sector — 주도 섹터와 대표 후보`,
-          `/pullback — 눌림목 대기 후보`,
-          `/관심 — 추이 관찰 종목 목록`,
-          `/보유 — 가상 보유 포트폴리오`,
-          `/장전플랜 — 9시 전 예약 주문용 후보/수량/매도가`,
+          `1) 오늘 브리핑: /brief`,
+          `2) 후보 스캔: /scan · /pullback`,
+          `3) 종목 검증: /종목분석 · /재무 · /수급`,
+          `4) 매매/포트폴리오: /장전플랜 · /보유 · /자동사이클 실행`,
+          `5) 주간 리포트: /리포트 추천 · /주간코파일럿`,
           ``,
           `도움말: /help`,
         ].join("\n")
@@ -47,9 +45,11 @@ export async function sendStartMessage(ctx: ChatContext, tgSend: any): Promise<v
     reply_markup: hasSetup
       ? actionButtons(
           [
-            { text: "주간 코파일럿", callback_data: "cmd:weeklycopilot" },
-            { text: "장전플랜", callback_data: "cmd:premarket" },
-            { text: "보유대응", callback_data: "cmd:watchresp" },
+            { text: "1. 오늘 브리핑", callback_data: "cmd:brief" },
+            { text: "2. 후보 스캔", callback_data: "cmd:scan" },
+            { text: "3. 종목 검증", callback_data: "prompt:trade" },
+            { text: "4. 매매/포트폴리오", callback_data: "cmd:watchlist" },
+            { text: "5. 주간 리포트", callback_data: "cmd:report:추천" },
             { text: "자동 점검", callback_data: "cmd:autocycle:check" },
             { text: "자동 실행", callback_data: "cmd:autocycle:run" },
             { text: "설정 가이드", callback_data: "cmd:onboarding" },

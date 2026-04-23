@@ -167,12 +167,16 @@ function isWatchOnlyItem(item: any): boolean {
   return !hasVirtualPosition(item);
 }
 
+function normalizePositionBucket(value: unknown): "LONG" | "SWING" {
+  return String(value ?? "").trim().toUpperCase() === "LONG" ? "LONG" : "SWING";
+}
+
 async function fetchWatchlistRows(chatId: number): Promise<{ items: any[]; error: any }> {
   const { data, error } = await supabaseRead
     .from("watchlist")
     .select(
       `
-      code, buy_price, buy_date, memo, created_at, quantity, invested_amount,
+      code, buy_price, buy_date, memo, created_at, quantity, invested_amount, bucket,
       stock:stocks!inner ( name, market, close, rsi14, sector_id )
     `
     )
@@ -1122,6 +1126,8 @@ export async function handleWatchlistCommand(
   let actionable = 0;
   let pullback = 0;
   let wait = 0;
+  let longBucketCount = 0;
+  let swingBucketCount = 0;
   let etfCount = 0;
   let stockCount = 0;
 
@@ -1130,6 +1136,9 @@ export async function handleWatchlistCommand(
     const name = stock?.name ?? item.code;
     const market = String(stock?.market ?? "");
     const isEtf = isEtfLike({ market, name });
+    const bucket = normalizePositionBucket(item.bucket);
+    if (bucket === "LONG") longBucketCount += 1;
+    else swingBucketCount += 1;
     if (isEtf) etfCount += 1;
     else stockCount += 1;
     const etfMeta = etfMetaMap.get(String(item.code));
@@ -1194,7 +1203,7 @@ export async function handleWatchlistCommand(
       : "";
 
     return (
-      `${idx + 1}. <b>${esc(name)}</b> (${item.code})${isEtf ? " · ETF" : ""} · 추가 (${addedDate})\n` +
+      `${idx + 1}. <b>${esc(name)}</b> (${item.code})${isEtf ? " · ETF" : ""} · ${bucket === "LONG" ? "장기" : "단기"} · 추가 (${addedDate})\n` +
       `    현재 <code>${fmtInt(close)}원</code>  ${changeStr}` +
       buyStr +
       plStr +
@@ -1247,6 +1256,7 @@ export async function handleWatchlistCommand(
     LINE,
     `오늘 액션 ${actionable}건 · 눌림 대기 ${pullback}건 · 관망 ${wait}건`,
     `주식 ${stockCount}건 · ETF ${etfCount}건`,
+    `버킷 장기 ${longBucketCount}건 · 단기 ${swingBucketCount}건`,
     "",
     ...lines,
     summaryLine,

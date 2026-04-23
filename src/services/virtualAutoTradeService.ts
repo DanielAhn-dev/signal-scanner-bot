@@ -19,6 +19,7 @@ import {
   buildPositionStrategyMemo,
   parsePositionStrategyState,
   planAutoTradeExit,
+  resolvePositionBucketFromProfile,
   resolvePositionTradeProfile,
   type PlannedAutoTradeExit,
 } from "./virtualAutoTradePositionStrategy";
@@ -48,6 +49,8 @@ import {
   detectTrendBreakExitSignal,
   evaluateAutoTradeSignalGate,
 } from "./virtualAutoTradeSignalGate";
+import { sendMessage } from "../telegram/api";
+import { runLongTermCoachForChat } from "./longTermCoachService";
 
 type RunMode = SelectionAutoTradeRunMode;
 type RunType = AutoTradeRunType;
@@ -61,6 +64,8 @@ type AutoTradeSettingRow = {
   min_buy_score: number;
   take_profit_pct: number;
   stop_loss_pct: number;
+  long_term_ratio?: number | null;
+  last_long_term_coach_at?: string | null;
   last_monday_buy_at?: string | null;
   last_daily_review_at?: string | null;
   selected_strategy?: string | null;
@@ -177,6 +182,10 @@ function toPositiveInt(value: unknown, fallback: number): number {
 function clamp(value: number, min: number, max: number): number {
   if (!Number.isFinite(value)) return min;
   return Math.max(min, Math.min(max, value));
+}
+
+function normalizeLongTermRatio(value: unknown, fallback = 70): number {
+  return Math.round(clamp(toNumber(value, fallback), 0, 100));
 }
 
 function resolveSignalTrustThresholdsFromPrefs(prefs: {
@@ -308,6 +317,36 @@ function kstDateKey(base = new Date()): string {
   const m = String(d.getUTCMonth() + 1).padStart(2, "0");
   const day = String(d.getUTCDate()).padStart(2, "0");
   return `${y}-${m}-${day}`;
+}
+
+function pickExecutionLines(notes: string[]): string[] {
+  return notes
+    .filter((note) => /^\[(실행 매수|실행 추가매수|실행 매도|실행 부분익절)\]/.test(note))
+    .slice(0, 5);
+}
+
+function buildAutoTradeExecutionAlert(input: {
+  runType: RunType;
+  action: AutoTradeActionSummary;
+}): string | null {
+  const executedCount = input.action.buys + input.action.sells;
+  if (executedCount <= 0) return null;
+
+  const runLabel =
+    input.runType === "MONDAY_BUY"
+      ? "월요일 진입"
+      : input.runType === "DAILY_REVIEW"
+        ? "일일 대응"
+        : "수동 실행";
+
+  const lines = [
+    `[자동사이클 체결 알림] ${runLabel}`,
+    `매수 ${input.action.buys}건 · 매도 ${input.action.sells}건 · 미체결 ${input.action.skipped}건`,
+    ...pickExecutionLines(input.action.notes || []).map((line) => `- ${line}`),
+    "다음 점검: /보유 · /보유대응",
+  ];
+
+  return lines.join("\n");
 }
 
 function isKrxIntradaySession(base = new Date()): boolean {
@@ -911,6 +950,8 @@ async function runMondayBuyForUser(payload: {
   if (selectedStrategy) {
     summary.notes.push(`전략: ${getStrategyLabel(selectedStrategy) || selectedStrategy}`);
   }
+  const longTermRatio = normalizeLongTermRatio(payload.setting.long_term_ratio, 70);
+  summary.notes.push(`자산 비중: 장기 ${longTermRatio}% · 단기 ${100 - longTermRatio}%`);
   summary.notes.push(
     `신뢰도 임계값(${signalTrustThresholds.variant}): 신규 ${signalTrustThresholds.newBuy} · 추가 ${signalTrustThresholds.addOn} · 리밸런싱 ${signalTrustThresholds.rebalance}`
   );
@@ -1345,6 +1386,7 @@ async function runMondayBuyForUser(payload: {
             buy_date: new Date().toISOString().slice(0, 10),
             quantity: qty,
             invested_amount: investedAmount,
+            bucket: resolvePositionBucketFromProfile(tradeProfile.profile),
             status: "holding",
             memo: buildPositionStrategyMemo({
               event: "monday-buy",
@@ -2600,6 +2642,7 @@ async function runDailyReviewForUser(payload: {
                 buy_date: new Date().toISOString().slice(0, 10),
                 quantity: qty,
                 invested_amount: investedAmount,
+                bucket: resolvePositionBucketFromProfile(entryProfile.profile),
                 memo: buildPositionStrategyMemo({
                   event: "rebalance-buy",
                   note: "autotrade-rebalance-buy",
@@ -2755,6 +2798,7 @@ function buildDefaultSettingForChat(chatId: number, riskProfile?: "safe" | "bala
       min_buy_score: 74,
       take_profit_pct: 10,
       stop_loss_pct: 5,
+      long_term_ratio: 55,
       selected_strategy: "POSITION_CORE",
     };
   }
@@ -2767,6 +2811,7 @@ function buildDefaultSettingForChat(chatId: number, riskProfile?: "safe" | "bala
       min_buy_score: 72,
       take_profit_pct: 9,
       stop_loss_pct: 4,
+      long_term_ratio: 65,
       selected_strategy: "SWING",
     };
   }
@@ -2778,6 +2823,7 @@ function buildDefaultSettingForChat(chatId: number, riskProfile?: "safe" | "bala
     min_buy_score: 70,
     take_profit_pct: 8,
     stop_loss_pct: 4,
+    long_term_ratio: 75,
     selected_strategy: "HOLD_SAFE",
   };
 }
@@ -2804,7 +2850,7 @@ export async function runVirtualAutoTradingForChat(input: {
   const { data: settingRow } = await supabase
     .from("virtual_autotrade_settings")
     .select(
-      "chat_id, is_enabled, monday_buy_slots, max_positions, min_buy_score, take_profit_pct, stop_loss_pct, last_monday_buy_at, last_daily_review_at, selected_strategy"
+      "chat_id, is_enabled, monday_buy_slots, max_positions, min_buy_score, take_profit_pct, stop_loss_pct, long_term_ratio, last_monday_buy_at, last_daily_review_at, selected_strategy"
     )
     .eq("chat_id", input.chatId)
     .maybeSingle();
@@ -2819,6 +2865,10 @@ export async function runVirtualAutoTradingForChat(input: {
     ...defaultSetting,
     ...(settingRow as Partial<AutoTradeSettingRow> | null ?? {}),
     chat_id: input.chatId,
+    long_term_ratio: normalizeLongTermRatio(
+      (settingRow as Partial<AutoTradeSettingRow> | null)?.long_term_ratio,
+      defaultSetting.long_term_ratio ?? 70
+    ),
     is_enabled: ensureEnabled ? true : Boolean((settingRow as any)?.is_enabled ?? defaultSetting.is_enabled),
   };
 
@@ -2832,6 +2882,7 @@ export async function runVirtualAutoTradingForChat(input: {
         min_buy_score: setting.min_buy_score,
         take_profit_pct: setting.take_profit_pct,
         stop_loss_pct: setting.stop_loss_pct,
+        long_term_ratio: setting.long_term_ratio,
         selected_strategy: setting.selected_strategy,
         updated_at: new Date().toISOString(),
       },
@@ -2965,7 +3016,7 @@ export async function runVirtualAutoTradingCycle(input?: {
   const { data: settingsData, error: settingsError } = await supabase
     .from("virtual_autotrade_settings")
     .select(
-      "chat_id, is_enabled, monday_buy_slots, max_positions, min_buy_score, take_profit_pct, stop_loss_pct, last_monday_buy_at, last_daily_review_at, selected_strategy"
+      "chat_id, is_enabled, monday_buy_slots, max_positions, min_buy_score, take_profit_pct, stop_loss_pct, long_term_ratio, last_long_term_coach_at, last_monday_buy_at, last_daily_review_at, selected_strategy"
     )
     .eq("is_enabled", true)
     .order("chat_id", { ascending: true })
@@ -3049,6 +3100,34 @@ export async function runVirtualAutoTradingCycle(input?: {
             .from("virtual_autotrade_settings")
             .update({ last_daily_review_at: new Date().toISOString() })
             .eq("chat_id", setting.chat_id);
+        }
+
+        const executionAlert = buildAutoTradeExecutionAlert({
+          runType,
+          action: actionSummary,
+        });
+        if (executionAlert) {
+          await sendMessage(setting.chat_id, executionAlert).catch((err: unknown) => {
+            console.error("[autoTrade] execution alert send failed", err);
+          });
+        }
+
+        if (runType !== "MONDAY_BUY") {
+          const coach = await runLongTermCoachForChat({
+            supabase,
+            chatId: setting.chat_id,
+            lastCoachAt: setting.last_long_term_coach_at,
+          }).catch(() => null);
+
+          if (coach?.shouldNotify && coach.text) {
+            await sendMessage(setting.chat_id, coach.text).catch((err: unknown) => {
+              console.error("[autoTrade] long-term coach send failed", err);
+            });
+            await supabase
+              .from("virtual_autotrade_settings")
+              .update({ last_long_term_coach_at: new Date().toISOString() })
+              .eq("chat_id", setting.chat_id);
+          }
         }
       }
 

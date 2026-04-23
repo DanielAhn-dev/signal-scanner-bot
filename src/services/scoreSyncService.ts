@@ -4,6 +4,13 @@ import { calculateScore, type MarketEnv } from "../score/engine";
 import { fetchAllMarketData } from "../utils/fetchMarketData";
 import { fetchLatestScoresByCodes } from "./scoreSourceService";
 
+type InvestorDailyRow = {
+  ticker: string;
+  date: string;
+  foreign: number | null;
+  institution: number | null;
+};
+
 type ScoreUpsertRow = {
   code: string;
   asof: string;
@@ -63,6 +70,76 @@ function resolveMarketEnv(raw: Awaited<ReturnType<typeof fetchAllMarketData>>): 
   };
 }
 
+function countConsecutivePositive(values: number[]): number {
+  let count = 0;
+  for (const value of values) {
+    if (value > 0) count += 1;
+    else break;
+  }
+  return count;
+}
+
+async function fetchInvestorFlowByCodes(
+  supabase: SupabaseClient,
+  codes: string[]
+): Promise<Map<string, {
+  foreign5d: number;
+  institution5d: number;
+  foreignConsecutiveBuyDays: number;
+  institutionConsecutiveBuyDays: number;
+}>> {
+  const map = new Map<string, {
+    foreign5d: number;
+    institution5d: number;
+    foreignConsecutiveBuyDays: number;
+    institutionConsecutiveBuyDays: number;
+  }>();
+
+  if (!codes.length) return map;
+
+  const since30 = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)
+    .toISOString()
+    .slice(0, 10);
+
+  const { data, error } = await supabase
+    .from("investor_daily")
+    .select("ticker, date, foreign, institution")
+    .in("ticker", codes)
+    .gte("date", since30)
+    .order("date", { ascending: false })
+    .returns<InvestorDailyRow[]>();
+
+  if (error) {
+    return map;
+  }
+
+  const grouped = new Map<string, InvestorDailyRow[]>();
+  for (const row of data ?? []) {
+    const code = String(row.ticker ?? "").trim();
+    if (!code) continue;
+    const list = grouped.get(code) ?? [];
+    list.push(row);
+    grouped.set(code, list);
+  }
+
+  for (const code of codes) {
+    const rows = (grouped.get(code) ?? []).slice().sort((a, b) => b.date.localeCompare(a.date));
+    const foreignSeries = rows.map((row) => Number(row.foreign ?? 0));
+    const institutionSeries = rows.map((row) => Number(row.institution ?? 0));
+    const foreign5d = foreignSeries.slice(0, 5).reduce((sum, value) => sum + value, 0);
+    const institution5d = institutionSeries.slice(0, 5).reduce((sum, value) => sum + value, 0);
+
+    map.set(code, {
+      foreign5d,
+      institution5d,
+      foreignConsecutiveBuyDays: countConsecutivePositive(foreignSeries),
+      institutionConsecutiveBuyDays: countConsecutivePositive(institutionSeries),
+    });
+  }
+
+  return map;
+}
+
 async function upsertRowsByBatch(supabase: SupabaseClient, rows: ScoreUpsertRow[]) {
   const batchSize = 120;
   for (let i = 0; i < rows.length; i += batchSize) {
@@ -112,6 +189,7 @@ export async function syncScoresFromEngine(
 
   const marketOverview = await fetchAllMarketData().catch(() => ({} as Awaited<ReturnType<typeof fetchAllMarketData>>));
   const marketEnv = resolveMarketEnv(marketOverview);
+  const investorFlowByCode = await fetchInvestorFlowByCodes(supabase, codes);
 
   const existingScoreResult = await fetchLatestScoresByCodes(supabase, codes);
   const existingValueScoreByCode = new Map<string, number>();
@@ -144,7 +222,18 @@ export async function syncScoresFromEngine(
           continue;
         }
 
-        const scored = calculateScore(series, marketEnv);
+        const investorFlow = investorFlowByCode.get(code);
+        const scored = calculateScore(series, {
+          ...marketEnv,
+          investorFlow: investorFlow
+            ? {
+                foreign5d: investorFlow.foreign5d,
+                institution5d: investorFlow.institution5d,
+                foreignConsecutiveBuyDays: investorFlow.foreignConsecutiveBuyDays,
+                institutionConsecutiveBuyDays: investorFlow.institutionConsecutiveBuyDays,
+              }
+            : undefined,
+        });
         if (!scored) {
           skippedInsufficientSeries += 1;
           continue;

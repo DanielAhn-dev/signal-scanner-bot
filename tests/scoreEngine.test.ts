@@ -42,3 +42,45 @@ test("calculateScore: 데이터 200봉 미만이면 null", () => {
   const result = calculateScore(buildSeries(120), { vix: 18, fearGreed: 50, usdkrw: 1330 });
   assert.equal(result, null);
 });
+
+test("calculateScore: 외국인/기관 순매수 연속 유입은 점수 가점", () => {
+  const baseData = buildSeries();
+  const neutral = calculateScore(baseData, { vix: 18, fearGreed: 50, usdkrw: 1330 });
+  const inflow = calculateScore(baseData, {
+    vix: 18,
+    fearGreed: 50,
+    usdkrw: 1330,
+    investorFlow: {
+      foreign5d: 8_500_000_000,
+      institution5d: 3_200_000_000,
+      foreignConsecutiveBuyDays: 5,
+      institutionConsecutiveBuyDays: 3,
+    },
+  });
+
+  assert.ok(neutral && inflow);
+  assert.ok((inflow?.score ?? 0) > (neutral?.score ?? 0));
+  assert.ok((inflow?.factors.institutional_score ?? 0) >= 8);
+  assert.equal(inflow?.factors.institutional_signal, "accumulation");
+});
+
+test("calculateScore: 외국인/기관 대규모 순매도는 점수 감점", () => {
+  const baseData = buildSeries();
+  const neutral = calculateScore(baseData, { vix: 18, fearGreed: 50, usdkrw: 1330 });
+  const outflow = calculateScore(baseData, {
+    vix: 18,
+    fearGreed: 50,
+    usdkrw: 1330,
+    investorFlow: {
+      foreign5d: -6_200_000_000,
+      institution5d: -3_500_000_000,
+      foreignConsecutiveBuyDays: 0,
+      institutionConsecutiveBuyDays: 0,
+    },
+  });
+
+  assert.ok(neutral && outflow);
+  assert.ok((outflow?.score ?? 0) < (neutral?.score ?? 0));
+  assert.ok((outflow?.factors.institutional_score ?? 0) <= -8);
+  assert.equal(outflow?.factors.institutional_signal, "distribution");
+});

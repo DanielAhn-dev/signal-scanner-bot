@@ -9,6 +9,8 @@ export type PositionStrategyProfile =
   | "SWING"
   | "POSITION_CORE";
 
+export type PositionBucket = "LONG" | "SWING";
+
 export type ParsedPositionStrategyState = {
   profile: PositionStrategyProfile;
   takeProfitTranchesDone: number;
@@ -278,6 +280,13 @@ export function resolvePositionTradeProfile(input: {
         expectedHorizonDays: 5,
       };
   }
+}
+
+export function resolvePositionBucketFromProfile(
+  profile?: string | null
+): PositionBucket {
+  const normalized = normalizePositionStrategyProfile(profile);
+  return normalized === "POSITION_CORE" ? "LONG" : "SWING";
 }
 
 export function planAutoTradeExit(input: {

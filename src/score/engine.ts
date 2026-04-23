@@ -26,12 +26,25 @@ export interface ScoreFactors {
   // ATR 변동성
   atr14?: number;   // ATR 절대값
   atr_pct?: number; // ATR / 종가 * 100
+  // 기관/외국인 수급
+  institutional_score?: number;
+  institutional_signal?: "accumulation" | "distribution" | "neutral";
+  foreign_5d?: number;
+  institution_5d?: number;
+  foreign_consecutive_buy_days?: number;
+  institution_consecutive_buy_days?: number;
 }
 
 export interface MarketEnv {
   vix?: number;
   fearGreed?: number;
   usdkrw?: number;
+  investorFlow?: {
+    foreign5d?: number;
+    institution5d?: number;
+    foreignConsecutiveBuyDays?: number;
+    institutionConsecutiveBuyDays?: number;
+  };
 }
 
 export interface StockScore {
@@ -196,8 +209,14 @@ export function calculateScore(
 
     // ── 시장 환경 보정 (MarketEnv) ──
     let marketAdj = 0;
+    let institutionalAdj = 0;
+    let institutionalSignal: ScoreFactors["institutional_signal"] = "neutral";
+    let foreign5d: number | undefined;
+    let institution5d: number | undefined;
+    let foreignConsecutiveBuyDays: number | undefined;
+    let institutionConsecutiveBuyDays: number | undefined;
     if (marketEnv) {
-      const { vix, fearGreed, usdkrw } = marketEnv;
+      const { vix, fearGreed, usdkrw, investorFlow } = marketEnv;
       // VIX: 30+ → -12, 25-30 → -7, 20-25 → -3
       if (vix != null && Number.isFinite(vix)) {
         if (vix >= 30) marketAdj -= 12;
@@ -217,8 +236,40 @@ export function calculateScore(
         if (usdkrw >= 1400) marketAdj -= 5;
         else if (usdkrw >= 1350) marketAdj -= 2;
       }
+
+      // 기관/외국인 수급 보정
+      foreign5d = Number.isFinite(Number(investorFlow?.foreign5d))
+        ? Number(investorFlow?.foreign5d)
+        : undefined;
+      institution5d = Number.isFinite(Number(investorFlow?.institution5d))
+        ? Number(investorFlow?.institution5d)
+        : undefined;
+      foreignConsecutiveBuyDays = Number.isFinite(Number(investorFlow?.foreignConsecutiveBuyDays))
+        ? Math.max(0, Math.floor(Number(investorFlow?.foreignConsecutiveBuyDays)))
+        : undefined;
+      institutionConsecutiveBuyDays = Number.isFinite(Number(investorFlow?.institutionConsecutiveBuyDays))
+        ? Math.max(0, Math.floor(Number(investorFlow?.institutionConsecutiveBuyDays)))
+        : undefined;
+
+      if ((foreignConsecutiveBuyDays ?? 0) >= 5) institutionalAdj += 5;
+      if ((institutionConsecutiveBuyDays ?? 0) >= 3) institutionalAdj += 3;
+
+      // 매집 패턴: 가격 횡보 + 거래량 확대 + AVWAP 지지
+      const accumulationPattern =
+        Math.abs(roc21) <= 6 &&
+        (vol_ratio ?? 0) >= 1.4 &&
+        avwap_support >= 66;
+      if (accumulationPattern) institutionalAdj += 4;
+
+      // 분배 패턴: 외국인/기관 대규모 순매도
+      if ((foreign5d ?? 0) <= -5_000_000_000) institutionalAdj -= 6;
+      if ((institution5d ?? 0) <= -3_000_000_000) institutionalAdj -= 3;
+
+      if (institutionalAdj >= 4) institutionalSignal = "accumulation";
+      else if (institutionalAdj <= -4) institutionalSignal = "distribution";
     }
-    score += marketAdj;
+    institutionalAdj = Math.max(-10, Math.min(12, institutionalAdj));
+    score += marketAdj + institutionalAdj;
     // 0~100 으로 클램프
     score = Math.max(0, Math.min(100, score));
 
@@ -293,6 +344,12 @@ export function calculateScore(
         macd_divergence_bearish,
         atr14,
         atr_pct,
+        institutional_score: institutionalAdj,
+        institutional_signal: institutionalSignal,
+        foreign_5d: foreign5d,
+        institution_5d: institution5d,
+        foreign_consecutive_buy_days: foreignConsecutiveBuyDays,
+        institution_consecutive_buy_days: institutionConsecutiveBuyDays,
       },
       recommendation,
       entry: {
