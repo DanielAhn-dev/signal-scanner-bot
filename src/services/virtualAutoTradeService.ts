@@ -481,6 +481,39 @@ async function getRecentAutoTradeMetrics(payload: {
   };
 }
 
+function getKstDayRange(base = new Date()): { startIso: string; endIso: string } {
+  const dayMs = 24 * 60 * 60 * 1000;
+  const kstOffsetMs = 9 * 60 * 60 * 1000;
+  const kstNowMs = base.getTime() + kstOffsetMs;
+  const kstStartMs = Math.floor(kstNowMs / dayMs) * dayMs;
+  const utcStartMs = kstStartMs - kstOffsetMs;
+  return {
+    startIso: new Date(utcStartMs).toISOString(),
+    endIso: new Date(utcStartMs + dayMs).toISOString(),
+  };
+}
+
+async function getDailyRealizedPnl(payload: {
+  supabase: SupabaseClientAny;
+  chatId: number;
+}): Promise<number> {
+  const { startIso, endIso } = getKstDayRange();
+  const { data, error } = await payload.supabase
+    .from(PORTFOLIO_TABLES.trades)
+    .select("pnl_amount")
+    .eq("chat_id", payload.chatId)
+    .eq("side", "SELL")
+    .gte("traded_at", startIso)
+    .lt("traded_at", endIso)
+    .limit(3000);
+
+  if (error) return 0;
+
+  return (data ?? []).reduce((sum: number, row: Record<string, unknown>) => {
+    return sum + toNumber(row.pnl_amount, 0);
+  }, 0);
+}
+
 async function getLatestScoreAsof(
   supabase: SupabaseClientAny
 ): Promise<string | null> {
@@ -777,6 +810,32 @@ async function runMondayBuyForUser(payload: {
   summary.notes.push(
     `시장모드: ${marketPolicy.label} · ${marketPolicy.reason} · 최소현금 ${marketPolicy.minCashReservePct}% 유지`
   );
+
+  const dailyLossLimitPct = Math.max(0.5, toNumber(prefs.daily_loss_limit_pct, 5));
+  const dailyRealizedPnl = await getDailyRealizedPnl({
+    supabase: payload.supabase,
+    chatId,
+  });
+  const dailyLossLimitAmount = -Math.abs(seedCapital * (dailyLossLimitPct / 100));
+  if (seedCapital > 0 && dailyRealizedPnl <= dailyLossLimitAmount) {
+    summary.skipped += 1;
+    summary.notes.push(
+      `신규 매수 중단: 일손실 한도 도달 (${fmtKrw(dailyRealizedPnl)} / 기준 ${fmtKrw(dailyLossLimitAmount)})`
+    );
+    await writeActionLog({
+      supabase: payload.supabase,
+      runId: payload.runId,
+      chatId,
+      actionType: "SKIP",
+      reason: "daily-loss-limit-reached",
+      detail: {
+        dailyRealizedPnl,
+        dailyLossLimitAmount,
+        dailyLossLimitPct,
+      },
+    });
+    return summary;
+  }
 
   if (rawRemainSlots <= 0 && pacingMetrics.relaxLevel >= 2 && activeCount <= 0) {
     rawRemainSlots = 1;

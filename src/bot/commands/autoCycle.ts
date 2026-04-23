@@ -254,6 +254,46 @@ function formatActionBreakdown(action: {
   ].join(" · ");
 }
 
+function buildThreeLineSummary(input: {
+  action: { buys: number; sells: number; skipped: number; errors: number };
+  metrics: AutoTradeRecentMetrics | null;
+  notes: string[];
+}): string[] {
+  const { action, metrics, notes } = input;
+  const line1 = `결과: 매수 ${action.buys}건 · 매도 ${action.sells}건 · 미체결 ${action.skipped}건 · 오류 ${action.errors}건`;
+
+  const SKIP_REASON_KO: Record<string, string> = {
+    "insufficient-cash": "현금부족",
+    "no-available-cash": "가용현금없음",
+    "cash-reserve-floor": "현금하한도달",
+    "strategy-blocked-buy": "전략차단",
+    "hold-safe-probe": "안전탐색보류",
+    "no-candidates": "후보없음",
+    "market-policy-filtered": "시장정책필터",
+    "daily-loss-limit-reached": "일손실한도",
+  };
+
+  const topReasons = (metrics?.topSkipReasons ?? []).slice(0, 2);
+  const line2 = topReasons.length
+    ? `상위사유: ${topReasons
+        .map((item) => `${SKIP_REASON_KO[item.reason] ?? item.reason} ${item.count}건`)
+        .join(" · ")}`
+    : "상위사유: 없음";
+
+  const hasExecuted = action.buys + action.sells > 0;
+  const hasDailyLimitNote = notes.some((note) => /일손실 한도 도달/.test(note));
+  const hasCandidateDrop = notes.some((note) => /후보 필터링|후보 탈락 상위/.test(note));
+  const line3 = hasExecuted
+    ? "다음액션: /보유대응 으로 익절·손절 기준 점검"
+    : hasDailyLimitNote
+      ? "다음액션: 일손실 한도 회복까지 신규 진입 중단"
+      : hasCandidateDrop
+        ? "다음액션: /자동사이클 점검 상세로 필터 단계 확인"
+        : "다음액션: /자동사이클 점검 상세로 원인 확인";
+
+  return [line1, line2, line3];
+}
+
 function prioritizeNotes(notes: string[]): string[] {
   const uniqueNotes = Array.from(new Set(notes.filter(Boolean)));
   const priorityRules: Array<{ pattern: RegExp; score: number }> = [
@@ -366,6 +406,8 @@ function buildRecentMetricsLines(metrics: AutoTradeRecentMetrics | null): string
       "strategy-blocked-buy": "전략차단",
       "hold-safe-probe": "안전탐색보류",
       "no-candidates": "후보없음",
+      "market-policy-filtered": "시장정책필터",
+      "daily-loss-limit-reached": "일손실한도",
       "invalid-holding-or-price": "보유/가격오류",
       "within-range": "목표범위내",
       "stop-loss": "손절",
@@ -415,12 +457,13 @@ export async function handleAutoCycleCommand(
     const compactLines = [
       `<b>자동 사이클 ${dryRun ? "테스트" : "실행"} 완료</b>`,
       `모드: ${formatModeLabel(mode)}`,
-      formatExecutionStatus(action),
-      formatActionBreakdown(action),
-      recentMetricsLines.length ? `\n${recentMetricsLines.join("\n")}` : "",
-      metricsComparisonLines.length ? `\n${metricsComparisonLines.join("\n")}` : "",
-      noteLines.length ? `\n핵심 메모\n- ${noteLines.slice(0, 5).join("\n- ")}` : "",
-      "\n팁: 상세 설명이 필요하면 /자동사이클 점검 상세 또는 /자동사이클 실행 상세",
+      ...buildThreeLineSummary({
+        action,
+        metrics: result.recentMetrics,
+        notes: action.notes || [],
+      }),
+      noteLines.length ? `\n핵심 메모\n- ${noteLines.slice(0, 3).join("\n- ")}` : "",
+      "\n팁: 상세 설명은 /자동사이클 점검 상세",
     ].filter(Boolean);
 
     const detailedLines = [
