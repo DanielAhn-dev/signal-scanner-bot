@@ -418,15 +418,31 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     for (const job of jobs) {
       const jobStartedAt = Date.now();
+
+      // 원자적 클레임: status='queued' 조건을 만족할 때만 업데이트
+      // 다른 워커가 이미 처리 중인 잡은 건너뜀
+      const { data: claimed } = await supa()
+        .from("jobs")
+        .update({ status: "running", started_at: new Date().toISOString() })
+        .eq("id", job.id)
+        .eq("status", "queued")
+        .select("id");
+
+      if (!claimed || claimed.length === 0) {
+        logWorker("info", "job_skipped", {
+          step: "claim_job",
+          job_id: job.id,
+          job_type: job.type,
+          reason: "already_claimed",
+        });
+        continue;
+      }
+
       logWorker("info", "job_start", {
         step: "start_job",
         job_id: job.id,
         job_type: job.type,
       });
-      await supa()
-        .from("jobs")
-        .update({ status: "running", started_at: new Date().toISOString() })
-        .eq("id", job.id);
 
       try {
         if (job.type === "WATCH_SECTOR") {

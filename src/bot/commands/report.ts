@@ -430,9 +430,11 @@ async function handleDailyCandidateReportCommand(
     text: "오늘 대응할 투자 후보 PDF를 생성 중입니다. 잠시만 기다려주세요...",
   });
 
+  let report: Awaited<ReturnType<typeof createDailyCandidatePlanningReportResult>> | null = null;
+
   try {
     const prefs = await getUserInvestmentPrefs(ctx.from?.id ?? ctx.chatId);
-    const report = await createDailyCandidatePlanningReportResult(supabase, {
+    report = await createDailyCandidatePlanningReportResult(supabase, {
       riskProfile: (prefs.risk_profile ?? "safe") as "safe" | "balanced" | "active",
       chatId: ctx.chatId,
     });
@@ -464,13 +466,8 @@ async function handleDailyCandidateReportCommand(
     });
   } catch (e: any) {
     const detail = e instanceof Error ? e.message : String(e);
-    try {
-      const prefs = await getUserInvestmentPrefs(ctx.from?.id ?? ctx.chatId);
-      const report = await createDailyCandidatePlanningReportResult(supabase, {
-        riskProfile: (prefs.risk_profile ?? "safe") as "safe" | "balanced" | "active",
-        chatId: ctx.chatId,
-      });
-
+    if (report) {
+      // 리포트 데이터는 있으나 PDF 전송에 실패한 경우 → 텍스트로 대체
       await tgSend("sendMessage", {
         chat_id: ctx.chatId,
         text: [
@@ -485,13 +482,13 @@ async function handleDailyCandidateReportCommand(
           2
         ),
       });
-    } catch (fallbackError: any) {
-      const fallbackDetail = fallbackError instanceof Error ? fallbackError.message : String(fallbackError);
+    } else {
+      // 리포트 생성 자체가 실패한 경우
       await tgSend("sendMessage", {
         chat_id: ctx.chatId,
         text: [
           "추천 리포트 생성에 실패했습니다.",
-          `원인: ${fallbackDetail}`,
+          `원인: ${detail}`,
           "잠시 후 다시 시도해주세요.",
         ].join("\n"),
       });
