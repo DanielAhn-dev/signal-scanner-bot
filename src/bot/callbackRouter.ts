@@ -6,7 +6,7 @@ import {
 import { handleRiskProfileSelection } from "./commands/onboarding";
 import { handleReportMenu } from "./commands/report";
 import { handleSectorDetailCommand } from "./commands/sector";
-import type { ChatContext } from "./router";
+import type { ChatContext } from "./routing/types";
 import { routeMessage } from "./router";
 
 export async function sendPromptForCommand(
