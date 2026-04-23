@@ -23,6 +23,7 @@ import {
 } from "./virtualAutoTradePositionStrategy";
 import {
   applyStrategyBuyConstraint,
+  deriveEntryProfile,
   detectAutoTradeMarketPolicy,
   pickAutoTradeAddOnCandidates,
   pickAutoTradeCandidates,
@@ -34,6 +35,7 @@ import {
   type AutoTradeRunType,
   type RankedCandidate,
 } from "./virtualAutoTradeSelection";
+import { fetchLatestPullbackCandidateCodes } from "./virtualAutoTradePullbackIntegration";
 import {
   fetchRealtimePriceBatch,
   type RealtimeStockData,
@@ -160,6 +162,27 @@ function toPositiveInt(value: unknown, fallback: number): number {
 
 function fmtKrw(value: number): string {
   return `${Math.round(value).toLocaleString("ko-KR")}원`;
+}
+
+function formatFilteringMetricsLine(input: {
+  label: string;
+  metrics?: AutoTradeCandidateSelectionResult["filteringMetrics"];
+}): string | null {
+  const metrics = input.metrics;
+  if (!metrics) return null;
+
+  return `${input.label}: 초기 ${metrics.initialCount}건 -> 정책 ${metrics.afterMarketPolicyCount}건 -> 기본 ${metrics.afterBaseFilterCount}건 -> 후보 ${metrics.candidatePoolCount}건 -> 최종 ${metrics.selectedCount}건`;
+}
+
+function formatTopRejectReasons(input?: {
+  rejectedByReason?: Record<string, number>;
+}): string | null {
+  const entries = Object.entries(input?.rejectedByReason ?? {})
+    .filter(([, count]) => Number.isFinite(count) && count > 0)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 2);
+  if (!entries.length) return null;
+  return entries.map(([reason, count]) => `${reason}:${count}`).join(" · ");
 }
 
 async function fetchExecutionPriceMap(
@@ -603,6 +626,8 @@ async function selectMondayCandidates(payload: {
   limit: number;
   heldCodes: Set<string>;
   marketPolicy?: AutoTradeMarketPolicy;
+  selectedStrategy?: string | null;
+  riskProfile?: string | null;
 }): Promise<AutoTradeCandidateSelectionResult> {
   const { rows: rankedRows, latestAsof } = await fetchLatestRankedRows({
     supabase: payload.supabase,
@@ -615,8 +640,30 @@ async function selectMondayCandidates(payload: {
       thresholdUsed: toPositiveInt(payload.minBuyScore, 70),
       latestTopScore: 0,
       latestAsof: null,
+      filteringMetrics: {
+        initialCount: 0,
+        afterMarketPolicyCount: 0,
+        afterBaseFilterCount: 0,
+        candidatePoolCount: 0,
+        selectedCount: 0,
+      },
+      entryProfile: "score-first",
+      pullbackCandidatesUsed: 0,
+      aggressiveCandidatesUsed: 0,
     };
   }
+
+  const entryProfile = deriveEntryProfile({
+    selectedStrategy: payload.selectedStrategy,
+    riskProfile: payload.riskProfile,
+  });
+  const pullbackCandidateCodes =
+    entryProfile === "pullback-first"
+      ? await fetchLatestPullbackCandidateCodes({
+          supabase: payload.supabase,
+          limit: Math.max(payload.limit * 4, 20),
+        })
+      : undefined;
 
   const selection = pickAutoTradeCandidates({
     rows: rankedRows,
@@ -624,6 +671,8 @@ async function selectMondayCandidates(payload: {
     limit: payload.limit,
     heldCodes: payload.heldCodes,
     marketPolicy: payload.marketPolicy,
+    entryProfile,
+    pullbackCandidateCodes,
   });
 
   return {
@@ -790,12 +839,33 @@ async function runMondayBuyForUser(payload: {
     limit: remainSlots,
     heldCodes,
     marketPolicy,
+    selectedStrategy,
+    riskProfile: prefs.risk_profile ?? null,
   });
   const candidates = candidateSelection.candidates;
   const buyPriceResolution = await resolveBuyExecutionPrices(candidates);
 
   if (candidateSelection.latestAsof) {
     summary.notes.push(`점수 기준일: ${candidateSelection.latestAsof}`);
+  }
+
+  if (candidateSelection.entryProfile === "pullback-first") {
+    summary.notes.push("진입 프로필: 눌림목 + 매집 포착 하이브리드");
+    summary.notes.push(
+      `하이브리드 반영: 눌림목 ${candidateSelection.pullbackCandidatesUsed ?? 0}건 · 매집 포착 ${candidateSelection.aggressiveCandidatesUsed ?? 0}건 / 총 ${candidateSelection.candidates.length}건`
+    );
+  }
+
+  const filteringLine = formatFilteringMetricsLine({
+    label: "후보 필터링",
+    metrics: candidateSelection.filteringMetrics,
+  });
+  if (filteringLine) {
+    summary.notes.push(filteringLine);
+  }
+  const topRejectReasons = formatTopRejectReasons(candidateSelection.filteringMetrics);
+  if (topRejectReasons) {
+    summary.notes.push(`후보 탈락 상위: ${topRejectReasons}`);
   }
 
   if (buyPriceResolution.marketPhase === "intraday") {
@@ -839,6 +909,10 @@ async function runMondayBuyForUser(payload: {
         latestTopScore: candidateSelection.latestTopScore,
         thresholdUsed: candidateSelection.thresholdUsed,
         selectionMode: candidateSelection.selectionMode,
+        filteringMetrics: candidateSelection.filteringMetrics ?? null,
+        entryProfile: candidateSelection.entryProfile ?? null,
+        pullbackCandidatesUsed: candidateSelection.pullbackCandidatesUsed ?? 0,
+        aggressiveCandidatesUsed: candidateSelection.aggressiveCandidatesUsed ?? 0,
       },
     });
     return summary;
@@ -1606,6 +1680,18 @@ async function runDailyReviewForUser(payload: {
 
       if (addOnSelection.latestAsof) {
         summary.notes.push(`보유 추가매수 점수 기준일: ${addOnSelection.latestAsof}`);
+      }
+
+      const addOnFilteringLine = formatFilteringMetricsLine({
+        label: "추가매수 필터링",
+        metrics: addOnSelection.filteringMetrics,
+      });
+      if (addOnFilteringLine) {
+        summary.notes.push(addOnFilteringLine);
+      }
+      const addOnRejectReasons = formatTopRejectReasons(addOnSelection.filteringMetrics);
+      if (addOnRejectReasons) {
+        summary.notes.push(`추가매수 탈락 상위: ${addOnRejectReasons}`);
       }
 
       const addOnBuyPriceResolution = await resolveBuyExecutionPrices(addOnSelection.candidates);

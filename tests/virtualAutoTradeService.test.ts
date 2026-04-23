@@ -320,3 +320,120 @@ test("planAutoTradeExit: 마지막 익절 tranche 는 잔량 전부 매도한다
   assert.equal(plan.quantityToSell, 3);
   assert.equal(plan.reason, "take-profit-final");
 });
+
+test("pickAutoTradeCandidates: filteringMetrics에 정책/기본/최종 단계 수가 기록된다", () => {
+  const policy = detectAutoTradeMarketPolicy({
+    overview: {
+      vix: { price: 31 },
+      fearGreed: { score: 25 },
+      usdkrw: { changeRate: 0.1 },
+      kospi: { changeRate: 0.2 },
+      kosdaq: { changeRate: -0.5 },
+    },
+  });
+
+  const result = pickAutoTradeCandidates({
+    rows: [
+      {
+        code: "A",
+        close: 10000,
+        score: 80,
+        name: "Alpha",
+        signal: "BUY",
+        market: "KOSPI",
+        liquidity: 30_000_000_000,
+        marketCap: 2_000_000_000_000,
+      },
+      {
+        code: "B",
+        close: 10000,
+        score: 79,
+        name: "Beta",
+        signal: "BUY",
+        market: "KOSDAQ",
+        liquidity: 50_000_000_000,
+        marketCap: 2_000_000_000_000,
+      },
+      {
+        code: "C",
+        close: 0,
+        score: 78,
+        name: "Gamma",
+        signal: "BUY",
+        market: "KOSPI",
+        liquidity: 40_000_000_000,
+        marketCap: 2_000_000_000_000,
+      },
+    ],
+    preferredMinBuyScore: 70,
+    limit: 2,
+    heldCodes: new Set<string>(),
+    marketPolicy: policy,
+  });
+
+  assert.ok(result.filteringMetrics);
+  assert.equal(result.filteringMetrics?.initialCount, 3);
+  assert.equal(result.filteringMetrics?.afterMarketPolicyCount, 2);
+  assert.equal(result.filteringMetrics?.afterBaseFilterCount, 1);
+  assert.equal(result.filteringMetrics?.selectedCount, 1);
+  assert.equal(result.filteringMetrics?.rejectedByReason?.marketPolicy, 1);
+  assert.equal(result.filteringMetrics?.rejectedByReason?.invalidOrHeld, 1);
+});
+
+test("pickAutoTradeAddOnCandidates: filteringMetrics에 밴드/RSI 탈락 사유를 집계한다", () => {
+  const result = pickAutoTradeAddOnCandidates({
+    rows: [
+      { code: "A", close: 12000, score: 80, name: "Alpha", signal: "BUY", rsi14: 55, liquidity: 20_000_000_000 },
+      { code: "B", close: 10100, score: 80, name: "Beta", signal: "BUY", rsi14: 75, liquidity: 20_000_000_000 },
+      { code: "C", close: 10100, score: 80, name: "Gamma", signal: "BUY", rsi14: 50, liquidity: 2_000_000_000 },
+    ],
+    preferredMinBuyScore: 72,
+    limit: 3,
+    holdingsByCode: new Map([
+      ["A", { code: "A", buyPrice: 10000, allowAddOn: true }],
+      ["B", { code: "B", buyPrice: 10000, allowAddOn: true }],
+      ["C", { code: "C", buyPrice: 10000, allowAddOn: true }],
+    ]),
+  });
+
+  assert.ok(result.filteringMetrics);
+  assert.equal(result.filteringMetrics?.candidatePoolCount, 3);
+  assert.equal(result.filteringMetrics?.selectedCount, 1);
+  assert.equal(result.filteringMetrics?.rejectedByReason?.addOnBand, 0);
+  assert.equal(result.filteringMetrics?.rejectedByReason?.rsi, 1);
+  assert.equal(result.filteringMetrics?.rejectedByReason?.liquidity, 1);
+});
+
+test("pickAutoTradeCandidates: pullback-first에서 눌림목 후보를 점수 근소 열위여도 우선 선택한다", () => {
+  const result = pickAutoTradeCandidates({
+    rows: [
+      { code: "A", close: 10000, score: 80, name: "Alpha", signal: "BUY" },
+      { code: "B", close: 10000, score: 78, name: "Beta", signal: "BUY" },
+    ],
+    preferredMinBuyScore: 70,
+    limit: 1,
+    heldCodes: new Set<string>(),
+    entryProfile: "pullback-first",
+    pullbackCandidateCodes: new Set(["B"]),
+  });
+
+  assert.equal(result.candidates[0]?.code, "B");
+  assert.equal(result.pullbackCandidatesUsed, 1);
+});
+
+test("pickAutoTradeCandidates: pullback-first에서 매집 포착 후보도 우선 선택할 수 있다", () => {
+  const result = pickAutoTradeCandidates({
+    rows: [
+      { code: "A", close: 10000, score: 81, name: "Alpha", signal: "HOLD", rsi14: 56, liquidity: 20_000_000_000 },
+      { code: "B", close: 10000, score: 78, name: "Beta", signal: "BUY", rsi14: 55, liquidity: 20_000_000_000 },
+    ],
+    preferredMinBuyScore: 79,
+    limit: 1,
+    heldCodes: new Set<string>(),
+    entryProfile: "pullback-first",
+    pullbackCandidateCodes: new Set<string>(),
+  });
+
+  assert.equal(result.candidates[0]?.code, "B");
+  assert.equal(result.aggressiveCandidatesUsed, 1);
+});

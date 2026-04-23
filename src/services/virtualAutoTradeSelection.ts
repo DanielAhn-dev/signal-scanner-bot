@@ -44,6 +44,8 @@ export type AutoTradeCandidateSelectionMode =
   | "held-add-on"
   | "none";
 
+export type AutoTradeEntryProfile = "pullback-first" | "score-first";
+
 export type AutoTradeCandidateSelectionResult = {
   candidates: Array<{
     code: string;
@@ -58,6 +60,17 @@ export type AutoTradeCandidateSelectionResult = {
   thresholdUsed: number;
   latestTopScore: number;
   latestAsof?: string | null;
+  entryProfile?: AutoTradeEntryProfile;
+  pullbackCandidatesUsed?: number;
+  aggressiveCandidatesUsed?: number;
+  filteringMetrics?: {
+    initialCount: number;
+    afterMarketPolicyCount: number;
+    afterBaseFilterCount: number;
+    candidatePoolCount: number;
+    selectedCount: number;
+    rejectedByReason?: Record<string, number>;
+  };
 };
 
 export type AutoTradeRunMode = "auto" | "monday" | "daily";
@@ -249,13 +262,33 @@ function filterRowsByMarketPolicy(input: {
 
 function prioritizeRowsByMarketPolicy(
   rows: RankedCandidate[],
-  policy?: AutoTradeMarketPolicy
+  policy?: AutoTradeMarketPolicy,
+  options?: {
+    entryProfile?: AutoTradeEntryProfile;
+    pullbackCandidateCodes?: Set<string>;
+  }
 ): RankedCandidate[] {
-  if (!policy) return rows;
-
   return [...rows].sort((a, b) => {
+    if (
+      options?.entryProfile === "pullback-first" &&
+      options.pullbackCandidateCodes &&
+      options.pullbackCandidateCodes.size > 0
+    ) {
+      const pullbackDiff =
+        Number(options.pullbackCandidateCodes.has(b.code)) -
+        Number(options.pullbackCandidateCodes.has(a.code));
+      if (pullbackDiff !== 0) return pullbackDiff;
+
+      const accumulationDiff =
+        Number(isAggressiveAccumulationCandidate(b)) -
+        Number(isAggressiveAccumulationCandidate(a));
+      if (accumulationDiff !== 0) return accumulationDiff;
+    }
+
     const scoreDiff = b.score - a.score;
     if (scoreDiff !== 0) return scoreDiff;
+
+    if (!policy) return 0;
 
     const marketRank = (row: RankedCandidate) => {
       if (policy.mode === "large-cap-defense") {
@@ -275,8 +308,13 @@ function takeRowsWithinMarketPolicy(input: {
   rows: RankedCandidate[];
   limit: number;
   policy?: AutoTradeMarketPolicy;
+  entryProfile?: AutoTradeEntryProfile;
+  pullbackCandidateCodes?: Set<string>;
 }): RankedCandidate[] {
-  const prioritized = prioritizeRowsByMarketPolicy(input.rows, input.policy);
+  const prioritized = prioritizeRowsByMarketPolicy(input.rows, input.policy, {
+    entryProfile: input.entryProfile,
+    pullbackCandidateCodes: input.pullbackCandidateCodes,
+  });
   if (!input.policy) return prioritized.slice(0, input.limit);
 
   const result: RankedCandidate[] = [];
@@ -374,21 +412,110 @@ export function applyStrategyBuyConstraint(input: {
   };
 }
 
+export function deriveEntryProfile(input: {
+  selectedStrategy?: string | null;
+  riskProfile?: string | null;
+}): AutoTradeEntryProfile {
+  const selectedStrategy = String(input.selectedStrategy ?? "").trim().toUpperCase();
+  const riskProfile = String(input.riskProfile ?? "").trim().toLowerCase();
+
+  if (selectedStrategy === "POSITION_CORE" && riskProfile === "active") {
+    return "pullback-first";
+  }
+
+  return "score-first";
+}
+
+type AggressiveAccumulationLike = {
+  score: number;
+  signal?: string | null;
+  rsi14?: number | null;
+  liquidity?: number | null;
+};
+
+function isAggressiveAccumulationLike(row: AggressiveAccumulationLike): boolean {
+  const signalPreferred = isPreferredBuySignal(row.signal);
+  const rsi14 = toNumber(row.rsi14, 50);
+  const liquidity = toNumber(row.liquidity, 0);
+  const liquiditySafe = liquidity <= 0 || liquidity >= 12_000_000_000;
+
+  return signalPreferred && row.score >= 76 && rsi14 >= 48 && rsi14 <= 70 && liquiditySafe;
+}
+
+function isAggressiveAccumulationCandidate(row: RankedCandidate): boolean {
+  return isAggressiveAccumulationLike(row);
+}
+
+function countPullbackCandidates(input: {
+  candidates: Array<{ code: string }>;
+  pullbackCandidateCodes?: Set<string>;
+}): number {
+  if (!input.pullbackCandidateCodes || input.pullbackCandidateCodes.size <= 0) {
+    return 0;
+  }
+  return input.candidates.reduce((sum, candidate) => {
+    return sum + (input.pullbackCandidateCodes?.has(candidate.code) ? 1 : 0);
+  }, 0);
+}
+
+function resolveEffectiveScoreFloor(input: {
+  row: RankedCandidate;
+  floor: number;
+  entryProfile: AutoTradeEntryProfile;
+  pullbackCandidateCodes?: Set<string>;
+}): number {
+  if (
+    input.entryProfile === "pullback-first" &&
+    input.pullbackCandidateCodes?.has(input.row.code)
+  ) {
+    return Math.max(30, input.floor - 2);
+  }
+  if (input.entryProfile === "pullback-first" && isAggressiveAccumulationCandidate(input.row)) {
+    return Math.max(30, input.floor - 1);
+  }
+  return input.floor;
+}
+
+function countAggressiveCandidates(input: {
+  candidates: Array<{ code: string; score: number; signal?: string | null; rsi14?: number | null; liquidity?: number | null }>;
+}): number {
+  return input.candidates.reduce((sum, candidate) => {
+    return sum + (isAggressiveAccumulationLike(candidate) ? 1 : 0);
+  }, 0);
+}
+
 export function pickAutoTradeCandidates(input: {
   rows: RankedCandidate[];
   preferredMinBuyScore: number;
   limit: number;
   heldCodes: Set<string>;
   marketPolicy?: AutoTradeMarketPolicy;
+  entryProfile?: AutoTradeEntryProfile;
+  pullbackCandidateCodes?: Set<string>;
 }): AutoTradeCandidateSelectionResult {
   const limit = Math.max(1, Math.floor(input.limit));
   const preferredMinBuyScore = toPositiveInt(input.preferredMinBuyScore, 70);
-  const rows = filterRowsByMarketPolicy({
+  const entryProfile: AutoTradeEntryProfile = input.entryProfile ?? "score-first";
+  const initialCount = input.rows.length;
+  const marketPolicyRows = filterRowsByMarketPolicy({
     rows: input.rows,
     policy: input.marketPolicy,
-  })
+  });
+  const baseFilteredRows = marketPolicyRows
     .filter((row) => row.close > 0 && !input.heldCodes.has(row.code))
     .sort((a, b) => b.score - a.score);
+  const rows = baseFilteredRows;
+
+  const filteringMetricsBase = {
+    initialCount,
+    afterMarketPolicyCount: marketPolicyRows.length,
+    afterBaseFilterCount: rows.length,
+    candidatePoolCount: rows.length,
+    rejectedByReason: {
+      marketPolicy: Math.max(0, initialCount - marketPolicyRows.length),
+      invalidOrHeld: Math.max(0, marketPolicyRows.length - rows.length),
+    },
+  };
 
   const latestTopScore = rows[0]?.score ?? 0;
   const adaptiveMinBuyScore = deriveAdaptiveMinBuyScore(
@@ -401,6 +528,8 @@ export function pickAutoTradeCandidates(input: {
       rows: targetRows,
       limit,
       policy: input.marketPolicy,
+      entryProfile,
+      pullbackCandidateCodes: input.pullbackCandidateCodes,
     }).map(({ code, close, score, name, signal, rsi14, liquidity, market, marketCap, universeLevel }) => ({
       code,
       close,
@@ -414,55 +543,145 @@ export function pickAutoTradeCandidates(input: {
       universeLevel: universeLevel ?? null,
     }));
 
-  const preferredSignalRows = rows.filter(
-    (row) => row.score >= preferredMinBuyScore && isPreferredBuySignal(row.signal)
-  );
+  const preferredSignalRows = rows.filter((row) => {
+    const scoreFloor = resolveEffectiveScoreFloor({
+      row,
+      floor: preferredMinBuyScore,
+      entryProfile,
+      pullbackCandidateCodes: input.pullbackCandidateCodes,
+    });
+    return row.score >= scoreFloor && isPreferredBuySignal(row.signal);
+  });
   if (preferredSignalRows.length > 0) {
+    const candidates = toCandidates(preferredSignalRows);
     return {
-      candidates: toCandidates(preferredSignalRows),
+      candidates,
       selectionMode: "signal-preferred",
       thresholdUsed: preferredMinBuyScore,
       latestTopScore,
       latestAsof: null,
+      entryProfile,
+      pullbackCandidatesUsed: countPullbackCandidates({
+        candidates,
+        pullbackCandidateCodes: input.pullbackCandidateCodes,
+      }),
+      aggressiveCandidatesUsed: countAggressiveCandidates({ candidates }),
+      filteringMetrics: {
+        ...filteringMetricsBase,
+        selectedCount: candidates.length,
+        rejectedByReason: {
+          ...filteringMetricsBase.rejectedByReason,
+          scoreOrSignal: Math.max(0, rows.length - preferredSignalRows.length),
+          limit: Math.max(0, preferredSignalRows.length - candidates.length),
+        },
+      },
     };
   }
 
-  const relaxedSignalRows = rows.filter(
-    (row) => row.score >= adaptiveMinBuyScore && isPreferredBuySignal(row.signal)
-  );
+  const relaxedSignalRows = rows.filter((row) => {
+    const scoreFloor = resolveEffectiveScoreFloor({
+      row,
+      floor: adaptiveMinBuyScore,
+      entryProfile,
+      pullbackCandidateCodes: input.pullbackCandidateCodes,
+    });
+    return row.score >= scoreFloor && isPreferredBuySignal(row.signal);
+  });
   if (relaxedSignalRows.length > 0) {
+    const candidates = toCandidates(relaxedSignalRows);
     return {
-      candidates: toCandidates(relaxedSignalRows),
+      candidates,
       selectionMode: "signal-relaxed",
       thresholdUsed: adaptiveMinBuyScore,
       latestTopScore,
       latestAsof: null,
+      entryProfile,
+      pullbackCandidatesUsed: countPullbackCandidates({
+        candidates,
+        pullbackCandidateCodes: input.pullbackCandidateCodes,
+      }),
+      aggressiveCandidatesUsed: countAggressiveCandidates({ candidates }),
+      filteringMetrics: {
+        ...filteringMetricsBase,
+        selectedCount: candidates.length,
+        rejectedByReason: {
+          ...filteringMetricsBase.rejectedByReason,
+          scoreOrSignal: Math.max(0, rows.length - relaxedSignalRows.length),
+          limit: Math.max(0, relaxedSignalRows.length - candidates.length),
+        },
+      },
     };
   }
 
   const expandedSignalRows = rows.filter((row) => {
-    if (row.score < adaptiveMinBuyScore) return false;
+    const scoreFloor = resolveEffectiveScoreFloor({
+      row,
+      floor: adaptiveMinBuyScore,
+      entryProfile,
+      pullbackCandidateCodes: input.pullbackCandidateCodes,
+    });
+    if (row.score < scoreFloor) return false;
     const normalized = normalizeSignal(row.signal);
     return normalized === "HOLD" || normalized === "ACCUMULATE";
   });
   if (expandedSignalRows.length > 0) {
+    const candidates = toCandidates(expandedSignalRows);
     return {
-      candidates: toCandidates(expandedSignalRows),
+      candidates,
       selectionMode: "signal-relaxed",
       thresholdUsed: adaptiveMinBuyScore,
       latestTopScore,
       latestAsof: null,
+      entryProfile,
+      pullbackCandidatesUsed: countPullbackCandidates({
+        candidates,
+        pullbackCandidateCodes: input.pullbackCandidateCodes,
+      }),
+      aggressiveCandidatesUsed: countAggressiveCandidates({ candidates }),
+      filteringMetrics: {
+        ...filteringMetricsBase,
+        selectedCount: candidates.length,
+        rejectedByReason: {
+          ...filteringMetricsBase.rejectedByReason,
+          scoreOrSignal: Math.max(0, rows.length - expandedSignalRows.length),
+          limit: Math.max(0, expandedSignalRows.length - candidates.length),
+        },
+      },
     };
   }
 
-  const fallbackRows = rows.filter((row) => row.score >= adaptiveMinBuyScore);
+  const fallbackRows = rows.filter((row) => {
+    const scoreFloor = resolveEffectiveScoreFloor({
+      row,
+      floor: adaptiveMinBuyScore,
+      entryProfile,
+      pullbackCandidateCodes: input.pullbackCandidateCodes,
+    });
+    return row.score >= scoreFloor;
+  });
   if (fallbackRows.length > 0) {
+    const candidates = toCandidates(fallbackRows);
     return {
-      candidates: toCandidates(fallbackRows),
+      candidates,
       selectionMode: "top-score-fallback",
       thresholdUsed: adaptiveMinBuyScore,
       latestTopScore,
       latestAsof: null,
+      entryProfile,
+      pullbackCandidatesUsed: countPullbackCandidates({
+        candidates,
+        pullbackCandidateCodes: input.pullbackCandidateCodes,
+      }),
+      aggressiveCandidatesUsed: countAggressiveCandidates({ candidates }),
+      filteringMetrics: {
+        ...filteringMetricsBase,
+        selectedCount: candidates.length,
+        rejectedByReason: {
+          ...filteringMetricsBase.rejectedByReason,
+          scoreThreshold: Math.max(0, rows.length - fallbackRows.length),
+          limit: Math.max(0, fallbackRows.length - candidates.length),
+        },
+      },
     };
   }
 
@@ -472,6 +691,17 @@ export function pickAutoTradeCandidates(input: {
     thresholdUsed: adaptiveMinBuyScore,
     latestTopScore,
     latestAsof: null,
+    entryProfile,
+    pullbackCandidatesUsed: 0,
+    aggressiveCandidatesUsed: 0,
+    filteringMetrics: {
+      ...filteringMetricsBase,
+      selectedCount: 0,
+      rejectedByReason: {
+        ...filteringMetricsBase.rejectedByReason,
+        scoreOrSignal: rows.length,
+      },
+    },
   };
 }
 
@@ -484,10 +714,12 @@ export function pickAutoTradeAddOnCandidates(input: {
 }): AutoTradeCandidateSelectionResult {
   const limit = Math.max(1, Math.floor(input.limit));
   const preferredMinBuyScore = toPositiveInt(input.preferredMinBuyScore, 70);
-  const rows = filterRowsByMarketPolicy({
+  const initialCount = input.rows.length;
+  const marketPolicyRows = filterRowsByMarketPolicy({
     rows: input.rows,
     policy: input.marketPolicy,
-  })
+  });
+  const rows = marketPolicyRows
     .filter((row) => row.close > 0 && input.holdingsByCode.has(row.code))
     .sort((a, b) => b.score - a.score);
 
@@ -497,15 +729,33 @@ export function pickAutoTradeAddOnCandidates(input: {
     latestTopScore
   );
 
-  const candidates = takeRowsWithinMarketPolicy({
+  const candidatePool = takeRowsWithinMarketPolicy({
     rows,
     limit,
     policy: input.marketPolicy,
-  })
+  });
+
+  const rejectedByReason: Record<string, number> = {
+    marketPolicy: Math.max(0, initialCount - marketPolicyRows.length),
+    invalidOrNotHeld: Math.max(0, marketPolicyRows.length - rows.length),
+    addOnDisabled: 0,
+    scoreThreshold: 0,
+    liquidity: 0,
+    rsi: 0,
+    addOnBand: 0,
+  };
+
+  const candidates = candidatePool
     .filter((row) => {
       const holding = input.holdingsByCode.get(row.code);
-      if (!holding) return false;
-      if (holding.allowAddOn === false) return false;
+      if (!holding) {
+        rejectedByReason.invalidOrNotHeld += 1;
+        return false;
+      }
+      if (holding.allowAddOn === false) {
+        rejectedByReason.addOnDisabled += 1;
+        return false;
+      }
 
       const pullbackPct =
         holding.buyPrice > 0 ? ((row.close - holding.buyPrice) / holding.buyPrice) * 100 : 0;
@@ -517,12 +767,24 @@ export function pickAutoTradeAddOnCandidates(input: {
       const liquidity = toNumber(row.liquidity, 0);
       const liquiditySafe = liquidity <= 0 || liquidity >= 8_000_000_000;
 
-      return (
-        row.score >= adaptiveMinBuyScore &&
-        liquiditySafe &&
-        rsiHealthy &&
-        (withinAddOnBand || strongContinuation)
-      );
+      if (row.score < adaptiveMinBuyScore) {
+        rejectedByReason.scoreThreshold += 1;
+        return false;
+      }
+      if (!liquiditySafe) {
+        rejectedByReason.liquidity += 1;
+        return false;
+      }
+      if (!rsiHealthy) {
+        rejectedByReason.rsi += 1;
+        return false;
+      }
+      if (!(withinAddOnBand || strongContinuation)) {
+        rejectedByReason.addOnBand += 1;
+        return false;
+      }
+
+      return true;
     })
     .map(({ code, close, score, name, signal, rsi14, liquidity }) => ({
       code,
@@ -540,5 +802,16 @@ export function pickAutoTradeAddOnCandidates(input: {
     thresholdUsed: adaptiveMinBuyScore,
     latestTopScore,
     latestAsof: null,
+    entryProfile: "score-first",
+    pullbackCandidatesUsed: 0,
+    aggressiveCandidatesUsed: 0,
+    filteringMetrics: {
+      initialCount,
+      afterMarketPolicyCount: marketPolicyRows.length,
+      afterBaseFilterCount: rows.length,
+      candidatePoolCount: candidatePool.length,
+      selectedCount: candidates.length,
+      rejectedByReason,
+    },
   };
 }
