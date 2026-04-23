@@ -19,6 +19,7 @@ import {
   handleAutoShadowCommand,
   handleAutoTrustCommand,
 } from "../commands/autoTradeOps";
+import { handleAutoReportCommand } from "../commands/autoReport";
 import { handleReportCommand } from "../commands/report";
 import {
   handleKospiCommand,
@@ -190,6 +191,11 @@ export const COMMAND_ROUTE_SPECS: CommandRouteSpec[] = [
     pattern: CMD.AUTOBACKTEST,
     tokens: ["자동백테스트", "autobacktest"],
     run: (match, ctx, tgSend) => handleAutoBacktestCommand(match[2] ?? "3", ctx, tgSend),
+  },
+  {
+    pattern: CMD.AUTOREPORT,
+    tokens: ["자동리포트", "autoreport"],
+    run: (_match, ctx, tgSend) => handleAutoReportCommand(ctx, tgSend),
   },
   {
     pattern: CMD.RISK_PROFILE,

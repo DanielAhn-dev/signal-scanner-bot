@@ -1825,7 +1825,7 @@ async function runDailyReviewForUser(payload: {
 
   const { data: stockRows, error: stockError } = await payload.supabase
     .from("stocks")
-    .select("code, close")
+    .select("code, close, market")
     .in("code", codeList);
 
   if (stockError) {
@@ -1835,10 +1835,13 @@ async function runDailyReviewForUser(payload: {
   }
 
   const closeByCode = new Map<string, number>();
+  const marketByCode = new Map<string, string>();
   for (const row of stockRows ?? []) {
     const code = String((row as Record<string, unknown>).code ?? "");
     const close = toNumber((row as Record<string, unknown>).close, 0);
+    const market = String((row as Record<string, unknown>).market ?? "");
     if (code && close > 0) closeByCode.set(code, close);
+    if (code && market) marketByCode.set(code, market);
   }
 
   const feeRate = toNumber(prefs.virtual_fee_rate, 0.00015);
@@ -1921,12 +1924,29 @@ async function runDailyReviewForUser(payload: {
       takeProfitTranchesDone: strategyState.takeProfitTranchesDone,
     });
     const holdingScoreRow = holdingFactorsByCode.get(holding.code);
+    const holdingSignal = holdingScoreRow?.signal ?? null;
+    const holdingMarket = marketByCode.get(holding.code) ?? "";
+    // 시장 레짐이 대형주 방어 모드일 때 KOSDAQ 보유 종목의 익절 기준 선제 적용
+    const regimeEarlyExit =
+      marketPolicy.mode === "large-cap-defense" &&
+      holdingMarket.toUpperCase() === "KOSDAQ" &&
+      pnlPct > 1.0;
     const trendExitSignal = detectTrendBreakExitSignal({
       currentPrice: close,
       pnlPct,
       factors: extractScoreFactors(holdingScoreRow?.factors),
+      signal: holdingSignal,
     });
-    const exitPlan: PlannedAutoTradeExit = trendExitSignal.exitAction === "STOP_LOSS"
+    const exitPlan: PlannedAutoTradeExit =
+      regimeEarlyExit && trendExitSignal.exitAction === "HOLD"
+        ? {
+            action: "TAKE_PROFIT",
+            quantityToSell: qty,
+            isPartial: false,
+            nextTakeProfitTranchesDone: strategyState.takeProfitTranchesDone,
+            reason: "take-profit-final",
+          }
+        : trendExitSignal.exitAction === "STOP_LOSS"
       ? {
           action: "STOP_LOSS",
           quantityToSell: qty,
@@ -1960,10 +1980,23 @@ async function runDailyReviewForUser(payload: {
           buyPrice,
           close,
           pnlPct: Number(pnlPct.toFixed(2)),
+          signal: holdingSignal,
+          market: holdingMarket,
+          marketMode: marketPolicy.mode,
         },
       });
       continue;
     }
+
+    // 매도 이유 노트 (signal/regime 기반이면 명시)
+    const exitReasonLabel: string = (() => {
+      if (trendExitSignal.reason === "signal-strong-sell") return "[신호청산] STRONG_SELL 전환";
+      if (trendExitSignal.reason === "signal-sell") return "[신호익절] SELL 전환 + 수익 중";
+      if (trendExitSignal.reason === "trend-break-sma200") return "[추세이탈] SMA200 하향이탈";
+      if (trendExitSignal.reason === "trend-break-sma50") return "[추세익절] SMA50 하향이탈";
+      if (regimeEarlyExit) return "[레짐익절] 방어모드 KOSDAQ 선익절";
+      return "";
+    })();
 
     try {
       const result = await executeAutoTradeSell({
@@ -1998,7 +2031,9 @@ async function runDailyReviewForUser(payload: {
       }
       summary.sells += 1;
       summary.notes.push(`${result.note} · 손익률 ${pnlPct.toFixed(2)}%`);
-      if (trendExitSignal.reason !== "none") {
+      if (exitReasonLabel) {
+        summary.notes.push(exitReasonLabel);
+      } else if (trendExitSignal.reason !== "none") {
         summary.notes.push(`[추세이탈 청산] ${holding.code} · ${trendExitSignal.reason}`);
       }
     } catch (error: unknown) {
@@ -3173,3 +3208,139 @@ export async function runVirtualAutoTradingCycle(input?: {
 
   return summary;
 }
+
+// ---------------------------------------------------------------------------
+// 자동매매 진단 리포트
+// ---------------------------------------------------------------------------
+
+export type AutoTradeDiagnosticReport = {
+  windowDays: number;
+  metrics: AutoTradeRecentMetrics | null;
+  backtest: {
+    months: 3 | 6;
+    winRatePct: number;
+    profitFactor: number;
+    avgWin: number;
+    avgLoss: number;
+    realizedPnl: number;
+    sellTrades: number;
+  } | null;
+  holdingCount: number;
+  availableCash: number;
+  marketMode: string;
+  marketModeReason: string;
+  settings: {
+    isEnabled: boolean;
+    isShadow: boolean;
+    minBuyScore: number;
+    stopLossPct: number;
+    takeProfitPct: number;
+  } | null;
+};
+
+export async function generateAutoTradeDiagnosticReport(
+  chatId: number
+): Promise<AutoTradeDiagnosticReport> {
+  const supabase: SupabaseClientAny = createClient(
+    process.env.SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!,
+    { auth: { persistSession: false } }
+  );
+
+  const [metricsResult, settingResp, holdingsResp, backtestResult] = await Promise.all([
+    getRecentAutoTradeMetrics({ supabase, chatId, windowDays: 7 }),
+    supabase
+      .from("virtual_autotrade_settings")
+      .select(
+        "is_enabled, is_shadow_mode, min_buy_score, stop_loss_pct, take_profit_pct"
+      )
+      .eq("chat_id", chatId)
+      .maybeSingle(),
+    supabase
+      .from("virtual_positions")
+      .select("code, quantity, buy_price, invested_amount")
+      .eq("chat_id", chatId)
+      .gt("quantity", 0),
+    generateAutoTradeBacktestReportForChat({ chatId, months: 3 }).catch(() => null),
+  ]);
+
+  const settingRow = settingResp.data as
+    | {
+        is_enabled?: boolean | null;
+        is_shadow_mode?: boolean | null;
+        min_buy_score?: number | null;
+        stop_loss_pct?: number | null;
+        take_profit_pct?: number | null;
+      }
+    | null
+    | undefined;
+
+  const holdings = (holdingsResp.data ?? []) as Array<{
+    quantity?: number | null;
+    buy_price?: number | null;
+    invested_amount?: number | null;
+  }>;
+
+  const investedFromHoldings = holdings.reduce((sum, row) => {
+    const qty = Math.max(0, Math.floor(toNumber(row.quantity, 0)));
+    const buyPrice = Math.max(0, toNumber(row.buy_price, 0));
+    const investedAmount = Math.max(0, toNumber(row.invested_amount, 0));
+    const fallback = qty > 0 && buyPrice > 0 ? Math.round(qty * buyPrice) : 0;
+    return sum + Math.max(investedAmount, fallback);
+  }, 0);
+
+  const prefsResult = await supabase
+    .from("user_investment_prefs")
+    .select("virtual_cash, virtual_seed_capital, capital_krw, virtual_realized_pnl")
+    .eq("tg_id", chatId)
+    .maybeSingle();
+
+  const prefs = (prefsResult.data ?? {}) as Record<string, unknown>;
+  const storedCash = toNumber(prefs.virtual_cash, 0);
+  const seedCapital = toNumber(prefs.virtual_seed_capital, toNumber(prefs.capital_krw, 0));
+  const realizedPnl = toNumber(prefs.virtual_realized_pnl, 0);
+  const derivedCash = Math.max(0, Math.round(seedCapital + realizedPnl - investedFromHoldings));
+  const availableCash = storedCash > 0 ? storedCash : derivedCash;
+
+  // 시장 레짐 감지
+  let marketMode = "balanced";
+  let marketModeReason = "";
+  try {
+    const overview = await fetchAllMarketData().catch(() => null);
+    const policy = detectAutoTradeMarketPolicy({ overview });
+    marketMode = policy.mode;
+    marketModeReason = policy.reason;
+  } catch {
+    // 시장 데이터 미수신 시 기본값 유지
+  }
+
+  return {
+    windowDays: 7,
+    metrics: metricsResult,
+    backtest: backtestResult
+      ? {
+          months: backtestResult.months,
+          winRatePct: backtestResult.winRatePct,
+          profitFactor: backtestResult.profitFactor,
+          avgWin: backtestResult.avgWin,
+          avgLoss: backtestResult.avgLoss,
+          realizedPnl: backtestResult.realizedPnl,
+          sellTrades: backtestResult.sellTrades,
+        }
+      : null,
+    holdingCount: holdings.length,
+    availableCash,
+    marketMode,
+    marketModeReason,
+    settings: settingRow
+      ? {
+          isEnabled: Boolean(settingRow.is_enabled),
+          isShadow: Boolean(settingRow.is_shadow_mode),
+          minBuyScore: toNumber(settingRow.min_buy_score, 60),
+          stopLossPct: Math.abs(toNumber(settingRow.stop_loss_pct, 4)),
+          takeProfitPct: Math.abs(toNumber(settingRow.take_profit_pct, 8)),
+        }
+      : null,
+  };
+}
+

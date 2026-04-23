@@ -24,7 +24,12 @@ export type SignalGateResult = {
 
 export type TrendBreakExitSignal = {
   exitAction: "HOLD" | "STOP_LOSS" | "TAKE_PROFIT";
-  reason: "none" | "trend-break-sma200" | "trend-break-sma50";
+  reason:
+    | "none"
+    | "trend-break-sma200"
+    | "trend-break-sma50"
+    | "signal-strong-sell"
+    | "signal-sell";
 };
 
 function toNumber(value: unknown, fallback = 0): number {
@@ -133,13 +138,16 @@ export function detectTrendBreakExitSignal(input: {
   currentPrice: number;
   pnlPct: number;
   factors?: Record<string, unknown> | null;
+  signal?: string | null;
 }): TrendBreakExitSignal {
   const currentPrice = Math.max(0, toNumber(input.currentPrice, 0));
   const pnlPct = toNumber(input.pnlPct, 0);
   const factors = (input.factors ?? {}) as SignalGateFactors;
   const sma200 = Math.max(0, toNumber(factors.sma200, 0));
   const sma50 = Math.max(0, toNumber(factors.sma50, 0));
+  const normalizedSignal = String(input.signal ?? "").trim().toUpperCase();
 
+  // SMA200 이탈 → 즉시 손절 (최우선)
   if (sma200 > 0 && currentPrice < sma200) {
     return {
       exitAction: "STOP_LOSS",
@@ -147,6 +155,23 @@ export function detectTrendBreakExitSignal(input: {
     };
   }
 
+  // STRONG_SELL 신호 → 수익이면 익절, 손실이면 손절로 즉시 청산
+  if (normalizedSignal === "STRONG_SELL") {
+    return {
+      exitAction: pnlPct > 0 ? "TAKE_PROFIT" : "STOP_LOSS",
+      reason: "signal-strong-sell",
+    };
+  }
+
+  // SELL 신호 + 수익 중 → 익절 선취
+  if (normalizedSignal === "SELL" && pnlPct > 0) {
+    return {
+      exitAction: "TAKE_PROFIT",
+      reason: "signal-sell",
+    };
+  }
+
+  // SMA50 이탈 + 소폭 수익 → 익절
   if (sma50 > 0 && currentPrice < sma50 && pnlPct > 1.0) {
     return {
       exitAction: "TAKE_PROFIT",

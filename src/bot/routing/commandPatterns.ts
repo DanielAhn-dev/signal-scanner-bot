@@ -53,6 +53,7 @@ export const CMD = {
   ETFINFO: /^\/(etfinfo)(?:\s+(.+))?$/i,
   ETFDIV: /^\/(etfdiv)(?:\s+(.+))?$/i,
   STRATEGY_SELECT: /^\/(전략선택|strategy)$/i,
+  AUTOREPORT: /^\/(자동리포트|autoreport)$/i,
 };
 
 export function normalizeIncomingMessageText(text: string): string {

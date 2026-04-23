@@ -10,6 +10,7 @@ export interface ScoreSnapshotRow {
   value_score: number | null;
   factors: Json | null;
   asof: string | null;
+  signal?: string | null;
 }
 
 export interface ScoreSnapshotResult {
@@ -71,6 +72,7 @@ export async function fetchLatestScoresByCodes(
           "value_score",
           "factors",
           "asof",
+          "signal",
         ].join(", ")
       )
       .eq("asof", latestAsof)
@@ -100,6 +102,7 @@ export async function fetchLatestScoresByCodes(
           "value_score",
           "factors",
           "asof",
+          "signal",
         ].join(", ")
       )
       .in("code", missingCodes)
