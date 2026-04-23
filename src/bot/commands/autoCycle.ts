@@ -274,11 +274,32 @@ function buildThreeLineSummary(input: {
   };
 
   const topReasons = (metrics?.topSkipReasons ?? []).slice(0, 2);
-  const line2 = topReasons.length
-    ? `상위사유: ${topReasons
+  const latestRejectNote = notes.find((note) => note.startsWith("후보 탈락 상위:"));
+  const currentRunCause = (() => {
+    if (action.buys + action.sells > 0) return "체결 조건 충족";
+    if (notes.some((note) => /일손실 한도 도달/.test(note))) return "일손실 한도 도달";
+    if (notes.some((note) => /선택 전략으로 신규 매수 중지|안전 전략 유지|제한 진입|기존 포지션만 관리/.test(note))) {
+      return "전략 제한";
+    }
+    if (notes.some((note) => /투자 가능 현금 0원|현금 하한 유지 구간|현금 부족으로 매수 스킵/.test(note))) {
+      return "현금/사이징 제약";
+    }
+    if (latestRejectNote) {
+      return latestRejectNote.replace("후보 탈락 상위:", "후보 필터")
+        .replace(/\s+/g, " ")
+        .trim();
+    }
+    if (notes.some((note) => /매수 후보 없음|신규 매수 후보 0건/.test(note))) {
+      return "후보 점수·신호 미충족";
+    }
+    return action.skipped > 0 ? "조건 미충족으로 미체결" : "이상 없음";
+  })();
+  const recentReasons = topReasons.length
+    ? topReasons
         .map((item) => `${SKIP_REASON_KO[item.reason] ?? item.reason} ${item.count}건`)
-        .join(" · ")}`
-    : "상위사유: 없음";
+        .join(" · ")
+    : "없음";
+  const line2 = `이번회차: ${currentRunCause} · 최근누적: ${recentReasons}`;
 
   const hasExecuted = action.buys + action.sells > 0;
   const hasDailyLimitNote = notes.some((note) => /일손실 한도 도달/.test(note));

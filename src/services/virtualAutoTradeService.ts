@@ -161,6 +161,11 @@ function toPositiveInt(value: unknown, fallback: number): number {
   return n > 0 ? n : fallback;
 }
 
+function resolveCandidateProbeLimit(targetSlots: number): number {
+  const slots = Math.max(1, Math.floor(targetSlots));
+  return Math.max(slots, Math.max(6, slots * 3));
+}
+
 function fmtKrw(value: number): string {
   return `${Math.round(value).toLocaleString("ko-KR")}원`;
 }
@@ -925,7 +930,7 @@ async function runMondayBuyForUser(payload: {
   const candidateSelection = await selectMondayCandidates({
     supabase: payload.supabase,
     minBuyScore: buyConstraint.minBuyScore,
-    limit: remainSlots,
+    limit: resolveCandidateProbeLimit(remainSlots),
     heldCodes,
     marketPolicy,
     selectedStrategy,
@@ -1082,7 +1087,6 @@ async function runMondayBuyForUser(payload: {
             price: executionPrice,
           },
         });
-        slotsLeft -= 1;
         continue;
       }
 
@@ -2088,7 +2092,7 @@ async function runDailyReviewForUser(payload: {
       const candidateSelection = await selectMondayCandidates({
         supabase: payload.supabase,
         minBuyScore: buyConstraint.minBuyScore,
-        limit: buySlots,
+        limit: resolveCandidateProbeLimit(buySlots),
         heldCodes,
         marketPolicy,
       });
@@ -2194,7 +2198,6 @@ async function runDailyReviewForUser(payload: {
               price: executionPrice,
             },
           });
-          slotsLeft -= 1;
           continue;
         }
 
