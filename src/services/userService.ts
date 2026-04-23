@@ -33,6 +33,12 @@ export type InvestmentPrefs = {
   virtual_fee_rate?: number;
   virtual_tax_rate?: number;
   daily_loss_limit_pct?: number;
+  pacing_target_annual_pct?: number;
+  pacing_target_monthly_pct?: number;
+  pacing_state?: "behind" | "on-track" | "ahead";
+  pacing_last_updated_at?: string;
+  fallback_relax_level?: 0 | 1 | 2;
+  trade_freeze_reason?: string;
 };
 
 function resolveDefaultAutoTradeStrategy(
@@ -88,6 +94,14 @@ export async function getUserInvestmentPrefs(
   const virtualFeeRate = Number(prefs.virtual_fee_rate);
   const virtualTaxRate = Number(prefs.virtual_tax_rate);
   const dailyLossLimitPct = Number(prefs.daily_loss_limit_pct);
+  const pacingTargetAnnualPct = Number(prefs.pacing_target_annual_pct);
+  const pacingTargetMonthlyPct = Number(prefs.pacing_target_monthly_pct);
+  const fallbackRelaxLevel = Number(prefs.fallback_relax_level);
+  const pacingState = typeof prefs.pacing_state === "string" ? prefs.pacing_state : undefined;
+  const pacingLastUpdatedAt =
+    typeof prefs.pacing_last_updated_at === "string" ? prefs.pacing_last_updated_at : undefined;
+  const tradeFreezeReason =
+    typeof prefs.trade_freeze_reason === "string" ? prefs.trade_freeze_reason : undefined;
 
   if (Number.isFinite(cap) && cap > 0) out.capital_krw = cap;
   if (Number.isFinite(split) && split > 0) out.split_count = Math.floor(split);
@@ -108,6 +122,24 @@ export async function getUserInvestmentPrefs(
   if (Number.isFinite(virtualTaxRate) && virtualTaxRate >= 0) out.virtual_tax_rate = virtualTaxRate;
   if (Number.isFinite(dailyLossLimitPct) && dailyLossLimitPct > 0) {
     out.daily_loss_limit_pct = dailyLossLimitPct;
+  }
+  if (Number.isFinite(pacingTargetAnnualPct) && pacingTargetAnnualPct > 0) {
+    out.pacing_target_annual_pct = pacingTargetAnnualPct;
+  }
+  if (Number.isFinite(pacingTargetMonthlyPct) && pacingTargetMonthlyPct > 0) {
+    out.pacing_target_monthly_pct = pacingTargetMonthlyPct;
+  }
+  if (pacingState === "behind" || pacingState === "on-track" || pacingState === "ahead") {
+    out.pacing_state = pacingState;
+  }
+  if (pacingLastUpdatedAt) {
+    out.pacing_last_updated_at = pacingLastUpdatedAt;
+  }
+  if (Number.isFinite(fallbackRelaxLevel) && fallbackRelaxLevel >= 0 && fallbackRelaxLevel <= 2) {
+    out.fallback_relax_level = Math.floor(fallbackRelaxLevel) as 0 | 1 | 2;
+  }
+  if (tradeFreezeReason) {
+    out.trade_freeze_reason = tradeFreezeReason;
   }
 
   return out;
@@ -204,6 +236,32 @@ export async function setUserInvestmentPrefs(
       daily_loss_limit_pct:
         Number.isFinite(Number(merged.daily_loss_limit_pct))
           ? Number(merged.daily_loss_limit_pct)
+          : undefined,
+      pacing_target_annual_pct:
+        Number.isFinite(Number(merged.pacing_target_annual_pct))
+          ? Number(merged.pacing_target_annual_pct)
+          : undefined,
+      pacing_target_monthly_pct:
+        Number.isFinite(Number(merged.pacing_target_monthly_pct))
+          ? Number(merged.pacing_target_monthly_pct)
+          : undefined,
+      pacing_state:
+        merged.pacing_state === "behind" ||
+        merged.pacing_state === "on-track" ||
+        merged.pacing_state === "ahead"
+          ? (merged.pacing_state as "behind" | "on-track" | "ahead")
+          : undefined,
+      pacing_last_updated_at:
+        typeof merged.pacing_last_updated_at === "string"
+          ? merged.pacing_last_updated_at
+          : undefined,
+      fallback_relax_level:
+        Number.isFinite(Number(merged.fallback_relax_level))
+          ? (Math.max(0, Math.min(2, Math.floor(Number(merged.fallback_relax_level)))) as 0 | 1 | 2)
+          : undefined,
+      trade_freeze_reason:
+        typeof merged.trade_freeze_reason === "string"
+          ? merged.trade_freeze_reason
           : undefined,
     },
   };

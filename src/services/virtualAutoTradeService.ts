@@ -36,6 +36,7 @@ import {
   type RankedCandidate,
 } from "./virtualAutoTradeSelection";
 import { fetchLatestPullbackCandidateCodes } from "./virtualAutoTradePullbackIntegration";
+import { computeAutoTradePacingMetrics } from "./virtualAutoTradePacingService";
 import {
   fetchRealtimePriceBatch,
   type RealtimeStockData,
@@ -730,9 +731,29 @@ async function runMondayBuyForUser(payload: {
     summary.notes.push(`전략: ${getStrategyLabel(selectedStrategy) || selectedStrategy}`);
   }
 
+  const recentMetricsForPacing = await getRecentAutoTradeMetrics({
+    supabase: payload.supabase,
+    chatId,
+    windowDays: 20,
+  });
+  const pacingMetrics = await computeAutoTradePacingMetrics({
+    supabase: payload.supabase,
+    chatId,
+    prefs,
+    recentRunCount: recentMetricsForPacing?.runCount,
+    recentBuyActions: recentMetricsForPacing?.buyActions,
+  });
+
+  summary.notes.push(
+    `페이싱: 월수익 ${pacingMetrics.monthReturnPct.toFixed(2)}% / 목표 ${pacingMetrics.targetMonthlyPct.toFixed(2)}% (${pacingMetrics.state})`
+  );
+
   const activeCount = heldCodes.size;
   const maxPositions = toPositiveInt(payload.setting.max_positions, 10);
-  const rawRemainSlots = Math.max(0, Math.min(toPositiveInt(payload.setting.monday_buy_slots, 2), maxPositions - activeCount));
+  let rawRemainSlots = Math.max(
+    0,
+    Math.min(toPositiveInt(payload.setting.monday_buy_slots, 2), maxPositions - activeCount)
+  );
   const storedCashRaw = Number(prefs.virtual_cash);
   const storedCash = Number.isFinite(storedCashRaw) ? Math.max(0, storedCashRaw) : null;
   const seedCapital = Math.max(
@@ -757,12 +778,21 @@ async function runMondayBuyForUser(payload: {
     `시장모드: ${marketPolicy.label} · ${marketPolicy.reason} · 최소현금 ${marketPolicy.minCashReservePct}% 유지`
   );
 
+  if (rawRemainSlots <= 0 && pacingMetrics.relaxLevel >= 2 && activeCount <= 0) {
+    rawRemainSlots = 1;
+  }
+
   const buyConstraint = applyStrategyBuyConstraint({
     selectedStrategy,
     requestedSlots: rawRemainSlots,
     baseMinBuyScore: toPositiveInt(payload.setting.min_buy_score, 72),
     activeCount,
+    pacingRelaxLevel: pacingMetrics.relaxLevel,
   });
+
+  if (pacingMetrics.relaxLevel > 0) {
+    summary.notes.push(`페이싱 보정: 기준점수 완화 레벨 ${pacingMetrics.relaxLevel}`);
+  }
   const remainSlots = buyConstraint.buySlots;
 
   if (buyConstraint.note) {
@@ -913,6 +943,8 @@ async function runMondayBuyForUser(payload: {
         entryProfile: candidateSelection.entryProfile ?? null,
         pullbackCandidatesUsed: candidateSelection.pullbackCandidatesUsed ?? 0,
         aggressiveCandidatesUsed: candidateSelection.aggressiveCandidatesUsed ?? 0,
+        target_pacing_state: pacingMetrics.state,
+        fallback_relax_level: pacingMetrics.relaxLevel,
       },
     });
     return summary;

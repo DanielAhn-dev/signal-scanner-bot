@@ -361,9 +361,12 @@ export function applyStrategyBuyConstraint(input: {
   requestedSlots: number;
   baseMinBuyScore: number;
   activeCount: number;
+  pacingRelaxLevel?: 0 | 1 | 2;
 }): AutoTradeBuyConstraint {
   const requestedSlots = Math.max(0, Math.floor(input.requestedSlots));
-  const baseMinBuyScore = toPositiveInt(input.baseMinBuyScore, 70);
+  const relaxLevel = input.pacingRelaxLevel ?? 0;
+  const relaxedOffset = relaxLevel >= 2 ? 4 : relaxLevel >= 1 ? 2 : 0;
+  const baseMinBuyScore = Math.max(30, toPositiveInt(input.baseMinBuyScore, 70) - relaxedOffset);
   const activeCount = Math.max(0, Math.floor(input.activeCount));
   const selectedStrategy = String(input.selectedStrategy ?? "").trim().toUpperCase();
 
