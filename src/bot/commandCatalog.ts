@@ -21,6 +21,7 @@ export type TelegramBotCommand = {
 };
 
 const CALLBACK_COMMAND_TEXT: Record<string, string> = {
+  weeklycopilot: "/주간코파일럿",
   brief: "/brief",
   premarket: "/장전플랜",
   market: "/market",
@@ -60,6 +61,7 @@ const HELP_SECTIONS = [
   {
     title: "빠른 시작",
     lines: [
+      "/주간코파일럿 — 주간 핵심 실행(브리핑→장전플랜→보유대응)",
       "/온보딩 — 처음 사용자 가이드",
       "/투자성향 [안전형|균형형|공격형] — 기본 투자성향 설정",
       "/투자금 [금액] [분할횟수] [목표수익률] [성향] [일손실한도%] — 매수 계획 설정",
@@ -144,6 +146,7 @@ const HELP_SECTIONS = [
 ] as const;
 
 const UNKNOWN_COMMAND_TOKENS = [
+  "/주간코파일럿",
   "/온보딩",
   "/브리핑",
   "/리포트",
@@ -256,6 +259,7 @@ export const PROMPT_PRESETS: Record<PromptKind, PromptPreset> = PROMPT_PRESET_LI
 
 export const TELEGRAM_BOT_COMMANDS: TelegramBotCommand[] = [
   { command: "start", description: "시작 · 메뉴" },
+  { command: "weekly", description: "주간 코파일럿(브리핑·플랜·보유대응)" },
   { command: "onboarding", description: "초보자 온보딩 가이드" },
   { command: "sector", description: "주도 섹터 랭킹" },
   { command: "scan", description: "눌림목 스캐너" },

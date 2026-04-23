@@ -47,6 +47,7 @@ import {
 } from "./commands/watchlist";
 import { handleProfileCommand } from "./commands/profile";
 import { handleRankingCommand } from "./commands/ranking";
+import { handleWeeklyCopilotCommand } from "./commands/weeklyCopilot";
 import {
   handleFollowCommand,
   handleUnfollowCommand,
@@ -66,6 +67,7 @@ const CMD = {
   START:       /^\/(start|시작|메뉴)$/i,
   HELP:        /^\/(help|도움말)$/i,
   BRIEF:       /^\/(brief|morning|브리핑|장전)$/i,
+  WEEKLY_COPILOT: /^\/(weekly|weeklycopilot|주간코파일럿)$/i,
   REPORT:      /^\/(report|리포트)(?:\s+(.+))?$/i,
   GUIDEPDF:    /^\/(guidepdf|가이드pdf|운영가이드pdf)$/i,
   TRADE:       /^\/(analyze|종목분석)\s+(.+)$/i,
@@ -151,6 +153,7 @@ export async function routeMessage(
             `투자성향: ${riskProfileLabel(prefs.risk_profile)}`,
             `투자금: ${(prefs.capital_krw || 0).toLocaleString("ko-KR")}원`,
             ``,
+            `/주간코파일럿 — 이번 주 실행 흐름 한번에 진행`,
             `/brief — 장전 브리핑 + 내 보유 종목 점검`,
             `/sector — 주도 섹터와 대표 후보`,
             `/pullback — 눌림목 대기 후보`,
@@ -173,16 +176,14 @@ export async function routeMessage(
       parse_mode: "HTML",
       reply_markup: hasSetup
         ? actionButtons([
-            { text: "브리핑", callback_data: "cmd:brief" },
-            { text: "리포트 메뉴", callback_data: "cmd:report" },
-            { text: "관심", callback_data: "cmd:watchonly" },
-            { text: "보유", callback_data: "cmd:watchlist" },
-            { text: "섹터", callback_data: "cmd:sector" },
+            { text: "주간 코파일럿", callback_data: "cmd:weeklycopilot" },
             { text: "장전플랜", callback_data: "cmd:premarket" },
-          { text: "투자성향", callback_data: "cmd:riskprofile" },
+            { text: "보유대응", callback_data: "cmd:watchresp" },
+            { text: "자동 점검", callback_data: "cmd:autocycle:check" },
+            { text: "자동 실행", callback_data: "cmd:autocycle:run" },
+            { text: "시장", callback_data: "cmd:market" },
             { text: "투자금 수정", callback_data: "prompt:capital" },
-            { text: "가이드", callback_data: "cmd:onboarding" },
-            { text: "프로필", callback_data: "cmd:profile" },
+            { text: "설정 가이드", callback_data: "cmd:onboarding" },
           ], 2)
         : actionButtons([
             { text: "안전형", callback_data: "risk:safe" },
@@ -193,6 +194,18 @@ export async function routeMessage(
             { text: "브리핑", callback_data: "cmd:brief" },
           ], 2),
     });
+    return;
+  }
+
+  if (CMD.WEEKLY_COPILOT.test(t)) {
+    try {
+      await handleWeeklyCopilotCommand(ctx, tgSend);
+    } catch (e) {
+      await tgSend("sendMessage", {
+        chat_id: ctx.chatId,
+        text: SEND_ERR("주간 코파일럿"),
+      });
+    }
     return;
   }
 
