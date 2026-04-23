@@ -16,9 +16,15 @@ export const fmtInt = (n: number) =>
 export const fmtOne = (n: number) =>
   Number.isFinite(n) ? n.toFixed(1) : "-";
 
+export const fmtPctFixed = (n: number, digits = 1) => {
+  if (!Number.isFinite(n)) return "-";
+  const rounded = Number(n.toFixed(digits));
+  const normalized = Object.is(rounded, -0) ? 0 : rounded;
+  return `${normalized > 0 ? "+" : ""}${normalized.toFixed(digits)}%`;
+};
+
 /** 퍼센트 (부호 포함) */
-export const fmtPct = (n: number) =>
-  Number.isFinite(n) ? `${n > 0 ? "+" : ""}${n.toFixed(1)}%` : "-";
+export const fmtPct = (n: number) => fmtPctFixed(n, 1);
 
 /** 구분선 */
 export const LINE = "─────────────────";

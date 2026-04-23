@@ -8,7 +8,7 @@ import {
   handleEtfCoreCommand,
   handleEtfThemeCommand,
 } from "./marketPicks";
-import { esc, fmtInt, fmtPct, LINE } from "../messages/format";
+import { esc, fmtInt, fmtPct, fmtPctFixed, LINE } from "../messages/format";
 import { actionButtons, ACTIONS, buildMessage, bullets, divider, header, section } from "../messages/layout";
 
 type EtfHit = {
@@ -171,9 +171,9 @@ export async function handleEtfInfoCommand(
   ]);
 
   const price = realtime?.price;
-  const nav = snapshot?.nav ?? snapshot?.latestNav;
+  const nav = snapshot?.latestNav ?? snapshot?.nav;
   const premiumRate = snapshot?.premiumRate;
-  const premiumLine = premiumRate !== undefined ? fmtPct(premiumRate) : "-";
+  const premiumLine = premiumRate !== undefined ? fmtPctFixed(premiumRate, 2) : "-";
 
   const lines: string[] = [];
   if (price) {

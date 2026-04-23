@@ -4,7 +4,7 @@
 import type { ChatContext } from "../router";
 import { createClient } from "@supabase/supabase-js";
 import { searchByNameOrCode } from "../../search/normalize";
-import { esc, fmtInt, fmtPct, LINE } from "../messages/format";
+import { esc, fmtInt, fmtPct, fmtPctFixed, LINE } from "../messages/format";
 import {
   fetchRealtimePrice,
   fetchRealtimePriceBatch,
@@ -251,8 +251,8 @@ function buildEtfActionSummary(input: {
   const premiumLabel = premiumRate == null
     ? "괴리율 확인"
     : Math.abs(premiumRate) >= 1
-      ? `괴리율 ${fmtPct(premiumRate)} 점검`
-      : `괴리율 ${fmtPct(premiumRate)} 안정권`;
+      ? `괴리율 ${fmtPctFixed(premiumRate, 2)} 점검`
+      : `괴리율 ${fmtPctFixed(premiumRate, 2)} 안정권`;
   const payoutLabel = input.latestPayoutDate
     ? `실지급 ${input.latestPayoutDate}`
     : input.nextExpectedDate
@@ -1185,7 +1185,7 @@ export async function handleWatchlistCommand(
     const etfStr = isEtf
       ? [
           etfMeta?.snapshot?.latestNav || etfMeta?.snapshot?.nav
-            ? `\n    ETF NAV <code>${fmtInt(Number(etfMeta?.snapshot?.latestNav ?? etfMeta?.snapshot?.nav ?? 0))}원</code> · 괴리율 ${etfMeta?.snapshot?.premiumRate != null ? fmtPct(etfMeta.snapshot.premiumRate) : "확인중"}`
+            ? `\n    ETF NAV <code>${fmtInt(Number(etfMeta?.snapshot?.latestNav ?? etfMeta?.snapshot?.nav ?? 0))}원</code> · 괴리율 ${etfMeta?.snapshot?.premiumRate != null ? fmtPctFixed(etfMeta.snapshot.premiumRate, 2) : "확인중"}`
             : "",
           etfMeta?.distribution
             ? `\n    분배 ${etfMeta.distribution.cadenceLabel} · 월 ${formatEtfMonthList(etfMeta.distribution.monthList)}${etfMeta.distribution.annualAmount != null ? ` · 올해누적 ${fmtInt(etfMeta.distribution.annualAmount)}원` : etfMeta.distribution.latestAmount != null ? ` · 최근 ${fmtInt(etfMeta.distribution.latestAmount)}원` : ""}${etfMeta.distribution.nextExpectedDate ? ` · 다음 예상 ${etfMeta.distribution.nextExpectedDate}` : ""}`
