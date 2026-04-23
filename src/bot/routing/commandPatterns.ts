@@ -18,7 +18,7 @@ export const CMD = {
   FINANCE: /^\/(finance|재무)(?:\s+(.+))?$/i,
   CAPITAL: /^\/(capital|투자금)(?:\s+(.+))?$/i,
   AUTOTRUST: /^\/(신뢰도|autotrust)(?:\s+(.+))?$/i,
-  AUTOSHADOW: /^\/(섀도우|shadow)(?:\s+(.+))?$/i,
+  AUTOSHADOW: /^\/(섀도우|새도우|쉐도우|shadow)(?:\s+(.+))?$/i,
   AUTOBACKTEST: /^\/(자동백테스트|autobacktest)(?:\s+(.+))?$/i,
   RISK_PROFILE: /^\/(투자성향|성향|risk|riskprofile)(?:\s+(.+))?$/i,
   WATCHONLYLIST: /^\/(watchlist|관심)$/i,

@@ -2,6 +2,7 @@ export type CommandCategory =
   | "default"
   | "trade"
   | "autocycle"
+  | "weekly"
   | "briefing"
   | "report";
 
@@ -27,6 +28,7 @@ export const DEFAULT_WORKER_TIMEOUTS: WorkerTimeouts = {
       default: 20000,
       trade: 45000,
       autocycle: 30000,
+      weekly: 54000,
       briefing: 50000,
       report: 52000,
     } as Record<CommandCategory, number>,
@@ -56,6 +58,7 @@ export function resolveWorkerTimeoutsFromEnv(
         default: toPositiveInt(env.WORKER_JOB_TIMEOUT_DEFAULT_MS, base.job.byCategory.default),
         trade: toPositiveInt(env.WORKER_JOB_TIMEOUT_TRADE_MS, base.job.byCategory.trade),
         autocycle: toPositiveInt(env.WORKER_JOB_TIMEOUT_AUTOCYCLE_MS, base.job.byCategory.autocycle),
+        weekly: toPositiveInt(env.WORKER_JOB_TIMEOUT_WEEKLY_MS, base.job.byCategory.weekly),
         briefing: toPositiveInt(env.WORKER_JOB_TIMEOUT_BRIEFING_MS, base.job.byCategory.briefing),
         report: toPositiveInt(env.WORKER_JOB_TIMEOUT_REPORT_MS, base.job.byCategory.report),
       },
@@ -84,6 +87,10 @@ export function isBriefCommandText(text: string): boolean {
   return /^\/(brief|morning|브리핑|장전)(?:\s|$)/i.test(text.trim());
 }
 
+export function isWeeklyCopilotCommandText(text: string): boolean {
+  return /^\/(weekly|weeklycopilot|주간코파일럿)(?:\s|$)/i.test(text.trim());
+}
+
 export function isTradeCallbackData(data: string): boolean {
   return /^trade:/i.test(data.trim());
 }
@@ -99,6 +106,7 @@ export function isReportCommandText(text: string): boolean {
 export function resolveCommandCategoryFromMessageText(text: string): CommandCategory {
   const value = String(text || "").trim();
   if (isAutoCycleCommandText(value)) return "autocycle";
+  if (isWeeklyCopilotCommandText(value)) return "weekly";
   if (isBriefCommandText(value)) return "briefing";
   if (isTradeCommandText(value)) return "trade";
   if (isReportCommandText(value)) return "report";
@@ -121,6 +129,9 @@ export function describeCommandLabel(
   const text = String(commandText || "").trim();
   if (!text) return context === "callback" ? "버튼 요청" : "요청";
   if (isAutoCycleCommandText(text) || /autocycle/i.test(text)) return "자동사이클 요청";
+  if (isWeeklyCopilotCommandText(text) || /weeklycopilot|주간코파일럿/i.test(text)) {
+    return "주간코파일럿 요청";
+  }
   return isReportCommandText(text)
     ? "리포트 요청"
     : context === "callback"
@@ -146,6 +157,18 @@ export function buildFailureMessage(input: {
         ].join("\n")
       : [
           "리포트 생성 중 오류가 발생했습니다.",
+          "잠시 후 다시 시도해주세요.",
+        ].join("\n");
+  }
+
+  if (category === "weekly") {
+    return isTimeout
+      ? [
+          "주간코파일럿 처리 시간이 길어 이번 요청은 중단되었습니다.",
+          "잠시 후 /주간코파일럿 강제 로 재실행해주세요.",
+        ].join("\n")
+      : [
+          "주간코파일럿 처리 중 오류가 발생했습니다.",
           "잠시 후 다시 시도해주세요.",
         ].join("\n");
   }

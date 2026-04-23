@@ -118,7 +118,7 @@ export async function handleAutoShadowCommand(
     await setUserInvestmentPrefs(tgId, { virtual_shadow_mode: true });
     await tgSend("sendMessage", {
       chat_id: ctx.chatId,
-      text: "SHADOW 모드 ON: 자동사이클 실행 시에도 실반영 없이 신호만 기록합니다.",
+      text: "SHADOW 모드 ON: 자동사이클 실행 시에도 실반영 없이 신호만 기록합니다.\n(명령 별칭: /shadow on | /섀도우 on)",
     });
     return;
   }
@@ -127,7 +127,7 @@ export async function handleAutoShadowCommand(
     await setUserInvestmentPrefs(tgId, { virtual_shadow_mode: false });
     await tgSend("sendMessage", {
       chat_id: ctx.chatId,
-      text: "SHADOW 모드 OFF: 자동사이클 실행 시 실제 반영됩니다.",
+      text: "SHADOW 모드 OFF: 자동사이클 실행 시 실제 반영됩니다.\n(명령 별칭: /shadow off | /섀도우 off)",
     });
     return;
   }
@@ -136,7 +136,7 @@ export async function handleAutoShadowCommand(
   const status = prefs.virtual_shadow_mode ? "ON" : "OFF";
   await tgSend("sendMessage", {
     chat_id: ctx.chatId,
-    text: ["SHADOW 모드 상태", `- 현재: ${status}`, "- 설정: /섀도우 on | /섀도우 off"].join("\n"),
+    text: ["SHADOW 모드 상태", `- 현재: ${status}`, "- 설정: /shadow on | /shadow off", "- 한글 별칭: /섀도우 on | /섀도우 off"].join("\n"),
   });
 }
 
@@ -167,7 +167,7 @@ export async function handleAutoBacktestCommand(
       "다음 명령",
       "- /신뢰도 A 또는 /신뢰도 B",
       "- /신뢰도 62 58 60",
-      "- /섀도우 on",
+      "- /shadow on",
     ].join("\n"),
   });
 }
