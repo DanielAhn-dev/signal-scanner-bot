@@ -35,8 +35,12 @@
             "schedule": "35 23 * * 5"
         },
         {
+            "path": "/api/cron/virtualAutoTrade?mode=monday",
+            "schedule": "45 23 * * 0"
+        },
+        {
             "path": "/api/cron/virtualAutoTrade",
-            "schedule": "45 23 * * 0-4"
+            "schedule": "45 23 * * 1-4"
         }
     ]
 }

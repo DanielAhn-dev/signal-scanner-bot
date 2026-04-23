@@ -353,10 +353,8 @@ export function selectRunType(
 ): AutoTradeRunType {
   if (mode === "monday") return "MONDAY_BUY";
   if (mode === "daily") return "DAILY_REVIEW";
-  // auto는 기본적으로 매일 점검/진입 사이클을 수행한다.
-  // MONDAY_BUY는 명시적으로 mode="monday"를 호출할 때만 실행한다.
-  void now;
-  return "DAILY_REVIEW";
+  // auto: KST 기준 월요일이면 신규 진입 사이클(MONDAY_BUY), 나머지는 일일 점검(DAILY_REVIEW)
+  return isKstMonday(now) ? "MONDAY_BUY" : "DAILY_REVIEW";
 }
 
 export function applyStrategyBuyConstraint(input: {

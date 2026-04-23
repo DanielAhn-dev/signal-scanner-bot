@@ -328,6 +328,7 @@ function pickExecutionLines(notes: string[]): string[] {
 function buildAutoTradeExecutionAlert(input: {
   runType: RunType;
   action: AutoTradeActionSummary;
+  isShadow?: boolean;
 }): string | null {
   const executedCount = input.action.buys + input.action.sells;
   if (executedCount <= 0) return null;
@@ -339,11 +340,13 @@ function buildAutoTradeExecutionAlert(input: {
         ? "일일 대응"
         : "수동 실행";
 
+  const shadowPrefix = input.isShadow ? "[섀도우] " : "";
+
   const lines = [
-    `[자동사이클 체결 알림] ${runLabel}`,
+    `${shadowPrefix}[자동사이클 체결 알림] ${runLabel}`,
     `매수 ${input.action.buys}건 · 매도 ${input.action.sells}건 · 미체결 ${input.action.skipped}건`,
     ...pickExecutionLines(input.action.notes || []).map((line) => `- ${line}`),
-    "다음 점검: /보유 · /보유대응",
+    input.isShadow ? "※ 섀도우 모드: 실반영 없음. 실전 전환은 /섀도우 off" : "다음 점검: /보유 · /보유대응",
   ];
 
   return lines.join("\n");
@@ -3089,6 +3092,8 @@ export async function runVirtualAutoTradingCycle(input?: {
         },
       });
 
+      const isShadowRun = !userDryRun ? false : Boolean(prefs.virtual_shadow_mode);
+
       if (!userDryRun) {
         if (runType === "MONDAY_BUY") {
           await supabase
@@ -3101,33 +3106,37 @@ export async function runVirtualAutoTradingCycle(input?: {
             .update({ last_daily_review_at: new Date().toISOString() })
             .eq("chat_id", setting.chat_id);
         }
+      }
 
+      // 실행 알림: 실제 체결 또는 섀도우 모드 체결 시 모두 발송
+      {
         const executionAlert = buildAutoTradeExecutionAlert({
           runType,
           action: actionSummary,
+          isShadow: isShadowRun,
         });
         if (executionAlert) {
           await sendMessage(setting.chat_id, executionAlert).catch((err: unknown) => {
             console.error("[autoTrade] execution alert send failed", err);
           });
         }
+      }
 
-        if (runType !== "MONDAY_BUY") {
-          const coach = await runLongTermCoachForChat({
-            supabase,
-            chatId: setting.chat_id,
-            lastCoachAt: setting.last_long_term_coach_at,
-          }).catch(() => null);
+      if (!userDryRun && runType !== "MONDAY_BUY") {
+        const coach = await runLongTermCoachForChat({
+          supabase,
+          chatId: setting.chat_id,
+          lastCoachAt: setting.last_long_term_coach_at,
+        }).catch(() => null);
 
-          if (coach?.shouldNotify && coach.text) {
-            await sendMessage(setting.chat_id, coach.text).catch((err: unknown) => {
-              console.error("[autoTrade] long-term coach send failed", err);
-            });
-            await supabase
-              .from("virtual_autotrade_settings")
-              .update({ last_long_term_coach_at: new Date().toISOString() })
-              .eq("chat_id", setting.chat_id);
-          }
+        if (coach?.shouldNotify && coach.text) {
+          await sendMessage(setting.chat_id, coach.text).catch((err: unknown) => {
+            console.error("[autoTrade] long-term coach send failed", err);
+          });
+          await supabase
+            .from("virtual_autotrade_settings")
+            .update({ last_long_term_coach_at: new Date().toISOString() })
+            .eq("chat_id", setting.chat_id);
         }
       }
 
