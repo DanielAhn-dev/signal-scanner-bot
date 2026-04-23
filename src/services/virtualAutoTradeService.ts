@@ -20,6 +20,7 @@ import {
   parsePositionStrategyState,
   planAutoTradeExit,
   resolvePositionTradeProfile,
+  type PlannedAutoTradeExit,
 } from "./virtualAutoTradePositionStrategy";
 import {
   applyStrategyBuyConstraint,
@@ -42,6 +43,11 @@ import {
   type RealtimeStockData,
 } from "../utils/fetchRealtimePrice";
 import { fetchAllMarketData } from "../utils/fetchMarketData";
+import { fetchLatestScoresByCodes } from "./scoreSourceService";
+import {
+  detectTrendBreakExitSignal,
+  evaluateAutoTradeSignalGate,
+} from "./virtualAutoTradeSignalGate";
 
 type RunMode = SelectionAutoTradeRunMode;
 type RunType = AutoTradeRunType;
@@ -338,6 +344,15 @@ function normalizeStock(input: ScoreCandidateRow["stock"]): {
     marketCap: toNumber((row as Record<string, unknown>).market_cap, 0) || null,
     universeLevel: String((row as Record<string, unknown>).universe_level ?? "") || null,
   };
+}
+
+function extractScoreFactors(
+  factors: unknown
+): Record<string, unknown> | null {
+  if (!factors || typeof factors !== "object" || Array.isArray(factors)) {
+    return null;
+  }
+  return factors as Record<string, unknown>;
 }
 
 
@@ -938,6 +953,18 @@ async function runMondayBuyForUser(payload: {
   });
   const candidates = candidateSelection.candidates;
   const buyPriceResolution = await resolveBuyExecutionPrices(candidates);
+  const mondayScoreSnapshot = candidates.length
+    ? await fetchLatestScoresByCodes(payload.supabase, candidates.map((candidate) => candidate.code)).catch(
+        () => null
+      )
+    : null;
+  const mondayFactorsByCode = mondayScoreSnapshot?.byCode ?? new Map();
+
+  if ((mondayScoreSnapshot?.fallbackCodes?.length ?? 0) > 0) {
+    summary.notes.push(
+      `점수 fallback 반영: ${mondayScoreSnapshot?.fallbackCodes?.length ?? 0}종목`
+    );
+  }
 
   if (candidateSelection.latestAsof) {
     summary.notes.push(`점수 기준일: ${candidateSelection.latestAsof}`);
@@ -1016,6 +1043,7 @@ async function runMondayBuyForUser(payload: {
 
   let plannedHoldingCount = activeCount;
   let sizingNoteAdded = false;
+  let trustGateNoteAdded = false;
   let slotsLeft = remainSlots;
   let insufficientCashCount = 0;
 
@@ -1026,6 +1054,42 @@ async function runMondayBuyForUser(payload: {
       const executionEntry = buyPriceResolution.priceByCode.get(candidate.code);
       const executionPrice = executionEntry?.price ?? candidate.close;
       const executionSource = executionEntry?.source ?? "close";
+      const scoreRow = mondayFactorsByCode.get(candidate.code);
+      const signalGate = evaluateAutoTradeSignalGate({
+        currentPrice: executionPrice,
+        score: candidate.score,
+        factors: extractScoreFactors(scoreRow?.factors),
+        minTrustScore: 62,
+        requireAboveSma200: true,
+      });
+
+      if (!trustGateNoteAdded) {
+        summary.notes.push("진입게이트: 세력선(sma200) 상단 + 턴 신뢰도(거래량/RSI/MACD/AVWAP) 적용");
+        trustGateNoteAdded = true;
+      }
+
+      if (!signalGate.passed) {
+        summary.skipped += 1;
+        await writeActionLog({
+          supabase: payload.supabase,
+          runId: payload.runId,
+          chatId,
+          code: candidate.code,
+          actionType: "SKIP",
+          reason: "signal-gate-reject",
+          detail: {
+            score: candidate.score,
+            trustScore: signalGate.trustScore,
+            trustGrade: signalGate.grade,
+            reasons: signalGate.reasons,
+            metrics: signalGate.metrics,
+            price: executionPrice,
+            priceSource: executionSource,
+          },
+        });
+        continue;
+      }
+
       const sizing = calculateAutoTradeBuySizing({
         availableCash: deployableCash,
         price: executionPrice,
@@ -1126,6 +1190,11 @@ async function runMondayBuyForUser(payload: {
             strategyProfile: tradeProfile.profile,
             targetPrice,
             expectedPnl,
+            signalTrust: {
+              score: signalGate.trustScore,
+              grade: signalGate.grade,
+              metrics: signalGate.metrics,
+            },
           },
         });
         plannedHoldingCount += 1;
@@ -1231,6 +1300,11 @@ async function runMondayBuyForUser(payload: {
           deployableCashAfter: deployableCash,
           marketMode: marketPolicy.mode,
           marketReason: marketPolicy.reason,
+          signalTrust: {
+            score: signalGate.trustScore,
+            grade: signalGate.grade,
+            metrics: signalGate.metrics,
+          },
         },
       });
       // 결정로그: 월요일 자동 매수
@@ -1243,7 +1317,7 @@ async function runMondayBuyForUser(payload: {
         confidence: Math.min(100, Math.max(0, candidate.score)),
         expectedHorizonDays: tradeProfile.expectedHorizonDays,
         reasonSummary: `자동 월요일 매수 (${profileLabel}, 점수 ${candidate.score.toFixed(1)})`,
-        reasonDetails: { score: candidate.score, price: executionPrice, priceSource: executionSource, qty, investedAmount, totalBudget: sizing.totalBudget, splitCount: sizing.splitCount, strategyProfile: tradeProfile.profile, trigger: "monday-score-candidate" },
+        reasonDetails: { score: candidate.score, price: executionPrice, priceSource: executionSource, qty, investedAmount, totalBudget: sizing.totalBudget, splitCount: sizing.splitCount, strategyProfile: tradeProfile.profile, trigger: "monday-score-candidate", signalTrust: { score: signalGate.trustScore, grade: signalGate.grade, metrics: signalGate.metrics } },
         linkedTradeId: tradeId ?? undefined,
       }).catch((err: unknown) => console.error("[autoTrade] decision log BUY failed", err));
       slotsLeft -= 1;
@@ -1557,6 +1631,17 @@ async function runDailyReviewForUser(payload: {
   }
 
   const codeList = holdings.map((row) => row.code);
+  const holdingScoreSnapshot = codeList.length
+    ? await fetchLatestScoresByCodes(payload.supabase, codeList).catch(() => null)
+    : null;
+  const holdingFactorsByCode = holdingScoreSnapshot?.byCode ?? new Map();
+
+  if ((holdingScoreSnapshot?.fallbackCodes?.length ?? 0) > 0) {
+    summary.notes.push(
+      `보유 점수 fallback 반영: ${holdingScoreSnapshot?.fallbackCodes?.length ?? 0}종목`
+    );
+  }
+
   const { data: stockRows, error: stockError } = await payload.supabase
     .from("stocks")
     .select("code, close")
@@ -1647,7 +1732,7 @@ async function runDailyReviewForUser(payload: {
       sellSplitCount,
     });
     const pnlPct = ((close - buyPrice) / buyPrice) * 100;
-    const exitPlan = planAutoTradeExit({
+    const baseExitPlan = planAutoTradeExit({
       quantity: qty,
       pnlPct,
       takeProfitPct: tradeProfile.takeProfitPct,
@@ -1655,6 +1740,29 @@ async function runDailyReviewForUser(payload: {
       takeProfitSplitCount: tradeProfile.takeProfitSplitCount,
       takeProfitTranchesDone: strategyState.takeProfitTranchesDone,
     });
+    const holdingScoreRow = holdingFactorsByCode.get(holding.code);
+    const trendExitSignal = detectTrendBreakExitSignal({
+      currentPrice: close,
+      pnlPct,
+      factors: extractScoreFactors(holdingScoreRow?.factors),
+    });
+    const exitPlan: PlannedAutoTradeExit = trendExitSignal.exitAction === "STOP_LOSS"
+      ? {
+          action: "STOP_LOSS",
+          quantityToSell: qty,
+          isPartial: false,
+          nextTakeProfitTranchesDone: strategyState.takeProfitTranchesDone,
+          reason: "stop-loss",
+        }
+      : trendExitSignal.exitAction === "TAKE_PROFIT"
+        ? {
+            action: "TAKE_PROFIT",
+            quantityToSell: qty,
+            isPartial: false,
+            nextTakeProfitTranchesDone: strategyState.takeProfitTranchesDone,
+            reason: "take-profit-final",
+          }
+        : baseExitPlan;
 
     if (exitPlan.action === "HOLD") {
       holdCount += 1;
@@ -1710,6 +1818,9 @@ async function runDailyReviewForUser(payload: {
       }
       summary.sells += 1;
       summary.notes.push(`${result.note} · 손익률 ${pnlPct.toFixed(2)}%`);
+      if (trendExitSignal.reason !== "none") {
+        summary.notes.push(`[추세이탈 청산] ${holding.code} · ${trendExitSignal.reason}`);
+      }
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : String(error);
       summary.errors += 1;
@@ -1790,6 +1901,13 @@ async function runDailyReviewForUser(payload: {
       }
 
       const addOnBuyPriceResolution = await resolveBuyExecutionPrices(addOnSelection.candidates);
+      const addOnScoreSnapshot = addOnSelection.candidates.length
+        ? await fetchLatestScoresByCodes(
+            payload.supabase,
+            addOnSelection.candidates.map((candidate) => candidate.code)
+          ).catch(() => null)
+        : null;
+      const addOnFactorsByCode = addOnScoreSnapshot?.byCode ?? new Map();
 
       if (addOnSelection.candidates.length > 0) {
         if (addOnBuyPriceResolution.marketPhase === "intraday") {
@@ -1815,6 +1933,36 @@ async function runDailyReviewForUser(payload: {
         const executionEntry = addOnBuyPriceResolution.priceByCode.get(candidate.code);
         const executionPrice = executionEntry?.price ?? candidate.close;
         const executionSource = executionEntry?.source ?? "close";
+        const scoreRow = addOnFactorsByCode.get(candidate.code);
+        const signalGate = evaluateAutoTradeSignalGate({
+          currentPrice: executionPrice,
+          score: candidate.score,
+          factors: extractScoreFactors(scoreRow?.factors),
+          minTrustScore: 58,
+          requireAboveSma200: true,
+        });
+
+        if (!signalGate.passed) {
+          summary.skipped += 1;
+          await writeActionLog({
+            supabase: payload.supabase,
+            runId: payload.runId,
+            chatId,
+            code: candidate.code,
+            actionType: "SKIP",
+            reason: "add-on-signal-gate-reject",
+            detail: {
+              score: candidate.score,
+              trustScore: signalGate.trustScore,
+              trustGrade: signalGate.grade,
+              reasons: signalGate.reasons,
+              metrics: signalGate.metrics,
+              price: executionPrice,
+              priceSource: executionSource,
+            },
+          });
+          continue;
+        }
 
         const currentQty = Math.max(0, Math.floor(toNumber(holding.quantity, 0)));
         const currentBuyPrice = Math.max(0, toNumber(holding.buy_price, 0));
@@ -1889,6 +2037,11 @@ async function runDailyReviewForUser(payload: {
                 nextInvested,
                 nextBuyPrice,
                 score: candidate.score,
+                signalTrust: {
+                  score: signalGate.trustScore,
+                  grade: signalGate.grade,
+                  metrics: signalGate.metrics,
+                },
               },
             });
             availableCash = Math.max(0, availableCash - addOnInvested);
@@ -1984,6 +2137,11 @@ async function runDailyReviewForUser(payload: {
               deployableCashAfter: deployableCash,
               marketMode: marketPolicy.mode,
               marketReason: marketPolicy.reason,
+              signalTrust: {
+                score: signalGate.trustScore,
+                grade: signalGate.grade,
+                metrics: signalGate.metrics,
+              },
             },
           });
           appendVirtualDecisionLog({
@@ -2004,6 +2162,11 @@ async function runDailyReviewForUser(payload: {
               nextQty,
               nextBuyPrice,
               score: candidate.score,
+              signalTrust: {
+                score: signalGate.trustScore,
+                grade: signalGate.grade,
+                metrics: signalGate.metrics,
+              },
             },
             linkedTradeId: tradeId ?? undefined,
           }).catch((err: unknown) => console.error("[autoTrade] decision log add-on BUY failed", err));
@@ -2098,6 +2261,12 @@ async function runDailyReviewForUser(payload: {
       });
       const candidates = candidateSelection.candidates;
       const rebalanceBuyPriceResolution = await resolveBuyExecutionPrices(candidates);
+      const rebalanceScoreSnapshot = candidates.length
+        ? await fetchLatestScoresByCodes(payload.supabase, candidates.map((candidate) => candidate.code)).catch(
+            () => null
+          )
+        : null;
+      const rebalanceFactorsByCode = rebalanceScoreSnapshot?.byCode ?? new Map();
 
       if (candidateSelection.latestAsof) {
         summary.notes.push(`점수 기준일: ${candidateSelection.latestAsof}`);
@@ -2155,6 +2324,36 @@ async function runDailyReviewForUser(payload: {
         const executionEntry = rebalanceBuyPriceResolution.priceByCode.get(candidate.code);
         const executionPrice = executionEntry?.price ?? candidate.close;
         const executionSource = executionEntry?.source ?? "close";
+        const scoreRow = rebalanceFactorsByCode.get(candidate.code);
+        const signalGate = evaluateAutoTradeSignalGate({
+          currentPrice: executionPrice,
+          score: candidate.score,
+          factors: extractScoreFactors(scoreRow?.factors),
+          minTrustScore: 60,
+          requireAboveSma200: true,
+        });
+
+        if (!signalGate.passed) {
+          summary.skipped += 1;
+          await writeActionLog({
+            supabase: payload.supabase,
+            runId: payload.runId,
+            chatId,
+            code: candidate.code,
+            actionType: "SKIP",
+            reason: "rebalance-signal-gate-reject",
+            detail: {
+              score: candidate.score,
+              trustScore: signalGate.trustScore,
+              trustGrade: signalGate.grade,
+              reasons: signalGate.reasons,
+              metrics: signalGate.metrics,
+              price: executionPrice,
+              priceSource: executionSource,
+            },
+          });
+          continue;
+        }
 
         const sizing = calculateAutoTradeBuySizing({
           availableCash: deployableCash,
@@ -2242,6 +2441,11 @@ async function runDailyReviewForUser(payload: {
                 strategyProfile: entryProfile.profile,
                 targetPrice,
                 expectedPnl,
+                signalTrust: {
+                  score: signalGate.trustScore,
+                  grade: signalGate.grade,
+                  metrics: signalGate.metrics,
+                },
               },
             });
             plannedHoldingCount += 1;
@@ -2348,6 +2552,11 @@ async function runDailyReviewForUser(payload: {
               deployableCashAfter: deployableCash,
               marketMode: marketPolicy.mode,
               marketReason: marketPolicy.reason,
+              signalTrust: {
+                score: signalGate.trustScore,
+                grade: signalGate.grade,
+                metrics: signalGate.metrics,
+              },
             },
           });
           // 결정로그: 일일 리밸런싱 재매수
@@ -2360,7 +2569,7 @@ async function runDailyReviewForUser(payload: {
             confidence: Math.min(100, Math.max(0, candidate.score)),
             expectedHorizonDays: entryProfile.expectedHorizonDays,
             reasonSummary: `자동 리밸런싱 재매수 (${profileLabel}, 점수 ${candidate.score.toFixed(1)})`,
-            reasonDetails: { score: candidate.score, price: executionPrice, priceSource: executionSource, qty, investedAmount, totalBudget: sizing.totalBudget, splitCount: sizing.splitCount, strategyProfile: entryProfile.profile, trigger: "rebalance-buy" },
+            reasonDetails: { score: candidate.score, price: executionPrice, priceSource: executionSource, qty, investedAmount, totalBudget: sizing.totalBudget, splitCount: sizing.splitCount, strategyProfile: entryProfile.profile, trigger: "rebalance-buy", signalTrust: { score: signalGate.trustScore, grade: signalGate.grade, metrics: signalGate.metrics } },
             linkedTradeId: tradeId ?? undefined,
           }).catch((err: unknown) => console.error("[autoTrade] decision log rebalance BUY failed", err));
         } catch (error: unknown) {
