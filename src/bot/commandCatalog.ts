@@ -62,6 +62,7 @@ const HELP_SECTIONS = [
     title: "빠른 시작",
     lines: [
       "/주간코파일럿 — 주간 핵심 실행(브리핑→장전플랜→보유대응)",
+      "/주간코파일럿 강제 — 동일일 재실행(필요 시)",
       "/온보딩 — 처음 사용자 가이드",
       "/투자성향 [안전형|균형형|공격형] — 기본 투자성향 설정",
       "/투자금 [금액] [분할횟수] [목표수익률] [성향] [일손실한도%] — 매수 계획 설정",
@@ -143,6 +144,16 @@ const HELP_SECTIONS = [
       "/피드 — 팔로잉 포트폴리오",
     ],
   },
+] as const;
+
+const CORE_HELP_LINES = [
+  "핵심 6개 액션",
+  "/주간코파일럿 — 주간 핵심 실행",
+  "/장전플랜 — 오늘 주문 가격/수량 점검",
+  "/보유대응 — 보유 종목 대응 플랜",
+  "/자동사이클 점검 — 자동 실행 전 시뮬레이션",
+  "/자동사이클 실행 — 자동 전략 반영",
+  "/리포트 추천 — 오늘 대응 후보 요약",
 ] as const;
 
 const UNKNOWN_COMMAND_TOKENS = [
@@ -318,6 +329,7 @@ export function resolveReplyPrefixFromText(replyText: string): string | undefine
 
 export function resolveCallbackCommandText(command: string): string | undefined {
   if (command.startsWith("report:")) return `/report ${command.slice(7)}`;
+  if (command === "weeklycopilot:force") return "/주간코파일럿 강제";
   if (command === "autocycle:check") return "/자동사이클 점검";
   if (command === "autocycle:run") return "/자동사이클 실행";
   if (command === "autocycle:entry-check") return "/자동사이클 점검 진입";
@@ -346,7 +358,7 @@ export function resolveCallbackPrefixedCommandText(
 }
 
 export function buildHelpMessage(): string {
-  const lines = ["도움말 (/help, /도움말)", "─────────────────"];
+  const lines = ["도움말 (/help, /도움말)", "─────────────────", ...CORE_HELP_LINES, ""];
 
   for (const section of HELP_SECTIONS) {
     lines.push(section.title);

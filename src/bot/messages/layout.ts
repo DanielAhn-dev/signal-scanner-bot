@@ -64,11 +64,11 @@ export function buildRecommendationActionButtons(
 export const ACTIONS = {
   weeklyCopilot: [
     { text: "주간 코파일럿", callback_data: "cmd:weeklycopilot" },
+    { text: "강제 재실행", callback_data: "cmd:weeklycopilot:force" },
     { text: "장전플랜", callback_data: "cmd:premarket" },
     { text: "보유대응", callback_data: "cmd:watchresp" },
     { text: "자동 점검", callback_data: "cmd:autocycle:check" },
     { text: "자동 실행", callback_data: "cmd:autocycle:run" },
-    { text: "리포트", callback_data: "cmd:report" },
   ] as InlineButton[],
   autoCycleMenu: [
     { text: "자동 점검", callback_data: "cmd:autocycle:check" },

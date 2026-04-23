@@ -39,6 +39,9 @@ export type InvestmentPrefs = {
   pacing_last_updated_at?: string;
   fallback_relax_level?: 0 | 1 | 2;
   trade_freeze_reason?: string;
+  weekly_copilot_last_run_at?: string;
+  weekly_copilot_last_mode?: "normal" | "forced";
+  weekly_copilot_last_status?: "success" | "partial";
 };
 
 function resolveDefaultAutoTradeStrategy(
@@ -102,6 +105,19 @@ export async function getUserInvestmentPrefs(
     typeof prefs.pacing_last_updated_at === "string" ? prefs.pacing_last_updated_at : undefined;
   const tradeFreezeReason =
     typeof prefs.trade_freeze_reason === "string" ? prefs.trade_freeze_reason : undefined;
+  const weeklyCopilotLastRunAt =
+    typeof prefs.weekly_copilot_last_run_at === "string"
+      ? prefs.weekly_copilot_last_run_at
+      : undefined;
+  const weeklyCopilotLastMode =
+    prefs.weekly_copilot_last_mode === "forced" || prefs.weekly_copilot_last_mode === "normal"
+      ? prefs.weekly_copilot_last_mode
+      : undefined;
+  const weeklyCopilotLastStatus =
+    prefs.weekly_copilot_last_status === "success" ||
+    prefs.weekly_copilot_last_status === "partial"
+      ? prefs.weekly_copilot_last_status
+      : undefined;
 
   if (Number.isFinite(cap) && cap > 0) out.capital_krw = cap;
   if (Number.isFinite(split) && split > 0) out.split_count = Math.floor(split);
@@ -140,6 +156,15 @@ export async function getUserInvestmentPrefs(
   }
   if (tradeFreezeReason) {
     out.trade_freeze_reason = tradeFreezeReason;
+  }
+  if (weeklyCopilotLastRunAt) {
+    out.weekly_copilot_last_run_at = weeklyCopilotLastRunAt;
+  }
+  if (weeklyCopilotLastMode) {
+    out.weekly_copilot_last_mode = weeklyCopilotLastMode;
+  }
+  if (weeklyCopilotLastStatus) {
+    out.weekly_copilot_last_status = weeklyCopilotLastStatus;
   }
 
   return out;
@@ -262,6 +287,20 @@ export async function setUserInvestmentPrefs(
       trade_freeze_reason:
         typeof merged.trade_freeze_reason === "string"
           ? merged.trade_freeze_reason
+          : undefined,
+      weekly_copilot_last_run_at:
+        typeof merged.weekly_copilot_last_run_at === "string"
+          ? merged.weekly_copilot_last_run_at
+          : undefined,
+      weekly_copilot_last_mode:
+        merged.weekly_copilot_last_mode === "forced" ||
+        merged.weekly_copilot_last_mode === "normal"
+          ? (merged.weekly_copilot_last_mode as "normal" | "forced")
+          : undefined,
+      weekly_copilot_last_status:
+        merged.weekly_copilot_last_status === "success" ||
+        merged.weekly_copilot_last_status === "partial"
+          ? (merged.weekly_copilot_last_status as "success" | "partial")
           : undefined,
     },
   };

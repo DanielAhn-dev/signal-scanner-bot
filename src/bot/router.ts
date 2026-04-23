@@ -67,7 +67,7 @@ const CMD = {
   START:       /^\/(start|시작|메뉴)$/i,
   HELP:        /^\/(help|도움말)$/i,
   BRIEF:       /^\/(brief|morning|브리핑|장전)$/i,
-  WEEKLY_COPILOT: /^\/(weekly|weeklycopilot|주간코파일럿)$/i,
+  WEEKLY_COPILOT: /^\/(weekly|weeklycopilot|주간코파일럿)(?:\s+(.+))?$/i,
   REPORT:      /^\/(report|리포트)(?:\s+(.+))?$/i,
   GUIDEPDF:    /^\/(guidepdf|가이드pdf|운영가이드pdf)$/i,
   TRADE:       /^\/(analyze|종목분석)\s+(.+)$/i,
@@ -181,8 +181,6 @@ export async function routeMessage(
             { text: "보유대응", callback_data: "cmd:watchresp" },
             { text: "자동 점검", callback_data: "cmd:autocycle:check" },
             { text: "자동 실행", callback_data: "cmd:autocycle:run" },
-            { text: "시장", callback_data: "cmd:market" },
-            { text: "투자금 수정", callback_data: "prompt:capital" },
             { text: "설정 가이드", callback_data: "cmd:onboarding" },
           ], 2)
         : actionButtons([
@@ -197,9 +195,10 @@ export async function routeMessage(
     return;
   }
 
-  if (CMD.WEEKLY_COPILOT.test(t)) {
+  const weeklyCopilotMatch = t.match(CMD.WEEKLY_COPILOT);
+  if (weeklyCopilotMatch) {
     try {
-      await handleWeeklyCopilotCommand(ctx, tgSend);
+      await handleWeeklyCopilotCommand(ctx, tgSend, weeklyCopilotMatch[2] ?? "");
     } catch (e) {
       await tgSend("sendMessage", {
         chat_id: ctx.chatId,
