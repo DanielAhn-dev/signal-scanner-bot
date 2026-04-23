@@ -20,7 +20,8 @@ const INTERNAL_SECRET = process.env.CRON_SECRET || "";
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || "";
 const DEFAULT_TG_TIMEOUT_MS = 5000;
 const DOCUMENT_TG_TIMEOUT_MS = 30000;
-const DEFAULT_JOB_TIMEOUT_MS = 7800;
+const DEFAULT_JOB_TIMEOUT_MS = 20000;
+const TRADE_JOB_TIMEOUT_MS = 45000;
 const AUTO_CYCLE_JOB_TIMEOUT_MS = 30000;
 const REPORT_JOB_TIMEOUT_MS = 52000;
 const DEV_LOG = process.env.NODE_ENV !== "production";
@@ -151,6 +152,8 @@ async function handleWatchSectorJob(job: any) {
 function resolveJobTimeout(text: string): number {
   return isAutoCycleCommandText(text)
     ? AUTO_CYCLE_JOB_TIMEOUT_MS
+    : isTradeCommandText(text)
+    ? TRADE_JOB_TIMEOUT_MS
     : /^\/(report|리포트)(?:\s|$)/i.test(text.trim())
     ? REPORT_JOB_TIMEOUT_MS
     : DEFAULT_JOB_TIMEOUT_MS;
@@ -158,6 +161,14 @@ function resolveJobTimeout(text: string): number {
 
 function isAutoCycleCommandText(text: string): boolean {
   return /^\/(autocycle|자동사이클)(?:\s|$)/i.test(text.trim());
+}
+
+function isTradeCommandText(text: string): boolean {
+  return /^\/(analyze|종목분석)(?:\s|$)/i.test(text.trim());
+}
+
+function isTradeCallbackData(data: string): boolean {
+  return /^trade:/i.test(data.trim());
 }
 
 function describeCommandLabel(commandText?: string, context: "message" | "callback" = "message"): string {
@@ -257,9 +268,12 @@ async function handleTelegramUpdateJob(job: any) {
       show_alert: false,
     });
 
-    const callbackTimeout = u.callback_query.data === "cmd:report" || u.callback_query.data.startsWith("cmd:report:")
-      ? REPORT_JOB_TIMEOUT_MS
-      : DEFAULT_JOB_TIMEOUT_MS;
+    const callbackTimeout =
+      u.callback_query.data === "cmd:report" || u.callback_query.data.startsWith("cmd:report:")
+        ? REPORT_JOB_TIMEOUT_MS
+        : isTradeCallbackData(u.callback_query.data)
+        ? TRADE_JOB_TIMEOUT_MS
+        : DEFAULT_JOB_TIMEOUT_MS;
     logWorker("info", "command_start", {
       step: "callback_route",
       command: u.callback_query.data,
