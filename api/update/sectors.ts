@@ -1,4 +1,3 @@
-// api/update/sectors.ts
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import {
   supaAdmin,
@@ -7,11 +6,10 @@ import {
   bad,
   slugify,
   UpdateResult,
-} from "./_shared";
+} from "../../src/lib/apiUpdateShared";
 
 type SectorSeed = { id: string; name: string; metrics: { krx_index?: string } };
 
-// 최소 필요 업종 Seed (원하는대로 추가/수정 가능)
 const SEED: SectorSeed[] = [
   { id: "semiconductor", name: "반도체", metrics: { krx_index: "1014" } },
   {
@@ -32,22 +30,17 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   try {
     const supa = supaAdmin();
 
-    // 기존 데이터 조회
-    const { data: existing } = await supa
-      .from("sectors")
-      .select("id,name,metrics");
+    const { data: existing } = await supa.from("sectors").select("id,name,metrics");
 
     const existingRows = existing ?? [];
     const existById = new Map(existingRows.map((r: any) => [r.id, r]));
 
-    // upsert 대상
     const payload = SEED.map((s) => ({
       id: slugify(s.id || s.name),
       name: s.name,
       metrics: s.metrics || {},
     }));
 
-    // 차이 계산
     let inserted = 0;
     let updated = 0;
 
@@ -58,15 +51,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       } else {
         const changedName = (prev.name || "") !== row.name;
         const changedMetrics =
-          JSON.stringify(prev.metrics || {}) !==
-          JSON.stringify(row.metrics || {});
+          JSON.stringify(prev.metrics || {}) !== JSON.stringify(row.metrics || {});
         if (changedName || changedMetrics) {
           updated += 1;
         }
       }
     }
 
-    // upsert
     await supa.from("sectors").upsert(payload, { onConflict: "id" });
 
     const result: UpdateResult = {

@@ -6,6 +6,7 @@ import { tg } from "../../src/telegram/api";
 import { createClient } from "@supabase/supabase-js";
 import { getUserInvestmentPrefs } from "../../src/services/userService";
 import { ACTIONS, actionButtons, buildRecommendationActionButtons } from "../../src/bot/messages/layout";
+import { buildOpsStatusDigest } from "../../src/services/opsStatusService";
 
 const ADMIN_CHAT_ID = process.env.TELEGRAM_ADMIN_CHAT_ID;
 const CRON_SECRET = process.env.CRON_SECRET;
@@ -18,6 +19,16 @@ export const config = {
 
 // 발송 사이 딜레이 (Telegram Bot API: 30msg/sec 제한 준수)
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+function resolveBriefingType(raw?: string): "pre_market" | "market_close" {
+  if (raw === "pre_market" || raw === "market_close") return raw;
+
+  const now = new Date();
+  const utcMs = now.getTime() + now.getTimezoneOffset() * 60 * 1000;
+  const kst = new Date(utcMs + 9 * 60 * 60 * 1000);
+  const kstMinutes = kst.getUTCHours() * 60 + kst.getUTCMinutes();
+  return kstMinutes >= 15 * 60 ? "market_close" : "pre_market";
+}
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== "GET") {
@@ -34,9 +45,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   try {
     const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 
-    // 브리핑 타입 결정
-    const briefingType =
-      req.query.type === "market_close" ? "market_close" : "pre_market";
+    const requestedType =
+      typeof req.query.type === "string" ? req.query.type : undefined;
+    const briefingType = resolveBriefingType(requestedType);
+    const opsDigest = await buildOpsStatusDigest(supabase).catch((error) => {
+      console.warn("[briefing-cron] 운영 상태 체크 생성 실패:", error);
+      return "";
+    });
 
     // 활성 사용자 목록 조회
     const { data: users, error: usersError } = await supabase
@@ -79,7 +94,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           ? await buildAutoCyclePreviewText(chatId)
           : null;
         const briefingText = planningResult?.text ? `${report}\n\n${planningResult.text}` : report;
-        const finalText = autoCyclePreview ? `${briefingText}\n\n${autoCyclePreview}` : briefingText;
+        const withAutoCycle = autoCyclePreview ? `${briefingText}\n\n${autoCyclePreview}` : briefingText;
+        const finalText = opsDigest ? `${withAutoCycle}\n\n${opsDigest}` : withAutoCycle;
 
         await tg("sendMessage", {
           chat_id: chatId,

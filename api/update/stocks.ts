@@ -1,9 +1,7 @@
-// api/update/stocks.ts
 import type { VercelRequest, VercelResponse } from "@vercel/node";
-import { supaAdmin, isAuthorized, ok, bad, UpdateResult } from "./_shared";
+import { supaAdmin, isAuthorized, ok, bad, UpdateResult } from "../../src/lib/apiUpdateShared";
 import * as XLSX from "xlsx";
 
-// KRX 상장법인 XLS (회사명/종목코드/업종 등 포함)
 const KRX_LIST_URL =
   "https://kind.krx.co.kr/corpgeneral/corpList.do?method=download";
 
@@ -23,19 +21,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   try {
     const supa = supaAdmin();
 
-    // 1) 섹터 맵 로드: 이름 키워드 매칭을 위해 미리 가져옴
-    const { data: sectors } = await supa
-      .from("sectors")
-      .select("id,name,metrics");
+    const { data: sectors } = await supa.from("sectors").select("id,name,metrics");
 
     const sectorRows = sectors ?? [];
 
-    // name 또는 id에서 키워드 탐색
     const sectorResolver = (industry: string | undefined) => {
       const s = (industry || "").trim();
       if (!s) return null;
 
-      // 간단 매칭 규칙
       const rules: [string, string][] = [
         ["반도체", "semiconductor"],
         ["전자", "electronics"],
@@ -59,12 +52,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         }
       }
 
-      // 정확 일치/부분 일치 최후 매칭
       const byName = sectorRows.find((x: any) => (x.name || "").includes(s));
       return (byName?.id as string) || null;
     };
 
-    // 2) KRX XLS 다운로드 및 파싱
     const resp = await fetch(KRX_LIST_URL);
     if (!resp.ok) {
       throw new Error(`KRX list download failed: ${resp.status}`);
@@ -74,7 +65,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const ws = wb.Sheets[wb.SheetNames[0]];
     const rows = XLSX.utils.sheet_to_json<KRXRow>(ws);
 
-    // 3) 종목 payload 생성
     const payload = rows
       .map((r: KRXRow) => {
         const code = pad6(String(r.종목코드 || ""));
@@ -89,15 +79,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       sector_id: string | null;
     }[];
 
-    // 4) 기존 조회
-    const { data: existing } = await supa
-      .from("stocks")
-      .select("code,name,sector_id");
+    const { data: existing } = await supa.from("stocks").select("code,name,sector_id");
 
     const existingRows = existing ?? [];
     const existByCode = new Map(existingRows.map((r: any) => [r.code, r]));
 
-    // 5) 삽입/갱신 카운팅
     let inserted = 0;
     let updated = 0;
 
@@ -107,15 +93,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         inserted += 1;
       } else {
         const changedName = (prev.name || "") !== row.name;
-        const changedSector =
-          (prev.sector_id || null) !== (row.sector_id || null);
+        const changedSector = (prev.sector_id || null) !== (row.sector_id || null);
         if (changedName || changedSector) {
           updated += 1;
         }
       }
     }
 
-    // 6) upsert 실행
     await supa.from("stocks").upsert(payload, { onConflict: "code" });
 
     const result: UpdateResult = {
