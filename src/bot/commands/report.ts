@@ -444,7 +444,7 @@ async function handleDailyCandidateReportCommand(
     form.set("chat_id", String(ctx.chatId));
     form.set("caption", pdf.caption);
     form.set("disable_content_type_detection", "true");
-    form.set("document", new Blob([pdf.bytes.buffer as ArrayBuffer], { type: "application/pdf" }), pdf.fileName);
+    form.set("document", new Blob([pdf.bytes.buffer.slice(pdf.bytes.byteOffset, pdf.bytes.byteOffset + pdf.bytes.byteLength) as ArrayBuffer], { type: "application/pdf" }), pdf.fileName);
 
     const sendResult = await tgSend("sendDocument", form);
 
@@ -707,7 +707,7 @@ export async function handleReportCommand(
     form.set("chat_id", String(ctx.chatId));
     form.set("caption", report.caption);
     form.set("disable_content_type_detection", "true");
-    form.set("document", new Blob([report.bytes.buffer as ArrayBuffer], { type: "application/pdf" }), report.fileName);
+    form.set("document", new Blob([report.bytes.buffer.slice(report.bytes.byteOffset, report.bytes.byteOffset + report.bytes.byteLength) as ArrayBuffer], { type: "application/pdf" }), report.fileName);
 
     const sendResult = await tgSend("sendDocument", form);
 

@@ -24,6 +24,7 @@ const DEFAULT_JOB_TIMEOUT_MS = 20000;
 const TRADE_JOB_TIMEOUT_MS = 45000;
 const AUTO_CYCLE_JOB_TIMEOUT_MS = 30000;
 const REPORT_JOB_TIMEOUT_MS = 52000;
+const STALE_TELEGRAM_JOB_MS = 3 * 60 * 1000;
 const DEV_LOG = process.env.NODE_ENV !== "production";
 
 export const config = {
@@ -184,6 +185,13 @@ function describeCommandLabel(commandText?: string, context: "message" | "callba
 
 function isReportCommandText(text: string): boolean {
   return /^\/(report|리포트)(?:\s|$)/i.test(text.trim());
+}
+
+function isStaleTelegramUpdateJob(job: { type?: string; created_at?: string | null }): boolean {
+  if (job.type !== "telegram_update") return false;
+  const createdAt = Date.parse(String(job.created_at || ""));
+  if (!Number.isFinite(createdAt)) return false;
+  return Date.now() - createdAt > STALE_TELEGRAM_JOB_MS;
 }
 
 async function notifyReportFailure(chatId: number, error: unknown): Promise<void> {
@@ -419,15 +427,50 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     for (const job of jobs) {
       const jobStartedAt = Date.now();
 
+      const { data: claimed } = await supa()
+        .from("jobs")
+        .update({ status: "running", started_at: new Date().toISOString() })
+        .eq("id", job.id)
+        .eq("status", "queued")
+        .select("id");
+
+      if (!claimed || claimed.length === 0) {
+        logWorker("info", "job_skipped", {
+          step: "claim_job",
+          job_id: job.id,
+          job_type: job.type,
+          reason: "already_claimed",
+        });
+        continue;
+      }
+
       logWorker("info", "job_start", {
         step: "start_job",
         job_id: job.id,
         job_type: job.type,
       });
-      await supa()
-        .from("jobs")
-        .update({ status: "running", started_at: new Date().toISOString() })
-        .eq("id", job.id);
+
+      if (isStaleTelegramUpdateJob(job)) {
+        logWorker("info", "job_skipped", {
+          step: "drop_stale_job",
+          job_id: job.id,
+          job_type: job.type,
+          created_at: job.created_at,
+          stale_after_ms: STALE_TELEGRAM_JOB_MS,
+          reason: "stale_telegram_update",
+        });
+        await supa()
+          .from("jobs")
+          .update({
+            status: "failed",
+            finished_at: new Date().toISOString(),
+            ok: false,
+            error: "stale telegram update dropped",
+          })
+          .eq("id", job.id);
+        totalProcessed++;
+        continue;
+      }
 
       try {
         if (job.type === "WATCH_SECTOR") {

@@ -14,20 +14,22 @@ function resolveBase(): string {
   return base;
 }
 
-function triggerWorker(base: string, secret: string): void {
+async function triggerWorker(base: string, secret: string): Promise<void> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 5000);
 
-  fetch(`${base}/api/worker?token=${encodeURIComponent(secret)}`, {
-    method: "POST",
-    headers: { "x-internal-secret": secret },
-    signal: controller.signal,
-  })
-    .then((r) => {
-      if (!r.ok) console.error("[telegram] worker trigger non-2xx:", r.status);
-    })
-    .catch((e) => console.error("[telegram] worker trigger failed:", e))
-    .finally(() => clearTimeout(timer));
+  try {
+    const response = await fetch(`${base}/api/worker?token=${encodeURIComponent(secret)}`, {
+      method: "POST",
+      headers: { "x-internal-secret": secret },
+      signal: controller.signal,
+    });
+    if (!response.ok) console.error("[telegram] worker trigger non-2xx:", response.status);
+  } catch (e) {
+    console.error("[telegram] worker trigger failed:", e);
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
@@ -79,7 +81,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     // 워커 트리거(fire-and-forget: 잡이 큐에 적재된 후 즉시 200 반환)
     const base = resolveBase();
     if (base && process.env.CRON_SECRET) {
-      triggerWorker(base, process.env.CRON_SECRET);
+      await triggerWorker(base, process.env.CRON_SECRET);
     }
   } catch (e) {
     // 내부 오류는 로그만 남기고 200 ACK
