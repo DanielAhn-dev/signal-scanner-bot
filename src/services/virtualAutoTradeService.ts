@@ -76,6 +76,13 @@ type BuyPriceResolution = {
 
 const AUTO_TRADE_STRATEGY_ID = "core.autotrade.v1";
 
+type SignalTrustThresholds = {
+  variant: "A" | "B" | "CUSTOM";
+  newBuy: number;
+  addOn: number;
+  rebalance: number;
+};
+
 export type AutoTradeRunMode = SelectionAutoTradeRunMode;
 
 export type ChatAutoTradeRunSummary = {
@@ -165,6 +172,31 @@ function toNumber(value: unknown, fallback = 0): number {
 function toPositiveInt(value: unknown, fallback: number): number {
   const n = Math.floor(toNumber(value, fallback));
   return n > 0 ? n : fallback;
+}
+
+function clamp(value: number, min: number, max: number): number {
+  if (!Number.isFinite(value)) return min;
+  return Math.max(min, Math.min(max, value));
+}
+
+function resolveSignalTrustThresholdsFromPrefs(prefs: {
+  signal_trust_variant?: "A" | "B" | "CUSTOM";
+  signal_trust_new_buy?: number;
+  signal_trust_add_on?: number;
+  signal_trust_rebalance?: number;
+}): SignalTrustThresholds {
+  const variant = prefs.signal_trust_variant ?? "A";
+  const preset =
+    variant === "B"
+      ? { newBuy: 66, addOn: 62, rebalance: 64 }
+      : { newBuy: 62, addOn: 58, rebalance: 60 };
+
+  return {
+    variant,
+    newBuy: clamp(toNumber(prefs.signal_trust_new_buy, preset.newBuy), 0, 100),
+    addOn: clamp(toNumber(prefs.signal_trust_add_on, preset.addOn), 0, 100),
+    rebalance: clamp(toNumber(prefs.signal_trust_rebalance, preset.rebalance), 0, 100),
+  };
 }
 
 function resolveCandidateProbeLimit(targetSlots: number): number {
@@ -501,6 +533,101 @@ async function getRecentAutoTradeMetrics(payload: {
   };
 }
 
+export async function generateAutoTradeBacktestReportForChat(input: {
+  chatId: number;
+  months: 3 | 6;
+}): Promise<{
+  months: 3 | 6;
+  totalTrades: number;
+  buyTrades: number;
+  sellTrades: number;
+  realizedPnl: number;
+  winRatePct: number;
+  avgWin: number;
+  avgLoss: number;
+  profitFactor: number;
+  maxLossStreak: number;
+}> {
+  const supabase: SupabaseClientAny = createClient(
+    process.env.SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!,
+    { auth: { persistSession: false } }
+  );
+
+  const months = input.months;
+  const since = new Date();
+  since.setMonth(since.getMonth() - months);
+
+  const { data, error } = await supabase
+    .from(PORTFOLIO_TABLES.trades)
+    .select("side, pnl_amount, traded_at")
+    .eq("chat_id", input.chatId)
+    .gte("traded_at", since.toISOString())
+    .order("traded_at", { ascending: true })
+    .limit(20000);
+
+  if (error) {
+    throw error;
+  }
+
+  const rows = (data ?? []) as Array<{
+    side?: string | null;
+    pnl_amount?: number | null;
+  }>;
+
+  let buyTrades = 0;
+  let sellTrades = 0;
+  let realizedPnl = 0;
+  const wins: number[] = [];
+  const losses: number[] = [];
+  let currentLossStreak = 0;
+  let maxLossStreak = 0;
+
+  for (const row of rows) {
+    const side = String(row.side ?? "").toUpperCase();
+    if (side === "BUY") {
+      buyTrades += 1;
+      continue;
+    }
+    if (side !== "SELL") {
+      continue;
+    }
+
+    sellTrades += 1;
+    const pnl = toNumber(row.pnl_amount, 0);
+    realizedPnl += pnl;
+
+    if (pnl > 0) {
+      wins.push(pnl);
+      currentLossStreak = 0;
+    } else if (pnl < 0) {
+      losses.push(Math.abs(pnl));
+      currentLossStreak += 1;
+      maxLossStreak = Math.max(maxLossStreak, currentLossStreak);
+    }
+  }
+
+  const winRatePct = sellTrades > 0 ? (wins.length / sellTrades) * 100 : 0;
+  const avgWin = wins.length ? wins.reduce((sum, value) => sum + value, 0) / wins.length : 0;
+  const avgLoss = losses.length ? losses.reduce((sum, value) => sum + value, 0) / losses.length : 0;
+  const grossWin = wins.reduce((sum, value) => sum + value, 0);
+  const grossLoss = losses.reduce((sum, value) => sum + value, 0);
+  const profitFactor = grossLoss > 0 ? grossWin / grossLoss : grossWin > 0 ? 99 : 0;
+
+  return {
+    months,
+    totalTrades: buyTrades + sellTrades,
+    buyTrades,
+    sellTrades,
+    realizedPnl,
+    winRatePct,
+    avgWin,
+    avgLoss,
+    profitFactor,
+    maxLossStreak,
+  };
+}
+
 function getKstDayRange(base = new Date()): { startIso: string; endIso: string } {
   const dayMs = 24 * 60 * 60 * 1000;
   const kstOffsetMs = 9 * 60 * 60 * 1000;
@@ -752,6 +879,7 @@ async function runMondayBuyForUser(payload: {
   };
 
   const prefs = await getUserInvestmentPrefs(chatId);
+  const signalTrustThresholds = resolveSignalTrustThresholdsFromPrefs(prefs);
 
   const { data: holdingRows, error: holdingError } = await payload.supabase
     .from(PORTFOLIO_TABLES.positionsLegacy)
@@ -783,6 +911,9 @@ async function runMondayBuyForUser(payload: {
   if (selectedStrategy) {
     summary.notes.push(`전략: ${getStrategyLabel(selectedStrategy) || selectedStrategy}`);
   }
+  summary.notes.push(
+    `신뢰도 임계값(${signalTrustThresholds.variant}): 신규 ${signalTrustThresholds.newBuy} · 추가 ${signalTrustThresholds.addOn} · 리밸런싱 ${signalTrustThresholds.rebalance}`
+  );
 
   const recentMetricsForPacing = await getRecentAutoTradeMetrics({
     supabase: payload.supabase,
@@ -1059,7 +1190,7 @@ async function runMondayBuyForUser(payload: {
         currentPrice: executionPrice,
         score: candidate.score,
         factors: extractScoreFactors(scoreRow?.factors),
-        minTrustScore: 62,
+        minTrustScore: signalTrustThresholds.newBuy,
         requireAboveSma200: true,
       });
 
@@ -1590,6 +1721,8 @@ async function runDailyReviewForUser(payload: {
   dryRun: boolean;
 }): Promise<AutoTradeActionSummary> {
   const chatId = payload.setting.chat_id;
+  const prefs = await getUserInvestmentPrefs(chatId);
+  const signalTrustThresholds = resolveSignalTrustThresholdsFromPrefs(prefs);
   const summary: AutoTradeActionSummary = {
     chatId,
     buys: 0,
@@ -1604,6 +1737,9 @@ async function runDailyReviewForUser(payload: {
   if (selectedStrategy) {
     summary.notes.push(`기본 전략: ${getStrategyLabel(selectedStrategy) || selectedStrategy}`);
   }
+  summary.notes.push(
+    `신뢰도 임계값(${signalTrustThresholds.variant}): 신규 ${signalTrustThresholds.newBuy} · 추가 ${signalTrustThresholds.addOn} · 리밸런싱 ${signalTrustThresholds.rebalance}`
+  );
 
   const { data: holdingsData, error: holdingsError } = await payload.supabase
     .from(PORTFOLIO_TABLES.positionsLegacy)
@@ -1660,7 +1796,6 @@ async function runDailyReviewForUser(payload: {
     if (code && close > 0) closeByCode.set(code, close);
   }
 
-  const prefs = await getUserInvestmentPrefs(chatId);
   const feeRate = toNumber(prefs.virtual_fee_rate, 0.00015);
   const taxRate = toNumber(prefs.virtual_tax_rate, 0.0018);
   const baseStopLossPct = Math.abs(toNumber(payload.setting.stop_loss_pct, 4));
@@ -1938,7 +2073,7 @@ async function runDailyReviewForUser(payload: {
           currentPrice: executionPrice,
           score: candidate.score,
           factors: extractScoreFactors(scoreRow?.factors),
-          minTrustScore: 58,
+          minTrustScore: signalTrustThresholds.addOn,
           requireAboveSma200: true,
         });
 
@@ -2329,7 +2464,7 @@ async function runDailyReviewForUser(payload: {
           currentPrice: executionPrice,
           score: candidate.score,
           factors: extractScoreFactors(scoreRow?.factors),
-          minTrustScore: 60,
+          minTrustScore: signalTrustThresholds.rebalance,
           requireAboveSma200: true,
         });
 
@@ -2654,7 +2789,7 @@ export async function runVirtualAutoTradingForChat(input: {
   ensureEnabled?: boolean;
 }): Promise<ChatAutoTradeRunSummary> {
   const mode = input.mode ?? "auto";
-  const dryRun = Boolean(input.dryRun);
+  let dryRun = Boolean(input.dryRun);
   const ensureEnabled = input.ensureEnabled !== false;
 
   const supabase: SupabaseClientAny = createClient(
@@ -2675,6 +2810,9 @@ export async function runVirtualAutoTradingForChat(input: {
     .maybeSingle();
 
   const prefs = await getUserInvestmentPrefs(input.chatId);
+  if (prefs.virtual_shadow_mode && !dryRun) {
+    dryRun = true;
+  }
   const defaultSetting = buildDefaultSettingForChat(input.chatId, prefs.risk_profile);
 
   const setting: AutoTradeSettingRow = {
@@ -2721,6 +2859,10 @@ export async function runVirtualAutoTradingForChat(input: {
         runId,
         dryRun,
       });
+
+  if (prefs.virtual_shadow_mode) {
+    action.notes.unshift("[SHADOW] 실반영 없이 신호 동시 검증 모드");
+  }
 
   const status = action.errors > 0
     ? "FAILED"
@@ -2856,19 +2998,25 @@ export async function runVirtualAutoTradingCycle(input?: {
     });
 
     try {
+      const prefs = await getUserInvestmentPrefs(setting.chat_id);
+      const userDryRun = dryRun || Boolean(prefs.virtual_shadow_mode);
       const actionSummary = runType === "MONDAY_BUY"
         ? await runMondayBuyForUser({
             supabase,
             setting,
             runId,
-            dryRun,
+            dryRun: userDryRun,
           })
         : await runDailyReviewForUser({
             supabase,
             setting,
             runId,
-            dryRun,
+            dryRun: userDryRun,
           });
+
+      if (prefs.virtual_shadow_mode) {
+        actionSummary.notes.unshift("[SHADOW] 실반영 없이 신호 동시 검증");
+      }
 
       const status = actionSummary.errors > 0
         ? "FAILED"
@@ -2886,11 +3034,11 @@ export async function runVirtualAutoTradingCycle(input?: {
           skipped: actionSummary.skipped,
           errors: actionSummary.errors,
           notes: actionSummary.notes,
-          dryRun,
+          dryRun: userDryRun,
         },
       });
 
-      if (!dryRun) {
+      if (!userDryRun) {
         if (runType === "MONDAY_BUY") {
           await supabase
             .from("virtual_autotrade_settings")

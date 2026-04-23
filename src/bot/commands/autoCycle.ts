@@ -69,9 +69,9 @@ function buildMetricsComparisonLines(
 }
 
 function formatModeLabel(mode: AutoTradeRunMode): string {
-  if (mode === "monday") return "월요일 매수";
+  if (mode === "monday") return "진입 강제 실행";
   if (mode === "daily") return "일일 사이클";
-  return "자동(실행 시점 재판단)";
+  return "자동(매일 통합 사이클)";
 }
 
 function buildModeGuide(mode: AutoTradeRunMode): string[] {
@@ -91,7 +91,7 @@ function buildModeGuide(mode: AutoTradeRunMode): string[] {
   }
   return [
     "모드 설명",
-    "- 기본 모드는 오늘 기준 통합판단입니다.",
+    "- 기본 모드는 매일 통합판단(일일 리뷰 + 진입)입니다.",
     "- /자동사이클 점검은 시뮬레이션, /자동사이클 실행은 실제 반영으로 이해하면 됩니다.",
   ];
 }
@@ -118,7 +118,7 @@ function buildRunModeDifferenceGuide(mode: AutoTradeRunMode, dryRun: boolean): s
     ? "진입(신규 진입 판단 강제)"
     : mode === "daily"
       ? "일일 대응(보유 중심)"
-      : "자동(요일 기준 재판단)";
+      : "자동(매일 통합판단)";
 
   return [
     "실행 해석",

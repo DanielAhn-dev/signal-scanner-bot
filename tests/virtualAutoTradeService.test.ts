@@ -18,9 +18,9 @@ import {
   resolvePositionTradeProfile,
 } from "../src/services/virtualAutoTradePositionStrategy";
 
-test("selectRunType: auto 모드는 KST 월요일에 monday buy를 선택한다", () => {
+test("selectRunType: auto 모드는 요일과 무관하게 daily review를 선택한다", () => {
   const sundayUtc = new Date("2026-04-19T18:00:00.000Z");
-  assert.equal(selectRunType("auto", sundayUtc), "MONDAY_BUY");
+  assert.equal(selectRunType("auto", sundayUtc), "DAILY_REVIEW");
 });
 
 test("deriveAdaptiveMinBuyScore: 현재 상위 점수대에 맞춰 기준을 완화한다", () => {

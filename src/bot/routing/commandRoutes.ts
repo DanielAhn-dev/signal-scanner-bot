@@ -14,6 +14,11 @@ import { handleStocksCommand } from "../commands/stocks";
 import { handleFlowCommand } from "../commands/flow";
 import { handleNextSectorCommand } from "../commands/sector";
 import { handleCapitalCommand } from "../commands/capital";
+import {
+  handleAutoBacktestCommand,
+  handleAutoShadowCommand,
+  handleAutoTrustCommand,
+} from "../commands/autoTradeOps";
 import { handleReportCommand } from "../commands/report";
 import {
   handleKospiCommand,
@@ -170,6 +175,21 @@ export const COMMAND_ROUTE_SPECS: CommandRouteSpec[] = [
     pattern: CMD.CAPITAL,
     tokens: ["capital", "투자금"],
     run: (match, ctx, tgSend) => handleCapitalCommand(match[2] ?? "", ctx, tgSend),
+  },
+  {
+    pattern: CMD.AUTOTRUST,
+    tokens: ["신뢰도", "autotrust"],
+    run: (match, ctx, tgSend) => handleAutoTrustCommand(match[2] ?? "", ctx, tgSend),
+  },
+  {
+    pattern: CMD.AUTOSHADOW,
+    tokens: ["섀도우", "shadow"],
+    run: (match, ctx, tgSend) => handleAutoShadowCommand(match[2] ?? "status", ctx, tgSend),
+  },
+  {
+    pattern: CMD.AUTOBACKTEST,
+    tokens: ["자동백테스트", "autobacktest"],
+    run: (match, ctx, tgSend) => handleAutoBacktestCommand(match[2] ?? "3", ctx, tgSend),
   },
   {
     pattern: CMD.RISK_PROFILE,

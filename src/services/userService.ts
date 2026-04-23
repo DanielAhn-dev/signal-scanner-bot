@@ -89,6 +89,11 @@ export type InvestmentPrefs = {
   weekly_copilot_last_run_at?: string;
   weekly_copilot_last_mode?: "normal" | "forced";
   weekly_copilot_last_status?: "success" | "partial";
+  signal_trust_variant?: "A" | "B" | "CUSTOM";
+  signal_trust_new_buy?: number;
+  signal_trust_add_on?: number;
+  signal_trust_rebalance?: number;
+  virtual_shadow_mode?: boolean;
 };
 
 function resolveDefaultAutoTradeStrategy(
@@ -165,6 +170,17 @@ export async function getUserInvestmentPrefs(
     prefs.weekly_copilot_last_status === "partial"
       ? prefs.weekly_copilot_last_status
       : undefined;
+  const signalTrustVariant =
+    prefs.signal_trust_variant === "A" ||
+    prefs.signal_trust_variant === "B" ||
+    prefs.signal_trust_variant === "CUSTOM"
+      ? prefs.signal_trust_variant
+      : undefined;
+  const signalTrustNewBuy = Number(prefs.signal_trust_new_buy);
+  const signalTrustAddOn = Number(prefs.signal_trust_add_on);
+  const signalTrustRebalance = Number(prefs.signal_trust_rebalance);
+  const virtualShadowMode =
+    typeof prefs.virtual_shadow_mode === "boolean" ? prefs.virtual_shadow_mode : undefined;
 
   if (Number.isFinite(cap) && cap > 0) out.capital_krw = cap;
   if (Number.isFinite(split) && split > 0) out.split_count = Math.floor(split);
@@ -212,6 +228,25 @@ export async function getUserInvestmentPrefs(
   }
   if (weeklyCopilotLastStatus) {
     out.weekly_copilot_last_status = weeklyCopilotLastStatus;
+  }
+  if (signalTrustVariant) {
+    out.signal_trust_variant = signalTrustVariant;
+  }
+  if (Number.isFinite(signalTrustNewBuy) && signalTrustNewBuy >= 0 && signalTrustNewBuy <= 100) {
+    out.signal_trust_new_buy = signalTrustNewBuy;
+  }
+  if (Number.isFinite(signalTrustAddOn) && signalTrustAddOn >= 0 && signalTrustAddOn <= 100) {
+    out.signal_trust_add_on = signalTrustAddOn;
+  }
+  if (
+    Number.isFinite(signalTrustRebalance) &&
+    signalTrustRebalance >= 0 &&
+    signalTrustRebalance <= 100
+  ) {
+    out.signal_trust_rebalance = signalTrustRebalance;
+  }
+  if (typeof virtualShadowMode === "boolean") {
+    out.virtual_shadow_mode = virtualShadowMode;
   }
 
   return out;
@@ -348,6 +383,28 @@ export async function setUserInvestmentPrefs(
         merged.weekly_copilot_last_status === "success" ||
         merged.weekly_copilot_last_status === "partial"
           ? (merged.weekly_copilot_last_status as "success" | "partial")
+          : undefined,
+      signal_trust_variant:
+        merged.signal_trust_variant === "A" ||
+        merged.signal_trust_variant === "B" ||
+        merged.signal_trust_variant === "CUSTOM"
+          ? (merged.signal_trust_variant as "A" | "B" | "CUSTOM")
+          : undefined,
+      signal_trust_new_buy:
+        Number.isFinite(Number(merged.signal_trust_new_buy))
+          ? Number(merged.signal_trust_new_buy)
+          : undefined,
+      signal_trust_add_on:
+        Number.isFinite(Number(merged.signal_trust_add_on))
+          ? Number(merged.signal_trust_add_on)
+          : undefined,
+      signal_trust_rebalance:
+        Number.isFinite(Number(merged.signal_trust_rebalance))
+          ? Number(merged.signal_trust_rebalance)
+          : undefined,
+      virtual_shadow_mode:
+        typeof merged.virtual_shadow_mode === "boolean"
+          ? merged.virtual_shadow_mode
           : undefined,
     },
   };
