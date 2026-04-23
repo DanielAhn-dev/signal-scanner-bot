@@ -56,11 +56,11 @@ import {
 import { getUserInvestmentPrefs } from "../services/userService";
 import { actionButtons } from "./messages/layout";
 
-  export type ChatContext = {
-    chatId: number;
-    messageId?: number;
-    from?: any;
-  };
+export type ChatContext = {
+  chatId: number;
+  messageId?: number;
+  from?: any;
+};
 
 // 텍스트 명령 패턴 (한글/영문 모두 지원)
 const CMD = {
@@ -119,6 +119,22 @@ const CMD = {
 
 const SEND_ERR = (cmd: string) =>
   `⚠️ ${cmd} 조회 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.`;
+
+async function runWithUserError(
+  ctx: ChatContext,
+  tgSend: any,
+  commandLabel: string,
+  run: () => Promise<void>
+): Promise<void> {
+  try {
+    await run();
+  } catch {
+    await tgSend("sendMessage", {
+      chat_id: ctx.chatId,
+      text: SEND_ERR(commandLabel),
+    });
+  }
+}
 
 function riskProfileLabel(profile?: "safe" | "balanced" | "active"): string {
   if (profile === "balanced") return "균형형";
@@ -197,65 +213,40 @@ export async function routeMessage(
 
   const weeklyCopilotMatch = t.match(CMD.WEEKLY_COPILOT);
   if (weeklyCopilotMatch) {
-    try {
-      await handleWeeklyCopilotCommand(ctx, tgSend, weeklyCopilotMatch[2] ?? "");
-    } catch (e) {
-      await tgSend("sendMessage", {
-        chat_id: ctx.chatId,
-        text: SEND_ERR("주간 코파일럿"),
-      });
-    }
+    await runWithUserError(ctx, tgSend, "주간 코파일럿", () =>
+      handleWeeklyCopilotCommand(ctx, tgSend, weeklyCopilotMatch[2] ?? "")
+    );
     return;
   }
 
   // /brief — 실시간 장전 브리핑 (주도 테마, 추천 종목, 매수·관망 신호)
   if (CMD.BRIEF.test(t)) {
-    try {
-      await handleBriefCommand(ctx, tgSend);
-    } catch (e) {
-      await tgSend("sendMessage", {
-        chat_id: ctx.chatId,
-        text: SEND_ERR("브리핑"),
-      });
-    }
+    await runWithUserError(ctx, tgSend, "브리핑", () =>
+      handleBriefCommand(ctx, tgSend)
+    );
     return;
   }
 
   if (CMD.PREMARKET.test(t)) {
-    try {
-      await handlePreMarketPlanCommand("", ctx, tgSend);
-    } catch (e) {
-      await tgSend("sendMessage", {
-        chat_id: ctx.chatId,
-        text: SEND_ERR("장전 주문 플랜"),
-      });
-    }
+    await runWithUserError(ctx, tgSend, "장전 주문 플랜", () =>
+      handlePreMarketPlanCommand("", ctx, tgSend)
+    );
     return;
   }
 
   // /report — 리포트 메뉴 및 PDF 생성
   const reportMatch = t.match(CMD.REPORT);
   if (reportMatch) {
-    try {
-      await handleReportCommand(ctx, tgSend, reportMatch[2]);
-    } catch (e) {
-      await tgSend("sendMessage", {
-        chat_id: ctx.chatId,
-        text: SEND_ERR("리포트"),
-      });
-    }
+    await runWithUserError(ctx, tgSend, "리포트", () =>
+      handleReportCommand(ctx, tgSend, reportMatch[2])
+    );
     return;
   }
 
   if (CMD.GUIDEPDF.test(t)) {
-    try {
-      await handleReportCommand(ctx, tgSend, "가이드");
-    } catch (e) {
-      await tgSend("sendMessage", {
-        chat_id: ctx.chatId,
-        text: SEND_ERR("가이드 PDF"),
-      });
-    }
+    await runWithUserError(ctx, tgSend, "가이드 PDF", () =>
+      handleReportCommand(ctx, tgSend, "가이드")
+    );
     return;
   }
 
@@ -270,14 +261,9 @@ export async function routeMessage(
 
   // /전략선택 — 위험 대응 전략 선택
   if (CMD.STRATEGY_SELECT.test(t)) {
-    try {
-      await handleStrategySelect(ctx, tgSend);
-    } catch (e) {
-      await tgSend("sendMessage", {
-        chat_id: ctx.chatId,
-        text: SEND_ERR("전략 선택"),
-      });
-    }
+    await runWithUserError(ctx, tgSend, "전략 선택", () =>
+      handleStrategySelect(ctx, tgSend)
+    );
     return;
   }
 
@@ -289,53 +275,33 @@ export async function routeMessage(
 
   // /sector — 주도 업종/테마
   if (CMD.SECTOR.test(t)) {
-    try {
-      await handleSectorCommand(ctx, tgSend);
-    } catch (e) {
-      await tgSend("sendMessage", {
-        chat_id: ctx.chatId,
-        text: SEND_ERR("업종"),
-      });
-    }
+    await runWithUserError(ctx, tgSend, "업종", () =>
+      handleSectorCommand(ctx, tgSend)
+    );
     return;
   }
 
   // /pullback — 눌림목 매집 후보
   if (CMD.PULLBACK.test(t)) {
-    try {
-      await handlePullbackCommand(ctx, tgSend);
-    } catch (e) {
-      await tgSend("sendMessage", {
-        chat_id: ctx.chatId,
-        text: SEND_ERR("눌림목"),
-      });
-    }
+    await runWithUserError(ctx, tgSend, "눌림목", () =>
+      handlePullbackCommand(ctx, tgSend)
+    );
     return;
   }
 
   // /economy — 글로벌 경제지표
   if (CMD.ECONOMY.test(t)) {
-    try {
-      await handleEconomyCommand(ctx, tgSend);
-    } catch (e) {
-      await tgSend("sendMessage", {
-        chat_id: ctx.chatId,
-        text: SEND_ERR("경제지표"),
-      });
-    }
+    await runWithUserError(ctx, tgSend, "경제지표", () =>
+      handleEconomyCommand(ctx, tgSend)
+    );
     return;
   }
 
   // /market — 시장 현황
   if (CMD.MARKET.test(t)) {
-    try {
-      await handleMarketCommand(ctx, tgSend);
-    } catch (e) {
-      await tgSend("sendMessage", {
-        chat_id: ctx.chatId,
-        text: SEND_ERR("시장"),
-      });
-    }
+    await runWithUserError(ctx, tgSend, "시장", () =>
+      handleMarketCommand(ctx, tgSend)
+    );
     return;
   }
 
@@ -349,28 +315,18 @@ export async function routeMessage(
   // /stocks [섹터명] — 섹터별 대표 종목
   const mstocks = t.match(CMD.STOCKS);
   if (mstocks) {
-    try {
-      await handleStocksCommand(mstocks[2], ctx, tgSend);
-    } catch (e) {
-      await tgSend("sendMessage", {
-        chat_id: ctx.chatId,
-        text: SEND_ERR("종목"),
-      });
-    }
+    await runWithUserError(ctx, tgSend, "종목", () =>
+      handleStocksCommand(mstocks[2], ctx, tgSend)
+    );
     return;
   }
 
   // /scan — 눌림목 스캐너
   if (CMD.SCAN.test(t)) {
-    try {
+    await runWithUserError(ctx, tgSend, "스캔", async () => {
       const mscan = t.match(CMD.SCAN);
       await handleScanCommand(mscan?.[2] ?? "", ctx, tgSend);
-    } catch (e) {
-      await tgSend("sendMessage", {
-        chat_id: ctx.chatId,
-        text: SEND_ERR("스캔"),
-      });
-    }
+    });
     return;
   }
 
@@ -383,15 +339,10 @@ export async function routeMessage(
 
   // /flow — 외국인·기관 수급
   if (CMD.FLOW.test(t)) {
-    try {
+    await runWithUserError(ctx, tgSend, "수급", async () => {
       const mflow = t.match(CMD.FLOW);
       await handleFlowCommand(mflow?.[2] ?? "", ctx, tgSend);
-    } catch (e) {
-      await tgSend("sendMessage", {
-        chat_id: ctx.chatId,
-        text: SEND_ERR("수급"),
-      });
-    }
+    });
     return;
   }
 
@@ -548,103 +499,63 @@ export async function routeMessage(
 
   // /kospi — 코스피 보수형 추천
   if (CMD.KOSPI.test(t)) {
-    try {
-      await handleKospiCommand(ctx, tgSend);
-    } catch (e) {
-      await tgSend("sendMessage", {
-        chat_id: ctx.chatId,
-        text: SEND_ERR("코스피"),
-      });
-    }
+    await runWithUserError(ctx, tgSend, "코스피", () =>
+      handleKospiCommand(ctx, tgSend)
+    );
     return;
   }
 
   // /kosdaq — 코스닥 보수형 추천
   if (CMD.KOSDAQ.test(t)) {
-    try {
-      await handleKosdaqCommand(ctx, tgSend);
-    } catch (e) {
-      await tgSend("sendMessage", {
-        chat_id: ctx.chatId,
-        text: SEND_ERR("코스닥"),
-      });
-    }
+    await runWithUserError(ctx, tgSend, "코스닥", () =>
+      handleKosdaqCommand(ctx, tgSend)
+    );
     return;
   }
 
   const metfInfo = t.match(CMD.ETFINFO);
   if (metfInfo) {
-    try {
-      await handleEtfInfoCommand(metfInfo[2] ?? "", ctx, tgSend);
-    } catch (e) {
-      await tgSend("sendMessage", {
-        chat_id: ctx.chatId,
-        text: SEND_ERR("ETF 정보"),
-      });
-    }
+    await runWithUserError(ctx, tgSend, "ETF 정보", () =>
+      handleEtfInfoCommand(metfInfo[2] ?? "", ctx, tgSend)
+    );
     return;
   }
 
   const metfDiv = t.match(CMD.ETFDIV);
   if (metfDiv) {
-    try {
-      await handleEtfDistributionCommand(metfDiv[2] ?? "", ctx, tgSend);
-    } catch (e) {
-      await tgSend("sendMessage", {
-        chat_id: ctx.chatId,
-        text: SEND_ERR("ETF 분배금"),
-      });
-    }
+    await runWithUserError(ctx, tgSend, "ETF 분배금", () =>
+      handleEtfDistributionCommand(metfDiv[2] ?? "", ctx, tgSend)
+    );
     return;
   }
 
   if (CMD.ETFCORE.test(t)) {
-    try {
-      await handleEtfCoreCommand(ctx, tgSend);
-    } catch (e) {
-      await tgSend("sendMessage", {
-        chat_id: ctx.chatId,
-        text: SEND_ERR("ETF 적립형"),
-      });
-    }
+    await runWithUserError(ctx, tgSend, "ETF 적립형", () =>
+      handleEtfCoreCommand(ctx, tgSend)
+    );
     return;
   }
 
   if (CMD.ETFTHEME.test(t)) {
-    try {
-      await handleEtfThemeCommand(ctx, tgSend);
-    } catch (e) {
-      await tgSend("sendMessage", {
-        chat_id: ctx.chatId,
-        text: SEND_ERR("ETF 테마형"),
-      });
-    }
+    await runWithUserError(ctx, tgSend, "ETF 테마형", () =>
+      handleEtfThemeCommand(ctx, tgSend)
+    );
     return;
   }
 
   const metfHub = t.match(CMD.ETFHUB);
   if (metfHub) {
-    try {
-      await handleEtfHubCommand(metfHub[2] ?? "", ctx, tgSend);
-    } catch (e) {
-      await tgSend("sendMessage", {
-        chat_id: ctx.chatId,
-        text: SEND_ERR("ETF 허브"),
-      });
-    }
+    await runWithUserError(ctx, tgSend, "ETF 허브", () =>
+      handleEtfHubCommand(metfHub[2] ?? "", ctx, tgSend)
+    );
     return;
   }
 
   const metf = t.match(CMD.ETF);
   if (metf) {
-    try {
-      await handleEtfHubCommand(metf[2] ?? "", ctx, tgSend);
-    } catch (e) {
-      await tgSend("sendMessage", {
-        chat_id: ctx.chatId,
-        text: SEND_ERR("ETF 허브"),
-      });
-    }
+    await runWithUserError(ctx, tgSend, "ETF 허브", () =>
+      handleEtfHubCommand(metf[2] ?? "", ctx, tgSend)
+    );
     return;
   }
 

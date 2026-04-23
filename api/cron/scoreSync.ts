@@ -1,6 +1,7 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { createClient } from "@supabase/supabase-js";
 import { syncScoresFromEngine } from "../../src/services/scoreSyncService";
+import { parsePositiveInt } from "./query";
 
 const CRON_SECRET = process.env.CRON_SECRET;
 const SUPABASE_URL = process.env.SUPABASE_URL;
@@ -9,13 +10,6 @@ const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 export const config = {
   maxDuration: 60,
 };
-
-function parsePositiveInt(raw: string | string[] | undefined): number | undefined {
-  const value = Array.isArray(raw) ? raw[0] : raw;
-  if (!value) return undefined;
-  const parsed = Number.parseInt(value, 10);
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : undefined;
-}
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== "GET") {

@@ -1,5 +1,6 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { runVirtualAutoTradingCycle } from "../../src/services/virtualAutoTradeService";
+import { firstQueryValue, parseBoolean, parsePositiveInt } from "./query";
 
 const CRON_SECRET = process.env.CRON_SECRET;
 
@@ -7,23 +8,11 @@ export const config = {
   maxDuration: 60,
 };
 
-function parsePositiveInt(raw: string | string[] | undefined): number | undefined {
-  const value = Array.isArray(raw) ? raw[0] : raw;
-  if (!value) return undefined;
-  const parsed = Number.parseInt(value, 10);
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : undefined;
-}
-
 function parseMode(raw: string | string[] | undefined): "auto" | "monday" | "daily" {
-  const value = (Array.isArray(raw) ? raw[0] : raw) ?? "auto";
+  const value = firstQueryValue(raw) ?? "auto";
   if (value === "monday") return "monday";
   if (value === "daily") return "daily";
   return "auto";
-}
-
-function parseBoolean(raw: string | string[] | undefined): boolean {
-  const value = ((Array.isArray(raw) ? raw[0] : raw) ?? "").toLowerCase();
-  return value === "1" || value === "true" || value === "yes" || value === "y";
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
