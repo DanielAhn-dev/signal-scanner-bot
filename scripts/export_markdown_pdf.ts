@@ -46,7 +46,7 @@ const COLORS = {
   border: rgb(0.84, 0.84, 0.88),
   surface: rgb(0.96, 0.96, 0.97),
   accent: rgb(0.08, 0.22, 0.40),
-  accentSoft: rgb(0.90, 0.94, 0.98),
+  accentSoft: rgb(0.86, 0.86, 0.89),
   quote: rgb(0.94, 0.95, 0.97),
   code: rgb(0.95, 0.95, 0.96),
   white: rgb(1, 1, 1),
@@ -165,8 +165,13 @@ function parseStableDateFromMarkdown(markdown: string): { label: string; date: D
 }
 
 function stripInlineMarkdown(text: string): string {
+  // Insert an invisible joiner after command-leading slash (e.g. /자동사이클)
+  // so PDF viewers do not auto-detect links and draw misaligned underlines.
+  const breakAutoLinkForSlashCommand = (value: string): string =>
+    value.replace(/(^|[\s(])\/(?=[^\s/]+)/g, "$1/\u2060");
+
   return sanitizePdfText(
-    text
+    breakAutoLinkForSlashCommand(text)
     .replace(/`([^`]+)`/g, "$1")
     .replace(/\*\*([^*]+)\*\*/g, "$1")
     .replace(/\*([^*]+)\*/g, "$1")
@@ -279,14 +284,34 @@ function drawWrappedText(args: {
 }) {
   const lines = wrapText(args.text, args.maxWidth, args.font, args.fontSize);
   const lh = lineHeight(args.fontSize);
+  const commandToken = /\/\u2060?[^\s/]+/g;
   for (let index = 0; index < lines.length; index += 1) {
-    args.page.drawText(sanitizePdfText(lines[index]), {
+    const lineText = sanitizePdfText(lines[index]);
+    const textY = args.y - args.fontSize * 0.8 - index * lh;
+    args.page.drawText(lineText, {
       x: args.x,
-      y: args.y - args.fontSize * 0.8 - index * lh,
+      y: textY,
       size: args.fontSize,
       font: args.font,
       color: args.color,
     });
+
+    // Draw stable black underlines for slash commands, preventing viewer-dependent auto-link underline artifacts.
+    const matches = Array.from(lineText.matchAll(commandToken));
+    for (const match of matches) {
+      const token = match[0];
+      const startIndex = match.index ?? 0;
+      const prefix = lineText.slice(0, startIndex);
+      const underlineX = args.x + args.font.widthOfTextAtSize(prefix, args.fontSize);
+      const underlineWidth = args.font.widthOfTextAtSize(token, args.fontSize);
+      const underlineY = textY - 1.6;
+      args.page.drawLine({
+        start: { x: underlineX, y: underlineY },
+        end: { x: underlineX + underlineWidth, y: underlineY },
+        thickness: 0.8,
+        color: COLORS.text,
+      });
+    }
   }
   return { lines, height: lines.length * lh };
 }
@@ -577,12 +602,14 @@ function renderBlocks(pdf: PDFDocument, fonts: Fonts, title: string, dateLabel: 
         page,
       });
       if (block.level <= 2) {
-        page.drawRectangle({
-          x: PAGE.marginLeft,
-          y: cursor.y - wrapped.height - 8,
-          width: block.level === 1 ? bodyWidth : 120,
-          height: 2,
-          color: COLORS.accentSoft,
+        const underlineText = wrapped.lines[wrapped.lines.length - 1] ?? block.text;
+        const underlineWidth = Math.min(bodyWidth, fonts.bold.widthOfTextAtSize(underlineText, metrics.size));
+        const underlineY = cursor.y - wrapped.height - 1;
+        page.drawLine({
+          start: { x: PAGE.marginLeft, y: underlineY },
+          end: { x: PAGE.marginLeft + underlineWidth, y: underlineY },
+          thickness: 1,
+          color: COLORS.text,
         });
       }
       cursor.move(wrapped.height + metrics.after);
