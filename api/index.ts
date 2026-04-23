@@ -8,7 +8,7 @@ export default async function handler(_: any, res: any) {
   if (!commandsRegistered && process.env.TELEGRAM_BOT_TOKEN) {
     commandsRegistered = true;
     try {
-      const { setCommandsKo } = await import("../src/telegram/api");
+      const { setCommandsKo } = await import("../src/telegram/api.js");
       const result = await setCommandsKo();
       console.log("[auto-init] setCommandsKo:", result.ok ? "OK" : "FAIL");
     } catch (e) {

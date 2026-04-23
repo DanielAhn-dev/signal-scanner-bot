@@ -3,15 +3,62 @@
 
 import { createClient } from "@supabase/supabase-js";
 
-const supabase = createClient(
-  process.env.SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-);
+let supabaseWriteClient: any = null;
+let supabaseReadClient: any = null;
 
-const supabaseRead = createClient(
-  process.env.SUPABASE_URL!,
-  process.env.SUPABASE_ANON_KEY!
-);
+function getRequiredEnv(name: "SUPABASE_URL" | "SUPABASE_SERVICE_ROLE_KEY"): string {
+  const value = process.env[name];
+  if (!value) {
+    throw new Error(`${name} is required.`);
+  }
+  return value;
+}
+
+function getSupabaseWriteClient(): any {
+  if (supabaseWriteClient) return supabaseWriteClient;
+  supabaseWriteClient = createClient(
+    getRequiredEnv("SUPABASE_URL"),
+    getRequiredEnv("SUPABASE_SERVICE_ROLE_KEY")
+  );
+  return supabaseWriteClient;
+}
+
+function getSupabaseReadClient(): any {
+  if (supabaseReadClient) return supabaseReadClient;
+  const url = getRequiredEnv("SUPABASE_URL");
+  const anonKey = process.env.SUPABASE_ANON_KEY;
+  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  const key = anonKey || serviceRoleKey;
+
+  if (!key) {
+    throw new Error("SUPABASE_ANON_KEY or SUPABASE_SERVICE_ROLE_KEY is required.");
+  }
+
+  supabaseReadClient = createClient(url, key);
+  return supabaseReadClient;
+}
+
+const supabase: any = new Proxy({}, {
+  get(_target, prop) {
+    const client = getSupabaseWriteClient() as unknown as Record<string, unknown>;
+    const value = client[prop as string];
+    if (typeof value === "function") {
+      return (value as Function).bind(client);
+    }
+    return value;
+  },
+});
+
+const supabaseRead: any = new Proxy({}, {
+  get(_target, prop) {
+    const client = getSupabaseReadClient() as unknown as Record<string, unknown>;
+    const value = client[prop as string];
+    if (typeof value === "function") {
+      return (value as Function).bind(client);
+    }
+    return value;
+  },
+});
 
 export interface TelegramFrom {
   id: number;

@@ -249,7 +249,7 @@ export async function handleBuyCommand(
     });
   }
 
-  const { fetchRealtimeStockData } = await import("../../utils/fetchRealtimePrice");
+  const { fetchRealtimeStockData } = await import("../../utils/fetchRealtimePrice.js");
   const [realtimeData, series, marketData, fundamental, prefs] = await Promise.all([
     fetchRealtimeStockData(code),
     getDailySeries(code, 420).catch(() => []),

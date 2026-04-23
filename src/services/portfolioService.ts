@@ -88,10 +88,29 @@ export type SyncedPortfolioState = {
   holdingCount: number;
 };
 
-const supabase = createClient(
-  process.env.SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-);
+let supabaseClient: any = null;
+
+function getSupabaseClient() {
+  if (supabaseClient) return supabaseClient;
+  const url = process.env.SUPABASE_URL;
+  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!url || !serviceRoleKey) {
+    throw new Error("SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are required.");
+  }
+  supabaseClient = createClient(url, serviceRoleKey);
+  return supabaseClient;
+}
+
+const supabase: any = new Proxy({}, {
+  get(_target, prop) {
+    const client = getSupabaseClient() as unknown as Record<string, unknown>;
+    const value = client[prop as string];
+    if (typeof value === "function") {
+      return (value as Function).bind(client);
+    }
+    return value;
+  },
+});
 
 function toPositiveNumber(value: unknown): number | null {
   const n = Number(value);

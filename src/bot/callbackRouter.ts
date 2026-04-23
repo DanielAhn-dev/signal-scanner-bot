@@ -78,7 +78,7 @@ export async function routeCallbackData(
 
     if (prefix === "strategy") {
       try {
-        const { handleStrategyCallback } = await import("./commands/strategySelect");
+        const { handleStrategyCallback } = await import("./commands/strategySelect.js");
         const supabaseModule = await import("@supabase/supabase-js");
         const {
           SUPABASE_URL,
@@ -98,7 +98,7 @@ export async function routeCallbackData(
         }
 
         const supabase = supabaseModule.createClient(SUPABASE_URL, supabaseKey);
-        await handleStrategyCallback(ctx, tgSend, supabase, payload);
+        await handleStrategyCallback(ctx, tgSend, supabase as any, payload);
         return;
       } catch (error) {
         console.error("[callbackRouter] strategy callback 처리 실패:", error);

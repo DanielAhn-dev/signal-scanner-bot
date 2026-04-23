@@ -2,7 +2,13 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { createClient } from "@supabase/supabase-js";
 import { routeCallbackData } from "../src/bot/callbackRouter";
-import { routeMessage } from "../src/bot/router";
+const { routeMessage } = require("../src/bot/router") as {
+  routeMessage: (
+    text: string,
+    ctx: { chatId: number; from: unknown },
+    tgSend: (method: string, body: any) => Promise<any>
+  ) => Promise<void>;
+};
 import { scoreStocksInSector, StockScore } from "../src/lib/stocks";
 import {
   getReplyPrefixForPromptKind,

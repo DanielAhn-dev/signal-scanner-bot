@@ -552,7 +552,7 @@ export async function createBriefingReport(
 
   let riskSignalSection = "";
   try {
-    const { calculateRiskSignals } = await import("./riskSignalService");
+    const { calculateRiskSignals } = await import("./riskSignalService.js");
     const riskSignals = await calculateRiskSignals(supabase, marketData as any, { chatId: options?.chatId });
     riskSignalSection = `\n${riskSignals.html_brief}\n`;
     if (riskSignals.signal_count > 0) {

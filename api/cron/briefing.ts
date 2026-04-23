@@ -140,8 +140,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     // 리스크 신호 계산 및 저장
     try {
-      const { calculateRiskSignals } = await import("../../src/services/riskSignalService");
-      const { fetchAllMarketData } = await import("../../src/utils/fetchMarketData");
+      const { calculateRiskSignals } = await import("../../src/services/riskSignalService.js");
+      const { fetchAllMarketData } = await import("../../src/utils/fetchMarketData.js");
       
       const marketOverview = await fetchAllMarketData();
       const riskSignals = await calculateRiskSignals(supabase, marketOverview as any);
