@@ -2,6 +2,7 @@ import type { ChatContext } from "../router";
 import { createClient } from "@supabase/supabase-js";
 import { createBriefingReport } from "../../services/briefingService";
 import { createDailyCandidatePlanningReportResult } from "../../services/marketInsightService";
+import { buildAutoCyclePreviewText } from "../../services/autoCycleBriefingService";
 import { buildPersonalizedGuidance } from "../../services/personalizedGuidanceService";
 import { getUserInvestmentPrefs } from "../../services/userService";
 import { ACTIONS, actionButtons, buildRecommendationActionButtons } from "../messages/layout";
@@ -33,15 +34,17 @@ export async function handleBriefCommand(
     mode: "briefing",
     chatId: ctx.chatId,
   }).catch(() => null);
+  const autoCyclePreview = await buildAutoCyclePreviewText(ctx.chatId);
   const personalLines = await buildPersonalizedGuidance({
     chatId: ctx.chatId,
     context: "brief",
   }).catch(() => []);
 
   const finalReportBase = planningResult?.text ? `${report}\n\n${planningResult.text}` : report;
+  const withAutoCyclePreview = autoCyclePreview ? `${finalReportBase}\n\n${autoCyclePreview}` : finalReportBase;
   const finalReport = personalLines.length > 0
-    ? `${finalReportBase}\n\n<b>내 상황 제안</b>\n- ${personalLines.join("\n- ")}`
-    : finalReportBase;
+    ? `${withAutoCyclePreview}\n\n<b>내 상황 제안</b>\n- ${personalLines.join("\n- ")}`
+    : withAutoCyclePreview;
 
   await tgSend("sendMessage", {
     chat_id: ctx.chatId,
@@ -49,7 +52,7 @@ export async function handleBriefCommand(
     parse_mode: "HTML",
     disable_web_page_preview: true,
     reply_markup: actionButtons(
-      buildRecommendationActionButtons(planningResult?.actionItems ?? [], [...ACTIONS.briefing, ...ACTIONS.autoCycleQuick]),
+      buildRecommendationActionButtons((planningResult?.actionItems ?? []).slice(0, 2), ACTIONS.briefingPrimary),
       3
     ),
   });

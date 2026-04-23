@@ -119,6 +119,12 @@ export const ACTIONS = {
     { text: "눌림목", callback_data: "cmd:pullback" },
     { text: "시장", callback_data: "cmd:market" },
   ] as InlineButton[],
+  briefingPrimary: [
+    { text: "자동 점검", callback_data: "cmd:autocycle:check" },
+    { text: "자동 실행", callback_data: "cmd:autocycle:run" },
+    { text: "진입 실행", callback_data: "cmd:autocycle:entry-run" },
+    { text: "더보기", callback_data: "cmd:report" },
+  ] as InlineButton[],
   recommendationFollowup: [
     { text: "눌림목", callback_data: "cmd:pullback" },
     { text: "코스피", callback_data: "cmd:kospi" },

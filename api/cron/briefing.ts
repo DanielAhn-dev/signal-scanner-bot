@@ -1,6 +1,7 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { createBriefingReport } from "../../src/services/briefingService";
 import { createDailyCandidatePlanningReportResult } from "../../src/services/marketInsightService";
+import { buildAutoCyclePreviewText } from "../../src/services/autoCycleBriefingService";
 import { tg } from "../../src/telegram/api";
 import { createClient } from "@supabase/supabase-js";
 import { getUserInvestmentPrefs } from "../../src/services/userService";
@@ -74,10 +75,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
               compactActionText: true,
             }).catch(() => null)
           : null;
+        const autoCyclePreview = briefingType === "pre_market"
+          ? await buildAutoCyclePreviewText(chatId)
+          : null;
+        const briefingText = planningResult?.text ? `${report}\n\n${planningResult.text}` : report;
+        const finalText = autoCyclePreview ? `${briefingText}\n\n${autoCyclePreview}` : briefingText;
 
         await tg("sendMessage", {
           chat_id: chatId,
-          text: planningResult?.text ? `${report}\n\n${planningResult.text}` : report,
+          text: finalText,
           parse_mode: "HTML",
           disable_web_page_preview: true,
           ...(briefingType === "pre_market"
@@ -85,7 +91,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
                 reply_markup: actionButtons(
                   buildRecommendationActionButtons(
                     (planningResult?.actionItems ?? []).slice(0, 2),
-                    [...ACTIONS.recommendationFollowupCompact, ...ACTIONS.autoCycleQuick]
+                    ACTIONS.briefingPrimary
                   ),
                   3
                 ),
