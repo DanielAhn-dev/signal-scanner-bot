@@ -136,6 +136,273 @@ async function runWithUserError(
   }
 }
 
+type CommandRouteHandler = (
+  match: RegExpMatchArray,
+  ctx: ChatContext,
+  tgSend: any
+) => Promise<void>;
+
+type CommandRouteSpec = {
+  pattern: RegExp;
+  run: CommandRouteHandler;
+  userErrorLabel?: string;
+};
+
+const COMMAND_ROUTE_SPECS: CommandRouteSpec[] = [
+  {
+    pattern: CMD.WEEKLY_COPILOT,
+    userErrorLabel: "주간 코파일럿",
+    run: (match, ctx, tgSend) =>
+      handleWeeklyCopilotCommand(ctx, tgSend, match[2] ?? ""),
+  },
+  {
+    pattern: CMD.BRIEF,
+    userErrorLabel: "브리핑",
+    run: (_match, ctx, tgSend) => handleBriefCommand(ctx, tgSend),
+  },
+  {
+    pattern: CMD.PREMARKET,
+    userErrorLabel: "장전 주문 플랜",
+    run: (_match, ctx, tgSend) => handlePreMarketPlanCommand("", ctx, tgSend),
+  },
+  {
+    pattern: CMD.REPORT,
+    userErrorLabel: "리포트",
+    run: (match, ctx, tgSend) => handleReportCommand(ctx, tgSend, match[2]),
+  },
+  {
+    pattern: CMD.GUIDEPDF,
+    userErrorLabel: "가이드 PDF",
+    run: (_match, ctx, tgSend) => handleReportCommand(ctx, tgSend, "가이드"),
+  },
+  {
+    pattern: CMD.HELP,
+    run: async (_match, ctx, tgSend) => {
+      await tgSend("sendMessage", {
+        chat_id: ctx.chatId,
+        text: KO_MESSAGES.HELP,
+      });
+    },
+  },
+  {
+    pattern: CMD.STRATEGY_SELECT,
+    userErrorLabel: "전략 선택",
+    run: (_match, ctx, tgSend) => handleStrategySelect(ctx, tgSend),
+  },
+  {
+    pattern: CMD.ONBOARDING,
+    run: (_match, ctx, tgSend) => handleOnboardingCommand(ctx, tgSend),
+  },
+  {
+    pattern: CMD.SECTOR,
+    userErrorLabel: "업종",
+    run: (_match, ctx, tgSend) => handleSectorCommand(ctx, tgSend),
+  },
+  {
+    pattern: CMD.PULLBACK,
+    userErrorLabel: "눌림목",
+    run: (_match, ctx, tgSend) => handlePullbackCommand(ctx, tgSend),
+  },
+  {
+    pattern: CMD.ECONOMY,
+    userErrorLabel: "경제지표",
+    run: (_match, ctx, tgSend) => handleEconomyCommand(ctx, tgSend),
+  },
+  {
+    pattern: CMD.MARKET,
+    userErrorLabel: "시장",
+    run: (_match, ctx, tgSend) => handleMarketCommand(ctx, tgSend),
+  },
+  {
+    pattern: CMD.TRADE,
+    run: (match, ctx, tgSend) => handleBuyCommand(match[2], ctx, tgSend),
+  },
+  {
+    pattern: CMD.STOCKS,
+    userErrorLabel: "종목",
+    run: (match, ctx, tgSend) => handleStocksCommand(match[2], ctx, tgSend),
+  },
+  {
+    pattern: CMD.SCAN,
+    userErrorLabel: "스캔",
+    run: (match, ctx, tgSend) => handleScanCommand(match[2] ?? "", ctx, tgSend),
+  },
+  {
+    pattern: CMD.NEWS,
+    run: (match, ctx, tgSend) => handleNewsCommand(match[2] ?? "", ctx, tgSend),
+  },
+  {
+    pattern: CMD.FLOW,
+    userErrorLabel: "수급",
+    run: (match, ctx, tgSend) => handleFlowCommand(match[2] ?? "", ctx, tgSend),
+  },
+  {
+    pattern: CMD.FINANCE,
+    run: (match, ctx, tgSend) => handleFinanceCommand(match[2] ?? "", ctx, tgSend),
+  },
+  {
+    pattern: CMD.CAPITAL,
+    run: (match, ctx, tgSend) => handleCapitalCommand(match[2] ?? "", ctx, tgSend),
+  },
+  {
+    pattern: CMD.RISK_PROFILE,
+    run: (match, ctx, tgSend) => handleRiskProfileCommand(match[2] ?? "", ctx, tgSend),
+  },
+  {
+    pattern: CMD.WATCHONLYLIST,
+    run: (_match, ctx, tgSend) => handleWatchOnlyCommand(ctx, tgSend),
+  },
+  {
+    pattern: CMD.WATCHONLYADD,
+    run: (match, ctx, tgSend) => handleWatchOnlyAdd(match[2] ?? "", ctx, tgSend),
+  },
+  {
+    pattern: CMD.WATCHONLYREMOVE,
+    run: (match, ctx, tgSend) => handleWatchOnlyRemove(match[2] ?? "", ctx, tgSend),
+  },
+  {
+    pattern: CMD.WATCHONLYRESET,
+    run: (match, ctx, tgSend) => handleWatchOnlyReset(match[2] ?? "", ctx, tgSend),
+  },
+  {
+    pattern: CMD.WATCHONLYRESP,
+    run: (_match, ctx, tgSend) => handleWatchOnlyResponseCommand(ctx, tgSend),
+  },
+  {
+    pattern: CMD.WATCHADD,
+    run: (match, ctx, tgSend) => handleWatchlistAdd(match[2] ?? "", ctx, tgSend),
+  },
+  {
+    pattern: CMD.WATCHREMOVE,
+    run: (match, ctx, tgSend) => handleWatchlistRemove(match[2] ?? "", ctx, tgSend),
+  },
+  {
+    pattern: CMD.WATCHEDIT,
+    run: (match, ctx, tgSend) => handleWatchlistEdit(match[2] ?? "", ctx, tgSend),
+  },
+  {
+    pattern: CMD.WATCHRESTORE,
+    run: (match, ctx, tgSend) => handleWatchlistRestoreCommand(match[2] ?? "", ctx, tgSend),
+  },
+  {
+    pattern: CMD.RECORD,
+    run: (match, ctx, tgSend) => handleWatchlistHistoryCommand(match[2] ?? "", ctx, tgSend),
+  },
+  {
+    pattern: CMD.LIQUIDATEALL,
+    run: (match, ctx, tgSend) =>
+      handleWatchlistLiquidateAllCommand(match[2] ?? "", ctx, tgSend),
+  },
+  {
+    pattern: CMD.WATCHAUTO,
+    run: (_match, ctx, tgSend) => handleWatchlistAutoCommand(ctx, tgSend),
+  },
+  {
+    pattern: CMD.WATCHRESP,
+    run: (_match, ctx, tgSend) => handleWatchlistResponseCommand(ctx, tgSend),
+  },
+  {
+    pattern: CMD.ALERT,
+    run: (_match, ctx, tgSend) => handleAlertCommand(ctx, tgSend),
+  },
+  {
+    pattern: CMD.WATCHLIST,
+    run: (_match, ctx, tgSend) => handleWatchlistCommand(ctx, tgSend),
+  },
+  {
+    pattern: CMD.AUTOCYCLE,
+    run: (match, ctx, tgSend) => handleAutoCycleCommand(match[2] ?? "", ctx, tgSend),
+  },
+  {
+    pattern: CMD.RANKING,
+    run: (_match, ctx, tgSend) => handleRankingCommand(ctx, tgSend),
+  },
+  {
+    pattern: CMD.PROFILE,
+    run: (_match, ctx, tgSend) => handleProfileCommand(ctx, tgSend),
+  },
+  {
+    pattern: CMD.FOLLOW,
+    run: (match, ctx, tgSend) => handleFollowCommand(match[2] ?? "", ctx, tgSend),
+  },
+  {
+    pattern: CMD.UNFOLLOW,
+    run: (match, ctx, tgSend) => handleUnfollowCommand(match[2] ?? "", ctx, tgSend),
+  },
+  {
+    pattern: CMD.FEED,
+    run: (_match, ctx, tgSend) => handleFeedCommand(ctx, tgSend),
+  },
+  {
+    pattern: CMD.NEXTSECTOR,
+    run: (_match, ctx, tgSend) => handleNextSectorCommand(ctx, tgSend),
+  },
+  {
+    pattern: CMD.KOSPI,
+    userErrorLabel: "코스피",
+    run: (_match, ctx, tgSend) => handleKospiCommand(ctx, tgSend),
+  },
+  {
+    pattern: CMD.KOSDAQ,
+    userErrorLabel: "코스닥",
+    run: (_match, ctx, tgSend) => handleKosdaqCommand(ctx, tgSend),
+  },
+  {
+    pattern: CMD.ETFINFO,
+    userErrorLabel: "ETF 정보",
+    run: (match, ctx, tgSend) => handleEtfInfoCommand(match[2] ?? "", ctx, tgSend),
+  },
+  {
+    pattern: CMD.ETFDIV,
+    userErrorLabel: "ETF 분배금",
+    run: (match, ctx, tgSend) =>
+      handleEtfDistributionCommand(match[2] ?? "", ctx, tgSend),
+  },
+  {
+    pattern: CMD.ETFCORE,
+    userErrorLabel: "ETF 적립형",
+    run: (_match, ctx, tgSend) => handleEtfCoreCommand(ctx, tgSend),
+  },
+  {
+    pattern: CMD.ETFTHEME,
+    userErrorLabel: "ETF 테마형",
+    run: (_match, ctx, tgSend) => handleEtfThemeCommand(ctx, tgSend),
+  },
+  {
+    pattern: CMD.ETFHUB,
+    userErrorLabel: "ETF 허브",
+    run: (match, ctx, tgSend) => handleEtfHubCommand(match[2] ?? "", ctx, tgSend),
+  },
+  {
+    pattern: CMD.ETF,
+    userErrorLabel: "ETF 허브",
+    run: (match, ctx, tgSend) => handleEtfHubCommand(match[2] ?? "", ctx, tgSend),
+  },
+];
+
+async function dispatchCommandRoutes(
+  text: string,
+  ctx: ChatContext,
+  tgSend: any
+): Promise<boolean> {
+  for (const route of COMMAND_ROUTE_SPECS) {
+    const match = text.match(route.pattern);
+    if (!match) continue;
+
+    if (route.userErrorLabel) {
+      await runWithUserError(ctx, tgSend, route.userErrorLabel, () =>
+        route.run(match, ctx, tgSend)
+      );
+    } else {
+      await route.run(match, ctx, tgSend);
+    }
+
+    return true;
+  }
+
+  return false;
+}
+
 function riskProfileLabel(profile?: "safe" | "balanced" | "active"): string {
   if (profile === "balanced") return "균형형";
   if (profile === "active") return "공격형";
@@ -211,353 +478,8 @@ export async function routeMessage(
     return;
   }
 
-  const weeklyCopilotMatch = t.match(CMD.WEEKLY_COPILOT);
-  if (weeklyCopilotMatch) {
-    await runWithUserError(ctx, tgSend, "주간 코파일럿", () =>
-      handleWeeklyCopilotCommand(ctx, tgSend, weeklyCopilotMatch[2] ?? "")
-    );
-    return;
-  }
-
-  // /brief — 실시간 장전 브리핑 (주도 테마, 추천 종목, 매수·관망 신호)
-  if (CMD.BRIEF.test(t)) {
-    await runWithUserError(ctx, tgSend, "브리핑", () =>
-      handleBriefCommand(ctx, tgSend)
-    );
-    return;
-  }
-
-  if (CMD.PREMARKET.test(t)) {
-    await runWithUserError(ctx, tgSend, "장전 주문 플랜", () =>
-      handlePreMarketPlanCommand("", ctx, tgSend)
-    );
-    return;
-  }
-
-  // /report — 리포트 메뉴 및 PDF 생성
-  const reportMatch = t.match(CMD.REPORT);
-  if (reportMatch) {
-    await runWithUserError(ctx, tgSend, "리포트", () =>
-      handleReportCommand(ctx, tgSend, reportMatch[2])
-    );
-    return;
-  }
-
-  if (CMD.GUIDEPDF.test(t)) {
-    await runWithUserError(ctx, tgSend, "가이드 PDF", () =>
-      handleReportCommand(ctx, tgSend, "가이드")
-    );
-    return;
-  }
-
-  // /help | /도움말
-  if (CMD.HELP.test(t)) {
-    await tgSend("sendMessage", {
-      chat_id: ctx.chatId,
-      text: KO_MESSAGES.HELP,
-    });
-    return;
-  }
-
-  // /전략선택 — 위험 대응 전략 선택
-  if (CMD.STRATEGY_SELECT.test(t)) {
-    await runWithUserError(ctx, tgSend, "전략 선택", () =>
-      handleStrategySelect(ctx, tgSend)
-    );
-    return;
-  }
-
-  // /onboarding — 사용 가이드
-  if (CMD.ONBOARDING.test(t)) {
-    await handleOnboardingCommand(ctx, tgSend);
-    return;
-  }
-
-  // /sector — 주도 업종/테마
-  if (CMD.SECTOR.test(t)) {
-    await runWithUserError(ctx, tgSend, "업종", () =>
-      handleSectorCommand(ctx, tgSend)
-    );
-    return;
-  }
-
-  // /pullback — 눌림목 매집 후보
-  if (CMD.PULLBACK.test(t)) {
-    await runWithUserError(ctx, tgSend, "눌림목", () =>
-      handlePullbackCommand(ctx, tgSend)
-    );
-    return;
-  }
-
-  // /economy — 글로벌 경제지표
-  if (CMD.ECONOMY.test(t)) {
-    await runWithUserError(ctx, tgSend, "경제지표", () =>
-      handleEconomyCommand(ctx, tgSend)
-    );
-    return;
-  }
-
-  // /market — 시장 현황
-  if (CMD.MARKET.test(t)) {
-    await runWithUserError(ctx, tgSend, "시장", () =>
-      handleMarketCommand(ctx, tgSend)
-    );
-    return;
-  }
-
-  // /analyze | /종목분석 [종목명/코드] — 종목 분석
-  const mt = t.match(CMD.TRADE);
-  if (mt) {
-    await handleBuyCommand(mt[2], ctx, tgSend);
-    return;
-  }
-
-  // /stocks [섹터명] — 섹터별 대표 종목
-  const mstocks = t.match(CMD.STOCKS);
-  if (mstocks) {
-    await runWithUserError(ctx, tgSend, "종목", () =>
-      handleStocksCommand(mstocks[2], ctx, tgSend)
-    );
-    return;
-  }
-
-  // /scan — 눌림목 스캐너
-  if (CMD.SCAN.test(t)) {
-    await runWithUserError(ctx, tgSend, "스캔", async () => {
-      const mscan = t.match(CMD.SCAN);
-      await handleScanCommand(mscan?.[2] ?? "", ctx, tgSend);
-    });
-    return;
-  }
-
-  // /news — 시장·종목 뉴스
-  if (CMD.NEWS.test(t)) {
-    const mn = t.match(CMD.NEWS);
-    await handleNewsCommand(mn?.[2] ?? "", ctx, tgSend);
-    return;
-  }
-
-  // /flow — 외국인·기관 수급
-  if (CMD.FLOW.test(t)) {
-    await runWithUserError(ctx, tgSend, "수급", async () => {
-      const mflow = t.match(CMD.FLOW);
-      await handleFlowCommand(mflow?.[2] ?? "", ctx, tgSend);
-    });
-    return;
-  }
-
-  // /finance — 재무 요약
-  if (CMD.FINANCE.test(t)) {
-    const mf = t.match(CMD.FINANCE);
-    await handleFinanceCommand(mf?.[2] ?? "", ctx, tgSend);
-    return;
-  }
-
-  // /capital — 투자금 설정
-  if (CMD.CAPITAL.test(t)) {
-    const mc = t.match(CMD.CAPITAL);
-    await handleCapitalCommand(mc?.[2] ?? "", ctx, tgSend);
-    return;
-  }
-
-  // /투자성향 — 기본 투자성향 설정
-  if (CMD.RISK_PROFILE.test(t)) {
-    const mr = t.match(CMD.RISK_PROFILE);
-    await handleRiskProfileCommand(mr?.[2] ?? "", ctx, tgSend);
-    return;
-  }
-
-  if (CMD.WATCHONLYLIST.test(t)) {
-    await handleWatchOnlyCommand(ctx, tgSend);
-    return;
-  }
-
-  const mwatchAdd = t.match(CMD.WATCHONLYADD);
-  if (mwatchAdd) {
-    await handleWatchOnlyAdd(mwatchAdd[2] ?? "", ctx, tgSend);
-    return;
-  }
-
-  const mwatchRemove = t.match(CMD.WATCHONLYREMOVE);
-  if (mwatchRemove) {
-    await handleWatchOnlyRemove(mwatchRemove[2] ?? "", ctx, tgSend);
-    return;
-  }
-
-  const mwatchReset = t.match(CMD.WATCHONLYRESET);
-  if (mwatchReset) {
-    await handleWatchOnlyReset(mwatchReset[2] ?? "", ctx, tgSend);
-    return;
-  }
-
-  if (CMD.WATCHONLYRESP.test(t)) {
-    await handleWatchOnlyResponseCommand(ctx, tgSend);
-    return;
-  }
-
-  const mwa = t.match(CMD.WATCHADD);
-  if (mwa) {
-    await handleWatchlistAdd(mwa[2] ?? "", ctx, tgSend);
-    return;
-  }
-
-  const mwr = t.match(CMD.WATCHREMOVE);
-  if (mwr) {
-    await handleWatchlistRemove(mwr[2] ?? "", ctx, tgSend);
-    return;
-  }
-
-  const mwe = t.match(CMD.WATCHEDIT);
-  if (mwe) {
-    await handleWatchlistEdit(mwe[2] ?? "", ctx, tgSend);
-    return;
-  }
-
-  const mwrRestore = t.match(CMD.WATCHRESTORE);
-  if (mwrRestore) {
-    await handleWatchlistRestoreCommand(mwrRestore[2] ?? "", ctx, tgSend);
-    return;
-  }
-
-  const mrecord = t.match(CMD.RECORD);
-  if (mrecord) {
-    await handleWatchlistHistoryCommand(mrecord[2] ?? "", ctx, tgSend);
-    return;
-  }
-
-  const mLiquidateAll = t.match(CMD.LIQUIDATEALL);
-  if (mLiquidateAll) {
-    await handleWatchlistLiquidateAllCommand(mLiquidateAll[2] ?? "", ctx, tgSend);
-    return;
-  }
-
-  if (CMD.WATCHAUTO.test(t)) {
-    await handleWatchlistAutoCommand(ctx, tgSend);
-    return;
-  }
-
-  if (CMD.WATCHRESP.test(t)) {
-    await handleWatchlistResponseCommand(ctx, tgSend);
-    return;
-  }
-
-  // /alert — 이상징후 점검
-  if (CMD.ALERT.test(t)) {
-    await handleAlertCommand(ctx, tgSend);
-    return;
-  }
-
-  // /holdings | /보유 — 가상 보유 포트폴리오
-  if (CMD.WATCHLIST.test(t)) {
-    await handleWatchlistCommand(ctx, tgSend);
-    return;
-  }
-
-  const mAutoCycle = t.match(CMD.AUTOCYCLE);
-  if (mAutoCycle) {
-    await handleAutoCycleCommand(mAutoCycle[2] ?? "", ctx, tgSend);
-    return;
-  }
-
-  // /ranking — 포트폴리오 랭킹
-  if (CMD.RANKING.test(t)) {
-    await handleRankingCommand(ctx, tgSend);
-    return;
-  }
-
-  // /profile — 내 프로필
-  if (CMD.PROFILE.test(t)) {
-    await handleProfileCommand(ctx, tgSend);
-    return;
-  }
-
-  // /follow — 트레이더 팔로우
-  const mfollow = t.match(CMD.FOLLOW);
-  if (mfollow) {
-    await handleFollowCommand(mfollow[2] ?? "", ctx, tgSend);
-    return;
-  }
-
-  // /unfollow — 트레이더 언팔로우
-  const munfollow = t.match(CMD.UNFOLLOW);
-  if (munfollow) {
-    await handleUnfollowCommand(munfollow[2] ?? "", ctx, tgSend);
-    return;
-  }
-
-  // /feed — 팔로잉 피드
-  if (CMD.FEED.test(t)) {
-    await handleFeedCommand(ctx, tgSend);
-    return;
-  }
-
-  // /nextsector — 수급 유입 섹터
-  if (CMD.NEXTSECTOR.test(t)) {
-    await handleNextSectorCommand(ctx, tgSend);
-    return;
-  }
-
-  // /kospi — 코스피 보수형 추천
-  if (CMD.KOSPI.test(t)) {
-    await runWithUserError(ctx, tgSend, "코스피", () =>
-      handleKospiCommand(ctx, tgSend)
-    );
-    return;
-  }
-
-  // /kosdaq — 코스닥 보수형 추천
-  if (CMD.KOSDAQ.test(t)) {
-    await runWithUserError(ctx, tgSend, "코스닥", () =>
-      handleKosdaqCommand(ctx, tgSend)
-    );
-    return;
-  }
-
-  const metfInfo = t.match(CMD.ETFINFO);
-  if (metfInfo) {
-    await runWithUserError(ctx, tgSend, "ETF 정보", () =>
-      handleEtfInfoCommand(metfInfo[2] ?? "", ctx, tgSend)
-    );
-    return;
-  }
-
-  const metfDiv = t.match(CMD.ETFDIV);
-  if (metfDiv) {
-    await runWithUserError(ctx, tgSend, "ETF 분배금", () =>
-      handleEtfDistributionCommand(metfDiv[2] ?? "", ctx, tgSend)
-    );
-    return;
-  }
-
-  if (CMD.ETFCORE.test(t)) {
-    await runWithUserError(ctx, tgSend, "ETF 적립형", () =>
-      handleEtfCoreCommand(ctx, tgSend)
-    );
-    return;
-  }
-
-  if (CMD.ETFTHEME.test(t)) {
-    await runWithUserError(ctx, tgSend, "ETF 테마형", () =>
-      handleEtfThemeCommand(ctx, tgSend)
-    );
-    return;
-  }
-
-  const metfHub = t.match(CMD.ETFHUB);
-  if (metfHub) {
-    await runWithUserError(ctx, tgSend, "ETF 허브", () =>
-      handleEtfHubCommand(metfHub[2] ?? "", ctx, tgSend)
-    );
-    return;
-  }
-
-  const metf = t.match(CMD.ETF);
-  if (metf) {
-    await runWithUserError(ctx, tgSend, "ETF 허브", () =>
-      handleEtfHubCommand(metf[2] ?? "", ctx, tgSend)
-    );
-    return;
-  }
+  const handled = await dispatchCommandRoutes(t, ctx, tgSend);
+  if (handled) return;
 
   // 알 수 없는 명령
   await tgSend("sendMessage", {
