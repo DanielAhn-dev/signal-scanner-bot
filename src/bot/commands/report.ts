@@ -532,10 +532,10 @@ function buildPublicDailyCandidateText(rawText: string): string {
     ...compacted,
     "",
     "<b>공유용 한 장 포인트</b>",
-    "• 오늘은 상(🟥) 주목도 1~2개만 우선 점검하고, 나머지는 장중 추적 후보로 두세요.",
-    "• 후보 종목은 추격보다 분할 접근을 기본으로 하고, 손절/익절 기준을 진입 전에 먼저 고정하세요.",
-    "• 시장 방향이 불명확하면 종목 수를 늘리기보다 상위 섹터 대표주 중심으로 집중도를 높이세요.",
-    "• 이 리포트는 학습·공유 목적 자료이며, 최종 판단은 개인 책임입니다.",
+    "- 오늘은 상 주목도 1~2개만 우선 점검하고, 나머지는 장중 추적 후보로 두세요.",
+    "- 후보 종목은 추격보다 분할 접근을 기본으로 하고, 손절/익절 기준을 진입 전에 먼저 고정하세요.",
+    "- 시장 방향이 불명확하면 종목 수를 늘리기보다 상위 섹터 대표주 중심으로 집중도를 높이세요.",
+    "- 이 리포트는 학습·공유 목적 자료이며, 최종 판단은 개인 책임입니다.",
   ].join("\n");
 }
 
@@ -680,7 +680,7 @@ function isCandidateSectionHeading(line: string): boolean {
 }
 
 function isCandidateHeaderLine(line: string): boolean {
-  return /^\d+\.\s+(상|중|하)\s+/.test(String(line ?? "").trim());
+  return /^\d+\.\s+(?:🟥|🟩|🟦)?\s*(상|중|하)\s+/.test(String(line ?? "").trim());
 }
 
 function isCandidatePriorityLine(line: string): boolean {
@@ -692,7 +692,13 @@ function isCandidateScoreLine(line: string): boolean {
 }
 
 function normalizeCandidateHeaderLine(line: string): string {
-  return String(line ?? "").replace(/^(\d+\.\s+)(상|중|하)\s+/, "$1[$2] ").trim();
+  const raw = String(line ?? "").trim();
+  const match = raw.match(/^(\d+\.\s+)(?:🟥|🟩|🟦)?\s*(상|중|하)\s+(.+?)\s+(\d{6})\s+([\d,]+원)$/);
+  if (!match) {
+    return raw.replace(/^(\d+\.\s+)(?:🟥|🟩|🟦)?\s*(상|중|하)\s+/, "$1[$2] ").trim();
+  }
+  const [, prefix, tier, name, code, price] = match;
+  return `${prefix}[${tier}] ${name} / ${code} / ${price}`;
 }
 
 function getCandidateHeaderColor(line: string): RGB {
@@ -701,6 +707,20 @@ function getCandidateHeaderColor(line: string): RGB {
   if (/^\d+\.\s+중\s+/.test(normalized)) return rgb(0.13, 0.37, 0.22);
   if (/^\d+\.\s+하\s+/.test(normalized)) return rgb(0.12, 0.30, 0.52);
   return rgb(0.12, 0.12, 0.16);
+}
+
+function getCandidateHeaderHighlight(line: string): { fill: RGB; text: RGB } {
+  const normalized = String(line ?? "").trim();
+  if (/^\d+\.\s+(?:🟥|🟩|🟦)?\s*상\s+/.test(normalized)) {
+    return { fill: rgb(1.0, 0.93, 0.93), text: rgb(0.72, 0.16, 0.16) };
+  }
+  if (/^\d+\.\s+(?:🟥|🟩|🟦)?\s*중\s+/.test(normalized)) {
+    return { fill: rgb(0.92, 0.98, 0.93), text: rgb(0.12, 0.45, 0.24) };
+  }
+  if (/^\d+\.\s+(?:🟥|🟩|🟦)?\s*하\s+/.test(normalized)) {
+    return { fill: rgb(0.92, 0.96, 1.0), text: rgb(0.13, 0.34, 0.62) };
+  }
+  return { fill: rgb(0.95, 0.95, 0.97), text: rgb(0.12, 0.12, 0.16) };
 }
 
 async function createDailyCandidateReportPdf(
@@ -755,6 +775,7 @@ async function createDailyCandidateReportPdf(
   let inCandidateListSection = false;
   let hasRenderedCandidateItem = false;
   let hasRenderedSectorIndexLine = false;
+  let lastHeadingY = 0;
 
   for (const rawLine of rawLines) {
     const isDivider = /^[-─]{5,}$/.test(rawLine.trim());
@@ -765,6 +786,7 @@ async function createDailyCandidateReportPdf(
     const roleLineStyle = getSectorRoleLineStyle(line);
 
     if (!line) {
+      if (inCandidateListSection) continue;
       ctx.y -= 8;
       continue;
     }
@@ -780,68 +802,105 @@ async function createDailyCandidateReportPdf(
       continue;
     }
 
-    if (isHeading) {
-      inSectorTemplateSection = line === "섹터별 대표·대기";
-      inCandidateListSection = isCandidateSectionHeading(line);
+    // 후보 섹션 내 항목 헤더: "<b>🟩 중</b> <b>종목명</b>..." 형태라 isHeading에 먼저 잡히므로
+    // isHeading 전에 가로채야 inCandidateListSection이 잘못 리셋되지 않습니다.
+    if (inCandidateListSection && isCandidateHeaderLine(line)) {
+      if (hasRenderedCandidateItem) {
+        // 항목(1번/2번/3번...) 사이 공백을 줄입니다.
+        ctx.y -= 8;
+      }
+      const normalizedHeader = normalizeCandidateHeaderLine(line);
+      const highlight = getCandidateHeaderHighlight(line);
+      const wrapped = wrapText(normalizedHeader, ctx.BODY_W - 12, ctx.fontBold, bodyFontSize);
+      const highlightHeight = wrapped.length * bodyLineHeight + 7;
+      const bgWidth = Math.min(
+        wrapped.reduce((max, l) => Math.max(max, ctx.fontBold.widthOfTextAtSize(l, bodyFontSize)), 0) + 16,
+        ctx.BODY_W
+      );
+      ctx.ensureSpace(highlightHeight + 20);
+      ctx.rect(ctx.ML - 2, ctx.y - highlightHeight + 5, bgWidth, highlightHeight, highlight.fill);
+      ctx.textBold(normalizedHeader, ctx.ML + 4, ctx.y, bodyFontSize, highlight.text, ctx.BODY_W - 12);
+      // 헤더 라벨과 본문(우선/점수) 간격을 조금 더 타이트하게 맞춥니다.z
+      ctx.y -= wrapped.length * bodyLineHeight + 5;
+      hasRenderedCandidateItem = true;
+      continue;
+    }
+
+    if (isHeading || line === "섹터별 대표·대기" || isCandidateSectionHeading(line)) {
+      const wasSectorTemplateSection = inSectorTemplateSection;
+      const wasCandidateListSection = inCandidateListSection;
+      const nextIsSectorTemplateSection = line === "섹터별 대표·대기";
+      const nextIsCandidateListSection = isCandidateSectionHeading(line);
+      if (wasSectorTemplateSection && !nextIsSectorTemplateSection) {
+        // 섹터 템플릿 다음의 다른 섹션(예: 눌림목 우선 체크)은 블록 간 여백을 분명히 둡니다.
+        ctx.y -= 6;
+      }
+      if (wasCandidateListSection && !nextIsCandidateListSection) {
+        // 후보 리스트 블록이 끝나고 다른 섹션으로 넘어갈 때도 여백을 둡니다.
+        ctx.y -= 12;
+      }
+      if (wasCandidateListSection && nextIsCandidateListSection) {
+        // 코스피 우선 후보 진입 시에만 간격을 1.5배로 넓힙니다.
+        ctx.y -= line === "코스피 우선 후보" ? 15 : 10;
+      }
+
+      inSectorTemplateSection = nextIsSectorTemplateSection;
+      inCandidateListSection = nextIsCandidateListSection;
       hasRenderedCandidateItem = false;
       hasRenderedSectorIndexLine = false;
       ctx.ensureSpace(20);
       const count = ctx.textBold(line, ctx.ML, ctx.y, sectionFontSize, theme.accent, ctx.BODY_W);
-      ctx.y -= count * Math.round(sectionFontSize * 1.45) + 4;
+      lastHeadingY = ctx.y;
+      const headingBottomGap = nextIsSectorTemplateSection ? 14 : nextIsCandidateListSection ? 4 : 6;
+      ctx.y -= count * Math.round(sectionFontSize * 1.45) + headingBottomGap;
       continue;
     }
 
-    if (inCandidateListSection && isCandidateHeaderLine(line)) {
-      if (hasRenderedCandidateItem) {
-        // 아이템 경계 간격은 유지하되, 헤더-상세 간격은 과도하게 벌어지지 않게 조정합니다.
-        ctx.y -= 7;
-      }
-      const normalizedHeader = normalizeCandidateHeaderLine(line);
-      ctx.ensureSpace(bodyLineHeight + 8);
-      const count = ctx.textBold(normalizedHeader, ctx.ML, ctx.y, bodyFontSize + 0.7, getCandidateHeaderColor(line), ctx.BODY_W);
-      ctx.y -= count * Math.round((bodyFontSize + 0.7) * 1.4) + 1;
-      hasRenderedCandidateItem = true;
+    if (inCandidateListSection && !hasRenderedCandidateItem && /^기준일/.test(line)) {
+      ctx.textRightLight(line, ctx.ML + ctx.BODY_W, lastHeadingY, bodyFontSize - 0.5, theme.subtitle);
       continue;
     }
 
     if (inCandidateListSection && isCandidatePriorityLine(line)) {
       const count = ctx.text(line, ctx.ML + 8, ctx.y, bodyFontSize, rgb(0.24, 0.24, 0.30), ctx.BODY_W - 8);
-      ctx.y -= count * bodyLineHeight + 2;
+      ctx.y -= count * bodyLineHeight;
       continue;
     }
 
     if (inCandidateListSection && isCandidateScoreLine(line)) {
       const count = ctx.textLight(line, ctx.ML + 8, ctx.y, bodyFontSize, rgb(0.38, 0.38, 0.44), ctx.BODY_W - 8);
-      // 각 번호 블록의 마지막 줄 이후 간격을 늘려 다음 번호 타이틀과 시각적으로 분리합니다.
-      ctx.y -= count * bodyLineHeight + 11;
+      ctx.y -= count * bodyLineHeight;
       continue;
     }
 
     if (inCandidateListSection && /^⚠️/.test(line)) {
       const count = ctx.text(line, ctx.ML + 8, ctx.y, bodyFontSize, rgb(0.63, 0.20, 0.20), ctx.BODY_W - 8);
-      ctx.y -= count * bodyLineHeight + 11;
+      ctx.y -= count * bodyLineHeight + 1;
       continue;
     }
 
     if (inSectorTemplateSection && /^\d+\.\s+/.test(line.trim())) {
       if (hasRenderedSectorIndexLine) {
-        // 섹터 묶음(1/2/3...) 사이 간격을 넉넉히 둬서 구분감을 높입니다.
-        ctx.y -= 16;
+        ctx.y -= 10;
       }
-      ctx.ensureSpace(bodyLineHeight + 16);
+      ctx.ensureSpace(bodyLineHeight + 10);
       const count = ctx.textBold(line, ctx.ML, ctx.y, bodyFontSize, rgb(0.14, 0.14, 0.18), ctx.BODY_W);
-      ctx.y -= count * bodyLineHeight + 16;
+      ctx.y -= count * bodyLineHeight + 6;
       hasRenderedSectorIndexLine = true;
       continue;
     }
 
     if (attentionHighlight) {
       const wrapped = wrapText(line, ctx.BODY_W - 12, ctx.fontBold, bodyFontSize);
-      const highlightHeight = wrapped.length * bodyLineHeight + 4;
+      const highlightHeight = wrapped.length * bodyLineHeight + 7;
+      const bgWidth = Math.min(
+        wrapped.reduce((max, l) => Math.max(max, ctx.fontBold.widthOfTextAtSize(l, bodyFontSize)), 0) + 16,
+        ctx.BODY_W
+      );
       ctx.ensureSpace(highlightHeight + 4);
-      ctx.rect(ctx.ML - 2, ctx.y - highlightHeight + 2, ctx.BODY_W, highlightHeight, attentionHighlight.fill);
+      ctx.rect(ctx.ML - 2, ctx.y - highlightHeight + 5, bgWidth, highlightHeight, attentionHighlight.fill);
       ctx.textBold(line, ctx.ML + 4, ctx.y, bodyFontSize, attentionHighlight.text, ctx.BODY_W - 12);
-      ctx.y -= wrapped.length * bodyLineHeight + 2;
+      ctx.y -= wrapped.length * bodyLineHeight + 10;
       continue;
     }
 
@@ -849,12 +908,16 @@ async function createDailyCandidateReportPdf(
       const cardStyle = inSectorTemplateSection ? getSectorRoleCardStyle(line) : null;
       if (cardStyle) {
         const wrapped = wrapText(line, ctx.BODY_W - 22, ctx.fontBold, bodyFontSize);
-        const cardHeight = wrapped.length * bodyLineHeight + 8;
+        const cardHeight = wrapped.length * bodyLineHeight + 11;
+        const bgCardWidth = Math.min(
+          wrapped.reduce((max, l) => Math.max(max, ctx.fontBold.widthOfTextAtSize(l, bodyFontSize)), 0) + 24,
+          ctx.BODY_W
+        );
         ctx.ensureSpace(cardHeight + 6);
-        ctx.rect(ctx.ML - 1, ctx.y - cardHeight + 2, ctx.BODY_W, cardHeight, cardStyle.fill);
-        ctx.rect(ctx.ML - 1, ctx.y - cardHeight + 2, 3, cardHeight, cardStyle.accent);
+        ctx.rect(ctx.ML - 1, ctx.y - cardHeight + 5, bgCardWidth, cardHeight, cardStyle.fill);
+        ctx.rect(ctx.ML - 1, ctx.y - cardHeight + 5, 3, cardHeight, cardStyle.accent);
         const count = ctx.textBold(line, ctx.ML + 8, ctx.y - 1, bodyFontSize, cardStyle.text, ctx.BODY_W - 18);
-        ctx.y -= count * bodyLineHeight + 6;
+        ctx.y -= count * bodyLineHeight + 5;
         continue;
       }
 
