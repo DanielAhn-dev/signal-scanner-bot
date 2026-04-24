@@ -75,6 +75,9 @@ async function setCommands() {
       // default scope (1:1 채팅 포함)
       callSetMyCommands({ commands }),
       callSetMyCommands({ commands, language_code: "ko" }),
+      // 개인 채팅 전용 — 빈 private scope가 default를 덮어쓰지 않게 명시 등록
+      callSetMyCommands({ commands, scope: { type: "all_private_chats" } }),
+      callSetMyCommands({ commands, scope: { type: "all_private_chats" }, language_code: "ko" }),
       // 그룹 채팅 — /명령어 자동완성이 그룹에서도 표시되게 함
       callSetMyCommands({ commands, scope: { type: "all_group_chats" } }),
       callSetMyCommands({ commands, scope: { type: "all_group_chats" }, language_code: "ko" }),
@@ -82,7 +85,7 @@ async function setCommands() {
 
     const allOk = results.every((r) => r.ok);
     if (allOk) {
-      console.log("✅ Telegram bot commands updated successfully! (default + all_group_chats)");
+      console.log("✅ Telegram bot commands updated successfully! (default + all_private_chats + all_group_chats)");
     } else {
       results.forEach((r, i) => {
         if (!r.ok) console.error(`❌ scope[${i}] failed:`, r);

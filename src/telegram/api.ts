@@ -54,11 +54,15 @@ export async function sendDocument(payload: {
 
 /** 텔레그램에 봇 명령어 + 메뉴 버튼 + 설명 등록 */
 export async function setCommandsKo(): Promise<TgResponse> {
-  const [r1, r2, r3, r4, r5, r6] = await Promise.all([
+  const [r1, r2, r3, r4, r5, r6, r7, r8] = await Promise.all([
     // 기본(전체 언어) 명령어 — private + group 기본값
     tg("setMyCommands", { commands: TELEGRAM_BOT_COMMANDS }),
     // 한국어 전용 — default scope
     tg("setMyCommands", { commands: TELEGRAM_BOT_COMMANDS, language_code: "ko" }),
+    // 개인 채팅 전용 — stale 빈 스코프가 default를 덮어쓰지 않게 명시 등록
+    tg("setMyCommands", { commands: TELEGRAM_BOT_COMMANDS, scope: { type: "all_private_chats" } }),
+    // 개인 채팅 한국어
+    tg("setMyCommands", { commands: TELEGRAM_BOT_COMMANDS, scope: { type: "all_private_chats" }, language_code: "ko" }),
     // 그룹 채팅 전용 — /명령어 자동완성이 그룹에서도 표시되게 함
     tg("setMyCommands", { commands: TELEGRAM_BOT_COMMANDS, scope: { type: "all_group_chats" } }),
     // 그룹 채팅 한국어
@@ -87,5 +91,5 @@ export async function setCommandsKo(): Promise<TgResponse> {
     language_code: "ko",
   });
 
-  return { ok: !!(r1.ok || r2.ok || r3.ok || r4.ok) };
+  return { ok: !!(r1.ok || r2.ok || r3.ok || r4.ok || r5.ok || r6.ok || r7.ok || r8.ok) };
 }
