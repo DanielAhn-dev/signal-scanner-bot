@@ -793,13 +793,13 @@ async function createDailyCandidateReportPdf(
 
     if (inCandidateListSection && isCandidateHeaderLine(line)) {
       if (hasRenderedCandidateItem) {
-        // 번호 아이템(1/2/3...) 사이 간격을 넓혀 스캔 가독성을 높입니다.
-        ctx.y -= 11;
+        // 아이템 경계 간격은 유지하되, 헤더-상세 간격은 과도하게 벌어지지 않게 조정합니다.
+        ctx.y -= 7;
       }
       const normalizedHeader = normalizeCandidateHeaderLine(line);
       ctx.ensureSpace(bodyLineHeight + 8);
       const count = ctx.textBold(normalizedHeader, ctx.ML, ctx.y, bodyFontSize + 0.7, getCandidateHeaderColor(line), ctx.BODY_W);
-      ctx.y -= count * Math.round((bodyFontSize + 0.7) * 1.4) + 4;
+      ctx.y -= count * Math.round((bodyFontSize + 0.7) * 1.4) + 1;
       hasRenderedCandidateItem = true;
       continue;
     }
@@ -812,24 +812,25 @@ async function createDailyCandidateReportPdf(
 
     if (inCandidateListSection && isCandidateScoreLine(line)) {
       const count = ctx.textLight(line, ctx.ML + 8, ctx.y, bodyFontSize, rgb(0.38, 0.38, 0.44), ctx.BODY_W - 8);
-      ctx.y -= count * bodyLineHeight + 6;
+      // 각 번호 블록의 마지막 줄 이후 간격을 늘려 다음 번호 타이틀과 시각적으로 분리합니다.
+      ctx.y -= count * bodyLineHeight + 11;
       continue;
     }
 
     if (inCandidateListSection && /^⚠️/.test(line)) {
       const count = ctx.text(line, ctx.ML + 8, ctx.y, bodyFontSize, rgb(0.63, 0.20, 0.20), ctx.BODY_W - 8);
-      ctx.y -= count * bodyLineHeight + 6;
+      ctx.y -= count * bodyLineHeight + 11;
       continue;
     }
 
     if (inSectorTemplateSection && /^\d+\.\s+/.test(line.trim())) {
       if (hasRenderedSectorIndexLine) {
         // 섹터 묶음(1/2/3...) 사이 간격을 넉넉히 둬서 구분감을 높입니다.
-        ctx.y -= 6;
+        ctx.y -= 16;
       }
-      ctx.ensureSpace(bodyLineHeight + 12);
+      ctx.ensureSpace(bodyLineHeight + 16);
       const count = ctx.textBold(line, ctx.ML, ctx.y, bodyFontSize, rgb(0.14, 0.14, 0.18), ctx.BODY_W);
-      ctx.y -= count * bodyLineHeight + 6;
+      ctx.y -= count * bodyLineHeight + 16;
       hasRenderedSectorIndexLine = true;
       continue;
     }
