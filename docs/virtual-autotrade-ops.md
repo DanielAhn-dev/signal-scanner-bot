@@ -55,7 +55,19 @@ pnpm autotrade:enable -- --tgIds=123456789 --enable=false
 
 ```bash
 curl -H "Authorization: Bearer $CRON_SECRET" "https://signal-scanner-bot.vercel.app/api/cron/virtualAutoTrade?mode=auto&dryRun=true&maxUsers=20"
+
+curl -H "Authorization: Bearer $CRON_SECRET" "https://signal-scanner-bot.vercel.app/api/cron/virtualAutoTrade?mode=auto&dryRun=false&intradayOnly=true&windowMinutes=10&maxUsers=50"
 ```
+
+- 첫 번째 호출은 dry-run 점검용입니다.
+- 두 번째 호출은 평일 장중 10분 자동운영 실반영 경로 점검용입니다.
+
+## 4-1) 장중 자동운영 기본값
+
+- 평일 09:00~15:30 KST 구간만 장중 자동사이클이 실행됩니다.
+- 장중 자동사이클은 10분 창 기준으로 묶여 같은 사용자에게 같은 창에서 중복 실행되지 않습니다.
+- 자동 체결 알림에는 `보유`, `보유대응`, `최근 기록`, `자동 점검` 버튼이 함께 붙습니다.
+- 장외 시간에 장중 전용 호출이 들어오면 내부 가드가 즉시 스킵합니다.
 
 ## 5) 결과 확인 SQL
 

@@ -50,6 +50,20 @@ import {
   evaluateAutoTradeSignalGate,
 } from "./virtualAutoTradeSignalGate";
 import { sendMessage } from "../telegram/api";
+import { actionButtons } from "../bot/messages/layout";
+import {
+  isKrxIntradayAutoTradeWindow,
+  kstDateKey,
+  kstWindowKey,
+} from "./virtualAutoTradeTiming";
+import {
+  buildAutoTradeExecutionButtons,
+  pickExecutionLines,
+} from "./virtualAutoTradeAlert";
+import {
+  buildAutoTradeSkipReasonStats,
+  type AutoTradeSkipReasonStat,
+} from "./virtualAutoTradeObservability";
 import { runLongTermCoachForChat } from "./longTermCoachService";
 
 type RunMode = SelectionAutoTradeRunMode;
@@ -166,6 +180,7 @@ export type AutoTradeRunSummary = {
   sellCount: number;
   skippedCount: number;
   errorCount: number;
+  skipReasonStats: AutoTradeSkipReasonStat[];
   actions: AutoTradeActionSummary[];
 };
 
@@ -309,20 +324,6 @@ function buildResponseGuideNote(input: {
     `트레일링 +5.0%(${fmtKrw(trailingArmedPrice)}) 도달 후 고점대비 -2.0% 이탈 시 1차익절 기준(${fmtKrw(trailingExitPrice)})`,
     `투입비중 ${positionWeightPct.toFixed(1)}%`,
   ].join(" · ");
-}
-
-function kstDateKey(base = new Date()): string {
-  const d = new Date(base.getTime() + 9 * 60 * 60 * 1000);
-  const y = d.getUTCFullYear();
-  const m = String(d.getUTCMonth() + 1).padStart(2, "0");
-  const day = String(d.getUTCDate()).padStart(2, "0");
-  return `${y}-${m}-${day}`;
-}
-
-function pickExecutionLines(notes: string[]): string[] {
-  return notes
-    .filter((note) => /^\[(실행 매수|실행 추가매수|실행 매도|실행 부분익절)\]/.test(note))
-    .slice(0, 5);
 }
 
 function buildAutoTradeExecutionAlert(input: {
@@ -2928,12 +2929,13 @@ export async function runVirtualAutoTradingForChat(input: {
     );
   }
 
-  const runId = await startRun({
+  const runStart = await startRun({
     supabase,
     runType: "MANUAL",
     runKey,
     chatId: input.chatId,
   });
+  const runId = runStart.runId;
 
   const action = runType === "MONDAY_BUY"
     ? await runMondayBuyForUser({
@@ -2996,7 +2998,20 @@ async function startRun(payload: {
   runType: RunType;
   runKey: string;
   chatId: number;
-}): Promise<number | null> {
+}): Promise<{ runId: number | null; shouldSkip: boolean }> {
+  const { data: existing } = await payload.supabase
+    .from("virtual_autotrade_runs")
+    .select("id")
+    .eq("run_type", payload.runType)
+    .eq("run_key", payload.runKey)
+    .eq("chat_id", payload.chatId)
+    .maybeSingle();
+
+  const existingId = Number((existing as Record<string, unknown> | null)?.id ?? 0) || null;
+  if (existingId) {
+    return { runId: existingId, shouldSkip: true };
+  }
+
   const { data, error } = await payload.supabase
     .from("virtual_autotrade_runs")
     .upsert(
@@ -3012,8 +3027,11 @@ async function startRun(payload: {
     .select("id")
     .maybeSingle();
 
-  if (error) return null;
-  return Number((data as Record<string, unknown> | null)?.id ?? 0) || null;
+  if (error) return { runId: null, shouldSkip: false };
+  return {
+    runId: Number((data as Record<string, unknown> | null)?.id ?? 0) || null,
+    shouldSkip: false,
+  };
 }
 
 async function finishRun(payload: {
@@ -3037,10 +3055,16 @@ export async function runVirtualAutoTradingCycle(input?: {
   mode?: RunMode;
   maxUsers?: number;
   dryRun?: boolean;
+  intradayOnly?: boolean;
+  windowMinutes?: number;
+  now?: Date;
 }): Promise<AutoTradeRunSummary> {
   const mode = input?.mode ?? "auto";
   const maxUsers = Math.max(1, Math.floor(input?.maxUsers ?? 200));
   const dryRun = Boolean(input?.dryRun);
+  const intradayOnly = Boolean(input?.intradayOnly);
+  const now = input?.now ?? new Date();
+  const windowMinutes = Math.max(1, Math.floor(input?.windowMinutes ?? 10));
 
   const supabase: SupabaseClientAny = createClient(
     process.env.SUPABASE_URL!,
@@ -3049,7 +3073,25 @@ export async function runVirtualAutoTradingCycle(input?: {
   );
 
   const runType = selectRunType(mode);
-  const runKey = kstDateKey();
+  const runKey = intradayOnly ? kstWindowKey(now, windowMinutes) : kstDateKey(now);
+
+  if (intradayOnly && !isKrxIntradayAutoTradeWindow(now)) {
+    return {
+      mode,
+      runType,
+      runKey,
+      totalUsers: 0,
+      processedUsers: 0,
+      buyCount: 0,
+      sellCount: 0,
+      skippedCount: 0,
+      errorCount: 0,
+      skipReasonStats: [
+        { code: "out_of_session", label: "장중 외 시간 스킵", count: 1 },
+      ],
+      actions: [],
+    };
+  }
 
   const { data: settingsData, error: settingsError } = await supabase
     .from("virtual_autotrade_settings")
@@ -3075,16 +3117,32 @@ export async function runVirtualAutoTradingCycle(input?: {
     sellCount: 0,
     skippedCount: 0,
     errorCount: 0,
+    skipReasonStats: [],
     actions: [],
   };
 
   for (const setting of settings) {
-    const runId = await startRun({
+    const runStart = await startRun({
       supabase,
       runType,
       runKey,
       chatId: setting.chat_id,
     });
+    const runId = runStart.runId;
+
+    if (runStart.shouldSkip) {
+      summary.processedUsers += 1;
+      summary.skippedCount += 1;
+      summary.actions.push({
+        chatId: setting.chat_id,
+        buys: 0,
+        sells: 0,
+        skipped: 1,
+        errors: 0,
+        notes: [`[자동사이클] 동일 실행창(${runKey}) 이미 처리됨`],
+      });
+      continue;
+    }
 
     try {
       const prefs = await getUserInvestmentPrefs(setting.chat_id);
@@ -3151,7 +3209,11 @@ export async function runVirtualAutoTradingCycle(input?: {
           isShadow: isShadowRun,
         });
         if (executionAlert) {
-          await sendMessage(setting.chat_id, executionAlert).catch((err: unknown) => {
+          await sendMessage(
+            setting.chat_id,
+            executionAlert,
+            actionButtons(buildAutoTradeExecutionButtons(actionSummary.notes || []))
+          ).catch((err: unknown) => {
             console.error("[autoTrade] execution alert send failed", err);
           });
         }
@@ -3205,6 +3267,10 @@ export async function runVirtualAutoTradingCycle(input?: {
       });
     }
   }
+
+  summary.skipReasonStats = buildAutoTradeSkipReasonStats({
+    actions: summary.actions,
+  });
 
   return summary;
 }

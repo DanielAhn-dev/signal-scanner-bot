@@ -129,6 +129,12 @@
 - `/자동사이클 점검 진입` 또는 `/자동사이클 실행 진입` : 신규 진입 판단을 강제로 확인
 - `/자동매도점검` : 기준 충족 시 자동 매도 기록
 
+장중 자동운영 최신 동작 요약:
+1. 평일 09:00~15:30 KST 동안 10분 창 기준 자동사이클이 반복 실행됩니다.
+2. 같은 사용자에게 같은 10분 창은 중복 실행되지 않습니다.
+3. 자동 체결 알림에는 `보유`, `보유대응`, `최근 기록`, `자동 점검` 버튼이 함께 제공됩니다.
+4. 장중 자동운영은 투자금, 분할 횟수, 손실 한도, 현금 하한 기준을 그대로 재사용합니다.
+
 자동사이클 최신 동작 요약:
 1. 진입은 `눌림목 + 매집 포착` 하이브리드 우선(조건 통과분)
 2. 월간 페이싱(연 10% 기준) 하회 시 기준 완화, 과열/손실 구간은 방어 복귀
@@ -236,6 +242,7 @@ pnpm autotrade:enable -- --tgIds=123456789 --enable=false
 
 ```bash
 curl -H "Authorization: Bearer $CRON_SECRET" "https://signal-scanner-bot.vercel.app/api/cron/virtualAutoTrade?mode=auto&dryRun=true&maxUsers=20"
+curl -H "Authorization: Bearer $CRON_SECRET" "https://signal-scanner-bot.vercel.app/api/cron/virtualAutoTrade?mode=auto&dryRun=false&intradayOnly=true&windowMinutes=10&maxUsers=50"
 ```
 
 ### 자동화에서 꼭 지킬 규칙
@@ -247,9 +254,10 @@ curl -H "Authorization: Bearer $CRON_SECRET" "https://signal-scanner-bot.vercel.
 ### 실전 운용 요약 (월~금)
 
 1. 주간 첫 진입 전에는 `/자동사이클 점검 진입`으로 점검만 하고, 실집행은 필요할 때 `/자동사이클 실행 진입` 1회로 제한합니다.
-2. 일반 운용은 `/자동사이클 점검` 후 `/자동사이클 실행` 흐름으로 하루 1회만 고정 실행합니다.
-3. 보유가 0개가 된 뒤 재진입이 필요하면 `/자동사이클 점검 진입`으로 먼저 확인합니다.
-4. 시간대별 체크리스트와 예외 대응은 `docs/virtual-autotrade-weekly-playbook.md`를 기준으로 운용합니다.
+2. 일반 운용은 평일 장중 10분 자동사이클을 기본으로 두고, 수동 `/자동사이클 점검`은 급변장 확인용으로만 사용합니다.
+3. 체결 알림이 오면 버튼으로 `/보유`, `/보유대응`, `/거래기록 최근 7일` 흐름을 바로 확인합니다.
+4. 보유가 0개가 된 뒤 재진입이 필요하면 `/자동사이클 점검 진입`으로 먼저 확인합니다.
+5. 시간대별 체크리스트와 예외 대응은 `docs/virtual-autotrade-weekly-playbook.md`를 기준으로 운용합니다.
 
 ---
 

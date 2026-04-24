@@ -80,6 +80,12 @@ export const ACTIONS = {
     { text: "자동 점검", callback_data: "cmd:autocycle:check" },
     { text: "자동 실행", callback_data: "cmd:autocycle:run" },
   ] as InlineButton[],
+  autoCycleExecutionFollowup: [
+    { text: "보유", callback_data: "cmd:watchlist" },
+    { text: "보유대응", callback_data: "cmd:watchresp" },
+    { text: "최근 기록", callback_data: "cmd:tradelog:recent-7" },
+    { text: "자동 점검", callback_data: "cmd:autocycle:check" },
+  ] as InlineButton[],
   tradeHistoryFilters: [
     { text: "이번 달", callback_data: "cmd:tradelog:month" },
     { text: "지난달", callback_data: "cmd:tradelog:last-month" },

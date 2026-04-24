@@ -41,6 +41,28 @@ worker.{event}.{context}.{category}[.timeout]
 - `worker.command_done.message.trade`
 - `worker.command_failed_notify.message.autocycle.timeout`
 
+## 2-1) 장중 자동사이클 cron 로그
+
+`api/cron/virtualAutoTrade.ts`는 장중 자동사이클 실행 후 아래 구조화 로그를 남깁니다.
+
+```text
+scope=autocycle_cron
+event=cycle_done | cycle_failed
+run_key=2026-04-24T10:10
+intraday_only=true | false
+skip_reason_stats=[{ code, label, count }]
+```
+
+대표 `skip_reason_stats.code`:
+
+- `out_of_session` : 장중 외 시간 스킵
+- `duplicate_window` : 같은 10분 실행창 중복 스킵
+- `daily_loss_limit` : 일손실 한도 도달
+- `no_deployable_cash` : 투자 가능 현금 없음
+- `cash_reserve_floor` : 현금 하한 유지
+- `insufficient_cash` : 현금 부족
+- `no_buy_slots` : 매수 슬롯 없음
+
 ## 3) 운영 대시보드 집계 템플릿
 
 아래는 로그 수집 시스템(ELK, Datadog, Loki, BigQuery 등)에서 그대로 응용 가능한 집계 기준입니다.
@@ -54,6 +76,22 @@ SELECT
 FROM worker_logs
 WHERE ts >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 24 HOUR)
 GROUP BY metric_key
+ORDER BY cnt DESC;
+```
+
+### A-1. 장중 자동사이클 스킵 사유 집계
+
+```sql
+SELECT
+  JSON_VALUE(payload, '$.event') AS event,
+  JSON_VALUE(reason, '$.code') AS skip_reason_code,
+  JSON_VALUE(reason, '$.label') AS skip_reason_label,
+  SUM(CAST(JSON_VALUE(reason, '$.count') AS INT64)) AS cnt
+FROM worker_logs,
+UNNEST(JSON_QUERY_ARRAY(payload, '$.skip_reason_stats')) AS reason
+WHERE JSON_VALUE(payload, '$.scope') = 'autocycle_cron'
+  AND ts >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 24 HOUR)
+GROUP BY event, skip_reason_code, skip_reason_label
 ORDER BY cnt DESC;
 ```
 
@@ -91,3 +129,4 @@ ORDER BY p95_duration_ms DESC;
 2. `autocycle` 카테고리 timeout 비중이 20% 이상이면 `WORKER_JOB_TIMEOUT_AUTOCYCLE_MS` 점검
 3. `trade` p95 처리시간이 장시간 상승하면 외부 데이터 소스 지연 여부 점검
 4. 타임아웃 증가는 우선 `점검(dry-run)` 경로 안내 문구와 함께 사용자 공지
+5. `autocycle_cron.cycle_done` 로그에서 `duplicate_window` 또는 `out_of_session` 급증이 의도된 스킵인지 확인

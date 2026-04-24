@@ -17,6 +17,10 @@ import {
   planAutoTradeExit,
   resolvePositionTradeProfile,
 } from "../src/services/virtualAutoTradePositionStrategy";
+import {
+  isKrxIntradayAutoTradeWindow,
+  kstWindowKey,
+} from "../src/services/virtualAutoTradeTiming";
 
 test("selectRunType: auto 모드는 요일과 무관하게 daily review를 선택한다", () => {
   const sundayUtc = new Date("2026-04-19T18:00:00.000Z");
@@ -449,4 +453,17 @@ test("pickAutoTradeCandidates: pullback-first에서 매집 포착 후보도 우�
 
   assert.equal(result.candidates[0]?.code, "B");
   assert.equal(result.aggressiveCandidatesUsed, 1);
+});
+
+test("isKrxIntradayAutoTradeWindow: 평일 장중 10시는 true", () => {
+  assert.equal(isKrxIntradayAutoTradeWindow(new Date("2026-04-24T01:00:00.000Z")), true);
+});
+
+test("isKrxIntradayAutoTradeWindow: 평일 장마감 후는 false", () => {
+  assert.equal(isKrxIntradayAutoTradeWindow(new Date("2026-04-24T07:00:00.000Z")), false);
+});
+
+test("kstWindowKey: 장중 실행 키를 10분 창으로 버킷팅한다", () => {
+  assert.equal(kstWindowKey(new Date("2026-04-24T01:07:00.000Z"), 10), "2026-04-24T10:00");
+  assert.equal(kstWindowKey(new Date("2026-04-24T01:19:00.000Z"), 10), "2026-04-24T10:10");
 });
