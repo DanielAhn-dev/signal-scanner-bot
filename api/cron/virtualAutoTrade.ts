@@ -1,8 +1,11 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
+import { buildAutoTradeCronAlertMessage } from "../../src/services/virtualAutoTradeCronAlert";
 import { runVirtualAutoTradingCycle } from "../../src/services/virtualAutoTradeService";
+import { sendMessage } from "../../src/telegram/api";
 import { firstQueryValue, parseBoolean, parsePositiveInt } from "./query";
 
 const CRON_SECRET = process.env.CRON_SECRET;
+const AUTO_TRADE_ALERT_CHAT_ID = Number(process.env.AUTO_TRADE_ALERT_CHAT_ID || "0");
 
 export const config = {
   maxDuration: 60,
@@ -58,6 +61,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         skip_reason_stats: summary.skipReasonStats,
       })
     );
+
+    const alertMessage = buildAutoTradeCronAlertMessage(summary);
+    if (AUTO_TRADE_ALERT_CHAT_ID > 0 && alertMessage) {
+      await sendMessage(AUTO_TRADE_ALERT_CHAT_ID, alertMessage);
+    }
 
     return res.status(200).json({
       ok: true,

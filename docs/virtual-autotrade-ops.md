@@ -68,6 +68,7 @@ curl -H "Authorization: Bearer $CRON_SECRET" "https://signal-scanner-bot.vercel.
 - 장중 자동사이클은 10분 창 기준으로 묶여 같은 사용자에게 같은 창에서 중복 실행되지 않습니다.
 - 자동 체결 알림에는 `보유`, `보유대응`, `최근 기록`, `자동 점검` 버튼이 함께 붙습니다.
 - 장외 시간에 장중 전용 호출이 들어오면 내부 가드가 즉시 스킵합니다.
+- `AUTO_TRADE_ALERT_CHAT_ID`를 지정하면 `duplicate_window` 급증, `out_of_session`, `error_count` 발생 시 운영자 채팅으로 요약 경보를 보냅니다.
 
 ## 5) 결과 확인 SQL
 

@@ -63,6 +63,12 @@ skip_reason_stats=[{ code, label, count }]
 - `insufficient_cash` : 현금 부족
 - `no_buy_slots` : 매수 슬롯 없음
 
+`AUTO_TRADE_ALERT_CHAT_ID`가 설정되어 있으면 아래 경우 운영자 Telegram 채팅으로 즉시 요약 경보를 전송합니다.
+
+- `error_count > 0`
+- `out_of_session > 0`
+- `duplicate_window >= 3`
+
 ## 3) 운영 대시보드 집계 템플릿
 
 아래는 로그 수집 시스템(ELK, Datadog, Loki, BigQuery 등)에서 그대로 응용 가능한 집계 기준입니다.
