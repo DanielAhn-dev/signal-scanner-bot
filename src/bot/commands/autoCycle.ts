@@ -502,15 +502,7 @@ export async function handleAutoCycleCommand(
       chat_id: ctx.chatId,
       text: (verbose ? detailedLines : compactLines).join("\n"),
       parse_mode: "HTML",
-      reply_markup: actionButtons(
-        [
-          ...ACTIONS.autoCycleQuick,
-          { text: "진입 실행", callback_data: "cmd:autocycle:entry-run" },
-          { text: "핵심 추천", callback_data: "cmd:report:추천" },
-          { text: "더보기", callback_data: "cmd:report" },
-        ],
-        3
-      ),
+      reply_markup: actionButtons(ACTIONS.autoCycleResultPrimary, 3),
     });
   } catch (error: unknown) {
     const message = formatUnknownError(error);

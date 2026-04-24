@@ -139,6 +139,13 @@ export const ACTIONS = {
     { text: "진입 실행", callback_data: "cmd:autocycle:entry-run" },
     { text: "더보기", callback_data: "cmd:report" },
   ] as InlineButton[],
+  autoCycleResultPrimary: [
+    { text: "자동 점검", callback_data: "cmd:autocycle:check" },
+    { text: "자동 실행", callback_data: "cmd:autocycle:run" },
+    { text: "진입 실행", callback_data: "cmd:autocycle:entry-run" },
+    { text: "핵심 추천", callback_data: "cmd:report:추천" },
+    { text: "더보기", callback_data: "cmd:report" },
+  ] as InlineButton[],
   recommendationFollowup: [
     { text: "눌림목", callback_data: "cmd:pullback" },
     { text: "코스피", callback_data: "cmd:kospi" },

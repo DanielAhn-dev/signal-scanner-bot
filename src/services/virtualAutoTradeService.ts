@@ -3317,9 +3317,7 @@ export async function generateAutoTradeDiagnosticReport(
     getRecentAutoTradeMetrics({ supabase, chatId, windowDays: 7 }),
     supabase
       .from("virtual_autotrade_settings")
-      .select(
-        "is_enabled, is_shadow_mode, min_buy_score, stop_loss_pct, take_profit_pct"
-      )
+      .select("is_enabled, min_buy_score, stop_loss_pct, take_profit_pct")
       .eq("chat_id", chatId)
       .maybeSingle(),
     supabase
@@ -3333,7 +3331,6 @@ export async function generateAutoTradeDiagnosticReport(
   const settingRow = settingResp.data as
     | {
         is_enabled?: boolean | null;
-        is_shadow_mode?: boolean | null;
         min_buy_score?: number | null;
         stop_loss_pct?: number | null;
         take_profit_pct?: number | null;
@@ -3357,7 +3354,7 @@ export async function generateAutoTradeDiagnosticReport(
 
   const prefsResult = await supabase
     .from("user_investment_prefs")
-    .select("virtual_cash, virtual_seed_capital, capital_krw, virtual_realized_pnl")
+    .select("virtual_cash, virtual_seed_capital, capital_krw, virtual_realized_pnl, virtual_shadow_mode")
     .eq("tg_id", chatId)
     .maybeSingle();
 
@@ -3401,7 +3398,7 @@ export async function generateAutoTradeDiagnosticReport(
     settings: settingRow
       ? {
           isEnabled: Boolean(settingRow.is_enabled),
-          isShadow: Boolean(settingRow.is_shadow_mode),
+          isShadow: Boolean(prefs.virtual_shadow_mode),
           minBuyScore: toNumber(settingRow.min_buy_score, 60),
           stopLossPct: Math.abs(toNumber(settingRow.stop_loss_pct, 4)),
           takeProfitPct: Math.abs(toNumber(settingRow.take_profit_pct, 8)),
