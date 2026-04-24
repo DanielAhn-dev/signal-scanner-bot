@@ -37,14 +37,6 @@
         {
             "path": "/api/cron/virtualAutoTrade",
             "schedule": "45 23 * * 0-4"
-        },
-        {
-            "path": "/api/cron/virtualAutoTrade?mode=auto&dryRun=false&intradayOnly=true&windowMinutes=10&maxUsers=50",
-            "schedule": "*/10 0-5 * * 1-5"
-        },
-        {
-            "path": "/api/cron/virtualAutoTrade?mode=auto&dryRun=false&intradayOnly=true&windowMinutes=10&maxUsers=50",
-            "schedule": "0,10,20 6 * * 1-5"
         }
     ]
 }
