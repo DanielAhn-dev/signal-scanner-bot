@@ -32,7 +32,31 @@ export function buildMessage(blocks: Array<string | undefined | null>): string {
 }
 
 export function actionButtons(buttons: InlineButton[], cols = 2) {
-  return createMultiRowKeyboard(cols, buttons);
+  return createMultiRowKeyboard(cols, removeConsecutiveDuplicateButtons(buttons));
+}
+
+function normalizeButtonValue(value: string | undefined): string {
+  return String(value ?? "").trim().toLowerCase();
+}
+
+function removeConsecutiveDuplicateButtons(buttons: InlineButton[]): InlineButton[] {
+  const out: InlineButton[] = [];
+
+  for (const button of buttons) {
+    const prev = out[out.length - 1];
+    if (!prev) {
+      out.push(button);
+      continue;
+    }
+
+    const sameCallback = normalizeButtonValue(prev.callback_data) === normalizeButtonValue(button.callback_data);
+    const sameText = normalizeButtonValue(prev.text) === normalizeButtonValue(button.text);
+    if (sameCallback || sameText) continue;
+
+    out.push(button);
+  }
+
+  return out;
 }
 
 export function buildRecommendationActionButtons(
@@ -105,7 +129,7 @@ export const ACTIONS = {
     { text: "월간", callback_data: "cmd:report:monthly" },
     { text: "실전운용", callback_data: "cmd:report:playbook" },
     { text: "추천", callback_data: "cmd:report:추천" },
-    { text: "공개추천", callback_data: "cmd:report:공개추천" },
+    { text: "공유추천", callback_data: "cmd:report:공개추천" },
     { text: "가이드", callback_data: "cmd:report:guide" },
     { text: "포트폴리오", callback_data: "cmd:report:portfolio" },
     { text: "거시", callback_data: "cmd:report:economy" },

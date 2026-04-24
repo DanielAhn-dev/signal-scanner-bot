@@ -32,7 +32,7 @@ const REPORT_TOPIC_GUIDE = [
   { command: "월간", aliases: ["월간", "monthly", "month"], description: "월별 성과 요약 텍스트" },
   { command: "실전운용", aliases: ["실전운용", "실전", "운용", "플레이북", "playbook", "ops"], description: "월~금 자동매매 실전 체크리스트 텍스트" },
   { command: "추천", aliases: ["추천", "후보", "daily", "plan", "planning", "ideas"], description: "매일 대응할 투자 후보 PDF" },
-  { command: "공개추천", aliases: ["공개추천", "공개 추천", "공유추천", "public", "publicplan", "share"], description: "개인 보유·자금 정보를 제외한 공유용 후보 PDF" },
+  { command: "공개추천", aliases: ["공개추천", "공개 추천", "공유추천", "public", "publicplan", "share"], description: "개인 보유·자금 정보를 제외한 후보 PDF" },
   { command: "가이드", aliases: ["가이드", "운영가이드", "guide", "guidepdf"], description: "운영 가이드 PDF" },
     { command: "자동매매", aliases: ["자동매매", "명령어", "command", "automate"], description: "자동매매 명령어 사용 가이드 PDF" },
   { command: "포트폴리오", aliases: ["포트폴리오", "보유", "holdings", "portfolio"], description: "보유 종목과 최근 거래 중심 PDF" },
@@ -64,7 +64,7 @@ function buildReportMenuText(): string {
     "/리포트 실전운용 — 월~금 자동매매 실전 체크리스트 텍스트",
     "  전략 유지 여부, 보유 추가매수, 부분 익절, 분할 매도 점검용",
     "/리포트 추천 — 오늘 대응할 투자 후보 PDF",
-    "/리포트 공개추천 — 개인 보유/자금 정보 제외 공유용 후보 PDF",
+    "/리포트 공유추천 — 개인 보유/자금 정보 제외 후보 PDF",
     "/리포트 가이드 — 기능 활용 운영 가이드 PDF",
       "/리포트 자동매매 — 자동매매 명령어 사용 방법 PDF",
     "/리포트 포트폴리오 — 보유 종목/거래 중심 PDF",
@@ -545,7 +545,7 @@ async function handlePublicDailyCandidateReportCommand(
 ): Promise<void> {
   await tgSend("sendMessage", {
     chat_id: ctx.chatId,
-    text: "공유용 투자 후보 PDF를 생성 중입니다. 잠시만 기다려주세요...",
+    text: "투자 후보 PDF를 생성 중입니다. 잠시만 기다려주세요...",
   });
 
   let report: Awaited<ReturnType<typeof createDailyCandidatePlanningReportResult>> | null = null;
@@ -561,12 +561,12 @@ async function handlePublicDailyCandidateReportCommand(
     };
 
     const pdf = await createDailyCandidateReportPdf(ctx.chatId, report, {
-      title: "오늘의 공개 투자 후보 리포트",
-      subtitle: "개인 보유·자금·리스크 정보를 제외한 공유용 요약입니다.",
+      title: "오늘의 투자 후보 리포트",
+      subtitle: "개인 보유·자금·리스크 정보를 제외한 요약입니다.",
       filePrefix: "public_candidate_report",
-      captionTitle: "오늘의 공개 투자 후보 리포트",
-      captionSubtitle: "추천 엔진 기준 공유용 일일 후보 PDF (개인정보 제외)",
-      summaryText: "오늘의 공개 투자 후보 리포트 PDF를 보냈습니다.",
+      captionTitle: "오늘의 투자 후보 리포트",
+      captionSubtitle: "추천 엔진 기준 일일 후보 PDF (개인정보 제외)",
+      summaryText: "오늘의 투자 후보 리포트 PDF를 보냈습니다.",
     });
     const form = new FormData();
     form.set("chat_id", String(ctx.chatId));
@@ -585,7 +585,7 @@ async function handlePublicDailyCandidateReportCommand(
       chat_id: ctx.chatId,
       text: [
         pdf.summaryText,
-        "개인 보유/자금 정보가 제거되어 외부 공유에 바로 사용할 수 있습니다.",
+        "개인 보유/자금 정보가 제거된 버전입니다.",
       ].join("\n"),
       reply_markup: actionButtons(
         buildRecommendationActionButtons(report.actionItems, [...ACTIONS.recommendationFollowupCompact, ...ACTIONS.reportMenu]),
@@ -598,7 +598,7 @@ async function handlePublicDailyCandidateReportCommand(
       await tgSend("sendMessage", {
         chat_id: ctx.chatId,
         text: [
-          "공개추천 PDF 전송에 실패해 텍스트 리포트로 대체합니다.",
+          "추천 PDF 전송에 실패해 텍스트 리포트로 대체합니다.",
           `원인: ${detail}`,
           "",
           report.text,
@@ -613,7 +613,7 @@ async function handlePublicDailyCandidateReportCommand(
       await tgSend("sendMessage", {
         chat_id: ctx.chatId,
         text: [
-          "공개추천 리포트 생성에 실패했습니다.",
+          "추천 리포트 생성에 실패했습니다.",
           `원인: ${detail}`,
           "잠시 후 다시 시도해주세요.",
         ].join("\n"),
@@ -643,6 +643,64 @@ function getAttentionHighlight(line: string): { fill: RGB; text: RGB } | null {
     return { fill: rgb(0.92, 0.96, 1.0), text: rgb(0.13, 0.34, 0.62) };
   }
   return null;
+}
+
+function getSectorRoleLineStyle(line: string): { text: RGB; bold: boolean } | null {
+  const normalized = String(line ?? "").trim();
+  if (/^\[대표\]/.test(normalized)) {
+    return { text: rgb(0.13, 0.28, 0.53), bold: true };
+  }
+  if (/^\[대기\]/.test(normalized)) {
+    return { text: rgb(0.16, 0.38, 0.24), bold: true };
+  }
+  return null;
+}
+
+function getSectorRoleCardStyle(line: string): { fill: RGB; accent: RGB; text: RGB } | null {
+  const normalized = String(line ?? "").trim();
+  if (/^\[대표\]/.test(normalized)) {
+    return {
+      fill: rgb(0.95, 0.97, 1.0),
+      accent: rgb(0.18, 0.36, 0.66),
+      text: rgb(0.12, 0.27, 0.48),
+    };
+  }
+  if (/^\[대기\]/.test(normalized)) {
+    return {
+      fill: rgb(0.95, 0.99, 0.96),
+      accent: rgb(0.18, 0.46, 0.29),
+      text: rgb(0.12, 0.35, 0.22),
+    };
+  }
+  return null;
+}
+
+function isCandidateSectionHeading(line: string): boolean {
+  return line === "눌림목 우선 체크" || line === "코스피 우선 후보" || line === "코스닥 우선 후보";
+}
+
+function isCandidateHeaderLine(line: string): boolean {
+  return /^\d+\.\s+(상|중|하)\s+/.test(String(line ?? "").trim());
+}
+
+function isCandidatePriorityLine(line: string): boolean {
+  return /^우선\s+\d+순위/.test(String(line ?? "").trim());
+}
+
+function isCandidateScoreLine(line: string): boolean {
+  return /^점수\s+기술/.test(String(line ?? "").trim());
+}
+
+function normalizeCandidateHeaderLine(line: string): string {
+  return String(line ?? "").replace(/^(\d+\.\s+)(상|중|하)\s+/, "$1[$2] ").trim();
+}
+
+function getCandidateHeaderColor(line: string): RGB {
+  const normalized = String(line ?? "").trim();
+  if (/^\d+\.\s+상\s+/.test(normalized)) return rgb(0.56, 0.16, 0.16);
+  if (/^\d+\.\s+중\s+/.test(normalized)) return rgb(0.13, 0.37, 0.22);
+  if (/^\d+\.\s+하\s+/.test(normalized)) return rgb(0.12, 0.30, 0.52);
+  return rgb(0.12, 0.12, 0.16);
 }
 
 async function createDailyCandidateReportPdf(
@@ -693,6 +751,9 @@ async function createDailyCandidateReportPdf(
   const sectionFontSize = 10;
   const bodyFontSize = 8.5;
   const bodyLineHeight = Math.round(bodyFontSize * 1.45);
+  let inSectorTemplateSection = false;
+  let inCandidateListSection = false;
+  let hasRenderedCandidateItem = false;
 
   for (const rawLine of rawLines) {
     const isDivider = /^[-─]{5,}$/.test(rawLine.trim());
@@ -700,6 +761,7 @@ async function createDailyCandidateReportPdf(
     const isMuted = /<i>.*<\/i>/.test(rawLine);
     const line = stripTelegramHtml(rawLine);
     const attentionHighlight = getAttentionHighlight(line);
+    const roleLineStyle = getSectorRoleLineStyle(line);
 
     if (!line) {
       ctx.y -= 8;
@@ -718,9 +780,49 @@ async function createDailyCandidateReportPdf(
     }
 
     if (isHeading) {
+      inSectorTemplateSection = line === "섹터별 대표·대기";
+      inCandidateListSection = isCandidateSectionHeading(line);
+      hasRenderedCandidateItem = false;
       ctx.ensureSpace(20);
       const count = ctx.textBold(line, ctx.ML, ctx.y, sectionFontSize, theme.accent, ctx.BODY_W);
       ctx.y -= count * Math.round(sectionFontSize * 1.45) + 4;
+      continue;
+    }
+
+    if (inCandidateListSection && isCandidateHeaderLine(line)) {
+      if (hasRenderedCandidateItem) {
+        ctx.y -= 5;
+      }
+      const normalizedHeader = normalizeCandidateHeaderLine(line);
+      ctx.ensureSpace(bodyLineHeight + 8);
+      const count = ctx.textBold(normalizedHeader, ctx.ML, ctx.y, bodyFontSize + 0.7, getCandidateHeaderColor(line), ctx.BODY_W);
+      ctx.y -= count * Math.round((bodyFontSize + 0.7) * 1.4) + 2;
+      hasRenderedCandidateItem = true;
+      continue;
+    }
+
+    if (inCandidateListSection && isCandidatePriorityLine(line)) {
+      const count = ctx.text(line, ctx.ML + 8, ctx.y, bodyFontSize, rgb(0.24, 0.24, 0.30), ctx.BODY_W - 8);
+      ctx.y -= count * bodyLineHeight + 1;
+      continue;
+    }
+
+    if (inCandidateListSection && isCandidateScoreLine(line)) {
+      const count = ctx.textLight(line, ctx.ML + 8, ctx.y, bodyFontSize, rgb(0.38, 0.38, 0.44), ctx.BODY_W - 8);
+      ctx.y -= count * bodyLineHeight + 3;
+      continue;
+    }
+
+    if (inCandidateListSection && /^⚠️/.test(line)) {
+      const count = ctx.text(line, ctx.ML + 8, ctx.y, bodyFontSize, rgb(0.63, 0.20, 0.20), ctx.BODY_W - 8);
+      ctx.y -= count * bodyLineHeight + 3;
+      continue;
+    }
+
+    if (inSectorTemplateSection && /^\d+\.\s+/.test(line.trim())) {
+      ctx.ensureSpace(bodyLineHeight + 6);
+      const count = ctx.textBold(line, ctx.ML, ctx.y, bodyFontSize, rgb(0.14, 0.14, 0.18), ctx.BODY_W);
+      ctx.y -= count * bodyLineHeight + 3;
       continue;
     }
 
@@ -731,6 +833,26 @@ async function createDailyCandidateReportPdf(
       ctx.rect(ctx.ML - 2, ctx.y - highlightHeight + 2, ctx.BODY_W, highlightHeight, attentionHighlight.fill);
       ctx.textBold(line, ctx.ML + 4, ctx.y, bodyFontSize, attentionHighlight.text, ctx.BODY_W - 12);
       ctx.y -= wrapped.length * bodyLineHeight + 2;
+      continue;
+    }
+
+    if (roleLineStyle) {
+      const cardStyle = inSectorTemplateSection ? getSectorRoleCardStyle(line) : null;
+      if (cardStyle) {
+        const wrapped = wrapText(line, ctx.BODY_W - 22, ctx.fontBold, bodyFontSize);
+        const cardHeight = wrapped.length * bodyLineHeight + 6;
+        ctx.ensureSpace(cardHeight + 4);
+        ctx.rect(ctx.ML - 1, ctx.y - cardHeight + 2, ctx.BODY_W, cardHeight, cardStyle.fill);
+        ctx.rect(ctx.ML - 1, ctx.y - cardHeight + 2, 3, cardHeight, cardStyle.accent);
+        const count = ctx.textBold(line, ctx.ML + 8, ctx.y - 1, bodyFontSize, cardStyle.text, ctx.BODY_W - 18);
+        ctx.y -= count * bodyLineHeight + 4;
+        continue;
+      }
+
+      const count = roleLineStyle.bold
+        ? ctx.textBold(line, ctx.ML, ctx.y, bodyFontSize, roleLineStyle.text, ctx.BODY_W)
+        : ctx.text(line, ctx.ML, ctx.y, bodyFontSize, roleLineStyle.text, ctx.BODY_W);
+      ctx.y -= count * bodyLineHeight + 2;
       continue;
     }
 

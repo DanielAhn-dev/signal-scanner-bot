@@ -816,8 +816,8 @@ function buildSectorTemplateLines(input: {
           })
         : null;
       const rep = group.representative
-        ? `대표 ${formatPriorityTag(index + 1)} · ${group.representative.name}(${group.representative.code})${repTag ? ` · ${repTag}` : ""} · ${group.representative.type === "market" ? `${group.representative.trendLabel} · 종합 ${group.representative.score.toFixed(1)}` : `진입 ${group.representative.entryGrade} · 경고 ${group.representative.warnGrade}`}`
-        : "대표 후보 없음";
+        ? `[대표] ${formatPriorityTag(index + 1)} | ${group.representative.name}(${group.representative.code})${repTag ? ` | ${repTag}` : ""} | ${group.representative.type === "market" ? `${group.representative.trendLabel} · 종합 ${group.representative.score.toFixed(1)}` : `진입 ${group.representative.entryGrade} · 경고 ${group.representative.warnGrade}`}`
+        : "[대표] 후보 없음";
       const waitTag = group.waiting
         ? classifyCandidateStyleTag({
             market: group.waiting.market,
@@ -826,8 +826,8 @@ function buildSectorTemplateLines(input: {
           })
         : null;
       const wait = group.waiting
-        ? `대기 ${group.waiting.name}(${group.waiting.code})${waitTag ? ` · ${waitTag}` : ""} · ${group.waiting.type === "pullback" ? `진입 ${group.waiting.entryGrade} · 경고 ${group.waiting.warnGrade}` : `${group.waiting.trendLabel} · 종합 ${group.waiting.score.toFixed(1)}`}`
-        : "대기 후보 없음";
+        ? `[대기] ${group.waiting.name}(${group.waiting.code})${waitTag ? ` | ${waitTag}` : ""} | ${group.waiting.type === "pullback" ? `진입 ${group.waiting.entryGrade} · 경고 ${group.waiting.warnGrade}` : `${group.waiting.trendLabel} · 종합 ${group.waiting.score.toFixed(1)}`}`
+        : "[대기] 후보 없음";
       return `${index + 1}. ${group.sectorName}\n   ${rep}\n   ${wait}`;
     });
 }
