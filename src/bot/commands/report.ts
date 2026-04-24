@@ -754,6 +754,7 @@ async function createDailyCandidateReportPdf(
   let inSectorTemplateSection = false;
   let inCandidateListSection = false;
   let hasRenderedCandidateItem = false;
+  let hasRenderedSectorIndexLine = false;
 
   for (const rawLine of rawLines) {
     const isDivider = /^[-─]{5,}$/.test(rawLine.trim());
@@ -783,6 +784,7 @@ async function createDailyCandidateReportPdf(
       inSectorTemplateSection = line === "섹터별 대표·대기";
       inCandidateListSection = isCandidateSectionHeading(line);
       hasRenderedCandidateItem = false;
+      hasRenderedSectorIndexLine = false;
       ctx.ensureSpace(20);
       const count = ctx.textBold(line, ctx.ML, ctx.y, sectionFontSize, theme.accent, ctx.BODY_W);
       ctx.y -= count * Math.round(sectionFontSize * 1.45) + 4;
@@ -791,38 +793,44 @@ async function createDailyCandidateReportPdf(
 
     if (inCandidateListSection && isCandidateHeaderLine(line)) {
       if (hasRenderedCandidateItem) {
-        ctx.y -= 5;
+        // 번호 아이템(1/2/3...) 사이 간격을 넓혀 스캔 가독성을 높입니다.
+        ctx.y -= 11;
       }
       const normalizedHeader = normalizeCandidateHeaderLine(line);
       ctx.ensureSpace(bodyLineHeight + 8);
       const count = ctx.textBold(normalizedHeader, ctx.ML, ctx.y, bodyFontSize + 0.7, getCandidateHeaderColor(line), ctx.BODY_W);
-      ctx.y -= count * Math.round((bodyFontSize + 0.7) * 1.4) + 2;
+      ctx.y -= count * Math.round((bodyFontSize + 0.7) * 1.4) + 4;
       hasRenderedCandidateItem = true;
       continue;
     }
 
     if (inCandidateListSection && isCandidatePriorityLine(line)) {
       const count = ctx.text(line, ctx.ML + 8, ctx.y, bodyFontSize, rgb(0.24, 0.24, 0.30), ctx.BODY_W - 8);
-      ctx.y -= count * bodyLineHeight + 1;
+      ctx.y -= count * bodyLineHeight + 2;
       continue;
     }
 
     if (inCandidateListSection && isCandidateScoreLine(line)) {
       const count = ctx.textLight(line, ctx.ML + 8, ctx.y, bodyFontSize, rgb(0.38, 0.38, 0.44), ctx.BODY_W - 8);
-      ctx.y -= count * bodyLineHeight + 3;
+      ctx.y -= count * bodyLineHeight + 6;
       continue;
     }
 
     if (inCandidateListSection && /^⚠️/.test(line)) {
       const count = ctx.text(line, ctx.ML + 8, ctx.y, bodyFontSize, rgb(0.63, 0.20, 0.20), ctx.BODY_W - 8);
-      ctx.y -= count * bodyLineHeight + 3;
+      ctx.y -= count * bodyLineHeight + 6;
       continue;
     }
 
     if (inSectorTemplateSection && /^\d+\.\s+/.test(line.trim())) {
-      ctx.ensureSpace(bodyLineHeight + 6);
+      if (hasRenderedSectorIndexLine) {
+        // 섹터 묶음(1/2/3...) 사이 간격을 넉넉히 둬서 구분감을 높입니다.
+        ctx.y -= 6;
+      }
+      ctx.ensureSpace(bodyLineHeight + 12);
       const count = ctx.textBold(line, ctx.ML, ctx.y, bodyFontSize, rgb(0.14, 0.14, 0.18), ctx.BODY_W);
-      ctx.y -= count * bodyLineHeight + 3;
+      ctx.y -= count * bodyLineHeight + 6;
+      hasRenderedSectorIndexLine = true;
       continue;
     }
 
@@ -840,12 +848,12 @@ async function createDailyCandidateReportPdf(
       const cardStyle = inSectorTemplateSection ? getSectorRoleCardStyle(line) : null;
       if (cardStyle) {
         const wrapped = wrapText(line, ctx.BODY_W - 22, ctx.fontBold, bodyFontSize);
-        const cardHeight = wrapped.length * bodyLineHeight + 6;
-        ctx.ensureSpace(cardHeight + 4);
+        const cardHeight = wrapped.length * bodyLineHeight + 8;
+        ctx.ensureSpace(cardHeight + 6);
         ctx.rect(ctx.ML - 1, ctx.y - cardHeight + 2, ctx.BODY_W, cardHeight, cardStyle.fill);
         ctx.rect(ctx.ML - 1, ctx.y - cardHeight + 2, 3, cardHeight, cardStyle.accent);
         const count = ctx.textBold(line, ctx.ML + 8, ctx.y - 1, bodyFontSize, cardStyle.text, ctx.BODY_W - 18);
-        ctx.y -= count * bodyLineHeight + 4;
+        ctx.y -= count * bodyLineHeight + 6;
         continue;
       }
 
