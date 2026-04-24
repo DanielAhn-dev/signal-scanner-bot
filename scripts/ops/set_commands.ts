@@ -59,23 +59,34 @@ if (!TELEGRAM_BOT_TOKEN) {
   process.exit(1);
 }
 
-async function setCommands() {
+async function callSetMyCommands(body: object): Promise<TelegramResponse> {
   const url = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/setMyCommands`;
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  return (await res.json()) as TelegramResponse;
+}
 
+async function setCommands() {
   try {
-    const res = await fetch(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ commands }),
-    });
+    const results = await Promise.all([
+      // default scope (1:1 채팅 포함)
+      callSetMyCommands({ commands }),
+      callSetMyCommands({ commands, language_code: "ko" }),
+      // 그룹 채팅 — /명령어 자동완성이 그룹에서도 표시되게 함
+      callSetMyCommands({ commands, scope: { type: "all_group_chats" } }),
+      callSetMyCommands({ commands, scope: { type: "all_group_chats" }, language_code: "ko" }),
+    ]);
 
-    // 🔧 res.json() 결과를 명시적으로 TelegramResponse로 단언
-    const json = (await res.json()) as TelegramResponse;
-
-    if (json.ok) {
-      console.log("✅ Telegram bot commands updated successfully!");
+    const allOk = results.every((r) => r.ok);
+    if (allOk) {
+      console.log("✅ Telegram bot commands updated successfully! (default + all_group_chats)");
     } else {
-      console.error("❌ Failed to update commands:", json);
+      results.forEach((r, i) => {
+        if (!r.ok) console.error(`❌ scope[${i}] failed:`, r);
+      });
     }
   } catch (e) {
     console.error("❌ Exception while updating commands:", e);

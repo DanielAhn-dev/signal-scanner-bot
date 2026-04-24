@@ -54,12 +54,16 @@ export async function sendDocument(payload: {
 
 /** 텔레그램에 봇 명령어 + 메뉴 버튼 + 설명 등록 */
 export async function setCommandsKo(): Promise<TgResponse> {
-  const [r1, r2, r3, r4] = await Promise.all([
-    // 기본(전체 언어) 명령어
+  const [r1, r2, r3, r4, r5, r6] = await Promise.all([
+    // 기본(전체 언어) 명령어 — private + group 기본값
     tg("setMyCommands", { commands: TELEGRAM_BOT_COMMANDS }),
-    // 한국어 전용
+    // 한국어 전용 — default scope
     tg("setMyCommands", { commands: TELEGRAM_BOT_COMMANDS, language_code: "ko" }),
-    // 채팅 입력창 메뉴 버튼 → 명령어 목록 표시
+    // 그룹 채팅 전용 — /명령어 자동완성이 그룹에서도 표시되게 함
+    tg("setMyCommands", { commands: TELEGRAM_BOT_COMMANDS, scope: { type: "all_group_chats" } }),
+    // 그룹 채팅 한국어
+    tg("setMyCommands", { commands: TELEGRAM_BOT_COMMANDS, scope: { type: "all_group_chats" }, language_code: "ko" }),
+    // 채팅 입력창 메뉴 버튼 → 명령어 목록 표시 (1:1 채팅)
     tg("setChatMenuButton", {
       menu_button: { type: "commands" },
     }),
@@ -83,5 +87,5 @@ export async function setCommandsKo(): Promise<TgResponse> {
     language_code: "ko",
   });
 
-  return { ok: !!(r1.ok || r2.ok) };
+  return { ok: !!(r1.ok || r2.ok || r3.ok || r4.ok) };
 }
