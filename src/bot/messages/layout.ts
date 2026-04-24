@@ -105,6 +105,7 @@ export const ACTIONS = {
     { text: "월간", callback_data: "cmd:report:monthly" },
     { text: "실전운용", callback_data: "cmd:report:playbook" },
     { text: "추천", callback_data: "cmd:report:추천" },
+    { text: "공개추천", callback_data: "cmd:report:공개추천" },
     { text: "가이드", callback_data: "cmd:report:guide" },
     { text: "포트폴리오", callback_data: "cmd:report:portfolio" },
     { text: "거시", callback_data: "cmd:report:economy" },

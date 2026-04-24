@@ -32,6 +32,7 @@ const REPORT_TOPIC_GUIDE = [
   { command: "월간", aliases: ["월간", "monthly", "month"], description: "월별 성과 요약 텍스트" },
   { command: "실전운용", aliases: ["실전운용", "실전", "운용", "플레이북", "playbook", "ops"], description: "월~금 자동매매 실전 체크리스트 텍스트" },
   { command: "추천", aliases: ["추천", "후보", "daily", "plan", "planning", "ideas"], description: "매일 대응할 투자 후보 PDF" },
+  { command: "공개추천", aliases: ["공개추천", "공개 추천", "공유추천", "public", "publicplan", "share"], description: "개인 보유·자금 정보를 제외한 공유용 후보 PDF" },
   { command: "가이드", aliases: ["가이드", "운영가이드", "guide", "guidepdf"], description: "운영 가이드 PDF" },
     { command: "자동매매", aliases: ["자동매매", "명령어", "command", "automate"], description: "자동매매 명령어 사용 가이드 PDF" },
   { command: "포트폴리오", aliases: ["포트폴리오", "보유", "holdings", "portfolio"], description: "보유 종목과 최근 거래 중심 PDF" },
@@ -63,6 +64,7 @@ function buildReportMenuText(): string {
     "/리포트 실전운용 — 월~금 자동매매 실전 체크리스트 텍스트",
     "  전략 유지 여부, 보유 추가매수, 부분 익절, 분할 매도 점검용",
     "/리포트 추천 — 오늘 대응할 투자 후보 PDF",
+    "/리포트 공개추천 — 개인 보유/자금 정보 제외 공유용 후보 PDF",
     "/리포트 가이드 — 기능 활용 운영 가이드 PDF",
       "/리포트 자동매매 — 자동매매 명령어 사용 방법 PDF",
     "/리포트 포트폴리오 — 보유 종목/거래 중심 PDF",
@@ -496,6 +498,130 @@ async function handleDailyCandidateReportCommand(
   }
 }
 
+function buildPublicDailyCandidateText(rawText: string): string {
+  const lines = String(rawText || "").split("\n");
+  const hiddenSections = new Set(["<b>자금·리스크 상태</b>", "<b>분산 경고</b>"]);
+  const sanitized: string[] = [];
+  let skipping = false;
+
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (hiddenSections.has(trimmed)) {
+      skipping = true;
+      continue;
+    }
+    if (skipping) {
+      if (/^<b>.*<\/b>$/.test(trimmed)) {
+        skipping = false;
+      } else {
+        continue;
+      }
+    }
+    sanitized.push(line);
+  }
+
+  const compacted: string[] = [];
+  for (const line of sanitized) {
+    const isEmpty = line.trim() === "";
+    const prevEmpty = compacted.length > 0 && compacted[compacted.length - 1].trim() === "";
+    if (isEmpty && prevEmpty) continue;
+    compacted.push(line);
+  }
+
+  return [
+    ...compacted,
+    "",
+    "<b>공유용 한 장 포인트</b>",
+    "• 오늘은 상(🟥) 주목도 1~2개만 우선 점검하고, 나머지는 장중 추적 후보로 두세요.",
+    "• 후보 종목은 추격보다 분할 접근을 기본으로 하고, 손절/익절 기준을 진입 전에 먼저 고정하세요.",
+    "• 시장 방향이 불명확하면 종목 수를 늘리기보다 상위 섹터 대표주 중심으로 집중도를 높이세요.",
+    "• 이 리포트는 학습·공유 목적 자료이며, 최종 판단은 개인 책임입니다.",
+  ].join("\n");
+}
+
+async function handlePublicDailyCandidateReportCommand(
+  ctx: ChatContext,
+  tgSend: any
+): Promise<void> {
+  await tgSend("sendMessage", {
+    chat_id: ctx.chatId,
+    text: "공유용 투자 후보 PDF를 생성 중입니다. 잠시만 기다려주세요...",
+  });
+
+  let report: Awaited<ReturnType<typeof createDailyCandidatePlanningReportResult>> | null = null;
+
+  try {
+    report = await createDailyCandidatePlanningReportResult(supabase, {
+      riskProfile: "balanced",
+    });
+
+    report = {
+      ...report,
+      text: buildPublicDailyCandidateText(report.text),
+    };
+
+    const pdf = await createDailyCandidateReportPdf(ctx.chatId, report, {
+      title: "오늘의 공개 투자 후보 리포트",
+      subtitle: "개인 보유·자금·리스크 정보를 제외한 공유용 요약입니다.",
+      filePrefix: "public_candidate_report",
+      captionTitle: "오늘의 공개 투자 후보 리포트",
+      captionSubtitle: "추천 엔진 기준 공유용 일일 후보 PDF (개인정보 제외)",
+      summaryText: "오늘의 공개 투자 후보 리포트 PDF를 보냈습니다.",
+    });
+    const form = new FormData();
+    form.set("chat_id", String(ctx.chatId));
+    form.set("caption", pdf.caption);
+    form.set("disable_content_type_detection", "true");
+    form.set("document", new Blob([pdf.bytes.buffer.slice(pdf.bytes.byteOffset, pdf.bytes.byteOffset + pdf.bytes.byteLength) as ArrayBuffer], { type: "application/pdf" }), pdf.fileName);
+
+    const sendResult = await tgSend("sendDocument", form);
+
+    if (!sendResult?.ok) {
+      const sendError = sendResult?.description || "Telegram sendDocument failed";
+      throw new Error(sendError);
+    }
+
+    await tgSend("sendMessage", {
+      chat_id: ctx.chatId,
+      text: [
+        pdf.summaryText,
+        "개인 보유/자금 정보가 제거되어 외부 공유에 바로 사용할 수 있습니다.",
+      ].join("\n"),
+      reply_markup: actionButtons(
+        buildRecommendationActionButtons(report.actionItems, [...ACTIONS.recommendationFollowupCompact, ...ACTIONS.reportMenu]),
+        2
+      ),
+    });
+  } catch (e: any) {
+    const detail = e instanceof Error ? e.message : String(e);
+    if (report) {
+      await tgSend("sendMessage", {
+        chat_id: ctx.chatId,
+        text: [
+          "공개추천 PDF 전송에 실패해 텍스트 리포트로 대체합니다.",
+          `원인: ${detail}`,
+          "",
+          report.text,
+        ].join("\n"),
+        parse_mode: "HTML",
+        reply_markup: actionButtons(
+          buildRecommendationActionButtons(report.actionItems, [...ACTIONS.recommendationFollowupCompact, ...ACTIONS.reportMenu]),
+          2
+        ),
+      });
+    } else {
+      await tgSend("sendMessage", {
+        chat_id: ctx.chatId,
+        text: [
+          "공개추천 리포트 생성에 실패했습니다.",
+          `원인: ${detail}`,
+          "잠시 후 다시 시도해주세요.",
+        ].join("\n"),
+      });
+    }
+  }
+}
+
 function stripTelegramHtml(raw: string): string {
   return String(raw ?? "")
     .replace(/<\/?(b|i|code)>/g, "")
@@ -521,7 +647,15 @@ function getAttentionHighlight(line: string): { fill: RGB; text: RGB } | null {
 
 async function createDailyCandidateReportPdf(
   chatId: number,
-  report: DailyCandidatePlanningReportResult
+  report: DailyCandidatePlanningReportResult,
+  options?: {
+    title?: string;
+    subtitle?: string;
+    filePrefix?: string;
+    captionTitle?: string;
+    captionSubtitle?: string;
+    summaryText?: string;
+  }
 ): Promise<{
   bytes: Uint8Array;
   fileName: string;
@@ -542,11 +676,17 @@ async function createDailyCandidateReportPdf(
   const ctx = new ReportContext(pdf, fontLight, font, fontBold, theme);
   ctx.footerLabel = ymd;
   ctx.addPage(null);
-  ctx.pageTitle = "오늘의 투자 후보 리포트";
+  const title = options?.title ?? "오늘의 투자 후보 리포트";
+  const subtitle = options?.subtitle ?? "추천 엔진이 고른 당일 후보를 PDF로 묶은 테스트 출력입니다. PDF 전송 경로와 추천 데이터 경로를 함께 검증할 수 있습니다.";
+  const filePrefix = options?.filePrefix ?? "daily_candidate_report";
+  const captionTitle = options?.captionTitle ?? "오늘의 투자 후보 리포트";
+  const captionSubtitle = options?.captionSubtitle ?? "추천 엔진 기준 일일 대응 후보 PDF";
+  const summaryText = options?.summaryText ?? "오늘의 투자 후보 리포트 PDF를 보냈습니다.";
+  ctx.pageTitle = title;
   drawTopicHero(
     ctx,
-    "오늘의 투자 후보 리포트",
-    "추천 엔진이 고른 당일 후보를 PDF로 묶은 테스트 출력입니다. PDF 전송 경로와 추천 데이터 경로를 함께 검증할 수 있습니다."
+    title,
+    subtitle
   );
 
   const rawLines = String(report.text ?? "").split("\n");
@@ -566,7 +706,7 @@ async function createDailyCandidateReportPdf(
       continue;
     }
 
-    if (line === "오늘의 투자 후보 리포트") {
+    if (line === "오늘의 투자 후보 리포트" || line === "오늘의 공개 투자 후보 리포트") {
       continue;
     }
 
@@ -604,13 +744,13 @@ async function createDailyCandidateReportPdf(
 
   return {
     bytes: await pdf.save(),
-    fileName: `daily_candidate_report_${chatId}_${ymd}.pdf`,
+    fileName: `${filePrefix}_${chatId}_${ymd}.pdf`,
     caption: [
-      "오늘의 투자 후보 리포트",
+      captionTitle,
       `기준일: ${krDate}`,
-      "추천 엔진 기준 일일 대응 후보 PDF",
+      captionSubtitle,
     ].join("\n"),
-    summaryText: "오늘의 투자 후보 리포트 PDF를 보냈습니다.",
+    summaryText,
   };
 }
 
@@ -663,6 +803,11 @@ export async function handleReportCommand(
 
   if (normalizedTopic === "추천") {
     await handleDailyCandidateReportCommand(ctx, tgSend);
+    return;
+  }
+
+  if (normalizedTopic === "공개추천") {
+    await handlePublicDailyCandidateReportCommand(ctx, tgSend);
     return;
   }
 
