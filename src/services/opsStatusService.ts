@@ -1,5 +1,14 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import type { AutoTradeSkipReasonStat } from "./virtualAutoTradeObservability";
 import { buildFreshnessLabel, isBusinessStale } from "../utils/dataFreshness";
+
+type AutoTradeRunSummaryLike = {
+  skipReasonStats?: Array<{
+    code?: string | null;
+    label?: string | null;
+    count?: number | null;
+  }> | null;
+};
 
 function kstNow(base = new Date()): Date {
   const utcMs = base.getTime() + base.getTimezoneOffset() * 60 * 1000;
@@ -78,6 +87,65 @@ async function fetchTodayAutoTradeFailedCount(
   return count ?? 0;
 }
 
+export function aggregateAutoTradeSkipReasonStats(
+  summaries: AutoTradeRunSummaryLike[]
+): AutoTradeSkipReasonStat[] {
+  const counter = new Map<string, { label: string; count: number }>();
+
+  for (const summary of summaries) {
+    for (const stat of summary.skipReasonStats ?? []) {
+      const code = String(stat?.code ?? "").trim();
+      const label = String(stat?.label ?? "기타").trim() || "기타";
+      const count = Number(stat?.count ?? 0);
+      if (!code || !Number.isFinite(count) || count <= 0) continue;
+      const current = counter.get(code) ?? { label, count: 0 };
+      counter.set(code, {
+        label: current.label || label,
+        count: current.count + count,
+      });
+    }
+  }
+
+  return Array.from(counter.entries())
+    .map(([code, value]) => ({
+      code,
+      label: value.label,
+      count: value.count,
+    }))
+    .sort((a, b) => b.count - a.count || a.code.localeCompare(b.code));
+}
+
+export function formatAutoTradeSkipReasonStats(
+  stats: AutoTradeSkipReasonStat[],
+  limit = 3
+): string {
+  const top = stats.filter((stat) => stat.count > 0).slice(0, limit);
+  if (top.length === 0) return "없음";
+  return top
+    .map((stat) => `${stat.label} ${stat.count.toLocaleString("ko-KR")}건`)
+    .join(" · ");
+}
+
+async function fetchTodayAutoTradeSkipReasonStats(
+  supabase: SupabaseClient,
+  startIso: string,
+  endIso: string
+): Promise<AutoTradeSkipReasonStat[]> {
+  const { data, error } = await supabase
+    .from("virtual_autotrade_runs")
+    .select("summary")
+    .gte("started_at", startIso)
+    .lt("started_at", endIso)
+    .limit(1000);
+  if (error) return [];
+
+  const summaries = (data ?? []).map((row) => {
+    const rec = row as Record<string, unknown>;
+    return (rec.summary ?? {}) as AutoTradeRunSummaryLike;
+  });
+  return aggregateAutoTradeSkipReasonStats(summaries);
+}
+
 function parsePositiveInt(raw: string | undefined): number | null {
   const n = Number(raw);
   if (!Number.isFinite(n)) return null;
@@ -88,7 +156,7 @@ function parsePositiveInt(raw: string | undefined): number | null {
 export async function buildOpsStatusDigest(supabase: SupabaseClient): Promise<string> {
   const { startIso, endIso, ymd } = kstDayRangeIso();
 
-  const [latestSectorAt, latestScoreAsof, queuedJobs, jobsToday, autoTradeRunsToday, autoTradeFailedToday] =
+  const [latestSectorAt, latestScoreAsof, queuedJobs, jobsToday, autoTradeRunsToday, autoTradeFailedToday, autoTradeSkipStats] =
     await Promise.all([
       fetchLatestValue(supabase, "sectors", "updated_at"),
       fetchLatestValue(supabase, "scores", "asof"),
@@ -96,6 +164,7 @@ export async function buildOpsStatusDigest(supabase: SupabaseClient): Promise<st
       fetchCountByRange(supabase, "jobs", "created_at", startIso, endIso),
       fetchCountByRange(supabase, "virtual_autotrade_runs", "started_at", startIso, endIso),
       fetchTodayAutoTradeFailedCount(supabase, startIso, endIso),
+      fetchTodayAutoTradeSkipReasonStats(supabase, startIso, endIso),
     ]);
 
   const sectorFreshness = buildFreshnessLabel(latestSectorAt, 1);
@@ -111,12 +180,14 @@ export async function buildOpsStatusDigest(supabase: SupabaseClient): Promise<st
   const staleLine = staleWarning
     ? "- 상태 경고: ⚠️ 데이터 갱신 지연이 감지되었습니다."
     : "- 상태 경고: 없음";
+  const autoTradeSkipLine = `- 자동매매 스킵 상위: ${formatAutoTradeSkipReasonStats(autoTradeSkipStats)}`;
 
   return [
     "<b>📡 운영 상태 체크</b>",
     `- 기준일: ${ymd} (KST)`,
     `- 데이터 신선도: 섹터 ${sectorFreshness} · 점수 ${scoreFreshness}`,
     `- 가상자동매매: 오늘 실행 ${autoTradeRunsToday.toLocaleString("ko-KR")}회 (실패 ${autoTradeFailedToday.toLocaleString("ko-KR")}회)`,
+    autoTradeSkipLine,
     `- 작업 큐 대기: ${queuedJobs.toLocaleString("ko-KR")}건`,
     budgetLine,
     staleLine,
