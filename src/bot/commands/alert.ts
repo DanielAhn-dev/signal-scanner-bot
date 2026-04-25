@@ -87,6 +87,18 @@ function evaluateRisk(data: any): {
     marketWatch.push(`공포탐욕 ${data.fearGreed.score} — 극단적 탐욕`);
   }
 
+  const usChanges = [data.sp500?.changeRate, data.nasdaq?.changeRate, data.dow?.changeRate]
+    .filter((value): value is number => Number.isFinite(value));
+  if (usChanges.length >= 2) {
+    const usAvg = usChanges.reduce((sum, value) => sum + value, 0) / usChanges.length;
+    if (usAvg <= -1.2) {
+      riskScore += 1;
+      marketWatch.push(`미국 3대 지수 약세 (${usAvg.toFixed(2)}%) — 개장 초반 변동성 주의`);
+    } else if (usAvg >= 1.2) {
+      marketWatch.push(`미국 3대 지수 강세 (+${usAvg.toFixed(2)}%) — 위험선호 개선`);
+    }
+  }
+
   if (riskScore >= 5) {
     actions.push("신규 진입 비중 축소, 기존 포지션 손절 기준 재확인");
     actions.push("단타 횟수 제한 및 하루 손실 한도 도달 시 즉시 종료");

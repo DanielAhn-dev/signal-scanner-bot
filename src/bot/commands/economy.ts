@@ -89,6 +89,13 @@ export async function handleEconomyCommand(
       )} ${fmtRate(data.nasdaq.changeRate)}`
     );
   }
+  if (data.dow) {
+    us.push(
+      `DOW      <code>${data.dow.price.toLocaleString()}</code>  ${arrow(
+        data.dow.change
+      )} ${fmtRate(data.dow.changeRate)}`
+    );
+  }
 
   const fx: string[] = [];
   if (data.usdkrw) {
@@ -194,6 +201,20 @@ export async function handleEconomyCommand(
     comments.push("비트코인 급락 — 위험자산 회피 심리");
   else if (data.bitcoin && data.bitcoin.changeRate >= 5)
     comments.push("비트코인 급등 — 위험선호 강화");
+
+  const usRates = [
+    data.sp500?.changeRate,
+    data.nasdaq?.changeRate,
+    data.dow?.changeRate,
+  ].filter((value): value is number => Number.isFinite(value));
+  if (usRates.length >= 2) {
+    const usAvg = usRates.reduce((sum, value) => sum + value, 0) / usRates.length;
+    if (usAvg <= -1.2) {
+      comments.push("미국 3대 지수 약세 — 국내도 갭하락/리스크오프 가능, 추격매수보다 분할 대기 권장");
+    } else if (usAvg >= 1.2) {
+      comments.push("미국 3대 지수 강세 — 리스크온 확산 가능, 주도 섹터 대표주 중심으로만 단계적 진입 권장");
+    }
+  }
 
   const personalLines = await buildPersonalizedGuidance({
     chatId: ctx.chatId,

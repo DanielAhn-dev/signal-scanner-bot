@@ -525,6 +525,18 @@ export async function createBriefingReport(
     const kd = marketData.kosdaq;
     mktLines.push(`  KOSDAQ <b>${kd.price.toLocaleString()}</b> ${fmtChange(kd.changeRate)}`);
   }
+  if (marketData.sp500) {
+    const sp = marketData.sp500;
+    mktLines.push(`  S&P500 <b>${sp.price.toLocaleString()}</b> ${fmtChange(sp.changeRate)}`);
+  }
+  if (marketData.nasdaq) {
+    const nq = marketData.nasdaq;
+    mktLines.push(`  NASDAQ <b>${nq.price.toLocaleString()}</b> ${fmtChange(nq.changeRate)}`);
+  }
+  if (marketData.dow) {
+    const dj = marketData.dow;
+    mktLines.push(`  DOW    <b>${dj.price.toLocaleString()}</b> ${fmtChange(dj.changeRate)}`);
+  }
   if (marketData.vix) {
     const v = marketData.vix;
     const tag = v.price >= 30 ? "⚠️ 공포" : v.price >= 20 ? "🟡 주의" : "🟢 안정";
@@ -539,6 +551,20 @@ export async function createBriefingReport(
     mktLines.push(`  공포·탐욕  <b>${fg.score}</b> (${fg.rating})`);
   }
   report += mktLines.length > 0 ? mktLines.join("\n") + "\n" : "  (조회 불가)\n";
+
+  const usIndexChanges = [
+    marketData.sp500?.changeRate,
+    marketData.nasdaq?.changeRate,
+    marketData.dow?.changeRate,
+  ].filter((value): value is number => Number.isFinite(value));
+  if (usIndexChanges.length >= 2) {
+    const usAvg = usIndexChanges.reduce((sum, value) => sum + value, 0) / usIndexChanges.length;
+    if (usAvg <= -1.2) {
+      report += `  대응 포인트  <b>미국 3대 지수 약세</b> → 초반 변동성 확인 후 분할 진입\n`;
+    } else if (usAvg >= 1.2) {
+      report += `  대응 포인트  <b>미국 3대 지수 강세</b> → 주도 섹터 대표주 중심으로 단계적 진입\n`;
+    }
+  }
 
   if (marketData.meta) {
     const quality = marketData.meta.isPartial ? "⚠️ 부분 수집" : "✅ 정상";
