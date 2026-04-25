@@ -11,6 +11,7 @@ import {
   detectAutoTradeMarketPolicy,
   type AutoTradeMarketPolicy,
 } from "../../services/virtualAutoTradeSelection";
+import { filterCodesByCriticalNewsRisk } from "../../services/newsRiskFilter";
 import { esc, fmtInt, fmtOne } from "../messages/format";
 import { header, section, divider, buildMessage, actionButtons } from "../messages/layout";
 
@@ -685,13 +686,31 @@ async function runMarketPickCommand(
     return;
   }
 
-  const top = sortByDesc(policyCandidates, (c) => c.finalScore).slice(0, TOP_N);
+  const rankedCandidates = sortByDesc(policyCandidates, (c) => c.finalScore);
+  const { blockedByCode: blockedByNews } = await filterCodesByCriticalNewsRisk(
+    rankedCandidates.slice(0, 40).map((item) => item.code),
+    { maxNewsPerCode: 6, checkLimit: 40 }
+  );
+  const top = rankedCandidates
+    .filter((item) => !blockedByNews.has(item.code))
+    .slice(0, TOP_N);
+
+  if (!top.length) {
+    await tgSend("sendMessage", {
+      chat_id: ctx.chatId,
+      text: `⚠️ ${commandLabel(kind)} 후보가 뉴스 이벤트 리스크(상폐/공개매수/거래정지 등)로 제외되어 추천 가능한 종목이 없습니다.`,
+    });
+    return;
+  }
   const realtimeMap = {
     ...fallbackRealtimeMap,
     ...(await fetchRealtimePriceBatch(top.map((c) => c.code)).catch(() => ({} as Record<string, any>))),
   };
 
-  const text = buildResultMessage(kind, top, realtimeMap, regime, etfStrategy, marketPolicy);
+  const baseText = buildResultMessage(kind, top, realtimeMap, regime, etfStrategy, marketPolicy);
+  const text = blockedByNews.size > 0
+    ? `${baseText}\n\n⚠️ 뉴스 이벤트 리스크로 ${blockedByNews.size}개 제외(공개매수/상폐/거래정지 등)`
+    : baseText;
   const buttons = [
     ...top.map((c) => ({ text: c.name, callback_data: `trade:${c.code}` })),
     { text: "코스피", callback_data: "cmd:kospi" },
