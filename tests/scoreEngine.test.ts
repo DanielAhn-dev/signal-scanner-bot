@@ -84,3 +84,11 @@ test("calculateScore: 외국인/기관 대규모 순매도는 점수 감점", ()
   assert.ok((outflow?.factors.institutional_score ?? 0) <= -8);
   assert.equal(outflow?.factors.institutional_signal, "distribution");
 });
+
+test("calculateScore: Stable Pro 팩터(stable_turn/trust)가 산출된다", () => {
+  const result = calculateScore(buildSeries(), { vix: 18, fearGreed: 50, usdkrw: 1330 });
+  assert.ok(result);
+  assert.ok(result?.factors.stable_turn);
+  assert.ok(Number.isFinite(Number(result?.factors.stable_turn_trust ?? NaN)));
+  assert.ok(typeof result?.factors.stable_above_avg === "boolean");
+});

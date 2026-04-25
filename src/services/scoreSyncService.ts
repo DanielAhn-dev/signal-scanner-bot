@@ -54,9 +54,21 @@ function deriveLiquidityScore(volRatio?: number): number {
   return Math.round(clamp(raw, 0, 100));
 }
 
-function deriveSignalFromTotalScore(totalScore: number): ScoreUpsertRow["signal"] {
+function deriveSignalFromTotalScore(
+  totalScore: number,
+  factors?: Record<string, unknown>
+): ScoreUpsertRow["signal"] {
+  const stableTurn = String(factors?.stable_turn ?? "").trim().toLowerCase();
+  const stableTrust = Number(factors?.stable_turn_trust ?? 50);
+  const aboveAvg = Boolean(factors?.stable_above_avg ?? false);
+
+  if (stableTurn === "bear-strong") return "SELL";
+  if (stableTurn === "bull-strong" && totalScore >= 72) return "STRONG_BUY";
+  if (stableTurn === "bull-weak" && totalScore >= 66) return "BUY";
+
   if (totalScore >= 85) return "STRONG_BUY";
   if (totalScore >= 70) return "BUY";
+  if (stableTrust >= 68 && aboveAvg && totalScore >= 58) return "WATCH";
   if (totalScore >= 55) return "WATCH";
   if (totalScore <= 20) return "SELL";
   return "HOLD";
@@ -243,7 +255,10 @@ export async function syncScoresFromEngine(
         const momentumScore = deriveMomentumScore(scored.factors.rsi14, scored.factors.roc21);
         const liquidityScore = deriveLiquidityScore(scored.factors.vol_ratio);
         const valueScore = existingValueScoreByCode.get(code) ?? 50;
-        const signal = deriveSignalFromTotalScore(totalScore);
+        const signal = deriveSignalFromTotalScore(
+          totalScore,
+          scored.factors as unknown as Record<string, unknown>
+        );
 
         upsertRows.push({
           code,

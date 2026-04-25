@@ -140,6 +140,7 @@ type ScoreCandidateRow = {
   code: string;
   total_score: number | null;
   signal?: string | null;
+  factors?: Record<string, unknown> | null;
   stock: {
     code: string;
     name: string | null;
@@ -733,11 +734,13 @@ async function fetchLatestRankedRows(payload: {
     "code",
     "total_score",
     "signal",
+    "factors",
     "stock:stocks!inner(code, name, close, rsi14, liquidity, market, market_cap, universe_level)",
   ].join(",");
   const selectWithoutSignal = [
     "code",
     "total_score",
+    "factors",
     "stock:stocks!inner(code, name, close, rsi14, liquidity, market, market_cap, universe_level)",
   ].join(",");
 
@@ -774,6 +777,7 @@ async function fetchLatestRankedRows(payload: {
   for (const row of (data ?? []) as ScoreCandidateRow[]) {
     const stock = normalizeStock(row.stock);
     if (!stock) continue;
+    const rawFactors = (row.factors ?? {}) as Record<string, unknown>;
 
     rankedRows.push({
       code: row.code,
@@ -786,6 +790,16 @@ async function fetchLatestRankedRows(payload: {
       market: stock.market ?? null,
       marketCap: stock.marketCap ?? null,
       universeLevel: stock.universeLevel ?? null,
+      stableTurn: String(rawFactors.stable_turn ?? "").trim() || null,
+      stableTrust: Number.isFinite(Number(rawFactors.stable_turn_trust))
+        ? Number(rawFactors.stable_turn_trust)
+        : null,
+      stableAboveAvg: typeof rawFactors.stable_above_avg === "boolean"
+        ? rawFactors.stable_above_avg
+        : null,
+      stableAccumulation: typeof rawFactors.stable_accumulation === "boolean"
+        ? rawFactors.stable_accumulation
+        : null,
     });
   }
 
