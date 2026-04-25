@@ -138,8 +138,8 @@ async function detectWatchlistAnomalies(chatId: number): Promise<string[]> {
     .limit(40)
     .returns<WatchlistCandidateRow[]>();
 
-  const watchRows = data ?? [];
-  const codes = [...new Set(watchRows.map((row) => row.code).filter(Boolean))];
+  const watchRows: WatchlistCandidateRow[] = data ?? [];
+  const codes = [...new Set(watchRows.map((row: WatchlistCandidateRow) => row.code).filter((code): code is string => Boolean(code)))];
   if (!codes.length) return [];
 
   const [microByCode, realtimeMap] = await Promise.all([
@@ -148,7 +148,7 @@ async function detectWatchlistAnomalies(chatId: number): Promise<string[]> {
   ]);
 
   const hits = watchRows
-    .map((row) => {
+    .map((row: WatchlistCandidateRow) => {
       const code = row.code;
       const micro = microByCode.get(code);
       const valueRatio = Number(micro?.valueRatio ?? 0);
@@ -165,9 +165,9 @@ async function detectWatchlistAnomalies(chatId: number): Promise<string[]> {
       };
     })
     .filter((row): row is { severity: number; text: string } => Boolean(row))
-    .sort((a, b) => b.severity - a.severity)
+    .sort((a: { severity: number }, b: { severity: number }) => b.severity - a.severity)
     .slice(0, 5)
-    .map((row) => row.text);
+    .map((row: { text: string }) => row.text);
 
   return hits;
 }

@@ -11,6 +11,9 @@ type KRXRow = {
   업종?: string;
 };
 
+type ExistingSectorRow = { id: string; name: string | null; metrics: Record<string, unknown> | null };
+type ExistingStockRow = { code: string; name: string | null; sector_id: string | null };
+
 function pad6(s: string) {
   return (s || "").replace(/\D/g, "").padStart(6, "0");
 }
@@ -23,7 +26,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     const { data: sectors } = await supa.from("sectors").select("id,name,metrics");
 
-    const sectorRows = sectors ?? [];
+    const sectorRows: ExistingSectorRow[] = sectors ?? [];
 
     const sectorResolver = (industry: string | undefined) => {
       const s = (industry || "").trim();
@@ -46,13 +49,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       for (const [kw, target] of rules) {
         if (s.includes(kw)) {
           const found = sectorRows.find(
-            (x: any) => x.id === target || (x.name || "").includes(kw)
+            (x: ExistingSectorRow) => x.id === target || (x.name || "").includes(kw)
           );
           if (found) return found.id as string;
         }
       }
 
-      const byName = sectorRows.find((x: any) => (x.name || "").includes(s));
+      const byName = sectorRows.find((x: ExistingSectorRow) => (x.name || "").includes(s));
       return (byName?.id as string) || null;
     };
 
@@ -81,8 +84,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     const { data: existing } = await supa.from("stocks").select("code,name,sector_id");
 
-    const existingRows = existing ?? [];
-    const existByCode = new Map(existingRows.map((r: any) => [r.code, r]));
+    const existingRows: ExistingStockRow[] = existing ?? [];
+    const existByCode = new Map(existingRows.map((r: ExistingStockRow) => [r.code, r]));
 
     let inserted = 0;
     let updated = 0;

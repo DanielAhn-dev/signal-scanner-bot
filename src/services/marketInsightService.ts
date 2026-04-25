@@ -265,6 +265,17 @@ type PickCandidate = {
   valueTraded: number;
 };
 
+type MarketPickCandidate = PickCandidate & {
+  marketCap: number;
+  liquidity: number;
+  universeLevel: string | null;
+  total_score: number;
+  momentum_score: number;
+  value_score: number;
+  universe_level: string | null;
+  market_cap: number;
+};
+
 type PullbackRow = {
   code: string;
   entry_grade: "A" | "B" | "C" | "D";
@@ -851,7 +862,7 @@ async function getDailyRealizedPnlForPlan(
     throw new Error(`당일 손익 조회 실패: ${error.message}`);
   }
 
-  return (data ?? []).reduce((sum, row: any) => {
+  return (data ?? []).reduce((sum: number, row: { pnl_amount?: number | null }) => {
     const pnl = Number(row?.pnl_amount ?? 0);
     return Number.isFinite(pnl) ? sum + pnl : sum;
   }, 0);
@@ -1095,8 +1106,8 @@ async function fetchMarketPickCandidatesForDailyPlan(
     fetchIndicatorsByCodesForDailyCandidates(supabase, codes),
   ]);
 
-  const ranked = rows
-    .map((row) => {
+  const ranked: MarketPickCandidate[] = rows
+    .map((row: StockRow) => {
       const indicator = indicatorMap.get(row.code);
       const latestScore = scoreResult.byCode.get(row.code);
       const price = Number(indicator?.close ?? row.close ?? 0);
@@ -1161,14 +1172,19 @@ async function fetchMarketPickCandidatesForDailyPlan(
         marketCap: Number(row.market_cap ?? 0),
         liquidity: Number(row.liquidity ?? 0),
         universeLevel: row.universe_level,
+        total_score: totalScore,
+        momentum_score: momentumScore,
+        value_score: valueScore,
+        universe_level: row.universe_level,
+        market_cap: Number(row.market_cap ?? 0),
       };
     })
-    .filter((row) => row.price > 0)
-    .filter((row) => row.valueTraded >= marketPolicy.minLiquidity);
+    .filter((row: MarketPickCandidate) => row.price > 0)
+    .filter((row: MarketPickCandidate) => row.valueTraded >= marketPolicy.minLiquidity);
 
   const largeCapFloor = marketPolicy.requireLargeCapKospi
     ? computeDynamicLargeCapFloor(
-        ranked.map((row) => ({
+        ranked.map((row: MarketPickCandidate) => ({
           code: row.code,
           close: row.price,
           score: row.score,
@@ -1182,14 +1198,14 @@ async function fetchMarketPickCandidatesForDailyPlan(
       )
     : 0;
 
-  const filtered = ranked.filter((row) => {
+  const filtered = ranked.filter((row: MarketPickCandidate) => {
     if (market === "KOSPI" && marketPolicy.requireLargeCapKospi) {
       return row.marketCap >= Math.max(marketPolicy.minMarketCap, largeCapFloor);
     }
     return true;
   });
 
-  return pickSaferCandidates(filtered, 5, riskProfile).sort((a, b) => b.score - a.score);
+  return pickSaferCandidates<MarketPickCandidate>(filtered, 5, riskProfile).sort((a, b) => b.score - a.score);
 }
 
 async function fetchPullbackCandidatesForDailyPlan(

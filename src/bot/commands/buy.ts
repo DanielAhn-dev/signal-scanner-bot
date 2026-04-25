@@ -69,7 +69,7 @@ async function getDailyRealizedPnl(chatId: number): Promise<number> {
     return 0;
   }
 
-  return (data ?? []).reduce((sum, row: any) => {
+  return (data ?? []).reduce((sum: number, row: { pnl_amount?: number | null }) => {
     const pnl = Number(row?.pnl_amount ?? 0);
     return Number.isFinite(pnl) ? sum + pnl : sum;
   }, 0);
