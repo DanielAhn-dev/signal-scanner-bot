@@ -10,6 +10,7 @@ import {
 } from "../../services/weeklyReportService";
 import {
   createDailyCandidatePlanningReportResult,
+  type DailyCandidateForecast,
   type DailyCandidatePlanningReportResult,
 } from "../../services/marketInsightService";
 import { summarizeWindow, type TradeRow } from "../../services/weeklyReportData";
@@ -498,7 +499,7 @@ async function handleDailyCandidateReportCommand(
   }
 }
 
-function buildPublicDailyCandidateText(rawText: string): string {
+export function buildPublicDailyCandidateText(rawText: string): string {
   const lines = String(rawText || "").split("\n");
   const hiddenSections = new Set(["<b>자금·리스크 상태</b>", "<b>분산 경고</b>"]);
   const sanitized: string[] = [];
@@ -723,7 +724,94 @@ function getCandidateHeaderHighlight(line: string): { fill: RGB; text: RGB } {
   return { fill: rgb(0.95, 0.95, 0.97), text: rgb(0.12, 0.12, 0.16) };
 }
 
-async function createDailyCandidateReportPdf(
+function drawDailyForecastSection(ctx: ReportContext, forecasts: DailyCandidateForecast[]) {
+  if (!forecasts.length) return;
+
+  const sectionTitleSize = 10;
+  const bodySize = 8;
+  const bodyLineHeight = Math.round(bodySize * 1.45);
+
+  ctx.ensureSpace(28);
+  const titleCount = ctx.textBold("예측 시나리오 (백테스트 아님)", ctx.ML, ctx.y, sectionTitleSize, rgb(0.10, 0.28, 0.52), ctx.BODY_W);
+  ctx.y -= titleCount * Math.round(sectionTitleSize * 1.45) + 4;
+  const noteCount = ctx.textLight(
+    "과거 유사 구간의 점수·추세·리스크 패턴을 이용한 추정입니다. 실제 손익은 체결/슬리피지/장세 변화에 따라 달라질 수 있습니다.",
+    ctx.ML,
+    ctx.y,
+    bodySize,
+    rgb(0.36, 0.36, 0.42),
+    ctx.BODY_W
+  );
+  ctx.y -= noteCount * bodyLineHeight + 8;
+
+  for (const [index, item] of forecasts.slice(0, 3).entries()) {
+    const cardHeight = 86;
+    ctx.ensureSpace(cardHeight + 10);
+
+    const topY = ctx.y;
+    const cardY = topY - cardHeight;
+    ctx.rect(ctx.ML, cardY, ctx.BODY_W, cardHeight, rgb(0.96, 0.97, 0.99));
+    ctx.rect(ctx.ML, cardY, 4, cardHeight, index === 0 ? rgb(0.78, 0.27, 0.27) : rgb(0.26, 0.44, 0.70));
+
+    const header = `${index + 1}. ${item.name} (${item.code}) · ${item.strategyLabel}`;
+    ctx.textBold(header, ctx.ML + 10, topY - 8, 9, rgb(0.13, 0.13, 0.18), ctx.BODY_W - 20);
+    ctx.text(
+      `기준가 ${Math.round(item.entryPrice).toLocaleString("ko-KR")}원 · 권장수량 ${item.suggestedQuantity > 0 ? `${item.suggestedQuantity}주` : "수량 산출 불가"}`,
+      ctx.ML + 10,
+      topY - 20,
+      bodySize,
+      rgb(0.18, 0.18, 0.24),
+      ctx.BODY_W - 20
+    );
+    ctx.text(
+      `예상손실 -${item.expectedDrawdownPct.toFixed(1)}% · 기준 +${item.expectedBasePct.toFixed(1)}% · 상단 +${item.expectedUpsidePct.toFixed(1)}% · 신뢰 ${item.confidencePct.toFixed(1)}%`,
+      ctx.ML + 10,
+      topY - 31,
+      bodySize,
+      rgb(0.18, 0.18, 0.24),
+      ctx.BODY_W - 20
+    );
+
+    const chartAreaW = ctx.BODY_W - 20;
+    const chartW = Math.max(140, Math.round(chartAreaW * 0.68));
+    const chartX = ctx.ML + 10 + Math.round((chartAreaW - chartW) / 2);
+    const chartY = topY - 76;
+    const chartH = 34;
+    const values = item.scenarioPathPct.length ? item.scenarioPathPct : [0, -1.5, -3.2, -0.9, 2.4, item.expectedBasePct];
+    const maxVal = Math.max(1, ...values, item.expectedUpsidePct);
+    const minVal = Math.min(-1, ...values, -item.expectedDrawdownPct);
+    const span = Math.max(1, maxVal - minVal);
+
+    const zeroY = chartY + ((0 - minVal) / span) * chartH;
+    ctx.line(chartX, zeroY, chartX + chartW, zeroY, rgb(0.78, 0.80, 0.85), 0.7);
+    ctx.line(chartX, chartY, chartX, chartY + chartH, rgb(0.82, 0.84, 0.88), 0.7);
+
+    const points = values.map((value, valueIndex) => {
+      const x = chartX + (chartW * valueIndex) / Math.max(1, values.length - 1);
+      const y = chartY + ((value - minVal) / span) * chartH;
+      return { x, y };
+    });
+
+    for (let i = 1; i < points.length; i += 1) {
+      ctx.line(
+        points[i - 1].x,
+        points[i - 1].y,
+        points[i].x,
+        points[i].y,
+        rgb(0.18, 0.46, 0.79),
+        1.6
+      );
+    }
+
+    const last = points[points.length - 1];
+    ctx.rect(last.x - 1.8, last.y - 1.8, 3.6, 3.6, rgb(0.14, 0.38, 0.70));
+    ctx.textLight("손익% 경로", chartX + chartW - 48, chartY - 1, 6.8, rgb(0.40, 0.42, 0.48));
+
+    ctx.y -= cardHeight + 8;
+  }
+}
+
+export async function createDailyCandidateReportPdf(
   chatId: number,
   report: DailyCandidatePlanningReportResult,
   options?: {
@@ -766,6 +854,8 @@ async function createDailyCandidateReportPdf(
     title,
     subtitle
   );
+
+  drawDailyForecastSection(ctx, report.forecasts ?? []);
 
   const rawLines = String(report.text ?? "").split("\n");
   const sectionFontSize = 10;
