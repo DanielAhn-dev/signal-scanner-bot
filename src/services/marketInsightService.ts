@@ -305,6 +305,7 @@ type PlanningConstraints = {
   blockedNewEntry: boolean;
   deployableCash: number;
   availableCash: number;
+  seedCapital: number;
   holdingCount: number;
   dayLossReached: boolean;
   statusLines: string[];
@@ -335,10 +336,15 @@ export type DailyCandidateForecast = {
   expectedUpsidePct: number;
   expectedDrawdownPct: number;
   confidencePct: number;
-  scenarioPathPct: number[];
+  scoreComponents: {
+    momentum: number; // 0-100
+    value: number;    // 0-100
+    safety: number;   // 0-100
+  };
 };
 
 const DEFAULT_DAILY_LOSS_LIMIT_PCT = 5;
+const DEFAULT_FORECAST_BASE_CAPITAL = 10_000_000;
 
 function clampDailyCandidateValue(value: number, min: number, max: number): number {
   if (!Number.isFinite(value)) return min;
@@ -368,25 +374,10 @@ function round1(value: number): number {
   return Math.round(value * 10) / 10;
 }
 
-function buildScenarioPathPct(input: {
-  expectedDrawdownPct: number;
-  expectedBasePct: number;
-}): number[] {
-  const down = Math.max(0.8, input.expectedDrawdownPct);
-  const base = input.expectedBasePct;
-  return [
-    0,
-    -Math.max(0.4, down * 0.45),
-    -down,
-    -Math.max(0.2, down * 0.35),
-    Math.max(0.2, base * 0.55),
-    base,
-  ].map(round1);
-}
-
 function estimateForecastFromMarketPick(input: {
   pick: PickCandidate;
   budgetPerCandidate: number;
+  sizingBaseCapital: number;
 }): DailyCandidateForecast {
   const scoreStrength = clampDailyCandidateValue((input.pick.score - 55) / 35, 0, 1);
   const rsiRisk = clampDailyCandidateValue(Math.abs(input.pick.rsi14 - 55) / 30, 0, 1);
@@ -398,9 +389,11 @@ function estimateForecastFromMarketPick(input: {
   const expectedDrawdownPct = round1(clampDailyCandidateValue(2.2 + (1 - strength) * 4.2 + rsiRisk * 2.1, 1.2, 11));
   const confidencePct = round1(clampDailyCandidateValue(52 + strength * 34 - rsiRisk * 14, 35, 92));
 
-  const quantity = input.pick.price > 0
-    ? Math.max(0, Math.floor(Math.max(0, input.budgetPerCandidate) / input.pick.price))
-    : 0;
+  const quantity = resolveSuggestedQuantity({
+    entryPrice: input.pick.price,
+    budgetPerCandidate: input.budgetPerCandidate,
+    sizingBaseCapital: input.sizingBaseCapital,
+  });
 
   return {
     code: input.pick.code,
@@ -417,16 +410,18 @@ function estimateForecastFromMarketPick(input: {
     expectedUpsidePct,
     expectedDrawdownPct,
     confidencePct,
-    scenarioPathPct: buildScenarioPathPct({
-      expectedDrawdownPct,
-      expectedBasePct,
-    }),
+    scoreComponents: {
+      momentum: round1(clampDailyCandidateValue(input.pick.momentumScore ?? 50, 0, 100)),
+      value: round1(clampDailyCandidateValue(input.pick.valueScore ?? 50, 0, 100)),
+      safety: round1(clampDailyCandidateValue(input.pick.safetyScore ?? 50, 0, 100)),
+    },
   };
 }
 
 function estimateForecastFromPullback(input: {
   item: PullbackRow;
   budgetPerCandidate: number;
+  sizingBaseCapital: number;
 }): DailyCandidateForecast {
   const price = Number(input.item.stock?.close ?? 0);
   const entryScore = Number(input.item.entry_score ?? 0);
@@ -438,9 +433,14 @@ function estimateForecastFromPullback(input: {
   const expectedDrawdownPct = round1(clampDailyCandidateValue(2.8 + (1 - strength) * 3.9 + warnScore * 0.15, 1.2, 10));
   const confidencePct = round1(clampDailyCandidateValue(48 + strength * 30 - warnScore * 1.8, 32, 88));
 
-  const quantity = price > 0
-    ? Math.max(0, Math.floor(Math.max(0, input.budgetPerCandidate) / price))
-    : 0;
+  const quantity = resolveSuggestedQuantity({
+    entryPrice: price,
+    budgetPerCandidate: input.budgetPerCandidate,
+    sizingBaseCapital: input.sizingBaseCapital,
+  });
+
+  const safetyFromWarn = round1(clampDailyCandidateValue((5 - warnScore) / 5 * 100, 0, 100));
+  const momentumFromEntry = round1(clampDailyCandidateValue(entryScore / 5 * 100, 0, 100));
 
   return {
     code: input.item.code,
@@ -452,11 +452,44 @@ function estimateForecastFromPullback(input: {
     expectedUpsidePct,
     expectedDrawdownPct,
     confidencePct,
-    scenarioPathPct: buildScenarioPathPct({
-      expectedDrawdownPct,
-      expectedBasePct,
-    }),
+    scoreComponents: {
+      momentum: momentumFromEntry,
+      value: round1(clampDailyCandidateValue((momentumFromEntry + safetyFromWarn) / 2, 0, 100)),
+      safety: safetyFromWarn,
+    },
   };
+}
+
+function resolveSizingBaseCapital(input: {
+  deployableCash?: number;
+  availableCash?: number;
+  seedCapital?: number;
+}): number {
+  const deployableCash = Math.max(0, Number(input.deployableCash ?? 0));
+  const availableCash = Math.max(0, Number(input.availableCash ?? 0));
+  const seedCapital = Math.max(0, Number(input.seedCapital ?? 0));
+
+  if (deployableCash > 0) return deployableCash;
+  if (availableCash > 0) return availableCash;
+  if (seedCapital > 0) return seedCapital;
+  return DEFAULT_FORECAST_BASE_CAPITAL;
+}
+
+function resolveSuggestedQuantity(input: {
+  entryPrice: number;
+  budgetPerCandidate: number;
+  sizingBaseCapital: number;
+}): number {
+  const price = Math.max(0, Number(input.entryPrice ?? 0));
+  const budget = Math.max(0, Number(input.budgetPerCandidate ?? 0));
+  const base = Math.max(0, Number(input.sizingBaseCapital ?? 0));
+  if (!(price > 0)) return 0;
+
+  const quantityByBudget = Math.floor(budget / price);
+  if (quantityByBudget >= 1) return quantityByBudget;
+
+  // 종목당 예산은 부족해도, 전체 기준금액에서 1주 매수가 가능하면 최소 1주를 제시한다.
+  return base >= price ? 1 : 0;
 }
 
 function buildDailyCandidateForecasts(input: {
@@ -466,10 +499,15 @@ function buildDailyCandidateForecasts(input: {
   topAnalyzeCodes: string[];
   displayLimit: number;
   deployableCash?: number;
+  availableCash?: number;
+  seedCapital?: number;
 }): DailyCandidateForecast[] {
-  const budgetPerCandidate =
-    (Number(input.deployableCash ?? 0) > 0 ? Number(input.deployableCash ?? 0) : 0) /
-    Math.max(1, input.displayLimit);
+  const sizingBaseCapital = resolveSizingBaseCapital({
+    deployableCash: input.deployableCash,
+    availableCash: input.availableCash,
+    seedCapital: input.seedCapital,
+  });
+  const budgetPerCandidate = sizingBaseCapital / Math.max(1, input.displayLimit);
 
   const pullbackByCode = new Map(input.pullbackItems.map((item) => [item.code, item]));
   const marketByCode = new Map(
@@ -495,6 +533,7 @@ function buildDailyCandidateForecasts(input: {
         estimateForecastFromPullback({
           item: pullback,
           budgetPerCandidate,
+          sizingBaseCapital,
         })
       );
     } else {
@@ -504,6 +543,7 @@ function buildDailyCandidateForecasts(input: {
         estimateForecastFromMarketPick({
           pick,
           budgetPerCandidate,
+          sizingBaseCapital,
         })
       );
     }
@@ -925,6 +965,7 @@ async function resolvePlanningConstraints(
     blockedNewEntry: dayLossReached,
     deployableCash,
     availableCash,
+    seedCapital,
     holdingCount,
     dayLossReached,
     statusLines,
@@ -1338,6 +1379,8 @@ export async function createDailyCandidatePlanningReportResult(
     topAnalyzeCodes,
     displayLimit,
     deployableCash: planningConstraints?.deployableCash,
+    availableCash: planningConstraints?.availableCash,
+    seedCapital: planningConstraints?.seedCapital,
   });
   const forecastLines = forecasts.length
     ? [
@@ -1438,9 +1481,9 @@ export async function createDailyCandidatePlanningReportResult(
     ...focusLines.map((line) => `• ${line}`),
     "",
     `<b>주목도 표시</b>`,
-    "• 🟥 상: 오늘 바로 다시 볼 핵심 후보",
-    "• 🟩 중: 장중 추적할 후보",
-    "• 🟦 하: 후보군 유지용 체크",
+    "• 🟥 상:오늘 바로 다시 볼 핵심 후보",
+    "• 🟩 중:장중 추적할 후보",
+    "• 🟦 하:후보군 유지용 체크",
     ...(planningConstraints?.statusLines.length
       ? ["", `<b>자금·리스크 상태</b>`, ...planningConstraints.statusLines.map((line) => `• ${line}`)]
       : []),
