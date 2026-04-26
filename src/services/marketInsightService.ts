@@ -1098,9 +1098,9 @@ async function fetchMarketPickCandidatesForDailyPlan(
   const rows = stocks ?? [];
   const sectorNameMap = await fetchSectorNameMap(
     supabase,
-    rows.map((row) => row.sector_id)
+    rows.map((row: StockRow) => row.sector_id)
   );
-  const codes = rows.map((row) => row.code);
+  const codes = rows.map((row: StockRow) => row.code);
   const [scoreResult, indicatorMap] = await Promise.all([
     fetchLatestScoresByCodes(supabase, codes),
     fetchIndicatorsByCodesForDailyCandidates(supabase, codes),

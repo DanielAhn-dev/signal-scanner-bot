@@ -818,7 +818,7 @@ export async function createWeeklyReportPdf(
       })
     : new Map<string, string>();
 
-  const rows = tradeRows.map((row) => ({
+  const rows = tradeRows.map((row: TradeRow) => ({
     ...row,
     name: stockNameMap.get(row.code) ?? row.name ?? row.code,
   }));

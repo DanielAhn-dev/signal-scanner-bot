@@ -679,7 +679,7 @@ async function fetchBottomTurnaroundCandidates(
   const byCode = scoreResult.byCode;
 
   const candidates = lowRsiStocks
-    .map((stock) => {
+    .map((stock: Pick<StockRow, "code" | "name" | "market" | "close" | "liquidity" | "rsi14" | "universe_level">) => {
       const score = byCode.get(stock.code);
       const factors = (score?.factors ?? {}) as Json;
 
