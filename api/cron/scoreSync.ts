@@ -1,7 +1,7 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { createClient } from "@supabase/supabase-js";
 import { syncScoresFromEngine } from "../../src/services/scoreSyncService";
-import { parsePositiveInt } from "./query";
+import { parsePositiveInt } from "../../src/server/cronQuery";
 
 const CRON_SECRET = process.env.CRON_SECRET;
 const SUPABASE_URL = process.env.SUPABASE_URL;

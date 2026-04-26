@@ -73,6 +73,11 @@ curl -H "Authorization: Bearer $CRON_SECRET" "https://signal-scanner-bot.vercel.
 
 자동 크론은 장전/야간 핵심 작업만 수행하고, 장중/튜닝은 필요할 때 수동 트리거로 실행합니다.
 
+Hobby 플랜 제한으로 배포 크론은 일 1회(UTC 23:00)로 동작합니다.
+- 이 1회 실행에서 `scoreSync -> briefing -> virtualAutoTrade -> strategyGateRefresh`를 순차 실행
+- 금요일(UTC 기준)에는 `report`까지 추가 실행
+- 장중 대응은 `/자동트리거 장중` 또는 장중 트리거 버튼으로 수동 실행
+
 ```bash
 pnpm cron:trigger:intraday
 pnpm cron:trigger:gate
@@ -106,6 +111,10 @@ pnpm cron:trigger -- --task briefing
 - `TELEGRAM_OPS_CHAT_IDS`: 운영 채팅 ID 목록
 
 위 값 중 하나라도 설정되면 허용된 사용자/채팅만 명령·버튼이 실행됩니다.
+
+추가 운영 옵션:
+- `CRON_HOBBY_DAILY_MODE` (기본 true): 일 1회 번들 실행 모드
+- `CRON_GATE_NOTIFY` (기본 true): 전략 게이트 상태 변경 시 운영 채팅 알림
 
 - `cron:trigger:intraday`: 장중 10분 자동사이클과 동일한 경로를 1회 실행
 - `cron:trigger:gate`: 전략 게이트 리프레시 + 설정 자동 튜닝 1회 실행

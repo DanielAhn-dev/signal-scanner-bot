@@ -4,6 +4,8 @@ import { createClient } from "@supabase/supabase-js";
 const CRON_SECRET = process.env.CRON_SECRET;
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
+const CRON_HOBBY_DAILY_MODE =
+  String(process.env.CRON_HOBBY_DAILY_MODE ?? "true").toLowerCase() !== "false";
 
 type CronTaskName =
   | "scoreSync"
@@ -51,6 +53,25 @@ function utcNowParts(date: Date): { dow: number; hour: number; minute: number } 
 
 function resolveDueTasks(now = new Date()): DueTask[] {
   const { dow, hour, minute } = utcNowParts(now);
+
+  if (CRON_HOBBY_DAILY_MODE) {
+    if (hour !== 23 || minute !== 0) return [];
+
+    const dailyTasks: DueTask[] = [
+      { name: "scoreSync", path: TASK_PATHS.scoreSync },
+      { name: "briefing", path: TASK_PATHS.briefing },
+      { name: "virtualAutoTrade", path: TASK_PATHS.virtualAutoTrade },
+      { name: "strategyGateRefresh", path: TASK_PATHS.strategyGateRefresh },
+    ];
+
+    // 주간 리포트는 금요일만 실행
+    if (dow === 5) {
+      dailyTasks.push({ name: "report", path: TASK_PATHS.report });
+    }
+
+    return dailyTasks;
+  }
+
   const tasks: DueTask[] = [];
 
   // scoreSync: 40 6 * * 1-5

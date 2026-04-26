@@ -6,12 +6,15 @@ import {
   upsertStrategyGateState,
   type StrategyGateMetrics,
 } from "../../src/services/strategyGateStateService";
+import { sendMessage } from "../../src/telegram/api";
 
 const CRON_SECRET = process.env.CRON_SECRET;
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 const AUTO_TRADE_STRATEGY_ID = "core.autotrade.v1";
 const AUTO_TUNE_ENABLED = String(process.env.CRON_AUTO_TUNE ?? "true").toLowerCase() !== "false";
+const AUTO_TRADE_ALERT_CHAT_ID = Number(process.env.AUTO_TRADE_ALERT_CHAT_ID || "0");
+const GATE_NOTIFY_ENABLED = String(process.env.CRON_GATE_NOTIFY ?? "true").toLowerCase() !== "false";
 
 export const config = {
   maxDuration: 60,
@@ -29,6 +32,11 @@ type SellRow = {
   chat_id: number;
   pnl_amount?: number | null;
   memo?: string | null;
+};
+
+type PreviousGateStateRow = {
+  chat_id: number;
+  gate_status: "promote" | "hold" | "watch" | "pause";
 };
 
 function toNumber(value: unknown, fallback = 0): number {
@@ -170,6 +178,22 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       throw new Error(`sell rows fetch failed: ${sellError.message}`);
     }
 
+    const { data: previousGateStates, error: previousGateError } = await supabase
+      .from("virtual_strategy_gate_states")
+      .select("chat_id, gate_status")
+      .eq("strategy_id", AUTO_TRADE_STRATEGY_ID)
+      .in("chat_id", chatIds)
+      .returns<PreviousGateStateRow[]>();
+
+    if (previousGateError) {
+      throw new Error(`previous gate fetch failed: ${previousGateError.message}`);
+    }
+
+    const previousByChat = new Map<number, PreviousGateStateRow["gate_status"]>();
+    for (const row of previousGateStates ?? []) {
+      previousByChat.set(Number(row.chat_id), row.gate_status);
+    }
+
     const byChat = new Map<number, SellRow[]>();
     for (const row of sellRows ?? []) {
       const chatId = Number(row.chat_id);
@@ -179,6 +203,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     let refreshed = 0;
     let tuned = 0;
+    const transitions: Array<{ chatId: number; from: string; to: string; sellCount: number; pf: number | null; winRate: number }> = [];
 
     for (const row of settingRows) {
       const chatId = Number(row.chat_id);
@@ -198,6 +223,18 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         },
       });
       refreshed += 1;
+
+      const previous = previousByChat.get(chatId);
+      if (previous && previous !== status) {
+        transitions.push({
+          chatId,
+          from: previous,
+          to: status,
+          sellCount: metrics.sellCount,
+          pf: metrics.profitFactor,
+          winRate: metrics.winRate,
+        });
+      }
 
       if (AUTO_TUNE_ENABLED) {
         const patch = resolveAdaptiveSettingPatch({ status, setting: row });
@@ -228,11 +265,27 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       }
     }
 
+    if (GATE_NOTIFY_ENABLED && AUTO_TRADE_ALERT_CHAT_ID > 0 && transitions.length > 0) {
+      const lines = transitions.slice(0, 30).map((item) => {
+        const pfText = item.pf == null ? "n/a" : item.pf.toFixed(2);
+        return `- ${item.chatId}: ${item.from} -> ${item.to} (sell=${item.sellCount}, win=${item.winRate.toFixed(1)}%, pf=${pfText})`;
+      });
+
+      const text = [
+        "[전략 게이트 변경 알림]",
+        `변경 수: ${transitions.length}`,
+        ...lines,
+      ].join("\n");
+
+      await sendMessage(AUTO_TRADE_ALERT_CHAT_ID, text);
+    }
+
     return res.status(200).json({
       ok: true,
       total: settingRows.length,
       refreshed,
       tuned,
+      transitions: transitions.length,
       autoTuneEnabled: AUTO_TUNE_ENABLED,
     });
   } catch (error: any) {

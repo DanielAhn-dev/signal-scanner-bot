@@ -2,7 +2,7 @@ import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { buildAutoTradeCronAlertMessage } from "../../src/services/virtualAutoTradeCronAlert";
 import { runVirtualAutoTradingCycle } from "../../src/services/virtualAutoTradeService";
 import { sendMessage } from "../../src/telegram/api";
-import { firstQueryValue, parseBoolean, parsePositiveInt } from "./query";
+import { firstQueryValue, parseBoolean, parsePositiveInt } from "../../src/server/cronQuery";
 
 const CRON_SECRET = process.env.CRON_SECRET;
 const AUTO_TRADE_ALERT_CHAT_ID = Number(process.env.AUTO_TRADE_ALERT_CHAT_ID || "0");

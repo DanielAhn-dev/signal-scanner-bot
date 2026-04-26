@@ -187,56 +187,56 @@ export function buildFailureMessage(input: {
       ].join("\n");
 }
 
-  export function buildWorkerMetricKey(input: {
-    event: "command_start" | "command_done" | "command_failed_notify";
-    category: CommandCategory;
-    context: "message" | "callback";
-    isTimeout?: boolean;
-  }): string {
-    const timeoutSuffix = input.isTimeout ? ".timeout" : "";
-    return `worker.${input.event}.${input.context}.${input.category}${timeoutSuffix}`;
+export function buildWorkerMetricKey(input: {
+  event: "command_start" | "command_done" | "command_failed_notify";
+  category: CommandCategory;
+  context: "message" | "callback";
+  isTimeout?: boolean;
+}): string {
+  const timeoutSuffix = input.isTimeout ? ".timeout" : "";
+  return `worker.${input.event}.${input.context}.${input.category}${timeoutSuffix}`;
+}
+
+export type FailureAlertConfig = {
+  threshold: number;
+  windowMs: number;
+  cooldownMs: number;
+};
+
+export type FailureAlertState = {
+  count: number;
+  windowStartedAtMs: number;
+  lastAlertAtMs?: number;
+};
+
+export function evaluateTimeoutFailureAlert(input: {
+  isTimeout: boolean;
+  nowMs: number;
+  state?: FailureAlertState;
+  config: FailureAlertConfig;
+}): { shouldAlert: boolean; nextState?: FailureAlertState } {
+  const { isTimeout, nowMs, state, config } = input;
+  if (!isTimeout) return { shouldAlert: false, nextState: state };
+
+  const threshold = Math.max(1, Math.floor(config.threshold));
+  const windowMs = Math.max(1, Math.floor(config.windowMs));
+  const cooldownMs = Math.max(0, Math.floor(config.cooldownMs));
+
+  const base: FailureAlertState = state
+    ? { ...state }
+    : { count: 0, windowStartedAtMs: nowMs };
+
+  if (nowMs - base.windowStartedAtMs > windowMs) {
+    base.count = 1;
+    base.windowStartedAtMs = nowMs;
+  } else {
+    base.count += 1;
   }
 
-  export type FailureAlertConfig = {
-    threshold: number;
-    windowMs: number;
-    cooldownMs: number;
-  };
+  const cooldownPassed =
+    base.lastAlertAtMs == null || nowMs - base.lastAlertAtMs >= cooldownMs;
+  const shouldAlert = base.count >= threshold && cooldownPassed;
+  if (shouldAlert) base.lastAlertAtMs = nowMs;
 
-  export type FailureAlertState = {
-    count: number;
-    windowStartedAtMs: number;
-    lastAlertAtMs?: number;
-  };
-
-  export function evaluateTimeoutFailureAlert(input: {
-    isTimeout: boolean;
-    nowMs: number;
-    state?: FailureAlertState;
-    config: FailureAlertConfig;
-  }): { shouldAlert: boolean; nextState?: FailureAlertState } {
-    const { isTimeout, nowMs, state, config } = input;
-    if (!isTimeout) return { shouldAlert: false, nextState: state };
-
-    const threshold = Math.max(1, Math.floor(config.threshold));
-    const windowMs = Math.max(1, Math.floor(config.windowMs));
-    const cooldownMs = Math.max(0, Math.floor(config.cooldownMs));
-
-    const base: FailureAlertState = state
-      ? { ...state }
-      : { count: 0, windowStartedAtMs: nowMs };
-
-    if (nowMs - base.windowStartedAtMs > windowMs) {
-      base.count = 1;
-      base.windowStartedAtMs = nowMs;
-    } else {
-      base.count += 1;
-    }
-
-    const cooldownPassed =
-      base.lastAlertAtMs == null || nowMs - base.lastAlertAtMs >= cooldownMs;
-    const shouldAlert = base.count >= threshold && cooldownPassed;
-    if (shouldAlert) base.lastAlertAtMs = nowMs;
-
-    return { shouldAlert, nextState: base };
-  }
+  return { shouldAlert, nextState: base };
+}
