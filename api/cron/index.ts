@@ -119,6 +119,32 @@ function resolveDueTasks(now = new Date()): DueTask[] {
   return tasks;
 }
 
+function firstQueryValue(value: string | string[] | undefined): string | null {
+  if (Array.isArray(value)) {
+    const first = value[0];
+    return typeof first === "string" ? first : null;
+  }
+  return typeof value === "string" ? value : null;
+}
+
+function buildForcedTaskPath(
+  basePath: string,
+  query: VercelRequest["query"]
+): string {
+  const [pathOnly, existingQuery = ""] = basePath.split("?");
+  const params = new URLSearchParams(existingQuery);
+  const forwardKeys = ["limit", "concurrency", "asof", "maxUsers", "windowMinutes", "intradayOnly", "dryRun", "mode", "type"];
+
+  for (const key of forwardKeys) {
+    const value = firstQueryValue(query[key]);
+    if (value == null || value.trim() === "") continue;
+    params.set(key, value);
+  }
+
+  const queryString = params.toString();
+  return queryString ? `${pathOnly}?${queryString}` : pathOnly;
+}
+
 async function claimTaskExecution(input: {
   supabase: any;
   taskName: string;
@@ -250,7 +276,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const dueTasks = forceTask
       ? [forceTask]
           .filter((task): task is CronTaskName => task in TASK_PATHS)
-          .map((task) => ({ name: task, path: TASK_PATHS[task] }))
+          .map((task) => ({
+            name: task,
+            path: buildForcedTaskPath(TASK_PATHS[task], req.query),
+          }))
       : resolveDueTasks(new Date());
 
     if (!dueTasks.length) {

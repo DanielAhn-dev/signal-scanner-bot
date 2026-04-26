@@ -19,6 +19,26 @@ type TriggerPlan = {
   tasks: ResolvedTask[];
 };
 
+function toPositiveInt(value: string | undefined, fallback: number): number {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return fallback;
+  const integer = Math.floor(parsed);
+  return integer > 0 ? integer : fallback;
+}
+
+const OPS_TRIGGER_TASK_TIMEOUT_MS = toPositiveInt(
+  process.env.OPS_TRIGGER_TASK_TIMEOUT_MS,
+  45000
+);
+const OPS_TRIGGER_SCORE_SYNC_LIMIT = toPositiveInt(
+  process.env.OPS_TRIGGER_SCORE_SYNC_LIMIT,
+  600
+);
+const OPS_TRIGGER_SCORE_SYNC_CONCURRENCY = toPositiveInt(
+  process.env.OPS_TRIGGER_SCORE_SYNC_CONCURRENCY,
+  8
+);
+
 function parseOpsChatIds(): Set<number> {
   const ids = new Set<number>();
   const raw = String(process.env.TELEGRAM_OPS_CHAT_IDS ?? "");
@@ -231,20 +251,48 @@ async function executeTriggerTask(
   cronSecret: string,
   step: ResolvedTask
 ): Promise<{ label: string; status: number; ok: boolean; body: string }> {
-  const response = await fetch(`${baseUrl}/api/cron?task=${step.task}`, {
-    method: "GET",
-    headers: {
-      authorization: `Bearer ${cronSecret}`,
-      "x-ops-trigger": "telegram",
-    },
-  });
-  const bodyText = await response.text();
-  return {
-    label: step.label,
-    status: response.status,
-    ok: response.ok,
-    body: bodyText,
-  };
+  const url = new URL(`${baseUrl}/api/cron`);
+  url.searchParams.set("task", step.task);
+
+  if (step.task === "scoreSync") {
+    url.searchParams.set("limit", String(OPS_TRIGGER_SCORE_SYNC_LIMIT));
+    url.searchParams.set("concurrency", String(OPS_TRIGGER_SCORE_SYNC_CONCURRENCY));
+  }
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), OPS_TRIGGER_TASK_TIMEOUT_MS);
+
+  try {
+    const response = await fetch(url.toString(), {
+      method: "GET",
+      headers: {
+        authorization: `Bearer ${cronSecret}`,
+        "x-ops-trigger": "telegram",
+      },
+      signal: controller.signal,
+    });
+    const bodyText = await response.text();
+    return {
+      label: step.label,
+      status: response.status,
+      ok: response.ok,
+      body: bodyText,
+    };
+  } catch (error: unknown) {
+    const isAbort = error instanceof Error && error.name === "AbortError";
+    return {
+      label: step.label,
+      status: isAbort ? 504 : 500,
+      ok: false,
+      body: isAbort
+        ? `ops trigger timeout (${OPS_TRIGGER_TASK_TIMEOUT_MS}ms)`
+        : error instanceof Error
+        ? error.message
+        : String(error),
+    };
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 export async function handleOpsTriggerCommand(
@@ -308,7 +356,9 @@ export async function handleOpsTriggerCommand(
         ? await Promise.all(
             plan.tasks.map((step) => executeTriggerTask(baseUrl, cronSecret, step))
           )
-        : await plan.tasks.reduce<Promise<Array<{ label: string; status: number; ok: boolean; body: string }>>>(
+        : await plan.tasks.reduce<
+            Promise<Array<{ label: string; status: number; ok: boolean; body: string }>>
+          >(
             async (accPromise, step) => {
               const acc = await accPromise;
               const result = await executeTriggerTask(baseUrl, cronSecret, step);
