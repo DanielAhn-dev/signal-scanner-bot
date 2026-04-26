@@ -108,6 +108,7 @@ const HELP_SECTIONS = [
       "/자동사이클 점검 — 오늘 기준 시뮬레이션",
       "/자동사이클 실행 — 오늘 기준 실제 반영",
       "/자동사이클 실행 진입 — 요일 무관 신규 진입 판단 강제",
+      "/자동트리거 [장중|게이트|점수|브리핑|리포트|야간] — 운영 채팅 수동 트리거",
       "/장전플랜 — 직장인용 장전 주문 카드",
       "  현재는 보유 종목 추가매수, 부분 익절, 분할 매도, 포지션별 전략 상태를 함께 반영",
       "/보유대응 — 익일 대응 플랜(무체결)",
@@ -193,6 +194,7 @@ const UNKNOWN_COMMAND_TOKENS = [
   "/보유복구",
   "/자동매도점검",
   "/자동사이클",
+  "/자동트리거",
   "/장전플랜",
   "/보유대응",
   "/수급",
@@ -296,6 +298,7 @@ export const TELEGRAM_BOT_COMMANDS: TelegramBotCommand[] = [
   { command: "holdingrestore", description: "누락 보유 포지션 복구" },
   { command: "autosellcheck", description: "자동 매도 점검" },
   { command: "autocycle", description: "자동사이클 점검·실행·진입" },
+  { command: "opsrun", description: "운영 수동 트리거(준비/장중/마감/전체)" },
   { command: "premarket", description: "장전 주문 플랜" },
   { command: "holdingplan", description: "보유 대응 플랜" },
   { command: "tradelog", description: "거래 기록" },
@@ -328,6 +331,15 @@ export function resolveReplyPrefixFromText(replyText: string): string | undefine
 
 export function resolveCallbackCommandText(command: string): string | undefined {
   if (command.startsWith("report:")) return `/report ${command.slice(7)}`;
+  if (command === "opstrigger:ready") return "/자동트리거 준비";
+  if (command === "opstrigger:intraday") return "/자동트리거 장중";
+  if (command === "opstrigger:close") return "/자동트리거 마감";
+  if (command === "opstrigger:all") return "/자동트리거 전체";
+  if (command === "opstrigger:gate") return "/자동트리거 게이트";
+  if (command === "opstrigger:score") return "/자동트리거 점수";
+  if (command === "opstrigger:briefing") return "/자동트리거 브리핑";
+  if (command === "opstrigger:report") return "/자동트리거 리포트";
+  if (command === "opstrigger:night") return "/자동트리거 야간";
   if (command === "weeklycopilot:force") return "/주간코파일럿 강제";
   if (command === "autocycle:check") return "/자동사이클 점검";
   if (command === "autocycle:run") return "/자동사이클 실행";

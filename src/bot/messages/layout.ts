@@ -104,6 +104,12 @@ export const ACTIONS = {
     { text: "자동 점검", callback_data: "cmd:autocycle:check" },
     { text: "자동 실행", callback_data: "cmd:autocycle:run" },
   ] as InlineButton[],
+  opsTriggerQuick: [
+    { text: "준비 트리거", callback_data: "cmd:opstrigger:ready" },
+    { text: "장중 트리거", callback_data: "cmd:opstrigger:intraday" },
+    { text: "마감 트리거", callback_data: "cmd:opstrigger:close" },
+    { text: "전체 트리거", callback_data: "cmd:opstrigger:all" },
+  ] as InlineButton[],
   autoCycleExecutionFollowup: [
     { text: "보유", callback_data: "cmd:watchlist" },
     { text: "보유대응", callback_data: "cmd:watchresp" },
