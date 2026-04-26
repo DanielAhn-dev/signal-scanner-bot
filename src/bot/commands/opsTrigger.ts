@@ -42,6 +42,14 @@ function getCronBaseUrl(): string | null {
   const explicit = String(process.env.CRON_BASE_URL ?? "").trim();
   if (explicit) return explicit.replace(/\/$/, "");
 
+  // VERCEL_PROJECT_PRODUCTION_URL은 stable 프로덕션 도메인 (Deployment Protection 적용 안됨)
+  // VERCEL_URL은 배포별 preview URL로 Deployment Protection에 막힐 수 있음
+  const productionUrl = String(process.env.VERCEL_PROJECT_PRODUCTION_URL ?? "").trim();
+  if (productionUrl) {
+    if (/^https?:\/\//i.test(productionUrl)) return productionUrl.replace(/\/$/, "");
+    return `https://${productionUrl.replace(/\/$/, "")}`;
+  }
+
   const vercelUrl = String(process.env.VERCEL_URL ?? "").trim();
   if (!vercelUrl) return null;
   if (/^https?:\/\//i.test(vercelUrl)) return vercelUrl.replace(/\/$/, "");
