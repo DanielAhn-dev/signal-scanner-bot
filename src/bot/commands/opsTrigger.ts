@@ -351,22 +351,10 @@ export async function handleOpsTriggerCommand(
   });
 
   try {
+    // 전체 실행 시간을 줄이기 위해 작업은 병렬 실행한다.
+    // (순차 실행 시 step별 지연이 누적되어 worker opstrigger timeout에 걸리기 쉬움)
     const results: Array<{ label: string; status: number; ok: boolean; body: string }> =
-      plan.key === "ready"
-        ? await Promise.all(
-            plan.tasks.map((step) => executeTriggerTask(baseUrl, cronSecret, step))
-          )
-        : await plan.tasks.reduce<
-            Promise<Array<{ label: string; status: number; ok: boolean; body: string }>>
-          >(
-            async (accPromise, step) => {
-              const acc = await accPromise;
-              const result = await executeTriggerTask(baseUrl, cronSecret, step);
-              acc.push(result);
-              return acc;
-            },
-            Promise.resolve([])
-          );
+      await Promise.all(plan.tasks.map((step) => executeTriggerTask(baseUrl, cronSecret, step)));
 
     await tgSend("sendMessage", {
       chat_id: chatId,

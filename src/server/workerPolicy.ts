@@ -29,7 +29,7 @@ export const DEFAULT_WORKER_TIMEOUTS: WorkerTimeouts = {
       default: 20000,
       trade: 45000,
       autocycle: 30000,
-      opstrigger: 55000,
+      opstrigger: 58000,
       weekly: 54000,
       briefing: 50000,
       report: 52000,
