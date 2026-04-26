@@ -83,13 +83,7 @@ function resolveDueTasks(now = new Date()): DueTask[] {
     tasks.push({ name: "virtualAutoTrade", path: TASK_PATHS.virtualAutoTrade });
   }
 
-  // 장중 10분 자동사이클: KST 09:00~15:20 (UTC 00:00~06:20), 평일(UTC 0~4)
-  if (dow >= 0 && dow <= 4 && hour >= 0 && hour <= 6 && minute % 10 === 0) {
-    tasks.push({
-      name: "virtualAutoTradeIntraday",
-      path: TASK_PATHS.virtualAutoTradeIntraday,
-    });
-  }
+  // 장중 10분 자동사이클은 무료 플랜 소모를 고려해 수동 트리거(task=virtualAutoTradeIntraday)로만 실행
 
   // 전략 게이트 리프레시 + 자동 튜닝: 23:55 UTC, 평일(UTC 0~4)
   if (dow >= 0 && dow <= 4 && hour === 23 && minute === 55) {

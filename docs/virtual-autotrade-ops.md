@@ -69,6 +69,21 @@ curl -H "Authorization: Bearer $CRON_SECRET" "https://signal-scanner-bot.vercel.
 - 무료 플랜 제약으로 자동 cron은 제공되지 않으며, 사용자 주도 수동 실행만 지원합니다.
 - `AUTO_TRADE_ALERT_CHAT_ID`를 지정하면 `duplicate_window` 급증, `out_of_session`, `error_count` 발생 시 운영자 채팅으로 요약 경보를 보냅니다.
 
+## 4-2) 무료 플랜 하이브리드 트리거
+
+자동 크론은 장전/야간 핵심 작업만 수행하고, 장중/튜닝은 필요할 때 수동 트리거로 실행합니다.
+
+```bash
+pnpm cron:trigger:intraday
+pnpm cron:trigger:gate
+pnpm cron:trigger -- --task scoreSync
+pnpm cron:trigger -- --task briefing
+```
+
+- `cron:trigger:intraday`: 장중 10분 자동사이클과 동일한 경로를 1회 실행
+- `cron:trigger:gate`: 전략 게이트 리프레시 + 설정 자동 튜닝 1회 실행
+- `cron:trigger -- --task ...`: 통합 디스패처에서 특정 작업만 실행
+
 ## 5) 결과 확인 SQL
 
 ```sql
