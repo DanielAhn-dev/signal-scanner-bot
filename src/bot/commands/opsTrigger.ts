@@ -182,6 +182,14 @@ function extractBuySellFromDispatcherBody(body: string): { buy: number; sell: nu
   };
 }
 
+function stripHtmlAndEscape(text: string): string {
+  return text
+    .replace(/<[^>]*>/g, "") // HTML 태그 제거
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+}
+
 function summarizePlanResult(
   planLabel: string,
   rows: Array<{ label: string; status: number; ok: boolean; body: string }>
@@ -200,7 +208,7 @@ function summarizePlanResult(
     buyTotal += counts.buy;
     sellTotal += counts.sell;
 
-    const compact = (row.body || "").replace(/\s+/g, " ").trim().slice(0, 110);
+    const compact = stripHtmlAndEscape((row.body || "").replace(/\s+/g, " ").trim().slice(0, 110));
     lines.push(`- ${row.ok ? "성공" : "실패"} | ${row.label} | HTTP ${row.status}`);
     if (compact) lines.push(`  ↳ ${compact}`);
   }
