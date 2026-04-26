@@ -5,7 +5,13 @@ const CRON_SECRET = process.env.CRON_SECRET;
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
-type CronTaskName = "scoreSync" | "briefing" | "report" | "virtualAutoTrade";
+type CronTaskName =
+  | "scoreSync"
+  | "briefing"
+  | "report"
+  | "virtualAutoTrade"
+  | "virtualAutoTradeIntraday"
+  | "strategyGateRefresh";
 
 type DueTask = {
   name: CronTaskName;
@@ -17,6 +23,9 @@ const TASK_PATHS: Record<CronTaskName, string> = {
   briefing: "/api/cron/briefing",
   report: "/api/cron/report",
   virtualAutoTrade: "/api/cron/virtualAutoTrade",
+  virtualAutoTradeIntraday:
+    "/api/cron/virtualAutoTrade?mode=auto&intradayOnly=true&windowMinutes=10&maxUsers=60",
+  strategyGateRefresh: "/api/cron/strategyGateRefresh",
 };
 
 function getBaseUrl(req: VercelRequest): string {
@@ -72,6 +81,22 @@ function resolveDueTasks(now = new Date()): DueTask[] {
   // virtualAutoTrade: 45 23 * * 0-4
   if (dow >= 0 && dow <= 4 && hour === 23 && minute === 45) {
     tasks.push({ name: "virtualAutoTrade", path: TASK_PATHS.virtualAutoTrade });
+  }
+
+  // 장중 10분 자동사이클: KST 09:00~15:20 (UTC 00:00~06:20), 평일(UTC 0~4)
+  if (dow >= 0 && dow <= 4 && hour >= 0 && hour <= 6 && minute % 10 === 0) {
+    tasks.push({
+      name: "virtualAutoTradeIntraday",
+      path: TASK_PATHS.virtualAutoTradeIntraday,
+    });
+  }
+
+  // 전략 게이트 리프레시 + 자동 튜닝: 23:55 UTC, 평일(UTC 0~4)
+  if (dow >= 0 && dow <= 4 && hour === 23 && minute === 55) {
+    tasks.push({
+      name: "strategyGateRefresh",
+      path: TASK_PATHS.strategyGateRefresh,
+    });
   }
 
   return tasks;
