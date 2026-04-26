@@ -7,6 +7,7 @@ export type AutoTradeSizingInput = {
   currentHoldingCount: number;
   maxPositions: number;
   stopLossPct: number;
+  riskBudgetScale?: number;
   prefs?: Pick<
     InvestmentPrefs,
     "capital_krw" | "risk_profile" | "virtual_seed_capital" | "virtual_target_positions" | "split_count"
@@ -24,6 +25,7 @@ export type AutoTradeSizingResult = {
   seedCapital: number;
   splitCount: number;
   configuredSplitCount: number;
+  riskBudgetScale: number;
   targetPositions: number;
   targetWeightPct: number;
   minOrderAmount: number;
@@ -57,6 +59,12 @@ function resolveSplitCount(raw?: number): number {
   return clampInt(raw ?? 3, 1, 5);
 }
 
+function clampScale(value: unknown): number {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return 1;
+  return Math.min(1, Math.max(0.2, n));
+}
+
 export function calculateAutoTradeBuySizing(
   input: AutoTradeSizingInput
 ): AutoTradeSizingResult {
@@ -66,6 +74,7 @@ export function calculateAutoTradeBuySizing(
   const currentHoldingCount = Math.max(0, Math.floor(input.currentHoldingCount));
   const maxPositions = Math.max(1, Math.floor(input.maxPositions));
   const stopLossPct = Math.max(0, Number(input.stopLossPct) || 0);
+  const riskBudgetScale = clampScale(input.riskBudgetScale);
 
   const seedCapital =
     toPositiveNumber(input.prefs?.virtual_seed_capital) ??
@@ -94,13 +103,15 @@ export function calculateAutoTradeBuySizing(
   if (maxBudgetByRisk && maxBudgetByRisk > 0) {
     candidateBudgets.push(maxBudgetByRisk);
   }
-  const totalBudget = candidateBudgets.length ? Math.max(0, Math.min(...candidateBudgets)) : 0;
+  const scaledTotalBudget = candidateBudgets.length
+    ? Math.max(0, Math.floor(Math.min(...candidateBudgets) * riskBudgetScale))
+    : 0;
   let splitCount = configuredSplitCount;
-  while (splitCount > 1 && Math.floor(totalBudget / splitCount) < MIN_ORDER_AMOUNT_KRW) {
+  while (splitCount > 1 && Math.floor(scaledTotalBudget / splitCount) < MIN_ORDER_AMOUNT_KRW) {
     splitCount -= 1;
   }
 
-  const budget = Math.max(0, Math.floor(totalBudget / splitCount));
+  const budget = Math.max(0, Math.floor(scaledTotalBudget / splitCount));
   let quantity = price > 0 ? Math.max(0, Math.floor(budget / price)) : 0;
   let investedAmount = quantity > 0 ? quantity * price : 0;
   if (investedAmount > 0 && investedAmount < MIN_ORDER_AMOUNT_KRW) {
@@ -112,18 +123,19 @@ export function calculateAutoTradeBuySizing(
     quantity,
     investedAmount,
     budget,
-    totalBudget,
+    totalBudget: scaledTotalBudget,
     budgetPerSlot,
     budgetPerTargetPosition,
     maxBudgetByRisk,
     seedCapital,
     splitCount,
     configuredSplitCount,
+    riskBudgetScale,
     targetPositions,
     minOrderAmount: MIN_ORDER_AMOUNT_KRW,
     targetWeightPct:
-      seedCapital > 0 && totalBudget > 0
-        ? Number(((totalBudget / seedCapital) * 100).toFixed(2))
+      seedCapital > 0 && scaledTotalBudget > 0
+        ? Number(((scaledTotalBudget / seedCapital) * 100).toFixed(2))
         : 0,
   };
 }

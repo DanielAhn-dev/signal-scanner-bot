@@ -18,11 +18,13 @@ import { drawTopicHero } from "../../services/weeklyReportLayout";
 import { ReportContext, loadFontBytes, wrapText } from "../../services/weeklyReportPdfCore";
 import { asKstDate, getReportTheme, toKrDate, toYmd } from "../../services/weeklyReportShared";
 import { buildInvestmentPlan } from "../../lib/investPlan";
+import { parseStrategyMemo } from "../../lib/strategyMemo";
 import {
   fetchWatchMicroSignalsByCodes,
   resolveWatchDecision,
 } from "../../lib/watchlistSignals";
 import { getDecisionReliabilitySummary } from "../../services/decisionLogService";
+import { fetchStrategyGateState } from "../../services/strategyGateStateService";
 import { getUserInvestmentPrefs } from "../../services/userService";
 import { handlePreMarketPlanCommand } from "./preMarketPlan";
 import { ACTIONS, actionButtons, buildRecommendationActionButtons } from "../messages/layout";
@@ -85,6 +87,82 @@ function fmtSignedWon(v: number): string {
   return `${v >= 0 ? "+" : ""}${fmtInt(v)}원`;
 }
 
+type StrategyMonthlyStat = {
+  strategyId: string;
+  sellCount: number;
+  winCount: number;
+  totalPnl: number;
+  winRate: number;
+  profitFactor: number | null;
+  maxDrawdown: number;
+};
+
+function calcMaxDrawdown(pnlSeries: number[]): number {
+  let peak = 0;
+  let equity = 0;
+  let maxDd = 0;
+  for (const pnl of pnlSeries) {
+    equity += pnl;
+    if (equity > peak) peak = equity;
+    const dd = peak - equity;
+    if (dd > maxDd) maxDd = dd;
+  }
+  return maxDd;
+}
+
+function summarizeMonthlyStrategyStats(rows: TradeRow[]): StrategyMonthlyStat[] {
+  const byStrategy = new Map<string, TradeRow[]>();
+  for (const row of rows) {
+    if (row.side !== "SELL") continue;
+    const strategyId = parseStrategyMemo(row.memo).strategyId;
+    const list = byStrategy.get(strategyId) ?? [];
+    list.push(row);
+    byStrategy.set(strategyId, list);
+  }
+
+  const out: StrategyMonthlyStat[] = [];
+  for (const [strategyId, sells] of byStrategy.entries()) {
+    const sorted = [...sells].sort((a, b) => a.traded_at.localeCompare(b.traded_at));
+    const pnls = sorted.map((row) => Number(row.pnl_amount ?? 0)).filter(Number.isFinite);
+    const totalPnl = pnls.reduce((acc, value) => acc + value, 0);
+    const winCount = pnls.filter((value) => value > 0).length;
+    const lossAbs = Math.abs(pnls.filter((value) => value < 0).reduce((acc, value) => acc + value, 0));
+    const winPnl = pnls.filter((value) => value > 0).reduce((acc, value) => acc + value, 0);
+
+    out.push({
+      strategyId,
+      sellCount: pnls.length,
+      winCount,
+      totalPnl,
+      winRate: pnls.length ? (winCount / pnls.length) * 100 : 0,
+      profitFactor: lossAbs > 0 ? winPnl / lossAbs : null,
+      maxDrawdown: calcMaxDrawdown(pnls),
+    });
+  }
+
+  return out.sort((a, b) => b.totalPnl - a.totalPnl);
+}
+
+function resolveStrategyGateStatus(input: {
+  stat: StrategyMonthlyStat;
+  mddLimitKrw: number;
+}): "승격 후보" | "유지" | "관찰" | "중단 후보" {
+  const { stat, mddLimitKrw } = input;
+  if (stat.sellCount < 8) return "관찰";
+  if (stat.profitFactor != null && stat.profitFactor < 0.9) return "중단 후보";
+  if (mddLimitKrw > 0 && stat.maxDrawdown > mddLimitKrw) return "중단 후보";
+  if (stat.profitFactor != null && stat.profitFactor >= 1.2) return "승격 후보";
+  return "유지";
+}
+
+function toPersistedGateLabel(status?: string | null): string {
+  if (status === "promote") return "승격 후보";
+  if (status === "pause") return "중단 후보";
+  if (status === "watch") return "관찰";
+  if (status === "hold") return "유지";
+  return "미집계";
+}
+
 function getKstMonthRange(now = new Date()): {
   label: string;
   startIso: string;
@@ -116,6 +194,11 @@ async function handleMonthlyReportCommand(
 
   try {
     const range = getKstMonthRange();
+    const prefs = await getUserInvestmentPrefs(ctx.chatId);
+    const seedCapital = Number(
+      prefs.virtual_seed_capital ?? prefs.capital_krw ?? prefs.virtual_cash ?? 0
+    );
+    const mddLimitKrw = seedCapital > 0 ? seedCapital * 0.08 : 0;
 
     const { data: tradeRows, error: tradeError } = await supabase
       .from("virtual_trades")
@@ -132,6 +215,13 @@ async function handleMonthlyReportCommand(
     }
 
     const summary = summarizeWindow(tradeRows ?? []);
+    const strategyStats = summarizeMonthlyStrategyStats(tradeRows ?? []);
+    const topStrategies = strategyStats.slice(0, 3);
+    const persistedGate = await fetchStrategyGateState({
+      supabase,
+      chatId: ctx.chatId,
+      strategyId: "core.autotrade.v1",
+    }).catch(() => null);
 
     const { data: watchRows } = await supabase
       .from("watchlist")
@@ -245,6 +335,30 @@ async function handleMonthlyReportCommand(
       }
     }
 
+    const strategyLines: string[] = [];
+    if (topStrategies.length) {
+      strategyLines.push("");
+      strategyLines.push("─────────────────");
+      strategyLines.push("<b>전략 라이브 리더보드 (월간)</b>");
+      for (const stat of topStrategies) {
+        const pfText = stat.profitFactor != null ? stat.profitFactor.toFixed(2) : "N/A";
+        const status = resolveStrategyGateStatus({ stat, mddLimitKrw });
+        strategyLines.push(
+          `${stat.strategyId}: ${fmtSignedWon(stat.totalPnl)} · 승률 ${stat.winRate.toFixed(1)}% (${stat.winCount}/${stat.sellCount}) · PF ${pfText} · MDD ${fmtInt(stat.maxDrawdown)}원 · ${status}`
+        );
+      }
+      if (mddLimitKrw > 0) {
+        strategyLines.push(`게이트 기준: PF 1.20+, MDD 한도 ${fmtInt(mddLimitKrw)}원 (seed 8%)`);
+      } else {
+        strategyLines.push("게이트 기준: PF 1.20+, 최소 매도 8건 (MDD 한도는 seed 설정 후 적용)");
+      }
+    }
+    if (persistedGate) {
+      strategyLines.push(
+        `실시간 자동게이트: ${toPersistedGateLabel(persistedGate.status)} · PF ${persistedGate.profitFactor != null ? persistedGate.profitFactor.toFixed(2) : "N/A"} · 승률 ${persistedGate.winRate.toFixed(1)}% · 연속손실 ${persistedGate.maxLossStreak}회`
+      );
+    }
+
     const msg = [
       `<b>${range.label} 월간 성과</b>`,
       "─────────────────",
@@ -255,6 +369,7 @@ async function handleMonthlyReportCommand(
       `최대 단일 손실: ${fmtSignedWon(summary.maxSingleLoss)}`,
       `규칙 준수율: ${ruleCompliancePct.toFixed(1)}% (손절 미이행 ${stopLossViolationCount}건)`,
       ...reliabilityLines,
+      ...strategyLines,
       "",
       "<b>다음 운용 포인트</b>",
       ...nextActions.map((line, idx) => `${idx + 1}) ${line}`),
