@@ -66,7 +66,11 @@ import {
   type AutoTradeSkipReasonStat,
 } from "./virtualAutoTradeObservability";
 import { runLongTermCoachForChat } from "./longTermCoachService";
-import { upsertStrategyGateState, resolveStrategyGateStatus } from "./strategyGateStateService";
+import {
+  fetchStrategyGateState,
+  upsertStrategyGateState,
+  resolveStrategyGateStatus,
+} from "./strategyGateStateService";
 
 type RunMode = SelectionAutoTradeRunMode;
 type RunType = AutoTradeRunType;
@@ -735,6 +739,41 @@ function applyPerformanceBuyGuard(input: {
   };
 }
 
+function applyPersistedGateGuard(input: {
+  requestedSlots: number;
+  baseMinBuyScore: number;
+  gateStatus?: "promote" | "hold" | "watch" | "pause";
+}): { requestedSlots: number; baseMinBuyScore: number; note?: string } {
+  const requestedSlots = Math.max(0, Math.floor(input.requestedSlots));
+  const baseMinBuyScore = toPositiveInt(input.baseMinBuyScore, 72);
+
+  if (!input.gateStatus || input.gateStatus === "hold") {
+    return { requestedSlots, baseMinBuyScore };
+  }
+
+  if (input.gateStatus === "pause") {
+    return {
+      requestedSlots: 0,
+      baseMinBuyScore: Math.min(98, baseMinBuyScore + 5),
+      note: "저장 게이트(중단 후보): 신규·추가 매수 차단",
+    };
+  }
+
+  if (input.gateStatus === "watch") {
+    return {
+      requestedSlots: Math.max(0, requestedSlots - 1),
+      baseMinBuyScore: Math.min(96, baseMinBuyScore + 2),
+      note: "저장 게이트(관찰): 슬롯 -1, 최소점수 +2",
+    };
+  }
+
+  return {
+    requestedSlots,
+    baseMinBuyScore: Math.max(50, baseMinBuyScore - 1),
+    note: "저장 게이트(승격 후보): 최소점수 -1",
+  };
+}
+
 export async function generateAutoTradeBacktestReportForChat(input: {
   chatId: number;
   months: 3 | 6;
@@ -1224,23 +1263,36 @@ async function runMondayBuyForUser(payload: {
     chatId,
     windowDays: 45,
   });
+  const persistedGateState = await fetchStrategyGateState({
+    supabase: payload.supabase,
+    chatId,
+    strategyId: AUTO_TRADE_STRATEGY_ID,
+  }).catch(() => null);
 
   const perfGuardForMonday = applyPerformanceBuyGuard({
     requestedSlots: rawRemainSlots,
     baseMinBuyScore: toPositiveInt(payload.setting.min_buy_score, 72),
     perf: mondaySellPerf,
   });
+  const persistedGuardForMonday = applyPersistedGateGuard({
+    requestedSlots: perfGuardForMonday.requestedSlots,
+    baseMinBuyScore: perfGuardForMonday.baseMinBuyScore,
+    gateStatus: persistedGateState?.status,
+  });
 
   const buyConstraint = applyStrategyBuyConstraint({
     selectedStrategy,
-    requestedSlots: perfGuardForMonday.requestedSlots,
-    baseMinBuyScore: perfGuardForMonday.baseMinBuyScore,
+    requestedSlots: persistedGuardForMonday.requestedSlots,
+    baseMinBuyScore: persistedGuardForMonday.baseMinBuyScore,
     activeCount,
     pacingRelaxLevel: pacingMetrics.relaxLevel,
   });
 
   if (perfGuardForMonday.note) {
     summary.notes.push(perfGuardForMonday.note);
+  }
+  if (persistedGuardForMonday.note) {
+    summary.notes.push(persistedGuardForMonday.note);
   }
 
   if (pacingMetrics.relaxLevel > 0) {
@@ -1984,14 +2036,27 @@ async function runDailyReviewForUser(payload: {
     chatId,
     windowDays: 45,
   });
+  const persistedGateState = await fetchStrategyGateState({
+    supabase: payload.supabase,
+    chatId,
+    strategyId: AUTO_TRADE_STRATEGY_ID,
+  }).catch(() => null);
 
   const perfGuard = applyPerformanceBuyGuard({
     requestedSlots: toPositiveInt(payload.setting.monday_buy_slots, 2),
     baseMinBuyScore: toPositiveInt(payload.setting.min_buy_score, 72),
     perf: dailySellPerf,
   });
+  const persistedGuard = applyPersistedGateGuard({
+    requestedSlots: perfGuard.requestedSlots,
+    baseMinBuyScore: perfGuard.baseMinBuyScore,
+    gateStatus: persistedGateState?.status,
+  });
   if (perfGuard.note) {
     summary.notes.push(perfGuard.note);
+  }
+  if (persistedGuard.note) {
+    summary.notes.push(persistedGuard.note);
   }
   if (selectedStrategy) {
     summary.notes.push(`기본 전략: ${getStrategyLabel(selectedStrategy) || selectedStrategy}`);
@@ -2315,8 +2380,8 @@ async function runDailyReviewForUser(payload: {
     summary.notes.push(`보유 현황: ${currentCount}/${maxPositions}종목 · 신규 여력 ${room}종목`);
     const addOnConstraint = applyStrategyBuyConstraint({
       selectedStrategy: payload.setting.selected_strategy,
-      requestedSlots: perfGuard.requestedSlots,
-      baseMinBuyScore: perfGuard.baseMinBuyScore,
+      requestedSlots: persistedGuard.requestedSlots,
+      baseMinBuyScore: persistedGuard.baseMinBuyScore,
       activeCount: currentCount,
     });
 
@@ -2645,15 +2710,23 @@ async function runDailyReviewForUser(payload: {
       baseMinBuyScore: toPositiveInt(payload.setting.min_buy_score, 72),
       perf: dailySellPerf,
     });
-    const buyConstraint = applyStrategyBuyConstraint({
-      selectedStrategy: payload.setting.selected_strategy,
+    const persistedRebalanceGuard = applyPersistedGateGuard({
       requestedSlots: perfAdjustedRebalance.requestedSlots,
       baseMinBuyScore: perfAdjustedRebalance.baseMinBuyScore,
+      gateStatus: persistedGateState?.status,
+    });
+    const buyConstraint = applyStrategyBuyConstraint({
+      selectedStrategy: payload.setting.selected_strategy,
+      requestedSlots: persistedRebalanceGuard.requestedSlots,
+      baseMinBuyScore: persistedRebalanceGuard.baseMinBuyScore,
       activeCount: currentCount,
     });
 
     if (perfAdjustedRebalance.note) {
       summary.notes.push(perfAdjustedRebalance.note);
+    }
+    if (persistedRebalanceGuard.note) {
+      summary.notes.push(persistedRebalanceGuard.note);
     }
     const buySlots = buyConstraint.buySlots;
 
