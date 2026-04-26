@@ -226,6 +226,27 @@ function summarizePlanResult(
   return lines.join("\n");
 }
 
+async function executeTriggerTask(
+  baseUrl: string,
+  cronSecret: string,
+  step: ResolvedTask
+): Promise<{ label: string; status: number; ok: boolean; body: string }> {
+  const response = await fetch(`${baseUrl}/api/cron?task=${step.task}`, {
+    method: "GET",
+    headers: {
+      authorization: `Bearer ${cronSecret}`,
+      "x-ops-trigger": "telegram",
+    },
+  });
+  const bodyText = await response.text();
+  return {
+    label: step.label,
+    status: response.status,
+    ok: response.ok,
+    body: bodyText,
+  };
+}
+
 export async function handleOpsTriggerCommand(
   input: string,
   ctx: ChatContext,
@@ -282,23 +303,20 @@ export async function handleOpsTriggerCommand(
   });
 
   try {
-    const results: Array<{ label: string; status: number; ok: boolean; body: string }> = [];
-    for (const step of plan.tasks) {
-      const response = await fetch(`${baseUrl}/api/cron?task=${step.task}`, {
-        method: "GET",
-        headers: {
-          authorization: `Bearer ${cronSecret}`,
-          "x-ops-trigger": "telegram",
-        },
-      });
-      const bodyText = await response.text();
-      results.push({
-        label: step.label,
-        status: response.status,
-        ok: response.ok,
-        body: bodyText,
-      });
-    }
+    const results: Array<{ label: string; status: number; ok: boolean; body: string }> =
+      plan.key === "ready"
+        ? await Promise.all(
+            plan.tasks.map((step) => executeTriggerTask(baseUrl, cronSecret, step))
+          )
+        : await plan.tasks.reduce<Promise<Array<{ label: string; status: number; ok: boolean; body: string }>>>(
+            async (accPromise, step) => {
+              const acc = await accPromise;
+              const result = await executeTriggerTask(baseUrl, cronSecret, step);
+              acc.push(result);
+              return acc;
+            },
+            Promise.resolve([])
+          );
 
     await tgSend("sendMessage", {
       chat_id: chatId,

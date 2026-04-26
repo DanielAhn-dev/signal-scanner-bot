@@ -2,6 +2,7 @@ export type CommandCategory =
   | "default"
   | "trade"
   | "autocycle"
+  | "opstrigger"
   | "weekly"
   | "briefing"
   | "report";
@@ -28,6 +29,7 @@ export const DEFAULT_WORKER_TIMEOUTS: WorkerTimeouts = {
       default: 20000,
       trade: 45000,
       autocycle: 30000,
+      opstrigger: 55000,
       weekly: 54000,
       briefing: 50000,
       report: 52000,
@@ -58,6 +60,10 @@ export function resolveWorkerTimeoutsFromEnv(
         default: toPositiveInt(env.WORKER_JOB_TIMEOUT_DEFAULT_MS, base.job.byCategory.default),
         trade: toPositiveInt(env.WORKER_JOB_TIMEOUT_TRADE_MS, base.job.byCategory.trade),
         autocycle: toPositiveInt(env.WORKER_JOB_TIMEOUT_AUTOCYCLE_MS, base.job.byCategory.autocycle),
+        opstrigger: toPositiveInt(
+          env.WORKER_JOB_TIMEOUT_OPSTRIGGER_MS,
+          base.job.byCategory.opstrigger
+        ),
         weekly: toPositiveInt(env.WORKER_JOB_TIMEOUT_WEEKLY_MS, base.job.byCategory.weekly),
         briefing: toPositiveInt(env.WORKER_JOB_TIMEOUT_BRIEFING_MS, base.job.byCategory.briefing),
         report: toPositiveInt(env.WORKER_JOB_TIMEOUT_REPORT_MS, base.job.byCategory.report),
@@ -83,6 +89,10 @@ export function isTradeCommandText(text: string): boolean {
   return /^\/(analyze|종목분석)(?:\s|$)/i.test(text.trim());
 }
 
+export function isOpsTriggerCommandText(text: string): boolean {
+  return /^\/(opsrun|cronrun|자동트리거|운영트리거)(?:\s|$)/i.test(text.trim());
+}
+
 export function isBriefCommandText(text: string): boolean {
   return /^\/(brief|morning|브리핑|장전)(?:\s|$)/i.test(text.trim());
 }
@@ -106,6 +116,7 @@ export function isReportCommandText(text: string): boolean {
 export function resolveCommandCategoryFromMessageText(text: string): CommandCategory {
   const value = String(text || "").trim();
   if (isAutoCycleCommandText(value)) return "autocycle";
+  if (isOpsTriggerCommandText(value)) return "opstrigger";
   if (isWeeklyCopilotCommandText(value)) return "weekly";
   if (isBriefCommandText(value)) return "briefing";
   if (isTradeCommandText(value)) return "trade";
@@ -118,6 +129,7 @@ export function resolveCommandCategoryFromCallbackData(data: string): CommandCat
   if (value === "cmd:report" || value.startsWith("cmd:report:")) return "report";
   if (isBriefCallbackData(value)) return "briefing";
   if (isTradeCallbackData(value)) return "trade";
+  if (value.startsWith("cmd:opstrigger:")) return "opstrigger";
   if (value.startsWith("cmd:autocycle") || value.includes("autocycle")) return "autocycle";
   return "default";
 }
@@ -129,6 +141,9 @@ export function describeCommandLabel(
   const text = String(commandText || "").trim();
   if (!text) return context === "callback" ? "버튼 요청" : "요청";
   if (isAutoCycleCommandText(text) || /autocycle/i.test(text)) return "자동사이클 요청";
+  if (isOpsTriggerCommandText(text) || /opstrigger|자동트리거|운영트리거/i.test(text)) {
+    return "자동트리거 요청";
+  }
   if (isWeeklyCopilotCommandText(text) || /weeklycopilot|주간코파일럿/i.test(text)) {
     return "주간코파일럿 요청";
   }
