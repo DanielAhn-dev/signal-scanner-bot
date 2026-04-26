@@ -126,6 +126,41 @@ function resolveAdaptiveSettingPatch(input: {
   return null;
 }
 
+function gatePriority(from: string, to: string): number {
+  if (to === "pause") return 40;
+  if (to === "promote") return 30;
+  if (from === "promote") return 20;
+  if (from === "pause") return 10;
+  return 0;
+}
+
+function buildFocusedTransitionLines(
+  transitions: Array<{
+    chatId: number;
+    from: string;
+    to: string;
+    sellCount: number;
+    pf: number | null;
+    winRate: number;
+  }>
+): string[] {
+  const focus = transitions.filter(
+    (item) => item.to === "promote" || item.to === "pause" || item.from === "promote" || item.from === "pause"
+  );
+  const source = focus.length > 0 ? focus : transitions;
+
+  const sorted = [...source].sort((a, b) => {
+    const p = gatePriority(b.from, b.to) - gatePriority(a.from, a.to);
+    if (p !== 0) return p;
+    return b.sellCount - a.sellCount;
+  });
+
+  return sorted.slice(0, 5).map((item) => {
+    const pfText = item.pf == null ? "n/a" : item.pf.toFixed(2);
+    return `- ${item.chatId}: ${item.from} -> ${item.to} (sell=${item.sellCount}, win=${item.winRate.toFixed(1)}%, pf=${pfText})`;
+  });
+}
+
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== "GET") {
     return res.status(405).send("Method Not Allowed");
@@ -266,15 +301,17 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     if (GATE_NOTIFY_ENABLED && AUTO_TRADE_ALERT_CHAT_ID > 0 && transitions.length > 0) {
-      const lines = transitions.slice(0, 30).map((item) => {
-        const pfText = item.pf == null ? "n/a" : item.pf.toFixed(2);
-        return `- ${item.chatId}: ${item.from} -> ${item.to} (sell=${item.sellCount}, win=${item.winRate.toFixed(1)}%, pf=${pfText})`;
-      });
+      const promoteCount = transitions.filter((item) => item.to === "promote").length;
+      const pauseCount = transitions.filter((item) => item.to === "pause").length;
+      const lines = buildFocusedTransitionLines(transitions);
+      const hidden = Math.max(0, transitions.length - lines.length);
 
       const text = [
         "[전략 게이트 변경 알림]",
-        `변경 수: ${transitions.length}`,
+        `변경 수: ${transitions.length} (promote=${promoteCount}, pause=${pauseCount})`,
+        "상위 변화 5건(압축):",
         ...lines,
+        hidden > 0 ? `- 그 외 ${hidden}건 생략` : undefined,
       ].join("\n");
 
       await sendMessage(AUTO_TRADE_ALERT_CHAT_ID, text);
