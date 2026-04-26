@@ -158,22 +158,54 @@ function buildHelpText(): string {
   ].join("\n");
 }
 
+function parseJsonBody(raw: string | undefined): any | null {
+  if (!raw) return null;
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return null;
+  }
+}
+
+function extractBuySellFromDispatcherBody(body: string): { buy: number; sell: number } {
+  const parsed = parseJsonBody(body);
+  const first = Array.isArray(parsed?.results) ? parsed.results[0] : null;
+  const nested = parseJsonBody(first?.body);
+  const summary = nested?.summary;
+  if (!summary || typeof summary !== "object") return { buy: 0, sell: 0 };
+
+  const buy = Number(summary.buyCount ?? summary.buy_count ?? 0);
+  const sell = Number(summary.sellCount ?? summary.sell_count ?? 0);
+  return {
+    buy: Number.isFinite(buy) ? buy : 0,
+    sell: Number.isFinite(sell) ? sell : 0,
+  };
+}
+
 function summarizePlanResult(
   planLabel: string,
   rows: Array<{ label: string; status: number; ok: boolean; body: string }>
 ): string {
   const okCount = rows.filter((row) => row.ok).length;
   const total = rows.length;
+  let buyTotal = 0;
+  let sellTotal = 0;
   const lines = [
     `<b>${planLabel}</b> 실행 결과`,
     `- 완료: ${okCount}/${total}`,
   ];
 
   for (const row of rows) {
+    const counts = extractBuySellFromDispatcherBody(row.body);
+    buyTotal += counts.buy;
+    sellTotal += counts.sell;
+
     const compact = (row.body || "").replace(/\s+/g, " ").trim().slice(0, 110);
     lines.push(`- ${row.ok ? "성공" : "실패"} | ${row.label} | HTTP ${row.status}`);
     if (compact) lines.push(`  ↳ ${compact}`);
   }
+
+  lines.splice(2, 0, `- 포지션 변화: 매수 +${buyTotal}건 / 매도 -${sellTotal}건`);
 
   return lines.join("\n");
 }

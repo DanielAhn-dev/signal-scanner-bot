@@ -1,11 +1,13 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { createClient } from "@supabase/supabase-js";
+import { sendMessage } from "../../src/telegram/api";
 
 const CRON_SECRET = process.env.CRON_SECRET;
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 const CRON_HOBBY_DAILY_MODE =
   String(process.env.CRON_HOBBY_DAILY_MODE ?? "true").toLowerCase() !== "false";
+const AUTO_TRADE_ALERT_CHAT_ID = Number(process.env.AUTO_TRADE_ALERT_CHAT_ID || "0");
 
 type CronTaskName =
   | "scoreSync"
@@ -152,6 +154,76 @@ async function callTask(baseUrl: string, taskPath: string): Promise<{ ok: boolea
   };
 }
 
+function parseJsonBody(raw: string | undefined): any | null {
+  if (!raw) return null;
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return null;
+  }
+}
+
+function extractAutoTradeCounts(body: string | undefined): { buy: number; sell: number } {
+  const parsed = parseJsonBody(body);
+  const summary = parsed?.summary;
+  if (!summary || typeof summary !== "object") return { buy: 0, sell: 0 };
+
+  const buy = Number(summary.buyCount ?? summary.buy_count ?? 0);
+  const sell = Number(summary.sellCount ?? summary.sell_count ?? 0);
+  return {
+    buy: Number.isFinite(buy) ? buy : 0,
+    sell: Number.isFinite(sell) ? sell : 0,
+  };
+}
+
+async function notifyDailyBundleSummary(input: {
+  dueTasks: DueTask[];
+  results: Array<{
+    task: string;
+    claimed: boolean;
+    ok?: boolean;
+    status?: number;
+    body?: string;
+    error?: string;
+  }>;
+  hasError: boolean;
+}): Promise<void> {
+  if (AUTO_TRADE_ALERT_CHAT_ID <= 0) return;
+
+  const lines: string[] = [];
+  let buyTotal = 0;
+  let sellTotal = 0;
+
+  for (const result of input.results) {
+    if (!result.claimed) {
+      lines.push(`- ${result.task}: 중복으로 스킵`);
+      continue;
+    }
+
+    if (result.error) {
+      lines.push(`- ${result.task}: 실패 (${result.error})`);
+      continue;
+    }
+
+    lines.push(`- ${result.task}: ${result.ok ? "성공" : "실패"} (HTTP ${result.status ?? 0})`);
+
+    if (result.task === "virtualAutoTrade" || result.task === "virtualAutoTradeIntraday") {
+      const counts = extractAutoTradeCounts(result.body);
+      buyTotal += counts.buy;
+      sellTotal += counts.sell;
+    }
+  }
+
+  const text = [
+    `[일일 번들 크론 ${input.hasError ? "실패" : "완료"}]`,
+    `작업 수: ${input.dueTasks.length}`,
+    `매수/매도: +${buyTotal} / -${sellTotal}`,
+    ...lines,
+  ].join("\n");
+
+  await sendMessage(AUTO_TRADE_ALERT_CHAT_ID, text);
+}
+
 export const config = {
   maxDuration: 60,
 };
@@ -228,6 +300,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     const hasError = results.some((result) => result.error || result.ok === false);
+
+    if (!forceTask && CRON_HOBBY_DAILY_MODE) {
+      await notifyDailyBundleSummary({
+        dueTasks,
+        results,
+        hasError,
+      });
+    }
+
     return res.status(hasError ? 500 : 200).json({
       ok: !hasError,
       dueCount: dueTasks.length,
