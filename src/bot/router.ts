@@ -1,4 +1,5 @@
 import { KO_MESSAGES } from "./messages/ko";
+import { buildAccessDeniedMessage, isAllowedTelegramUser } from "./accessControl";
 import { CMD, normalizeIncomingMessageText } from "./routing/commandPatterns";
 import { dispatchCommandRoutes } from "./routing/dispatcher";
 import { sendStartMessage } from "./routing/startMessage";
@@ -14,6 +15,14 @@ export async function routeMessage(
   tgSend: any
 ): Promise<void> {
   const normalized = normalizeIncomingMessageText(text);
+
+  if (!isAllowedTelegramUser(ctx)) {
+    await tgSend("sendMessage", {
+      chat_id: ctx.chatId,
+      text: buildAccessDeniedMessage(),
+    });
+    return;
+  }
 
   if (CMD.START.test(normalized)) {
     await sendStartMessage(ctx, tgSend);

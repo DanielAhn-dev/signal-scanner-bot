@@ -46,6 +46,7 @@ export interface MarketOverview {
   fearGreed?: FearGreedData;
   sp500?: MarketIndex;
   nasdaq?: MarketIndex;
+  dow?: MarketIndex;
   us10y?: MarketIndex;
   gold?: MarketIndex;
   silver?: MarketIndex;
@@ -154,6 +155,7 @@ async function fetchYahoo(
 export const fetchVIX = () => fetchYahoo("^VIX", "VIX");
 export const fetchSP500 = () => fetchYahoo("^GSPC", "S&P 500");
 export const fetchNASDAQ = () => fetchYahoo("^IXIC", "NASDAQ");
+export const fetchDOW = () => fetchYahoo("^DJI", "Dow Jones");
 export const fetchUS10Y = () => fetchYahoo("^TNX", "US 10Y");
 
 // ─── 원자재 · 에너지 · 암호화폐 ───
@@ -196,7 +198,7 @@ function withOverviewMeta<T extends MarketOverview>(overview: T): T {
 }
 
 export async function fetchReportMarketData(): Promise<MarketOverview> {
-  const [kospi, kosdaq, usdkrw, vix, fearGreed, sp500, nasdaq, us10y] = await Promise.all([
+  const [kospi, kosdaq, usdkrw, vix, fearGreed, sp500, nasdaq, dow, us10y] = await Promise.all([
     fetchKOSPI(),
     fetchKOSDAQ(),
     fetchUSDKRW(),
@@ -204,6 +206,7 @@ export async function fetchReportMarketData(): Promise<MarketOverview> {
     fetchFearGreed(),
     fetchSP500(),
     fetchNASDAQ(),
+    fetchDOW(),
     fetchUS10Y(),
   ]);
 
@@ -215,6 +218,7 @@ export async function fetchReportMarketData(): Promise<MarketOverview> {
     fearGreed: fearGreed ?? undefined,
     sp500: sp500 ?? undefined,
     nasdaq: nasdaq ?? undefined,
+    dow: dow ?? undefined,
     us10y: us10y ?? undefined,
   });
 }
@@ -223,7 +227,7 @@ export async function fetchReportMarketData(): Promise<MarketOverview> {
 export async function fetchAllMarketData(): Promise<MarketOverview> {
   const [
     kospi, kosdaq, usdkrw, vix, fearGreed,
-    sp500, nasdaq, us10y,
+    sp500, nasdaq, dow, us10y,
     gold, silver, copper, wtiOil, bitcoin,
   ] = await Promise.all([
     fetchKOSPI(),
@@ -233,6 +237,7 @@ export async function fetchAllMarketData(): Promise<MarketOverview> {
     fetchFearGreed(),
     fetchSP500(),
     fetchNASDAQ(),
+    fetchDOW(),
     fetchUS10Y(),
     fetchGold(),
     fetchSilver(),
@@ -249,6 +254,7 @@ export async function fetchAllMarketData(): Promise<MarketOverview> {
     fearGreed: fearGreed ?? undefined,
     sp500: sp500 ?? undefined,
     nasdaq: nasdaq ?? undefined,
+    dow: dow ?? undefined,
     us10y: us10y ?? undefined,
     gold: gold ?? undefined,
     silver: silver ?? undefined,

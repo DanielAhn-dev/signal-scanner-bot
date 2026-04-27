@@ -3,6 +3,7 @@ import type { SectorScore } from "../lib/sectors";
 import { getUserInvestmentPrefs } from "./userService";
 import { calculateSectorConcentration, getSectorConcentrationWarnings } from "./portfolioService";
 import { fetchLatestScoresByCodes } from "./scoreSourceService";
+import { filterCodesByCriticalNewsRisk } from "./newsRiskFilter";
 import { getSafetyPreferenceScore, pickSaferCandidates, type RiskProfile } from "../lib/investableUniverse";
 import { computeDynamicLargeCapFloor, detectAutoTradeMarketPolicy, resolveDeployableCash } from "./virtualAutoTradeSelection";
 import type { MarketOverview } from "../utils/fetchMarketData";
@@ -115,6 +116,8 @@ export function buildMarketInsightLines(input: {
   const nextNames = nextSectors.slice(0, 2).map((sector) => sector.name);
   const vix = Number(market.vix?.price ?? 0);
   const usdkrw = Number(market.usdkrw?.price ?? 0);
+  const usIndexChanges = [market.sp500?.changeRate, market.nasdaq?.changeRate, market.dow?.changeRate]
+    .filter((value): value is number => Number.isFinite(value));
 
   if (riskScore >= 70) {
     lines.push(`지금 장은 ${regimeLabel} 쪽 해석이 맞습니다. 시장 전체를 넓게 사기보다 방어와 현금 여력을 우선 두는 편이 안전합니다.`);
@@ -138,6 +141,15 @@ export function buildMarketInsightLines(input: {
     lines.push("거시 부담이 상대적으로 덜해, 주도 섹터 대표주 중심으로만 천천히 비중을 늘리는 전략이 무리하지 않습니다.");
   }
 
+  if (usIndexChanges.length >= 2) {
+    const usAvg = usIndexChanges.reduce((sum, value) => sum + value, 0) / usIndexChanges.length;
+    if (usAvg <= -1.2) {
+      lines.push("미국 3대 지수가 동반 약세라 국내도 리스크오프 연동 가능성이 있어, 개장 초반 추격보다 확인 후 분할 진입이 유리합니다.");
+    } else if (usAvg >= 1.2) {
+      lines.push("미국 3대 지수가 동반 강세라 위험선호가 이어질 여지가 있어, 상위 섹터 대표주 중심으로 단계적 확대가 효율적입니다.");
+    }
+  }
+
   return lines.slice(0, 3);
 }
 
@@ -147,6 +159,8 @@ export function buildEconomyInsightLines(market: MarketOverview): string[] {
   const us10y = Number(market.us10y?.price ?? 0);
   const usdkrw = Number(market.usdkrw?.price ?? 0);
   const fearGreed = Number(market.fearGreed?.score ?? 50);
+  const usIndexChanges = [market.sp500?.changeRate, market.nasdaq?.changeRate, market.dow?.changeRate]
+    .filter((value): value is number => Number.isFinite(value));
 
   if (vix >= 30 || us10y >= 5 || usdkrw >= 1450) {
     lines.push("거시 변수는 아직 방어 우위 구간입니다. 공격적으로 확장하기보다 비중 조절과 손실 제한을 먼저 점검하는 편이 자연스럽습니다.");
@@ -166,6 +180,15 @@ export function buildEconomyInsightLines(market: MarketOverview): string[] {
     lines.push("환율과 변동성이 같이 높으면 외국인 수급이 흔들리기 쉬워, 대형주도 안심 구간으로 보기 어렵습니다.");
   } else if (vix < 20 && us10y < 4.5) {
     lines.push("변동성과 금리 부담이 심하지 않아, 실전에서는 시장 전체보다 어떤 업종에 자금이 붙는지 확인하는 단계로 넘어가면 됩니다.");
+  }
+
+  if (usIndexChanges.length >= 2) {
+    const usAvg = usIndexChanges.reduce((sum, value) => sum + value, 0) / usIndexChanges.length;
+    if (usAvg <= -1.2) {
+      lines.push("미국 3대 지수가 동반 약세면 국내 개장 초반 변동성 확대가 잦아, 1차 눌림 확인 전 과도한 선진입은 피하는 편이 안전합니다.");
+    } else if (usAvg >= 1.2) {
+      lines.push("미국 3대 지수 강세가 확인되면 리스크온 가능성이 높아져, 주도 섹터 대표주를 분할로 따라가는 대응이 유효합니다.");
+    }
   }
 
   return lines.slice(0, 3);
@@ -242,6 +265,17 @@ type PickCandidate = {
   valueTraded: number;
 };
 
+type MarketPickCandidate = PickCandidate & {
+  marketCap: number;
+  liquidity: number;
+  universeLevel: string | null;
+  total_score: number;
+  momentum_score: number;
+  value_score: number;
+  universe_level: string | null;
+  market_cap: number;
+};
+
 type PullbackRow = {
   code: string;
   entry_grade: "A" | "B" | "C" | "D";
@@ -282,6 +316,7 @@ type PlanningConstraints = {
   blockedNewEntry: boolean;
   deployableCash: number;
   availableCash: number;
+  seedCapital: number;
   holdingCount: number;
   dayLossReached: boolean;
   statusLines: string[];
@@ -299,9 +334,28 @@ export type DailyCandidatePlanningReportResult = {
   topAnalyzeCodes: string[];
   sectorLeaderCodes: string[];
   actionItems: Array<{ code: string; label: string }>;
+  forecasts: DailyCandidateForecast[];
+};
+
+export type DailyCandidateForecast = {
+  code: string;
+  name: string;
+  strategyLabel: string;
+  entryPrice: number;
+  suggestedQuantity: number;
+  expectedBasePct: number;
+  expectedUpsidePct: number;
+  expectedDrawdownPct: number;
+  confidencePct: number;
+  scoreComponents: {
+    momentum: number; // 0-100
+    value: number;    // 0-100
+    safety: number;   // 0-100
+  };
 };
 
 const DEFAULT_DAILY_LOSS_LIMIT_PCT = 5;
+const DEFAULT_FORECAST_BASE_CAPITAL = 10_000_000;
 
 function clampDailyCandidateValue(value: number, min: number, max: number): number {
   if (!Number.isFinite(value)) return min;
@@ -325,6 +379,190 @@ function fmtDailyCandidateKrwShort(value: number): string {
   const restEok = eok % 10_000;
   if (jo > 0) return restEok > 0 ? `${jo}조 ${restEok.toLocaleString("ko-KR")}억` : `${jo}조`;
   return `${eok.toLocaleString("ko-KR")}억`;
+}
+
+function round1(value: number): number {
+  return Math.round(value * 10) / 10;
+}
+
+function estimateForecastFromMarketPick(input: {
+  pick: PickCandidate;
+  budgetPerCandidate: number;
+  sizingBaseCapital: number;
+}): DailyCandidateForecast {
+  const scoreStrength = clampDailyCandidateValue((input.pick.score - 55) / 35, 0, 1);
+  const rsiRisk = clampDailyCandidateValue(Math.abs(input.pick.rsi14 - 55) / 30, 0, 1);
+  const trendBoost = input.pick.trendLabel === "정배열 상승" ? 0.12 : input.pick.trendLabel === "상승 우위" ? 0.07 : 0;
+  const strength = clampDailyCandidateValue(scoreStrength + trendBoost, 0, 1);
+
+  const expectedBasePct = round1(clampDailyCandidateValue(1.6 + strength * 8.8 - rsiRisk * 1.8, -3.5, 14));
+  const expectedUpsidePct = round1(clampDailyCandidateValue(expectedBasePct + 3.8 + strength * 2.8, 0.5, 20));
+  const expectedDrawdownPct = round1(clampDailyCandidateValue(2.2 + (1 - strength) * 4.2 + rsiRisk * 2.1, 1.2, 11));
+  const confidencePct = round1(clampDailyCandidateValue(52 + strength * 34 - rsiRisk * 14, 35, 92));
+
+  const quantity = resolveSuggestedQuantity({
+    entryPrice: input.pick.price,
+    budgetPerCandidate: input.budgetPerCandidate,
+    sizingBaseCapital: input.sizingBaseCapital,
+  });
+
+  return {
+    code: input.pick.code,
+    name: input.pick.name,
+    strategyLabel:
+      input.pick.trendLabel === "정배열 상승"
+        ? "추세분할"
+        : input.pick.trendLabel === "상승 우위"
+          ? "지지매수"
+          : "확인매수",
+    entryPrice: input.pick.price,
+    suggestedQuantity: quantity,
+    expectedBasePct,
+    expectedUpsidePct,
+    expectedDrawdownPct,
+    confidencePct,
+    scoreComponents: {
+      momentum: round1(clampDailyCandidateValue(input.pick.momentumScore ?? 50, 0, 100)),
+      value: round1(clampDailyCandidateValue(input.pick.valueScore ?? 50, 0, 100)),
+      safety: round1(clampDailyCandidateValue(input.pick.safetyScore ?? 50, 0, 100)),
+    },
+  };
+}
+
+function estimateForecastFromPullback(input: {
+  item: PullbackRow;
+  budgetPerCandidate: number;
+  sizingBaseCapital: number;
+}): DailyCandidateForecast {
+  const price = Number(input.item.stock?.close ?? 0);
+  const entryScore = Number(input.item.entry_score ?? 0);
+  const warnScore = Number(input.item.warn_score ?? 0);
+  const strength = clampDailyCandidateValue((entryScore * 25 - warnScore * 6 + 42) / 100, 0, 1);
+
+  const expectedBasePct = round1(clampDailyCandidateValue(1.2 + strength * 7.6, -2, 12));
+  const expectedUpsidePct = round1(clampDailyCandidateValue(expectedBasePct + 3.6 + strength * 2.3, 0.8, 18));
+  const expectedDrawdownPct = round1(clampDailyCandidateValue(2.8 + (1 - strength) * 3.9 + warnScore * 0.15, 1.2, 10));
+  const confidencePct = round1(clampDailyCandidateValue(48 + strength * 30 - warnScore * 1.8, 32, 88));
+
+  const quantity = resolveSuggestedQuantity({
+    entryPrice: price,
+    budgetPerCandidate: input.budgetPerCandidate,
+    sizingBaseCapital: input.sizingBaseCapital,
+  });
+
+  const safetyFromWarn = round1(clampDailyCandidateValue((5 - warnScore) / 5 * 100, 0, 100));
+  const momentumFromEntry = round1(clampDailyCandidateValue(entryScore / 5 * 100, 0, 100));
+
+  return {
+    code: input.item.code,
+    name: String(input.item.stock?.name ?? input.item.code),
+    strategyLabel: "눌림분할",
+    entryPrice: price,
+    suggestedQuantity: quantity,
+    expectedBasePct,
+    expectedUpsidePct,
+    expectedDrawdownPct,
+    confidencePct,
+    scoreComponents: {
+      momentum: momentumFromEntry,
+      value: round1(clampDailyCandidateValue((momentumFromEntry + safetyFromWarn) / 2, 0, 100)),
+      safety: safetyFromWarn,
+    },
+  };
+}
+
+function resolveSizingBaseCapital(input: {
+  deployableCash?: number;
+  availableCash?: number;
+  seedCapital?: number;
+}): number {
+  const deployableCash = Math.max(0, Number(input.deployableCash ?? 0));
+  const availableCash = Math.max(0, Number(input.availableCash ?? 0));
+  const seedCapital = Math.max(0, Number(input.seedCapital ?? 0));
+
+  if (deployableCash > 0) return deployableCash;
+  if (availableCash > 0) return availableCash;
+  if (seedCapital > 0) return seedCapital;
+  return DEFAULT_FORECAST_BASE_CAPITAL;
+}
+
+function resolveSuggestedQuantity(input: {
+  entryPrice: number;
+  budgetPerCandidate: number;
+  sizingBaseCapital: number;
+}): number {
+  const price = Math.max(0, Number(input.entryPrice ?? 0));
+  const budget = Math.max(0, Number(input.budgetPerCandidate ?? 0));
+  const base = Math.max(0, Number(input.sizingBaseCapital ?? 0));
+  if (!(price > 0)) return 0;
+
+  const quantityByBudget = Math.floor(budget / price);
+  if (quantityByBudget >= 1) return quantityByBudget;
+
+  // 종목당 예산은 부족해도, 전체 기준금액에서 1주 매수가 가능하면 최소 1주를 제시한다.
+  return base >= price ? 1 : 0;
+}
+
+function buildDailyCandidateForecasts(input: {
+  pullbackItems: PullbackRow[];
+  kospiPicks: PickCandidate[];
+  kosdaqPicks: PickCandidate[];
+  topAnalyzeCodes: string[];
+  displayLimit: number;
+  deployableCash?: number;
+  availableCash?: number;
+  seedCapital?: number;
+}): DailyCandidateForecast[] {
+  const sizingBaseCapital = resolveSizingBaseCapital({
+    deployableCash: input.deployableCash,
+    availableCash: input.availableCash,
+    seedCapital: input.seedCapital,
+  });
+  const budgetPerCandidate = sizingBaseCapital / Math.max(1, input.displayLimit);
+
+  const pullbackByCode = new Map(input.pullbackItems.map((item) => [item.code, item]));
+  const marketByCode = new Map(
+    [...input.kospiPicks, ...input.kosdaqPicks].map((pick) => [pick.code, pick])
+  );
+
+  const orderedCodes = [
+    ...input.topAnalyzeCodes,
+    ...input.pullbackItems.map((item) => item.code),
+    ...input.kospiPicks.map((pick) => pick.code),
+    ...input.kosdaqPicks.map((pick) => pick.code),
+  ];
+
+  const forecasts: DailyCandidateForecast[] = [];
+  const seen = new Set<string>();
+  for (const code of orderedCodes) {
+    if (seen.has(code)) continue;
+    seen.add(code);
+
+    const pullback = pullbackByCode.get(code);
+    if (pullback) {
+      forecasts.push(
+        estimateForecastFromPullback({
+          item: pullback,
+          budgetPerCandidate,
+          sizingBaseCapital,
+        })
+      );
+    } else {
+      const pick = marketByCode.get(code);
+      if (!pick) continue;
+      forecasts.push(
+        estimateForecastFromMarketPick({
+          pick,
+          budgetPerCandidate,
+          sizingBaseCapital,
+        })
+      );
+    }
+
+    if (forecasts.length >= 3) break;
+  }
+
+  return forecasts;
 }
 
 function getKstDayRangeForPlan(reference = new Date()): { startIso: string; endIso: string } {
@@ -624,7 +862,7 @@ async function getDailyRealizedPnlForPlan(
     throw new Error(`당일 손익 조회 실패: ${error.message}`);
   }
 
-  return (data ?? []).reduce((sum, row: any) => {
+  return (data ?? []).reduce((sum: number, row: { pnl_amount?: number | null }) => {
     const pnl = Number(row?.pnl_amount ?? 0);
     return Number.isFinite(pnl) ? sum + pnl : sum;
   }, 0);
@@ -738,6 +976,7 @@ async function resolvePlanningConstraints(
     blockedNewEntry: dayLossReached,
     deployableCash,
     availableCash,
+    seedCapital,
     holdingCount,
     dayLossReached,
     statusLines,
@@ -859,16 +1098,16 @@ async function fetchMarketPickCandidatesForDailyPlan(
   const rows = stocks ?? [];
   const sectorNameMap = await fetchSectorNameMap(
     supabase,
-    rows.map((row) => row.sector_id)
+    rows.map((row: StockRow) => row.sector_id)
   );
-  const codes = rows.map((row) => row.code);
+  const codes = rows.map((row: StockRow) => row.code);
   const [scoreResult, indicatorMap] = await Promise.all([
     fetchLatestScoresByCodes(supabase, codes),
     fetchIndicatorsByCodesForDailyCandidates(supabase, codes),
   ]);
 
-  const ranked = rows
-    .map((row) => {
+  const ranked: MarketPickCandidate[] = rows
+    .map((row: StockRow) => {
       const indicator = indicatorMap.get(row.code);
       const latestScore = scoreResult.byCode.get(row.code);
       const price = Number(indicator?.close ?? row.close ?? 0);
@@ -933,14 +1172,19 @@ async function fetchMarketPickCandidatesForDailyPlan(
         marketCap: Number(row.market_cap ?? 0),
         liquidity: Number(row.liquidity ?? 0),
         universeLevel: row.universe_level,
+        total_score: totalScore,
+        momentum_score: momentumScore,
+        value_score: valueScore,
+        universe_level: row.universe_level,
+        market_cap: Number(row.market_cap ?? 0),
       };
     })
-    .filter((row) => row.price > 0)
-    .filter((row) => row.valueTraded >= marketPolicy.minLiquidity);
+    .filter((row: MarketPickCandidate) => row.price > 0)
+    .filter((row: MarketPickCandidate) => row.valueTraded >= marketPolicy.minLiquidity);
 
   const largeCapFloor = marketPolicy.requireLargeCapKospi
     ? computeDynamicLargeCapFloor(
-        ranked.map((row) => ({
+        ranked.map((row: MarketPickCandidate) => ({
           code: row.code,
           close: row.price,
           score: row.score,
@@ -954,14 +1198,14 @@ async function fetchMarketPickCandidatesForDailyPlan(
       )
     : 0;
 
-  const filtered = ranked.filter((row) => {
+  const filtered = ranked.filter((row: MarketPickCandidate) => {
     if (market === "KOSPI" && marketPolicy.requireLargeCapKospi) {
       return row.marketCap >= Math.max(marketPolicy.minMarketCap, largeCapFloor);
     }
     return true;
   });
 
-  return pickSaferCandidates(filtered, 5, riskProfile).sort((a, b) => b.score - a.score);
+  return pickSaferCandidates<MarketPickCandidate>(filtered, 5, riskProfile).sort((a, b) => b.score - a.score);
 }
 
 async function fetchPullbackCandidatesForDailyPlan(
@@ -1048,19 +1292,35 @@ export async function createDailyCandidatePlanningReportResult(
   const orderedPullbackItems = orderPullbackCandidatesByOverlap(pullbackResult.items, sectorOverlapWarnings);
   const orderedKospiPicks = orderMarketCandidatesByOverlap(kospiPicks, sectorOverlapWarnings);
   const orderedKosdaqPicks = orderMarketCandidatesByOverlap(kosdaqPicks, sectorOverlapWarnings);
-  const visiblePullbackItems = orderedPullbackItems.filter(
+  const visiblePullbackItemsByOverlap = orderedPullbackItems.filter(
     (item) => !shouldHideCandidateByOverlap(item.stock?.sector_id ? sectorOverlapWarnings.get(item.stock.sector_id) : undefined)
   );
-  const visibleKospiPicks = orderedKospiPicks.filter(
+  const visibleKospiPicksByOverlap = orderedKospiPicks.filter(
     (item) => !shouldHideCandidateByOverlap(item.sectorId ? sectorOverlapWarnings.get(item.sectorId) : undefined)
   );
-  const visibleKosdaqPicks = orderedKosdaqPicks.filter(
+  const visibleKosdaqPicksByOverlap = orderedKosdaqPicks.filter(
     (item) => !shouldHideCandidateByOverlap(item.sectorId ? sectorOverlapWarnings.get(item.sectorId) : undefined)
   );
+
+  const newsRiskCodes = [
+    ...visiblePullbackItemsByOverlap.map((item) => item.code),
+    ...visibleKospiPicksByOverlap.map((item) => item.code),
+    ...visibleKosdaqPicksByOverlap.map((item) => item.code),
+  ];
+  const { blockedByCode: blockedByNews } = await filterCodesByCriticalNewsRisk(newsRiskCodes, {
+    maxNewsPerCode: 6,
+    checkLimit: 40,
+  });
+
+  const visiblePullbackItems = visiblePullbackItemsByOverlap.filter((item) => !blockedByNews.has(item.code));
+  const visibleKospiPicks = visibleKospiPicksByOverlap.filter((item) => !blockedByNews.has(item.code));
+  const visibleKosdaqPicks = visibleKosdaqPicksByOverlap.filter((item) => !blockedByNews.has(item.code));
+
   const hiddenByOverlapCount =
-    orderedPullbackItems.length - visiblePullbackItems.length +
-    orderedKospiPicks.length - visibleKospiPicks.length +
-    orderedKosdaqPicks.length - visibleKosdaqPicks.length;
+    orderedPullbackItems.length - visiblePullbackItemsByOverlap.length +
+    orderedKospiPicks.length - visibleKospiPicksByOverlap.length +
+    orderedKosdaqPicks.length - visibleKosdaqPicksByOverlap.length;
+  const hiddenByNewsCount = blockedByNews.size;
   const topAnalyzeCodes = pickTopAnalyzeCodes({
     pullbackItems: visiblePullbackItems,
     kospiPicks: visibleKospiPicks,
@@ -1086,6 +1346,15 @@ export async function createDailyCandidatePlanningReportResult(
       : null,
     marketOverview?.kosdaq
       ? `KOSDAQ ${fmtDailyCandidateInt(marketOverview.kosdaq.price)} ${fmtDailyCandidatePct(marketOverview.kosdaq.changeRate)}`
+      : null,
+    marketOverview?.sp500
+      ? `S&P500 ${fmtDailyCandidateInt(marketOverview.sp500.price)} ${fmtDailyCandidatePct(marketOverview.sp500.changeRate)}`
+      : null,
+    marketOverview?.nasdaq
+      ? `NASDAQ ${fmtDailyCandidateInt(marketOverview.nasdaq.price)} ${fmtDailyCandidatePct(marketOverview.nasdaq.changeRate)}`
+      : null,
+    marketOverview?.dow
+      ? `DOW ${fmtDailyCandidateInt(marketOverview.dow.price)} ${fmtDailyCandidatePct(marketOverview.dow.changeRate)}`
       : null,
     marketOverview?.usdkrw
       ? `달러/원 ${fmtDailyCandidateInt(marketOverview.usdkrw.price)} ${fmtDailyCandidatePct(marketOverview.usdkrw.changeRate)}`
@@ -1119,6 +1388,26 @@ export async function createDailyCandidatePlanningReportResult(
     kosdaqPicks: visibleKosdaqPicks,
   });
   const displayLimit = Math.max(1, planningConstraints?.displayLimit ?? 5);
+  const forecasts = buildDailyCandidateForecasts({
+    pullbackItems: visiblePullbackItems,
+    kospiPicks: visibleKospiPicks,
+    kosdaqPicks: visibleKosdaqPicks,
+    topAnalyzeCodes,
+    displayLimit,
+    deployableCash: planningConstraints?.deployableCash,
+    availableCash: planningConstraints?.availableCash,
+    seedCapital: planningConstraints?.seedCapital,
+  });
+  const forecastLines = forecasts.length
+    ? [
+        "",
+        "<b>예측 시나리오 (백테스트 아님)</b>",
+        "과거 유사구간(점수·추세·리스크) 기반 추정이며, 실전 체결/슬리피지에 따라 달라질 수 있습니다.",
+        ...forecasts.map((item, index) =>
+          `${index + 1}. ${item.name}(${item.code}) · 기준가 ${fmtDailyCandidateInt(item.entryPrice)}원 · 권장 ${item.suggestedQuantity > 0 ? `${item.suggestedQuantity}주` : "수량 산출 불가"} · 예상손실 -${item.expectedDrawdownPct.toFixed(1)}% · 기준 +${item.expectedBasePct.toFixed(1)}% · 상단 +${item.expectedUpsidePct.toFixed(1)}% · 신뢰 ${item.confidencePct.toFixed(1)}%`
+        ),
+      ]
+    : [];
 
   const pullbackLines = visiblePullbackItems.length
     ? visiblePullbackItems.slice(0, displayLimit).map((item, index) => {
@@ -1170,6 +1459,7 @@ export async function createDailyCandidatePlanningReportResult(
       `<b>오늘 후보 계획</b>`,
       ...(planningConstraints?.statusLines.length ? planningConstraints.statusLines.map((line) => `  ${line}`) : []),
       ...(hiddenByOverlapCount > 0 ? [`  보유 섹터 과집중으로 ${hiddenByOverlapCount}개 후보는 본문에서 제외`] : []),
+      ...(hiddenByNewsCount > 0 ? [`  뉴스 이벤트 리스크(공개매수/상폐/거래정지 등)로 ${hiddenByNewsCount}개 제외`] : []),
       ...(sectorFocusLines.length ? [`  섹터 집중: ${sectorFocusLines.map((line) => line.replace(/^\d+\.\s*/, "")).join(", ")}`] : []),
       `  대응 원칙: ${focusLines[0]}`,
       ...(compactPullback.length ? ["  눌림목", ...compactPullback] : ["  눌림목 후보 없음"]),
@@ -1179,11 +1469,20 @@ export async function createDailyCandidatePlanningReportResult(
           ? ["  코스닥", ...compactKosdaq]
           : ["  코스닥 후보 없음"]
         : ["  코스닥 신규 후보 제한"]),
+      ...(forecasts.length
+        ? [
+            "  예측",
+            ...forecasts.slice(0, 2).map((item) =>
+              `  ▸ ${item.name}(${item.code}) · -${item.expectedDrawdownPct.toFixed(1)}% / +${item.expectedBasePct.toFixed(1)}% / 상단 +${item.expectedUpsidePct.toFixed(1)}%`
+            ),
+          ]
+        : []),
       actionLine,
     ].join("\n"),
       topAnalyzeCodes,
       sectorLeaderCodes,
       actionItems,
+      forecasts,
     };
   }
 
@@ -1198,11 +1497,14 @@ export async function createDailyCandidatePlanningReportResult(
     ...focusLines.map((line) => `• ${line}`),
     "",
     `<b>주목도 표시</b>`,
-    "• 🟥 상: 오늘 바로 다시 볼 핵심 후보",
-    "• 🟩 중: 장중 추적할 후보",
-    "• 🟦 하: 후보군 유지용 체크",
+    "• 🟥 상:오늘 바로 다시 볼 핵심 후보",
+    "• 🟩 중:장중 추적할 후보",
+    "• 🟦 하:후보군 유지용 체크",
     ...(planningConstraints?.statusLines.length
       ? ["", `<b>자금·리스크 상태</b>`, ...planningConstraints.statusLines.map((line) => `• ${line}`)]
+      : []),
+    ...(hiddenByNewsCount > 0
+      ? ["", `<b>이벤트 리스크 제외</b>`, `• 뉴스 기반 이벤트 리스크(공개매수/상폐/거래정지 등)로 ${hiddenByNewsCount}개 후보를 본문에서 제외했습니다.`]
       : []),
     ...(sectorOverlapWarnings.size > 0
       ? ["", `<b>분산 경고</b>`, ...[...sectorOverlapWarnings.values()].slice(0, 2).map((warning) => `• 보유 섹터 ${warning.sectorName} 비중 ${warning.ratio.toFixed(1)}%로 높습니다. 같은 섹터 신규 진입은 보수적으로 보세요.`), ...(hiddenByOverlapCount > 0 ? [`• 강한 중복 섹터 후보 ${hiddenByOverlapCount}개는 이번 리포트 본문에서 제외했습니다.`] : [])]
@@ -1228,10 +1530,12 @@ export async function createDailyCandidatePlanningReportResult(
         ? "조건에 맞는 코스닥 후보가 없습니다."
         : "현재 시장모드에서는 코스닥 신규 후보를 제한합니다."
     ),
+    ...forecastLines,
   ].join("\n"),
     topAnalyzeCodes,
     sectorLeaderCodes,
     actionItems,
+    forecasts,
   };
 }
 

@@ -5,6 +5,9 @@ export type SignalGateFactors = {
   avwap_support?: number;
   vol_ratio?: number;
   macd_cross?: string | null;
+  stable_turn?: string | null;
+  stable_turn_trust?: number;
+  stable_above_avg?: boolean;
 };
 
 export type SignalGateResult = {
@@ -19,6 +22,9 @@ export type SignalGateResult = {
     avwapSupport: number;
     volRatio: number;
     macdCross: string;
+    stableTurn: string;
+    stableTrust: number;
+    stableAboveAvg: boolean;
   };
 };
 
@@ -48,6 +54,19 @@ function normalizeMacdCross(value: unknown): string {
   return "none";
 }
 
+function normalizeStableTurn(value: unknown): string {
+  const normalized = String(value ?? "").trim().toLowerCase();
+  if (
+    normalized === "bull-weak" ||
+    normalized === "bull-strong" ||
+    normalized === "bear-weak" ||
+    normalized === "bear-strong"
+  ) {
+    return normalized;
+  }
+  return "none";
+}
+
 function toGrade(score: number): SignalGateResult["grade"] {
   if (score >= 80) return "A";
   if (score >= 68) return "B";
@@ -71,6 +90,10 @@ export function evaluateAutoTradeSignalGate(input: {
   const avwapSupport = clamp(toNumber(factors.avwap_support, 50), 0, 100);
   const volRatio = Math.max(0, toNumber(factors.vol_ratio, 1));
   const macdCross = normalizeMacdCross(factors.macd_cross);
+  const stableTurn = normalizeStableTurn(factors.stable_turn);
+  const stableTrust = clamp(toNumber(factors.stable_turn_trust, 60), 0, 100);
+  const stableAboveAvg =
+    factors.stable_above_avg == null ? true : Boolean(factors.stable_above_avg);
   const aboveSma200 = sma200 > 0 ? currentPrice >= sma200 : true;
   const aboveSma50 = sma50 > 0 ? currentPrice >= sma50 : true;
 
@@ -95,6 +118,18 @@ export function evaluateAutoTradeSignalGate(input: {
   if (macdCross === "golden") trustScore += 8;
   if (macdCross === "dead") trustScore -= 14;
 
+  if (stableAboveAvg) trustScore += 8;
+  else trustScore -= 10;
+
+  if (stableTurn === "bull-strong") trustScore += 10;
+  else if (stableTurn === "bull-weak") trustScore += 5;
+  else if (stableTurn === "bear-strong") trustScore -= 12;
+  else if (stableTurn === "bear-weak") trustScore -= 6;
+
+  if (stableTrust >= 75) trustScore += 6;
+  else if (stableTrust >= 65) trustScore += 3;
+  else if (stableTrust <= 45) trustScore -= 8;
+
   if (score >= 78) trustScore += 8;
   else if (score >= 70) trustScore += 5;
   else if (score >= 60) trustScore += 2;
@@ -109,6 +144,8 @@ export function evaluateAutoTradeSignalGate(input: {
   if (requireAboveSma200 && !aboveSma200) reasons.push("가격이 장기 세력선(sma200) 아래");
   if (!aboveSma50) reasons.push("가격이 추세선(sma50) 아래");
   if (macdCross === "dead") reasons.push("MACD 데드크로스");
+  if (stableTurn === "bear-strong") reasons.push("Stable 턴 약세 강화 구간");
+  if (!stableAboveAvg) reasons.push("가격이 세력 평단 아래");
   if (volRatio < 0.9) reasons.push("거래량 신뢰도 부족");
   if (rsi14 > 74) reasons.push("RSI 과열");
   if (trustScore < minTrustScore) reasons.push(`신뢰도 ${trustScore}점 < 기준 ${minTrustScore}점`);
@@ -116,7 +153,8 @@ export function evaluateAutoTradeSignalGate(input: {
   const passed =
     trustScore >= minTrustScore &&
     (!requireAboveSma200 || aboveSma200) &&
-    macdCross !== "dead";
+    macdCross !== "dead" &&
+    stableTurn !== "bear-strong";
 
   return {
     passed,
@@ -130,6 +168,9 @@ export function evaluateAutoTradeSignalGate(input: {
       avwapSupport,
       volRatio,
       macdCross,
+      stableTurn,
+      stableTrust,
+      stableAboveAvg,
     },
   };
 }

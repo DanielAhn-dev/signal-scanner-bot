@@ -9,6 +9,7 @@ import {
 } from "../../src/lib/apiUpdateShared";
 
 type SectorSeed = { id: string; name: string; metrics: { krx_index?: string } };
+type ExistingSectorRow = { id: string; name: string | null; metrics: Record<string, unknown> | null };
 
 const SEED: SectorSeed[] = [
   { id: "semiconductor", name: "반도체", metrics: { krx_index: "1014" } },
@@ -32,8 +33,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     const { data: existing } = await supa.from("sectors").select("id,name,metrics");
 
-    const existingRows = existing ?? [];
-    const existById = new Map(existingRows.map((r: any) => [r.id, r]));
+    const existingRows: ExistingSectorRow[] = existing ?? [];
+    const existById = new Map(existingRows.map((r: ExistingSectorRow) => [r.id, r]));
 
     const payload = SEED.map((s) => ({
       id: slugify(s.id || s.name),

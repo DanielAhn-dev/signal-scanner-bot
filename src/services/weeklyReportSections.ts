@@ -198,6 +198,14 @@ export function drawMarketOverviewSection(
       valueColor: pnlColor(toNum(market.nasdaq.changeRate)),
     });
   }
+  if (market.dow) {
+    cards.push({
+      label: "Dow Jones",
+      value: fmtInt(toNum(market.dow.price)),
+      sub: fmtPct(toNum(market.dow.changeRate)),
+      valueColor: pnlColor(toNum(market.dow.changeRate)),
+    });
+  }
 
   while (cards.length % 4 !== 0) cards.push({ label: "", value: "" });
   if (cards.length > 0) drawKpiGrid(ctx, cards, 4);
@@ -684,6 +692,7 @@ export function drawEconomySection(
   if (market.kosdaq) cards.push({ label: "KOSDAQ", value: fmtInt(toNum(market.kosdaq.price)), sub: fmtPct(toNum(market.kosdaq.changeRate)), valueColor: pnlColor(toNum(market.kosdaq.changeRate)) });
   if (market.sp500) cards.push({ label: "S&P 500", value: fmtInt(toNum(market.sp500.price)), sub: fmtPct(toNum(market.sp500.changeRate)), valueColor: pnlColor(toNum(market.sp500.changeRate)) });
   if (market.nasdaq) cards.push({ label: "NASDAQ", value: fmtInt(toNum(market.nasdaq.price)), sub: fmtPct(toNum(market.nasdaq.changeRate)), valueColor: pnlColor(toNum(market.nasdaq.changeRate)) });
+  if (market.dow) cards.push({ label: "Dow Jones", value: fmtInt(toNum(market.dow.price)), sub: fmtPct(toNum(market.dow.changeRate)), valueColor: pnlColor(toNum(market.dow.changeRate)) });
   if (market.usdkrw) cards.push({ label: "USD/KRW", value: `${fmtInt(toNum(market.usdkrw.price))}원`, sub: fmtPct(toNum(market.usdkrw.changeRate)), valueColor: C.text });
   if (market.us10y) cards.push({ label: "미국 10년물", value: `${toNum(market.us10y.price).toFixed(2)}%`, sub: fmtPct(toNum(market.us10y.changeRate)), valueColor: pnlColor(toNum(market.us10y.changeRate)) });
   if (market.vix) cards.push({ label: "VIX", value: toNum(market.vix.price).toFixed(2), sub: toNum(market.vix.price) >= 30 ? "고위험" : toNum(market.vix.price) >= 20 ? "주의" : "안정", valueColor: toNum(market.vix.price) >= 30 ? C.up : C.text });
@@ -704,8 +713,21 @@ export function drawEconomySection(
   const wtiVal = market.wtiOil ? toNum(market.wtiOil.price) : 0;
   const goldVal = market.gold ? toNum(market.gold.price) : 0;
   const copperVal = market.copper ? toNum(market.copper.price) : 0;
+  const usIndexChanges = [
+    market.sp500?.changeRate,
+    market.nasdaq?.changeRate,
+    market.dow?.changeRate,
+  ].filter((value): value is number => Number.isFinite(value));
 
   const comments: string[] = [];
+  if (usIndexChanges.length >= 2) {
+    const usAvg = usIndexChanges.reduce((sum, value) => sum + value, 0) / usIndexChanges.length;
+    if (usAvg <= -1.2) {
+      comments.push("미국 3대 지수가 동반 약세로 마감해 리스크오프 압력이 우세합니다. 국내 개장 초반에는 추격 진입보다 변동성 소화 확인 후 분할 접근이 유리합니다.");
+    } else if (usAvg >= 1.2) {
+      comments.push("미국 3대 지수가 동반 강세로 위험선호 흐름이 개선됐습니다. 국내 대응은 상위 섹터 대표주 중심으로 단계적 비중 확대가 효율적입니다.");
+    }
+  }
   if (vixVal >= 30) comments.push(`VIX ${vixVal.toFixed(1)}로 변동성 위험 수준입니다. 옵션 헤지 비용이 높아진 구간으로 신규 진입 시 포지션 규모를 평소의 50~70% 이하로 제한하는 것이 좋습니다.`);
   else if (vixVal >= 20) comments.push(`VIX ${vixVal.toFixed(1)}로 경계 구간에 진입했습니다. 단기 급등락 가능성을 열어두고 손절·목표가 기준을 사전에 정해 두는 대응이 필요합니다.`);
   if (fgVal <= 20) comments.push(`공포·탐욕 지수 ${fgVal}로 극단적 공포 구간입니다. 과거 사례상 이 구간은 중기 저점 형성 가능성이 높아 분할 매수를 고려할 만합니다.`);

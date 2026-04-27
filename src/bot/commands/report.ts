@@ -10,6 +10,7 @@ import {
 } from "../../services/weeklyReportService";
 import {
   createDailyCandidatePlanningReportResult,
+  type DailyCandidateForecast,
   type DailyCandidatePlanningReportResult,
 } from "../../services/marketInsightService";
 import { summarizeWindow, type TradeRow } from "../../services/weeklyReportData";
@@ -17,11 +18,13 @@ import { drawTopicHero } from "../../services/weeklyReportLayout";
 import { ReportContext, loadFontBytes, wrapText } from "../../services/weeklyReportPdfCore";
 import { asKstDate, getReportTheme, toKrDate, toYmd } from "../../services/weeklyReportShared";
 import { buildInvestmentPlan } from "../../lib/investPlan";
+import { parseStrategyMemo } from "../../lib/strategyMemo";
 import {
   fetchWatchMicroSignalsByCodes,
   resolveWatchDecision,
 } from "../../lib/watchlistSignals";
 import { getDecisionReliabilitySummary } from "../../services/decisionLogService";
+import { fetchStrategyGateState } from "../../services/strategyGateStateService";
 import { getUserInvestmentPrefs } from "../../services/userService";
 import { handlePreMarketPlanCommand } from "./preMarketPlan";
 import { ACTIONS, actionButtons, buildRecommendationActionButtons } from "../messages/layout";
@@ -84,6 +87,82 @@ function fmtSignedWon(v: number): string {
   return `${v >= 0 ? "+" : ""}${fmtInt(v)}원`;
 }
 
+type StrategyMonthlyStat = {
+  strategyId: string;
+  sellCount: number;
+  winCount: number;
+  totalPnl: number;
+  winRate: number;
+  profitFactor: number | null;
+  maxDrawdown: number;
+};
+
+function calcMaxDrawdown(pnlSeries: number[]): number {
+  let peak = 0;
+  let equity = 0;
+  let maxDd = 0;
+  for (const pnl of pnlSeries) {
+    equity += pnl;
+    if (equity > peak) peak = equity;
+    const dd = peak - equity;
+    if (dd > maxDd) maxDd = dd;
+  }
+  return maxDd;
+}
+
+function summarizeMonthlyStrategyStats(rows: TradeRow[]): StrategyMonthlyStat[] {
+  const byStrategy = new Map<string, TradeRow[]>();
+  for (const row of rows) {
+    if (row.side !== "SELL") continue;
+    const strategyId = parseStrategyMemo(row.memo).strategyId;
+    const list = byStrategy.get(strategyId) ?? [];
+    list.push(row);
+    byStrategy.set(strategyId, list);
+  }
+
+  const out: StrategyMonthlyStat[] = [];
+  for (const [strategyId, sells] of byStrategy.entries()) {
+    const sorted = [...sells].sort((a, b) => a.traded_at.localeCompare(b.traded_at));
+    const pnls = sorted.map((row) => Number(row.pnl_amount ?? 0)).filter(Number.isFinite);
+    const totalPnl = pnls.reduce((acc, value) => acc + value, 0);
+    const winCount = pnls.filter((value) => value > 0).length;
+    const lossAbs = Math.abs(pnls.filter((value) => value < 0).reduce((acc, value) => acc + value, 0));
+    const winPnl = pnls.filter((value) => value > 0).reduce((acc, value) => acc + value, 0);
+
+    out.push({
+      strategyId,
+      sellCount: pnls.length,
+      winCount,
+      totalPnl,
+      winRate: pnls.length ? (winCount / pnls.length) * 100 : 0,
+      profitFactor: lossAbs > 0 ? winPnl / lossAbs : null,
+      maxDrawdown: calcMaxDrawdown(pnls),
+    });
+  }
+
+  return out.sort((a, b) => b.totalPnl - a.totalPnl);
+}
+
+function resolveStrategyGateStatus(input: {
+  stat: StrategyMonthlyStat;
+  mddLimitKrw: number;
+}): "승격 후보" | "유지" | "관찰" | "중단 후보" {
+  const { stat, mddLimitKrw } = input;
+  if (stat.sellCount < 8) return "관찰";
+  if (stat.profitFactor != null && stat.profitFactor < 0.9) return "중단 후보";
+  if (mddLimitKrw > 0 && stat.maxDrawdown > mddLimitKrw) return "중단 후보";
+  if (stat.profitFactor != null && stat.profitFactor >= 1.2) return "승격 후보";
+  return "유지";
+}
+
+function toPersistedGateLabel(status?: string | null): string {
+  if (status === "promote") return "승격 후보";
+  if (status === "pause") return "중단 후보";
+  if (status === "watch") return "관찰";
+  if (status === "hold") return "유지";
+  return "미집계";
+}
+
 function getKstMonthRange(now = new Date()): {
   label: string;
   startIso: string;
@@ -115,6 +194,11 @@ async function handleMonthlyReportCommand(
 
   try {
     const range = getKstMonthRange();
+    const prefs = await getUserInvestmentPrefs(ctx.chatId);
+    const seedCapital = Number(
+      prefs.virtual_seed_capital ?? prefs.capital_krw ?? prefs.virtual_cash ?? 0
+    );
+    const mddLimitKrw = seedCapital > 0 ? seedCapital * 0.08 : 0;
 
     const { data: tradeRows, error: tradeError } = await supabase
       .from("virtual_trades")
@@ -131,6 +215,13 @@ async function handleMonthlyReportCommand(
     }
 
     const summary = summarizeWindow(tradeRows ?? []);
+    const strategyStats = summarizeMonthlyStrategyStats(tradeRows ?? []);
+    const topStrategies = strategyStats.slice(0, 3);
+    const persistedGate = await fetchStrategyGateState({
+      supabase,
+      chatId: ctx.chatId,
+      strategyId: "core.autotrade.v1",
+    }).catch(() => null);
 
     const { data: watchRows } = await supabase
       .from("watchlist")
@@ -244,6 +335,30 @@ async function handleMonthlyReportCommand(
       }
     }
 
+    const strategyLines: string[] = [];
+    if (topStrategies.length) {
+      strategyLines.push("");
+      strategyLines.push("─────────────────");
+      strategyLines.push("<b>전략 라이브 리더보드 (월간)</b>");
+      for (const stat of topStrategies) {
+        const pfText = stat.profitFactor != null ? stat.profitFactor.toFixed(2) : "N/A";
+        const status = resolveStrategyGateStatus({ stat, mddLimitKrw });
+        strategyLines.push(
+          `${stat.strategyId}: ${fmtSignedWon(stat.totalPnl)} · 승률 ${stat.winRate.toFixed(1)}% (${stat.winCount}/${stat.sellCount}) · PF ${pfText} · MDD ${fmtInt(stat.maxDrawdown)}원 · ${status}`
+        );
+      }
+      if (mddLimitKrw > 0) {
+        strategyLines.push(`게이트 기준: PF 1.20+, MDD 한도 ${fmtInt(mddLimitKrw)}원 (seed 8%)`);
+      } else {
+        strategyLines.push("게이트 기준: PF 1.20+, 최소 매도 8건 (MDD 한도는 seed 설정 후 적용)");
+      }
+    }
+    if (persistedGate) {
+      strategyLines.push(
+        `실시간 자동게이트: ${toPersistedGateLabel(persistedGate.status)} · PF ${persistedGate.profitFactor != null ? persistedGate.profitFactor.toFixed(2) : "N/A"} · 승률 ${persistedGate.winRate.toFixed(1)}% · 연속손실 ${persistedGate.maxLossStreak}회`
+      );
+    }
+
     const msg = [
       `<b>${range.label} 월간 성과</b>`,
       "─────────────────",
@@ -254,6 +369,7 @@ async function handleMonthlyReportCommand(
       `최대 단일 손실: ${fmtSignedWon(summary.maxSingleLoss)}`,
       `규칙 준수율: ${ruleCompliancePct.toFixed(1)}% (손절 미이행 ${stopLossViolationCount}건)`,
       ...reliabilityLines,
+      ...strategyLines,
       "",
       "<b>다음 운용 포인트</b>",
       ...nextActions.map((line, idx) => `${idx + 1}) ${line}`),
@@ -498,7 +614,7 @@ async function handleDailyCandidateReportCommand(
   }
 }
 
-function buildPublicDailyCandidateText(rawText: string): string {
+export function buildPublicDailyCandidateText(rawText: string): string {
   const lines = String(rawText || "").split("\n");
   const hiddenSections = new Set(["<b>자금·리스크 상태</b>", "<b>분산 경고</b>"]);
   const sanitized: string[] = [];
@@ -631,6 +747,75 @@ function stripTelegramHtml(raw: string): string {
     .trim();
 }
 
+function parseReportMetaLine(line: string): { riskLabel: string; regimeLabel: string } | null {
+  const match = String(line ?? "").trim().match(/^투자성향\s+(.+?)\s+·\s+레짐\s+(.+)$/);
+  if (!match) return null;
+  return {
+    riskLabel: match[1].trim(),
+    regimeLabel: match[2].trim(),
+  };
+}
+
+function parseMarketSnapshotLine(line: string): { label: string; price: string; rate: string; rateValue: number } | null {
+  const match = String(line ?? "").trim().match(/^([A-Z&/0-9가-힣]+)\s+([\d,]+)\s+([+-]\s*\d+(?:\.\d+)?%)$/);
+  if (!match) return null;
+  const rate = match[3].replace(/\s+/g, "");
+  const rateValue = Number(rate.replace("%", ""));
+  if (!Number.isFinite(rateValue)) return null;
+  return {
+    label: match[1].trim(),
+    price: match[2].trim(),
+    rate,
+    rateValue,
+  };
+}
+
+function marketRateColor(value: number): RGB {
+  if (value > 0) return rgb(0.74, 0.14, 0.14);
+  if (value < 0) return rgb(0.08, 0.40, 0.72);
+  return rgb(0.42, 0.42, 0.48);
+}
+
+function drawReportMetaBand(
+  ctx: ReportContext,
+  meta: { riskLabel: string; regimeLabel: string },
+  theme: { accent: RGB; border: RGB; softBg: RGB; subtitle: RGB }
+) {
+  const topY = ctx.y;
+  const bandH = 16;
+  ctx.ensureSpace(bandH + 5);
+  ctx.rect(ctx.ML, topY - bandH + 4, ctx.BODY_W, bandH, theme.softBg);
+  ctx.rect(ctx.ML, topY - bandH + 4, 3, bandH, theme.accent);
+  ctx.textLight("PROFILE", ctx.ML + 8, topY - 1, 5.8, theme.accent);
+  ctx.textBold(`투자성향 ${meta.riskLabel}`, ctx.ML + 47, topY - 1, 7.8, rgb(0.14, 0.14, 0.18));
+  ctx.textRight(`레짐 ${meta.regimeLabel}`, ctx.ML + ctx.BODY_W - 8, topY - 1, 7.2, theme.subtitle);
+  ctx.y -= bandH + 2;
+}
+
+function drawMarketSnapshotRow(ctx: ReportContext, snapshot: { label: string; price: string; rate: string; rateValue: number }) {
+  const topY = ctx.y;
+  const rowH = 16;
+  const cardY = topY - rowH + 4;
+  const rateColor = marketRateColor(snapshot.rateValue);
+  const labelColor = rgb(0.34, 0.36, 0.40);
+  const priceColor = rgb(0.08, 0.08, 0.10);
+
+  ctx.ensureSpace(rowH + 2);
+  ctx.rect(ctx.ML, cardY, ctx.BODY_W, rowH, rgb(0.985, 0.986, 0.990));
+  ctx.line(ctx.ML, cardY, ctx.ML + ctx.BODY_W, cardY, rgb(0.88, 0.89, 0.92), 0.45);
+
+  const labelX = ctx.ML + 8;
+  const priceX = ctx.ML + 74;
+  const rateRightX = ctx.ML + ctx.BODY_W - 8;
+  const baselineY = topY;
+
+  ctx.textLight(snapshot.label, labelX, baselineY, 6.2, labelColor);
+  ctx.textBold(snapshot.price, priceX, baselineY, 8.9, priceColor);
+  ctx.textRightBold(snapshot.rate, rateRightX, baselineY, 8.1, rateColor);
+
+  ctx.y -= rowH;
+}
+
 function getAttentionHighlight(line: string): { fill: RGB; text: RGB } | null {
   const normalized = String(line ?? "").trim();
   if (/^\d+\.\s+🟥\s+상\s+/.test(normalized)) {
@@ -723,7 +908,155 @@ function getCandidateHeaderHighlight(line: string): { fill: RGB; text: RGB } {
   return { fill: rgb(0.95, 0.95, 0.97), text: rgb(0.12, 0.12, 0.16) };
 }
 
-async function createDailyCandidateReportPdf(
+function drawCandidateCharts(ctx: ReportContext, forecasts: DailyCandidateForecast[]) {
+  if (!forecasts.length) return;
+
+  const bodySize = 8;
+  const labelSize = 7.5;
+  const bodyLineHeight = Math.round(bodySize * 1.45);
+  const sectionTitleSize = 10;
+
+  // ── 레이아웃 공통 상수 ───────────────────────────────────────────────────
+  const axisLabelW = 86;    // 종목명 전용 영역 (긴 이름 대비)
+  const rightNumW = 50;     // 오른쪽 수치 전용 고정 영역
+  const chartW = ctx.BODY_W - axisLabelW - rightNumW;  // 바 차트 실제 너비
+  const chartX = ctx.ML + axisLabelW;
+
+  // ── 1. 리스크-리워드 밴드 차트 ──────────────────────────────────────────
+  ctx.ensureSpace(28);
+  ctx.textBold("후보 리스크-리워드 비교", ctx.ML, ctx.y, sectionTitleSize, rgb(0.10, 0.28, 0.52), ctx.BODY_W);
+  ctx.y -= Math.round(sectionTitleSize * 1.45) + 2;
+  ctx.textLight(
+    "손실 한도(-) / 기준 수익(+) / 상단 수익(+) 범위를 종목별로 비교합니다.",
+    ctx.ML, ctx.y, bodySize, rgb(0.36, 0.36, 0.42), ctx.BODY_W
+  );
+  ctx.y -= bodyLineHeight + 8;
+
+  const rowH = 24;
+
+  // 스케일
+  const maxLoss = Math.max(2, ...forecasts.map((f) => f.expectedDrawdownPct));
+  const maxGain = Math.max(2, ...forecasts.map((f) => f.expectedUpsidePct));
+  const totalSpan = maxLoss + maxGain;
+  const zeroX = chartX + (maxLoss / totalSpan) * chartW;
+
+  // 축 상단 레이블 & 세로 기준선
+  ctx.ensureSpace(forecasts.length * (rowH + 6) + 44);
+  ctx.line(zeroX, ctx.y, zeroX, ctx.y - forecasts.length * (rowH + 6) - 10, rgb(0.60, 0.62, 0.68), 0.6);
+  ctx.textRightLight("0%", zeroX - 3, ctx.y + 4, labelSize, rgb(0.50, 0.52, 0.58));
+
+  ctx.y -= 10;
+
+  for (const item of forecasts) {
+    const lossW = (item.expectedDrawdownPct / totalSpan) * chartW;
+    const baseW = Math.max(0, (item.expectedBasePct / totalSpan) * chartW);
+    const upsideW = (item.expectedUpsidePct / totalSpan) * chartW;
+    const barH = rowH - 10;
+    const barY = ctx.y - rowH + 8;
+    const midY = barY + barH / 2 - 2;
+
+    // ─ 손실 바 (왼쪽, 빨강)
+    ctx.rect(zeroX - lossW, barY, lossW, barH, rgb(0.96, 0.88, 0.88));
+    ctx.line(zeroX - lossW, barY, zeroX, barY, rgb(0.82, 0.26, 0.26), 0.6);
+    ctx.line(zeroX - lossW, barY + barH, zeroX, barY + barH, rgb(0.82, 0.26, 0.26), 0.6);
+    ctx.line(zeroX - lossW, barY, zeroX - lossW, barY + barH, rgb(0.82, 0.26, 0.26), 0.6);
+
+    // ─ 기준수익 바 (초록)
+    if (baseW > 0) {
+      ctx.rect(zeroX, barY, baseW, barH, rgb(0.86, 0.96, 0.89));
+    }
+    // ─ 상단수익 바 (연초록)
+    if (upsideW > baseW) {
+      ctx.rect(zeroX + baseW, barY, upsideW - baseW, barH, rgb(0.93, 0.99, 0.94));
+      ctx.line(zeroX, barY, zeroX + upsideW, barY, rgb(0.26, 0.52, 0.36), 0.6);
+      ctx.line(zeroX, barY + barH, zeroX + upsideW, barY + barH, rgb(0.26, 0.52, 0.36), 0.6);
+      ctx.line(zeroX + upsideW, barY, zeroX + upsideW, barY + barH, rgb(0.26, 0.52, 0.36), 0.6);
+      ctx.line(zeroX + baseW, barY, zeroX + baseW, barY + barH, rgb(0.26, 0.52, 0.36), 0.8);
+    } else if (baseW > 0) {
+      ctx.line(zeroX, barY, zeroX + baseW, barY, rgb(0.26, 0.52, 0.36), 0.6);
+      ctx.line(zeroX, barY + barH, zeroX + baseW, barY + barH, rgb(0.26, 0.52, 0.36), 0.6);
+      ctx.line(zeroX + baseW, barY, zeroX + baseW, barY + barH, rgb(0.26, 0.52, 0.36), 0.6);
+    }
+
+    // ─ 수치 라벨: 손실(바 왼쪽 끝 고정), 상단수익(오른쪽 고정 영역)
+    ctx.textRightLight(`-${item.expectedDrawdownPct.toFixed(1)}%`, chartX - 5, midY, labelSize, rgb(0.68, 0.22, 0.22));
+    ctx.text(`+${item.expectedUpsidePct.toFixed(1)}%`, chartX + chartW + 8, midY, labelSize, rgb(0.18, 0.44, 0.28));
+
+    // ─ 종목 라벨
+    ctx.textLight(item.name, ctx.ML, ctx.y - rowH / 2 - 2, labelSize, rgb(0.18, 0.18, 0.24), axisLabelW - 10);
+
+    ctx.y -= rowH + 4;
+  }
+
+  ctx.y -= 8;
+
+  // 범례
+  ctx.rect(ctx.ML, ctx.y - 7, 10, 7, rgb(0.96, 0.88, 0.88));
+  ctx.text("손실 한도", ctx.ML + 13, ctx.y - 1, labelSize, rgb(0.42, 0.42, 0.48));
+  ctx.rect(ctx.ML + 58, ctx.y - 7, 10, 7, rgb(0.86, 0.96, 0.89));
+  ctx.text("기준 수익", ctx.ML + 71, ctx.y - 1, labelSize, rgb(0.42, 0.42, 0.48));
+  ctx.rect(ctx.ML + 116, ctx.y - 7, 10, 7, rgb(0.93, 0.99, 0.94));
+  ctx.text("상단 수익", ctx.ML + 129, ctx.y - 1, labelSize, rgb(0.42, 0.42, 0.48));
+  ctx.y -= 28;  // 섹션 2와 간격
+
+  // ── 2. 점수 구성 가로 막대 차트 ──────────────────────────────────────────
+  ctx.ensureSpace(28);
+  ctx.textBold("후보 점수 구성 프로파일", ctx.ML, ctx.y, sectionTitleSize, rgb(0.10, 0.28, 0.52), ctx.BODY_W);
+  ctx.y -= Math.round(sectionTitleSize * 1.45) + 2;
+  ctx.textLight(
+    "모멘텀(추세·가속도) / 밸류(가격 매력도) / 안전성(리스크 억제) 점수를 종목별로 보여줍니다.",
+    ctx.ML, ctx.y, bodySize, rgb(0.36, 0.36, 0.42), ctx.BODY_W
+  );
+  ctx.y -= bodyLineHeight + 8;
+
+  const scoreBarW = chartW;  // 바 너비 통일
+  const scoreX = chartX;
+  const scoreRowH = 32;
+  const subBarH = 6;
+  const subBarGap = 4;
+
+  ctx.ensureSpace(forecasts.length * (scoreRowH + 8) + 20);
+
+  for (const item of forecasts) {
+    const { momentum, value, safety } = item.scoreComponents;
+    const labels = ["모멘텀", "밸류", "안전성"];
+    const values = [momentum, value, safety];
+    const colors: Array<[RGB, RGB]> = [
+      [rgb(0.22, 0.44, 0.76), rgb(0.84, 0.90, 0.98)],
+      [rgb(0.18, 0.50, 0.33), rgb(0.84, 0.96, 0.88)],
+      [rgb(0.58, 0.38, 0.12), rgb(0.98, 0.93, 0.84)],
+    ];
+
+    ctx.textBold(item.name, ctx.ML, ctx.y, bodySize - 0.5, rgb(0.14, 0.14, 0.20), axisLabelW - 10);
+    ctx.textLight(item.strategyLabel, ctx.ML, ctx.y - (subBarH + subBarGap + 1), labelSize - 0.5, rgb(0.44, 0.44, 0.50), axisLabelW - 10);
+
+    for (let i = 0; i < 3; i++) {
+      const barY = ctx.y - i * (subBarH + subBarGap) - subBarH + 4;
+      const barLen = (values[i] / 100) * scoreBarW;
+
+      ctx.rect(scoreX, barY, scoreBarW, subBarH, rgb(0.93, 0.94, 0.96));
+      if (barLen > 0) {
+        ctx.rect(scoreX, barY, barLen, subBarH, colors[i][1]);
+        ctx.rect(scoreX, barY, Math.min(barLen, subBarH), subBarH, colors[i][0]);
+      }
+
+      // 수치 라벨: 오른쪽 고정 영역
+      ctx.text(`${labels[i]} ${values[i].toFixed(0)}`, scoreX + scoreBarW + 8, barY + subBarH - 2, labelSize, colors[i][0]);
+    }
+
+    // 25/50/75 그리드 선
+    for (const pct of [25, 50, 75]) {
+      const gx = scoreX + (pct / 100) * scoreBarW;
+      ctx.line(gx, ctx.y + 4, gx, ctx.y - 3 * (subBarH + subBarGap) + 4, rgb(0.82, 0.84, 0.88), 0.4);
+    }
+
+    ctx.y -= scoreRowH + 4;
+  }
+
+  ctx.y -= 6;
+}
+
+export async function createDailyCandidateReportPdf(
   chatId: number,
   report: DailyCandidatePlanningReportResult,
   options?: {
@@ -767,6 +1100,8 @@ async function createDailyCandidateReportPdf(
     subtitle
   );
 
+  drawCandidateCharts(ctx, report.forecasts ?? []);
+
   const rawLines = String(report.text ?? "").split("\n");
   const sectionFontSize = 10;
   const bodyFontSize = 8.5;
@@ -799,6 +1134,18 @@ async function createDailyCandidateReportPdf(
       ctx.ensureSpace(14);
       ctx.line(ctx.ML, ctx.y, ctx.ML + ctx.BODY_W, ctx.y, theme.border, 0.75);
       ctx.y -= 12;
+      continue;
+    }
+
+    const reportMeta = isMuted ? parseReportMetaLine(line) : null;
+    if (reportMeta) {
+      drawReportMetaBand(ctx, reportMeta, theme);
+      continue;
+    }
+
+    const marketSnapshot = parseMarketSnapshotLine(line);
+    if (marketSnapshot) {
+      drawMarketSnapshotRow(ctx, marketSnapshot);
       continue;
     }
 

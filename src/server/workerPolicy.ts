@@ -2,6 +2,7 @@ export type CommandCategory =
   | "default"
   | "trade"
   | "autocycle"
+  | "opstrigger"
   | "weekly"
   | "briefing"
   | "report";
@@ -28,6 +29,7 @@ export const DEFAULT_WORKER_TIMEOUTS: WorkerTimeouts = {
       default: 20000,
       trade: 45000,
       autocycle: 30000,
+      opstrigger: 58000,
       weekly: 54000,
       briefing: 50000,
       report: 52000,
@@ -58,6 +60,10 @@ export function resolveWorkerTimeoutsFromEnv(
         default: toPositiveInt(env.WORKER_JOB_TIMEOUT_DEFAULT_MS, base.job.byCategory.default),
         trade: toPositiveInt(env.WORKER_JOB_TIMEOUT_TRADE_MS, base.job.byCategory.trade),
         autocycle: toPositiveInt(env.WORKER_JOB_TIMEOUT_AUTOCYCLE_MS, base.job.byCategory.autocycle),
+        opstrigger: toPositiveInt(
+          env.WORKER_JOB_TIMEOUT_OPSTRIGGER_MS,
+          base.job.byCategory.opstrigger
+        ),
         weekly: toPositiveInt(env.WORKER_JOB_TIMEOUT_WEEKLY_MS, base.job.byCategory.weekly),
         briefing: toPositiveInt(env.WORKER_JOB_TIMEOUT_BRIEFING_MS, base.job.byCategory.briefing),
         report: toPositiveInt(env.WORKER_JOB_TIMEOUT_REPORT_MS, base.job.byCategory.report),
@@ -83,6 +89,10 @@ export function isTradeCommandText(text: string): boolean {
   return /^\/(analyze|종목분석)(?:\s|$)/i.test(text.trim());
 }
 
+export function isOpsTriggerCommandText(text: string): boolean {
+  return /^\/(opsrun|cronrun|자동트리거|운영트리거)(?:\s|$)/i.test(text.trim());
+}
+
 export function isBriefCommandText(text: string): boolean {
   return /^\/(brief|morning|브리핑|장전)(?:\s|$)/i.test(text.trim());
 }
@@ -106,6 +116,7 @@ export function isReportCommandText(text: string): boolean {
 export function resolveCommandCategoryFromMessageText(text: string): CommandCategory {
   const value = String(text || "").trim();
   if (isAutoCycleCommandText(value)) return "autocycle";
+  if (isOpsTriggerCommandText(value)) return "opstrigger";
   if (isWeeklyCopilotCommandText(value)) return "weekly";
   if (isBriefCommandText(value)) return "briefing";
   if (isTradeCommandText(value)) return "trade";
@@ -118,6 +129,7 @@ export function resolveCommandCategoryFromCallbackData(data: string): CommandCat
   if (value === "cmd:report" || value.startsWith("cmd:report:")) return "report";
   if (isBriefCallbackData(value)) return "briefing";
   if (isTradeCallbackData(value)) return "trade";
+  if (value.startsWith("cmd:opstrigger:") || value.startsWith("cmd:autotrigger")) return "opstrigger";
   if (value.startsWith("cmd:autocycle") || value.includes("autocycle")) return "autocycle";
   return "default";
 }
@@ -129,6 +141,9 @@ export function describeCommandLabel(
   const text = String(commandText || "").trim();
   if (!text) return context === "callback" ? "버튼 요청" : "요청";
   if (isAutoCycleCommandText(text) || /autocycle/i.test(text)) return "자동사이클 요청";
+  if (isOpsTriggerCommandText(text) || /opstrigger|자동트리거|운영트리거/i.test(text)) {
+    return "자동트리거 요청";
+  }
   if (isWeeklyCopilotCommandText(text) || /weeklycopilot|주간코파일럿/i.test(text)) {
     return "주간코파일럿 요청";
   }
@@ -187,56 +202,56 @@ export function buildFailureMessage(input: {
       ].join("\n");
 }
 
-  export function buildWorkerMetricKey(input: {
-    event: "command_start" | "command_done" | "command_failed_notify";
-    category: CommandCategory;
-    context: "message" | "callback";
-    isTimeout?: boolean;
-  }): string {
-    const timeoutSuffix = input.isTimeout ? ".timeout" : "";
-    return `worker.${input.event}.${input.context}.${input.category}${timeoutSuffix}`;
+export function buildWorkerMetricKey(input: {
+  event: "command_start" | "command_done" | "command_failed_notify";
+  category: CommandCategory;
+  context: "message" | "callback";
+  isTimeout?: boolean;
+}): string {
+  const timeoutSuffix = input.isTimeout ? ".timeout" : "";
+  return `worker.${input.event}.${input.context}.${input.category}${timeoutSuffix}`;
+}
+
+export type FailureAlertConfig = {
+  threshold: number;
+  windowMs: number;
+  cooldownMs: number;
+};
+
+export type FailureAlertState = {
+  count: number;
+  windowStartedAtMs: number;
+  lastAlertAtMs?: number;
+};
+
+export function evaluateTimeoutFailureAlert(input: {
+  isTimeout: boolean;
+  nowMs: number;
+  state?: FailureAlertState;
+  config: FailureAlertConfig;
+}): { shouldAlert: boolean; nextState?: FailureAlertState } {
+  const { isTimeout, nowMs, state, config } = input;
+  if (!isTimeout) return { shouldAlert: false, nextState: state };
+
+  const threshold = Math.max(1, Math.floor(config.threshold));
+  const windowMs = Math.max(1, Math.floor(config.windowMs));
+  const cooldownMs = Math.max(0, Math.floor(config.cooldownMs));
+
+  const base: FailureAlertState = state
+    ? { ...state }
+    : { count: 0, windowStartedAtMs: nowMs };
+
+  if (nowMs - base.windowStartedAtMs > windowMs) {
+    base.count = 1;
+    base.windowStartedAtMs = nowMs;
+  } else {
+    base.count += 1;
   }
 
-  export type FailureAlertConfig = {
-    threshold: number;
-    windowMs: number;
-    cooldownMs: number;
-  };
+  const cooldownPassed =
+    base.lastAlertAtMs == null || nowMs - base.lastAlertAtMs >= cooldownMs;
+  const shouldAlert = base.count >= threshold && cooldownPassed;
+  if (shouldAlert) base.lastAlertAtMs = nowMs;
 
-  export type FailureAlertState = {
-    count: number;
-    windowStartedAtMs: number;
-    lastAlertAtMs?: number;
-  };
-
-  export function evaluateTimeoutFailureAlert(input: {
-    isTimeout: boolean;
-    nowMs: number;
-    state?: FailureAlertState;
-    config: FailureAlertConfig;
-  }): { shouldAlert: boolean; nextState?: FailureAlertState } {
-    const { isTimeout, nowMs, state, config } = input;
-    if (!isTimeout) return { shouldAlert: false, nextState: state };
-
-    const threshold = Math.max(1, Math.floor(config.threshold));
-    const windowMs = Math.max(1, Math.floor(config.windowMs));
-    const cooldownMs = Math.max(0, Math.floor(config.cooldownMs));
-
-    const base: FailureAlertState = state
-      ? { ...state }
-      : { count: 0, windowStartedAtMs: nowMs };
-
-    if (nowMs - base.windowStartedAtMs > windowMs) {
-      base.count = 1;
-      base.windowStartedAtMs = nowMs;
-    } else {
-      base.count += 1;
-    }
-
-    const cooldownPassed =
-      base.lastAlertAtMs == null || nowMs - base.lastAlertAtMs >= cooldownMs;
-    const shouldAlert = base.count >= threshold && cooldownPassed;
-    if (shouldAlert) base.lastAlertAtMs = nowMs;
-
-    return { shouldAlert, nextState: base };
-  }
+  return { shouldAlert, nextState: base };
+}

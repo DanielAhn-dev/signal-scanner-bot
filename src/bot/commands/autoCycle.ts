@@ -300,20 +300,20 @@ function buildThreeLineSummary(input: {
         .map((item) => `${SKIP_REASON_KO[item.reason] ?? item.reason} ${item.count}건`)
         .join(" · ")
     : "없음";
-  const line2 = `이번회차: ${currentRunCause} · 최근누적: ${recentReasons}`;
+  const line2 = `이유: ${currentRunCause}`;
 
   const hasExecuted = action.buys + action.sells > 0;
   const hasDailyLimitNote = notes.some((note) => /일손실 한도 도달/.test(note));
   const hasCandidateDrop = notes.some((note) => /후보 필터링|후보 탈락 상위/.test(note));
   const line3 = hasExecuted
-    ? "다음액션: /보유대응 으로 익절·손절 기준 점검"
+    ? "액션: /보유대응 으로 익절·손절 기준 점검"
     : hasDailyLimitNote
-      ? "다음액션: 일손실 한도 회복까지 신규 진입 중단"
+      ? "액션: 일손실 한도 회복까지 신규 진입 중단"
       : hasCandidateDrop
-        ? "다음액션: /자동사이클 점검 상세로 필터 단계 확인"
-        : "다음액션: /자동사이클 점검 상세로 원인 확인";
+        ? "액션: /자동사이클 점검 상세로 필터 단계 확인"
+        : "액션: /자동사이클 점검 상세로 원인 확인";
 
-  return [line1, line2, line3];
+  return [line1, line2, line3, `참고: 최근누적 미체결 사유 ${recentReasons}`];
 }
 
 function prioritizeNotes(notes: string[]): string[] {

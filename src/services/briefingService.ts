@@ -62,6 +62,22 @@ interface StockRow {
   is_active?: boolean | null;
 }
 
+type BriefingCandidate = {
+  code: string;
+  name: string;
+  market?: string | null;
+  sector_id?: string | null;
+  close: number | null;
+  liquidity: number | null;
+  avg_volume_20d?: number | null;
+  rsi14: number | null;
+  is_sector_leader?: boolean | null;
+  universe_level: string | null;
+  momentum_score?: number | null;
+  total_score?: number | null;
+  roc21?: number | null;
+};
+
 type ScoreRow = ScoreSnapshotRow;
 
 interface WatchlistRow {
@@ -245,7 +261,7 @@ export async function createBriefingReport(
   });
   stepStartedAt = Date.now();
 
-  const topSectorIds = topSectors.map((s) => s.id);
+  const topSectorIds = topSectors.map((s: SectorRow) => s.id);
 
   // 1-b. 섹터 5일 모멘텀 (sector_daily 기반)
   const sectorMomentumMap = await fetchSectorMomentum(supabase, topSectorIds, asOf);
@@ -311,14 +327,14 @@ export async function createBriefingReport(
   );
 
   const briefingFundamentalCandidates = [
-    ...topSectors.flatMap((sector) => {
+    ...topSectors.flatMap((sector: SectorRow) => {
       const stocksOfSector =
-        sectorStocks?.filter((s) => s.sector_id === sector.id) ?? [];
+        sectorStocks?.filter((s: StockRow) => s.sector_id === sector.id) ?? [];
       return pickTopStocksForSector(stocksOfSector, scoresByCode, 5, riskProfile);
     }),
     ...bottomCandidates,
   ];
-  const briefingFundamentalCodes = [...new Set(briefingFundamentalCandidates.map((item) => item.code))];
+  const briefingFundamentalCodes = [...new Set(briefingFundamentalCandidates.map((item: BriefingCandidate) => item.code))];
   const briefingFundamentals = await Promise.all(
     briefingFundamentalCodes.map(async (code) => ({
       code,
@@ -333,7 +349,7 @@ export async function createBriefingReport(
 
   // 6. 실시간 가격 일괄 조회
   const allCodes = (sectorStocks ?? []).map((s) => s.code);
-  const bottomCodes = bottomCandidates.map((s) => s.code);
+  const bottomCodes = bottomCandidates.map((s: BriefingCandidate) => s.code);
   const uniqueCodes = [...new Set([...allCodes, ...bottomCodes, ...watchlistCodes])];
   const realtimeMap = uniqueCodes.length
     ? await fetchRealtimePriceBatch(uniqueCodes).catch(() => ({} as Record<string, any>))
@@ -349,9 +365,9 @@ export async function createBriefingReport(
   stepStartedAt = Date.now();
 
   // 8. 섹터별 리포트 텍스트 조립
-  const sectorReports = topSectors.map((sector) => {
+  const sectorReports = topSectors.map((sector: SectorRow) => {
     const stocksOfSector =
-      sectorStocks?.filter((s) => s.sector_id === sector.id) ?? [];
+      sectorStocks?.filter((s: StockRow) => s.sector_id === sector.id) ?? [];
 
     const picked = rerankBriefingCandidates(
       pickTopStocksForSector(stocksOfSector, scoresByCode, 5, riskProfile),
@@ -372,14 +388,14 @@ export async function createBriefingReport(
 
   const watchlistMicro = await fetchWatchMicroSignalsByCodes(supabase, watchlistCodes);
   const etfWatchlistStocks = watchlistItems
-    .map((item) => Array.isArray(item.stock) ? item.stock[0] : item.stock)
-    .filter((stock): stock is StockRow => Boolean(stock && isEtfLike({ market: stock.market, name: stock.name })));
+    .map((item: WatchlistRow) => Array.isArray(item.stock) ? item.stock[0] : item.stock)
+    .filter((stock: StockRow | null): stock is StockRow => Boolean(stock && isEtfLike({ market: stock.market, name: stock.name })));
   const etfWatchlistCodes = etfWatchlistStocks.map((stock) => stock.code);
   const etfSnapshotMap = new Map<string, EtfSnapshot | null>();
   const etfDistributionMap = new Map<string, EtfDistributionSummary | null>();
 
   await Promise.all(
-    etfWatchlistStocks.map(async (stock) => {
+    etfWatchlistStocks.map(async (stock: StockRow) => {
       const [snapshot, distribution] = await Promise.all([
         getEtfSnapshot(stock.code).catch(() => null),
         getEtfDistributionSummary(stock.code, stock.name).catch(() => null),
@@ -429,8 +445,8 @@ export async function createBriefingReport(
     topSectors,
     watchlistMicro,
     newsSentimentByCode,
-    watchlistViewItems.filter((item) => {
-      const matched = watchlistItems.find((row) => row.code === item.code);
+    watchlistViewItems.filter((item: WatchlistViewItem) => {
+      const matched = watchlistItems.find((row: WatchlistRow) => row.code === item.code);
       return matched ? hasVirtualPosition(matched) : false;
     })
   );
@@ -439,8 +455,8 @@ export async function createBriefingReport(
     scoresByCode,
     realtimeMap,
     topSectors,
-    watchlistViewItems.filter((item) => {
-      const matched = watchlistItems.find((row) => row.code === item.code);
+    watchlistViewItems.filter((item: WatchlistViewItem) => {
+      const matched = watchlistItems.find((row: WatchlistRow) => row.code === item.code);
       return matched ? isWatchOnlyItem(matched) : false;
     })
   );
@@ -525,6 +541,18 @@ export async function createBriefingReport(
     const kd = marketData.kosdaq;
     mktLines.push(`  KOSDAQ <b>${kd.price.toLocaleString()}</b> ${fmtChange(kd.changeRate)}`);
   }
+  if (marketData.sp500) {
+    const sp = marketData.sp500;
+    mktLines.push(`  S&P500 <b>${sp.price.toLocaleString()}</b> ${fmtChange(sp.changeRate)}`);
+  }
+  if (marketData.nasdaq) {
+    const nq = marketData.nasdaq;
+    mktLines.push(`  NASDAQ <b>${nq.price.toLocaleString()}</b> ${fmtChange(nq.changeRate)}`);
+  }
+  if (marketData.dow) {
+    const dj = marketData.dow;
+    mktLines.push(`  DOW    <b>${dj.price.toLocaleString()}</b> ${fmtChange(dj.changeRate)}`);
+  }
   if (marketData.vix) {
     const v = marketData.vix;
     const tag = v.price >= 30 ? "⚠️ 공포" : v.price >= 20 ? "🟡 주의" : "🟢 안정";
@@ -539,6 +567,20 @@ export async function createBriefingReport(
     mktLines.push(`  공포·탐욕  <b>${fg.score}</b> (${fg.rating})`);
   }
   report += mktLines.length > 0 ? mktLines.join("\n") + "\n" : "  (조회 불가)\n";
+
+  const usIndexChanges = [
+    marketData.sp500?.changeRate,
+    marketData.nasdaq?.changeRate,
+    marketData.dow?.changeRate,
+  ].filter((value): value is number => Number.isFinite(value));
+  if (usIndexChanges.length >= 2) {
+    const usAvg = usIndexChanges.reduce((sum, value) => sum + value, 0) / usIndexChanges.length;
+    if (usAvg <= -1.2) {
+      report += `  대응 포인트  <b>미국 3대 지수 약세</b> → 초반 변동성 확인 후 분할 진입\n`;
+    } else if (usAvg >= 1.2) {
+      report += `  대응 포인트  <b>미국 3대 지수 강세</b> → 주도 섹터 대표주 중심으로 단계적 진입\n`;
+    }
+  }
 
   if (marketData.meta) {
     const quality = marketData.meta.isPartial ? "⚠️ 부분 수집" : "✅ 정상";
@@ -631,13 +673,13 @@ async function fetchBottomTurnaroundCandidates(
 
   if (!lowRsiStocks || lowRsiStocks.length === 0) return [];
 
-  const codes = lowRsiStocks.map((s) => s.code);
+  const codes = lowRsiStocks.map((s: Pick<StockRow, "code" | "name" | "market" | "close" | "liquidity" | "rsi14" | "universe_level">) => s.code);
 
   const scoreResult = await fetchScoresByCodes(supabase, codes);
   const byCode = scoreResult.byCode;
 
   const candidates = lowRsiStocks
-    .map((stock) => {
+    .map((stock: Pick<StockRow, "code" | "name" | "market" | "close" | "liquidity" | "rsi14" | "universe_level">) => {
       const score = byCode.get(stock.code);
       const factors = (score?.factors ?? {}) as Json;
 
@@ -652,9 +694,9 @@ async function fetchBottomTurnaroundCandidates(
         roc21,
       };
     })
-    .filter((s) => (s.roc21 ?? 0) > 0);
+    .filter((s: BriefingCandidate) => (s.roc21 ?? 0) > 0);
 
-  return pickSaferCandidates(candidates, 5, riskProfile);
+  return pickSaferCandidates<BriefingCandidate>(candidates, 5, riskProfile);
 }
 
 async function fetchWatchlistItems(
@@ -761,8 +803,8 @@ function pickTopStocksForSector(
   scoresByCode: Map<string, ScoreRow>,
   limit: number,
   riskProfile: RiskProfile
-) {
-  const scored = stocks.map((s) => {
+): BriefingCandidate[] {
+  const scored: BriefingCandidate[] = stocks.map((s: StockRow) => {
     const score = scoresByCode.get(s.code);
     const total = toNumber(score?.total_score ?? score?.momentum_score ?? 0);
 
@@ -772,14 +814,14 @@ function pickTopStocksForSector(
     };
   });
 
-  return pickSaferCandidates(scored, limit, riskProfile);
+  return pickSaferCandidates<BriefingCandidate>(scored, limit, riskProfile);
 }
 
-function rerankBriefingCandidates(
-  stocks: Array<{ code: string; total_score?: number | null }>,
+function rerankBriefingCandidates<T extends { code: string; total_score?: number | null }>(
+  stocks: T[],
   fundamentals: Map<string, FundamentalSnapshot>,
   limit: number
-) {
+): T[] {
   return [...stocks]
     .sort((a, b) => {
       const fa = fundamentals.get(a.code);
@@ -799,7 +841,7 @@ function rerankBriefingCandidates(
 
 function formatSectorSection(
   sector: SectorRow,
-  stocks: any[],
+  stocks: BriefingCandidate[],
   scoresByCode: Map<string, ScoreRow>,
   realtimeMap: Record<string, any>,
   momentum5d?: number | null,

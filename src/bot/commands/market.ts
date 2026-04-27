@@ -104,6 +104,21 @@ function diagnoseMarket(data: MarketOverview): {
     }
   }
 
+  const usChanges = [data.sp500?.changeRate, data.nasdaq?.changeRate, data.dow?.changeRate]
+    .filter((value): value is number => Number.isFinite(value));
+  if (usChanges.length >= 2) {
+    const usAvg = usChanges.reduce((sum, value) => sum + value, 0) / usChanges.length;
+    if (usAvg <= -1.2) {
+      riskScore += 8;
+      signals.push("🔴 미국 3대 지수 동반 약세 — 리스크오프 가능성");
+      advice.push("개장 직후 추격 진입보다 1차 변동성 소화 후 분할 진입");
+    } else if (usAvg >= 1.2) {
+      riskScore -= 4;
+      signals.push("🟢 미국 3대 지수 동반 강세 — 위험선호 확산");
+      advice.push("주도 섹터 대표주 중심으로 단계적 비중 확대");
+    }
+  }
+
   riskScore = Math.max(0, Math.min(100, riskScore));
 
   let regime: MarketRegime;
@@ -180,6 +195,12 @@ export async function handleMarketCommand(
   msg += `<b>글로벌 환경</b>\n`;
   if (marketData.kospi)
     msg += `  KOSPI ${marketData.kospi.price.toLocaleString()} (${marketData.kospi.changeRate >= 0 ? "+" : ""}${marketData.kospi.changeRate.toFixed(1)}%)\n`;
+  if (marketData.sp500)
+    msg += `  S&P500 ${marketData.sp500.price.toLocaleString()} (${marketData.sp500.changeRate >= 0 ? "+" : ""}${marketData.sp500.changeRate.toFixed(1)}%)\n`;
+  if (marketData.nasdaq)
+    msg += `  NASDAQ ${marketData.nasdaq.price.toLocaleString()} (${marketData.nasdaq.changeRate >= 0 ? "+" : ""}${marketData.nasdaq.changeRate.toFixed(1)}%)\n`;
+  if (marketData.dow)
+    msg += `  DOW ${marketData.dow.price.toLocaleString()} (${marketData.dow.changeRate >= 0 ? "+" : ""}${marketData.dow.changeRate.toFixed(1)}%)\n`;
   if (marketData.vix)
     msg += `  VIX ${marketData.vix.price.toFixed(1)}\n`;
   if (marketData.usdkrw)

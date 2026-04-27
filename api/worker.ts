@@ -26,7 +26,7 @@ import {
   type FailureAlertConfig,
   type FailureAlertState,
   type CommandCategory,
-} from "./workerPolicy";
+} from "../src/server/workerPolicy";
 
 // supa 클라이언트는 service_role 키를 사용해야 함
 const supa = () =>

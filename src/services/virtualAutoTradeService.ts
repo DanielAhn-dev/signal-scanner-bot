@@ -12,6 +12,7 @@ import {
 } from "./userService";
 import { syncVirtualPortfolio } from "./portfolioService";
 import { buildStrategyMemo } from "../lib/strategyMemo";
+import { parseStrategyMemo } from "../lib/strategyMemo";
 import { appendVirtualDecisionLog } from "./decisionLogService";
 import { calculateAutoTradeBuySizing } from "./virtualAutoTradeSizing";
 import {
@@ -65,6 +66,11 @@ import {
   type AutoTradeSkipReasonStat,
 } from "./virtualAutoTradeObservability";
 import { runLongTermCoachForChat } from "./longTermCoachService";
+import {
+  fetchStrategyGateState,
+  upsertStrategyGateState,
+  resolveStrategyGateStatus,
+} from "./strategyGateStateService";
 
 type RunMode = SelectionAutoTradeRunMode;
 type RunType = AutoTradeRunType;
@@ -124,6 +130,21 @@ export type AutoTradeRecentMetrics = {
   topSkipReasons: Array<{ reason: string; count: number }>;
 };
 
+type AutoTradeSellPerformance = {
+  windowDays: number;
+  sellCount: number;
+  winRate: number;
+  profitFactor: number | null;
+  maxLossStreak: number;
+};
+
+function toGateLabel(status: "promote" | "hold" | "watch" | "pause"): string {
+  if (status === "promote") return "승격 후보";
+  if (status === "pause") return "중단 후보";
+  if (status === "watch") return "관찰";
+  return "유지";
+}
+
 type HoldingRow = {
   id: number;
   code: string;
@@ -140,6 +161,7 @@ type ScoreCandidateRow = {
   code: string;
   total_score: number | null;
   signal?: string | null;
+  factors?: Record<string, unknown> | null;
   stock: {
     code: string;
     name: string | null;
@@ -280,6 +302,37 @@ function formatPriceSourceLabel(source: BuyPriceSource | "snapshot"): string {
   if (source === "realtime") return "실시간 시세";
   if (source === "close") return "종가 시세";
   return "스냅샷 시세";
+}
+
+function resolveDailyRiskBudget(input: {
+  seedCapital: number;
+  dailyLossLimitPct: number;
+  dailyRealizedPnl: number;
+}): {
+  lossCapAmount: number;
+  lossUsedAmount: number;
+  remainingLossAmount: number;
+  scale: number;
+  blocked: boolean;
+} {
+  const seedCapital = Math.max(0, toNumber(input.seedCapital, 0));
+  const dailyLossLimitPct = Math.max(0, toNumber(input.dailyLossLimitPct, 0));
+  const dailyRealizedPnl = toNumber(input.dailyRealizedPnl, 0);
+
+  const lossCapAmount = seedCapital > 0 ? Math.abs(seedCapital * (dailyLossLimitPct / 100)) : 0;
+  const lossUsedAmount = Math.max(0, -dailyRealizedPnl);
+  const remainingLossAmount = Math.max(0, lossCapAmount - lossUsedAmount);
+  const blocked = lossCapAmount > 0 && lossUsedAmount >= lossCapAmount;
+  const scale =
+    lossCapAmount > 0 ? Math.max(0.35, Math.min(1, remainingLossAmount / lossCapAmount)) : 1;
+
+  return {
+    lossCapAmount,
+    lossUsedAmount,
+    remainingLossAmount,
+    scale,
+    blocked,
+  };
 }
 
 function buildResponseGuideNote(input: {
@@ -576,6 +629,151 @@ async function getRecentAutoTradeMetrics(payload: {
   };
 }
 
+async function getRecentAutoTradeSellPerformance(payload: {
+  supabase: SupabaseClientAny;
+  chatId: number;
+  windowDays?: number;
+}): Promise<AutoTradeSellPerformance | null> {
+  const windowDays = Math.max(7, Math.floor(payload.windowDays ?? 45));
+  const since = new Date(Date.now() - windowDays * 24 * 60 * 60 * 1000).toISOString();
+
+  const { data, error } = await payload.supabase
+    .from(PORTFOLIO_TABLES.trades)
+    .select("side, pnl_amount, memo, traded_at")
+    .eq("chat_id", payload.chatId)
+    .eq("side", "SELL")
+    .gte("traded_at", since)
+    .order("traded_at", { ascending: true })
+    .limit(5000);
+
+  if (error) return null;
+
+  const rows = (data ?? []) as Array<{
+    side?: string | null;
+    pnl_amount?: number | null;
+    memo?: string | null;
+  }>;
+
+  const pnls: number[] = [];
+  for (const row of rows) {
+    const strategyId = parseStrategyMemo(row.memo).strategyId;
+    if (strategyId !== AUTO_TRADE_STRATEGY_ID) continue;
+    pnls.push(toNumber(row.pnl_amount, 0));
+  }
+
+  if (!pnls.length) {
+    return {
+      windowDays,
+      sellCount: 0,
+      winRate: 0,
+      profitFactor: null,
+      maxLossStreak: 0,
+    };
+  }
+
+  const wins = pnls.filter((value) => value > 0);
+  const losses = pnls.filter((value) => value < 0);
+  const grossWin = wins.reduce((acc, value) => acc + value, 0);
+  const grossLossAbs = Math.abs(losses.reduce((acc, value) => acc + value, 0));
+
+  let maxLossStreak = 0;
+  let currentLossStreak = 0;
+  for (const pnl of pnls) {
+    if (pnl < 0) {
+      currentLossStreak += 1;
+      if (currentLossStreak > maxLossStreak) maxLossStreak = currentLossStreak;
+    } else {
+      currentLossStreak = 0;
+    }
+  }
+
+  return {
+    windowDays,
+    sellCount: pnls.length,
+    winRate: (wins.length / pnls.length) * 100,
+    profitFactor: grossLossAbs > 0 ? grossWin / grossLossAbs : null,
+    maxLossStreak,
+  };
+}
+
+function applyPerformanceBuyGuard(input: {
+  requestedSlots: number;
+  baseMinBuyScore: number;
+  perf: AutoTradeSellPerformance | null;
+}): { requestedSlots: number; baseMinBuyScore: number; note?: string } {
+  const requestedSlots = Math.max(0, Math.floor(input.requestedSlots));
+  const baseMinBuyScore = toPositiveInt(input.baseMinBuyScore, 72);
+  const perf = input.perf;
+
+  if (!perf || perf.sellCount < 8) {
+    return { requestedSlots, baseMinBuyScore };
+  }
+
+  const pf = perf.profitFactor;
+  const isRiskOff = (pf != null && pf < 0.9) || perf.maxLossStreak >= 4;
+  if (isRiskOff) {
+    return {
+      requestedSlots: Math.max(0, requestedSlots - 1),
+      baseMinBuyScore: Math.min(95, baseMinBuyScore + 3),
+      note: `성과게이트(보수): 최근 ${perf.windowDays}일 PF ${pf != null ? pf.toFixed(2) : "N/A"}, 연속손실 ${perf.maxLossStreak}회 -> 슬롯 -1, 최소점수 +3`,
+    };
+  }
+
+  const isRiskOn =
+    perf.sellCount >= 12 &&
+    pf != null &&
+    pf >= 1.25 &&
+    perf.winRate >= 55;
+  if (isRiskOn) {
+    return {
+      requestedSlots,
+      baseMinBuyScore: Math.max(50, baseMinBuyScore - 2),
+      note: `성과게이트(완화): 최근 ${perf.windowDays}일 PF ${pf.toFixed(2)}, 승률 ${perf.winRate.toFixed(1)}% -> 최소점수 -2`,
+    };
+  }
+
+  return {
+    requestedSlots,
+    baseMinBuyScore,
+    note: `성과게이트(유지): 최근 ${perf.windowDays}일 PF ${pf != null ? pf.toFixed(2) : "N/A"}, 승률 ${perf.winRate.toFixed(1)}%`,
+  };
+}
+
+function applyPersistedGateGuard(input: {
+  requestedSlots: number;
+  baseMinBuyScore: number;
+  gateStatus?: "promote" | "hold" | "watch" | "pause";
+}): { requestedSlots: number; baseMinBuyScore: number; note?: string } {
+  const requestedSlots = Math.max(0, Math.floor(input.requestedSlots));
+  const baseMinBuyScore = toPositiveInt(input.baseMinBuyScore, 72);
+
+  if (!input.gateStatus || input.gateStatus === "hold") {
+    return { requestedSlots, baseMinBuyScore };
+  }
+
+  if (input.gateStatus === "pause") {
+    return {
+      requestedSlots: 0,
+      baseMinBuyScore: Math.min(98, baseMinBuyScore + 5),
+      note: "저장 게이트(중단 후보): 신규·추가 매수 차단",
+    };
+  }
+
+  if (input.gateStatus === "watch") {
+    return {
+      requestedSlots: Math.max(0, requestedSlots - 1),
+      baseMinBuyScore: Math.min(96, baseMinBuyScore + 2),
+      note: "저장 게이트(관찰): 슬롯 -1, 최소점수 +2",
+    };
+  }
+
+  return {
+    requestedSlots,
+    baseMinBuyScore: Math.max(50, baseMinBuyScore - 1),
+    note: "저장 게이트(승격 후보): 최소점수 -1",
+  };
+}
+
 export async function generateAutoTradeBacktestReportForChat(input: {
   chatId: number;
   months: 3 | 6;
@@ -733,11 +931,13 @@ async function fetchLatestRankedRows(payload: {
     "code",
     "total_score",
     "signal",
+    "factors",
     "stock:stocks!inner(code, name, close, rsi14, liquidity, market, market_cap, universe_level)",
   ].join(",");
   const selectWithoutSignal = [
     "code",
     "total_score",
+    "factors",
     "stock:stocks!inner(code, name, close, rsi14, liquidity, market, market_cap, universe_level)",
   ].join(",");
 
@@ -774,6 +974,7 @@ async function fetchLatestRankedRows(payload: {
   for (const row of (data ?? []) as ScoreCandidateRow[]) {
     const stock = normalizeStock(row.stock);
     if (!stock) continue;
+    const rawFactors = (row.factors ?? {}) as Record<string, unknown>;
 
     rankedRows.push({
       code: row.code,
@@ -786,6 +987,16 @@ async function fetchLatestRankedRows(payload: {
       market: stock.market ?? null,
       marketCap: stock.marketCap ?? null,
       universeLevel: stock.universeLevel ?? null,
+      stableTurn: String(rawFactors.stable_turn ?? "").trim() || null,
+      stableTrust: Number.isFinite(Number(rawFactors.stable_turn_trust))
+        ? Number(rawFactors.stable_turn_trust)
+        : null,
+      stableAboveAvg: typeof rawFactors.stable_above_avg === "boolean"
+        ? rawFactors.stable_above_avg
+        : null,
+      stableAccumulation: typeof rawFactors.stable_accumulation === "boolean"
+        ? rawFactors.stable_accumulation
+        : null,
     });
   }
 
@@ -1012,8 +1223,13 @@ async function runMondayBuyForUser(payload: {
     supabase: payload.supabase,
     chatId,
   });
-  const dailyLossLimitAmount = -Math.abs(seedCapital * (dailyLossLimitPct / 100));
-  if (seedCapital > 0 && dailyRealizedPnl <= dailyLossLimitAmount) {
+  const dailyRiskBudget = resolveDailyRiskBudget({
+    seedCapital,
+    dailyLossLimitPct,
+    dailyRealizedPnl,
+  });
+  const dailyLossLimitAmount = -Math.abs(dailyRiskBudget.lossCapAmount);
+  if (dailyRiskBudget.blocked) {
     summary.skipped += 1;
     summary.notes.push(
       `신규 매수 중단: 일손실 한도 도달 (${fmtKrw(dailyRealizedPnl)} / 기준 ${fmtKrw(dailyLossLimitAmount)})`
@@ -1032,18 +1248,52 @@ async function runMondayBuyForUser(payload: {
     });
     return summary;
   }
+  if (dailyRiskBudget.scale < 1) {
+    summary.notes.push(
+      `위험예산 축소: 일손실 사용 ${fmtKrw(-dailyRiskBudget.lossUsedAmount)} / 한도 ${fmtKrw(-dailyRiskBudget.lossCapAmount)} -> 매수예산 ${(dailyRiskBudget.scale * 100).toFixed(0)}% 적용`
+    );
+  }
 
   if (rawRemainSlots <= 0 && pacingMetrics.relaxLevel >= 2 && activeCount <= 0) {
     rawRemainSlots = 1;
   }
 
-  const buyConstraint = applyStrategyBuyConstraint({
-    selectedStrategy,
+  const mondaySellPerf = await getRecentAutoTradeSellPerformance({
+    supabase: payload.supabase,
+    chatId,
+    windowDays: 45,
+  });
+  const persistedGateState = await fetchStrategyGateState({
+    supabase: payload.supabase,
+    chatId,
+    strategyId: AUTO_TRADE_STRATEGY_ID,
+  }).catch(() => null);
+
+  const perfGuardForMonday = applyPerformanceBuyGuard({
     requestedSlots: rawRemainSlots,
     baseMinBuyScore: toPositiveInt(payload.setting.min_buy_score, 72),
+    perf: mondaySellPerf,
+  });
+  const persistedGuardForMonday = applyPersistedGateGuard({
+    requestedSlots: perfGuardForMonday.requestedSlots,
+    baseMinBuyScore: perfGuardForMonday.baseMinBuyScore,
+    gateStatus: persistedGateState?.status,
+  });
+
+  const buyConstraint = applyStrategyBuyConstraint({
+    selectedStrategy,
+    requestedSlots: persistedGuardForMonday.requestedSlots,
+    baseMinBuyScore: persistedGuardForMonday.baseMinBuyScore,
     activeCount,
     pacingRelaxLevel: pacingMetrics.relaxLevel,
   });
+
+  if (perfGuardForMonday.note) {
+    summary.notes.push(perfGuardForMonday.note);
+  }
+  if (persistedGuardForMonday.note) {
+    summary.notes.push(persistedGuardForMonday.note);
+  }
 
   if (pacingMetrics.relaxLevel > 0) {
     summary.notes.push(`페이싱 보정: 기준점수 완화 레벨 ${pacingMetrics.relaxLevel}`);
@@ -1273,6 +1523,7 @@ async function runMondayBuyForUser(payload: {
         currentHoldingCount: plannedHoldingCount,
         maxPositions,
         stopLossPct: Math.abs(toNumber(payload.setting.stop_loss_pct, 4)),
+        riskBudgetScale: dailyRiskBudget.scale,
         prefs,
       });
 
@@ -1780,6 +2031,33 @@ async function runDailyReviewForUser(payload: {
 
   // 적용된 전략 기록
   const selectedStrategy = payload.setting.selected_strategy;
+  const dailySellPerf = await getRecentAutoTradeSellPerformance({
+    supabase: payload.supabase,
+    chatId,
+    windowDays: 45,
+  });
+  const persistedGateState = await fetchStrategyGateState({
+    supabase: payload.supabase,
+    chatId,
+    strategyId: AUTO_TRADE_STRATEGY_ID,
+  }).catch(() => null);
+
+  const perfGuard = applyPerformanceBuyGuard({
+    requestedSlots: toPositiveInt(payload.setting.monday_buy_slots, 2),
+    baseMinBuyScore: toPositiveInt(payload.setting.min_buy_score, 72),
+    perf: dailySellPerf,
+  });
+  const persistedGuard = applyPersistedGateGuard({
+    requestedSlots: perfGuard.requestedSlots,
+    baseMinBuyScore: perfGuard.baseMinBuyScore,
+    gateStatus: persistedGateState?.status,
+  });
+  if (perfGuard.note) {
+    summary.notes.push(perfGuard.note);
+  }
+  if (persistedGuard.note) {
+    summary.notes.push(persistedGuard.note);
+  }
   if (selectedStrategy) {
     summary.notes.push(`기본 전략: ${getStrategyLabel(selectedStrategy) || selectedStrategy}`);
   }
@@ -1882,6 +2160,26 @@ async function runDailyReviewForUser(payload: {
   summary.notes.push(
     `시장모드: ${marketPolicy.label} · ${marketPolicy.reason} · 최소현금 ${marketPolicy.minCashReservePct}% 유지`
   );
+  const dailyLossLimitPct = Math.max(0.5, toNumber(prefs.daily_loss_limit_pct, 5));
+  const dailyRealizedPnl = await getDailyRealizedPnl({
+    supabase: payload.supabase,
+    chatId,
+  });
+  const dailyRiskBudget = resolveDailyRiskBudget({
+    seedCapital,
+    dailyLossLimitPct,
+    dailyRealizedPnl,
+  });
+  const dailyBuyBlocked = dailyRiskBudget.blocked;
+  if (dailyBuyBlocked) {
+    summary.notes.push(
+      `신규/추가 매수 차단: 일손실 한도 도달 (${fmtKrw(dailyRealizedPnl)} / 기준 ${fmtKrw(-dailyRiskBudget.lossCapAmount)})`
+    );
+  } else if (dailyRiskBudget.scale < 1) {
+    summary.notes.push(
+      `위험예산 축소: 일손실 사용 ${fmtKrw(-dailyRiskBudget.lossUsedAmount)} / 한도 ${fmtKrw(-dailyRiskBudget.lossCapAmount)} -> 매수예산 ${(dailyRiskBudget.scale * 100).toFixed(0)}% 적용`
+    );
+  }
   let holdCount = 0;
   let takeProfitCount = 0;
   let stopLossCount = 0;
@@ -2082,12 +2380,12 @@ async function runDailyReviewForUser(payload: {
     summary.notes.push(`보유 현황: ${currentCount}/${maxPositions}종목 · 신규 여력 ${room}종목`);
     const addOnConstraint = applyStrategyBuyConstraint({
       selectedStrategy: payload.setting.selected_strategy,
-      requestedSlots: toPositiveInt(payload.setting.monday_buy_slots, 2),
-      baseMinBuyScore: toPositiveInt(payload.setting.min_buy_score, 72),
+      requestedSlots: persistedGuard.requestedSlots,
+      baseMinBuyScore: persistedGuard.baseMinBuyScore,
       activeCount: currentCount,
     });
 
-    if (availableCash > 0 && addOnConstraint.buySlots > 0 && activeHoldings.length > 0) {
+    if (!dailyBuyBlocked && availableCash > 0 && addOnConstraint.buySlots > 0 && activeHoldings.length > 0) {
       const addOnSelection = await selectDailyAddOnCandidates({
         supabase: payload.supabase,
         holdings: activeHoldings,
@@ -2200,6 +2498,7 @@ async function runDailyReviewForUser(payload: {
           currentHoldingCount: Math.max(0, currentCount - 1),
           maxPositions: Math.max(1, maxPositions),
           stopLossPct: holdingProfile.stopLossPct,
+          riskBudgetScale: dailyRiskBudget.scale,
           prefs,
         });
         const addOnBudget = Math.max(
@@ -2406,12 +2705,29 @@ async function runDailyReviewForUser(payload: {
     // 기존 monday_buy_slots를 회차당 신규매수 상한으로 재사용한다.
     const maxNewBuysPerRun = toPositiveInt(payload.setting.monday_buy_slots, 2);
     const rawBuySlots = Math.min(room, maxNewBuysPerRun);
-    const buyConstraint = applyStrategyBuyConstraint({
-      selectedStrategy: payload.setting.selected_strategy,
+    const perfAdjustedRebalance = applyPerformanceBuyGuard({
       requestedSlots: rawBuySlots,
       baseMinBuyScore: toPositiveInt(payload.setting.min_buy_score, 72),
+      perf: dailySellPerf,
+    });
+    const persistedRebalanceGuard = applyPersistedGateGuard({
+      requestedSlots: perfAdjustedRebalance.requestedSlots,
+      baseMinBuyScore: perfAdjustedRebalance.baseMinBuyScore,
+      gateStatus: persistedGateState?.status,
+    });
+    const buyConstraint = applyStrategyBuyConstraint({
+      selectedStrategy: payload.setting.selected_strategy,
+      requestedSlots: persistedRebalanceGuard.requestedSlots,
+      baseMinBuyScore: persistedRebalanceGuard.baseMinBuyScore,
       activeCount: currentCount,
     });
+
+    if (perfAdjustedRebalance.note) {
+      summary.notes.push(perfAdjustedRebalance.note);
+    }
+    if (persistedRebalanceGuard.note) {
+      summary.notes.push(persistedRebalanceGuard.note);
+    }
     const buySlots = buyConstraint.buySlots;
 
     if (buyConstraint.note) {
@@ -2437,6 +2753,20 @@ async function runDailyReviewForUser(payload: {
           maxPositions,
           currentCount,
           selectedStrategy: payload.setting.selected_strategy ?? null,
+        },
+      });
+    } else if (dailyBuyBlocked) {
+      summary.notes.push("신규 매수 차단: 일손실 한도 도달");
+      await writeActionLog({
+        supabase: payload.supabase,
+        runId: payload.runId,
+        chatId,
+        actionType: "SKIP",
+        reason: "daily-loss-limit-reached",
+        detail: {
+          dailyRealizedPnl,
+          dailyLossLimitPct,
+          lossCapAmount: dailyRiskBudget.lossCapAmount,
         },
       });
     } else if (availableCash <= 0) {
@@ -2578,6 +2908,7 @@ async function runDailyReviewForUser(payload: {
           currentHoldingCount: plannedHoldingCount,
           maxPositions,
           stopLossPct: entryProfile.stopLossPct,
+          riskBudgetScale: dailyRiskBudget.scale,
           prefs,
         });
 
@@ -2983,6 +3314,43 @@ export async function runVirtualAutoTradingForChat(input: {
     windowDays: 7,
   });
 
+  const sellPerf = await getRecentAutoTradeSellPerformance({
+    supabase,
+    chatId: input.chatId,
+    windowDays: 45,
+  });
+  if (sellPerf) {
+    const gateStatus = resolveStrategyGateStatus({
+      sellCount: sellPerf.sellCount,
+      winRate: sellPerf.winRate,
+      profitFactor: sellPerf.profitFactor,
+      maxLossStreak: sellPerf.maxLossStreak,
+      windowDays: sellPerf.windowDays,
+    });
+    await upsertStrategyGateState({
+      supabase,
+      chatId: input.chatId,
+      strategyId: AUTO_TRADE_STRATEGY_ID,
+      strategyProfile: setting.selected_strategy ?? null,
+      metrics: {
+        sellCount: sellPerf.sellCount,
+        winRate: sellPerf.winRate,
+        profitFactor: sellPerf.profitFactor,
+        maxLossStreak: sellPerf.maxLossStreak,
+        windowDays: sellPerf.windowDays,
+      },
+      status: gateStatus,
+      meta: {
+        mode,
+        runType,
+        dryRun,
+      },
+    });
+    action.notes.push(
+      `전략게이트: ${toGateLabel(gateStatus)} (PF ${sellPerf.profitFactor != null ? sellPerf.profitFactor.toFixed(2) : "N/A"}, 승률 ${sellPerf.winRate.toFixed(1)}%, 연속손실 ${sellPerf.maxLossStreak}회)`
+    );
+  }
+
   return {
     mode,
     runType,
@@ -3170,6 +3538,43 @@ export async function runVirtualAutoTradingCycle(input?: {
         : actionSummary.buys + actionSummary.sells > 0
           ? "SUCCESS"
           : "SKIPPED";
+
+      const sellPerf = await getRecentAutoTradeSellPerformance({
+        supabase,
+        chatId: setting.chat_id,
+        windowDays: 45,
+      });
+      if (sellPerf) {
+        const gateStatus = resolveStrategyGateStatus({
+          sellCount: sellPerf.sellCount,
+          winRate: sellPerf.winRate,
+          profitFactor: sellPerf.profitFactor,
+          maxLossStreak: sellPerf.maxLossStreak,
+          windowDays: sellPerf.windowDays,
+        });
+        await upsertStrategyGateState({
+          supabase,
+          chatId: setting.chat_id,
+          strategyId: AUTO_TRADE_STRATEGY_ID,
+          strategyProfile: setting.selected_strategy ?? null,
+          metrics: {
+            sellCount: sellPerf.sellCount,
+            winRate: sellPerf.winRate,
+            profitFactor: sellPerf.profitFactor,
+            maxLossStreak: sellPerf.maxLossStreak,
+            windowDays: sellPerf.windowDays,
+          },
+          status: gateStatus,
+          meta: {
+            mode,
+            runType,
+            dryRun: userDryRun,
+          },
+        });
+        actionSummary.notes.push(
+          `전략게이트: ${toGateLabel(gateStatus)} (PF ${sellPerf.profitFactor != null ? sellPerf.profitFactor.toFixed(2) : "N/A"}, 승률 ${sellPerf.winRate.toFixed(1)}%, 연속손실 ${sellPerf.maxLossStreak}회)`
+        );
+      }
 
       await finishRun({
         supabase,

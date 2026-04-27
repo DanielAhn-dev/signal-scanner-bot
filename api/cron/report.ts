@@ -40,7 +40,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     const recipients =
       users && users.length > 0
-        ? users.map((u: { tg_id: number }) => Number(u.tg_id)).filter((id) => Number.isFinite(id))
+        ? users.map((u: { tg_id: number }) => Number(u.tg_id)).filter((id: number) => Number.isFinite(id))
         : [Number(ADMIN_CHAT_ID)];
 
     let sent = 0;

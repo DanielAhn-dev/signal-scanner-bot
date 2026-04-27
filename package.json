@@ -2,11 +2,11 @@
   "name": "signal-scanner-bot",
   "type": "commonjs",
   "version": "1.0.2",
-  "packageManager": "pnpm@9.0.0",
+  "packageManager": "pnpm@10.0.0",
   "description": "Telegram Stock Signal Scanner Bot with Vercel Functions",
   "private": true,
   "scripts": {
-    "local": "vercel dev",
+    "local": "pnpm dlx vercel dev",
     "build": "tsc --noEmit",
     "test": "tsx --test tests/**/*.test.ts",
     "docs:guide:pdf": "tsx scripts/export_markdown_pdf.ts --input docs/user-operating-guide.md --output docs/generated/user-operating-guide.pdf --title \"Signal Scanner Bot 운영 가이드\"",
@@ -14,16 +14,20 @@
     "verify:fundamental-parser": "tsx scripts/verify_fundamental_parser.ts",
     "audit:fundamental-live": "tsx scripts/audit_fundamental_live.ts",
     "verify:vercel": "pnpm build",
-    "deploy": "vercel --prod",
+    "deploy": "pnpm dlx vercel --prod",
     "sync:scores": "tsx scripts/sync_scores_from_engine.ts",
     "seed:sectors": "tsx scripts/seedSectors.ts",
     "gen:sectors": "tsx scripts/generateSectorsJson.ts",
     "set:commands": "tsx scripts/ops/set_commands.ts",
     "autotrade:dry-run": "tsx scripts/ops/virtual_autotrade_dry_run.ts",
     "autotrade:run": "tsx scripts/ops/virtual_autotrade_run.ts",
+    "cron:trigger": "tsx scripts/ops/trigger_cron_dispatch.ts",
+    "cron:trigger:intraday": "tsx scripts/ops/trigger_cron_dispatch.ts --task virtualAutoTradeIntraday",
+    "cron:trigger:gate": "tsx scripts/ops/trigger_cron_dispatch.ts --task strategyGateRefresh",
     "autotrade:enable": "tsx scripts/ops/virtual_autotrade_enable.ts",
     "ops:rollback-trade": "tsx scripts/ops/rollback_virtual_trade.ts",
     "report:strategy-live": "tsx scripts/strategy_leaderboard.ts",
+    "report:local": "tsx scripts/generate_local_reports.ts",
     "setWebhook": "node scripts/ops/setWebhook.mjs https://signal-scanner-bot.vercel.app/api/telegram",
     "backtest:market-picks": "tsx scripts/backtest_market_picks.ts",
     "prepare": "husky"
@@ -45,7 +49,6 @@
     "@vercel/node": "^5.7.7",
     "husky": "^9.1.7",
     "tsx": "^4.20.6",
-    "typescript": "^5.3.3",
-    "vercel": "^51.7.0"
+    "typescript": "^5.3.3"
   }
 }

@@ -12,6 +12,7 @@ import { pickSaferCandidates, type RiskProfile } from "../../lib/investableUnive
 import { getUserInvestmentPrefs } from "../../services/userService";
 import { analyzeNewsSentiment, formatSentimentLine } from "../../lib/newsSentiment";
 import { fetchStockNews } from "../../utils/fetchNews";
+import { filterCodesByCriticalNewsRisk } from "../../services/newsRiskFilter";
 import { esc, gradeLabel } from "../messages/format";
 import { fetchLatestScoresByCodes } from "../../services/scoreSourceService";
 import { buildFreshnessLabel, isBusinessStale } from "../../utils/dataFreshness";
@@ -242,12 +243,28 @@ export async function handleScanCommand(
   const codes = saferPool.map((c) => c.code);
   const realtimeMap = await fetchRealtimePriceBatch(codes);
 
-  const scoreMap = new Map<string, { total?: number; value?: number }>();
+  const scoreMap = new Map<
+    string,
+    {
+      total?: number;
+      value?: number;
+      stableTrust?: number;
+      stableTurn?: string;
+      stableAboveAvg?: boolean;
+    }
+  >();
   const scoreResult = await fetchLatestScoresByCodes(supabase, codes);
   scoreResult.byCode.forEach((row, code) => {
+    const factors = (row.factors ?? {}) as Record<string, unknown>;
     scoreMap.set(code, {
       total: Number(row.total_score ?? 0) || undefined,
       value: Number(row.value_score ?? 0) || undefined,
+      stableTrust: Number(factors.stable_turn_trust ?? 0) || undefined,
+      stableTurn: String(factors.stable_turn ?? "").trim() || undefined,
+      stableAboveAvg:
+        typeof factors.stable_above_avg === "boolean"
+          ? factors.stable_above_avg
+          : undefined,
     });
   });
 
@@ -265,7 +282,7 @@ export async function handleScanCommand(
       .map((x) => [x.code, x.fundamental!])
   );
 
-  const finalPicks = [...saferPool]
+  const rankedPicks = [...saferPool]
     .sort((a, b) => {
       const ra = realtimeMap[a.code];
       const rb = realtimeMap[b.code];
@@ -275,6 +292,14 @@ export async function handleScanCommand(
       const fundB = fundMap.get(b.code);
       const qa = fundA?.qualityScore ?? 50;
       const qb = fundB?.qualityScore ?? 50;
+      const stableBoostA =
+        (sa?.stableTrust ?? 0) * 0.35 +
+        ((sa?.stableTurn ?? "").startsWith("bull") ? 8 : (sa?.stableTurn ?? "").startsWith("bear") ? -8 : 0) +
+        (sa?.stableAboveAvg ? 3 : -3);
+      const stableBoostB =
+        (sb?.stableTrust ?? 0) * 0.35 +
+        ((sb?.stableTurn ?? "").startsWith("bull") ? 8 : (sb?.stableTurn ?? "").startsWith("bear") ? -8 : 0) +
+        (sb?.stableAboveAvg ? 3 : -3);
       const warnPenaltyA = getFundamentalWarningTags(fundA ?? {}).length * 6;
       const warnPenaltyB = getFundamentalWarningTags(fundB ?? {}).length * 6;
 
@@ -283,6 +308,7 @@ export async function handleScanCommand(
         (6 - (a.warn_score ?? 0)) * 8 +
         (sa?.total ?? 0) * 0.6 +
         (sa?.value ?? 0) * 0.5 +
+        stableBoostA +
         qa * 0.6 +
         (ra?.changeRate ?? 0) * 1.2 -
         warnPenaltyA;
@@ -291,11 +317,21 @@ export async function handleScanCommand(
         (6 - (b.warn_score ?? 0)) * 8 +
         (sb?.total ?? 0) * 0.6 +
         (sb?.value ?? 0) * 0.5 +
+        stableBoostB +
         qb * 0.6 +
         (rb?.changeRate ?? 0) * 1.2 -
         warnPenaltyB;
       return scoreB - scoreA;
-    })
+    });
+
+  const newsRiskCheckPool = rankedPicks.slice(0, 30);
+  const { blockedByCode: blockedByNews } = await filterCodesByCriticalNewsRisk(
+    newsRiskCheckPool.map((item) => item.code),
+    { maxNewsPerCode: 6, checkLimit: 30 }
+  );
+
+  const finalPicks = rankedPicks
+    .filter((item) => !blockedByNews.has(item.code))
     .slice(0, 10);
 
   const sentimentByCode = new Map<string, string>();
@@ -325,6 +361,20 @@ export async function handleScanCommand(
         : ` ${rt.changeRate >= 0 ? "▲" : "▼"}${Math.abs(rt.changeRate).toFixed(1)}%`;
     const s = scoreMap.get(item.code);
     const f = fundMap.get(item.code)?.qualityScore;
+    const stable = scoreMap.get(item.code);
+    const stableTurn = stable?.stableTurn
+      ? stable.stableTurn === "bull-strong"
+        ? "강상승"
+        : stable.stableTurn === "bull-weak"
+          ? "상승"
+          : stable.stableTurn === "bear-strong"
+            ? "강하락"
+            : stable.stableTurn === "bear-weak"
+              ? "하락"
+              : "중립"
+      : "중립";
+    const stableTrustLabel =
+      stable?.stableTrust != null ? `${Math.round(stable.stableTrust)}점` : "-";
     const warn = WARN_LABEL[item.warn_grade] ?? item.warn_grade;
     const grade = gradeLabel[item.entry_grade] ?? "○";
     const details: Array<{ key: string; score: number; text: string }> = [];
@@ -421,7 +471,7 @@ export async function handleScanCommand(
 
     return (
       `${idx + 1}. ${grade} <b>${esc(item.stock?.name || item.code)}</b> <code>${price.toLocaleString("ko-KR")}원</code>${chg}\n` +
-      `진입 ${item.entry_grade}(${item.entry_score}/4) · 경고 ${warn}(${item.warn_score}/6) · 점수 ${Math.round(s?.total ?? 0)} · 재무 ${f ?? "-"}\n` +
+      `진입 ${item.entry_grade}(${item.entry_score}/4) · 경고 ${warn}(${item.warn_score}/6) · 점수 ${Math.round(s?.total ?? 0)} · 재무 ${f ?? "-"} · Stable ${stableTurn}/${stableTrustLabel}\n` +
       `${detailLine}`
     );
   });
@@ -447,6 +497,7 @@ export async function handleScanCommand(
     section("스캔 조건", [
       "A/B 진입등급 · 매도경고 제외 · 코스피 중심 위험성향 필터",
       `후보 ${candidates.length}개 중 상위 ${finalPicks.length}개`,
+      ...(blockedByNews.size > 0 ? [`뉴스 이벤트 리스크로 ${blockedByNews.size}개 제외(공개매수/상폐/거래정지 등)`] : []),
       `점수 기준일 ${scoreResult.latestAsof ?? "확인 불가"}`,
       ...freshnessWarnings,
     ]),

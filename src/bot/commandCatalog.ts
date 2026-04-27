@@ -194,6 +194,7 @@ const UNKNOWN_COMMAND_TOKENS = [
   "/보유복구",
   "/자동매도점검",
   "/자동사이클",
+  "/자동트리거",
   "/장전플랜",
   "/보유대응",
   "/수급",
@@ -330,6 +331,15 @@ export function resolveReplyPrefixFromText(replyText: string): string | undefine
 
 export function resolveCallbackCommandText(command: string): string | undefined {
   if (command.startsWith("report:")) return `/report ${command.slice(7)}`;
+  if (command === "opstrigger:ready") return "/자동트리거 준비";
+  if (command === "opstrigger:intraday") return "/자동트리거 장중";
+  if (command === "opstrigger:close") return "/자동트리거 마감";
+  if (command === "opstrigger:all") return "/자동트리거 전체";
+  if (command === "opstrigger:gate") return "/자동트리거 게이트";
+  if (command === "opstrigger:score") return "/자동트리거 점수";
+  if (command === "opstrigger:briefing") return "/자동트리거 브리핑";
+  if (command === "opstrigger:report") return "/자동트리거 리포트";
+  if (command === "opstrigger:night") return "/자동트리거 야간";
   if (command === "weeklycopilot:force") return "/주간코파일럿 강제";
   if (command === "autocycle:check") return "/자동사이클 점검";
   if (command === "autocycle:run") return "/자동사이클 실행";

@@ -101,7 +101,7 @@ export function drawPageTitle(ctx: LayoutContext, title: string) {
 export function drawTopicHero(ctx: LayoutContext, title: string, subtitle: string) {
   const bodyW = ctx.BODY_W;
   const x = ctx.ML;
-  ctx.ensureSpace(80);
+  ctx.ensureSpace(76);
 
   ctx.textLight(ctx.theme.heroLabel, x, ctx.y, 6.5, ctx.theme.accent);
   ctx.y -= Math.round(6.5 * 1.45) + 5;
@@ -110,10 +110,10 @@ export function drawTopicHero(ctx: LayoutContext, title: string, subtitle: strin
   ctx.y -= Math.round(20 * 1.45) + 4;
 
   const subLines = ctx.textLight(subtitle, x, ctx.y, 8.5, C.dim, bodyW);
-  ctx.y -= subLines * Math.round(8.5 * 1.45) + 10;
+  ctx.y -= subLines * Math.round(8.5 * 1.45) + 4;
 
   ctx.line(x, ctx.y, x + bodyW, ctx.y, C.black, 1);
-  ctx.y -= 24;
+  ctx.y -= 18;
 }
 
 export function drawClosingHighlight(

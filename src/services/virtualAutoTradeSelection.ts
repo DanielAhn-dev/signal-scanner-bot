@@ -9,6 +9,10 @@ export type RankedCandidate = {
   market?: string | null;
   marketCap?: number | null;
   universeLevel?: string | null;
+  stableTurn?: string | null;
+  stableTrust?: number | null;
+  stableAboveAvg?: boolean | null;
+  stableAccumulation?: boolean | null;
 };
 
 export type AutoTradeMarketPolicyMode =
@@ -107,6 +111,20 @@ function clamp(value: number, min: number, max: number): number {
 
 function normalizeSignal(signal: unknown): string {
   return String(signal ?? "").trim().toUpperCase();
+}
+
+function normalizeStableTurn(turn: unknown): string {
+  return String(turn ?? "").trim().toLowerCase();
+}
+
+function isStableBullTurn(turn: unknown): boolean {
+  const normalized = normalizeStableTurn(turn);
+  return normalized === "bull-weak" || normalized === "bull-strong";
+}
+
+function isStableBearTurn(turn: unknown): boolean {
+  const normalized = normalizeStableTurn(turn);
+  return normalized === "bear-weak" || normalized === "bear-strong";
 }
 
 export function isPreferredBuySignal(signal: unknown): boolean {
@@ -279,6 +297,12 @@ function prioritizeRowsByMarketPolicy(
         Number(options.pullbackCandidateCodes.has(a.code));
       if (pullbackDiff !== 0) return pullbackDiff;
 
+      const bullTurnDiff = Number(isStableBullTurn(b.stableTurn)) - Number(isStableBullTurn(a.stableTurn));
+      if (bullTurnDiff !== 0) return bullTurnDiff;
+
+      const trustDiff = toNumber(b.stableTrust, 0) - toNumber(a.stableTrust, 0);
+      if (trustDiff !== 0) return trustDiff;
+
       const accumulationDiff =
         Number(isAggressiveAccumulationCandidate(b)) -
         Number(isAggressiveAccumulationCandidate(a));
@@ -435,6 +459,9 @@ type AggressiveAccumulationLike = {
   signal?: string | null;
   rsi14?: number | null;
   liquidity?: number | null;
+  stableTurn?: string | null;
+  stableTrust?: number | null;
+  stableAboveAvg?: boolean | null;
 };
 
 function isAggressiveAccumulationLike(row: AggressiveAccumulationLike): boolean {
@@ -442,8 +469,23 @@ function isAggressiveAccumulationLike(row: AggressiveAccumulationLike): boolean 
   const rsi14 = toNumber(row.rsi14, 50);
   const liquidity = toNumber(row.liquidity, 0);
   const liquiditySafe = liquidity <= 0 || liquidity >= 12_000_000_000;
+  const hasStableContext =
+    row.stableTurn != null || row.stableTrust != null || row.stableAboveAvg != null;
+  const stableTrust = toNumber(row.stableTrust, 50);
+  const stableAboveAvg = Boolean(row.stableAboveAvg ?? false);
+  const stableTurnPreferred = !hasStableContext || isStableBullTurn(row.stableTurn);
+  const stableTrustPreferred = !hasStableContext || stableTrust >= 64;
+  const stableAvgPreferred = !hasStableContext || stableAboveAvg;
 
-  return signalPreferred && row.score >= 76 && rsi14 >= 48 && rsi14 <= 70 && liquiditySafe;
+  return (
+    (signalPreferred || stableTurnPreferred) &&
+    row.score >= 76 &&
+    rsi14 >= 48 &&
+    rsi14 <= 70 &&
+    liquiditySafe &&
+    stableTrustPreferred &&
+    stableAvgPreferred
+  );
 }
 
 function isAggressiveAccumulationCandidate(row: RankedCandidate): boolean {
@@ -477,11 +519,23 @@ function resolveEffectiveScoreFloor(input: {
   if (input.entryProfile === "pullback-first" && isAggressiveAccumulationCandidate(input.row)) {
     return Math.max(30, input.floor - 1);
   }
+  if (input.entryProfile === "pullback-first" && normalizeStableTurn(input.row.stableTurn) === "bull-strong") {
+    return Math.max(30, input.floor - 2);
+  }
   return input.floor;
 }
 
 function countAggressiveCandidates(input: {
-  candidates: Array<{ code: string; score: number; signal?: string | null; rsi14?: number | null; liquidity?: number | null }>;
+  candidates: Array<{
+    code: string;
+    score: number;
+    signal?: string | null;
+    rsi14?: number | null;
+    liquidity?: number | null;
+    stableTurn?: string | null;
+    stableTrust?: number | null;
+    stableAboveAvg?: boolean | null;
+  }>;
 }): number {
   return input.candidates.reduce((sum, candidate) => {
     return sum + (isAggressiveAccumulationLike(candidate) ? 1 : 0);
@@ -534,7 +588,7 @@ export function pickAutoTradeCandidates(input: {
       policy: input.marketPolicy,
       entryProfile,
       pullbackCandidateCodes: input.pullbackCandidateCodes,
-    }).map(({ code, close, score, name, signal, rsi14, liquidity, market, marketCap, universeLevel }) => ({
+    }).map(({ code, close, score, name, signal, rsi14, liquidity, market, marketCap, universeLevel, stableTurn, stableTrust, stableAboveAvg, stableAccumulation }) => ({
       code,
       close,
       score,
@@ -545,6 +599,10 @@ export function pickAutoTradeCandidates(input: {
       market: market ?? null,
       marketCap: marketCap ?? null,
       universeLevel: universeLevel ?? null,
+      stableTurn: stableTurn ?? null,
+      stableTrust: stableTrust ?? null,
+      stableAboveAvg: stableAboveAvg ?? null,
+      stableAccumulation: stableAccumulation ?? null,
     }));
 
   const preferredSignalRows = rows.filter((row) => {
@@ -554,7 +612,11 @@ export function pickAutoTradeCandidates(input: {
       entryProfile,
       pullbackCandidateCodes: input.pullbackCandidateCodes,
     });
-    return row.score >= scoreFloor && isPreferredBuySignal(row.signal);
+    const stableBullPreferred =
+      isStableBullTurn(row.stableTurn) &&
+      toNumber(row.stableTrust, 0) >= 68 &&
+      Boolean(row.stableAboveAvg ?? false);
+    return row.score >= scoreFloor && (isPreferredBuySignal(row.signal) || stableBullPreferred);
   });
   if (preferredSignalRows.length > 0) {
     const candidates = toCandidates(preferredSignalRows);
@@ -589,7 +651,11 @@ export function pickAutoTradeCandidates(input: {
       entryProfile,
       pullbackCandidateCodes: input.pullbackCandidateCodes,
     });
-    return row.score >= scoreFloor && isPreferredBuySignal(row.signal);
+    const stableBullPreferred =
+      isStableBullTurn(row.stableTurn) &&
+      toNumber(row.stableTrust, 0) >= 64 &&
+      Boolean(row.stableAboveAvg ?? false);
+    return row.score >= scoreFloor && (isPreferredBuySignal(row.signal) || stableBullPreferred);
   });
   if (relaxedSignalRows.length > 0) {
     const candidates = toCandidates(relaxedSignalRows);
@@ -626,7 +692,9 @@ export function pickAutoTradeCandidates(input: {
     });
     if (row.score < scoreFloor) return false;
     const normalized = normalizeSignal(row.signal);
-    return normalized === "HOLD" || normalized === "ACCUMULATE";
+    const stableAccumulation = Boolean(row.stableAccumulation ?? false);
+    const avoidBearStrong = normalizeStableTurn(row.stableTurn) !== "bear-strong";
+    return (normalized === "HOLD" || normalized === "ACCUMULATE" || stableAccumulation) && avoidBearStrong;
   });
   if (expandedSignalRows.length > 0) {
     const candidates = toCandidates(expandedSignalRows);
@@ -765,11 +833,16 @@ export function pickAutoTradeAddOnCandidates(input: {
         holding.buyPrice > 0 ? ((row.close - holding.buyPrice) / holding.buyPrice) * 100 : 0;
       const withinAddOnBand = pullbackPct >= -6 && pullbackPct <= 3;
       const strongContinuation =
-        isPreferredBuySignal(row.signal) && row.score >= preferredMinBuyScore + 3;
+        (isPreferredBuySignal(row.signal) || isStableBullTurn(row.stableTurn)) &&
+        row.score >= preferredMinBuyScore + 3;
       const rsi14 = toNumber(row.rsi14, 50);
       const rsiHealthy = rsi14 >= 42 && rsi14 <= 68;
       const liquidity = toNumber(row.liquidity, 0);
       const liquiditySafe = liquidity <= 0 || liquidity >= 8_000_000_000;
+      const hasStableContext =
+        row.stableTurn != null || row.stableTrust != null || row.stableAboveAvg != null;
+      const stableTrust = toNumber(row.stableTrust, 50);
+      const avoidBearTurn = !isStableBearTurn(row.stableTurn);
 
       if (row.score < adaptiveMinBuyScore) {
         rejectedByReason.scoreThreshold += 1;
@@ -783,6 +856,10 @@ export function pickAutoTradeAddOnCandidates(input: {
         rejectedByReason.rsi += 1;
         return false;
       }
+      if (hasStableContext && (!avoidBearTurn || stableTrust < 55)) {
+        rejectedByReason.addOnBand += 1;
+        return false;
+      }
       if (!(withinAddOnBand || strongContinuation)) {
         rejectedByReason.addOnBand += 1;
         return false;
@@ -790,7 +867,7 @@ export function pickAutoTradeAddOnCandidates(input: {
 
       return true;
     })
-    .map(({ code, close, score, name, signal, rsi14, liquidity }) => ({
+    .map(({ code, close, score, name, signal, rsi14, liquidity, stableTurn, stableTrust, stableAboveAvg, stableAccumulation }) => ({
       code,
       close,
       score,
@@ -798,6 +875,10 @@ export function pickAutoTradeAddOnCandidates(input: {
       signal: signal ?? null,
       rsi14: rsi14 ?? null,
       liquidity: liquidity ?? null,
+      stableTurn: stableTurn ?? null,
+      stableTrust: stableTrust ?? null,
+      stableAboveAvg: stableAboveAvg ?? null,
+      stableAccumulation: stableAccumulation ?? null,
     }));
 
   return {

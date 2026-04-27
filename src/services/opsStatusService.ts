@@ -139,7 +139,7 @@ async function fetchTodayAutoTradeSkipReasonStats(
     .limit(1000);
   if (error) return [];
 
-  const summaries = (data ?? []).map((row) => {
+  const summaries = (data ?? []).map((row: { summary?: unknown }) => {
     const rec = row as Record<string, unknown>;
     return (rec.summary ?? {}) as AutoTradeRunSummaryLike;
   });

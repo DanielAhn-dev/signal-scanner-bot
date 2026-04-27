@@ -1,5 +1,5 @@
 import { getUserInvestmentPrefs } from "../../services/userService";
-import { actionButtons } from "../messages/layout";
+import { ACTIONS, actionButtons } from "../messages/layout";
 import type { ChatContext } from "./types";
 
 function riskProfileLabel(profile?: "safe" | "balanced" | "active"): string {
@@ -52,6 +52,7 @@ export async function sendStartMessage(ctx: ChatContext, tgSend: any): Promise<v
             { text: "5. 주간 리포트", callback_data: "cmd:report:추천" },
             { text: "자동 점검", callback_data: "cmd:autocycle:check" },
             { text: "자동 실행", callback_data: "cmd:autocycle:run" },
+            ...ACTIONS.opsTriggerQuick,
             { text: "설정 가이드", callback_data: "cmd:onboarding" },
           ],
           2

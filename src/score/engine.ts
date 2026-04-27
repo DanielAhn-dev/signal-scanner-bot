@@ -5,6 +5,7 @@ import { roc } from "../indicators/roc";
 import { avwap } from "../indicators/avwap";
 import { macd, detectMACDCross, detectMACDDivergence } from "../indicators/macd";
 import { calcATR, atrSizeAdjustment } from "../indicators/atr";
+import { calculateStableProSignal, type StableTurnType } from "../indicators/stablePro";
 import { sanitizeOHLCV } from "../lib/validateOHLCV";
 import type { StockOHLCV } from "../data/types";
 
@@ -33,6 +34,16 @@ export interface ScoreFactors {
   institution_5d?: number;
   foreign_consecutive_buy_days?: number;
   institution_consecutive_buy_days?: number;
+  // Stable Pro (세력 평단 + 턴 신뢰도)
+  stable_avg_price?: number;
+  stable_support?: number;
+  stable_box_high?: number;
+  stable_box_low?: number;
+  stable_above_avg?: boolean;
+  stable_vol_ratio?: number;
+  stable_turn?: StableTurnType;
+  stable_turn_trust?: number;
+  stable_accumulation?: boolean;
 }
 
 export interface MarketEnv {
@@ -163,6 +174,16 @@ export function calculateScore(
     const atr14 = atrCalc?.atr14 ?? undefined;
     const atr_pct = atrCalc?.atrPct ?? undefined;
 
+    // ── Stable Pro (세력 평단 + 턴 신뢰도) ──
+    const stable = calculateStableProSignal(sorted, {
+      volLen: 20,
+      boxLen: 25,
+      avgLen: 30,
+      atrLen: 20,
+    });
+    const stableBullTurn = stable.turn === "bull-weak" || stable.turn === "bull-strong";
+    const stableBearTurn = stable.turn === "bear-weak" || stable.turn === "bear-strong";
+
     // 점수 가중 (0~100)
     let score = 0;
 
@@ -206,6 +227,23 @@ export function calculateScore(
     if (macd_divergence_bullish) score += 4;
     // 하락 다이버전스 (고점 반전 감지): -4점
     if (macd_divergence_bearish) score -= 4;
+
+    // ── Stable Pro 보정 ──
+    if (stable.turn === "bull-strong") score += 8;
+    else if (stable.turn === "bull-weak") score += 4;
+    else if (stable.turn === "bear-strong") score -= 9;
+    else if (stable.turn === "bear-weak") score -= 5;
+
+    if (stable.aboveAvg) score += 3;
+    else score -= 3;
+
+    if (stable.support > 0 && lastClose >= stable.support) score += 2;
+    else if (stable.support > 0) score -= 4;
+
+    if (stable.accumulation) score += 2;
+
+    if (stable.trustScore >= 78) score += 3;
+    else if (stable.trustScore <= 35) score -= 5;
 
     // ── 시장 환경 보정 (MarketEnv) ──
     let marketAdj = 0;
@@ -277,10 +315,16 @@ export function calculateScore(
     const breakoutBuy =
       near20 && avwap_support >= 66 && volSpike20 && rsi14 >= 50 && roc14 >= 0;
     // 데드 크로스가 최근 발생했으면 추세 매수 억제
-    const trendBuy = above50 && rsi14 >= 55 && roc21 >= 0 && macd_cross !== "dead";
+    const trendBuy =
+      above50 &&
+      rsi14 >= 55 &&
+      roc21 >= 0 &&
+      macd_cross !== "dead" &&
+      stable.aboveAvg;
 
     let signal: StockScore["signal"] = "none";
-    if (breakoutBuy || trendBuy) signal = "buy";
+    if ((breakoutBuy || trendBuy || stableBullTurn) && !stableBearTurn) signal = "buy";
+    else if (stable.turn === "bear-strong") signal = score <= 45 ? "sell" : "hold";
     else if (score >= 35) signal = "hold";
     else if (score <= 15) signal = "sell";
 
@@ -350,6 +394,15 @@ export function calculateScore(
         institution_5d: institution5d,
         foreign_consecutive_buy_days: foreignConsecutiveBuyDays,
         institution_consecutive_buy_days: institutionConsecutiveBuyDays,
+        stable_avg_price: stable.avgPrice,
+        stable_support: stable.support,
+        stable_box_high: stable.boxHigh,
+        stable_box_low: stable.boxLow,
+        stable_above_avg: stable.aboveAvg,
+        stable_vol_ratio: stable.volRatio,
+        stable_turn: stable.turn,
+        stable_turn_trust: stable.trustScore,
+        stable_accumulation: stable.accumulation,
       },
       recommendation,
       entry: {

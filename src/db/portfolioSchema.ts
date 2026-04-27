@@ -7,6 +7,7 @@ export const PORTFOLIO_TABLES = {
   decisionLogs: "virtual_decision_logs",
   decisionOutcomes: "virtual_decision_outcomes",
   strategyVersions: "virtual_strategy_versions",
+  strategyGateStates: "virtual_strategy_gate_states",
   lots: "virtual_trade_lots",
   lotMatches: "virtual_trade_lot_matches",
   lotView: "virtual_position_lots",

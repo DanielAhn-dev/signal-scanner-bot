@@ -15,28 +15,8 @@
     "outputDirectory": ".",
     "crons": [
         {
-            "path": "/api/cron/scoreSync",
-            "schedule": "40 6 * * 1-5"
-        },
-        {
-            "path": "/api/cron/scoreSync",
-            "schedule": "0 23 * * 0-4"
-        },
-        {
-            "path": "/api/cron/briefing",
-            "schedule": "30 23 * * 0-4"
-        },
-        {
-            "path": "/api/cron/briefing",
-            "schedule": "10 6 * * 1-5"
-        },
-        {
-            "path": "/api/cron/report",
-            "schedule": "35 23 * * 5"
-        },
-        {
-            "path": "/api/cron/virtualAutoTrade",
-            "schedule": "45 23 * * 0-4"
+            "path": "/api/cron",
+            "schedule": "0 23 * * *"
         }
     ]
 }

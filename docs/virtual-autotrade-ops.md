@@ -69,6 +69,57 @@ curl -H "Authorization: Bearer $CRON_SECRET" "https://signal-scanner-bot.vercel.
 - 무료 플랜 제약으로 자동 cron은 제공되지 않으며, 사용자 주도 수동 실행만 지원합니다.
 - `AUTO_TRADE_ALERT_CHAT_ID`를 지정하면 `duplicate_window` 급증, `out_of_session`, `error_count` 발생 시 운영자 채팅으로 요약 경보를 보냅니다.
 
+## 4-2) 무료 플랜 하이브리드 트리거
+
+자동 크론은 장전/야간 핵심 작업만 수행하고, 장중/튜닝은 필요할 때 수동 트리거로 실행합니다.
+
+Hobby 플랜 제한으로 배포 크론은 일 1회(UTC 23:00)로 동작합니다.
+- 이 1회 실행에서 `scoreSync -> briefing -> virtualAutoTrade -> strategyGateRefresh`를 순차 실행
+- 금요일(UTC 기준)에는 `report`까지 추가 실행
+- 장중 대응은 `/자동트리거 장중` 또는 장중 트리거 버튼으로 수동 실행
+
+```bash
+pnpm cron:trigger:intraday
+pnpm cron:trigger:gate
+pnpm cron:trigger -- --task scoreSync
+pnpm cron:trigger -- --task briefing
+```
+
+텔레그램 운영 채팅에서 동일 트리거를 실행할 수 있습니다.
+
+```text
+/자동트리거 준비
+/자동트리거 장중
+/자동트리거 마감
+/자동트리거 전체
+/자동트리거 게이트
+/자동트리거 점수
+/자동트리거 브리핑
+/자동트리거 리포트
+/자동트리거 야간
+```
+
+- `준비`: 점수 동기화 + 장전 브리핑(사전 데이터 준비)
+- `장중`: 점수 동기화 + 장중 자동사이클(조건 충족 시 매수/매도)
+- `마감`: 야간 자동사이클 + 게이트 리프레시 + 점수 동기화 + 다음날 브리핑 준비
+- `전체`: 준비~마감 전체 시퀀스를 순차 실행
+
+접근 제어(권장):
+
+- `TELEGRAM_ALLOWED_USER_IDS`: 허용할 Telegram 사용자 ID 목록(쉼표/공백 구분)
+- `TELEGRAM_OWNER_USER_ID`: 소유자 1인 ID
+- `TELEGRAM_OPS_CHAT_IDS`: 운영 채팅 ID 목록
+
+위 값 중 하나라도 설정되면 허용된 사용자/채팅만 명령·버튼이 실행됩니다.
+
+추가 운영 옵션:
+- `CRON_HOBBY_DAILY_MODE` (기본 true): 일 1회 번들 실행 모드
+- `CRON_GATE_NOTIFY` (기본 true): 전략 게이트 상태 변경 시 운영 채팅 알림
+
+- `cron:trigger:intraday`: 장중 10분 자동사이클과 동일한 경로를 1회 실행
+- `cron:trigger:gate`: 전략 게이트 리프레시 + 설정 자동 튜닝 1회 실행
+- `cron:trigger -- --task ...`: 통합 디스패처에서 특정 작업만 실행
+
 ## 5) 결과 확인 SQL
 
 ```sql

@@ -128,6 +128,10 @@ type PullbackSignalWeekRow = {
     | null;
 };
 
+type TradeDateRow = {
+  trade_date: string | null;
+};
+
 type PullbackAggregateRow = {
   code: string;
   name: string;
@@ -254,13 +258,14 @@ async function buildPullbackWeeklyReportData(
     .from("pullback_signals")
     .select("trade_date")
     .order("trade_date", { ascending: false })
-    .limit(40);
+    .limit(10)
+    .returns<TradeDateRow[]>();
 
   if (dateError) {
     throw new Error(`눌림목 기준일 조회 실패: ${dateError.message}`);
   }
 
-  const recentDates = [...new Set((dateRows ?? []).map((row: any) => row.trade_date).filter(Boolean))].slice(0, 5);
+  const recentDates = [...new Set((dateRows ?? []).map((row: TradeDateRow) => row.trade_date).filter((row): row is string => Boolean(row)))].slice(0, 5);
   if (!recentDates.length) {
     return {
       candidates: [],
@@ -289,7 +294,7 @@ async function buildPullbackWeeklyReportData(
     throw new Error(`눌림목 후보 조회 실패: ${signalError.message}`);
   }
 
-  const normalizedSignals = (signalRows ?? []).map((row) => {
+  const normalizedSignals = (signalRows ?? []).map((row: PullbackSignalWeekRow) => {
     const stock = unwrapJoined(row.stock);
     return {
       ...row,
@@ -796,7 +801,7 @@ export async function createWeeklyReportPdf(
   });
 
   const tradeRows = tradeRes.data ?? [];
-  const tradeCodes = [...new Set(tradeRows.map((row) => row.code).filter(Boolean))];
+  const tradeCodes = [...new Set(tradeRows.map((row: TradeRow) => row.code).filter((code): code is string => Boolean(code)))];
   const stockNameMap = tradeCodes.length
     ? await runReportStep("trade_name_query", async () => {
         const { data, error } = await supabase
@@ -809,11 +814,11 @@ export async function createWeeklyReportPdf(
           throw new Error(`stocks 조회 실패: ${error.message}`);
         }
 
-        return new Map((data ?? []).map((row) => [row.code, row.name]));
+        return new Map((data ?? []).map((row: StockNameRow) => [row.code, row.name]));
       })
     : new Map<string, string>();
 
-  const rows = tradeRows.map((row) => ({
+  const rows = tradeRows.map((row: TradeRow) => ({
     ...row,
     name: stockNameMap.get(row.code) ?? row.name ?? row.code,
   }));
@@ -821,7 +826,7 @@ export async function createWeeklyReportPdf(
   const curr = summarizeWindow(windows.current14);
   const prev = summarizeWindow(windows.prev14);
 
-  const codes = (watchRes.data ?? []).map((r) => r.code);
+  const codes = (watchRes.data ?? []).map((r: WatchlistRow) => r.code);
   const realtimeMap = codes.length
     ? await runReportStep("realtime_price", async () => {
         try {

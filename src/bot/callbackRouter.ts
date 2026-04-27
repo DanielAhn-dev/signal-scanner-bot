@@ -3,6 +3,7 @@ import {
   resolveCallbackCommandText,
   resolveCallbackPrefixedCommandText,
 } from "./commandCatalog";
+import { buildAccessDeniedMessage, isAllowedTelegramUser } from "./accessControl";
 import { handleRiskProfileSelection } from "./commands/onboarding";
 import { handleReportMenu } from "./commands/report";
 import { handleSectorDetailCommand } from "./commands/sector";
@@ -38,6 +39,14 @@ export async function routeCallbackData(
   ctx: ChatContext,
   tgSend: any
 ): Promise<void> {
+  if (!isAllowedTelegramUser(ctx)) {
+    await tgSend("sendMessage", {
+      chat_id: ctx.chatId,
+      text: buildAccessDeniedMessage(),
+    });
+    return;
+  }
+
   if (data.startsWith("cmd:")) {
     const cmd = data.slice(4);
 
