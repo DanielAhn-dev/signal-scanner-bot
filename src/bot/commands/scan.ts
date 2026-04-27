@@ -26,6 +26,7 @@ import {
   ACTIONS,
 } from "../messages/layout";
 import { buildPersonalizedGuidance } from "../../services/personalizedGuidanceService";
+import { appendScanRunLog } from "../../services/scanRunLogService";
 import {
   describeScanFilterReasons,
   formatScanFilterLabels,
@@ -112,6 +113,12 @@ function formatFilterRateLine(stat: RecentFilterPassStat): string {
     `진입 ${stat.entryCount}(${pct(stat.entryCount)})`,
     `매집+진입 ${stat.comboCount}(${pct(stat.comboCount)})`,
   ].join(" · ");
+}
+
+function resolveRiskRealtimeWeightMultiplier(riskProfile: RiskProfile): number {
+  if (riskProfile === "active") return 1.15;
+  if (riskProfile === "balanced") return 1;
+  return 0.9;
 }
 
 async function fetchRecentFilterPassStats(
@@ -578,6 +585,9 @@ export async function handleScanCommand(
         : staleBusinessGap >= 1
           ? scanConfig.stale1Weight
           : scanConfig.freshWeight;
+  const riskAdjustedRealtimeWeight = Number(
+    (realtimeMomentumWeight * resolveRiskRealtimeWeightMultiplier(riskProfile)).toFixed(2)
+  );
 
   const rankedPicks = [...saferPool]
     .sort((a, b) => {
@@ -613,7 +623,7 @@ export async function handleScanCommand(
         (sa?.value ?? 0) * 0.5 +
         stableBoostA +
         qa * 0.6 +
-        momentumA * realtimeMomentumWeight -
+        momentumA * riskAdjustedRealtimeWeight -
         warnPenaltyA;
       const scoreB =
         (b.entry_score ?? 0) * 20 +
@@ -622,7 +632,7 @@ export async function handleScanCommand(
         (sb?.value ?? 0) * 0.5 +
         stableBoostB +
         qb * 0.6 +
-        momentumB * realtimeMomentumWeight -
+        momentumB * riskAdjustedRealtimeWeight -
         warnPenaltyB;
       return scoreB - scoreA;
     });
@@ -825,7 +835,7 @@ export async function handleScanCommand(
       `후보 ${candidates.length}개 중 필터 통과 ${filteredCandidates.length}개 · 안전성향 통과 ${saferPool.length}개 · 상위 ${finalPicks.length}개`,
       ...(blockedByNews.size > 0 ? [`뉴스 이벤트 리스크로 ${blockedByNews.size}개 제외(공개매수/상폐/거래정지 등)`] : []),
       ...(staleBusinessGap >= 1
-        ? [`장중 보정: 실시간 등락 가중치 x${realtimeMomentumWeight.toFixed(1)} (시그널/점수 지연 ${staleBusinessGap}영업일)`]
+        ? [`장중 보정: 실시간 등락 가중치 x${riskAdjustedRealtimeWeight.toFixed(1)} (시그널/점수 지연 ${staleBusinessGap}영업일 · ${riskProfileLabel(riskProfile)} 보정)`]
         : []),
       `점수 기준일 ${scoreResult.latestAsof ?? "확인 불가"}`,
       ...freshnessWarnings,
@@ -847,5 +857,21 @@ export async function handleScanCommand(
     parse_mode: "HTML",
     disable_web_page_preview: true,
     reply_markup: actionButtons([...ACTIONS.promptAnalyze, ...ACTIONS.marketFlow], 3),
+  });
+
+  await appendScanRunLog({
+    chatId: ctx.chatId,
+    userId: Number(ctx.from?.id ?? 0) || null,
+    query,
+    filters: parsedInput.filters,
+    riskProfile,
+    signalTradeDate: latestDate,
+    scoreAsof: scoreResult.latestAsof,
+    candidateCount: candidates.length,
+    filteredCount: filteredCandidates.length,
+    saferCount: saferPool.length,
+    finalCount: finalPicks.length,
+    staleBusinessGap,
+    realtimeMomentumWeight: riskAdjustedRealtimeWeight,
   });
 }

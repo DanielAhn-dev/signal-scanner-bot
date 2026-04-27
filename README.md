@@ -33,6 +33,17 @@ pnpm docs:guide:pdf:check
 - /리포트 수급: 자금 흐름 PDF
 - /리포트 섹터: 섹터 강도 PDF
 
+## 스캔 고도화
+
+- /스캔로그 [일수]: 최근 스캔 실행의 필터 통과율/최종선정 추세를 요약합니다. (기본 7일, 최대 30일)
+- 장중 보정 가중치는 아래 환경변수로 조정할 수 있습니다.
+	- `SCAN_REALTIME_MOMENTUM_CAP` (기본 5)
+	- `SCAN_REALTIME_MIN_COVERAGE` (기본 0.3)
+	- `SCAN_REALTIME_WEIGHT_FRESH` (기본 1.2)
+	- `SCAN_REALTIME_WEIGHT_STALE1` (기본 2.4)
+	- `SCAN_REALTIME_WEIGHT_STALE2` (기본 3.2)
+- 투자성향 보정: 안전형 0.9x, 균형형 1.0x, 공격형 1.15x 배율이 장중 보정 가중치에 추가 적용됩니다.
+
 ## 자동 운영 알림
 
 - 평일 장시작 전(08:30 KST) 브리핑 자동 발송

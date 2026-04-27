@@ -28,6 +28,7 @@ import {
   applyStrategyBuyConstraint,
   deriveEntryProfile,
   detectAutoTradeMarketPolicy,
+  isActionableTodayBuySignal,
   pickAutoTradeAddOnCandidates,
   pickAutoTradeCandidates,
   resolveDeployableCash,
@@ -44,6 +45,7 @@ import {
   fetchRealtimePriceBatch,
   type RealtimeStockData,
 } from "../utils/fetchRealtimePrice";
+import { describeScanFilterReasons } from "../bot/commands/scanFilters";
 import { fetchAllMarketData } from "../utils/fetchMarketData";
 import { fetchLatestScoresByCodes } from "./scoreSourceService";
 import {
@@ -461,6 +463,42 @@ function buildTodaySignalReasonNote(input: {
   }
 
   return parts.length ? `[오늘신호] ${parts.join(" · ")}` : "";
+}
+
+function buildAutoTradeFilterReason(candidate: {
+  score: number;
+  signal?: string | null;
+  stableTurn?: string | null;
+  stableTrust?: number | null;
+  stableAboveAvg?: boolean | null;
+  stableAccumulation?: boolean | null;
+}): string {
+  const stableTurn = String(candidate.stableTurn ?? "").toLowerCase();
+  const reasons = describeScanFilterReasons(
+    {
+      total: toNumber(candidate.score, 0),
+      signal: String(candidate.signal ?? ""),
+      stableTurn,
+      stableTrust: toNumber(candidate.stableTrust, 0),
+      stableAboveAvg: Boolean(candidate.stableAboveAvg ?? false),
+      stableAccumulation: Boolean(candidate.stableAccumulation ?? false),
+      recentInDays: isActionableTodayBuySignal(candidate.signal) ? 1 : 0,
+      recentAccumulationDays: Boolean(candidate.stableAccumulation ?? false) ? 2 : 0,
+      recentBullDays:
+        stableTurn === "bull-weak" || stableTurn === "bull-strong"
+          ? 1
+          : 0,
+    },
+    ["entry", "accumulation"],
+    {
+      entryGrade: "A",
+      entryScore: 3,
+      trendGrade: "B",
+      distGrade: "B",
+    }
+  );
+
+  return reasons.slice(0, 2).join(" · ");
 }
 
 function buildAutoTradeExecutionAlert(input: {
@@ -1589,6 +1627,7 @@ async function runMondayBuyForUser(payload: {
         stableTurn,
         signalGate: { trustScore: signalGate.trustScore, grade: signalGate.grade },
       });
+      const filterReason = buildAutoTradeFilterReason(candidate);
 
       if (!trustGateNoteAdded) {
         summary.notes.push("진입게이트: 세력선(sma200) 상단 + 턴 신뢰도(거래량/RSI/MACD/AVWAP) 적용");
@@ -1687,7 +1726,7 @@ async function runMondayBuyForUser(payload: {
         const expectedPnl = Math.max(0, Math.round((targetPrice - executionPrice) * qty));
         summary.buys += 1;
         summary.notes.push(
-          `[테스트 매수안] ${candidate.name}(${candidate.code}) ${qty}주 · 전략 ${profileLabel} · 매수가 ${fmtKrw(executionPrice)} · 투입 ${fmtKrw(investedAmount)} · 목표가 ${fmtKrw(targetPrice)} · 기대수익 ${fmtKrw(expectedPnl)} (${Math.abs(toNumber(payload.setting.take_profit_pct, 8)).toFixed(1)}%) · ${formatPriceSourceLabel(executionSource)}${todaySignalReason ? ` · ${todaySignalReason}` : ""}`
+          `[테스트 매수안] ${candidate.name}(${candidate.code}) ${qty}주 · 전략 ${profileLabel} · 매수가 ${fmtKrw(executionPrice)} · 투입 ${fmtKrw(investedAmount)} · 목표가 ${fmtKrw(targetPrice)} · 기대수익 ${fmtKrw(expectedPnl)} (${Math.abs(toNumber(payload.setting.take_profit_pct, 8)).toFixed(1)}%) · ${formatPriceSourceLabel(executionSource)}${todaySignalReason ? ` · ${todaySignalReason}` : ""}${filterReason ? ` · 필터근거 ${filterReason}` : ""}`
         );
         summary.notes.push(
           buildResponseGuideNote({
@@ -1795,7 +1834,7 @@ async function runMondayBuyForUser(payload: {
       availableCash = Math.max(0, availableCash - investedAmount);
       deployableCash = Math.max(0, deployableCash - investedAmount);
       summary.notes.push(
-        `[실행 매수] ${candidate.name}(${candidate.code}) ${qty}주 · 전략 ${profileLabel} · 매수가 ${fmtKrw(executionPrice)} · 투입 ${fmtKrw(investedAmount)} · 점수 ${candidate.score.toFixed(1)} · ${formatPriceSourceLabel(executionSource)}${todaySignalReason ? ` · ${todaySignalReason}` : ""}`
+        `[실행 매수] ${candidate.name}(${candidate.code}) ${qty}주 · 전략 ${profileLabel} · 매수가 ${fmtKrw(executionPrice)} · 투입 ${fmtKrw(investedAmount)} · 점수 ${candidate.score.toFixed(1)} · ${formatPriceSourceLabel(executionSource)}${todaySignalReason ? ` · ${todaySignalReason}` : ""}${filterReason ? ` · 필터근거 ${filterReason}` : ""}`
       );
       summary.notes.push(
         buildResponseGuideNote({
@@ -2651,13 +2690,14 @@ async function runDailyReviewForUser(payload: {
           stableTurn: candidate.stableTurn,
           signalGate: { trustScore: signalGate.trustScore, grade: signalGate.grade },
         });
+        const filterReason = buildAutoTradeFilterReason(candidate);
 
         try {
           if (payload.dryRun) {
             addOnBuyCount += 1;
             summary.buys += 1;
             summary.notes.push(
-              `[테스트 추가매수안] ${candidate.name}(${candidate.code}) +${addOnQty}주 · 총 ${nextQty}주 · 평균단가 ${fmtKrw(nextBuyPrice)} · 투입 ${fmtKrw(addOnInvested)} · ${formatPriceSourceLabel(executionSource)}${todaySignalReason ? ` · ${todaySignalReason}` : ""}`
+              `[테스트 추가매수안] ${candidate.name}(${candidate.code}) +${addOnQty}주 · 총 ${nextQty}주 · 평균단가 ${fmtKrw(nextBuyPrice)} · 투입 ${fmtKrw(addOnInvested)} · ${formatPriceSourceLabel(executionSource)}${todaySignalReason ? ` · ${todaySignalReason}` : ""}${filterReason ? ` · 필터근거 ${filterReason}` : ""}`
             );
             summary.notes.push(
               buildResponseGuideNote({
@@ -2752,7 +2792,7 @@ async function runDailyReviewForUser(payload: {
           addOnBuyCount += 1;
           summary.buys += 1;
           summary.notes.push(
-            `[실행 추가매수] ${candidate.name}(${candidate.code}) +${addOnQty}주 · 총 ${nextQty}주 · 평균단가 ${fmtKrw(nextBuyPrice)} · 투입 ${fmtKrw(addOnInvested)} · 점수 ${candidate.score.toFixed(1)} · ${formatPriceSourceLabel(executionSource)}${todaySignalReason ? ` · ${todaySignalReason}` : ""}`
+            `[실행 추가매수] ${candidate.name}(${candidate.code}) +${addOnQty}주 · 총 ${nextQty}주 · 평균단가 ${fmtKrw(nextBuyPrice)} · 투입 ${fmtKrw(addOnInvested)} · 점수 ${candidate.score.toFixed(1)} · ${formatPriceSourceLabel(executionSource)}${todaySignalReason ? ` · ${todaySignalReason}` : ""}${filterReason ? ` · 필터근거 ${filterReason}` : ""}`
           );
           summary.notes.push(
             buildResponseGuideNote({
@@ -3087,6 +3127,7 @@ async function runDailyReviewForUser(payload: {
           stableTurn: candidate.stableTurn,
           signalGate: { trustScore: signalGate.trustScore, grade: signalGate.grade },
         });
+        const filterReason = buildAutoTradeFilterReason(candidate);
 
         try {
           if (payload.dryRun) {
@@ -3096,7 +3137,7 @@ async function runDailyReviewForUser(payload: {
             rebalanceBuyCount += 1;
             summary.buys += 1;
             summary.notes.push(
-              `[테스트 매수안] ${candidate.name}(${candidate.code}) ${qty}주 · 전략 ${profileLabel} · 매수가 ${fmtKrw(executionPrice)} · 목표가 ${fmtKrw(targetPrice)} · 기대수익 ${fmtKrw(expectedPnl)} (${targetPct.toFixed(1)}%) · ${formatPriceSourceLabel(executionSource)}${todaySignalReason ? ` · ${todaySignalReason}` : ""}`
+              `[테스트 매수안] ${candidate.name}(${candidate.code}) ${qty}주 · 전략 ${profileLabel} · 매수가 ${fmtKrw(executionPrice)} · 목표가 ${fmtKrw(targetPrice)} · 기대수익 ${fmtKrw(expectedPnl)} (${targetPct.toFixed(1)}%) · ${formatPriceSourceLabel(executionSource)}${todaySignalReason ? ` · ${todaySignalReason}` : ""}${filterReason ? ` · 필터근거 ${filterReason}` : ""}`
             );
             summary.notes.push(
               buildResponseGuideNote({
@@ -3205,7 +3246,7 @@ async function runDailyReviewForUser(payload: {
           rebalanceBuyCount += 1;
           summary.buys += 1;
           summary.notes.push(
-            `[실행 매수] ${candidate.name}(${candidate.code}) ${qty}주 · 전략 ${profileLabel} · 매수가 ${fmtKrw(executionPrice)} · 투입 ${fmtKrw(investedAmount)} · 점수 ${candidate.score.toFixed(1)} · ${formatPriceSourceLabel(executionSource)}${todaySignalReason ? ` · ${todaySignalReason}` : ""}`
+            `[실행 매수] ${candidate.name}(${candidate.code}) ${qty}주 · 전략 ${profileLabel} · 매수가 ${fmtKrw(executionPrice)} · 투입 ${fmtKrw(investedAmount)} · 점수 ${candidate.score.toFixed(1)} · ${formatPriceSourceLabel(executionSource)}${todaySignalReason ? ` · ${todaySignalReason}` : ""}${filterReason ? ` · 필터근거 ${filterReason}` : ""}`
           );
           summary.notes.push(
             buildResponseGuideNote({

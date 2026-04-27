@@ -12,6 +12,7 @@ export const CMD = {
   ECONOMY: /^\/(economy|경제)$/i,
   MARKET: /^\/(market|시장)$/i,
   ONBOARDING: /^\/(onboarding|온보딩|시작하기|가이드)$/i,
+  SCANLOG: /^\/(scanlog|스캔로그)(?:\s+(.+))?$/i,
   SCAN: /^\/(scan|스캔)(?:\s+(.+))?$/i,
   NEWS: /^\/(news|뉴스)(?:\s+(.+))?$/i,
   FLOW: /^\/(flow|수급)(?:\s+(.+))?$/i,

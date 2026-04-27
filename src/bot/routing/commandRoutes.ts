@@ -10,6 +10,7 @@ import { handleMarketCommand } from "../commands/market";
 import { handleFinanceCommand } from "../commands/finance";
 import { handleNewsCommand } from "../commands/news";
 import { handleScanCommand } from "../commands/scan";
+import { handleScanLogCommand } from "../commands/scanLog";
 import { handleStocksCommand } from "../commands/stocks";
 import { handleFlowCommand } from "../commands/flow";
 import { handleNextSectorCommand } from "../commands/sector";
@@ -151,6 +152,12 @@ export const COMMAND_ROUTE_SPECS: CommandRouteSpec[] = [
     userErrorLabel: "종목",
     tokens: ["stocks", "종목"],
     run: (match, ctx, tgSend) => handleStocksCommand(match[2], ctx, tgSend),
+  },
+  {
+    pattern: CMD.SCANLOG,
+    userErrorLabel: "스캔 로그",
+    tokens: ["scanlog", "스캔로그"],
+    run: (match, ctx, tgSend) => handleScanLogCommand(match[2] ?? "", ctx, tgSend),
   },
   {
     pattern: CMD.SCAN,
