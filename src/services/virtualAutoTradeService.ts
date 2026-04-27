@@ -440,6 +440,29 @@ function buildResponseGuideNote(input: {
   ].join(" · ");
 }
 
+function buildTodaySignalReasonNote(input: {
+  signal?: string | null;
+  stableTurn?: string | null;
+  signalGate?: { trustScore: number; grade: string } | null;
+}): string {
+  const signal = String(input.signal ?? "").trim().toUpperCase();
+  const stableTurn = String(input.stableTurn ?? "").trim().toLowerCase();
+  const parts: string[] = [];
+
+  if (signal === "STRONG_BUY") parts.push("오늘 적극신호 STRONG_BUY");
+  else if (signal === "BUY") parts.push("오늘 적극신호 BUY");
+  else if (signal === "WATCH") parts.push("오늘 관찰신호 WATCH");
+
+  if (stableTurn === "bull-strong") parts.push("Stable 강상승 턴");
+  else if (stableTurn === "bull-weak") parts.push("Stable 상승 턴");
+
+  if (input.signalGate) {
+    parts.push(`신뢰도 ${input.signalGate.grade}(${input.signalGate.trustScore}점)`);
+  }
+
+  return parts.length ? `[오늘신호] ${parts.join(" · ")}` : "";
+}
+
 function buildAutoTradeExecutionAlert(input: {
   runType: RunType;
   action: AutoTradeActionSummary;
@@ -1491,6 +1514,15 @@ async function runMondayBuyForUser(payload: {
       `후보 기준 완화: 최신 상위점수 ${candidateSelection.latestTopScore}점 기준으로 ${candidateSelection.thresholdUsed}점 이상 BUY 계열 종목 선별`
     );
   }
+  if (candidateSelection.selectionMode === "signal-preferred") {
+    const actionableTodayCount = candidates.filter((candidate) => {
+      const normalized = String(candidate.signal ?? "").trim().toUpperCase();
+      return normalized === "BUY" || normalized === "STRONG_BUY";
+    }).length;
+    if (actionableTodayCount > 0) {
+      summary.notes.push(`오늘 적극신호 우선: BUY/STRONG_BUY ${actionableTodayCount}건 중심 선별`);
+    }
+  }
   if (candidateSelection.selectionMode === "top-score-fallback") {
     summary.notes.push(
       `후보 대체선별: BUY 신호 부족으로 상위 점수대 ${candidateSelection.thresholdUsed}점 이상 종목 선별`
@@ -1542,12 +1574,20 @@ async function runMondayBuyForUser(payload: {
       const executionPrice = executionEntry?.price ?? candidate.close;
       const executionSource = executionEntry?.source ?? "close";
       const scoreRow = mondayFactorsByCode.get(candidate.code);
+      const stableTurn = scoreRow?.factors
+        ? String(((scoreRow.factors as Record<string, unknown>).stable_turn ?? "")).trim()
+        : null;
       const signalGate = evaluateAutoTradeSignalGate({
         currentPrice: executionPrice,
         score: candidate.score,
         factors: extractScoreFactors(scoreRow?.factors),
         minTrustScore: signalTrustThresholds.newBuy,
         requireAboveSma200: true,
+      });
+      const todaySignalReason = buildTodaySignalReasonNote({
+        signal: candidate.signal,
+        stableTurn,
+        signalGate: { trustScore: signalGate.trustScore, grade: signalGate.grade },
       });
 
       if (!trustGateNoteAdded) {
@@ -1647,7 +1687,7 @@ async function runMondayBuyForUser(payload: {
         const expectedPnl = Math.max(0, Math.round((targetPrice - executionPrice) * qty));
         summary.buys += 1;
         summary.notes.push(
-          `[테스트 매수안] ${candidate.name}(${candidate.code}) ${qty}주 · 전략 ${profileLabel} · 매수가 ${fmtKrw(executionPrice)} · 투입 ${fmtKrw(investedAmount)} · 목표가 ${fmtKrw(targetPrice)} · 기대수익 ${fmtKrw(expectedPnl)} (${Math.abs(toNumber(payload.setting.take_profit_pct, 8)).toFixed(1)}%) · ${formatPriceSourceLabel(executionSource)}`
+          `[테스트 매수안] ${candidate.name}(${candidate.code}) ${qty}주 · 전략 ${profileLabel} · 매수가 ${fmtKrw(executionPrice)} · 투입 ${fmtKrw(investedAmount)} · 목표가 ${fmtKrw(targetPrice)} · 기대수익 ${fmtKrw(expectedPnl)} (${Math.abs(toNumber(payload.setting.take_profit_pct, 8)).toFixed(1)}%) · ${formatPriceSourceLabel(executionSource)}${todaySignalReason ? ` · ${todaySignalReason}` : ""}`
         );
         summary.notes.push(
           buildResponseGuideNote({
@@ -1755,7 +1795,7 @@ async function runMondayBuyForUser(payload: {
       availableCash = Math.max(0, availableCash - investedAmount);
       deployableCash = Math.max(0, deployableCash - investedAmount);
       summary.notes.push(
-        `[실행 매수] ${candidate.name}(${candidate.code}) ${qty}주 · 전략 ${profileLabel} · 매수가 ${fmtKrw(executionPrice)} · 투입 ${fmtKrw(investedAmount)} · 점수 ${candidate.score.toFixed(1)} · ${formatPriceSourceLabel(executionSource)}`
+        `[실행 매수] ${candidate.name}(${candidate.code}) ${qty}주 · 전략 ${profileLabel} · 매수가 ${fmtKrw(executionPrice)} · 투입 ${fmtKrw(investedAmount)} · 점수 ${candidate.score.toFixed(1)} · ${formatPriceSourceLabel(executionSource)}${todaySignalReason ? ` · ${todaySignalReason}` : ""}`
       );
       summary.notes.push(
         buildResponseGuideNote({
@@ -2367,7 +2407,7 @@ async function runDailyReviewForUser(payload: {
     // 매도 이유 노트 (signal/regime 기반이면 명시)
     const exitReasonLabel: string = (() => {
       if (trendExitSignal.reason === "signal-strong-sell") return "[신호청산] STRONG_SELL 전환";
-      if (trendExitSignal.reason === "signal-sell") return "[신호익절] SELL 전환 + 수익 중";
+      if (trendExitSignal.reason === "signal-sell") return pnlPct > 0 ? "[신호익절] SELL 전환 + 수익 중" : "[신호손절] SELL 전환 + 손실 구간";
       if (trendExitSignal.reason === "trend-break-sma200") return "[추세이탈] SMA200 하향이탈";
       if (trendExitSignal.reason === "trend-break-sma50") return "[추세익절] SMA50 하향이탈";
       if (regimeEarlyExit) return "[레짐익절] 방어모드 KOSDAQ 선익절";
@@ -2606,13 +2646,18 @@ async function runDailyReviewForUser(payload: {
         const nextQty = currentQty + addOnQty;
         const nextInvested = currentInvested + addOnInvested;
         const nextBuyPrice = Number((nextInvested / nextQty).toFixed(4));
+        const todaySignalReason = buildTodaySignalReasonNote({
+          signal: candidate.signal,
+          stableTurn: candidate.stableTurn,
+          signalGate: { trustScore: signalGate.trustScore, grade: signalGate.grade },
+        });
 
         try {
           if (payload.dryRun) {
             addOnBuyCount += 1;
             summary.buys += 1;
             summary.notes.push(
-              `[테스트 추가매수안] ${candidate.name}(${candidate.code}) +${addOnQty}주 · 총 ${nextQty}주 · 평균단가 ${fmtKrw(nextBuyPrice)} · 투입 ${fmtKrw(addOnInvested)} · ${formatPriceSourceLabel(executionSource)}`
+              `[테스트 추가매수안] ${candidate.name}(${candidate.code}) +${addOnQty}주 · 총 ${nextQty}주 · 평균단가 ${fmtKrw(nextBuyPrice)} · 투입 ${fmtKrw(addOnInvested)} · ${formatPriceSourceLabel(executionSource)}${todaySignalReason ? ` · ${todaySignalReason}` : ""}`
             );
             summary.notes.push(
               buildResponseGuideNote({
@@ -2707,7 +2752,7 @@ async function runDailyReviewForUser(payload: {
           addOnBuyCount += 1;
           summary.buys += 1;
           summary.notes.push(
-            `[실행 추가매수] ${candidate.name}(${candidate.code}) +${addOnQty}주 · 총 ${nextQty}주 · 평균단가 ${fmtKrw(nextBuyPrice)} · 투입 ${fmtKrw(addOnInvested)} · 점수 ${candidate.score.toFixed(1)} · ${formatPriceSourceLabel(executionSource)}`
+            `[실행 추가매수] ${candidate.name}(${candidate.code}) +${addOnQty}주 · 총 ${nextQty}주 · 평균단가 ${fmtKrw(nextBuyPrice)} · 투입 ${fmtKrw(addOnInvested)} · 점수 ${candidate.score.toFixed(1)} · ${formatPriceSourceLabel(executionSource)}${todaySignalReason ? ` · ${todaySignalReason}` : ""}`
           );
           summary.notes.push(
             buildResponseGuideNote({
@@ -3037,6 +3082,11 @@ async function runDailyReviewForUser(payload: {
         }
 
         const investedAmount = sizing.investedAmount;
+        const todaySignalReason = buildTodaySignalReasonNote({
+          signal: candidate.signal,
+          stableTurn: candidate.stableTurn,
+          signalGate: { trustScore: signalGate.trustScore, grade: signalGate.grade },
+        });
 
         try {
           if (payload.dryRun) {
@@ -3046,7 +3096,7 @@ async function runDailyReviewForUser(payload: {
             rebalanceBuyCount += 1;
             summary.buys += 1;
             summary.notes.push(
-              `[테스트 매수안] ${candidate.name}(${candidate.code}) ${qty}주 · 전략 ${profileLabel} · 매수가 ${fmtKrw(executionPrice)} · 목표가 ${fmtKrw(targetPrice)} · 기대수익 ${fmtKrw(expectedPnl)} (${targetPct.toFixed(1)}%) · ${formatPriceSourceLabel(executionSource)}`
+              `[테스트 매수안] ${candidate.name}(${candidate.code}) ${qty}주 · 전략 ${profileLabel} · 매수가 ${fmtKrw(executionPrice)} · 목표가 ${fmtKrw(targetPrice)} · 기대수익 ${fmtKrw(expectedPnl)} (${targetPct.toFixed(1)}%) · ${formatPriceSourceLabel(executionSource)}${todaySignalReason ? ` · ${todaySignalReason}` : ""}`
             );
             summary.notes.push(
               buildResponseGuideNote({
@@ -3155,7 +3205,7 @@ async function runDailyReviewForUser(payload: {
           rebalanceBuyCount += 1;
           summary.buys += 1;
           summary.notes.push(
-            `[실행 매수] ${candidate.name}(${candidate.code}) ${qty}주 · 전략 ${profileLabel} · 매수가 ${fmtKrw(executionPrice)} · 투입 ${fmtKrw(investedAmount)} · 점수 ${candidate.score.toFixed(1)} · ${formatPriceSourceLabel(executionSource)}`
+            `[실행 매수] ${candidate.name}(${candidate.code}) ${qty}주 · 전략 ${profileLabel} · 매수가 ${fmtKrw(executionPrice)} · 투입 ${fmtKrw(investedAmount)} · 점수 ${candidate.score.toFixed(1)} · ${formatPriceSourceLabel(executionSource)}${todaySignalReason ? ` · ${todaySignalReason}` : ""}`
           );
           summary.notes.push(
             buildResponseGuideNote({

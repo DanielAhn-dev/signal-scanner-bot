@@ -204,10 +204,10 @@ export function detectTrendBreakExitSignal(input: {
     };
   }
 
-  // SELL 신호 + 수익 중 → 익절 선취
-  if (normalizedSignal === "SELL" && pnlPct > 0) {
+  // SELL 신호 → 수익이면 익절, 손실이면 손절로 즉시 축소/청산 우선
+  if (normalizedSignal === "SELL") {
     return {
-      exitAction: "TAKE_PROFIT",
+      exitAction: pnlPct > 0 ? "TAKE_PROFIT" : "STOP_LOSS",
       reason: "signal-sell",
     };
   }

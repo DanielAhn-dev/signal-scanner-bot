@@ -59,6 +59,7 @@ export type AutoTradeCandidateSelectionResult = {
     signal?: string | null;
     rsi14?: number | null;
     liquidity?: number | null;
+    stableTurn?: string | null;
   }>;
   selectionMode: AutoTradeCandidateSelectionMode;
   thresholdUsed: number;
