@@ -25,6 +25,11 @@ import {
   ACTIONS,
 } from "../messages/layout";
 import { buildPersonalizedGuidance } from "../../services/personalizedGuidanceService";
+import {
+  formatScanFilterLabels,
+  matchesScanFilters,
+  parseScanInput,
+} from "./scanFilters";
 
 const supabase = createClient(
   process.env.SUPABASE_URL!,
@@ -133,13 +138,15 @@ export async function handleScanCommand(
   ctx: ChatContext,
   tgSend: any
 ): Promise<void> {
-  const query = (input || "").trim();
+  const parsedInput = parseScanInput(input);
+  const query = parsedInput.query;
+  const filterLabels = formatScanFilterLabels(parsedInput.filters);
   const prefs = await getUserInvestmentPrefs(ctx.from?.id ?? ctx.chatId);
   const riskProfile = (prefs.risk_profile ?? "safe") as RiskProfile;
 
   await tgSend("sendMessage", {
     chat_id: ctx.chatId,
-    text: `${query ? `'${query}' 조건` : "전체 시장"} 눌림목 스캔 중...`,
+    text: `${query ? `'${query}' 조건` : "전체 시장"} 눌림목 스캔 중...${filterLabels.length ? `\n필터: ${filterLabels.join(" · ")}` : ""}`,
   });
 
   const { data: latestRow } = await supabase
@@ -248,9 +255,11 @@ export async function handleScanCommand(
     {
       total?: number;
       value?: number;
+      signal?: string;
       stableTrust?: number;
       stableTurn?: string;
       stableAboveAvg?: boolean;
+      stableAccumulation?: boolean;
     }
   >();
   const scoreResult = await fetchLatestScoresByCodes(supabase, codes);
@@ -259,16 +268,38 @@ export async function handleScanCommand(
     scoreMap.set(code, {
       total: Number(row.total_score ?? 0) || undefined,
       value: Number(row.value_score ?? 0) || undefined,
+      signal: String(row.signal ?? "").trim() || undefined,
       stableTrust: Number(factors.stable_turn_trust ?? 0) || undefined,
       stableTurn: String(factors.stable_turn ?? "").trim() || undefined,
       stableAboveAvg:
         typeof factors.stable_above_avg === "boolean"
           ? factors.stable_above_avg
           : undefined,
+      stableAccumulation:
+        typeof factors.stable_accumulation === "boolean"
+          ? factors.stable_accumulation
+          : undefined,
     });
   });
 
-  const rerankPool = saferPool.slice(0, 12);
+  const filteredPool = saferPool.filter((item) =>
+    matchesScanFilters(scoreMap.get(item.code), parsedInput.filters)
+  );
+
+  if (!filteredPool.length) {
+    await tgSend("sendMessage", {
+      chat_id: ctx.chatId,
+      text: [
+        `조건에 맞는 눌림목 후보가 없습니다.`,
+        `(기준일: ${latestDate})`,
+        ...(filterLabels.length ? [`필터: ${filterLabels.join(" · ")}`] : []),
+        "예시: /스캔 반도체 추세 매집 진입",
+      ].join("\n"),
+    });
+    return;
+  }
+
+  const rerankPool = filteredPool.slice(0, 12);
   const fundamentals = await Promise.all(
     rerankPool.map(async (s) => ({
       code: s.code,
@@ -282,7 +313,7 @@ export async function handleScanCommand(
       .map((x) => [x.code, x.fundamental!])
   );
 
-  const rankedPicks = [...saferPool]
+  const rankedPicks = [...filteredPool]
     .sort((a, b) => {
       const ra = realtimeMap[a.code];
       const rb = realtimeMap[b.code];
@@ -375,6 +406,8 @@ export async function handleScanCommand(
       : "중립";
     const stableTrustLabel =
       stable?.stableTrust != null ? `${Math.round(stable.stableTrust)}점` : "-";
+    const stableAccumulation = stable?.stableAccumulation ? "매집" : "";
+    const scoreSignal = stable?.signal ? String(stable.signal).toUpperCase() : "-";
     const warn = WARN_LABEL[item.warn_grade] ?? item.warn_grade;
     const grade = gradeLabel[item.entry_grade] ?? "○";
     const details: Array<{ key: string; score: number; text: string }> = [];
@@ -471,7 +504,7 @@ export async function handleScanCommand(
 
     return (
       `${idx + 1}. ${grade} <b>${esc(item.stock?.name || item.code)}</b> <code>${price.toLocaleString("ko-KR")}원</code>${chg}\n` +
-      `진입 ${item.entry_grade}(${item.entry_score}/4) · 경고 ${warn}(${item.warn_score}/6) · 점수 ${Math.round(s?.total ?? 0)} · 재무 ${f ?? "-"} · Stable ${stableTurn}/${stableTrustLabel}\n` +
+      `진입 ${item.entry_grade}(${item.entry_score}/4) · 경고 ${warn}(${item.warn_score}/6) · 점수 ${Math.round(s?.total ?? 0)} · 재무 ${f ?? "-"} · Stable ${stableTurn}/${stableTrustLabel}${stableAccumulation ? ` · ${stableAccumulation}` : ""} · 신호 ${scoreSignal}\n` +
       `${detailLine}`
     );
   });
@@ -496,7 +529,8 @@ export async function handleScanCommand(
     header(title, `기준일 ${latestDate} · ${riskProfileLabel(riskProfile)} 기준`),
     section("스캔 조건", [
       "A/B 진입등급 · 매도경고 제외 · 코스피 중심 위험성향 필터",
-      `후보 ${candidates.length}개 중 상위 ${finalPicks.length}개`,
+      ...(filterLabels.length ? [`Stable 필터: ${filterLabels.join(" · ")}`] : []),
+      `후보 ${candidates.length}개 중 필터 통과 ${filteredPool.length}개 · 상위 ${finalPicks.length}개`,
       ...(blockedByNews.size > 0 ? [`뉴스 이벤트 리스크로 ${blockedByNews.size}개 제외(공개매수/상폐/거래정지 등)`] : []),
       `점수 기준일 ${scoreResult.latestAsof ?? "확인 불가"}`,
       ...freshnessWarnings,

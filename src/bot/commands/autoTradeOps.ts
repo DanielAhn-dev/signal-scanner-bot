@@ -199,6 +199,73 @@ function trimBody(text: string, maxLen = 220): string {
   return normalized.length > maxLen ? `${normalized.slice(0, maxLen)}...` : normalized;
 }
 
+function resolveHttpStatusLabelKo(status: number): string {
+  const labels: Record<number, string> = {
+    200: "정상",
+    201: "생성됨",
+    202: "요청 접수",
+    204: "응답 없음",
+    400: "잘못된 요청",
+    401: "인증 필요",
+    403: "권한 없음",
+    404: "경로 없음",
+    408: "요청 시간 초과",
+    409: "요청 충돌",
+    422: "요청 형식 오류",
+    429: "요청 과다",
+    500: "서버 오류",
+    501: "미구현",
+    502: "게이트웨이 오류",
+    503: "서비스 불가",
+    504: "게이트웨이 시간 초과",
+  };
+
+  if (labels[status]) return labels[status];
+  if (status >= 200 && status < 300) return "성공";
+  if (status >= 400 && status < 500) return "클라이언트 오류";
+  if (status >= 500 && status < 600) return "서버 오류";
+  return "알 수 없음";
+}
+
+function formatTriggerResponseBody(step: AutoTriggerStep, body: string): string {
+  const normalized = String(body || "").trim();
+  if (!normalized) return "(empty body)";
+
+  if (step.key === "intraday-1" || step.key === "ready-1") {
+    return normalized;
+  }
+
+  try {
+    const parsed = JSON.parse(normalized) as {
+      ok?: boolean;
+      summary?: {
+        runType?: string;
+        runKey?: string;
+        totalUsers?: number;
+        processedUsers?: number;
+        buyCount?: number;
+        sellCount?: number;
+        skippedCount?: number;
+        errorCount?: number;
+      };
+    };
+
+    const summary = parsed?.summary;
+    if (!summary) return trimBody(normalized);
+
+    return [
+      `실행결과: ${parsed.ok === false ? "실패" : "성공"}`,
+      `런타입: ${summary.runType ?? "N/A"}`,
+      `윈도우: ${summary.runKey ?? "N/A"}`,
+      `대상/처리: ${summary.totalUsers ?? 0}/${summary.processedUsers ?? 0}`,
+      `매수/매도: ${summary.buyCount ?? 0}/${summary.sellCount ?? 0}`,
+      `스킵/오류: ${summary.skippedCount ?? 0}/${summary.errorCount ?? 0}`,
+    ].join("\n");
+  } catch {
+    return trimBody(normalized);
+  }
+}
+
 function resolveAutoTriggerStep(input: string): AutoTriggerStep | "menu" | null {
   const text = String(input || "").trim().toLowerCase();
   if (!text || ["menu", "메뉴", "도움", "help"].includes(text)) return "menu";
@@ -212,7 +279,7 @@ function resolveAutoTriggerStep(input: string): AutoTriggerStep | "menu" | null 
       return {
         key: "intraday-2",
         label: "장중 2/2 자동사이클",
-        path: "/api/cron/virtualAutoTrade?mode=auto&dryRun=false&intradayOnly=true&windowMinutes=50",
+        path: "/api/cron/virtualAutoTrade?mode=auto&dryRun=false&intradayOnly=true&windowMinutes=10",
       };
     }
     return {
@@ -297,7 +364,7 @@ async function executeAutoTriggerStep(
       signal: controller.signal,
     });
     const body = await res.text().catch(() => "");
-    return { status: res.status, body: trimBody(body) };
+    return { status: res.status, body };
   } catch (error: unknown) {
     if (error instanceof Error && error.name === "AbortError") {
       throw new Error(`ops trigger timeout (${timeoutMs}ms)`);
@@ -366,12 +433,14 @@ export async function handleAutoTriggerCommand(
     const result = await executeAutoTriggerStep(baseUrl, cronSecret, step);
     const ok = result.status >= 200 && result.status < 300;
     const statusLabel = ok ? "성공" : "실패";
+    const responseBody = formatTriggerResponseBody(step, result.body);
+    const httpLabel = resolveHttpStatusLabelKo(result.status);
     await tgSend("sendMessage", {
       chat_id: ctx.chatId,
       text: [
         statusLabel,
-        `${step.label} | HTTP ${result.status}`,
-        `↳ ${result.body}`,
+        `${step.label} | ${httpLabel} (HTTP ${result.status})`,
+        `↳ ${responseBody}`,
       ].join("\n"),
       reply_markup:
         ok && step.nextCallback && step.nextLabel

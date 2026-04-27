@@ -221,6 +221,67 @@ function clamp(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, value));
 }
 
+function normalizeSignalValue(signal: unknown): string {
+  return String(signal ?? "").trim().toUpperCase();
+}
+
+function resolveAdaptiveExitThreshold(input: {
+  takeProfitPct: number;
+  stopLossPct: number;
+  signal?: string | null;
+  market?: string | null;
+  marketPolicy: AutoTradeMarketPolicy;
+  pnlPct: number;
+}): {
+  takeProfitPct: number;
+  stopLossPct: number;
+} {
+  let takeProfitPct = Math.max(2, Math.abs(toNumber(input.takeProfitPct, 8)));
+  let stopLossPct = Math.max(1, Math.abs(toNumber(input.stopLossPct, 4)));
+  const signal = normalizeSignalValue(input.signal);
+  const market = String(input.market ?? "").trim().toUpperCase();
+
+  if (input.marketPolicy.mode === "rotation" && (signal === "BUY" || signal === "STRONG_BUY")) {
+    takeProfitPct += 1.2;
+    stopLossPct += 0.3;
+  }
+
+  if (signal === "STRONG_BUY") {
+    takeProfitPct += 0.8;
+    stopLossPct += 0.2;
+  } else if (signal === "SELL") {
+    takeProfitPct -= 1.2;
+    stopLossPct -= 0.4;
+  } else if (signal === "STRONG_SELL") {
+    takeProfitPct -= 2.2;
+    stopLossPct -= 0.8;
+  }
+
+  if (input.marketPolicy.mode === "large-cap-defense") {
+    takeProfitPct -= 0.8;
+    stopLossPct -= 0.3;
+    if (market === "KOSDAQ") {
+      takeProfitPct -= 0.7;
+      stopLossPct -= 0.3;
+    }
+  }
+
+  if (input.pnlPct >= Math.max(2, takeProfitPct * 0.5) && (signal === "BUY" || signal === "STRONG_BUY")) {
+    takeProfitPct += 0.6;
+  }
+
+  takeProfitPct = Number(clamp(takeProfitPct, 3, 14).toFixed(1));
+  stopLossPct = Number(clamp(stopLossPct, 1.5, 8).toFixed(1));
+  if (takeProfitPct < stopLossPct + 1.5) {
+    takeProfitPct = Number(Math.min(14, stopLossPct + 1.5).toFixed(1));
+  }
+
+  return {
+    takeProfitPct,
+    stopLossPct,
+  };
+}
+
 function normalizeLongTermRatio(value: unknown, fallback = 70): number {
   return Math.round(clamp(toNumber(value, fallback), 0, 100));
 }
@@ -2186,6 +2247,10 @@ async function runDailyReviewForUser(payload: {
   let addOnBuyCount = 0;
   let rebalanceBuyCount = 0;
   let insufficientCashCount = 0;
+  let holdTakeProfitMin = Number.POSITIVE_INFINITY;
+  let holdTakeProfitMax = 0;
+  let holdStopLossMin = Number.POSITIVE_INFINITY;
+  let holdStopLossMax = 0;
 
   for (const holding of holdings) {
     const qty = Math.max(0, Math.floor(toNumber(holding.quantity, 0)));
@@ -2214,17 +2279,25 @@ async function runDailyReviewForUser(payload: {
       sellSplitCount,
     });
     const pnlPct = ((close - buyPrice) / buyPrice) * 100;
-    const baseExitPlan = planAutoTradeExit({
-      quantity: qty,
-      pnlPct,
-      takeProfitPct: tradeProfile.takeProfitPct,
-      stopLossPct: tradeProfile.stopLossPct,
-      takeProfitSplitCount: tradeProfile.takeProfitSplitCount,
-      takeProfitTranchesDone: strategyState.takeProfitTranchesDone,
-    });
     const holdingScoreRow = holdingFactorsByCode.get(holding.code);
     const holdingSignal = holdingScoreRow?.signal ?? null;
     const holdingMarket = marketByCode.get(holding.code) ?? "";
+    const adaptiveExitThreshold = resolveAdaptiveExitThreshold({
+      takeProfitPct: tradeProfile.takeProfitPct,
+      stopLossPct: tradeProfile.stopLossPct,
+      signal: holdingSignal,
+      market: holdingMarket,
+      marketPolicy,
+      pnlPct,
+    });
+    const baseExitPlan = planAutoTradeExit({
+      quantity: qty,
+      pnlPct,
+      takeProfitPct: adaptiveExitThreshold.takeProfitPct,
+      stopLossPct: adaptiveExitThreshold.stopLossPct,
+      takeProfitSplitCount: tradeProfile.takeProfitSplitCount,
+      takeProfitTranchesDone: strategyState.takeProfitTranchesDone,
+    });
     // 시장 레짐이 대형주 방어 모드일 때 KOSDAQ 보유 종목의 익절 기준 선제 적용
     const regimeEarlyExit =
       marketPolicy.mode === "large-cap-defense" &&
@@ -2265,6 +2338,10 @@ async function runDailyReviewForUser(payload: {
 
     if (exitPlan.action === "HOLD") {
       holdCount += 1;
+      holdTakeProfitMin = Math.min(holdTakeProfitMin, adaptiveExitThreshold.takeProfitPct);
+      holdTakeProfitMax = Math.max(holdTakeProfitMax, adaptiveExitThreshold.takeProfitPct);
+      holdStopLossMin = Math.min(holdStopLossMin, adaptiveExitThreshold.stopLossPct);
+      holdStopLossMax = Math.max(holdStopLossMax, adaptiveExitThreshold.stopLossPct);
       await writeActionLog({
         supabase: payload.supabase,
         runId: payload.runId,
@@ -2274,8 +2351,8 @@ async function runDailyReviewForUser(payload: {
         reason: "within-range",
         detail: {
           strategyProfile: tradeProfile.profile,
-          takeProfitPct: tradeProfile.takeProfitPct,
-          stopLossPct: tradeProfile.stopLossPct,
+          takeProfitPct: adaptiveExitThreshold.takeProfitPct,
+          stopLossPct: adaptiveExitThreshold.stopLossPct,
           buyPrice,
           close,
           pnlPct: Number(pnlPct.toFixed(2)),
@@ -2352,8 +2429,20 @@ async function runDailyReviewForUser(payload: {
   }
 
   if (holdCount > 0 && takeProfitCount === 0 && stopLossCount === 0) {
+    const takeProfitMin = Number.isFinite(holdTakeProfitMin)
+      ? holdTakeProfitMin
+      : Math.abs(toNumber(baseTakeProfitPct, 8));
+    const takeProfitMax = holdTakeProfitMax > 0
+      ? holdTakeProfitMax
+      : Math.abs(toNumber(baseTakeProfitPct, 8));
+    const stopLossMin = Number.isFinite(holdStopLossMin)
+      ? holdStopLossMin
+      : Math.abs(toNumber(baseStopLossPct, 4));
+    const stopLossMax = holdStopLossMax > 0
+      ? holdStopLossMax
+      : Math.abs(toNumber(baseStopLossPct, 4));
     summary.notes.push(
-      `보유 종목 ${holdCount}건은 기본 익절 ${baseTakeProfitPct.toFixed(1)}% / 손절 ${baseStopLossPct.toFixed(1)}% 범위 내에서 유지`
+      `보유 종목 ${holdCount}건은 적응형 익절 ${takeProfitMin.toFixed(1)}~${takeProfitMax.toFixed(1)}% / 손절 ${stopLossMin.toFixed(1)}~${stopLossMax.toFixed(1)}% 범위 내에서 유지`
     );
   }
 
