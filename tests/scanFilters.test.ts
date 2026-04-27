@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
+  describeScanFilterReasons,
   formatScanFilterLabels,
   matchesScanFilters,
   parseScanInput,
@@ -156,4 +157,30 @@ test("matchesScanFilters: 매집 필터는 IN 신호와 눌림목 맥락에서�
 
 test("formatScanFilterLabels: 사용자 노출 라벨을 반환한다", () => {
   assert.deepEqual(formatScanFilterLabels(["stable", "entry"]), ["세력선 우위", "IN 타이밍"]);
+});
+
+test("describeScanFilterReasons: 선택한 필터의 통과 근거를 반환한다", () => {
+  const reasons = describeScanFilterReasons(
+    {
+      total: 72,
+      signal: "buy",
+      stableTrust: 70,
+      stableTurn: "bull-strong",
+      stableAboveAvg: true,
+      stableAccumulation: true,
+      recentInDays: 1,
+      recentAccumulationDays: 2,
+    },
+    ["entry", "accumulation"],
+    {
+      entryGrade: "A",
+      entryScore: 4,
+      trendGrade: "A",
+      distGrade: "A",
+    }
+  );
+
+  assert.equal(reasons.length, 2);
+  assert.equal(reasons[0]?.startsWith("IN 타이밍("), true);
+  assert.equal(reasons[1]?.startsWith("매집("), true);
 });

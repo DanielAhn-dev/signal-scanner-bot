@@ -27,6 +27,7 @@ import {
 } from "../messages/layout";
 import { buildPersonalizedGuidance } from "../../services/personalizedGuidanceService";
 import {
+  describeScanFilterReasons,
   formatScanFilterLabels,
   matchesScanFilters,
   parseScanInput,
@@ -58,12 +59,183 @@ type PullbackRow = {
   };
 };
 
+type ScanConfig = {
+  momentumCap: number;
+  minCoverage: number;
+  freshWeight: number;
+  stale1Weight: number;
+  stale2Weight: number;
+};
+
+type RecentFilterPassStat = {
+  date: string;
+  baseCount: number;
+  trendCount: number;
+  accumulationCount: number;
+  entryCount: number;
+  comboCount: number;
+};
+
 const WARN_LABEL: Record<string, string> = {
   SAFE: "안전",
   WATCH: "관찰",
   WARN: "주의",
   SELL: "매도",
 };
+
+function parseEnvNumber(raw: string | undefined, fallback: number): number {
+  const n = Number(raw);
+  return Number.isFinite(n) ? n : fallback;
+}
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.max(min, Math.min(max, value));
+}
+
+function resolveScanConfig(): ScanConfig {
+  return {
+    momentumCap: clamp(parseEnvNumber(process.env.SCAN_REALTIME_MOMENTUM_CAP, 5), 1, 15),
+    minCoverage: clamp(parseEnvNumber(process.env.SCAN_REALTIME_MIN_COVERAGE, 0.3), 0, 1),
+    freshWeight: clamp(parseEnvNumber(process.env.SCAN_REALTIME_WEIGHT_FRESH, 1.2), 0.5, 4),
+    stale1Weight: clamp(parseEnvNumber(process.env.SCAN_REALTIME_WEIGHT_STALE1, 2.4), 0.5, 8),
+    stale2Weight: clamp(parseEnvNumber(process.env.SCAN_REALTIME_WEIGHT_STALE2, 3.2), 0.5, 10),
+  };
+}
+
+function formatFilterRateLine(stat: RecentFilterPassStat): string {
+  const pct = (count: number) => (stat.baseCount > 0 ? `${Math.round((count / stat.baseCount) * 100)}%` : "0%");
+  return [
+    `${stat.date}`,
+    `기본 ${stat.baseCount}개`,
+    `추세 ${stat.trendCount}(${pct(stat.trendCount)})`,
+    `매집 ${stat.accumulationCount}(${pct(stat.accumulationCount)})`,
+    `진입 ${stat.entryCount}(${pct(stat.entryCount)})`,
+    `매집+진입 ${stat.comboCount}(${pct(stat.comboCount)})`,
+  ].join(" · ");
+}
+
+async function fetchRecentFilterPassStats(
+  supabaseClient: typeof supabase,
+  sectorId: string | null,
+  limitDays = 3
+): Promise<RecentFilterPassStat[]> {
+  const { data: recentDates } = await supabaseClient
+    .from("pullback_signals")
+    .select("trade_date")
+    .order("trade_date", { ascending: false })
+    .limit(Math.max(limitDays, 1));
+
+  const uniqueDates = [...new Set((recentDates ?? []).map((row: { trade_date?: string }) => row.trade_date).filter(Boolean))]
+    .slice(0, limitDays) as string[];
+
+  if (!uniqueDates.length) return [];
+
+  const stats = await Promise.all(
+    uniqueDates.map(async (date): Promise<RecentFilterPassStat> => {
+      const rows = sectorId
+        ? (
+            await supabaseClient
+              .from("pullback_signals")
+              .select(
+                "code, entry_grade, entry_score, trend_grade, dist_grade, warn_grade, stock:stocks!inner(sector_id)"
+              )
+              .eq("trade_date", date)
+              .in("entry_grade", ["A", "B"])
+              .neq("warn_grade", "SELL")
+              .eq("stock.sector_id", sectorId)
+              .limit(600)
+          ).data
+        : (
+            await supabaseClient
+              .from("pullback_signals")
+              .select("code, entry_grade, entry_score, trend_grade, dist_grade, warn_grade")
+              .eq("trade_date", date)
+              .in("entry_grade", ["A", "B"])
+              .neq("warn_grade", "SELL")
+              .limit(600)
+          ).data;
+
+      const candidates = (rows ?? []) as Array<{
+        code: string;
+        entry_grade?: string;
+        entry_score?: number;
+        trend_grade?: string;
+        dist_grade?: string;
+      }>;
+      const codes = [...new Set(candidates.map((row) => String(row.code ?? "").trim()).filter(Boolean))];
+
+      if (!codes.length) {
+        return {
+          date,
+          baseCount: 0,
+          trendCount: 0,
+          accumulationCount: 0,
+          entryCount: 0,
+          comboCount: 0,
+        };
+      }
+
+      const { data: scoreRows } = await supabaseClient
+        .from("scores")
+        .select("code, total_score, signal, factors")
+        .eq("asof", date)
+        .in("code", codes)
+        .limit(Math.max(400, codes.length * 2));
+
+      const scoreByCode = new Map(
+        ((scoreRows ?? []) as Array<{
+          code: string;
+          total_score?: number | null;
+          signal?: string | null;
+          factors?: Record<string, unknown> | null;
+        }>).map((row) => [String(row.code ?? "").trim(), row])
+      );
+
+      let trendCount = 0;
+      let accumulationCount = 0;
+      let entryCount = 0;
+      let comboCount = 0;
+
+      for (const row of candidates) {
+        const score = scoreByCode.get(row.code);
+        const factors = (score?.factors ?? {}) as Record<string, unknown>;
+        const snapshot = {
+          total: Number(score?.total_score ?? 0),
+          signal: String(score?.signal ?? ""),
+          stableTrust: Number(factors.stable_turn_trust ?? 0),
+          stableTurn: String(factors.stable_turn ?? ""),
+          stableAboveAvg: Boolean(factors.stable_above_avg ?? false),
+          stableAccumulation: Boolean(factors.stable_accumulation ?? false),
+          recentInDays: 0,
+          recentAccumulationDays: 0,
+          recentBullDays: 0,
+        };
+        const pullback = {
+          entryGrade: row.entry_grade,
+          entryScore: Number(row.entry_score ?? 0),
+          trendGrade: row.trend_grade,
+          distGrade: row.dist_grade,
+        };
+
+        if (matchesScanFilters(snapshot, ["trend"], pullback)) trendCount += 1;
+        if (matchesScanFilters(snapshot, ["accumulation"], pullback)) accumulationCount += 1;
+        if (matchesScanFilters(snapshot, ["entry"], pullback)) entryCount += 1;
+        if (matchesScanFilters(snapshot, ["accumulation", "entry"], pullback)) comboCount += 1;
+      }
+
+      return {
+        date,
+        baseCount: candidates.length,
+        trendCount,
+        accumulationCount,
+        entryCount,
+        comboCount,
+      };
+    })
+  );
+
+  return stats;
+}
 
 function hashSeed(input: string): number {
   let hash = 0;
@@ -192,6 +364,7 @@ export async function handleScanCommand(
   ctx: ChatContext,
   tgSend: any
 ): Promise<void> {
+  const scanConfig = resolveScanConfig();
   const parsedInput = parseScanInput(input);
   const query = parsedInput.query;
   const filterLabels = formatScanFilterLabels(parsedInput.filters);
@@ -257,6 +430,9 @@ export async function handleScanCommand(
   if (sectorId) {
     pbQuery = pbQuery.eq("stock.sector_id", sectorId);
   }
+
+  const recentFilterPassStats = await fetchRecentFilterPassStats(supabase, sectorId, 3)
+    .catch(() => [] as RecentFilterPassStat[]);
 
   const { data: rawCandidates, error } = await pbQuery;
 
@@ -395,13 +571,13 @@ export async function handleScanCommand(
   const staleBusinessGap = Math.max(signalBusinessGap, scoreBusinessGap);
   const realtimeCoverage = codes.length > 0 ? Object.keys(realtimeMap).length / codes.length : 0;
   const realtimeMomentumWeight =
-    realtimeCoverage < 0.3
-      ? 1.2
+    realtimeCoverage < scanConfig.minCoverage
+      ? scanConfig.freshWeight
       : staleBusinessGap >= 2
-        ? 3.2
+        ? scanConfig.stale2Weight
         : staleBusinessGap >= 1
-          ? 2.4
-          : 1.2;
+          ? scanConfig.stale1Weight
+          : scanConfig.freshWeight;
 
   const rankedPicks = [...saferPool]
     .sort((a, b) => {
@@ -427,8 +603,8 @@ export async function handleScanCommand(
         (sb?.recentAccumulationDays ?? 0) * 2;
       const warnPenaltyA = getFundamentalWarningTags(fundA ?? {}).length * 6;
       const warnPenaltyB = getFundamentalWarningTags(fundB ?? {}).length * 6;
-      const momentumA = Math.max(-5, Math.min(5, ra?.changeRate ?? 0));
-      const momentumB = Math.max(-5, Math.min(5, rb?.changeRate ?? 0));
+      const momentumA = Math.max(-scanConfig.momentumCap, Math.min(scanConfig.momentumCap, ra?.changeRate ?? 0));
+      const momentumB = Math.max(-scanConfig.momentumCap, Math.min(scanConfig.momentumCap, rb?.changeRate ?? 0));
 
       const scoreA =
         (a.entry_score ?? 0) * 20 +
@@ -605,10 +781,21 @@ export async function handleScanCommand(
         Boolean(sentiment),
         variantSalt
       );
+    const filterReasonLine = parsedInput.filters.length
+      ? describeScanFilterReasons(s, parsedInput.filters, {
+          entryGrade: item.entry_grade,
+          entryScore: item.entry_score,
+          trendGrade: item.trend_grade,
+          distGrade: item.dist_grade,
+        })
+          .slice(0, 2)
+          .join(" · ")
+      : "";
 
     return (
       `${idx + 1}. ${grade} <b>${esc(item.stock?.name || item.code)}</b> <code>${price.toLocaleString("ko-KR")}원</code>${chg}\n` +
       `진입 ${item.entry_grade}(${item.entry_score}/4) · 경고 ${warn}(${item.warn_score}/6) · 점수 ${Math.round(s?.total ?? 0)} · 재무 ${f ?? "-"} · Stable ${stableTurn}/${stableTrustLabel}${stableAccumulation ? ` · ${stableAccumulation}` : ""} · 신호 ${scoreSignal}${recentText ? ` · 최근 ${recentText}` : ""}\n` +
+      `${filterReasonLine ? `필터 근거 ${filterReasonLine}\n` : ""}` +
       `${detailLine}`
     );
   });
@@ -628,6 +815,7 @@ export async function handleScanCommand(
     chatId: ctx.chatId,
     context: "scan",
   }).catch(() => []);
+  const recentFilterRateLines = recentFilterPassStats.map((stat) => formatFilterRateLine(stat));
 
   const msg = buildMessage([
     header(title, `기준일 ${latestDate} · ${riskProfileLabel(riskProfile)} 기준`),
@@ -642,6 +830,9 @@ export async function handleScanCommand(
       `점수 기준일 ${scoreResult.latestAsof ?? "확인 불가"}`,
       ...freshnessWarnings,
     ]),
+    ...(recentFilterRateLines.length > 0
+      ? [section("최근 3영업일 필터 통과율", recentFilterRateLines)]
+      : []),
     ...(personalLines.length > 0
       ? [section("내 상황 제안", personalLines)]
       : []),
