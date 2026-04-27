@@ -5,6 +5,7 @@ import {
   computeDynamicLargeCapFloor,
   detectAutoTradeMarketPolicy,
   deriveAdaptiveMinBuyScore,
+  isActionableTodayBuySignal,
   pickAutoTradeAddOnCandidates,
   pickAutoTradeCandidates,
   resolveDeployableCash,
@@ -33,6 +34,12 @@ test("deriveAdaptiveMinBuyScore: 현재 상위 점수대에 맞춰 기준을 완
   assert.equal(deriveAdaptiveMinBuyScore(70, 34), 31);
 });
 
+test("isActionableTodayBuySignal: 오늘 적극 매수 신호는 BUY/STRONG_BUY만 인정한다", () => {
+  assert.equal(isActionableTodayBuySignal("BUY"), true);
+  assert.equal(isActionableTodayBuySignal("STRONG_BUY"), true);
+  assert.equal(isActionableTodayBuySignal("WATCH"), false);
+});
+
 test("pickAutoTradeCandidates: BUY 신호가 없어도 완화 신호(HOLD) 우선으로 후보를 반환한다", () => {
   const result = pickAutoTradeCandidates({
     rows: [
@@ -50,6 +57,24 @@ test("pickAutoTradeCandidates: BUY 신호가 없어도 완화 신호(HOLD) 우�
   assert.deepEqual(
     result.candidates.map((candidate) => candidate.code),
     ["A", "B"]
+  );
+});
+
+test("pickAutoTradeCandidates: 오늘 BUY 신호가 있으면 WATCH보다 우선해 signal-preferred로 선택한다", () => {
+  const result = pickAutoTradeCandidates({
+    rows: [
+      { code: "A", close: 10000, score: 72, name: "Alpha", signal: "WATCH" },
+      { code: "B", close: 10000, score: 71, name: "Beta", signal: "BUY" },
+    ],
+    preferredMinBuyScore: 70,
+    limit: 2,
+    heldCodes: new Set<string>(),
+  });
+
+  assert.equal(result.selectionMode, "signal-preferred");
+  assert.deepEqual(
+    result.candidates.map((candidate) => candidate.code),
+    ["B"]
   );
 });
 

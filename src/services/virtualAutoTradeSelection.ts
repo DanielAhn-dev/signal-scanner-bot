@@ -131,6 +131,10 @@ export function isPreferredBuySignal(signal: unknown): boolean {
   return ["BUY", "STRONG_BUY", "WATCH"].includes(normalizeSignal(signal));
 }
 
+export function isActionableTodayBuySignal(signal: unknown): boolean {
+  return ["BUY", "STRONG_BUY"].includes(normalizeSignal(signal));
+}
+
 export function deriveAdaptiveMinBuyScore(
   preferredMinBuyScore: number,
   latestTopScore: number
@@ -616,7 +620,7 @@ export function pickAutoTradeCandidates(input: {
       isStableBullTurn(row.stableTurn) &&
       toNumber(row.stableTrust, 0) >= 68 &&
       Boolean(row.stableAboveAvg ?? false);
-    return row.score >= scoreFloor && (isPreferredBuySignal(row.signal) || stableBullPreferred);
+    return row.score >= scoreFloor && (isActionableTodayBuySignal(row.signal) || stableBullPreferred);
   });
   if (preferredSignalRows.length > 0) {
     const candidates = toCandidates(preferredSignalRows);

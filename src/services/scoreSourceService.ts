@@ -19,6 +19,13 @@ export interface ScoreSnapshotResult {
   fallbackCodes: string[];
 }
 
+export interface RecentScoreHistoryPoint {
+  asof: string | null;
+  signal?: string | null;
+  total_score: number | null;
+  factors: Json | null;
+}
+
 function uniqCodes(codes: string[]): string[] {
   return [...new Set(codes.map((code) => code.trim()).filter(Boolean))];
 }
@@ -132,4 +139,44 @@ export async function fetchLatestScoresByCodes(
     byCode,
     fallbackCodes,
   };
+}
+
+export async function fetchRecentScoreHistoryByCodes(
+  supabase: SupabaseClient,
+  codes: string[],
+  lookbackPerCode = 5
+): Promise<Map<string, RecentScoreHistoryPoint[]>> {
+  const targets = uniqCodes(codes);
+  const historyMap = new Map<string, RecentScoreHistoryPoint[]>();
+
+  if (!targets.length) return historyMap;
+
+  const limit = Math.max(300, targets.length * Math.max(lookbackPerCode, 3) * 4);
+  const { data, error } = await supabase
+    .from("scores")
+    .select("code, asof, signal, total_score, factors")
+    .in("code", targets)
+    .order("asof", { ascending: false })
+    .limit(limit)
+    .returns<Array<RecentScoreHistoryPoint & { code: string }>>();
+
+  if (error) {
+    throw new Error(`Recent score history fetch failed: ${error.message}`);
+  }
+
+  for (const row of data ?? []) {
+    const code = String(row.code ?? "").trim();
+    if (!code) continue;
+    const current = historyMap.get(code) ?? [];
+    if (current.length >= lookbackPerCode) continue;
+    current.push({
+      asof: row.asof,
+      signal: row.signal,
+      total_score: row.total_score,
+      factors: row.factors,
+    });
+    historyMap.set(code, current);
+  }
+
+  return historyMap;
 }

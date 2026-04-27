@@ -12,6 +12,9 @@ export type ScanScoreSnapshot = {
   stableTurn?: string;
   stableAboveAvg?: boolean;
   stableAccumulation?: boolean;
+  recentInDays?: number;
+  recentAccumulationDays?: number;
+  recentBullDays?: number;
 };
 
 const FILTER_TOKEN_MAP: Array<{ filter: ScanFilterKey; tokens: string[] }> = [
@@ -77,21 +80,30 @@ export function matchesScanFilters(
   const stableTurn = String(snapshot?.stableTurn ?? "").trim().toLowerCase();
   const stableAboveAvg = Boolean(snapshot?.stableAboveAvg ?? false);
   const stableAccumulation = Boolean(snapshot?.stableAccumulation ?? false);
+  const recentInDays = Number(snapshot?.recentInDays ?? 0);
+  const recentAccumulationDays = Number(snapshot?.recentAccumulationDays ?? 0);
+  const recentBullDays = Number(snapshot?.recentBullDays ?? 0);
   const bullTurn = isBullTurn(stableTurn);
   const bearTurn = isBearTurn(stableTurn);
+  const buyLikeSignal = signal === "buy" || signal === "strong_buy" || signal === "watch";
+  const stablePositive = stableAboveAvg && stableTrust >= 50 && !bearTurn;
+  const accumulationLike =
+    stableAccumulation ||
+    recentAccumulationDays >= 2 ||
+    (stableAboveAvg && stableTrust >= 58 && total >= 58 && !bearTurn);
 
   return filters.every((filter) => {
     if (filter === "stable") {
-      return stableAboveAvg && stableTrust >= 55 && !bearTurn;
+      return bullTurn || recentBullDays >= 1 || stablePositive;
     }
     if (filter === "trend") {
-      return stableAboveAvg && !bearTurn && (signal === "buy" || total >= 60);
+      return !bearTurn && ((stableAboveAvg && total >= 55) || buyLikeSignal || bullTurn);
     }
     if (filter === "accumulation") {
-      return stableAccumulation;
+      return accumulationLike;
     }
     if (filter === "entry") {
-      return !bearTurn && (bullTurn || signal === "buy") && stableTrust >= 55;
+      return !bearTurn && (recentInDays >= 1 || bullTurn || signal === "buy" || signal === "strong_buy" || (stableAboveAvg && stableTrust >= 60 && total >= 65));
     }
     return true;
   });

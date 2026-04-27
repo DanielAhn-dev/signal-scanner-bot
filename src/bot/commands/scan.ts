@@ -15,6 +15,7 @@ import { fetchStockNews } from "../../utils/fetchNews";
 import { filterCodesByCriticalNewsRisk } from "../../services/newsRiskFilter";
 import { esc, gradeLabel } from "../messages/format";
 import { fetchLatestScoresByCodes } from "../../services/scoreSourceService";
+import { fetchRecentScoreHistoryByCodes } from "../../services/scoreSourceService";
 import { buildFreshnessLabel, isBusinessStale } from "../../utils/dataFreshness";
 import {
   header,
@@ -97,6 +98,59 @@ function riskProfileLabel(profile?: RiskProfile): string {
   if (profile === "balanced") return "균형형";
   if (profile === "active") return "공격형";
   return "안전형";
+}
+
+function summarizeRecentScoreContext(
+  history: Array<{
+    asof: string | null;
+    signal?: string | null;
+    total_score: number | null;
+    factors: Record<string, unknown> | null;
+  }>
+): {
+  recentInDays: number;
+  recentAccumulationDays: number;
+  recentBullDays: number;
+  recentText: string[];
+} {
+  let recentInDays = 0;
+  let recentAccumulationDays = 0;
+  let recentBullDays = 0;
+  let recentInOffset: number | null = null;
+
+  history.forEach((row, index) => {
+    const signal = String(row.signal ?? "").trim().toLowerCase();
+    const factors = (row.factors ?? {}) as Record<string, unknown>;
+    const stableTurn = String(factors.stable_turn ?? "").trim().toLowerCase();
+    const stableAccumulation = typeof factors.stable_accumulation === "boolean"
+      ? factors.stable_accumulation
+      : false;
+
+    if (signal === "buy" || signal === "strong_buy") {
+      recentInDays += 1;
+      if (recentInOffset == null) recentInOffset = index;
+    }
+    if (stableAccumulation) recentAccumulationDays += 1;
+    if (stableTurn === "bull-weak" || stableTurn === "bull-strong") recentBullDays += 1;
+  });
+
+  const recentText: string[] = [];
+  if (recentInOffset != null) {
+    recentText.push(recentInOffset === 0 ? "오늘 IN 계열" : `${recentInOffset}일 전 IN`);
+  }
+  if (recentAccumulationDays > 0) {
+    recentText.push(`최근 매집 ${recentAccumulationDays}일`);
+  }
+  if (recentBullDays > 0) {
+    recentText.push(`최근 상승턴 ${recentBullDays}회`);
+  }
+
+  return {
+    recentInDays,
+    recentAccumulationDays,
+    recentBullDays,
+    recentText,
+  };
 }
 
 function buildDetailFallback(
@@ -235,19 +289,15 @@ export async function handleScanCommand(
 
   const variantSalt = `${Date.now()}|${ctx.chatId}|${query || "all"}`;
 
-  const saferPool = pickSaferCandidates(
-    candidates.map((item) => ({
-      ...item,
-      name: item.stock?.name,
-      market: item.stock?.market,
-      liquidity: item.stock?.liquidity,
-      universe_level: item.stock?.universe_level,
-    })),
-    20,
-    riskProfile
-  ) as PullbackRow[];
+  const candidatePool = candidates.map((item) => ({
+    ...item,
+    name: item.stock?.name,
+    market: item.stock?.market,
+    liquidity: item.stock?.liquidity,
+    universe_level: item.stock?.universe_level,
+  }));
 
-  const codes = saferPool.map((c) => c.code);
+  const codes = candidatePool.map((c) => c.code);
   const realtimeMap = await fetchRealtimePriceBatch(codes);
 
   const scoreMap = new Map<
@@ -260,11 +310,23 @@ export async function handleScanCommand(
       stableTurn?: string;
       stableAboveAvg?: boolean;
       stableAccumulation?: boolean;
+      recentInDays?: number;
+      recentAccumulationDays?: number;
+      recentBullDays?: number;
+      recentText?: string[];
     }
   >();
   const scoreResult = await fetchLatestScoresByCodes(supabase, codes);
+  const recentHistoryByCode = await fetchRecentScoreHistoryByCodes(supabase, codes, 5);
   scoreResult.byCode.forEach((row, code) => {
     const factors = (row.factors ?? {}) as Record<string, unknown>;
+    const recentHistory = recentHistoryByCode.get(code) ?? [];
+    const recentSummary = summarizeRecentScoreContext(recentHistory as Array<{
+      asof: string | null;
+      signal?: string | null;
+      total_score: number | null;
+      factors: Record<string, unknown> | null;
+    }>);
     scoreMap.set(code, {
       total: Number(row.total_score ?? 0) || undefined,
       value: Number(row.value_score ?? 0) || undefined,
@@ -279,14 +341,24 @@ export async function handleScanCommand(
         typeof factors.stable_accumulation === "boolean"
           ? factors.stable_accumulation
           : undefined,
+      recentInDays: recentSummary.recentInDays,
+      recentAccumulationDays: recentSummary.recentAccumulationDays,
+      recentBullDays: recentSummary.recentBullDays,
+      recentText: recentSummary.recentText,
     });
   });
 
-  const filteredPool = saferPool.filter((item) =>
+  const filteredCandidates = candidatePool.filter((item) =>
     matchesScanFilters(scoreMap.get(item.code), parsedInput.filters)
   );
 
-  if (!filteredPool.length) {
+  const saferPool = pickSaferCandidates(
+    filteredCandidates,
+    20,
+    riskProfile
+  ) as PullbackRow[];
+
+  if (!filteredCandidates.length) {
     await tgSend("sendMessage", {
       chat_id: ctx.chatId,
       text: [
@@ -299,7 +371,7 @@ export async function handleScanCommand(
     return;
   }
 
-  const rerankPool = filteredPool.slice(0, 12);
+  const rerankPool = saferPool.slice(0, 12);
   const fundamentals = await Promise.all(
     rerankPool.map(async (s) => ({
       code: s.code,
@@ -313,7 +385,7 @@ export async function handleScanCommand(
       .map((x) => [x.code, x.fundamental!])
   );
 
-  const rankedPicks = [...filteredPool]
+  const rankedPicks = [...saferPool]
     .sort((a, b) => {
       const ra = realtimeMap[a.code];
       const rb = realtimeMap[b.code];
@@ -326,11 +398,15 @@ export async function handleScanCommand(
       const stableBoostA =
         (sa?.stableTrust ?? 0) * 0.35 +
         ((sa?.stableTurn ?? "").startsWith("bull") ? 8 : (sa?.stableTurn ?? "").startsWith("bear") ? -8 : 0) +
-        (sa?.stableAboveAvg ? 3 : -3);
+        (sa?.stableAboveAvg ? 3 : -3) +
+        (sa?.recentInDays ?? 0) * 4 +
+        (sa?.recentAccumulationDays ?? 0) * 2;
       const stableBoostB =
         (sb?.stableTrust ?? 0) * 0.35 +
         ((sb?.stableTurn ?? "").startsWith("bull") ? 8 : (sb?.stableTurn ?? "").startsWith("bear") ? -8 : 0) +
-        (sb?.stableAboveAvg ? 3 : -3);
+        (sb?.stableAboveAvg ? 3 : -3) +
+        (sb?.recentInDays ?? 0) * 4 +
+        (sb?.recentAccumulationDays ?? 0) * 2;
       const warnPenaltyA = getFundamentalWarningTags(fundA ?? {}).length * 6;
       const warnPenaltyB = getFundamentalWarningTags(fundB ?? {}).length * 6;
 
@@ -408,6 +484,7 @@ export async function handleScanCommand(
       stable?.stableTrust != null ? `${Math.round(stable.stableTrust)}점` : "-";
     const stableAccumulation = stable?.stableAccumulation ? "매집" : "";
     const scoreSignal = stable?.signal ? String(stable.signal).toUpperCase() : "-";
+    const recentText = stable?.recentText?.slice(0, 2).join(" · ") ?? "";
     const warn = WARN_LABEL[item.warn_grade] ?? item.warn_grade;
     const grade = gradeLabel[item.entry_grade] ?? "○";
     const details: Array<{ key: string; score: number; text: string }> = [];
@@ -488,6 +565,13 @@ export async function handleScanCommand(
         ])
       );
     }
+    if (recentText) {
+      pushDetail(
+        "recent",
+        92,
+        recentText
+      );
+    }
 
     const conciseDetails = details
       .sort((a, b) => b.score - a.score)
@@ -504,7 +588,7 @@ export async function handleScanCommand(
 
     return (
       `${idx + 1}. ${grade} <b>${esc(item.stock?.name || item.code)}</b> <code>${price.toLocaleString("ko-KR")}원</code>${chg}\n` +
-      `진입 ${item.entry_grade}(${item.entry_score}/4) · 경고 ${warn}(${item.warn_score}/6) · 점수 ${Math.round(s?.total ?? 0)} · 재무 ${f ?? "-"} · Stable ${stableTurn}/${stableTrustLabel}${stableAccumulation ? ` · ${stableAccumulation}` : ""} · 신호 ${scoreSignal}\n` +
+      `진입 ${item.entry_grade}(${item.entry_score}/4) · 경고 ${warn}(${item.warn_score}/6) · 점수 ${Math.round(s?.total ?? 0)} · 재무 ${f ?? "-"} · Stable ${stableTurn}/${stableTrustLabel}${stableAccumulation ? ` · ${stableAccumulation}` : ""} · 신호 ${scoreSignal}${recentText ? ` · 최근 ${recentText}` : ""}\n` +
       `${detailLine}`
     );
   });
@@ -530,7 +614,7 @@ export async function handleScanCommand(
     section("스캔 조건", [
       "A/B 진입등급 · 매도경고 제외 · 코스피 중심 위험성향 필터",
       ...(filterLabels.length ? [`Stable 필터: ${filterLabels.join(" · ")}`] : []),
-      `후보 ${candidates.length}개 중 필터 통과 ${filteredPool.length}개 · 상위 ${finalPicks.length}개`,
+      `후보 ${candidates.length}개 중 필터 통과 ${filteredCandidates.length}개 · 안전성향 통과 ${saferPool.length}개 · 상위 ${finalPicks.length}개`,
       ...(blockedByNews.size > 0 ? [`뉴스 이벤트 리스크로 ${blockedByNews.size}개 제외(공개매수/상폐/거래정지 등)`] : []),
       `점수 기준일 ${scoreResult.latestAsof ?? "확인 불가"}`,
       ...freshnessWarnings,
