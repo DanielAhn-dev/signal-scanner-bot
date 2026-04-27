@@ -16,7 +16,7 @@ import { filterCodesByCriticalNewsRisk } from "../../services/newsRiskFilter";
 import { esc, gradeLabel } from "../messages/format";
 import { fetchLatestScoresByCodes } from "../../services/scoreSourceService";
 import { fetchRecentScoreHistoryByCodes } from "../../services/scoreSourceService";
-import { buildFreshnessLabel, isBusinessStale } from "../../utils/dataFreshness";
+import { buildFreshnessLabel, businessDaysBehind, isBusinessStale } from "../../utils/dataFreshness";
 import {
   header,
   section,
@@ -390,6 +390,19 @@ export async function handleScanCommand(
       .map((x) => [x.code, x.fundamental!])
   );
 
+  const signalBusinessGap = businessDaysBehind(latestDate) ?? 0;
+  const scoreBusinessGap = businessDaysBehind(scoreResult.latestAsof) ?? 0;
+  const staleBusinessGap = Math.max(signalBusinessGap, scoreBusinessGap);
+  const realtimeCoverage = codes.length > 0 ? Object.keys(realtimeMap).length / codes.length : 0;
+  const realtimeMomentumWeight =
+    realtimeCoverage < 0.3
+      ? 1.2
+      : staleBusinessGap >= 2
+        ? 3.2
+        : staleBusinessGap >= 1
+          ? 2.4
+          : 1.2;
+
   const rankedPicks = [...saferPool]
     .sort((a, b) => {
       const ra = realtimeMap[a.code];
@@ -414,6 +427,8 @@ export async function handleScanCommand(
         (sb?.recentAccumulationDays ?? 0) * 2;
       const warnPenaltyA = getFundamentalWarningTags(fundA ?? {}).length * 6;
       const warnPenaltyB = getFundamentalWarningTags(fundB ?? {}).length * 6;
+      const momentumA = Math.max(-5, Math.min(5, ra?.changeRate ?? 0));
+      const momentumB = Math.max(-5, Math.min(5, rb?.changeRate ?? 0));
 
       const scoreA =
         (a.entry_score ?? 0) * 20 +
@@ -422,7 +437,7 @@ export async function handleScanCommand(
         (sa?.value ?? 0) * 0.5 +
         stableBoostA +
         qa * 0.6 +
-        (ra?.changeRate ?? 0) * 1.2 -
+        momentumA * realtimeMomentumWeight -
         warnPenaltyA;
       const scoreB =
         (b.entry_score ?? 0) * 20 +
@@ -431,7 +446,7 @@ export async function handleScanCommand(
         (sb?.value ?? 0) * 0.5 +
         stableBoostB +
         qb * 0.6 +
-        (rb?.changeRate ?? 0) * 1.2 -
+        momentumB * realtimeMomentumWeight -
         warnPenaltyB;
       return scoreB - scoreA;
     });
@@ -621,6 +636,9 @@ export async function handleScanCommand(
       ...(filterLabels.length ? [`Stable 필터: ${filterLabels.join(" · ")}`] : []),
       `후보 ${candidates.length}개 중 필터 통과 ${filteredCandidates.length}개 · 안전성향 통과 ${saferPool.length}개 · 상위 ${finalPicks.length}개`,
       ...(blockedByNews.size > 0 ? [`뉴스 이벤트 리스크로 ${blockedByNews.size}개 제외(공개매수/상폐/거래정지 등)`] : []),
+      ...(staleBusinessGap >= 1
+        ? [`장중 보정: 실시간 등락 가중치 x${realtimeMomentumWeight.toFixed(1)} (시그널/점수 지연 ${staleBusinessGap}영업일)`]
+        : []),
       `점수 기준일 ${scoreResult.latestAsof ?? "확인 불가"}`,
       ...freshnessWarnings,
     ]),

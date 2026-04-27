@@ -108,16 +108,14 @@ export function matchesScanFilters(
     !bearTurn &&
     (recentInDays >= 1 ||
       bullTurn ||
-      signal === "buy" ||
-      signal === "strong_buy" ||
-      (stableAboveAvg && stableTrust >= 60 && total >= 65) ||
-      pullbackEntryLike);
+      ((signal === "buy" || signal === "strong_buy") && stableAboveAvg && stableTrust >= 58) ||
+      (stableAboveAvg && stableTrust >= 64 && total >= 68));
   const accumulationLike =
     stableAccumulation ||
     recentAccumulationDays >= 2 ||
-    (stableAboveAvg && stableTrust >= 58 && total >= 58 && !bearTurn) ||
-    (!bearTurn && buyLikeSignal && (recentInDays >= 1 || total >= 55)) ||
-    pullbackAccumulationLike;
+    (stableAboveAvg && stableTrust >= 62 && total >= 62 && !bearTurn) ||
+    (!bearTurn && recentInDays >= 1 && stableAboveAvg && stableTrust >= 58) ||
+    (!bearTurn && pullbackAccumulationLike && stableAboveAvg && stableTrust >= 60);
 
   return filters.every((filter) => {
     if (filter === "stable") {
