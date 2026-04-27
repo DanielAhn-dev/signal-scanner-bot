@@ -278,7 +278,7 @@ async function executeAutoTriggerStep(
     throw new Error("step.path 또는 step.inlineRun 중 하나는 필수");
   }
 
-  const timeoutMs = 45000;
+  const timeoutMs = 55000; // intradayOnly 모드의 순차 처리 시간 고려 (Vercel maxDuration=60초)
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {

@@ -3428,7 +3428,10 @@ export async function runVirtualAutoTradingCycle(input?: {
   now?: Date;
 }): Promise<AutoTradeRunSummary> {
   const mode = input?.mode ?? "auto";
-  const maxUsers = Math.max(1, Math.floor(input?.maxUsers ?? 200));
+  // intradayOnly: 수동 버튼 트리거 용 (빠른 응답) → maxUsers 기본값 5
+  // 일반 cron: 모든 사용자 처리 → maxUsers 기본값 200
+  const defaultMaxUsers = input?.intradayOnly ? 5 : 200;
+  const maxUsers = Math.max(1, Math.floor(input?.maxUsers ?? defaultMaxUsers));
   const dryRun = Boolean(input?.dryRun);
   const intradayOnly = Boolean(input?.intradayOnly);
   const now = input?.now ?? new Date();
