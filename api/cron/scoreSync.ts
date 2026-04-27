@@ -11,6 +11,25 @@ export const config = {
   maxDuration: 60,
 };
 
+function isKrxSessionKstNow(now = new Date()): boolean {
+  const kst = new Date(now.getTime() + 9 * 60 * 60 * 1000);
+  const day = kst.getUTCDay();
+  if (day === 0 || day === 6) return false;
+  const minutes = kst.getUTCHours() * 60 + kst.getUTCMinutes();
+  const open = 9 * 60;
+  const close = 15 * 60 + 30;
+  return minutes >= open && minutes <= close;
+}
+
+function parseBooleanLike(value: unknown): boolean | undefined {
+  if (typeof value !== "string") return undefined;
+  const text = value.trim().toLowerCase();
+  if (!text) return undefined;
+  if (["1", "true", "yes", "on", "y"].includes(text)) return true;
+  if (["0", "false", "no", "off", "n"].includes(text)) return false;
+  return undefined;
+}
+
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== "GET") {
     return res.status(405).send("Method Not Allowed");
@@ -28,6 +47,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const limit = parsePositiveInt(req.query.limit);
     const concurrency = parsePositiveInt(req.query.concurrency);
     const asof = typeof req.query.asof === "string" ? req.query.asof : undefined;
+    const fastQuery = parseBooleanLike(req.query.fast);
+    const fastMode = fastQuery ?? (!limit && !concurrency ? isKrxSessionKstNow() : false);
 
     const supabase = createClient(SUPABASE_URL, SUPABASE_KEY, {
       auth: { persistSession: false },
@@ -37,10 +58,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       asof,
       limit,
       concurrency,
+      fastMode,
     });
 
     return res.status(200).json({
       ok: true,
+      fastMode,
       summary,
     });
   } catch (error: any) {

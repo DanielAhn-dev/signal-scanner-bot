@@ -99,6 +99,7 @@ export const ACTIONS = {
     { text: "자동 실행", callback_data: "cmd:autocycle:run" },
     { text: "진입 점검", callback_data: "cmd:autocycle:entry-check" },
     { text: "진입 실행", callback_data: "cmd:autocycle:entry-run" },
+    { text: "순차 트리거", callback_data: "cmd:autotrigger" },
   ] as InlineButton[],
   autoCycleQuick: [
     { text: "자동 점검", callback_data: "cmd:autocycle:check" },
@@ -168,6 +169,7 @@ export const ACTIONS = {
     { text: "자동 점검", callback_data: "cmd:autocycle:check" },
     { text: "자동 실행", callback_data: "cmd:autocycle:run" },
     { text: "진입 실행", callback_data: "cmd:autocycle:entry-run" },
+    { text: "순차 트리거", callback_data: "cmd:autotrigger" },
     { text: "핵심 추천", callback_data: "cmd:report:추천" },
     { text: "더보기", callback_data: "cmd:report" },
   ] as InlineButton[],

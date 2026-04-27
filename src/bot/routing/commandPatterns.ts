@@ -20,6 +20,7 @@ export const CMD = {
   AUTOTRUST: /^\/(신뢰도|autotrust)(?:\s+(.+))?$/i,
   AUTOSHADOW: /^\/(섀도우|새도우|쉐도우|shadow)(?:\s+(.+))?$/i,
   AUTOBACKTEST: /^\/(자동백테스트|autobacktest)(?:\s+(.+))?$/i,
+  AUTOTRIGGER: /^\/(자동트리거|순차트리거|autotrigger)(?:\s+(.+))?$/i,
   RISK_PROFILE: /^\/(투자성향|성향|risk|riskprofile)(?:\s+(.+))?$/i,
   WATCHONLYLIST: /^\/(watchlist|관심)$/i,
   WATCHONLYADD: /^\/(watchadd|관심추가)(?:\s+(.+))?$/i,

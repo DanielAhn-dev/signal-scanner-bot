@@ -36,7 +36,15 @@ export type ScoreSyncOptions = {
   asof?: string;
   limit?: number;
   concurrency?: number;
+  fastMode?: boolean;
 };
+
+const DEFAULT_LIMIT = 1500;
+const DEFAULT_CONCURRENCY = 5;
+const DEFAULT_LOOKBACK = 420;
+const FAST_MODE_LIMIT = 450;
+const FAST_MODE_CONCURRENCY = 10;
+const FAST_MODE_LOOKBACK = 260;
 
 function clamp(value: number, min: number, max: number): number {
   if (!Number.isFinite(value)) return min;
@@ -158,7 +166,18 @@ export async function syncScoresFromEngine(
   options: ScoreSyncOptions = {}
 ): Promise<ScoreSyncSummary> {
   const asof = options.asof ?? new Date().toISOString().slice(0, 10);
-  const concurrency = Math.max(1, Math.min(12, options.concurrency ?? 5));
+  const fastMode = Boolean(options.fastMode);
+  const effectiveLimit = Math.max(
+    1,
+    options.limit && options.limit > 0
+      ? options.limit
+      : fastMode
+      ? FAST_MODE_LIMIT
+      : DEFAULT_LIMIT
+  );
+  const effectiveConcurrency = fastMode ? FAST_MODE_CONCURRENCY : DEFAULT_CONCURRENCY;
+  const concurrency = Math.max(1, Math.min(12, options.concurrency ?? effectiveConcurrency));
+  const lookback = fastMode ? FAST_MODE_LOOKBACK : DEFAULT_LOOKBACK;
 
   const { data: stockRows, error: stockError } = await supabase
     .from("stocks")
@@ -166,7 +185,7 @@ export async function syncScoresFromEngine(
     .eq("is_active", true)
     .in("universe_level", ["core", "extended"])
     .order("code", { ascending: true })
-    .limit(options.limit && options.limit > 0 ? options.limit : 1500);
+    .limit(effectiveLimit);
 
   if (stockError) {
     throw new Error(`Target stocks fetch failed: ${stockError.message}`);
@@ -216,7 +235,7 @@ export async function syncScoresFromEngine(
       const code = codes[index];
 
       try {
-        const series = await getDailySeries(code, 420);
+        const series = await getDailySeries(code, lookback);
         if (!series || series.length < 200) {
           skippedInsufficientSeries += 1;
           continue;

@@ -6,6 +6,7 @@ import {
   getUserInvestmentPrefs,
   setUserInvestmentPrefs,
 } from "../../services/userService";
+import { actionButtons } from "../messages/layout";
 
 function toNumber(value: unknown, fallback = 0): number {
   const n = Number(value);
@@ -170,4 +171,174 @@ export async function handleAutoBacktestCommand(
       "- /shadow on",
     ].join("\n"),
   });
+}
+
+type AutoTriggerStep = {
+  key: "intraday-1" | "intraday-2" | "ready-1" | "ready-2";
+  label: string;
+  path: string;
+  nextCallback?: string;
+  nextLabel?: string;
+};
+
+function resolveBaseUrl(): string {
+  const raw = String(process.env.BASE_URL || process.env.VERCEL_URL || "").trim();
+  if (!raw) return "";
+  const withScheme = /^https?:\/\//i.test(raw) ? raw : `https://${raw}`;
+  return withScheme.replace(/\/+$/, "");
+}
+
+function trimBody(text: string, maxLen = 220): string {
+  const normalized = String(text || "").replace(/\s+/g, " ").trim();
+  if (!normalized) return "(empty body)";
+  return normalized.length > maxLen ? `${normalized.slice(0, maxLen)}...` : normalized;
+}
+
+function resolveAutoTriggerStep(input: string): AutoTriggerStep | "menu" | null {
+  const text = String(input || "").trim().toLowerCase();
+  if (!text || ["menu", "메뉴", "도움", "help"].includes(text)) return "menu";
+
+  const isNext = ["다음", "next", "2", "2단계", "step2"].some((k) => text.includes(k));
+  const isIntraday = ["장중", "intraday", "실행"].some((k) => text.includes(k));
+  const isReady = ["장전", "ready", "준비", "프리마켓"].some((k) => text.includes(k));
+
+  if (isIntraday) {
+    if (isNext) {
+      return {
+        key: "intraday-2",
+        label: "장중 2/2 자동사이클",
+        path: "/api/cron/virtualAutoTrade?mode=auto&dryRun=false&intradayOnly=true&windowMinutes=10&maxUsers=50",
+      };
+    }
+    return {
+      key: "intraday-1",
+      label: "장중 1/2 점수 동기화",
+      path: "/api/cron/scoreSync?fast=true",
+      nextCallback: "cmd:autotrigger:intraday:next",
+      nextLabel: "다음 2/2 장중 자동사이클",
+    };
+  }
+
+  if (isReady) {
+    if (isNext) {
+      return {
+        key: "ready-2",
+        label: "장전 2/2 브리핑",
+        path: "/api/cron/briefing?type=pre_market",
+      };
+    }
+    return {
+      key: "ready-1",
+      label: "장전 1/2 점수 동기화",
+      path: "/api/cron/scoreSync?fast=true",
+      nextCallback: "cmd:autotrigger:ready:next",
+      nextLabel: "다음 2/2 장전 브리핑",
+    };
+  }
+
+  return null;
+}
+
+async function executeAutoTriggerStep(
+  baseUrl: string,
+  cronSecret: string,
+  step: AutoTriggerStep
+): Promise<{ status: number; body: string }> {
+  const timeoutMs = 45000;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const res = await fetch(`${baseUrl}${step.path}`, {
+      method: "GET",
+      headers: { authorization: `Bearer ${cronSecret}` },
+      signal: controller.signal,
+    });
+    const body = await res.text().catch(() => "");
+    return { status: res.status, body: trimBody(body) };
+  } catch (error: unknown) {
+    if (error instanceof Error && error.name === "AbortError") {
+      throw new Error(`ops trigger timeout (${timeoutMs}ms)`);
+    }
+    throw error;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+export async function handleAutoTriggerCommand(
+  input: string,
+  ctx: ChatContext,
+  tgSend: any
+): Promise<void> {
+  const step = resolveAutoTriggerStep(input);
+  if (step === "menu") {
+    await tgSend("sendMessage", {
+      chat_id: ctx.chatId,
+      text: [
+        "순차 트리거 메뉴",
+        "- 1요청 1응답 방식으로 단계별 실행합니다.",
+        "- 1단계 완료 후 다음 버튼으로 2단계를 실행하세요.",
+        "",
+        "명령 예시:",
+        "/자동트리거 장중",
+        "/자동트리거 장중 다음",
+        "/자동트리거 장전",
+        "/자동트리거 장전 다음",
+      ].join("\n"),
+      reply_markup: actionButtons(
+        [
+          { text: "장중 1/2", callback_data: "cmd:autotrigger:intraday" },
+          { text: "장전 1/2", callback_data: "cmd:autotrigger:ready" },
+        ],
+        2
+      ),
+    });
+    return;
+  }
+
+  if (!step) {
+    await tgSend("sendMessage", {
+      chat_id: ctx.chatId,
+      text: "사용법: /자동트리거 [장중|장전] [다음]",
+    });
+    return;
+  }
+
+  const baseUrl = resolveBaseUrl();
+  const cronSecret = String(process.env.CRON_SECRET || "").trim();
+  if (!baseUrl || !cronSecret) {
+    await tgSend("sendMessage", {
+      chat_id: ctx.chatId,
+      text: "자동트리거 설정이 누락되었습니다. BASE_URL/CRON_SECRET 환경변수를 확인해주세요.",
+    });
+    return;
+  }
+
+  await tgSend("sendMessage", {
+    chat_id: ctx.chatId,
+    text: `⏳ ${step.label} 실행 중...`,
+  });
+
+  try {
+    const result = await executeAutoTriggerStep(baseUrl, cronSecret, step);
+    const ok = result.status >= 200 && result.status < 300;
+    await tgSend("sendMessage", {
+      chat_id: ctx.chatId,
+      text: [
+        ok ? "성공" : "실패",
+        `${step.label} | HTTP ${result.status}`,
+        `↳ ${result.body}`,
+      ].join("\n"),
+      reply_markup:
+        ok && step.nextCallback && step.nextLabel
+          ? actionButtons([{ text: step.nextLabel, callback_data: step.nextCallback }], 1)
+          : undefined,
+    });
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : String(error);
+    await tgSend("sendMessage", {
+      chat_id: ctx.chatId,
+      text: ["실패", `${step.label}`, `↳ ${message}`].join("\n"),
+    });
+  }
 }

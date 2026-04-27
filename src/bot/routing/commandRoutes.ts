@@ -17,6 +17,7 @@ import { handleCapitalCommand } from "../commands/capital";
 import {
   handleAutoBacktestCommand,
   handleAutoShadowCommand,
+  handleAutoTriggerCommand,
   handleAutoTrustCommand,
 } from "../commands/autoTradeOps";
 import { handleAutoReportCommand } from "../commands/autoReport";
@@ -191,6 +192,11 @@ export const COMMAND_ROUTE_SPECS: CommandRouteSpec[] = [
     pattern: CMD.AUTOBACKTEST,
     tokens: ["자동백테스트", "autobacktest"],
     run: (match, ctx, tgSend) => handleAutoBacktestCommand(match[2] ?? "3", ctx, tgSend),
+  },
+  {
+    pattern: CMD.AUTOTRIGGER,
+    tokens: ["자동트리거", "순차트리거", "autotrigger"],
+    run: (match, ctx, tgSend) => handleAutoTriggerCommand(match[2] ?? "", ctx, tgSend),
   },
   {
     pattern: CMD.AUTOREPORT,
