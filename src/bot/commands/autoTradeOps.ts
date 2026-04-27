@@ -212,7 +212,7 @@ function resolveAutoTriggerStep(input: string): AutoTriggerStep | "menu" | null 
       return {
         key: "intraday-2",
         label: "장중 2/2 자동사이클",
-        path: "/api/cron/virtualAutoTrade?mode=auto&dryRun=false&intradayOnly=true&windowMinutes=10&maxUsers=50",
+        path: "/api/cron/virtualAutoTrade?mode=auto&dryRun=false&intradayOnly=true&windowMinutes=50",
       };
     }
     return {
@@ -245,21 +245,30 @@ function resolveAutoTriggerStep(input: string): AutoTriggerStep | "menu" | null 
 }
 
 /**
- * scoreSync를 HTTP 자기호출 대신 인라인으로 직접 실행하는 팩토리
- * (Vercel 함수 간 HTTP 연결 실패 문제 우회)
+ * scoreSync를 백그라운드에서 비동기로 실행하는 팩토리
+ * - 호출자에게 즉시 반환 ("백그라운드 진행 중")
+ * - 실제 동기화는 fire-and-forget으로 뒤에서 실행
+ * - Telegram 타임아웃 방지
  */
 function makeScoreSyncRunner(): () => Promise<string> {
   return async () => {
     const supabaseUrl = process.env.SUPABASE_URL;
     const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
     if (!supabaseUrl || !supabaseKey) {
-      throw new Error("SUPABASE 환경변수 누락");
+      // 즉시 반환: 환경변수 없으면 "스킵"이라고 응답
+      return "(동기화 설정 없음)";
     }
-    const supabase = createClient(supabaseUrl, supabaseKey, {
-      auth: { persistSession: false },
+    
+    // 백그라운드 비동기 실행 (기다리지 않음)
+    syncScoresFromEngine(
+      createClient(supabaseUrl, supabaseKey, { auth: { persistSession: false } }),
+      { fastMode: true }
+    ).catch((err) => {
+      console.error("[autotrigger] background score sync failed:", err);
     });
-    const summary = await syncScoresFromEngine(supabase, { fastMode: true });
-    return `처리 ${summary.processedCount}/${summary.targetCount} (실패 ${summary.failedCount})`;
+    
+    // 호출자에게 즉시 반환
+    return "백그라운드 동기화 진행 중...";
   };
 }
 
