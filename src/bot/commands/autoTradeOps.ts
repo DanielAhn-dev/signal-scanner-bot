@@ -1,3 +1,4 @@
+import { createClient } from "@supabase/supabase-js";
 import type { ChatContext } from "../routing/types";
 import {
   generateAutoTradeBacktestReportForChat,
@@ -6,6 +7,7 @@ import {
   getUserInvestmentPrefs,
   setUserInvestmentPrefs,
 } from "../../services/userService";
+import { syncScoresFromEngine } from "../../services/scoreSyncService";
 import { actionButtons } from "../messages/layout";
 
 function toNumber(value: unknown, fallback = 0): number {
@@ -176,11 +178,12 @@ export async function handleAutoBacktestCommand(
 type AutoTriggerStep = {
   key: "intraday-1" | "intraday-2" | "ready-1" | "ready-2";
   label: string;
-  path: string;
+  /** HTTP 크론 경로 (path 또는 inlineRun 중 하나 사용) */
+  path?: string;
+  /** Supabase 서비스를 직접 인라인 실행 (HTTP 자기호출 대신) */
+  inlineRun?: () => Promise<string>;
   nextCallback?: string;
   nextLabel?: string;
-  /** true이면 응답을 기다리지 않고 즉시 반환 (장시간 소요 크론용) */
-  fireAndForget?: boolean;
 };
 
 function resolveBaseUrl(): string {
@@ -215,10 +218,9 @@ function resolveAutoTriggerStep(input: string): AutoTriggerStep | "menu" | null 
     return {
       key: "intraday-1",
       label: "장중 1/2 점수 동기화",
-      path: "/api/cron/scoreSync?fast=true",
+      inlineRun: makeScoreSyncRunner(),
       nextCallback: "cmd:autotrigger:intraday:next",
       nextLabel: "다음 2/2 장중 자동사이클",
-      fireAndForget: true,
     };
   }
 
@@ -233,14 +235,32 @@ function resolveAutoTriggerStep(input: string): AutoTriggerStep | "menu" | null 
     return {
       key: "ready-1",
       label: "장전 1/2 점수 동기화",
-      path: "/api/cron/scoreSync?fast=true",
+      inlineRun: makeScoreSyncRunner(),
       nextCallback: "cmd:autotrigger:ready:next",
       nextLabel: "다음 2/2 장전 브리핑",
-      fireAndForget: true,
     };
   }
 
   return null;
+}
+
+/**
+ * scoreSync를 HTTP 자기호출 대신 인라인으로 직접 실행하는 팩토리
+ * (Vercel 함수 간 HTTP 연결 실패 문제 우회)
+ */
+function makeScoreSyncRunner(): () => Promise<string> {
+  return async () => {
+    const supabaseUrl = process.env.SUPABASE_URL;
+    const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+    if (!supabaseUrl || !supabaseKey) {
+      throw new Error("SUPABASE 환경변수 누락");
+    }
+    const supabase = createClient(supabaseUrl, supabaseKey, {
+      auth: { persistSession: false },
+    });
+    const summary = await syncScoresFromEngine(supabase, { fastMode: true });
+    return `처리 ${summary.processedCount}/${summary.targetCount} (실패 ${summary.failedCount})`;
+  };
 }
 
 async function executeAutoTriggerStep(
@@ -248,27 +268,14 @@ async function executeAutoTriggerStep(
   cronSecret: string,
   step: AutoTriggerStep
 ): Promise<{ status: number; body: string }> {
-  // fireAndForget: 응답 본문을 기다리지 않고 요청 전송 후 즉시 반환
-  // (scoreSync 등 장시간 소요 크론은 별도 Vercel 함수로 독립 실행됨)
-  if (step.fireAndForget) {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 8000);
-    try {
-      const res = await fetch(`${baseUrl}${step.path}`, {
-        method: "GET",
-        headers: { authorization: `Bearer ${cronSecret}` },
-        signal: controller.signal,
-      });
-      res.body?.cancel().catch(() => {});
-      return { status: res.status, body: "요청 전송됨 (백그라운드 실행 중)" };
-    } catch (error: unknown) {
-      if (error instanceof Error && error.name === "AbortError") {
-        throw new Error("요청 전송 연결 실패 (8000ms)");
-      }
-      throw error;
-    } finally {
-      clearTimeout(timer);
-    }
+  // inlineRun: HTTP 자기호출 대신 서비스 함수 직접 실행
+  if (step.inlineRun) {
+    const body = await step.inlineRun();
+    return { status: 200, body };
+  }
+
+  if (!step.path) {
+    throw new Error("step.path 또는 step.inlineRun 중 하나는 필수");
   }
 
   const timeoutMs = 45000;
@@ -349,9 +356,7 @@ export async function handleAutoTriggerCommand(
   try {
     const result = await executeAutoTriggerStep(baseUrl, cronSecret, step);
     const ok = result.status >= 200 && result.status < 300;
-    const statusLabel = step.fireAndForget
-      ? ok ? "요청됨 (백그라운드 실행 중)" : "실패"
-      : ok ? "성공" : "실패";
+    const statusLabel = ok ? "성공" : "실패";
     await tgSend("sendMessage", {
       chat_id: ctx.chatId,
       text: [
