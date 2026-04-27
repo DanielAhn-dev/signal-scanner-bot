@@ -17,6 +17,13 @@ export type ScanScoreSnapshot = {
   recentBullDays?: number;
 };
 
+export type ScanPullbackSnapshot = {
+  entryGrade?: string;
+  entryScore?: number;
+  trendGrade?: string;
+  distGrade?: string;
+};
+
 const FILTER_TOKEN_MAP: Array<{ filter: ScanFilterKey; tokens: string[] }> = [
   { filter: "trend", tokens: ["trend", "추세", "상승", "trendup"] },
   { filter: "accumulation", tokens: ["acc", "매집", "accumulation"] },
@@ -70,7 +77,8 @@ export function parseScanInput(input: string): ParsedScanInput {
 
 export function matchesScanFilters(
   snapshot: ScanScoreSnapshot | undefined,
-  filters: ScanFilterKey[]
+  filters: ScanFilterKey[],
+  pullback?: ScanPullbackSnapshot
 ): boolean {
   if (!filters.length) return true;
 
@@ -83,14 +91,33 @@ export function matchesScanFilters(
   const recentInDays = Number(snapshot?.recentInDays ?? 0);
   const recentAccumulationDays = Number(snapshot?.recentAccumulationDays ?? 0);
   const recentBullDays = Number(snapshot?.recentBullDays ?? 0);
+  const entryGrade = String(pullback?.entryGrade ?? "").trim().toUpperCase();
+  const entryScore = Number(pullback?.entryScore ?? 0);
+  const trendGrade = String(pullback?.trendGrade ?? "").trim().toUpperCase();
+  const distGrade = String(pullback?.distGrade ?? "").trim().toUpperCase();
   const bullTurn = isBullTurn(stableTurn);
   const bearTurn = isBearTurn(stableTurn);
   const buyLikeSignal = signal === "buy" || signal === "strong_buy" || signal === "watch";
+  const pullbackEntryLike = entryGrade === "A" || entryGrade === "B" || entryScore >= 3;
+  const pullbackAccumulationLike =
+    (trendGrade === "A" || trendGrade === "B") &&
+    (distGrade === "A" || distGrade === "B") &&
+    pullbackEntryLike;
   const stablePositive = stableAboveAvg && stableTrust >= 50 && !bearTurn;
+  const entryLike =
+    !bearTurn &&
+    (recentInDays >= 1 ||
+      bullTurn ||
+      signal === "buy" ||
+      signal === "strong_buy" ||
+      (stableAboveAvg && stableTrust >= 60 && total >= 65) ||
+      pullbackEntryLike);
   const accumulationLike =
     stableAccumulation ||
     recentAccumulationDays >= 2 ||
-    (stableAboveAvg && stableTrust >= 58 && total >= 58 && !bearTurn);
+    (stableAboveAvg && stableTrust >= 58 && total >= 58 && !bearTurn) ||
+    (!bearTurn && buyLikeSignal && (recentInDays >= 1 || total >= 55)) ||
+    pullbackAccumulationLike;
 
   return filters.every((filter) => {
     if (filter === "stable") {
@@ -103,7 +130,7 @@ export function matchesScanFilters(
       return accumulationLike;
     }
     if (filter === "entry") {
-      return !bearTurn && (recentInDays >= 1 || bullTurn || signal === "buy" || signal === "strong_buy" || (stableAboveAvg && stableTrust >= 60 && total >= 65));
+      return entryLike;
     }
     return true;
   });

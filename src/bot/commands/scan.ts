@@ -349,7 +349,12 @@ export async function handleScanCommand(
   });
 
   const filteredCandidates = candidatePool.filter((item) =>
-    matchesScanFilters(scoreMap.get(item.code), parsedInput.filters)
+    matchesScanFilters(scoreMap.get(item.code), parsedInput.filters, {
+      entryGrade: item.entry_grade,
+      entryScore: item.entry_score,
+      trendGrade: item.trend_grade,
+      distGrade: item.dist_grade,
+    })
   );
 
   const saferPool = pickSaferCandidates(
