@@ -224,10 +224,17 @@ async function fetchRecentFilterPassStats(
           distGrade: row.dist_grade,
         };
 
-        if (matchesScanFilters(snapshot, ["trend"], pullback)) trendCount += 1;
-        if (matchesScanFilters(snapshot, ["accumulation"], pullback)) accumulationCount += 1;
-        if (matchesScanFilters(snapshot, ["entry"], pullback)) entryCount += 1;
-        if (matchesScanFilters(snapshot, ["accumulation", "entry"], pullback)) comboCount += 1;
+        // 기본적으로는 score 기반 필터 평가를 사용하지만,
+        // 점수 데이터가 없거나 일부 필드가 비어 있을 때는
+        // pullback_signals 필드 기반의 단순 폴백 규칙으로 카운트를 보완합니다.
+        const pullbackTrend = ["A", "B"].includes(String(row.trend_grade ?? "").trim().toUpperCase());
+        const pullbackDistGood = ["A", "B"].includes(String(row.dist_grade ?? "").trim().toUpperCase());
+        const pullbackEntryLike = ["A", "B"].includes(String(row.entry_grade ?? "").trim().toUpperCase()) || Number(row.entry_score ?? 0) >= 3;
+
+        if (matchesScanFilters(snapshot, ["trend"], pullback) || pullbackTrend) trendCount += 1;
+        if (matchesScanFilters(snapshot, ["accumulation"], pullback) || (pullbackTrend && pullbackDistGood)) accumulationCount += 1;
+        if (matchesScanFilters(snapshot, ["entry"], pullback) || pullbackEntryLike) entryCount += 1;
+        if (matchesScanFilters(snapshot, ["accumulation", "entry"], pullback) || ((pullbackTrend && pullbackDistGood) && pullbackEntryLike)) comboCount += 1;
       }
 
       return {
@@ -375,6 +382,21 @@ export async function handleScanCommand(
   const parsedInput = parseScanInput(input);
   const query = parsedInput.query;
   const filterLabels = formatScanFilterLabels(parsedInput.filters);
+  const helpToken = String(query || "").trim().toLowerCase();
+  if (["도움말", "help", "?", "설명", "usage"].includes(helpToken)) {
+    await tgSend("sendMessage", {
+      chat_id: ctx.chatId,
+      text: [
+        "/스캔 하위 옵션 도움말",
+        "사용법: /스캔 [섹터] [추세|매집|진입|세력]",
+        "옵션: 추세(추세) · 매집(매집) · 진입(진입) · 세력(세력)",
+        "예시: /스캔 반도체 추세",
+        "예시: /스캔 매집",
+        "예시: /스캔 눌림목  (기본 눌림목 스캔)",
+      ].join('\n'),
+    });
+    return;
+  }
   const prefs = await getUserInvestmentPrefs(ctx.from?.id ?? ctx.chatId);
   const riskProfile = (prefs.risk_profile ?? "safe") as RiskProfile;
 
@@ -510,20 +532,29 @@ export async function handleScanCommand(
       total_score: number | null;
       factors: Record<string, unknown> | null;
     }>);
+    // 폴백: 최신 스냅샷의 factors가 부족하면 최근 이력에서 값을 가져옵니다.
+    const fallbackFactors = (recentHistory[0]?.factors ?? {}) as Record<string, unknown>;
+    const stableTurnVal = String(factors.stable_turn ?? fallbackFactors.stable_turn ?? "").trim() || undefined;
+    const stableTrustVal = Number(factors.stable_turn_trust ?? fallbackFactors.stable_turn_trust ?? NaN);
+    const stableAboveAvgVal = typeof factors.stable_above_avg === "boolean"
+      ? factors.stable_above_avg
+      : typeof fallbackFactors.stable_above_avg === "boolean"
+        ? fallbackFactors.stable_above_avg
+        : undefined;
+    const stableAccumulationVal = typeof factors.stable_accumulation === "boolean"
+      ? factors.stable_accumulation
+      : typeof fallbackFactors.stable_accumulation === "boolean"
+        ? fallbackFactors.stable_accumulation
+        : undefined;
+
     scoreMap.set(code, {
       total: Number(row.total_score ?? 0) || undefined,
       value: Number(row.value_score ?? 0) || undefined,
       signal: String(row.signal ?? "").trim() || undefined,
-      stableTrust: Number(factors.stable_turn_trust ?? 0) || undefined,
-      stableTurn: String(factors.stable_turn ?? "").trim() || undefined,
-      stableAboveAvg:
-        typeof factors.stable_above_avg === "boolean"
-          ? factors.stable_above_avg
-          : undefined,
-      stableAccumulation:
-        typeof factors.stable_accumulation === "boolean"
-          ? factors.stable_accumulation
-          : undefined,
+      stableTrust: Number.isFinite(stableTrustVal) ? stableTrustVal : undefined,
+      stableTurn: stableTurnVal,
+      stableAboveAvg: stableAboveAvgVal,
+      stableAccumulation: stableAccumulationVal,
       recentInDays: recentSummary.recentInDays,
       recentAccumulationDays: recentSummary.recentAccumulationDays,
       recentBullDays: recentSummary.recentBullDays,
