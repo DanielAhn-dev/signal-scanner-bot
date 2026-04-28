@@ -78,6 +78,36 @@ test("pickAutoTradeCandidates: 오늘 BUY 신호가 있으면 WATCH보다 우선
   );
 });
 
+test("pickAutoTradeCandidates: 점수대가 유사하면 PEG가 낮은 종목을 우선한다", () => {
+  const result = pickAutoTradeCandidates({
+    rows: [
+      { code: "A", close: 10000, score: 73, name: "Alpha", signal: "BUY", peg: 2.4 },
+      { code: "B", close: 10000, score: 72, name: "Beta", signal: "BUY", peg: 0.9 },
+    ],
+    preferredMinBuyScore: 70,
+    limit: 1,
+    heldCodes: new Set<string>(),
+  });
+
+  assert.equal(result.selectionMode, "signal-preferred");
+  assert.equal(result.candidates[0]?.code, "B");
+});
+
+test("pickAutoTradeCandidates: PEG 데이터가 없어도 기존처럼 후보 수는 유지한다", () => {
+  const result = pickAutoTradeCandidates({
+    rows: [
+      { code: "A", close: 10000, score: 73, name: "Alpha", signal: "BUY" },
+      { code: "B", close: 9900, score: 72, name: "Beta", signal: "BUY" },
+    ],
+    preferredMinBuyScore: 70,
+    limit: 2,
+    heldCodes: new Set<string>(),
+  });
+
+  assert.equal(result.selectionMode, "signal-preferred");
+  assert.equal(result.candidates.length, 2);
+});
+
 test("detectAutoTradeMarketPolicy: 고변동 구간은 대형주 방어 모드로 전환한다", () => {
   const policy = detectAutoTradeMarketPolicy({
     overview: {

@@ -361,6 +361,25 @@ function resolveExecutionPrice(input: {
   return { price: Math.max(0, input.fallbackPrice), source: "snapshot" };
 }
 
+function resolveEarningsGrowthPctFromFactors(
+  factors: Record<string, unknown>
+): number | null {
+  const candidates = [
+    factors.earnings_growth_pct,
+    factors.net_income_growth_pct,
+    factors.op_income_growth_pct,
+  ];
+
+  for (const value of candidates) {
+    const numeric = Number(value);
+    if (Number.isFinite(numeric) && numeric > 0) {
+      return numeric;
+    }
+  }
+
+  return null;
+}
+
 function formatPriceSourceLabel(source: BuyPriceSource | "snapshot"): string {
   if (source === "realtime") return "실시간 시세";
   if (source === "close") return "종가 시세";
@@ -1097,12 +1116,24 @@ async function fetchLatestRankedRows(payload: {
     const stock = normalizeStock(row.stock);
     if (!stock) continue;
     const rawFactors = (row.factors ?? {}) as Record<string, unknown>;
+    const rawPer = Number(rawFactors.per);
+    const per = Number.isFinite(rawPer) && rawPer > 0 ? rawPer : null;
+    const earningsGrowthPct = resolveEarningsGrowthPctFromFactors(rawFactors);
+    const rawPeg = Number(rawFactors.peg);
+    const peg = Number.isFinite(rawPeg) && rawPeg > 0
+      ? rawPeg
+      : per != null && earningsGrowthPct != null && earningsGrowthPct > 0
+      ? per / earningsGrowthPct
+      : null;
 
     rankedRows.push({
       code: row.code,
       close: stock.close,
       score: toNumber(row.total_score, 0),
       name: stock.name || row.code,
+      peg,
+      per,
+      earningsGrowthPct,
       signal: row.signal ?? null,
       rsi14: stock.rsi14 ?? null,
       liquidity: stock.liquidity ?? null,

@@ -3,6 +3,9 @@ export type RankedCandidate = {
   close: number;
   score: number;
   name: string;
+  peg?: number | null;
+  per?: number | null;
+  earningsGrowthPct?: number | null;
   signal?: string | null;
   rsi14?: number | null;
   liquidity?: number | null;
@@ -114,6 +117,36 @@ function toPositiveInt(value: unknown, fallback: number): number {
 function clamp(value: number, min: number, max: number): number {
   if (!Number.isFinite(value)) return min;
   return Math.max(min, Math.min(max, value));
+}
+
+function resolvePeg(row: RankedCandidate): number | null {
+  const directPeg = toNumber(row.peg, NaN);
+  if (Number.isFinite(directPeg) && directPeg > 0) {
+    return directPeg;
+  }
+
+  const per = toNumber(row.per, NaN);
+  const growth = toNumber(row.earningsGrowthPct, NaN);
+  if (!Number.isFinite(per) || !Number.isFinite(growth) || per <= 0 || growth <= 0) {
+    return null;
+  }
+
+  return per / growth;
+}
+
+function resolvePegRankBoost(row: RankedCandidate): number {
+  const peg = resolvePeg(row);
+  if (peg == null) return 0;
+  if (peg <= 0.8) return 3.5;
+  if (peg <= 1.2) return 2.5;
+  if (peg <= 1.8) return 1.2;
+  if (peg <= 2.5) return 0;
+  if (peg <= 3.5) return -1.2;
+  return -2.5;
+}
+
+function resolveCompositeRankScore(row: RankedCandidate): number {
+  return row.score + resolvePegRankBoost(row);
 }
 
 function normalizeSignal(signal: unknown): string {
@@ -320,8 +353,11 @@ function prioritizeRowsByMarketPolicy(
       if (accumulationDiff !== 0) return accumulationDiff;
     }
 
-    const scoreDiff = b.score - a.score;
+    const scoreDiff = resolveCompositeRankScore(b) - resolveCompositeRankScore(a);
     if (scoreDiff !== 0) return scoreDiff;
+
+    const rawScoreDiff = b.score - a.score;
+    if (rawScoreDiff !== 0) return rawScoreDiff;
 
     if (!policy) return 0;
 
@@ -572,7 +608,7 @@ export function pickAutoTradeCandidates(input: {
   });
   const baseFilteredRows = marketPolicyRows
     .filter((row) => row.close > 0 && !input.heldCodes.has(row.code))
-    .sort((a, b) => b.score - a.score);
+    .sort((a, b) => resolveCompositeRankScore(b) - resolveCompositeRankScore(a));
   const rows = baseFilteredRows;
 
   const filteringMetricsBase = {
@@ -804,7 +840,7 @@ export function pickAutoTradeAddOnCandidates(input: {
   });
   const rows = marketPolicyRows
     .filter((row) => row.close > 0 && input.holdingsByCode.has(row.code))
-    .sort((a, b) => b.score - a.score);
+    .sort((a, b) => resolveCompositeRankScore(b) - resolveCompositeRankScore(a));
 
   const latestTopScore = rows[0]?.score ?? 0;
   const adaptiveMinBuyScore = deriveAdaptiveMinBuyScore(
