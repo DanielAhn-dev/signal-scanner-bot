@@ -63,11 +63,14 @@ export function parseScanInput(input: string): ParsedScanInput {
     .map((token) => token.trim())
     .filter(Boolean);
 
+  const IGNORE_TOKENS = ["눌림목", "눌림", "기본"];
+
   const filters = new Set<ScanFilterKey>();
   const remaining: string[] = [];
 
   for (const rawToken of rawTokens) {
     const token = normalizeToken(rawToken);
+    if (IGNORE_TOKENS.includes(token)) continue;
     const matched = FILTER_TOKEN_MAP.find((entry) => entry.tokens.includes(token));
     if (matched) {
       filters.add(matched.filter);
