@@ -440,6 +440,11 @@ export async function handleScanCommand(
     sectorName = sectors[0].name;
   }
 
+  // 기본 동작: 아무 필터도 없으면 진입 등급 A/B 기준으로 후보를 좁힙니다.
+  // 단, 사용자가 특정 필터(예: 매집, 추세, 세력)만 지정한 경우에는
+  // 진입(A/B) 제한을 제거해 해당 필터에 맞는 후보를 모두 조회합니다.
+  const needEntryFilter = parsedInput.filters.length === 0 || parsedInput.filters.includes("entry");
+
   let pbQuery = supabase
     .from("pullback_signals")
     .select(
@@ -451,10 +456,13 @@ export async function handleScanCommand(
     `
     )
     .eq("trade_date", latestDate)
-    .in("entry_grade", ["A", "B"])
     .neq("warn_grade", "SELL")
     .order("entry_score", { ascending: false })
     .limit(300);
+
+  if (needEntryFilter) {
+    pbQuery = pbQuery.in("entry_grade", ["A", "B"]);
+  }
 
   if (sectorId) {
     pbQuery = pbQuery.eq("stock.sector_id", sectorId);
