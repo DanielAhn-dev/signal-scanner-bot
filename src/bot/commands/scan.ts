@@ -756,6 +756,7 @@ export async function handleScanCommand(
     .filter((item) => !blockedByNews.has(item.code))
     .filter((item) => {
       const fund = fundMap.get(item.code) ?? null;
+      // exclude explicit fails
       return passesBasicFundFilter(fund);
     })
     .slice(0, 10);

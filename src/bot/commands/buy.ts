@@ -9,6 +9,7 @@ import {
 } from "../messages/fundamental";
 import { getUserInvestmentPrefs } from "../../services/userService";
 import { getFundamentalSnapshot } from "../../services/fundamentalService";
+import fundamentalStore from "../../services/fundamentalStore";
 import {
   calculateSectorConcentration,
   getSectorConcentrationWarnings,
@@ -254,7 +255,49 @@ export async function handleBuyCommand(
     fetchRealtimeStockData(code),
     getDailySeries(code, 420).catch(() => []),
     fetchAllMarketData().catch(() => null),
-    getFundamentalSnapshot(code).catch(() => null),
+    (async () => {
+      try {
+        const dbRec = await fundamentalStore.getLatestFundamentalSnapshot(code);
+        if (dbRec) {
+          return {
+            qualityScore: Number(dbRec.computed?.qualityScore ?? 50) || 50,
+            profileLabel:
+              typeof dbRec.computed?.profileLabel === "string"
+                ? dbRec.computed?.profileLabel
+                : undefined,
+            profileNote:
+              typeof dbRec.computed?.profileNote === "string"
+                ? dbRec.computed?.profileNote
+                : undefined,
+            per: typeof dbRec.per === "number" ? dbRec.per : undefined,
+            pbr: typeof dbRec.pbr === "number" ? dbRec.pbr : undefined,
+            roe: typeof dbRec.roe === "number" ? dbRec.roe : undefined,
+            debtRatio: typeof dbRec.debt_ratio === "number" ? dbRec.debt_ratio : undefined,
+            salesGrowthPct:
+              Number(dbRec.computed?.salesGrowthPct ?? NaN) || undefined,
+            salesGrowthLowBase: Boolean(dbRec.computed?.salesGrowthLowBase ?? false),
+            opIncomeGrowthPct:
+              Number(dbRec.computed?.opIncomeGrowthPct ?? NaN) || undefined,
+            opIncomeGrowthLowBase: Boolean(dbRec.computed?.opIncomeGrowthLowBase ?? false),
+            opIncomeTurnaround: Boolean(dbRec.computed?.opIncomeTurnaround ?? false),
+            netIncomeGrowthPct:
+              Number(dbRec.computed?.netIncomeGrowthPct ?? NaN) || undefined,
+            netIncomeGrowthLowBase: Boolean(dbRec.computed?.netIncomeGrowthLowBase ?? false),
+            netIncomeTurnaround: Boolean(dbRec.computed?.netIncomeTurnaround ?? false),
+            commentary:
+              typeof dbRec.computed?.commentary === "string"
+                ? dbRec.computed?.commentary
+                : typeof dbRec.computed?.note === "string"
+                ? dbRec.computed?.note
+                : undefined,
+          };
+        }
+      } catch (e) {
+        // fallthrough to live fetch
+        console.error("fundamentalStore.getLatestFundamentalSnapshot error:", e);
+      }
+      return getFundamentalSnapshot(code).catch(() => null);
+    })(),
     getUserInvestmentPrefs(ctx.from?.id ?? ctx.chatId),
   ]);
 

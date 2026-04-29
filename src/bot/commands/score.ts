@@ -13,6 +13,7 @@ import {
 import { fetchRealtimeStockData } from "../../utils/fetchRealtimePrice";
 import { fetchAllMarketData } from "../../utils/fetchMarketData";
 import { getFundamentalSnapshot } from "../../services/fundamentalService";
+import fundamentalStore from "../../services/fundamentalStore";
 import { buildInvestmentPlan } from "../../lib/investPlan";
 import { scaleSeriesToReferencePrice } from "../../lib/priceScale";
 
@@ -169,7 +170,46 @@ export async function handleScoreCommand(
     getDailySeries(code, 420),
     fetchRealtimeStockData(code),
     fetchAllMarketData().catch(() => null),
-    getFundamentalSnapshot(code).catch(() => null),
+    (async () => {
+      try {
+        const dbRec = await fundamentalStore.getLatestFundamentalSnapshot(code);
+        if (dbRec) {
+          return {
+            // map DB snapshot shape to service shape expected by message builder
+            per: dbRec.per ?? undefined,
+            pbr: dbRec.pbr ?? undefined,
+            roe: dbRec.roe ?? undefined,
+            debtRatio: dbRec.debt_ratio ?? undefined,
+            salesGrowthPct: Number(dbRec.computed?.salesGrowthPct ?? NaN) || undefined,
+            salesGrowthLowBase: Boolean(dbRec.computed?.salesGrowthLowBase ?? false),
+            opIncomeGrowthPct: Number(dbRec.computed?.opIncomeGrowthPct ?? NaN) || undefined,
+            opIncomeGrowthLowBase: Boolean(dbRec.computed?.opIncomeGrowthLowBase ?? false),
+            opIncomeTurnaround: Boolean(dbRec.computed?.opIncomeTurnaround ?? false),
+            netIncomeGrowthPct: Number(dbRec.computed?.netIncomeGrowthPct ?? NaN) || undefined,
+            netIncomeGrowthLowBase: Boolean(dbRec.computed?.netIncomeGrowthLowBase ?? false),
+            netIncomeTurnaround: Boolean(dbRec.computed?.netIncomeTurnaround ?? false),
+            commentary:
+              typeof dbRec.computed?.commentary === "string"
+                ? dbRec.computed?.commentary
+                : typeof dbRec.computed?.note === "string"
+                ? dbRec.computed?.note
+                : undefined,
+            qualityScore: Number(dbRec.computed?.qualityScore ?? 50) || 50,
+            profileLabel:
+              typeof dbRec.computed?.profileLabel === "string"
+                ? dbRec.computed?.profileLabel
+                : undefined,
+            profileNote:
+              typeof dbRec.computed?.profileNote === "string"
+                ? dbRec.computed?.profileNote
+                : undefined,
+          };
+        }
+      } catch (e) {
+        // fallthrough to live
+      }
+      return getFundamentalSnapshot(code).catch(() => null);
+    })(),
   ]);
 
   if (!series || series.length < 200) {
@@ -191,9 +231,10 @@ export async function handleScoreCommand(
     });
   }
 
-  const finalScore = fundamental
-    ? Number((scored.score * 0.8 + fundamental.qualityScore * 0.2).toFixed(1))
-    : scored.score;
+  const finalScore =
+    fundamental && typeof fundamental.qualityScore === "number"
+      ? Number((scored.score * 0.8 + Number(fundamental.qualityScore) * 0.2).toFixed(1))
+      : scored.score;
   const scoreWithFund = { ...scored, finalScore };
 
   const realtimePrice = realtimeData?.price ?? undefined;

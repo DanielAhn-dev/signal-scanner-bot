@@ -10,6 +10,7 @@ import {
   formatPer,
 } from "../messages/fundamental";
 import { getFundamentalSnapshot } from "../../services/fundamentalService";
+import fundamentalStore from "../../services/fundamentalStore";
 import { actionButtons, ACTIONS } from "../messages/layout";
 
 function interpretFinance(input: {
@@ -108,21 +109,59 @@ export async function handleFinanceCommand(
 
   const [rt, fin] = await Promise.all([
     fetchRealtimeStockData(code),
-    getFundamentalSnapshot(code),
+    (async () => {
+      try {
+        const dbRec = await fundamentalStore.getLatestFundamentalSnapshot(code);
+        if (dbRec) {
+          return {
+            sectorName: typeof dbRec.computed?.sectorName === "string" ? dbRec.computed.sectorName : dbRec.source ?? undefined,
+            profileLabel: typeof dbRec.computed?.profileLabel === "string" ? dbRec.computed.profileLabel : undefined,
+            profileNote: typeof dbRec.computed?.profileNote === "string" ? dbRec.computed.profileNote : undefined,
+            per: typeof dbRec.per === "number" ? dbRec.per : undefined,
+            pbr: typeof dbRec.pbr === "number" ? dbRec.pbr : undefined,
+            roe: typeof dbRec.roe === "number" ? dbRec.roe : undefined,
+            debtRatio: typeof dbRec.debt_ratio === "number" ? dbRec.debt_ratio : undefined,
+            qualityScore: Number(dbRec.computed?.qualityScore ?? 50) || 50,
+            sales: typeof dbRec.sales === "number" ? dbRec.sales : undefined,
+            opIncome: typeof dbRec.operating_income === "number" ? dbRec.operating_income : undefined,
+            netIncome: typeof dbRec.net_income === "number" ? dbRec.net_income : undefined,
+            salesGrowthPct: Number(dbRec.computed?.salesGrowthPct ?? NaN) || undefined,
+            opIncomeGrowthPct: Number(dbRec.computed?.opIncomeGrowthPct ?? NaN) || undefined,
+            netIncomeGrowthPct: Number(dbRec.computed?.netIncomeGrowthPct ?? NaN) || undefined,
+            salesGrowthLowBase: Boolean(dbRec.computed?.salesGrowthLowBase ?? false),
+            opIncomeGrowthLowBase: Boolean(dbRec.computed?.opIncomeGrowthLowBase ?? false),
+            opIncomeTurnaround: Boolean(dbRec.computed?.opIncomeTurnaround ?? false),
+            netIncomeGrowthLowBase: Boolean(dbRec.computed?.netIncomeGrowthLowBase ?? false),
+            netIncomeTurnaround: Boolean(dbRec.computed?.netIncomeTurnaround ?? false),
+            commentary:
+              typeof dbRec.computed?.commentary === "string"
+                ? dbRec.computed?.commentary
+                : typeof dbRec.computed?.note === "string"
+                ? dbRec.computed?.note
+                : undefined,
+          };
+        }
+      } catch (e) {
+        console.error("fundamentalStore.getLatestFundamentalSnapshot error:", e);
+      }
+      return getFundamentalSnapshot(code).catch(() => null);
+    })(),
   ]);
 
+  const finSafe = (fin ?? {}) as any;
+
   const price = rt?.price;
-  const per = rt?.per ?? fin.per;
-  const pbr = rt?.pbr ?? fin.pbr;
+  const per = rt?.per ?? finSafe.per;
+  const pbr = rt?.pbr ?? finSafe.pbr;
 
   const comment = interpretFinance({
-    sectorName: fin.sectorName,
-    profileLabel: fin.profileLabel,
-    profileNote: fin.profileNote,
+    sectorName: finSafe.sectorName,
+    profileLabel: finSafe.profileLabel,
+    profileNote: finSafe.profileNote,
     per,
     pbr,
-    roe: fin.roe,
-    debtRatio: fin.debtRatio,
+    roe: finSafe.roe,
+    debtRatio: finSafe.debtRatio,
   });
 
   let msg = `<b>${esc(name)}</b>  <code>${code}</code> 재무 요약\n`;
@@ -135,40 +174,40 @@ export async function handleFinanceCommand(
   msg += `<b>핵심 지표</b>\n`;
   msg += `PER <code>${formatPer(per)}</code> · `;
   msg += `PBR <code>${pbr !== undefined ? pbr.toFixed(2) : "-"}</code> · `;
-  msg += `ROE <code>${formatPctValue(fin.roe)}</code>\n`;
-  msg += `부채비율 <code>${formatPctValue(fin.debtRatio)}</code>\n\n`;
+  msg += `ROE <code>${formatPctValue(finSafe.roe)}</code>\n`;
+  msg += `부채비율 <code>${formatPctValue(finSafe.debtRatio)}</code>\n\n`;
   msg += `${formatFundamentalInline({
-    qualityScore: fin.qualityScore,
-    profileLabel: fin.profileLabel,
+    qualityScore: finSafe.qualityScore,
+    profileLabel: finSafe.profileLabel,
     per,
     pbr,
-    roe: fin.roe,
-    debtRatio: fin.debtRatio,
+    roe: finSafe.roe,
+    debtRatio: finSafe.debtRatio,
   }, { includeDebtRatio: true, htmlCodeForScore: true })}\n\n`;
-  if (fin.sectorName) {
-    msg += `업종 <code>${esc(fin.sectorName)}</code>\n`;
+  if (finSafe.sectorName) {
+    msg += `업종 <code>${esc(finSafe.sectorName)}</code>\n`;
   }
-  if (fin.profileNote) {
-    msg += `<i>${esc(fin.profileNote)}</i>\n\n`;
+  if (finSafe.profileNote) {
+    msg += `<i>${esc(finSafe.profileNote)}</i>\n\n`;
   }
 
   msg += `<b>실적(최근 연간 기준)</b>\n`;
-  msg += `매출 <code>${formatEokAmount(fin.sales)}</code>\n`;
-  msg += `영업이익 <code>${formatEokAmount(fin.opIncome)}</code>\n`;
-  msg += `당기순이익 <code>${formatEokAmount(fin.netIncome)}</code>\n`;
+  msg += `매출 <code>${formatEokAmount(finSafe.sales)}</code>\n`;
+  msg += `영업이익 <code>${formatEokAmount(finSafe.opIncome)}</code>\n`;
+  msg += `당기순이익 <code>${formatEokAmount(finSafe.netIncome)}</code>\n`;
   msg += `<i>실적은 최근 연간 확정치 기준</i>\n`;
   msg += `\n`; 
   msg += `<b>성장률(전년 대비)</b>\n`;
-  msg += `매출 <code>${formatPctValue(fin.salesGrowthPct)}</code> · `;
-  msg += `영업이익 <code>${formatPctValue(fin.opIncomeGrowthPct)}</code> · `;
-  msg += `순이익 <code>${formatPctValue(fin.netIncomeGrowthPct)}</code>\n`;
+  msg += `매출 <code>${formatPctValue(finSafe.salesGrowthPct)}</code> · `;
+  msg += `영업이익 <code>${formatPctValue(finSafe.opIncomeGrowthPct)}</code> · `;
+  msg += `순이익 <code>${formatPctValue(finSafe.netIncomeGrowthPct)}</code>\n`;
   msg += `<i>현재 PER/PBR은 최근 4분기 기준</i>\n`;
   const growthHints = [
-    fin.salesGrowthLowBase ? "매출 성장률은 낮은 기저 영향 가능성" : "",
-    fin.opIncomeTurnaround ? "영업이익은 턴어라운드 구간" : "",
-    fin.opIncomeGrowthLowBase ? "영업이익 성장률은 낮은 기저 영향 가능성" : "",
-    fin.netIncomeTurnaround ? "순이익은 턴어라운드 구간" : "",
-    fin.netIncomeGrowthLowBase ? "순이익 성장률은 낮은 기저 영향 가능성" : "",
+    finSafe.salesGrowthLowBase ? "매출 성장률은 낮은 기저 영향 가능성" : "",
+    finSafe.opIncomeTurnaround ? "영업이익은 턴어라운드 구간" : "",
+    finSafe.opIncomeGrowthLowBase ? "영업이익 성장률은 낮은 기저 영향 가능성" : "",
+    finSafe.netIncomeTurnaround ? "순이익은 턴어라운드 구간" : "",
+    finSafe.netIncomeGrowthLowBase ? "순이익 성장률은 낮은 기저 영향 가능성" : "",
   ].filter(Boolean);
   if (growthHints.length) {
     msg += `<i>${esc(growthHints.join(" · "))}</i>\n`;
@@ -176,7 +215,7 @@ export async function handleFinanceCommand(
 
   msg += `\n${LINE}\n<b>해석 코멘트</b>\n`;
   msg += `${esc(comment)}\n`;
-  msg += `${esc(fin.commentary)}`;
+  msg += `${esc(finSafe.commentary ?? "")}`;
 
   await tgSend("sendMessage", {
     chat_id: ctx.chatId,

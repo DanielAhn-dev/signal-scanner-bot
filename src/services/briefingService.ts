@@ -4,10 +4,11 @@ import { fetchAllMarketData, type MarketOverview } from "../utils/fetchMarketDat
 import { buildInvestmentPlan } from "../lib/investPlan";
 import { pickSaferCandidates, type RiskProfile } from "../lib/investableUniverse";
 import {
-  getFundamentalSnapshot,
   getFundamentalWarningTags,
   type FundamentalSnapshot,
 } from "./fundamentalService";
+import fundamentalStore from "./fundamentalStore";
+import { getFundamentalSnapshot as liveGetFundamentalSnapshot } from "./fundamentalService";
 import {
   fetchWatchMicroSignalsByCodes,
   type WatchMicroSignal,
@@ -335,17 +336,53 @@ export async function createBriefingReport(
     ...bottomCandidates,
   ];
   const briefingFundamentalCodes = [...new Set(briefingFundamentalCandidates.map((item: BriefingCandidate) => item.code))];
-  const briefingFundamentals = await Promise.all(
-    briefingFundamentalCodes.map(async (code) => ({
-      code,
-      fundamental: await getFundamentalSnapshot(code).catch(() => null),
-    }))
+  // Batch load fundamentals from DB; fallback to live scrape when missing
+  const dbFundMap = await fundamentalStore.getFundamentalSnapshotsForCodes(
+    briefingFundamentalCodes
   );
-  const fundamentalByCode = new Map<string, FundamentalSnapshot>(
-    briefingFundamentals
-      .filter((item) => item.fundamental)
-      .map((item) => [item.code, item.fundamental as FundamentalSnapshot])
-  );
+
+  function mapDbToServiceShapeForBriefing(db: any): FundamentalSnapshot | null {
+    if (!db) return null;
+    return {
+      sectorName: db.sector_name ?? undefined,
+      sectorCategory: db.sector_category ?? undefined,
+      profileLabel: db.profile_label ?? undefined,
+      profileNote: db.profile_note ?? undefined,
+      per: db.per ?? undefined,
+      pbr: db.pbr ?? undefined,
+      roe: db.roe ?? undefined,
+      debtRatio: db.debt_ratio ?? undefined,
+      sales: db.sales ?? undefined,
+      opIncome: db.operating_income ?? undefined,
+      netIncome: db.net_income ?? undefined,
+      salesGrowthPct: db.computed?.salesGrowthPct ?? undefined,
+      salesGrowthLowBase: db.computed?.salesGrowthLowBase ?? false,
+      opIncomeGrowthPct: db.computed?.opIncomeGrowthPct ?? undefined,
+      opIncomeGrowthLowBase: db.computed?.opIncomeGrowthLowBase ?? false,
+      opIncomeTurnaround: db.computed?.opIncomeTurnaround ?? false,
+      netIncomeGrowthPct: db.computed?.netIncomeGrowthPct ?? undefined,
+      netIncomeGrowthLowBase: db.computed?.netIncomeGrowthLowBase ?? false,
+      netIncomeTurnaround: db.computed?.netIncomeTurnaround ?? false,
+      qualityScore: db.computed?.qualityScore ?? 50,
+      commentary: db.computed?.commentary ?? "",
+    } as FundamentalSnapshot;
+  }
+
+  const fundamentalByCode = new Map<string, FundamentalSnapshot>();
+  for (const code of briefingFundamentalCodes) {
+    const dbRec = dbFundMap[code] ?? null;
+    if (dbRec) {
+      fundamentalByCode.set(code, mapDbToServiceShapeForBriefing(dbRec)!);
+      continue;
+    }
+    // fallback to live scrape if DB missing
+    try {
+      const live = await liveGetFundamentalSnapshot(code).catch(() => null);
+      if (live) fundamentalByCode.set(code, live as FundamentalSnapshot);
+    } catch {
+      // ignore
+    }
+  }
 
   // 6. 실시간 가격 일괄 조회
   const allCodes = (sectorStocks ?? []).map((s) => s.code);
