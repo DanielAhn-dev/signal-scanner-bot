@@ -36,6 +36,7 @@ import {
 } from "../commands/etf";
 import { handleAutoCycleCommand } from "../commands/autoCycle";
 import { handleOpsTriggerCommand } from "../commands/opsTrigger";
+import { handleDataSyncCommand } from "../commands/dataSync";
 import { handlePreMarketPlanCommand } from "../commands/preMarketPlan";
 import { handleStrategySelect } from "../commands/strategySelect";
 import {
@@ -301,6 +302,11 @@ export const COMMAND_ROUTE_SPECS: CommandRouteSpec[] = [
     pattern: CMD.OPSTRIGGER,
     tokens: ["opsrun", "cronrun", "자동트리거", "운영트리거"],
     run: (match, ctx, tgSend) => handleOpsTriggerCommand(match[2] ?? "", ctx, tgSend),
+  },
+  {
+    pattern: CMD.DATA_SYNC,
+    tokens: ["데이터동기화", "동기화", "datasync", "syncdata"],
+    run: (match, ctx, tgSend) => handleDataSyncCommand(match, ctx, tgSend),
   },
   {
     pattern: CMD.RANKING,

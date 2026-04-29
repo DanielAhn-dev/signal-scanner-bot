@@ -55,6 +55,7 @@ export const CMD = {
   ETFTHEME: /^\/(etftheme)(?:\s+(.+))?$/i,
   ETFINFO: /^\/(etfinfo)(?:\s+(.+))?$/i,
   ETFDIV: /^\/(etfdiv)(?:\s+(.+))?$/i,
+  DATA_SYNC: /^\/(데이터동기화|데이터|동기화|datasync|syncdata)(?:\s+(.+))?$/i,
   STRATEGY_SELECT: /^\/(전략선택|strategy)$/i,
   AUTOREPORT: /^\/(자동리포트|autoreport)$/i,
 };
