@@ -160,6 +160,7 @@ export function resolveWatchDecision(payload: {
   const base = baseAction(payload.close, payload.buyPrice, payload.plan);
   const micro = payload.microSignal;
   const hasMicroTrigger = Boolean(micro?.valueAnomaly || micro?.flowShift);
+  const stopLossBypass = base.action === "STOP_LOSS";
 
   let confidence = 45;
   if (base.action !== "HOLD") confidence += 10;
@@ -168,7 +169,7 @@ export function resolveWatchDecision(payload: {
   if (micro?.valueAnomaly && micro?.flowShift) confidence += 5;
   confidence = Math.max(30, Math.min(95, confidence));
 
-  if (base.action !== "HOLD" && !hasMicroTrigger) {
+  if (!stopLossBypass && base.action !== "HOLD" && !hasMicroTrigger) {
     return {
       action: "HOLD",
       reason: `${base.reason} 대기 (거래대금/수급 트리거 미충족)`,
@@ -185,7 +186,8 @@ export function resolveWatchDecision(payload: {
     reason: base.reason,
     pnlPct: base.pnlPct,
     triggerReasons: micro?.triggerReasons ?? [],
-    executionGuardPassed: base.action === "HOLD" ? false : hasMicroTrigger,
+    executionGuardPassed:
+      base.action === "HOLD" ? false : stopLossBypass ? true : hasMicroTrigger,
     confidence,
   };
 }

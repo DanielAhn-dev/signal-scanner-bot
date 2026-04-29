@@ -85,6 +85,7 @@ export type AutoTradeCandidateSelectionResult = {
     selectedCount: number;
     rejectedByReason?: Record<string, number>;
   };
+  guardNote?: string;
 };
 
 export type AutoTradeRunMode = "auto" | "monday" | "daily";

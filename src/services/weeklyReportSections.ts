@@ -1,6 +1,7 @@
 import type { PDFFont } from "pdf-lib";
 import { fetchAllMarketData, fetchReportMarketData } from "../utils/fetchMarketData";
 import type { TradeWindows, WindowSummary } from "./weeklyReportData";
+import type { ScoreSnapshotRow } from "./scoreSourceService";
 import {
   C,
   FIFO_REALIZED_LABEL,
@@ -270,7 +271,7 @@ export function drawPortfolioSection(
   drawKpiGrid(ctx, cards, 4);
 }
 
-export function drawTradesSection(ctx: ReportRenderContext, windows: TradeWindows) {
+export function drawTradesSection(ctx: ReportRenderContext, windows: TradeWindows, scoreByCode?: Map<string, ScoreSnapshotRow>) {
   ctx.y -= 6;
   drawSectionHeader(ctx, "매매 기록 및 성과 분석", FIFO_TRADE_NOTE);
 
@@ -312,6 +313,64 @@ export function drawTradesSection(ctx: ReportRenderContext, windows: TradeWindow
     ctx.y -= 4;
     ctx.text("최근 2주 거래 기록이 없습니다.", ctx.ML + 8, ctx.y, 9, C.muted);
     ctx.y -= 20;
+  }
+
+  // 점수대별 성과 (optional)
+  try {
+    if (scoreByCode && windows.current14 && windows.current14.length) {
+      const sells = windows.current14.filter((r) => r.side === "SELL");
+      const buckets = [
+        { key: "0-50", min: 0, max: 50 },
+        { key: "50-60", min: 50, max: 60 },
+        { key: "60-70", min: 60, max: 70 },
+        { key: "70-80", min: 70, max: 80 },
+        { key: "80-100", min: 80, max: 100 },
+      ];
+
+      const stats = new Map<string, { count: number; avgPnl: number; wins: number }>();
+      for (const b of buckets) stats.set(b.key, { count: 0, avgPnl: 0, wins: 0 });
+
+      for (const row of sells) {
+        const code = row.code;
+        const scoreRow = scoreByCode.get(code);
+        const score = scoreRow?.total_score ?? null;
+        if (score == null || !Number.isFinite(score)) continue;
+        const bucket = buckets.find((b) => score >= b.min && score < b.max) ?? buckets[buckets.length - 1];
+        const entry = stats.get(bucket.key)!;
+        const price = toNum(row.price);
+        const qty = Math.max(0, Math.floor(toNum(row.quantity)));
+        const notional = price * qty;
+        const pnlPct = notional ? (toNum(row.pnl_amount) / notional) * 100 : 0;
+        entry.count += 1;
+        entry.avgPnl += pnlPct;
+        if (pnlPct > 0) entry.wins += 1;
+      }
+
+      const tableRows = buckets.map((b) => {
+        const v = stats.get(b.key)!;
+        const avg = v.count ? v.avgPnl / v.count : 0;
+        const winRate = v.count ? (v.wins / v.count) * 100 : 0;
+        return [b.key, String(v.count), fmtPct(avg), `${winRate.toFixed(1)}%`];
+      }).filter((r) => r[1] !== "0");
+
+      if (tableRows.length) {
+        ctx.y -= 6;
+        drawSectionHeader(ctx, "점수대별 매도 성과", "최근 2주 매도 기준 · 최신 점수 기준 집계");
+        drawTable(
+          ctx,
+          [
+            { header: "점수대", width: 80 },
+            { header: "매도건수", width: 60, align: "right" },
+            { header: "평균 매도 수익률", width: 120, align: "right" },
+            { header: "승률", width: 80, align: "right" },
+          ],
+          tableRows,
+          tableRows.map(() => C.text)
+        );
+      }
+    }
+  } catch (e) {
+    // ignore rendering errors
   }
 }
 

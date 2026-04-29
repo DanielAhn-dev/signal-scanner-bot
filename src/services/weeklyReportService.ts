@@ -65,6 +65,7 @@ import {
   type WeeklyReportFailureStep,
 } from "./weeklyReportErrors";
 import { fetchLatestScoresByCodes } from "./scoreSourceService";
+import type { ScoreSnapshotResult } from "./scoreSourceService";
 import { getUserInvestmentPrefs, type InvestmentPrefs } from "./userService";
 
 export { describeWeeklyReportFailure } from "./weeklyReportErrors";
@@ -185,6 +186,7 @@ type RenderReportInput = {
   market: Awaited<ReturnType<typeof fetchReportMarketData>> | Awaited<ReturnType<typeof fetchAllMarketData>>;
   reliability: DecisionReliabilityForSection | null;
   pullbackReport: PullbackWeeklyReportData | null;
+  scoreSnapshot?: ScoreSnapshotResult | null;
 };
 
 function unwrapJoined<T>(value: T | T[] | null | undefined): T | null {
@@ -603,14 +605,14 @@ export async function renderReportPdf(input: RenderReportInput): Promise<WeeklyP
   } else if (topicMeta.topic === "watchlist") {
     drawPortfolioSection(ctx, totalInvested, totalValue, totalUnrealized, totalUnrealizedPct, holdingItems, curr, prev);
     drawWatchlistSection(ctx, holdingItems, totalInvested, totalUnrealized, totalUnrealizedPct);
-    drawTradesSection(ctx, windows);
+    drawTradesSection(ctx, windows, input.scoreSnapshot?.byCode ?? new Map());
     if (reliability) drawDecisionLogSection(ctx, reliability);
   } else if (topicMeta.topic === "watchonly") {
     drawWatchOnlySection(ctx, watchOnlyItems);
   } else {
     drawMarketOverviewSection(ctx, ymd, market as Awaited<ReturnType<typeof fetchReportMarketData>>, sectors.slice(0, 3));
     drawPortfolioSection(ctx, totalInvested, totalValue, totalUnrealized, totalUnrealizedPct, holdingItems, curr, prev);
-    drawTradesSection(ctx, windows);
+    drawTradesSection(ctx, windows, input.scoreSnapshot?.byCode ?? new Map());
     drawWatchlistSection(ctx, holdingItems, totalInvested, totalUnrealized, totalUnrealizedPct);
     if (reliability) drawDecisionLogSection(ctx, reliability);
     drawCommentarySection(ctx, font, curr, prev, totalUnrealized, totalUnrealizedPct, watchItems, sectors, wrapText);
@@ -747,6 +749,7 @@ export async function createWeeklyReportPdf(
         market,
         reliability: null,
         pullbackReport,
+        scoreSnapshot: null,
       })
     );
   }
@@ -825,6 +828,16 @@ export async function createWeeklyReportPdf(
   const windows = splitWindows(rows, now);
   const curr = summarizeWindow(windows.current14);
   const prev = summarizeWindow(windows.prev14);
+
+  const scoreSnapshot = tradeCodes.length
+    ? await runReportStep("score_snapshot", async () => {
+        try {
+          return await fetchLatestScoresByCodes(supabase, tradeCodes);
+        } catch {
+          return { latestAsof: null, byCode: new Map(), fallbackCodes: [] } as ScoreSnapshotResult;
+        }
+      })
+    : { latestAsof: null, byCode: new Map(), fallbackCodes: [] } as ScoreSnapshotResult;
 
   const codes = (watchRes.data ?? []).map((r: WatchlistRow) => r.code);
   const realtimeMap = codes.length
@@ -926,6 +939,7 @@ export async function createWeeklyReportPdf(
         market,
         reliability: reliability ?? null,
         pullbackReport,
+        scoreSnapshot,
       })
     );
 
@@ -1071,6 +1085,7 @@ export async function createPreviewReportPdf(topicStr = "economy"): Promise<Uint
     market,
     reliability: null,
     pullbackReport: null,
+    scoreSnapshot: null,
   });
 
   return rendered.bytes;

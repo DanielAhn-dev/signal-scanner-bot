@@ -73,6 +73,7 @@ import {
   upsertStrategyGateState,
   resolveStrategyGateStatus,
 } from "./strategyGateStateService";
+import { businessDaysBehind } from "../utils/dataFreshness";
 
 type RunMode = SelectionAutoTradeRunMode;
 type RunType = AutoTradeRunType;
@@ -915,6 +916,44 @@ function applyPersistedGateGuard(input: {
   };
 }
 
+function applyMarketRegimeBuyGuard(input: {
+  baseMinBuyScore: number;
+  marketOverview?: {
+    vix?: { price?: number | null } | null;
+    fearGreed?: { score?: number | null } | null;
+  } | null;
+}): { minBuyScore: number; note?: string } {
+  const baseMinBuyScore = toPositiveInt(input.baseMinBuyScore, 72);
+  const vix = toNumber(input.marketOverview?.vix?.price, 0);
+  const fearGreed = toNumber(input.marketOverview?.fearGreed?.score, 50);
+
+  if (vix >= 30) {
+    const minBuyScore = Math.max(baseMinBuyScore, 78);
+    return {
+      minBuyScore,
+      note: `시장게이트(초고변동): VIX ${vix.toFixed(1)} -> 최소점수 ${minBuyScore}점`,
+    };
+  }
+
+  if (vix >= 25) {
+    const minBuyScore = Math.max(baseMinBuyScore, 75);
+    return {
+      minBuyScore,
+      note: `시장게이트(변동성 경계): VIX ${vix.toFixed(1)} -> 최소점수 ${minBuyScore}점`,
+    };
+  }
+
+  if (fearGreed <= 20) {
+    const minBuyScore = Math.max(50, Math.min(baseMinBuyScore, 65));
+    return {
+      minBuyScore,
+      note: `시장게이트(극단 공포): 공포탐욕 ${fearGreed.toFixed(0)} -> 최소점수 ${minBuyScore}점`,
+    };
+  }
+
+  return { minBuyScore: baseMinBuyScore };
+}
+
 export async function generateAutoTradeBacktestReportForChat(input: {
   chatId: number;
   months: 3 | 6;
@@ -1241,6 +1280,33 @@ async function selectMondayCandidates(payload: {
     };
   }
 
+  const staleBusinessDays = businessDaysBehind(latestAsof);
+  if (staleBusinessDays == null || staleBusinessDays > 1) {
+    return {
+      candidates: [],
+      selectionMode: "none",
+      thresholdUsed: Math.min(98, Math.max(70, toPositiveInt(payload.minBuyScore, 70) + 6)),
+      latestTopScore: rankedRows[0]?.score ?? 0,
+      latestAsof,
+      filteringMetrics: {
+        initialCount: rankedRows.length,
+        afterMarketPolicyCount: 0,
+        afterBaseFilterCount: 0,
+        candidatePoolCount: 0,
+        selectedCount: 0,
+      },
+      entryProfile: "score-first",
+      pullbackCandidatesUsed: 0,
+      aggressiveCandidatesUsed: 0,
+      guardNote: `점수 기준일 지연(${staleBusinessDays == null ? "확인불가" : `${staleBusinessDays}영업일`})으로 신규 매수 차단`,
+    };
+  }
+
+  const staleAdjustedMinBuyScore =
+    staleBusinessDays === 1
+      ? Math.min(95, toPositiveInt(payload.minBuyScore, 70) + 2)
+      : toPositiveInt(payload.minBuyScore, 70);
+
   const entryProfile = deriveEntryProfile({
     selectedStrategy: payload.selectedStrategy,
     riskProfile: payload.riskProfile,
@@ -1255,7 +1321,7 @@ async function selectMondayCandidates(payload: {
 
   const selection = pickAutoTradeCandidates({
     rows: rankedRows,
-    preferredMinBuyScore: payload.minBuyScore,
+    preferredMinBuyScore: staleAdjustedMinBuyScore,
     limit: payload.limit,
     heldCodes: payload.heldCodes,
     marketPolicy: payload.marketPolicy,
@@ -1266,6 +1332,10 @@ async function selectMondayCandidates(payload: {
   return {
     ...selection,
     latestAsof,
+    guardNote:
+      staleBusinessDays === 1
+        ? `점수 기준일 1영업일 지연으로 최소점수 +2 보수 적용 (기준일 ${latestAsof})`
+        : undefined,
   };
 }
 
@@ -1451,6 +1521,15 @@ async function runMondayBuyForUser(payload: {
   if (pacingMetrics.relaxLevel > 0) {
     summary.notes.push(`페이싱 보정: 기준점수 완화 레벨 ${pacingMetrics.relaxLevel}`);
   }
+
+  const marketRegimeGuard = applyMarketRegimeBuyGuard({
+    baseMinBuyScore: buyConstraint.minBuyScore,
+    marketOverview,
+  });
+  if (marketRegimeGuard.note) {
+    summary.notes.push(marketRegimeGuard.note);
+  }
+
   const remainSlots = buyConstraint.buySlots;
 
   if (buyConstraint.note) {
@@ -1523,13 +1602,16 @@ async function runMondayBuyForUser(payload: {
 
   const candidateSelection = await selectMondayCandidates({
     supabase: payload.supabase,
-    minBuyScore: buyConstraint.minBuyScore,
+    minBuyScore: marketRegimeGuard.minBuyScore,
     limit: resolveCandidateProbeLimit(remainSlots),
     heldCodes,
     marketPolicy,
     selectedStrategy,
     riskProfile: prefs.risk_profile ?? null,
   });
+  if (candidateSelection.guardNote) {
+    summary.notes.push(candidateSelection.guardNote);
+  }
   const candidates = candidateSelection.candidates;
   const buyPriceResolution = await resolveBuyExecutionPrices(candidates);
   const mondayScoreSnapshot = candidates.length
@@ -1719,12 +1801,32 @@ async function runMondayBuyForUser(payload: {
         riskProfile: prefs.risk_profile,
         candidate,
       });
-      const tradeProfile = resolvePositionTradeProfile({
+      let tradeProfile = resolvePositionTradeProfile({
         accountStrategy: candidateProfile,
         baseTakeProfitPct: Math.abs(toNumber(payload.setting.take_profit_pct, 8)),
         baseStopLossPct: Math.abs(toNumber(payload.setting.stop_loss_pct, 4)),
         sellSplitCount: Math.max(1, Math.min(4, toPositiveInt(prefs.virtual_sell_split_count, 2))),
       });
+      // Adjust tradeProfile using ATR if available in score factors
+      try {
+        const scoreRow = mondayFactorsByCode.get(candidate.code) as Record<string, unknown> | undefined;
+        const factors = extractScoreFactors(scoreRow?.factors);
+        const atrPct = factors && Number.isFinite(Number(factors.atrPct)) ? Number(factors.atrPct) : null;
+        if (atrPct != null) {
+          // stopLossPct: at least base, or atrPct * 2; cap to 15%
+          const stopFromAtr = Math.min(15, Math.max(tradeProfile.stopLossPct, atrPct * 2));
+          // takeProfitPct: at least base, or atrPct * 4; cap to 50%
+          const takeFromAtr = Math.min(50, Math.max(tradeProfile.takeProfitPct, atrPct * 4));
+          tradeProfile = {
+            ...tradeProfile,
+            stopLossPct: Number(stopFromAtr.toFixed(2)),
+            takeProfitPct: Number(takeFromAtr.toFixed(2)),
+          };
+          summary.notes.push(`ATR 보정: ${candidate.code} ATR% ${atrPct.toFixed(2)} -> 손절 ${tradeProfile.stopLossPct}% / 익절 ${tradeProfile.takeProfitPct}%`);
+        }
+      } catch (e) {
+        // ignore and continue with default tradeProfile
+      }
       const profileLabel = getStrategyLabel(tradeProfile.profile) || tradeProfile.profile;
       if (qty <= 0 || investedAmount <= 0) {
         summary.skipped += 1;

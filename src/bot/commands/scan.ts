@@ -5,9 +5,10 @@ import type { ChatContext } from "../router";
 import { createClient } from "@supabase/supabase-js";
 import { fetchRealtimePriceBatch } from "../../utils/fetchRealtimePrice";
 import {
-  getFundamentalSnapshot,
   getFundamentalWarningTags,
+  getFundamentalSnapshot,
 } from "../../services/fundamentalService";
+import fundamentalStore from "../../services/fundamentalStore";
 import { pickSaferCandidates, type RiskProfile } from "../../lib/investableUniverse";
 import { getUserInvestmentPrefs } from "../../services/userService";
 import { analyzeNewsSentiment, formatSentimentLine } from "../../lib/newsSentiment";
@@ -627,19 +628,47 @@ export async function handleScanCommand(
   }
 
   const rerankPool = saferPool.slice(0, 12);
+  // Fetch latest stored fundamentals from DB instead of on-demand scraping
   const fundamentals = await Promise.all(
-    rerankPool.map(async (s) => ({
-      code: s.code,
-      fundamental: await getFundamentalSnapshot(s.code).catch(() => null),
-    }))
+    rerankPool.map(async (s) => {
+      try {
+        const dbRec = await fundamentalStore.getLatestFundamentalSnapshot(s.code);
+        if (dbRec) return { code: s.code, dbRec };
+        // fallback: on-demand scrape if DB missing
+        const live = await getFundamentalSnapshot(s.code).catch(() => null);
+        return { code: s.code, dbRec: live ? { ...live, computed: { qualityScore: live.qualityScore, salesGrowthPct: live.salesGrowthPct, opIncomeGrowthPct: live.opIncomeGrowthPct, netIncomeGrowthPct: live.netIncomeGrowthPct, commentary: live.commentary }, per: live.per, pbr: live.pbr, roe: live.roe, debt_ratio: live.debtRatio, net_income: live.netIncome } : null };
+      } catch {
+        return { code: s.code, dbRec: null };
+      }
+    })
   );
 
-  const fundMap = new Map(
-    fundamentals
-      .filter((x) => x.fundamental)
-      .map((x) => [x.code, x.fundamental!])
-  );
+  function mapDbToServiceShape(db: any) {
+    if (!db) return null;
+    return {
+      per: db.per ?? undefined,
+      pbr: db.pbr ?? undefined,
+      roe: db.roe ?? undefined,
+      debtRatio: db.debt_ratio ?? db.debtRatio ?? undefined,
+      netIncome: db.net_income ?? undefined,
+      salesGrowthPct: db.computed?.salesGrowthPct ?? undefined,
+      opIncomeGrowthPct: db.computed?.opIncomeGrowthPct ?? undefined,
+      netIncomeGrowthPct: db.computed?.netIncomeGrowthPct ?? undefined,
+      salesGrowthLowBase: db.computed?.salesGrowthLowBase ?? false,
+      opIncomeGrowthLowBase: db.computed?.opIncomeGrowthLowBase ?? false,
+      opIncomeTurnaround: db.computed?.opIncomeTurnaround ?? false,
+      netIncomeGrowthLowBase: db.computed?.netIncomeGrowthLowBase ?? false,
+      netIncomeTurnaround: db.computed?.netIncomeTurnaround ?? false,
+      qualityScore: db.computed?.qualityScore ?? 50,
+      commentary: db.computed?.commentary ?? "",
+    };
+  }
 
+  const fundEntries: [string, any][] = fundamentals
+    .map((x) => [x.code, mapDbToServiceShape(x.dbRec)]) as [string, any][];
+  const fundMap = new Map<string, any>(
+    fundEntries.filter(([, v]) => v != null) as [string, any][]
+  );
   const signalBusinessGap = businessDaysBehind(latestDate) ?? 0;
   const scoreBusinessGap = businessDaysBehind(scoreResult.latestAsof) ?? 0;
   const staleBusinessGap = Math.max(signalBusinessGap, scoreBusinessGap);
@@ -655,6 +684,19 @@ export async function handleScanCommand(
   const riskAdjustedRealtimeWeight = Number(
     (realtimeMomentumWeight * resolveRiskRealtimeWeightMultiplier(riskProfile)).toFixed(2)
   );
+
+  // Basic financial filter: require qualityScore >= 55 AND (ROE >= 8 OR debt_ratio <= 150)
+  function passesBasicFundFilter(fund: any | null | undefined) {
+    if (!fund) return true; // keep if no data (optional: change to false to be stricter)
+    const q = Number(fund.qualityScore ?? 0);
+    const roe = Number(fund.roe ?? fund.ROE ?? 0);
+    const debt = Number(fund.debtRatio ?? fund.debt_ratio ?? 1e9);
+    if (!Number.isFinite(q) || q <= 0) return false;
+    if (q < 55) return false;
+    if (Number.isFinite(roe) && roe >= 8) return true;
+    if (Number.isFinite(debt) && debt <= 150) return true;
+    return false;
+  }
 
   const rankedPicks = [...saferPool]
     .sort((a, b) => {
@@ -712,6 +754,10 @@ export async function handleScanCommand(
 
   const finalPicks = rankedPicks
     .filter((item) => !blockedByNews.has(item.code))
+    .filter((item) => {
+      const fund = fundMap.get(item.code) ?? null;
+      return passesBasicFundFilter(fund);
+    })
     .slice(0, 10);
 
   const sentimentByCode = new Map<string, string>();

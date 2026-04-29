@@ -98,3 +98,32 @@ export function extractMetricValue(text: string, unit: string): number | undefin
 export function clamp(n: number, lo: number, hi: number): number {
   return Math.min(hi, Math.max(lo, n));
 }
+
+// --- Quarterly / TTM / cashflow helpers ---
+
+export function takeQuarterlyNumbers(row: string[]): number[] {
+  // Fallback: reuse takeNumbers for rows that already contain quarterly figures.
+  return takeNumbers(row);
+}
+
+export function computeTTMFromQuarterNumbers(quarters: number[]): number | undefined {
+  if (!quarters || quarters.length < 4) return undefined;
+  const last4 = quarters.slice(-4);
+  if (last4.some((v) => !Number.isFinite(v))) return undefined;
+  return last4.reduce((s, v) => s + v, 0);
+}
+
+export function computeMargins(sales?: number, opIncome?: number, netIncome?: number) {
+  const opMargin = sales && Number.isFinite(sales) && opIncome !== undefined
+    ? opIncome / sales
+    : undefined;
+  const netMargin = sales && Number.isFinite(sales) && netIncome !== undefined
+    ? netIncome / sales
+    : undefined;
+  return { opMargin, netMargin };
+}
+
+export function parseCashflowRow(row: string[]): number | undefined {
+  // Many cashflow rows are structured similarly to income rows; return latest annual value if available.
+  return findLatestActualAnnualValue(row);
+}

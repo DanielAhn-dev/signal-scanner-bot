@@ -11,6 +11,7 @@ export type WeeklyReportFailureStep =
   | "sector_stocks_query"
   | "market_data"
   | "realtime_price"
+  | "score_snapshot"
   | "font_load"
   | "pdf_render"
   | "pdf_save"
@@ -25,6 +26,7 @@ const WEEKLY_REPORT_STEP_LABEL: Record<WeeklyReportFailureStep, string> = {
   pullback_user_prefs_query: "사용자 투자설정 조회",
   pullback_sector_name_query: "후보 섹터명 조회",
   watchlist_query: "보유 종목 조회",
+  score_snapshot: "점수 스냅샷 조회",
   sector_query: "섹터 데이터 조회",
   sector_stocks_query: "섹터 구성 종목 조회",
   market_data: "시장 데이터 조회",

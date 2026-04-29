@@ -83,7 +83,7 @@ export const COMMAND_ROUTE_SPECS: CommandRouteSpec[] = [
   {
     pattern: CMD.PREMARKET,
     userErrorLabel: "장전 주문 플랜",
-    tokens: ["premarket", "장전플랜", "직장인플랜", "오늘주문"],
+    tokens: ["premarket", "장전플랜", "직장인플랜", "오늘주문", "오늘계획"],
     run: (_match, ctx, tgSend) => handlePreMarketPlanCommand("", ctx, tgSend),
   },
   {
