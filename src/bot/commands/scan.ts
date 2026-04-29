@@ -527,6 +527,10 @@ export async function handleScanCommand(
       recentAccumulationDays?: number;
       recentBullDays?: number;
       recentText?: string[];
+      stableAboveAvgDays5?: number;
+      stableAccumulationDays?: number;
+      netBuyingPressure5d?: number;
+      volExpansionToday?: number;
     }
   >();
   const scoreResult = await fetchLatestScoresByCodes(supabase, codes);
@@ -554,6 +558,26 @@ export async function handleScanCommand(
       : typeof fallbackFactors.stable_accumulation === "boolean"
         ? fallbackFactors.stable_accumulation
         : undefined;
+    const stableAboveAvgDays5Val = typeof factors.stable_above_avg_days_5 === "number"
+      ? factors.stable_above_avg_days_5
+      : typeof fallbackFactors.stable_above_avg_days_5 === "number"
+        ? fallbackFactors.stable_above_avg_days_5
+        : undefined;
+    const stableAccumulationDaysVal = typeof factors.stable_accumulation_days === "number"
+      ? factors.stable_accumulation_days
+      : typeof fallbackFactors.stable_accumulation_days === "number"
+        ? fallbackFactors.stable_accumulation_days
+        : undefined;
+    const netBuyingPressure5dVal = typeof factors.net_buying_pressure_5d === "number"
+      ? factors.net_buying_pressure_5d
+      : typeof fallbackFactors.net_buying_pressure_5d === "number"
+        ? fallbackFactors.net_buying_pressure_5d
+        : undefined;
+    const volExpansionTodayVal = typeof factors.vol_expansion_today === "number"
+      ? factors.vol_expansion_today
+      : typeof fallbackFactors.vol_expansion_today === "number"
+        ? fallbackFactors.vol_expansion_today
+        : undefined;
 
     scoreMap.set(code, {
       total: Number(row.total_score ?? 0) || undefined,
@@ -567,6 +591,10 @@ export async function handleScanCommand(
       recentAccumulationDays: recentSummary.recentAccumulationDays,
       recentBullDays: recentSummary.recentBullDays,
       recentText: recentSummary.recentText,
+      stableAboveAvgDays5: stableAboveAvgDays5Val,
+      stableAccumulationDays: stableAccumulationDaysVal,
+      netBuyingPressure5d: netBuyingPressure5dVal,
+      volExpansionToday: volExpansionTodayVal,
     });
   });
 

@@ -44,6 +44,11 @@ export interface ScoreFactors {
   stable_turn?: StableTurnType;
   stable_turn_trust?: number;
   stable_accumulation?: boolean;
+  // 멀티데이 파생 지표 (최근 5거래일 흐름)
+  stable_above_avg_days_5?: number;  // 0~5: 최근 5일 중 세력선 위 일수
+  stable_accumulation_days?: number; // 연속 매집 일수 (오늘부터 역산)
+  net_buying_pressure_5d?: number;   // -1~1: 최근 5일 순매수세 (양봉/음봉 기반)
+  vol_expansion_today?: number;      // 오늘 거래량 / 20일 평균 거래량
 }
 
 export interface MarketEnv {
@@ -175,14 +180,41 @@ export function calculateScore(
     const atr_pct = atrCalc?.atrPct ?? undefined;
 
     // ── Stable Pro (세력 평단 + 턴 신뢰도) ──
-    const stable = calculateStableProSignal(sorted, {
-      volLen: 20,
-      boxLen: 25,
-      avgLen: 30,
-      atrLen: 20,
-    });
+    const stableOptions = { volLen: 20, boxLen: 25, avgLen: 30, atrLen: 20 };
+    const stable = calculateStableProSignal(sorted, stableOptions);
     const stableBullTurn = stable.turn === "bull-weak" || stable.turn === "bull-strong";
     const stableBearTurn = stable.turn === "bear-weak" || stable.turn === "bear-strong";
+
+    // ── 멀티데이 파생 지표 (최근 5거래일) ──
+    const MULTIDAY_WINDOW = 5;
+    let stableAboveAvgDays5 = 0;
+    let stableAccumulationDays = 0;
+    let consecutiveAccumulating = true;
+    for (let offset = 0; offset < MULTIDAY_WINDOW; offset++) {
+      const slice = sorted.slice(0, sorted.length - offset);
+      if (slice.length < 200) break;
+      const sig = calculateStableProSignal(slice, stableOptions);
+      if (sig.aboveAvg) stableAboveAvgDays5 += 1;
+      if (consecutiveAccumulating && sig.accumulation) {
+        stableAccumulationDays += 1;
+      } else {
+        consecutiveAccumulating = false;
+      }
+    }
+    // 순매수세: 최근 5거래일 양봉 거래량 합산 비율 (−1 ~ +1)
+    const recentBars = sorted.slice(-MULTIDAY_WINDOW);
+    let buyVol = 0;
+    let sellVol = 0;
+    for (const bar of recentBars) {
+      if (bar.close >= bar.open) buyVol += bar.volume;
+      else sellVol += bar.volume;
+    }
+    const totalVol = buyVol + sellVol;
+    const netBuyingPressure5d = totalVol > 0 ? (buyVol - sellVol) / totalVol : 0;
+    // 오늘 거래량 팽창 비율
+    const vol20Slice = sorted.slice(-20).map((d) => d.volume);
+    const vol20Avg = vol20Slice.reduce((sum, v) => sum + v, 0) / (vol20Slice.length || 1);
+    const volExpansionToday = vol20Avg > 0 ? (sorted[sorted.length - 1]?.volume ?? 0) / vol20Avg : 1;
 
     // 점수 가중 (0~100)
     let score = 0;
@@ -403,6 +435,10 @@ export function calculateScore(
         stable_turn: stable.turn,
         stable_turn_trust: stable.trustScore,
         stable_accumulation: stable.accumulation,
+        stable_above_avg_days_5: stableAboveAvgDays5,
+        stable_accumulation_days: stableAccumulationDays,
+        net_buying_pressure_5d: Math.round(netBuyingPressure5d * 1000) / 1000,
+        vol_expansion_today: Math.round(volExpansionToday * 100) / 100,
       },
       recommendation,
       entry: {

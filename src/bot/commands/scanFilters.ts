@@ -15,6 +15,11 @@ export type ScanScoreSnapshot = {
   recentInDays?: number;
   recentAccumulationDays?: number;
   recentBullDays?: number;
+  // 멀티데이 파생 지표
+  stableAboveAvgDays5?: number;    // 0~5: 최근 5일 중 세력선 위 일수
+  stableAccumulationDays?: number; // 연속 매집 일수
+  netBuyingPressure5d?: number;    // -1~1: 5일 순매수세
+  volExpansionToday?: number;      // 오늘 거래량 / 20일 평균
 };
 
 export type ScanPullbackSnapshot = {
@@ -109,6 +114,12 @@ function evaluateScanFilters(
   const recentInDays = Number(snapshot?.recentInDays ?? 0);
   const recentAccumulationDays = Number(snapshot?.recentAccumulationDays ?? 0);
   const recentBullDays = Number(snapshot?.recentBullDays ?? 0);
+  // 멀티데이 파생 지표
+  const stableAboveAvgDays5 = Number(snapshot?.stableAboveAvgDays5 ?? -1);
+  const stableAccumulationDays = Number(snapshot?.stableAccumulationDays ?? -1);
+  const netBuyingPressure5d = Number(snapshot?.netBuyingPressure5d ?? NaN);
+  const volExpansionToday = Number(snapshot?.volExpansionToday ?? NaN);
+  const hasMultiDay = stableAboveAvgDays5 >= 0; // 멀티데이 데이터 존재 여부
   const entryGrade = String(pullback?.entryGrade ?? "").trim().toUpperCase();
   const entryScore = Number(pullback?.entryScore ?? 0);
   const trendGrade = String(pullback?.trendGrade ?? "").trim().toUpperCase();
@@ -129,23 +140,39 @@ function evaluateScanFilters(
       bullTurn ||
       ((signal === "buy" || signal === "strong_buy") && stableAboveAvg && stableTrust >= 58) ||
       (stableAboveAvg && stableTrust >= 64 && total >= 68));
-  const accumulationLike =
+  // 멀티데이 기반 매집 조건 (데이터 있을 때 우선 적용)
+  const multiDayAccumulation = hasMultiDay && (
+    stableAccumulationDays >= 2 ||
+    (stableAboveAvgDays5 >= 3 && Number.isFinite(netBuyingPressure5d) && netBuyingPressure5d > 0) ||
+    (stableAccumulation && Number.isFinite(volExpansionToday) && volExpansionToday < 1.5)
+  );
+  const legacyAccumulation =
     stableAccumulation ||
     recentAccumulationDays >= 2 ||
     (stableAboveAvg && stableTrust >= 62 && total >= 62 && !bearTurn) ||
     (!bearTurn && recentInDays >= 1 && stableAboveAvg && stableTrust >= 58) ||
     (!bearTurn && pullbackAccumulationLike && stableAboveAvg && stableTrust >= 60);
+  const accumulationLike = multiDayAccumulation || legacyAccumulation;
+
+  // 멀티데이 기반 세력선 조건
+  const multiDayStable = hasMultiDay && (
+    (bullTurn && stableAboveAvgDays5 >= 2) ||
+    (stableAboveAvgDays5 >= 4 && Number.isFinite(netBuyingPressure5d) && netBuyingPressure5d > 0.1)
+  );
+  const stableMatched = multiDayStable || bullTurn || recentBullDays >= 1 || stablePositive;
 
   return {
     stable: {
-      matched: bullTurn || recentBullDays >= 1 || stablePositive,
-      reason: bullTurn
-        ? "세력 상승턴"
-        : recentBullDays >= 1
-          ? `최근 상승턴 ${recentBullDays}회`
-          : stablePositive
-            ? "세력선/신뢰도 우위"
-            : "세력 우위 부족",
+      matched: stableMatched,
+      reason: multiDayStable
+        ? `세력선 위 ${stableAboveAvgDays5}일 + 매수세 ${Math.round((netBuyingPressure5d || 0) * 100)}%`
+        : bullTurn
+          ? "세력 상승턴"
+          : recentBullDays >= 1
+            ? `최근 상승턴 ${recentBullDays}회`
+            : stablePositive
+              ? "세력선/신뢰도 우위"
+              : "세력 우위 부족",
     },
     trend: {
       matched: trendLike,
@@ -161,17 +188,21 @@ function evaluateScanFilters(
     },
     accumulation: {
       matched: accumulationLike,
-      reason: stableAccumulation
-        ? "Stable 매집"
-        : recentAccumulationDays >= 2
-          ? `최근 매집 ${recentAccumulationDays}일`
-          : stableAboveAvg && stableTrust >= 62 && total >= 62 && !bearTurn
-            ? `안정구간·신뢰도 ${Math.round(stableTrust)}점`
-            : !bearTurn && recentInDays >= 1 && stableAboveAvg && stableTrust >= 58
-              ? "최근 IN + 안정구간"
-              : !bearTurn && pullbackAccumulationLike && stableAboveAvg && stableTrust >= 60
-                ? "눌림목 품질 + 안정구간"
-                : "매집 신호 부족",
+      reason: multiDayAccumulation && stableAccumulationDays >= 2
+        ? `연속 매집 ${stableAccumulationDays}거래일`
+        : multiDayAccumulation
+          ? `세력선 위 ${stableAboveAvgDays5}일·매수세 ${Math.round((netBuyingPressure5d || 0) * 100)}%`
+          : stableAccumulation
+            ? "Stable 매집"
+            : recentAccumulationDays >= 2
+              ? `최근 매집 ${recentAccumulationDays}일`
+              : stableAboveAvg && stableTrust >= 62 && total >= 62 && !bearTurn
+                ? `안정구간·신뢰도 ${Math.round(stableTrust)}점`
+                : !bearTurn && recentInDays >= 1 && stableAboveAvg && stableTrust >= 58
+                  ? "최근 IN + 안정구간"
+                  : !bearTurn && pullbackAccumulationLike && stableAboveAvg && stableTrust >= 60
+                    ? "눌림목 품질 + 안정구간"
+                    : "매집 신호 부족",
     },
     entry: {
       matched: entryLike,
