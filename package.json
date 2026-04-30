@@ -30,6 +30,8 @@
     "report:local": "tsx scripts/generate_local_reports.ts",
     "setWebhook": "node scripts/ops/setWebhook.mjs https://signal-scanner-bot.vercel.app/api/telegram",
     "backtest:market-picks": "tsx scripts/backtest_market_picks.ts",
+    "analyze:edge": "tsx scripts/analyze_recommendation_edge.ts",
+    "ops:check-data-sync": "tsx scripts/check_data_sync_health.ts",
     "prepare": "husky",
     "reconcile:duplicates": "tsx scripts/reconcile_duplicates.ts"
   },

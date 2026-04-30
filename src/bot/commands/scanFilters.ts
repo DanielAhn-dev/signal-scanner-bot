@@ -20,6 +20,10 @@ export type ScanScoreSnapshot = {
   stableAccumulationDays?: number; // 연속 매집 일수
   netBuyingPressure5d?: number;    // -1~1: 5일 순매수세
   volExpansionToday?: number;      // 오늘 거래량 / 20일 평균
+  rsi14?: number;
+  valueTraded?: number;
+  aboveSma20?: boolean;
+  aboveSma50?: boolean;
 };
 
 export type ScanPullbackSnapshot = {
@@ -119,6 +123,10 @@ function evaluateScanFilters(
   const stableAccumulationDays = Number(snapshot?.stableAccumulationDays ?? -1);
   const netBuyingPressure5d = Number(snapshot?.netBuyingPressure5d ?? NaN);
   const volExpansionToday = Number(snapshot?.volExpansionToday ?? NaN);
+  const rsi14 = Number(snapshot?.rsi14 ?? NaN);
+  const valueTraded = Number(snapshot?.valueTraded ?? NaN);
+  const aboveSma20 = snapshot?.aboveSma20 === true;
+  const aboveSma50 = snapshot?.aboveSma50 === true;
   const hasMultiDay = stableAboveAvgDays5 >= 0; // 멀티데이 데이터 존재 여부
   const entryGrade = String(pullback?.entryGrade ?? "").trim().toUpperCase();
   const entryScore = Number(pullback?.entryScore ?? 0);
@@ -133,13 +141,21 @@ function evaluateScanFilters(
     (distGrade === "A" || distGrade === "B") &&
     pullbackEntryLike;
   const stablePositive = stableAboveAvg && stableTrust >= 50 && !bearTurn;
-  const trendLike = !bearTurn && ((stableAboveAvg && total >= 55) || buyLikeSignal || bullTurn);
+  const trendByIndicator =
+    !bearTurn &&
+    aboveSma20 &&
+    (aboveSma50 || total >= 60) &&
+    Number.isFinite(rsi14) &&
+    rsi14 >= 42 &&
+    rsi14 <= 68;
+  const trendLike = !bearTurn && ((stableAboveAvg && total >= 55) || buyLikeSignal || bullTurn || trendByIndicator);
   const entryLike =
     !bearTurn &&
     (recentInDays >= 1 ||
       bullTurn ||
       ((signal === "buy" || signal === "strong_buy") && stableAboveAvg && stableTrust >= 58) ||
-      (stableAboveAvg && stableTrust >= 64 && total >= 68));
+      (stableAboveAvg && stableTrust >= 64 && total >= 68) ||
+      (trendByIndicator && Number.isFinite(valueTraded) && valueTraded >= 8_000_000_000));
   // 멀티데이 기반 매집 조건 (데이터 있을 때 우선 적용)
   const multiDayAccumulation = hasMultiDay && (
     stableAccumulationDays >= 2 ||
@@ -160,6 +176,13 @@ function evaluateScanFilters(
     (stableAboveAvgDays5 >= 4 && Number.isFinite(netBuyingPressure5d) && netBuyingPressure5d > 0.1)
   );
   const stableMatched = multiDayStable || bullTurn || recentBullDays >= 1 || stablePositive;
+  const accumulationByIndicator =
+    trendByIndicator &&
+    Number.isFinite(valueTraded) &&
+    valueTraded >= 10_000_000_000 &&
+    Number.isFinite(rsi14) &&
+    rsi14 >= 45 &&
+    rsi14 <= 64;
 
   return {
     stable: {
@@ -180,6 +203,8 @@ function evaluateScanFilters(
         ? "상승턴 확인"
         : stableAboveAvg && total >= 55
           ? `기준선 상회·점수 ${Math.round(total)}`
+          : trendByIndicator
+            ? `이평 정렬·RSI ${Math.round(rsi14)}`
           : buyLikeSignal
             ? `신호 ${signal.toUpperCase()}`
             : bearTurn
@@ -187,9 +212,11 @@ function evaluateScanFilters(
               : "추세 신호 부족",
     },
     accumulation: {
-      matched: accumulationLike,
+      matched: accumulationLike || accumulationByIndicator,
       reason: multiDayAccumulation && stableAccumulationDays >= 2
         ? `연속 매집 ${stableAccumulationDays}거래일`
+        : accumulationByIndicator
+          ? `거래대금 ${Math.round(valueTraded / 100_000_000)}억·RSI ${Math.round(rsi14)}`
         : multiDayAccumulation
           ? `세력선 위 ${stableAboveAvgDays5}일·매수세 ${Math.round((netBuyingPressure5d || 0) * 100)}%`
           : stableAccumulation

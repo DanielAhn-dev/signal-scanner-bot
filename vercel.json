@@ -23,7 +23,7 @@
         },
         {
             "path": "/api/cron/scoreSync",
-            "schedule": "30 6 * * 1-5"
+            "schedule": "40 6 * * 1-5"
         }
     ]
 }

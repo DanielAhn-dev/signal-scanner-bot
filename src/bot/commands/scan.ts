@@ -532,8 +532,39 @@ export async function handleScanCommand(
       stableAccumulationDays?: number;
       netBuyingPressure5d?: number;
       volExpansionToday?: number;
+      rsi14?: number;
+      valueTraded?: number;
+      aboveSma20?: boolean;
+      aboveSma50?: boolean;
     }
   >();
+  const indicatorByCode = new Map<
+    string,
+    {
+      close?: number;
+      rsi14?: number;
+      value_traded?: number;
+      sma20?: number;
+      sma50?: number;
+    }
+  >();
+  const { data: indicatorRows } = await supabase
+    .from("daily_indicators")
+    .select("code, close, rsi14, value_traded, sma20, sma50")
+    .eq("trade_date", latestDate)
+    .in("code", codes)
+    .limit(Math.max(400, codes.length * 2));
+  for (const row of (indicatorRows ?? []) as Array<Record<string, unknown>>) {
+    const code = String(row.code ?? "").trim();
+    if (!code) continue;
+    indicatorByCode.set(code, {
+      close: Number(row.close ?? NaN),
+      rsi14: Number(row.rsi14 ?? NaN),
+      value_traded: Number(row.value_traded ?? NaN),
+      sma20: Number(row.sma20 ?? NaN),
+      sma50: Number(row.sma50 ?? NaN),
+    });
+  }
   const scoreResult = await fetchLatestScoresByCodes(supabase, codes);
   const recentHistoryByCode = await fetchRecentScoreHistoryByCodes(supabase, codes, 5);
   scoreResult.byCode.forEach((row, code) => {
@@ -579,6 +610,12 @@ export async function handleScanCommand(
       : typeof fallbackFactors.vol_expansion_today === "number"
         ? fallbackFactors.vol_expansion_today
         : undefined;
+    const indicator = indicatorByCode.get(code);
+    const closeVal = Number(indicator?.close ?? NaN);
+    const sma20Val = Number(indicator?.sma20 ?? NaN);
+    const sma50Val = Number(indicator?.sma50 ?? NaN);
+    const rsi14Val = Number(indicator?.rsi14 ?? NaN);
+    const valueTradedVal = Number(indicator?.value_traded ?? NaN);
 
     scoreMap.set(code, {
       total: Number(row.total_score ?? 0) || undefined,
@@ -596,6 +633,10 @@ export async function handleScanCommand(
       stableAccumulationDays: stableAccumulationDaysVal,
       netBuyingPressure5d: netBuyingPressure5dVal,
       volExpansionToday: volExpansionTodayVal,
+      rsi14: Number.isFinite(rsi14Val) ? rsi14Val : undefined,
+      valueTraded: Number.isFinite(valueTradedVal) ? valueTradedVal : undefined,
+      aboveSma20: Number.isFinite(closeVal) && Number.isFinite(sma20Val) ? closeVal > sma20Val : undefined,
+      aboveSma50: Number.isFinite(closeVal) && Number.isFinite(sma50Val) ? closeVal > sma50Val : undefined,
     });
   });
 

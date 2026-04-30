@@ -7,6 +7,12 @@ const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 const CRON_HOBBY_DAILY_MODE =
   String(process.env.CRON_HOBBY_DAILY_MODE ?? "true").toLowerCase() !== "false";
+const CRON_HOBBY_INCLUDE_AUTOTRADE =
+  String(process.env.CRON_HOBBY_INCLUDE_AUTOTRADE ?? "false").toLowerCase() === "true";
+const CRON_HOBBY_INCLUDE_GATE_REFRESH =
+  String(process.env.CRON_HOBBY_INCLUDE_GATE_REFRESH ?? "false").toLowerCase() === "true";
+const CRON_HOBBY_INCLUDE_WEEKLY_REPORT =
+  String(process.env.CRON_HOBBY_INCLUDE_WEEKLY_REPORT ?? "false").toLowerCase() === "true";
 const AUTO_TRADE_ALERT_CHAT_ID = Number(process.env.AUTO_TRADE_ALERT_CHAT_ID || "0");
 
 type CronTaskName =
@@ -24,7 +30,7 @@ type DueTask = {
 
 const TASK_PATHS: Record<CronTaskName, string> = {
   scoreSync: "/api/cron/scoreSync",
-  briefing: "/api/cron/briefing",
+  briefing: "/api/cron/briefing?type=pre_market",
   report: "/api/cron/report",
   virtualAutoTrade: "/api/cron/virtualAutoTrade",
   virtualAutoTradeIntraday:
@@ -59,15 +65,17 @@ function resolveDueTasks(now = new Date()): DueTask[] {
   if (CRON_HOBBY_DAILY_MODE) {
     if (hour !== 23 || minute !== 0) return [];
 
-    const dailyTasks: DueTask[] = [
-      { name: "scoreSync", path: TASK_PATHS.scoreSync },
-      { name: "briefing", path: TASK_PATHS.briefing },
-      { name: "virtualAutoTrade", path: TASK_PATHS.virtualAutoTrade },
-      { name: "strategyGateRefresh", path: TASK_PATHS.strategyGateRefresh },
-    ];
+    // 무료 플랜(60초 제한)에서는 장전 브리핑을 우선 단독 실행.
+    // 점수 동기화는 vercel.json의 /api/cron/scoreSync 스케줄로 분리 처리한다.
+    const dailyTasks: DueTask[] = [{ name: "briefing", path: TASK_PATHS.briefing }];
 
-    // 주간 리포트는 금요일만 실행
-    if (dow === 5) {
+    if (CRON_HOBBY_INCLUDE_AUTOTRADE) {
+      dailyTasks.push({ name: "virtualAutoTrade", path: TASK_PATHS.virtualAutoTrade });
+    }
+    if (CRON_HOBBY_INCLUDE_GATE_REFRESH) {
+      dailyTasks.push({ name: "strategyGateRefresh", path: TASK_PATHS.strategyGateRefresh });
+    }
+    if (CRON_HOBBY_INCLUDE_WEEKLY_REPORT && dow === 5) {
       dailyTasks.push({ name: "report", path: TASK_PATHS.report });
     }
 
