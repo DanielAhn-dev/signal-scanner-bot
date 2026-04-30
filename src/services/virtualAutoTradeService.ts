@@ -3985,6 +3985,7 @@ export async function runVirtualAutoTradingCycle(input?: {
   for (const setting of settings) {
     const lockKey = `${runKey}:${setting.chat_id}`;
     let locked = false;
+    let runId: number | null = null;
     try {
       locked = await tryAcquireRunLock(supabase, lockKey).catch((err) => {
         throw err;
@@ -4010,7 +4011,7 @@ export async function runVirtualAutoTradingCycle(input?: {
         runKey,
         chatId: setting.chat_id,
       });
-      const runId = runStart.runId;
+      runId = runStart.runId;
 
       if (runStart.shouldSkip) {
         summary.processedUsers += 1;
