@@ -300,7 +300,7 @@ export const COMMAND_ROUTE_SPECS: CommandRouteSpec[] = [
   },
   {
     pattern: CMD.OPSTRIGGER,
-    tokens: ["opsrun", "cronrun", "자동트리거", "운영트리거"],
+    tokens: ["opsrun", "cronrun", "운영트리거"],
     run: (match, ctx, tgSend) => handleOpsTriggerCommand(match[2] ?? "", ctx, tgSend),
   },
   {
