@@ -150,6 +150,21 @@ export async function routeCallbackData(
       await routeMessage(resolved, ctx, tgSend);
       return;
     }
+
+    if (prefix === "autobuy") {
+      try {
+        const { handleAutoBuyCommand } = await import("./commands/autoBuy.js");
+        await handleAutoBuyCommand(payload, ctx, tgSend);
+        return;
+      } catch (error) {
+        console.error("[callbackRouter] autobuy callback failed:", error);
+        await tgSend("sendMessage", {
+          chat_id: ctx.chatId,
+          text: "⚠️ 권장매수 처리 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.",
+        });
+        return;
+      }
+    }
   }
 
   if (data.startsWith("KRX:")) {

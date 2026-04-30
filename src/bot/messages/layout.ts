@@ -211,6 +211,7 @@ export const ACTIONS = {
   ] as InlineButton[],
   analyzeStock: (code: string) =>
     [
+      { text: "권장매수", callback_data: `autobuy:${code}` },
       { text: "종목분석", callback_data: `trade:${code}` },
       { text: "재무", callback_data: `finance:${code}` },
       { text: "뉴스", callback_data: `news:${code}` },
@@ -218,6 +219,7 @@ export const ACTIONS = {
     ] as InlineButton[],
   analyzeStockWithRecalc: (code: string) =>
     [
+      { text: "권장매수", callback_data: `autobuy:${code}` },
       { text: "재분석", callback_data: `trade:${code}` },
       { text: "종목분석", callback_data: `trade:${code}` },
       { text: "재무", callback_data: `finance:${code}` },
