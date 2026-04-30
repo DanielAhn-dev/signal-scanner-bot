@@ -1,0 +1,2845 @@
+{
+  "generatedAt": "2026-04-30T08:18:47.882Z",
+  "scans": {
+    "src": {
+      "exists": true,
+      "count": 139,
+      "files": [
+        {
+          "path": "src/adapters/index.ts",
+          "size": 2126,
+          "mtime": "2026-03-04T08:02:04.650Z",
+          "ext": ".ts",
+          "keywords": [],
+          "lines": 71
+        },
+        {
+          "path": "src/adapters/krx/client.ts",
+          "size": 13740,
+          "mtime": "2026-03-04T04:25:07.024Z",
+          "ext": ".ts",
+          "keywords": [],
+          "lines": 442
+        },
+        {
+          "path": "src/adapters/krx/index.ts",
+          "size": 67,
+          "mtime": "2026-03-04T04:25:07.025Z",
+          "ext": ".ts",
+          "keywords": [],
+          "lines": 3
+        },
+        {
+          "path": "src/adapters/sectors.ts",
+          "size": 1111,
+          "mtime": "2026-03-04T04:25:07.025Z",
+          "ext": ".ts",
+          "keywords": [],
+          "lines": 31
+        },
+        {
+          "path": "src/adapters/stocks.ts",
+          "size": 450,
+          "mtime": "2026-03-04T04:25:07.025Z",
+          "ext": ".ts",
+          "keywords": [],
+          "lines": 14
+        },
+        {
+          "path": "src/bot/accessControl.ts",
+          "size": 2232,
+          "mtime": "2026-04-27T01:35:46.044Z",
+          "ext": ".ts",
+          "keywords": [
+            "telegram"
+          ],
+          "lines": 64
+        },
+        {
+          "path": "src/bot/callbackRouter.ts",
+          "size": 4731,
+          "mtime": "2026-04-30T07:23:08.998Z",
+          "ext": ".ts",
+          "keywords": [
+            "risk",
+            "telegram",
+            "strategy"
+          ],
+          "lines": 164
+        },
+        {
+          "path": "src/bot/commandCatalog.ts",
+          "size": 15434,
+          "mtime": "2026-04-27T07:12:32.093Z",
+          "ext": ".ts",
+          "keywords": [
+            "risk",
+            "telegram",
+            "strategy"
+          ],
+          "lines": 401
+        },
+        {
+          "path": "src/bot/commands/alert.ts",
+          "size": 12469,
+          "mtime": "2026-04-27T01:35:46.046Z",
+          "ext": ".ts",
+          "keywords": [
+            "risk"
+          ],
+          "lines": 347
+        },
+        {
+          "path": "src/bot/commands/autoCycle.ts",
+          "size": 19432,
+          "mtime": "2026-04-27T01:35:46.047Z",
+          "ext": ".ts",
+          "keywords": [
+            "risk",
+            "stop",
+            "position",
+            "sizing",
+            "virtual",
+            "autotrade",
+            "strategy"
+          ],
+          "lines": 515
+        },
+        {
+          "path": "src/bot/commands/autoReport.ts",
+          "size": 4440,
+          "mtime": "2026-04-24T01:55:31.220Z",
+          "ext": ".ts",
+          "keywords": [
+            "stop",
+            "stoploss",
+            "backtest",
+            "virtual",
+            "autotrade"
+          ],
+          "lines": 115
+        },
+        {
+          "path": "src/bot/commands/autoTradeOps.ts",
+          "size": 15245,
+          "mtime": "2026-04-27T04:39:51.636Z",
+          "ext": ".ts",
+          "keywords": [
+            "backtest",
+            "virtual",
+            "autotrade",
+            "telegram"
+          ],
+          "lines": 458
+        },
+        {
+          "path": "src/bot/commands/brief.ts",
+          "size": 2553,
+          "mtime": "2026-04-23T04:06:11.305Z",
+          "ext": ".ts",
+          "keywords": [
+            "risk"
+          ],
+          "lines": 60
+        },
+        {
+          "path": "src/bot/commands/buy.ts",
+          "size": 18887,
+          "mtime": "2026-04-30T04:18:21.018Z",
+          "ext": ".ts",
+          "keywords": [
+            "risk",
+            "stop",
+            "stoploss",
+            "position",
+            "sizing",
+            "virtual",
+            "autotrade"
+          ],
+          "lines": 510
+        },
+        {
+          "path": "src/bot/commands/capital.ts",
+          "size": 6526,
+          "mtime": "2026-04-20T00:58:58.961Z",
+          "ext": ".ts",
+          "keywords": [
+            "risk"
+          ],
+          "lines": 181
+        },
+        {
+          "path": "src/bot/commands/dataSync.ts",
+          "size": 1946,
+          "mtime": "2026-04-29T05:38:35.256Z",
+          "ext": ".ts",
+          "keywords": [],
+          "lines": 47
+        },
+        {
+          "path": "src/bot/commands/economy.ts",
+          "size": 8147,
+          "mtime": "2026-04-27T01:35:46.048Z",
+          "ext": ".ts",
+          "keywords": [
+            "risk"
+          ],
+          "lines": 253
+        },
+        {
+          "path": "src/bot/commands/etf.ts",
+          "size": 14537,
+          "mtime": "2026-04-23T05:10:07.169Z",
+          "ext": ".ts",
+          "keywords": [],
+          "lines": 363
+        },
+        {
+          "path": "src/bot/commands/finance.ts",
+          "size": 9598,
+          "mtime": "2026-04-30T04:18:21.019Z",
+          "ext": ".ts",
+          "keywords": [],
+          "lines": 227
+        },
+        {
+          "path": "src/bot/commands/flow.ts",
+          "size": 8363,
+          "mtime": "2026-04-20T07:47:17.776Z",
+          "ext": ".ts",
+          "keywords": [],
+          "lines": 258
+        },
+        {
+          "path": "src/bot/commands/follow.ts",
+          "size": 3255,
+          "mtime": "2026-04-20T00:58:58.963Z",
+          "ext": ".ts",
+          "keywords": [],
+          "lines": 119
+        },
+        {
+          "path": "src/bot/commands/market.ts",
+          "size": 10611,
+          "mtime": "2026-04-27T01:35:46.049Z",
+          "ext": ".ts",
+          "keywords": [
+            "risk"
+          ],
+          "lines": 317
+        },
+        {
+          "path": "src/bot/commands/marketPicks.ts",
+          "size": 23086,
+          "mtime": "2026-04-27T01:35:46.049Z",
+          "ext": ".ts",
+          "keywords": [
+            "risk",
+            "virtual",
+            "autotrade",
+            "strategy"
+          ],
+          "lines": 748
+        },
+        {
+          "path": "src/bot/commands/news.ts",
+          "size": 3613,
+          "mtime": "2026-04-20T06:22:28.913Z",
+          "ext": ".ts",
+          "keywords": [],
+          "lines": 119
+        },
+        {
+          "path": "src/bot/commands/onboarding.ts",
+          "size": 7253,
+          "mtime": "2026-04-22T08:42:59.361Z",
+          "ext": ".ts",
+          "keywords": [
+            "risk",
+            "strategy"
+          ],
+          "lines": 180
+        },
+        {
+          "path": "src/bot/commands/opsTrigger.ts",
+          "size": 12117,
+          "mtime": "2026-04-27T01:35:46.050Z",
+          "ext": ".ts",
+          "keywords": [
+            "virtual",
+            "autotrade",
+            "telegram",
+            "strategy"
+          ],
+          "lines": 372
+        },
+        {
+          "path": "src/bot/commands/preMarketPlan.ts",
+          "size": 25889,
+          "mtime": "2026-04-22T04:24:35.389Z",
+          "ext": ".ts",
+          "keywords": [
+            "risk",
+            "stop",
+            "stoploss",
+            "position",
+            "sizing",
+            "virtual",
+            "autotrade",
+            "strategy"
+          ],
+          "lines": 689
+        },
+        {
+          "path": "src/bot/commands/preMarketPlanAdaptive.ts",
+          "size": 2424,
+          "mtime": "2026-04-22T02:59:03.206Z",
+          "ext": ".ts",
+          "keywords": [
+            "risk"
+          ],
+          "lines": 89
+        },
+        {
+          "path": "src/bot/commands/profile.ts",
+          "size": 2345,
+          "mtime": "2026-04-20T00:58:58.966Z",
+          "ext": ".ts",
+          "keywords": [
+            "risk"
+          ],
+          "lines": 74
+        },
+        {
+          "path": "src/bot/commands/pullback.ts",
+          "size": 7301,
+          "mtime": "2026-04-16T00:26:26.282Z",
+          "ext": ".ts",
+          "keywords": [
+            "risk"
+          ],
+          "lines": 207
+        },
+        {
+          "path": "src/bot/commands/ranking.ts",
+          "size": 1754,
+          "mtime": "2026-04-20T00:58:58.967Z",
+          "ext": ".ts",
+          "keywords": [],
+          "lines": 61
+        },
+        {
+          "path": "src/bot/commands/report.ts",
+          "size": 58943,
+          "mtime": "2026-04-27T01:35:46.051Z",
+          "ext": ".ts",
+          "keywords": [
+            "risk",
+            "stop",
+            "stoploss",
+            "virtual",
+            "autotrade",
+            "telegram",
+            "strategy"
+          ],
+          "lines": 1455
+        },
+        {
+          "path": "src/bot/commands/scan.ts",
+          "size": 38889,
+          "mtime": "2026-04-30T05:33:10.839Z",
+          "ext": ".ts",
+          "keywords": [
+            "risk"
+          ],
+          "lines": 1033
+        },
+        {
+          "path": "src/bot/commands/scanFilters.ts",
+          "size": 10525,
+          "mtime": "2026-04-30T05:33:10.839Z",
+          "ext": ".ts",
+          "keywords": [],
+          "lines": 267
+        },
+        {
+          "path": "src/bot/commands/scanLog.ts",
+          "size": 1656,
+          "mtime": "2026-04-27T07:12:32.093Z",
+          "ext": ".ts",
+          "keywords": [],
+          "lines": 51
+        },
+        {
+          "path": "src/bot/commands/score.ts",
+          "size": 10511,
+          "mtime": "2026-04-30T04:18:21.020Z",
+          "ext": ".ts",
+          "keywords": [
+            "risk",
+            "stop",
+            "strategy"
+          ],
+          "lines": 280
+        },
+        {
+          "path": "src/bot/commands/sector.ts",
+          "size": 9381,
+          "mtime": "2026-04-20T07:47:17.777Z",
+          "ext": ".ts",
+          "keywords": [
+            "risk"
+          ],
+          "lines": 292
+        },
+        {
+          "path": "src/bot/commands/stocks.ts",
+          "size": 6348,
+          "mtime": "2026-04-20T00:58:58.970Z",
+          "ext": ".ts",
+          "keywords": [
+            "risk"
+          ],
+          "lines": 182
+        },
+        {
+          "path": "src/bot/commands/strategySelect.ts",
+          "size": 3921,
+          "mtime": "2026-04-22T08:36:15.632Z",
+          "ext": ".ts",
+          "keywords": [
+            "risk",
+            "virtual",
+            "autotrade",
+            "strategy"
+          ],
+          "lines": 125
+        },
+        {
+          "path": "src/bot/commands/watchlist.ts",
+          "size": 104363,
+          "mtime": "2026-04-24T01:55:31.221Z",
+          "ext": ".ts",
+          "keywords": [
+            "risk",
+            "stop",
+            "stoploss",
+            "position",
+            "virtual",
+            "strategy"
+          ],
+          "lines": 3010
+        },
+        {
+          "path": "src/bot/commands/watchlistHistory.ts",
+          "size": 7589,
+          "mtime": "2026-04-20T04:17:25.877Z",
+          "ext": ".ts",
+          "keywords": [],
+          "lines": 207
+        },
+        {
+          "path": "src/bot/commands/weeklyCopilot.ts",
+          "size": 6685,
+          "mtime": "2026-04-23T04:34:29.941Z",
+          "ext": ".ts",
+          "keywords": [
+            "risk"
+          ],
+          "lines": 196
+        },
+        {
+          "path": "src/bot/menu/menuTree.ts",
+          "size": 4728,
+          "mtime": "2026-04-30T07:20:30.567Z",
+          "ext": ".ts",
+          "keywords": [
+            "risk",
+            "telegram"
+          ],
+          "lines": 139
+        },
+        {
+          "path": "src/bot/menu/renderMenu.ts",
+          "size": 2496,
+          "mtime": "2026-04-30T07:41:11.137Z",
+          "ext": ".ts",
+          "keywords": [],
+          "lines": 78
+        },
+        {
+          "path": "src/bot/messages/format.ts",
+          "size": 1280,
+          "mtime": "2026-04-23T05:10:07.169Z",
+          "ext": ".ts",
+          "keywords": [],
+          "lines": 42
+        },
+        {
+          "path": "src/bot/messages/fundamental.ts",
+          "size": 2344,
+          "mtime": "2026-04-17T05:38:46.953Z",
+          "ext": ".ts",
+          "keywords": [],
+          "lines": 74
+        },
+        {
+          "path": "src/bot/messages/ko.ts",
+          "size": 3433,
+          "mtime": "2026-04-27T05:19:33.304Z",
+          "ext": ".ts",
+          "keywords": [],
+          "lines": 58
+        },
+        {
+          "path": "src/bot/messages/layout.ts",
+          "size": 9978,
+          "mtime": "2026-04-27T01:35:46.052Z",
+          "ext": ".ts",
+          "keywords": [
+            "telegram"
+          ],
+          "lines": 236
+        },
+        {
+          "path": "src/bot/router.ts",
+          "size": 1225,
+          "mtime": "2026-04-27T01:35:46.053Z",
+          "ext": ".ts",
+          "keywords": [
+            "telegram"
+          ],
+          "lines": 40
+        },
+        {
+          "path": "src/bot/routing/commandPatterns.ts",
+          "size": 3439,
+          "mtime": "2026-04-30T06:12:23.124Z",
+          "ext": ".ts",
+          "keywords": [
+            "risk",
+            "backtest",
+            "strategy"
+          ],
+          "lines": 68
+        },
+        {
+          "path": "src/bot/routing/commandRoutes.ts",
+          "size": 13291,
+          "mtime": "2026-04-30T06:12:21.350Z",
+          "ext": ".ts",
+          "keywords": [
+            "risk",
+            "backtest",
+            "autotrade",
+            "strategy"
+          ],
+          "lines": 391
+        },
+        {
+          "path": "src/bot/routing/dispatcher.ts",
+          "size": 2354,
+          "mtime": "2026-04-23T05:52:44.889Z",
+          "ext": ".ts",
+          "keywords": [],
+          "lines": 90
+        },
+        {
+          "path": "src/bot/routing/startMessage.ts",
+          "size": 764,
+          "mtime": "2026-04-30T07:09:43.289Z",
+          "ext": ".ts",
+          "keywords": [
+            "risk"
+          ],
+          "lines": 19
+        },
+        {
+          "path": "src/bot/routing/types.ts",
+          "size": 353,
+          "mtime": "2026-04-23T05:52:44.888Z",
+          "ext": ".ts",
+          "keywords": [],
+          "lines": 19
+        },
+        {
+          "path": "src/cache/keys.ts",
+          "size": 181,
+          "mtime": "2026-03-04T04:25:07.029Z",
+          "ext": ".ts",
+          "keywords": [],
+          "lines": 7
+        },
+        {
+          "path": "src/cache/memory.ts",
+          "size": 3775,
+          "mtime": "2026-03-04T04:25:07.029Z",
+          "ext": ".ts",
+          "keywords": [],
+          "lines": 129
+        },
+        {
+          "path": "src/data/sector.ts",
+          "size": 10314,
+          "mtime": "2026-04-20T00:58:58.975Z",
+          "ext": ".ts",
+          "keywords": [],
+          "lines": 348
+        },
+        {
+          "path": "src/data/types.ts",
+          "size": 631,
+          "mtime": "2026-03-04T04:25:07.030Z",
+          "ext": ".ts",
+          "keywords": [],
+          "lines": 31
+        },
+        {
+          "path": "src/db/client.ts",
+          "size": 203,
+          "mtime": "2026-03-04T04:25:07.031Z",
+          "ext": ".ts",
+          "keywords": [],
+          "lines": 8
+        },
+        {
+          "path": "src/db/portfolioSchema.ts",
+          "size": 787,
+          "mtime": "2026-04-27T01:35:46.056Z",
+          "ext": ".ts",
+          "keywords": [
+            "position",
+            "virtual",
+            "strategy"
+          ],
+          "lines": 22
+        },
+        {
+          "path": "src/indicators/atr.ts",
+          "size": 3455,
+          "mtime": "2026-04-17T00:36:25.159Z",
+          "ext": ".ts",
+          "keywords": [],
+          "lines": 133
+        },
+        {
+          "path": "src/indicators/avwap.ts",
+          "size": 1004,
+          "mtime": "2026-03-04T04:25:07.031Z",
+          "ext": ".ts",
+          "keywords": [],
+          "lines": 40
+        },
+        {
+          "path": "src/indicators/index.ts",
+          "size": 205,
+          "mtime": "2026-04-27T01:35:46.056Z",
+          "ext": ".ts",
+          "keywords": [],
+          "lines": 9
+        },
+        {
+          "path": "src/indicators/macd.ts",
+          "size": 5740,
+          "mtime": "2026-04-17T00:36:25.159Z",
+          "ext": ".ts",
+          "keywords": [],
+          "lines": 182
+        },
+        {
+          "path": "src/indicators/roc.ts",
+          "size": 581,
+          "mtime": "2026-03-04T04:25:07.032Z",
+          "ext": ".ts",
+          "keywords": [],
+          "lines": 25
+        },
+        {
+          "path": "src/indicators/rsi.ts",
+          "size": 1101,
+          "mtime": "2026-03-04T04:25:07.032Z",
+          "ext": ".ts",
+          "keywords": [],
+          "lines": 43
+        },
+        {
+          "path": "src/indicators/sma.ts",
+          "size": 544,
+          "mtime": "2026-03-04T04:25:07.032Z",
+          "ext": ".ts",
+          "keywords": [],
+          "lines": 24
+        },
+        {
+          "path": "src/indicators/stablePro.ts",
+          "size": 5391,
+          "mtime": "2026-04-27T01:35:46.057Z",
+          "ext": ".ts",
+          "keywords": [],
+          "lines": 189
+        },
+        {
+          "path": "src/jobs/sync.ts",
+          "size": 232,
+          "mtime": "2026-03-04T04:25:07.033Z",
+          "ext": ".ts",
+          "keywords": [],
+          "lines": 9
+        },
+        {
+          "path": "src/lib/apiUpdateShared.ts",
+          "size": 1418,
+          "mtime": "2026-04-23T05:23:29.001Z",
+          "ext": ".ts",
+          "keywords": [
+            "telegram"
+          ],
+          "lines": 49
+        },
+        {
+          "path": "src/lib/base.ts",
+          "size": 598,
+          "mtime": "2026-03-05T02:13:33.914Z",
+          "ext": ".ts",
+          "keywords": [],
+          "lines": 18
+        },
+        {
+          "path": "src/lib/diff.ts",
+          "size": 1159,
+          "mtime": "2026-03-04T04:25:07.034Z",
+          "ext": ".ts",
+          "keywords": [],
+          "lines": 40
+        },
+        {
+          "path": "src/lib/investableUniverse.ts",
+          "size": 4129,
+          "mtime": "2026-04-15T04:30:41.323Z",
+          "ext": ".ts",
+          "keywords": [
+            "risk"
+          ],
+          "lines": 117
+        },
+        {
+          "path": "src/lib/investPlan.ts",
+          "size": 13560,
+          "mtime": "2026-04-20T00:58:58.976Z",
+          "ext": ".ts",
+          "keywords": [
+            "risk",
+            "stop"
+          ],
+          "lines": 367
+        },
+        {
+          "path": "src/lib/newsSentiment.ts",
+          "size": 7556,
+          "mtime": "2026-04-20T00:58:58.977Z",
+          "ext": ".ts",
+          "keywords": [],
+          "lines": 187
+        },
+        {
+          "path": "src/lib/normalize.ts",
+          "size": 1321,
+          "mtime": "2026-03-04T04:25:07.034Z",
+          "ext": ".ts",
+          "keywords": [],
+          "lines": 41
+        },
+        {
+          "path": "src/lib/priceScale.ts",
+          "size": 2086,
+          "mtime": "2026-04-17T02:22:11.652Z",
+          "ext": ".ts",
+          "keywords": [],
+          "lines": 70
+        },
+        {
+          "path": "src/lib/scoring.ts",
+          "size": 2094,
+          "mtime": "2026-04-17T00:36:25.159Z",
+          "ext": ".ts",
+          "keywords": [],
+          "lines": 66
+        },
+        {
+          "path": "src/lib/sectors.ts",
+          "size": 9859,
+          "mtime": "2026-03-04T07:07:32.534Z",
+          "ext": ".ts",
+          "keywords": [],
+          "lines": 311
+        },
+        {
+          "path": "src/lib/snapshot.ts",
+          "size": 1878,
+          "mtime": "2026-03-04T04:25:07.035Z",
+          "ext": ".ts",
+          "keywords": [],
+          "lines": 45
+        },
+        {
+          "path": "src/lib/source.ts",
+          "size": 8840,
+          "mtime": "2026-04-20T00:58:58.978Z",
+          "ext": ".ts",
+          "keywords": [],
+          "lines": 303
+        },
+        {
+          "path": "src/lib/stocks.ts",
+          "size": 1193,
+          "mtime": "2026-03-04T04:25:07.036Z",
+          "ext": ".ts",
+          "keywords": [],
+          "lines": 42
+        },
+        {
+          "path": "src/lib/strategyMemo.ts",
+          "size": 2239,
+          "mtime": "2026-04-20T00:58:58.978Z",
+          "ext": ".ts",
+          "keywords": [
+            "autotrade",
+            "strategy"
+          ],
+          "lines": 78
+        },
+        {
+          "path": "src/lib/supa.ts",
+          "size": 178,
+          "mtime": "2026-03-04T04:25:07.036Z",
+          "ext": ".ts",
+          "keywords": [],
+          "lines": 5
+        },
+        {
+          "path": "src/lib/validateOHLCV.ts",
+          "size": 3433,
+          "mtime": "2026-04-17T00:36:25.168Z",
+          "ext": ".ts",
+          "keywords": [],
+          "lines": 122
+        },
+        {
+          "path": "src/lib/watchlistSignals.ts",
+          "size": 7701,
+          "mtime": "2026-04-30T04:18:21.022Z",
+          "ext": ".ts",
+          "keywords": [
+            "stop",
+            "stoploss"
+          ],
+          "lines": 248
+        },
+        {
+          "path": "src/score/engine.ts",
+          "size": 17866,
+          "mtime": "2026-04-29T05:01:23.140Z",
+          "ext": ".ts",
+          "keywords": [
+            "stop"
+          ],
+          "lines": 460
+        },
+        {
+          "path": "src/search/normalize.ts",
+          "size": 7685,
+          "mtime": "2026-03-06T01:49:13.095Z",
+          "ext": ".ts",
+          "keywords": [],
+          "lines": 246
+        },
+        {
+          "path": "src/server/cronQuery.ts",
+          "size": 655,
+          "mtime": "2026-04-27T01:35:46.058Z",
+          "ext": ".ts",
+          "keywords": [],
+          "lines": 19
+        },
+        {
+          "path": "src/server/workerPolicy.ts",
+          "size": 8757,
+          "mtime": "2026-04-27T01:44:02.776Z",
+          "ext": ".ts",
+          "keywords": [],
+          "lines": 258
+        },
+        {
+          "path": "src/services/autoCycleBriefingService.ts",
+          "size": 2412,
+          "mtime": "2026-04-23T04:06:11.305Z",
+          "ext": ".ts",
+          "keywords": [
+            "virtual",
+            "autotrade",
+            "strategy"
+          ],
+          "lines": 58
+        },
+        {
+          "path": "src/services/briefingService.ts",
+          "size": 47175,
+          "mtime": "2026-04-30T07:49:12.491Z",
+          "ext": ".ts",
+          "keywords": [
+            "risk",
+            "stop",
+            "position",
+            "virtual",
+            "strategy"
+          ],
+          "lines": 1283
+        },
+        {
+          "path": "src/services/decisionLogService.ts",
+          "size": 7846,
+          "mtime": "2026-04-20T00:58:58.981Z",
+          "ext": ".ts",
+          "keywords": [
+            "virtual",
+            "strategy"
+          ],
+          "lines": 233
+        },
+        {
+          "path": "src/services/etfService.ts",
+          "size": 18572,
+          "mtime": "2026-04-21T08:40:55.910Z",
+          "ext": ".ts",
+          "keywords": [],
+          "lines": 596
+        },
+        {
+          "path": "src/services/fundamentalParser.ts",
+          "size": 4209,
+          "mtime": "2026-04-30T04:18:21.024Z",
+          "ext": ".ts",
+          "keywords": [],
+          "lines": 129
+        },
+        {
+          "path": "src/services/fundamentalProfile.ts",
+          "size": 4648,
+          "mtime": "2026-04-17T05:30:58.913Z",
+          "ext": ".ts",
+          "keywords": [],
+          "lines": 153
+        },
+        {
+          "path": "src/services/fundamentalService.ts",
+          "size": 17209,
+          "mtime": "2026-04-17T05:44:54.849Z",
+          "ext": ".ts",
+          "keywords": [],
+          "lines": 542
+        },
+        {
+          "path": "src/services/fundamentalStore.ts",
+          "size": 4170,
+          "mtime": "2026-04-30T04:18:21.025Z",
+          "ext": ".ts",
+          "keywords": [],
+          "lines": 129
+        },
+        {
+          "path": "src/services/longTermCoachService.ts",
+          "size": 6066,
+          "mtime": "2026-04-24T01:55:31.225Z",
+          "ext": ".ts",
+          "keywords": [
+            "position",
+            "virtual",
+            "autotrade",
+            "strategy"
+          ],
+          "lines": 191
+        },
+        {
+          "path": "src/services/marketInsightService.ts",
+          "size": 63356,
+          "mtime": "2026-04-27T01:35:46.060Z",
+          "ext": ".ts",
+          "keywords": [
+            "risk",
+            "sizing",
+            "virtual",
+            "autotrade",
+            "strategy"
+          ],
+          "lines": 1548
+        },
+        {
+          "path": "src/services/newsRiskFilter.ts",
+          "size": 2201,
+          "mtime": "2026-04-27T01:35:46.060Z",
+          "ext": ".ts",
+          "keywords": [
+            "risk"
+          ],
+          "lines": 58
+        },
+        {
+          "path": "src/services/opsStatusService.ts",
+          "size": 7427,
+          "mtime": "2026-04-27T01:35:46.061Z",
+          "ext": ".ts",
+          "keywords": [
+            "virtual",
+            "autotrade"
+          ],
+          "lines": 197
+        },
+        {
+          "path": "src/services/personalizedGuidanceService.ts",
+          "size": 8839,
+          "mtime": "2026-04-20T07:15:46.935Z",
+          "ext": ".ts",
+          "keywords": [
+            "position",
+            "virtual",
+            "autotrade",
+            "strategy"
+          ],
+          "lines": 207
+        },
+        {
+          "path": "src/services/portfolioService.ts",
+          "size": 7932,
+          "mtime": "2026-04-23T08:23:58.811Z",
+          "ext": ".ts",
+          "keywords": [
+            "position",
+            "virtual"
+          ],
+          "lines": 272
+        },
+        {
+          "path": "src/services/riskSignalService.ts",
+          "size": 6620,
+          "mtime": "2026-04-20T07:06:31.895Z",
+          "ext": ".ts",
+          "keywords": [
+            "risk",
+            "strategy"
+          ],
+          "lines": 236
+        },
+        {
+          "path": "src/services/scanRunLogService.ts",
+          "size": 5216,
+          "mtime": "2026-04-27T07:12:32.093Z",
+          "ext": ".ts",
+          "keywords": [
+            "risk"
+          ],
+          "lines": 166
+        },
+        {
+          "path": "src/services/scoreSourceService.ts",
+          "size": 4916,
+          "mtime": "2026-04-27T05:31:13.610Z",
+          "ext": ".ts",
+          "keywords": [],
+          "lines": 182
+        },
+        {
+          "path": "src/services/scoreSyncService.ts",
+          "size": 9736,
+          "mtime": "2026-04-27T01:35:46.062Z",
+          "ext": ".ts",
+          "keywords": [],
+          "lines": 313
+        },
+        {
+          "path": "src/services/strategyGateStateService.ts",
+          "size": 3501,
+          "mtime": "2026-04-27T01:35:46.062Z",
+          "ext": ".ts",
+          "keywords": [
+            "virtual",
+            "strategy"
+          ],
+          "lines": 98
+        },
+        {
+          "path": "src/services/userService.ts",
+          "size": 21788,
+          "mtime": "2026-04-24T01:55:31.228Z",
+          "ext": ".ts",
+          "keywords": [
+            "risk",
+            "position",
+            "virtual",
+            "autotrade",
+            "telegram",
+            "strategy"
+          ],
+          "lines": 621
+        },
+        {
+          "path": "src/services/virtualAutoTradeAlert.ts",
+          "size": 1307,
+          "mtime": "2026-04-24T02:18:02.674Z",
+          "ext": ".ts",
+          "keywords": [
+            "autotrade",
+            "telegram"
+          ],
+          "lines": 40
+        },
+        {
+          "path": "src/services/virtualAutoTradeCronAlert.ts",
+          "size": 1822,
+          "mtime": "2026-04-24T02:27:04.743Z",
+          "ext": ".ts",
+          "keywords": [
+            "virtual",
+            "autotrade"
+          ],
+          "lines": 49
+        },
+        {
+          "path": "src/services/virtualAutoTradeObservability.ts",
+          "size": 2419,
+          "mtime": "2026-04-24T02:18:02.675Z",
+          "ext": ".ts",
+          "keywords": [
+            "autotrade"
+          ],
+          "lines": 69
+        },
+        {
+          "path": "src/services/virtualAutoTradePacingService.ts",
+          "size": 3299,
+          "mtime": "2026-04-23T01:23:51.553Z",
+          "ext": ".ts",
+          "keywords": [
+            "virtual",
+            "autotrade"
+          ],
+          "lines": 106
+        },
+        {
+          "path": "src/services/virtualAutoTradePositionStrategy.ts",
+          "size": 11430,
+          "mtime": "2026-04-24T01:55:31.229Z",
+          "ext": ".ts",
+          "keywords": [
+            "risk",
+            "stop",
+            "stoploss",
+            "position",
+            "autotrade",
+            "strategy"
+          ],
+          "lines": 364
+        },
+        {
+          "path": "src/services/virtualAutoTradePullbackIntegration.ts",
+          "size": 2462,
+          "mtime": "2026-04-27T01:35:46.063Z",
+          "ext": ".ts",
+          "keywords": [],
+          "lines": 82
+        },
+        {
+          "path": "src/services/virtualAutoTradeSelection.ts",
+          "size": 30906,
+          "mtime": "2026-04-30T04:18:21.026Z",
+          "ext": ".ts",
+          "keywords": [
+            "risk",
+            "position",
+            "autotrade",
+            "strategy"
+          ],
+          "lines": 950
+        },
+        {
+          "path": "src/services/virtualAutoTradeService.ts",
+          "size": 151535,
+          "mtime": "2026-04-30T05:30:27.142Z",
+          "ext": ".ts",
+          "keywords": [
+            "risk",
+            "stop",
+            "stoploss",
+            "position",
+            "sizing",
+            "backtest",
+            "virtual",
+            "autotrade",
+            "telegram",
+            "strategy"
+          ],
+          "lines": 4331
+        },
+        {
+          "path": "src/services/virtualAutoTradeSignalGate.ts",
+          "size": 7170,
+          "mtime": "2026-04-27T05:37:53.137Z",
+          "ext": ".ts",
+          "keywords": [
+            "stop",
+            "autotrade"
+          ],
+          "lines": 228
+        },
+        {
+          "path": "src/services/virtualAutoTradeSizing.ts",
+          "size": 4718,
+          "mtime": "2026-04-27T01:35:46.066Z",
+          "ext": ".ts",
+          "keywords": [
+            "risk",
+            "stop",
+            "stoploss",
+            "position",
+            "sizing",
+            "virtual",
+            "autotrade"
+          ],
+          "lines": 141
+        },
+        {
+          "path": "src/services/virtualAutoTradeTiming.ts",
+          "size": 1358,
+          "mtime": "2026-04-24T02:08:55.051Z",
+          "ext": ".ts",
+          "keywords": [
+            "autotrade"
+          ],
+          "lines": 37
+        },
+        {
+          "path": "src/services/virtualLotService.ts",
+          "size": 9276,
+          "mtime": "2026-04-20T04:59:42.119Z",
+          "ext": ".ts",
+          "keywords": [],
+          "lines": 321
+        },
+        {
+          "path": "src/services/weeklyReportData.ts",
+          "size": 3302,
+          "mtime": "2026-04-21T06:00:42.383Z",
+          "ext": ".ts",
+          "keywords": [],
+          "lines": 107
+        },
+        {
+          "path": "src/services/weeklyReportErrors.ts",
+          "size": 3820,
+          "mtime": "2026-04-30T04:18:21.030Z",
+          "ext": ".ts",
+          "keywords": [],
+          "lines": 126
+        },
+        {
+          "path": "src/services/weeklyReportLayout.ts",
+          "size": 5330,
+          "mtime": "2026-04-27T01:35:46.067Z",
+          "ext": ".ts",
+          "keywords": [
+            "edge"
+          ],
+          "lines": 143
+        },
+        {
+          "path": "src/services/weeklyReportNarrative.ts",
+          "size": 30784,
+          "mtime": "2026-04-21T06:25:13.772Z",
+          "ext": ".ts",
+          "keywords": [
+            "risk"
+          ],
+          "lines": 571
+        },
+        {
+          "path": "src/services/weeklyReportPdfCore.ts",
+          "size": 7198,
+          "mtime": "2026-04-21T01:32:07.552Z",
+          "ext": ".ts",
+          "keywords": [
+            "edge"
+          ],
+          "lines": 194
+        },
+        {
+          "path": "src/services/weeklyReportRenderers.ts",
+          "size": 8850,
+          "mtime": "2026-04-21T06:25:13.770Z",
+          "ext": ".ts",
+          "keywords": [
+            "edge"
+          ],
+          "lines": 260
+        },
+        {
+          "path": "src/services/weeklyReportSections.ts",
+          "size": 44784,
+          "mtime": "2026-04-30T04:18:21.031Z",
+          "ext": ".ts",
+          "keywords": [
+            "risk",
+            "stop",
+            "strategy"
+          ],
+          "lines": 1018
+        },
+        {
+          "path": "src/services/weeklyReportService.ts",
+          "size": 40173,
+          "mtime": "2026-04-30T07:53:04.241Z",
+          "ext": ".ts",
+          "keywords": [
+            "risk",
+            "stop",
+            "stoploss",
+            "position",
+            "sizing",
+            "virtual",
+            "autotrade"
+          ],
+          "lines": 1089
+        },
+        {
+          "path": "src/services/weeklyReportShared.ts",
+          "size": 9319,
+          "mtime": "2026-04-21T06:25:13.770Z",
+          "ext": ".ts",
+          "keywords": [],
+          "lines": 291
+        },
+        {
+          "path": "src/telegram/api.ts",
+          "size": 3948,
+          "mtime": "2026-04-24T04:39:52.547Z",
+          "ext": ".ts",
+          "keywords": [
+            "telegram"
+          ],
+          "lines": 96
+        },
+        {
+          "path": "src/telegram/keyboards.ts",
+          "size": 555,
+          "mtime": "2026-03-04T04:25:07.038Z",
+          "ext": ".ts",
+          "keywords": [
+            "telegram"
+          ],
+          "lines": 17
+        },
+        {
+          "path": "src/types/db.ts",
+          "size": 1457,
+          "mtime": "2026-03-05T02:56:38.051Z",
+          "ext": ".ts",
+          "keywords": [],
+          "lines": 68
+        },
+        {
+          "path": "src/utils/cron.ts",
+          "size": 619,
+          "mtime": "2026-03-04T04:25:07.039Z",
+          "ext": ".ts",
+          "keywords": [],
+          "lines": 17
+        },
+        {
+          "path": "src/utils/dataFreshness.ts",
+          "size": 1984,
+          "mtime": "2026-04-20T00:58:58.991Z",
+          "ext": ".ts",
+          "keywords": [],
+          "lines": 62
+        },
+        {
+          "path": "src/utils/fetchMarketData.ts",
+          "size": 7189,
+          "mtime": "2026-04-27T01:35:46.069Z",
+          "ext": ".ts",
+          "keywords": [],
+          "lines": 266
+        },
+        {
+          "path": "src/utils/fetchNews.ts",
+          "size": 3538,
+          "mtime": "2026-04-16T00:26:26.333Z",
+          "ext": ".ts",
+          "keywords": [],
+          "lines": 118
+        },
+        {
+          "path": "src/utils/fetchRealtimePrice.ts",
+          "size": 3885,
+          "mtime": "2026-04-17T09:58:08.747Z",
+          "ext": ".ts",
+          "keywords": [],
+          "lines": 130
+        }
+      ]
+    },
+    "scripts": {
+      "exists": true,
+      "count": 57,
+      "files": [
+        {
+          "path": "scripts/analyze_recommendation_edge.ts",
+          "size": 17357,
+          "mtime": "2026-04-30T05:37:51.916Z",
+          "ext": ".ts",
+          "keywords": [
+            "edge"
+          ],
+          "lines": 478
+        },
+        {
+          "path": "scripts/audit_fundamental_live.ts",
+          "size": 6553,
+          "mtime": "2026-04-17T05:44:54.849Z",
+          "ext": ".ts",
+          "keywords": [],
+          "lines": 186
+        },
+        {
+          "path": "scripts/backfill_split_adjustments.py",
+          "size": 6160,
+          "mtime": "2026-04-17T02:26:35.282Z",
+          "ext": ".py",
+          "keywords": [],
+          "lines": 167
+        },
+        {
+          "path": "scripts/backtest_fundamental_filter.ts",
+          "size": 8206,
+          "mtime": "2026-04-30T04:18:21.015Z",
+          "ext": ".ts",
+          "keywords": [],
+          "lines": 228
+        },
+        {
+          "path": "scripts/backtest_market_picks.ts",
+          "size": 10035,
+          "mtime": "2026-04-16T00:26:26.267Z",
+          "ext": ".ts",
+          "keywords": [
+            "backtest"
+          ],
+          "lines": 334
+        },
+        {
+          "path": "scripts/batch_test_fundamental.ts",
+          "size": 1960,
+          "mtime": "2026-04-17T05:07:21.997Z",
+          "ext": ".ts",
+          "keywords": [],
+          "lines": 52
+        },
+        {
+          "path": "scripts/check_data_sync_health.ts",
+          "size": 4241,
+          "mtime": "2026-04-30T05:44:41.035Z",
+          "ext": ".ts",
+          "keywords": [],
+          "lines": 125
+        },
+        {
+          "path": "scripts/create-snapshot.mjs",
+          "size": 2743,
+          "mtime": "2026-03-04T04:25:07.017Z",
+          "ext": ".mjs",
+          "keywords": [],
+          "lines": 84
+        },
+        {
+          "path": "scripts/daily_batch.py",
+          "size": 43472,
+          "mtime": "2026-04-20T00:58:58.947Z",
+          "ext": ".py",
+          "keywords": [],
+          "lines": 1117
+        },
+        {
+          "path": "scripts/daily_batch_old.py",
+          "size": 35665,
+          "mtime": "2026-04-20T00:58:58.949Z",
+          "ext": ".py",
+          "keywords": [],
+          "lines": 946
+        },
+        {
+          "path": "scripts/diagnose_scan_data.ts",
+          "size": 5165,
+          "mtime": "2026-04-28T08:16:44.199Z",
+          "ext": ".ts",
+          "keywords": [],
+          "lines": 123
+        },
+        {
+          "path": "scripts/etl_fundamentals.ts",
+          "size": 3149,
+          "mtime": "2026-04-30T04:18:21.016Z",
+          "ext": ".ts",
+          "keywords": [],
+          "lines": 94
+        },
+        {
+          "path": "scripts/export_markdown_pdf.ts",
+          "size": 25691,
+          "mtime": "2026-04-23T01:55:03.733Z",
+          "ext": ".ts",
+          "keywords": [],
+          "lines": 778
+        },
+        {
+          "path": "scripts/fundamental_audit_latest.json",
+          "size": 1154,
+          "mtime": "2026-04-17T05:37:00.103Z",
+          "ext": ".json",
+          "keywords": [],
+          "lines": 51
+        },
+        {
+          "path": "scripts/fundamental_results.json",
+          "size": 661,
+          "mtime": "2026-04-17T05:08:25.589Z",
+          "ext": ".json",
+          "keywords": [],
+          "lines": 22
+        },
+        {
+          "path": "scripts/generateSectorsJson.ts",
+          "size": 1503,
+          "mtime": "2026-03-04T04:25:07.018Z",
+          "ext": ".ts",
+          "keywords": [],
+          "lines": 42
+        },
+        {
+          "path": "scripts/generate_local_reports.ts",
+          "size": 4469,
+          "mtime": "2026-04-27T01:35:46.044Z",
+          "ext": ".ts",
+          "keywords": [
+            "risk"
+          ],
+          "lines": 136
+        },
+        {
+          "path": "scripts/generate_stock_scores.py",
+          "size": 8327,
+          "mtime": "2026-04-20T00:58:58.950Z",
+          "ext": ".py",
+          "keywords": [],
+          "lines": 226
+        },
+        {
+          "path": "scripts/map_sectors.py",
+          "size": 5645,
+          "mtime": "2026-03-04T04:25:07.019Z",
+          "ext": ".py",
+          "keywords": [],
+          "lines": 163
+        },
+        {
+          "path": "scripts/md-to-pdf.js",
+          "size": 2582,
+          "mtime": "2026-04-30T08:08:18.075Z",
+          "ext": ".js",
+          "keywords": [
+            "edge"
+          ],
+          "lines": 64
+        },
+        {
+          "path": "scripts/minimist.d.ts",
+          "size": 520,
+          "mtime": "2026-04-30T05:30:32.484Z",
+          "ext": ".ts",
+          "keywords": [
+            "stop"
+          ],
+          "lines": 22
+        },
+        {
+          "path": "scripts/normalize_sectors.py",
+          "size": 3436,
+          "mtime": "2026-03-04T04:25:07.019Z",
+          "ext": ".py",
+          "keywords": [],
+          "lines": 108
+        },
+        {
+          "path": "scripts/normalize_sectors_full.py",
+          "size": 3914,
+          "mtime": "2026-03-04T04:25:07.020Z",
+          "ext": ".py",
+          "keywords": [],
+          "lines": 125
+        },
+        {
+          "path": "scripts/ops/generate_candidate_pdf_local.ts",
+          "size": 2020,
+          "mtime": "2026-04-24T04:54:48.923Z",
+          "ext": ".ts",
+          "keywords": [],
+          "lines": 60
+        },
+        {
+          "path": "scripts/ops/rollback_virtual_trade.ts",
+          "size": 22469,
+          "mtime": "2026-04-21T01:14:48.023Z",
+          "ext": ".ts",
+          "keywords": [
+            "position",
+            "virtual",
+            "autotrade",
+            "strategy"
+          ],
+          "lines": 563
+        },
+        {
+          "path": "scripts/ops/setWebhook.mjs",
+          "size": 3999,
+          "mtime": "2026-04-20T00:58:58.951Z",
+          "ext": ".mjs",
+          "keywords": [
+            "telegram"
+          ],
+          "lines": 101
+        },
+        {
+          "path": "scripts/ops/set_commands.ts",
+          "size": 4709,
+          "mtime": "2026-04-24T04:39:52.547Z",
+          "ext": ".ts",
+          "keywords": [
+            "telegram"
+          ],
+          "lines": 103
+        },
+        {
+          "path": "scripts/ops/trigger_cron_dispatch.ts",
+          "size": 1601,
+          "mtime": "2026-04-27T01:35:46.044Z",
+          "ext": ".ts",
+          "keywords": [
+            "virtual",
+            "autotrade"
+          ],
+          "lines": 55
+        },
+        {
+          "path": "scripts/ops/virtual_autotrade_dry_run.ts",
+          "size": 1218,
+          "mtime": "2026-04-20T00:58:58.952Z",
+          "ext": ".ts",
+          "keywords": [
+            "virtual",
+            "autotrade"
+          ],
+          "lines": 39
+        },
+        {
+          "path": "scripts/ops/virtual_autotrade_enable.ts",
+          "size": 5278,
+          "mtime": "2026-04-20T00:58:58.952Z",
+          "ext": ".ts",
+          "keywords": [
+            "risk",
+            "stop",
+            "stoploss",
+            "position",
+            "virtual",
+            "autotrade"
+          ],
+          "lines": 167
+        },
+        {
+          "path": "scripts/ops/virtual_autotrade_run.ts",
+          "size": 1207,
+          "mtime": "2026-04-20T00:58:58.953Z",
+          "ext": ".ts",
+          "keywords": [
+            "virtual",
+            "autotrade"
+          ],
+          "lines": 39
+        },
+        {
+          "path": "scripts/previewReport.ts",
+          "size": 763,
+          "mtime": "2026-04-20T08:26:27.092Z",
+          "ext": ".ts",
+          "keywords": [],
+          "lines": 22
+        },
+        {
+          "path": "scripts/reconcile_duplicates.ts",
+          "size": 8387,
+          "mtime": "2026-04-30T05:16:16.964Z",
+          "ext": ".ts",
+          "keywords": [
+            "position",
+            "virtual"
+          ],
+          "lines": 205
+        },
+        {
+          "path": "scripts/seedSectors.ts",
+          "size": 7207,
+          "mtime": "2026-03-04T04:25:07.021Z",
+          "ext": ".ts",
+          "keywords": [],
+          "lines": 227
+        },
+        {
+          "path": "scripts/send_today_plan.ts",
+          "size": 4477,
+          "mtime": "2026-04-30T04:18:21.016Z",
+          "ext": ".ts",
+          "keywords": [
+            "risk",
+            "stop",
+            "stoploss",
+            "position",
+            "sizing",
+            "virtual",
+            "autotrade",
+            "telegram"
+          ],
+          "lines": 106
+        },
+        {
+          "path": "scripts/simulate_today_plan.ts",
+          "size": 3059,
+          "mtime": "2026-04-30T04:18:21.017Z",
+          "ext": ".ts",
+          "keywords": [
+            "risk",
+            "stop",
+            "stoploss",
+            "position",
+            "sizing",
+            "virtual",
+            "autotrade"
+          ],
+          "lines": 88
+        },
+        {
+          "path": "scripts/strategy_leaderboard.ts",
+          "size": 5113,
+          "mtime": "2026-04-20T00:58:58.953Z",
+          "ext": ".ts",
+          "keywords": [
+            "virtual",
+            "strategy"
+          ],
+          "lines": 167
+        },
+        {
+          "path": "scripts/sync_scores_from_engine.ts",
+          "size": 1563,
+          "mtime": "2026-04-20T00:58:58.953Z",
+          "ext": ".ts",
+          "keywords": [],
+          "lines": 42
+        },
+        {
+          "path": "scripts/system-analysis.js",
+          "size": 4030,
+          "mtime": "2026-04-30T08:18:21.334Z",
+          "ext": ".js",
+          "keywords": [
+            "risk",
+            "stop",
+            "stoploss",
+            "position",
+            "sizing",
+            "backtest",
+            "virtual",
+            "autotrade",
+            "telegram",
+            "strategy",
+            "edge"
+          ],
+          "lines": 121
+        },
+        {
+          "path": "scripts/test_fundamental.ts",
+          "size": 426,
+          "mtime": "2026-03-26T10:53:46.582Z",
+          "ext": ".ts",
+          "keywords": [],
+          "lines": 16
+        },
+        {
+          "path": "scripts/update_indicators.py",
+          "size": 10374,
+          "mtime": "2026-04-20T00:58:58.954Z",
+          "ext": ".py",
+          "keywords": [],
+          "lines": 279
+        },
+        {
+          "path": "scripts/update_market_data.py",
+          "size": 4597,
+          "mtime": "2026-03-04T04:25:07.022Z",
+          "ext": ".py",
+          "keywords": [],
+          "lines": 122
+        },
+        {
+          "path": "scripts/update_sector_scores.py",
+          "size": 17534,
+          "mtime": "2026-04-20T00:58:58.955Z",
+          "ext": ".py",
+          "keywords": [],
+          "lines": 478
+        },
+        {
+          "path": "scripts/update_stock_scores.py",
+          "size": 3782,
+          "mtime": "2026-04-20T00:58:58.956Z",
+          "ext": ".py",
+          "keywords": [],
+          "lines": 125
+        },
+        {
+          "path": "scripts/verify_fundamental_parser.ts",
+          "size": 3289,
+          "mtime": "2026-04-17T05:30:58.911Z",
+          "ext": ".ts",
+          "keywords": [],
+          "lines": 101
+        },
+        {
+          "path": "scripts/_check_db.py",
+          "size": 1593,
+          "mtime": "2026-03-04T05:55:09.994Z",
+          "ext": ".py",
+          "keywords": [],
+          "lines": 42
+        },
+        {
+          "path": "scripts/_check_pykrx.py",
+          "size": 4633,
+          "mtime": "2026-03-04T04:25:07.015Z",
+          "ext": ".py",
+          "keywords": [],
+          "lines": 101
+        },
+        {
+          "path": "scripts/_fetch_sectors.py",
+          "size": 13016,
+          "mtime": "2026-03-04T04:25:07.015Z",
+          "ext": ".py",
+          "keywords": [],
+          "lines": 363
+        },
+        {
+          "path": "scripts/_fixStocksAndMapSectors.ts",
+          "size": 5400,
+          "mtime": "2026-03-04T04:25:07.016Z",
+          "ext": ".ts",
+          "keywords": [],
+          "lines": 183
+        },
+        {
+          "path": "scripts/_price_adjustment.py",
+          "size": 2818,
+          "mtime": "2026-04-17T02:22:11.652Z",
+          "ext": ".py",
+          "keywords": [],
+          "lines": 87
+        },
+        {
+          "path": "scripts/_syncSectors.ts",
+          "size": 6635,
+          "mtime": "2026-03-04T04:25:07.016Z",
+          "ext": ".ts",
+          "keywords": [],
+          "lines": 210
+        },
+        {
+          "path": "scripts/_syncSectorsToStocks.ts",
+          "size": 8183,
+          "mtime": "2026-03-04T04:25:07.017Z",
+          "ext": ".ts",
+          "keywords": [],
+          "lines": 245
+        },
+        {
+          "path": "scripts/__pycache__/backfill_split_adjustments.cpython-313.pyc",
+          "size": 10242,
+          "mtime": "2026-04-17T02:19:48.902Z",
+          "ext": ".pyc"
+        },
+        {
+          "path": "scripts/__pycache__/daily_batch.cpython-313.pyc",
+          "size": 56823,
+          "mtime": "2026-04-17T02:19:48.910Z",
+          "ext": ".pyc"
+        },
+        {
+          "path": "scripts/__pycache__/update_indicators.cpython-313.pyc",
+          "size": 6275,
+          "mtime": "2026-04-17T02:19:48.911Z",
+          "ext": ".pyc"
+        },
+        {
+          "path": "scripts/__pycache__/_price_adjustment.cpython-313.pyc",
+          "size": 4388,
+          "mtime": "2026-04-17T02:24:21.361Z",
+          "ext": ".pyc"
+        },
+        {
+          "path": "scripts/__refactor.sh",
+          "size": 4532,
+          "mtime": "2026-03-04T04:25:07.014Z",
+          "ext": ".sh"
+        }
+      ]
+    },
+    "api": {
+      "exists": true,
+      "count": 12,
+      "files": [
+        {
+          "path": "api/cron/briefing.ts",
+          "size": 7051,
+          "mtime": "2026-04-23T08:38:45.890Z",
+          "ext": ".ts",
+          "keywords": [
+            "risk",
+            "telegram"
+          ],
+          "lines": 177
+        },
+        {
+          "path": "api/cron/index.ts",
+          "size": 10986,
+          "mtime": "2026-04-30T05:37:43.264Z",
+          "ext": ".ts",
+          "keywords": [
+            "virtual",
+            "autotrade",
+            "telegram",
+            "strategy"
+          ],
+          "lines": 361
+        },
+        {
+          "path": "api/cron/report.ts",
+          "size": 3146,
+          "mtime": "2026-04-27T01:35:46.038Z",
+          "ext": ".ts",
+          "keywords": [
+            "telegram"
+          ],
+          "lines": 95
+        },
+        {
+          "path": "api/cron/scoreSync.ts",
+          "size": 2468,
+          "mtime": "2026-04-27T01:35:46.039Z",
+          "ext": ".ts",
+          "keywords": [],
+          "lines": 76
+        },
+        {
+          "path": "api/cron/strategyGateRefresh.ts",
+          "size": 11227,
+          "mtime": "2026-04-30T07:49:12.491Z",
+          "ext": ".ts",
+          "keywords": [
+            "virtual",
+            "autotrade",
+            "telegram",
+            "strategy"
+          ],
+          "lines": 335
+        },
+        {
+          "path": "api/cron/virtualAutoTrade.ts",
+          "size": 2894,
+          "mtime": "2026-04-27T01:35:46.040Z",
+          "ext": ".ts",
+          "keywords": [
+            "virtual",
+            "autotrade",
+            "telegram"
+          ],
+          "lines": 90
+        },
+        {
+          "path": "api/index.ts",
+          "size": 651,
+          "mtime": "2026-04-23T08:39:32.962Z",
+          "ext": ".ts",
+          "keywords": [
+            "telegram"
+          ],
+          "lines": 20
+        },
+        {
+          "path": "api/telegram.ts",
+          "size": 3026,
+          "mtime": "2026-04-23T02:43:51.758Z",
+          "ext": ".ts",
+          "keywords": [
+            "telegram"
+          ],
+          "lines": 93
+        },
+        {
+          "path": "api/update/index.ts",
+          "size": 952,
+          "mtime": "2026-03-04T04:25:07.007Z",
+          "ext": ".ts",
+          "keywords": [
+            "telegram"
+          ],
+          "lines": 35
+        },
+        {
+          "path": "api/update/sectors.ts",
+          "size": 2349,
+          "mtime": "2026-04-27T01:35:46.040Z",
+          "ext": ".ts",
+          "keywords": [],
+          "lines": 76
+        },
+        {
+          "path": "api/update/stocks.ts",
+          "size": 3848,
+          "mtime": "2026-04-27T01:35:46.041Z",
+          "ext": ".ts",
+          "keywords": [],
+          "lines": 120
+        },
+        {
+          "path": "api/worker.ts",
+          "size": 18083,
+          "mtime": "2026-04-30T07:18:30.207Z",
+          "ext": ".ts",
+          "keywords": [
+            "telegram"
+          ],
+          "lines": 600
+        }
+      ]
+    },
+    "data": {
+      "exists": true,
+      "count": 3,
+      "files": [
+        {
+          "path": "data/all_krx.json",
+          "size": 337635,
+          "mtime": "2026-03-04T04:25:07.010Z",
+          "ext": ".json",
+          "keywords": [],
+          "lines": 18222
+        },
+        {
+          "path": "data/sectors.json",
+          "size": 19721,
+          "mtime": "2026-03-04T04:25:07.011Z",
+          "ext": ".json",
+          "keywords": [],
+          "lines": 881
+        },
+        {
+          "path": "data/sector_aliases.json",
+          "size": 2,
+          "mtime": "2026-03-04T04:25:07.011Z",
+          "ext": ".json",
+          "keywords": [],
+          "lines": 1
+        }
+      ]
+    },
+    "db": {
+      "exists": true,
+      "count": 1,
+      "files": [
+        {
+          "path": "db/migrations/001_create_fundamentals.sql",
+          "size": 798,
+          "mtime": "2026-04-30T04:18:21.011Z",
+          "ext": ".sql"
+        }
+      ]
+    }
+  },
+  "summary": {
+    "keywordMatches": [
+      {
+        "path": "src/bot/accessControl.ts",
+        "keywords": [
+          "telegram"
+        ]
+      },
+      {
+        "path": "src/bot/callbackRouter.ts",
+        "keywords": [
+          "risk",
+          "telegram",
+          "strategy"
+        ]
+      },
+      {
+        "path": "src/bot/commandCatalog.ts",
+        "keywords": [
+          "risk",
+          "telegram",
+          "strategy"
+        ]
+      },
+      {
+        "path": "src/bot/commands/alert.ts",
+        "keywords": [
+          "risk"
+        ]
+      },
+      {
+        "path": "src/bot/commands/autoCycle.ts",
+        "keywords": [
+          "risk",
+          "stop",
+          "position",
+          "sizing",
+          "virtual",
+          "autotrade",
+          "strategy"
+        ]
+      },
+      {
+        "path": "src/bot/commands/autoReport.ts",
+        "keywords": [
+          "stop",
+          "stoploss",
+          "backtest",
+          "virtual",
+          "autotrade"
+        ]
+      },
+      {
+        "path": "src/bot/commands/autoTradeOps.ts",
+        "keywords": [
+          "backtest",
+          "virtual",
+          "autotrade",
+          "telegram"
+        ]
+      },
+      {
+        "path": "src/bot/commands/brief.ts",
+        "keywords": [
+          "risk"
+        ]
+      },
+      {
+        "path": "src/bot/commands/buy.ts",
+        "keywords": [
+          "risk",
+          "stop",
+          "stoploss",
+          "position",
+          "sizing",
+          "virtual",
+          "autotrade"
+        ]
+      },
+      {
+        "path": "src/bot/commands/capital.ts",
+        "keywords": [
+          "risk"
+        ]
+      },
+      {
+        "path": "src/bot/commands/economy.ts",
+        "keywords": [
+          "risk"
+        ]
+      },
+      {
+        "path": "src/bot/commands/market.ts",
+        "keywords": [
+          "risk"
+        ]
+      },
+      {
+        "path": "src/bot/commands/marketPicks.ts",
+        "keywords": [
+          "risk",
+          "virtual",
+          "autotrade",
+          "strategy"
+        ]
+      },
+      {
+        "path": "src/bot/commands/onboarding.ts",
+        "keywords": [
+          "risk",
+          "strategy"
+        ]
+      },
+      {
+        "path": "src/bot/commands/opsTrigger.ts",
+        "keywords": [
+          "virtual",
+          "autotrade",
+          "telegram",
+          "strategy"
+        ]
+      },
+      {
+        "path": "src/bot/commands/preMarketPlan.ts",
+        "keywords": [
+          "risk",
+          "stop",
+          "stoploss",
+          "position",
+          "sizing",
+          "virtual",
+          "autotrade",
+          "strategy"
+        ]
+      },
+      {
+        "path": "src/bot/commands/preMarketPlanAdaptive.ts",
+        "keywords": [
+          "risk"
+        ]
+      },
+      {
+        "path": "src/bot/commands/profile.ts",
+        "keywords": [
+          "risk"
+        ]
+      },
+      {
+        "path": "src/bot/commands/pullback.ts",
+        "keywords": [
+          "risk"
+        ]
+      },
+      {
+        "path": "src/bot/commands/report.ts",
+        "keywords": [
+          "risk",
+          "stop",
+          "stoploss",
+          "virtual",
+          "autotrade",
+          "telegram",
+          "strategy"
+        ]
+      },
+      {
+        "path": "src/bot/commands/scan.ts",
+        "keywords": [
+          "risk"
+        ]
+      },
+      {
+        "path": "src/bot/commands/score.ts",
+        "keywords": [
+          "risk",
+          "stop",
+          "strategy"
+        ]
+      },
+      {
+        "path": "src/bot/commands/sector.ts",
+        "keywords": [
+          "risk"
+        ]
+      },
+      {
+        "path": "src/bot/commands/stocks.ts",
+        "keywords": [
+          "risk"
+        ]
+      },
+      {
+        "path": "src/bot/commands/strategySelect.ts",
+        "keywords": [
+          "risk",
+          "virtual",
+          "autotrade",
+          "strategy"
+        ]
+      },
+      {
+        "path": "src/bot/commands/watchlist.ts",
+        "keywords": [
+          "risk",
+          "stop",
+          "stoploss",
+          "position",
+          "virtual",
+          "strategy"
+        ]
+      },
+      {
+        "path": "src/bot/commands/weeklyCopilot.ts",
+        "keywords": [
+          "risk"
+        ]
+      },
+      {
+        "path": "src/bot/menu/menuTree.ts",
+        "keywords": [
+          "risk",
+          "telegram"
+        ]
+      },
+      {
+        "path": "src/bot/messages/layout.ts",
+        "keywords": [
+          "telegram"
+        ]
+      },
+      {
+        "path": "src/bot/router.ts",
+        "keywords": [
+          "telegram"
+        ]
+      },
+      {
+        "path": "src/bot/routing/commandPatterns.ts",
+        "keywords": [
+          "risk",
+          "backtest",
+          "strategy"
+        ]
+      },
+      {
+        "path": "src/bot/routing/commandRoutes.ts",
+        "keywords": [
+          "risk",
+          "backtest",
+          "autotrade",
+          "strategy"
+        ]
+      },
+      {
+        "path": "src/bot/routing/startMessage.ts",
+        "keywords": [
+          "risk"
+        ]
+      },
+      {
+        "path": "src/db/portfolioSchema.ts",
+        "keywords": [
+          "position",
+          "virtual",
+          "strategy"
+        ]
+      },
+      {
+        "path": "src/lib/apiUpdateShared.ts",
+        "keywords": [
+          "telegram"
+        ]
+      },
+      {
+        "path": "src/lib/investableUniverse.ts",
+        "keywords": [
+          "risk"
+        ]
+      },
+      {
+        "path": "src/lib/investPlan.ts",
+        "keywords": [
+          "risk",
+          "stop"
+        ]
+      },
+      {
+        "path": "src/lib/strategyMemo.ts",
+        "keywords": [
+          "autotrade",
+          "strategy"
+        ]
+      },
+      {
+        "path": "src/lib/watchlistSignals.ts",
+        "keywords": [
+          "stop",
+          "stoploss"
+        ]
+      },
+      {
+        "path": "src/score/engine.ts",
+        "keywords": [
+          "stop"
+        ]
+      },
+      {
+        "path": "src/services/autoCycleBriefingService.ts",
+        "keywords": [
+          "virtual",
+          "autotrade",
+          "strategy"
+        ]
+      },
+      {
+        "path": "src/services/briefingService.ts",
+        "keywords": [
+          "risk",
+          "stop",
+          "position",
+          "virtual",
+          "strategy"
+        ]
+      },
+      {
+        "path": "src/services/decisionLogService.ts",
+        "keywords": [
+          "virtual",
+          "strategy"
+        ]
+      },
+      {
+        "path": "src/services/longTermCoachService.ts",
+        "keywords": [
+          "position",
+          "virtual",
+          "autotrade",
+          "strategy"
+        ]
+      },
+      {
+        "path": "src/services/marketInsightService.ts",
+        "keywords": [
+          "risk",
+          "sizing",
+          "virtual",
+          "autotrade",
+          "strategy"
+        ]
+      },
+      {
+        "path": "src/services/newsRiskFilter.ts",
+        "keywords": [
+          "risk"
+        ]
+      },
+      {
+        "path": "src/services/opsStatusService.ts",
+        "keywords": [
+          "virtual",
+          "autotrade"
+        ]
+      },
+      {
+        "path": "src/services/personalizedGuidanceService.ts",
+        "keywords": [
+          "position",
+          "virtual",
+          "autotrade",
+          "strategy"
+        ]
+      },
+      {
+        "path": "src/services/portfolioService.ts",
+        "keywords": [
+          "position",
+          "virtual"
+        ]
+      },
+      {
+        "path": "src/services/riskSignalService.ts",
+        "keywords": [
+          "risk",
+          "strategy"
+        ]
+      },
+      {
+        "path": "src/services/scanRunLogService.ts",
+        "keywords": [
+          "risk"
+        ]
+      },
+      {
+        "path": "src/services/strategyGateStateService.ts",
+        "keywords": [
+          "virtual",
+          "strategy"
+        ]
+      },
+      {
+        "path": "src/services/userService.ts",
+        "keywords": [
+          "risk",
+          "position",
+          "virtual",
+          "autotrade",
+          "telegram",
+          "strategy"
+        ]
+      },
+      {
+        "path": "src/services/virtualAutoTradeAlert.ts",
+        "keywords": [
+          "autotrade",
+          "telegram"
+        ]
+      },
+      {
+        "path": "src/services/virtualAutoTradeCronAlert.ts",
+        "keywords": [
+          "virtual",
+          "autotrade"
+        ]
+      },
+      {
+        "path": "src/services/virtualAutoTradeObservability.ts",
+        "keywords": [
+          "autotrade"
+        ]
+      },
+      {
+        "path": "src/services/virtualAutoTradePacingService.ts",
+        "keywords": [
+          "virtual",
+          "autotrade"
+        ]
+      },
+      {
+        "path": "src/services/virtualAutoTradePositionStrategy.ts",
+        "keywords": [
+          "risk",
+          "stop",
+          "stoploss",
+          "position",
+          "autotrade",
+          "strategy"
+        ]
+      },
+      {
+        "path": "src/services/virtualAutoTradeSelection.ts",
+        "keywords": [
+          "risk",
+          "position",
+          "autotrade",
+          "strategy"
+        ]
+      },
+      {
+        "path": "src/services/virtualAutoTradeService.ts",
+        "keywords": [
+          "risk",
+          "stop",
+          "stoploss",
+          "position",
+          "sizing",
+          "backtest",
+          "virtual",
+          "autotrade",
+          "telegram",
+          "strategy"
+        ]
+      },
+      {
+        "path": "src/services/virtualAutoTradeSignalGate.ts",
+        "keywords": [
+          "stop",
+          "autotrade"
+        ]
+      },
+      {
+        "path": "src/services/virtualAutoTradeSizing.ts",
+        "keywords": [
+          "risk",
+          "stop",
+          "stoploss",
+          "position",
+          "sizing",
+          "virtual",
+          "autotrade"
+        ]
+      },
+      {
+        "path": "src/services/virtualAutoTradeTiming.ts",
+        "keywords": [
+          "autotrade"
+        ]
+      },
+      {
+        "path": "src/services/weeklyReportLayout.ts",
+        "keywords": [
+          "edge"
+        ]
+      },
+      {
+        "path": "src/services/weeklyReportNarrative.ts",
+        "keywords": [
+          "risk"
+        ]
+      },
+      {
+        "path": "src/services/weeklyReportPdfCore.ts",
+        "keywords": [
+          "edge"
+        ]
+      },
+      {
+        "path": "src/services/weeklyReportRenderers.ts",
+        "keywords": [
+          "edge"
+        ]
+      },
+      {
+        "path": "src/services/weeklyReportSections.ts",
+        "keywords": [
+          "risk",
+          "stop",
+          "strategy"
+        ]
+      },
+      {
+        "path": "src/services/weeklyReportService.ts",
+        "keywords": [
+          "risk",
+          "stop",
+          "stoploss",
+          "position",
+          "sizing",
+          "virtual",
+          "autotrade"
+        ]
+      },
+      {
+        "path": "src/telegram/api.ts",
+        "keywords": [
+          "telegram"
+        ]
+      },
+      {
+        "path": "src/telegram/keyboards.ts",
+        "keywords": [
+          "telegram"
+        ]
+      },
+      {
+        "path": "scripts/analyze_recommendation_edge.ts",
+        "keywords": [
+          "edge"
+        ]
+      },
+      {
+        "path": "scripts/backtest_market_picks.ts",
+        "keywords": [
+          "backtest"
+        ]
+      },
+      {
+        "path": "scripts/generate_local_reports.ts",
+        "keywords": [
+          "risk"
+        ]
+      },
+      {
+        "path": "scripts/md-to-pdf.js",
+        "keywords": [
+          "edge"
+        ]
+      },
+      {
+        "path": "scripts/minimist.d.ts",
+        "keywords": [
+          "stop"
+        ]
+      },
+      {
+        "path": "scripts/ops/rollback_virtual_trade.ts",
+        "keywords": [
+          "position",
+          "virtual",
+          "autotrade",
+          "strategy"
+        ]
+      },
+      {
+        "path": "scripts/ops/setWebhook.mjs",
+        "keywords": [
+          "telegram"
+        ]
+      },
+      {
+        "path": "scripts/ops/set_commands.ts",
+        "keywords": [
+          "telegram"
+        ]
+      },
+      {
+        "path": "scripts/ops/trigger_cron_dispatch.ts",
+        "keywords": [
+          "virtual",
+          "autotrade"
+        ]
+      },
+      {
+        "path": "scripts/ops/virtual_autotrade_dry_run.ts",
+        "keywords": [
+          "virtual",
+          "autotrade"
+        ]
+      },
+      {
+        "path": "scripts/ops/virtual_autotrade_enable.ts",
+        "keywords": [
+          "risk",
+          "stop",
+          "stoploss",
+          "position",
+          "virtual",
+          "autotrade"
+        ]
+      },
+      {
+        "path": "scripts/ops/virtual_autotrade_run.ts",
+        "keywords": [
+          "virtual",
+          "autotrade"
+        ]
+      },
+      {
+        "path": "scripts/reconcile_duplicates.ts",
+        "keywords": [
+          "position",
+          "virtual"
+        ]
+      },
+      {
+        "path": "scripts/send_today_plan.ts",
+        "keywords": [
+          "risk",
+          "stop",
+          "stoploss",
+          "position",
+          "sizing",
+          "virtual",
+          "autotrade",
+          "telegram"
+        ]
+      },
+      {
+        "path": "scripts/simulate_today_plan.ts",
+        "keywords": [
+          "risk",
+          "stop",
+          "stoploss",
+          "position",
+          "sizing",
+          "virtual",
+          "autotrade"
+        ]
+      },
+      {
+        "path": "scripts/strategy_leaderboard.ts",
+        "keywords": [
+          "virtual",
+          "strategy"
+        ]
+      },
+      {
+        "path": "scripts/system-analysis.js",
+        "keywords": [
+          "risk",
+          "stop",
+          "stoploss",
+          "position",
+          "sizing",
+          "backtest",
+          "virtual",
+          "autotrade",
+          "telegram",
+          "strategy",
+          "edge"
+        ]
+      },
+      {
+        "path": "api/cron/briefing.ts",
+        "keywords": [
+          "risk",
+          "telegram"
+        ]
+      },
+      {
+        "path": "api/cron/index.ts",
+        "keywords": [
+          "virtual",
+          "autotrade",
+          "telegram",
+          "strategy"
+        ]
+      },
+      {
+        "path": "api/cron/report.ts",
+        "keywords": [
+          "telegram"
+        ]
+      },
+      {
+        "path": "api/cron/strategyGateRefresh.ts",
+        "keywords": [
+          "virtual",
+          "autotrade",
+          "telegram",
+          "strategy"
+        ]
+      },
+      {
+        "path": "api/cron/virtualAutoTrade.ts",
+        "keywords": [
+          "virtual",
+          "autotrade",
+          "telegram"
+        ]
+      },
+      {
+        "path": "api/index.ts",
+        "keywords": [
+          "telegram"
+        ]
+      },
+      {
+        "path": "api/telegram.ts",
+        "keywords": [
+          "telegram"
+        ]
+      },
+      {
+        "path": "api/update/index.ts",
+        "keywords": [
+          "telegram"
+        ]
+      },
+      {
+        "path": "api/worker.ts",
+        "keywords": [
+          "telegram"
+        ]
+      }
+    ],
+    "largeFiles": [
+      {
+        "path": "data/all_krx.json",
+        "size": 337635
+      }
+    ]
+  }
+}
