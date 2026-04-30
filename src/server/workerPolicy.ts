@@ -21,7 +21,8 @@ export type WorkerTimeouts = {
 export const DEFAULT_WORKER_TIMEOUTS: WorkerTimeouts = {
   tg: {
     defaultMs: 5000,
-    documentMs: 30000,
+    // PDF/파일 전송은 네트워크 업로드가 필요하므로 기본 타임아웃을 기존 30s에서 60s로 상향합니다.
+    documentMs: 60000,
   },
   job: {
     defaultMs: 20000,

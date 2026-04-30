@@ -28,6 +28,7 @@ import { fetchStrategyGateState } from "../../services/strategyGateStateService"
 import { getUserInvestmentPrefs } from "../../services/userService";
 import { handlePreMarketPlanCommand } from "./preMarketPlan";
 import { ACTIONS, actionButtons, buildRecommendationActionButtons } from "../messages/layout";
+import { sendLongMessage } from "../lib/tgHelpers";
 
 const REPORT_TOPIC_GUIDE = [
   { command: "주간", aliases: ["주간", "종합", "전체", "full", "weekly"], description: "시장과 포트폴리오를 함께 보는 종합 PDF" },
@@ -586,14 +587,13 @@ async function handleDailyCandidateReportCommand(
     const detail = e instanceof Error ? e.message : String(e);
     if (report) {
       // 리포트 데이터는 있으나 PDF 전송에 실패한 경우 → 텍스트로 대체
-      await tgSend("sendMessage", {
-        chat_id: ctx.chatId,
-        text: [
-          "추천 PDF 전송에 실패해 텍스트 리포트로 대체합니다.",
-          `원인: ${detail}`,
-          "",
-          report.text,
-        ].join("\n"),
+      const textStr = [
+        "추천 PDF 전송에 실패해 텍스트 리포트로 대체합니다.",
+        `원인: ${detail}`,
+        "",
+        report.text,
+      ].join("\n");
+      await sendLongMessage(tgSend, ctx.chatId, textStr, {
         parse_mode: "HTML",
         reply_markup: actionButtons(
           buildRecommendationActionButtons(report.actionItems, [...ACTIONS.recommendationFollowup, ...ACTIONS.reportMenu]),
@@ -711,14 +711,13 @@ async function handlePublicDailyCandidateReportCommand(
   } catch (e: any) {
     const detail = e instanceof Error ? e.message : String(e);
     if (report) {
-      await tgSend("sendMessage", {
-        chat_id: ctx.chatId,
-        text: [
-          "추천 PDF 전송에 실패해 텍스트 리포트로 대체합니다.",
-          `원인: ${detail}`,
-          "",
-          report.text,
-        ].join("\n"),
+      const textStr = [
+        "추천 PDF 전송에 실패해 텍스트 리포트로 대체합니다.",
+        `원인: ${detail}`,
+        "",
+        report.text,
+      ].join("\n");
+      await sendLongMessage(tgSend, ctx.chatId, textStr, {
         parse_mode: "HTML",
         reply_markup: actionButtons(
           buildRecommendationActionButtons(report.actionItems, [...ACTIONS.recommendationFollowupCompact, ...ACTIONS.reportMenu]),
@@ -1406,16 +1405,14 @@ export async function handleReportCommand(
         elapsedMs: Date.now() - startedAt,
         error: sendError,
       });
-      await tgSend("sendMessage", {
-        chat_id: ctx.chatId,
-        text: [
-          `${report.title} PDF 전송에 실패했습니다.`,
-          `사유: ${sendError}`,
-          "텍스트 요약으로 대체합니다.",
-          "",
-          report.summaryText,
-        ].join("\n"),
-      });
+      const textStr = [
+        `${report.title} PDF 전송에 실패했습니다.`,
+        `사유: ${sendError}`,
+        "텍스트 요약으로 대체합니다.",
+        "",
+        report.summaryText,
+      ].join("\n");
+      await sendLongMessage(tgSend, ctx.chatId, textStr);
       return;
     }
 
