@@ -912,152 +912,51 @@ function getCandidateHeaderHighlight(line: string): { fill: RGB; text: RGB } {
   return { fill: rgb(0.95, 0.95, 0.97), text: rgb(0.12, 0.12, 0.16) };
 }
 
-function drawCandidateCharts(ctx: ReportContext, forecasts: DailyCandidateForecast[]) {
+function drawCandidateSummaryTable(ctx: ReportContext, forecasts: DailyCandidateForecast[]) {
   if (!forecasts.length) return;
 
-  const bodySize = 8;
   const labelSize = 7.5;
-  const bodyLineHeight = Math.round(bodySize * 1.45);
-  const sectionTitleSize = 10;
+  const bodySize = 8;
+  const rowH = 20;
+  const theme = getReportTheme("full");
 
-  // ── 레이아웃 공통 상수 ───────────────────────────────────────────────────
-  const axisLabelW = 86;    // 종목명 전용 영역 (긴 이름 대비)
-  const rightNumW = 50;     // 오른쪽 수치 전용 고정 영역
-  const chartW = ctx.BODY_W - axisLabelW - rightNumW;  // 바 차트 실제 너비
-  const chartX = ctx.ML + axisLabelW;
+  ctx.ensureSpace(rowH * (forecasts.length + 1) + 24);
 
-  // ── 1. 리스크-리워드 밴드 차트 ──────────────────────────────────────────
-  ctx.ensureSpace(28);
-  ctx.textBold("후보 리스크-리워드 비교", ctx.ML, ctx.y, sectionTitleSize, rgb(0.10, 0.28, 0.52), ctx.BODY_W);
-  ctx.y -= Math.round(sectionTitleSize * 1.45) + 2;
-  ctx.textLight(
-    "손실 한도(-) / 기준 수익(+) / 상단 수익(+) 범위를 종목별로 비교합니다.",
-    ctx.ML, ctx.y, bodySize, rgb(0.36, 0.36, 0.42), ctx.BODY_W
-  );
-  ctx.y -= bodyLineHeight + 8;
+  // 헤더
+  const col0 = ctx.ML;
+  const col1 = ctx.ML + 100;
+  const col2 = ctx.ML + 185;
+  const col3 = ctx.ML + ctx.BODY_W;
 
-  const rowH = 24;
-
-  // 스케일
-  const maxLoss = Math.max(2, ...forecasts.map((f) => f.expectedDrawdownPct));
-  const maxGain = Math.max(2, ...forecasts.map((f) => f.expectedUpsidePct));
-  const totalSpan = maxLoss + maxGain;
-  const zeroX = chartX + (maxLoss / totalSpan) * chartW;
-
-  // 축 상단 레이블 & 세로 기준선
-  ctx.ensureSpace(forecasts.length * (rowH + 6) + 44);
-  ctx.line(zeroX, ctx.y, zeroX, ctx.y - forecasts.length * (rowH + 6) - 10, rgb(0.60, 0.62, 0.68), 0.6);
-  ctx.textRightLight("0%", zeroX - 3, ctx.y + 4, labelSize, rgb(0.50, 0.52, 0.58));
-
-  ctx.y -= 10;
+  ctx.rect(ctx.ML, ctx.y - rowH + 5, ctx.BODY_W, rowH, theme.softBg);
+  ctx.textLight("종목", col0 + 4, ctx.y, labelSize, theme.subtitle);
+  ctx.textLight("전략", col1, ctx.y, labelSize, theme.subtitle);
+  ctx.textLight("손실/목표", col2, ctx.y, labelSize, theme.subtitle);
+  ctx.textRight("모멘텀 / 밸류 / 안전성", col3 - 4, ctx.y, labelSize, theme.subtitle);
+  ctx.y -= rowH;
 
   for (const item of forecasts) {
-    const lossW = (item.expectedDrawdownPct / totalSpan) * chartW;
-    const baseW = Math.max(0, (item.expectedBasePct / totalSpan) * chartW);
-    const upsideW = (item.expectedUpsidePct / totalSpan) * chartW;
-    const barH = rowH - 10;
-    const barY = ctx.y - rowH + 8;
-    const midY = barY + barH / 2 - 2;
+    ctx.ensureSpace(rowH + 4);
+    ctx.line(ctx.ML, ctx.y + 4, ctx.ML + ctx.BODY_W, ctx.y + 4, theme.border, 0.4);
 
-    // ─ 손실 바 (왼쪽, 빨강)
-    ctx.rect(zeroX - lossW, barY, lossW, barH, rgb(0.96, 0.88, 0.88));
-    ctx.line(zeroX - lossW, barY, zeroX, barY, rgb(0.82, 0.26, 0.26), 0.6);
-    ctx.line(zeroX - lossW, barY + barH, zeroX, barY + barH, rgb(0.82, 0.26, 0.26), 0.6);
-    ctx.line(zeroX - lossW, barY, zeroX - lossW, barY + barH, rgb(0.82, 0.26, 0.26), 0.6);
+    ctx.textBold(item.name, col0 + 4, ctx.y, bodySize, rgb(0.10, 0.10, 0.16), 92);
+    ctx.textLight(item.strategyLabel, col1, ctx.y, labelSize, theme.subtitle, 82);
 
-    // ─ 기준수익 바 (초록)
-    if (baseW > 0) {
-      ctx.rect(zeroX, barY, baseW, barH, rgb(0.86, 0.96, 0.89));
-    }
-    // ─ 상단수익 바 (연초록)
-    if (upsideW > baseW) {
-      ctx.rect(zeroX + baseW, barY, upsideW - baseW, barH, rgb(0.93, 0.99, 0.94));
-      ctx.line(zeroX, barY, zeroX + upsideW, barY, rgb(0.26, 0.52, 0.36), 0.6);
-      ctx.line(zeroX, barY + barH, zeroX + upsideW, barY + barH, rgb(0.26, 0.52, 0.36), 0.6);
-      ctx.line(zeroX + upsideW, barY, zeroX + upsideW, barY + barH, rgb(0.26, 0.52, 0.36), 0.6);
-      ctx.line(zeroX + baseW, barY, zeroX + baseW, barY + barH, rgb(0.26, 0.52, 0.36), 0.8);
-    } else if (baseW > 0) {
-      ctx.line(zeroX, barY, zeroX + baseW, barY, rgb(0.26, 0.52, 0.36), 0.6);
-      ctx.line(zeroX, barY + barH, zeroX + baseW, barY + barH, rgb(0.26, 0.52, 0.36), 0.6);
-      ctx.line(zeroX + baseW, barY, zeroX + baseW, barY + barH, rgb(0.26, 0.52, 0.36), 0.6);
-    }
+    const lossColor = rgb(0.74, 0.16, 0.16);
+    const gainColor = rgb(0.12, 0.44, 0.24);
+    ctx.text(`-${item.expectedDrawdownPct.toFixed(1)}%`, col2, ctx.y, labelSize, lossColor);
+    ctx.text(` / +${item.expectedUpsidePct.toFixed(1)}%`, col2 + 32, ctx.y, labelSize, gainColor);
 
-    // ─ 수치 라벨: 손실(바 왼쪽 끝 고정), 상단수익(오른쪽 고정 영역)
-    ctx.textRightLight(`-${item.expectedDrawdownPct.toFixed(1)}%`, chartX - 5, midY, labelSize, rgb(0.68, 0.22, 0.22));
-    ctx.text(`+${item.expectedUpsidePct.toFixed(1)}%`, chartX + chartW + 8, midY, labelSize, rgb(0.18, 0.44, 0.28));
+    const { momentum, value, safety } = item.scoreComponents;
+    ctx.textRight(
+      `${momentum.toFixed(0)} / ${value.toFixed(0)} / ${safety.toFixed(0)}`,
+      col3 - 4, ctx.y, labelSize, rgb(0.28, 0.28, 0.36)
+    );
 
-    // ─ 종목 라벨
-    ctx.textLight(item.name, ctx.ML, ctx.y - rowH / 2 - 2, labelSize, rgb(0.18, 0.18, 0.24), axisLabelW - 10);
-
-    ctx.y -= rowH + 4;
+    ctx.y -= rowH;
   }
 
   ctx.y -= 8;
-
-  // 범례
-  ctx.rect(ctx.ML, ctx.y - 7, 10, 7, rgb(0.96, 0.88, 0.88));
-  ctx.text("손실 한도", ctx.ML + 13, ctx.y - 1, labelSize, rgb(0.42, 0.42, 0.48));
-  ctx.rect(ctx.ML + 58, ctx.y - 7, 10, 7, rgb(0.86, 0.96, 0.89));
-  ctx.text("기준 수익", ctx.ML + 71, ctx.y - 1, labelSize, rgb(0.42, 0.42, 0.48));
-  ctx.rect(ctx.ML + 116, ctx.y - 7, 10, 7, rgb(0.93, 0.99, 0.94));
-  ctx.text("상단 수익", ctx.ML + 129, ctx.y - 1, labelSize, rgb(0.42, 0.42, 0.48));
-  ctx.y -= 28;  // 섹션 2와 간격
-
-  // ── 2. 점수 구성 가로 막대 차트 ──────────────────────────────────────────
-  ctx.ensureSpace(28);
-  ctx.textBold("후보 점수 구성 프로파일", ctx.ML, ctx.y, sectionTitleSize, rgb(0.10, 0.28, 0.52), ctx.BODY_W);
-  ctx.y -= Math.round(sectionTitleSize * 1.45) + 2;
-  ctx.textLight(
-    "모멘텀(추세·가속도) / 밸류(가격 매력도) / 안전성(리스크 억제) 점수를 종목별로 보여줍니다.",
-    ctx.ML, ctx.y, bodySize, rgb(0.36, 0.36, 0.42), ctx.BODY_W
-  );
-  ctx.y -= bodyLineHeight + 8;
-
-  const scoreBarW = chartW;  // 바 너비 통일
-  const scoreX = chartX;
-  const scoreRowH = 32;
-  const subBarH = 6;
-  const subBarGap = 4;
-
-  ctx.ensureSpace(forecasts.length * (scoreRowH + 8) + 20);
-
-  for (const item of forecasts) {
-    const { momentum, value, safety } = item.scoreComponents;
-    const labels = ["모멘텀", "밸류", "안전성"];
-    const values = [momentum, value, safety];
-    const colors: Array<[RGB, RGB]> = [
-      [rgb(0.22, 0.44, 0.76), rgb(0.84, 0.90, 0.98)],
-      [rgb(0.18, 0.50, 0.33), rgb(0.84, 0.96, 0.88)],
-      [rgb(0.58, 0.38, 0.12), rgb(0.98, 0.93, 0.84)],
-    ];
-
-    ctx.textBold(item.name, ctx.ML, ctx.y, bodySize - 0.5, rgb(0.14, 0.14, 0.20), axisLabelW - 10);
-    ctx.textLight(item.strategyLabel, ctx.ML, ctx.y - (subBarH + subBarGap + 1), labelSize - 0.5, rgb(0.44, 0.44, 0.50), axisLabelW - 10);
-
-    for (let i = 0; i < 3; i++) {
-      const barY = ctx.y - i * (subBarH + subBarGap) - subBarH + 4;
-      const barLen = (values[i] / 100) * scoreBarW;
-
-      ctx.rect(scoreX, barY, scoreBarW, subBarH, rgb(0.93, 0.94, 0.96));
-      if (barLen > 0) {
-        ctx.rect(scoreX, barY, barLen, subBarH, colors[i][1]);
-        ctx.rect(scoreX, barY, Math.min(barLen, subBarH), subBarH, colors[i][0]);
-      }
-
-      // 수치 라벨: 오른쪽 고정 영역
-      ctx.text(`${labels[i]} ${values[i].toFixed(0)}`, scoreX + scoreBarW + 8, barY + subBarH - 2, labelSize, colors[i][0]);
-    }
-
-    // 25/50/75 그리드 선
-    for (const pct of [25, 50, 75]) {
-      const gx = scoreX + (pct / 100) * scoreBarW;
-      ctx.line(gx, ctx.y + 4, gx, ctx.y - 3 * (subBarH + subBarGap) + 4, rgb(0.82, 0.84, 0.88), 0.4);
-    }
-
-    ctx.y -= scoreRowH + 4;
-  }
-
-  ctx.y -= 6;
 }
 
 export async function createDailyCandidateReportPdf(
@@ -1104,7 +1003,7 @@ export async function createDailyCandidateReportPdf(
     subtitle
   );
 
-  drawCandidateCharts(ctx, report.forecasts ?? []);
+  drawCandidateSummaryTable(ctx, report.forecasts ?? []);
 
   const rawLines = String(report.text ?? "").split("\n");
   const sectionFontSize = 10;
@@ -1213,18 +1112,21 @@ export async function createDailyCandidateReportPdf(
     }
 
     if (inCandidateListSection && isCandidatePriorityLine(line)) {
+      ctx.ensureSpace(bodyLineHeight + 2);
       const count = ctx.text(line, ctx.ML + 8, ctx.y, bodyFontSize, rgb(0.24, 0.24, 0.30), ctx.BODY_W - 8);
       ctx.y -= count * bodyLineHeight;
       continue;
     }
 
     if (inCandidateListSection && isCandidateScoreLine(line)) {
+      ctx.ensureSpace(bodyLineHeight + 2);
       const count = ctx.textLight(line, ctx.ML + 8, ctx.y, bodyFontSize, rgb(0.38, 0.38, 0.44), ctx.BODY_W - 8);
       ctx.y -= count * bodyLineHeight;
       continue;
     }
 
     if (inCandidateListSection && /^⚠️/.test(line)) {
+      ctx.ensureSpace(bodyLineHeight + 2);
       const count = ctx.text(line, ctx.ML + 8, ctx.y, bodyFontSize, rgb(0.63, 0.20, 0.20), ctx.BODY_W - 8);
       ctx.y -= count * bodyLineHeight + 1;
       continue;
@@ -1272,6 +1174,7 @@ export async function createDailyCandidateReportPdf(
         continue;
       }
 
+      ctx.ensureSpace(bodyLineHeight + 2);
       const count = roleLineStyle.bold
         ? ctx.textBold(line, ctx.ML, ctx.y, bodyFontSize, roleLineStyle.text, ctx.BODY_W)
         : ctx.text(line, ctx.ML, ctx.y, bodyFontSize, roleLineStyle.text, ctx.BODY_W);
@@ -1279,6 +1182,7 @@ export async function createDailyCandidateReportPdf(
       continue;
     }
 
+    ctx.ensureSpace(bodyLineHeight + 2);
     const count = isMuted
       ? ctx.textLight(line, ctx.ML, ctx.y, bodyFontSize, theme.subtitle, ctx.BODY_W)
       : ctx.text(line, ctx.ML, ctx.y, bodyFontSize, undefined, ctx.BODY_W);
