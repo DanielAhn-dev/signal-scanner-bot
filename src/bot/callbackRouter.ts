@@ -164,6 +164,57 @@ export async function routeCallbackData(
         });
         return;
       }
+
+      if (prefix === "autobuy_exec") {
+        // payload format: CODE:QTY:PRICE
+        const parts = payload.split(":");
+        const code = parts[0];
+        const qty = Number(parts[1] ?? 0);
+        const price = Number(parts[2] ?? 0);
+        await tgSend("sendMessage", {
+          chat_id: ctx.chatId,
+          text: `실거래로 진행하시겠습니까?\n종목: ${code}\n수량: ${qty}주\n가격(예상): ${price}원`,
+          reply_markup: {
+            inline_keyboard: [[
+              { text: "확인", callback_data: `autobuy_exec_confirm:${code}:${qty}:${price}` },
+              { text: "취소", callback_data: `autobuy_exec_cancel:${code}` },
+            ]],
+          },
+        });
+        return;
+      }
+
+      if (prefix === "autobuy_exec_confirm") {
+        const parts = payload.split(":");
+        const code = parts[0];
+        const qty = Number(parts[1] ?? 0);
+        const price = Number(parts[2] ?? 0);
+        try {
+          const execService = await import("../services/tradeExecutionService.js");
+          const res = await execService.executeOrder({
+            chatId: ctx.chatId,
+            code,
+            side: "BUY",
+            price,
+            quantity: qty,
+            useReal: process.env.REAL_TRADING_ENABLED === "1",
+          });
+          if (!res.ok) {
+            await tgSend("sendMessage", { chat_id: ctx.chatId, text: `실행 실패: ${res.message}` });
+          } else {
+            await tgSend("sendMessage", { chat_id: ctx.chatId, text: `주문 접수 완료 (가상 로그 id=${res.id ?? 'n/a'})` });
+          }
+        } catch (e) {
+          console.error("autobuy_exec_confirm error:", e);
+          await tgSend("sendMessage", { chat_id: ctx.chatId, text: "주문 처리 중 오류가 발생했습니다." });
+        }
+        return;
+      }
+
+      if (prefix === "autobuy_exec_cancel") {
+        await tgSend("sendMessage", { chat_id: ctx.chatId, text: "실거래 요청이 취소되었습니다." });
+        return;
+      }
     }
   }
 

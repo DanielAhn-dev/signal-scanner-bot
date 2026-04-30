@@ -8,13 +8,28 @@ import { fmtInt, LINE } from "../messages/format";
 import { actionButtons } from "../messages/layout";
 import { positionSizeByVolatility, fractionalKelly } from "../../risk";
 
-const supabase = createClient(process.env.SUPABASE_URL!, process.env.SUPABASE_ANON_KEY!);
-
 export async function handleAutoBuyCommand(code: string, ctx: ChatContext, tgSend: any) {
   if (!code) return tgSend("sendMessage", { chat_id: ctx.chatId, text: "종목 코드가 없습니다." });
+  // create supabase client lazily to avoid top-level errors when env not set in local tests
+  let supabase: any = null;
+  try {
+    if (process.env.SUPABASE_URL && process.env.SUPABASE_ANON_KEY) {
+      supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_ANON_KEY);
+    }
+  } catch (e) {
+    supabase = null;
+  }
 
   // 1) 기본 데이터
-  const { data: stock } = await supabase.from("stocks").select("code,name,close").eq("code", code).limit(1).single();
+  let stock: any = null;
+  if (supabase) {
+    const q = await supabase.from("stocks").select("code,name,close").eq("code", code).limit(1).single().catch(() => null);
+    stock = q?.data ?? q;
+  }
+  if (!stock) {
+    // fallback minimal stock info when DB not available
+    stock = { code, name: code, close: 0 };
+  }
   if (!stock) return tgSend("sendMessage", { chat_id: ctx.chatId, text: "종목을 찾을 수 없습니다." });
 
   const realtime = await fetchRealtimeStockData(code).catch(() => ({} as any));
@@ -47,8 +62,11 @@ export async function handleAutoBuyCommand(code: string, ctx: ChatContext, tgSen
 
   const text = lines.join("\n");
 
+  // Build callback for exec with encoded sizing
+  const execCallback = `autobuy_exec:${code}:${sizing.shares}:${Math.floor(price)}`;
   const kb = actionButtons([
     { text: "가상매수 추가", callback_data: `watchadd:${code}` },
+    { text: "실거래 실행", callback_data: execCallback },
     { text: "종목분석", callback_data: `trade:${code}` },
   ], 2);
 
