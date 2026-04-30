@@ -677,6 +677,50 @@ async function appendTradeLog(payload: {
   return Number((data as Record<string, unknown> | null)?.id ?? 0) || null;
 }
 
+async function tryRegisterOperation(params: {
+  supabase: SupabaseClientAny;
+  opKey: string;
+  chatId: number | string;
+  strategy?: string | null;
+  meta?: Record<string, unknown> | null;
+}): Promise<boolean> {
+  const supabase = params.supabase;
+  const row = {
+    op_key: String(params.opKey),
+    user_id: String(params.chatId),
+    strategy: params.strategy ?? null,
+    meta: params.meta ?? null,
+  };
+
+  const { data, error } = await supabase
+    .from("executed_operations")
+    .upsert(row, { onConflict: "op_key", ignoreDuplicates: true })
+    .select("op_key")
+    .maybeSingle();
+
+  if (error) {
+    throw error;
+  }
+
+  // if data is null, the upsert was ignored (duplicate)
+  return Boolean(data && (data as Record<string, unknown>).op_key);
+}
+
+async function tryAcquireRunLock(supabase: SupabaseClientAny, opKey: string): Promise<boolean> {
+  // Requires a table `virtual_autotrade_locks(op_key text primary key, acquired_at timestamptz default now())`
+  const { data, error } = await supabase
+    .from("virtual_autotrade_locks")
+    .upsert({ op_key: opKey }, { onConflict: "op_key", ignoreDuplicates: true })
+    .select("op_key")
+    .maybeSingle();
+  if (error) throw error;
+  return Boolean(data && (data as Record<string, unknown>).op_key);
+}
+
+async function releaseRunLock(supabase: SupabaseClientAny, opKey: string): Promise<void> {
+  await supabase.from("virtual_autotrade_locks").delete().eq("op_key", opKey);
+}
+
 async function writeActionLog(payload: {
   supabase: SupabaseClientAny;
   runId: number | null;
@@ -1904,6 +1948,31 @@ async function runMondayBuyForUser(payload: {
         continue;
       }
 
+      const opKey = `${chatId}:BUY:${candidate.code}:${Math.round(executionPrice)}:${qty}:${new Date().toISOString().slice(0,16)}`;
+      const registered = await tryRegisterOperation({
+        supabase: payload.supabase,
+        opKey,
+        chatId,
+        strategy: AUTO_TRADE_STRATEGY_ID,
+        meta: { event: "monday-buy", profile: tradeProfile.profile, runId: payload.runId },
+      }).catch((err) => {
+        throw err;
+      });
+
+      if (!registered) {
+        summary.skipped += 1;
+        await writeActionLog({
+          supabase: payload.supabase,
+          runId: payload.runId,
+          chatId,
+          code: candidate.code,
+          actionType: "SKIP",
+          reason: "duplicate-execution",
+          detail: { opKey },
+        });
+        continue;
+      }
+
       const { data: upserted, error: upsertError } = await payload.supabase
         .from(PORTFOLIO_TABLES.positionsLegacy)
         .upsert(
@@ -1947,6 +2016,15 @@ async function runMondayBuyForUser(payload: {
           note: "autotrade-monday-buy",
         }),
       });
+
+      // 즉시 가상현금 업데이트 (원자 트랜잭션은 향후 DB 함수로 개선 가능)
+      try {
+        await setUserInvestmentPrefs(chatId, {
+          virtual_cash: Math.max(0, Math.round(availableCash)),
+        });
+      } catch (e) {
+        console.error("[autoTrade] update virtual_cash after buy failed", e);
+      }
 
       const positionId = Number((upserted as Record<string, unknown> | null)?.id ?? 0) || null;
       if (positionId) {
@@ -2139,6 +2217,34 @@ async function executeAutoTradeSell(payload: {
   const net = Math.max(0, gross - feeAmount - taxAmount);
   const pnl = net - soldCost;
   const isTakeProfit = payload.reason !== "stop-loss";
+
+  const sellOpKey = `${payload.chatId}:SELL:${payload.holding.code}:${Math.round(payload.close)}:${sellQty}:${new Date().toISOString().slice(0,16)}`;
+  const sellRegistered = await tryRegisterOperation({
+    supabase: payload.supabase,
+    opKey: sellOpKey,
+    chatId: payload.chatId,
+    strategy: AUTO_TRADE_STRATEGY_ID,
+    meta: { event: payload.reason, holdingId: payload.holding.id, runId: payload.runId },
+  }).catch((err) => { throw err; });
+
+  if (!sellRegistered) {
+    await writeActionLog({
+      supabase: payload.supabase,
+      runId: payload.runId,
+      chatId: payload.chatId,
+      code: payload.holding.code,
+      actionType: "SKIP",
+      reason: "duplicate-execution",
+      detail: { opKey: sellOpKey },
+    });
+    return {
+      sold: false,
+      partial: false,
+      proceeds: 0,
+      realizedPnlDelta: 0,
+      note: `${payload.holding.code} 매도 스킵: 중복 실행`,
+    };
+  }
 
   if (payload.dryRun) {
     await writeActionLog({
@@ -2612,6 +2718,15 @@ async function runDailyReviewForUser(payload: {
 
       realizedDelta += result.realizedPnlDelta;
       availableCash += result.proceeds;
+      // 즉시 가상현금 및 실현손익 갱신
+      try {
+        await setUserInvestmentPrefs(chatId, {
+          virtual_realized_pnl: toNumber(prefs.virtual_realized_pnl, 0) + realizedDelta,
+          virtual_cash: Math.max(0, Math.round(availableCash)),
+        });
+      } catch (e) {
+        console.error("[autoTrade] update virtual cash/pnl after sell failed", e);
+      }
       if (exitPlan.action === "STOP_LOSS") {
         stopLossCount += 1;
       } else {
@@ -2871,6 +2986,29 @@ async function runDailyReviewForUser(payload: {
             continue;
           }
 
+          const opKey = `${chatId}:BUY:${candidate.code}:${Math.round(executionPrice)}:${addOnQty}:${new Date().toISOString().slice(0,16)}`;
+          const registered = await tryRegisterOperation({
+            supabase: payload.supabase,
+            opKey,
+            chatId,
+            strategy: AUTO_TRADE_STRATEGY_ID,
+            meta: { event: "add-on-buy", profile: holdingProfile.profile, runId: payload.runId },
+          }).catch((err) => { throw err; });
+
+          if (!registered) {
+            summary.skipped += 1;
+            await writeActionLog({
+              supabase: payload.supabase,
+              runId: payload.runId,
+              chatId,
+              code: candidate.code,
+              actionType: "SKIP",
+              reason: "duplicate-execution",
+              detail: { opKey },
+            });
+            continue;
+          }
+
           const { error: updateError } = await payload.supabase
             .from(PORTFOLIO_TABLES.positionsLegacy)
             .update({
@@ -2907,6 +3045,22 @@ async function runDailyReviewForUser(payload: {
               note: "autotrade-add-on-buy",
             }),
           });
+
+          try {
+            await setUserInvestmentPrefs(chatId, {
+              virtual_cash: Math.max(0, Math.round(availableCash)),
+            });
+          } catch (e) {
+            console.error("[autoTrade] update virtual_cash after add-on buy failed", e);
+          }
+
+          try {
+            await setUserInvestmentPrefs(chatId, {
+              virtual_cash: Math.max(0, Math.round(availableCash)),
+            });
+          } catch (e) {
+            console.error("[autoTrade] update virtual_cash after rebalance buy failed", e);
+          }
 
           await appendTradeLotsForHolding({
             chatId,
@@ -3312,6 +3466,29 @@ async function runDailyReviewForUser(payload: {
             availableCash = Math.max(0, availableCash - investedAmount);
             deployableCash = Math.max(0, deployableCash - investedAmount);
             slotsLeft -= 1;
+            continue;
+          }
+
+          const opKey = `${chatId}:BUY:${candidate.code}:${Math.round(executionPrice)}:${qty}:${new Date().toISOString().slice(0,16)}`;
+          const registered = await tryRegisterOperation({
+            supabase: payload.supabase,
+            opKey,
+            chatId,
+            strategy: AUTO_TRADE_STRATEGY_ID,
+            meta: { event: "rebalance-buy", profile: entryProfile.profile, runId: payload.runId },
+          }).catch((err) => { throw err; });
+
+          if (!registered) {
+            summary.skipped += 1;
+            await writeActionLog({
+              supabase: payload.supabase,
+              runId: payload.runId,
+              chatId,
+              code: candidate.code,
+              actionType: "SKIP",
+              reason: "duplicate-execution",
+              detail: { opKey },
+            });
             continue;
           }
 
@@ -3806,29 +3983,49 @@ export async function runVirtualAutoTradingCycle(input?: {
   };
 
   for (const setting of settings) {
-    const runStart = await startRun({
-      supabase,
-      runType,
-      runKey,
-      chatId: setting.chat_id,
-    });
-    const runId = runStart.runId;
-
-    if (runStart.shouldSkip) {
-      summary.processedUsers += 1;
-      summary.skippedCount += 1;
-      summary.actions.push({
-        chatId: setting.chat_id,
-        buys: 0,
-        sells: 0,
-        skipped: 1,
-        errors: 0,
-        notes: [`[자동사이클] 동일 실행창(${runKey}) 이미 처리됨`],
-      });
-      continue;
-    }
-
+    const lockKey = `${runKey}:${setting.chat_id}`;
+    let locked = false;
     try {
+      locked = await tryAcquireRunLock(supabase, lockKey).catch((err) => {
+        throw err;
+      });
+
+      if (!locked) {
+        summary.processedUsers += 1;
+        summary.skippedCount += 1;
+        summary.actions.push({
+          chatId: setting.chat_id,
+          buys: 0,
+          sells: 0,
+          skipped: 1,
+          errors: 0,
+          notes: [`[자동사이클] 동일 실행창(${runKey}) 다른 프로세스가 실행중`],
+        });
+        continue;
+      }
+
+      const runStart = await startRun({
+        supabase,
+        runType,
+        runKey,
+        chatId: setting.chat_id,
+      });
+      const runId = runStart.runId;
+
+      if (runStart.shouldSkip) {
+        summary.processedUsers += 1;
+        summary.skippedCount += 1;
+        summary.actions.push({
+          chatId: setting.chat_id,
+          buys: 0,
+          sells: 0,
+          skipped: 1,
+          errors: 0,
+          notes: [`[자동사이클] 동일 실행창(${runKey}) 이미 처리됨`],
+        });
+        continue;
+      }
+
       const prefs = await getUserInvestmentPrefs(setting.chat_id);
       const userDryRun = dryRun || Boolean(prefs.virtual_shadow_mode);
       const actionSummary = runType === "MONDAY_BUY"
@@ -3986,6 +4183,10 @@ export async function runVirtualAutoTradingCycle(input?: {
         errors: 1,
         notes: [message],
       });
+    } finally {
+      if (locked) {
+        await releaseRunLock(supabase, lockKey).catch(() => null);
+      }
     }
   }
 
@@ -4127,4 +4328,3 @@ export async function generateAutoTradeDiagnosticReport(
       : null,
   };
 }
-
