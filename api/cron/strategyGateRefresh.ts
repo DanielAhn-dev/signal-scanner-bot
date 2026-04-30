@@ -194,7 +194,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     const settingRows = settings ?? [];
-    const chatIds = settingRows.map((row) => row.chat_id).filter((id) => Number.isFinite(id));
+    const chatIds = (settingRows as SettingRow[]).map((row: SettingRow) => row.chat_id).filter((id): id is number => Number.isFinite(id));
 
     if (!chatIds.length) {
       return res.status(200).json({ ok: true, total: 0, refreshed: 0, tuned: 0 });
@@ -225,12 +225,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     const previousByChat = new Map<number, PreviousGateStateRow["gate_status"]>();
-    for (const row of previousGateStates ?? []) {
+    for (const row of (previousGateStates ?? []) as PreviousGateStateRow[]) {
       previousByChat.set(Number(row.chat_id), row.gate_status);
     }
 
     const byChat = new Map<number, SellRow[]>();
-    for (const row of sellRows ?? []) {
+    for (const row of (sellRows ?? []) as SellRow[]) {
       const chatId = Number(row.chat_id);
       if (!byChat.has(chatId)) byChat.set(chatId, []);
       byChat.get(chatId)!.push(row);
@@ -240,7 +240,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     let tuned = 0;
     const transitions: Array<{ chatId: number; from: string; to: string; sellCount: number; pf: number | null; winRate: number }> = [];
 
-    for (const row of settingRows) {
+    for (const row of (settingRows as SettingRow[])) {
       const chatId = Number(row.chat_id);
       const metrics = buildMetrics(byChat.get(chatId) ?? [], windowDays);
       const status = resolveStrategyGateStatus(metrics);

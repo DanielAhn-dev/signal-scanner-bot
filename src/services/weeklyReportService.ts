@@ -296,13 +296,10 @@ async function buildPullbackWeeklyReportData(
     throw new Error(`눌림목 후보 조회 실패: ${signalError.message}`);
   }
 
-  const normalizedSignals = (signalRows ?? []).map((row: PullbackSignalWeekRow) => {
-    const stock = unwrapJoined(row.stock);
-    return {
-      ...row,
-      stock,
-    };
-  }).filter((row) => row.stock && row.code);
+  const mappedSignals = (signalRows ?? []).map((row: PullbackSignalWeekRow) => ({ ...row, stock: unwrapJoined(row.stock) }));
+  const normalizedSignals = mappedSignals.filter((row) => row.stock && row.code) as Array<
+    PullbackSignalWeekRow & { stock: NonNullable<PullbackSignalWeekRow["stock"]> }
+  >;
 
   if (!normalizedSignals.length) {
     const prefs = await getUserInvestmentPrefs(chatId);
@@ -320,14 +317,14 @@ async function buildPullbackWeeklyReportData(
 
   const sectorNameMap = await fetchSectorNameMapForPullback(
     supabase,
-    normalizedSignals.map((row) => row.stock?.sector_id)
+    normalizedSignals.map((row) => (row.stock as any)?.sector_id)
   );
   const prefs = await getUserInvestmentPrefs(chatId);
   const riskProfile = (prefs.risk_profile ?? "safe") as RiskProfile;
 
   const grouped = new Map<string, PullbackAggregateRow>();
   for (const row of normalizedSignals) {
-    const stock = row.stock!;
+    const stock = row.stock as any;
     const existing = grouped.get(row.code);
     const entryScore = toNum(row.entry_score);
     const warnScore = toNum(row.warn_score);

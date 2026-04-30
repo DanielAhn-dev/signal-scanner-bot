@@ -297,7 +297,7 @@ export async function createBriefingReport(
     throw new Error(`Stock fetch failed: ${stockError.message}`);
   }
 
-  const sectorStockCodes = (sectorStocks ?? []).map((s) => s.code);
+  const sectorStockCodes = (sectorStocks ?? []).map((s: StockRow) => s.code);
 
   // 3. 위 종목들에 대한 score 정보 (최신 asof 우선 + 종목별 fallback)
   const sectorScoreResult = await fetchScoresByCodes(supabase, sectorStockCodes);
@@ -306,7 +306,7 @@ export async function createBriefingReport(
   const watchlistItems = options?.chatId
     ? await fetchWatchlistItems(supabase, options.chatId)
     : [];
-  const watchlistCodes = watchlistItems.map((item) => item.code);
+  const watchlistCodes = watchlistItems.map((item: WatchlistRow) => item.code);
   const watchlistScoreResult = await fetchScoresByCodes(supabase, watchlistCodes);
   watchlistScoreResult.byCode.forEach((value, key) => scoresByCode.set(key, value));
 
@@ -385,7 +385,7 @@ export async function createBriefingReport(
   }
 
   // 6. 실시간 가격 일괄 조회
-  const allCodes = (sectorStocks ?? []).map((s) => s.code);
+  const allCodes = (sectorStocks ?? []).map((s: StockRow) => s.code);
   const bottomCodes = bottomCandidates.map((s: BriefingCandidate) => s.code);
   const uniqueCodes = [...new Set([...allCodes, ...bottomCodes, ...watchlistCodes])];
   const realtimeMap = uniqueCodes.length
@@ -955,7 +955,7 @@ function formatSectorSection(
 }
 
 function formatBottomSection(
-  candidates: any[],
+  candidates: BriefingCandidate[],
   realtimeMap: Record<string, any>,
   fundamentalByCode?: Map<string, FundamentalSnapshot>
 ) {
@@ -966,7 +966,7 @@ function formatBottomSection(
   return (
     candidates
       .slice(0, 2)
-      .map((s) => {
+      .map((s: BriefingCandidate) => {
         const rt = realtimeMap[s.code];
         const price = rt?.price ?? s.close;
         const priceStr = price != null ? Number(price).toLocaleString("ko-KR") : "-";
