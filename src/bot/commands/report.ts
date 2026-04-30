@@ -553,12 +553,17 @@ async function handleDailyCandidateReportCommand(
 
   try {
     const prefs = await getUserInvestmentPrefs(ctx.from?.id ?? ctx.chatId);
+    const t0 = Date.now();
     report = await createDailyCandidatePlanningReportResult(supabase, {
       riskProfile: (prefs.risk_profile ?? "safe") as "safe" | "balanced" | "active",
       chatId: ctx.chatId,
     });
+    const t1 = Date.now();
 
     const pdf = await createDailyCandidateReportPdf(ctx.chatId, report);
+    const t2 = Date.now();
+    console.log(`[추천리포트] 데이터:${t1-t0}ms PDF생성:${t2-t1}ms 크기:${pdf.bytes.byteLength}bytes`);
+
     const form = new FormData();
     form.set("chat_id", String(ctx.chatId));
     form.set("caption", pdf.caption);
