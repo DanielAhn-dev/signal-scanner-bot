@@ -8,6 +8,7 @@ import { handleRiskProfileSelection } from "./commands/onboarding";
 import { handleReportMenu } from "./commands/report";
 import { handleSectorDetailCommand } from "./commands/sector";
 import type { ChatContext } from "./routing/types";
+import { renderMenu } from "./menu/renderMenu";
 import { routeMessage } from "./router";
 
 export async function sendPromptForCommand(
@@ -64,6 +65,12 @@ export async function routeCallbackData(
 
   if (data.startsWith("prompt:")) {
     await sendPromptForCommand(data.slice(7), ctx.chatId, tgSend);
+    return;
+  }
+
+  if (data.startsWith("menu:")) {
+    const path = data.slice(5);
+    await renderMenu(path, ctx, tgSend);
     return;
   }
 
