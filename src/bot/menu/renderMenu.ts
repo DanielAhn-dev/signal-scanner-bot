@@ -31,14 +31,28 @@ export async function renderMenu(path: string, ctx: ChatContext, tgSend: any) {
   try {
     // Prefer editing existing message if messageId is available (better UX)
     if (ctx.messageId) {
-      await tgSend("editMessageReplyMarkup", {
-        chat_id: ctx.chatId,
-        message_id: ctx.messageId,
-        reply_markup,
-      });
-
-      // Also update text if desired (optional) — keep it simple: send a notice when not present
-      return;
+      try {
+        await tgSend("editMessageText", {
+          chat_id: ctx.chatId,
+          message_id: ctx.messageId,
+          text,
+          reply_markup,
+        });
+        return;
+      } catch (e) {
+        // some messages may not allow editMessageText (e.g., media messages) — fallback to reply markup edit
+        console.warn("[renderMenu] editMessageText failed, falling back to editMessageReplyMarkup:", e);
+        try {
+          await tgSend("editMessageReplyMarkup", {
+            chat_id: ctx.chatId,
+            message_id: ctx.messageId,
+            reply_markup,
+          });
+          return;
+        } catch (er) {
+          console.error("[renderMenu] editMessageReplyMarkup fallback failed:", er);
+        }
+      }
     }
 
     await tgSend("sendMessage", {
