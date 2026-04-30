@@ -427,7 +427,7 @@ export async function createBriefingReport(
   const etfWatchlistStocks = watchlistItems
     .map((item: WatchlistRow) => Array.isArray(item.stock) ? item.stock[0] : item.stock)
     .filter((stock: StockRow | null): stock is StockRow => Boolean(stock && isEtfLike({ market: stock.market, name: stock.name })));
-  const etfWatchlistCodes = etfWatchlistStocks.map((stock) => stock.code);
+  const etfWatchlistCodes = etfWatchlistStocks.map((stock: StockRow) => stock.code);
   const etfSnapshotMap = new Map<string, EtfSnapshot | null>();
   const etfDistributionMap = new Map<string, EtfDistributionSummary | null>();
 
