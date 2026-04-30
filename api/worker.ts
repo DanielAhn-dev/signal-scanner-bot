@@ -340,8 +340,10 @@ async function handleTelegramUpdateJob(job: any) {
     });
     try {
       await withTimeout(
-        routeCallbackData(u.callback_query.data, { chatId, from }, (method: string, body: any) =>
-          tgCallOrThrow(method, body, chatId)
+        routeCallbackData(
+          u.callback_query.data,
+          { chatId, from, messageId: u.callback_query.message?.message_id },
+          (method: string, body: any) => tgCallOrThrow(method, body, chatId)
         ),
         callbackTimeout,
         `callback ${u.callback_query.data}`
