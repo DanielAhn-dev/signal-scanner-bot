@@ -40,7 +40,7 @@ export const CMD = {
   WATCHLIST: /^\/(holdings|보유)$/i,
   AUTOCYCLE: /^\/(autocycle|자동사이클)(?:\s+(.+))?$/i,
   OPSTRIGGER: /^\/(opsrun|cronrun|자동트리거|운영트리거)(?:\s+(.+))?$/i,
-  PREMARKET: /^\/(premarket|장전플랜|직장인플랜|오늘주문)(?:\s+(.+))?$/i,
+  PREMARKET: /^\/(premarket|장전플랜|직장인플랜|오늘주문|오늘계획)(?:\s+(.+))?$/i,
   RANKING: /^\/(ranking|랭킹|순위)$/i,
   PROFILE: /^\/(profile|프로필|내정보)$/i,
   FOLLOW: /^\/(follow|팔로우)(?:\s+(.+))?$/i,
