@@ -59,4 +59,5 @@ export async function renderMenu(path: string, ctx: ChatContext, tgSend: any) {
   }
 }
 
+export { sanitizeButtons };
 export default renderMenu;

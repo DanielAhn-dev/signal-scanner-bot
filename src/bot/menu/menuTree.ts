@@ -64,7 +64,7 @@ const MENU_NODES: Record<string, MenuNode> = {
     id: "autocycle",
     title: "자동사이클",
     text: "자동사이클 관련 빠른 작업입니다.",
-    buttons: [...ACTIONS.autoCycleMenu, { text: "뒤로", callback_data: "menu:root" }],
+    buttons: [...ACTIONS.autoCycleMenu, ...ACTIONS.autoCycleQuick, { text: "뒤로", callback_data: "menu:root" }],
   },
 
   watch: {
@@ -93,6 +93,33 @@ const MENU_NODES: Record<string, MenuNode> = {
       { text: "프로필", callback_data: "cmd:profile" },
       { text: "뒤로", callback_data: "menu:root" },
     ],
+  },
+  ops: {
+    id: "ops",
+    title: "운영 트리거",
+    text: "운영/트리거 관련 빠른 작업입니다.",
+    buttons: [...ACTIONS.opsTriggerQuick, { text: "뒤로", callback_data: "menu:root" }],
+  },
+
+  tradehistory: {
+    id: "tradehistory",
+    title: "거래기록",
+    text: "거래기록 필터를 선택하세요.",
+    buttons: [...ACTIONS.tradeHistoryFilters, { text: "뒤로", callback_data: "menu:root" }],
+  },
+
+  recommendation: {
+    id: "recommendation",
+    title: "추천 후속",
+    text: "추천 관련 후속 작업입니다.",
+    buttons: [...ACTIONS.recommendationFollowup, ...ACTIONS.recommendationFollowupCompact, { text: "뒤로", callback_data: "menu:root" }],
+  },
+
+  prompt: {
+    id: "prompt",
+    title: "프롬프트 분석",
+    text: "직접 입력 프롬프트를 사용합니다.",
+    buttons: [...ACTIONS.promptAnalyze, { text: "뒤로", callback_data: "menu:root" }],
   },
 };
 

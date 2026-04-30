@@ -50,6 +50,25 @@ export async function routeCallbackData(
 
   if (data.startsWith("cmd:")) {
     const cmd = data.slice(4);
+    // 일부 cmd 버튼은 하위 메뉴로 유도
+    const menuRedirectMap: Record<string, string> = {
+      report: "report",
+      etf: "etf",
+      autocycle: "autocycle",
+      market: "market",
+      brief: "briefing",
+      weekly: "weekly",
+      weeklycopilot: "weekly",
+      watchlist: "watch",
+      opsrun: "ops",
+      opstrigger: "ops",
+      tradelog: "tradehistory",
+    };
+
+    if (menuRedirectMap[cmd]) {
+      await renderMenu(menuRedirectMap[cmd], ctx, tgSend);
+      return;
+    }
 
     if (cmd === "report") {
       await handleReportMenu(ctx, tgSend);
