@@ -20,11 +20,26 @@ export function isAuthorized(req: VercelRequest) {
   const secret =
     (req.headers["x-telegram-bot-secret"] as string) ||
     (req.headers["x-cron-secret"] as string);
-  return (
+  const bySecret = (
     !!secret &&
     (secret === process.env.TELEGRAM_BOT_SECRET ||
       secret === process.env.CRON_SECRET)
   );
+
+  if (bySecret) return true;
+
+  // 로컬 개발 편의: UI 인증키로 수동 update 호출 허용 (production 제외)
+  if (process.env.NODE_ENV !== "production") {
+    const host = String(req.headers["host"] || "").toLowerCase();
+    const isLocalHost = host.includes("localhost") || host.startsWith("127.0.0.1");
+    const expectedUiKey = String(process.env.UI_READ_KEY || process.env.VITE_UI_READ_KEY || "");
+    const requestUiKey = String(req.headers["x-ui-key"] || req.query?.ui_key || "");
+    if (isLocalHost && expectedUiKey && requestUiKey && requestUiKey === expectedUiKey) {
+      return true;
+    }
+  }
+
+  return false;
 }
 
 export function ok(res: VercelResponse, body: UpdateResult) {

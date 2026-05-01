@@ -1,0 +1,70 @@
+import type { VercelRequest, VercelResponse } from '@vercel/node'
+import { createClient } from '@supabase/supabase-js'
+import { resolveUiUserContext } from './_userContext'
+
+export default async function handler(req: VercelRequest, res: VercelResponse) {
+  const origin = (req.headers.origin as string) || process.env.UI_CORS_ORIGIN || '*'
+  res.setHeader('Access-Control-Allow-Origin', origin)
+  res.setHeader('Access-Control-Allow-Methods', 'GET,POST,OPTIONS')
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type,x-ui-key,x-user-chat-id')
+  res.setHeader('Access-Control-Allow-Credentials', 'true')
+  if (req.method === 'OPTIONS') return res.status(204).end()
+
+  const readKey = req.headers['x-ui-key'] || req.query.ui_key || process.env.UI_READ_KEY || process.env.VITE_UI_READ_KEY
+  if (!readKey || String(readKey) !== (process.env.UI_READ_KEY || process.env.VITE_UI_READ_KEY)) {
+    return res.status(401).json({ error: 'Unauthorized' })
+  }
+
+  const url = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_KEY
+  if (!url || !key) return res.status(500).json({ error: 'Server not configured' })
+
+  const supabase = createClient(url, key)
+
+  try {
+    const user = resolveUiUserContext(req)
+    const resolvedChatId = user.chatId
+
+    if (req.method === 'GET') {
+      const chatId = resolvedChatId
+      if (!chatId) return res.status(400).json({ error: 'chat_id required' })
+      const { data, error } = await supabase
+        .from('virtual_autotrade_settings')
+        .select('*')
+        .eq('chat_id', Number(chatId))
+        .limit(1)
+
+      if (error) return res.status(500).json({ error: error.message })
+      return res.status(200).json({ data: data && data[0] ? data[0] : null })
+    }
+
+    if (req.method === 'POST') {
+      const body = req.body || {}
+      const chatId = resolvedChatId
+      if (!chatId) return res.status(400).json({ error: 'chat_id required' })
+
+      const payload: any = {
+        chat_id: Number(chatId),
+        is_enabled: body.is_enabled === true || body.is_enabled === 'true' || false,
+        monday_buy_slots: body.monday_buy_slots != null ? Number(body.monday_buy_slots) : undefined,
+        max_positions: body.max_positions != null ? Number(body.max_positions) : undefined,
+        min_buy_score: body.min_buy_score != null ? Number(body.min_buy_score) : undefined,
+        take_profit_pct: body.take_profit_pct != null ? Number(body.take_profit_pct) : undefined,
+        stop_loss_pct: body.stop_loss_pct != null ? Number(body.stop_loss_pct) : undefined,
+        long_term_ratio: body.long_term_ratio != null ? Number(body.long_term_ratio) : undefined,
+      }
+
+      // upsert
+      const { data, error } = await supabase
+        .from('virtual_autotrade_settings')
+        .upsert(payload, { onConflict: 'chat_id' })
+
+      if (error) return res.status(500).json({ error: error.message })
+      return res.status(200).json({ data: data && data[0] ? data[0] : null })
+    }
+
+    return res.status(405).json({ error: 'Method not allowed' })
+  } catch (e: any) {
+    return res.status(500).json({ error: String(e) })
+  }
+}

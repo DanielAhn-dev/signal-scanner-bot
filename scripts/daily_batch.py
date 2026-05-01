@@ -18,6 +18,7 @@ import sys
 import time
 import traceback
 from datetime import date, datetime, timedelta
+from zoneinfo import ZoneInfo
 from typing import List, Dict, Tuple, Optional
 
 import pandas as pd
@@ -85,8 +86,12 @@ def derive_signal(total_score: int) -> str:
     return "HOLD"
 
 def get_last_trading_date() -> str:
-    """오늘 또는 가장 최근 거래일을 YYYYMMDD로 반환 (삼성전자 기준)"""
-    today = date.today()
+    """오늘 또는 가장 최근 거래일을 YYYYMMDD로 반환 (삼성전자 기준)
+
+    서버/컨테이너의 로컬 타임존 차이로 날짜가 어긋나는 경우가 있어,
+    한국 표준시(Asia/Seoul)를 기준으로 날짜를 계산합니다.
+    """
+    today = datetime.now(ZoneInfo("Asia/Seoul")).date()
     for i in range(0, 8):
         d = today - timedelta(days=i)
         d_str = d.strftime("%Y%m%d")

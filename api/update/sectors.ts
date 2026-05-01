@@ -1,4 +1,6 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
+import fs from "node:fs/promises";
+import path from "node:path";
 import {
   supaAdmin,
   isAuthorized,
@@ -25,6 +27,33 @@ const SEED: SectorSeed[] = [
   { id: "banks", name: "은행/금융", metrics: { krx_index: "1027" } },
 ];
 
+type FileSectorRow = {
+  id: string;
+  name: string;
+  metrics?: Record<string, unknown> | null;
+  score?: number;
+};
+
+async function loadSectorSeedFromFile(): Promise<FileSectorRow[] | null> {
+  const filePath = path.join(process.cwd(), "data", "sectors.json");
+  try {
+    const raw = await fs.readFile(filePath, "utf8");
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return null;
+    const rows = parsed
+      .map((row: any) => ({
+        id: slugify(String(row?.id || "")),
+        name: String(row?.name || "").trim(),
+        metrics: (row?.metrics && typeof row.metrics === "object") ? row.metrics : {},
+        score: Number.isFinite(Number(row?.score)) ? Number(row.score) : undefined,
+      }))
+      .filter((row: FileSectorRow) => row.id && row.name);
+    return rows.length ? rows : null;
+  } catch {
+    return null;
+  }
+}
+
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (!isAuthorized(req)) return bad(res, 401, "unauthorized");
 
@@ -36,10 +65,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const existingRows: ExistingSectorRow[] = existing ?? [];
     const existById = new Map(existingRows.map((r: ExistingSectorRow) => [r.id, r]));
 
-    const payload = SEED.map((s) => ({
-      id: slugify(s.id || s.name),
-      name: s.name,
+    const fileSeed = await loadSectorSeedFromFile();
+    const payload = (fileSeed ?? SEED).map((s: any) => ({
+      id: slugify(String(s.id || s.name || "")),
+      name: String(s.name || "").trim(),
       metrics: s.metrics || {},
+      ...(Number.isFinite(Number(s.score)) ? { score: Number(s.score) } : {}),
     }));
 
     let inserted = 0;
