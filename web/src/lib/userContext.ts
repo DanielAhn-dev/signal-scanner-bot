@@ -21,8 +21,17 @@ export function readProfile(): StoredProfile | null {
 
 export function saveProfile(patch: Partial<StoredProfile>) {
   const existing = readProfile() ?? {}
+  const fixedChatId = getFixedAllowedChatId()
+  const normalizedPatchChatId = normalizeChatId(patch.telegramId)
+
+  const merged: StoredProfile = {
+    ...existing,
+    ...patch,
+    telegramId: fixedChatId || normalizedPatchChatId || existing.telegramId,
+  }
+
   try {
-    localStorage.setItem('profile', JSON.stringify({ ...existing, ...patch }))
+    localStorage.setItem('profile', JSON.stringify(merged))
   } catch { /* ignore */ }
 }
 
@@ -55,6 +64,15 @@ function getAllowedChatIdsFromEnv(): string[] {
     .split(',')
     .map(normalizeChatId)
     .filter(Boolean)
+}
+
+export function getFixedAllowedChatId(): string {
+  const enforced = normalizeChatId(import.meta.env.VITE_ENFORCED_CHAT_ID)
+  if (enforced) return enforced
+
+  const allowed = getAllowedChatIdsFromEnv()
+  if (allowed.length === 1) return allowed[0]
+  return ''
 }
 
 export function isAllowedChatId(raw: unknown): boolean {
@@ -93,6 +111,9 @@ export function saveApiBase(raw: unknown) {
 }
 
 export function getCurrentUserChatId(): string {
+  const fixed = getFixedAllowedChatId()
+  if (fixed) return fixed
+
   const profile = readProfile()
   const fromProfile = normalizeChatId(profile?.telegramId)
   if (fromProfile) return fromProfile

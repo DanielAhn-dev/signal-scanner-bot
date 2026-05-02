@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react'
-import { readProfile, saveProfile, clearProfile, type StoredProfile } from '../lib/userContext'
+import { getFixedAllowedChatId, readProfile, saveProfile, clearProfile, type StoredProfile } from '../lib/userContext'
 import { invalidateCache } from '../lib/api'
 
 interface Props {
@@ -18,6 +18,7 @@ type VerifyStatus = typeof STATUS_IDLE | typeof STATUS_LOADING | typeof STATUS_O
 
 export default function ProfileModal({ isOpen, onClose, onSaved }: Props) {
   const overlayRef = useRef<HTMLDivElement>(null)
+  const fixedChatId = getFixedAllowedChatId()
 
   const [telegramId, setTelegramId] = useState('')
   const [nickname, setNickname]     = useState('')
@@ -33,14 +34,14 @@ export default function ProfileModal({ isOpen, onClose, onSaved }: Props) {
   useEffect(() => {
     if (!isOpen) return
     const p = readProfile()
-    setTelegramId(p?.telegramId ?? '')
+    setTelegramId(fixedChatId || (p?.telegramId ?? ''))
     setNickname(p?.nickname ?? '')
     setTgName(p?.telegramName ?? '')
     setTgUsername(p?.telegramUsername ?? '')
-    setVerifyStatus(p?.telegramId ? STATUS_OK : STATUS_IDLE)
+    setVerifyStatus((fixedChatId || p?.telegramId) ? STATUS_OK : STATUS_IDLE)
     setVerifyMsg('')
     setSaveMsg('')
-  }, [isOpen])
+  }, [isOpen, fixedChatId])
 
   /* ── ESC 닫기 ── */
   useEffect(() => {
@@ -58,6 +59,12 @@ export default function ProfileModal({ isOpen, onClose, onSaved }: Props) {
 
   /* ── 텔레그램 ID 검증 ── */
   const handleVerify = async () => {
+    if (fixedChatId) {
+      setVerifyStatus(STATUS_OK)
+      setVerifyMsg('고정 Chat ID 정책이 적용되어 있습니다.')
+      return
+    }
+
     const id = telegramId.trim().replace(/[^0-9-]/g, '')
     if (!id) { setVerifyMsg('텔레그램 Chat ID를 입력해 주세요.'); setVerifyStatus(STATUS_ERR); return }
     setVerifyStatus(STATUS_LOADING)
@@ -183,23 +190,28 @@ export default function ProfileModal({ isOpen, onClose, onSaved }: Props) {
             <input
               className="ui-text"
               placeholder="예: 123456789"
-              value={telegramId}
+              value={fixedChatId || telegramId}
               onChange={e => {
                 setTelegramId(e.target.value)
                 setVerifyStatus(STATUS_IDLE)
                 setVerifyMsg('')
               }}
               inputMode="numeric"
+              readOnly={!!fixedChatId}
             />
             <button
               className={`ui-button${verifyStatus === STATUS_LOADING ? ' ui-btn-secondary' : ' ui-btn-primary'}`}
               style={{ whiteSpace: 'nowrap' }}
               onClick={handleVerify}
-              disabled={verifyStatus === STATUS_LOADING}
+              disabled={verifyStatus === STATUS_LOADING || !!fixedChatId}
             >
               {verifyStatus === STATUS_LOADING ? '확인 중…' : '확인'}
             </button>
           </div>
+
+          {fixedChatId && (
+            <p className="profile-hint">고정 Chat ID 정책이 적용되어 Chat ID를 변경할 수 없습니다.</p>
+          )}
 
           {verifyMsg && (
             <p className={`profile-verify-msg${verifyStatus === STATUS_ERR ? ' profile-verify-msg--err' : ' profile-verify-msg--ok'}`}>

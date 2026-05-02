@@ -5,11 +5,10 @@ import Portfolio from './features/portfolio'
 import ScanPage from './features/scan'
 import { preloadStocks } from './lib/stockCache'
 import {
-  getApiBase,
   getCurrentUserChatId,
+  getFixedAllowedChatId,
   isAllowedChatId,
   normalizeChatId,
-  saveApiBase,
   saveProfile,
 } from './lib/userContext'
 
@@ -48,12 +47,10 @@ const COMPONENTS = {
 type RouteKey = keyof typeof COMPONENTS
 
 export default function App() {
-  const configuredApiBase = getApiBase()
-  const envApiBase = String(import.meta.env.VITE_API_BASE || '').trim()
-  const hasEnvApiBase = !!envApiBase
+  const fixedChatId = getFixedAllowedChatId()
 
-  const initialChatId = getCurrentUserChatId()
-  const initialAccess = !!configuredApiBase && !!initialChatId && isAllowedChatId(initialChatId)
+  const initialChatId = fixedChatId || getCurrentUserChatId()
+  const initialAccess = false
 
   const getInitialRoute = (): RouteKey => {
     try {
@@ -68,7 +65,6 @@ export default function App() {
   const [route, setRoute] = useState<RouteKey>(getInitialRoute)
   const [accessGranted, setAccessGranted] = useState(initialAccess)
   const [chatIdInput, setChatIdInput] = useState(initialChatId)
-  const [apiBaseInput, setApiBaseInput] = useState(configuredApiBase)
   const [accessError, setAccessError] = useState('')
 
   const allowedHint = useMemo(() => {
@@ -112,7 +108,7 @@ export default function App() {
   const handleUnlock = () => {
     setAccessError('')
 
-    const normalizedChatId = normalizeChatId(chatIdInput)
+    const normalizedChatId = fixedChatId || normalizeChatId(chatIdInput)
     if (!normalizedChatId) {
       setAccessError('Chat ID를 숫자로 입력해 주세요.')
       return
@@ -121,19 +117,6 @@ export default function App() {
     if (!isAllowedChatId(normalizedChatId)) {
       setAccessError('허용되지 않은 Chat ID입니다.')
       return
-    }
-
-    if (!hasEnvApiBase) {
-      const trimmed = String(apiBaseInput || '').trim().replace(/\/$/, '')
-      if (!trimmed) {
-        setAccessError('API Base URL이 필요합니다. 예: https://your-backend.vercel.app')
-        return
-      }
-      if (!/^https?:\/\//.test(trimmed)) {
-        setAccessError('API Base URL은 http:// 또는 https://로 시작해야 합니다.')
-        return
-      }
-      saveApiBase(trimmed)
     }
 
     saveProfile({ telegramId: normalizedChatId })
@@ -173,26 +156,14 @@ export default function App() {
                 className="ui-text"
                 placeholder="예: 8311154094"
                 inputMode="numeric"
-                value={chatIdInput}
+                value={fixedChatId || chatIdInput}
                 onChange={(e) => setChatIdInput(e.target.value)}
+                readOnly={!!fixedChatId}
               />
-
-              {!hasEnvApiBase && (
-                <>
-                  <label className="profile-field-label" htmlFor="access-api-base" style={{ marginTop: 12 }}>
-                    API Base URL
-                  </label>
-                  <input
-                    id="access-api-base"
-                    className="ui-text"
-                    placeholder="예: https://signal-scanner-bot.vercel.app"
-                    value={apiBaseInput}
-                    onChange={(e) => setApiBaseInput(e.target.value)}
-                  />
-                  <p className="muted" style={{ marginTop: 8, fontSize: 12 }}>
-                    VITE_API_BASE가 배포 환경에 없어서 런타임 입력이 필요합니다.
-                  </p>
-                </>
+              {fixedChatId && (
+                <p className="muted" style={{ marginTop: 8, fontSize: 12 }}>
+                  고정 Chat ID 정책이 적용되어 변경할 수 없습니다.
+                </p>
               )}
 
               {accessError && (

@@ -1,4 +1,4 @@
-import { getApiBase, getCurrentUserChatId } from './userContext'
+import { getApiBase, getCurrentUserChatId, getFixedAllowedChatId } from './userContext'
 
 type CacheEntry = { ts: number; data: any }
 
@@ -58,7 +58,7 @@ export async function apiFetch(
   if (uiKey) headers['x-ui-key'] = uiKey
   const requiresUserChatId = /\/api\/ui\/(positions|watchlist|virtual-trade|decisions|summary|settings|notify)(\?|$)/.test(url)
   if (requiresUserChatId) {
-    const chatId = getCurrentUserChatId()
+    const chatId = getFixedAllowedChatId() || getCurrentUserChatId()
     if (chatId) headers['x-user-chat-id'] = chatId
   }
   if (!headers['content-type'] && fetchOpts.body) headers['content-type'] = 'application/json'
