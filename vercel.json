@@ -11,40 +11,30 @@
         "api/worker.ts": {
             "maxDuration": 60
         },
-        "api/cron/scoreSync.ts": {
+        "api/cron.ts": {
             "maxDuration": 60
         },
-        "api/cron/briefing.ts": {
+        "api/ui.ts": {
             "maxDuration": 60
         },
-        "api/cron/report.ts": {
-            "maxDuration": 60
-        },
-        "api/cron/strategyGateRefresh.ts": {
-            "maxDuration": 60
-        },
-        "api/cron/virtualAutoTrade.ts": {
-            "maxDuration": 60
-        },
-        "api/ui/report-pdf.ts": {
-            "maxDuration": 60
-        },
-        "api/ui/report-web.ts": {
-            "maxDuration": 60
-        },
-        "api/ui/report-snapshot.ts": {
-            "maxDuration": 60
-        },
-        "api/ui/trigger-briefing.ts": {
-            "maxDuration": 30
-        },
-        "api/ui/trigger-update.ts": {
-            "maxDuration": 30
-        },
-        "api/ui/notify.ts": {
+        "api/update.ts": {
             "maxDuration": 30
         }
     },
+    "rewrites": [
+        {
+            "source": "/api/ui/:route",
+            "destination": "/api/ui?route=:route"
+        },
+        {
+            "source": "/api/cron/:task",
+            "destination": "/api/cron?task=:task"
+        },
+        {
+            "source": "/api/update/:task",
+            "destination": "/api/update?task=:task"
+        }
+    ],
     "outputDirectory": ".",
     "crons": [
         {
