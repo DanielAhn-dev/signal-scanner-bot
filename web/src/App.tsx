@@ -46,7 +46,7 @@ const COMPONENTS = {
 type RouteKey = keyof typeof COMPONENTS
 
 export default function App() {
-  const initialChatId = getCurrentUserChatId()
+  const initialChatId = ''
   const initialAccess = false
 
   const getInitialRoute = (): RouteKey => {
