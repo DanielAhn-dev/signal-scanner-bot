@@ -5,7 +5,7 @@
     "devCommand": null,
     "installCommand": null,
     "functions": {
-        "api/ui/*.ts": {
+        "api/ui.ts": {
             "maxDuration": 60
         },
         "api/telegram.ts": {
