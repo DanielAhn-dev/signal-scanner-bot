@@ -267,7 +267,13 @@ async function buildPullbackWeeklyReportData(
     throw new Error(`눌림목 기준일 조회 실패: ${dateError.message}`);
   }
 
-  const recentDates = [...new Set((dateRows ?? []).map((row: TradeDateRow) => row.trade_date).filter((row): row is string => Boolean(row)))].slice(0, 5);
+  const recentDates: string[] = [
+    ...new Set(
+      ((dateRows ?? []) as TradeDateRow[])
+        .map((row: TradeDateRow) => row.trade_date)
+        .filter((row: string | null): row is string => Boolean(row))
+    ),
+  ].slice(0, 5);
   if (!recentDates.length) {
     return {
       candidates: [],
@@ -296,10 +302,14 @@ async function buildPullbackWeeklyReportData(
     throw new Error(`눌림목 후보 조회 실패: ${signalError.message}`);
   }
 
-  const mappedSignals = (signalRows ?? []).map((row: PullbackSignalWeekRow) => ({ ...row, stock: unwrapJoined(row.stock) }));
-  const normalizedSignals = mappedSignals.filter((row) => row.stock && row.code) as Array<
-    PullbackSignalWeekRow & { stock: NonNullable<PullbackSignalWeekRow["stock"]> }
-  >;
+  const mappedSignals: Array<
+    PullbackSignalWeekRow & { stock: NonNullable<PullbackSignalWeekRow["stock"]> | null }
+  > = (signalRows ?? []).map((row: PullbackSignalWeekRow) => ({ ...row, stock: unwrapJoined(row.stock) }));
+  const normalizedSignals = mappedSignals.filter(
+    (
+      row: PullbackSignalWeekRow & { stock: NonNullable<PullbackSignalWeekRow["stock"]> | null }
+    ): row is PullbackSignalWeekRow & { stock: NonNullable<PullbackSignalWeekRow["stock"]> } => Boolean(row.stock && row.code)
+  );
 
   if (!normalizedSignals.length) {
     const prefs = await getUserInvestmentPrefs(chatId);
@@ -800,8 +810,8 @@ export async function createWeeklyReportPdf(
     }
   });
 
-  const tradeRows = tradeRes.data ?? [];
-  const tradeCodes = [...new Set(tradeRows.map((row: TradeRow) => row.code).filter((code): code is string => Boolean(code)))];
+  const tradeRows: TradeRow[] = (tradeRes.data ?? []) as TradeRow[];
+  const tradeCodes: string[] = [...new Set(tradeRows.map((row) => row.code).filter((code): code is string => Boolean(code)))];
   const stockNameMap = tradeCodes.length
     ? await runReportStep("trade_name_query", async () => {
         const { data, error } = await supabase
@@ -836,7 +846,8 @@ export async function createWeeklyReportPdf(
       })
     : { latestAsof: null, byCode: new Map(), fallbackCodes: [] } as ScoreSnapshotResult;
 
-  const codes = (watchRes.data ?? []).map((r: WatchlistRow) => r.code);
+  const watchRows: WatchlistRow[] = (watchRes.data ?? []) as WatchlistRow[];
+  const codes: string[] = watchRows.map((r: WatchlistRow) => r.code);
   const realtimeMap = codes.length
     ? await runReportStep("realtime_price", async () => {
         try {
@@ -847,7 +858,7 @@ export async function createWeeklyReportPdf(
       })
     : {};
 
-  const watchItems: WatchItem[] = (watchRes.data ?? []).map((row: WatchlistRow) => {
+  const watchItems: WatchItem[] = watchRows.map((row: WatchlistRow) => {
     const stock = unwrapStock(row.stock);
     const buyPrice = row.buy_price != null ? toNum(row.buy_price) : null;
     const qtyRaw = row.quantity != null ? Math.floor(toNum(row.quantity)) : 0;

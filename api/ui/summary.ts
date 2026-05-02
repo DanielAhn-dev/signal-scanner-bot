@@ -5,6 +5,17 @@ import { resolveUiUserContext } from './_userContext'
 const SUMMARY_CACHE_TTL_MS = Math.max(0, Number(process.env.UI_SUMMARY_CACHE_TTL_MS || 10_000))
 const SUMMARY_QUERY_TIMEOUT_MS = Math.max(1_000, Number(process.env.UI_SUMMARY_QUERY_TIMEOUT_MS || 7_000))
 
+type PositionSummaryRow = {
+  quantity: number | null
+  buy_price: number | null
+  invested_amount: number | null
+  stock: { close: number | null } | Array<{ close: number | null }> | null
+}
+
+type ScanRunRow = {
+  created_at: string | null
+}
+
 type SummaryCacheEntry = {
   expiresAt: number
   payload: any
@@ -82,7 +93,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         .from('virtual_positions')
         .select('id,quantity,buy_price,invested_amount,stock:stocks(close)')
         .eq('chat_id', chatId)
-        .gt('quantity', 0),
+        .gt('quantity', 0)
+        .returns<PositionSummaryRow[]>(),
       SUMMARY_QUERY_TIMEOUT_MS,
       'virtual_positions summary query',
     )
@@ -102,23 +114,24 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           .select('created_at')
           .eq('chat_id', chatId)
           .order('created_at', { ascending: false })
-          .limit(1),
+          .limit(1)
+          .returns<ScanRunRow[]>(),
         SUMMARY_QUERY_TIMEOUT_MS,
         'scan_run_logs summary query',
       ),
     ])
 
-    const positions = positionsResult.data ?? []
+    const positions: PositionSummaryRow[] = positionsResult.data ?? []
     const posCount = positions.length
 
     const decCount =
-      decisionResult.status === 'fulfilled' && Number.isFinite(Number(decisionResult.value.count))
-        ? Number(decisionResult.value.count)
+      decisionResult.status === 'fulfilled' && Number.isFinite(Number((decisionResult.value as { count?: unknown }).count))
+        ? Number((decisionResult.value as { count?: unknown }).count)
         : 0
 
-    const lastScan =
+    const lastScan: ScanRunRow[] =
       lastScanResult.status === 'fulfilled'
-        ? (lastScanResult.value.data ?? [])
+        ? (((lastScanResult.value as { data?: ScanRunRow[] | null }).data) ?? [])
         : []
 
     const unrealizedPnlSum = (positions ?? []).reduce((acc: number, row: any) => {

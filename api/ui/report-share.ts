@@ -44,9 +44,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (req.method === 'GET') {
       const topic = req.query.topic ? resolveReportTopic(req.query.topic) : undefined
       const shares = await listReportShares({ supabase, topic, activeOnly: String(req.query.all || '') !== '1' })
+      type ShareListItem = (typeof shares)[number]
       return res.status(200).json({
         ok: true,
-        data: shares.map((share) => ({
+        data: shares.map((share: ShareListItem) => ({
           ...share,
           url: `${origin}/api/ui/report-shared?share=${encodeURIComponent(share.publicToken)}`,
         })),
