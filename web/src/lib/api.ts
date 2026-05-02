@@ -120,7 +120,12 @@ export async function apiFetch(
           const body = await res.text().catch(() => '')
           const preview = body.slice(0, 200)
           if (res.status === 404 && url.includes('/api/ui/')) {
-            throw new Error(`API endpoint not found (${res.status}) from ${url}. Check VITE_API_BASE and backend deployment. ${preview}`)
+            const origin = typeof window !== 'undefined' ? window.location.origin : ''
+            throw new Error(
+              `API endpoint not found (${res.status}) from ${url}. `
+              + `If web and backend are deployed as separate Vercel projects, set VITE_API_BASE to backend URL `
+              + `(current origin: ${origin || 'n/a'}). Check backend deployment and vercel project root. ${preview}`,
+            )
           }
           throw new Error(`API request failed (${res.status}) from ${url}: ${preview}`)
         }
