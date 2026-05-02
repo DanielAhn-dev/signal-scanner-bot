@@ -3,6 +3,7 @@ import { createClient, SupabaseClient } from '@supabase/supabase-js'
 import { resolveUiUserContext } from './_userContext'
 
 const SUMMARY_CACHE_TTL_MS = Math.max(0, Number(process.env.UI_SUMMARY_CACHE_TTL_MS || 10_000))
+const SUMMARY_QUERY_TIMEOUT_MS = Math.max(1_000, Number(process.env.UI_SUMMARY_QUERY_TIMEOUT_MS || 7_000))
 
 type SummaryCacheEntry = {
   expiresAt: number
@@ -10,6 +11,24 @@ type SummaryCacheEntry = {
 }
 
 const summaryCache = new Map<string, SummaryCacheEntry>()
+
+function withTimeout<T>(promise: PromiseLike<T>, timeoutMs: number, label: string): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => {
+      reject(new Error(`${label} timed out after ${timeoutMs}ms`))
+    }, timeoutMs)
+
+    Promise.resolve(promise)
+      .then((value) => {
+        clearTimeout(timer)
+        resolve(value)
+      })
+      .catch((error) => {
+        clearTimeout(timer)
+        reject(error)
+      })
+  })
+}
 
 let _supabase: SupabaseClient | null = null
 function getSupabase(): SupabaseClient {
@@ -58,20 +77,49 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   try {
-    const [{ count: posCount }, { data: positions }, { count: decCount }, { data: lastScan }] = await Promise.all([
-      // positions count
-      supabase.from('virtual_positions').select('id', { count: 'exact', head: true }).eq('chat_id', chatId),
-      // user-scoped unrealized pnl calculation
+    const positionsResult = await withTimeout(
       supabase
         .from('virtual_positions')
-        .select('quantity,buy_price,invested_amount,stock:stocks(close)')
+        .select('id,quantity,buy_price,invested_amount,stock:stocks(close)')
         .eq('chat_id', chatId)
         .gt('quantity', 0),
-      // decision logs count
-      supabase.from('virtual_decision_logs').select('id', { count: 'exact', head: true }).eq('chat_id', chatId),
-      // last scan run
-      supabase.from('scan_run_logs').select('created_at').eq('chat_id', chatId).order('created_at', { ascending: false }).limit(1)
+      SUMMARY_QUERY_TIMEOUT_MS,
+      'virtual_positions summary query',
+    )
+
+    const [decisionResult, lastScanResult] = await Promise.allSettled([
+      withTimeout(
+        supabase
+          .from('virtual_decision_logs')
+          .select('id', { count: 'planned', head: true })
+          .eq('chat_id', chatId),
+        SUMMARY_QUERY_TIMEOUT_MS,
+        'virtual_decision_logs summary query',
+      ),
+      withTimeout(
+        supabase
+          .from('scan_run_logs')
+          .select('created_at')
+          .eq('chat_id', chatId)
+          .order('created_at', { ascending: false })
+          .limit(1),
+        SUMMARY_QUERY_TIMEOUT_MS,
+        'scan_run_logs summary query',
+      ),
     ])
+
+    const positions = positionsResult.data ?? []
+    const posCount = positions.length
+
+    const decCount =
+      decisionResult.status === 'fulfilled' && Number.isFinite(Number(decisionResult.value.count))
+        ? Number(decisionResult.value.count)
+        : 0
+
+    const lastScan =
+      lastScanResult.status === 'fulfilled'
+        ? (lastScanResult.value.data ?? [])
+        : []
 
     const unrealizedPnlSum = (positions ?? []).reduce((acc: number, row: any) => {
       const qty = Number(row?.quantity || 0)
