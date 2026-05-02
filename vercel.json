@@ -5,6 +5,9 @@
     "devCommand": null,
     "installCommand": null,
     "functions": {
+        "api/ui/*.ts": {
+            "maxDuration": 60
+        },
         "api/telegram.ts": {
             "maxDuration": 15
         },
@@ -15,6 +18,9 @@
             "maxDuration": 60
         },
         "api/ui.ts": {
+            "maxDuration": 60
+        },
+        "api/ui/index.ts": {
             "maxDuration": 60
         },
         "api/update.ts": {
