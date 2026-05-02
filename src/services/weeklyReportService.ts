@@ -812,8 +812,8 @@ export async function createWeeklyReportPdf(
 
   const tradeRows: TradeRow[] = (tradeRes.data ?? []) as TradeRow[];
   const tradeCodes: string[] = [...new Set(tradeRows.map((row) => row.code).filter((code): code is string => Boolean(code)))];
-  const stockNameMap = tradeCodes.length
-    ? await runReportStep("trade_name_query", async () => {
+  const stockNameMap: Map<string, string> = tradeCodes.length
+    ? await runReportStep<Map<string, string>>("trade_name_query", async () => {
         const { data, error } = await supabase
           .from("stocks")
           .select("code, name")
@@ -824,13 +824,13 @@ export async function createWeeklyReportPdf(
           throw new Error(`stocks 조회 실패: ${error.message}`);
         }
 
-        return new Map((data ?? []).map((row: StockNameRow) => [row.code, row.name]));
+        return new Map<string, string>((data ?? []).map((row: StockNameRow) => [row.code, row.name]));
       })
     : new Map<string, string>();
 
-  const rows = tradeRows.map((row: TradeRow) => ({
+  const rows: TradeRow[] = tradeRows.map((row: TradeRow) => ({
     ...row,
-    name: stockNameMap.get(row.code) ?? row.name ?? row.code,
+    name: String(stockNameMap.get(row.code) ?? row.name ?? row.code),
   }));
   const windows = splitWindows(rows, now);
   const curr = summarizeWindow(windows.current14);

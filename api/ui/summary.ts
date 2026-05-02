@@ -16,6 +16,14 @@ type ScanRunRow = {
   created_at: string | null
 }
 
+type QueryWithData<T> = {
+  data: T[] | null
+}
+
+type QueryWithCount = {
+  count: number | null
+}
+
 type SummaryCacheEntry = {
   expiresAt: number
   payload: any
@@ -88,7 +96,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   try {
-    const positionsResult = await withTimeout(
+    const positionsResult = await withTimeout<QueryWithData<PositionSummaryRow>>(
       supabase
         .from('virtual_positions')
         .select('id,quantity,buy_price,invested_amount,stock:stocks(close)')
@@ -100,7 +108,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     )
 
     const [decisionResult, lastScanResult] = await Promise.allSettled([
-      withTimeout(
+      withTimeout<QueryWithCount>(
         supabase
           .from('virtual_decision_logs')
           .select('id', { count: 'planned', head: true })
@@ -108,7 +116,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         SUMMARY_QUERY_TIMEOUT_MS,
         'virtual_decision_logs summary query',
       ),
-      withTimeout(
+      withTimeout<QueryWithData<ScanRunRow>>(
         supabase
           .from('scan_run_logs')
           .select('created_at')
@@ -125,13 +133,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const posCount = positions.length
 
     const decCount =
-      decisionResult.status === 'fulfilled' && Number.isFinite(Number((decisionResult.value as { count?: unknown }).count))
-        ? Number((decisionResult.value as { count?: unknown }).count)
+      decisionResult.status === 'fulfilled' && Number.isFinite(Number(decisionResult.value.count))
+        ? Number(decisionResult.value.count)
         : 0
 
     const lastScan: ScanRunRow[] =
       lastScanResult.status === 'fulfilled'
-        ? (((lastScanResult.value as { data?: ScanRunRow[] | null }).data) ?? [])
+        ? (lastScanResult.value.data ?? [])
         : []
 
     const unrealizedPnlSum = (positions ?? []).reduce((acc: number, row: any) => {
