@@ -1,4 +1,4 @@
-import { getCurrentUserChatId } from './userContext'
+import { getApiBase, getCurrentUserChatId } from './userContext'
 
 type CacheEntry = { ts: number; data: any }
 
@@ -11,7 +11,7 @@ export function invalidateCache(pathPrefix?: string) {
     __api_cache.clear()
     return
   }
-  const base = import.meta.env.VITE_API_BASE || ''
+  const base = getApiBase()
   const prefix = base ? `${base.replace(/\/$/, '')}${pathPrefix}` : pathPrefix
   for (const key of __api_cache.keys()) {
     if (key.startsWith(prefix)) __api_cache.delete(key)
@@ -46,7 +46,7 @@ export async function apiFetch(
 ) {
   const { cacheMs = 3000, timeoutMs = 10_000, retries = 1, ...fetchOpts } = opts
 
-  const base = import.meta.env.VITE_API_BASE || ''
+  const base = getApiBase()
   const url = base
     ? `${base.replace(/\/$/, '')}${path.startsWith('/') ? path : `/${path}`}`
     : path
@@ -84,10 +84,19 @@ export async function apiFetch(
     for (let attempt = 0; attempt < maxAttempts; attempt++) {
       try {
         const res = await _fetch(url, { ...fetchOpts, headers }, timeoutMs)
+        if (!res.ok) {
+          const body = await res.text().catch(() => '')
+          const preview = body.slice(0, 200)
+          if (res.status === 404 && url.includes('/api/ui/')) {
+            throw new Error(`API endpoint not found (${res.status}) from ${url}. Check VITE_API_BASE and backend deployment. ${preview}`)
+          }
+          throw new Error(`API request failed (${res.status}) from ${url}: ${preview}`)
+        }
+
         const ct = res.headers.get('content-type') || ''
         if (!ct.includes('application/json')) {
           const text = await res.text()
-          throw new Error(`Non-JSON response from ${url}: ${text.slice(0, 200)}`)
+          throw new Error(`Expected JSON from ${url}, got ${ct || 'unknown content-type'}: ${text.slice(0, 200)}`)
         }
         const json = await res.json()
         if (method === 'GET' && cacheMs > 0) {
