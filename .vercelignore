@@ -1,0 +1,13 @@
+# web/ 디렉토리는 별도 Vercel 프로젝트로 배포됩니다
+web/
+
+# 개발/도구 디렉토리 (런타임에 불필요)
+scripts/
+docs/
+tests/
+tmp/
+
+# 파이썬 관련
+*.py
+requirements.txt
+pkg_resources.py
