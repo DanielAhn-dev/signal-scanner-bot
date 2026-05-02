@@ -3,6 +3,7 @@
   "buildCommand": "pnpm build",
   "outputDirectory": "dist",
   "rewrites": [
+    { "source": "/api/:path*", "destination": "https://signal-scanner-bot.vercel.app/api/:path*" },
     { "source": "/((?!api/.*).*)", "destination": "/index.html" }
   ]
 }
