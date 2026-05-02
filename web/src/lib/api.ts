@@ -1,9 +1,18 @@
-import { getApiBase, getCurrentUserChatId, getFixedAllowedChatId } from './userContext'
+import { getApiBase, getCurrentUserChatId } from './userContext'
 
 type CacheEntry = { ts: number; data: any }
 
 const __api_cache = new Map<string, CacheEntry>()
 const __inflight = new Map<string, Promise<any>>()
+
+function toUiQueryRouteUrl(url: string): string | null {
+  const m = url.match(/^(.*\/api\/ui)\/([^/?#]+)(\?[^#]*)?$/)
+  if (!m) return null
+  const base = m[1]
+  const route = m[2]
+  const qs = m[3] ? m[3].slice(1) : ''
+  return `${base}?route=${encodeURIComponent(route)}${qs ? `&${qs}` : ''}`
+}
 
 /** 캐시 전체 또는 특정 path prefix 무효화 */
 export function invalidateCache(pathPrefix?: string) {
@@ -40,6 +49,15 @@ async function _fetch(url: string, opts: RequestInit, timeoutMs: number): Promis
   }
 }
 
+async function parseJsonResponse(res: Response, url: string) {
+  const ct = res.headers.get('content-type') || ''
+  if (!ct.includes('application/json')) {
+    const text = await res.text()
+    throw new Error(`Expected JSON from ${url}, got ${ct || 'unknown content-type'}: ${text.slice(0, 200)}`)
+  }
+  return res.json()
+}
+
 export async function apiFetch(
   path: string,
   opts: ApiFetchOptions = {},
@@ -58,7 +76,7 @@ export async function apiFetch(
   if (uiKey) headers['x-ui-key'] = uiKey
   const requiresUserChatId = /\/api\/ui\/(positions|watchlist|virtual-trade|decisions|summary|settings|notify)(\?|$)/.test(url)
   if (requiresUserChatId) {
-    const chatId = getFixedAllowedChatId() || getCurrentUserChatId()
+    const chatId = getCurrentUserChatId()
     if (chatId) headers['x-user-chat-id'] = chatId
   }
   if (!headers['content-type'] && fetchOpts.body) headers['content-type'] = 'application/json'
@@ -85,6 +103,20 @@ export async function apiFetch(
       try {
         const res = await _fetch(url, { ...fetchOpts, headers }, timeoutMs)
         if (!res.ok) {
+          if (res.status === 404) {
+            const fallbackUrl = toUiQueryRouteUrl(url)
+            if (fallbackUrl) {
+              const fallbackRes = await _fetch(fallbackUrl, { ...fetchOpts, headers }, timeoutMs)
+              if (fallbackRes.ok) {
+                const json = await parseJsonResponse(fallbackRes, fallbackUrl)
+                if (method === 'GET' && cacheMs > 0) {
+                  __api_cache.set(cacheKey, { ts: Date.now(), data: json })
+                }
+                return json
+              }
+            }
+          }
+
           const body = await res.text().catch(() => '')
           const preview = body.slice(0, 200)
           if (res.status === 404 && url.includes('/api/ui/')) {
@@ -93,12 +125,7 @@ export async function apiFetch(
           throw new Error(`API request failed (${res.status}) from ${url}: ${preview}`)
         }
 
-        const ct = res.headers.get('content-type') || ''
-        if (!ct.includes('application/json')) {
-          const text = await res.text()
-          throw new Error(`Expected JSON from ${url}, got ${ct || 'unknown content-type'}: ${text.slice(0, 200)}`)
-        }
-        const json = await res.json()
+        const json = await parseJsonResponse(res, url)
         if (method === 'GET' && cacheMs > 0) {
           __api_cache.set(cacheKey, { ts: Date.now(), data: json })
         }

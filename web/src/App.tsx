@@ -6,7 +6,6 @@ import ScanPage from './features/scan'
 import { preloadStocks } from './lib/stockCache'
 import {
   getCurrentUserChatId,
-  getFixedAllowedChatId,
   isAllowedChatId,
   normalizeChatId,
   saveProfile,
@@ -47,9 +46,7 @@ const COMPONENTS = {
 type RouteKey = keyof typeof COMPONENTS
 
 export default function App() {
-  const fixedChatId = getFixedAllowedChatId()
-
-  const initialChatId = fixedChatId || getCurrentUserChatId()
+  const initialChatId = getCurrentUserChatId()
   const initialAccess = false
 
   const getInitialRoute = (): RouteKey => {
@@ -108,7 +105,7 @@ export default function App() {
   const handleUnlock = () => {
     setAccessError('')
 
-    const normalizedChatId = fixedChatId || normalizeChatId(chatIdInput)
+    const normalizedChatId = normalizeChatId(chatIdInput)
     if (!normalizedChatId) {
       setAccessError('Chat ID를 숫자로 입력해 주세요.')
       return
@@ -156,15 +153,9 @@ export default function App() {
                 className="ui-text"
                 placeholder="예: 8311154094"
                 inputMode="numeric"
-                value={fixedChatId || chatIdInput}
+                value={chatIdInput}
                 onChange={(e) => setChatIdInput(e.target.value)}
-                readOnly={!!fixedChatId}
               />
-              {fixedChatId && (
-                <p className="muted" style={{ marginTop: 8, fontSize: 12 }}>
-                  고정 Chat ID 정책이 적용되어 변경할 수 없습니다.
-                </p>
-              )}
 
               {accessError && (
                 <p className="profile-verify-msg profile-verify-msg--err" style={{ marginTop: 12 }}>
