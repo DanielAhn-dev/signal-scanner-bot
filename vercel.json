@@ -17,12 +17,6 @@
         "api/cron.ts": {
             "maxDuration": 60
         },
-        "api/ui.ts": {
-            "maxDuration": 60
-        },
-        "api/ui/index.ts": {
-            "maxDuration": 60
-        },
         "api/update.ts": {
             "maxDuration": 30
         }
