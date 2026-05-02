@@ -5,16 +5,42 @@
     "devCommand": null,
     "installCommand": null,
     "functions": {
+        "api/ui/*.ts": {
+            "maxDuration": 60
+        },
         "api/telegram.ts": {
             "maxDuration": 15
         },
         "api/worker.ts": {
             "maxDuration": 60
         },
-        "api/cron/scoreSync.ts": {
+        "api/cron.ts": {
             "maxDuration": 60
+        },
+        "api/ui.ts": {
+            "maxDuration": 60
+        },
+        "api/ui/index.ts": {
+            "maxDuration": 60
+        },
+        "api/update.ts": {
+            "maxDuration": 30
         }
     },
+    "rewrites": [
+        {
+            "source": "/api/ui/:route",
+            "destination": "/api/ui?route=:route"
+        },
+        {
+            "source": "/api/cron/:task",
+            "destination": "/api/cron?task=:task"
+        },
+        {
+            "source": "/api/update/:task",
+            "destination": "/api/update?task=:task"
+        }
+    ],
     "outputDirectory": ".",
     "crons": [
         {

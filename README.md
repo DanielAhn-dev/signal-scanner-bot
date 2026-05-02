@@ -7,6 +7,7 @@
 - 온보딩·기능개선 로드맵: [docs/onboarding-roadmap.md](docs/onboarding-roadmap.md)
 - 가상 자동매매 운영 가이드: [docs/virtual-autotrade-ops.md](docs/virtual-autotrade-ops.md)
 - Worker 관측/운영 가이드: [docs/worker-observability-guide.md](docs/worker-observability-guide.md)
+- Vercel 분리 프로젝트 체크리스트: [docs/vercel-split-projects-checklist.md](docs/vercel-split-projects-checklist.md)
 
 ### 운영 가이드 PDF 생성
 

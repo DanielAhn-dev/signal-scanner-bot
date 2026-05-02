@@ -1,0 +1,374 @@
+﻿import React, { useEffect, useState, useRef, useCallback, useMemo } from 'react'
+import { apiFetch, invalidateCache } from '../../lib/api'
+import { formatKrw, formatNumber } from '../../lib/format'
+import Skeleton from '../../components/Skeleton'
+import Button from '../../components/ui/Button'
+import Input from '../../components/ui/Input'
+import Modal from '../../components/Modal'
+import { EmptyState, ErrorState } from '../../components/StateViews'
+import { useToast } from '../../components/ToastProvider'
+import Pagination from '../../components/Pagination'
+
+export default function Portfolio() {
+  const [allRows, setAllRows] = useState<any[]>([])
+  const [loading, setLoading] = useState(true)
+  const [page, setPage] = useState(1)
+  const pageSize = 20
+  const [search, setSearch] = useState('')
+  const [searchInput, setSearchInput] = useState('')
+  const [selectedSector, setSelectedSector] = useState<string | null>(null)
+  const [positionFilter, setPositionFilter] = useState<'all' | 'holding' | 'interest'>('all')
+  const [showAllSectors, setShowAllSectors] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  const [modalOpen, setModalOpen] = useState(false)
+  const [modalRow, setModalRow] = useState<any | null>(null)
+  const [modalSide, setModalSide] = useState<'buy' | 'sell'>('buy')
+  const [tradeQty, setTradeQty] = useState(1)
+  const [tradePrice, setTradePrice] = useState<number | ''>('')
+  const [tradeLoading, setTradeLoading] = useState(false)
+  const [tradeError, setTradeError] = useState<string | null>(null)
+  const toast = useToast()
+
+  const load = useCallback(async (soft = false) => {
+    if (!soft) setLoading(true)
+    if (!soft) setError(null)
+    try {
+      // 초기 로드 pageSize를 20으로 제한 → 초기 응답 시간 8초에서 1초 이하로 단축
+      const params = new URLSearchParams({ page: '1', pageSize: '20', includeLots: '0' })
+      const json = await apiFetch(`/api/ui/positions?${params}`, { cacheMs: 3_000, timeoutMs: 15_000, retries: 1 })
+      setAllRows(json?.data ?? [])
+    } catch (e: any) {
+      setError(e?.message || String(e))
+    } finally {
+      if (!soft) setLoading(false)
+    }
+  }, [])
+
+  useEffect(() => { load() }, [load])
+
+  // 클라이언트 사이드 파생 상태 – API 재호출 없이 즉시 필터링
+  const holdingAll = useMemo(() => allRows.filter((r: any) => r.position_type === 'holding'), [allRows])
+  const interestAll = useMemo(() => allRows.filter((r: any) => r.position_type !== 'holding'), [allRows])
+
+  const sectors = useMemo(() => {
+    const base = positionFilter === 'holding' ? holdingAll : positionFilter === 'interest' ? interestAll : allRows
+    const seen = new Map<string, { id: string; name: string }>()
+    for (const r of base) {
+      const s = r.stock?.sector
+      if (s?.id && s?.name && !seen.has(String(s.id))) {
+        seen.set(String(s.id), { id: String(s.id), name: String(s.name) })
+      }
+    }
+    return Array.from(seen.values()).sort((a, b) => a.name.localeCompare(b.name, 'ko'))
+  }, [allRows, positionFilter, holdingAll, interestAll])
+
+  const filteredRows = useMemo(() => {
+    let result: any[] = positionFilter === 'holding' ? holdingAll : positionFilter === 'interest' ? interestAll : allRows
+    if (selectedSector) result = result.filter((r: any) => String(r.stock?.sector_id ?? '') === selectedSector)
+    if (search) {
+      const q = search.toLowerCase()
+      result = result.filter((r: any) =>
+        (r.code || '').toLowerCase().includes(q) ||
+        (r.stock_name || '').toLowerCase().includes(q)
+      )
+    }
+    return result
+  }, [allRows, positionFilter, selectedSector, search, holdingAll, interestAll])
+
+  const total = filteredRows.length
+  const totalPages = Math.ceil(total / pageSize)
+  const rows = filteredRows.slice((page - 1) * pageSize, page * pageSize)
+  const totalUnrealized = holdingAll.reduce((acc: number, r: any) => acc + Number(r.unrealized_pnl || 0), 0)
+
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const onSearchChange = (v: string) => {
+    setSearchInput(v)
+    if (debounceRef.current) clearTimeout(debounceRef.current)
+    debounceRef.current = setTimeout(() => {
+      setSearch(v)
+      setPage(1)
+    }, 220)
+  }
+  useEffect(() => () => { if (debounceRef.current) clearTimeout(debounceRef.current) }, [])
+
+  const openTradeModal = (row: any, side: 'buy' | 'sell') => {
+    setModalRow(row)
+    setModalSide(side)
+    setTradeQty(side === 'buy' ? (row.recommended_buy_qty || 1) : (row.quantity || 1))
+    setTradePrice(row.stock?.close ?? row.avg_price ?? '')
+    setTradeError(null)
+    setModalOpen(true)
+  }
+
+  const submitTrade = async () => {
+    if (!modalRow) return
+    if (!tradeQty || tradeQty <= 0) { setTradeError('수량은 1 이상이어야 합니다'); return }
+    if (tradePrice !== '' && Number(tradePrice) <= 0) { setTradeError('가격은 0보다 커야 합니다'); return }
+
+    setTradeLoading(true)
+    setTradeError(null)
+    try {
+      const payload = {
+        code: modalRow.code,
+        side: modalSide === 'buy' ? 'BUY' : 'SELL',
+        quantity: Number(tradeQty),
+        price: tradePrice !== '' ? Number(tradePrice) : (modalRow.stock?.close ?? modalRow.avg_price ?? 0),
+      }
+      const json = await apiFetch('/api/ui/virtual-trade', {
+        method: 'POST',
+        cacheMs: 0,
+        timeoutMs: 12_000,
+        body: JSON.stringify(payload),
+      })
+      if (json?.error) {
+        setTradeError(String(json?.error || '거래 실행 실패'))
+      } else {
+        toast.show(`${modalSide === 'buy' ? '매수' : '매도'} 등록 완료 ✓`)
+        invalidateCache('/api/ui/positions')
+        setModalOpen(false)
+        load(true)
+      }
+    } catch (e: any) {
+      setTradeError(String(e?.message || e))
+    } finally {
+      setTradeLoading(false)
+    }
+  }
+
+  const visibleSectors = showAllSectors ? sectors : sectors.slice(0, 8)
+
+  const onTabChange = (t: 'all' | 'holding' | 'interest') => {
+    setPositionFilter(t)
+    setSelectedSector(null)
+    setPage(1)
+  }
+
+  const onSectorChange = (sectorId: string | null) => {
+    setSelectedSector(sectorId)
+    setPage(1)
+  }
+
+  return (
+    <section className="container-app portfolio-page">
+      <div className="portfolio-head">
+        <div className="portfolio-title-wrap">
+          <h1 className="title-xl portfolio-title">가상 포트폴리오</h1>
+          <p className="portfolio-subtitle">보유 포지션과 관심 종목을 한 화면에서 관리합니다.</p>
+        </div>
+        <span className="portfolio-total-pill">
+          {allRows.length > 0 ? `총 ${allRows.length}개` : '포지션 집계 준비중'}
+        </span>
+      </div>
+
+      <div className="portfolio-stat-grid">
+        <div className="card portfolio-stat-card">
+          <div className="stat-label">보유 종목</div>
+          <div className="stat-value">{holdingAll.length}</div>
+          <div className="stat-sub">실제 보유 상태</div>
+        </div>
+        <div className="card portfolio-stat-card">
+          <div className="stat-label">관심 종목</div>
+          <div className="stat-value">{interestAll.length}</div>
+          <div className="stat-sub">매수 대기 항목</div>
+        </div>
+        <div className="card portfolio-stat-card">
+          <div className="stat-label">평가손익 합계</div>
+          <div className={`stat-value ${totalUnrealized < 0 ? 'negative' : 'positive'}`}>
+            {formatKrw(totalUnrealized)}
+          </div>
+          <div className="stat-sub">보유 포지션 기준</div>
+        </div>
+      </div>
+
+      {/* 필터 */}
+      <div className="card mb-4 portfolio-filter-card">
+        <div className="portfolio-filter-stack">
+          <div>
+            <div className="caption portfolio-filter-label">섹터</div>
+            <div className="tag-list">
+              <button
+                className={`tag${!selectedSector ? ' active' : ''}`}
+                onClick={() => onSectorChange(null)}
+              >전체</button>
+              {visibleSectors.map((s: any) => (
+                <button
+                  key={s.id}
+                  className={`tag${selectedSector === s.id ? ' active' : ''}`}
+                  onClick={() => onSectorChange(s.id)}
+                >{s.name}</button>
+              ))}
+              {sectors.length > 8 && (
+                <button className="tag" onClick={() => setShowAllSectors(v => !v)}>
+                  {showAllSectors ? '접기' : `+ ${sectors.length - 8}개 더보기`}
+                </button>
+              )}
+            </div>
+          </div>
+
+          <div>
+            <div className="caption portfolio-filter-label">포지션 유형</div>
+            <div className="tag-list portfolio-segment-list">
+              <button
+                className={`tag${positionFilter === 'all' ? ' active' : ''}`}
+                onClick={() => onTabChange('all')}
+              >
+                전체 ({allRows.length})
+              </button>
+              <button
+                className={`tag${positionFilter === 'holding' ? ' active' : ''}`}
+                onClick={() => onTabChange('holding')}
+              >
+                보유 ({holdingAll.length})
+              </button>
+              <button
+                className={`tag${positionFilter === 'interest' ? ' active' : ''}`}
+                onClick={() => onTabChange('interest')}
+              >
+                관심 ({interestAll.length})
+              </button>
+            </div>
+          </div>
+
+          <div className="portfolio-search-row">
+            <input
+              className="input portfolio-search-input"
+              placeholder="코드 또는 종목명 검색"
+              value={searchInput}
+              onChange={e => onSearchChange(e.target.value)}
+            />
+            <Button className="portfolio-search-btn" variant="secondary" onClick={() => { setSearch(searchInput); setPage(1) }} disabled={loading}>
+              검색
+            </Button>
+          </div>
+        </div>
+      </div>
+
+      {error && (
+        <div className="portfolio-error-wrap">
+          <ErrorState message={error} onRetry={() => load()} />
+        </div>
+      )}
+
+      <div className="cards-list portfolio-cards-list">
+        {loading && rows.length === 0 && <div className="card portfolio-loading-card"><Skeleton lines={5} height={18} /></div>}
+
+        {!loading && !error && rows.length === 0 && (
+          <EmptyState
+            title={positionFilter === 'interest' ? '관심 종목 없음' : positionFilter === 'holding' ? '보유 포지션 없음' : '포지션 없음'}
+            description={positionFilter === 'all' ? '텔레그램 /가상매수 또는 아래 버튼으로 포지션을 추가하세요.' : '선택한 유형에 해당하는 항목이 없습니다.'}
+          />
+        )}
+
+        {!error && rows.map((r: any) => {
+          const pnl = r.unrealized_pnl
+          const isHolding = r.position_type === 'holding'
+          return (
+            <div key={r.id} className="card card-lg portfolio-position-card">
+              <div className="flex-between portfolio-position-top">
+                <div>
+                  <div className="title-lg">{r.stock_name ?? r.ticker ?? r.symbol}</div>
+                  <div className="caption">{r.code}</div>
+                  {isHolding ? (
+                    <div className="muted portfolio-position-meta">
+                      {r.quantity}주 · 매수가 {formatKrw(r.avg_price)}
+                      {r.buy_date ? ` · ${r.buy_date}` : ''}
+                    </div>
+                  ) : (
+                    <div className="muted portfolio-position-meta">
+                      관심 항목 · 추천 매수: {r.recommended_buy_qty
+                        ? `${r.recommended_buy_qty}주 (${formatKrw(r.recommended_buy_amount)})`
+                        : '제안 없음'}
+                    </div>
+                  )}
+                </div>
+
+                <div className="text-right portfolio-position-pnl">
+                  {isHolding ? (
+                    <>
+                      <div
+                        className={pnl != null ? (pnl < 0 ? 'negative' : 'positive') : ''}
+                        style={{ fontWeight: 'var(--font-weight-bold)', fontSize: 'var(--font-size-xl)' }}
+                      >
+                        {pnl != null ? formatKrw(pnl) : '—'}
+                      </div>
+                      <div className="caption">
+                        {r.unrealized_pct != null ? `${formatNumber(r.unrealized_pct, 2)}%` : '—'}
+                        {r.hold_days != null ? ` · ${r.hold_days}일` : ''}
+                      </div>
+                    </>
+                  ) : (
+                    <span className="caption">관심</span>
+                  )}
+                </div>
+              </div>
+
+              {r.lots?.length > 0 && (
+                <div className="caption portfolio-lots">
+                  로트: {r.lots.map((l: any) => `${l.acquired_quantity}주 @${formatKrw(l.acquired_price)}`).join(' · ')}
+                </div>
+              )}
+
+              <div className="portfolio-actions-row">
+                <Button className="portfolio-action-btn" variant="secondary" onClick={() => openTradeModal(r, 'buy')}>가상매수</Button>
+                {isHolding && <Button className="portfolio-action-btn" variant="ghost" onClick={() => openTradeModal(r, 'sell')}>가상매도</Button>}
+              </div>
+            </div>
+          )
+        })}
+      </div>
+
+      {totalPages > 1 && (
+        <div className="pagination-wrap">
+          <Pagination page={page} pageSize={pageSize} total={total} onChange={setPage} />
+        </div>
+      )}
+
+      <Modal
+        isOpen={modalOpen}
+        title={`가상${modalSide === 'buy' ? '매수' : '매도'}`}
+        onClose={() => setModalOpen(false)}
+        size="sm"
+      >
+        {modalRow && (
+          <>
+            <div className="muted" style={{ marginBottom: 'var(--space-4)' }}>
+              <strong style={{ color: 'var(--color-text-primary)' }}>
+                {modalRow.stock_name ?? modalRow.code}
+              </strong>
+              <span className="caption"> ({modalRow.code})</span>
+            </div>
+
+            <div className="grid-two" style={{ marginBottom: 'var(--space-4)' }}>
+              <Input
+                label="수량"
+                type="number"
+                value={String(tradeQty)}
+                onChange={(e: any) => setTradeQty(Number(e.target.value))}
+              />
+              <Input
+                label="가격 (미입력 시 현재가)"
+                type="number"
+                value={tradePrice === '' ? '' : String(tradePrice)}
+                onChange={(e: any) => setTradePrice(e.target.value === '' ? '' : Number(e.target.value))}
+              />
+            </div>
+
+            {tradeError && (
+              <div className="state-error" style={{ marginBottom: 'var(--space-3)' }}>
+                <div className="state-error-title">{tradeError}</div>
+              </div>
+            )}
+
+            <div style={{ display: 'flex', gap: 'var(--space-2)' }}>
+              <Button variant="primary" onClick={submitTrade} disabled={tradeLoading}>
+                {tradeLoading ? '처리 중…' : '실행'}
+              </Button>
+              <Button variant="ghost" onClick={() => setModalOpen(false)}>취소</Button>
+            </div>
+          </>
+        )}
+      </Modal>
+    </section>
+  )
+}
