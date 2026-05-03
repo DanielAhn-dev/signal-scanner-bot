@@ -127,6 +127,12 @@ export async function apiFetch(
               + `(current origin: ${origin || 'n/a'}). Check backend deployment and vercel project root. ${preview}`,
             )
           }
+          if (res.status === 401) {
+            throw new Error(
+              `API request failed (401) from ${url}: ${preview}. `
+              + `Split deployment detected (web/api): verify backend env UI_READ_KEY and web env VITE_UI_READ_KEY are both set to the same value.`,
+            )
+          }
           throw new Error(`API request failed (${res.status}) from ${url}: ${preview}`)
         }
 
