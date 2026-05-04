@@ -21,6 +21,7 @@ const FeedPage = lazy(() => import('./features/feed'))
 const ProfilePage = lazy(() => import('./features/profile'))
 const DBViewPage = lazy(() => import('./features/dbView'))
 const SectorsPage = lazy(() => import('./features/sectors'))
+const AdminUsersPage = lazy(() => import('./features/admin-users'))
 
 const COMPONENTS = {
   dashboard: Dashboard,
@@ -38,11 +39,13 @@ const COMPONENTS = {
   profile: ProfilePage,
   sectors: SectorsPage,
   dbview: DBViewPage,
+  'admin-users': AdminUsersPage,
 } as const
 
 type RouteKey = keyof typeof COMPONENTS
 const AUTH_RETURN_HASH_KEY = 'supabase-auth-return-hash'
 const AUTH_ERROR_KEY = 'supabase-auth-last-error'
+const AUTH_OPEN_PROFILE_MODAL_KEY = 'supabase-open-profile-modal'
 
 const decodeAuthValue = (value: string) => {
   let current = value
@@ -86,6 +89,17 @@ export default function App() {
 }
 
 function AppContent() {
+  const consumeOpenProfileModalFlag = () => {
+    if (typeof window === 'undefined') return false
+    try {
+      const shouldOpen = window.sessionStorage.getItem(AUTH_OPEN_PROFILE_MODAL_KEY) === '1'
+      if (shouldOpen) window.sessionStorage.removeItem(AUTH_OPEN_PROFILE_MODAL_KEY)
+      return shouldOpen
+    } catch {
+      return false
+    }
+  }
+
   const getInitialRoute = (): RouteKey => {
     try {
       const hash = window.location.hash?.replace('#', '')
@@ -184,7 +198,7 @@ function AppContent() {
     void supabase.auth.getSession().then(({ data }) => applySession(data?.session ?? null, false))
 
     const { data: listener } = supabase.auth.onAuthStateChange((event, session) => {
-      const shouldOpenModal = event === 'SIGNED_IN'
+      const shouldOpenModal = event === 'SIGNED_IN' && consumeOpenProfileModalFlag()
       void applySession(session, shouldOpenModal)
       if (event === 'SIGNED_IN' || event === 'SIGNED_OUT') setIsSigningIn(false)
     })
@@ -228,6 +242,7 @@ function AppContent() {
         window.sessionStorage.removeItem(AUTH_ERROR_KEY)
         const currentHash = window.location.hash || '#dashboard'
         window.sessionStorage.setItem(AUTH_RETURN_HASH_KEY, currentHash)
+        window.sessionStorage.setItem(AUTH_OPEN_PROFILE_MODAL_KEY, '1')
       } catch {
         // ignore
       }
@@ -269,8 +284,12 @@ function AppContent() {
   if (!authReady && isSupabaseConfigured) {
     return (
       <div className="layout-shell">
-        <main className="p-4">
-          <div className="panel">인증 상태 확인 중...</div>
+        <main className="auth-status-main">
+          <section className="auth-status-card" aria-live="polite" aria-busy="true">
+            <div className="auth-status-spinner" aria-hidden />
+            <h1 className="auth-status-title">인증 상태 확인 중...</h1>
+            <p className="auth-status-desc">세션을 안전하게 확인하고 있습니다. 잠시만 기다려 주세요.</p>
+          </section>
         </main>
       </div>
     )

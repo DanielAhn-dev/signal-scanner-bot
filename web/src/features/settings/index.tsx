@@ -179,6 +179,22 @@ export default function Settings(){
             현재 권한: {accessInfo?.has_advanced_access ? '고급 기능 사용 가능' : '일반 기능만 사용 가능'}
             {accessInfo?.is_admin ? ' (관리자)' : ''}
           </div>
+          {accessInfo?.is_admin && (
+            <div className="mt-2">
+              <Button
+                variant="secondary"
+                onClick={() => {
+                  try {
+                    window.location.hash = 'admin-users'
+                  } catch {
+                    // ignore
+                  }
+                }}
+              >
+                사용자 관리 페이지 열기
+              </Button>
+            </div>
+          )}
         </div>
 
         <div className="card">

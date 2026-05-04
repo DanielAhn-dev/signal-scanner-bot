@@ -3,6 +3,7 @@ import { TELEGRAM_COMMANDS } from '../data/telegramCommands'
 import { NAV_ITEMS, PRIMARY_NAV_KEYS } from '../navigation'
 import ProfileModal from './ProfileModal'
 import { readProfile, type StoredProfile } from '../lib/userContext'
+import { apiFetch } from '../lib/api'
 
 type Props = {
   onNavigate: (r: string) => void
@@ -32,6 +33,7 @@ export default function Header({
   const [filter, setFilter] = React.useState('')
   const [profileOpen, setProfileOpen] = React.useState(false)
   const [profile, setProfile] = React.useState<StoredProfile>(() => readProfile() ?? {})
+  const [isAdmin, setIsAdmin] = React.useState(false)
 
   // 아바타 이니셜 계산
   const authLabel = authName || authEmail || ''
@@ -45,7 +47,17 @@ export default function Header({
 
   const visible = TELEGRAM_COMMANDS.filter(c => c.cmd.includes(filter) || c.desc.includes(filter))
 
-  const allItems = React.useMemo(() => NAV_ITEMS.flatMap(group => group.items), [])
+  const visibleNavGroups = React.useMemo(
+    () => NAV_ITEMS
+      .map((group) => ({
+        ...group,
+        items: group.items.filter((item) => !item.adminOnly || isAdmin),
+      }))
+      .filter((group) => group.items.length > 0),
+    [isAdmin],
+  )
+
+  const allItems = React.useMemo(() => visibleNavGroups.flatMap(group => group.items), [visibleNavGroups])
   const primaryItems = React.useMemo(
     () => allItems.filter(item => PRIMARY_NAV_KEYS.includes(item.key as any)),
     [allItems],
@@ -78,6 +90,29 @@ export default function Header({
     if (!profileModalTrigger) return
     setProfileOpen(true)
   }, [profileModalTrigger])
+
+  React.useEffect(() => {
+    let disposed = false
+
+    const run = async () => {
+      if (!isSignedIn) {
+        if (!disposed) setIsAdmin(false)
+        return
+      }
+
+      try {
+        const json = await apiFetch('/api/ui/access-users?mode=me', { cacheMs: 0, timeoutMs: 10_000 })
+        if (!disposed) setIsAdmin(!!json?.data?.is_admin)
+      } catch {
+        if (!disposed) setIsAdmin(false)
+      }
+    }
+
+    void run()
+    return () => {
+      disposed = true
+    }
+  }, [isSignedIn, profileModalTrigger])
 
   return (
     <>
@@ -143,7 +178,7 @@ export default function Header({
               <button className="nav-item" onClick={() => setDrawerOpen(false)}>닫기</button>
             </div>
             <div className="nav-drawer-content">
-              {NAV_ITEMS.map((group) => (
+              {visibleNavGroups.map((group) => (
                 <div key={group.category} className="nav-group">
                   <div className="nav-group-title">{group.category}</div>
                   <div className="nav-group-items">

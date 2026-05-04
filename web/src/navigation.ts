@@ -1,4 +1,16 @@
-﻿export const NAV_ITEMS = [
+﻿export type NavItem = {
+  key: string
+  label: string
+  type?: 'commands'
+  adminOnly?: boolean
+}
+
+export type NavGroup = {
+  category: string
+  items: NavItem[]
+}
+
+export const NAV_ITEMS: NavGroup[] = [
   {
     category: '주요',
     items: [
@@ -32,11 +44,12 @@
     category: '유틸',
     items: [
       { key: 'commands', label: '명령 목록', type: 'commands' },
-      { key: 'dbview', label: '데이터 뷰' }
+      { key: 'dbview', label: '데이터 뷰' },
+      { key: 'admin-users', label: '사용자 관리', adminOnly: true }
     ]
   }
 ]
 
 export const PRIMARY_NAV_KEYS = ['dashboard', 'sectors', 'scan', 'portfolio', 'reports'] as const
 
-export type NavKey = (typeof NAV_ITEMS[number])['items'][number]['key'] | 'commands'
+export type NavKey = NavItem['key'] | 'commands'

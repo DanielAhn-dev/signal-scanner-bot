@@ -15,6 +15,12 @@ export const ADVANCED_ROUTES = new Set([
 
 const ACCESS_TABLE = 'web_advanced_access_users'
 
+function parsePositiveInt(raw: unknown): number | null {
+  const value = Number(String(raw ?? '').trim())
+  if (!Number.isFinite(value) || value <= 0) return null
+  return Math.trunc(value)
+}
+
 function parseAdminChatIdSet(): Set<number> {
   const raw = String(process.env.UI_ADMIN_CHAT_IDS || process.env.UI_ADMIN_CHAT_ID || '').trim()
   if (!raw) return new Set<number>()
@@ -24,6 +30,10 @@ function parseAdminChatIdSet(): Set<number> {
     .filter((n) => Number.isFinite(n) && n > 0)
     .map((n) => Math.trunc(n))
   return new Set(values)
+}
+
+function getOwnerAdminChatId(): number | null {
+  return parsePositiveInt(process.env.TELEGRAM_OWNER_USER_ID)
 }
 
 function getSupabaseAdminClient(): SupabaseClient | null {
@@ -41,19 +51,24 @@ export function resolveRequesterChatId(req: VercelRequest): number | null {
 
 export function isAdminChatId(chatId: number | null): boolean {
   if (!chatId) return false
+  const owner = getOwnerAdminChatId()
+  if (owner && chatId === owner) return true
   return parseAdminChatIdSet().has(chatId)
 }
 
-async function hasAdvancedAccessFromTable(supabase: SupabaseClient, chatId: number): Promise<boolean> {
+async function getAccessRowFromTable(supabase: SupabaseClient, chatId: number): Promise<{ isEnabled: boolean; isAdmin: boolean }> {
   const { data, error } = await supabase
     .from(ACCESS_TABLE)
-    .select('chat_id,is_enabled')
+    .select('chat_id,is_enabled,is_admin')
     .eq('chat_id', chatId)
-    .eq('is_enabled', true)
     .limit(1)
 
-  if (error) return false
-  return Boolean(data && data[0] && data[0].chat_id)
+  if (error || !data || !data[0]) return { isEnabled: false, isAdmin: false }
+  const row = data[0] as { is_enabled?: boolean | null; is_admin?: boolean | null }
+  return {
+    isEnabled: row.is_enabled !== false,
+    isAdmin: row.is_admin === true,
+  }
 }
 
 export async function evaluateAdvancedAccess(chatId: number | null): Promise<{
@@ -63,14 +78,16 @@ export async function evaluateAdvancedAccess(chatId: number | null): Promise<{
 }> {
   if (!chatId) return { allowed: false, isAdmin: false, hasAdvancedAccess: false }
 
-  const isAdmin = isAdminChatId(chatId)
-  if (isAdmin) return { allowed: true, isAdmin: true, hasAdvancedAccess: true }
+  const isOwnerAdmin = isAdminChatId(chatId)
+  if (isOwnerAdmin) return { allowed: true, isAdmin: true, hasAdvancedAccess: true }
 
   const supabase = getSupabaseAdminClient()
   if (!supabase) return { allowed: false, isAdmin: false, hasAdvancedAccess: false }
 
-  const hasAdvancedAccess = await hasAdvancedAccessFromTable(supabase, chatId)
-  return { allowed: hasAdvancedAccess, isAdmin: false, hasAdvancedAccess }
+  const access = await getAccessRowFromTable(supabase, chatId)
+  const isAdmin = access.isAdmin
+  const hasAdvancedAccess = access.isEnabled || isAdmin
+  return { allowed: hasAdvancedAccess, isAdmin, hasAdvancedAccess }
 }
 
 export async function enforceAdvancedRouteAccess(req: VercelRequest): Promise<{ allowed: true } | { allowed: false; status: number; error: string }> {

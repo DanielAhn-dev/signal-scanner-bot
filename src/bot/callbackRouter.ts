@@ -40,7 +40,7 @@ export async function routeCallbackData(
   ctx: ChatContext,
   tgSend: any
 ): Promise<void> {
-  if (!isAllowedTelegramUser(ctx)) {
+  if (!(await isAllowedTelegramUser(ctx))) {
     await tgSend("sendMessage", {
       chat_id: ctx.chatId,
       text: buildAccessDeniedMessage(),

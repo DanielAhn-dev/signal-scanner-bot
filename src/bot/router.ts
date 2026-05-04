@@ -16,7 +16,7 @@ export async function routeMessage(
 ): Promise<void> {
   const normalized = normalizeIncomingMessageText(text);
 
-  if (!isAllowedTelegramUser(ctx)) {
+  if (!(await isAllowedTelegramUser(ctx))) {
     await tgSend("sendMessage", {
       chat_id: ctx.chatId,
       text: buildAccessDeniedMessage(),

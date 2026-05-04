@@ -1365,3 +1365,160 @@ html, body, #root {
     @apply w-full;
   }
 }
+
+/* ================================================================
+   AUTH STATUS (인증 상태 화면)
+   ================================================================ */
+.auth-status-main {
+  @apply min-h-screen flex items-center justify-center;
+  padding: var(--space-6);
+  background:
+    radial-gradient(circle at 12% 18%, rgba(0, 96, 255, 0.10), transparent 46%),
+    radial-gradient(circle at 88% 82%, rgba(31, 99, 255, 0.08), transparent 42%),
+    var(--color-bg-page);
+}
+
+.auth-status-card {
+  @apply w-full;
+  max-width: 34rem;
+  text-align: center;
+  background: var(--color-bg-surface);
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--radius-xl);
+  padding: var(--space-8) var(--space-6);
+  box-shadow: var(--shadow-md);
+}
+
+.auth-status-spinner {
+  width: 2.75rem;
+  height: 2.75rem;
+  margin: 0 auto var(--space-4);
+  border-radius: 50%;
+  border: 3px solid var(--color-blue-100);
+  border-top-color: var(--color-brand);
+  animation: auth-spin var(--duration-slower) linear infinite;
+}
+
+.auth-status-title {
+  margin: 0 0 var(--space-2);
+  font-size: var(--font-size-2xl);
+  font-weight: var(--font-weight-bold);
+  color: var(--color-text-primary);
+  letter-spacing: var(--letter-spacing-tight);
+}
+
+.auth-status-desc {
+  margin: 0;
+  font-size: var(--font-size-sm);
+  color: var(--color-text-secondary);
+}
+
+@keyframes auth-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+/* ================================================================
+   ADMIN USERS PAGE
+   ================================================================ */
+.admin-users-header {
+  @apply flex items-start justify-between;
+  gap: var(--space-3);
+  margin-bottom: var(--space-3);
+}
+
+.admin-users-stats {
+  margin-top: var(--space-2);
+}
+
+.admin-users-stat-value {
+  margin-top: var(--space-1);
+  font-size: var(--font-size-2xl);
+  font-weight: var(--font-weight-bold);
+  line-height: var(--line-height-tight);
+  color: var(--color-text-primary);
+}
+
+.admin-users-stat-allowed { color: var(--color-success); }
+.admin-users-stat-blocked { color: var(--color-error); }
+
+.admin-users-search-wrap {
+  @apply flex items-center;
+  gap: var(--space-2);
+  min-width: min(520px, 100%);
+}
+
+.admin-users-search-wrap .ui-field {
+  margin: 0;
+  flex: 1;
+}
+
+.admin-users-table-wrap {
+  overflow-x: auto;
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--radius-md);
+}
+
+.admin-users-table {
+  width: 100%;
+  border-collapse: collapse;
+  min-width: 860px;
+  font-size: var(--font-size-sm);
+}
+
+.admin-users-table th,
+.admin-users-table td {
+  text-align: left;
+  padding: var(--space-3) var(--space-2);
+  border-bottom: 1px solid var(--color-border-default);
+  vertical-align: middle;
+}
+
+.admin-users-table thead th {
+  background: var(--color-bg-sunken);
+  color: var(--color-text-secondary);
+  font-weight: var(--font-weight-semibold);
+  white-space: nowrap;
+}
+
+.admin-users-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.admin-users-unlinked-list {
+  @apply flex flex-col;
+  gap: var(--space-2);
+}
+
+.admin-users-unlinked-row {
+  @apply flex items-center justify-between;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--color-border-default);
+  background: var(--color-bg-sunken);
+}
+
+.admin-users-denied {
+  max-width: 42rem;
+  margin: var(--space-8) auto 0;
+}
+
+@media (max-width: 640px) {
+  .auth-status-main {
+    padding: var(--space-4);
+  }
+
+  .auth-status-card {
+    padding: var(--space-6) var(--space-4);
+  }
+
+  .auth-status-title {
+    font-size: var(--font-size-xl);
+  }
+
+  .admin-users-search-wrap {
+    @apply w-full flex-col items-stretch;
+    min-width: 0;
+  }
+}

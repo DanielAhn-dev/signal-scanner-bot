@@ -1,32 +1,11 @@
 import type { ChatContext } from "./routing/types";
-
-function parseIdSet(raw: string | undefined): Set<number> {
-  const result = new Set<number>();
-  for (const token of String(raw ?? "").split(/[\s,]+/).filter(Boolean)) {
-    const id = Number(token);
-    if (Number.isFinite(id) && id !== 0) result.add(id);
-  }
-  return result;
-}
-
-function mergeInto(target: Set<number>, source: Set<number>): void {
-  for (const id of source) target.add(id);
-}
+import { createClient } from "@supabase/supabase-js";
 
 function resolveAllowedIds(): Set<number> {
   const allowed = new Set<number>();
 
-  mergeInto(allowed, parseIdSet(process.env.TELEGRAM_ALLOWED_USER_IDS));
-  mergeInto(allowed, parseIdSet(process.env.TELEGRAM_OPS_CHAT_IDS));
-
   const ownerId = Number(process.env.TELEGRAM_OWNER_USER_ID ?? "0");
   if (Number.isFinite(ownerId) && ownerId !== 0) allowed.add(ownerId);
-
-  const adminChatId = Number(process.env.TELEGRAM_ADMIN_CHAT_ID ?? "0");
-  if (Number.isFinite(adminChatId) && adminChatId !== 0) allowed.add(adminChatId);
-
-  const alertChatId = Number(process.env.AUTO_TRADE_ALERT_CHAT_ID ?? "0");
-  if (Number.isFinite(alertChatId) && alertChatId !== 0) allowed.add(alertChatId);
 
   return allowed;
 }
@@ -40,6 +19,53 @@ function resolveActorIds(ctx: ChatContext): number[] {
   return ids;
 }
 
+const ACCESS_TABLE = "web_advanced_access_users";
+const DB_CACHE_TTL_MS = 30_000;
+
+let cachedDbAllowedIds = new Set<number>();
+let cachedDbLoadedAt = 0;
+
+function getSupabaseAdminClient() {
+  const url = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
+  const key =
+    process.env.SUPABASE_SERVICE_ROLE_KEY ||
+    process.env.SUPABASE_KEY ||
+    process.env.SUPABASE_ANON_KEY;
+  if (!url || !key) return null;
+  return createClient(url, key);
+}
+
+async function resolveDbAllowedIds(): Promise<Set<number>> {
+  const now = Date.now();
+  if (cachedDbLoadedAt > 0 && now - cachedDbLoadedAt < DB_CACHE_TTL_MS) {
+    return cachedDbAllowedIds;
+  }
+
+  const supabase = getSupabaseAdminClient();
+  if (!supabase) return new Set<number>();
+
+  try {
+    const { data, error } = await supabase
+      .from(ACCESS_TABLE)
+      .select("chat_id,is_enabled")
+      .eq("is_enabled", true)
+      .limit(5000);
+
+    if (error) return new Set<number>();
+
+    const next = new Set<number>();
+    for (const row of data || []) {
+      const chatId = Number((row as any).chat_id ?? 0);
+      if (Number.isFinite(chatId) && chatId !== 0) next.add(Math.trunc(chatId));
+    }
+    cachedDbAllowedIds = next;
+    cachedDbLoadedAt = now;
+    return next;
+  } catch {
+    return new Set<number>();
+  }
+}
+
 export function isAccessControlEnabled(): boolean {
   if (String(process.env.TELEGRAM_ACCESS_CONTROL ?? "").toLowerCase() === "off") {
     return false;
@@ -47,12 +73,22 @@ export function isAccessControlEnabled(): boolean {
   return resolveAllowedIds().size > 0;
 }
 
-export function isAllowedTelegramUser(ctx: ChatContext): boolean {
-  const allowed = resolveAllowedIds();
-  if (allowed.size === 0) return true;
+export async function isAllowedTelegramUser(ctx: ChatContext): Promise<boolean> {
+  if (String(process.env.TELEGRAM_ACCESS_CONTROL ?? "").toLowerCase() === "off") {
+    return true;
+  }
 
+  const allowed = resolveAllowedIds();
   const actorIds = resolveActorIds(ctx);
-  return actorIds.some((id) => allowed.has(id));
+  if (actorIds.some((id) => allowed.has(id))) return true;
+
+  const dbAllowed = await resolveDbAllowedIds();
+  if (dbAllowed.size > 0) {
+    return actorIds.some((id) => dbAllowed.has(id));
+  }
+
+  if (allowed.size > 0) return false;
+  return true;
 }
 
 export function buildAccessDeniedMessage(): string {

@@ -1,3 +1,4 @@
+import { createClient } from "@supabase/supabase-js";
 import type { ChatContext } from "../router";
 
 type CronTaskName =
@@ -39,23 +40,41 @@ const OPS_TRIGGER_SCORE_SYNC_CONCURRENCY = toPositiveInt(
   8
 );
 
-function parseOpsChatIds(): Set<number> {
-  const ids = new Set<number>();
-  const raw = String(process.env.TELEGRAM_OPS_CHAT_IDS ?? "");
-  for (const token of raw.split(/[\s,]+/).filter(Boolean)) {
-    const value = Number(token);
-    if (Number.isFinite(value) && value !== 0) ids.add(value);
-  }
-
-  const alertChatId = Number(process.env.AUTO_TRADE_ALERT_CHAT_ID ?? "0");
-  if (Number.isFinite(alertChatId) && alertChatId !== 0) ids.add(alertChatId);
-
-  return ids;
+function getOwnerChatId(): number | null {
+  const value = Number(process.env.TELEGRAM_OWNER_USER_ID ?? "0");
+  return Number.isFinite(value) && value > 0 ? Math.trunc(value) : null;
 }
 
-function isOpsAllowed(chatId: number): boolean {
-  const allowed = parseOpsChatIds();
-  return allowed.size > 0 && allowed.has(chatId);
+function getSupabaseClient() {
+  const url = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_KEY;
+  if (!url || !key) return null;
+  return createClient(url, key);
+}
+
+async function isOpsAllowed(chatId: number): Promise<boolean> {
+  // 오너는 항상 허용
+  const owner = getOwnerChatId();
+  if (owner && chatId === owner) return true;
+
+  // DB에서 is_admin=true 인 사용자는 OPS 명령 허용
+  const supabase = getSupabaseClient();
+  if (!supabase) return false;
+
+  try {
+    const { data, error } = await supabase
+      .from("web_advanced_access_users")
+      .select("chat_id")
+      .eq("chat_id", chatId)
+      .eq("is_admin", true)
+      .eq("is_enabled", true)
+      .limit(1);
+
+    if (error) return false;
+    return Boolean(data && data[0]);
+  } catch {
+    return false;
+  }
 }
 
 function getCronBaseUrl(): string | null {
@@ -312,7 +331,7 @@ export async function handleOpsTriggerCommand(
     return;
   }
 
-  if (!isOpsAllowed(chatId)) {
+  if (!(await isOpsAllowed(chatId))) {
     await tgSend("sendMessage", {
       chat_id: chatId,
       text: [
