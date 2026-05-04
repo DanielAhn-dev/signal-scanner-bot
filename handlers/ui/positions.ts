@@ -2,6 +2,45 @@ import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { createClient, SupabaseClient } from '@supabase/supabase-js'
 import { resolveUiUserContext } from './_userContext'
 
+// 실시간 현재가 조회
+async function fetchRealtimePriceBatch(codes: string[]): Promise<Record<string, number>> {
+  if (!codes.length) return {}
+  const priceMap: Record<string, number> = {}
+  
+  try {
+    // 10개씩 청크로 나누어 조회 (API 부하 분산)
+    for (let i = 0; i < codes.length; i += 10) {
+      const chunk = codes.slice(i, i + 10)
+      const promises = chunk.map(async (code) => {
+        try {
+          const response = await fetch(
+            `https://m.stock.naver.com/api/stock/${code}/basic`,
+            {
+              headers: { 'User-Agent': 'Mozilla/5.0' },
+              signal: AbortSignal.timeout(2500),
+            }
+          )
+          if (!response.ok) return [code, null] as const
+          const data = await response.json() as any
+          const price = parseInt(data.closePrice?.replace(/,/g, '') || 0, 10)
+          return [code, Number.isFinite(price) && price > 0 ? price : null] as const
+        } catch {
+          return [code, null] as const
+        }
+      })
+      
+      const results = await Promise.all(promises)
+      results.forEach(([code, price]) => {
+        if (price) priceMap[code] = price
+      })
+    }
+  } catch (e) {
+    console.error('Real-time price fetch error:', e)
+  }
+  
+  return priceMap
+}
+
 const POSITIONS_CACHE_TTL_MS = Math.max(0, Number(process.env.UI_POSITIONS_CACHE_TTL_MS || 8_000))
 const POSITIONS_LOTS_TIMEOUT_MS = Math.max(120, Number(process.env.UI_POSITIONS_LOTS_TIMEOUT_MS || 300))
 
@@ -116,6 +155,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const { data, error, count } = await base.range(from, to)
     if (error) return res.status(500).json({ error: error.message })
 
+    // 현재가 일괄 조회 (포트폴리오 손익 계산용)
+    const codes = (data ?? [])
+      .map((r: any) => r.code)
+      .filter((code: string) => code)
+    const realtimePriceMap = codes.length > 0 ? await fetchRealtimePriceBatch(codes) : {}
+
     // fetch lots only when holding positions exist (skip for interest-only queries)
     const ids = !includeLots || positionType === 'interest' ? [] : (data ?? [])
       .filter((r: any) => Number(r.quantity || 0) > 0)
@@ -143,7 +188,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     const mapped = (data ?? []).map((row: any) => {
-      const close = row.stock?.close ?? null
+      // 현재가 우선, 없으면 DB 종가 (폴백)
+      const close = realtimePriceMap[row.code] ?? row.stock?.close ?? null
       const buyPrice = row.buy_price ?? (row.invested_amount && row.quantity ? Number(row.invested_amount) / Number(row.quantity) : null)
       const unrealized = (close != null && buyPrice != null && row.quantity != null) ? (Number(close) - Number(buyPrice)) * Number(row.quantity) : null
       const percent = (close != null && buyPrice != null && buyPrice > 0) ? ((Number(close) - Number(buyPrice)) / Number(buyPrice)) * 100 : null
