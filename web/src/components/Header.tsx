@@ -64,8 +64,14 @@ export default function Header({
   )
 
   React.useEffect(() => {
+    if (!drawerOpen) return
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setDrawerOpen(false) }
+    document.addEventListener('keydown', onKey)
+    return () => document.removeEventListener('keydown', onKey)
+  }, [drawerOpen])
+
+  React.useEffect(() => {
     if (cmdOpen) {
-      // focus the search input when modal opens
       setTimeout(() => cmdInputRef.current?.focus(), 0)
       const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setCmdOpen(false) }
       document.addEventListener('keydown', onKey)
@@ -174,8 +180,17 @@ export default function Header({
         <div className="nav-drawer-overlay" role="dialog" aria-modal aria-label="전체 메뉴" onClick={() => setDrawerOpen(false)}>
           <aside className="nav-drawer" onClick={(e) => e.stopPropagation()}>
             <div className="nav-drawer-header">
-              <div className="nav-drawer-title">전체 메뉴</div>
-              <button className="nav-item" onClick={() => setDrawerOpen(false)}>닫기</button>
+              <div className="nav-drawer-title">메뉴</div>
+              <button
+                className="nav-drawer-close"
+                aria-label="메뉴 닫기"
+                onClick={() => setDrawerOpen(false)}
+              >
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                  <line x1="18" y1="6" x2="6" y2="18"/>
+                  <line x1="6" y1="6" x2="18" y2="18"/>
+                </svg>
+              </button>
             </div>
             <div className="nav-drawer-content">
               {visibleNavGroups.map((group) => (
@@ -186,7 +201,7 @@ export default function Header({
                       <button
                         key={item.key}
                         role="menuitem"
-                        className={`nav-item${activeRoute === item.key ? ' active' : ''}`}
+                        className={`nav-item${activeRoute === item.key ? ' active' : ''}${PRIMARY_NAV_KEYS.includes(item.key as any) ? ' nav-drawer-primary-item' : ''}`}
                         onClick={() => {
                           if ((item as any).type === 'commands') {
                             setCmdOpen(true)

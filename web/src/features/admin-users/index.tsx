@@ -206,12 +206,18 @@ export default function AdminUsers() {
 
   if (!isAdmin) {
     return (
-      <section className="container-app">
-        <div className="card card-lg admin-users-denied">
-          <h1 className="title-xl">사용자 관리</h1>
-          <p className="muted">관리자 권한이 있는 계정만 접근할 수 있습니다.</p>
+      <div className="access-denied-page">
+        <div className="access-denied-card">
+          <div className="access-denied-icon" aria-hidden>
+            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+              <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
+              <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+            </svg>
+          </div>
+          <h1 className="access-denied-title">접근 권한 없음</h1>
+          <p className="access-denied-desc">이 페이지는 관리자 계정만 접근할 수 있습니다.</p>
         </div>
-      </section>
+      </div>
     )
   }
 

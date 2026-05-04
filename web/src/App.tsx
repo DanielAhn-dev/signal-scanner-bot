@@ -298,32 +298,38 @@ function AppContent() {
   return (
     <div className="layout-shell">
       {!isSignedIn ? (
-        <main className="p-4">
-          <div className="max-w-3xl mx-auto">
-            <div className="card card-lg" style={{ textAlign: 'center' }}>
-              <h1 className="title-xl" style={{ marginBottom: 12 }}>접근 권한이 필요합니다</h1>
-              <p className="muted" style={{ marginBottom: 16 }}>
-                로그인하지 않으면 대시보드 및 모든 페이지에 접근할 수 없습니다.
-              </p>
-              {!isSupabaseConfigured && (
-                <p className="muted" style={{ marginBottom: 12 }}>
-                  Supabase 설정이 없어 로그인을 진행할 수 없습니다.
-                </p>
-              )}
-              {!!authError && (
-                <p className="profile-verify-msg profile-verify-msg--err" style={{ marginBottom: 12 }}>
-                  Google 로그인 실패: {authError}
-                </p>
-              )}
-              <button
-                className="ui-button ui-btn-primary"
-                onClick={handleGoogleSignIn}
-                disabled={!isSupabaseConfigured || isSigningIn}
-              >
-                {isSigningIn ? '로그인 중...' : 'Google 로그인'}
-              </button>
+        <main className="auth-status-main">
+          <section className="auth-status-card">
+            <div className="access-required-icon" aria-hidden>
+              <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/>
+                <polyline points="10 17 15 12 10 7"/>
+                <line x1="15" y1="12" x2="3" y2="12"/>
+              </svg>
             </div>
-          </div>
+            <h1 className="auth-status-title">로그인이 필요합니다</h1>
+            <p className="auth-status-desc" style={{ marginBottom: 'var(--space-6)' }}>
+              Google 계정으로 로그인하면 대시보드와 모든 기능을 사용할 수 있습니다.
+            </p>
+            {!isSupabaseConfigured && (
+              <p className="auth-status-desc" style={{ marginBottom: 'var(--space-3)', color: 'var(--color-warning)' }}>
+                Supabase 설정이 없어 로그인을 진행할 수 없습니다.
+              </p>
+            )}
+            {!!authError && (
+              <p className="profile-verify-msg profile-verify-msg--err" style={{ marginBottom: 'var(--space-3)' }}>
+                Google 로그인 실패: {authError}
+              </p>
+            )}
+            <button
+              className="ui-button ui-btn-primary"
+              style={{ width: '100%' }}
+              onClick={handleGoogleSignIn}
+              disabled={!isSupabaseConfigured || isSigningIn}
+            >
+              {isSigningIn ? '로그인 중...' : 'Google로 로그인'}
+            </button>
+          </section>
         </main>
       ) : (
         <>
