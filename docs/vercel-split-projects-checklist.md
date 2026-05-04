@@ -10,7 +10,7 @@
 권장 도메인 예시
 
 - backend: `https://signal-scanner-bot.vercel.app`
-- web: `https://stocksweb-seven.vercel.app`
+- web: `https://signal-scanner-web.vercel.app`
 
 ## 2) Vercel 프로젝트 설정
 

@@ -1,4 +1,5 @@
 export type StoredProfile = {
+  clientId?: string
   telegramId?: string
   nickname?: string
   telegramUsername?: string
@@ -22,8 +23,65 @@ export function readProfile(): StoredProfile | null {
 export function saveProfile(patch: Partial<StoredProfile>) {
   const existing = readProfile() ?? {}
   try {
-    localStorage.setItem('profile', JSON.stringify({ ...existing, ...patch }))
+    const merged = { ...existing, ...patch }
+    localStorage.setItem('profile', JSON.stringify(merged))
+
+    // try to sync to server if we have a clientId (best-effort, fire-and-forget)
+    ;(async () => {
+      try {
+        const clientId = String(merged.clientId || '')
+        if (!clientId) return
+        const base = getApiBase() || ''
+        const url = base ? `${base.replace(/\/$/, '')}/api/ui/profile` : `/api/ui/profile`
+        await fetch(`${url}`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ client_id: clientId, telegram_id: merged.telegramId || undefined, nickname: merged.nickname || undefined }),
+        })
+      } catch {
+        // ignore network errors
+      }
+    })()
   } catch { /* ignore */ }
+}
+
+export function ensureClientId(): string {
+  try {
+    const p = readProfile() ?? {}
+    if (p.clientId) return p.clientId
+    const id = `c_${Math.random().toString(36).slice(2, 10)}`
+    saveProfile({ clientId: id })
+    return id
+  } catch {
+    const id = `c_${Math.random().toString(36).slice(2, 10)}`
+    try { saveProfile({ clientId: id }) } catch {}
+    return id
+  }
+}
+
+export async function loadProfileFromServer(): Promise<StoredProfile | null> {
+  try {
+    const p = readProfile() ?? {}
+    const clientId = String(p.clientId || '')
+    if (!clientId) return null
+    const base = getApiBase() || ''
+    const url = base ? `${base.replace(/\/$/, '')}/api/ui/profile?client_id=${encodeURIComponent(clientId)}` : `/api/ui/profile?client_id=${encodeURIComponent(clientId)}`
+    const resp = await fetch(url, { method: 'GET' })
+    if (!resp.ok) return null
+    const json = await resp.json().catch(() => null)
+    if (!json || json.error) return null
+    const data = json.data ?? null
+    if (!data) return null
+    const mapped: StoredProfile = {
+      clientId,
+      telegramId: data.telegram_id ? String(data.telegram_id) : undefined,
+      nickname: data.nickname || undefined,
+    }
+    saveProfile(mapped)
+    return mapped
+  } catch {
+    return null
+  }
 }
 
 export function clearProfile() {

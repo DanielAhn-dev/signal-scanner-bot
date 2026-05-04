@@ -1,0 +1,44 @@
+name: Intraday Pullback Signals
+
+on:
+  schedule:
+    # 장 시간 (9:30~16:00 KST) 동안 30분마다 실행
+    # 단, GitHub Actions는 시간 단위만 지원하므로 매시간 10분/40분에 실행
+    # 월~금, 09:00~16:00 KST = 00:00~07:00 UTC
+    - cron: "10,40 0-7 * * 1-5"
+  workflow_dispatch:
+
+jobs:
+  intraday-signals:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      TZ: "Asia/Seoul"
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "18"
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v2
+        with:
+          version: 8
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build TypeScript
+        run: pnpm exec tsc scripts/intraday_pullback_signals.ts --outDir dist --module esnext --target es2020 --skipLibCheck true 2>/dev/null || true
+
+      - name: Run Intraday Signal Generation
+        run: |
+          echo "🚀 Intraday Pullback Signals: $(date)"
+          pnpm exec tsx scripts/intraday_pullback_signals.ts
+          echo "🏁 Finished: $(date)"

@@ -73,7 +73,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const readKey = req.headers['x-ui-key'] || req.query.ui_key
   const trustedOrigins = String(
     process.env.UI_TRUSTED_WEB_ORIGINS ||
-    'https://stocksweb-seven.vercel.app,http://localhost:5173',
+    'https://signal-scanner-web.vercel.app,http://localhost:5173',
   )
     .split(',')
     .map((v) => v.trim())

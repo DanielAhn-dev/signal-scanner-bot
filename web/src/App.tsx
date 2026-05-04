@@ -63,6 +63,7 @@ export default function App() {
   const [accessGranted, setAccessGranted] = useState(initialAccess)
   const [chatIdInput, setChatIdInput] = useState(initialChatId)
   const [accessError, setAccessError] = useState('')
+  const [signedIn, setSignedIn] = useState(false)
 
   const allowedHint = useMemo(() => {
     const raw = String(
@@ -120,6 +121,27 @@ export default function App() {
     setAccessGranted(true)
   }
 
+  const handleGoogleSignIn = async () => {
+    // simulated sign-in: ensure client id and try to load server profile
+    try {
+      setSignedIn(true)
+      // ensure client id and load profile
+      const { ensureClientId, loadProfileFromServer } = await import('./lib/userContext')
+      const cid = ensureClientId()
+      const serverProfile = await loadProfileFromServer()
+      if (serverProfile && serverProfile.telegramId) {
+        setChatIdInput(serverProfile.telegramId)
+        // auto-apply access if allowed
+        const normalized = normalizeChatId(serverProfile.telegramId)
+        if (normalized && isAllowedChatId(normalized)) {
+          setAccessGranted(true)
+        }
+      }
+    } catch (e) {
+      // ignore
+    }
+  }
+
   return (
     <ToastProvider>
       <div className="min-h-screen bg-slate-50 text-slate-900">
@@ -139,19 +161,33 @@ export default function App() {
         ) : (
           <div className="modal-overlay" role="dialog" aria-modal="true" aria-label="접근 제한">
             <div className="modal card" style={{ maxWidth: 560, width: '92vw' }}>
-              <h2 className="title-lg" style={{ marginBottom: 8 }}>접근 확인</h2>
-              <p className="muted" style={{ marginBottom: 10 }}>
-                이 웹은 허용된 텔레그램 Chat ID 사용자만 사용할 수 있습니다.
-              </p>
-              <p className="muted" style={{ marginBottom: 14 }}>
-                {allowedHint}
-              </p>
+              <h2 className="title-lg" style={{ marginBottom: 8 }}>로그인 / 접근 확인</h2>
+
+              {!signedIn ? (
+                <>
+                  <div style={{ marginBottom: 12 }}>
+                    <button className="ui-button ui-btn-primary" onClick={handleGoogleSignIn}>구글로 계속</button>
+                  </div>
+                  <p className="muted" style={{ marginBottom: 10 }}>
+                    이 웹은 허용된 텔레그램 Chat ID 사용자만 사용할 수 있습니다.
+                  </p>
+                  <p className="muted" style={{ marginBottom: 14 }}>
+                    {allowedHint}
+                  </p>
+                </>
+              ) : (
+                <>
+                  <p className="muted" style={{ marginBottom: 10 }}>
+                    Google로 로그인되었습니다. 자신의 텔레그램 Chat ID를 입력해 프로필에 등록해주세요.
+                  </p>
+                </>
+              )}
 
               <label className="profile-field-label" htmlFor="access-chat-id">Chat ID</label>
               <input
                 id="access-chat-id"
                 className="ui-text"
-                placeholder="예: 8311154094"
+                placeholder={signedIn ? "" : "예: 0011154094"}
                 inputMode="numeric"
                 value={chatIdInput}
                 onChange={(e) => setChatIdInput(e.target.value)}

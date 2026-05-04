@@ -18,6 +18,7 @@ import { esc, gradeLabel } from "../messages/format";
 import { fetchLatestScoresByCodes } from "../../services/scoreSourceService";
 import { fetchRecentScoreHistoryByCodes } from "../../services/scoreSourceService";
 import { buildFreshnessLabel, businessDaysBehind, isBusinessStale } from "../../utils/dataFreshness";
+import { calculateRealtimeIndicators } from "../../utils/realtimeIndicators";
 import {
   header,
   section,
@@ -739,6 +740,32 @@ export async function handleScanCommand(
     return false;
   }
 
+  // 현재가 기반 기술지표 사전 계산 (스캔 정렬에 활용)
+  const realtimeIndicatorsByCode = new Map<string, { adjustedMomentumScore: number; confidence: number }>();
+  for (const item of saferPool) {
+    const rt = realtimeMap[item.code];
+    const ind = indicatorByCode.get(item.code);
+    
+    if (rt && ind && rt.price && ind.close) {
+      const realtimeInd = calculateRealtimeIndicators({
+        closePrice: ind.close,
+        currentPrice: rt.price,
+        rsi14: ind.rsi14,
+        roc14: undefined, // daily_indicators에 ROC 없음 (대신 지표에서 계산)
+        roc21: undefined,
+        sma20: ind.sma20,
+        sma50: ind.sma50,
+        sma200: undefined,
+        volume: ind.value_traded,
+        currentVolume: ind.value_traded, // 정확한 장중 거래량 없으므로 추정
+      });
+      realtimeIndicatorsByCode.set(item.code, {
+        adjustedMomentumScore: realtimeInd.adjustedMomentumScore,
+        confidence: realtimeInd.confidence,
+      });
+    }
+  }
+
   const rankedPicks = [...saferPool]
     .sort((a, b) => {
       const ra = realtimeMap[a.code];
@@ -766,6 +793,16 @@ export async function handleScanCommand(
       const momentumA = Math.max(-scanConfig.momentumCap, Math.min(scanConfig.momentumCap, ra?.changeRate ?? 0));
       const momentumB = Math.max(-scanConfig.momentumCap, Math.min(scanConfig.momentumCap, rb?.changeRate ?? 0));
 
+      // 현재가 기반 기술지표 조정 (신뢰도 가중)
+      const rtIndA = realtimeIndicatorsByCode.get(a.code);
+      const rtIndB = realtimeIndicatorsByCode.get(b.code);
+      const adjustedMomentumA = rtIndA 
+        ? (momentumA * 0.4) + ((rtIndA.adjustedMomentumScore - 50) * 0.1 * rtIndA.confidence)
+        : momentumA;
+      const adjustedMomentumB = rtIndB 
+        ? (momentumB * 0.4) + ((rtIndB.adjustedMomentumScore - 50) * 0.1 * rtIndB.confidence)
+        : momentumB;
+
       const scoreA =
         (a.entry_score ?? 0) * 20 +
         (6 - (a.warn_score ?? 0)) * 8 +
@@ -773,7 +810,7 @@ export async function handleScanCommand(
         (sa?.value ?? 0) * 0.5 +
         stableBoostA +
         qa * 0.6 +
-        momentumA * riskAdjustedRealtimeWeight -
+        adjustedMomentumA * riskAdjustedRealtimeWeight -
         warnPenaltyA;
       const scoreB =
         (b.entry_score ?? 0) * 20 +
@@ -782,7 +819,7 @@ export async function handleScanCommand(
         (sb?.value ?? 0) * 0.5 +
         stableBoostB +
         qb * 0.6 +
-        momentumB * riskAdjustedRealtimeWeight -
+        adjustedMomentumB * riskAdjustedRealtimeWeight -
         warnPenaltyB;
       return scoreB - scoreA;
     });
