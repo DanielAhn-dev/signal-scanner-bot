@@ -4,9 +4,29 @@ import { NAV_ITEMS, PRIMARY_NAV_KEYS } from '../navigation'
 import ProfileModal from './ProfileModal'
 import { readProfile, type StoredProfile } from '../lib/userContext'
 
-type Props = { onNavigate: (r: string) => void; activeRoute?: string }
+type Props = {
+  onNavigate: (r: string) => void
+  activeRoute?: string
+  isSignedIn: boolean
+  isSigningIn: boolean
+  authEmail?: string
+  authName?: string
+  onSignIn: () => void
+  onSignOut: () => void
+  profileModalTrigger?: number
+}
 
-export default function Header({ onNavigate, activeRoute }: Props){
+export default function Header({
+  onNavigate,
+  activeRoute,
+  isSignedIn,
+  isSigningIn,
+  authEmail,
+  authName,
+  onSignIn,
+  onSignOut,
+  profileModalTrigger,
+}: Props){
   const [drawerOpen, setDrawerOpen] = React.useState(false)
   const [cmdOpen, setCmdOpen] = React.useState(false)
   const [filter, setFilter] = React.useState('')
@@ -14,11 +34,12 @@ export default function Header({ onNavigate, activeRoute }: Props){
   const [profile, setProfile] = React.useState<StoredProfile>(() => readProfile() ?? {})
 
   // 아바타 이니셜 계산
-  const displayName = profile.nickname || profile.telegramName || ''
+  const authLabel = authName || authEmail || ''
+  const displayName = profile.nickname || profile.telegramName || authLabel
   const initials = displayName
     ? displayName.split(' ').map((w: string) => w[0]).join('').toUpperCase().slice(0, 2)
     : null
-  const isConnected = !!profile.telegramId
+  const isTelegramLinked = !!profile.telegramId
 
   const cmdInputRef = React.useRef<HTMLInputElement | null>(null)
 
@@ -49,6 +70,15 @@ export default function Header({ onNavigate, activeRoute }: Props){
     }
   }, [drawerOpen, cmdOpen])
 
+  React.useEffect(() => {
+    setProfile(readProfile() ?? {})
+  }, [isSignedIn, profileModalTrigger])
+
+  React.useEffect(() => {
+    if (!profileModalTrigger) return
+    setProfileOpen(true)
+  }, [profileModalTrigger])
+
   return (
     <>
     <header className="site-header">
@@ -77,7 +107,7 @@ export default function Header({ onNavigate, activeRoute }: Props){
           </button>
           {/* 프로필 아바타 버튼 */}
           <button
-            className={`profile-avatar-btn${isConnected ? ' profile-avatar-btn--connected' : ''}`}
+            className={`profile-avatar-btn${isTelegramLinked ? ' profile-avatar-btn--connected' : ''}`}
             onClick={() => setProfileOpen(true)}
             aria-label="내 프로필"
             title={displayName || '프로필 설정'}
@@ -88,7 +118,7 @@ export default function Header({ onNavigate, activeRoute }: Props){
                 <circle cx="12" cy="7" r="4"/>
               </svg>
             )}
-            {!isConnected && <span className="profile-avatar-dot" aria-hidden />}
+            {isSignedIn && !isTelegramLinked && <span className="profile-avatar-dot" aria-hidden />}
           </button>
           <button
             className="nav-toggle"
@@ -178,6 +208,12 @@ export default function Header({ onNavigate, activeRoute }: Props){
       isOpen={profileOpen}
       onClose={() => setProfileOpen(false)}
       onSaved={p => setProfile(prev => ({ ...prev, ...p }))}
+      isSignedIn={isSignedIn}
+      authEmail={authEmail}
+      authName={authName}
+      onSignIn={onSignIn}
+      onSignOut={onSignOut}
+      isSigningIn={isSigningIn}
     />
       </>
     )

@@ -14,6 +14,17 @@ function toUiQueryRouteUrl(url: string): string | null {
   return `${base}?route=${encodeURIComponent(route)}${qs ? `&${qs}` : ''}`
 }
 
+function appendQueryParam(url: string, key: string, value: string): string {
+  if (!value) return url
+  const hashIndex = url.indexOf('#')
+  const base = hashIndex >= 0 ? url.slice(0, hashIndex) : url
+  const hash = hashIndex >= 0 ? url.slice(hashIndex) : ''
+  const hasKey = new RegExp(`(?:\\?|&)${key}=`).test(base)
+  if (hasKey) return url
+  const sep = base.includes('?') ? '&' : '?'
+  return `${base}${sep}${encodeURIComponent(key)}=${encodeURIComponent(value)}${hash}`
+}
+
 /** 캐시 전체 또는 특정 path prefix 무효화 */
 export function invalidateCache(pathPrefix?: string) {
   if (!pathPrefix) {
@@ -65,7 +76,7 @@ export async function apiFetch(
   const { cacheMs = 3000, timeoutMs = 10_000, retries = 1, ...fetchOpts } = opts
 
   const base = getApiBase()
-  const url = base
+  let url = base
     ? `${base.replace(/\/$/, '')}${path.startsWith('/') ? path : `/${path}`}`
     : path
 
@@ -74,10 +85,12 @@ export async function apiFetch(
   }
   const uiKey = import.meta.env.VITE_UI_READ_KEY
   if (uiKey) headers['x-ui-key'] = uiKey
-  const requiresUserChatId = /\/api\/ui\/(positions|watchlist|virtual-trade|decisions|summary|settings|notify)(\?|$)/.test(url)
-  if (requiresUserChatId) {
+  const requiresUserChatIdHeader = /\/api\/ui\/(positions|watchlist|virtual-trade|decisions|summary|settings|notify|access-users)(\?|$)/.test(url)
+  const requiresUserChatIdQuery = /\/api\/ui\/(positions|watchlist|virtual-trade|decisions|summary|settings|notify|access-users|trigger-update|trigger-briefing|sync-history|sync-status|report-pdf|report-share|report-snapshot|report-web)(\?|$)/.test(url)
+  if (requiresUserChatIdHeader || requiresUserChatIdQuery) {
     const chatId = getCurrentUserChatId()
-    if (chatId) headers['x-user-chat-id'] = chatId
+    if (chatId && requiresUserChatIdHeader) headers['x-user-chat-id'] = chatId
+    if (chatId && requiresUserChatIdQuery) url = appendQueryParam(url, 'chat_id', chatId)
   }
   if (!headers['content-type'] && fetchOpts.body) headers['content-type'] = 'application/json'
 

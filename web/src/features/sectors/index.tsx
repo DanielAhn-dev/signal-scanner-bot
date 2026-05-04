@@ -28,6 +28,71 @@ type Sector = {
   metrics?: Record<string, any>
 }
 
+function toNum(v: unknown): number | null {
+  const n = Number(v)
+  return Number.isFinite(n) ? n : null
+}
+
+function formatKoreanMoney(v: number): string {
+  const sign = v < 0 ? "-" : ""
+  const abs = Math.abs(v)
+  const units = [
+    { value: 1_0000_0000_0000, label: "조" },
+    { value: 1_0000_0000, label: "억" },
+    { value: 1_0000, label: "만" },
+  ]
+  for (const u of units) {
+    if (abs >= u.value) {
+      const q = abs / u.value
+      const digits = q >= 100 ? 0 : q >= 10 ? 1 : 2
+      return `${sign}${q.toFixed(digits)}${u.label}`
+    }
+  }
+  return `${sign}${Math.round(abs).toLocaleString()}`
+}
+
+function buildMetricsSummary(s: Sector): string | null {
+  const core = toNum(s.metrics?.core_count)
+  const stock = toNum(s.metrics?.stock_count)
+  const inst5d = toNum(s.metrics?.flow_inst_5d)
+  const parts: string[] = []
+  if (core != null) parts.push(`핵심 종목 ${Math.round(core)}개`)
+  if (stock != null) parts.push(`구성 종목 ${Math.round(stock)}개`)
+  if (inst5d != null) {
+    const dir = inst5d > 0 ? "기관 5일 순유입" : inst5d < 0 ? "기관 5일 순유출" : "기관 5일 중립"
+    parts.push(`${dir} ${formatKoreanMoney(inst5d)}원`)
+  }
+  return parts.length > 0 ? parts.join(" · ") : null
+}
+
+function buildSectorReason(s: Sector, tab: Tab): string {
+  const score = s.score ?? 0
+  const change = s.change_rate ?? 0
+  const inst5d = toNum(s.metrics?.flow_inst_5d)
+  const scoreText = score >= 75
+    ? "점수 상위권으로 주도 강도가 높은 구간입니다"
+    : score >= 55
+      ? "점수가 기준선(55점) 이상이라 추세가 유지되는 구간입니다"
+      : "점수는 낮지만 단기 모멘텀을 체크할 구간입니다"
+
+  const changeText = change > 0
+    ? `단기 등락률이 +${change.toFixed(2)}%로 우상향 흐름입니다`
+    : change < 0
+      ? `단기 등락률이 ${change.toFixed(2)}%로 변동성 확인이 필요합니다`
+      : "단기 등락률은 보합권입니다"
+
+  const flowText = inst5d == null
+    ? "수급 데이터는 제한적으로 제공됩니다"
+    : inst5d > 0
+      ? `기관 수급이 최근 5일 ${formatKoreanMoney(inst5d)}원 순유입입니다`
+      : inst5d < 0
+        ? `기관 수급이 최근 5일 ${formatKoreanMoney(Math.abs(inst5d))}원 순유출입니다`
+        : "기관 수급이 최근 5일 중립입니다"
+
+  if (tab === "promising") return `${scoreText}. ${flowText}.`
+  return `${changeText}. ${flowText}.`
+}
+
 function ScoreBadge({ score }: { score: number | null }) {
   if (score == null) return <span className="caption">-</span>
   const s = Math.round(score)
@@ -131,20 +196,16 @@ export default function SectorsPage() {
       ) : (
         <div className="cards-list">
           {displayed.map((s, idx) => {
-            const metaKeys = s.metrics ? Object.keys(s.metrics).slice(0, 3) : []
+            const metricsSummary = buildMetricsSummary(s)
+            const reason = buildSectorReason(s, tab)
             return (
               <div key={s.id} className="card sector-row-card">
                 <div className="sector-row-left">
                   <div className="sector-row-rank">#{idx + 1}</div>
                   <div>
                     <div className="sector-row-name">{s.name}</div>
-                    {metaKeys.length > 0 && (
-                      <div className="sector-row-meta">
-                        {metaKeys.map(k => (
-                          <span key={k} className="caption">{k}: {String(s.metrics![k])}</span>
-                        ))}
-                      </div>
-                    )}
+                    {metricsSummary && <div className="sector-row-meta"><span className="caption">{metricsSummary}</span></div>}
+                    <p className="muted" style={{ margin: "6px 0 0", lineHeight: 1.45 }}>{reason}</p>
                   </div>
                 </div>
                 <div className="sector-row-right">

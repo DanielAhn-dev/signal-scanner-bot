@@ -1,9 +1,12 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
+import accessUsers from '../handlers/ui/access-users'
+import { ADVANCED_ROUTES, enforceAdvancedRouteAccess } from '../handlers/ui/_accessControl'
 
 import decisions from '../handlers/ui/decisions'
 import formatStock from '../handlers/ui/format-stock'
 import notify from '../handlers/ui/notify'
 import positions from '../handlers/ui/positions'
+import profile from '../handlers/ui/profile'
 import reportPdf from '../handlers/ui/report-pdf'
 import reportShare from '../handlers/ui/report-share'
 import reportShared from '../handlers/ui/report-shared'
@@ -25,10 +28,12 @@ import watchlist from '../handlers/ui/watchlist'
 type UiHandler = (req: VercelRequest, res: VercelResponse) => unknown | Promise<unknown>
 
 const ROUTES: Record<string, UiHandler> = {
+  'access-users': accessUsers,
   decisions,
   'format-stock': formatStock,
   notify,
   positions,
+  profile,
   'report-pdf': reportPdf,
   'report-share': reportShare,
   'report-shared': reportShared,
@@ -63,6 +68,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   if (!fn) {
     return res.status(404).json({ ok: false, error: `Unknown /api/ui route: ${route || '(empty)'}` })
+  }
+
+  if (ADVANCED_ROUTES.has(route)) {
+    const guard = await enforceAdvancedRouteAccess(req)
+    if (!guard.allowed) {
+      return res.status(guard.status).json({ error: guard.error })
+    }
   }
 
   return fn(req, res)

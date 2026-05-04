@@ -6,6 +6,8 @@ export type StoredProfile = {
   telegramName?: string
 }
 
+import { supabase } from './supabase'
+
 const RUNTIME_API_BASE_KEY = 'signal_scanner_api_base'
 
 export function readProfile(): StoredProfile | null {
@@ -29,13 +31,15 @@ export function saveProfile(patch: Partial<StoredProfile>) {
     // try to sync to server if we have a clientId (best-effort, fire-and-forget)
     ;(async () => {
       try {
-        const clientId = String(merged.clientId || '')
+        const identity = await getAuthIdentity()
+        const clientId = String(merged.clientId || identity.userId || '')
         if (!clientId) return
         const base = getApiBase() || ''
         const url = base ? `${base.replace(/\/$/, '')}/api/ui/profile` : `/api/ui/profile`
+        const headers = buildProfileHeaders(identity.accessToken)
         await fetch(`${url}`, {
           method: 'POST',
-          headers: { 'content-type': 'application/json' },
+          headers,
           body: JSON.stringify({ client_id: clientId, telegram_id: merged.telegramId || undefined, nickname: merged.nickname || undefined }),
         })
       } catch {
@@ -61,12 +65,14 @@ export function ensureClientId(): string {
 
 export async function loadProfileFromServer(): Promise<StoredProfile | null> {
   try {
+    const identity = await getAuthIdentity()
     const p = readProfile() ?? {}
-    const clientId = String(p.clientId || '')
+    const clientId = String(identity.userId || p.clientId || '')
     if (!clientId) return null
     const base = getApiBase() || ''
     const url = base ? `${base.replace(/\/$/, '')}/api/ui/profile?client_id=${encodeURIComponent(clientId)}` : `/api/ui/profile?client_id=${encodeURIComponent(clientId)}`
-    const resp = await fetch(url, { method: 'GET' })
+    const headers = buildProfileHeaders(identity.accessToken)
+    const resp = await fetch(url, { method: 'GET', headers })
     if (!resp.ok) return null
     const json = await resp.json().catch(() => null)
     if (!json || json.error) return null
@@ -82,6 +88,32 @@ export async function loadProfileFromServer(): Promise<StoredProfile | null> {
   } catch {
     return null
   }
+}
+
+async function getAuthIdentity(): Promise<{ userId?: string; accessToken?: string }> {
+  try {
+    if (!supabase) return {}
+    const { data } = await supabase.auth.getSession()
+    const session = data?.session
+    if (!session || !session.user) return {}
+    return {
+      userId: session.user.id,
+      accessToken: session.access_token,
+    }
+  } catch {
+    return {}
+  }
+}
+
+function buildProfileHeaders(accessToken?: string): Record<string, string> {
+  const headers: Record<string, string> = {
+    'content-type': 'application/json',
+  }
+
+  const uiKey = String(import.meta.env.VITE_UI_READ_KEY || '').trim()
+  if (uiKey) headers['x-ui-key'] = uiKey
+  if (accessToken) headers.authorization = `Bearer ${accessToken}`
+  return headers
 }
 
 export function clearProfile() {

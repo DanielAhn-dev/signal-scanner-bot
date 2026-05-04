@@ -1,0 +1,102 @@
+import type { VercelRequest } from '@vercel/node'
+import { createClient, type SupabaseClient } from '@supabase/supabase-js'
+import { resolveUiUserContext } from './_userContext'
+
+export const ADVANCED_ROUTES = new Set([
+  'trigger-update',
+  'trigger-briefing',
+  'sync-history',
+  'sync-status',
+  'report-pdf',
+  'report-share',
+  'report-snapshot',
+  'report-web',
+])
+
+const ACCESS_TABLE = 'web_advanced_access_users'
+
+function parseAdminChatIdSet(): Set<number> {
+  const raw = String(process.env.UI_ADMIN_CHAT_IDS || process.env.UI_ADMIN_CHAT_ID || '').trim()
+  if (!raw) return new Set<number>()
+  const values = raw
+    .split(',')
+    .map((v) => Number(String(v).trim()))
+    .filter((n) => Number.isFinite(n) && n > 0)
+    .map((n) => Math.trunc(n))
+  return new Set(values)
+}
+
+function getSupabaseAdminClient(): SupabaseClient | null {
+  const url = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_KEY
+  if (!url || !key) return null
+  return createClient(url, key)
+}
+
+export function resolveRequesterChatId(req: VercelRequest): number | null {
+  const user = resolveUiUserContext(req)
+  if (user.source === 'env' || user.source === 'none') return null
+  return user.chatId
+}
+
+export function isAdminChatId(chatId: number | null): boolean {
+  if (!chatId) return false
+  return parseAdminChatIdSet().has(chatId)
+}
+
+async function hasAdvancedAccessFromTable(supabase: SupabaseClient, chatId: number): Promise<boolean> {
+  const { data, error } = await supabase
+    .from(ACCESS_TABLE)
+    .select('chat_id,is_enabled')
+    .eq('chat_id', chatId)
+    .eq('is_enabled', true)
+    .limit(1)
+
+  if (error) return false
+  return Boolean(data && data[0] && data[0].chat_id)
+}
+
+export async function evaluateAdvancedAccess(chatId: number | null): Promise<{
+  allowed: boolean
+  isAdmin: boolean
+  hasAdvancedAccess: boolean
+}> {
+  if (!chatId) return { allowed: false, isAdmin: false, hasAdvancedAccess: false }
+
+  const isAdmin = isAdminChatId(chatId)
+  if (isAdmin) return { allowed: true, isAdmin: true, hasAdvancedAccess: true }
+
+  const supabase = getSupabaseAdminClient()
+  if (!supabase) return { allowed: false, isAdmin: false, hasAdvancedAccess: false }
+
+  const hasAdvancedAccess = await hasAdvancedAccessFromTable(supabase, chatId)
+  return { allowed: hasAdvancedAccess, isAdmin: false, hasAdvancedAccess }
+}
+
+export async function enforceAdvancedRouteAccess(req: VercelRequest): Promise<{ allowed: true } | { allowed: false; status: number; error: string }> {
+  const chatId = resolveRequesterChatId(req)
+  if (!chatId) {
+    return {
+      allowed: false,
+      status: 400,
+      error: 'chat_id required for advanced routes',
+    }
+  }
+
+  const access = await evaluateAdvancedAccess(chatId)
+  if (access.allowed) return { allowed: true }
+
+  return {
+    allowed: false,
+    status: 403,
+    error: 'Advanced feature access denied',
+  }
+}
+
+export function getAccessTableName(): string {
+  return ACCESS_TABLE
+}
+
+export function getSupabaseAdminForUi(): SupabaseClient | null {
+  return getSupabaseAdminClient()
+}

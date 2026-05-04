@@ -1,12 +1,19 @@
 import React, { useEffect, useRef, useState } from 'react'
 import { readProfile, saveProfile, clearProfile, type StoredProfile } from '../lib/userContext'
 import { invalidateCache } from '../lib/api'
+import { useToast } from './ToastProvider'
 
 interface Props {
   isOpen: boolean
   onClose: () => void
   /** 저장 성공 시 헤더 등 외부 상태 갱신용 */
   onSaved?: (profile: StoredProfile) => void
+  isSignedIn: boolean
+  authEmail?: string
+  authName?: string
+  onSignIn: () => void
+  onSignOut: () => void
+  isSigningIn?: boolean
 }
 
 const STATUS_IDLE    = 'idle'
@@ -16,8 +23,19 @@ const STATUS_ERR     = 'error'
 
 type VerifyStatus = typeof STATUS_IDLE | typeof STATUS_LOADING | typeof STATUS_OK | typeof STATUS_ERR
 
-export default function ProfileModal({ isOpen, onClose, onSaved }: Props) {
+export default function ProfileModal({
+  isOpen,
+  onClose,
+  onSaved,
+  isSignedIn,
+  authEmail,
+  authName,
+  onSignIn,
+  onSignOut,
+  isSigningIn,
+}: Props) {
   const overlayRef = useRef<HTMLDivElement>(null)
+  const toast = useToast()
 
   const [telegramId, setTelegramId] = useState('')
   const [nickname, setNickname]     = useState('')
@@ -58,6 +76,11 @@ export default function ProfileModal({ isOpen, onClose, onSaved }: Props) {
 
   /* ── 텔레그램 ID 검증 ── */
   const handleVerify = async () => {
+    if (!isSignedIn) {
+      setVerifyStatus(STATUS_ERR)
+      setVerifyMsg('Google 로그인 후 텔레그램 연동을 진행해 주세요.')
+      return
+    }
     const id = telegramId.trim().replace(/[^0-9-]/g, '')
     if (!id) { setVerifyMsg('텔레그램 Chat ID를 입력해 주세요.'); setVerifyStatus(STATUS_ERR); return }
     setVerifyStatus(STATUS_LOADING)
@@ -85,8 +108,13 @@ export default function ProfileModal({ isOpen, onClose, onSaved }: Props) {
 
   /* ── 저장 ── */
   const handleSave = () => {
+    if (!isSignedIn) {
+      setSaveMsg('Google 로그인 후 저장할 수 있습니다.')
+      return
+    }
     setSaving(true)
     setSaveMsg('')
+    const previousTelegramId = readProfile()?.telegramId || ''
     const patch: StoredProfile = {
       telegramId:       telegramId.trim().replace(/[^0-9-]/g, '') || undefined,
       nickname:         nickname.trim() || undefined,
@@ -97,6 +125,10 @@ export default function ProfileModal({ isOpen, onClose, onSaved }: Props) {
       saveProfile(patch)
       invalidateCache()            // API 캐시 무효화 → chatId 변경 반영
       setSaveMsg('저장됐습니다.')
+      const firstLinked = !previousTelegramId && !!patch.telegramId
+      if (firstLinked) {
+        toast.show('텔레그램 연동 완료: 이제 알림/요청이 Telegram Chat ID 기준으로 동작합니다.')
+      }
       onSaved?.(patch)
       setTimeout(onClose, 800)
     } catch {
@@ -129,7 +161,7 @@ export default function ProfileModal({ isOpen, onClose, onSaved }: Props) {
     .toUpperCase()
     .slice(0, 2)
 
-  const isConnected = verifyStatus === STATUS_OK && !!telegramId.trim()
+  const isConnected = isSignedIn && verifyStatus === STATUS_OK && !!telegramId.trim()
 
   return (
     <div
@@ -159,6 +191,31 @@ export default function ProfileModal({ isOpen, onClose, onSaved }: Props) {
 
         {/* ── 섹션: 기본 정보 ── */}
         <section className="profile-section">
+          <div className="profile-section-title">계정</div>
+          {isSignedIn ? (
+            <>
+              <p className="profile-hint" style={{ marginBottom: 8 }}>
+                Google 계정으로 로그인됨
+              </p>
+              <p className="profile-hint" style={{ marginBottom: 10 }}>
+                {authName ? `${authName} · ` : ''}{authEmail || '이메일 정보 없음'}
+              </p>
+              <button className="ui-button ui-btn-ghost" onClick={onSignOut}>로그아웃</button>
+            </>
+          ) : (
+            <>
+              <p className="profile-hint" style={{ marginBottom: 10 }}>
+                로그인 전에는 웹 페이지 접근이 제한됩니다. Google 로그인 후 이용해 주세요.
+              </p>
+              <button className="ui-button ui-btn-primary" onClick={onSignIn} disabled={!!isSigningIn}>
+                {isSigningIn ? '로그인 중…' : 'Google 로그인'}
+              </button>
+            </>
+          )}
+        </section>
+
+        {/* ── 섹션: 기본 정보 ── */}
+        <section className="profile-section">
           <div className="profile-section-title">기본 정보</div>
           <label className="profile-field-label">닉네임</label>
           <input
@@ -184,6 +241,7 @@ export default function ProfileModal({ isOpen, onClose, onSaved }: Props) {
               className="ui-text"
               placeholder="예: 123456789"
               value={telegramId}
+              disabled={!isSignedIn}
               onChange={e => {
                 setTelegramId(e.target.value)
                 setVerifyStatus(STATUS_IDLE)
@@ -195,7 +253,7 @@ export default function ProfileModal({ isOpen, onClose, onSaved }: Props) {
               className={`ui-button${verifyStatus === STATUS_LOADING ? ' ui-btn-secondary' : ' ui-btn-primary'}`}
               style={{ whiteSpace: 'nowrap' }}
               onClick={handleVerify}
-              disabled={verifyStatus === STATUS_LOADING}
+              disabled={!isSignedIn || verifyStatus === STATUS_LOADING}
             >
               {verifyStatus === STATUS_LOADING ? '확인 중…' : '확인'}
             </button>
@@ -226,7 +284,7 @@ export default function ProfileModal({ isOpen, onClose, onSaved }: Props) {
           <button
             className="ui-button ui-btn-primary"
             onClick={handleSave}
-            disabled={saving}
+            disabled={!isSignedIn || saving}
           >
             {saving ? '저장 중…' : '저장'}
           </button>

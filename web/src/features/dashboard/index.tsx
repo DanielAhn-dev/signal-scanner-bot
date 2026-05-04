@@ -47,9 +47,11 @@ export default function Dashboard({ onNavigate }: { onNavigate?: (r: string) => 
   const [loading, setLoading] = useState(!initSummary)
   const [error, setError] = useState<string | null>(null)
 
-  const loadData = useCallback(async (force = false) => {
-    setLoading(true)
-    setError(null)
+  const loadData = useCallback(async ({ force = false, silent = false }: { force?: boolean; silent?: boolean } = {}) => {
+    if (!silent) {
+      setLoading(true)
+      setError(null)
+    }
     const [summaryResult, sectorsResult] = await Promise.allSettled([
       apiFetch('/api/ui/summary', {
         cacheMs: force ? 0 : SUMMARY_TTL,
@@ -83,16 +85,22 @@ export default function Dashboard({ onNavigate }: { onNavigate?: (r: string) => 
       errs.push(sectorsResult.reason?.message || String(sectorsResult.reason))
     }
 
-    if (errs.length > 0) {
+    if (errs.length > 0 && !silent) {
       setError(errs[0])
     }
 
-    setLoading(false)
+    if (!silent) setLoading(false)
   }, [])
 
   useEffect(() => {
-    if (!initSummary) loadData()
-    else setLoading(false)
+    if (!initSummary) {
+      void loadData()
+      return
+    }
+
+    setLoading(false)
+    // cached snapshot is shown immediately, then revalidated in background
+    void loadData({ silent: true })
   }, [initSummary, loadData])
 
   const pnl = summary?.unrealized_pnl_sum ?? null
@@ -108,12 +116,12 @@ export default function Dashboard({ onNavigate }: { onNavigate?: (r: string) => 
     <section className="container-app">
       <div className="flex-between mb-4">
         <h1 className="title-xl" style={{ marginBottom: 0 }}>대시보드</h1>
-        <Button variant="secondary" onClick={() => loadData(true)} disabled={loading}>
+        <Button variant="secondary" onClick={() => loadData({ force: true })} disabled={loading}>
           {loading ? '로딩...' : '새로고침'}
         </Button>
       </div>
 
-      {error && <ErrorState message={error} onRetry={() => loadData(true)} />}
+      {error && <ErrorState message={error} onRetry={() => loadData({ force: true })} />}
 
       <div className="cards-grid cols-2 mb-4">
         {loading && !summary ? (

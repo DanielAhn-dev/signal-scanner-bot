@@ -5,7 +5,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const origin = (req.headers.origin as string) || process.env.UI_CORS_ORIGIN || '*'
   res.setHeader('Access-Control-Allow-Origin', origin)
   res.setHeader('Access-Control-Allow-Methods', 'GET,POST,OPTIONS')
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type,x-ui-key')
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type,x-ui-key,Authorization')
   res.setHeader('Access-Control-Allow-Credentials', 'true')
   if (req.method === 'OPTIONS') return res.status(204).end()
 
@@ -21,8 +21,22 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const supabase = createClient(url, key)
 
   try {
+    const authHeader = String(req.headers.authorization || '')
+    const bearer = authHeader.toLowerCase().startsWith('bearer ')
+      ? authHeader.slice(7).trim()
+      : ''
+
+    let authenticatedUserId = ''
+    if (bearer) {
+      const { data: authData, error: authError } = await supabase.auth.getUser(bearer)
+      if (authError || !authData?.user?.id) {
+        return res.status(401).json({ error: 'Invalid auth token' })
+      }
+      authenticatedUserId = authData.user.id
+    }
+
     if (req.method === 'GET') {
-      const clientId = String(req.query.client_id || req.query.clientId || '')
+      const clientId = authenticatedUserId || String(req.query.client_id || req.query.clientId || '')
       if (!clientId) return res.status(400).json({ error: 'client_id required' })
 
       const { data, error } = await supabase
@@ -37,7 +51,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     if (req.method === 'POST') {
       const body = req.body || {}
-      const clientId = String(body.client_id || body.clientId || '')
+      const clientId = authenticatedUserId || String(body.client_id || body.clientId || '')
       if (!clientId) return res.status(400).json({ error: 'client_id required' })
 
       const payload: any = {

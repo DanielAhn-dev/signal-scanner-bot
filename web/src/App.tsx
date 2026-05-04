@@ -1,15 +1,12 @@
-﻿import React, { lazy, Suspense, useEffect, useMemo, useState } from 'react'
+﻿import React, { lazy, Suspense, useEffect, useState } from 'react'
+import type { Session } from '@supabase/supabase-js'
 import Header from './components/Header'
-import { ToastProvider } from './components/ToastProvider'
+import { ToastProvider, useToast } from './components/ToastProvider'
 import Portfolio from './features/portfolio'
 import ScanPage from './features/scan'
 import { preloadStocks } from './lib/stockCache'
-import {
-  getCurrentUserChatId,
-  isAllowedChatId,
-  normalizeChatId,
-  saveProfile,
-} from './lib/userContext'
+import { loadProfileFromServer, readProfile, saveProfile } from './lib/userContext'
+import { isSupabaseConfigured, supabase } from './lib/supabase'
 
 const Dashboard = lazy(() => import('./features/dashboard'))
 const Trades = lazy(() => import('./features/trades'))
@@ -44,11 +41,51 @@ const COMPONENTS = {
 } as const
 
 type RouteKey = keyof typeof COMPONENTS
+const AUTH_RETURN_HASH_KEY = 'supabase-auth-return-hash'
+const AUTH_ERROR_KEY = 'supabase-auth-last-error'
+
+const decodeAuthValue = (value: string) => {
+  let current = value
+  for (let index = 0; index < 2; index += 1) {
+    try {
+      const decoded = decodeURIComponent(current.replace(/\+/g, ' '))
+      if (decoded === current) break
+      current = decoded
+    } catch {
+      break
+    }
+  }
+  return current
+}
+
+const readAuthErrorFromLocation = () => {
+  if (typeof window === 'undefined') return ''
+
+  const query = new URLSearchParams(window.location.search)
+  const hash = window.location.hash.startsWith('#')
+    ? new URLSearchParams(window.location.hash.slice(1))
+    : new URLSearchParams()
+
+  const error = query.get('error') || hash.get('error') || ''
+  const description = query.get('error_description') || hash.get('error_description') || ''
+  const code = query.get('error_code') || hash.get('error_code') || ''
+
+  if (!error && !description && !code) return ''
+
+  const message = decodeAuthValue(description || error || 'Google 로그인 처리 중 오류가 발생했습니다.')
+  if (code) return `${message} (${decodeAuthValue(code)})`
+  return message
+}
 
 export default function App() {
-  const initialChatId = ''
-  const initialAccess = false
+  return (
+    <ToastProvider>
+      <AppContent />
+    </ToastProvider>
+  )
+}
 
+function AppContent() {
   const getInitialRoute = (): RouteKey => {
     try {
       const hash = window.location.hash?.replace('#', '')
@@ -60,29 +97,41 @@ export default function App() {
   }
 
   const [route, setRoute] = useState<RouteKey>(getInitialRoute)
-  const [accessGranted, setAccessGranted] = useState(initialAccess)
-  const [chatIdInput, setChatIdInput] = useState(initialChatId)
-  const [accessError, setAccessError] = useState('')
-  const [signedIn, setSignedIn] = useState(false)
+  const [isSignedIn, setIsSignedIn] = useState(false)
+  const [authReady, setAuthReady] = useState(false)
+  const [isSigningIn, setIsSigningIn] = useState(false)
+  const [authEmail, setAuthEmail] = useState('')
+  const [authName, setAuthName] = useState('')
+  const [authError, setAuthError] = useState('')
+  const [profileModalTrigger, setProfileModalTrigger] = useState(0)
+  const toast = useToast()
 
-  const allowedHint = useMemo(() => {
-    const raw = String(
-      import.meta.env.VITE_ALLOWED_CHAT_IDS
-      || import.meta.env.VITE_ALLOWED_CHAT_ID
-      || import.meta.env.VITE_DEFAULT_TELEGRAM_CHAT_ID
-      || '',
-    )
-    return raw.trim() ? '허용된 Chat ID만 접근할 수 있습니다.' : '허용 Chat ID 설정이 없어 현재는 입력된 Chat ID를 허용합니다.'
+  useEffect(() => {
+    preloadStocks()
   }, [])
 
   useEffect(() => {
-    if (!accessGranted) return
-    preloadStocks()
-  }, [accessGranted])
+    try {
+      const message = readAuthErrorFromLocation()
+      if (!message) {
+        const stored = window.sessionStorage.getItem(AUTH_ERROR_KEY) || ''
+        if (stored) setAuthError(stored)
+        return
+      }
+
+      setAuthError(message)
+      window.sessionStorage.setItem(AUTH_ERROR_KEY, message)
+      toast.show(`Google 로그인 실패: ${message}`, 5000)
+
+      const returnHash = window.sessionStorage.getItem(AUTH_RETURN_HASH_KEY) || ''
+      const nextUrl = `${window.location.pathname}${returnHash.startsWith('#') ? returnHash : ''}`
+      window.history.replaceState({}, document.title, nextUrl)
+    } catch {
+      // ignore
+    }
+  }, [toast])
 
   useEffect(() => {
-    if (!accessGranted) return
-
     const onHash = () => {
       try {
         const hash = window.location.hash?.replace('#', '')
@@ -94,7 +143,71 @@ export default function App() {
 
     window.addEventListener('hashchange', onHash)
     return () => window.removeEventListener('hashchange', onHash)
-  }, [accessGranted])
+  }, [])
+
+  useEffect(() => {
+    if (!supabase || !isSupabaseConfigured) {
+      setAuthReady(true)
+      return
+    }
+    let disposed = false
+
+    const applySession = async (session: Session | null, openProfileModal: boolean) => {
+      const user = session?.user
+      if (!user) {
+        if (disposed) return
+        setIsSignedIn(false)
+        setAuthEmail('')
+        setAuthName('')
+        setAuthReady(true)
+        return
+      }
+
+      const metadata = (user.user_metadata ?? {}) as Record<string, unknown>
+      const name = String(metadata.full_name || metadata.name || metadata.preferred_username || '').trim()
+      const email = String(user.email || '').trim()
+
+      saveProfile({
+        clientId: user.id,
+        nickname: name || readProfile()?.nickname,
+      })
+      await loadProfileFromServer()
+
+      if (disposed) return
+      setIsSignedIn(true)
+      setAuthEmail(email)
+      setAuthName(name)
+      setAuthReady(true)
+      if (openProfileModal) setProfileModalTrigger((v) => v + 1)
+    }
+
+    void supabase.auth.getSession().then(({ data }) => applySession(data?.session ?? null, false))
+
+    const { data: listener } = supabase.auth.onAuthStateChange((event, session) => {
+      const shouldOpenModal = event === 'SIGNED_IN'
+      void applySession(session, shouldOpenModal)
+      if (event === 'SIGNED_IN' || event === 'SIGNED_OUT') setIsSigningIn(false)
+    })
+
+    return () => {
+      disposed = true
+      listener.subscription.unsubscribe()
+    }
+  }, [])
+
+  useEffect(() => {
+    if (!isSignedIn) return
+    try {
+      const returnHash = window.sessionStorage.getItem(AUTH_RETURN_HASH_KEY)
+      if (!returnHash) return
+      window.sessionStorage.removeItem(AUTH_RETURN_HASH_KEY)
+      if (returnHash.startsWith('#') && returnHash !== window.location.hash) {
+        window.location.hash = returnHash
+      }
+    } catch {
+      // ignore
+    }
+  }, [isSignedIn])
 
   const Active = COMPONENTS[route]
 
@@ -103,111 +216,120 @@ export default function App() {
     try { window.location.hash = r } catch { /* ignore */ }
   }
 
-  const handleUnlock = () => {
-    setAccessError('')
-
-    const normalizedChatId = normalizeChatId(chatIdInput)
-    if (!normalizedChatId) {
-      setAccessError('Chat ID를 숫자로 입력해 주세요.')
-      return
+  const handleGoogleSignIn = async () => {
+    try {
+      if (!supabase || !isSupabaseConfigured) {
+        toast.show('Supabase 인증 설정이 비어 있습니다. VITE_SUPABASE_URL과 VITE_SUPABASE_ANON_KEY를 확인해 주세요.')
+        return
+      }
+      setIsSigningIn(true)
+      setAuthError('')
+      try {
+        window.sessionStorage.removeItem(AUTH_ERROR_KEY)
+        const currentHash = window.location.hash || '#dashboard'
+        window.sessionStorage.setItem(AUTH_RETURN_HASH_KEY, currentHash)
+      } catch {
+        // ignore
+      }
+      const redirectTo = `${window.location.origin}${window.location.pathname}`
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider: 'google',
+        options: {
+          redirectTo,
+          queryParams: {
+            prompt: 'select_account',
+          },
+        },
+      })
+      if (error) throw error
+    } catch (error) {
+      const detail = String((error as { message?: string; code?: string; error_code?: string } | null)?.message || '')
+      const providerDisabled = /Unsupported provider/i.test(detail)
+      if (providerDisabled) {
+        toast.show('현재 Supabase 프로젝트에서 Google provider가 비활성화되어 있습니다. Supabase Authentication > Providers에서 Google을 활성화해 주세요.')
+      } else {
+        toast.show(detail ? `Google 로그인 실패: ${detail}` : 'Google 로그인에 실패했습니다.')
+      }
+      setIsSigningIn(false)
     }
-
-    if (!isAllowedChatId(normalizedChatId)) {
-      setAccessError('허용되지 않은 Chat ID입니다.')
-      return
-    }
-
-    saveProfile({ telegramId: normalizedChatId })
-    setAccessGranted(true)
   }
 
-  const handleGoogleSignIn = async () => {
-    // simulated sign-in: ensure client id and try to load server profile
+  const handleSignOut = async () => {
     try {
-      setSignedIn(true)
-      // ensure client id and load profile
-      const { ensureClientId, loadProfileFromServer } = await import('./lib/userContext')
-      const cid = ensureClientId()
-      const serverProfile = await loadProfileFromServer()
-      if (serverProfile && serverProfile.telegramId) {
-        setChatIdInput(serverProfile.telegramId)
-        // auto-apply access if allowed
-        const normalized = normalizeChatId(serverProfile.telegramId)
-        if (normalized && isAllowedChatId(normalized)) {
-          setAccessGranted(true)
-        }
-      }
-    } catch (e) {
+      if (!supabase || !isSupabaseConfigured) return
+      await supabase.auth.signOut()
+      setIsSignedIn(false)
+      setAuthEmail('')
+      setAuthName('')
+    } catch {
       // ignore
     }
   }
 
+  if (!authReady && isSupabaseConfigured) {
+    return (
+      <div className="layout-shell">
+        <main className="p-4">
+          <div className="panel">인증 상태 확인 중...</div>
+        </main>
+      </div>
+    )
+  }
+
   return (
-    <ToastProvider>
-      <div className="min-h-screen bg-slate-50 text-slate-900">
-        {accessGranted ? (
-          <>
-            <Header onNavigate={handleNavigate} activeRoute={route} />
-            <main className="p-4">
-              <Suspense fallback={<div>Loading...</div>}>
-                {Active
-                  ? route === 'dashboard'
-                    ? <Dashboard onNavigate={handleNavigate} />
-                    : <Active />
-                  : null}
-              </Suspense>
-            </main>
-          </>
-        ) : (
-          <div className="modal-overlay" role="dialog" aria-modal="true" aria-label="접근 제한">
-            <div className="modal card" style={{ maxWidth: 560, width: '92vw' }}>
-              <h2 className="title-lg" style={{ marginBottom: 8 }}>로그인 / 접근 확인</h2>
-
-              {!signedIn ? (
-                <>
-                  <div style={{ marginBottom: 12 }}>
-                    <button className="ui-button ui-btn-primary" onClick={handleGoogleSignIn}>구글로 계속</button>
-                  </div>
-                  <p className="muted" style={{ marginBottom: 10 }}>
-                    이 웹은 허용된 텔레그램 Chat ID 사용자만 사용할 수 있습니다.
-                  </p>
-                  <p className="muted" style={{ marginBottom: 14 }}>
-                    {allowedHint}
-                  </p>
-                </>
-              ) : (
-                <>
-                  <p className="muted" style={{ marginBottom: 10 }}>
-                    Google로 로그인되었습니다. 자신의 텔레그램 Chat ID를 입력해 프로필에 등록해주세요.
-                  </p>
-                </>
-              )}
-
-              <label className="profile-field-label" htmlFor="access-chat-id">Chat ID</label>
-              <input
-                id="access-chat-id"
-                className="ui-text"
-                placeholder={signedIn ? "" : "예: 0011154094"}
-                inputMode="numeric"
-                value={chatIdInput}
-                onChange={(e) => setChatIdInput(e.target.value)}
-              />
-
-              {accessError && (
-                <p className="profile-verify-msg profile-verify-msg--err" style={{ marginTop: 12 }}>
-                  {accessError}
+    <div className="layout-shell">
+      {!isSignedIn ? (
+        <main className="p-4">
+          <div className="max-w-3xl mx-auto">
+            <div className="card card-lg" style={{ textAlign: 'center' }}>
+              <h1 className="title-xl" style={{ marginBottom: 12 }}>접근 권한이 필요합니다</h1>
+              <p className="muted" style={{ marginBottom: 16 }}>
+                로그인하지 않으면 대시보드 및 모든 페이지에 접근할 수 없습니다.
+              </p>
+              {!isSupabaseConfigured && (
+                <p className="muted" style={{ marginBottom: 12 }}>
+                  Supabase 설정이 없어 로그인을 진행할 수 없습니다.
                 </p>
               )}
-
-              <div className="profile-actions" style={{ marginTop: 16 }}>
-                <button className="ui-button ui-btn-primary" onClick={handleUnlock}>
-                  입장
-                </button>
-              </div>
+              {!!authError && (
+                <p className="profile-verify-msg profile-verify-msg--err" style={{ marginBottom: 12 }}>
+                  Google 로그인 실패: {authError}
+                </p>
+              )}
+              <button
+                className="ui-button ui-btn-primary"
+                onClick={handleGoogleSignIn}
+                disabled={!isSupabaseConfigured || isSigningIn}
+              >
+                {isSigningIn ? '로그인 중...' : 'Google 로그인'}
+              </button>
             </div>
           </div>
-        )}
-      </div>
-    </ToastProvider>
+        </main>
+      ) : (
+        <>
+          <Header
+            onNavigate={handleNavigate}
+            activeRoute={route}
+            isSignedIn={isSignedIn}
+            isSigningIn={isSigningIn}
+            authEmail={authEmail}
+            authName={authName}
+            onSignIn={handleGoogleSignIn}
+            onSignOut={handleSignOut}
+            profileModalTrigger={profileModalTrigger}
+          />
+          <main className="p-4">
+            <Suspense fallback={<div>Loading...</div>}>
+              {Active
+                ? route === 'dashboard'
+                  ? <Dashboard onNavigate={handleNavigate} />
+                  : <Active />
+                : null}
+            </Suspense>
+          </main>
+        </>
+      )}
+    </div>
   )
 }

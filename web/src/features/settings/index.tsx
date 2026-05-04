@@ -13,6 +13,12 @@ export default function Settings(){
 
   const [settings, setSettings] = useState<any | null>(null)
   const [saving, setSaving] = useState(false)
+  const [accessInfo, setAccessInfo] = useState<{ chat_id: number | null; is_admin: boolean; has_advanced_access: boolean } | null>(null)
+  const [accessRows, setAccessRows] = useState<Array<{ chat_id: number; nickname?: string | null; note?: string | null; is_enabled?: boolean | null; updated_at?: string | null }>>([])
+  const [adminLoading, setAdminLoading] = useState(false)
+  const [adminTargetChatId, setAdminTargetChatId] = useState('')
+  const [adminNickname, setAdminNickname] = useState('')
+  const [adminNote, setAdminNote] = useState('')
 
   useEffect(() => {
     (async () => {
@@ -24,8 +30,93 @@ export default function Settings(){
       } catch (e) {
         // ignore
       }
+
+      try {
+        const me = await apiFetch('/api/ui/access-users?mode=me', { cacheMs: 0, timeoutMs: 10_000 })
+        const info = me?.data ?? null
+        setAccessInfo(info)
+        if (info?.is_admin) {
+          const list = await apiFetch('/api/ui/access-users', { cacheMs: 0, timeoutMs: 10_000 })
+          setAccessRows(Array.isArray(list?.data) ? list.data : [])
+        }
+      } catch {
+        // ignore
+      }
     })()
   }, [])
+
+  const refreshAccessRows = async () => {
+    if (!accessInfo?.is_admin) return
+    const list = await apiFetch('/api/ui/access-users', { cacheMs: 0, timeoutMs: 10_000 })
+    setAccessRows(Array.isArray(list?.data) ? list.data : [])
+  }
+
+  const upsertAccessUser = async () => {
+    const normalized = String(adminTargetChatId || '').trim().replace(/[^0-9]/g, '')
+    if (!normalized) {
+      setStatus('관리 대상 Chat ID를 입력해 주세요.')
+      return
+    }
+    setAdminLoading(true)
+    try {
+      await apiFetch('/api/ui/access-users', {
+        method: 'POST',
+        cacheMs: 0,
+        timeoutMs: 10_000,
+        body: JSON.stringify({
+          chat_id: Number(normalized),
+          nickname: adminNickname.trim() || undefined,
+          note: adminNote.trim() || undefined,
+          is_enabled: true,
+        }),
+      })
+      setStatus('고급 기능 사용자 저장 완료')
+      setAdminTargetChatId('')
+      setAdminNickname('')
+      setAdminNote('')
+      await refreshAccessRows()
+    } catch (e: any) {
+      setStatus(String(e?.message || e))
+    } finally {
+      setAdminLoading(false)
+    }
+  }
+
+  const toggleAccessUser = async (targetChatId: number, nextEnabled: boolean) => {
+    setAdminLoading(true)
+    try {
+      await apiFetch('/api/ui/access-users', {
+        method: 'PATCH',
+        cacheMs: 0,
+        timeoutMs: 10_000,
+        body: JSON.stringify({ chat_id: targetChatId, is_enabled: nextEnabled }),
+      })
+      setStatus(`고급 기능 ${nextEnabled ? '허용' : '차단'} 완료`)
+      await refreshAccessRows()
+    } catch (e: any) {
+      setStatus(String(e?.message || e))
+    } finally {
+      setAdminLoading(false)
+    }
+  }
+
+  const removeAccessUser = async (targetChatId: number) => {
+    setAdminLoading(true)
+    try {
+      await apiFetch('/api/ui/access-users', {
+        method: 'DELETE',
+        cacheMs: 0,
+        timeoutMs: 10_000,
+        body: JSON.stringify({ chat_id: targetChatId }),
+      })
+      setStatus('고급 기능 사용자 삭제 완료')
+      await refreshAccessRows()
+    } catch (e: any) {
+      setStatus(String(e?.message || e))
+    } finally {
+      setAdminLoading(false)
+    }
+  }
 
   const sendTest = async () => {
     setStatus(undefined)
@@ -84,6 +175,10 @@ export default function Settings(){
         <div className="card">
           <Input label="기본 Telegram 채팅 ID" value={chatId} onChange={(e:any) => setChatId(e.target.value)} placeholder="예: 123456789" />
           <div className="text-xs muted mt-2">참고: 서버에 `DEFAULT_TELEGRAM_CHAT_ID`가 설정되어 있으면 기본값으로 불러옵니다.</div>
+          <div className="text-xs muted mt-2">
+            현재 권한: {accessInfo?.has_advanced_access ? '고급 기능 사용 가능' : '일반 기능만 사용 가능'}
+            {accessInfo?.is_admin ? ' (관리자)' : ''}
+          </div>
         </div>
 
         <div className="card">
@@ -133,6 +228,69 @@ export default function Settings(){
             {status && <div className="muted">{status}</div>}
           </div>
         </div>
+
+        {accessInfo?.is_admin && (
+          <div className="card">
+            <label className="block muted">고급 기능 사용자 관리 (관리자)</label>
+            <div className="mt-2 grid-two">
+              <Input label="대상 Chat ID" value={adminTargetChatId} onChange={(e:any) => setAdminTargetChatId(e.target.value)} placeholder="예: 123456789" />
+              <Input label="닉네임(선택)" value={adminNickname} onChange={(e:any) => setAdminNickname(e.target.value)} placeholder="예: 운영팀" />
+            </div>
+            <div className="mt-2">
+              <Input label="메모(선택)" value={adminNote} onChange={(e:any) => setAdminNote(e.target.value)} placeholder="권한 부여 사유" />
+            </div>
+            <div className="mt-2 flex items-center gap-2">
+              <Button onClick={upsertAccessUser} disabled={adminLoading} variant="primary">
+                {adminLoading ? '처리중…' : '추가/갱신'}
+              </Button>
+            </div>
+
+            <div className="mt-3" style={{ overflowX: 'auto' }}>
+              <table className="w-full text-sm">
+                <thead>
+                  <tr>
+                    <th style={{ textAlign: 'left', padding: '8px 6px' }}>Chat ID</th>
+                    <th style={{ textAlign: 'left', padding: '8px 6px' }}>닉네임</th>
+                    <th style={{ textAlign: 'left', padding: '8px 6px' }}>메모</th>
+                    <th style={{ textAlign: 'left', padding: '8px 6px' }}>상태</th>
+                    <th style={{ textAlign: 'left', padding: '8px 6px' }}>작업</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {accessRows.map((row) => (
+                    <tr key={row.chat_id}>
+                      <td style={{ padding: '8px 6px' }}>{row.chat_id}</td>
+                      <td style={{ padding: '8px 6px' }}>{row.nickname || '-'}</td>
+                      <td style={{ padding: '8px 6px' }}>{row.note || '-'}</td>
+                      <td style={{ padding: '8px 6px' }}>{row.is_enabled ? '허용' : '차단'}</td>
+                      <td style={{ padding: '8px 6px', display: 'flex', gap: 8 }}>
+                        <Button
+                          variant="secondary"
+                          disabled={adminLoading}
+                          onClick={() => toggleAccessUser(row.chat_id, !row.is_enabled)}
+                        >
+                          {row.is_enabled ? '차단' : '허용'}
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          disabled={adminLoading}
+                          onClick={() => removeAccessUser(row.chat_id)}
+                        >
+                          삭제
+                        </Button>
+                      </td>
+                    </tr>
+                  ))}
+                  {accessRows.length === 0 && (
+                    <tr>
+                      <td colSpan={5} style={{ padding: '10px 6px' }} className="muted">등록된 고급 기능 사용자가 없습니다.</td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
       </div>
     </section>
   )
