@@ -1,1 +1,18 @@
+#!/usr/bin/env sh
+
+# Ensure Node.js is discoverable in Git hook shell environments.
+if ! command -v node >/dev/null 2>&1; then
+	if [ -x "/c/Users/daeyo/AppData/Local/nvm-nodejs/node.exe" ]; then
+		PATH="/c/Users/daeyo/AppData/Local/nvm-nodejs:$PATH"
+	elif [ -x "/c/Program Files/nodejs/node.exe" ]; then
+		PATH="/c/Program Files/nodejs:$PATH"
+	fi
+	export PATH
+fi
+
+if ! command -v node >/dev/null 2>&1; then
+	echo "husky - node not found in PATH"
+	exit 127
+fi
+
 pnpm run verify:vercel
