@@ -1,5 +1,19 @@
 # signal-scanner-bot
 
+## 로컬 개발 표준 환경
+
+- Node.js 20.x (LTS)
+- pnpm 10.x
+- `pnpm install` 이후 `pnpm run local` 실행 (프로젝트 로컬 `vercel` CLI 사용)
+
+예시:
+
+```bash
+corepack enable
+pnpm install
+pnpm run local
+```
+
 ## 운영 가이드
 
 - 통합 운영 가이드 원본: [docs/user-operating-guide.md](docs/user-operating-guide.md)
