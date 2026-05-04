@@ -246,7 +246,9 @@ function AppContent() {
       } catch {
         // ignore
       }
-      const redirectTo = `${window.location.origin}${window.location.pathname}`
+      const redirectTo =
+        (import.meta.env.VITE_SUPABASE_OAUTH_REDIRECT || import.meta.env.VITE_OAUTH_REDIRECT) ||
+        `${window.location.origin}${window.location.pathname}`
       const { error } = await supabase.auth.signInWithOAuth({
         provider: 'google',
         options: {

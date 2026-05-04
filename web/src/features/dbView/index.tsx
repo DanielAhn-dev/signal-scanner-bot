@@ -363,7 +363,27 @@ export default function DBViewPage() {
     }
   }
 
-  const visibleSectors = showAllSectors ? sectors : sectors.slice(0, 10)
+  // 실제 stocks에 존재하는 sector_id만 추려 섹터 버튼에 표시 (0건 섹터 제거)
+  const usedSectorIds = useMemo(() => {
+    const ids = new Set<string>()
+    for (const s of allStocks) {
+      if (s.sector_id) ids.add(s.sector_id)
+    }
+    return ids
+  }, [allStocks])
+
+  const activeSectors = useMemo(
+    () => sectors.filter((s: any) => usedSectorIds.has(s.id)),
+    [sectors, usedSectorIds],
+  )
+
+  const sectorMap = useMemo(() => {
+    const m: Record<string, string> = {}
+    for (const s of sectors) m[s.id] = s.name
+    return m
+  }, [sectors])
+
+  const visibleSectors = showAllSectors ? activeSectors : activeSectors.slice(0, 15)
   const totalPages = Math.ceil(total / pageSize)
 
   return (
@@ -403,18 +423,18 @@ export default function DBViewPage() {
       <div className="portfolio-stat-grid">
         <div className="card portfolio-stat-card">
           <div className="stat-label">전체 종목</div>
-          <div className="stat-value">{total > 0 ? total.toLocaleString() : '—'}</div>
-          <div className="stat-sub">등록된 종목 수</div>
+          <div className="stat-value">{loading ? '…' : allStocks.length.toLocaleString()}</div>
+          <div className="stat-sub">DB에 등록된 종목 수</div>
         </div>
         <div className="card portfolio-stat-card">
-          <div className="stat-label">현재 페이지</div>
-          <div className="stat-value">{rows.length}</div>
-          <div className="stat-sub">페이지당 {pageSize}건</div>
+          <div className="stat-label">검색 결과</div>
+          <div className="stat-value">{loading ? '…' : total.toLocaleString()}</div>
+          <div className="stat-sub">필터·검색 결과 수</div>
         </div>
         <div className="card portfolio-stat-card">
           <div className="stat-label">섹터 수</div>
-          <div className="stat-value">{sectors.length}</div>
-          <div className="stat-sub">분류된 섹터</div>
+          <div className="stat-value">{loading ? '…' : activeSectors.length}</div>
+          <div className="stat-sub">종목이 있는 섹터</div>
         </div>
       </div>
 
@@ -474,9 +494,9 @@ export default function DBViewPage() {
                   onClick={() => { setSelectedSector(s.id); setPage(1) }}
                 >{s.name}</button>
               ))}
-              {sectors.length > 10 && (
+              {activeSectors.length > 15 && (
                 <button className="tag" onClick={() => setShowAllSectors(v => !v)}>
-                  {showAllSectors ? '접기' : `+ ${sectors.length - 10}개 더보기`}
+                  {showAllSectors ? '접기' : `+ ${activeSectors.length - 15}개 더보기`}
                 </button>
               )}
             </div>
@@ -529,7 +549,7 @@ export default function DBViewPage() {
           <div key={r.code} className="dbview-table-row">
             <div className="dbview-code">{r.code}</div>
             <div className="dbview-name">{r.name}</div>
-            <div className="caption muted dbview-sector">{r.sector_id ?? '—'}</div>
+            <div className="caption muted dbview-sector">{r.sector_id ? (sectorMap[r.sector_id] ?? r.sector_id) : '—'}</div>
             <div className="caption muted dbview-updated">
               {r.updated_at ? new Date(r.updated_at).toLocaleString('ko-KR', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }) : '—'}
             </div>
