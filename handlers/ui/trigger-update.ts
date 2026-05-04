@@ -2,7 +2,22 @@ import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { spawn } from 'node:child_process'
 import { finishSyncJob, startSyncJob, updateSyncJob } from './_syncState'
 
-const ORIGIN = process.env.UI_CORS_ORIGIN || '*'
+const ORIGIN = process.env.UI_CORS_ORIGIN || ''
+
+function resolveCorsOrigin(req: VercelRequest): string {
+  const requestOrigin = String(req.headers.origin || '').trim()
+  const trustedOrigins = String(
+    process.env.UI_TRUSTED_WEB_ORIGINS ||
+    process.env.UI_CORS_ORIGIN ||
+    'https://signal-scanner-web.vercel.app,http://localhost:5173',
+  )
+    .split(',')
+    .map((v) => v.trim())
+    .filter(Boolean)
+
+  if (requestOrigin && trustedOrigins.includes(requestOrigin)) return requestOrigin
+  return trustedOrigins[0] || ORIGIN || '*'
+}
 
 type SyncPipelineKey = 'dbview-default' | 'score-sync' | 'full-refresh'
 
@@ -114,7 +129,8 @@ async function runPipeline(
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
-  res.setHeader('Access-Control-Allow-Origin', ORIGIN)
+  const origin = resolveCorsOrigin(req)
+  res.setHeader('Access-Control-Allow-Origin', origin)
   res.setHeader('Access-Control-Allow-Methods', 'GET,POST,OPTIONS')
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type,x-ui-key')
   res.setHeader('Access-Control-Allow-Credentials', 'true')

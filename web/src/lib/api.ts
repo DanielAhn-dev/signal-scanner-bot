@@ -14,6 +14,10 @@ function toUiQueryRouteUrl(url: string): string | null {
   return `${base}?route=${encodeURIComponent(route)}${qs ? `&${qs}` : ''}`
 }
 
+function normalizeUiUrl(url: string): string {
+  return toUiQueryRouteUrl(url) || url
+}
+
 function appendQueryParam(url: string, key: string, value: string): string {
   if (!value) return url
   const hashIndex = url.indexOf('#')
@@ -80,13 +84,16 @@ export async function apiFetch(
     ? `${base.replace(/\/$/, '')}${path.startsWith('/') ? path : `/${path}`}`
     : path
 
+  // Avoid relying on edge rewrites in split deployments by using query-route form directly.
+  url = normalizeUiUrl(url)
+
   const headers: Record<string, string> = {
     ...(fetchOpts.headers as Record<string, string> || {}),
   }
   const uiKey = import.meta.env.VITE_UI_READ_KEY
   if (uiKey) headers['x-ui-key'] = uiKey
-  const requiresUserChatIdHeader = /\/api\/ui\/(positions|watchlist|virtual-trade|decisions|summary|settings|notify|access-users)(\?|$)/.test(url)
-  const requiresUserChatIdQuery = /\/api\/ui\/(positions|watchlist|virtual-trade|decisions|summary|settings|notify|access-users|trigger-update|trigger-briefing|sync-history|sync-status|report-pdf|report-share|report-snapshot|report-web)(\?|$)/.test(url)
+  const requiresUserChatIdHeader = /\/api\/ui\/(positions|watchlist|virtual-trade|decisions|summary|settings|notify|access-users)(\?|$)|\/api\/ui\?route=(positions|watchlist|virtual-trade|decisions|summary|settings|notify|access-users)(&|$)/.test(url)
+  const requiresUserChatIdQuery = /\/api\/ui\/(positions|watchlist|virtual-trade|decisions|summary|settings|notify|access-users|trigger-update|trigger-briefing|sync-history|sync-status|report-pdf|report-share|report-snapshot|report-web)(\?|$)|\/api\/ui\?route=(positions|watchlist|virtual-trade|decisions|summary|settings|notify|access-users|trigger-update|trigger-briefing|sync-history|sync-status|report-pdf|report-share|report-snapshot|report-web)(&|$)/.test(url)
   if (requiresUserChatIdHeader || requiresUserChatIdQuery) {
     const chatId = getCurrentUserChatId()
     if (chatId && requiresUserChatIdHeader) headers['x-user-chat-id'] = chatId

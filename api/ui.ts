@@ -63,6 +63,25 @@ export const config = {
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
+  const requestOrigin = String(req.headers.origin || '').trim()
+  const trustedOrigins = String(
+    process.env.UI_TRUSTED_WEB_ORIGINS ||
+    process.env.UI_CORS_ORIGIN ||
+    'https://signal-scanner-web.vercel.app,http://localhost:5173',
+  )
+    .split(',')
+    .map((v) => v.trim())
+    .filter(Boolean)
+  const allowOrigin = requestOrigin && trustedOrigins.includes(requestOrigin)
+    ? requestOrigin
+    : (trustedOrigins[0] || '*')
+
+  res.setHeader('Access-Control-Allow-Origin', allowOrigin)
+  res.setHeader('Access-Control-Allow-Methods', 'GET,POST,OPTIONS')
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type,x-ui-key,x-user-chat-id')
+  res.setHeader('Access-Control-Allow-Credentials', 'true')
+  if (req.method === 'OPTIONS') return res.status(204).end()
+
   const route = normalizeRoute(req.query.route)
   const fn = ROUTES[route]
 

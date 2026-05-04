@@ -25,7 +25,21 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   try {
     const item = await getSyncJob(syncId)
-    if (!item) return res.status(404).json({ error: 'Sync job not found' })
+    if (!item) {
+      return res.status(200).json({
+        ok: true,
+        data: {
+          id: syncId,
+          kind: 'stocks-refresh',
+          status: 'running',
+          progress: 1,
+          stage: '요청 대기',
+          detail: '동기화 작업 생성 대기 중입니다.',
+          startedAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        },
+      })
+    }
     return res.status(200).json({ ok: true, data: item })
   } catch (e: any) {
     return res.status(500).json({ error: String(e?.message || e) })
