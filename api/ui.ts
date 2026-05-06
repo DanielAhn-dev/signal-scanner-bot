@@ -109,19 +109,29 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   res.setHeader('Vary', 'Origin,Access-Control-Request-Headers')
   if (req.method === 'OPTIONS') return res.status(204).end()
 
-  const route = normalizeRoute(req.query.route)
-  const fn = ROUTES[route]
+  try {
+    const route = normalizeRoute(req.query.route)
+    const fn = ROUTES[route]
 
-  if (!fn) {
-    return res.status(404).json({ ok: false, error: `Unknown /api/ui route: ${route || '(empty)'}` })
-  }
-
-  if (ADVANCED_ROUTES.has(route)) {
-    const guard = await enforceAdvancedRouteAccess(req)
-    if (!guard.allowed) {
-      return res.status(guard.status).json({ error: guard.error })
+    if (!fn) {
+      return res.status(404).json({ ok: false, error: `Unknown /api/ui route: ${route || '(empty)'}` })
     }
-  }
 
-  return fn(req, res)
+    if (ADVANCED_ROUTES.has(route)) {
+      const guard = await enforceAdvancedRouteAccess(req)
+      if (!guard.allowed) {
+        return res.status(guard.status).json({ error: guard.error })
+      }
+    }
+
+    return await fn(req, res)
+  } catch (error: any) {
+    if (!res.headersSent) {
+      return res.status(500).json({
+        ok: false,
+        error: String(error?.message || error),
+      })
+    }
+    return undefined
+  }
 }

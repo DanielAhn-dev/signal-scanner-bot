@@ -209,6 +209,20 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const base = resolveInternalBase(req)
 
     const secret = process.env.CRON_SECRET || process.env.TELEGRAM_BOT_SECRET || ''
+    if (!secret) {
+      const message = 'Server misconfigured: missing CRON_SECRET or TELEGRAM_BOT_SECRET'
+      if (syncId) {
+        await finishSyncJob({
+          id: syncId,
+          status: 'failed',
+          stage: '서버 설정 오류',
+          progress: 95,
+          detail: message,
+        })
+      }
+      return res.status(500).json({ error: message })
+    }
+
     const updateHeaders = {
       'x-telegram-bot-secret': secret,
       'x-ui-key': String(readKey),
