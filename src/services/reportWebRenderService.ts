@@ -250,6 +250,65 @@ function convictionRationalePoints(item: DailyCandidateForecast): string[] {
   return points.slice(0, 5)
 }
 
+function convictionEntryBand(entryPrice: number, strategyLabel: string): { low: number; high: number } {
+  // 전략별 진입 밴드 — 현재가 기준 상대 범위
+  const offsets: Record<string, [number, number]> = {
+    '눌림분할':  [-0.030, -0.005],  // 눌림 구간 진입
+    '추세분할':  [-0.010,  0.010],  // 추세 추종 구간
+    '지지매수':  [-0.025,  0.000],  // 지지선 하단~지지선
+    '확인매수':  [ 0.000,  0.020],  // 확인 후 진입
+  }
+  const [lo, hi] = offsets[strategyLabel] ?? [-0.015, 0.015]
+  return {
+    low:  Math.round(entryPrice * (1 + lo)),
+    high: Math.round(entryPrice * (1 + hi)),
+  }
+}
+
+function convictionAdvisorSection(item: DailyCandidateForecast): string {
+  const { entryPrice, expectedBasePct, expectedUpsidePct, expectedDrawdownPct, strategyLabel } = item
+  const band = convictionEntryBand(entryPrice, strategyLabel)
+  const stopPrice  = Math.round(entryPrice * (1 - expectedDrawdownPct / 100))
+  const target1    = Math.round(entryPrice * (1 + expectedBasePct   / 100))
+  const target2    = Math.round(entryPrice * (1 + expectedUpsidePct / 100))
+
+  const fmt  = (n: number) => n.toLocaleString('ko-KR')
+  const pct  = (n: number, sign = true) => `${sign && n >= 0 ? '+' : ''}${n.toFixed(1)}%`
+
+  const rows = [
+    { label: '진입 구간',  value: `${fmt(band.low)} ~ ${fmt(band.high)}원`,                          color: '#191F28' },
+    { label: '손절 기준',  value: `${fmt(stopPrice)}원 (${pct(-expectedDrawdownPct)})`,               color: '#1478FF' },
+    { label: '1차 목표',   value: `${fmt(target1)}원 (${pct(expectedBasePct)})`,                     color: '#F04452' },
+    { label: '2차 목표',   value: `${fmt(target2)}원 (${pct(expectedUpsidePct)})`,                   color: '#F04452' },
+  ]
+
+  const cells = rows.map(r =>
+    `<div style="padding:10px 0;border-right:1px solid #F2F4F6;flex:1;min-width:0;padding-left:12px;padding-right:12px">
+      <div style="font-size:10px;color:#8B95A1;margin-bottom:3px">${r.label}</div>
+      <div style="font-size:12.5px;font-weight:700;color:${r.color};white-space:nowrap">${r.value}</div>
+    </div>`
+  ).join('')
+
+  // 전략 요약 한 줄
+  const adviceMap: Record<string, string> = {
+    '눌림분할': '진입 구간 진입 시 2~3회 분할 매수. 손절가 이탈 시 즉시 정리하세요.',
+    '추세분할': '추세 확인 후 분할 진입. 1차 목표 도달 시 절반 익절, 잔여 2차 목표 유지.',
+    '지지매수': '지지선 하단 매수, 이탈 확정 시 손절. 반등 확인 후 추가 비중.',
+    '확인매수': '확인 신호 이후 진입. 무릎에서 사고 어깨에서 파는 전략으로 목표 고정 후 진입.',
+  }
+  const advice = adviceMap[strategyLabel] ?? '분할 진입 후 손절가와 목표가를 고정하고 대응하세요.'
+
+  return `<div style="border-top:1px solid #F2F4F6;background:#FAFBFC">
+  <div style="display:flex;flex-wrap:wrap;border-bottom:1px solid #F2F4F6">
+    ${cells}
+  </div>
+  <div style="padding:9px 14px;font-size:11.5px;color:#4A5568;line-height:1.6;display:flex;align-items:flex-start;gap:8px">
+    <span style="color:#0060FF;font-weight:700;flex-shrink:0">어드바이스</span>
+    <span>${escapeHtml(advice)}</span>
+  </div>
+</div>`
+}
+
 function buildConvictionCard(item: DailyCandidateForecast, index: number): string {
   const badgeColor = CONVICTION_RANK_BADGE[Math.min(index, CONVICTION_RANK_BADGE.length - 1)]
   const conf = convictionConfidenceLevel(item.confidencePct)
@@ -331,6 +390,7 @@ function buildConvictionCard(item: DailyCandidateForecast, index: number): strin
     </div>
 
   </div>
+  ${convictionAdvisorSection(item)}
 </div>`
 }
 
