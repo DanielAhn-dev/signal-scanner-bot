@@ -8,6 +8,7 @@ import {
 } from '../bot/commands/report'
 import { getUserInvestmentPrefs } from './userService'
 import { createWeeklyReportPdf } from './weeklyReportService'
+import { buildConvictionWebHtml, HTML_BODY_PREFIX } from './reportWebRenderService'
 
 export type ReportTopic =
   | '추천'
@@ -191,11 +192,17 @@ export async function buildReportBodyText(params: {
   })
 
   const baseText = report.text || ''
+
+  if (topic === '확신추천') {
+    return {
+      bodyText: HTML_BODY_PREFIX + buildConvictionWebHtml(report.forecasts),
+      sourceLabel: '/리포트 명령 결과',
+    }
+  }
+
   const bodyText = topic === '공개추천'
     ? buildPublicDailyCandidateText(baseText)
-    : topic === '확신추천'
-      ? buildConvictionRecommendationText(report)
-      : baseText
+    : baseText
 
   return {
     bodyText,

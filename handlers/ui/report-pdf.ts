@@ -148,12 +148,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           }
         : topic === '확신추천'
           ? {
-              title: '확신추천 하이라이트 3선',
-              subtitle: '눌림목/점수/리스크를 함께 반영한 확신 후보 압축본입니다.',
+              title: '확신추천 하이라이트 종목',
+              subtitle: '눌림목·점수·리스크를 함께 반영한 확신 후보 하이라이트입니다.',
               filePrefix: 'conviction_candidate_report',
-              captionTitle: '확신추천 하이라이트 3선',
+              captionTitle: '확신추천 하이라이트 종목',
               captionSubtitle: '추천 엔진 기준 일일 확신 후보 PDF',
-              summaryText: '확신추천 하이라이트 3선 PDF를 생성했습니다.',
+              summaryText: '확신추천 하이라이트 종목 PDF를 생성했습니다.',
             }
           : undefined
     )

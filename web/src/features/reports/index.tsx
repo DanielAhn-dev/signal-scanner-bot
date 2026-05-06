@@ -44,8 +44,8 @@ const REPORT_ACTIONS: ReportAction[] = [
   },
   {
     key: 'conviction-candidate-pdf',
-    label: '확신추천 하이라이트 3선',
-    desc: '눌림목 하이라이트 3선처럼 갈만한 확신 후보를 압축한 리포트를 생성합니다. (/리포트 확신추천 대응)',
+    label: '확신추천 하이라이트 종목',
+    desc: '눌림목·점수·리스크를 종합한 확신 후보 하이라이트 리포트를 생성합니다. (/리포트 확신추천 대응)',
     kind: 'download',
     endpoint: '/api/ui/report-pdf?topic=확신추천',
     method: 'GET',

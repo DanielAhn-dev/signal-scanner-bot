@@ -12,9 +12,9 @@ import {
   type ReportTopic,
 } from '../../src/services/reportSnapshotService'
 import {
+  renderBodyText,
   renderLayout,
   toPreHtml,
-  toRichHtml,
   topicTitle,
 } from '../../src/services/reportWebRenderService'
 
@@ -113,7 +113,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         title: topicTitle(topic),
         topic,
         sourceLabel: persisted.sourceLabel,
-        contentHtml: toRichHtml(persisted.bodyText),
+        contentHtml: renderBodyText(persisted.bodyText),
       })
       setCachedHtml(cacheKey, html)
       res.setHeader('Content-Type', 'text/html; charset=utf-8')
@@ -135,7 +135,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       title: topicTitle(topic),
       topic,
       sourceLabel,
-      contentHtml: toRichHtml(bodyText),
+      contentHtml: renderBodyText(bodyText),
     })
 
     setCachedHtml(cacheKey, html)
