@@ -5,7 +5,7 @@ import {
   createSupabaseServiceClientFromEnv,
   getKstDateKey,
 } from '../../src/services/reportSnapshotService'
-import { createReportShare } from '../../src/services/reportShareService'
+import { REPORT_SHARE_TABLE, createReportShare } from '../../src/services/reportShareService'
 
 const ORIGIN = process.env.UI_CORS_ORIGIN || '*'
 
@@ -27,12 +27,12 @@ function round(value: number, digits = 2): number {
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   res.setHeader('Access-Control-Allow-Origin', ORIGIN)
-  res.setHeader('Access-Control-Allow-Methods', 'POST,OPTIONS')
+  res.setHeader('Access-Control-Allow-Methods', 'GET,POST,DELETE,OPTIONS')
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type,x-ui-key,x-user-chat-id')
   res.setHeader('Access-Control-Allow-Credentials', 'true')
 
   if (req.method === 'OPTIONS') return res.status(204).end()
-  if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' })
+  if (!['GET', 'POST', 'DELETE'].includes(String(req.method || ''))) return res.status(405).json({ error: 'Method not allowed' })
 
   const readKey = req.headers['x-ui-key'] || req.query.ui_key || process.env.UI_READ_KEY || process.env.VITE_UI_READ_KEY
   if (!readKey || String(readKey) !== (process.env.UI_READ_KEY || process.env.VITE_UI_READ_KEY)) {
@@ -47,6 +47,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (!chatId) {
     return res.status(400).json({ error: 'chat_id required (header x-user-chat-id, query/body chat_id, or server default)' })
   }
+  const audienceKey = buildAudienceKey(chatId)
 
   const host = req.headers['x-forwarded-host'] || req.headers.host || ''
   const proto = req.headers['x-forwarded-proto'] || 'https'
@@ -54,6 +55,59 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   try {
     const supabase = createSupabaseServiceClientFromEnv()
+
+    if (req.method === 'GET') {
+      const all = String(req.query.all || '0') === '1'
+      const limit = Math.min(50, Math.max(1, Number(req.query.limit || 20)))
+
+      let query = supabase
+        .from(REPORT_SHARE_TABLE)
+        .select('id,public_token,topic,audience_key,expires_at,created_at,revoked_at,access_count,last_accessed_at')
+        .eq('topic', 'portfolio-share')
+        .eq('audience_key', audienceKey)
+        .order('created_at', { ascending: false })
+        .limit(limit)
+
+      if (!all) {
+        query = query.is('revoked_at', null).gt('expires_at', new Date().toISOString())
+      }
+
+      const { data, error } = await query
+      if (error) return res.status(500).json({ error: error.message })
+
+      return res.status(200).json({
+        ok: true,
+        data: (data || []).map((row: any) => ({
+          shareId: String(row.id),
+          publicToken: String(row.public_token),
+          expiresAt: String(row.expires_at),
+          createdAt: row.created_at ? String(row.created_at) : '',
+          revokedAt: row.revoked_at ? String(row.revoked_at) : null,
+          accessCount: Number(row.access_count || 0),
+          lastAccessedAt: row.last_accessed_at ? String(row.last_accessed_at) : null,
+          url: `${origin}/api/ui/portfolio-shared?share=${encodeURIComponent(String(row.public_token || ''))}`,
+        })),
+      })
+    }
+
+    if (req.method === 'DELETE') {
+      const shareId = String(req.query.shareId || req.body?.shareId || '')
+      if (!shareId) return res.status(400).json({ error: 'shareId required' })
+
+      const { data, error } = await supabase
+        .from(REPORT_SHARE_TABLE)
+        .update({ revoked_at: new Date().toISOString() })
+        .eq('id', shareId)
+        .eq('topic', 'portfolio-share')
+        .eq('audience_key', audienceKey)
+        .is('revoked_at', null)
+        .select('id')
+        .maybeSingle()
+
+      if (error) return res.status(500).json({ error: error.message })
+      if (!data?.id) return res.status(404).json({ error: '공유 링크를 찾을 수 없거나 이미 철회되었습니다.' })
+      return res.status(200).json({ ok: true, shareId })
+    }
 
     const { data, error } = await supabase
       .from('virtual_positions')
@@ -117,7 +171,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       secret,
       topic: 'portfolio-share',
       reportDate: getKstDateKey(),
-      audienceKey: buildAudienceKey(chatId),
+      audienceKey,
       bodyText: JSON.stringify(payload),
       sourceLabel: 'portfolio-share-v1',
       expiresAt,

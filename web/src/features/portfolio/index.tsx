@@ -10,6 +10,16 @@ import { useToast } from '../../components/ToastProvider'
 import Pagination from '../../components/Pagination'
 import useWatchlistActions from '../../hooks/useWatchlistActions'
 
+type PortfolioShareHistoryItem = {
+  shareId: string
+  url: string
+  expiresAt: string
+  createdAt?: string
+  revokedAt?: string | null
+  accessCount?: number
+  lastAccessedAt?: string | null
+}
+
 export default function Portfolio() {
   const [allRows, setAllRows] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
@@ -34,7 +44,11 @@ export default function Portfolio() {
   const [shareModalOpen, setShareModalOpen] = useState(false)
   const [sharedSummaryUrl, setSharedSummaryUrl] = useState('')
   const [shareExpiresAt, setShareExpiresAt] = useState('')
+  const [shareTtlHours, setShareTtlHours] = useState<number>(48)
   const [shareCreating, setShareCreating] = useState(false)
+  const [shareHistory, setShareHistory] = useState<PortfolioShareHistoryItem[]>([])
+  const [shareHistoryLoading, setShareHistoryLoading] = useState(false)
+  const [revokingShareId, setRevokingShareId] = useState('')
   const [maintModalOpen, setMaintModalOpen] = useState(false)
   const [maintMode, setMaintMode] = useState<'watchreset' | 'liquidateall' | 'holdingedit' | 'holdingrestore'>('watchreset')
   const [maintRow, setMaintRow] = useState<any | null>(null)
@@ -267,19 +281,67 @@ export default function Portfolio() {
         method: 'POST',
         cacheMs: 0,
         timeoutMs: 12_000,
-        body: JSON.stringify({ ttlHours: 48 }),
+        body: JSON.stringify({ ttlHours: shareTtlHours }),
       })
       const url = String(json?.url || '')
       if (!url) throw new Error('공유 URL 생성에 실패했습니다')
       setSharedSummaryUrl(url)
       setShareExpiresAt(String(json?.expiresAt || ''))
       toast.show('공유 URL이 생성되었습니다')
+      invalidateCache('/api/ui/portfolio-share')
+      const historyJson = await apiFetch('/api/ui/portfolio-share?all=1&limit=10', {
+        cacheMs: 0,
+        timeoutMs: 10_000,
+      })
+      setShareHistory(Array.isArray(historyJson?.data) ? historyJson.data : [])
     } catch (e: any) {
       toast.show(String(e?.message || e || '공유 URL 생성 실패'))
     } finally {
       setShareCreating(false)
     }
-  }, [shareCreating, toast])
+  }, [shareCreating, shareTtlHours, toast])
+
+  const loadShareHistory = useCallback(async () => {
+    setShareHistoryLoading(true)
+    try {
+      const json = await apiFetch('/api/ui/portfolio-share?all=1&limit=10', {
+        cacheMs: 0,
+        timeoutMs: 10_000,
+      })
+      setShareHistory(Array.isArray(json?.data) ? json.data : [])
+    } catch (e: any) {
+      toast.show(String(e?.message || e || '공유 이력 조회 실패'))
+    } finally {
+      setShareHistoryLoading(false)
+    }
+  }, [toast])
+
+  const revokeShare = useCallback(async (shareId: string) => {
+    if (!shareId || revokingShareId) return
+    setRevokingShareId(shareId)
+    try {
+      const json = await apiFetch('/api/ui/portfolio-share', {
+        method: 'DELETE',
+        cacheMs: 0,
+        timeoutMs: 10_000,
+        body: JSON.stringify({ shareId }),
+      })
+      if (json?.error) throw new Error(String(json.error))
+      toast.show('공유 링크를 철회했습니다')
+      if (sharedSummaryUrl) {
+        const target = shareHistory.find((item) => item.shareId === shareId)
+        if (target?.url === sharedSummaryUrl) {
+          setSharedSummaryUrl('')
+          setShareExpiresAt('')
+        }
+      }
+      await loadShareHistory()
+    } catch (e: any) {
+      toast.show(String(e?.message || e || '공유 링크 철회 실패'))
+    } finally {
+      setRevokingShareId('')
+    }
+  }, [revokingShareId, toast, sharedSummaryUrl, shareHistory, loadShareHistory])
 
   const copyPortfolioShareUrl = async () => {
     if (!sharedSummaryUrl) {
@@ -299,6 +361,11 @@ export default function Portfolio() {
     if (sharedSummaryUrl || shareCreating) return
     void createPublicShareUrl()
   }, [shareModalOpen, sharedSummaryUrl, shareCreating, createPublicShareUrl])
+
+  useEffect(() => {
+    if (!shareModalOpen) return
+    void loadShareHistory()
+  }, [shareModalOpen, loadShareHistory])
 
   return (
     <section className="container-app portfolio-page">
@@ -565,6 +632,19 @@ export default function Portfolio() {
           </div>
 
           <div style={{ display: 'flex', gap: 'var(--space-2)', alignItems: 'center', flexWrap: 'wrap', marginBottom: 'var(--space-3)' }}>
+            <div style={{ minWidth: 180 }}>
+              <div className="caption muted" style={{ marginBottom: 'var(--space-1)' }}>링크 만료</div>
+              <select
+                className="input"
+                value={String(shareTtlHours)}
+                onChange={(e) => setShareTtlHours(Number(e.target.value) || 48)}
+                disabled={shareCreating}
+              >
+                <option value="24">24시간</option>
+                <option value="48">48시간</option>
+                <option value="168">7일</option>
+              </select>
+            </div>
             <Input
               label="공유 URL (인증 없이 접근 가능)"
               readOnly
@@ -583,6 +663,57 @@ export default function Portfolio() {
 
           <div className="caption muted" style={{ marginBottom: 'var(--space-3)' }}>
             이 URL은 누구나 열람 가능한 공유 전용 단독 페이지입니다.
+          </div>
+
+          <div className="card" style={{ margin: 0, marginBottom: 'var(--space-3)', padding: 'var(--space-3)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--space-2)' }}>
+              <div className="title-md">최근 공유 링크</div>
+              <Button variant="secondary" onClick={loadShareHistory} disabled={shareHistoryLoading}>
+                {shareHistoryLoading ? '조회 중...' : '새로고침'}
+              </Button>
+            </div>
+
+            {shareHistory.length === 0 ? (
+              <div className="caption muted">공유 이력이 없습니다.</div>
+            ) : (
+              <div style={{ display: 'grid', gap: 'var(--space-2)' }}>
+                {shareHistory.map((item) => {
+                  const isRevoked = Boolean(item.revokedAt)
+                  const isExpired = new Date(item.expiresAt).getTime() <= Date.now()
+                  return (
+                    <div key={item.shareId} style={{ border: '1px solid var(--color-border-muted)', borderRadius: 'var(--radius-md)', padding: 'var(--space-2)' }}>
+                      <div className="caption" style={{ marginBottom: 'var(--space-1)' }}>
+                        생성 {item.createdAt ? new Date(item.createdAt).toLocaleString('ko-KR', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false }) : '-'}
+                        {' · '}만료 {new Date(item.expiresAt).toLocaleString('ko-KR', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false })}
+                        {' · '}조회 {Number(item.accessCount || 0)}회
+                      </div>
+                      <div style={{ display: 'flex', gap: 'var(--space-2)', flexWrap: 'wrap' }}>
+                        <Button
+                          variant="secondary"
+                          onClick={async () => {
+                            try {
+                              await navigator.clipboard.writeText(String(item.url || ''))
+                              toast.show('공유 URL을 복사했습니다')
+                            } catch {
+                              toast.show('공유 URL 복사에 실패했습니다')
+                            }
+                          }}
+                        >
+                          URL 복사
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          onClick={() => revokeShare(item.shareId)}
+                          disabled={isRevoked || isExpired || revokingShareId === item.shareId}
+                        >
+                          {isRevoked ? '철회됨' : isExpired ? '만료됨' : revokingShareId === item.shareId ? '철회 중...' : '철회'}
+                        </Button>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
           </div>
 
           <div className="portfolio-capture-metrics">
