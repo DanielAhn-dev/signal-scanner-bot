@@ -3,6 +3,7 @@ import { createClient } from '@supabase/supabase-js'
 import { buildInvestmentPlan } from '../../src/lib/investPlan'
 import { fetchLatestScoresByCodes } from '../../src/services/scoreSourceService'
 import { scaleScoreFactorsToReferencePrice } from '../../src/lib/priceScale'
+import { getFundamentalSnapshot } from '../../src/services/fundamentalService'
 
 const ORIGIN = process.env.UI_CORS_ORIGIN || '*'
 
@@ -176,6 +177,59 @@ function toSafeChatId(raw: unknown): number | null {
   return n
 }
 
+async function saveFundamentalSnapshot(
+  supabase: any,
+  code: string,
+  snapshot: any,
+): Promise<boolean> {
+  if (!snapshot || typeof snapshot !== 'object') {
+    return false
+  }
+
+  try {
+    const now = new Date().toISOString()
+    
+    // Map snapshot fields to fundamentals table columns
+    const row = {
+      code,
+      per: asNum(snapshot.per) ?? null,
+      pbr: asNum(snapshot.pbr) ?? null,
+      eps: null,  // FundamentalSnapshot doesn't include eps/bps
+      bps: null,
+      roe: asNum(snapshot.roe) ?? null,
+      debt_ratio: asNum(snapshot.debtRatio) ?? null,
+      sales: asNum(snapshot.sales) ?? null,
+      operating_income: asNum(snapshot.opIncome) ?? null,
+      net_income: asNum(snapshot.netIncome) ?? null,
+      cashflow_oper: null,  // Not in snapshot
+      cashflow_free: null,
+      as_of: now,
+      period_type: 'snapshot',
+      period_end: null,
+      computed: true,
+      raw_rows: null,
+      source: 'live_scrape',
+      created_at: now,
+    }
+
+    const { error } = await supabase
+      .from('fundamentals')
+      .upsert(row, { onConflict: 'code,as_of' })
+      .select()
+
+    if (error) {
+      console.warn(`Failed to save fundamentals for ${code}:`, error.message)
+      return false
+    }
+
+    console.log(`✓ Saved live scraped fundamentals for ${code}`)
+    return true
+  } catch (e: any) {
+    console.warn(`Exception saving fundamentals for ${code}:`, e?.message)
+    return false
+  }
+}
+
 function estimateFundamentalQuality(fund: any): number {
   const roe = asNum(fund?.roe)
   const per = asNum(fund?.per)
@@ -347,7 +401,30 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       fetchInvestorFlow(supabase, code),
     ])
 
-    const fund = fundamentalsResp.data?.[0] || null
+    let fund: any = fundamentalsResp.data?.[0] || null
+
+    // 📌 Fallback to live scraping if fundamentals data not found in DB
+    if (!fund) {
+      try {
+        const scrapedFund = await getFundamentalSnapshot(code)
+        if (scrapedFund && Object.keys(scrapedFund).length > 0) {
+          fund = {
+            per: scrapedFund.per,
+            pbr: scrapedFund.pbr,
+            roe: scrapedFund.roe,
+            debt_ratio: scrapedFund.debtRatio,
+            eps: null,
+            bps: null,
+            as_of: new Date().toISOString(),
+          }
+          // 💾 Save scraped data to DB for future queries (non-blocking)
+          void saveFundamentalSnapshot(supabase, code, scrapedFund)
+        }
+      } catch (e: any) {
+        // Silent fallback - if scraping fails, just proceed with null
+        console.warn(`Fallback scraping failed for ${code}:`, e?.message)
+      }
+    }
 
     const normalizedSeries = [...series]
     if (!normalizedSeries.length && stock) {
