@@ -7,6 +7,7 @@ import Skeleton from '../../components/Skeleton'
 import { ErrorState, EmptyState } from '../../components/StateViews'
 import { useToast } from '../../components/ToastProvider'
 import StockDetailModal from '../../components/StockDetailModal'
+import useWatchlistActions from '../../hooks/useWatchlistActions'
 
 const WATCHLIST_SNAPSHOT_KEY = 'watchlist_snapshot_v1'
 
@@ -43,7 +44,6 @@ export default function WatchlistPage() {
   const [addResults, setAddResults] = useState<any[]>([])
   const [addLoading, setAddLoading] = useState(false)
   const [activeAddIndex, setActiveAddIndex] = useState(-1)
-  const [mutatingCode, setMutatingCode] = useState<string | null>(null)
   const [highlightCode, setHighlightCode] = useState<string | null>(null)
   const [detailCode, setDetailCode] = useState<string>('')
   const [detailName, setDetailName] = useState<string>('')
@@ -52,6 +52,14 @@ export default function WatchlistPage() {
   const addDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const highlightTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const toast = useToast()
+  const {
+    replaceWatchedCodes,
+    isWatched,
+    isAdding,
+    isRemoving,
+    addToWatchlist,
+    removeFromWatchlist,
+  } = useWatchlistActions()
 
   const load = useCallback(async (force = false) => {
     if (!force && items.length > 0) return
@@ -73,12 +81,13 @@ export default function WatchlistPage() {
       const nextItems = res?.data ?? []
       setItems(nextItems)
       writeWatchlistSnapshot(nextItems)
+      replaceWatchedCodes(nextItems.map((it: any) => String(it?.code || '')))
     } catch (e: any) {
       setError(e?.message || String(e))
     } finally {
       setLoading(false)
     }
-  }, [items.length])
+  }, [items.length, replaceWatchedCodes])
 
   useEffect(() => {
     // Prevent duplicate initial fetch in React StrictMode dev cycle.
@@ -124,7 +133,6 @@ export default function WatchlistPage() {
     highlightTimerRef.current = setTimeout(() => setHighlightCode(null), 1300)
   }
 
-  const watchedCodes = useMemo(() => new Set(items.map((it: any) => String(it.code))), [items])
   const visibleAddResults = useMemo(() => addResults.slice(0, 6), [addResults])
   const filteredItems = useMemo(() => {
     const q = listSearch.trim().toLowerCase()
@@ -139,44 +147,32 @@ export default function WatchlistPage() {
 
   const addInterest = async (code: string) => {
     if (!code) return
-    setMutatingCode(code)
     try {
-      const res = await apiFetch('/api/ui/watchlist', {
-        method: 'POST',
-        cacheMs: 0,
-        timeoutMs: 12_000,
-        body: JSON.stringify({ code }),
-      })
-      if (res?.error) throw new Error(String(res.error))
-      toast.show('관심 종목에 추가되었습니다 ✓')
-      await load(true)
-      flashAdded(code)
+      const result = await addToWatchlist(code)
+      if (result === 'added') {
+        toast.show('관심 종목에 추가되었습니다 ✓')
+        await load(true)
+        flashAdded(code)
+      } else if (result === 'exists') {
+        toast.show('이미 관심 종목에 있습니다')
+      }
     } catch (e: any) {
       toast.show(String(e?.message || e))
-    } finally {
-      setMutatingCode(null)
     }
   }
 
   const removeInterest = async (code: string) => {
     if (!code) return
-    setMutatingCode(code)
     try {
-      const res = await apiFetch('/api/ui/watchlist', {
-        method: 'DELETE',
-        cacheMs: 0,
-        timeoutMs: 12_000,
-        body: JSON.stringify({ code }),
-      })
-      if (res?.error) throw new Error(String(res.error))
+      const result = await removeFromWatchlist(code)
+      if (result !== 'removed' && result !== 'not-found') return
       const next = items.filter((it: any) => String(it.code) !== String(code))
       setItems(next)
       writeWatchlistSnapshot(next)
+      replaceWatchedCodes(next.map((it: any) => String(it?.code || '')))
       toast.show('관심 종목에서 제거되었습니다')
     } catch (e: any) {
       toast.show(String(e?.message || e))
-    } finally {
-      setMutatingCode(null)
     }
   }
 
@@ -253,7 +249,8 @@ export default function WatchlistPage() {
               <div className="watchlist-add-results">
                 {visibleAddResults.map((s: any, idx: number) => {
                   const code = String(s.code || '')
-                  const exists = watchedCodes.has(code)
+                  const exists = isWatched(code)
+                  const isAddingNow = isAdding(code)
                   return (
                     <div key={code} className={`watchlist-add-row${idx === activeAddIndex ? ' active' : ''}`}>
                       <div>
@@ -264,11 +261,11 @@ export default function WatchlistPage() {
                         className="watchlist-icon-btn"
                         variant={exists ? 'ghost' : 'secondary'}
                         onClick={() => addInterest(code)}
-                        disabled={exists || mutatingCode === code}
+                        disabled={exists || isAddingNow}
                         title={exists ? '이미 관심 종목' : '관심 종목에 추가'}
                       >
                         <span className="watchlist-btn-symbol" aria-hidden>{exists ? 'OK' : '+'}</span>
-                        <span className="watchlist-btn-label">{exists ? '추가됨' : (mutatingCode === code ? '추가중' : '추가')}</span>
+                        <span className="watchlist-btn-label">{exists ? '추가됨' : (isAddingNow ? '추가중' : '추가')}</span>
                       </Button>
                     </div>
                   )
@@ -322,11 +319,11 @@ export default function WatchlistPage() {
                       e?.stopPropagation?.()
                       removeInterest(String(r.code))
                     }}
-                    disabled={mutatingCode === String(r.code)}
+                    disabled={isRemoving(String(r.code))}
                     title="관심 종목에서 삭제"
                   >
                     <span className="watchlist-btn-symbol" aria-hidden>x</span>
-                    <span className="watchlist-btn-label">{mutatingCode === String(r.code) ? '삭제중' : '삭제'}</span>
+                    <span className="watchlist-btn-label">{isRemoving(String(r.code)) ? '삭제중' : '삭제'}</span>
                   </Button>
                 </div>
               </div>

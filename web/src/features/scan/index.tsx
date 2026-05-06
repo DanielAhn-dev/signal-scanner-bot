@@ -6,6 +6,7 @@ import Skeleton from '../../components/Skeleton'
 import { ErrorState, EmptyState } from '../../components/StateViews'
 import { useToast } from '../../components/ToastProvider'
 import Pagination from '../../components/Pagination'
+import useWatchlistActions from '../../hooks/useWatchlistActions'
 
 const SCAN_SNAPSHOT_KEY = 'scan_snapshot_v1'
 
@@ -100,9 +101,16 @@ export default function ScanPage() {
   const [sortKey, setSortKey] = useState<SortKey>('entry_score')
   const [sortDirection, setSortDirection] = useState<SortDirection>('desc')
   const [page, setPage] = useState(1)
-  const [addingCode, setAddingCode] = useState<string | null>(null)
   const pageSize = 20
   const toast = useToast()
+  const {
+    loadWatchlistCodes,
+    isWatched,
+    isAdding,
+    isRemoving,
+    addToWatchlist,
+    removeFromWatchlist,
+  } = useWatchlistActions()
 
   const loadCandidates = async () => {
     setLoading(true)
@@ -128,6 +136,11 @@ export default function ScanPage() {
   }
 
   useEffect(() => { loadCandidates() }, [])
+  useEffect(() => {
+    loadWatchlistCodes().catch(() => {
+      // 관심종목 조회 실패 시에도 스캔 화면은 계속 사용 가능해야 함
+    })
+  }, [loadWatchlistCodes])
 
   const triggerScan = async () => {
     setScanLoading(true)
@@ -227,23 +240,33 @@ export default function ScanPage() {
     setSortDirection(key === 'code' || key === 'name' || key === 'sector_id' ? 'asc' : 'desc')
   }
 
-  const addToWatchlist = async (code: string) => {
-    if (!code) return
-    setAddingCode(code)
+  const onAddToWatchlist = async (code: string) => {
     try {
-      const res = await apiFetch('/api/ui/watchlist', {
-        method: 'POST',
-        cacheMs: 0,
-        timeoutMs: 12_000,
-        body: JSON.stringify({ code }),
-      })
-      if (res?.error) throw new Error(String(res.error))
-      toast.show('관심 종목에 추가되었습니다 ✓')
+      const result = await addToWatchlist(code)
+      if (result === 'added') {
+        toast.show('관심 종목에 추가되었습니다 ✓')
+      } else if (result === 'exists') {
+        toast.show('이미 관심 종목에 있습니다')
+      }
     } catch (e: any) {
       toast.show(String(e?.message || e))
-    } finally {
-      setAddingCode(null)
     }
+  }
+
+  const onToggleWatchlist = async (code: string) => {
+    if (!code) return
+    if (isWatched(code)) {
+      try {
+        const result = await removeFromWatchlist(code)
+        if (result === 'removed' || result === 'not-found') {
+          toast.show('관심 종목에서 제거되었습니다')
+        }
+      } catch (e: any) {
+        toast.show(String(e?.message || e))
+      }
+      return
+    }
+    await onAddToWatchlist(code)
   }
 
   const renderSortableHeader = (label: string, key: SortKey) => {
@@ -347,7 +370,13 @@ export default function ScanPage() {
               </tr>
             </thead>
             <tbody>
-              {displayRows.map((s: any) => (
+              {displayRows.map((s: any) => {
+                const code = String(s.code)
+                const isAdded = isWatched(code)
+                const isAddingNow = isAdding(code)
+                const isRemovingNow = isRemoving(code)
+                const isMutating = isAddingNow || isRemovingNow
+                return (
                 <tr key={s.code} style={{ borderBottom: '1px solid var(--color-border-default)' }}>
                   <td style={{ padding: 'var(--space-2) var(--space-3)', fontFamily: 'var(--font-family-mono)', color: 'var(--color-text-brand)' }}>{s.code}</td>
                   <td style={{ padding: 'var(--space-2) var(--space-3)', fontWeight: 'var(--font-weight-medium)' }}>{s.name}</td>
@@ -390,16 +419,19 @@ export default function ScanPage() {
                     <Button
                       className="watchlist-icon-btn scan-watch-add-btn"
                       variant="ghost"
-                      onClick={() => addToWatchlist(String(s.code))}
-                      disabled={addingCode === String(s.code)}
-                      title="관심 종목에 추가"
+                      onClick={() => onToggleWatchlist(code)}
+                      disabled={isMutating}
+                      title={isAdded ? '관심 종목에서 제거' : '관심 종목에 추가'}
                     >
-                      <span className="watchlist-btn-symbol" aria-hidden>+</span>
-                      <span className="watchlist-btn-label">{addingCode === String(s.code) ? '추가중' : '추가'}</span>
+                      <span className="watchlist-btn-symbol" aria-hidden>{isAdded ? 'x' : '+'}</span>
+                      <span className="watchlist-btn-label">
+                        {isAddingNow ? '추가중' : isRemovingNow ? '제거중' : isAdded ? '제거' : '추가'}
+                      </span>
                     </Button>
                   </td>
                 </tr>
-              ))}
+                )
+              })}
             </tbody>
           </table>
 
