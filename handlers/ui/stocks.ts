@@ -14,8 +14,20 @@ function getSupabase(): SupabaseClient {
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
-  const origin = (req.headers.origin as string) || ORIGIN || '*'
-  res.setHeader('Access-Control-Allow-Origin', origin)
+  const requestOrigin = String(req.headers.origin || '').trim()
+  const trustedOrigins = String(
+    process.env.UI_TRUSTED_WEB_ORIGINS ||
+    process.env.UI_CORS_ORIGIN ||
+    'https://signal-scanner-web.vercel.app,http://localhost:5173',
+  )
+    .split(',')
+    .map((v) => v.trim())
+    .filter(Boolean)
+  const allowOrigin = requestOrigin && trustedOrigins.includes(requestOrigin)
+    ? requestOrigin
+    : (trustedOrigins[0] || ORIGIN || '*')
+
+  res.setHeader('Access-Control-Allow-Origin', allowOrigin)
   res.setHeader('Access-Control-Allow-Methods', 'GET,POST,OPTIONS')
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type,x-ui-key')
   res.setHeader('Access-Control-Allow-Credentials', 'true')
@@ -28,14 +40,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   const expectedReadKey = process.env.UI_READ_KEY || process.env.VITE_UI_READ_KEY
   const readKey = req.headers['x-ui-key'] || req.query.ui_key
-  const trustedOrigins = String(
-    process.env.UI_TRUSTED_WEB_ORIGINS ||
-    'https://signal-scanner-web.vercel.app,http://localhost:5173',
-  )
-    .split(',')
-    .map((v) => v.trim())
-    .filter(Boolean)
-  const isTrustedOrigin = !!origin && trustedOrigins.includes(origin)
+  const isTrustedOrigin = !!requestOrigin && trustedOrigins.includes(requestOrigin)
   if (expectedReadKey && !isTrustedOrigin && String(readKey || '') !== expectedReadKey) {
     return res.status(401).json({ error: 'Unauthorized', detail: 'Invalid UI read key' })
   }

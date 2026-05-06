@@ -44,17 +44,18 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   try {
-    const user = resolveUiUserContext(req)
-    const chatId = user.chatId
-    if (!chatId) return res.status(400).json({ error: 'chat_id required (header x-user-chat-id, query/body chat_id, or server default)' })
-
     const q = req.query || {}
     const page = Math.max(1, Number(q.page || 1))
     const pageSize = Math.min(1000, Math.max(10, Number(q.pageSize || 50)))
+    const withCount = String(q.withCount || '') === '1'
+
+    const user = resolveUiUserContext(req)
+    const chatId = user.chatId
+    if (!chatId) return res.status(200).json({ data: [], count: withCount ? 0 : undefined, page, pageSize })
+
     const from = (page - 1) * pageSize
     const to = from + pageSize - 1
 
-    const withCount = String(q.withCount || '') === '1'
     const bypassCache = String((q as any).cacheMs || '') === '0'
     const cacheKey = JSON.stringify({ chatId, page, pageSize, withCount })
 

@@ -36,6 +36,7 @@ export const NAV_ITEMS: NavGroup[] = [
     items: [
       { key: 'market', label: '마켓' },
       { key: 'economy', label: '이코노미' },
+      { key: 'news', label: '뉴스' },
       { key: 'feed', label: '피드' },
       { key: 'profile', label: '프로필' }
     ]

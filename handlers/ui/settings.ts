@@ -27,7 +27,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     if (req.method === 'GET') {
       const chatId = resolvedChatId
-      if (!chatId) return res.status(400).json({ error: 'chat_id required' })
+      if (!chatId) return res.status(200).json({ data: null })
       const { data, error } = await supabase
         .from('virtual_autotrade_settings')
         .select('*')

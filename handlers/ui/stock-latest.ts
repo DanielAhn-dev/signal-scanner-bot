@@ -155,16 +155,30 @@ async function fetchInvestorFlow(supabase: any, code: string): Promise<InvestorF
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
-  const origin = (req.headers.origin as string) || ORIGIN || '*'
-  res.setHeader('Access-Control-Allow-Origin', origin)
+  const requestOrigin = String(req.headers.origin || '').trim()
+  const trustedOrigins = String(
+    process.env.UI_TRUSTED_WEB_ORIGINS ||
+    process.env.UI_CORS_ORIGIN ||
+    'https://signal-scanner-web.vercel.app,http://localhost:5173',
+  )
+    .split(',')
+    .map((v) => v.trim())
+    .filter(Boolean)
+  const allowOrigin = requestOrigin && trustedOrigins.includes(requestOrigin)
+    ? requestOrigin
+    : (trustedOrigins[0] || ORIGIN || '*')
+
+  res.setHeader('Access-Control-Allow-Origin', allowOrigin)
   res.setHeader('Access-Control-Allow-Methods', 'GET,POST,OPTIONS')
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type,x-ui-key')
   res.setHeader('Access-Control-Allow-Credentials', 'true')
   if (req.method === 'OPTIONS') return res.status(204).end()
   if (req.method !== 'GET') return res.status(405).json({ error: 'Method not allowed' })
 
-  const readKey = req.headers['x-ui-key'] || req.query.ui_key || process.env.UI_READ_KEY || process.env.VITE_UI_READ_KEY
-  if (!readKey || String(readKey) !== (process.env.UI_READ_KEY || process.env.VITE_UI_READ_KEY)) {
+  const expectedReadKey = process.env.UI_READ_KEY || process.env.VITE_UI_READ_KEY
+  const readKey = req.headers['x-ui-key'] || req.query.ui_key
+  const isTrustedOrigin = !!requestOrigin && trustedOrigins.includes(requestOrigin)
+  if (expectedReadKey && !isTrustedOrigin && String(readKey || '') !== expectedReadKey) {
     return res.status(401).json({ error: 'Unauthorized' })
   }
 

@@ -28,6 +28,14 @@ export default function Portfolio() {
   const [tradePrice, setTradePrice] = useState<number | ''>('')
   const [tradeLoading, setTradeLoading] = useState(false)
   const [tradeError, setTradeError] = useState<string | null>(null)
+  const [maintModalOpen, setMaintModalOpen] = useState(false)
+  const [maintMode, setMaintMode] = useState<'watchreset' | 'liquidateall' | 'holdingedit' | 'holdingrestore'>('watchreset')
+  const [maintRow, setMaintRow] = useState<any | null>(null)
+  const [maintCode, setMaintCode] = useState('')
+  const [maintBuyPrice, setMaintBuyPrice] = useState<number | ''>('')
+  const [maintQty, setMaintQty] = useState<number>(1)
+  const [maintLoading, setMaintLoading] = useState(false)
+  const [maintError, setMaintError] = useState<string | null>(null)
   const toast = useToast()
 
   const load = useCallback(async (soft = false) => {
@@ -101,6 +109,56 @@ export default function Portfolio() {
     setModalOpen(true)
   }
 
+  const openMaintenanceModal = (mode: 'watchreset' | 'liquidateall' | 'holdingedit' | 'holdingrestore', row?: any) => {
+    setMaintMode(mode)
+    setMaintRow(row ?? null)
+    setMaintError(null)
+    if (mode === 'holdingedit') {
+      const code = String(row?.code || '')
+      setMaintCode(code)
+      setMaintBuyPrice(Number(row?.avg_price || row?.buy_price || row?.stock?.close || 0) || '')
+      setMaintQty(Math.max(1, Number(row?.quantity || 1)))
+    }
+    setMaintModalOpen(true)
+  }
+
+  const runMaintenance = async () => {
+    setMaintLoading(true)
+    setMaintError(null)
+    try {
+      const body: any = { mode: maintMode }
+      if (maintMode === 'holdingedit') {
+        body.code = maintCode
+        body.buy_price = maintBuyPrice
+        body.quantity = maintQty
+      }
+
+      const json = await apiFetch('/api/ui/positions-maintenance', {
+        method: 'POST',
+        cacheMs: 0,
+        timeoutMs: 20_000,
+        body: JSON.stringify(body),
+      })
+      if (json?.error) throw new Error(String(json.error))
+
+      if (maintMode === 'watchreset') {
+        toast.show(`관심 종목 ${Number(json?.removed || 0)}건 초기화 완료`)
+      } else if (maintMode === 'liquidateall') {
+        toast.show(`보유 종목 ${Number(json?.soldCount || 0)}건 전체매도 처리 완료`)
+      } else {
+        toast.show('보유수정 완료 ✓')
+      }
+
+      invalidateCache('/api/ui/positions')
+      setMaintModalOpen(false)
+      await load(true)
+    } catch (e: any) {
+      setMaintError(String(e?.message || e))
+    } finally {
+      setMaintLoading(false)
+    }
+  }
+
   const submitTrade = async () => {
     if (!modalRow) return
     if (!tradeQty || tradeQty <= 0) { setTradeError('수량은 1 이상이어야 합니다'); return }
@@ -156,9 +214,13 @@ export default function Portfolio() {
           <h1 className="title-xl portfolio-title">가상 포트폴리오</h1>
           <p className="portfolio-subtitle">보유 포지션과 관심 종목을 한 화면에서 관리합니다.</p>
         </div>
-        <span className="portfolio-total-pill">
-          {allRows.length > 0 ? `총 ${allRows.length}개` : '포지션 집계 준비중'}
-        </span>
+        <div style={{ display: 'flex', gap: 'var(--space-2)', alignItems: 'center', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+          <span className="portfolio-total-pill">
+            {allRows.length > 0 ? `총 ${allRows.length}개` : '포지션 집계 준비중'}
+          </span>
+          <Button variant="ghost" onClick={() => openMaintenanceModal('watchreset')} disabled={loading || interestAll.length === 0}>관심초기화</Button>
+          <Button variant="ghost" onClick={() => openMaintenanceModal('liquidateall')} disabled={loading || holdingAll.length === 0}>전체매도</Button>
+        </div>
       </div>
 
       <div className="portfolio-stat-grid">
@@ -311,6 +373,7 @@ export default function Portfolio() {
 
               <div className="portfolio-actions-row">
                 <Button className="portfolio-action-btn" variant="secondary" onClick={() => openTradeModal(r, 'buy')}>가상매수</Button>
+                {isHolding && <Button className="portfolio-action-btn" variant="secondary" onClick={() => openMaintenanceModal('holdingedit', r)}>보유수정</Button>}
                 {isHolding && <Button className="portfolio-action-btn" variant="ghost" onClick={() => openTradeModal(r, 'sell')}>가상매도</Button>}
               </div>
             </div>
@@ -368,6 +431,56 @@ export default function Portfolio() {
             </div>
           </>
         )}
+      </Modal>
+
+      <Modal
+        isOpen={maintModalOpen}
+        title={maintMode === 'watchreset' ? '관심초기화' : maintMode === 'liquidateall' ? '전체매도' : '보유수정'}
+        onClose={() => setMaintModalOpen(false)}
+        size="sm"
+      >
+        {maintMode === 'watchreset' && (
+          <div className="muted" style={{ marginBottom: 'var(--space-3)' }}>
+            관심 종목(보유수량 0)만 일괄 삭제합니다. 보유 종목은 유지됩니다.
+          </div>
+        )}
+
+        {maintMode === 'liquidateall' && (
+          <div className="muted" style={{ marginBottom: 'var(--space-3)' }}>
+            현재 보유 종목을 기준가로 일괄 매도 처리합니다. 실행 후 보유수량이 0으로 전환됩니다.
+          </div>
+        )}
+
+        {maintMode === 'holdingedit' && (
+          <>
+            <div className="muted" style={{ marginBottom: 'var(--space-3)' }}>
+              {maintRow?.stock_name || maintCode || '종목'}의 매수가/수량을 재설정합니다.
+            </div>
+            <div className="grid-two" style={{ marginBottom: 'var(--space-3)' }}>
+              <Input label="종목코드" value={maintCode} onChange={(e: any) => setMaintCode(String(e?.target?.value || '').toUpperCase())} />
+              <Input label="수량" type="number" value={String(maintQty)} onChange={(e: any) => setMaintQty(Math.max(1, Number(e?.target?.value || 1)))} />
+            </div>
+            <Input
+              label="매수가"
+              type="number"
+              value={maintBuyPrice === '' ? '' : String(maintBuyPrice)}
+              onChange={(e: any) => setMaintBuyPrice(e?.target?.value === '' ? '' : Number(e?.target?.value))}
+            />
+          </>
+        )}
+
+        {maintError && (
+          <div className="state-error" style={{ marginTop: 'var(--space-3)', marginBottom: 'var(--space-3)' }}>
+            <div className="state-error-title">{maintError}</div>
+          </div>
+        )}
+
+        <div style={{ display: 'flex', gap: 'var(--space-2)', marginTop: 'var(--space-3)' }}>
+          <Button variant="primary" onClick={runMaintenance} disabled={maintLoading}>
+            {maintLoading ? '처리 중…' : '실행'}
+          </Button>
+          <Button variant="ghost" onClick={() => setMaintModalOpen(false)}>취소</Button>
+        </div>
       </Modal>
     </section>
   )

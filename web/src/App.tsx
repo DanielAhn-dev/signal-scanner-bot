@@ -18,6 +18,7 @@ const ReportsPage = lazy(() => import('./features/reports'))
 const MarketPage = lazy(() => import('./features/market'))
 const EconomyPage = lazy(() => import('./features/economy'))
 const FeedPage = lazy(() => import('./features/feed'))
+const NewsPage = lazy(() => import('./features/news'))
 const ProfilePage = lazy(() => import('./features/profile'))
 const DBViewPage = lazy(() => import('./features/dbView'))
 const SectorsPage = lazy(() => import('./features/sectors'))
@@ -36,6 +37,7 @@ const COMPONENTS = {
   market: MarketPage,
   economy: EconomyPage,
   feed: FeedPage,
+  news: NewsPage,
   profile: ProfilePage,
   sectors: SectorsPage,
   dbview: DBViewPage,
@@ -45,7 +47,6 @@ const COMPONENTS = {
 type RouteKey = keyof typeof COMPONENTS
 const AUTH_RETURN_HASH_KEY = 'supabase-auth-return-hash'
 const AUTH_ERROR_KEY = 'supabase-auth-last-error'
-const AUTH_OPEN_PROFILE_MODAL_KEY = 'supabase-open-profile-modal'
 
 const decodeAuthValue = (value: string) => {
   let current = value
@@ -89,17 +90,6 @@ export default function App() {
 }
 
 function AppContent() {
-  const consumeOpenProfileModalFlag = () => {
-    if (typeof window === 'undefined') return false
-    try {
-      const shouldOpen = window.sessionStorage.getItem(AUTH_OPEN_PROFILE_MODAL_KEY) === '1'
-      if (shouldOpen) window.sessionStorage.removeItem(AUTH_OPEN_PROFILE_MODAL_KEY)
-      return shouldOpen
-    } catch {
-      return false
-    }
-  }
-
   const getInitialRoute = (): RouteKey => {
     try {
       const hash = window.location.hash?.replace('#', '')
@@ -117,7 +107,6 @@ function AppContent() {
   const [authEmail, setAuthEmail] = useState('')
   const [authName, setAuthName] = useState('')
   const [authError, setAuthError] = useState('')
-  const [profileModalTrigger, setProfileModalTrigger] = useState(0)
   const toast = useToast()
 
   useEffect(() => {
@@ -166,7 +155,7 @@ function AppContent() {
     }
     let disposed = false
 
-    const applySession = async (session: Session | null, openProfileModal: boolean) => {
+    const applySession = async (session: Session | null) => {
       const user = session?.user
       if (!user) {
         if (disposed) return
@@ -192,14 +181,12 @@ function AppContent() {
       setAuthEmail(email)
       setAuthName(name)
       setAuthReady(true)
-      if (openProfileModal) setProfileModalTrigger((v) => v + 1)
     }
 
-    void supabase.auth.getSession().then(({ data }) => applySession(data?.session ?? null, false))
+    void supabase.auth.getSession().then(({ data }) => applySession(data?.session ?? null))
 
     const { data: listener } = supabase.auth.onAuthStateChange((event, session) => {
-      const shouldOpenModal = event === 'SIGNED_IN' && consumeOpenProfileModalFlag()
-      void applySession(session, shouldOpenModal)
+      void applySession(session)
       if (event === 'SIGNED_IN' || event === 'SIGNED_OUT') setIsSigningIn(false)
     })
 
@@ -242,7 +229,6 @@ function AppContent() {
         window.sessionStorage.removeItem(AUTH_ERROR_KEY)
         const currentHash = window.location.hash || '#dashboard'
         window.sessionStorage.setItem(AUTH_RETURN_HASH_KEY, currentHash)
-        window.sessionStorage.setItem(AUTH_OPEN_PROFILE_MODAL_KEY, '1')
       } catch {
         // ignore
       }
@@ -344,7 +330,6 @@ function AppContent() {
             authName={authName}
             onSignIn={handleGoogleSignIn}
             onSignOut={handleSignOut}
-            profileModalTrigger={profileModalTrigger}
           />
           <main className="p-4">
             <Suspense fallback={<div>Loading...</div>}>

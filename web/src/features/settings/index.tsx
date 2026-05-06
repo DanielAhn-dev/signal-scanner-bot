@@ -4,6 +4,8 @@ import Input from '../../components/ui/Input'
 import Checkbox from '../../components/ui/Checkbox'
 import { apiFetch } from '../../lib/api'
 import { getCurrentUserChatId } from '../../lib/userContext'
+import TelegramLinkCallout from '../../components/TelegramLinkCallout'
+import { requestOpenProfileModal } from '../../lib/profileModal'
 
 export default function Settings(){
   const [chatId, setChatId] = useState<string>('')
@@ -141,7 +143,7 @@ export default function Settings(){
     setSaving(true)
     try {
       const payload = {
-        chat_id: chatId,
+        chat_id: chatId || undefined,
         is_enabled: !!settings?.is_enabled,
         monday_buy_slots: Number(settings?.monday_buy_slots || 2),
         max_positions: Number(settings?.max_positions || 10),
@@ -172,8 +174,16 @@ export default function Settings(){
     <section className="container-app">
       <h1 className="title-xl">설정 / 알림</h1>
       <div className="cards-list">
+        {!chatId && (
+          <TelegramLinkCallout
+            description="Chat ID를 연결하면 테스트 알림과 텔레그램 연동 기능을 바로 사용할 수 있습니다."
+            onAction={() => requestOpenProfileModal()}
+          />
+        )}
+
         <div className="card">
-          <Input label="기본 Telegram 채팅 ID" value={chatId} onChange={(e:any) => setChatId(e.target.value)} placeholder="예: 123456789" />
+          <Input label="Telegram Chat ID (선택)" value={chatId} onChange={(e:any) => setChatId(e.target.value)} placeholder="예: 123456789" />
+          <div className="text-xs muted mt-2">웹 기본 기능에는 필수가 아닙니다. 알림 전송/텔레그램 연동 기능에만 사용됩니다.</div>
           <div className="text-xs muted mt-2">참고: 서버에 `DEFAULT_TELEGRAM_CHAT_ID`가 설정되어 있으면 기본값으로 불러옵니다.</div>
           <div className="text-xs muted mt-2">
             현재 권한: {accessInfo?.has_advanced_access ? '고급 기능 사용 가능' : '일반 기능만 사용 가능'}

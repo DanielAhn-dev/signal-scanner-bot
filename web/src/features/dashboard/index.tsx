@@ -1,9 +1,12 @@
 ﻿import React, { useEffect, useState, useCallback } from 'react'
 import { apiFetch } from '../../lib/api'
 import { formatKrw } from '../../lib/format'
+import { getCurrentUserChatId } from '../../lib/userContext'
 import Button from '../../components/ui/Button'
 import Skeleton from '../../components/Skeleton'
 import { ErrorState } from '../../components/StateViews'
+import TelegramLinkCallout from '../../components/TelegramLinkCallout'
+import { requestOpenProfileModal } from '../../lib/profileModal'
 
 const SUMMARY_TTL = 30_000
 const SECTORS_TTL = 120_000
@@ -106,6 +109,7 @@ export default function Dashboard({ onNavigate }: { onNavigate?: (r: string) => 
   const pnl = summary?.unrealized_pnl_sum ?? null
   const pnlClass = pnl != null ? (pnl > 0 ? 'positive' : pnl < 0 ? 'negative' : '') : ''
   const topSector = sectors.length > 0 ? sectors[0]?.name : '-'
+  const chatId = getCurrentUserChatId()
   const lastScan = summary?.last_scan_at
     ? new Date(summary.last_scan_at).toLocaleString('ko-KR', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })
     : '-'
@@ -122,6 +126,16 @@ export default function Dashboard({ onNavigate }: { onNavigate?: (r: string) => 
       </div>
 
       {error && <ErrorState message={error} onRetry={() => loadData({ force: true })} />}
+
+      {!chatId && (
+        <div className="mb-4">
+          <TelegramLinkCallout
+            title="아직 텔레그램 연동 전입니다"
+            description="웹 기능은 바로 사용 가능하지만, 알림 전송/텔레그램 연동은 Chat ID 연결이 필요합니다."
+            onAction={() => requestOpenProfileModal()}
+          />
+        </div>
+      )}
 
       <div className="cards-grid cols-2 mb-4">
         {loading && !summary ? (

@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react'
 import { readProfile, saveProfile, clearProfile, type StoredProfile } from '../lib/userContext'
 import { invalidateCache } from '../lib/api'
 import { useToast } from './ToastProvider'
+import { apiFetch } from '../lib/api'
 
 interface Props {
   isOpen: boolean
@@ -46,6 +47,7 @@ export default function ProfileModal({
   const [verifyMsg, setVerifyMsg]       = useState('')
   const [saving, setSaving]             = useState(false)
   const [saveMsg, setSaveMsg]           = useState('')
+  const [autoResolved, setAutoResolved] = useState(false)
 
   /* ── 열릴 때 localStorage에서 현재 값 로드 ── */
   useEffect(() => {
@@ -58,7 +60,44 @@ export default function ProfileModal({
     setVerifyStatus(p?.telegramId ? STATUS_OK : STATUS_IDLE)
     setVerifyMsg('')
     setSaveMsg('')
+    setAutoResolved(false)
   }, [isOpen])
+
+  useEffect(() => {
+    if (!isOpen || !isSignedIn) return
+    const normalized = telegramId.trim().replace(/[^0-9-]/g, '')
+    if (!normalized) return
+    if (autoResolved) return
+
+    let disposed = false
+    const run = async () => {
+      try {
+        setVerifyStatus(STATUS_LOADING)
+        const json = await apiFetch(`/api/ui/telegram-profile?chatId=${encodeURIComponent(normalized)}`, {
+          cacheMs: 15_000,
+          timeoutMs: 10_000,
+          retries: 0,
+        })
+        if (disposed) return
+        const name = [json?.first_name, json?.last_name].filter(Boolean).join(' ').trim()
+        if (name) setTgName(name)
+        if (json?.username) setTgUsername(String(json.username))
+        setVerifyStatus(STATUS_OK)
+        setVerifyMsg(name ? `✓ ${name}${json?.username ? ` (@${json.username})` : ''}` : '연동 정보 확인 완료')
+      } catch {
+        if (disposed) return
+        setVerifyStatus(STATUS_IDLE)
+        setVerifyMsg('')
+      } finally {
+        if (!disposed) setAutoResolved(true)
+      }
+    }
+    void run()
+
+    return () => {
+      disposed = true
+    }
+  }, [isOpen, isSignedIn, telegramId, autoResolved])
 
   /* ── ESC 닫기 ── */
   useEffect(() => {
@@ -86,20 +125,22 @@ export default function ProfileModal({
     setVerifyStatus(STATUS_LOADING)
     setVerifyMsg('')
     try {
-      const res = await fetch(`/api/getTelegramProfile?chatId=${encodeURIComponent(id)}`, {
-        headers: { 'x-internal-secret': '' },
+      const json = await apiFetch(`/api/ui/telegram-profile?chatId=${encodeURIComponent(id)}`, {
+        cacheMs: 0,
+        timeoutMs: 10_000,
+        retries: 0,
       })
-      const json = await res.json()
-      if (!res.ok || json?.error) {
+      if (json?.error) {
         setVerifyStatus(STATUS_ERR)
         setVerifyMsg(json?.error || '조회 실패 — Chat ID를 다시 확인해 주세요.')
         return
       }
-      const name = [json.first_name, json.last_name].filter(Boolean).join(' ')
+      const name = [json?.first_name, json?.last_name].filter(Boolean).join(' ').trim()
       setTgName(name)
-      setTgUsername(json.username ?? '')
+      setTgUsername(json?.username ?? '')
       setVerifyStatus(STATUS_OK)
-      setVerifyMsg(`✓ ${name}${json.username ? ' (@' + json.username + ')' : ''} 확인 완료`)
+      setVerifyMsg(`✓ ${name || '사용자'}${json?.username ? ' (@' + json.username + ')' : ''} 확인 완료`)
+      setAutoResolved(true)
     } catch (e: any) {
       setVerifyStatus(STATUS_ERR)
       setVerifyMsg('네트워크 오류: ' + (e?.message ?? String(e)))
@@ -127,7 +168,7 @@ export default function ProfileModal({
       setSaveMsg('저장됐습니다.')
       const firstLinked = !previousTelegramId && !!patch.telegramId
       if (firstLinked) {
-        toast.show('텔레그램 연동 완료: 이제 알림/요청이 Telegram Chat ID 기준으로 동작합니다.')
+        toast.show('텔레그램 연동 완료: 알림 전송/텔레그램 연동 기능에 사용됩니다.')
       }
       onSaved?.(patch)
       setTimeout(onClose, 800)
@@ -235,6 +276,9 @@ export default function ProfileModal({
             텔레그램 봇에서 <strong>/내정보</strong> 또는 <strong>/start</strong> 명령을 보내면
             Chat ID를 확인할 수 있습니다.
           </p>
+          <p className="profile-hint" style={{ marginTop: 6 }}>
+            선택 입력 항목입니다. 웹 기본 기능은 Chat ID 없이도 사용할 수 있습니다.
+          </p>
           <label className="profile-field-label">Chat ID</label>
           <div className="profile-field-row">
             <input
@@ -271,6 +315,15 @@ export default function ProfileModal({
               <span>{tgName}{tgUsername && <span className="muted"> @{tgUsername}</span>}</span>
             </div>
           )}
+
+          <details style={{ marginTop: 10 }}>
+            <summary className="profile-hint" style={{ cursor: 'pointer' }}>연동 가이드 / 자주 겪는 오류</summary>
+            <div className="profile-hint" style={{ marginTop: 8 }}>
+              1) 텔레그램 봇에서 /start 실행 후 받은 Chat ID를 붙여넣어 주세요.<br />
+              2) Chat ID는 숫자만 입력해도 됩니다. (공백/문자는 자동 정리)<br />
+              3) 조회 실패 시 먼저 텔레그램에서 봇과 대화를 시작했는지 확인해 주세요.
+            </div>
+          </details>
         </section>
 
         {/* ── 저장 메시지 ── */}

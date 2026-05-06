@@ -6,6 +6,7 @@ import Button from '../../components/ui/Button'
 import Skeleton from '../../components/Skeleton'
 import { ErrorState, EmptyState } from '../../components/StateViews'
 import { useToast } from '../../components/ToastProvider'
+import StockDetailModal from '../../components/StockDetailModal'
 
 const WATCHLIST_SNAPSHOT_KEY = 'watchlist_snapshot_v1'
 
@@ -44,6 +45,9 @@ export default function WatchlistPage() {
   const [activeAddIndex, setActiveAddIndex] = useState(-1)
   const [mutatingCode, setMutatingCode] = useState<string | null>(null)
   const [highlightCode, setHighlightCode] = useState<string | null>(null)
+  const [detailCode, setDetailCode] = useState<string>('')
+  const [detailName, setDetailName] = useState<string>('')
+  const [detailOpen, setDetailOpen] = useState(false)
   const didInitRef = useRef(false)
   const addDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const highlightTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -176,6 +180,12 @@ export default function WatchlistPage() {
     }
   }
 
+  const openDetail = (row: any) => {
+    setDetailCode(String(row?.code || ''))
+    setDetailName(String(row?.stock_name || row?.code || ''))
+    setDetailOpen(true)
+  }
+
   const onAddSearchKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (!visibleAddResults.length) return
     if (e.key === 'ArrowDown') {
@@ -286,6 +296,12 @@ export default function WatchlistPage() {
               key={r.id}
               className={`card watchlist-item-card${highlightCode === String(r.code) ? ' watchlist-item-highlight' : ''}`}
               data-hoverable
+              role="button"
+              tabIndex={0}
+              onClick={() => openDetail(r)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') openDetail(r)
+              }}
               style={{ '--watchlist-i': idx } as React.CSSProperties}
             >
               <div className="flex-between watchlist-item-top">
@@ -302,7 +318,10 @@ export default function WatchlistPage() {
                   <Button
                     className="watchlist-icon-btn watchlist-delete-btn"
                     variant="ghost"
-                    onClick={() => removeInterest(String(r.code))}
+                    onClick={(e: any) => {
+                      e?.stopPropagation?.()
+                      removeInterest(String(r.code))
+                    }}
                     disabled={mutatingCode === String(r.code)}
                     title="관심 종목에서 삭제"
                   >
@@ -315,6 +334,13 @@ export default function WatchlistPage() {
           ))}
         </div>
       </div>
+
+      <StockDetailModal
+        code={detailCode}
+        name={detailName}
+        isOpen={detailOpen}
+        onClose={() => setDetailOpen(false)}
+      />
     </section>
   )
 }

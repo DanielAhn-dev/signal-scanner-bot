@@ -85,21 +85,29 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   try {
-    const user = resolveUiUserContext(req)
-    const chatId = user.chatId
-    if (!chatId) return res.status(400).json({ error: 'chat_id required (header x-user-chat-id, query/body chat_id, or server default)' })
-
     const q = req.query || {}
     const qParams: any = req.query || {}
     const page = Math.max(1, Number(q.page || 1))
     const pageSize = Math.min(200, Math.max(10, Number(q.pageSize || 20)))
+    const withCount = String(qParams.withCount || '') === '1'
+
+    const user = resolveUiUserContext(req)
+    const chatId = user.chatId
+    if (!chatId) {
+      return res.status(200).json({
+        data: [],
+        count: withCount ? 0 : undefined,
+        page,
+        pageSize,
+      })
+    }
+
     const from = (page - 1) * pageSize
     const to = from + pageSize - 1
 
     const codeOrQ = String(qParams.q || '').trim()
     const sector = qParams.sector || null
     const minLiquidity = qParams.minLiquidity ? Number(qParams.minLiquidity) : null
-    const withCount = String(qParams.withCount || '') === '1'
     const positionType = String(qParams.positionType || 'all') // 'all' | 'holding' | 'interest'
     const includeLots = String(qParams.includeLots || '0') === '1'
     const bypassCache = String(qParams.cacheMs || '') === '0'

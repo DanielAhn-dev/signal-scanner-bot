@@ -86,7 +86,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const bypassCache = String((req.query as any)?.cacheMs || '') === '0'
   const user = resolveUiUserContext(req)
   const chatId = user.chatId
-  if (!chatId) return res.status(400).json({ error: 'chat_id required (header x-user-chat-id, query/body chat_id, or server default)' })
+  if (!chatId) {
+    return res.status(200).json({
+      data: {
+        positions: 0,
+        decisions: 0,
+        unrealized_pnl_sum: null,
+        last_scan_at: null,
+      },
+    })
+  }
 
   const cacheKey = `summary:${chatId}`
   if (!bypassCache && SUMMARY_CACHE_TTL_MS > 0) {

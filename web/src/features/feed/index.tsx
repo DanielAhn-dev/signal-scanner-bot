@@ -3,11 +3,15 @@ import { apiFetch } from '../../lib/api'
 import Button from '../../components/ui/Button'
 import Skeleton from '../../components/Skeleton'
 import { ErrorState, EmptyState } from '../../components/StateViews'
+import StockDetailModal from '../../components/StockDetailModal'
 
 export default function FeedPage() {
   const [decisions, setDecisions] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [detailCode, setDetailCode] = useState('')
+  const [detailName, setDetailName] = useState('')
+  const [detailOpen, setDetailOpen] = useState(false)
 
   const load = async () => {
     setLoading(true)
@@ -50,7 +54,24 @@ export default function FeedPage() {
 
       <div className="cards-list">
         {!loading && decisions.map((d: any, i: number) => (
-          <div key={d.id ?? i} className="card">
+          <div
+            key={d.id ?? i}
+            className="card"
+            role="button"
+            tabIndex={0}
+            onClick={() => {
+              if (!d.code) return
+              setDetailCode(String(d.code))
+              setDetailName(String(d.stock_name ?? d.code))
+              setDetailOpen(true)
+            }}
+            onKeyDown={(e) => {
+              if (e.key !== 'Enter' || !d.code) return
+              setDetailCode(String(d.code))
+              setDetailName(String(d.stock_name ?? d.code))
+              setDetailOpen(true)
+            }}
+          >
             <div className="flex-between">
               <div>
                 <span style={{ fontWeight: 'var(--font-weight-bold)', color: ACTION_COLOR[d.action] ?? 'inherit', marginRight: 'var(--space-2)' }}>
@@ -67,6 +88,13 @@ export default function FeedPage() {
           </div>
         ))}
       </div>
+
+      <StockDetailModal
+        code={detailCode}
+        name={detailName}
+        isOpen={detailOpen}
+        onClose={() => setDetailOpen(false)}
+      />
     </section>
   )
 }

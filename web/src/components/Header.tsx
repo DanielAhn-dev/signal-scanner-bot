@@ -4,6 +4,7 @@ import { NAV_ITEMS, PRIMARY_NAV_KEYS } from '../navigation'
 import ProfileModal from './ProfileModal'
 import { readProfile, type StoredProfile } from '../lib/userContext'
 import { apiFetch } from '../lib/api'
+import { onOpenProfileModal } from '../lib/profileModal'
 
 type Props = {
   onNavigate: (r: string) => void
@@ -14,7 +15,6 @@ type Props = {
   authName?: string
   onSignIn: () => void
   onSignOut: () => void
-  profileModalTrigger?: number
 }
 
 export default function Header({
@@ -26,7 +26,6 @@ export default function Header({
   authName,
   onSignIn,
   onSignOut,
-  profileModalTrigger,
 }: Props){
   const [drawerOpen, setDrawerOpen] = React.useState(false)
   const [cmdOpen, setCmdOpen] = React.useState(false)
@@ -90,12 +89,7 @@ export default function Header({
 
   React.useEffect(() => {
     setProfile(readProfile() ?? {})
-  }, [isSignedIn, profileModalTrigger])
-
-  React.useEffect(() => {
-    if (!profileModalTrigger) return
-    setProfileOpen(true)
-  }, [profileModalTrigger])
+  }, [isSignedIn])
 
   React.useEffect(() => {
     let disposed = false
@@ -118,7 +112,11 @@ export default function Header({
     return () => {
       disposed = true
     }
-  }, [isSignedIn, profileModalTrigger])
+  }, [isSignedIn])
+
+  React.useEffect(() => {
+    return onOpenProfileModal(() => setProfileOpen(true))
+  }, [])
 
   return (
     <>
@@ -159,7 +157,6 @@ export default function Header({
                 <circle cx="12" cy="7" r="4"/>
               </svg>
             )}
-            {isSignedIn && !isTelegramLinked && <span className="profile-avatar-dot" aria-hidden />}
           </button>
           <button
             className="nav-toggle"

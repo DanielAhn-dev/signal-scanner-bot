@@ -5,7 +5,9 @@ import { ADVANCED_ROUTES, enforceAdvancedRouteAccess } from '../handlers/ui/_acc
 import decisions from '../handlers/ui/decisions'
 import formatStock from '../handlers/ui/format-stock'
 import notify from '../handlers/ui/notify'
+import news from '../handlers/ui/news'
 import positions from '../handlers/ui/positions'
+import positionsMaintenance from '../handlers/ui/positions-maintenance'
 import profile from '../handlers/ui/profile'
 import reportPdf from '../handlers/ui/report-pdf'
 import reportShare from '../handlers/ui/report-share'
@@ -20,6 +22,7 @@ import stocks from '../handlers/ui/stocks'
 import summary from '../handlers/ui/summary'
 import syncHistory from '../handlers/ui/sync-history'
 import syncStatus from '../handlers/ui/sync-status'
+import telegramProfile from '../handlers/ui/telegram-profile'
 import triggerBriefing from '../handlers/ui/trigger-briefing'
 import triggerUpdate from '../handlers/ui/trigger-update'
 import virtualTrade from '../handlers/ui/virtual-trade'
@@ -31,8 +34,10 @@ const ROUTES: Record<string, UiHandler> = {
   'access-users': accessUsers,
   decisions,
   'format-stock': formatStock,
+  news,
   notify,
   positions,
+  'positions-maintenance': positionsMaintenance,
   profile,
   'report-pdf': reportPdf,
   'report-share': reportShare,
@@ -47,6 +52,7 @@ const ROUTES: Record<string, UiHandler> = {
   summary,
   'sync-history': syncHistory,
   'sync-status': syncStatus,
+  'telegram-profile': telegramProfile,
   'trigger-briefing': triggerBriefing,
   'trigger-update': triggerUpdate,
   'virtual-trade': virtualTrade,

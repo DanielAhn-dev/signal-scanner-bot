@@ -78,10 +78,12 @@ export async function loadProfileFromServer(): Promise<StoredProfile | null> {
     if (!json || json.error) return null
     const data = json.data ?? null
     if (!data) return null
-    const mapped: StoredProfile = {
-      clientId,
-      telegramId: data.telegram_id ? String(data.telegram_id) : undefined,
-      nickname: data.nickname || undefined,
+    const mapped: StoredProfile = { clientId }
+    if (data.telegram_id != null && String(data.telegram_id).trim() !== '') {
+      mapped.telegramId = String(data.telegram_id)
+    }
+    if (data.nickname != null && String(data.nickname).trim() !== '') {
+      mapped.nickname = String(data.nickname)
     }
     saveProfile(mapped)
     return mapped
