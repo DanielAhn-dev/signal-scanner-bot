@@ -20,7 +20,7 @@ type SyncStore = {
   history: SyncHistoryItem[]
 }
 
-const STORE_PATH = path.join(process.cwd(), 'tmp', 'ui-sync-store.json')
+const STORE_PATH = path.join('/tmp', 'ui-sync-store.json')
 
 const EMPTY_STORE: SyncStore = {
   active: {},
