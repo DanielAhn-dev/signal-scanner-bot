@@ -119,6 +119,11 @@ export default function Portfolio() {
       setMaintBuyPrice(Number(row?.avg_price || row?.buy_price || row?.stock?.close || 0) || '')
       setMaintQty(Math.max(1, Number(row?.quantity || 1)))
     }
+    if (mode === 'holdingrestore') {
+      setMaintCode('')
+      setMaintBuyPrice('')
+      setMaintQty(1)
+    }
     setMaintModalOpen(true)
   }
 
@@ -127,7 +132,7 @@ export default function Portfolio() {
     setMaintError(null)
     try {
       const body: any = { mode: maintMode }
-      if (maintMode === 'holdingedit') {
+      if (maintMode === 'holdingedit' || maintMode === 'holdingrestore') {
         body.code = maintCode
         body.buy_price = maintBuyPrice
         body.quantity = maintQty
@@ -145,6 +150,10 @@ export default function Portfolio() {
         toast.show(`관심 종목 ${Number(json?.removed || 0)}건 초기화 완료`)
       } else if (maintMode === 'liquidateall') {
         toast.show(`보유 종목 ${Number(json?.soldCount || 0)}건 전체매도 처리 완료`)
+      } else if (maintMode === 'holdingrestore') {
+        const label = json?.data?.stock_name || json?.data?.code || maintCode
+        const action = json?.created ? '신규 복구' : '기존 포지션 수정'
+        toast.show(`${label} 보유복구(${action}) 완료 ✓`)
       } else {
         toast.show('보유수정 완료 ✓')
       }
@@ -218,6 +227,7 @@ export default function Portfolio() {
           <span className="portfolio-total-pill">
             {allRows.length > 0 ? `총 ${allRows.length}개` : '포지션 집계 준비중'}
           </span>
+          <Button variant="ghost" onClick={() => openMaintenanceModal('holdingrestore')} disabled={loading}>보유복구</Button>
           <Button variant="ghost" onClick={() => openMaintenanceModal('watchreset')} disabled={loading || interestAll.length === 0}>관심초기화</Button>
           <Button variant="ghost" onClick={() => openMaintenanceModal('liquidateall')} disabled={loading || holdingAll.length === 0}>전체매도</Button>
         </div>
@@ -435,7 +445,12 @@ export default function Portfolio() {
 
       <Modal
         isOpen={maintModalOpen}
-        title={maintMode === 'watchreset' ? '관심초기화' : maintMode === 'liquidateall' ? '전체매도' : '보유수정'}
+        title={
+          maintMode === 'watchreset' ? '관심초기화' :
+          maintMode === 'liquidateall' ? '전체매도' :
+          maintMode === 'holdingrestore' ? '보유복구' :
+          '보유수정'
+        }
         onClose={() => setMaintModalOpen(false)}
         size="sm"
       >
@@ -466,6 +481,38 @@ export default function Portfolio() {
               value={maintBuyPrice === '' ? '' : String(maintBuyPrice)}
               onChange={(e: any) => setMaintBuyPrice(e?.target?.value === '' ? '' : Number(e?.target?.value))}
             />
+          </>
+        )}
+
+        {maintMode === 'holdingrestore' && (
+          <>
+            <div className="muted" style={{ marginBottom: 'var(--space-3)' }}>
+              누락된 보유 포지션을 복구합니다. 기존 포지션이 있으면 덮어쓰고, 없으면 새로 생성합니다.
+            </div>
+            <div className="grid-two" style={{ marginBottom: 'var(--space-3)' }}>
+              <Input
+                label="종목코드"
+                placeholder="예) 005930"
+                value={maintCode}
+                onChange={(e: any) => setMaintCode(String(e?.target?.value || '').toUpperCase())}
+              />
+              <Input
+                label="수량"
+                type="number"
+                value={String(maintQty)}
+                onChange={(e: any) => setMaintQty(Math.max(1, Number(e?.target?.value || 1)))}
+              />
+            </div>
+            <Input
+              label="매수가 (원)"
+              type="number"
+              placeholder="예) 75000"
+              value={maintBuyPrice === '' ? '' : String(maintBuyPrice)}
+              onChange={(e: any) => setMaintBuyPrice(e?.target?.value === '' ? '' : Number(e?.target?.value))}
+            />
+            <div className="caption muted" style={{ marginTop: 'var(--space-2)' }}>
+              거래 이력에 ADJUST 로그가 기록됩니다.
+            </div>
           </>
         )}
 

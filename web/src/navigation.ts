@@ -42,6 +42,12 @@ export const NAV_ITEMS: NavGroup[] = [
     ]
   },
   {
+    category: '운영',
+    items: [
+      { key: 'operations', label: '운영 패널' },
+    ]
+  },
+  {
     category: '유틸',
     items: [
       { key: 'commands', label: '명령 목록', type: 'commands' },
