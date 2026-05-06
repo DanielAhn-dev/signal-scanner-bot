@@ -39,10 +39,10 @@ export default function Trades() {
         {!loading && rows.map((r: any) => (
           <div key={r.id} className="card">
             <div className="flex-between">
-              <div className="font-medium">{r.ticker || r.symbol} · {r.action}</div>
+              <div className="font-medium">{r.stock_name || r.ticker || r.symbol || r.code} ({r.code || '-'}) · {r.action}</div>
               <div className="muted">{new Date(r.created_at).toLocaleString()}</div>
             </div>
-            <div className="muted mt-1">이유: {r.reason ?? r.notes ?? '-'}</div>
+            <div className="muted mt-1">이유: {r.reason_summary ?? r.reason ?? r.notes ?? '-'}</div>
           </div>
         ))}
       </div>

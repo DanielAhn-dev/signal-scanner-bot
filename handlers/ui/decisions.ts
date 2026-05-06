@@ -11,6 +11,102 @@ type DecisionsCacheEntry = {
 
 const decisionsCache = new Map<string, DecisionsCacheEntry>()
 
+function toNumber(value: unknown): number | null {
+  const num = Number(value)
+  return Number.isFinite(num) ? num : null
+}
+
+function formatMoney(value: unknown): string | null {
+  const num = toNumber(value)
+  if (num == null) return null
+  return `${Math.round(num).toLocaleString('ko-KR')}원`
+}
+
+function formatPct(value: unknown): string | null {
+  const num = toNumber(value)
+  if (num == null) return null
+  return `${num.toFixed(2)}%`
+}
+
+function normalizeTrigger(raw: unknown): string {
+  return String(raw ?? '').trim()
+}
+
+function buildDetailLines(action: string, reasonDetails: unknown): string[] {
+  if (!reasonDetails || typeof reasonDetails !== 'object') return []
+  const d = reasonDetails as Record<string, unknown>
+  const lines: string[] = []
+
+  const trigger = normalizeTrigger(d.trigger)
+  if (trigger) lines.push(`trigger: ${trigger}`)
+
+  const strategyProfile = String(d.strategyProfile ?? '').trim()
+  if (strategyProfile) lines.push(`profile: ${strategyProfile}`)
+
+  const score = toNumber(d.score)
+  if (score != null) lines.push(`score: ${score.toFixed(1)}`)
+
+  const qty = toNumber(d.qty ?? d.sellQty ?? d.addOnQty)
+  if (qty != null && qty > 0) lines.push(`qty: ${Math.floor(qty)}주`)
+
+  const price = formatMoney(d.price ?? d.sellPrice)
+  if (price) lines.push(`price: ${price}`)
+
+  const buyPrice = formatMoney(d.buyPrice)
+  if (buyPrice && action === 'SELL') lines.push(`buy_price: ${buyPrice}`)
+
+  const invested = formatMoney(d.investedAmount ?? d.addOnInvested)
+  if (invested) lines.push(`invested: ${invested}`)
+
+  const pnl = formatMoney(d.pnl)
+  if (pnl && action === 'SELL') lines.push(`realized_pnl: ${pnl}`)
+
+  const rr = toNumber(d.expectedRr)
+  if (rr != null) lines.push(`expected_rr: ${rr.toFixed(2)}`)
+
+  const trust = d.signalTrust
+  if (trust && typeof trust === 'object') {
+    const trustObj = trust as Record<string, unknown>
+    const trustScore = toNumber(trustObj.score)
+    const trustGrade = String(trustObj.grade ?? '').trim()
+    if (trustScore != null || trustGrade) {
+      const parts = [
+        trustScore != null ? `score ${trustScore.toFixed(1)}` : '',
+        trustGrade ? `grade ${trustGrade}` : '',
+      ].filter(Boolean)
+      if (parts.length) lines.push(`signal_trust: ${parts.join(' / ')}`)
+    }
+  }
+
+  const priceSource = String(d.priceSource ?? '').trim()
+  if (priceSource) lines.push(`price_source: ${priceSource}`)
+
+  const marketMode = String(d.marketMode ?? '').trim()
+  const marketReason = String(d.marketReason ?? '').trim()
+  if (marketMode || marketReason) {
+    lines.push(`market: ${[marketMode, marketReason].filter(Boolean).join(' / ')}`)
+  }
+
+  return lines
+}
+
+function deriveAutoFlag(row: Record<string, unknown>): boolean {
+  const strategyId = String(row.strategy_id ?? '').toLowerCase()
+  const summary = String(row.reason_summary ?? row.reason ?? '').toLowerCase()
+  const reasonDetails = row.reason_details
+  const trigger =
+    reasonDetails && typeof reasonDetails === 'object'
+      ? String((reasonDetails as Record<string, unknown>).trigger ?? '').toLowerCase()
+      : ''
+
+  return (
+    strategyId.includes('auto') ||
+    summary.startsWith('자동') ||
+    summary.includes('autotrade') ||
+    trigger.includes('auto')
+  )
+}
+
 let _supabase: SupabaseClient | null = null
 function getSupabase(): SupabaseClient {
   if (_supabase) return _supabase
@@ -74,7 +170,64 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const { data, error, count } = await query.range(from, to)
 
     if (error) return res.status(500).json({ error: error.message })
-    const payload = { data: data ?? [], count: withCount ? (count ?? 0) : undefined, page, pageSize }
+
+    const rows = (data ?? []) as Array<Record<string, unknown>>
+    const codes = Array.from(
+      new Set(
+        rows
+          .map((row) => String(row.code ?? '').trim())
+          .filter(Boolean)
+      )
+    )
+
+    const stockNameByCode = new Map<string, string>()
+    if (codes.length) {
+      const { data: stockRows } = await supabase
+        .from('stocks')
+        .select('code,name')
+        .in('code', codes)
+
+      for (const row of (stockRows ?? []) as Array<{ code?: string | null; name?: string | null }>) {
+        const code = String(row.code ?? '').trim()
+        const name = String(row.name ?? '').trim()
+        if (code && name) stockNameByCode.set(code, name)
+      }
+    }
+
+    const normalizedRows = rows.map((row) => {
+      const code = String(row.code ?? '').trim()
+      const reasonSummary = String(row.reason_summary ?? row.reason ?? '').trim()
+      const reasonDetails = row.reason_details
+      const action = String(row.action ?? '').toUpperCase()
+      const stockName = String(row.stock_name ?? '').trim() || stockNameByCode.get(code) || code
+      const detailLines = buildDetailLines(action, reasonDetails)
+
+      return {
+        ...row,
+        code,
+        stock_name: stockName,
+        reason: reasonSummary,
+        reason_summary: reasonSummary,
+        reason_details: reasonDetails && typeof reasonDetails === 'object' ? reasonDetails : null,
+        buy_reason: action === 'BUY' ? reasonSummary : null,
+        sell_reason: action === 'SELL' ? reasonSummary : null,
+        detail_lines: detailLines,
+        trigger_label:
+          reasonDetails && typeof reasonDetails === 'object'
+            ? normalizeTrigger((reasonDetails as Record<string, unknown>).trigger)
+            : '',
+        is_auto: deriveAutoFlag(row),
+        pnl_pct: action === 'SELL' && toNumber((reasonDetails as Record<string, unknown> | null)?.buyPrice) && toNumber((reasonDetails as Record<string, unknown> | null)?.sellPrice)
+          ? formatPct(
+              ((Number((reasonDetails as Record<string, unknown>).sellPrice) - Number((reasonDetails as Record<string, unknown>).buyPrice)) /
+                Number((reasonDetails as Record<string, unknown>).buyPrice)) *
+                100
+            )
+          : null,
+      }
+    })
+
+    const payload = { data: normalizedRows, count: withCount ? (count ?? 0) : undefined, page, pageSize }
 
     if (!bypassCache && DECISIONS_CACHE_TTL_MS > 0) {
       decisionsCache.set(cacheKey, {

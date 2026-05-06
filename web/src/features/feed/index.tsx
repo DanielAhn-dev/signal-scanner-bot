@@ -5,8 +5,22 @@ import Skeleton from '../../components/Skeleton'
 import { ErrorState, EmptyState } from '../../components/StateViews'
 import StockDetailModal from '../../components/StockDetailModal'
 
+type DecisionRow = {
+  id?: number
+  code?: string
+  stock_name?: string
+  action?: string
+  created_at?: string
+  reason_summary?: string
+  buy_reason?: string | null
+  sell_reason?: string | null
+  detail_lines?: string[]
+  trigger_label?: string
+  is_auto?: boolean
+}
+
 export default function FeedPage() {
-  const [decisions, setDecisions] = useState<any[]>([])
+  const [decisions, setDecisions] = useState<DecisionRow[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [detailCode, setDetailCode] = useState('')
@@ -42,7 +56,7 @@ export default function FeedPage() {
       </div>
 
       <div className="card mb-4">
-        <div className="muted">텔레그램 <code>/feed</code>에 대응합니다. 최근 자동매매 의사결정 30개를 표시합니다.</div>
+        <div className="muted">최근 자동매매 의사결정 30개를 표시합니다. 종목명, 자동/수동 구분, 매수·매도 사유와 상세 근거를 함께 확인할 수 있습니다.</div>
       </div>
 
       {error && <ErrorState message={error} onRetry={load} />}
@@ -53,7 +67,7 @@ export default function FeedPage() {
       )}
 
       <div className="cards-list">
-        {!loading && decisions.map((d: any, i: number) => (
+        {!loading && decisions.map((d: DecisionRow, i: number) => (
           <div
             key={d.id ?? i}
             className="card"
@@ -79,12 +93,28 @@ export default function FeedPage() {
                 </span>
                 <span className="title-md">{d.stock_name ?? d.code}</span>
                 <span className="caption" style={{ marginLeft: 'var(--space-2)' }}>{d.code}</span>
+                <span className="caption" style={{ marginLeft: 'var(--space-2)', color: d.is_auto ? 'var(--color-primary)' : 'var(--color-text-tertiary)' }}>
+                  {d.is_auto ? '시스템 자동' : '수동/기타'}
+                </span>
               </div>
               <div className="caption">
                 {d.created_at ? new Date(d.created_at).toLocaleString('ko-KR', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—'}
               </div>
             </div>
-            {d.reason && <div className="muted mt-1">{d.reason}</div>}
+            {d.reason_summary && <div className="muted mt-1">요약: {d.reason_summary}</div>}
+            {d.buy_reason && <div className="muted mt-1">매수 이유: {d.buy_reason}</div>}
+            {d.sell_reason && <div className="muted mt-1">매도 이유: {d.sell_reason}</div>}
+            {!!d.trigger_label && <div className="caption mt-1">트리거: {d.trigger_label}</div>}
+            {!!d.detail_lines?.length && (
+              <details className="mt-1" onClick={(e) => e.stopPropagation()}>
+                <summary className="caption" style={{ cursor: 'pointer' }}>상세 근거 보기</summary>
+                <div className="mt-1">
+                  {d.detail_lines.map((line, idx) => (
+                    <div key={`${d.id ?? i}-line-${idx}`} className="caption">• {line}</div>
+                  ))}
+                </div>
+              </details>
+            )}
           </div>
         ))}
       </div>
