@@ -8,6 +8,7 @@ import Modal from '../../components/Modal'
 import { EmptyState, ErrorState } from '../../components/StateViews'
 import { useToast } from '../../components/ToastProvider'
 import Pagination from '../../components/Pagination'
+import useWatchlistActions from '../../hooks/useWatchlistActions'
 
 export default function Portfolio() {
   const [allRows, setAllRows] = useState<any[]>([])
@@ -28,6 +29,7 @@ export default function Portfolio() {
   const [tradePrice, setTradePrice] = useState<number | ''>('')
   const [tradeLoading, setTradeLoading] = useState(false)
   const [tradeError, setTradeError] = useState<string | null>(null)
+  const [shareModalOpen, setShareModalOpen] = useState(false)
   const [maintModalOpen, setMaintModalOpen] = useState(false)
   const [maintMode, setMaintMode] = useState<'watchreset' | 'liquidateall' | 'holdingedit' | 'holdingrestore'>('watchreset')
   const [maintRow, setMaintRow] = useState<any | null>(null)
@@ -37,6 +39,7 @@ export default function Portfolio() {
   const [maintLoading, setMaintLoading] = useState(false)
   const [maintError, setMaintError] = useState<string | null>(null)
   const toast = useToast()
+  const { isRemoving, removeFromWatchlist } = useWatchlistActions()
 
   const load = useCallback(async (soft = false) => {
     if (!soft) setLoading(true)
@@ -88,6 +91,19 @@ export default function Portfolio() {
   const totalPages = Math.ceil(total / pageSize)
   const rows = filteredRows.slice((page - 1) * pageSize, page * pageSize)
   const totalUnrealized = holdingAll.reduce((acc: number, r: any) => acc + Number(r.unrealized_pnl || 0), 0)
+  const totalInvested = holdingAll.reduce((acc: number, r: any) => acc + (Number(r.quantity || 0) * Number(r.avg_price || 0)), 0)
+  const totalReturnPct = totalInvested > 0 ? (totalUnrealized / totalInvested) * 100 : 0
+  const captureGeneratedAt = useMemo(
+    () => new Intl.DateTimeFormat('ko-KR', {
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+    }).format(new Date()),
+    [shareModalOpen],
+  )
 
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const onSearchChange = (v: string) => {
@@ -216,6 +232,24 @@ export default function Portfolio() {
     setPage(1)
   }
 
+  const removeInterest = async (code: string) => {
+    if (!code) return
+    try {
+      const result = await removeFromWatchlist(code)
+      if (result !== 'removed' && result !== 'not-found') return
+      setAllRows((prev) => prev.filter((row: any) => !(String(row?.code || '') === code && row?.position_type !== 'holding')))
+      toast.show('관심 종목에서 제거되었습니다')
+    } catch (e: any) {
+      toast.show(String(e?.message || e))
+    }
+  }
+
+  const formatSignedKrw = (value: number) => {
+    const num = Number(value || 0)
+    if (num === 0) return formatKrw(0)
+    return `${num > 0 ? '+' : '-'}${formatKrw(Math.abs(num))}`
+  }
+
   return (
     <section className="container-app portfolio-page">
       <div className="portfolio-head">
@@ -227,6 +261,7 @@ export default function Portfolio() {
           <span className="portfolio-total-pill">
             {allRows.length > 0 ? `총 ${allRows.length}개` : '포지션 집계 준비중'}
           </span>
+          <Button variant="secondary" onClick={() => setShareModalOpen(true)} disabled={loading || holdingAll.length === 0}>캡처용 보기</Button>
           <Button variant="ghost" onClick={() => openMaintenanceModal('holdingrestore')} disabled={loading}>보유복구</Button>
           <Button variant="ghost" onClick={() => openMaintenanceModal('watchreset')} disabled={loading || interestAll.length === 0}>관심초기화</Button>
           <Button variant="ghost" onClick={() => openMaintenanceModal('liquidateall')} disabled={loading || holdingAll.length === 0}>전체매도</Button>
@@ -335,6 +370,7 @@ export default function Portfolio() {
         {!error && rows.map((r: any) => {
           const pnl = r.unrealized_pnl
           const isHolding = r.position_type === 'holding'
+            const code = String(r.code || '')
           return (
             <div key={r.id} className="card card-lg portfolio-position-card">
               <div className="flex-between portfolio-position-top">
@@ -385,6 +421,16 @@ export default function Portfolio() {
                 <Button className="portfolio-action-btn" variant="secondary" onClick={() => openTradeModal(r, 'buy')}>가상매수</Button>
                 {isHolding && <Button className="portfolio-action-btn" variant="secondary" onClick={() => openMaintenanceModal('holdingedit', r)}>보유수정</Button>}
                 {isHolding && <Button className="portfolio-action-btn" variant="ghost" onClick={() => openTradeModal(r, 'sell')}>가상매도</Button>}
+                {!isHolding && (
+                  <Button
+                    className="portfolio-action-btn"
+                    variant="ghost"
+                    onClick={() => removeInterest(code)}
+                    disabled={isRemoving(code)}
+                  >
+                    {isRemoving(code) ? '관심제거중' : '관심제거'}
+                  </Button>
+                )}
               </div>
             </div>
           )
@@ -441,6 +487,73 @@ export default function Portfolio() {
             </div>
           </>
         )}
+      </Modal>
+
+      <Modal
+        isOpen={shareModalOpen}
+        title="포트폴리오 캡처"
+        onClose={() => setShareModalOpen(false)}
+        size="lg"
+      >
+        <div className="portfolio-capture-card">
+          <div className="portfolio-capture-top">
+            <div>
+              <div className="portfolio-capture-title">가상 포트폴리오 공유용 요약</div>
+              <div className="portfolio-capture-time">기준시각 {captureGeneratedAt}</div>
+            </div>
+            <div className="portfolio-capture-count">보유 {holdingAll.length}종목</div>
+          </div>
+
+          <div className="portfolio-capture-metrics">
+            <div className="portfolio-capture-metric">
+              <div className="portfolio-capture-label">총 매수원금</div>
+              <div className="portfolio-capture-value">{formatKrw(totalInvested)}</div>
+            </div>
+            <div className="portfolio-capture-metric">
+              <div className="portfolio-capture-label">평가손익</div>
+              <div className={`portfolio-capture-value ${totalUnrealized < 0 ? 'negative' : 'positive'}`}>
+                {formatSignedKrw(totalUnrealized)}
+              </div>
+            </div>
+            <div className="portfolio-capture-metric">
+              <div className="portfolio-capture-label">현재 수익률</div>
+              <div className={`portfolio-capture-value ${totalReturnPct < 0 ? 'negative' : 'positive'}`}>
+                {`${totalReturnPct > 0 ? '+' : ''}${formatNumber(totalReturnPct, 2)}%`}
+              </div>
+            </div>
+          </div>
+
+          <div className="portfolio-capture-table-wrap">
+            <table className="portfolio-capture-table">
+              <thead>
+                <tr>
+                  <th>종목명</th>
+                  <th>종목코드</th>
+                  <th>매수가</th>
+                  <th>매수일</th>
+                  <th>손익</th>
+                  <th>수익률</th>
+                </tr>
+              </thead>
+              <tbody>
+                {holdingAll.map((r: any) => {
+                  const pnl = Number(r.unrealized_pnl || 0)
+                  const pct = Number(r.unrealized_pct || 0)
+                  return (
+                    <tr key={`capture-${r.id}`}>
+                      <td>{r.stock_name ?? r.ticker ?? r.symbol ?? '-'}</td>
+                      <td>{r.code || '-'}</td>
+                      <td>{formatKrw(Number(r.avg_price || 0))}</td>
+                      <td>{r.buy_date || '-'}</td>
+                      <td className={pnl < 0 ? 'negative' : pnl > 0 ? 'positive' : ''}>{formatSignedKrw(pnl)}</td>
+                      <td className={pct < 0 ? 'negative' : pct > 0 ? 'positive' : ''}>{`${pct > 0 ? '+' : ''}${formatNumber(pct, 2)}%`}</td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
       </Modal>
 
       <Modal

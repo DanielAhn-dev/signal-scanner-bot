@@ -987,9 +987,104 @@ html, body, #root {
   min-width: 5.25rem;
 }
 
+.portfolio-capture-card {
+  border: 1px solid #dbe5f2;
+  border-radius: var(--radius-lg);
+  background: linear-gradient(180deg, #ffffff 0%, #f7faff 100%);
+  padding: var(--space-4);
+}
+
+.portfolio-capture-top {
+  @apply flex items-start justify-between;
+  gap: var(--space-3);
+  @apply mb-3;
+}
+
+.portfolio-capture-title {
+  @apply text-base;
+  @apply font-semibold;
+  color: var(--color-text-primary);
+}
+
+.portfolio-capture-time {
+  @apply text-xs;
+  color: var(--color-text-tertiary);
+  @apply mt-1;
+}
+
+.portfolio-capture-count {
+  @apply text-xs;
+  @apply font-semibold;
+  @apply px-3 py-1;
+  @apply rounded-full;
+  background: #edf3fd;
+  color: #2456a7;
+}
+
+.portfolio-capture-metrics {
+  @apply grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-2);
+  @apply mb-3;
+}
+
+.portfolio-capture-metric {
+  border: 1px solid #dfebfa;
+  border-radius: var(--radius-md);
+  background: #fdfefe;
+  @apply px-3 py-2;
+}
+
+.portfolio-capture-label {
+  @apply text-xs;
+  color: var(--color-text-tertiary);
+}
+
+.portfolio-capture-value {
+  @apply text-lg;
+  @apply font-bold;
+  margin-top: 0.2rem;
+  color: var(--color-text-primary);
+  font-variant-numeric: tabular-nums;
+}
+
+.portfolio-capture-table-wrap {
+  overflow-x: auto;
+}
+
+.portfolio-capture-table {
+  width: 100%;
+  border-collapse: collapse;
+  min-width: 680px;
+}
+
+.portfolio-capture-table th,
+.portfolio-capture-table td {
+  border-bottom: 1px solid #e6edf7;
+  @apply px-2 py-2;
+  @apply text-sm;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.portfolio-capture-table th {
+  @apply text-xs;
+  @apply font-semibold;
+  color: var(--color-text-secondary);
+  background: #f2f7ff;
+}
+
+.portfolio-capture-table td {
+  color: var(--color-text-primary);
+}
+
 @media (max-width: 1024px) {
   .portfolio-stat-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .portfolio-capture-metrics {
+    grid-template-columns: 1fr;
   }
 }
 
@@ -999,6 +1094,10 @@ html, body, #root {
   }
 
   .portfolio-head {
+    @apply flex-col items-start;
+  }
+
+  .portfolio-capture-top {
     @apply flex-col items-start;
   }
 
