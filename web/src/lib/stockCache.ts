@@ -15,8 +15,9 @@ export interface StockItem {
   updated_at: string | null
 }
 
-const CACHE_KEY = 'stock_cache_v1'
+const CACHE_KEY = 'stock_cache_v2'
 const CACHE_TTL = 24 * 60 * 60 * 1000 // 24시간
+const MIN_EXPECTED_STOCKS = 1500
 
 // 모듈 수준 메모리 캐시 (페이지 전환해도 유지됨)
 let _memCache: StockItem[] | null = null
@@ -29,6 +30,8 @@ function readFromStorage(): StockItem[] | null {
     const parsed = JSON.parse(raw) as { items: StockItem[]; ts: number }
     if (!Array.isArray(parsed?.items)) return null
     if (Date.now() - Number(parsed.ts) > CACHE_TTL) return null
+    // 과거 버전/불완전 캐시 방어: 종목 수가 비정상적으로 적으면 무효화
+    if (parsed.items.length > 0 && parsed.items.length < MIN_EXPECTED_STOCKS) return null
     return parsed.items
   } catch {
     return null
@@ -68,6 +71,10 @@ export async function getStocks(): Promise<StockItem[]> {
   if (!_fetchPromise) {
     _fetchPromise = doFetch()
       .then((items) => {
+        // 비정상적으로 적은 데이터는 캐시에 저장하지 않음
+        if (items.length > 0 && items.length < MIN_EXPECTED_STOCKS) {
+          return items
+        }
         _memCache = items
         writeToStorage(items)
         return items

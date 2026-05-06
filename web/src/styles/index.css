@@ -1,7 +1,7 @@
-@import './tokens.css';
+﻿@import './tokens.css';
 @import "tailwindcss";
 
-/* safelist — 동적으로 생성되는 클래스 보존 */
+/* safelist - keep dynamically generated classes */
 @source inline("p-6 p-4 p-3 p-2 rounded rounded-lg rounded-md shadow-sm shadow text-3xl text-2xl text-lg font-extrabold font-semibold text-slate-500 text-right grid grid-cols-2 items-center justify-between max-w-3xl space-y-2 space-y-3 mb-4 mb-6 mt-1 text-red-600 text-green-600");
 
 @layer base {
@@ -13,19 +13,19 @@
 html, body, #root {
   @apply h-full antialiased;
   font-family: var(--font-family-sans);
-  font-size: var(--font-size-base);
+  @apply text-base;
   color: var(--color-text-primary);
   background: var(--color-bg-page);
   line-height: var(--line-height-normal);
 }
 
-/* 숫자 tabular rendering */
+/* numeric tabular rendering */
 .number, .price, .pnl, td.numeric {
   font-variant-numeric: tabular-nums;
   font-feature-settings: "tnum";
 }
 
-/* 숫자 우측정렬 유틸 (특히 금액/유동성용) */
+/* numeric right-align utility (amount/liquidity columns) */
 .number-right {
   @apply text-right;
 }
@@ -61,7 +61,7 @@ html, body, #root {
 .card:where([data-hoverable]):hover { box-shadow: var(--card-shadow-hover, var(--shadow-sm)); }
 .card-lg {
   padding: var(--spacing-card-lg);
-  border-radius: var(--radius-lg);
+  @apply rounded-lg;
 }
 .card-error {
   border-color: var(--color-border-error);
@@ -72,46 +72,46 @@ html, body, #root {
    TYPOGRAPHY
    ================================================================ */
 .title-xl {
-  font-size: var(--font-size-2xl);
-  font-weight: var(--font-weight-bold);
+  @apply text-2xl;
+  @apply font-bold;
   letter-spacing: var(--letter-spacing-tight);
   line-height: var(--line-height-tight);
-  margin-bottom: var(--space-4);
+  @apply mb-4;
 }
 .title-lg {
-  font-size: var(--font-size-lg);
-  font-weight: var(--font-weight-semibold);
+  @apply text-lg;
+  @apply font-semibold;
   line-height: var(--line-height-snug);
 }
 .title-md {
-  font-size: var(--font-size-base);
-  font-weight: var(--font-weight-semibold);
+  @apply text-base;
+  @apply font-semibold;
 }
-.muted     { color: var(--color-text-secondary); font-size: var(--font-size-sm); }
-.caption   { color: var(--color-text-tertiary); font-size: var(--font-size-xs); }
+.muted     { color: var(--color-text-secondary); @apply text-sm; }
+.caption   { color: var(--color-text-tertiary); @apply text-xs; }
 
 /* ================================================================
-   STOCK STATE COLORS  (한국 규약: 상승=빨강, 하락=파랑)
+   STOCK STATE COLORS  (?쒓뎅 洹쒖빟: ?곸듅=鍮④컯, ?섎씫=?뚮옉)
    ================================================================ */
-.positive { color: var(--color-stock-up);   font-weight: var(--font-weight-semibold); }
-.negative { color: var(--color-stock-down); font-weight: var(--font-weight-semibold); }
+.positive { color: var(--color-stock-up);   @apply font-semibold; }
+.negative { color: var(--color-stock-down); @apply font-semibold; }
 .neutral  { color: var(--color-stock-flat); }
 
 .badge-up {
   background: var(--color-stock-up-bg);
   color: var(--color-stock-up);
   padding: 0.15rem 0.55rem;
-  border-radius: var(--radius-full);
-  font-size: var(--font-size-xs);
-  font-weight: var(--font-weight-semibold);
+  @apply rounded-full;
+  @apply text-xs;
+  @apply font-semibold;
 }
 .badge-down {
   background: var(--color-stock-down-bg);
   color: var(--color-stock-down);
   padding: 0.15rem 0.55rem;
-  border-radius: var(--radius-full);
-  font-size: var(--font-size-xs);
-  font-weight: var(--font-weight-semibold);
+  @apply rounded-full;
+  @apply text-xs;
+  @apply font-semibold;
 }
 
 /* ================================================================
@@ -126,12 +126,12 @@ html, body, #root {
 .flex-gap-sm  { @apply flex items-center; gap: var(--space-2); }
 .flex-gap-md  { @apply flex items-center; gap: var(--space-3); }
 .text-right   { @apply text-right; }
-.mt-1 { margin-top: var(--space-1); }
-.mt-2 { margin-top: var(--space-2); }
-.mt-3 { margin-top: var(--space-3); }
-.mt-4 { margin-top: var(--space-4); }
-.mb-4 { margin-bottom: var(--space-4); }
-.mb-6 { margin-bottom: var(--space-6); }
+.mt-1 { @apply mt-1; }
+.mt-2 { @apply mt-2; }
+.mt-3 { @apply mt-3; }
+.mt-4 { @apply mt-4; }
+.mb-4 { @apply mb-4; }
+.mb-6 { @apply mb-6; }
 .gap-2 { gap: var(--space-2); }
 .gap-3 { gap: var(--space-3); }
 .flex      { @apply flex; }
@@ -165,20 +165,20 @@ html, body, #root {
 .header-inner {
   @apply max-w-none w-full flex items-center;
   gap: var(--space-3);
-  padding: var(--space-2) var(--space-4);
+  @apply px-4 py-2;
 }
 .brand { @apply flex-1; }
 .brand-btn {
   @apply bg-transparent border-none cursor-pointer p-0;
-  font-weight: var(--font-weight-bold);
-  font-size: var(--font-size-base);
+  @apply font-bold;
+  @apply text-base;
   color: var(--color-text-primary);
 }
 .nav-toggle {
   @apply bg-transparent flex items-center justify-center cursor-pointer;
   border: 1px solid var(--color-border-strong);
-  padding: var(--space-1) var(--space-2);
-  border-radius: var(--radius-sm);
+  @apply px-2 py-1;
+  @apply rounded-sm;
   min-height: 36px;
   min-width: 36px;
 }
@@ -227,13 +227,13 @@ html, body, #root {
 
 .nav-drawer-header {
   @apply flex items-center justify-between;
-  padding: var(--space-4);
+  @apply p-4;
   border-bottom: 1px solid var(--color-border-default);
 }
 
 .nav-drawer-title {
-  font-size: var(--font-size-base);
-  font-weight: var(--font-weight-bold);
+  @apply text-base;
+  @apply font-bold;
   color: var(--color-text-primary);
 }
 
@@ -241,7 +241,7 @@ html, body, #root {
   @apply flex items-center justify-center cursor-pointer bg-transparent border-none;
   width: 36px;
   height: 36px;
-  border-radius: var(--radius-sm);
+  @apply rounded-sm;
   color: var(--color-text-secondary);
   transition: background var(--duration-fast) var(--ease-out), color var(--duration-fast) var(--ease-out);
 }
@@ -250,14 +250,14 @@ html, body, #root {
   color: var(--color-text-primary);
 }
 
-/* 데스크탑(≥640px)에서 드로어 내 primary nav 항목 숨기기 (헤더에 이미 노출) */
+/* ?곗뒪?ы깙(??40px)?먯꽌 ?쒕줈????primary nav ??ぉ ?④린湲?(?ㅻ뜑???대? ?몄텧) */
 @media (min-width: 640px) {
   .nav-drawer-primary-item { display: none; }
 }
 
 .nav-drawer-content {
   @apply overflow-auto flex flex-col;
-  padding: var(--space-3) var(--space-4) var(--space-6);
+  @apply px-4 pt-3 pb-6;
   gap: var(--space-4);
 }
 
@@ -277,29 +277,27 @@ html, body, #root {
 
 .report-drawer-header {
   @apply flex items-center justify-between;
-  padding: var(--space-4);
+  @apply p-4;
   border-bottom: 1px solid var(--color-border-default);
   background: linear-gradient(120deg, var(--color-brand-subtle), var(--color-bg-surface) 58%);
 }
 
 .report-drawer-title {
-  font-size: var(--font-size-lg);
-  font-weight: var(--font-weight-bold);
+  @apply text-lg;
+  @apply font-bold;
   color: var(--color-text-primary);
 }
 
 .report-drawer-content {
   @apply flex;
   flex: 1;
-  overflow: hidden;
-  padding: var(--space-3);
+  @apply overflow-hidden;
+  @apply p-3;
 }
 
 .report-drawer-content iframe {
-  width: 100%;
-  height: 100%;
-  border: 1px solid var(--color-border-default);
-  border-radius: var(--radius-md);
+  @apply h-full w-full border rounded-md;
+  border-color: var(--color-border-default);
   background: var(--color-bg-surface);
 }
 
@@ -308,12 +306,8 @@ html, body, #root {
   gap: var(--space-2);
 }
 .nav-group-title {
-  @apply uppercase;
-  font-size: var(--font-size-xs);
+  @apply px-2 py-1 text-xs font-semibold uppercase tracking-wider;
   color: var(--color-text-tertiary);
-  font-weight: var(--font-weight-semibold);
-  letter-spacing: var(--letter-spacing-wider);
-  padding: var(--space-1) var(--space-2);
 }
 .nav-group-items {
   @apply flex flex-col items-stretch;
@@ -323,9 +317,9 @@ html, body, #root {
 .nav-item {
   @apply bg-transparent cursor-pointer text-left inline-flex items-center justify-center whitespace-nowrap;
   border: 1px solid var(--color-border-default);
-  padding: var(--space-2) var(--space-3);
-  border-radius: var(--radius-sm);
-  font-size: var(--font-size-sm);
+  @apply px-3 py-2;
+  @apply rounded-sm;
+  @apply text-sm;
   color: var(--nav-item-text, var(--color-text-secondary));
   transition: background var(--duration-fast) var(--ease-out), color var(--duration-fast) var(--ease-out);
   min-height: 36px;
@@ -339,7 +333,7 @@ html, body, #root {
   background: var(--nav-item-bg-active, var(--color-gray-100));
   border-color: var(--color-brand-muted);
   color: var(--nav-item-text-active, var(--color-text-primary));
-  font-weight: var(--font-weight-medium);
+  @apply font-medium;
 }
 .nav-item:focus-visible {
   @apply outline-none;
@@ -350,19 +344,19 @@ html, body, #root {
 
 @media (min-width: 640px) {
   .top-nav-list { @apply flex; }
-  .header-inner { padding: var(--space-3) var(--space-4); }
+  .header-inner { @apply px-4 py-3; }
 
-  /* 헤더 상단 nav 탭 스타일 (토스 스타일: 밑줄 인디케이터) */
+  /* ?ㅻ뜑 ?곷떒 nav ???ㅽ???(?좎뒪 ?ㅽ??? 諛묒쨪 ?몃뵒耳?댄꽣) */
   .top-nav-list .nav-item {
-    border: none;
+    @apply border-none;
     background: transparent;
     border-radius: 0;
-    padding: var(--space-1) var(--space-2);
+    @apply px-2 py-1;
     padding-bottom: calc(var(--space-1) + 2px);
     border-bottom: 2px solid transparent;
     color: var(--color-text-secondary);
-    font-size: var(--font-size-sm);
-    font-weight: var(--font-weight-medium);
+    @apply text-sm;
+    @apply font-medium;
     min-height: unset;
   }
   .top-nav-list .nav-item:hover {
@@ -374,22 +368,22 @@ html, body, #root {
     background: transparent;
     border-bottom-color: var(--color-brand);
     color: var(--color-text-primary);
-    font-weight: var(--font-weight-semibold);
+    @apply font-semibold;
   }
 }
 
 /* ================================================================
-   PROFILE AVATAR BUTTON (헤더)
+   PROFILE AVATAR BUTTON (?ㅻ뜑)
    ================================================================ */
 .profile-avatar-btn {
   @apply relative inline-flex items-center justify-center cursor-pointer bg-transparent border-none;
   width: 36px;
   height: 36px;
-  border-radius: var(--radius-full);
+  @apply rounded-full;
   background: var(--color-bg-sunken);
   color: var(--color-text-secondary);
-  font-size: var(--font-size-xs);
-  font-weight: var(--font-weight-bold);
+  @apply text-xs;
+  @apply font-bold;
   letter-spacing: 0.02em;
   border: 1.5px solid var(--color-border-default);
   transition: border-color var(--duration-fast) var(--ease-out), box-shadow var(--duration-fast) var(--ease-out);
@@ -404,7 +398,7 @@ html, body, #root {
   border-color: var(--color-brand-muted, var(--color-blue-200));
   color: var(--color-brand, var(--color-blue-600));
 }
-/* 미연동 상태 빨간 dot */
+/* 誘몄뿰???곹깭 鍮④컙 dot */
 .profile-avatar-dot {
   @apply absolute block;
   top: 2px;
@@ -424,7 +418,7 @@ html, body, #root {
 }
 .profile-avatar-wrap {
   @apply flex flex-col items-center;
-  margin-bottom: var(--space-4);
+  @apply mb-4;
   gap: var(--space-2);
 }
 .profile-avatar {
@@ -434,8 +428,8 @@ html, body, #root {
   border-radius: 50%;
   background: var(--color-bg-sunken);
   color: var(--color-text-secondary);
-  font-size: var(--font-size-xl);
-  font-weight: var(--font-weight-bold);
+  @apply text-xl;
+  @apply font-bold;
   border: 2px solid var(--color-border-default);
 }
 .profile-avatar--connected {
@@ -444,30 +438,30 @@ html, body, #root {
   color: var(--color-brand, var(--color-blue-600));
 }
 .profile-badge-connected {
-  font-size: var(--font-size-xs);
-  font-weight: var(--font-weight-semibold);
+  @apply text-xs;
+  @apply font-semibold;
   color: var(--color-brand, var(--color-blue-600));
   background: var(--color-brand-subtle, var(--color-blue-50));
   border: 1px solid var(--color-brand-muted, var(--color-blue-200));
-  border-radius: var(--radius-full);
+  @apply rounded-full;
   padding: 2px 10px;
 }
 .profile-section {
   @apply flex flex-col;
   gap: var(--space-2);
-  margin-bottom: var(--space-4);
+  @apply mb-4;
 }
 .profile-section-title {
-  font-size: var(--font-size-sm);
-  font-weight: var(--font-weight-semibold);
+  @apply text-sm;
+  @apply font-semibold;
   color: var(--color-text-secondary);
   text-transform: uppercase;
   letter-spacing: 0.06em;
-  margin-bottom: var(--space-1);
+  @apply mb-1;
 }
 .profile-field-label {
-  font-size: var(--font-size-sm);
-  font-weight: var(--font-weight-medium);
+  @apply text-sm;
+  @apply font-medium;
   color: var(--color-text-secondary);
 }
 .profile-field-row {
@@ -476,16 +470,16 @@ html, body, #root {
 }
 .profile-field-row .ui-text {
   flex: 1;
-  min-width: 0;
+  @apply min-w-0;
 }
 .profile-hint {
-  font-size: var(--font-size-xs);
+  @apply text-xs;
   color: var(--color-text-tertiary);
   line-height: var(--line-height-relaxed);
   margin: 0;
 }
 .profile-verify-msg {
-  font-size: var(--font-size-sm);
+  @apply text-sm;
   margin: 0;
 }
 .profile-verify-msg--ok  { color: var(--color-brand, var(--color-blue-600)); }
@@ -493,26 +487,26 @@ html, body, #root {
 .profile-tg-info {
   @apply flex items-center;
   gap: var(--space-2);
-  font-size: var(--font-size-sm);
+  @apply text-sm;
   background: var(--color-bg-sunken);
-  border-radius: var(--radius-md);
-  padding: var(--space-2) var(--space-3);
+  @apply rounded-md;
+  @apply px-3 py-2;
 }
-.profile-tg-icon { font-size: 1.1em; }
+.profile-tg-icon { @apply text-[1.1em]; }
 .profile-save-msg {
-  font-size: var(--font-size-sm);
+  @apply text-sm;
   color: var(--color-brand, var(--color-blue-600));
-  text-align: center;
-  margin-bottom: var(--space-2);
+  @apply text-center;
+  @apply mb-2;
 }
 .profile-actions {
   @apply flex items-center justify-between;
   gap: var(--space-3);
-  margin-top: var(--space-2);
+  @apply mt-2;
 }
 
   /* ================================================================
-     STAT CARD (대시보드 요약)
+     STAT CARD (??쒕낫???붿빟)
      ================================================================ */
   .stat-card {
     transition: box-shadow var(--duration-fast) var(--ease-out);
@@ -520,17 +514,17 @@ html, body, #root {
   .stat-card:focus-visible { @apply outline-none; box-shadow: var(--shadow-focus); }
   .stat-card:hover { box-shadow: var(--shadow-md); }
   .stat-unit {
-    font-size: var(--font-size-sm);
-    font-weight: var(--font-weight-normal);
+    @apply text-sm;
+    @apply font-normal;
     color: var(--color-text-tertiary);
     margin-left: 4px;
   }
   .stat-value--sm {
-    font-size: var(--font-size-base) !important;
+    @apply text-base!;
   }
 
   /* ================================================================
-     SECTOR MINI CARD (대시보드 Top 8 그리드)
+     SECTOR MINI CARD (??쒕낫??Top 8 洹몃━??
      ================================================================ */
   .sector-mini-card {
     @apply flex flex-col;
@@ -540,36 +534,36 @@ html, body, #root {
   .sector-mini-card:hover { box-shadow: var(--shadow-md); }
   .sector-mini-card:focus-visible { @apply outline-none; box-shadow: var(--shadow-focus); }
   .sector-mini-rank {
-    font-size: var(--font-size-xs);
+    @apply text-xs;
     color: var(--color-text-tertiary);
-    font-weight: var(--font-weight-semibold);
+    @apply font-semibold;
   }
   .sector-mini-name {
-    font-size: var(--font-size-sm);
-    font-weight: var(--font-weight-semibold);
+    @apply text-sm;
+    @apply font-semibold;
     color: var(--color-text-primary);
     line-height: var(--line-height-snug);
   }
   .sector-mini-footer {
     @apply flex items-center;
     gap: var(--space-2);
-    margin-top: var(--space-1);
+    @apply mt-1;
   }
   .sector-mini-score {
-    font-size: var(--font-size-xs);
-    font-weight: var(--font-weight-bold);
+    @apply text-xs;
+    @apply font-bold;
     color: var(--color-brand, var(--color-blue-600));
     background: var(--color-brand-subtle, var(--color-blue-50));
-    border-radius: var(--radius-full);
+    @apply rounded-full;
     padding: 1px 8px;
   }
   .sector-mini-cr {
-    font-size: var(--font-size-xs);
-    font-weight: var(--font-weight-semibold);
+    @apply text-xs;
+    @apply font-semibold;
   }
 
   /* ================================================================
-     SECTOR ROW CARD (섹터 페이지 리스트)
+     SECTOR ROW CARD (?뱁꽣 ?섏씠吏 由ъ뒪??
      ================================================================ */
   .sector-row-card {
     @apply flex items-center justify-between;
@@ -577,23 +571,23 @@ html, body, #root {
   .sector-row-left {
     @apply flex items-center;
     gap: var(--space-3);
-    min-width: 0;
+    @apply min-w-0;
   }
   .sector-row-rank {
-    font-size: var(--font-size-sm);
-    font-weight: var(--font-weight-bold);
+    @apply text-sm;
+    @apply font-bold;
     color: var(--color-text-tertiary);
     width: 28px;
     flex-shrink: 0;
   }
   .sector-row-name {
-    font-size: var(--font-size-base);
-    font-weight: var(--font-weight-semibold);
+    @apply text-base;
+    @apply font-semibold;
   }
   .sector-row-meta {
     @apply flex flex-wrap;
     gap: var(--space-2);
-    margin-top: var(--space-1);
+    @apply mt-1;
   }
   .sector-row-right {
     @apply flex flex-col items-end;
@@ -606,13 +600,13 @@ html, body, #root {
      ================================================================ */
   .sector-tab-btn {
     @apply inline-flex items-center cursor-pointer;
-    padding: var(--space-2) var(--space-4);
-    border-radius: var(--radius-full);
+    @apply px-4 py-2;
+    @apply rounded-full;
     border: 1.5px solid var(--color-border-default);
     background: transparent;
     color: var(--color-text-secondary);
-    font-size: var(--font-size-sm);
-    font-weight: var(--font-weight-medium);
+    @apply text-sm;
+    @apply font-medium;
     transition: all var(--duration-fast) var(--ease-out);
   }
   .sector-tab-btn:hover {
@@ -623,7 +617,7 @@ html, body, #root {
     background: var(--color-brand-subtle, var(--color-blue-50));
     border-color: var(--color-brand-muted, var(--color-blue-200));
     color: var(--color-brand, var(--color-blue-600));
-    font-weight: var(--font-weight-semibold);
+    @apply font-semibold;
   }
 
 
@@ -636,7 +630,7 @@ html, body, #root {
   font-size: var(--label-font-size, var(--font-size-sm));
   font-weight: var(--label-font-weight, var(--font-weight-medium));
   color: var(--label-color, var(--color-text-secondary));
-  margin-bottom: var(--space-1);
+  @apply mb-1;
 }
 .ui-input .ui-text,
 .ui-input .ui-textarea,
@@ -646,7 +640,7 @@ html, body, #root {
   padding: var(--space-2) var(--input-padding-x, var(--space-3));
   border: 1px solid var(--input-border, var(--color-border-default));
   border-radius: var(--input-radius, var(--radius-xs));
-  font-size: var(--font-size-sm);
+  @apply text-sm;
   color: var(--input-text, var(--color-text-primary));
   background: var(--input-bg, var(--color-bg-sunken));
   transition: border-color var(--duration-fast) var(--ease-out), box-shadow var(--duration-fast) var(--ease-out);
@@ -667,7 +661,7 @@ html, body, #root {
   border-radius: var(--btn-radius, var(--radius-sm));
   padding: var(--btn-padding-md, 0.5rem 0.875rem);
   font-weight: var(--btn-font-weight, var(--font-weight-semibold));
-  font-size: var(--font-size-sm);
+  @apply text-sm;
   border: 1px solid transparent;
   min-height: var(--btn-height-md, 40px);
   min-width: 2.75rem;
@@ -688,13 +682,13 @@ html, body, #root {
 .ui-btn-ghost { background: var(--btn-ghost-bg); color: var(--btn-ghost-text); }
 .ui-btn-ghost:hover:not(:disabled) { background: var(--btn-ghost-bg-hover); }
 
-.ui-field + .ui-field { margin-top: var(--space-3); }
+.ui-field + .ui-field { @apply mt-3; }
 
 .ui-checkbox {
   width: 18px;
   height: 18px;
   border: 1px solid var(--color-border-strong);
-  border-radius: var(--radius-xs);
+  @apply rounded-xs;
   background: var(--color-bg-surface);
   accent-color: var(--color-brand);
 }
@@ -706,25 +700,25 @@ html, body, #root {
 .btn {
   @apply inline-flex items-center justify-center cursor-pointer bg-transparent;
   padding: var(--btn-padding-sm, var(--space-1) var(--space-2));
-  border-radius: var(--radius-sm);
+  @apply rounded-sm;
   border: 1px solid var(--color-border-default);
-  font-weight: var(--font-weight-semibold);
-  font-size: var(--font-size-sm);
+  @apply font-semibold;
+  @apply text-sm;
   color: var(--color-text-secondary);
   min-height: 36px;
   transition: background var(--duration-fast) var(--ease-out), color var(--duration-fast) var(--ease-out);
 }
 .btn:hover:not(:disabled) { background: var(--color-bg-sunken); color: var(--color-text-primary); }
-.btn-small { font-size: var(--font-size-xs); padding: var(--space-1) var(--space-2); min-height: 28px; }
+.btn-small { @apply text-xs; @apply px-2 py-1; min-height: 28px; }
 .btn-active { background: var(--color-brand-subtle); color: var(--color-brand); border-color: transparent; }
 .btn:disabled { @apply opacity-50 cursor-not-allowed; }
 
 .input {
-  padding: var(--space-2) var(--space-3);
+  @apply px-3 py-2;
   min-height: var(--input-height, 2.75rem);
   border: 1px solid var(--color-border-default);
-  border-radius: var(--radius-sm);
-  font-size: var(--font-size-sm);
+  @apply rounded-sm;
+  @apply text-sm;
   color: var(--color-text-primary);
   background: var(--color-bg-sunken);
   font-family: inherit;
@@ -764,28 +758,28 @@ html, body, #root {
   @apply fixed inset-0 flex items-center justify-center;
   background: var(--color-bg-overlay);
   z-index: var(--z-modal);
-  padding: var(--space-4);
+  @apply p-4;
   animation: fadeIn var(--duration-normal) var(--ease-out);
 }
 .modal {
   @apply relative w-full max-h-[90vh] max-w-xl overflow-auto;
   background: var(--color-bg-elevated);
-  border-radius: var(--radius-xl);
+  @apply rounded-xl;
   padding: var(--spacing-card-lg);
   box-shadow: var(--shadow-lg);
   animation: slideUp var(--duration-normal) var(--ease-default);
 }
 .modal-header {
   @apply flex items-center justify-between;
-  margin-bottom: var(--space-4);
+  @apply mb-4;
 }
-.modal-title { font-size: var(--font-size-xl); font-weight: var(--font-weight-bold); }
+.modal-title { @apply text-xl; @apply font-bold; }
 .modal-close {
   @apply bg-transparent border-none cursor-pointer flex items-center justify-center;
-  padding: var(--space-2);
-  border-radius: var(--radius-sm);
+  @apply p-2;
+  @apply rounded-sm;
   color: var(--color-text-secondary);
-  font-size: var(--font-size-lg);
+  @apply text-lg;
   min-width: 36px;
   min-height: 36px;
   transition: background var(--duration-fast) var(--ease-out);
@@ -801,25 +795,25 @@ html, body, #root {
    ================================================================ */
 .state-empty {
   @apply flex flex-col items-center justify-center text-center;
-  padding: var(--space-16) var(--space-4);
+  @apply px-4 py-16;
   color: var(--color-text-tertiary);
   gap: var(--space-3);
 }
-.state-empty-icon  { @apply opacity-[0.35]; font-size: var(--font-size-4xl); }
-.state-empty-title { font-size: var(--font-size-lg); font-weight: var(--font-weight-semibold); color: var(--color-text-secondary); }
-.state-empty-desc  { font-size: var(--font-size-sm); }
+.state-empty-icon  { @apply opacity-[0.35]; @apply text-4xl; }
+.state-empty-title { @apply text-lg; @apply font-semibold; color: var(--color-text-secondary); }
+.state-empty-desc  { @apply text-sm; }
 
 .state-error {
   @apply flex flex-col;
   gap: var(--space-3);
-  margin-bottom: var(--space-3);
-  padding: var(--space-4);
-  border-radius: var(--radius-md);
+  @apply mb-3;
+  @apply p-4;
+  @apply rounded-md;
   background: var(--color-error-bg);
   border: 1px solid var(--color-border-error);
   color: var(--color-error);
 }
-.state-error-title { font-weight: var(--font-weight-semibold); font-size: var(--font-size-sm); }
+.state-error-title { @apply font-semibold; @apply text-sm; }
 
 /* ================================================================
    SECTOR CHIPS / TAG LIST
@@ -830,11 +824,11 @@ html, body, #root {
 }
 .tag {
   @apply inline-flex items-center cursor-pointer;
-  padding: var(--space-1) var(--space-3);
-  border-radius: var(--radius-full);
+  @apply px-3 py-1;
+  @apply rounded-full;
   border: 1px solid var(--color-border-default);
-  font-size: var(--font-size-xs);
-  font-weight: var(--font-weight-medium);
+  @apply text-xs;
+  @apply font-medium;
   background: var(--color-bg-surface);
   color: var(--color-text-secondary);
   transition: background var(--duration-fast) var(--ease-out), border-color var(--duration-fast) var(--ease-out);
@@ -843,20 +837,20 @@ html, body, #root {
 .tag.active { background: var(--color-brand-subtle); border-color: var(--color-brand); color: var(--color-brand); }
 
 /* ================================================================
-   STAT CARD (대시보드 수치 카드)
+   STAT CARD (??쒕낫???섏튂 移대뱶)
    ================================================================ */
-.stat-label { font-size: var(--font-size-xs); color: var(--color-text-secondary); font-weight: var(--font-weight-medium); margin-bottom: var(--space-1); }
-.stat-value { font-variant-numeric: tabular-nums; font-size: var(--font-size-2xl); font-weight: var(--font-weight-bold); letter-spacing: var(--letter-spacing-tight); line-height: var(--line-height-tight); }
-.stat-sub   { font-size: var(--font-size-xs); color: var(--color-text-tertiary); margin-top: var(--space-1); }
+.stat-label { @apply text-xs; color: var(--color-text-secondary); @apply font-medium; @apply mb-1; }
+.stat-value { font-variant-numeric: tabular-nums; @apply text-2xl; @apply font-bold; letter-spacing: var(--letter-spacing-tight); line-height: var(--line-height-tight); }
+.stat-sub   { @apply text-xs; color: var(--color-text-tertiary); @apply mt-1; }
 
 /* ================================================================
    SECTION HEADER
    ================================================================ */
 .section-header {
   @apply flex items-center justify-between;
-  margin-bottom: var(--space-3);
+  @apply mb-3;
 }
-.section-title  { font-size: var(--font-size-lg); font-weight: var(--font-weight-semibold); color: var(--color-text-primary); }
+.section-title  { @apply text-lg; @apply font-semibold; color: var(--color-text-primary); }
 
 /* ================================================================
    PAGINATION
@@ -864,9 +858,9 @@ html, body, #root {
 .pagination-wrap {
   @apply flex items-center justify-center flex-wrap;
   gap: var(--space-2);
-  margin-top: var(--space-4);
+  @apply mt-4;
 }
-.page-info { font-size: var(--font-size-xs); color: var(--color-text-tertiary); }
+.page-info { @apply text-xs; color: var(--color-text-tertiary); }
 
 /* ================================================================
    PORTFOLIO PAGE
@@ -881,35 +875,35 @@ html, body, #root {
 .portfolio-head {
   @apply flex items-start justify-between;
   gap: var(--space-3);
-  margin-bottom: var(--space-4);
+  @apply mb-4;
 }
 
 .portfolio-title {
-  margin-bottom: var(--space-1);
+  @apply mb-1;
 }
 
 .portfolio-subtitle {
   margin: 0;
   color: var(--color-text-secondary);
-  font-size: var(--font-size-sm);
+  @apply text-sm;
 }
 
 .portfolio-total-pill {
   @apply whitespace-nowrap;
-  padding: var(--space-2) var(--space-3);
-  border-radius: var(--radius-full);
+  @apply px-3 py-2;
+  @apply rounded-full;
   background: var(--color-bg-surface);
   border: 1px solid var(--color-border-default);
   color: var(--color-text-secondary);
-  font-size: var(--font-size-xs);
-  font-weight: var(--font-weight-medium);
+  @apply text-xs;
+  @apply font-medium;
 }
 
 .portfolio-stat-grid {
   @apply grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: var(--space-3);
-  margin-bottom: var(--space-4);
+  @apply mb-4;
 }
 
 .portfolio-stat-card {
@@ -928,7 +922,7 @@ html, body, #root {
 }
 
 .portfolio-filter-label {
-  margin-bottom: var(--space-2);
+  @apply mb-2;
 }
 
 .portfolio-segment-list .tag {
@@ -968,7 +962,7 @@ html, body, #root {
 }
 
 .portfolio-position-meta {
-  margin-top: var(--space-1);
+  @apply mt-1;
 }
 
 .portfolio-position-pnl {
@@ -977,16 +971,16 @@ html, body, #root {
 
 .portfolio-lots {
   @apply inline-flex;
-  margin-top: var(--space-2);
-  padding: var(--space-1) var(--space-2);
-  border-radius: var(--radius-sm);
+  @apply mt-2;
+  @apply px-2 py-1;
+  @apply rounded-sm;
   background: var(--color-bg-sunken);
 }
 
 .portfolio-actions-row {
   @apply flex;
   gap: var(--space-2);
-  margin-top: var(--space-3);
+  @apply mt-3;
 }
 
 .portfolio-action-btn {
@@ -1046,17 +1040,17 @@ html, body, #root {
 .watchlist-head {
   @apply flex items-start justify-between;
   gap: var(--space-3);
-  margin-bottom: var(--space-4);
+  @apply mb-4;
 }
 
 .watchlist-title {
-  margin-bottom: var(--space-1);
+  @apply mb-1;
 }
 
 .watchlist-subtitle {
   margin: 0;
   color: var(--color-text-secondary);
-  font-size: var(--font-size-sm);
+  @apply text-sm;
 }
 
 .watchlist-head-actions {
@@ -1066,13 +1060,13 @@ html, body, #root {
 
 .watchlist-count-pill {
   @apply whitespace-nowrap;
-  padding: var(--space-2) var(--space-3);
-  border-radius: var(--radius-full);
+  @apply px-3 py-2;
+  @apply rounded-full;
   background: var(--color-bg-surface);
   border: 1px solid var(--color-border-default);
   color: var(--color-text-secondary);
-  font-size: var(--font-size-xs);
-  font-weight: var(--font-weight-medium);
+  @apply text-xs;
+  @apply font-medium;
 }
 
 .watchlist-manage-card {
@@ -1088,8 +1082,8 @@ html, body, #root {
 
 .watchlist-manage-caption {
   color: var(--color-text-secondary);
-  font-size: var(--font-size-sm);
-  margin-bottom: var(--space-3);
+  @apply text-sm;
+  @apply mb-3;
 }
 
 .watchlist-manage-grid {
@@ -1104,13 +1098,13 @@ html, body, #root {
 }
 
 .watchlist-label {
-  font-size: var(--font-size-xs);
-  font-weight: var(--font-weight-semibold);
+  @apply text-xs;
+  @apply font-semibold;
   color: var(--color-text-secondary);
 }
 
 .watchlist-input {
-  min-width: 0;
+  @apply min-w-0;
 }
 
 .watchlist-add-hint {
@@ -1120,17 +1114,17 @@ html, body, #root {
 .watchlist-add-results {
   @apply flex flex-col;
   gap: var(--space-2);
-  padding: var(--space-2);
+  @apply p-2;
   border: 1px solid var(--color-border-default);
-  border-radius: var(--radius-md);
+  @apply rounded-md;
   background: var(--color-bg-surface);
 }
 
 .watchlist-add-row {
   @apply flex items-center justify-between;
   gap: var(--space-2);
-  padding: var(--space-2);
-  border-radius: var(--radius-sm);
+  @apply p-2;
+  @apply rounded-sm;
   border: 1px solid #eef1f5;
 }
 
@@ -1149,16 +1143,16 @@ html, body, #root {
   @apply inline-flex items-center justify-center;
   width: 1.1rem;
   height: 1.1rem;
-  border-radius: var(--radius-full);
-  font-size: 0.72rem;
-  font-weight: var(--font-weight-bold);
+  @apply rounded-full;
+  @apply text-[0.72rem];
+  @apply font-bold;
   border: 1px solid currentColor;
   line-height: 1;
 }
 
 .watchlist-btn-label {
-  font-size: var(--font-size-xs);
-  font-weight: var(--font-weight-semibold);
+  @apply text-xs;
+  @apply font-semibold;
 }
 
 .watchlist-delete-btn .watchlist-btn-symbol {
@@ -1167,8 +1161,8 @@ html, body, #root {
 }
 
 .watchlist-add-name {
-  font-size: var(--font-size-sm);
-  font-weight: var(--font-weight-semibold);
+  @apply text-sm;
+  @apply font-semibold;
   color: var(--color-text-primary);
 }
 
@@ -1178,7 +1172,7 @@ html, body, #root {
 
 .watchlist-list-shell {
   max-height: none;
-  overflow: visible;
+  @apply overflow-visible;
   padding-right: 0;
 }
 
@@ -1199,7 +1193,7 @@ html, body, #root {
 }
 
 .watchlist-item-title {
-  margin-bottom: var(--space-1);
+  @apply mb-1;
 }
 
 .watchlist-item-actions {
@@ -1261,7 +1255,7 @@ html, body, #root {
 
   .watchlist-list-shell {
     max-height: none;
-    overflow: visible;
+    @apply overflow-visible;
     padding-right: 0;
   }
 }
@@ -1289,10 +1283,10 @@ html, body, #root {
   @apply grid;
   grid-template-columns: 7rem 12rem 1fr 12rem 5rem;
   gap: 0 var(--space-3);
-  padding: var(--space-3) var(--space-4);
+  @apply px-4 py-3;
   border-bottom: 1px solid var(--color-border-default);
-  font-size: var(--font-size-sm);
-  font-weight: var(--font-weight-semibold);
+  @apply text-sm;
+  @apply font-semibold;
   color: var(--color-text-secondary);
   background: var(--color-bg-sunken);
   border-radius: var(--card-radius) var(--card-radius) 0 0;
@@ -1302,7 +1296,7 @@ html, body, #root {
   @apply grid items-center;
   grid-template-columns: 7rem 12rem 1fr 12rem 5rem;
   gap: 0 var(--space-3);
-  padding: var(--space-3) var(--space-4);
+  @apply px-4 py-3;
   border-bottom: 1px solid var(--color-border-default);
   transition: background var(--duration-fast);
 }
@@ -1317,14 +1311,14 @@ html, body, #root {
 
 .dbview-code {
   font-family: var(--font-family-mono);
-  font-size: var(--font-size-sm);
-  font-weight: var(--font-weight-semibold);
+  @apply text-sm;
+  @apply font-semibold;
   color: var(--color-text-brand);
 }
 
 .dbview-name {
   @apply whitespace-nowrap overflow-hidden text-ellipsis;
-  font-weight: var(--font-weight-medium);
+  @apply font-medium;
 }
 
 .dbview-sector {
@@ -1334,7 +1328,7 @@ html, body, #root {
 
 .dbview-liq {
   font-variant-numeric: tabular-nums;
-  font-size: var(--font-size-sm);
+  @apply text-sm;
 }
 
 .dbview-updated {
@@ -1347,11 +1341,11 @@ html, body, #root {
 }
 
 .dbview-table-skeleton {
-  padding: var(--space-4);
+  @apply p-4;
 }
 
 .dbview-empty {
-  padding: var(--space-6);
+  @apply p-6;
 }
 
 .dbview-detail-list {
@@ -1362,14 +1356,14 @@ html, body, #root {
 .dbview-detail-summary {
   @apply flex flex-col;
   gap: var(--space-2);
-  padding: var(--space-3);
+  @apply p-3;
   background: var(--color-bg-sunken);
-  border-radius: var(--radius-sm);
+  @apply rounded-sm;
 }
 
 .dbview-detail-summary-head {
-  font-size: var(--font-size-sm);
-  font-weight: var(--font-weight-semibold);
+  @apply text-sm;
+  @apply font-semibold;
   color: var(--color-text-secondary);
 }
 
@@ -1377,21 +1371,21 @@ html, body, #root {
   @apply grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: var(--space-2) var(--space-3);
-  font-size: var(--font-size-sm);
+  @apply text-sm;
 }
 
 .dbview-detail-meta-grid {
-  padding: var(--space-3);
+  @apply p-3;
   background: var(--color-bg-sunken);
-  border-radius: var(--radius-sm);
+  @apply rounded-sm;
 }
 
 .dbview-detail-row {
   @apply flex flex-col;
   gap: var(--space-1);
-  padding: var(--space-3);
+  @apply p-3;
   background: var(--color-bg-sunken);
-  border-radius: var(--radius-sm);
+  @apply rounded-sm;
 }
 
 @media (max-width: 768px) {
@@ -1419,11 +1413,11 @@ html, body, #root {
 }
 
 /* ================================================================
-   AUTH STATUS (인증 상태 화면)
+   AUTH STATUS (?몄쬆 ?곹깭 ?붾㈃)
    ================================================================ */
 .auth-status-main {
   @apply min-h-screen flex items-center justify-center;
-  padding: var(--space-6);
+  @apply p-6;
   background:
     radial-gradient(circle at 12% 18%, rgba(0, 96, 255, 0.10), transparent 46%),
     radial-gradient(circle at 88% 82%, rgba(31, 99, 255, 0.08), transparent 42%),
@@ -1434,8 +1428,8 @@ html, body, #root {
   @apply w-full max-w-136 text-center;
   background: var(--color-bg-surface);
   border: 1px solid var(--color-border-default);
-  border-radius: var(--radius-xl);
-  padding: var(--space-8) var(--space-6);
+  @apply rounded-xl;
+  @apply px-6 py-8;
   box-shadow: var(--shadow-md);
 }
 
@@ -1451,15 +1445,15 @@ html, body, #root {
 
 .auth-status-title {
   margin: 0 0 var(--space-2);
-  font-size: var(--font-size-2xl);
-  font-weight: var(--font-weight-bold);
+  @apply text-2xl;
+  @apply font-bold;
   color: var(--color-text-primary);
   letter-spacing: var(--letter-spacing-tight);
 }
 
 .auth-status-desc {
   margin: 0;
-  font-size: var(--font-size-sm);
+  @apply text-sm;
   color: var(--color-text-secondary);
 }
 
@@ -1474,17 +1468,17 @@ html, body, #root {
 .admin-users-header {
   @apply flex items-start justify-between;
   gap: var(--space-3);
-  margin-bottom: var(--space-3);
+  @apply mb-3;
 }
 
 .admin-users-stats {
-  margin-top: var(--space-2);
+  @apply mt-2;
 }
 
 .admin-users-stat-value {
-  margin-top: var(--space-1);
-  font-size: var(--font-size-2xl);
-  font-weight: var(--font-weight-bold);
+  @apply mt-1;
+  @apply text-2xl;
+  @apply font-bold;
   line-height: var(--line-height-tight);
   color: var(--color-text-primary);
 }
@@ -1504,22 +1498,22 @@ html, body, #root {
 }
 
 .admin-users-table-wrap {
-  overflow-x: auto;
+  @apply overflow-x-auto;
   border: 1px solid var(--color-border-default);
-  border-radius: var(--radius-md);
+  @apply rounded-md;
 }
 
 .admin-users-table {
-  width: 100%;
+  @apply w-full;
   border-collapse: collapse;
   min-width: 860px;
-  font-size: var(--font-size-sm);
+  @apply text-sm;
 }
 
 .admin-users-table th,
 .admin-users-table td {
-  text-align: left;
-  padding: var(--space-3) var(--space-2);
+  @apply text-left;
+  @apply px-2 py-3;
   border-bottom: 1px solid var(--color-border-default);
   vertical-align: middle;
 }
@@ -1527,8 +1521,8 @@ html, body, #root {
 .admin-users-table thead th {
   background: var(--color-bg-sunken);
   color: var(--color-text-secondary);
-  font-weight: var(--font-weight-semibold);
-  white-space: nowrap;
+  @apply font-semibold;
+  @apply whitespace-nowrap;
 }
 
 .admin-users-table tbody tr:last-child td {
@@ -1543,17 +1537,17 @@ html, body, #root {
 .admin-users-unlinked-row {
   @apply flex items-center justify-between;
   gap: var(--space-2);
-  padding: var(--space-2) var(--space-3);
-  border-radius: var(--radius-sm);
+  @apply px-3 py-2;
+  @apply rounded-sm;
   border: 1px solid var(--color-border-default);
   background: var(--color-bg-sunken);
 }
 
-/* Access Denied / Access Required — 뷰포트 중앙 정렬 */
+/* Access Denied / Access Required ??酉고룷??以묒븰 ?뺣젹 */
 .access-denied-page {
   @apply flex items-center justify-center;
   min-height: calc(100vh - var(--header-height, 3.5rem));
-  padding: var(--space-6);
+  @apply p-6;
   background:
     radial-gradient(circle at 20% 30%, rgba(0, 96, 255, 0.05), transparent 50%),
     var(--color-bg-page);
@@ -1561,10 +1555,10 @@ html, body, #root {
 
 .access-denied-card {
   @apply flex w-full max-w-88 flex-col items-center text-center;
-  padding: var(--space-10) var(--space-6);
+  @apply px-6 py-10;
   background: var(--color-bg-surface);
   border: 1px solid var(--color-border-default);
-  border-radius: var(--radius-xl);
+  @apply rounded-xl;
   box-shadow: var(--shadow-md);
 }
 
@@ -1575,25 +1569,25 @@ html, body, #root {
   border-radius: 50%;
   background: var(--color-bg-sunken);
   color: var(--color-text-tertiary);
-  margin-bottom: var(--space-5);
+  @apply mb-5;
   border: 1px solid var(--color-border-default);
 }
 
 .access-denied-title {
-  font-size: var(--font-size-xl);
-  font-weight: var(--font-weight-bold);
+  @apply text-xl;
+  @apply font-bold;
   color: var(--color-text-primary);
   letter-spacing: var(--letter-spacing-tight);
-  margin-bottom: var(--space-2);
+  @apply mb-2;
 }
 
 .access-denied-desc {
-  font-size: var(--font-size-sm);
+  @apply text-sm;
   color: var(--color-text-secondary);
   line-height: var(--line-height-relaxed);
 }
 
-/* Access Required icon (로그인 화면) */
+/* Access Required icon (濡쒓렇???붾㈃) */
 .access-required-icon {
   @apply flex items-center justify-center mx-auto;
   width: 68px;
@@ -1601,26 +1595,26 @@ html, body, #root {
   border-radius: 50%;
   background: var(--color-brand-subtle);
   color: var(--color-brand);
-  margin-bottom: var(--space-5);
+  @apply mb-5;
   border: 1px solid var(--color-brand-muted);
 }
 
 @media (max-width: 640px) {
   .auth-status-main {
-    padding: var(--space-4);
+    @apply p-4;
   }
 
   .auth-status-card {
-    padding: var(--space-6) var(--space-4);
+    @apply px-4 py-6;
   }
 
   .auth-status-title {
-    font-size: var(--font-size-xl);
+    @apply text-xl;
   }
 
   .admin-users-search-wrap {
     @apply w-full flex-col items-stretch;
-    min-width: 0;
+    @apply min-w-0;
   }
 }
 
@@ -1642,7 +1636,7 @@ html, body, #root {
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
   z-index: 1000;
   max-height: 280px;
-  overflow-y: auto;
+  @apply overflow-y-auto;
 }
 
 .stock-search-item {
@@ -1670,15 +1664,16 @@ html, body, #root {
 
 .stock-search-name {
   @apply flex-1;
-  font-weight: var(--font-weight-500);
+  @apply font-medium;
   color: var(--color-text-primary);
-  font-size: var(--font-size-base);
+  @apply text-base;
 }
 
 .stock-search-code {
   font-family: monospace;
-  font-size: var(--font-size-sm);
+  @apply text-sm;
   color: var(--color-text-secondary);
-  white-space: nowrap;
+  @apply whitespace-nowrap;
 }
 }
+

@@ -1,5 +1,8 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { createClient } from '@supabase/supabase-js'
+import { buildInvestmentPlan } from '../../src/lib/investPlan'
+import { fetchLatestScoresByCodes } from '../../src/services/scoreSourceService'
+import { scaleScoreFactorsToReferencePrice } from '../../src/lib/priceScale'
 
 const ORIGIN = process.env.UI_CORS_ORIGIN || '*'
 
@@ -20,6 +23,13 @@ type InvestorFlowRow = {
 }
 
 function asNum(v: unknown): number | null {
+  if (v == null) return null
+  if (typeof v === 'string') {
+    const normalized = v.replace(/,/g, '').trim()
+    if (!normalized) return null
+    const n = Number(normalized)
+    return Number.isFinite(n) ? n : null
+  }
   const n = Number(v)
   return Number.isFinite(n) ? n : null
 }
@@ -158,6 +168,135 @@ async function fetchInvestorFlow(supabase: any, code: string): Promise<InvestorF
   return null
 }
 
+function toSafeChatId(raw: unknown): number | null {
+  const normalized = String(raw ?? '').trim().replace(/[^0-9]/g, '')
+  if (!normalized) return null
+  const n = Number(normalized)
+  if (!Number.isFinite(n) || n <= 0) return null
+  return n
+}
+
+function estimateFundamentalQuality(fund: any): number {
+  const roe = asNum(fund?.roe)
+  const per = asNum(fund?.per)
+  const pbr = asNum(fund?.pbr)
+  let score = 50
+  if (roe != null) score += roe >= 12 ? 12 : roe >= 8 ? 6 : -4
+  if (per != null) score += per <= 12 ? 8 : per <= 18 ? 3 : -4
+  if (pbr != null) score += pbr <= 1.5 ? 6 : pbr <= 2.5 ? 2 : -3
+  return Math.max(20, Math.min(85, score))
+}
+
+async function buildAdvisorPayload(input: {
+  supabase: any
+  code: string
+  stock: any | null
+  latest: LatestRow | null
+  fund: any | null
+  chatId: number | null
+}) {
+  const { supabase, code, stock, latest, fund, chatId } = input
+  const currentPrice = asNum(latest?.close ?? stock?.close)
+  if (currentPrice == null) return null
+
+  let fallbackScore: number | undefined
+  let latestFactors: Record<string, any> | null = null
+
+  try {
+    const scoreResult = await fetchLatestScoresByCodes(supabase, [code])
+    const latestScoreRow = scoreResult.byCode.get(code)
+    latestFactors =
+      latestScoreRow?.factors && typeof latestScoreRow.factors === 'object'
+        ? (latestScoreRow.factors as Record<string, any>)
+        : null
+
+    const scoreNum = Number(
+      latestScoreRow?.total_score ?? latestScoreRow?.momentum_score ?? NaN,
+    )
+    if (Number.isFinite(scoreNum)) fallbackScore = scoreNum
+  } catch {
+    // 점수 테이블 미존재/조회 실패 시 기술점수 없이 플랜만 계산
+  }
+
+  const fallbackFactors = scaleScoreFactorsToReferencePrice(
+    {
+      sma20: Number(latestFactors?.sma20 ?? stock?.sma20 ?? currentPrice),
+      sma50: Number(latestFactors?.sma50 ?? stock?.sma50 ?? currentPrice),
+      sma200: Number(latestFactors?.sma200 ?? currentPrice),
+      rsi14: Number(latestFactors?.rsi14 ?? stock?.rsi14 ?? 50),
+      roc14: Number(latestFactors?.roc14 ?? 0),
+      roc21: Number(latestFactors?.roc21 ?? 0),
+      avwap_support: Number(latestFactors?.avwap_support ?? 50),
+      atr14: Number(latestFactors?.atr14 ?? 0),
+      atr_pct: Number(latestFactors?.atr_pct ?? 0),
+      vol_ratio: Number(latestFactors?.vol_ratio ?? 1),
+      macd_cross:
+        latestFactors?.macd_cross === 'golden' || latestFactors?.macd_cross === 'dead'
+          ? latestFactors.macd_cross
+          : 'none',
+    },
+    currentPrice,
+    stock?.close,
+  )
+
+  const fundamentalScore = estimateFundamentalQuality(fund)
+  const plan = buildInvestmentPlan({
+    currentPrice,
+    factors: fallbackFactors,
+    technicalScore: fallbackScore,
+    variantSeed: code,
+    fundamental: {
+      qualityScore: fundamentalScore,
+      per: asNum(fund?.per) ?? undefined,
+      pbr: asNum(fund?.pbr) ?? undefined,
+      roe: asNum(fund?.roe) ?? undefined,
+    },
+  })
+
+  const finalScore =
+    fallbackScore !== undefined
+      ? Number((fallbackScore * 0.8 + fundamentalScore * 0.2).toFixed(1))
+      : undefined
+
+  let personalLines: string[] = []
+  if (chatId) {
+    personalLines = await (async () => {
+      try {
+        const { buildPersonalizedGuidance } = await import('../../src/services/personalizedGuidanceService.js')
+        return await buildPersonalizedGuidance({
+          chatId,
+          focusCode: code,
+          context: 'buy',
+        })
+      } catch {
+        return []
+      }
+    })()
+  }
+
+  return {
+    technicalScore: fallbackScore ?? null,
+    fundamentalScore,
+    finalScore: finalScore ?? null,
+    status: plan.status,
+    statusLabel: plan.statusLabel,
+    summary: plan.summary,
+    entryLow: plan.entryLow,
+    entryHigh: plan.entryHigh,
+    stopPrice: plan.stopPrice,
+    target1: plan.target1,
+    target2: plan.target2,
+    stopPct: plan.stopPct,
+    target1Pct: plan.target1Pct,
+    target2Pct: plan.target2Pct,
+    holdDays: plan.holdDays,
+    riskReward: plan.riskReward,
+    rationale: plan.rationale,
+    warnings: plan.warnings,
+    personalLines,
+  }
+}
+
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   const requestOrigin = String(req.headers.origin || '').trim()
   const trustedOrigins = String(
@@ -192,6 +331,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   const supabase = createClient(url, key)
   const code = String(req.query.code || '').trim()
+  const chatId = toSafeChatId(req.query.chat_id || req.headers['x-user-chat-id'])
   if (!code) return res.status(400).json({ error: 'Missing code parameter' })
 
   try {
@@ -223,6 +363,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     const latest = normalizedSeries[0] || null
+    const advisor = await buildAdvisorPayload({
+      supabase,
+      code,
+      stock,
+      latest,
+      fund,
+      chatId,
+    })
 
     return res.status(200).json({
       data: normalizedSeries,
@@ -256,6 +404,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             institution: asNum(flow.institution),
           }
         : null,
+      advisor,
     })
   } catch (e: any) {
     return res.status(500).json({ error: String(e) })

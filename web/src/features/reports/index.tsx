@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react'
 import { apiFetch } from '../../lib/api'
+import { getCurrentUserChatId } from '../../lib/userContext'
 import Button from '../../components/ui/Button'
 import { useToast } from '../../components/ToastProvider'
 import PdfDrawer from '../../components/PdfDrawer'
@@ -156,15 +157,36 @@ export default function ReportsPage() {
   const [shareListLoading, setShareListLoading] = useState(false)
   const [revokingShareId, setRevokingShareId] = useState<string | null>(null)
 
+  const appendQueryParam = (url: string, key: string, value: string) => {
+    if (!value) return url
+    if (new RegExp(`(?:\\?|&)${key}=`).test(url)) return url
+    return `${url}${url.includes('?') ? '&' : '?'}${encodeURIComponent(key)}=${encodeURIComponent(value)}`
+  }
+
+  const buildUiRequest = (endpoint: string) => {
+    const base = import.meta.env.VITE_API_BASE || ''
+    const uiKey = import.meta.env.VITE_UI_READ_KEY
+    const chatId = getCurrentUserChatId() || ''
+
+    let resolvedEndpoint = endpoint
+    if (uiKey) resolvedEndpoint = appendQueryParam(resolvedEndpoint, 'ui_key', uiKey)
+    if (chatId) resolvedEndpoint = appendQueryParam(resolvedEndpoint, 'chat_id', chatId)
+
+    const url = base
+      ? `${base.replace(/\/$/, '')}${resolvedEndpoint.startsWith('/') ? resolvedEndpoint : `/${resolvedEndpoint}`}`
+      : resolvedEndpoint
+
+    const headers: Record<string, string> = {}
+    if (uiKey) headers['x-ui-key'] = uiKey
+    if (chatId) headers['x-user-chat-id'] = chatId
+    return { url, headers, chatId }
+  }
+
   const loadShareList = async (topic = shareTopic) => {
     setShareListLoading(true)
     try {
-      const base = import.meta.env.VITE_API_BASE || ''
-      const uiKey = import.meta.env.VITE_UI_READ_KEY
       const endpoint = `/api/ui/report-share?topic=${encodeURIComponent(topic)}`
-      const url = base ? `${base.replace(/\/$/, '')}${endpoint}` : endpoint
-      const headers: Record<string, string> = {}
-      if (uiKey) headers['x-ui-key'] = uiKey
+      const { url, headers } = buildUiRequest(endpoint)
       const res = await fetch(url, { headers })
       const json = await res.json()
       if (!res.ok) throw new Error(json?.error || '공유 목록 조회 실패')
@@ -179,12 +201,8 @@ export default function ReportsPage() {
   const revokeShare = async (shareId: string) => {
     setRevokingShareId(shareId)
     try {
-      const base = import.meta.env.VITE_API_BASE || ''
-      const uiKey = import.meta.env.VITE_UI_READ_KEY
       const endpoint = `/api/ui/report-share?shareId=${encodeURIComponent(shareId)}`
-      const url = base ? `${base.replace(/\/$/, '')}${endpoint}` : endpoint
-      const headers: Record<string, string> = {}
-      if (uiKey) headers['x-ui-key'] = uiKey
+      const { url, headers } = buildUiRequest(endpoint)
       const res = await fetch(url, { method: 'DELETE', headers })
       const json = await res.json()
       if (!res.ok) throw new Error(json?.error || '공유 철회 실패')
@@ -225,14 +243,7 @@ export default function ReportsPage() {
   const runDownload = async (key: string, endpoint: string, fileName = 'report.pdf') => {
     setStates(s => ({ ...s, [key]: { loading: true } }))
     try {
-      const base = import.meta.env.VITE_API_BASE || ''
-      const url = base
-        ? `${base.replace(/\/$/, '')}${endpoint.startsWith('/') ? endpoint : `/${endpoint}`}`
-        : endpoint
-
-      const headers: Record<string, string> = {}
-      const uiKey = import.meta.env.VITE_UI_READ_KEY
-      if (uiKey) headers['x-ui-key'] = uiKey
+      const { url, headers } = buildUiRequest(endpoint)
 
       const res = await fetch(url, { method: 'GET', headers })
       if (!res.ok) {
@@ -262,7 +273,6 @@ export default function ReportsPage() {
     setDrawerLoading(true)
     setDrawerTitle(`${label} 웹보기`)
     try {
-      const base = import.meta.env.VITE_API_BASE || ''
       const uiKey = import.meta.env.VITE_UI_READ_KEY || ''
       // use web-only HTML view endpoint instead of PDF for better readability
       const webEndpoint = endpoint.replace('report-pdf', 'report-web')
@@ -271,15 +281,12 @@ export default function ReportsPage() {
 
       // Snapshot prewarm: try fast-path first, but do not block the UI if generation is slow.
       try {
-        const snapshotUrl = base
-          ? `${base.replace(/\/$/, '')}/api/ui/report-snapshot`
-          : '/api/ui/report-snapshot'
-        const headers: Record<string, string> = { 'Content-Type': 'application/json' }
-        if (uiKey) headers['x-ui-key'] = uiKey
+        const snapshotReq = buildUiRequest('/api/ui/report-snapshot')
+        const headers: Record<string, string> = { ...snapshotReq.headers, 'Content-Type': 'application/json' }
 
         const controller = new AbortController()
         const timer = window.setTimeout(() => controller.abort(), 1200)
-        await fetch(snapshotUrl, {
+        await fetch(snapshotReq.url, {
           method: 'POST',
           headers,
           body: JSON.stringify({ topic }),
@@ -290,18 +297,12 @@ export default function ReportsPage() {
         // Best-effort prewarm only.
       }
 
-      const hasQuery = webEndpoint.includes('?')
-      const endpointWithAuth = uiKey
-        ? `${webEndpoint}${hasQuery ? '&' : '?'}ui_key=${encodeURIComponent(uiKey)}`
-        : webEndpoint
-      const url = base
-        ? `${base.replace(/\/$/, '')}${endpointWithAuth.startsWith('/') ? endpointWithAuth : `/${endpointWithAuth}`}`
-        : endpointWithAuth
+      const webReq = buildUiRequest(webEndpoint)
 
       // load the web view directly into iframe (no blob)
       setDrawerUrl(prev => {
         if (prev && prev.startsWith('blob:')) URL.revokeObjectURL(prev)
-        return url
+        return webReq.url
       })
     } catch (e: any) {
       toast.show(String(e?.message || e))
@@ -312,17 +313,13 @@ export default function ReportsPage() {
   const runShare = async (endpoint: string) => {
     setStates(s => ({ ...s, ['share']: { loading: true } }))
     try {
-      const base = import.meta.env.VITE_API_BASE || ''
-      const url = base ? `${base.replace(/\/$/, '')}/api/ui/report-share` : '/api/ui/report-share'
-      const params = new URLSearchParams()
+      const request = buildUiRequest('/api/ui/report-share')
       const topicMatch = endpoint.match(/topic=([^&]+)/)
       const topic = topicMatch ? decodeURIComponent(topicMatch[1]) : '추천'
       setShareTopic(topic)
-      const uiKey = import.meta.env.VITE_UI_READ_KEY
-      const headers: Record<string,string> = { 'Content-Type': 'application/json' }
-      if (uiKey) headers['x-ui-key'] = uiKey
+      const headers: Record<string,string> = { ...request.headers, 'Content-Type': 'application/json' }
 
-      const res = await fetch(url, { method: 'POST', headers, body: JSON.stringify({ topic }) })
+      const res = await fetch(request.url, { method: 'POST', headers, body: JSON.stringify({ topic }) })
       const json = await res.json()
       if (!res.ok) throw new Error(json?.error || '공유 생성 실패')
       // show share modal with url and code

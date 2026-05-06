@@ -23,6 +23,14 @@ export default function StockSearchInput({
   const inputRef = useRef<HTMLInputElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
 
+  const normalizeSearchTerm = (text: string) => {
+    return text
+      .normalize('NFKC')
+      .toLowerCase()
+      .replace(/\s+/g, '')
+      .replace(/[·ㆍ\.\-_/()\[\]{}]/g, '')
+  }
+
   // 종목 캐시 로드
   useEffect(() => {
     const load = async () => {
@@ -45,11 +53,6 @@ export default function StockSearchInput({
       return
     }
 
-    // 검색어 정규화 (공백, 특수문자 제거)
-    const normalizeSearchTerm = (text: string) => {
-      return text.toLowerCase().replace(/\s+/g, '').replace(/[·\-\(\)]/g, '')
-    }
-    
     const nq = normalizeSearchTerm(q)
 
     // 코드 또는 한글명으로 검색 (정규화 후)

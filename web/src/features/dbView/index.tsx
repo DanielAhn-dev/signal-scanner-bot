@@ -89,6 +89,14 @@ function formatWon(v: unknown): string {
   return `${n.toLocaleString('ko-KR')}원`
 }
 
+function normalizeSearchTerm(text: string): string {
+  return text
+    .normalize('NFKC')
+    .toLowerCase()
+    .replace(/\s+/g, '')
+    .replace(/[·ㆍ\.\-_/()\[\]{}]/g, '')
+}
+
 export default function DBViewPage() {
   const [allStocks, setAllStocks] = useState<StockItem[]>([])
   const [loading, setLoading] = useState(true)
@@ -197,10 +205,10 @@ export default function DBViewPage() {
   const filteredStocks = useMemo(() => {
     let result = allStocks
     if (appliedSearch) {
-      const lower = appliedSearch.toLowerCase()
+      const lower = normalizeSearchTerm(appliedSearch)
       result = result.filter(s =>
-        s.code.toLowerCase().includes(lower) ||
-        s.name.toLowerCase().includes(lower)
+        normalizeSearchTerm(s.code).includes(lower) ||
+        normalizeSearchTerm(s.name).includes(lower)
       )
     }
     if (selectedSector) {
