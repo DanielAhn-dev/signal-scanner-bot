@@ -75,6 +75,7 @@ export default function NewsPage() {
     setRelatedLoadingSet(prev => new Set(prev).add(key))
     try {
       const qs = new URLSearchParams({ title: item.title })
+      if (item.link) qs.set('link', item.link)
       if (baseStock?.code && baseStock?.name) {
         qs.set('baseCode', baseStock.code)
         qs.set('baseName', baseStock.name)

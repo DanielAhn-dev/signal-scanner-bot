@@ -13,6 +13,29 @@ function getSupabase(): SupabaseClient {
   return _supabase
 }
 
+function applyStockFilters(query: any, opts: {
+  sector: string | null
+  codeOrQ: string
+  minLiquidity: number | null
+}) {
+  const { sector, codeOrQ, minLiquidity } = opts
+  let next = query
+
+  if (sector) {
+    next = next.eq('sector_id', sector)
+  }
+  if (codeOrQ) {
+    // search by code or name
+    const like = `%${codeOrQ.replace(/%/g, '')}%`
+    next = next.or(`code.ilike.${like},name.ilike.${like}`)
+  }
+  if (minLiquidity != null && !Number.isNaN(minLiquidity)) {
+    next = next.gte('liquidity', minLiquidity)
+  }
+
+  return next
+}
+
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   const requestOrigin = String(req.headers.origin || '').trim()
   const trustedOrigins = String(
@@ -66,26 +89,57 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const allMode = String(qParams.all || '') === '1'
 
     const withCount = String(qParams.withCount || '') === '1'
-    let query = withCount
-      ? supabase.from('stocks').select('code,name,sector_id,liquidity,updated_at', { count: 'exact' }).order('code', { ascending: true })
-      : supabase.from('stocks').select('code,name,sector_id,liquidity,updated_at').order('code', { ascending: true })
+    const filterOptions = { sector, codeOrQ, minLiquidity }
 
-    if (sector) {
-      query = query.eq('sector_id', sector)
-    }
-    if (codeOrQ) {
-      // search by code or name
-      const like = `%${codeOrQ.replace(/%/g, '')}%`
-      query = query.or(`code.ilike.${like},name.ilike.${like}`)
-    }
-    if (minLiquidity != null && !Number.isNaN(minLiquidity)) {
-      query = query.gte('liquidity', minLiquidity)
+    if (allMode) {
+      // Supabase max rows(예: 1000) 제한으로 잘리는 상황을 피하기 위해 range 배치 조회
+      const chunkSize = 1000
+      const maxRows = 50_000
+      const items: any[] = []
+
+      for (let fromIdx = 0; fromIdx < maxRows; fromIdx += chunkSize) {
+        const toIdx = fromIdx + chunkSize - 1
+        const query = applyStockFilters(
+          supabase
+            .from('stocks')
+            .select('code,name,sector_id,liquidity,updated_at')
+            .order('code', { ascending: true }),
+          filterOptions,
+        )
+        const { data, error } = await query.range(fromIdx, toIdx)
+        if (error) return res.status(500).json({ error: error.message })
+
+        const rows = data ?? []
+        items.push(...rows)
+        if (rows.length < chunkSize) break
+      }
+
+      let totalCount: number | undefined = undefined
+      if (withCount) {
+        const countQuery = applyStockFilters(
+          supabase.from('stocks').select('code', { count: 'exact', head: true }),
+          filterOptions,
+        )
+        const { count, error } = await countQuery
+        if (error) return res.status(500).json({ error: error.message })
+        totalCount = count ?? 0
+      }
+
+      return res.status(200).json({
+        data: items,
+        count: withCount ? (totalCount ?? items.length) : undefined,
+        page,
+        pageSize,
+      })
     }
 
-    // all=1: 클라이언트 캐시용 전체 목록 반환 (최대 5000)
-    const { data, error, count } = allMode
-      ? await query.limit(5000)
-      : await query.range(from, to)
+    const query = applyStockFilters(
+      withCount
+        ? supabase.from('stocks').select('code,name,sector_id,liquidity,updated_at', { count: 'exact' }).order('code', { ascending: true })
+        : supabase.from('stocks').select('code,name,sector_id,liquidity,updated_at').order('code', { ascending: true }),
+      filterOptions,
+    )
+    const { data, error, count } = await query.range(from, to)
 
     if (error) return res.status(500).json({ error: error.message })
 
