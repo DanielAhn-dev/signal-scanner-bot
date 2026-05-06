@@ -149,16 +149,16 @@ export default function StockSearchInput({
           background: var(--color-bg-primary);
           border: 1px solid var(--color-border);
           border-radius: 8px;
-          box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
-          z-index: 100;
-          max-height: 240px;
+          box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+          z-index: 1000;
+          max-height: 280px;
           overflow-y: auto;
         }
 
         .stock-search-item {
           width: 100%;
-          padding: var(--space-3);
-          background: none;
+          padding: 10px 12px;
+          background: var(--color-bg-primary);
           border: none;
           border-bottom: 1px solid var(--color-border);
           text-align: left;
@@ -174,7 +174,10 @@ export default function StockSearchInput({
           border-bottom: none;
         }
 
-        .stock-search-item:hover,
+        .stock-search-item:hover {
+          background-color: var(--color-bg-secondary);
+        }
+
         .stock-search-item.selected {
           background-color: var(--color-bg-secondary);
         }
@@ -183,12 +186,14 @@ export default function StockSearchInput({
           flex: 1;
           font-weight: var(--font-weight-500);
           color: var(--color-text-primary);
+          font-size: var(--font-size-base);
         }
 
         .stock-search-code {
           font-family: monospace;
           font-size: var(--font-size-sm);
           color: var(--color-text-secondary);
+          white-space: nowrap;
         }
       `}</style>
     </div>
