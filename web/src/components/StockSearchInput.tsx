@@ -45,11 +45,18 @@ export default function StockSearchInput({
       return
     }
 
-    // 코드 또는 한글명으로 검색
+    // 검색어 정규화 (공백, 특수문자 제거)
+    const normalizeSearchTerm = (text: string) => {
+      return text.toLowerCase().replace(/\s+/g, '').replace(/[·\-\(\)]/g, '')
+    }
+    
+    const nq = normalizeSearchTerm(q)
+
+    // 코드 또는 한글명으로 검색 (정규화 후)
     const filtered = allStocks
       .filter(s => {
-        const codeMatch = s.code.includes(q)
-        const nameMatch = s.name.includes(q)
+        const codeMatch = s.code.includes(q) // 코드는 그대로
+        const nameMatch = normalizeSearchTerm(s.name).includes(nq) // 명칭은 정규화 후 비교
         return codeMatch || nameMatch
       })
       .slice(0, 10) // 최대 10개
