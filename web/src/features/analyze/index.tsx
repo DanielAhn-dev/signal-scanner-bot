@@ -1,9 +1,10 @@
 import React, { useState, useRef, useEffect } from 'react'
 import { apiFetch } from '../../lib/api'
 import { formatKrw, formatNumber } from '../../lib/format'
-import { getStocks } from '../../lib/stockCache'
+import { getStocks, type StockItem } from '../../lib/stockCache'
 import Button from '../../components/ui/Button'
 import Skeleton from '../../components/Skeleton'
+import StockSearchInput from '../../components/StockSearchInput'
 
 export default function AnalyzePage() {
   const [query, setQuery] = useState('')
@@ -35,9 +36,11 @@ export default function AnalyzePage() {
   const analyze = async (code?: string) => {
     const q = code ?? query.trim()
     if (!q) return
+    
     setLoading(true)
     setError(null)
     setResult(null)
+    
     try {
       const res = await apiFetch(`/api/ui/stock-latest?code=${encodeURIComponent(q)}`, { cacheMs: 10_000 })
       if (res?.profile || res?.latest) {
@@ -58,6 +61,10 @@ export default function AnalyzePage() {
     }
   }
 
+  const handleStockSelect = (stock: StockItem) => {
+    analyze(stock.code)
+  }
+
   return (
     <section className="container-app">
       <h1 className="title-xl">종목 분석</h1>
@@ -67,14 +74,12 @@ export default function AnalyzePage() {
           종목 코드(6자리) 또는 종목명으로 검색합니다. 텔레그램 <code>/analyze</code> 에 대응합니다.
         </div>
         <div style={{ display: 'flex', gap: 'var(--space-2)' }}>
-          <input
-            ref={inputRef}
-            className="input"
-            style={{ flex: 1 }}
-            placeholder="예: 005930 또는 삼성전자"
+          <StockSearchInput
             value={query}
-            onChange={e => setQuery(e.target.value)}
-            onKeyDown={e => e.key === 'Enter' && analyze()}
+            onChange={setQuery}
+            onSelect={handleStockSelect}
+            placeholder="종목 코드(예: 005930) 또는 한글명(예: 삼성전자)"
+            disabled={loading}
           />
           <Button variant="primary" onClick={() => analyze()} disabled={loading || !query.trim()}>
             {loading ? '조회 중…' : '분석'}
