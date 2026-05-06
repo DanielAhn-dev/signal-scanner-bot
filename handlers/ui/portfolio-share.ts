@@ -6,6 +6,7 @@ import {
   getKstDateKey,
 } from '../../src/services/reportSnapshotService'
 import { REPORT_SHARE_TABLE, createReportShare } from '../../src/services/reportShareService'
+import { fetchRealtimePriceBatch } from '../../src/utils/fetchRealtimePrice'
 
 const ORIGIN = process.env.UI_CORS_ORIGIN || '*'
 
@@ -168,10 +169,17 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     if (error) return res.status(500).json({ error: error.message })
 
+    const codes = (data || []).map((row: any) => String(row?.code || '').trim()).filter(Boolean)
+    const realtimeMap = codes.length > 0 ? await fetchRealtimePriceBatch(codes).catch(() => ({} as Record<string, { price?: number }>)) : {}
+
     const rows: PortfolioShareRow[] = (data || []).map((row: any) => {
       const quantity = Number(row.quantity || 0)
       const buyPrice = Number(row.buy_price || 0)
-      const currentPrice = Number(row.stock?.close || 0)
+      const code = String(row.code || '').trim()
+      const realtimePrice = Number(realtimeMap[code]?.price)
+      const currentPrice = Number.isFinite(realtimePrice) && realtimePrice > 0
+        ? realtimePrice
+        : Number(row.stock?.close || 0)
       const unrealizedPnl = (currentPrice - buyPrice) * quantity
       const unrealizedPct = buyPrice > 0 ? ((currentPrice - buyPrice) / buyPrice) * 100 : 0
 

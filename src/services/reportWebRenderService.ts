@@ -304,7 +304,7 @@ export function renderLayout(params: {
       <div class="meta">출처: ${escapeHtml(sourceLabel)} · 웹 렌더링 뷰</div>
     </header>
     <article class="content">${contentHtml}</article>
-    <footer class="footer">Signal Scanner Bot · 공유 링크는 만료되거나 철회될 수 있습니다.</footer>
+    <footer class="footer">공유 링크는 만료되거나 철회될 수 있습니다.</footer>
   </main>
 </body>
 </html>`
