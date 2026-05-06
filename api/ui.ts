@@ -7,6 +7,7 @@ import formatStock from '../handlers/ui/format-stock'
 import notify from '../handlers/ui/notify'
 import operations from '../handlers/ui/operations'
 import news from '../handlers/ui/news'
+import newsRelated from '../handlers/ui/news-related'
 import positions from '../handlers/ui/positions'
 import positionsMaintenance from '../handlers/ui/positions-maintenance'
 import profile from '../handlers/ui/profile'
@@ -36,6 +37,7 @@ const ROUTES: Record<string, UiHandler> = {
   decisions,
   'format-stock': formatStock,
   news,
+    'news-related': newsRelated,
   notify,
   operations,
   positions,
