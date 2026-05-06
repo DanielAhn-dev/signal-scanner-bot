@@ -2,6 +2,7 @@ import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { createClient, SupabaseClient } from '@supabase/supabase-js'
 import { resolveUiUserContext } from './_userContext'
 import { runVirtualAutoTradingCycle } from '../../src/services/virtualAutoTradeService'
+import { replaceTradeLotsForHolding } from '../../src/services/virtualLotService'
 
 type ActivityRow = {
   id: string
@@ -47,6 +48,16 @@ type OpsDashboardKpi = {
   holding_count: number
   latest_failed_reason: string | null
   latest_failed_at: string | null
+}
+
+type ConsistencyIssue = {
+  code: string
+  name: string | null
+  kind: 'mismatch' | 'missing_lots' | 'orphan_lots'
+  position_id: number | null
+  position_qty: number
+  lot_qty: number
+  detail: string
 }
 
 function kstDayRangeIso(base = new Date()): { startIso: string; endIso: string; ymd: string } {
@@ -403,6 +414,147 @@ async function getAutoSellCandidates(supabase: SupabaseClient, chatId: string | 
   }).sort((a: any, b: any) => a.pct_change - b.pct_change)
 }
 
+async function getLotConsistencyReport(
+  supabase: SupabaseClient,
+  chatId: string | number,
+) {
+  const [positionsRes, lotsRes] = await Promise.all([
+    supabase
+      .from('virtual_positions')
+      .select('id,code,quantity,buy_price,invested_amount,buy_date,created_at,status,stock:stocks(name)')
+      .eq('chat_id', chatId)
+      .eq('status', 'holding')
+      .gt('quantity', 0),
+    supabase
+      .from('virtual_trade_lots')
+      .select('id,code,remaining_quantity,acquired_quantity,position_id,watchlist_id,seed_position_id')
+      .eq('chat_id', chatId)
+      .gt('remaining_quantity', 0),
+  ])
+
+  if (positionsRes.error) throw new Error(positionsRes.error.message)
+  if (lotsRes.error) throw new Error(lotsRes.error.message)
+
+  const positions = Array.isArray(positionsRes.data) ? positionsRes.data : []
+  const lots = Array.isArray(lotsRes.data) ? lotsRes.data : []
+
+  const lotQtyByCode = new Map<string, number>()
+  for (const lot of lots) {
+    const code = String((lot as Record<string, unknown>)?.code || '').trim()
+    const remaining = Number((lot as Record<string, unknown>)?.remaining_quantity || 0)
+    lotQtyByCode.set(code, (lotQtyByCode.get(code) || 0) + (Number.isFinite(remaining) ? remaining : 0))
+  }
+
+  const issues: ConsistencyIssue[] = []
+  const positionCodes = new Set<string>()
+  for (const position of positions) {
+    const record = position as Record<string, unknown>
+    const code = String(record.code || '').trim()
+    const positionQty = Math.max(0, Math.floor(Number(record.quantity || 0)))
+    const lotQty = Math.max(0, Math.floor(Number(lotQtyByCode.get(code) || 0)))
+    positionCodes.add(code)
+    if (positionQty === lotQty) continue
+
+    const kind = lotQty <= 0 ? 'missing_lots' : 'mismatch'
+    issues.push({
+      code,
+      name: String((record.stock as Record<string, unknown> | null)?.name || '').trim() || null,
+      kind,
+      position_id: Number(record.id || 0) || null,
+      position_qty: positionQty,
+      lot_qty: lotQty,
+      detail: kind === 'missing_lots'
+        ? `보유수량 ${positionQty}주인데 열려 있는 FIFO lot 이 없습니다.`
+        : `보유수량 ${positionQty}주와 FIFO lot 합계 ${lotQty}주가 다릅니다.`,
+    })
+  }
+
+  for (const [code, lotQty] of lotQtyByCode.entries()) {
+    if (positionCodes.has(code)) continue
+    issues.push({
+      code,
+      name: null,
+      kind: 'orphan_lots',
+      position_id: null,
+      position_qty: 0,
+      lot_qty: Math.max(0, Math.floor(lotQty)),
+      detail: `보유 포지션은 없는데 FIFO lot ${Math.max(0, Math.floor(lotQty))}주가 열려 있습니다.`,
+    })
+  }
+
+  return {
+    checked_count: positions.length,
+    issue_count: issues.length,
+    issues,
+  }
+}
+
+async function repairLotConsistency(
+  supabase: SupabaseClient,
+  chatId: string | number,
+  codeFilter?: string | null,
+) {
+  const report = await getLotConsistencyReport(supabase, chatId)
+  const positionsRes = await supabase
+    .from('virtual_positions')
+    .select('id,code,quantity,buy_price,invested_amount,buy_date,created_at,status')
+    .eq('chat_id', chatId)
+    .eq('status', 'holding')
+    .gt('quantity', 0)
+
+  if (positionsRes.error) throw new Error(positionsRes.error.message)
+  const positions = Array.isArray(positionsRes.data) ? positionsRes.data : []
+  const positionByCode = new Map<string, Record<string, unknown>>()
+  for (const position of positions) {
+    const code = String((position as Record<string, unknown>)?.code || '').trim()
+    if (code) positionByCode.set(code, position as Record<string, unknown>)
+  }
+
+  let repairedCount = 0
+  const repairedCodes: string[] = []
+  const issues = report.issues.filter((issue) => !codeFilter || issue.code === codeFilter)
+  const nowIso = new Date().toISOString()
+
+  for (const issue of issues) {
+    if (issue.kind === 'orphan_lots') {
+      const { error } = await supabase
+        .from('virtual_trade_lots')
+        .update({ remaining_quantity: 0, closed_at: nowIso, updated_at: nowIso, note: 'ops-consistency-orphan-close' })
+        .eq('chat_id', chatId)
+        .eq('code', issue.code)
+        .gt('remaining_quantity', 0)
+      if (error) throw new Error(error.message)
+      repairedCount += 1
+      repairedCodes.push(issue.code)
+      continue
+    }
+
+    const position = positionByCode.get(issue.code)
+    if (!position) continue
+    await replaceTradeLotsForHolding({
+      chatId: Number(chatId),
+      watchlistId: Number(position.id || 0) || null,
+      code: issue.code,
+      quantity: Number(position.quantity || 0),
+      investedAmount: Number(position.invested_amount || 0),
+      buyPrice: Number(position.buy_price || 0),
+      acquiredAt: String(position.created_at || ''),
+      buyDate: String(position.buy_date || ''),
+      note: 'ops-consistency-repair',
+    })
+    repairedCount += 1
+    repairedCodes.push(issue.code)
+  }
+
+  const nextReport = await getLotConsistencyReport(supabase, chatId)
+  return {
+    repaired_count: repairedCount,
+    repaired_codes: repairedCodes,
+    before: report,
+    after: nextReport,
+  }
+}
+
 // Jobs 큐에 작업 등록
 async function enqueueJob(
   supabase: SupabaseClient,
@@ -589,6 +741,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         return res.status(200).json({ ok: true, data: candidates })
       }
 
+      if (view === 'consistency') {
+        const report = await getLotConsistencyReport(supabase, chatId)
+        return res.status(200).json({ ok: true, data: report })
+      }
+
       // 기본: 최근 실행 이력
       const activity = await getRecentActivity(supabase, chatId)
       return res.status(200).json({ ok: true, data: activity })
@@ -639,6 +796,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       if (mode === 'autosellcheck') {
         const candidates = await getAutoSellCandidates(supabase, chatId)
         return res.status(200).json({ ok: true, mode, data: candidates })
+      }
+
+      if (mode === 'consistency_repair') {
+        const code = String(body.code || '').trim() || null
+        const result = await repairLotConsistency(supabase, chatId, code)
+        return res.status(200).json({ ok: true, mode, data: result })
       }
 
       return res.status(400).json({ error: 'unsupported mode' })

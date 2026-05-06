@@ -109,6 +109,22 @@ type OperationsKpi = {
   latest_failed_at?: string | null
 }
 
+type ConsistencyIssue = {
+  code: string
+  name: string | null
+  kind: 'mismatch' | 'missing_lots' | 'orphan_lots'
+  position_id: number | null
+  position_qty: number
+  lot_qty: number
+  detail: string
+}
+
+type ConsistencyReport = {
+  checked_count: number
+  issue_count: number
+  issues: ConsistencyIssue[]
+}
+
 type LiveJobState = 'queued' | 'running' | 'done' | 'failed'
 
 type NoteTag = {
@@ -250,6 +266,9 @@ export default function OperationsPage() {
 
   const [dashboardKpi, setDashboardKpi] = useState<OperationsKpi | null>(null)
   const [dashboardLoading, setDashboardLoading] = useState(true)
+  const [consistency, setConsistency] = useState<ConsistencyReport | null>(null)
+  const [consistencyLoading, setConsistencyLoading] = useState(false)
+  const [consistencyRepairing, setConsistencyRepairing] = useState(false)
 
   const loadActivity = useCallback(async () => {
     setActivityLoading(true)
@@ -279,6 +298,20 @@ export default function OperationsPage() {
 
   useEffect(() => { loadDashboard() }, [loadDashboard])
 
+  const loadConsistency = useCallback(async () => {
+    setConsistencyLoading(true)
+    try {
+      const json = await apiFetch('/api/ui/operations?view=consistency', { cacheMs: 0, timeoutMs: 20_000 })
+      setConsistency((json?.data || null) as ConsistencyReport | null)
+    } catch (e: any) {
+      toast.show('정합성 점검 조회 실패: ' + String(e?.message || e))
+    } finally {
+      setConsistencyLoading(false)
+    }
+  }, [toast])
+
+  useEffect(() => { void loadConsistency() }, [loadConsistency])
+
   const addWatchingJob = useCallback((jobId: string) => {
     setWatchingJobIds(prev => (prev.includes(jobId) ? prev : [...prev, jobId]))
   }, [])
@@ -299,6 +332,7 @@ export default function OperationsPage() {
         setWatchingJobIds(prev => prev.filter(id => id !== jobId))
         setTimeout(loadActivity, 500)
         setTimeout(loadDashboard, 600)
+        setTimeout(loadConsistency, 800)
 
         if (state === 'failed' && !silent) {
           toast.show(`작업 실패: ${snapshot.job.error || '원인 미상'}`)
@@ -318,7 +352,7 @@ export default function OperationsPage() {
         toast.show('실시간 상태 조회 실패: ' + String(e?.message || e))
       }
     }
-  }, [loadActivity, loadDashboard, toast])
+  }, [loadActivity, loadConsistency, loadDashboard, toast])
 
   useEffect(() => {
     if (watchingJobIds.length === 0) return
@@ -441,6 +475,27 @@ export default function OperationsPage() {
     && pendingDryRunApproval.jobId !== bannerDismissedForJobId
   )
 
+  const repairConsistency = useCallback(async (code?: string) => {
+    setConsistencyRepairing(true)
+    try {
+      const json = await apiFetch('/api/ui/operations', {
+        method: 'POST',
+        cacheMs: 0,
+        timeoutMs: 60_000,
+        body: JSON.stringify({ mode: 'consistency_repair', code: code || null }),
+      })
+      if (json?.error) throw new Error(String(json.error))
+      const repaired = Number(json?.data?.repaired_count || 0)
+      toast.show(repaired > 0 ? `정합성 복구 완료: ${repaired}건` : '복구할 항목이 없습니다.')
+      await loadConsistency()
+      await loadDashboard()
+    } catch (e: any) {
+      toast.show('정합성 복구 실패: ' + String(e?.message || e))
+    } finally {
+      setConsistencyRepairing(false)
+    }
+  }, [loadConsistency, loadDashboard, toast])
+
   return (
     <section className="container-app">
       <div style={{ marginBottom: 'var(--space-6)' }}>
@@ -523,6 +578,58 @@ export default function OperationsPage() {
               <div className="caption muted" style={{ marginTop: 'var(--space-1)' }}>대기작업 / 보유종목</div>
             </div>
           </>
+        )}
+      </div>
+
+      <div className="card card-lg" style={{ marginBottom: 'var(--space-6)', background: 'linear-gradient(135deg, #FFFDFC, #FFFFFF 58%, #F8FBFF)' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 'var(--space-3)', flexWrap: 'wrap', marginBottom: 'var(--space-3)' }}>
+          <div>
+            <div className="title-lg">FIFO 정합성 점검/복구</div>
+            <div className="caption muted" style={{ marginTop: 'var(--space-1)' }}>
+              보유수량과 FIFO lot 잔량이 다를 때 자동매도 실패가 발생할 수 있습니다.
+            </div>
+          </div>
+          <div style={{ display: 'flex', gap: 'var(--space-2)', flexWrap: 'wrap' }}>
+            <Button variant="ghost" onClick={() => { void loadConsistency() }} disabled={consistencyLoading || consistencyRepairing}>
+              {consistencyLoading ? '점검 중...' : '정합성 점검'}
+            </Button>
+            <Button variant="secondary" onClick={() => { void repairConsistency() }} disabled={consistencyLoading || consistencyRepairing}>
+              {consistencyRepairing ? '복구 중...' : '전체 복구'}
+            </Button>
+          </div>
+        </div>
+
+        {consistency && (
+          <div style={{ marginBottom: 'var(--space-3)' }}>
+            <div className="caption muted">점검 대상 {consistency.checked_count}건 · 이슈 {consistency.issue_count}건</div>
+          </div>
+        )}
+
+        {!consistencyLoading && consistency && consistency.issue_count === 0 && (
+          <div className="card" style={{ background: '#F7FCF9', borderColor: '#CBEAD9' }}>
+            <div className="caption" style={{ color: '#0F766E' }}>현재 보유수량과 FIFO lot 잔량이 일치합니다.</div>
+          </div>
+        )}
+
+        {!consistencyLoading && consistency && consistency.issue_count > 0 && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' }}>
+            {consistency.issues.map((issue) => (
+              <div key={`${issue.kind}-${issue.code}-${issue.position_id ?? 'none'}`} className="card" style={{ borderColor: issue.kind === 'orphan_lots' ? '#FFD6D9' : '#FFE1B3' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', gap: 'var(--space-2)', flexWrap: 'wrap' }}>
+                  <div>
+                    <div className="font-medium">{issue.name || issue.code}{issue.name ? ` (${issue.code})` : ''}</div>
+                    <div className="caption muted" style={{ marginTop: 4 }}>{issue.detail}</div>
+                    <div className="caption muted" style={{ marginTop: 4 }}>보유 {issue.position_qty}주 · lot {issue.lot_qty}주</div>
+                  </div>
+                  <div>
+                    <Button variant="ghost" onClick={() => { void repairConsistency(issue.code) }} disabled={consistencyRepairing}>
+                      이 종목 복구
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
         )}
       </div>
 

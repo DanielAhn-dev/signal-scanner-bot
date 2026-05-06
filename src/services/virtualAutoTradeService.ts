@@ -5,6 +5,7 @@ import {
   appendTradeLotsForHolding,
   ensureTradeLotsForHolding,
   previewFifoSale,
+  replaceTradeLotsForHolding,
 } from "./virtualLotService";
 import {
   getUserInvestmentPrefs,
@@ -2200,11 +2201,43 @@ async function executeAutoTradeSell(payload: {
     buyDate: payload.holding.buy_date,
   });
 
-  const fifo = await previewFifoSale({
-    chatId: payload.chatId,
-    code: payload.holding.code,
-    quantity: sellQty,
-  });
+  let fifo;
+  try {
+    fifo = await previewFifoSale({
+      chatId: payload.chatId,
+      code: payload.holding.code,
+      quantity: sellQty,
+    });
+  } catch (fifoError) {
+    try {
+      await replaceTradeLotsForHolding({
+        chatId: payload.chatId,
+        watchlistId: payload.holding.id,
+        code: payload.holding.code,
+        quantity: qty,
+        investedAmount: invested,
+        buyPrice: payload.buyPrice,
+        acquiredAt: payload.holding.created_at,
+        buyDate: payload.holding.buy_date,
+        note: "autotrade-fifo-rebuild-before-sell",
+      });
+
+      fifo = await previewFifoSale({
+        chatId: payload.chatId,
+        code: payload.holding.code,
+        quantity: sellQty,
+      });
+    } catch (repairError) {
+      const message = repairError instanceof Error ? repairError.message : String(repairError)
+      return {
+        sold: false,
+        partial: false,
+        proceeds: 0,
+        realizedPnlDelta: 0,
+        note: `${payload.holding.code} 매도 중단: FIFO 정합성 자동 복구 실패 (${message})`,
+      }
+    }
+  }
   const soldCost = fifo.totalCost;
   const remainInvested = Math.max(0, invested - soldCost);
   const nextBuyPrice =
@@ -2325,13 +2358,28 @@ async function executeAutoTradeSell(payload: {
     }),
   });
 
-  await applyFifoSale({
-    chatId: payload.chatId,
-    code: payload.holding.code,
-    exitPrice: payload.close,
-    tradeId,
-    allocations: fifo.allocations,
-  });
+  try {
+    await applyFifoSale({
+      chatId: payload.chatId,
+      code: payload.holding.code,
+      exitPrice: payload.close,
+      tradeId,
+      allocations: fifo.allocations,
+    });
+  } catch (lotError) {
+    await replaceTradeLotsForHolding({
+      chatId: payload.chatId,
+      watchlistId: isFullExit ? null : payload.holding.id,
+      code: payload.holding.code,
+      quantity: remainQty,
+      investedAmount: isFullExit ? 0 : remainInvested,
+      buyPrice: isFullExit ? null : nextBuyPrice,
+      acquiredAt: payload.holding.created_at,
+      buyDate: payload.holding.buy_date,
+      note: "autotrade-fifo-rebuilt-after-sell",
+    }).catch(() => undefined)
+    throw lotError
+  }
 
   await writeActionLog({
     supabase: payload.supabase,
