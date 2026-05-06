@@ -1,6 +1,7 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { createClient, SupabaseClient } from '@supabase/supabase-js'
 import { resolveUiUserContext } from './_userContext'
+import { runVirtualAutoTradingCycle } from '../../src/services/virtualAutoTradeService'
 
 type ActivityRow = {
   id: string
@@ -24,6 +25,41 @@ type JobRow = {
   started_at: string | null
   finished_at: string | null
   payload: Record<string, unknown> | null
+}
+
+type TimelineEvent = {
+  ts: string
+  kind: 'queued' | 'running' | 'run_started' | 'trade' | 'run_finished' | 'job_finished'
+  label: string
+}
+
+type OpsDashboardKpi = {
+  asof: string
+  buy_count: number
+  sell_count: number
+  adjust_count: number
+  trade_amount: number
+  run_total: number
+  run_success: number
+  run_skipped: number
+  run_failed: number
+  queue_waiting: number
+  holding_count: number
+}
+
+function kstDayRangeIso(base = new Date()): { startIso: string; endIso: string; ymd: string } {
+  const utcMs = base.getTime() + base.getTimezoneOffset() * 60 * 1000
+  const kst = new Date(utcMs + 9 * 60 * 60 * 1000)
+  const y = kst.getUTCFullYear()
+  const m = String(kst.getUTCMonth() + 1).padStart(2, '0')
+  const d = String(kst.getUTCDate()).padStart(2, '0')
+  const startUtc = new Date(Date.UTC(y, kst.getUTCMonth(), kst.getUTCDate(), -9, 0, 0))
+  const endUtc = new Date(Date.UTC(y, kst.getUTCMonth(), kst.getUTCDate() + 1, -9, 0, 0))
+  return {
+    startIso: startUtc.toISOString(),
+    endIso: endUtc.toISOString(),
+    ymd: `${y}-${m}-${d}`,
+  }
 }
 
 let _supabase: SupabaseClient | null = null
@@ -187,13 +223,133 @@ async function getJobSnapshot(
     }
   })
 
-  const latestRun = recentRuns[0] || null
+  const latestRun = (recentRuns[0] || null) as Record<string, unknown> | null
+  const latestRunSummary = (latestRun?.summary || {}) as Record<string, unknown>
+
+  const dryRunDetails = {
+    buys: Number(latestRunSummary.buys ?? latestRunSummary.buyCount ?? 0),
+    sells: Number(latestRunSummary.sells ?? latestRunSummary.sellCount ?? 0),
+    skipped: Number(latestRunSummary.skipped ?? latestRunSummary.skippedCount ?? 0),
+    errors: Number(latestRunSummary.errors ?? latestRunSummary.errorCount ?? 0),
+    notes: Array.isArray(latestRunSummary.notes)
+      ? latestRunSummary.notes.map((v) => String(v || '').trim()).filter(Boolean)
+      : [],
+  }
+
+  const timeline: TimelineEvent[] = []
+  if (job.created_at) timeline.push({ ts: job.created_at, kind: 'queued', label: '작업 큐 등록' })
+  if (job.started_at) timeline.push({ ts: job.started_at, kind: 'running', label: '워커 실행 시작' })
+  if (latestRun?.started_at) timeline.push({ ts: String(latestRun.started_at), kind: 'run_started', label: '자동사이클 계산 시작' })
+
+  for (const trade of recentTrades.slice(0, 5)) {
+    const side = String((trade as Record<string, unknown>).side || '').toUpperCase()
+    const sideLabel = side === 'BUY' ? '매수' : side === 'SELL' ? '매도' : '조정'
+    const name = String((trade as Record<string, unknown>).stock_name || (trade as Record<string, unknown>).code || '-')
+    const quantity = Number((trade as Record<string, unknown>).quantity || 0)
+    timeline.push({
+      ts: String((trade as Record<string, unknown>).created_at || ''),
+      kind: 'trade',
+      label: `${name} ${sideLabel} ${quantity}주`,
+    })
+  }
+
+  if (latestRun?.finished_at) {
+    const runStatus = String(latestRun.status || '')
+    const runStatusLabel = runStatus === 'SUCCESS' ? '실행 요약 완료' : runStatus === 'FAILED' ? '실행 요약 실패' : '실행 요약(스킵)'
+    timeline.push({ ts: String(latestRun.finished_at), kind: 'run_finished', label: runStatusLabel })
+  }
+  if (job.finished_at) {
+    const doneLabel = String(job.status || '') === 'failed' ? '작업 종료(실패)' : '작업 종료(완료)'
+    timeline.push({ ts: job.finished_at, kind: 'job_finished', label: doneLabel })
+  }
+
+  timeline.sort((a, b) => {
+    const ta = Date.parse(a.ts || '') || 0
+    const tb = Date.parse(b.ts || '') || 0
+    return ta - tb
+  })
 
   return {
     job,
     latest_run: latestRun,
     recent_runs: recentRuns,
     recent_trades: recentTrades,
+    timeline,
+    dry_run_details: dryRunDetails,
+  }
+}
+
+async function getOperationsDashboardKpi(
+  supabase: SupabaseClient,
+  chatId: string | number
+): Promise<OpsDashboardKpi> {
+  const { startIso, endIso, ymd } = kstDayRangeIso()
+
+  const [tradesRes, runsRes, queueRes, holdingsRes] = await Promise.all([
+    supabase
+      .from('virtual_trades')
+      .select('side,gross_amount')
+      .eq('chat_id', chatId)
+      .gte('created_at', startIso)
+      .lt('created_at', endIso),
+    supabase
+      .from('virtual_autotrade_runs')
+      .select('status')
+      .eq('chat_id', chatId)
+      .gte('started_at', startIso)
+      .lt('started_at', endIso),
+    supabase
+      .from('jobs')
+      .select('id', { count: 'exact', head: true })
+      .eq('type', 'cron_dispatch')
+      .eq('status', 'queued')
+      .contains('payload', { chat_id: Number(chatId) }),
+    supabase
+      .from('virtual_positions')
+      .select('id', { count: 'exact', head: true })
+      .eq('chat_id', chatId)
+      .eq('status', 'holding')
+      .gt('quantity', 0),
+  ])
+
+  const trades = Array.isArray(tradesRes.data) ? tradesRes.data : []
+  const runs = Array.isArray(runsRes.data) ? runsRes.data : []
+
+  let buyCount = 0
+  let sellCount = 0
+  let adjustCount = 0
+  let tradeAmount = 0
+  for (const trade of trades) {
+    const side = String((trade as Record<string, unknown>)?.side || '').toUpperCase()
+    const amount = Number((trade as Record<string, unknown>)?.gross_amount || 0)
+    if (side === 'BUY') buyCount += 1
+    else if (side === 'SELL') sellCount += 1
+    else adjustCount += 1
+    if (Number.isFinite(amount)) tradeAmount += amount
+  }
+
+  let runSuccess = 0
+  let runSkipped = 0
+  let runFailed = 0
+  for (const run of runs) {
+    const status = String((run as Record<string, unknown>)?.status || '').toUpperCase()
+    if (status === 'SUCCESS') runSuccess += 1
+    else if (status === 'FAILED') runFailed += 1
+    else runSkipped += 1
+  }
+
+  return {
+    asof: ymd,
+    buy_count: buyCount,
+    sell_count: sellCount,
+    adjust_count: adjustCount,
+    trade_amount: tradeAmount,
+    run_total: runs.length,
+    run_success: runSuccess,
+    run_skipped: runSkipped,
+    run_failed: runFailed,
+    queue_waiting: queueRes.count || 0,
+    holding_count: holdingsRes.count || 0,
   }
 }
 
@@ -230,17 +386,132 @@ async function enqueueJob(
   chatId: string | number,
   taskType: string,
   payload: Record<string, unknown>
-): Promise<{ id: string } | null> {
+): Promise<{ id: string; payload: Record<string, unknown> | null } | null> {
   const dedupKey = `web:${taskType}:${chatId}:${Date.now()}`
   const { data, error } = await supabase.from('jobs').insert({
     type: 'cron_dispatch',
     status: 'queued',
     dedup_key: dedupKey,
     payload: { task: taskType, chat_id: chatId, source: 'web', ...payload },
-  }).select('id').single()
+  }).select('id,payload').single()
 
   if (error) throw new Error(error.message)
   return data as any
+}
+
+function toPositiveInt(value: unknown, fallback: number): number {
+  const parsed = Number(value)
+  if (!Number.isFinite(parsed)) return fallback
+  const integer = Math.floor(parsed)
+  return integer > 0 ? integer : fallback
+}
+
+async function cleanupLegacyQueuedJobs(
+  supabase: SupabaseClient,
+  chatId: string | number,
+  staleMinutes = 10,
+) {
+  const cutoff = new Date(Date.now() - staleMinutes * 60 * 1000).toISOString()
+  await supabase
+    .from('jobs')
+    .update({
+      status: 'failed',
+      ok: false,
+      error: 'superseded by inline web execution',
+      finished_at: new Date().toISOString(),
+    })
+    .eq('type', 'cron_dispatch')
+    .eq('status', 'queued')
+    .contains('payload', { chat_id: Number(chatId) })
+    .lt('created_at', cutoff)
+}
+
+async function executeInlineCronDispatch(
+  supabase: SupabaseClient,
+  job: { id: string; payload: Record<string, unknown> | null },
+) {
+  const payload = (job.payload || {}) as Record<string, unknown>
+  const task = String(payload.task || '').trim()
+  const dryRun = payload.dry_run !== false
+
+  await supabase
+    .from('jobs')
+    .update({ status: 'running', started_at: new Date().toISOString(), error: null })
+    .eq('id', job.id)
+
+  try {
+    let summary: Record<string, unknown> | null = null
+
+    if (task === 'virtualAutoTrade') {
+      const intradayOnly = Boolean(payload.intraday_only)
+      const windowMinutes = toPositiveInt(payload.window_minutes, 10)
+      const maxUsers = toPositiveInt(payload.max_users, intradayOnly ? 60 : 200)
+      const run = await runVirtualAutoTradingCycle({
+        mode: 'auto',
+        dryRun,
+        intradayOnly,
+        windowMinutes,
+        maxUsers,
+      })
+      summary = {
+        buyCount: run.buyCount,
+        sellCount: run.sellCount,
+        skippedCount: run.skippedCount,
+        errorCount: run.errorCount,
+        runType: run.runType,
+        runKey: run.runKey,
+      }
+    } else if (task === 'virtualAutoTradeIntraday') {
+      const step = String(payload.step || 'intraday').toLowerCase()
+      const intradayOnly = step !== 'ready'
+      const run = await runVirtualAutoTradingCycle({
+        mode: 'auto',
+        dryRun,
+        intradayOnly,
+        windowMinutes: 10,
+        maxUsers: 60,
+      })
+      summary = {
+        buyCount: run.buyCount,
+        sellCount: run.sellCount,
+        skippedCount: run.skippedCount,
+        errorCount: run.errorCount,
+        runType: run.runType,
+        runKey: run.runKey,
+        step,
+      }
+    } else {
+      throw new Error(`unsupported cron_dispatch task: ${task || 'empty'}`)
+    }
+
+    await supabase
+      .from('jobs')
+      .update({
+        status: 'done',
+        ok: true,
+        finished_at: new Date().toISOString(),
+        payload: {
+          ...payload,
+          inline_executed: true,
+          inline_summary: summary,
+        },
+      })
+      .eq('id', job.id)
+
+    return { status: 'done' as const }
+  } catch (e: any) {
+    const message = String(e?.message || e)
+    await supabase
+      .from('jobs')
+      .update({
+        status: 'failed',
+        ok: false,
+        finished_at: new Date().toISOString(),
+        error: message,
+      })
+      .eq('id', job.id)
+    return { status: 'failed' as const, error: message }
+  }
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
@@ -285,6 +556,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         return res.status(200).json({ ok: true, data: snapshot })
       }
 
+      if (view === 'dashboard') {
+        const kpi = await getOperationsDashboardKpi(supabase, chatId)
+        return res.status(200).json({ ok: true, data: kpi })
+      }
+
       if (view === 'autosellcheck') {
         const candidates = await getAutoSellCandidates(supabase, chatId)
         return res.status(200).json({ ok: true, data: candidates })
@@ -299,13 +575,24 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const body = (req.body || {}) as any
       const mode = String(body.mode || '').trim().toLowerCase()
 
+      await cleanupLegacyQueuedJobs(supabase, chatId).catch(() => undefined)
+
       if (mode === 'autocycle') {
         const dryRun = body.dry_run !== false
         const job = await enqueueJob(supabase, chatId, 'virtualAutoTrade', {
           dry_run: dryRun,
           trigger_mode: body.trigger_mode || 'auto',
         })
-        return res.status(200).json({ ok: true, mode, dry_run: dryRun, job_id: (job as any)?.id })
+        if (!job?.id) throw new Error('failed to create job')
+        const execution = await executeInlineCronDispatch(supabase, job)
+        return res.status(200).json({
+          ok: true,
+          mode,
+          dry_run: dryRun,
+          job_id: job.id,
+          job_status: execution.status,
+          execution_error: execution.status === 'failed' ? execution.error : null,
+        })
       }
 
       if (mode === 'autotrigger') {
@@ -314,7 +601,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           step,
           dry_run: body.dry_run !== false,
         })
-        return res.status(200).json({ ok: true, mode, step, job_id: (job as any)?.id })
+        if (!job?.id) throw new Error('failed to create job')
+        const execution = await executeInlineCronDispatch(supabase, job)
+        return res.status(200).json({
+          ok: true,
+          mode,
+          step,
+          job_id: job.id,
+          job_status: execution.status,
+          execution_error: execution.status === 'failed' ? execution.error : null,
+        })
       }
 
       if (mode === 'autosellcheck') {

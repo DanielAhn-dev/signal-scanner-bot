@@ -3,6 +3,7 @@ import { apiFetch } from '../../lib/api'
 import { formatKrw, formatNumber } from '../../lib/format'
 import Skeleton from '../../components/Skeleton'
 import Button from '../../components/ui/Button'
+import Modal from '../../components/Modal'
 import { useToast } from '../../components/ToastProvider'
 
 type TradeRow = {
@@ -54,14 +55,33 @@ type AutoTradeRun = {
   run_key: string
   status: 'SUCCESS' | 'SKIPPED' | 'FAILED'
   summary?: {
+    buys?: number
+    sells?: number
+    skipped?: number
+    errors?: number
     buyCount?: number
     sellCount?: number
     skippedCount?: number
     errorCount?: number
+    notes?: string[]
     [key: string]: unknown
   } | null
   started_at: string
   finished_at: string | null
+}
+
+type TimelineEvent = {
+  ts: string
+  kind: 'queued' | 'running' | 'run_started' | 'trade' | 'run_finished' | 'job_finished'
+  label: string
+}
+
+type DryRunDetails = {
+  buys: number
+  sells: number
+  skipped: number
+  errors: number
+  notes: string[]
 }
 
 type JobSnapshot = {
@@ -69,9 +89,32 @@ type JobSnapshot = {
   latest_run: AutoTradeRun | null
   recent_runs: AutoTradeRun[]
   recent_trades: TradeRow[]
+  timeline?: TimelineEvent[]
+  dry_run_details?: DryRunDetails
+}
+
+type OperationsKpi = {
+  asof: string
+  buy_count: number
+  sell_count: number
+  adjust_count: number
+  trade_amount: number
+  run_total: number
+  run_success: number
+  run_skipped: number
+  run_failed: number
+  queue_waiting: number
+  holding_count: number
 }
 
 type LiveJobState = 'queued' | 'running' | 'done' | 'failed'
+
+type NoteTag = {
+  key: 'candidate' | 'reject' | 'risk' | 'policy' | 'execution' | 'other'
+  label: string
+  color: string
+  bg: string
+}
 
 function sideBadge(side: string) {
   if (side === 'BUY') return <span style={{ color: 'var(--color-positive)', fontWeight: 600 }}>매수</span>
@@ -99,10 +142,10 @@ function resolveTaskLabel(payload: JobPayload | null): string {
 function renderRunSummary(run: AutoTradeRun | null): string {
   if (!run) return '실행 요약 대기 중'
   const summary = run.summary || {}
-  const buys = Number(summary.buyCount || 0)
-  const sells = Number(summary.sellCount || 0)
-  const skipped = Number(summary.skippedCount || 0)
-  const errors = Number(summary.errorCount || 0)
+  const buys = Number(summary.buys ?? summary.buyCount ?? 0)
+  const sells = Number(summary.sells ?? summary.sellCount ?? 0)
+  const skipped = Number(summary.skipped ?? summary.skippedCount ?? 0)
+  const errors = Number(summary.errors ?? summary.errorCount ?? 0)
   return `매수 ${buys} · 매도 ${sells} · 스킵 ${skipped} · 오류 ${errors}`
 }
 
@@ -110,6 +153,46 @@ function progressFill(status: LiveJobState): string {
   if (status === 'queued') return '24%'
   if (status === 'running') return '66%'
   return '100%'
+}
+
+function getTimelineMeta(event: TimelineEvent): { icon: string; color: string; bg: string } {
+  if (event.kind === 'queued') return { icon: 'Q', color: '#6B7280', bg: '#F3F4F6' }
+  if (event.kind === 'running' || event.kind === 'run_started') return { icon: 'R', color: '#0052DB', bg: '#EBF3FF' }
+  if (event.kind === 'trade') return { icon: 'T', color: '#0F766E', bg: '#E8F7F3' }
+  const failed = /실패|error/i.test(event.label)
+  if (failed) return { icon: '!', color: '#D0313E', bg: '#FFF0F1' }
+  return { icon: 'D', color: '#2563EB', bg: '#EDF4FF' }
+}
+
+function classifyDryRunNote(note: string): NoteTag {
+  const normalized = String(note || '').toLowerCase()
+  if (/후보|점수|진입|매수/i.test(note)) {
+    return { key: 'candidate', label: '후보', color: '#0B57D0', bg: '#EBF3FF' }
+  }
+  if (/탈락|보류|스킵|없음|불가|제외/i.test(note)) {
+    return { key: 'reject', label: '제외', color: '#92400E', bg: '#FFF4E5' }
+  }
+  if (/손절|익절|리스크|변동성|연속손실|오류|실패|timeout|fail/i.test(normalized)) {
+    return { key: 'risk', label: '리스크', color: '#B42318', bg: '#FFF0F1' }
+  }
+  if (/전략|게이트|정책|비중|페이싱|프로필|기준/i.test(note)) {
+    return { key: 'policy', label: '정책', color: '#4338CA', bg: '#EEF2FF' }
+  }
+  if (/실행|체결|매도|매수|반영/i.test(note)) {
+    return { key: 'execution', label: '실행', color: '#0F766E', bg: '#E8F7F3' }
+  }
+  return { key: 'other', label: '기타', color: '#475467', bg: '#F5F7FA' }
+}
+
+function resolveFailureCause(snapshot: JobSnapshot): string {
+  const direct = String(snapshot.job.error || '').trim()
+  if (direct) return direct
+
+  const notes = snapshot.dry_run_details?.notes || []
+  const noteHit = notes.find((note) => /오류|실패|error|fail|timeout/i.test(note))
+  if (noteHit) return noteHit
+
+  return '실패 원인 상세가 아직 수집되지 않았습니다.'
 }
 
 export default function OperationsPage() {
@@ -132,6 +215,11 @@ export default function OperationsPage() {
 
   const [liveJobs, setLiveJobs] = useState<Record<string, JobSnapshot>>({})
   const [watchingJobIds, setWatchingJobIds] = useState<string[]>([])
+  const [selectedDryRunJobId, setSelectedDryRunJobId] = useState<string | null>(null)
+  const [expandedJobIds, setExpandedJobIds] = useState<string[]>([])
+
+  const [dashboardKpi, setDashboardKpi] = useState<OperationsKpi | null>(null)
+  const [dashboardLoading, setDashboardLoading] = useState(true)
 
   const loadActivity = useCallback(async () => {
     setActivityLoading(true)
@@ -146,6 +234,20 @@ export default function OperationsPage() {
   }, [toast])
 
   useEffect(() => { loadActivity() }, [loadActivity])
+
+  const loadDashboard = useCallback(async () => {
+    setDashboardLoading(true)
+    try {
+      const json = await apiFetch('/api/ui/operations?view=dashboard', { cacheMs: 0, timeoutMs: 15_000 })
+      setDashboardKpi((json?.data || null) as OperationsKpi | null)
+    } catch (e: any) {
+      toast.show('운영 KPI 조회 실패: ' + String(e?.message || e))
+    } finally {
+      setDashboardLoading(false)
+    }
+  }, [toast])
+
+  useEffect(() => { loadDashboard() }, [loadDashboard])
 
   const addWatchingJob = useCallback((jobId: string) => {
     setWatchingJobIds(prev => (prev.includes(jobId) ? prev : [...prev, jobId]))
@@ -166,6 +268,7 @@ export default function OperationsPage() {
       if (state === 'done' || state === 'failed') {
         setWatchingJobIds(prev => prev.filter(id => id !== jobId))
         setTimeout(loadActivity, 500)
+        setTimeout(loadDashboard, 600)
 
         if (state === 'failed' && !silent) {
           toast.show(`작업 실패: ${snapshot.job.error || '원인 미상'}`)
@@ -185,7 +288,7 @@ export default function OperationsPage() {
         toast.show('실시간 상태 조회 실패: ' + String(e?.message || e))
       }
     }
-  }, [loadActivity, toast])
+  }, [loadActivity, loadDashboard, toast])
 
   useEffect(() => {
     if (watchingJobIds.length === 0) return
@@ -218,18 +321,23 @@ export default function OperationsPage() {
       const json = await apiFetch('/api/ui/operations', {
         method: 'POST',
         cacheMs: 0,
-        timeoutMs: 20_000,
+        timeoutMs: 60_000,
         body: JSON.stringify({ mode: 'autocycle', dry_run: dryRun }),
       })
       if (json?.error) throw new Error(String(json.error))
       const jobId = String(json?.job_id || '').trim()
       if (!jobId) throw new Error('job_id가 비어 있습니다.')
       const label = dryRun ? '점검(dry-run)' : '실행'
-      setAutocycleResult(`자동사이클 ${label} 요청 등록 완료 - job_id: ${jobId}`)
-      setAutocycleStatus('done')
+      if (json?.execution_error) {
+        setAutocycleResult(`자동사이클 ${label} 실행 실패 - ${String(json.execution_error)}`)
+        setAutocycleStatus('error')
+      } else {
+        setAutocycleResult(`자동사이클 ${label} 요청 등록 완료 - job_id: ${jobId}`)
+        setAutocycleStatus('done')
+      }
       if (!dryRun) setPendingDryRunApproval(null)
       addWatchingJob(jobId)
-      void refreshJobSnapshot(jobId, true)
+      void refreshJobSnapshot(jobId, false)
       toast.show(`자동사이클 ${label} 등록 완료`)
     } catch (e: any) {
       setAutocycleResult(String(e?.message || e))
@@ -244,16 +352,21 @@ export default function OperationsPage() {
       const json = await apiFetch('/api/ui/operations', {
         method: 'POST',
         cacheMs: 0,
-        timeoutMs: 20_000,
+        timeoutMs: 60_000,
         body: JSON.stringify({ mode: 'autotrigger', step: autotriggerStep, dry_run: true }),
       })
       if (json?.error) throw new Error(String(json.error))
       const jobId = String(json?.job_id || '').trim()
       if (!jobId) throw new Error('job_id가 비어 있습니다.')
-      setAutotriggerResult(`순차트리거(${autotriggerStep}) 요청 등록 완료 - job_id: ${jobId}`)
-      setAutotriggerStatus('done')
+      if (json?.execution_error) {
+        setAutotriggerResult(`순차트리거(${autotriggerStep}) 실행 실패 - ${String(json.execution_error)}`)
+        setAutotriggerStatus('error')
+      } else {
+        setAutotriggerResult(`순차트리거(${autotriggerStep}) 요청 등록 완료 - job_id: ${jobId}`)
+        setAutotriggerStatus('done')
+      }
       addWatchingJob(jobId)
-      void refreshJobSnapshot(jobId, true)
+      void refreshJobSnapshot(jobId, false)
       toast.show('순차트리거 등록 완료')
     } catch (e: any) {
       setAutotriggerResult(String(e?.message || e))
@@ -269,11 +382,51 @@ export default function OperationsPage() {
     })
   }, [liveJobs])
 
+  const selectedDryRunSnapshot = useMemo(() => {
+    if (!selectedDryRunJobId) return null
+    return liveJobs[selectedDryRunJobId] || null
+  }, [liveJobs, selectedDryRunJobId])
+
   return (
     <section className="container-app">
       <div style={{ marginBottom: 'var(--space-6)' }}>
         <h1 className="title-xl">운영 패널</h1>
         <p className="muted">가상매수/매도 자동화의 실시간 진행 상태, 실행 요약, 최근 결과를 한 화면에서 확인합니다.</p>
+      </div>
+
+      <div
+        style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
+          gap: 'var(--space-3)',
+          marginBottom: 'var(--space-6)',
+        }}
+      >
+        {dashboardLoading && <Skeleton lines={2} height={16} />}
+        {!dashboardLoading && dashboardKpi && (
+          <>
+            <div className="card" style={{ background: 'linear-gradient(150deg, #FFFFFF, #F7FBFF)' }}>
+              <div className="caption muted">오늘 체결</div>
+              <div className="title-lg" style={{ marginTop: 'var(--space-1)' }}>{dashboardKpi.buy_count + dashboardKpi.sell_count}건</div>
+              <div className="caption muted" style={{ marginTop: 'var(--space-1)' }}>매수 {dashboardKpi.buy_count} · 매도 {dashboardKpi.sell_count}</div>
+            </div>
+            <div className="card" style={{ background: 'linear-gradient(150deg, #FFFFFF, #F6FAF9)' }}>
+              <div className="caption muted">오늘 거래금액</div>
+              <div className="title-lg" style={{ marginTop: 'var(--space-1)' }}>{formatKrw(dashboardKpi.trade_amount)}</div>
+              <div className="caption muted" style={{ marginTop: 'var(--space-1)' }}>기준일 {dashboardKpi.asof}</div>
+            </div>
+            <div className="card" style={{ background: 'linear-gradient(150deg, #FFFFFF, #FAF8FF)' }}>
+              <div className="caption muted">자동사이클 실행</div>
+              <div className="title-lg" style={{ marginTop: 'var(--space-1)' }}>{dashboardKpi.run_total}회</div>
+              <div className="caption muted" style={{ marginTop: 'var(--space-1)' }}>성공 {dashboardKpi.run_success} · 실패 {dashboardKpi.run_failed}</div>
+            </div>
+            <div className="card" style={{ background: 'linear-gradient(150deg, #FFFFFF, #FFF9F5)' }}>
+              <div className="caption muted">큐 대기/보유</div>
+              <div className="title-lg" style={{ marginTop: 'var(--space-1)' }}>{dashboardKpi.queue_waiting} / {dashboardKpi.holding_count}</div>
+              <div className="caption muted" style={{ marginTop: 'var(--space-1)' }}>대기작업 / 보유종목</div>
+            </div>
+          </>
+        )}
       </div>
 
       <div className="card card-lg" style={{ marginBottom: 'var(--space-6)', background: 'linear-gradient(130deg, #F8FBFF 0%, #FFFFFF 52%, #F5F7FA 100%)' }}>
@@ -297,16 +450,25 @@ export default function OperationsPage() {
           <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
             {liveJobItems.slice(0, 6).map((item) => {
               const state = normalizeJobState(item.job.status)
+              const jobId = String(item.job.id)
               const running = state === 'running'
               const failed = state === 'failed'
+              const expanded = failed || expandedJobIds.includes(jobId)
               return (
-                <div key={String(item.job.id)} className="card" style={{ borderColor: failed ? 'var(--color-border-error)' : 'var(--color-border-default)' }}>
+                <div key={jobId} className="card" style={{ borderColor: failed ? 'var(--color-border-error)' : 'var(--color-border-default)' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 'var(--space-2)', flexWrap: 'wrap' }}>
                     <div className="font-medium">{resolveTaskLabel(item.job.payload)}</div>
                     <div className="caption" style={{ color: failed ? 'var(--color-error)' : running ? 'var(--color-brand)' : 'var(--color-text-tertiary)', fontWeight: 700 }}>
                       {failed ? '실패' : running ? '실행 중' : state === 'done' ? '완료' : '대기 중'}
                     </div>
                   </div>
+
+                  {failed && (
+                    <div style={{ marginTop: 'var(--space-2)', padding: '8px 10px', borderRadius: 8, background: '#FFF0F1', border: '1px solid #FFD6D9' }}>
+                      <div className="caption" style={{ color: '#B42318', fontWeight: 700 }}>실패 원인</div>
+                      <div className="caption" style={{ color: '#7A271A', marginTop: 4 }}>{resolveFailureCause(item)}</div>
+                    </div>
+                  )}
 
                   <div style={{ marginTop: 'var(--space-2)', height: 8, borderRadius: 999, background: 'var(--color-gray-100)', overflow: 'hidden' }}>
                     <div
@@ -328,6 +490,38 @@ export default function OperationsPage() {
                     {failed ? (item.job.error || '오류 상세가 없습니다.') : renderRunSummary(item.latest_run)}
                   </div>
 
+                  {Array.isArray(item.timeline) && item.timeline.length > 0 && (
+                    <div style={{ marginTop: 'var(--space-3)', borderTop: '1px dashed var(--color-border-default)', paddingTop: 'var(--space-2)' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--space-1)' }}>
+                        <div className="caption muted">실행 타임라인</div>
+                        {!failed && (
+                          <button
+                            className="caption"
+                            style={{ border: 'none', background: 'transparent', color: 'var(--color-brand)', cursor: 'pointer', fontWeight: 600 }}
+                            onClick={() => {
+                              setExpandedJobIds(prev => prev.includes(jobId) ? prev.filter(id => id !== jobId) : [...prev, jobId])
+                            }}
+                          >
+                            {expanded ? '접기' : '전체 보기'}
+                          </button>
+                        )}
+                      </div>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-1)' }}>
+                        {(expanded ? item.timeline : item.timeline.slice(-4)).map((event, index) => {
+                          const meta = getTimelineMeta(event)
+                          return (
+                          <div key={`${String(item.job.id)}-timeline-${index}`} style={{ display: 'flex', justifyContent: 'space-between', gap: 'var(--space-2)', alignItems: 'center' }}>
+                            <span className="caption" style={{ color: 'var(--color-text-secondary)', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                              <span style={{ width: 18, height: 18, borderRadius: 999, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', background: meta.bg, color: meta.color, fontSize: 10, fontWeight: 700 }}>{meta.icon}</span>
+                              {event.label}
+                            </span>
+                            <span className="caption muted">{new Date(event.ts).toLocaleTimeString('ko-KR')}</span>
+                          </div>
+                        )})}
+                      </div>
+                    </div>
+                  )}
+
                   {item.recent_trades.length > 0 && (
                     <div style={{ marginTop: 'var(--space-2)', display: 'flex', flexWrap: 'wrap', gap: 'var(--space-2)' }}>
                       {item.recent_trades.slice(0, 3).map(trade => (
@@ -335,6 +529,17 @@ export default function OperationsPage() {
                           {(trade.stock_name || trade.code)} {trade.side === 'BUY' ? '매수' : trade.side === 'SELL' ? '매도' : '조정'} {trade.quantity}주
                         </span>
                       ))}
+                    </div>
+                  )}
+
+                  {item.job.payload?.dry_run !== false && (
+                    <div style={{ marginTop: 'var(--space-2)' }}>
+                      <Button
+                        variant="ghost"
+                        onClick={() => setSelectedDryRunJobId(String(item.job.id))}
+                      >
+                        드라이런 상세 보기
+                      </Button>
                     </div>
                   )}
                 </div>
@@ -497,6 +702,74 @@ export default function OperationsPage() {
           )}
         </div>
       </div>
+
+      <Modal
+        isOpen={!!selectedDryRunSnapshot}
+        title="드라이런 상세 리포트"
+        onClose={() => setSelectedDryRunJobId(null)}
+        size="lg"
+      >
+        {selectedDryRunSnapshot && (
+          <div style={{ padding: 'var(--space-4)' }}>
+            <div className="caption muted">job_id: {String(selectedDryRunSnapshot.job.id)}</div>
+            <div className="title-lg" style={{ marginTop: 'var(--space-2)' }}>
+              {resolveTaskLabel(selectedDryRunSnapshot.job.payload)}
+            </div>
+            <div className="caption muted" style={{ marginTop: 'var(--space-1)' }}>
+              {selectedDryRunSnapshot.dry_run_details
+                ? `매수 ${selectedDryRunSnapshot.dry_run_details.buys} · 매도 ${selectedDryRunSnapshot.dry_run_details.sells} · 스킵 ${selectedDryRunSnapshot.dry_run_details.skipped} · 오류 ${selectedDryRunSnapshot.dry_run_details.errors}`
+                : renderRunSummary(selectedDryRunSnapshot.latest_run)}
+            </div>
+
+            <div style={{ marginTop: 'var(--space-3)' }}>
+              <div className="title-md" style={{ marginBottom: 'var(--space-2)' }}>단계별 로그</div>
+              {selectedDryRunSnapshot.timeline && selectedDryRunSnapshot.timeline.length > 0 ? (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' }}>
+                  {selectedDryRunSnapshot.timeline.map((event, index) => (
+                    <div key={`modal-timeline-${index}`} className="card" style={{ padding: 'var(--space-3)' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 'var(--space-2)' }}>
+                        <span className="font-medium" style={{ fontSize: '0.9rem', display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+                          {(() => {
+                            const meta = getTimelineMeta(event)
+                            return <span style={{ width: 18, height: 18, borderRadius: 999, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', background: meta.bg, color: meta.color, fontSize: 10, fontWeight: 700 }}>{meta.icon}</span>
+                          })()}
+                          {event.label}
+                        </span>
+                        <span className="caption muted">{new Date(event.ts).toLocaleString('ko-KR')}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="caption muted">타임라인 데이터 없음</div>
+              )}
+            </div>
+
+            <div style={{ marginTop: 'var(--space-3)' }}>
+              <div className="title-md" style={{ marginBottom: 'var(--space-2)' }}>매수 후보/제외 사유 요약</div>
+              {selectedDryRunSnapshot.dry_run_details?.notes?.length ? (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)', maxHeight: 260, overflowY: 'auto' }}>
+                  {selectedDryRunSnapshot.dry_run_details.notes.map((note, index) => (
+                    <div key={`dryrun-note-${index}`} className="card" style={{ padding: 'var(--space-3)', background: '#FAFCFF' }}>
+                      {(() => {
+                        const tag = classifyDryRunNote(note)
+                        return (
+                          <span className="caption" style={{ display: 'inline-flex', alignItems: 'center', borderRadius: 999, padding: '2px 8px', background: tag.bg, color: tag.color, fontWeight: 700, marginBottom: 6 }}>
+                            {tag.label}
+                          </span>
+                        )
+                      })()}
+                      <div className="caption" style={{ color: 'var(--color-text-secondary)' }}>{note}</div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="caption muted">상세 노트가 없습니다.</div>
+              )}
+            </div>
+          </div>
+        )}
+      </Modal>
 
       {/* 최근 실행 이력 */}
       <div>

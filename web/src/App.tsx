@@ -18,7 +18,6 @@ const ReportsPage = lazy(() => import('./features/reports'))
 const MarketPage = lazy(() => import('./features/market'))
 const EconomyPage = lazy(() => import('./features/economy'))
 const FeedPage = lazy(() => import('./features/feed'))
-const StrategyPage = lazy(() => import('./features/strategy'))
 const NewsPage = lazy(() => import('./features/news'))
 const ProfilePage = lazy(() => import('./features/profile'))
 const DBViewPage = lazy(() => import('./features/dbView'))
@@ -39,7 +38,6 @@ const COMPONENTS = {
   market: MarketPage,
   economy: EconomyPage,
   feed: FeedPage,
-  strategy: StrategyPage,
   news: NewsPage,
   profile: ProfilePage,
   sectors: SectorsPage,
