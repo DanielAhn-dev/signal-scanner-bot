@@ -1,6 +1,7 @@
-import React, { useState, useRef } from 'react'
+import React, { useState, useRef, useEffect } from 'react'
 import { apiFetch } from '../../lib/api'
 import { formatKrw, formatNumber } from '../../lib/format'
+import { getStocks } from '../../lib/stockCache'
 import Button from '../../components/ui/Button'
 import Skeleton from '../../components/Skeleton'
 
@@ -9,7 +10,27 @@ export default function AnalyzePage() {
   const [result, setResult] = useState<any | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [quickStocks, setQuickStocks] = useState<Array<{ code: string; name: string }>>([])
   const inputRef = useRef<HTMLInputElement>(null)
+
+  useEffect(() => {
+    // 인기 종목 정보 로드
+    const load = async () => {
+      try {
+        const all = await getStocks()
+        const codes = ['005930', '000660', '035420', '051910', '207940']
+        const stocks = codes
+          .map(code => all.find(s => s.code === code))
+          .filter(Boolean)
+          .map(s => ({ code: s!.code, name: s!.name }))
+        setQuickStocks(stocks)
+      } catch {
+        // 로드 실패 시 코드만 표시
+        setQuickStocks([])
+      }
+    }
+    void load()
+  }, [])
 
   const analyze = async (code?: string) => {
     const q = code ?? query.trim()
@@ -19,16 +40,23 @@ export default function AnalyzePage() {
     setResult(null)
     try {
       const res = await apiFetch(`/api/ui/stock-latest?code=${encodeURIComponent(q)}`, { cacheMs: 10_000 })
-      if (res?.data) setResult(res.data)
-      else setError(res?.error || '조회 결과 없음')
+      if (res?.profile || res?.latest) {
+        // profile과 latest 병합
+        setResult({
+          ...res.profile,
+          ...res.latest,
+        })
+      } else if (res?.error) {
+        setError(res.error)
+      } else {
+        setError('조회 결과 없음')
+      }
     } catch (e: any) {
       setError(e?.message || String(e))
     } finally {
       setLoading(false)
     }
   }
-
-  const quick = ['005930', '000660', '035420', '051910', '207940']
 
   return (
     <section className="container-app">
@@ -53,9 +81,18 @@ export default function AnalyzePage() {
           </Button>
         </div>
         <div className="tag-list" style={{ marginTop: 'var(--space-3)' }}>
-          {quick.map(c => (
-            <button key={c} className="tag" onClick={() => { setQuery(c); analyze(c) }}>{c}</button>
-          ))}
+          {quickStocks.length > 0 ? (
+            quickStocks.map(s => (
+              <button key={s.code} className="tag" onClick={() => { setQuery(s.code); analyze(s.code) }} title={s.code}>
+                {s.name}
+              </button>
+            ))
+          ) : (
+            // 로드 실패 시 코드만 표시
+            ['005930', '000660', '035420', '051910', '207940'].map(c => (
+              <button key={c} className="tag" onClick={() => { setQuery(c); analyze(c) }}>{c}</button>
+            ))
+          )}
         </div>
       </div>
 

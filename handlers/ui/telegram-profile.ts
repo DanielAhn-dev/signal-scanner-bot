@@ -48,7 +48,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     .map((v) => v.trim())
     .filter(Boolean)
   const isTrustedOrigin = !!requestOrigin && trustedOrigins.includes(requestOrigin)
-  if (expectedReadKey && !isTrustedOrigin && String(readKey || '') !== expectedReadKey) {
+  
+  // 인증 체크: (trusted origin 또는 UI key 일치) 해야 함
+  // 둘 다 만족하지 않으면 401
+  const hasValidAuth = isTrustedOrigin || (expectedReadKey && String(readKey || '') === expectedReadKey)
+  if (expectedReadKey && !hasValidAuth) {
     return res.status(401).json({ error: 'Unauthorized' })
   }
 

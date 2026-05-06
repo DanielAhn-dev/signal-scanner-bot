@@ -4,7 +4,6 @@ import { NAV_ITEMS, PRIMARY_NAV_KEYS } from '../navigation'
 import ProfileModal from './ProfileModal'
 import { readProfile, type StoredProfile } from '../lib/userContext'
 import { apiFetch } from '../lib/api'
-import { onOpenProfileModal } from '../lib/profileModal'
 
 type Props = {
   onNavigate: (r: string) => void
@@ -113,10 +112,6 @@ export default function Header({
       disposed = true
     }
   }, [isSignedIn])
-
-  React.useEffect(() => {
-    return onOpenProfileModal(() => setProfileOpen(true))
-  }, [])
 
   return (
     <>
