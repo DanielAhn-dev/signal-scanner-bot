@@ -20,6 +20,41 @@ type PortfolioShareRow = {
   unrealizedPct: number
 }
 
+function firstHeaderValue(value: string | string[] | undefined): string {
+  if (Array.isArray(value)) return String(value[0] || '')
+  return String(value || '')
+}
+
+function normalizeOrigin(input: string): string {
+  const raw = String(input || '').trim()
+  if (!raw) return ''
+  try {
+    const url = new URL(raw)
+    if (url.protocol !== 'http:' && url.protocol !== 'https:') return ''
+    return url.origin
+  } catch {
+    return ''
+  }
+}
+
+function resolvePublicOrigin(req: VercelRequest): string {
+  const envOrigin = normalizeOrigin(
+    process.env.SHARE_PUBLIC_ORIGIN || process.env.UI_PUBLIC_ORIGIN || process.env.WEB_PUBLIC_ORIGIN || '',
+  )
+  if (envOrigin) return envOrigin
+
+  const requestOrigin = normalizeOrigin(firstHeaderValue(req.headers.origin))
+  if (requestOrigin) return requestOrigin
+
+  const referer = firstHeaderValue(req.headers.referer)
+  const refererOrigin = normalizeOrigin(referer)
+  if (refererOrigin) return refererOrigin
+
+  const host = firstHeaderValue(req.headers['x-forwarded-host']) || firstHeaderValue(req.headers.host)
+  const proto = firstHeaderValue(req.headers['x-forwarded-proto']) || 'https'
+  return normalizeOrigin(`${proto}://${host}`)
+}
+
 function round(value: number, digits = 2): number {
   const factor = 10 ** digits
   return Math.round(value * factor) / factor
@@ -49,9 +84,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
   const audienceKey = buildAudienceKey(chatId)
 
-  const host = req.headers['x-forwarded-host'] || req.headers.host || ''
-  const proto = req.headers['x-forwarded-proto'] || 'https'
-  const origin = `${proto}://${String(host)}`
+  const publicOrigin = resolvePublicOrigin(req)
 
   try {
     const supabase = createSupabaseServiceClientFromEnv()
@@ -85,7 +118,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           revokedAt: row.revoked_at ? String(row.revoked_at) : null,
           accessCount: Number(row.access_count || 0),
           lastAccessedAt: row.last_accessed_at ? String(row.last_accessed_at) : null,
-          url: `${origin}/api/ui/portfolio-shared?share=${encodeURIComponent(String(row.public_token || ''))}`,
+          url: `${publicOrigin}/api/ui/portfolio-shared?share=${encodeURIComponent(String(row.public_token || ''))}`,
         })),
       })
     }
@@ -93,6 +126,22 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (req.method === 'DELETE') {
       const shareId = String(req.query.shareId || req.body?.shareId || '')
       if (!shareId) return res.status(400).json({ error: 'shareId required' })
+
+      const hardDelete = String(req.query.hard || req.body?.hard || '0') === '1' || req.body?.hard === true
+      if (hardDelete) {
+        const { data, error } = await supabase
+          .from(REPORT_SHARE_TABLE)
+          .delete()
+          .eq('id', shareId)
+          .eq('topic', 'portfolio-share')
+          .eq('audience_key', audienceKey)
+          .select('id')
+          .maybeSingle()
+
+        if (error) return res.status(500).json({ error: error.message })
+        if (!data?.id) return res.status(404).json({ error: '공유 기록을 찾을 수 없습니다.' })
+        return res.status(200).json({ ok: true, shareId, deleted: true })
+      }
 
       const { data, error } = await supabase
         .from(REPORT_SHARE_TABLE)
@@ -177,7 +226,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       expiresAt,
     })
 
-    const url = `${origin}/api/ui/portfolio-shared?share=${encodeURIComponent(share.publicToken)}`
+    const url = `${publicOrigin}/api/ui/portfolio-shared?share=${encodeURIComponent(share.publicToken)}`
 
     return res.status(200).json({
       ok: true,

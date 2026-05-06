@@ -41,11 +41,12 @@ function formatSignedKrw(value: number): string {
   return `${num > 0 ? '+' : '-'}${formatKrw(num)}`
 }
 
-function renderMetric(label: string, value: string): string {
+function renderMetric(label: string, value: string, valueColor?: string): string {
+  const color = valueColor || 'var(--color-text-primary)'
   return `
-    <div style="border:1px solid #dbe3ea;border-radius:12px;padding:12px;background:#f8fbff">
-      <div style="font-size:12px;color:#64748b">${escapeHtml(label)}</div>
-      <div style="margin-top:3px;font-size:24px;font-weight:800;color:#0f172a">${escapeHtml(value)}</div>
+    <div style="border:1px solid var(--color-border-default);border-radius:var(--radius-lg);padding:14px 14px 13px;background:var(--color-bg-surface);box-shadow:inset 0 1px 0 rgba(255,255,255,0.8)">
+      <div style="font-size:12px;color:var(--color-text-tertiary);letter-spacing:-0.01em">${escapeHtml(label)}</div>
+      <div style="margin-top:4px;font-size:22px;line-height:1.15;font-weight:var(--font-weight-semibold);letter-spacing:-0.02em;color:${color}">${escapeHtml(value)}</div>
     </div>`
 }
 
@@ -67,47 +68,55 @@ function renderPortfolioSummary(payload: PortfolioSharePayload): string {
   const tableRows = rows.map((row) => {
     const pnl = Number(row.unrealizedPnl || 0)
     const pct = Number(row.unrealizedPct || 0)
-    const pnlColor = pnl > 0 ? '#15803d' : pnl < 0 ? '#b91c1c' : '#334155'
-    const pctColor = pct > 0 ? '#15803d' : pct < 0 ? '#b91c1c' : '#334155'
+    const pnlColor = pnl > 0 ? 'var(--color-stock-up)' : pnl < 0 ? 'var(--color-stock-down)' : 'var(--color-text-secondary)'
+    const pctColor = pct > 0 ? 'var(--color-stock-up)' : pct < 0 ? 'var(--color-stock-down)' : 'var(--color-text-secondary)'
 
     return `
-      <tr>
-        <td>${escapeHtml(String(row.stockName || '-'))}</td>
-        <td>${escapeHtml(String(row.code || '-'))}</td>
-        <td>${escapeHtml(`${Number(row.quantity || 0).toLocaleString('ko-KR')}주`)}</td>
-        <td>${escapeHtml(formatKrw(Number(row.buyPrice || 0)))}</td>
-        <td>${escapeHtml(String(row.buyDate || '-'))}</td>
-        <td style="color:${pnlColor};font-weight:700">${escapeHtml(formatSignedKrw(pnl))}</td>
-        <td style="color:${pctColor};font-weight:700">${escapeHtml(`${pct > 0 ? '+' : ''}${pct.toFixed(2)}%`)}</td>
+      <tr style="border-bottom:1px solid var(--color-border-default);">
+        <td style="padding:12px 10px;line-height:1.5;">${escapeHtml(String(row.stockName || '-'))}</td>
+        <td style="padding:12px 10px;color:var(--color-text-secondary);line-height:1.5;">${escapeHtml(String(row.code || '-'))}</td>
+        <td style="padding:12px 10px;line-height:1.5;">${escapeHtml(`${Number(row.quantity || 0).toLocaleString('ko-KR')}주`)}</td>
+        <td style="padding:12px 10px;line-height:1.5;">${escapeHtml(formatKrw(Number(row.buyPrice || 0)))}</td>
+        <td style="padding:12px 10px;color:var(--color-text-secondary);line-height:1.5;">${escapeHtml(String(row.buyDate || '-'))}</td>
+        <td style="padding:12px 10px;color:${pnlColor};font-weight:var(--font-weight-semibold);line-height:1.5;">${escapeHtml(formatSignedKrw(pnl))}</td>
+        <td style="padding:12px 10px;color:${pctColor};font-weight:var(--font-weight-semibold);line-height:1.5;">${escapeHtml(`${pct > 0 ? '+' : ''}${pct.toFixed(2)}%`)}</td>
       </tr>`
   }).join('')
 
   return `
-    <section style="margin-bottom:16px;color:#64748b">기준시각 ${escapeHtml(generatedAt)}</section>
+    <section style="margin-bottom:16px;color:var(--color-text-secondary)">기준시각 ${escapeHtml(generatedAt)}</section>
 
     <section style="display:grid;gap:10px;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));margin-bottom:14px;">
       ${renderMetric('보유 종목', `${Number(totals.holdingCount || 0).toLocaleString('ko-KR')}개`)}
       ${renderMetric('총 매수원금', formatKrw(Number(totals.invested || 0)))}
       ${renderMetric('평가금액', formatKrw(Number(totals.currentValue || 0)))}
-      ${renderMetric('평가손익', formatSignedKrw(Number(totals.unrealized || 0)))}
-      ${renderMetric('현재 수익률', `${Number(totals.returnPct || 0) > 0 ? '+' : ''}${Number(totals.returnPct || 0).toFixed(2)}%`)}
+      ${(() => {
+        const unrealized = Number(totals.unrealized || 0)
+        const unrealizedColor = unrealized > 0 ? 'var(--color-stock-up)' : unrealized < 0 ? 'var(--color-stock-down)' : undefined
+        return renderMetric('평가손익', formatSignedKrw(unrealized), unrealizedColor)
+      })()}
+      ${(() => {
+        const returnPct = Number(totals.returnPct || 0)
+        const returnColor = returnPct > 0 ? 'var(--color-stock-up)' : returnPct < 0 ? 'var(--color-stock-down)' : undefined
+        return renderMetric('현재 수익률', `${returnPct > 0 ? '+' : ''}${returnPct.toFixed(2)}%`, returnColor)
+      })()}
     </section>
 
-    <section style="border:1px solid #dbe3ea;border-radius:14px;overflow:hidden;background:#fff">
-      <table style="width:100%;border-collapse:collapse;font-size:14px;">
+    <section style="border:1px solid var(--color-border-default);border-radius:var(--radius-xl);overflow:hidden;background:var(--color-bg-surface);box-shadow:0 1px 0 rgba(255,255,255,0.8)">
+      <table style="width:100%;border-collapse:separate;border-spacing:0;font-size:14px;line-height:1.45;color:var(--color-text-primary);">
         <thead>
-          <tr style="background:#f1f5f9;color:#334155">
-            <th style="text-align:left;padding:10px;border-bottom:1px solid #e2e8f0;">종목명</th>
-            <th style="text-align:left;padding:10px;border-bottom:1px solid #e2e8f0;">종목코드</th>
-            <th style="text-align:left;padding:10px;border-bottom:1px solid #e2e8f0;">보유수량</th>
-            <th style="text-align:left;padding:10px;border-bottom:1px solid #e2e8f0;">매수가</th>
-            <th style="text-align:left;padding:10px;border-bottom:1px solid #e2e8f0;">매수일</th>
-            <th style="text-align:left;padding:10px;border-bottom:1px solid #e2e8f0;">손익</th>
-            <th style="text-align:left;padding:10px;border-bottom:1px solid #e2e8f0;">수익률</th>
+          <tr style="background:var(--color-bg-sunken);color:var(--color-text-secondary)">
+            <th style="text-align:left;padding:13px 10px 12px;border-bottom:1px solid var(--color-border-default);font-size:13px;font-weight:var(--font-weight-semibold);letter-spacing:-0.01em;">종목명</th>
+            <th style="text-align:left;padding:13px 10px 12px;border-bottom:1px solid var(--color-border-default);font-size:13px;font-weight:var(--font-weight-semibold);letter-spacing:-0.01em;">종목코드</th>
+            <th style="text-align:left;padding:13px 10px 12px;border-bottom:1px solid var(--color-border-default);font-size:13px;font-weight:var(--font-weight-semibold);letter-spacing:-0.01em;">보유수량</th>
+            <th style="text-align:left;padding:13px 10px 12px;border-bottom:1px solid var(--color-border-default);font-size:13px;font-weight:var(--font-weight-semibold);letter-spacing:-0.01em;">매수가</th>
+            <th style="text-align:left;padding:13px 10px 12px;border-bottom:1px solid var(--color-border-default);font-size:13px;font-weight:var(--font-weight-semibold);letter-spacing:-0.01em;">매수일</th>
+            <th style="text-align:left;padding:13px 10px 12px;border-bottom:1px solid var(--color-border-default);font-size:13px;font-weight:var(--font-weight-semibold);letter-spacing:-0.01em;">손익</th>
+            <th style="text-align:left;padding:13px 10px 12px;border-bottom:1px solid var(--color-border-default);font-size:13px;font-weight:var(--font-weight-semibold);letter-spacing:-0.01em;">수익률</th>
           </tr>
         </thead>
         <tbody>
-          ${tableRows || '<tr><td colspan="7" style="padding:14px;color:#64748b">표시할 보유 종목이 없습니다.</td></tr>'}
+          ${tableRows || '<tr><td colspan="7" style="padding:16px 12px;color:var(--color-text-secondary);font-size:14px;line-height:1.5;">표시할 보유 종목이 없습니다.</td></tr>'}
         </tbody>
       </table>
     </section>`

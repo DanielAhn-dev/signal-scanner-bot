@@ -20,6 +20,15 @@ type PortfolioShareHistoryItem = {
   lastAccessedAt?: string | null
 }
 
+function pickLatestActiveShare(items: PortfolioShareHistoryItem[]): PortfolioShareHistoryItem | null {
+  const now = Date.now()
+  for (const item of items) {
+    const expired = new Date(item.expiresAt).getTime() <= now
+    if (!item.revokedAt && !expired) return item
+  }
+  return null
+}
+
 export default function Portfolio() {
   const [allRows, setAllRows] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
@@ -49,6 +58,7 @@ export default function Portfolio() {
   const [shareHistory, setShareHistory] = useState<PortfolioShareHistoryItem[]>([])
   const [shareHistoryLoading, setShareHistoryLoading] = useState(false)
   const [revokingShareId, setRevokingShareId] = useState('')
+  const [deletingShareId, setDeletingShareId] = useState('')
   const [maintModalOpen, setMaintModalOpen] = useState(false)
   const [maintMode, setMaintMode] = useState<'watchreset' | 'liquidateall' | 'holdingedit' | 'holdingrestore'>('watchreset')
   const [maintRow, setMaintRow] = useState<any | null>(null)
@@ -301,16 +311,19 @@ export default function Portfolio() {
     }
   }, [shareCreating, shareTtlHours, toast])
 
-  const loadShareHistory = useCallback(async () => {
+  const loadShareHistory = useCallback(async (opts?: { silent?: boolean }) => {
     setShareHistoryLoading(true)
     try {
       const json = await apiFetch('/api/ui/portfolio-share?all=1&limit=10', {
         cacheMs: 0,
         timeoutMs: 10_000,
       })
-      setShareHistory(Array.isArray(json?.data) ? json.data : [])
+      const list = Array.isArray(json?.data) ? json.data : []
+      setShareHistory(list)
+      return list as PortfolioShareHistoryItem[]
     } catch (e: any) {
-      toast.show(String(e?.message || e || '공유 이력 조회 실패'))
+      if (!opts?.silent) toast.show(String(e?.message || e || '공유 이력 조회 실패'))
+      return [] as PortfolioShareHistoryItem[]
     } finally {
       setShareHistoryLoading(false)
     }
@@ -335,13 +348,53 @@ export default function Portfolio() {
           setShareExpiresAt('')
         }
       }
-      await loadShareHistory()
+      const updated = await loadShareHistory()
+      const active = pickLatestActiveShare(updated)
+      if (active?.url) {
+        setSharedSummaryUrl(active.url)
+        setShareExpiresAt(String(active.expiresAt || ''))
+      } else {
+        setSharedSummaryUrl('')
+        setShareExpiresAt('')
+      }
     } catch (e: any) {
       toast.show(String(e?.message || e || '공유 링크 철회 실패'))
     } finally {
       setRevokingShareId('')
     }
   }, [revokingShareId, toast, sharedSummaryUrl, shareHistory, loadShareHistory])
+
+  const deleteShare = useCallback(async (shareId: string) => {
+    if (!shareId || deletingShareId) return
+    const ok = window.confirm('이 공유 기록을 목록에서 삭제할까요? 삭제 후 복구할 수 없습니다.')
+    if (!ok) return
+
+    setDeletingShareId(shareId)
+    try {
+      const json = await apiFetch('/api/ui/portfolio-share', {
+        method: 'DELETE',
+        cacheMs: 0,
+        timeoutMs: 10_000,
+        body: JSON.stringify({ shareId, hard: true }),
+      })
+      if (json?.error) throw new Error(String(json.error))
+
+      toast.show('공유 기록을 삭제했습니다')
+      const updated = await loadShareHistory()
+      const active = pickLatestActiveShare(updated)
+      if (active?.url) {
+        setSharedSummaryUrl(active.url)
+        setShareExpiresAt(String(active.expiresAt || ''))
+      } else {
+        setSharedSummaryUrl('')
+        setShareExpiresAt('')
+      }
+    } catch (e: any) {
+      toast.show(String(e?.message || e || '공유 기록 삭제 실패'))
+    } finally {
+      setDeletingShareId('')
+    }
+  }, [deletingShareId, toast, loadShareHistory])
 
   const copyPortfolioShareUrl = async () => {
     if (!sharedSummaryUrl) {
@@ -358,14 +411,28 @@ export default function Portfolio() {
 
   useEffect(() => {
     if (!shareModalOpen) return
-    if (sharedSummaryUrl || shareCreating) return
-    void createPublicShareUrl()
-  }, [shareModalOpen, sharedSummaryUrl, shareCreating, createPublicShareUrl])
 
-  useEffect(() => {
-    if (!shareModalOpen) return
-    void loadShareHistory()
-  }, [shareModalOpen, loadShareHistory])
+    let cancelled = false
+    ;(async () => {
+      const history = await loadShareHistory({ silent: true })
+      if (cancelled) return
+
+      const active = pickLatestActiveShare(history)
+      if (active?.url) {
+        setSharedSummaryUrl(active.url)
+        setShareExpiresAt(String(active.expiresAt || ''))
+        return
+      }
+
+      if (!shareCreating) {
+        await createPublicShareUrl()
+      }
+    })()
+
+    return () => {
+      cancelled = true
+    }
+  }, [shareModalOpen, shareCreating, createPublicShareUrl, loadShareHistory])
 
   return (
     <section className="container-app portfolio-page">
@@ -668,7 +735,7 @@ export default function Portfolio() {
           <div className="card" style={{ margin: 0, marginBottom: 'var(--space-3)', padding: 'var(--space-3)' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--space-2)' }}>
               <div className="title-md">최근 공유 링크</div>
-              <Button variant="secondary" onClick={loadShareHistory} disabled={shareHistoryLoading}>
+              <Button variant="secondary" onClick={() => { void loadShareHistory() }} disabled={shareHistoryLoading}>
                 {shareHistoryLoading ? '조회 중...' : '새로고침'}
               </Button>
             </div>
@@ -704,9 +771,16 @@ export default function Portfolio() {
                         <Button
                           variant="ghost"
                           onClick={() => revokeShare(item.shareId)}
-                          disabled={isRevoked || isExpired || revokingShareId === item.shareId}
+                          disabled={isRevoked || isExpired || revokingShareId === item.shareId || deletingShareId === item.shareId}
                         >
                           {isRevoked ? '철회됨' : isExpired ? '만료됨' : revokingShareId === item.shareId ? '철회 중...' : '철회'}
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          onClick={() => deleteShare(item.shareId)}
+                          disabled={revokingShareId === item.shareId || deletingShareId === item.shareId}
+                        >
+                          {deletingShareId === item.shareId ? '삭제 중...' : '삭제'}
                         </Button>
                       </div>
                     </div>

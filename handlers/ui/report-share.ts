@@ -17,6 +17,41 @@ import {
 
 const ORIGIN = process.env.UI_CORS_ORIGIN || '*'
 
+function firstHeaderValue(value: string | string[] | undefined): string {
+  if (Array.isArray(value)) return String(value[0] || '')
+  return String(value || '')
+}
+
+function normalizeOrigin(input: string): string {
+  const raw = String(input || '').trim()
+  if (!raw) return ''
+  try {
+    const url = new URL(raw)
+    if (url.protocol !== 'http:' && url.protocol !== 'https:') return ''
+    return url.origin
+  } catch {
+    return ''
+  }
+}
+
+function resolvePublicOrigin(req: VercelRequest): string {
+  const envOrigin = normalizeOrigin(
+    process.env.SHARE_PUBLIC_ORIGIN || process.env.UI_PUBLIC_ORIGIN || process.env.WEB_PUBLIC_ORIGIN || '',
+  )
+  if (envOrigin) return envOrigin
+
+  const requestOrigin = normalizeOrigin(firstHeaderValue(req.headers.origin))
+  if (requestOrigin) return requestOrigin
+
+  const referer = firstHeaderValue(req.headers.referer)
+  const refererOrigin = normalizeOrigin(referer)
+  if (refererOrigin) return refererOrigin
+
+  const host = firstHeaderValue(req.headers['x-forwarded-host']) || firstHeaderValue(req.headers.host)
+  const proto = firstHeaderValue(req.headers['x-forwarded-proto']) || 'https'
+  return normalizeOrigin(`${proto}://${host}`)
+}
+
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   res.setHeader('Access-Control-Allow-Origin', ORIGIN)
   res.setHeader('Access-Control-Allow-Methods', 'GET,POST,DELETE,OPTIONS')
@@ -34,9 +69,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const secret = process.env.SHARE_KEY || process.env.UI_SHARE_KEY || process.env.UI_READ_KEY || process.env.VITE_UI_READ_KEY
   if (!secret) return res.status(500).json({ error: 'Server misconfiguration' })
 
-  const host = req.headers['x-forwarded-host'] || req.headers.host || ''
-  const proto = req.headers['x-forwarded-proto'] || 'https'
-  const origin = `${proto}://${String(host)}`
+  const publicOrigin = resolvePublicOrigin(req)
 
   try {
     const supabase = createSupabaseServiceClientFromEnv()
@@ -49,7 +82,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         ok: true,
         data: shares.map((share: ShareListItem) => ({
           ...share,
-          url: `${origin}/api/ui/report-shared?share=${encodeURIComponent(share.publicToken)}`,
+          url: `${publicOrigin}/api/ui/report-shared?share=${encodeURIComponent(share.publicToken)}`,
         })),
       })
     }
@@ -92,7 +125,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       expiresAt,
     })
 
-    const url = `${origin}/api/ui/report-shared?share=${encodeURIComponent(share.publicToken)}`
+    const url = `${publicOrigin}/api/ui/report-shared?share=${encodeURIComponent(share.publicToken)}`
 
     return res.status(200).json({
       ok: true,
