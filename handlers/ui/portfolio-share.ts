@@ -6,7 +6,11 @@ import {
   getKstDateKey,
 } from '../../src/services/reportSnapshotService'
 import { REPORT_SHARE_TABLE, createReportShare } from '../../src/services/reportShareService'
-import { fetchRealtimePriceBatch } from '../../src/utils/fetchRealtimePrice'
+import {
+  fetchRealtimePriceBatch,
+  logRealtimeCoverageMetric,
+  type RealtimeStockData,
+} from '../../src/utils/fetchRealtimePrice'
 
 const ORIGIN = process.env.UI_CORS_ORIGIN || '*'
 
@@ -170,16 +174,22 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (error) return res.status(500).json({ error: error.message })
 
     const codes = (data || []).map((row: any) => String(row?.code || '').trim()).filter(Boolean)
-    const realtimeMap = codes.length > 0 ? await fetchRealtimePriceBatch(codes).catch(() => ({} as Record<string, { price?: number }>)) : {}
+    const realtimeMap = codes.length > 0
+      ? await fetchRealtimePriceBatch(codes).catch(() => ({} as Record<string, RealtimeStockData>))
+      : {}
+    let fallbackToCloseCount = 0
 
     const rows: PortfolioShareRow[] = (data || []).map((row: any) => {
       const quantity = Number(row.quantity || 0)
       const buyPrice = Number(row.buy_price || 0)
       const code = String(row.code || '').trim()
       const realtimePrice = Number(realtimeMap[code]?.price)
-      const currentPrice = Number.isFinite(realtimePrice) && realtimePrice > 0
+      const hasRealtime = Number.isFinite(realtimePrice) && realtimePrice > 0
+      const closeFallback = Number(row.stock?.close)
+      const currentPrice = hasRealtime
         ? realtimePrice
-        : Number(row.stock?.close || 0)
+        : (Number.isFinite(closeFallback) ? closeFallback : 0)
+      if (!hasRealtime && Number.isFinite(closeFallback)) fallbackToCloseCount += 1
       const unrealizedPnl = (currentPrice - buyPrice) * quantity
       const unrealizedPct = buyPrice > 0 ? ((currentPrice - buyPrice) / buyPrice) * 100 : 0
 
@@ -199,6 +209,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const totalCurrent = rows.reduce((acc, row) => acc + row.quantity * row.currentPrice, 0)
     const totalUnrealized = totalCurrent - totalInvested
     const totalReturnPct = totalInvested > 0 ? (totalUnrealized / totalInvested) * 100 : 0
+
+    logRealtimeCoverageMetric({
+      context: 'ui.portfolio-share',
+      requestedCodes: codes,
+      realtimeMap,
+      fallbackToCloseCount,
+      extra: { chatId, rows: rows.length },
+    })
 
     const nowIso = new Date().toISOString()
     const payload = {

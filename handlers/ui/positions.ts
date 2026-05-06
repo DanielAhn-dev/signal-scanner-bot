@@ -1,7 +1,11 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { createClient, SupabaseClient } from '@supabase/supabase-js'
 import { resolveUiUserContext } from './_userContext'
-import { fetchRealtimePriceBatch } from '../../src/utils/fetchRealtimePrice'
+import {
+  fetchRealtimePriceBatch,
+  logRealtimeCoverageMetric,
+  type RealtimeStockData,
+} from '../../src/utils/fetchRealtimePrice'
 
 const POSITIONS_CACHE_TTL_MS = Math.max(0, Number(process.env.UI_POSITIONS_CACHE_TTL_MS || 8_000))
 const POSITIONS_LOTS_TIMEOUT_MS = Math.max(120, Number(process.env.UI_POSITIONS_LOTS_TIMEOUT_MS || 300))
@@ -130,7 +134,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       .map((r: any) => r.code)
       .filter((code: string) => code)
     const realtimePriceMap = codes.length > 0
-      ? await fetchRealtimePriceBatch(codes).catch(() => ({} as Record<string, { price?: number }>))
+      ? await fetchRealtimePriceBatch(codes).catch(() => ({} as Record<string, RealtimeStockData>))
       : {}
 
     // fetch lots only when holding positions exist (skip for interest-only queries)
@@ -159,13 +163,17 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       })
     }
 
+    let fallbackToCloseCount = 0
     const mapped = (data ?? []).map((row: any) => {
       // 현재가 우선, 없으면 DB 종가 (폴백)
       const code = String(row.code || '').trim()
       const realtimePrice = Number(realtimePriceMap[code]?.price)
-      const close = Number.isFinite(realtimePrice) && realtimePrice > 0
+      const hasRealtime = Number.isFinite(realtimePrice) && realtimePrice > 0
+      const closeFallback = Number(row.stock?.close)
+      const close = hasRealtime
         ? realtimePrice
-        : row.stock?.close ?? null
+        : (Number.isFinite(closeFallback) ? closeFallback : null)
+      if (!hasRealtime && Number.isFinite(closeFallback)) fallbackToCloseCount += 1
       const buyPrice = row.buy_price ?? (row.invested_amount && row.quantity ? Number(row.invested_amount) / Number(row.quantity) : null)
       const unrealized = (close != null && buyPrice != null && row.quantity != null) ? (Number(close) - Number(buyPrice)) * Number(row.quantity) : null
       const percent = (close != null && buyPrice != null && buyPrice > 0) ? ((Number(close) - Number(buyPrice)) / Number(buyPrice)) * 100 : null
@@ -219,6 +227,19 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       page,
       pageSize,
     }
+
+    logRealtimeCoverageMetric({
+      context: 'ui.positions',
+      requestedCodes: codes,
+      realtimeMap: realtimePriceMap,
+      fallbackToCloseCount,
+      extra: {
+        chatId,
+        page,
+        pageSize,
+        positionType,
+      },
+    })
 
     if (!bypassCache && POSITIONS_CACHE_TTL_MS > 0) {
       positionsCache.set(cacheKey, {

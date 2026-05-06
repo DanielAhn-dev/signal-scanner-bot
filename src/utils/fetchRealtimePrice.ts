@@ -35,6 +35,14 @@ export interface RealtimeStockData {
   fetchedAt: string;
 }
 
+type RealtimeCoverageMetricInput = {
+  context: string;
+  requestedCodes: string[];
+  realtimeMap: Record<string, RealtimeStockData>;
+  fallbackToCloseCount?: number;
+  extra?: Record<string, string | number | boolean | null | undefined>;
+};
+
 const parseNum = (s?: string): number | undefined => {
   if (!s) return undefined;
   const n = parseFloat(s.replace(/,/g, ""));
@@ -126,4 +134,32 @@ export async function fetchRealtimePriceBatch(
     }
   }
   return result;
+}
+
+/** 운영 관측용: 실시간 가격 조회 커버리지 메트릭 로깅 */
+export function logRealtimeCoverageMetric(input: RealtimeCoverageMetricInput): void {
+  if (String(process.env.UI_REALTIME_METRICS_ENABLED || "0") !== "1") return;
+
+  const requested = [...new Set(input.requestedCodes.map((code) => code.trim()).filter(Boolean))];
+  const requestedCount = requested.length;
+  if (requestedCount <= 0) return;
+
+  const realtimeHitCount = requested.reduce((acc, code) => {
+    const price = Number(input.realtimeMap[code]?.price);
+    return acc + (Number.isFinite(price) && price > 0 ? 1 : 0);
+  }, 0);
+  const fallbackToCloseCount = Math.max(0, Number(input.fallbackToCloseCount || 0));
+  const realtimeCoveragePct = Math.round((realtimeHitCount / requestedCount) * 10000) / 100;
+
+  console.info(
+    "[realtime-price-metric]",
+    JSON.stringify({
+      context: input.context,
+      requestedCount,
+      realtimeHitCount,
+      fallbackToCloseCount,
+      realtimeCoveragePct,
+      ...input.extra,
+    })
+  );
 }

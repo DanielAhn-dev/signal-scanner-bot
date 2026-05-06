@@ -1,7 +1,11 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { createClient, SupabaseClient } from '@supabase/supabase-js'
 import { resolveUiUserContext } from './_userContext'
-import { fetchRealtimePriceBatch } from '../../src/utils/fetchRealtimePrice'
+import {
+  fetchRealtimePriceBatch,
+  logRealtimeCoverageMetric,
+  type RealtimeStockData,
+} from '../../src/utils/fetchRealtimePrice'
 
 const SUMMARY_CACHE_TTL_MS = Math.max(0, Number(process.env.UI_SUMMARY_CACHE_TTL_MS || 10_000))
 const SUMMARY_QUERY_TIMEOUT_MS = Math.max(1_000, Number(process.env.UI_SUMMARY_QUERY_TIMEOUT_MS || 7_000))
@@ -156,7 +160,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       .map((row) => String(row?.code || '').trim())
       .filter(Boolean)
     const realtimePriceMap = await fetchRealtimePriceBatch(positionCodes).catch(
-      () => ({} as Record<string, { price?: number }>),
+      () => ({} as Record<string, RealtimeStockData>),
     )
 
     const decCount =
@@ -169,6 +173,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         ? (lastScanResult.value.data ?? [])
         : []
 
+    let fallbackToCloseCount = 0
     const unrealizedPnlSum = (positions ?? []).reduce((acc: number, row: any) => {
       const qty = Number(row?.quantity || 0)
       if (qty <= 0) return acc
@@ -176,9 +181,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const stock = Array.isArray(row?.stock) ? row.stock[0] : row?.stock
       const code = String(row?.code || stock?.code || '').trim()
       const realtimePrice = Number(realtimePriceMap[code]?.price)
-      const close = Number.isFinite(realtimePrice) && realtimePrice > 0
+      const hasRealtime = Number.isFinite(realtimePrice) && realtimePrice > 0
+      const closeFallback = Number(stock?.close)
+      const close = hasRealtime
         ? realtimePrice
-        : Number(stock?.close)
+        : closeFallback
+      if (!hasRealtime && Number.isFinite(closeFallback)) fallbackToCloseCount += 1
       let avg = Number(row?.buy_price)
       if (!Number.isFinite(avg) || avg <= 0) {
         const invested = Number(row?.invested_amount)
@@ -195,6 +203,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       unrealized_pnl_sum: Number.isFinite(unrealizedPnlSum) ? unrealizedPnlSum : null,
       last_scan_at: lastScan && lastScan.length ? lastScan[0].created_at : null
     }
+
+    logRealtimeCoverageMetric({
+      context: 'ui.summary',
+      requestedCodes: positionCodes,
+      realtimeMap: realtimePriceMap,
+      fallbackToCloseCount,
+      extra: { chatId, positions: posCount ?? 0 },
+    })
 
     const payload = { data: summary }
     if (!bypassCache && SUMMARY_CACHE_TTL_MS > 0) {
