@@ -1664,7 +1664,6 @@ html, body, #root {
 }
 
 .stock-search-item:hover {
-  @apply bg-opacity-50;
   background-color: var(--color-bg-secondary);
 }
 
