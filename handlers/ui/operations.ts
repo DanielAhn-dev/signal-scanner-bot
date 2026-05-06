@@ -45,6 +45,8 @@ type OpsDashboardKpi = {
   run_failed: number
   queue_waiting: number
   holding_count: number
+  latest_failed_reason: string | null
+  latest_failed_at: string | null
 }
 
 function kstDayRangeIso(base = new Date()): { startIso: string; endIso: string; ymd: string } {
@@ -312,6 +314,17 @@ async function getOperationsDashboardKpi(
       .gt('quantity', 0),
   ])
 
+  const latestFailedRes = await supabase
+    .from('virtual_autotrade_runs')
+    .select('started_at,summary')
+    .eq('chat_id', chatId)
+    .eq('status', 'FAILED')
+    .gte('started_at', startIso)
+    .lt('started_at', endIso)
+    .order('started_at', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+
   const trades = Array.isArray(tradesRes.data) ? tradesRes.data : []
   const runs = Array.isArray(runsRes.data) ? runsRes.data : []
 
@@ -338,6 +351,14 @@ async function getOperationsDashboardKpi(
     else runSkipped += 1
   }
 
+  const latestFailed = (latestFailedRes.data || null) as Record<string, unknown> | null
+  const latestSummary = (latestFailed?.summary || {}) as Record<string, unknown>
+  const latestNotes = Array.isArray(latestSummary.notes)
+    ? latestSummary.notes.map((v) => String(v || '').trim()).filter(Boolean)
+    : []
+  const noteReason = latestNotes.find((note) => /오류|실패|error|fail|timeout/i.test(note)) || null
+  const latestFailedReason = String(latestSummary.error || noteReason || '').trim() || null
+
   return {
     asof: ymd,
     buy_count: buyCount,
@@ -350,6 +371,8 @@ async function getOperationsDashboardKpi(
     run_failed: runFailed,
     queue_waiting: queueRes.count || 0,
     holding_count: holdingsRes.count || 0,
+    latest_failed_reason: latestFailedReason,
+    latest_failed_at: latestFailed?.started_at ? String(latestFailed.started_at) : null,
   }
 }
 

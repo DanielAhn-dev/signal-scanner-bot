@@ -105,6 +105,8 @@ type OperationsKpi = {
   run_failed: number
   queue_waiting: number
   holding_count: number
+  latest_failed_reason?: string | null
+  latest_failed_at?: string | null
 }
 
 type LiveJobState = 'queued' | 'running' | 'done' | 'failed'
@@ -186,13 +188,40 @@ function classifyDryRunNote(note: string): NoteTag {
 
 function resolveFailureCause(snapshot: JobSnapshot): string {
   const direct = String(snapshot.job.error || '').trim()
-  if (direct) return direct
+  if (direct) return translateOperationMessage(direct)
 
   const notes = snapshot.dry_run_details?.notes || []
   const noteHit = notes.find((note) => /오류|실패|error|fail|timeout/i.test(note))
-  if (noteHit) return noteHit
+  if (noteHit) return translateOperationMessage(noteHit)
 
   return '실패 원인 상세가 아직 수집되지 않았습니다.'
+}
+
+function translateOperationMessage(message: string): string {
+  const text = String(message || '').trim()
+  if (!text) return '실패 원인 상세가 아직 수집되지 않았습니다.'
+
+  const fifoLotMatch = text.match(/FIFO lots are insufficient for\s+([0-9A-Z]+):\s+need\s+(\d+),\s+left\s+(\d+)/i)
+  if (fifoLotMatch) {
+    const [, code, needRaw, leftRaw] = fifoLotMatch
+    const need = Number(needRaw || 0)
+    const left = Number(leftRaw || 0)
+    return `${code} 매도 주문 수량이 현재 FIFO 기준 보유 수량보다 많아 실행하지 못했습니다. ${need}주를 매도하려 했지만 실제로 추적 가능한 잔량은 ${left}주입니다. 보유수량 조정, 이전 매도 반영 누락, 수동 수정 이력을 확인해 주세요.`
+  }
+
+  if (/timeout/i.test(text)) {
+    return `작업 처리 시간이 초과되었습니다. 잠시 후 다시 시도하거나, 데이터/보유 상태를 먼저 점검해 주세요. 원문: ${text}`
+  }
+
+  if (/unsupported cron_dispatch task/i.test(text)) {
+    return `지원하지 않는 작업 유형이라 실행할 수 없습니다. 운영패널 연결 작업명을 확인해 주세요.`
+  }
+
+  return text
+}
+
+function normalizeStep(value: unknown): 'intraday' | 'ready' {
+  return String(value || '').toLowerCase() === 'ready' ? 'ready' : 'intraday'
 }
 
 export default function OperationsPage() {
@@ -208,6 +237,7 @@ export default function OperationsPage() {
   const [autocycleStatus, setAutocycleStatus] = useState<OpStatus>('idle')
   const [autocycleResult, setAutocycleResult] = useState<string | null>(null)
   const [pendingDryRunApproval, setPendingDryRunApproval] = useState<{ jobId: string; summary: string } | null>(null)
+  const [bannerDismissedForJobId, setBannerDismissedForJobId] = useState<string | null>(null)
 
   const [autotriggerStatus, setAutotriggerStatus] = useState<OpStatus>('idle')
   const [autotriggerStep, setAutotriggerStep] = useState<'intraday' | 'ready'>('intraday')
@@ -336,6 +366,7 @@ export default function OperationsPage() {
         setAutocycleStatus('done')
       }
       if (!dryRun) setPendingDryRunApproval(null)
+      if (dryRun) setBannerDismissedForJobId(null)
       addWatchingJob(jobId)
       void refreshJobSnapshot(jobId, false)
       toast.show(`자동사이클 ${label} 등록 완료`)
@@ -345,7 +376,8 @@ export default function OperationsPage() {
     }
   }
 
-  const runAutotrigger = async () => {
+  const runAutotrigger = async (stepOverride?: 'intraday' | 'ready') => {
+    const stepToRun = stepOverride || autotriggerStep
     setAutotriggerStatus('loading')
     setAutotriggerResult(null)
     try {
@@ -353,16 +385,16 @@ export default function OperationsPage() {
         method: 'POST',
         cacheMs: 0,
         timeoutMs: 60_000,
-        body: JSON.stringify({ mode: 'autotrigger', step: autotriggerStep, dry_run: true }),
+        body: JSON.stringify({ mode: 'autotrigger', step: stepToRun, dry_run: true }),
       })
       if (json?.error) throw new Error(String(json.error))
       const jobId = String(json?.job_id || '').trim()
       if (!jobId) throw new Error('job_id가 비어 있습니다.')
       if (json?.execution_error) {
-        setAutotriggerResult(`순차트리거(${autotriggerStep}) 실행 실패 - ${String(json.execution_error)}`)
+        setAutotriggerResult(`순차트리거(${stepToRun}) 실행 실패 - ${String(json.execution_error)}`)
         setAutotriggerStatus('error')
       } else {
-        setAutotriggerResult(`순차트리거(${autotriggerStep}) 요청 등록 완료 - job_id: ${jobId}`)
+        setAutotriggerResult(`순차트리거(${stepToRun}) 요청 등록 완료 - job_id: ${jobId}`)
         setAutotriggerStatus('done')
       }
       addWatchingJob(jobId)
@@ -387,12 +419,72 @@ export default function OperationsPage() {
     return liveJobs[selectedDryRunJobId] || null
   }, [liveJobs, selectedDryRunJobId])
 
+  const retryJob = useCallback(async (snapshot: JobSnapshot) => {
+    const payload = snapshot.job.payload || {}
+    const task = String(payload.task || '')
+    if (task === 'virtualAutoTrade') {
+      const dryRun = payload.dry_run !== false
+      await runAutocycle(dryRun)
+      return
+    }
+    if (task === 'virtualAutoTradeIntraday') {
+      const step = normalizeStep(payload.step)
+      setAutotriggerStep(step)
+      await runAutotrigger(step)
+      return
+    }
+    toast.show('재시도를 지원하지 않는 작업입니다.')
+  }, [toast])
+
+  const showStickyDryRunBanner = Boolean(
+    pendingDryRunApproval
+    && pendingDryRunApproval.jobId !== bannerDismissedForJobId
+  )
+
   return (
     <section className="container-app">
       <div style={{ marginBottom: 'var(--space-6)' }}>
         <h1 className="title-xl">운영 패널</h1>
         <p className="muted">가상매수/매도 자동화의 실시간 진행 상태, 실행 요약, 최근 결과를 한 화면에서 확인합니다.</p>
       </div>
+
+      {showStickyDryRunBanner && pendingDryRunApproval && (
+        <div
+          className="card"
+          style={{
+            marginBottom: 'var(--space-4)',
+            borderColor: 'var(--color-blue-200)',
+            background: 'linear-gradient(120deg, var(--color-blue-50), #FFFFFF 70%)',
+            position: 'sticky',
+            top: 72,
+            zIndex: 220,
+          }}
+        >
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 'var(--space-2)', flexWrap: 'wrap' }}>
+            <div>
+              <div className="title-md">드라이런 검토 완료: 실행 여부를 선택하세요</div>
+              <div className="caption muted" style={{ marginTop: 4 }}>job_id: {pendingDryRunApproval.jobId} · {pendingDryRunApproval.summary}</div>
+            </div>
+            <div style={{ display: 'flex', gap: 'var(--space-2)', flexWrap: 'wrap' }}>
+              <Button variant="primary" onClick={() => runAutocycle(false)} disabled={autocycleStatus === 'loading'}>
+                결과 수락 후 실제 실행
+              </Button>
+              <Button
+                variant="ghost"
+                onClick={() => setSelectedDryRunJobId(pendingDryRunApproval.jobId)}
+              >
+                상세 보기
+              </Button>
+              <Button
+                variant="ghost"
+                onClick={() => setBannerDismissedForJobId(pendingDryRunApproval.jobId)}
+              >
+                닫기
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <div
         style={{
@@ -419,6 +511,11 @@ export default function OperationsPage() {
               <div className="caption muted">자동사이클 실행</div>
               <div className="title-lg" style={{ marginTop: 'var(--space-1)' }}>{dashboardKpi.run_total}회</div>
               <div className="caption muted" style={{ marginTop: 'var(--space-1)' }}>성공 {dashboardKpi.run_success} · 실패 {dashboardKpi.run_failed}</div>
+              {dashboardKpi.run_failed > 0 && dashboardKpi.latest_failed_reason && (
+                <div className="caption" style={{ marginTop: 'var(--space-1)', color: 'var(--color-error)' }}>
+                  최근 실패: {translateOperationMessage(dashboardKpi.latest_failed_reason)}
+                </div>
+              )}
             </div>
             <div className="card" style={{ background: 'linear-gradient(150deg, #FFFFFF, #FFF9F5)' }}>
               <div className="caption muted">큐 대기/보유</div>
@@ -467,6 +564,15 @@ export default function OperationsPage() {
                     <div style={{ marginTop: 'var(--space-2)', padding: '8px 10px', borderRadius: 8, background: '#FFF0F1', border: '1px solid #FFD6D9' }}>
                       <div className="caption" style={{ color: '#B42318', fontWeight: 700 }}>실패 원인</div>
                       <div className="caption" style={{ color: '#7A271A', marginTop: 4 }}>{resolveFailureCause(item)}</div>
+                      <div style={{ marginTop: 8 }}>
+                        <Button
+                          variant="ghost"
+                          onClick={() => { void retryJob(item) }}
+                          disabled={autocycleStatus === 'loading' || autotriggerStatus === 'loading'}
+                        >
+                          동일 조건 재시도
+                        </Button>
+                      </div>
                     </div>
                   )}
 
@@ -526,7 +632,7 @@ export default function OperationsPage() {
                     <div style={{ marginTop: 'var(--space-2)', display: 'flex', flexWrap: 'wrap', gap: 'var(--space-2)' }}>
                       {item.recent_trades.slice(0, 3).map(trade => (
                         <span key={trade.id} className="caption" style={{ padding: '4px 8px', borderRadius: 999, background: 'var(--color-gray-50)', color: 'var(--color-text-secondary)' }}>
-                          {(trade.stock_name || trade.code)} {trade.side === 'BUY' ? '매수' : trade.side === 'SELL' ? '매도' : '조정'} {trade.quantity}주
+                          {(trade.stock_name || trade.code)} {trade.side === 'BUY' ? '매수' : trade.side === 'SELL' ? '매도' : '조정'} {trade.quantity}주 @{formatKrw(trade.price)}
                         </span>
                       ))}
                     </div>
@@ -640,7 +746,7 @@ export default function OperationsPage() {
             </select>
             <Button
               variant="secondary"
-              onClick={runAutotrigger}
+              onClick={() => { void runAutotrigger() }}
               disabled={autotriggerStatus === 'loading'}
             >
               {autotriggerStatus === 'loading' ? '요청 중...' : '트리거 요청'}
