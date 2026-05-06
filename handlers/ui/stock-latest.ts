@@ -100,6 +100,10 @@ async function fetchStockProfile(supabase: any, code: string): Promise<any | nul
     'code,name,sector_id,close,updated_at,description,market_cap,per,pbr,eps,bps',
     'code,name,sector_id,close,updated_at,description',
     'code,name,sector_id,close,updated_at',
+    'code,name,sector_id,close,updated_at,description,market_cap,per,pbr,eps,bps,foreign_ratio,sma20,sma50,rsi14',
+    'code,name,sector_id,close,updated_at,description,market_cap,per,pbr,eps,bps,foreigner_ratio,sma20,sma50,rsi14',
+    'code,name,sector_id,close,updated_at,description,market_cap,per,pbr,eps,bps,foreign_ratio',
+    'code,name,sector_id,close,updated_at,description,market_cap,per,pbr,eps,bps,foreigner_ratio',
   ]
 
   for (const select of selectAttempts) {
@@ -240,6 +244,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             fundamentals_as_of: fund?.as_of ?? null,
             roe: asNum(fund?.roe),
             debt_ratio: asNum(fund?.debt_ratio),
+            sma20: asNum((stock as any).sma20),
+            sma50: asNum((stock as any).sma50),
+            rsi14: asNum((stock as any).rsi14),
           }
         : null,
       flow: flow

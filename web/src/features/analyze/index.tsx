@@ -191,6 +191,24 @@ export default function AnalyzePage() {
             </div>
           )}
 
+          {(result.sma20 != null || result.sma50 != null || result.rsi14 != null) && (
+            <>
+              <div className="title-md" style={{ marginTop: 'var(--space-4)', marginBottom: 'var(--space-2)' }}>기술지표</div>
+              <div className="cards-grid cols-3">
+                {[
+                  ['SMA 20', result.sma20 != null ? formatKrw(result.sma20) : '—'],
+                  ['SMA 50', result.sma50 != null ? formatKrw(result.sma50) : '—'],
+                  ['RSI 14', result.rsi14 != null ? formatNumber(result.rsi14, 2) : '—'],
+                ].map(([label, val]) => (
+                  <div key={label as string}>
+                    <div className="stat-label">{label}</div>
+                    <div className="stat-value" style={{ fontSize: 'var(--font-size-base)' }}>{val}</div>
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
+
           {result.sector && (
             <div className="mt-4 caption">섹터: {result.sector}</div>
           )}

@@ -4,10 +4,11 @@
 /* safelist — 동적으로 생성되는 클래스 보존 */
 @source inline("p-6 p-4 p-3 p-2 rounded rounded-lg rounded-md shadow-sm shadow text-3xl text-2xl text-lg font-extrabold font-semibold text-slate-500 text-right grid grid-cols-2 items-center justify-between max-w-3xl space-y-2 space-y-3 mb-4 mb-6 mt-1 text-red-600 text-green-600");
 
+@layer base {
 /* ================================================================
    GLOBAL RESET & BASE
    ================================================================ */
-*, *::before, *::after { box-sizing: border-box; }
+*, *::before, *::after { @apply box-border; }
 
 html, body, #root {
   @apply h-full antialiased;
@@ -26,15 +27,17 @@ html, body, #root {
 
 /* 숫자 우측정렬 유틸 (특히 금액/유동성용) */
 .number-right {
-  text-align: right;
+  @apply text-right;
 }
+}
+
+@layer components {
 
 /* ================================================================
    LAYOUT
    ================================================================ */
 .max-w-3xl {
-  @apply mx-auto;
-  max-width: 48rem;
+  @apply mx-auto max-w-3xl;
 }
 
 .container-app {
@@ -417,7 +420,7 @@ html, body, #root {
    PROFILE MODAL
    ================================================================ */
 .profile-modal {
-  max-width: 28rem;
+  @apply max-w-md;
 }
 .profile-avatar-wrap {
   @apply flex flex-col items-center;
@@ -624,7 +627,9 @@ html, body, #root {
   }
 
 
-   ================================================================ */
+/* ================================================================
+  FORM CONTROLS
+  ================================================================ */
 .ui-field { @apply block; }
 .ui-label {
   @apply block;
@@ -763,12 +768,10 @@ html, body, #root {
   animation: fadeIn var(--duration-normal) var(--ease-out);
 }
 .modal {
-  @apply w-full overflow-auto relative;
+  @apply relative w-full max-h-[90vh] max-w-xl overflow-auto;
   background: var(--color-bg-elevated);
   border-radius: var(--radius-xl);
   padding: var(--spacing-card-lg);
-  max-width: 36rem;
-  max-height: 90vh;
   box-shadow: var(--shadow-lg);
   animation: slideUp var(--duration-normal) var(--ease-default);
 }
@@ -1428,9 +1431,7 @@ html, body, #root {
 }
 
 .auth-status-card {
-  @apply w-full;
-  max-width: 34rem;
-  text-align: center;
+  @apply w-full max-w-136 text-center;
   background: var(--color-bg-surface);
   border: 1px solid var(--color-border-default);
   border-radius: var(--radius-xl);
@@ -1559,9 +1560,7 @@ html, body, #root {
 }
 
 .access-denied-card {
-  @apply flex flex-col items-center text-center;
-  width: 100%;
-  max-width: 22rem;
+  @apply flex w-full max-w-88 flex-col items-center text-center;
   padding: var(--space-10) var(--space-6);
   background: var(--color-bg-surface);
   border: 1px solid var(--color-border-default);
@@ -1637,10 +1636,9 @@ html, body, #root {
 }
 
 .stock-search-dropdown {
-  @apply absolute left-0 right-0 bg-white;
+  @apply absolute left-0 right-0 bg-white rounded-lg;
   top: calc(100% + 4px);
   border: 1px solid var(--color-border);
-  border-radius: 8px;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
   z-index: 1000;
   max-height: 280px;
@@ -1682,4 +1680,5 @@ html, body, #root {
   font-size: var(--font-size-sm);
   color: var(--color-text-secondary);
   white-space: nowrap;
+}
 }
