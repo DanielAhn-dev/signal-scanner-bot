@@ -1,6 +1,14 @@
 import type { ReportTopic } from './reportSnapshotService'
 
 export function topicLabel(topic: ReportTopic | string): string {
+  if (topic === '주간') return '주간'
+  if (topic === '눌림목') return '눌림목'
+  if (topic === '포트폴리오') return '포트폴리오'
+  if (topic === '관심종목') return '관심종목'
+  if (topic === '거시') return '거시'
+  if (topic === '수급') return '수급'
+  if (topic === '섹터') return '섹터'
+  if (topic === '확신추천') return '확신추천'
   if (topic === '공개추천') return '공개추천'
   if (topic === '가이드') return '운영 가이드'
   if (topic === '자동매매') return '자동매매 가이드'
@@ -8,6 +16,14 @@ export function topicLabel(topic: ReportTopic | string): string {
 }
 
 export function topicTitle(topic: ReportTopic | string): string {
+  if (topic === '주간') return '주간 증시 리포트'
+  if (topic === '눌림목') return '다음 주 눌림목 리포트'
+  if (topic === '포트폴리오') return '보유 포트폴리오 리포트'
+  if (topic === '관심종목') return '관심종목 리포트'
+  if (topic === '거시') return '거시 지표 리포트'
+  if (topic === '수급') return '수급 리포트'
+  if (topic === '섹터') return '섹터 리포트'
+  if (topic === '확신추천') return '확신추천 하이라이트 3선'
   if (topic === '공개추천') return '공유용 오늘의 투자 후보 리포트'
   if (topic === '가이드') return 'Signal Scanner Bot 운영 가이드'
   if (topic === '자동매매') return '자동매매 명령어 운영 가이드'

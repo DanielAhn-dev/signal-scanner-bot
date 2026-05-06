@@ -36,6 +36,7 @@ const REPORT_TOPIC_GUIDE = [
   { command: "월간", aliases: ["월간", "monthly", "month"], description: "월별 성과 요약 텍스트" },
   { command: "실전운용", aliases: ["실전운용", "실전", "운용", "플레이북", "playbook", "ops"], description: "월~금 자동매매 실전 체크리스트 텍스트" },
   { command: "추천", aliases: ["추천", "후보", "daily", "plan", "planning", "ideas"], description: "매일 대응할 투자 후보 PDF" },
+  { command: "확신추천", aliases: ["확신추천", "확실추천", "핵심추천", "하이라이트", "하이라이트3선", "3선추천", "conviction"], description: "하이라이트 3선 중심 확신 후보 텍스트" },
   { command: "공개추천", aliases: ["공개추천", "공개 추천", "공유추천", "public", "publicplan", "share"], description: "개인 보유·자금 정보를 제외한 후보 PDF" },
   { command: "가이드", aliases: ["가이드", "운영가이드", "guide", "guidepdf"], description: "운영 가이드 PDF" },
     { command: "자동매매", aliases: ["자동매매", "명령어", "command", "automate"], description: "자동매매 명령어 사용 가이드 PDF" },
@@ -68,6 +69,7 @@ function buildReportMenuText(): string {
     "/리포트 실전운용 — 월~금 자동매매 실전 체크리스트 텍스트",
     "  전략 유지 여부, 보유 추가매수, 부분 익절, 분할 매도 점검용",
     "/리포트 추천 — 오늘 대응할 투자 후보 PDF",
+    "/리포트 확신추천 — 갈만한 확신 후보 하이라이트 3선 텍스트",
     "/리포트 공유추천 — 개인 보유/자금 정보 제외 후보 PDF",
     "/리포트 가이드 — 기능 활용 운영 가이드 PDF",
       "/리포트 자동매매 — 자동매매 명령어 사용 방법 PDF",
@@ -78,6 +80,55 @@ function buildReportMenuText(): string {
     "/리포트 섹터 — 섹터 강도 랭킹 PDF",
     "/리포트 장전플랜 — 오늘 적응형 주문 플랜 (성과 반영 보수/공격 조정)",
   ].join("\n");
+}
+
+export function buildConvictionRecommendationText(
+  report: DailyCandidatePlanningReportResult,
+  limit = 3
+): string {
+  const ranked = [...(report.forecasts ?? [])]
+    .sort((a, b) => {
+      if (b.confidencePct !== a.confidencePct) return b.confidencePct - a.confidencePct;
+      const aEdge = a.expectedUpsidePct - a.expectedDrawdownPct;
+      const bEdge = b.expectedUpsidePct - b.expectedDrawdownPct;
+      return bEdge - aEdge;
+    })
+    .slice(0, Math.max(1, limit));
+
+  if (!ranked.length) {
+    return [
+      "<b>확신추천 하이라이트 3선</b>",
+      "─────────────────",
+      "현재 조건에서 확신 후보를 찾지 못했습니다.",
+      "시장 변동성이 낮아지면 /리포트 추천 또는 /눌림목으로 다시 확인하세요.",
+    ].join("\n");
+  }
+
+  const badge = ["🟥", "🟩", "🟦"];
+  const lines = [
+    "<b>확신추천 하이라이트 3선</b>",
+    "─────────────────",
+    "눌림목/점수/리스크를 함께 반영해 오늘 바로 볼 후보만 압축했습니다.",
+    "",
+  ];
+
+  for (let i = 0; i < ranked.length; i += 1) {
+    const item = ranked[i];
+    const edge = item.expectedUpsidePct - item.expectedDrawdownPct;
+    lines.push(
+      `${i + 1}. ${badge[i] ?? "•"} <b>${item.name}</b> <code>${item.code}</code> · 신뢰 <b>${item.confidencePct.toFixed(1)}%</b>`
+    );
+    lines.push(
+      `   기준 ${fmtInt(item.entryPrice)}원 · 예상손실 -${item.expectedDrawdownPct.toFixed(1)}% · 기준 +${item.expectedBasePct.toFixed(1)}% · 상단 +${item.expectedUpsidePct.toFixed(1)}%`
+    );
+    lines.push(
+      `   점수 모멘텀 ${item.scoreComponents.momentum.toFixed(0)} / 밸류 ${item.scoreComponents.value.toFixed(0)} / 안전성 ${item.scoreComponents.safety.toFixed(0)} · 기대여지 +${edge.toFixed(1)}%`
+    );
+  }
+
+  lines.push("");
+  lines.push("원칙: 상위 1~2개 우선, 추격보다 분할 진입, 손절/익절 가격을 먼저 고정하세요.");
+  return lines.join("\n");
 }
 
 function fmtInt(v: number): string {
@@ -616,6 +667,42 @@ async function handleDailyCandidateReportCommand(
         ].join("\n"),
       });
     }
+  }
+}
+
+async function handleConvictionRecommendationReportCommand(
+  ctx: ChatContext,
+  tgSend: any
+): Promise<void> {
+  await tgSend("sendMessage", {
+    chat_id: ctx.chatId,
+    text: "확신추천 하이라이트 3선을 정리 중입니다. 잠시만 기다려주세요...",
+  });
+
+  try {
+    const prefs = await getUserInvestmentPrefs(ctx.from?.id ?? ctx.chatId);
+    const report = await createDailyCandidatePlanningReportResult(supabase, {
+      riskProfile: (prefs.risk_profile ?? "safe") as "safe" | "balanced" | "active",
+      chatId: ctx.chatId,
+    });
+
+    await sendLongMessage(tgSend, ctx.chatId, buildConvictionRecommendationText(report), {
+      parse_mode: "HTML",
+      reply_markup: actionButtons(
+        buildRecommendationActionButtons(report.actionItems, [...ACTIONS.recommendationFollowup, ...ACTIONS.reportMenu]),
+        2
+      ),
+    });
+  } catch (e: any) {
+    const detail = e instanceof Error ? e.message : String(e);
+    await tgSend("sendMessage", {
+      chat_id: ctx.chatId,
+      text: [
+        "확신추천 리포트 생성에 실패했습니다.",
+        `원인: ${detail}`,
+        "잠시 후 다시 시도해주세요.",
+      ].join("\n"),
+    });
   }
 }
 
@@ -1252,6 +1339,11 @@ export async function handleReportCommand(
 
   if (normalizedTopic === "추천") {
     await handleDailyCandidateReportCommand(ctx, tgSend);
+    return;
+  }
+
+  if (normalizedTopic === "확신추천") {
+    await handleConvictionRecommendationReportCommand(ctx, tgSend);
     return;
   }
 

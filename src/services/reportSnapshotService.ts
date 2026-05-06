@@ -2,18 +2,42 @@ import { createClient, type SupabaseClient } from '@supabase/supabase-js'
 import { readFile } from 'node:fs/promises'
 import path from 'node:path'
 import { createDailyCandidatePlanningReportResult } from './marketInsightService'
-import { buildPublicDailyCandidateText } from '../bot/commands/report'
+import {
+  buildConvictionRecommendationText,
+  buildPublicDailyCandidateText,
+} from '../bot/commands/report'
 import { getUserInvestmentPrefs } from './userService'
+import { createWeeklyReportPdf } from './weeklyReportService'
 
-export type ReportTopic = '추천' | '공개추천' | '가이드' | '자동매매'
+export type ReportTopic =
+  | '추천'
+  | '확신추천'
+  | '공개추천'
+  | '가이드'
+  | '자동매매'
+  | '주간'
+  | '눌림목'
+  | '포트폴리오'
+  | '관심종목'
+  | '거시'
+  | '수급'
+  | '섹터'
 
 export const REPORT_SNAPSHOT_TABLE = 'ui_report_snapshots'
 
 export function resolveReportTopic(raw: unknown): ReportTopic {
   const v = String(raw || '').trim().toLowerCase()
+  if (v === '확신추천' || v === '확실추천' || v === '핵심추천' || v === 'conviction') return '확신추천'
   if (v === '공개추천' || v === 'public') return '공개추천'
   if (v === '가이드' || v === 'guide') return '가이드'
   if (v === '자동매매' || v === 'auto-guide') return '자동매매'
+  if (v === '주간' || v === 'full' || v === 'weekly') return '주간'
+  if (v === '눌림목' || v === 'pullback') return '눌림목'
+  if (v === '포트폴리오' || v === 'portfolio' || v === 'watchlist') return '포트폴리오'
+  if (v === '관심종목' || v === '관심' || v === 'watchonly' || v === 'watch') return '관심종목'
+  if (v === '거시' || v === '경제' || v === 'macro' || v === 'economy') return '거시'
+  if (v === '수급' || v === 'flow') return '수급'
+  if (v === '섹터' || v === 'sector') return '섹터'
   return '추천'
 }
 
@@ -110,6 +134,16 @@ function resolveGuideMarkdownPath(topic: ReportTopic): string {
   return path.join(process.cwd(), 'docs', 'user-operating-guide.md')
 }
 
+const WEEKLY_REPORT_TOPIC_MAP: Partial<Record<ReportTopic, string>> = {
+  주간: 'full',
+  눌림목: 'pullback',
+  포트폴리오: 'portfolio',
+  관심종목: 'watchonly',
+  거시: 'economy',
+  수급: 'flow',
+  섹터: 'sector',
+}
+
 export async function buildReportBodyText(params: {
   topic: ReportTopic
   chatId: number | null
@@ -130,6 +164,23 @@ export async function buildReportBodyText(params: {
     throw new Error('Supabase client is required for 추천/공개추천 generation')
   }
 
+  if (WEEKLY_REPORT_TOPIC_MAP[topic]) {
+    const weekly = await createWeeklyReportPdf(supabase, {
+      chatId: chatId ?? 999999,
+      topic: WEEKLY_REPORT_TOPIC_MAP[topic],
+    })
+
+    return {
+      bodyText: [
+        `<b>${weekly.title}</b>`,
+        weekly.summaryText,
+        '',
+        `<i>${weekly.caption}</i>`,
+      ].join('\n'),
+      sourceLabel: '/리포트 명령 결과',
+    }
+  }
+
   const riskProfile = chatId
     ? ((await getUserInvestmentPrefs(chatId)).risk_profile ?? 'safe') as 'safe' | 'balanced' | 'active'
     : 'balanced'
@@ -140,7 +191,11 @@ export async function buildReportBodyText(params: {
   })
 
   const baseText = report.text || ''
-  const bodyText = topic === '공개추천' ? buildPublicDailyCandidateText(baseText) : baseText
+  const bodyText = topic === '공개추천'
+    ? buildPublicDailyCandidateText(baseText)
+    : topic === '확신추천'
+      ? buildConvictionRecommendationText(report)
+      : baseText
 
   return {
     bodyText,
