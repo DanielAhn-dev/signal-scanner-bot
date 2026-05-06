@@ -2,6 +2,30 @@ import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { createClient, SupabaseClient } from '@supabase/supabase-js'
 import { resolveUiUserContext } from './_userContext'
 
+type ActivityRow = {
+  id: string
+  code: string
+  side: 'BUY' | 'SELL' | 'ADJUST'
+  price: number
+  quantity: number
+  gross_amount: number
+  memo: string | null
+  created_at: string
+  stock_name: string | null
+}
+
+type JobRow = {
+  id: string
+  type: string
+  status: string
+  ok: boolean | null
+  error: string | null
+  created_at: string
+  started_at: string | null
+  finished_at: string | null
+  payload: Record<string, unknown> | null
+}
+
 let _supabase: SupabaseClient | null = null
 function getSupabase(): SupabaseClient {
   if (_supabase) return _supabase
@@ -46,7 +70,131 @@ async function getRecentActivity(supabase: SupabaseClient, chatId: string | numb
     .limit(limit)
 
   if (error) throw new Error(error.message)
-  return Array.isArray(data) ? data : []
+  const rows = Array.isArray(data) ? data : []
+  if (rows.length === 0) return []
+
+  const codeSet = new Set<string>()
+  for (const row of rows) {
+    const code = String((row as Record<string, unknown>)?.code || '').trim()
+    if (code) codeSet.add(code)
+  }
+
+  let nameMap: Record<string, string> = {}
+  if (codeSet.size > 0) {
+    const { data: stocks } = await supabase
+      .from('stocks')
+      .select('code,name')
+      .in('code', Array.from(codeSet))
+
+    if (Array.isArray(stocks)) {
+      nameMap = stocks.reduce((acc, cur) => {
+        const code = String((cur as Record<string, unknown>)?.code || '').trim()
+        const name = String((cur as Record<string, unknown>)?.name || '').trim()
+        if (code && name) acc[code] = name
+        return acc
+      }, {} as Record<string, string>)
+    }
+  }
+
+  return rows.map((row) => {
+    const record = row as Record<string, unknown>
+    const code = String(record.code || '').trim()
+    return {
+      ...record,
+      code,
+      stock_name: nameMap[code] || null,
+    }
+  }) as ActivityRow[]
+}
+
+async function getJobSnapshot(
+  supabase: SupabaseClient,
+  chatId: string | number,
+  jobId: string
+) {
+  const { data, error } = await supabase
+    .from('jobs')
+    .select('id,type,status,ok,error,created_at,started_at,finished_at,payload')
+    .eq('id', jobId)
+    .maybeSingle()
+
+  if (error) throw new Error(error.message)
+  if (!data) return null
+
+  const job = data as JobRow
+  if (job.type !== 'cron_dispatch') return null
+
+  const payload = job.payload || {}
+  const payloadChatId = Number((payload as Record<string, unknown>).chat_id || 0)
+  if (Number.isFinite(payloadChatId) && payloadChatId > 0 && String(payloadChatId) !== String(chatId)) {
+    return null
+  }
+
+  const cursor = new Date(Date.parse(String(job.created_at || '')) || Date.now())
+  cursor.setMinutes(cursor.getMinutes() - 3)
+  const cursorIso = cursor.toISOString()
+
+  const [recentRunsRes, recentTradesRes] = await Promise.all([
+    supabase
+      .from('virtual_autotrade_runs')
+      .select('id,run_type,run_key,status,summary,started_at,finished_at')
+      .eq('chat_id', chatId)
+      .gte('started_at', cursorIso)
+      .order('started_at', { ascending: false })
+      .limit(5),
+    supabase
+      .from('virtual_trades')
+      .select('id,code,side,price,quantity,gross_amount,memo,created_at')
+      .eq('chat_id', chatId)
+      .gte('created_at', cursorIso)
+      .order('created_at', { ascending: false })
+      .limit(8),
+  ])
+
+  const recentRuns = Array.isArray(recentRunsRes.data) ? recentRunsRes.data : []
+  const recentTradesRaw = Array.isArray(recentTradesRes.data) ? recentTradesRes.data : []
+
+  const tradeCodeSet = new Set<string>()
+  for (const row of recentTradesRaw) {
+    const code = String((row as Record<string, unknown>)?.code || '').trim()
+    if (code) tradeCodeSet.add(code)
+  }
+
+  let tradeNameMap: Record<string, string> = {}
+  if (tradeCodeSet.size > 0) {
+    const { data: stocks } = await supabase
+      .from('stocks')
+      .select('code,name')
+      .in('code', Array.from(tradeCodeSet))
+
+    if (Array.isArray(stocks)) {
+      tradeNameMap = stocks.reduce((acc, cur) => {
+        const code = String((cur as Record<string, unknown>)?.code || '').trim()
+        const name = String((cur as Record<string, unknown>)?.name || '').trim()
+        if (code && name) acc[code] = name
+        return acc
+      }, {} as Record<string, string>)
+    }
+  }
+
+  const recentTrades = recentTradesRaw.map((row) => {
+    const record = row as Record<string, unknown>
+    const code = String(record.code || '').trim()
+    return {
+      ...record,
+      code,
+      stock_name: tradeNameMap[code] || null,
+    }
+  })
+
+  const latestRun = recentRuns[0] || null
+
+  return {
+    job,
+    latest_run: latestRun,
+    recent_runs: recentRuns,
+    recent_trades: recentTrades,
+  }
 }
 
 // 자동매도 대상 포지션 점검 (score 없이 단순 조건: 수량 > 0 & holding)
@@ -128,6 +276,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   try {
     if (req.method === 'GET') {
       const view = String(req.query.view || 'activity')
+
+      if (view === 'job') {
+        const jobId = String(req.query.job_id || '').trim()
+        if (!jobId) return res.status(400).json({ error: 'job_id required' })
+        const snapshot = await getJobSnapshot(supabase, chatId, jobId)
+        if (!snapshot) return res.status(404).json({ error: 'job not found' })
+        return res.status(200).json({ ok: true, data: snapshot })
+      }
 
       if (view === 'autosellcheck') {
         const candidates = await getAutoSellCandidates(supabase, chatId)
