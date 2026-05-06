@@ -172,6 +172,10 @@ async function claimTaskExecution(input: {
 }
 
 async function callTask(baseUrl: string, taskPath: string): Promise<{ ok: boolean; status: number; body: string }> {
+  if (!CRON_SECRET) {
+    throw new Error("Missing CRON_SECRET");
+  }
+
   const response = await fetch(`${baseUrl}${taskPath}`, {
     method: "GET",
     headers: {
@@ -267,6 +271,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(405).send("Method Not Allowed");
   }
 
+  if (!CRON_SECRET) {
+    return res.status(500).json({ ok: false, error: "Missing CRON_SECRET" });
+  }
+
   if (req.headers.authorization !== `Bearer ${CRON_SECRET}`) {
     return res.status(401).send("Unauthorized");
   }
@@ -281,6 +289,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     });
 
     const forceTask = typeof req.query.task === "string" ? req.query.task : undefined;
+    if (forceTask && !(forceTask in TASK_PATHS)) {
+      return res.status(400).json({ ok: false, error: `Unknown cron task: ${forceTask}` });
+    }
+
     const dueTasks = forceTask
       ? [forceTask]
           .filter((task): task is CronTaskName => task in TASK_PATHS)

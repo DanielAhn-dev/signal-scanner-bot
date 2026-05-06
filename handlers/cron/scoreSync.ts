@@ -35,6 +35,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(405).send("Method Not Allowed");
   }
 
+  if (!CRON_SECRET) {
+    return res.status(500).send("Missing CRON_SECRET");
+  }
+
   if (req.headers.authorization !== `Bearer ${CRON_SECRET}`) {
     return res.status(401).send("Unauthorized");
   }
