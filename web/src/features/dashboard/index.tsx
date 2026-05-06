@@ -1,4 +1,4 @@
-﻿import React, { useEffect, useState, useCallback } from 'react'
+﻿import React, { useEffect, useState, useCallback, useMemo } from 'react'
 import { apiFetch } from '../../lib/api'
 import { formatKrw } from '../../lib/format'
 import { getCurrentUserChatId } from '../../lib/userContext'
@@ -39,60 +39,100 @@ function writeLS(key: string, data: unknown) {
 }
 
 export default function Dashboard({ onNavigate }: { onNavigate?: (r: string) => void }) {
-  const initSummary = readSession<any>('dashboard_summary', SUMMARY_TTL)
-    ?? readLS<any>(LS_SUMMARY_KEY, SUMMARY_TTL)
+  const initSummary = useMemo(
+    () => readSession<any>('dashboard_summary', SUMMARY_TTL)
+      ?? readLS<any>(LS_SUMMARY_KEY, SUMMARY_TTL),
+    [],
+  )
 
-  const initSectors = readSession<any[]>('dashboard_sectors', SECTORS_TTL)
-    ?? readLS<any[]>(LS_SECTORS_KEY, SECTORS_TTL) ?? []
+  const initSectors = useMemo(
+    () => readSession<any[]>('dashboard_sectors', SECTORS_TTL)
+      ?? readLS<any[]>(LS_SECTORS_KEY, SECTORS_TTL) ?? [],
+    [],
+  )
 
   const [summary, setSummary] = useState<any | null>(initSummary)
   const [sectors, setSectors] = useState<any[]>(initSectors)
   const [loading, setLoading] = useState(!initSummary)
+  const [refreshing, setRefreshing] = useState(false)
+  const [lastUpdatedAt, setLastUpdatedAt] = useState<number | null>(initSummary ? Date.now() : null)
+  const [pnlAuditMessage, setPnlAuditMessage] = useState<string>('')
   const [error, setError] = useState<string | null>(null)
 
   const loadData = useCallback(async ({ force = false, silent = false }: { force?: boolean; silent?: boolean } = {}) => {
+    if (!silent) setRefreshing(true)
+    if (force) setPnlAuditMessage('손익 점검 중...')
     if (!silent) {
       setLoading(true)
       setError(null)
     }
-    const [summaryResult, sectorsResult] = await Promise.allSettled([
-      apiFetch('/api/ui/summary', {
-        cacheMs: force ? 0 : SUMMARY_TTL,
-        timeoutMs: 15_000,
-        retries: 1,
-      }),
-      apiFetch('/api/ui/sectors?top=8', {
-        cacheMs: force ? 0 : SECTORS_TTL,
-        timeoutMs: 12_000,
-        retries: 1,
-      }),
-    ])
+    try {
+      const [summaryResult, sectorsResult] = await Promise.allSettled([
+        apiFetch(`/api/ui/summary${force ? '?cacheMs=0' : ''}`, {
+          cacheMs: force ? 0 : SUMMARY_TTL,
+          timeoutMs: 15_000,
+          retries: 1,
+        }),
+        apiFetch(`/api/ui/sectors?top=8${force ? '&cacheMs=0' : ''}`, {
+          cacheMs: force ? 0 : SECTORS_TTL,
+          timeoutMs: 12_000,
+          retries: 1,
+        }),
+      ])
 
-    const errs: string[] = []
+      const errs: string[] = []
+      let hasSuccess = false
 
-    if (summaryResult.status === 'fulfilled' && summaryResult.value?.data) {
-      const data = summaryResult.value.data
-      setSummary(data)
-      writeSession('dashboard_summary', data)
-      writeLS(LS_SUMMARY_KEY, data)
-    } else if (summaryResult.status === 'rejected') {
-      errs.push(summaryResult.reason?.message || String(summaryResult.reason))
+      if (summaryResult.status === 'fulfilled' && summaryResult.value?.data) {
+        const data = summaryResult.value.data
+        setSummary(data)
+        writeSession('dashboard_summary', data)
+        writeLS(LS_SUMMARY_KEY, data)
+        hasSuccess = true
+      } else if (summaryResult.status === 'rejected') {
+        errs.push(summaryResult.reason?.message || String(summaryResult.reason))
+      }
+
+      if (sectorsResult.status === 'fulfilled' && sectorsResult.value?.data) {
+        const data = sectorsResult.value.data
+        setSectors(data)
+        writeSession('dashboard_sectors', data)
+        writeLS(LS_SECTORS_KEY, data)
+        hasSuccess = true
+      } else if (sectorsResult.status === 'rejected') {
+        errs.push(sectorsResult.reason?.message || String(sectorsResult.reason))
+      }
+
+      if (hasSuccess) setLastUpdatedAt(Date.now())
+
+      if (force && summaryResult.status === 'fulfilled' && summaryResult.value?.data) {
+        try {
+          const positionsJson = await apiFetch('/api/ui/positions?page=1&pageSize=200&includeLots=0&positionType=holding&cacheMs=0', {
+            cacheMs: 0,
+            timeoutMs: 15_000,
+            retries: 0,
+          })
+          const rows = Array.isArray(positionsJson?.data) ? positionsJson.data : []
+          const portfolioPnl = rows.reduce((acc: number, row: any) => acc + Number(row?.unrealized_pnl || 0), 0)
+          const dashboardPnl = Number(summaryResult.value.data?.unrealized_pnl_sum || 0)
+          const diff = Math.round((dashboardPnl - portfolioPnl) * 100) / 100
+          if (Math.abs(diff) < 0.01) {
+            setPnlAuditMessage('손익 점검 완료: 대시보드/포트폴리오 일치')
+          } else {
+            setPnlAuditMessage(`손익 점검 경고: 차이 ${formatKrw(diff)}`)
+          }
+        } catch (auditErr: any) {
+          setPnlAuditMessage(`손익 점검 실패: ${String(auditErr?.message || auditErr)}`)
+        }
+      }
+
+      if (errs.length > 0 && !silent) {
+        setError(errs[0])
+      }
+    } finally {
+      if (!silent) setLoading(false)
+      if (!silent) setRefreshing(false)
     }
-
-    if (sectorsResult.status === 'fulfilled' && sectorsResult.value?.data) {
-      const data = sectorsResult.value.data
-      setSectors(data)
-      writeSession('dashboard_sectors', data)
-      writeLS(LS_SECTORS_KEY, data)
-    } else if (sectorsResult.status === 'rejected') {
-      errs.push(sectorsResult.reason?.message || String(sectorsResult.reason))
-    }
-
-    if (errs.length > 0 && !silent) {
-      setError(errs[0])
-    }
-
-    if (!silent) setLoading(false)
   }, [])
 
   useEffect(() => {
@@ -110,6 +150,9 @@ export default function Dashboard({ onNavigate }: { onNavigate?: (r: string) => 
   const pnlClass = pnl != null ? (pnl > 0 ? 'positive' : pnl < 0 ? 'negative' : '') : ''
   const topSector = sectors.length > 0 ? sectors[0]?.name : '-'
   const chatId = getCurrentUserChatId()
+  const refreshLabel = lastUpdatedAt
+    ? new Date(lastUpdatedAt).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+    : '-'
   const lastScan = summary?.last_scan_at
     ? new Date(summary.last_scan_at).toLocaleString('ko-KR', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })
     : '-'
@@ -120,10 +163,21 @@ export default function Dashboard({ onNavigate }: { onNavigate?: (r: string) => 
     <section className="container-app">
       <div className="flex-between mb-4">
         <h1 className="title-xl" style={{ marginBottom: 0 }}>대시보드</h1>
-        <Button variant="secondary" onClick={() => loadData({ force: true })} disabled={loading}>
-          {loading ? '로딩...' : '새로고침'}
-        </Button>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
+          <div className="caption muted">
+            {refreshing ? '업데이트 중...' : `마지막 갱신 ${refreshLabel}`}
+          </div>
+          <Button variant="secondary" onClick={() => loadData({ force: true })} disabled={loading || refreshing}>
+            {refreshing ? '새로고침 중...' : '새로고침'}
+          </Button>
+        </div>
       </div>
+
+      {pnlAuditMessage && (
+        <div className="caption muted" style={{ marginTop: '-0.5rem', marginBottom: '1rem' }}>
+          {pnlAuditMessage}
+        </div>
+      )}
 
       {error && <ErrorState message={error} onRetry={() => loadData({ force: true })} />}
 

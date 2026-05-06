@@ -13,6 +13,8 @@ import useWatchlistActions from '../../hooks/useWatchlistActions'
 export default function Portfolio() {
   const [allRows, setAllRows] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
+  const [refreshing, setRefreshing] = useState(false)
+  const [lastUpdatedAt, setLastUpdatedAt] = useState<number | null>(null)
   const [page, setPage] = useState(1)
   const pageSize = 20
   const [search, setSearch] = useState('')
@@ -41,18 +43,22 @@ export default function Portfolio() {
   const toast = useToast()
   const { isRemoving, removeFromWatchlist } = useWatchlistActions()
 
-  const load = useCallback(async (soft = false) => {
+  const load = useCallback(async ({ soft = false, force = false }: { soft?: boolean; force?: boolean } = {}) => {
+    setRefreshing(true)
     if (!soft) setLoading(true)
     if (!soft) setError(null)
     try {
       // 초기 로드 pageSize를 20으로 제한 → 초기 응답 시간 8초에서 1초 이하로 단축
       const params = new URLSearchParams({ page: '1', pageSize: '20', includeLots: '0' })
+      if (force) params.set('cacheMs', '0')
       const json = await apiFetch(`/api/ui/positions?${params}`, { cacheMs: 3_000, timeoutMs: 15_000, retries: 1 })
       setAllRows(json?.data ?? [])
+      setLastUpdatedAt(Date.now())
     } catch (e: any) {
       setError(e?.message || String(e))
     } finally {
       if (!soft) setLoading(false)
+      setRefreshing(false)
     }
   }, [])
 
@@ -176,7 +182,7 @@ export default function Portfolio() {
 
       invalidateCache('/api/ui/positions')
       setMaintModalOpen(false)
-      await load(true)
+      await load({ soft: true, force: true })
     } catch (e: any) {
       setMaintError(String(e?.message || e))
     } finally {
@@ -210,7 +216,7 @@ export default function Portfolio() {
         toast.show(`${modalSide === 'buy' ? '매수' : '매도'} 등록 완료 ✓`)
         invalidateCache('/api/ui/positions')
         setModalOpen(false)
-        load(true)
+        load({ soft: true, force: true })
       }
     } catch (e: any) {
       setTradeError(String(e?.message || e))
@@ -258,6 +264,16 @@ export default function Portfolio() {
           <p className="portfolio-subtitle">보유 포지션과 관심 종목을 한 화면에서 관리합니다.</p>
         </div>
         <div style={{ display: 'flex', gap: 'var(--space-2)', alignItems: 'center', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+          <span className="caption muted">
+            {refreshing
+              ? '업데이트 중...'
+              : `마지막 갱신 ${lastUpdatedAt
+                ? new Date(lastUpdatedAt).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+                : '-'}`}
+          </span>
+          <Button variant="secondary" onClick={() => load({ force: true })} disabled={loading || refreshing}>
+            {refreshing ? '새로고침 중...' : '새로고침'}
+          </Button>
           <span className="portfolio-total-pill">
             {allRows.length > 0 ? `총 ${allRows.length}개` : '포지션 집계 준비중'}
           </span>
@@ -353,7 +369,7 @@ export default function Portfolio() {
 
       {error && (
         <div className="portfolio-error-wrap">
-          <ErrorState message={error} onRetry={() => load()} />
+          <ErrorState message={error} onRetry={() => load({ force: true })} />
         </div>
       )}
 

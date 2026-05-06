@@ -6,10 +6,11 @@ const SUMMARY_CACHE_TTL_MS = Math.max(0, Number(process.env.UI_SUMMARY_CACHE_TTL
 const SUMMARY_QUERY_TIMEOUT_MS = Math.max(1_000, Number(process.env.UI_SUMMARY_QUERY_TIMEOUT_MS || 7_000))
 
 type PositionSummaryRow = {
+  code: string | null
   quantity: number | null
   buy_price: number | null
   invested_amount: number | null
-  stock: { close: number | null } | Array<{ close: number | null }> | null
+  stock: { code: string | null; close: number | null } | Array<{ code: string | null; close: number | null }> | null
 }
 
 type ScanRunRow = {
@@ -30,6 +31,36 @@ type SummaryCacheEntry = {
 }
 
 const summaryCache = new Map<string, SummaryCacheEntry>()
+
+async function fetchRealtimePriceBatch(codes: string[]): Promise<Record<string, number>> {
+  if (!codes.length) return {}
+
+  const priceMap: Record<string, number> = {}
+  for (let i = 0; i < codes.length; i += 10) {
+    const chunk = codes.slice(i, i + 10)
+    const promises = chunk.map(async (code) => {
+      try {
+        const response = await fetch(`https://m.stock.naver.com/api/stock/${code}/basic`, {
+          headers: { 'User-Agent': 'Mozilla/5.0' },
+          signal: AbortSignal.timeout(2_500),
+        })
+        if (!response.ok) return [code, null] as const
+        const data = await response.json() as any
+        const price = parseInt(String(data?.closePrice ?? '').replace(/,/g, ''), 10)
+        return [code, Number.isFinite(price) && price > 0 ? price : null] as const
+      } catch {
+        return [code, null] as const
+      }
+    })
+
+    const results = await Promise.all(promises)
+    results.forEach(([code, price]) => {
+      if (price != null) priceMap[code] = price
+    })
+  }
+
+  return priceMap
+}
 
 function withTimeout<T>(promise: PromiseLike<T>, timeoutMs: number, label: string): Promise<T> {
   return new Promise<T>((resolve, reject) => {
@@ -117,7 +148,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const positionsResult = await withTimeout<QueryWithData<PositionSummaryRow>>(
       supabase
         .from('virtual_positions')
-        .select('id,quantity,buy_price,invested_amount,stock:stocks(close)')
+        .select('id,code,quantity,buy_price,invested_amount,stock:stocks(code,close)')
         .eq('chat_id', chatId)
         .gt('quantity', 0)
         .returns<PositionSummaryRow[]>(),
@@ -150,6 +181,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const positions: PositionSummaryRow[] = positionsResult.data ?? []
     const posCount = positions.length
 
+    const positionCodes = positions
+      .map((row) => String(row?.code || '').trim())
+      .filter(Boolean)
+    const realtimePriceMap = await fetchRealtimePriceBatch(positionCodes)
+
     const decCount =
       decisionResult.status === 'fulfilled' && Number.isFinite(Number(decisionResult.value.count))
         ? Number(decisionResult.value.count)
@@ -164,7 +200,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const qty = Number(row?.quantity || 0)
       if (qty <= 0) return acc
 
-      const close = Number(row?.stock?.close)
+      const stock = Array.isArray(row?.stock) ? row.stock[0] : row?.stock
+      const code = String(row?.code || stock?.code || '').trim()
+      const close = Number(realtimePriceMap[code] ?? stock?.close)
       let avg = Number(row?.buy_price)
       if (!Number.isFinite(avg) || avg <= 0) {
         const invested = Number(row?.invested_amount)
