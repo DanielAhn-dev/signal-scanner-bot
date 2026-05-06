@@ -2,6 +2,7 @@
 // 네이버 뉴스 조회 (모바일 API + HTML 스크래핑)
 
 import * as cheerio from "cheerio";
+import iconv from "iconv-lite";
 
 export interface NewsItem {
   title: string;
@@ -17,6 +18,7 @@ type FetchLikeResponse = {
   ok: boolean;
   json(): Promise<unknown>;
   text(): Promise<string>;
+  arrayBuffer(): Promise<ArrayBuffer>;
 };
 
 /** 개별 종목 뉴스 — 네이버 모바일 주식 API */
@@ -68,12 +70,19 @@ export async function fetchMarketNews(limit = 7): Promise<NewsItem[]> {
       headers: { "User-Agent": UA },
     })) as FetchLikeResponse;
     if (!res.ok) return [];
-    const html = await res.text();
+    // 네이버 금융은 EUC-KR 응답이므로 ArrayBuffer로 받아 수동 디코딩
+    const ab = await res.arrayBuffer();
+    let html: string;
+    try {
+      html = iconv.decode(Buffer.from(ab), "euc-kr");
+    } catch {
+      html = new TextDecoder("utf-8").decode(ab);
+    }
     const $ = cheerio.load(html);
     const items: NewsItem[] = [];
     const seen = new Set<string>();
 
-    // .articleSubject a — 뉴스 제목 링크
+    // .articleSubject a — 뉴스 제목 링크 (출처·날짜도 같은 li에서 추출)
     $(".articleSubject a").each((_, el) => {
       if (items.length >= limit) return;
       const $a = $(el);
@@ -84,7 +93,14 @@ export async function fetchMarketNews(limit = 7): Promise<NewsItem[]> {
       const fullLink = href.startsWith("http")
         ? href
         : `https://finance.naver.com${href}`;
-      items.push({ title, link: fullLink });
+      const $li = $a.closest("li");
+      const source = $li.find(".articleSummary .press").text().trim()
+        || $li.find(".press").text().trim()
+        || "";
+      const date = $li.find(".articleSummary .wdate").text().trim()
+        || $li.find(".wdate").text().trim()
+        || "";
+      items.push({ title, link: fullLink, source: source || undefined, date: date || undefined });
     });
 
     // fallback: dl dt a
