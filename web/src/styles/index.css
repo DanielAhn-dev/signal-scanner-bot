@@ -1637,9 +1637,8 @@ html, body, #root {
 }
 
 .stock-search-dropdown {
-  @apply absolute left-0 right-0;
+  @apply absolute left-0 right-0 bg-white;
   top: calc(100% + 4px);
-  background: var(--color-bg-primary);
   border: 1px solid var(--color-border);
   border-radius: 8px;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);

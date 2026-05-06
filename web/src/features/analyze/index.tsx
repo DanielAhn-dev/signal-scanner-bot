@@ -5,6 +5,7 @@ import { getStocks, type StockItem } from '../../lib/stockCache'
 import Button from '../../components/ui/Button'
 import Skeleton from '../../components/Skeleton'
 import StockSearchInput from '../../components/StockSearchInput'
+import ShareButtons from '../../components/ShareButtons'
 
 export default function AnalyzePage() {
   const [query, setQuery] = useState('')
@@ -130,6 +131,22 @@ export default function AnalyzePage() {
             )}
           </div>
 
+          {result.close != null && (
+            <div style={{ marginBottom: 'var(--space-3)', marginTop: 'var(--space-3)' }}>
+              <ShareButtons
+                data={{
+                  title: result.name || result.code,
+                  code: result.code,
+                  price: result.close,
+                  changePct: result.change_pct,
+                  url: typeof window !== 'undefined' ? window.location.href : '',
+                }}
+                variant="button"
+                showLabel
+              />
+            </div>
+          )}
+
           <div className="cards-grid cols-2">
             {[
               ['날짜', result.date ?? '—'],
@@ -145,6 +162,34 @@ export default function AnalyzePage() {
               </div>
             ))}
           </div>
+
+          {(result.per != null || result.pbr != null || result.eps != null || result.bps != null || result.roe != null || result.debt_ratio != null) && (
+            <>
+              <div className="title-md" style={{ marginTop: 'var(--space-4)', marginBottom: 'var(--space-2)' }}>투자지표</div>
+              <div className="cards-grid cols-3">
+                {[
+                  ['PER', result.per != null ? formatNumber(result.per, 2) : '—'],
+                  ['PBR', result.pbr != null ? formatNumber(result.pbr, 2) : '—'],
+                  ['EPS', result.eps != null ? formatKrw(result.eps) : '—'],
+                  ['BPS', result.bps != null ? formatKrw(result.bps) : '—'],
+                  ['ROE', result.roe != null ? formatNumber(result.roe, 2) + '%' : '—'],
+                  ['부채비율', result.debt_ratio != null ? formatNumber(result.debt_ratio, 2) + '%' : '—'],
+                ].map(([label, val]) => (
+                  <div key={label as string}>
+                    <div className="stat-label">{label}</div>
+                    <div className="stat-value" style={{ fontSize: 'var(--font-size-base)' }}>{val}</div>
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
+
+          {result.foreign_ratio != null && (
+            <div style={{ marginTop: 'var(--space-4)', padding: 'var(--space-3)', background: 'var(--color-bg-sunken)', borderRadius: 'var(--radius-sm)' }}>
+              <div className="stat-label">외국인 보유비율</div>
+              <div className="stat-value" style={{ fontSize: 'var(--font-size-lg)' }}>{formatNumber(result.foreign_ratio, 2)}%</div>
+            </div>
+          )}
 
           {result.sector && (
             <div className="mt-4 caption">섹터: {result.sector}</div>
