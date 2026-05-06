@@ -32,6 +32,9 @@ export default function Portfolio() {
   const [tradeLoading, setTradeLoading] = useState(false)
   const [tradeError, setTradeError] = useState<string | null>(null)
   const [shareModalOpen, setShareModalOpen] = useState(false)
+  const [sharedSummaryUrl, setSharedSummaryUrl] = useState('')
+  const [shareExpiresAt, setShareExpiresAt] = useState('')
+  const [shareCreating, setShareCreating] = useState(false)
   const [maintModalOpen, setMaintModalOpen] = useState(false)
   const [maintMode, setMaintMode] = useState<'watchreset' | 'liquidateall' | 'holdingedit' | 'holdingrestore'>('watchreset')
   const [maintRow, setMaintRow] = useState<any | null>(null)
@@ -256,6 +259,47 @@ export default function Portfolio() {
     return `${num > 0 ? '+' : '-'}${formatKrw(Math.abs(num))}`
   }
 
+  const createPublicShareUrl = useCallback(async () => {
+    if (shareCreating) return
+    setShareCreating(true)
+    try {
+      const json = await apiFetch('/api/ui/portfolio-share', {
+        method: 'POST',
+        cacheMs: 0,
+        timeoutMs: 12_000,
+        body: JSON.stringify({ ttlHours: 48 }),
+      })
+      const url = String(json?.url || '')
+      if (!url) throw new Error('공유 URL 생성에 실패했습니다')
+      setSharedSummaryUrl(url)
+      setShareExpiresAt(String(json?.expiresAt || ''))
+      toast.show('공유 URL이 생성되었습니다')
+    } catch (e: any) {
+      toast.show(String(e?.message || e || '공유 URL 생성 실패'))
+    } finally {
+      setShareCreating(false)
+    }
+  }, [shareCreating, toast])
+
+  const copyPortfolioShareUrl = async () => {
+    if (!sharedSummaryUrl) {
+      toast.show('먼저 공유 URL을 생성해 주세요')
+      return
+    }
+    try {
+      await navigator.clipboard.writeText(sharedSummaryUrl)
+      toast.show('공유 URL을 복사했습니다')
+    } catch {
+      toast.show('공유 URL 복사에 실패했습니다')
+    }
+  }
+
+  useEffect(() => {
+    if (!shareModalOpen) return
+    if (sharedSummaryUrl || shareCreating) return
+    void createPublicShareUrl()
+  }, [shareModalOpen, sharedSummaryUrl, shareCreating, createPublicShareUrl])
+
   return (
     <section className="container-app portfolio-page">
       <div className="portfolio-head">
@@ -277,7 +321,7 @@ export default function Portfolio() {
           <span className="portfolio-total-pill">
             {allRows.length > 0 ? `총 ${allRows.length}개` : '포지션 집계 준비중'}
           </span>
-          <Button variant="secondary" onClick={() => setShareModalOpen(true)} disabled={loading || holdingAll.length === 0}>캡처용 보기</Button>
+          <Button variant="secondary" onClick={() => setShareModalOpen(true)} disabled={loading || holdingAll.length === 0}>공유 요약 보기</Button>
           <Button variant="ghost" onClick={() => openMaintenanceModal('holdingrestore')} disabled={loading}>보유복구</Button>
           <Button variant="ghost" onClick={() => openMaintenanceModal('watchreset')} disabled={loading || interestAll.length === 0}>관심초기화</Button>
           <Button variant="ghost" onClick={() => openMaintenanceModal('liquidateall')} disabled={loading || holdingAll.length === 0}>전체매도</Button>
@@ -507,17 +551,38 @@ export default function Portfolio() {
 
       <Modal
         isOpen={shareModalOpen}
-        title="포트폴리오 캡처"
+        title="포트폴리오 공유 요약"
         onClose={() => setShareModalOpen(false)}
         size="lg"
       >
         <div className="portfolio-capture-card">
           <div className="portfolio-capture-top">
             <div>
-              <div className="portfolio-capture-title">가상 포트폴리오 공유용 요약</div>
+              <div className="portfolio-capture-title">가상 포트폴리오 요약</div>
               <div className="portfolio-capture-time">기준시각 {captureGeneratedAt}</div>
             </div>
             <div className="portfolio-capture-count">보유 {holdingAll.length}종목</div>
+          </div>
+
+          <div style={{ display: 'flex', gap: 'var(--space-2)', alignItems: 'center', flexWrap: 'wrap', marginBottom: 'var(--space-3)' }}>
+            <Input
+              label="공유 URL (인증 없이 접근 가능)"
+              readOnly
+              value={sharedSummaryUrl || (shareCreating ? '공유 URL 생성 중...' : '')}
+            />
+            <Button variant="secondary" onClick={createPublicShareUrl} disabled={shareCreating}>
+              {shareCreating ? '생성 중...' : 'URL 재생성'}
+            </Button>
+            <Button variant="secondary" onClick={copyPortfolioShareUrl} disabled={!sharedSummaryUrl}>URL 복사</Button>
+          </div>
+          {shareExpiresAt && (
+            <div className="caption muted" style={{ marginBottom: 'var(--space-3)' }}>
+              링크 만료: {new Date(shareExpiresAt).toLocaleString('ko-KR', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false })}
+            </div>
+          )}
+
+          <div className="caption muted" style={{ marginBottom: 'var(--space-3)' }}>
+            이 URL은 누구나 열람 가능한 공유 전용 단독 페이지입니다.
           </div>
 
           <div className="portfolio-capture-metrics">
@@ -545,6 +610,7 @@ export default function Portfolio() {
                 <tr>
                   <th>종목명</th>
                   <th>종목코드</th>
+                  <th>보유수량</th>
                   <th>매수가</th>
                   <th>매수일</th>
                   <th>손익</th>
@@ -559,6 +625,7 @@ export default function Portfolio() {
                     <tr key={`capture-${r.id}`}>
                       <td>{r.stock_name ?? r.ticker ?? r.symbol ?? '-'}</td>
                       <td>{r.code || '-'}</td>
+                      <td>{`${formatNumber(Number(r.quantity || 0), 0)}주`}</td>
                       <td>{formatKrw(Number(r.avg_price || 0))}</td>
                       <td>{r.buy_date || '-'}</td>
                       <td className={pnl < 0 ? 'negative' : pnl > 0 ? 'positive' : ''}>{formatSignedKrw(pnl)}</td>

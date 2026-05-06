@@ -10,6 +10,8 @@ import news from '../handlers/ui/news'
 import newsRelated from '../handlers/ui/news-related'
 import positions from '../handlers/ui/positions'
 import positionsMaintenance from '../handlers/ui/positions-maintenance'
+import portfolioShare from '../handlers/ui/portfolio-share'
+import portfolioShared from '../handlers/ui/portfolio-shared'
 import profile from '../handlers/ui/profile'
 import reportPdf from '../handlers/ui/report-pdf'
 import reportShare from '../handlers/ui/report-share'
@@ -40,6 +42,8 @@ const ROUTES: Record<string, UiHandler> = {
     'news-related': newsRelated,
   notify,
   operations,
+  'portfolio-share': portfolioShare,
+  'portfolio-shared': portfolioShared,
   positions,
   'positions-maintenance': positionsMaintenance,
   profile,
