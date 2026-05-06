@@ -131,6 +131,7 @@ export default function ScanPage() {
 
   const triggerScan = async () => {
     setScanLoading(true)
+    toast.show('동기화 시작 중… 완료까지 수 분 소요될 수 있습니다.')
     try {
       const res = await apiFetch('/api/ui/trigger-update', {
         method: 'POST',
@@ -142,14 +143,19 @@ export default function ScanPage() {
         }),
       })
       if (res?.ok) {
-        toast.show('스캔/DB 동기화 요청 완료 ✓')
+        toast.show('스캔/DB 동기화 완료 ✓')
         await loadCandidates()
       } else {
         const detail = res?.body?.error || res?.error || '스캔 요청 실패'
-        toast.show(String(detail))
+        toast.show(`동기화 실패: ${String(detail)}`)
       }
     } catch (e: any) {
-      toast.show(String(e?.message || e))
+      const msg = String(e?.message || e)
+      if (msg.toLowerCase().includes('timed out') || msg.toLowerCase().includes('network error') || msg.toLowerCase().includes('failed to fetch')) {
+        toast.show('서버 응답 시간 초과. 동기화는 백그라운드에서 계속 실행될 수 있습니다. 잠시 후 새로고침해 주세요.')
+      } else {
+        toast.show(`오류: ${msg}`)
+      }
     } finally {
       setScanLoading(false)
     }

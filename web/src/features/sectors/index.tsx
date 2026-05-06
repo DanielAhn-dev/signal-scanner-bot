@@ -156,9 +156,14 @@ export default function SectorsPage() {
       <div className="flex-between mb-4">
         <h1 className="title-xl" style={{ marginBottom: 0 }}>섹터</h1>
         <Button variant="secondary" onClick={() => loadData(true)} disabled={loading}>
-          {loading ? "로딩..." : "새로고침"}
+          {loading ? "⟳ 새로고침 중…" : "새로고침"}
         </Button>
       </div>
+      {loading && all.length > 0 && (
+        <div className="muted" style={{ marginBottom: "var(--space-3)", fontSize: "var(--font-size-sm)" }}>
+          섹터 데이터를 불러오는 중입니다…
+        </div>
+      )}
 
       {/* 탭 */}
       <div style={{ display: "flex", gap: "var(--space-2)", marginBottom: "var(--space-4)" }}>
@@ -194,7 +199,7 @@ export default function SectorsPage() {
       ) : displayed.length === 0 ? (
         <div className="card"><div className="muted">데이터 없음</div></div>
       ) : (
-        <div className="cards-list">
+        <div className="cards-list" style={{ opacity: loading ? 0.55 : 1, transition: "opacity 0.25s" }}>
           {displayed.map((s, idx) => {
             const metricsSummary = buildMetricsSummary(s)
             const reason = buildSectorReason(s, tab)
