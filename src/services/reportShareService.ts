@@ -59,6 +59,17 @@ export async function createReportShare(params: {
   const publicToken = generatePublicShareToken()
   const inviteCodeHash = hashInviteCode(secret, inviteCode)
 
+  const { error: revokeError } = await supabase
+    .from(REPORT_SHARE_TABLE)
+    .update({ revoked_at: new Date().toISOString() })
+    .eq('topic', topic)
+    .eq('report_date', reportDate)
+    .eq('audience_key', audienceKey)
+    .is('revoked_at', null)
+    .gt('expires_at', new Date().toISOString())
+
+  if (revokeError) throw revokeError
+
   const payload = {
     id: shareId,
     public_token: publicToken,

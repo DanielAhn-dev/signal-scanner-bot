@@ -420,7 +420,7 @@ export function buildConvictionWebHtml(
 ${cards}
 <div style="padding:14px 16px;background:#F9FAFB;border-radius:10px;border:1px solid #E5E8EB;font-size:12px;line-height:1.85;color:#6B7280">
   <strong style="color:#191F28">매수 원칙</strong>&nbsp; 상위 1~2개에 우선 집중하고, 추격 진입보다 분할 매수로 평단을 낮추세요. 진입 전 손절가와 익절가를 먼저 고정하는 습관이 중요합니다.<br>
-  <span style="color:#8B95A1;font-size:11px">이 리포트는 Signal Scanner Bot의 복합 지표 모델이 자동 생성합니다. 투자 판단은 최종적으로 본인 책임 하에 이루어져야 합니다.</span>
+  <span style="color:#8B95A1;font-size:11px">이 리포트는 SSB의 복합 지표 모델이 자동 생성합니다. 투자 판단은 최종적으로 본인 책임 하에 이루어져야 합니다.</span>
 </div>`
 }
 
