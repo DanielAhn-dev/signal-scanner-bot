@@ -19,7 +19,7 @@ function resolveCorsOrigin(req: VercelRequest): string {
   return trustedOrigins[0] || ORIGIN || '*'
 }
 
-type SyncPipelineKey = 'dbview-default' | 'score-sync' | 'full-refresh'
+type SyncPipelineKey = 'dbview-default' | 'score-sync' | 'full-refresh' | 'data-full-sync'
 
 const ALLOWLISTED_PIPELINES: Record<SyncPipelineKey, string[]> = {
   'dbview-default': [
@@ -33,6 +33,13 @@ const ALLOWLISTED_PIPELINES: Record<SyncPipelineKey, string[]> = {
     'pnpm exec tsx scripts/_syncSectors.ts',
     'pnpm exec tsx scripts/_syncSectorsToStocks.ts',
     'pnpm run sync:scores',
+  ],
+  // OHLCV 수집 제외, DB에 있는 데이터 기준으로 지표/섹터/점수 전체 재계산
+  // ENABLE_WEB_SCRIPT_RUNNER=true + 로컬 Python 환경 필요
+  'data-full-sync': [
+    'pnpm exec tsx scripts/_syncSectors.ts',
+    'pnpm exec tsx scripts/_syncSectorsToStocks.ts',
+    'python scripts/daily_batch.py --skip-ohlcv',
   ],
 }
 

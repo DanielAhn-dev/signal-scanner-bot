@@ -11,6 +11,10 @@ type ActivityRow = {
   price: number
   quantity: number
   gross_amount: number
+  net_amount: number | null
+  fee_amount: number | null
+  tax_amount: number | null
+  pnl_amount: number | null
   memo: string | null
   created_at: string
   stock_name: string | null
@@ -112,7 +116,7 @@ function corsHeaders(req: VercelRequest): Record<string, string> {
 async function getRecentActivity(supabase: SupabaseClient, chatId: string | number, limit = 20) {
   const { data, error } = await supabase
     .from('virtual_trades')
-    .select('id,code,side,price,quantity,gross_amount,memo,created_at')
+    .select('id,code,side,price,quantity,gross_amount,net_amount,fee_amount,tax_amount,pnl_amount,memo,created_at')
     .eq('chat_id', chatId)
     .in('side', ['BUY', 'SELL', 'ADJUST'])
     .order('created_at', { ascending: false })

@@ -14,6 +14,10 @@ type TradeRow = {
   price: number
   quantity: number
   gross_amount: number
+  net_amount?: number | null
+  fee_amount?: number | null
+  tax_amount?: number | null
+  pnl_amount?: number | null
   memo: string | null
   created_at: string
 }
@@ -132,6 +136,75 @@ type NoteTag = {
   label: string
   color: string
   bg: string
+}
+
+// 이벤트 → 한국어
+const EVENT_LABEL_MAP: Record<string, string> = {
+  'new-buy': '신규 매수',
+  'add-on-buy': '추가 매수',
+  'take-profit': '익절 매도',
+  'take-profit-partial': '일부 익절',
+  'stop-loss': '손절 매도',
+  'rebalance': '리밸런싱',
+  'rebalance-sell': '리밸런싱 매도',
+  'rebalance-buy': '리밸런싱 매수',
+  'manual': '수동 거래',
+  'legacy': '수동 거래',
+}
+
+// 전략 ID → 한국어
+const STRATEGY_LABEL_MAP: Record<string, string> = {
+  'core.autotrade.v1': '자동매매',
+  'core.plan.v1': '관심종목 계획',
+  'ops.adjustment.v1': '수동 조정',
+  'legacy.unknown': '기타',
+}
+
+function interpretMemo(memo: string | null): { label: string; reason: string | null } {
+  if (!memo) return { label: '매매 근거 없음', reason: null }
+
+  // key=value 형식 파싱
+  if (memo.includes('strategy=') || memo.includes('event=')) {
+    const map = new Map<string, string>()
+    for (const token of memo.split(';')) {
+      const eqIdx = token.indexOf('=')
+      if (eqIdx < 0) continue
+      const key = token.slice(0, eqIdx).trim().toLowerCase()
+      const val = token.slice(eqIdx + 1).trim()
+      if (key && val) map.set(key, val)
+    }
+    const strategyId = map.get('strategy') ?? map.get('strategy_id') ?? ''
+    const event = map.get('event') ?? ''
+    const note = map.get('note') ?? null
+
+    const strategyLabel = STRATEGY_LABEL_MAP[strategyId] ?? strategyId
+    const eventLabel = EVENT_LABEL_MAP[event] ?? event
+
+    const label = strategyLabel && eventLabel
+      ? `${strategyLabel} · ${eventLabel}`
+      : eventLabel || strategyLabel || '매매'
+
+    // note가 event와 동일하거나 중복이면 생략
+    const rawNote = note && note !== event && note !== memo ? note : null
+    // note에서 사람이 읽기 좋은 텍스트 추출
+    const reason = rawNote
+      ? (EVENT_LABEL_MAP[rawNote] ?? rawNote.replace(/-/g, ' '))
+      : null
+
+    return { label, reason }
+  }
+
+  // 레거시 메모
+  if (memo.startsWith('autotrade-')) return { label: `자동매매 · ${memo.replace('autotrade-', '').replace(/-/g, ' ')}`, reason: null }
+  if (memo.startsWith('watchlist-')) return { label: `관심종목 · ${memo.replace('watchlist-', '').replace(/-/g, ' ')}`, reason: null }
+  return { label: memo, reason: null }
+}
+
+function cardBgStyle(side: string): React.CSSProperties {
+  // 토스증권 스타일: 카드는 흰색 유지, 아주 미세한 tint만 (배지/텍스트로 상태 표현)
+  if (side === 'BUY') return { background: 'rgba(240, 68, 82, 0.04)' }   // --color-stock-up 4% 투명도
+  if (side === 'SELL') return { background: 'rgba(20, 120, 255, 0.04)' }  // --color-stock-down 4% 투명도
+  return {}
 }
 
 function sideBadge(side: string) {
@@ -509,7 +582,7 @@ export default function OperationsPage() {
           style={{
             marginBottom: 'var(--space-4)',
             borderColor: 'var(--color-blue-200)',
-            background: 'linear-gradient(120deg, var(--color-blue-50), #FFFFFF 70%)',
+            background: 'var(--color-blue-50)',
             position: 'sticky',
             top: 72,
             zIndex: 220,
@@ -552,17 +625,17 @@ export default function OperationsPage() {
         {dashboardLoading && <Skeleton lines={2} height={16} />}
         {!dashboardLoading && dashboardKpi && (
           <>
-            <div className="card" style={{ background: 'linear-gradient(150deg, #FFFFFF, #F7FBFF)' }}>
+            <div className="card">
               <div className="caption muted">오늘 체결</div>
               <div className="title-lg" style={{ marginTop: 'var(--space-1)' }}>{dashboardKpi.buy_count + dashboardKpi.sell_count}건</div>
               <div className="caption muted" style={{ marginTop: 'var(--space-1)' }}>매수 {dashboardKpi.buy_count} · 매도 {dashboardKpi.sell_count}</div>
             </div>
-            <div className="card" style={{ background: 'linear-gradient(150deg, #FFFFFF, #F6FAF9)' }}>
+            <div className="card">
               <div className="caption muted">오늘 거래금액</div>
               <div className="title-lg" style={{ marginTop: 'var(--space-1)' }}>{formatKrw(dashboardKpi.trade_amount)}</div>
               <div className="caption muted" style={{ marginTop: 'var(--space-1)' }}>기준일 {dashboardKpi.asof}</div>
             </div>
-            <div className="card" style={{ background: 'linear-gradient(150deg, #FFFFFF, #FAF8FF)' }}>
+            <div className="card">
               <div className="caption muted">자동사이클 실행</div>
               <div className="title-lg" style={{ marginTop: 'var(--space-1)' }}>{dashboardKpi.run_total}회</div>
               <div className="caption muted" style={{ marginTop: 'var(--space-1)' }}>성공 {dashboardKpi.run_success} · 실패 {dashboardKpi.run_failed}</div>
@@ -572,7 +645,7 @@ export default function OperationsPage() {
                 </div>
               )}
             </div>
-            <div className="card" style={{ background: 'linear-gradient(150deg, #FFFFFF, #FFF9F5)' }}>
+            <div className="card">
               <div className="caption muted">큐 대기/보유</div>
               <div className="title-lg" style={{ marginTop: 'var(--space-1)' }}>{dashboardKpi.queue_waiting} / {dashboardKpi.holding_count}</div>
               <div className="caption muted" style={{ marginTop: 'var(--space-1)' }}>대기작업 / 보유종목</div>
@@ -581,7 +654,7 @@ export default function OperationsPage() {
         )}
       </div>
 
-      <div className="card card-lg" style={{ marginBottom: 'var(--space-6)', background: 'linear-gradient(135deg, #FFFDFC, #FFFFFF 58%, #F8FBFF)' }}>
+      <div className="card card-lg" style={{ marginBottom: 'var(--space-6)' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 'var(--space-3)', flexWrap: 'wrap', marginBottom: 'var(--space-3)' }}>
           <div>
             <div className="title-lg">FIFO 정합성 점검/복구</div>
@@ -633,7 +706,7 @@ export default function OperationsPage() {
         )}
       </div>
 
-      <div className="card card-lg" style={{ marginBottom: 'var(--space-6)', background: 'linear-gradient(130deg, #F8FBFF 0%, #FFFFFF 52%, #F5F7FA 100%)' }}>
+      <div className="card card-lg" style={{ marginBottom: 'var(--space-6)' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 'var(--space-3)', flexWrap: 'wrap', marginBottom: 'var(--space-3)' }}>
           <div>
             <div className="title-lg">실시간 실행 보드</div>
@@ -763,7 +836,7 @@ export default function OperationsPage() {
       </div>
 
       {pendingDryRunApproval && (
-        <div className="card card-lg" style={{ marginBottom: 'var(--space-6)', borderColor: 'var(--color-blue-200)', background: 'linear-gradient(120deg, var(--color-blue-50), #FFFFFF 70%)' }}>
+        <div className="card card-lg" style={{ marginBottom: 'var(--space-6)', borderColor: 'var(--color-blue-200)', background: 'var(--color-blue-50)' }}>
           <div className="title-lg">드라이런 결과 검토 완료</div>
           <div className="muted" style={{ marginTop: 'var(--space-1)' }}>
             job_id: {pendingDryRunApproval.jobId}
@@ -994,8 +1067,17 @@ export default function OperationsPage() {
         {!activityLoading && activity.length === 0 && (
           <div className="card"><div className="muted">실행 이력 없음</div></div>
         )}
-        {!activityLoading && activity.map(row => (
-          <div key={row.id} className="card" style={{ marginBottom: 'var(--space-2)' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' }}>
+        {!activityLoading && activity.map((row, idx) => {
+          const { label: memoLabel, reason: memoReason } = interpretMemo(row.memo)
+          const isRecent = idx === 0
+          const feeAmt = Number(row.fee_amount ?? 0)
+          const taxAmt = Number(row.tax_amount ?? 0)
+          const totalCost = feeAmt + taxAmt
+          const pnlAmt = row.pnl_amount != null ? Number(row.pnl_amount) : null
+          const isSell = row.side === 'SELL'
+          return (
+          <div key={row.id} className="card" style={{ ...cardBgStyle(row.side), ...(isRecent ? { boxShadow: '0 0 0 2px var(--color-brand)' } : {}) }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
               <div>
                 <span className="font-medium">{row.stock_name || row.code}</span>
@@ -1007,15 +1089,39 @@ export default function OperationsPage() {
                   {row.quantity}주 · {formatKrw(row.price)}
                 </span>
               </div>
-              <div className="caption muted">{new Date(row.created_at).toLocaleString('ko-KR')}</div>
+              <div style={{ textAlign: 'right' }}>
+                <div className="caption muted">{new Date(row.created_at).toLocaleString('ko-KR')}</div>
+                {isRecent && <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-brand)', fontWeight: 'var(--font-weight-semibold)' }}>최근</div>}
+              </div>
             </div>
-            {row.memo && (
-              <div className="caption muted" style={{ marginTop: 'var(--space-1)' }}>
-                {row.memo}
+            {/* 해석된 매매 이유 */}
+            <div style={{ marginTop: 'var(--space-1)', display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
+              <span style={{ fontSize: 'var(--font-size-xs)', fontWeight: 'var(--font-weight-semibold)', color: row.side === 'BUY' ? 'var(--color-stock-up)' : row.side === 'SELL' ? 'var(--color-stock-down)' : 'var(--color-text-secondary)', background: row.side === 'BUY' ? 'var(--color-stock-up-bg)' : row.side === 'SELL' ? 'var(--color-stock-down-bg)' : 'var(--color-stock-flat-bg)', borderRadius: 'var(--radius-sm)', padding: '2px 8px' }}>
+                {memoLabel}
+              </span>
+              {memoReason && <span className="caption muted">{memoReason}</span>}
+            </div>
+            {/* 매매비용 / 실수익 */}
+            {totalCost > 0 && (
+              <div className="caption muted" style={{ marginTop: 'var(--space-1)', display: 'flex', gap: 'var(--space-3)' }}>
+                <span>수수료 {formatKrw(feeAmt)}</span>
+                {taxAmt > 0 && <span>거래세 {formatKrw(taxAmt)}</span>}
+                <span>총비용 {formatKrw(totalCost)}</span>
+              </div>
+            )}
+            {isSell && pnlAmt != null && (
+              <div style={{ marginTop: 'var(--space-1)', fontSize: 'var(--font-size-xs)', fontWeight: 'var(--font-weight-semibold)', color: pnlAmt >= 0 ? 'var(--color-stock-up)' : 'var(--color-stock-down)' }}>
+                실현손익 {pnlAmt >= 0 ? '+' : ''}{formatKrw(pnlAmt)}
+                {totalCost > 0 && (
+                  <span style={{ fontWeight: 'var(--font-weight-regular)', color: 'var(--color-text-tertiary)', marginLeft: 'var(--space-2)' }}>
+                    (비용 포함 순수익 {pnlAmt - totalCost >= 0 ? '+' : ''}{formatKrw(pnlAmt - totalCost)})
+                  </span>
+                )}
               </div>
             )}
           </div>
-        ))}
+        )})}
+        </div>
       </div>
     </section>
   )

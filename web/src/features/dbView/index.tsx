@@ -290,6 +290,45 @@ export default function DBViewPage() {
     }
   }
 
+  const triggerFullDataSync = async () => {
+    const syncId = `sync-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+    setSyncing(true)
+    startSyncProgress('전체 데이터 동기화 (섹터·종가·지표·점수)')
+    beginSyncPolling(syncId)
+    toast.show('전체 데이터 동기화를 시작합니다… (수 분 소요)')
+    try {
+      const res = await apiFetch('/api/ui/trigger-update', {
+        method: 'POST',
+        body: JSON.stringify({ runScripts: true, pipeline: 'data-full-sync', syncId }),
+        cacheMs: 0,
+        timeoutMs: 900_000,
+        retries: 0,
+      })
+      if (!res?.ok || res?.error) {
+        const detail = res?.body?.error || res?.error || '전체 동기화 실패'
+        finishSyncProgress('전체 동기화 실패', String(detail), false)
+        toast.show(`동기화 실패: ${detail}`)
+      } else {
+        if (res?.scriptRunner?.requested && !res?.scriptRunner?.enabled) {
+          toast.show('스크립트 실행 비활성 상태 (ENABLE_WEB_SCRIPT_RUNNER=true 필요)')
+        } else {
+          finishSyncProgress('전체 동기화 완료', '섹터·종가·지표·점수가 갱신되었습니다.', true)
+          toast.show('전체 동기화 완료. 목록 갱신 중…')
+          await load(true)
+          await loadSyncHistory()
+          setSyncStage('목록 갱신 완료')
+          setSyncDetail('최신 데이터가 반영되었습니다.')
+          setTimeout(() => setSyncModalOpen(false), 700)
+        }
+      }
+    } catch (e: any) {
+      finishSyncProgress('전체 동기화 오류', String(e?.message || e), false)
+      toast.show(`동기화 오류: ${String(e?.message || e)}`)
+    } finally {
+      setSyncing(false)
+    }
+  }
+
   const forceRefreshStocksUpdatedAt = async () => {
     const syncId = `sync-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
     setSyncing(true)
@@ -416,6 +455,14 @@ export default function DBViewPage() {
             disabled={syncing || loading}
           >
             {syncing ? '동기화 중…' : '동기화'}
+          </Button>
+          <Button
+            variant="primary"
+            onClick={triggerFullDataSync}
+            disabled={syncing || loading}
+            title="섹터 + 종가·지표·점수 전체 재계산 (OHLCV 수집 제외, 수 분 소요)"
+          >
+            {syncing ? '동기화 중…' : '전체 동기화'}
           </Button>
           <Button
             variant="ghost"

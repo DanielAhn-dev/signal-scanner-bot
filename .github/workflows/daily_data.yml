@@ -5,6 +5,15 @@ on:
     # 장 마감 후 데이터 수집: KST 18:10 = UTC 09:10 (월~금)
     - cron: "10 9 * * 1-5"
   workflow_dispatch:
+    inputs:
+      skip_ohlcv:
+        description: 'OHLCV 수집 스킵 (stock_daily 데이터가 이미 있을 때 지표·섹터·점수만 재계산)'
+        type: boolean
+        default: false
+      trading_date:
+        description: '기준 거래일 (YYYYMMDD, 비워두면 자동 감지)'
+        type: string
+        default: ''
 
 jobs:
   fetch-and-process:
@@ -32,5 +41,14 @@ jobs:
       - name: Run Daily Batch (All-in-one)
         run: |
           echo "🚀 Starting daily batch: $(date)"
-          python scripts/daily_batch.py
+          ARGS=""
+          if [ "${{ github.event.inputs.skip_ohlcv }}" = "true" ]; then
+            ARGS="$ARGS --skip-ohlcv"
+            echo "   ⏭️  OHLCV 수집 스킵 모드"
+          fi
+          if [ -n "${{ github.event.inputs.trading_date }}" ]; then
+            ARGS="$ARGS --date ${{ github.event.inputs.trading_date }}"
+            echo "   📅 기준일 지정: ${{ github.event.inputs.trading_date }}"
+          fi
+          python scripts/daily_batch.py $ARGS
           echo "🏁 Finished: $(date)"

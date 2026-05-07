@@ -1094,8 +1094,20 @@ if __name__ == "__main__":
     # --skip-ohlcv 플래그로 OHLCV 수집 스킵 가능
     skip_ohlcv = "--skip-ohlcv" in sys.argv
 
-    trading_date = get_last_trading_date()
-    print(f"📅 기준 거래일: {trading_date}")
+    # --date YYYYMMDD 플래그로 기준 거래일 직접 지정
+    trading_date: str
+    if "--date" in sys.argv:
+        date_idx = sys.argv.index("--date")
+        if date_idx + 1 < len(sys.argv):
+            trading_date = sys.argv[date_idx + 1]
+            print(f"📅 기준 거래일 (지정): {trading_date}")
+        else:
+            print("⚠️ --date 인수 값 없음, 자동 감지로 전환")
+            trading_date = get_last_trading_date()
+            print(f"📅 기준 거래일 (자동): {trading_date}")
+    else:
+        trading_date = get_last_trading_date()
+        print(f"📅 기준 거래일: {trading_date}")
 
     if skip_ohlcv:
         print("\n[1/6] OHLCV 수집 스킵 (--skip-ohlcv)")
