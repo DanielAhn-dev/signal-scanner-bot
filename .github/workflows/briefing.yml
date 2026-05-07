@@ -56,11 +56,12 @@ jobs:
           fi
 
           TYPE="${{ steps.type.outputs.briefing_type }}"
+          BASE_URL="${VERCEL_APP_URL%/}"
           echo "📤 Sending ${TYPE} briefing..."
 
-          HTTP_CODE=$(curl -s -o /tmp/response.txt -w "%{http_code}" \
+          HTTP_CODE=$(curl -s -L -o /tmp/response.txt -w "%{http_code}" \
             -H "Authorization: Bearer ${CRON_SECRET}" \
-            "${VERCEL_APP_URL}/api/cron/briefing?type=${TYPE}")
+            "${BASE_URL}/api/cron/briefing?type=${TYPE}")
 
           echo "HTTP Status: ${HTTP_CODE}"
           cat /tmp/response.txt
