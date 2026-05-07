@@ -4,6 +4,7 @@
     "buildCommand": null,
     "devCommand": null,
     "installCommand": null,
+    "ignoreCommand": "git diff HEAD~1 --name-only | grep -qvE '^web/'",
     "functions": {
         "api/ui.ts": {
             "maxDuration": 60
