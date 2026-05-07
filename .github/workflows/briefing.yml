@@ -20,6 +20,7 @@ on:
 jobs:
   send-briefing:
     runs-on: ubuntu-latest
+    environment: production
     timeout-minutes: 5
     env:
       TZ: "Asia/Seoul"
@@ -41,13 +42,25 @@ jobs:
           fi
 
       - name: Call Vercel Briefing API
+        env:
+          VERCEL_APP_URL: ${{ secrets.VERCEL_APP_URL }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
         run: |
+          if [ -z "${VERCEL_APP_URL}" ]; then
+            echo "::error::VERCEL_APP_URL secret is not set"
+            exit 1
+          fi
+          if [ -z "${CRON_SECRET}" ]; then
+            echo "::error::CRON_SECRET secret is not set"
+            exit 1
+          fi
+
           TYPE="${{ steps.type.outputs.briefing_type }}"
           echo "📤 Sending ${TYPE} briefing..."
 
           HTTP_CODE=$(curl -s -o /tmp/response.txt -w "%{http_code}" \
-            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
-            "${{ secrets.VERCEL_APP_URL }}/api/cron/briefing?type=${TYPE}")
+            -H "Authorization: Bearer ${CRON_SECRET}" \
+            "${VERCEL_APP_URL}/api/cron/briefing?type=${TYPE}")
 
           echo "HTTP Status: ${HTTP_CODE}"
           cat /tmp/response.txt

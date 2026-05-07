@@ -1046,6 +1046,176 @@ function drawCandidateSummaryTable(ctx: ReportContext, forecasts: DailyCandidate
   ctx.y -= 8;
 }
 
+function rankConvictionForecasts(forecasts: DailyCandidateForecast[], limit = 10): DailyCandidateForecast[] {
+  return [...(forecasts ?? [])]
+    .sort((a, b) => {
+      if (b.confidencePct !== a.confidencePct) return b.confidencePct - a.confidencePct;
+      const aEdge = a.expectedUpsidePct - a.expectedDrawdownPct;
+      const bEdge = b.expectedUpsidePct - b.expectedDrawdownPct;
+      return bEdge - aEdge;
+    })
+    .slice(0, Math.max(1, limit));
+}
+
+function convictionStrategyDescription(label: string): string {
+  const map: Record<string, string> = {
+    눌림분할: "상승 흐름의 단기 조정 구간에서 분할 진입해 평균 단가를 낮추는 전략",
+    추세분할: "정배열 추세를 확인한 뒤 분할 진입해 추격 리스크를 낮추는 전략",
+    지지매수: "지지선 반등 구간에서 하방 기준을 명확히 두고 진입하는 전략",
+    확인매수: "기술/밸류/안전 지표 확인 후 신호가 맞을 때만 진입하는 전략",
+  };
+  return map[label] ?? "복합 지표를 종합해 선별한 진입 전략";
+}
+
+function convictionEntryBand(entryPrice: number, strategyLabel: string): { low: number; high: number } {
+  const offsets: Record<string, [number, number]> = {
+    눌림분할: [-0.03, -0.005],
+    추세분할: [-0.01, 0.01],
+    지지매수: [-0.025, 0],
+    확인매수: [0, 0.02],
+  };
+  const [lo, hi] = offsets[strategyLabel] ?? [-0.015, 0.015];
+  return {
+    low: Math.round(entryPrice * (1 + lo)),
+    high: Math.round(entryPrice * (1 + hi)),
+  };
+}
+
+function convictionAdvice(strategyLabel: string): string {
+  const map: Record<string, string> = {
+    눌림분할: "진입 구간에서 2~3회 분할 매수, 손절가 이탈 시 즉시 정리",
+    추세분할: "추세 확인 후 분할 진입, 1차 목표 도달 시 일부 익절",
+    지지매수: "지지선 하단 매수 후 이탈 확정 시 손절, 반등 확인 시 추가",
+    확인매수: "신호 확인 후 진입하고 손절/목표가를 먼저 고정",
+  };
+  return map[strategyLabel] ?? "분할 진입 후 손절가/목표가를 고정해 대응";
+}
+
+function convictionRationalePoints(item: DailyCandidateForecast): string[] {
+  const points: string[] = [];
+  const edge = item.expectedUpsidePct - item.expectedDrawdownPct;
+
+  points.push(convictionStrategyDescription(item.strategyLabel));
+
+  if (item.scoreComponents.momentum >= 75) {
+    points.push(`모멘텀 ${item.scoreComponents.momentum.toFixed(0)}점: 강한 추세 지속 가능성`);
+  } else if (item.scoreComponents.momentum >= 60) {
+    points.push(`모멘텀 ${item.scoreComponents.momentum.toFixed(0)}점: 우상향 흐름 유지`);
+  } else {
+    points.push(`모멘텀 ${item.scoreComponents.momentum.toFixed(0)}점: 추세 재확인 후 진입 권장`);
+  }
+
+  if (item.scoreComponents.value >= 70) {
+    points.push(`밸류 ${item.scoreComponents.value.toFixed(0)}점: 저평가 구간 여지`);
+  } else if (item.scoreComponents.value >= 55) {
+    points.push(`밸류 ${item.scoreComponents.value.toFixed(0)}점: 과열 부담 낮은 적정 구간`);
+  }
+
+  if (item.scoreComponents.safety >= 72) {
+    points.push(`안전성 ${item.scoreComponents.safety.toFixed(0)}점: 하방 리스크 제한`);
+  } else if (item.scoreComponents.safety >= 55) {
+    points.push(`안전성 ${item.scoreComponents.safety.toFixed(0)}점: 기본 리스크 요건 충족`);
+  } else {
+    points.push(`안전성 ${item.scoreComponents.safety.toFixed(0)}점: 비중 축소/분할 진입 권장`);
+  }
+
+  if (edge >= 8) {
+    points.push(`기대 여지 +${edge.toFixed(1)}%: 손익비 우수`);
+  } else if (edge >= 5) {
+    points.push(`기대 여지 +${edge.toFixed(1)}%: 리스크 대비 기대수익 양호`);
+  } else {
+    points.push(`기대 여지 +${edge.toFixed(1)}%: 초기 진입 비중 보수 권장`);
+  }
+
+  return points.slice(0, 4);
+}
+
+function drawConvictionCard(ctx: ReportContext, item: DailyCandidateForecast, index: number) {
+  const titleSize = 10;
+  const bodySize = 8;
+  const lineHeight = 12;
+  const boxX = ctx.ML;
+  const boxW = ctx.BODY_W;
+  const edge = item.expectedUpsidePct - item.expectedDrawdownPct;
+  const band = convictionEntryBand(item.entryPrice, item.strategyLabel);
+  const stopPrice = Math.round(item.entryPrice * (1 - item.expectedDrawdownPct / 100));
+  const target1 = Math.round(item.entryPrice * (1 + item.expectedBasePct / 100));
+  const target2 = Math.round(item.entryPrice * (1 + item.expectedUpsidePct / 100));
+  const points = convictionRationalePoints(item);
+
+  const innerWidth = boxW - 14;
+  const topPadding = 14;
+  const bottomPadding = 14;
+  const title = `${index + 1}. ${item.name} (${item.code})`;
+  const sub = `${item.strategyLabel} · 신뢰 ${item.confidencePct.toFixed(1)}% · 기대여지 +${edge.toFixed(1)}%`;
+  const scores = `점수 모멘텀 ${item.scoreComponents.momentum.toFixed(0)} / 밸류 ${item.scoreComponents.value.toFixed(0)} / 안전성 ${item.scoreComponents.safety.toFixed(0)}`;
+  const prices = `진입 ${fmtInt(band.low)}~${fmtInt(band.high)}원 · 손절 ${fmtInt(stopPrice)}원 · 1차 ${fmtInt(target1)}원 · 2차 ${fmtInt(target2)}원`;
+  const advice = `어드바이스: ${convictionAdvice(item.strategyLabel)}`;
+
+  const textLines = {
+    title: wrapText(title, innerWidth, ctx.fontBold, titleSize).length,
+    sub: wrapText(sub, innerWidth, ctx.font, bodySize).length,
+    scores: wrapText(scores, innerWidth, ctx.fontLight, bodySize).length,
+    prices: wrapText(prices, innerWidth, ctx.font, bodySize).length,
+    section: wrapText("매수 확신 근거", innerWidth, ctx.fontBold, bodySize).length,
+    points: points.reduce((sum, point) => sum + wrapText(`• ${point}`, innerWidth - 2, ctx.font, bodySize).length, 0),
+    advice: wrapText(advice, innerWidth, ctx.fontBold, bodySize).length,
+  };
+
+  const gapUnits = 6;
+  const contentLines =
+    textLines.title +
+    textLines.sub +
+    textLines.scores +
+    textLines.prices +
+    textLines.section +
+    textLines.points +
+    textLines.advice;
+  const cardHeight = topPadding + bottomPadding + contentLines * lineHeight + gapUnits;
+  ctx.ensureSpace(cardHeight + 8);
+
+  const cardTopY = ctx.y;
+  const cardBottomY = cardTopY - cardHeight;
+  ctx.rect(boxX, cardBottomY, boxW, cardHeight, rgb(0.985, 0.988, 0.995));
+  ctx.line(boxX, cardTopY, boxX + boxW, cardTopY, rgb(0.84, 0.87, 0.93), 0.8);
+  ctx.line(boxX, cardBottomY, boxX + boxW, cardBottomY, rgb(0.84, 0.87, 0.93), 0.8);
+
+  let cursorY = cardTopY - topPadding;
+  const left = boxX + 8;
+
+  cursorY -= ctx.textBold(title, left, cursorY, titleSize, rgb(0.11, 0.13, 0.18), boxW - 14) * lineHeight;
+  cursorY -= 1;
+  cursorY -= ctx.text(sub, left, cursorY, bodySize, rgb(0.19, 0.31, 0.54), boxW - 14) * lineHeight;
+  cursorY -= ctx.textLight(scores, left, cursorY, bodySize, rgb(0.38, 0.40, 0.45), boxW - 14) * lineHeight;
+  cursorY -= ctx.text(prices, left, cursorY, bodySize, rgb(0.12, 0.12, 0.16), boxW - 14) * lineHeight;
+  cursorY -= 1;
+
+  cursorY -= ctx.textBold("매수 확신 근거", left, cursorY, bodySize, rgb(0.18, 0.26, 0.46), boxW - 14) * lineHeight;
+  for (const point of points) {
+    cursorY -= ctx.text(`• ${point}`, left + 2, cursorY, bodySize, rgb(0.19, 0.19, 0.22), boxW - 16) * lineHeight;
+  }
+
+  cursorY -= 1;
+  ctx.textBold(advice, left, cursorY, bodySize, rgb(0.13, 0.35, 0.56), boxW - 14);
+
+  ctx.y = cardBottomY - 8;
+}
+
+function drawConvictionCandidateSection(ctx: ReportContext, forecasts: DailyCandidateForecast[]) {
+  const ranked = rankConvictionForecasts(forecasts, 10);
+  const intro = `눌림목·점수·리스크를 함께 반영한 확신 후보 ${ranked.length}개 종목(신뢰도 순)`;
+
+  ctx.ensureSpace(20);
+  ctx.textBold("확신추천 상세 카드", ctx.ML, ctx.y, 10, rgb(0.17, 0.30, 0.55), ctx.BODY_W);
+  ctx.y -= 14;
+  ctx.textLight(intro, ctx.ML, ctx.y, 8.5, rgb(0.36, 0.37, 0.42), ctx.BODY_W);
+  ctx.y -= 14;
+
+  for (let i = 0; i < ranked.length; i += 1) {
+    drawConvictionCard(ctx, ranked[i], i);
+  }
+}
+
 export async function createDailyCandidateReportPdf(
   chatId: number,
   report: DailyCandidatePlanningReportResult,
@@ -1091,6 +1261,22 @@ export async function createDailyCandidateReportPdf(
   );
 
   drawCandidateSummaryTable(ctx, report.forecasts ?? []);
+
+  const isConvictionReport = filePrefix.includes("conviction") || title.includes("확신추천");
+  if (isConvictionReport) {
+    drawConvictionCandidateSection(ctx, report.forecasts ?? []);
+    ctx.finalizePage();
+    return {
+      bytes: await pdf.save(),
+      fileName: `${filePrefix}_${chatId}_${ymd}.pdf`,
+      caption: [
+        captionTitle,
+        `기준일: ${krDate}`,
+        captionSubtitle,
+      ].join("\n"),
+      summaryText,
+    };
+  }
 
   const rawLines = String(report.text ?? "").split("\n");
   const sectionFontSize = 10;

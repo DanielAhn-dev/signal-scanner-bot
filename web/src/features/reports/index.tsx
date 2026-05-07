@@ -44,7 +44,7 @@ const REPORT_ACTIONS: ReportAction[] = [
   },
   {
     key: 'conviction-candidate-pdf',
-    label: '확신추천 하이라이트 종목',
+    label: '하이라이트 종목',
     desc: '눌림목·점수·리스크를 종합한 확신 후보 하이라이트 리포트를 생성합니다. (/리포트 확신추천 대응)',
     kind: 'download',
     endpoint: '/api/ui/report-pdf?topic=확신추천',
@@ -255,7 +255,13 @@ export default function ReportsPage() {
       const downloadUrl = URL.createObjectURL(blob)
       const a = document.createElement('a')
       a.href = downloadUrl
-      a.download = fileName
+      const today = new Date()
+      const dateStr = `${today.getFullYear()}${String(today.getMonth() + 1).padStart(2, '0')}${String(today.getDate()).padStart(2, '0')}`
+      const dotIdx = fileName.lastIndexOf('.')
+      const datedFileName = dotIdx !== -1
+        ? `${fileName.slice(0, dotIdx)}_${dateStr}${fileName.slice(dotIdx)}`
+        : `${fileName}_${dateStr}`
+      a.download = datedFileName
       document.body.appendChild(a)
       a.click()
       a.remove()
