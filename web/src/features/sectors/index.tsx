@@ -123,7 +123,7 @@ export default function SectorsPage() {
     setLoading(true)
     setError(null)
     try {
-      const res = await apiFetch("/api/ui/sectors", { cacheMs: force ? 0 : SECTORS_TTL })
+      const res = await apiFetch("/api/ui/sectors", { cacheMs: force ? 0 : SECTORS_TTL, timeoutMs: 15_000 })
       const data: Sector[] = res?.data ?? []
       setAll(data)
       writeLS(LS_KEY, data)

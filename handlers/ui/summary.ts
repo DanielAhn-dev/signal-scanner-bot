@@ -159,9 +159,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const positionCodes = positions
       .map((row) => String(row?.code || '').trim())
       .filter(Boolean)
-    const realtimePriceMap = await fetchRealtimePriceBatch(positionCodes).catch(
-      () => ({} as Record<string, RealtimeStockData>),
-    )
+    const REALTIME_BATCH_TOTAL_TIMEOUT_MS = Math.max(1_000, Number(process.env.UI_REALTIME_BATCH_TIMEOUT_MS || 4_000))
+    const realtimePriceMap = await Promise.race([
+      fetchRealtimePriceBatch(positionCodes),
+      new Promise<Record<string, RealtimeStockData>>((resolve) =>
+        setTimeout(() => resolve({}), REALTIME_BATCH_TOTAL_TIMEOUT_MS),
+      ),
+    ]).catch(() => ({} as Record<string, RealtimeStockData>))
 
     const decCount =
       decisionResult.status === 'fulfilled' && Number.isFinite(Number(decisionResult.value.count))

@@ -115,6 +115,17 @@ function AppContent() {
     preloadStocks()
   }, [])
 
+  // Vercel 서버리스 함수 cold start 방지: 앱 첫 진입 시 세션당 1회 warm-up
+  useEffect(() => {
+    const WARM_KEY = '__api_warmed'
+    if (typeof window === 'undefined') return
+    if (sessionStorage.getItem(WARM_KEY)) return
+    sessionStorage.setItem(WARM_KEY, '1')
+    const base = (import.meta.env.VITE_API_BASE || '').replace(/\/$/, '')
+    const url = `${base}/api/ui?route=sectors&top=1&cacheMs=300000`
+    fetch(url, { method: 'GET', signal: AbortSignal.timeout?.(8_000) }).catch(() => {/* 무시 */})
+  }, [])
+
   useEffect(() => {
     try {
       const message = readAuthErrorFromLocation()

@@ -15,12 +15,17 @@ export default function MarketPage() {
     setLoading(true)
     setError(null)
     try {
-      const [s, sec] = await Promise.all([
-        apiFetch('/api/ui/summary', { cacheMs: 30_000 }),
-        apiFetch('/api/ui/sectors',  { cacheMs: 60_000 }),
+      const [sRes, secRes] = await Promise.allSettled([
+        apiFetch('/api/ui/summary', { cacheMs: 30_000, timeoutMs: 15_000, retries: 1 }),
+        apiFetch('/api/ui/sectors',  { cacheMs: 60_000, timeoutMs: 15_000, retries: 1 }),
       ])
-      setSummary(s?.data ?? null)
-      setSectors(sec?.data ?? [])
+      if (sRes.status === 'fulfilled') setSummary(sRes.value?.data ?? null)
+      if (secRes.status === 'fulfilled') setSectors(secRes.value?.data ?? [])
+      const errs = [sRes, secRes]
+        .filter((r) => r.status === 'rejected')
+        .map((r) => (r as PromiseRejectedResult).reason?.message || String((r as PromiseRejectedResult).reason))
+      if (errs.length === 2) throw new Error(errs[0])
+      // 하나라도 성공하면 에러 없이 표시
     } catch (e: any) {
       setError(e?.message || String(e))
     } finally {

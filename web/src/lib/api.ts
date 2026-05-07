@@ -163,8 +163,11 @@ export async function apiFetch(
         return json
       } catch (e: any) {
         lastErr = e
-        // 마지막 시도거나 타임아웃이면 재시도 없이 throw
-        if (attempt === maxAttempts - 1 || e?.message?.includes('timed out')) break
+        // 401/404 등 HTTP 에러는 재시도해도 달라지지 않으므로 즉시 throw
+        const isHttpError = e?.message?.match(/API request failed \(\d+\)/)
+        if (attempt === maxAttempts - 1 || isHttpError) break
+        // 타임아웃/네트워크 에러는 Vercel cold start일 수 있으므로 재시도 (함수가 이미 워밍됨)
+        await new Promise((r) => setTimeout(r, 300))
       }
     }
     throw lastErr

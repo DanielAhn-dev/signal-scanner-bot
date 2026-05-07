@@ -31,7 +31,7 @@ export default function FeedPage() {
     setLoading(true)
     setError(null)
     try {
-      const res = await apiFetch('/api/ui/decisions?pageSize=30', { cacheMs: 10_000 })
+      const res = await apiFetch('/api/ui/decisions?pageSize=30', { cacheMs: 10_000, timeoutMs: 12_000, retries: 1 })
       setDecisions(res?.data ?? [])
     } catch (e: any) {
       setError(e?.message || String(e))

@@ -230,7 +230,7 @@ export default function DBViewPage() {
   useEffect(() => {
     ;(async () => {
       try {
-        const s = await apiFetch('/api/ui/sectors', { cacheMs: 60_000 })
+        const s = await apiFetch('/api/ui/sectors', { cacheMs: 60_000, timeoutMs: 15_000, retries: 1 })
         setSectors(s.data ?? [])
       } catch { /* ignore */ }
     })()
