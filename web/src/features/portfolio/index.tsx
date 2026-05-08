@@ -441,24 +441,51 @@ export default function Portfolio() {
           <h1 className="title-xl portfolio-title">가상 포트폴리오</h1>
           <p className="portfolio-subtitle">보유 포지션과 관심 종목을 한 화면에서 관리합니다.</p>
         </div>
-        <div style={{ display: 'flex', gap: 'var(--space-2)', alignItems: 'center', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
-          <span className="caption muted">
+        <div className="portfolio-head-actions">
+          <span className="caption muted portfolio-head-updated">
             {refreshing
               ? '업데이트 중...'
               : `마지막 갱신 ${lastUpdatedAt
                 ? new Date(lastUpdatedAt).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
                 : '-'}`}
           </span>
-          <Button variant="secondary" onClick={() => load({ force: true })} disabled={loading || refreshing}>
-            {refreshing ? '새로고침 중...' : '새로고침'}
-          </Button>
-          <span className="portfolio-total-pill">
-            {allRows.length > 0 ? `총 ${allRows.length}개` : '포지션 집계 준비중'}
-          </span>
-          <Button variant="secondary" onClick={() => setShareModalOpen(true)} disabled={loading || holdingAll.length === 0}>공유 요약 보기</Button>
-          <Button variant="ghost" onClick={() => openMaintenanceModal('holdingrestore')} disabled={loading}>보유복구</Button>
-          <Button variant="ghost" onClick={() => openMaintenanceModal('watchreset')} disabled={loading || interestAll.length === 0}>관심초기화</Button>
-          <Button variant="ghost" onClick={() => openMaintenanceModal('liquidateall')} disabled={loading || holdingAll.length === 0}>전체매도</Button>
+
+          <div className="portfolio-head-primary-actions">
+            <Button variant="secondary" onClick={() => load({ force: true })} disabled={loading || refreshing}>
+              {refreshing ? '새로고침 중...' : '새로고침'}
+            </Button>
+            <span className="portfolio-total-pill">
+              {allRows.length > 0 ? `총 ${allRows.length}개` : '포지션 집계 준비중'}
+            </span>
+            <Button variant="secondary" onClick={() => setShareModalOpen(true)} disabled={loading || holdingAll.length === 0}>공유 요약 보기</Button>
+          </div>
+
+          <div className="portfolio-head-text-actions" role="group" aria-label="포트폴리오 유지보수 작업">
+            <button
+              type="button"
+              className="portfolio-text-action"
+              onClick={() => openMaintenanceModal('holdingrestore')}
+              disabled={loading}
+            >
+              보유복구
+            </button>
+            <button
+              type="button"
+              className="portfolio-text-action"
+              onClick={() => openMaintenanceModal('watchreset')}
+              disabled={loading || interestAll.length === 0}
+            >
+              관심초기화
+            </button>
+            <button
+              type="button"
+              className="portfolio-text-action danger"
+              onClick={() => openMaintenanceModal('liquidateall')}
+              disabled={loading || holdingAll.length === 0}
+            >
+              전체매도
+            </button>
+          </div>
         </div>
       </div>
 
@@ -698,8 +725,8 @@ export default function Portfolio() {
             <div className="portfolio-capture-count">보유 {holdingAll.length}종목</div>
           </div>
 
-          <div style={{ display: 'flex', gap: 'var(--space-2)', alignItems: 'center', flexWrap: 'wrap', marginBottom: 'var(--space-3)' }}>
-            <div style={{ minWidth: 180 }}>
+          <div className="portfolio-share-control-grid">
+            <div className="portfolio-share-ttl-field">
               <div className="caption muted" style={{ marginBottom: 'var(--space-1)' }}>링크 만료</div>
               <select
                 className="input"
@@ -712,15 +739,21 @@ export default function Portfolio() {
                 <option value="168">7일</option>
               </select>
             </div>
-            <Input
-              label="공유 URL (인증 없이 접근 가능)"
-              readOnly
-              value={sharedSummaryUrl || (shareCreating ? '공유 URL 생성 중...' : '')}
-            />
-            <Button variant="secondary" onClick={createPublicShareUrl} disabled={shareCreating}>
-              {shareCreating ? '생성 중...' : 'URL 재생성'}
-            </Button>
-            <Button variant="secondary" onClick={copyPortfolioShareUrl} disabled={!sharedSummaryUrl}>URL 복사</Button>
+
+            <div className="portfolio-share-url-block">
+              <div className="caption muted portfolio-share-url-label">공유 URL (인증 없이 접근 가능)</div>
+              <div className="portfolio-share-url-row">
+                <input
+                  className="ui-text portfolio-share-url-input"
+                  readOnly
+                  value={sharedSummaryUrl || (shareCreating ? '공유 URL 생성 중...' : '')}
+                />
+                <Button variant="secondary" onClick={createPublicShareUrl} disabled={shareCreating}>
+                  {shareCreating ? '생성 중...' : 'URL 재생성'}
+                </Button>
+                <Button variant="secondary" onClick={copyPortfolioShareUrl} disabled={!sharedSummaryUrl}>URL 복사</Button>
+              </div>
+            </div>
           </div>
           {shareExpiresAt && (
             <div className="caption muted" style={{ marginBottom: 'var(--space-3)' }}>
@@ -748,13 +781,19 @@ export default function Portfolio() {
                   const isRevoked = Boolean(item.revokedAt)
                   const isExpired = new Date(item.expiresAt).getTime() <= Date.now()
                   return (
-                    <div key={item.shareId} style={{ border: '1px solid var(--color-border-muted)', borderRadius: 'var(--radius-md)', padding: 'var(--space-2)' }}>
-                      <div className="caption" style={{ marginBottom: 'var(--space-1)' }}>
-                        생성 {item.createdAt ? new Date(item.createdAt).toLocaleString('ko-KR', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false }) : '-'}
-                        {' · '}만료 {new Date(item.expiresAt).toLocaleString('ko-KR', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false })}
-                        {' · '}조회 {Number(item.accessCount || 0)}회
+                    <div key={item.shareId} className="portfolio-share-history-item">
+                      <div className="portfolio-share-history-head">
+                        <div className="caption">
+                          생성 {item.createdAt ? new Date(item.createdAt).toLocaleString('ko-KR', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false }) : '-'}
+                          {' · '}만료 {new Date(item.expiresAt).toLocaleString('ko-KR', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false })}
+                          {' · '}조회 {Number(item.accessCount || 0)}회
+                        </div>
+                        <div className={`portfolio-share-history-status ${isRevoked ? 'is-revoked' : isExpired ? 'is-expired' : 'is-active'}`}>
+                          {isRevoked ? '철회됨' : isExpired ? '만료됨' : '활성'}
+                        </div>
                       </div>
-                      <div style={{ display: 'flex', gap: 'var(--space-2)', flexWrap: 'wrap' }}>
+                      <div className="portfolio-share-history-url">{item.url}</div>
+                      <div className="portfolio-share-history-actions">
                         <Button
                           variant="secondary"
                           onClick={async () => {

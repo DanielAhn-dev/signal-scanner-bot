@@ -941,15 +941,81 @@ html, body, #root {
   @apply text-sm;
 }
 
+.portfolio-head-actions {
+  @apply flex items-center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.portfolio-head-updated {
+  @apply whitespace-nowrap;
+}
+
+.portfolio-head-primary-actions {
+  @apply flex items-center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.portfolio-head-text-actions {
+  @apply flex items-center;
+  gap: var(--space-2);
+  padding-left: var(--space-2);
+  margin-left: var(--space-1);
+  border-left: 1px solid var(--color-border-muted);
+}
+
+.portfolio-text-action {
+  @apply bg-transparent border-none;
+  @apply text-sm;
+  @apply font-semibold;
+  color: var(--color-text-secondary);
+  padding: 0.125rem 0;
+  line-height: 1.25;
+  cursor: pointer;
+  border-bottom: 1px solid transparent;
+  transition: color var(--duration-fast) var(--ease-out), border-color var(--duration-fast) var(--ease-out);
+}
+
+.portfolio-text-action:hover:not(:disabled) {
+  color: var(--color-text-primary);
+  border-bottom-color: var(--color-border-strong);
+}
+
+.portfolio-text-action:focus-visible {
+  @apply outline-none;
+  box-shadow: var(--shadow-focus);
+  border-radius: var(--radius-xs);
+}
+
+.portfolio-text-action:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.portfolio-text-action.danger {
+  color: #b54242;
+}
+
+.portfolio-text-action.danger:hover:not(:disabled) {
+  color: #922f2f;
+  border-bottom-color: #d68a8a;
+}
+
 .portfolio-total-pill {
   @apply whitespace-nowrap;
-  @apply px-3 py-2;
-  @apply rounded-full;
-  background: var(--color-bg-surface);
-  border: 1px solid var(--color-border-default);
+  @apply px-3;
+  min-height: var(--btn-height-md, 40px);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--btn-radius, var(--radius-sm));
+  background: var(--btn-secondary-bg, #eff6ff);
+  border: 1px solid var(--color-blue-100);
   color: var(--color-text-secondary);
-  @apply text-xs;
-  @apply font-medium;
+  @apply text-sm;
+  @apply font-semibold;
 }
 
 .portfolio-stat-grid {
@@ -1074,6 +1140,84 @@ html, body, #root {
   color: #2456a7;
 }
 
+.portfolio-share-control-grid {
+  @apply grid;
+  grid-template-columns: minmax(180px, 220px) minmax(0, 1fr);
+  gap: var(--space-3);
+  @apply mb-3;
+  align-items: end;
+}
+
+.portfolio-share-url-block {
+  min-width: 0;
+}
+
+.portfolio-share-url-label {
+  @apply mb-1;
+}
+
+.portfolio-share-url-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  gap: var(--space-2);
+  align-items: center;
+}
+
+.portfolio-share-url-input {
+  min-width: 0;
+}
+
+.portfolio-share-history-item {
+  border: 1px solid var(--color-border-muted);
+  border-radius: var(--radius-md);
+  padding: var(--space-2);
+}
+
+.portfolio-share-history-head {
+  @apply flex items-start justify-between;
+  gap: var(--space-2);
+}
+
+.portfolio-share-history-status {
+  @apply text-xs;
+  @apply font-semibold;
+  border-radius: 999px;
+  padding: 0.15rem 0.55rem;
+  white-space: nowrap;
+}
+
+.portfolio-share-history-status.is-active {
+  background: #ecfdf3;
+  color: #0f8a4c;
+}
+
+.portfolio-share-history-status.is-expired {
+  background: #f3f4f6;
+  color: #4b5563;
+}
+
+.portfolio-share-history-status.is-revoked {
+  background: #fef2f2;
+  color: #c24141;
+}
+
+.portfolio-share-history-url {
+  @apply mt-1;
+  @apply text-sm;
+  color: var(--color-text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.portfolio-share-history-actions {
+  @apply flex;
+  gap: var(--space-2);
+  @apply mt-2;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+}
+
 .portfolio-capture-metrics {
   @apply grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -1150,6 +1294,30 @@ html, body, #root {
     @apply flex-col items-start;
   }
 
+  .portfolio-head-actions {
+    width: 100%;
+    justify-content: flex-start;
+  }
+
+  .portfolio-head-primary-actions {
+    width: 100%;
+  }
+
+  .portfolio-head-primary-actions .ui-button,
+  .portfolio-head-primary-actions .portfolio-total-pill {
+    flex: 1 1 auto;
+    text-align: center;
+    justify-content: center;
+  }
+
+  .portfolio-head-text-actions {
+    width: 100%;
+    border-left: 0;
+    padding-left: 0;
+    margin-left: 0;
+    justify-content: flex-start;
+  }
+
   .portfolio-capture-top {
     @apply flex-col items-start;
   }
@@ -1176,6 +1344,28 @@ html, body, #root {
 
   .portfolio-action-btn {
     @apply w-full;
+  }
+
+  .portfolio-share-control-grid {
+    grid-template-columns: 1fr;
+    align-items: stretch;
+  }
+
+  .portfolio-share-url-row {
+    grid-template-columns: 1fr;
+  }
+
+  .portfolio-share-url-row .ui-button {
+    @apply w-full;
+  }
+
+  .portfolio-share-history-head {
+    @apply flex-col;
+    align-items: flex-start;
+  }
+
+  .portfolio-share-history-actions {
+    justify-content: flex-start;
   }
 }
 

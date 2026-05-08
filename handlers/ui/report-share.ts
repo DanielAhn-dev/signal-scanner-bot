@@ -82,7 +82,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         ok: true,
         data: shares.map((share: ShareListItem) => ({
           ...share,
-          url: `${publicOrigin}/api/ui/report-shared?share=${encodeURIComponent(share.publicToken)}`,
+          url: `${publicOrigin}/report/shared?share=${encodeURIComponent(share.publicToken)}`,
         })),
       })
     }
@@ -125,7 +125,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       expiresAt,
     })
 
-    const url = `${publicOrigin}/api/ui/report-shared?share=${encodeURIComponent(share.publicToken)}`
+    const url = `${publicOrigin}/report/shared?share=${encodeURIComponent(share.publicToken)}`
 
     return res.status(200).json({
       ok: true,

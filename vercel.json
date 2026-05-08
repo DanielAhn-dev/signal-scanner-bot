@@ -24,6 +24,14 @@
     },
     "rewrites": [
         {
+            "source": "/portfolio/shared",
+            "destination": "/api/ui/portfolio-shared"
+        },
+        {
+            "source": "/report/shared",
+            "destination": "/api/ui/report-shared"
+        },
+        {
             "source": "/api/ui/:route",
             "destination": "/api/ui?route=:route"
         },

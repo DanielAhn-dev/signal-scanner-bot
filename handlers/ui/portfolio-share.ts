@@ -123,7 +123,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           revokedAt: row.revoked_at ? String(row.revoked_at) : null,
           accessCount: Number(row.access_count || 0),
           lastAccessedAt: row.last_accessed_at ? String(row.last_accessed_at) : null,
-          url: `${publicOrigin}/api/ui/portfolio-shared?share=${encodeURIComponent(String(row.public_token || ''))}`,
+          url: `${publicOrigin}/portfolio/shared?share=${encodeURIComponent(String(row.public_token || ''))}`,
         })),
       })
     }
@@ -252,7 +252,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       expiresAt,
     })
 
-    const url = `${publicOrigin}/api/ui/portfolio-shared?share=${encodeURIComponent(share.publicToken)}`
+    const url = `${publicOrigin}/portfolio/shared?share=${encodeURIComponent(share.publicToken)}`
 
     return res.status(200).json({
       ok: true,
