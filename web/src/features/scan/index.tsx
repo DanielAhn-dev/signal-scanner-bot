@@ -40,6 +40,7 @@ type SortKey =
   | 'code'
   | 'name'
   | 'sector_id'
+  | 'priority_score'
   | 'entry_grade'
   | 'entry_score'
   | 'trend_grade'
@@ -79,11 +80,17 @@ function gradeScore(grade: string | null | undefined): number {
   return 0
 }
 
+/** 복합 우선순위 점수: entry_score × 20 − warn_score × 3 (범위 약 −18 ~ 80) */
+function computePriorityScore(item: ScanCandidate): number {
+  return (item.entry_score ?? 0) * 20 - (item.warn_score ?? 0) * 3
+}
+
 function toComparableValue(item: ScanCandidate, key: SortKey): string | number {
+  if (key === 'priority_score') return computePriorityScore(item)
   if (key === 'entry_grade' || key === 'trend_grade' || key === 'dist_grade' || key === 'pivot_grade') {
     return gradeScore(item[key])
   }
-  const v = item[key]
+  const v = item[key as keyof ScanCandidate]
   if (v == null) return ''
   if (typeof v === 'number') return v
   return String(v)
@@ -101,12 +108,38 @@ function GradeBadge({ grade, label }: { grade: string | null | undefined; label?
   )
 }
 
+type ScanHighlightItem = {
+  code: string
+  name: string
+  sector_id: string | null
+  entry_grade: string | null
+  entry_score: number | null
+  trend_grade: string | null
+  dist_grade: string | null
+  pivot_grade: string | null
+  warn_grade: string | null
+  warn_score: number | null
+  signal?: string | null
+  stable_turn?: string | null
+  total_score?: number | null
+  highlight_score?: number
+}
+
 function WarnBadge({ grade }: { grade: string | null | undefined }) {
   if (!grade) return <span className="scan-grade-label">—</span>
   const g = String(grade).toUpperCase()
   const cls = g === 'SAFE' ? 'scan-warn-safe' : g === 'WATCH' ? 'scan-warn-watch' : g === 'WARN' ? 'scan-warn-warn' : 'scan-warn-default'
   const label = g === 'SAFE' ? '안전' : g === 'WATCH' ? '관찰' : g === 'WARN' ? '주의' : g
   return <span className={`scan-warn-badge ${cls}`}>{label}</span>
+}
+
+function SignalBadge({ signal }: { signal: string | null | undefined }) {
+  if (!signal) return null
+  const s = String(signal).toUpperCase().trim()
+  if (!s || s === 'NEUTRAL' || s === 'NONE') return null
+  const cls = s === 'STRONG_BUY' ? 'scan-grade-a' : s === 'BUY' ? 'scan-grade-b' : s === 'WATCH' ? 'scan-grade-c' : 'scan-grade-other'
+  const label = s === 'STRONG_BUY' ? '강력매수' : s === 'BUY' ? '매수' : s === 'SELL' ? '매도' : s === 'WATCH' ? '관찰' : s
+  return <span className={`scan-grade-badge ${cls}`} title="종합시그널">{label}</span>
 }
 
 export default function ScanPage({ onNavigate }: { onNavigate?: (r: string) => void }) {
@@ -117,9 +150,11 @@ export default function ScanPage({ onNavigate }: { onNavigate?: (r: string) => v
   const [loading, setLoading] = useState(() => !snapshot)
   const [error, setError] = useState<string | null>(null)
   const [scanLoading, setScanLoading] = useState(false)
+  const [apiHighlights, setApiHighlights] = useState<ScanHighlightItem[]>([])
+  const [highlightLoading, setHighlightLoading] = useState(true)
   const [selectedSector, setSelectedSector] = useState<string>('all')
   const [conditionFilter, setConditionFilter] = useState<'all' | 'entry' | 'trend' | 'accumulation' | 'stable'>('all')
-  const [sortKey, setSortKey] = useState<SortKey>('entry_score')
+  const [sortKey, setSortKey] = useState<SortKey>('priority_score')
   const [sortDirection, setSortDirection] = useState<SortDirection>('desc')
   const [page, setPage] = useState(1)
   const pageSize = 20
@@ -157,6 +192,13 @@ export default function ScanPage({ onNavigate }: { onNavigate?: (r: string) => v
   }
 
   useEffect(() => { loadCandidates() }, [])
+  useEffect(() => {
+    setHighlightLoading(true)
+    apiFetch('/api/ui/scan-highlights', { cacheMs: 60_000, timeoutMs: 15_000 })
+      .then((res) => { if (Array.isArray(res?.data)) setApiHighlights(res.data) })
+      .catch(() => { /* API 호출 실패 시 로컈 폴백 사용 */ })
+      .finally(() => setHighlightLoading(false))
+  }, [])
   useEffect(() => {
     loadWatchlistCodes().catch(() => {
       // 관심종목 조회 실패 시에도 스캔 화면은 계속 사용 가능해야 함
@@ -205,7 +247,7 @@ export default function ScanPage({ onNavigate }: { onNavigate?: (r: string) => v
     [candidates],
   )
 
-  const highlightCandidates = useMemo(() => {
+  const localHighlights = useMemo<ScanHighlightItem[]>(() => {
     return [...candidates]
       .filter(c => ['A', 'B'].includes(String(c.entry_grade || '').toUpperCase()))
       .sort((a, b) => {
@@ -219,6 +261,9 @@ export default function ScanPage({ onNavigate }: { onNavigate?: (r: string) => v
       })
       .slice(0, 5)
   }, [candidates])
+
+  // API 하이라이트가 있으면 우선 사용, 없으면 로컈 폴백
+  const activeHighlights = apiHighlights.length > 0 ? apiHighlights : localHighlights
 
   const filterCounts = useMemo(() => {
     const base = selectedSector === 'all' ? candidates : candidates.filter(c => c.sector_id === selectedSector)
@@ -258,6 +303,7 @@ export default function ScanPage({ onNavigate }: { onNavigate?: (r: string) => v
 
   const displayRows = useMemo(() => pagedCandidates.map((s) => ({
     ...s,
+    priorityScore: Math.round(computePriorityScore(s)),
     tradeDateText: s.trade_date ?? '—',
     updatedAtText: s.stock_updated_at
       ? new Date(s.stock_updated_at).toLocaleString('ko-KR', {
@@ -281,7 +327,23 @@ export default function ScanPage({ onNavigate }: { onNavigate?: (r: string) => v
 
   useEffect(() => {
     setPage(1)
-  }, [selectedSector, conditionFilter])
+  }, [selectedSector])
+
+  // 필터 탭별 기본 정렬 기준
+  const FILTER_DEFAULT_SORT: Record<typeof conditionFilter, SortKey> = {
+    all: 'priority_score',
+    entry: 'entry_score',
+    trend: 'trend_grade',
+    accumulation: 'dist_grade',
+    stable: 'pivot_grade',
+  }
+
+  const handleConditionFilter = (filter: typeof conditionFilter) => {
+    setConditionFilter(filter)
+    setSortKey(FILTER_DEFAULT_SORT[filter])
+    setSortDirection('desc')
+    setPage(1)
+  }
 
   const onSort = (key: SortKey) => {
     if (sortKey === key) {
@@ -371,7 +433,7 @@ export default function ScanPage({ onNavigate }: { onNavigate?: (r: string) => v
             <button
               key={option.key}
               className={`tag${conditionFilter === option.key ? ' active' : ''}`}
-              onClick={() => setConditionFilter(option.key)}
+              onClick={() => handleConditionFilter(option.key)}
             >
               {option.label} ({filterCounts[option.key]})
             </button>
@@ -394,14 +456,18 @@ export default function ScanPage({ onNavigate }: { onNavigate?: (r: string) => v
       {error && <ErrorState message={error} onRetry={loadCandidates} />}
 
       {/* 오늘의 추천 눌림목 섹션 */}
-      {!loading && !error && highlightCandidates.length > 0 && conditionFilter === 'all' && selectedSector === 'all' && (
+      {!loading && !error && !highlightLoading && activeHighlights.length > 0 && conditionFilter === 'all' && selectedSector === 'all' && (
         <div className="card mb-4">
           <div className="scan-highlight-section-title">
             <span className="scan-highlight-section-label">오늘의 추천 눌림목</span>
             <span className="scan-highlight-section-badge">진입 A/B · 경고 최소</span>
           </div>
           <div className="scan-highlight-grid">
-            {highlightCandidates.map((c, idx) => (
+            {(apiHighlights.length > 0
+              ? <div className="scan-highlight-section-badge" style={{ fontSize: '0.7rem', marginTop: '2px', opacity: 0.7 }}>pullback + 시그널 교차 선정</div>
+              : <div className="scan-highlight-section-badge" style={{ fontSize: '0.7rem', marginTop: '2px', opacity: 0.7 }}>pullback 진입점수 기반</div>
+            )}
+            {activeHighlights.map((c, idx) => (
               <button
                 key={c.code}
                 type="button"
@@ -424,10 +490,12 @@ export default function ScanPage({ onNavigate }: { onNavigate?: (r: string) => v
                   <GradeBadge grade={c.trend_grade} label="추세" />
                   <GradeBadge grade={c.dist_grade} label="매집" />
                   {c.pivot_grade && <GradeBadge grade={c.pivot_grade} label="세력" />}
+                  {c.signal && <SignalBadge signal={c.signal} />}
                 </div>
                 <div className="scan-highlight-meta">
                   {c.sector_id && <span>{c.sector_id}</span>}
-                  {c.entry_score != null && <span>점수 {formatNumber(c.entry_score, 1)}</span>}
+                  {c.entry_score != null && <span>진입 {formatNumber(c.entry_score, 1)}</span>}
+                  {c.total_score != null && <span>종합 {formatNumber(c.total_score, 0)}</span>}
                 </div>
                 <div className="scan-highlight-hint">클릭하여 상세 분석 →</div>
               </button>
@@ -462,6 +530,7 @@ export default function ScanPage({ onNavigate }: { onNavigate?: (r: string) => v
                   <th className="scan-th">{renderSortableHeader('코드', 'code')}</th>
                   <th className="scan-th">{renderSortableHeader('종목명', 'name')}</th>
                   <th className="scan-th">{renderSortableHeader('섹터', 'sector_id')}</th>
+                  <th className="scan-th">{renderSortableHeader('우선순위', 'priority_score')}</th>
                   <th className="scan-th">{renderSortableHeader('진입', 'entry_grade')}</th>
                   <th className="scan-th">{renderSortableHeader('진입점수', 'entry_score')}</th>
                   <th className="scan-th">{renderSortableHeader('추세', 'trend_grade')}</th>
@@ -490,6 +559,11 @@ export default function ScanPage({ onNavigate }: { onNavigate?: (r: string) => v
                       <td className="scan-td scan-td-code">{s.code}</td>
                       <td className="scan-td scan-td-name">{s.name}</td>
                       <td className="scan-td scan-td-sector">{s.sector_id ?? '—'}</td>
+                      <td className="scan-td number" title="진입점수×20 − 경고점수×3">
+                        <span className={s.priorityScore >= 60 ? 'scan-grade-badge scan-grade-a' : s.priorityScore >= 40 ? 'scan-grade-badge scan-grade-b' : 'scan-grade-label'}>
+                          {s.priorityScore}
+                        </span>
+                      </td>
                       <td className="scan-td">
                         <GradeBadge grade={s.entry_grade} />
                       </td>

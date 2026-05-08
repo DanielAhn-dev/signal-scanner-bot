@@ -19,6 +19,7 @@ import reportShared from '../handlers/ui/report-shared'
 import reportSnapshot from '../handlers/ui/report-snapshot'
 import reportWeb from '../handlers/ui/report-web'
 import scanCandidates from '../handlers/ui/scan-candidates'
+import scanHighlights from '../handlers/ui/scan-highlights'
 import sectors from '../handlers/ui/sectors'
 import settings from '../handlers/ui/settings'
 import stockLatest from '../handlers/ui/stock-latest'
@@ -53,6 +54,7 @@ const ROUTES: Record<string, UiHandler> = {
   'report-snapshot': reportSnapshot,
   'report-web': reportWeb,
   'scan-candidates': scanCandidates,
+  'scan-highlights': scanHighlights,
   sectors,
   settings,
   'stock-latest': stockLatest,
