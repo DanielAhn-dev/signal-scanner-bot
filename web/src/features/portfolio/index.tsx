@@ -8,7 +8,6 @@ import Modal from '../../components/Modal'
 import { EmptyState, ErrorState } from '../../components/StateViews'
 import { useToast } from '../../components/ToastProvider'
 import Pagination from '../../components/Pagination'
-import useWatchlistActions from '../../hooks/useWatchlistActions'
 
 type PortfolioShareHistoryItem = {
   shareId: string
@@ -39,7 +38,8 @@ export default function Portfolio() {
   const [search, setSearch] = useState('')
   const [searchInput, setSearchInput] = useState('')
   const [selectedSector, setSelectedSector] = useState<string | null>(null)
-  const [positionFilter, setPositionFilter] = useState<'all' | 'holding' | 'interest'>('all')
+  const [holdingStateFilter, setHoldingStateFilter] = useState<'all' | 'hold' | 'add'>('all')
+  const [gradeFilter, setGradeFilter] = useState<'all' | 'A' | 'B' | 'C'>('all')
   const [showAllSectors, setShowAllSectors] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -60,7 +60,7 @@ export default function Portfolio() {
   const [revokingShareId, setRevokingShareId] = useState('')
   const [deletingShareId, setDeletingShareId] = useState('')
   const [maintModalOpen, setMaintModalOpen] = useState(false)
-  const [maintMode, setMaintMode] = useState<'watchreset' | 'liquidateall' | 'holdingedit' | 'holdingrestore'>('watchreset')
+  const [maintMode, setMaintMode] = useState<'liquidateall' | 'holdingedit' | 'holdingrestore'>('holdingrestore')
   const [maintRow, setMaintRow] = useState<any | null>(null)
   const [maintCode, setMaintCode] = useState('')
   const [maintBuyPrice, setMaintBuyPrice] = useState<number | ''>('')
@@ -68,7 +68,18 @@ export default function Portfolio() {
   const [maintLoading, setMaintLoading] = useState(false)
   const [maintError, setMaintError] = useState<string | null>(null)
   const toast = useToast()
-  const { isRemoving, removeFromWatchlist } = useWatchlistActions()
+
+  const getHoldingState = (row: any): 'hold' | 'add' => {
+    return Number(row?.recommended_buy_qty || 0) > 0 ? 'add' : 'hold'
+  }
+
+  const getPerformanceGrade = (row: any): 'A' | 'B' | 'C' => {
+    const pct = Number(row?.unrealized_pct)
+    if (!Number.isFinite(pct)) return 'C'
+    if (pct >= 5) return 'A'
+    if (pct >= 0) return 'B'
+    return 'C'
+  }
 
   const load = useCallback(async ({ soft = false, force = false }: { soft?: boolean; force?: boolean } = {}) => {
     setRefreshing(true)
@@ -76,7 +87,7 @@ export default function Portfolio() {
     if (!soft) setError(null)
     try {
       // 초기 로드 pageSize를 20으로 제한 → 초기 응답 시간 8초에서 1초 이하로 단축
-      const params = new URLSearchParams({ page: '1', pageSize: '20', includeLots: '0' })
+      const params = new URLSearchParams({ page: '1', pageSize: '20', includeLots: '0', positionType: 'holding' })
       if (force) params.set('cacheMs', '0')
       const json = await apiFetch(`/api/ui/positions?${params}`, { cacheMs: 3_000, timeoutMs: 15_000, retries: 1 })
       setAllRows(json?.data ?? [])
@@ -93,10 +104,9 @@ export default function Portfolio() {
 
   // 클라이언트 사이드 파생 상태 – API 재호출 없이 즉시 필터링
   const holdingAll = useMemo(() => allRows.filter((r: any) => r.position_type === 'holding'), [allRows])
-  const interestAll = useMemo(() => allRows.filter((r: any) => r.position_type !== 'holding'), [allRows])
 
   const sectors = useMemo(() => {
-    const base = positionFilter === 'holding' ? holdingAll : positionFilter === 'interest' ? interestAll : allRows
+    const base = holdingAll
     const seen = new Map<string, { id: string; name: string }>()
     for (const r of base) {
       const s = r.stock?.sector
@@ -105,10 +115,10 @@ export default function Portfolio() {
       }
     }
     return Array.from(seen.values()).sort((a, b) => a.name.localeCompare(b.name, 'ko'))
-  }, [allRows, positionFilter, holdingAll, interestAll])
+  }, [holdingAll])
 
   const filteredRows = useMemo(() => {
-    let result: any[] = positionFilter === 'holding' ? holdingAll : positionFilter === 'interest' ? interestAll : allRows
+    let result: any[] = holdingAll
     if (selectedSector) result = result.filter((r: any) => String(r.stock?.sector_id ?? '') === selectedSector)
     if (search) {
       const q = search.toLowerCase()
@@ -117,8 +127,17 @@ export default function Portfolio() {
         (r.stock_name || '').toLowerCase().includes(q)
       )
     }
+
+    if (holdingStateFilter !== 'all') {
+      result = result.filter((r: any) => getHoldingState(r) === holdingStateFilter)
+    }
+
+    if (gradeFilter !== 'all') {
+      result = result.filter((r: any) => getPerformanceGrade(r) === gradeFilter)
+    }
+
     return result
-  }, [allRows, positionFilter, selectedSector, search, holdingAll, interestAll])
+  }, [holdingAll, selectedSector, search, holdingStateFilter, gradeFilter])
 
   const total = filteredRows.length
   const totalPages = Math.ceil(total / pageSize)
@@ -158,7 +177,7 @@ export default function Portfolio() {
     setModalOpen(true)
   }
 
-  const openMaintenanceModal = (mode: 'watchreset' | 'liquidateall' | 'holdingedit' | 'holdingrestore', row?: any) => {
+  const openMaintenanceModal = (mode: 'liquidateall' | 'holdingedit' | 'holdingrestore', row?: any) => {
     setMaintMode(mode)
     setMaintRow(row ?? null)
     setMaintError(null)
@@ -195,9 +214,7 @@ export default function Portfolio() {
       })
       if (json?.error) throw new Error(String(json.error))
 
-      if (maintMode === 'watchreset') {
-        toast.show(`관심 종목 ${Number(json?.removed || 0)}건 초기화 완료`)
-      } else if (maintMode === 'liquidateall') {
+      if (maintMode === 'liquidateall') {
         toast.show(`보유 종목 ${Number(json?.soldCount || 0)}건 전체매도 처리 완료`)
       } else if (maintMode === 'holdingrestore') {
         const label = json?.data?.stock_name || json?.data?.code || maintCode
@@ -254,27 +271,9 @@ export default function Portfolio() {
 
   const visibleSectors = showAllSectors ? sectors : sectors.slice(0, 8)
 
-  const onTabChange = (t: 'all' | 'holding' | 'interest') => {
-    setPositionFilter(t)
-    setSelectedSector(null)
-    setPage(1)
-  }
-
   const onSectorChange = (sectorId: string | null) => {
     setSelectedSector(sectorId)
     setPage(1)
-  }
-
-  const removeInterest = async (code: string) => {
-    if (!code) return
-    try {
-      const result = await removeFromWatchlist(code)
-      if (result !== 'removed' && result !== 'not-found') return
-      setAllRows((prev) => prev.filter((row: any) => !(String(row?.code || '') === code && row?.position_type !== 'holding')))
-      toast.show('관심 종목에서 제거되었습니다')
-    } catch (e: any) {
-      toast.show(String(e?.message || e))
-    }
   }
 
   const formatSignedKrw = (value: number) => {
@@ -439,7 +438,7 @@ export default function Portfolio() {
       <div className="portfolio-head">
         <div className="portfolio-title-wrap">
           <h1 className="title-xl portfolio-title">가상 포트폴리오</h1>
-          <p className="portfolio-subtitle">보유 포지션과 관심 종목을 한 화면에서 관리합니다.</p>
+          <p className="portfolio-subtitle">보유 포지션만 집중해서 관리합니다.</p>
         </div>
         <div className="portfolio-head-actions">
           <span className="caption muted portfolio-head-updated">
@@ -472,14 +471,6 @@ export default function Portfolio() {
             <button
               type="button"
               className="portfolio-text-action"
-              onClick={() => openMaintenanceModal('watchreset')}
-              disabled={loading || interestAll.length === 0}
-            >
-              관심초기화
-            </button>
-            <button
-              type="button"
-              className="portfolio-text-action danger"
               onClick={() => openMaintenanceModal('liquidateall')}
               disabled={loading || holdingAll.length === 0}
             >
@@ -496,9 +487,9 @@ export default function Portfolio() {
           <div className="stat-sub">실제 보유 상태</div>
         </div>
         <div className="card portfolio-stat-card">
-          <div className="stat-label">관심 종목</div>
-          <div className="stat-value">{interestAll.length}</div>
-          <div className="stat-sub">매수 대기 항목</div>
+          <div className="stat-label">현재 실제 매수금</div>
+          <div className="stat-value">{formatKrw(totalInvested)}</div>
+          <div className="stat-sub">보유 수량×평균 매수가</div>
         </div>
         <div className="card portfolio-stat-card">
           <div className="stat-label">평가손익 합계</div>
@@ -535,25 +526,55 @@ export default function Portfolio() {
           </div>
 
           <div>
-            <div className="caption portfolio-filter-label">포지션 유형</div>
+            <div className="caption portfolio-filter-label">보유 상태</div>
             <div className="tag-list portfolio-segment-list">
               <button
-                className={`tag${positionFilter === 'all' ? ' active' : ''}`}
-                onClick={() => onTabChange('all')}
+                className={`tag${holdingStateFilter === 'all' ? ' active' : ''}`}
+                onClick={() => { setHoldingStateFilter('all'); setPage(1) }}
               >
-                전체 ({allRows.length})
+                전체
               </button>
               <button
-                className={`tag${positionFilter === 'holding' ? ' active' : ''}`}
-                onClick={() => onTabChange('holding')}
+                className={`tag${holdingStateFilter === 'hold' ? ' active' : ''}`}
+                onClick={() => { setHoldingStateFilter('hold'); setPage(1) }}
               >
-                보유 ({holdingAll.length})
+                보통 보유(홀드)
               </button>
               <button
-                className={`tag${positionFilter === 'interest' ? ' active' : ''}`}
-                onClick={() => onTabChange('interest')}
+                className={`tag${holdingStateFilter === 'add' ? ' active' : ''}`}
+                onClick={() => { setHoldingStateFilter('add'); setPage(1) }}
               >
-                관심 ({interestAll.length})
+                추가매수(IN진입)
+              </button>
+            </div>
+          </div>
+
+          <div>
+            <div className="caption portfolio-filter-label">성과 등급</div>
+            <div className="tag-list portfolio-segment-list">
+              <button
+                className={`tag${gradeFilter === 'all' ? ' active' : ''}`}
+                onClick={() => { setGradeFilter('all'); setPage(1) }}
+              >
+                전체
+              </button>
+              <button
+                className={`tag${gradeFilter === 'A' ? ' active' : ''}`}
+                onClick={() => { setGradeFilter('A'); setPage(1) }}
+              >
+                A (수익률 5% 이상)
+              </button>
+              <button
+                className={`tag${gradeFilter === 'B' ? ' active' : ''}`}
+                onClick={() => { setGradeFilter('B'); setPage(1) }}
+              >
+                B (0~5%)
+              </button>
+              <button
+                className={`tag${gradeFilter === 'C' ? ' active' : ''}`}
+                onClick={() => { setGradeFilter('C'); setPage(1) }}
+              >
+                C (0% 미만)
               </button>
             </div>
           </div>
@@ -583,52 +604,44 @@ export default function Portfolio() {
 
         {!loading && !error && rows.length === 0 && (
           <EmptyState
-            title={positionFilter === 'interest' ? '관심 종목 없음' : positionFilter === 'holding' ? '보유 포지션 없음' : '포지션 없음'}
-            description={positionFilter === 'all' ? '텔레그램 /가상매수 또는 아래 버튼으로 포지션을 추가하세요.' : '선택한 유형에 해당하는 항목이 없습니다.'}
+            title="보유 포지션 없음"
+            description="텔레그램 /가상매수 또는 아래 버튼으로 보유 포지션을 추가하세요."
           />
         )}
 
         {!error && rows.map((r: any) => {
           const pnl = r.unrealized_pnl
-          const isHolding = r.position_type === 'holding'
-            const code = String(r.code || '')
+          const holdingState = getHoldingState(r)
+          const grade = getPerformanceGrade(r)
           return (
             <div key={r.id} className="card card-lg portfolio-position-card">
               <div className="flex-between portfolio-position-top">
                 <div>
                   <div className="title-lg">{r.stock_name ?? r.ticker ?? r.symbol}</div>
                   <div className="caption">{r.code}</div>
-                  {isHolding ? (
-                    <div className="muted portfolio-position-meta">
-                      {r.quantity}주 · 매수가 {formatKrw(r.avg_price)}
-                      {r.buy_date ? ` · ${r.buy_date}` : ''}
-                    </div>
-                  ) : (
-                    <div className="muted portfolio-position-meta">
-                      관심 항목 · 추천 매수: {r.recommended_buy_qty
-                        ? `${r.recommended_buy_qty}주 (${formatKrw(r.recommended_buy_amount)})`
-                        : '제안 없음'}
-                    </div>
-                  )}
+                  <div className="muted portfolio-position-meta">
+                    {r.quantity}주 · 매수가 {formatKrw(r.avg_price)}
+                    {r.buy_date ? ` · ${r.buy_date}` : ''}
+                  </div>
+                  <div className="caption" style={{ marginTop: '4px' }}>
+                    상태: {holdingState === 'add' ? '추가매수(IN진입)' : '보통 보유(홀드)'}
+                    {' · '}등급 {grade}
+                  </div>
                 </div>
 
                 <div className="text-right portfolio-position-pnl">
-                  {isHolding ? (
-                    <>
-                      <div
-                        className={pnl != null ? (pnl < 0 ? 'negative' : 'positive') : ''}
-                        style={{ fontWeight: 'var(--font-weight-bold)', fontSize: 'var(--font-size-xl)' }}
-                      >
-                        {pnl != null ? formatKrw(pnl) : '—'}
-                      </div>
-                      <div className="caption">
-                        {r.unrealized_pct != null ? `${formatNumber(r.unrealized_pct, 2)}%` : '—'}
-                        {r.hold_days != null ? ` · ${r.hold_days}일` : ''}
-                      </div>
-                    </>
-                  ) : (
-                    <span className="caption">관심</span>
-                  )}
+                  <>
+                    <div
+                      className={pnl != null ? (pnl < 0 ? 'negative' : 'positive') : ''}
+                      style={{ fontWeight: 'var(--font-weight-bold)', fontSize: 'var(--font-size-xl)' }}
+                    >
+                      {pnl != null ? formatKrw(pnl) : '—'}
+                    </div>
+                    <div className="caption">
+                      {r.unrealized_pct != null ? `${formatNumber(r.unrealized_pct, 2)}%` : '—'}
+                      {r.hold_days != null ? ` · ${r.hold_days}일` : ''}
+                    </div>
+                  </>
                 </div>
               </div>
 
@@ -640,18 +653,8 @@ export default function Portfolio() {
 
               <div className="portfolio-actions-row">
                 <Button className="portfolio-action-btn" variant="secondary" onClick={() => openTradeModal(r, 'buy')}>가상매수</Button>
-                {isHolding && <Button className="portfolio-action-btn" variant="secondary" onClick={() => openMaintenanceModal('holdingedit', r)}>보유수정</Button>}
-                {isHolding && <Button className="portfolio-action-btn" variant="ghost" onClick={() => openTradeModal(r, 'sell')}>가상매도</Button>}
-                {!isHolding && (
-                  <Button
-                    className="portfolio-action-btn"
-                    variant="ghost"
-                    onClick={() => removeInterest(code)}
-                    disabled={isRemoving(code)}
-                  >
-                    {isRemoving(code) ? '관심제거중' : '관심제거'}
-                  </Button>
-                )}
+                <Button className="portfolio-action-btn" variant="secondary" onClick={() => openMaintenanceModal('holdingedit', r)}>보유수정</Button>
+                <Button className="portfolio-action-btn" variant="ghost" onClick={() => openTradeModal(r, 'sell')}>가상매도</Button>
               </div>
             </div>
           )
@@ -886,7 +889,6 @@ export default function Portfolio() {
       <Modal
         isOpen={maintModalOpen}
         title={
-          maintMode === 'watchreset' ? '관심초기화' :
           maintMode === 'liquidateall' ? '전체매도' :
           maintMode === 'holdingrestore' ? '보유복구' :
           '보유수정'
@@ -894,12 +896,6 @@ export default function Portfolio() {
         onClose={() => setMaintModalOpen(false)}
         size="sm"
       >
-        {maintMode === 'watchreset' && (
-          <div className="muted" style={{ marginBottom: 'var(--space-3)' }}>
-            관심 종목(보유수량 0)만 일괄 삭제합니다. 보유 종목은 유지됩니다.
-          </div>
-        )}
-
         {maintMode === 'liquidateall' && (
           <div className="muted" style={{ marginBottom: 'var(--space-3)' }}>
             현재 보유 종목을 기준가로 일괄 매도 처리합니다. 실행 후 보유수량이 0으로 전환됩니다.
