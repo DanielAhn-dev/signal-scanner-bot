@@ -344,7 +344,7 @@ function AppContent() {
             onSignIn={handleGoogleSignIn}
             onSignOut={handleSignOut}
           />
-          <main className="p-4">
+          <main>
             <Suspense fallback={<div>Loading...</div>}>
               {Active
                 ? route === 'dashboard'

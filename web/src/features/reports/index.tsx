@@ -354,8 +354,8 @@ export default function ReportsPage() {
           const s = states[r.key]
           return (
             <div key={r.key} className="card">
-              <div className="flex-between">
-                <div>
+              <div className="report-action-card-body">
+                <div className="report-action-card-info">
                   <div className="title-md">{r.label}</div>
                   <div className="muted mt-1">{r.desc}</div>
                   {s?.msg && (
@@ -363,7 +363,7 @@ export default function ReportsPage() {
                   )}
                 </div>
                 {r.kind === 'download' ? (
-                  <div style={{ display: 'flex', gap: 8, marginLeft: 8, alignItems: 'center' }}>
+                  <div className="report-action-card-btns">
                     <Button variant="secondary" onClick={() => runDownload(r.key, r.endpoint, r.fileName)} disabled={s?.loading}>
                       {s?.loading ? '처리 중…' : '다운로드'}
                     </Button>
@@ -371,13 +371,15 @@ export default function ReportsPage() {
                     <Button variant="secondary" onClick={() => runShare(r.endpoint)} disabled={states['share']?.loading}>공유</Button>
                   </div>
                 ) : (
-                  <Button
-                    variant="secondary"
-                    onClick={() => runTrigger(r.key, r.endpoint, r.method)}
-                    disabled={s?.loading}
-                  >
-                    {s?.loading ? '처리 중…' : '실행'}
-                  </Button>
+                  <div className="report-action-card-btns">
+                    <Button
+                      variant="secondary"
+                      onClick={() => runTrigger(r.key, r.endpoint, r.method)}
+                      disabled={s?.loading}
+                    >
+                      {s?.loading ? '처리 중…' : '실행'}
+                    </Button>
+                  </div>
                 )}
               </div>
             </div>

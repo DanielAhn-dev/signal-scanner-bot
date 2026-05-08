@@ -45,6 +45,15 @@ html, body, #root {
   padding: var(--spacing-page-y) var(--spacing-page-x);
 }
 
+@media (max-width: 639px) {
+  .container-app {
+    padding: var(--space-3) var(--space-3);
+  }
+  .card {
+    --card-padding: var(--space-4);
+  }
+}
+
 /* ================================================================
    CARD
    ================================================================ */
@@ -144,6 +153,42 @@ html, body, #root {
   @apply flex flex-col;
   gap: var(--spacing-stack-lg);
 }
+
+/* ================================================================
+   REPORT ACTION CARD — 반응형 레이아웃
+   ================================================================ */
+.report-action-card-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+.report-action-card-info {
+  flex: 1;
+  min-width: 0;
+}
+.report-action-card-btns {
+  display: flex;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+.report-action-card-btns .ui-button {
+  flex: 1 1 auto;
+}
+@media (min-width: 640px) {
+  .report-action-card-body {
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .report-action-card-btns {
+    flex-shrink: 0;
+    margin-left: var(--space-3);
+    flex-wrap: nowrap;
+  }
+  .report-action-card-btns .ui-button {
+    flex: none;
+  }
+}
 .cards-grid {
   @apply grid;
   gap: var(--space-3);
@@ -176,13 +221,17 @@ html, body, #root {
 }
 .nav-toggle {
   @apply bg-transparent flex items-center justify-center cursor-pointer;
-  border: 1px solid var(--color-border-strong);
-  @apply px-2 py-1;
-  @apply rounded-sm;
+  border: none;
+  border-radius: var(--radius-sm);
+  padding: 0;
   min-height: 36px;
   min-width: 36px;
+  color: var(--color-text-secondary);
 }
-.nav-toggle:hover { background: var(--color-bg-sunken); }
+.nav-toggle:hover {
+  background: var(--color-bg-sunken);
+  color: var(--color-text-primary);
+}
 
 .top-nav {
   @apply flex items-center;
@@ -203,6 +252,10 @@ html, body, #root {
 .top-nav-action:hover {
   background: var(--color-bg-sunken);
   color: var(--color-text-primary);
+}
+
+@media (max-width: 639px) {
+  .top-nav-action { display: none; }
 }
 
 .nav-drawer-overlay {
