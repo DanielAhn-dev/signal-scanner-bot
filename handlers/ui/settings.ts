@@ -43,6 +43,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const chatId = resolvedChatId
       if (!chatId) return res.status(400).json({ error: 'chat_id required' })
 
+      const VALID_STRATEGIES = ['HOLD_SAFE', 'REDUCE_TIGHT', 'WAIT_AND_DIP_BUY']
+      const rawStrategy = String(body.selected_strategy || '').trim().toUpperCase()
+
       const payload: any = {
         chat_id: Number(chatId),
         is_enabled: body.is_enabled === true || body.is_enabled === 'true' || false,
@@ -52,6 +55,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         take_profit_pct: body.take_profit_pct != null ? Number(body.take_profit_pct) : undefined,
         stop_loss_pct: body.stop_loss_pct != null ? Number(body.stop_loss_pct) : undefined,
         long_term_ratio: body.long_term_ratio != null ? Number(body.long_term_ratio) : undefined,
+        selected_strategy: VALID_STRATEGIES.includes(rawStrategy) ? rawStrategy : undefined,
       }
 
       // upsert

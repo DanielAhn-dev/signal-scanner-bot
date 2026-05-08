@@ -24,6 +24,7 @@ const DBViewPage = lazy(() => import('./features/dbView'))
 const SectorsPage = lazy(() => import('./features/sectors'))
 const AdminUsersPage = lazy(() => import('./features/admin-users'))
 const OperationsPage = lazy(() => import('./features/operations'))
+const StrategyPage = lazy(() => import('./features/strategy'))
 
 const COMPONENTS = {
   dashboard: Dashboard,
@@ -44,6 +45,7 @@ const COMPONENTS = {
   dbview: DBViewPage,
   'admin-users': AdminUsersPage,
   operations: OperationsPage,
+  strategy: StrategyPage,
 } as const
 
 type RouteKey = keyof typeof COMPONENTS

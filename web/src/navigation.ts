@@ -58,6 +58,6 @@ export const NAV_ITEMS: NavGroup[] = [
   }
 ]
 
-export const PRIMARY_NAV_KEYS = ['dashboard', 'sectors', 'scan', 'portfolio', 'reports'] as const
+export const PRIMARY_NAV_KEYS = ['dashboard', 'sectors', 'scan', 'portfolio', 'strategy', 'reports'] as const
 
 export type NavKey = NavItem['key'] | 'commands'
