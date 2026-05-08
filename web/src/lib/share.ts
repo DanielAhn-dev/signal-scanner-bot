@@ -63,6 +63,11 @@ function loadKakaoSdk(): Promise<void> {
   return kakaoSdkLoading
 }
 
+/** 공유 모달 열릴 때 SDK를 미리 로드 — 클릭 시 user gesture 단절 방지 */
+export function preloadKakaoSdk(): void {
+  loadKakaoSdk().catch(() => {/* 실패해도 무시 — 클릭 시 재시도 */})
+}
+
 function initKakao() {
   const key = String(import.meta.env.VITE_KAKAO_JS_KEY || '')
   if (!key) throw new Error('VITE_KAKAO_JS_KEY 환경변수가 설정되지 않았습니다.')
@@ -74,6 +79,8 @@ function initKakao() {
 /**
  * 카카오톡 공유 — Kakao JS SDK sendDefault 방식
  * VITE_KAKAO_JS_KEY 환경변수에 JavaScript 키를 설정해야 합니다.
+ * SDK가 미리 로드되지 않은 경우 await이 발생해 팝업이 차단될 수 있으므로
+ * 공유 모달 열릴 때 preloadKakaoSdk()를 먼저 호출해 주세요.
  */
 export async function shareToKakaotalk(data: ShareData): Promise<void> {
   const url = resolveShareUrl(data.url)
@@ -83,6 +90,7 @@ export async function shareToKakaotalk(data: ShareData): Promise<void> {
     : ''
   const description = `현재가: ${price}${pctStr}`
 
+  // SDK가 이미 로드되어 있으면 await 없이 즉시 통과 (user gesture 보존)
   await loadKakaoSdk()
   initKakao()
 

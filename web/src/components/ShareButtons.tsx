@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react'
 import { createPortal } from 'react-dom'
-import { shareToKakaotalk, shareToTwitter, copyToClipboard, shareViaWebAPI, type ShareData } from '../lib/share'
+import { shareToKakaotalk, preloadKakaoSdk, shareToTwitter, copyToClipboard, shareViaWebAPI, type ShareData } from '../lib/share'
 import { useToast } from './ToastProvider'
 
 interface Props {
@@ -29,6 +29,8 @@ export default function ShareButtons({ data, variant = 'button', showLabel = tru
     if (!isOpen) return
     const prevOverflow = document.body.style.overflow
     document.body.style.overflow = 'hidden'
+    // 모달 열릴 때 SDK 미리 로드 (카카오 버튼 클릭 시 await 없이 진행하기 위함)
+    preloadKakaoSdk()
     return () => {
       document.body.style.overflow = prevOverflow
     }
