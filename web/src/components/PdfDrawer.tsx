@@ -45,13 +45,36 @@ export default function PdfDrawer({
           <div className="report-drawer-title">{title}</div>
           <button className="nav-item" onClick={onClose}>닫기</button>
         </div>
-        <div className="report-drawer-content">
-          {pdfUrl ? (
+        <div className="report-drawer-content" style={{ position: 'relative' }}>
+          {loading && !pdfUrl ? (
+            <div
+              style={{
+                position: 'absolute',
+                inset: 0,
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: 12,
+                background: 'var(--color-bg-surface)',
+              }}
+            >
+              <div style={{
+                width: 32,
+                height: 32,
+                border: '3px solid var(--color-border-default)',
+                borderTopColor: 'var(--color-brand)',
+                borderRadius: '50%',
+                animation: 'auth-spin 0.8s linear infinite',
+              }} />
+              <span className="muted">리포트 불러오는 중…</span>
+            </div>
+          ) : pdfUrl ? (
             <>
               <iframe
                 title={title}
                 src={pdfUrl}
-                style={{ width: '100%', height: '100%', border: 'none' }}
+                style={{ width: '100%', height: '100%', border: 'none', display: 'block' }}
                 onLoad={onFrameLoad}
                 onError={onFrameError}
               />
@@ -74,7 +97,7 @@ export default function PdfDrawer({
               ) : null}
             </>
           ) : (
-            <div className="muted">미리보기를 불러오지 못했습니다.</div>
+            <div className="muted" style={{ padding: '2rem' }}>미리보기를 불러오지 못했습니다.</div>
           )}
         </div>
       </aside>

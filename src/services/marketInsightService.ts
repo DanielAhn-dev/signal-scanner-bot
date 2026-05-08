@@ -560,7 +560,7 @@ function buildDailyCandidateForecasts(input: {
       );
     }
 
-    if (forecasts.length >= 3) break;
+    if (forecasts.length >= Math.min(input.displayLimit, 5)) break;
   }
 
   return forecasts;

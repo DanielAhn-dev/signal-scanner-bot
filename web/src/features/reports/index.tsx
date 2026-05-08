@@ -3,7 +3,6 @@ import { apiFetch } from '../../lib/api'
 import { getCurrentUserChatId } from '../../lib/userContext'
 import Button from '../../components/ui/Button'
 import { useToast } from '../../components/ToastProvider'
-import PdfDrawer from '../../components/PdfDrawer'
 import ShareModal from '../../components/ShareModal'
 import { readSimulationPlan, type HighlightSimulationPlan } from '../simulator/planStore'
 import { buildTelegramMessage, calcExpectedValue, calcSplitInvested } from '../simulator/telegramFormat'
@@ -149,10 +148,6 @@ const REPORT_ACTIONS: ReportAction[] = [
 export default function ReportsPage() {
   const [states, setStates] = useState<Record<string, { loading: boolean; msg?: string }>>({})
   const toast = useToast()
-  const [drawerOpen, setDrawerOpen] = useState(false)
-  const [drawerUrl, setDrawerUrl] = useState<string | null>(null)
-  const [drawerLoading, setDrawerLoading] = useState(false)
-  const [drawerTitle, setDrawerTitle] = useState('리포트 웹보기')
   const [shareInfo, setShareInfo] = useState<{ shareId?: string; url: string; code: string; expiresAt?: string; topic?: string } | null>(null)
   const [shareOpen, setShareOpen] = useState(false)
   const [shareTopic, setShareTopic] = useState<string>('추천')
@@ -332,48 +327,6 @@ export default function ReportsPage() {
     }
   }
 
-  const openWebView = async (endpoint: string, label: string) => {
-    setDrawerOpen(true)
-    setDrawerLoading(true)
-    setDrawerTitle(`${label} 웹보기`)
-    try {
-      const uiKey = import.meta.env.VITE_UI_READ_KEY || ''
-      // use web-only HTML view endpoint instead of PDF for better readability
-      const webEndpoint = endpoint.replace('report-pdf', 'report-web')
-      const topicMatch = webEndpoint.match(/[?&]topic=([^&]+)/)
-      const topic = topicMatch ? decodeURIComponent(topicMatch[1]) : '추천'
-
-      // Snapshot prewarm: try fast-path first, but do not block the UI if generation is slow.
-      try {
-        const snapshotReq = buildUiRequest('/api/ui/report-snapshot')
-        const headers: Record<string, string> = { ...snapshotReq.headers, 'Content-Type': 'application/json' }
-
-        const controller = new AbortController()
-        const timer = window.setTimeout(() => controller.abort(), 1200)
-        await fetch(snapshotReq.url, {
-          method: 'POST',
-          headers,
-          body: JSON.stringify({ topic }),
-          signal: controller.signal,
-        }).catch(() => undefined)
-        window.clearTimeout(timer)
-      } catch {
-        // Best-effort prewarm only.
-      }
-
-      const webReq = buildUiRequest(webEndpoint)
-
-      // load the web view directly into iframe (no blob)
-      setDrawerUrl(prev => {
-        if (prev && prev.startsWith('blob:')) URL.revokeObjectURL(prev)
-        return webReq.url
-      })
-    } catch (e: any) {
-      toast.show(String(e?.message || e))
-      setDrawerUrl(null)
-    }
-  }
-
   const runShare = async (endpoint: string) => {
     setStates(s => ({ ...s, ['share']: { loading: true } }))
     try {
@@ -447,7 +400,6 @@ export default function ReportsPage() {
                     <Button variant="secondary" onClick={() => runDownload(r.key, r.endpoint, r.fileName)} disabled={s?.loading}>
                       {s?.loading ? '처리 중…' : '다운로드'}
                     </Button>
-                    <Button variant="secondary" onClick={() => openWebView(r.endpoint, r.label)}>웹보기</Button>
                     <Button variant="secondary" onClick={() => runShare(r.endpoint)} disabled={states['share']?.loading}>공유</Button>
                   </div>
                 ) : (
@@ -477,23 +429,6 @@ export default function ReportsPage() {
         onRefresh={() => { void loadShareList(shareTopic) }}
         onRevoke={revokeShare}
         revokingId={revokingShareId}
-      />
-      <PdfDrawer
-        open={drawerOpen}
-        onClose={() => {
-          setDrawerOpen(false)
-          setDrawerLoading(false)
-          if (drawerUrl && drawerUrl.startsWith('blob:')) URL.revokeObjectURL(drawerUrl)
-          setDrawerUrl(null)
-        }}
-        title={drawerTitle}
-        pdfUrl={drawerUrl}
-        loading={drawerLoading}
-        onFrameLoad={() => setDrawerLoading(false)}
-        onFrameError={() => {
-          setDrawerLoading(false)
-          toast.show('웹보기를 불러오지 못했습니다.')
-        }}
       />
     </section>
   )
