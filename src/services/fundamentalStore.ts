@@ -19,6 +19,8 @@ export type FundamentalSnapshot = {
   cashflow_free?: number | null;
   per?: number | null;
   pbr?: number | null;
+  eps?: number | null; // 주당순이익 (close ÷ PER 파생)
+  bps?: number | null; // 주당순자산 (close ÷ PBR 파생)
   roe?: number | null;
   debt_ratio?: number | null;
   computed?: Record<string, unknown> | null; // margins, ttm values, derived ratios
@@ -120,9 +122,34 @@ export async function getFundamentalSnapshotsForCodes(
   }
 }
 
+/** stocks 테이블에서 코드별 현재 종가를 일괄 조회 (EPS/BPS 파생 계산용) */
+export async function getStockClosePrices(
+  codes: string[]
+): Promise<Map<string, number>> {
+  const map = new Map<string, number>();
+  if (!codes.length) return map;
+  try {
+    const { data, error } = await supabase
+      .from("stocks")
+      .select("code,close")
+      .in("code", codes);
+    if (error) {
+      console.error("getStockClosePrices error:", error);
+      return map;
+    }
+    for (const row of data ?? []) {
+      if (row.close != null) map.set(row.code, Number(row.close));
+    }
+  } catch (e) {
+    console.error("getStockClosePrices exception:", e);
+  }
+  return map;
+}
+
 export default {
   upsertFundamentalSnapshot,
   bulkUpsertFundamentalSnapshots,
   getLatestFundamentalSnapshot,
   getFundamentalSnapshotsForCodes,
+  getStockClosePrices,
 };

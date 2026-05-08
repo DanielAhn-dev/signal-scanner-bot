@@ -2,7 +2,7 @@ import "dotenv/config";
 import fs from "fs";
 import path from "path";
 import { getFundamentalSnapshot } from "../src/services/fundamentalService";
-import fundamentalStore, { FundamentalSnapshot as StoreSnapshot } from "../src/services/fundamentalStore";
+import fundamentalStore, { FundamentalSnapshot as StoreSnapshot, getStockClosePrices } from "../src/services/fundamentalStore";
 
 const args = process.argv.slice(2);
 const defaultCodes = ["035420", "005930", "000660", "035720", "207940"];
@@ -40,11 +40,36 @@ function sleep(ms: number) {
   const chunkSize = 50;
   for (let i = 0; i < codes.length; i += chunkSize) {
     const chunk = codes.slice(i, i + chunkSize);
+
+    // EPS/BPS 파생 계산을 위해 현재 종가 일괄 조회
+    const closePrices = await getStockClosePrices(chunk);
+
     const snapshots: StoreSnapshot[] = [];
     for (const code of chunk) {
       try {
         console.log(`Fetching ${code}...`);
         const s = await getFundamentalSnapshot(code);
+        const close = closePrices.get(code) ?? null;
+
+        // EPS = 주당순이익 (현재가 ÷ PER), BPS = 주당순자산 (현재가 ÷ PBR)
+        const eps =
+          close != null && s.per != null && s.per > 0
+            ? Math.round(close / s.per)
+            : null;
+        const bps =
+          close != null && s.pbr != null && s.pbr > 0
+            ? Math.round(close / s.pbr)
+            : null;
+
+        // PEG = PER ÷ 순이익성장률 (성장률 양수일 때만 의미 있음)
+        const peg =
+          s.per != null &&
+          s.per > 0 &&
+          s.netIncomeGrowthPct != null &&
+          s.netIncomeGrowthPct > 0
+            ? Math.round((s.per / s.netIncomeGrowthPct) * 100) / 100
+            : null;
+
         const storeRec: StoreSnapshot = {
           code,
           as_of: new Date().toISOString(),
@@ -57,6 +82,8 @@ function sleep(ms: number) {
           cashflow_free: null,
           per: s.per ?? null,
           pbr: s.pbr ?? null,
+          eps,
+          bps,
           roe: s.roe ?? null,
           debt_ratio: s.debtRatio ?? null,
           computed: {
@@ -65,6 +92,7 @@ function sleep(ms: number) {
             netIncomeGrowthPct: s.netIncomeGrowthPct ?? null,
             qualityScore: s.qualityScore ?? null,
             commentary: s.commentary ?? null,
+            peg,
           },
           raw_rows: null,
           source: "naver-scrape",

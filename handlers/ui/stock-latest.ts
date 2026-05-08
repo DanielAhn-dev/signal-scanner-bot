@@ -194,6 +194,8 @@ async function saveFundamentalSnapshot(
       code,
       per: asNum(snapshot.per) ?? null,
       pbr: asNum(snapshot.pbr) ?? null,
+      eps: null,  // 라이브 스크레이핑에서는 종가 불명 → ETL 배치에서 계산
+      bps: null,
       roe: asNum(snapshot.roe) ?? null,
       debt_ratio: asNum(snapshot.debtRatio) ?? null,
       sales: asNum(snapshot.sales) ?? null,
@@ -392,7 +394,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       fetchStockProfile(supabase, code),
       supabase
         .from('fundamentals')
-        .select('as_of,per,pbr,roe,debt_ratio')
+        .select('as_of,per,pbr,eps,bps,roe,debt_ratio')
         .eq('code', code)
         .order('as_of', { ascending: false })
         .limit(1),
