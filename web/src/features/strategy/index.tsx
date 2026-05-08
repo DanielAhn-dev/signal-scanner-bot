@@ -29,6 +29,17 @@ type AutoTradeSettings = {
   take_profit_pct?: number
   stop_loss_pct?: number
   long_term_ratio?: number
+  // 동적 포지션 사이징
+  use_dynamic_sizing?: boolean
+  base_max_positions?: number
+  bull_multiplier?: number
+  bear_multiplier?: number
+  min_confidence_pct?: number
+  // 적응형 손익 조정
+  use_adaptive_exit?: boolean
+  stop_loss_range?: [number, number]
+  take_profit_range?: [number, number]
+  volatility_adjustment?: number
 }
 
 type ActivityRow = {
@@ -133,6 +144,17 @@ function formatKrwShort(value: number): string {
 function buildLinePath(points: Array<{ x: number; y: number }>): string {
   if (points.length === 0) return ''
   return points.map((point, index) => `${index === 0 ? 'M' : 'L'} ${point.x} ${point.y}`).join(' ')
+}
+
+function calculateMovingAverage(values: number[], window: number): number[] {
+  const result: number[] = []
+  for (let i = 0; i < values.length; i++) {
+    const start = Math.max(0, i - window + 1)
+    const subset = values.slice(start, i + 1)
+    const avg = subset.reduce((a, b) => a + b, 0) / subset.length
+    result.push(avg)
+  }
+  return result
 }
 
 export default function StrategyPage() {
@@ -323,9 +345,15 @@ export default function StrategyPage() {
     if (series.length === 0) {
       return {
         points: [] as Array<{ id: string; x: number; y: number; label: string; date: string; value: number }>,
+        movingAvgPoints: [] as Array<{ x: number; y: number }>,
         path: '',
+        maPath: '',
         baselineY: 84,
         lastValue: 0,
+        fillSegments: [] as Array<{ start: number; end: number; color: string }>,
+        segments: [] as Array<{ x1: number; y1: number; x2: number; y2: number; color: string }>,
+        projectionPoints: [] as Array<{ x: number; y: number }>,
+        tradeBars: [] as Array<{ x: number; amount: number; isPositive: boolean; barW: number; barH: number; barBaseY: number; label: string; date: string; rectY: number }>,
       }
     }
 
@@ -346,12 +374,105 @@ export default function StrategyPage() {
       return { ...item, x, y }
     })
 
+    // 이동평균선 (3-point MA)
+    const maValues = calculateMovingAverage(values, Math.min(3, Math.max(1, Math.floor(series.length / 3))))
+    const movingAvgPoints = series.map((item, index) => {
+      const x = series.length === 1
+        ? width / 2
+        : paddingX + (index / (series.length - 1)) * (width - paddingX * 2)
+      const y = paddingY + ((max - maValues[index]) / range) * (height - paddingY * 2)
+      return { x, y }
+    })
+
+    // 구간별 배경색
+    const fillSegments: Array<{ start: number; end: number; color: string }> = []
+    for (let i = 0; i < points.length - 1; i++) {
+      const currIsPositive = values[i] >= 0
+      const nextIsPositive = values[i + 1] >= 0
+      if (currIsPositive !== nextIsPositive) {
+        // 경계 지점에서 컬러 전환
+        const color = values[i + 1] >= 0 ? '#d1fae5' : '#fee2e2'
+        fillSegments.push({ start: i, end: i + 1, color })
+      } else {
+        const color = currIsPositive ? '#d1fae5' : '#fee2e2'
+        fillSegments.push({ start: i, end: i + 1, color })
+      }
+    }
+
+    // 구간별 색상 세그먼트 (각 구간의 중간값 기준)
+    const segments = points.slice(0, -1).map((p, i) => {
+      const next = points[i + 1]!
+      const midValue = (values[i] + values[i + 1]) / 2
+      return { x1: p.x, y1: p.y, x2: next.x, y2: next.y, color: midValue >= 0 ? '#10b981' : '#ef4444' }
+    })
+
+    // 선형 추세 기반 예상선 (최근 3거래 전망)
+    const projectionPoints: Array<{ x: number; y: number }> = []
+    if (points.length >= 2) {
+      const stepX = (points[points.length - 1]!.x - points[0]!.x) / Math.max(points.length - 1, 1)
+      const avgDeltaVal = (values[values.length - 1] - values[0]) / Math.max(values.length - 1, 1)
+      for (let i = 1; i <= 3; i++) {
+        const projVal = values[values.length - 1] + avgDeltaVal * i
+        const projY = paddingY + ((max - projVal) / range) * (height - paddingY * 2)
+        projectionPoints.push({
+          x: points[points.length - 1]!.x + stepX * i,
+          y: Math.max(paddingY / 2, Math.min(height - paddingY / 2, projY)),
+        })
+      }
+    }
+
+    // 거래별 손익 막대 데이터
+    const barBaseY = 44
+    const barPad = 8
+    const barMaxAbs = Math.max(1, ...realizedRows.map((r) => Math.abs(Number(r.pnl_amount || 0))))
+    const barBandH = barBaseY - barPad
+    const barW = Math.max(4, Math.min(14, ((width - paddingX * 2) / Math.max(realizedRows.length, 1)) * 0.65))
+    const tradeBars = realizedRows.map((row, i) => {
+      const x = realizedRows.length === 1
+        ? width / 2
+        : paddingX + (i / (realizedRows.length - 1)) * (width - paddingX * 2)
+      const amount = Number(row.pnl_amount || 0)
+      const isPositive = amount >= 0
+      const barH = Math.max(2, (Math.abs(amount) / barMaxAbs) * barBandH)
+      return {
+        x, amount, isPositive, barW, barH, barBaseY,
+        label: row.stock_name || row.code || '-',
+        date: new Date(row.created_at).toLocaleDateString('ko-KR', { month: 'numeric', day: 'numeric' }),
+        rectY: isPositive ? barBaseY - barH : barBaseY,
+      }
+    })
+
     return {
       points,
+      movingAvgPoints,
       path: buildLinePath(points),
+      maPath: buildLinePath(movingAvgPoints),
       baselineY: paddingY + ((max - 0) / range) * (height - paddingY * 2),
       lastValue: points[points.length - 1]?.value ?? 0,
+      fillSegments,
+      segments,
+      projectionPoints,
+      tradeBars,
     }
+  }, [activityRows])
+
+  const rollingWinRate = useMemo(() => {
+    const sellRows = [...activityRows]
+      .filter((row) => row.side === 'SELL' && Number.isFinite(Number(row.pnl_amount)))
+      .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime())
+    if (sellRows.length < 3) return { points: [] as Array<{ x: number; y: number; winRate: number }>, path: '', avgWinRate: 0 }
+    const windowSize = Math.min(5, Math.max(2, Math.floor(sellRows.length / 2)))
+    const wWidth = 560; const wPadX = 18; const wPadY = 8; const wH = 60
+    const pts = sellRows.slice(windowSize - 1).map((_, i) => {
+      const win = sellRows.slice(i, i + windowSize).filter((r) => Number(r.pnl_amount || 0) > 0).length
+      const winRate = Math.round((win / windowSize) * 100)
+      const tradeIdx = i + windowSize - 1
+      const x = sellRows.length <= 1 ? wWidth / 2 : wPadX + (tradeIdx / (sellRows.length - 1)) * (wWidth - wPadX * 2)
+      const y = wPadY + ((100 - winRate) / 100) * (wH - wPadY * 2)
+      return { x, y, winRate }
+    })
+    const avgWinRate = pts.length > 0 ? Math.round(pts.reduce((s, p) => s + p.winRate, 0) / pts.length) : 0
+    return { points: pts, path: buildLinePath(pts), avgWinRate }
   }, [activityRows])
 
   const tabs: { key: Tab; label: string }[] = [
@@ -417,24 +538,65 @@ export default function StrategyPage() {
           </div>
 
           {!settingsLoading && settings && (
-            <div className="cards-list mb-4">
-              <div className="card">
-                <div className="caption">최소 매수 점수</div>
-                <div className="title-lg">{settings.min_buy_score ?? 72}</div>
+            <>
+              <div className="cards-list mb-4">
+                <div className="card">
+                  <div className="caption">최소 매수 점수</div>
+                  <div className="title-lg">{settings.min_buy_score ?? 72}</div>
+                </div>
+                <div className="card">
+                  <div className="caption">익절 / 손절 기준</div>
+                  <div className="title-lg">{settings.take_profit_pct ?? 8}% / {settings.stop_loss_pct ?? 4}%</div>
+                </div>
+                <div className="card">
+                  <div className="caption">최대 보유 종목</div>
+                  <div className="title-lg">{settings.max_positions ?? 10}종목</div>
+                </div>
+                <div className="card">
+                  <div className="caption">월요일 매수 슬롯</div>
+                  <div className="title-lg">{settings.monday_buy_slots ?? 2}개</div>
+                </div>
               </div>
-              <div className="card">
-                <div className="caption">익절 / 손절 기준</div>
-                <div className="title-lg">{settings.take_profit_pct ?? 8}% / {settings.stop_loss_pct ?? 4}%</div>
-              </div>
-              <div className="card">
-                <div className="caption">최대 보유 종목</div>
-                <div className="title-lg">{settings.max_positions ?? 10}종목</div>
-              </div>
-              <div className="card">
-                <div className="caption">월요일 매수 슬롯</div>
-                <div className="title-lg">{settings.monday_buy_slots ?? 2}개</div>
-              </div>
-            </div>
+
+              {settings?.use_dynamic_sizing && (
+                <div className="card mb-4" style={{ background: 'linear-gradient(135deg, rgba(59,130,246,0.05), rgba(16,185,129,0.05))' }}>
+                  <div className="title-md" style={{ marginBottom: 'var(--space-3)' }}>
+                    📊 동적 포지션 사이징 — 예상 범위
+                  </div>
+                  
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12, marginBottom: 'var(--space-3)' }}>
+                    <div style={{ padding: 12, background: 'var(--color-stock-down-bg)', borderRadius: 'var(--radius-sm)' }}>
+                      <div className="caption">약세장</div>
+                      <div style={{ fontSize: '1.3rem', fontWeight: 700, color: 'var(--color-stock-down)', marginTop: 4 }}>
+                        {Math.round((settings.base_max_positions ?? 3) * (settings.bear_multiplier ?? 0.5))} ~ {Math.ceil((settings.base_max_positions ?? 3) * (settings.bear_multiplier ?? 0.5))}종목
+                      </div>
+                      <div className="muted" style={{ fontSize: '0.75rem', marginTop: 4 }}>현금 보유 우선</div>
+                    </div>
+
+                    <div style={{ padding: 12, background: 'var(--color-bg-sunken)', borderRadius: 'var(--radius-sm)' }}>
+                      <div className="caption">중립/횡보장</div>
+                      <div style={{ fontSize: '1.3rem', fontWeight: 700, marginTop: 4 }}>
+                        {settings.base_max_positions ?? 3}종목
+                      </div>
+                      <div className="muted" style={{ fontSize: '0.75rem', marginTop: 4 }}>기본 설정값</div>
+                    </div>
+
+                    <div style={{ padding: 12, background: 'var(--color-stock-up-bg)', borderRadius: 'var(--radius-sm)' }}>
+                      <div className="caption">강세장</div>
+                      <div style={{ fontSize: '1.3rem', fontWeight: 700, color: 'var(--color-stock-up)', marginTop: 4 }}>
+                        {Math.round((settings.base_max_positions ?? 3) * (settings.bull_multiplier ?? 1.5))} ~ {Math.ceil((settings.base_max_positions ?? 3) * (settings.bull_multiplier ?? 1.5))}종목
+                      </div>
+                      <div className="muted" style={{ fontSize: '0.75rem', marginTop: 4 }}>공격적 진입</div>
+                    </div>
+                  </div>
+
+                  <div className="muted" style={{ fontSize: '0.8rem', lineHeight: 1.6, borderTop: '1px solid var(--color-border-default)', paddingTop: 12 }}>
+                    <strong>동작 원리:</strong><br/>
+                    시장 국면(최근 {summary.topRegimes.length > 0 ? formatMarketRegimeLabel(summary.topRegimes[0]?.[0] ?? '') : '감지 중'})과 신호 신뢰도를 반영하여, 위 범위 내에서 실제 진입 종목 수가 자동으로 조정됩니다. 신뢰도가 {settings.min_confidence_pct ?? 65}% 미만이면 진입을 제한합니다.
+                  </div>
+                </div>
+              )}
+            </>
           )}
 
           <div className="card mb-4">
@@ -706,6 +868,107 @@ export default function StrategyPage() {
               </div>
 
               <div className="card">
+                <div className="title-md" style={{ marginBottom: 'var(--space-3)' }}>고급 설정 — 동적 포지션 사이징</div>
+                <Checkbox
+                  label="동적 포지션 사이징 사용"
+                  checked={!!settings?.use_dynamic_sizing}
+                  onChange={(value) => setSettings({ ...settings, use_dynamic_sizing: value })}
+                />
+                <div className="muted mt-2" style={{ marginBottom: 'var(--space-3)' }}>
+                  활성화하면 시장 국면(강세/약세/횡보)에 따라 최대 보유 종목 수가 자동으로 조정됩니다.
+                </div>
+
+                {settings?.use_dynamic_sizing && (
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, background: 'var(--color-bg-sunken)', padding: 12, borderRadius: 'var(--radius-sm)', marginBottom: 'var(--space-3)' }}>
+                    <Input
+                      label="기본 최대 종목 수 (base)"
+                      type="number"
+                      value={settings?.base_max_positions ?? 3}
+                      onChange={(e: any) => setSettings({ ...settings, base_max_positions: Number(e.target.value) })}
+                    />
+                    <Input
+                      label="강세장 배수 (×)"
+                      type="number"
+                      step="0.1"
+                      value={settings?.bull_multiplier ?? 1.5}
+                      onChange={(e: any) => setSettings({ ...settings, bull_multiplier: Number(e.target.value) })}
+                    />
+                    <Input
+                      label="약세장 배수 (×)"
+                      type="number"
+                      step="0.1"
+                      value={settings?.bear_multiplier ?? 0.5}
+                      onChange={(e: any) => setSettings({ ...settings, bear_multiplier: Number(e.target.value) })}
+                    />
+                    <Input
+                      label="최소 신뢰도 임계 (%)"
+                      type="number"
+                      value={settings?.min_confidence_pct ?? 65}
+                      onChange={(e: any) => setSettings({ ...settings, min_confidence_pct: Number(e.target.value) })}
+                    />
+                  </div>
+                )}
+
+                <Checkbox
+                  label="적응형 손익 조정 사용"
+                  checked={!!settings?.use_adaptive_exit}
+                  onChange={(value) => setSettings({ ...settings, use_adaptive_exit: value })}
+                />
+                <div className="muted mt-2">
+                  활성화하면 변동성과 신호 신뢰도에 따라 손절·익절이 동적으로 조정됩니다.
+                </div>
+              </div>
+
+              <div className="card">
+                <div className="title-md" style={{ marginBottom: 'var(--space-3)' }}>각 전략별 동작 방식</div>
+                
+                {STRATEGY_OPTIONS.map((option) => (
+                  <div
+                    key={option.id}
+                    style={{
+                      marginBottom: 16,
+                      paddingBottom: 16,
+                      borderBottom: '1px solid var(--color-border-default)',
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+                      <div
+                        style={{
+                          width: 12,
+                          height: 12,
+                          borderRadius: '50%',
+                          background: option.color,
+                        }}
+                      />
+                      <div style={{ fontWeight: 600 }}>{option.label}</div>
+                    </div>
+                    
+                    {option.id === 'HOLD_SAFE' && (
+                      <div className="muted" style={{ fontSize: '0.85rem', lineHeight: 1.6 }}>
+                        <strong>기본 전략:</strong> 보수적 진입<br/>
+                        <strong>권장 설정:</strong> 기본(base) 2~3종목 | 강세장 ×1.3 | 약세장 ×0.7<br/>
+                        <strong>동작:</strong> 신뢰도 높은 신호만 진입. 강세장이면 3~4종목, 약세장이면 1~2종목으로 조정
+                      </div>
+                    )}
+                    {option.id === 'REDUCE_TIGHT' && (
+                      <div className="muted" style={{ fontSize: '0.85rem', lineHeight: 1.6 }}>
+                        <strong>기본 전략:</strong> 신속한 리스크 관리<br/>
+                        <strong>권장 설정:</strong> 기본(base) 1~2종목 | 강세장 ×2.0 | 약세장 ×0.3<br/>
+                        <strong>동작:</strong> 좋은 신호에서만 과감하게. 강세장 확인 시 2~4종목까지 진입, 약세장은 진입 제한
+                      </div>
+                    )}
+                    {option.id === 'WAIT_AND_DIP_BUY' && (
+                      <div className="muted" style={{ fontSize: '0.85rem', lineHeight: 1.6 }}>
+                        <strong>기본 전략:</strong> 기회 대기형<br/>
+                        <strong>권장 설정:</strong> 기본(base) 1~2종목 | 강세장 ×1.5 | 약세장 ×0.2<br/>
+                        <strong>동작:</strong> 높은 신뢰도만 진입. 강세 확정 후 분할 진입, 약세 지속 시 현금 보유
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+
+              <div className="card">
                 <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
                   <Button variant="primary" onClick={saveSettings} disabled={saving}>
                     {saving ? '저장 중…' : '설정 저장'}
@@ -768,28 +1031,154 @@ export default function StrategyPage() {
             {!activityLoading && profitTrend.points.length === 0 && <div className="muted">실현손익 차트를 그릴 매도 데이터가 아직 없습니다.</div>}
             {!activityLoading && profitTrend.points.length > 0 && (
               <div>
-                <svg viewBox="0 0 560 168" style={{ width: '100%', height: 'auto', display: 'block' }} aria-label="실현손익 추이 차트" role="img">
-                  <line x1="18" x2="542" y1={profitTrend.baselineY} y2={profitTrend.baselineY} stroke="var(--color-border-subtle)" strokeDasharray="4 4" />
+                <svg viewBox="0 0 560 168" style={{ maxWidth: 720, width: '100%', height: 'auto', display: 'block', marginLeft: 'auto', marginRight: 'auto' }} aria-label="실현손익 추이 차트" role="img">
+                  {/* 구간별 배경색 */}
+                  {profitTrend.fillSegments.map((seg, idx) => {
+                    if (profitTrend.points.length < 2) return null
+                    const p1 = profitTrend.points[seg.start]
+                    const p2 = profitTrend.points[seg.end]
+                    if (!p1 || !p2) return null
+                    return (
+                      <rect
+                        key={`fill-${idx}`}
+                        x={Math.min(p1.x, p2.x) - 2}
+                        y="12"
+                        width={Math.abs(p2.x - p1.x) + 4}
+                        height="144"
+                        fill={seg.color}
+                        opacity="0.4"
+                      />
+                    )
+                  })}
+                  {/* 기준선 */}
+                  <line x1="18" x2="542" y1={profitTrend.baselineY} y2={profitTrend.baselineY} stroke="var(--color-border-subtle)" strokeDasharray="4 4" strokeWidth="0.8" />
+                  {/* 이동평균선 (회색 점선) */}
                   <path
-                    d={profitTrend.path}
+                    d={profitTrend.maPath}
                     fill="none"
-                    stroke={profitTrend.lastValue >= 0 ? '#10b981' : '#ef4444'}
-                    strokeWidth="3"
+                    stroke="rgba(100,116,139,0.5)"
+                    strokeWidth="1.5"
                     strokeLinecap="round"
                     strokeLinejoin="round"
+                    strokeDasharray="4 2"
                   />
+                  {/* 예상 추세선 (보라색 점선) */}
+                  {profitTrend.projectionPoints.length > 0 && (
+                    <path
+                      d={buildLinePath([profitTrend.points[profitTrend.points.length - 1]!, ...profitTrend.projectionPoints])}
+                      fill="none"
+                      stroke="rgba(139,92,246,0.55)"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeDasharray="5 4"
+                    />
+                  )}
+                  {/* 구간별 색상 세그먼트 메인 라인 */}
+                  {profitTrend.segments.map((seg, idx) => (
+                    <line
+                      key={`seg-${idx}`}
+                      x1={seg.x1} y1={seg.y1} x2={seg.x2} y2={seg.y2}
+                      stroke={seg.color}
+                      strokeWidth="3"
+                      strokeLinecap="round"
+                    />
+                  ))}
+                  {/* 데이터 포인트 (개별 색상) */}
                   {profitTrend.points.map((point) => (
-                    <circle key={point.id} cx={point.x} cy={point.y} r="3.5" fill={profitTrend.lastValue >= 0 ? '#10b981' : '#ef4444'} />
+                    <g key={point.id}>
+                      <circle cx={point.x} cy={point.y} r="4" fill="white" stroke={point.value >= 0 ? '#10b981' : '#ef4444'} strokeWidth="2" style={{ cursor: 'pointer' }} />
+                      <title>{`${point.label} · ${point.date} · ${formatKrwShort(point.value)}`}</title>
+                    </g>
                   ))}
                 </svg>
                 <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, marginTop: 8, fontSize: '0.75rem', color: 'var(--color-text-secondary)' }}>
                   <span>{profitTrend.points[0]?.date || '-'}</span>
-                  <span>0원 기준선</span>
+                  <span style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+                    <span style={{ display: 'flex', gap: 4, alignItems: 'center' }}><span style={{ display: 'inline-block', width: 14, height: 3, background: '#10b981', borderRadius: 2 }} /> 실현손익</span>
+                    <span style={{ display: 'flex', gap: 4, alignItems: 'center' }}><span style={{ display: 'inline-block', width: 14, height: 2, background: 'rgba(100,116,139,0.5)', backgroundImage: 'repeating-linear-gradient(90deg, rgba(100,116,139,0.5) 0px, rgba(100,116,139,0.5) 4px, transparent 4px, transparent 6px)' }} /> 이동평균</span>
+                    {profitTrend.projectionPoints.length > 0 && <span style={{ display: 'flex', gap: 4, alignItems: 'center' }}><span style={{ display: 'inline-block', width: 14, height: 2, background: 'rgba(139,92,246,0.55)', backgroundImage: 'repeating-linear-gradient(90deg, rgba(139,92,246,0.55) 0px, rgba(139,92,246,0.55) 5px, transparent 5px, transparent 9px)' }} /> 예상 추세</span>}
+                  </span>
                   <span>{profitTrend.points[profitTrend.points.length - 1]?.date || '-'}</span>
                 </div>
               </div>
             )}
           </div>
+
+          {!activityLoading && profitTrend.tradeBars.length > 0 && (
+            <div className="card mb-4">
+              <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'baseline', marginBottom: 'var(--space-2)', flexWrap: 'wrap' }}>
+                <div>
+                  <div className="title-md">거래별 손익 분포</div>
+                  <div className="muted" style={{ marginTop: 4, fontSize: '0.8rem' }}>각 매도 거래의 개별 실현손익. 초록=수익, 빨강=손실</div>
+                </div>
+                <div style={{ textAlign: 'right' }}>
+                  <div className="caption">전체 승률</div>
+                  <div className="title-md" style={{ color: profitTrend.tradeBars.filter((b) => b.isPositive).length / profitTrend.tradeBars.length >= 0.5 ? '#10b981' : '#ef4444' }}>
+                    {Math.round((profitTrend.tradeBars.filter((b) => b.isPositive).length / profitTrend.tradeBars.length) * 100)}%
+                  </div>
+                </div>
+              </div>
+              <svg viewBox="0 0 560 80" style={{ width: '100%', height: 'auto', display: 'block' }} aria-label="거래별 손익 바 차트">
+                <line x1="10" x2="550" y1="44" y2="44" stroke="var(--color-border-subtle)" strokeWidth="0.8" />
+                {profitTrend.tradeBars.map((bar, idx) => (
+                  <g key={idx}>
+                    <rect
+                      x={bar.x - bar.barW / 2}
+                      y={bar.rectY}
+                      width={bar.barW}
+                      height={bar.barH}
+                      fill={bar.isPositive ? '#10b981' : '#ef4444'}
+                      opacity="0.8"
+                      rx="2"
+                    />
+                    <title>{`${bar.label} · ${bar.date} · ${formatKrwShort(bar.amount)}`}</title>
+                  </g>
+                ))}
+              </svg>
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem', color: 'var(--color-text-secondary)', marginTop: 4 }}>
+                <span>{profitTrend.tradeBars[0]?.date || '-'}</span>
+                <span>{profitTrend.tradeBars[profitTrend.tradeBars.length - 1]?.date || '-'}</span>
+              </div>
+            </div>
+          )}
+
+          {!activityLoading && rollingWinRate.points.length > 0 && (
+            <div className="card mb-4">
+              <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'baseline', marginBottom: 'var(--space-2)', flexWrap: 'wrap' }}>
+                <div>
+                  <div className="title-md">롤링 승률 추이</div>
+                  <div className="muted" style={{ marginTop: 4, fontSize: '0.8rem' }}>최근 거래 묶음 기준 승률 변화. 50% 위면 수익 우세</div>
+                </div>
+                <div style={{ textAlign: 'right' }}>
+                  <div className="caption">평균 승률</div>
+                  <div className="title-md" style={{ color: rollingWinRate.avgWinRate >= 50 ? '#10b981' : '#ef4444' }}>{rollingWinRate.avgWinRate}%</div>
+                </div>
+              </div>
+              <svg viewBox="0 0 560 60" style={{ width: '100%', height: 'auto', display: 'block' }} aria-label="롤링 승률 차트">
+                <line x1="18" x2="542" y1="30" y2="30" stroke="var(--color-border-subtle)" strokeDasharray="4 4" strokeWidth="0.8" />
+                <path
+                  d={rollingWinRate.path}
+                  fill="none"
+                  stroke={rollingWinRate.avgWinRate >= 50 ? '#10b981' : '#ef4444'}
+                  strokeWidth="2.5"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+                {rollingWinRate.points.map((pt, idx) => (
+                  <g key={idx}>
+                    <circle cx={pt.x} cy={pt.y} r="3.5" fill="white" stroke={pt.winRate >= 50 ? '#10b981' : '#ef4444'} strokeWidth="1.5" />
+                    <title>{`승률 ${pt.winRate}%`}</title>
+                  </g>
+                ))}
+              </svg>
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem', color: 'var(--color-text-secondary)', marginTop: 4 }}>
+                <span style={{ color: '#10b981' }}>↑ 수익 우세</span>
+                <span>50% 기준선</span>
+                <span style={{ color: '#ef4444' }}>손실 우세 ↓</span>
+              </div>
+            </div>
+          )}
 
           <div className="card mb-4">
             <div className="title-md" style={{ marginBottom: 'var(--space-2)' }}>전략 & 국면 전환 타임라인</div>

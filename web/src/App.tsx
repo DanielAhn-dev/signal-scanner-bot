@@ -85,6 +85,13 @@ const readAuthErrorFromLocation = () => {
   return message
 }
 
+const canOpenPublicAnalyze = () => {
+  if (typeof window === 'undefined') return false
+  if (window.location.pathname.replace(/^\//, '') !== 'analyze') return false
+  const params = new URLSearchParams(window.location.search)
+  return !!params.get('code')
+}
+
 export default function App() {
   return (
     <ToastProvider>
@@ -112,6 +119,7 @@ function AppContent() {
   const [authName, setAuthName] = useState('')
   const [authError, setAuthError] = useState('')
   const toast = useToast()
+  const allowPublicAnalyze = canOpenPublicAnalyze()
 
   useEffect(() => {
     preloadStocks()
@@ -308,7 +316,7 @@ function AppContent() {
 
   return (
     <div className="layout-shell">
-      {!isSignedIn ? (
+      {!isSignedIn && !allowPublicAnalyze ? (
         <main className="auth-status-main">
           <section className="auth-status-card">
             <div className="access-required-icon" aria-hidden>
@@ -344,16 +352,18 @@ function AppContent() {
         </main>
       ) : (
         <>
-          <Header
-            onNavigate={handleNavigate}
-            activeRoute={route}
-            isSignedIn={isSignedIn}
-            isSigningIn={isSigningIn}
-            authEmail={authEmail}
-            authName={authName}
-            onSignIn={handleGoogleSignIn}
-            onSignOut={handleSignOut}
-          />
+          {isSignedIn && (
+            <Header
+              onNavigate={handleNavigate}
+              activeRoute={route}
+              isSignedIn={isSignedIn}
+              isSigningIn={isSigningIn}
+              authEmail={authEmail}
+              authName={authName}
+              onSignIn={handleGoogleSignIn}
+              onSignOut={handleSignOut}
+            />
+          )}
           <main>
             <Suspense fallback={<div>Loading...</div>}>
               {Active

@@ -8,6 +8,16 @@ import Skeleton from '../../components/Skeleton'
 import StockSearchInput from '../../components/StockSearchInput'
 import ShareButtons from '../../components/ShareButtons'
 
+function buildAnalyzeShareUrl(code: string): string {
+  if (typeof window === 'undefined') return `/analyze?code=${encodeURIComponent(code)}`
+  const nextUrl = new URL(window.location.href)
+  nextUrl.pathname = '/analyze'
+  nextUrl.search = ''
+  nextUrl.hash = ''
+  nextUrl.searchParams.set('code', code)
+  return nextUrl.toString()
+}
+
 function computeSMA(closes: number[], period: number): number | null {
   if (closes.length < period) return null
   return closes.slice(0, period).reduce((a, b) => a + b, 0) / period
@@ -124,17 +134,34 @@ export default function AnalyzePage() {
     }
   }
 
+  useEffect(() => {
+    if (!result?.code || typeof window === 'undefined') return
+    try {
+      const nextUrl = buildAnalyzeShareUrl(result.code)
+      if (nextUrl !== window.location.href) {
+        window.history.replaceState({}, '', nextUrl)
+      }
+    } catch {
+      // ignore
+    }
+  }, [result?.code])
+
   const handleStockSelect = (stock: StockItem) => {
     analyze(stock.code)
   }
 
   useEffect(() => {
     try {
+      const params = new URLSearchParams(window.location.search)
+      const sharedCode = params.get('code')?.trim()
       const pending = sessionStorage.getItem('analyze_pending_code')
+      const initialCode = sharedCode || pending
       if (pending) {
         sessionStorage.removeItem('analyze_pending_code')
-        setQuery(pending)
-        void analyze(pending)
+      }
+      if (initialCode) {
+        setQuery(initialCode)
+        void analyze(initialCode)
       }
     } catch {
       // ignore
@@ -157,6 +184,44 @@ export default function AnalyzePage() {
     result?.high != null && result?.low != null && result?.high !== result?.low
       ? ((result.close - result.low) / (result.high - result.low)) * 100
       : null
+
+  const shareSummaryLines = useMemo(() => {
+    if (!result) return [] as string[]
+    const lines: string[] = []
+
+    if (result.high != null && result.low != null) {
+      lines.push(`일중 범위 ${formatKrw(result.low)} ~ ${formatKrw(result.high)}`)
+    }
+
+    const fundamentalBits = [
+      result.per != null ? `PER ${formatNumber(result.per, 2)}` : null,
+      result.pbr != null ? `PBR ${formatNumber(result.pbr, 2)}` : null,
+      result.roe != null ? `ROE ${formatNumber(result.roe, 2)}%` : null,
+    ].filter(Boolean) as string[]
+    if (fundamentalBits.length > 0) {
+      lines.push(fundamentalBits.join(' / '))
+    }
+
+    if (advisor?.statusLabel || advisor?.finalScore != null) {
+      const advisorParts = [
+        advisor?.statusLabel ? `AI 판정 ${advisor.statusLabel}` : null,
+        advisor?.finalScore != null ? `${formatNumber(advisor.finalScore, 1)}점` : null,
+      ].filter(Boolean) as string[]
+      if (advisorParts.length > 0) {
+        lines.push(advisorParts.join(' · '))
+      }
+    }
+
+    if (advisor?.entryLow != null && advisor?.entryHigh != null) {
+      lines.push(`진입구간 ${formatKrw(advisor.entryLow)} ~ ${formatKrw(advisor.entryHigh)}`)
+    }
+
+    if (advisor?.target1 != null && advisor?.stopPrice != null) {
+      lines.push(`1차 목표 ${formatKrw(advisor.target1)} / 손절 ${formatKrw(advisor.stopPrice)}`)
+    }
+
+    return lines.slice(0, 4)
+  }, [advisor, result])
 
   return (
     <section className="container-app">
@@ -233,7 +298,8 @@ export default function AnalyzePage() {
                   code: result.code,
                   price: result.close,
                   changePct: result.change_pct,
-                  url: typeof window !== 'undefined' ? window.location.href : '',
+                  summaryLines: shareSummaryLines,
+                  url: buildAnalyzeShareUrl(result.code),
                 }}
                 variant="button"
                 showLabel

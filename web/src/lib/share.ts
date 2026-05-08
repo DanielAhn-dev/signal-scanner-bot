@@ -2,12 +2,25 @@
  * SNS 공유 유틸리티
  */
 
+import { formatKrw } from './format'
+
 export interface ShareData {
   title: string        // 종목명
   code: string         // 종목 코드
   price: number | null // 가격
   changePct?: number   // 변화율
+  summaryLines?: string[]
   url?: string         // 공유 링크 (생략하면 현재 페이지)
+}
+
+function buildShareSummary(data: ShareData): string[] {
+  const basePrice = data.price != null
+    ? `현재가 ${formatKrw(data.price)}${data.changePct != null ? ` (${data.changePct > 0 ? '+' : ''}${data.changePct.toFixed(2)}%)` : ''}`
+    : '현재가 —'
+
+  return [basePrice, ...(data.summaryLines ?? [])]
+    .map(line => String(line || '').trim())
+    .filter(Boolean)
 }
 
 function resolveShareUrl(url?: string): string {
@@ -84,11 +97,7 @@ function initKakao() {
  */
 export async function shareToKakaotalk(data: ShareData): Promise<void> {
   const url = resolveShareUrl(data.url)
-  const price = data.price != null ? formatKrw(data.price) : '—'
-  const pctStr = data.changePct != null
-    ? ` ${data.changePct > 0 ? '+' : ''}${data.changePct.toFixed(2)}%`
-    : ''
-  const description = `현재가: ${price}${pctStr}`
+  const description = buildShareSummary(data).join(' · ')
 
   // SDK가 이미 로드되어 있으면 await 없이 즉시 통과 (user gesture 보존)
   await loadKakaoSdk()
@@ -121,7 +130,7 @@ export async function shareToKakaotalk(data: ShareData): Promise<void> {
  * Twitter(X) 공유
  */
 export function shareToTwitter(data: ShareData) {
-  const message = `${data.title} (${data.code})\n현재가: ${data.price != null ? formatKrw(data.price) : '—'}\n변화: ${data.changePct != null ? `${data.changePct > 0 ? '+' : ''}${data.changePct.toFixed(2)}%` : '—'}`
+  const message = [`${data.title} (${data.code})`, ...buildShareSummary(data)].join('\n')
   const url = resolveShareUrl(data.url)
   const twitterUrl = `https://twitter.com/intent/tweet?text=${encodeURIComponent(message)}&url=${encodeURIComponent(url)}`
   window.open(twitterUrl, 'twitter-share', 'width=550,height=420')
@@ -132,7 +141,7 @@ export function shareToTwitter(data: ShareData) {
  */
 export async function copyToClipboard(data: ShareData) {
   const url = resolveShareUrl(data.url)
-  const message = `${data.title} (${data.code}) - 종목 분석\n가격: ${data.price != null ? formatKrw(data.price) : '—'}\n변화: ${data.changePct != null ? `${data.changePct > 0 ? '+' : ''}${data.changePct.toFixed(2)}%` : '—'}\n\n${url}`
+  const message = [`${data.title} (${data.code}) - 종목 분석`, ...buildShareSummary(data), '', url].join('\n')
   
   try {
     await navigator.clipboard.writeText(message)
@@ -147,7 +156,7 @@ export async function copyToClipboard(data: ShareData) {
  */
 export async function shareViaWebAPI(data: ShareData) {
   const url = resolveShareUrl(data.url)
-  const text = `${data.title} (${data.code}) - 현재가 ${data.price != null ? formatKrw(data.price) : '—'}`
+  const text = [`${data.title} (${data.code})`, ...buildShareSummary(data).slice(0, 3)].join('\n')
   
   if (navigator.share) {
     try {
@@ -167,15 +176,3 @@ export async function shareViaWebAPI(data: ShareData) {
   return false
 }
 
-/**
- * KRW 포매팅
- */
-function formatKrw(value: number): string {
-  if (value >= 1_000_000) {
-    return `${(value / 1_000_000).toFixed(1)}M원`
-  }
-  if (value >= 1_000) {
-    return `${(value / 1_000).toFixed(0)}K원`
-  }
-  return `${value.toFixed(0)}원`
-}
