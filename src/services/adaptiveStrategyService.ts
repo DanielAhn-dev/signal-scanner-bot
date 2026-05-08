@@ -1,6 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 
-type FactorKey = 'entry_grade' | 'trend_grade' | 'pivot_grade' | 'warn_grade'
+type FactorKey = 'entry_grade' | 'trend_grade' | 'pivot_grade' | 'warn_grade' | 'signal' | 'stable_turn' | 'market_regime'
 
 type PullbackHistoryRow = {
   trade_date: string
@@ -9,6 +9,9 @@ type PullbackHistoryRow = {
   trend_grade: string | null
   pivot_grade: string | null
   warn_grade: string | null
+  signal: string | null
+  stable_turn: string | null
+  market_regime: string | null
 }
 
 type PriceRow = {
@@ -53,7 +56,7 @@ type AdaptiveOverlay = {
 
 const CACHE_TTL_MS = 5 * 60_000
 const PRICE_TABLES = ['stock_prices', 'stock_timeseries', 'stock_history'] as const
-const FACTOR_KEYS: FactorKey[] = ['entry_grade', 'trend_grade', 'pivot_grade', 'warn_grade']
+const FACTOR_KEYS: FactorKey[] = ['entry_grade', 'trend_grade', 'pivot_grade', 'warn_grade', 'signal', 'stable_turn', 'market_regime']
 
 const cache = new Map<string, { expiresAt: number; data: AdaptiveStrategyInsights }>()
 
@@ -73,7 +76,10 @@ function factorName(key: FactorKey): string {
   if (key === 'entry_grade') return '진입'
   if (key === 'trend_grade') return '추세'
   if (key === 'pivot_grade') return '세력'
-  return '경고'
+  if (key === 'warn_grade') return '경고'
+  if (key === 'signal') return '신호'
+  if (key === 'stable_turn') return '세력턴'
+  return '국면'
 }
 
 function factorLabel(key: FactorKey, value: string): string {
@@ -110,23 +116,77 @@ async function getRecentTradeDates(supabase: SupabaseClient, limit: number): Pro
 async function getHistoricalPullbackRows(supabase: SupabaseClient, tradeDates: string[]): Promise<PullbackHistoryRow[]> {
   if (tradeDates.length === 0) return []
 
-  const { data, error } = await supabase
+  const { data: pullbackData, error: pullbackError } = await supabase
     .from('pullback_signals')
     .select('trade_date,code,entry_grade,trend_grade,pivot_grade,warn_grade')
     .in('trade_date', tradeDates)
     .in('entry_grade', ['A', 'B'])
     .neq('warn_grade', 'SELL')
 
-  if (error) throw new Error(error.message)
+  if (pullbackError) throw new Error(pullbackError.message)
 
-  return (data ?? []).map((row) => ({
+  const rows = (pullbackData ?? []).map((row) => ({
     trade_date: String((row as PullbackHistoryRow).trade_date || ''),
     code: String((row as PullbackHistoryRow).code || ''),
     entry_grade: (row as PullbackHistoryRow).entry_grade ?? null,
     trend_grade: (row as PullbackHistoryRow).trend_grade ?? null,
     pivot_grade: (row as PullbackHistoryRow).pivot_grade ?? null,
     warn_grade: (row as PullbackHistoryRow).warn_grade ?? null,
+    signal: null as string | null,
+    stable_turn: null as string | null,
+    market_regime: null as string | null,
   }))
+
+  const codeSet = Array.from(new Set(rows.map((row) => row.code).filter(Boolean)))
+  if (codeSet.length === 0) return rows
+
+  // 각 코드별 최신 scores 데이터 조회
+  const { data: scoresData } = await supabase
+    .from('scores')
+    .select('code,signal,stable_turn')
+    .in('code', codeSet)
+    .order('trade_date', { ascending: false })
+    .limit(Math.max(50, codeSet.length))
+
+  const scoresByCode = new Map<string, { signal: string | null; stable_turn: string | null }>()
+  for (const scoreRow of scoresData ?? []) {
+    const code = String((scoreRow as { code?: string }).code || '')
+    if (code && !scoresByCode.has(code)) {
+      scoresByCode.set(code, {
+        signal: (scoreRow as { signal?: string }).signal ?? null,
+        stable_turn: (scoreRow as { stable_turn?: string }).stable_turn ?? null,
+      })
+    }
+  }
+
+  // 각 코드별 최신 market_regime 조회 (decisions 테이블에서)
+  const { data: decisionData } = await supabase
+    .from('decisions')
+    .select('code,market_regime')
+    .in('code', codeSet)
+    .order('created_at', { ascending: false })
+    .limit(Math.max(50, codeSet.length))
+
+  const regimeByCode = new Map<string, string>()
+  for (const decRow of decisionData ?? []) {
+    const code = String((decRow as { code?: string }).code || '')
+    const regime = (decRow as { market_regime?: string }).market_regime ?? null
+    if (code && regime && !regimeByCode.has(code)) {
+      regimeByCode.set(code, regime)
+    }
+  }
+
+  // rows에 signal, stable_turn, market_regime 병합
+  return rows.map((row) => {
+    const scores = scoresByCode.get(row.code)
+    const regime = regimeByCode.get(row.code)
+    return {
+      ...row,
+      signal: scores?.signal ?? null,
+      stable_turn: scores?.stable_turn ?? null,
+      market_regime: regime ?? null,
+    }
+  })
 }
 
 async function getPriceRows(
