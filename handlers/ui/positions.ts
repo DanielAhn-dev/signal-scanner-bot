@@ -160,6 +160,36 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       }
     }
 
+    const pullbackByCode = new Map<string, {
+      entryGrade: string | null
+      trendGrade: string | null
+      warnGrade: string | null
+      warnScore: number | null
+    }>()
+    if (codes.length > 0) {
+      const { data: latestPullbackRows } = await supabase
+        .from('pullback_signals')
+        .select('trade_date')
+        .order('trade_date', { ascending: false })
+        .limit(1)
+      const latestTradeDate = (latestPullbackRows?.[0]?.trade_date as string) ?? null
+      if (latestTradeDate) {
+        const { data: pullbackRows } = await supabase
+          .from('pullback_signals')
+          .select('code, entry_grade, trend_grade, warn_grade, warn_score')
+          .eq('trade_date', latestTradeDate)
+          .in('code', codes)
+        for (const row of (pullbackRows ?? []) as any[]) {
+          pullbackByCode.set(String(row.code || ''), {
+            entryGrade: String(row?.entry_grade || '').trim().toUpperCase() || null,
+            trendGrade: String(row?.trend_grade || '').trim().toUpperCase() || null,
+            warnGrade: String(row?.warn_grade || '').trim().toUpperCase() || null,
+            warnScore: Number.isFinite(Number(row?.warn_score)) ? Number(row.warn_score) : null,
+          })
+        }
+      }
+    }
+
     // fetch lots only when holding positions exist (skip for interest-only queries)
     const ids = !includeLots || positionType === 'interest' ? [] : (data ?? [])
       .filter((r: any) => Number(r.quantity || 0) > 0)
@@ -206,6 +236,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const pid = String(row.id)
       const lots = lotsByPosition[pid] ?? []
       const score = scoreByCode.get(code)
+      const pullback = pullbackByCode.get(code)
 
       // recommended additional buy based on invested_amount target
       let recommended_buy_qty: number | null = null
@@ -240,6 +271,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         stock_name: row.stock?.name ?? null,
         total_score: score?.totalScore ?? null,
         score_signal: score?.signal ?? null,
+        entry_grade: pullback?.entryGrade ?? null,
+        trend_grade: pullback?.trendGrade ?? null,
+        warn_grade: pullback?.warnGrade ?? null,
+        warn_score: pullback?.warnScore ?? null,
         position_type: (String(row.status || '').toLowerCase() === 'watch' || String(row.status || '').toLowerCase() === 'interest') ? 'interest' : (row.quantity ? 'holding' : 'interest'),
         lots,
         recommended_buy_qty,
