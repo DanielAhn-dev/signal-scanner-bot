@@ -19,20 +19,105 @@ type HighlightItem = {
   entry_score: number | null
   total_score?: number | null
   adaptive_adjustment?: number | null
-}
-
-function GradeBadge({ grade }: { grade: string | null | undefined }) {
-  if (!grade) return <span className="scan-grade-label">-</span>
-  const g = String(grade).toUpperCase().trim()
-  const cls = g === 'A' ? 'scan-grade-a' : g === 'B' ? 'scan-grade-b' : g === 'C' ? 'scan-grade-c' : 'scan-grade-other'
-  return <span className={`scan-grade-badge ${cls}`}>{g}</span>
+  adaptive_reasons?: string[] | null
+  // forecast fields
+  entry_price: number | null
+  strategy_label: string
+  expected_base_pct: number
+  expected_upside_pct: number
+  expected_drawdown_pct: number
+  confidence_pct: number
+  score_momentum: number
+  score_value: number
+  score_safety: number
 }
 
 function WarnBadge({ grade }: { grade: string | null | undefined }) {
-  if (!grade) return <span className="scan-grade-label">-</span>
+  if (!grade) return null
   const g = String(grade).toUpperCase().trim()
   const cls = g === 'SAFE' ? 'scan-warn-safe' : g === 'WATCH' ? 'scan-warn-watch' : g === 'WARN' ? 'scan-warn-warn' : 'scan-warn-default'
   return <span className={`scan-warn-badge ${cls}`}>{g}</span>
+}
+
+function StrategyBadge({ label }: { label: string }) {
+  return (
+    <span style={{
+      display: 'inline-block',
+      padding: '2px 8px',
+      borderRadius: 4,
+      fontSize: 11,
+      fontWeight: 600,
+      background: 'var(--color-brand-subtle)',
+      color: 'var(--color-brand)',
+      border: '1px solid var(--color-brand)',
+    }}>{label}</span>
+  )
+}
+
+function ConfidenceLabel({ pct }: { pct: number }) {
+  const level = pct >= 75 ? '높음' : pct >= 60 ? '보통' : '주의'
+  const color = pct >= 75 ? 'var(--color-stock-up)' : pct >= 60 ? 'var(--color-text-secondary)' : 'var(--color-stock-down)'
+  return (
+    <div style={{ textAlign: 'right', flexShrink: 0 }}>
+      <div style={{ fontSize: 11, color: 'var(--color-text-tertiary)' }}>종합 신뢰도</div>
+      <div style={{ fontSize: 20, fontWeight: 700, color, lineHeight: 1.2 }}>
+        {formatNumber(pct, 1)}<span style={{ fontSize: 13 }}>%</span>
+      </div>
+      <div style={{ fontSize: 11, color }}>{level}</div>
+    </div>
+  )
+}
+
+function SelectCircle({ selected }: { selected: boolean }) {
+  return (
+    <div style={{
+      width: 22, height: 22, borderRadius: '50%', flexShrink: 0,
+      border: selected ? '2px solid var(--color-brand)' : '2px solid var(--color-border-default)',
+      background: selected ? 'var(--color-brand)' : 'transparent',
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+      transition: 'all 0.15s',
+      cursor: 'pointer',
+    }}>
+      {selected && (
+        <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+          <path d="M2.5 6L5 8.5L9.5 3.5" stroke="#fff" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+      )}
+    </div>
+  )
+}
+
+function ScoreBar({ label, value, color }: { label: string; value: number; color: string }) {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 5 }}>
+      <span style={{ width: 38, fontSize: 12, color: 'var(--color-text-secondary)', flexShrink: 0 }}>{label}</span>
+      <div style={{ flex: 1, height: 6, borderRadius: 3, background: 'var(--color-border-default)' }}>
+        <div style={{ width: `${Math.min(100, Math.max(0, value))}%`, height: '100%', borderRadius: 3, background: color, transition: 'width 0.4s ease' }} />
+      </div>
+      <span style={{ width: 26, fontSize: 12, textAlign: 'right', color: 'var(--color-text-primary)' }}>{Math.round(value)}</span>
+    </div>
+  )
+}
+
+function PriceCell({ label, value, pct, color }: { label: string; value?: string | null; pct?: string | null; color?: string }) {
+  return (
+    <div>
+      <div style={{ fontSize: 11, color: 'var(--color-text-tertiary)', marginBottom: 2 }}>{label}</div>
+      {value && <div style={{ fontSize: 13, fontWeight: 600 }}>{value}</div>}
+      {pct && <div style={{ fontSize: 13, fontWeight: 600, color: color || 'inherit' }}>{pct}</div>}
+    </div>
+  )
+}
+
+function calcPrices(item: HighlightItem) {
+  const p = item.entry_price
+  if (!p || p <= 0) return null
+  const stop = Math.round(p * (1 - item.expected_drawdown_pct / 100))
+  const t1 = Math.round(p * (1 + item.expected_base_pct / 100))
+  const t2 = Math.round(p * (1 + item.expected_upside_pct / 100))
+  const entryLow = Math.round(p * 0.995)
+  const entryHigh = Math.round(p * 1.005)
+  return { stop, t1, t2, entryLow, entryHigh }
 }
 
 const ANALYZE_PENDING_CODE_KEY = 'analyze_pending_code'
@@ -147,15 +232,26 @@ export default function HighlightsPage() {
           </div>
           <Button variant="secondary" onClick={load} disabled={loading}>하이라이트 새로고침</Button>
         </div>
-        <div className="grid-two mt-3">
-          <Input
-            label="총 투자금 (원)"
-            type="number"
-            min={0}
-            value={totalCapital}
-            onChange={(e) => setTotalCapital(e.target.value)}
-          />
-          <div className="card" style={{ padding: 'var(--space-3)' }}>
+        <div style={{ display: 'flex', gap: 'var(--space-3)', alignItems: 'stretch', marginTop: 'var(--space-3)' }}>
+          <div style={{ flex: 1 }}>
+            <Input
+              label="총 투자금 (원)"
+              type="number"
+              min={0}
+              value={totalCapital}
+              onChange={(e) => setTotalCapital(e.target.value)}
+            />
+          </div>
+          <div style={{
+            flex: 1,
+            padding: 'var(--space-3)',
+            borderRadius: 'var(--radius-md)',
+            background: 'var(--color-bg-muted)',
+            border: '1px solid var(--color-border-default)',
+            display: 'flex',
+            flexDirection: 'column',
+            justifyContent: 'center',
+          }}>
             <div className="caption">선택 종목 합계</div>
             <div className="title-md mt-1">{formatKrw(totalPlannedAmount)}</div>
             <div className={`caption mt-1 ${remaining < 0 ? 'negative' : 'muted'}`}>
@@ -175,55 +271,212 @@ export default function HighlightsPage() {
       ) : items.length === 0 ? (
         <div className="card"><EmptyState title="하이라이트 후보가 없습니다" description="스캔 실행 이후 다시 시도해 주세요." /></div>
       ) : (
-        <div className="cards-grid cols-2">
-          {items.map((row, index) => {
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
+          {/* TOP 3: 풀 카드 */}
+          {items.slice(0, 3).map((row, index) => {
             const selected = selectedCodes.includes(row.code)
             const amount = amountByCode[row.code] || '0'
+            const prices = calcPrices(row)
+            const reasons = Array.isArray(row.adaptive_reasons) && row.adaptive_reasons.length > 0 ? row.adaptive_reasons : null
             return (
               <div
                 key={row.code}
                 className="card"
                 style={{
-                  borderColor: selected ? 'var(--color-border-primary)' : undefined,
-                  boxShadow: selected ? 'var(--shadow-sm)' : undefined,
+                  padding: 'var(--space-5)',
+                  borderColor: selected ? 'var(--color-brand)' : undefined,
+                  transition: 'border-color 0.15s',
                 }}
               >
-                <div className="flex-between" style={{ alignItems: 'flex-start' }}>
-                  <div>
-                    <div className="caption">TOP {index + 1}</div>
-                    <div className="title-md" style={{ marginTop: 'var(--space-1)' }}>{row.name}</div>
-                    <div className="caption">{row.code} {row.sector_id ? `· ${row.sector_id}` : ''}</div>
+                {/* 헤더 */}
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 'var(--space-4)' }}>
+                  <div style={{ display: 'flex', gap: 'var(--space-3)', alignItems: 'flex-start' }}>
+                    <div style={{
+                      width: 28, height: 28, borderRadius: '50%', flexShrink: 0,
+                      background: index === 0 ? 'var(--color-brand)' : 'var(--color-bg-muted)',
+                      color: index === 0 ? '#fff' : 'var(--color-text-secondary)',
+                      border: index === 0 ? 'none' : '1px solid var(--color-border-default)',
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      fontWeight: 700, fontSize: 13,
+                    }}>{index + 1}</div>
+                    <div>
+                      <div style={{ fontSize: 18, fontWeight: 700, lineHeight: 1.2 }}>{row.name}</div>
+                      <div style={{ fontSize: 12, color: 'var(--color-text-tertiary)', marginTop: 4, display: 'flex', gap: 8, alignItems: 'center' }}>
+                        <span>{row.code}</span>
+                        <StrategyBadge label={row.strategy_label} />
+                        <WarnBadge grade={row.warn_grade} />
+                      </div>
+                    </div>
                   </div>
-                  <WarnBadge grade={row.warn_grade} />
+                  <div style={{ display: 'flex', alignItems: 'flex-start', gap: 'var(--space-3)' }}>
+                    <ConfidenceLabel pct={row.confidence_pct} />
+                    <div onClick={() => toggleCode(row.code)} style={{ marginTop: 2 }}>
+                      <SelectCircle selected={selected} />
+                    </div>
+                  </div>
                 </div>
 
-                <div className="mt-3 flex-gap-sm" style={{ flexWrap: 'wrap' }}>
-                  <GradeBadge grade={row.entry_grade} />
-                  <GradeBadge grade={row.trend_grade} />
-                  <GradeBadge grade={row.dist_grade} />
-                  <span className="caption">진입 {formatNumber(row.entry_score, 1)}</span>
-                  {typeof row.total_score === 'number' && <span className="caption">종합 {formatNumber(row.total_score, 0)}</span>}
+                {/* 가격 4칸 — divider 구분 */}
+                <div style={{
+                  display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)',
+                  gap: 'var(--space-3)',
+                  borderTop: '1px solid var(--color-border-default)',
+                  borderBottom: '1px solid var(--color-border-default)',
+                  padding: 'var(--space-3) 0',
+                  marginBottom: 'var(--space-4)',
+                }}>
+                  <PriceCell label="기준 진입가" value={row.entry_price ? `${formatKrw(row.entry_price)}` : '-'} />
+                  <PriceCell label="기대 수익" pct={`+${formatNumber(row.expected_base_pct, 1)}%`} color="var(--color-stock-up)" />
+                  <PriceCell label="상단 목표" pct={`+${formatNumber(row.expected_upside_pct, 1)}%`} color="var(--color-stock-up)" />
+                  <PriceCell label="예상 손실" pct={`-${formatNumber(row.expected_drawdown_pct, 1)}%`} color="var(--color-stock-down)" />
                 </div>
 
-                <div className="mt-3">
-                  <Input
-                    label="투입 금액 (원)"
-                    type="number"
-                    min={0}
-                    value={amount}
-                    onChange={(e) => setAmountByCode((prev) => ({ ...prev, [row.code]: e.target.value }))}
-                  />
+                {/* 점수 지표 + 매수 근거 */}
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-4)', marginBottom: 'var(--space-4)' }}>
+                  <div>
+                    <div style={{ fontSize: 11, color: 'var(--color-text-tertiary)', marginBottom: 8, fontWeight: 500, letterSpacing: '0.02em' }}>점수 지표</div>
+                    <ScoreBar label="모멘텀" value={row.score_momentum} color="#ef4444" />
+                    <ScoreBar label="밸류" value={row.score_value} color="#f97316" />
+                    <ScoreBar label="안전성" value={row.score_safety} color="#22c55e" />
+                    <div style={{
+                      marginTop: 8, fontSize: 12, color: 'var(--color-stock-up)', fontWeight: 600,
+                    }}>
+                      기대 여지 +{formatNumber(row.expected_base_pct, 1)}%
+                    </div>
+                  </div>
+                  <div>
+                    <div style={{ fontSize: 11, color: 'var(--color-text-tertiary)', marginBottom: 8, fontWeight: 500, letterSpacing: '0.02em' }}>매수 확신 근거</div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+                      {(reasons ?? [
+                        `모멘텀 ${Math.round(row.score_momentum)}점 — 진입 강도 기반 추세 분석.`,
+                        `안전성 ${Math.round(row.score_safety)}점 — 하방 리스크 제한적입니다.`,
+                        `기대 여지 +${formatNumber(row.expected_base_pct, 1)}% — 예상 손실 대비 기대 수익 비율이 우수합니다.`,
+                      ]).slice(0, 4).map((r, i) => (
+                        <div key={i} style={{ fontSize: 12, color: 'var(--color-text-secondary)', lineHeight: 1.6 }}>{r}</div>
+                      ))}
+                    </div>
+                  </div>
                 </div>
 
-                <div className="mt-3 flex-gap-sm" style={{ justifyContent: 'space-between' }}>
-                  <Button variant={selected ? 'primary' : 'secondary'} onClick={() => toggleCode(row.code)}>
-                    {selected ? '선택됨' : '후보 선택'}
-                  </Button>
+                {/* 진입구간/목표가 */}
+                {prices && (
+                  <div style={{
+                    display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)',
+                    gap: 'var(--space-2)',
+                    borderTop: '1px solid var(--color-border-default)',
+                    paddingTop: 'var(--space-3)',
+                    marginBottom: 'var(--space-4)',
+                  }}>
+                    <div>
+                      <div style={{ fontSize: 11, color: 'var(--color-text-tertiary)' }}>진입 구간</div>
+                      <div style={{ fontSize: 12, fontWeight: 600, marginTop: 2 }}>{formatKrw(prices.entryLow)} ~ {formatKrw(prices.entryHigh)}</div>
+                    </div>
+                    <div>
+                      <div style={{ fontSize: 11, color: 'var(--color-text-tertiary)' }}>손절 기준</div>
+                      <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--color-stock-down)', marginTop: 2 }}>
+                        {formatKrw(prices.stop)} (-{formatNumber(row.expected_drawdown_pct, 1)}%)
+                      </div>
+                    </div>
+                    <div>
+                      <div style={{ fontSize: 11, color: 'var(--color-text-tertiary)' }}>1차 목표</div>
+                      <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--color-stock-up)', marginTop: 2 }}>
+                        {formatKrw(prices.t1)} (+{formatNumber(row.expected_base_pct, 1)}%)
+                      </div>
+                    </div>
+                    <div>
+                      <div style={{ fontSize: 11, color: 'var(--color-text-tertiary)' }}>2차 목표</div>
+                      <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--color-stock-up)', marginTop: 2 }}>
+                        {formatKrw(prices.t2)} (+{formatNumber(row.expected_upside_pct, 1)}%)
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* 투입금액 + 상세분석 */}
+                <div style={{ display: 'flex', gap: 'var(--space-3)', alignItems: 'flex-end' }}>
+                  <div style={{ flex: 1 }}>
+                    <Input
+                      label="투입 금액 (원)"
+                      type="number"
+                      min={0}
+                      value={amount}
+                      onChange={(e) => setAmountByCode((prev) => ({ ...prev, [row.code]: e.target.value }))}
+                    />
+                  </div>
                   <Button variant="ghost" onClick={() => goAnalyze(row.code)}>상세분석</Button>
                 </div>
               </div>
             )
           })}
+
+          {/* TOP 4-5: 컴팩트 카드 */}
+          {items.slice(3).length > 0 && (
+            <div>
+              <div style={{ fontSize: 12, color: 'var(--color-text-tertiary)', marginBottom: 'var(--space-2)', padding: '0 2px' }}>추가 후보</div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' }}>
+                {items.slice(3).map((row, i) => {
+                  const selected = selectedCodes.includes(row.code)
+                  const amount = amountByCode[row.code] || '0'
+                  return (
+                    <div
+                      key={row.code}
+                      className="card"
+                      style={{
+                        padding: 'var(--space-3) var(--space-4)',
+                        borderColor: selected ? 'var(--color-brand)' : undefined,
+                        borderLeftWidth: selected ? 3 : undefined,
+                        transition: 'border-color 0.15s, border-left-width 0.15s',
+                      }}
+                    >
+                      <div style={{ display: 'flex', gap: 'var(--space-3)', alignItems: 'center', flexWrap: 'wrap' }}>
+                        <div style={{
+                          width: 24, height: 24, borderRadius: '50%', flexShrink: 0,
+                          background: 'var(--color-bg-muted)', color: 'var(--color-text-secondary)',
+                          display: 'flex', alignItems: 'center', justifyContent: 'center',
+                          fontWeight: 700, fontSize: 12, border: '1px solid var(--color-border-default)',
+                        }}>{i + 4}</div>
+                        <div style={{ flex: 1, minWidth: 120 }}>
+                          <div style={{ fontWeight: 600, fontSize: 14 }}>{row.name}</div>
+                          <div style={{ fontSize: 11, color: 'var(--color-text-tertiary)' }}>{row.code}</div>
+                        </div>
+                        <div style={{ display: 'flex', gap: 'var(--space-3)', alignItems: 'center', flexWrap: 'wrap' }}>
+                          {row.entry_price && (
+                            <div style={{ textAlign: 'center' }}>
+                              <div style={{ fontSize: 10, color: 'var(--color-text-tertiary)' }}>기준가</div>
+                              <div style={{ fontSize: 12, fontWeight: 600 }}>{formatKrw(row.entry_price)}</div>
+                            </div>
+                          )}
+                          <div style={{ textAlign: 'center' }}>
+                            <div style={{ fontSize: 10, color: 'var(--color-text-tertiary)' }}>기대수익</div>
+                            <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--color-stock-up)' }}>+{formatNumber(row.expected_base_pct, 1)}%</div>
+                          </div>
+                          <div style={{ textAlign: 'center' }}>
+                            <div style={{ fontSize: 10, color: 'var(--color-text-tertiary)' }}>신뢰도</div>
+                            <div style={{ fontSize: 12, fontWeight: 600 }}>{formatNumber(row.confidence_pct, 1)}%</div>
+                          </div>
+                          <WarnBadge grade={row.warn_grade} />
+                        </div>
+                        <div style={{ display: 'flex', gap: 'var(--space-2)', alignItems: 'center' }}>
+                          <div style={{ width: 90 }}>
+                            <Input
+                              type="number"
+                              min={0}
+                              value={amount}
+                              onChange={(e) => setAmountByCode((prev) => ({ ...prev, [row.code]: e.target.value }))}
+                            />
+                          </div>
+                          <Button variant="ghost" onClick={() => goAnalyze(row.code)}>분석</Button>
+                          <div onClick={() => toggleCode(row.code)}>
+                            <SelectCircle selected={selected} />
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+          )}
         </div>
       )}
     </div>

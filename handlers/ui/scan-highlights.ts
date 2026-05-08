@@ -1,13 +1,12 @@
-import type { VercelRequest, VercelResponse } from '@vercel/node'
+﻿import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
-import { applyAdaptiveOverlayToPullbackCandidate, getAdaptiveStrategyInsights } from '../../src/services/adaptiveStrategyService'
+import { createDailyCandidatePlanningReportResult } from '../../src/services/marketInsightService'
 
 const ORIGIN = process.env.UI_CORS_ORIGIN || '*'
 const CACHE_TTL_MS = 60_000 // 1분
 
 type CacheEntry = {
   expiresAt: number
-  latestDate: string | null
   data: ScanHighlightItem[]
 }
 
@@ -41,21 +40,16 @@ export type ScanHighlightItem = {
   adaptive_adjustment?: number
   adaptive_reasons?: string[]
   adaptive_score?: number
-}
-
-function signalBonus(signal: string | null | undefined): number {
-  const s = String(signal || '').toUpperCase().trim()
-  if (s === 'STRONG_BUY') return 15
-  if (s === 'BUY') return 8
-  if (s === 'WATCH') return 3
-  return 0
-}
-
-function stableBonus(stableTurn: string | null | undefined): number {
-  const s = String(stableTurn || '').toLowerCase().trim()
-  if (s === 'bull-strong') return 10
-  if (s === 'bull-weak') return 5
-  return 0
+  // forecast fields
+  entry_price: number | null
+  strategy_label: string
+  expected_base_pct: number
+  expected_upside_pct: number
+  expected_drawdown_pct: number
+  confidence_pct: number
+  score_momentum: number
+  score_value: number
+  score_safety: number
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
@@ -84,7 +78,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   const cached = cache.get('highlights')
   if (cached && Date.now() <= cached.expiresAt) {
-    return res.status(200).json({ ok: true, cached: true, latestDate: cached.latestDate, data: cached.data })
+    return res.status(200).json({ ok: true, cached: true, data: cached.data })
   }
 
   let supabase: SupabaseClient
@@ -95,107 +89,72 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   try {
-    const adaptiveInsights = await getAdaptiveStrategyInsights(supabase)
+    // 확신추천(/리포트 하이라이트)과 동일한 파이프라인 사용
+    const report = await createDailyCandidatePlanningReportResult(supabase, {
+      riskProfile: 'safe',
+      mode: 'full',
+    })
 
-    // 1) 최신 trade_date 조회
-    const { data: latestRows, error: latestError } = await supabase
+    const forecasts = report.forecasts ?? []
+    if (!forecasts.length) {
+      return res.status(200).json({ ok: true, cached: false, data: [] })
+    }
+
+    // 확신추천과 동일한 정렬: confidencePct desc → edge(upside-drawdown) desc
+    const ranked = [...forecasts].sort((a, b) => {
+      if (b.confidencePct !== a.confidencePct) return b.confidencePct - a.confidencePct
+      const aEdge = a.expectedUpsidePct - a.expectedDrawdownPct
+      const bEdge = b.expectedUpsidePct - b.expectedDrawdownPct
+      return bEdge - aEdge
+    }).slice(0, 5)
+
+    // ranked 코드에 대한 grade 데이터 조회
+    const rankedCodes = ranked.map((f) => f.code)
+    const { data: gradeRows } = await supabase
       .from('pullback_signals')
-      .select('trade_date')
+      .select('code, entry_grade, entry_score, trend_grade, dist_grade, pivot_grade, warn_grade, warn_score, trade_date, stock:stocks!inner(sector_id)')
+      .in('code', rankedCodes)
       .order('trade_date', { ascending: false })
-      .limit(1)
-    if (latestError) return res.status(500).json({ error: latestError.message })
-    const latestDate = (latestRows?.[0]?.trade_date as string) ?? null
-    if (!latestDate) return res.status(200).json({ ok: true, latestDate: null, data: [] })
 
-    // 2) 진입 A/B, SELL 제외 후보
-    const { data: pbRows, error: pbError } = await supabase
-      .from('pullback_signals')
-      .select('code, entry_grade, entry_score, trend_grade, dist_grade, pivot_grade, warn_grade, warn_score')
-      .eq('trade_date', latestDate)
-      .in('entry_grade', ['A', 'B'])
-      .neq('warn_grade', 'SELL')
-      .order('entry_score', { ascending: false })
-      .limit(80)
-    if (pbError) return res.status(500).json({ error: pbError.message })
-
-    const codes = (pbRows ?? []).map((r: any) => r.code as string).filter(Boolean)
-    if (!codes.length) return res.status(200).json({ ok: true, latestDate, data: [] })
-
-    // 3) 종목명/섹터 조회
-    const { data: stockRows } = await supabase
-      .from('stocks')
-      .select('code, name, sector_id')
-      .in('code', codes)
-    const stockMap = new Map<string, { name: string; sector_id: string | null }>()
-    for (const s of (stockRows ?? []) as any[]) {
-      stockMap.set(s.code, { name: s.name, sector_id: s.sector_id ?? null })
+    // 코드별 최신 grade 행만 유지
+    const gradeMap = new Map<string, any>()
+    for (const row of gradeRows ?? []) {
+      if (!gradeMap.has(row.code)) gradeMap.set(row.code, row)
     }
 
-    // 4) scores 최신 asof 조회 후 교차
-    const { data: latestScoreRows } = await supabase
-      .from('scores')
-      .select('asof')
-      .order('asof', { ascending: false })
-      .limit(1)
-    const latestAsof = (latestScoreRows?.[0]?.asof as string) ?? null
-
-    const scoreMap = new Map<string, { signal: string | null; stableTurn: string | null; totalScore: number | null }>()
-    if (latestAsof) {
-      const { data: scoreRows } = await supabase
-        .from('scores')
-        .select('code, signal, total_score, factors')
-        .eq('asof', latestAsof)
-        .in('code', codes)
-      for (const row of (scoreRows ?? []) as any[]) {
-        const factors = row.factors ?? {}
-        scoreMap.set(row.code, {
-          signal: String(row.signal || '') || null,
-          stableTurn: String(factors?.stable_turn || '') || null,
-          totalScore: typeof row.total_score === 'number' ? row.total_score : null,
-        })
-      }
-    }
-
-    // 5) highlight_score 계산 및 TOP5 추출
-    const items: ScanHighlightItem[] = (pbRows ?? []).map((row: any) => {
-      const stock = stockMap.get(row.code)
-      const entryScore = Number(row.entry_score ?? 0)
-      const warnScore = Number(row.warn_score ?? 0)
-      const sc = scoreMap.get(row.code)
-      const priorityBase = entryScore * 20 - warnScore * 3
-      const highlightScore = priorityBase + signalBonus(sc?.signal) + stableBonus(sc?.stableTurn)
-      const adaptive = applyAdaptiveOverlayToPullbackCandidate(row, adaptiveInsights)
+    const data: ScanHighlightItem[] = ranked.map((f) => {
+      const g = gradeMap.get(f.code)
       return {
-        code: row.code,
-        name: stock?.name ?? row.code,
-        sector_id: stock?.sector_id ?? null,
-        entry_grade: row.entry_grade ?? null,
-        entry_score: row.entry_score ?? null,
-        trend_grade: row.trend_grade ?? null,
-        dist_grade: row.dist_grade ?? null,
-        pivot_grade: row.pivot_grade ?? null,
-        warn_grade: row.warn_grade ?? null,
-        warn_score: row.warn_score ?? null,
-        signal: sc?.signal ?? null,
-        stable_turn: sc?.stableTurn ?? null,
-        total_score: sc?.totalScore ?? null,
-        highlight_score: highlightScore,
-        adaptive_adjustment: adaptive.adjustment,
-        adaptive_reasons: adaptive.reasons,
-        adaptive_score: round1(highlightScore + adaptive.adjustment),
+        code: f.code,
+        name: f.name,
+        sector_id: (g?.stock as any)?.sector_id ?? null,
+        entry_grade: g?.entry_grade ?? null,
+        entry_score: g?.entry_score ?? null,
+        trend_grade: g?.trend_grade ?? null,
+        dist_grade: g?.dist_grade ?? null,
+        pivot_grade: g?.pivot_grade ?? null,
+        warn_grade: g?.warn_grade ?? null,
+        warn_score: g?.warn_score ?? null,
+        signal: null,
+        stable_turn: null,
+        total_score: null,
+        highlight_score: f.confidencePct,
+        adaptive_score: f.confidencePct,
+        entry_price: f.entryPrice > 0 ? f.entryPrice : null,
+        strategy_label: f.strategyLabel,
+        expected_base_pct: f.expectedBasePct,
+        expected_upside_pct: f.expectedUpsidePct,
+        expected_drawdown_pct: f.expectedDrawdownPct,
+        confidence_pct: f.confidencePct,
+        score_momentum: f.scoreComponents.momentum,
+        score_value: f.scoreComponents.value,
+        score_safety: f.scoreComponents.safety,
       }
     })
 
-    items.sort((a, b) => Number(b.adaptive_score ?? b.highlight_score) - Number(a.adaptive_score ?? a.highlight_score))
-    const top5 = items.slice(0, 5)
-
-    cache.set('highlights', { expiresAt: Date.now() + CACHE_TTL_MS, latestDate, data: top5 })
-    return res.status(200).json({ ok: true, cached: false, latestDate, data: top5 })
+    cache.set('highlights', { expiresAt: Date.now() + CACHE_TTL_MS, data })
+    return res.status(200).json({ ok: true, cached: false, data })
   } catch (e: any) {
     return res.status(500).json({ error: String(e?.message || e) })
   }
-}
-
-function round1(value: number): number {
-  return Math.round(value * 10) / 10
 }

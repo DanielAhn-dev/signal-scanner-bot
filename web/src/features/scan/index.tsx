@@ -406,7 +406,7 @@ export default function ScanPage({ onNavigate }: { onNavigate?: (r: string) => v
   }
 
   return (
-    <section className="container-app">
+    <section className="container-app container-wide">
       {/* 페이지 헤더 */}
       <div className="flex-between mb-4">
         <h1 className="title-xl" style={{ marginBottom: 0 }}>눌림목 스캐너</h1>

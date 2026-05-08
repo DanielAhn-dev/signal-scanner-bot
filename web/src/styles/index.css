@@ -43,6 +43,12 @@ html, body, #root {
 .container-app {
   @apply min-h-screen;
   padding: var(--spacing-page-y) var(--spacing-page-x);
+  max-width: 960px;
+  margin-left: auto;
+  margin-right: auto;
+}
+.container-app.container-wide {
+  max-width: 1320px;
 }
 
 @media (max-width: 639px) {
@@ -342,15 +348,18 @@ html, body, #root {
 }
 
 .report-drawer-content {
-  @apply flex;
+  display: flex;
   flex: 1;
-  @apply overflow-hidden;
-  @apply p-3;
+  overflow: hidden;
+  position: relative;
+  padding: 0;
 }
 
 .report-drawer-content iframe {
-  @apply h-full w-full border rounded-md;
-  border-color: var(--color-border-default);
+  width: 100%;
+  height: 100%;
+  border: none;
+  display: block;
   background: var(--color-bg-surface);
 }
 
@@ -709,6 +718,13 @@ html, body, #root {
   @apply resize-y;
   min-height: 120px;
 }
+/* number input spinner 숨김 */
+.ui-text[type=number]::-webkit-outer-spin-button,
+.ui-text[type=number]::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+.ui-text[type=number] { -moz-appearance: textfield; }
 .ui-button {
   @apply cursor-pointer inline-flex items-center justify-center whitespace-nowrap;
   border-radius: var(--btn-radius, var(--radius-sm));
