@@ -453,6 +453,38 @@ export default function AnalyzePage() {
                   </div>
                 </div>
 
+                {/* 트레일링 스탑 가이드 */}
+                {advisor.entryLow != null && (
+                  <div style={{
+                    background: 'var(--color-warning-bg, rgba(255,170,0,0.08))',
+                    border: '1px solid rgba(200,140,0,0.2)',
+                    borderRadius: 'var(--radius-md)',
+                    padding: 'var(--space-3)',
+                    marginBottom: 'var(--space-2)',
+                  }}>
+                    <div className="stat-label" style={{ color: 'var(--color-warning-text, #a07000)', marginBottom: 'var(--space-1)' }}>
+                      트레일링 스탑 기준 (참고용)
+                    </div>
+                    {(() => {
+                      const baseEntry = advisor.entryLow ?? result.close ?? 0
+                      const TRAILING_ARM_PCT = 5   // 활성화 수익률
+                      const TRAILING_STOP_PCT = 10 // 고점 대비 이탈 %
+                      const trailingArmPrice = baseEntry > 0 ? Math.round(baseEntry * (1 + TRAILING_ARM_PCT / 100)) : null
+                      return (
+                        <div className="caption" style={{ lineHeight: '1.7' }}>
+                          <span>• 진입 후 <strong>+{TRAILING_ARM_PCT}%</strong> 도달 시 트레일링 활성화</span><br />
+                          {trailingArmPrice && (
+                            <><span style={{ paddingLeft: '1em' }}>→ 활성화 기준가 약 <strong>{formatKrw(trailingArmPrice)}</strong></span><br /></>
+                          )}
+                          <span>• 이후 고점 대비 <strong>-{TRAILING_STOP_PCT}%</strong> 이탈 시 익절</span><br />
+                          <span>• 손절: 진입가(평단) 대비 <strong>-{advisor.stopPct != null ? `${Math.abs(advisor.stopPct * 100).toFixed(1)}%` : '10%'}</strong></span><br />
+                          <span style={{ opacity: 0.7 }}>※ 상방은 무제한 — 고점 추적으로 수익 보호. 가상매매 자동사이클에 적용 중.</span>
+                        </div>
+                      )
+                    })()}
+                  </div>
+                )}
+
                 {/* 판단 근거 */}
                 {Array.isArray(advisor.rationale) && advisor.rationale.length > 0 && (
                   <div style={{ marginBottom: 'var(--space-2)' }}>

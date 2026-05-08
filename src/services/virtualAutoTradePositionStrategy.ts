@@ -14,6 +14,8 @@ export type PositionBucket = "LONG" | "SWING";
 export type ParsedPositionStrategyState = {
   profile: PositionStrategyProfile;
   takeProfitTranchesDone: number;
+  /** 보유 기간 중 최고가 (트레일링 스탑 계산용, memo에서 복원) */
+  peakPrice: number | null;
 };
 
 export type ResolvedPositionTradeProfile = {
@@ -123,10 +125,13 @@ export function parsePositionStrategyState(
     map.get("profile") ?? map.get("strategy_profile") ?? fallbackProfile ?? "DEFAULT"
   );
   const takeProfitTranchesDone = Math.max(0, Math.floor(toNumber(map.get("tp_tranches"), 0)));
+  const rawPeak = toNumber(map.get("peak_price"), 0);
+  const peakPrice = rawPeak > 0 ? rawPeak : null;
 
   return {
     profile,
     takeProfitTranchesDone,
+    peakPrice,
   };
 }
 
@@ -135,9 +140,12 @@ export function buildPositionStrategyMemo(input: {
   note?: string;
   profile?: string | null;
   takeProfitTranchesDone?: number;
+  /** 보유 중 최고가 (트레일링 스탑용) */
+  peakPrice?: number | null;
 }): string {
   const profile = normalizePositionStrategyProfile(input.profile);
   const takeProfitTranchesDone = Math.max(0, Math.floor(toNumber(input.takeProfitTranchesDone, 0)));
+  const peakPriceVal = input.peakPrice != null && input.peakPrice > 0 ? Math.round(input.peakPrice) : null;
   const parts = [
     buildStrategyMemo({
       strategyId: "core.autotrade.v1",
@@ -147,6 +155,7 @@ export function buildPositionStrategyMemo(input: {
     `profile=${sanitizeMemoValue(profile)}`,
     `tp_tranches=${takeProfitTranchesDone}`,
   ];
+  if (peakPriceVal != null) parts.push(`peak_price=${peakPriceVal}`);
 
   return parts.join(";");
 }

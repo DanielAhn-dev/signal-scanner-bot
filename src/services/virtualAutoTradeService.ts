@@ -926,6 +926,58 @@ function applyPerformanceBuyGuard(input: {
   };
 }
 
+/**
+ * 적응형 출구 전략 조정 엔진
+ * 최근 매도 성과(손절 연속 패턴, 익절 비율) → stopLossPct / takeProfitPct 자동 조정
+ * - 연속 손절 3회 이상: 손절 기준 타이트하게 (더 일찍 끊기)
+ * - 익절 비율 높고 PF 양호: 익절 목표를 소폭 늘려 수익 연장
+ * - 평균 손절 비율 분석: 실제 -X%에서 끊기는지 파악 후 기준 조정
+ */
+export function applyAdaptiveExitGuard(input: {
+  baseStopLossPct: number;
+  baseTakeProfitPct: number;
+  perf: AutoTradeSellPerformance | null;
+}): { stopLossPct: number; takeProfitPct: number; note?: string } {
+  const stopLossPct = Math.abs(toNumber(input.baseStopLossPct, 4));
+  const takeProfitPct = Math.abs(toNumber(input.baseTakeProfitPct, 8));
+  const perf = input.perf;
+
+  if (!perf || perf.sellCount < 5) {
+    return { stopLossPct, takeProfitPct };
+  }
+
+  const notes: string[] = [];
+
+  // 연속 손절 3회 이상 → 손절 기준 더 타이트하게 (빠른 손절)
+  if (perf.maxLossStreak >= 3) {
+    const tighterStop = Math.max(2, stopLossPct - 1.0);
+    notes.push(`연속손실 ${perf.maxLossStreak}회 → 손절 ${stopLossPct.toFixed(1)}% → ${tighterStop.toFixed(1)}%`);
+    return {
+      stopLossPct: tighterStop,
+      takeProfitPct,
+      note: notes.join(" · "),
+    };
+  }
+
+  // 승률 높고 PF 양호 → 익절 목표 소폭 연장 (수익 더 끌기)
+  if (
+    perf.sellCount >= 10 &&
+    perf.winRate >= 55 &&
+    perf.profitFactor != null &&
+    perf.profitFactor >= 1.2
+  ) {
+    const extendedTP = Math.min(15, takeProfitPct + 1.5);
+    notes.push(`승률 ${perf.winRate.toFixed(1)}% PF ${perf.profitFactor.toFixed(2)} → 익절 ${takeProfitPct.toFixed(1)}% → ${extendedTP.toFixed(1)}%`);
+    return {
+      stopLossPct,
+      takeProfitPct: extendedTP,
+      note: notes.join(" · "),
+    };
+  }
+
+  return { stopLossPct, takeProfitPct };
+}
+
 function applyPersistedGateGuard(input: {
   requestedSlots: number;
   baseMinBuyScore: number;
@@ -2485,6 +2537,7 @@ async function runDailyReviewForUser(payload: {
   if (persistedGuard.note) {
     summary.notes.push(persistedGuard.note);
   }
+
   if (selectedStrategy) {
     summary.notes.push(`기본 전략: ${getStrategyLabel(selectedStrategy) || selectedStrategy}`);
   }
@@ -2552,9 +2605,21 @@ async function runDailyReviewForUser(payload: {
 
   const feeRate = toNumber(prefs.virtual_fee_rate, 0.00015);
   const taxRate = toNumber(prefs.virtual_tax_rate, 0.0018);
-  const baseStopLossPct = Math.abs(toNumber(payload.setting.stop_loss_pct, 4));
-  const baseTakeProfitPct = Math.abs(toNumber(payload.setting.take_profit_pct, 8));
+  const rawBaseStopLossPct = Math.abs(toNumber(payload.setting.stop_loss_pct, 4));
+  const rawBaseTakeProfitPct = Math.abs(toNumber(payload.setting.take_profit_pct, 8));
   const sellSplitCount = Math.max(1, Math.min(4, toPositiveInt(prefs.virtual_sell_split_count, 2)));
+
+  // 적응형 출구 전략 조정: 최근 성과 기반 손절/익절 기준 자동 조정
+  const adaptiveExitGuard = applyAdaptiveExitGuard({
+    baseStopLossPct: rawBaseStopLossPct,
+    baseTakeProfitPct: rawBaseTakeProfitPct,
+    perf: dailySellPerf,
+  });
+  const baseStopLossPct = adaptiveExitGuard.stopLossPct;
+  const baseTakeProfitPct = adaptiveExitGuard.takeProfitPct;
+  if (adaptiveExitGuard.note) {
+    summary.notes.push(`[출구조정] ${adaptiveExitGuard.note}`);
+  }
 
   let realizedDelta = 0;
   const storedCashRaw = Number(prefs.virtual_cash);
@@ -2664,6 +2729,18 @@ async function runDailyReviewForUser(payload: {
       takeProfitSplitCount: tradeProfile.takeProfitSplitCount,
       takeProfitTranchesDone: strategyState.takeProfitTranchesDone,
     });
+
+    // 트레일링 스탑: 보유 중 최고가 추적 → 고점 대비 -10% 이탈 시 익절
+    const prevPeak = strategyState.peakPrice;
+    const updatedPeakPrice = prevPeak != null ? Math.max(prevPeak, close) : close;
+    const TRAILING_STOP_FROM_PEAK_PCT = 10; // 고점 대비 하락 퍼센트
+    const TRAILING_STOP_ARM_PCT = 5;       // 트레일링 활성화 최소 수익 (평단 +5% 이상일 때만)
+    const trailingArmed = pnlPct >= TRAILING_STOP_ARM_PCT;
+    const trailingStopBreached =
+      trailingArmed &&
+      updatedPeakPrice > buyPrice &&
+      close < updatedPeakPrice * (1 - TRAILING_STOP_FROM_PEAK_PCT / 100);
+
     // 시장 레짐이 대형주 방어 모드일 때 KOSDAQ 보유 종목의 익절 기준 선제 적용
     const regimeEarlyExit =
       marketPolicy.mode === "large-cap-defense" &&
@@ -2676,7 +2753,15 @@ async function runDailyReviewForUser(payload: {
       signal: holdingSignal,
     });
     const exitPlan: PlannedAutoTradeExit =
-      regimeEarlyExit && trendExitSignal.exitAction === "HOLD"
+      trailingStopBreached
+        ? {
+            action: "TAKE_PROFIT",
+            quantityToSell: qty,
+            isPartial: false,
+            nextTakeProfitTranchesDone: strategyState.takeProfitTranchesDone,
+            reason: "take-profit-final",
+          }
+        : regimeEarlyExit && trendExitSignal.exitAction === "HOLD"
         ? {
             action: "TAKE_PROFIT",
             quantityToSell: qty,
@@ -2708,6 +2793,23 @@ async function runDailyReviewForUser(payload: {
       holdTakeProfitMax = Math.max(holdTakeProfitMax, adaptiveExitThreshold.takeProfitPct);
       holdStopLossMin = Math.min(holdStopLossMin, adaptiveExitThreshold.stopLossPct);
       holdStopLossMax = Math.max(holdStopLossMax, adaptiveExitThreshold.stopLossPct);
+      // peak_price 갱신 (HOLD 시에도 최고가 트래킹)
+      if (updatedPeakPrice !== prevPeak) {
+        const nextMemo = buildPositionStrategyMemo({
+          event: "hold-peak-update",
+          note: "trailing-stop-track",
+          profile: tradeProfile.profile,
+          takeProfitTranchesDone: strategyState.takeProfitTranchesDone,
+          peakPrice: updatedPeakPrice,
+        });
+        await payload.supabase
+          .from(PORTFOLIO_TABLES.positionsLegacy)
+          .update({ memo: nextMemo })
+          .eq("chat_id", chatId)
+          .eq("id", holding.id)
+          .then(() => { /* peak update - best effort */ })
+          .catch(() => { /* ignore */ });
+      }
       await writeActionLog({
         supabase: payload.supabase,
         runId: payload.runId,
@@ -2732,6 +2834,7 @@ async function runDailyReviewForUser(payload: {
 
     // 매도 이유 노트 (signal/regime 기반이면 명시)
     const exitReasonLabel: string = (() => {
+      if (trailingStopBreached) return `[트레일링익절] 고점(${fmtKrw(updatedPeakPrice)}) 대비 -${TRAILING_STOP_FROM_PEAK_PCT}% 이탈 · 수익률 ${pnlPct.toFixed(2)}%`;
       if (trendExitSignal.reason === "signal-strong-sell") return "[신호청산] STRONG_SELL 전환";
       if (trendExitSignal.reason === "signal-sell") return pnlPct > 0 ? "[신호익절] SELL 전환 + 수익 중" : "[신호손절] SELL 전환 + 손실 구간";
       if (trendExitSignal.reason === "trend-break-sma200") return "[추세이탈] SMA200 하향이탈";
