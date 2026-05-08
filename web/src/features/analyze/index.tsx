@@ -128,6 +128,19 @@ export default function AnalyzePage() {
     analyze(stock.code)
   }
 
+  useEffect(() => {
+    try {
+      const pending = sessionStorage.getItem('analyze_pending_code')
+      if (pending) {
+        sessionStorage.removeItem('analyze_pending_code')
+        setQuery(pending)
+        void analyze(pending)
+      }
+    } catch {
+      // ignore
+    }
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
   const formatDate = (value: unknown) => {
     if (!value) return '—'
     const d = new Date(String(value))

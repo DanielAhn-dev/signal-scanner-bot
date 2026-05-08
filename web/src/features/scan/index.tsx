@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react'
+﻿import React, { useEffect, useMemo, useState } from 'react'
 import { apiFetch } from '../../lib/api'
 import { formatNumber } from '../../lib/format'
 import Button from '../../components/ui/Button'
@@ -9,6 +9,7 @@ import Pagination from '../../components/Pagination'
 import useWatchlistActions from '../../hooks/useWatchlistActions'
 
 const SCAN_SNAPSHOT_KEY = 'scan_snapshot_v1'
+const ANALYZE_PENDING_CODE_KEY = 'analyze_pending_code'
 
 function readScanSnapshot() {
   try {
@@ -88,7 +89,27 @@ function toComparableValue(item: ScanCandidate, key: SortKey): string | number {
   return String(v)
 }
 
-export default function ScanPage() {
+function GradeBadge({ grade, label }: { grade: string | null | undefined; label?: string }) {
+  if (!grade) return <span className="scan-grade-label">—</span>
+  const g = String(grade).toUpperCase()
+  const cls = g === 'A' ? 'scan-grade-a' : g === 'B' ? 'scan-grade-b' : g === 'C' ? 'scan-grade-c' : 'scan-grade-other'
+  return (
+    <span className="flex-gap-sm" style={{ gap: '3px' }}>
+      {label && <span className="scan-grade-label">{label}</span>}
+      <span className={`scan-grade-badge ${cls}`}>{g}</span>
+    </span>
+  )
+}
+
+function WarnBadge({ grade }: { grade: string | null | undefined }) {
+  if (!grade) return <span className="scan-grade-label">—</span>
+  const g = String(grade).toUpperCase()
+  const cls = g === 'SAFE' ? 'scan-warn-safe' : g === 'WATCH' ? 'scan-warn-watch' : g === 'WARN' ? 'scan-warn-warn' : 'scan-warn-default'
+  const label = g === 'SAFE' ? '안전' : g === 'WATCH' ? '관찰' : g === 'WARN' ? '주의' : g
+  return <span className={`scan-warn-badge ${cls}`}>{label}</span>
+}
+
+export default function ScanPage({ onNavigate }: { onNavigate?: (r: string) => void }) {
   const snapshot = readScanSnapshot()
   const [candidates, setCandidates] = useState<ScanCandidate[]>(() => snapshot?.candidates ?? [])
   const [total, setTotal] = useState(() => snapshot?.total ?? 0)
@@ -174,10 +195,41 @@ export default function ScanPage() {
     }
   }
 
+  const navigateToAnalyze = (code: string) => {
+    try { sessionStorage.setItem(ANALYZE_PENDING_CODE_KEY, code) } catch { /* ignore */ }
+    onNavigate?.('analyze')
+  }
+
   const sectors = useMemo(
     () => ['all', ...new Set(candidates.map((row) => row.sector_id).filter((v): v is string => !!v))],
     [candidates],
   )
+
+  const highlightCandidates = useMemo(() => {
+    return [...candidates]
+      .filter(c => ['A', 'B'].includes(String(c.entry_grade || '').toUpperCase()))
+      .sort((a, b) => {
+        const ga = gradeScore(a.entry_grade)
+        const gb = gradeScore(b.entry_grade)
+        if (ga !== gb) return gb - ga
+        const wa = a.warn_score ?? 999
+        const wb = b.warn_score ?? 999
+        if (wa !== wb) return wa - wb
+        return (b.entry_score ?? 0) - (a.entry_score ?? 0)
+      })
+      .slice(0, 5)
+  }, [candidates])
+
+  const filterCounts = useMemo(() => {
+    const base = selectedSector === 'all' ? candidates : candidates.filter(c => c.sector_id === selectedSector)
+    return {
+      all: base.length,
+      entry: base.filter(c => ['A', 'B'].includes(String(c.entry_grade || '').toUpperCase())).length,
+      trend: base.filter(c => ['A', 'B'].includes(String(c.trend_grade || '').toUpperCase())).length,
+      accumulation: base.filter(c => ['A', 'B'].includes(String(c.dist_grade || '').toUpperCase())).length,
+      stable: base.filter(c => ['A', 'B'].includes(String(c.pivot_grade || '').toUpperCase())).length,
+    }
+  }, [candidates, selectedSector])
 
   const filteredCandidates = useMemo(() => candidates.filter((item) => {
     if (selectedSector !== 'all' && item.sector_id !== selectedSector) return false
@@ -253,7 +305,8 @@ export default function ScanPage() {
     }
   }
 
-  const onToggleWatchlist = async (code: string) => {
+  const onToggleWatchlist = async (e: React.MouseEvent, code: string) => {
+    e.stopPropagation()
     if (!code) return
     if (isWatched(code)) {
       try {
@@ -276,13 +329,7 @@ export default function ScanPage() {
       <button
         type="button"
         onClick={() => onSort(key)}
-        style={{
-          all: 'unset',
-          cursor: 'pointer',
-          color: active ? 'var(--color-text-primary)' : 'var(--color-text-secondary)',
-          fontWeight: active ? 'var(--font-weight-semibold)' : 'var(--font-weight-medium)',
-          whiteSpace: 'nowrap',
-        }}
+        className={`scan-sort-btn${active ? ' scan-sort-btn--active' : ''}`}
       >
         {label}{marker}
       </button>
@@ -291,9 +338,10 @@ export default function ScanPage() {
 
   return (
     <section className="container-app">
+      {/* 페이지 헤더 */}
       <div className="flex-between mb-4">
         <h1 className="title-xl" style={{ marginBottom: 0 }}>눌림목 스캐너</h1>
-        <div style={{ display: 'flex', gap: 'var(--space-2)' }}>
+        <div className="scan-header-actions">
           <Button variant="ghost" onClick={loadCandidates} disabled={loading}>새로고침</Button>
           <Button variant="primary" onClick={triggerScan} disabled={scanLoading}>
             {scanLoading ? '동기화 중…' : '▶ 스캔 동기화 실행'}
@@ -301,38 +349,38 @@ export default function ScanPage() {
         </div>
       </div>
 
+      {/* 상태 표시 */}
       <div className="card mb-4">
         <div className="muted">
-          <span style={{ color: 'var(--color-text-primary)', fontWeight: 'var(--font-weight-semibold)' }}>{sortedCandidates.length}</span>개 후보 ·
-          최신 기준일 {latestDate ?? '—'} · 텔레그램 /scan 과 동일한 pullback 신호 후보를 표시합니다.
+          <span className="scan-stat-count">{sortedCandidates.length}</span>개 후보 ·
+          최신 기준일 {latestDate ?? '—'} · 텔레그램 pullback 신호 기반 · 종목 클릭 시 상세 분석으로 이동
         </div>
       </div>
 
+      {/* 필터 */}
       <div className="card mb-4">
-        <div className="muted" style={{ marginBottom: 'var(--space-2)' }}>필터</div>
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 'var(--space-2)', marginBottom: 'var(--space-2)' }}>
-          {[
+        <div className="muted mb-4" style={{ marginBottom: 'var(--space-2)' }}>필터</div>
+        <div className="scan-filter-section mb-4" style={{ marginBottom: 'var(--space-2)' }}>
+          {([
             { key: 'all', label: '전체' },
             { key: 'entry', label: '진입(A/B)' },
             { key: 'trend', label: '추세(A/B)' },
             { key: 'accumulation', label: '매집(A/B)' },
             { key: 'stable', label: '세력선(A/B)' },
-          ].map((option) => (
+          ] as const).map((option) => (
             <button
               key={option.key}
               className={`tag${conditionFilter === option.key ? ' active' : ''}`}
-              onClick={() => setConditionFilter(option.key as typeof conditionFilter)}
+              onClick={() => setConditionFilter(option.key)}
             >
-              {option.label}
+              {option.label} ({filterCounts[option.key]})
             </button>
           ))}
         </div>
-
-        <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', flexWrap: 'wrap' }}>
-          <span className="muted">섹터</span>
+        <div className="scan-filter-section">
+          <span className="scan-filter-label">섹터</span>
           <select
-            className="input"
-            style={{ minWidth: 180 }}
+            className="input scan-sector-select"
             value={selectedSector}
             onChange={(e) => setSelectedSector(e.target.value)}
           >
@@ -345,98 +393,162 @@ export default function ScanPage() {
 
       {error && <ErrorState message={error} onRetry={loadCandidates} />}
 
+      {/* 오늘의 추천 눌림목 섹션 */}
+      {!loading && !error && highlightCandidates.length > 0 && conditionFilter === 'all' && selectedSector === 'all' && (
+        <div className="card mb-4">
+          <div className="scan-highlight-section-title">
+            <span className="scan-highlight-section-label">오늘의 추천 눌림목</span>
+            <span className="scan-highlight-section-badge">진입 A/B · 경고 최소</span>
+          </div>
+          <div className="scan-highlight-grid">
+            {highlightCandidates.map((c, idx) => (
+              <button
+                key={c.code}
+                type="button"
+                className={`scan-highlight-card${idx === 0 ? ' scan-highlight-card--top' : ''}`}
+                onClick={() => navigateToAnalyze(c.code)}
+                title={`${c.name} 상세 분석 보기`}
+              >
+                <div className="flex-between">
+                  <span className={`scan-highlight-rank${idx > 0 ? ' scan-highlight-rank--rest' : ''}`}>
+                    TOP {idx + 1}
+                  </span>
+                  <WarnBadge grade={c.warn_grade} />
+                </div>
+                <div>
+                  <div className="scan-highlight-name">{c.name}</div>
+                  <div className="scan-highlight-code">{c.code}</div>
+                </div>
+                <div className="scan-highlight-grades">
+                  <GradeBadge grade={c.entry_grade} label="진입" />
+                  <GradeBadge grade={c.trend_grade} label="추세" />
+                  <GradeBadge grade={c.dist_grade} label="매집" />
+                  {c.pivot_grade && <GradeBadge grade={c.pivot_grade} label="세력" />}
+                </div>
+                <div className="scan-highlight-meta">
+                  {c.sector_id && <span>{c.sector_id}</span>}
+                  {c.entry_score != null && <span>점수 {formatNumber(c.entry_score, 1)}</span>}
+                </div>
+                <div className="scan-highlight-hint">클릭하여 상세 분석 →</div>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* 전체 목록 */}
       {loading && candidates.length === 0 ? (
         <div className="card"><Skeleton lines={6} height={16} /></div>
       ) : !error && sortedCandidates.length === 0 ? (
         <EmptyState title="스캔 결과 없음" description="스캔을 실행하거나 필터를 조정해 보세요." />
       ) : (
-        <div style={{ overflowX: 'auto' }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 'var(--font-size-sm)' }}>
-            <thead>
-              <tr style={{ borderBottom: '2px solid var(--color-border-default)', textAlign: 'left' }}>
-                <th style={{ padding: 'var(--space-2) var(--space-3)' }}>{renderSortableHeader('코드', 'code')}</th>
-                <th style={{ padding: 'var(--space-2) var(--space-3)' }}>{renderSortableHeader('종목명', 'name')}</th>
-                <th style={{ padding: 'var(--space-2) var(--space-3)' }}>{renderSortableHeader('섹터', 'sector_id')}</th>
-                <th style={{ padding: 'var(--space-2) var(--space-3)' }}>{renderSortableHeader('진입', 'entry_grade')}</th>
-                <th style={{ padding: 'var(--space-2) var(--space-3)' }}>{renderSortableHeader('진입점수', 'entry_score')}</th>
-                <th style={{ padding: 'var(--space-2) var(--space-3)' }}>{renderSortableHeader('추세', 'trend_grade')}</th>
-                <th style={{ padding: 'var(--space-2) var(--space-3)' }}>{renderSortableHeader('매집', 'dist_grade')}</th>
-                <th style={{ padding: 'var(--space-2) var(--space-3)' }}>{renderSortableHeader('세력선', 'pivot_grade')}</th>
-                <th style={{ padding: 'var(--space-2) var(--space-3)' }}>{renderSortableHeader('경고점수', 'warn_score')}</th>
-                <th style={{ padding: 'var(--space-2) var(--space-3)' }}>{renderSortableHeader('유동성', 'liquidity')}</th>
-                <th style={{ padding: 'var(--space-2) var(--space-3)' }}>{renderSortableHeader('기준일', 'trade_date')}</th>
-                <th style={{ padding: 'var(--space-2) var(--space-3)' }}>{renderSortableHeader('종목업데이트', 'stock_updated_at')}</th>
-                <th style={{ padding: 'var(--space-2) var(--space-3)' }}>관리</th>
-              </tr>
-            </thead>
-            <tbody>
-              {displayRows.map((s: any) => {
-                const code = String(s.code)
-                const isAdded = isWatched(code)
-                const isAddingNow = isAdding(code)
-                const isRemovingNow = isRemoving(code)
-                const isMutating = isAddingNow || isRemovingNow
-                return (
-                <tr key={s.code} style={{ borderBottom: '1px solid var(--color-border-default)' }}>
-                  <td style={{ padding: 'var(--space-2) var(--space-3)', fontFamily: 'var(--font-family-mono)', color: 'var(--color-text-brand)' }}>{s.code}</td>
-                  <td style={{ padding: 'var(--space-2) var(--space-3)', fontWeight: 'var(--font-weight-medium)' }}>{s.name}</td>
-                  <td style={{ padding: 'var(--space-2) var(--space-3)', color: 'var(--color-text-secondary)' }}>{s.sector_id ?? '—'}</td>
-                  <td style={{ padding: 'var(--space-2) var(--space-3)' }}>{s.entry_grade ?? '—'}</td>
-                  <td style={{ padding: 'var(--space-2) var(--space-3)' }} className="number">
-                    {s.entry_score != null ? formatNumber(s.entry_score, 2) : '—'}
-                  </td>
-                  <td style={{ padding: 'var(--space-2) var(--space-3)' }}>{s.trend_grade ?? '—'}</td>
-                  <td style={{ padding: 'var(--space-2) var(--space-3)' }}>
-                    {s.dist_grade ?? '—'}
-                    {s.dist_pct != null ? ` (${formatNumber(s.dist_pct, 2)}%)` : ''}
-                  </td>
-                  <td style={{ padding: 'var(--space-2) var(--space-3)' }}>
-                    {s.pivot_grade ?? '—'}
-                    {s.vol_atr_grade ? ` / ${s.vol_atr_grade}` : ''}
-                  </td>
-                  <td style={{ padding: 'var(--space-2) var(--space-3)' }}>
-                    {s.warn_grade ?? '—'}{s.warn_score != null && s.warn_score > 0 ? ` (${Math.round(s.warn_score)}개)` : ''}
-                  </td>
-                  <td style={{ padding: 'var(--space-2) var(--space-3)' }} className="number number-right">{s.liquidity != null ? formatNumber(s.liquidity, 0) : '—'}</td>
-                  <td style={{ padding: 'var(--space-2) var(--space-3)', color: 'var(--color-text-tertiary)' }}>
-                    {s.tradeDateText}
-                  </td>
-                  <td style={{ padding: 'var(--space-2) var(--space-3)', color: 'var(--color-text-tertiary)' }}>
-                    {s.trade_date ? (
-                      <div>
+        <div className="card" style={{ padding: 0 }}>
+          {(conditionFilter !== 'all' || selectedSector !== 'all') && (
+            <div className="scan-section-label" style={{ padding: 'var(--space-3) var(--space-4)', borderBottom: '1px solid var(--color-border-default)' }}>
+              {conditionFilter !== 'all'
+                ? `필터 결과 · ${sortedCandidates.length}개`
+                : `${selectedSector} 섹터 · ${sortedCandidates.length}개`}
+            </div>
+          )}
+          {conditionFilter === 'all' && selectedSector === 'all' && (
+            <div className="scan-section-label" style={{ padding: 'var(--space-3) var(--space-4)', borderBottom: '1px solid var(--color-border-default)' }}>
+              전체 후보 목록 · {sortedCandidates.length}개 (종목명 클릭 시 상세 분석)
+            </div>
+          )}
+          <div className="scan-table-wrap">
+            <table className="scan-table">
+              <thead className="scan-thead">
+                <tr>
+                  <th className="scan-th">{renderSortableHeader('코드', 'code')}</th>
+                  <th className="scan-th">{renderSortableHeader('종목명', 'name')}</th>
+                  <th className="scan-th">{renderSortableHeader('섹터', 'sector_id')}</th>
+                  <th className="scan-th">{renderSortableHeader('진입', 'entry_grade')}</th>
+                  <th className="scan-th">{renderSortableHeader('진입점수', 'entry_score')}</th>
+                  <th className="scan-th">{renderSortableHeader('추세', 'trend_grade')}</th>
+                  <th className="scan-th">{renderSortableHeader('매집', 'dist_grade')}</th>
+                  <th className="scan-th">{renderSortableHeader('세력선', 'pivot_grade')}</th>
+                  <th className="scan-th">{renderSortableHeader('경고', 'warn_score')}</th>
+                  <th className="scan-th">{renderSortableHeader('유동성', 'liquidity')}</th>
+                  <th className="scan-th">{renderSortableHeader('기준일', 'trade_date')}</th>
+                  <th className="scan-th">관리</th>
+                </tr>
+              </thead>
+              <tbody>
+                {displayRows.map((s: any) => {
+                  const code = String(s.code)
+                  const isAdded = isWatched(code)
+                  const isAddingNow = isAdding(code)
+                  const isRemovingNow = isRemoving(code)
+                  const isMutating = isAddingNow || isRemovingNow
+                  return (
+                    <tr
+                      key={s.code}
+                      className="scan-tr"
+                      onClick={() => navigateToAnalyze(code)}
+                      title={`${s.name} 상세 분석`}
+                    >
+                      <td className="scan-td scan-td-code">{s.code}</td>
+                      <td className="scan-td scan-td-name">{s.name}</td>
+                      <td className="scan-td scan-td-sector">{s.sector_id ?? '—'}</td>
+                      <td className="scan-td">
+                        <GradeBadge grade={s.entry_grade} />
+                      </td>
+                      <td className="scan-td number">
+                        {s.entry_score != null ? formatNumber(s.entry_score, 2) : '—'}
+                      </td>
+                      <td className="scan-td">
+                        <GradeBadge grade={s.trend_grade} />
+                      </td>
+                      <td className="scan-td">
+                        <GradeBadge grade={s.dist_grade} />
+                        {s.dist_pct != null && (
+                          <span className="scan-grade-label"> ({formatNumber(s.dist_pct, 2)}%)</span>
+                        )}
+                      </td>
+                      <td className="scan-td">
+                        <GradeBadge grade={s.pivot_grade} />
+                        {s.vol_atr_grade && (
+                          <span className="scan-grade-label"> / {s.vol_atr_grade}</span>
+                        )}
+                      </td>
+                      <td className="scan-td">
+                        <WarnBadge grade={s.warn_grade} />
+                        {s.warn_score != null && s.warn_score > 0 && (
+                          <span className="scan-grade-label"> ({Math.round(s.warn_score)})</span>
+                        )}
+                      </td>
+                      <td className="scan-td number number-right">
+                        {s.liquidity != null ? formatNumber(s.liquidity, 0) : '—'}
+                      </td>
+                      <td className="scan-td scan-td-date">
                         <div>{s.tradeDateText}</div>
                         {s.updatedAtText && (
-                          <div style={{ fontSize: '0.85em', color: 'var(--color-text-tertiary)', marginTop: '4px' }}>
-                            업데이트(KST): {s.updatedAtText}
-                          </div>
+                          <div className="scan-td-updated-sub">{s.updatedAtText}</div>
                         )}
-                      </div>
-                    ) : (
-                      s.updatedDateText
-                    )}
-                  </td>
-                  <td style={{ padding: 'var(--space-2) var(--space-3)' }}>
-                    <Button
-                      className="watchlist-icon-btn scan-watch-add-btn"
-                      variant="ghost"
-                      onClick={() => onToggleWatchlist(code)}
-                      disabled={isMutating}
-                      title={isAdded ? '관심 종목에서 제거' : '관심 종목에 추가'}
-                    >
-                      <span className="watchlist-btn-symbol" aria-hidden>{isAdded ? 'x' : '+'}</span>
-                      <span className="watchlist-btn-label">
-                        {isAddingNow ? '추가중' : isRemovingNow ? '제거중' : isAdded ? '제거' : '추가'}
-                      </span>
-                    </Button>
-                  </td>
-                </tr>
-                )
-              })}
-            </tbody>
-          </table>
+                      </td>
+                      <td className="scan-td" onClick={(e) => e.stopPropagation()}>
+                        <Button
+                          className="watchlist-icon-btn scan-watch-add-btn"
+                          variant="ghost"
+                          onClick={(e: React.MouseEvent) => onToggleWatchlist(e, code)}
+                          disabled={isMutating}
+                          title={isAdded ? '관심 종목에서 제거' : '관심 종목에 추가'}
+                        >
+                          <span className="watchlist-btn-symbol" aria-hidden>{isAdded ? 'x' : '+'}</span>
+                          <span className="watchlist-btn-label">
+                            {isAddingNow ? '추가중' : isRemovingNow ? '제거중' : isAdded ? '제거' : '추가'}
+                          </span>
+                        </Button>
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
 
           {totalPages > 1 && (
-            <div className="pagination-wrap" style={{ marginTop: 'var(--space-3)' }}>
+            <div className="pagination-wrap">
               <Pagination page={page} pageSize={pageSize} total={sortedCandidates.length} onChange={setPage} />
             </div>
           )}

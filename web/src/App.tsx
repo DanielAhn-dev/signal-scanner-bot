@@ -349,6 +349,8 @@ function AppContent() {
               {Active
                 ? route === 'dashboard'
                   ? <Dashboard onNavigate={handleNavigate} />
+                  : route === 'scan'
+                  ? <ScanPage onNavigate={handleNavigate} />
                   : <Active />
                 : null}
             </Suspense>

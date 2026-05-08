@@ -1776,3 +1776,256 @@ html, body, #root {
 }
 }
 
+/* ================================================================
+   SCAN PAGE
+   ================================================================ */
+
+/* 헤더 액션 영역 */
+.scan-header-actions {
+  @apply flex items-center;
+  gap: var(--space-2);
+}
+
+/* 통계 정보 바 */
+.scan-stat-count {
+  @apply font-semibold;
+  color: var(--color-text-primary);
+}
+
+/* 필터 바 */
+.scan-filter-section {
+  @apply flex flex-wrap items-center;
+  gap: var(--space-2);
+}
+.scan-filter-label {
+  @apply text-sm;
+  color: var(--color-text-secondary);
+}
+.scan-sector-select {
+  min-width: 180px;
+}
+
+/* 하이라이트 섹션 */
+.scan-highlight-section-title {
+  @apply flex items-center;
+  gap: var(--space-2);
+  @apply mb-3;
+}
+.scan-highlight-section-label {
+  @apply text-base font-semibold;
+  color: var(--color-text-primary);
+}
+.scan-highlight-section-badge {
+  @apply text-xs font-semibold px-2 py-0;
+  @apply rounded-full;
+  background: var(--color-brand-subtle);
+  color: var(--color-brand);
+  border: 1px solid var(--color-brand-muted);
+}
+.scan-highlight-grid {
+  @apply grid;
+  gap: var(--space-3);
+  grid-template-columns: 1fr;
+}
+@media (min-width: 640px) {
+  .scan-highlight-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+@media (min-width: 960px) {
+  .scan-highlight-grid {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+
+.scan-highlight-card {
+  @apply flex flex-col cursor-pointer;
+  gap: var(--space-2);
+  border: 1px solid var(--color-border-default);
+  @apply rounded-lg;
+  padding: var(--space-3) var(--space-4);
+  background: var(--color-bg-surface);
+  box-shadow: var(--shadow-xs);
+  transition: box-shadow var(--duration-fast) var(--ease-out), border-color var(--duration-fast) var(--ease-out), transform var(--duration-fast) var(--ease-out);
+}
+.scan-highlight-card:hover {
+  box-shadow: var(--shadow-sm);
+  border-color: var(--color-brand-muted);
+  transform: translateY(-1px);
+}
+.scan-highlight-card--top {
+  background: linear-gradient(135deg, var(--color-brand-subtle) 0%, var(--color-bg-surface) 80%);
+  border-color: var(--color-brand-muted);
+  box-shadow: 0 0 0 2px rgba(0, 96, 255, 0.06), var(--shadow-sm);
+}
+
+.scan-highlight-rank {
+  @apply text-xs font-bold;
+  color: var(--color-brand);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+.scan-highlight-rank--rest {
+  color: var(--color-text-tertiary);
+}
+.scan-highlight-name {
+  @apply text-base font-semibold;
+  color: var(--color-text-primary);
+  line-height: var(--line-height-snug);
+}
+.scan-highlight-code {
+  font-family: var(--font-family-mono);
+  @apply text-xs;
+  color: var(--color-text-brand);
+  @apply font-semibold;
+}
+.scan-highlight-grades {
+  @apply flex flex-wrap items-center;
+  gap: var(--space-2);
+  @apply mt-1;
+}
+.scan-highlight-meta {
+  @apply flex items-center flex-wrap;
+  gap: var(--space-2);
+  @apply text-xs;
+  color: var(--color-text-secondary);
+  @apply mt-1;
+}
+.scan-highlight-hint {
+  @apply text-xs;
+  color: var(--color-text-tertiary);
+  @apply mt-1;
+}
+
+/* 등급 배지 */
+.scan-grade-badge {
+  @apply inline-flex items-center justify-center font-bold;
+  @apply text-xs;
+  width: 1.5rem;
+  height: 1.5rem;
+  @apply rounded-sm;
+}
+.scan-grade-a {
+  background: var(--color-success-bg, #ecfdf5);
+  color: var(--color-success, #059669);
+}
+.scan-grade-b {
+  background: var(--color-brand-subtle);
+  color: var(--color-brand);
+}
+.scan-grade-c {
+  background: var(--color-warning-bg, #fffbeb);
+  color: var(--color-warning, #d97706);
+}
+.scan-grade-other {
+  background: var(--color-bg-sunken);
+  color: var(--color-text-tertiary);
+}
+
+/* 경고 배지 */
+.scan-warn-badge {
+  @apply inline-flex items-center;
+  @apply text-xs font-semibold;
+  @apply px-2 py-0;
+  @apply rounded-full;
+}
+.scan-warn-safe {
+  background: var(--color-success-bg, #ecfdf5);
+  color: var(--color-success, #059669);
+}
+.scan-warn-watch {
+  background: var(--color-warning-bg, #fffbeb);
+  color: var(--color-warning, #d97706);
+}
+.scan-warn-warn {
+  background: var(--color-error-bg, #fef2f2);
+  color: var(--color-error, #dc2626);
+}
+.scan-warn-default {
+  background: var(--color-bg-sunken);
+  color: var(--color-text-tertiary);
+}
+
+/* 그레이드 레이블 */
+.scan-grade-label {
+  @apply text-xs;
+  color: var(--color-text-tertiary);
+}
+
+/* 테이블 */
+.scan-table-wrap {
+  @apply overflow-x-auto;
+}
+.scan-table {
+  @apply w-full;
+  border-collapse: collapse;
+  font-size: var(--font-size-sm);
+}
+.scan-thead tr {
+  border-bottom: 2px solid var(--color-border-default);
+  @apply text-left;
+}
+.scan-th {
+  padding: var(--space-2) var(--space-3);
+  @apply whitespace-nowrap;
+}
+.scan-sort-btn {
+  @apply bg-transparent border-none cursor-pointer p-0;
+  @apply font-medium text-sm;
+  @apply whitespace-nowrap;
+  color: var(--color-text-secondary);
+  transition: color var(--duration-fast);
+}
+.scan-sort-btn--active {
+  color: var(--color-text-primary);
+  @apply font-semibold;
+}
+.scan-tr {
+  border-bottom: 1px solid var(--color-border-default);
+  cursor: pointer;
+  transition: background var(--duration-fast);
+}
+.scan-tr:hover {
+  background: var(--color-bg-sunken);
+}
+.scan-td {
+  padding: var(--space-2) var(--space-3);
+  @apply whitespace-nowrap;
+}
+.scan-td-code {
+  font-family: var(--font-family-mono);
+  color: var(--color-text-brand);
+  @apply font-semibold;
+}
+.scan-td-name {
+  @apply font-medium;
+  color: var(--color-text-primary);
+}
+.scan-td-sector {
+  color: var(--color-text-secondary);
+}
+.scan-td-date {
+  color: var(--color-text-tertiary);
+}
+.scan-td-updated-sub {
+  @apply text-xs;
+  color: var(--color-text-tertiary);
+  @apply mt-1;
+  line-height: var(--line-height-snug);
+}
+
+/* 섹션 구분자 */
+.scan-section-label {
+  @apply text-sm font-semibold;
+  color: var(--color-text-secondary);
+  @apply mb-2;
+}
+
+@media (max-width: 640px) {
+  .scan-sector-select {
+    @apply w-full;
+  }
+  .scan-highlight-grid {
+    grid-template-columns: 1fr;
+  }
+}
