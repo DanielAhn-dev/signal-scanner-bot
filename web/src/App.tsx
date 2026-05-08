@@ -94,8 +94,8 @@ export default function App() {
 function AppContent() {
   const getInitialRoute = (): RouteKey => {
     try {
-      const hash = window.location.hash?.replace('#', '')
-      if (hash && (hash in COMPONENTS)) return hash as RouteKey
+      const path = window.location.pathname.replace(/^\//, '')
+      if (path && (path in COMPONENTS)) return path as RouteKey
     } catch {
       // ignore (SSR/undefined window)
     }
@@ -139,26 +139,29 @@ function AppContent() {
       window.sessionStorage.setItem(AUTH_ERROR_KEY, message)
       toast.show(`Google 로그인 실패: ${message}`, 5000)
 
-      const returnHash = window.sessionStorage.getItem(AUTH_RETURN_HASH_KEY) || ''
-      const nextUrl = `${window.location.pathname}${returnHash.startsWith('#') ? returnHash : ''}`
-      window.history.replaceState({}, document.title, nextUrl)
+      const returnPath = window.sessionStorage.getItem(AUTH_RETURN_HASH_KEY) || ''
+      const cleanPath = returnPath.startsWith('#')
+        ? `/${returnPath.slice(1)}`
+        : returnPath.startsWith('/') ? returnPath : window.location.pathname
+      window.history.replaceState({}, document.title, cleanPath)
     } catch {
       // ignore
     }
   }, [toast])
 
   useEffect(() => {
-    const onHash = () => {
+    const onPopState = () => {
       try {
-        const hash = window.location.hash?.replace('#', '')
-        if (hash && (hash in COMPONENTS)) setRoute(hash as RouteKey)
+        const path = window.location.pathname.replace(/^\//, '')
+        if (path && (path in COMPONENTS)) setRoute(path as RouteKey)
+        else setRoute('dashboard')
       } catch {
         // ignore
       }
     }
 
-    window.addEventListener('hashchange', onHash)
-    return () => window.removeEventListener('hashchange', onHash)
+    window.addEventListener('popstate', onPopState)
+    return () => window.removeEventListener('popstate', onPopState)
   }, [])
 
   useEffect(() => {
@@ -212,11 +215,16 @@ function AppContent() {
   useEffect(() => {
     if (!isSignedIn) return
     try {
-      const returnHash = window.sessionStorage.getItem(AUTH_RETURN_HASH_KEY)
-      if (!returnHash) return
+      const returnPath = window.sessionStorage.getItem(AUTH_RETURN_HASH_KEY)
+      if (!returnPath) return
       window.sessionStorage.removeItem(AUTH_RETURN_HASH_KEY)
-      if (returnHash.startsWith('#') && returnHash !== window.location.hash) {
-        window.location.hash = returnHash
+      const path = returnPath.startsWith('#')
+        ? `/${returnPath.slice(1)}`
+        : returnPath.startsWith('/') ? returnPath : `/${returnPath}`
+      if (path && path !== window.location.pathname) {
+        window.history.pushState({}, '', path)
+        const routeKey = path.replace(/^\//, '')
+        if (routeKey in COMPONENTS) setRoute(routeKey as RouteKey)
       }
     } catch {
       // ignore
@@ -227,7 +235,7 @@ function AppContent() {
 
   const handleNavigate = (r: string) => {
     setRoute(r as RouteKey)
-    try { window.location.hash = r } catch { /* ignore */ }
+    try { window.history.pushState({}, '', `/${r}`) } catch { /* ignore */ }
   }
 
   const handleGoogleSignIn = async () => {
@@ -240,8 +248,8 @@ function AppContent() {
       setAuthError('')
       try {
         window.sessionStorage.removeItem(AUTH_ERROR_KEY)
-        const currentHash = window.location.hash || '#dashboard'
-        window.sessionStorage.setItem(AUTH_RETURN_HASH_KEY, currentHash)
+        const currentPath = window.location.pathname || '/dashboard'
+        window.sessionStorage.setItem(AUTH_RETURN_HASH_KEY, currentPath)
       } catch {
         // ignore
       }
