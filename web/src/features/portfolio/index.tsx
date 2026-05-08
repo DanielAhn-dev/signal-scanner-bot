@@ -38,8 +38,12 @@ export default function Portfolio() {
   const [search, setSearch] = useState('')
   const [searchInput, setSearchInput] = useState('')
   const [selectedSector, setSelectedSector] = useState<string | null>(null)
-  const [holdingStateFilter, setHoldingStateFilter] = useState<'all' | 'hold' | 'add'>('all')
+  const [holdingStateFilter, setHoldingStateFilter] = useState<'all' | 'hold' | 'add' | 'partial'>('all')
   const [gradeFilter, setGradeFilter] = useState<'all' | 'A' | 'B' | 'C'>('all')
+  const [gradeAThreshold, setGradeAThreshold] = useState(80)
+  const [gradeBThreshold, setGradeBThreshold] = useState(65)
+  const [addEntryMinScore, setAddEntryMinScore] = useState(70)
+  const [partialTakeProfitPct, setPartialTakeProfitPct] = useState(8)
   const [showAllSectors, setShowAllSectors] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -69,15 +73,32 @@ export default function Portfolio() {
   const [maintError, setMaintError] = useState<string | null>(null)
   const toast = useToast()
 
-  const getHoldingState = (row: any): 'hold' | 'add' => {
-    return Number(row?.recommended_buy_qty || 0) > 0 ? 'add' : 'hold'
+  const safeGradeAThreshold = Math.max(1, Math.min(100, Number(gradeAThreshold || 80)))
+  const safeGradeBThreshold = Math.max(0, Math.min(safeGradeAThreshold - 1, Number(gradeBThreshold || 65)))
+  const safeAddEntryMinScore = Math.max(0, Math.min(100, Number(addEntryMinScore || 70)))
+  const safePartialTakeProfitPct = Math.max(0, Math.min(50, Number(partialTakeProfitPct || 8)))
+
+  const getScoreValue = (row: any): number | null => {
+    const score = Number(row?.total_score)
+    return Number.isFinite(score) ? score : null
+  }
+
+  const getHoldingState = (row: any): 'hold' | 'add' | 'partial' => {
+    const pct = Number(row?.unrealized_pct)
+    if (Number.isFinite(pct) && pct >= safePartialTakeProfitPct) return 'partial'
+
+    const score = getScoreValue(row)
+    const hasAddSignal = Number(row?.recommended_buy_qty || 0) > 0
+    if (hasAddSignal && (score == null || score >= safeAddEntryMinScore)) return 'add'
+
+    return 'hold'
   }
 
   const getPerformanceGrade = (row: any): 'A' | 'B' | 'C' => {
-    const pct = Number(row?.unrealized_pct)
-    if (!Number.isFinite(pct)) return 'C'
-    if (pct >= 5) return 'A'
-    if (pct >= 0) return 'B'
+    const score = getScoreValue(row)
+    if (score == null) return 'C'
+    if (score >= safeGradeAThreshold) return 'A'
+    if (score >= safeGradeBThreshold) return 'B'
     return 'C'
   }
 
@@ -137,7 +158,7 @@ export default function Portfolio() {
     }
 
     return result
-  }, [holdingAll, selectedSector, search, holdingStateFilter, gradeFilter])
+  }, [holdingAll, selectedSector, search, holdingStateFilter, gradeFilter, safePartialTakeProfitPct, safeAddEntryMinScore, safeGradeAThreshold, safeGradeBThreshold])
 
   const total = filteredRows.length
   const totalPages = Math.ceil(total / pageSize)
@@ -546,6 +567,12 @@ export default function Portfolio() {
               >
                 추가매수(IN진입)
               </button>
+              <button
+                className={`tag${holdingStateFilter === 'partial' ? ' active' : ''}`}
+                onClick={() => { setHoldingStateFilter('partial'); setPage(1) }}
+              >
+                부분청산 후보
+              </button>
             </div>
           </div>
 
@@ -562,20 +589,53 @@ export default function Portfolio() {
                 className={`tag${gradeFilter === 'A' ? ' active' : ''}`}
                 onClick={() => { setGradeFilter('A'); setPage(1) }}
               >
-                A (수익률 5% 이상)
+                A (점수 {safeGradeAThreshold} 이상)
               </button>
               <button
                 className={`tag${gradeFilter === 'B' ? ' active' : ''}`}
                 onClick={() => { setGradeFilter('B'); setPage(1) }}
               >
-                B (0~5%)
+                B (점수 {safeGradeBThreshold}~{safeGradeAThreshold - 1})
               </button>
               <button
                 className={`tag${gradeFilter === 'C' ? ' active' : ''}`}
                 onClick={() => { setGradeFilter('C'); setPage(1) }}
               >
-                C (0% 미만)
+                C (점수 {safeGradeBThreshold - 1} 이하)
               </button>
+            </div>
+          </div>
+
+          <div>
+            <div className="caption portfolio-filter-label">기준값 조정</div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 'var(--space-2)' }}>
+              <Input
+                label="A 등급 점수"
+                type="number"
+                value={String(gradeAThreshold)}
+                onChange={(e: any) => setGradeAThreshold(Number(e?.target?.value || 80))}
+              />
+              <Input
+                label="B 등급 점수"
+                type="number"
+                value={String(gradeBThreshold)}
+                onChange={(e: any) => setGradeBThreshold(Number(e?.target?.value || 65))}
+              />
+              <Input
+                label="추가매수 최소 점수"
+                type="number"
+                value={String(addEntryMinScore)}
+                onChange={(e: any) => setAddEntryMinScore(Number(e?.target?.value || 70))}
+              />
+              <Input
+                label="부분청산 후보 수익률(%)"
+                type="number"
+                value={String(partialTakeProfitPct)}
+                onChange={(e: any) => setPartialTakeProfitPct(Number(e?.target?.value || 8))}
+              />
+            </div>
+            <div className="caption muted" style={{ marginTop: 'var(--space-1)' }}>
+              등급은 종목 점수(total_score), 상태는 점수/수익률/추가매수 신호를 기준으로 자동 분류됩니다.
             </div>
           </div>
 
@@ -613,6 +673,8 @@ export default function Portfolio() {
           const pnl = r.unrealized_pnl
           const holdingState = getHoldingState(r)
           const grade = getPerformanceGrade(r)
+          const score = getScoreValue(r)
+          const scoreSignal = String(r?.score_signal || '').trim().toUpperCase()
           return (
             <div key={r.id} className="card card-lg portfolio-position-card">
               <div className="flex-between portfolio-position-top">
@@ -624,8 +686,10 @@ export default function Portfolio() {
                     {r.buy_date ? ` · ${r.buy_date}` : ''}
                   </div>
                   <div className="caption" style={{ marginTop: '4px' }}>
-                    상태: {holdingState === 'add' ? '추가매수(IN진입)' : '보통 보유(홀드)'}
+                    상태: {holdingState === 'partial' ? '부분청산 후보' : holdingState === 'add' ? '추가매수(IN진입)' : '보통 보유(홀드)'}
                     {' · '}등급 {grade}
+                    {' · '}점수 {score != null ? formatNumber(score, 1) : '—'}
+                    {scoreSignal ? ` · 신호 ${scoreSignal}` : ''}
                   </div>
                 </div>
 

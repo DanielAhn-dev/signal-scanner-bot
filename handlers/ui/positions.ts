@@ -137,6 +137,29 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       ? await fetchRealtimePriceBatch(codes).catch(() => ({} as Record<string, RealtimeStockData>))
       : {}
 
+    const scoreByCode = new Map<string, { totalScore: number | null; signal: string | null }>()
+    if (codes.length > 0) {
+      const { data: latestScoreRows } = await supabase
+        .from('scores')
+        .select('asof')
+        .order('asof', { ascending: false })
+        .limit(1)
+      const latestAsof = (latestScoreRows?.[0]?.asof as string) ?? null
+      if (latestAsof) {
+        const { data: scoreRows } = await supabase
+          .from('scores')
+          .select('code, total_score, signal')
+          .eq('asof', latestAsof)
+          .in('code', codes)
+        for (const row of (scoreRows ?? []) as any[]) {
+          scoreByCode.set(String(row.code || ''), {
+            totalScore: Number.isFinite(Number(row?.total_score)) ? Number(row.total_score) : null,
+            signal: String(row?.signal || '').trim() || null,
+          })
+        }
+      }
+    }
+
     // fetch lots only when holding positions exist (skip for interest-only queries)
     const ids = !includeLots || positionType === 'interest' ? [] : (data ?? [])
       .filter((r: any) => Number(r.quantity || 0) > 0)
@@ -182,6 +205,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
       const pid = String(row.id)
       const lots = lotsByPosition[pid] ?? []
+      const score = scoreByCode.get(code)
 
       // recommended additional buy based on invested_amount target
       let recommended_buy_qty: number | null = null
@@ -214,6 +238,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         unrealized_pct: percent,
         hold_days: holdDays,
         stock_name: row.stock?.name ?? null,
+        total_score: score?.totalScore ?? null,
+        score_signal: score?.signal ?? null,
         position_type: (String(row.status || '').toLowerCase() === 'watch' || String(row.status || '').toLowerCase() === 'interest') ? 'interest' : (row.quantity ? 'holding' : 'interest'),
         lots,
         recommended_buy_qty,
