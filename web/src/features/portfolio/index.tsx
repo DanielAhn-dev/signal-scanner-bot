@@ -28,6 +28,8 @@ function pickLatestActiveShare(items: PortfolioShareHistoryItem[]): PortfolioSha
   return null
 }
 
+const PORTFOLIO_RULES_STORAGE_KEY = 'portfolio.holdingRules.v1'
+
 export default function Portfolio() {
   const [allRows, setAllRows] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
@@ -44,6 +46,7 @@ export default function Portfolio() {
   const [gradeBThreshold, setGradeBThreshold] = useState(65)
   const [addEntryMinScore, setAddEntryMinScore] = useState(70)
   const [partialTakeProfitPct, setPartialTakeProfitPct] = useState(8)
+  const [partialWarnScoreMin, setPartialWarnScoreMin] = useState(3)
   const [showAllSectors, setShowAllSectors] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -77,21 +80,54 @@ export default function Portfolio() {
   const safeGradeBThreshold = Math.max(0, Math.min(safeGradeAThreshold - 1, Number(gradeBThreshold || 65)))
   const safeAddEntryMinScore = Math.max(0, Math.min(100, Number(addEntryMinScore || 70)))
   const safePartialTakeProfitPct = Math.max(0, Math.min(50, Number(partialTakeProfitPct || 8)))
+  const safePartialWarnScoreMin = Math.max(0, Math.min(10, Number(partialWarnScoreMin || 3)))
 
   const getScoreValue = (row: any): number | null => {
     const score = Number(row?.total_score)
     return Number.isFinite(score) ? score : null
   }
 
-  const getHoldingState = (row: any): 'hold' | 'add' | 'partial' => {
+  const evaluateHoldingState = (row: any): { state: 'hold' | 'add' | 'partial'; reasons: string[] } => {
+    const reasons: string[] = []
     const pct = Number(row?.unrealized_pct)
-    if (Number.isFinite(pct) && pct >= safePartialTakeProfitPct) return 'partial'
+    const warnScoreNum = Number(row?.warn_score)
+    const warnScore = Number.isFinite(warnScoreNum) ? warnScoreNum : null
+    const scoreSignal = String(row?.score_signal || '').trim().toUpperCase()
+    const entryGrade = String(row?.entry_grade || '').trim().toUpperCase()
+    const trendGrade = String(row?.trend_grade || '').trim().toUpperCase()
+    const warnGrade = String(row?.warn_grade || '').trim().toUpperCase()
+
+    const partialSignalHit = ['SELL', 'HOLD'].includes(scoreSignal) || ['WARN', 'SELL'].includes(warnGrade)
+    const partialWarnScoreHit = warnScore != null && warnScore >= safePartialWarnScoreMin
+    if (Number.isFinite(pct) && pct >= safePartialTakeProfitPct && partialSignalHit && partialWarnScoreHit) {
+      reasons.push(`수익률 ${formatNumber(pct, 2)}% >= ${formatNumber(safePartialTakeProfitPct, 2)}%`)
+      reasons.push(`신호/경고 조건 충족 (${scoreSignal || '-'} / ${warnGrade || '-'})`)
+      reasons.push(`warn_score ${formatNumber(warnScore, 1)} >= ${formatNumber(safePartialWarnScoreMin, 1)}`)
+      return { state: 'partial', reasons }
+    }
 
     const score = getScoreValue(row)
     const hasAddSignal = Number(row?.recommended_buy_qty || 0) > 0
-    if (hasAddSignal && (score == null || score >= safeAddEntryMinScore)) return 'add'
+    const hasPullbackHint = Boolean(entryGrade || trendGrade || warnGrade)
+    const entryTrendOk = !hasPullbackHint || (['A', 'B'].includes(entryGrade) && ['A', 'B'].includes(trendGrade))
+    const riskOk = !warnGrade || ['SAFE', 'WATCH'].includes(warnGrade)
+    const signalOk = !scoreSignal || scoreSignal !== 'SELL'
+    const scoreOk = score == null || score >= safeAddEntryMinScore
+    if (hasAddSignal && scoreOk && entryTrendOk && riskOk && signalOk) {
+      reasons.push(`추가매수 제안 수량 ${Number(row?.recommended_buy_qty || 0)}주`) 
+      reasons.push(`점수 조건 ${score == null ? 'N/A' : formatNumber(score, 1)} / 기준 ${formatNumber(safeAddEntryMinScore, 1)}`)
+      reasons.push(`진입/추세/경고 ${entryGrade || '-'} / ${trendGrade || '-'} / ${warnGrade || '-'}`)
+      return { state: 'add', reasons }
+    }
 
-    return 'hold'
+    reasons.push('추가매수/부분청산 조건 미충족')
+    if (Number.isFinite(pct)) reasons.push(`현재 수익률 ${formatNumber(pct, 2)}%`)
+    if (warnScore != null) reasons.push(`warn_score ${formatNumber(warnScore, 1)}`)
+    return { state: 'hold', reasons }
+  }
+
+  const getHoldingState = (row: any): 'hold' | 'add' | 'partial' => {
+    return evaluateHoldingState(row).state
   }
 
   const getPerformanceGrade = (row: any): 'A' | 'B' | 'C' => {
@@ -122,6 +158,42 @@ export default function Portfolio() {
   }, [])
 
   useEffect(() => { load() }, [load])
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    try {
+      const raw = window.localStorage.getItem(PORTFOLIO_RULES_STORAGE_KEY)
+      if (!raw) return
+      const parsed = JSON.parse(raw)
+      const nextA = Number(parsed?.gradeAThreshold)
+      const nextB = Number(parsed?.gradeBThreshold)
+      const nextAdd = Number(parsed?.addEntryMinScore)
+      const nextPartialPct = Number(parsed?.partialTakeProfitPct)
+      const nextPartialWarn = Number(parsed?.partialWarnScoreMin)
+      if (Number.isFinite(nextA)) setGradeAThreshold(nextA)
+      if (Number.isFinite(nextB)) setGradeBThreshold(nextB)
+      if (Number.isFinite(nextAdd)) setAddEntryMinScore(nextAdd)
+      if (Number.isFinite(nextPartialPct)) setPartialTakeProfitPct(nextPartialPct)
+      if (Number.isFinite(nextPartialWarn)) setPartialWarnScoreMin(nextPartialWarn)
+    } catch {
+      // ignore malformed local storage value
+    }
+  }, [])
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    try {
+      window.localStorage.setItem(PORTFOLIO_RULES_STORAGE_KEY, JSON.stringify({
+        gradeAThreshold,
+        gradeBThreshold,
+        addEntryMinScore,
+        partialTakeProfitPct,
+        partialWarnScoreMin,
+      }))
+    } catch {
+      // ignore local storage write errors
+    }
+  }, [gradeAThreshold, gradeBThreshold, addEntryMinScore, partialTakeProfitPct, partialWarnScoreMin])
 
   // 클라이언트 사이드 파생 상태 – API 재호출 없이 즉시 필터링
   const holdingAll = useMemo(() => allRows.filter((r: any) => r.position_type === 'holding'), [allRows])
@@ -158,7 +230,7 @@ export default function Portfolio() {
     }
 
     return result
-  }, [holdingAll, selectedSector, search, holdingStateFilter, gradeFilter, safePartialTakeProfitPct, safeAddEntryMinScore, safeGradeAThreshold, safeGradeBThreshold])
+  }, [holdingAll, selectedSector, search, holdingStateFilter, gradeFilter, safePartialTakeProfitPct, safePartialWarnScoreMin, safeAddEntryMinScore, safeGradeAThreshold, safeGradeBThreshold])
 
   const total = filteredRows.length
   const totalPages = Math.ceil(total / pageSize)
@@ -633,9 +705,15 @@ export default function Portfolio() {
                 value={String(partialTakeProfitPct)}
                 onChange={(e: any) => setPartialTakeProfitPct(Number(e?.target?.value || 8))}
               />
+              <Input
+                label="부분청산 최소 warn_score"
+                type="number"
+                value={String(partialWarnScoreMin)}
+                onChange={(e: any) => setPartialWarnScoreMin(Number(e?.target?.value || 3))}
+              />
             </div>
             <div className="caption muted" style={{ marginTop: 'var(--space-1)' }}>
-              등급은 종목 점수(total_score), 상태는 점수/수익률/추가매수 신호를 기준으로 자동 분류됩니다.
+              등급은 종목 점수(total_score), 상태는 점수/수익률/신호/진입·추세·경고 등급과 warn_score 기준을 함께 반영해 자동 분류됩니다.
             </div>
           </div>
 
@@ -671,10 +749,36 @@ export default function Portfolio() {
 
         {!error && rows.map((r: any) => {
           const pnl = r.unrealized_pnl
-          const holdingState = getHoldingState(r)
+          const stateEvaluation = evaluateHoldingState(r)
+          const holdingState = stateEvaluation.state
           const grade = getPerformanceGrade(r)
           const score = getScoreValue(r)
           const scoreSignal = String(r?.score_signal || '').trim().toUpperCase()
+          const entryGrade = String(r?.entry_grade || '').trim().toUpperCase()
+          const trendGrade = String(r?.trend_grade || '').trim().toUpperCase()
+          const warnGrade = String(r?.warn_grade || '').trim().toUpperCase()
+          const warnScore = Number.isFinite(Number(r?.warn_score)) ? Number(r?.warn_score) : null
+          const reasonText = stateEvaluation.reasons.join('\n')
+
+          // 판정근거 배지 계산
+          const reasonBadges: { label: string; type: 'partial' | 'add' | 'warn' | 'ok' | 'neutral' }[] = []
+          if (holdingState === 'partial') {
+            reasonBadges.push({ label: '익절구간', type: 'partial' })
+            if (['SELL', 'HOLD'].includes(scoreSignal)) reasonBadges.push({ label: scoreSignal === 'SELL' ? '매도신호' : '보유신호', type: 'warn' })
+            if (['WARN', 'SELL'].includes(warnGrade)) reasonBadges.push({ label: '경고강함', type: 'warn' })
+            if (warnScore != null) reasonBadges.push({ label: `경고점수 ${formatNumber(warnScore, 0)}`, type: 'warn' })
+          } else if (holdingState === 'add') {
+            reasonBadges.push({ label: '추가진입', type: 'add' })
+            if (score != null) reasonBadges.push({ label: `점수충족 ${formatNumber(score, 0)}`, type: 'ok' })
+            if (['A', 'B'].includes(entryGrade)) reasonBadges.push({ label: `진입${entryGrade}`, type: 'ok' })
+            if (['A', 'B'].includes(trendGrade)) reasonBadges.push({ label: `추세${trendGrade}`, type: 'ok' })
+          } else {
+            if (score != null && score < safeAddEntryMinScore) reasonBadges.push({ label: '점수부족', type: 'neutral' })
+            if (['WARN', 'SELL'].includes(warnGrade)) reasonBadges.push({ label: '경고있음', type: 'warn' })
+            if (['SELL'].includes(scoreSignal)) reasonBadges.push({ label: '매도신호', type: 'warn' })
+            if (reasonBadges.length === 0) reasonBadges.push({ label: '관망', type: 'neutral' })
+          }
+
           return (
             <div key={r.id} className="card card-lg portfolio-position-card">
               <div className="flex-between portfolio-position-top">
@@ -690,7 +794,16 @@ export default function Portfolio() {
                     {' · '}등급 {grade}
                     {' · '}점수 {score != null ? formatNumber(score, 1) : '—'}
                     {scoreSignal ? ` · 신호 ${scoreSignal}` : ''}
+                    {(entryGrade || trendGrade || warnGrade) ? ` · 진입 ${entryGrade || '-'} / 추세 ${trendGrade || '-'} / 경고 ${warnGrade || '-'}` : ''}
+                    {reasonText ? <span style={{ marginLeft: '4px', textDecoration: 'underline dotted', cursor: 'help' }} title={reasonText}>[판정근거]</span> : null}
                   </div>
+                  {reasonBadges.length > 0 && (
+                    <div className="portfolio-reason-badges">
+                      {reasonBadges.map((b, i) => (
+                        <span key={i} className={`portfolio-reason-badge portfolio-reason-badge--${b.type}`}>{b.label}</span>
+                      ))}
+                    </div>
+                  )}
                 </div>
 
                 <div className="text-right portfolio-position-pnl">

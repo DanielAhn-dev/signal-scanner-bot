@@ -1080,6 +1080,54 @@ html, body, #root {
   box-shadow: 0 3px 10px rgba(12, 32, 64, 0.04);
 }
 
+.portfolio-reason-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 6px;
+}
+
+.portfolio-reason-badge {
+  display: inline-block;
+  padding: 1px 7px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1.6;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+}
+
+.portfolio-reason-badge--partial {
+  background: #fff3cd;
+  color: #7d5800;
+  border: 1px solid #f0c430;
+}
+
+.portfolio-reason-badge--add {
+  background: #dbeafe;
+  color: #1d4ed8;
+  border: 1px solid #93c5fd;
+}
+
+.portfolio-reason-badge--warn {
+  background: #fee2e2;
+  color: #b91c1c;
+  border: 1px solid #fca5a5;
+}
+
+.portfolio-reason-badge--ok {
+  background: #dcfce7;
+  color: #15803d;
+  border: 1px solid #86efac;
+}
+
+.portfolio-reason-badge--neutral {
+  background: #f3f4f6;
+  color: #6b7280;
+  border: 1px solid #d1d5db;
+}
+
 .portfolio-position-meta {
   @apply mt-1;
 }
