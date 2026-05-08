@@ -6,6 +6,7 @@ import { useToast } from '../../components/ToastProvider'
 import PdfDrawer from '../../components/PdfDrawer'
 import ShareModal from '../../components/ShareModal'
 import { readSimulationPlan, type HighlightSimulationPlan } from '../simulator/planStore'
+import { buildTelegramMessage, calcExpectedValue, calcSplitInvested } from '../simulator/telegramFormat'
 import { formatKrw } from '../../lib/format'
 
 type ReportAction = {
@@ -174,19 +175,35 @@ export default function ReportsPage() {
     if (!simPlan) return
     setSimSending(true)
     try {
-      const cap = simPlan.totalCapital || 0
       const items = simPlan.items || []
-      const lines = [
-        '[시뮬레이터 계획 간단 요약]',
-        `저장시점: ${new Date(simPlan.createdAt).toLocaleString('ko-KR')}`,
-        `총 투자금: ${formatKrw(cap)} · 종목 ${items.length}개`,
-        simPlan.notes ? `메모: ${String(simPlan.notes).slice(0, 100)}` : '',
-        '',
-        ...items.slice(0, 8).map((row: any) => `- ${row.name || row.code} ${formatKrw(row.amount)}`),
-      ].filter((l) => l !== null)
+      const totalCapital = simPlan.totalCapital || 0
+      const feePct = 0.15
+      const taxPct = 0.2
+      const fillRatePct = 100
+      const splitInvested = items.reduce((acc, row) => acc + calcSplitInvested(row, fillRatePct), 0)
+      const expected = items.reduce((acc, row) => acc + calcExpectedValue(row), 0)
+      const feeTax = splitInvested * ((feePct + taxPct) / 100)
+      const expectedAfterCost = expected - feeTax
+      const remaining = totalCapital - items.reduce((acc, row) => acc + (row.amount || 0), 0)
+
+      const header = simPlan.notes
+        ? `저장: ${new Date(simPlan.createdAt).toLocaleString('ko-KR')} · 메모: ${String(simPlan.notes).slice(0, 60)}\n`
+        : `저장: ${new Date(simPlan.createdAt).toLocaleString('ko-KR')}\n`
+
+      const body = buildTelegramMessage({
+        totalCapital,
+        fillRatePct,
+        feePct,
+        taxPct,
+        expectedAfterCost,
+        remaining,
+        items,
+        format: 'detailed',
+      })
+
       await apiFetch('/api/ui/notify', {
         method: 'POST',
-        body: JSON.stringify({ message: lines.join('\n') }),
+        body: JSON.stringify({ message: header + body }),
         cacheMs: 0,
         timeoutMs: 12_000,
       })
