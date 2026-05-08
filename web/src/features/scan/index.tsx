@@ -463,10 +463,6 @@ export default function ScanPage({ onNavigate }: { onNavigate?: (r: string) => v
             <span className="scan-highlight-section-badge">진입 A/B · 경고 최소</span>
           </div>
           <div className="scan-highlight-grid">
-            {(apiHighlights.length > 0
-              ? <div className="scan-highlight-section-badge" style={{ fontSize: '0.7rem', marginTop: '2px', opacity: 0.7 }}>pullback + 시그널 교차 선정</div>
-              : <div className="scan-highlight-section-badge" style={{ fontSize: '0.7rem', marginTop: '2px', opacity: 0.7 }}>pullback 진입점수 기반</div>
-            )}
             {activeHighlights.map((c, idx) => (
               <button
                 key={c.code}
