@@ -165,6 +165,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       trendGrade: string | null
       warnGrade: string | null
       warnScore: number | null
+      warnOverheat: boolean | null
+      warnVolSpike: boolean | null
+      warnAtrSpike: boolean | null
+      warnRsiOb: boolean | null
+      warnMaBreak: boolean | null
+      warnDeadCross: boolean | null
     }>()
     if (codes.length > 0) {
       const { data: latestPullbackRows } = await supabase
@@ -176,7 +182,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       if (latestTradeDate) {
         const { data: pullbackRows } = await supabase
           .from('pullback_signals')
-          .select('code, entry_grade, trend_grade, warn_grade, warn_score')
+          .select('code, entry_grade, trend_grade, warn_grade, warn_score, warn_overheat, warn_vol_spike, warn_atr_spike, warn_rsi_ob, warn_ma_break, warn_dead_cross')
           .eq('trade_date', latestTradeDate)
           .in('code', codes)
         for (const row of (pullbackRows ?? []) as any[]) {
@@ -185,6 +191,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             trendGrade: String(row?.trend_grade || '').trim().toUpperCase() || null,
             warnGrade: String(row?.warn_grade || '').trim().toUpperCase() || null,
             warnScore: Number.isFinite(Number(row?.warn_score)) ? Number(row.warn_score) : null,
+            warnOverheat: typeof row?.warn_overheat === 'boolean' ? row.warn_overheat : null,
+            warnVolSpike: typeof row?.warn_vol_spike === 'boolean' ? row.warn_vol_spike : null,
+            warnAtrSpike: typeof row?.warn_atr_spike === 'boolean' ? row.warn_atr_spike : null,
+            warnRsiOb: typeof row?.warn_rsi_ob === 'boolean' ? row.warn_rsi_ob : null,
+            warnMaBreak: typeof row?.warn_ma_break === 'boolean' ? row.warn_ma_break : null,
+            warnDeadCross: typeof row?.warn_dead_cross === 'boolean' ? row.warn_dead_cross : null,
           })
         }
       }
@@ -275,6 +287,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         trend_grade: pullback?.trendGrade ?? null,
         warn_grade: pullback?.warnGrade ?? null,
         warn_score: pullback?.warnScore ?? null,
+        warn_overheat: pullback?.warnOverheat ?? null,
+        warn_vol_spike: pullback?.warnVolSpike ?? null,
+        warn_atr_spike: pullback?.warnAtrSpike ?? null,
+        warn_rsi_ob: pullback?.warnRsiOb ?? null,
+        warn_ma_break: pullback?.warnMaBreak ?? null,
+        warn_dead_cross: pullback?.warnDeadCross ?? null,
         position_type: (String(row.status || '').toLowerCase() === 'watch' || String(row.status || '').toLowerCase() === 'interest') ? 'interest' : (row.quantity ? 'holding' : 'interest'),
         lots,
         recommended_buy_qty,

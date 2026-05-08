@@ -30,6 +30,15 @@ function pickLatestActiveShare(items: PortfolioShareHistoryItem[]): PortfolioSha
 
 const PORTFOLIO_RULES_STORAGE_KEY = 'portfolio.holdingRules.v1'
 
+const WARN_REASON_LABELS: Array<{ key: string; label: string }> = [
+  { key: 'warn_overheat', label: '이격 과열(21일선 대비 +7% 초과)' },
+  { key: 'warn_vol_spike', label: '거래량 급증(20일 평균 대비 2배 초과)' },
+  { key: 'warn_atr_spike', label: '변동성 급증(ATR14 > ATR20 평균 x 1.5)' },
+  { key: 'warn_rsi_ob', label: 'RSI 과매수(70 초과)' },
+  { key: 'warn_ma_break', label: '21일선 이탈(종가 < MA21)' },
+  { key: 'warn_dead_cross', label: '데드크로스(MA21 < MA50)' },
+]
+
 export default function Portfolio() {
   const [allRows, setAllRows] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
@@ -87,6 +96,14 @@ export default function Portfolio() {
     return Number.isFinite(score) ? score : null
   }
 
+  const getWarnReasonDetails = (row: any): string[] => {
+    const details: string[] = []
+    for (const item of WARN_REASON_LABELS) {
+      if (row?.[item.key] === true) details.push(item.label)
+    }
+    return details
+  }
+
   const evaluateHoldingState = (row: any): { state: 'hold' | 'add' | 'partial'; reasons: string[] } => {
     const reasons: string[] = []
     const pct = Number(row?.unrealized_pct)
@@ -96,6 +113,7 @@ export default function Portfolio() {
     const entryGrade = String(row?.entry_grade || '').trim().toUpperCase()
     const trendGrade = String(row?.trend_grade || '').trim().toUpperCase()
     const warnGrade = String(row?.warn_grade || '').trim().toUpperCase()
+    const warnDetails = getWarnReasonDetails(row)
 
     const partialSignalHit = ['SELL', 'HOLD'].includes(scoreSignal) || ['WARN', 'SELL'].includes(warnGrade)
     const partialWarnScoreHit = warnScore != null && warnScore >= safePartialWarnScoreMin
@@ -103,6 +121,7 @@ export default function Portfolio() {
       reasons.push(`수익률 ${formatNumber(pct, 2)}% >= ${formatNumber(safePartialTakeProfitPct, 2)}%`)
       reasons.push(`신호/경고 조건 충족 (${scoreSignal || '-'} / ${warnGrade || '-'})`)
       reasons.push(`warn_score ${formatNumber(warnScore, 1)} >= ${formatNumber(safePartialWarnScoreMin, 1)}`)
+      if (warnDetails.length > 0) reasons.push(`상세 경고: ${warnDetails.join(', ')}`)
       return { state: 'partial', reasons }
     }
 
@@ -117,12 +136,14 @@ export default function Portfolio() {
       reasons.push(`추가매수 제안 수량 ${Number(row?.recommended_buy_qty || 0)}주`) 
       reasons.push(`점수 조건 ${score == null ? 'N/A' : formatNumber(score, 1)} / 기준 ${formatNumber(safeAddEntryMinScore, 1)}`)
       reasons.push(`진입/추세/경고 ${entryGrade || '-'} / ${trendGrade || '-'} / ${warnGrade || '-'}`)
+      if (warnDetails.length > 0) reasons.push(`상세 경고: ${warnDetails.join(', ')}`)
       return { state: 'add', reasons }
     }
 
     reasons.push('추가매수/부분청산 조건 미충족')
     if (Number.isFinite(pct)) reasons.push(`현재 수익률 ${formatNumber(pct, 2)}%`)
     if (warnScore != null) reasons.push(`warn_score ${formatNumber(warnScore, 1)}`)
+    if (warnDetails.length > 0) reasons.push(`상세 경고: ${warnDetails.join(', ')}`)
     return { state: 'hold', reasons }
   }
 
