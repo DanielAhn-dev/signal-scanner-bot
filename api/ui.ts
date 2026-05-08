@@ -21,6 +21,7 @@ import reportWeb from '../handlers/ui/report-web'
 import scanCandidates from '../handlers/ui/scan-candidates'
 import scanHighlights from '../handlers/ui/scan-highlights'
 import sectors from '../handlers/ui/sectors'
+import simulationPlan from '../handlers/ui/simulation-plan'
 import settings from '../handlers/ui/settings'
 import stockLatest from '../handlers/ui/stock-latest'
 import stocks from '../handlers/ui/stocks'
@@ -57,6 +58,7 @@ const ROUTES: Record<string, UiHandler> = {
   'scan-candidates': scanCandidates,
   'scan-highlights': scanHighlights,
   sectors,
+  'simulation-plan': simulationPlan,
   settings,
   'stock-latest': stockLatest,
   stocks,

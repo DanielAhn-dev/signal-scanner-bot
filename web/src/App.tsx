@@ -25,6 +25,8 @@ const SectorsPage = lazy(() => import('./features/sectors'))
 const AdminUsersPage = lazy(() => import('./features/admin-users'))
 const OperationsPage = lazy(() => import('./features/operations'))
 const StrategyPage = lazy(() => import('./features/strategy'))
+const HighlightsPage = lazy(() => import('./features/highlights'))
+const SimulatorPage = lazy(() => import('./features/simulator'))
 
 const COMPONENTS = {
   dashboard: Dashboard,
@@ -46,6 +48,8 @@ const COMPONENTS = {
   'admin-users': AdminUsersPage,
   operations: OperationsPage,
   strategy: StrategyPage,
+  highlights: HighlightsPage,
+  simulator: SimulatorPage,
 } as const
 
 type RouteKey = keyof typeof COMPONENTS

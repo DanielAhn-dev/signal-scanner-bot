@@ -465,9 +465,14 @@ export default function ScanPage({ onNavigate }: { onNavigate?: (r: string) => v
       {/* 오늘의 추천 눌림목 섹션 */}
       {!loading && !error && !highlightLoading && activeHighlights.length > 0 && conditionFilter === 'all' && selectedSector === 'all' && (
         <div className="card mb-4">
-          <div className="scan-highlight-section-title">
+          <div className="scan-highlight-section-title" style={{ gap: 'var(--space-2)', flexWrap: 'wrap' }}>
             <span className="scan-highlight-section-label">오늘의 추천 눌림목</span>
             <span className="scan-highlight-section-badge">진입 A/B · 경고 최소</span>
+            {onNavigate && (
+              <Button variant="secondary" onClick={() => onNavigate('highlights')} style={{ marginLeft: 'auto' }}>
+                하이라이트 허브
+              </Button>
+            )}
           </div>
           <div className="scan-highlight-grid">
             {activeHighlights.map((c, idx) => (

@@ -15,6 +15,7 @@ export const NAV_ITEMS: NavGroup[] = [
     category: '주요',
     items: [
       { key: 'dashboard', label: '대시보드' },
+      { key: 'highlights', label: '하이라이트' },
       { key: 'sectors', label: '섹터' },
       { key: 'portfolio', label: '포트폴리오' },
       { key: 'trades', label: '거래기록' },
@@ -28,7 +29,8 @@ export const NAV_ITEMS: NavGroup[] = [
       { key: 'analyze', label: '분석' },
       { key: 'watchlist', label: '감시목록' },
       { key: 'alerts', label: '알림' },
-      { key: 'reports', label: '리포트' }
+      { key: 'reports', label: '리포트' },
+      { key: 'simulator', label: '시뮬레이터' }
     ]
   },
   {
@@ -58,6 +60,6 @@ export const NAV_ITEMS: NavGroup[] = [
   }
 ]
 
-export const PRIMARY_NAV_KEYS = ['dashboard', 'sectors', 'scan', 'portfolio', 'strategy', 'reports'] as const
+export const PRIMARY_NAV_KEYS = ['dashboard', 'highlights', 'scan', 'simulator', 'portfolio', 'reports'] as const
 
 export type NavKey = NavItem['key'] | 'commands'

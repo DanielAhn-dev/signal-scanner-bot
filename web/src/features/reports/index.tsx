@@ -5,6 +5,8 @@ import Button from '../../components/ui/Button'
 import { useToast } from '../../components/ToastProvider'
 import PdfDrawer from '../../components/PdfDrawer'
 import ShareModal from '../../components/ShareModal'
+import { readSimulationPlan, type HighlightSimulationPlan } from '../simulator/planStore'
+import { formatKrw } from '../../lib/format'
 
 type ReportAction = {
   key: string
@@ -156,6 +158,45 @@ export default function ReportsPage() {
   const [shareList, setShareList] = useState<Array<{ shareId: string; publicToken: string; topic: string; expiresAt: string; createdAt?: string; revokedAt?: string | null; accessCount?: number; lastAccessedAt?: string | null }>>([])
   const [shareListLoading, setShareListLoading] = useState(false)
   const [revokingShareId, setRevokingShareId] = useState<string | null>(null)
+  const [simPlan, setSimPlan] = useState<HighlightSimulationPlan | null>(null)
+  const [simSending, setSimSending] = useState(false)
+
+  useEffect(() => {
+    setSimPlan(readSimulationPlan())
+  }, [])
+
+  const navigateSimulator = () => {
+    window.history.pushState({}, '', '#simulator')
+    window.dispatchEvent(new PopStateEvent('popstate'))
+  }
+
+  const sendSimPlanTelegram = async () => {
+    if (!simPlan) return
+    setSimSending(true)
+    try {
+      const cap = simPlan.totalCapital || 0
+      const items = simPlan.items || []
+      const lines = [
+        '[시뮬레이터 계획 간단 요약]',
+        `저장시점: ${new Date(simPlan.createdAt).toLocaleString('ko-KR')}`,
+        `총 투자금: ${formatKrw(cap)} · 종목 ${items.length}개`,
+        simPlan.notes ? `메모: ${String(simPlan.notes).slice(0, 100)}` : '',
+        '',
+        ...items.slice(0, 8).map((row: any) => `- ${row.name || row.code} ${formatKrw(row.amount)}`),
+      ].filter((l) => l !== null)
+      await apiFetch('/api/ui/notify', {
+        method: 'POST',
+        body: JSON.stringify({ message: lines.join('\n') }),
+        cacheMs: 0,
+        timeoutMs: 12_000,
+      })
+      toast.show('시뮬레이션 계획을 텔레그램으로 전송했습니다.')
+    } catch (e: any) {
+      toast.show(`전송 실패: ${e?.message || String(e)}`)
+    } finally {
+      setSimSending(false)
+    }
+  }
 
   const appendQueryParam = (url: string, key: string, value: string) => {
     if (!value) return url
@@ -344,6 +385,28 @@ export default function ReportsPage() {
   return (
     <section className="container-app">
       <h1 className="title-xl">리포트</h1>
+
+      {simPlan && simPlan.items?.length > 0 && (
+        <div className="card mb-4" style={{ borderLeft: '3px solid var(--color-stock-up)' }}>
+          <div className="flex-between" style={{ flexWrap: 'wrap', gap: 'var(--space-2)' }}>
+            <div>
+              <div className="title-md">시뮬레이터 저장 계획</div>
+              <div className="caption mt-1">
+                {new Date(simPlan.createdAt).toLocaleString('ko-KR')} · 총 {formatKrw(simPlan.totalCapital)} · 종목 {simPlan.items.length}개
+              </div>
+              {simPlan.notes && <div className="muted mt-1">{String(simPlan.notes).slice(0, 80)}</div>}
+              <div className="caption mt-2">
+                {simPlan.items.slice(0, 5).map((it: any) => it.name || it.code).join(', ')}
+                {simPlan.items.length > 5 ? ` 외 ${simPlan.items.length - 5}개` : ''}
+              </div>
+            </div>
+            <div className="flex-gap-sm">
+              <Button variant="secondary" onClick={navigateSimulator}>시뮬레이터 열기</Button>
+              <Button variant="ghost" onClick={sendSimPlanTelegram} disabled={simSending}>텔레그램 전송</Button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className="card mb-4">
         <div className="muted">텔레그램 명령(/리포트, /브리핑, /guidepdf)에 대응하는 기능을 웹에서 실행/다운로드합니다.</div>
