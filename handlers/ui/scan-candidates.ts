@@ -1,5 +1,6 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { createClient, SupabaseClient } from '@supabase/supabase-js'
+import { applyAdaptiveOverlayToPullbackCandidate, getAdaptiveStrategyInsights } from '../../src/services/adaptiveStrategyService'
 
 const ORIGIN = process.env.UI_CORS_ORIGIN || '*'
 const SCAN_CACHE_TTL_MS = Math.max(0, Number(process.env.UI_SCAN_CANDIDATES_CACHE_TTL_MS || 15_000))
@@ -57,6 +58,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   try {
+    const adaptiveInsights = await getAdaptiveStrategyInsights(supabase)
+
     const limit = Math.min(200, Math.max(20, Number(req.query.limit || 60)))
     const includeIndicatorLiquidity = String(req.query.includeIndicatorLiquidity || '0') === '1'
     const bypassCache = String(req.query.cacheMs || '') === '0'
@@ -154,6 +157,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     const rows = (data ?? []).map((row: any) => {
       const stock = Array.isArray(row.stock) ? (row.stock[0] || {}) : (row.stock || {})
+      const adaptive = applyAdaptiveOverlayToPullbackCandidate(row, adaptiveInsights)
+      const baseScore = Number(row.entry_score ?? 0) * 20 - Number(row.warn_score ?? 0) * 3
       return {
         code: row.code,
         trade_date: row.trade_date,
@@ -171,8 +176,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         liquidity: stock.liquidity ?? indicatorLiquidityByCode.get(String(row.code)) ?? null,
         close: stock.close ?? null,
         stock_updated_at: stock.updated_at ?? null,
+        adaptive_adjustment: adaptive.adjustment,
+        adaptive_reasons: adaptive.reasons,
+        adaptive_score: round1(baseScore + adaptive.adjustment),
       }
     })
+
+    rows.sort((a: any, b: any) => Number(b.adaptive_score ?? 0) - Number(a.adaptive_score ?? 0) || Number(b.entry_score ?? 0) - Number(a.entry_score ?? 0))
 
     const payload = {
       latestDate,
@@ -191,4 +201,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   } catch (e: any) {
     return res.status(500).json({ error: String(e) })
   }
+}
+
+function round1(value: number): number {
+  return Math.round(value * 10) / 10
 }

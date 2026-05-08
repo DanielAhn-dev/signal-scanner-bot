@@ -1,5 +1,6 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
+import { applyAdaptiveOverlayToPullbackCandidate, getAdaptiveStrategyInsights } from '../../src/services/adaptiveStrategyService'
 
 const ORIGIN = process.env.UI_CORS_ORIGIN || '*'
 const CACHE_TTL_MS = 60_000 // 1분
@@ -37,6 +38,9 @@ export type ScanHighlightItem = {
   stable_turn: string | null
   total_score: number | null
   highlight_score: number
+  adaptive_adjustment?: number
+  adaptive_reasons?: string[]
+  adaptive_score?: number
 }
 
 function signalBonus(signal: string | null | undefined): number {
@@ -91,6 +95,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   try {
+    const adaptiveInsights = await getAdaptiveStrategyInsights(supabase)
+
     // 1) 최신 trade_date 조회
     const { data: latestRows, error: latestError } = await supabase
       .from('pullback_signals')
@@ -158,6 +164,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const sc = scoreMap.get(row.code)
       const priorityBase = entryScore * 20 - warnScore * 3
       const highlightScore = priorityBase + signalBonus(sc?.signal) + stableBonus(sc?.stableTurn)
+      const adaptive = applyAdaptiveOverlayToPullbackCandidate(row, adaptiveInsights)
       return {
         code: row.code,
         name: stock?.name ?? row.code,
@@ -173,10 +180,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         stable_turn: sc?.stableTurn ?? null,
         total_score: sc?.totalScore ?? null,
         highlight_score: highlightScore,
+        adaptive_adjustment: adaptive.adjustment,
+        adaptive_reasons: adaptive.reasons,
+        adaptive_score: round1(highlightScore + adaptive.adjustment),
       }
     })
 
-    items.sort((a, b) => b.highlight_score - a.highlight_score)
+    items.sort((a, b) => Number(b.adaptive_score ?? b.highlight_score) - Number(a.adaptive_score ?? a.highlight_score))
     const top5 = items.slice(0, 5)
 
     cache.set('highlights', { expiresAt: Date.now() + CACHE_TTL_MS, latestDate, data: top5 })
@@ -184,4 +194,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   } catch (e: any) {
     return res.status(500).json({ error: String(e?.message || e) })
   }
+}
+
+function round1(value: number): number {
+  return Math.round(value * 10) / 10
 }

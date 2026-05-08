@@ -6,7 +6,6 @@ import Checkbox from '../../components/ui/Checkbox'
 import Skeleton from '../../components/Skeleton'
 import { EmptyState, ErrorState } from '../../components/StateViews'
 
-// ─── Types ────────────────────────────────────────────────────────────────────
 type DecisionRow = {
   id?: number
   code?: string
@@ -32,6 +31,38 @@ type AutoTradeSettings = {
   long_term_ratio?: number
 }
 
+type ActivityRow = {
+  id: string
+  code: string
+  stock_name?: string | null
+  side: 'BUY' | 'SELL' | 'ADJUST'
+  pnl_amount?: number | null
+  created_at: string
+  memo?: string | null
+}
+
+type AdaptiveFactorStat = {
+  key: string
+  factor: string
+  label: string
+  sampleCount: number
+  winRatePct: number
+  avgForwardReturnPct: number
+  weight: number
+}
+
+type AdaptiveInsights = {
+  latestTradeDate: string | null
+  horizonBars: number
+  sampleCount: number
+  baseHitRatePct: number
+  baseAvgReturnPct: number
+  strengthScore: number
+  todayBiasSummary: string
+  topPositiveFactors: AdaptiveFactorStat[]
+  topNegativeFactors: AdaptiveFactorStat[]
+}
+
 const STRATEGY_OPTIONS = [
   {
     id: 'HOLD_SAFE',
@@ -53,21 +84,70 @@ const STRATEGY_OPTIONS = [
   },
 ] as const
 
+const TRIGGER_LABEL_MAP: Record<string, string> = {
+  'add-on-buy': '추가 매수',
+  'rebalance-buy': '리밸런싱 매수',
+  'take-profit-partial': '분할 익절',
+  'monday-score-candidate': '월요일 점수 후보 진입',
+  'stop-loss': '손절 매도',
+  'take-profit-final': '최종 익절',
+  'take-profit': '익절 매도',
+  'new-buy': '신규 매수',
+  'rebalance-sell': '리밸런싱 매도',
+  rebalance: '리밸런싱',
+  manual: '수동 거래',
+}
+
+const MARKET_REGIME_LABEL_MAP: Record<string, string> = {
+  bull: '상승장',
+  bear: '하락장',
+  bearish: '하락장',
+  sideways: '횡보장',
+  neutral: '중립',
+  risk_off: '리스크 오프',
+  risk_on: '리스크 온',
+}
+
 type Tab = 'overview' | 'settings' | 'growth'
+
+function formatTriggerLabel(value: string): string {
+  const normalized = String(value || '').trim().toLowerCase()
+  if (!normalized) return '-'
+  return TRIGGER_LABEL_MAP[normalized] || normalized.replace(/-/g, ' ')
+}
+
+function formatMarketRegimeLabel(value: string): string {
+  const normalized = String(value || '').trim().toLowerCase()
+  if (!normalized) return '-'
+  return MARKET_REGIME_LABEL_MAP[normalized] || value
+}
+
+function formatKrwShort(value: number): string {
+  const sign = value < 0 ? '-' : ''
+  const abs = Math.abs(value)
+  if (abs >= 100_000_000) return `${sign}${(abs / 100_000_000).toFixed(1)}억`
+  if (abs >= 10_000) return `${sign}${Math.round(abs / 10_000).toLocaleString('ko-KR')}만`
+  return `${sign}${Math.round(abs).toLocaleString('ko-KR')}원`
+}
+
+function buildLinePath(points: Array<{ x: number; y: number }>): string {
+  if (points.length === 0) return ''
+  return points.map((point, index) => `${index === 0 ? 'M' : 'L'} ${point.x} ${point.y}`).join(' ')
+}
 
 export default function StrategyPage() {
   const [tab, setTab] = useState<Tab>('overview')
-
-  // decisions
   const [rows, setRows] = useState<DecisionRow[]>([])
   const [decLoading, setDecLoading] = useState(true)
   const [decError, setDecError] = useState<string | null>(null)
-
-  // settings
   const [settings, setSettings] = useState<AutoTradeSettings | null>(null)
   const [settingsLoading, setSettingsLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [saveStatus, setSaveStatus] = useState<string | null>(null)
+  const [activityRows, setActivityRows] = useState<ActivityRow[]>([])
+  const [activityLoading, setActivityLoading] = useState(true)
+  const [adaptiveInsights, setAdaptiveInsights] = useState<AdaptiveInsights | null>(null)
+  const [adaptiveLoading, setAdaptiveLoading] = useState(true)
 
   const loadDecisions = async () => {
     setDecLoading(true)
@@ -88,9 +168,33 @@ export default function StrategyPage() {
       const res = await apiFetch('/api/ui/settings', { cacheMs: 0, timeoutMs: 10_000 })
       setSettings(res?.data ?? null)
     } catch {
-      // ignore
+      setSettings(null)
     } finally {
       setSettingsLoading(false)
+    }
+  }
+
+  const loadActivity = async () => {
+    setActivityLoading(true)
+    try {
+      const res = await apiFetch('/api/ui/operations?view=activity', { cacheMs: 0, timeoutMs: 15_000 })
+      setActivityRows(Array.isArray(res?.data) ? (res.data as ActivityRow[]) : [])
+    } catch {
+      setActivityRows([])
+    } finally {
+      setActivityLoading(false)
+    }
+  }
+
+  const loadAdaptiveInsights = async () => {
+    setAdaptiveLoading(true)
+    try {
+      const res = await apiFetch('/api/ui/strategy-adaptive', { cacheMs: 60_000, timeoutMs: 20_000 })
+      setAdaptiveInsights((res?.data ?? null) as AdaptiveInsights | null)
+    } catch {
+      setAdaptiveInsights(null)
+    } finally {
+      setAdaptiveLoading(false)
     }
   }
 
@@ -120,13 +224,15 @@ export default function StrategyPage() {
   useEffect(() => {
     void loadDecisions()
     void loadSettings()
+    void loadActivity()
+    void loadAdaptiveInsights()
   }, [])
 
   const summary = useMemo(() => {
     const total = rows.length
-    const autoCount = rows.filter((r) => !!r.is_auto).length
-    const buyCount = rows.filter((r) => String(r.action || '').toUpperCase() === 'BUY').length
-    const sellCount = rows.filter((r) => String(r.action || '').toUpperCase() === 'SELL').length
+    const autoCount = rows.filter((row) => !!row.is_auto).length
+    const buyCount = rows.filter((row) => String(row.action || '').toUpperCase() === 'BUY').length
+    const sellCount = rows.filter((row) => String(row.action || '').toUpperCase() === 'SELL').length
 
     const triggerCount = new Map<string, number>()
     const versionCount = new Map<string, number>()
@@ -142,39 +248,20 @@ export default function StrategyPage() {
       if (regime) regimeCount.set(regime, (regimeCount.get(regime) || 0) + 1)
     }
 
-    const topTriggers = Array.from(triggerCount.entries())
-      .sort((a, b) => b[1] - a[1])
-      .slice(0, 8)
-
-    const topVersions = Array.from(versionCount.entries())
-      .sort((a, b) => b[1] - a[1])
-      .slice(0, 5)
-
-    const topRegimes = Array.from(regimeCount.entries())
-      .sort((a, b) => b[1] - a[1])
-      .slice(0, 5)
-
     return {
       total,
       autoCount,
       buyCount,
       sellCount,
       autoRatio: total > 0 ? Math.round((autoCount / total) * 100) : 0,
-      topTriggers,
-      topVersions,
-      topRegimes,
+      topTriggers: Array.from(triggerCount.entries()).sort((a, b) => b[1] - a[1]).slice(0, 8),
+      topVersions: Array.from(versionCount.entries()).sort((a, b) => b[1] - a[1]).slice(0, 5),
+      topRegimes: Array.from(regimeCount.entries()).sort((a, b) => b[1] - a[1]).slice(0, 5),
     }
   }, [rows])
 
-  // ─── 전략 성장 타임라인 ───────────────────────────────────────────────────
   const growthTimeline = useMemo(() => {
-    const events: Array<{
-      key: string
-      time: string
-      kind: 'version' | 'regime' | 'trigger'
-      text: string
-      subtitle: string
-    }> = []
+    const events: Array<{ key: string; time: string; kind: 'version' | 'regime'; text: string; subtitle: string }> = []
     let prevVersion = ''
     let prevRegime = ''
 
@@ -202,8 +289,8 @@ export default function StrategyPage() {
           key: `r-${row.id ?? Math.random()}`,
           time: created,
           kind: 'regime',
-          text: `시장 국면 전환 → ${regime}`,
-          subtitle: `${code} · ${action || '-'}${trigger ? ` · ${trigger}` : ''}`,
+          text: `시장 국면 전환 → ${formatMarketRegimeLabel(regime)}`,
+          subtitle: `${code} · ${action || '-'}${trigger ? ` · ${formatTriggerLabel(trigger)}` : ''}`,
         })
         prevRegime = regime
       }
@@ -212,11 +299,60 @@ export default function StrategyPage() {
     return events.slice(0, 30)
   }, [rows])
 
-  // ─── 현재 전략 레이블 ─────────────────────────────────────────────────────
   const currentStrategyInfo = useMemo(() => {
     const id = String(settings?.selected_strategy || 'HOLD_SAFE').toUpperCase()
-    return STRATEGY_OPTIONS.find((s) => s.id === id) ?? STRATEGY_OPTIONS[0]
+    return STRATEGY_OPTIONS.find((item) => item.id === id) ?? STRATEGY_OPTIONS[0]
   }, [settings])
+
+  const profitTrend = useMemo(() => {
+    const realizedRows = [...activityRows]
+      .filter((row) => row.side === 'SELL' && Number.isFinite(Number(row.pnl_amount)))
+      .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime())
+
+    let cumulative = 0
+    const series = realizedRows.map((row, index) => {
+      cumulative += Number(row.pnl_amount || 0)
+      return {
+        id: row.id || `${row.code}-${index}`,
+        label: row.stock_name || row.code || '-',
+        date: new Date(row.created_at).toLocaleDateString('ko-KR', { month: 'numeric', day: 'numeric' }),
+        value: cumulative,
+      }
+    })
+
+    if (series.length === 0) {
+      return {
+        points: [] as Array<{ id: string; x: number; y: number; label: string; date: string; value: number }>,
+        path: '',
+        baselineY: 84,
+        lastValue: 0,
+      }
+    }
+
+    const width = 560
+    const height = 168
+    const paddingX = 18
+    const paddingY = 16
+    const values = series.map((item) => item.value)
+    const min = Math.min(0, ...values)
+    const max = Math.max(0, ...values)
+    const range = Math.max(1, max - min)
+
+    const points = series.map((item, index) => {
+      const x = series.length === 1
+        ? width / 2
+        : paddingX + (index / (series.length - 1)) * (width - paddingX * 2)
+      const y = paddingY + ((max - item.value) / range) * (height - paddingY * 2)
+      return { ...item, x, y }
+    })
+
+    return {
+      points,
+      path: buildLinePath(points),
+      baselineY: paddingY + ((max - 0) / range) * (height - paddingY * 2),
+      lastValue: points[points.length - 1]?.value ?? 0,
+    }
+  }, [activityRows])
 
   const tabs: { key: Tab; label: string }[] = [
     { key: 'overview', label: '현황' },
@@ -226,35 +362,36 @@ export default function StrategyPage() {
 
   return (
     <section className="container-app">
-      {/* ─── Header ───────────────────────────────────────────────── */}
       <div className="flex-between mb-4">
         <h1 className="title-xl" style={{ marginBottom: 0 }}>전략 대시보드</h1>
         <Button
           variant="secondary"
-          onClick={() => { void loadDecisions(); void loadSettings() }}
-          disabled={decLoading || settingsLoading}
+          onClick={() => {
+            void loadDecisions()
+            void loadSettings()
+            void loadActivity()
+            void loadAdaptiveInsights()
+          }}
+          disabled={decLoading || settingsLoading || activityLoading || adaptiveLoading}
         >
           새로고침
         </Button>
       </div>
 
-      {/* ─── Tab bar ──────────────────────────────────────────────── */}
       <div style={{ display: 'flex', gap: 8, marginBottom: 20, flexWrap: 'wrap' }}>
-        {tabs.map((t) => (
+        {tabs.map((item) => (
           <button
-            key={t.key}
-            className={`sector-tab-btn${tab === t.key ? ' sector-tab-btn--active' : ''}`}
-            onClick={() => setTab(t.key)}
+            key={item.key}
+            className={`sector-tab-btn${tab === item.key ? ' sector-tab-btn--active' : ''}`}
+            onClick={() => setTab(item.key)}
           >
-            {t.label}
+            {item.label}
           </button>
         ))}
       </div>
 
-      {/* ════════════════════ TAB: 현황 ════════════════════ */}
       {tab === 'overview' && (
         <>
-          {/* 현재 전략 상태 배너 */}
           <div
             className="card mb-4"
             style={{
@@ -265,27 +402,20 @@ export default function StrategyPage() {
             <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
               <div>
                 <div className="caption" style={{ marginBottom: 2 }}>현재 운용 전략</div>
-                <div
-                  className="title-lg"
-                  style={{ color: currentStrategyInfo.color }}
-                >
+                <div className="title-lg" style={{ color: currentStrategyInfo.color }}>
                   {currentStrategyInfo.label}
                 </div>
                 <div className="muted" style={{ marginTop: 2 }}>{currentStrategyInfo.desc}</div>
               </div>
               <div style={{ marginLeft: 'auto', textAlign: 'right' }}>
-                <div className="caption">자동매매</div>
-                <div
-                  className="title-md"
-                  style={{ color: settings?.is_enabled ? '#10b981' : '#ef4444' }}
-                >
+                <div className="caption">자동매매 상태</div>
+                <div className="title-md" style={{ color: settings?.is_enabled ? '#10b981' : '#ef4444' }}>
                   {settingsLoading ? '…' : settings?.is_enabled ? '활성화' : '비활성화'}
                 </div>
               </div>
             </div>
           </div>
 
-          {/* 퀀트 파라미터 요약 */}
           {!settingsLoading && settings && (
             <div className="cards-list mb-4">
               <div className="card">
@@ -293,11 +423,11 @@ export default function StrategyPage() {
                 <div className="title-lg">{settings.min_buy_score ?? 72}</div>
               </div>
               <div className="card">
-                <div className="caption">익절 / 손절</div>
+                <div className="caption">익절 / 손절 기준</div>
                 <div className="title-lg">{settings.take_profit_pct ?? 8}% / {settings.stop_loss_pct ?? 4}%</div>
               </div>
               <div className="card">
-                <div className="caption">최대 포지션</div>
+                <div className="caption">최대 보유 종목</div>
                 <div className="title-lg">{settings.max_positions ?? 10}종목</div>
               </div>
               <div className="card">
@@ -307,7 +437,71 @@ export default function StrategyPage() {
             </div>
           )}
 
-          {/* 의사결정 통계 */}
+          <div className="card mb-4">
+            <div className="flex-between" style={{ alignItems: 'baseline', marginBottom: 'var(--space-2)' }}>
+              <div className="title-md">적응형 전략 엔진</div>
+              {adaptiveInsights?.latestTradeDate && <div className="caption">기준일 {adaptiveInsights.latestTradeDate}</div>}
+            </div>
+            <div className="muted" style={{ marginBottom: 12, fontSize: '0.82rem' }}>
+              최근 눌림목 후보의 실제 {adaptiveInsights?.horizonBars ?? 3}거래일 성과를 기준으로, 현재 스캔/하이라이트 후보 정렬에 반영 중인 적응 가중치입니다.
+            </div>
+            {adaptiveLoading && <Skeleton lines={4} height={12} />}
+            {!adaptiveLoading && adaptiveInsights && (
+              <>
+                <div className="cards-list" style={{ marginBottom: 16 }}>
+                  <div className="card">
+                    <div className="caption">적응 강도</div>
+                    <div className="title-lg">{adaptiveInsights.strengthScore}</div>
+                  </div>
+                  <div className="card">
+                    <div className="caption">최근 적중률</div>
+                    <div className="title-lg">{adaptiveInsights.baseHitRatePct}%</div>
+                  </div>
+                  <div className="card">
+                    <div className="caption">평균 {adaptiveInsights.horizonBars}일 수익률</div>
+                    <div className="title-lg" style={{ color: adaptiveInsights.baseAvgReturnPct >= 0 ? '#10b981' : '#ef4444' }}>
+                      {adaptiveInsights.baseAvgReturnPct > 0 ? '+' : ''}{adaptiveInsights.baseAvgReturnPct}%
+                    </div>
+                  </div>
+                  <div className="card">
+                    <div className="caption">현재 우위 패턴</div>
+                    <div className="title-md">{adaptiveInsights.todayBiasSummary}</div>
+                  </div>
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                  <div>
+                    <div className="caption" style={{ marginBottom: 8 }}>강화 중인 기준</div>
+                    {adaptiveInsights.topPositiveFactors.length === 0 && <div className="muted">강화 기준 없음</div>}
+                    {adaptiveInsights.topPositiveFactors.map((item) => (
+                      <div key={`${item.key}-${item.factor}`} style={{ marginBottom: 10 }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12 }}>
+                          <span style={{ fontWeight: 500 }}>{item.label}</span>
+                          <span style={{ color: '#10b981', fontWeight: 600 }}>+{item.weight}</span>
+                        </div>
+                        <div className="caption">승률 {item.winRatePct}% · 평균 {item.avgForwardReturnPct > 0 ? '+' : ''}{item.avgForwardReturnPct}% · 샘플 {item.sampleCount}</div>
+                      </div>
+                    ))}
+                  </div>
+                  <div>
+                    <div className="caption" style={{ marginBottom: 8 }}>약화 중인 기준</div>
+                    {adaptiveInsights.topNegativeFactors.length === 0 && <div className="muted">약화 기준 없음</div>}
+                    {adaptiveInsights.topNegativeFactors.map((item) => (
+                      <div key={`${item.key}-${item.factor}`} style={{ marginBottom: 10 }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12 }}>
+                          <span style={{ fontWeight: 500 }}>{item.label}</span>
+                          <span style={{ color: '#ef4444', fontWeight: 600 }}>{item.weight}</span>
+                        </div>
+                        <div className="caption">승률 {item.winRatePct}% · 평균 {item.avgForwardReturnPct > 0 ? '+' : ''}{item.avgForwardReturnPct}% · 샘플 {item.sampleCount}</div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </>
+            )}
+            {!adaptiveLoading && !adaptiveInsights && <div className="muted">적응형 전략 데이터를 아직 계산하지 못했습니다.</div>}
+          </div>
+
           {decError && <ErrorState message={decError} onRetry={loadDecisions} />}
           {decLoading && <div className="card mb-4"><Skeleton lines={4} height={14} /></div>}
           {!decLoading && !decError && rows.length > 0 && (
@@ -318,18 +512,17 @@ export default function StrategyPage() {
                   <div className="title-lg">{summary.total}건</div>
                 </div>
                 <div className="card">
-                  <div className="caption">시스템 자동 비중</div>
+                  <div className="caption">자동 의사결정 비중</div>
                   <div className="title-lg">{summary.autoRatio}%</div>
                   <div className="muted">({summary.autoCount}건)</div>
                 </div>
                 <div className="card">
-                  <div className="caption">매수 / 매도</div>
+                  <div className="caption">매수 / 매도 횟수</div>
                   <div className="title-lg">{summary.buyCount} / {summary.sellCount}</div>
                 </div>
               </div>
 
               <div className="cards-list mb-4">
-                {/* 트리거 빈도 */}
                 <div className="card">
                   <div className="title-md" style={{ marginBottom: 'var(--space-2)' }}>주요 트리거 빈도</div>
                   {summary.topTriggers.length === 0 && <div className="muted">데이터 없음</div>}
@@ -339,7 +532,7 @@ export default function StrategyPage() {
                     return (
                       <div key={trigger} style={{ marginBottom: 8 }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 3 }}>
-                          <span className="caption">{trigger}</span>
+                          <span className="caption">{formatTriggerLabel(trigger)}</span>
                           <span className="caption">{count}건</span>
                         </div>
                         <div style={{ height: 5, background: 'var(--color-border-subtle)', borderRadius: 3 }}>
@@ -358,7 +551,6 @@ export default function StrategyPage() {
                   })}
                 </div>
 
-                {/* 시장 국면 분포 */}
                 <div className="card">
                   <div className="title-md" style={{ marginBottom: 'var(--space-2)' }}>시장 국면 분포</div>
                   {summary.topRegimes.length === 0 && <div className="muted">데이터 없음</div>}
@@ -368,7 +560,7 @@ export default function StrategyPage() {
                     return (
                       <div key={regime} style={{ marginBottom: 8 }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 3 }}>
-                          <span className="caption">{regime}</span>
+                          <span className="caption">{formatMarketRegimeLabel(regime)}</span>
                           <span className="caption">{count}건</span>
                         </div>
                         <div style={{ height: 5, background: 'var(--color-border-subtle)', borderRadius: 3 }}>
@@ -387,7 +579,6 @@ export default function StrategyPage() {
                   })}
                 </div>
 
-                {/* 전략 버전 분포 */}
                 <div className="card">
                   <div className="title-md" style={{ marginBottom: 'var(--space-2)' }}>전략 버전 분포</div>
                   {summary.topVersions.length === 0 && <div className="muted">데이터 없음</div>}
@@ -410,34 +601,28 @@ export default function StrategyPage() {
         </>
       )}
 
-      {/* ════════════════════ TAB: 전략 설정 ════════════════════ */}
       {tab === 'settings' && (
         <div className="cards-list">
           {settingsLoading && <div className="card"><Skeleton lines={5} height={14} /></div>}
           {!settingsLoading && (
             <>
-              {/* 운용 전략 선택 */}
               <div className="card">
                 <div className="title-md" style={{ marginBottom: 'var(--space-3)' }}>운용 전략 선택</div>
                 <div className="muted" style={{ marginBottom: 'var(--space-3)' }}>
                   시장 위험도와 현재 계좌 상황에 맞는 전략을 선택합니다. 변경 후 저장하면 다음 자동매매 사이클부터 적용됩니다.
                 </div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                  {STRATEGY_OPTIONS.map((opt) => {
-                    const isActive = String(settings?.selected_strategy || 'HOLD_SAFE').toUpperCase() === opt.id
+                  {STRATEGY_OPTIONS.map((option) => {
+                    const isActive = String(settings?.selected_strategy || 'HOLD_SAFE').toUpperCase() === option.id
                     return (
                       <div
-                        key={opt.id}
-                        onClick={() => setSettings({ ...settings, selected_strategy: opt.id })}
+                        key={option.id}
+                        onClick={() => setSettings({ ...settings, selected_strategy: option.id })}
                         style={{
                           padding: '14px 16px',
                           borderRadius: 'var(--radius-card)',
-                          border: isActive
-                            ? `2px solid ${opt.color}`
-                            : '1.5px solid var(--color-border-default)',
-                          background: isActive
-                            ? `color-mix(in srgb, ${opt.color} 8%, var(--color-surface-card))`
-                            : 'var(--color-surface-card)',
+                          border: isActive ? `2px solid ${option.color}` : '1.5px solid var(--color-border-default)',
+                          background: isActive ? `color-mix(in srgb, ${option.color} 8%, var(--color-surface-card))` : 'var(--color-surface-card)',
                           cursor: 'pointer',
                           transition: 'all 0.2s',
                           display: 'flex',
@@ -450,16 +635,14 @@ export default function StrategyPage() {
                             width: 16,
                             height: 16,
                             borderRadius: '50%',
-                            border: `2px solid ${opt.color}`,
-                            background: isActive ? opt.color : 'transparent',
+                            border: `2px solid ${option.color}`,
+                            background: isActive ? option.color : 'transparent',
                             flexShrink: 0,
                           }}
                         />
                         <div>
-                          <div style={{ fontWeight: 600, color: isActive ? opt.color : 'inherit' }}>
-                            {opt.label}
-                          </div>
-                          <div className="muted" style={{ marginTop: 2 }}>{opt.desc}</div>
+                          <div style={{ fontWeight: 600, color: isActive ? option.color : 'inherit' }}>{option.label}</div>
+                          <div className="muted" style={{ marginTop: 2 }}>{option.desc}</div>
                         </div>
                       </div>
                     )
@@ -467,20 +650,16 @@ export default function StrategyPage() {
                 </div>
               </div>
 
-              {/* 자동매매 활성화 */}
               <div className="card">
                 <div className="title-md" style={{ marginBottom: 'var(--space-2)' }}>자동매매 제어</div>
                 <Checkbox
                   label="자동매매 활성화"
                   checked={!!settings?.is_enabled}
-                  onChange={(v) => setSettings({ ...settings, is_enabled: v })}
+                  onChange={(value) => setSettings({ ...settings, is_enabled: value })}
                 />
-                <div className="muted mt-2">
-                  비활성화하면 스케줄 실행 시 매매 없이 분석만 수행합니다.
-                </div>
+                <div className="muted mt-2">비활성화하면 스케줄 실행 시 매매 없이 분석만 수행합니다.</div>
               </div>
 
-              {/* 퀀트 파라미터 */}
               <div className="card">
                 <div className="title-md" style={{ marginBottom: 'var(--space-3)' }}>퀀트 파라미터</div>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
@@ -488,69 +667,51 @@ export default function StrategyPage() {
                     label="최소 매수 점수"
                     type="number"
                     value={settings?.min_buy_score ?? 72}
-                    onChange={(e: any) =>
-                      setSettings({ ...settings, min_buy_score: Number(e.target.value) })
-                    }
+                    onChange={(e: any) => setSettings({ ...settings, min_buy_score: Number(e.target.value) })}
                   />
                   <Input
-                    label="최대 포지션 수"
+                    label="최대 보유 종목 수"
                     type="number"
                     value={settings?.max_positions ?? 10}
-                    onChange={(e: any) =>
-                      setSettings({ ...settings, max_positions: Number(e.target.value) })
-                    }
+                    onChange={(e: any) => setSettings({ ...settings, max_positions: Number(e.target.value) })}
                   />
                   <Input
                     label="익절 (%)"
                     type="number"
                     value={settings?.take_profit_pct ?? 8}
-                    onChange={(e: any) =>
-                      setSettings({ ...settings, take_profit_pct: Number(e.target.value) })
-                    }
+                    onChange={(e: any) => setSettings({ ...settings, take_profit_pct: Number(e.target.value) })}
                   />
                   <Input
                     label="손절 (%)"
                     type="number"
                     value={settings?.stop_loss_pct ?? 4}
-                    onChange={(e: any) =>
-                      setSettings({ ...settings, stop_loss_pct: Number(e.target.value) })
-                    }
+                    onChange={(e: any) => setSettings({ ...settings, stop_loss_pct: Number(e.target.value) })}
                   />
                   <Input
                     label="월요일 매수 슬롯"
                     type="number"
                     value={settings?.monday_buy_slots ?? 2}
-                    onChange={(e: any) =>
-                      setSettings({ ...settings, monday_buy_slots: Number(e.target.value) })
-                    }
+                    onChange={(e: any) => setSettings({ ...settings, monday_buy_slots: Number(e.target.value) })}
                   />
                   <Input
-                    label="장기 비중 (%)"
+                    label="장기 포지션 비중 (%)"
                     type="number"
                     value={settings?.long_term_ratio ?? 70}
-                    onChange={(e: any) =>
-                      setSettings({ ...settings, long_term_ratio: Number(e.target.value) })
-                    }
+                    onChange={(e: any) => setSettings({ ...settings, long_term_ratio: Number(e.target.value) })}
                   />
                 </div>
                 <div className="muted mt-2" style={{ fontSize: '0.78rem' }}>
-                  최소 매수 점수: 스캔 점수 미달 시 매수 제외 · 익절/손절은 가상 자동매매 기준 · 장기 비중은 장기 포지션 목표 비율
+                  최소 매수 점수는 스캔 컷오프, 익절·손절은 가상 자동매매 기준, 장기 포지션 비중은 장기 보유 목표 비율입니다.
                 </div>
               </div>
 
-              {/* 저장 */}
               <div className="card">
                 <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
                   <Button variant="primary" onClick={saveSettings} disabled={saving}>
                     {saving ? '저장 중…' : '설정 저장'}
                   </Button>
                   {saveStatus && (
-                    <span
-                      className="caption"
-                      style={{
-                        color: saveStatus.startsWith('오류') ? '#ef4444' : '#10b981',
-                      }}
-                    >
+                    <span className="caption" style={{ color: saveStatus.startsWith('오류') ? '#ef4444' : '#10b981' }}>
                       {saveStatus}
                     </span>
                   )}
@@ -561,55 +722,80 @@ export default function StrategyPage() {
         </div>
       )}
 
-      {/* ════════════════════ TAB: 성장 기록 ════════════════════ */}
       {tab === 'growth' && (
         <>
-          {/* 성장 요약 내러티브 */}
           <div className="card mb-4" style={{ borderLeft: '4px solid var(--color-brand)' }}>
             <div className="title-md" style={{ marginBottom: 8 }}>전략 성장 요약</div>
             {decLoading && <Skeleton lines={3} height={12} />}
             {!decLoading && rows.length > 0 && (() => {
-              const firstDate = rows[rows.length - 1]?.created_at
-                ? new Date(rows[rows.length - 1]!.created_at!).toLocaleDateString('ko-KR')
-                : '-'
-              const lastDate = rows[0]?.created_at
-                ? new Date(rows[0]!.created_at!).toLocaleDateString('ko-KR')
-                : '-'
-              const uniqueRegimes = new Set(rows.map((r) => r.market_regime).filter(Boolean)).size
-              const uniqueVersions = new Set(rows.map((r) => r.strategy_version).filter(Boolean)).size
+              const firstDate = rows[rows.length - 1]?.created_at ? new Date(rows[rows.length - 1]!.created_at!).toLocaleDateString('ko-KR') : '-'
+              const lastDate = rows[0]?.created_at ? new Date(rows[0]!.created_at!).toLocaleDateString('ko-KR') : '-'
+              const uniqueRegimes = new Set(rows.map((row) => row.market_regime).filter(Boolean)).size
+              const uniqueVersions = new Set(rows.map((row) => row.strategy_version).filter(Boolean)).size
               return (
                 <div style={{ lineHeight: 1.7, color: 'var(--color-text-secondary)' }}>
-                  <span>{firstDate}</span>부터 <span>{lastDate}</span>까지{' '}
-                  <strong style={{ color: 'var(--color-text-primary)' }}>{summary.total}건</strong>의 의사결정이 누적되었습니다.{' '}
-                  이 중 자동 시스템이 판단한 비중은{' '}
-                  <strong style={{ color: 'var(--color-brand)' }}>{summary.autoRatio}%</strong>이며,{' '}
-                  <strong>{summary.buyCount}번</strong> 매수, <strong>{summary.sellCount}번</strong> 매도가 이루어졌습니다.
-                  {uniqueVersions > 0 && (
-                    <> 총 <strong>{uniqueVersions}개</strong>의 전략 버전이 관측되었고,</>
-                  )}
-                  {uniqueRegimes > 0 && (
-                    <> <strong>{uniqueRegimes}가지</strong> 시장 국면을 경험했습니다.</>
-                  )}
-                  {' '}주요 판단 트리거는{' '}
-                  <strong>{summary.topTriggers[0]?.[0] || '-'}</strong>{summary.topTriggers[0] ? `(${summary.topTriggers[0][1]}건)` : ''}입니다.
+                  <span>{firstDate}</span>부터 <span>{lastDate}</span>까지 <strong style={{ color: 'var(--color-text-primary)' }}>{summary.total}건</strong>의 의사결정이 누적되었습니다. 이 중 자동 시스템이 판단한 비중은 <strong style={{ color: 'var(--color-brand)' }}>{summary.autoRatio}%</strong>이며, <strong>{summary.buyCount}번</strong> 매수, <strong>{summary.sellCount}번</strong> 매도가 이루어졌습니다.
+                  {uniqueVersions > 0 && <> 총 <strong>{uniqueVersions}개</strong>의 전략 버전이 관측되었고,</>}
+                  {uniqueRegimes > 0 && <> <strong>{uniqueRegimes}가지</strong> 시장 국면을 경험했습니다.</>}
+                  {' '}주요 판단 트리거는 <strong>{formatTriggerLabel(summary.topTriggers[0]?.[0] || '-')}</strong>{summary.topTriggers[0] ? `(${summary.topTriggers[0][1]}건)` : ''}입니다.
                 </div>
               )
             })()}
-            {!decLoading && rows.length === 0 && (
-              <div className="muted">아직 데이터가 없습니다. 자동매매가 실행되면 기록이 쌓입니다.</div>
+            {!decLoading && rows.length === 0 && <div className="muted">아직 데이터가 없습니다. 자동매매가 실행되면 기록이 쌓입니다.</div>}
+          </div>
+
+          {!adaptiveLoading && adaptiveInsights && (
+            <div className="card mb-4">
+              <div className="title-md" style={{ marginBottom: 8 }}>실시간 적응 메모</div>
+              <div style={{ lineHeight: 1.7, color: 'var(--color-text-secondary)' }}>
+                최근 {adaptiveInsights.sampleCount}개 샘플을 기준으로 <strong style={{ color: 'var(--color-text-primary)' }}>{adaptiveInsights.todayBiasSummary}</strong> 패턴이 상대적으로 우세합니다. 현재 엔진은 상위 강화 기준을 스캔/하이라이트 정렬에 반영하고 있으며, 최근 {adaptiveInsights.horizonBars}거래일 평균 성과는 <strong style={{ color: adaptiveInsights.baseAvgReturnPct >= 0 ? '#10b981' : '#ef4444' }}>{adaptiveInsights.baseAvgReturnPct > 0 ? '+' : ''}{adaptiveInsights.baseAvgReturnPct}%</strong>, 적중률은 <strong style={{ color: 'var(--color-text-primary)' }}>{adaptiveInsights.baseHitRatePct}%</strong>입니다.
+              </div>
+            </div>
+          )}
+
+          <div className="card mb-4">
+            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'baseline', marginBottom: 'var(--space-2)', flexWrap: 'wrap' }}>
+              <div>
+                <div className="title-md">실현손익 추이</div>
+                <div className="muted" style={{ marginTop: 4, fontSize: '0.8rem' }}>최근 매도 거래를 기준으로 누적 실현손익 흐름을 단순 선형 차트로 보여줍니다.</div>
+              </div>
+              <div style={{ textAlign: 'right' }}>
+                <div className="caption">현재 누적 실현손익</div>
+                <div className="title-md" style={{ color: profitTrend.lastValue >= 0 ? '#10b981' : '#ef4444' }}>{formatKrwShort(profitTrend.lastValue)}</div>
+              </div>
+            </div>
+            {activityLoading && <Skeleton lines={4} height={12} />}
+            {!activityLoading && profitTrend.points.length === 0 && <div className="muted">실현손익 차트를 그릴 매도 데이터가 아직 없습니다.</div>}
+            {!activityLoading && profitTrend.points.length > 0 && (
+              <div>
+                <svg viewBox="0 0 560 168" style={{ width: '100%', height: 'auto', display: 'block' }} aria-label="실현손익 추이 차트" role="img">
+                  <line x1="18" x2="542" y1={profitTrend.baselineY} y2={profitTrend.baselineY} stroke="var(--color-border-subtle)" strokeDasharray="4 4" />
+                  <path
+                    d={profitTrend.path}
+                    fill="none"
+                    stroke={profitTrend.lastValue >= 0 ? '#10b981' : '#ef4444'}
+                    strokeWidth="3"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
+                  {profitTrend.points.map((point) => (
+                    <circle key={point.id} cx={point.x} cy={point.y} r="3.5" fill={profitTrend.lastValue >= 0 ? '#10b981' : '#ef4444'} />
+                  ))}
+                </svg>
+                <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, marginTop: 8, fontSize: '0.75rem', color: 'var(--color-text-secondary)' }}>
+                  <span>{profitTrend.points[0]?.date || '-'}</span>
+                  <span>0원 기준선</span>
+                  <span>{profitTrend.points[profitTrend.points.length - 1]?.date || '-'}</span>
+                </div>
+              </div>
             )}
           </div>
 
-          {/* 전략·국면 전환 타임라인 */}
           <div className="card mb-4">
             <div className="title-md" style={{ marginBottom: 'var(--space-2)' }}>전략 & 국면 전환 타임라인</div>
-            <div className="muted" style={{ marginBottom: 12, fontSize: '0.8rem' }}>
-              전략 버전 또는 시장 국면이 바뀐 시점을 시간 순으로 표시합니다.
-            </div>
+            <div className="muted" style={{ marginBottom: 12, fontSize: '0.8rem' }}>전략 버전 또는 시장 국면이 바뀐 시점을 시간 순으로 표시합니다.</div>
             {decLoading && <Skeleton lines={5} height={12} />}
-            {!decLoading && growthTimeline.length === 0 && (
-              <div className="muted">감지된 전환 없음</div>
-            )}
+            {!decLoading && growthTimeline.length === 0 && <div className="muted">감지된 전환 없음</div>}
             {!decLoading && growthTimeline.map((item) => (
               <div
                 key={item.key}
@@ -640,20 +826,17 @@ export default function StrategyPage() {
             ))}
           </div>
 
-          {/* 트리거 누적 분포 */}
           {!decLoading && summary.topTriggers.length > 0 && (
             <div className="card">
               <div className="title-md" style={{ marginBottom: 'var(--space-2)' }}>누적 트리거 분포</div>
-              <div className="muted" style={{ marginBottom: 12, fontSize: '0.8rem' }}>
-                어떤 조건에 의해 매매가 결정되었는지 누적 빈도를 보여줍니다.
-              </div>
+              <div className="muted" style={{ marginBottom: 12, fontSize: '0.8rem' }}>어떤 조건에 의해 매매가 결정되었는지 누적 빈도를 보여줍니다.</div>
               {summary.topTriggers.map(([trigger, count]) => {
                 const maxCount = summary.topTriggers[0]?.[1] ?? 1
                 const pct = Math.round((count / maxCount) * 100)
                 return (
                   <div key={trigger} style={{ marginBottom: 12 }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
-                      <span style={{ fontSize: '0.88rem', fontWeight: 500 }}>{trigger}</span>
+                      <span style={{ fontSize: '0.88rem', fontWeight: 500 }}>{formatTriggerLabel(trigger)}</span>
                       <span className="caption">{count}건 ({Math.round((count / summary.total) * 100)}%)</span>
                     </div>
                     <div style={{ height: 8, background: 'var(--color-border-subtle)', borderRadius: 4 }}>

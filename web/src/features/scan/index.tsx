@@ -67,6 +67,9 @@ type ScanCandidate = {
   vol_atr_grade: string | null
   warn_grade: string | null
   warn_score: number | null
+  adaptive_adjustment?: number | null
+  adaptive_reasons?: string[] | null
+  adaptive_score?: number | null
 }
 
 function gradeScore(grade: string | null | undefined): number {
@@ -82,6 +85,7 @@ function gradeScore(grade: string | null | undefined): number {
 
 /** 복합 우선순위 점수: entry_score × 20 − warn_score × 3 (범위 약 −18 ~ 80) */
 function computePriorityScore(item: ScanCandidate): number {
+  if (typeof item.adaptive_score === 'number' && Number.isFinite(item.adaptive_score)) return item.adaptive_score
   return (item.entry_score ?? 0) * 20 - (item.warn_score ?? 0) * 3
 }
 
@@ -123,6 +127,9 @@ type ScanHighlightItem = {
   stable_turn?: string | null
   total_score?: number | null
   highlight_score?: number
+  adaptive_adjustment?: number | null
+  adaptive_reasons?: string[] | null
+  adaptive_score?: number | null
 }
 
 function WarnBadge({ grade }: { grade: string | null | undefined }) {
@@ -492,6 +499,11 @@ export default function ScanPage({ onNavigate }: { onNavigate?: (r: string) => v
                   {c.sector_id && <span>{c.sector_id}</span>}
                   {c.entry_score != null && <span>진입 {formatNumber(c.entry_score, 1)}</span>}
                   {c.total_score != null && <span>종합 {formatNumber(c.total_score, 0)}</span>}
+                  {typeof c.adaptive_adjustment === 'number' && Math.abs(c.adaptive_adjustment) >= 0.1 && (
+                    <span style={{ color: c.adaptive_adjustment >= 0 ? 'var(--color-positive)' : 'var(--color-negative)' }}>
+                      적응 {c.adaptive_adjustment > 0 ? '+' : ''}{formatNumber(c.adaptive_adjustment, 1)}
+                    </span>
+                  )}
                 </div>
                 <div className="scan-highlight-hint">클릭하여 상세 분석 →</div>
               </button>

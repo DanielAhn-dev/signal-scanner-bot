@@ -24,6 +24,7 @@ import sectors from '../handlers/ui/sectors'
 import settings from '../handlers/ui/settings'
 import stockLatest from '../handlers/ui/stock-latest'
 import stocks from '../handlers/ui/stocks'
+import strategyAdaptive from '../handlers/ui/strategy-adaptive'
 import summary from '../handlers/ui/summary'
 import syncHistory from '../handlers/ui/sync-history'
 import syncStatus from '../handlers/ui/sync-status'
@@ -59,6 +60,7 @@ const ROUTES: Record<string, UiHandler> = {
   settings,
   'stock-latest': stockLatest,
   stocks,
+  'strategy-adaptive': strategyAdaptive,
   summary,
   'sync-history': syncHistory,
   'sync-status': syncStatus,

@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { applyAdaptiveOverlayToPullbackCandidate, getAdaptiveStrategyInsights, type AdaptiveStrategyInsights } from "./adaptiveStrategyService";
 import type { SectorScore } from "../lib/sectors";
 import { getUserInvestmentPrefs } from "./userService";
 import { calculateSectorConcentration, getSectorConcentrationWarnings } from "./portfolioService";
@@ -634,13 +635,16 @@ function orderMarketCandidatesByOverlap(
 
 function orderPullbackCandidatesByOverlap(
   items: PullbackRow[],
-  warnings: Map<string, SectorOverlapWarning>
+  warnings: Map<string, SectorOverlapWarning>,
+  adaptiveInsights?: AdaptiveStrategyInsights | null
 ): PullbackRow[] {
   return [...items].sort((a, b) => {
     const aPenalty = getOverlapPenalty(a.stock?.sector_id ? warnings.get(a.stock.sector_id) : undefined);
     const bPenalty = getOverlapPenalty(b.stock?.sector_id ? warnings.get(b.stock.sector_id) : undefined);
-    const aRank = Number(a.entry_score ?? 0) * 20 - aPenalty;
-    const bRank = Number(b.entry_score ?? 0) * 20 - bPenalty;
+    const aAdaptive = adaptiveInsights ? applyAdaptiveOverlayToPullbackCandidate(a as any, adaptiveInsights).adjustment : 0;
+    const bAdaptive = adaptiveInsights ? applyAdaptiveOverlayToPullbackCandidate(b as any, adaptiveInsights).adjustment : 0;
+    const aRank = Number(a.entry_score ?? 0) * 20 + aAdaptive - aPenalty;
+    const bRank = Number(b.entry_score ?? 0) * 20 + bAdaptive - bPenalty;
     return bRank - aRank || Number(b.entry_score ?? 0) - Number(a.entry_score ?? 0);
   });
 }
@@ -1283,13 +1287,14 @@ export async function createDailyCandidatePlanningReportResult(
     marketReservePct: marketPolicy.minCashReservePct,
   }).catch(() => null);
   const sectorOverlapWarnings = await getSectorOverlapWarningsForPlan(supabase, options?.chatId).catch(() => new Map());
+  const adaptiveInsights = await getAdaptiveStrategyInsights(supabase).catch(() => null);
 
   const [pullbackResult, kospiPicks, kosdaqPicks] = await Promise.all([
     fetchPullbackCandidatesForDailyPlan(supabase, riskProfile),
     fetchMarketPickCandidatesForDailyPlan(supabase, "KOSPI", riskProfile, marketPolicy),
     fetchMarketPickCandidatesForDailyPlan(supabase, "KOSDAQ", riskProfile, marketPolicy),
   ]);
-  const orderedPullbackItems = orderPullbackCandidatesByOverlap(pullbackResult.items, sectorOverlapWarnings);
+  const orderedPullbackItems = orderPullbackCandidatesByOverlap(pullbackResult.items, sectorOverlapWarnings, adaptiveInsights);
   const orderedKospiPicks = orderMarketCandidatesByOverlap(kospiPicks, sectorOverlapWarnings);
   const orderedKosdaqPicks = orderMarketCandidatesByOverlap(kosdaqPicks, sectorOverlapWarnings);
   const visiblePullbackItemsByOverlap = orderedPullbackItems.filter(
