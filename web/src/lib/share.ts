@@ -10,35 +10,103 @@ export interface ShareData {
   url?: string         // 공유 링크 (생략하면 현재 페이지)
 }
 
-/**
- * 카카오톡 공유 (앱 설치 필요)
- */
-export function shareToKakaotalk(data: ShareData) {
-  const price = data.price != null ? formatKrw(data.price) : '조회 중'
-  const pctStr = data.changePct != null ? `${data.changePct > 0 ? '+' : ''}${data.changePct.toFixed(2)}%` : '—'
-  const message = `${data.title} (${data.code})\n가격: ${price} ${pctStr}`
-  
-  // 카카오톡 앱이 설치되어 있으면 앱으로, 없으면 웹으로
-  const url = data.url || window.location.href
-  const encodedUrl = encodeURIComponent(url)
-  const encodedMsg = encodeURIComponent(message)
-  
-  // 카카오톡 프로토콜 (앱)
-  const kakaoAppUrl = `kakaoagent://silencereminder.send?url=${encodedUrl}&text=${encodedMsg}`
-  
-  // 웹 버전 폴백
-  const kakaoWebUrl = `https://share.kakao.com/web/link?url=${encodedUrl}&text=${encodedMsg}`
-  
+function resolveShareUrl(url?: string): string {
+  const raw = url || window.location.href
   try {
-    // 먼저 앱 링크 시도 (짧은 타임아웃)
-    const timeout = setTimeout(() => {
-      window.location.href = kakaoWebUrl
-    }, 500)
-    window.location.href = kakaoAppUrl
-    setTimeout(() => clearTimeout(timeout), 1000)
+    const parsed = new URL(raw, window.location.href)
+    const sharePublicOrigin = String(
+      import.meta.env.VITE_SHARE_PUBLIC_ORIGIN ||
+      import.meta.env.VITE_PUBLIC_WEB_ORIGIN ||
+      '',
+    ).trim()
+
+    // 로컬 개발 환경에서 공유할 때 외부에서 접근 가능한 공개 도메인으로 치환 가능
+    if (sharePublicOrigin && (parsed.hostname === 'localhost' || parsed.hostname === '127.0.0.1')) {
+      const publicBase = new URL(sharePublicOrigin)
+      parsed.protocol = publicBase.protocol
+      parsed.host = publicBase.host
+    }
+
+    return parsed.toString()
   } catch {
-    window.location.href = kakaoWebUrl
+    return raw
   }
+}
+
+// Kakao SDK 타입 선언 (런타임 주입)
+declare global {
+  interface Window {
+    Kakao?: {
+      isInitialized: () => boolean
+      init: (key: string) => void
+      Share: {
+        sendDefault: (settings: Record<string, unknown>) => void
+      }
+    }
+  }
+}
+
+let kakaoSdkLoading: Promise<void> | null = null
+
+function loadKakaoSdk(): Promise<void> {
+  if (window.Kakao) return Promise.resolve()
+  if (kakaoSdkLoading) return kakaoSdkLoading
+
+  kakaoSdkLoading = new Promise<void>((resolve, reject) => {
+    const script = document.createElement('script')
+    script.src = 'https://t1.kakaocdn.net/kakao_js_sdk/2.7.4/kakao.min.js'
+    script.crossOrigin = 'anonymous'
+    script.onload = () => resolve()
+    script.onerror = () => reject(new Error('Kakao SDK 로드 실패'))
+    document.head.appendChild(script)
+  })
+  return kakaoSdkLoading
+}
+
+function initKakao() {
+  const key = String(import.meta.env.VITE_KAKAO_JS_KEY || '')
+  if (!key) throw new Error('VITE_KAKAO_JS_KEY 환경변수가 설정되지 않았습니다.')
+  if (window.Kakao && !window.Kakao.isInitialized()) {
+    window.Kakao.init(key)
+  }
+}
+
+/**
+ * 카카오톡 공유 — Kakao JS SDK sendDefault 방식
+ * VITE_KAKAO_JS_KEY 환경변수에 JavaScript 키를 설정해야 합니다.
+ */
+export async function shareToKakaotalk(data: ShareData): Promise<void> {
+  const url = resolveShareUrl(data.url)
+  const price = data.price != null ? formatKrw(data.price) : '—'
+  const pctStr = data.changePct != null
+    ? ` ${data.changePct > 0 ? '+' : ''}${data.changePct.toFixed(2)}%`
+    : ''
+  const description = `현재가: ${price}${pctStr}`
+
+  await loadKakaoSdk()
+  initKakao()
+
+  window.Kakao!.Share.sendDefault({
+    objectType: 'feed',
+    content: {
+      title: `${data.title} (${data.code})`,
+      description,
+      imageUrl: 'https://signal-scanner-web.vercel.app/icon-192.png',
+      link: {
+        mobileWebUrl: url,
+        webUrl: url,
+      },
+    },
+    buttons: [
+      {
+        title: '종목 분석 보기',
+        link: {
+          mobileWebUrl: url,
+          webUrl: url,
+        },
+      },
+    ],
+  })
 }
 
 /**
@@ -46,7 +114,7 @@ export function shareToKakaotalk(data: ShareData) {
  */
 export function shareToTwitter(data: ShareData) {
   const message = `${data.title} (${data.code})\n현재가: ${data.price != null ? formatKrw(data.price) : '—'}\n변화: ${data.changePct != null ? `${data.changePct > 0 ? '+' : ''}${data.changePct.toFixed(2)}%` : '—'}`
-  const url = data.url || window.location.href
+  const url = resolveShareUrl(data.url)
   const twitterUrl = `https://twitter.com/intent/tweet?text=${encodeURIComponent(message)}&url=${encodeURIComponent(url)}`
   window.open(twitterUrl, 'twitter-share', 'width=550,height=420')
 }
@@ -55,7 +123,7 @@ export function shareToTwitter(data: ShareData) {
  * URL 복사
  */
 export async function copyToClipboard(data: ShareData) {
-  const url = data.url || window.location.href
+  const url = resolveShareUrl(data.url)
   const message = `${data.title} (${data.code}) - 종목 분석\n가격: ${data.price != null ? formatKrw(data.price) : '—'}\n변화: ${data.changePct != null ? `${data.changePct > 0 ? '+' : ''}${data.changePct.toFixed(2)}%` : '—'}\n\n${url}`
   
   try {
@@ -70,7 +138,7 @@ export async function copyToClipboard(data: ShareData) {
  * 웹 공유 API (모바일 지원)
  */
 export async function shareViaWebAPI(data: ShareData) {
-  const url = data.url || window.location.href
+  const url = resolveShareUrl(data.url)
   const text = `${data.title} (${data.code}) - 현재가 ${data.price != null ? formatKrw(data.price) : '—'}`
   
   if (navigator.share) {

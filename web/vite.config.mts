@@ -32,6 +32,8 @@ export default defineConfig(({ mode }) => {
       'import.meta.env.VITE_DEFAULT_TELEGRAM_CHAT_ID': JSON.stringify(readEnv('VITE_DEFAULT_TELEGRAM_CHAT_ID')),
       'import.meta.env.VITE_SUPABASE_URL': JSON.stringify(readEnv('VITE_SUPABASE_URL', 'SUPABASE_URL')),
       'import.meta.env.VITE_SUPABASE_ANON_KEY': JSON.stringify(readEnv('VITE_SUPABASE_ANON_KEY')),
+      'import.meta.env.VITE_KAKAO_JS_KEY': JSON.stringify(readEnv('VITE_KAKAO_JS_KEY', 'KAKAO_JS_KEY')),
+      'import.meta.env.VITE_SHARE_PUBLIC_ORIGIN': JSON.stringify(readEnv('VITE_SHARE_PUBLIC_ORIGIN', 'WEB_PUBLIC_ORIGIN', 'UI_PUBLIC_ORIGIN')),
     },
     server: {
       port: 5173,

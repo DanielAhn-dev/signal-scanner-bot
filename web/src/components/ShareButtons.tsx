@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react'
+import { createPortal } from 'react-dom'
 import { shareToKakaotalk, shareToTwitter, copyToClipboard, shareViaWebAPI, type ShareData } from '../lib/share'
 import { useToast } from './ToastProvider'
 
@@ -24,11 +25,21 @@ export default function ShareButtons({ data, variant = 'button', showLabel = tru
     return () => document.removeEventListener('keydown', handleEsc)
   }, [isOpen])
 
-  const handleKakaotalk = () => {
+  useEffect(() => {
+    if (!isOpen) return
+    const prevOverflow = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    return () => {
+      document.body.style.overflow = prevOverflow
+    }
+  }, [isOpen])
+
+  const handleKakaotalk = async () => {
     try {
-      shareToKakaotalk(data)
+      await shareToKakaotalk(data)
     } catch (e) {
-      toast.show('카카오톡 공유에 실패했습니다.', 3000)
+      const msg = e instanceof Error ? e.message : '카카오톡 공유에 실패했습니다.'
+      toast.show(msg, 4000)
     }
     setIsOpen(false)
   }
@@ -127,13 +138,13 @@ export default function ShareButtons({ data, variant = 'button', showLabel = tru
         {showLabel && '공유'}
       </button>
 
-      {isOpen && (
+      {isOpen && typeof document !== 'undefined' && createPortal(
         <div
           className="share-modal-overlay"
           ref={overlayRef}
           onClick={e => e.target === overlayRef.current && setIsOpen(false)}
         >
-          <div className="share-modal" role="dialog" aria-label="공유 옵션">
+          <div className="share-modal" role="dialog" aria-label="공유 옵션" aria-modal="true">
             <div className="share-modal-header">
               <h3 className="share-modal-title">공유하기</h3>
               <button
@@ -193,7 +204,8 @@ export default function ShareButtons({ data, variant = 'button', showLabel = tru
               </button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body,
       )}
 
       <style>{`
@@ -232,14 +244,15 @@ export default function ShareButtons({ data, variant = 'button', showLabel = tru
           left: 0;
           right: 0;
           bottom: 0;
-          background: rgba(0, 0, 0, 0.5);
+          background: var(--color-bg-overlay);
           display: flex;
           align-items: flex-end;
-          z-index: 1000;
+          z-index: var(--z-modal);
         }
 
         .share-modal {
-          background: var(--color-bg-primary);
+          background: var(--color-bg-elevated);
+          border: 1px solid var(--color-border-default);
           border-radius: 12px 12px 0 0;
           width: 100%;
           max-width: 480px;
@@ -263,7 +276,7 @@ export default function ShareButtons({ data, variant = 'button', showLabel = tru
 
         .share-modal-header {
           padding: var(--space-4);
-          border-bottom: 1px solid var(--color-border);
+          border-bottom: 1px solid var(--color-border-default);
           display: flex;
           justify-content: space-between;
           align-items: center;
@@ -308,8 +321,8 @@ export default function ShareButtons({ data, variant = 'button', showLabel = tru
           gap: var(--space-3);
           align-items: center;
           padding: var(--space-3);
-          background: var(--color-bg-secondary);
-          border: 1px solid var(--color-border);
+          background: var(--color-bg-sunken);
+          border: 1px solid var(--color-border-default);
           border-radius: 8px;
           cursor: pointer;
           transition: all 0.2s ease;
