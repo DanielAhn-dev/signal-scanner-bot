@@ -27,12 +27,44 @@ interface MarketDiagnosis {
   advice: string[]
 }
 
+interface EconomicPhase {
+  phase: 'normal' | 'high_inflation' | 'deflation' | 'stagflation' | 'unknown'
+  label: string
+  description: string
+  severity: number // 0-100, higher = more concerning
+  indicators: {
+    us10y: number | null
+    goldTrend: 'up' | 'down' | 'neutral' | null
+    oilTrend: 'up' | 'down' | 'neutral' | null
+    usdkrwTrend: 'up' | 'down' | 'neutral' | null
+    riskSentiment: 'risk_on' | 'risk_off' | 'neutral'
+  }
+}
+
+interface GlobalCorrelation {
+  kospiToSp500Correlation: number | null // -1 to 1
+  kospiSp500Spread: number | null // KOSPI% - SP500%
+  americanFuturesSignal: 'bullish' | 'bearish' | 'neutral'
+  usdStrength: 'strengthening' | 'weakening' | 'neutral'
+  emergingMarketsPressure: 'high' | 'moderate' | 'low'
+}
+
+interface TradingSignal {
+  shouldTrade: boolean // 현재 매매 권장 여부
+  confidence: number // 0-100
+  recommendation: string
+  restrictions: string[] // 해야 할 제약사항
+}
+
 interface MarketOverviewResponse {
   diagnosis: MarketDiagnosis
   indices: MarketOverview
   topSectors: SectorScore[]
   nextSectors: SectorScore[]
   regimeLabel: string
+  economicPhase: EconomicPhase
+  globalCorrelation: GlobalCorrelation
+  tradingSignal: TradingSignal
   fetchedAt: string
 }
 
@@ -147,6 +179,232 @@ const regimeLabel: Record<MarketRegime, string> = {
   strong_bear: '하락장 — 현금 확보 우선',
 }
 
+function diagnoseEconomicPhase(data: MarketOverview): EconomicPhase {
+  // 인플레이션/디플레이션 진단
+  // 금: 인플레이션 헤지 → 금 상승 = 인플레 우려
+  // 유가: 수요-공급 신호 → 유가 상승 = 수요 강함/공급 부족
+  // 금리: 긴축 정도 → 10Y 상승 = 높은 금리
+  // 달러: 안전자산 유입 → 강달러 = 리스크오프
+
+  let severity = 50
+  let phase: EconomicPhase['phase'] = 'unknown'
+  const indicators: EconomicPhase['indicators'] = {
+    us10y: data.us10y?.price ?? null,
+    goldTrend: null,
+    oilTrend: null,
+    usdkrwTrend: null,
+    riskSentiment: 'neutral',
+  }
+
+  // 금 추세 (역사적 평균 ~1800달러, 최근 2000~2100달러 범위)
+  const goldPrice = data.gold?.price ?? 0
+  const goldHigh = 2100
+  const goldLow = 1800
+  if (goldPrice > goldHigh) {
+    indicators.goldTrend = 'up'
+  } else if (goldPrice < goldLow) {
+    indicators.goldTrend = 'down'
+  } else {
+    indicators.goldTrend = 'neutral'
+  }
+
+  // 유가 추세 (역사적 평균 ~80달러, 최근 70~100달러 범위)
+  const oilPrice = data.wtiOil?.price ?? 0
+  const oilHigh = 100
+  const oilLow = 70
+  if (oilPrice > oilHigh) {
+    indicators.oilTrend = 'up'
+  } else if (oilPrice < oilLow) {
+    indicators.oilTrend = 'down'
+  } else {
+    indicators.oilTrend = 'neutral'
+  }
+
+  // 환율 추세 (1200~1450원 범위)
+  const usdkrwPrice = data.usdkrw?.price ?? 1300
+  const usdkrwHigh = 1400
+  const usdkrwLow = 1250
+  if (usdkrwPrice > usdkrwHigh) {
+    indicators.usdkrwTrend = 'up' // 달러 강세
+  } else if (usdkrwPrice < usdkrwLow) {
+    indicators.usdkrwTrend = 'down'
+  } else {
+    indicators.usdkrwTrend = 'neutral'
+  }
+
+  // 위험 심리도
+  if (data.fearGreed && data.vix) {
+    if (data.fearGreed.score >= 70 || data.vix.price <= 15) {
+      indicators.riskSentiment = 'risk_on'
+    } else if (data.fearGreed.score <= 30 || data.vix.price >= 25) {
+      indicators.riskSentiment = 'risk_off'
+    }
+  }
+
+  // 경제 국면 판단
+  const hasHighInflation = indicators.goldTrend === 'up' && indicators.oilTrend === 'up'
+  const hasHighRates = data.us10y && data.us10y.price >= 4.5
+  const hasDeflationarySignals = indicators.oilTrend === 'down' && indicators.goldTrend === 'down'
+  const hasRiskOff = indicators.riskSentiment === 'risk_off'
+
+  if (hasHighInflation && hasHighRates) {
+    phase = 'stagflation'
+    severity = 85
+  } else if (hasHighInflation) {
+    phase = 'high_inflation'
+    severity = 70
+  } else if (hasDeflationarySignals && hasRiskOff) {
+    phase = 'deflation'
+    severity = 75
+  } else if (indicators.goldTrend !== 'up' && indicators.oilTrend !== 'up' && !hasRiskOff) {
+    phase = 'normal'
+    severity = 45
+  }
+
+  const phaseLabels: Record<EconomicPhase['phase'], { label: string; description: string }> = {
+    stagflation: {
+      label: '스태그플레이션 ⚠️',
+      description: '고인플레 + 고금리 + 약세장. 매우 어려운 시장. 현금/방어주 우선.',
+    },
+    high_inflation: {
+      label: '고인플레이션',
+      description: '인플레 우려. 금/원자재 강세. 금리 인상 압박. 신중한 진입 필요.',
+    },
+    deflation: {
+      label: '디플레이션 우려',
+      description: '수요 부족 신호. 안전자산 선호. 경기 둔화 가능성.',
+    },
+    normal: {
+      label: '정상 국면',
+      description: '인플레/금리 안정적. 성장주 진입 기회.',
+    },
+    unknown: {
+      label: '판단 어려움',
+      description: '신호가 혼재. 추가 정보 필요.',
+    },
+  }
+
+  return {
+    phase,
+    label: phaseLabels[phase].label,
+    description: phaseLabels[phase].description,
+    severity,
+    indicators,
+  }
+}
+
+function analyzeGlobalCorrelation(data: MarketOverview): GlobalCorrelation {
+  // 미국 증시 신호
+  const sp500Change = data.sp500?.changeRate ?? 0
+  const nasdaqChange = data.nasdaq?.changeRate ?? 0
+  const dowChange = data.dow?.changeRate ?? 0
+  const americanAvg = (sp500Change + nasdaqChange + dowChange) / 3
+
+  // 한국 증시 신호
+  const kospiChange = data.kospi?.changeRate ?? 0
+  const kosdaqChange = data.kosdaq?.changeRate ?? 0
+
+  // 상관도 추정 (간단한 휴리스틱)
+  const correlation = kospiChange > 0 && americanAvg > 0 ? 0.8 : kospiChange < 0 && americanAvg < 0 ? 0.7 : 0.3
+
+  // 스프레드 (미국이 더 강한지 약한지)
+  const spread = kospiChange - americanAvg
+
+  // 미국 선물 신호
+  let americanFuturesSignal: 'bullish' | 'bearish' | 'neutral' = 'neutral'
+  if (americanAvg >= 1.0) americanFuturesSignal = 'bullish'
+  else if (americanAvg <= -1.0) americanFuturesSignal = 'bearish'
+
+  // 달러 강도
+  let usdStrength: 'strengthening' | 'weakening' | 'neutral' = 'neutral'
+  if (data.usdkrw && data.usdkrw.changeRate >= 0.5) usdStrength = 'strengthening'
+  else if (data.usdkrw && data.usdkrw.changeRate <= -0.5) usdStrength = 'weakening'
+
+  // 신흥시장 압박도 (강달러 + 고금리 = 신흥시장 피매도)
+  let emergingMarketsPressure: 'high' | 'moderate' | 'low' = 'moderate'
+  if (usdStrength === 'strengthening' && data.us10y && data.us10y.price >= 4.5) {
+    emergingMarketsPressure = 'high'
+  } else if (usdStrength === 'weakening' || (data.us10y && data.us10y.price < 4.0)) {
+    emergingMarketsPressure = 'low'
+  }
+
+  return {
+    kospiToSp500Correlation: correlation,
+    kospiSp500Spread: spread,
+    americanFuturesSignal,
+    usdStrength,
+    emergingMarketsPressure,
+  }
+}
+
+function generateTradingSignal(
+  diagnosis: MarketDiagnosis,
+  economicPhase: EconomicPhase,
+  correlation: GlobalCorrelation
+): TradingSignal {
+  const restrictions: string[] = []
+  let shouldTrade = true
+  let confidence = 70
+
+  // 경제 국면별 제약
+  if (economicPhase.phase === 'stagflation') {
+    shouldTrade = false
+    confidence = 20
+    restrictions.push('스태그플레이션: 매매 제한 권고 (현금 확보 우선)')
+  } else if (economicPhase.phase === 'high_inflation') {
+    confidence -= 20
+    restrictions.push('고인플레: 방어주/금리민감주 회피')
+  } else if (economicPhase.phase === 'deflation') {
+    confidence -= 15
+    restrictions.push('디플레이션 우려: 신중한 매매, 현금 비중 확대')
+  }
+
+  // 시장 체제별 제약
+  if (diagnosis.regime === 'strong_bear' || diagnosis.regime === 'bear') {
+    confidence -= 15
+    restrictions.push('약세장: 분할 진입 필수, 손절 -5% 이상 엄수')
+  } else if (diagnosis.regime === 'strong_bull') {
+    confidence += 10
+  }
+
+  // 글로벌 상관도별 제약
+  if (correlation.americanFuturesSignal === 'bearish') {
+    confidence -= 10
+    restrictions.push('미국 선물 약세: 한국 증시 동반 약세 가능성')
+  }
+
+  if (correlation.emergingMarketsPressure === 'high') {
+    confidence -= 15
+    restrictions.push('신흥시장 압박: 달러 강세로 외국인 이탈 위험')
+  }
+
+  // VIX/Fear&Greed 신호
+  if (diagnosis.riskScore >= 75) {
+    shouldTrade = false
+    confidence = 30
+    restrictions.push('극단적 공포: 매매 중단, 손절 기준 엄수')
+  } else if (diagnosis.riskScore >= 60) {
+    confidence -= 10
+    restrictions.push('높은 위험 수준: 비중 축소, 분할 진입만')
+  }
+
+  confidence = Math.max(0, Math.min(100, confidence))
+
+  const recommendation =
+    shouldTrade && confidence >= 60
+      ? `매매 진행 가능 (신뢰도 ${confidence}%) — ${restrictions.length > 0 ? '다만 제약사항 확인 필요' : '양호한 진입 환경'}`
+      : shouldTrade && confidence >= 40
+        ? `제한적 매매 (신뢰도 ${confidence}%) — ${restrictions.length > 0 ? restrictions.slice(0, 2).join(', ') : '보수적 접근 권고'}`
+        : `매매 제한 권고 (신뢰도 ${confidence}%) — ${restrictions[0] || '현금 비중 확대 우선'}`
+
+  return {
+    shouldTrade: confidence >= 50,
+    confidence,
+    recommendation,
+    restrictions,
+  }
+}
+
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   const origin = (req.headers.origin as string) || process.env.UI_CORS_ORIGIN || '*'
   res.setHeader('Access-Control-Allow-Origin', origin)
@@ -206,6 +464,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const diagnosis = diagnoseMarket(marketData)
     const topSectors = getTopSectors(sectorScores).slice(0, 5)
     const nextSectors = getNextSectorCandidates(sectorScores, 3e9).slice(0, 5)
+    const economicPhase = diagnoseEconomicPhase(marketData)
+    const globalCorrelation = analyzeGlobalCorrelation(marketData)
+    const tradingSignal = generateTradingSignal(diagnosis, economicPhase, globalCorrelation)
 
     const payload: MarketOverviewResponse = {
       diagnosis,
@@ -213,6 +474,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       topSectors,
       nextSectors,
       regimeLabel: regimeLabel[diagnosis.regime],
+      economicPhase,
+      globalCorrelation,
+      tradingSignal,
       fetchedAt: new Date().toISOString(),
     }
 

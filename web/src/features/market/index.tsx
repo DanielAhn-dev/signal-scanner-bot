@@ -52,6 +52,32 @@ interface MarketOverviewData {
   topSectors: SectorScore[]
   nextSectors: SectorScore[]
   regimeLabel: string
+  economicPhase: {
+    phase: 'normal' | 'high_inflation' | 'deflation' | 'stagflation' | 'unknown'
+    label: string
+    description: string
+    severity: number
+    indicators: {
+      us10y: number | null
+      goldTrend: 'up' | 'down' | 'neutral' | null
+      oilTrend: 'up' | 'down' | 'neutral' | null
+      usdkrwTrend: 'up' | 'down' | 'neutral' | null
+      riskSentiment: 'risk_on' | 'risk_off' | 'neutral'
+    }
+  }
+  globalCorrelation: {
+    kospiToSp500Correlation: number | null
+    kospiSp500Spread: number | null
+    americanFuturesSignal: 'bullish' | 'bearish' | 'neutral'
+    usdStrength: 'strengthening' | 'weakening' | 'neutral'
+    emergingMarketsPressure: 'high' | 'moderate' | 'low'
+  }
+  tradingSignal: {
+    shouldTrade: boolean
+    confidence: number
+    recommendation: string
+    restrictions: string[]
+  }
   fetchedAt: string
 }
 
@@ -79,6 +105,11 @@ export default function MarketPage() {
   const [data, setData] = useState<MarketOverviewData | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [expandSections, setExpandSections] = useState<Record<string, boolean>>({
+    indices: false,
+    sectors: false,
+    details: false,
+  })
 
   const load = async () => {
     setLoading(true)
@@ -100,6 +131,10 @@ export default function MarketPage() {
   useEffect(() => {
     void load()
   }, [])
+
+  const toggleSection = (key: string) => {
+    setExpandSections(prev => ({ ...prev, [key]: !prev[key] }))
+  }
 
   if (error) {
     return (
@@ -176,6 +211,241 @@ export default function MarketPage() {
             </div>
           </div>
         </div>
+      </div>
+
+      {/* 경제 국면 진단 */}
+      <div
+        className="card mb-4"
+        style={{
+          borderColor: data.economicPhase.phase === 'stagflation' ? 'var(--color-stock-down)' : 
+                       data.economicPhase.phase === 'high_inflation' ? '#f97316' :
+                       data.economicPhase.phase === 'deflation' ? 'var(--color-stock-down)' :
+                       'var(--color-border-default)',
+          borderWidth: data.economicPhase.phase !== 'normal' && data.economicPhase.phase !== 'unknown' ? 2 : 1,
+          background: data.economicPhase.phase === 'stagflation' ? 'rgba(239, 68, 68, 0.05)' :
+                     data.economicPhase.phase === 'high_inflation' ? 'rgba(249, 115, 22, 0.05)' :
+                     data.economicPhase.phase === 'deflation' ? 'rgba(239, 68, 68, 0.05)' :
+                     undefined,
+        }}
+      >
+        <div className="section-title mb-3">경제 국면 진단</div>
+        <div style={{ marginBottom: 'var(--space-3)' }}>
+          <div style={{
+            display: 'inline-block',
+            padding: 'var(--space-2) var(--space-3)',
+            borderRadius: 'var(--radius-md)',
+            background: data.economicPhase.phase === 'stagflation' ? 'rgba(239, 68, 68, 0.2)' :
+                       data.economicPhase.phase === 'high_inflation' ? 'rgba(249, 115, 22, 0.2)' :
+                       data.economicPhase.phase === 'deflation' ? 'rgba(239, 68, 68, 0.2)' :
+                       'var(--color-bg-muted)',
+            fontSize: 14,
+            fontWeight: 600,
+          }}>
+            {data.economicPhase.phase === 'stagflation' && '⚠️ 스태그플레이션'}
+            {data.economicPhase.phase === 'high_inflation' && '📈 고인플레이션'}
+            {data.economicPhase.phase === 'deflation' && '📉 디플레이션 우려'}
+            {data.economicPhase.phase === 'normal' && '✅ 정상 국면'}
+            {data.economicPhase.phase === 'unknown' && '❓ 판단 어려움'}
+          </div>
+        </div>
+        
+        <div style={{ marginBottom: 'var(--space-3)', lineHeight: 1.8 }}>
+          <p style={{ fontSize: 13, color: 'var(--color-text-secondary)', margin: 0 }}>
+            {data.economicPhase.description}
+          </p>
+        </div>
+
+        {/* 경제 지표 */}
+        <div style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fit, minmax(100px, 1fr))',
+          gap: 'var(--space-2)',
+          paddingTop: 'var(--space-3)',
+          borderTop: '1px solid var(--color-border-default)',
+        }}>
+          <div>
+            <div className="caption" style={{ marginBottom: 4 }}>US 10Y</div>
+            <div style={{ fontSize: 14, fontWeight: 600 }}>
+              {data.economicPhase.indicators.us10y ? data.economicPhase.indicators.us10y.toFixed(2) + '%' : '—'}
+            </div>
+            <div className="caption" style={{ marginTop: 2, color: 'var(--color-text-tertiary)' }}>
+              {data.economicPhase.indicators.us10y ? (data.economicPhase.indicators.us10y >= 4.5 ? '고금리' : '적정') : '—'}
+            </div>
+          </div>
+          <div>
+            <div className="caption" style={{ marginBottom: 4 }}>금 추세</div>
+            <div style={{ fontSize: 14, fontWeight: 600 }}>
+              {data.economicPhase.indicators.goldTrend === 'up' ? '📈 상승' :
+               data.economicPhase.indicators.goldTrend === 'down' ? '📉 하락' :
+               '➡️ 중립'}
+            </div>
+          </div>
+          <div>
+            <div className="caption" style={{ marginBottom: 4 }}>유가 추세</div>
+            <div style={{ fontSize: 14, fontWeight: 600 }}>
+              {data.economicPhase.indicators.oilTrend === 'up' ? '📈 상승' :
+               data.economicPhase.indicators.oilTrend === 'down' ? '📉 하락' :
+               '➡️ 중립'}
+            </div>
+          </div>
+          <div>
+            <div className="caption" style={{ marginBottom: 4 }}>위험심리</div>
+            <div style={{ fontSize: 14, fontWeight: 600 }}>
+              {data.economicPhase.indicators.riskSentiment === 'risk_on' ? '🟢 On' :
+               data.economicPhase.indicators.riskSentiment === 'risk_off' ? '🔴 Off' :
+               '🟡 중립'}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* 글로벌 영향도 분석 */}
+      <div className="card mb-4">
+        <div className="section-title mb-3">글로벌 영향도 분석 (한국 vs 미국)</div>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 'var(--space-3)' }}>
+          <div style={{
+            padding: 'var(--space-3)',
+            background: 'var(--color-bg-muted)',
+            borderRadius: 'var(--radius-sm)',
+          }}>
+            <div className="caption">KOSPI ↔️ S&P500</div>
+            <div style={{ fontSize: 18, fontWeight: 700, marginTop: 4, color: 'var(--color-brand)' }}>
+              {data.globalCorrelation.kospiToSp500Correlation !== null 
+                ? (data.globalCorrelation.kospiToSp500Correlation * 100).toFixed(0) + '%'
+                : '—'}
+            </div>
+            <div className="caption" style={{ marginTop: 6, color: 'var(--color-text-secondary)' }}>
+              {data.globalCorrelation.kospiToSp500Correlation !== null
+                ? data.globalCorrelation.kospiToSp500Correlation > 0.7
+                  ? '높은 동조도'
+                  : '낮은 동조도'
+                : '분석 불가'}
+            </div>
+          </div>
+
+          <div style={{
+            padding: 'var(--space-3)',
+            background: 'var(--color-bg-muted)',
+            borderRadius: 'var(--radius-sm)',
+          }}>
+            <div className="caption">미국 선물 신호</div>
+            <div style={{
+              fontSize: 16,
+              fontWeight: 600,
+              marginTop: 4,
+              color: data.globalCorrelation.americanFuturesSignal === 'bullish' ? 'var(--color-stock-up)' :
+                     data.globalCorrelation.americanFuturesSignal === 'bearish' ? 'var(--color-stock-down)' :
+                     'var(--color-text-secondary)',
+            }}>
+              {data.globalCorrelation.americanFuturesSignal === 'bullish' ? '🟢 강세' :
+               data.globalCorrelation.americanFuturesSignal === 'bearish' ? '🔴 약세' :
+               '🟡 중립'}
+            </div>
+            <div className="caption" style={{ marginTop: 6, color: 'var(--color-text-secondary)' }}>
+              한국 증시 영향도
+            </div>
+          </div>
+
+          <div style={{
+            padding: 'var(--space-3)',
+            background: 'var(--color-bg-muted)',
+            borderRadius: 'var(--radius-sm)',
+          }}>
+            <div className="caption">달러 강도</div>
+            <div style={{
+              fontSize: 16,
+              fontWeight: 600,
+              marginTop: 4,
+              color: data.globalCorrelation.usdStrength === 'strengthening' ? 'var(--color-stock-up)' :
+                     data.globalCorrelation.usdStrength === 'weakening' ? 'var(--color-stock-down)' :
+                     'var(--color-text-secondary)',
+            }}>
+              {data.globalCorrelation.usdStrength === 'strengthening' ? '📈 강달러' :
+               data.globalCorrelation.usdStrength === 'weakening' ? '📉 약달러' :
+               '➡️ 중립'}
+            </div>
+            <div className="caption" style={{ marginTop: 6, color: 'var(--color-text-secondary)' }}>
+              신흥시장 압박
+            </div>
+          </div>
+
+          <div style={{
+            padding: 'var(--space-3)',
+            background: 'var(--color-bg-muted)',
+            borderRadius: 'var(--radius-sm)',
+          }}>
+            <div className="caption">신흥시장 압박</div>
+            <div style={{
+              fontSize: 16,
+              fontWeight: 600,
+              marginTop: 4,
+              color: data.globalCorrelation.emergingMarketsPressure === 'high' ? 'var(--color-stock-down)' :
+                     data.globalCorrelation.emergingMarketsPressure === 'moderate' ? 'var(--color-text-secondary)' :
+                     'var(--color-stock-up)',
+            }}>
+              {data.globalCorrelation.emergingMarketsPressure === 'high' ? '🔴 높음' :
+               data.globalCorrelation.emergingMarketsPressure === 'moderate' ? '🟡 중간' :
+               '🟢 낮음'}
+            </div>
+            <div className="caption" style={{ marginTop: 6, color: 'var(--color-text-secondary)' }}>
+              외국인 이탈 가능성
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* 거래 신호 & 매매 판단 */}
+      <div
+        className="card mb-4"
+        style={{
+          borderColor: data.tradingSignal.shouldTrade ? 'var(--color-stock-up)' : 'var(--color-stock-down)',
+          borderWidth: 2,
+          background: data.tradingSignal.shouldTrade ? 'rgba(34, 197, 94, 0.05)' : 'rgba(239, 68, 68, 0.05)',
+        }}
+      >
+        <div className="section-title mb-3" style={{
+          color: data.tradingSignal.shouldTrade ? 'var(--color-stock-up)' : 'var(--color-stock-down)',
+        }}>
+          {data.tradingSignal.shouldTrade ? '✅ 거래 신호' : '⛔ 거래 신호'}
+        </div>
+        
+        <div style={{
+          padding: 'var(--space-3)',
+          background: data.tradingSignal.shouldTrade ? 'rgba(34, 197, 94, 0.1)' : 'rgba(239, 68, 68, 0.1)',
+          borderRadius: 'var(--radius-md)',
+          marginBottom: 'var(--space-3)',
+          borderLeft: '4px solid ' + (data.tradingSignal.shouldTrade ? 'var(--color-stock-up)' : 'var(--color-stock-down)'),
+        }}>
+          <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 4 }}>
+            신뢰도: {data.tradingSignal.confidence}%
+          </div>
+          <div style={{ fontSize: 13, lineHeight: 1.6, color: 'var(--color-text-secondary)' }}>
+            {data.tradingSignal.recommendation}
+          </div>
+        </div>
+
+        {/* 제약사항 */}
+        {data.tradingSignal.restrictions.length > 0 && (
+          <div>
+            <div className="caption" style={{ marginBottom: 'var(--space-2)' }}>주의사항:</div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' }}>
+              {data.tradingSignal.restrictions.map((restriction, i) => (
+                <div
+                  key={i}
+                  style={{
+                    padding: 'var(--space-2)',
+                    background: 'var(--color-bg-muted)',
+                    borderRadius: 'var(--radius-sm)',
+                    fontSize: 12,
+                    borderLeft: '3px solid var(--color-stock-down)',
+                  }}
+                >
+                  {restriction}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
 
       {/* 글로벌 지표 */}
