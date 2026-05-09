@@ -48,10 +48,12 @@ export default function EconomyPage() {
   const [data, setData] = useState<EconomyData | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [isLegacyBackend, setIsLegacyBackend] = useState(false)
 
   const load = async () => {
     setLoading(true)
     setError(null)
+    setIsLegacyBackend(false)
     try {
       const endpoints = [
         '/api/market-overview',
@@ -81,7 +83,19 @@ export default function EconomyPage() {
 
       setData(result.data)
     } catch (e: any) {
-      setError(e?.message || String(e))
+      const message = String(e?.message || e || '')
+      const isUnknownMarketRoute =
+        message.includes('Unknown /api/ui route: market-overview') ||
+        message.includes('/api/ui?route=market-overview')
+
+      if (isUnknownMarketRoute) {
+        // 구버전 백엔드: 화면은 열고 텔레그램 우회 안내를 노출한다.
+        setData({ indices: {} })
+        setIsLegacyBackend(true)
+        setError(null)
+      } else {
+        setError(message)
+      }
     } finally {
       setLoading(false)
     }
@@ -132,6 +146,16 @@ export default function EconomyPage() {
           {fetchedAt ? ` 마지막 갱신: ${new Date(fetchedAt).toLocaleString('ko-KR')}` : ''}
         </div>
       </div>
+
+      {isLegacyBackend && (
+        <div className="card mb-4" style={{ borderColor: 'var(--color-border-default)', background: 'var(--color-bg-muted)' }}>
+          <div className="stat-label" style={{ marginBottom: 'var(--space-2)' }}>실시간 연동 안내</div>
+          <div className="stat-sub" style={{ lineHeight: 1.7 }}>
+            현재 서버 배포 버전에서 market-overview 라우트를 아직 지원하지 않아 웹 카드 실시간 수치가 비어 있습니다.
+            텔레그램에서 <code>/economy</code> 명령으로 최신 값을 확인할 수 있습니다.
+          </div>
+        </div>
+      )}
 
       <div className="cards-grid cols-2">
         {INDICATORS.map(ind => (

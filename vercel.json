@@ -4,7 +4,7 @@
     "buildCommand": null,
     "devCommand": null,
     "installCommand": null,
-    "ignoreCommand": "git diff HEAD~1 --name-only | grep -qvE '^web/'",
+    "ignoreCommand": "if [ \"$VERCEL_ENV\" = \"production\" ]; then exit 1; fi; git diff HEAD~1 --name-only | grep -qE '^web/'",
     "functions": {
         "api/market-overview.ts": {
             "maxDuration": 60
