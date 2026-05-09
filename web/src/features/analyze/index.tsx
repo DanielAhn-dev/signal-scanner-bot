@@ -61,6 +61,7 @@ export default function AnalyzePage() {
   const [result, setResult] = useState<any | null>(null)
   const [series, setSeries] = useState<any[]>([])
   const [flow, setFlow] = useState<any | null>(null)
+  const [creditShort, setCreditShort] = useState<any | null>(null)
   const [advisor, setAdvisor] = useState<any | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -110,6 +111,7 @@ export default function AnalyzePage() {
     setError(null)
     setResult(null)
     setFlow(null)
+    setCreditShort(null)
     setAdvisor(null)
     setSeries([])
 
@@ -121,6 +123,7 @@ export default function AnalyzePage() {
         setResult({ ...res.profile, ...res.latest })
         setSeries(res?.data ?? [])
         setFlow(res?.flow ?? null)
+        setCreditShort(res?.creditShort ?? null)
         setAdvisor(res?.advisor ?? null)
       } else if (res?.error) {
         setError(res.error)
@@ -401,6 +404,44 @@ export default function AnalyzePage() {
               <div key={label}>
                 <div className="stat-label">{label}</div>
                 <div className="stat-value" style={{ fontSize: 'var(--font-size-base)', color: val === '—' ? 'var(--color-text-disabled)' : undefined }}>{val}</div>
+              </div>
+            ))}
+          </div>
+
+          {/* ── 공매도 / 신용 ── */}
+          <div className="title-md" style={{ marginTop: 'var(--space-4)', marginBottom: 'var(--space-2)' }}>공매도 / 신용</div>
+          <div className="cards-grid cols-3">
+            {([
+              {
+                label: '신용비율',
+                val: creditShort?.creditRatio != null ? formatNumber(creditShort.creditRatio, 2) + '%' : '—',
+                hint: '신용잔고 ÷ 상장주식수',
+                warn: creditShort?.creditRatio != null && creditShort.creditRatio > 5,
+              },
+              {
+                label: '공매도 잔고비율',
+                val: creditShort?.shortRatio != null ? formatNumber(creditShort.shortRatio, 2) + '%' : '—',
+                hint: '공매도 잔고 ÷ 상장주식수',
+                warn: creditShort?.shortRatio != null && creditShort.shortRatio > 1,
+              },
+              {
+                label: '공매도 잔고(주)',
+                val: creditShort?.shortBalance != null ? formatNumber(creditShort.shortBalance, 0) : '—',
+                hint: '최근 KRX 신고 기준',
+                warn: false,
+              },
+            ] as { label: string; val: string; hint: string; warn: boolean }[]).map(({ label, val, hint, warn }) => (
+              <div key={label}>
+                <div className="stat-label">{label}</div>
+                <div className="stat-value" style={{
+                  fontSize: 'var(--font-size-base)',
+                  color: val === '—'
+                    ? 'var(--color-text-disabled)'
+                    : warn
+                    ? 'var(--color-error)'
+                    : undefined,
+                }}>{val}</div>
+                <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-tertiary)', marginTop: 2 }}>{hint}</div>
               </div>
             ))}
           </div>

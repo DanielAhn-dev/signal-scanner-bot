@@ -4,6 +4,7 @@ import { buildInvestmentPlan } from '../../src/lib/investPlan'
 import { fetchLatestScoresByCodes } from '../../src/services/scoreSourceService'
 import { scaleScoreFactorsToReferencePrice } from '../../src/lib/priceScale'
 import { getFundamentalSnapshot } from '../../src/services/fundamentalService'
+import { fetchCreditShortSnapshot } from '../../src/utils/fetchCreditShortData'
 
 const ORIGIN = process.env.UI_CORS_ORIGIN || '*'
 
@@ -389,7 +390,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (!code) return res.status(400).json({ error: 'Missing code parameter' })
 
   try {
-    const [series, stock, fundamentalsResp, flow] = await Promise.all([
+    const [series, stock, fundamentalsResp, flow, creditShort] = await Promise.all([
       fetchTimeSeries(supabase, code),
       fetchStockProfile(supabase, code),
       supabase
@@ -399,6 +400,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         .order('as_of', { ascending: false })
         .limit(1),
       fetchInvestorFlow(supabase, code),
+      fetchCreditShortSnapshot(code).catch(() => null),
     ])
 
     let fund: any = fundamentalsResp.data?.[0] || null
@@ -479,6 +481,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             date: flow.date,
             foreign: asNum(flow.foreign),
             institution: asNum(flow.institution),
+          }
+        : null,
+      creditShort: creditShort
+        ? {
+            creditRatio: creditShort.creditRatio,
+            shortRatio: creditShort.shortRatio,
+            shortBalance: creditShort.shortBalance,
           }
         : null,
       advisor,

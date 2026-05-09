@@ -5,7 +5,9 @@
       "Bash(pnpm add *)",
       "Bash(npm install *)",
       "Bash(npx tsc *)",
-      "Bash(npm uninstall *)"
+      "Bash(npm uninstall *)",
+      "Bash(Get-ChildItem -Path \"d:\\\\Dev\\\\Github\\\\signal-scanner-bot\\\\web\\\\src\\\\features\" -Recurse -Directory)",
+      "Bash(Select-Object FullName)"
     ]
   }
 }
