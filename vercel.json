@@ -6,6 +6,9 @@
     "installCommand": null,
     "ignoreCommand": "git diff HEAD~1 --name-only | grep -qvE '^web/'",
     "functions": {
+        "api/market-overview.ts": {
+            "maxDuration": 60
+        },
         "api/ui.ts": {
             "maxDuration": 60
         },

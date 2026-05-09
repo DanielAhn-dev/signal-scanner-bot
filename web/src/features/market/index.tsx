@@ -107,11 +107,32 @@ export default function MarketPage() {
     setLoading(true)
     setError(null)
     try {
-      const result = await apiFetch('/api/ui/market-overview', {
-        cacheMs: 30_000,
-        timeoutMs: 20_000,
-        retries: 1,
-      })
+      const endpoints = [
+        '/api/market-overview',
+        '/api/ui/market-overview',
+        '/api/ui?route=market-overview',
+      ]
+
+      let result: any = null
+      let lastError: unknown = null
+
+      for (const endpoint of endpoints) {
+        try {
+          result = await apiFetch(endpoint, {
+            cacheMs: 30_000,
+            timeoutMs: 20_000,
+            retries: 0,
+          })
+          break
+        } catch (e) {
+          lastError = e
+        }
+      }
+
+      if (!result) {
+        throw lastError || new Error('market overview fetch failed')
+      }
+
       setData(result?.data ?? null)
     } catch (e: any) {
       setError(e?.message || String(e))
