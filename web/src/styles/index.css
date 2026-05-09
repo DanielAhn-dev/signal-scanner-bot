@@ -629,6 +629,21 @@ html, body, #root {
      ================================================================ */
   .sector-row-card {
     @apply flex items-center justify-between;
+    flex-wrap: wrap;
+    row-gap: var(--space-2);
+    @apply cursor-pointer;
+    transition: border-color var(--duration-fast) var(--ease-out), box-shadow var(--duration-fast) var(--ease-out);
+  }
+  .sector-row-card:hover {
+    border-color: var(--color-brand-muted);
+    box-shadow: var(--shadow-sm);
+  }
+  .sector-row-card:focus-visible {
+    outline: 2px solid var(--color-border-focus);
+    outline-offset: 2px;
+  }
+  .sector-row-card--expanded {
+    border-color: var(--color-brand-muted);
   }
   .sector-row-left {
     @apply flex items-center;
@@ -655,6 +670,61 @@ html, body, #root {
     @apply flex flex-col items-end;
     gap: var(--space-1);
     flex-shrink: 0;
+  }
+  .sector-leader-panel {
+    width: 100%;
+    margin-top: var(--space-3);
+    padding-top: var(--space-3);
+    border-top: 1px dashed var(--color-border-default);
+  }
+  .sector-leader-title {
+    @apply text-sm;
+    @apply font-semibold;
+    color: var(--color-text-secondary);
+    margin-bottom: var(--space-2);
+  }
+  .sector-leader-list {
+    @apply flex flex-col;
+    gap: var(--space-2);
+  }
+  .sector-leader-item {
+    @apply flex items-center;
+    gap: var(--space-2);
+    width: 100%;
+    border: 1px solid var(--color-border-default);
+    border-radius: var(--radius-sm);
+    padding: 10px 12px;
+    background: var(--color-bg-surface);
+    color: var(--color-text-primary);
+    cursor: pointer;
+    transition: border-color var(--duration-fast) var(--ease-out), background var(--duration-fast) var(--ease-out);
+  }
+  .sector-leader-item:hover {
+    border-color: var(--color-brand-muted);
+    background: var(--color-brand-subtle);
+  }
+  .sector-leader-rank {
+    @apply text-xs;
+    @apply font-bold;
+    color: var(--color-brand);
+    min-width: 32px;
+  }
+  .sector-leader-name {
+    @apply text-sm;
+    @apply font-semibold;
+    @apply min-w-0;
+  }
+  .sector-leader-code {
+    @apply text-xs;
+    color: var(--color-text-brand);
+    font-family: var(--font-family-mono);
+    margin-left: auto;
+  }
+  .sector-leader-score {
+    @apply text-xs;
+    color: var(--color-text-secondary);
+    min-width: 82px;
+    text-align: right;
   }
 
   /* ================================================================

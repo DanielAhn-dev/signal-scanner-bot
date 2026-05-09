@@ -4,6 +4,7 @@ import { NAV_ITEMS, PRIMARY_NAV_KEYS } from '../navigation'
 import ProfileModal from './ProfileModal'
 import { readProfile, type StoredProfile } from '../lib/userContext'
 import { apiFetch } from '../lib/api'
+import { onOpenProfileModal } from '../lib/profileModal'
 
 type Props = {
   onNavigate: (r: string) => void
@@ -32,6 +33,7 @@ export default function Header({
   const [profileOpen, setProfileOpen] = React.useState(false)
   const [profile, setProfile] = React.useState<StoredProfile>(() => readProfile() ?? {})
   const [isAdmin, setIsAdmin] = React.useState(false)
+  const [focusChatIdField, setFocusChatIdField] = React.useState(false)
 
   // 아바타 이니셜 계산
   const authLabel = authName || authEmail || ''
@@ -89,6 +91,14 @@ export default function Header({
   React.useEffect(() => {
     setProfile(readProfile() ?? {})
   }, [isSignedIn])
+
+  // 대시보드에서 "Chat ID 연결" 버튼 클릭 시 프로필 모달 열기
+  React.useEffect(() => {
+    return onOpenProfileModal(() => {
+      setProfileOpen(true)
+      setFocusChatIdField(true)
+    })
+  }, [])
 
   React.useEffect(() => {
     let disposed = false
@@ -248,7 +258,7 @@ export default function Header({
     </header>
     <ProfileModal
       isOpen={profileOpen}
-      onClose={() => setProfileOpen(false)}
+      onClose={() => { setProfileOpen(false); setFocusChatIdField(false) }}
       onSaved={p => setProfile(prev => ({ ...prev, ...p }))}
       isSignedIn={isSignedIn}
       authEmail={authEmail}
@@ -256,6 +266,7 @@ export default function Header({
       onSignIn={onSignIn}
       onSignOut={onSignOut}
       isSigningIn={isSigningIn}
+      focusChatIdField={focusChatIdField}
     />
       </>
     )

@@ -15,6 +15,8 @@ interface Props {
   onSignIn: () => void
   onSignOut: () => void
   isSigningIn?: boolean
+  /** Chat ID 필드로 포커스 여부 */
+  focusChatIdField?: boolean
 }
 
 const STATUS_IDLE    = 'idle'
@@ -34,8 +36,10 @@ export default function ProfileModal({
   onSignIn,
   onSignOut,
   isSigningIn,
+  focusChatIdField,
 }: Props) {
   const overlayRef = useRef<HTMLDivElement>(null)
+  const chatIdInputRef = useRef<HTMLInputElement>(null)
   const toast = useToast()
 
   const [telegramId, setTelegramId] = useState('')
@@ -61,7 +65,12 @@ export default function ProfileModal({
     setVerifyMsg('')
     setSaveMsg('')
     setAutoResolved(false)
-  }, [isOpen])
+    
+    // Chat ID 필드로 포커스 이동
+    if (focusChatIdField) {
+      setTimeout(() => chatIdInputRef.current?.focus(), 100)
+    }
+  }, [isOpen, focusChatIdField])
 
   useEffect(() => {
     if (!isOpen || !isSignedIn) return
@@ -282,6 +291,7 @@ export default function ProfileModal({
           <label className="profile-field-label">Chat ID</label>
           <div className="profile-field-row">
             <input
+              ref={chatIdInputRef}
               className="ui-text"
               placeholder="예: 123456789"
               value={telegramId}

@@ -145,7 +145,7 @@ export default function HighlightsPage() {
     setLoading(true)
     setError(null)
     try {
-      const json = await apiFetch('/api/ui/scan-highlights', { cacheMs: 30_000, timeoutMs: 15_000, retries: 1 })
+      const json = await apiFetch('/api/ui/scan-highlights', { cacheMs: 30_000, timeoutMs: 30_000, retries: 2 })
       const nextItems: HighlightItem[] = Array.isArray(json?.data) ? json.data : []
       setItems(nextItems)
       setSelectedCodes((prev) => {
@@ -160,7 +160,15 @@ export default function HighlightsPage() {
         return clone
       })
     } catch (e: any) {
-      setError(e?.message || String(e))
+      const msg = e?.message || String(e)
+      // 타임아웃 오류 시 더 명확한 메시지 제공
+      if (msg.includes('timed out') || msg.includes('timeout')) {
+        setError('서버 응답이 느립니다. 잠시 후 다시 시도해주세요.')
+      } else if (msg.includes('404') || msg.includes('Unknown') || msg.includes('route')) {
+        setError('데이터를 불러오는 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.')
+      } else {
+        setError(msg)
+      }
     } finally {
       setLoading(false)
     }

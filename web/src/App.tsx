@@ -184,6 +184,12 @@ function AppContent() {
       return
     }
     let disposed = false
+    let sessionCheckTimer: number | undefined
+
+    const markAuthReady = () => {
+      if (disposed) return
+      setAuthReady(true)
+    }
 
     const applySession = async (session: Session | null) => {
       const user = session?.user
@@ -192,7 +198,7 @@ function AppContent() {
         setIsSignedIn(false)
         setAuthEmail('')
         setAuthName('')
-        setAuthReady(true)
+        markAuthReady()
         return
       }
 
@@ -204,16 +210,30 @@ function AppContent() {
         clientId: user.id,
         nickname: name || readProfile()?.nickname,
       })
-      await loadProfileFromServer()
+
+      // 프로필 동기화는 인증 상태 판정보다 중요도가 낮으므로 백그라운드로 처리한다.
+      void loadProfileFromServer().catch(() => {})
 
       if (disposed) return
       setIsSignedIn(true)
       setAuthEmail(email)
       setAuthName(name)
-      setAuthReady(true)
+      markAuthReady()
     }
 
-    void supabase.auth.getSession().then(({ data }) => applySession(data?.session ?? null))
+    sessionCheckTimer = window.setTimeout(() => {
+      if (!disposed && !authReady) {
+        // getSession이 비정상적으로 지연되면 로그인 화면을 막지 않는다.
+        markAuthReady()
+      }
+    }, 5000)
+
+    void supabase.auth.getSession()
+      .then(({ data }) => applySession(data?.session ?? null))
+      .catch(() => applySession(null))
+      .finally(() => {
+        if (sessionCheckTimer !== undefined) window.clearTimeout(sessionCheckTimer)
+      })
 
     const { data: listener } = supabase.auth.onAuthStateChange((event, session) => {
       void applySession(session)
@@ -222,6 +242,7 @@ function AppContent() {
 
     return () => {
       disposed = true
+      if (sessionCheckTimer !== undefined) window.clearTimeout(sessionCheckTimer)
       listener.subscription.unsubscribe()
     }
   }, [])
@@ -267,9 +288,11 @@ function AppContent() {
       } catch {
         // ignore
       }
-      const redirectTo =
-        (import.meta.env.VITE_SUPABASE_OAUTH_REDIRECT || import.meta.env.VITE_OAUTH_REDIRECT) ||
-        `${window.location.origin}${window.location.pathname}`
+      const envRedirectTo = import.meta.env.VITE_SUPABASE_OAUTH_REDIRECT || import.meta.env.VITE_OAUTH_REDIRECT
+      const isLocalhost = /^(localhost|127\.0\.0\.1)$/i.test(window.location.hostname)
+      const redirectTo = isLocalhost
+        ? window.location.origin
+        : (envRedirectTo || `${window.location.origin}${window.location.pathname}`)
       const { error } = await supabase.auth.signInWithOAuth({
         provider: 'google',
         options: {
@@ -375,6 +398,8 @@ function AppContent() {
                   ? <Dashboard onNavigate={handleNavigate} />
                   : route === 'scan'
                   ? <ScanPage onNavigate={handleNavigate} />
+                  : route === 'sectors'
+                  ? <SectorsPage onNavigate={handleNavigate} />
                   : <Active />
                 : null}
             </Suspense>

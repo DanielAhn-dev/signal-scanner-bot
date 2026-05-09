@@ -1,4 +1,4 @@
-﻿import React, { useEffect, useState, useCallback } from "react"
+﻿import React, { useEffect, useState, useCallback, useMemo } from "react"
 import { apiFetch } from "../../lib/api"
 import Button from "../../components/ui/Button"
 import Skeleton from "../../components/Skeleton"
@@ -26,6 +26,29 @@ type Sector = {
   score: number | null
   change_rate: number | null
   metrics?: Record<string, any>
+}
+
+type ScanCandidate = {
+  code: string
+  name: string
+  sector_id: string | null
+  entry_score: number | null
+  warn_score: number | null
+  adaptive_score?: number | null
+}
+
+type SectorLeader = {
+  code: string
+  name: string
+  priorityScore: number
+  entryScore: number | null
+}
+
+const ANALYZE_PENDING_CODE_KEY = "analyze_pending_code"
+
+function computePriorityScore(item: ScanCandidate): number {
+  if (typeof item.adaptive_score === "number" && Number.isFinite(item.adaptive_score)) return item.adaptive_score
+  return (item.entry_score ?? 0) * 20 - (item.warn_score ?? 0) * 3
 }
 
 function toNum(v: unknown): number | null {
@@ -112,12 +135,16 @@ function ChangeRate({ val }: { val: number | null }) {
 
 type Tab = "promising" | "next"
 
-export default function SectorsPage() {
+export default function SectorsPage({ onNavigate }: { onNavigate?: (r: string) => void }) {
   const initAll = readLS<Sector[]>(LS_KEY, SECTORS_TTL) ?? []
   const [all, setAll] = useState<Sector[]>(initAll)
   const [loading, setLoading] = useState(initAll.length === 0)
   const [error, setError] = useState<string | null>(null)
   const [tab, setTab] = useState<Tab>("promising")
+  const [expandedSectorId, setExpandedSectorId] = useState<string | null>(null)
+  const [scanCandidates, setScanCandidates] = useState<ScanCandidate[]>([])
+  const [leadersLoading, setLeadersLoading] = useState(false)
+  const [leadersError, setLeadersError] = useState<string | null>(null)
 
   const loadData = useCallback(async (force = false) => {
     setLoading(true)
@@ -138,6 +165,62 @@ export default function SectorsPage() {
     if (all.length === 0) loadData()
     else setLoading(false)
   }, [loadData, all.length])
+
+  const loadScanCandidates = useCallback(async () => {
+    if (scanCandidates.length > 0 || leadersLoading) return
+    setLeadersLoading(true)
+    setLeadersError(null)
+    try {
+      const res = await apiFetch("/api/ui/scan-candidates?limit=120", { cacheMs: 10_000, timeoutMs: 20_000 })
+      const rows: ScanCandidate[] = Array.isArray(res?.data) ? res.data : []
+      setScanCandidates(rows)
+    } catch (e: any) {
+      setLeadersError(e?.message || String(e))
+    } finally {
+      setLeadersLoading(false)
+    }
+  }, [scanCandidates.length, leadersLoading])
+
+  const sectorLeaders = useMemo(() => {
+    const grouped = new Map<string, SectorLeader[]>()
+    for (const row of scanCandidates) {
+      if (!row.sector_id) continue
+      const list = grouped.get(row.sector_id) ?? []
+      list.push({
+        code: row.code,
+        name: row.name,
+        priorityScore: Math.round(computePriorityScore(row)),
+        entryScore: row.entry_score,
+      })
+      grouped.set(row.sector_id, list)
+    }
+    for (const [sectorId, rows] of grouped) {
+      rows.sort((a, b) => b.priorityScore - a.priorityScore || (b.entryScore ?? 0) - (a.entryScore ?? 0))
+      grouped.set(sectorId, rows.slice(0, 3))
+    }
+    return grouped
+  }, [scanCandidates])
+
+  const navigateToAnalyze = useCallback((code: string) => {
+    try { sessionStorage.setItem(ANALYZE_PENDING_CODE_KEY, code) } catch { /* ignore */ }
+    if (onNavigate) {
+      onNavigate("analyze")
+      return
+    }
+    try {
+      window.history.pushState({}, "", "/analyze")
+      window.dispatchEvent(new PopStateEvent("popstate"))
+    } catch {
+      // ignore
+    }
+  }, [onNavigate])
+
+  const onSectorCardClick = useCallback((sectorId: string) => {
+    setExpandedSectorId((prev) => prev === sectorId ? null : sectorId)
+    if (scanCandidates.length === 0) {
+      void loadScanCandidates()
+    }
+  }, [scanCandidates.length, loadScanCandidates])
 
   // 탭별 정렬/필터
   const sorted = [...all].sort((a, b) => (b.score ?? 0) - (a.score ?? 0))
@@ -204,7 +287,19 @@ export default function SectorsPage() {
             const metricsSummary = buildMetricsSummary(s)
             const reason = buildSectorReason(s, tab)
             return (
-              <div key={s.id} className="card sector-row-card">
+              <div
+                key={s.id}
+                className={`card sector-row-card${expandedSectorId === s.id ? " sector-row-card--expanded" : ""}`}
+                role="button"
+                tabIndex={0}
+                onClick={() => onSectorCardClick(s.id)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault()
+                    onSectorCardClick(s.id)
+                  }
+                }}
+              >
                 <div className="sector-row-left">
                   <div className="sector-row-rank">#{idx + 1}</div>
                   <div>
@@ -217,6 +312,35 @@ export default function SectorsPage() {
                   <ScoreBadge score={s.score} />
                   <ChangeRate val={s.change_rate} />
                 </div>
+                {expandedSectorId === s.id && (
+                  <div className="sector-leader-panel" onClick={(e) => e.stopPropagation()}>
+                    <div className="sector-leader-title">대장주 TOP 3 (우선순위)</div>
+                    {leadersLoading ? (
+                      <div className="muted">대장주를 계산하는 중입니다…</div>
+                    ) : leadersError ? (
+                      <div className="muted">대장주 데이터를 불러오지 못했습니다: {leadersError}</div>
+                    ) : (sectorLeaders.get(s.id) ?? []).length === 0 ? (
+                      <div className="muted">현재 섹터에 표시할 후보 종목이 없습니다.</div>
+                    ) : (
+                      <div className="sector-leader-list">
+                        {(sectorLeaders.get(s.id) ?? []).map((leader, leaderIdx) => (
+                          <button
+                            key={`${s.id}-${leader.code}`}
+                            type="button"
+                            className="sector-leader-item"
+                            onClick={() => navigateToAnalyze(leader.code)}
+                            title={`${leader.name} 분석으로 이동`}
+                          >
+                            <span className="sector-leader-rank">{leaderIdx + 1}위</span>
+                            <span className="sector-leader-name">{leader.name}</span>
+                            <span className="sector-leader-code">{leader.code}</span>
+                            <span className="sector-leader-score">우선순위 {leader.priorityScore}</span>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
             )
           })}

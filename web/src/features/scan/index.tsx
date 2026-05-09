@@ -201,7 +201,7 @@ export default function ScanPage({ onNavigate }: { onNavigate?: (r: string) => v
   useEffect(() => { loadCandidates() }, [])
   useEffect(() => {
     setHighlightLoading(true)
-    apiFetch('/api/ui/scan-highlights', { cacheMs: 60_000, timeoutMs: 15_000 })
+    apiFetch('/api/ui/scan-highlights', { cacheMs: 60_000, timeoutMs: 30_000 })
       .then((res) => { if (Array.isArray(res?.data)) setApiHighlights(res.data) })
       .catch(() => { /* API 호출 실패 시 로컈 폴백 사용 */ })
       .finally(() => setHighlightLoading(false))

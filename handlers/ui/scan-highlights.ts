@@ -3,7 +3,7 @@ import { createClient, type SupabaseClient } from '@supabase/supabase-js'
 import { createDailyCandidatePlanningReportResult } from '../../src/services/marketInsightService'
 
 const ORIGIN = process.env.UI_CORS_ORIGIN || '*'
-const CACHE_TTL_MS = 60_000 // 1분
+const CACHE_TTL_MS = 300_000 // 5분 (캐시 자주 갱신되지 않으므로)
 
 type CacheEntry = {
   expiresAt: number
@@ -89,10 +89,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   try {
-    // 확신추천(/리포트 하이라이트)과 동일한 파이프라인 사용
+    // 최상위 5개만 필요하므로 briefing 모드로 경량화
     const report = await createDailyCandidatePlanningReportResult(supabase, {
       riskProfile: 'safe',
-      mode: 'full',
+      mode: 'briefing',
     })
 
     const forecasts = report.forecasts ?? []
