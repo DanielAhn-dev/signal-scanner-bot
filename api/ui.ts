@@ -4,6 +4,7 @@ import { ADVANCED_ROUTES, enforceAdvancedRouteAccess } from '../handlers/ui/_acc
 
 import decisions from '../handlers/ui/decisions'
 import formatStock from '../handlers/ui/format-stock'
+import marketOverview from '../handlers/ui/market-overview'
 import notify from '../handlers/ui/notify'
 import operations from '../handlers/ui/operations'
 import news from '../handlers/ui/news'
@@ -41,6 +42,7 @@ const ROUTES: Record<string, UiHandler> = {
   'access-users': accessUsers,
   decisions,
   'format-stock': formatStock,
+  'market-overview': marketOverview,
   news,
     'news-related': newsRelated,
   notify,
