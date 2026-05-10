@@ -80,23 +80,45 @@ function normalizeRoute(value: string | string[] | undefined): string {
   return String(value || '').trim()
 }
 
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
+
+function wildcardToRegExp(pattern: string): RegExp {
+  const parts = pattern.split('*').map((v) => escapeRegExp(v))
+  return new RegExp(`^${parts.join('.*')}$`)
+}
+
+function matchesTrustedOrigin(origin: string, patterns: string[]): boolean {
+  for (const pattern of patterns) {
+    if (!pattern) continue
+    if (!pattern.includes('*')) {
+      if (origin === pattern) return true
+      continue
+    }
+    if (wildcardToRegExp(pattern).test(origin)) return true
+  }
+  return false
+}
+
 export const config = {
   maxDuration: 60,
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   const requestOrigin = String(req.headers.origin || '').trim()
-  const trustedOrigins = String(
+  const trustedOriginPatterns = String(
     process.env.UI_TRUSTED_WEB_ORIGINS ||
     process.env.UI_CORS_ORIGIN ||
-    'https://signal-scanner-web.vercel.app,https://stocksweb-seven.vercel.app,http://localhost:5173',
+    'https://signal-scanner-web.vercel.app,https://stocksweb-seven.vercel.app,https://signal-scanner-web-*.vercel.app,http://localhost:5173',
   )
     .split(',')
     .map((v) => v.trim())
     .filter(Boolean)
-  const allowOrigin = requestOrigin && trustedOrigins.includes(requestOrigin)
+  const primaryOrigin = trustedOriginPatterns.find((origin) => !origin.includes('*')) || trustedOriginPatterns[0] || '*'
+  const allowOrigin = requestOrigin && matchesTrustedOrigin(requestOrigin, trustedOriginPatterns)
     ? requestOrigin
-    : (trustedOrigins[0] || '*')
+    : primaryOrigin
 
   const requestedHeaders = String(req.headers['access-control-request-headers'] || '')
     .split(',')

@@ -45,10 +45,20 @@ export function invalidateCache(pathPrefix?: string) {
 export interface ApiFetchOptions extends RequestInit {
   /** GET 캐시 유효시간(ms). 0이면 캐시 비활성. 기본 3000 */
   cacheMs?: number
-  /** 요청 타임아웃(ms). 기본 10000 */
+  /** 요청 타임아웃(ms). 기본 15000 */
   timeoutMs?: number
-  /** GET 실패 시 재시도 횟수 (기본 1) */
+  /** GET 실패 시 재시도 횟수 (기본 2) */
   retries?: number
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
+function computeRetryDelay(attempt: number): number {
+  const exp = Math.min(2000, 300 * (2 ** attempt))
+  const jitter = Math.floor(Math.random() * 200)
+  return exp + jitter
 }
 
 async function _fetch(url: string, opts: RequestInit, timeoutMs: number): Promise<Response> {
@@ -77,7 +87,7 @@ export async function apiFetch(
   path: string,
   opts: ApiFetchOptions = {},
 ) {
-  const { cacheMs = 3000, timeoutMs = 10_000, retries = 1, ...fetchOpts } = opts
+  const { cacheMs = 3000, timeoutMs = 15_000, retries = 2, ...fetchOpts } = opts
 
   const base = getApiBase()
   let url = base
@@ -166,10 +176,17 @@ export async function apiFetch(
         // 401/404 등 HTTP 에러는 재시도해도 달라지지 않으므로 즉시 throw
         const isHttpError = e?.message?.match(/API request failed \(\d+\)/)
         if (attempt === maxAttempts - 1 || isHttpError) break
-        // 타임아웃/네트워크 에러는 Vercel cold start일 수 있으므로 재시도 (함수가 이미 워밍됨)
-        await new Promise((r) => setTimeout(r, 300))
+        // 타임아웃/네트워크 에러는 cold start 또는 일시 혼잡일 수 있어 지수 백오프로 재시도한다.
+        await sleep(computeRetryDelay(attempt))
       }
     }
+
+    // 네트워크가 일시적으로 불안정할 때는 마지막 성공값(만료 캐시)으로 화면 끊김을 막는다.
+    if (method === 'GET') {
+      const stale = __api_cache.get(cacheKey)
+      if (stale) return stale.data
+    }
+
     throw lastErr
   }
 
