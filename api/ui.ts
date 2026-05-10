@@ -3,6 +3,7 @@ import accessUsers from '../handlers/ui/access-users'
 import { ADVANCED_ROUTES, enforceAdvancedRouteAccess } from '../handlers/ui/_accessControl'
 
 import decisions from '../handlers/ui/decisions'
+import discoveryPicks from '../handlers/ui/discovery-picks'
 import formatStock from '../handlers/ui/format-stock'
 import marketOverview from '../handlers/ui/market-overview'
 import notify from '../handlers/ui/notify'
@@ -41,6 +42,7 @@ type UiHandler = (req: VercelRequest, res: VercelResponse) => unknown | Promise<
 const ROUTES: Record<string, UiHandler> = {
   'access-users': accessUsers,
   decisions,
+  'discovery-picks': discoveryPicks,
   'format-stock': formatStock,
   'market-overview': marketOverview,
   news,

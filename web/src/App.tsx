@@ -27,6 +27,7 @@ const OperationsPage = lazy(() => import('./features/operations'))
 const StrategyPage = lazy(() => import('./features/strategy'))
 const HighlightsPage = lazy(() => import('./features/highlights'))
 const SimulatorPage = lazy(() => import('./features/simulator'))
+const DiscoveryPage = lazy(() => import('./features/discovery'))
 
 const COMPONENTS = {
   dashboard: Dashboard,
@@ -50,6 +51,7 @@ const COMPONENTS = {
   strategy: StrategyPage,
   highlights: HighlightsPage,
   simulator: SimulatorPage,
+  discovery: DiscoveryPage,
 } as const
 
 type RouteKey = keyof typeof COMPONENTS
@@ -176,6 +178,20 @@ function AppContent() {
 
     window.addEventListener('popstate', onPopState)
     return () => window.removeEventListener('popstate', onPopState)
+  }, [])
+
+  useEffect(() => {
+    const onNavGoto = (e: Event) => {
+      try {
+        const key = (e as CustomEvent<{ key: string }>).detail?.key
+        if (key && key in COMPONENTS) {
+          setRoute(key as RouteKey)
+          window.history.pushState({}, '', `/${key}`)
+        }
+      } catch { /* ignore */ }
+    }
+    window.addEventListener('nav:goto', onNavGoto)
+    return () => window.removeEventListener('nav:goto', onNavGoto)
   }, [])
 
   useEffect(() => {

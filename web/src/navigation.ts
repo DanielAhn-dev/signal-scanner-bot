@@ -26,6 +26,7 @@ export const NAV_ITEMS: NavGroup[] = [
     category: '기능',
     items: [
       { key: 'scan', label: '스캔' },
+      { key: 'discovery', label: '발굴' },
       { key: 'analyze', label: '분석' },
       { key: 'watchlist', label: '감시목록' },
       { key: 'alerts', label: '알림' },
