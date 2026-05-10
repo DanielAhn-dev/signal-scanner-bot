@@ -46,11 +46,58 @@ type DiscoveryFunnel = {
   afterGrowth: number
 }
 
+type DiscoveryPreset = {
+  key: string
+  label: string
+  hint: string
+  criteria: DiscoveryCriteria
+}
+
 const DEFAULT_CRITERIA: DiscoveryCriteria = {
   minMarketCapBillion: 500,
   minRoe: 8,
   maxPbr: 2,
   qoqMode: 'two-quarter-positive',
+}
+
+const DISCOVERY_PRESETS: DiscoveryPreset[] = [
+  {
+    key: 'starter-balance',
+    label: '입문 균형형',
+    hint: '후보 수와 품질 균형',
+    criteria: {
+      minMarketCapBillion: 500,
+      minRoe: 8,
+      maxPbr: 2,
+      qoqMode: 'latest-quarter-positive',
+    },
+  },
+  {
+    key: 'quality-focus',
+    label: '품질 엄격형',
+    hint: '후보는 적지만 보수적',
+    criteria: {
+      minMarketCapBillion: 500,
+      minRoe: 10,
+      maxPbr: 1.6,
+      qoqMode: 'two-quarter-positive',
+    },
+  },
+  {
+    key: 'early-discovery',
+    label: '초기 발굴형',
+    hint: '초기 모멘텀 탐색',
+    criteria: {
+      minMarketCapBillion: 300,
+      minRoe: 6,
+      maxPbr: 2.5,
+      qoqMode: 'latest-quarter-positive',
+    },
+  },
+]
+
+function criteriaSignature(c: DiscoveryCriteria): string {
+  return [c.minMarketCapBillion, c.minRoe, c.maxPbr, c.qoqMode].join('|')
 }
 
 function ScoreBadge({ value, max }: { value: number; max: number }) {
@@ -152,6 +199,13 @@ export default function DiscoveryPage() {
     fetchPicks(limit, criteria)
   }
 
+  function applyPreset(preset: DiscoveryPreset) {
+    setCriteria(preset.criteria)
+    fetchPicks(limit, preset.criteria)
+  }
+
+  const appliedPresetKey = DISCOVERY_PRESETS.find((p) => criteriaSignature(p.criteria) === criteriaSignature(appliedCriteria))?.key ?? null
+
   const updatedLabel = fetchedAt
     ? `${new Date(fetchedAt).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })} 기준`
     : null
@@ -201,7 +255,24 @@ export default function DiscoveryPage() {
 
       <div className="card mb-4">
         <div className="title-md" style={{ marginBottom: 'var(--space-2)' }}>기준 설정</div>
-        <div className="cards-grid cols-3" style={{ marginBottom: 'var(--space-2)' }}>
+        <div style={{ marginBottom: 'var(--space-3)' }}>
+          <div className="caption" style={{ marginBottom: 'var(--space-2)' }}>초보자 추천 프리셋</div>
+          <div className="flex-gap-sm" style={{ flexWrap: 'wrap' }}>
+            {DISCOVERY_PRESETS.map((preset) => (
+              <Button
+                key={preset.key}
+                variant={appliedPresetKey === preset.key ? 'primary' : 'secondary'}
+                size="sm"
+                onClick={() => applyPreset(preset)}
+                disabled={loading}
+                title={preset.hint}
+              >
+                {preset.label}
+              </Button>
+            ))}
+          </div>
+        </div>
+        <div className="cards-grid cols-3 discovery-criteria-grid" style={{ marginBottom: 'var(--space-2)' }}>
           <Input
             label="최소 시총(억)"
             type="number"
@@ -274,7 +345,7 @@ export default function DiscoveryPage() {
       )}
 
       {!loading && error && (
-        <ErrorState message={error} onRetry={() => fetchPicks(limit)} />
+        <ErrorState message={error} onRetry={() => fetchPicks(limit, criteria)} />
       )}
 
       {!loading && !error && picks.length === 0 && (

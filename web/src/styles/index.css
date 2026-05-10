@@ -823,6 +823,12 @@ html, body, #root {
 
 .ui-field + .ui-field { @apply mt-3; }
 
+/* discovery 설정 그리드는 컬럼 정렬이 우선이라 sibling top-margin을 제거한다. */
+.discovery-criteria-grid > .ui-field,
+.discovery-criteria-grid > .ui-field + .ui-field {
+  margin-top: 0;
+}
+
 .ui-checkbox {
   width: 18px;
   height: 18px;
