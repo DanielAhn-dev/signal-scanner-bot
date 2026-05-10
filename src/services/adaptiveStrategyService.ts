@@ -109,7 +109,13 @@ async function getRecentTradeDates(supabase: SupabaseClient, limit: number): Pro
 
   if (error) throw new Error(error.message)
 
-  const uniqueDates = Array.from(new Set((data ?? []).map((row) => String((row as { trade_date?: string }).trade_date || '')).filter(Boolean)))
+  const uniqueDates = Array.from(
+    new Set(
+      (data ?? [])
+        .map((row: unknown) => String((row as { trade_date?: string }).trade_date || ''))
+        .filter((value): value is string => Boolean(value))
+    )
+  )
   return uniqueDates.slice(0, limit)
 }
 
@@ -125,7 +131,7 @@ async function getHistoricalPullbackRows(supabase: SupabaseClient, tradeDates: s
 
   if (pullbackError) throw new Error(pullbackError.message)
 
-  const rows = (pullbackData ?? []).map((row) => ({
+  const rows: PullbackHistoryRow[] = (pullbackData ?? []).map((row: unknown) => ({
     trade_date: String((row as PullbackHistoryRow).trade_date || ''),
     code: String((row as PullbackHistoryRow).code || ''),
     entry_grade: (row as PullbackHistoryRow).entry_grade ?? null,

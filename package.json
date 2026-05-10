@@ -6,7 +6,7 @@
   "description": "Telegram Stock Signal Scanner Bot with Vercel Functions",
   "private": true,
   "engines": {
-    "node": "20.x",
+    "node": ">=20 <23",
     "pnpm": ">=9 <11"
   },
   "scripts": {

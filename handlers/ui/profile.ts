@@ -28,11 +28,21 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     let authenticatedUserId = ''
     if (bearer) {
-      const { data: authData, error: authError } = await supabase.auth.getUser(bearer)
-      if (authError || !authData?.user?.id) {
+      const authRes = await fetch(`${url}/auth/v1/user`, {
+        method: 'GET',
+        headers: {
+          apikey: key,
+          Authorization: `Bearer ${bearer}`,
+        },
+      })
+      if (!authRes.ok) {
         return res.status(401).json({ error: 'Invalid auth token' })
       }
-      authenticatedUserId = authData.user.id
+      const authData = (await authRes.json()) as { id?: string }
+      if (!authData?.id) {
+        return res.status(401).json({ error: 'Invalid auth token' })
+      }
+      authenticatedUserId = authData.id
     }
 
     if (req.method === 'GET') {

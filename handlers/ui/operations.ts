@@ -249,7 +249,7 @@ async function getJobSnapshot(
     skipped: Number(latestRunSummary.skipped ?? latestRunSummary.skippedCount ?? 0),
     errors: Number(latestRunSummary.errors ?? latestRunSummary.errorCount ?? 0),
     notes: Array.isArray(latestRunSummary.notes)
-      ? latestRunSummary.notes.map((v) => String(v || '').trim()).filter(Boolean)
+      ? latestRunSummary.notes.map((v: unknown) => String(v || '').trim()).filter(Boolean)
       : [],
   }
 
