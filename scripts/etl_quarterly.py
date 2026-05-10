@@ -16,6 +16,7 @@ import json
 import os
 import sys
 import time
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
@@ -61,6 +62,7 @@ _session.headers.update({
 
 FINANCE_SUMMARY_URL = "https://m.stock.naver.com/api/stock/{code}/finance/summary"
 _DAY_MAP = {"03": "31", "06": "30", "09": "30", "12": "31"}
+_trend_table_missing_warned = False
 
 
 def _safe_int(val) -> Optional[int]:
@@ -158,6 +160,56 @@ def upsert_records(records: list[dict]) -> int:
         return 0
 
 
+def build_trend_records(records: list[dict]) -> list[dict]:
+    now_iso = datetime.now(timezone.utc).isoformat()
+    trends: list[dict] = []
+    for rec in records:
+        computed = rec.get("computed") or {}
+        trends.append({
+            "code": rec.get("code"),
+            "period_end": rec.get("period_end"),
+            "quarter_key": computed.get("quarter_key"),
+            "is_consensus": bool(computed.get("is_consensus", False)),
+            "sales": rec.get("sales"),
+            "operating_income": rec.get("operating_income"),
+            "eps": rec.get("eps"),
+            "rev_qoq": computed.get("rev_qoq"),
+            "op_qoq": computed.get("op_qoq"),
+            "rev_acceleration": computed.get("rev_acceleration"),
+            "op_acceleration": computed.get("op_acceleration"),
+            "source": rec.get("source") or "naver-mobile-api",
+            "computed": computed,
+            "updated_at": now_iso,
+        })
+    return trends
+
+
+def upsert_trend_records(records: list[dict]) -> int:
+    global _trend_table_missing_warned
+    if not records:
+        return 0
+    try:
+        supabase.table("fundamental_trends").upsert(
+            records,
+            on_conflict="code,period_end",
+        ).execute()
+        return len(records)
+    except Exception as e:
+        msg = str(e)
+        missing_signatures = (
+            ("fundamental_trends" in msg and "does not exist" in msg)
+            or "PGRST205" in msg
+            or "schema cache" in msg
+        )
+        if missing_signatures:
+            if not _trend_table_missing_warned:
+                print("  fundamental_trends 테이블이 없어 스킵합니다. (마이그레이션 적용 필요)")
+                _trend_table_missing_warned = True
+            return 0
+        print(f"  fundamental_trends upsert 에러: {e}")
+        return 0
+
+
 def load_all_codes(limit: Optional[int] = None) -> list[str]:
     fpath = Path(__file__).parent.parent / "data" / "all_krx.json"
     try:
@@ -191,6 +243,7 @@ def main() -> None:
 
     print(f"분기별 재무 수집 시작: {len(codes)}개 종목")
     total_saved = 0
+    total_trends_saved = 0
     total_ok = 0
 
     for idx, code in enumerate(codes):
@@ -200,10 +253,14 @@ def main() -> None:
         if records:
             records = _compute_qoq(records)
             total_saved += upsert_records(records)
+            total_trends_saved += upsert_trend_records(build_trend_records(records))
             total_ok += 1
         time.sleep(0.2)
 
-    print(f"\n완료: {total_ok}/{len(codes)}개 종목 성공, {total_saved}개 레코드 저장")
+    print(
+        f"\n완료: {total_ok}/{len(codes)}개 종목 성공, "
+        f"fundamentals {total_saved}개 / fundamental_trends {total_trends_saved}개 저장"
+    )
 
 
 if __name__ == "__main__":
