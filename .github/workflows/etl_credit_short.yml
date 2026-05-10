@@ -55,7 +55,11 @@ jobs:
           if [ "${{ github.event.inputs.skip_short }}" = "true" ]; then
             ARGS="$ARGS --skip-short"
           fi
-          python scripts/update_credit_short.py $ARGS 2>&1 | tee /tmp/etl_output.txt
+            # KRX data.krx.co.kr는 GitHub Actions(Azure IP)를 차단함 → 기본으로 --skip-short
+            ARGS="$ARGS --skip-short"
+            # Naver 신용비율 SPA 마이그레이션으로 --skip-credit도 기본 적용
+            ARGS="$ARGS --skip-credit"
+            python scripts/update_credit_short.py $ARGS 2>&1 | tee /tmp/etl_output.txt
           # 저장 건수 0이면 경고 종료코드
           if grep -q "저장할 데이터 없음" /tmp/etl_output.txt; then
             echo "::warning::공매도/신용 데이터 저장 건수 0 — KRX 차단 또는 비거래일"

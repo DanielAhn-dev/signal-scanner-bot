@@ -1,0 +1,41 @@
+name: ETL Quarterly Fundamentals
+
+on:
+  schedule:
+    # 매주 토요일 01:00 UTC (한국 시간 10:00)
+    - cron: "0 1 * * 6"
+  workflow_dispatch:
+    inputs:
+      limit:
+        description: "처리할 최대 종목 수 (기본: 전체)"
+        required: false
+        default: ""
+
+jobs:
+  etl:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run ETL
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: |
+          ARGS=""
+          if [ -n "${{ github.event.inputs.limit }}" ]; then
+            ARGS="--limit ${{ github.event.inputs.limit }}"
+          fi
+          python scripts/etl_quarterly.py $ARGS

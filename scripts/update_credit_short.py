@@ -345,59 +345,12 @@ def fetch_shorting_all_markets(trading_date: str) -> "dict[str, dict]":
 # ── 신용비율 수집 (Naver Finance HTML) ───────────────────
 def fetch_credit_ratio_naver(code: str) -> Optional[float]:
     """
-    Naver Finance 종목 메인에서 신용비율(%) 파싱.
-    세 가지 방법을 순서대로 시도.
+    [DEPRECATED] Naver Finance가 React SPA(stock.naver.com)로 마이그레이션되면서
+    HTML 스크래핑이 불가능해졌습니다. 신용비율 API 엔드포인트가 공개되지 않아
+    현재 수집 불가. 항상 None 반환.
+
+    TODO: stock.naver.com SPA API 엔드포인트 확인 후 복구 필요.
     """
-    try:
-        url = f"https://finance.naver.com/item/main.naver?code={code}"
-        resp = requests.get(
-            url,
-            headers={
-                "User-Agent": UA,
-                "Accept-Language": "ko-KR,ko;q=0.9",
-                "Referer": "https://finance.naver.com/",
-            },
-            timeout=10,
-        )
-        resp.raise_for_status()
-        # Naver 페이지는 EUC-KR로 인코딩되는 경우 있음
-        resp.encoding = resp.apparent_encoding or "utf-8"
-        soup = BeautifulSoup(resp.text, "html.parser")
-
-        # 방법 1: <tr> 단위로 th+td 쌍 탐색 (가장 안정적)
-        for tr in soup.find_all("tr"):
-            th = tr.find("th")
-            if th and "신용비율" in th.get_text():
-                td = tr.find("td")
-                if td:
-                    # Naver는 숫자를 <em> 안에 넣는 경우가 많음
-                    em = td.find("em")
-                    text = (em or td).get_text(strip=True)
-                    val = safe_float(text.replace("%", "").replace(",", ""))
-                    if val is not None:
-                        return val
-
-        # 방법 2: <dt>/<dd> 구조 (일부 종목 페이지)
-        for dt in soup.find_all("dt"):
-            if "신용비율" in dt.get_text():
-                dd = dt.find_next_sibling("dd")
-                if dd:
-                    val = safe_float(dd.get_text(strip=True).replace("%", ""))
-                    if val is not None:
-                        return val
-
-        # 방법 3: 정규식 — HTML 원문에서 패턴 추출
-        # 패턴: "신용비율" 근처의 숫자 (소수점 포함)
-        match = re.search(
-            r"신용비율[^0-9\-]{0,30}?([\-]?[0-9]+\.?[0-9]*)",
-            resp.text,
-        )
-        if match:
-            return safe_float(match.group(1))
-
-    except Exception as e:
-        # 개별 종목 에러는 조용히 무시 (배치 수집 중단 방지)
-        _ = e
     return None
 
 
