@@ -90,7 +90,10 @@ def fetch_quarterly(code: str) -> list[dict]:
         print(f"  [{code}] fetch 실패: {e}")
         return []
 
-    qs = data.get("chartIncomeStatement", {}).get("quarter", {})
+    if not isinstance(data, dict):
+        return []
+
+    qs = (data.get("chartIncomeStatement") or {}).get("quarter", {})
     cols = qs.get("columns", [])
     titles = qs.get("trTitleList", [])
     if not cols or len(cols) < 3:
@@ -101,8 +104,8 @@ def fetch_quarterly(code: str) -> list[dict]:
     op_incs = cols[2][1:] if len(cols) > 2 else []
     consensus = {t["key"]: t.get("isConsensus") == "Y" for t in titles}
 
-    eps_titles = data.get("chartEps", {}).get("trTitleList", [])
-    eps_cols = data.get("chartEps", {}).get("columns", [])
+    eps_titles = (data.get("chartEps") or {}).get("trTitleList", [])
+    eps_cols = (data.get("chartEps") or {}).get("columns", [])
     eps_map: dict[str, Optional[int]] = {}
     if eps_cols and len(eps_cols) > 1:
         for ev, et in zip(eps_cols[1][1:], eps_titles):
