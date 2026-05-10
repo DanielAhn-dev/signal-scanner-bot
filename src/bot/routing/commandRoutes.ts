@@ -29,6 +29,7 @@ import {
   handleEtfCoreCommand,
   handleEtfThemeCommand,
 } from "../commands/marketPicks";
+import { handleDiscoveryCommand } from "../commands/discovery";
 import {
   handleEtfDistributionCommand,
   handleEtfHubCommand,
@@ -349,6 +350,12 @@ export const COMMAND_ROUTE_SPECS: CommandRouteSpec[] = [
     userErrorLabel: "코스닥",
     tokens: ["kosdaq", "코스닥"],
     run: (_match, ctx, tgSend) => handleKosdaqCommand(ctx, tgSend),
+  },
+  {
+    pattern: CMD.DISCOVERY,
+    userErrorLabel: "발굴",
+    tokens: ["discovery", "발굴"],
+    run: (match, ctx, tgSend) => handleDiscoveryCommand(match[2] ?? "", ctx, tgSend),
   },
   {
     pattern: CMD.ETFINFO,

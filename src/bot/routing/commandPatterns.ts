@@ -49,6 +49,7 @@ export const CMD = {
   NEXTSECTOR: /^\/(nextsector|다음섹터|수급섹터)$/i,
   KOSPI: /^(?:\/)?(kospi|코스피)$/i,
   KOSDAQ: /^(?:\/)?(kosdaq|코스닥)$/i,
+  DISCOVERY: /^\/(discovery|발굴)(?:\s+(.+))?$/i,
   ETF: /^(?:\/)?(etf|이티에프)(?:\s+(.+))?$/i,
   ETFHUB: /^(?:\/)?(etfhub|이티에프허브|etf허브)(?:\s+(.+))?$/i,
   ETFCORE: /^\/(etfcore)(?:\s+(.+))?$/i,
