@@ -34,6 +34,12 @@ type PerShareMetrics = {
   eps: number | null
   bps: number | null
   peg: number | null
+  pegMeta: {
+    source: 'stored' | 'derived' | 'unavailable'
+    confidence: 'high' | 'medium' | 'low'
+    growthPct: number | null
+    label: string
+  }
 }
 
 function asNum(v: unknown): number | null {
@@ -285,10 +291,33 @@ function derivePerShareMetrics(input: {
       ? Number((per / netIncomeGrowthPct).toFixed(2))
       : null)
 
+  const pegMeta: PerShareMetrics['pegMeta'] =
+    peg != null
+      ? {
+          source: 'stored',
+          confidence: 'high',
+          growthPct: netIncomeGrowthPct,
+          label: '실데이터',
+        }
+      : resolvedPeg != null
+        ? {
+            source: 'derived',
+            confidence: 'medium',
+            growthPct: netIncomeGrowthPct,
+            label: '추정치',
+          }
+        : {
+            source: 'unavailable',
+            confidence: 'low',
+            growthPct: netIncomeGrowthPct,
+            label: '데이터부족',
+          }
+
   return {
     eps: resolvedEps,
     bps: resolvedBps,
     peg: resolvedPeg,
+    pegMeta,
   }
 }
 
@@ -729,6 +758,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             eps: perShareMetrics.eps,
             bps: perShareMetrics.bps,
             peg: perShareMetrics.peg,
+            peg_meta: perShareMetrics.pegMeta,
             foreign_ratio: asNum((stock as any).foreign_ratio ?? (stock as any).foreigner_ratio),
             fundamentals_as_of: fund?.as_of ?? null,
             roe: asNum(fund?.roe),

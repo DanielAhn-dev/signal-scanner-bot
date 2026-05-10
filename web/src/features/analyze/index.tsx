@@ -369,17 +369,55 @@ export default function AnalyzePage() {
           <div className="title-md" style={{ marginBottom: 'var(--space-2)' }}>투자지표</div>
           <div className="cards-grid cols-3">
             {([
-              ['PER', result.per != null ? formatNumber(result.per, 2) : '—'],
-              ['PBR', result.pbr != null ? formatNumber(result.pbr, 2) : '—'],
-              ['PEG', result.peg != null ? formatNumber(result.peg, 2) : '—'],
-              ['EPS', result.eps != null ? formatKrw(result.eps) : '—'],
-              ['BPS', result.bps != null ? formatKrw(result.bps) : '—'],
-              ['ROE', result.roe != null ? formatNumber(result.roe, 2) + '%' : '—'],
-              ['부채비율', result.debt_ratio != null ? formatNumber(result.debt_ratio, 2) + '%' : '—'],
-            ] as [string, string][]).map(([label, val]) => (
+              { label: 'PER', val: result.per != null ? formatNumber(result.per, 2) : '—' },
+              { label: 'PBR', val: result.pbr != null ? formatNumber(result.pbr, 2) : '—' },
+              {
+                label: 'PEG',
+                val: result.peg != null ? formatNumber(result.peg, 2) : '—',
+                tag: result?.peg_meta?.label ?? null,
+                hint:
+                  result?.peg_meta?.growthPct != null
+                    ? `순이익성장률 ${formatNumber(result.peg_meta.growthPct, 2)}% 기반`
+                    : '순이익성장률 데이터 부족 시 신뢰도 낮음',
+              },
+              { label: 'EPS', val: result.eps != null ? formatKrw(result.eps) : '—' },
+              { label: 'BPS', val: result.bps != null ? formatKrw(result.bps) : '—' },
+              { label: 'ROE', val: result.roe != null ? formatNumber(result.roe, 2) + '%' : '—' },
+              { label: '부채비율', val: result.debt_ratio != null ? formatNumber(result.debt_ratio, 2) + '%' : '—' },
+            ] as { label: string; val: string; tag?: string | null; hint?: string }[]).map(({ label, val, tag, hint }) => (
               <div key={label}>
-                <div className="stat-label">{label}</div>
+                <div className="stat-label" style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-1)' }}>
+                  <span>{label}</span>
+                  {tag && (
+                    <span
+                      style={{
+                        fontSize: 'var(--font-size-xs)',
+                        padding: '1px 6px',
+                        borderRadius: 999,
+                        background:
+                          tag === '실데이터'
+                            ? 'var(--color-success-bg)'
+                            : tag === '추정치'
+                              ? 'var(--color-warning-bg)'
+                              : 'var(--color-error-bg)',
+                        color:
+                          tag === '실데이터'
+                            ? 'var(--color-success)'
+                            : tag === '추정치'
+                              ? 'var(--color-warning)'
+                              : 'var(--color-error)',
+                      }}
+                    >
+                      {tag}
+                    </span>
+                  )}
+                </div>
                 <div className="stat-value" style={{ fontSize: 'var(--font-size-base)', color: val === '—' ? 'var(--color-text-disabled)' : undefined }}>{val}</div>
+                {hint && (
+                  <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-tertiary)', marginTop: 2 }}>
+                    {hint}
+                  </div>
+                )}
               </div>
             ))}
           </div>
