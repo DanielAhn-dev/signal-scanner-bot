@@ -59,6 +59,58 @@ const MIN_MARKET_CAP = 50_000_000_000; // 500억
 const MIN_ROE = 8;
 const MAX_PBR = 2.0;
 
+export type DiscoveryQoqMode = "two-quarter-positive" | "latest-quarter-positive";
+
+export type DiscoveryCriteria = {
+  minMarketCap: number;
+  minRoe: number;
+  maxPbr: number;
+  qoqMode: DiscoveryQoqMode;
+};
+
+export type DiscoveryFunnel = {
+  annualUniverse: number;
+  afterMarketCap: number;
+  afterValue: number;
+  afterTrendData: number;
+  afterGrowth: number;
+};
+
+export type DiscoveryResult = {
+  picks: DiscoveryPick[];
+  criteria: DiscoveryCriteria;
+  funnel: DiscoveryFunnel;
+};
+
+const DEFAULT_DISCOVERY_CRITERIA: DiscoveryCriteria = {
+  minMarketCap: MIN_MARKET_CAP,
+  minRoe: MIN_ROE,
+  maxPbr: MAX_PBR,
+  qoqMode: "two-quarter-positive",
+};
+
+function sanitizeDiscoveryCriteria(input?: Partial<DiscoveryCriteria>): DiscoveryCriteria {
+  const minMarketCap = Number(input?.minMarketCap);
+  const minRoe = Number(input?.minRoe);
+  const maxPbr = Number(input?.maxPbr);
+  const qoqMode = input?.qoqMode === "latest-quarter-positive"
+    ? "latest-quarter-positive"
+    : "two-quarter-positive";
+
+  return {
+    minMarketCap: Number.isFinite(minMarketCap)
+      ? Math.max(10_000_000_000, Math.min(5_000_000_000_000, minMarketCap))
+      : DEFAULT_DISCOVERY_CRITERIA.minMarketCap,
+    minRoe: Number.isFinite(minRoe)
+      ? Math.max(0, Math.min(50, minRoe))
+      : DEFAULT_DISCOVERY_CRITERIA.minRoe,
+    maxPbr: Number.isFinite(maxPbr)
+      ? Math.max(0.1, Math.min(10, maxPbr))
+      : DEFAULT_DISCOVERY_CRITERIA.maxPbr,
+    qoqMode,
+  };
+}
+
 function chunk<T>(arr: T[], size: number): T[][] {
   const out: T[][] = [];
   for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size));
@@ -152,7 +204,11 @@ async function fetchSmartMoney12wByCode(
   return out;
 }
 
-export async function discoverMultibaggerCandidates(limit = 20): Promise<DiscoveryPick[]> {
+export async function discoverMultibagger(
+  limit = 20,
+  criteriaInput?: Partial<DiscoveryCriteria>
+): Promise<DiscoveryResult> {
+  const criteria = sanitizeDiscoveryCriteria(criteriaInput);
   const supabaseUrl = process.env.SUPABASE_URL;
   const supabaseKey =
     process.env.SUPABASE_SERVICE_ROLE_KEY ||
@@ -170,7 +226,15 @@ export async function discoverMultibaggerCandidates(limit = 20): Promise<Discove
   const annualMap = await fetchLatestAnnualByCode(supabase);
   const codes = [...annualMap.keys()];
 
-  if (!codes.length) return [];
+  const funnel: DiscoveryFunnel = {
+    annualUniverse: codes.length,
+    afterMarketCap: 0,
+    afterValue: 0,
+    afterTrendData: 0,
+    afterGrowth: 0,
+  };
+
+  if (!codes.length) return { picks: [], criteria, funnel };
 
   const { data: stocks, error: stockErr } = await supabase
     .from("stocks")
@@ -201,16 +265,19 @@ export async function discoverMultibaggerCandidates(limit = 20): Promise<Discove
     if (!annual) continue;
 
     const marketCap = Number(stock.market_cap ?? 0);
-    if (!Number.isFinite(marketCap) || marketCap < MIN_MARKET_CAP) continue;
+    if (!Number.isFinite(marketCap) || marketCap < criteria.minMarketCap) continue;
+    funnel.afterMarketCap += 1;
 
     const pbr = toNum(annual.pbr);
     const roe = toNum(annual.roe);
     const per = toNum(annual.per);
-    if (pbr == null || pbr >= MAX_PBR) continue;
-    if (roe == null || roe <= MIN_ROE) continue;
+    if (pbr == null || pbr >= criteria.maxPbr) continue;
+    if (roe == null || roe <= criteria.minRoe) continue;
+    funnel.afterValue += 1;
 
     const trends = trendMap.get(stock.code) ?? [];
     if (trends.length < 2) continue;
+    funnel.afterTrendData += 1;
 
     const [latest, prev] = trends;
     const latestRev = toNum(latest.rev_qoq);
@@ -218,14 +285,18 @@ export async function discoverMultibaggerCandidates(limit = 20): Promise<Discove
     const prevRev = toNum(prev.rev_qoq);
     const prevOp = toNum(prev.op_qoq);
 
-    // 최근 2분기 성장 필터
-    const twoQuarterGrowth =
+    const latestQuarterGrowth =
       latestRev != null && latestRev > 0 &&
-      latestOp != null && latestOp > 0 &&
+      latestOp != null && latestOp > 0;
+    const twoQuarterGrowth =
+      latestQuarterGrowth &&
       prevRev != null && prevRev > 0 &&
       prevOp != null && prevOp > 0;
-
-    if (!twoQuarterGrowth) continue;
+    const growthPassed = criteria.qoqMode === "latest-quarter-positive"
+      ? latestQuarterGrowth
+      : twoQuarterGrowth;
+    if (!growthPassed) continue;
+    funnel.afterGrowth += 1;
 
     const smartMoney12w = Number(smartMoneyMap.get(stock.code) ?? 0);
     const smartMoneyRatioPct = marketCap > 0 ? (smartMoney12w / marketCap) * 100 : null;
@@ -260,7 +331,16 @@ export async function discoverMultibaggerCandidates(limit = 20): Promise<Discove
     });
   }
 
-  return picks
-    .sort((a, b) => b.score.totalScore - a.score.totalScore)
-    .slice(0, Math.max(1, Math.min(30, limit)));
+  return {
+    picks: picks
+      .sort((a, b) => b.score.totalScore - a.score.totalScore)
+      .slice(0, Math.max(1, Math.min(30, limit))),
+    criteria,
+    funnel,
+  };
+}
+
+export async function discoverMultibaggerCandidates(limit = 20): Promise<DiscoveryPick[]> {
+  const result = await discoverMultibagger(limit);
+  return result.picks;
 }

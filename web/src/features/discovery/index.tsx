@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react'
 import { apiFetch } from '../../lib/api'
 import Button from '../../components/ui/Button'
+import Input from '../../components/ui/Input'
 import Skeleton from '../../components/Skeleton'
 import { EmptyState, ErrorState } from '../../components/StateViews'
 
@@ -28,6 +29,28 @@ type DiscoveryPick = {
   smartMoney12w: number
   smartMoneyRatioPct: number | null
   score: ScoreBreakdown
+}
+
+type DiscoveryCriteria = {
+  minMarketCapBillion: number
+  minRoe: number
+  maxPbr: number
+  qoqMode: 'two-quarter-positive' | 'latest-quarter-positive'
+}
+
+type DiscoveryFunnel = {
+  annualUniverse: number
+  afterMarketCap: number
+  afterValue: number
+  afterTrendData: number
+  afterGrowth: number
+}
+
+const DEFAULT_CRITERIA: DiscoveryCriteria = {
+  minMarketCapBillion: 500,
+  minRoe: 8,
+  maxPbr: 2,
+  qoqMode: 'two-quarter-positive',
 }
 
 function ScoreBadge({ value, max }: { value: number; max: number }) {
@@ -68,17 +91,38 @@ export default function DiscoveryPage() {
   const [error, setError] = useState<string | null>(null)
   const [limit, setLimit] = useState(20)
   const [fetchedAt, setFetchedAt] = useState<string | null>(null)
+  const [criteria, setCriteria] = useState<DiscoveryCriteria>(DEFAULT_CRITERIA)
+  const [appliedCriteria, setAppliedCriteria] = useState<DiscoveryCriteria>(DEFAULT_CRITERIA)
+  const [funnel, setFunnel] = useState<DiscoveryFunnel | null>(null)
 
-  async function fetchPicks(n: number) {
+  async function fetchPicks(n: number, c: DiscoveryCriteria) {
     setLoading(true)
     setError(null)
     try {
-      const res = await apiFetch(`/api/ui/discovery-picks?limit=${n}`, {
+      const params = new URLSearchParams({
+        limit: String(n),
+        minMarketCapBillion: String(c.minMarketCapBillion),
+        minRoe: String(c.minRoe),
+        maxPbr: String(c.maxPbr),
+        qoqMode: c.qoqMode,
+      })
+      const res = await apiFetch(`/api/ui/discovery-picks?${params.toString()}`, {
         cacheMs: 120_000,
         timeoutMs: 30_000,
       })
       setPicks(res.picks ?? [])
       setFetchedAt(res.fetchedAt ?? null)
+      setFunnel(res.funnel ?? null)
+      if (res.criteria) {
+        setAppliedCriteria({
+          minMarketCapBillion: Number(res.criteria.minMarketCapBillion ?? c.minMarketCapBillion),
+          minRoe: Number(res.criteria.minRoe ?? c.minRoe),
+          maxPbr: Number(res.criteria.maxPbr ?? c.maxPbr),
+          qoqMode: (res.criteria.qoqMode === 'latest-quarter-positive' ? 'latest-quarter-positive' : 'two-quarter-positive'),
+        })
+      } else {
+        setAppliedCriteria(c)
+      }
     } catch (err: any) {
       setError(err?.message ?? '데이터 조회 실패')
     } finally {
@@ -87,7 +131,7 @@ export default function DiscoveryPage() {
   }
 
   useEffect(() => {
-    fetchPicks(limit)
+    fetchPicks(limit, criteria)
   }, [])
 
   function handleAnalyze(code: string) {
@@ -101,7 +145,11 @@ export default function DiscoveryPage() {
 
   function handleLimitChange(n: number) {
     setLimit(n)
-    fetchPicks(n)
+    fetchPicks(n, criteria)
+  }
+
+  function applyCriteria() {
+    fetchPicks(limit, criteria)
   }
 
   const updatedLabel = fetchedAt
@@ -134,7 +182,7 @@ export default function DiscoveryPage() {
           <Button
             variant="secondary"
             size="sm"
-            onClick={() => fetchPicks(limit)}
+            onClick={() => fetchPicks(limit, criteria)}
             disabled={loading}
           >
             {loading ? '조회 중...' : '새로고침'}
@@ -144,10 +192,78 @@ export default function DiscoveryPage() {
 
       <div className="card mb-4">
         <div className="muted">
-          후보 <strong>{picks.length}</strong>개 · 필터 기준: 시총 500억↑, PBR {'<'} 2.0, ROE {'>'} 8%, 최근 2분기 매출·영업이익 QoQ 양수
+          후보 <strong>{picks.length}</strong>개 · 필터 기준: 시총 {appliedCriteria.minMarketCapBillion}억↑,
+          {' '}PBR {'<'} {appliedCriteria.maxPbr.toFixed(1)}, ROE {'>'} {appliedCriteria.minRoe.toFixed(1)}%,
+          {' '}{appliedCriteria.qoqMode === 'two-quarter-positive' ? '최근 2분기 매출·영업이익 QoQ 양수' : '최신 분기 매출·영업이익 QoQ 양수'}
           {updatedLabel ? ` · ${updatedLabel}` : ''}
         </div>
       </div>
+
+      <div className="card mb-4">
+        <div className="title-md" style={{ marginBottom: 'var(--space-2)' }}>기준 설정</div>
+        <div className="cards-grid cols-3" style={{ marginBottom: 'var(--space-2)' }}>
+          <Input
+            label="최소 시총(억)"
+            type="number"
+            min={100}
+            step={50}
+            value={criteria.minMarketCapBillion}
+            onChange={(e) => setCriteria((prev) => ({ ...prev, minMarketCapBillion: Number(e.target.value || 0) }))}
+          />
+          <Input
+            label="최소 ROE(%)"
+            type="number"
+            min={0}
+            max={50}
+            step={0.5}
+            value={criteria.minRoe}
+            onChange={(e) => setCriteria((prev) => ({ ...prev, minRoe: Number(e.target.value || 0) }))}
+          />
+          <Input
+            label="최대 PBR"
+            type="number"
+            min={0.1}
+            max={10}
+            step={0.1}
+            value={criteria.maxPbr}
+            onChange={(e) => setCriteria((prev) => ({ ...prev, maxPbr: Number(e.target.value || 0) }))}
+          />
+        </div>
+        <div className="flex-between" style={{ gap: 'var(--space-2)', flexWrap: 'wrap' }}>
+          <div className="ui-field" style={{ minWidth: 260 }}>
+            <label className="ui-label">성장 조건</label>
+            <select
+              className="input"
+              value={criteria.qoqMode}
+              onChange={(e) => setCriteria((prev) => ({
+                ...prev,
+                qoqMode: e.target.value === 'latest-quarter-positive' ? 'latest-quarter-positive' : 'two-quarter-positive',
+              }))}
+            >
+              <option value="two-quarter-positive">최근 2분기 모두 QoQ 양수</option>
+              <option value="latest-quarter-positive">최신 분기 QoQ 양수</option>
+            </select>
+          </div>
+          <div className="flex-gap-sm">
+            <Button variant="secondary" size="sm" onClick={() => setCriteria(appliedCriteria)} disabled={loading}>
+              적용값으로 되돌리기
+            </Button>
+            <Button variant="primary" size="sm" onClick={applyCriteria} disabled={loading}>
+              기준 적용
+            </Button>
+          </div>
+        </div>
+      </div>
+
+      {funnel && (
+        <div className="card mb-4">
+          <div className="title-md" style={{ marginBottom: 'var(--space-2)' }}>필터 퍼널</div>
+          <div className="caption" style={{ lineHeight: 1.8 }}>
+            연간 재무 유니버스 {funnel.annualUniverse}개 → 시총 통과 {funnel.afterMarketCap}개 → 가치 통과 {funnel.afterValue}개 →
+            최근 2분기 데이터 보유 {funnel.afterTrendData}개 → 최종 성장 조건 통과 {funnel.afterGrowth}개
+          </div>
+        </div>
+      )}
 
       {loading && (
         <div className="card mb-4">
@@ -163,7 +279,13 @@ export default function DiscoveryPage() {
 
       {!loading && !error && picks.length === 0 && (
         <div className="card mb-4">
-          <EmptyState message="조건에 맞는 후보가 없습니다. ETL 실행 후 다시 확인해 주세요." />
+          <EmptyState
+            message={
+              funnel
+                ? `조건에 맞는 후보가 없습니다. 현재 퍼널 마지막 단계 통과: ${funnel.afterGrowth}개`
+                : '조건에 맞는 후보가 없습니다. ETL 실행 후 다시 확인해 주세요.'
+            }
+          />
         </div>
       )}
 
