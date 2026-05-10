@@ -13,6 +13,7 @@ m.stock.naver.com/api/stock/{code}/finance/summary 에서
 from __future__ import annotations
 
 import json
+import calendar
 import os
 import sys
 import time
@@ -61,8 +62,11 @@ _session.headers.update({
 })
 
 FINANCE_SUMMARY_URL = "https://m.stock.naver.com/api/stock/{code}/finance/summary"
-_DAY_MAP = {"03": "31", "06": "30", "09": "30", "12": "31"}
 _trend_table_missing_warned = False
+
+
+def _last_day_of_month(year: int, month: int) -> int:
+    return calendar.monthrange(year, month)[1]
 
 
 def _safe_int(val) -> Optional[int]:
@@ -75,9 +79,11 @@ def _safe_int(val) -> Optional[int]:
 
 
 def _quarter_to_date(key: str) -> str:
-    """'202506' -> '2025-06-30'"""
-    m = key[4:6]
-    return f"{key[:4]}-{m}-{_DAY_MAP.get(m, '30')}"
+    """'202506' -> '2025-06-30', '202602' -> '2026-02-28'"""
+    year = int(key[:4])
+    month = int(key[4:6])
+    day = _last_day_of_month(year, month)
+    return f"{year}-{month:02d}-{day:02d}"
 
 
 def fetch_quarterly(code: str) -> list[dict]:
