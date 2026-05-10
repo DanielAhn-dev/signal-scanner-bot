@@ -7,7 +7,12 @@
       "Bash(npx tsc *)",
       "Bash(npm uninstall *)",
       "Bash(Get-ChildItem -Path \"d:\\\\Dev\\\\Github\\\\signal-scanner-bot\\\\web\\\\src\\\\features\" -Recurse -Directory)",
-      "Bash(Select-Object FullName)"
+      "Bash(Select-Object FullName)",
+      "Bash(Get-ChildItem -Path \"d:\\\\Dev\\\\Github\\\\signal-scanner-bot\" -Recurse -Include *.py, *.sql, *.json, *.js, *.ts, *.yml, *.yaml)",
+      "Bash(Select-Object -ExpandProperty FullName)",
+      "Bash(Get-ChildItem -Path \"d:\\\\Dev\\\\Github\\\\signal-scanner-bot\" -Directory)",
+      "Bash(xargs grep -l \"CREATE TABLE.*stocks\")",
+      "Bash(xargs ls -lh)"
     ]
   }
 }

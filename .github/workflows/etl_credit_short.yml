@@ -1,0 +1,53 @@
+name: ETL - Credit & Short Data
+
+on:
+  schedule:
+    # 장 마감 후: 매주 월~금 08:30 UTC (한국시간 17:30, 장 마감 30분 후)
+    - cron: '30 8 * * 1-5'
+  workflow_dispatch:
+    inputs:
+      date:
+        description: '기준 거래일 (YYYYMMDD, 미입력 시 자동 감지)'
+        required: false
+      skip_credit:
+        description: '신용비율 수집 스킵'
+        type: boolean
+        default: false
+      skip_short:
+        description: '공매도 수집 스킵'
+        type: boolean
+        default: false
+
+jobs:
+  etl:
+    runs-on: ubuntu-latest
+    environment: production
+    timeout-minutes: 60
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: pip install pykrx supabase requests beautifulsoup4 python-dotenv
+
+      - name: Run ETL - Credit & Short
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: |
+          ARGS=""
+          if [ -n "${{ github.event.inputs.date }}" ]; then
+            ARGS="$ARGS --date ${{ github.event.inputs.date }}"
+          fi
+          if [ "${{ github.event.inputs.skip_credit }}" = "true" ]; then
+            ARGS="$ARGS --skip-credit"
+          fi
+          if [ "${{ github.event.inputs.skip_short }}" = "true" ]; then
+            ARGS="$ARGS --skip-short"
+          fi
+          python scripts/update_credit_short.py $ARGS

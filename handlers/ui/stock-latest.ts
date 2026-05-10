@@ -107,6 +107,8 @@ async function fetchTimeSeries(supabase: any, code: string): Promise<LatestRow[]
 
 async function fetchStockProfile(supabase: any, code: string): Promise<any | null> {
   const selectAttempts = [
+    // migration 적용 후: credit_ratio, short_ratio, short_balance 포함
+    'code,name,sector_id,close,updated_at,description,market_cap,per,pbr,eps,bps,foreign_ratio,credit_ratio,short_ratio,short_balance',
     'code,name,sector_id,close,updated_at,description,market_cap,per,pbr,eps,bps,foreign_ratio',
     'code,name,sector_id,close,updated_at,description,market_cap,per,pbr,eps,bps,foreigner_ratio',
     'code,name,sector_id,close,updated_at,description,market_cap,per,pbr,eps,bps',
@@ -114,8 +116,6 @@ async function fetchStockProfile(supabase: any, code: string): Promise<any | nul
     'code,name,sector_id,close,updated_at',
     'code,name,sector_id,close,updated_at,description,market_cap,per,pbr,eps,bps,foreign_ratio,sma20,sma50,rsi14',
     'code,name,sector_id,close,updated_at,description,market_cap,per,pbr,eps,bps,foreigner_ratio,sma20,sma50,rsi14',
-    'code,name,sector_id,close,updated_at,description,market_cap,per,pbr,eps,bps,foreign_ratio',
-    'code,name,sector_id,close,updated_at,description,market_cap,per,pbr,eps,bps,foreigner_ratio',
   ]
 
   for (const select of selectAttempts) {
@@ -390,7 +390,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (!code) return res.status(400).json({ error: 'Missing code parameter' })
 
   try {
-    const [series, stock, fundamentalsResp, flow, creditShort] = await Promise.all([
+    const [series, stock, fundamentalsResp, flow] = await Promise.all([
       fetchTimeSeries(supabase, code),
       fetchStockProfile(supabase, code),
       supabase
@@ -400,7 +400,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         .order('as_of', { ascending: false })
         .limit(1),
       fetchInvestorFlow(supabase, code),
-      fetchCreditShortSnapshot(code).catch(() => null),
     ])
 
     let fund: any = fundamentalsResp.data?.[0] || null
@@ -439,6 +438,21 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         volume: null,
         value: null,
       })
+    }
+
+    // 공매도/신용: DB 우선, 없으면 live 스크래핑 fallback
+    const dbCreditRatio = asNum((stock as any)?.credit_ratio)
+    const dbShortRatio   = asNum((stock as any)?.short_ratio)
+    const dbShortBalance = asNum((stock as any)?.short_balance)
+    const hasDbCreditShort = dbCreditRatio != null || dbShortRatio != null
+
+    let creditShort: { creditRatio: number | null; shortRatio: number | null; shortBalance: number | null } | null = null
+    if (hasDbCreditShort) {
+      creditShort = { creditRatio: dbCreditRatio, shortRatio: dbShortRatio, shortBalance: dbShortBalance }
+    } else {
+      // ETL 아직 미실행 또는 migration 미적용 → 실시간 스크래핑 fallback
+      const live = await fetchCreditShortSnapshot(code).catch(() => null)
+      if (live) creditShort = { creditRatio: live.creditRatio, shortRatio: live.shortRatio, shortBalance: live.shortBalance }
     }
 
     const latest = normalizedSeries[0] || null
