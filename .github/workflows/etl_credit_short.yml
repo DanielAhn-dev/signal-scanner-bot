@@ -33,9 +33,14 @@ jobs:
           cache: 'pip'
 
       - name: Install dependencies
-        run: pip install pykrx supabase requests beautifulsoup4 python-dotenv
+        run: |
+          pip install pykrx supabase requests beautifulsoup4 python-dotenv
+          # playwright는 KRX 차단 시 브라우저 폴백용 (선택적)
+          pip install playwright || true
+          python -m playwright install chromium --with-deps || true
 
       - name: Run ETL - Credit & Short
+        id: etl_run
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
@@ -50,4 +55,16 @@ jobs:
           if [ "${{ github.event.inputs.skip_short }}" = "true" ]; then
             ARGS="$ARGS --skip-short"
           fi
-          python scripts/update_credit_short.py $ARGS
+          python scripts/update_credit_short.py $ARGS 2>&1 | tee /tmp/etl_output.txt
+          # 저장 건수 0이면 경고 종료코드
+          if grep -q "저장할 데이터 없음" /tmp/etl_output.txt; then
+            echo "::warning::공매도/신용 데이터 저장 건수 0 — KRX 차단 또는 비거래일"
+          fi
+
+      - name: Upload log on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: etl-log-${{ github.run_id }}
+          path: /tmp/etl_output.txt
+          retention-days: 7

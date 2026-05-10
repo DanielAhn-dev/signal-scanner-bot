@@ -30,7 +30,6 @@ try:
     HAS_PYKRX = True
 except ImportError:
     HAS_PYKRX = False
-    print("⚠️ pykrx 미설치 — 공매도 수집 불가. pip install pykrx")
 
 from supabase import create_client, Client
 
@@ -97,115 +96,308 @@ def get_last_trading_date() -> str:
     return yyyymmdd_from_date(today)
 
 
-# ── 공매도 데이터 수집 (PyKRX) ────────────────────────────
-def fetch_shorting_all_markets(trading_date: str) -> dict[str, dict]:
+# ── 공매도 데이터 수집 (KRX) ────────────────────────────
+# PyKRX는 쿠키 없이 직접 POST → KRX가 LOGOUT 반환.
+# 해결: PyKRX의 Post.read()를 공유 세션(쿠키 포함)으로 monkey-patch.
+KRX_MAIN_PAGE  = "https://data.krx.co.kr/"
+KRX_SHORT_MENU = "https://data.krx.co.kr/contents/MDC/MDI/mdiLoader/index.cmd?menuId=MDC0201020201"
+KRX_REFERER    = KRX_SHORT_MENU
+KRX_URL        = "https://data.krx.co.kr/comm/bldAttendant/getJsonData.cmd"
+KRX_HEADERS = {
+    "User-Agent": UA,
+    "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
+    "Referer": KRX_REFERER,
+    "Accept": "application/json, text/javascript, */*; q=0.01",
+    "Accept-Language": "ko-KR,ko;q=0.9",
+    "X-Requested-With": "XMLHttpRequest",
+    "Origin": "https://data.krx.co.kr",
+}
+
+_krx_session: "requests.Session | None" = None
+_krx_blocked: bool = False   # 연속 LOGOUT → 전체 차단 플래그
+
+def get_krx_session(force: bool = False) -> "requests.Session":
+    """KRX 세션 초기화 (3단계 웜업 → JSESSIONID 활성화)."""
+    global _krx_session
+    if _krx_session is not None and not force:
+        return _krx_session
+    s = requests.Session()
+    s.headers.update({"User-Agent": UA, "Accept-Language": "ko-KR,ko;q=0.9"})
+    try:
+        s.get(KRX_MAIN_PAGE,  timeout=15, allow_redirects=True)
+        time.sleep(0.8)
+        s.get(KRX_SHORT_MENU, timeout=15, allow_redirects=True)
+        time.sleep(0.8)
+        cookies = list(s.cookies.keys())
+        print(f"  [KRX] 세션 초기화 완료 (쿠키: {cookies})")
+    except Exception as e:
+        print(f"  [KRX] 세션 초기화 실패: {e}")
+    _krx_session = s
+    return s
+
+def _patch_pykrx_session(session: "requests.Session") -> None:
     """
-    KOSPI + KOSDAQ 전종목 공매도 잔고 조회.
-    반환: { code → { short_ratio, short_balance, short_volume } }
+    PyKRX의 Post.read()를 공유 세션으로 교체.
+    쿠키 없이 POST하면 KRX가 LOGOUT을 반환하므로 필수.
     """
+    if not HAS_PYKRX:
+        return
+    try:
+        from pykrx.website.comm import webio
+        original_post_read = webio.Post.read
+
+        def _patched_read(self, **params):
+            try:
+                resp = session.post(
+                    self.url,
+                    headers={**self.headers, **KRX_HEADERS},
+                    data=params,
+                    timeout=30,
+                )
+                return resp
+            except Exception:
+                return original_post_read(self, **params)
+
+        webio.Post.read = _patched_read
+        print("  [PyKRX] Session monkey-patch 적용 완료")
+    except Exception as e:
+        print(f"  [PyKRX] patch 실패 (무시): {e}")
+
+def _build_isin(code6: str) -> str:
+    return f"KR7{code6.zfill(6)}0003"
+
+def _parse_krx_num(s) -> Optional[float]:
+    return safe_float(str(s).replace(",", "").strip())
+
+def _krx_post(form: dict, timeout: int = 20) -> "dict | None":
+    """KRX API POST (세션 쿠키 포함) — 실패 시 None 반환."""
+    global _krx_blocked
+    if _krx_blocked:
+        return None
+    session = get_krx_session()
+    for attempt in range(2):
+        try:
+            resp = session.post(KRX_URL, data=form, headers=KRX_HEADERS, timeout=timeout)
+            body = resp.text[:300]
+            is_logout = "LOGOUT" in body or (not resp.ok and resp.status_code in (400, 401, 403))
+            if is_logout:
+                if attempt == 0:
+                    time.sleep(2)
+                    session = get_krx_session(force=True)
+                    _patch_pykrx_session(session)
+                    continue
+                # 2회 연속 LOGOUT → 전체 차단으로 판단
+                print("  ❌ KRX API 차단됨 (LOGOUT 연속) — 공매도 수집 중단")
+                _krx_blocked = True
+                return None
+            if not resp.ok:
+                print(f"    KRX {resp.status_code}: {body[:200]}")
+                return None
+            data = resp.json()
+            if isinstance(data, str) and "LOGOUT" in data:
+                _krx_blocked = True
+                return None
+            return data
+        except Exception as e:
+            print(f"    KRX 요청 에러: {e}")
+            return None
+    return None
+
+
+def _parse_krx_short_rows(rows: list) -> "dict[str, dict]":
+    """KRX 응답 rows → { code: {short_ratio, short_balance, short_volume} }"""
+    if rows:
+        print(f"    KRX 응답 키: {list(rows[0].keys())}")  # 키 확인용
+    result: dict[str, dict] = {}
+    for row in rows:
+        raw_code = str(row.get("ISU_SRT_CD") or row.get("ISU_CD") or "")
+        code = raw_code.strip().lstrip("A").zfill(6)
+        if not code or len(code) != 6:
+            continue
+        ratio   = _parse_krx_num(row.get("STCK_BAL_RT") or row.get("BAL_RT") or row.get("SLVL_RT") or 0)
+        balance = _parse_krx_num(row.get("END_SNTT_STKCNT") or row.get("BAL_STKCNT") or 0)
+        volume  = _parse_krx_num(row.get("SLVL_VOL") or row.get("ACC_TRDVOL") or 0)
+        if ratio or balance:
+            result[code] = {
+                "short_ratio":   round(ratio, 4) if ratio else None,
+                "short_balance": int(balance) if balance else None,
+                "short_volume":  int(volume) if volume else None,
+            }
+    return result
+
+
+def _fetch_short_via_pykrx(trading_date: str) -> "dict[str, dict]":
+    """PyKRX를 이용한 공매도 잔고 수집 (세션 monkey-patch 적용)."""
     result: dict[str, dict] = {}
     if not HAS_PYKRX:
         return result
 
-    for market in ("KOSPI", "KOSDAQ"):
+    # 세션 초기화 후 PyKRX에 주입
+    session = get_krx_session()
+    _patch_pykrx_session(session)
+
+    for mkt, mkt_label in [("KOSPI", "KOSPI"), ("KOSDAQ", "KOSDAQ")]:
         try:
-            # 시장 전체 공매도 잔고 현황
-            df = krx_stock.get_shorting_balance(trading_date, market=market)
+            df = krx_stock.get_shorting_balance_top50(trading_date, market=mkt)
             if df is None or df.empty:
-                print(f"  ⚠️ {market} 공매도 데이터 없음 (휴장 또는 미발표)")
+                print(f"    [PyKRX] {mkt_label}: 데이터 없음")
                 continue
-
-            for ticker, row in df.iterrows():
-                code = str(ticker).zfill(6)
-                # 칼럼명이 버전마다 다를 수 있어 복수 키 시도
-                balance = safe_float(
-                    row.get("공매도잔고") or row.get("잔고") or row.get("balance")
-                )
-                ratio = safe_float(
-                    row.get("공매도비율") or row.get("잔고비율") or row.get("ratio")
-                )
-                volume = safe_float(
-                    row.get("공매도거래량") or row.get("거래량") or row.get("volume")
-                )
-                result[code] = {
-                    "short_balance": int(balance) if balance is not None else None,
-                    "short_ratio":   round(ratio, 4) if ratio is not None else None,
-                    "short_volume":  int(volume) if volume is not None else None,
-                }
-            print(f"  ✅ {market} 공매도 {len(df)}개 종목 수집")
-            time.sleep(1)
-
+            # 컬럼명 후보 (PyKRX 버전에 따라 다름)
+            RATIO_COLS   = ["공매도잔고비율", "잔고비율", "비율"]
+            BALANCE_COLS = ["공매도잔고", "잔고"]
+            ratio_col   = next((c for c in RATIO_COLS   if c in df.columns), None)
+            balance_col = next((c for c in BALANCE_COLS if c in df.columns), None)
+            added = 0
+            for ticker in df.index:
+                code = str(ticker).lstrip("A").zfill(6)
+                if not code or len(code) != 6:
+                    continue
+                ratio   = safe_float(df.at[ticker, ratio_col])   if ratio_col   else None
+                balance = safe_float(df.at[ticker, balance_col]) if balance_col else None
+                if ratio or balance:
+                    result[code] = {
+                        "short_ratio":   round(ratio, 4) if ratio   else None,
+                        "short_balance": int(balance)   if balance  else None,
+                        "short_volume":  None,
+                    }
+                    added += 1
+            print(f"    [PyKRX] {mkt_label}: {added}개")
         except Exception as e:
-            print(f"  ⚠️ {market} 공매도 전체 조회 실패: {e}")
-            # 전체 조회 실패 시 종목별로 재시도 (핵심 종목만)
-            result.update(_fetch_shorting_per_ticker(trading_date, market))
+            print(f"    [PyKRX] {mkt_label} 실패: {e}")
+        time.sleep(1)
 
     return result
 
 
-def _fetch_shorting_per_ticker(trading_date: str, market: str) -> dict[str, dict]:
-    """전체 조회 실패 시 대표 종목 핵심 100개만 개별 조회"""
-    fallback: dict[str, dict] = {}
-    try:
-        res = supabase.table("stocks") \
-            .select("code") \
-            .eq("market", market) \
-            .eq("is_active", True) \
-            .in_("universe_level", ["core"]) \
-            .order("mcap_rank") \
-            .limit(100) \
-            .execute()
-        codes = [r["code"] for r in (res.data or [])]
-    except Exception:
-        return fallback
+def fetch_shorting_all_markets(trading_date: str) -> "dict[str, dict]":
+    """
+    KRX 공매도 잔고 조회.
+    전략 A: PyKRX top50 (KRX 세션 내부 처리, 안정적)
+    전략 B: KRX 직접 API (HTTPS, 세션 쿠키) — PyKRX 실패 시
+    전략 C: 종목별 개별 조회 (core 종목) — 위 두 전략 모두 실패 시
+    """
+    result: dict[str, dict] = {}
 
-    for code in codes:
+    # ── 전략 A: PyKRX 우선 ──
+    if HAS_PYKRX:
+        print("  [전략A] PyKRX 공매도 잔고 상위 종목 조회...")
+        result = _fetch_short_via_pykrx(trading_date)
+        if len(result) >= 50:
+            print(f"  📊 공매도 수집 종목: {len(result)}개 (PyKRX)")
+            return result
+        print(f"  ⚠️ PyKRX 결과 부족 ({len(result)}개) → 직접 API 시도")
+
+    # ── 전략 B: KRX 직접 API (HTTPS) ──
+    print("  [전략B] KRX 직접 API 공매도 잔고 상위 종목 조회...")
+    for mkt_tp, mkt_label in [("1", "KOSPI"), ("2", "KOSDAQ")]:
+        data = _krx_post({
+            "bld":          "dbms/MDC/STAT/standard/MDCSTAT10701",
+            "mktTpCd":      mkt_tp,
+            "trdDd":        trading_date,
+            "money":        "1",
+            "csvxls_isNo":  "false",
+        })
+        if data:
+            rows = data.get("OutBlock_1") or data.get("outBlock_1") or []
+            parsed = _parse_krx_short_rows(rows)
+            result.update(parsed)
+            print(f"    {mkt_label} 상위 종목: {len(parsed)}개")
+        time.sleep(1.5)
+
+    # ── 전략 C: 종목별 잔고 조회 (core 종목) ──
+    if len(result) < 10:
+        print("  [전략C] 종목별 공매도 잔고 개별 조회 (core)...")
         try:
-            df = krx_stock.get_shorting_balance_by_date(trading_date, trading_date, code)
-            if df is None or df.empty:
-                continue
-            row = df.iloc[0]
-            balance = safe_float(row.get("공매도잔고") or row.get("잔고"))
-            ratio   = safe_float(row.get("공매도비율") or row.get("잔고비율"))
-            volume  = safe_float(row.get("공매도거래량") or row.get("거래량"))
-            fallback[code] = {
-                "short_balance": int(balance) if balance is not None else None,
-                "short_ratio":   round(ratio, 4) if ratio is not None else None,
-                "short_volume":  int(volume) if volume is not None else None,
-            }
-            time.sleep(0.25)
+            res = supabase.table("stocks").select("code") \
+                .eq("is_active", True).in_("universe_level", ["core"]) \
+                .order("mcap_rank").limit(100).execute()
+            codes = [r["code"] for r in (res.data or [])]
         except Exception:
-            continue
+            codes = []
 
-    return fallback
+        ok = 0
+        for code in codes:
+            if _krx_blocked:
+                print("  ❌ KRX 차단 감지 → 전략C 조기 종료")
+                break
+            isin = _build_isin(code)
+            data = _krx_post({
+                "bld":          "dbms/MDC/STAT/standard/MDCSTAT10401",
+                "isuCd":        isin,
+                "strtDd":       trading_date,
+                "endDd":        trading_date,
+                "money":        "1",
+                "csvxls_isNo":  "false",
+            }, timeout=10)
+            if data:
+                rows = data.get("OutBlock_1") or data.get("outBlock_1") or []
+                parsed = _parse_krx_short_rows(rows)
+                if parsed:
+                    result.update(parsed)
+                    ok += 1
+            time.sleep(0.5)
+        print(f"    종목별 조회: {ok}/{len(codes)} 성공")
+
+    print(f"  📊 공매도 수집 종목: {len(result)}개")
+    return result
 
 
 # ── 신용비율 수집 (Naver Finance HTML) ───────────────────
 def fetch_credit_ratio_naver(code: str) -> Optional[float]:
-    """Naver Finance 종목 메인에서 신용비율(%) 파싱"""
+    """
+    Naver Finance 종목 메인에서 신용비율(%) 파싱.
+    세 가지 방법을 순서대로 시도.
+    """
     try:
         url = f"https://finance.naver.com/item/main.naver?code={code}"
-        resp = requests.get(url, headers={"User-Agent": UA}, timeout=8)
+        resp = requests.get(
+            url,
+            headers={
+                "User-Agent": UA,
+                "Accept-Language": "ko-KR,ko;q=0.9",
+                "Referer": "https://finance.naver.com/",
+            },
+            timeout=10,
+        )
         resp.raise_for_status()
+        # Naver 페이지는 EUC-KR로 인코딩되는 경우 있음
+        resp.encoding = resp.apparent_encoding or "utf-8"
         soup = BeautifulSoup(resp.text, "html.parser")
 
-        # 방법 1: th 텍스트로 레이블 탐색
-        for th in soup.find_all("th"):
-            if th.get_text(strip=True) == "신용비율":
-                td = th.find_next_sibling("td")
+        # 방법 1: <tr> 단위로 th+td 쌍 탐색 (가장 안정적)
+        for tr in soup.find_all("tr"):
+            th = tr.find("th")
+            if th and "신용비율" in th.get_text():
+                td = tr.find("td")
                 if td:
-                    text = td.get_text(strip=True)
+                    # Naver는 숫자를 <em> 안에 넣는 경우가 많음
+                    em = td.find("em")
+                    text = (em or td).get_text(strip=True)
                     val = safe_float(text.replace("%", "").replace(",", ""))
                     if val is not None:
                         return val
 
-        # 방법 2: 정규식 fallback
-        match = re.search(r"신용비율[^0-9]*([0-9]+\.?[0-9]*)", resp.text)
+        # 방법 2: <dt>/<dd> 구조 (일부 종목 페이지)
+        for dt in soup.find_all("dt"):
+            if "신용비율" in dt.get_text():
+                dd = dt.find_next_sibling("dd")
+                if dd:
+                    val = safe_float(dd.get_text(strip=True).replace("%", ""))
+                    if val is not None:
+                        return val
+
+        # 방법 3: 정규식 — HTML 원문에서 패턴 추출
+        # 패턴: "신용비율" 근처의 숫자 (소수점 포함)
+        match = re.search(
+            r"신용비율[^0-9\-]{0,30}?([\-]?[0-9]+\.?[0-9]*)",
+            resp.text,
+        )
         if match:
             return safe_float(match.group(1))
 
-    except Exception:
-        pass
+    except Exception as e:
+        # 개별 종목 에러는 조용히 무시 (배치 수집 중단 방지)
+        _ = e
     return None
 
 
@@ -329,8 +521,8 @@ def main():
 
     # ── Step 1: 공매도 수집 ──
     short_map: dict[str, dict] = {}
-    if not SKIP_SHORT and HAS_PYKRX:
-        print("\n[1/2] 공매도 잔고 수집 (PyKRX)...")
+    if not SKIP_SHORT:
+        print("\n[1/2] 공매도 잔고 수집 (KRX 직접 API)...")
         short_map = fetch_shorting_all_markets(trading_date)
         print(f"  📊 공매도 수집 종목: {len(short_map)}개")
     else:
