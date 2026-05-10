@@ -153,9 +153,18 @@ async function fetchSmartMoney12wByCode(
 }
 
 export async function discoverMultibaggerCandidates(limit = 20): Promise<DiscoveryPick[]> {
+  const supabaseUrl = process.env.SUPABASE_URL;
+  const supabaseKey =
+    process.env.SUPABASE_SERVICE_ROLE_KEY ||
+    process.env.SUPABASE_KEY ||
+    process.env.SUPABASE_ANON_KEY;
+  if (!supabaseUrl || !supabaseKey) {
+    throw new Error("SUPABASE_URL 또는 SUPABASE 키가 설정되지 않았습니다.");
+  }
+
   const supabase = createClient(
-    process.env.SUPABASE_URL!,
-    process.env.SUPABASE_ANON_KEY!
+    supabaseUrl,
+    supabaseKey
   );
 
   const annualMap = await fetchLatestAnnualByCode(supabase);
