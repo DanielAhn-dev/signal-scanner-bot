@@ -14,6 +14,7 @@ export interface InvestmentPlanInput {
     per?: FundamentalSnapshot["per"];
     pbr?: FundamentalSnapshot["pbr"];
     roe?: FundamentalSnapshot["roe"];
+    peg?: number;
     commentary?: FundamentalSnapshot["commentary"];
   } | null;
   marketEnv?: MarketEnv;
@@ -128,7 +129,8 @@ export function buildInvestmentPlan(input: InvestmentPlanInput): InvestmentPlan 
       (fundamentalQuality - 50) * 0.7 +
       ((input.fundamental?.per ?? 18) <= 12 ? 8 : 0) +
       ((input.fundamental?.pbr ?? 1.8) <= 1.5 ? 6 : 0) +
-      ((input.fundamental?.roe ?? 8) >= 12 ? 8 : 0),
+      ((input.fundamental?.roe ?? 8) >= 12 ? 8 : 0) +
+      ((input.fundamental?.peg ?? 2) <= 1 ? 6 : (input.fundamental?.peg ?? 2) <= 1.5 ? 3 : (input.fundamental?.peg ?? 2) >= 3 ? -4 : 0),
     0,
     100
   );

@@ -24,6 +24,18 @@ type InvestorFlowRow = {
   institution: number | null
 }
 
+type CreditShortProxy = {
+  riskScore: number
+  level: 'low' | 'moderate' | 'high'
+  reasons: string[]
+}
+
+type PerShareMetrics = {
+  eps: number | null
+  bps: number | null
+  peg: number | null
+}
+
 function asNum(v: unknown): number | null {
   if (v == null) return null
   if (typeof v === 'string') {
@@ -235,11 +247,140 @@ function estimateFundamentalQuality(fund: any): number {
   const roe = asNum(fund?.roe)
   const per = asNum(fund?.per)
   const pbr = asNum(fund?.pbr)
+  const peg = asNum((fund as any)?.peg)
   let score = 50
   if (roe != null) score += roe >= 12 ? 12 : roe >= 8 ? 6 : -4
   if (per != null) score += per <= 12 ? 8 : per <= 18 ? 3 : -4
   if (pbr != null) score += pbr <= 1.5 ? 6 : pbr <= 2.5 ? 2 : -3
+  if (peg != null) score += peg <= 1 ? 6 : peg <= 1.5 ? 3 : peg >= 3 ? -4 : 0
   return Math.max(20, Math.min(85, score))
+}
+
+function derivePerShareMetrics(input: {
+  price: number | null
+  per: number | null
+  pbr: number | null
+  eps: number | null
+  bps: number | null
+  peg: number | null
+  netIncomeGrowthPct: number | null
+}): PerShareMetrics {
+  const {
+    price,
+    per,
+    pbr,
+    eps,
+    bps,
+    peg,
+    netIncomeGrowthPct,
+  } = input
+
+  const resolvedEps =
+    eps ?? (price != null && per != null && per > 0 ? Number((price / per).toFixed(0)) : null)
+  const resolvedBps =
+    bps ?? (price != null && pbr != null && pbr > 0 ? Number((price / pbr).toFixed(0)) : null)
+  const resolvedPeg =
+    peg ??
+    (per != null && per > 0 && netIncomeGrowthPct != null && netIncomeGrowthPct > 0
+      ? Number((per / netIncomeGrowthPct).toFixed(2))
+      : null)
+
+  return {
+    eps: resolvedEps,
+    bps: resolvedBps,
+    peg: resolvedPeg,
+  }
+}
+
+function computeCreditShortProxy(input: {
+  stock: any | null
+  latest: LatestRow | null
+  series: LatestRow[]
+  flow: InvestorFlowRow | null
+}): CreditShortProxy {
+  const { stock, latest, series, flow } = input
+  const reasons: string[] = []
+  let riskScore = 50
+
+  const current = asNum(latest?.close ?? stock?.close)
+  const sma20 = asNum((stock as any)?.sma20)
+  const sma50 = asNum((stock as any)?.sma50)
+  const rsi14 = asNum((stock as any)?.rsi14)
+
+  if (rsi14 != null) {
+    if (rsi14 >= 70) {
+      riskScore += 12
+      reasons.push('RSI 과열권(70+)')
+    } else if (rsi14 >= 65) {
+      riskScore += 6
+      reasons.push('RSI 고점권(65+)')
+    } else if (rsi14 <= 35) {
+      riskScore -= 4
+      reasons.push('RSI 저점권(35-)')
+    }
+  }
+
+  if (current != null && sma20 != null && sma20 > 0) {
+    const premium20 = ((current - sma20) / sma20) * 100
+    if (premium20 >= 6) {
+      riskScore += 8
+      reasons.push('단기 이격 과열(SMA20 대비 +6%↑)')
+    } else if (premium20 >= 3) {
+      riskScore += 4
+      reasons.push('단기 이격 확대(SMA20 대비 +3%↑)')
+    }
+  }
+
+  if (current != null && sma50 != null && sma50 > 0) {
+    const premium50 = ((current - sma50) / sma50) * 100
+    if (premium50 >= 12) {
+      riskScore += 8
+      reasons.push('중기 이격 과열(SMA50 대비 +12%↑)')
+    } else if (premium50 >= 6) {
+      riskScore += 4
+      reasons.push('중기 이격 확대(SMA50 대비 +6%↑)')
+    }
+  }
+
+  const closes = series
+    .map((row) => asNum(row.close))
+    .filter((v): v is number => v != null)
+    .slice(0, 8)
+  if (closes.length >= 5) {
+    const rets: number[] = []
+    for (let i = 0; i < closes.length - 1; i += 1) {
+      const base = closes[i + 1]
+      if (base > 0) rets.push(Math.abs((closes[i] - base) / base) * 100)
+    }
+    if (rets.length) {
+      const mean = rets.reduce((acc, v) => acc + v, 0) / rets.length
+      if (mean >= 4) {
+        riskScore += 8
+        reasons.push('최근 변동성 확대(일평균 4%↑)')
+      } else if (mean >= 2.5) {
+        riskScore += 4
+        reasons.push('최근 변동성 상승(일평균 2.5%↑)')
+      }
+    }
+  }
+
+  const flowNet = (asNum(flow?.foreign) ?? 0) + (asNum(flow?.institution) ?? 0)
+  if (flowNet < -1_000_000) {
+    riskScore += 8
+    reasons.push('수급 약세(외인+기관 순매도 강함)')
+  } else if (flowNet < 0) {
+    riskScore += 4
+    reasons.push('수급 약세(외인+기관 순매도)')
+  }
+
+  const level: CreditShortProxy['level'] =
+    riskScore >= 65 ? 'high' : riskScore >= 45 ? 'moderate' : 'low'
+
+  return {
+    riskScore: Math.max(0, Math.min(100, Number(riskScore.toFixed(1)))),
+    level,
+    reasons: reasons.slice(0, 4),
+  }
 }
 
 async function buildAdvisorPayload(input: {
@@ -249,8 +390,21 @@ async function buildAdvisorPayload(input: {
   latest: LatestRow | null
   fund: any | null
   chatId: number | null
+  creditShortProxy: CreditShortProxy | null
+  hasRealCreditShort: boolean
+  perShareMetrics: PerShareMetrics
 }) {
-  const { supabase, code, stock, latest, fund, chatId } = input
+  const {
+    supabase,
+    code,
+    stock,
+    latest,
+    fund,
+    chatId,
+    creditShortProxy,
+    hasRealCreditShort,
+    perShareMetrics,
+  } = input
   const currentPrice = asNum(latest?.close ?? stock?.close)
   if (currentPrice == null) return null
 
@@ -305,6 +459,7 @@ async function buildAdvisorPayload(input: {
       per: asNum(fund?.per) ?? undefined,
       pbr: asNum(fund?.pbr) ?? undefined,
       roe: asNum(fund?.roe) ?? undefined,
+      peg: perShareMetrics.peg ?? undefined,
     },
   })
 
@@ -312,6 +467,20 @@ async function buildAdvisorPayload(input: {
     fallbackScore !== undefined
       ? Number((fallbackScore * 0.8 + fundamentalScore * 0.2).toFixed(1))
       : undefined
+
+  const proxyPenalty =
+    !hasRealCreditShort && creditShortProxy
+      ? creditShortProxy.level === 'high'
+        ? 6
+        : creditShortProxy.level === 'moderate'
+          ? 3
+          : 0
+      : 0
+
+  const finalScoreAdjusted =
+    finalScore != null
+      ? Math.max(0, Math.min(100, Number((finalScore - proxyPenalty).toFixed(1))))
+      : null
 
   let personalLines: string[] = []
   if (chatId) {
@@ -332,7 +501,7 @@ async function buildAdvisorPayload(input: {
   return {
     technicalScore: fallbackScore ?? null,
     fundamentalScore,
-    finalScore: finalScore ?? null,
+    finalScore: finalScoreAdjusted,
     status: plan.status,
     statusLabel: plan.statusLabel,
     summary: plan.summary,
@@ -347,7 +516,12 @@ async function buildAdvisorPayload(input: {
     holdDays: plan.holdDays,
     riskReward: plan.riskReward,
     rationale: plan.rationale,
-    warnings: plan.warnings,
+    warnings: [
+      ...(Array.isArray(plan.warnings) ? plan.warnings : []),
+      ...(!hasRealCreditShort && creditShortProxy && creditShortProxy.level !== 'low'
+        ? [`신용/공매도 실데이터 부재: 프록시 과열 리스크 ${creditShortProxy.level === 'high' ? '높음' : '보통'}`]
+        : []),
+    ],
     personalLines,
   }
 }
@@ -395,7 +569,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       fetchStockProfile(supabase, code),
       supabase
         .from('fundamentals')
-        .select('as_of,per,pbr,eps,bps,roe,debt_ratio')
+        .select('as_of,per,pbr,eps,bps,roe,debt_ratio,computed')
         .eq('code', code)
         .order('as_of', { ascending: false })
         .limit(1),
@@ -446,23 +620,96 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const dbShortBalance = asNum((stock as any)?.short_balance)
     const hasDbCreditShort = dbCreditRatio != null || dbShortRatio != null
 
-    let creditShort: { creditRatio: number | null; shortRatio: number | null; shortBalance: number | null } | null = null
+    let creditShort: {
+      creditRatio: number | null
+      shortRatio: number | null
+      shortBalance: number | null
+      source: 'db' | 'live' | 'proxy'
+      proxyRisk: CreditShortProxy | null
+    } | null = null
+
+    const proxyRisk = computeCreditShortProxy({
+      stock,
+      latest: normalizedSeries[0] || null,
+      series: normalizedSeries,
+      flow,
+    })
+
     if (hasDbCreditShort) {
-      creditShort = { creditRatio: dbCreditRatio, shortRatio: dbShortRatio, shortBalance: dbShortBalance }
+      creditShort = {
+        creditRatio: dbCreditRatio,
+        shortRatio: dbShortRatio,
+        shortBalance: dbShortBalance,
+        source: 'db',
+        proxyRisk: null,
+      }
     } else {
       // ETL 아직 미실행 또는 migration 미적용 → 실시간 스크래핑 fallback
       const live = await fetchCreditShortSnapshot(code).catch(() => null)
-      if (live) creditShort = { creditRatio: live.creditRatio, shortRatio: live.shortRatio, shortBalance: live.shortBalance }
+      if (live && (live.creditRatio != null || live.shortRatio != null || live.shortBalance != null)) {
+        creditShort = {
+          creditRatio: live.creditRatio,
+          shortRatio: live.shortRatio,
+          shortBalance: live.shortBalance,
+          source: 'live',
+          proxyRisk: null,
+        }
+      } else {
+        creditShort = {
+          creditRatio: null,
+          shortRatio: null,
+          shortBalance: null,
+          source: 'proxy',
+          proxyRisk,
+        }
+      }
     }
 
     const latest = normalizedSeries[0] || null
+    const currentPrice = asNum(latest?.close ?? (stock as any)?.close)
+
+    const resolvedPer = asNum((stock as any)?.per) ?? asNum(fund?.per)
+    const resolvedPbr = asNum((stock as any)?.pbr) ?? asNum(fund?.pbr)
+    const resolvedEps = asNum((stock as any)?.eps) ?? asNum(fund?.eps)
+    const resolvedBps = asNum((stock as any)?.bps) ?? asNum(fund?.bps)
+    const resolvedPeg =
+      asNum((stock as any)?.peg) ??
+      asNum((fund as any)?.peg) ??
+      asNum((fund as any)?.computed?.peg)
+    const netIncomeGrowthPct =
+      asNum((fund as any)?.net_income_growth_pct) ??
+      asNum((fund as any)?.netIncomeGrowthPct) ??
+      asNum((fund as any)?.computed?.netIncomeGrowthPct)
+
+    const perShareMetrics = derivePerShareMetrics({
+      price: currentPrice,
+      per: resolvedPer,
+      pbr: resolvedPbr,
+      eps: resolvedEps,
+      bps: resolvedBps,
+      peg: resolvedPeg,
+      netIncomeGrowthPct,
+    })
+
+    const mergedFundForAdvisor = {
+      ...(fund || {}),
+      per: resolvedPer,
+      pbr: resolvedPbr,
+      eps: perShareMetrics.eps,
+      bps: perShareMetrics.bps,
+      peg: perShareMetrics.peg,
+    }
+
     const advisor = await buildAdvisorPayload({
       supabase,
       code,
       stock,
       latest,
-      fund,
+      fund: mergedFundForAdvisor,
       chatId,
+      creditShortProxy: creditShort?.proxyRisk ?? null,
+      hasRealCreditShort: !!creditShort && creditShort.source !== 'proxy',
+      perShareMetrics,
     })
 
     return res.status(200).json({
@@ -477,10 +724,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             close: asNum(stock.close),
             updated_at: toIsoDate(stock.updated_at),
             market_cap: asNum((stock as any).market_cap),
-            per: asNum((stock as any).per) ?? asNum(fund?.per),
-            pbr: asNum((stock as any).pbr) ?? asNum(fund?.pbr),
-            eps: asNum((stock as any).eps) ?? asNum(fund?.eps),
-            bps: asNum((stock as any).bps) ?? asNum(fund?.bps),
+            per: resolvedPer,
+            pbr: resolvedPbr,
+            eps: perShareMetrics.eps,
+            bps: perShareMetrics.bps,
+            peg: perShareMetrics.peg,
             foreign_ratio: asNum((stock as any).foreign_ratio ?? (stock as any).foreigner_ratio),
             fundamentals_as_of: fund?.as_of ?? null,
             roe: asNum(fund?.roe),
@@ -502,6 +750,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             creditRatio: creditShort.creditRatio,
             shortRatio: creditShort.shortRatio,
             shortBalance: creditShort.shortBalance,
+            source: creditShort.source,
+            proxyRisk: creditShort.proxyRisk,
           }
         : null,
       advisor,

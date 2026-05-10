@@ -371,6 +371,7 @@ export default function AnalyzePage() {
             {([
               ['PER', result.per != null ? formatNumber(result.per, 2) : '—'],
               ['PBR', result.pbr != null ? formatNumber(result.pbr, 2) : '—'],
+              ['PEG', result.peg != null ? formatNumber(result.peg, 2) : '—'],
               ['EPS', result.eps != null ? formatKrw(result.eps) : '—'],
               ['BPS', result.bps != null ? formatKrw(result.bps) : '—'],
               ['ROE', result.roe != null ? formatNumber(result.roe, 2) + '%' : '—'],
