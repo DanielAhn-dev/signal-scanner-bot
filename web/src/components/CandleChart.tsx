@@ -7,10 +7,10 @@ import {
   createChart,
   ColorType,
   CrosshairMode,
+  CandlestickSeries,
+  HistogramSeries,
   type IChartApi,
   type ISeriesApi,
-  type CandlestickSeriesOptions,
-  type HistogramSeriesOptions,
 } from 'lightweight-charts'
 import type { OhlcvCandle } from '../lib/types'
 
@@ -34,8 +34,8 @@ function toTimestamp(dateStr: string): number {
 export default function CandleChart({ candles, entryLow, entryHigh, stopLoss, target1, height = 340 }: Props) {
   const containerRef = useRef<HTMLDivElement>(null)
   const chartRef = useRef<IChartApi | null>(null)
-  const candleSeriesRef = useRef<ISeriesApi<'Candlestick'> | null>(null)
-  const volSeriesRef = useRef<ISeriesApi<'Histogram'> | null>(null)
+  const candleSeriesRef = useRef<ISeriesApi<'Candlestick', any> | null>(null)
+  const volSeriesRef = useRef<ISeriesApi<'Histogram', any> | null>(null)
 
   useEffect(() => {
     if (!containerRef.current || candles.length === 0) return
@@ -63,21 +63,21 @@ export default function CandleChart({ candles, entryLow, entryHigh, stopLoss, ta
     chartRef.current = chart
 
     // 캔들 시리즈
-    const candleSeries = chart.addCandlestickSeries({
+    const candleSeries = chart.addSeries(CandlestickSeries, {
       upColor: '#26a69a',
       downColor: '#ef5350',
       borderVisible: false,
       wickUpColor: '#26a69a',
       wickDownColor: '#ef5350',
-    } as Partial<CandlestickSeriesOptions>)
+    })
     candleSeriesRef.current = candleSeries
 
     // 볼륨 시리즈 (보조, 오버레이 방식)
-    const volSeries = chart.addHistogramSeries({
+    const volSeries = chart.addSeries(HistogramSeries, {
       color: '#26a69a',
       priceFormat: { type: 'volume' },
       priceScaleId: 'vol',
-    } as Partial<HistogramSeriesOptions>)
+    })
     chart.priceScale('vol').applyOptions({ scaleMargins: { top: 0.8, bottom: 0 } })
     volSeriesRef.current = volSeries
 
