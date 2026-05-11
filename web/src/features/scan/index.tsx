@@ -2,7 +2,6 @@
 import { apiFetch } from '../../lib/api'
 import { formatNumber } from '../../lib/format'
 import Button from '../../components/ui/Button'
-import CardCaptureActions from '../../components/CardCaptureActions'
 import Skeleton from '../../components/Skeleton'
 import { ErrorState, EmptyState } from '../../components/StateViews'
 import { useToast } from '../../components/ToastProvider'
@@ -535,14 +534,7 @@ export default function ScanPage({ onNavigate }: { onNavigate?: (r: string) => v
 
       {/* 참고용 추천 섹션 */}
       {!loading && !error && !highlightLoading && activeHighlights.length > 0 && conditionFilter === 'all' && selectedSector === 'all' && (
-        <div className="card mb-4 card-capture-anchor" id="scan-highlight-section-capture">
-          <CardCaptureActions
-            targetId="scan-highlight-section-capture"
-            title="참고용 추천 눌림목"
-            filename={`scan-highlights-section-${new Date().toISOString().slice(0, 10)}`}
-            text="참고용 추천 눌림목 섹션 이미지"
-            onNotify={(message) => toast.show(message)}
-          />
+        <div className="card mb-4" id="scan-highlight-section-capture">
           <div className="scan-highlight-section-title" style={{ gap: 'var(--space-2)', flexWrap: 'wrap' }}>
             <span className="scan-highlight-section-label">참고용 추천 눌림목</span>
             <span className="scan-highlight-section-badge">상단 참고 · 하단 실전 기준과 분리</span>
@@ -602,14 +594,7 @@ export default function ScanPage({ onNavigate }: { onNavigate?: (r: string) => v
       ) : !error && sortedCandidates.length === 0 ? (
         <EmptyState title="스캔 결과 없음" description="스캔을 실행하거나 필터를 조정해 보세요." />
       ) : (
-        <div className="card card-capture-anchor" style={{ padding: 0 }} id="scan-candidates-section-capture">
-          <CardCaptureActions
-            targetId="scan-candidates-section-capture"
-            title="전체 후보 목록"
-            filename={`scan-candidates-section-${new Date().toISOString().slice(0, 10)}`}
-            text="전체 후보 목록 섹션 이미지"
-            onNotify={(message) => toast.show(message)}
-          />
+        <div className="card" style={{ padding: 0 }} id="scan-candidates-section-capture">
           {(conditionFilter !== 'all' || selectedSector !== 'all') && (
             <div className="scan-section-label" style={{ padding: 'var(--space-3) var(--space-4)', borderBottom: '1px solid var(--color-border-default)' }}>
               {conditionFilter !== 'all'

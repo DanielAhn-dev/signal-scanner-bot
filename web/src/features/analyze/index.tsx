@@ -6,7 +6,6 @@ import { getCurrentUserChatId } from '../../lib/userContext'
 import Button from '../../components/ui/Button'
 import Skeleton from '../../components/Skeleton'
 import StockSearchInput from '../../components/StockSearchInput'
-import CardCaptureActions from '../../components/CardCaptureActions'
 
 function buildAnalyzeShareUrl(code: string): string {
   if (typeof window === 'undefined') return `/analyze?code=${encodeURIComponent(code)}`
@@ -279,15 +278,7 @@ export default function AnalyzePage() {
       )}
 
       {result && !loading && (
-        <div className="card card-lg card-capture-anchor" id={analyzeCaptureId}>
-          <CardCaptureActions
-            targetId={analyzeCaptureId}
-            title={`${analyzeCaptureTitle} 분석`}
-            filename={analyzeCaptureFilename}
-            text={analyzeCaptureText}
-            shareUrl={buildAnalyzeShareUrl(result.code)}
-          />
-
+        <div className="card card-lg" id={analyzeCaptureId}>
           {/* ── 헤더: 종목명 + 현재가 ── */}
           <div className="flex-between" style={{ marginBottom: 'var(--space-3)' }}>
             <div>

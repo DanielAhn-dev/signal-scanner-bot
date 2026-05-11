@@ -160,74 +160,7 @@ html, body, #root {
   gap: var(--spacing-stack-lg);
 }
 
-/* ================================================================
-   CARD CAPTURE ACTIONS
-   ================================================================ */
-.card-capture-anchor {
-  position: relative;
-}
 
-.card-capture-actions {
-  position: absolute;
-  top: 10px;
-  right: 10px;
-  display: flex;
-  gap: 6px;
-  z-index: 4;
-  opacity: 0;
-  transform: translateY(-3px);
-  pointer-events: none;
-  transition: opacity var(--duration-fast) var(--ease-out), transform var(--duration-fast) var(--ease-out);
-}
-
-.card-capture-anchor:hover .card-capture-actions,
-.card-capture-anchor:focus-within .card-capture-actions {
-  opacity: 1;
-  transform: translateY(0);
-  pointer-events: auto;
-}
-
-.card-capture-btn {
-  border: 1px solid rgba(15, 23, 42, 0.14);
-  background: rgba(255, 255, 255, 0.95);
-  color: var(--color-text-primary);
-  border-radius: 999px;
-  padding: 4px 10px;
-  font-size: 11px;
-  font-weight: 700;
-  line-height: 1.3;
-  cursor: pointer;
-  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.1);
-}
-
-.card-capture-btn:hover:not(:disabled) {
-  border-color: rgba(22, 91, 214, 0.35);
-}
-
-.card-capture-btn-share {
-  background: rgba(236, 244, 255, 0.96);
-  color: #165bd6;
-  border-color: rgba(22, 91, 214, 0.22);
-}
-
-.card-capture-btn-kakao {
-  background: rgba(255, 235, 105, 0.95);
-  color: #3a2600;
-  border-color: rgba(58, 38, 0, 0.22);
-}
-
-.card-capture-btn:disabled {
-  opacity: 0.65;
-  cursor: not-allowed;
-}
-
-@media (hover: none), (pointer: coarse) {
-  .card-capture-actions {
-    opacity: 1;
-    transform: none;
-    pointer-events: auto;
-  }
-}
 
 /* ================================================================
    TRADES PAGE
@@ -1365,20 +1298,6 @@ html, body, #root {
   gap: var(--space-3);
 }
 
-.portfolio-share-image-actions {
-  display: flex;
-  gap: var(--space-2);
-  flex-wrap: wrap;
-}
-
-.portfolio-capture-top-actions {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: var(--space-2);
-  flex-wrap: wrap;
-}
-
 .portfolio-asset-overview-input-row {
   display: grid;
   grid-template-columns: minmax(180px, 260px) auto;
@@ -1841,84 +1760,6 @@ html, body, #root {
     padding-left: 0;
     margin-left: 0;
     justify-content: flex-start;
-  }
-
-  .portfolio-capture-top {
-    @apply flex-col items-start;
-  }
-
-  .portfolio-capture-top-actions {
-    width: 100%;
-    justify-content: flex-start;
-  }
-
-  .portfolio-share-image-actions {
-    flex-direction: column;
-  }
-
-  .portfolio-share-image-actions .ui-button,
-  .portfolio-capture-top-actions .ui-button {
-    width: 100%;
-  }
-
-  .portfolio-total-pill {
-    @apply whitespace-normal;
-  }
-
-  .portfolio-stat-grid {
-    grid-template-columns: 1fr;
-  }
-
-  .portfolio-asset-overview-input-row {
-    grid-template-columns: 1fr;
-  }
-
-  .portfolio-asset-overview-input-row .ui-button {
-    width: auto;
-    padding: 6px 12px;
-    font-size: 12px;
-  }
-
-  .portfolio-asset-metrics {
-    grid-template-columns: 1fr;
-  }
-
-  .portfolio-allocation-list {
-    max-height: none;
-  }
-
-  .portfolio-search-row {
-    @apply flex-col items-stretch;
-  }
-
-  .portfolio-search-btn {
-    @apply w-full;
-  }
-
-  .portfolio-actions-row {
-    @apply flex-col;
-  }
-
-  .portfolio-action-btn {
-    @apply w-full;
-  }
-
-  .portfolio-share-control-grid {
-    grid-template-columns: 1fr;
-    align-items: stretch;
-  }
-
-  .portfolio-share-url-row {
-    grid-template-columns: 1fr;
-  }
-
-  .portfolio-share-url-row .ui-button {
-    @apply w-full;
-  }
-
-  .portfolio-share-history-head {
-    @apply flex-col;
-    align-items: flex-start;
   }
 
   .portfolio-share-history-actions {
