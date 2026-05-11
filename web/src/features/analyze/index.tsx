@@ -118,7 +118,7 @@ export default function AnalyzePage() {
     try {
       const chatId = getCurrentUserChatId()
       const chatQs = chatId ? `&chat_id=${encodeURIComponent(chatId)}` : ''
-      const res = await apiFetch(`/api/ui/stock-latest?code=${encodeURIComponent(q)}${chatQs}`, { cacheMs: 10_000 })
+      const res = await apiFetch(`/api/ui/stock-latest?code=${encodeURIComponent(q)}${chatQs}`, { cacheMs: 0 })
       if (res?.profile || res?.latest) {
         setResult({ ...res.profile, ...res.latest })
         setSeries(res?.data ?? [])
@@ -489,7 +489,7 @@ export default function AnalyzePage() {
           {advisor && (
             <>
               {DIVIDER}
-              <div className="title-md" style={{ marginBottom: 'var(--space-3)' }}>Signal Scanner 어드바이저</div>
+              <div className="title-md" style={{ marginBottom: 'var(--space-3)' }}>Nexora 어드바이저</div>
               <div className="card" style={{ background: 'var(--color-bg-sunken)' }}>
 
                 {/* 점수 + 프로그레스 바 */}

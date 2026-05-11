@@ -128,7 +128,7 @@ export default function Header({
     <header className="site-header">
       <div className="header-inner">
         <div className="brand">
-          <button className="brand-btn" onClick={() => { onNavigate('dashboard'); setDrawerOpen(false) }}>Signal Scanner</button>
+          <button className="brand-btn" onClick={() => { onNavigate('dashboard'); setDrawerOpen(false) }}>Nexora</button>
         </div>
 
         <div className="top-nav" role="navigation" aria-label="핵심 네비게이션">

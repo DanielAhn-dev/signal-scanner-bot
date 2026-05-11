@@ -3,7 +3,7 @@ import Button from '../../components/ui/Button'
 import { useToast } from '../../components/ToastProvider'
 
 export default function AlertsPage() {
-  const [message, setMessage] = useState('테스트 알림입니다. Signal Scanner Web에서 전송됩니다.')
+  const [message, setMessage] = useState('테스트 알림입니다. Nexora Web에서 전송됩니다.')
   const [sending, setSending] = useState(false)
   const [result, setResult] = useState<string | null>(null)
   const toast = useToast()

@@ -410,7 +410,7 @@ export default function ScanPage({ onNavigate }: { onNavigate?: (r: string) => v
     <section className="container-app container-wide">
       {/* 페이지 헤더 */}
       <div className="flex-between mb-4">
-        <h1 className="title-xl" style={{ marginBottom: 0 }}>눌림목 스캐너</h1>
+        <h1 className="title-xl" style={{ marginBottom: 0 }}>Nexora 눌림목</h1>
         <div className="scan-header-actions">
           <Button variant="ghost" onClick={loadCandidates} disabled={loading}>새로고침</Button>
           <Button variant="primary" onClick={triggerScan} disabled={scanLoading}>

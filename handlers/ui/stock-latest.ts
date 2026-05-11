@@ -5,6 +5,7 @@ import { fetchLatestScoresByCodes } from '../../src/services/scoreSourceService'
 import { scaleScoreFactorsToReferencePrice } from '../../src/lib/priceScale'
 import { getFundamentalSnapshot } from '../../src/services/fundamentalService'
 import { fetchCreditShortSnapshot } from '../../src/utils/fetchCreditShortData'
+import { fetchRealtimeStockData } from '../../src/utils/fetchRealtimePrice'
 
 const ORIGIN = process.env.UI_CORS_ORIGIN || '*'
 
@@ -40,6 +41,14 @@ type PerShareMetrics = {
     growthPct: number | null
     label: string
   }
+}
+
+function isKrxIntradaySession(base = new Date()): boolean {
+  const kst = new Date(base.getTime() + 9 * 60 * 60 * 1000)
+  const day = kst.getUTCDay()
+  if (day === 0 || day === 6) return false
+  const minutes = kst.getUTCHours() * 60 + kst.getUTCMinutes()
+  return minutes >= 9 * 60 && minutes < 15 * 60 + 30
 }
 
 function asNum(v: unknown): number | null {
@@ -417,6 +426,7 @@ async function buildAdvisorPayload(input: {
   code: string
   stock: any | null
   latest: LatestRow | null
+  realtimePrice: number | null
   fund: any | null
   chatId: number | null
   creditShortProxy: CreditShortProxy | null
@@ -428,13 +438,16 @@ async function buildAdvisorPayload(input: {
     code,
     stock,
     latest,
+    realtimePrice,
     fund,
     chatId,
     creditShortProxy,
     hasRealCreditShort,
     perShareMetrics,
   } = input
-  const currentPrice = asNum(latest?.close ?? stock?.close)
+  const currentPrice =
+    (isKrxIntradaySession() ? asNum(realtimePrice) : null) ??
+    asNum(latest?.close ?? stock?.close)
   if (currentPrice == null) return null
 
   let fallbackScore: number | undefined
@@ -593,7 +606,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (!code) return res.status(400).json({ error: 'Missing code parameter' })
 
   try {
-    const [series, stock, fundamentalsResp, flow] = await Promise.all([
+    const [series, stock, fundamentalsResp, flow, realtimeData] = await Promise.all([
       fetchTimeSeries(supabase, code),
       fetchStockProfile(supabase, code),
       supabase
@@ -603,6 +616,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         .order('as_of', { ascending: false })
         .limit(1),
       fetchInvestorFlow(supabase, code),
+      fetchRealtimeStockData(code).catch(() => null),
     ])
 
     let fund: any = fundamentalsResp.data?.[0] || null
@@ -695,7 +709,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     const latest = normalizedSeries[0] || null
-    const currentPrice = asNum(latest?.close ?? (stock as any)?.close)
+    const realtimePrice = asNum(realtimeData?.price)
+    const currentPrice =
+      (isKrxIntradaySession() ? realtimePrice : null) ??
+      asNum(latest?.close ?? (stock as any)?.close)
 
     const resolvedPer = asNum((stock as any)?.per) ?? asNum(fund?.per)
     const resolvedPbr = asNum((stock as any)?.pbr) ?? asNum(fund?.pbr)
@@ -734,6 +751,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       code,
       stock,
       latest,
+      realtimePrice,
       fund: mergedFundForAdvisor,
       chatId,
       creditShortProxy: creditShort?.proxyRisk ?? null,
@@ -743,14 +761,19 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     return res.status(200).json({
       data: normalizedSeries,
-      latest,
+      latest: latest
+        ? {
+            ...latest,
+            close: currentPrice,
+          }
+        : null,
       profile: stock
         ? {
             code: stock.code,
             name: stock.name,
             sector_id: stock.sector_id,
             description: stock.description,
-            close: asNum(stock.close),
+            close: currentPrice,
             updated_at: toIsoDate(stock.updated_at),
             market_cap: asNum((stock as any).market_cap),
             per: resolvedPer,
