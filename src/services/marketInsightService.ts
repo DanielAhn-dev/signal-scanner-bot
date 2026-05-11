@@ -423,9 +423,9 @@ function estimateForecastFromMarketPick(input: {
     expectedDrawdownPct,
     confidencePct,
     scoreComponents: {
-      momentum: round1(clampDailyCandidateValue(input.pick.momentumScore ?? 50, 0, 100)),
-      value: round1(clampDailyCandidateValue(input.pick.valueScore ?? 50, 0, 100)),
-      safety: round1(clampDailyCandidateValue(input.pick.safetyScore ?? 50, 0, 100)),
+      momentum: clampDailyCandidateValue(round1(clampDailyCandidateValue(input.pick.momentumScore ?? 50, 0, 100)), 0, 100),
+      value: clampDailyCandidateValue(round1(clampDailyCandidateValue(input.pick.valueScore ?? 50, 0, 100)), 0, 100),
+      safety: clampDailyCandidateValue(round1(clampDailyCandidateValue(input.pick.safetyScore ?? 50, 0, 100)), 0, 100),
     },
   };
 }
@@ -465,9 +465,9 @@ function estimateForecastFromPullback(input: {
     expectedDrawdownPct,
     confidencePct,
     scoreComponents: {
-      momentum: momentumFromEntry,
-      value: round1(clampDailyCandidateValue((momentumFromEntry + safetyFromWarn) / 2, 0, 100)),
-      safety: safetyFromWarn,
+      momentum: clampDailyCandidateValue(momentumFromEntry, 0, 100),
+      value: clampDailyCandidateValue(round1((momentumFromEntry + safetyFromWarn) / 2), 0, 100),
+      safety: clampDailyCandidateValue(safetyFromWarn, 0, 100),
     },
   };
 }
