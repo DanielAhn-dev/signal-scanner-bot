@@ -12,6 +12,8 @@ export type RankedCandidate = {
   market?: string | null;
   marketCap?: number | null;
   universeLevel?: string | null;
+  isSectorLeader?: boolean | null;
+  aboveSma20?: boolean | null;
   stableTurn?: string | null;
   stableTrust?: number | null;
   stableAboveAvg?: boolean | null;
@@ -65,6 +67,7 @@ export type AutoTradeCandidateSelectionResult = {
     market?: string | null;
     marketCap?: number | null;
     universeLevel?: string | null;
+    isSectorLeader?: boolean | null;
     stableTurn?: string | null;
     stableTrust?: number | null;
     stableAboveAvg?: boolean | null;
@@ -147,7 +150,9 @@ function resolvePegRankBoost(row: RankedCandidate): number {
 }
 
 function resolveCompositeRankScore(row: RankedCandidate): number {
-  return row.score + resolvePegRankBoost(row);
+  // 섹터 리더 종목에 +4점 보너스 (동점 시 섹터 선도주 우선 매수)
+  const sectorLeaderBonus = row.isSectorLeader === true ? 4 : 0;
+  return row.score + resolvePegRankBoost(row) + sectorLeaderBonus;
 }
 
 function normalizeSignal(signal: unknown): string {
@@ -608,7 +613,17 @@ export function pickAutoTradeCandidates(input: {
     policy: input.marketPolicy,
   });
   const baseFilteredRows = marketPolicyRows
-    .filter((row) => row.close > 0 && !input.heldCodes.has(row.code))
+    .filter((row) => {
+      if (row.close <= 0 || input.heldCodes.has(row.code)) return false;
+      // Scan Edge 필터: RSI 45~65, 거래대금 ≥100억, 종가 > SMA20
+      // 데이터 미비 시(null) 해당 조건은 통과 처리
+      const rsi = row.rsi14 ?? null;
+      if (rsi != null && (rsi < 45 || rsi > 65)) return false;
+      const liq = row.liquidity ?? null;
+      if (liq != null && liq > 0 && liq < 10_000_000_000) return false;
+      if (row.aboveSma20 === false) return false;
+      return true;
+    })
     .sort((a, b) => resolveCompositeRankScore(b) - resolveCompositeRankScore(a));
   const rows = baseFilteredRows;
 
@@ -636,7 +651,7 @@ export function pickAutoTradeCandidates(input: {
       policy: input.marketPolicy,
       entryProfile,
       pullbackCandidateCodes: input.pullbackCandidateCodes,
-    }).map(({ code, close, score, name, signal, rsi14, liquidity, market, marketCap, universeLevel, stableTurn, stableTrust, stableAboveAvg, stableAccumulation }) => ({
+    }).map(({ code, close, score, name, signal, rsi14, liquidity, market, marketCap, universeLevel, isSectorLeader, stableTurn, stableTrust, stableAboveAvg, stableAccumulation }) => ({
       code,
       close,
       score,
@@ -647,6 +662,7 @@ export function pickAutoTradeCandidates(input: {
       market: market ?? null,
       marketCap: marketCap ?? null,
       universeLevel: universeLevel ?? null,
+      isSectorLeader: isSectorLeader ?? null,
       stableTurn: stableTurn ?? null,
       stableTrust: stableTrust ?? null,
       stableAboveAvg: stableAboveAvg ?? null,
@@ -915,7 +931,7 @@ export function pickAutoTradeAddOnCandidates(input: {
 
       return true;
     })
-    .map(({ code, close, score, name, signal, rsi14, liquidity, stableTurn, stableTrust, stableAboveAvg, stableAccumulation }) => ({
+    .map(({ code, close, score, name, signal, rsi14, liquidity, isSectorLeader, stableTurn, stableTrust, stableAboveAvg, stableAccumulation }) => ({
       code,
       close,
       score,
@@ -923,6 +939,7 @@ export function pickAutoTradeAddOnCandidates(input: {
       signal: signal ?? null,
       rsi14: rsi14 ?? null,
       liquidity: liquidity ?? null,
+      isSectorLeader: isSectorLeader ?? null,
       stableTurn: stableTurn ?? null,
       stableTrust: stableTrust ?? null,
       stableAboveAvg: stableAboveAvg ?? null,
