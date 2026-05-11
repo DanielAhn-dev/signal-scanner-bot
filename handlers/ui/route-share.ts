@@ -9,7 +9,7 @@ import { REPORT_SHARE_TABLE, createReportShare } from '../../src/services/report
 
 const ORIGIN = process.env.UI_CORS_ORIGIN || '*'
 
-type ShareKind = 'scan' | 'analyze'
+type ShareKind = 'scan' | 'analyze' | 'highlights'
 
 function firstHeaderValue(value: string | string[] | undefined): string {
   if (Array.isArray(value)) return String(value[0] || '')
@@ -49,11 +49,14 @@ function resolvePublicOrigin(req: VercelRequest): string {
 function resolveKind(value: unknown): ShareKind {
   const v = String(value || '').trim().toLowerCase()
   if (v === 'analyze') return 'analyze'
+  if (v === 'highlights') return 'highlights'
   return 'scan'
 }
 
 function toTopic(kind: ShareKind): string {
-  return kind === 'analyze' ? 'analyze-share' : 'scan-share'
+  if (kind === 'analyze') return 'analyze-share'
+  if (kind === 'highlights') return 'highlights-share'
+  return 'scan-share'
 }
 
 function toPublicPath(kind: ShareKind): string {

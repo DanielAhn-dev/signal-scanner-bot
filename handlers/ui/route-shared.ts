@@ -8,16 +8,19 @@ import { escapeHtml, renderLayout } from '../../src/services/reportWebRenderServ
 
 const ORIGIN = process.env.UI_CORS_ORIGIN || '*'
 
-type ShareKind = 'scan' | 'analyze'
+type ShareKind = 'scan' | 'analyze' | 'highlights'
 
 function resolveKind(value: unknown): ShareKind {
   const v = String(value || '').trim().toLowerCase()
   if (v === 'analyze') return 'analyze'
+  if (v === 'highlights') return 'highlights'
   return 'scan'
 }
 
 function expectedTopic(kind: ShareKind): string {
-  return kind === 'analyze' ? 'analyze-share' : 'scan-share'
+  if (kind === 'analyze') return 'analyze-share'
+  if (kind === 'highlights') return 'highlights-share'
+  return 'scan-share'
 }
 
 function formatKrw(value: number): string {
@@ -149,6 +152,47 @@ function renderScanShared(payload: any): string {
   `
 }
 
+function renderHighlightsShared(payload: any): string {
+  const items = Array.isArray(payload?.items) ? payload.items : []
+  const totalCapital = Number(payload?.totalCapital || 0)
+  const selectedCount = Number(payload?.selectedCount || 0)
+  const totalCount = Number(payload?.totalCount || 0)
+
+  const itemsHtml = items.slice(0, 20).map((item: any, idx: number) => {
+    const entryPrice = item?.entry_price ? formatKrw(item.entry_price) : '-'
+    const basePct = item?.expected_base_pct != null ? `${Number(item.expected_base_pct).toFixed(1)}%` : '-'
+    const upPct = item?.expected_upside_pct != null ? `${Number(item.expected_upside_pct).toFixed(1)}%` : '-'
+    const downPct = item?.expected_drawdown_pct != null ? `${Number(item.expected_drawdown_pct).toFixed(1)}%` : '-'
+    const confidence = item?.confidence_pct != null ? `${Number(item.confidence_pct).toFixed(1)}%` : '-'
+    return `
+      <article style="border:1px solid var(--color-border-default);border-radius:12px;padding:14px;background:#fff;">
+        <div style="display:flex;justify-content:space-between;gap:8px;align-items:flex-start;margin-bottom:10px;">
+          <div>
+            <div style="font-size:12px;color:#64748b">TOP ${idx + 1}</div>
+            <div style="margin-top:4px;font-size:16px;font-weight:800;color:#0f172a">${escapeHtml(String(item?.name || '-'))}</div>
+            <div style="margin-top:2px;font-size:12px;color:#64748b">${escapeHtml(String(item?.code || '-'))}</div>
+          </div>
+          <div style="text-align:right;font-size:14px;font-weight:700;color:#0060ff;">${escapeHtml(confidence)}</div>
+        </div>
+        <div style="border-top:1px solid var(--color-border-default);padding-top:10px;display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;">
+          <div style="font-size:11px;color:#64748b;"><div style="font-weight:600;color:#0f172a;margin-top:4px;">${escapeHtml(entryPrice)}</div><div style="font-size:10px;margin-top:2px;">진입가</div></div>
+          <div style="font-size:11px;color:#64748b;"><div style="font-weight:600;color:#059669;margin-top:4px;">+${escapeHtml(basePct)}</div><div style="font-size:10px;margin-top:2px;">목표1</div></div>
+          <div style="font-size:11px;color:#64748b;"><div style="font-weight:600;color:#059669;margin-top:4px;">+${escapeHtml(upPct)}</div><div style="font-size:10px;margin-top:2px;">목표2</div></div>
+          <div style="font-size:11px;color:#64748b;"><div style="font-weight:600;color:#dc2626;margin-top:4px;">-${escapeHtml(downPct)}</div><div style="font-size:10px;margin-top:2px;">손절</div></div>
+        </div>
+      </article>`
+  }).join('')
+
+  return `
+    ${sharedResponsiveStyles()}
+    <section style="margin-bottom:12px;padding:14px 16px;border:1px solid var(--color-border-default);border-radius:14px;background:linear-gradient(135deg,#fff5f0 0%,#fffaf8 100%);">
+      <div style="font-size:21px;line-height:1.25;font-weight:800;color:#0f172a">하이라이트 허브 공유</div>
+      <div style="margin-top:8px;font-size:13px;color:#475569">선택된 ${selectedCount}개 종목 · 총 투자금 ${formatKrw(totalCapital)} (전체 ${totalCount}개 중)</div>
+    </section>
+    <section class="shared-cards">${itemsHtml || '<article style="border:1px solid var(--color-border-default);border-radius:12px;padding:16px;background:#fff;color:#64748b">표시할 종목이 없습니다.</article>'}</section>
+  `
+}
+
 function renderAnalyzeShared(payload: any): string {
   const stock = payload?.stock || {}
   const advisor = payload?.advisor || {}
@@ -272,13 +316,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     const contentHtml = kind === 'analyze'
       ? renderAnalyzeShared(payload)
-      : renderScanShared(payload)
+      : kind === 'highlights'
+        ? renderHighlightsShared(payload)
+        : renderScanShared(payload)
 
     const html = renderLayout({
-      title: kind === 'analyze' ? '종목 분석 공유' : '눌림목 스캔 공유',
-      topic: kind === 'analyze' ? '종목 분석 공유' : '눌림목 공유',
+      title: kind === 'analyze' ? '종목 분석 공유' : kind === 'highlights' ? '하이라이트 허브 공유' : '눌림목 스캔 공유',
+      topic: kind === 'analyze' ? '종목 분석 공유' : kind === 'highlights' ? '하이라이트 공유' : '눌림목 공유',
       sourceLabel: String(record.source_label || `${kind}-share`),
-      description: kind === 'analyze' ? 'Nexora 종목 분석 공유 페이지' : 'Nexora 눌림목 스캔 공유 페이지',
+      description: kind === 'analyze' ? 'Nexora 종목 분석 공유 페이지' : kind === 'highlights' ? 'Nexora 하이라이트 허브 공유 페이지' : 'Nexora 눌림목 스캔 공유 페이지',
       contentHtml,
       shareLocked: true,
     })

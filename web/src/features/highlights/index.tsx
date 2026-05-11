@@ -6,6 +6,8 @@ import Input from '../../components/ui/Input'
 import Skeleton from '../../components/Skeleton'
 import { EmptyState, ErrorState } from '../../components/StateViews'
 import { useToast } from '../../components/ToastProvider'
+import ShareModal from '../../components/ShareModal'
+import { useShareManager } from '../../hooks/useShareManager'
 import { defaultPlanItem, saveSimulationPlan, type HighlightPlanItem } from '../simulator/planStore'
 
 type HighlightItem = {
@@ -140,6 +142,11 @@ export default function HighlightsPage() {
   const [totalCapital, setTotalCapital] = useState('10000000')
   const [isSaving, setIsSaving] = useState(false)
   const toast = useToast()
+  const shareManager = useShareManager({
+    endpoint: '/api/ui/route-share',
+    scopeKey: 'kind',
+    requiresCode: false,
+  })
 
   const load = React.useCallback(async () => {
     setLoading(true)
@@ -227,6 +234,40 @@ export default function HighlightsPage() {
     }
   }
 
+  const onShareHighlights = async () => {
+    if (selectedItems.length === 0) {
+      toast.show('최소 1개 종목을 선택해 주세요.')
+      return
+    }
+
+    await shareManager.createShare('highlights', {
+      kind: 'highlights',
+      payload: {
+        items: selectedItems.map((row) => ({
+          code: row.code,
+          name: row.name,
+          sector_id: row.sector_id,
+          entry_grade: row.entry_grade,
+          trend_grade: row.trend_grade,
+          dist_grade: row.dist_grade,
+          warn_grade: row.warn_grade,
+          entry_price: row.entry_price,
+          strategy_label: row.strategy_label,
+          expected_base_pct: row.expected_base_pct,
+          expected_upside_pct: row.expected_upside_pct,
+          expected_drawdown_pct: row.expected_drawdown_pct,
+          confidence_pct: row.confidence_pct,
+          score_momentum: row.score_momentum,
+          score_value: row.score_value,
+          score_safety: row.score_safety,
+        })),
+        totalCapital: Number(totalCapital || 0),
+        selectedCount: selectedItems.length,
+        totalCount: items.length,
+      },
+    })
+  }
+
   return (
     <div className="container-app">
       <div className="title-xl">하이라이트 허브</div>
@@ -238,7 +279,10 @@ export default function HighlightsPage() {
             <div className="title-md">오늘의 집행 초안</div>
             <div className="caption mt-1">최대 1~3종목 권장. 단일 확신 종목이면 1종목만 선택 후 분할진입 시뮬레이션을 사용하세요.</div>
           </div>
-          <Button variant="secondary" onClick={load} disabled={loading}>하이라이트 새로고침</Button>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <Button variant="secondary" onClick={onShareHighlights} disabled={selectedItems.length === 0}>링크 공유</Button>
+            <Button variant="secondary" onClick={load} disabled={loading}>하이라이트 새로고침</Button>
+          </div>
         </div>
         <div style={{ display: 'flex', gap: 'var(--space-3)', alignItems: 'stretch', marginTop: 'var(--space-3)' }}>
           <div style={{ flex: 1 }}>
@@ -487,6 +531,22 @@ export default function HighlightsPage() {
           )}
         </div>
       )}
+
+      <ShareModal
+        open={shareManager.open}
+        onClose={shareManager.close}
+        url={shareManager.info?.url}
+        code={shareManager.info?.code}
+        requiresCode={shareManager.requiresCode}
+        expiresAt={shareManager.info?.expiresAt}
+        shares={shareManager.list}
+        loading={shareManager.loading}
+        onRefresh={() => { void shareManager.loadList('highlights') }}
+        includeAll={shareManager.includeAll}
+        onChangeIncludeAll={shareManager.setIncludeAll}
+        onRevoke={shareManager.revokeShare}
+        revokingId={shareManager.revokingId}
+      />
     </div>
   )
 }
