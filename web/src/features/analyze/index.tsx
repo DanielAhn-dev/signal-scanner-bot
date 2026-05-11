@@ -6,6 +6,8 @@ import { getCurrentUserChatId } from '../../lib/userContext'
 import Button from '../../components/ui/Button'
 import Skeleton from '../../components/Skeleton'
 import StockSearchInput from '../../components/StockSearchInput'
+import { useToast } from '../../components/ToastProvider'
+import { useRouteShare } from '../../hooks/useRouteShare'
 
 function buildAnalyzeShareUrl(code: string): string {
   if (typeof window === 'undefined') return `/analyze?code=${encodeURIComponent(code)}`
@@ -66,6 +68,8 @@ export default function AnalyzePage() {
   const [error, setError] = useState<string | null>(null)
   const [quickStocks, setQuickStocks] = useState<Array<{ code: string; name: string }>>([])
   const inputRef = useRef<HTMLInputElement>(null)
+  const toast = useToast()
+  const { shareRoute } = useRouteShare()
 
   useEffect(() => {
     const load = async () => {
@@ -226,13 +230,31 @@ export default function AnalyzePage() {
   }, [advisor, result])
 
   const analyzeCaptureId = result?.code ? `analyze-result-capture-${result.code}` : 'analyze-result-capture'
-  const analyzeCaptureTitle = result?.name ?? result?.code ?? '종목 분석'
-  const analyzeCaptureFilename = result?.code
-    ? `analyze-${result.code}-${new Date().toISOString().slice(0, 10)}`
-    : `analyze-${new Date().toISOString().slice(0, 10)}`
-  const analyzeCaptureText = shareSummaryLines.length > 0
-    ? `${analyzeCaptureTitle} 분석 · ${shareSummaryLines.join(' · ')}`
-    : `${analyzeCaptureTitle} 분석`
+
+  const onShareAnalyze = async () => {
+    const code = String(result?.code || query || '').trim()
+    if (!code) {
+      toast.show('먼저 종목을 조회해 주세요')
+      return
+    }
+
+    const summary = shareSummaryLines.length > 0
+      ? shareSummaryLines.join(' · ')
+      : `${result?.name || code} 분석 링크`
+
+    const { url, mode } = await shareRoute({
+      path: '/analyze',
+      query: { code },
+      title: `${result?.name || code} 종목 분석`,
+      text: summary,
+    })
+
+    if (mode === 'native') {
+      toast.show('공유 창을 열었습니다')
+      return
+    }
+    toast.show(`링크를 복사했습니다: ${url}`)
+  }
 
   return (
     <section className="container-app">
@@ -252,6 +274,9 @@ export default function AnalyzePage() {
           />
           <Button variant="primary" onClick={() => analyze()} disabled={loading || !query.trim()}>
             {loading ? '조회 중…' : '분석'}
+          </Button>
+          <Button variant="secondary" onClick={onShareAnalyze} disabled={loading || !result?.code}>
+            링크 공유
           </Button>
         </div>
         <div className="tag-list" style={{ marginTop: 'var(--space-3)' }}>

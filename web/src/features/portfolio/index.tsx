@@ -368,16 +368,6 @@ export default function Portfolio() {
     toast.show('초기 투자금을 저장했습니다')
   }
 
-
-      text: '포트폴리오 핵심 요약 이미지',
-    })
-    if (shared) {
-      toast.show('공유 앱을 열었습니다. 카카오톡을 선택해 보내세요.')
-      return
-    }
-    downloadBlob(blob, `portfolio-share-summary-${new Date().toISOString().slice(0, 10)}`)
-    toast.show('기기 공유가 지원되지 않아 이미지로 저장했습니다')
-  }
   const captureGeneratedAt = useMemo(
     () => new Intl.DateTimeFormat('ko-KR', {
       year: 'numeric',

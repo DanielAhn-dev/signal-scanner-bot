@@ -7,6 +7,7 @@ import { ErrorState, EmptyState } from '../../components/StateViews'
 import { useToast } from '../../components/ToastProvider'
 import Pagination from '../../components/Pagination'
 import useWatchlistActions from '../../hooks/useWatchlistActions'
+import { useRouteShare } from '../../hooks/useRouteShare'
 
 const SCAN_SNAPSHOT_KEY = 'scan_snapshot_v1'
 const ANALYZE_PENDING_CODE_KEY = 'analyze_pending_code'
@@ -195,6 +196,7 @@ export default function ScanPage({ onNavigate }: { onNavigate?: (r: string) => v
   const [page, setPage] = useState(1)
   const pageSize = 20
   const toast = useToast()
+  const { shareRoute } = useRouteShare()
   const toastRef = useRef(toast)
   const lastSignatureRef = useRef<string | null>(null)
   const hasFetchedRef = useRef(false)
@@ -210,6 +212,18 @@ export default function ScanPage({ onNavigate }: { onNavigate?: (r: string) => v
     addToWatchlist,
     removeFromWatchlist,
   } = useWatchlistActions()
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const params = new URLSearchParams(window.location.search)
+    const nextSector = String(params.get('sector') || '').trim()
+    const nextFilter = String(params.get('filter') || '').trim()
+
+    if (nextSector) setSelectedSector(nextSector)
+    if (['all', 'entry', 'trend', 'accumulation', 'stable'].includes(nextFilter)) {
+      setConditionFilter(nextFilter as typeof conditionFilter)
+    }
+  }, [])
 
   const loadCandidates = useCallback(async (options?: { silent?: boolean }) => {
     if (!options?.silent) setLoading(true)
@@ -461,6 +475,24 @@ export default function ScanPage({ onNavigate }: { onNavigate?: (r: string) => v
     await onAddToWatchlist(code)
   }
 
+  const onShareScan = async () => {
+    const { url, mode } = await shareRoute({
+      path: '/scan',
+      query: {
+        sector: selectedSector !== 'all' ? selectedSector : undefined,
+        filter: conditionFilter !== 'all' ? conditionFilter : undefined,
+      },
+      title: 'Nexora 눌림목',
+      text: 'Nexora 눌림목 화면 공유 링크',
+    })
+
+    if (mode === 'native') {
+      toast.show('공유 창을 열었습니다')
+      return
+    }
+    toast.show(`링크를 복사했습니다: ${url}`)
+  }
+
   const renderSortableHeader = (label: string, key: SortKey) => {
     const active = sortKey === key
     const marker = active ? (sortDirection === 'asc' ? ' ▲' : ' ▼') : ''
@@ -481,6 +513,7 @@ export default function ScanPage({ onNavigate }: { onNavigate?: (r: string) => v
       <div className="flex-between mb-4">
         <h1 className="title-xl" style={{ marginBottom: 0 }}>Nexora 눌림목</h1>
         <div className="scan-header-actions">
+          <Button variant="secondary" onClick={onShareScan}>링크 공유</Button>
           <Button variant="ghost" onClick={() => { void loadCandidates() }} disabled={loading}>새로고침</Button>
           <Button variant="primary" onClick={triggerScan} disabled={scanLoading}>
             {scanLoading ? '동기화 중…' : '▶ 스캔 동기화 실행'}
