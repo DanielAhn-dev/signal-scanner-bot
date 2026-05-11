@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useMemo, useState } from 'react'
 import { apiFetch } from '../../lib/api'
 import Button from '../../components/ui/Button'
 import Input from '../../components/ui/Input'
@@ -18,6 +18,9 @@ type ScoreBreakdown = {
 type DiscoveryPick = {
   code: string
   name: string
+  sectorId: string | null
+  sectorName: string | null
+  sectorRawScore: number | null
   marketCap: number
   pbr: number | null
   per: number | null
@@ -30,6 +33,15 @@ type DiscoveryPick = {
   smartMoneyRatioPct: number | null
   score: ScoreBreakdown
 }
+
+type SectorSnapshot = {
+  id: string
+  name: string
+  score: number | null
+  change_rate: number | null
+}
+
+type SectorFilterMode = 'all' | 'promising' | 'next' | 'promising-or-next'
 
 type DiscoveryCriteria = {
   minMarketCapBillion: number
@@ -51,6 +63,7 @@ type DiscoveryPreset = {
   label: string
   hint: string
   criteria: DiscoveryCriteria
+  sectorMode: SectorFilterMode
 }
 
 const DEFAULT_CRITERIA: DiscoveryCriteria = {
@@ -71,6 +84,7 @@ const DISCOVERY_PRESETS: DiscoveryPreset[] = [
       maxPbr: 2,
       qoqMode: 'latest-quarter-positive',
     },
+    sectorMode: 'all',
   },
   {
     key: 'quality-focus',
@@ -82,6 +96,7 @@ const DISCOVERY_PRESETS: DiscoveryPreset[] = [
       maxPbr: 1.6,
       qoqMode: 'two-quarter-positive',
     },
+    sectorMode: 'all',
   },
   {
     key: 'early-discovery',
@@ -93,11 +108,89 @@ const DISCOVERY_PRESETS: DiscoveryPreset[] = [
       maxPbr: 2.5,
       qoqMode: 'latest-quarter-positive',
     },
+    sectorMode: 'all',
+  },
+  {
+    key: 'leader-sector-follow',
+    label: '주도 섹터 추종형',
+    hint: '점수 상위 섹터 내 종목 우선',
+    criteria: {
+      minMarketCapBillion: 500,
+      minRoe: 8,
+      maxPbr: 2.1,
+      qoqMode: 'two-quarter-positive',
+    },
+    sectorMode: 'promising',
+  },
+  {
+    key: 'rotation-early',
+    label: '다음 섹터 선점형',
+    hint: '수급 유입 기대 섹터를 선제 탐색',
+    criteria: {
+      minMarketCapBillion: 300,
+      minRoe: 6,
+      maxPbr: 2.4,
+      qoqMode: 'latest-quarter-positive',
+    },
+    sectorMode: 'next',
+  },
+  {
+    key: 'dual-sector-barbell',
+    label: '듀얼 섹터 바벨형',
+    hint: '주도+다음 섹터를 동시에 추적',
+    criteria: {
+      minMarketCapBillion: 400,
+      minRoe: 7,
+      maxPbr: 2.2,
+      qoqMode: 'latest-quarter-positive',
+    },
+    sectorMode: 'promising-or-next',
   },
 ]
 
-function criteriaSignature(c: DiscoveryCriteria): string {
-  return [c.minMarketCapBillion, c.minRoe, c.maxPbr, c.qoqMode].join('|')
+function criteriaSignature(c: DiscoveryCriteria, sectorMode: SectorFilterMode): string {
+  return [c.minMarketCapBillion, c.minRoe, c.maxPbr, c.qoqMode, sectorMode].join('|')
+}
+
+function asFiniteNumber(v: unknown): number | null {
+  const n = Number(v)
+  return Number.isFinite(n) ? n : null
+}
+
+function normalizeScore(raw: any): ScoreBreakdown {
+  const totalScore = asFiniteNumber(raw?.totalScore) ?? 0
+  const valueScore = asFiniteNumber(raw?.value) ?? asFiniteNumber(raw?.valueScore) ?? 0
+  const momentumScore = asFiniteNumber(raw?.momentum) ?? asFiniteNumber(raw?.momentumScore) ?? 0
+  const smartMoneyScore = asFiniteNumber(raw?.smartMoney) ?? asFiniteNumber(raw?.smartMoneyScore) ?? 0
+  const sectorScore = asFiniteNumber(raw?.sector) ?? asFiniteNumber(raw?.sectorScore) ?? 0
+  return {
+    totalScore,
+    value: valueScore,
+    momentum: momentumScore,
+    smartMoney: smartMoneyScore,
+    sector: sectorScore,
+  }
+}
+
+function normalizePick(raw: any): DiscoveryPick {
+  return {
+    code: String(raw?.code ?? ''),
+    name: String(raw?.name ?? ''),
+    sectorId: raw?.sectorId != null ? String(raw.sectorId) : null,
+    sectorName: raw?.sectorName != null ? String(raw.sectorName) : null,
+    sectorRawScore: asFiniteNumber(raw?.sectorRawScore),
+    marketCap: asFiniteNumber(raw?.marketCap) ?? 0,
+    pbr: asFiniteNumber(raw?.pbr),
+    per: asFiniteNumber(raw?.per),
+    roe: asFiniteNumber(raw?.roe),
+    revQoq: asFiniteNumber(raw?.revQoq),
+    opQoq: asFiniteNumber(raw?.opQoq),
+    revAcceleration: asFiniteNumber(raw?.revAcceleration),
+    opAcceleration: asFiniteNumber(raw?.opAcceleration),
+    smartMoney12w: asFiniteNumber(raw?.smartMoney12w) ?? 0,
+    smartMoneyRatioPct: asFiniteNumber(raw?.smartMoneyRatioPct),
+    score: normalizeScore(raw?.score),
+  }
 }
 
 function ScoreBadge({ value, max }: { value: number; max: number }) {
@@ -134,15 +227,38 @@ function navigateTo(route: string) {
 
 export default function DiscoveryPage() {
   const [picks, setPicks] = useState<DiscoveryPick[]>([])
+  const [sectors, setSectors] = useState<SectorSnapshot[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [limit, setLimit] = useState(20)
   const [fetchedAt, setFetchedAt] = useState<string | null>(null)
   const [criteria, setCriteria] = useState<DiscoveryCriteria>(DEFAULT_CRITERIA)
   const [appliedCriteria, setAppliedCriteria] = useState<DiscoveryCriteria>(DEFAULT_CRITERIA)
+  const [sectorMode, setSectorMode] = useState<SectorFilterMode>('all')
+  const [appliedSectorMode, setAppliedSectorMode] = useState<SectorFilterMode>('all')
   const [funnel, setFunnel] = useState<DiscoveryFunnel | null>(null)
 
-  async function fetchPicks(n: number, c: DiscoveryCriteria) {
+  async function fetchSectors() {
+    try {
+      const res = await apiFetch('/api/ui/sectors', {
+        cacheMs: 60_000,
+        timeoutMs: 15_000,
+      })
+      const data = Array.isArray(res?.data) ? res.data : []
+      setSectors(
+        data.map((row: any) => ({
+          id: String(row?.id ?? ''),
+          name: String(row?.name ?? row?.id ?? ''),
+          score: asFiniteNumber(row?.score),
+          change_rate: asFiniteNumber(row?.change_rate),
+        })).filter((row: SectorSnapshot) => row.id.length > 0)
+      )
+    } catch {
+      setSectors([])
+    }
+  }
+
+  async function fetchPicks(n: number, c: DiscoveryCriteria, mode: SectorFilterMode = sectorMode) {
     setLoading(true)
     setError(null)
     try {
@@ -157,7 +273,7 @@ export default function DiscoveryPage() {
         cacheMs: 120_000,
         timeoutMs: 30_000,
       })
-      setPicks(res.picks ?? [])
+      setPicks((res.picks ?? []).map((pick: any) => normalizePick(pick)))
       setFetchedAt(res.fetchedAt ?? null)
       setFunnel(res.funnel ?? null)
       if (res.criteria) {
@@ -170,6 +286,7 @@ export default function DiscoveryPage() {
       } else {
         setAppliedCriteria(c)
       }
+      setAppliedSectorMode(mode)
     } catch (err: any) {
       setError(err?.message ?? '데이터 조회 실패')
     } finally {
@@ -178,7 +295,8 @@ export default function DiscoveryPage() {
   }
 
   useEffect(() => {
-    fetchPicks(limit, criteria)
+    fetchSectors()
+    fetchPicks(limit, criteria, sectorMode)
   }, [])
 
   function handleAnalyze(code: string) {
@@ -192,19 +310,63 @@ export default function DiscoveryPage() {
 
   function handleLimitChange(n: number) {
     setLimit(n)
-    fetchPicks(n, criteria)
+    fetchPicks(n, criteria, sectorMode)
   }
 
   function applyCriteria() {
-    fetchPicks(limit, criteria)
+    fetchPicks(limit, criteria, sectorMode)
   }
 
   function applyPreset(preset: DiscoveryPreset) {
     setCriteria(preset.criteria)
-    fetchPicks(limit, preset.criteria)
+    setSectorMode(preset.sectorMode)
+    fetchPicks(limit, preset.criteria, preset.sectorMode)
   }
 
-  const appliedPresetKey = DISCOVERY_PRESETS.find((p) => criteriaSignature(p.criteria) === criteriaSignature(appliedCriteria))?.key ?? null
+  const appliedPresetKey = DISCOVERY_PRESETS.find((p) => criteriaSignature(p.criteria, p.sectorMode) === criteriaSignature(appliedCriteria, appliedSectorMode))?.key ?? null
+
+  const sectorScoreMap = useMemo(() => {
+    const m = new Map<string, number>()
+    for (const sector of sectors) {
+      if (sector.score != null) m.set(sector.id, sector.score)
+    }
+    return m
+  }, [sectors])
+
+  const promisingSectorIds = useMemo(() => {
+    return new Set(sectors.filter((s) => (s.score ?? -1) >= 55).map((s) => s.id))
+  }, [sectors])
+
+  const nextSectorIds = useMemo(() => {
+    return new Set(sectors.filter((s) => (s.score ?? -1) >= 40 && (s.change_rate ?? 0) > 0).map((s) => s.id))
+  }, [sectors])
+
+  const filteredPicks = useMemo(() => {
+    if (sectorMode === 'all') return picks
+
+    const hasSectorUniverse = promisingSectorIds.size > 0 || nextSectorIds.size > 0
+    if (!hasSectorUniverse) {
+      if (sectorMode === 'promising') {
+        return picks.filter((pick) => (pick.sectorRawScore ?? sectorScoreMap.get(pick.sectorId ?? '') ?? -1) >= 55)
+      }
+      return picks
+    }
+
+    return picks.filter((pick) => {
+      const sid = pick.sectorId
+      if (!sid) return false
+      if (sectorMode === 'promising') return promisingSectorIds.has(sid)
+      if (sectorMode === 'next') return nextSectorIds.has(sid)
+      return promisingSectorIds.has(sid) || nextSectorIds.has(sid)
+    })
+  }, [nextSectorIds, picks, promisingSectorIds, sectorMode, sectorScoreMap])
+
+  const sectorModeSummary = useMemo(() => {
+    if (sectorMode === 'all') return '전체 섹터'
+    if (sectorMode === 'promising') return `유망 섹터(${promisingSectorIds.size}개)`
+    if (sectorMode === 'next') return `다음 섹터(${nextSectorIds.size}개)`
+    return `유망+다음 섹터(${new Set([...promisingSectorIds, ...nextSectorIds]).size}개)`
+  }, [nextSectorIds, promisingSectorIds, sectorMode])
 
   const updatedLabel = fetchedAt
     ? `${new Date(fetchedAt).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })} 기준`
@@ -236,7 +398,7 @@ export default function DiscoveryPage() {
           <Button
             variant="secondary"
             size="sm"
-            onClick={() => fetchPicks(limit, criteria)}
+            onClick={() => fetchPicks(limit, criteria, sectorMode)}
             disabled={loading}
           >
             {loading ? '조회 중...' : '새로고침'}
@@ -246,7 +408,7 @@ export default function DiscoveryPage() {
 
       <div className="card mb-4">
         <div className="muted">
-          후보 <strong>{picks.length}</strong>개 · 필터 기준: 시총 {appliedCriteria.minMarketCapBillion}억↑,
+          후보 <strong>{filteredPicks.length}</strong>개 · 섹터 모드 <strong>{sectorModeSummary}</strong> · 필터 기준: 시총 {appliedCriteria.minMarketCapBillion}억↑,
           {' '}PBR {'<'} {appliedCriteria.maxPbr.toFixed(1)}, ROE {'>'} {appliedCriteria.minRoe.toFixed(1)}%,
           {' '}{appliedCriteria.qoqMode === 'two-quarter-positive' ? '최근 2분기 매출·영업이익 QoQ 양수' : '최신 분기 매출·영업이익 QoQ 양수'}
           {updatedLabel ? ` · ${updatedLabel}` : ''}
@@ -271,6 +433,12 @@ export default function DiscoveryPage() {
               </Button>
             ))}
           </div>
+        </div>
+        <div className="flex-gap-sm" style={{ flexWrap: 'wrap', marginBottom: 'var(--space-3)' }}>
+          <Button variant={sectorMode === 'all' ? 'primary' : 'secondary'} size="sm" onClick={() => setSectorMode('all')} disabled={loading}>전체 섹터</Button>
+          <Button variant={sectorMode === 'promising' ? 'primary' : 'secondary'} size="sm" onClick={() => setSectorMode('promising')} disabled={loading}>유망 섹터</Button>
+          <Button variant={sectorMode === 'next' ? 'primary' : 'secondary'} size="sm" onClick={() => setSectorMode('next')} disabled={loading}>다음 섹터</Button>
+          <Button variant={sectorMode === 'promising-or-next' ? 'primary' : 'secondary'} size="sm" onClick={() => setSectorMode('promising-or-next')} disabled={loading}>유망 + 다음</Button>
         </div>
         <div className="cards-grid cols-3 discovery-criteria-grid" style={{ marginBottom: 'var(--space-2)' }}>
           <Input
@@ -316,7 +484,15 @@ export default function DiscoveryPage() {
             </select>
           </div>
           <div className="flex-gap-sm">
-            <Button variant="secondary" size="sm" onClick={() => setCriteria(appliedCriteria)} disabled={loading}>
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => {
+                setCriteria(appliedCriteria)
+                setSectorMode(appliedSectorMode)
+              }}
+              disabled={loading}
+            >
               적용값으로 되돌리기
             </Button>
             <Button variant="primary" size="sm" onClick={applyCriteria} disabled={loading}>
@@ -345,7 +521,7 @@ export default function DiscoveryPage() {
       )}
 
       {!loading && error && (
-        <ErrorState message={error} onRetry={() => fetchPicks(limit, criteria)} />
+        <ErrorState message={error} onRetry={() => fetchPicks(limit, criteria, sectorMode)} />
       )}
 
       {!loading && !error && picks.length === 0 && (
@@ -360,7 +536,13 @@ export default function DiscoveryPage() {
         </div>
       )}
 
-      {!loading && !error && picks.length > 0 && (
+      {!loading && !error && picks.length > 0 && filteredPicks.length === 0 && (
+        <div className="card mb-4">
+          <EmptyState message="현재 섹터 모드 조건에 맞는 후보가 없습니다. 섹터 모드 또는 기준을 조정해 보세요." />
+        </div>
+      )}
+
+      {!loading && !error && filteredPicks.length > 0 && (
         <div className="card mb-4">
           <div className="scan-table-wrap">
           <table className="scan-table">
@@ -382,12 +564,13 @@ export default function DiscoveryPage() {
               </tr>
             </thead>
             <tbody>
-              {picks.map((pick, idx) => (
+              {filteredPicks.map((pick, idx) => (
                 <tr key={pick.code} className="scan-tr">
                   <td className="scan-td">{idx + 1}</td>
                   <td className="scan-td">
                     <div className="scan-td-name">{pick.name}</div>
                     <div className="scan-td-code">{pick.code}</div>
+                    {pick.sectorName && <div className="caption muted">섹터 {pick.sectorName}</div>}
                   </td>
                   <td className="scan-td">
                     <ScoreBadge value={pick.score.totalScore} max={100} />
