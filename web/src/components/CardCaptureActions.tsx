@@ -1,13 +1,16 @@
 import React, { useState } from 'react'
 import { captureElementToPngBlob, downloadBlob, shareBlobImage } from '../lib/imageCapture'
+import { preloadKakaoSdk, shareFeedToKakaotalk } from '../lib/share'
 
 type Props = {
   targetId: string
   title: string
   filename: string
   text?: string
+  shareUrl?: string
   className?: string
   hideShare?: boolean
+  hideKakao?: boolean
   captureOptions?: {
     pixelRatio?: number
     width?: number
@@ -22,8 +25,10 @@ export default function CardCaptureActions({
   title,
   filename,
   text,
+  shareUrl,
   className = '',
   hideShare = false,
+  hideKakao = false,
   captureOptions,
   onNotify,
 }: Props) {
@@ -32,6 +37,10 @@ export default function CardCaptureActions({
   const notify = (message: string) => {
     if (onNotify) onNotify(message)
   }
+
+  React.useEffect(() => {
+    preloadKakaoSdk()
+  }, [])
 
   const getTarget = (): HTMLElement | null => {
     const el = document.getElementById(targetId)
@@ -88,6 +97,22 @@ export default function CardCaptureActions({
     notify('기기 공유를 지원하지 않아 이미지로 저장했습니다')
   }
 
+  const onKakaoShare = async (e: React.MouseEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    try {
+      await shareFeedToKakaotalk({
+        title,
+        description: text || title,
+        url: shareUrl || window.location.href,
+        buttonTitle: '섹션 보기',
+      })
+      notify('카카오톡 공유창을 열었습니다')
+    } catch (err: any) {
+      notify(String(err?.message || err || '카카오톡 공유 실패'))
+    }
+  }
+
   return (
     <div className={`card-capture-actions ${className}`.trim()} data-capture-ignore="true">
       <button
@@ -98,6 +123,16 @@ export default function CardCaptureActions({
       >
         {busy ? '생성 중...' : '저장'}
       </button>
+      {!hideKakao && (
+        <button
+          type="button"
+          className="card-capture-btn card-capture-btn-kakao"
+          onClick={onKakaoShare}
+          disabled={busy}
+        >
+          카카오톡
+        </button>
+      )}
       {!hideShare && (
         <button
           type="button"

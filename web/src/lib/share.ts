@@ -13,6 +13,14 @@ export interface ShareData {
   url?: string         // 공유 링크 (생략하면 현재 페이지)
 }
 
+export interface KakaoFeedShareData {
+  title: string
+  description?: string
+  url?: string
+  buttonTitle?: string
+  imageUrl?: string
+}
+
 function buildShareSummary(data: ShareData): string[] {
   const basePrice = data.price != null
     ? `현재가 ${formatKrw(data.price)}${data.changePct != null ? ` (${data.changePct > 0 ? '+' : ''}${data.changePct.toFixed(2)}%)` : ''}`
@@ -117,6 +125,36 @@ export async function shareToKakaotalk(data: ShareData): Promise<void> {
     buttons: [
       {
         title: '종목 분석 보기',
+        link: {
+          mobileWebUrl: url,
+          webUrl: url,
+        },
+      },
+    ],
+  })
+}
+
+export async function shareFeedToKakaotalk(data: KakaoFeedShareData): Promise<void> {
+  const url = resolveShareUrl(data.url)
+  const description = String(data.description || '').trim() || 'Signal Scanner 공유'
+
+  await loadKakaoSdk()
+  initKakao()
+
+  window.Kakao!.Share.sendDefault({
+    objectType: 'feed',
+    content: {
+      title: String(data.title || 'Signal Scanner').trim(),
+      description,
+      imageUrl: String(data.imageUrl || 'https://signal-scanner-web.vercel.app/icon-192.png'),
+      link: {
+        mobileWebUrl: url,
+        webUrl: url,
+      },
+    },
+    buttons: [
+      {
+        title: String(data.buttonTitle || '바로 보기').trim(),
         link: {
           mobileWebUrl: url,
           webUrl: url,
