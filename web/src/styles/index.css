@@ -138,8 +138,19 @@ html, body, #root {
   gap: var(--space-3);
 }
 .flex-between { @apply flex items-center justify-between; }
+@media (max-width: 639px) {
+  .flex-between {
+    @apply flex-col items-stretch justify-start;
+  }
+}
 .flex-gap-sm  { @apply flex items-center; gap: var(--space-2); }
 .flex-gap-md  { @apply flex items-center; gap: var(--space-3); }
+@media (max-width: 639px) {
+  .flex-gap-sm,
+  .flex-gap-md {
+    @apply flex-col items-stretch;
+  }
+}
 .text-right   { @apply text-right; }
 .mt-1 { @apply mt-1; }
 .mt-2 { @apply mt-2; }
@@ -2484,6 +2495,16 @@ html, body, #root {
 .scan-header-actions {
   @apply flex items-center;
   gap: var(--space-2);
+}
+
+@media (max-width: 639px) {
+  .scan-header-actions {
+    @apply flex-col items-stretch;
+  }
+  .scan-header-actions select,
+  .scan-header-actions button {
+    width: 100%;
+  }
 }
 
 /* 통계 정보 바 */

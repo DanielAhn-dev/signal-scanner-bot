@@ -279,13 +279,13 @@ export default function HighlightsPage() {
             <div className="title-md">오늘의 집행 초안</div>
             <div className="caption mt-1">최대 1~3종목 권장. 단일 확신 종목이면 1종목만 선택 후 분할진입 시뮬레이션을 사용하세요.</div>
           </div>
-          <div style={{ display: 'flex', gap: 8 }}>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
             <Button variant="secondary" onClick={onShareHighlights} disabled={selectedItems.length === 0}>링크 공유</Button>
             <Button variant="secondary" onClick={load} disabled={loading}>하이라이트 새로고침</Button>
           </div>
         </div>
-        <div style={{ display: 'flex', gap: 'var(--space-3)', alignItems: 'stretch', marginTop: 'var(--space-3)' }}>
-          <div style={{ flex: 1 }}>
+        <div style={{ display: 'flex', gap: 'var(--space-3)', alignItems: 'stretch', marginTop: 'var(--space-3)', flexWrap: 'wrap' }}>
+          <div style={{ flex: '1 1 200px', minWidth: '200px' }}>
             <Input
               label="총 투자금 (원)"
               type="number"
@@ -295,7 +295,7 @@ export default function HighlightsPage() {
             />
           </div>
           <div style={{
-            flex: 1,
+            flex: '1 1 200px',
             padding: 'var(--space-3)',
             borderRadius: 'var(--radius-md)',
             background: 'var(--color-bg-muted)',

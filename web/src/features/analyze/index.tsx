@@ -274,13 +274,14 @@ export default function AnalyzePage() {
         <div className="muted" style={{ marginBottom: 'var(--space-3)' }}>
           종목 코드(6자리) 또는 종목명으로 검색합니다. 텔레그램 <code>/analyze</code> 에 대응합니다.
         </div>
-        <div style={{ display: 'flex', gap: 'var(--space-2)' }}>
+        <div style={{ display: 'flex', gap: 'var(--space-2)', flexWrap: 'wrap', alignItems: 'stretch' }}>
           <StockSearchInput
             value={query}
             onChange={setQuery}
             onSelect={handleStockSelect}
             placeholder="종목 코드(예: 005930) 또는 한글명(예: 삼성전자)"
             disabled={loading}
+            style={{ flex: '1 1 auto', minWidth: '200px' }}
           />
           <Button variant="primary" onClick={() => analyze()} disabled={loading || !query.trim()}>
             {loading ? '조회 중…' : '분석'}
