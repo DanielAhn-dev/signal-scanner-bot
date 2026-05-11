@@ -32,6 +32,10 @@ function normalizeTrigger(raw: unknown): string {
   return String(raw ?? '').trim()
 }
 
+function escapeLikeQuery(value: string): string {
+  return value.replace(/[%_,]/g, ' ').trim()
+}
+
 function buildDetailLines(action: string, reasonDetails: unknown): string[] {
   if (!reasonDetails || typeof reasonDetails !== 'object') return []
   const d = reasonDetails as Record<string, unknown>
@@ -144,6 +148,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const page = Math.max(1, Number(q.page || 1))
     const pageSize = Math.min(1000, Math.max(10, Number(q.pageSize || 50)))
     const withCount = String(q.withCount || '') === '1'
+    const keyword = String(q.q || '').trim()
+    const actionFilterRaw = String(q.action || '').trim().toUpperCase()
+    const actionFilter = actionFilterRaw === 'BUY' || actionFilterRaw === 'SELL' ? actionFilterRaw : ''
+    const modeFilterRaw = String(q.mode || '').trim().toLowerCase()
+    const modeFilter = modeFilterRaw === 'auto' || modeFilterRaw === 'manual' ? modeFilterRaw : 'all'
 
     const user = resolveUiUserContext(req)
     const chatId = user.chatId
@@ -153,7 +162,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const to = from + pageSize - 1
 
     const bypassCache = String((q as any).cacheMs || '') === '0'
-    const cacheKey = JSON.stringify({ chatId, page, pageSize, withCount })
+    const cacheKey = JSON.stringify({ chatId, page, pageSize, withCount, keyword, actionFilter, modeFilter })
 
     if (!bypassCache && DECISIONS_CACHE_TTL_MS > 0) {
       const cached = decisionsCache.get(cacheKey)
@@ -167,11 +176,39 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       ? supabase.from('virtual_decision_logs').select('*', { count: 'exact' }).eq('chat_id', chatId).order('created_at', { ascending: false })
       : supabase.from('virtual_decision_logs').select('*').eq('chat_id', chatId).order('created_at', { ascending: false })
 
-    const { data, error, count } = await query.range(from, to)
+    if (actionFilter) {
+      query.eq('action', actionFilter)
+    }
 
-    if (error) return res.status(500).json({ error: error.message })
+    if (keyword) {
+      const safeKeyword = escapeLikeQuery(keyword)
+      if (safeKeyword) {
+        const like = `%${safeKeyword}%`
+        query.or(`code.ilike.${like},reason_summary.ilike.${like},reason.ilike.${like},strategy_id.ilike.${like}`)
+      }
+    }
 
-    const rows = (data ?? []) as Array<Record<string, unknown>>
+    let rows: Array<Record<string, unknown>> = []
+    let matchedCount: number | undefined
+
+    if (modeFilter === 'all') {
+      const { data, error, count } = await query.range(from, to)
+      if (error) return res.status(500).json({ error: error.message })
+      rows = (data ?? []) as Array<Record<string, unknown>>
+      matchedCount = withCount ? (count ?? 0) : undefined
+    } else {
+      const { data, error } = await query
+      if (error) return res.status(500).json({ error: error.message })
+
+      const allRows = (data ?? []) as Array<Record<string, unknown>>
+      const filteredByMode = allRows.filter((row) => {
+        const isAuto = deriveAutoFlag(row)
+        return modeFilter === 'auto' ? isAuto : !isAuto
+      })
+
+      rows = filteredByMode.slice(from, to + 1)
+      matchedCount = withCount ? filteredByMode.length : undefined
+    }
     const codes = Array.from(
       new Set(
         rows
@@ -227,7 +264,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       }
     })
 
-    const payload = { data: normalizedRows, count: withCount ? (count ?? 0) : undefined, page, pageSize }
+    const payload = { data: normalizedRows, count: matchedCount, page, pageSize }
 
     if (!bypassCache && DECISIONS_CACHE_TTL_MS > 0) {
       decisionsCache.set(cacheKey, {

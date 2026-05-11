@@ -185,6 +185,36 @@ html, body, #root {
   gap: var(--space-2);
 }
 
+.trades-filter-card {
+  border-color: #dfe7f3;
+  background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
+  margin-bottom: var(--space-3);
+}
+
+.trades-filter-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  gap: var(--space-2);
+  align-items: center;
+}
+
+.trades-search-input {
+  min-width: 0;
+}
+
+.trades-filter-tags {
+  margin-top: var(--space-2);
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.trades-filter-count {
+  margin-left: auto;
+  white-space: nowrap;
+}
+
 .trades-log-card {
   border-color: #e4eaf2;
   background: linear-gradient(180deg, #ffffff 0%, #fbfdff 100%);
@@ -1797,6 +1827,19 @@ html, body, #root {
   .trades-title {
     font-size: 1.55rem;
     line-height: 1.25;
+  }
+
+  .trades-filter-row {
+    grid-template-columns: 1fr;
+  }
+
+  .trades-filter-row .ui-button {
+    width: 100%;
+  }
+
+  .trades-filter-count {
+    margin-left: 0;
+    width: 100%;
   }
 }
 
