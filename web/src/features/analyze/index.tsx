@@ -9,21 +9,8 @@ import StockSearchInput from '../../components/StockSearchInput'
 import { useToast } from '../../components/ToastProvider'
 import ShareModal from '../../components/ShareModal'
 import { useShareManager } from '../../hooks/useShareManager'
-
-function computeSMA(closes: number[], period: number): number | null {
-  if (closes.length < period) return null
-  return closes.slice(0, period).reduce((a, b) => a + b, 0) / period
-}
-
-function computeRSI(closes: number[], period = 14): number | null {
-  if (closes.length < period + 1) return null
-  const changes: number[] = []
-  for (let i = 0; i < period; i++) changes.push(closes[i] - closes[i + 1])
-  const avgGain = changes.reduce((s, c) => s + (c > 0 ? c : 0), 0) / period
-  const avgLoss = changes.reduce((s, c) => s + (c < 0 ? -c : 0), 0) / period
-  if (avgLoss === 0) return 100
-  return 100 - 100 / (1 + avgGain / avgLoss)
-}
+import CandleChart from '../../components/CandleChart'
+import type { OhlcvCandle } from '../../lib/types'
 
 function scoreColor(score: number | null): string {
   if (score == null) return 'var(--color-text-tertiary)'
@@ -51,7 +38,7 @@ const DIVIDER = (
 export default function AnalyzePage() {
   const [query, setQuery] = useState('')
   const [result, setResult] = useState<any | null>(null)
-  const [series, setSeries] = useState<any[]>([])
+  const [candles, setCandles] = useState<OhlcvCandle[]>([])
   const [flow, setFlow] = useState<any | null>(null)
   const [creditShort, setCreditShort] = useState<any | null>(null)
   const [advisor, setAdvisor] = useState<any | null>(null)
@@ -83,23 +70,10 @@ export default function AnalyzePage() {
     void load()
   }, [])
 
-  const closes = useMemo(
-    () => series.map((r: any) => r.close).filter((v: any) => typeof v === 'number') as number[],
-    [series],
-  )
-
-  const computedSma20 = useMemo(
-    () => (result?.sma20 != null ? result.sma20 : computeSMA(closes, 20)),
-    [result, closes],
-  )
-  const computedSma50 = useMemo(
-    () => (result?.sma50 != null ? result.sma50 : computeSMA(closes, 50)),
-    [result, closes],
-  )
-  const computedRsi14 = useMemo(
-    () => (result?.rsi14 != null ? result.rsi14 : computeRSI(closes, 14)),
-    [result, closes],
-  )
+  // 서버에서 내려온 값을 직접 사용한다. 클라이언트 재계산은 서버와 불일치를 유발한다.
+  const computedSma20 = result?.sma20 ?? null
+  const computedSma50 = result?.sma50 ?? null
+  const computedRsi14 = result?.rsi14 ?? null
 
   const analyze = async (code?: string) => {
     const q = code ?? query.trim()
@@ -111,7 +85,7 @@ export default function AnalyzePage() {
     setFlow(null)
     setCreditShort(null)
     setAdvisor(null)
-    setSeries([])
+    setCandles([])
 
     try {
       const chatId = getCurrentUserChatId()
@@ -119,7 +93,16 @@ export default function AnalyzePage() {
       const res = await apiFetch(`/api/ui/stock-latest?code=${encodeURIComponent(q)}${chatQs}`, { cacheMs: 0 })
       if (res?.profile || res?.latest) {
         setResult({ ...res.profile, ...res.latest })
-        setSeries(res?.data ?? [])
+        // OHLCV 캔들 데이터: 서버 series를 OhlcvCandle 형태로 정규화
+        const rawData: any[] = res?.data ?? []
+        setCandles(rawData.map((r: any) => ({
+          date: String(r.date || r.Date || ''),
+          open: Number(r.open),
+          high: Number(r.high),
+          low: Number(r.low),
+          close: Number(r.close),
+          volume: Number(r.volume ?? 0),
+        })).filter((c) => c.date && !isNaN(c.close)))
         setFlow(res?.flow ?? null)
         setCreditShort(res?.creditShort ?? null)
         setAdvisor(res?.advisor ?? null)
@@ -509,6 +492,21 @@ export default function AnalyzePage() {
               </div>
             ))}
           </div>
+
+          {/* ── 캔들 차트 ── */}
+          {candles.length > 0 && (
+            <>
+              {DIVIDER}
+              <div className="title-md" style={{ marginBottom: 'var(--space-3)' }}>가격 차트</div>
+              <CandleChart
+                candles={candles}
+                entryLow={advisor?.entryLow}
+                entryHigh={advisor?.entryHigh}
+                stopLoss={advisor?.stopPrice}
+                target1={advisor?.target1}
+              />
+            </>
+          )}
 
           {/* ── 어드바이저 ── */}
           {advisor && (

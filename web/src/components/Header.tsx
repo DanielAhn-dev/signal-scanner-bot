@@ -5,28 +5,18 @@ import ProfileModal from './ProfileModal'
 import { readProfile, type StoredProfile } from '../lib/userContext'
 import { apiFetch } from '../lib/api'
 import { onOpenProfileModal } from '../lib/profileModal'
+import { useAuthStore } from '../stores/authStore'
 
 type Props = {
   onNavigate: (r: string) => void
   activeRoute?: string
-  isSignedIn: boolean
-  isSigningIn: boolean
-  authEmail?: string
-  authName?: string
-  onSignIn: () => void
-  onSignOut: () => void
 }
 
 export default function Header({
   onNavigate,
   activeRoute,
-  isSignedIn,
-  isSigningIn,
-  authEmail,
-  authName,
-  onSignIn,
-  onSignOut,
 }: Props){
+  const { isSignedIn, isSigningIn, authEmail, authName, signIn, signOut } = useAuthStore()
   const [drawerOpen, setDrawerOpen] = React.useState(false)
   const [cmdOpen, setCmdOpen] = React.useState(false)
   const [filter, setFilter] = React.useState('')
@@ -263,8 +253,8 @@ export default function Header({
       isSignedIn={isSignedIn}
       authEmail={authEmail}
       authName={authName}
-      onSignIn={onSignIn}
-      onSignOut={onSignOut}
+      onSignIn={signIn}
+      onSignOut={signOut}
       isSigningIn={isSigningIn}
       focusChatIdField={focusChatIdField}
     />

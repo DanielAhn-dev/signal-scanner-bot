@@ -1,12 +1,12 @@
-﻿import React, { lazy, Suspense, useEffect, useState } from 'react'
-import type { Session } from '@supabase/supabase-js'
+﻿import React, { lazy, Suspense, useEffect } from 'react'
+import { Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom'
 import Header from './components/Header'
 import { ToastProvider, useToast } from './components/ToastProvider'
 import Portfolio from './features/portfolio'
 import ScanPage from './features/scan'
 import { preloadStocks } from './lib/stockCache'
-import { loadProfileFromServer, readProfile, saveProfile } from './lib/userContext'
-import { isSupabaseConfigured, supabase } from './lib/supabase'
+import { isSupabaseConfigured } from './lib/supabase'
+import { useAuthStore } from './stores/authStore'
 
 const Dashboard = lazy(() => import('./features/dashboard'))
 const Trades = lazy(() => import('./features/trades'))
@@ -28,75 +28,7 @@ const StrategyPage = lazy(() => import('./features/strategy'))
 const HighlightsPage = lazy(() => import('./features/highlights'))
 const SimulatorPage = lazy(() => import('./features/simulator'))
 const DiscoveryPage = lazy(() => import('./features/discovery'))
-
-const COMPONENTS = {
-  dashboard: Dashboard,
-  portfolio: Portfolio,
-  trades: Trades,
-  settings: Settings,
-  scan: ScanPage,
-  analyze: AnalyzePage,
-  watchlist: WatchlistPage,
-  alerts: AlertsPage,
-  reports: ReportsPage,
-  market: MarketPage,
-  economy: EconomyPage,
-  feed: FeedPage,
-  news: NewsPage,
-  profile: ProfilePage,
-  sectors: SectorsPage,
-  dbview: DBViewPage,
-  'admin-users': AdminUsersPage,
-  operations: OperationsPage,
-  strategy: StrategyPage,
-  highlights: HighlightsPage,
-  simulator: SimulatorPage,
-  discovery: DiscoveryPage,
-} as const
-
-type RouteKey = keyof typeof COMPONENTS
-const AUTH_RETURN_HASH_KEY = 'supabase-auth-return-hash'
-const AUTH_ERROR_KEY = 'supabase-auth-last-error'
-
-const decodeAuthValue = (value: string) => {
-  let current = value
-  for (let index = 0; index < 2; index += 1) {
-    try {
-      const decoded = decodeURIComponent(current.replace(/\+/g, ' '))
-      if (decoded === current) break
-      current = decoded
-    } catch {
-      break
-    }
-  }
-  return current
-}
-
-const readAuthErrorFromLocation = () => {
-  if (typeof window === 'undefined') return ''
-
-  const query = new URLSearchParams(window.location.search)
-  const hash = window.location.hash.startsWith('#')
-    ? new URLSearchParams(window.location.hash.slice(1))
-    : new URLSearchParams()
-
-  const error = query.get('error') || hash.get('error') || ''
-  const description = query.get('error_description') || hash.get('error_description') || ''
-  const code = query.get('error_code') || hash.get('error_code') || ''
-
-  if (!error && !description && !code) return ''
-
-  const message = decodeAuthValue(description || error || 'Google 로그인 처리 중 오류가 발생했습니다.')
-  if (code) return `${message} (${decodeAuthValue(code)})`
-  return message
-}
-
-const canOpenPublicAnalyze = () => {
-  if (typeof window === 'undefined') return false
-  if (window.location.pathname.replace(/^\//, '') !== 'analyze') return false
-  const params = new URLSearchParams(window.location.search)
-  return !!params.get('code')
-}
+const PositionMaintenancePage = lazy(() => import('./features/position-maintenance'))
 
 export default function App() {
   return (
@@ -107,241 +39,48 @@ export default function App() {
 }
 
 function AppContent() {
-  const getInitialRoute = (): RouteKey => {
-    try {
-      const path = window.location.pathname.replace(/^\//, '')
-      if (path && (path in COMPONENTS)) return path as RouteKey
-    } catch {
-      // ignore (SSR/undefined window)
-    }
-    return 'dashboard'
-  }
-
-  const [route, setRoute] = useState<RouteKey>(getInitialRoute)
-  const [isSignedIn, setIsSignedIn] = useState(false)
-  const [authReady, setAuthReady] = useState(false)
-  const [isSigningIn, setIsSigningIn] = useState(false)
-  const [authEmail, setAuthEmail] = useState('')
-  const [authName, setAuthName] = useState('')
-  const [authError, setAuthError] = useState('')
+  const navigate = useNavigate()
+  const location = useLocation()
   const toast = useToast()
-  const allowPublicAnalyze = canOpenPublicAnalyze()
 
-  useEffect(() => {
-    preloadStocks()
-  }, [])
+  const { isSignedIn, isSigningIn, authReady, authEmail, authName, authError, initAuth, signIn, signOut } = useAuthStore()
 
-  // Vercel 서버리스 함수 cold start 방지: 앱 첫 진입 시 세션당 1회 warm-up
+  const isPublicAnalyze = location.pathname === '/analyze' && new URLSearchParams(location.search).has('code')
+
+  // Supabase 인증 초기화
+  useEffect(() => initAuth(), [initAuth])
+
+  // 주식 캐시 프리로드
+  useEffect(() => { preloadStocks() }, [])
+
+  // Vercel cold start warm-up
   useEffect(() => {
     const WARM_KEY = '__api_warmed'
-    if (typeof window === 'undefined') return
     if (sessionStorage.getItem(WARM_KEY)) return
     sessionStorage.setItem(WARM_KEY, '1')
     const base = (import.meta.env.VITE_API_BASE || '').replace(/\/$/, '')
-    const url = `${base}/api/ui?route=sectors&top=1&cacheMs=300000`
-    fetch(url, { method: 'GET', signal: AbortSignal.timeout?.(8_000) }).catch(() => {/* 무시 */})
+    fetch(`${base}/api/ui?route=sectors&top=1&cacheMs=300000`, {
+      method: 'GET',
+      signal: AbortSignal.timeout?.(8_000),
+    }).catch(() => {})
   }, [])
 
+  // 인증 오류 Toast 표시
   useEffect(() => {
-    try {
-      const message = readAuthErrorFromLocation()
-      if (!message) {
-        const stored = window.sessionStorage.getItem(AUTH_ERROR_KEY) || ''
-        if (stored) setAuthError(stored)
-        return
-      }
+    if (authError) toast.show(`Google 로그인 실패: ${authError}`, 5000)
+  }, [authError, toast])
 
-      setAuthError(message)
-      window.sessionStorage.setItem(AUTH_ERROR_KEY, message)
-      toast.show(`Google 로그인 실패: ${message}`, 5000)
-
-      const returnPath = window.sessionStorage.getItem(AUTH_RETURN_HASH_KEY) || ''
-      const cleanPath = returnPath.startsWith('#')
-        ? `/${returnPath.slice(1)}`
-        : returnPath.startsWith('/') ? returnPath : window.location.pathname
-      window.history.replaceState({}, document.title, cleanPath)
-    } catch {
-      // ignore
-    }
-  }, [toast])
-
-  useEffect(() => {
-    const onPopState = () => {
-      try {
-        const path = window.location.pathname.replace(/^\//, '')
-        if (path && (path in COMPONENTS)) setRoute(path as RouteKey)
-        else setRoute('dashboard')
-      } catch {
-        // ignore
-      }
-    }
-
-    window.addEventListener('popstate', onPopState)
-    return () => window.removeEventListener('popstate', onPopState)
-  }, [])
-
+  // nav:goto 커스텀 이벤트 (기존 코드 호환)
   useEffect(() => {
     const onNavGoto = (e: Event) => {
-      try {
-        const key = (e as CustomEvent<{ key: string }>).detail?.key
-        if (key && key in COMPONENTS) {
-          setRoute(key as RouteKey)
-          window.history.pushState({}, '', `/${key}`)
-        }
-      } catch { /* ignore */ }
+      const key = (e as CustomEvent<{ key: string }>).detail?.key
+      if (key) navigate(`/${key}`)
     }
     window.addEventListener('nav:goto', onNavGoto)
     return () => window.removeEventListener('nav:goto', onNavGoto)
-  }, [])
+  }, [navigate])
 
-  useEffect(() => {
-    if (!supabase || !isSupabaseConfigured) {
-      setAuthReady(true)
-      return
-    }
-    let disposed = false
-    let sessionCheckTimer: number | undefined
-
-    const markAuthReady = () => {
-      if (disposed) return
-      setAuthReady(true)
-    }
-
-    const applySession = async (session: Session | null) => {
-      const user = session?.user
-      if (!user) {
-        if (disposed) return
-        setIsSignedIn(false)
-        setAuthEmail('')
-        setAuthName('')
-        markAuthReady()
-        return
-      }
-
-      const metadata = (user.user_metadata ?? {}) as Record<string, unknown>
-      const name = String(metadata.full_name || metadata.name || metadata.preferred_username || '').trim()
-      const email = String(user.email || '').trim()
-
-      saveProfile({
-        clientId: user.id,
-        nickname: name || readProfile()?.nickname,
-      })
-
-      // 프로필 동기화는 인증 상태 판정보다 중요도가 낮으므로 백그라운드로 처리한다.
-      void loadProfileFromServer().catch(() => {})
-
-      if (disposed) return
-      setIsSignedIn(true)
-      setAuthEmail(email)
-      setAuthName(name)
-      markAuthReady()
-    }
-
-    sessionCheckTimer = window.setTimeout(() => {
-      if (!disposed && !authReady) {
-        // getSession이 비정상적으로 지연되면 로그인 화면을 막지 않는다.
-        markAuthReady()
-      }
-    }, 5000)
-
-    void supabase.auth.getSession()
-      .then(({ data }) => applySession(data?.session ?? null))
-      .catch(() => applySession(null))
-      .finally(() => {
-        if (sessionCheckTimer !== undefined) window.clearTimeout(sessionCheckTimer)
-      })
-
-    const { data: listener } = supabase.auth.onAuthStateChange((event, session) => {
-      void applySession(session)
-      if (event === 'SIGNED_IN' || event === 'SIGNED_OUT') setIsSigningIn(false)
-    })
-
-    return () => {
-      disposed = true
-      if (sessionCheckTimer !== undefined) window.clearTimeout(sessionCheckTimer)
-      listener.subscription.unsubscribe()
-    }
-  }, [])
-
-  useEffect(() => {
-    if (!isSignedIn) return
-    try {
-      const returnPath = window.sessionStorage.getItem(AUTH_RETURN_HASH_KEY)
-      if (!returnPath) return
-      window.sessionStorage.removeItem(AUTH_RETURN_HASH_KEY)
-      const path = returnPath.startsWith('#')
-        ? `/${returnPath.slice(1)}`
-        : returnPath.startsWith('/') ? returnPath : `/${returnPath}`
-      if (path && path !== window.location.pathname) {
-        window.history.pushState({}, '', path)
-        const routeKey = path.replace(/^\//, '')
-        if (routeKey in COMPONENTS) setRoute(routeKey as RouteKey)
-      }
-    } catch {
-      // ignore
-    }
-  }, [isSignedIn])
-
-  const Active = COMPONENTS[route]
-
-  const handleNavigate = (r: string) => {
-    setRoute(r as RouteKey)
-    try { window.history.pushState({}, '', `/${r}`) } catch { /* ignore */ }
-  }
-
-  const handleGoogleSignIn = async () => {
-    try {
-      if (!supabase || !isSupabaseConfigured) {
-        toast.show('Supabase 인증 설정이 비어 있습니다. VITE_SUPABASE_URL과 VITE_SUPABASE_ANON_KEY를 확인해 주세요.')
-        return
-      }
-      setIsSigningIn(true)
-      setAuthError('')
-      try {
-        window.sessionStorage.removeItem(AUTH_ERROR_KEY)
-        const currentPath = window.location.pathname || '/dashboard'
-        window.sessionStorage.setItem(AUTH_RETURN_HASH_KEY, currentPath)
-      } catch {
-        // ignore
-      }
-      const envRedirectTo = import.meta.env.VITE_SUPABASE_OAUTH_REDIRECT || import.meta.env.VITE_OAUTH_REDIRECT
-      const isLocalhost = /^(localhost|127\.0\.0\.1)$/i.test(window.location.hostname)
-      const redirectTo = isLocalhost
-        ? window.location.origin
-        : (envRedirectTo || `${window.location.origin}${window.location.pathname}`)
-      const { error } = await supabase.auth.signInWithOAuth({
-        provider: 'google',
-        options: {
-          redirectTo,
-          queryParams: {
-            prompt: 'select_account',
-          },
-        },
-      })
-      if (error) throw error
-    } catch (error) {
-      const detail = String((error as { message?: string; code?: string; error_code?: string } | null)?.message || '')
-      const providerDisabled = /Unsupported provider/i.test(detail)
-      if (providerDisabled) {
-        toast.show('현재 Supabase 프로젝트에서 Google provider가 비활성화되어 있습니다. Supabase Authentication > Providers에서 Google을 활성화해 주세요.')
-      } else {
-        toast.show(detail ? `Google 로그인 실패: ${detail}` : 'Google 로그인에 실패했습니다.')
-      }
-      setIsSigningIn(false)
-    }
-  }
-
-  const handleSignOut = async () => {
-    try {
-      if (!supabase || !isSupabaseConfigured) return
-      await supabase.auth.signOut()
-      setIsSignedIn(false)
-      setAuthEmail('')
-      setAuthName('')
-    } catch {
-      // ignore
-    }
-  }
+  const handleNavigate = (r: string) => navigate(`/${r}`)
 
   if (!authReady && isSupabaseConfigured) {
     return (
@@ -357,9 +96,9 @@ function AppContent() {
     )
   }
 
-  return (
-    <div className="layout-shell">
-      {!isSignedIn && !allowPublicAnalyze ? (
+  if (!isSignedIn && !isPublicAnalyze) {
+    return (
+      <div className="layout-shell">
         <main className="auth-status-main">
           <section className="auth-status-card">
             <div className="access-required-icon" aria-hidden>
@@ -386,42 +125,56 @@ function AppContent() {
             <button
               className="ui-button ui-btn-primary"
               style={{ width: '100%' }}
-              onClick={handleGoogleSignIn}
+              onClick={signIn}
               disabled={!isSupabaseConfigured || isSigningIn}
             >
               {isSigningIn ? '로그인 중...' : 'Google로 로그인'}
             </button>
           </section>
         </main>
-      ) : (
-        <>
-          {isSignedIn && (
-            <Header
-              onNavigate={handleNavigate}
-              activeRoute={route}
-              isSignedIn={isSignedIn}
-              isSigningIn={isSigningIn}
-              authEmail={authEmail}
-              authName={authName}
-              onSignIn={handleGoogleSignIn}
-              onSignOut={handleSignOut}
-            />
-          )}
-          <main>
-            <Suspense fallback={<div>Loading...</div>}>
-              {Active
-                ? route === 'dashboard'
-                  ? <Dashboard onNavigate={handleNavigate} />
-                  : route === 'scan'
-                  ? <ScanPage onNavigate={handleNavigate} />
-                  : route === 'sectors'
-                  ? <SectorsPage onNavigate={handleNavigate} />
-                  : <Active />
-                : null}
-            </Suspense>
-          </main>
-        </>
+      </div>
+    )
+  }
+
+  return (
+    <div className="layout-shell">
+      {isSignedIn && (
+        <Header
+          onNavigate={handleNavigate}
+          activeRoute={location.pathname.replace(/^\//, '') || 'dashboard'}
+        />
       )}
+      <main>
+        <Suspense fallback={<div>Loading...</div>}>
+          <Routes>
+            <Route path="/" element={<Navigate to="/dashboard" replace />} />
+            <Route path="/dashboard" element={<Dashboard onNavigate={handleNavigate} />} />
+            <Route path="/portfolio" element={<Portfolio />} />
+            <Route path="/trades" element={<Trades />} />
+            <Route path="/settings" element={<Settings />} />
+            <Route path="/scan" element={<ScanPage onNavigate={handleNavigate} />} />
+            <Route path="/analyze" element={<AnalyzePage />} />
+            <Route path="/watchlist" element={<WatchlistPage />} />
+            <Route path="/alerts" element={<AlertsPage />} />
+            <Route path="/reports" element={<ReportsPage />} />
+            <Route path="/market" element={<MarketPage />} />
+            <Route path="/economy" element={<EconomyPage />} />
+            <Route path="/feed" element={<FeedPage />} />
+            <Route path="/news" element={<NewsPage />} />
+            <Route path="/profile" element={<ProfilePage />} />
+            <Route path="/sectors" element={<SectorsPage onNavigate={handleNavigate} />} />
+            <Route path="/dbview" element={<DBViewPage />} />
+            <Route path="/admin-users" element={<AdminUsersPage />} />
+            <Route path="/operations" element={<OperationsPage />} />
+            <Route path="/strategy" element={<StrategyPage />} />
+            <Route path="/highlights" element={<HighlightsPage />} />
+            <Route path="/simulator" element={<SimulatorPage />} />
+            <Route path="/discovery" element={<DiscoveryPage />} />
+            <Route path="/position-maintenance" element={<PositionMaintenancePage />} />
+            <Route path="*" element={<Navigate to="/dashboard" replace />} />
+          </Routes>
+        </Suspense>
+      </main>
     </div>
   )
 }

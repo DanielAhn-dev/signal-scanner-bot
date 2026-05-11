@@ -49,6 +49,7 @@ export const NAV_ITEMS: NavGroup[] = [
     category: '운영',
     items: [
       { key: 'operations', label: '운영 패널' },
+      { key: 'position-maintenance', label: '포지션 유지보수' },
     ]
   },
   {
