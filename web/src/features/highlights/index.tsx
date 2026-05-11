@@ -270,7 +270,7 @@ export default function HighlightsPage() {
 
   return (
     <div className="container-app">
-      <div className="title-xl">하이라이트 허브</div>
+      <div className="title-xl">하이라이트</div>
       <div className="muted mb-4">오늘의 최종 진입 후보를 고르고 바로 배분/수익 시뮬레이션으로 넘길 수 있습니다.</div>
 
       <div className="card mb-4">

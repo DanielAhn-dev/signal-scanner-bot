@@ -232,109 +232,130 @@ function renderHighlightsShared(payload: any): string {
     ? new Date(payload.generatedAt).toLocaleString('ko-KR', { hour12: false })
     : '-'
 
-  const fmtSignedPct = (value: unknown): string => {
-    const n = Number(value)
-    if (!Number.isFinite(n)) return '-'
-    return `${n >= 0 ? '+' : ''}${n.toFixed(1)}%`
-  }
-
-  const confidenceLevel = (pct: number): { label: string; color: string } => {
-    if (pct >= 78) return { label: '높음', color: '#F04452' }
+  const confLevel = (pct: number): { label: string; color: string } => {
+    if (pct >= 78) return { label: '높음', color: '#007B5F' }
     if (pct >= 65) return { label: '보통', color: '#C85700' }
-    return { label: '주의', color: '#64748b' }
+    return { label: '주의', color: '#F04452' }
   }
 
-  const scoreBar = (label: string, valueRaw: unknown, color: string): string => {
-    const value = Math.max(0, Math.min(100, Number(valueRaw) || 0))
-    return `<div style="display:flex;align-items:center;gap:8px;">
-      <span style="width:42px;font-size:12px;color:#475569">${escapeHtml(label)}</span>
-      <div style="flex:1;height:6px;border-radius:999px;background:#e2e8f0;overflow:hidden;">
-        <div style="width:${value.toFixed(1)}%;height:100%;border-radius:999px;background:${color};"></div>
+  const scoreBar = (label: string, valueRaw: unknown, colorHigh: string): string => {
+    const v = Math.max(0, Math.min(100, Number(valueRaw) || 0))
+    const fill = v >= 70 ? colorHigh : v >= 50 ? '#FF8A00' : '#C5C8CE'
+    return `<div style="display:flex;align-items:center;gap:8px">
+      <span style="font-size:11px;color:#8B95A1;width:36px;flex-shrink:0">${escapeHtml(label)}</span>
+      <div style="flex:1;height:4px;background:#E5E8EB;border-radius:2px;overflow:hidden">
+        <div style="width:${v.toFixed(0)}%;height:100%;background:${fill};border-radius:2px"></div>
       </div>
-      <span style="width:26px;text-align:right;font-size:12px;color:#0f172a">${Math.round(value)}</span>
+      <span style="font-size:11px;font-weight:700;color:#191F28;width:24px;text-align:right">${Math.round(v)}</span>
     </div>`
   }
+
+  const RANK_COLOR = ['#0060FF', '#6B7280', '#6B7280', '#6B7280', '#6B7280']
 
   const itemsHtml = items.slice(0, 20).map((item: any, idx: number) => {
     const entry = Number(item?.entry_price || 0)
     const base = Number(item?.expected_base_pct || 0)
     const upside = Number(item?.expected_upside_pct || 0)
     const drawdown = Number(item?.expected_drawdown_pct || 0)
-    const confidenceNum = Number(item?.confidence_pct || 0)
-    const confidence = Number.isFinite(confidenceNum) ? `${confidenceNum.toFixed(1)}%` : '-'
-    const confidenceInfo = confidenceLevel(confidenceNum)
+    const confNum = Number(item?.confidence_pct || 0)
     const strategy = String(item?.strategy_label || '-')
-
-    const entryPrice = entry > 0 ? formatKrw(entry) : '-'
-    const target1 = entry > 0 ? formatKrw(Math.round(entry * (1 + base / 100))) : '-'
-    const target2 = entry > 0 ? formatKrw(Math.round(entry * (1 + upside / 100))) : '-'
-    const stop = entry > 0 ? formatKrw(Math.round(entry * (1 - drawdown / 100))) : '-'
+    const warnGrade = String(item?.warn_grade || 'SAFE')
     const edge = upside - drawdown
 
-    const rationale = [
-      `모멘텀 ${Math.round(Number(item?.score_momentum || 0))}점 - 진입 강도 기반 추세 분석.`,
-      `안전성 ${Math.round(Number(item?.score_safety || 0))}점 - 하방 리스크 제한적입니다.`,
-      `기대 여지 ${fmtSignedPct(edge)} - 예상 손실 대비 기대 수익 비율이 ${edge >= 8 ? '우수' : edge >= 4 ? '양호' : '보수적'}합니다.`,
-    ]
+    const fmt = (n: number) => n > 0 ? Math.round(n).toLocaleString('ko-KR') : '-'
+    const entryFmt = fmt(entry)
+    const stopFmt = entry > 0 ? fmt(entry * (1 - drawdown / 100)) : '-'
+    const t1Fmt = entry > 0 ? fmt(entry * (1 + base / 100)) : '-'
+    const t2Fmt = entry > 0 ? fmt(entry * (1 + upside / 100)) : '-'
 
-    return `
-      <article style="border:1px solid #bfdbfe;border-radius:14px;padding:14px;background:#fff;box-shadow:0 1px 2px rgba(15,23,42,0.04);">
-        <div style="display:flex;justify-content:space-between;gap:10px;align-items:flex-start;margin-bottom:10px;">
-          <div>
-            <div style="font-size:12px;color:#64748b">TOP ${idx + 1}</div>
-            <div style="margin-top:4px;font-size:16px;font-weight:800;color:#0f172a">${escapeHtml(String(item?.name || '-'))}</div>
-            <div style="margin-top:2px;font-size:12px;color:#64748b;display:flex;gap:6px;align-items:center;flex-wrap:wrap;">
-              <span>${escapeHtml(String(item?.code || '-'))}</span>
-              <span style="display:inline-flex;align-items:center;padding:2px 8px;border-radius:999px;background:#eff6ff;color:#1d4ed8;border:1px solid #bfdbfe;font-size:11px;font-weight:700;">${escapeHtml(strategy)}</span>
-              <span style="display:inline-flex;align-items:center;padding:2px 8px;border-radius:999px;background:#ecfdf5;color:#047857;border:1px solid #a7f3d0;font-size:11px;font-weight:700;">${escapeHtml(String(item?.warn_grade || 'SAFE'))}</span>
-            </div>
-          </div>
-          <div style="text-align:right;min-width:72px;">
-            <div style="font-size:11px;color:#64748b">종합 신뢰도</div>
-            <div style="font-size:26px;line-height:1.1;font-weight:700;color:${confidenceInfo.color};margin-top:2px;">${escapeHtml(confidence)}</div>
-            <div style="font-size:11px;color:${confidenceInfo.color};font-weight:700;">${confidenceInfo.label}</div>
-          </div>
-        </div>
-        <div style="border-top:1px solid var(--color-border-default);padding-top:10px;display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;">
-          <div style="font-size:11px;color:#64748b;"><div style="font-weight:700;color:#0f172a;margin-top:4px;">${escapeHtml(entryPrice)}</div><div style="font-size:10px;margin-top:2px;">기준 진입가</div></div>
-          <div style="font-size:11px;color:#64748b;"><div style="font-weight:700;color:#F04452;margin-top:4px;">${escapeHtml(fmtSignedPct(base))}</div><div style="font-size:10px;margin-top:2px;">기대 수익</div></div>
-          <div style="font-size:11px;color:#64748b;"><div style="font-weight:700;color:#F04452;margin-top:4px;">${escapeHtml(fmtSignedPct(upside))}</div><div style="font-size:10px;margin-top:2px;">상단 목표</div></div>
-          <div style="font-size:11px;color:#64748b;"><div style="font-weight:700;color:#1478FF;margin-top:4px;">${escapeHtml(fmtSignedPct(-Math.abs(drawdown)))}</div><div style="font-size:10px;margin-top:2px;">예상 손실</div></div>
-        </div>
-        <div class="shared-card-detail-grid" style="margin-top:10px;padding-top:10px;border-top:1px solid var(--color-border-default);">
-          <div>
-            <div style="font-size:12px;color:#64748b;margin-bottom:8px;">점수 지표</div>
-            <div style="display:flex;flex-direction:column;gap:6px;">
-              ${scoreBar('모멘텀', item?.score_momentum, '#ef4444')}
-              ${scoreBar('밸류', item?.score_value, '#f97316')}
-              ${scoreBar('안전성', item?.score_safety, '#22c55e')}
-            </div>
-            <div style="margin-top:8px;font-size:12px;font-weight:700;color:${edge >= 0 ? '#ef4444' : '#1478FF'}">기대 여지 ${escapeHtml(fmtSignedPct(edge))}</div>
-          </div>
-          <div>
-            <div style="font-size:12px;color:#64748b;margin-bottom:6px;">매수 확신 근거</div>
-            <div style="display:flex;flex-direction:column;gap:4px;">
-              ${rationale.map((line) => `<div style="font-size:12px;color:#334155;line-height:1.5;word-break:keep-all;overflow-wrap:anywhere;">${escapeHtml(line)}</div>`).join('')}
-            </div>
-          </div>
-        </div>
-        <div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--color-border-default);display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;">
-          <div style="font-size:11px;color:#64748b;"><div style="font-size:10px;margin-bottom:2px;">진입 구간</div><div style="font-size:13px;font-weight:700;color:#0f172a;">${escapeHtml(entryPrice)}</div></div>
-          <div style="font-size:11px;color:#64748b;"><div style="font-size:10px;margin-bottom:2px;">손절 기준</div><div style="font-size:13px;font-weight:700;color:#1478FF;">${escapeHtml(stop)}</div></div>
-          <div style="font-size:11px;color:#64748b;"><div style="font-size:10px;margin-bottom:2px;">1차 목표</div><div style="font-size:13px;font-weight:700;color:#F04452;">${escapeHtml(target1)}</div></div>
-          <div style="font-size:11px;color:#64748b;"><div style="font-size:10px;margin-bottom:2px;">2차 목표</div><div style="font-size:13px;font-weight:700;color:#F04452;">${escapeHtml(target2)}</div></div>
-        </div>
-      </article>`
+    const rankColor = RANK_COLOR[Math.min(idx, RANK_COLOR.length - 1)]
+    const conf = confLevel(confNum)
+
+    return `<div style="margin-bottom:12px;background:#fff;border:1px solid #E5E8EB;border-radius:16px;overflow:hidden">
+
+  <!-- 헤더 -->
+  <div style="padding:16px 18px;display:flex;align-items:center;gap:14px">
+    <div style="width:36px;height:36px;border-radius:50%;background:${rankColor};display:flex;align-items:center;justify-content:center;flex-shrink:0">
+      <span style="color:#fff;font-size:15px;font-weight:800">${idx + 1}</span>
+    </div>
+    <div style="flex:1;min-width:0">
+      <div style="font-size:18px;font-weight:800;color:#191F28;letter-spacing:-0.02em;line-height:1.25;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escapeHtml(String(item?.name || '-'))}</div>
+      <div style="margin-top:4px;display:flex;gap:5px;flex-wrap:wrap">
+        <span style="font-size:11px;color:#8B95A1;font-family:monospace">${escapeHtml(String(item?.code || '-'))}</span>
+        <span style="font-size:11px;background:#EBF3FF;color:#0060FF;padding:1px 7px;border-radius:6px;font-weight:600">${escapeHtml(strategy)}</span>
+        <span style="font-size:11px;background:#EDFAF5;color:#007B5F;padding:1px 7px;border-radius:6px;font-weight:600">${escapeHtml(warnGrade)}</span>
+      </div>
+    </div>
+    <div style="text-align:right;flex-shrink:0">
+      <div style="font-size:22px;font-weight:800;color:${conf.color};line-height:1;letter-spacing:-0.02em">${confNum.toFixed(1)}<span style="font-size:12px;font-weight:500">%</span></div>
+      <div style="font-size:11px;color:${conf.color};font-weight:600;margin-top:2px">${conf.label}</div>
+    </div>
+  </div>
+
+  <!-- 핵심 지표 4칸 -->
+  <div style="display:grid;grid-template-columns:repeat(4,1fr);border-top:1px solid #F2F4F6">
+    <div style="padding:12px 10px;text-align:center;border-right:1px solid #F2F4F6;background:#FAFBFC">
+      <div style="font-size:10px;color:#8B95A1;margin-bottom:5px">기준 진입가</div>
+      <div style="font-size:15px;font-weight:700;color:#191F28">${entryFmt}</div>
+      <div style="font-size:10px;color:#8B95A1;margin-top:1px">원</div>
+    </div>
+    <div style="padding:12px 10px;text-align:center;border-right:1px solid #F2F4F6;background:#FAFBFC">
+      <div style="font-size:10px;color:#8B95A1;margin-bottom:5px">기대 수익</div>
+      <div style="font-size:15px;font-weight:700;color:#F04452">+${base.toFixed(1)}%</div>
+    </div>
+    <div style="padding:12px 10px;text-align:center;border-right:1px solid #F2F4F6;background:#FAFBFC">
+      <div style="font-size:10px;color:#8B95A1;margin-bottom:5px">상단 목표</div>
+      <div style="font-size:15px;font-weight:700;color:#F04452">+${upside.toFixed(1)}%</div>
+    </div>
+    <div style="padding:12px 10px;text-align:center;background:#FAFBFC">
+      <div style="font-size:10px;color:#8B95A1;margin-bottom:5px">예상 손실</div>
+      <div style="font-size:15px;font-weight:700;color:#1478FF">-${drawdown.toFixed(1)}%</div>
+    </div>
+  </div>
+
+  <!-- 점수 + 기대여지 -->
+  <div style="padding:14px 18px;border-top:1px solid #F2F4F6;display:flex;gap:20px;align-items:flex-start;flex-wrap:wrap">
+    <div style="flex:1;min-width:160px;display:flex;flex-direction:column;gap:7px">
+      ${scoreBar('모멘텀', item?.score_momentum, '#F04452')}
+      ${scoreBar('밸류', item?.score_value, '#0060FF')}
+      ${scoreBar('안전성', item?.score_safety, '#00B493')}
+    </div>
+    <div style="padding:10px 14px;background:#F9FAFB;border-radius:10px;border:1px solid #E5E8EB;display:flex;flex-direction:column;align-items:center;justify-content:center;min-width:80px">
+      <div style="font-size:10px;color:#8B95A1;margin-bottom:3px">기대 여지</div>
+      <div style="font-size:20px;font-weight:800;color:${edge >= 7 ? '#007B5F' : edge >= 4 ? '#C85700' : '#F04452'}">+${edge.toFixed(1)}<span style="font-size:11px;font-weight:500">%</span></div>
+    </div>
+  </div>
+
+  <!-- 가격 구간 -->
+  <div style="display:flex;border-top:1px solid #F2F4F6">
+    <div style="flex:1;padding:10px 14px;border-right:1px solid #F2F4F6">
+      <div style="font-size:10px;color:#8B95A1;margin-bottom:3px">진입 구간</div>
+      <div style="font-size:13px;font-weight:700;color:#191F28">${entryFmt}원</div>
+    </div>
+    <div style="flex:1;padding:10px 14px;border-right:1px solid #F2F4F6">
+      <div style="font-size:10px;color:#8B95A1;margin-bottom:3px">손절 기준</div>
+      <div style="font-size:13px;font-weight:700;color:#1478FF">${stopFmt}원</div>
+    </div>
+    <div style="flex:1;padding:10px 14px;border-right:1px solid #F2F4F6">
+      <div style="font-size:10px;color:#8B95A1;margin-bottom:3px">1차 목표</div>
+      <div style="font-size:13px;font-weight:700;color:#F04452">${t1Fmt}원</div>
+    </div>
+    <div style="flex:1;padding:10px 14px">
+      <div style="font-size:10px;color:#8B95A1;margin-bottom:3px">2차 목표</div>
+      <div style="font-size:13px;font-weight:700;color:#F04452">${t2Fmt}원</div>
+    </div>
+  </div>
+
+</div>`
   }).join('')
 
   return `
-    ${sharedResponsiveStyles()}
-    <section style="margin-bottom:12px;padding:14px 16px;border:1px solid var(--color-border-default);border-radius:14px;background:linear-gradient(135deg,#fff5f0 0%,#fffaf8 100%);">
-      <div style="font-size:12px;color:#64748b">기준시각 ${escapeHtml(generatedAt)}</div>
-      <div style="margin-top:6px;font-size:14px;line-height:1.35;font-weight:700;color:#334155">선택 포지션 요약</div>
-      <div style="margin-top:8px;font-size:13px;color:#475569">선택된 ${selectedCount}개 종목 · 총 투자금 ${formatKrw(totalCapital)} (전체 ${totalCount}개 중)</div>
-    </section>
-    <section class="shared-cards">${itemsHtml || '<article style="border:1px solid var(--color-border-default);border-radius:12px;padding:16px;background:#fff;color:#64748b">표시할 종목이 없습니다.</article>'}</section>
+    <div style="margin-bottom:20px;padding:16px 18px;background:#F9FAFB;border-radius:12px;border:1px solid #E5E8EB">
+      <div style="font-size:11px;color:#8B95A1;margin-bottom:4px">기준시각 ${escapeHtml(generatedAt)}</div>
+      <div style="font-size:16px;font-weight:700;color:#191F28">선택 포지션 요약</div>
+      <div style="margin-top:4px;font-size:13px;color:#6B7280">${selectedCount}개 종목 · 총 투자금 ${formatKrw(totalCapital)} (전체 ${totalCount}개 중)</div>
+    </div>
+    ${itemsHtml || '<div style="padding:32px;text-align:center;color:#8B95A1;font-size:14px">표시할 종목이 없습니다.</div>'}
   `
 }
 
