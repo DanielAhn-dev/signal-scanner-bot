@@ -161,6 +161,116 @@ html, body, #root {
 }
 
 /* ================================================================
+   TRADES PAGE
+   ================================================================ */
+.trades-page {
+  max-width: 980px;
+}
+
+.trades-head {
+  margin-bottom: var(--space-3);
+}
+
+.trades-title {
+  margin-bottom: 0;
+}
+
+.trades-subtitle {
+  margin: 6px 0 0;
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-sm);
+}
+
+.trades-log-list {
+  gap: var(--space-2);
+}
+
+.trades-log-card {
+  border-color: #e4eaf2;
+  background: linear-gradient(180deg, #ffffff 0%, #fbfdff 100%);
+  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.04);
+  padding: var(--space-3);
+}
+
+.trades-log-top {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 6px;
+}
+
+.trades-log-title-wrap {
+  min-width: 0;
+}
+
+.trades-log-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  color: var(--color-text-primary);
+  font-size: var(--font-size-md);
+  font-weight: var(--font-weight-semibold);
+}
+
+.trades-log-action {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  padding: 2px 8px;
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-bold);
+  letter-spacing: 0.01em;
+}
+
+.trades-log-action.is-buy {
+  background: #e9f2ff;
+  color: #1f5fd6;
+}
+
+.trades-log-action.is-sell {
+  background: #fef2f2;
+  color: #c24141;
+}
+
+.trades-log-time {
+  color: var(--color-text-tertiary);
+  font-size: var(--font-size-sm);
+}
+
+.trades-log-reason {
+  margin-top: 6px;
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-sm);
+  line-height: 1.45;
+  word-break: keep-all;
+}
+
+.trades-empty-card {
+  color: var(--color-text-secondary);
+}
+
+.trades-pagination-wrap {
+  margin-top: var(--space-3);
+}
+
+@media (min-width: 768px) {
+  .trades-log-card {
+    padding: var(--space-4);
+  }
+
+  .trades-log-top {
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: start;
+    gap: var(--space-2);
+  }
+
+  .trades-log-time {
+    text-align: right;
+    white-space: nowrap;
+  }
+}
+
+/* ================================================================
    REPORT ACTION CARD — 반응형 레이아웃
    ================================================================ */
 .report-action-card-body {
@@ -1678,6 +1788,15 @@ html, body, #root {
 
   .portfolio-share-history-actions {
     justify-content: flex-start;
+  }
+
+  .trades-page {
+    padding-top: var(--space-4);
+  }
+
+  .trades-title {
+    font-size: 1.55rem;
+    line-height: 1.25;
   }
 }
 

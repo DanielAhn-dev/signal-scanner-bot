@@ -31,23 +31,36 @@ export default function Trades() {
   }, [page])
 
   return (
-    <section>
-      <h1 className="title-xl">거래 기록 / 결정 로그</h1>
-      <div className="cards-list">
+    <section className="container-app trades-page">
+      <div className="trades-head">
+        <h1 className="title-xl trades-title">거래 기록 / 결정 로그</h1>
+        <p className="trades-subtitle">자동/수동 매수·매도 의사결정 로그를 최신순으로 확인합니다.</p>
+      </div>
+
+      <div className="cards-list trades-log-list">
         {loading && <Skeleton lines={3} height={18} />}
-        {!loading && rows.length === 0 && <div className="card">기록 없음</div>}
+        {!loading && rows.length === 0 && <div className="card trades-empty-card">기록 없음</div>}
         {!loading && rows.map((r: any) => (
-          <div key={r.id} className="card">
-            <div className="flex-between">
-              <div className="font-medium">{r.stock_name || r.ticker || r.symbol || r.code} ({r.code || '-'}) · {r.action}</div>
-              <div className="muted">{new Date(r.created_at).toLocaleString()}</div>
+          <div key={r.id} className="card trades-log-card">
+            <div className="trades-log-top">
+              <div className="trades-log-title-wrap">
+                <div className="trades-log-title">
+                  {r.stock_name || r.ticker || r.symbol || r.code} ({r.code || '-'})
+                  <span className={`trades-log-action ${String(r.action || '').toUpperCase() === 'BUY' ? 'is-buy' : 'is-sell'}`}>
+                    {String(r.action || '-').toUpperCase()}
+                  </span>
+                </div>
+              </div>
+              <div className="trades-log-time">{new Date(r.created_at).toLocaleString('ko-KR')}</div>
             </div>
-            <div className="muted mt-1">이유: {r.reason_summary ?? r.reason ?? r.notes ?? '-'}</div>
+            <div className="trades-log-reason">이유: {r.reason_summary ?? r.reason ?? r.notes ?? '-'}</div>
           </div>
         ))}
       </div>
 
-      <Pagination page={page} pageSize={pageSize} total={total} onChange={(p) => setPage(p)} />
+      <div className="pagination-wrap trades-pagination-wrap">
+        <Pagination page={page} pageSize={pageSize} total={total} onChange={(p) => setPage(p)} />
+      </div>
     </section>
   )
 }
