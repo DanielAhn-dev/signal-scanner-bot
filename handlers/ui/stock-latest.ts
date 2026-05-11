@@ -51,6 +51,81 @@ type PerShareMetrics = {
   }
 }
 
+type AdvisorSignalStatus = 'strong_buy' | 'buy' | 'watch' | 'partial_sell' | 'sell'
+
+function resolveAdvisorSignal(input: {
+  currentPrice: number | null
+  finalScore: number | null
+  technicalScore: number | null
+  statusFromPlan: string | null | undefined
+  entryLow: number | null
+  entryHigh: number | null
+  stopPrice: number | null
+  target1: number | null
+}): { status: AdvisorSignalStatus; statusLabel: string; reason: string } {
+  const {
+    currentPrice,
+    finalScore,
+    technicalScore,
+    statusFromPlan,
+    entryLow,
+    entryHigh,
+    stopPrice,
+    target1,
+  } = input
+
+  const s = String(statusFromPlan || '').toLowerCase()
+  const score = Number.isFinite(Number(finalScore)) ? Number(finalScore) : Number(technicalScore)
+  const hasScore = Number.isFinite(score)
+  const price = Number.isFinite(Number(currentPrice)) ? Number(currentPrice) : null
+
+  const inEntryBand =
+    price != null && entryLow != null && entryHigh != null
+      ? price >= Number(entryLow) && price <= Number(entryHigh)
+      : false
+
+  // 매수 조건은 보수적으로 유지하되, 진입 밴드 인근(소폭 이탈)까지 허용해 신호 누락을 줄인다.
+  const nearEntryBand =
+    price != null && entryLow != null && entryHigh != null
+      ? price >= Number(entryLow) * 0.985 && price <= Number(entryHigh) * 1.015
+      : false
+
+  if (price != null && stopPrice != null && price <= Number(stopPrice)) {
+    return { status: 'sell', statusLabel: '손절/매도', reason: '현재가가 손절 기준 이하로 이탈' }
+  }
+
+  if (price != null && target1 != null && price >= Number(target1)) {
+    return { status: 'partial_sell', statusLabel: '익절', reason: '현재가가 1차 목표가 도달/상회' }
+  }
+
+  if (s === 'wait') {
+    return { status: 'watch', statusLabel: '관망', reason: '플랜 상태가 관망(wait) 구간' }
+  }
+
+  // buy-now는 곧바로 강력매수로 두지 않고, 점수+진입구간을 동시에 만족할 때만 강력매수로 본다.
+  if (inEntryBand && s === 'buy-now' && hasScore && score >= 74) {
+    return {
+      status: 'strong_buy',
+      statusLabel: '강력매수',
+      reason: '진입구간 내 + buy-now + 점수 74점 이상',
+    }
+  }
+
+  if (nearEntryBand && (s === 'buy-now' || s === 'buy-on-pullback')) {
+    return {
+      status: 'buy',
+      statusLabel: '매수',
+      reason: '진입구간 인근(±1.5%) + 매수 플랜 상태',
+    }
+  }
+
+  return {
+    status: 'watch',
+    statusLabel: '관망',
+    reason: '진입/익절/손절 트리거 조건 미충족',
+  }
+}
+
 function isKrxIntradaySession(base = new Date()): boolean {
   const kst = new Date(base.getTime() + 9 * 60 * 60 * 1000)
   const day = kst.getUTCDay()
@@ -616,6 +691,17 @@ async function buildAdvisorPayload(input: {
       ? Math.max(0, Math.min(100, Number((finalScore - proxyPenalty).toFixed(1))))
       : null
 
+  const normalizedSignal = resolveAdvisorSignal({
+    currentPrice,
+    finalScore: finalScoreAdjusted,
+    technicalScore: fallbackScore ?? null,
+    statusFromPlan: plan.status,
+    entryLow: plan.entryLow,
+    entryHigh: plan.entryHigh,
+    stopPrice: plan.stopPrice,
+    target1: plan.target1,
+  })
+
   let personalLines: string[] = []
   if (chatId) {
     personalLines = await (async () => {
@@ -636,8 +722,9 @@ async function buildAdvisorPayload(input: {
     technicalScore: fallbackScore ?? null,
     fundamentalScore,
     finalScore: finalScoreAdjusted,
-    status: plan.status,
-    statusLabel: plan.statusLabel,
+    status: normalizedSignal.status,
+    statusLabel: normalizedSignal.statusLabel,
+    signalReason: normalizedSignal.reason,
     summary: plan.summary,
     entryLow: plan.entryLow,
     entryHigh: plan.entryHigh,

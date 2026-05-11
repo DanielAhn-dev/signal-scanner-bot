@@ -684,6 +684,7 @@ export default function AnalyzePage() {
                       {advisor.statusLabel ?? '—'}
                     </span>
                   </div>
+                  {advisor.signalReason && <div className="caption" style={{ marginBottom: 'var(--space-1)' }}>신호 근거: {advisor.signalReason}</div>}
                   {advisor.summary && <div className="caption">{advisor.summary}</div>}
                 </div>
 
