@@ -6,7 +6,7 @@ import { getCurrentUserChatId } from '../../lib/userContext'
 import Button from '../../components/ui/Button'
 import Skeleton from '../../components/Skeleton'
 import StockSearchInput from '../../components/StockSearchInput'
-import ShareButtons from '../../components/ShareButtons'
+import CardCaptureActions from '../../components/CardCaptureActions'
 
 function buildAnalyzeShareUrl(code: string): string {
   if (typeof window === 'undefined') return `/analyze?code=${encodeURIComponent(code)}`
@@ -226,6 +226,15 @@ export default function AnalyzePage() {
     return lines.slice(0, 4)
   }, [advisor, result])
 
+  const analyzeCaptureId = result?.code ? `analyze-result-capture-${result.code}` : 'analyze-result-capture'
+  const analyzeCaptureTitle = result?.name ?? result?.code ?? '종목 분석'
+  const analyzeCaptureFilename = result?.code
+    ? `analyze-${result.code}-${new Date().toISOString().slice(0, 10)}`
+    : `analyze-${new Date().toISOString().slice(0, 10)}`
+  const analyzeCaptureText = shareSummaryLines.length > 0
+    ? `${analyzeCaptureTitle} 분석 · ${shareSummaryLines.join(' · ')}`
+    : `${analyzeCaptureTitle} 분석`
+
   return (
     <section className="container-app">
       <h1 className="title-xl">종목 분석</h1>
@@ -270,7 +279,14 @@ export default function AnalyzePage() {
       )}
 
       {result && !loading && (
-        <div className="card card-lg">
+        <div className="card card-lg card-capture-anchor" id={analyzeCaptureId}>
+          <CardCaptureActions
+            targetId={analyzeCaptureId}
+            title={`${analyzeCaptureTitle} 분석`}
+            filename={analyzeCaptureFilename}
+            text={analyzeCaptureText}
+            shareUrl={buildAnalyzeShareUrl(result.code)}
+          />
 
           {/* ── 헤더: 종목명 + 현재가 ── */}
           <div className="flex-between" style={{ marginBottom: 'var(--space-3)' }}>
@@ -291,24 +307,6 @@ export default function AnalyzePage() {
               </div>
             )}
           </div>
-
-          {/* 공유 버튼 */}
-          {result.close != null && (
-            <div style={{ marginBottom: 'var(--space-4)' }}>
-              <ShareButtons
-                data={{
-                  title: result.name || result.code,
-                  code: result.code,
-                  price: result.close,
-                  changePct: result.change_pct,
-                  summaryLines: shareSummaryLines,
-                  url: buildAnalyzeShareUrl(result.code),
-                }}
-                variant="button"
-                showLabel
-              />
-            </div>
-          )}
 
           {/* ── 일중 범위 바 ── */}
           {result.high != null && result.low != null && (

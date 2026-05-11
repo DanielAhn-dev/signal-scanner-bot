@@ -1,4 +1,4 @@
-﻿import React, { useEffect, useMemo, useState } from 'react'
+﻿import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { apiFetch } from '../../lib/api'
 import { formatNumber } from '../../lib/format'
 import Button from '../../components/ui/Button'
@@ -12,6 +12,8 @@ import useWatchlistActions from '../../hooks/useWatchlistActions'
 const SCAN_SNAPSHOT_KEY = 'scan_snapshot_v1'
 const ANALYZE_PENDING_CODE_KEY = 'analyze_pending_code'
 
+type MarketPhase = 'intraday' | 'after-close'
+
 function readScanSnapshot() {
   try {
     const raw = sessionStorage.getItem(SCAN_SNAPSHOT_KEY)
@@ -22,18 +24,37 @@ function readScanSnapshot() {
       candidates: parsed.candidates as ScanCandidate[],
       total: Number(parsed.total || 0),
       latestDate: parsed.latestDate ? String(parsed.latestDate) : null,
+      marketPhase: parsed.marketPhase === 'intraday' ? 'intraday' : 'after-close',
+      realtimeAppliedCount: Number(parsed.realtimeAppliedCount || 0),
     }
   } catch {
     return null
   }
 }
 
-function writeScanSnapshot(payload: { candidates: ScanCandidate[]; total: number; latestDate: string | null }) {
+function writeScanSnapshot(payload: {
+  candidates: ScanCandidate[]
+  total: number
+  latestDate: string | null
+  marketPhase: MarketPhase
+  realtimeAppliedCount: number
+}) {
   try {
     sessionStorage.setItem(SCAN_SNAPSHOT_KEY, JSON.stringify(payload))
   } catch {
     // ignore
   }
+}
+
+function buildCandidateSignature(items: ScanCandidate[]): string {
+  if (!Array.isArray(items) || items.length === 0) return 'empty'
+  return items
+    .slice(0, 30)
+    .map((item) => {
+      const score = Number(item.adaptive_score ?? (item.entry_score ?? 0) * 20 - (item.warn_score ?? 0) * 3)
+      return `${item.code}:${Number.isFinite(score) ? score.toFixed(1) : '0.0'}`
+    })
+    .join('|')
 }
 
 type SortDirection = 'asc' | 'desc'
@@ -155,6 +176,10 @@ export default function ScanPage({ onNavigate }: { onNavigate?: (r: string) => v
   const [candidates, setCandidates] = useState<ScanCandidate[]>(() => snapshot?.candidates ?? [])
   const [total, setTotal] = useState(() => snapshot?.total ?? 0)
   const [latestDate, setLatestDate] = useState<string | null>(() => snapshot?.latestDate ?? null)
+  const [marketPhase, setMarketPhase] = useState<MarketPhase>(() => (
+    snapshot?.marketPhase === 'intraday' ? 'intraday' : 'after-close'
+  ))
+  const [realtimeAppliedCount, setRealtimeAppliedCount] = useState<number>(() => snapshot?.realtimeAppliedCount ?? 0)
   const [loading, setLoading] = useState(() => !snapshot)
   const [error, setError] = useState<string | null>(null)
   const [scanLoading, setScanLoading] = useState(false)
@@ -167,6 +192,13 @@ export default function ScanPage({ onNavigate }: { onNavigate?: (r: string) => v
   const [page, setPage] = useState(1)
   const pageSize = 20
   const toast = useToast()
+  const toastRef = useRef(toast)
+  const lastSignatureRef = useRef<string | null>(null)
+  const hasFetchedRef = useRef(false)
+
+  useEffect(() => {
+    toastRef.current = toast
+  }, [toast])
   const {
     loadWatchlistCodes,
     isWatched,
@@ -176,30 +208,53 @@ export default function ScanPage({ onNavigate }: { onNavigate?: (r: string) => v
     removeFromWatchlist,
   } = useWatchlistActions()
 
-  const loadCandidates = async () => {
-    setLoading(true)
+  const loadCandidates = useCallback(async (options?: { silent?: boolean }) => {
+    if (!options?.silent) setLoading(true)
     setError(null)
     try {
-      const res = await apiFetch('/api/ui/scan-candidates?limit=80', {
-        cacheMs: 10_000,
+      const ts = Date.now()
+      const res = await apiFetch(`/api/ui/scan-candidates?limit=80&cacheMs=0&_ts=${ts}`, {
+        cacheMs: 0,
         timeoutMs: 25_000,
       })
-      setCandidates(res?.data ?? [])
+      const nextCandidates = Array.isArray(res?.data) ? (res.data as ScanCandidate[]) : []
+      const nextSignature = buildCandidateSignature(nextCandidates)
+      const prevSignature = lastSignatureRef.current
+
+      if (!options?.silent && hasFetchedRef.current) {
+        if (prevSignature === nextSignature) {
+          toastRef.current.show(`데이터 동일 · 기준일 ${res?.latestDate ?? '—'} · ${res?.marketPhase === 'intraday' ? '장중(현재가 반영 없음/미미)' : '종가 기준'}`)
+        } else {
+          toastRef.current.show(`데이터 업데이트 감지 · 기준일 ${res?.latestDate ?? '—'}`)
+        }
+      }
+
+      lastSignatureRef.current = nextSignature
+      hasFetchedRef.current = true
+
+      setCandidates(nextCandidates)
       setTotal(res?.count ?? 0)
       setLatestDate(res?.latestDate ?? null)
+      setMarketPhase(res?.marketPhase === 'intraday' ? 'intraday' : 'after-close')
+      setRealtimeAppliedCount(Number(res?.realtimeAppliedCount ?? 0))
       writeScanSnapshot({
-        candidates: res?.data ?? [],
+        candidates: nextCandidates,
         total: res?.count ?? 0,
         latestDate: res?.latestDate ?? null,
+        marketPhase: res?.marketPhase === 'intraday' ? 'intraday' : 'after-close',
+        realtimeAppliedCount: Number(res?.realtimeAppliedCount ?? 0),
       })
     } catch (e: any) {
       setError(e?.message || String(e))
     } finally {
-      setLoading(false)
+      if (!options?.silent) setLoading(false)
     }
-  }
+  }, [])
 
-  useEffect(() => { loadCandidates() }, [])
+  useEffect(() => {
+    void loadCandidates()
+  }, [loadCandidates])
+
   useEffect(() => {
     setHighlightLoading(true)
     apiFetch('/api/ui/scan-highlights', { cacheMs: 60_000, timeoutMs: 30_000 })
@@ -227,7 +282,17 @@ export default function ScanPage({ onNavigate }: { onNavigate?: (r: string) => v
         }),
       })
       if (res?.ok) {
-        toast.show('스캔/DB 동기화 완료 ✓')
+        const runnerEnabled = !!res?.scriptRunner?.enabled
+        const runnerRequested = !!res?.scriptRunner?.requested
+        const runnerOk = !!res?.scriptRunner?.result?.ok
+
+        if (runnerRequested && !runnerEnabled) {
+          toast.show('DB 갱신만 완료됨(점수 재계산 스크립트 비활성). 서버 ENABLE_WEB_SCRIPT_RUNNER 확인 필요')
+        } else if (runnerRequested && !runnerOk) {
+          toast.show('DB 갱신 완료, 스코어 재계산 일부 실패(서버 로그 확인 필요)')
+        } else {
+          toast.show('스캔/DB 동기화 완료 ✓')
+        }
         await loadCandidates()
       } else {
         const detail = res?.body?.error || res?.error || '스캔 요청 실패'
@@ -412,7 +477,7 @@ export default function ScanPage({ onNavigate }: { onNavigate?: (r: string) => v
       <div className="flex-between mb-4">
         <h1 className="title-xl" style={{ marginBottom: 0 }}>Nexora 눌림목</h1>
         <div className="scan-header-actions">
-          <Button variant="ghost" onClick={loadCandidates} disabled={loading}>새로고침</Button>
+          <Button variant="ghost" onClick={() => { void loadCandidates() }} disabled={loading}>새로고침</Button>
           <Button variant="primary" onClick={triggerScan} disabled={scanLoading}>
             {scanLoading ? '동기화 중…' : '▶ 스캔 동기화 실행'}
           </Button>
@@ -423,7 +488,7 @@ export default function ScanPage({ onNavigate }: { onNavigate?: (r: string) => v
       <div className="card mb-4">
         <div className="muted">
           <span className="scan-stat-count">{sortedCandidates.length}</span>개 후보 ·
-          최신 기준일 {latestDate ?? '—'} · 텔레그램 pullback 신호 기반 · 종목 클릭 시 상세 분석으로 이동
+          최신 기준일 {latestDate ?? '—'} · {marketPhase === 'intraday' ? `장중 현재가 반영(${realtimeAppliedCount}건)` : '종가 기준'} · 텔레그램 pullback 신호 기반 · 종목 클릭 시 상세 분석으로 이동
         </div>
       </div>
 

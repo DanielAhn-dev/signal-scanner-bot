@@ -1,6 +1,7 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { createClient, SupabaseClient } from '@supabase/supabase-js'
 import { applyAdaptiveOverlayToPullbackCandidate, getAdaptiveStrategyInsights } from '../../src/services/adaptiveStrategyService'
+import { fetchRealtimePriceBatch } from '../../src/utils/fetchRealtimePrice'
 
 const ORIGIN = process.env.UI_CORS_ORIGIN || '*'
 const SCAN_CACHE_TTL_MS = Math.max(0, Number(process.env.UI_SCAN_CANDIDATES_CACHE_TTL_MS || 15_000))
@@ -11,6 +12,18 @@ type ScanCacheEntry = {
 }
 
 const scanCache = new Map<string, ScanCacheEntry>()
+
+function isKrxIntradaySession(base = new Date()): boolean {
+  const kst = new Date(base.getTime() + 9 * 60 * 60 * 1000)
+  const day = kst.getUTCDay()
+  if (day === 0 || day === 6) return false
+  const minutes = kst.getUTCHours() * 60 + kst.getUTCMinutes()
+  return minutes >= 9 * 60 && minutes < 15 * 60 + 30
+}
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.min(max, Math.max(min, value))
+}
 
 let _supabase: SupabaseClient | null = null
 function getSupabase(): SupabaseClient {
@@ -59,10 +72,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   try {
     const adaptiveInsights = await getAdaptiveStrategyInsights(supabase)
+    const intraday = isKrxIntradaySession()
 
     const limit = Math.min(200, Math.max(20, Number(req.query.limit || 60)))
     const includeIndicatorLiquidity = String(req.query.includeIndicatorLiquidity || '0') === '1'
-    const bypassCache = String(req.query.cacheMs || '') === '0'
+    const bypassCache = String(req.query.cacheMs || '') === '0' || intraday
     const cacheKey = JSON.stringify({ limit, includeIndicatorLiquidity })
 
     if (!bypassCache && SCAN_CACHE_TTL_MS > 0) {
@@ -155,10 +169,31 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       }
     }
 
+    const codes = (data ?? []).map((row: any) => String(row?.code || '')).filter(Boolean)
+    const realtimeMap = intraday && codes.length > 0
+      ? await fetchRealtimePriceBatch(codes).catch(() => ({} as Record<string, any>))
+      : ({} as Record<string, any>)
+
+    let realtimeAppliedCount = 0
+
     const rows = (data ?? []).map((row: any) => {
       const stock = Array.isArray(row.stock) ? (row.stock[0] || {}) : (row.stock || {})
       const adaptive = applyAdaptiveOverlayToPullbackCandidate(row, adaptiveInsights)
       const baseScore = Number(row.entry_score ?? 0) * 20 - Number(row.warn_score ?? 0) * 3
+      const closePrice = Number(stock.close ?? 0)
+      const realtimePrice = Number(realtimeMap[row.code]?.price ?? 0)
+      const hasRealtime = intraday && Number.isFinite(realtimePrice) && realtimePrice > 0
+      const currentPrice = hasRealtime ? realtimePrice : (Number.isFinite(closePrice) && closePrice > 0 ? closePrice : null)
+      const intradayChangePct = hasRealtime && closePrice > 0
+        ? ((realtimePrice - closePrice) / closePrice) * 100
+        : 0
+      if (hasRealtime) realtimeAppliedCount += 1
+
+      // 장중에는 현재가 변화폭을 소폭 점수에 반영(변화가 없으면 종가 기준과 동일)
+      const intradayDelta = hasRealtime
+        ? clamp(intradayChangePct * 1.2, -8, 8)
+        : 0
+
       return {
         code: row.code,
         trade_date: row.trade_date,
@@ -175,16 +210,21 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         sector_id: stock.sector_id || null,
         liquidity: stock.liquidity ?? indicatorLiquidityByCode.get(String(row.code)) ?? null,
         close: stock.close ?? null,
+        current_price: currentPrice,
+        price_source: hasRealtime ? 'realtime' : 'close',
+        intraday_change_pct: hasRealtime ? round2(intradayChangePct) : 0,
         stock_updated_at: stock.updated_at ?? null,
         adaptive_adjustment: adaptive.adjustment,
         adaptive_reasons: adaptive.reasons,
-        adaptive_score: round1(baseScore + adaptive.adjustment),
+        adaptive_score: round1(baseScore + adaptive.adjustment + intradayDelta),
       }
     })
 
     rows.sort((a: any, b: any) => Number(b.adaptive_score ?? 0) - Number(a.adaptive_score ?? 0) || Number(b.entry_score ?? 0) - Number(a.entry_score ?? 0))
 
     const payload = {
+      marketPhase: intraday ? 'intraday' : 'after-close',
+      realtimeAppliedCount,
       latestDate,
       count: rows.length,
       data: rows,
@@ -205,4 +245,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
 function round1(value: number): number {
   return Math.round(value * 10) / 10
+}
+
+function round2(value: number): number {
+  return Math.round(value * 100) / 100
 }
