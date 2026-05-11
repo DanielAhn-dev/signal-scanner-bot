@@ -121,10 +121,10 @@ export default function ShareModal({
 
   return (
     <div className="modal-overlay" role="dialog" aria-modal aria-label="공유 링크">
-      <div className="modal card" style={{ maxWidth: 640 }}>
-        <div className="flex-between">
+      <div className="modal card" style={{ maxWidth: '100%', width: '100%' }}>
+        <div className="flex-between" style={{ alignItems: 'flex-start' }}>
           <h2 className="title-lg">공유 링크 생성됨</h2>
-          <button className="nav-item" onClick={onClose}>닫기</button>
+          <button className="nav-item" onClick={onClose} style={{ marginLeft: 'auto' }}>닫기</button>
         </div>
         <div className="mt-2">
           <div className="muted">
@@ -150,17 +150,17 @@ export default function ShareModal({
           </div>
           <div style={{ marginTop: 12 }}>
             <div className="caption">URL</div>
-            <div style={{ display: 'flex', gap: 8, marginTop: 6 }}>
-              <input readOnly value={url || ''} style={{ flex: 1 }} className="ui-text" />
-              <button className="ui-button ui-btn-secondary" onClick={() => copy(url)}>복사</button>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 6 }}>
+              <input readOnly value={url || ''} style={{ flex: 1, minWidth: 0, width: '100%' }} className="ui-text" />
+              <button className="ui-button ui-btn-secondary" style={{ width: '100%' }} onClick={() => copy(url)}>복사</button>
             </div>
           </div>
           {requiresCode && (
             <div style={{ marginTop: 12 }}>
               <div className="caption">초대코드</div>
-              <div style={{ display: 'flex', gap: 8, marginTop: 6 }}>
-                <input readOnly value={code || ''} className="ui-text" style={{ width: 160 }} />
-                <button className="ui-button ui-btn-secondary" onClick={() => copy(code)}>복사</button>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 6 }}>
+                <input readOnly value={code || ''} className="ui-text" style={{ width: '100%' }} />
+                <button className="ui-button ui-btn-secondary" style={{ width: '100%' }} onClick={() => copy(code)}>복사</button>
               </div>
             </div>
           )}
@@ -169,28 +169,26 @@ export default function ShareModal({
             <div className="muted" style={{ marginTop: 6 }}>{formatDate(expiresAt)}</div>
           </div>
           <div style={{ marginTop: 18, borderTop: '1px solid var(--color-border-muted, #e5e7eb)', paddingTop: 14 }}>
-            <div className="flex-between" style={{ alignItems: 'center' }}>
-              <div>
-                <div className="title-md">최근 공유 링크</div>
-                <div className="muted" style={{ marginTop: 4 }}>같은 주제로 최근 발급된 링크를 보고 철회할 수 있습니다.</div>
-              </div>
-              <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                <select
-                  className="input"
-                  value={listFilter}
-                  onChange={(e) => setListFilter(e.target.value === 'all' ? 'all' : 'active')}
-                  style={{ minWidth: 132 }}
-                >
-                  <option value="active">활성 링크만</option>
-                  <option value="all">전체 링크</option>
-                </select>
-                <select className="input" value={sortBy} onChange={(e) => setSortBy(e.target.value as 'recent' | 'views' | 'expires')} style={{ minWidth: 140 }}>
-                  <option value="recent">최신순</option>
-                  <option value="views">조회수순</option>
-                  <option value="expires">만료임박순</option>
-                </select>
-                <button className="ui-button ui-btn-secondary" onClick={onRefresh} disabled={loading}>새로고침</button>
-              </div>
+            <div style={{ marginBottom: 12 }}>
+              <div className="title-md">최근 공유 링크</div>
+              <div className="muted" style={{ marginTop: 4 }}>같은 주제로 최근 발급된 링크를 보고 철회할 수 있습니다.</div>
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(100px, 1fr))', gap: 8, alignItems: 'stretch' }}>
+              <select
+                className="input"
+                value={listFilter}
+                onChange={(e) => setListFilter(e.target.value === 'all' ? 'all' : 'active')}
+                style={{ width: '100%' }}
+              >
+                <option value="active">활성 링크만</option>
+                <option value="all">전체 링크</option>
+              </select>
+              <select className="input" value={sortBy} onChange={(e) => setSortBy(e.target.value as 'recent' | 'views' | 'expires')} style={{ width: '100%' }}>
+                <option value="recent">최신순</option>
+                <option value="views">조회수순</option>
+                <option value="expires">만료임박순</option>
+              </select>
+              <button className="ui-button ui-btn-secondary" onClick={onRefresh} disabled={loading} style={{ width: '100%' }}>새로고침</button>
             </div>
             <div style={{ marginTop: 12, display: 'grid', gap: 10, maxHeight: 280, overflow: 'auto' }}>
               {sortedShares.length === 0 ? (
@@ -201,7 +199,7 @@ export default function ShareModal({
                   <div key={share.shareId} className="card" style={{ margin: 0, padding: 12 }}>
                     <div className="caption">생성 {formatDate(share.createdAt)}</div>
                     <div className="muted" style={{ marginTop: 4 }}>만료 {formatDate(share.expiresAt)} · 조회 {share.accessCount || 0}회</div>
-                    <div style={{ display: 'flex', gap: 8, marginTop: 10, flexWrap: 'wrap' }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginTop: 10 }}>
                         <button className="ui-button ui-btn-secondary" onClick={() => copy(share.url || link)}>링크 복사</button>
                       <button className="ui-button ui-btn-secondary" onClick={() => onRevoke?.(share.shareId)} disabled={revokingId === share.shareId}>
                         {revokingId === share.shareId ? '철회 중…' : '철회'}
