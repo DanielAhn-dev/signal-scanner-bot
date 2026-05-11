@@ -106,6 +106,14 @@ export type AnalyzeResult = {
   value_score: number | null
   sma20: number | null
   sma50: number | null
+  sma200: number | null
+  sma240: number | null
+  sma244: number | null
+  ema20: number | null
+  ema50: number | null
+  ema200: number | null
+  ema240: number | null
+  ema244: number | null
   rsi14: number | null
   entry_price: number | null
   stop_loss_price: number | null

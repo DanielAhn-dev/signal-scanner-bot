@@ -44,6 +44,11 @@ export default function AnalyzePage() {
   const [advisor, setAdvisor] = useState<any | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [showExtendedIndicators, setShowExtendedIndicators] = useState(false)
+  const [showChartHud, setShowChartHud] = useState(true)
+  const [showMaEmaOverlay, setShowMaEmaOverlay] = useState(true)
+  const [showTradeMarkers, setShowTradeMarkers] = useState(true)
+  const [showForceLine, setShowForceLine] = useState(false)
   const [quickStocks, setQuickStocks] = useState<Array<{ code: string; name: string }>>([])
   const inputRef = useRef<HTMLInputElement>(null)
   const toast = useToast()
@@ -73,6 +78,14 @@ export default function AnalyzePage() {
   // 서버에서 내려온 값을 직접 사용한다. 클라이언트 재계산은 서버와 불일치를 유발한다.
   const computedSma20 = result?.sma20 ?? null
   const computedSma50 = result?.sma50 ?? null
+  const computedSma200 = result?.sma200 ?? null
+  const computedSma240 = result?.sma240 ?? null
+  const computedSma244 = result?.sma244 ?? null
+  const computedEma20 = result?.ema20 ?? null
+  const computedEma50 = result?.ema50 ?? null
+  const computedEma200 = result?.ema200 ?? null
+  const computedEma240 = result?.ema240 ?? null
+  const computedEma244 = result?.ema244 ?? null
   const computedRsi14 = result?.rsi14 ?? null
 
   const analyze = async (code?: string) => {
@@ -206,6 +219,34 @@ export default function AnalyzePage() {
 
     return lines.slice(0, 4)
   }, [advisor, result])
+
+  const chartHud = useMemo(() => {
+    if (!candles.length) {
+      return {
+        support: null as number | null,
+        resistance: null as number | null,
+      }
+    }
+
+    const recent = [...candles].slice(-20)
+    const lows = recent.map((c) => Number(c.low)).filter((v) => Number.isFinite(v))
+    const highs = recent.map((c) => Number(c.high)).filter((v) => Number.isFinite(v))
+
+    return {
+      support: lows.length ? Math.min(...lows) : null,
+      resistance: highs.length ? Math.max(...highs) : null,
+    }
+  }, [candles])
+
+  const signalText = useMemo(() => {
+    const status = String(advisor?.status || '').toLowerCase()
+    if (status === 'strong_buy' || status === 'buy-now') return '강력매수'
+    if (status === 'buy' || status === 'buy-on-pullback') return '매수'
+    if (status === 'partial_sell') return '익절'
+    if (status === 'sell') return '손절/매도'
+    if (status === 'watch') return '관망'
+    return advisor?.statusLabel || '대기'
+  }, [advisor])
 
   const analyzeCaptureId = result?.code ? `analyze-result-capture-${result.code}` : 'analyze-result-capture'
 
@@ -438,7 +479,17 @@ export default function AnalyzePage() {
           {DIVIDER}
 
           {/* ── 수급/기술 ── */}
-          <div className="title-md" style={{ marginBottom: 'var(--space-2)' }}>수급/기술</div>
+          <div className="flex-between" style={{ marginBottom: 'var(--space-2)' }}>
+            <div className="title-md">수급/기술</div>
+            <button
+              className="btn btn-sm"
+              type="button"
+              onClick={() => setShowExtendedIndicators((v) => !v)}
+              aria-pressed={showExtendedIndicators}
+            >
+              {showExtendedIndicators ? '확장 지표 숨기기' : '확장 지표 보기'}
+            </button>
+          </div>
           <div className="cards-grid cols-3">
             {([
               ['외국인 보유비율', result.foreign_ratio != null ? formatNumber(result.foreign_ratio, 2) + '%' : '—'],
@@ -447,6 +498,18 @@ export default function AnalyzePage() {
               ['SMA 20', computedSma20 != null ? formatKrw(computedSma20) : '—'],
               ['SMA 50', computedSma50 != null ? formatKrw(computedSma50) : '—'],
               ['RSI 14', computedRsi14 != null ? formatNumber(computedRsi14, 1) : '—'],
+              ...(showExtendedIndicators
+                ? ([
+                    ['SMA 200', computedSma200 != null ? formatKrw(computedSma200) : '—'],
+                    ['SMA 240', computedSma240 != null ? formatKrw(computedSma240) : '—'],
+                    ['SMA 244', computedSma244 != null ? formatKrw(computedSma244) : '—'],
+                    ['EMA 20', computedEma20 != null ? formatKrw(computedEma20) : '—'],
+                    ['EMA 50', computedEma50 != null ? formatKrw(computedEma50) : '—'],
+                    ['EMA 200', computedEma200 != null ? formatKrw(computedEma200) : '—'],
+                    ['EMA 240', computedEma240 != null ? formatKrw(computedEma240) : '—'],
+                    ['EMA 244', computedEma244 != null ? formatKrw(computedEma244) : '—'],
+                  ] as [string, string][])
+                : []),
             ] as [string, string][]).map(([label, val]) => (
               <div key={label}>
                 <div className="stat-label">{label}</div>
@@ -497,13 +560,70 @@ export default function AnalyzePage() {
           {candles.length > 0 && (
             <>
               {DIVIDER}
-              <div className="title-md" style={{ marginBottom: 'var(--space-3)' }}>가격 차트</div>
+              <div className="flex-between" style={{ marginBottom: 'var(--space-3)' }}>
+                <div className="title-md">가격 차트</div>
+                <div style={{ display: 'flex', gap: 'var(--space-2)', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+                  <button
+                    className="btn btn-sm"
+                    type="button"
+                    onClick={() => setShowChartHud((v) => !v)}
+                    aria-pressed={showChartHud}
+                  >
+                    {showChartHud ? 'HUD 끄기' : 'HUD 켜기'}
+                  </button>
+                  <button
+                    className="btn btn-sm"
+                    type="button"
+                    onClick={() => setShowMaEmaOverlay((v) => !v)}
+                    aria-pressed={showMaEmaOverlay}
+                  >
+                    {showMaEmaOverlay ? 'MA/EMA 끄기' : 'MA/EMA 켜기'}
+                  </button>
+                  <button
+                    className="btn btn-sm"
+                    type="button"
+                    onClick={() => setShowTradeMarkers((v) => !v)}
+                    aria-pressed={showTradeMarkers}
+                  >
+                    {showTradeMarkers ? '신호 마커 끄기' : '신호 마커 켜기'}
+                  </button>
+                  <button
+                    className="btn btn-sm"
+                    type="button"
+                    onClick={() => setShowForceLine((v) => !v)}
+                    aria-pressed={showForceLine}
+                  >
+                    {showForceLine ? '세력선 끄기' : '세력선 켜기'}
+                  </button>
+                </div>
+              </div>
+              {showChartHud && (
+                <div className="cards-grid cols-3" style={{ marginBottom: 'var(--space-3)' }}>
+                  {([
+                    ['신호', signalText],
+                    ['지지 (최근 20봉)', chartHud.support != null ? formatKrw(chartHud.support) : '—'],
+                    ['저항 (최근 20봉)', chartHud.resistance != null ? formatKrw(chartHud.resistance) : '—'],
+                    ['손절', advisor?.stopPrice != null ? formatKrw(advisor.stopPrice) : '—'],
+                    ['1차 익절', advisor?.target1 != null ? formatKrw(advisor.target1) : '—'],
+                    ['진입구간', advisor?.entryLow != null && advisor?.entryHigh != null ? `${formatKrw(advisor.entryLow)} ~ ${formatKrw(advisor.entryHigh)}` : '—'],
+                  ] as [string, string][]).map(([label, val]) => (
+                    <div key={label}>
+                      <div className="stat-label">{label}</div>
+                      <div className="stat-value" style={{ fontSize: 'var(--font-size-base)', color: val === '—' ? 'var(--color-text-disabled)' : undefined }}>{val}</div>
+                    </div>
+                  ))}
+                </div>
+              )}
               <CandleChart
                 candles={candles}
-                entryLow={advisor?.entryLow}
-                entryHigh={advisor?.entryHigh}
-                stopLoss={advisor?.stopPrice}
-                target1={advisor?.target1}
+                entryLow={showChartHud ? advisor?.entryLow : null}
+                entryHigh={showChartHud ? advisor?.entryHigh : null}
+                stopLoss={showChartHud ? advisor?.stopPrice : null}
+                target1={showChartHud ? advisor?.target1 : null}
+                tradeSignal={advisor?.status ?? null}
+                showMaEmaOverlay={showMaEmaOverlay}
+                showTradeMarkers={showTradeMarkers}
+                showForceLine={showForceLine}
               />
             </>
           )}

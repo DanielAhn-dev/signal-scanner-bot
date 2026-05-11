@@ -25,6 +25,14 @@ type InvestorFlowRow = {
   institution: number | null
 }
 
+type IndicatorSnapshot = {
+  trade_date: string | null
+  sma20: number | null
+  sma50: number | null
+  sma200: number | null
+  rsi14: number | null
+}
+
 type CreditShortProxy = {
   riskScore: number
   level: 'low' | 'moderate' | 'high'
@@ -83,6 +91,37 @@ function normalizeSeriesRow(raw: any): LatestRow {
   }
 }
 
+function computeSmaFromSeries(series: LatestRow[], period: number): number | null {
+  if (!Number.isFinite(period) || period <= 0) return null
+  const closes = series
+    .map((row) => asNum(row.close))
+    .filter((v): v is number => v != null)
+  if (closes.length < period) return null
+  const subset = closes.slice(0, period)
+  const avg = subset.reduce((acc, v) => acc + v, 0) / period
+  return Number(avg.toFixed(2))
+}
+
+function computeEmaFromSeries(series: LatestRow[], period: number): number | null {
+  if (!Number.isFinite(period) || period <= 0) return null
+  const closesDesc = series
+    .map((row) => asNum(row.close))
+    .filter((v): v is number => v != null)
+  if (closesDesc.length < period) return null
+
+  const closesAsc = [...closesDesc].reverse()
+  let ema =
+    closesAsc.slice(0, period).reduce((acc, v) => acc + v, 0) /
+    period
+  const k = 2 / (period + 1)
+
+  for (let i = period; i < closesAsc.length; i += 1) {
+    ema = closesAsc[i] * k + ema * (1 - k)
+  }
+
+  return Number(ema.toFixed(2))
+}
+
 async function fetchTimeSeries(supabase: any, code: string): Promise<LatestRow[]> {
   const attemptSpecs: Array<{
     table: string
@@ -108,7 +147,7 @@ async function fetchTimeSeries(supabase: any, code: string): Promise<LatestRow[]
           .select(spec.select)
           .eq(spec.codeCol, targetCode)
           .order(spec.dateCol, { ascending: false })
-          .limit(60)
+          .limit(320)
       }
 
       const first = await run(code)
@@ -134,15 +173,18 @@ async function fetchTimeSeries(supabase: any, code: string): Promise<LatestRow[]
 
 async function fetchStockProfile(supabase: any, code: string): Promise<any | null> {
   const selectAttempts = [
-    // migration 적용 후: credit_ratio, short_ratio, short_balance 포함
+    // 최신 스키마: 공매도/신용 + 기술지표 포함
+    'code,name,sector_id,close,updated_at,description,market_cap,per,pbr,eps,bps,foreign_ratio,credit_ratio,short_ratio,short_balance,sma20,sma50,rsi14',
+    // 일부 컬럼이 빠진 스키마 대비
+    'code,name,sector_id,close,updated_at,description,market_cap,per,pbr,eps,bps,foreign_ratio,sma20,sma50,rsi14',
+    'code,name,sector_id,close,updated_at,description,market_cap,per,pbr,eps,bps,foreigner_ratio,sma20,sma50,rsi14',
+    // 기술지표 컬럼이 아직 없을 수 있는 과거 스키마
     'code,name,sector_id,close,updated_at,description,market_cap,per,pbr,eps,bps,foreign_ratio,credit_ratio,short_ratio,short_balance',
     'code,name,sector_id,close,updated_at,description,market_cap,per,pbr,eps,bps,foreign_ratio',
     'code,name,sector_id,close,updated_at,description,market_cap,per,pbr,eps,bps,foreigner_ratio',
     'code,name,sector_id,close,updated_at,description,market_cap,per,pbr,eps,bps',
     'code,name,sector_id,close,updated_at,description',
     'code,name,sector_id,close,updated_at',
-    'code,name,sector_id,close,updated_at,description,market_cap,per,pbr,eps,bps,foreign_ratio,sma20,sma50,rsi14',
-    'code,name,sector_id,close,updated_at,description,market_cap,per,pbr,eps,bps,foreigner_ratio,sma20,sma50,rsi14',
   ]
 
   for (const select of selectAttempts) {
@@ -155,6 +197,56 @@ async function fetchStockProfile(supabase: any, code: string): Promise<any | nul
 
       if (!error) {
         return data?.[0] || null
+      }
+    } catch {
+      // continue
+    }
+  }
+
+  return null
+}
+
+async function fetchLatestIndicators(supabase: any, code: string): Promise<IndicatorSnapshot | null> {
+  const attempts = [
+    { table: 'daily_indicators', select: 'trade_date,sma20,sma50,sma200,rsi14', codeCol: 'code', dateCol: 'trade_date' },
+    { table: 'daily_indicators', select: 'trade_date,sma20,sma50,sma200,rsi14', codeCol: 'ticker', dateCol: 'trade_date' },
+  ]
+
+  for (const spec of attempts) {
+    try {
+      const run = async (targetCode: string) => {
+        return await supabase
+          .from(spec.table)
+          .select(spec.select)
+          .eq(spec.codeCol, targetCode)
+          .order(spec.dateCol, { ascending: false })
+          .limit(1)
+      }
+
+      const first = await run(code)
+      if (!first.error && first.data && first.data.length) {
+        const row = first.data[0] as any
+        return {
+          trade_date: row?.trade_date ?? null,
+          sma20: asNum(row?.sma20),
+          sma50: asNum(row?.sma50),
+          sma200: asNum(row?.sma200),
+          rsi14: asNum(row?.rsi14),
+        }
+      }
+
+      if (spec.codeCol === 'ticker') {
+        const second = await run(`A${code}`)
+        if (!second.error && second.data && second.data.length) {
+          const row = second.data[0] as any
+          return {
+            trade_date: row?.trade_date ?? null,
+            sma20: asNum(row?.sma20),
+            sma50: asNum(row?.sma50),
+            sma200: asNum(row?.sma200),
+            rsi14: asNum(row?.rsi14),
+          }
+        }
       }
     } catch {
       // continue
@@ -606,7 +698,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (!code) return res.status(400).json({ error: 'Missing code parameter' })
 
   try {
-    const [series, stock, fundamentalsResp, flow, realtimeData] = await Promise.all([
+    const [series, stock, fundamentalsResp, flow, realtimeData, indicatorSnapshot] = await Promise.all([
       fetchTimeSeries(supabase, code),
       fetchStockProfile(supabase, code),
       supabase
@@ -617,6 +709,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         .limit(1),
       fetchInvestorFlow(supabase, code),
       fetchRealtimeStockData(code).catch(() => null),
+      fetchLatestIndicators(supabase, code),
     ])
 
     let fund: any = fundamentalsResp.data?.[0] || null
@@ -727,6 +820,24 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       asNum((fund as any)?.netIncomeGrowthPct) ??
       asNum((fund as any)?.computed?.netIncomeGrowthPct)
 
+    const resolvedSma20 = asNum((stock as any)?.sma20) ?? asNum(indicatorSnapshot?.sma20)
+    const resolvedSma50 = asNum((stock as any)?.sma50) ?? asNum(indicatorSnapshot?.sma50)
+    const resolvedSma200 =
+      asNum((stock as any)?.sma200) ??
+      asNum(indicatorSnapshot?.sma200) ??
+      computeSmaFromSeries(normalizedSeries, 200)
+    const resolvedSma240 = computeSmaFromSeries(normalizedSeries, 240)
+    const resolvedSma244 = computeSmaFromSeries(normalizedSeries, 244)
+    const resolvedEma20 = computeEmaFromSeries(normalizedSeries, 20)
+    const resolvedEma50 = computeEmaFromSeries(normalizedSeries, 50)
+    const resolvedEma200 = computeEmaFromSeries(normalizedSeries, 200)
+    const resolvedEma240 = computeEmaFromSeries(normalizedSeries, 240)
+    const resolvedEma244 = computeEmaFromSeries(normalizedSeries, 244)
+    const resolvedRsi14 = asNum((stock as any)?.rsi14) ?? asNum(indicatorSnapshot?.rsi14)
+    const resolvedForeignRatio =
+      asNum((stock as any)?.foreign_ratio ?? (stock as any)?.foreigner_ratio) ??
+      asNum(realtimeData?.foreignRatio)
+
     const perShareMetrics = derivePerShareMetrics({
       price: currentPrice,
       per: resolvedPer,
@@ -782,13 +893,21 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             bps: perShareMetrics.bps,
             peg: perShareMetrics.peg,
             peg_meta: perShareMetrics.pegMeta,
-            foreign_ratio: asNum((stock as any).foreign_ratio ?? (stock as any).foreigner_ratio),
+            foreign_ratio: resolvedForeignRatio,
             fundamentals_as_of: fund?.as_of ?? null,
             roe: asNum(fund?.roe),
             debt_ratio: asNum(fund?.debt_ratio),
-            sma20: asNum((stock as any).sma20),
-            sma50: asNum((stock as any).sma50),
-            rsi14: asNum((stock as any).rsi14),
+            sma20: resolvedSma20,
+            sma50: resolvedSma50,
+            sma200: resolvedSma200,
+            sma240: resolvedSma240,
+            sma244: resolvedSma244,
+            ema20: resolvedEma20,
+            ema50: resolvedEma50,
+            ema200: resolvedEma200,
+            ema240: resolvedEma240,
+            ema244: resolvedEma244,
+            rsi14: resolvedRsi14,
           }
         : null,
       flow: flow
