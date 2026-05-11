@@ -19,7 +19,7 @@ function resolveCorsOrigin(req: VercelRequest): string {
   return trustedOrigins[0] || ORIGIN || '*'
 }
 
-type SyncPipelineKey = 'dbview-default' | 'score-sync' | 'full-refresh' | 'data-full-sync'
+type SyncPipelineKey = 'dbview-default' | 'score-sync' | 'full-refresh' | 'data-full-sync' | 'intraday-refresh'
 
 const ALLOWLISTED_PIPELINES: Record<SyncPipelineKey, string[]> = {
   'dbview-default': [
@@ -40,6 +40,9 @@ const ALLOWLISTED_PIPELINES: Record<SyncPipelineKey, string[]> = {
     'pnpm exec tsx scripts/_syncSectors.ts',
     'pnpm exec tsx scripts/_syncSectorsToStocks.ts',
     'python scripts/daily_batch.py --skip-ohlcv',
+  ],
+  'intraday-refresh': [
+    'pnpm exec tsx scripts/intraday_pullback_signals.ts',
   ],
 }
 
@@ -169,10 +172,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     const allowScriptRunner = toBool(process.env.ENABLE_WEB_SCRIPT_RUNNER)
+    const allowIntradayRunner = requestedPipeline === 'intraday-refresh'
 
     let scriptRun: { pipeline: SyncPipelineKey; ok: boolean; results: Array<{ command: string; ok: boolean; code: number | null; stdout: string; stderr: string }> } | null = null
     let scriptError: string | null = null
-    if (runScripts && allowScriptRunner && requestedPipeline in ALLOWLISTED_PIPELINES) {
+    const runScriptAfterCoreUpdate = requestedPipeline === 'intraday-refresh'
+
+    if (runScripts && (allowScriptRunner || allowIntradayRunner) && requestedPipeline in ALLOWLISTED_PIPELINES && !runScriptAfterCoreUpdate) {
       if (syncId) {
         await updateSyncJob({
           id: syncId,
@@ -249,6 +255,36 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const sectorsJson = await sectorsRes.json().catch(() => ({ error: 'invalid json (sectors)' }))
       const updateOk = stocksRes.ok && sectorsRes.ok && !(stocksJson as any)?.error && !(sectorsJson as any)?.error
       const json = { ok: updateOk, stocks: { status: stocksRes.status, ...(stocksJson as object) }, sectors: { status: sectorsRes.status, ...(sectorsJson as object) } }
+      if (runScripts && (allowScriptRunner || allowIntradayRunner) && requestedPipeline in ALLOWLISTED_PIPELINES && runScriptAfterCoreUpdate) {
+        if (syncId) {
+          await updateSyncJob({
+            id: syncId,
+            stage: '장중 신호 재계산 실행',
+            progress: 78,
+            detail: requestedPipeline,
+          })
+        }
+        scriptRun = await runPipeline(requestedPipeline, async (p) => {
+          if (!syncId) return
+          await updateSyncJob({
+            id: syncId,
+            stage: p.stage,
+            progress: 78 + Math.round(p.progress * 0.2),
+            detail: p.detail,
+          })
+        })
+        if (!scriptRun.ok) {
+          scriptError = 'Script pipeline failed'
+          if (syncId) {
+            await updateSyncJob({
+              id: syncId,
+              stage: '장중 신호 재계산 실패',
+              progress: 88,
+              detail: scriptRun.results[scriptRun.results.length - 1]?.stderr || scriptError,
+            })
+          }
+        }
+      }
       // 핵심 DB 업데이트 성공 시 요청 자체는 성공으로 처리하고,
       // 스크립트 파이프라인 실패는 warning으로 전달한다.
       const responseOk = updateOk
@@ -272,7 +308,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         body: json,
         ...(scriptError ? { warning: scriptError } : {}),
         scriptRunner: {
-          enabled: allowScriptRunner,
+          enabled: allowScriptRunner || allowIntradayRunner,
           requested: runScripts,
           pipeline: requestedPipeline,
           result: scriptRun,

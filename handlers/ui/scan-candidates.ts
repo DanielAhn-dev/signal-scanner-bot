@@ -189,9 +189,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         : 0
       if (hasRealtime) realtimeAppliedCount += 1
 
-      // 장중에는 현재가 변화폭을 소폭 점수에 반영(변화가 없으면 종가 기준과 동일)
+      // 장중에는 현재가 변화폭을 점수에 반영해 순위 변화 체감을 높임
       const intradayDelta = hasRealtime
-        ? clamp(intradayChangePct * 1.2, -8, 8)
+        ? clamp(intradayChangePct * 2.4, -15, 15)
         : 0
 
       return {

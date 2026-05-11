@@ -63,6 +63,7 @@ type SortKey =
   | 'name'
   | 'sector_id'
   | 'priority_score'
+  | 'intraday_change_pct'
   | 'entry_grade'
   | 'entry_score'
   | 'trend_grade'
@@ -89,6 +90,9 @@ type ScanCandidate = {
   vol_atr_grade: string | null
   warn_grade: string | null
   warn_score: number | null
+  intraday_change_pct?: number | null
+  current_price?: number | null
+  price_source?: 'realtime' | 'close'
   adaptive_adjustment?: number | null
   adaptive_reasons?: string[] | null
   adaptive_score?: number | null
@@ -278,7 +282,7 @@ export default function ScanPage({ onNavigate }: { onNavigate?: (r: string) => v
         timeoutMs: 180_000,
         body: JSON.stringify({
           runScripts: true,
-          pipeline: 'full-refresh',
+          pipeline: 'intraday-refresh',
         }),
       })
       if (res?.ok) {
@@ -287,11 +291,11 @@ export default function ScanPage({ onNavigate }: { onNavigate?: (r: string) => v
         const runnerOk = !!res?.scriptRunner?.result?.ok
 
         if (runnerRequested && !runnerEnabled) {
-          toast.show('DB 갱신만 완료됨(점수 재계산 스크립트 비활성). 서버 ENABLE_WEB_SCRIPT_RUNNER 확인 필요')
+          toast.show('DB 갱신만 완료됨(장중 신호 재계산 스크립트 비활성). 서버 ENABLE_WEB_SCRIPT_RUNNER 확인 필요')
         } else if (runnerRequested && !runnerOk) {
-          toast.show('DB 갱신 완료, 스코어 재계산 일부 실패(서버 로그 확인 필요)')
+          toast.show('DB 갱신 완료, 장중 신호 재계산 일부 실패(서버 로그 확인 필요)')
         } else {
-          toast.show('스캔/DB 동기화 완료 ✓')
+          toast.show('장중 눌림목 재계산 완료 ✓')
         }
         await loadCandidates()
       } else {
@@ -376,7 +380,8 @@ export default function ScanPage({ onNavigate }: { onNavigate?: (r: string) => v
 
   const displayRows = useMemo(() => pagedCandidates.map((s) => ({
     ...s,
-    priorityScore: Math.round(computePriorityScore(s)),
+    priorityScore: Number(computePriorityScore(s).toFixed(1)),
+    intradayChangePct: typeof s.intraday_change_pct === 'number' ? s.intraday_change_pct : null,
     tradeDateText: s.trade_date ?? '—',
     updatedAtText: s.stock_updated_at
       ? new Date(s.stock_updated_at).toLocaleString('ko-KR', {
@@ -528,19 +533,19 @@ export default function ScanPage({ onNavigate }: { onNavigate?: (r: string) => v
 
       {error && <ErrorState message={error} onRetry={loadCandidates} />}
 
-      {/* 오늘의 추천 눌림목 섹션 */}
+      {/* 참고용 추천 섹션 */}
       {!loading && !error && !highlightLoading && activeHighlights.length > 0 && conditionFilter === 'all' && selectedSector === 'all' && (
         <div className="card mb-4 card-capture-anchor" id="scan-highlight-section-capture">
           <CardCaptureActions
             targetId="scan-highlight-section-capture"
-            title="오늘의 추천 눌림목"
+            title="참고용 추천 눌림목"
             filename={`scan-highlights-section-${new Date().toISOString().slice(0, 10)}`}
-            text="오늘의 추천 눌림목 섹션 이미지"
+            text="참고용 추천 눌림목 섹션 이미지"
             onNotify={(message) => toast.show(message)}
           />
           <div className="scan-highlight-section-title" style={{ gap: 'var(--space-2)', flexWrap: 'wrap' }}>
-            <span className="scan-highlight-section-label">오늘의 추천 눌림목</span>
-            <span className="scan-highlight-section-badge">진입 A/B · 경고 최소</span>
+            <span className="scan-highlight-section-label">참고용 추천 눌림목</span>
+            <span className="scan-highlight-section-badge">상단 참고 · 하단 실전 기준과 분리</span>
             {onNavigate && (
               <Button variant="secondary" onClick={() => onNavigate('highlights')} style={{ marginLeft: 'auto' }}>
                 하이라이트 허브
@@ -555,7 +560,7 @@ export default function ScanPage({ onNavigate }: { onNavigate?: (r: string) => v
                 type="button"
                 className={`scan-highlight-card${idx === 0 ? ' scan-highlight-card--top' : ''}`}
                 onClick={() => navigateToAnalyze(c.code)}
-                title={`${c.name} 상세 분석 보기`}
+                title={`${c.name} 참고용 상세 보기`}
               >
                 <div className="flex-between">
                   <span className={`scan-highlight-rank${idx > 0 ? ' scan-highlight-rank--rest' : ''}`}>
@@ -584,7 +589,7 @@ export default function ScanPage({ onNavigate }: { onNavigate?: (r: string) => v
                     </span>
                   )}
                 </div>
-                <div className="scan-highlight-hint">클릭하여 상세 분석 →</div>
+                <div className="scan-highlight-hint">참고용 상세 분석 →</div>
               </button>
             ))}
           </div>
@@ -614,7 +619,7 @@ export default function ScanPage({ onNavigate }: { onNavigate?: (r: string) => v
           )}
           {conditionFilter === 'all' && selectedSector === 'all' && (
             <div className="scan-section-label" style={{ padding: 'var(--space-3) var(--space-4)', borderBottom: '1px solid var(--color-border-default)' }}>
-              전체 후보 목록 · {sortedCandidates.length}개 (종목명 클릭 시 상세 분석)
+              전체 후보 목록 · {sortedCandidates.length}개 (실전 기준, 오늘 장중/종가 신호 반영)
             </div>
           )}
           <div className="scan-table-wrap">
@@ -632,6 +637,7 @@ export default function ScanPage({ onNavigate }: { onNavigate?: (r: string) => v
                   <th className="scan-th">{renderSortableHeader('세력선', 'pivot_grade')}</th>
                   <th className="scan-th">{renderSortableHeader('경고', 'warn_score')}</th>
                   <th className="scan-th">{renderSortableHeader('유동성', 'liquidity')}</th>
+                  <th className="scan-th">{renderSortableHeader('변동(%)', 'intraday_change_pct')}</th>
                   <th className="scan-th">{renderSortableHeader('기준일', 'trade_date')}</th>
                   <th className="scan-th">관리</th>
                 </tr>
@@ -653,9 +659,9 @@ export default function ScanPage({ onNavigate }: { onNavigate?: (r: string) => v
                       <td className="scan-td scan-td-code">{s.code}</td>
                       <td className="scan-td scan-td-name">{s.name}</td>
                       <td className="scan-td scan-td-sector">{s.sector_id ?? '—'}</td>
-                      <td className="scan-td number" title="진입점수×20 − 경고점수×3">
+                      <td className="scan-td number" title="진입점수×20 − 경고점수×3 + 장중 현재가 보정">
                         <span className={s.priorityScore >= 60 ? 'scan-grade-badge scan-grade-a' : s.priorityScore >= 40 ? 'scan-grade-badge scan-grade-b' : 'scan-grade-label'}>
-                          {s.priorityScore}
+                          {formatNumber(s.priorityScore, 1)}
                         </span>
                       </td>
                       <td className="scan-td">
@@ -687,6 +693,22 @@ export default function ScanPage({ onNavigate }: { onNavigate?: (r: string) => v
                       </td>
                       <td className="scan-td number number-right">
                         {s.liquidity != null ? formatNumber(s.liquidity, 0) : '—'}
+                      </td>
+                      <td className="scan-td number number-right">
+                        {typeof s.intradayChangePct === 'number'
+                          ? (
+                            <span style={{
+                              color: s.intradayChangePct > 0
+                                ? 'var(--color-success)'
+                                : s.intradayChangePct < 0
+                                  ? 'var(--color-error)'
+                                  : undefined,
+                              fontWeight: 600,
+                            }}>
+                              {s.intradayChangePct > 0 ? '+' : ''}{formatNumber(s.intradayChangePct, 2)}%
+                            </span>
+                            )
+                          : '—'}
                       </td>
                       <td className="scan-td scan-td-date">
                         <div>{s.tradeDateText}</div>

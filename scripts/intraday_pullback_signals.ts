@@ -7,6 +7,7 @@
  */
 
 import { createClient } from "@supabase/supabase-js";
+import { fetchRealtimePriceBatch } from "../src/utils/fetchRealtimePrice";
 
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -53,7 +54,6 @@ interface PullbackSignal {
   warn_score: number;
   ma21: number;
   ma50: number;
-  is_intraday?: boolean; // 표시: 이것이 intraday 신호임
 }
 
 /**
@@ -192,7 +192,6 @@ function computeIntradayPullbackSignal(history: StockDailyRow[]): Omit<PullbackS
     warn_score,
     ma21: safe_float(ma20),
     ma50: safe_float(ma50),
-    is_intraday: true,
   };
 }
 
@@ -222,6 +221,29 @@ async function generateIntradayPullbackSignals(): Promise<void> {
 
     const codes = stocks.map(s => s.code);
     console.log(`  -> 대상 종목: ${codes.length}개`);
+
+    const realtimeMap = await fetchRealtimePriceBatch(codes).catch(() => ({} as Record<string, any>));
+    const toCurrentRow = (history: StockDailyRow[], currentPrice: number | null): StockDailyRow[] => {
+      if (!history.length || !currentPrice || !Number.isFinite(currentPrice) || currentPrice <= 0) {
+        return history;
+      }
+
+      const last = history[history.length - 1];
+      const currentDate = tradeDate;
+      const currentRow: StockDailyRow = {
+        ...last,
+        date: currentDate,
+        close: currentPrice,
+        high: Math.max(last.high ?? currentPrice, currentPrice),
+        low: Math.min(last.low ?? currentPrice, currentPrice),
+      };
+
+      if (last.date === currentDate) {
+        return [...history.slice(0, -1), currentRow];
+      }
+
+      return [...history, currentRow];
+    };
 
     const upserts: PullbackSignal[] = [];
     let fail_count = 0;
@@ -257,7 +279,9 @@ async function generateIntradayPullbackSignals(): Promise<void> {
       for (const [ticker, history] of byTicker) {
         try {
           const sorted = history.sort((a, b) => a.date.localeCompare(b.date));
-          const signal = computeIntradayPullbackSignal(sorted);
+          const realtimePrice = Number(realtimeMap[ticker]?.price ?? 0);
+          const adjusted = toCurrentRow(sorted, realtimePrice);
+          const signal = computeIntradayPullbackSignal(adjusted);
 
           if (signal) {
             upserts.push({
