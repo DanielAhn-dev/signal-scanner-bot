@@ -29,6 +29,8 @@ function pickLatestActiveShare(items: PortfolioShareHistoryItem[]): PortfolioSha
 }
 
 const PORTFOLIO_RULES_STORAGE_KEY = 'portfolio.holdingRules.v1'
+const PORTFOLIO_ASSET_OVERVIEW_STORAGE_KEY = 'portfolio.assetOverview.v1'
+const DEFAULT_INITIAL_CAPITAL = 10_000_000
 
 const WARN_REASON_LABELS: Array<{ key: string; label: string }> = [
   { key: 'warn_overheat', label: '이격 과열(21일선 대비 +7% 초과)' },
@@ -57,6 +59,9 @@ export default function Portfolio() {
   const [partialTakeProfitPct, setPartialTakeProfitPct] = useState(8)
   const [partialWarnScoreMin, setPartialWarnScoreMin] = useState(3)
   const [showAllSectors, setShowAllSectors] = useState(false)
+  const [initialCapitalInput, setInitialCapitalInput] = useState(String(DEFAULT_INITIAL_CAPITAL))
+  const [initialCapital, setInitialCapital] = useState<number>(DEFAULT_INITIAL_CAPITAL)
+  const [assetAccordionOpen, setAssetAccordionOpen] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
   const [modalOpen, setModalOpen] = useState(false)
@@ -216,6 +221,36 @@ export default function Portfolio() {
     }
   }, [gradeAThreshold, gradeBThreshold, addEntryMinScore, partialTakeProfitPct, partialWarnScoreMin])
 
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    try {
+      const raw = window.localStorage.getItem(PORTFOLIO_ASSET_OVERVIEW_STORAGE_KEY)
+      if (!raw) return
+      const parsed = JSON.parse(raw)
+      const nextInitialCapital = Number(parsed?.initialCapital)
+      const nextOpen = parsed?.assetAccordionOpen
+      if (Number.isFinite(nextInitialCapital) && nextInitialCapital > 0) {
+        setInitialCapital(nextInitialCapital)
+        setInitialCapitalInput(String(Math.round(nextInitialCapital)))
+      }
+      if (typeof nextOpen === 'boolean') setAssetAccordionOpen(nextOpen)
+    } catch {
+      // ignore malformed local storage value
+    }
+  }, [])
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    try {
+      window.localStorage.setItem(PORTFOLIO_ASSET_OVERVIEW_STORAGE_KEY, JSON.stringify({
+        initialCapital,
+        assetAccordionOpen,
+      }))
+    } catch {
+      // ignore local storage write errors
+    }
+  }, [initialCapital, assetAccordionOpen])
+
   // 클라이언트 사이드 파생 상태 – API 재호출 없이 즉시 필터링
   const holdingAll = useMemo(() => allRows.filter((r: any) => r.position_type === 'holding'), [allRows])
 
@@ -259,6 +294,79 @@ export default function Portfolio() {
   const totalUnrealized = holdingAll.reduce((acc: number, r: any) => acc + Number(r.unrealized_pnl || 0), 0)
   const totalInvested = holdingAll.reduce((acc: number, r: any) => acc + (Number(r.quantity || 0) * Number(r.avg_price || 0)), 0)
   const totalReturnPct = totalInvested > 0 ? (totalUnrealized / totalInvested) * 100 : 0
+  const totalEvaluationValue = totalInvested + totalUnrealized
+  const estimatedCash = initialCapital - totalInvested
+  const totalAssetValue = totalEvaluationValue + estimatedCash
+  const allocationRows = useMemo(() => {
+    const items = holdingAll
+      .map((r: any) => {
+        const quantity = Number(r.quantity || 0)
+        const avgPrice = Number(r.avg_price || 0)
+        const unrealized = Number(r.unrealized_pnl || 0)
+        const marketValue = quantity > 0 ? (quantity * avgPrice + unrealized) : 0
+        const safeValue = Number.isFinite(marketValue) ? marketValue : 0
+        return {
+          code: String(r.code || '-'),
+          name: String(r.stock_name || r.ticker || r.symbol || r.code || '-'),
+          value: Math.max(0, safeValue),
+        }
+      })
+      .filter((row) => row.value > 0)
+      .sort((a, b) => b.value - a.value)
+
+    if (estimatedCash > 0) {
+      items.push({
+        code: 'CASH',
+        name: '현금',
+        value: estimatedCash,
+      })
+    }
+
+    const sum = items.reduce((acc, row) => acc + row.value, 0)
+    if (sum <= 0) return [] as Array<{ code: string; name: string; value: number; ratio: number }>
+
+    return items.map((row) => ({
+      ...row,
+      ratio: (row.value / sum) * 100,
+    }))
+  }, [holdingAll, estimatedCash])
+
+  const allocationColors = [
+    '#2f7ae5',
+    '#14b8a6',
+    '#f59e0b',
+    '#ef4444',
+    '#8b5cf6',
+    '#06b6d4',
+    '#84cc16',
+    '#f97316',
+    '#ec4899',
+    '#64748b',
+  ]
+
+  const allocationChartStyle = useMemo(() => {
+    if (allocationRows.length === 0) return 'conic-gradient(#e5e7eb 0deg 360deg)'
+    let currentAngle = 0
+    const parts = allocationRows.map((row, idx) => {
+      const start = currentAngle
+      const angle = (row.ratio / 100) * 360
+      currentAngle += angle
+      const end = idx === allocationRows.length - 1 ? 360 : currentAngle
+      return `${allocationColors[idx % allocationColors.length]} ${start.toFixed(2)}deg ${end.toFixed(2)}deg`
+    })
+    return `conic-gradient(${parts.join(', ')})`
+  }, [allocationRows])
+
+  const applyInitialCapital = () => {
+    const next = Number(initialCapitalInput)
+    if (!Number.isFinite(next) || next <= 0) {
+      toast.show('초기 투자금은 1원 이상으로 입력해 주세요')
+      setInitialCapitalInput(String(Math.round(initialCapital || DEFAULT_INITIAL_CAPITAL)))
+      return
+    }
+    setInitialCapital(Math.round(next))
+    toast.show('초기 투자금을 저장했습니다')
+  }
   const captureGeneratedAt = useMemo(
     () => new Intl.DateTimeFormat('ko-KR', {
       year: 'numeric',
@@ -612,6 +720,86 @@ export default function Portfolio() {
           </div>
           <div className="stat-sub">보유 포지션 기준</div>
         </div>
+      </div>
+
+      <div className="card mb-4 portfolio-asset-overview-card">
+        <button
+          type="button"
+          className="portfolio-asset-overview-head"
+          onClick={() => setAssetAccordionOpen((prev) => !prev)}
+          aria-expanded={assetAccordionOpen}
+        >
+          <div>
+            <div className="title-md">자산 구성 및 리밸런싱 기준</div>
+            <div className="caption muted">초기 투자금, 평가금, 현금, 종목별 비중을 한 번에 확인합니다.</div>
+          </div>
+          <span className="portfolio-asset-overview-toggle" aria-hidden>{assetAccordionOpen ? '접기 ▲' : '펼치기 ▼'}</span>
+        </button>
+
+        {assetAccordionOpen && (
+          <div className="portfolio-asset-overview-body">
+            <div className="portfolio-asset-overview-input-row">
+              <Input
+                label="초기 투자금"
+                type="number"
+                value={initialCapitalInput}
+                onChange={(e: any) => setInitialCapitalInput(String(e?.target?.value || ''))}
+              />
+              <Button variant="secondary" onClick={applyInitialCapital}>적용</Button>
+            </div>
+
+            <div className="portfolio-asset-metrics">
+              <div className="portfolio-asset-metric">
+                <div className="portfolio-capture-label">초기 투자금</div>
+                <div className="portfolio-capture-value">{formatKrw(initialCapital)}</div>
+              </div>
+              <div className="portfolio-asset-metric">
+                <div className="portfolio-capture-label">현재 평가금(보유 종목)</div>
+                <div className="portfolio-capture-value">{formatKrw(totalEvaluationValue)}</div>
+              </div>
+              <div className="portfolio-asset-metric">
+                <div className="portfolio-capture-label">남은 현금(추정)</div>
+                <div className={`portfolio-capture-value ${estimatedCash < 0 ? 'negative' : ''}`}>{formatKrw(estimatedCash)}</div>
+              </div>
+              <div className="portfolio-asset-metric">
+                <div className="portfolio-capture-label">총 자산(평가금 + 현금)</div>
+                <div className={`portfolio-capture-value ${totalAssetValue < 0 ? 'negative' : 'positive'}`}>{formatKrw(totalAssetValue)}</div>
+              </div>
+            </div>
+
+            <div className="portfolio-allocation-wrap">
+              <div className="portfolio-allocation-chart-wrap">
+                <div className="portfolio-allocation-chart" style={{ background: allocationChartStyle }} />
+                <div className="portfolio-allocation-chart-center">
+                  <div className="portfolio-allocation-center-label">총 자산</div>
+                  <div className="portfolio-allocation-center-value">{formatKrw(totalAssetValue)}</div>
+                </div>
+              </div>
+
+              <div className="portfolio-allocation-list">
+                {allocationRows.length === 0 ? (
+                  <div className="caption muted">비중을 계산할 데이터가 없습니다.</div>
+                ) : (
+                  allocationRows.map((row, idx) => (
+                    <div key={`${row.code}-${idx}`} className="portfolio-allocation-item">
+                      <div className="portfolio-allocation-item-name">
+                        <span className="portfolio-allocation-dot" style={{ background: allocationColors[idx % allocationColors.length] }} />
+                        <span>{row.name}</span>
+                      </div>
+                      <div className="portfolio-allocation-item-values">
+                        <span>{formatNumber(row.ratio, 1)}%</span>
+                        <span className="muted">{formatKrw(row.value)}</span>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+            <div className="caption muted" style={{ marginTop: 'var(--space-2)' }}>
+              남은 현금은 현재 보유 매수금 기준 추정치입니다. 리밸런싱은 종목별 비중(%)을 기준으로 목표 비중 대비 차이를 확인해 진행하세요.
+            </div>
+          </div>
+        )}
       </div>
 
       {/* 필터 */}
