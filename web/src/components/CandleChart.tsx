@@ -40,6 +40,62 @@ function toTimestamp(dateStr: string): number {
   return Math.floor(new Date(normalized).getTime() / 1000)
 }
 
+function sanitizeCandlesForChart(candles: OhlcvCandle[]): OhlcvCandle[] {
+  if (!Array.isArray(candles) || candles.length === 0) return []
+
+  const sorted = [...candles].sort((a, b) => String(a.date).localeCompare(String(b.date)))
+  const dedupByTime = new Map<number, OhlcvCandle>()
+
+  for (const c of sorted) {
+    const ts = toTimestamp(String(c.date || ''))
+    const open = Number(c.open)
+    const high = Number(c.high)
+    const low = Number(c.low)
+    const close = Number(c.close)
+    const volumeRaw = Number(c.volume)
+
+    if (!Number.isFinite(ts) || ts <= 0) continue
+    if (!Number.isFinite(open) || !Number.isFinite(high) || !Number.isFinite(low) || !Number.isFinite(close)) continue
+    if (open <= 0 || high <= 0 || low <= 0 || close <= 0) continue
+
+    const normalizedHigh = Math.max(high, open, close, low)
+    const normalizedLow = Math.min(low, open, close, high)
+    const volume = Number.isFinite(volumeRaw) && volumeRaw > 0 ? volumeRaw : 0
+
+    dedupByTime.set(ts, {
+      date: String(c.date),
+      open,
+      high: normalizedHigh,
+      low: normalizedLow,
+      close,
+      volume,
+    })
+  }
+
+  const deduped = [...dedupByTime.values()].sort((a, b) => String(a.date).localeCompare(String(b.date)))
+  if (deduped.length <= 1) return deduped
+
+  const filtered: OhlcvCandle[] = []
+  let prevClose: number | null = null
+
+  for (const c of deduped) {
+    if (prevClose != null && prevClose > 0) {
+      const minRatio = Number(c.low) / prevClose
+      const maxRatio = Number(c.high) / prevClose
+
+      // 분할 미보정/오입력으로 보이는 비정상 급변 봉을 차트에서 제외한다.
+      if (minRatio < 0.35 || maxRatio > 2.2) {
+        continue
+      }
+    }
+
+    filtered.push(c)
+    prevClose = Number(c.close)
+  }
+
+  return filtered
+}
+
 type TimeValue = { time: any; value: number; color?: string }
 
 function computeSmaLine(candles: OhlcvCandle[], period: number): TimeValue[] {
@@ -161,9 +217,10 @@ export default function CandleChart({
   const chartRef = useRef<IChartApi | null>(null)
   const candleSeriesRef = useRef<ISeriesApi<'Candlestick', any> | null>(null)
   const volSeriesRef = useRef<ISeriesApi<'Histogram', any> | null>(null)
+  const safeCandles = sanitizeCandlesForChart(candles)
 
   useEffect(() => {
-    if (!containerRef.current || candles.length === 0) return
+    if (!containerRef.current || safeCandles.length === 0) return
 
     const el = containerRef.current
     const isDark = document.documentElement.classList.contains('dark') ||
@@ -226,7 +283,7 @@ export default function CandleChart({
     volSeriesRef.current = volSeries
 
     // 데이터 (오름차순 정렬)
-    const sorted = [...candles].sort((a, b) => a.date.localeCompare(b.date))
+    const sorted = [...safeCandles].sort((a, b) => a.date.localeCompare(b.date))
     const candleData = sorted.map((c) => ({
       time: toTimestamp(c.date) as any,
       open: c.open,
@@ -423,7 +480,7 @@ export default function CandleChart({
       chartRef.current = null
     }
   }, [
-    candles,
+    safeCandles,
     entryLow,
     entryHigh,
     stopLoss,
@@ -435,7 +492,7 @@ export default function CandleChart({
     height,
   ])
 
-  if (candles.length === 0) return null
+  if (safeCandles.length === 0) return null
 
   const signalLabel = (() => {
     const s = String(tradeSignal || '').toLowerCase()

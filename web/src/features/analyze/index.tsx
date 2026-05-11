@@ -108,14 +108,23 @@ export default function AnalyzePage() {
         setResult({ ...res.profile, ...res.latest })
         // OHLCV 캔들 데이터: 서버 series를 OhlcvCandle 형태로 정규화
         const rawData: any[] = res?.data ?? []
-        setCandles(rawData.map((r: any) => ({
-          date: String(r.date || r.Date || ''),
-          open: Number(r.open),
-          high: Number(r.high),
-          low: Number(r.low),
-          close: Number(r.close),
-          volume: Number(r.volume ?? 0),
-        })).filter((c) => c.date && !isNaN(c.close)))
+        setCandles(
+          rawData
+            .map((r: any) => ({
+              date: String(r.date || r.Date || ''),
+              open: Number(r.open),
+              high: Number(r.high),
+              low: Number(r.low),
+              close: Number(r.close),
+              volume: Number(r.volume ?? 0),
+            }))
+            .filter((c) => {
+              if (!c.date) return false
+              if (![c.open, c.high, c.low, c.close].every(Number.isFinite)) return false
+              if (c.open <= 0 || c.high <= 0 || c.low <= 0 || c.close <= 0) return false
+              return c.high >= Math.max(c.open, c.close, c.low) && c.low <= Math.min(c.open, c.close, c.high)
+            })
+        )
         setFlow(res?.flow ?? null)
         setCreditShort(res?.creditShort ?? null)
         setAdvisor(res?.advisor ?? null)

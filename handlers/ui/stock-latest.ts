@@ -218,6 +218,68 @@ function normalizeSeriesRow(raw: any): LatestRow {
   }
 }
 
+function sanitizeTimeSeries(series: LatestRow[]): LatestRow[] {
+  if (!Array.isArray(series) || !series.length) return []
+
+  const sortedDesc = [...series]
+    .filter((row) => !!row?.date)
+    .sort((a, b) => String(b.date).localeCompare(String(a.date)))
+
+  const dedupByDate = new Map<string, LatestRow>()
+  for (const row of sortedDesc) {
+    const date = String(row.date || '').trim()
+    if (!date) continue
+
+    const open = asNum(row.open)
+    const high = asNum(row.high)
+    const low = asNum(row.low)
+    const close = asNum(row.close)
+    const volume = asNum(row.volume)
+    const value = asNum(row.value)
+
+    if (open == null || high == null || low == null || close == null) continue
+    if (open <= 0 || high <= 0 || low <= 0 || close <= 0) continue
+
+    dedupByDate.set(date, {
+      date,
+      open,
+      high: Math.max(high, open, close, low),
+      low: Math.min(low, open, close, high),
+      close,
+      volume: volume != null && volume > 0 ? volume : 0,
+      value: value != null && value >= 0 ? value : null,
+    })
+  }
+
+  const dedupedDesc = [...dedupByDate.values()].sort((a, b) => String(b.date).localeCompare(String(a.date)))
+  if (dedupedDesc.length <= 1) return dedupedDesc
+
+  const filtered: LatestRow[] = []
+  let prevClose: number | null = null
+
+  for (const row of dedupedDesc) {
+    const close = asNum(row.close)
+    const high = asNum(row.high)
+    const low = asNum(row.low)
+    if (close == null || high == null || low == null) continue
+
+    if (prevClose != null && prevClose > 0) {
+      const minRatio = low / prevClose
+      const maxRatio = high / prevClose
+
+      // 분할 미보정/오입력으로 보이는 비정상 급변 봉을 제외한다.
+      if (minRatio < 0.35 || maxRatio > 2.2) {
+        continue
+      }
+    }
+
+    filtered.push(row)
+    prevClose = close
+  }
+
+  return filtered
+}
+
 function computeSmaFromSeries(series: LatestRow[], period: number): number | null {
   if (!Number.isFinite(period) || period <= 0) return null
   const closes = series
@@ -878,7 +940,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       }
     }
 
-    const normalizedSeries = [...series]
+    const normalizedSeries = sanitizeTimeSeries(series)
     if (!normalizedSeries.length && stock) {
       normalizedSeries.push({
         date: toIsoDate(stock.updated_at),
