@@ -1386,6 +1386,12 @@ html, body, #root {
   align-items: end;
 }
 
+.portfolio-asset-overview-input-row .ui-button {
+  padding: 6px 12px;
+  font-size: 12px;
+  height: auto;
+}
+
 .portfolio-asset-metrics {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -1868,7 +1874,9 @@ html, body, #root {
   }
 
   .portfolio-asset-overview-input-row .ui-button {
-    width: 100%;
+    width: auto;
+    padding: 6px 12px;
+    font-size: 12px;
   }
 
   .portfolio-asset-metrics {

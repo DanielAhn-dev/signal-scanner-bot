@@ -27,6 +27,29 @@ export async function captureElementToPngBlob(
       doc.querySelectorAll('[data-capture-ignore="true"]').forEach((node) => {
         if (node instanceof HTMLElement) node.style.display = 'none'
       })
+      
+      // 동적 스타일(CSS 변수, 계산된 값 등)을 인라인 스타일로 강제 변환
+      // 파이차트 배경 그래디언트가 제대로 캡처되도록 함
+      doc.querySelectorAll('[style*="background"]').forEach((node) => {
+        if (node instanceof HTMLElement) {
+          const computedStyle = window.getComputedStyle(node)
+          const bg = computedStyle.background || computedStyle.backgroundColor
+          if (bg && !node.style.background) {
+            node.style.background = bg
+          }
+        }
+      })
+      
+      // .portfolio-allocation-chart 같은 배경 스타일 요소 특별 처리
+      doc.querySelectorAll('.portfolio-allocation-chart, [class*="chart"]').forEach((node) => {
+        if (node instanceof HTMLElement) {
+          const computedStyle = window.getComputedStyle(node)
+          const bg = computedStyle.background || computedStyle.backgroundColor
+          if (bg) {
+            node.style.background = bg
+          }
+        }
+      })
     },
   })
 
