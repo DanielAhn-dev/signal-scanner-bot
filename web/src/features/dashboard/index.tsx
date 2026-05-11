@@ -1,6 +1,6 @@
 ﻿import React from 'react'
 import { formatKrw } from '../../lib/format'
-import { getCurrentUserChatId } from '../../lib/userContext'
+import { getCurrentUserChatId, onProfileUpdated } from '../../lib/userContext'
 import Button from '../../components/ui/Button'
 import Skeleton from '../../components/Skeleton'
 import { ErrorState } from '../../components/StateViews'
@@ -10,6 +10,22 @@ import { useDashboardSummary, useSectors } from '../../lib/queries'
 import type { DashboardSummary, SectorItem } from '../../lib/types'
 
 export default function Dashboard({ onNavigate }: { onNavigate?: (r: string) => void }) {
+  const [chatId, setChatId] = React.useState<string>(() => getCurrentUserChatId())
+
+  React.useEffect(() => {
+    const refreshChatId = () => {
+      const next = getCurrentUserChatId()
+      setChatId((prev) => (prev === next ? prev : next))
+    }
+
+    const offProfile = onProfileUpdated(refreshChatId)
+    window.addEventListener('focus', refreshChatId)
+    return () => {
+      offProfile()
+      window.removeEventListener('focus', refreshChatId)
+    }
+  }, [])
+
   const {
     data: summaryRaw,
     isLoading: summaryLoading,
@@ -42,7 +58,6 @@ export default function Dashboard({ onNavigate }: { onNavigate?: (r: string) => 
   const pnl = (summary as any)?.unrealized_pnl_sum ?? null
   const pnlClass = pnl != null ? (pnl > 0 ? 'positive' : pnl < 0 ? 'negative' : '') : ''
   const topSector = sectors.length > 0 ? sectors[0]?.name : '-'
-  const chatId = getCurrentUserChatId()
   const refreshLabel = dataUpdatedAt
     ? new Date(dataUpdatedAt).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
     : '-'

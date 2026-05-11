@@ -3,7 +3,7 @@ import Button from '../../components/ui/Button'
 import Input from '../../components/ui/Input'
 import Checkbox from '../../components/ui/Checkbox'
 import { apiFetch } from '../../lib/api'
-import { getCurrentUserChatId } from '../../lib/userContext'
+import { getCurrentUserChatId, onProfileUpdated } from '../../lib/userContext'
 import TelegramLinkCallout from '../../components/TelegramLinkCallout'
 import { requestOpenProfileModal } from '../../lib/profileModal'
 
@@ -23,10 +23,24 @@ export default function Settings(){
   const [adminNote, setAdminNote] = useState('')
 
   useEffect(() => {
+    const refreshChatId = () => {
+      const next = getCurrentUserChatId()
+      setChatId((prev) => (prev === next ? prev : next))
+    }
+
+    refreshChatId()
+    const offProfile = onProfileUpdated(refreshChatId)
+    window.addEventListener('focus', refreshChatId)
+
+    return () => {
+      offProfile()
+      window.removeEventListener('focus', refreshChatId)
+    }
+  }, [])
+
+  useEffect(() => {
     (async () => {
       try {
-        const chat = getCurrentUserChatId()
-        setChatId(chat)
         const json = await apiFetch('/api/ui/settings', { cacheMs: 0, timeoutMs: 10_000 })
         setSettings(json?.data ?? null)
       } catch (e) {
