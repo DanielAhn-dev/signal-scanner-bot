@@ -62,6 +62,8 @@ function resolveAdvisorSignal(input: {
   entryHigh: number | null
   stopPrice: number | null
   target1: number | null
+  riskReward: number | null
+  conviction: number | null
 }): { status: AdvisorSignalStatus; statusLabel: string; reason: string } {
   const {
     currentPrice,
@@ -72,12 +74,26 @@ function resolveAdvisorSignal(input: {
     entryHigh,
     stopPrice,
     target1,
+    riskReward,
+    conviction,
   } = input
 
   const s = String(statusFromPlan || '').toLowerCase()
   const score = Number.isFinite(Number(finalScore)) ? Number(finalScore) : Number(technicalScore)
   const hasScore = Number.isFinite(score)
+  const tech = Number.isFinite(Number(technicalScore)) ? Number(technicalScore) : null
+  const hasTech = tech != null
+  const rr = Number.isFinite(Number(riskReward)) ? Number(riskReward) : null
+  const cv = Number.isFinite(Number(conviction)) ? Number(conviction) : null
   const price = Number.isFinite(Number(currentPrice)) ? Number(currentPrice) : null
+  const entryMid =
+    entryLow != null && entryHigh != null
+      ? (Number(entryLow) + Number(entryHigh)) / 2
+      : null
+  const entryDistPct =
+    price != null && entryMid != null && entryMid > 0
+      ? Math.abs(((price - entryMid) / entryMid) * 100)
+      : null
 
   const inEntryBand =
     price != null && entryLow != null && entryHigh != null
@@ -102,20 +118,56 @@ function resolveAdvisorSignal(input: {
     return { status: 'watch', statusLabel: '관망', reason: '플랜 상태가 관망(wait) 구간' }
   }
 
+  if (!hasScore || !hasTech) {
+    return {
+      status: 'watch',
+      statusLabel: '관망',
+      reason: '점수 데이터 불충분(보수적 관망)',
+    }
+  }
+
   // buy-now는 곧바로 강력매수로 두지 않고, 점수+진입구간을 동시에 만족할 때만 강력매수로 본다.
-  if (inEntryBand && s === 'buy-now' && hasScore && score >= 74) {
+  const strongBuyOk =
+    s === 'buy-now' &&
+    inEntryBand &&
+    score >= 76 &&
+    tech >= 68 &&
+    (rr == null || rr >= 1.35) &&
+    (cv == null || cv >= 66)
+
+  if (strongBuyOk) {
     return {
       status: 'strong_buy',
       statusLabel: '강력매수',
-      reason: '진입구간 내 + buy-now + 점수 74점 이상',
+      reason: `진입구간 내 + 고점수(${score.toFixed(1)}/${tech.toFixed(1)}) + 손익비/확신도 충족`,
+    }
+  }
+
+  const entryTightEnough = entryDistPct == null || entryDistPct <= 1.0
+  const rrOk = rr == null || rr >= 1.15
+  const cvOk = cv == null || cv >= 55
+  const buyNowScoreOk = score >= 66 && tech >= 62
+  const pullbackScoreOk = score >= 62 && tech >= 58
+
+  if (
+    nearEntryBand &&
+    entryTightEnough &&
+    rrOk &&
+    cvOk &&
+    ((s === 'buy-now' && buyNowScoreOk) || (s === 'buy-on-pullback' && pullbackScoreOk))
+  ) {
+    return {
+      status: 'buy',
+      statusLabel: '매수',
+      reason: `진입 인근 + 점수(${score.toFixed(1)}/${tech.toFixed(1)}) + 손익비/확신도 조건 충족`,
     }
   }
 
   if (nearEntryBand && (s === 'buy-now' || s === 'buy-on-pullback')) {
     return {
-      status: 'buy',
-      statusLabel: '매수',
-      reason: '진입구간 인근(±1.5%) + 매수 플랜 상태',
+      status: 'watch',
+      statusLabel: '관망',
+      reason: `진입 인근이지만 필터 미충족(점수 ${score.toFixed(1)}/${tech.toFixed(1)}, RR ${rr?.toFixed(2) ?? '-'}, 확신 ${cv?.toFixed(1) ?? '-'})`,
     }
   }
 
@@ -700,6 +752,8 @@ async function buildAdvisorPayload(input: {
     entryHigh: plan.entryHigh,
     stopPrice: plan.stopPrice,
     target1: plan.target1,
+    riskReward: plan.riskReward,
+    conviction: plan.conviction,
   })
 
   let personalLines: string[] = []

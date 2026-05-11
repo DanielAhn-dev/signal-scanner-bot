@@ -361,13 +361,15 @@ export default function CandleChart({
         status === 'scale-in'
       const isSell = status === 'sell'
       const isPartialSell = status === 'partial_sell' || status === 'partial-sell'
+      const latest = sorted[sorted.length - 1]
+      const latestTime = toTimestamp(latest.date) as any
 
-      // 매수/추가매수는 마지막 봉 고정이 아니라, 실제 진입구간 터치가 확인된 봉에 마커를 표시한다.
+      // 신호 마커는 과거 히스토리 탐색이 아닌 최신 봉 기준으로만 표시한다.
       if (entryLow != null && entryHigh != null && (isStrongBuy || isBuy || isAddBuy)) {
-        const entryTouched = [...sorted].reverse().find((c) => Number(c.low) <= Number(entryHigh) && Number(c.high) >= Number(entryLow))
-        if (entryTouched) {
+        const entryTouchedLatest = Number(latest.low) <= Number(entryHigh) && Number(latest.high) >= Number(entryLow)
+        if (entryTouchedLatest) {
           markers.push({
-            time: toTimestamp(entryTouched.date) as any,
+            time: latestTime,
             position: 'belowBar',
             color: '#22c55e',
             shape: 'arrowUp',
@@ -376,11 +378,11 @@ export default function CandleChart({
         }
       }
 
-      if (target1 != null) {
-        const hitTarget = [...sorted].reverse().find((c) => Number(c.high) >= Number(target1))
-        if (hitTarget) {
+      if (target1 != null && isPartialSell) {
+        const hitTargetLatest = Number(latest.high) >= Number(target1)
+        if (hitTargetLatest) {
           markers.push({
-            time: toTimestamp(hitTarget.date) as any,
+            time: latestTime,
             position: 'aboveBar',
             color: '#3b82f6',
             shape: 'arrowDown',
@@ -389,32 +391,11 @@ export default function CandleChart({
         }
       }
 
-      if (stopLoss != null) {
-        const hitStop = [...sorted].reverse().find((c) => Number(c.low) <= Number(stopLoss))
-        if (hitStop) {
+      if (stopLoss != null && isSell) {
+        const hitStopLatest = Number(latest.low) <= Number(stopLoss)
+        if (hitStopLatest) {
           markers.push({
-            time: toTimestamp(hitStop.date) as any,
-            position: 'belowBar',
-            color: '#ef4444',
-            shape: 'arrowDown',
-            text: '손절',
-          })
-        }
-      }
-
-      if (!markers.length && (isPartialSell || isSell) && sorted.length) {
-        const latest = sorted[sorted.length - 1]
-        if (target1 != null && Number(latest.high) >= Number(target1)) {
-          markers.push({
-            time: toTimestamp(latest.date) as any,
-            position: 'aboveBar',
-            color: '#3b82f6',
-            shape: 'arrowDown',
-            text: '익절',
-          })
-        } else if (stopLoss != null && Number(latest.low) <= Number(stopLoss)) {
-          markers.push({
-            time: toTimestamp(latest.date) as any,
+            time: latestTime,
             position: 'belowBar',
             color: '#ef4444',
             shape: 'arrowDown',
