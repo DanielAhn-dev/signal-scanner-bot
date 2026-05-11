@@ -14,6 +14,7 @@ export default function Trades() {
   const [search, setSearch] = useState('')
   const [actionFilter, setActionFilter] = useState<'all' | 'BUY' | 'SELL'>('all')
   const [modeFilter, setModeFilter] = useState<'all' | 'auto' | 'manual'>('all')
+  const [initialized, setInitialized] = useState(false)
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const onSearchChange = (value: string) => {
@@ -30,6 +31,44 @@ export default function Trades() {
   }, [])
 
   useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    const q = String(params.get('q') || '').trim()
+    const action = String(params.get('action') || '').toUpperCase()
+    const mode = String(params.get('mode') || '').toLowerCase()
+    const nextPage = Math.max(1, Number(params.get('page') || 1))
+
+    if (q) {
+      setSearchInput(q)
+      setSearch(q)
+    }
+    if (action === 'BUY' || action === 'SELL') setActionFilter(action)
+    if (mode === 'auto' || mode === 'manual') setModeFilter(mode)
+    if (Number.isFinite(nextPage) && nextPage > 1) setPage(nextPage)
+
+    setInitialized(true)
+  }, [])
+
+  useEffect(() => {
+    if (!initialized) return
+    const params = new URLSearchParams(window.location.search)
+    if (search) params.set('q', search)
+    else params.delete('q')
+
+    if (actionFilter !== 'all') params.set('action', actionFilter)
+    else params.delete('action')
+
+    if (modeFilter !== 'all') params.set('mode', modeFilter)
+    else params.delete('mode')
+
+    if (page > 1) params.set('page', String(page))
+    else params.delete('page')
+
+    const next = `${window.location.pathname}${params.toString() ? `?${params.toString()}` : ''}`
+    window.history.replaceState({}, '', next)
+  }, [initialized, search, actionFilter, modeFilter, page])
+
+  useEffect(() => {
+    if (!initialized) return
     let mounted = true
     ;(async () => {
       try {
@@ -56,7 +95,7 @@ export default function Trades() {
       }
     })()
     return () => { mounted = false }
-  }, [page, pageSize, search, actionFilter, modeFilter])
+  }, [initialized, page, pageSize, search, actionFilter, modeFilter])
 
   return (
     <section className="container-app trades-page">

@@ -1,12 +1,14 @@
-﻿import React, { useEffect, useMemo, useState } from 'react'
+﻿import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { apiFetch } from '../../lib/api'
 import { formatNumber } from '../../lib/format'
 import Button from '../../components/ui/Button'
+import CardCaptureActions from '../../components/CardCaptureActions'
 import Skeleton from '../../components/Skeleton'
 import { ErrorState, EmptyState } from '../../components/StateViews'
 import { useToast } from '../../components/ToastProvider'
 import Pagination from '../../components/Pagination'
 import useWatchlistActions from '../../hooks/useWatchlistActions'
+import { captureElementToPngBlob, downloadBlob, shareBlobImage } from '../../lib/imageCapture'
 
 const SCAN_SNAPSHOT_KEY = 'scan_snapshot_v1'
 const ANALYZE_PENDING_CODE_KEY = 'analyze_pending_code'
@@ -164,6 +166,8 @@ export default function ScanPage({ onNavigate }: { onNavigate?: (r: string) => v
   const [sortKey, setSortKey] = useState<SortKey>('priority_score')
   const [sortDirection, setSortDirection] = useState<SortDirection>('desc')
   const [page, setPage] = useState(1)
+  const [highlightCaptureBusy, setHighlightCaptureBusy] = useState(false)
+  const highlightShareRef = useRef<HTMLDivElement | null>(null)
   const pageSize = 20
   const toast = useToast()
   const {
@@ -271,6 +275,7 @@ export default function ScanPage({ onNavigate }: { onNavigate?: (r: string) => v
 
   // API 하이라이트가 있으면 우선 사용, 없으면 로컈 폴백
   const activeHighlights = apiHighlights.length > 0 ? apiHighlights : localHighlights
+  const highlightCardItems = useMemo(() => activeHighlights.slice(0, 3), [activeHighlights])
 
   const filterCounts = useMemo(() => {
     const base = selectedSector === 'all' ? candidates : candidates.filter(c => c.sector_id === selectedSector)
@@ -359,6 +364,60 @@ export default function ScanPage({ onNavigate }: { onNavigate?: (r: string) => v
     }
     setSortKey(key)
     setSortDirection(key === 'code' || key === 'name' || key === 'sector_id' ? 'asc' : 'desc')
+  }
+
+  const saveHighlightCardImage = async () => {
+    if (!highlightShareRef.current || highlightCardItems.length === 0) {
+      toast.show('저장할 하이라이트가 없습니다')
+      return
+    }
+    setHighlightCaptureBusy(true)
+    try {
+      const blob = await captureElementToPngBlob(highlightShareRef.current, {
+        pixelRatio: 2,
+        width: 1080,
+        height: 1080,
+        backgroundColor: '#f4f8ff',
+      })
+      downloadBlob(blob, `today-highlights-${new Date().toISOString().slice(0, 10)}`)
+      toast.show('오늘의 추천 카드뉴스 이미지를 저장했습니다')
+    } catch (e: any) {
+      toast.show(String(e?.message || e || '카드뉴스 이미지 생성 실패'))
+    } finally {
+      setHighlightCaptureBusy(false)
+    }
+  }
+
+  const shareHighlightCardImage = async () => {
+    if (!highlightShareRef.current || highlightCardItems.length === 0) {
+      toast.show('공유할 하이라이트가 없습니다')
+      return
+    }
+    setHighlightCaptureBusy(true)
+    try {
+      const blob = await captureElementToPngBlob(highlightShareRef.current, {
+        pixelRatio: 2,
+        width: 1080,
+        height: 1080,
+        backgroundColor: '#f4f8ff',
+      })
+      const shared = await shareBlobImage({
+        blob,
+        filename: `today-highlights-${new Date().toISOString().slice(0, 10)}`,
+        title: '오늘의 추천 눌림목',
+        text: '오늘의 추천 종목 카드뉴스',
+      })
+      if (shared) {
+        toast.show('공유 앱을 열었습니다. 카카오톡을 선택해 보내세요.')
+        return
+      }
+      downloadBlob(blob, `today-highlights-${new Date().toISOString().slice(0, 10)}`)
+      toast.show('기기 공유가 지원되지 않아 이미지로 저장했습니다')
+    } catch (e: any) {
+      toast.show(String(e?.message || e || '카드뉴스 이미지 생성 실패'))
+    } finally {
+      setHighlightCaptureBusy(false)
+    }
   }
 
   const onAddToWatchlist = async (code: string) => {
@@ -468,50 +527,101 @@ export default function ScanPage({ onNavigate }: { onNavigate?: (r: string) => v
           <div className="scan-highlight-section-title" style={{ gap: 'var(--space-2)', flexWrap: 'wrap' }}>
             <span className="scan-highlight-section-label">오늘의 추천 눌림목</span>
             <span className="scan-highlight-section-badge">진입 A/B · 경고 최소</span>
+            <Button
+              variant="secondary"
+              onClick={saveHighlightCardImage}
+              disabled={highlightCaptureBusy || highlightCardItems.length === 0}
+            >
+              {highlightCaptureBusy ? '생성 중...' : '카드뉴스 저장'}
+            </Button>
+            <Button
+              variant="ghost"
+              onClick={shareHighlightCardImage}
+              disabled={highlightCaptureBusy || highlightCardItems.length === 0}
+            >
+              앱 공유 (카카오톡)
+            </Button>
             {onNavigate && (
               <Button variant="secondary" onClick={() => onNavigate('highlights')} style={{ marginLeft: 'auto' }}>
                 하이라이트 허브
               </Button>
             )}
           </div>
+
+          <div className="scan-share-card-stage" aria-hidden>
+            <div className="scan-share-card" ref={highlightShareRef}>
+              <div className="scan-share-card-header">
+                <div className="scan-share-card-title">오늘의 추천 눌림목 TOP 3</div>
+                <div className="scan-share-card-date">{new Date().toLocaleDateString('ko-KR')}</div>
+              </div>
+              <div className="scan-share-card-subtitle">진입/추세 A·B 중심 · 경고 최소 우선</div>
+              <div className="scan-share-card-list">
+                {highlightCardItems.map((item, idx) => (
+                  <div key={`share-${item.code}`} className="scan-share-card-item">
+                    <div className="scan-share-card-rank">TOP {idx + 1}</div>
+                    <div className="scan-share-card-main">
+                      <div className="scan-share-card-name">{item.name}</div>
+                      <div className="scan-share-card-code">{item.code}{item.sector_id ? ` · ${item.sector_id}` : ''}</div>
+                    </div>
+                    <div className="scan-share-card-meta">
+                      <div>진입 {item.entry_grade || '-'}</div>
+                      <div>추세 {item.trend_grade || '-'}</div>
+                      <div>경고 {item.warn_grade || '-'}</div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <div className="scan-share-card-footer">Signal Scanner</div>
+            </div>
+          </div>
+
           <div className="scan-highlight-grid">
             {activeHighlights.map((c, idx) => (
-              <button
-                key={c.code}
-                type="button"
-                className={`scan-highlight-card${idx === 0 ? ' scan-highlight-card--top' : ''}`}
-                onClick={() => navigateToAnalyze(c.code)}
-                title={`${c.name} 상세 분석 보기`}
-              >
-                <div className="flex-between">
-                  <span className={`scan-highlight-rank${idx > 0 ? ' scan-highlight-rank--rest' : ''}`}>
-                    TOP {idx + 1}
-                  </span>
-                  <WarnBadge grade={c.warn_grade} />
-                </div>
-                <div>
-                  <div className="scan-highlight-name">{c.name}</div>
-                  <div className="scan-highlight-code">{c.code}</div>
-                </div>
-                <div className="scan-highlight-grades">
-                  <GradeBadge grade={c.entry_grade} label="진입" />
-                  <GradeBadge grade={c.trend_grade} label="추세" />
-                  <GradeBadge grade={c.dist_grade} label="매집" />
-                  {c.pivot_grade && <GradeBadge grade={c.pivot_grade} label="세력" />}
-                  {c.signal && <SignalBadge signal={c.signal} />}
-                </div>
-                <div className="scan-highlight-meta">
-                  {c.sector_id && <span>{c.sector_id}</span>}
-                  {c.entry_score != null && <span>진입 {formatNumber(c.entry_score, 1)}</span>}
-                  {c.total_score != null && <span>종합 {formatNumber(c.total_score, 0)}</span>}
-                  {typeof c.adaptive_adjustment === 'number' && Math.abs(c.adaptive_adjustment) >= 0.1 && (
-                    <span style={{ color: c.adaptive_adjustment >= 0 ? 'var(--color-positive)' : 'var(--color-negative)' }}>
-                      적응 {c.adaptive_adjustment > 0 ? '+' : ''}{formatNumber(c.adaptive_adjustment, 1)}
+              <div key={c.code} className="scan-highlight-item-wrap card-capture-anchor">
+                <CardCaptureActions
+                  targetId={`scan-highlight-card-${c.code}`}
+                  title={`${c.name} (${c.code})`}
+                  filename={`highlight-${c.code}-${new Date().toISOString().slice(0, 10)}`}
+                  text="오늘의 추천 눌림목 카드"
+                  onNotify={(message) => toast.show(message)}
+                />
+                <button
+                  id={`scan-highlight-card-${c.code}`}
+                  type="button"
+                  className={`scan-highlight-card${idx === 0 ? ' scan-highlight-card--top' : ''}`}
+                  onClick={() => navigateToAnalyze(c.code)}
+                  title={`${c.name} 상세 분석 보기`}
+                >
+                  <div className="flex-between">
+                    <span className={`scan-highlight-rank${idx > 0 ? ' scan-highlight-rank--rest' : ''}`}>
+                      TOP {idx + 1}
                     </span>
-                  )}
-                </div>
-                <div className="scan-highlight-hint">클릭하여 상세 분석 →</div>
-              </button>
+                    <WarnBadge grade={c.warn_grade} />
+                  </div>
+                  <div>
+                    <div className="scan-highlight-name">{c.name}</div>
+                    <div className="scan-highlight-code">{c.code}</div>
+                  </div>
+                  <div className="scan-highlight-grades">
+                    <GradeBadge grade={c.entry_grade} label="진입" />
+                    <GradeBadge grade={c.trend_grade} label="추세" />
+                    <GradeBadge grade={c.dist_grade} label="매집" />
+                    {c.pivot_grade && <GradeBadge grade={c.pivot_grade} label="세력" />}
+                    {c.signal && <SignalBadge signal={c.signal} />}
+                  </div>
+                  <div className="scan-highlight-meta">
+                    {c.sector_id && <span>{c.sector_id}</span>}
+                    {c.entry_score != null && <span>진입 {formatNumber(c.entry_score, 1)}</span>}
+                    {c.total_score != null && <span>종합 {formatNumber(c.total_score, 0)}</span>}
+                    {typeof c.adaptive_adjustment === 'number' && Math.abs(c.adaptive_adjustment) >= 0.1 && (
+                      <span style={{ color: c.adaptive_adjustment >= 0 ? 'var(--color-positive)' : 'var(--color-negative)' }}>
+                        적응 {c.adaptive_adjustment > 0 ? '+' : ''}{formatNumber(c.adaptive_adjustment, 1)}
+                      </span>
+                    )}
+                  </div>
+                  <div className="scan-highlight-hint">클릭하여 상세 분석 →</div>
+                </button>
+              </div>
             ))}
           </div>
         </div>

@@ -8,6 +8,7 @@ import Modal from '../../components/Modal'
 import { EmptyState, ErrorState } from '../../components/StateViews'
 import { useToast } from '../../components/ToastProvider'
 import Pagination from '../../components/Pagination'
+import { captureElementToPngBlob, downloadBlob, shareBlobImage } from '../../lib/imageCapture'
 
 type PortfolioShareHistoryItem = {
   shareId: string
@@ -88,6 +89,10 @@ export default function Portfolio() {
   const [maintQty, setMaintQty] = useState<number>(1)
   const [maintLoading, setMaintLoading] = useState(false)
   const [maintError, setMaintError] = useState<string | null>(null)
+  const [assetCaptureBusy, setAssetCaptureBusy] = useState(false)
+  const [shareCaptureBusy, setShareCaptureBusy] = useState(false)
+  const assetOverviewCaptureRef = useRef<HTMLDivElement | null>(null)
+  const shareSummaryCaptureRef = useRef<HTMLDivElement | null>(null)
   const toast = useToast()
 
   const safeGradeAThreshold = Math.max(1, Math.min(100, Number(gradeAThreshold || 80)))
@@ -366,6 +371,91 @@ export default function Portfolio() {
     }
     setInitialCapital(Math.round(next))
     toast.show('초기 투자금을 저장했습니다')
+  }
+
+  const runCapture = async (params: {
+    target: HTMLElement | null
+    filename: string
+    onBusy: (busy: boolean) => void
+  }) => {
+    if (!params.target) {
+      toast.show('캡처할 영역을 찾지 못했습니다')
+      return
+    }
+    params.onBusy(true)
+    try {
+      const blob = await captureElementToPngBlob(params.target, { pixelRatio: 2 })
+      return blob
+    } catch (e: any) {
+      toast.show(String(e?.message || e || '이미지 생성에 실패했습니다'))
+      return null
+    } finally {
+      params.onBusy(false)
+    }
+  }
+
+  const saveAssetOverviewImage = async () => {
+    const blob = await runCapture({
+      target: assetOverviewCaptureRef.current,
+      filename: `portfolio-allocation-${new Date().toISOString().slice(0, 10)}`,
+      onBusy: setAssetCaptureBusy,
+    })
+    if (!blob) return
+    downloadBlob(blob, `portfolio-allocation-${new Date().toISOString().slice(0, 10)}`)
+    toast.show('자산 구성 이미지를 저장했습니다')
+  }
+
+  const shareAssetOverviewImage = async () => {
+    const blob = await runCapture({
+      target: assetOverviewCaptureRef.current,
+      filename: `portfolio-allocation-${new Date().toISOString().slice(0, 10)}`,
+      onBusy: setAssetCaptureBusy,
+    })
+    if (!blob) return
+    const shared = await shareBlobImage({
+      blob,
+      filename: `portfolio-allocation-${new Date().toISOString().slice(0, 10)}`,
+      title: '포트폴리오 자산 구성',
+      text: '포트폴리오 자산 비중 이미지',
+    })
+    if (shared) {
+      toast.show('공유 앱을 열었습니다. 카카오톡을 선택해 보내세요.')
+      return
+    }
+    downloadBlob(blob, `portfolio-allocation-${new Date().toISOString().slice(0, 10)}`)
+    toast.show('기기 공유가 지원되지 않아 이미지로 저장했습니다')
+  }
+
+  const saveShareSummaryImage = async () => {
+    const blob = await runCapture({
+      target: shareSummaryCaptureRef.current,
+      filename: `portfolio-share-summary-${new Date().toISOString().slice(0, 10)}`,
+      onBusy: setShareCaptureBusy,
+    })
+    if (!blob) return
+    downloadBlob(blob, `portfolio-share-summary-${new Date().toISOString().slice(0, 10)}`)
+    toast.show('공유 요약 이미지를 저장했습니다')
+  }
+
+  const shareShareSummaryImage = async () => {
+    const blob = await runCapture({
+      target: shareSummaryCaptureRef.current,
+      filename: `portfolio-share-summary-${new Date().toISOString().slice(0, 10)}`,
+      onBusy: setShareCaptureBusy,
+    })
+    if (!blob) return
+    const shared = await shareBlobImage({
+      blob,
+      filename: `portfolio-share-summary-${new Date().toISOString().slice(0, 10)}`,
+      title: '포트폴리오 공유 요약',
+      text: '포트폴리오 핵심 요약 이미지',
+    })
+    if (shared) {
+      toast.show('공유 앱을 열었습니다. 카카오톡을 선택해 보내세요.')
+      return
+    }
+    downloadBlob(blob, `portfolio-share-summary-${new Date().toISOString().slice(0, 10)}`)
+    toast.show('기기 공유가 지원되지 않아 이미지로 저장했습니다')
   }
   const captureGeneratedAt = useMemo(
     () => new Intl.DateTimeFormat('ko-KR', {
@@ -722,7 +812,7 @@ export default function Portfolio() {
         </div>
       </div>
 
-      <div className="card mb-4 portfolio-asset-overview-card">
+      <div className="card mb-4 portfolio-asset-overview-card" ref={assetOverviewCaptureRef}>
         <button
           type="button"
           className="portfolio-asset-overview-head"
@@ -738,6 +828,14 @@ export default function Portfolio() {
 
         {assetAccordionOpen && (
           <div className="portfolio-asset-overview-body">
+            <div className="portfolio-share-image-actions" data-capture-ignore="true">
+              <Button variant="secondary" onClick={saveAssetOverviewImage} disabled={assetCaptureBusy}>
+                {assetCaptureBusy ? '이미지 생성 중...' : '이미지 저장'}
+              </Button>
+              <Button variant="ghost" onClick={shareAssetOverviewImage} disabled={assetCaptureBusy}>
+                앱 공유 (카카오톡)
+              </Button>
+            </div>
             <div className="portfolio-asset-overview-input-row">
               <Input
                 label="초기 투자금"
@@ -1105,13 +1203,21 @@ export default function Portfolio() {
         onClose={() => setShareModalOpen(false)}
         size="lg"
       >
-        <div className="portfolio-capture-card">
+        <div className="portfolio-capture-card" ref={shareSummaryCaptureRef}>
           <div className="portfolio-capture-top">
             <div>
               <div className="portfolio-capture-title">가상 포트폴리오 요약</div>
               <div className="portfolio-capture-time">기준시각 {captureGeneratedAt}</div>
             </div>
-            <div className="portfolio-capture-count">보유 {holdingAll.length}종목</div>
+            <div className="portfolio-capture-top-actions" data-capture-ignore="true">
+              <div className="portfolio-capture-count">보유 {holdingAll.length}종목</div>
+              <Button variant="secondary" onClick={saveShareSummaryImage} disabled={shareCaptureBusy}>
+                {shareCaptureBusy ? '생성 중...' : '이미지 저장'}
+              </Button>
+              <Button variant="ghost" onClick={shareShareSummaryImage} disabled={shareCaptureBusy}>
+                앱 공유 (카카오톡)
+              </Button>
+            </div>
           </div>
 
           <div className="portfolio-share-control-grid">
