@@ -17,12 +17,15 @@ type Props = {
   onClose: () => void
   url?: string | null
   code?: string | null
+  requiresCode?: boolean
   expiresAt?: string | null
   shares?: ShareItem[]
   loading?: boolean
   onRefresh?: () => void
   onRevoke?: (shareId: string) => void
   revokingId?: string | null
+  includeAll?: boolean
+  onChangeIncludeAll?: (next: boolean) => void
 }
 
 function formatDate(value?: string | null) {
@@ -32,12 +35,89 @@ function formatDate(value?: string | null) {
   return d.toLocaleString('ko-KR', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })
 }
 
-export default function ShareModal({ open, onClose, url, code, expiresAt, shares = [], loading, onRefresh, onRevoke, revokingId }: Props) {
+const SHARE_MODAL_SORT_KEY = 'share_modal_sort_v1'
+const SHARE_MODAL_FILTER_KEY = 'share_modal_filter_v1'
+
+export default function ShareModal({
+  open,
+  onClose,
+  url,
+  code,
+  requiresCode = true,
+  expiresAt,
+  shares = [],
+  loading,
+  onRefresh,
+  onRevoke,
+  revokingId,
+  includeAll = false,
+  onChangeIncludeAll,
+}: Props) {
   if (!open) return null
+
+  const [sortBy, setSortBy] = React.useState<'recent' | 'views' | 'expires'>('recent')
+  const [listFilter, setListFilter] = React.useState<'active' | 'all'>(includeAll ? 'all' : 'active')
+
+  React.useEffect(() => {
+    if (typeof window === 'undefined') return
+    try {
+      const saved = String(window.localStorage.getItem(SHARE_MODAL_SORT_KEY) || '').trim()
+      if (saved === 'recent' || saved === 'views' || saved === 'expires') {
+        setSortBy(saved)
+      }
+      const savedFilter = String(window.localStorage.getItem(SHARE_MODAL_FILTER_KEY) || '').trim()
+      if (savedFilter === 'active' || savedFilter === 'all') {
+        setListFilter(savedFilter)
+      }
+    } catch {
+      // ignore local storage read errors
+    }
+  }, [])
+
+  React.useEffect(() => {
+    if (typeof window === 'undefined') return
+    try {
+      window.localStorage.setItem(SHARE_MODAL_SORT_KEY, sortBy)
+    } catch {
+      // ignore local storage write errors
+    }
+  }, [sortBy])
+
+  React.useEffect(() => {
+    if (typeof window === 'undefined') return
+    try {
+      window.localStorage.setItem(SHARE_MODAL_FILTER_KEY, listFilter)
+    } catch {
+      // ignore local storage write errors
+    }
+  }, [listFilter])
+
+  React.useEffect(() => {
+    onChangeIncludeAll?.(listFilter === 'all')
+  }, [listFilter, onChangeIncludeAll])
 
   const copy = async (text?: string | null) => {
     try { await navigator.clipboard?.writeText(text || '') } catch {}
   }
+
+  const sortedShares = React.useMemo(() => {
+    const base = [...shares]
+    if (sortBy === 'views') {
+      return base.sort((a, b) => Number(b.accessCount || 0) - Number(a.accessCount || 0))
+    }
+    if (sortBy === 'expires') {
+      return base.sort((a, b) => {
+        const av = new Date(a.expiresAt).getTime()
+        const bv = new Date(b.expiresAt).getTime()
+        return av - bv
+      })
+    }
+    return base.sort((a, b) => {
+      const av = new Date(a.createdAt || a.expiresAt).getTime()
+      const bv = new Date(b.createdAt || b.expiresAt).getTime()
+      return bv - av
+    })
+  }, [shares, sortBy])
 
   return (
     <div className="modal-overlay" role="dialog" aria-modal aria-label="공유 링크">
@@ -47,7 +127,11 @@ export default function ShareModal({ open, onClose, url, code, expiresAt, shares
           <button className="nav-item" onClick={onClose}>닫기</button>
         </div>
         <div className="mt-2">
-          <div className="muted">다음 URL을 받은 사용자에게 전달하세요. 접근 시 초대코드가 필요합니다.</div>
+          <div className="muted">
+            {requiresCode
+              ? '다음 URL을 받은 사용자에게 전달하세요. 접근 시 초대코드가 필요합니다.'
+              : '다음 URL을 받은 사용자에게 전달하세요. 링크를 열면 바로 공유 화면이 표시됩니다.'}
+          </div>
           <div
             style={{
               marginTop: 12,
@@ -59,7 +143,9 @@ export default function ShareModal({ open, onClose, url, code, expiresAt, shares
           >
             <div className="caption" style={{ color: 'var(--color-text-primary, #111827)', fontWeight: 700 }}>안내</div>
             <div className="muted" style={{ marginTop: 6, lineHeight: 1.6 }}>
-              초대코드는 새로 공유 링크를 다시 생성하기 전까지 계속 사용할 수 있습니다. 다시 생성하면 이전 링크와 초대코드는 즉시 만료되고, 새로 발급된 정보만 사용할 수 있습니다.
+              {requiresCode
+                ? '초대코드는 새로 공유 링크를 다시 생성하기 전까지 계속 사용할 수 있습니다. 다시 생성하면 이전 링크와 초대코드는 즉시 만료되고, 새로 발급된 정보만 사용할 수 있습니다.'
+                : '공유 링크를 다시 생성하면 이전 링크는 즉시 만료되고, 새로 발급된 링크만 사용할 수 있습니다.'}
             </div>
           </div>
           <div style={{ marginTop: 12 }}>
@@ -69,13 +155,15 @@ export default function ShareModal({ open, onClose, url, code, expiresAt, shares
               <button className="ui-button ui-btn-secondary" onClick={() => copy(url)}>복사</button>
             </div>
           </div>
-          <div style={{ marginTop: 12 }}>
-            <div className="caption">초대코드</div>
-            <div style={{ display: 'flex', gap: 8, marginTop: 6 }}>
-              <input readOnly value={code || ''} className="ui-text" style={{ width: 160 }} />
-              <button className="ui-button ui-btn-secondary" onClick={() => copy(code)}>복사</button>
+          {requiresCode && (
+            <div style={{ marginTop: 12 }}>
+              <div className="caption">초대코드</div>
+              <div style={{ display: 'flex', gap: 8, marginTop: 6 }}>
+                <input readOnly value={code || ''} className="ui-text" style={{ width: 160 }} />
+                <button className="ui-button ui-btn-secondary" onClick={() => copy(code)}>복사</button>
+              </div>
             </div>
-          </div>
+          )}
           <div style={{ marginTop: 12 }}>
             <div className="caption">만료 시각</div>
             <div className="muted" style={{ marginTop: 6 }}>{formatDate(expiresAt)}</div>
@@ -86,12 +174,28 @@ export default function ShareModal({ open, onClose, url, code, expiresAt, shares
                 <div className="title-md">최근 공유 링크</div>
                 <div className="muted" style={{ marginTop: 4 }}>같은 주제로 최근 발급된 링크를 보고 철회할 수 있습니다.</div>
               </div>
-              <button className="ui-button ui-btn-secondary" onClick={onRefresh} disabled={loading}>새로고침</button>
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                <select
+                  className="input"
+                  value={listFilter}
+                  onChange={(e) => setListFilter(e.target.value === 'all' ? 'all' : 'active')}
+                  style={{ minWidth: 132 }}
+                >
+                  <option value="active">활성 링크만</option>
+                  <option value="all">전체 링크</option>
+                </select>
+                <select className="input" value={sortBy} onChange={(e) => setSortBy(e.target.value as 'recent' | 'views' | 'expires')} style={{ minWidth: 140 }}>
+                  <option value="recent">최신순</option>
+                  <option value="views">조회수순</option>
+                  <option value="expires">만료임박순</option>
+                </select>
+                <button className="ui-button ui-btn-secondary" onClick={onRefresh} disabled={loading}>새로고침</button>
+              </div>
             </div>
             <div style={{ marginTop: 12, display: 'grid', gap: 10, maxHeight: 280, overflow: 'auto' }}>
-              {shares.length === 0 ? (
+              {sortedShares.length === 0 ? (
                 <div className="muted">표시할 공유 링크가 없습니다.</div>
-              ) : shares.map((share) => {
+              ) : sortedShares.map((share) => {
                 const link = `${url?.split('?')[0] || ''}?share=${encodeURIComponent(share.publicToken)}`
                 return (
                   <div key={share.shareId} className="card" style={{ margin: 0, padding: 12 }}>

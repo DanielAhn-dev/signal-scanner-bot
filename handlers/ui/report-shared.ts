@@ -23,7 +23,7 @@ function renderCodeGate(params: {
   error?: string
 }) {
   const { share, topic, error } = params
-  const action = `/report/shared?share=${encodeURIComponent(share)}`
+  const action = `/api/ui/report-shared?share=${encodeURIComponent(share)}`
   const body = `
     <section style="max-width:520px;margin:8vh auto;background:rgba(255,255,255,0.94);border:1px solid #e5e8eb;border-radius:18px;padding:24px;box-shadow:0 16px 48px rgba(15,23,42,0.08)">
       <div style="display:inline-block;background:#0060ff;color:#fff;border-radius:999px;padding:4px 10px;font-size:12px;font-weight:700">공유 링크</div>

@@ -7,7 +7,8 @@ import { ErrorState, EmptyState } from '../../components/StateViews'
 import { useToast } from '../../components/ToastProvider'
 import Pagination from '../../components/Pagination'
 import useWatchlistActions from '../../hooks/useWatchlistActions'
-import { useRouteShare } from '../../hooks/useRouteShare'
+import ShareModal from '../../components/ShareModal'
+import { useShareManager } from '../../hooks/useShareManager'
 
 const SCAN_SNAPSHOT_KEY = 'scan_snapshot_v1'
 const ANALYZE_PENDING_CODE_KEY = 'analyze_pending_code'
@@ -191,12 +192,18 @@ export default function ScanPage({ onNavigate }: { onNavigate?: (r: string) => v
   const [highlightLoading, setHighlightLoading] = useState(true)
   const [selectedSector, setSelectedSector] = useState<string>('all')
   const [conditionFilter, setConditionFilter] = useState<'all' | 'entry' | 'trend' | 'accumulation' | 'stable'>('all')
+  const [shareViewMode, setShareViewMode] = useState<'table' | 'cards'>('table')
+  const [shareCardLimit, setShareCardLimit] = useState<10 | 20 | 30>(20)
   const [sortKey, setSortKey] = useState<SortKey>('priority_score')
   const [sortDirection, setSortDirection] = useState<SortDirection>('desc')
   const [page, setPage] = useState(1)
   const pageSize = 20
   const toast = useToast()
-  const { shareRoute } = useRouteShare()
+  const shareManager = useShareManager({
+    endpoint: '/api/ui/route-share',
+    scopeKey: 'kind',
+    requiresCode: false,
+  })
   const toastRef = useRef(toast)
   const lastSignatureRef = useRef<string | null>(null)
   const hasFetchedRef = useRef(false)
@@ -476,21 +483,45 @@ export default function ScanPage({ onNavigate }: { onNavigate?: (r: string) => v
   }
 
   const onShareScan = async () => {
-    const { url, mode } = await shareRoute({
-      path: '/scan',
-      query: {
-        sector: selectedSector !== 'all' ? selectedSector : undefined,
-        filter: conditionFilter !== 'all' ? conditionFilter : undefined,
-      },
-      title: 'Nexora 눌림목',
-      text: 'Nexora 눌림목 화면 공유 링크',
-    })
+    const rows = sortedCandidates.slice(0, 30).map((row) => ({
+      code: row.code,
+      name: row.name,
+      sector: row.sector_id,
+      entryGrade: row.entry_grade,
+      trendGrade: row.trend_grade,
+      distGrade: row.dist_grade,
+      pivotGrade: row.pivot_grade,
+      warnGrade: row.warn_grade,
+      warnScore: row.warn_score,
+      entryScore: row.entry_score,
+      priorityScore: Number(computePriorityScore(row).toFixed(1)),
+      intradayChangePct: typeof row.intraday_change_pct === 'number' ? row.intraday_change_pct : null,
+      tradeDate: row.trade_date,
+    }))
 
-    if (mode === 'native') {
-      toast.show('공유 창을 열었습니다')
-      return
-    }
-    toast.show(`링크를 복사했습니다: ${url}`)
+    await shareManager.createShare('scan', {
+      kind: 'scan',
+      payload: {
+        viewMode: shareViewMode,
+        cardLimit: shareViewMode === 'cards' ? shareCardLimit : undefined,
+        latestDate,
+        marketPhase,
+        realtimeAppliedCount,
+        sectionLabels: {
+          highlights: '참고용 추천 눌림목',
+          candidates: '실전 기준 후보 목록',
+        },
+        conditionFilter,
+        conditionFilterLabel:
+          conditionFilter === 'entry' ? '진입(A/B)' :
+          conditionFilter === 'trend' ? '추세(A/B)' :
+          conditionFilter === 'accumulation' ? '매집(A/B)' :
+          conditionFilter === 'stable' ? '세력선(A/B)' : '전체',
+        selectedSector,
+        sectorLabel: selectedSector === 'all' ? '전체 섹터' : selectedSector,
+        rows,
+      },
+    })
   }
 
   const renderSortableHeader = (label: string, key: SortKey) => {
@@ -513,6 +544,32 @@ export default function ScanPage({ onNavigate }: { onNavigate?: (r: string) => v
       <div className="flex-between mb-4">
         <h1 className="title-xl" style={{ marginBottom: 0 }}>Nexora 눌림목</h1>
         <div className="scan-header-actions">
+          <select
+            className="input"
+            value={shareViewMode}
+            onChange={(e) => setShareViewMode(e.target.value === 'cards' ? 'cards' : 'table')}
+            title="공유 페이지 표시 방식"
+            style={{ minWidth: 136 }}
+          >
+            <option value="table">공유: 테이블</option>
+            <option value="cards">공유: 카드</option>
+          </select>
+          {shareViewMode === 'cards' && (
+            <select
+              className="input"
+              value={String(shareCardLimit)}
+              onChange={(e) => {
+                const n = Number(e.target.value)
+                setShareCardLimit(n === 10 || n === 20 || n === 30 ? n : 20)
+              }}
+              title="카드 공유 상위 개수"
+              style={{ minWidth: 128 }}
+            >
+              <option value="10">카드 TOP 10</option>
+              <option value="20">카드 TOP 20</option>
+              <option value="30">카드 TOP 30</option>
+            </select>
+          )}
           <Button variant="secondary" onClick={onShareScan}>링크 공유</Button>
           <Button variant="ghost" onClick={() => { void loadCandidates() }} disabled={loading}>새로고침</Button>
           <Button variant="primary" onClick={triggerScan} disabled={scanLoading}>
@@ -762,6 +819,21 @@ export default function ScanPage({ onNavigate }: { onNavigate?: (r: string) => v
           )}
         </div>
       )}
+      <ShareModal
+        open={shareManager.open}
+        onClose={shareManager.close}
+        url={shareManager.info?.url}
+        code={shareManager.info?.code}
+        requiresCode={shareManager.requiresCode}
+        expiresAt={shareManager.info?.expiresAt}
+        shares={shareManager.list}
+        loading={shareManager.loading}
+        onRefresh={() => { void shareManager.loadList('scan') }}
+        includeAll={shareManager.includeAll}
+        onChangeIncludeAll={shareManager.setIncludeAll}
+        onRevoke={shareManager.revokeShare}
+        revokingId={shareManager.revokingId}
+      />
     </section>
   )
 }

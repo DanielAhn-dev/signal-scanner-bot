@@ -7,6 +7,7 @@ import ShareModal from '../../components/ShareModal'
 import { readSimulationPlan, type HighlightSimulationPlan } from '../simulator/planStore'
 import { buildTelegramMessage, calcExpectedValue, calcSplitInvested } from '../simulator/telegramFormat'
 import { formatKrw } from '../../lib/format'
+import { useShareManager } from '../../hooks/useShareManager'
 
 type ReportAction = {
   key: string
@@ -148,18 +149,33 @@ const REPORT_ACTIONS: ReportAction[] = [
 export default function ReportsPage() {
   const [states, setStates] = useState<Record<string, { loading: boolean; msg?: string }>>({})
   const toast = useToast()
-  const [shareInfo, setShareInfo] = useState<{ shareId?: string; url: string; code: string; expiresAt?: string; topic?: string } | null>(null)
-  const [shareOpen, setShareOpen] = useState(false)
-  const [shareTopic, setShareTopic] = useState<string>('추천')
-  const [shareList, setShareList] = useState<Array<{ shareId: string; publicToken: string; topic: string; expiresAt: string; createdAt?: string; revokedAt?: string | null; accessCount?: number; lastAccessedAt?: string | null }>>([])
-  const [shareListLoading, setShareListLoading] = useState(false)
-  const [revokingShareId, setRevokingShareId] = useState<string | null>(null)
   const [simPlan, setSimPlan] = useState<HighlightSimulationPlan | null>(null)
   const [simSending, setSimSending] = useState(false)
+  const shareManager = useShareManager({
+    endpoint: '/api/ui/report-share',
+    scopeKey: 'topic',
+    requiresCode: true,
+  })
 
   useEffect(() => {
     setSimPlan(readSimulationPlan())
   }, [])
+
+  const buildUiRequest = (endpoint: string): { url: string; headers: Record<string, string> } => {
+    const base = import.meta.env.VITE_API_BASE || ''
+    const uiKey = import.meta.env.VITE_UI_READ_KEY
+    const chatId = getCurrentUserChatId() || ''
+    let resolvedEndpoint = endpoint
+    if (uiKey) resolvedEndpoint = `${resolvedEndpoint}${resolvedEndpoint.includes('?') ? '&' : '?'}ui_key=${encodeURIComponent(uiKey)}`
+    if (chatId) resolvedEndpoint = `${resolvedEndpoint}${resolvedEndpoint.includes('?') ? '&' : '?'}chat_id=${encodeURIComponent(chatId)}`
+    const url = base
+      ? `${base.replace(/\/$/, '')}${resolvedEndpoint.startsWith('/') ? resolvedEndpoint : `/${resolvedEndpoint}`}`
+      : resolvedEndpoint
+    const headers: Record<string, string> = {}
+    if (uiKey) headers['x-ui-key'] = uiKey
+    if (chatId) headers['x-user-chat-id'] = chatId
+    return { url, headers }
+  }
 
   const navigateSimulator = () => {
     window.history.pushState({}, '', '#simulator')
@@ -210,69 +226,6 @@ export default function ReportsPage() {
     }
   }
 
-  const appendQueryParam = (url: string, key: string, value: string) => {
-    if (!value) return url
-    if (new RegExp(`(?:\\?|&)${key}=`).test(url)) return url
-    return `${url}${url.includes('?') ? '&' : '?'}${encodeURIComponent(key)}=${encodeURIComponent(value)}`
-  }
-
-  const buildUiRequest = (endpoint: string) => {
-    const base = import.meta.env.VITE_API_BASE || ''
-    const uiKey = import.meta.env.VITE_UI_READ_KEY
-    const chatId = getCurrentUserChatId() || ''
-
-    let resolvedEndpoint = endpoint
-    if (uiKey) resolvedEndpoint = appendQueryParam(resolvedEndpoint, 'ui_key', uiKey)
-    if (chatId) resolvedEndpoint = appendQueryParam(resolvedEndpoint, 'chat_id', chatId)
-
-    const url = base
-      ? `${base.replace(/\/$/, '')}${resolvedEndpoint.startsWith('/') ? resolvedEndpoint : `/${resolvedEndpoint}`}`
-      : resolvedEndpoint
-
-    const headers: Record<string, string> = {}
-    if (uiKey) headers['x-ui-key'] = uiKey
-    if (chatId) headers['x-user-chat-id'] = chatId
-    return { url, headers, chatId }
-  }
-
-  const loadShareList = async (topic = shareTopic) => {
-    setShareListLoading(true)
-    try {
-      const endpoint = `/api/ui/report-share?topic=${encodeURIComponent(topic)}`
-      const { url, headers } = buildUiRequest(endpoint)
-      const res = await fetch(url, { headers })
-      const json = await res.json()
-      if (!res.ok) throw new Error(json?.error || '공유 목록 조회 실패')
-      setShareList(Array.isArray(json?.data) ? json.data : [])
-    } catch (e: any) {
-      toast.show(String(e?.message || e))
-    } finally {
-      setShareListLoading(false)
-    }
-  }
-
-  const revokeShare = async (shareId: string) => {
-    setRevokingShareId(shareId)
-    try {
-      const endpoint = `/api/ui/report-share?shareId=${encodeURIComponent(shareId)}`
-      const { url, headers } = buildUiRequest(endpoint)
-      const res = await fetch(url, { method: 'DELETE', headers })
-      const json = await res.json()
-      if (!res.ok) throw new Error(json?.error || '공유 철회 실패')
-      toast.show('공유 링크를 철회했습니다.')
-      await loadShareList(shareTopic)
-    } catch (e: any) {
-      toast.show(String(e?.message || e))
-    } finally {
-      setRevokingShareId(null)
-    }
-  }
-
-  useEffect(() => {
-    if (!shareOpen) return
-    void loadShareList(shareTopic)
-  }, [shareOpen, shareTopic])
-
   const runTrigger = async (key: string, endpoint: string, method: 'GET' | 'POST' = 'POST') => {
     setStates(s => ({ ...s, [key]: { loading: true } }))
     try {
@@ -296,9 +249,9 @@ export default function ReportsPage() {
   const runDownload = async (key: string, endpoint: string, fileName = 'report.pdf') => {
     setStates(s => ({ ...s, [key]: { loading: true } }))
     try {
-      const { url, headers } = buildUiRequest(endpoint)
+      const request = buildUiRequest(endpoint)
 
-      const res = await fetch(url, { method: 'GET', headers })
+      const res = await fetch(request.url, { method: 'GET', headers: request.headers })
       if (!res.ok) {
         const text = await res.text().catch(() => '')
         throw new Error(text || `다운로드 실패 (${res.status})`)
@@ -330,21 +283,10 @@ export default function ReportsPage() {
   const runShare = async (endpoint: string) => {
     setStates(s => ({ ...s, ['share']: { loading: true } }))
     try {
-      const request = buildUiRequest('/api/ui/report-share')
       const topicMatch = endpoint.match(/topic=([^&]+)/)
       const topic = topicMatch ? decodeURIComponent(topicMatch[1]) : '추천'
-      setShareTopic(topic)
-      const headers: Record<string,string> = { ...request.headers, 'Content-Type': 'application/json' }
-
-      const res = await fetch(request.url, { method: 'POST', headers, body: JSON.stringify({ topic }) })
-      const json = await res.json()
-      if (!res.ok) throw new Error(json?.error || '공유 생성 실패')
-      // show share modal with url and code
-      setShareInfo({ shareId: json.shareId, url: json.url, code: json.code, expiresAt: json.expiresAt, topic: json.topic })
-      setShareList(Array.isArray(json?.list) ? json.list : shareList)
-      setShareOpen(true)
-      toast.show('공유 URL 생성됨 ✓')
-      try { await navigator.clipboard?.writeText(json.url) } catch {}
+      const shared = await shareManager.createShare(topic, { topic })
+      if (!shared) throw new Error('공유 생성 실패')
       setStates(s => ({ ...s, ['share']: { loading: false, msg: '공유 URL 생성됨' } }))
     } catch (e: any) {
       setStates(s => ({ ...s, ['share']: { loading: false, msg: String(e?.message || e) } }))
@@ -419,16 +361,19 @@ export default function ReportsPage() {
         })}
       </div>
       <ShareModal
-        open={shareOpen}
-        onClose={() => { setShareOpen(false); setShareInfo(null) }}
-        url={shareInfo?.url}
-        code={shareInfo?.code}
-        expiresAt={shareInfo?.expiresAt}
-        shares={shareList}
-        loading={shareListLoading}
-        onRefresh={() => { void loadShareList(shareTopic) }}
-        onRevoke={revokeShare}
-        revokingId={revokingShareId}
+        open={shareManager.open}
+        onClose={shareManager.close}
+        url={shareManager.info?.url}
+        code={shareManager.info?.code}
+        requiresCode={shareManager.requiresCode}
+        expiresAt={shareManager.info?.expiresAt}
+        shares={shareManager.list}
+        loading={shareManager.loading}
+        onRefresh={() => { void shareManager.loadList() }}
+        includeAll={shareManager.includeAll}
+        onChangeIncludeAll={shareManager.setIncludeAll}
+        onRevoke={shareManager.revokeShare}
+        revokingId={shareManager.revokingId}
       />
     </section>
   )

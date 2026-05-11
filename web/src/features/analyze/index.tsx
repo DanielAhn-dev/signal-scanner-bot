@@ -7,17 +7,8 @@ import Button from '../../components/ui/Button'
 import Skeleton from '../../components/Skeleton'
 import StockSearchInput from '../../components/StockSearchInput'
 import { useToast } from '../../components/ToastProvider'
-import { useRouteShare } from '../../hooks/useRouteShare'
-
-function buildAnalyzeShareUrl(code: string): string {
-  if (typeof window === 'undefined') return `/analyze?code=${encodeURIComponent(code)}`
-  const nextUrl = new URL(window.location.href)
-  nextUrl.pathname = '/analyze'
-  nextUrl.search = ''
-  nextUrl.hash = ''
-  nextUrl.searchParams.set('code', code)
-  return nextUrl.toString()
-}
+import ShareModal from '../../components/ShareModal'
+import { useShareManager } from '../../hooks/useShareManager'
 
 function computeSMA(closes: number[], period: number): number | null {
   if (closes.length < period) return null
@@ -69,7 +60,11 @@ export default function AnalyzePage() {
   const [quickStocks, setQuickStocks] = useState<Array<{ code: string; name: string }>>([])
   const inputRef = useRef<HTMLInputElement>(null)
   const toast = useToast()
-  const { shareRoute } = useRouteShare()
+  const shareManager = useShareManager({
+    endpoint: '/api/ui/route-share',
+    scopeKey: 'kind',
+    requiresCode: false,
+  })
 
   useEffect(() => {
     const load = async () => {
@@ -238,22 +233,37 @@ export default function AnalyzePage() {
       return
     }
 
-    const summary = shareSummaryLines.length > 0
-      ? shareSummaryLines.join(' · ')
-      : `${result?.name || code} 분석 링크`
-
-    const { url, mode } = await shareRoute({
-      path: '/analyze',
-      query: { code },
-      title: `${result?.name || code} 종목 분석`,
-      text: summary,
+    await shareManager.createShare('analyze', {
+      kind: 'analyze',
+      payload: {
+        stock: {
+          code,
+          name: result?.name,
+          price: result?.close,
+          changePct: result?.change_pct,
+          date: result?.date,
+          open: result?.open,
+          high: result?.high,
+          low: result?.low,
+          volume: result?.volume,
+          marketCap: result?.market_cap,
+          per: result?.per,
+          pbr: result?.pbr,
+          roe: result?.roe,
+        },
+        advisor: {
+          statusLabel: advisor?.statusLabel,
+          finalScore: advisor?.finalScore,
+          entryLow: advisor?.entryLow,
+          entryHigh: advisor?.entryHigh,
+          target1: advisor?.target1,
+          target2: advisor?.target2,
+          stopPrice: advisor?.stopPrice,
+        },
+        summaryLines: shareSummaryLines,
+        recentCloses: closes.slice(0, 10).reverse(),
+      },
     })
-
-    if (mode === 'native') {
-      toast.show('공유 창을 열었습니다')
-      return
-    }
-    toast.show(`링크를 복사했습니다: ${url}`)
   }
 
   return (
@@ -683,6 +693,21 @@ export default function AnalyzePage() {
           )}
         </div>
       )}
+      <ShareModal
+        open={shareManager.open}
+        onClose={shareManager.close}
+        url={shareManager.info?.url}
+        code={shareManager.info?.code}
+        requiresCode={shareManager.requiresCode}
+        expiresAt={shareManager.info?.expiresAt}
+        shares={shareManager.list}
+        loading={shareManager.loading}
+        onRefresh={() => { void shareManager.loadList('analyze') }}
+        includeAll={shareManager.includeAll}
+        onChangeIncludeAll={shareManager.setIncludeAll}
+        onRevoke={shareManager.revokeShare}
+        revokingId={shareManager.revokingId}
+      />
     </section>
   )
 }

@@ -18,6 +18,8 @@ import profile from '../handlers/ui/profile'
 import reportPdf from '../handlers/ui/report-pdf'
 import reportShare from '../handlers/ui/report-share'
 import reportShared from '../handlers/ui/report-shared'
+import routeShare from '../handlers/ui/route-share'
+import routeShared from '../handlers/ui/route-shared'
 import reportSnapshot from '../handlers/ui/report-snapshot'
 import reportWeb from '../handlers/ui/report-web'
 import scanCandidates from '../handlers/ui/scan-candidates'
@@ -57,6 +59,8 @@ const ROUTES: Record<string, UiHandler> = {
   'report-pdf': reportPdf,
   'report-share': reportShare,
   'report-shared': reportShared,
+  'route-share': routeShare,
+  'route-shared': routeShared,
   'report-snapshot': reportSnapshot,
   'report-web': reportWeb,
   'scan-candidates': scanCandidates,
@@ -135,7 +139,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   ])
 
   res.setHeader('Access-Control-Allow-Origin', allowOrigin)
-  res.setHeader('Access-Control-Allow-Methods', 'GET,POST,OPTIONS')
+  res.setHeader('Access-Control-Allow-Methods', 'GET,POST,DELETE,OPTIONS')
   res.setHeader('Access-Control-Allow-Headers', Array.from(allowHeaders).join(','))
   res.setHeader('Access-Control-Allow-Credentials', 'true')
   res.setHeader('Vary', 'Origin,Access-Control-Request-Headers')

@@ -35,6 +35,14 @@
             "destination": "/api/ui/report-shared"
         },
         {
+            "source": "/scan/shared",
+            "destination": "/api/ui/route-shared?kind=scan"
+        },
+        {
+            "source": "/analyze/shared",
+            "destination": "/api/ui/route-shared?kind=analyze"
+        },
+        {
             "source": "/api/ui/:route",
             "destination": "/api/ui?route=:route"
         },
