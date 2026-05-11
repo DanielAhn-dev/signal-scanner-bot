@@ -494,7 +494,7 @@ export default function DBViewPage() {
       </div>
 
       <div className="card mb-4" style={{ padding: 'var(--space-4)' }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 'var(--space-3)' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 'var(--space-3)', flexWrap: 'wrap', gap: 'var(--space-2)' }}>
           <div className="title-md">동기화 이력</div>
           <Button variant="ghost" onClick={() => { void loadSyncHistory() }} disabled={loading || syncing}>새로고침</Button>
         </div>
