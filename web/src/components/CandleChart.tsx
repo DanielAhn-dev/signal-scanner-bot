@@ -40,7 +40,7 @@ function toTimestamp(dateStr: string): number {
   return Math.floor(new Date(normalized).getTime() / 1000)
 }
 
-type TimeValue = { time: any; value: number }
+type TimeValue = { time: any; value: number; color?: string }
 
 function computeSmaLine(candles: OhlcvCandle[], period: number): TimeValue[] {
   if (period <= 0) return []
@@ -129,8 +129,13 @@ function computeForceLine(candles: OhlcvCandle[]): {
     const atr = trQueue.length ? trSum / trQueue.length : 0
     const band = atr * 1.2
     const time = toTimestamp(c.date) as any
+    const isBuyPressure = close >= avg
 
-    center.push({ time, value: Number(avg.toFixed(2)) })
+    center.push({
+      time,
+      value: Number(avg.toFixed(2)),
+      color: isBuyPressure ? '#22c55e' : '#ef4444',
+    })
     upper.push({ time, value: Number((avg + band).toFixed(2)) })
     lower.push({ time, value: Number((avg - band).toFixed(2)) })
   }
@@ -167,8 +172,9 @@ export default function CandleChart({
     const bg = isDark ? '#0b1220' : '#fbfdff'
     const textColor = isDark ? '#9fb1c7' : '#5f6f86'
     const gridColor = isDark ? 'rgba(148,163,184,0.14)' : 'rgba(120,138,161,0.16)'
-    const upColor = '#22ab94'
-    const downColor = '#f7525f'
+    // 국내 캔들 규칙: 상승=빨강, 하락=파랑
+    const upColor = '#ef4444'
+    const downColor = '#3b82f6'
 
     const chart = createChart(el, {
       width: el.clientWidth,
@@ -231,7 +237,7 @@ export default function CandleChart({
     const volData = sorted.map((c) => ({
       time: toTimestamp(c.date) as any,
       value: c.volume,
-      color: c.close >= c.open ? 'rgba(34,171,148,0.36)' : 'rgba(247,82,95,0.36)',
+      color: c.close >= c.open ? 'rgba(239,68,68,0.36)' : 'rgba(59,130,246,0.36)',
     }))
 
     candleSeries.setData(candleData)
@@ -269,7 +275,7 @@ export default function CandleChart({
       const force = computeForceLine(sorted)
       if (force.center.length) {
         const centerSeries = chart.addSeries(LineSeries, {
-          color: '#14b8a6',
+          color: '#22c55e',
           lineWidth: 3,
           lineStyle: LineStyle.Solid,
           title: '세력선',
@@ -344,17 +350,30 @@ export default function CandleChart({
 
       const markers: any[] = []
       const status = String(tradeSignal || '').toLowerCase()
-      const last = sorted[sorted.length - 1]
-      const lastTime = toTimestamp(last.date) as any
+      const isStrongBuy = status === 'strong_buy' || status === 'buy-now'
+      const isBuy = status === 'buy' || status === 'buy-on-pullback'
+      const isAddBuy =
+        status === 'add_buy' ||
+        status === 'add-buy' ||
+        status === 'additional_buy' ||
+        status === 'additional-buy' ||
+        status === 'scale_in' ||
+        status === 'scale-in'
+      const isSell = status === 'sell'
+      const isPartialSell = status === 'partial_sell' || status === 'partial-sell'
 
-      if (status === 'strong_buy' || status === 'buy' || status === 'buy-now' || status === 'buy-on-pullback') {
-        markers.push({
-          time: lastTime,
-          position: 'belowBar',
-          color: '#22c55e',
-          shape: 'arrowUp',
-          text: status === 'strong_buy' || status === 'buy-now' ? '강력매수' : '매수',
-        })
+      // 매수/추가매수는 마지막 봉 고정이 아니라, 실제 진입구간 터치가 확인된 봉에 마커를 표시한다.
+      if (entryLow != null && entryHigh != null && (isStrongBuy || isBuy || isAddBuy)) {
+        const entryTouched = [...sorted].reverse().find((c) => Number(c.low) <= Number(entryHigh) && Number(c.high) >= Number(entryLow))
+        if (entryTouched) {
+          markers.push({
+            time: toTimestamp(entryTouched.date) as any,
+            position: 'belowBar',
+            color: '#22c55e',
+            shape: 'arrowUp',
+            text: isAddBuy ? '추가매수' : isStrongBuy ? '강력매수' : '매수',
+          })
+        }
       }
 
       if (target1 != null) {
@@ -383,14 +402,25 @@ export default function CandleChart({
         }
       }
 
-      if (!markers.length && (status === 'partial_sell' || status === 'sell')) {
-        markers.push({
-          time: lastTime,
-          position: 'aboveBar',
-          color: status === 'partial_sell' ? '#3b82f6' : '#ef4444',
-          shape: 'arrowDown',
-          text: status === 'partial_sell' ? '익절' : '매도',
-        })
+      if (!markers.length && (isPartialSell || isSell) && sorted.length) {
+        const latest = sorted[sorted.length - 1]
+        if (target1 != null && Number(latest.high) >= Number(target1)) {
+          markers.push({
+            time: toTimestamp(latest.date) as any,
+            position: 'aboveBar',
+            color: '#3b82f6',
+            shape: 'arrowDown',
+            text: '익절',
+          })
+        } else if (stopLoss != null && Number(latest.low) <= Number(stopLoss)) {
+          markers.push({
+            time: toTimestamp(latest.date) as any,
+            position: 'belowBar',
+            color: '#ef4444',
+            shape: 'arrowDown',
+            text: '손절',
+          })
+        }
       }
 
       if (markers.length) {
@@ -430,6 +460,7 @@ export default function CandleChart({
     const s = String(tradeSignal || '').toLowerCase()
     if (s === 'strong_buy' || s === 'buy-now') return '강력매수'
     if (s === 'buy' || s === 'buy-on-pullback') return '매수'
+    if (s === 'add_buy' || s === 'add-buy' || s === 'additional_buy' || s === 'additional-buy' || s === 'scale_in' || s === 'scale-in') return '추가매수'
     if (s === 'partial_sell') return '익절'
     if (s === 'sell') return '손절/매도'
     if (s === 'watch') return '관망'

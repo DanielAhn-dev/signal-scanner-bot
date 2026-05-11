@@ -242,6 +242,7 @@ export default function AnalyzePage() {
     const status = String(advisor?.status || '').toLowerCase()
     if (status === 'strong_buy' || status === 'buy-now') return '강력매수'
     if (status === 'buy' || status === 'buy-on-pullback') return '매수'
+    if (status === 'add_buy' || status === 'add-buy' || status === 'additional_buy' || status === 'additional-buy' || status === 'scale_in' || status === 'scale-in') return '추가매수'
     if (status === 'partial_sell') return '익절'
     if (status === 'sell') return '손절/매도'
     if (status === 'watch') return '관망'
