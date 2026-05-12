@@ -54,7 +54,7 @@ SUPABASE_URL = os.environ.get("SUPABASE_URL", "")
 SUPABASE_KEY = os.environ.get("SUPABASE_SERVICE_ROLE_KEY", "") or os.environ.get("SUPABASE_SERVICE_KEY", "")
 
 if not SUPABASE_URL or not SUPABASE_KEY:
-    print("🚨 SUPABASE_URL / SERVICE_ROLE_KEY 미설정", file=sys.stderr)
+    print("[ERROR] SUPABASE_URL / SERVICE_ROLE_KEY 미설정", file=sys.stderr)
     sys.exit(1)
 
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
@@ -187,7 +187,7 @@ def _krx_post(form: dict, timeout: int = 20) -> "dict | None":
                     _patch_pykrx_session(session)
                     continue
                 # 2회 연속 LOGOUT → 전체 차단으로 판단
-                print("  ❌ KRX API 차단됨 (LOGOUT 연속) — 공매도 수집 중단")
+                print("  [BLOCKED] KRX API 차단됨 (LOGOUT 연속) — 공매도 수집 중단")
                 _krx_blocked = True
                 return None
             if not resp.ok:
@@ -283,9 +283,9 @@ def fetch_shorting_all_markets(trading_date: str) -> "dict[str, dict]":
         print("  [전략A] PyKRX 공매도 잔고 상위 종목 조회...")
         result = _fetch_short_via_pykrx(trading_date)
         if len(result) >= 50:
-            print(f"  📊 공매도 수집 종목: {len(result)}개 (PyKRX)")
+            print(f"  [DONE] 공매도 수집 종목: {len(result)}개 (PyKRX)")
             return result
-        print(f"  ⚠️ PyKRX 결과 부족 ({len(result)}개) → 직접 API 시도")
+        print(f"  [WARN] PyKRX 결과 부족 ({len(result)}개) → 직접 API 시도")
 
     # ── 전략 B: KRX 직접 API (HTTPS) ──
     print("  [전략B] KRX 직접 API 공매도 잔고 상위 종목 조회...")
@@ -338,7 +338,7 @@ def fetch_shorting_all_markets(trading_date: str) -> "dict[str, dict]":
             time.sleep(0.5)
         print(f"    종목별 조회: {ok}/{len(codes)} 성공")
 
-    print(f"  📊 공매도 수집 종목: {len(result)}개")
+    print(f"  [DONE] 공매도 수집 종목: {len(result)}개")
     return result
 
 
@@ -383,7 +383,7 @@ def upsert_daily_records(
     """stock_credit_short_daily 테이블에 upsert"""
     all_codes = set(short_map) | set(credit_map)
     if not all_codes:
-        print("  ⚠️ 저장할 데이터 없음")
+        print("  [WARN] 저장할 데이터 없음")
         return
 
     rows = []
@@ -406,7 +406,7 @@ def upsert_daily_records(
             supabase.table("stock_credit_short_daily").upsert(chunk).execute()
             saved += len(chunk)
         except Exception as e:
-            print(f"  ⚠️ stock_credit_short_daily upsert 에러: {e}")
+            print(f"  [WARN] stock_credit_short_daily upsert 에러: {e}")
             # 개별 재시도
             for row in chunk:
                 try:
@@ -415,7 +415,7 @@ def upsert_daily_records(
                 except Exception:
                     pass
 
-    print(f"  ✅ stock_credit_short_daily: {saved}/{len(rows)}개 저장")
+    print(f"  [OK] stock_credit_short_daily: {saved}/{len(rows)}개 저장")
 
 
 def update_stocks_latest(
@@ -455,12 +455,12 @@ def update_stocks_latest(
                 saved += 1
         except Exception as e:
             print(f"  ⚠️ stocks 업데이트 에러: {e}")
-    print(f"  ✅ stocks 테이블 최신값: {saved}개 업데이트")
+    print(f"  [OK] stocks 테이블 최신값: {saved}개 업데이트")
 
 
 # ── 메인 ──────────────────────────────────────────────────
 def main():
-    print(f"🚀 공매도/신용비율 ETL 시작: {datetime.now().isoformat()}")
+    print(f"[START] 공매도/신용비율 ETL 시작: {datetime.now().isoformat()}")
 
     # 기준 거래일 결정
     if "--date" in sys.argv:
@@ -470,14 +470,14 @@ def main():
         trading_date = get_last_trading_date()
 
     trading_iso = iso_from_yyyymmdd(trading_date)
-    print(f"📅 기준 거래일: {trading_date} ({trading_iso})")
+    print(f"[DATE] 기준 거래일: {trading_date} ({trading_iso})")
 
     # ── Step 1: 공매도 수집 ──
     short_map: dict[str, dict] = {}
     if not SKIP_SHORT:
         print("\n[1/2] 공매도 잔고 수집 (KRX 직접 API)...")
         short_map = fetch_shorting_all_markets(trading_date)
-        print(f"  📊 공매도 수집 종목: {len(short_map)}개")
+        print(f"  [DONE] 공매도 수집 종목: {len(short_map)}개")
     else:
         print("\n[1/2] 공매도 수집 스킵")
 
@@ -494,14 +494,14 @@ def main():
                 .execute()
             target_codes = [r["code"] for r in (res.data or [])]
         except Exception as e:
-            print(f"  ❌ 대상 종목 조회 실패: {e}")
+            print(f"  [ERROR] 대상 종목 조회 실패: {e}")
             target_codes = []
 
         if target_codes:
             print(f"  대상: {len(target_codes)}개 종목")
             credit_map = fetch_credit_ratios_batch(target_codes, delay=0.5)
         else:
-            print("  ⚠️ 대상 종목 없음")
+            print("  [WARN] 대상 종목 없음")
     else:
         print("\n[2/2] 신용비율 수집 스킵")
 
@@ -511,9 +511,9 @@ def main():
         upsert_daily_records(trading_iso, short_map, credit_map)
         update_stocks_latest(short_map, credit_map)
     else:
-        print("\n⚠️ 저장할 데이터 없음 — 종료")
+        print("\n[WARN] 저장할 데이터 없음 — 종료")
 
-    print(f"\n🏁 완료: {datetime.now().isoformat()}")
+    print(f"\n[END] 완료: {datetime.now().isoformat()}")
 
 
 if __name__ == "__main__":
