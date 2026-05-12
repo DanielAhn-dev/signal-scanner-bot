@@ -286,17 +286,22 @@ export default function Portfolio() {
     return 'C'
   }
 
+  const [serverTotal, setServerTotal] = useState<number | null>(null)
+  const [loadMoreLoading, setLoadMoreLoading] = useState(false)
+  const INITIAL_PAGE_SIZE = 20
+
   const load = useCallback(async ({ soft = false, force = false }: { soft?: boolean; force?: boolean } = {}) => {
     setRefreshing(true)
     if (!soft) setLoading(true)
     if (!soft) setError(null)
     try {
       // 초기 로드 pageSize를 20으로 제한 → 초기 응답 시간 8초에서 1초 이하로 단축
-      const params = new URLSearchParams({ page: '1', pageSize: '20', includeLots: '0', positionType: 'holding' })
+      const params = new URLSearchParams({ page: '1', pageSize: String(INITIAL_PAGE_SIZE), includeLots: '0', positionType: 'holding', withCount: '1' })
       if (force) params.set('cacheMs', '0')
       const json = await apiFetch(`/api/ui/positions?${params}`, { cacheMs: 3_000, timeoutMs: 15_000, retries: 1 })
       const rows = Array.isArray(json?.data) ? json.data : []
       setAllRows(rows)
+      setServerTotal(json?.count != null ? Number(json.count) : null)
       const nextFolders = Array.isArray(json?.accounts)
         ? json.accounts
             .map((item: any) => ({
@@ -334,6 +339,22 @@ export default function Portfolio() {
       setRefreshing(false)
     }
   }, [])
+
+  const loadMore = useCallback(async () => {
+    setLoadMoreLoading(true)
+    try {
+      const nextPage = Math.floor(allRows.length / INITIAL_PAGE_SIZE) + 1
+      const params = new URLSearchParams({ page: String(nextPage), pageSize: String(INITIAL_PAGE_SIZE), includeLots: '0', positionType: 'holding', withCount: '1' })
+      const json = await apiFetch(`/api/ui/positions?${params}`, { cacheMs: 3_000, timeoutMs: 15_000, retries: 1 })
+      const newRows = json?.data ?? []
+      setAllRows((prev) => [...prev, ...newRows])
+      setServerTotal(json?.count != null ? Number(json.count) : null)
+    } catch (e: any) {
+      setError(e?.message || String(e))
+    } finally {
+      setLoadMoreLoading(false)
+    }
+  }, [allRows.length])
 
   useEffect(() => { load() }, [load])
 
@@ -1445,6 +1466,18 @@ export default function Portfolio() {
       {totalPages > 1 && (
         <div className="pagination-wrap">
           <Pagination page={page} pageSize={pageSize} total={total} onChange={setPage} />
+        </div>
+      )}
+
+      {serverTotal != null && allRows.length < serverTotal && (
+        <div className="pagination-wrap" style={{ justifyContent: 'center' }}>
+          <Button
+            variant="secondary"
+            onClick={loadMore}
+            disabled={loadMoreLoading}
+          >
+            {loadMoreLoading ? '로딩 중…' : `더 보기 (${allRows.length} / ${serverTotal})`}
+          </Button>
         </div>
       )}
 

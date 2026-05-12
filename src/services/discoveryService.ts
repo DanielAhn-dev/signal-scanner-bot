@@ -36,12 +36,16 @@ type InvestorDailyRow = {
 
 type SectorRow = {
   id: string;
+  name: string | null;
   score: number | null;
 };
 
 export type DiscoveryPick = {
   code: string;
   name: string;
+  sectorId: string | null;
+  sectorName: string | null;
+  sectorRawScore: number | null;
   marketCap: number;
   pbr: number | null;
   per: number | null;
@@ -247,16 +251,19 @@ export async function discoverMultibagger(
   const [trendMap, smartMoneyMap, sectorResp] = await Promise.all([
     fetchLatestTwoTrendsByCode(supabase, codes),
     fetchSmartMoney12wByCode(supabase, codes),
-    supabase.from("sectors").select("id, score").returns<SectorRow[]>(),
+    supabase.from("sectors").select("id, name, score").returns<SectorRow[]>(),
   ]);
 
   if (sectorResp.error) {
     throw new Error(`sectors 조회 실패: ${sectorResp.error.message}`);
   }
 
-  const sectorScoreMap = new Map<string, number | null>();
+  const sectorMetaMap = new Map<string, { name: string | null; score: number | null }>();
   for (const s of sectorResp.data ?? []) {
-    sectorScoreMap.set(String(s.id), toNum(s.score));
+    sectorMetaMap.set(String(s.id), {
+      name: s.name ?? null,
+      score: toNum(s.score),
+    });
   }
 
   const picks: DiscoveryPick[] = [];
@@ -300,7 +307,8 @@ export async function discoverMultibagger(
 
     const smartMoney12w = Number(smartMoneyMap.get(stock.code) ?? 0);
     const smartMoneyRatioPct = marketCap > 0 ? (smartMoney12w / marketCap) * 100 : null;
-    const sectorScore = stock.sector_id ? (sectorScoreMap.get(stock.sector_id) ?? null) : null;
+    const sectorMeta = stock.sector_id ? (sectorMetaMap.get(stock.sector_id) ?? null) : null;
+    const sectorScore = sectorMeta?.score ?? null;
 
     const score = calculateLongtermScore({
       pbr,
@@ -317,6 +325,9 @@ export async function discoverMultibagger(
     picks.push({
       code: stock.code,
       name: stock.name,
+      sectorId: stock.sector_id,
+      sectorName: sectorMeta?.name ?? stock.sector_id,
+      sectorRawScore: sectorScore,
       marketCap,
       pbr,
       per,

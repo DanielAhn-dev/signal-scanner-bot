@@ -601,6 +601,7 @@ function normalizeStock(input: ScoreCandidateRow["stock"]): {
   market?: string | null;
   marketCap?: number | null;
   universeLevel?: string | null;
+  isSectorLeader?: boolean | null;
 } | null {
   const row = Array.isArray(input) ? input[0] : input;
   if (!row) return null;
@@ -614,6 +615,9 @@ function normalizeStock(input: ScoreCandidateRow["stock"]): {
     market: String((row as Record<string, unknown>).market ?? "") || null,
     marketCap: toNumber((row as Record<string, unknown>).market_cap, 0) || null,
     universeLevel: String((row as Record<string, unknown>).universe_level ?? "") || null,
+    isSectorLeader: typeof (row as Record<string, unknown>).is_sector_leader === "boolean"
+      ? (row as Record<string, unknown>).is_sector_leader as boolean
+      : null,
   };
 }
 
@@ -1209,13 +1213,13 @@ async function fetchLatestRankedRows(payload: {
     "total_score",
     "signal",
     "factors",
-    "stock:stocks!inner(code, name, close, rsi14, liquidity, market, market_cap, universe_level)",
+    "stock:stocks!inner(code, name, close, rsi14, liquidity, market, market_cap, universe_level, is_sector_leader)",
   ].join(",");
   const selectWithoutSignal = [
     "code",
     "total_score",
     "factors",
-    "stock:stocks!inner(code, name, close, rsi14, liquidity, market, market_cap, universe_level)",
+    "stock:stocks!inner(code, name, close, rsi14, liquidity, market, market_cap, universe_level, is_sector_leader)",
   ].join(",");
 
   const buildQuery = (selectClause: string) => {
@@ -1262,6 +1266,10 @@ async function fetchLatestRankedRows(payload: {
       ? per / earningsGrowthPct
       : null;
 
+    const rawSma20 = Number(rawFactors.sma20);
+    const sma20 = Number.isFinite(rawSma20) && rawSma20 > 0 ? rawSma20 : null;
+    const aboveSma20 = sma20 != null && stock.close > 0 ? stock.close > sma20 : null;
+
     rankedRows.push({
       code: row.code,
       close: stock.close,
@@ -1276,6 +1284,8 @@ async function fetchLatestRankedRows(payload: {
       market: stock.market ?? null,
       marketCap: stock.marketCap ?? null,
       universeLevel: stock.universeLevel ?? null,
+      isSectorLeader: stock.isSectorLeader ?? null,
+      aboveSma20,
       stableTurn: String(rawFactors.stable_turn ?? "").trim() || null,
       stableTrust: Number.isFinite(Number(rawFactors.stable_turn_trust))
         ? Number(rawFactors.stable_turn_trust)
@@ -1346,6 +1356,7 @@ async function selectDailyAddOnCandidates(payload: {
 
 async function selectMondayCandidates(payload: {
   supabase: SupabaseClientAny;
+  chatId: number;
   minBuyScore: number;
   limit: number;
   heldCodes: Set<string>;
@@ -1357,6 +1368,21 @@ async function selectMondayCandidates(payload: {
     supabase: payload.supabase,
     limit: Math.max(payload.limit * 20, 300),
   });
+
+  // 스탑로스 쿨다운: 최근 5영업일(7일) 내 stop-loss 매도 종목은 재진입 차단
+  const cooldownSince = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+  const { data: stoplossActions } = await payload.supabase
+    .from("virtual_autotrade_actions")
+    .select("code")
+    .eq("chat_id", payload.chatId)
+    .eq("action_type", "SELL")
+    .eq("reason", "stop-loss")
+    .gte("created_at", cooldownSince)
+    .limit(100);
+  const cooldownCodes = new Set<string>(
+    (stoplossActions ?? []).map((r: { code?: string | null }) => String(r.code ?? "")).filter(Boolean)
+  );
+  const heldAndCooldownCodes = new Set<string>([...payload.heldCodes, ...cooldownCodes]);
   if (!latestAsof) {
     return {
       candidates: [],
@@ -1420,7 +1446,7 @@ async function selectMondayCandidates(payload: {
     rows: rankedRows,
     preferredMinBuyScore: staleAdjustedMinBuyScore,
     limit: payload.limit,
-    heldCodes: payload.heldCodes,
+    heldCodes: heldAndCooldownCodes,
     marketPolicy: payload.marketPolicy,
     entryProfile,
     pullbackCandidateCodes,
@@ -1431,8 +1457,10 @@ async function selectMondayCandidates(payload: {
     latestAsof,
     guardNote:
       staleBusinessDays === 1
-        ? `점수 기준일 1영업일 지연으로 최소점수 +2 보수 적용 (기준일 ${latestAsof})`
-        : undefined,
+        ? `점수 기준일 1영업일 지연으로 최소점수 +2 보수 적용 (기준일 ${latestAsof})${cooldownCodes.size > 0 ? ` · 스탑로스 쿨다운 ${cooldownCodes.size}종목 제외` : ""}`
+        : cooldownCodes.size > 0
+          ? `스탑로스 쿨다운 ${cooldownCodes.size}종목 제외`
+          : undefined,
   };
 }
 
@@ -1699,6 +1727,7 @@ async function runMondayBuyForUser(payload: {
 
   const candidateSelection = await selectMondayCandidates({
     supabase: payload.supabase,
+    chatId,
     minBuyScore: marketRegimeGuard.minBuyScore,
     limit: resolveCandidateProbeLimit(remainSlots),
     heldCodes,
@@ -3412,6 +3441,7 @@ async function runDailyReviewForUser(payload: {
     } else {
       const candidateSelection = await selectMondayCandidates({
         supabase: payload.supabase,
+        chatId,
         minBuyScore: buyConstraint.minBuyScore,
         limit: resolveCandidateProbeLimit(buySlots),
         heldCodes,

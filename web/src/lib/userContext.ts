@@ -9,6 +9,19 @@ export type StoredProfile = {
 import { supabase } from './supabase'
 
 const RUNTIME_API_BASE_KEY = 'signal_scanner_api_base'
+const PROFILE_UPDATED_EVENT = 'signal-scanner:profile-updated'
+
+function emitProfileUpdated() {
+  if (typeof window === 'undefined') return
+  window.dispatchEvent(new Event(PROFILE_UPDATED_EVENT))
+}
+
+export function onProfileUpdated(listener: () => void): () => void {
+  if (typeof window === 'undefined') return () => {}
+  const handler = () => listener()
+  window.addEventListener(PROFILE_UPDATED_EVENT, handler)
+  return () => window.removeEventListener(PROFILE_UPDATED_EVENT, handler)
+}
 
 export function readProfile(): StoredProfile | null {
   try {
@@ -27,6 +40,7 @@ export function saveProfile(patch: Partial<StoredProfile>) {
   try {
     const merged = { ...existing, ...patch }
     localStorage.setItem('profile', JSON.stringify(merged))
+    emitProfileUpdated()
 
     // try to sync to server if we have a clientId (best-effort, fire-and-forget)
     ;(async () => {
@@ -119,7 +133,10 @@ function buildProfileHeaders(accessToken?: string): Record<string, string> {
 }
 
 export function clearProfile() {
-  try { localStorage.removeItem('profile') } catch { /* ignore */ }
+  try {
+    localStorage.removeItem('profile')
+    emitProfileUpdated()
+  } catch { /* ignore */ }
 }
 
 export function normalizeChatId(raw: unknown): string {

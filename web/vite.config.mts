@@ -35,6 +35,12 @@ export default defineConfig(({ mode }) => {
       'import.meta.env.VITE_KAKAO_JS_KEY': JSON.stringify(readEnv('VITE_KAKAO_JS_KEY', 'KAKAO_JS_KEY')),
       'import.meta.env.VITE_SHARE_PUBLIC_ORIGIN': JSON.stringify(readEnv('VITE_SHARE_PUBLIC_ORIGIN', 'WEB_PUBLIC_ORIGIN', 'UI_PUBLIC_ORIGIN')),
     },
+    test: {
+      environment: 'jsdom',
+      globals: true,
+      setupFiles: ['./src/test/setup.ts'],
+      include: ['src/**/*.{test,spec}.{ts,tsx}'],
+    },
     server: {
       port: 5173,
       proxy: {

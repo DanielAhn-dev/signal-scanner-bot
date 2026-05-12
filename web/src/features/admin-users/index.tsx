@@ -204,6 +204,18 @@ export default function AdminUsers() {
     }
   }
 
+  // 초기 접근 권한 확인 중 (accessInfo가 아직 null이면 로딩 중)
+  if (accessInfo === null) {
+    return (
+      <div className="access-denied-page">
+        <div className="access-denied-card">
+          <div className="auth-status-spinner" aria-hidden style={{ margin: '0 auto 12px' }} />
+          <p className="access-denied-desc">접근 권한 확인 중…</p>
+        </div>
+      </div>
+    )
+  }
+
   if (!isAdmin) {
     return (
       <div className="access-denied-page">

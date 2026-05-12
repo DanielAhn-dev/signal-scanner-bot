@@ -25,6 +25,14 @@ type InvestorFlowRow = {
   institution: number | null
 }
 
+type IndicatorSnapshot = {
+  trade_date: string | null
+  sma20: number | null
+  sma50: number | null
+  sma200: number | null
+  rsi14: number | null
+}
+
 type CreditShortProxy = {
   riskScore: number
   level: 'low' | 'moderate' | 'high'
@@ -40,6 +48,133 @@ type PerShareMetrics = {
     confidence: 'high' | 'medium' | 'low'
     growthPct: number | null
     label: string
+  }
+}
+
+type AdvisorSignalStatus = 'strong_buy' | 'buy' | 'watch' | 'partial_sell' | 'sell'
+
+function resolveAdvisorSignal(input: {
+  currentPrice: number | null
+  finalScore: number | null
+  technicalScore: number | null
+  statusFromPlan: string | null | undefined
+  entryLow: number | null
+  entryHigh: number | null
+  stopPrice: number | null
+  target1: number | null
+  riskReward: number | null
+  conviction: number | null
+}): { status: AdvisorSignalStatus; statusLabel: string; reason: string } {
+  const {
+    currentPrice,
+    finalScore,
+    technicalScore,
+    statusFromPlan,
+    entryLow,
+    entryHigh,
+    stopPrice,
+    target1,
+    riskReward,
+    conviction,
+  } = input
+
+  const s = String(statusFromPlan || '').toLowerCase()
+  const score = Number.isFinite(Number(finalScore)) ? Number(finalScore) : Number(technicalScore)
+  const hasScore = Number.isFinite(score)
+  const tech = Number.isFinite(Number(technicalScore)) ? Number(technicalScore) : null
+  const hasTech = tech != null
+  const rr = Number.isFinite(Number(riskReward)) ? Number(riskReward) : null
+  const cv = Number.isFinite(Number(conviction)) ? Number(conviction) : null
+  const price = Number.isFinite(Number(currentPrice)) ? Number(currentPrice) : null
+  const entryMid =
+    entryLow != null && entryHigh != null
+      ? (Number(entryLow) + Number(entryHigh)) / 2
+      : null
+  const entryDistPct =
+    price != null && entryMid != null && entryMid > 0
+      ? Math.abs(((price - entryMid) / entryMid) * 100)
+      : null
+
+  const inEntryBand =
+    price != null && entryLow != null && entryHigh != null
+      ? price >= Number(entryLow) && price <= Number(entryHigh)
+      : false
+
+  // 매수 조건은 보수적으로 유지하되, 진입 밴드 인근(소폭 이탈)까지 허용해 신호 누락을 줄인다.
+  const nearEntryBand =
+    price != null && entryLow != null && entryHigh != null
+      ? price >= Number(entryLow) * 0.985 && price <= Number(entryHigh) * 1.015
+      : false
+
+  if (price != null && stopPrice != null && price <= Number(stopPrice)) {
+    return { status: 'sell', statusLabel: '손절/매도', reason: '현재가가 손절 기준 이하로 이탈' }
+  }
+
+  if (price != null && target1 != null && price >= Number(target1)) {
+    return { status: 'partial_sell', statusLabel: '익절', reason: '현재가가 1차 목표가 도달/상회' }
+  }
+
+  if (s === 'wait') {
+    return { status: 'watch', statusLabel: '관망', reason: '플랜 상태가 관망(wait) 구간' }
+  }
+
+  if (!hasScore || !hasTech) {
+    return {
+      status: 'watch',
+      statusLabel: '관망',
+      reason: '점수 데이터 불충분(보수적 관망)',
+    }
+  }
+
+  // buy-now는 곧바로 강력매수로 두지 않고, 점수+진입구간을 동시에 만족할 때만 강력매수로 본다.
+  const strongBuyOk =
+    s === 'buy-now' &&
+    inEntryBand &&
+    score >= 76 &&
+    tech >= 68 &&
+    (rr == null || rr >= 1.35) &&
+    (cv == null || cv >= 66)
+
+  if (strongBuyOk) {
+    return {
+      status: 'strong_buy',
+      statusLabel: '강력매수',
+      reason: `진입구간 내 + 고점수(${score.toFixed(1)}/${tech.toFixed(1)}) + 손익비/확신도 충족`,
+    }
+  }
+
+  const entryTightEnough = entryDistPct == null || entryDistPct <= 1.0
+  const rrOk = rr == null || rr >= 1.15
+  const cvOk = cv == null || cv >= 55
+  const buyNowScoreOk = score >= 66 && tech >= 62
+  const pullbackScoreOk = score >= 62 && tech >= 58
+
+  if (
+    nearEntryBand &&
+    entryTightEnough &&
+    rrOk &&
+    cvOk &&
+    ((s === 'buy-now' && buyNowScoreOk) || (s === 'buy-on-pullback' && pullbackScoreOk))
+  ) {
+    return {
+      status: 'buy',
+      statusLabel: '매수',
+      reason: `진입 인근 + 점수(${score.toFixed(1)}/${tech.toFixed(1)}) + 손익비/확신도 조건 충족`,
+    }
+  }
+
+  if (nearEntryBand && (s === 'buy-now' || s === 'buy-on-pullback')) {
+    return {
+      status: 'watch',
+      statusLabel: '관망',
+      reason: `진입 인근이지만 필터 미충족(점수 ${score.toFixed(1)}/${tech.toFixed(1)}, RR ${rr?.toFixed(2) ?? '-'}, 확신 ${cv?.toFixed(1) ?? '-'})`,
+    }
+  }
+
+  return {
+    status: 'watch',
+    statusLabel: '관망',
+    reason: '진입/익절/손절 트리거 조건 미충족',
   }
 }
 
@@ -83,6 +218,99 @@ function normalizeSeriesRow(raw: any): LatestRow {
   }
 }
 
+function sanitizeTimeSeries(series: LatestRow[]): LatestRow[] {
+  if (!Array.isArray(series) || !series.length) return []
+
+  const sortedDesc = [...series]
+    .filter((row) => !!row?.date)
+    .sort((a, b) => String(b.date).localeCompare(String(a.date)))
+
+  const dedupByDate = new Map<string, LatestRow>()
+  for (const row of sortedDesc) {
+    const date = String(row.date || '').trim()
+    if (!date) continue
+
+    const open = asNum(row.open)
+    const high = asNum(row.high)
+    const low = asNum(row.low)
+    const close = asNum(row.close)
+    const volume = asNum(row.volume)
+    const value = asNum(row.value)
+
+    if (open == null || high == null || low == null || close == null) continue
+    if (open <= 0 || high <= 0 || low <= 0 || close <= 0) continue
+
+    dedupByDate.set(date, {
+      date,
+      open,
+      high: Math.max(high, open, close, low),
+      low: Math.min(low, open, close, high),
+      close,
+      volume: volume != null && volume > 0 ? volume : 0,
+      value: value != null && value >= 0 ? value : null,
+    })
+  }
+
+  const dedupedDesc = [...dedupByDate.values()].sort((a, b) => String(b.date).localeCompare(String(a.date)))
+  if (dedupedDesc.length <= 1) return dedupedDesc
+
+  const filtered: LatestRow[] = []
+  let prevClose: number | null = null
+
+  for (const row of dedupedDesc) {
+    const close = asNum(row.close)
+    const high = asNum(row.high)
+    const low = asNum(row.low)
+    if (close == null || high == null || low == null) continue
+
+    if (prevClose != null && prevClose > 0) {
+      const minRatio = low / prevClose
+      const maxRatio = high / prevClose
+
+      // 분할 미보정/오입력으로 보이는 비정상 급변 봉을 제외한다.
+      if (minRatio < 0.35 || maxRatio > 2.2) {
+        continue
+      }
+    }
+
+    filtered.push(row)
+    prevClose = close
+  }
+
+  return filtered
+}
+
+function computeSmaFromSeries(series: LatestRow[], period: number): number | null {
+  if (!Number.isFinite(period) || period <= 0) return null
+  const closes = series
+    .map((row) => asNum(row.close))
+    .filter((v): v is number => v != null)
+  if (closes.length < period) return null
+  const subset = closes.slice(0, period)
+  const avg = subset.reduce((acc, v) => acc + v, 0) / period
+  return Number(avg.toFixed(2))
+}
+
+function computeEmaFromSeries(series: LatestRow[], period: number): number | null {
+  if (!Number.isFinite(period) || period <= 0) return null
+  const closesDesc = series
+    .map((row) => asNum(row.close))
+    .filter((v): v is number => v != null)
+  if (closesDesc.length < period) return null
+
+  const closesAsc = [...closesDesc].reverse()
+  let ema =
+    closesAsc.slice(0, period).reduce((acc, v) => acc + v, 0) /
+    period
+  const k = 2 / (period + 1)
+
+  for (let i = period; i < closesAsc.length; i += 1) {
+    ema = closesAsc[i] * k + ema * (1 - k)
+  }
+
+  return Number(ema.toFixed(2))
+}
+
 async function fetchTimeSeries(supabase: any, code: string): Promise<LatestRow[]> {
   const attemptSpecs: Array<{
     table: string
@@ -108,7 +336,7 @@ async function fetchTimeSeries(supabase: any, code: string): Promise<LatestRow[]
           .select(spec.select)
           .eq(spec.codeCol, targetCode)
           .order(spec.dateCol, { ascending: false })
-          .limit(60)
+          .limit(320)
       }
 
       const first = await run(code)
@@ -134,15 +362,18 @@ async function fetchTimeSeries(supabase: any, code: string): Promise<LatestRow[]
 
 async function fetchStockProfile(supabase: any, code: string): Promise<any | null> {
   const selectAttempts = [
-    // migration 적용 후: credit_ratio, short_ratio, short_balance 포함
+    // 최신 스키마: 공매도/신용 + 기술지표 포함
+    'code,name,sector_id,close,updated_at,description,market_cap,per,pbr,eps,bps,foreign_ratio,credit_ratio,short_ratio,short_balance,sma20,sma50,rsi14',
+    // 일부 컬럼이 빠진 스키마 대비
+    'code,name,sector_id,close,updated_at,description,market_cap,per,pbr,eps,bps,foreign_ratio,sma20,sma50,rsi14',
+    'code,name,sector_id,close,updated_at,description,market_cap,per,pbr,eps,bps,foreigner_ratio,sma20,sma50,rsi14',
+    // 기술지표 컬럼이 아직 없을 수 있는 과거 스키마
     'code,name,sector_id,close,updated_at,description,market_cap,per,pbr,eps,bps,foreign_ratio,credit_ratio,short_ratio,short_balance',
     'code,name,sector_id,close,updated_at,description,market_cap,per,pbr,eps,bps,foreign_ratio',
     'code,name,sector_id,close,updated_at,description,market_cap,per,pbr,eps,bps,foreigner_ratio',
     'code,name,sector_id,close,updated_at,description,market_cap,per,pbr,eps,bps',
     'code,name,sector_id,close,updated_at,description',
     'code,name,sector_id,close,updated_at',
-    'code,name,sector_id,close,updated_at,description,market_cap,per,pbr,eps,bps,foreign_ratio,sma20,sma50,rsi14',
-    'code,name,sector_id,close,updated_at,description,market_cap,per,pbr,eps,bps,foreigner_ratio,sma20,sma50,rsi14',
   ]
 
   for (const select of selectAttempts) {
@@ -155,6 +386,56 @@ async function fetchStockProfile(supabase: any, code: string): Promise<any | nul
 
       if (!error) {
         return data?.[0] || null
+      }
+    } catch {
+      // continue
+    }
+  }
+
+  return null
+}
+
+async function fetchLatestIndicators(supabase: any, code: string): Promise<IndicatorSnapshot | null> {
+  const attempts = [
+    { table: 'daily_indicators', select: 'trade_date,sma20,sma50,sma200,rsi14', codeCol: 'code', dateCol: 'trade_date' },
+    { table: 'daily_indicators', select: 'trade_date,sma20,sma50,sma200,rsi14', codeCol: 'ticker', dateCol: 'trade_date' },
+  ]
+
+  for (const spec of attempts) {
+    try {
+      const run = async (targetCode: string) => {
+        return await supabase
+          .from(spec.table)
+          .select(spec.select)
+          .eq(spec.codeCol, targetCode)
+          .order(spec.dateCol, { ascending: false })
+          .limit(1)
+      }
+
+      const first = await run(code)
+      if (!first.error && first.data && first.data.length) {
+        const row = first.data[0] as any
+        return {
+          trade_date: row?.trade_date ?? null,
+          sma20: asNum(row?.sma20),
+          sma50: asNum(row?.sma50),
+          sma200: asNum(row?.sma200),
+          rsi14: asNum(row?.rsi14),
+        }
+      }
+
+      if (spec.codeCol === 'ticker') {
+        const second = await run(`A${code}`)
+        if (!second.error && second.data && second.data.length) {
+          const row = second.data[0] as any
+          return {
+            trade_date: row?.trade_date ?? null,
+            sma20: asNum(row?.sma20),
+            sma50: asNum(row?.sma50),
+            sma200: asNum(row?.sma200),
+            rsi14: asNum(row?.rsi14),
+          }
+        }
       }
     } catch {
       // continue
@@ -524,6 +805,19 @@ async function buildAdvisorPayload(input: {
       ? Math.max(0, Math.min(100, Number((finalScore - proxyPenalty).toFixed(1))))
       : null
 
+  const normalizedSignal = resolveAdvisorSignal({
+    currentPrice,
+    finalScore: finalScoreAdjusted,
+    technicalScore: fallbackScore ?? null,
+    statusFromPlan: plan.status,
+    entryLow: plan.entryLow,
+    entryHigh: plan.entryHigh,
+    stopPrice: plan.stopPrice,
+    target1: plan.target1,
+    riskReward: plan.riskReward,
+    conviction: plan.conviction,
+  })
+
   let personalLines: string[] = []
   if (chatId) {
     personalLines = await (async () => {
@@ -544,8 +838,9 @@ async function buildAdvisorPayload(input: {
     technicalScore: fallbackScore ?? null,
     fundamentalScore,
     finalScore: finalScoreAdjusted,
-    status: plan.status,
-    statusLabel: plan.statusLabel,
+    status: normalizedSignal.status,
+    statusLabel: normalizedSignal.statusLabel,
+    signalReason: normalizedSignal.reason,
     summary: plan.summary,
     entryLow: plan.entryLow,
     entryHigh: plan.entryHigh,
@@ -606,7 +901,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (!code) return res.status(400).json({ error: 'Missing code parameter' })
 
   try {
-    const [series, stock, fundamentalsResp, flow, realtimeData] = await Promise.all([
+    const [series, stock, fundamentalsResp, flow, realtimeData, indicatorSnapshot] = await Promise.all([
       fetchTimeSeries(supabase, code),
       fetchStockProfile(supabase, code),
       supabase
@@ -617,6 +912,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         .limit(1),
       fetchInvestorFlow(supabase, code),
       fetchRealtimeStockData(code).catch(() => null),
+      fetchLatestIndicators(supabase, code),
     ])
 
     let fund: any = fundamentalsResp.data?.[0] || null
@@ -644,7 +940,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       }
     }
 
-    const normalizedSeries = [...series]
+    const normalizedSeries = sanitizeTimeSeries(series)
     if (!normalizedSeries.length && stock) {
       normalizedSeries.push({
         date: toIsoDate(stock.updated_at),
@@ -727,6 +1023,24 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       asNum((fund as any)?.netIncomeGrowthPct) ??
       asNum((fund as any)?.computed?.netIncomeGrowthPct)
 
+    const resolvedSma20 = asNum((stock as any)?.sma20) ?? asNum(indicatorSnapshot?.sma20)
+    const resolvedSma50 = asNum((stock as any)?.sma50) ?? asNum(indicatorSnapshot?.sma50)
+    const resolvedSma200 =
+      asNum((stock as any)?.sma200) ??
+      asNum(indicatorSnapshot?.sma200) ??
+      computeSmaFromSeries(normalizedSeries, 200)
+    const resolvedSma240 = computeSmaFromSeries(normalizedSeries, 240)
+    const resolvedSma244 = computeSmaFromSeries(normalizedSeries, 244)
+    const resolvedEma20 = computeEmaFromSeries(normalizedSeries, 20)
+    const resolvedEma50 = computeEmaFromSeries(normalizedSeries, 50)
+    const resolvedEma200 = computeEmaFromSeries(normalizedSeries, 200)
+    const resolvedEma240 = computeEmaFromSeries(normalizedSeries, 240)
+    const resolvedEma244 = computeEmaFromSeries(normalizedSeries, 244)
+    const resolvedRsi14 = asNum((stock as any)?.rsi14) ?? asNum(indicatorSnapshot?.rsi14)
+    const resolvedForeignRatio =
+      asNum((stock as any)?.foreign_ratio ?? (stock as any)?.foreigner_ratio) ??
+      asNum(realtimeData?.foreignRatio)
+
     const perShareMetrics = derivePerShareMetrics({
       price: currentPrice,
       per: resolvedPer,
@@ -782,13 +1096,21 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             bps: perShareMetrics.bps,
             peg: perShareMetrics.peg,
             peg_meta: perShareMetrics.pegMeta,
-            foreign_ratio: asNum((stock as any).foreign_ratio ?? (stock as any).foreigner_ratio),
+            foreign_ratio: resolvedForeignRatio,
             fundamentals_as_of: fund?.as_of ?? null,
             roe: asNum(fund?.roe),
             debt_ratio: asNum(fund?.debt_ratio),
-            sma20: asNum((stock as any).sma20),
-            sma50: asNum((stock as any).sma50),
-            rsi14: asNum((stock as any).rsi14),
+            sma20: resolvedSma20,
+            sma50: resolvedSma50,
+            sma200: resolvedSma200,
+            sma240: resolvedSma240,
+            sma244: resolvedSma244,
+            ema20: resolvedEma20,
+            ema50: resolvedEma50,
+            ema200: resolvedEma200,
+            ema240: resolvedEma240,
+            ema244: resolvedEma244,
+            rsi14: resolvedRsi14,
           }
         : null,
       flow: flow
