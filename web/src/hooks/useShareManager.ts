@@ -92,6 +92,7 @@ export function useShareManager(options: UseShareManagerOptions) {
       const headers = { ...request.headers, 'Content-Type': 'application/json' }
       const payload = {
         ...body,
+        requiresCode,
         [scopeKey]: nextScope,
       }
       const res = await fetch(request.url, {

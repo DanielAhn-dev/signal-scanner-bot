@@ -155,6 +155,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const kind = resolveKind(req.body?.kind || req.query.kind)
     const topic = toTopic(kind)
     const payload = req.body?.payload
+    const requiresCode = String(req.body?.requiresCode || req.query.requiresCode || '0') === '1'
+      || req.body?.requiresCode === true
     if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
       return res.status(400).json({ error: 'payload object required' })
     }
@@ -162,6 +164,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const bodyText = JSON.stringify({
       schema: kind === 'analyze' ? 'analyze-share-v1' : 'scan-share-v1',
       generatedAt: new Date().toISOString(),
+      sharePolicy: { requiresCode },
       ...payload,
     })
 
@@ -175,7 +178,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       reportDate: getKstDateKey(),
       audienceKey,
       bodyText,
-      sourceLabel: kind === 'analyze' ? 'analyze-share-v1' : 'scan-share-v1',
+      sourceLabel: kind === 'analyze' ? 'analyze-share-v1' : kind === 'highlights' ? 'highlights-share-v1' : 'scan-share-v1',
       expiresAt,
     })
 
@@ -184,6 +187,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       ok: true,
       kind,
       url,
+      code: requiresCode ? share.inviteCode : null,
       shareId: share.shareId,
       expiresAt: share.expiresAt,
     })

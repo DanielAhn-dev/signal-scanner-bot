@@ -23,6 +23,10 @@ function hashInviteCode(secret: string, inviteCode: string): string {
   return crypto.createHmac('sha256', secret).update(inviteCode.trim().toUpperCase()).digest('hex')
 }
 
+function hashShareAccessToken(secret: string, accessToken: string): string {
+  return crypto.createHmac('sha256', secret).update(accessToken.trim()).digest('hex')
+}
+
 function randomAlphaNumeric(length: number): string {
   return crypto.randomBytes(length * 2).toString('base64').replace(/[^A-Za-z0-9]/g, '').slice(0, length).toUpperCase()
 }
@@ -37,6 +41,10 @@ export function generateInviteCode(): string {
 
 export function generatePublicShareToken(): string {
   return randomToken(18)
+}
+
+export function generateShareAccessToken(): string {
+  return randomToken(24)
 }
 
 export function generateShareId(): string {
@@ -153,7 +161,7 @@ export async function getReportShareByPublicToken(params: {
   const { supabase, publicToken } = params
   const { data, error } = await supabase
     .from(REPORT_SHARE_TABLE)
-    .select('id,public_token,topic,report_date,audience_key,invite_code_hash,body_text,source_label,expires_at,created_at,revoked_at,access_count,last_accessed_at')
+    .select('id,public_token,topic,report_date,audience_key,invite_code_hash,claimer_token_hash,claimed_at,body_text,source_label,expires_at,created_at,revoked_at,access_count,last_accessed_at')
     .eq('public_token', publicToken)
     .maybeSingle()
   if (error) throw error
@@ -169,6 +177,48 @@ export function verifyInviteCode(params: {
   const actual = hashInviteCode(params.secret, params.inviteCode)
   const expected = params.inviteCodeHash
   return crypto.timingSafeEqual(Buffer.from(actual, 'hex'), Buffer.from(expected, 'hex'))
+}
+
+export function verifyShareAccessToken(params: {
+  secret: string
+  accessToken: string
+  accessTokenHash: string
+}): boolean {
+  const actual = hashShareAccessToken(params.secret, params.accessToken)
+  const expected = params.accessTokenHash
+  try {
+    return crypto.timingSafeEqual(Buffer.from(actual, 'hex'), Buffer.from(expected, 'hex'))
+  } catch {
+    return false
+  }
+}
+
+export async function claimReportShareAccess(params: {
+  supabase: SupabaseClient
+  shareId: string
+  accessCount: number
+  claimerTokenHash: string
+}) {
+  const { supabase, shareId, accessCount, claimerTokenHash } = params
+  const nowIso = new Date().toISOString()
+  const { data, error } = await supabase
+    .from(REPORT_SHARE_TABLE)
+    .update({
+      claimer_token_hash: claimerTokenHash,
+      claimed_at: nowIso,
+      access_count: accessCount + 1,
+      last_accessed_at: nowIso,
+    })
+    .eq('id', shareId)
+    .is('claimer_token_hash', null)
+    .select('id')
+    .maybeSingle()
+  if (error) throw error
+  return Boolean(data?.id)
+}
+
+export function hashShareAccessTokenForStorage(secret: string, accessToken: string): string {
+  return hashShareAccessToken(secret, accessToken)
 }
 
 export async function markReportShareAccessed(params: {

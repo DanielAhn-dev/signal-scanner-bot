@@ -145,7 +145,7 @@ export default function HighlightsPage() {
   const shareManager = useShareManager({
     endpoint: '/api/ui/route-share',
     scopeKey: 'kind',
-    requiresCode: false,
+    requiresCode: true,
   })
 
   const load = React.useCallback(async () => {
@@ -242,6 +242,7 @@ export default function HighlightsPage() {
 
     await shareManager.createShare('highlights', {
       kind: 'highlights',
+      requiresCode: shareManager.requiresCode,
       payload: {
         items: selectedItems.map((row) => ({
           code: row.code,

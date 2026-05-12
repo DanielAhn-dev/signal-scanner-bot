@@ -1,7 +1,12 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import {
+  claimReportShareAccess,
+  generateShareAccessToken,
   getReportShareByPublicToken,
+  hashShareAccessTokenForStorage,
   markReportShareAccessed,
+  verifyInviteCode,
+  verifyShareAccessToken,
 } from '../../src/services/reportShareService'
 import { createSupabaseServiceClientFromEnv } from '../../src/services/reportSnapshotService'
 import { escapeHtml, renderLayout } from '../../src/services/reportWebRenderService'
@@ -9,6 +14,51 @@ import { escapeHtml, renderLayout } from '../../src/services/reportWebRenderServ
 const ORIGIN = process.env.UI_CORS_ORIGIN || '*'
 
 type ShareKind = 'scan' | 'analyze' | 'highlights'
+
+function parseCookies(req: VercelRequest): Record<string, string> {
+  const raw = String(req.headers.cookie || '')
+  if (!raw) return {}
+  return raw.split(';').reduce<Record<string, string>>((acc, token) => {
+    const [key, ...rest] = token.trim().split('=')
+    if (!key) return acc
+    acc[key] = decodeURIComponent(rest.join('='))
+    return acc
+  }, {})
+}
+
+function claimCookieName(shareId: string): string {
+  return `ssb_share_claim_${shareId.replace(/[^A-Za-z0-9_]/g, '')}`
+}
+
+function renderCodeGate(params: {
+  share: string
+  kind: ShareKind
+  error?: string
+}) {
+  const { share, kind, error } = params
+  const action = `/api/ui/route-shared?kind=${encodeURIComponent(kind)}&share=${encodeURIComponent(share)}`
+  const body = `
+    <section style="max-width:520px;margin:8vh auto;background:rgba(255,255,255,0.94);border:1px solid #e5e8eb;border-radius:18px;padding:24px;box-shadow:0 16px 48px rgba(15,23,42,0.08)">
+      <div style="display:inline-block;background:#0060ff;color:#fff;border-radius:999px;padding:4px 10px;font-size:12px;font-weight:700">공유 링크</div>
+      <h1 style="margin:12px 0 8px;font-size:28px;line-height:1.2">초대코드 확인</h1>
+      <p style="margin:0 0 14px;color:#6b7280">공유자가 전달한 초대코드를 입력하면 공유 페이지를 열 수 있습니다.</p>
+      ${error ? `<div style="margin:0 0 14px;padding:10px 12px;border-radius:10px;background:#fff1f2;color:#be123c;border:1px solid #fecdd3">${escapeHtml(error)}</div>` : ''}
+      <form method="GET" action="${action}">
+        <label style="display:block;font-size:13px;color:#475569;margin-bottom:6px">초대코드</label>
+        <input name="code" placeholder="예: ABC123" style="width:100%;padding:12px 14px;border:1px solid #d1d5db;border-radius:12px;font-size:15px" />
+        <button type="submit" style="margin-top:14px;padding:12px 16px;border-radius:12px;background:#0f172a;color:#fff;border:none;font-weight:700;cursor:pointer">공유 열기</button>
+      </form>
+    </section>`
+
+  return renderLayout({
+    title: '공유 링크 열기',
+    topic: kind === 'analyze' ? '종목 분석 공유' : kind === 'highlights' ? '하이라이트 공유' : '눌림목 공유',
+    sourceLabel: 'share-gate',
+    description: '초대코드를 입력해 공유 페이지를 확인합니다.',
+    contentHtml: body,
+    shareLocked: true,
+  })
+}
 
 function resolveKind(value: unknown): ShareKind {
   const v = String(value || '').trim().toLowerCase()
@@ -454,6 +504,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (!share) return res.status(400).json({ error: 'share required' })
 
   const kind = resolveKind(req.query.kind)
+  const secret = process.env.SHARE_KEY || process.env.UI_SHARE_KEY || process.env.UI_READ_KEY || process.env.VITE_UI_READ_KEY
+  if (!secret) return res.status(500).json({ error: 'Server misconfiguration' })
 
   try {
     const supabase = createSupabaseServiceClientFromEnv()
@@ -467,6 +519,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.status(410).send('만료된 공유 링크입니다.')
     }
 
+    const cookieName = claimCookieName(String(record.id || ''))
+    const cookieValue = parseCookies(req)[cookieName]
+
     let payload: any = {}
     try {
       payload = JSON.parse(String(record.body_text || '{}')) as any
@@ -474,11 +529,49 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.status(500).send('공유 데이터 형식이 올바르지 않습니다.')
     }
 
-    await markReportShareAccessed({
-      supabase,
-      shareId: String(record.id),
-      accessCount: Number(record.access_count || 0),
-    }).catch(() => undefined)
+    const requiresCode = payload?.sharePolicy?.requiresCode === true
+    let accessAlreadyCounted = false
+    if (requiresCode) {
+      const storedClaimerHash = String(record.claimer_token_hash || '')
+      const providedCode = String(req.query.code || '').trim().toUpperCase()
+      const maxAgeSec = Math.max(60, Math.floor((new Date(String(record.expires_at)).getTime() - Date.now()) / 1000))
+
+      if (storedClaimerHash) {
+        if (!cookieValue || !verifyShareAccessToken({ secret, accessToken: cookieValue, accessTokenHash: storedClaimerHash })) {
+          return res.status(403).send(renderCodeGate({ share, kind, error: '이 초대코드는 이미 1회 사용되었습니다. 최초 인증 기기에서만 재접속할 수 있습니다.' }))
+        }
+      } else {
+        if (!providedCode) {
+          return res.status(200).send(renderCodeGate({ share, kind }))
+        }
+        if (!verifyInviteCode({ secret, inviteCode: providedCode, inviteCodeHash: String(record.invite_code_hash || '') })) {
+          return res.status(403).send(renderCodeGate({ share, kind, error: '초대코드가 올바르지 않습니다.' }))
+        }
+
+        const claimerToken = generateShareAccessToken()
+        const claimerTokenHash = hashShareAccessTokenForStorage(secret, claimerToken)
+        const claimed = await claimReportShareAccess({
+          supabase,
+          shareId: String(record.id),
+          accessCount: Number(record.access_count || 0),
+          claimerTokenHash,
+        })
+        if (!claimed) {
+          return res.status(409).send(renderCodeGate({ share, kind, error: '이미 다른 사용자가 초대코드를 등록했습니다.' }))
+        }
+
+        accessAlreadyCounted = true
+        res.setHeader('Set-Cookie', `${cookieName}=${encodeURIComponent(claimerToken)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${maxAgeSec}`)
+      }
+    }
+
+    if (!accessAlreadyCounted) {
+      await markReportShareAccessed({
+        supabase,
+        shareId: String(record.id),
+        accessCount: Number(record.access_count || 0),
+      }).catch(() => undefined)
+    }
 
     const contentHtml = kind === 'analyze'
       ? renderAnalyzeShared(payload)
