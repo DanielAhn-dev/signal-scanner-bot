@@ -153,6 +153,18 @@ const DISCOVERY_PRESETS: DiscoveryPreset[] = [
     },
     sectorMode: 'promising-or-next',
   },
+  {
+    key: 'large-cap-leaders',
+    label: '대장주 추종형',
+    hint: '섹터별 시총 상위 대형주 발굴',
+    criteria: {
+      minMarketCapBillion: 1000,
+      minRoe: 3,
+      maxPbr: 2.5,
+      qoqMode: 'latest-quarter-positive',
+    },
+    sectorMode: 'promising',
+  },
 ]
 
 function criteriaSignature(c: DiscoveryCriteria, sectorMode: SectorFilterMode): string {
