@@ -23,7 +23,7 @@ function renderCodeGate(params: {
   error?: string
 }) {
   const { share, topic, error } = params
-  const action = `/api/ui/report-shared?share=${encodeURIComponent(share)}`
+  const action = '/api/ui/report-shared'
   const body = `
     <section style="max-width:520px;margin:8vh auto;background:rgba(255,255,255,0.94);border:1px solid #e5e8eb;border-radius:18px;padding:24px;box-shadow:0 16px 48px rgba(15,23,42,0.08)">
       <div style="display:inline-block;background:#0060ff;color:#fff;border-radius:999px;padding:4px 10px;font-size:12px;font-weight:700">공유 링크</div>
@@ -31,6 +31,7 @@ function renderCodeGate(params: {
       <p style="margin:0 0 14px;color:#6b7280">공유자가 전달한 초대코드를 입력하면 ${escapeHtml(topic)} 리포트를 열 수 있습니다.</p>
       ${error ? `<div style="margin:0 0 14px;padding:10px 12px;border-radius:10px;background:#fff1f2;color:#be123c;border:1px solid #fecdd3">${escapeHtml(error)}</div>` : ''}
       <form method="GET" action="${action}">
+        <input type="hidden" name="share" value="${escapeHtml(share)}" />
         <label style="display:block;font-size:13px;color:#475569;margin-bottom:6px">초대코드</label>
         <input name="code" placeholder="예: ABC123" style="width:100%;padding:12px 14px;border:1px solid #d1d5db;border-radius:12px;font-size:15px" />
         <button type="submit" style="margin-top:14px;padding:12px 16px;border-radius:12px;background:#0f172a;color:#fff;border:none;font-weight:700;cursor:pointer">리포트 열기</button>
