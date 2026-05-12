@@ -34,11 +34,18 @@ interface EconomicPhase {
   severity: number // 0-100, higher = more concerning
   indicators: {
     us10y: number | null
+    cpiYoy: number | null
     goldTrend: 'up' | 'down' | 'neutral' | null
     oilTrend: 'up' | 'down' | 'neutral' | null
     usdkrwTrend: 'up' | 'down' | 'neutral' | null
     riskSentiment: 'risk_on' | 'risk_off' | 'neutral'
   }
+}
+
+interface CpiIndicator {
+  yoy: number | null
+  source: 'env' | 'unavailable'
+  fetchedAt: string
 }
 
 interface GlobalCorrelation {
@@ -59,6 +66,7 @@ interface TradingSignal {
 interface MarketOverviewResponse {
   diagnosis: MarketDiagnosis
   indices: MarketOverview
+  cpi: CpiIndicator
   topSectors: SectorScore[]
   nextSectors: SectorScore[]
   regimeLabel: string
@@ -74,6 +82,20 @@ type MarketCacheEntry = {
 }
 
 const marketCache = new Map<string, MarketCacheEntry>()
+
+function parseOptionalNumber(value: unknown): number | null {
+  const n = Number(value)
+  return Number.isFinite(n) ? n : null
+}
+
+function resolveCpiIndicator(): CpiIndicator {
+  const yoy = parseOptionalNumber(process.env.MARKET_CPI_YOY)
+  return {
+    yoy,
+    source: yoy == null ? 'unavailable' : 'env',
+    fetchedAt: new Date().toISOString(),
+  }
+}
 
 function diagnoseMarket(data: MarketOverview): MarketDiagnosis {
   const signals: string[] = []
@@ -179,7 +201,7 @@ const regimeLabel: Record<MarketRegime, string> = {
   strong_bear: '하락장 — 현금 확보 우선',
 }
 
-function diagnoseEconomicPhase(data: MarketOverview): EconomicPhase {
+function diagnoseEconomicPhase(data: MarketOverview, cpiYoy: number | null): EconomicPhase {
   // 인플레이션/디플레이션 진단
   // 금: 인플레이션 헤지 → 금 상승 = 인플레 우려
   // 유가: 수요-공급 신호 → 유가 상승 = 수요 강함/공급 부족
@@ -190,6 +212,7 @@ function diagnoseEconomicPhase(data: MarketOverview): EconomicPhase {
   let phase: EconomicPhase['phase'] = 'unknown'
   const indicators: EconomicPhase['indicators'] = {
     us10y: data.us10y?.price ?? null,
+    cpiYoy,
     goldTrend: null,
     oilTrend: null,
     usdkrwTrend: null,
@@ -244,16 +267,18 @@ function diagnoseEconomicPhase(data: MarketOverview): EconomicPhase {
   // 경제 국면 판단
   const hasHighInflation = indicators.goldTrend === 'up' && indicators.oilTrend === 'up'
   const hasHighRates = data.us10y && data.us10y.price >= 4.5
+  const hasCpiHot = cpiYoy != null && cpiYoy >= 3.5
+  const hasCpiCool = cpiYoy != null && cpiYoy <= 1.8
   const hasDeflationarySignals = indicators.oilTrend === 'down' && indicators.goldTrend === 'down'
   const hasRiskOff = indicators.riskSentiment === 'risk_off'
 
-  if (hasHighInflation && hasHighRates) {
+  if ((hasHighInflation || hasCpiHot) && hasHighRates) {
     phase = 'stagflation'
     severity = 85
-  } else if (hasHighInflation) {
+  } else if (hasHighInflation || hasCpiHot) {
     phase = 'high_inflation'
     severity = 70
-  } else if (hasDeflationarySignals && hasRiskOff) {
+  } else if ((hasDeflationarySignals || hasCpiCool) && hasRiskOff) {
     phase = 'deflation'
     severity = 75
   } else if (indicators.goldTrend !== 'up' && indicators.oilTrend !== 'up' && !hasRiskOff) {
@@ -464,13 +489,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const diagnosis = diagnoseMarket(marketData)
     const topSectors = getTopSectors(sectorScores).slice(0, 5)
     const nextSectors = getNextSectorCandidates(sectorScores, 3e9).slice(0, 5)
-    const economicPhase = diagnoseEconomicPhase(marketData)
+    const cpi = resolveCpiIndicator()
+    const economicPhase = diagnoseEconomicPhase(marketData, cpi.yoy)
     const globalCorrelation = analyzeGlobalCorrelation(marketData)
     const tradingSignal = generateTradingSignal(diagnosis, economicPhase, globalCorrelation)
 
     const payload: MarketOverviewResponse = {
       diagnosis,
       indices: marketData,
+      cpi,
       topSectors,
       nextSectors,
       regimeLabel: regimeLabel[diagnosis.regime],

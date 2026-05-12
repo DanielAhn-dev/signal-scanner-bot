@@ -1,5 +1,7 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
+import accountPolicies from '../handlers/ui/account-policies'
 import accessUsers from '../handlers/ui/access-users'
+import advisorPerformance from '../handlers/ui/advisor-performance'
 import { ADVANCED_ROUTES, enforceAdvancedRouteAccess } from '../handlers/ui/_accessControl'
 
 import decisions from '../handlers/ui/decisions'
@@ -42,7 +44,9 @@ import watchlist from '../handlers/ui/watchlist'
 type UiHandler = (req: VercelRequest, res: VercelResponse) => unknown | Promise<unknown>
 
 const ROUTES: Record<string, UiHandler> = {
+  'account-policies': accountPolicies,
   'access-users': accessUsers,
+  'advisor-performance': advisorPerformance,
   decisions,
   'discovery-picks': discoveryPicks,
   'format-stock': formatStock,

@@ -15,6 +15,13 @@ type ScoreBreakdown = {
   sector: number
 }
 
+type ApiScoreBreakdown = Partial<ScoreBreakdown> & {
+  valueScore?: number
+  momentumScore?: number
+  smartMoneyScore?: number
+  sectorScore?: number
+}
+
 type DiscoveryPick = {
   code: string
   name: string
@@ -29,6 +36,40 @@ type DiscoveryPick = {
   smartMoney12w: number
   smartMoneyRatioPct: number | null
   score: ScoreBreakdown
+}
+
+function toSafeNumber(v: unknown): number {
+  const n = Number(v)
+  return Number.isFinite(n) ? n : 0
+}
+
+function normalizeScore(raw: ApiScoreBreakdown | null | undefined): ScoreBreakdown {
+  const src = raw ?? {}
+  return {
+    totalScore: toSafeNumber(src.totalScore),
+    value: toSafeNumber(src.value ?? src.valueScore),
+    momentum: toSafeNumber(src.momentum ?? src.momentumScore),
+    smartMoney: toSafeNumber(src.smartMoney ?? src.smartMoneyScore),
+    sector: toSafeNumber(src.sector ?? src.sectorScore),
+  }
+}
+
+function normalizePick(raw: any): DiscoveryPick {
+  return {
+    code: String(raw?.code ?? ''),
+    name: String(raw?.name ?? ''),
+    marketCap: toSafeNumber(raw?.marketCap),
+    pbr: raw?.pbr == null ? null : Number(raw.pbr),
+    per: raw?.per == null ? null : Number(raw.per),
+    roe: raw?.roe == null ? null : Number(raw.roe),
+    revQoq: raw?.revQoq == null ? null : Number(raw.revQoq),
+    opQoq: raw?.opQoq == null ? null : Number(raw.opQoq),
+    revAcceleration: raw?.revAcceleration == null ? null : Number(raw.revAcceleration),
+    opAcceleration: raw?.opAcceleration == null ? null : Number(raw.opAcceleration),
+    smartMoney12w: toSafeNumber(raw?.smartMoney12w),
+    smartMoneyRatioPct: raw?.smartMoneyRatioPct == null ? null : Number(raw.smartMoneyRatioPct),
+    score: normalizeScore(raw?.score),
+  }
 }
 
 type DiscoveryCriteria = {
@@ -157,7 +198,8 @@ export default function DiscoveryPage() {
         cacheMs: 120_000,
         timeoutMs: 30_000,
       })
-      setPicks(res.picks ?? [])
+      const nextPicks = Array.isArray(res?.picks) ? res.picks.map((row: any) => normalizePick(row)) : []
+      setPicks(nextPicks)
       setFetchedAt(res.fetchedAt ?? null)
       setFunnel(res.funnel ?? null)
       if (res.criteria) {

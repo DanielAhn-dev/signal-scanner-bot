@@ -74,6 +74,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const codeOrQ = String(qParams.q || '').trim()
     const sector = qParams.sector || null
     const minLiquidity = qParams.minLiquidity ? Number(qParams.minLiquidity) : null
+    const brokerName = String(qParams.brokerName || '').trim()
+    const accountName = String(qParams.accountName || '').trim()
     const positionType = String(qParams.positionType || 'all') // 'all' | 'holding' | 'interest'
     const includeLots = String(qParams.includeLots || '0') === '1'
     const bypassCache = String(qParams.cacheMs || '') === '0'
@@ -85,6 +87,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       codeOrQ,
       sector,
       minLiquidity,
+      brokerName,
+      accountName,
       withCount,
       positionType,
       includeLots,
@@ -100,8 +104,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     // build base query
     let base = withCount
-      ? supabase.from('virtual_positions').select('id, chat_id, code, buy_price, buy_date, memo, created_at, updated_at, quantity, invested_amount, status, stock:stocks(code,name,close,sector_id,sector:sectors(id,name))', { count: 'exact' })
-      : supabase.from('virtual_positions').select('id, chat_id, code, buy_price, buy_date, memo, created_at, updated_at, quantity, invested_amount, status, stock:stocks(code,name,close,sector_id,sector:sectors(id,name))')
+      ? supabase.from('virtual_positions').select('id, chat_id, code, buy_price, buy_date, memo, created_at, updated_at, quantity, invested_amount, status, broker_name, account_name, stock:stocks(code,name,close,sector_id,sector:sectors(id,name))', { count: 'exact' })
+      : supabase.from('virtual_positions').select('id, chat_id, code, buy_price, buy_date, memo, created_at, updated_at, quantity, invested_amount, status, broker_name, account_name, stock:stocks(code,name,close,sector_id,sector:sectors(id,name))')
 
     base = base.eq('chat_id', chatId)
 
@@ -114,6 +118,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
     if (minLiquidity != null && !Number.isNaN(minLiquidity)) {
       base = base.gte('stock.liquidity', minLiquidity)
+    }
+    if (brokerName) {
+      base = base.eq('broker_name', brokerName)
+    }
+    if (accountName) {
+      base = base.eq('account_name', accountName)
     }
 
     // Server-side position type filter — reduces rows fetched and enables correct pagination
@@ -276,6 +286,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         ...row,
         symbol: row.code,
         ticker: row.code,
+        broker_name: row.broker_name ?? null,
+        account_name: row.account_name ?? null,
+        account_label: [row.broker_name, row.account_name].filter(Boolean).join(' / ') || null,
         avg_price: buyPrice,
         unrealized_pnl: unrealized,
         unrealized_pct: percent,
@@ -300,8 +313,28 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       }
     })
 
+    const accountMap = new Map<string, { brokerName: string; accountName: string; count: number }>()
+    for (const row of mapped) {
+      const b = String(row?.broker_name || '').trim()
+      const a = String(row?.account_name || '').trim()
+      if (!b && !a) continue
+      const key = `${b}|||${a}`
+      const prev = accountMap.get(key)
+      accountMap.set(key, {
+        brokerName: b,
+        accountName: a,
+        count: (prev?.count ?? 0) + 1,
+      })
+    }
+    const accounts = Array.from(accountMap.values()).sort((x, y) => {
+      const labelX = `${x.brokerName} ${x.accountName}`.trim()
+      const labelY = `${y.brokerName} ${y.accountName}`.trim()
+      return labelX.localeCompare(labelY, 'ko')
+    })
+
     const payload = {
       data: mapped,
+      accounts,
       count: typeof count === 'number' ? count : undefined,
       page,
       pageSize,

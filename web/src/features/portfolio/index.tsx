@@ -19,6 +19,54 @@ type PortfolioShareHistoryItem = {
   lastAccessedAt?: string | null
 }
 
+type AccountFolder = {
+  key: string
+  brokerName: string
+  accountName: string
+  count: number
+}
+
+type AccountPolicy = {
+  chat_id?: number
+  broker_name: string
+  account_name: string
+  risk_profile: 'safe' | 'balanced' | 'active'
+  max_positions: number | null
+  daily_loss_limit_pct: number | null
+  min_cash_reserve_pct: number | null
+  add_entry_score_adjust: number
+  partial_take_profit_adjust_pct: number
+  stop_loss_pct: number | null
+  take_profit_pct: number | null
+}
+
+type AdvisorPerformanceData = {
+  summary?: {
+    trustScore?: number | null
+    totalDecisions?: number
+    linkedSellWinRatePct?: number | null
+    linkedRealizedPnl?: number
+  } | null
+  recent?: Array<{
+    code?: string
+    action?: string
+    confidence?: number | null
+    reason_summary?: string | null
+    trade?: { pnl_amount?: number | null } | null
+  }>
+} | null
+
+function buildAccountKey(brokerName?: string | null, accountName?: string | null): string {
+  return `${String(brokerName || '').trim()}|||${String(accountName || '').trim()}`
+}
+
+function accountLabel(brokerName?: string | null, accountName?: string | null): string {
+  const broker = String(brokerName || '').trim()
+  const account = String(accountName || '').trim()
+  const label = [broker, account].filter(Boolean).join(' / ')
+  return label || '계좌 미지정'
+}
+
 function pickLatestActiveShare(items: PortfolioShareHistoryItem[]): PortfolioShareHistoryItem | null {
   const now = Date.now()
   for (const item of items) {
@@ -51,6 +99,14 @@ export default function Portfolio() {
   const [search, setSearch] = useState('')
   const [searchInput, setSearchInput] = useState('')
   const [selectedSector, setSelectedSector] = useState<string | null>(null)
+  const [selectedAccountKey, setSelectedAccountKey] = useState<string>('all')
+  const [accountFolders, setAccountFolders] = useState<AccountFolder[]>([])
+  const [accountPolicies, setAccountPolicies] = useState<AccountPolicy[]>([])
+  const [policyLoading, setPolicyLoading] = useState(false)
+  const [policySaving, setPolicySaving] = useState(false)
+  const [policyDraft, setPolicyDraft] = useState<AccountPolicy | null>(null)
+  const [advisorPerf, setAdvisorPerf] = useState<AdvisorPerformanceData>(null)
+  const [advisorPerfLoading, setAdvisorPerfLoading] = useState(false)
   const [holdingStateFilter, setHoldingStateFilter] = useState<'all' | 'hold' | 'add' | 'partial'>('all')
   const [gradeFilter, setGradeFilter] = useState<'all' | 'A' | 'B' | 'C'>('all')
   const [gradeAThreshold, setGradeAThreshold] = useState(80)
@@ -86,8 +142,12 @@ export default function Portfolio() {
   const [maintCode, setMaintCode] = useState('')
   const [maintBuyPrice, setMaintBuyPrice] = useState<number | ''>('')
   const [maintQty, setMaintQty] = useState<number>(1)
+  const [maintBrokerName, setMaintBrokerName] = useState('')
+  const [maintAccountName, setMaintAccountName] = useState('')
   const [maintLoading, setMaintLoading] = useState(false)
   const [maintError, setMaintError] = useState<string | null>(null)
+  const [macroLoading, setMacroLoading] = useState(false)
+  const [macroSnapshot, setMacroSnapshot] = useState<any | null>(null)
   const toast = useToast()
 
   const safeGradeAThreshold = Math.max(1, Math.min(100, Number(gradeAThreshold || 80)))
@@ -95,6 +155,65 @@ export default function Portfolio() {
   const safeAddEntryMinScore = Math.max(0, Math.min(100, Number(addEntryMinScore || 70)))
   const safePartialTakeProfitPct = Math.max(0, Math.min(50, Number(partialTakeProfitPct || 8)))
   const safePartialWarnScoreMin = Math.max(0, Math.min(10, Number(partialWarnScoreMin || 3)))
+
+  const policyByKey = useMemo(() => {
+    const map = new Map<string, AccountPolicy>()
+    for (const p of accountPolicies) {
+      map.set(buildAccountKey(p.broker_name, p.account_name), p)
+    }
+    return map
+  }, [accountPolicies])
+
+  const macroRiskLevel = useMemo(() => {
+    const us10y = Number(macroSnapshot?.indices?.us10y?.price)
+    const wtiOil = Number(macroSnapshot?.indices?.wtiOil?.price)
+    const cpiYoy = Number(macroSnapshot?.cpi?.yoy)
+    const riskScore = Number(macroSnapshot?.diagnosis?.riskScore)
+    const score = Number.isFinite(riskScore) ? riskScore : 50
+
+    let addScorePenalty = 0
+    let partialTakeProfitBonus = 0
+    let label = '중립'
+
+    if (score >= 75 || us10y >= 5 || wtiOil >= 95 || cpiYoy >= 3.5) {
+      addScorePenalty = 8
+      partialTakeProfitBonus = 2
+      label = '방어'
+    } else if (score >= 60 || us10y >= 4.6 || wtiOil >= 85 || cpiYoy >= 3.0) {
+      addScorePenalty = 4
+      partialTakeProfitBonus = 1
+      label = '주의'
+    }
+
+    return {
+      label,
+      addScorePenalty,
+      partialTakeProfitBonus,
+      us10y: Number.isFinite(us10y) ? us10y : null,
+      wtiOil: Number.isFinite(wtiOil) ? wtiOil : null,
+      cpiYoy: Number.isFinite(cpiYoy) ? cpiYoy : null,
+      diagnosis: String(macroSnapshot?.regimeLabel || '시장 진단 없음'),
+    }
+  }, [macroSnapshot])
+
+  const safeAddEntryMinScoreWithMacro = Math.max(0, Math.min(100, safeAddEntryMinScore + macroRiskLevel.addScorePenalty))
+  const safePartialTakeProfitPctWithMacro = Math.max(0, Math.min(50, safePartialTakeProfitPct - macroRiskLevel.partialTakeProfitBonus))
+
+  const resolvePolicyForRow = useCallback((row: any): AccountPolicy | null => {
+    const key = buildAccountKey(row?.broker_name, row?.account_name)
+    return policyByKey.get(key) ?? null
+  }, [policyByKey])
+
+  const resolveAdvisoryThresholds = useCallback((row: any) => {
+    const policy = resolvePolicyForRow(row)
+    const addEntry = Math.max(0, Math.min(100, safeAddEntryMinScoreWithMacro + Number(policy?.add_entry_score_adjust || 0)))
+    const partialTp = Math.max(0, Math.min(50, safePartialTakeProfitPctWithMacro + Number(policy?.partial_take_profit_adjust_pct || 0)))
+    return {
+      addEntry,
+      partialTp,
+      policy,
+    }
+  }, [resolvePolicyForRow, safeAddEntryMinScoreWithMacro, safePartialTakeProfitPctWithMacro])
 
   const getScoreValue = (row: any): number | null => {
     const score = Number(row?.total_score)
@@ -111,6 +230,7 @@ export default function Portfolio() {
 
   const evaluateHoldingState = (row: any): { state: 'hold' | 'add' | 'partial'; reasons: string[] } => {
     const reasons: string[] = []
+    const thresholds = resolveAdvisoryThresholds(row)
     const pct = Number(row?.unrealized_pct)
     const warnScoreNum = Number(row?.warn_score)
     const warnScore = Number.isFinite(warnScoreNum) ? warnScoreNum : null
@@ -122,10 +242,11 @@ export default function Portfolio() {
 
     const partialSignalHit = ['SELL', 'HOLD'].includes(scoreSignal) || ['WARN', 'SELL'].includes(warnGrade)
     const partialWarnScoreHit = warnScore != null && warnScore >= safePartialWarnScoreMin
-    if (Number.isFinite(pct) && pct >= safePartialTakeProfitPct && partialSignalHit && partialWarnScoreHit) {
-      reasons.push(`수익률 ${formatNumber(pct, 2)}% >= ${formatNumber(safePartialTakeProfitPct, 2)}%`)
+    if (Number.isFinite(pct) && pct >= thresholds.partialTp && partialSignalHit && partialWarnScoreHit) {
+      reasons.push(`수익률 ${formatNumber(pct, 2)}% >= ${formatNumber(thresholds.partialTp, 2)}%`)
       reasons.push(`신호/경고 조건 충족 (${scoreSignal || '-'} / ${warnGrade || '-'})`)
       reasons.push(`warn_score ${formatNumber(warnScore, 1)} >= ${formatNumber(safePartialWarnScoreMin, 1)}`)
+      if (thresholds.policy) reasons.push(`계좌정책 반영(${accountLabel(thresholds.policy.broker_name, thresholds.policy.account_name)})`)
       if (warnDetails.length > 0) reasons.push(`상세 경고: ${warnDetails.join(', ')}`)
       return { state: 'partial', reasons }
     }
@@ -136,11 +257,12 @@ export default function Portfolio() {
     const entryTrendOk = !hasPullbackHint || (['A', 'B'].includes(entryGrade) && ['A', 'B'].includes(trendGrade))
     const riskOk = !warnGrade || ['SAFE', 'WATCH'].includes(warnGrade)
     const signalOk = !scoreSignal || scoreSignal !== 'SELL'
-    const scoreOk = score == null || score >= safeAddEntryMinScore
+    const scoreOk = score == null || score >= thresholds.addEntry
     if (hasAddSignal && scoreOk && entryTrendOk && riskOk && signalOk) {
       reasons.push(`추가매수 제안 수량 ${Number(row?.recommended_buy_qty || 0)}주`) 
-      reasons.push(`점수 조건 ${score == null ? 'N/A' : formatNumber(score, 1)} / 기준 ${formatNumber(safeAddEntryMinScore, 1)}`)
+      reasons.push(`점수 조건 ${score == null ? 'N/A' : formatNumber(score, 1)} / 기준 ${formatNumber(thresholds.addEntry, 1)}`)
       reasons.push(`진입/추세/경고 ${entryGrade || '-'} / ${trendGrade || '-'} / ${warnGrade || '-'}`)
+      if (thresholds.policy) reasons.push(`계좌정책 반영(${accountLabel(thresholds.policy.broker_name, thresholds.policy.account_name)})`)
       if (warnDetails.length > 0) reasons.push(`상세 경고: ${warnDetails.join(', ')}`)
       return { state: 'add', reasons }
     }
@@ -173,7 +295,37 @@ export default function Portfolio() {
       const params = new URLSearchParams({ page: '1', pageSize: '20', includeLots: '0', positionType: 'holding' })
       if (force) params.set('cacheMs', '0')
       const json = await apiFetch(`/api/ui/positions?${params}`, { cacheMs: 3_000, timeoutMs: 15_000, retries: 1 })
-      setAllRows(json?.data ?? [])
+      const rows = Array.isArray(json?.data) ? json.data : []
+      setAllRows(rows)
+      const nextFolders = Array.isArray(json?.accounts)
+        ? json.accounts
+            .map((item: any) => ({
+              key: buildAccountKey(item?.brokerName, item?.accountName),
+              brokerName: String(item?.brokerName || ''),
+              accountName: String(item?.accountName || ''),
+              count: Number(item?.count || 0),
+            }))
+            .filter((item: AccountFolder) => item.brokerName || item.accountName)
+        : []
+      if (nextFolders.length > 0) {
+        setAccountFolders(nextFolders)
+      } else {
+        const fallbackMap = new Map<string, AccountFolder>()
+        for (const row of rows) {
+          const key = buildAccountKey(row?.broker_name, row?.account_name)
+          const labelBroker = String(row?.broker_name || '').trim()
+          const labelAccount = String(row?.account_name || '').trim()
+          if (!labelBroker && !labelAccount) continue
+          const prev = fallbackMap.get(key)
+          fallbackMap.set(key, {
+            key,
+            brokerName: labelBroker,
+            accountName: labelAccount,
+            count: (prev?.count ?? 0) + 1,
+          })
+        }
+        setAccountFolders(Array.from(fallbackMap.values()))
+      }
       setLastUpdatedAt(Date.now())
     } catch (e: any) {
       setError(e?.message || String(e))
@@ -184,6 +336,113 @@ export default function Portfolio() {
   }, [])
 
   useEffect(() => { load() }, [load])
+
+  const loadMacroSnapshot = useCallback(async () => {
+    setMacroLoading(true)
+    try {
+      const json = await apiFetch('/api/ui/market-overview', {
+        cacheMs: 120_000,
+        timeoutMs: 10_000,
+        retries: 1,
+      })
+      if (json?.data) setMacroSnapshot(json.data)
+    } catch {
+      // ignore macro fetch failures
+    } finally {
+      setMacroLoading(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    void loadMacroSnapshot()
+  }, [loadMacroSnapshot])
+
+  const loadAccountPolicies = useCallback(async () => {
+    setPolicyLoading(true)
+    try {
+      const json = await apiFetch('/api/ui/account-policies', {
+        cacheMs: 30_000,
+        timeoutMs: 10_000,
+        retries: 1,
+      })
+      setAccountPolicies(Array.isArray(json?.data) ? json.data : [])
+    } catch {
+      setAccountPolicies([])
+    } finally {
+      setPolicyLoading(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    void loadAccountPolicies()
+  }, [loadAccountPolicies])
+
+  const loadAdvisorPerformance = useCallback(async () => {
+    setAdvisorPerfLoading(true)
+    try {
+      const json = await apiFetch('/api/ui/advisor-performance?windowDays=90', {
+        cacheMs: 20_000,
+        timeoutMs: 10_000,
+        retries: 1,
+      })
+      setAdvisorPerf(json?.data ?? null)
+    } catch {
+      setAdvisorPerf(null)
+    } finally {
+      setAdvisorPerfLoading(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    void loadAdvisorPerformance()
+  }, [loadAdvisorPerformance])
+
+  useEffect(() => {
+    if (selectedAccountKey === 'all') {
+      setPolicyDraft(null)
+      return
+    }
+
+    const [brokerName, accountName] = selectedAccountKey.split('|||')
+    const existing = policyByKey.get(selectedAccountKey)
+    setPolicyDraft(existing ?? {
+      broker_name: brokerName || '',
+      account_name: accountName || '',
+      risk_profile: 'balanced',
+      max_positions: null,
+      daily_loss_limit_pct: null,
+      min_cash_reserve_pct: null,
+      add_entry_score_adjust: 0,
+      partial_take_profit_adjust_pct: 0,
+      stop_loss_pct: null,
+      take_profit_pct: null,
+    })
+  }, [selectedAccountKey, policyByKey])
+
+  const savePolicyDraft = useCallback(async () => {
+    if (!policyDraft) return
+    if (!String(policyDraft.broker_name || '').trim() || !String(policyDraft.account_name || '').trim()) {
+      toast.show('정책 저장 대상 계좌가 없습니다')
+      return
+    }
+    setPolicySaving(true)
+    try {
+      const json = await apiFetch('/api/ui/account-policies', {
+        method: 'POST',
+        cacheMs: 0,
+        timeoutMs: 12_000,
+        body: JSON.stringify(policyDraft),
+      })
+      if (json?.error) throw new Error(String(json.error))
+      toast.show('계좌 정책 저장 완료')
+      await loadAccountPolicies()
+      await load({ soft: true, force: true })
+    } catch (e: any) {
+      toast.show(String(e?.message || e || '계좌 정책 저장 실패'))
+    } finally {
+      setPolicySaving(false)
+    }
+  }, [policyDraft, toast, loadAccountPolicies, load])
 
   useEffect(() => {
     if (typeof window === 'undefined') return
@@ -268,6 +527,9 @@ export default function Portfolio() {
 
   const filteredRows = useMemo(() => {
     let result: any[] = holdingAll
+    if (selectedAccountKey !== 'all') {
+      result = result.filter((r: any) => buildAccountKey(r?.broker_name, r?.account_name) === selectedAccountKey)
+    }
     if (selectedSector) result = result.filter((r: any) => String(r.stock?.sector_id ?? '') === selectedSector)
     if (search) {
       const q = search.toLowerCase()
@@ -286,7 +548,7 @@ export default function Portfolio() {
     }
 
     return result
-  }, [holdingAll, selectedSector, search, holdingStateFilter, gradeFilter, safePartialTakeProfitPct, safePartialWarnScoreMin, safeAddEntryMinScore, safeGradeAThreshold, safeGradeBThreshold])
+  }, [holdingAll, selectedAccountKey, selectedSector, search, holdingStateFilter, gradeFilter, safePartialTakeProfitPctWithMacro, safePartialWarnScoreMin, safeAddEntryMinScoreWithMacro, safeGradeAThreshold, safeGradeBThreshold])
 
   const total = filteredRows.length
   const totalPages = Math.ceil(total / pageSize)
@@ -409,11 +671,15 @@ export default function Portfolio() {
       setMaintCode(code)
       setMaintBuyPrice(Number(row?.avg_price || row?.buy_price || row?.stock?.close || 0) || '')
       setMaintQty(Math.max(1, Number(row?.quantity || 1)))
+      setMaintBrokerName(String(row?.broker_name || ''))
+      setMaintAccountName(String(row?.account_name || ''))
     }
     if (mode === 'holdingrestore') {
       setMaintCode('')
       setMaintBuyPrice('')
       setMaintQty(1)
+      setMaintBrokerName('')
+      setMaintAccountName('')
     }
     setMaintModalOpen(true)
   }
@@ -427,6 +693,8 @@ export default function Portfolio() {
         body.code = maintCode
         body.buy_price = maintBuyPrice
         body.quantity = maintQty
+        body.broker_name = String(maintBrokerName || '').trim()
+        body.account_name = String(maintAccountName || '').trim()
       }
 
       const json = await apiFetch('/api/ui/positions-maintenance', {
@@ -470,6 +738,8 @@ export default function Portfolio() {
         side: modalSide === 'buy' ? 'BUY' : 'SELL',
         quantity: Number(tradeQty),
         price: tradePrice !== '' ? Number(tradePrice) : (modalRow.stock?.close ?? modalRow.avg_price ?? 0),
+        broker_name: String(modalRow?.broker_name || '').trim() || null,
+        account_name: String(modalRow?.account_name || '').trim() || null,
       }
       const json = await apiFetch('/api/ui/virtual-trade', {
         method: 'POST',
@@ -723,6 +993,104 @@ export default function Portfolio() {
         </div>
       </div>
 
+      <div className="card mb-4 portfolio-macro-card">
+        <div className="title-md" style={{ marginBottom: 'var(--space-2)' }}>거시 반영 어드바이저 (금리·유가·CPI)</div>
+        <div className="caption muted" style={{ marginBottom: 'var(--space-2)' }}>
+          {macroLoading
+            ? '거시지표 로딩 중...'
+            : `${macroRiskLevel.diagnosis} · 정책 ${macroRiskLevel.label} · 추가매수 기준 +${macroRiskLevel.addScorePenalty}점 · 부분익절 기준 -${macroRiskLevel.partialTakeProfitBonus}%p`}
+        </div>
+        <div className="portfolio-macro-grid">
+          <div className="portfolio-macro-metric"><span>미국10년물</span><strong>{macroRiskLevel.us10y != null ? `${formatNumber(macroRiskLevel.us10y, 2)}%` : '—'}</strong></div>
+          <div className="portfolio-macro-metric"><span>WTI유가</span><strong>{macroRiskLevel.wtiOil != null ? `$${formatNumber(macroRiskLevel.wtiOil, 1)}` : '—'}</strong></div>
+          <div className="portfolio-macro-metric"><span>CPI YoY</span><strong>{macroRiskLevel.cpiYoy != null ? `${formatNumber(macroRiskLevel.cpiYoy, 2)}%` : '미설정'}</strong></div>
+        </div>
+      </div>
+
+      <div className="card mb-4 portfolio-policy-card">
+        <div className="title-md" style={{ marginBottom: 'var(--space-2)' }}>계좌별 위험정책</div>
+        {selectedAccountKey === 'all' ? (
+          <div className="caption muted">계좌 폴더를 선택하면 해당 계좌의 정책(최대보유/일손실/현금비중/점수 가감)을 설정할 수 있습니다.</div>
+        ) : policyDraft ? (
+          <>
+            <div className="caption muted" style={{ marginBottom: 'var(--space-2)' }}>
+              대상: {accountLabel(policyDraft.broker_name, policyDraft.account_name)}
+              {policyLoading ? ' · 정책 조회 중...' : ''}
+            </div>
+            <div className="portfolio-policy-grid">
+              <label className="ui-label">
+                <span>리스크 프로필</span>
+                <select
+                  className="input"
+                  value={String(policyDraft.risk_profile)}
+                  onChange={(e: any) => setPolicyDraft((prev) => prev ? { ...prev, risk_profile: (String(e?.target?.value || 'balanced') as any) } : prev)}
+                >
+                  <option value="safe">safe</option>
+                  <option value="balanced">balanced</option>
+                  <option value="active">active</option>
+                </select>
+              </label>
+              <Input
+                label="최대 보유 종목 수"
+                type="number"
+                value={policyDraft.max_positions == null ? '' : String(policyDraft.max_positions)}
+                onChange={(e: any) => setPolicyDraft((prev) => prev ? { ...prev, max_positions: e?.target?.value === '' ? null : Number(e?.target?.value) } : prev)}
+              />
+              <Input
+                label="일손실 한도(%)"
+                type="number"
+                value={policyDraft.daily_loss_limit_pct == null ? '' : String(policyDraft.daily_loss_limit_pct)}
+                onChange={(e: any) => setPolicyDraft((prev) => prev ? { ...prev, daily_loss_limit_pct: e?.target?.value === '' ? null : Number(e?.target?.value) } : prev)}
+              />
+              <Input
+                label="최소 현금 비중(%)"
+                type="number"
+                value={policyDraft.min_cash_reserve_pct == null ? '' : String(policyDraft.min_cash_reserve_pct)}
+                onChange={(e: any) => setPolicyDraft((prev) => prev ? { ...prev, min_cash_reserve_pct: e?.target?.value === '' ? null : Number(e?.target?.value) } : prev)}
+              />
+              <Input
+                label="추가매수 점수 가감"
+                type="number"
+                value={String(policyDraft.add_entry_score_adjust || 0)}
+                onChange={(e: any) => setPolicyDraft((prev) => prev ? { ...prev, add_entry_score_adjust: Number(e?.target?.value || 0) } : prev)}
+              />
+              <Input
+                label="부분익절 기준 가감(%p)"
+                type="number"
+                value={String(policyDraft.partial_take_profit_adjust_pct || 0)}
+                onChange={(e: any) => setPolicyDraft((prev) => prev ? { ...prev, partial_take_profit_adjust_pct: Number(e?.target?.value || 0) } : prev)}
+              />
+            </div>
+            <div style={{ display: 'flex', gap: 'var(--space-2)', marginTop: 'var(--space-2)' }}>
+              <Button variant="secondary" onClick={() => { void savePolicyDraft() }} disabled={policySaving}>
+                {policySaving ? '저장 중...' : '정책 저장'}
+              </Button>
+            </div>
+          </>
+        ) : null}
+      </div>
+
+      <div className="card mb-4 portfolio-performance-card">
+        <div className="title-md" style={{ marginBottom: 'var(--space-2)' }}>어드바이저 성과(최근 90일)</div>
+        {advisorPerfLoading ? (
+          <div className="caption muted">성과 데이터 조회 중...</div>
+        ) : advisorPerf?.summary ? (
+          <>
+            <div className="portfolio-performance-grid">
+              <div className="portfolio-performance-metric"><span>신뢰 점수</span><strong>{advisorPerf.summary.trustScore ?? '—'}</strong></div>
+              <div className="portfolio-performance-metric"><span>의사결정 수</span><strong>{advisorPerf.summary.totalDecisions ?? 0}</strong></div>
+              <div className="portfolio-performance-metric"><span>매도 승률</span><strong>{advisorPerf.summary.linkedSellWinRatePct != null ? `${formatNumber(advisorPerf.summary.linkedSellWinRatePct, 1)}%` : '—'}</strong></div>
+              <div className="portfolio-performance-metric"><span>누적 실현손익</span><strong>{formatKrw(Number(advisorPerf.summary.linkedRealizedPnl || 0))}</strong></div>
+            </div>
+            <div className="caption muted" style={{ marginTop: 'var(--space-2)' }}>
+              최근 액션 샘플: {(advisorPerf.recent ?? []).slice(0, 3).map((row) => `${row.code || '-'} ${row.action || '-'} (${row.confidence != null ? `${formatNumber(Number(row.confidence), 0)}%` : '신뢰도 없음'})`).join(' · ') || '없음'}
+            </div>
+          </>
+        ) : (
+          <div className="caption muted">성과 데이터가 아직 없습니다. 거래/의사결정 로그가 쌓이면 자동 집계됩니다.</div>
+        )}
+      </div>
+
       <div className="card mb-4 portfolio-asset-overview-card">
         <button
           type="button"
@@ -807,6 +1175,30 @@ export default function Portfolio() {
       {/* 필터 */}
       <div className="card mb-4 portfolio-filter-card">
         <div className="portfolio-filter-stack">
+          <div>
+            <div className="caption portfolio-filter-label">계좌 폴더</div>
+            <div className="tag-list portfolio-segment-list">
+              <button
+                className={`tag${selectedAccountKey === 'all' ? ' active' : ''}`}
+                onClick={() => { setSelectedAccountKey('all'); setPage(1) }}
+              >
+                전체
+              </button>
+              {accountFolders.map((account) => (
+                <button
+                  key={account.key}
+                  className={`tag${selectedAccountKey === account.key ? ' active' : ''}`}
+                  onClick={() => { setSelectedAccountKey(account.key); setPage(1) }}
+                >
+                  {accountLabel(account.brokerName, account.accountName)} ({account.count})
+                </button>
+              ))}
+              {accountFolders.length === 0 && (
+                <span className="caption muted">등록된 계좌 폴더가 없습니다. 보유수정/보유복구에서 추가하세요.</span>
+              )}
+            </div>
+          </div>
+
           <div>
             <div className="caption portfolio-filter-label">섹터</div>
             <div className="tag-list">
@@ -998,6 +1390,7 @@ export default function Portfolio() {
                   <div className="caption">{r.code}</div>
                   <div className="muted portfolio-position-meta">
                     {r.quantity}주 · 매수가 {formatKrw(r.avg_price)}
+                    {` · ${accountLabel(r?.broker_name, r?.account_name)}`}
                     {r.buy_date ? ` · ${r.buy_date}` : ''}
                   </div>
                   <div className="caption" style={{ marginTop: '4px' }}>
@@ -1299,6 +1692,10 @@ export default function Portfolio() {
               <Input label="종목코드" value={maintCode} onChange={(e: any) => setMaintCode(String(e?.target?.value || '').toUpperCase())} />
               <Input label="수량" type="number" value={String(maintQty)} onChange={(e: any) => setMaintQty(Math.max(1, Number(e?.target?.value || 1)))} />
             </div>
+            <div className="grid-two" style={{ marginBottom: 'var(--space-3)' }}>
+              <Input label="증권사" placeholder="예) NH, 토스, 삼성" value={maintBrokerName} onChange={(e: any) => setMaintBrokerName(String(e?.target?.value || ''))} />
+              <Input label="계좌명" placeholder="예) ISA, 연금, 일반" value={maintAccountName} onChange={(e: any) => setMaintAccountName(String(e?.target?.value || ''))} />
+            </div>
             <Input
               label="매수가"
               type="number"
@@ -1325,6 +1722,20 @@ export default function Portfolio() {
                 type="number"
                 value={String(maintQty)}
                 onChange={(e: any) => setMaintQty(Math.max(1, Number(e?.target?.value || 1)))}
+              />
+            </div>
+            <div className="grid-two" style={{ marginBottom: 'var(--space-3)' }}>
+              <Input
+                label="증권사"
+                placeholder="예) NH, 토스, 삼성"
+                value={maintBrokerName}
+                onChange={(e: any) => setMaintBrokerName(String(e?.target?.value || ''))}
+              />
+              <Input
+                label="계좌명"
+                placeholder="예) ISA, 연금, 일반"
+                value={maintAccountName}
+                onChange={(e: any) => setMaintAccountName(String(e?.target?.value || ''))}
               />
             </div>
             <Input

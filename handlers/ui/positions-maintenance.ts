@@ -22,6 +22,11 @@ function asPositiveNumber(input: unknown): number | null {
   return n
 }
 
+function normalizeLabel(input: unknown): string | null {
+  const v = String(input || '').trim()
+  return v ? v : null
+}
+
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   const requestOrigin = String(req.headers.origin || '').trim()
   const trustedOrigins = String(
@@ -82,6 +87,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const code = normalizeCode(body.code)
       const buyPrice = asPositiveNumber(body.buy_price)
       const quantity = Math.max(1, Math.trunc(Number(body.quantity || 1)))
+      const brokerName = normalizeLabel(body.broker_name)
+      const accountName = normalizeLabel(body.account_name)
 
       if (!code) return res.status(400).json({ error: 'code required' })
       if (!buyPrice) return res.status(400).json({ error: 'buy_price must be > 0' })
@@ -108,9 +115,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           invested_amount: investedAmount,
           status: 'holding',
           buy_date: buyDate,
+          broker_name: brokerName,
+          account_name: accountName,
         })
         .eq('id', position.id)
-        .select('id,code,buy_price,quantity,invested_amount,status,buy_date')
+        .select('id,code,buy_price,quantity,invested_amount,status,buy_date,broker_name,account_name')
         .single()
 
       if (upErr) return res.status(500).json({ error: upErr.message })
@@ -135,7 +144,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (mode === 'liquidateall') {
       const { data: holdings, error: holdErr } = await supabase
         .from('virtual_positions')
-        .select('id,code,quantity,buy_price,status,stock:stocks(close)')
+        .select('id,code,quantity,buy_price,status,broker_name,account_name,stock:stocks(close)')
         .eq('chat_id', chatId)
         .gt('quantity', 0)
 
@@ -158,6 +167,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           net_amount: gross,
           fee_amount: 0,
           tax_amount: 0,
+          broker_name: String(row?.broker_name || '').trim() || null,
+          account_name: String(row?.account_name || '').trim() || null,
           memo: '웹 전체매도',
           created_at: nowIso,
         }
@@ -188,6 +199,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const code = normalizeCode(body.code)
       const buyPrice = asPositiveNumber(body.buy_price)
       const quantity = Math.max(1, Math.trunc(Number(body.quantity || 1)))
+      const brokerName = normalizeLabel(body.broker_name)
+      const accountName = normalizeLabel(body.account_name)
 
       if (!code) return res.status(400).json({ error: 'code required' })
       if (!buyPrice) return res.status(400).json({ error: 'buy_price must be > 0' })
@@ -227,6 +240,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             status: 'holding',
             buy_date: buyDate,
             memo: 'web-restore:v1',
+            broker_name: brokerName,
+            account_name: accountName,
           })
           .eq('id', (existing as any).id)
           .select('id')
@@ -245,6 +260,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             status: 'holding',
             buy_date: buyDate,
             memo: 'web-restore:v1',
+            broker_name: brokerName,
+            account_name: accountName,
           })
           .select('id')
           .single()
@@ -283,7 +300,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         ok: true,
         mode,
         created: !existing,
-        data: { code, stock_name: (stock as any).name, buy_price: buyPrice, quantity, invested_amount: investedAmount },
+        data: {
+          code,
+          stock_name: (stock as any).name,
+          buy_price: buyPrice,
+          quantity,
+          invested_amount: investedAmount,
+          broker_name: brokerName,
+          account_name: accountName,
+        },
       })
     }
 

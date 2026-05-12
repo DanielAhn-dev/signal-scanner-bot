@@ -21,7 +21,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_KEY
   if (!url || !key) return res.status(500).json({ error: 'Server not configured' })
 
-  const { code, side, quantity, price, memo } = req.body || {}
+  const { code, side, quantity, price, memo, broker_name, account_name } = req.body || {}
   if (!code || !side || !quantity || !price) return res.status(400).json({ error: 'Missing fields' })
 
   const supabase = createClient(url, key)
@@ -34,6 +34,19 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const chatId = user.chatId
     if (!chatId) return res.status(400).json({ error: 'chat_id required (header x-user-chat-id, query/body chat_id, or server default)' })
 
+    let brokerName = String(broker_name || '').trim() || null
+    let accountName = String(account_name || '').trim() || null
+    if (!brokerName && !accountName) {
+      const { data: pos } = await supabase
+        .from('virtual_positions')
+        .select('broker_name,account_name')
+        .eq('chat_id', chatId)
+        .eq('code', String(code))
+        .maybeSingle()
+      brokerName = String((pos as any)?.broker_name || '').trim() || null
+      accountName = String((pos as any)?.account_name || '').trim() || null
+    }
+
     const insertResp = await supabase.from('virtual_trades').insert([{ 
       chat_id: chatId,
       code: String(code),
@@ -44,6 +57,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       net_amount: gross,
       fee_amount: 0,
       tax_amount: 0,
+      broker_name: brokerName,
+      account_name: accountName,
       memo: memo || null,
     }]).select().single()
 
