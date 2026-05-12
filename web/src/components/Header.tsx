@@ -2,6 +2,7 @@ import React from 'react'
 import { TELEGRAM_COMMANDS } from '../data/telegramCommands'
 import { NAV_ITEMS, PRIMARY_NAV_KEYS } from '../navigation'
 import ProfileModal from './ProfileModal'
+import CreditShortForm from './CreditShortForm'
 import { readProfile, type StoredProfile } from '../lib/userContext'
 import { apiFetch } from '../lib/api'
 import { onOpenProfileModal } from '../lib/profileModal'
@@ -21,6 +22,7 @@ export default function Header({
   const [cmdOpen, setCmdOpen] = React.useState(false)
   const [filter, setFilter] = React.useState('')
   const [profileOpen, setProfileOpen] = React.useState(false)
+  const [creditShortOpen, setCreditShortOpen] = React.useState(false)
   const [profile, setProfile] = React.useState<StoredProfile>(() => readProfile() ?? {})
   const [isAdmin, setIsAdmin] = React.useState(false)
   const [focusChatIdField, setFocusChatIdField] = React.useState(false)
@@ -82,6 +84,18 @@ export default function Header({
     setProfile(readProfile() ?? {})
   }, [isSignedIn])
 
+  const handleSaveCreditShort = React.useCallback(async (data: { rows: Array<{ code: string; date: string; shortRatio?: number; creditRatio?: number }> }) => {
+    const json = await apiFetch('/api/credit-short', {
+      method: 'POST',
+      cacheMs: 0,
+      timeoutMs: 20_000,
+      body: JSON.stringify(data),
+    })
+    if (!json?.success) {
+      throw new Error(json?.error || '저장 실패')
+    }
+  }, [])
+
   // 대시보드에서 "Chat ID 연결" 버튼 클릭 시 프로필 모달 열기
   React.useEffect(() => {
     return onOpenProfileModal(() => {
@@ -138,6 +152,13 @@ export default function Header({
             onClick={() => setCmdOpen(true)}
           >
             명령
+          </button>
+          <button
+            className="nav-item top-nav-action"
+            onClick={() => setCreditShortOpen(true)}
+            title="신용/공매도 수동 입력"
+          >
+            신용/공매도
           </button>
           {/* 프로필 아바타 버튼 */}
           <button
@@ -257,6 +278,11 @@ export default function Header({
       onSignOut={signOut}
       isSigningIn={isSigningIn}
       focusChatIdField={focusChatIdField}
+    />
+    <CreditShortForm
+      isOpen={creditShortOpen}
+      onClose={() => setCreditShortOpen(false)}
+      onSave={handleSaveCreditShort}
     />
       </>
     )
