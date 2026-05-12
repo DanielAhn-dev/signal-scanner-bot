@@ -33,6 +33,13 @@ type IndicatorSnapshot = {
   rsi14: number | null
 }
 
+type CreditShortDailySnapshot = {
+  date: string | null
+  credit_ratio: number | null
+  short_ratio: number | null
+  short_balance: number | null
+}
+
 type CreditShortProxy = {
   riskScore: number
   level: 'low' | 'moderate' | 'high'
@@ -364,11 +371,14 @@ async function fetchStockProfile(supabase: any, code: string): Promise<any | nul
   const selectAttempts = [
     // 최신 스키마: 공매도/신용 + 기술지표 포함
     'code,name,sector_id,close,updated_at,description,market_cap,per,pbr,eps,bps,foreign_ratio,credit_ratio,short_ratio,short_balance,sma20,sma50,rsi14',
+    // foreigner_ratio 컬럼명을 쓰는 스키마 + 공매도/신용 + 기술지표 포함
+    'code,name,sector_id,close,updated_at,description,market_cap,per,pbr,eps,bps,foreigner_ratio,credit_ratio,short_ratio,short_balance,sma20,sma50,rsi14',
     // 일부 컬럼이 빠진 스키마 대비
     'code,name,sector_id,close,updated_at,description,market_cap,per,pbr,eps,bps,foreign_ratio,sma20,sma50,rsi14',
     'code,name,sector_id,close,updated_at,description,market_cap,per,pbr,eps,bps,foreigner_ratio,sma20,sma50,rsi14',
     // 기술지표 컬럼이 아직 없을 수 있는 과거 스키마
     'code,name,sector_id,close,updated_at,description,market_cap,per,pbr,eps,bps,foreign_ratio,credit_ratio,short_ratio,short_balance',
+    'code,name,sector_id,close,updated_at,description,market_cap,per,pbr,eps,bps,foreigner_ratio,credit_ratio,short_ratio,short_balance',
     'code,name,sector_id,close,updated_at,description,market_cap,per,pbr,eps,bps,foreign_ratio',
     'code,name,sector_id,close,updated_at,description,market_cap,per,pbr,eps,bps,foreigner_ratio',
     'code,name,sector_id,close,updated_at,description,market_cap,per,pbr,eps,bps',
@@ -443,6 +453,28 @@ async function fetchLatestIndicators(supabase: any, code: string): Promise<Indic
   }
 
   return null
+}
+
+async function fetchLatestCreditShortDaily(supabase: any, code: string): Promise<CreditShortDailySnapshot | null> {
+  try {
+    const { data, error } = await supabase
+      .from('stock_credit_short_daily')
+      .select('date,credit_ratio,short_ratio,short_balance')
+      .eq('code', code)
+      .order('date', { ascending: false })
+      .limit(1)
+
+    if (error || !data?.length) return null
+    const row = data[0] as any
+    return {
+      date: row?.date ?? null,
+      credit_ratio: asNum(row?.credit_ratio),
+      short_ratio: asNum(row?.short_ratio),
+      short_balance: asNum(row?.short_balance),
+    }
+  } catch {
+    return null
+  }
 }
 
 async function fetchInvestorFlow(supabase: any, code: string): Promise<InvestorFlowRow | null> {
@@ -702,6 +734,50 @@ function computeCreditShortProxy(input: {
   }
 }
 
+function computeRealCreditShortAdjustment(input: {
+  creditRatio: number | null
+  shortRatio: number | null
+}): { scoreAdj: number; reasons: string[] } {
+  const credit = Number.isFinite(Number(input.creditRatio)) ? Number(input.creditRatio) : null
+  const short = Number.isFinite(Number(input.shortRatio)) ? Number(input.shortRatio) : null
+
+  let adj = 0
+  const reasons: string[] = []
+
+  if (short != null) {
+    if (short >= 20) {
+      adj -= 8
+      reasons.push(`공매도 비율 높음(${short.toFixed(2)}%)`)
+    } else if (short >= 12) {
+      adj -= 5
+      reasons.push(`공매도 비율 경계(${short.toFixed(2)}%)`)
+    } else if (short >= 7) {
+      adj -= 2
+    } else if (short <= 2) {
+      adj += 2
+      reasons.push(`공매도 비율 낮음(${short.toFixed(2)}%)`)
+    }
+  }
+
+  if (credit != null) {
+    if (credit >= 12) {
+      adj -= 7
+      reasons.push(`신용비율 과열(${credit.toFixed(2)}%)`)
+    } else if (credit >= 8) {
+      adj -= 4
+      reasons.push(`신용비율 높음(${credit.toFixed(2)}%)`)
+    } else if (credit >= 5) {
+      adj -= 2
+    } else if (credit <= 1.5) {
+      adj += 1
+      reasons.push(`신용비율 안정(${credit.toFixed(2)}%)`)
+    }
+  }
+
+  const clamped = Math.max(-12, Math.min(4, adj))
+  return { scoreAdj: clamped, reasons: reasons.slice(0, 3) }
+}
+
 async function buildAdvisorPayload(input: {
   supabase: any
   code: string
@@ -726,9 +802,7 @@ async function buildAdvisorPayload(input: {
     hasRealCreditShort,
     perShareMetrics,
   } = input
-  const currentPrice =
-    (isKrxIntradaySession() ? asNum(realtimePrice) : null) ??
-    asNum(latest?.close ?? stock?.close)
+  const currentPrice = asNum(realtimePrice) ?? asNum(latest?.close ?? stock?.close)
   if (currentPrice == null) return null
 
   let fallbackScore: number | undefined
@@ -800,9 +874,20 @@ async function buildAdvisorPayload(input: {
           : 0
       : 0
 
+  const realCreditShort = computeRealCreditShortAdjustment({
+    creditRatio: asNum((stock as any)?.credit_ratio),
+    shortRatio: asNum((stock as any)?.short_ratio),
+  })
+
   const finalScoreAdjusted =
     finalScore != null
-      ? Math.max(0, Math.min(100, Number((finalScore - proxyPenalty).toFixed(1))))
+      ? Math.max(
+          0,
+          Math.min(
+            100,
+            Number((finalScore - proxyPenalty + (hasRealCreditShort ? realCreditShort.scoreAdj : 0)).toFixed(1)),
+          ),
+        )
       : null
 
   const normalizedSignal = resolveAdvisorSignal({
@@ -855,6 +940,9 @@ async function buildAdvisorPayload(input: {
     rationale: plan.rationale,
     warnings: [
       ...(Array.isArray(plan.warnings) ? plan.warnings : []),
+      ...(hasRealCreditShort
+        ? realCreditShort.reasons
+        : []),
       ...(!hasRealCreditShort && creditShortProxy && creditShortProxy.level !== 'low'
         ? [`신용/공매도 실데이터 부재: 프록시 과열 리스크 ${creditShortProxy.level === 'high' ? '높음' : '보통'}`]
         : []),
@@ -896,12 +984,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (!url || !key) return res.status(500).json({ error: 'Server not configured' })
 
   const supabase = createClient(url, key)
-  const code = String(req.query.code || '').trim()
+  const rawCode = String(req.query.code || '').trim().replace(/^A/i, '')
+  const code = /^\d{1,6}$/.test(rawCode) ? rawCode.padStart(6, '0') : rawCode
   const chatId = toSafeChatId(req.query.chat_id || req.headers['x-user-chat-id'])
   if (!code) return res.status(400).json({ error: 'Missing code parameter' })
 
   try {
-    const [series, stock, fundamentalsResp, flow, realtimeData, indicatorSnapshot] = await Promise.all([
+    const [series, stock, fundamentalsResp, flow, realtimeData, indicatorSnapshot, latestCreditShortDaily] = await Promise.all([
       fetchTimeSeries(supabase, code),
       fetchStockProfile(supabase, code),
       supabase
@@ -913,6 +1002,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       fetchInvestorFlow(supabase, code),
       fetchRealtimeStockData(code).catch(() => null),
       fetchLatestIndicators(supabase, code),
+      fetchLatestCreditShortDaily(supabase, code),
     ])
 
     let fund: any = fundamentalsResp.data?.[0] || null
@@ -954,9 +1044,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     // 공매도/신용: DB 우선, 없으면 live 스크래핑 fallback
-    const dbCreditRatio = asNum((stock as any)?.credit_ratio)
-    const dbShortRatio   = asNum((stock as any)?.short_ratio)
-    const dbShortBalance = asNum((stock as any)?.short_balance)
+    const dbCreditRatio =
+      asNum((stock as any)?.credit_ratio) ??
+      asNum((latestCreditShortDaily as any)?.credit_ratio)
+    const dbShortRatio =
+      asNum((stock as any)?.short_ratio) ??
+      asNum((latestCreditShortDaily as any)?.short_ratio)
+    const dbShortBalance =
+      asNum((stock as any)?.short_balance) ??
+      asNum((latestCreditShortDaily as any)?.short_balance)
     const hasDbCreditShort = dbCreditRatio != null || dbShortRatio != null
 
     let creditShort: {
@@ -1006,9 +1102,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     const latest = normalizedSeries[0] || null
     const realtimePrice = asNum(realtimeData?.price)
-    const currentPrice =
-      (isKrxIntradaySession() ? realtimePrice : null) ??
-      asNum(latest?.close ?? (stock as any)?.close)
+    const fallbackClose = asNum(latest?.close ?? (stock as any)?.close)
+    const hasRealtimePrice = realtimePrice != null && realtimePrice > 0
+    const currentPrice = hasRealtimePrice ? realtimePrice : fallbackClose
+    const priceMeta = {
+      source: hasRealtimePrice ? 'realtime' : 'close',
+      marketStatus: realtimeData?.marketStatus ?? null,
+      fetchedAt: hasRealtimePrice ? toIsoDate(realtimeData?.fetchedAt) : null,
+    }
 
     const resolvedPer = asNum((stock as any)?.per) ?? asNum(fund?.per)
     const resolvedPbr = asNum((stock as any)?.pbr) ?? asNum(fund?.pbr)
@@ -1081,6 +1182,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             close: currentPrice,
           }
         : null,
+      price_meta: priceMeta,
       profile: stock
         ? {
             code: stock.code,
@@ -1111,6 +1213,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             ema240: resolvedEma240,
             ema244: resolvedEma244,
             rsi14: resolvedRsi14,
+            price_source: priceMeta.source,
+            price_market_status: priceMeta.marketStatus,
+            price_fetched_at: priceMeta.fetchedAt,
           }
         : null,
       flow: flow
