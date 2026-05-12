@@ -50,40 +50,6 @@ type SectorSnapshot = {
 
 type SectorFilterMode = 'all' | 'promising' | 'next' | 'promising-or-next'
 
-function toSafeNumber(v: unknown): number {
-  const n = Number(v)
-  return Number.isFinite(n) ? n : 0
-}
-
-function normalizeScore(raw: ApiScoreBreakdown | null | undefined): ScoreBreakdown {
-  const src = raw ?? {}
-  return {
-    totalScore: toSafeNumber(src.totalScore),
-    value: toSafeNumber(src.value ?? src.valueScore),
-    momentum: toSafeNumber(src.momentum ?? src.momentumScore),
-    smartMoney: toSafeNumber(src.smartMoney ?? src.smartMoneyScore),
-    sector: toSafeNumber(src.sector ?? src.sectorScore),
-  }
-}
-
-function normalizePick(raw: any): DiscoveryPick {
-  return {
-    code: String(raw?.code ?? ''),
-    name: String(raw?.name ?? ''),
-    marketCap: toSafeNumber(raw?.marketCap),
-    pbr: raw?.pbr == null ? null : Number(raw.pbr),
-    per: raw?.per == null ? null : Number(raw.per),
-    roe: raw?.roe == null ? null : Number(raw.roe),
-    revQoq: raw?.revQoq == null ? null : Number(raw.revQoq),
-    opQoq: raw?.opQoq == null ? null : Number(raw.opQoq),
-    revAcceleration: raw?.revAcceleration == null ? null : Number(raw.revAcceleration),
-    opAcceleration: raw?.opAcceleration == null ? null : Number(raw.opAcceleration),
-    smartMoney12w: toSafeNumber(raw?.smartMoney12w),
-    smartMoneyRatioPct: raw?.smartMoneyRatioPct == null ? null : Number(raw.smartMoneyRatioPct),
-    score: normalizeScore(raw?.score),
-  }
-}
-
 type DiscoveryCriteria = {
   minMarketCapBillion: number
   minRoe: number
