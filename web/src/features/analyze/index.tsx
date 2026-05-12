@@ -186,6 +186,20 @@ export default function AnalyzePage() {
     })
   }
 
+  const formatDateTime = (value: unknown) => {
+    if (!value) return '—'
+    const d = new Date(String(value))
+    if (Number.isNaN(d.getTime())) return String(value)
+    return d.toLocaleString('ko-KR', {
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      timeZone: 'Asia/Seoul',
+    })
+  }
+
   const priceBarPct =
     result?.high != null && result?.low != null && result?.high !== result?.low
       ? ((result.close - result.low) / (result.high - result.low)) * 100
@@ -365,6 +379,11 @@ export default function AnalyzePage() {
                     {result.change_pct > 0 ? '+' : ''}{formatNumber(result.change_pct, 2)}%
                   </div>
                 )}
+                <div className="caption muted" style={{ marginTop: 'var(--space-1)' }}>
+                  {result.price_source === 'realtime'
+                    ? `실시간 반영${result.price_fetched_at ? ` · ${formatDateTime(result.price_fetched_at)}` : ''}`
+                    : '종가 기준'}
+                </div>
               </div>
             )}
           </div>
