@@ -149,6 +149,14 @@ def save_run_status(status: dict) -> None:
         json.dump(status, f, ensure_ascii=False, indent=2)
 
 
+def append_alert_log(message: str) -> None:
+    path = Path(__file__).resolve().parents[1] / "logs" / "credit_short_alert.log"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    ts = datetime.now().isoformat(timespec="seconds")
+    with path.open("a", encoding="utf-8") as f:
+        f.write(f"[{ts}] {message}\n")
+
+
 def load_short_map_from_csv(csv_path: str, trading_iso: str) -> dict[str, dict]:
     path = Path(csv_path)
     if not path.exists():
@@ -558,7 +566,7 @@ def update_stocks_latest(
 
 
 # ── 메인 ──────────────────────────────────────────────────
-def main():
+def main() -> int:
     print(f"[START] 공매도 ETL 시작: {datetime.now().isoformat()}")
     run_status = load_run_status()
 
@@ -608,6 +616,7 @@ def main():
         print("\n[1/1] 공매도 수집 스킵")
 
     # ── Step 3: DB 저장 ──
+    exit_code = 0
     if short_map:
         print("\n[DB] 저장 중...")
         upsert_daily_records(trading_iso, short_map)
@@ -636,13 +645,18 @@ def main():
         save_run_status(run_status)
 
         if consecutive >= ALERT_CONSECUTIVE_FAILURES:
-            print(
-                f"[ALERT] 공매도 수집 실패 {consecutive}회 연속 발생 "
+            alert_message = (
+                f"공매도 수집 실패 {consecutive}회 연속 발생 "
                 f"(reason={reason}, last_success={run_status.get('last_success_date') or 'n/a'})"
             )
+            print(f"[ALERT] {alert_message}")
+            append_alert_log(alert_message)
+
+        exit_code = 2 if reason == "krx_blocked" else 1
 
     print(f"\n[END] 완료: {datetime.now().isoformat()}")
+    return exit_code
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

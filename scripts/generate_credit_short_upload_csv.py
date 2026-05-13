@@ -1,13 +1,13 @@
 """
-Generate per-symbol credit/short upload CSV template for manual web upload.
+Generate per-symbol short-selling fallback CSV template.
 
 Output columns:
-  code,date,shortRatio,creditRatio
+    code,date,shortRatio,shortBalance,shortVolume
 
 Usage:
-  python scripts/generate_credit_short_upload_csv.py --date 2026-05-12
-  python scripts/generate_credit_short_upload_csv.py --date 2026-05-12 --output tmp/credit_short_upload_2026-05-12.csv
-  python scripts/generate_credit_short_upload_csv.py --date 2026-05-12 --prefill-latest
+    python scripts/generate_credit_short_upload_csv.py --date 2026-05-12
+    python scripts/generate_credit_short_upload_csv.py --date 2026-05-12 --output tmp/short_fallback_2026-05-12.csv
+    python scripts/generate_credit_short_upload_csv.py --date 2026-05-12 --prefill-latest
 """
 from __future__ import annotations
 
@@ -22,17 +22,17 @@ from supabase import Client, create_client
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Generate credit/short upload CSV template")
+    parser = argparse.ArgumentParser(description="Generate short fallback CSV template")
     parser.add_argument("--date", required=True, help="Target date (YYYY-MM-DD or YYYYMMDD)")
     parser.add_argument(
         "--output",
         default="",
-        help="Output CSV path (default: tmp/credit_short_upload_<date>.csv)",
+        help="Output CSV path (default: tmp/short_fallback_<date>.csv)",
     )
     parser.add_argument(
         "--prefill-latest",
         action="store_true",
-        help="Prefill shortRatio/creditRatio from stocks.latest values",
+        help="Prefill shortRatio/shortBalance/shortVolume from stocks.latest values",
     )
     parser.add_argument(
         "--limit",
@@ -82,7 +82,7 @@ def get_supabase() -> Client:
 def fetch_active_stocks(supabase: Client, prefill_latest: bool, limit: int) -> list[dict[str, Any]]:
     select_cols = "code"
     if prefill_latest:
-        select_cols = "code,short_ratio,credit_ratio"
+        select_cols = "code,short_ratio,short_balance,short_volume"
 
     query = (
         supabase.table("stocks")
@@ -112,7 +112,7 @@ def main() -> int:
         print(f"[ERROR] {e}", file=sys.stderr)
         return 1
 
-    output_path = args.output or f"tmp/credit_short_upload_{target_date}.csv"
+    output_path = args.output or f"tmp/short_fallback_{target_date}.csv"
     os.makedirs(os.path.dirname(output_path) or ".", exist_ok=True)
 
     try:
@@ -128,18 +128,25 @@ def main() -> int:
 
     with open(output_path, "w", newline="", encoding="utf-8") as f:
         writer = csv.writer(f)
-        writer.writerow(["code", "date", "shortRatio", "creditRatio"])
+        writer.writerow(["code", "date", "shortRatio", "shortBalance", "shortVolume"])
         for row in stocks:
             short_ratio = row.get("short_ratio") if args.prefill_latest else ""
-            credit_ratio = row.get("credit_ratio") if args.prefill_latest else ""
-            writer.writerow([row["code"], target_date, short_ratio if short_ratio is not None else "", credit_ratio if credit_ratio is not None else ""])
+            short_balance = row.get("short_balance") if args.prefill_latest else ""
+            short_volume = row.get("short_volume") if args.prefill_latest else ""
+            writer.writerow([
+                row["code"],
+                target_date,
+                short_ratio if short_ratio is not None else "",
+                short_balance if short_balance is not None else "",
+                short_volume if short_volume is not None else "",
+            ])
 
     print(f"[OK] Generated: {output_path}")
     print(f"[OK] Rows: {len(stocks)}")
     if not args.prefill_latest:
-        print("[INFO] shortRatio/creditRatio are empty. Fill values and upload in web modal.")
+        print("[INFO] shortRatio/shortBalance/shortVolume are empty. Fill values and use as fallback CSV.")
     else:
-        print("[INFO] shortRatio/creditRatio prefilled from stocks.latest values.")
+        print("[INFO] shortRatio/shortBalance/shortVolume prefilled from stocks.latest values.")
 
     return 0
 

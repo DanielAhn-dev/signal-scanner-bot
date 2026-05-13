@@ -29,17 +29,17 @@ pip install -r requirements.txt
 ```powershell
 # PowerShell 관리자 모드에서 실행
 Set-ExecutionPolicy -Scope Process -ExecutionPolicy RemoteSigned
-.\register_credit_short_task.ps1
+.\scripts\register_credit_short_daily_task.ps1 -Force
 ```
 
 **실행 결과:**
 ```
 [OK] Task Scheduler 등록 완료!
 ==========================================
-작업명: SyncCreditShort
+작업명: SyncCreditShortDaily
 경로: \Signal-Scanner-Bot\
-실행: 매주 월요일 17:35
-배치: D:\Work\batch\sync_credit_short.bat
+실행: 평일 장종료 후 1회 (18:10)
+배치: D:\Work\dev\github\signal-scanner-bot\scripts\sync_credit_short_daily.bat
 ```
 
 ---
@@ -47,8 +47,7 @@ Set-ExecutionPolicy -Scope Process -ExecutionPolicy RemoteSigned
 ## 동작 방식
 
 ### 자동 실행 일정
-- **기본 권장**: 평일 매일 17:40 공매도 지표 자동 적재
-- **기존 방식**: 매주 월요일 17:35 (보조 운영)
+- **고정 권장**: 평일 매일 18:10 공매도 지표 자동 적재 (장종료 후 1회)
 - **필요조건**: Windows PC가 켜져있어야 함
 - **로그**: `D:\Work\dev\github\signal-scanner-bot\logs\credit_short_*.log`
 
@@ -72,6 +71,19 @@ Set-ExecutionPolicy -Scope Process -ExecutionPolicy RemoteSigned
 - **최근 성공일 지연 경고**: `CREDIT_SHORT_STALE_WARN_DAYS` (기본 3일)
 - **대체 소스 훅(CSV)**: `CREDIT_SHORT_FALLBACK_CSV` 경로 지정 시 KRX 실패 때 fallback 로드
 - **상태 파일**: `logs/credit_short_status.json` (마지막 성공일/연속 실패 횟수 저장)
+- **알림 파일**: `logs/credit_short_alert.log` (임계치 도달 ALERT 누적)
+
+### Fallback CSV 운영 절차 (반자동)
+1. fallback 템플릿 생성
+```powershell
+python scripts/generate_credit_short_upload_csv.py --date 2026-05-13 --prefill-latest
+```
+2. 생성된 `tmp/short_fallback_2026-05-13.csv` 파일에 확보 가능한 공매도 지표를 채움
+3. `.env`에 fallback 경로 지정
+```dotenv
+CREDIT_SHORT_FALLBACK_CSV=tmp/short_fallback_2026-05-13.csv
+```
+4. 스케줄/수동 실행 시 KRX 결과가 비어 있으면 CSV를 자동 로드
 
 ---
 
@@ -120,11 +132,11 @@ Get-Content (Get-ChildItem d:\Work\dev\github\signal-scanner-bot\logs\credit_sho
 ### 1. Task가 실행되지 않음
 ```powershell
 # 작업 상태 확인
-Get-ScheduledTask -TaskName SyncCreditShort -TaskPath \Signal-Scanner-Bot\ | Format-List
+Get-ScheduledTask -TaskName SyncCreditShortDaily -TaskPath \Signal-Scanner-Bot\ | Format-List
 
 # 작업 삭제 후 다시 등록
-Unregister-ScheduledTask -TaskName SyncCreditShort -Confirm:$false
-.\register_credit_short_task.ps1
+Unregister-ScheduledTask -TaskName SyncCreditShortDaily -TaskPath \Signal-Scanner-Bot\ -Confirm:$false
+.\scripts\register_credit_short_daily_task.ps1 -Force
 ```
 
 ### 2. 인코딩 에러

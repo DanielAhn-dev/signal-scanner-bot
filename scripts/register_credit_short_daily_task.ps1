@@ -1,7 +1,7 @@
 param(
   [string]$TaskName = "SyncCreditShortDaily",
   [string]$TaskFolder = "\Signal-Scanner-Bot\",
-  [string]$RunAt = "17:40",
+  [string]$RunAt = "18:10",
   [switch]$Force
 )
 
@@ -31,7 +31,8 @@ setlocal
 cd /d "$repoRoot"
 set PYTHONIOENCODING=utf-8
 "$pythonExe" "$scriptPath" >> "$logDir\credit_short_daily.log" 2>&1
-endlocal
+set EXITCODE=%ERRORLEVEL%
+endlocal & exit /b %EXITCODE%
 "@
 Set-Content -Path $batchPath -Value $batchBody -Encoding Ascii
 
@@ -54,5 +55,5 @@ if ($LASTEXITCODE -ne 0) {
 Write-Host "[OK] Task Scheduler 등록 완료"
 Write-Host "작업명: $TaskName"
 Write-Host "경로: $TaskFolder"
-Write-Host "실행: 평일 $RunAt"
+Write-Host "실행: 평일 장종료 후 1회 ($RunAt)"
 Write-Host "배치: $batchPath"
