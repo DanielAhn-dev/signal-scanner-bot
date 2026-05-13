@@ -28,7 +28,60 @@ type NaverFinanceData = {
   rows: Record<string, string[]>;
   currentPer?: number;
   currentPbr?: number;
+  perFromTable?: number;
+  pbrFromTable?: number;
+  perFromBlind?: number;
+  pbrFromBlind?: number;
+  perFromHtml?: number;
+  pbrFromHtml?: number;
 };
+
+type ValuationMetric = "PER" | "PBR";
+type ValuationSource = "rt" | "current" | "table" | "blind" | "html";
+
+function sanitizeValuationCandidate(
+  metric: ValuationMetric,
+  raw: number | undefined
+): { value?: number; reason?: string } {
+  if (raw === undefined) return { value: undefined };
+  if (!Number.isFinite(raw)) return { value: undefined, reason: "non_finite" };
+
+  if (metric === "PER") {
+    if (raw === 0) return { value: undefined, reason: "zero" };
+    const abs = Math.abs(raw);
+    if (Number.isInteger(abs) && abs >= 1900 && abs <= 2099) {
+      return { value: undefined, reason: "year_like" };
+    }
+    if (abs > 1000) return { value: undefined, reason: "out_of_range" };
+    return { value: raw };
+  }
+
+  if (raw <= 0) return { value: undefined, reason: "non_positive" };
+  if (raw > 1000) return { value: undefined, reason: "out_of_range" };
+  return { value: raw };
+}
+
+function pickValidatedCandidate(
+  metric: ValuationMetric,
+  code: string,
+  candidates: Array<{ source: ValuationSource; value: number | undefined }>
+): { value?: number; source?: ValuationSource } {
+  for (const candidate of candidates) {
+    if (candidate.value === undefined) continue;
+
+    const sanitized = sanitizeValuationCandidate(metric, candidate.value);
+    if (sanitized.value === undefined) {
+      console.info(
+        `fundamental: reject ${metric} candidate (${code}) source=${candidate.source} raw=${candidate.value} reason=${sanitized.reason || "invalid"}`
+      );
+      continue;
+    }
+
+    return { value: sanitized.value, source: candidate.source };
+  }
+
+  return { value: undefined, source: undefined };
+}
 
 export type FundamentalSnapshot = {
   sectorName?: string;
@@ -483,6 +536,12 @@ async function fetchNaverFinanceRows(code: string): Promise<NaverFinanceData> {
       rows: out,
       currentPer,
       currentPbr,
+      perFromTable,
+      pbrFromTable,
+      perFromBlind,
+      pbrFromBlind,
+      perFromHtml,
+      pbrFromHtml,
     };
   } catch (e) {
     console.error(`fetchNaverFinanceRows failed (${code}):`, e);
@@ -502,7 +561,17 @@ export async function getFundamentalSnapshot(code: string): Promise<FundamentalS
 
   const profile = resolveFundamentalProfile({ sectorName, sectorCategory });
 
-  const { rows, currentPer, currentPbr } = financeData;
+  const {
+    rows,
+    currentPer,
+    currentPbr,
+    perFromTable,
+    pbrFromTable,
+    perFromBlind,
+    pbrFromBlind,
+    perFromHtml,
+    pbrFromHtml,
+  } = financeData;
 
   const sales = findLatestActualAnnualValue(rows["매출액"] || []);
   const opIncome = findLatestActualAnnualValue(rows["영업이익"] || []);
@@ -521,12 +590,36 @@ export async function getFundamentalSnapshot(code: string): Promise<FundamentalS
     rows["ROE(지배주주)"] || rows["ROE"] || rows["ROE(%)"] || []
   );
 
-  const perRaw = rt?.per ?? currentPer ?? parseNum((rows.__PER_FALLBACK__ || [])[0] || "");
-  const pbrRaw = rt?.pbr ?? currentPbr ?? parseNum((rows.__PBR_FALLBACK__ || [])[0] || "");
+  const perPick = pickValidatedCandidate("PER", code, [
+    { source: "rt", value: rt?.per },
+    { source: "current", value: currentPer },
+    { source: "table", value: perFromTable },
+    { source: "blind", value: perFromBlind },
+    { source: "html", value: perFromHtml },
+  ]);
+  const pbrPick = pickValidatedCandidate("PBR", code, [
+    { source: "rt", value: rt?.pbr },
+    { source: "current", value: currentPbr },
+    { source: "table", value: pbrFromTable },
+    { source: "blind", value: pbrFromBlind },
+    { source: "html", value: pbrFromHtml },
+  ]);
 
-  // Sanity checks: filter out clearly invalid parse results (e.g. very large integers or zero PBR)
-  let per: number | undefined = perRaw;
-  let pbr: number | undefined = pbrRaw;
+  let per: number | undefined = perPick.value;
+  let pbr: number | undefined = pbrPick.value;
+
+  if (perPick.source && perPick.source !== "rt") {
+    console.info(
+      `fundamental: selected PER source (${code}) -> ${perPick.source} (${per})`
+    );
+  }
+  if (pbrPick.source && pbrPick.source !== "rt") {
+    console.info(
+      `fundamental: selected PBR source (${code}) -> ${pbrPick.source} (${pbr})`
+    );
+  }
+
+  // Final guardrail for any future paths that may bypass candidate filtering.
   if (per !== undefined && (Math.abs(per) > 1000 || per === 0)) {
     console.info(`fundamental: sanitized PER for ${code} (raw=${per}) -> undefined`);
     per = undefined;
