@@ -954,18 +954,20 @@ export default function Portfolio() {
         <div className="portfolio-title-wrap">
           <h1 className="title-xl portfolio-title">가상 포트폴리오</h1>
           <p className="portfolio-subtitle">보유 포지션만 집중해서 관리합니다.</p>
-          <EconomicEventBadge onNavigateToCalendar={() => {}} />
         </div>
-        <div className="portfolio-head-actions">
-          <span className="caption muted portfolio-head-updated">
-            {refreshing
-              ? '업데이트 중...'
-              : `마지막 갱신 ${lastUpdatedAt
-                ? new Date(lastUpdatedAt).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
-                : '-'}`}
-          </span>
+        <div className="portfolio-head-toolbar">
+          <div className="portfolio-head-info">
+            <EconomicEventBadge onNavigateToCalendar={() => {}} />
+            <span className="caption muted portfolio-head-updated">
+              {refreshing
+                ? '업데이트 중...'
+                : `마지막 갱신 ${lastUpdatedAt
+                  ? new Date(lastUpdatedAt).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+                  : '-'}`}
+            </span>
+          </div>
 
-          <div className="portfolio-head-primary-actions">
+          <div className="portfolio-head-controls">
             <Button variant="secondary" onClick={() => load({ force: true })} disabled={loading || refreshing}>
               {refreshing ? '새로고침 중...' : '새로고침'}
             </Button>
@@ -975,23 +977,13 @@ export default function Portfolio() {
             <Button variant="secondary" onClick={() => setShareModalOpen(true)} disabled={loading || holdingAll.length === 0}>공유 요약 보기</Button>
           </div>
 
-          <div className="portfolio-head-text-actions" role="group" aria-label="포트폴리오 유지보수 작업">
-            <button
-              type="button"
-              className="portfolio-text-action"
-              onClick={() => openMaintenanceModal('holdingrestore')}
-              disabled={loading}
-            >
+          <div className="portfolio-head-maintenance" role="group" aria-label="포트폴리오 유지보수 작업">
+            <Button variant="ghost" size="sm" onClick={() => openMaintenanceModal('holdingrestore')} disabled={loading}>
               보유복구
-            </button>
-            <button
-              type="button"
-              className="portfolio-text-action"
-              onClick={() => openMaintenanceModal('liquidateall')}
-              disabled={loading || holdingAll.length === 0}
-            >
+            </Button>
+            <Button variant="ghost" size="sm" onClick={() => openMaintenanceModal('liquidateall')} disabled={loading || holdingAll.length === 0}>
               전체매도
-            </button>
+            </Button>
           </div>
         </div>
       </div>
@@ -1217,7 +1209,12 @@ export default function Portfolio() {
                 </button>
               ))}
               {accountFolders.length === 0 && (
-                <span className="caption muted">등록된 계좌 폴더가 없습니다. 보유수정/보유복구에서 추가하세요.</span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', flexWrap: 'wrap' }}>
+                  <span className="caption muted">등록된 계좌 폴더가 없습니다. 상단 유지보수의 보유복구에서 계좌/종목을 바로 추가할 수 있습니다.</span>
+                  <Button variant="secondary" size="sm" onClick={() => openMaintenanceModal('holdingrestore')} disabled={loading}>
+                    보유복구 열기
+                  </Button>
+                </div>
               )}
             </div>
           </div>
@@ -1367,10 +1364,17 @@ export default function Portfolio() {
         {loading && rows.length === 0 && <div className="card portfolio-loading-card"><Skeleton lines={5} height={18} /></div>}
 
         {!loading && !error && rows.length === 0 && (
-          <EmptyState
-            title="보유 포지션 없음"
-            description="텔레그램 /가상매수 또는 아래 버튼으로 보유 포지션을 추가하세요."
-          />
+          <>
+            <EmptyState
+              title="보유 포지션 없음"
+              description="상단 유지보수 > 보유복구에서 계좌/종목을 바로 추가할 수 있습니다."
+            />
+            <div style={{ display: 'flex', justifyContent: 'center', marginTop: 'var(--space-3)' }}>
+              <Button variant="secondary" onClick={() => openMaintenanceModal('holdingrestore')} disabled={loading}>
+                보유복구(계좌/종목 추가) 열기
+              </Button>
+            </div>
+          </>
         )}
 
         {!error && rows.map((r: any) => {

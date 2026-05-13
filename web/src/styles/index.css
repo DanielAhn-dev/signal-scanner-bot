@@ -1011,6 +1011,18 @@ html, body, #root {
 .ui-btn-ghost { background: var(--btn-ghost-bg); color: var(--btn-ghost-text); }
 .ui-btn-ghost:hover:not(:disabled) { background: var(--btn-ghost-bg-hover); }
 
+/* Button size variants */
+.ui-btn-sm {
+  min-height: var(--btn-height-sm, 32px);
+  padding: 0.375rem 0.625rem;
+  @apply text-xs;
+}
+.ui-btn-lg {
+  min-height: var(--btn-height-lg, 48px);
+  padding: 0.75rem 1rem;
+  @apply text-base;
+}
+
 .ui-field + .ui-field { @apply mt-3; }
 
 /* discovery 설정 그리드는 컬럼 정렬이 우선이라 sibling top-margin을 제거한다. */
@@ -1209,9 +1221,13 @@ html, body, #root {
 }
 
 .portfolio-head {
-  @apply flex items-start justify-between;
-  gap: var(--space-3);
+  @apply flex flex-col items-stretch;
+  gap: var(--space-2);
   @apply mb-4;
+}
+
+.portfolio-title-wrap {
+  @apply flex-1 min-w-0;
 }
 
 .portfolio-title {
@@ -1224,66 +1240,38 @@ html, body, #root {
   @apply text-sm;
 }
 
-.portfolio-head-actions {
+.portfolio-head-toolbar {
+  width: 100%;
+  @apply flex flex-row items-center;
+  gap: var(--space-2);
+  justify-content: space-between;
+  flex-wrap: wrap;
+}
+
+.portfolio-head-info {
+  @apply flex items-center;
+  gap: var(--space-2);
+}
+
+.portfolio-head-updated {
+  @apply whitespace-nowrap text-xs;
+  color: var(--color-text-muted);
+}
+
+.portfolio-head-controls {
   @apply flex items-center;
   gap: var(--space-2);
   flex-wrap: wrap;
   justify-content: flex-end;
+  margin-left: auto;
 }
 
-.portfolio-head-updated {
-  @apply whitespace-nowrap;
-}
-
-.portfolio-head-primary-actions {
-  @apply flex items-center;
-  gap: var(--space-2);
-  flex-wrap: wrap;
-}
-
-.portfolio-head-text-actions {
+.portfolio-head-maintenance {
   @apply flex items-center;
   gap: var(--space-2);
   padding-left: var(--space-2);
   margin-left: var(--space-1);
   border-left: 1px solid var(--color-border-muted);
-}
-
-.portfolio-text-action {
-  @apply bg-transparent border-none;
-  @apply text-sm;
-  @apply font-semibold;
-  color: var(--color-text-secondary);
-  padding: 0.125rem 0;
-  line-height: 1.25;
-  cursor: pointer;
-  border-bottom: 1px solid transparent;
-  transition: color var(--duration-fast) var(--ease-out), border-color var(--duration-fast) var(--ease-out);
-}
-
-.portfolio-text-action:hover:not(:disabled) {
-  color: var(--color-text-primary);
-  border-bottom-color: var(--color-border-strong);
-}
-
-.portfolio-text-action:focus-visible {
-  @apply outline-none;
-  box-shadow: var(--shadow-focus);
-  border-radius: var(--radius-xs);
-}
-
-.portfolio-text-action:disabled {
-  opacity: 0.45;
-  cursor: not-allowed;
-}
-
-.portfolio-text-action.danger {
-  color: #b54242;
-}
-
-.portfolio-text-action.danger:hover:not(:disabled) {
-  color: #922f2f;
-  border-bottom-color: #d68a8a;
 }
 
 .portfolio-total-pill {
@@ -1836,29 +1824,42 @@ html, body, #root {
 
   .portfolio-head {
     @apply flex-col items-start;
+    gap: var(--space-2);
   }
 
-  .portfolio-head-actions {
+  .portfolio-head-toolbar {
     width: 100%;
+    @apply flex-row items-start justify-between;
+  }
+
+  .portfolio-head-info {
+    @apply flex-col items-start;
+    gap: var(--space-1);
+  }
+
+  .portfolio-head-controls {
+    width: 100%;
+    @apply flex-col;
+    gap: var(--space-1);
     justify-content: flex-start;
   }
 
-  .portfolio-head-primary-actions {
+  .portfolio-head-controls .ui-button,
+  .portfolio-head-controls .portfolio-total-pill {
     width: 100%;
   }
 
-  .portfolio-head-primary-actions .ui-button,
-  .portfolio-head-primary-actions .portfolio-total-pill {
-    flex: 1 1 auto;
-    text-align: center;
-    justify-content: center;
-  }
-
-  .portfolio-head-text-actions {
+  .portfolio-head-maintenance {
     width: 100%;
+    @apply flex-col;
+    gap: var(--space-1);
+    padding-top: var(--space-2);
+    border-top: 1px solid var(--color-border-muted);
     border-left: 0;
-    padding-left: 0;
-    margin-left: 0;
+  }
+
+  .portfolio-head-maintenance .ui-button {
+    width: 100%;
     justify-content: flex-start;
   }
 
