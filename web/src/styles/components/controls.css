@@ -166,6 +166,9 @@ select {
 
 .ui-field + .ui-field { @apply mt-3; }
 
+/* grid 컨텍스트 내에서는 ui-field 간 margin-top 제거 */
+.grid-two > .ui-field,
+.grid-two > .ui-field + .ui-field,
 .discovery-criteria-grid > .ui-field,
 .discovery-criteria-grid > .ui-field + .ui-field {
   margin-top: 0;

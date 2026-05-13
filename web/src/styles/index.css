@@ -820,6 +820,27 @@ a:focus-visible {
   border-color: #e3e8ef;
 }
 
+.portfolio-cost-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  cursor: pointer;
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-medium);
+  color: var(--color-text-secondary);
+  white-space: nowrap;
+}
+.portfolio-cost-toggle input[type="checkbox"] {
+  width: 12px;
+  height: 12px;
+  cursor: pointer;
+  accent-color: var(--color-primary);
+  margin: 0;
+}
+.portfolio-cost-toggle span {
+  user-select: none;
+}
+
 .portfolio-filter-card {
   background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
   border-color: #dde7f8;

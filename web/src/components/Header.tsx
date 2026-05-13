@@ -1,4 +1,5 @@
 import React from 'react'
+import { createPortal } from 'react-dom'
 import { BadgePercent, Command, Menu, UserRound, X } from 'lucide-react'
 import { TELEGRAM_COMMANDS } from '../data/telegramCommands'
 import { NAV_ITEMS, PRIMARY_NAV_KEYS } from '../navigation'
@@ -206,7 +207,7 @@ export default function Header({
         </div>
       </div>
 
-      {drawerOpen && (
+      {drawerOpen && createPortal(
         <div className="nav-drawer-overlay" role="dialog" aria-modal aria-label="전체 메뉴" onClick={() => setDrawerOpen(false)}>
           <aside className="nav-drawer" onClick={(e) => e.stopPropagation()}>
             <div className="nav-drawer-header">

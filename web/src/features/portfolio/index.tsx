@@ -5,6 +5,7 @@ import Skeleton from '../../components/Skeleton'
 import Button from '../../components/ui/Button'
 import Input from '../../components/ui/Input'
 import Modal from '../../components/Modal'
+import StockSearchInput from '../../components/StockSearchInput'
 import { EmptyState, ErrorState } from '../../components/StateViews'
 import { useToast } from '../../components/ToastProvider'
 import Pagination from '../../components/Pagination'
@@ -119,6 +120,9 @@ export default function Portfolio() {
   const [initialCapitalInput, setInitialCapitalInput] = useState(String(DEFAULT_INITIAL_CAPITAL))
   const [initialCapital, setInitialCapital] = useState<number>(DEFAULT_INITIAL_CAPITAL)
   const [assetAccordionOpen, setAssetAccordionOpen] = useState(true)
+  const [includeCost, setIncludeCost] = useState(false)
+  const [buyFeeRatePct, setBuyFeeRatePct] = useState(0.015)  // 매수수수료 %
+  const [sellFeeRatePct, setSellFeeRatePct] = useState(0.195) // 매도수수료+거래세 %
   const [error, setError] = useState<string | null>(null)
 
   const [modalOpen, setModalOpen] = useState(false)
@@ -148,6 +152,7 @@ export default function Portfolio() {
   const [maintLoading, setMaintLoading] = useState(false)
   const [maintError, setMaintError] = useState<string | null>(null)
   const [maintStep, setMaintStep] = useState<1 | 2>(1)
+  const [maintAccountMode, setMaintAccountMode] = useState<'select' | 'manual'>('select')
   const [macroLoading, setMacroLoading] = useState(false)
   const [macroSnapshot, setMacroSnapshot] = useState<any | null>(null)
   const toast = useToast()
@@ -578,8 +583,17 @@ export default function Portfolio() {
   const rows = filteredRows.slice((page - 1) * pageSize, page * pageSize)
   const totalUnrealized = holdingAll.reduce((acc: number, r: any) => acc + Number(r.unrealized_pnl || 0), 0)
   const totalInvested = holdingAll.reduce((acc: number, r: any) => acc + (Number(r.quantity || 0) * Number(r.avg_price || 0)), 0)
-  const totalReturnPct = totalInvested > 0 ? (totalUnrealized / totalInvested) * 100 : 0
-  const totalEvaluationValue = totalInvested + totalUnrealized
+  // 비용 계산: 매수비용(이미 발생) + 매도예상비용(현재가 기준)
+  const totalTradeCost = holdingAll.reduce((acc: number, r: any) => {
+    const invested = Number(r.quantity || 0) * Number(r.avg_price || 0)
+    const currentValue = invested + Number(r.unrealized_pnl || 0)
+    const buyCost = invested * (buyFeeRatePct / 100)
+    const sellCost = currentValue > 0 ? currentValue * (sellFeeRatePct / 100) : 0
+    return acc + buyCost + sellCost
+  }, 0)
+  const adjustedUnrealized = includeCost ? totalUnrealized - totalTradeCost : totalUnrealized
+  const totalReturnPct = totalInvested > 0 ? (adjustedUnrealized / totalInvested) * 100 : 0
+  const totalEvaluationValue = totalInvested + adjustedUnrealized
   const estimatedCash = initialCapital - totalInvested
   const totalAssetValue = totalEvaluationValue + estimatedCash
   const allocationRows = useMemo(() => {
@@ -704,6 +718,7 @@ export default function Portfolio() {
       setMaintBrokerName('')
       setMaintAccountName('')
       setMaintStep(1)
+      setMaintAccountMode(accountFolders.length > 0 ? 'select' : 'manual')
     }
     setMaintModalOpen(true)
   }
@@ -1002,11 +1017,25 @@ export default function Portfolio() {
           <div className="stat-sub">보유 수량×평균 매수가</div>
         </div>
         <div className="card portfolio-stat-card">
-          <div className="stat-label">평가손익 합계</div>
-          <div className={`stat-value ${totalUnrealized < 0 ? 'negative' : 'positive'}`}>
-            {formatKrw(totalUnrealized)}
+          <div className="stat-label" style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-1)', flexWrap: 'wrap' }}>
+            평가손익 합계
+            <label className="portfolio-cost-toggle" title={`매수수수료 ${buyFeeRatePct}% + 매도수수료·거래세 ${sellFeeRatePct}%`}>
+              <input
+                type="checkbox"
+                checked={includeCost}
+                onChange={e => setIncludeCost(e.target.checked)}
+              />
+              <span>비용포함</span>
+            </label>
           </div>
-          <div className="stat-sub">보유 포지션 기준</div>
+          <div className={`stat-value ${adjustedUnrealized < 0 ? 'negative' : 'positive'}`}>
+            {formatKrw(adjustedUnrealized)}
+          </div>
+          <div className="stat-sub">
+            {includeCost
+              ? `비용 ${formatKrw(Math.round(totalTradeCost))} 차감`
+              : '보유 포지션 기준'}
+          </div>
         </div>
       </div>
 
@@ -1211,13 +1240,18 @@ export default function Portfolio() {
                 </button>
               ))}
               {accountFolders.length === 0 && (
-                <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', flexWrap: 'wrap' }}>
-                  <span className="caption muted">등록된 계좌 폴더가 없습니다. 상단 유지보수의 계좌/보유 추가에서 계좌와 종목을 바로 등록할 수 있습니다.</span>
-                  <Button variant="secondary" size="sm" onClick={() => openMaintenanceModal('holdingrestore')} disabled={loading}>
-                    계좌/보유 추가 열기
-                  </Button>
-                </div>
+                <span className="caption muted">등록된 계좌 폴더가 없습니다.</span>
               )}
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => openMaintenanceModal('holdingrestore')}
+                disabled={loading}
+                style={{ marginLeft: 'auto' }}
+                title="계좌/보유 추가"
+              >
+                + 추가
+              </Button>
             </div>
           </div>
 
@@ -1340,6 +1374,29 @@ export default function Portfolio() {
             <div className="caption muted" style={{ marginTop: 'var(--space-1)' }}>
               등급은 종목 점수(total_score), 상태는 점수/수익률/신호/진입·추세·경고 등급과 warn_score 기준을 함께 반영해 자동 분류됩니다.
             </div>
+
+            {includeCost && (
+              <div style={{ marginTop: 'var(--space-3)', paddingTop: 'var(--space-2)', borderTop: '1px solid var(--color-border)' }}>
+                <div className="caption" style={{ marginBottom: 'var(--space-2)', fontWeight: 'var(--font-weight-medium)' }}>매매비용 요율 설정</div>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 'var(--space-2)' }}>
+                  <Input
+                    label="매수수수료 (%)"
+                    type="number"
+                    value={String(buyFeeRatePct)}
+                    onChange={(e: any) => setBuyFeeRatePct(Math.max(0, Number(e?.target?.value ?? 0.015)))}
+                  />
+                  <Input
+                    label="매도수수료+거래세 (%)"
+                    type="number"
+                    value={String(sellFeeRatePct)}
+                    onChange={(e: any) => setSellFeeRatePct(Math.max(0, Number(e?.target?.value ?? 0.195)))}
+                  />
+                </div>
+                <div className="caption muted" style={{ marginTop: 'var(--space-1)' }}>
+                  기본값 매수 0.015% · 매도 0.195% (수수료 0.015% + KOSPI 거래세 0.18%). 증권사·계좌별로 조정하세요.
+                </div>
+              </div>
+            )}
           </div>
 
           <div className="portfolio-search-row">
@@ -1440,18 +1497,32 @@ export default function Portfolio() {
                 </div>
 
                 <div className="text-right portfolio-position-pnl">
-                  <>
-                    <div
-                      className={pnl != null ? (pnl < 0 ? 'negative' : 'positive') : ''}
-                      style={{ fontWeight: 'var(--font-weight-bold)', fontSize: 'var(--font-size-xl)' }}
-                    >
-                      {pnl != null ? formatKrw(pnl) : '—'}
-                    </div>
-                    <div className="caption">
-                      {r.unrealized_pct != null ? `${formatNumber(r.unrealized_pct, 2)}%` : '—'}
-                      {r.hold_days != null ? ` · ${r.hold_days}일` : ''}
-                    </div>
-                  </>
+                  {(() => {
+                    const rawPnl = pnl != null ? Number(pnl) : null
+                    let displayPnl = rawPnl
+                    let displayPct = r.unrealized_pct != null ? Number(r.unrealized_pct) : null
+                    if (includeCost && rawPnl != null) {
+                      const inv = Number(r.quantity || 0) * Number(r.avg_price || 0)
+                      const curVal = inv + rawPnl
+                      const cost = inv * (buyFeeRatePct / 100) + (curVal > 0 ? curVal * (sellFeeRatePct / 100) : 0)
+                      displayPnl = rawPnl - cost
+                      displayPct = inv > 0 ? (displayPnl / inv) * 100 : null
+                    }
+                    return (
+                      <>
+                        <div
+                          className={displayPnl != null ? (displayPnl < 0 ? 'negative' : 'positive') : ''}
+                          style={{ fontWeight: 'var(--font-weight-bold)', fontSize: 'var(--font-size-xl)' }}
+                        >
+                          {displayPnl != null ? formatKrw(displayPnl) : '—'}
+                        </div>
+                        <div className="caption">
+                          {displayPct != null ? `${formatNumber(displayPct, 2)}%` : '—'}
+                          {r.hold_days != null ? ` · ${r.hold_days}일` : ''}
+                        </div>
+                      </>
+                    )
+                  })()}
                 </div>
               </div>
 
@@ -1729,8 +1800,16 @@ export default function Portfolio() {
             <div className="muted" style={{ marginBottom: 'var(--space-3)' }}>
               <strong>{maintRow?.stock_name || maintCode || '종목'}</strong>의 매수가/수량/계좌를 수정합니다.
             </div>
-            <div className="grid-two" style={{ marginBottom: 'var(--space-3)' }}>
-              <Input label="종목코드" value={maintCode} onChange={(e: any) => setMaintCode(String(e?.target?.value || '').toUpperCase())} />
+            <div className="ui-field" style={{ marginBottom: 'var(--space-3)' }}>
+              <label className="ui-label">종목코드</label>
+              <StockSearchInput
+                value={maintCode}
+                onChange={(v) => setMaintCode(v.toUpperCase())}
+                onSelect={(s) => setMaintCode(s.code)}
+                placeholder="예) 005930 또는 종목명"
+              />
+            </div>
+            <div style={{ marginBottom: 'var(--space-3)' }}>
               <Input label="보유 수량" type="number" value={String(maintQty)} onChange={(e: any) => setMaintQty(Math.max(1, Number(e?.target?.value || 1)))} />
             </div>
             <div style={{ marginBottom: 'var(--space-3)' }}>
@@ -1753,23 +1832,78 @@ export default function Portfolio() {
             <div className="muted" style={{ marginBottom: 'var(--space-3)' }}>
               매매 계좌 정보를 입력합니다. 증권사와 계좌명이 계좌 폴더의 기준이 됩니다.
             </div>
-            <div className="grid-two" style={{ marginBottom: 'var(--space-3)' }}>
-              <Input
-                label="증권사"
-                placeholder="예) 토스, NH, 삼성"
-                value={maintBrokerName}
-                onChange={(e: any) => setMaintBrokerName(String(e?.target?.value || ''))}
-              />
-              <Input
-                label="계좌명"
-                placeholder="예) ISA, 연금, 일반"
-                value={maintAccountName}
-                onChange={(e: any) => setMaintAccountName(String(e?.target?.value || ''))}
-              />
-            </div>
-            <div className="caption muted" style={{ marginBottom: 'var(--space-3)' }}>
-              예) 증권사: 토스증권 / 계좌명: ISA → 화면에 <strong>토스증권 / ISA</strong> 폴더로 표시됩니다.
-            </div>
+
+            {accountFolders.length > 0 && maintAccountMode === 'select' && (
+              <>
+                <div className="ui-field" style={{ marginBottom: 'var(--space-3)' }}>
+                  <label className="ui-label">기존 계좌 선택</label>
+                  <select
+                    className="input"
+                    value={[maintBrokerName, maintAccountName].filter(Boolean).join('||')}
+                    onChange={(e) => {
+                      const val = e.target.value
+                      if (val === '__new__') {
+                        setMaintBrokerName('')
+                        setMaintAccountName('')
+                        setMaintAccountMode('manual')
+                      } else {
+                        const [broker, account] = val.split('||')
+                        setMaintBrokerName(broker ?? '')
+                        setMaintAccountName(account ?? '')
+                      }
+                    }}
+                  >
+                    <option value="">계좌를 선택하세요</option>
+                    {accountFolders.map((f) => {
+                      const val = [f.brokerName, f.accountName].filter(Boolean).join('||')
+                      return (
+                        <option key={f.key} value={val}>
+                          {accountLabel(f.brokerName, f.accountName)} ({f.count}종목)
+                        </option>
+                      )
+                    })}
+                    <option value="__new__">➕ 새로 입력하기</option>
+                  </select>
+                </div>
+              </>
+            )}
+
+            {(accountFolders.length === 0 || maintAccountMode === 'manual') && (
+              <>
+                {accountFolders.length > 0 && (
+                  <button
+                    type="button"
+                    className="caption"
+                    style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--color-primary)', marginBottom: 'var(--space-2)', padding: 0 }}
+                    onClick={() => {
+                      setMaintBrokerName('')
+                      setMaintAccountName('')
+                      setMaintAccountMode('select')
+                    }}
+                  >
+                    ← 기존 계좌에서 선택
+                  </button>
+                )}
+                <div className="grid-two" style={{ marginBottom: 'var(--space-3)' }}>
+                  <Input
+                    label="증권사"
+                    placeholder="예) 토스, NH, 삼성"
+                    value={maintBrokerName}
+                    onChange={(e: any) => setMaintBrokerName(String(e?.target?.value || ''))}
+                  />
+                  <Input
+                    label="계좌명"
+                    placeholder="예) ISA, 연금, 일반"
+                    value={maintAccountName}
+                    onChange={(e: any) => setMaintAccountName(String(e?.target?.value || ''))}
+                  />
+                </div>
+                <div className="caption muted" style={{ marginBottom: 'var(--space-3)' }}>
+                  예) 증권사: 토스증권 / 계좌명: ISA → 화면에 <strong>토스증권 / ISA</strong> 폴더로 표시됩니다.
+                </div>
+              </>
+            )}
+
             {maintError && (
               <div className="state-error" style={{ marginBottom: 'var(--space-3)' }}>
                 <div className="state-error-title">{maintError}</div>
@@ -1800,13 +1934,16 @@ export default function Portfolio() {
               계좌: <strong>{[maintBrokerName, maintAccountName].filter(Boolean).join(' / ') || '미지정'}</strong>
               <br />추가할 종목의 매수 정보를 입력합니다.
             </div>
-            <div className="grid-two" style={{ marginBottom: 'var(--space-3)' }}>
-              <Input
-                label="종목코드"
-                placeholder="예) 005930"
+            <div className="ui-field" style={{ marginBottom: 'var(--space-3)' }}>
+              <label className="ui-label">종목코드</label>
+              <StockSearchInput
                 value={maintCode}
-                onChange={(e: any) => setMaintCode(String(e?.target?.value || '').toUpperCase())}
+                onChange={(v) => setMaintCode(v.toUpperCase())}
+                onSelect={(s) => setMaintCode(s.code)}
+                placeholder="예) 005930 또는 종목명"
               />
+            </div>
+            <div style={{ marginBottom: 'var(--space-3)' }}>
               <Input
                 label="보유 수량"
                 type="number"

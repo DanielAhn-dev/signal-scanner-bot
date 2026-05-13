@@ -78,7 +78,7 @@
 
 .nav-drawer-overlay {
   @apply fixed inset-0 flex justify-end;
-  z-index: var(--z-overlay);
+  z-index: 9000;
   background: var(--color-bg-overlay);
 }
 
@@ -89,6 +89,7 @@
   border-left: 1px solid var(--color-border-default);
   box-shadow: var(--shadow-lg);
   animation: drawerSlideIn var(--duration-slow) var(--ease-default) both;
+  z-index: 9001;
 }
 
 @keyframes drawerSlideIn {
