@@ -1,15 +1,13 @@
 """
 scripts/update_credit_short.py
 ==============================
-장 마감 후 공매도 잔고 + 신용비율 데이터를 수집해 DB에 저장.
+장 마감 후 공매도 지표 데이터를 수집해 DB에 저장.
 
-  - 공매도: PyKRX (KRX 공식) → stock_credit_short_daily + stocks 테이블
-  - 신용비율: Naver Finance HTML 스크래핑 → 동일 테이블 업데이트
+    - 공매도: PyKRX (KRX 공식) + KRX 직접 API → stock_credit_short_daily + stocks 테이블
 
 사용법:
   python scripts/update_credit_short.py
   python scripts/update_credit_short.py --date 20260509  # 특정 날짜
-  python scripts/update_credit_short.py --skip-credit    # 신용비율 스킵
   python scripts/update_credit_short.py --skip-short     # 공매도 스킵
 """
 from __future__ import annotations
@@ -18,9 +16,12 @@ import os
 import sys
 import time
 import re
+import json
+import csv
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 from typing import Optional
+from pathlib import Path
 
 import requests
 
@@ -60,13 +61,7 @@ supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
 
-SKIP_CREDIT = "--skip-credit" in sys.argv
 SKIP_SHORT  = "--skip-short"  in sys.argv
-FORCE_CREDIT = "--force-credit" in sys.argv
-
-# Naver Finance 신용비율 소스는 현재 미복구 상태이므로 기본적으로 신용 수집은 자동 스킵한다.
-# 필요 시 --force-credit 옵션으로 강제 프로브 가능.
-CREDIT_SOURCE_AVAILABLE = False
 
 
 def env_bool(name: str, default: bool) -> bool:
@@ -104,6 +99,9 @@ ALLOWED_UNIVERSE = [
 ]
 MIN_LIQUIDITY = env_float("CREDIT_SHORT_MIN_LIQUIDITY", 0.0)
 MAX_ELIGIBLE_CODES = env_positive_int("CREDIT_SHORT_MAX_ELIGIBLE_CODES", 500)
+ALERT_CONSECUTIVE_FAILURES = env_positive_int("CREDIT_SHORT_ALERT_CONSECUTIVE_FAILURES", 2)
+STALE_WARN_DAYS = env_positive_int("CREDIT_SHORT_STALE_WARN_DAYS", 3)
+FALLBACK_CSV = str(os.environ.get("CREDIT_SHORT_FALLBACK_CSV", "")).strip()
 
 
 # ── 유틸리티 ───────────────────────────────────────────────
@@ -119,6 +117,72 @@ def yyyymmdd_from_date(d: datetime) -> str:
 
 def iso_from_yyyymmdd(s: str) -> str:
     return f"{s[:4]}-{s[4:6]}-{s[6:8]}"
+
+
+def parse_iso_date(s: str) -> Optional[datetime]:
+    try:
+        return datetime.strptime(s, "%Y-%m-%d")
+    except Exception:
+        return None
+
+
+def status_file_path() -> Path:
+    return Path(__file__).resolve().parents[1] / "logs" / "credit_short_status.json"
+
+
+def load_run_status() -> dict:
+    path = status_file_path()
+    if not path.exists():
+        return {}
+    try:
+        with path.open("r", encoding="utf-8") as f:
+            data = json.load(f)
+            return data if isinstance(data, dict) else {}
+    except Exception:
+        return {}
+
+
+def save_run_status(status: dict) -> None:
+    path = status_file_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", encoding="utf-8") as f:
+        json.dump(status, f, ensure_ascii=False, indent=2)
+
+
+def load_short_map_from_csv(csv_path: str, trading_iso: str) -> dict[str, dict]:
+    path = Path(csv_path)
+    if not path.exists():
+        print(f"  [FALLBACK] CSV 파일 없음: {csv_path}")
+        return {}
+
+    out: dict[str, dict] = {}
+    with path.open("r", encoding="utf-8-sig", newline="") as f:
+        reader = csv.DictReader(f)
+        for row in reader:
+            raw_code = str(row.get("code") or row.get("Code") or "").strip().lstrip("A")
+            code = raw_code.zfill(6)
+            if not code or len(code) != 6:
+                continue
+
+            raw_date = str(row.get("date") or row.get("Date") or "").strip()
+            if raw_date and raw_date != trading_iso:
+                continue
+
+            sr = safe_float(row.get("shortRatio") or row.get("short_ratio") or None)
+            sb = safe_float(row.get("shortBalance") or row.get("short_balance") or None)
+            sv = safe_float(row.get("shortVolume") or row.get("short_volume") or None)
+
+            if sr is None and sb is None and sv is None:
+                continue
+
+            out[code] = {
+                "short_ratio": round(sr, 4) if sr is not None else None,
+                "short_balance": int(sb) if sb is not None else None,
+                "short_volume": int(sv) if sv is not None else None,
+            }
+
+    print(f"  [FALLBACK] CSV 로드 완료: {len(out)}개 ({csv_path})")
+    return out
 
 def get_last_trading_date() -> str:
     """가장 최근 거래일을 YYYYMMDD 형식으로 반환 (삼성전자 기준)"""
@@ -383,38 +447,6 @@ def fetch_shorting_all_markets(trading_date: str) -> "dict[str, dict]":
     return result
 
 
-# ── 신용비율 수집 (Naver Finance HTML) ───────────────────
-def fetch_credit_ratio_naver(code: str) -> Optional[float]:
-    """
-    [DEPRECATED] Naver Finance가 React SPA(stock.naver.com)로 마이그레이션되면서
-    HTML 스크래핑이 불가능해졌습니다. 신용비율 API 엔드포인트가 공개되지 않아
-    현재 수집 불가. 항상 None 반환.
-
-    TODO: stock.naver.com SPA API 엔드포인트 확인 후 복구 필요.
-    """
-    return None
-
-
-def fetch_credit_ratios_batch(
-    codes: list[str],
-    delay: float = 0.5,
-) -> dict[str, Optional[float]]:
-    """여러 종목 신용비율 순차 수집. 진행 상황 표시 포함."""
-    result: dict[str, Optional[float]] = {}
-    total = len(codes)
-    ok = 0
-    for idx, code in enumerate(codes):
-        if idx % 50 == 0 and idx > 0:
-            print(f"    신용비율 진행: {idx}/{total} (성공: {ok})")
-        ratio = fetch_credit_ratio_naver(code)
-        result[code] = ratio
-        if ratio is not None:
-            ok += 1
-        time.sleep(delay)
-    print(f"    신용비율 완료: {ok}/{total} 성공")
-    return result
-
-
 def load_investable_codes() -> list[str]:
     """투자 가능 유니버스(활성 + universe + 유동성 + 시총순 상위) 코드 목록"""
     try:
@@ -448,10 +480,9 @@ def load_investable_codes() -> list[str]:
 def upsert_daily_records(
     trading_iso: str,
     short_map: dict[str, dict],
-    credit_map: dict[str, Optional[float]],
 ):
     """stock_credit_short_daily 테이블에 upsert"""
-    all_codes = set(short_map) | set(credit_map)
+    all_codes = set(short_map)
     if not all_codes:
         print("  [WARN] 저장할 데이터 없음")
         return
@@ -462,7 +493,6 @@ def upsert_daily_records(
         rows.append({
             "code":          code,
             "date":          trading_iso,
-            "credit_ratio":  credit_map.get(code),
             "short_ratio":   short.get("short_ratio"),
             "short_balance": short.get("short_balance"),
             "short_volume":  short.get("short_volume"),
@@ -490,23 +520,22 @@ def upsert_daily_records(
 
 def update_stocks_latest(
     short_map: dict[str, dict],
-    credit_map: dict[str, Optional[float]],
 ):
     """stocks 테이블 최신 칼럼 업데이트 (API가 바로 읽음)"""
-    all_codes = set(short_map) | set(credit_map)
+    all_codes = set(short_map)
     updates = []
     for code in all_codes:
         short = short_map.get(code, {})
         update: dict = {"code": code}
-        cr = credit_map.get(code)
-        if cr is not None:
-            update["credit_ratio"] = cr
         sr = short.get("short_ratio")
         if sr is not None:
             update["short_ratio"] = sr
         sb = short.get("short_balance")
         if sb is not None:
             update["short_balance"] = sb
+        sv = short.get("short_volume")
+        if sv is not None:
+            update["short_volume"] = sv
         if len(update) > 1:  # code 외에 실제 업데이트 값이 있을 때만
             updates.append(update)
 
@@ -530,7 +559,8 @@ def update_stocks_latest(
 
 # ── 메인 ──────────────────────────────────────────────────
 def main():
-    print(f"[START] 공매도/신용비율 ETL 시작: {datetime.now().isoformat()}")
+    print(f"[START] 공매도 ETL 시작: {datetime.now().isoformat()}")
+    run_status = load_run_status()
 
     # 기준 거래일 결정
     if "--date" in sys.argv:
@@ -542,6 +572,15 @@ def main():
     trading_iso = iso_from_yyyymmdd(trading_date)
     print(f"[DATE] 기준 거래일: {trading_date} ({trading_iso})")
 
+    last_success_date = str(run_status.get("last_success_date") or "").strip()
+    if last_success_date:
+        last_dt = parse_iso_date(last_success_date)
+        cur_dt = parse_iso_date(trading_iso)
+        if last_dt and cur_dt:
+            stale_days = (cur_dt.date() - last_dt.date()).days
+            if stale_days >= STALE_WARN_DAYS:
+                print(f"[WARN] 마지막 성공 적재일이 {stale_days}일 전입니다: {last_success_date}")
+
     investable_codes = load_investable_codes() if ONLY_INVESTABLE else []
     investable_set = set(investable_codes)
     if ONLY_INVESTABLE:
@@ -550,51 +589,57 @@ def main():
     # ── Step 1: 공매도 수집 ──
     short_map: dict[str, dict] = {}
     if not SKIP_SHORT:
-        print("\n[1/2] 공매도 잔고 수집 (KRX 직접 API)...")
+        print("\n[1/1] 공매도 지표 수집 (KRX 직접 API)...")
         short_map = fetch_shorting_all_markets(trading_date)
         if ONLY_INVESTABLE and investable_set:
             before = len(short_map)
             short_map = {k: v for k, v in short_map.items() if k in investable_set}
             print(f"  [FILTER] 공매도 데이터 엄선 적용: {before} -> {len(short_map)}")
+        if not short_map and FALLBACK_CSV:
+            print("  [FALLBACK] KRX 데이터가 비어 CSV fallback을 시도합니다...")
+            fallback_map = load_short_map_from_csv(FALLBACK_CSV, trading_iso)
+            if ONLY_INVESTABLE and investable_set:
+                before_fallback = len(fallback_map)
+                fallback_map = {k: v for k, v in fallback_map.items() if k in investable_set}
+                print(f"  [FALLBACK] 엄선 적용: {before_fallback} -> {len(fallback_map)}")
+            short_map = fallback_map
         print(f"  [DONE] 공매도 수집 종목: {len(short_map)}개")
     else:
-        print("\n[1/2] 공매도 수집 스킵")
-
-    # ── Step 2: 신용비율 수집 ──
-    credit_map: dict[str, Optional[float]] = {}
-    if not SKIP_CREDIT:
-        if not CREDIT_SOURCE_AVAILABLE and not FORCE_CREDIT:
-            print("\n[2/2] 신용비율 수집 자동 스킵 (데이터 소스 미복구: --force-credit 로 강제 가능)")
-        else:
-            print("\n[2/2] 신용비율 수집 (Naver Finance)...")
-            target_codes = investable_codes if ONLY_INVESTABLE else []
-            if not target_codes:
-                try:
-                    res = supabase.table("stocks") \
-                        .select("code") \
-                        .eq("is_active", True) \
-                        .in_("universe_level", ["core", "extended"]) \
-                        .execute()
-                    target_codes = [str(r["code"]).strip().lstrip("A").zfill(6) for r in (res.data or [])]
-                except Exception as e:
-                    print(f"  [ERROR] 대상 종목 조회 실패: {e}")
-                    target_codes = []
-
-            if target_codes:
-                print(f"  대상: {len(target_codes)}개 종목")
-                credit_map = fetch_credit_ratios_batch(target_codes, delay=0.5)
-            else:
-                print("  [WARN] 대상 종목 없음")
-    else:
-        print("\n[2/2] 신용비율 수집 스킵")
+        print("\n[1/1] 공매도 수집 스킵")
 
     # ── Step 3: DB 저장 ──
-    if short_map or credit_map:
+    if short_map:
         print("\n[DB] 저장 중...")
-        upsert_daily_records(trading_iso, short_map, credit_map)
-        update_stocks_latest(short_map, credit_map)
+        upsert_daily_records(trading_iso, short_map)
+        update_stocks_latest(short_map)
+        run_status.update({
+            "last_run_at": datetime.now().isoformat(),
+            "last_status": "success",
+            "last_reason": "ok",
+            "last_success_date": trading_iso,
+            "last_success_count": len(short_map),
+            "consecutive_failures": 0,
+            "krx_blocked": bool(_krx_blocked),
+        })
+        save_run_status(run_status)
     else:
         print("\n[WARN] 저장할 데이터 없음 — 종료")
+        reason = "krx_blocked" if _krx_blocked else "empty_result"
+        consecutive = int(run_status.get("consecutive_failures") or 0) + 1
+        run_status.update({
+            "last_run_at": datetime.now().isoformat(),
+            "last_status": "failed",
+            "last_reason": reason,
+            "consecutive_failures": consecutive,
+            "krx_blocked": bool(_krx_blocked),
+        })
+        save_run_status(run_status)
+
+        if consecutive >= ALERT_CONSECUTIVE_FAILURES:
+            print(
+                f"[ALERT] 공매도 수집 실패 {consecutive}회 연속 발생 "
+                f"(reason={reason}, last_success={run_status.get('last_success_date') or 'n/a'})"
+            )
 
     print(f"\n[END] 완료: {datetime.now().isoformat()}")
 

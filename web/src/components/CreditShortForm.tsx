@@ -5,7 +5,8 @@ type CreditShortRow = {
   code: string
   date: string
   shortRatio?: number
-  creditRatio?: number
+  shortBalance?: number
+  shortVolume?: number
 }
 
 type Props = {
@@ -56,7 +57,7 @@ export default function CreditShortForm({ isOpen, onClose, onSave }: Props) {
     }
 
     if (parsed.skipped > 0) {
-      setWarning(`빈 비율 행 ${parsed.skipped}개는 자동 제외되었습니다.`)
+      setWarning(`빈 지표 행 ${parsed.skipped}개는 자동 제외되었습니다.`)
     }
 
     setLoading(true)
@@ -104,7 +105,7 @@ export default function CreditShortForm({ isOpen, onClose, onSave }: Props) {
   }
 
   return (
-    <Modal isOpen={isOpen} onClose={handleClose} title="신용/공매도 데이터 입력">
+    <Modal isOpen={isOpen} onClose={handleClose} title="공매도 데이터 입력">
       <div className="p-6 space-y-4">
         {error && (
           <div className="p-3 bg-red-50 border border-red-200 rounded text-red-700 text-sm">
@@ -164,13 +165,13 @@ export default function CreditShortForm({ isOpen, onClose, onSave }: Props) {
               disabled={loading}
               className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:bg-gray-100"
               placeholder={[
-                'code,date,shortRatio,creditRatio',
-                '005930,2026-05-12,4.5,3.2',
-                '000660,2026-05-12,3.1,2.8',
+                'code,date,shortRatio,shortBalance,shortVolume',
+                '005930,2026-05-12,4.5,15200000,340000',
+                '000660,2026-05-12,3.1,9800000,210000',
               ].join('\n')}
             />
             <p className="text-xs text-gray-500 mt-1">
-              형식: code,date,shortRatio,creditRatio (헤더 행 허용, shortRatio/creditRatio 중 하나 비워도 됨)
+              형식: code,date,shortRatio,shortBalance,shortVolume (헤더 행 허용, 세 지표 중 하나 이상 입력)
             </p>
           </div>
 
@@ -226,8 +227,8 @@ function parseRows(raw: string): { ok: true; rows: CreditShortRow[]; skipped: nu
       continue
     }
 
-    if (cells.length < 4) {
-      return { ok: false, error: `${i + 1}행 형식 오류: code,date,shortRatio,creditRatio` }
+    if (cells.length < 3) {
+      return { ok: false, error: `${i + 1}행 형식 오류: code,date,shortRatio[,shortBalance,shortVolume]` }
     }
 
     const rawCode = (cells[0] || '').replace(/^A/i, '')
@@ -243,13 +244,14 @@ function parseRows(raw: string): { ok: true; rows: CreditShortRow[]; skipped: nu
     }
 
     const shortRatio = toNullableNumber(cells[2])
-    const creditRatio = toNullableNumber(cells[3])
+    const shortBalance = toNullableNumber(cells[3] || '')
+    const shortVolume = toNullableNumber(cells[4] || '')
 
-    if (shortRatio === undefined || creditRatio === undefined) {
-      return { ok: false, error: `${i + 1}행 비율은 숫자여야 합니다` }
+    if (shortRatio === undefined || shortBalance === undefined || shortVolume === undefined) {
+      return { ok: false, error: `${i + 1}행 지표는 숫자여야 합니다` }
     }
 
-    if (shortRatio == null && creditRatio == null) {
+    if (shortRatio == null && shortBalance == null && shortVolume == null) {
       skipped += 1
       continue
     }
@@ -258,12 +260,13 @@ function parseRows(raw: string): { ok: true; rows: CreditShortRow[]; skipped: nu
       code,
       date,
       ...(shortRatio != null ? { shortRatio } : {}),
-      ...(creditRatio != null ? { creditRatio } : {}),
+      ...(shortBalance != null ? { shortBalance } : {}),
+      ...(shortVolume != null ? { shortVolume } : {}),
     })
   }
 
   if (!rows.length) {
-    return { ok: false, error: '유효한 데이터 행이 없습니다 (비율 값이 있는 행이 필요합니다)' }
+    return { ok: false, error: '유효한 데이터 행이 없습니다 (공매도 지표가 있는 행이 필요합니다)' }
   }
 
   return { ok: true, rows, skipped }

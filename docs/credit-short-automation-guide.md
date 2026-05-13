@@ -1,4 +1,4 @@
-# ⚠️ 신용/공매도 데이터 자동 수집 가이드 (DEPRECATED - 2026-05-12)
+# ⚠️ 공매도 데이터 자동 수집 가이드
 
 **현황**: KRX API 차단으로 인해 자동 수집이 불가능합니다.
 
@@ -10,8 +10,7 @@
 
 ## 현황
 - **공매도**: KRX API는 로컬 머신에서 정상 작동 (GitHub Actions는 Azure IP 차단)
-- **신용비율**: Naver Finance SPA 마이그레이션으로 현재 미지원 (API 역공학 필요)
-- **전략**: 로컬 Windows PC에서 **주 1회 자동 수집** → Supabase DB 저장
+- **전략**: 로컬 Windows PC에서 **평일 자동 수집** → Supabase DB 저장
 
 ---
 
@@ -48,8 +47,8 @@ Set-ExecutionPolicy -Scope Process -ExecutionPolicy RemoteSigned
 ## 동작 방식
 
 ### 자동 실행 일정
-- **기본 권장**: 평일 매일 17:40 공매도 전용 자동 적재 (`--skip-credit`)
-- **기존 방식**: 매주 월요일 17:35 (수동 입력 보조용)
+- **기본 권장**: 평일 매일 17:40 공매도 지표 자동 적재
+- **기존 방식**: 매주 월요일 17:35 (보조 운영)
 - **필요조건**: Windows PC가 켜져있어야 함
 - **로그**: `D:\Work\dev\github\signal-scanner-bot\logs\credit_short_*.log`
 
@@ -61,13 +60,18 @@ Set-ExecutionPolicy -Scope Process -ExecutionPolicy RemoteSigned
 .\scripts\register_credit_short_daily_task.ps1 -Force
 ```
 
-신용 데이터 소스가 미복구 상태이므로 기본적으로 공매도만 적재합니다.
-필요 시 `scripts/update_credit_short.py --force-credit` 으로 신용 소스 복구 테스트를 강제할 수 있습니다.
+현재 파이프라인은 공매도 전용으로 동작합니다.
 
 ### 수집 범위
 - **상위 종목**: PyKRX가 공식 지원하는 공매도 상위 50개 종목
 - **Core 종목**: Supabase stocks 테이블에서 is_active=true인 core 유니버스 종목
 - **DB 저장**: stock_credit_short_daily + stocks 테이블 자동 업데이트
+
+### 운영 안전장치 (신규)
+- **연속 실패 알림 로그**: `CREDIT_SHORT_ALERT_CONSECUTIVE_FAILURES` (기본 2회)
+- **최근 성공일 지연 경고**: `CREDIT_SHORT_STALE_WARN_DAYS` (기본 3일)
+- **대체 소스 훅(CSV)**: `CREDIT_SHORT_FALLBACK_CSV` 경로 지정 시 KRX 실패 때 fallback 로드
+- **상태 파일**: `logs/credit_short_status.json` (마지막 성공일/연속 실패 횟수 저장)
 
 ---
 
@@ -86,10 +90,7 @@ python scripts/update_credit_short.py
 # 특정 날짜로 실행
 python scripts/update_credit_short.py --date 20260505
 
-# 공매도만 수집 (신용비율 스킵)
-python scripts/update_credit_short.py --skip-credit
-
-# 신용비율만 수집 (공매도 스킵) — 현재 미지원
+# 공매도 수집 스킵 (점검용)
 python scripts/update_credit_short.py --skip-short
 ```
 
@@ -139,13 +140,9 @@ Unregister-ScheduledTask -TaskName SyncCreditShort -Confirm:$false
 
 ## 향후 개선
 
-### 신용비율 복구 (현재 미지원)
-- stock.naver.com GraphQL API 엔드포인트 분석
-- 또는 다른 데이터 소스 통합 (키움 API, 한투 HAPI 등)
-
 ### 증강 옵션
-1. **Naver 신용비율**: Playwright로 SPA 렌더링 후 스크래핑
-2. **증권사 API**: KIS (키움) OAuth 연동
+1. **공매도 지표 확장**: short_balance, short_volume 대시보드 반영 강화
+2. **증권사 API**: 대체 공매도 데이터 소스 연동
 3. **웹 UI 버튼**: `POST /api/refresh-credit-short` 엔드포인트 추가
 
 ---
@@ -154,8 +151,7 @@ Unregister-ScheduledTask -TaskName SyncCreditShort -Confirm:$false
 
 | 항목 | 현황 |
 |------|------|
-| **공매도** | ✅ 완전 자동화 (주 1회) |
-| **신용비율** | ❌ 데이터 소스 필요 |
+| **공매도** | ✅ 자동화 운영 가능 (평일) |
 | **비용** | 0원 (로컬 자동화) |
 | **정확도** | KRX 공식 API 기반 |
 | **무중단** | PC 켜져있으면 안정적 |

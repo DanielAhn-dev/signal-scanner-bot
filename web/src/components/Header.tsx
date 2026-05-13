@@ -84,7 +84,7 @@ export default function Header({
     setProfile(readProfile() ?? {})
   }, [isSignedIn])
 
-  const handleSaveCreditShort = React.useCallback(async (data: { rows: Array<{ code: string; date: string; shortRatio?: number; creditRatio?: number }> }) => {
+  const handleSaveCreditShort = React.useCallback(async (data: { rows: Array<{ code: string; date: string; shortRatio?: number; shortBalance?: number; shortVolume?: number }> }) => {
     const batchSize = Math.max(50, Number(import.meta.env.VITE_CREDIT_SHORT_UPLOAD_BATCH_SIZE || 250))
     const timeoutMs = Math.max(20_000, Number(import.meta.env.VITE_CREDIT_SHORT_UPLOAD_TIMEOUT_MS || 60_000))
     const rows = Array.isArray(data?.rows) ? data.rows : []
@@ -175,9 +175,9 @@ export default function Header({
           <button
             className="nav-item top-nav-action"
             onClick={() => setCreditShortOpen(true)}
-            title="신용/공매도 수동 입력"
+            title="공매도 지표 수동 입력"
           >
-            신용/공매도
+            공매도
           </button>
           {/* 프로필 아바타 버튼 */}
           <button

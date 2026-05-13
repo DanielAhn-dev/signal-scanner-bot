@@ -80,8 +80,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       })
     }
 
-    const records: Array<{ code: string; date: string; short_ratio: number | null; credit_ratio: number | null }> = []
-    const latestByCode = new Map<string, { short_ratio?: number; credit_ratio?: number }>()
+    const records: Array<{
+      code: string
+      date: string
+      short_ratio: number | null
+      short_balance: number | null
+      short_volume: number | null
+    }> = []
+    const latestByCode = new Map<string, { short_ratio?: number; short_balance?: number; short_volume?: number }>()
     const investableCodes = ONLY_INVESTABLE ? await loadInvestableCodes() : null
     let filteredOut = 0
 
@@ -101,28 +107,36 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         return res.status(400).json({ error: `Invalid date at row ${i + 1} (YYYY-MM-DD)` })
       }
 
-      const hasShort = row.shortRatio !== undefined && row.shortRatio !== null && row.shortRatio !== ''
-      const hasCredit = row.creditRatio !== undefined && row.creditRatio !== null && row.creditRatio !== ''
-      if (!hasShort && !hasCredit) {
-        return res.status(400).json({ error: `shortRatio/creditRatio required at row ${i + 1}` })
+      const hasShortRatio = row.shortRatio !== undefined && row.shortRatio !== null && row.shortRatio !== ''
+      const hasShortBalance = row.shortBalance !== undefined && row.shortBalance !== null && row.shortBalance !== ''
+      const hasShortVolume = row.shortVolume !== undefined && row.shortVolume !== null && row.shortVolume !== ''
+      if (!hasShortRatio && !hasShortBalance && !hasShortVolume) {
+        return res.status(400).json({ error: `shortRatio/shortBalance/shortVolume required at row ${i + 1}` })
       }
 
-      const shortRatio = hasShort ? Number(row.shortRatio) : null
-      const creditRatio = hasCredit ? Number(row.creditRatio) : null
-      if ((shortRatio !== null && Number.isNaN(shortRatio)) || (creditRatio !== null && Number.isNaN(creditRatio))) {
-        return res.status(400).json({ error: `shortRatio/creditRatio must be numeric at row ${i + 1}` })
+      const shortRatio = hasShortRatio ? Number(row.shortRatio) : null
+      const shortBalance = hasShortBalance ? Number(row.shortBalance) : null
+      const shortVolume = hasShortVolume ? Number(row.shortVolume) : null
+      if (
+        (shortRatio !== null && Number.isNaN(shortRatio))
+        || (shortBalance !== null && (Number.isNaN(shortBalance) || shortBalance < 0))
+        || (shortVolume !== null && (Number.isNaN(shortVolume) || shortVolume < 0))
+      ) {
+        return res.status(400).json({ error: `shortRatio/shortBalance/shortVolume must be numeric at row ${i + 1}` })
       }
 
       records.push({
         code,
         date: rawDate,
         short_ratio: shortRatio,
-        credit_ratio: creditRatio,
+        short_balance: shortBalance != null ? Math.trunc(shortBalance) : null,
+        short_volume: shortVolume != null ? Math.trunc(shortVolume) : null,
       })
 
       const latest = latestByCode.get(code) || {}
       if (shortRatio !== null) latest.short_ratio = shortRatio
-      if (creditRatio !== null) latest.credit_ratio = creditRatio
+      if (shortBalance !== null) latest.short_balance = Math.trunc(shortBalance)
+      if (shortVolume !== null) latest.short_volume = Math.trunc(shortVolume)
       latestByCode.set(code, latest)
     }
 

@@ -30,7 +30,7 @@ chcp 65001 >nul
 setlocal
 cd /d "$repoRoot"
 set PYTHONIOENCODING=utf-8
-"$pythonExe" "$scriptPath" --skip-credit >> "$logDir\credit_short_daily.log" 2>&1
+"$pythonExe" "$scriptPath" >> "$logDir\credit_short_daily.log" 2>&1
 endlocal
 "@
 Set-Content -Path $batchPath -Value $batchBody -Encoding Ascii
