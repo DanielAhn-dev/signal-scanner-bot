@@ -82,6 +82,12 @@ const PORTFOLIO_RULES_STORAGE_KEY = 'portfolio.holdingRules.v1'
 const PORTFOLIO_ASSET_OVERVIEW_STORAGE_KEY = 'portfolio.assetOverview.v1'
 const DEFAULT_INITIAL_CAPITAL = 10_000_000
 
+function getTodayLocalYmd(): string {
+  const now = new Date()
+  const tzOffsetMs = now.getTimezoneOffset() * 60_000
+  return new Date(now.getTime() - tzOffsetMs).toISOString().slice(0, 10)
+}
+
 const WARN_REASON_LABELS: Array<{ key: string; label: string }> = [
   { key: 'warn_overheat', label: '이격 과열(21일선 대비 +7% 초과)' },
   { key: 'warn_vol_spike', label: '거래량 급증(20일 평균 대비 2배 초과)' },
@@ -146,6 +152,7 @@ export default function Portfolio() {
   const [maintRow, setMaintRow] = useState<any | null>(null)
   const [maintCode, setMaintCode] = useState('')
   const [maintBuyPrice, setMaintBuyPrice] = useState<number | ''>('')
+  const [maintBuyDate, setMaintBuyDate] = useState<string>(getTodayLocalYmd())
   const [maintQty, setMaintQty] = useState<number>(1)
   const [maintBrokerName, setMaintBrokerName] = useState('')
   const [maintAccountName, setMaintAccountName] = useState('')
@@ -707,6 +714,7 @@ export default function Portfolio() {
       const code = String(row?.code || '')
       setMaintCode(code)
       setMaintBuyPrice(Number(row?.avg_price || row?.buy_price || row?.stock?.close || 0) || '')
+      setMaintBuyDate(String(row?.buy_date || getTodayLocalYmd()))
       setMaintQty(Math.max(1, Number(row?.quantity || 1)))
       setMaintBrokerName(String(row?.broker_name || ''))
       setMaintAccountName(String(row?.account_name || ''))
@@ -714,6 +722,7 @@ export default function Portfolio() {
     if (mode === 'holdingrestore') {
       setMaintCode('')
       setMaintBuyPrice('')
+      setMaintBuyDate(getTodayLocalYmd())
       setMaintQty(1)
       setMaintBrokerName('')
       setMaintAccountName('')
@@ -731,6 +740,7 @@ export default function Portfolio() {
       if (maintMode === 'holdingedit' || maintMode === 'holdingrestore') {
         body.code = maintCode
         body.buy_price = maintBuyPrice
+        body.buy_date = maintBuyDate
         body.quantity = maintQty
         body.broker_name = String(maintBrokerName || '').trim()
         body.account_name = String(maintAccountName || '').trim()
@@ -1814,6 +1824,14 @@ export default function Portfolio() {
             </div>
             <div style={{ marginBottom: 'var(--space-3)' }}>
               <Input
+                label="최초 매수일"
+                type="date"
+                value={maintBuyDate}
+                onChange={(e: any) => setMaintBuyDate(String(e?.target?.value || getTodayLocalYmd()))}
+              />
+            </div>
+            <div style={{ marginBottom: 'var(--space-3)' }}>
+              <Input
                 label="평균 매수가 (원)"
                 type="number"
                 value={maintBuyPrice === '' ? '' : String(maintBuyPrice)}
@@ -1958,6 +1976,14 @@ export default function Portfolio() {
               value={maintBuyPrice === '' ? '' : String(maintBuyPrice)}
               onChange={(e: any) => setMaintBuyPrice(e?.target?.value === '' ? '' : Number(e?.target?.value))}
             />
+            <div style={{ marginTop: 'var(--space-3)' }}>
+              <Input
+                label="최초 매수일"
+                type="date"
+                value={maintBuyDate}
+                onChange={(e: any) => setMaintBuyDate(String(e?.target?.value || getTodayLocalYmd()))}
+              />
+            </div>
             <div className="caption muted" style={{ marginTop: 'var(--space-2)', marginBottom: 'var(--space-1)' }}>
               저장 후 가상매도 시 수익/손실이 자동 기록됩니다.
             </div>

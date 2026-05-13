@@ -27,6 +27,14 @@ function normalizeLabel(input: unknown): string | null {
   return v ? v : null
 }
 
+function normalizeYmdDate(input: unknown): string | null {
+  const v = String(input || '').trim()
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(v)) return null
+  const t = Date.parse(`${v}T00:00:00Z`)
+  if (!Number.isFinite(t)) return null
+  return v
+}
+
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   const requestOrigin = String(req.headers.origin || '').trim()
   const trustedOrigins = String(
@@ -87,6 +95,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const code = normalizeCode(body.code)
       const buyPrice = asPositiveNumber(body.buy_price)
       const quantity = Math.max(1, Math.trunc(Number(body.quantity || 1)))
+      const buyDate = normalizeYmdDate(body.buy_date) || new Date().toISOString().slice(0, 10)
       const brokerName = normalizeLabel(body.broker_name)
       const accountName = normalizeLabel(body.account_name)
 
@@ -105,7 +114,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       if (!position) return res.status(404).json({ error: 'position not found' })
 
       const investedAmount = buyPrice * quantity
-      const buyDate = new Date().toISOString().slice(0, 10)
+      const acquiredAtIso = `${buyDate}T00:00:00.000Z`
 
       const { data: updated, error: upErr } = await supabase
         .from('virtual_positions')
@@ -133,7 +142,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         acquired_price: buyPrice,
         acquired_quantity: quantity,
         remaining_quantity: quantity,
-        acquired_at: nowIso,
+        acquired_at: acquiredAtIso,
       }])
 
       if (lotErr) return res.status(500).json({ error: lotErr.message })
@@ -199,6 +208,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const code = normalizeCode(body.code)
       const buyPrice = asPositiveNumber(body.buy_price)
       const quantity = Math.max(1, Math.trunc(Number(body.quantity || 1)))
+      const buyDate = normalizeYmdDate(body.buy_date) || new Date().toISOString().slice(0, 10)
       const brokerName = normalizeLabel(body.broker_name)
       const accountName = normalizeLabel(body.account_name)
 
@@ -216,8 +226,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       if (!stock) return res.status(404).json({ error: `종목코드 ${code}를 찾을 수 없습니다` })
 
       const investedAmount = Math.round(buyPrice * quantity)
-      const buyDate = new Date().toISOString().slice(0, 10)
       const nowIso = new Date().toISOString()
+      const acquiredAtIso = `${buyDate}T00:00:00.000Z`
 
       // 기존 포지션 조회 (없으면 신규 생성)
       const { data: existing, error: posErr } = await supabase
@@ -293,7 +303,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         acquired_price: buyPrice,
         acquired_quantity: quantity,
         remaining_quantity: quantity,
-        acquired_at: nowIso,
+        acquired_at: acquiredAtIso,
       }])
 
       return res.status(200).json({
