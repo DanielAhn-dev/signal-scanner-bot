@@ -288,8 +288,28 @@
   --btn-padding-sm: 0.25rem 0.625rem;
   --btn-padding-md: 0.5rem 0.875rem;
   --btn-padding-lg: 0.75rem 1rem;
-  --btn-radius:    var(--radius-sm);
+  --btn-radius:    var(--radius-md);
   --btn-font-weight: var(--font-weight-semibold);
+}
+
+
+/* ============================================================
+   COMPONENT TOKENS — Link / Chip / Radio
+   ============================================================ */
+:root {
+  --link-color:        var(--color-brand);
+  --link-color-hover:  var(--color-brand-hover);
+  --link-color-active: var(--color-brand-active);
+
+  --chip-bg:            var(--color-bg-sunken);
+  --chip-bg-hover:      var(--color-gray-100);
+  --chip-bg-active:     var(--color-brand-subtle);
+  --chip-border:        var(--color-border-default);
+  --chip-border-active: var(--color-brand-muted);
+  --chip-text:          var(--color-text-secondary);
+  --chip-text-active:   var(--color-brand);
+
+  --radio-ring: var(--color-brand);
 }
 
 

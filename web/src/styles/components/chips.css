@@ -1,0 +1,79 @@
+@layer components {
+/* ================================================================
+   ECONOMIC EVENT BADGE
+   ================================================================ */
+.economic-event-badge {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border-default);
+  border-left: 3px solid var(--color-warning);
+  background: var(--color-warning-bg);
+  margin-bottom: var(--space-3);
+}
+
+.economic-event-badge.is-critical {
+  border-left-color: var(--color-stock-up);
+  background: var(--color-stock-up-bg);
+}
+
+.economic-event-badge-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.economic-event-badge-title {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-text-primary);
+}
+
+.economic-event-badge-meta {
+  margin-top: 2px;
+  font-size: var(--font-size-xs);
+  color: var(--color-text-secondary);
+}
+
+.economic-event-badge-reaction {
+  margin-left: var(--space-2);
+}
+
+/* ================================================================
+   TAG / CHIP LIST
+   ================================================================ */
+.tag-list {
+  @apply flex flex-wrap;
+  gap: var(--space-1);
+}
+
+.tag {
+  @apply inline-flex items-center cursor-pointer;
+  @apply px-3 py-1;
+  @apply rounded-full;
+  border: 1px solid var(--chip-border, var(--color-border-default));
+  @apply text-xs;
+  @apply font-medium;
+  background: var(--chip-bg, var(--color-bg-sunken));
+  color: var(--chip-text, var(--color-text-secondary));
+  transition: color var(--duration-fast) var(--ease-out), border-color var(--duration-fast) var(--ease-out), background var(--duration-fast) var(--ease-out);
+}
+
+.tag:hover {
+  color: var(--color-text-primary);
+  border-color: var(--chip-border-active, var(--color-brand-muted));
+  background: var(--chip-bg-hover, var(--color-gray-100));
+}
+
+.tag.active {
+  border-color: var(--chip-border-active, var(--color-brand-muted));
+  color: var(--chip-text-active, var(--color-brand));
+  background: var(--chip-bg-active, var(--color-brand-subtle));
+  font-weight: 600;
+}
+}

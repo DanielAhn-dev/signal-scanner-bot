@@ -1,5 +1,10 @@
 ﻿@import './tokens.css';
 @import "tailwindcss";
+@import './layout/shell.css';
+@import './components/navigation.css';
+@import './components/controls.css';
+@import './components/chips.css';
+@import './components/feedback.css';
 
 /* safelist - keep dynamically generated classes */
 @source inline("p-6 p-4 p-3 p-2 rounded rounded-lg rounded-md shadow-sm shadow text-3xl text-2xl text-lg font-extrabold font-semibold text-slate-500 text-right grid grid-cols-2 items-center justify-between max-w-3xl space-y-2 space-y-3 mb-4 mb-6 mt-1 text-red-600 text-green-600");
@@ -19,6 +24,22 @@ html, body, #root {
   line-height: var(--line-height-normal);
 }
 
+a {
+  color: var(--link-color, var(--color-brand));
+  text-decoration: none;
+  transition: color var(--duration-fast) var(--ease-out);
+}
+
+a:hover {
+  color: var(--link-color-hover, var(--color-brand-hover));
+}
+
+a:focus-visible {
+  @apply outline-none;
+  box-shadow: var(--shadow-focus);
+  border-radius: var(--radius-xs);
+}
+
 /* numeric tabular rendering */
 .number, .price, .pnl, td.numeric {
   font-variant-numeric: tabular-nums;
@@ -33,32 +54,7 @@ html, body, #root {
 
 @layer components {
 
-/* ================================================================
-   LAYOUT
-   ================================================================ */
-.max-w-3xl {
-  @apply mx-auto max-w-3xl;
-}
-
-.container-app {
-  @apply min-h-screen;
-  padding: var(--spacing-page-y) var(--spacing-page-x);
-  max-width: 960px;
-  margin-left: auto;
-  margin-right: auto;
-}
-.container-app.container-wide {
-  max-width: 1320px;
-}
-
-@media (max-width: 639px) {
-  .container-app {
-    padding: var(--space-3) var(--space-3);
-  }
-  .card {
-    --card-padding: var(--space-4);
-  }
-}
+/* layout moved: layout/shell.css */
 
 /* ================================================================
    CARD
@@ -362,310 +358,7 @@ html, body, #root {
   .cards-grid.cols-3 { grid-template-columns: repeat(3, 1fr); }
 }
 
-/* ================================================================
-   HEADER / NAVIGATION
-   ================================================================ */
-.site-header {
-  @apply sticky top-0;
-  background: var(--header-bg, var(--color-bg-surface));
-  border-bottom: 1px solid var(--header-border, var(--color-border-default));
-  z-index: var(--header-z, var(--z-sticky));
-}
-.header-inner {
-  @apply max-w-none w-full flex items-center;
-  gap: var(--space-3);
-  @apply px-4 py-2;
-}
-.brand { @apply flex-1; }
-.brand-btn {
-  @apply bg-transparent border-none cursor-pointer p-0;
-  @apply font-bold;
-  @apply text-base;
-  color: var(--color-text-primary);
-}
-.nav-toggle {
-  @apply bg-transparent flex items-center justify-center cursor-pointer;
-  border: none;
-  border-radius: var(--radius-sm);
-  padding: 0;
-  min-height: 36px;
-  min-width: 36px;
-  color: var(--color-text-secondary);
-}
-.nav-toggle:hover {
-  background: var(--color-bg-sunken);
-  color: var(--color-text-primary);
-}
-
-.top-nav {
-  @apply flex items-center;
-  gap: var(--space-2);
-}
-
-.top-nav-list {
-  @apply hidden items-center;
-  gap: var(--space-1);
-}
-
-.top-nav-action {
-  border: 1px solid var(--color-border-default);
-  background: var(--color-bg-surface);
-  color: var(--color-text-secondary);
-}
-
-.top-nav-action:hover {
-  background: var(--color-bg-sunken);
-  color: var(--color-text-primary);
-}
-
-@media (max-width: 639px) {
-  .top-nav-action { display: none; }
-}
-
-.nav-drawer-overlay {
-  @apply fixed inset-0 flex justify-end;
-  z-index: var(--z-overlay);
-  background: var(--color-bg-overlay);
-}
-
-.nav-drawer {
-  @apply h-screen flex flex-col;
-  width: min(300px, 88vw);
-  background: var(--color-bg-surface);
-  border-left: 1px solid var(--color-border-default);
-  box-shadow: var(--shadow-lg);
-  animation: drawerSlideIn var(--duration-slow) var(--ease-default) both;
-}
-
-@keyframes drawerSlideIn {
-  from { transform: translateX(100%); opacity: 0.6; }
-  to   { transform: translateX(0);    opacity: 1; }
-}
-
-.nav-drawer-header {
-  @apply flex items-center justify-between;
-  @apply p-4;
-  border-bottom: 1px solid var(--color-border-default);
-}
-
-.nav-drawer-title {
-  @apply text-base;
-  @apply font-bold;
-  color: var(--color-text-primary);
-}
-
-.nav-drawer-close {
-  @apply flex items-center justify-center cursor-pointer bg-transparent border-none;
-  width: 36px;
-  height: 36px;
-  @apply rounded-sm;
-  color: var(--color-text-secondary);
-  transition: background var(--duration-fast) var(--ease-out), color var(--duration-fast) var(--ease-out);
-}
-.nav-drawer-close:hover {
-  background: var(--color-bg-sunken);
-  color: var(--color-text-primary);
-}
-
-/* ================================================================
-   MODAL — 반응형 레이아웃
-   ================================================================ */
-.modal-overlay {
-  @apply fixed inset-0 flex items-center justify-center;
-  z-index: 999;
-  background: rgba(0, 0, 0, 0.5);
-  padding: var(--space-3);
-  overflow-y: auto;
-}
-
-.modal {
-  background: var(--color-bg-surface);
-  border-radius: var(--radius-lg);
-  border: 1px solid var(--color-border-default);
-  box-shadow: var(--shadow-lg);
-  width: 100%;
-  max-height: 90vh;
-  overflow-y: auto;
-  max-width: 640px;
-}
-
-@media (max-width: 639px) {
-  .modal-overlay {
-    padding: var(--space-2);
-    align-items: flex-start;
-    padding-top: var(--space-4);
-  }
-
-  .modal {
-    max-width: 100%;
-    width: 100%;
-    max-height: 85vh;
-    border-radius: var(--radius-md);
-  }
-}
-
-/* ?곗뒪?ы깙(??40px)?먯꽌 ?쒕줈????primary nav ??ぉ ?④린湲?(?ㅻ뜑???대? ?몄텧) */
-@media (min-width: 640px) {
-  .nav-drawer-primary-item { display: none; }
-}
-
-.nav-drawer-content {
-  @apply overflow-auto flex flex-col;
-  @apply px-4 pt-3 pb-6;
-  gap: var(--space-4);
-}
-
-.report-drawer-overlay {
-  @apply fixed inset-0 flex justify-end;
-  z-index: var(--z-modal);
-  background: var(--color-bg-overlay);
-}
-
-.report-drawer {
-  @apply h-screen flex flex-col;
-  width: min(880px, 96vw);
-  background: var(--color-bg-surface);
-  border-left: 1px solid var(--color-border-default);
-  box-shadow: var(--shadow-lg);
-}
-
-.report-drawer-header {
-  @apply flex items-center justify-between;
-  @apply p-4;
-  border-bottom: 1px solid var(--color-border-default);
-  background: linear-gradient(120deg, var(--color-brand-subtle), var(--color-bg-surface) 58%);
-}
-
-.report-drawer-title {
-  @apply text-lg;
-  @apply font-bold;
-  color: var(--color-text-primary);
-}
-
-.report-drawer-content {
-  display: flex;
-  flex: 1;
-  overflow: hidden;
-  position: relative;
-  padding: 0;
-}
-
-.report-drawer-content iframe {
-  width: 100%;
-  height: 100%;
-  border: none;
-  display: block;
-  background: var(--color-bg-surface);
-}
-
-.nav-group {
-  @apply flex flex-col;
-  gap: var(--space-2);
-}
-.nav-group-title {
-  @apply px-2 py-1 text-xs font-semibold uppercase tracking-wider;
-  color: var(--color-text-tertiary);
-}
-.nav-group-items {
-  @apply flex flex-col items-stretch;
-  gap: var(--space-2);
-}
-
-.nav-item {
-  @apply bg-transparent cursor-pointer text-left inline-flex items-center justify-center whitespace-nowrap;
-  border: 1px solid var(--color-border-default);
-  @apply px-3 py-2;
-  @apply rounded-sm;
-  @apply text-sm;
-  color: var(--nav-item-text, var(--color-text-secondary));
-  transition: background var(--duration-fast) var(--ease-out), color var(--duration-fast) var(--ease-out);
-  min-height: 36px;
-}
-.nav-item:hover {
-  background: var(--nav-item-bg-hover, var(--color-gray-50));
-  border-color: var(--color-border-strong);
-  color: var(--color-text-primary);
-}
-.nav-item.active {
-  background: var(--nav-item-bg-active, var(--color-gray-100));
-  border-color: var(--color-brand-muted);
-  color: var(--nav-item-text-active, var(--color-text-primary));
-  @apply font-medium;
-}
-.nav-item:focus-visible {
-  @apply outline-none;
-  box-shadow: var(--shadow-focus);
-}
-.nav-icon { @apply inline-block; margin-right: var(--space-2); }
-.nav-label { @apply align-middle; }
-
-@media (min-width: 640px) {
-  .top-nav-list { @apply flex; }
-  .header-inner { @apply px-4 py-3; }
-
-  /* ?ㅻ뜑 ?곷떒 nav ???ㅽ???(?좎뒪 ?ㅽ??? 諛묒쨪 ?몃뵒耳?댄꽣) */
-  .top-nav-list .nav-item {
-    @apply border-none;
-    background: transparent;
-    border-radius: 0;
-    @apply px-2 py-1;
-    padding-bottom: calc(var(--space-1) + 2px);
-    border-bottom: 2px solid transparent;
-    color: var(--color-text-secondary);
-    @apply text-sm;
-    @apply font-medium;
-    min-height: unset;
-  }
-  .top-nav-list .nav-item:hover {
-    background: transparent;
-    border-color: var(--color-border-strong);
-    color: var(--color-text-primary);
-  }
-  .top-nav-list .nav-item.active {
-    background: transparent;
-    border-bottom-color: var(--color-brand);
-    color: var(--color-text-primary);
-    @apply font-semibold;
-  }
-}
-
-/* ================================================================
-   PROFILE AVATAR BUTTON (?ㅻ뜑)
-   ================================================================ */
-.profile-avatar-btn {
-  @apply relative inline-flex items-center justify-center cursor-pointer bg-transparent border-none;
-  width: 36px;
-  height: 36px;
-  @apply rounded-full;
-  background: var(--color-bg-sunken);
-  color: var(--color-text-secondary);
-  @apply text-xs;
-  @apply font-bold;
-  letter-spacing: 0.02em;
-  border: 1.5px solid var(--color-border-default);
-  transition: border-color var(--duration-fast) var(--ease-out), box-shadow var(--duration-fast) var(--ease-out);
-  flex-shrink: 0;
-}
-.profile-avatar-btn:hover {
-  border-color: var(--color-brand-muted);
-  box-shadow: var(--shadow-focus);
-}
-.profile-avatar-btn--connected {
-  background: var(--color-brand-subtle, var(--color-blue-50));
-  border-color: var(--color-brand-muted, var(--color-blue-200));
-  color: var(--color-brand, var(--color-blue-600));
-}
-/* 誘몄뿰???곹깭 鍮④컙 dot */
-.profile-avatar-dot {
-  @apply absolute block;
-  top: 2px;
-  right: 2px;
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: var(--color-stock-up, #F04452);
-  border: 1.5px solid var(--color-bg-surface);
-}
+/* navigation moved: components/navigation.css */
 
 /* ================================================================
    PROFILE MODAL
@@ -948,160 +641,9 @@ html, body, #root {
   }
 
 
-/* ================================================================
-  FORM CONTROLS
-  ================================================================ */
-.ui-field { @apply block; }
-.ui-label {
-  @apply block;
-  font-size: var(--label-font-size, var(--font-size-sm));
-  font-weight: var(--label-font-weight, var(--font-weight-medium));
-  color: var(--label-color, var(--color-text-secondary));
-  @apply mb-1;
-}
-.ui-input .ui-text,
-.ui-input .ui-textarea,
-.ui-text,
-.ui-textarea {
-  @apply w-full;
-  padding: var(--space-2) var(--input-padding-x, var(--space-3));
-  border: 1px solid var(--input-border, var(--color-border-default));
-  border-radius: var(--input-radius, var(--radius-xs));
-  @apply text-sm;
-  color: var(--input-text, var(--color-text-primary));
-  background: var(--input-bg, var(--color-bg-sunken));
-  transition: border-color var(--duration-fast) var(--ease-out), box-shadow var(--duration-fast) var(--ease-out);
-}
-.ui-text:hover, .ui-textarea:hover { border-color: var(--input-border-hover, var(--color-border-strong)); }
-.ui-text:focus, .ui-textarea:focus {
-  @apply outline-none;
-  border-color: var(--input-border-focus, var(--color-border-focus));
-  background: var(--input-bg-focus, var(--color-bg-surface));
-  box-shadow: var(--shadow-focus);
-}
-.ui-textarea {
-  @apply resize-y;
-  min-height: 120px;
-}
-/* number input spinner 숨김 */
-.ui-text[type=number]::-webkit-outer-spin-button,
-.ui-text[type=number]::-webkit-inner-spin-button {
-  -webkit-appearance: none;
-  margin: 0;
-}
-.ui-text[type=number] { -moz-appearance: textfield; }
-.ui-button {
-  @apply cursor-pointer inline-flex items-center justify-center whitespace-nowrap;
-  border-radius: var(--btn-radius, var(--radius-sm));
-  padding: var(--btn-padding-md, 0.5rem 0.875rem);
-  font-weight: var(--btn-font-weight, var(--font-weight-semibold));
-  @apply text-sm;
-  border: 1px solid transparent;
-  min-height: var(--btn-height-md, 40px);
-  min-width: 2.75rem;
-  gap: var(--space-1);
-  font-family: inherit;
-  line-height: 1.2;
-  transition: background var(--duration-fast) var(--ease-out), box-shadow var(--duration-fast) var(--ease-out);
-}
-.ui-button:disabled { @apply opacity-50 cursor-not-allowed; }
-.ui-btn-primary  { background: var(--btn-primary-bg); color: var(--btn-primary-text); }
-.ui-btn-primary:hover:not(:disabled)  { background: var(--btn-primary-bg-hover); }
-.ui-btn-secondary {
-  background: var(--btn-secondary-bg);
-  color: var(--btn-secondary-text);
-  border-color: var(--color-blue-100);
-}
-.ui-btn-secondary:hover:not(:disabled) { background: var(--btn-secondary-bg-hover); }
-.ui-btn-ghost { background: var(--btn-ghost-bg); color: var(--btn-ghost-text); }
-.ui-btn-ghost:hover:not(:disabled) { background: var(--btn-ghost-bg-hover); }
+/* controls moved: components/controls.css */
 
-/* Button size variants */
-.ui-btn-sm {
-  min-height: var(--btn-height-sm, 32px);
-  padding: 0.375rem 0.625rem;
-  @apply text-xs;
-}
-.ui-btn-lg {
-  min-height: var(--btn-height-lg, 48px);
-  padding: 0.75rem 1rem;
-  @apply text-base;
-}
-
-.ui-field + .ui-field { @apply mt-3; }
-
-/* discovery 설정 그리드는 컬럼 정렬이 우선이라 sibling top-margin을 제거한다. */
-.discovery-criteria-grid > .ui-field,
-.discovery-criteria-grid > .ui-field + .ui-field {
-  margin-top: 0;
-}
-
-.ui-checkbox {
-  width: 18px;
-  height: 18px;
-  border: 1px solid var(--color-border-strong);
-  @apply rounded-xs;
-  background: var(--color-bg-surface);
-  accent-color: var(--color-brand);
-}
-.ui-checkbox:focus-visible { @apply outline-none; box-shadow: var(--shadow-focus); }
-
-/* ================================================================
-   BUTTON (inline filter / tag buttons)
-   ================================================================ */
-.btn {
-  @apply inline-flex items-center justify-center cursor-pointer bg-transparent;
-  padding: var(--btn-padding-sm, var(--space-1) var(--space-2));
-  @apply rounded-sm;
-  border: 1px solid var(--color-border-default);
-  @apply font-semibold;
-  @apply text-sm;
-  color: var(--color-text-secondary);
-  min-height: 36px;
-  transition: background var(--duration-fast) var(--ease-out), color var(--duration-fast) var(--ease-out);
-}
-.btn:hover:not(:disabled) { background: var(--color-bg-sunken); color: var(--color-text-primary); }
-.btn-small { @apply text-xs; @apply px-2 py-1; min-height: 28px; }
-.btn-active { background: var(--color-brand-subtle); color: var(--color-brand); border-color: transparent; }
-.btn:disabled { @apply opacity-50 cursor-not-allowed; }
-
-.input {
-  @apply px-3 py-2;
-  min-height: var(--input-height, 2.75rem);
-  border: 1px solid var(--color-border-default);
-  @apply rounded-sm;
-  @apply text-sm;
-  color: var(--color-text-primary);
-  background: var(--color-bg-sunken);
-  font-family: inherit;
-}
-.input:focus {
-  @apply outline-none;
-  border-color: var(--color-border-focus);
-  box-shadow: var(--shadow-focus);
-}
-.more-toggle { background: transparent; border: 1px dashed var(--color-border-strong); }
-
-/* ================================================================
-   SKELETON
-   ================================================================ */
-.skeleton {
-  @apply w-full;
-  background: linear-gradient(
-    90deg,
-    var(--skeleton-base, var(--color-gray-200)) 25%,
-    var(--skeleton-highlight, var(--color-gray-100)) 50%,
-    var(--skeleton-base, var(--color-gray-200)) 75%
-  );
-  background-size: 200% 100%;
-  border-radius: var(--skeleton-radius, var(--radius-xs));
-  animation: shimmer var(--skeleton-duration, 1.4s) linear infinite;
-}
-
-@keyframes shimmer {
-  0%   { background-position: 200% 0; }
-  100% { background-position: -200% 0; }
-}
+/* feedback moved: components/feedback.css */
 
 /* ================================================================
    MODAL
@@ -1121,6 +663,22 @@ html, body, #root {
   box-shadow: var(--shadow-lg);
   animation: slideUp var(--duration-normal) var(--ease-default);
 }
+
+@media (max-width: 639px) {
+  .modal-overlay {
+    padding: var(--space-2);
+    align-items: flex-start;
+    padding-top: var(--space-4);
+  }
+
+  .modal {
+    max-width: 100%;
+    width: 100%;
+    max-height: 85vh;
+    border-radius: var(--radius-md);
+  }
+}
+
 .modal-header {
   @apply flex items-center justify-between;
   @apply mb-4;
@@ -1143,58 +701,7 @@ html, body, #root {
 @keyframes slideUp { from { transform: translateY(24px); opacity: 0; } to { transform: none; opacity: 1; } }
 @keyframes spin    { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
 
-/* ================================================================
-   EMPTY / ERROR STATE
-   ================================================================ */
-.state-empty {
-  @apply flex flex-col items-center justify-center text-center;
-  @apply px-4 py-16;
-  color: var(--color-text-tertiary);
-  gap: var(--space-3);
-}
-.state-empty-icon  { @apply opacity-[0.35]; @apply text-4xl; }
-.state-empty-title { @apply text-lg; @apply font-semibold; color: var(--color-text-secondary); }
-.state-empty-desc  { @apply text-sm; }
-
-.state-error {
-  @apply flex flex-col;
-  gap: var(--space-3);
-  @apply mb-3;
-  @apply p-4;
-  @apply rounded-md;
-  background: var(--color-error-bg);
-  border: 1px solid var(--color-border-error);
-  color: var(--color-error);
-}
-.state-error-title { @apply font-semibold; @apply text-sm; }
-
-/* ================================================================
-   SECTOR CHIPS / TAG LIST — Toss Design System (Minimal)
-   ================================================================ */
-.tag-list {
-  @apply flex flex-wrap;
-  gap: var(--space-1);
-}
-.tag {
-  @apply inline-flex items-center cursor-pointer;
-  @apply px-3 py-2;
-  @apply rounded-none;
-  border: none;
-  border-bottom: 2px solid transparent;
-  @apply text-xs;
-  @apply font-medium;
-  background: transparent;
-  color: var(--color-text-secondary);
-  transition: color var(--duration-fast) var(--ease-out), border-color var(--duration-fast) var(--ease-out);
-}
-.tag:hover { 
-  color: var(--color-text-primary);
-}
-.tag.active { 
-  border-bottom-color: var(--color-text-primary);
-  color: var(--color-text-primary); 
-  font-weight: 500;
-}
+/* chips moved: components/chips.css */
 
 /* ================================================================
    STAT CARD (??쒕낫???섏튂 移대뱶)
