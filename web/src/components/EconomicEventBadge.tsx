@@ -3,7 +3,7 @@
  * 모바일 우선, 컴팩트 디자인
  */
 import React, { useEffect, useState } from 'react'
-import { apiFetch } from '../../lib/api'
+import { apiFetch } from '../lib/api'
 import type { EconomicEvent } from '../../../src/types/economics'
 
 interface EconomicEventBadgeProps {
