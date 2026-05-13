@@ -8,10 +8,10 @@ import EconomicEventBadge from '../../components/EconomicEventBadge'
 import { requestOpenProfileModal } from '../../lib/profileModal'
 import { useDashboardSummary, useSectors } from '../../lib/queries'
 import type { DashboardSummary, SectorItem } from '../../lib/types'
-import { useProfileStore } from '../../stores/profileStore'
+import { useCurrentChatId } from '../../stores/profileStore'
 
 export default function Dashboard({ onNavigate }: { onNavigate?: (r: string) => void }) {
-  const chatId = useProfileStore((state) => state.profile.telegramId || '')
+  const chatId = useCurrentChatId()
 
   const {
     data: summaryRaw,

@@ -5,10 +5,10 @@ import Checkbox from '../../components/ui/Checkbox'
 import { apiFetch } from '../../lib/api'
 import TelegramLinkCallout from '../../components/TelegramLinkCallout'
 import { requestOpenProfileModal } from '../../lib/profileModal'
-import { useProfileStore } from '../../stores/profileStore'
+import { useCurrentChatId } from '../../stores/profileStore'
 
 export default function Settings(){
-  const currentChatId = useProfileStore((state) => state.profile.telegramId || '')
+  const currentChatId = useCurrentChatId()
   const [chatId, setChatId] = useState<string>('')
   const [message, setMessage] = useState<string>('테스트 알림입니다.')
   const [status, setStatus] = useState<string|undefined>()

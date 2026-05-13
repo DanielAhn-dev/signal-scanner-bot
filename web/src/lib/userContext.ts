@@ -20,20 +20,7 @@ export type SaveProfileResult = {
 import { supabase } from './supabase'
 
 const RUNTIME_API_BASE_KEY = 'signal_scanner_api_base'
-const PROFILE_UPDATED_EVENT = 'signal-scanner:profile-updated'
 const PROFILE_STORAGE_KEY = 'profile'
-
-function emitProfileUpdated() {
-  if (typeof window === 'undefined') return
-  window.dispatchEvent(new Event(PROFILE_UPDATED_EVENT))
-}
-
-export function onProfileUpdated(listener: () => void): () => void {
-  if (typeof window === 'undefined') return () => {}
-  const handler = () => listener()
-  window.addEventListener(PROFILE_UPDATED_EVENT, handler)
-  return () => window.removeEventListener(PROFILE_UPDATED_EVENT, handler)
-}
 
 export function readProfile(): StoredProfile | null {
   try {
@@ -61,11 +48,9 @@ function writeProfile(profile: StoredProfile | null) {
   try {
     if (!profile || Object.keys(profile).length === 0) {
       localStorage.removeItem(PROFILE_STORAGE_KEY)
-      emitProfileUpdated()
       return
     }
     localStorage.setItem(PROFILE_STORAGE_KEY, JSON.stringify(profile))
-    emitProfileUpdated()
   } catch { /* ignore */ }
 }
 
@@ -134,11 +119,11 @@ export function ensureClientId(): string {
     const p = readProfile() ?? {}
     if (p.clientId) return p.clientId
     const id = `c_${Math.random().toString(36).slice(2, 10)}`
-    saveProfile({ clientId: id })
+    writeProfile({ ...p, clientId: id })
     return id
   } catch {
     const id = `c_${Math.random().toString(36).slice(2, 10)}`
-    try { saveProfile({ clientId: id }) } catch {}
+    try { writeProfile({ clientId: id }) } catch {}
     return id
   }
 }
@@ -205,43 +190,13 @@ function buildProfileHeaders(accessToken?: string): Record<string, string> {
 export function clearProfile() {
   try {
     localStorage.removeItem(PROFILE_STORAGE_KEY)
-    emitProfileUpdated()
   } catch { /* ignore */ }
-}
-
-export function normalizeChatId(raw: unknown): string {
-  const s = String(raw ?? '').trim()
-  if (!s) return ''
-  const digits = s.replace(/[^0-9]/g, '')
-  return digits
 }
 
 function normalizeApiBase(raw: unknown): string {
   const s = String(raw ?? '').trim()
   if (!s) return ''
   return s.replace(/\/$/, '')
-}
-
-function getAllowedChatIdsFromEnv(): string[] {
-  const raw = String(
-    import.meta.env.VITE_ALLOWED_CHAT_IDS
-    || import.meta.env.VITE_ALLOWED_CHAT_ID
-    || import.meta.env.VITE_DEFAULT_TELEGRAM_CHAT_ID
-    || '',
-  )
-  if (!raw.trim()) return []
-  return raw
-    .split(',')
-    .map(normalizeChatId)
-    .filter(Boolean)
-}
-
-export function isAllowedChatId(raw: unknown): boolean {
-  const chatId = normalizeChatId(raw)
-  if (!chatId) return false
-  const allowed = getAllowedChatIdsFromEnv()
-  if (allowed.length === 0) return true
-  return allowed.includes(chatId)
 }
 
 export function getApiBase(): string {

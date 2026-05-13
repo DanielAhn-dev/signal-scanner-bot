@@ -4,7 +4,7 @@
  */
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { apiFetch } from './api'
-import { useProfileStore } from '../stores/profileStore'
+import { useCurrentChatId } from '../stores/profileStore'
 import type {
   DashboardSummary,
   SectorItem,
@@ -59,7 +59,7 @@ export function useScanCandidates(params?: Record<string, string>) {
 
 // ── 포트폴리오 ───────────────────────────────────────────
 export function usePositions() {
-  const chatId = useProfileStore((state) => state.profile.telegramId || '')
+  const chatId = useCurrentChatId()
   return useQuery<PositionRow[]>({
     queryKey: QUERY_KEYS.positions(chatId),
     queryFn: () => apiFetch('/api/ui/positions', { cacheMs: 0, timeoutMs: 15_000, retries: 1 }),
@@ -69,7 +69,7 @@ export function usePositions() {
 }
 
 export function useTrades(page = 1) {
-  const chatId = useProfileStore((state) => state.profile.telegramId || '')
+  const chatId = useCurrentChatId()
   return useQuery<{ rows: TradeRow[]; total: number }>({
     queryKey: QUERY_KEYS.trades(page, chatId),
     queryFn: () => apiFetch(`/api/ui/decisions?page=${page}`, { cacheMs: 0, timeoutMs: 12_000, retries: 1 }),
@@ -109,7 +109,7 @@ export function useFlow(code: string, opts?: { enabled?: boolean }) {
 // ── 포지션 유지보수 뮤테이션 ──────────────────────────────
 export function useMaintenanceMutation() {
   const qc = useQueryClient()
-  const chatId = useProfileStore((state) => state.profile.telegramId || '')
+  const chatId = useCurrentChatId()
   return useMutation<MaintenanceResult, Error, Record<string, unknown>>({
     mutationFn: (body) => {
       return apiFetch('/api/ui/positions-maintenance', {

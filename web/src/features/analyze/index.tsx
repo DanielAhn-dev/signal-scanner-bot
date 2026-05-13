@@ -12,7 +12,7 @@ import CandleChart from '../../components/CandleChart'
 import EconomicEventBadge from '../../components/EconomicEventBadge'
 import { LayoutDashboard, TrendingUp, Flag, Activity } from 'lucide-react'
 import type { OhlcvCandle } from '../../lib/types'
-import { useProfileStore } from '../../stores/profileStore'
+import { useCurrentChatId } from '../../stores/profileStore'
 
 function scoreColor(score: number | null): string {
   if (score == null) return 'var(--color-text-tertiary)'
@@ -74,7 +74,7 @@ function useLocalStorageBool(key: string, defaultValue: boolean): [boolean, (v: 
 }
 
 export default function AnalyzePage({ onNavigate }: { onNavigate?: (r: string) => void }) {
-  const chatId = useProfileStore((state) => state.profile.telegramId || '')
+  const chatId = useCurrentChatId()
   const [query, setQuery] = useState('')
   const [result, setResult] = useState<any | null>(null)
   const [candles, setCandles] = useState<OhlcvCandle[]>([])

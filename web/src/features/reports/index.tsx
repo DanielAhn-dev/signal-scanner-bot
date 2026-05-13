@@ -7,7 +7,7 @@ import { readSimulationPlan, type HighlightSimulationPlan } from '../simulator/p
 import { buildTelegramMessage, calcExpectedValue, calcSplitInvested } from '../simulator/telegramFormat'
 import { formatKrw } from '../../lib/format'
 import { useShareManager } from '../../hooks/useShareManager'
-import { useProfileStore } from '../../stores/profileStore'
+import { useCurrentChatId } from '../../stores/profileStore'
 
 type ReportAction = {
   key: string
@@ -147,7 +147,7 @@ const REPORT_ACTIONS: ReportAction[] = [
 ]
 
 export default function ReportsPage() {
-  const chatId = useProfileStore((state) => state.profile.telegramId || '')
+  const chatId = useCurrentChatId()
   const [states, setStates] = useState<Record<string, { loading: boolean; msg?: string }>>({})
   const toast = useToast()
   const [simPlan, setSimPlan] = useState<HighlightSimulationPlan | null>(null)

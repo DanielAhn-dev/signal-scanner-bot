@@ -17,6 +17,10 @@ type ProfileActions = {
   setSyncError: (message: string) => void
 }
 
+export const selectProfile = (state: ProfileState) => state.profile
+export const selectCurrentChatId = (state: ProfileState) => state.profile.telegramId || ''
+export const selectIsTelegramLinked = (state: ProfileState) => !!state.profile.telegramId
+
 export const useProfileStore = create<ProfileState & ProfileActions>((set) => ({
   profile: readProfile() ?? {},
   isAdmin: false,
@@ -59,4 +63,12 @@ export const useProfileStore = create<ProfileState & ProfileActions>((set) => ({
 
 export function getCurrentChatIdFromStore(): string {
   return useProfileStore.getState().profile.telegramId || ''
+}
+
+export function useCurrentChatId(): string {
+  return useProfileStore(selectCurrentChatId)
+}
+
+export function useIsTelegramLinked(): boolean {
+  return useProfileStore(selectIsTelegramLinked)
 }
