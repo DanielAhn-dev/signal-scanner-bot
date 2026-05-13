@@ -61,14 +61,7 @@ function sleep(ms: number) {
             ? Math.round(close / s.pbr)
             : null;
 
-        // PEG = PER ÷ 순이익성장률 (성장률 양수일 때만 의미 있음)
-        const peg =
-          s.per != null &&
-          s.per > 0 &&
-          s.netIncomeGrowthPct != null &&
-          s.netIncomeGrowthPct > 0
-            ? Math.round((s.per / s.netIncomeGrowthPct) * 100) / 100
-            : null;
+        const peg = s.peg ?? null;
 
         const storeRec: StoreSnapshot = {
           code,
@@ -87,11 +80,14 @@ function sleep(ms: number) {
           roe: s.roe ?? null,
           debt_ratio: s.debtRatio ?? null,
           computed: {
+            netIncomeForwardGrowthPct: s.netIncomeForwardGrowthPct ?? null,
             salesGrowthPct: s.salesGrowthPct ?? null,
             opIncomeGrowthPct: s.opIncomeGrowthPct ?? null,
             netIncomeGrowthPct: s.netIncomeGrowthPct ?? null,
             qualityScore: s.qualityScore ?? null,
             commentary: s.commentary ?? null,
+            pegSource: s.pegSource ?? null,
+            pegGrowthPct: s.pegGrowthPct ?? null,
             peg,
           },
           raw_rows: null,

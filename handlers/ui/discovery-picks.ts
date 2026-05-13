@@ -38,12 +38,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     : req.query.minMarketCapBillion
   const minRoeRaw = Array.isArray(req.query.minRoe) ? req.query.minRoe[0] : req.query.minRoe
   const maxPbrRaw = Array.isArray(req.query.maxPbr) ? req.query.maxPbr[0] : req.query.maxPbr
+  const minPegRaw = Array.isArray(req.query.minPeg) ? req.query.minPeg[0] : req.query.minPeg
+  const maxPegRaw = Array.isArray(req.query.maxPeg) ? req.query.maxPeg[0] : req.query.maxPeg
   const qoqModeRaw = Array.isArray(req.query.qoqMode) ? req.query.qoqMode[0] : req.query.qoqMode
 
   const criteriaInput = {
     minMarketCap: Number(minMarketCapBillionRaw) * 100_000_000,
     minRoe: Number(minRoeRaw),
     maxPbr: Number(maxPbrRaw),
+    minPeg: minPegRaw == null || String(minPegRaw).trim() === '' ? null : Number(minPegRaw),
+    maxPeg: maxPegRaw == null || String(maxPegRaw).trim() === '' ? null : Number(maxPegRaw),
     qoqMode: (qoqModeRaw === 'latest-quarter-positive'
       ? 'latest-quarter-positive'
       : 'two-quarter-positive') as DiscoveryQoqMode,
@@ -58,6 +62,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         minMarketCapBillion: Math.round(result.criteria.minMarketCap / 100_000_000),
         minRoe: result.criteria.minRoe,
         maxPbr: result.criteria.maxPbr,
+        minPeg: result.criteria.minPeg,
+        maxPeg: result.criteria.maxPeg,
         qoqMode: result.criteria.qoqMode,
       },
       funnel: result.funnel,

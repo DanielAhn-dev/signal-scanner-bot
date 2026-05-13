@@ -48,6 +48,18 @@ export function growthPctFromRow(row: string[]): number | undefined {
   return ((latest - prev) / Math.abs(prev)) * 100;
 }
 
+export function forwardGrowthPctFromAnnualRow(row: string[]): number | undefined {
+  const annualCells = (row || []).slice(0, ANNUAL_COLUMN_COUNT);
+  if (annualCells.length < ANNUAL_COLUMN_COUNT) return undefined;
+
+  const latestActual = parseNum(annualCells[ACTUAL_ANNUAL_COLUMN_COUNT - 1] || "");
+  const nextForecast = parseNum(annualCells[ANNUAL_COLUMN_COUNT - 1] || "");
+  if (latestActual === undefined || nextForecast === undefined) return undefined;
+  if (!Number.isFinite(latestActual) || latestActual === 0) return undefined;
+
+  return ((nextForecast - latestActual) / Math.abs(latestActual)) * 100;
+}
+
 export function analyzeGrowthRow(
   row: string[],
   options?: { lowBaseFloor?: number }

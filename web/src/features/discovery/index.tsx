@@ -32,6 +32,8 @@ type DiscoveryPick = {
   pbr: number | null
   per: number | null
   roe: number | null
+  peg: number | null
+  pegSource: 'net_income_forward' | 'net_income' | 'op_income' | 'sales' | null
   revQoq: number | null
   opQoq: number | null
   revAcceleration: number | null
@@ -54,6 +56,8 @@ type DiscoveryCriteria = {
   minMarketCapBillion: number
   minRoe: number
   maxPbr: number
+  minPeg: number | null
+  maxPeg: number | null
   qoqMode: 'two-quarter-positive' | 'latest-quarter-positive'
 }
 
@@ -61,6 +65,7 @@ type DiscoveryFunnel = {
   annualUniverse: number
   afterMarketCap: number
   afterValue: number
+  afterPeg: number
   afterTrendData: number
   afterGrowth: number
 }
@@ -77,6 +82,8 @@ const DEFAULT_CRITERIA: DiscoveryCriteria = {
   minMarketCapBillion: 500,
   minRoe: 8,
   maxPbr: 2,
+  minPeg: null,
+  maxPeg: null,
   qoqMode: 'two-quarter-positive',
 }
 
@@ -89,6 +96,8 @@ const DISCOVERY_PRESETS: DiscoveryPreset[] = [
       minMarketCapBillion: 500,
       minRoe: 8,
       maxPbr: 2,
+      minPeg: null,
+      maxPeg: null,
       qoqMode: 'latest-quarter-positive',
     },
     sectorMode: 'all',
@@ -101,6 +110,8 @@ const DISCOVERY_PRESETS: DiscoveryPreset[] = [
       minMarketCapBillion: 500,
       minRoe: 10,
       maxPbr: 1.6,
+      minPeg: null,
+      maxPeg: null,
       qoqMode: 'two-quarter-positive',
     },
     sectorMode: 'all',
@@ -113,6 +124,8 @@ const DISCOVERY_PRESETS: DiscoveryPreset[] = [
       minMarketCapBillion: 300,
       minRoe: 6,
       maxPbr: 2.5,
+      minPeg: null,
+      maxPeg: null,
       qoqMode: 'latest-quarter-positive',
     },
     sectorMode: 'all',
@@ -125,6 +138,8 @@ const DISCOVERY_PRESETS: DiscoveryPreset[] = [
       minMarketCapBillion: 500,
       minRoe: 8,
       maxPbr: 2.1,
+      minPeg: null,
+      maxPeg: null,
       qoqMode: 'two-quarter-positive',
     },
     sectorMode: 'promising',
@@ -137,6 +152,8 @@ const DISCOVERY_PRESETS: DiscoveryPreset[] = [
       minMarketCapBillion: 300,
       minRoe: 6,
       maxPbr: 2.4,
+      minPeg: null,
+      maxPeg: null,
       qoqMode: 'latest-quarter-positive',
     },
     sectorMode: 'next',
@@ -149,6 +166,8 @@ const DISCOVERY_PRESETS: DiscoveryPreset[] = [
       minMarketCapBillion: 400,
       minRoe: 7,
       maxPbr: 2.2,
+      minPeg: null,
+      maxPeg: null,
       qoqMode: 'latest-quarter-positive',
     },
     sectorMode: 'promising-or-next',
@@ -161,6 +180,8 @@ const DISCOVERY_PRESETS: DiscoveryPreset[] = [
       minMarketCapBillion: 1000,
       minRoe: 3,
       maxPbr: 2.5,
+      minPeg: null,
+      maxPeg: null,
       qoqMode: 'latest-quarter-positive',
     },
     sectorMode: 'promising',
@@ -168,7 +189,7 @@ const DISCOVERY_PRESETS: DiscoveryPreset[] = [
 ]
 
 function criteriaSignature(c: DiscoveryCriteria, sectorMode: SectorFilterMode): string {
-  return [c.minMarketCapBillion, c.minRoe, c.maxPbr, c.qoqMode, sectorMode].join('|')
+  return [c.minMarketCapBillion, c.minRoe, c.maxPbr, c.minPeg ?? '', c.maxPeg ?? '', c.qoqMode, sectorMode].join('|')
 }
 
 function asFiniteNumber(v: unknown): number | null {
@@ -202,6 +223,14 @@ function normalizePick(raw: any): DiscoveryPick {
     pbr: asFiniteNumber(raw?.pbr),
     per: asFiniteNumber(raw?.per),
     roe: asFiniteNumber(raw?.roe),
+    peg: asFiniteNumber(raw?.peg),
+    pegSource:
+      raw?.pegSource === 'net_income_forward' ||
+      raw?.pegSource === 'net_income' ||
+      raw?.pegSource === 'op_income' ||
+      raw?.pegSource === 'sales'
+      ? raw.pegSource
+      : null,
     revQoq: asFiniteNumber(raw?.revQoq),
     opQoq: asFiniteNumber(raw?.opQoq),
     revAcceleration: asFiniteNumber(raw?.revAcceleration),
@@ -288,6 +317,8 @@ export default function DiscoveryPage() {
         maxPbr: String(c.maxPbr),
         qoqMode: c.qoqMode,
       })
+      if (c.minPeg != null) params.set('minPeg', String(c.minPeg))
+      if (c.maxPeg != null) params.set('maxPeg', String(c.maxPeg))
       const res = await apiFetch(`/api/ui/discovery-picks?${params.toString()}`, {
         cacheMs: 120_000,
         timeoutMs: 30_000,
@@ -301,6 +332,8 @@ export default function DiscoveryPage() {
           minMarketCapBillion: Number(res.criteria.minMarketCapBillion ?? c.minMarketCapBillion),
           minRoe: Number(res.criteria.minRoe ?? c.minRoe),
           maxPbr: Number(res.criteria.maxPbr ?? c.maxPbr),
+          minPeg: res.criteria.minPeg == null ? null : Number(res.criteria.minPeg),
+          maxPeg: res.criteria.maxPeg == null ? null : Number(res.criteria.maxPeg),
           qoqMode: (res.criteria.qoqMode === 'latest-quarter-positive' ? 'latest-quarter-positive' : 'two-quarter-positive'),
         })
       } else {
@@ -430,6 +463,8 @@ export default function DiscoveryPage() {
         <div className="muted">
           후보 <strong>{filteredPicks.length}</strong>개 · 섹터 모드 <strong>{sectorModeSummary}</strong> · 필터 기준: 시총 {appliedCriteria.minMarketCapBillion}억↑,
           {' '}PBR {'<'} {appliedCriteria.maxPbr.toFixed(1)}, ROE {'>'} {appliedCriteria.minRoe.toFixed(1)}%,
+          {' '}PEG {appliedCriteria.minPeg != null ? `${appliedCriteria.minPeg.toFixed(1)}↑` : '하한 없음'}
+          {appliedCriteria.maxPeg != null ? ` · ${appliedCriteria.maxPeg.toFixed(1)}↓` : ''},
           {' '}{appliedCriteria.qoqMode === 'two-quarter-positive' ? '최근 2분기 매출·영업이익 QoQ 양수' : '최신 분기 매출·영업이익 QoQ 양수'}
           {updatedLabel ? ` · ${updatedLabel}` : ''}
         </div>
@@ -460,7 +495,7 @@ export default function DiscoveryPage() {
           <Button variant={sectorMode === 'next' ? 'primary' : 'secondary'} size="sm" onClick={() => setSectorMode('next')} disabled={loading}>다음 섹터</Button>
           <Button variant={sectorMode === 'promising-or-next' ? 'primary' : 'secondary'} size="sm" onClick={() => setSectorMode('promising-or-next')} disabled={loading}>유망 + 다음</Button>
         </div>
-        <div className="cards-grid cols-3 discovery-criteria-grid" style={{ marginBottom: 'var(--space-2)' }}>
+        <div className="cards-grid cols-4 discovery-criteria-grid" style={{ marginBottom: 'var(--space-2)' }}>
           <Input
             label="최소 시총(억)"
             type="number"
@@ -486,6 +521,24 @@ export default function DiscoveryPage() {
             step={0.1}
             value={criteria.maxPbr}
             onChange={(e) => setCriteria((prev) => ({ ...prev, maxPbr: Number(e.target.value || 0) }))}
+          />
+          <Input
+            label="최소 PEG"
+            type="number"
+            min={0.1}
+            max={100}
+            step={0.1}
+            value={criteria.minPeg ?? ''}
+            onChange={(e) => setCriteria((prev) => ({ ...prev, minPeg: e.target.value === '' ? null : Number(e.target.value) }))}
+          />
+          <Input
+            label="최대 PEG"
+            type="number"
+            min={0.1}
+            max={100}
+            step={0.1}
+            value={criteria.maxPeg ?? ''}
+            onChange={(e) => setCriteria((prev) => ({ ...prev, maxPeg: e.target.value === '' ? null : Number(e.target.value) }))}
           />
         </div>
         <div className="flex-between" style={{ gap: 'var(--space-2)', flexWrap: 'wrap' }}>
@@ -527,7 +580,7 @@ export default function DiscoveryPage() {
           <div className="title-md" style={{ marginBottom: 'var(--space-2)' }}>필터 퍼널</div>
           <div className="caption" style={{ lineHeight: 1.8 }}>
             연간 재무 유니버스 {funnel.annualUniverse}개 → 시총 통과 {funnel.afterMarketCap}개 → 가치 통과 {funnel.afterValue}개 →
-            최근 2분기 데이터 보유 {funnel.afterTrendData}개 → 최종 성장 조건 통과 {funnel.afterGrowth}개
+            PEG 조건 통과 {funnel.afterPeg}개 → 최근 2분기 데이터 보유 {funnel.afterTrendData}개 → 최종 성장 조건 통과 {funnel.afterGrowth}개
           </div>
         </div>
       )}
@@ -575,6 +628,7 @@ export default function DiscoveryPage() {
                 <th className="scan-th">모멘텀<br /><small>40pt</small></th>
                 <th className="scan-th">수급<br /><small>20pt</small></th>
                 <th className="scan-th">섹터<br /><small>10pt</small></th>
+                <th className="scan-th">PEG</th>
                 <th className="scan-th">PBR</th>
                 <th className="scan-th">ROE</th>
                 <th className="scan-th">매출QoQ</th>
@@ -606,6 +660,20 @@ export default function DiscoveryPage() {
                   </td>
                   <td className="scan-td">
                     <ScoreBadge value={pick.score.sector} max={10} />
+                  </td>
+                  <td className="scan-td">
+                    <div>{pick.peg != null ? pick.peg.toFixed(2) : '—'}</div>
+                    {pick.pegSource && (
+                      <div className="caption muted">
+                        {pick.pegSource === 'net_income_forward'
+                          ? '순이익 선행'
+                          : pick.pegSource === 'net_income'
+                            ? '순이익'
+                            : pick.pegSource === 'op_income'
+                              ? '영업이익'
+                              : '매출'} 기반
+                      </div>
+                    )}
                   </td>
                   <td className="scan-td">
                     {pick.pbr != null ? pick.pbr.toFixed(2) : '—'}

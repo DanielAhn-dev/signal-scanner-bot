@@ -484,8 +484,14 @@ export default function AnalyzePage({ onNavigate }: { onNavigate?: (r: string) =
                 tag: result?.peg_meta?.label ?? null,
                 hint:
                   result?.peg_meta?.growthPct != null
-                    ? `순이익성장률 ${formatNumber(result.peg_meta.growthPct, 2)}% 기반`
-                    : '순이익성장률 데이터 부족 시 신뢰도 낮음',
+                    ? `${result?.peg_meta?.growthBasis === 'net_income_forward'
+                      ? '순이익 선행성장률'
+                      : result?.peg_meta?.growthBasis === 'op_income'
+                      ? '영업이익성장률'
+                      : result?.peg_meta?.growthBasis === 'sales'
+                        ? '매출성장률'
+                        : '순이익성장률'} ${formatNumber(result.peg_meta.growthPct, 2)}% 기반`
+                    : '성장률 데이터 부족 시 신뢰도 낮음',
               },
               { label: 'EPS', val: result.eps != null ? formatKrw(result.eps) : '—' },
               { label: 'BPS', val: result.bps != null ? formatKrw(result.bps) : '—' },

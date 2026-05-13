@@ -54,6 +54,7 @@ type PerShareMetrics = {
     source: 'stored' | 'derived' | 'unavailable'
     confidence: 'high' | 'medium' | 'low'
     growthPct: number | null
+    growthBasis: 'net_income_forward' | 'net_income' | 'op_income' | 'sales' | null
     label: string
   }
 }
@@ -547,7 +548,17 @@ async function saveFundamentalSnapshot(
       as_of: now,
       period_type: 'snapshot',
       period_end: null,
-      computed: true,
+      computed: {
+        netIncomeForwardGrowthPct: asNum(snapshot.netIncomeForwardGrowthPct) ?? null,
+        salesGrowthPct: asNum(snapshot.salesGrowthPct) ?? null,
+        opIncomeGrowthPct: asNum(snapshot.opIncomeGrowthPct) ?? null,
+        netIncomeGrowthPct: asNum(snapshot.netIncomeGrowthPct) ?? null,
+        qualityScore: asNum(snapshot.qualityScore) ?? null,
+        commentary: String(snapshot.commentary || ''),
+        peg: asNum(snapshot.peg) ?? null,
+        pegSource: snapshot.pegSource ?? null,
+        pegGrowthPct: asNum(snapshot.pegGrowthPct) ?? null,
+      },
       raw_rows: null,
       source: 'live_scrape',
       created_at: now,
@@ -591,6 +602,9 @@ function derivePerShareMetrics(input: {
   eps: number | null
   bps: number | null
   peg: number | null
+  netIncomeForwardGrowthPct: number | null
+  salesGrowthPct: number | null
+  opIncomeGrowthPct: number | null
   netIncomeGrowthPct: number | null
 }): PerShareMetrics {
   const {
@@ -600,8 +614,24 @@ function derivePerShareMetrics(input: {
     eps,
     bps,
     peg,
+    netIncomeForwardGrowthPct,
+    salesGrowthPct,
+    opIncomeGrowthPct,
     netIncomeGrowthPct,
   } = input
+
+  const pegFallback =
+    per != null && per > 0
+      ? ((netIncomeForwardGrowthPct != null && netIncomeForwardGrowthPct > 0)
+          ? { growthPct: netIncomeForwardGrowthPct, growthBasis: 'net_income_forward' as const }
+          : (netIncomeGrowthPct != null && netIncomeGrowthPct > 0)
+          ? { growthPct: netIncomeGrowthPct, growthBasis: 'net_income' as const }
+          : (opIncomeGrowthPct != null && opIncomeGrowthPct > 0)
+            ? { growthPct: opIncomeGrowthPct, growthBasis: 'op_income' as const }
+            : (salesGrowthPct != null && salesGrowthPct > 0)
+              ? { growthPct: salesGrowthPct, growthBasis: 'sales' as const }
+              : { growthPct: null, growthBasis: null })
+      : { growthPct: null, growthBasis: null }
 
   const resolvedEps =
     eps ?? (price != null && per != null && per > 0 ? Number((price / per).toFixed(0)) : null)
@@ -609,29 +639,33 @@ function derivePerShareMetrics(input: {
     bps ?? (price != null && pbr != null && pbr > 0 ? Number((price / pbr).toFixed(0)) : null)
   const resolvedPeg =
     peg ??
-    (per != null && per > 0 && netIncomeGrowthPct != null && netIncomeGrowthPct > 0
-      ? Number((per / netIncomeGrowthPct).toFixed(2))
-      : null)
+    (pegFallback.growthPct != null ? Number((per! / pegFallback.growthPct).toFixed(2)) : null)
 
   const pegMeta: PerShareMetrics['pegMeta'] =
     peg != null
       ? {
           source: 'stored',
           confidence: 'high',
-          growthPct: netIncomeGrowthPct,
+          growthPct: pegFallback.growthPct,
+          growthBasis: pegFallback.growthBasis,
           label: '실데이터',
         }
       : resolvedPeg != null
         ? {
             source: 'derived',
             confidence: 'medium',
-            growthPct: netIncomeGrowthPct,
-            label: '추정치',
+            growthPct: pegFallback.growthPct,
+            growthBasis: pegFallback.growthBasis,
+            label:
+              pegFallback.growthBasis === 'net_income_forward' || pegFallback.growthBasis === 'net_income'
+                ? '실데이터'
+                : '추정치',
           }
         : {
             source: 'unavailable',
             confidence: 'low',
-            growthPct: netIncomeGrowthPct,
+            growthPct: pegFallback.growthPct,
+            growthBasis: pegFallback.growthBasis,
             label: '데이터부족',
           }
 
@@ -1007,19 +1041,57 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     let fund: any = fundamentalsResp.data?.[0] || null
 
-    // 📌 Fallback to live scraping if fundamentals data not found in DB
-    if (!fund) {
+    const hasUsablePegInputs = (candidate: any): boolean => {
+      const hasPer = asNum(candidate?.per) != null
+      const hasStoredPeg = asNum(candidate?.peg) != null || asNum(candidate?.computed?.peg) != null
+      const hasGrowth =
+        asNum(candidate?.netIncomeForwardGrowthPct) != null ||
+        asNum(candidate?.netIncomeGrowthPct) != null ||
+        asNum(candidate?.computed?.netIncomeForwardGrowthPct) != null ||
+        asNum(candidate?.computed?.netIncomeGrowthPct) != null ||
+        asNum(candidate?.opIncomeGrowthPct) != null ||
+        asNum(candidate?.computed?.opIncomeGrowthPct) != null ||
+        asNum(candidate?.salesGrowthPct) != null ||
+        asNum(candidate?.computed?.salesGrowthPct) != null
+      return hasPer && (hasStoredPeg || hasGrowth)
+    }
+
+    // DB 데이터가 없거나 PEG 산출 재료가 부족하면 live 스크랩으로 보강
+    if (!hasUsablePegInputs(fund)) {
       try {
         const scrapedFund = await getFundamentalSnapshot(code)
         if (scrapedFund && Object.keys(scrapedFund).length > 0) {
+          const mergedComputed = {
+            ...(typeof fund?.computed === 'object' && fund?.computed ? fund.computed : {}),
+            netIncomeForwardGrowthPct: scrapedFund.netIncomeForwardGrowthPct ?? null,
+            salesGrowthPct: scrapedFund.salesGrowthPct ?? null,
+            opIncomeGrowthPct: scrapedFund.opIncomeGrowthPct ?? null,
+            netIncomeGrowthPct: scrapedFund.netIncomeGrowthPct ?? null,
+            qualityScore: scrapedFund.qualityScore ?? null,
+            commentary: scrapedFund.commentary ?? null,
+            peg: scrapedFund.peg ?? null,
+            pegSource: scrapedFund.pegSource ?? null,
+            pegGrowthPct: scrapedFund.pegGrowthPct ?? null,
+          }
+
           fund = {
-            per: scrapedFund.per,
-            pbr: scrapedFund.pbr,
-            roe: scrapedFund.roe,
-            debt_ratio: scrapedFund.debtRatio,
-            eps: null,
-            bps: null,
-            as_of: new Date().toISOString(),
+            ...(fund || {}),
+            per: asNum(fund?.per) ?? scrapedFund.per ?? null,
+            pbr: asNum(fund?.pbr) ?? scrapedFund.pbr ?? null,
+            roe: asNum(fund?.roe) ?? scrapedFund.roe ?? null,
+            debt_ratio: asNum(fund?.debt_ratio) ?? scrapedFund.debtRatio ?? null,
+            eps: asNum(fund?.eps) ?? null,
+            bps: asNum(fund?.bps) ?? null,
+            as_of: fund?.as_of ?? new Date().toISOString(),
+            netIncomeForwardGrowthPct:
+              asNum(fund?.netIncomeForwardGrowthPct) ?? scrapedFund.netIncomeForwardGrowthPct ?? null,
+            salesGrowthPct: asNum(fund?.salesGrowthPct) ?? scrapedFund.salesGrowthPct ?? null,
+            opIncomeGrowthPct: asNum(fund?.opIncomeGrowthPct) ?? scrapedFund.opIncomeGrowthPct ?? null,
+            netIncomeGrowthPct: asNum(fund?.netIncomeGrowthPct) ?? scrapedFund.netIncomeGrowthPct ?? null,
+            peg: asNum(fund?.peg) ?? scrapedFund.peg ?? null,
+            pegSource: fund?.pegSource ?? scrapedFund.pegSource ?? null,
+            pegGrowthPct: asNum(fund?.pegGrowthPct) ?? scrapedFund.pegGrowthPct ?? null,
+            computed: mergedComputed,
           }
           // 💾 Save scraped data to DB for future queries (non-blocking)
           void saveFundamentalSnapshot(supabase, code, scrapedFund)
@@ -1119,6 +1191,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       asNum((stock as any)?.peg) ??
       asNum((fund as any)?.peg) ??
       asNum((fund as any)?.computed?.peg)
+    const netIncomeForwardGrowthPct =
+      asNum((fund as any)?.netIncomeForwardGrowthPct) ??
+      asNum((fund as any)?.computed?.netIncomeForwardGrowthPct)
+    const salesGrowthPct =
+      asNum((fund as any)?.salesGrowthPct) ??
+      asNum((fund as any)?.computed?.salesGrowthPct)
+    const opIncomeGrowthPct =
+      asNum((fund as any)?.opIncomeGrowthPct) ??
+      asNum((fund as any)?.computed?.opIncomeGrowthPct)
     const netIncomeGrowthPct =
       asNum((fund as any)?.net_income_growth_pct) ??
       asNum((fund as any)?.netIncomeGrowthPct) ??
@@ -1149,6 +1230,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       eps: resolvedEps,
       bps: resolvedBps,
       peg: resolvedPeg,
+      netIncomeForwardGrowthPct,
+      salesGrowthPct,
+      opIncomeGrowthPct,
       netIncomeGrowthPct,
     })
 

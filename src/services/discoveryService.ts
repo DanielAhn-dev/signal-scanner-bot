@@ -16,6 +16,7 @@ type FundamentalAnnualRow = {
   pbr: number | null;
   roe: number | null;
   period_type: string | null;
+  computed?: Record<string, unknown> | null;
 };
 
 type FundamentalTrendRow = {
@@ -50,6 +51,8 @@ export type DiscoveryPick = {
   pbr: number | null;
   per: number | null;
   roe: number | null;
+  peg: number | null;
+  pegSource: 'net_income_forward' | 'net_income' | 'op_income' | 'sales' | null;
   revQoq: number | null;
   opQoq: number | null;
   revAcceleration: number | null;
@@ -69,6 +72,8 @@ export type DiscoveryCriteria = {
   minMarketCap: number;
   minRoe: number;
   maxPbr: number;
+  minPeg: number | null;
+  maxPeg: number | null;
   qoqMode: DiscoveryQoqMode;
 };
 
@@ -76,6 +81,7 @@ export type DiscoveryFunnel = {
   annualUniverse: number;
   afterMarketCap: number;
   afterValue: number;
+  afterPeg: number;
   afterTrendData: number;
   afterGrowth: number;
 };
@@ -90,6 +96,8 @@ const DEFAULT_DISCOVERY_CRITERIA: DiscoveryCriteria = {
   minMarketCap: MIN_MARKET_CAP,
   minRoe: MIN_ROE,
   maxPbr: MAX_PBR,
+  minPeg: null,
+  maxPeg: null,
   qoqMode: "two-quarter-positive",
 };
 
@@ -97,6 +105,8 @@ function sanitizeDiscoveryCriteria(input?: Partial<DiscoveryCriteria>): Discover
   const minMarketCap = Number(input?.minMarketCap);
   const minRoe = Number(input?.minRoe);
   const maxPbr = Number(input?.maxPbr);
+  const minPeg = input?.minPeg == null ? null : Number(input.minPeg);
+  const maxPeg = input?.maxPeg == null ? null : Number(input.maxPeg);
   const qoqMode = input?.qoqMode === "latest-quarter-positive"
     ? "latest-quarter-positive"
     : "two-quarter-positive";
@@ -111,6 +121,12 @@ function sanitizeDiscoveryCriteria(input?: Partial<DiscoveryCriteria>): Discover
     maxPbr: Number.isFinite(maxPbr)
       ? Math.max(0.1, Math.min(10, maxPbr))
       : DEFAULT_DISCOVERY_CRITERIA.maxPbr,
+    minPeg: minPeg == null || !Number.isFinite(minPeg)
+      ? DEFAULT_DISCOVERY_CRITERIA.minPeg
+      : Math.max(0.1, Math.min(100, minPeg)),
+    maxPeg: maxPeg == null || !Number.isFinite(maxPeg)
+      ? DEFAULT_DISCOVERY_CRITERIA.maxPeg
+      : Math.max(0.1, Math.min(100, maxPeg)),
     qoqMode,
   };
 }
@@ -140,13 +156,48 @@ async function fetchLatestAnnualByCode(
 ): Promise<Map<string, FundamentalAnnualRow>> {
   const { data, error } = await supabase
     .from("fundamentals")
-    .select("code, as_of, per, pbr, roe, period_type")
+    .select("code, as_of, per, pbr, roe, period_type, computed")
     .eq("period_type", "annual")
     .order("as_of", { ascending: false })
     .limit(6000);
 
   if (error) throw new Error(`annual fundamentals 조회 실패: ${error.message}`);
   return mapLatestByCode((data ?? []) as FundamentalAnnualRow[]);
+}
+
+function resolvePeg(row: FundamentalAnnualRow): { peg: number | null; pegSource: 'net_income_forward' | 'net_income' | 'op_income' | 'sales' | null } {
+  const computed = (row.computed ?? {}) as Record<string, unknown>;
+  const storedPeg = toNum(computed.peg);
+  if (storedPeg != null && storedPeg > 0) {
+    const source =
+      computed.pegSource === 'net_income_forward' ||
+      computed.pegSource === 'net_income' ||
+      computed.pegSource === 'op_income' ||
+      computed.pegSource === 'sales'
+      ? computed.pegSource
+      : 'net_income';
+    return { peg: storedPeg, pegSource: source };
+  }
+
+  const growthCandidates: Array<{ source: 'net_income_forward' | 'net_income' | 'op_income' | 'sales'; value: number | null }> = [
+    { source: 'net_income_forward', value: toNum(computed.netIncomeForwardGrowthPct) },
+    { source: 'net_income', value: toNum(computed.netIncomeGrowthPct) },
+    { source: 'op_income', value: toNum(computed.opIncomeGrowthPct) },
+    { source: 'sales', value: toNum(computed.salesGrowthPct) },
+  ];
+  const per = toNum(row.per);
+  if (per == null || per <= 0) return { peg: null, pegSource: null };
+
+  for (const candidate of growthCandidates) {
+    if (candidate.value != null && candidate.value > 0) {
+      return {
+        peg: Math.round((per / candidate.value) * 100) / 100,
+        pegSource: candidate.source,
+      };
+    }
+  }
+
+  return { peg: null, pegSource: null };
 }
 
 async function fetchLatestTwoTrendsByCode(
@@ -234,6 +285,7 @@ export async function discoverMultibagger(
     annualUniverse: codes.length,
     afterMarketCap: 0,
     afterValue: 0,
+    afterPeg: 0,
     afterTrendData: 0,
     afterGrowth: 0,
   };
@@ -281,6 +333,16 @@ export async function discoverMultibagger(
     if (pbr == null || pbr >= criteria.maxPbr) continue;
     if (roe == null || roe <= criteria.minRoe) continue;
     funnel.afterValue += 1;
+
+    const pegResolved = resolvePeg(annual);
+    const peg = pegResolved.peg;
+    if (
+      (criteria.minPeg != null && (peg == null || peg < criteria.minPeg)) ||
+      (criteria.maxPeg != null && (peg == null || peg > criteria.maxPeg))
+    ) {
+      continue;
+    }
+    funnel.afterPeg += 1;
 
     const trends = trendMap.get(stock.code) ?? [];
     if (trends.length < 2) continue;
@@ -332,6 +394,8 @@ export async function discoverMultibagger(
       pbr,
       per,
       roe,
+      peg,
+      pegSource: pegResolved.pegSource,
       revQoq: latestRev,
       opQoq: latestOp,
       revAcceleration: toNum(latest.rev_acceleration),

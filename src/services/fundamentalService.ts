@@ -7,6 +7,7 @@ import {
   extractMetricValue,
   findFirstNumberInText,
   findLatestActualAnnualValue,
+  forwardGrowthPctFromAnnualRow,
   growthPctFromRow,
   parseNum,
 } from "./fundamentalParser";
@@ -46,12 +47,48 @@ export type FundamentalSnapshot = {
   opIncomeGrowthPct?: number;
   opIncomeGrowthLowBase?: boolean;
   opIncomeTurnaround?: boolean;
+  netIncomeForwardGrowthPct?: number;
   netIncomeGrowthPct?: number;
   netIncomeGrowthLowBase?: boolean;
   netIncomeTurnaround?: boolean;
+  peg?: number;
+  pegSource?: 'net_income_forward' | 'net_income' | 'op_income' | 'sales' | null;
+  pegGrowthPct?: number;
   qualityScore: number;
   commentary: string;
 };
+
+export function resolvePegFromGrowth(input: {
+  per?: number;
+  netIncomeForwardGrowthPct?: number;
+  netIncomeGrowthPct?: number;
+  opIncomeGrowthPct?: number;
+  salesGrowthPct?: number;
+}): { peg?: number; pegSource?: 'net_income_forward' | 'net_income' | 'op_income' | 'sales' | null; pegGrowthPct?: number } {
+  const per = Number(input.per ?? NaN);
+  if (!Number.isFinite(per) || per <= 0) {
+    return { peg: undefined, pegSource: null, pegGrowthPct: undefined };
+  }
+
+  const candidates: Array<{ source: 'net_income_forward' | 'net_income' | 'op_income' | 'sales'; growthPct?: number }> = [
+    { source: 'net_income_forward', growthPct: input.netIncomeForwardGrowthPct },
+    { source: 'net_income', growthPct: input.netIncomeGrowthPct },
+    { source: 'op_income', growthPct: input.opIncomeGrowthPct },
+    { source: 'sales', growthPct: input.salesGrowthPct },
+  ];
+
+  for (const candidate of candidates) {
+    const growthPct = Number(candidate.growthPct ?? NaN);
+    if (!Number.isFinite(growthPct) || growthPct <= 0) continue;
+    return {
+      peg: Math.round((per / growthPct) * 100) / 100,
+      pegSource: candidate.source,
+      pegGrowthPct: growthPct,
+    };
+  }
+
+  return { peg: undefined, pegSource: null, pegGrowthPct: undefined };
+}
 
 export function getFundamentalWarningTags(
   snapshot: Pick<
@@ -475,6 +512,7 @@ export async function getFundamentalSnapshot(code: string): Promise<FundamentalS
   const netIncomeGrowth = analyzeGrowthRow(rows["당기순이익"] || [], { lowBaseFloor: 500 });
   const salesGrowthPct = salesGrowth.pct ?? growthPctFromRow(rows["매출액"] || []);
   const opIncomeGrowthPct = opIncomeGrowth.pct ?? growthPctFromRow(rows["영업이익"] || []);
+  const netIncomeForwardGrowthPct = forwardGrowthPctFromAnnualRow(rows["당기순이익"] || []);
   const netIncomeGrowthPct = netIncomeGrowth.pct ?? growthPctFromRow(rows["당기순이익"] || []);
   const debtRatio = findLatestActualAnnualValue(
     rows["부채비율"] || rows["부채비율(%)"] || rows["부채비율연결"] || []
@@ -497,6 +535,14 @@ export async function getFundamentalSnapshot(code: string): Promise<FundamentalS
     console.info(`fundamental: sanitized PBR for ${code} (raw=${pbr}) -> undefined`);
     pbr = undefined;
   }
+
+  const pegResolved = resolvePegFromGrowth({
+    per,
+    netIncomeForwardGrowthPct,
+    netIncomeGrowthPct,
+    opIncomeGrowthPct,
+    salesGrowthPct,
+  });
 
   const quality = evaluateFundamentalQuality({
     sectorName,
@@ -535,6 +581,9 @@ export async function getFundamentalSnapshot(code: string): Promise<FundamentalS
     netIncomeGrowthPct,
     netIncomeGrowthLowBase: netIncomeGrowth.lowBase,
     netIncomeTurnaround: netIncomeGrowth.turnaround,
+    peg: pegResolved.peg,
+    pegSource: pegResolved.pegSource,
+    pegGrowthPct: pegResolved.pegGrowthPct,
     qualityScore: quality.score,
     commentary: quality.commentary,
   };
