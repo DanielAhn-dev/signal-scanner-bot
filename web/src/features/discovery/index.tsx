@@ -87,6 +87,8 @@ const DEFAULT_CRITERIA: DiscoveryCriteria = {
   qoqMode: 'two-quarter-positive',
 }
 
+const DISCOVERY_PRESET_COLLAPSED_COUNT = 4
+
 const DISCOVERY_PRESETS: DiscoveryPreset[] = [
   {
     key: 'starter-balance',
@@ -329,6 +331,7 @@ export default function DiscoveryPage() {
   const [sectorMode, setSectorMode] = useState<SectorFilterMode>('all')
   const [appliedSectorMode, setAppliedSectorMode] = useState<SectorFilterMode>('all')
   const [funnel, setFunnel] = useState<DiscoveryFunnel | null>(null)
+  const [showAllPresets, setShowAllPresets] = useState(false)
 
   async function fetchSectors() {
     try {
@@ -421,6 +424,19 @@ export default function DiscoveryPage() {
   }
 
   const appliedPresetKey = DISCOVERY_PRESETS.find((p) => criteriaSignature(p.criteria, p.sectorMode) === criteriaSignature(appliedCriteria, appliedSectorMode))?.key ?? null
+
+  const visiblePresets = useMemo(() => {
+    if (showAllPresets) return DISCOVERY_PRESETS
+    return DISCOVERY_PRESETS.slice(0, DISCOVERY_PRESET_COLLAPSED_COUNT)
+  }, [showAllPresets])
+
+  useEffect(() => {
+    if (!appliedPresetKey) return
+    const isInCollapsed = DISCOVERY_PRESETS
+      .slice(0, DISCOVERY_PRESET_COLLAPSED_COUNT)
+      .some((preset) => preset.key === appliedPresetKey)
+    if (!isInCollapsed) setShowAllPresets(true)
+  }, [appliedPresetKey])
 
   const sectorScoreMap = useMemo(() => {
     const m = new Map<string, number>()
@@ -519,7 +535,7 @@ export default function DiscoveryPage() {
         <div className="discovery-filter-group" style={{ marginBottom: 'var(--space-3)' }}>
           <div className="caption" style={{ marginBottom: 'var(--space-2)' }}>초보자 추천 프리셋</div>
           <div className="flex-gap-sm discovery-filter-chip-row" style={{ flexWrap: 'wrap' }}>
-            {DISCOVERY_PRESETS.map((preset) => (
+            {visiblePresets.map((preset) => (
               <Button
                 key={preset.key}
                 variant={appliedPresetKey === preset.key ? 'primary' : 'secondary'}
@@ -531,6 +547,18 @@ export default function DiscoveryPage() {
                 {preset.label}
               </Button>
             ))}
+            {DISCOVERY_PRESETS.length > DISCOVERY_PRESET_COLLAPSED_COUNT && (
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => setShowAllPresets((prev) => !prev)}
+                disabled={loading}
+              >
+                {showAllPresets
+                  ? '프리셋 접기'
+                  : `+${DISCOVERY_PRESETS.length - DISCOVERY_PRESET_COLLAPSED_COUNT}개 더보기`}
+              </Button>
+            )}
           </div>
         </div>
         <div className="flex-gap-sm discovery-filter-chip-row" style={{ flexWrap: 'wrap', marginBottom: 'var(--space-3)' }}>
@@ -744,13 +772,15 @@ export default function DiscoveryPage() {
                   <td className="scan-td" data-label="시총">
                     <MarketCapCell value={pick.marketCap} />
                   </td>
-                  <td className="scan-td discovery-td-action" data-label="분석">
+                  <td className="scan-td discovery-td-action" data-label="">
                     <Button
                       variant="secondary"
                       size="xs"
+                      className="discovery-action-icon-btn"
+                      aria-label={`${pick.name} 분석 열기`}
                       onClick={() => handleAnalyze(pick.code)}
                     >
-                      분석
+                      <span aria-hidden>{'>'}</span>
                     </Button>
                   </td>
                 </tr>
