@@ -303,14 +303,14 @@ export default function AdminUsers() {
               <tbody>
                 {rows.map((row) => (
                   <tr key={row.chat_id}>
-                    <td>{row.chat_id}</td>
-                    <td>{displayName(row)}</td>
-                    <td>{row.web_client_count > 0 ? `연동 ${row.web_client_count}` : '미연동'}</td>
-                    <td>{row.telegram_is_active === false ? '비활성' : '활성/미확인'}</td>
-                    <td>{formatLastActive(row.last_active_at)}</td>
-                    <td>{row.is_allowed ? '허용' : '차단'}</td>
-                    <td>{row.is_admin ? '관리자' : '-'}</td>
-                    <td>
+                    <td data-label="Chat ID">{row.chat_id}</td>
+                    <td data-label="사용자명">{displayName(row)}</td>
+                    <td data-label="웹 연동">{row.web_client_count > 0 ? `연동 ${row.web_client_count}` : '미연동'}</td>
+                    <td data-label="텔레그램 상태">{row.telegram_is_active === false ? '비활성' : '활성/미확인'}</td>
+                    <td data-label="마지막 활동">{formatLastActive(row.last_active_at)}</td>
+                    <td data-label="권한">{row.is_allowed ? '허용' : '차단'}</td>
+                    <td data-label="관리자">{row.is_admin ? '관리자' : '-'}</td>
+                    <td data-label="작업">
                       <div className="flex-gap-sm">
                         <Button
                           variant={row.is_allowed ? 'ghost' : 'primary'}

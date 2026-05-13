@@ -2597,13 +2597,70 @@ a:focus-visible {
     display: none;
   }
 
-  .scan-table th,
-  .scan-table td {
-    padding: var(--space-2);
+  .scan-table-wrap {
+    overflow-x: visible;
   }
 
   .scan-table {
-    min-width: 640px;
+    min-width: 0;
+    width: 100%;
+    border-collapse: separate;
+    border-spacing: 0;
+  }
+
+  .scan-thead {
+    display: none;
+  }
+
+  .scan-table tbody {
+    display: grid;
+    gap: var(--space-2);
+    padding: var(--space-2);
+  }
+
+  .scan-tr {
+    display: grid;
+    gap: var(--space-1);
+    border: 1px solid var(--color-border-default);
+    border-radius: var(--radius-md);
+    padding: var(--space-2);
+    background: var(--color-bg-surface);
+  }
+
+  .scan-td {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-2);
+    padding: var(--space-1) 0;
+    white-space: normal;
+    border: none;
+  }
+
+  .scan-td::before {
+    content: attr(data-label);
+    color: var(--color-text-tertiary);
+    font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-medium);
+    flex-shrink: 0;
+  }
+
+  .scan-td-name {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .scan-td-name::before {
+    margin-bottom: 2px;
+  }
+
+  .scan-td-date {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .scan-td-date::before {
+    margin-bottom: 2px;
   }
 
   .scan-highlight-grid {
@@ -2622,7 +2679,60 @@ a:focus-visible {
     display: none;
   }
 
+  .admin-users-table-wrap {
+    overflow-x: visible;
+  }
+
   .admin-users-table {
-    min-width: 620px;
+    min-width: 0;
+    width: 100%;
+    border-collapse: separate;
+    border-spacing: 0;
+  }
+
+  .admin-users-table thead {
+    display: none;
+  }
+
+  .admin-users-table tbody {
+    display: grid;
+    gap: var(--space-2);
+    padding: var(--space-2);
+  }
+
+  .admin-users-table tr {
+    display: grid;
+    gap: var(--space-1);
+    border: 1px solid var(--color-border-default);
+    border-radius: var(--radius-md);
+    padding: var(--space-2);
+    background: var(--color-bg-surface);
+  }
+
+  .admin-users-table td {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-2);
+    padding: var(--space-1) 0;
+    border: none;
+    white-space: normal;
+  }
+
+  .admin-users-table td::before {
+    content: attr(data-label);
+    color: var(--color-text-tertiary);
+    font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-medium);
+    flex-shrink: 0;
+  }
+
+  .admin-users-table td[data-label='작업'] {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .admin-users-table td[data-label='작업']::before {
+    margin-bottom: 2px;
   }
 }

@@ -104,17 +104,22 @@ export default function NewsPage() {
         <div className="muted" style={{ marginBottom: 'var(--space-3)' }}>
           텔레그램 <code>/news</code> 명령과 같은 뉴스 소스를 웹에서도 조회합니다.
         </div>
-        <div style={{ display: 'flex', gap: 'var(--space-2)' }}>
+        <form
+          style={{ display: 'flex', gap: 'var(--space-2)' }}
+          onSubmit={(e) => {
+            e.preventDefault()
+            applyQuery()
+          }}
+        >
           <input
             className="input"
             style={{ flex: 1 }}
             placeholder="종목명 또는 코드 (비우면 시장 뉴스)"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && applyQuery()}
           />
-          <Button variant="primary" onClick={applyQuery} disabled={loading}>조회</Button>
-        </div>
+          <Button variant="primary" type="submit" disabled={loading}>조회</Button>
+        </form>
       </div>
 
       {error && <ErrorState message={error} onRetry={() => load(appliedQuery)} />}

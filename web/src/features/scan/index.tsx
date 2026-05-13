@@ -730,45 +730,45 @@ export default function ScanPage({ onNavigate }: { onNavigate?: (r: string) => v
                       onClick={() => navigateToAnalyze(code)}
                       title={`${s.name} 상세 분석`}
                     >
-                      <td className="scan-td scan-td-code">{s.code}</td>
-                      <td className="scan-td scan-td-name">{s.name}</td>
-                      <td className="scan-td scan-td-sector">{s.sector_id ?? '—'}</td>
-                      <td className="scan-td number" title="진입점수×20 − 경고점수×3 + 장중 현재가 보정">
+                      <td className="scan-td scan-td-code" data-label="코드">{s.code}</td>
+                      <td className="scan-td scan-td-name" data-label="종목명">{s.name}</td>
+                      <td className="scan-td scan-td-sector" data-label="섹터">{s.sector_id ?? '—'}</td>
+                      <td className="scan-td number" data-label="우선순위" title="진입점수×20 − 경고점수×3 + 장중 현재가 보정">
                         <span className={s.priorityScore >= 60 ? 'scan-grade-badge scan-grade-a' : s.priorityScore >= 40 ? 'scan-grade-badge scan-grade-b' : 'scan-grade-label'}>
                           {formatNumber(s.priorityScore, 1)}
                         </span>
                       </td>
-                      <td className="scan-td">
+                      <td className="scan-td" data-label="진입">
                         <GradeBadge grade={s.entry_grade} />
                       </td>
-                      <td className="scan-td number">
+                      <td className="scan-td number" data-label="진입점수">
                         {s.entry_score != null ? formatNumber(s.entry_score, 2) : '—'}
                       </td>
-                      <td className="scan-td">
+                      <td className="scan-td" data-label="추세">
                         <GradeBadge grade={s.trend_grade} />
                       </td>
-                      <td className="scan-td">
+                      <td className="scan-td" data-label="매집">
                         <GradeBadge grade={s.dist_grade} />
                         {s.dist_pct != null && (
                           <span className="scan-grade-label"> ({formatNumber(s.dist_pct, 2)}%)</span>
                         )}
                       </td>
-                      <td className="scan-td">
+                      <td className="scan-td" data-label="세력선">
                         <GradeBadge grade={s.pivot_grade} />
                         {s.vol_atr_grade && (
                           <span className="scan-grade-label"> / {s.vol_atr_grade}</span>
                         )}
                       </td>
-                      <td className="scan-td">
+                      <td className="scan-td" data-label="경고">
                         <WarnBadge grade={s.warn_grade} />
                         {s.warn_score != null && s.warn_score > 0 && (
                           <span className="scan-grade-label"> ({Math.round(s.warn_score)})</span>
                         )}
                       </td>
-                      <td className="scan-td number number-right">
+                      <td className="scan-td number number-right" data-label="유동성">
                         {s.liquidity != null ? formatNumber(s.liquidity, 0) : '—'}
                       </td>
-                      <td className="scan-td number number-right">
+                      <td className="scan-td number number-right" data-label="변동(%)">
                         {typeof s.intradayChangePct === 'number'
                           ? (
                             <span style={{
@@ -784,13 +784,13 @@ export default function ScanPage({ onNavigate }: { onNavigate?: (r: string) => v
                             )
                           : '—'}
                       </td>
-                      <td className="scan-td scan-td-date">
+                      <td className="scan-td scan-td-date" data-label="기준일">
                         <div>{s.tradeDateText}</div>
                         {s.updatedAtText && (
                           <div className="scan-td-updated-sub">{s.updatedAtText}</div>
                         )}
                       </td>
-                      <td className="scan-td" onClick={(e) => e.stopPropagation()}>
+                      <td className="scan-td" data-label="관리" onClick={(e) => e.stopPropagation()}>
                         <Button
                           className="watchlist-icon-btn scan-watch-add-btn"
                           variant="ghost"
