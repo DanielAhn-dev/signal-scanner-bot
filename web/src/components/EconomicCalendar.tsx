@@ -1,9 +1,8 @@
-/**
- * 경제 캘린더 UI 컴포넌트 - 모바일 우선 설계
- */
-import React, { useMemo } from 'react'
+import React, { useMemo, useState } from 'react'
+import { ChevronDown, ChevronUp, ArrowUp, ArrowDown, Minus, Clock, CheckCircle2 } from 'lucide-react'
 import type { EconomicEvent, EventImportance } from '../../../src/types/economics'
 import { calculateEventImpactScore, generateEventTradeRestriction } from '../../../src/utils/fetchEconomicCalendar'
+import Skeleton from './Skeleton'
 
 interface EconomicCalendarProps {
   events: EconomicEvent[]
@@ -11,334 +10,477 @@ interface EconomicCalendarProps {
   onRefresh?: () => void
 }
 
-function getImportanceColor(importance: EventImportance): string {
-  switch (importance) {
-    case 'critical':
-      return 'var(--color-stock-up)' // 빨강 (심각)
-    case 'high':
-      return '#FF6B35' // var(--color-orange-500)
-    case 'medium':
-      return '#F5B800' // var(--color-yellow-500)
-    case 'low':
-      return 'var(--color-text-secondary)' // 회색 (낮음)
-  }
+// ─── Helpers ────────────────────────────────────────────────────────────────
+
+function isReleased(event: EconomicEvent): boolean {
+  // actualValue가 있으면 이미 발표됨
+  if (event.actualValue !== undefined) return true
+  // 또는 예정 시각이 현재보다 과거
+  return new Date(event.scheduledAt).getTime() < Date.now()
 }
 
-function getImportanceBg(importance: EventImportance): string {
-  switch (importance) {
-    case 'critical':
-      return 'var(--color-stock-up-bg)' // 연한 빨강
-    case 'high':
-      return 'var(--color-warning-bg)' // 연한 주황
-    case 'medium':
-      return '#FFFAEE' // 연한 노랑
-    case 'low':
-      return 'var(--color-border-default)'
-  }
-}
-
-function formatEventTime(isoString: string): string {
+function formatScheduledAt(isoString: string): string {
   const date = new Date(isoString)
   const now = new Date()
-  const diffMs = date.getTime() - now.getTime()
-  const diffDays = Math.ceil(diffMs / (24 * 60 * 60 * 1000))
 
-  if (diffDays === 0) return '오늘'
+  // 날짜 기준 비교 (시각 무시)
+  const eventDay = new Date(date.getFullYear(), date.getMonth(), date.getDate())
+  const today    = new Date(now.getFullYear(),  now.getMonth(),  now.getDate())
+  const diffDays = Math.round((eventDay.getTime() - today.getTime()) / 86_400_000)
+
+  if (diffDays < 0) {
+    // 과거
+    if (diffDays === -1) return '어제'
+    if (diffDays >= -6) return `${Math.abs(diffDays)}일 전`
+    return date.toLocaleDateString('ko-KR', { month: 'short', day: 'numeric' })
+  }
+  if (diffDays === 0) return '오늘 ' + date.toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })
   if (diffDays === 1) return '내일'
   if (diffDays <= 7) return `${diffDays}일 후`
   if (diffDays <= 30) return `${Math.ceil(diffDays / 7)}주 후`
-
   return date.toLocaleDateString('ko-KR', { month: 'short', day: 'numeric' })
 }
 
-function formatEventValue(value: number | undefined, unit?: string): string {
-  if (value === undefined) return '—'
-  const formatted = value.toFixed(1)
-  return unit ? `${formatted}${unit}` : formatted
+function importanceLabel(imp: EventImportance): string {
+  switch (imp) {
+    case 'critical': return '최중요'
+    case 'high':     return '높음'
+    case 'medium':   return '중간'
+    case 'low':      return '낮음'
+  }
 }
 
-/**
- * 이벤트 카드 - 모바일 최적화 (세로 스택)
- */
-function EventCard({ event }: { event: EconomicEvent }) {
+function importanceColor(imp: EventImportance): string {
+  switch (imp) {
+    case 'critical': return 'var(--color-stock-up)'
+    case 'high':     return 'var(--color-warning)'
+    case 'medium':   return 'var(--color-yellow-500)'
+    case 'low':      return 'var(--color-text-tertiary)'
+  }
+}
+
+function importanceBg(imp: EventImportance): string {
+  switch (imp) {
+    case 'critical': return 'var(--color-stock-up-bg)'
+    case 'high':     return 'var(--color-warning-bg)'
+    case 'medium':   return '#FFFAEE'
+    case 'low':      return 'var(--color-gray-100)'
+  }
+}
+
+// ─── Group by date ───────────────────────────────────────────────────────────
+
+type DateGroup = {
+  key: string
+  label: string
+  events: EconomicEvent[]
+}
+
+function groupByDate(events: EconomicEvent[]): DateGroup[] {
+  const now   = new Date()
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+
+  const released: EconomicEvent[] = []
+  const todayEvts: EconomicEvent[] = []
+  const thisWeek: EconomicEvent[] = []
+  const later: EconomicEvent[] = []
+
+  for (const e of events) {
+    if (isReleased(e)) {
+      released.push(e)
+      continue
+    }
+    const d = new Date(e.scheduledAt)
+    const day = new Date(d.getFullYear(), d.getMonth(), d.getDate())
+    const diff = Math.round((day.getTime() - today.getTime()) / 86_400_000)
+    if (diff <= 0) todayEvts.push(e)
+    else if (diff <= 7) thisWeek.push(e)
+    else later.push(e)
+  }
+
+  const groups: DateGroup[] = []
+  if (released.length)  groups.push({ key: 'released', label: '발표됨',  events: released })
+  if (todayEvts.length) groups.push({ key: 'today',    label: '오늘',    events: todayEvts })
+  if (thisWeek.length)  groups.push({ key: 'week',     label: '이번 주', events: thisWeek })
+  if (later.length)     groups.push({ key: 'later',    label: '이후',    events: later })
+  return groups
+}
+
+// ─── Event item ──────────────────────────────────────────────────────────────
+
+function EventItem({ event }: { event: EconomicEvent }) {
+  const [open, setOpen] = useState(false)
+  const released = isReleased(event)
   const impactScore = calculateEventImpactScore(event)
   const restriction = generateEventTradeRestriction(event)
-  const timeDisplay = formatEventTime(event.scheduledAt)
+  const timeLabel = formatScheduledAt(event.scheduledAt)
+
+  const hasActual   = event.actualValue  !== undefined
+  const hasForecast = event.forecastValue !== undefined
+  const hasPrevious = event.previousValue !== undefined
+  const hasMarket   = event.averageKospiReaction !== undefined
+
+  // 실제 vs 예측 방향
+  const beat = hasActual && hasForecast
+    ? event.actualValue! > event.forecastValue! ? 'up'
+      : event.actualValue! < event.forecastValue! ? 'down'
+      : 'flat'
+    : null
 
   return (
-    <div
-      className="card"
-      style={{
-        borderLeft: `4px solid ${getImportanceColor(event.importance)}`,
-        background: getImportanceBg(event.importance),
-        marginBottom: 'var(--space-3)',
-      }}
-    >
-      {/* 헤더: 이벤트명 + 시간 */}
-      <div style={{ marginBottom: 'var(--space-3)' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 'var(--space-2)' }}>
-          <div style={{ flex: 1 }}>
-            <div className="title-sm" style={{ marginBottom: 'var(--space-1)' }}>
-              {event.name}
-            </div>
-            <div className="caption" style={{ color: 'var(--color-text-secondary)' }}>
-              {event.country}
-            </div>
-          </div>
+    <div>
+      {/* 메인 행 */}
+      <button
+        onClick={() => setOpen(v => !v)}
+        style={{
+          width: '100%',
+          display: 'flex',
+          alignItems: 'flex-start',
+          justifyContent: 'space-between',
+          gap: 'var(--space-3)',
+          padding: 'var(--space-4) var(--space-5)',
+          background: 'none',
+          border: 'none',
+          cursor: 'pointer',
+          textAlign: 'left',
+          WebkitTapHighlightColor: 'transparent',
+          minHeight: 60,
+        }}
+      >
+        <div style={{ flex: 1, minWidth: 0 }}>
+          {/* 이벤트명 */}
           <div
             style={{
-              background: getImportanceColor(event.importance),
-              color: 'white',
-              padding: 'var(--space-1) var(--space-2)',
-              borderRadius: 'var(--radius-xs)',
+              fontSize: 'var(--font-size-sm)',
+              fontWeight: 'var(--font-weight-semibold)',
+              color: released ? 'var(--color-text-secondary)' : 'var(--color-text-primary)',
+              lineHeight: 1.3,
+              marginBottom: 4,
+            }}
+          >
+            {event.name}
+          </div>
+          {/* 메타 */}
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 'var(--space-2)',
               fontSize: 'var(--font-size-xs)',
-              fontWeight: 600,
+              color: 'var(--color-text-tertiary)',
+            }}
+          >
+            {released
+              ? <CheckCircle2 size={11} style={{ color: 'var(--color-success)', flexShrink: 0 }} />
+              : <Clock size={11} style={{ flexShrink: 0 }} />}
+            <span>{event.country}</span>
+            <span>·</span>
+            <span style={{ color: released ? 'var(--color-text-tertiary)' : importanceColor(event.importance) }}>
+              {timeLabel}
+            </span>
+          </div>
+        </div>
+
+        {/* 우측: 값 + 중요도 chip */}
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4, flexShrink: 0 }}>
+          {/* 실제값 또는 예측값 */}
+          {hasActual ? (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+              <span
+                style={{
+                  fontSize: 'var(--font-size-base)',
+                  fontWeight: 'var(--font-weight-bold)',
+                  color: beat === 'up' ? 'var(--color-stock-up)' : beat === 'down' ? 'var(--color-stock-down)' : 'var(--color-text-primary)',
+                  fontVariantNumeric: 'tabular-nums',
+                }}
+              >
+                {event.actualValue!.toFixed(1)}{event.unit}
+              </span>
+              {beat === 'up'   && <ArrowUp   size={12} style={{ color: 'var(--color-stock-up)' }}   strokeWidth={2.5} />}
+              {beat === 'down' && <ArrowDown size={12} style={{ color: 'var(--color-stock-down)' }} strokeWidth={2.5} />}
+              {beat === 'flat' && <Minus     size={12} style={{ color: 'var(--color-text-tertiary)' }} />}
+            </div>
+          ) : hasForecast ? (
+            <span style={{ fontSize: 'var(--font-size-sm)', fontWeight: 'var(--font-weight-semibold)', color: 'var(--color-text-primary)', fontVariantNumeric: 'tabular-nums' }}>
+              예측 {event.forecastValue!.toFixed(1)}{event.unit}
+            </span>
+          ) : null}
+          {/* 중요도 chip */}
+          <span
+            style={{
+              padding: '2px 7px',
+              borderRadius: 'var(--radius-full)',
+              fontSize: 'var(--font-size-xs)',
+              fontWeight: 'var(--font-weight-semibold)',
+              color: importanceColor(event.importance),
+              background: importanceBg(event.importance),
               whiteSpace: 'nowrap',
             }}
           >
-            {event.importance === 'critical' && '⭐ 중요'}
-            {event.importance === 'high' && '📌 높음'}
-            {event.importance === 'medium' && '📊 중간'}
-            {event.importance === 'low' && '📈 낮음'}
-          </div>
+            {importanceLabel(event.importance)}
+          </span>
         </div>
-        <div className="stat-label" style={{ marginTop: 'var(--space-2)', color: getImportanceColor(event.importance), fontWeight: 600 }}>
-          🕒 {timeDisplay}
-        </div>
-      </div>
 
-      {/* 구분선 */}
-      <div style={{ height: 1, background: 'var(--color-border-default)', marginBottom: 'var(--space-3)' }} />
+        {/* 접기/펼치기 */}
+        <span style={{ color: 'var(--color-text-tertiary)', flexShrink: 0, alignSelf: 'center', display: 'flex' }}>
+          {open ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+        </span>
+      </button>
 
-      {/* 지표값 */}
-      <div style={{ marginBottom: 'var(--space-3)' }}>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-3)' }}>
-          {event.forecastValue !== undefined && (
-            <div>
-              <div className="stat-label">사전 예측</div>
-              <div className="stat-value">{formatEventValue(event.forecastValue, event.unit)}</div>
-            </div>
-          )}
-          {event.previousValue !== undefined && (
-            <div>
-              <div className="stat-label">이전 발표</div>
-              <div className="stat-value">{formatEventValue(event.previousValue, event.unit)}</div>
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* 과거 시장 반응 */}
-      {event.averageKospiReaction !== undefined && (
-        <>
-          <div style={{ height: 1, background: 'var(--color-border-default)', marginBottom: 'var(--space-3)' }} />
-          <div style={{ marginBottom: 'var(--space-3)' }}>
-            <div className="stat-label" style={{ marginBottom: 'var(--space-2)' }}>
-              과거 평균 시장 반응
-            </div>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-2)' }}>
-              <div style={{ padding: 'var(--space-2)', background: 'var(--color-bg-surface)', borderRadius: 'var(--radius-sm)' }}>
-                <div className="caption">KOSPI</div>
-                <div
-                  style={{
-                    fontSize: 'var(--font-size-lg)',
-                    fontWeight: 600,
-                    color: event.averageKospiReaction >= 0 ? 'var(--color-stock-up)' : 'var(--color-stock-down)',
-                  }}
-                >
-                  {event.averageKospiReaction >= 0 ? '▲' : '▼'} {Math.abs(event.averageKospiReaction).toFixed(2)}%
-                </div>
-              </div>
-              {event.averageVolatilityIncrease !== undefined && (
-                <div style={{ padding: 'var(--space-2)', background: 'var(--color-bg-surface)', borderRadius: 'var(--radius-sm)' }}>
-                  <div className="caption">변동성</div>
-                  <div style={{ fontSize: 'var(--font-size-lg)', fontWeight: 600, color: 'var(--color-warning-strong)' }}>
-                    +{event.averageVolatilityIncrease.toFixed(1)}p
-                  </div>
-                </div>
+      {/* 상세 펼침 */}
+      {open && (
+        <div
+          style={{
+            padding: '0 var(--space-5) var(--space-4)',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 'var(--space-3)',
+          }}
+        >
+          {/* 발표 수치 그리드 */}
+          {(hasActual || hasForecast || hasPrevious) && (
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 'var(--space-2)' }}>
+              {hasActual && (
+                <ValueTile
+                  label="실제"
+                  value={`${event.actualValue!.toFixed(1)}${event.unit ?? ''}`}
+                  color={beat === 'up' ? 'var(--color-stock-up)' : beat === 'down' ? 'var(--color-stock-down)' : 'var(--color-text-primary)'}
+                  highlight
+                />
+              )}
+              {hasForecast && (
+                <ValueTile label="예측" value={`${event.forecastValue!.toFixed(1)}${event.unit ?? ''}`} />
+              )}
+              {hasPrevious && (
+                <ValueTile label="이전" value={`${event.previousValue!.toFixed(1)}${event.unit ?? ''}`} />
               )}
             </div>
-          </div>
-        </>
-      )}
+          )}
 
-      {/* 영향도 점수 */}
-      {impactScore > 0 && (
-        <>
-          <div style={{ height: 1, background: 'var(--color-border-default)', marginBottom: 'var(--space-3)' }} />
-          <div style={{ marginBottom: 'var(--space-3)' }}>
-            <div className="stat-label" style={{ marginBottom: 'var(--space-2)' }}>
-              예상 시장 영향도
-            </div>
-            <div style={{ position: 'relative', height: 24, background: 'var(--color-border-default)', borderRadius: 'var(--radius-sm)', overflow: 'hidden' }}>
-              <div
-                style={{
-                  position: 'absolute',
-                  left: 0,
-                  top: 0,
-                  height: '100%',
-                  width: `${impactScore}%`,
-                  background: getImportanceColor(event.importance),
-                  transition: 'width 0.3s ease',
-                }}
-              />
-              <div
-                style={{
-                  position: 'relative',
-                  zIndex: 1,
-                  height: '100%',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  fontSize: 'var(--font-size-xs)',
-                  fontWeight: 600,
-                  color: impactScore > 50 ? 'white' : 'var(--color-text-primary)',
-                }}
-              >
-                {impactScore}%
+          {/* 과거 시장 반응 */}
+          {hasMarket && (
+            <div>
+              <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-tertiary)', fontWeight: 'var(--font-weight-medium)', marginBottom: 8, letterSpacing: '0.04em' }}>
+                과거 평균 시장 반응
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-2)' }}>
+                <div style={{ padding: 'var(--space-3)', background: 'var(--color-bg-sunken)', borderRadius: 'var(--radius-md)' }}>
+                  <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-tertiary)', marginBottom: 4 }}>KOSPI</div>
+                  <div
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 3,
+                      fontSize: 'var(--font-size-base)',
+                      fontWeight: 'var(--font-weight-bold)',
+                      color: event.averageKospiReaction! >= 0 ? 'var(--color-stock-up)' : 'var(--color-stock-down)',
+                      fontVariantNumeric: 'tabular-nums',
+                    }}
+                  >
+                    {event.averageKospiReaction! >= 0
+                      ? <ArrowUp size={12} strokeWidth={2.5} />
+                      : <ArrowDown size={12} strokeWidth={2.5} />}
+                    {Math.abs(event.averageKospiReaction!).toFixed(2)}%
+                  </div>
+                </div>
+                {event.averageVolatilityIncrease !== undefined && (
+                  <div style={{ padding: 'var(--space-3)', background: 'var(--color-bg-sunken)', borderRadius: 'var(--radius-md)' }}>
+                    <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-tertiary)', marginBottom: 4 }}>변동성</div>
+                    <div style={{ fontSize: 'var(--font-size-base)', fontWeight: 'var(--font-weight-bold)', color: 'var(--color-warning)', fontVariantNumeric: 'tabular-nums' }}>
+                      +{event.averageVolatilityIncrease.toFixed(1)}p
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
-          </div>
-        </>
-      )}
+          )}
 
-      {/* 거래 제약사항 */}
+          {/* 영향도 바 */}
+          {impactScore > 0 && (
+            <div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 6 }}>
+                <span style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-tertiary)', fontWeight: 'var(--font-weight-medium)' }}>예상 시장 영향도</span>
+                <span style={{ fontSize: 'var(--font-size-xs)', fontWeight: 'var(--font-weight-semibold)', color: importanceColor(event.importance) }}>{impactScore}%</span>
+              </div>
+              <div style={{ height: 4, background: 'var(--color-bg-sunken)', borderRadius: 'var(--radius-full)', overflow: 'hidden' }}>
+                <div
+                  style={{
+                    width: `${impactScore}%`,
+                    height: '100%',
+                    background: importanceColor(event.importance),
+                    borderRadius: 'var(--radius-full)',
+                    transition: 'width 0.4s ease',
+                  }}
+                />
+              </div>
+            </div>
+          )}
+
+          {/* 거래 제약 메시지 */}
+          <div
+            style={{
+              padding: 'var(--space-3) var(--space-4)',
+              background: 'var(--color-bg-sunken)',
+              borderRadius: 'var(--radius-sm)',
+              borderLeft: `2px solid ${importanceColor(event.importance)}`,
+              fontSize: 'var(--font-size-xs)',
+              color: 'var(--color-text-secondary)',
+              lineHeight: 1.6,
+            }}
+          >
+            {restriction}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ─── Value tile ──────────────────────────────────────────────────────────────
+
+function ValueTile({ label, value, color, highlight }: { label: string; value: string; color?: string; highlight?: boolean }) {
+  return (
+    <div
+      style={{
+        padding: 'var(--space-3)',
+        background: highlight ? 'var(--color-bg-surface)' : 'var(--color-bg-sunken)',
+        border: highlight ? '1px solid var(--color-border-default)' : 'none',
+        borderRadius: 'var(--radius-md)',
+        textAlign: 'center',
+      }}
+    >
+      <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-tertiary)', marginBottom: 4 }}>{label}</div>
       <div
         style={{
-          padding: 'var(--space-2) var(--space-3)',
-          background: 'var(--color-bg-surface)',
-          borderRadius: 'var(--radius-sm)',
-          borderLeft: `3px solid ${getImportanceColor(event.importance)}`,
+          fontSize: 'var(--font-size-base)',
+          fontWeight: 'var(--font-weight-bold)',
+          color: color ?? 'var(--color-text-primary)',
+          fontVariantNumeric: 'tabular-nums',
         }}
       >
-        <div className="caption" style={{ lineHeight: 1.6, color: 'var(--color-text-primary)' }}>
-          {restriction}
-        </div>
+        {value}
       </div>
     </div>
   )
 }
 
-/**
- * 경제 캘린더 - 메인 컴포넌트
- */
-export default function EconomicCalendar({ events, loading, onRefresh }: EconomicCalendarProps) {
-  // 중요도별 분류
-  const eventsByImportance = useMemo(() => {
-    const critical = events.filter(e => e.importance === 'critical')
-    const high = events.filter(e => e.importance === 'high')
-    const medium = events.filter(e => e.importance === 'medium')
-    const low = events.filter(e => e.importance === 'low')
-    return { critical, high, medium, low }
-  }, [events])
+// ─── Main component ──────────────────────────────────────────────────────────
 
-  const totalImportantEvents = eventsByImportance.critical.length + eventsByImportance.high.length
+export default function EconomicCalendar({ events, loading }: EconomicCalendarProps) {
+  const groups = useMemo(() => groupByDate(events), [events])
+
+  const upcomingImportant = useMemo(
+    () => events.filter(e => !isReleased(e) && (e.importance === 'critical' || e.importance === 'high')),
+    [events]
+  )
 
   if (loading) {
-    return (
-      <div style={{ marginTop: 'var(--space-4)' }}>
-        <div className="card">
-          <div style={{ height: 200, background: 'var(--color-border-default)', borderRadius: 'var(--radius-sm)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-            <div className="muted">데이터 로딩 중...</div>
-          </div>
-        </div>
-      </div>
-    )
+    return <div style={{ marginTop: 'var(--space-2)' }}><Skeleton lines={8} height={14} /></div>
   }
 
   if (events.length === 0) {
     return (
-      <div style={{ marginTop: 'var(--space-4)' }}>
-        <div className="card">
-          <div style={{ textAlign: 'center', padding: 'var(--space-6)' }}>
-            <div className="muted">예정된 경제 이벤트가 없습니다.</div>
-          </div>
-        </div>
+      <div style={{ textAlign: 'center', padding: 'var(--space-10)', color: 'var(--color-text-tertiary)', fontSize: 'var(--font-size-sm)' }}>
+        예정된 경제 이벤트가 없습니다
       </div>
     )
   }
 
   return (
-    <div style={{ marginTop: 'var(--space-4)' }}>
-      {/* 요약 카드 */}
-      {totalImportantEvents > 0 && (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
+
+      {/* 요약 배너 */}
+      {upcomingImportant.length > 0 && (
         <div
-          className="card mb-4"
           style={{
-            background: 'var(--color-stock-up-bg)',
-            borderLeft: '4px solid var(--color-stock-up)',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 'var(--space-3)',
+            padding: 'var(--space-3) var(--space-4)',
+            background: 'var(--color-warning-bg)',
+            border: '1px solid var(--color-warning)',
+            borderLeft: '3px solid var(--color-warning)',
+            borderRadius: 'var(--radius-md)',
           }}
         >
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <div>
-              <div className="title-md" style={{ marginBottom: 'var(--space-1)' }}>
-                ⭐ {totalImportantEvents}개의 주요 경제 이벤트 예정
-              </div>
-              <div className="muted">변동성 주의, 포지션 관리 필수</div>
+          <div
+            style={{
+              width: 8,
+              height: 8,
+              borderRadius: '50%',
+              background: 'var(--color-warning)',
+              flexShrink: 0,
+            }}
+          />
+          <div>
+            <div style={{ fontSize: 'var(--font-size-sm)', fontWeight: 'var(--font-weight-semibold)', color: 'var(--color-text-primary)' }}>
+              다음 {upcomingImportant.length}개의 주요 이벤트 예정
+            </div>
+            <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)', marginTop: 2 }}>
+              변동성 주의, 포지션 관리 권고
             </div>
           </div>
         </div>
       )}
 
-      {/* Critical 이벤트 */}
-      {eventsByImportance.critical.length > 0 && (
-        <div style={{ marginBottom: 'var(--space-5)' }}>
-          <div className="title-sm" style={{ marginBottom: 'var(--space-2)', color: 'var(--color-stock-up)', fontWeight: 700 }}>
-            🔴 최우선 주의 ({eventsByImportance.critical.length})
-          </div>
-          {eventsByImportance.critical.map(event => (
-            <EventCard key={event.id} event={event} />
-          ))}
-        </div>
-      )}
-
-      {/* High 이벤트 */}
-      {eventsByImportance.high.length > 0 && (
-        <div style={{ marginBottom: 'var(--space-5)' }}>
-          <div className="title-sm" style={{ marginBottom: 'var(--space-2)', color: '#FF6B35', fontWeight: 700 }}>
-            🟠 높음 ({eventsByImportance.high.length})
-          </div>
-          {eventsByImportance.high.map(event => (
-            <EventCard key={event.id} event={event} />
-          ))}
-        </div>
-      )}
-
-      {/* Medium 이벤트 */}
-      {eventsByImportance.medium.length > 0 && (
-        <div style={{ marginBottom: 'var(--space-5)' }}>
-          <div className="title-sm" style={{ marginBottom: 'var(--space-2)', color: 'var(--color-warning)', fontWeight: 600 }}>
-            🟡 중간 ({eventsByImportance.medium.length})
-          </div>
-          {eventsByImportance.medium.map(event => (
-            <EventCard key={event.id} event={event} />
-          ))}
-        </div>
-      )}
-
-      {/* Low 이벤트 */}
-      {eventsByImportance.low.length > 0 && (
-        <details style={{ marginTop: 'var(--space-4)' }}>
-          <summary
+      {/* 날짜 그룹별 리스트 */}
+      {groups.map(group => (
+        <div key={group.key}>
+          {/* 섹션 레이블 */}
+          <div
             style={{
-              cursor: 'pointer',
-              padding: 'var(--space-2) var(--space-3)',
-              background: 'var(--color-border-default)',
-              borderRadius: 'var(--radius-sm)',
-              fontWeight: 600,
-              fontSize: 'var(--font-size-sm)',
-              color: 'var(--color-text-secondary)',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 'var(--space-2)',
+              padding: 'var(--space-1) 0 var(--space-2)',
             }}
           >
-            🟢 낮음 ({eventsByImportance.low.length})
-          </summary>
-          <div style={{ marginTop: 'var(--space-3)' }}>
-            {eventsByImportance.low.map(event => (
-              <EventCard key={event.id} event={event} />
+            {group.key === 'released' && (
+              <CheckCircle2 size={12} style={{ color: 'var(--color-success)' }} />
+            )}
+            <span
+              style={{
+                fontSize: 'var(--font-size-xs)',
+                fontWeight: 'var(--font-weight-semibold)',
+                color: group.key === 'released' ? 'var(--color-success)' : 'var(--color-text-tertiary)',
+                letterSpacing: '0.05em',
+                textTransform: 'uppercase',
+              }}
+            >
+              {group.label}
+            </span>
+            <span
+              style={{
+                fontSize: 'var(--font-size-xs)',
+                color: 'var(--color-text-tertiary)',
+                background: 'var(--color-bg-sunken)',
+                padding: '1px 6px',
+                borderRadius: 'var(--radius-full)',
+              }}
+            >
+              {group.events.length}
+            </span>
+          </div>
+
+          {/* 이벤트 카드 */}
+          <div
+            className="card"
+            style={{
+              '--card-padding': '0',
+              overflow: 'hidden',
+            } as React.CSSProperties}
+          >
+            {group.events.map((event, idx) => (
+              <React.Fragment key={event.id}>
+                {idx > 0 && (
+                  <div style={{ height: 1, background: 'var(--color-border-default)', margin: '0 var(--space-5)' }} />
+                )}
+                <EventItem event={event} />
+              </React.Fragment>
             ))}
           </div>
-        </details>
-      )}
+        </div>
+      ))}
     </div>
   )
 }

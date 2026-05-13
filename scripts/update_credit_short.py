@@ -23,7 +23,6 @@ from zoneinfo import ZoneInfo
 from typing import Optional
 
 import requests
-from bs4 import BeautifulSoup
 
 try:
     from pykrx import stock as krx_stock
@@ -63,6 +62,48 @@ UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
 
 SKIP_CREDIT = "--skip-credit" in sys.argv
 SKIP_SHORT  = "--skip-short"  in sys.argv
+FORCE_CREDIT = "--force-credit" in sys.argv
+
+# Naver Finance 신용비율 소스는 현재 미복구 상태이므로 기본적으로 신용 수집은 자동 스킵한다.
+# 필요 시 --force-credit 옵션으로 강제 프로브 가능.
+CREDIT_SOURCE_AVAILABLE = False
+
+
+def env_bool(name: str, default: bool) -> bool:
+    raw = os.environ.get(name)
+    if raw is None:
+        return default
+    v = str(raw).strip().lower()
+    if v in ("1", "true", "yes", "y", "on"):
+        return True
+    if v in ("0", "false", "no", "n", "off"):
+        return False
+    return default
+
+
+def env_positive_int(name: str, default: int) -> int:
+    raw = os.environ.get(name)
+    try:
+        n = int(str(raw)) if raw is not None else default
+        return n if n > 0 else default
+    except Exception:
+        return default
+
+
+def env_float(name: str, default: float) -> float:
+    raw = os.environ.get(name)
+    try:
+        return float(str(raw).replace(",", "")) if raw is not None else default
+    except Exception:
+        return default
+
+
+ONLY_INVESTABLE = env_bool("CREDIT_SHORT_ONLY_INVESTABLE", True)
+ALLOWED_UNIVERSE = [
+    s.strip() for s in str(os.environ.get("CREDIT_SHORT_ALLOWED_UNIVERSE", "core,extended")).split(",") if s.strip()
+]
+MIN_LIQUIDITY = env_float("CREDIT_SHORT_MIN_LIQUIDITY", 0.0)
+MAX_ELIGIBLE_CODES = env_positive_int("CREDIT_SHORT_MAX_ELIGIBLE_CODES", 500)
 
 
 # ── 유틸리티 ───────────────────────────────────────────────
@@ -374,6 +415,35 @@ def fetch_credit_ratios_batch(
     return result
 
 
+def load_investable_codes() -> list[str]:
+    """투자 가능 유니버스(활성 + universe + 유동성 + 시총순 상위) 코드 목록"""
+    try:
+        query = (
+            supabase.table("stocks")
+            .select("code, liquidity")
+            .eq("is_active", True)
+            .order("mcap_rank")
+            .limit(MAX_ELIGIBLE_CODES)
+        )
+        if ALLOWED_UNIVERSE:
+            query = query.in_("universe_level", ALLOWED_UNIVERSE)
+        res = query.execute()
+    except Exception as e:
+        print(f"  [ERROR] 투자 가능 유니버스 조회 실패: {e}")
+        return []
+
+    codes: list[str] = []
+    for row in (res.data or []):
+        code = str(row.get("code") or "").strip().lstrip("A").zfill(6)
+        if not code or len(code) != 6:
+            continue
+        liq = safe_float(row.get("liquidity"), 0.0) or 0.0
+        if MIN_LIQUIDITY > 0 and liq < MIN_LIQUIDITY:
+            continue
+        codes.append(code)
+    return codes
+
+
 # ── DB 저장 ───────────────────────────────────────────────
 def upsert_daily_records(
     trading_iso: str,
@@ -472,11 +542,20 @@ def main():
     trading_iso = iso_from_yyyymmdd(trading_date)
     print(f"[DATE] 기준 거래일: {trading_date} ({trading_iso})")
 
+    investable_codes = load_investable_codes() if ONLY_INVESTABLE else []
+    investable_set = set(investable_codes)
+    if ONLY_INVESTABLE:
+        print(f"[UNIVERSE] 투자 가능 대상: {len(investable_codes)}개")
+
     # ── Step 1: 공매도 수집 ──
     short_map: dict[str, dict] = {}
     if not SKIP_SHORT:
         print("\n[1/2] 공매도 잔고 수집 (KRX 직접 API)...")
         short_map = fetch_shorting_all_markets(trading_date)
+        if ONLY_INVESTABLE and investable_set:
+            before = len(short_map)
+            short_map = {k: v for k, v in short_map.items() if k in investable_set}
+            print(f"  [FILTER] 공매도 데이터 엄선 적용: {before} -> {len(short_map)}")
         print(f"  [DONE] 공매도 수집 종목: {len(short_map)}개")
     else:
         print("\n[1/2] 공매도 수집 스킵")
@@ -484,24 +563,28 @@ def main():
     # ── Step 2: 신용비율 수집 ──
     credit_map: dict[str, Optional[float]] = {}
     if not SKIP_CREDIT:
-        print("\n[2/2] 신용비율 수집 (Naver Finance)...")
-        # core + extended 활성 종목만 대상 (전종목 대신 유니버스 한정)
-        try:
-            res = supabase.table("stocks") \
-                .select("code") \
-                .eq("is_active", True) \
-                .in_("universe_level", ["core", "extended"]) \
-                .execute()
-            target_codes = [r["code"] for r in (res.data or [])]
-        except Exception as e:
-            print(f"  [ERROR] 대상 종목 조회 실패: {e}")
-            target_codes = []
-
-        if target_codes:
-            print(f"  대상: {len(target_codes)}개 종목")
-            credit_map = fetch_credit_ratios_batch(target_codes, delay=0.5)
+        if not CREDIT_SOURCE_AVAILABLE and not FORCE_CREDIT:
+            print("\n[2/2] 신용비율 수집 자동 스킵 (데이터 소스 미복구: --force-credit 로 강제 가능)")
         else:
-            print("  [WARN] 대상 종목 없음")
+            print("\n[2/2] 신용비율 수집 (Naver Finance)...")
+            target_codes = investable_codes if ONLY_INVESTABLE else []
+            if not target_codes:
+                try:
+                    res = supabase.table("stocks") \
+                        .select("code") \
+                        .eq("is_active", True) \
+                        .in_("universe_level", ["core", "extended"]) \
+                        .execute()
+                    target_codes = [str(r["code"]).strip().lstrip("A").zfill(6) for r in (res.data or [])]
+                except Exception as e:
+                    print(f"  [ERROR] 대상 종목 조회 실패: {e}")
+                    target_codes = []
+
+            if target_codes:
+                print(f"  대상: {len(target_codes)}개 종목")
+                credit_map = fetch_credit_ratios_batch(target_codes, delay=0.5)
+            else:
+                print("  [WARN] 대상 종목 없음")
     else:
         print("\n[2/2] 신용비율 수집 스킵")
 

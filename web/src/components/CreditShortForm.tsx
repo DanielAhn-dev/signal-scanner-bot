@@ -11,7 +11,7 @@ type CreditShortRow = {
 type Props = {
   isOpen: boolean
   onClose: () => void
-  onSave?: (data: { rows: CreditShortRow[] }) => Promise<void>
+  onSave?: (data: { rows: CreditShortRow[] }) => Promise<{ saved: number; dropped: number; updatedStocks: number }>
 }
 
 export default function CreditShortForm({ isOpen, onClose, onSave }: Props) {
@@ -61,11 +61,16 @@ export default function CreditShortForm({ isOpen, onClose, onSave }: Props) {
 
     setLoading(true)
     try {
+      let saveSummary: { saved: number; dropped: number; updatedStocks: number } | null = null
       if (onSave) {
-        await onSave({ rows: parsed.rows })
+        saveSummary = await onSave({ rows: parsed.rows })
       }
 
-      setSavedCount(parsed.rows.length)
+      const totalDropped = (saveSummary?.dropped || 0) + parsed.skipped
+      if (totalDropped > 0) {
+        setWarning(`엄선 조건/빈 값으로 ${totalDropped}개 행이 제외되었습니다.`)
+      }
+      setSavedCount(saveSummary?.saved ?? parsed.rows.length)
       setSuccess(true)
       setTimeout(() => handleClose(), 2000)
     } catch (err) {

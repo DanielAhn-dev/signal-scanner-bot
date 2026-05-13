@@ -37,8 +37,7 @@ export const NAV_ITEMS: NavGroup[] = [
   {
     category: '마켓/콘텐츠',
     items: [
-      { key: 'market', label: '마켓' },
-      { key: 'economy', label: '이코노미' },
+      { key: 'market', label: '시장' },
       { key: 'strategy', label: '전략' },
       { key: 'news', label: '뉴스' },
       { key: 'feed', label: '피드' },

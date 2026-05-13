@@ -574,17 +574,8 @@ export default function ScanPage({ onNavigate }: { onNavigate?: (r: string) => v
         </div>
       </div>
 
+
       <EconomicEventBadge onNavigateToCalendar={() => onNavigate?.('economy')} />
-              <option value="30">카드 TOP 30</option>
-            </select>
-          )}
-          <Button variant="secondary" onClick={onShareScan}>링크 공유</Button>
-          <Button variant="ghost" onClick={() => { void loadCandidates() }} disabled={loading}>새로고침</Button>
-          <Button variant="primary" onClick={triggerScan} disabled={scanLoading}>
-            {scanLoading ? '동기화 중…' : '▶ 스캔 동기화 실행'}
-          </Button>
-        </div>
-      </div>
 
       {/* 상태 표시 */}
       <div className="card mb-4">

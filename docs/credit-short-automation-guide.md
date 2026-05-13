@@ -48,9 +48,21 @@ Set-ExecutionPolicy -Scope Process -ExecutionPolicy RemoteSigned
 ## 동작 방식
 
 ### 자동 실행 일정
-- **시간**: 매주 월요일 17:35 (장 마감 30분 후)
+- **기본 권장**: 평일 매일 17:40 공매도 전용 자동 적재 (`--skip-credit`)
+- **기존 방식**: 매주 월요일 17:35 (수동 입력 보조용)
 - **필요조건**: Windows PC가 켜져있어야 함
 - **로그**: `D:\Work\dev\github\signal-scanner-bot\logs\credit_short_*.log`
+
+### 일일 자동화 등록 (권장)
+
+```powershell
+cd d:\Work\dev\github\signal-scanner-bot
+Set-ExecutionPolicy -Scope Process -ExecutionPolicy RemoteSigned
+.\scripts\register_credit_short_daily_task.ps1 -Force
+```
+
+신용 데이터 소스가 미복구 상태이므로 기본적으로 공매도만 적재합니다.
+필요 시 `scripts/update_credit_short.py --force-credit` 으로 신용 소스 복구 테스트를 강제할 수 있습니다.
 
 ### 수집 범위
 - **상위 종목**: PyKRX가 공식 지원하는 공매도 상위 50개 종목

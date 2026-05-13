@@ -85,15 +85,34 @@ export default function Header({
   }, [isSignedIn])
 
   const handleSaveCreditShort = React.useCallback(async (data: { rows: Array<{ code: string; date: string; shortRatio?: number; creditRatio?: number }> }) => {
-    const json = await apiFetch('/api/credit-short', {
-      method: 'POST',
-      cacheMs: 0,
-      timeoutMs: 20_000,
-      body: JSON.stringify(data),
-    })
-    if (!json?.success) {
-      throw new Error(json?.error || '저장 실패')
+    const batchSize = Math.max(50, Number(import.meta.env.VITE_CREDIT_SHORT_UPLOAD_BATCH_SIZE || 250))
+    const timeoutMs = Math.max(20_000, Number(import.meta.env.VITE_CREDIT_SHORT_UPLOAD_TIMEOUT_MS || 60_000))
+    const rows = Array.isArray(data?.rows) ? data.rows : []
+
+    let saved = 0
+    let dropped = 0
+    let updatedStocks = 0
+
+    for (let i = 0; i < rows.length; i += batchSize) {
+      const chunk = rows.slice(i, i + batchSize)
+      const json = await apiFetch('/api/credit-short', {
+        method: 'POST',
+        cacheMs: 0,
+        timeoutMs,
+        body: JSON.stringify({ rows: chunk }),
+      })
+
+      if (!json?.success) {
+        const batchNo = Math.floor(i / batchSize) + 1
+        throw new Error(json?.error || `${batchNo}번 배치 저장 실패`)
+      }
+
+      saved += Number(json?.saved || 0)
+      dropped += Number(json?.filteredOut || 0)
+      updatedStocks += Number(json?.updatedStocks || 0)
     }
+
+    return { saved, dropped, updatedStocks }
   }, [])
 
   // 대시보드에서 "Chat ID 연결" 버튼 클릭 시 프로필 모달 열기
