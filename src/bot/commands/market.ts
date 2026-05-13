@@ -298,19 +298,20 @@ export async function handleMarketCommand(
     context: "market",
   }).catch(() => []);
 
-  if (personalLines.length > 0) {
-    msg += `\n${LINE}\n<b>내 상황 제안</b>\n`;
-    msg += personalLines.map((line) => `- ${line}`).join("\n");
-    msg += "\n";
-  }
-
   msg += `\n${LINE}`;
+
+  const kb = actionButtons([...ACTIONS.marketHub, ...ACTIONS.autoCycleQuick], 2);
+  if (personalLines.length > 0 && kb.inline_keyboard) {
+    kb.inline_keyboard.push([
+      { text: "👤 MY", callback_data: `my:market:market` },
+    ]);
+  }
 
   await tgSend("sendMessage", {
     chat_id: ctx.chatId,
     text: msg,
     parse_mode: "HTML",
     disable_web_page_preview: true,
-    reply_markup: actionButtons([...ACTIONS.marketHub, ...ACTIONS.autoCycleQuick], 2),
+    reply_markup: kb,
   });
 }

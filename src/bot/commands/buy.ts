@@ -114,7 +114,8 @@ function buildMessage(
     trancheBudget: number;
     totalShares: number;
     trancheShares: number;
-  }
+  },
+  includePlan: boolean = true
 ): string {
   const { name, code } = stock;
   const growthHints = fundamental ? getFundamentalGrowthHints(fundamental) : [];
@@ -155,7 +156,7 @@ function buildMessage(
   ].join("\n");
 
   let planBlock = "";
-  if (investPrefs && investPrefs.capital > 0 && investPrefs.splitCount > 0) {
+  if (includePlan && investPrefs && investPrefs.capital > 0 && investPrefs.splitCount > 0) {
     const capital = investPrefs.capital;
     const splitCount = investPrefs.splitCount;
     const expectedProfit = Math.floor(investPrefs.totalBudget * plan.target1Pct);
@@ -461,7 +462,8 @@ export async function handleBuyCommand(
           commentary: fundamental.commentary,
         }
       : undefined,
-    investPrefs
+    investPrefs,
+    false // includePlan: 기본 응답에 포함 안함
   );
 
   // 2-4: 섹터 과집중 경고 — 현재 관심종목의 섹터 집중도와 비교
@@ -492,18 +494,18 @@ export async function handleBuyCommand(
 
 
   const kb = actionButtons(ACTIONS.analyzeStock(code), 3);
-  const personalLines = await buildPersonalizedGuidance({
-    chatId: ctx.chatId,
-    focusCode: code,
-    context: "buy",
-  }).catch(() => []);
-  const personalBlock = personalLines.length > 0
-    ? `\n\n${LINE}\n<b>내 상황 제안</b>\n- ${personalLines.join("\n- ")}`
-    : "";
+  
+  // MY 버튼 추가
+  if (!kb.inline_keyboard) {
+    kb.inline_keyboard = [];
+  }
+  kb.inline_keyboard.push([
+    { text: "👤 MY", callback_data: `my:${code}:buy` },
+  ]);
 
   await tgSend("sendMessage", {
     chat_id: ctx.chatId,
-    text: msg + sectorWarningBlock + personalBlock,
+    text: msg + sectorWarningBlock,
     parse_mode: "HTML",
     reply_markup: kb,
   });

@@ -228,7 +228,6 @@ export async function handleEconomyCommand(
       `시장 온도: <code>${riskTag(data.vix?.price, data.fearGreed?.score)}</code>`,
     ]),
     ...(insightLines.length > 0 ? [section("해석", insightLines)] : []),
-    ...(personalLines.length > 0 ? [section("내 상황 제안", personalLines)] : []),
     section("국내 증시", domestic),
     section("미국 증시", us),
     section("환율", fx),
@@ -242,11 +241,26 @@ export async function handleEconomyCommand(
     divider(),
   ]);
 
+  const kb = { inline_keyboard: [[]] as any };
+  if (personalLines.length > 0) {
+    kb.inline_keyboard.push([
+      { text: "👤 MY", callback_data: `my:economy:economy` },
+    ]);
+  }
+
+  const baseKb = actionButtons([...ACTIONS.marketFlow, ...ACTIONS.autoCycleQuick], 2);
+  const finalKb = {
+    inline_keyboard: [
+      ...baseKb.inline_keyboard,
+      ...kb.inline_keyboard.filter((row: any) => row.length > 0),
+    ],
+  };
+
   await tgSend("sendMessage", {
     chat_id: ctx.chatId,
     text: msg,
     parse_mode: "HTML",
     disable_web_page_preview: true,
-    reply_markup: actionButtons([...ACTIONS.marketFlow, ...ACTIONS.autoCycleQuick], 2),
+    reply_markup: finalKb,
   });
 }

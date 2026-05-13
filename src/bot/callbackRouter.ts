@@ -101,6 +101,74 @@ export async function routeCallbackData(
     }
   }
 
+  if (data.startsWith("my:")) {
+    // MY 버튼 클릭: my:CODE:CONTEXT
+    // 예: my:005930:buy, my:005930:brief
+    const parts = data.slice(3).split(":");
+    const code = parts[0];
+    const context = parts[1] || "buy";
+    
+    if (!code) {
+      await tgSend("sendMessage", {
+        chat_id: ctx.chatId,
+        text: "⚠️ 종목 정보를 찾을 수 없습니다.",
+      });
+      return;
+    }
+
+    try {
+      const { buildPersonalizedGuidance } = await import("../services/personalizedGuidanceService.js");
+      const { LINE } = await import("./messages/format.js");
+      
+      const contextType = context as "brief" | "scan" | "flow" | "buy" | "market" | "holding-plan" | "news" | "economy";
+      const personalLines = await buildPersonalizedGuidance({
+        chatId: ctx.chatId,
+        focusCode: code,
+        context: contextType,
+      }).catch(() => []);
+
+      if (personalLines.length === 0) {
+        await tgSend("sendMessage", {
+          chat_id: ctx.chatId,
+          text: "개인화 정보가 없습니다.\n먼저 투자금과 위험도 설정을 완료해주세요.",
+        });
+        return;
+      }
+
+      let myMessage = `<b>${code} · 내 상황 제안</b>\n`;
+      myMessage += personalLines.map((line) => `- ${line}`).join("\n");
+
+      // context가 buy인 경우 추가로 투자금 기준 정보도 포함 가능
+      if (contextType === "buy") {
+        try {
+          const { getUserInvestmentPrefs } = await import("../services/userService.js");
+          const investPrefs = await getUserInvestmentPrefs(ctx.chatId);
+          
+          if (investPrefs && investPrefs.capital_krw && investPrefs.capital_krw > 0 && investPrefs.split_count && investPrefs.split_count > 0) {
+            myMessage += `\n\n<b>내 투자금 기준</b>`;
+            myMessage += `\n  투자금: ${investPrefs.capital_krw.toLocaleString()}원`;
+            myMessage += `\n  분할 횟수: ${investPrefs.split_count}회`;
+          }
+        } catch {
+          // 투자금 정보 조회 실패 시 무시
+        }
+      }
+
+      await tgSend("sendMessage", {
+        chat_id: ctx.chatId,
+        text: myMessage,
+        parse_mode: "HTML",
+      });
+    } catch (error) {
+      console.error("[callbackRouter] MY 버튼 처리 실패:", error);
+      await tgSend("sendMessage", {
+        chat_id: ctx.chatId,
+        text: "⚠️ 개인화 정보 조회 중 오류가 발생했습니다.",
+      });
+    }
+    return;
+  }
+
   const delimiter = data.indexOf(":");
   if (delimiter > 0) {
     const prefix = data.slice(0, delimiter);

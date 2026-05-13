@@ -168,18 +168,20 @@ export async function handleFlowCommand(
     context: "flow",
   }).catch(() => []);
 
-  if (personalLines.length > 0) {
-    msg += `\n\n${LINE}\n<b>내 상황 제안</b>\n`;
-    msg += personalLines.map((line) => `- ${line}`).join("\n");
-  }
-
   msg += `\n\n${LINE}\n아래 버튼으로 상세 분석을 이어가세요.`;
+
+  const kb = actionButtons(ACTIONS.analyzeStock(code), 3);
+  if (personalLines.length > 0 && kb.inline_keyboard) {
+    kb.inline_keyboard.push([
+      { text: "👤 MY", callback_data: `my:${code}:flow` },
+    ]);
+  }
 
   await tgSend("sendMessage", {
     chat_id: ctx.chatId,
     text: msg,
     parse_mode: "HTML",
-    reply_markup: actionButtons(ACTIONS.analyzeStock(code), 3),
+    reply_markup: kb,
   });
 }
 
@@ -241,17 +243,19 @@ async function handleMarketFlowSummary(
     context: "flow",
   }).catch(() => []);
 
-  if (personalLines.length > 0) {
-    msg += `\n\n${LINE}\n<b>내 상황 제안</b>\n`;
-    msg += personalLines.map((line) => `- ${line}`).join("\n");
-  }
-
   msg += `\n${LINE}`;
+
+  const kb = actionButtons([...ACTIONS.marketFlowWithPromptFlow, ...ACTIONS.autoCycleQuick], 2);
+  if (personalLines.length > 0 && kb.inline_keyboard) {
+    kb.inline_keyboard.push([
+      { text: "👤 MY", callback_data: `my:flow:flow` },
+    ]);
+  }
 
   await tgSend("sendMessage", {
     chat_id: ctx.chatId,
     text: msg,
     parse_mode: "HTML",
-    reply_markup: actionButtons([...ACTIONS.marketFlowWithPromptFlow, ...ACTIONS.autoCycleQuick], 2),
+    reply_markup: kb,
   });
 }

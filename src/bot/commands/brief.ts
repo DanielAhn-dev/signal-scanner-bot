@@ -41,19 +41,27 @@ export async function handleBriefCommand(
   }).catch(() => []);
 
   const finalReportBase = planningResult?.text ? `${report}\n\n${planningResult.text}` : report;
-  const withAutoCyclePreview = autoCyclePreview ? `${finalReportBase}\n\n${autoCyclePreview}` : finalReportBase;
-  const finalReport = personalLines.length > 0
-    ? `${withAutoCyclePreview}\n\n<b>내 상황 제안</b>\n- ${personalLines.join("\n- ")}`
-    : withAutoCyclePreview;
+  const finalReport = autoCyclePreview ? `${finalReportBase}\n\n${autoCyclePreview}` : finalReportBase;
+
+  // MY 버튼
+  const kb = actionButtons(
+    buildRecommendationActionButtons((planningResult?.actionItems ?? []).slice(0, 2), ACTIONS.briefingPrimary),
+    3
+  );
+  if (!kb.inline_keyboard) {
+    kb.inline_keyboard = [];
+  }
+  if (personalLines.length > 0) {
+    kb.inline_keyboard.push([
+      { text: "👤 MY", callback_data: `my:brief:brief` },
+    ]);
+  }
 
   await tgSend("sendMessage", {
     chat_id: ctx.chatId,
     text: finalReport,
     parse_mode: "HTML",
     disable_web_page_preview: true,
-    reply_markup: actionButtons(
-      buildRecommendationActionButtons((planningResult?.actionItems ?? []).slice(0, 2), ACTIONS.briefingPrimary),
-      3
-    ),
+    reply_markup: kb,
   });
 }
