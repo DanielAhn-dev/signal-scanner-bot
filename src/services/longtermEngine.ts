@@ -2,6 +2,7 @@ export type LongtermScoreInput = {
   pbr: number | null;
   per: number | null;
   roe: number | null;
+  peg: number | null;
   revQoq: number | null;
   opQoq: number | null;
   revAcceleration: number | null;
@@ -30,7 +31,12 @@ function lin(v: number, x0: number, x1: number, y0: number, y1: number): number 
   return y0 + ((v - x0) / (x1 - x0)) * (y1 - y0);
 }
 
-function calcValueScore(pbr: number | null, per: number | null, roe: number | null): number {
+function calcValueScore(
+  pbr: number | null,
+  per: number | null,
+  roe: number | null,
+  peg: number | null
+): number {
   let score = 0;
 
   const pbrNum = Number(pbr ?? NaN);
@@ -55,6 +61,16 @@ function calcValueScore(pbr: number | null, per: number | null, roe: number | nu
     else if (perNum <= 12) score += 4;
     else if (perNum <= 18) score += 2;
     else score += 1;
+  }
+
+  // PEG 최적화 메뉴(발굴)에서는 PEG가 순위에 직접 영향하도록 가치 점수에 반영한다.
+  const pegNum = Number(peg ?? NaN);
+  if (Number.isFinite(pegNum) && pegNum > 0) {
+    if (pegNum <= 0.8) score += 6;
+    else if (pegNum <= 1.2) score += 5;
+    else if (pegNum <= 1.8) score += 3;
+    else if (pegNum <= 2.5) score += 1;
+    else if (pegNum >= 3.5) score -= 3;
   }
 
   return clamp(score, 0, 30);
@@ -97,7 +113,7 @@ function calcSectorScore(sectorScoreRaw: number | null): number {
 }
 
 export function calculateLongtermScore(input: LongtermScoreInput): LongtermScoreBreakdown {
-  const valueScore = calcValueScore(input.pbr, input.per, input.roe);
+  const valueScore = calcValueScore(input.pbr, input.per, input.roe, input.peg);
   const momentumScore = calcMomentumScore(
     input.revQoq,
     input.opQoq,

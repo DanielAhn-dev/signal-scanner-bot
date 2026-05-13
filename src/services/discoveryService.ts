@@ -376,6 +376,7 @@ export async function discoverMultibagger(
       pbr,
       per,
       roe,
+      peg,
       revQoq: latestRev,
       opQoq: latestOp,
       revAcceleration: toNum(latest.rev_acceleration),

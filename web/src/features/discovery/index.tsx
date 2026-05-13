@@ -186,6 +186,48 @@ const DISCOVERY_PRESETS: DiscoveryPreset[] = [
     },
     sectorMode: 'promising',
   },
+  {
+    key: 'peg-extreme-undervalue',
+    label: 'PEG 극저평가형',
+    hint: '피터 린치 우량 저평가 기준 (PEG < 0.5)',
+    criteria: {
+      minMarketCapBillion: 500,
+      minRoe: 8,
+      maxPbr: 2.0,
+      minPeg: null,
+      maxPeg: 0.5,
+      qoqMode: 'two-quarter-positive',
+    },
+    sectorMode: 'all',
+  },
+  {
+    key: 'peg-undervalue',
+    label: 'PEG 저평가형',
+    hint: '성장 대비 저평가 (PEG < 1.0)',
+    criteria: {
+      minMarketCapBillion: 500,
+      minRoe: 8,
+      maxPbr: 2.0,
+      minPeg: null,
+      maxPeg: 1.0,
+      qoqMode: 'two-quarter-positive',
+    },
+    sectorMode: 'all',
+  },
+  {
+    key: 'peg-fair-value',
+    label: 'PEG 적정가형',
+    hint: '성장 대비 적정 평가 (1.0 ≤ PEG ≤ 1.5)',
+    criteria: {
+      minMarketCapBillion: 500,
+      minRoe: 8,
+      maxPbr: 2.0,
+      minPeg: 1.0,
+      maxPeg: 1.5,
+      qoqMode: 'two-quarter-positive',
+    },
+    sectorMode: 'all',
+  },
 ]
 
 function criteriaSignature(c: DiscoveryCriteria, sectorMode: SectorFilterMode): string {
@@ -431,7 +473,7 @@ export default function DiscoveryPage() {
         <div>
           <h1 className="title-xl" style={{ marginBottom: 0 }}>멀티배거 발굴</h1>
           <div className="muted" style={{ marginTop: 'var(--space-1)' }}>
-            펀더멘털(PBR·ROE·QoQ) × 스마트머니(12주 수급) × 섹터 복합 점수 기반 중장기 후보
+            펀더멘털(PBR·ROE·PEG·QoQ) × 스마트머니(12주 수급) × 섹터 복합 점수 기반 중장기 후보
           </div>
         </div>
         <div className="flex-gap-sm" style={{ flexWrap: 'wrap' }}>
@@ -709,7 +751,7 @@ export default function DiscoveryPage() {
 
       <div className="card">
         <div className="caption" style={{ lineHeight: 1.7 }}>
-          · <strong>가치(30pt)</strong>: PBR 구간 + ROE + PER 역수 기반<br />
+          · <strong>가치(30pt)</strong>: PBR 구간 + ROE + PER + PEG 보정 기반<br />
           · <strong>모멘텀(40pt)</strong>: 최신 매출/영업이익 QoQ + 가속도<br />
           · <strong>수급(20pt)</strong>: 최근 12주 외국인+기관 순매수 누적<br />
           · <strong>섹터(10pt)</strong>: 해당 섹터 점수 비례

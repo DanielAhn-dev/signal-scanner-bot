@@ -20,6 +20,8 @@
     "verify:vercel": "pnpm build",
     "deploy": "vercel --prod",
     "sync:scores": "tsx scripts/sync_scores_from_engine.ts",
+    "etl:fundamentals": "tsx scripts/etl_fundamentals.ts",
+    "etl:fundamentals:all500": "tsx scripts/etl_fundamentals.ts --all 500",
     "seed:sectors": "tsx scripts/seedSectors.ts",
     "gen:sectors": "tsx scripts/generateSectorsJson.ts",
     "set:commands": "tsx scripts/ops/set_commands.ts",
