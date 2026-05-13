@@ -207,7 +207,7 @@ export default function Header({
         </div>
       </div>
 
-      {drawerOpen && createPortal(
+      {drawerOpen && typeof document !== 'undefined' ? createPortal(
         <div className="nav-drawer-overlay" role="dialog" aria-modal aria-label="전체 메뉴" onClick={() => setDrawerOpen(false)}>
           <aside className="nav-drawer" onClick={(e) => e.stopPropagation()}>
             <div className="nav-drawer-header">
@@ -247,8 +247,8 @@ export default function Header({
               ))}
             </div>
           </aside>
-        </div>
-      )}
+        </div>, document.body
+      ) : null}
 
       {cmdOpen && (
         <div className="modal-overlay" role="dialog" aria-modal aria-label="텔레그램 명령 모달">
