@@ -3,11 +3,12 @@ import Button from '../../components/ui/Button'
 import Input from '../../components/ui/Input'
 import Checkbox from '../../components/ui/Checkbox'
 import { apiFetch } from '../../lib/api'
-import { getCurrentUserChatId, onProfileUpdated } from '../../lib/userContext'
 import TelegramLinkCallout from '../../components/TelegramLinkCallout'
 import { requestOpenProfileModal } from '../../lib/profileModal'
+import { useProfileStore } from '../../stores/profileStore'
 
 export default function Settings(){
+  const currentChatId = useProfileStore((state) => state.profile.telegramId || '')
   const [chatId, setChatId] = useState<string>('')
   const [message, setMessage] = useState<string>('테스트 알림입니다.')
   const [status, setStatus] = useState<string|undefined>()
@@ -23,20 +24,8 @@ export default function Settings(){
   const [adminNote, setAdminNote] = useState('')
 
   useEffect(() => {
-    const refreshChatId = () => {
-      const next = getCurrentUserChatId()
-      setChatId((prev) => (prev === next ? prev : next))
-    }
-
-    refreshChatId()
-    const offProfile = onProfileUpdated(refreshChatId)
-    window.addEventListener('focus', refreshChatId)
-
-    return () => {
-      offProfile()
-      window.removeEventListener('focus', refreshChatId)
-    }
-  }, [])
+    setChatId((prev) => (prev === currentChatId ? prev : currentChatId))
+  }, [currentChatId])
 
   useEffect(() => {
     (async () => {

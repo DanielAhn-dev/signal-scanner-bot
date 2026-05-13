@@ -96,10 +96,9 @@ export const useAuthStore = create<AuthState & AuthActions>((set, get) => ({
       )
       try {
         await profileStore.hydrateFromServer()
-        if (!disposed) set({ authError: '' })
       } catch (error: any) {
         if (!disposed) {
-          set({ authError: `로그인은 되었지만 프로필 동기화에 실패했습니다. ${error?.message || String(error)}` })
+          console.error('[auth] profile hydration failed:', error?.message || String(error))
         }
       }
       if (disposed) return

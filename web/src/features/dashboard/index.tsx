@@ -1,6 +1,5 @@
 ﻿import React from 'react'
 import { formatKrw } from '../../lib/format'
-import { getCurrentUserChatId, onProfileUpdated } from '../../lib/userContext'
 import Button from '../../components/ui/Button'
 import Skeleton from '../../components/Skeleton'
 import { ErrorState } from '../../components/StateViews'
@@ -9,23 +8,10 @@ import EconomicEventBadge from '../../components/EconomicEventBadge'
 import { requestOpenProfileModal } from '../../lib/profileModal'
 import { useDashboardSummary, useSectors } from '../../lib/queries'
 import type { DashboardSummary, SectorItem } from '../../lib/types'
+import { useProfileStore } from '../../stores/profileStore'
 
 export default function Dashboard({ onNavigate }: { onNavigate?: (r: string) => void }) {
-  const [chatId, setChatId] = React.useState<string>(() => getCurrentUserChatId())
-
-  React.useEffect(() => {
-    const refreshChatId = () => {
-      const next = getCurrentUserChatId()
-      setChatId((prev) => (prev === next ? prev : next))
-    }
-
-    const offProfile = onProfileUpdated(refreshChatId)
-    window.addEventListener('focus', refreshChatId)
-    return () => {
-      offProfile()
-      window.removeEventListener('focus', refreshChatId)
-    }
-  }, [])
+  const chatId = useProfileStore((state) => state.profile.telegramId || '')
 
   const {
     data: summaryRaw,

@@ -7,6 +7,7 @@ import ScanPage from './features/scan'
 import { preloadStocks } from './lib/stockCache'
 import { isSupabaseConfigured } from './lib/supabase'
 import { useAuthStore } from './stores/authStore'
+import { useProfileStore } from './stores/profileStore'
 
 const Dashboard = lazy(() => import('./features/dashboard'))
 const Trades = lazy(() => import('./features/trades'))
@@ -44,6 +45,8 @@ function AppContent() {
   const toast = useToast()
 
   const { isSignedIn, isSigningIn, authReady, authEmail, authName, authError, initAuth, signIn, signOut } = useAuthStore()
+  const profileSyncError = useProfileStore((state) => state.syncError)
+  const hydrateFromServer = useProfileStore((state) => state.hydrateFromServer)
 
   const isPublicAnalyze = location.pathname === '/analyze' && new URLSearchParams(location.search).has('code')
 
@@ -69,6 +72,12 @@ function AppContent() {
   useEffect(() => {
     if (authError) toast.show(`Google 로그인 실패: ${authError}`, 5000)
   }, [authError, toast])
+
+  useEffect(() => {
+    if (profileSyncError && isSignedIn) {
+      toast.show(`프로필 동기화 오류: ${profileSyncError}`, 5000)
+    }
+  }, [profileSyncError, isSignedIn, toast])
 
   // nav:goto 커스텀 이벤트 (기존 코드 호환)
   useEffect(() => {
@@ -143,6 +152,29 @@ function AppContent() {
           onNavigate={handleNavigate}
           activeRoute={location.pathname.replace(/^\//, '') || 'dashboard'}
         />
+      )}
+      {isSignedIn && !!profileSyncError && (
+        <div style={{ padding: '0 var(--space-4)' }}>
+          <div
+            className="profile-verify-msg profile-verify-msg--err"
+            style={{
+              maxWidth: 'var(--container-max, 1200px)',
+              margin: 'var(--space-3) auto 0',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: 'var(--space-3)',
+            }}
+          >
+            <span>프로필을 서버에서 다시 불러오지 못했습니다. 저장된 Chat ID와 닉네임이 최신 상태가 아닐 수 있습니다.</span>
+            <button
+              className="ui-button ui-btn-secondary"
+              onClick={() => { void hydrateFromServer() }}
+            >
+              다시 시도
+            </button>
+          </div>
+        </div>
       )}
       <main>
         <Suspense fallback={<div>Loading...</div>}>
