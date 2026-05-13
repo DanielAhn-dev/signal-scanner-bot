@@ -5,10 +5,10 @@ import { TELEGRAM_COMMANDS } from '../data/telegramCommands'
 import { NAV_ITEMS, PRIMARY_NAV_KEYS } from '../navigation'
 import ProfileModal from './ProfileModal'
 import CreditShortForm from './CreditShortForm'
-import { readProfile, type StoredProfile } from '../lib/userContext'
 import { apiFetch } from '../lib/api'
 import { onOpenProfileModal } from '../lib/profileModal'
 import { useAuthStore } from '../stores/authStore'
+import { useProfileStore } from '../stores/profileStore'
 
 type Props = {
   onNavigate: (r: string) => void
@@ -20,12 +20,12 @@ export default function Header({
   activeRoute,
 }: Props){
   const { isSignedIn, isSigningIn, authEmail, authName, signIn, signOut } = useAuthStore()
+  const profile = useProfileStore((state) => state.profile)
   const [drawerOpen, setDrawerOpen] = React.useState(false)
   const [cmdOpen, setCmdOpen] = React.useState(false)
   const [filter, setFilter] = React.useState('')
   const [profileOpen, setProfileOpen] = React.useState(false)
   const [creditShortOpen, setCreditShortOpen] = React.useState(false)
-  const [profile, setProfile] = React.useState<StoredProfile>(() => readProfile() ?? {})
   const [isAdmin, setIsAdmin] = React.useState(false)
   const [focusChatIdField, setFocusChatIdField] = React.useState(false)
 
@@ -81,10 +81,6 @@ export default function Header({
       }
     }
   }, [drawerOpen, cmdOpen])
-
-  React.useEffect(() => {
-    setProfile(readProfile() ?? {})
-  }, [isSignedIn])
 
   const handleSaveCreditShort = React.useCallback(async (data: { rows: Array<{ code: string; date: string; shortRatio?: number; shortBalance?: number; shortVolume?: number }> }) => {
     const batchSize = Math.max(50, Number(import.meta.env.VITE_CREDIT_SHORT_UPLOAD_BATCH_SIZE || 250))
@@ -285,7 +281,6 @@ export default function Header({
     <ProfileModal
       isOpen={profileOpen}
       onClose={() => { setProfileOpen(false); setFocusChatIdField(false) }}
-      onSaved={p => setProfile(prev => ({ ...prev, ...p }))}
       isSignedIn={isSignedIn}
       authEmail={authEmail}
       authName={authName}

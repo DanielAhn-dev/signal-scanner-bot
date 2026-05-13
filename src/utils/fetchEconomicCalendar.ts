@@ -222,14 +222,7 @@ export async function fetchEconomicCalendar(
     }
   } catch (error) {
     console.error('[fetchEconomicCalendar] error:', error)
-    return {
-      events: [],
-      timeRange: {
-        start: new Date().toISOString(),
-        end: new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toISOString(),
-      },
-      fetchedAt: new Date().toISOString(),
-    }
+    throw error instanceof Error ? error : new Error(String(error))
   }
 }
 

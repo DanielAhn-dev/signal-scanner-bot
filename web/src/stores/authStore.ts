@@ -1,7 +1,8 @@
 import { create } from 'zustand'
 import type { Session } from '@supabase/supabase-js'
 import { supabase, isSupabaseConfigured } from '../lib/supabase'
-import { loadProfileFromServer, readProfile, saveProfile } from '../lib/userContext'
+import { readProfile } from '../lib/userContext'
+import { useProfileStore } from './profileStore'
 
 export type AuthState = {
   isSignedIn: boolean
@@ -80,15 +81,27 @@ export const useAuthStore = create<AuthState & AuthActions>((set, get) => ({
       const user = session?.user
       if (!user) {
         if (disposed) return
-        set({ isSignedIn: false, authEmail: '', authName: '' })
+        useProfileStore.getState().clearState()
+        set({ isSignedIn: false, authEmail: '', authName: '', authError: '' })
         markAuthReady()
         return
       }
       const metadata = (user.user_metadata ?? {}) as Record<string, unknown>
       const name = String(metadata.full_name || metadata.name || metadata.preferred_username || '').trim()
       const email = String(user.email || '').trim()
-      saveProfile({ clientId: user.id, nickname: name || readProfile()?.nickname })
-      void loadProfileFromServer().catch(() => {})
+      const profileStore = useProfileStore.getState()
+      await profileStore.setProfile(
+        { clientId: user.id, nickname: name || readProfile()?.nickname },
+        { syncServer: false },
+      )
+      try {
+        await profileStore.hydrateFromServer()
+        if (!disposed) set({ authError: '' })
+      } catch (error: any) {
+        if (!disposed) {
+          set({ authError: `로그인은 되었지만 프로필 동기화에 실패했습니다. ${error?.message || String(error)}` })
+        }
+      }
       if (disposed) return
       set({ isSignedIn: true, authEmail: email, authName: name })
       markAuthReady()
@@ -176,6 +189,7 @@ export const useAuthStore = create<AuthState & AuthActions>((set, get) => ({
     try {
       await supabase.auth.signOut()
     } catch { /* ignore */ }
-    set({ isSignedIn: false, authEmail: '', authName: '' })
+    useProfileStore.getState().clearState()
+    set({ isSignedIn: false, authEmail: '', authName: '', authError: '' })
   },
 }))

@@ -859,6 +859,7 @@ export default function MarketPage() {
   const [loading, setLoading] = useState(true)
   const [calendarLoading, setCalendarLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [calendarError, setCalendarError] = useState<string | null>(null)
   const [tab, setTab] = useState<Tab>('diagnosis')
 
   const load = async () => {
@@ -883,10 +884,30 @@ export default function MarketPage() {
 
   const loadCalendar = async () => {
     setCalendarLoading(true)
+    setCalendarError(null)
     try {
-      const result = await apiFetch('/api/economic-calendar', { cacheMs: 3_600_000, timeoutMs: 10_000, retries: 1 })
-      if (result?.data) setCalendar(result.data)
-    } catch { /* 실패해도 페이지 깨지지 않음 */ }
+      const endpoints = [
+        '/api/economic-calendar',
+        '/api/ui/economic-calendar',
+        '/api/ui?route=economic-calendar',
+      ]
+      let result: any = null
+      let lastError: unknown = null
+      for (const ep of endpoints) {
+        try {
+          result = await apiFetch(ep, { cacheMs: 3_600_000, timeoutMs: 10_000, retries: 1 })
+          break
+        } catch (e) {
+          lastError = e
+        }
+      }
+      if (!result?.data) throw lastError || new Error('calendar fetch failed')
+      setCalendar(result.data)
+    } catch (e: any) {
+      const detail = e?.message || String(e)
+      setCalendarError(`경제 캘린더를 불러오지 못했습니다. 잠시 후 다시 시도해주세요. (${detail})`)
+      setCalendar(null)
+    }
     finally { setCalendarLoading(false) }
   }
 
@@ -930,11 +951,16 @@ export default function MarketPage() {
       {tab === 'diagnosis' && <DiagnosisTab data={data} />}
       {tab === 'indicators' && <IndicatorsTab data={data} />}
       {tab === 'calendar' && (
-        <EconomicCalendar
-          events={calendar?.events || []}
-          loading={calendarLoading}
-          onRefresh={loadCalendar}
-        />
+        calendarError ? (
+          <ErrorState message={calendarError} onRetry={loadCalendar} />
+        ) : (
+          <EconomicCalendar
+            events={calendar?.events || []}
+            loading={calendarLoading}
+            onRefresh={loadCalendar}
+            fetchedAt={calendar?.fetchedAt}
+          />
+        )
       )}
     </section>
   )

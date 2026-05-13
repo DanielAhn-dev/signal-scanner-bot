@@ -1,8 +1,9 @@
 import React, { useEffect, useRef, useState } from 'react'
-import { readProfile, saveProfile, clearProfile, type StoredProfile } from '../lib/userContext'
+import { type StoredProfile } from '../lib/userContext'
 import { invalidateCache } from '../lib/api'
 import { useToast } from './ToastProvider'
 import { apiFetch } from '../lib/api'
+import { useProfileStore } from '../stores/profileStore'
 
 interface Props {
   isOpen: boolean
@@ -38,6 +39,10 @@ export default function ProfileModal({
   isSigningIn,
   focusChatIdField,
 }: Props) {
+  const profile = useProfileStore((state) => state.profile)
+  const syncError = useProfileStore((state) => state.syncError)
+  const setProfile = useProfileStore((state) => state.setProfile)
+  const clearState = useProfileStore((state) => state.clearState)
   const overlayRef = useRef<HTMLDivElement>(null)
   const chatIdInputRef = useRef<HTMLInputElement>(null)
   const toast = useToast()
@@ -56,21 +61,20 @@ export default function ProfileModal({
   /* ── 열릴 때 localStorage에서 현재 값 로드 ── */
   useEffect(() => {
     if (!isOpen) return
-    const p = readProfile()
-    setTelegramId(p?.telegramId ?? '')
-    setNickname(p?.nickname ?? '')
-    setTgName(p?.telegramName ?? '')
-    setTgUsername(p?.telegramUsername ?? '')
-    setVerifyStatus(p?.telegramId ? STATUS_OK : STATUS_IDLE)
-    setVerifyMsg('')
-    setSaveMsg('')
+    setTelegramId(profile?.telegramId ?? '')
+    setNickname(profile?.nickname ?? '')
+    setTgName(profile?.telegramName ?? '')
+    setTgUsername(profile?.telegramUsername ?? '')
+    setVerifyStatus(profile?.telegramId ? STATUS_OK : STATUS_IDLE)
+    setVerifyMsg(syncError ? `프로필 동기화 오류: ${syncError}` : '')
+    setSaveMsg(syncError ? '서버 프로필 동기화 상태를 확인해 주세요.' : '')
     setAutoResolved(false)
     
     // Chat ID 필드로 포커스 이동
     if (focusChatIdField) {
       setTimeout(() => chatIdInputRef.current?.focus(), 100)
     }
-  }, [isOpen, focusChatIdField])
+  }, [isOpen, focusChatIdField, profile, syncError])
 
   useEffect(() => {
     if (!isOpen || !isSignedIn) return
@@ -157,14 +161,14 @@ export default function ProfileModal({
   }
 
   /* ── 저장 ── */
-  const handleSave = () => {
+  const handleSave = async () => {
     if (!isSignedIn) {
       setSaveMsg('Google 로그인 후 저장할 수 있습니다.')
       return
     }
     setSaving(true)
     setSaveMsg('')
-    const previousTelegramId = readProfile()?.telegramId || ''
+    const previousTelegramId = profile?.telegramId || ''
     const patch: StoredProfile = {
       telegramId:       telegramId.trim().replace(/[^0-9-]/g, '') || undefined,
       nickname:         nickname.trim() || undefined,
@@ -172,14 +176,18 @@ export default function ProfileModal({
       telegramUsername: tgUsername || undefined,
     }
     try {
-      saveProfile(patch)
+      const result = await setProfile(patch)
+      if (!result.synced) {
+        setSaveMsg(`저장 실패: ${result.error || '서버 프로필 저장에 실패했습니다.'}`)
+        return
+      }
       invalidateCache()            // API 캐시 무효화 → chatId 변경 반영
       setSaveMsg('저장됐습니다.')
       const firstLinked = !previousTelegramId && !!patch.telegramId
       if (firstLinked) {
         toast.show('텔레그램 연동 완료: 알림 전송/텔레그램 연동 기능에 사용됩니다.')
       }
-      onSaved?.(patch)
+      onSaved?.(result.profile)
       setTimeout(onClose, 800)
     } catch {
       setSaveMsg('저장에 실패했습니다.')
@@ -190,7 +198,7 @@ export default function ProfileModal({
 
   /* ── 연동 해제 ── */
   const handleClear = () => {
-    clearProfile()
+    clearState()
     setTelegramId('')
     setNickname('')
     setTgName('')

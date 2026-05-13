@@ -8,6 +8,7 @@ interface EconomicCalendarProps {
   events: EconomicEvent[]
   loading?: boolean
   onRefresh?: () => void
+  fetchedAt?: string
 }
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
@@ -370,7 +371,7 @@ function ValueTile({ label, value, color, highlight }: { label: string; value: s
 
 // ─── Main component ──────────────────────────────────────────────────────────
 
-export default function EconomicCalendar({ events, loading }: EconomicCalendarProps) {
+export default function EconomicCalendar({ events, loading, fetchedAt }: EconomicCalendarProps) {
   const groups = useMemo(() => groupByDate(events), [events])
 
   const upcomingImportant = useMemo(
@@ -384,8 +385,28 @@ export default function EconomicCalendar({ events, loading }: EconomicCalendarPr
 
   if (events.length === 0) {
     return (
-      <div style={{ textAlign: 'center', padding: 'var(--space-10)', color: 'var(--color-text-tertiary)', fontSize: 'var(--font-size-sm)' }}>
-        예정된 경제 이벤트가 없습니다
+      <div
+        style={{
+          textAlign: 'center',
+          padding: 'var(--space-10)',
+          color: 'var(--color-text-tertiary)',
+          fontSize: 'var(--font-size-sm)',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 'var(--space-2)',
+        }}
+      >
+        <div style={{ color: 'var(--color-text-secondary)', fontWeight: 'var(--font-weight-semibold)' }}>
+          현재 등록된 예정 경제 일정이 없습니다
+        </div>
+        <div>
+          이 화면은 정상 응답이지만 일정이 0건인 상태입니다. API 호출 실패는 별도 오류 화면으로 표시됩니다.
+        </div>
+        {fetchedAt && (
+          <div style={{ fontSize: 'var(--font-size-xs)' }}>
+            데이터 기준 시각: {new Date(fetchedAt).toLocaleString('ko-KR')}
+          </div>
+        )}
       </div>
     )
   }
