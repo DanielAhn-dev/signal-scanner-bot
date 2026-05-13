@@ -608,10 +608,13 @@ export default function Portfolio() {
   const total = filteredRows.length
   const totalPages = Math.ceil(total / pageSize)
   const rows = filteredRows.slice((page - 1) * pageSize, page * pageSize)
-  const totalUnrealized = holdingAll.reduce((acc: number, r: any) => acc + Number(r.unrealized_pnl || 0), 0)
-  const totalInvested = holdingAll.reduce((acc: number, r: any) => acc + (Number(r.quantity || 0) * Number(r.avg_price || 0)), 0)
+  const summaryRows = selectedAccountKey === 'all'
+    ? holdingAll
+    : holdingAll.filter((r: any) => buildAccountKey(r?.broker_name, r?.account_name) === selectedAccountKey)
+  const totalUnrealized = summaryRows.reduce((acc: number, r: any) => acc + Number(r.unrealized_pnl || 0), 0)
+  const totalInvested = summaryRows.reduce((acc: number, r: any) => acc + (Number(r.quantity || 0) * Number(r.avg_price || 0)), 0)
   // 비용 계산: 매수비용(이미 발생) + 매도예상비용(현재가 기준)
-  const totalTradeCost = holdingAll.reduce((acc: number, r: any) => {
+  const totalTradeCost = summaryRows.reduce((acc: number, r: any) => {
     const invested = Number(r.quantity || 0) * Number(r.avg_price || 0)
     const currentValue = invested + Number(r.unrealized_pnl || 0)
     const buyCost = invested * (buyFeeRatePct / 100)
@@ -822,7 +825,7 @@ export default function Portfolio() {
         toast.show(`${modalSide === 'buy' ? '매수' : '매도'} 등록 완료 ✓`)
         invalidateCache('/api/ui/positions')
         setModalOpen(false)
-        load({ soft: true, force: true })
+        await load({ soft: true, force: true })
       }
     } catch (e: any) {
       setTradeError(String(e?.message || e))
@@ -1047,17 +1050,7 @@ export default function Portfolio() {
           <div className="stat-sub">보유 수량×평균 매수가</div>
         </div>
         <div className="card portfolio-stat-card">
-          <div className="stat-label" style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-1)', flexWrap: 'wrap' }}>
-            평가손익 합계
-            <label className="portfolio-cost-toggle" title={`매수수수료 ${buyFeeRatePct}% + 매도수수료·거래세 ${sellFeeRatePct}%`}>
-              <input
-                type="checkbox"
-                checked={includeCost}
-                onChange={e => setIncludeCost(e.target.checked)}
-              />
-              <span>비용포함</span>
-            </label>
-          </div>
+          <div className="stat-label">평가손익 합계</div>
           <div className={`stat-value ${adjustedUnrealized < 0 ? 'negative' : 'positive'}`}>
             {formatKrw(adjustedUnrealized)}
           </div>
@@ -1282,6 +1275,19 @@ export default function Portfolio() {
               >
                 + 추가
               </Button>
+            </div>
+            <div style={{ marginTop: 'var(--space-2)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 'var(--space-2)', flexWrap: 'wrap' }}>
+              <label className="portfolio-cost-toggle" title={`매수수수료 ${buyFeeRatePct}% + 매도수수료·거래세 ${sellFeeRatePct}%`}>
+                <input
+                  type="checkbox"
+                  checked={includeCost}
+                  onChange={e => setIncludeCost(e.target.checked)}
+                />
+                <span>매매비용 반영</span>
+              </label>
+              <span className="caption muted">
+                {selectedAccountKey === 'all' ? '전체 계좌 손익에 적용' : '선택한 계좌 손익에 적용'}
+              </span>
             </div>
           </div>
 
