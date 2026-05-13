@@ -351,9 +351,14 @@ html, body, #root {
 .cards-grid {
   @apply grid;
   gap: var(--space-3);
+  /* 모바일 기본: 2열 */
+  grid-template-columns: repeat(2, 1fr);
 }
+/* cols-2: 모바일에서도 2열 유지 */
+.cards-grid.cols-2 { grid-template-columns: repeat(2, 1fr); }
+/* cols-3: 모바일 2열, sm+ 3열 */
+.cards-grid.cols-3 { grid-template-columns: repeat(2, 1fr); }
 @media (min-width: 640px) {
-  .cards-grid.cols-2 { grid-template-columns: repeat(2, 1fr); }
   .cards-grid.cols-3 { grid-template-columns: repeat(3, 1fr); }
 }
 

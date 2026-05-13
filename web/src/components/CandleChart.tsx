@@ -301,13 +301,11 @@ export default function CandleChart({
     volSeries.setData(volData)
 
     if (showMaEmaOverlay) {
+      // EMA21(단기 추세) + SMA50(중기) + SMA200(장기 추세) — 3선으로 시인성 확보
       const lineSpecs = [
-        { label: 'SMA20', period: 20, type: 'sma' as const, color: '#f59e0b', width: 2 },
+        { label: 'EMA21', period: 21, type: 'ema' as const, color: '#fb923c', width: 2 },
         { label: 'SMA50', period: 50, type: 'sma' as const, color: '#2dd4bf', width: 2 },
         { label: 'SMA200', period: 200, type: 'sma' as const, color: '#3b82f6', width: 2 },
-        { label: 'EMA20', period: 20, type: 'ema' as const, color: '#fb923c', width: 1 },
-        { label: 'EMA50', period: 50, type: 'ema' as const, color: '#34d399', width: 1 },
-        { label: 'EMA200', period: 200, type: 'ema' as const, color: '#818cf8', width: 1 },
       ]
 
       for (const spec of lineSpecs) {
@@ -319,7 +317,7 @@ export default function CandleChart({
         const lineSeries = chart.addSeries(LineSeries, {
           color: spec.color,
           lineWidth: spec.width,
-          lineStyle: spec.type === 'ema' ? LineStyle.Dotted : LineStyle.Solid,
+          lineStyle: spec.type === 'ema' ? LineStyle.Dashed : LineStyle.Solid,
           title: spec.label,
           lastValueVisible: true,
           priceLineVisible: false,
@@ -330,35 +328,86 @@ export default function CandleChart({
 
     if (showForceLine) {
       const force = computeForceLine(sorted)
+
+      // 세력선: 구간별 색상 변화 (초록=매수세, 빨강=매도세) — 연속된 하나의 선처럼 보이도록 세그먼트 분리
       if (force.center.length) {
-        const centerSeries = chart.addSeries(LineSeries, {
-          color: '#22c55e',
-          lineWidth: 3,
-          lineStyle: LineStyle.Solid,
-          title: '세력선',
-          lastValueVisible: true,
-          priceLineVisible: false,
+        // 색상별 세그먼트 분리
+        const segments: Array<{ color: string; data: TimeValue[] }> = []
+        let curColor = force.center[0].color || '#22c55e'
+        let curSeg: TimeValue[] = [force.center[0]]
+        for (let i = 1; i < force.center.length; i++) {
+          const pt = force.center[i]
+          const ptColor = pt.color || '#22c55e'
+          if (ptColor !== curColor) {
+            // 이음 처리: 이전 세그먼트 끝에 현재 점 포함 → 선이 끊기지 않음
+            curSeg.push(pt)
+            segments.push({ color: curColor, data: curSeg })
+            curColor = ptColor
+            curSeg = [pt]
+          } else {
+            curSeg.push(pt)
+          }
+        }
+        segments.push({ color: curColor, data: curSeg })
+
+        segments.forEach((seg, idx) => {
+          const s = chart.addSeries(LineSeries, {
+            color: seg.color,
+            lineWidth: 3,
+            lineStyle: LineStyle.Solid,
+            title: idx === 0 ? '세력선' : '',
+            lastValueVisible: idx === segments.length - 1,
+            priceLineVisible: false,
+          })
+          s.setData(seg.data)
         })
-        centerSeries.setData(force.center)
+
+        // 매집 마커 감지: 세력선이 빨강→초록 전환 + 거래량 급증 구간
+        const accumMarkers: any[] = []
+        for (let i = 1; i < force.center.length; i++) {
+          const prev = force.center[i - 1]
+          const cur = force.center[i]
+          const prevColor = prev.color || ''
+          const curColor2 = cur.color || ''
+          if (prevColor === '#ef4444' && curColor2 === '#22c55e') {
+            // 거래량 확인
+            const candle = sorted.find((c) => (toTimestamp(c.date) as any) === cur.time)
+            const vol = candle ? Number(candle.volume) : 0
+            const avgVol = sorted.slice(Math.max(0, i - 20), i).reduce((s, c) => s + Number(c.volume), 0) / Math.min(i, 20)
+            if (vol >= avgVol * 1.5) {
+              accumMarkers.push({
+                time: cur.time,
+                position: 'belowBar',
+                color: '#a855f7',
+                shape: 'circle',
+                text: '매집',
+              })
+            }
+          }
+        }
+        if (accumMarkers.length) {
+          createSeriesMarkers(candleSeries, accumMarkers)
+        }
       }
+
       if (force.upper.length) {
         const upperSeries = chart.addSeries(LineSeries, {
-          color: 'rgba(20,184,166,0.55)',
+          color: 'rgba(20,184,166,0.35)',
           lineWidth: 1,
           lineStyle: LineStyle.Dashed,
-          title: '세력 상단밴드',
-          lastValueVisible: true,
+          title: '',
+          lastValueVisible: false,
           priceLineVisible: false,
         })
         upperSeries.setData(force.upper)
       }
       if (force.lower.length) {
         const lowerSeries = chart.addSeries(LineSeries, {
-          color: 'rgba(20,184,166,0.55)',
+          color: 'rgba(20,184,166,0.35)',
           lineWidth: 1,
           lineStyle: LineStyle.Dashed,
-          title: '세력 하단밴드',
-          lastValueVisible: true,
+          title: '',
+          lastValueVisible: false,
           priceLineVisible: false,
         })
         lowerSeries.setData(force.lower)
@@ -533,9 +582,9 @@ export default function CandleChart({
             {symbolLabel || 'CHART'} · {signalLabel}
           </div>
           <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-            {showMaEmaOverlay && <span style={{ fontSize: 11, padding: '2px 6px', borderRadius: 999, background: 'rgba(245,158,11,0.22)' }}>SMA/EMA</span>}
+            {showMaEmaOverlay && <span style={{ fontSize: 11, padding: '2px 6px', borderRadius: 999, background: 'rgba(245,158,11,0.22)' }}>EMA21 · SMA50 · SMA200</span>}
             {showTradeMarkers && <span style={{ fontSize: 11, padding: '2px 6px', borderRadius: 999, background: 'rgba(59,130,246,0.22)' }}>신호 마커</span>}
-            {showForceLine && <span style={{ fontSize: 11, padding: '2px 6px', borderRadius: 999, background: 'rgba(20,184,166,0.22)' }}>세력선 밴드</span>}
+            {showForceLine && <span style={{ fontSize: 11, padding: '2px 6px', borderRadius: 999, background: 'rgba(20,184,166,0.22)' }}>세력선</span>}
           </div>
         </div>
       )}

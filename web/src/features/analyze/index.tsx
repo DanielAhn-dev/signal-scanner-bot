@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect, useMemo } from 'react'
+import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react'
 import { apiFetch } from '../../lib/api'
 import { formatKrw, formatNumber } from '../../lib/format'
 import { getStocks, type StockItem } from '../../lib/stockCache'
@@ -11,6 +11,7 @@ import ShareModal from '../../components/ShareModal'
 import { useShareManager } from '../../hooks/useShareManager'
 import CandleChart from '../../components/CandleChart'
 import EconomicEventBadge from '../../components/EconomicEventBadge'
+import { LayoutDashboard, TrendingUp, Flag, Activity } from 'lucide-react'
 import type { OhlcvCandle } from '../../lib/types'
 
 function scoreColor(score: number | null): string {
@@ -32,9 +33,45 @@ function advisorStatusStyle(status?: string): { background: string; color: strin
   return { background: 'var(--color-error-bg)', color: 'var(--color-error)' }
 }
 
+function regimeLabel(regime?: string): string {
+  const r = String(regime || '').toLowerCase()
+  if (r === 'risk_on') return '리스크온'
+  if (r === 'risk_off') return '리스크오프'
+  if (r === 'hold') return '중립/HOLD'
+  return '—'
+}
+
+function twoStageActionStyle(action?: string): { background: string; color: string } {
+  const a = String(action || '').toLowerCase()
+  if (a === 'aggressive_buy' || a === 'pilot_buy') {
+    return { background: 'var(--color-success-bg)', color: 'var(--color-success)' }
+  }
+  if (a === 'reduce' || a === 'hold') {
+    return { background: 'var(--color-warning-bg)', color: 'var(--color-warning)' }
+  }
+  return { background: 'var(--color-error-bg)', color: 'var(--color-error)' }
+}
+
 const DIVIDER = (
   <div style={{ borderTop: '1px solid var(--color-border-default)', margin: 'var(--space-4) 0' }} />
 )
+
+/** 차트 토글 상태를 localStorage에 영속 저장하는 훅 */
+function useLocalStorageBool(key: string, defaultValue: boolean): [boolean, (v: boolean) => void] {
+  const [value, setValue] = useState<boolean>(() => {
+    try {
+      const stored = localStorage.getItem(key)
+      return stored !== null ? stored === 'true' : defaultValue
+    } catch {
+      return defaultValue
+    }
+  })
+  const set = useCallback((v: boolean) => {
+    setValue(v)
+    try { localStorage.setItem(key, String(v)) } catch { /* ignore */ }
+  }, [key])
+  return [value, set]
+}
 
 export default function AnalyzePage({ onNavigate }: { onNavigate?: (r: string) => void }) {
   const [query, setQuery] = useState('')
@@ -46,10 +83,11 @@ export default function AnalyzePage({ onNavigate }: { onNavigate?: (r: string) =
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [showExtendedIndicators, setShowExtendedIndicators] = useState(false)
-  const [showChartHud, setShowChartHud] = useState(true)
-  const [showMaEmaOverlay, setShowMaEmaOverlay] = useState(true)
-  const [showTradeMarkers, setShowTradeMarkers] = useState(true)
-  const [showForceLine, setShowForceLine] = useState(false)
+  // 차트 토글 — localStorage에 저장, 기본값: HUD만 켜짐 / MA·세력선은 꺼짐
+  const [showChartHud, setShowChartHud] = useLocalStorageBool('chart.showHud', true)
+  const [showMaEmaOverlay, setShowMaEmaOverlay] = useLocalStorageBool('chart.showMaEma', false)
+  const [showTradeMarkers, setShowTradeMarkers] = useLocalStorageBool('chart.showMarkers', true)
+  const [showForceLine, setShowForceLine] = useLocalStorageBool('chart.showForce', false)
   const [showPersonalized, setShowPersonalized] = useState(false)
   const [quickStocks, setQuickStocks] = useState<Array<{ code: string; name: string }>>([])
   const inputRef = useRef<HTMLInputElement>(null)
@@ -254,6 +292,7 @@ export default function AnalyzePage({ onNavigate }: { onNavigate?: (r: string) =
       const advisorParts = [
         advisor?.statusLabel ? `AI 판정 ${advisor.statusLabel}` : null,
         advisor?.finalScore != null ? `${formatNumber(advisor.finalScore, 1)}점` : null,
+        advisor?.twoStage?.actionLabel ? `실행 ${advisor.twoStage.actionLabel}` : null,
       ].filter(Boolean) as string[]
       if (advisorParts.length > 0) {
         lines.push(advisorParts.join(' · '))
@@ -290,6 +329,7 @@ export default function AnalyzePage({ onNavigate }: { onNavigate?: (r: string) =
   }, [candles])
 
   const signalText = useMemo(() => {
+    if (advisor?.twoStage?.actionLabel) return `${advisor.twoStage.actionLabel} (${advisor?.statusLabel || '대기'})`
     const status = String(advisor?.status || '').toLowerCase()
     if (status === 'strong_buy' || status === 'buy-now') return '강력매수'
     if (status === 'buy' || status === 'buy-on-pullback') return '매수'
@@ -543,7 +583,7 @@ export default function AnalyzePage({ onNavigate }: { onNavigate?: (r: string) =
           {DIVIDER}
 
           {/* ── 수급/기술 ── */}
-          <div className="flex-between" style={{ marginBottom: 'var(--space-2)' }}>
+          <div className="flex-between" style={{ marginBottom: 'var(--space-3)', alignItems: 'center' }}>
             <div className="title-md">수급/기술</div>
             <button
               className="btn btn-sm"
@@ -583,7 +623,7 @@ export default function AnalyzePage({ onNavigate }: { onNavigate?: (r: string) =
           </div>
 
           {/* ── 공매도 / 신용 ── */}
-          <div className="title-md" style={{ marginTop: 'var(--space-4)', marginBottom: 'var(--space-2)' }}>공매도 / 신용</div>
+          <div className="title-md" style={{ marginTop: 'var(--space-6)', marginBottom: 'var(--space-3)' }}>공매도 / 신용</div>
           <div className="cards-grid cols-3">
             {([
               {
@@ -624,40 +664,113 @@ export default function AnalyzePage({ onNavigate }: { onNavigate?: (r: string) =
           {candles.length > 0 && (
             <>
               {DIVIDER}
-              <div className="flex-between" style={{ marginBottom: 'var(--space-3)' }}>
+              <div className="flex-between" style={{ marginBottom: 'var(--space-2)', alignItems: 'flex-start' }}>
                 <div className="title-md">가격 차트</div>
-                <div style={{ display: 'flex', gap: 'var(--space-2)', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+                <div style={{
+                  display: 'flex',
+                  gap: '6px',
+                  flexWrap: 'wrap',
+                  justifyContent: 'flex-end',
+                  background: 'var(--color-bg-sunken)',
+                  border: '1px solid var(--color-border-default)',
+                  borderRadius: 999,
+                  padding: '4px',
+                }}>
                   <button
-                    className="btn btn-sm"
+                    className="btn"
                     type="button"
                     onClick={() => setShowChartHud((v) => !v)}
                     aria-pressed={showChartHud}
+                    title="HUD"
+                    style={{
+                      height: 28,
+                      minWidth: 70,
+                      padding: '0 10px',
+                      fontSize: '12px',
+                      borderRadius: 999,
+                      border: '1px solid var(--color-border-default)',
+                      background: showChartHud ? 'var(--color-info-bg)' : 'var(--color-bg-surface)',
+                      color: showChartHud ? 'var(--color-info)' : 'var(--color-text-secondary)',
+                      fontWeight: 'var(--font-weight-semibold)',
+                      lineHeight: 1,
+                    }}
                   >
-                    {showChartHud ? 'HUD 끄기' : 'HUD 켜기'}
+                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                      <LayoutDashboard size={14} />
+                      HUD
+                    </span>
                   </button>
                   <button
-                    className="btn btn-sm"
+                    className="btn"
                     type="button"
                     onClick={() => setShowMaEmaOverlay((v) => !v)}
                     aria-pressed={showMaEmaOverlay}
+                    title="EMA21/SMA50/SMA200"
+                    style={{
+                      height: 28,
+                      minWidth: 78,
+                      padding: '0 10px',
+                      fontSize: '12px',
+                      borderRadius: 999,
+                      border: '1px solid var(--color-border-default)',
+                      background: showMaEmaOverlay ? 'var(--color-warning-bg)' : 'var(--color-bg-surface)',
+                      color: showMaEmaOverlay ? 'var(--color-warning)' : 'var(--color-text-secondary)',
+                      fontWeight: 'var(--font-weight-semibold)',
+                      lineHeight: 1,
+                    }}
                   >
-                    {showMaEmaOverlay ? 'MA/EMA 끄기' : 'MA/EMA 켜기'}
+                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                      <TrendingUp size={14} />
+                      MA
+                    </span>
                   </button>
                   <button
-                    className="btn btn-sm"
+                    className="btn"
                     type="button"
                     onClick={() => setShowTradeMarkers((v) => !v)}
                     aria-pressed={showTradeMarkers}
+                    title="신호 마커"
+                    style={{
+                      height: 28,
+                      minWidth: 78,
+                      padding: '0 10px',
+                      fontSize: '12px',
+                      borderRadius: 999,
+                      border: '1px solid var(--color-border-default)',
+                      background: showTradeMarkers ? 'var(--color-success-bg)' : 'var(--color-bg-surface)',
+                      color: showTradeMarkers ? 'var(--color-success)' : 'var(--color-text-secondary)',
+                      fontWeight: 'var(--font-weight-semibold)',
+                      lineHeight: 1,
+                    }}
                   >
-                    {showTradeMarkers ? '신호 마커 끄기' : '신호 마커 켜기'}
+                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                      <Flag size={14} />
+                      마커
+                    </span>
                   </button>
                   <button
-                    className="btn btn-sm"
+                    className="btn"
                     type="button"
                     onClick={() => setShowForceLine((v) => !v)}
                     aria-pressed={showForceLine}
+                    title="세력선"
+                    style={{
+                      height: 28,
+                      minWidth: 76,
+                      padding: '0 10px',
+                      fontSize: '12px',
+                      borderRadius: 999,
+                      border: '1px solid var(--color-border-default)',
+                      background: showForceLine ? 'var(--color-success-bg)' : 'var(--color-bg-surface)',
+                      color: showForceLine ? 'var(--color-success)' : 'var(--color-text-secondary)',
+                      fontWeight: 'var(--font-weight-semibold)',
+                      lineHeight: 1,
+                    }}
                   >
-                    {showForceLine ? '세력선 끄기' : '세력선 켜기'}
+                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                      <Activity size={14} />
+                      세력
+                    </span>
                   </button>
                 </div>
               </div>
@@ -665,8 +778,11 @@ export default function AnalyzePage({ onNavigate }: { onNavigate?: (r: string) =
                 <div className="cards-grid cols-3" style={{ marginBottom: 'var(--space-3)' }}>
                   {([
                     ['신호', signalText],
+                    ['1단계 레짐', regimeLabel(advisor?.twoStage?.regime)],
+                    ['2단계 실행', advisor?.twoStage?.actionLabel ?? '—'],
                     ['지지 (최근 20봉)', chartHud.support != null ? formatKrw(chartHud.support) : '—'],
                     ['저항 (최근 20봉)', chartHud.resistance != null ? formatKrw(chartHud.resistance) : '—'],
+                    ['권장 비중', advisor?.twoStage?.allocationPct != null ? `${formatNumber(advisor.twoStage.allocationPct, 0)}%` : '—'],
                     ['손절', advisor?.stopPrice != null ? formatKrw(advisor.stopPrice) : '—'],
                     ['1차 익절', advisor?.target1 != null ? formatKrw(advisor.target1) : '—'],
                     ['진입구간', advisor?.entryLow != null && advisor?.entryHigh != null ? `${formatKrw(advisor.entryLow)} ~ ${formatKrw(advisor.entryHigh)}` : '—'],
@@ -776,8 +892,42 @@ export default function AnalyzePage({ onNavigate }: { onNavigate?: (r: string) =
                     }}>
                       {advisor.statusLabel ?? '—'}
                     </span>
+                    <span style={{
+                      display: 'inline-block',
+                      padding: '0.2rem 0.75rem',
+                      borderRadius: 999,
+                      fontWeight: 'var(--font-weight-semibold)',
+                      fontSize: 'var(--font-size-sm)',
+                      background: advisor?.twoStage?.regime === 'risk_on'
+                        ? 'var(--color-success-bg)'
+                        : advisor?.twoStage?.regime === 'risk_off'
+                          ? 'var(--color-error-bg)'
+                          : 'var(--color-warning-bg)',
+                      color: advisor?.twoStage?.regime === 'risk_on'
+                        ? 'var(--color-success)'
+                        : advisor?.twoStage?.regime === 'risk_off'
+                          ? 'var(--color-error)'
+                          : 'var(--color-warning)',
+                    }}>
+                      1단계 {regimeLabel(advisor?.twoStage?.regime)}
+                    </span>
+                    <span style={{
+                      display: 'inline-block',
+                      padding: '0.2rem 0.75rem',
+                      borderRadius: 999,
+                      fontWeight: 'var(--font-weight-semibold)',
+                      fontSize: 'var(--font-size-sm)',
+                      ...twoStageActionStyle(advisor?.twoStage?.action),
+                    }}>
+                      2단계 {advisor?.twoStage?.actionLabel ?? '관망'}
+                    </span>
                   </div>
                   {advisor.signalReason && <div className="caption" style={{ marginBottom: 'var(--space-1)' }}>신호 근거: {advisor.signalReason}</div>}
+                  {advisor?.twoStage?.reason && (
+                    <div className="caption" style={{ marginBottom: 'var(--space-1)' }}>
+                      합성 근거: {advisor.twoStage.reason} · 권장 비중 {advisor?.twoStage?.allocationPct != null ? `${formatNumber(advisor.twoStage.allocationPct, 0)}%` : '—'}
+                    </div>
+                  )}
                   {advisor.summary && <div className="caption">{advisor.summary}</div>}
                 </div>
 

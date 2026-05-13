@@ -61,6 +61,9 @@ type PerShareMetrics = {
 
 type AdvisorSignalStatus = 'strong_buy' | 'buy' | 'watch' | 'partial_sell' | 'sell'
 
+type AdvisorRegimeStage = 'risk_off' | 'hold' | 'risk_on'
+type AdvisorExecutionAction = 'aggressive_buy' | 'pilot_buy' | 'hold' | 'reduce' | 'exit'
+
 function resolveAdvisorSignal(input: {
   currentPrice: number | null
   finalScore: number | null
@@ -183,6 +186,108 @@ function resolveAdvisorSignal(input: {
     status: 'watch',
     statusLabel: '관망',
     reason: '진입/익절/손절 트리거 조건 미충족',
+  }
+}
+
+function resolveTwoStageAction(input: {
+  signalStatus: AdvisorSignalStatus
+  finalScore: number | null
+  technicalScore: number | null
+  currentPrice: number | null
+  entryLow: number | null
+  entryHigh: number | null
+  riskReward: number | null
+  conviction: number | null
+  sma20: number | null
+  sma50: number | null
+}): {
+  regime: AdvisorRegimeStage
+  action: AdvisorExecutionAction
+  actionLabel: string
+  allocationPct: number
+  reason: string
+} {
+  const score = Number.isFinite(Number(input.finalScore)) ? Number(input.finalScore) : null
+  const tech = Number.isFinite(Number(input.technicalScore)) ? Number(input.technicalScore) : null
+  const price = Number.isFinite(Number(input.currentPrice)) ? Number(input.currentPrice) : null
+  const s20 = Number.isFinite(Number(input.sma20)) ? Number(input.sma20) : null
+  const s50 = Number.isFinite(Number(input.sma50)) ? Number(input.sma50) : null
+  const rr = Number.isFinite(Number(input.riskReward)) ? Number(input.riskReward) : null
+  const cv = Number.isFinite(Number(input.conviction)) ? Number(input.conviction) : null
+
+  const trendUp = s20 != null && s50 != null ? s20 >= s50 : (tech != null ? tech >= 62 : false)
+  const trendDown = s20 != null && s50 != null ? s20 < s50 : (tech != null ? tech < 45 : false)
+  const inEntry =
+    price != null && input.entryLow != null && input.entryHigh != null
+      ? price >= Number(input.entryLow) && price <= Number(input.entryHigh)
+      : false
+
+  let regime: AdvisorRegimeStage = 'hold'
+  if (trendDown || (score != null && score < 45)) {
+    regime = 'risk_off'
+  } else if (trendUp && score != null && score >= 64) {
+    regime = 'risk_on'
+  }
+
+  if (input.signalStatus === 'sell') {
+    return {
+      regime: 'risk_off',
+      action: 'exit',
+      actionLabel: '청산',
+      allocationPct: 0,
+      reason: '2단계 신호가 손절/매도 조건을 충족',
+    }
+  }
+
+  if (input.signalStatus === 'partial_sell') {
+    return {
+      regime,
+      action: 'reduce',
+      actionLabel: '비중축소',
+      allocationPct: 25,
+      reason: '목표가 도달 구간으로 분할 익절 우선',
+    }
+  }
+
+  if (regime === 'risk_on' && input.signalStatus === 'strong_buy') {
+    return {
+      regime,
+      action: 'aggressive_buy',
+      actionLabel: '공격매수',
+      allocationPct: 100,
+      reason: '1단계 레짐 우호 + 2단계 강력매수 동시 충족',
+    }
+  }
+
+  if (regime === 'risk_on' && input.signalStatus === 'buy') {
+    return {
+      regime,
+      action: 'aggressive_buy',
+      actionLabel: '매수',
+      allocationPct: 70,
+      reason: '상승 레짐에서 진입 신호가 확인됨',
+    }
+  }
+
+  if ((input.signalStatus === 'strong_buy' || input.signalStatus === 'buy') && (regime === 'hold' || regime === 'risk_off')) {
+    const qualityOk = (rr == null || rr >= 1.2) && (cv == null || cv >= 58)
+    return {
+      regime,
+      action: qualityOk && inEntry ? 'pilot_buy' : 'hold',
+      actionLabel: qualityOk && inEntry ? '시험진입' : '관망',
+      allocationPct: qualityOk && inEntry ? (regime === 'hold' ? 40 : 30) : 0,
+      reason: qualityOk && inEntry
+        ? '레짐 보수 구간이므로 축소 비중으로만 진입'
+        : '레짐/진입 품질 필터 미충족으로 관망',
+    }
+  }
+
+  return {
+    regime,
+    action: 'hold',
+    actionLabel: '관망',
+    allocationPct: 0,
+    reason: '레짐/트리거 합성 결과 대기 구간',
   }
 }
 
@@ -772,8 +877,9 @@ function computeRealCreditShortAdjustment(input: {
   creditRatio: number | null
   shortRatio: number | null
 }): { scoreAdj: number; reasons: string[] } {
-  const credit = Number.isFinite(Number(input.creditRatio)) ? Number(input.creditRatio) : null
-  const short = Number.isFinite(Number(input.shortRatio)) ? Number(input.shortRatio) : null
+  // 0은 데이터 없음으로 간주 — 0.00%가 실제 0이 아니라 미집계인 경우가 대부분
+  const credit = (Number.isFinite(Number(input.creditRatio)) && Number(input.creditRatio) > 0) ? Number(input.creditRatio) : null
+  const short = (Number.isFinite(Number(input.shortRatio)) && Number(input.shortRatio) > 0) ? Number(input.shortRatio) : null
 
   let adj = 0
   const reasons: string[] = []
@@ -823,6 +929,8 @@ async function buildAdvisorPayload(input: {
   creditShortProxy: CreditShortProxy | null
   hasRealCreditShort: boolean
   perShareMetrics: PerShareMetrics
+  resolvedCreditRatio?: number | null
+  resolvedShortRatio?: number | null
 }) {
   const {
     supabase,
@@ -835,6 +943,8 @@ async function buildAdvisorPayload(input: {
     creditShortProxy,
     hasRealCreditShort,
     perShareMetrics,
+    resolvedCreditRatio,
+    resolvedShortRatio,
   } = input
   const currentPrice = asNum(realtimePrice) ?? asNum(latest?.close ?? stock?.close)
   if (currentPrice == null) return null
@@ -908,9 +1018,10 @@ async function buildAdvisorPayload(input: {
           : 0
       : 0
 
+  // resolvedCreditRatio/shortRatio: creditShort DB/live 값 우선, 없으면 stock 컬럼 fallback
   const realCreditShort = computeRealCreditShortAdjustment({
-    creditRatio: asNum((stock as any)?.credit_ratio),
-    shortRatio: asNum((stock as any)?.short_ratio),
+    creditRatio: resolvedCreditRatio !== undefined ? resolvedCreditRatio : asNum((stock as any)?.credit_ratio),
+    shortRatio: resolvedShortRatio !== undefined ? resolvedShortRatio : asNum((stock as any)?.short_ratio),
   })
 
   const finalScoreAdjusted =
@@ -937,6 +1048,19 @@ async function buildAdvisorPayload(input: {
     conviction: plan.conviction,
   })
 
+  const twoStage = resolveTwoStageAction({
+    signalStatus: normalizedSignal.status,
+    finalScore: finalScoreAdjusted,
+    technicalScore: fallbackScore ?? null,
+    currentPrice,
+    entryLow: plan.entryLow,
+    entryHigh: plan.entryHigh,
+    riskReward: plan.riskReward,
+    conviction: plan.conviction,
+    sma20: asNum(fallbackFactors?.sma20),
+    sma50: asNum(fallbackFactors?.sma50),
+  })
+
   let personalLines: string[] = []
   if (chatId) {
     personalLines = await (async () => {
@@ -960,6 +1084,7 @@ async function buildAdvisorPayload(input: {
     status: normalizedSignal.status,
     statusLabel: normalizedSignal.statusLabel,
     signalReason: normalizedSignal.reason,
+    twoStage,
     summary: plan.summary,
     entryLow: plan.entryLow,
     entryHigh: plan.entryHigh,
@@ -1256,6 +1381,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       creditShortProxy: creditShort?.proxyRisk ?? null,
       hasRealCreditShort: !!creditShort && creditShort.source !== 'proxy',
       perShareMetrics,
+        resolvedCreditRatio: creditShort?.creditRatio ?? null,
+        resolvedShortRatio: creditShort?.shortRatio ?? null,
     })
 
     return res.status(200).json({
