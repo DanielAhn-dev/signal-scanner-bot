@@ -918,13 +918,14 @@ html, body, #root {
   }
 
   /* ================================================================
-     SECTOR TAB BUTTON
+     SECTOR TAB BUTTON — Toss Design System
      ================================================================ */
   .sector-tab-btn {
     @apply inline-flex items-center cursor-pointer;
-    @apply px-4 py-2;
-    @apply rounded-full;
-    border: 1.5px solid var(--color-border-default);
+    @apply px-3 py-2;
+    @apply rounded-none;
+    border: none;
+    border-bottom: 2px solid transparent;
     background: transparent;
     color: var(--color-text-secondary);
     @apply text-sm;
@@ -932,13 +933,12 @@ html, body, #root {
     transition: all var(--duration-fast) var(--ease-out);
   }
   .sector-tab-btn:hover {
-    border-color: var(--color-brand-muted);
     color: var(--color-text-primary);
   }
   .sector-tab-btn--active {
-    background: var(--color-brand-subtle, var(--color-blue-50));
-    border-color: var(--color-brand-muted, var(--color-blue-200));
-    color: var(--color-brand, var(--color-blue-600));
+    background: transparent;
+    border-bottom-color: var(--color-text-primary);
+    color: var(--color-text-primary);
     @apply font-semibold;
   }
 
@@ -1164,25 +1164,32 @@ html, body, #root {
 .state-error-title { @apply font-semibold; @apply text-sm; }
 
 /* ================================================================
-   SECTOR CHIPS / TAG LIST
+   SECTOR CHIPS / TAG LIST — Toss Design System (Minimal)
    ================================================================ */
 .tag-list {
   @apply flex flex-wrap;
-  gap: var(--space-2);
+  gap: var(--space-1);
 }
 .tag {
   @apply inline-flex items-center cursor-pointer;
-  @apply px-3 py-1;
-  @apply rounded-full;
-  border: 1px solid var(--color-border-default);
+  @apply px-3 py-2;
+  @apply rounded-none;
+  border: none;
+  border-bottom: 2px solid transparent;
   @apply text-xs;
   @apply font-medium;
-  background: var(--color-bg-surface);
+  background: transparent;
   color: var(--color-text-secondary);
-  transition: background var(--duration-fast) var(--ease-out), border-color var(--duration-fast) var(--ease-out);
+  transition: color var(--duration-fast) var(--ease-out), border-color var(--duration-fast) var(--ease-out);
 }
-.tag:hover { background: var(--color-bg-sunken); border-color: var(--color-border-strong); }
-.tag.active { background: var(--color-brand-subtle); border-color: var(--color-brand); color: var(--color-brand); }
+.tag:hover { 
+  color: var(--color-text-primary);
+}
+.tag.active { 
+  border-bottom-color: var(--color-text-primary);
+  color: var(--color-text-primary); 
+  font-weight: 500;
+}
 
 /* ================================================================
    STAT CARD (??쒕낫???섏튂 移대뱶)
@@ -1516,7 +1523,7 @@ html, body, #root {
 
 .portfolio-segment-list .tag {
   @apply justify-center;
-  min-width: 5.5rem;
+  min-width: auto;
 }
 
 .portfolio-search-row {
