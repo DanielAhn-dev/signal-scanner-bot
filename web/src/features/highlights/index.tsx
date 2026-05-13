@@ -7,6 +7,7 @@ import Skeleton from '../../components/Skeleton'
 import { EmptyState, ErrorState } from '../../components/StateViews'
 import { useToast } from '../../components/ToastProvider'
 import ShareModal from '../../components/ShareModal'
+import EconomicEventBadge from '../../components/EconomicEventBadge'
 import { useShareManager } from '../../hooks/useShareManager'
 import { defaultPlanItem, saveSimulationPlan, type HighlightPlanItem } from '../simulator/planStore'
 
@@ -133,7 +134,7 @@ function navigateTo(route: string) {
   }
 }
 
-export default function HighlightsPage() {
+export default function HighlightsPage({ onNavigate }: { onNavigate?: (r: string) => void }) {
   const [items, setItems] = React.useState<HighlightItem[]>([])
   const [loading, setLoading] = React.useState(true)
   const [error, setError] = React.useState<string | null>(null)
@@ -272,6 +273,7 @@ export default function HighlightsPage() {
   return (
     <div className="container-app">
       <div className="title-xl">하이라이트</div>
+      <EconomicEventBadge onNavigateToCalendar={() => onNavigate?.('economy')} />
       <div className="muted mb-4">오늘의 최종 진입 후보를 고르고 바로 배분/수익 시뮬레이션으로 넘길 수 있습니다.</div>
 
       <div className="card mb-4">

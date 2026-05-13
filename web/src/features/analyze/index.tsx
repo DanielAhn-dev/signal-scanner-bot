@@ -10,6 +10,7 @@ import { useToast } from '../../components/ToastProvider'
 import ShareModal from '../../components/ShareModal'
 import { useShareManager } from '../../hooks/useShareManager'
 import CandleChart from '../../components/CandleChart'
+import EconomicEventBadge from '../../components/EconomicEventBadge'
 import type { OhlcvCandle } from '../../lib/types'
 
 function scoreColor(score: number | null): string {
@@ -35,7 +36,7 @@ const DIVIDER = (
   <div style={{ borderTop: '1px solid var(--color-border-default)', margin: 'var(--space-4) 0' }} />
 )
 
-export default function AnalyzePage() {
+export default function AnalyzePage({ onNavigate }: { onNavigate?: (r: string) => void }) {
   const [query, setQuery] = useState('')
   const [result, setResult] = useState<any | null>(null)
   const [candles, setCandles] = useState<OhlcvCandle[]>([])
@@ -317,6 +318,7 @@ export default function AnalyzePage() {
   return (
     <section className="container-app">
       <h1 className="title-xl">종목 분석</h1>
+      <EconomicEventBadge onNavigateToCalendar={() => onNavigate?.('economy')} />
 
       <div className="card mb-4">
         <div className="muted" style={{ marginBottom: 'var(--space-3)' }}>

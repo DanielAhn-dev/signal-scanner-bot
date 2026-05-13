@@ -8,6 +8,7 @@ import { useToast } from '../../components/ToastProvider'
 import Pagination from '../../components/Pagination'
 import useWatchlistActions from '../../hooks/useWatchlistActions'
 import ShareModal from '../../components/ShareModal'
+import EconomicEventBadge from '../../components/EconomicEventBadge'
 import { useShareManager } from '../../hooks/useShareManager'
 
 const SCAN_SNAPSHOT_KEY = 'scan_snapshot_v1'
@@ -567,6 +568,13 @@ export default function ScanPage({ onNavigate }: { onNavigate?: (r: string) => v
             >
               <option value="10">카드 TOP 10</option>
               <option value="20">카드 TOP 20</option>
+              <option value="30">카드 TOP 30</option>
+            </select>
+          )}
+        </div>
+      </div>
+
+      <EconomicEventBadge onNavigateToCalendar={() => onNavigate?.('economy')} />
               <option value="30">카드 TOP 30</option>
             </select>
           )}

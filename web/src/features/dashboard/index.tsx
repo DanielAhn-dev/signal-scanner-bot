@@ -5,6 +5,7 @@ import Button from '../../components/ui/Button'
 import Skeleton from '../../components/Skeleton'
 import { ErrorState } from '../../components/StateViews'
 import TelegramLinkCallout from '../../components/TelegramLinkCallout'
+import EconomicEventBadge from '../../components/EconomicEventBadge'
 import { requestOpenProfileModal } from '../../lib/profileModal'
 import { useDashboardSummary, useSectors } from '../../lib/queries'
 import type { DashboardSummary, SectorItem } from '../../lib/types'
@@ -81,7 +82,7 @@ export default function Dashboard({ onNavigate }: { onNavigate?: (r: string) => 
         </div>
       </div>
 
-      {summaryError && <ErrorState message="요약 데이터 로드 실패" onRetry={handleRefresh} />}
+      <EconomicEventBadge onNavigateToCalendar={() => go('economy')} />
 
       {!chatId && (
         <div className="mb-4">

@@ -3,6 +3,7 @@ import { apiFetch } from "../../lib/api"
 import Button from "../../components/ui/Button"
 import Skeleton from "../../components/Skeleton"
 import { ErrorState } from "../../components/StateViews"
+import EconomicEventBadge from "../../components/EconomicEventBadge"
 
 const SECTORS_TTL = 60_000
 const LS_KEY = "ls_sectors_page"
@@ -242,6 +243,7 @@ export default function SectorsPage({ onNavigate }: { onNavigate?: (r: string) =
           {loading ? "⟳ 새로고침 중…" : "새로고침"}
         </Button>
       </div>
+      <EconomicEventBadge onNavigateToCalendar={() => onNavigate?.('economy')} />
       {loading && all.length > 0 && (
         <div className="muted" style={{ marginBottom: "var(--space-3)", fontSize: "var(--font-size-sm)" }}>
           섹터 데이터를 불러오는 중입니다…

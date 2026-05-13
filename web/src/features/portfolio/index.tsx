@@ -8,6 +8,7 @@ import Modal from '../../components/Modal'
 import { EmptyState, ErrorState } from '../../components/StateViews'
 import { useToast } from '../../components/ToastProvider'
 import Pagination from '../../components/Pagination'
+import EconomicEventBadge from '../../components/EconomicEventBadge'
 
 type PortfolioShareHistoryItem = {
   shareId: string
@@ -953,6 +954,7 @@ export default function Portfolio() {
         <div className="portfolio-title-wrap">
           <h1 className="title-xl portfolio-title">가상 포트폴리오</h1>
           <p className="portfolio-subtitle">보유 포지션만 집중해서 관리합니다.</p>
+          <EconomicEventBadge onNavigateToCalendar={() => {}} />
         </div>
         <div className="portfolio-head-actions">
           <span className="caption muted portfolio-head-updated">
