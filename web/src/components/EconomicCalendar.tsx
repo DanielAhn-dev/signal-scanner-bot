@@ -138,14 +138,18 @@ function EventItem({ event }: { event: EconomicEvent }) {
           alignItems: 'flex-start',
           justifyContent: 'space-between',
           gap: 'var(--space-3)',
-          padding: 'var(--space-4) var(--space-5)',
-          background: 'none',
+          padding: 'var(--space-3) var(--space-4)',
+          background: 'transparent',
           border: 'none',
+          borderBottom: '1px solid var(--color-border-default)',
           cursor: 'pointer',
           textAlign: 'left',
           WebkitTapHighlightColor: 'transparent',
-          minHeight: 60,
+          minHeight: 50,
+          transition: 'background var(--duration-fast) var(--ease-out)',
         }}
+        onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--color-bg-surface)')}
+        onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
       >
         <div style={{ flex: 1, minWidth: 0 }}>
           {/* 이벤트명 */}
