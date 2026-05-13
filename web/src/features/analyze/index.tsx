@@ -50,6 +50,7 @@ export default function AnalyzePage({ onNavigate }: { onNavigate?: (r: string) =
   const [showMaEmaOverlay, setShowMaEmaOverlay] = useState(true)
   const [showTradeMarkers, setShowTradeMarkers] = useState(true)
   const [showForceLine, setShowForceLine] = useState(false)
+  const [showPersonalized, setShowPersonalized] = useState(false)
   const [quickStocks, setQuickStocks] = useState<Array<{ code: string; name: string }>>([])
   const inputRef = useRef<HTMLInputElement>(null)
   const toast = useToast()
@@ -75,6 +76,32 @@ export default function AnalyzePage({ onNavigate }: { onNavigate?: (r: string) =
     }
     void load()
   }, [])
+
+  // 데이터 신뢰성 검증
+  const dataValidation = useMemo(() => {
+    if (!result || !advisor) return { isReliable: true, warnings: [] as string[] }
+    
+    const warnings: string[] = []
+    const currentPrice = result.close ?? 0
+    const entryMid = advisor.entryLow != null && advisor.entryHigh != null
+      ? (advisor.entryLow + advisor.entryHigh) / 2
+      : null
+    
+    // 진입가와 현재가의 갭 검증 (스케일링 이슈)
+    if (entryMid && currentPrice > 0) {
+      const ratio = Math.max(currentPrice, entryMid) / Math.min(currentPrice, entryMid)
+      if (ratio > 3) {
+        warnings.push(`진입가와 현재가의 갭이 큼 (비율: ${ratio.toFixed(1)}배). DB 데이터 동기화 확인 필요`)
+      } else if (ratio > 2) {
+        warnings.push(`진입가와 현재가의 차이가 예상보다 큼 (비율: ${ratio.toFixed(1)}배)`)
+      }
+    }
+    
+    return {
+      isReliable: warnings.length === 0,
+      warnings,
+    }
+  }, [result, advisor])
 
   // 서버에서 내려온 값을 직접 사용한다. 클라이언트 재계산은 서버와 불일치를 유발한다.
   const computedSma20 = result?.sma20 ?? null
@@ -663,7 +690,37 @@ export default function AnalyzePage({ onNavigate }: { onNavigate?: (r: string) =
           {advisor && (
             <>
               {DIVIDER}
-              <div className="title-md" style={{ marginBottom: 'var(--space-3)' }}>Nexora 어드바이저</div>
+              <div className="flex-between" style={{ marginBottom: 'var(--space-3)' }}>
+                <div className="title-md">Nexora 어드바이저</div>
+                <div style={{ display: 'flex', gap: 'var(--space-2)', alignItems: 'center', flexWrap: 'wrap' }}>
+                  {dataValidation.warnings.length > 0 && (
+                    <span style={{
+                      display: 'inline-block',
+                      padding: '0.2rem 0.75rem',
+                      borderRadius: 999,
+                      fontWeight: 'var(--font-weight-semibold)',
+                      fontSize: 'var(--font-size-sm)',
+                      background: 'var(--color-warning-bg)',
+                      color: 'var(--color-warning)',
+                      title: dataValidation.warnings.join('; '),
+                      cursor: 'help',
+                    }}>
+                      ⚠️ 데이터 검증 필요
+                    </span>
+                  )}
+                  {(Array.isArray(advisor.personalLines) && advisor.personalLines.length > 0) && (
+                    <button
+                      className="btn btn-sm"
+                      type="button"
+                      onClick={() => setShowPersonalized((v) => !v)}
+                      aria-pressed={showPersonalized}
+                      style={{ fontWeight: 'var(--font-weight-semibold)' }}
+                    >
+                      {showPersonalized ? '👤 MY 숨기기' : '👤 MY'}
+                    </button>
+                  )}
+                </div>
+              </div>
               <div className="card" style={{ background: 'var(--color-bg-sunken)' }}>
 
                 {/* 점수 + 프로그레스 바 */}
@@ -827,7 +884,7 @@ export default function AnalyzePage({ onNavigate }: { onNavigate?: (r: string) =
                 )}
 
                 {/* 내 상황 제안 */}
-                {Array.isArray(advisor.personalLines) && advisor.personalLines.length > 0 && (
+                {showPersonalized && Array.isArray(advisor.personalLines) && advisor.personalLines.length > 0 && (
                   <div>
                     <div className="stat-label">내 상황 제안</div>
                     {advisor.personalLines.map((line: string, i: number) => (

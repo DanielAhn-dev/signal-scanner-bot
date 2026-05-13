@@ -147,6 +147,7 @@ export default function Portfolio() {
   const [maintAccountName, setMaintAccountName] = useState('')
   const [maintLoading, setMaintLoading] = useState(false)
   const [maintError, setMaintError] = useState<string | null>(null)
+  const [maintStep, setMaintStep] = useState<1 | 2>(1)
   const [macroLoading, setMacroLoading] = useState(false)
   const [macroSnapshot, setMacroSnapshot] = useState<any | null>(null)
   const toast = useToast()
@@ -702,6 +703,7 @@ export default function Portfolio() {
       setMaintQty(1)
       setMaintBrokerName('')
       setMaintAccountName('')
+      setMaintStep(1)
     }
     setMaintModalOpen(true)
   }
@@ -731,8 +733,8 @@ export default function Portfolio() {
         toast.show(`보유 종목 ${Number(json?.soldCount || 0)}건 전체매도 처리 완료`)
       } else if (maintMode === 'holdingrestore') {
         const label = json?.data?.stock_name || json?.data?.code || maintCode
-        const action = json?.created ? '신규 복구' : '기존 포지션 수정'
-        toast.show(`${label} 보유복구(${action}) 완료 ✓`)
+        const action = json?.created ? '신규 추가' : '기존 포지션 수정'
+        toast.show(`${label} 계좌/보유 저장(${action}) 완료 ✓`)
       } else {
         toast.show('보유수정 완료 ✓')
       }
@@ -979,7 +981,7 @@ export default function Portfolio() {
 
           <div className="portfolio-head-maintenance" role="group" aria-label="포트폴리오 유지보수 작업">
             <Button variant="ghost" size="sm" onClick={() => openMaintenanceModal('holdingrestore')} disabled={loading}>
-              보유복구
+              계좌/보유 추가
             </Button>
             <Button variant="ghost" size="sm" onClick={() => openMaintenanceModal('liquidateall')} disabled={loading || holdingAll.length === 0}>
               전체매도
@@ -1210,9 +1212,9 @@ export default function Portfolio() {
               ))}
               {accountFolders.length === 0 && (
                 <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', flexWrap: 'wrap' }}>
-                  <span className="caption muted">등록된 계좌 폴더가 없습니다. 상단 유지보수의 보유복구에서 계좌/종목을 바로 추가할 수 있습니다.</span>
+                  <span className="caption muted">등록된 계좌 폴더가 없습니다. 상단 유지보수의 계좌/보유 추가에서 계좌와 종목을 바로 등록할 수 있습니다.</span>
                   <Button variant="secondary" size="sm" onClick={() => openMaintenanceModal('holdingrestore')} disabled={loading}>
-                    보유복구 열기
+                    계좌/보유 추가 열기
                   </Button>
                 </div>
               )}
@@ -1367,11 +1369,11 @@ export default function Portfolio() {
           <>
             <EmptyState
               title="보유 포지션 없음"
-              description="상단 유지보수 > 보유복구에서 계좌/종목을 바로 추가할 수 있습니다."
+              description="상단 유지보수 > 계좌/보유 추가에서 계좌와 종목을 바로 등록할 수 있습니다."
             />
             <div style={{ display: 'flex', justifyContent: 'center', marginTop: 'var(--space-3)' }}>
               <Button variant="secondary" onClick={() => openMaintenanceModal('holdingrestore')} disabled={loading}>
-                보유복구(계좌/종목 추가) 열기
+                계좌/보유 추가 열기
               </Button>
             </div>
           </>
@@ -1460,9 +1462,9 @@ export default function Portfolio() {
               )}
 
               <div className="portfolio-actions-row">
-                <Button className="portfolio-action-btn" variant="secondary" onClick={() => openTradeModal(r, 'buy')}>가상매수</Button>
-                <Button className="portfolio-action-btn" variant="secondary" onClick={() => openMaintenanceModal('holdingedit', r)}>보유수정</Button>
-                <Button className="portfolio-action-btn" variant="ghost" onClick={() => openTradeModal(r, 'sell')}>가상매도</Button>
+                <Button className="portfolio-action-btn" variant="secondary" onClick={() => openTradeModal(r, 'buy')}>추가매수</Button>
+                <Button className="portfolio-action-btn" variant="secondary" onClick={() => openMaintenanceModal('holdingedit', r)}>보유 수정</Button>
+                <Button className="portfolio-action-btn" variant="ghost" onClick={() => openTradeModal(r, 'sell')}>매도 · 수익기록</Button>
               </div>
             </div>
           )
@@ -1489,7 +1491,7 @@ export default function Portfolio() {
 
       <Modal
         isOpen={modalOpen}
-        title={`가상${modalSide === 'buy' ? '매수' : '매도'}`}
+        title={modalSide === 'buy' ? '추가매수' : '매도 · 수익기록'}
         onClose={() => setModalOpen(false)}
         size="sm"
       >
@@ -1710,8 +1712,8 @@ export default function Portfolio() {
         isOpen={maintModalOpen}
         title={
           maintMode === 'liquidateall' ? '전체매도' :
-          maintMode === 'holdingrestore' ? '보유복구' :
-          '보유수정'
+          maintMode === 'holdingrestore' ? (maintStep === 1 ? '1단계 · 계좌 설정' : '2단계 · 종목 추가') :
+          '보유 종목 수정'
         }
         onClose={() => setMaintModalOpen(false)}
         size="sm"
@@ -1725,48 +1727,36 @@ export default function Portfolio() {
         {maintMode === 'holdingedit' && (
           <>
             <div className="muted" style={{ marginBottom: 'var(--space-3)' }}>
-              {maintRow?.stock_name || maintCode || '종목'}의 매수가/수량을 재설정합니다.
+              <strong>{maintRow?.stock_name || maintCode || '종목'}</strong>의 매수가/수량/계좌를 수정합니다.
             </div>
             <div className="grid-two" style={{ marginBottom: 'var(--space-3)' }}>
               <Input label="종목코드" value={maintCode} onChange={(e: any) => setMaintCode(String(e?.target?.value || '').toUpperCase())} />
-              <Input label="수량" type="number" value={String(maintQty)} onChange={(e: any) => setMaintQty(Math.max(1, Number(e?.target?.value || 1)))} />
+              <Input label="보유 수량" type="number" value={String(maintQty)} onChange={(e: any) => setMaintQty(Math.max(1, Number(e?.target?.value || 1)))} />
+            </div>
+            <div style={{ marginBottom: 'var(--space-3)' }}>
+              <Input
+                label="평균 매수가 (원)"
+                type="number"
+                value={maintBuyPrice === '' ? '' : String(maintBuyPrice)}
+                onChange={(e: any) => setMaintBuyPrice(e?.target?.value === '' ? '' : Number(e?.target?.value))}
+              />
             </div>
             <div className="grid-two" style={{ marginBottom: 'var(--space-3)' }}>
               <Input label="증권사" placeholder="예) NH, 토스, 삼성" value={maintBrokerName} onChange={(e: any) => setMaintBrokerName(String(e?.target?.value || ''))} />
               <Input label="계좌명" placeholder="예) ISA, 연금, 일반" value={maintAccountName} onChange={(e: any) => setMaintAccountName(String(e?.target?.value || ''))} />
             </div>
-            <Input
-              label="매수가"
-              type="number"
-              value={maintBuyPrice === '' ? '' : String(maintBuyPrice)}
-              onChange={(e: any) => setMaintBuyPrice(e?.target?.value === '' ? '' : Number(e?.target?.value))}
-            />
           </>
         )}
 
-        {maintMode === 'holdingrestore' && (
+        {maintMode === 'holdingrestore' && maintStep === 1 && (
           <>
             <div className="muted" style={{ marginBottom: 'var(--space-3)' }}>
-              누락된 보유 포지션을 복구합니다. 기존 포지션이 있으면 덮어쓰고, 없으면 새로 생성합니다.
-            </div>
-            <div className="grid-two" style={{ marginBottom: 'var(--space-3)' }}>
-              <Input
-                label="종목코드"
-                placeholder="예) 005930"
-                value={maintCode}
-                onChange={(e: any) => setMaintCode(String(e?.target?.value || '').toUpperCase())}
-              />
-              <Input
-                label="수량"
-                type="number"
-                value={String(maintQty)}
-                onChange={(e: any) => setMaintQty(Math.max(1, Number(e?.target?.value || 1)))}
-              />
+              매매 계좌 정보를 입력합니다. 증권사와 계좌명이 계좌 폴더의 기준이 됩니다.
             </div>
             <div className="grid-two" style={{ marginBottom: 'var(--space-3)' }}>
               <Input
                 label="증권사"
-                placeholder="예) NH, 토스, 삼성"
+                placeholder="예) 토스, NH, 삼성"
                 value={maintBrokerName}
                 onChange={(e: any) => setMaintBrokerName(String(e?.target?.value || ''))}
               />
@@ -1777,31 +1767,109 @@ export default function Portfolio() {
                 onChange={(e: any) => setMaintAccountName(String(e?.target?.value || ''))}
               />
             </div>
+            <div className="caption muted" style={{ marginBottom: 'var(--space-3)' }}>
+              예) 증권사: 토스증권 / 계좌명: ISA → 화면에 <strong>토스증권 / ISA</strong> 폴더로 표시됩니다.
+            </div>
+            {maintError && (
+              <div className="state-error" style={{ marginBottom: 'var(--space-3)' }}>
+                <div className="state-error-title">{maintError}</div>
+              </div>
+            )}
+            <div style={{ display: 'flex', gap: 'var(--space-2)' }}>
+              <Button
+                variant="primary"
+                onClick={() => {
+                  if (!String(maintBrokerName || '').trim() && !String(maintAccountName || '').trim()) {
+                    setMaintError('증권사 또는 계좌명을 입력해 주세요')
+                    return
+                  }
+                  setMaintError(null)
+                  setMaintStep(2)
+                }}
+              >
+                다음 → 종목 추가
+              </Button>
+              <Button variant="ghost" onClick={() => setMaintModalOpen(false)}>취소</Button>
+            </div>
+          </>
+        )}
+
+        {maintMode === 'holdingrestore' && maintStep === 2 && (
+          <>
+            <div className="muted" style={{ marginBottom: 'var(--space-3)' }}>
+              계좌: <strong>{[maintBrokerName, maintAccountName].filter(Boolean).join(' / ') || '미지정'}</strong>
+              <br />추가할 종목의 매수 정보를 입력합니다.
+            </div>
+            <div className="grid-two" style={{ marginBottom: 'var(--space-3)' }}>
+              <Input
+                label="종목코드"
+                placeholder="예) 005930"
+                value={maintCode}
+                onChange={(e: any) => setMaintCode(String(e?.target?.value || '').toUpperCase())}
+              />
+              <Input
+                label="보유 수량"
+                type="number"
+                value={String(maintQty)}
+                onChange={(e: any) => setMaintQty(Math.max(1, Number(e?.target?.value || 1)))}
+              />
+            </div>
             <Input
-              label="매수가 (원)"
+              label="평균 매수가 (원)"
               type="number"
               placeholder="예) 75000"
               value={maintBuyPrice === '' ? '' : String(maintBuyPrice)}
               onChange={(e: any) => setMaintBuyPrice(e?.target?.value === '' ? '' : Number(e?.target?.value))}
             />
-            <div className="caption muted" style={{ marginTop: 'var(--space-2)' }}>
-              거래 이력에 ADJUST 로그가 기록됩니다.
+            <div className="caption muted" style={{ marginTop: 'var(--space-2)', marginBottom: 'var(--space-1)' }}>
+              저장 후 가상매도 시 수익/손실이 자동 기록됩니다.
+            </div>
+            {maintError && (
+              <div className="state-error" style={{ marginTop: 'var(--space-2)', marginBottom: 'var(--space-3)' }}>
+                <div className="state-error-title">{maintError}</div>
+              </div>
+            )}
+            <div style={{ display: 'flex', gap: 'var(--space-2)', marginTop: 'var(--space-3)' }}>
+              <Button variant="primary" onClick={runMaintenance} disabled={maintLoading}>
+                {maintLoading ? '저장 중…' : '종목 저장'}
+              </Button>
+              <Button variant="secondary" onClick={() => { setMaintError(null); setMaintStep(1) }}>← 계좌 수정</Button>
+              <Button variant="ghost" onClick={() => setMaintModalOpen(false)}>취소</Button>
             </div>
           </>
         )}
 
-        {maintError && (
-          <div className="state-error" style={{ marginTop: 'var(--space-3)', marginBottom: 'var(--space-3)' }}>
-            <div className="state-error-title">{maintError}</div>
-          </div>
+        {maintMode === 'liquidateall' && (
+          <>
+            {maintError && (
+              <div className="state-error" style={{ marginTop: 'var(--space-3)', marginBottom: 'var(--space-3)' }}>
+                <div className="state-error-title">{maintError}</div>
+              </div>
+            )}
+            <div style={{ display: 'flex', gap: 'var(--space-2)', marginTop: 'var(--space-3)' }}>
+              <Button variant="primary" onClick={runMaintenance} disabled={maintLoading}>
+                {maintLoading ? '처리 중…' : '전체매도 실행'}
+              </Button>
+              <Button variant="ghost" onClick={() => setMaintModalOpen(false)}>취소</Button>
+            </div>
+          </>
         )}
 
-        <div style={{ display: 'flex', gap: 'var(--space-2)', marginTop: 'var(--space-3)' }}>
-          <Button variant="primary" onClick={runMaintenance} disabled={maintLoading}>
-            {maintLoading ? '처리 중…' : '실행'}
-          </Button>
-          <Button variant="ghost" onClick={() => setMaintModalOpen(false)}>취소</Button>
-        </div>
+        {maintMode === 'holdingedit' && (
+          <>
+            {maintError && (
+              <div className="state-error" style={{ marginTop: 'var(--space-3)', marginBottom: 'var(--space-3)' }}>
+                <div className="state-error-title">{maintError}</div>
+              </div>
+            )}
+            <div style={{ display: 'flex', gap: 'var(--space-2)', marginTop: 'var(--space-3)' }}>
+              <Button variant="primary" onClick={runMaintenance} disabled={maintLoading}>
+                {maintLoading ? '저장 중…' : '수정 저장'}
+              </Button>
+              <Button variant="ghost" onClick={() => setMaintModalOpen(false)}>취소</Button>
+            </div>
+          </>
+        )}
       </Modal>
     </section>
   )
