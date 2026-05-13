@@ -166,6 +166,17 @@ a:focus-visible {
   @apply flex flex-col;
   gap: var(--spacing-stack-lg);
 }
+.card-action-btn {
+  width: 100%;
+  border: none;
+  background: inherit;
+  text-align: left;
+  color: inherit;
+}
+.card-action-btn:focus-visible {
+  @apply outline-none;
+  box-shadow: var(--shadow-focus);
+}
 
 
 
@@ -519,14 +530,23 @@ a:focus-visible {
     @apply flex items-center justify-between;
     flex-wrap: wrap;
     row-gap: var(--space-2);
-    @apply cursor-pointer;
     transition: border-color var(--duration-fast) var(--ease-out), box-shadow var(--duration-fast) var(--ease-out);
+  }
+  .sector-row-trigger {
+    @apply w-full flex items-center justify-between;
+    flex-wrap: wrap;
+    row-gap: var(--space-2);
+    background: transparent;
+    border: none;
+    text-align: left;
+    color: inherit;
+    cursor: pointer;
   }
   .sector-row-card:hover {
     border-color: var(--color-brand-muted);
     box-shadow: var(--shadow-sm);
   }
-  .sector-row-card:focus-visible {
+  .sector-row-trigger:focus-visible {
     outline: 2px solid var(--color-border-focus);
     outline-offset: 2px;
   }
@@ -666,9 +686,9 @@ a:focus-visible {
 
 @media (max-width: 639px) {
   .modal-overlay {
-    padding: var(--space-2);
+    padding: var(--space-4);
     align-items: flex-start;
-    padding-top: var(--space-4);
+    padding-top: var(--space-5);
   }
 
   .modal {
@@ -1392,6 +1412,20 @@ a:focus-visible {
 }
 
 @media (max-width: 640px) {
+  .portfolio-stat-grid,
+  .portfolio-asset-metrics {
+    grid-template-columns: 1fr;
+  }
+
+  .portfolio-asset-overview-input-row {
+    grid-template-columns: 1fr;
+    align-items: stretch;
+  }
+
+  .portfolio-allocation-wrap {
+    gap: var(--space-4);
+  }
+
   .portfolio-page {
     padding-top: var(--space-4);
   }
@@ -2544,7 +2578,51 @@ a:focus-visible {
   .scan-sector-select {
     @apply w-full;
   }
+  .scan-table th:nth-child(3),
+  .scan-table td:nth-child(3),
+  .scan-table th:nth-child(6),
+  .scan-table td:nth-child(6),
+  .scan-table th:nth-child(7),
+  .scan-table td:nth-child(7),
+  .scan-table th:nth-child(8),
+  .scan-table td:nth-child(8),
+  .scan-table th:nth-child(9),
+  .scan-table td:nth-child(9),
+  .scan-table th:nth-child(11),
+  .scan-table td:nth-child(11),
+  .scan-table th:nth-child(12),
+  .scan-table td:nth-child(12),
+  .scan-table th:nth-child(13),
+  .scan-table td:nth-child(13) {
+    display: none;
+  }
+
+  .scan-table th,
+  .scan-table td {
+    padding: var(--space-2);
+  }
+
+  .scan-table {
+    min-width: 640px;
+  }
+
   .scan-highlight-grid {
     grid-template-columns: 1fr;
+  }
+}
+@media (max-width: 768px) {
+  .admin-users-table th:nth-child(3),
+  .admin-users-table td:nth-child(3),
+  .admin-users-table th:nth-child(4),
+  .admin-users-table td:nth-child(4),
+  .admin-users-table th:nth-child(5),
+  .admin-users-table td:nth-child(5),
+  .admin-users-table th:nth-child(7),
+  .admin-users-table td:nth-child(7) {
+    display: none;
+  }
+
+  .admin-users-table {
+    min-width: 620px;
   }
 }

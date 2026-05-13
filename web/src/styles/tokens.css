@@ -104,6 +104,22 @@
   --color-error-bg:   var(--color-red-50);
   --color-info:       var(--color-brand);
   --color-info-bg:    var(--color-brand-subtle);
+
+  /* Compatibility aliases for legacy components */
+  --color-positive:       var(--color-stock-up);
+  --color-negative:       var(--color-stock-down);
+  --color-muted:          var(--color-gray-500);
+  --color-text-muted:     var(--color-text-secondary);
+  --color-surface-muted:  var(--color-bg-sunken);
+  --color-surface-card:   var(--color-bg-surface);
+  --color-border-subtle:  var(--color-gray-200);
+  --color-border-muted:   var(--color-gray-200);
+  --color-bg-hover:       var(--color-gray-50);
+  --color-bg-tertiary:    var(--color-gray-100);
+  --color-bg-secondary:   var(--color-gray-100);
+  --color-border:         var(--color-border-default);
+  --color-primary:        var(--color-brand);
+  --color-danger:         var(--color-error);
 }
 
 

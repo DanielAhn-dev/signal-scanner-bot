@@ -68,19 +68,12 @@ export default function FeedPage() {
 
       <div className="cards-list">
         {!loading && decisions.map((d: DecisionRow, i: number) => (
-          <div
+          <button
             key={d.id ?? i}
-            className="card"
-            role="button"
-            tabIndex={0}
+            type="button"
+            className="card card-action-btn"
             onClick={() => {
               if (!d.code) return
-              setDetailCode(String(d.code))
-              setDetailName(String(d.stock_name ?? d.code))
-              setDetailOpen(true)
-            }}
-            onKeyDown={(e) => {
-              if (e.key !== 'Enter' || !d.code) return
               setDetailCode(String(d.code))
               setDetailName(String(d.stock_name ?? d.code))
               setDetailOpen(true)
@@ -115,7 +108,7 @@ export default function FeedPage() {
                 </div>
               </details>
             )}
-          </div>
+          </button>
         ))}
       </div>
 

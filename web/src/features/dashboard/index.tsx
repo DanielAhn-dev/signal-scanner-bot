@@ -85,14 +85,13 @@ export default function Dashboard({ onNavigate }: { onNavigate?: (r: string) => 
           [0,1,2,3].map(i => <div key={i} className="card"><Skeleton lines={2} height={14} /></div>)
         ) : (
           <>
-            <div className="card stat-card" onClick={() => go('portfolio')} role="button" tabIndex={0}
-              style={{ cursor: 'pointer' }} onKeyDown={e => e.key === 'Enter' && go('portfolio')}>
+            <button type="button" className="card stat-card card-action-btn" onClick={() => go('portfolio')}>
               <div className="stat-label">보유 종목</div>
               <div className="stat-value">
                 {(summary as any)?.positions ?? '-'}{(summary as any)?.positions != null && <span className="stat-unit">종목</span>}
               </div>
               <div className="stat-sub">가상 포트폴리오 →</div>
-            </div>
+            </button>
 
             <div className="card stat-card">
               <div className="stat-label">미실현 손익</div>
@@ -108,12 +107,11 @@ export default function Dashboard({ onNavigate }: { onNavigate?: (r: string) => 
               <div className="stat-sub">스캔 실행 시각</div>
             </div>
 
-            <div className="card stat-card" onClick={() => go('sectors')} role="button" tabIndex={0}
-              style={{ cursor: 'pointer' }} onKeyDown={e => e.key === 'Enter' && go('sectors')}>
+            <button type="button" className="card stat-card card-action-btn" onClick={() => go('sectors')}>
               <div className="stat-label">1위 섹터</div>
               <div className="stat-value stat-value--sm">{topSector}</div>
               <div className="stat-sub">섹터 페이지 →</div>
-            </div>
+            </button>
           </>
         )}
       </div>
@@ -138,9 +136,11 @@ export default function Dashboard({ onNavigate }: { onNavigate?: (r: string) => 
               const cr = s.change_rate != null ? Number(s.change_rate) : null
               const crClass = cr != null ? (cr > 0 ? 'positive' : cr < 0 ? 'negative' : 'neutral') : ''
               return (
-                <div key={s.id} className="card sector-mini-card" onClick={() => go('sectors')}
-                  role="button" tabIndex={0} style={{ cursor: 'pointer' }}
-                  onKeyDown={e => e.key === 'Enter' && go('sectors')}
+                <button
+                  key={s.id}
+                  type="button"
+                  className="card sector-mini-card card-action-btn"
+                  onClick={() => go('sectors')}
                 >
                   <div className="sector-mini-rank">#{idx + 1}</div>
                   <div className="sector-mini-name">{s.name}</div>
@@ -152,7 +152,7 @@ export default function Dashboard({ onNavigate }: { onNavigate?: (r: string) => 
                       </span>
                     )}
                   </div>
-                </div>
+                </button>
               )
             })}
           </div>

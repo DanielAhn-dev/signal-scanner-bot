@@ -38,6 +38,19 @@ export default function Header({
   const isTelegramLinked = !!profile.telegramId
 
   const cmdInputRef = React.useRef<HTMLInputElement | null>(null)
+  const navToggleRef = React.useRef<HTMLButtonElement | null>(null)
+  const commandTriggerRef = React.useRef<HTMLButtonElement | null>(null)
+  const drawerRef = React.useRef<HTMLElement | null>(null)
+  const cmdModalRef = React.useRef<HTMLDivElement | null>(null)
+
+  const getFocusableElements = React.useCallback((container: HTMLElement | null): HTMLElement[] => {
+    if (!container) return []
+    return Array.from(
+      container.querySelectorAll<HTMLElement>(
+        'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+      ),
+    ).filter((el) => !el.hasAttribute('disabled') && el.tabIndex !== -1)
+  }, [])
 
   const visible = TELEGRAM_COMMANDS.filter(c => c.cmd.includes(filter) || c.desc.includes(filter))
 
@@ -59,19 +72,80 @@ export default function Header({
 
   React.useEffect(() => {
     if (!drawerOpen) return
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setDrawerOpen(false) }
+    const focusable = getFocusableElements(drawerRef.current)
+    focusable[0]?.focus()
+
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setDrawerOpen(false)
+        return
+      }
+      if (e.key !== 'Tab') return
+
+      const nodes = getFocusableElements(drawerRef.current)
+      if (nodes.length === 0) {
+        e.preventDefault()
+        return
+      }
+
+      const first = nodes[0]
+      const last = nodes[nodes.length - 1]
+      const active = document.activeElement as HTMLElement | null
+      if (e.shiftKey) {
+        if (!active || active === first) {
+          e.preventDefault()
+          last.focus()
+        }
+      } else if (!active || active === last) {
+        e.preventDefault()
+        first.focus()
+      }
+    }
+
     document.addEventListener('keydown', onKey)
-    return () => document.removeEventListener('keydown', onKey)
-  }, [drawerOpen])
+    return () => {
+      document.removeEventListener('keydown', onKey)
+      navToggleRef.current?.focus()
+    }
+  }, [drawerOpen, getFocusableElements])
 
   React.useEffect(() => {
-    if (cmdOpen) {
-      setTimeout(() => cmdInputRef.current?.focus(), 0)
-      const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setCmdOpen(false) }
-      document.addEventListener('keydown', onKey)
-      return () => document.removeEventListener('keydown', onKey)
+    if (!cmdOpen) return
+
+    setTimeout(() => cmdInputRef.current?.focus(), 0)
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setCmdOpen(false)
+        return
+      }
+      if (e.key !== 'Tab') return
+
+      const nodes = getFocusableElements(cmdModalRef.current)
+      if (nodes.length === 0) {
+        e.preventDefault()
+        return
+      }
+
+      const first = nodes[0]
+      const last = nodes[nodes.length - 1]
+      const active = document.activeElement as HTMLElement | null
+      if (e.shiftKey) {
+        if (!active || active === first) {
+          e.preventDefault()
+          last.focus()
+        }
+      } else if (!active || active === last) {
+        e.preventDefault()
+        first.focus()
+      }
     }
-  }, [cmdOpen])
+
+    document.addEventListener('keydown', onKey)
+    return () => {
+      document.removeEventListener('keydown', onKey)
+      commandTriggerRef.current?.focus()
+    }
+  }, [cmdOpen, getFocusableElements])
 
   React.useEffect(() => {
     if (drawerOpen || cmdOpen) {
@@ -168,6 +242,7 @@ export default function Header({
             className="nav-item top-nav-action"
             onClick={() => setCmdOpen(true)}
             aria-label="명령 목록 열기"
+            ref={commandTriggerRef}
           >
             <Command className="top-nav-action-icon" aria-hidden />
             <span className="top-nav-action-label">명령</span>
@@ -197,6 +272,7 @@ export default function Header({
             aria-expanded={drawerOpen}
             aria-label="전체 메뉴"
             onClick={() => setDrawerOpen(v => !v)}
+            ref={navToggleRef}
           >
             <Menu size={18} aria-hidden />
           </button>
@@ -205,7 +281,7 @@ export default function Header({
 
       {drawerOpen && typeof document !== 'undefined' ? createPortal(
         <div className="nav-drawer-overlay" role="dialog" aria-modal aria-label="전체 메뉴" onClick={() => setDrawerOpen(false)}>
-          <aside className="nav-drawer" onClick={(e) => e.stopPropagation()}>
+          <aside className="nav-drawer" onClick={(e) => e.stopPropagation()} ref={drawerRef} role="menu">
             <div className="nav-drawer-header">
               <div className="nav-drawer-title">메뉴</div>
               <button
@@ -247,8 +323,8 @@ export default function Header({
       ) : null}
 
       {cmdOpen && (
-        <div className="modal-overlay" role="dialog" aria-modal aria-label="텔레그램 명령 모달">
-          <div className="modal card">
+        <div className="modal-overlay" role="dialog" aria-modal aria-label="텔레그램 명령 모달" onClick={() => setCmdOpen(false)}>
+          <div className="modal card" onClick={(e) => e.stopPropagation()} ref={cmdModalRef}>
             <div className="flex-between">
               <h2 className="title-lg">텔레그램 명령</h2>
               <button className="nav-item" onClick={() => setCmdOpen(false)}>닫기</button>
@@ -256,13 +332,13 @@ export default function Header({
             <div className="mt-2">
               <input ref={cmdInputRef} placeholder="검색(cmd or 설명)" value={filter} onChange={(e) => setFilter(e.target.value)} className="ui-text" />
             </div>
-            <div className="mt-3" style={{maxHeight: '60vh', overflow: 'auto'}}>
+            <div className="mt-3" style={{maxHeight: '65vh', overflow: 'auto'}}>
               {visible.map(c => (
-                <div key={c.cmd} className="card" style={{marginBottom: 8}}>
+                <div key={c.cmd} className="card" style={{marginBottom: 'var(--space-2)'}}>
                   <div style={{display:'flex', justifyContent:'space-between', alignItems:'center'}}>
                     <div>
-                      <div style={{fontWeight:600}}>{c.cmd}</div>
-                      <div className="muted" style={{fontSize:12}}>{c.desc}</div>
+                      <div style={{fontWeight: 'var(--font-weight-semibold)'}}>{c.cmd}</div>
+                      <div className="muted" style={{fontSize: 'var(--font-size-xs)'}}>{c.desc}</div>
                     </div>
                     <div>
                       <button className="ui-button ui-btn-secondary" onClick={() => { navigator.clipboard?.writeText(c.cmd) }}>복사</button>

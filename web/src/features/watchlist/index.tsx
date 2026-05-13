@@ -289,16 +289,12 @@ export default function WatchlistPage() {
       <div className="watchlist-list-shell">
         <div className="cards-list watchlist-cards-list">
           {!loading && filteredItems.map((r: any, idx: number) => (
-            <div
+            <button
+              type="button"
               key={r.id}
-              className={`card watchlist-item-card${highlightCode === String(r.code) ? ' watchlist-item-highlight' : ''}`}
+              className={`card watchlist-item-card card-action-btn${highlightCode === String(r.code) ? ' watchlist-item-highlight' : ''}`}
               data-hoverable
-              role="button"
-              tabIndex={0}
               onClick={() => openDetail(r)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') openDetail(r)
-              }}
               style={{ '--watchlist-i': idx } as React.CSSProperties}
             >
               <div className="flex-between watchlist-item-top">
@@ -327,7 +323,7 @@ export default function WatchlistPage() {
                   </Button>
                 </div>
               </div>
-            </div>
+            </button>
           ))}
         </div>
       </div>

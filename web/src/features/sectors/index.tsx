@@ -292,28 +292,26 @@ export default function SectorsPage({ onNavigate }: { onNavigate?: (r: string) =
               <div
                 key={s.id}
                 className={`card sector-row-card${expandedSectorId === s.id ? " sector-row-card--expanded" : ""}`}
-                role="button"
-                tabIndex={0}
-                onClick={() => onSectorCardClick(s.id)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" || e.key === " ") {
-                    e.preventDefault()
-                    onSectorCardClick(s.id)
-                  }
-                }}
               >
-                <div className="sector-row-left">
-                  <div className="sector-row-rank">#{idx + 1}</div>
-                  <div>
-                    <div className="sector-row-name">{s.name}</div>
-                    {metricsSummary && <div className="sector-row-meta"><span className="caption">{metricsSummary}</span></div>}
-                    <p className="muted" style={{ margin: "6px 0 0", lineHeight: 1.45 }}>{reason}</p>
+                <button
+                  type="button"
+                  className="sector-row-trigger"
+                  onClick={() => onSectorCardClick(s.id)}
+                  aria-expanded={expandedSectorId === s.id}
+                >
+                  <div className="sector-row-left">
+                    <div className="sector-row-rank">#{idx + 1}</div>
+                    <div>
+                      <div className="sector-row-name">{s.name}</div>
+                      {metricsSummary && <div className="sector-row-meta"><span className="caption">{metricsSummary}</span></div>}
+                      <p className="muted" style={{ margin: "6px 0 0", lineHeight: 1.45 }}>{reason}</p>
+                    </div>
                   </div>
-                </div>
-                <div className="sector-row-right">
-                  <ScoreBadge score={s.score} />
-                  <ChangeRate val={s.change_rate} />
-                </div>
+                  <div className="sector-row-right">
+                    <ScoreBadge score={s.score} />
+                    <ChangeRate val={s.change_rate} />
+                  </div>
+                </button>
                 {expandedSectorId === s.id && (
                   <div className="sector-leader-panel" onClick={(e) => e.stopPropagation()}>
                     <div className="sector-leader-title">대장주 TOP 3 (우선순위)</div>
