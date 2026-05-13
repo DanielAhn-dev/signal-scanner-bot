@@ -102,6 +102,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           .order('updated_at', { ascending: false })
           .limit(limit)
 
+        // 테이블 미존재 시 빈 배열 반환 (우아한 실패)
+        if (error && error.message.includes('Could not find the table')) {
+          return res.status(200).json({ ok: true, data: [] })
+        }
         if (error) return res.status(500).json({ error: error.message })
 
         const rows = (data || []).map((row: any) => ({
@@ -123,6 +127,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         .order('updated_at', { ascending: false })
         .limit(1)
 
+      // 테이블 미존재 시 null 반환 (우아한 실패)
+      if (error && error.message.includes('Could not find the table')) {
+        return res.status(200).json({ ok: true, data: null })
+      }
       if (error) return res.status(500).json({ error: error.message })
 
       const first = data && data[0]
@@ -162,6 +170,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           { onConflict: 'topic,audience_key,report_date' },
         )
 
+      // 테이블 미존재 시에도 성공으로 처리 (향후 마이그레이션 시 저장될 수 있도록)
+      if (error && error.message.includes('Could not find the table')) {
+        return res.status(200).json({ ok: true, reportDate, warning: 'Snapshot table not available yet' })
+      }
       if (error) return res.status(500).json({ error: error.message })
 
       return res.status(200).json({ ok: true, reportDate })
