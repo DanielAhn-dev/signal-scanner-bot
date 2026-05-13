@@ -1097,6 +1097,40 @@ a:focus-visible {
   margin-top: 6px;
 }
 
+.portfolio-reason-toggle {
+  margin-left: 4px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--color-text-secondary);
+  text-decoration: underline dotted;
+  cursor: pointer;
+  font-size: inherit;
+  line-height: inherit;
+}
+
+.portfolio-reason-toggle:hover {
+  color: var(--color-text-primary);
+}
+
+.portfolio-reason-panel {
+  margin-top: 6px;
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--color-border);
+  background: var(--color-bg-secondary);
+}
+
+.portfolio-reason-line {
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-xs);
+  line-height: 1.5;
+}
+
+.portfolio-reason-line + .portfolio-reason-line {
+  margin-top: 2px;
+}
+
 .portfolio-reason-badge {
   display: inline-block;
   padding: 1px 7px;

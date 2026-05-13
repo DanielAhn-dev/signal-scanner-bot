@@ -69,6 +69,25 @@ function accountLabel(brokerName?: string | null, accountName?: string | null): 
   return label || '계좌 미지정'
 }
 
+function toSignalLabel(value?: string | null): string {
+  const v = String(value || '').trim().toUpperCase()
+  if (!v) return '-'
+  if (v === 'BUY') return '매수'
+  if (v === 'HOLD') return '보유'
+  if (v === 'SELL') return '매도'
+  return v
+}
+
+function toWarnLabel(value?: string | null): string {
+  const v = String(value || '').trim().toUpperCase()
+  if (!v) return '-'
+  if (v === 'SAFE') return '안전'
+  if (v === 'WATCH') return '관찰'
+  if (v === 'WARN') return '경고'
+  if (v === 'SELL') return '강한경고'
+  return v
+}
+
 function pickLatestActiveShare(items: PortfolioShareHistoryItem[]): PortfolioShareHistoryItem | null {
   const now = Date.now()
   for (const item of items) {
@@ -160,6 +179,7 @@ export default function Portfolio() {
   const [maintError, setMaintError] = useState<string | null>(null)
   const [maintStep, setMaintStep] = useState<1 | 2>(1)
   const [maintAccountMode, setMaintAccountMode] = useState<'select' | 'manual'>('select')
+  const [openReasonKey, setOpenReasonKey] = useState<string | null>(null)
   const [macroLoading, setMacroLoading] = useState(false)
   const [macroSnapshot, setMacroSnapshot] = useState<any | null>(null)
   const toast = useToast()
@@ -258,8 +278,8 @@ export default function Portfolio() {
     const partialWarnScoreHit = warnScore != null && warnScore >= safePartialWarnScoreMin
     if (Number.isFinite(pct) && pct >= thresholds.partialTp && partialSignalHit && partialWarnScoreHit) {
       reasons.push(`수익률 ${formatNumber(pct, 2)}% >= ${formatNumber(thresholds.partialTp, 2)}%`)
-      reasons.push(`신호/경고 조건 충족 (${scoreSignal || '-'} / ${warnGrade || '-'})`)
-      reasons.push(`warn_score ${formatNumber(warnScore, 1)} >= ${formatNumber(safePartialWarnScoreMin, 1)}`)
+      reasons.push(`신호/경고 조건 충족 (신호 ${toSignalLabel(scoreSignal)} / 경고 ${toWarnLabel(warnGrade)})`)
+      reasons.push(`경고점수 ${formatNumber(warnScore, 1)} >= 기준 ${formatNumber(safePartialWarnScoreMin, 1)}`)
       if (thresholds.policy) reasons.push(`계좌정책 반영(${accountLabel(thresholds.policy.broker_name, thresholds.policy.account_name)})`)
       if (warnDetails.length > 0) reasons.push(`상세 경고: ${warnDetails.join(', ')}`)
       return { state: 'partial', reasons }
@@ -274,8 +294,8 @@ export default function Portfolio() {
     const scoreOk = score == null || score >= thresholds.addEntry
     if (hasAddSignal && scoreOk && entryTrendOk && riskOk && signalOk) {
       reasons.push(`추가매수 제안 수량 ${Number(row?.recommended_buy_qty || 0)}주`) 
-      reasons.push(`점수 조건 ${score == null ? 'N/A' : formatNumber(score, 1)} / 기준 ${formatNumber(thresholds.addEntry, 1)}`)
-      reasons.push(`진입/추세/경고 ${entryGrade || '-'} / ${trendGrade || '-'} / ${warnGrade || '-'}`)
+      reasons.push(`점수 조건 ${score == null ? '점수 없음' : formatNumber(score, 1)} / 기준 ${formatNumber(thresholds.addEntry, 1)}`)
+      reasons.push(`진입/추세/경고 ${entryGrade || '-'} / ${trendGrade || '-'} / ${toWarnLabel(warnGrade)}`)
       if (thresholds.policy) reasons.push(`계좌정책 반영(${accountLabel(thresholds.policy.broker_name, thresholds.policy.account_name)})`)
       if (warnDetails.length > 0) reasons.push(`상세 경고: ${warnDetails.join(', ')}`)
       return { state: 'add', reasons }
@@ -283,7 +303,7 @@ export default function Portfolio() {
 
     reasons.push('추가매수/부분청산 조건 미충족')
     if (Number.isFinite(pct)) reasons.push(`현재 수익률 ${formatNumber(pct, 2)}%`)
-    if (warnScore != null) reasons.push(`warn_score ${formatNumber(warnScore, 1)}`)
+    if (warnScore != null) reasons.push(`경고점수 ${formatNumber(warnScore, 1)}`)
     if (warnDetails.length > 0) reasons.push(`상세 경고: ${warnDetails.join(', ')}`)
     return { state: 'hold', reasons }
   }
@@ -1457,7 +1477,8 @@ export default function Portfolio() {
           const trendGrade = String(r?.trend_grade || '').trim().toUpperCase()
           const warnGrade = String(r?.warn_grade || '').trim().toUpperCase()
           const warnScore = Number.isFinite(Number(r?.warn_score)) ? Number(r?.warn_score) : null
-          const reasonText = stateEvaluation.reasons.join('\n')
+          const reasonKey = String(r?.id ?? r?.code ?? Math.random())
+          const reasonOpen = openReasonKey === reasonKey
 
           // 판정근거 배지 계산
           const reasonBadges: { label: string; type: 'partial' | 'add' | 'warn' | 'ok' | 'neutral' }[] = []
@@ -1493,10 +1514,26 @@ export default function Portfolio() {
                     상태: {holdingState === 'partial' ? '부분청산 후보' : holdingState === 'add' ? '추가매수(IN진입)' : '보통 보유(홀드)'}
                     {' · '}등급 {grade}
                     {' · '}점수 {score != null ? formatNumber(score, 1) : '—'}
-                    {scoreSignal ? ` · 신호 ${scoreSignal}` : ''}
-                    {(entryGrade || trendGrade || warnGrade) ? ` · 진입 ${entryGrade || '-'} / 추세 ${trendGrade || '-'} / 경고 ${warnGrade || '-'}` : ''}
-                    {reasonText ? <span style={{ marginLeft: '4px', textDecoration: 'underline dotted', cursor: 'help' }} title={reasonText}>[판정근거]</span> : null}
+                    {scoreSignal ? ` · 신호 ${toSignalLabel(scoreSignal)}` : ''}
+                    {(entryGrade || trendGrade || warnGrade) ? ` · 진입 ${entryGrade || '-'} / 추세 ${trendGrade || '-'} / 경고 ${toWarnLabel(warnGrade)}` : ''}
+                    {stateEvaluation.reasons.length > 0 ? (
+                      <button
+                        type="button"
+                        className="portfolio-reason-toggle"
+                        onClick={() => setOpenReasonKey(reasonOpen ? null : reasonKey)}
+                        aria-expanded={reasonOpen}
+                      >
+                        [{reasonOpen ? '판정근거 접기' : '판정근거 보기'}]
+                      </button>
+                    ) : null}
                   </div>
+                  {reasonOpen && stateEvaluation.reasons.length > 0 && (
+                    <div className="portfolio-reason-panel" role="note" aria-label="판정 근거 상세">
+                      {stateEvaluation.reasons.map((reason, idx) => (
+                        <div key={`${reasonKey}-${idx}`} className="portfolio-reason-line">• {reason}</div>
+                      ))}
+                    </div>
+                  )}
                   {reasonBadges.length > 0 && (
                     <div className="portfolio-reason-badges">
                       {reasonBadges.map((b, i) => (
