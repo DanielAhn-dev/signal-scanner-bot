@@ -3,6 +3,7 @@
  * 모바일 우선, 컴팩트 디자인
  */
 import React, { useEffect, useState } from 'react'
+import { AlertTriangle, CalendarDays, MapPin } from 'lucide-react'
 import { apiFetch } from '../lib/api'
 import type { EconomicEvent } from '../../../src/types/economics'
 
@@ -61,28 +62,16 @@ export default function EconomicEventBadge({ onNavigateToCalendar }: EconomicEve
   const timeUntil = formatTimeUntilEvent(event.scheduledAt)
 
   return (
-    <div
-      style={{
-        background: isCritical ? 'var(--color-stock-up-bg)' : 'var(--color-warning-bg)',
-        borderLeft: `3px solid ${isCritical ? 'var(--color-stock-up)' : 'var(--color-warning)'}`,
-        padding: 'var(--space-2) var(--space-3)',
-        borderRadius: 'var(--radius-sm)',
-        marginBottom: 'var(--space-3)',
-        display: 'flex',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-        gap: 'var(--space-2)',
-        fontSize: 'var(--font-size-xs)',
-      }}
-    >
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ fontWeight: 600, color: 'var(--color-text-primary)', marginBottom: '2px' }}>
-          {isCritical ? '⭐' : '📌'} {event.name}
+    <div className={`economic-event-badge${isCritical ? ' is-critical' : ''}`}>
+      <div className="economic-event-badge-main">
+        <div className="economic-event-badge-title">
+          {isCritical ? <AlertTriangle size={14} aria-hidden /> : <MapPin size={14} aria-hidden />}
+          <span>{event.name}</span>
         </div>
-        <div style={{ color: 'var(--color-text-secondary)', fontSize: 'var(--font-size-xs)' }}>
+        <div className="economic-event-badge-meta">
           {timeUntil}
           {event.averageKospiReaction && (
-            <span style={{ marginLeft: 'var(--space-2)' }}>
+            <span className="economic-event-badge-reaction">
               과거 반응: {event.averageKospiReaction >= 0 ? '+' : ''}
               {event.averageKospiReaction.toFixed(2)}%
             </span>
@@ -90,22 +79,10 @@ export default function EconomicEventBadge({ onNavigateToCalendar }: EconomicEve
         </div>
       </div>
       <button
+        className="ui-button ui-btn-primary ui-btn-sm"
         onClick={onNavigateToCalendar}
-        style={{
-          padding: '4px 10px',
-          background: 'var(--color-brand)',
-          color: 'white',
-          border: 'none',
-          borderRadius: 'var(--radius-xs)',
-          cursor: 'pointer',
-          fontSize: 'var(--font-size-xs)',
-          fontWeight: 600,
-          whiteSpace: 'nowrap',
-          transition: 'opacity 0.2s',
-        }}
-        onMouseEnter={(e) => (e.currentTarget.style.opacity = '0.8')}
-        onMouseLeave={(e) => (e.currentTarget.style.opacity = '1')}
       >
+        <CalendarDays size={14} aria-hidden />
         캘린더
       </button>
     </div>
