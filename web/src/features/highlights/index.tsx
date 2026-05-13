@@ -365,9 +365,13 @@ export default function HighlightsPage({ onNavigate }: { onNavigate?: (r: string
                   </div>
                   <div style={{ display: 'flex', alignItems: 'flex-start', gap: 'var(--space-3)' }}>
                     <ConfidenceLabel pct={row.confidence_pct} />
-                    <div onClick={() => toggleCode(row.code)} style={{ marginTop: 2 }}>
+                    <button 
+                      onClick={() => toggleCode(row.code)}
+                      aria-label={selected ? `${row.code} 선택 해제` : `${row.code} 선택`}
+                      style={{ marginTop: 2, background: 'none', border: 'none', padding: 0, cursor: 'pointer' }}
+                    >
                       <SelectCircle selected={selected} />
-                    </div>
+                    </button>
                   </div>
                 </div>
 
@@ -521,9 +525,13 @@ export default function HighlightsPage({ onNavigate }: { onNavigate?: (r: string
                             />
                           </div>
                           <Button variant="ghost" onClick={() => goAnalyze(row.code)}>분석</Button>
-                          <div onClick={() => toggleCode(row.code)}>
+                          <button 
+                            onClick={() => toggleCode(row.code)}
+                            aria-label={selected ? `${row.code} 선택 해제` : `${row.code} 선택`}
+                            style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer' }}
+                          >
                             <SelectCircle selected={selected} />
-                          </div>
+                          </button>
                         </div>
                       </div>
                     </div>

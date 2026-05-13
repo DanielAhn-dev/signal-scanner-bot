@@ -79,21 +79,27 @@ const STRATEGY_OPTIONS = [
     id: 'HOLD_SAFE',
     label: '안전 포지션',
     desc: '보수 운용 · 최대 2종목 제한 진입',
-    color: '#3b82f6',
+    color: 'var(--color-brand)',
   },
   {
     id: 'REDUCE_TIGHT',
     label: '타이트 손절',
     desc: '손절 2% / 익절 4% · 적극적 리스크 컷',
-    color: '#f59e0b',
+    color: 'var(--color-warning)',
   },
   {
     id: 'WAIT_AND_DIP_BUY',
     label: '저가 매수 대기',
     desc: '현금 보유 · 눌림목 진입 기회 대기',
-    color: '#10b981',
+    color: 'var(--color-success)',
   },
 ] as const
+
+const COLOR_POSITIVE = 'var(--color-success)'
+const COLOR_NEGATIVE = 'var(--color-error)'
+const COLOR_WARNING = 'var(--color-warning)'
+const COLOR_POSITIVE_BG = 'var(--color-success-bg)'
+const COLOR_NEGATIVE_BG = 'var(--color-error-bg)'
 
 const TRIGGER_LABEL_MAP: Record<string, string> = {
   'add-on-buy': '추가 매수',
@@ -391,10 +397,10 @@ export default function StrategyPage() {
       const nextIsPositive = values[i + 1] >= 0
       if (currIsPositive !== nextIsPositive) {
         // 경계 지점에서 컬러 전환
-        const color = values[i + 1] >= 0 ? '#d1fae5' : '#fee2e2'
+        const color = values[i + 1] >= 0 ? COLOR_POSITIVE_BG : COLOR_NEGATIVE_BG
         fillSegments.push({ start: i, end: i + 1, color })
       } else {
-        const color = currIsPositive ? '#d1fae5' : '#fee2e2'
+        const color = currIsPositive ? COLOR_POSITIVE_BG : COLOR_NEGATIVE_BG
         fillSegments.push({ start: i, end: i + 1, color })
       }
     }
@@ -403,7 +409,7 @@ export default function StrategyPage() {
     const segments = points.slice(0, -1).map((p, i) => {
       const next = points[i + 1]!
       const midValue = (values[i] + values[i + 1]) / 2
-      return { x1: p.x, y1: p.y, x2: next.x, y2: next.y, color: midValue >= 0 ? '#10b981' : '#ef4444' }
+      return { x1: p.x, y1: p.y, x2: next.x, y2: next.y, color: midValue >= 0 ? COLOR_POSITIVE : COLOR_NEGATIVE }
     })
 
     // 선형 추세 기반 예상선 (최근 3거래 전망)
@@ -530,7 +536,7 @@ export default function StrategyPage() {
               </div>
               <div style={{ marginLeft: 'auto', textAlign: 'right' }}>
                 <div className="caption">자동매매 상태</div>
-                <div className="title-md" style={{ color: settings?.is_enabled ? '#10b981' : '#ef4444' }}>
+                <div className="title-md" style={{ color: settings?.is_enabled ? COLOR_POSITIVE : COLOR_NEGATIVE }}>
                   {settingsLoading ? '…' : settings?.is_enabled ? '활성화' : '비활성화'}
                 </div>
               </div>
@@ -567,30 +573,30 @@ export default function StrategyPage() {
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12, marginBottom: 'var(--space-3)' }}>
                     <div style={{ padding: 12, background: 'var(--color-stock-down-bg)', borderRadius: 'var(--radius-sm)' }}>
                       <div className="caption">약세장</div>
-                      <div style={{ fontSize: '1.3rem', fontWeight: 700, color: 'var(--color-stock-down)', marginTop: 4 }}>
+                      <div style={{ fontSize: 'var(--font-size-xl)', fontWeight: 700, color: 'var(--color-stock-down)', marginTop: 4 }}>
                         {Math.round((settings.base_max_positions ?? 3) * (settings.bear_multiplier ?? 0.5))} ~ {Math.ceil((settings.base_max_positions ?? 3) * (settings.bear_multiplier ?? 0.5))}종목
                       </div>
-                      <div className="muted" style={{ fontSize: '0.75rem', marginTop: 4 }}>현금 보유 우선</div>
+                      <div className="muted" style={{ fontSize: 'var(--font-size-xs)', marginTop: 4 }}>현금 보유 우선</div>
                     </div>
 
                     <div style={{ padding: 12, background: 'var(--color-bg-sunken)', borderRadius: 'var(--radius-sm)' }}>
                       <div className="caption">중립/횡보장</div>
-                      <div style={{ fontSize: '1.3rem', fontWeight: 700, marginTop: 4 }}>
+                      <div style={{ fontSize: 'var(--font-size-xl)', fontWeight: 700, marginTop: 4 }}>
                         {settings.base_max_positions ?? 3}종목
                       </div>
-                      <div className="muted" style={{ fontSize: '0.75rem', marginTop: 4 }}>기본 설정값</div>
+                      <div className="muted" style={{ fontSize: 'var(--font-size-xs)', marginTop: 4 }}>기본 설정값</div>
                     </div>
 
                     <div style={{ padding: 12, background: 'var(--color-stock-up-bg)', borderRadius: 'var(--radius-sm)' }}>
                       <div className="caption">강세장</div>
-                      <div style={{ fontSize: '1.3rem', fontWeight: 700, color: 'var(--color-stock-up)', marginTop: 4 }}>
+                      <div style={{ fontSize: 'var(--font-size-xl)', fontWeight: 700, color: 'var(--color-stock-up)', marginTop: 4 }}>
                         {Math.round((settings.base_max_positions ?? 3) * (settings.bull_multiplier ?? 1.5))} ~ {Math.ceil((settings.base_max_positions ?? 3) * (settings.bull_multiplier ?? 1.5))}종목
                       </div>
-                      <div className="muted" style={{ fontSize: '0.75rem', marginTop: 4 }}>공격적 진입</div>
+                      <div className="muted" style={{ fontSize: 'var(--font-size-xs)', marginTop: 4 }}>공격적 진입</div>
                     </div>
                   </div>
 
-                  <div className="muted" style={{ fontSize: '0.8rem', lineHeight: 1.6, borderTop: '1px solid var(--color-border-default)', paddingTop: 12 }}>
+                  <div className="muted" style={{ fontSize: 'var(--font-size-sm)', lineHeight: 1.6, borderTop: '1px solid var(--color-border-default)', paddingTop: 12 }}>
                     <strong>동작 원리:</strong><br/>
                     시장 국면(최근 {summary.topRegimes.length > 0 ? formatMarketRegimeLabel(summary.topRegimes[0]?.[0] ?? '') : '감지 중'})과 신호 신뢰도를 반영하여, 위 범위 내에서 실제 진입 종목 수가 자동으로 조정됩니다. 신뢰도가 {settings.min_confidence_pct ?? 65}% 미만이면 진입을 제한합니다.
                   </div>
@@ -604,7 +610,7 @@ export default function StrategyPage() {
               <div className="title-md">적응형 전략 엔진</div>
               {adaptiveInsights?.latestTradeDate && <div className="caption">기준일 {adaptiveInsights.latestTradeDate}</div>}
             </div>
-            <div className="muted" style={{ marginBottom: 12, fontSize: '0.82rem' }}>
+            <div className="muted" style={{ marginBottom: 12, fontSize: 'var(--font-size-sm)' }}>
               최근 눌림목 후보의 실제 {adaptiveInsights?.horizonBars ?? 3}거래일 성과를 기준으로, 현재 스캔/하이라이트 후보 정렬에 반영 중인 적응 가중치입니다.
             </div>
             {adaptiveLoading && <Skeleton lines={4} height={12} />}
@@ -621,7 +627,7 @@ export default function StrategyPage() {
                   </div>
                   <div className="card">
                     <div className="caption">평균 {adaptiveInsights.horizonBars}일 수익률</div>
-                    <div className="title-lg" style={{ color: adaptiveInsights.baseAvgReturnPct >= 0 ? '#10b981' : '#ef4444' }}>
+                    <div className="title-lg" style={{ color: adaptiveInsights.baseAvgReturnPct >= 0 ? COLOR_POSITIVE : COLOR_NEGATIVE }}>
                       {adaptiveInsights.baseAvgReturnPct > 0 ? '+' : ''}{adaptiveInsights.baseAvgReturnPct}%
                     </div>
                   </div>
@@ -639,7 +645,7 @@ export default function StrategyPage() {
                       <div key={`${item.key}-${item.factor}`} style={{ marginBottom: 10 }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12 }}>
                           <span style={{ fontWeight: 500 }}>{item.label}</span>
-                          <span style={{ color: '#10b981', fontWeight: 600 }}>+{item.weight}</span>
+                          <span style={{ color: COLOR_POSITIVE, fontWeight: 600 }}>+{item.weight}</span>
                         </div>
                         <div className="caption">승률 {item.winRatePct}% · 평균 {item.avgForwardReturnPct > 0 ? '+' : ''}{item.avgForwardReturnPct}% · 샘플 {item.sampleCount}</div>
                       </div>
@@ -652,7 +658,7 @@ export default function StrategyPage() {
                       <div key={`${item.key}-${item.factor}`} style={{ marginBottom: 10 }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12 }}>
                           <span style={{ fontWeight: 500 }}>{item.label}</span>
-                          <span style={{ color: '#ef4444', fontWeight: 600 }}>{item.weight}</span>
+                          <span style={{ color: COLOR_NEGATIVE, fontWeight: 600 }}>{item.weight}</span>
                         </div>
                         <div className="caption">승률 {item.winRatePct}% · 평균 {item.avgForwardReturnPct > 0 ? '+' : ''}{item.avgForwardReturnPct}% · 샘플 {item.sampleCount}</div>
                       </div>
@@ -730,7 +736,7 @@ export default function StrategyPage() {
                             style={{
                               height: '100%',
                               width: `${pct}%`,
-                              background: '#f59e0b',
+                              background: COLOR_WARNING,
                               borderRadius: 3,
                               transition: 'width 0.4s',
                             }}
@@ -862,7 +868,7 @@ export default function StrategyPage() {
                     onChange={(e: any) => setSettings({ ...settings, long_term_ratio: Number(e.target.value) })}
                   />
                 </div>
-                <div className="muted mt-2" style={{ fontSize: '0.78rem' }}>
+                <div className="muted mt-2" style={{ fontSize: 'var(--font-size-sm)' }}>
                   최소 매수 점수는 스캔 컷오프, 익절·손절은 가상 자동매매 기준, 장기 포지션 비중은 장기 보유 목표 비율입니다.
                 </div>
               </div>
@@ -944,21 +950,21 @@ export default function StrategyPage() {
                     </div>
                     
                     {option.id === 'HOLD_SAFE' && (
-                      <div className="muted" style={{ fontSize: '0.85rem', lineHeight: 1.6 }}>
+                      <div className="muted" style={{ fontSize: 'var(--font-size-sm)', lineHeight: 1.6 }}>
                         <strong>기본 전략:</strong> 보수적 진입<br/>
                         <strong>권장 설정:</strong> 기본(base) 2~3종목 | 강세장 ×1.3 | 약세장 ×0.7<br/>
                         <strong>동작:</strong> 신뢰도 높은 신호만 진입. 강세장이면 3~4종목, 약세장이면 1~2종목으로 조정
                       </div>
                     )}
                     {option.id === 'REDUCE_TIGHT' && (
-                      <div className="muted" style={{ fontSize: '0.85rem', lineHeight: 1.6 }}>
+                      <div className="muted" style={{ fontSize: 'var(--font-size-sm)', lineHeight: 1.6 }}>
                         <strong>기본 전략:</strong> 신속한 리스크 관리<br/>
                         <strong>권장 설정:</strong> 기본(base) 1~2종목 | 강세장 ×2.0 | 약세장 ×0.3<br/>
                         <strong>동작:</strong> 좋은 신호에서만 과감하게. 강세장 확인 시 2~4종목까지 진입, 약세장은 진입 제한
                       </div>
                     )}
                     {option.id === 'WAIT_AND_DIP_BUY' && (
-                      <div className="muted" style={{ fontSize: '0.85rem', lineHeight: 1.6 }}>
+                      <div className="muted" style={{ fontSize: 'var(--font-size-sm)', lineHeight: 1.6 }}>
                         <strong>기본 전략:</strong> 기회 대기형<br/>
                         <strong>권장 설정:</strong> 기본(base) 1~2종목 | 강세장 ×1.5 | 약세장 ×0.2<br/>
                         <strong>동작:</strong> 높은 신뢰도만 진입. 강세 확정 후 분할 진입, 약세 지속 시 현금 보유
@@ -974,7 +980,7 @@ export default function StrategyPage() {
                     {saving ? '저장 중…' : '설정 저장'}
                   </Button>
                   {saveStatus && (
-                    <span className="caption" style={{ color: saveStatus.startsWith('오류') ? '#ef4444' : '#10b981' }}>
+                    <span className="caption" style={{ color: saveStatus.startsWith('오류') ? COLOR_NEGATIVE : COLOR_POSITIVE }}>
                       {saveStatus}
                     </span>
                   )}
@@ -1011,7 +1017,7 @@ export default function StrategyPage() {
             <div className="card mb-4">
               <div className="title-md" style={{ marginBottom: 8 }}>실시간 적응 메모</div>
               <div style={{ lineHeight: 1.7, color: 'var(--color-text-secondary)' }}>
-                최근 {adaptiveInsights.sampleCount}개 샘플을 기준으로 <strong style={{ color: 'var(--color-text-primary)' }}>{adaptiveInsights.todayBiasSummary}</strong> 패턴이 상대적으로 우세합니다. 현재 엔진은 상위 강화 기준을 스캔/하이라이트 정렬에 반영하고 있으며, 최근 {adaptiveInsights.horizonBars}거래일 평균 성과는 <strong style={{ color: adaptiveInsights.baseAvgReturnPct >= 0 ? '#10b981' : '#ef4444' }}>{adaptiveInsights.baseAvgReturnPct > 0 ? '+' : ''}{adaptiveInsights.baseAvgReturnPct}%</strong>, 적중률은 <strong style={{ color: 'var(--color-text-primary)' }}>{adaptiveInsights.baseHitRatePct}%</strong>입니다.
+                최근 {adaptiveInsights.sampleCount}개 샘플을 기준으로 <strong style={{ color: 'var(--color-text-primary)' }}>{adaptiveInsights.todayBiasSummary}</strong> 패턴이 상대적으로 우세합니다. 현재 엔진은 상위 강화 기준을 스캔/하이라이트 정렬에 반영하고 있으며, 최근 {adaptiveInsights.horizonBars}거래일 평균 성과는 <strong style={{ color: adaptiveInsights.baseAvgReturnPct >= 0 ? COLOR_POSITIVE : COLOR_NEGATIVE }}>{adaptiveInsights.baseAvgReturnPct > 0 ? '+' : ''}{adaptiveInsights.baseAvgReturnPct}%</strong>, 적중률은 <strong style={{ color: 'var(--color-text-primary)' }}>{adaptiveInsights.baseHitRatePct}%</strong>입니다.
               </div>
             </div>
           )}
@@ -1020,11 +1026,11 @@ export default function StrategyPage() {
             <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'baseline', marginBottom: 'var(--space-2)', flexWrap: 'wrap' }}>
               <div>
                 <div className="title-md">실현손익 추이</div>
-                <div className="muted" style={{ marginTop: 4, fontSize: '0.8rem' }}>최근 매도 거래를 기준으로 누적 실현손익 흐름을 단순 선형 차트로 보여줍니다.</div>
+                <div className="muted" style={{ marginTop: 4, fontSize: 'var(--font-size-sm)' }}>최근 매도 거래를 기준으로 누적 실현손익 흐름을 단순 선형 차트로 보여줍니다.</div>
               </div>
               <div style={{ textAlign: 'right' }}>
                 <div className="caption">현재 누적 실현손익</div>
-                <div className="title-md" style={{ color: profitTrend.lastValue >= 0 ? '#10b981' : '#ef4444' }}>{formatKrwShort(profitTrend.lastValue)}</div>
+                <div className="title-md" style={{ color: profitTrend.lastValue >= 0 ? COLOR_POSITIVE : COLOR_NEGATIVE }}>{formatKrwShort(profitTrend.lastValue)}</div>
               </div>
             </div>
             {activityLoading && <Skeleton lines={4} height={12} />}
@@ -1056,7 +1062,7 @@ export default function StrategyPage() {
                   <path
                     d={profitTrend.maPath}
                     fill="none"
-                    stroke="rgba(100,116,139,0.5)"
+                    stroke="var(--chart-ma-line)"
                     strokeWidth="1.5"
                     strokeLinecap="round"
                     strokeLinejoin="round"
@@ -1067,7 +1073,7 @@ export default function StrategyPage() {
                     <path
                       d={buildLinePath([profitTrend.points[profitTrend.points.length - 1]!, ...profitTrend.projectionPoints])}
                       fill="none"
-                      stroke="rgba(139,92,246,0.55)"
+                      stroke="var(--chart-projection-line)"
                       strokeWidth="2"
                       strokeLinecap="round"
                       strokeLinejoin="round"
@@ -1087,17 +1093,17 @@ export default function StrategyPage() {
                   {/* 데이터 포인트 (개별 색상) */}
                   {profitTrend.points.map((point) => (
                     <g key={point.id}>
-                      <circle cx={point.x} cy={point.y} r="4" fill="white" stroke={point.value >= 0 ? '#10b981' : '#ef4444'} strokeWidth="2" style={{ cursor: 'pointer' }} />
+                      <circle cx={point.x} cy={point.y} r="4" fill="white" stroke={point.value >= 0 ? COLOR_POSITIVE : COLOR_NEGATIVE} strokeWidth="2" style={{ cursor: 'pointer' }} />
                       <title>{`${point.label} · ${point.date} · ${formatKrwShort(point.value)}`}</title>
                     </g>
                   ))}
                 </svg>
-                <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, marginTop: 8, fontSize: '0.75rem', color: 'var(--color-text-secondary)' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, marginTop: 8, fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)' }}>
                   <span>{profitTrend.points[0]?.date || '-'}</span>
                   <span style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
-                    <span style={{ display: 'flex', gap: 4, alignItems: 'center' }}><span style={{ display: 'inline-block', width: 14, height: 3, background: '#10b981', borderRadius: 2 }} /> 실현손익</span>
-                    <span style={{ display: 'flex', gap: 4, alignItems: 'center' }}><span style={{ display: 'inline-block', width: 14, height: 2, background: 'rgba(100,116,139,0.5)', backgroundImage: 'repeating-linear-gradient(90deg, rgba(100,116,139,0.5) 0px, rgba(100,116,139,0.5) 4px, transparent 4px, transparent 6px)' }} /> 이동평균</span>
-                    {profitTrend.projectionPoints.length > 0 && <span style={{ display: 'flex', gap: 4, alignItems: 'center' }}><span style={{ display: 'inline-block', width: 14, height: 2, background: 'rgba(139,92,246,0.55)', backgroundImage: 'repeating-linear-gradient(90deg, rgba(139,92,246,0.55) 0px, rgba(139,92,246,0.55) 5px, transparent 5px, transparent 9px)' }} /> 예상 추세</span>}
+                    <span style={{ display: 'flex', gap: 4, alignItems: 'center' }}><span style={{ display: 'inline-block', width: 14, height: 3, background: COLOR_POSITIVE, borderRadius: 2 }} /> 실현손익</span>
+                    <span style={{ display: 'flex', gap: 4, alignItems: 'center' }}><span style={{ display: 'inline-block', width: 14, height: 2, background: 'var(--chart-ma-line)', backgroundImage: 'repeating-linear-gradient(90deg, var(--chart-ma-line) 0px, var(--chart-ma-line) 4px, transparent 4px, transparent 6px)' }} /> 이동평균</span>
+                    {profitTrend.projectionPoints.length > 0 && <span style={{ display: 'flex', gap: 4, alignItems: 'center' }}><span style={{ display: 'inline-block', width: 14, height: 2, background: 'var(--chart-projection-line)', backgroundImage: 'repeating-linear-gradient(90deg, var(--chart-projection-line) 0px, var(--chart-projection-line) 5px, transparent 5px, transparent 9px)' }} /> 예상 추세</span>}
                   </span>
                   <span>{profitTrend.points[profitTrend.points.length - 1]?.date || '-'}</span>
                 </div>
@@ -1110,11 +1116,11 @@ export default function StrategyPage() {
               <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'baseline', marginBottom: 'var(--space-2)', flexWrap: 'wrap' }}>
                 <div>
                   <div className="title-md">거래별 손익 분포</div>
-                  <div className="muted" style={{ marginTop: 4, fontSize: '0.8rem' }}>각 매도 거래의 개별 실현손익. 초록=수익, 빨강=손실</div>
+                  <div className="muted" style={{ marginTop: 4, fontSize: 'var(--font-size-sm)' }}>각 매도 거래의 개별 실현손익. 초록=수익, 빨강=손실</div>
                 </div>
                 <div style={{ textAlign: 'right' }}>
                   <div className="caption">전체 승률</div>
-                  <div className="title-md" style={{ color: profitTrend.tradeBars.filter((b) => b.isPositive).length / profitTrend.tradeBars.length >= 0.5 ? '#10b981' : '#ef4444' }}>
+                  <div className="title-md" style={{ color: profitTrend.tradeBars.filter((b) => b.isPositive).length / profitTrend.tradeBars.length >= 0.5 ? COLOR_POSITIVE : COLOR_NEGATIVE }}>
                     {Math.round((profitTrend.tradeBars.filter((b) => b.isPositive).length / profitTrend.tradeBars.length) * 100)}%
                   </div>
                 </div>
@@ -1128,7 +1134,7 @@ export default function StrategyPage() {
                       y={bar.rectY}
                       width={bar.barW}
                       height={bar.barH}
-                      fill={bar.isPositive ? '#10b981' : '#ef4444'}
+                      fill={bar.isPositive ? COLOR_POSITIVE : COLOR_NEGATIVE}
                       opacity="0.8"
                       rx="2"
                     />
@@ -1136,7 +1142,7 @@ export default function StrategyPage() {
                   </g>
                 ))}
               </svg>
-              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem', color: 'var(--color-text-secondary)', marginTop: 4 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)', marginTop: 4 }}>
                 <span>{profitTrend.tradeBars[0]?.date || '-'}</span>
                 <span>{profitTrend.tradeBars[profitTrend.tradeBars.length - 1]?.date || '-'}</span>
               </div>
@@ -1148,11 +1154,11 @@ export default function StrategyPage() {
               <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'baseline', marginBottom: 'var(--space-2)', flexWrap: 'wrap' }}>
                 <div>
                   <div className="title-md">롤링 승률 추이</div>
-                  <div className="muted" style={{ marginTop: 4, fontSize: '0.8rem' }}>최근 거래 묶음 기준 승률 변화. 50% 위면 수익 우세</div>
+                  <div className="muted" style={{ marginTop: 4, fontSize: 'var(--font-size-sm)' }}>최근 거래 묶음 기준 승률 변화. 50% 위면 수익 우세</div>
                 </div>
                 <div style={{ textAlign: 'right' }}>
                   <div className="caption">평균 승률</div>
-                  <div className="title-md" style={{ color: rollingWinRate.avgWinRate >= 50 ? '#10b981' : '#ef4444' }}>{rollingWinRate.avgWinRate}%</div>
+                  <div className="title-md" style={{ color: rollingWinRate.avgWinRate >= 50 ? COLOR_POSITIVE : COLOR_NEGATIVE }}>{rollingWinRate.avgWinRate}%</div>
                 </div>
               </div>
               <svg viewBox="0 0 560 60" style={{ width: '100%', height: 'auto', display: 'block' }} aria-label="롤링 승률 차트">
@@ -1160,29 +1166,29 @@ export default function StrategyPage() {
                 <path
                   d={rollingWinRate.path}
                   fill="none"
-                  stroke={rollingWinRate.avgWinRate >= 50 ? '#10b981' : '#ef4444'}
+                  stroke={rollingWinRate.avgWinRate >= 50 ? COLOR_POSITIVE : COLOR_NEGATIVE}
                   strokeWidth="2.5"
                   strokeLinecap="round"
                   strokeLinejoin="round"
                 />
                 {rollingWinRate.points.map((pt, idx) => (
                   <g key={idx}>
-                    <circle cx={pt.x} cy={pt.y} r="3.5" fill="white" stroke={pt.winRate >= 50 ? '#10b981' : '#ef4444'} strokeWidth="1.5" />
+                    <circle cx={pt.x} cy={pt.y} r="3.5" fill="white" stroke={pt.winRate >= 50 ? COLOR_POSITIVE : COLOR_NEGATIVE} strokeWidth="1.5" />
                     <title>{`승률 ${pt.winRate}%`}</title>
                   </g>
                 ))}
               </svg>
-              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem', color: 'var(--color-text-secondary)', marginTop: 4 }}>
-                <span style={{ color: '#10b981' }}>↑ 수익 우세</span>
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)', marginTop: 4 }}>
+                <span style={{ color: COLOR_POSITIVE }}>↑ 수익 우세</span>
                 <span>50% 기준선</span>
-                <span style={{ color: '#ef4444' }}>손실 우세 ↓</span>
+                <span style={{ color: COLOR_NEGATIVE }}>손실 우세 ↓</span>
               </div>
             </div>
           )}
 
           <div className="card mb-4">
             <div className="title-md" style={{ marginBottom: 'var(--space-2)' }}>전략 & 국면 전환 타임라인</div>
-            <div className="muted" style={{ marginBottom: 12, fontSize: '0.8rem' }}>전략 버전 또는 시장 국면이 바뀐 시점을 시간 순으로 표시합니다.</div>
+            <div className="muted" style={{ marginBottom: 12, fontSize: 'var(--font-size-sm)' }}>전략 버전 또는 시장 국면이 바뀐 시점을 시간 순으로 표시합니다.</div>
             {decLoading && <Skeleton lines={5} height={12} />}
             {!decLoading && growthTimeline.length === 0 && <div className="muted">감지된 전환 없음</div>}
             {!decLoading && growthTimeline.map((item) => (
@@ -1201,7 +1207,7 @@ export default function StrategyPage() {
                     width: 10,
                     height: 10,
                     borderRadius: '50%',
-                    background: item.kind === 'version' ? 'var(--color-brand)' : '#f59e0b',
+                    background: item.kind === 'version' ? 'var(--color-brand)' : COLOR_WARNING,
                     marginTop: 4,
                     flexShrink: 0,
                   }}
@@ -1209,7 +1215,7 @@ export default function StrategyPage() {
                 <div>
                   <div style={{ fontWeight: 500 }}>{item.text}</div>
                   <div className="caption" style={{ marginTop: 2 }}>{item.subtitle}</div>
-                  <div className="muted" style={{ fontSize: '0.75rem', marginTop: 2 }}>{item.time}</div>
+                  <div className="muted" style={{ fontSize: 'var(--font-size-xs)', marginTop: 2 }}>{item.time}</div>
                 </div>
               </div>
             ))}
@@ -1218,14 +1224,14 @@ export default function StrategyPage() {
           {!decLoading && summary.topTriggers.length > 0 && (
             <div className="card">
               <div className="title-md" style={{ marginBottom: 'var(--space-2)' }}>누적 트리거 분포</div>
-              <div className="muted" style={{ marginBottom: 12, fontSize: '0.8rem' }}>어떤 조건에 의해 매매가 결정되었는지 누적 빈도를 보여줍니다.</div>
+              <div className="muted" style={{ marginBottom: 12, fontSize: 'var(--font-size-sm)' }}>어떤 조건에 의해 매매가 결정되었는지 누적 빈도를 보여줍니다.</div>
               {summary.topTriggers.map(([trigger, count]) => {
                 const maxCount = summary.topTriggers[0]?.[1] ?? 1
                 const pct = Math.round((count / maxCount) * 100)
                 return (
                   <div key={trigger} style={{ marginBottom: 12 }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
-                      <span style={{ fontSize: '0.88rem', fontWeight: 500 }}>{formatTriggerLabel(trigger)}</span>
+                      <span style={{ fontSize: 'var(--font-size-sm)', fontWeight: 500 }}>{formatTriggerLabel(trigger)}</span>
                       <span className="caption">{count}건 ({Math.round((count / summary.total) * 100)}%)</span>
                     </div>
                     <div style={{ height: 8, background: 'var(--color-border-subtle)', borderRadius: 4 }}>

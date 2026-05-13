@@ -120,6 +120,10 @@
   --color-border:         var(--color-border-default);
   --color-primary:        var(--color-brand);
   --color-danger:         var(--color-error);
+
+  /* Chart visualization colors */
+  --chart-ma-line:        rgba(100, 116, 139, 0.5);
+  --chart-projection-line: rgba(139, 92, 246, 0.55);
 }
 
 
