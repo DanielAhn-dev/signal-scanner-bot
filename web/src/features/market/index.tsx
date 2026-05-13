@@ -3,6 +3,7 @@ import { apiFetch } from '../../lib/api'
 import Button from '../../components/ui/Button'
 import Skeleton from '../../components/Skeleton'
 import { ErrorState } from '../../components/StateViews'
+import type { EconomicEvent } from '../../../src/types/economics'
 
 type MarketRegime = 'strong_bull' | 'bull' | 'neutral' | 'bear' | 'strong_bear'
 
@@ -161,7 +162,9 @@ function IndexGrid({ items }: { items: Array<{ label: string; index: MarketIndex
 
 export default function MarketPage() {
   const [data, setData] = useState<MarketOverviewData | null>(null)
+  const [upcomingEvents, setUpcomingEvents] = useState<EconomicEvent[]>([])
   const [loading, setLoading] = useState(true)
+  const [eventsLoading, setEventsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [expandSections, setExpandSections] = useState<Record<string, boolean>>({
     indices: false,
@@ -202,7 +205,30 @@ export default function MarketPage() {
     }
   }
 
-  useEffect(() => { void load() }, [])
+  const loadUpcomingEvents = async () => {
+    setEventsLoading(true)
+    try {
+      const result = await apiFetch('/api/economic-calendar?type=upcoming-high-risk', {
+        cacheMs: 3_600_000, // 1시간
+        timeoutMs: 10_000,
+        retries: 0,
+      })
+
+      if (result?.data?.events) {
+        setUpcomingEvents(result.data.events.slice(0, 2)) // 향후 2개 이벤트만 표시
+      }
+    } catch (e) {
+      // 경제 캘린더 로드 실패는 시장 페이지를 깨뜨리지 않음
+      console.error('[market] failed to load economic calendar:', e)
+    } finally {
+      setEventsLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    void load()
+    void loadUpcomingEvents()
+  }, [])
 
   const toggleSection = (key: string) =>
     setExpandSections(prev => ({ ...prev, [key]: !prev[key] }))
@@ -238,14 +264,99 @@ export default function MarketPage() {
   const signalBg   = tradingSignal.shouldTrade ? 'var(--color-success-bg)' : 'var(--color-error-bg)'
   const hasCommodities = !!(indices.gold || indices.silver || indices.copper || indices.wtiOil || indices.bitcoin)
 
+  // 주요 경제 이벤트 필터링
+  const criticalEvents = upcomingEvents.filter(e => e.importance === 'critical')
+  const highRiskEvents = upcomingEvents.filter(e => ['critical', 'high'].includes(e.importance))
+
   return (
     <section className="container-app">
 
       {/* 헤더 */}
       <div className="flex-between mb-6">
         <h1 className="title-xl" style={{ marginBottom: 0 }}>시장 진단</h1>
-        <Button variant="secondary" onClick={load} disabled={loading}>새로고침</Button>
+        <Button variant="secondary" onClick={() => { void load(); void loadUpcomingEvents() }} disabled={loading || eventsLoading}>새로고침</Button>
       </div>
+
+      {/* 경제 이벤트 알림 배너 */}
+      {criticalEvents.length > 0 && (
+        <div
+          className="card mb-4"
+          style={{
+            background: 'var(--color-stock-up-bg)',
+            borderLeft: '4px solid var(--color-stock-up)',
+            borderTop: '1px solid var(--color-stock-up)',
+            borderRight: '1px solid var(--color-stock-up)',
+            borderBottom: '1px solid var(--color-stock-up)',
+          }}
+        >
+          <div style={{ display: 'flex', gap: 'var(--space-3)', alignItems: 'flex-start' }}>
+            <span style={{ fontSize: '20px', flexShrink: 0 }}>⭐</span>
+            <div style={{ flex: 1 }}>
+              {criticalEvents.length === 1 ? (
+                <>
+                  <div className="title-sm" style={{ marginBottom: 'var(--space-1)' }}>
+                    주요 경제 지표 발표 예정
+                  </div>
+                  <div className="caption" style={{ color: 'var(--color-text-primary)', fontWeight: 500 }}>
+                    <strong>{criticalEvents[0].name}</strong> (
+                    {new Date(criticalEvents[0].scheduledAt).toLocaleString('ko-KR', {
+                      month: 'short',
+                      day: 'numeric',
+                      hour: '2-digit',
+                      minute: '2-digit',
+                    })}
+                    )
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div className="title-sm" style={{ marginBottom: 'var(--space-1)' }}>
+                    {criticalEvents.length}개의 중요 경제 이벤트 발표 예정
+                  </div>
+                  <div style={{ marginTop: 'var(--space-2)', display: 'flex', flexDirection: 'column', gap: 'var(--space-1)' }}>
+                    {criticalEvents.map(e => (
+                      <div key={e.id} className="caption" style={{ color: 'var(--color-text-primary)' }}>
+                        • <strong>{e.name}</strong> ({e.country})
+                      </div>
+                    ))}
+                  </div>
+                </>
+              )}
+              <div className="caption" style={{ marginTop: 'var(--space-2)', color: 'var(--color-text-secondary)' }}>
+                변동성 증가 가능, 포지션 관리 주의
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {highRiskEvents.length > 0 && criticalEvents.length === 0 && (
+        <div
+          className="card mb-4"
+          style={{
+            background: 'var(--color-warning-bg)',
+            borderLeft: '4px solid var(--color-warning)',
+            borderTop: '1px solid var(--color-warning)',
+            borderRight: '1px solid var(--color-warning)',
+            borderBottom: '1px solid var(--color-warning)',
+          }}
+        >
+          <div style={{ display: 'flex', gap: 'var(--space-3)', alignItems: 'flex-start' }}>
+            <span style={{ fontSize: '20px', flexShrink: 0 }}>📌</span>
+            <div style={{ flex: 1 }}>
+              <div className="title-sm" style={{ marginBottom: 'var(--space-1)' }}>
+                경제 지표 발표 예정
+              </div>
+              <div className="caption" style={{ color: 'var(--color-text-primary)', fontWeight: 500 }}>
+                {highRiskEvents[0].name}
+              </div>
+              <div className="caption" style={{ marginTop: 'var(--space-1)', color: 'var(--color-text-secondary)' }}>
+                변동성에 주의하세요
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ── 메인 신호 카드 ── */}
       <div

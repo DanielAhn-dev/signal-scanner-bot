@@ -4,6 +4,8 @@ import { formatNumber } from '../../lib/format'
 import Button from '../../components/ui/Button'
 import Skeleton from '../../components/Skeleton'
 import { ErrorState } from '../../components/StateViews'
+import EconomicCalendar from '../../components/EconomicCalendar'
+import type { EconomicEvent, EconomicCalendarResponse } from '../../../src/types/economics'
 
 interface MarketIndex {
   name: string
@@ -46,9 +48,13 @@ function formatPrice(index: MarketIndex, opts?: { isPercent?: boolean; isFx?: bo
 
 export default function EconomyPage() {
   const [data, setData] = useState<EconomyData | null>(null)
+  const [calendar, setCalendar] = useState<EconomicCalendarResponse | null>(null)
   const [loading, setLoading] = useState(true)
+  const [calendarLoading, setCalendarLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [calendarError, setCalendarError] = useState<string | null>(null)
   const [isLegacyBackend, setIsLegacyBackend] = useState(false)
+  const [activeTab, setActiveTab] = useState<'indicators' | 'calendar'>('indicators')
 
   const load = async () => {
     setLoading(true)
@@ -101,11 +107,35 @@ export default function EconomyPage() {
     }
   }
 
+  const loadCalendar = async () => {
+    setCalendarLoading(true)
+    setCalendarError(null)
+    try {
+      const result = await apiFetch('/api/economic-calendar', {
+        cacheMs: 3_600_000, // 1시간
+        timeoutMs: 10_000,
+        retries: 1,
+      })
+
+      if (!result?.data) {
+        throw new Error('calendar data fetch failed')
+      }
+
+      setCalendar(result.data)
+    } catch (e: any) {
+      const message = String(e?.message || e || '')
+      setCalendarError(message)
+    } finally {
+      setCalendarLoading(false)
+    }
+  }
+
   useEffect(() => {
     void load()
+    void loadCalendar()
   }, [])
 
-  if (error) {
+  if (error && !data) {
     return (
       <section className="container-app">
         <div className="flex-between mb-4">
@@ -117,7 +147,7 @@ export default function EconomyPage() {
     )
   }
 
-  if (loading || !data) {
+  if ((loading || !data) && activeTab === 'indicators') {
     return (
       <section className="container-app">
         <div className="flex-between mb-4">
@@ -131,61 +161,137 @@ export default function EconomyPage() {
     )
   }
 
-  const fetchedAt = data.indices.meta?.fetchedAt || data.fetchedAt
+  const fetchedAt = data?.indices.meta?.fetchedAt || data?.fetchedAt
 
   return (
     <section className="container-app">
+      {/* 헤더 */}
       <div className="flex-between mb-4">
-        <h1 className="title-xl" style={{ marginBottom: 0 }}>글로벌 경제지표</h1>
-        <Button variant="secondary" onClick={load} disabled={loading}>새로고침</Button>
+        <h1 className="title-xl" style={{ marginBottom: 0 }}>경제 분석</h1>
+        <Button
+          variant="secondary"
+          onClick={() => {
+            void load()
+            void loadCalendar()
+          }}
+          disabled={loading || calendarLoading}
+        >
+          새로고침
+        </Button>
       </div>
 
-      <div className="card mb-4">
-        <div className="muted">
-          텔레그램 <code>/economy</code>에 대응하는 실시간 지표입니다.
-          {fetchedAt ? ` 마지막 갱신: ${new Date(fetchedAt).toLocaleString('ko-KR')}` : ''}
-        </div>
+      {/* 탭 네비게이션 */}
+      <div
+        style={{
+          display: 'flex',
+          gap: 'var(--space-2)',
+          marginBottom: 'var(--space-4)',
+          borderBottom: '1px solid var(--color-border-default)',
+        }}
+      >
+        <button
+          onClick={() => setActiveTab('indicators')}
+          style={{
+            padding: 'var(--space-2) var(--space-3)',
+            background: activeTab === 'indicators' ? 'transparent' : 'transparent',
+            border: 'none',
+            borderBottom: activeTab === 'indicators' ? '2px solid var(--color-brand)' : '2px solid transparent',
+            color: activeTab === 'indicators' ? 'var(--color-brand)' : 'var(--color-text-secondary)',
+            cursor: 'pointer',
+            fontSize: 'var(--font-size-sm)',
+            fontWeight: activeTab === 'indicators' ? 600 : 500,
+            transition: 'all 0.2s ease',
+          }}
+        >
+          📊 경제지표
+        </button>
+        <button
+          onClick={() => setActiveTab('calendar')}
+          style={{
+            padding: 'var(--space-2) var(--space-3)',
+            background: activeTab === 'calendar' ? 'transparent' : 'transparent',
+            border: 'none',
+            borderBottom: activeTab === 'calendar' ? '2px solid var(--color-brand)' : '2px solid transparent',
+            color: activeTab === 'calendar' ? 'var(--color-brand)' : 'var(--color-text-secondary)',
+            cursor: 'pointer',
+            fontSize: 'var(--font-size-sm)',
+            fontWeight: activeTab === 'calendar' ? 600 : 500,
+            transition: 'all 0.2s ease',
+          }}
+        >
+          📅 이벤트 캘린더
+        </button>
       </div>
 
-      {isLegacyBackend && (
-        <div className="card mb-4" style={{ borderColor: 'var(--color-border-default)', background: 'var(--color-bg-muted)' }}>
-          <div className="stat-label" style={{ marginBottom: 'var(--space-2)' }}>실시간 연동 안내</div>
-          <div className="stat-sub" style={{ lineHeight: 1.7 }}>
-            현재 서버 배포 버전에서 market-overview 라우트를 아직 지원하지 않아 웹 카드 실시간 수치가 비어 있습니다.
-            텔레그램에서 <code>/economy</code> 명령으로 최신 값을 확인할 수 있습니다.
+      {/* 경제지표 탭 */}
+      {activeTab === 'indicators' && (
+        <>
+          <div className="card mb-4">
+            <div className="muted">
+              텔레그램 <code>/economy</code>에 대응하는 실시간 지표입니다.
+              {fetchedAt ? ` 마지막 갱신: ${new Date(fetchedAt).toLocaleString('ko-KR')}` : ''}
+            </div>
           </div>
-        </div>
+
+          {isLegacyBackend && (
+            <div className="card mb-4" style={{ borderColor: 'var(--color-border-default)', background: 'var(--color-bg-muted)' }}>
+              <div className="stat-label" style={{ marginBottom: 'var(--space-2)' }}>실시간 연동 안내</div>
+              <div className="stat-sub" style={{ lineHeight: 1.7 }}>
+                현재 서버 배포 버전에서 market-overview 라우트를 아직 지원하지 않아 웹 카드 실시간 수치가 비어 있습니다.
+                텔레그램에서 <code>/economy</code> 명령으로 최신 값을 확인할 수 있습니다.
+              </div>
+            </div>
+          )}
+
+          {data && (
+            <div className="cards-grid cols-2">
+              {INDICATORS.map(ind => (
+                <div key={ind.label} className="card">
+                  <div className="stat-label">{ind.label}</div>
+                  <div className="stat-value" style={{ fontSize: 'var(--font-size-2xl)' }}>
+                    {data.indices[ind.key] ? formatPrice(data.indices[ind.key]!, { isPercent: ind.isPercent, isFx: ind.isFx }) : '—'}
+                  </div>
+                  <div
+                    className="stat-sub"
+                    style={{
+                      color:
+                        data.indices[ind.key] && data.indices[ind.key]!.changeRate > 0
+                          ? 'var(--color-stock-up)'
+                          : data.indices[ind.key] && data.indices[ind.key]!.changeRate < 0
+                            ? 'var(--color-stock-down)'
+                            : 'var(--color-text-secondary)',
+                    }}
+                  >
+                    {data.indices[ind.key]
+                      ? `${data.indices[ind.key]!.changeRate >= 0 ? '+' : ''}${formatNumber(data.indices[ind.key]!.changeRate, 2)}%`
+                      : ind.desc}
+                  </div>
+                  <div className="stat-sub">{ind.desc}</div>
+                  <div className="caption mt-2" style={{ marginTop: 'var(--space-2)' }}>
+                    텔레그램: <code>{ind.cmd}</code>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </>
       )}
 
-      <div className="cards-grid cols-2">
-        {INDICATORS.map(ind => (
-          <div key={ind.label} className="card">
-            <div className="stat-label">{ind.label}</div>
-            <div className="stat-value" style={{ fontSize: 'var(--font-size-2xl)' }}>
-              {data.indices[ind.key] ? formatPrice(data.indices[ind.key]!, { isPercent: ind.isPercent, isFx: ind.isFx }) : '—'}
+      {/* 캘린더 탭 */}
+      {activeTab === 'calendar' && (
+        <div>
+          {calendarError && (
+            <div className="card mb-4" style={{ background: 'var(--color-stock-down-bg)' }}>
+              <div className="muted">{calendarError}</div>
             </div>
-            <div
-              className="stat-sub"
-              style={{
-                color:
-                  data.indices[ind.key] && data.indices[ind.key]!.changeRate > 0
-                    ? 'var(--color-stock-up)'
-                    : data.indices[ind.key] && data.indices[ind.key]!.changeRate < 0
-                      ? 'var(--color-stock-down)'
-                      : 'var(--color-text-secondary)',
-              }}
-            >
-              {data.indices[ind.key]
-                ? `${data.indices[ind.key]!.changeRate >= 0 ? '+' : ''}${formatNumber(data.indices[ind.key]!.changeRate, 2)}%`
-                : ind.desc}
-            </div>
-            <div className="stat-sub">{ind.desc}</div>
-            <div className="caption mt-2" style={{ marginTop: 'var(--space-2)' }}>
-              텔레그램: <code>{ind.cmd}</code>
-            </div>
-          </div>
-        ))}
-      </div>
+          )}
+          <EconomicCalendar
+            events={calendar?.events || []}
+            loading={calendarLoading}
+            onRefresh={loadCalendar}
+          />
+        </div>
+      )}
     </section>
   )
 }
