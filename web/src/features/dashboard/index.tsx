@@ -85,7 +85,7 @@ export default function Dashboard({ onNavigate }: { onNavigate?: (r: string) => 
           [0,1,2,3].map(i => <div key={i} className="card"><Skeleton lines={2} height={14} /></div>)
         ) : (
           <>
-            <button type="button" className="card stat-card card-action-btn" onClick={() => go('portfolio')}>
+            <button type="button" className="card stat-card stat-card--accent card-action-btn" onClick={() => go('portfolio')}>
               <div className="stat-label">보유 종목</div>
               <div className="stat-value">
                 {(summary as any)?.positions ?? '-'}{(summary as any)?.positions != null && <span className="stat-unit">종목</span>}
@@ -107,7 +107,7 @@ export default function Dashboard({ onNavigate }: { onNavigate?: (r: string) => 
               <div className="stat-sub">스캔 실행 시각</div>
             </div>
 
-            <button type="button" className="card stat-card card-action-btn" onClick={() => go('sectors')}>
+            <button type="button" className="card stat-card stat-card--accent card-action-btn" onClick={() => go('sectors')}>
               <div className="stat-label">1위 섹터</div>
               <div className="stat-value stat-value--sm">{topSector}</div>
               <div className="stat-sub">섹터 페이지 →</div>
@@ -117,10 +117,9 @@ export default function Dashboard({ onNavigate }: { onNavigate?: (r: string) => 
       </div>
 
       <div className="mb-4">
-        <div className="flex-between" style={{ marginBottom: 'var(--space-3)' }}>
+        <div className="dashboard-section-head">
           <div className="title-md">유망 섹터 Top 8</div>
-          <button style={{ cursor: 'pointer', background: 'none', border: 'none', color: 'var(--color-brand)', fontSize: 'var(--font-size-sm)' }}
-            onClick={() => go('sectors')}>전체 보기 →</button>
+          <button type="button" className="dashboard-section-link" onClick={() => go('sectors')}>전체 보기 →</button>
         </div>
 
         {sectorsLoading && sectors.length === 0 ? (
@@ -139,7 +138,7 @@ export default function Dashboard({ onNavigate }: { onNavigate?: (r: string) => 
                 <button
                   key={s.id}
                   type="button"
-                  className="card sector-mini-card card-action-btn"
+                  className="card sector-mini-card sector-mini-card--accent card-action-btn"
                   onClick={() => go('sectors')}
                 >
                   <div className="sector-mini-rank">#{idx + 1}</div>

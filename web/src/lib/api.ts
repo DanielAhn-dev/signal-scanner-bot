@@ -1,5 +1,6 @@
 import { getApiBase } from './userContext'
 import { getCurrentChatIdFromStore } from '../stores/profileStore'
+import { isReviewMode, getMockResponse } from './review-mode'
 
 type CacheEntry = { ts: number; data: any }
 
@@ -97,6 +98,12 @@ export async function apiFetch(
 
   // Avoid relying on edge rewrites in split deployments by using query-route form directly.
   url = normalizeUiUrl(url)
+
+  // Review mode: check for mock data first
+  const mockData = getMockResponse(url)
+  if (mockData) {
+    return mockData
+  }
 
   const headers: Record<string, string> = {
     ...(fetchOpts.headers as Record<string, string> || {}),

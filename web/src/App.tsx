@@ -6,6 +6,7 @@ import Portfolio from './features/portfolio'
 import ScanPage from './features/scan'
 import { preloadStocks } from './lib/stockCache'
 import { isSupabaseConfigured } from './lib/supabase'
+import { isReviewMode } from './lib/review-mode'
 import { useAuthStore } from './stores/authStore'
 import { useProfileStore } from './stores/profileStore'
 
@@ -49,9 +50,27 @@ function AppContent() {
   const hydrateFromServer = useProfileStore((state) => state.hydrateFromServer)
 
   const isPublicAnalyze = location.pathname === '/analyze' && new URLSearchParams(location.search).has('code')
+  const isReview = isReviewMode()
 
   // Supabase 인증 초기화
-  useEffect(() => initAuth(), [initAuth])
+  useEffect(() => {
+    const cleanup = initAuth()
+    return cleanup
+  }, [initAuth])
+
+  // Review mode: bypass authentication (only once on mount)
+  useEffect(() => {
+    if (isReview) {
+      useAuthStore.setState({
+        isSignedIn: true,
+        authReady: true,
+        authEmail: 'review@example.com',
+        authName: 'Review Mode',
+        signIn: async () => { /* no-op in review mode */ },
+      })
+      console.log('[Review Mode] Authentication bypassed')
+    }
+  }, [])
 
   // 주식 캐시 프리로드
   useEffect(() => { preloadStocks() }, [])
@@ -91,7 +110,7 @@ function AppContent() {
 
   const handleNavigate = (r: string) => navigate(`/${r}`)
 
-  if (!authReady && isSupabaseConfigured) {
+  if (!authReady && isSupabaseConfigured && !isReview) {
     return (
       <div className="layout-shell">
         <main className="auth-status-main">
@@ -105,7 +124,7 @@ function AppContent() {
     )
   }
 
-  if (!isSignedIn && !isPublicAnalyze) {
+  if (!isSignedIn && !isPublicAnalyze && !isReview) {
     return (
       <div className="layout-shell">
         <main className="auth-status-main">

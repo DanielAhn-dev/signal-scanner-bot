@@ -336,7 +336,7 @@ export default function HighlightsPage({ onNavigate }: { onNavigate?: (r: string
             return (
               <div
                 key={row.code}
-                className="card"
+                className="card highlights-hero-card"
                 style={{
                   padding: 'var(--space-5)',
                   borderColor: selected ? 'var(--color-brand)' : undefined,
@@ -344,8 +344,8 @@ export default function HighlightsPage({ onNavigate }: { onNavigate?: (r: string
                 }}
               >
                 {/* 헤더 */}
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 'var(--space-4)' }}>
-                  <div style={{ display: 'flex', gap: 'var(--space-3)', alignItems: 'flex-start' }}>
+                <div className="highlights-hero-header">
+                  <div className="highlights-hero-title-wrap">
                     <div style={{
                       width: 28, height: 28, borderRadius: '50%', flexShrink: 0,
                       background: index === 0 ? 'var(--color-brand)' : 'var(--color-bg-muted)',
@@ -354,18 +354,19 @@ export default function HighlightsPage({ onNavigate }: { onNavigate?: (r: string
                       display: 'flex', alignItems: 'center', justifyContent: 'center',
                       fontWeight: 700, fontSize: 13,
                     }}>{index + 1}</div>
-                    <div>
-                      <div style={{ fontSize: 18, fontWeight: 700, lineHeight: 1.2 }}>{row.name}</div>
-                      <div style={{ fontSize: 12, color: 'var(--color-text-tertiary)', marginTop: 4, display: 'flex', gap: 8, alignItems: 'center' }}>
+                    <div className="highlights-hero-title-block">
+                      <div className="highlights-hero-name">{row.name}</div>
+                      <div className="highlights-hero-meta">
                         <span>{row.code}</span>
                         <StrategyBadge label={row.strategy_label} />
                         <WarnBadge grade={row.warn_grade} />
                       </div>
                     </div>
                   </div>
-                  <div style={{ display: 'flex', alignItems: 'flex-start', gap: 'var(--space-3)' }}>
+                  <div className="highlights-hero-side">
                     <ConfidenceLabel pct={row.confidence_pct} />
-                    <button 
+                    <button
+                      type="button"
                       onClick={() => toggleCode(row.code)}
                       aria-label={selected ? `${row.code} 선택 해제` : `${row.code} 선택`}
                       style={{ marginTop: 2, background: 'none', border: 'none', padding: 0, cursor: 'pointer' }}
@@ -376,9 +377,7 @@ export default function HighlightsPage({ onNavigate }: { onNavigate?: (r: string
                 </div>
 
                 {/* 가격 4칸 — divider 구분 */}
-                <div style={{
-                  display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)',
-                  gap: 'var(--space-3)',
+                <div className="highlights-hero-prices" style={{
                   borderTop: '1px solid var(--color-border-default)',
                   borderBottom: '1px solid var(--color-border-default)',
                   padding: 'var(--space-3) 0',
@@ -391,7 +390,7 @@ export default function HighlightsPage({ onNavigate }: { onNavigate?: (r: string
                 </div>
 
                 {/* 점수 지표 + 매수 근거 */}
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-4)', marginBottom: 'var(--space-4)' }}>
+                <div className="highlights-hero-body">
                   <div>
                     <div style={{ fontSize: 11, color: 'var(--color-text-tertiary)', marginBottom: 8, fontWeight: 500, letterSpacing: '0.02em' }}>점수 지표</div>
                     <ScoreBar label="모멘텀" value={row.score_momentum} color="#ef4444" />
@@ -419,9 +418,7 @@ export default function HighlightsPage({ onNavigate }: { onNavigate?: (r: string
 
                 {/* 진입구간/목표가 */}
                 {prices && (
-                  <div style={{
-                    display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)',
-                    gap: 'var(--space-2)',
+                  <div className="highlights-hero-targets" style={{
                     borderTop: '1px solid var(--color-border-default)',
                     paddingTop: 'var(--space-3)',
                     marginBottom: 'var(--space-4)',
@@ -452,8 +449,8 @@ export default function HighlightsPage({ onNavigate }: { onNavigate?: (r: string
                 )}
 
                 {/* 투입금액 + 상세분석 */}
-                <div style={{ display: 'flex', gap: 'var(--space-3)', alignItems: 'flex-end' }}>
-                  <div style={{ flex: 1 }}>
+                <div className="highlights-hero-actions">
+                  <div className="highlights-hero-amount">
                     <Input
                       label="투입 금액 (원)"
                       type="number"
@@ -471,15 +468,15 @@ export default function HighlightsPage({ onNavigate }: { onNavigate?: (r: string
           {/* TOP 4-5: 컴팩트 카드 */}
           {items.slice(3).length > 0 && (
             <div>
-              <div style={{ fontSize: 12, color: 'var(--color-text-tertiary)', marginBottom: 'var(--space-2)', padding: '0 2px' }}>추가 후보</div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' }}>
+              <div className="highlights-subtitle">추가 후보</div>
+              <div className="highlights-compact-list">
                 {items.slice(3).map((row, i) => {
                   const selected = selectedCodes.includes(row.code)
                   const amount = amountByCode[row.code] || '0'
                   return (
                     <div
                       key={row.code}
-                      className="card"
+                      className="card highlights-compact-card"
                       style={{
                         padding: 'var(--space-3) var(--space-4)',
                         borderColor: selected ? 'var(--color-brand)' : undefined,
@@ -487,36 +484,36 @@ export default function HighlightsPage({ onNavigate }: { onNavigate?: (r: string
                         transition: 'border-color 0.15s, border-left-width 0.15s',
                       }}
                     >
-                      <div style={{ display: 'flex', gap: 'var(--space-3)', alignItems: 'center', flexWrap: 'wrap' }}>
+                      <div className="highlights-compact-inner">
                         <div style={{
                           width: 24, height: 24, borderRadius: '50%', flexShrink: 0,
                           background: 'var(--color-bg-muted)', color: 'var(--color-text-secondary)',
                           display: 'flex', alignItems: 'center', justifyContent: 'center',
                           fontWeight: 700, fontSize: 12, border: '1px solid var(--color-border-default)',
                         }}>{i + 4}</div>
-                        <div style={{ flex: 1, minWidth: 120 }}>
+                        <div className="highlights-compact-title">
                           <div style={{ fontWeight: 600, fontSize: 14 }}>{row.name}</div>
                           <div style={{ fontSize: 11, color: 'var(--color-text-tertiary)' }}>{row.code}</div>
                         </div>
-                        <div style={{ display: 'flex', gap: 'var(--space-3)', alignItems: 'center', flexWrap: 'wrap' }}>
+                        <div className="highlights-compact-metrics">
                           {row.entry_price && (
-                            <div style={{ textAlign: 'center' }}>
+                            <div className="highlights-compact-metric">
                               <div style={{ fontSize: 10, color: 'var(--color-text-tertiary)' }}>기준가</div>
                               <div style={{ fontSize: 12, fontWeight: 600 }}>{formatKrw(row.entry_price)}</div>
                             </div>
                           )}
-                          <div style={{ textAlign: 'center' }}>
+                          <div className="highlights-compact-metric">
                             <div style={{ fontSize: 10, color: 'var(--color-text-tertiary)' }}>기대수익</div>
                             <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--color-stock-up)' }}>+{formatNumber(row.expected_base_pct, 1)}%</div>
                           </div>
-                          <div style={{ textAlign: 'center' }}>
+                          <div className="highlights-compact-metric">
                             <div style={{ fontSize: 10, color: 'var(--color-text-tertiary)' }}>신뢰도</div>
                             <div style={{ fontSize: 12, fontWeight: 600 }}>{formatNumber(row.confidence_pct, 1)}%</div>
                           </div>
                           <WarnBadge grade={row.warn_grade} />
                         </div>
-                        <div style={{ display: 'flex', gap: 'var(--space-2)', alignItems: 'center' }}>
-                          <div style={{ width: 90 }}>
+                        <div className="highlights-compact-actions">
+                          <div className="highlights-compact-input">
                             <Input
                               type="number"
                               min={0}
@@ -525,7 +522,8 @@ export default function HighlightsPage({ onNavigate }: { onNavigate?: (r: string
                             />
                           </div>
                           <Button variant="ghost" onClick={() => goAnalyze(row.code)}>분석</Button>
-                          <button 
+                          <button
+                            type="button"
                             onClick={() => toggleCode(row.code)}
                             aria-label={selected ? `${row.code} 선택 해제` : `${row.code} 선택`}
                             style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer' }}

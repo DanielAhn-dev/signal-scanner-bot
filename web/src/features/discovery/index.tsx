@@ -503,7 +503,7 @@ export default function DiscoveryPage() {
         </div>
       </div>
 
-      <div className="card mb-4">
+      <div className="card mb-4 discovery-summary-card">
         <div className="muted">
           후보 <strong>{filteredPicks.length}</strong>개 · 섹터 모드 <strong>{sectorModeSummary}</strong> · 필터 기준: 시총 {appliedCriteria.minMarketCapBillion}억↑,
           {' '}PBR {'<'} {appliedCriteria.maxPbr.toFixed(1)}, ROE {'>'} {appliedCriteria.minRoe.toFixed(1)}%,
@@ -514,11 +514,11 @@ export default function DiscoveryPage() {
         </div>
       </div>
 
-      <div className="card mb-4">
+      <div className="card mb-4 discovery-filter-card">
         <div className="title-md" style={{ marginBottom: 'var(--space-2)' }}>기준 설정</div>
-        <div style={{ marginBottom: 'var(--space-3)' }}>
+        <div className="discovery-filter-group" style={{ marginBottom: 'var(--space-3)' }}>
           <div className="caption" style={{ marginBottom: 'var(--space-2)' }}>초보자 추천 프리셋</div>
-          <div className="flex-gap-sm" style={{ flexWrap: 'wrap' }}>
+          <div className="flex-gap-sm discovery-filter-chip-row" style={{ flexWrap: 'wrap' }}>
             {DISCOVERY_PRESETS.map((preset) => (
               <Button
                 key={preset.key}
@@ -533,7 +533,7 @@ export default function DiscoveryPage() {
             ))}
           </div>
         </div>
-        <div className="flex-gap-sm" style={{ flexWrap: 'wrap', marginBottom: 'var(--space-3)' }}>
+        <div className="flex-gap-sm discovery-filter-chip-row" style={{ flexWrap: 'wrap', marginBottom: 'var(--space-3)' }}>
           <Button variant={sectorMode === 'all' ? 'primary' : 'secondary'} size="sm" onClick={() => setSectorMode('all')} disabled={loading}>전체 섹터</Button>
           <Button variant={sectorMode === 'promising' ? 'primary' : 'secondary'} size="sm" onClick={() => setSectorMode('promising')} disabled={loading}>유망 섹터</Button>
           <Button variant={sectorMode === 'next' ? 'primary' : 'secondary'} size="sm" onClick={() => setSectorMode('next')} disabled={loading}>다음 섹터</Button>
@@ -585,8 +585,8 @@ export default function DiscoveryPage() {
             onChange={(e) => setCriteria((prev) => ({ ...prev, maxPeg: e.target.value === '' ? null : Number(e.target.value) }))}
           />
         </div>
-        <div className="flex-between" style={{ gap: 'var(--space-2)', flexWrap: 'wrap' }}>
-          <div className="ui-field" style={{ minWidth: 260 }}>
+        <div className="flex-between discovery-filter-actions" style={{ gap: 'var(--space-2)', flexWrap: 'wrap' }}>
+          <div className="ui-field discovery-growth-field" style={{ minWidth: 260 }}>
             <label className="ui-label">성장 조건</label>
             <select
               className="input"
@@ -600,7 +600,7 @@ export default function DiscoveryPage() {
               <option value="latest-quarter-positive">최신 분기 QoQ 양수</option>
             </select>
           </div>
-          <div className="flex-gap-sm">
+          <div className="flex-gap-sm discovery-filter-action-buttons">
             <Button
               variant="secondary"
               size="sm"
@@ -620,9 +620,9 @@ export default function DiscoveryPage() {
       </div>
 
       {funnel && (
-        <div className="card mb-4">
+        <div className="card mb-4 discovery-funnel-card">
           <div className="title-md" style={{ marginBottom: 'var(--space-2)' }}>필터 퍼널</div>
-          <div className="caption" style={{ lineHeight: 1.8 }}>
+          <div className="caption discovery-funnel-copy" style={{ lineHeight: 1.8 }}>
             연간 재무 유니버스 {funnel.annualUniverse}개 → 시총 통과 {funnel.afterMarketCap}개 → 가치 통과 {funnel.afterValue}개 →
             PEG 조건 통과 {funnel.afterPeg}개 → 최근 2분기 데이터 보유 {funnel.afterTrendData}개 → 최종 성장 조건 통과 {funnel.afterGrowth}개
           </div>
@@ -660,9 +660,9 @@ export default function DiscoveryPage() {
       )}
 
       {!loading && !error && filteredPicks.length > 0 && (
-        <div className="card mb-4">
+        <div className="card mb-4 discovery-result-card">
           <div className="scan-table-wrap">
-          <table className="scan-table">
+          <table className="scan-table discovery-table">
             <thead className="scan-thead">
               <tr>
                 <th className="scan-th">#</th>
@@ -689,33 +689,33 @@ export default function DiscoveryPage() {
                 else if (rankNum === 2) rankClass = 'discovery-rank-badge--second';
                 else if (rankNum === 3) rankClass = 'discovery-rank-badge--third';
                 return (
-                <tr key={pick.code} className="scan-tr">
-                  <td className="scan-td">
+                <tr key={pick.code} className="scan-tr discovery-tr">
+                  <td className="scan-td discovery-td-rank" data-label="순위">
                     <span className={`discovery-rank-badge discovery-rank-badge--circle ${rankClass}`}>
                       {rankNum}
                     </span>
                   </td>
-                  <td className="scan-td">
+                  <td className="scan-td discovery-td-stock" data-label="종목">
                     <div className="scan-td-name">{pick.name}</div>
                     <div className="scan-td-code">{pick.code}</div>
                     {pick.sectorName && <div className="caption muted">섹터 {pick.sectorName}</div>}
                   </td>
-                  <td className="scan-td">
+                  <td className="scan-td" data-label="종합 점수">
                     <ScoreBadge value={pick.score.totalScore} max={100} />
                   </td>
-                  <td className="scan-td">
+                  <td className="scan-td" data-label="가치">
                     <ScoreBadge value={pick.score.value} max={30} />
                   </td>
-                  <td className="scan-td">
+                  <td className="scan-td" data-label="모멘텀">
                     <ScoreBadge value={pick.score.momentum} max={40} />
                   </td>
-                  <td className="scan-td">
+                  <td className="scan-td" data-label="수급">
                     <ScoreBadge value={pick.score.smartMoney} max={20} />
                   </td>
-                  <td className="scan-td">
+                  <td className="scan-td" data-label="섹터">
                     <ScoreBadge value={pick.score.sector} max={10} />
                   </td>
-                  <td className="scan-td">
+                  <td className="scan-td" data-label="PEG">
                     <div>{pick.peg != null ? pick.peg.toFixed(2) : '—'}</div>
                     {pick.pegSource && (
                       <div className="caption muted">
@@ -729,22 +729,22 @@ export default function DiscoveryPage() {
                       </div>
                     )}
                   </td>
-                  <td className="scan-td">
+                  <td className="scan-td" data-label="PBR">
                     {pick.pbr != null ? pick.pbr.toFixed(2) : '—'}
                   </td>
-                  <td className="scan-td">
+                  <td className="scan-td" data-label="ROE">
                     {pick.roe != null ? `${pick.roe.toFixed(1)}%` : '—'}
                   </td>
-                  <td className="scan-td">
+                  <td className="scan-td" data-label="매출 QoQ">
                     <QoQCell value={pick.revQoq} />
                   </td>
-                  <td className="scan-td">
+                  <td className="scan-td" data-label="영업이익 QoQ">
                     <QoQCell value={pick.opQoq} />
                   </td>
-                  <td className="scan-td">
+                  <td className="scan-td" data-label="시총">
                     <MarketCapCell value={pick.marketCap} />
                   </td>
-                  <td className="scan-td">
+                  <td className="scan-td discovery-td-action" data-label="분석">
                     <Button
                       variant="secondary"
                       size="xs"
@@ -762,8 +762,8 @@ export default function DiscoveryPage() {
         </div>
       )}
 
-      <div className="card">
-        <div className="caption" style={{ lineHeight: 1.7 }}>
+      <div className="card discovery-footnote-card">
+        <div className="caption discovery-footnote-copy" style={{ lineHeight: 1.7 }}>
           · <strong>가치(30pt)</strong>: PBR 구간 + ROE + PER + PEG 보정 기반<br />
           · <strong>모멘텀(40pt)</strong>: 최신 매출/영업이익 QoQ + 가속도<br />
           · <strong>수급(20pt)</strong>: 최근 12주 외국인+기관 순매수 누적<br />
