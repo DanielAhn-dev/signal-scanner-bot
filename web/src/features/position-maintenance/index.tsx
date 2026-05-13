@@ -5,8 +5,8 @@ import Button from '../../components/ui/Button'
 import Input from '../../components/ui/Input'
 import Modal from '../../components/Modal'
 import { useToast } from '../../components/ToastProvider'
-import { getCurrentUserChatId } from '../../lib/userContext'
 import type { MaintenanceResult, PositionRow } from '../../lib/types'
+import { getCurrentChatIdFromStore } from '../../stores/profileStore'
 
 type OpMode = 'idle' | 'loading' | 'done' | 'error'
 
@@ -23,7 +23,7 @@ type RestoreForm = {
 }
 
 async function callMaintenance(body: Record<string, unknown>): Promise<MaintenanceResult> {
-  const chatId = getCurrentUserChatId()
+  const chatId = getCurrentChatIdFromStore()
   const result = await apiFetch('/api/ui/positions-maintenance', {
     method: 'POST',
     headers: { 'content-type': 'application/json', ...(chatId ? { 'x-user-chat-id': chatId } : {}) },

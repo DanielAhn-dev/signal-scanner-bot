@@ -1,4 +1,5 @@
-import { getApiBase, getCurrentUserChatId } from './userContext'
+import { getApiBase } from './userContext'
+import { getCurrentChatIdFromStore } from '../stores/profileStore'
 
 type CacheEntry = { ts: number; data: any }
 
@@ -105,7 +106,7 @@ export async function apiFetch(
   const requiresUserChatIdHeader = /\/api\/ui\/(positions|positions-maintenance|watchlist|virtual-trade|decisions|summary|settings|notify|access-users|operations|portfolio-share|simulation-plan|account-policies|advisor-performance)(\?|$)|\/api\/ui\?route=(positions|positions-maintenance|watchlist|virtual-trade|decisions|summary|settings|notify|access-users|operations|portfolio-share|simulation-plan|account-policies|advisor-performance)(&|$)/.test(url)
   const requiresUserChatIdQuery = /\/api\/ui\/(positions|positions-maintenance|watchlist|virtual-trade|decisions|summary|settings|notify|access-users|operations|portfolio-share|simulation-plan|account-policies|advisor-performance|trigger-update|trigger-briefing|sync-history|sync-status|report-pdf|report-share|report-snapshot|report-web)(\?|$)|\/api\/ui\?route=(positions|positions-maintenance|watchlist|virtual-trade|decisions|summary|settings|notify|access-users|operations|portfolio-share|simulation-plan|account-policies|advisor-performance|trigger-update|trigger-briefing|sync-history|sync-status|report-pdf|report-share|report-snapshot|report-web)(&|$)/.test(url)
   if (requiresUserChatIdHeader || requiresUserChatIdQuery) {
-    const chatId = getCurrentUserChatId()
+    const chatId = getCurrentChatIdFromStore()
     if (chatId && requiresUserChatIdHeader) headers['x-user-chat-id'] = chatId
     if (chatId && requiresUserChatIdQuery) url = appendQueryParam(url, 'chat_id', chatId)
   }

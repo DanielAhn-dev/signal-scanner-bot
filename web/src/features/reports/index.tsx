@@ -1,6 +1,5 @@
 import React, { useEffect, useState } from 'react'
 import { apiFetch } from '../../lib/api'
-import { getCurrentUserChatId } from '../../lib/userContext'
 import Button from '../../components/ui/Button'
 import { useToast } from '../../components/ToastProvider'
 import ShareModal from '../../components/ShareModal'
@@ -8,6 +7,7 @@ import { readSimulationPlan, type HighlightSimulationPlan } from '../simulator/p
 import { buildTelegramMessage, calcExpectedValue, calcSplitInvested } from '../simulator/telegramFormat'
 import { formatKrw } from '../../lib/format'
 import { useShareManager } from '../../hooks/useShareManager'
+import { useProfileStore } from '../../stores/profileStore'
 
 type ReportAction = {
   key: string
@@ -147,6 +147,7 @@ const REPORT_ACTIONS: ReportAction[] = [
 ]
 
 export default function ReportsPage() {
+  const chatId = useProfileStore((state) => state.profile.telegramId || '')
   const [states, setStates] = useState<Record<string, { loading: boolean; msg?: string }>>({})
   const toast = useToast()
   const [simPlan, setSimPlan] = useState<HighlightSimulationPlan | null>(null)
@@ -164,7 +165,6 @@ export default function ReportsPage() {
   const buildUiRequest = (endpoint: string): { url: string; headers: Record<string, string> } => {
     const base = import.meta.env.VITE_API_BASE || ''
     const uiKey = import.meta.env.VITE_UI_READ_KEY
-    const chatId = getCurrentUserChatId() || ''
     let resolvedEndpoint = endpoint
     if (uiKey) resolvedEndpoint = `${resolvedEndpoint}${resolvedEndpoint.includes('?') ? '&' : '?'}ui_key=${encodeURIComponent(uiKey)}`
     if (chatId) resolvedEndpoint = `${resolvedEndpoint}${resolvedEndpoint.includes('?') ? '&' : '?'}chat_id=${encodeURIComponent(chatId)}`

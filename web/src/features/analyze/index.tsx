@@ -2,7 +2,6 @@ import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react'
 import { apiFetch } from '../../lib/api'
 import { formatKrw, formatNumber } from '../../lib/format'
 import { getStocks, type StockItem } from '../../lib/stockCache'
-import { getCurrentUserChatId } from '../../lib/userContext'
 import Button from '../../components/ui/Button'
 import Skeleton from '../../components/Skeleton'
 import StockSearchInput from '../../components/StockSearchInput'
@@ -13,6 +12,7 @@ import CandleChart from '../../components/CandleChart'
 import EconomicEventBadge from '../../components/EconomicEventBadge'
 import { LayoutDashboard, TrendingUp, Flag, Activity } from 'lucide-react'
 import type { OhlcvCandle } from '../../lib/types'
+import { useProfileStore } from '../../stores/profileStore'
 
 function scoreColor(score: number | null): string {
   if (score == null) return 'var(--color-text-tertiary)'
@@ -74,6 +74,7 @@ function useLocalStorageBool(key: string, defaultValue: boolean): [boolean, (v: 
 }
 
 export default function AnalyzePage({ onNavigate }: { onNavigate?: (r: string) => void }) {
+  const chatId = useProfileStore((state) => state.profile.telegramId || '')
   const [query, setQuery] = useState('')
   const [result, setResult] = useState<any | null>(null)
   const [candles, setCandles] = useState<OhlcvCandle[]>([])
@@ -167,7 +168,6 @@ export default function AnalyzePage({ onNavigate }: { onNavigate?: (r: string) =
     setCandles([])
 
     try {
-      const chatId = getCurrentUserChatId()
       const chatQs = chatId ? `&chat_id=${encodeURIComponent(chatId)}` : ''
       const res = await apiFetch(`/api/ui/stock-latest?code=${encodeURIComponent(q)}${chatQs}`, { cacheMs: 0 })
       if (res?.profile || res?.latest) {

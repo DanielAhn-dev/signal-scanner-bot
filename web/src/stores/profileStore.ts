@@ -56,3 +56,7 @@ export const useProfileStore = create<ProfileState & ProfileActions>((set) => ({
 
   setSyncError: (message) => set({ syncError: message }),
 }))
+
+export function getCurrentChatIdFromStore(): string {
+  return useProfileStore.getState().profile.telegramId || ''
+}

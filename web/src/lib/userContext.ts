@@ -270,17 +270,3 @@ export function saveApiBase(raw: unknown) {
     // ignore
   }
 }
-
-export function getCurrentUserChatId(): string {
-  const profile = readProfile()
-  const fromProfile = normalizeChatId(profile?.telegramId)
-  if (fromProfile) return fromProfile
-
-  const fromEnv = normalizeChatId(import.meta.env.VITE_DEFAULT_TELEGRAM_CHAT_ID)
-  if (fromEnv) return fromEnv
-
-  const fromLegacyEnv = normalizeChatId((import.meta as any)?.env?.DEFAULT_TELEGRAM_CHAT_ID)
-  if (fromLegacyEnv) return fromLegacyEnv
-
-  return ''
-}

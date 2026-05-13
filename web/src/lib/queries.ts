@@ -4,7 +4,7 @@
  */
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { apiFetch } from './api'
-import { getCurrentUserChatId } from './userContext'
+import { useProfileStore } from '../stores/profileStore'
 import type {
   DashboardSummary,
   SectorItem,
@@ -22,8 +22,8 @@ export const QUERY_KEYS = {
   summary: ['summary'] as const,
   sectors: (top = 8) => ['sectors', top] as const,
   scanCandidates: (params?: Record<string, string>) => ['scan-candidates', params] as const,
-  positions: () => ['positions', getCurrentUserChatId()] as const,
-  trades: (page = 1) => ['trades', page, getCurrentUserChatId()] as const,
+  positions: (chatId = '') => ['positions', chatId] as const,
+  trades: (page = 1, chatId = '') => ['trades', page, chatId] as const,
   analyze: (code: string) => ['analyze', code] as const,
   ohlcv: (code: string) => ['ohlcv', code] as const,
   flow: (code: string) => ['flow', code] as const,
@@ -59,9 +59,9 @@ export function useScanCandidates(params?: Record<string, string>) {
 
 // ── 포트폴리오 ───────────────────────────────────────────
 export function usePositions() {
-  const chatId = getCurrentUserChatId()
+  const chatId = useProfileStore((state) => state.profile.telegramId || '')
   return useQuery<PositionRow[]>({
-    queryKey: QUERY_KEYS.positions(),
+    queryKey: QUERY_KEYS.positions(chatId),
     queryFn: () => apiFetch('/api/ui/positions', { cacheMs: 0, timeoutMs: 15_000, retries: 1 }),
     staleTime: 30_000,
     enabled: !!chatId,
@@ -69,9 +69,9 @@ export function usePositions() {
 }
 
 export function useTrades(page = 1) {
-  const chatId = getCurrentUserChatId()
+  const chatId = useProfileStore((state) => state.profile.telegramId || '')
   return useQuery<{ rows: TradeRow[]; total: number }>({
-    queryKey: QUERY_KEYS.trades(page),
+    queryKey: QUERY_KEYS.trades(page, chatId),
     queryFn: () => apiFetch(`/api/ui/decisions?page=${page}`, { cacheMs: 0, timeoutMs: 12_000, retries: 1 }),
     staleTime: 60_000,
     enabled: !!chatId,
@@ -109,9 +109,9 @@ export function useFlow(code: string, opts?: { enabled?: boolean }) {
 // ── 포지션 유지보수 뮤테이션 ──────────────────────────────
 export function useMaintenanceMutation() {
   const qc = useQueryClient()
+  const chatId = useProfileStore((state) => state.profile.telegramId || '')
   return useMutation<MaintenanceResult, Error, Record<string, unknown>>({
     mutationFn: (body) => {
-      const chatId = getCurrentUserChatId()
       return apiFetch('/api/ui/positions-maintenance', {
         method: 'POST',
         headers: {
@@ -123,7 +123,7 @@ export function useMaintenanceMutation() {
       })
     },
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: QUERY_KEYS.positions() })
+      qc.invalidateQueries({ queryKey: QUERY_KEYS.positions(chatId) })
     },
   })
 }
