@@ -1,4 +1,5 @@
 import React from 'react'
+import { BadgePercent, Command, Menu, UserRound, X } from 'lucide-react'
 import { TELEGRAM_COMMANDS } from '../data/telegramCommands'
 import { NAV_ITEMS, PRIMARY_NAV_KEYS } from '../navigation'
 import ProfileModal from './ProfileModal'
@@ -169,15 +170,19 @@ export default function Header({
           <button
             className="nav-item top-nav-action"
             onClick={() => setCmdOpen(true)}
+            aria-label="명령 목록 열기"
           >
-            명령
+            <Command className="top-nav-action-icon" aria-hidden />
+            <span className="top-nav-action-label">명령</span>
           </button>
           <button
             className="nav-item top-nav-action"
             onClick={() => setCreditShortOpen(true)}
             title="공매도 지표 수동 입력"
+            aria-label="공매도 지표 입력"
           >
-            공매도
+            <BadgePercent className="top-nav-action-icon" aria-hidden />
+            <span className="top-nav-action-label">공매도</span>
           </button>
           {/* 프로필 아바타 버튼 */}
           <button
@@ -187,10 +192,7 @@ export default function Header({
             title={displayName || '프로필 설정'}
           >
             {initials || (
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-                <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
-                <circle cx="12" cy="7" r="4"/>
-              </svg>
+              <UserRound size={16} aria-hidden />
             )}
           </button>
           <button
@@ -199,11 +201,7 @@ export default function Header({
             aria-label="전체 메뉴"
             onClick={() => setDrawerOpen(v => !v)}
           >
-            <svg width="20" height="14" viewBox="0 0 20 14" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden>
-              <rect y="1" width="20" height="2" rx="1" fill="currentColor" />
-              <rect y="6" width="20" height="2" rx="1" fill="currentColor" />
-              <rect y="11" width="20" height="2" rx="1" fill="currentColor" />
-            </svg>
+            <Menu size={18} aria-hidden />
           </button>
         </div>
       </div>
@@ -218,10 +216,7 @@ export default function Header({
                 aria-label="메뉴 닫기"
                 onClick={() => setDrawerOpen(false)}
               >
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-                  <line x1="18" y1="6" x2="6" y2="18"/>
-                  <line x1="6" y1="6" x2="18" y2="18"/>
-                </svg>
+                <X size={18} aria-hidden />
               </button>
             </div>
             <div className="nav-drawer-content">
