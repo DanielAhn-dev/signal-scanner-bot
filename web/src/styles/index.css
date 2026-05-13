@@ -2792,10 +2792,25 @@ html, body, #root {
 .scan-grade-badge {
   @apply inline-flex items-center justify-center font-bold;
   @apply text-xs;
-  width: 1.5rem;
+  padding: 2px 6px;
+  min-width: 1.5rem;
   height: 1.5rem;
   @apply rounded-sm;
 }
+
+/* 한 자리 숫자: 원 형태 */
+.scan-grade-badge--circle {
+  aspect-ratio: 1 / 1;
+  width: 1.5rem;
+  padding: 0;
+  border-radius: 50%;
+}
+
+/* 두 자리 이상: 알약 형태 */
+.scan-grade-badge--pill {
+  border-radius: 999px;
+}
+
 .scan-grade-a {
   background: var(--color-success-bg, #ecfdf5);
   color: var(--color-success, #059669);
@@ -2910,6 +2925,52 @@ html, body, #root {
   @apply text-sm font-semibold;
   color: var(--color-text-secondary);
   @apply mb-2;
+}
+
+/* 발굴 페이지 순위 배지 */
+.discovery-rank-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  aspect-ratio: 1 / 1;
+  width: 28px;
+  padding: 0;
+  border-radius: 50%;
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-bold);
+  flex-shrink: 0;
+}
+
+.discovery-rank-badge--circle {
+  /* 기본 스타일 (원 형태) */
+}
+
+/* 1등: 금색 */
+.discovery-rank-badge--first {
+  background: linear-gradient(135deg, #FFD700 0%, #FFA500 100%);
+  color: white;
+  box-shadow: 0 2px 4px rgba(255, 215, 0, 0.3);
+}
+
+/* 2등: 은색 */
+.discovery-rank-badge--second {
+  background: linear-gradient(135deg, #C0C0C0 0%, #A9A9A9 100%);
+  color: white;
+  box-shadow: 0 2px 4px rgba(192, 192, 192, 0.3);
+}
+
+/* 3등: 동색 */
+.discovery-rank-badge--third {
+  background: linear-gradient(135deg, #CD7F32 0%, #B87333 100%);
+  color: white;
+  box-shadow: 0 2px 4px rgba(205, 127, 50, 0.3);
+}
+
+/* 4등 이후: 흰색 */
+.discovery-rank-badge--rest {
+  background: #F5F5F5;
+  color: #666;
+  border: 1px solid #E5E5E5;
 }
 
 @media (max-width: 640px) {

@@ -287,7 +287,9 @@ function ScoreBadge({ value, max }: { value: number; max: number }) {
   const pct = Math.min(100, (value / max) * 100)
   const cls =
     pct >= 75 ? 'scan-grade-a' : pct >= 50 ? 'scan-grade-b' : pct >= 30 ? 'scan-grade-c' : 'scan-grade-other'
-  return <span className={`scan-grade-badge ${cls}`}>{value}</span>
+  const roundedValue = Math.round(value)
+  const isSingleDigit = roundedValue < 10
+  return <span className={`scan-grade-badge ${cls} ${isSingleDigit ? 'scan-grade-badge--circle' : 'scan-grade-badge--pill'}`}>{roundedValue}</span>
 }
 
 function QoQCell({ value }: { value: number | null | undefined }) {
@@ -680,9 +682,19 @@ export default function DiscoveryPage() {
               </tr>
             </thead>
             <tbody>
-              {filteredPicks.map((pick, idx) => (
+              {filteredPicks.map((pick, idx) => {
+                const rankNum = idx + 1;
+                let rankClass = 'discovery-rank-badge--rest';
+                if (rankNum === 1) rankClass = 'discovery-rank-badge--first';
+                else if (rankNum === 2) rankClass = 'discovery-rank-badge--second';
+                else if (rankNum === 3) rankClass = 'discovery-rank-badge--third';
+                return (
                 <tr key={pick.code} className="scan-tr">
-                  <td className="scan-td">{idx + 1}</td>
+                  <td className="scan-td">
+                    <span className={`discovery-rank-badge discovery-rank-badge--circle ${rankClass}`}>
+                      {rankNum}
+                    </span>
+                  </td>
                   <td className="scan-td">
                     <div className="scan-td-name">{pick.name}</div>
                     <div className="scan-td-code">{pick.code}</div>
@@ -742,7 +754,8 @@ export default function DiscoveryPage() {
                     </Button>
                   </td>
                 </tr>
-              ))}
+              );
+              })}
             </tbody>
           </table>
           </div>
