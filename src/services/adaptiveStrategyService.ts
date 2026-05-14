@@ -109,7 +109,7 @@ async function getRecentTradeDates(supabase: SupabaseClient, limit: number): Pro
 
   if (error) throw new Error(error.message)
 
-  const uniqueDates = Array.from(
+  const uniqueDates: string[] = Array.from(
     new Set(
       (data ?? [])
         .map((row: unknown) => String((row as { trade_date?: string }).trade_date || ''))
