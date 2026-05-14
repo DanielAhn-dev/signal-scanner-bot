@@ -4,6 +4,7 @@ import Button from '../../components/ui/Button'
 import Input from '../../components/ui/Input'
 import Skeleton from '../../components/Skeleton'
 import { EmptyState, ErrorState } from '../../components/StateViews'
+import { ChevronDown, RefreshCw } from 'lucide-react'
 
 const ANALYZE_PENDING_CODE_KEY = 'analyze_pending_code'
 
@@ -424,6 +425,7 @@ export default function DiscoveryPage() {
   }
 
   const appliedPresetKey = DISCOVERY_PRESETS.find((p) => criteriaSignature(p.criteria, p.sectorMode) === criteriaSignature(appliedCriteria, appliedSectorMode))?.key ?? null
+  const appliedPresetLabel = DISCOVERY_PRESETS.find((p) => p.key === appliedPresetKey)?.label ?? '커스텀 기준'
 
   const visiblePresets = useMemo(() => {
     if (showAllPresets) return DISCOVERY_PRESETS
@@ -487,33 +489,38 @@ export default function DiscoveryPage() {
 
   return (
     <section className="container-app container-wide">
-      <div className="flex-between mb-4" style={{ gap: 'var(--space-2)', flexWrap: 'wrap' }}>
-        <div>
+      <div className="discovery-page-head mb-4">
+        <div className="discovery-page-head__copy">
           <h1 className="title-xl" style={{ marginBottom: 0 }}>멀티배거 발굴</h1>
           <div className="muted" style={{ marginTop: 'var(--space-1)' }}>
             펀더멘털(PBR·ROE·PEG·QoQ) × 스마트머니(12주 수급) × 섹터 복합 점수 기반 중장기 후보
           </div>
         </div>
-        <div className="flex-gap-sm" style={{ flexWrap: 'wrap' }}>
-          <div className="flex-gap-sm" style={{ flexWrap: 'wrap' }}>
+        <div className="discovery-page-head__actions">
+          <div className="discovery-top-group" role="group" aria-label="TOP 후보 수">
             {([10, 20, 30] as const).map((n) => (
               <Button
                 key={n}
                 variant={limit === n ? 'primary' : 'secondary'}
                 size="sm"
+                className="discovery-top-button"
                 onClick={() => handleLimitChange(n)}
                 disabled={loading}
+                aria-pressed={limit === n}
+                data-active={limit === n}
               >
                 TOP {n}
               </Button>
             ))}
           </div>
           <Button
-            variant="secondary"
+            variant="ghost"
             size="sm"
+            className="discovery-refresh-button"
             onClick={() => fetchPicks(limit, criteria, sectorMode)}
             disabled={loading}
           >
+            <RefreshCw size={14} style={loading ? { animation: 'spin 1s linear infinite' } : undefined} />
             {loading ? '조회 중...' : '새로고침'}
           </Button>
         </div>
@@ -530,27 +537,46 @@ export default function DiscoveryPage() {
         </div>
       </div>
 
-      <div className="card mb-4 discovery-filter-card">
-        <div className="title-md" style={{ marginBottom: 'var(--space-2)' }}>기준 설정</div>
-        <div className="discovery-filter-group" style={{ marginBottom: 'var(--space-3)' }}>
-          <div className="caption" style={{ marginBottom: 'var(--space-2)' }}>초보자 추천 프리셋</div>
-          <div className="flex-gap-sm discovery-filter-chip-row" style={{ flexWrap: 'wrap' }}>
+      <details className="card mb-4 discovery-filter-card discovery-config-card">
+        <summary className="discovery-config-summary">
+          <div className="discovery-config-summary-main">
+            <div className="title-md" style={{ marginBottom: 0 }}>기준 설정</div>
+            <div className="caption" style={{ marginTop: 'var(--space-1)' }}>
+              프리셋과 기준값은 펼쳐서 조정
+            </div>
+          </div>
+          <div className="discovery-config-summary-meta">
+            <span className="discovery-config-pill discovery-config-pill--strong">{appliedPresetLabel}</span>
+            <span className="discovery-config-pill">{sectorModeSummary}</span>
+            <span className="discovery-config-chevron" aria-hidden="true">
+              <ChevronDown size={16} />
+            </span>
+          </div>
+        </summary>
+        <div className="discovery-config-body">
+          <div className="discovery-filter-group">
+            <div className="caption" style={{ marginBottom: 'var(--space-2)' }}>초보자 추천 프리셋</div>
+            <div className="discovery-filter-chip-row discovery-preset-row" style={{ flexWrap: 'wrap' }}>
             {visiblePresets.map((preset) => (
               <Button
                 key={preset.key}
                 variant={appliedPresetKey === preset.key ? 'primary' : 'secondary'}
                 size="sm"
+                className="discovery-preset-button"
                 onClick={() => applyPreset(preset)}
                 disabled={loading}
                 title={preset.hint}
+                aria-pressed={appliedPresetKey === preset.key}
+                data-active={appliedPresetKey === preset.key}
               >
                 {preset.label}
               </Button>
             ))}
             {DISCOVERY_PRESETS.length > DISCOVERY_PRESET_COLLAPSED_COUNT && (
               <Button
-                variant="secondary"
+                variant="ghost"
                 size="sm"
+                className="discovery-preset-more-button"
                 onClick={() => setShowAllPresets((prev) => !prev)}
                 disabled={loading}
               >
@@ -560,92 +586,96 @@ export default function DiscoveryPage() {
               </Button>
             )}
           </div>
-        </div>
-        <div className="flex-gap-sm discovery-filter-chip-row" style={{ flexWrap: 'wrap', marginBottom: 'var(--space-3)' }}>
-          <Button variant={sectorMode === 'all' ? 'primary' : 'secondary'} size="sm" onClick={() => setSectorMode('all')} disabled={loading}>전체 섹터</Button>
-          <Button variant={sectorMode === 'promising' ? 'primary' : 'secondary'} size="sm" onClick={() => setSectorMode('promising')} disabled={loading}>유망 섹터</Button>
-          <Button variant={sectorMode === 'next' ? 'primary' : 'secondary'} size="sm" onClick={() => setSectorMode('next')} disabled={loading}>다음 섹터</Button>
-          <Button variant={sectorMode === 'promising-or-next' ? 'primary' : 'secondary'} size="sm" onClick={() => setSectorMode('promising-or-next')} disabled={loading}>유망 + 다음</Button>
-        </div>
-        <div className="cards-grid cols-4 discovery-criteria-grid" style={{ marginBottom: 'var(--space-2)' }}>
-          <Input
-            label="최소 시총(억)"
-            type="number"
-            min={100}
-            step={50}
-            value={criteria.minMarketCapBillion}
-            onChange={(e) => setCriteria((prev) => ({ ...prev, minMarketCapBillion: Number(e.target.value || 0) }))}
-          />
-          <Input
-            label="최소 ROE(%)"
-            type="number"
-            min={0}
-            max={50}
-            step={0.5}
-            value={criteria.minRoe}
-            onChange={(e) => setCriteria((prev) => ({ ...prev, minRoe: Number(e.target.value || 0) }))}
-          />
-          <Input
-            label="최대 PBR"
-            type="number"
-            min={0.1}
-            max={10}
-            step={0.1}
-            value={criteria.maxPbr}
-            onChange={(e) => setCriteria((prev) => ({ ...prev, maxPbr: Number(e.target.value || 0) }))}
-          />
-          <Input
-            label="최소 PEG"
-            type="number"
-            min={0.1}
-            max={100}
-            step={0.1}
-            value={criteria.minPeg ?? ''}
-            onChange={(e) => setCriteria((prev) => ({ ...prev, minPeg: e.target.value === '' ? null : Number(e.target.value) }))}
-          />
-          <Input
-            label="최대 PEG"
-            type="number"
-            min={0.1}
-            max={100}
-            step={0.1}
-            value={criteria.maxPeg ?? ''}
-            onChange={(e) => setCriteria((prev) => ({ ...prev, maxPeg: e.target.value === '' ? null : Number(e.target.value) }))}
-          />
-        </div>
-        <div className="flex-between discovery-filter-actions" style={{ gap: 'var(--space-2)', flexWrap: 'wrap' }}>
-          <div className="ui-field discovery-growth-field" style={{ minWidth: 260 }}>
-            <label className="ui-label">성장 조건</label>
-            <select
-              className="input"
-              value={criteria.qoqMode}
-              onChange={(e) => setCriteria((prev) => ({
-                ...prev,
-                qoqMode: e.target.value === 'latest-quarter-positive' ? 'latest-quarter-positive' : 'two-quarter-positive',
-              }))}
-            >
-              <option value="two-quarter-positive">최근 2분기 모두 QoQ 양수</option>
-              <option value="latest-quarter-positive">최신 분기 QoQ 양수</option>
-            </select>
+          <div className="discovery-sector-panel">
+            <div className="caption" style={{ marginBottom: 'var(--space-2)' }}>섹터 범위</div>
+            <div className="discovery-sector-row discovery-filter-chip-row">
+              <Button variant={sectorMode === 'all' ? 'primary' : 'secondary'} size="sm" className="discovery-sector-button" onClick={() => setSectorMode('all')} disabled={loading} aria-pressed={sectorMode === 'all'} data-active={sectorMode === 'all'}>전체 섹터</Button>
+              <Button variant={sectorMode === 'promising' ? 'primary' : 'secondary'} size="sm" className="discovery-sector-button" onClick={() => setSectorMode('promising')} disabled={loading} aria-pressed={sectorMode === 'promising'} data-active={sectorMode === 'promising'}>유망 섹터</Button>
+              <Button variant={sectorMode === 'next' ? 'primary' : 'secondary'} size="sm" className="discovery-sector-button" onClick={() => setSectorMode('next')} disabled={loading} aria-pressed={sectorMode === 'next'} data-active={sectorMode === 'next'}>다음 섹터</Button>
+              <Button variant={sectorMode === 'promising-or-next' ? 'primary' : 'secondary'} size="sm" className="discovery-sector-button" onClick={() => setSectorMode('promising-or-next')} disabled={loading} aria-pressed={sectorMode === 'promising-or-next'} data-active={sectorMode === 'promising-or-next'}>유망 + 다음</Button>
+            </div>
           </div>
-          <div className="flex-gap-sm discovery-filter-action-buttons">
-            <Button
-              variant="secondary"
-              size="sm"
-              onClick={() => {
-                setCriteria(appliedCriteria)
-                setSectorMode(appliedSectorMode)
-              }}
-              disabled={loading}
-            >
-              적용값으로 되돌리기
-            </Button>
-            <Button variant="primary" size="sm" onClick={applyCriteria} disabled={loading}>
-              기준 적용
-            </Button>
+          <div className="cards-grid cols-4 discovery-criteria-grid" style={{ marginBottom: 'var(--space-2)' }}>
+            <Input
+              label="최소 시총(억)"
+              type="number"
+              min={100}
+              step={50}
+              value={criteria.minMarketCapBillion}
+              onChange={(e) => setCriteria((prev) => ({ ...prev, minMarketCapBillion: Number(e.target.value || 0) }))}
+            />
+            <Input
+              label="최소 ROE(%)"
+              type="number"
+              min={0}
+              max={50}
+              step={0.5}
+              value={criteria.minRoe}
+              onChange={(e) => setCriteria((prev) => ({ ...prev, minRoe: Number(e.target.value || 0) }))}
+            />
+            <Input
+              label="최대 PBR"
+              type="number"
+              min={0.1}
+              max={10}
+              step={0.1}
+              value={criteria.maxPbr}
+              onChange={(e) => setCriteria((prev) => ({ ...prev, maxPbr: Number(e.target.value || 0) }))}
+            />
+            <Input
+              label="최소 PEG"
+              type="number"
+              min={0.1}
+              max={100}
+              step={0.1}
+              value={criteria.minPeg ?? ''}
+              onChange={(e) => setCriteria((prev) => ({ ...prev, minPeg: e.target.value === '' ? null : Number(e.target.value) }))}
+            />
+            <Input
+              label="최대 PEG"
+              type="number"
+              min={0.1}
+              max={100}
+              step={0.1}
+              value={criteria.maxPeg ?? ''}
+              onChange={(e) => setCriteria((prev) => ({ ...prev, maxPeg: e.target.value === '' ? null : Number(e.target.value) }))}
+            />
+          </div>
+          <div className="discovery-filter-actions discovery-actions-stack" style={{ gap: 'var(--space-2)', flexWrap: 'wrap' }}>
+            <div className="ui-field discovery-growth-field" style={{ minWidth: 260 }}>
+              <label className="ui-label">성장 조건</label>
+              <select
+                className="input"
+                value={criteria.qoqMode}
+                onChange={(e) => setCriteria((prev) => ({
+                  ...prev,
+                  qoqMode: e.target.value === 'latest-quarter-positive' ? 'latest-quarter-positive' : 'two-quarter-positive',
+                }))}
+              >
+                <option value="two-quarter-positive">최근 2분기 모두 QoQ 양수</option>
+                <option value="latest-quarter-positive">최신 분기 QoQ 양수</option>
+              </select>
+            </div>
+            <div className="discovery-filter-action-buttons">
+              <Button
+                variant="ghost"
+                size="sm"
+                className="discovery-reset-button"
+                onClick={() => {
+                  setCriteria(appliedCriteria)
+                  setSectorMode(appliedSectorMode)
+                }}
+                disabled={loading}
+              >
+                적용값으로 되돌리기
+              </Button>
+              <Button variant="primary" size="sm" className="discovery-apply-button" onClick={applyCriteria} disabled={loading}>
+                기준 적용
+              </Button>
+            </div>
           </div>
         </div>
-      </div>
+      </details>
 
       {funnel && (
         <div className="card mb-4 discovery-funnel-card">
