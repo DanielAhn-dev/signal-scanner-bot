@@ -14,7 +14,8 @@ import {
   type WatchMicroSignal,
 } from "../lib/watchlistSignals";
 import { fetchStockNews } from "../utils/fetchNews";
-import { analyzeNewsSentiment, analyzeOrderIntakeSignal, formatOrderIntakeLine, sentimentEmoji, type SentimentResult, type OrderIntakeSignalResult } from "../lib/newsSentiment";
+import { analyzeNewsSentiment, formatOrderIntakeLine, sentimentEmoji, type SentimentResult, type OrderIntakeSignalResult } from "../lib/newsSentiment";
+import { saveOrderIntakeSignalFromNews } from "./orderIntakeSignalStore";
 import {
   calculateSectorConcentration,
   getSectorConcentrationWarnings,
@@ -451,7 +452,7 @@ export async function createBriefingReport(
   );
 
   // 액션 우선 + 손익 변동 우선 기준으로 최대 3개 감성 수집
-  const sentimentTargetCodes = watchlistViewItems
+  const sentimentTargetItems = watchlistViewItems
     .slice()
     .sort(
       (a, b) =>
@@ -459,18 +460,27 @@ export async function createBriefingReport(
         Math.abs(b.profitPct ?? 0) - Math.abs(a.profitPct ?? 0) ||
         b.totalScore - a.totalScore
     )
-    .slice(0, 3)
-    .map((item) => item.code);
+    .slice(0, 3);
+  const topSectorNameById = new Map(topSectors.map((sector) => [sector.id, sector.name]));
   const newsSentimentByCode = new Map<string, SentimentResult>();
   const orderSignalByCode = new Map<string, OrderIntakeSignalResult>();
   await Promise.all(
-    sentimentTargetCodes.map(async (code) => {
+    sentimentTargetItems.map(async (item) => {
       try {
-        const news = await fetchStockNews(code, 5);
+        const news = await fetchStockNews(item.code, 5);
         if (news.length) {
           const titles = news.map((n) => n.title);
-          newsSentimentByCode.set(code, analyzeNewsSentiment(titles));
-          orderSignalByCode.set(code, analyzeOrderIntakeSignal(titles));
+          newsSentimentByCode.set(item.code, analyzeNewsSentiment(titles));
+          const savedOrderSignal = await saveOrderIntakeSignalFromNews({
+            code: item.code,
+            sectorId: item.sectorId,
+            sectorName: item.sectorId ? topSectorNameById.get(item.sectorId) ?? null : null,
+            titles,
+            source: "briefing-watchlist-news",
+          });
+          if (savedOrderSignal) {
+            orderSignalByCode.set(item.code, savedOrderSignal);
+          }
         }
       } catch {
         // 뉴스 조회 실패는 브리핑을 차단하지 않음

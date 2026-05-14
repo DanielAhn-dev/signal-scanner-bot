@@ -43,8 +43,12 @@ function buildSectorListMessage(title: string, sectors: SectorScore[]): string {
     if (s.flowI5 !== 0) flows.push(`기 ${fmtKRW(s.flowI5)}`);
     const flowStr = flows.length ? flows.join(", ") : "수급 특이 없음";
     const rsDisplay = fmtPctSafe(s.rs1M);
+    const orderSignalBoost = s.orderSignalBoost ?? 0;
+    const orderSignalText = Math.abs(orderSignalBoost) >= 0.5
+      ? ` · 수주신호 ${orderSignalBoost > 0 ? "+" : ""}${orderSignalBoost.toFixed(1)}`
+      : "";
 
-    return `${rank}. <b>${esc(s.name)}</b>  <code>${s.score.toFixed(0)}점</code>\n${flowStr} · RS(1M) ${rsDisplay}`;
+    return `${rank}. <b>${esc(s.name)}</b>  <code>${s.score.toFixed(0)}점</code>\n${flowStr} · RS(1M) ${rsDisplay}${orderSignalText}`;
   });
 
   return buildMessage([

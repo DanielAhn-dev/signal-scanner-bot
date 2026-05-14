@@ -7,6 +7,7 @@ import {
   fetchTickerMetaInSector,
   fetchPrecomputedSectorScores,
 } from "./source";
+import { fetchRecentSectorOrderSignalBoost } from "../services/orderIntakeSignalStore";
 
 export interface SectorScore {
   id: string;
@@ -24,6 +25,7 @@ export interface SectorScore {
   flowF20: number;
   flowI5: number;
   flowI20: number;
+  orderSignalBoost?: number;
   score: number;
   grade: "A" | "B" | "C";
 }
@@ -101,6 +103,7 @@ export async function scoreSectors(today: string): Promise<SectorScore[]> {
   }
 
   const out: (SectorScore & { rawScore: number })[] = [];
+  const orderSignalBoostMap = await fetchRecentSectorOrderSignalBoost();
   const isNum = (x: unknown): x is number => Number.isFinite(x as number);
 
   for (const s of sectors as SectorSeries[]) {
@@ -187,7 +190,12 @@ export async function scoreSectors(today: string): Promise<SectorScore[]> {
     const flowSum5 = (flowF5 + flowI5) / 1e8;
     const sFlow = 0.2 * sig(flowSum5); // 전체 점수의 20%
 
-    const rawScore = (sRS + sTV + sSMA + sROC + sVolP + sFlow) * 100;
+    const orderSignalBoost =
+      orderSignalBoostMap.bySectorId.get(id) ??
+      orderSignalBoostMap.bySectorName.get(name) ??
+      0;
+
+    const rawScore = (sRS + sTV + sSMA + sROC + sVolP + sFlow) * 100 + orderSignalBoost;
 
     out.push({
       id,
@@ -205,6 +213,7 @@ export async function scoreSectors(today: string): Promise<SectorScore[]> {
       flowI5,
       flowF20,
       flowI20,
+      orderSignalBoost,
       score: 0,
       grade: "C",
       rawScore,
@@ -235,10 +244,17 @@ async function scoreSectorsFromPrecomputed(): Promise<SectorScore[]> {
   const rows = await fetchPrecomputedSectorScores();
   if (!rows.length) return [];
 
+  const orderSignalBoostMap = await fetchRecentSectorOrderSignalBoost();
+
   return rows
     .filter((r) => r.score > 0)
     .map((r) => {
       const m = r.metrics || {};
+      const orderSignalBoost =
+        orderSignalBoostMap.bySectorId.get(r.id) ??
+        orderSignalBoostMap.bySectorName.get(r.name) ??
+        0;
+      const boostedScore = clamp(r.score + orderSignalBoost, 0, 100);
       return {
         id: r.id,
         name: r.name,
@@ -255,8 +271,9 @@ async function scoreSectorsFromPrecomputed(): Promise<SectorScore[]> {
         flowF20: Number(m.flow_foreign_20d ?? 0),
         flowI5: Number(m.flow_inst_5d ?? 0),
         flowI20: Number(m.flow_inst_20d ?? 0),
-        score: r.score,
-        grade: (r.score >= 80 ? "A" : r.score >= 65 ? "B" : "C") as
+        orderSignalBoost,
+        score: boostedScore,
+        grade: (boostedScore >= 80 ? "A" : boostedScore >= 65 ? "B" : "C") as
           | "A"
           | "B"
           | "C",
