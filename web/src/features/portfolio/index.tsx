@@ -1286,7 +1286,7 @@ export default function Portfolio() {
                 <div className="portfolio-capture-value">{formatKrw(initialCapital)}</div>
               </div>
               <div className="portfolio-asset-metric">
-                <div className="portfolio-capture-label">보유 원금(체결가 기준)</div>
+                <div className="portfolio-capture-label">보유 평가금</div>
                 <div className="portfolio-capture-value">{formatKrw(totalEvaluationValue)}</div>
               </div>
               <div className="portfolio-asset-metric">
@@ -1328,7 +1328,7 @@ export default function Portfolio() {
               </div>
             </div>
             <div className="caption muted" style={{ marginTop: 'var(--space-2)' }}>
-              추정 예수금은 현재 보유 원금 기준 역산치입니다. 실제 증권사 예수금이 있으면 그 값을 우선 쓰는 편이 더 정확합니다.
+              추정 예수금은 시작 자금에서 보유 투자금액을 뺀 값입니다. 실제 증권사 예수금이 있으면 그 값을 우선 쓰는 편이 더 정확합니다.
             </div>
           </div>
         )}
