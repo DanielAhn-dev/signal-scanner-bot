@@ -1971,10 +1971,17 @@ export default function Portfolio() {
                 onChange={(v) => setMaintCode(v.toUpperCase())}
                 onSelect={(s) => setMaintCode(s.code)}
                 placeholder="예) 005930 또는 종목명"
+                onMouseDown={(e) => e.stopPropagation()}
               />
             </div>
             <div style={{ marginBottom: 'var(--space-3)' }}>
-              <Input label="보유 수량" type="number" value={String(maintQty)} onChange={(e: any) => setMaintQty(Math.max(1, Number(e?.target?.value || 1)))} />
+              <Input 
+                label="보유 수량" 
+                type="number" 
+                value={String(maintQty)} 
+                onChange={(e: any) => setMaintQty(Math.max(1, Number(e?.target?.value || 1)))}
+                onMouseDown={(e) => e.stopPropagation()}
+              />
             </div>
             <div style={{ marginBottom: 'var(--space-3)' }}>
               <Input
@@ -1982,6 +1989,7 @@ export default function Portfolio() {
                 type="date"
                 value={maintBuyDate}
                 onChange={(e: any) => setMaintBuyDate(String(e?.target?.value || getTodayLocalYmd()))}
+                onMouseDown={(e) => e.stopPropagation()}
               />
             </div>
             <div style={{ marginBottom: 'var(--space-3)' }}>
@@ -1990,11 +1998,24 @@ export default function Portfolio() {
                 type="number"
                 value={maintBuyPrice === '' ? '' : String(maintBuyPrice)}
                 onChange={(e: any) => setMaintBuyPrice(e?.target?.value === '' ? '' : Number(e?.target?.value))}
+                onMouseDown={(e) => e.stopPropagation()}
               />
             </div>
             <div className="grid-two" style={{ marginBottom: 'var(--space-3)' }}>
-              <Input label="증권사" placeholder="예) NH, 토스, 삼성" value={maintBrokerName} onChange={(e: any) => setMaintBrokerName(String(e?.target?.value || ''))} />
-              <Input label="계좌명" placeholder="예) ISA, 연금, 일반" value={maintAccountName} onChange={(e: any) => setMaintAccountName(String(e?.target?.value || ''))} />
+              <Input 
+                label="증권사" 
+                placeholder="예) NH, 토스, 삼성" 
+                value={maintBrokerName} 
+                onChange={(e: any) => setMaintBrokerName(String(e?.target?.value || ''))}
+                onMouseDown={(e) => e.stopPropagation()}
+              />
+              <Input 
+                label="계좌명" 
+                placeholder="예) ISA, 연금, 일반" 
+                value={maintAccountName} 
+                onChange={(e: any) => setMaintAccountName(String(e?.target?.value || ''))}
+                onMouseDown={(e) => e.stopPropagation()}
+              />
             </div>
           </>
         )}
@@ -2062,12 +2083,14 @@ export default function Portfolio() {
                     placeholder="예) 토스, NH, 삼성"
                     value={maintBrokerName}
                     onChange={(e: any) => setMaintBrokerName(String(e?.target?.value || ''))}
+                    onMouseDown={(e) => e.stopPropagation()}
                   />
                   <Input
                     label="계좌명"
                     placeholder="예) ISA, 연금, 일반"
                     value={maintAccountName}
                     onChange={(e: any) => setMaintAccountName(String(e?.target?.value || ''))}
+                    onMouseDown={(e) => e.stopPropagation()}
                   />
                 </div>
                 <div className="caption muted" style={{ marginBottom: 'var(--space-3)' }}>

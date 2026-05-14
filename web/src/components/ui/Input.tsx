@@ -8,14 +8,10 @@ type Props = React.InputHTMLAttributes<HTMLInputElement> & {
 export default function Input({ label, textarea, className = '', type, onKeyDown, ...rest }: Props) {
   const base = 'ui-input '
   
-  // 숫자 입력 필드에서 엔터/탭 키 전파 방지
+  // 숫자 입력 필드에서 키 이벤트 처리
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (type === 'number' && ['Enter', 'Tab'].includes(e.key)) {
-      // number 타입에서 위/아래 화살표 키나 Enter 처리 후 포커스 이동 방지
-      if (e.key === 'Enter') {
-        e.currentTarget.blur()
-      }
-    }
+    // 기본 동작만 수행, blur()는 호출하지 않음
+    // (수정 중 포커스가 자동 해제되는 것을 방지)
     onKeyDown?.(e)
   }
   

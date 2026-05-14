@@ -78,7 +78,13 @@ export default function Modal({ isOpen, open, title, onClose, children, size = '
     <div
       className="modal-overlay"
       ref={overlayRef}
-      onClick={(e) => { if (e.target === overlayRef.current) onClose() }}
+      onClick={(e) => {
+        // backdrop 클릭 시만 닫기 (내부 요소 클릭 시 이벤트 전파 방지)
+        if (e.target === overlayRef.current) {
+          e.stopPropagation()
+          onClose()
+        }
+      }}
       role="dialog"
       aria-modal="true"
       aria-labelledby="modal-title"
