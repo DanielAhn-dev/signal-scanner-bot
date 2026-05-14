@@ -49,12 +49,28 @@ async function getFallbackSnapshot<T>(snapshotKey: string): Promise<T | null> {
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   try {
     // CORS 헤더 추가
-    res.setHeader('Access-Control-Allow-Origin', '*')
+    const requestOrigin = String(req.headers.origin || '').trim()
+    const configuredOrigin = String(process.env.UI_CORS_ORIGIN || '*').trim()
+    const allowOrigin = configuredOrigin === '*' ? '*' : (requestOrigin || configuredOrigin)
+    const requestedHeaders = String(req.headers['access-control-request-headers'] || '')
+      .split(',')
+      .map((v) => v.trim())
+      .filter(Boolean)
+    const allowHeaders = new Set([
+      'Content-Type',
+      'x-ui-key',
+      'x-user-chat-id',
+      'Authorization',
+      ...requestedHeaders,
+    ])
+
+    res.setHeader('Access-Control-Allow-Origin', allowOrigin)
     res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS')
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type')
+    res.setHeader('Access-Control-Allow-Headers', Array.from(allowHeaders).join(','))
+    res.setHeader('Vary', 'Origin,Access-Control-Request-Headers')
 
     if (req.method === 'OPTIONS') {
-      return res.status(200).end()
+      return res.status(204).end()
     }
 
     const { query = 'all', type = 'calendar' } = req.query
