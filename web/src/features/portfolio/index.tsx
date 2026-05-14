@@ -145,6 +145,7 @@ export default function Portfolio() {
   const [initialCapitalInput, setInitialCapitalInput] = useState(String(DEFAULT_INITIAL_CAPITAL))
   const [initialCapital, setInitialCapital] = useState<number>(DEFAULT_INITIAL_CAPITAL)
   const [assetAccordionOpen, setAssetAccordionOpen] = useState(true)
+  const [filterAccordionOpen, setFilterAccordionOpen] = useState(false)
   const [includeCost, setIncludeCost] = useState(false)
   const [buyFeeRatePct, setBuyFeeRatePct] = useState(0.015)  // 매수수수료 %
   const [sellFeeRatePct, setSellFeeRatePct] = useState(0.195) // 매도수수료+거래세 %
@@ -627,7 +628,7 @@ export default function Portfolio() {
   const estimatedCash = initialCapital - totalInvested
   const totalAssetValue = totalEvaluationValue + estimatedCash
   const allocationRows = useMemo(() => {
-    const items = holdingAll
+    const items = summaryRows
       .map((r: any) => {
         const quantity = Number(r.quantity || 0)
         const avgPrice = Number(r.avg_price || 0)
@@ -658,7 +659,7 @@ export default function Portfolio() {
       ...row,
       ratio: (row.value / sum) * 100,
     }))
-  }, [holdingAll, estimatedCash])
+  }, [summaryRows, estimatedCash])
 
   const allocationColors = [
     '#2f7ae5',
@@ -1038,11 +1039,58 @@ export default function Portfolio() {
         </div>
       </div>
 
+      {/* 계좌별 탭 */}
+      <div className="portfolio-account-tabs" style={{ marginBottom: 'var(--space-3)', borderBottom: '1px solid var(--color-border)', display: 'flex', gap: 'var(--space-1)', padding: '0 0 var(--space-2) 0', overflowX: 'auto' }}>
+        <button
+          className={`portfolio-tab ${selectedAccountKey === 'all' ? 'active' : ''}`}
+          onClick={() => { setSelectedAccountKey('all'); setPage(1) }}
+          style={{
+            padding: 'var(--space-2) var(--space-3)',
+            border: 'none',
+            background: 'transparent',
+            cursor: 'pointer',
+            fontWeight: selectedAccountKey === 'all' ? 'var(--font-weight-bold)' : 'normal',
+            color: selectedAccountKey === 'all' ? 'var(--color-text-primary)' : 'var(--color-text-secondary)',
+            borderBottom: selectedAccountKey === 'all' ? '2px solid var(--color-primary)' : 'none',
+            fontSize: 'var(--font-size-sm)',
+            whiteSpace: 'nowrap',
+            flexShrink: 0,
+          }}
+        >
+          전체
+        </button>
+        {accountFolders.map((account) => (
+          <button
+            key={account.key}
+            className={`portfolio-tab ${selectedAccountKey === account.key ? 'active' : ''}`}
+            onClick={() => { setSelectedAccountKey(account.key); setPage(1) }}
+            style={{
+              padding: 'var(--space-2) var(--space-3)',
+              border: 'none',
+              background: 'transparent',
+              cursor: 'pointer',
+              fontWeight: selectedAccountKey === account.key ? 'var(--font-weight-bold)' : 'normal',
+              color: selectedAccountKey === account.key ? 'var(--color-text-primary)' : 'var(--color-text-secondary)',
+              borderBottom: selectedAccountKey === account.key ? '2px solid var(--color-primary)' : 'none',
+              fontSize: 'var(--font-size-sm)',
+              whiteSpace: 'nowrap',
+              flexShrink: 0,
+            }}
+            title={`${accountLabel(account.brokerName, account.accountName)} (${account.count})`}
+          >
+            {accountLabel(account.brokerName, account.accountName)} ({account.count})
+          </button>
+        ))}
+      </div>
+
       <div className="portfolio-stat-grid">
         <div className="card portfolio-stat-card">
           <div className="stat-label">보유 종목</div>
-          <div className="stat-value">{holdingAll.length}</div>
-          <div className="stat-sub">실제 보유 상태</div>
+          <div className="stat-value">{summaryRows.length}</div>
+          <div className="stat-sub">{selectedAccountKey === 'all' ? '전체 계좌' : accountLabel(
+            accountFolders.find(f => f.key === selectedAccountKey)?.brokerName,
+            accountFolders.find(f => f.key === selectedAccountKey)?.accountName
+          )}</div>
         </div>
         <div className="card portfolio-stat-card">
           <div className="stat-label">현재 실제 매수금</div>
@@ -1169,7 +1217,15 @@ export default function Portfolio() {
         >
           <div>
             <div className="title-md">자산 구성 및 리밸런싱 기준</div>
-            <div className="caption muted">초기 투자금, 평가금, 현금, 종목별 비중을 한 번에 확인합니다.</div>
+            <div className="caption muted">
+              {selectedAccountKey === 'all' 
+                ? '전체 계좌의 초기 투자금, 평가금, 현금, 종목별 비중을 확인합니다.'
+                : `${accountLabel(
+                    accountFolders.find(f => f.key === selectedAccountKey)?.brokerName,
+                    accountFolders.find(f => f.key === selectedAccountKey)?.accountName
+                  )} 계좌의 초기 투자금, 평가금, 현금, 종목별 비중을 확인합니다.`
+              }
+            </div>
           </div>
           <span className="portfolio-asset-overview-toggle" aria-hidden>{assetAccordionOpen ? '접기 ▲' : '펼치기 ▼'}</span>
         </button>
@@ -1243,53 +1299,51 @@ export default function Portfolio() {
 
       {/* 필터 */}
       <div className="card mb-4 portfolio-filter-card">
-        <div className="portfolio-filter-stack">
-          <div>
-            <div className="caption portfolio-filter-label">계좌 폴더</div>
-            <div className="tag-list portfolio-segment-list">
-              <button
-                className={`tag${selectedAccountKey === 'all' ? ' active' : ''}`}
-                onClick={() => { setSelectedAccountKey('all'); setPage(1) }}
-              >
-                전체
-              </button>
-              {accountFolders.map((account) => (
-                <button
-                  key={account.key}
-                  className={`tag${selectedAccountKey === account.key ? ' active' : ''}`}
-                  onClick={() => { setSelectedAccountKey(account.key); setPage(1) }}
-                >
-                  {accountLabel(account.brokerName, account.accountName)} ({account.count})
-                </button>
-              ))}
-              {accountFolders.length === 0 && (
-                <span className="caption muted">등록된 계좌 폴더가 없습니다.</span>
-              )}
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => openMaintenanceModal('holdingrestore')}
-                disabled={loading}
-                style={{ marginLeft: 'auto' }}
-                title="계좌/보유 추가"
-              >
-                + 추가
-              </Button>
-            </div>
-            <div style={{ marginTop: 'var(--space-2)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 'var(--space-2)', flexWrap: 'wrap' }}>
-              <label className="portfolio-cost-toggle" title={`매수수수료 ${buyFeeRatePct}% + 매도수수료·거래세 ${sellFeeRatePct}%`}>
-                <input
-                  type="checkbox"
-                  checked={includeCost}
-                  onChange={e => setIncludeCost(e.target.checked)}
-                />
-                <span>매매비용 반영</span>
-              </label>
-              <span className="caption muted">
-                {selectedAccountKey === 'all' ? '전체 계좌 손익에 적용' : '선택한 계좌 손익에 적용'}
+        <button
+          type="button"
+          className="portfolio-filter-head"
+          onClick={() => setFilterAccordionOpen((prev) => !prev)}
+          aria-expanded={filterAccordionOpen}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            width: '100%',
+            border: 'none',
+            background: 'transparent',
+            cursor: 'pointer',
+            padding: '0 0 var(--space-2) 0',
+            marginBottom: filterAccordionOpen ? 'var(--space-2)' : '0',
+            borderBottom: filterAccordionOpen ? '1px solid var(--color-border)' : 'none',
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
+            <span className="title-md" style={{ margin: 0 }}>필터 & 옵션</span>
+            {(selectedSector || holdingStateFilter !== 'all' || gradeFilter !== 'all' || search || includeCost) && (
+              <span className="caption" style={{ 
+                backgroundColor: 'var(--color-warning-bg)', 
+                color: 'var(--color-warning-text)',
+                padding: '2px 8px',
+                borderRadius: '12px',
+                fontSize: 'var(--font-size-xs)',
+              }}>
+                {[
+                  selectedSector ? 1 : 0,
+                  holdingStateFilter !== 'all' ? 1 : 0,
+                  gradeFilter !== 'all' ? 1 : 0,
+                  search ? 1 : 0,
+                  includeCost ? 1 : 0,
+                ].reduce((a, b) => a + b, 0)}개 필터 활성
               </span>
-            </div>
+            )}
           </div>
+          <span style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)' }} aria-hidden>
+            {filterAccordionOpen ? '접기 ▲' : '펼치기 ▼'}
+          </span>
+        </button>
+
+        {filterAccordionOpen && (
+          <div className="portfolio-filter-stack">
 
           <div>
             <div className="caption portfolio-filter-label">섹터</div>
@@ -1310,6 +1364,21 @@ export default function Portfolio() {
                   {showAllSectors ? '접기' : `+ ${sectors.length - 8}개 더보기`}
                 </button>
               )}
+            </div>
+          </div>
+
+          <div>
+            <div className="caption portfolio-filter-label">매매비용</div>
+            <label className="portfolio-cost-toggle" title={`매수수수료 ${buyFeeRatePct}% + 매도수수료·거래세 ${sellFeeRatePct}%`}>
+              <input
+                type="checkbox"
+                checked={includeCost}
+                onChange={e => setIncludeCost(e.target.checked)}
+              />
+              <span>손익 계산에 포함</span>
+            </label>
+            <div className="caption muted" style={{ marginTop: 'var(--space-1)' }}>
+              현재 기준: 매수 {buyFeeRatePct}% + 매도 {sellFeeRatePct}%
             </div>
           </div>
 
@@ -1446,7 +1515,8 @@ export default function Portfolio() {
               검색
             </Button>
           </div>
-        </div>
+          </div>
+        )}
       </div>
 
       {error && (
@@ -1513,8 +1583,12 @@ export default function Portfolio() {
                   <div className="caption">{r.code}</div>
                   <div className="muted portfolio-position-meta">
                     {r.quantity}주 · 매수가 {formatKrw(r.avg_price)}
-                    {` · ${accountLabel(r?.broker_name, r?.account_name)}`}
                     {r.buy_date ? ` · ${r.buy_date}` : ''}
+                  </div>
+                  <div className="caption" style={{ marginTop: '4px', marginBottom: 'var(--space-1)' }}>
+                    <span style={{ fontWeight: 'var(--font-weight-bold)', color: 'var(--color-text-primary)', padding: '2px 8px', backgroundColor: 'var(--color-background-secondary)', borderRadius: '4px', fontSize: 'var(--font-size-xs)', display: 'inline-block' }}>
+                      📊 {accountLabel(r?.broker_name, r?.account_name)}
+                    </span>
                   </div>
                   <div className="caption" style={{ marginTop: '4px' }}>
                     상태: {holdingState === 'partial' ? '부분청산 후보' : holdingState === 'add' ? '추가매수(IN진입)' : '보통 보유(홀드)'}
