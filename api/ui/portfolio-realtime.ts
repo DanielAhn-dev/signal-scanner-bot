@@ -1,6 +1,6 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { createClient } from '@supabase/supabase-js'
-import { resolveUiUserContext } from './_userContext'
+import { resolveUiUserContext } from '../../handlers/ui/_userContext'
 
 const ORIGIN = process.env.UI_CORS_ORIGIN || '*'
 

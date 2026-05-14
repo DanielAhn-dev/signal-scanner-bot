@@ -4,7 +4,18 @@
 import type { ChatContext } from '../bot/routing/types'
 import { createClient } from '@supabase/supabase-js'
 import { StopLossTakeProfitService } from '../services/stopLossTakeProfitService'
-import { formatKrw, formatPercent } from '../lib/format'
+
+function formatKrw(value: unknown): string {
+  const n = Number(value)
+  if (!Number.isFinite(n)) return '0원'
+  return `${Math.round(n).toLocaleString('ko-KR')}원`
+}
+
+function formatPercent(value: unknown): string {
+  const n = Number(value)
+  if (!Number.isFinite(n)) return '0.00%'
+  return `${n >= 0 ? '+' : ''}${n.toFixed(2)}%`
+}
 
 const url = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL
 const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_KEY

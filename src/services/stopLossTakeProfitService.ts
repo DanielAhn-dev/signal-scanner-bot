@@ -2,12 +2,16 @@
 // 손절/익절 자동 실행 서비스
 
 import { createClient } from '@supabase/supabase-js'
-import type { VirtualPosition, VirtualTrade } from '../lib/types'
-
-interface StockPrice {
-  code: string
-  price: number
-  timestamp: Date
+type VirtualPosition = {
+  id?: number
+  code?: string
+  buy_price?: number
+  quantity?: number
+  invested_amount?: number
+  stop_loss_percent?: number
+  take_profit_targets?: Array<{ target: number; percentage: number }>
+  auto_trading_enabled?: boolean
+  entry_date?: string
 }
 
 interface PositionWithPnL extends VirtualPosition {
@@ -17,10 +21,10 @@ interface PositionWithPnL extends VirtualPosition {
 }
 
 export class StopLossTakeProfitService {
-  private supabase: ReturnType<typeof createClient>
+  private supabase: any
 
   constructor(url: string, key: string) {
-    this.supabase = createClient(url, key)
+    this.supabase = createClient<any, any, any>(url, key)
   }
 
   /**
@@ -181,7 +185,7 @@ export class StopLossTakeProfitService {
         .from('virtual_positions')
         .select('*')
         .eq('chat_id', chatId)
-        .eq('quantity', '>', 0)
+        .gt('quantity', 0)
         .eq('auto_trading_enabled', true)
 
       if (posErr) throw posErr
@@ -265,7 +269,7 @@ export class StopLossTakeProfitService {
         .from('virtual_positions')
         .select('*')
         .eq('chat_id', chatId)
-        .eq('quantity', '>', 0)
+        .gt('quantity', 0)
 
       if (!Array.isArray(positions) || positions.length === 0) return
 
