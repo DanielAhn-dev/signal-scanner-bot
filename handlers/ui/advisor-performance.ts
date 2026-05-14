@@ -40,8 +40,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     if (logsError) return res.status(500).json({ error: logsError.message })
 
-    const decisionIds = Array.from(new Set((recentLogs ?? []).map((row: any) => Number(row?.id || 0)).filter((id) => id > 0)))
-    const tradeIds = Array.from(new Set((recentLogs ?? []).map((row: any) => Number(row?.linked_trade_id || 0)).filter((id) => id > 0)))
+    const decisionIds = Array.from(new Set((recentLogs ?? []).map((row: any) => Number(row?.id || 0)).filter((id: number) => id > 0)))
+    const tradeIds = Array.from(new Set((recentLogs ?? []).map((row: any) => Number(row?.linked_trade_id || 0)).filter((id: number) => id > 0)))
 
     const { data: outcomes } = decisionIds.length
       ? await supabase

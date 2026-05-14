@@ -1,33 +1,11 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { createClient } from '@supabase/supabase-js'
 import { resolveUiUserContext } from '../../handlers/ui/_userContext'
+import { fetchRealtimePriceBatch, type RealtimeStockData } from '../../src/utils/fetchRealtimePrice'
 
 const ORIGIN = process.env.UI_CORS_ORIGIN || '*'
 
-// 간단한 현재가 캐시 (실제로는 pykrx나 외부 API 사용)
-const priceCache = new Map<string, { price: number; timestamp: number }>()
-const CACHE_TTL = 60000 // 60초
-
-async function getCurrentPrice(code: string): Promise<number | null> {
-  // 캐시 확인
-  const cached = priceCache.get(code)
-  if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
-    return cached.price
-  }
-
-  try {
-    // TODO: 실제 현재가 조회 (pykrx, 증권사 API 등)
-    // 임시: 마지막 매수/매도 가격으로 사용
-    return null
-  } catch (e) {
-    console.error(`Failed to get price for ${code}:`, e)
-    return null
-  }
-}
-
-async function setCurrentPrice(code: string, price: number) {
-  priceCache.set(code, { price, timestamp: Date.now() })
-}
+const REALTIME_BATCH_TOTAL_TIMEOUT_MS = Math.max(1000, Number(process.env.UI_REALTIME_BATCH_TIMEOUT_MS || 4000))
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   res.setHeader('Access-Control-Allow-Origin', ORIGIN)
@@ -78,7 +56,20 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       })
     }
 
-    // 2) 현재가 조회 (DB 또는 캐시)
+    // 2) 실시간 현재가 배치 조회
+    const codes = positions
+      .map((pos) => String(pos?.code || '').trim())
+      .filter(Boolean)
+    const realtimePriceMap = codes.length > 0
+      ? await Promise.race([
+          fetchRealtimePriceBatch(codes),
+          new Promise<Record<string, RealtimeStockData>>((resolve) =>
+            setTimeout(() => resolve({}), REALTIME_BATCH_TOTAL_TIMEOUT_MS),
+          ),
+        ]).catch(() => ({} as Record<string, RealtimeStockData>))
+      : {}
+
+    // 3) 포지션별 현재가 및 손익 계산
     const positionsWithPrice: any[] = []
     let totalInvested = 0
     let totalCurrentValue = 0
@@ -87,19 +78,27 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const invested = Number(pos.invested_amount || 0)
       totalInvested += invested
 
-      // 현재가 조회
-      // 주의: 실제로는 pykrx, 증권사 API, 또는 stocks 테이블에서 조회
-      // 임시: 마지막 매매 가격 조회
-      const { data: lastTrade } = await supabase
-        .from('virtual_trades')
-        .select('price')
-        .eq('chat_id', chatId)
-        .eq('code', String(pos.code))
-        .order('id', { ascending: false })
-        .limit(1)
-        .single()
+      const code = String(pos.code || '').trim()
+      const realtimePrice = Number(realtimePriceMap[code]?.price)
+      const hasRealtime = Number.isFinite(realtimePrice) && realtimePrice > 0
+      let currentPrice = hasRealtime ? realtimePrice : Number(pos.buy_price || 0)
 
-      const currentPrice = lastTrade?.price ? Number(lastTrade.price) : Number(pos.buy_price || 0)
+      if (!hasRealtime) {
+        // 실시간 조회 실패 시 마지막 체결가로 보강
+        const { data: lastTrade } = await supabase
+          .from('virtual_trades')
+          .select('price')
+          .eq('chat_id', chatId)
+          .eq('code', code)
+          .order('id', { ascending: false })
+          .limit(1)
+          .single()
+        const fallbackTradePrice = Number(lastTrade?.price)
+        if (Number.isFinite(fallbackTradePrice) && fallbackTradePrice > 0) {
+          currentPrice = fallbackTradePrice
+        }
+      }
+
       const currentValue = Number(pos.quantity || 0) * currentPrice
       totalCurrentValue += currentValue
 

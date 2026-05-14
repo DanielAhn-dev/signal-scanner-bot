@@ -113,7 +113,7 @@ async function getRecentTradeDates(supabase: SupabaseClient, limit: number): Pro
     new Set(
       (data ?? [])
         .map((row: unknown) => String((row as { trade_date?: string }).trade_date || ''))
-        .filter((value): value is string => Boolean(value))
+        .filter((value: string): value is string => Boolean(value))
     )
   )
   return uniqueDates.slice(0, limit)

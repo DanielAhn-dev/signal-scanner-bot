@@ -461,7 +461,9 @@ export async function createBriefingReport(
         b.totalScore - a.totalScore
     )
     .slice(0, 3);
-  const topSectorNameById = new Map(topSectors.map((sector) => [sector.id, sector.name]));
+  const topSectorNameById = new Map<string, string | null>(
+    topSectors.map((sector: SectorRow) => [sector.id, sector.name ?? null])
+  );
   const newsSentimentByCode = new Map<string, SentimentResult>();
   const orderSignalByCode = new Map<string, OrderIntakeSignalResult>();
   await Promise.all(
@@ -1046,7 +1048,9 @@ async function formatWatchOnlySection(
   const actionable = sortedItems.filter((item) => item.plan.status === "buy-now").length;
   const pullback = sortedItems.filter((item) => item.plan.status === "buy-on-pullback").length;
   const wait = sortedItems.filter((item) => item.plan.status === "wait").length;
-  const topSectorNameById = new Map(topSectors.map((sector) => [sector.id, sector.name]));
+  const topSectorNameById = new Map<string, string | null>(
+    topSectors.map((sector: SectorRow) => [sector.id, sector.name ?? null])
+  );
   const overlappingThemes = Array.from(
     new Set(
       sortedItems
@@ -1108,7 +1112,9 @@ async function formatWatchlistSection(
   const pullback = sortedItems.filter((item) => item.plan.status === "buy-on-pullback").length;
   const wait = sortedItems.filter((item) => item.plan.status === "wait").length;
 
-  const topSectorNameById = new Map(topSectors.map((sector) => [sector.id, sector.name]));
+  const topSectorNameById = new Map<string, string | null>(
+    topSectors.map((sector: SectorRow) => [sector.id, sector.name ?? null])
+  );
   const overlappingThemes = Array.from(
     new Set(
       sortedItems

@@ -230,7 +230,7 @@ async function getJobSnapshot(
     }
   }
 
-  const recentTrades = recentTradesRaw.map((row) => {
+  const recentTrades = recentTradesRaw.map((row: unknown) => {
     const record = row as Record<string, unknown>
     const code = String(record.code || '').trim()
     return {
