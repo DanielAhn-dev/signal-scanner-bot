@@ -288,6 +288,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         ticker: row.code,
         broker_name: row.broker_name ?? null,
         account_name: row.account_name ?? null,
+        account_kind: (!String(row.broker_name || '').trim() && !String(row.account_name || '').trim()) ? 'virtual' : 'account',
         account_label: [row.broker_name, row.account_name].filter(Boolean).join(' / ') || null,
         avg_price: buyPrice,
         unrealized_pnl: unrealized,

@@ -69,6 +69,11 @@ function accountLabel(brokerName?: string | null, accountName?: string | null): 
   return label || '계좌 미지정'
 }
 
+function isVirtualPositionRow(row: any): boolean {
+  // 엄격 기준: 서버가 판정한 account_kind 값만 사용
+  return String(row?.account_kind || '').toLowerCase() === 'virtual'
+}
+
 function toSignalLabel(value?: string | null): string {
   const v = String(value || '').trim().toUpperCase()
   if (!v) return '-'
@@ -454,7 +459,7 @@ export default function Portfolio() {
   }, [loadAdvisorPerformance])
 
   useEffect(() => {
-    if (selectedAccountKey === 'all') {
+    if (selectedAccountKey === 'all' || selectedAccountKey === 'virtual') {
       setPolicyDraft(null)
       return
     }
@@ -568,6 +573,7 @@ export default function Portfolio() {
 
   // 클라이언트 사이드 파생 상태 – API 재호출 없이 즉시 필터링
   const holdingAll = useMemo(() => allRows.filter((r: any) => r.position_type === 'holding'), [allRows])
+  const virtualHoldingRows = useMemo(() => holdingAll.filter((r: any) => isVirtualPositionRow(r)), [holdingAll])
 
   const sectors = useMemo(() => {
     const base = holdingAll
@@ -583,7 +589,9 @@ export default function Portfolio() {
 
   const filteredRows = useMemo(() => {
     let result: any[] = holdingAll
-    if (selectedAccountKey !== 'all') {
+    if (selectedAccountKey === 'virtual') {
+      result = result.filter((r: any) => isVirtualPositionRow(r))
+    } else if (selectedAccountKey !== 'all') {
       result = result.filter((r: any) => buildAccountKey(r?.broker_name, r?.account_name) === selectedAccountKey)
     }
     if (selectedSector) result = result.filter((r: any) => String(r.stock?.sector_id ?? '') === selectedSector)
@@ -611,7 +619,17 @@ export default function Portfolio() {
   const rows = filteredRows.slice((page - 1) * pageSize, page * pageSize)
   const summaryRows = selectedAccountKey === 'all'
     ? holdingAll
-    : holdingAll.filter((r: any) => buildAccountKey(r?.broker_name, r?.account_name) === selectedAccountKey)
+    : selectedAccountKey === 'virtual'
+      ? virtualHoldingRows
+      : holdingAll.filter((r: any) => buildAccountKey(r?.broker_name, r?.account_name) === selectedAccountKey)
+  const selectedAccountLabel = selectedAccountKey === 'all'
+    ? '전체 계좌'
+    : selectedAccountKey === 'virtual'
+      ? '가상매매'
+      : accountLabel(
+          accountFolders.find(f => f.key === selectedAccountKey)?.brokerName,
+          accountFolders.find(f => f.key === selectedAccountKey)?.accountName,
+        )
   const totalUnrealized = summaryRows.reduce((acc: number, r: any) => acc + Number(r.unrealized_pnl || 0), 0)
   const totalInvested = summaryRows.reduce((acc: number, r: any) => acc + (Number(r.quantity || 0) * Number(r.avg_price || 0)), 0)
   // 비용 계산: 매수비용(이미 발생) + 매도예상비용(현재가 기준)
@@ -1059,6 +1077,24 @@ export default function Portfolio() {
         >
           전체
         </button>
+        <button
+          className={`portfolio-tab ${selectedAccountKey === 'virtual' ? 'active' : ''}`}
+          onClick={() => { setSelectedAccountKey('virtual'); setPage(1) }}
+          style={{
+            padding: 'var(--space-2) var(--space-3)',
+            border: 'none',
+            background: 'transparent',
+            cursor: 'pointer',
+            fontWeight: selectedAccountKey === 'virtual' ? 'var(--font-weight-bold)' : 'normal',
+            color: selectedAccountKey === 'virtual' ? 'var(--color-text-primary)' : 'var(--color-text-secondary)',
+            borderBottom: selectedAccountKey === 'virtual' ? '2px solid var(--color-primary)' : 'none',
+            fontSize: 'var(--font-size-sm)',
+            whiteSpace: 'nowrap',
+            flexShrink: 0,
+          }}
+        >
+          가상매매 ({virtualHoldingRows.length})
+        </button>
         {accountFolders.map((account) => (
           <button
             key={account.key}
@@ -1087,10 +1123,7 @@ export default function Portfolio() {
         <div className="card portfolio-stat-card">
           <div className="stat-label">보유 종목</div>
           <div className="stat-value">{summaryRows.length}</div>
-          <div className="stat-sub">{selectedAccountKey === 'all' ? '전체 계좌' : accountLabel(
-            accountFolders.find(f => f.key === selectedAccountKey)?.brokerName,
-            accountFolders.find(f => f.key === selectedAccountKey)?.accountName
-          )}</div>
+          <div className="stat-sub">{selectedAccountLabel}</div>
         </div>
         <div className="card portfolio-stat-card">
           <div className="stat-label">현재 실제 매수금</div>
@@ -1128,6 +1161,8 @@ export default function Portfolio() {
         <div className="title-md" style={{ marginBottom: 'var(--space-2)' }}>계좌별 위험정책</div>
         {selectedAccountKey === 'all' ? (
           <div className="caption muted">계좌 폴더를 선택하면 해당 계좌의 정책(최대보유/일손실/현금비중/점수 가감)을 설정할 수 있습니다.</div>
+        ) : selectedAccountKey === 'virtual' ? (
+          <div className="caption muted">가상매매 탭은 개별 계좌 정책 대상이 아닙니다. 특정 계좌 탭을 선택하면 정책을 설정할 수 있습니다.</div>
         ) : policyDraft ? (
           <>
             <div className="caption muted" style={{ marginBottom: 'var(--space-2)' }}>
@@ -1220,10 +1255,12 @@ export default function Portfolio() {
             <div className="caption muted">
               {selectedAccountKey === 'all' 
                 ? '전체 계좌의 초기 투자금, 평가금, 현금, 종목별 비중을 확인합니다.'
-                : `${accountLabel(
-                    accountFolders.find(f => f.key === selectedAccountKey)?.brokerName,
-                    accountFolders.find(f => f.key === selectedAccountKey)?.accountName
-                  )} 계좌의 초기 투자금, 평가금, 현금, 종목별 비중을 확인합니다.`
+                : selectedAccountKey === 'virtual'
+                  ? '가상매매 보유분의 초기 투자금, 평가금, 현금, 종목별 비중을 확인합니다.'
+                  : `${accountLabel(
+                      accountFolders.find(f => f.key === selectedAccountKey)?.brokerName,
+                      accountFolders.find(f => f.key === selectedAccountKey)?.accountName
+                    )} 계좌의 초기 투자금, 평가금, 현금, 종목별 비중을 확인합니다.`
               }
             </div>
           </div>
