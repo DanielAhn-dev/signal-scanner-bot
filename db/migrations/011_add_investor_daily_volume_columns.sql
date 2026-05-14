@@ -10,7 +10,7 @@ alter table if exists public.investor_daily
 update public.investor_daily
 set
   personal_amount = coalesce(personal_amount, personal),
-  foreign_amount = coalesce(foreign_amount, foreign),
+  foreign_amount = coalesce(foreign_amount, "foreign"),
   institution_amount = coalesce(institution_amount, institution)
 where
   personal_amount is null
