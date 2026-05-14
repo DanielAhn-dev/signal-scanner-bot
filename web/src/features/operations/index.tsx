@@ -871,65 +871,30 @@ export default function OperationsPage() {
         }}
       >
 
-        {/* Autocycle */}
+        {/* 지금 매매 체크 */}
         <div className="card card-lg">
           <div style={{ marginBottom: 'var(--space-3)' }}>
-            <div className="title-lg">자동사이클 (autocycle)</div>
+            <div className="title-lg">📊 지금 매매 체크</div>
             <div className="muted caption" style={{ marginTop: 'var(--space-1)' }}>
-              보유/관심 종목 점수 재평가 후 매수/매도 조건 충족 시 가상 거래를 실행합니다.
-              점검 모드는 실제 체결 없이 결과만 먼저 확인합니다.
+              현재 보유 포지션의 신호 재평가 및 손절/익절 조건을 확인합니다.
+              보유 종목 중 조건을 만족하는 것이 있으면 거래 대기 상태로 표시됩니다.
             </div>
           </div>
           <div style={{ display: 'flex', gap: 'var(--space-2)', flexWrap: 'wrap' }}>
             <Button
-              variant="secondary"
-              onClick={() => runAutocycle(true)}
-              disabled={autocycleStatus === 'loading'}
-            >
-              {autocycleStatus === 'loading' ? '요청 중...' : '점검 실행 (dry-run)'}
-            </Button>
-            <Button
-              variant="ghost"
-              onClick={() => runAutocycle(false)}
-              disabled={autocycleStatus === 'loading'}
-            >
-              실제 실행
-            </Button>
-          </div>
-          {autocycleResult && (
-            <div
-              className={autocycleStatus === 'error' ? 'state-error' : 'caption muted'}
-              style={{ marginTop: 'var(--space-3)' }}
-            >
-              {autocycleResult}
-            </div>
-          )}
-        </div>
-
-        {/* Autotrigger */}
-        <div className="card card-lg">
-          <div style={{ marginBottom: 'var(--space-3)' }}>
-            <div className="title-lg">순차트리거 (autotrigger)</div>
-            <div className="muted caption" style={{ marginTop: 'var(--space-1)' }}>
-              장중/장전 단계별 순차 트리거를 실행합니다. 단계를 선택 후 요청하세요.
-            </div>
-          </div>
-          <div style={{ display: 'flex', gap: 'var(--space-2)', alignItems: 'center', flexWrap: 'wrap' }}>
-            <select
-              className="input"
-              style={{ width: 'auto', minWidth: 120 }}
-              value={autotriggerStep}
-              onChange={e => setAutotriggerStep(e.target.value as 'intraday' | 'ready')}
-            >
-              <option value="intraday">장중 (intraday)</option>
-              <option value="ready">장전 (ready)</option>
-            </select>
-            <Button
-              variant="secondary"
+              variant="primary"
               onClick={() => { void runAutotrigger() }}
               disabled={autotriggerStatus === 'loading'}
+              style={{ minWidth: 160 }}
             >
-              {autotriggerStatus === 'loading' ? '요청 중...' : '트리거 요청'}
+              {autotriggerStatus === 'loading' ? '확인 중...' : '🔍 지금 확인'}
+            </Button>
+            <Button
+              variant="secondary"
+              onClick={() => setAutotriggerStep(autotriggerStep === 'intraday' ? 'ready' : 'intraday')}
+              disabled={autotriggerStatus === 'loading'}
+            >
+              {autotriggerStep === 'intraday' ? '장중' : '장전'} 모드
             </Button>
           </div>
           {autotriggerResult && (

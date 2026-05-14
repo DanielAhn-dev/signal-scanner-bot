@@ -59,6 +59,11 @@ export const CMD = {
   DATA_SYNC: /^\/(데이터동기화|데이터|동기화|datasync|syncdata)(?:\s+(.+))?$/i,
   STRATEGY_SELECT: /^\/(전략선택|strategy)$/i,
   AUTOREPORT: /^\/(자동리포트|autoreport)$/i,
+  STOPLOSS_SET: /^\/(손절설정|손절|stoploss)(?:\s+(.+))?$/i,
+  TAKEPROFIT_SET: /^\/(익절설정|익절|takeprofit)(?:\s+(.+))?$/i,
+  AUTO_TRADING: /^\/(자동매매|autotrading)(?:\s+(.+))?$/i,
+  PORTFOLIO_STATUS: /^\/(수익현황|포트폴리오|portfolio)$/i,
+  PNL_REPORT: /^\/(손익리포트|손익|리포트|pnlreport)(?:\s+(.+))?$/i,
 };
 
 export function normalizeIncomingMessageText(text: string): string {

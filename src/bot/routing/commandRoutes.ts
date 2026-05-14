@@ -41,6 +41,13 @@ import { handleDataSyncCommand } from "../commands/dataSync";
 import { handlePreMarketPlanCommand } from "../commands/preMarketPlan";
 import { handleStrategySelect } from "../commands/strategySelect";
 import {
+  cmdSetStopLoss,
+  cmdSetTakeProfit,
+  cmdAutoTrading,
+  cmdPortfolioStatus,
+  cmdPnLReport,
+} from "../../commands/stopLossCommands";
+import {
   handleWatchlistCommand,
   handleWatchOnlyCommand,
   handleWatchOnlyAdd,
@@ -393,5 +400,35 @@ export const COMMAND_ROUTE_SPECS: CommandRouteSpec[] = [
     userErrorLabel: "ETF 허브",
     tokens: ["etf", "이티에프"],
     run: (match, ctx, tgSend) => handleEtfHubCommand(match[2] ?? "", ctx, tgSend),
+  },
+  {
+    pattern: CMD.STOPLOSS_SET,
+    userErrorLabel: "손절설정",
+    tokens: ["손절설정", "손절", "stoploss"],
+    run: (match, ctx, tgSend) => cmdSetStopLoss(ctx, tgSend, match[2] ?? ""),
+  },
+  {
+    pattern: CMD.TAKEPROFIT_SET,
+    userErrorLabel: "익절설정",
+    tokens: ["익절설정", "익절", "takeprofit"],
+    run: (match, ctx, tgSend) => cmdSetTakeProfit(ctx, tgSend, match[2] ?? ""),
+  },
+  {
+    pattern: CMD.AUTO_TRADING,
+    userErrorLabel: "자동매매",
+    tokens: ["자동매매", "autotrading"],
+    run: (match, ctx, tgSend) => cmdAutoTrading(ctx, tgSend, match[2] ?? ""),
+  },
+  {
+    pattern: CMD.PORTFOLIO_STATUS,
+    userErrorLabel: "수익현황",
+    tokens: ["수익현황", "포트폴리오", "portfolio"],
+    run: (_match, ctx, tgSend) => cmdPortfolioStatus(ctx, tgSend),
+  },
+  {
+    pattern: CMD.PNL_REPORT,
+    userErrorLabel: "손익리포트",
+    tokens: ["손익리포트", "손익", "리포트", "pnlreport"],
+    run: (match, ctx, tgSend) => cmdPnLReport(ctx, tgSend, match[2] ?? ""),
   },
 ];
