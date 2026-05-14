@@ -646,7 +646,7 @@ async function appendTradeLog(payload: {
   supabase: SupabaseClientAny;
   chatId: number;
   code: string;
-  side: "BUY" | "SELL";
+  side: "BUY" | "SELL" | "ADJUST";
   price: number;
   quantity: number;
   grossAmount: number;
@@ -655,6 +655,9 @@ async function appendTradeLog(payload: {
   taxAmount?: number;
   pnlAmount?: number;
   memo?: string;
+  source?: "MANUAL" | "AUTO" | "ADJUST"; // 추가: 거래 출처
+  brokerName?: string | null;
+  accountName?: string | null;
 }): Promise<number | null> {
   const { data, error } = await payload.supabase
     .from(PORTFOLIO_TABLES.trades)
@@ -670,6 +673,9 @@ async function appendTradeLog(payload: {
       tax_amount: payload.taxAmount ?? 0,
       pnl_amount: payload.pnlAmount ?? 0,
       memo: payload.memo ?? null,
+      source: payload.source ?? "MANUAL",
+      broker_name: payload.brokerName ?? null,
+      account_name: payload.accountName ?? null,
       traded_at: new Date().toISOString(),
     })
     .select("id")
@@ -833,6 +839,8 @@ async function getRecentAutoTradeSellPerformance(payload: {
     .select("side, pnl_amount, memo, traded_at")
     .eq("chat_id", payload.chatId)
     .eq("side", "SELL")
+    .is("broker_name", null)
+    .is("account_name", null)
     .gte("traded_at", since)
     .order("traded_at", { ascending: true })
     .limit(5000);
@@ -1084,6 +1092,8 @@ export async function generateAutoTradeBacktestReportForChat(input: {
     .from(PORTFOLIO_TABLES.trades)
     .select("side, pnl_amount, traded_at")
     .eq("chat_id", input.chatId)
+    .is("broker_name", null)
+    .is("account_name", null)
     .gte("traded_at", since.toISOString())
     .order("traded_at", { ascending: true })
     .limit(20000);
@@ -1172,6 +1182,8 @@ async function getDailyRealizedPnl(payload: {
     .select("pnl_amount")
     .eq("chat_id", payload.chatId)
     .eq("side", "SELL")
+    .is("broker_name", null)
+    .is("account_name", null)
     .gte("traded_at", startIso)
     .lt("traded_at", endIso)
     .limit(3000);
@@ -1486,7 +1498,9 @@ async function runMondayBuyForUser(payload: {
   const { data: holdingRows, error: holdingError } = await payload.supabase
     .from(PORTFOLIO_TABLES.positionsLegacy)
     .select("id, code, status")
-    .eq("chat_id", chatId);
+    .eq("chat_id", chatId)
+    .is("broker_name", null)
+    .is("account_name", null);
 
   if (holdingError) {
     summary.errors += 1;
@@ -2067,6 +2081,8 @@ async function runMondayBuyForUser(payload: {
             invested_amount: investedAmount,
             bucket: resolvePositionBucketFromProfile(tradeProfile.profile),
             status: "holding",
+            broker_name: null,
+            account_name: null,
             memo: buildPositionStrategyMemo({
               event: "monday-buy",
               note: "autotrade-monday-buy",
@@ -2097,6 +2113,9 @@ async function runMondayBuyForUser(payload: {
           event: "monday-buy",
           note: "autotrade-monday-buy",
         }),
+        source: "AUTO",
+        brokerName: null,
+        accountName: null,
       });
 
       // 즉시 가상현금 업데이트 (원자 트랜잭션은 향후 DB 함수로 개선 가능)
@@ -2437,6 +2456,9 @@ async function executeAutoTradeSell(payload: {
       event: payload.reason,
       note: payload.reason,
     }),
+    source: "AUTO",
+    brokerName: null,
+    accountName: null,
   });
 
   try {
@@ -2578,6 +2600,8 @@ async function runDailyReviewForUser(payload: {
     .from(PORTFOLIO_TABLES.positionsLegacy)
     .select("id, code, buy_price, buy_date, created_at, quantity, invested_amount, status, memo")
     .eq("chat_id", chatId)
+    .is("broker_name", null)
+    .is("account_name", null)
     .eq("status", "holding");
 
   if (holdingsError) {
@@ -3224,6 +3248,9 @@ async function runDailyReviewForUser(payload: {
               event: "add-on-buy",
               note: "autotrade-add-on-buy",
             }),
+            source: "AUTO",
+            brokerName: null,
+            accountName: null,
           });
 
           try {
@@ -3684,6 +3711,8 @@ async function runDailyReviewForUser(payload: {
                 quantity: qty,
                 invested_amount: investedAmount,
                 bucket: resolvePositionBucketFromProfile(entryProfile.profile),
+                broker_name: null,
+                account_name: null,
                 memo: buildPositionStrategyMemo({
                   event: "rebalance-buy",
                   note: "autotrade-rebalance-buy",
@@ -3715,6 +3744,9 @@ async function runDailyReviewForUser(payload: {
               event: "rebalance-buy",
               note: "autotrade-rebalance-buy",
             }),
+            source: "AUTO",
+            brokerName: null,
+            accountName: null,
           });
 
           const positionId = Number((upserted as Record<string, unknown> | null)?.id ?? 0) || null;
