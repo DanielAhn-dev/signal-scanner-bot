@@ -1,14 +1,16 @@
 import React, { useEffect, useRef } from 'react'
 
 interface ModalProps {
-  isOpen: boolean
+  isOpen?: boolean
+  open?: boolean
   title: string
   onClose: () => void
   children: React.ReactNode
   size?: 'sm' | 'md' | 'lg'
 }
 
-export default function Modal({ isOpen, title, onClose, children, size = 'md' }: ModalProps) {
+export default function Modal({ isOpen, open, title, onClose, children, size = 'md' }: ModalProps) {
+  const modalOpen = isOpen ?? open ?? false
   const overlayRef = useRef<HTMLDivElement>(null)
   const dialogRef = useRef<HTMLDivElement>(null)
   const previousFocusedRef = useRef<HTMLElement | null>(null)
@@ -24,7 +26,7 @@ export default function Modal({ isOpen, title, onClose, children, size = 'md' }:
 
   // ESC로 닫기
   useEffect(() => {
-    if (!isOpen) return
+    if (!modalOpen) return
 
     previousFocusedRef.current = document.activeElement as HTMLElement | null
     setTimeout(() => {
@@ -66,9 +68,9 @@ export default function Modal({ isOpen, title, onClose, children, size = 'md' }:
       document.body.style.overflow = ''
       previousFocusedRef.current?.focus()
     }
-  }, [getFocusableElements, isOpen, onClose])
+  }, [getFocusableElements, modalOpen, onClose])
 
-  if (!isOpen) return null
+  if (!modalOpen) return null
 
   const maxW = size === 'sm' ? '28rem' : size === 'lg' ? '48rem' : '36rem'
 
