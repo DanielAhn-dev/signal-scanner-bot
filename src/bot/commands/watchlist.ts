@@ -2830,7 +2830,7 @@ export async function handleWatchlistHistoryCommand(
   let query = supabaseRead
     .from("virtual_trades")
     .select(
-      "id, code, side, price, quantity, gross_amount, net_amount, fee_amount, tax_amount, pnl_amount, memo, traded_at, stock:stocks(name)",
+      "id, code, side, price, quantity, gross_amount, net_amount, fee_amount, tax_amount, pnl_amount, memo, source, traded_at, stock:stocks(name)",
       { count: "exact" }
     )
     .eq("chat_id", ctx.chatId)
@@ -2843,6 +2843,11 @@ export async function handleWatchlistHistoryCommand(
 
   if (range.endIso) {
     query = query.lt("traded_at", range.endIso);
+  }
+
+  // source 필터 추가 (자동/수동)
+  if (range.sourceFilter) {
+    query = query.eq("source", range.sourceFilter);
   }
 
   const { data: rows, error, count } = await query;
@@ -2892,12 +2897,13 @@ export async function handleWatchlistHistoryCommand(
   }
 
   if (!rows || rows.length === 0) {
+    const sourceLabel = range.sourceFilter === "AUTO" ? " (자동 거래만)" : range.sourceFilter === "MANUAL" ? " (수동 입력만)" : "";
     return tgSend("sendMessage", {
       chat_id: ctx.chatId,
       text: [
         "<b>가상 매매 기록</b>",
         LINE,
-        `조회 범위 ${range.label} (${range.periodText})`,
+        `조회 범위 ${range.label}${sourceLabel} (${range.periodText})`,
         range.emptyText,
         range.mode === "all"
           ? "/가상매수 로 가상 매수를 시작해보세요."
@@ -2918,8 +2924,10 @@ export async function handleWatchlistHistoryCommand(
     const price = Number(r.price ?? 0);
     const stockName = String((Array.isArray((r as any).stock) ? (r as any).stock[0] : (r as any).stock)?.name ?? "").trim();
     const codeLabel = stockName ? `${esc(stockName)} ${r.code}` : String(r.code ?? "");
+    const source = String(r.source ?? "MANUAL").toUpperCase();
+    const sourceTag = source === "AUTO" ? " (자동)" : source === "ADJUST" ? " (수정)" : "";
     const base = `${idx + 1}. (${d}) ${side} ${codeLabel} ${qty}주 @ ${fmtInt(price)}원`;
-    const autoTag = String(r.memo ?? "").includes("(자동)") ? " (자동)" : "";
+    const autoTag = sourceTag;
 
     if (sideValue === "ADJUST") {
       const parsed = parseAdjustmentMemo(r.memo as string | null | undefined);
@@ -2977,11 +2985,12 @@ export async function handleWatchlistHistoryCommand(
   const displayCountNote = totalCount > rows.length
     ? `상세 내역은 최근 ${rows.length}건만 표시합니다.`
     : "상세 내역은 최신순으로 정렬합니다.";
+  const sourceLabel = range.sourceFilter === "AUTO" ? " (자동 거래만)" : range.sourceFilter === "MANUAL" ? " (수동 입력만)" : "";
 
   const msg = [
     "<b>가상 매매 기록</b>",
     LINE,
-    `조회 범위 ${range.label} (${range.periodText})`,
+    `조회 범위 ${range.label}${sourceLabel} (${range.periodText})`,
     `기록 합계 ${totalCount}건 (매수 ${buyRows.length} · 매도 ${totalSell} · 수정 ${adjustRows.length})`,
     `실현손익(FIFO) <code>${scopedRealized >= 0 ? "+" : ""}${fmtInt(scopedRealized)}원</code>`,
     `매도 승률 <code>${winRate.toFixed(1)}%</code> (승 ${winCount} · 패 ${loseCount})`,

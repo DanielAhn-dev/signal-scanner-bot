@@ -9,6 +9,7 @@ export type TradeHistoryRange = {
   endIso: string | null;
   reliabilityDays: number | null;
   emptyText: string;
+  sourceFilter?: "AUTO" | "MANUAL" | null; // 추가: 자동/수동 필터
 };
 
 export type ParsedTradeHistoryInput =
@@ -134,74 +135,90 @@ export function buildTradeHistoryInputGuide(): string {
   return [
     "예시: /거래기록, /거래기록 지난달, /거래기록 4월, /거래기록 4월 1주, /거래기록 최근 7일, /거래기록 전체",
     "숫자만 입력하면 최근 N일로 해석합니다. 예) /거래기록 14",
+    "자동/수동 필터: /거래기록 자동, /거래기록 4월 자동, /거래기록 최근 7일 수동",
   ].join("\n");
 }
 
 export function parseTradeHistoryInput(input: string, now = new Date()): ParsedTradeHistoryInput {
-  const raw = String(input ?? "").trim();
+  let raw = String(input ?? "").trim();
   const today = getKstTodayParts(now);
 
+  // 1. source 필터 추출 (자동/수동)
+  let sourceFilter: "AUTO" | "MANUAL" | null = null;
+  const sourceMatch = raw.match(/(자동|수동)$/i);
+  if (sourceMatch) {
+    sourceFilter = sourceMatch[1] === "자동" ? "AUTO" : "MANUAL";
+    // 필터 부분 제거
+    raw = raw.substring(0, sourceMatch.index).trim();
+  }
+
+  // 2. 범위 파싱 (기존 로직)
+  let rangeResult: ParsedTradeHistoryInput;
+
   if (!raw || /^(이번\s*달|이번달|당월)$/i.test(raw)) {
-    return { ok: true, range: buildMonthRange(today.year, today.monthIndex, now) };
-  }
-
-  if (/^(전체|all)$/i.test(raw)) {
-    return { ok: true, range: buildAllRange() };
-  }
-
-  if (/^(지난\s*달|지난달|전월)$/i.test(raw)) {
+    rangeResult = { ok: true, range: buildMonthRange(today.year, today.monthIndex, now) };
+  } else if (/^(전체|all)$/i.test(raw)) {
+    rangeResult = { ok: true, range: buildAllRange() };
+  } else if (/^(지난\s*달|지난달|전월)$/i.test(raw)) {
     const monthIndex = today.monthIndex === 0 ? 11 : today.monthIndex - 1;
     const year = today.monthIndex === 0 ? today.year - 1 : today.year;
-    return { ok: true, range: buildMonthRange(year, monthIndex, now) };
+    rangeResult = { ok: true, range: buildMonthRange(year, monthIndex, now) };
+  } else {
+    const monthWeekMatch = raw.match(/^(\d{1,2})\s*월\s*(\d{1,2})\s*주$/i);
+    if (monthWeekMatch) {
+      const month = Number(monthWeekMatch[1]);
+      const week = Number(monthWeekMatch[2]);
+      if (month < 1 || month > 12) {
+        return { ok: false, message: `지원하지 않는 월 입력입니다.\n${buildTradeHistoryInputGuide()}` };
+      }
+
+      const range = buildMonthWeekRange(resolveYearForMonth(month - 1, now), month - 1, week, now);
+      if (!range) {
+        return { ok: false, message: `지원하지 않는 주차입니다. 1주부터 4주까지만 입력해주세요.\n${buildTradeHistoryInputGuide()}` };
+      }
+      rangeResult = { ok: true, range };
+    } else {
+      const monthMatch = raw.match(/^(\d{1,2})\s*월$/i);
+      if (monthMatch) {
+        const month = Number(monthMatch[1]);
+        if (month < 1 || month > 12) {
+          return { ok: false, message: `지원하지 않는 월 입력입니다.\n${buildTradeHistoryInputGuide()}` };
+        }
+        rangeResult = {
+          ok: true,
+          range: buildMonthRange(resolveYearForMonth(month - 1, now), month - 1, now),
+        };
+      } else {
+        const recentDaysMatch = raw.match(/^(?:최근\s*)?(\d{1,3})\s*일$/i);
+        if (recentDaysMatch) {
+          const range = buildRecentDaysRange(Number(recentDaysMatch[1]), now);
+          if (!range) {
+            return { ok: false, message: `최근 일수 입력을 해석하지 못했습니다.\n${buildTradeHistoryInputGuide()}` };
+          }
+          rangeResult = { ok: true, range };
+        } else {
+          const parsedDays = Number(raw);
+          if (Number.isFinite(parsedDays) && parsedDays > 0) {
+            const range = buildRecentDaysRange(parsedDays, now);
+            if (!range) {
+              return { ok: false, message: `최근 일수 입력을 해석하지 못했습니다.\n${buildTradeHistoryInputGuide()}` };
+            }
+            rangeResult = { ok: true, range };
+          } else {
+            rangeResult = {
+              ok: false,
+              message: `거래기록 기간을 해석하지 못했습니다.\n${buildTradeHistoryInputGuide()}`,
+            };
+          }
+        }
+      }
+    }
   }
 
-  const monthWeekMatch = raw.match(/^(\d{1,2})\s*월\s*(\d{1,2})\s*주$/i);
-  if (monthWeekMatch) {
-    const month = Number(monthWeekMatch[1]);
-    const week = Number(monthWeekMatch[2]);
-    if (month < 1 || month > 12) {
-      return { ok: false, message: `지원하지 않는 월 입력입니다.\n${buildTradeHistoryInputGuide()}` };
-    }
-
-    const range = buildMonthWeekRange(resolveYearForMonth(month - 1, now), month - 1, week, now);
-    if (!range) {
-      return { ok: false, message: `지원하지 않는 주차입니다. 1주부터 4주까지만 입력해주세요.\n${buildTradeHistoryInputGuide()}` };
-    }
-    return { ok: true, range };
+  // 3. sourceFilter 적용
+  if (rangeResult.ok && sourceFilter) {
+    rangeResult.range.sourceFilter = sourceFilter;
   }
 
-  const monthMatch = raw.match(/^(\d{1,2})\s*월$/i);
-  if (monthMatch) {
-    const month = Number(monthMatch[1]);
-    if (month < 1 || month > 12) {
-      return { ok: false, message: `지원하지 않는 월 입력입니다.\n${buildTradeHistoryInputGuide()}` };
-    }
-    return {
-      ok: true,
-      range: buildMonthRange(resolveYearForMonth(month - 1, now), month - 1, now),
-    };
-  }
-
-  const recentDaysMatch = raw.match(/^(?:최근\s*)?(\d{1,3})\s*일$/i);
-  if (recentDaysMatch) {
-    const range = buildRecentDaysRange(Number(recentDaysMatch[1]), now);
-    if (!range) {
-      return { ok: false, message: `최근 일수 입력을 해석하지 못했습니다.\n${buildTradeHistoryInputGuide()}` };
-    }
-    return { ok: true, range };
-  }
-
-  const parsedDays = Number(raw);
-  if (Number.isFinite(parsedDays) && parsedDays > 0) {
-    const range = buildRecentDaysRange(parsedDays, now);
-    if (!range) {
-      return { ok: false, message: `최근 일수 입력을 해석하지 못했습니다.\n${buildTradeHistoryInputGuide()}` };
-    }
-    return { ok: true, range };
-  }
-
-  return {
-    ok: false,
-    message: `거래기록 기간을 해석하지 못했습니다.\n${buildTradeHistoryInputGuide()}`,
-  };
+  return rangeResult;
 }
