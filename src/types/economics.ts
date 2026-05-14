@@ -65,6 +65,39 @@ export type EconomicCalendarResponse = {
   fetchedAt: string                  // ISO 8601
 }
 
+/** 경제 이벤트 사후 결과 및 검증 기록 */
+export type EconomicEventOutcome = {
+  id?: number
+  eventId: string
+  eventName: string
+  country: string
+  category: EconomicCategory
+  importance: EventImportance
+  scheduledAt: string
+  publishedAt?: string
+  forecastValue?: number
+  actualValue?: number
+  previousValue?: number
+  surpriseValue?: number
+  surpriseDirection?: EventImpactDirection
+  kospiReturn1d?: number
+  kospiReturn3d?: number
+  kospiReturn5d?: number
+  kospiReturn10d?: number
+  kosdaqReturn1d?: number
+  kosdaqReturn3d?: number
+  kosdaqReturn5d?: number
+  kosdaqReturn10d?: number
+  volatilityChange?: number
+  keyDriver?: string
+  marketTheme?: string
+  confidenceScore?: number
+  reasonSummary?: string
+  reasonDetails?: Record<string, unknown>
+  createdAt?: string
+  updatedAt?: string
+}
+
 /** 경제 이벤트 필터 옵션 */
 export type EconomicEventFilter = {
   importance?: EventImportance[]

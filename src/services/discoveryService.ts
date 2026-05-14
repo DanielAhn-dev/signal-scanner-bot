@@ -383,6 +383,7 @@ export async function discoverMultibagger(
       opAcceleration: toNum(latest.op_acceleration),
       smartMoneyRatioPct,
       sectorScore,
+      sectorName: sectorMeta?.name ?? stock.sector_id,
     });
 
     picks.push({

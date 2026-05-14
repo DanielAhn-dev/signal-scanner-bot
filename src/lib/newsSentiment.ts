@@ -20,6 +20,15 @@ export interface SentimentResult {
   negativeDetails: MatchDetail[];
 }
 
+export interface OrderIntakeSignalResult {
+  /** -10 ~ +10 */
+  score: number;
+  positiveMatches: string[];
+  negativeMatches: string[];
+  positiveDetails: MatchDetail[];
+  negativeDetails: MatchDetail[];
+}
+
 // ─── 긍정 키워드 ──────────────────────────────────────────────────────────────
 
 const POSITIVE_KEYWORDS: readonly string[] = [
@@ -77,6 +86,40 @@ const NEGATIVE_KEYWORDS: readonly string[] = [
   "공매도 과열", "대주주 매도",
 ];
 
+const ORDER_POSITIVE_KEYWORDS: readonly string[] = [
+  "수주 증가",
+  "수주 확대",
+  "신규 수주",
+  "대규모 수주",
+  "수주 호조",
+  "수주잔고 확대",
+  "수주잔고 증가",
+  "수주잔액 확대",
+  "수주잔액 증가",
+  "수주 물량 확대",
+  "주문 증가",
+  "발주 확대",
+  "공사 수주",
+  "선박 수주",
+  "프로젝트 수주",
+];
+
+const ORDER_NEGATIVE_KEYWORDS: readonly string[] = [
+  "수주 감소",
+  "수주 부진",
+  "수주 둔화",
+  "수주 공백",
+  "수주잔고 감소",
+  "수주잔액 감소",
+  "발주 지연",
+  "수주 취소",
+  "주문 감소",
+  "수주 줄어",
+  "수주 감소세",
+  "수주 부진 지속",
+  "발주 부진",
+];
+
 // ─── 같은 제목 내 완화·극복 표현 — 부정 점수 무효화 ─────────────────────────
 
 const NEGATION_PATTERNS: readonly string[] = [
@@ -95,6 +138,8 @@ function hasMitigatingContext(title: string): boolean {
 
 const SORTED_POSITIVE = [...POSITIVE_KEYWORDS].sort((a, b) => b.length - a.length);
 const SORTED_NEGATIVE = [...NEGATIVE_KEYWORDS].sort((a, b) => b.length - a.length);
+const SORTED_ORDER_POSITIVE = [...ORDER_POSITIVE_KEYWORDS].sort((a, b) => b.length - a.length);
+const SORTED_ORDER_NEGATIVE = [...ORDER_NEGATIVE_KEYWORDS].sort((a, b) => b.length - a.length);
 
 // ─── 분석 함수 ────────────────────────────────────────────────────────────────
 
@@ -152,6 +197,54 @@ export function analyzeNewsSentiment(titles: string[]): SentimentResult {
     positiveDetails,
     negativeDetails,
   };
+}
+
+export function analyzeOrderIntakeSignal(titles: string[]): OrderIntakeSignalResult {
+  const positiveDetails: MatchDetail[] = [];
+  const negativeDetails: MatchDetail[] = [];
+  const seenPositive = new Set<string>();
+  const seenNegative = new Set<string>();
+  let rawScore = 0;
+
+  for (let i = 0; i < titles.length; i++) {
+    const weight = i <= 1 ? 2 : 1;
+    let workingPositive = titles[i];
+    let workingNegative = titles[i];
+
+    for (const kw of SORTED_ORDER_POSITIVE) {
+      if (workingPositive.includes(kw) && !seenPositive.has(kw)) {
+        seenPositive.add(kw);
+        positiveDetails.push({ keyword: kw, titleIndex: i });
+        rawScore += weight;
+        workingPositive = workingPositive.split(kw).join(" ".repeat(kw.length));
+      }
+    }
+
+    for (const kw of SORTED_ORDER_NEGATIVE) {
+      if (workingNegative.includes(kw) && !seenNegative.has(kw)) {
+        seenNegative.add(kw);
+        negativeDetails.push({ keyword: kw, titleIndex: i });
+        rawScore -= weight;
+        workingNegative = workingNegative.split(kw).join(" ".repeat(kw.length));
+      }
+    }
+  }
+
+  return {
+    score: Math.max(-10, Math.min(10, rawScore)),
+    positiveMatches: positiveDetails.map((d) => d.keyword),
+    negativeMatches: negativeDetails.map((d) => d.keyword),
+    positiveDetails,
+    negativeDetails,
+  };
+}
+
+export function formatOrderIntakeLine(result: OrderIntakeSignalResult): string {
+  const keywords = result.score > 0 ? result.positiveMatches : result.negativeMatches;
+  if (!keywords.length) return "";
+  const label = result.score > 0 ? "수주 증가" : "수주 감소";
+  const emoji = result.score > 0 ? (result.score >= 4 ? "🟢" : "📈") : result.score <= -4 ? "🚨" : "⚠️";
+  return `${emoji} ${label} (${keywords.slice(0, 3).join(", ")})`;
 }
 
 // ─── 포맷 헬퍼 ────────────────────────────────────────────────────────────────

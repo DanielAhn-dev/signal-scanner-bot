@@ -9,6 +9,7 @@ export type LongtermScoreInput = {
   opAcceleration: number | null;
   smartMoneyRatioPct: number | null;
   sectorScore: number | null;
+  sectorName?: string | null;
 };
 
 export type LongtermScoreBreakdown = {
@@ -106,10 +107,22 @@ function calcSmartMoneyScore(smartMoneyRatioPct: number | null): number {
   return clamp(lin(ratio, -1.0, 2.0, 0, 20), 0, 20);
 }
 
-function calcSectorScore(sectorScoreRaw: number | null): number {
+const ORDER_SENSITIVE_SECTOR_KEYWORDS = ["조선", "중공업", "기계", "방산", "플랜트", "건설", "원전"];
+
+function isOrderSensitiveSector(sectorName?: string | null): boolean {
+  const name = String(sectorName ?? "").trim();
+  if (!name) return false;
+  return ORDER_SENSITIVE_SECTOR_KEYWORDS.some((keyword) => name.includes(keyword));
+}
+
+function calcSectorScore(sectorScoreRaw: number | null, sectorName?: string | null): number {
   const score = Number(sectorScoreRaw ?? NaN);
   if (!Number.isFinite(score)) return 0;
-  return clamp(lin(score, 20, 80, 0, 10), 0, 10);
+  const base = clamp(lin(score, 20, 80, 0, 10), 0, 10);
+  if (!isOrderSensitiveSector(sectorName)) return base;
+
+  const bonus = score >= 60 ? 1.0 : score >= 45 ? 0.6 : score >= 35 ? 0.3 : 0;
+  return clamp(base + bonus, 0, 10);
 }
 
 export function calculateLongtermScore(input: LongtermScoreInput): LongtermScoreBreakdown {
@@ -121,7 +134,7 @@ export function calculateLongtermScore(input: LongtermScoreInput): LongtermScore
     input.opAcceleration
   );
   const smartMoneyScore = calcSmartMoneyScore(input.smartMoneyRatioPct);
-  const sectorScore = calcSectorScore(input.sectorScore);
+  const sectorScore = calcSectorScore(input.sectorScore, input.sectorName);
 
   const totalScore = clamp(
     valueScore + momentumScore + smartMoneyScore + sectorScore,

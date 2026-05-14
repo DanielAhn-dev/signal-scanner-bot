@@ -38,6 +38,8 @@ const GROWTH_KEYWORDS = [
   "성장",
 ];
 
+const ORDER_SENSITIVE_SECTOR_KEYWORDS = ["조선", "중공업", "기계", "방산", "플랜트", "건설", "원전"];
+
 function includesAny(text: string, keywords: string[]): boolean {
   return keywords.some((keyword) => text.includes(keyword));
 }
@@ -53,6 +55,10 @@ function buildTopFlowNames(rows: SectorFlowInsightRow[], kind: "positive" | "neg
     .sort((a, b) => (kind === "positive" ? b.totalFlow - a.totalFlow : a.totalFlow - b.totalFlow))
     .slice(0, 3)
     .map((row) => row.name);
+}
+
+function getOrderSensitiveSectorNames(names: string[]): string[] {
+  return names.filter((name) => ORDER_SENSITIVE_SECTOR_KEYWORDS.some((keyword) => name.includes(keyword)));
 }
 
 export function buildFlowInsightLines(rows: SectorFlowInsightRow[]): string[] {
@@ -203,6 +209,7 @@ export function buildSectorInsightLines(sectors: SectorScore[]): string[] {
   const leader = sectors[0];
   const second = sectors[1];
   const topNames = sectors.slice(0, 3).map((sector) => sector.name);
+  const orderSensitiveTopNames = getOrderSensitiveSectorNames(topNames);
   const lines: string[] = [];
   const gap = leader && second ? Number(leader.score) - Number(second.score) : 0;
 
@@ -219,6 +226,10 @@ export function buildSectorInsightLines(sectors: SectorScore[]): string[] {
     if (flowParts.length) {
       lines.push(`${leader.name}는 강도뿐 아니라 ${flowParts.join(", ")}이 같이 보이는지 확인하면 추세 신뢰도를 더 빨리 가늠할 수 있습니다.`);
     }
+  }
+
+  if (orderSensitiveTopNames.length) {
+    lines.push(`${orderSensitiveTopNames.join(", ")}는 수주 민감 업종이라, 수주 증가·수주잔고 확대 뉴스가 나오면 점수보다 체감 강도가 더 빨리 붙을 수 있습니다.`);
   }
 
   lines.push("따라서 지금은 하위 테마를 넓게 추격하기보다, 상위 섹터 대표 종목 안에서 진입 자리를 고르는 편이 더 안정적입니다.");

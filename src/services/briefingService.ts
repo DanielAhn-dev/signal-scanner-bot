@@ -14,7 +14,7 @@ import {
   type WatchMicroSignal,
 } from "../lib/watchlistSignals";
 import { fetchStockNews } from "../utils/fetchNews";
-import { analyzeNewsSentiment, sentimentEmoji, type SentimentResult } from "../lib/newsSentiment";
+import { analyzeNewsSentiment, analyzeOrderIntakeSignal, formatOrderIntakeLine, sentimentEmoji, type SentimentResult, type OrderIntakeSignalResult } from "../lib/newsSentiment";
 import {
   calculateSectorConcentration,
   getSectorConcentrationWarnings,
@@ -462,12 +462,15 @@ export async function createBriefingReport(
     .slice(0, 3)
     .map((item) => item.code);
   const newsSentimentByCode = new Map<string, SentimentResult>();
+  const orderSignalByCode = new Map<string, OrderIntakeSignalResult>();
   await Promise.all(
     sentimentTargetCodes.map(async (code) => {
       try {
         const news = await fetchStockNews(code, 5);
         if (news.length) {
-          newsSentimentByCode.set(code, analyzeNewsSentiment(news.map((n) => n.title)));
+          const titles = news.map((n) => n.title);
+          newsSentimentByCode.set(code, analyzeNewsSentiment(titles));
+          orderSignalByCode.set(code, analyzeOrderIntakeSignal(titles));
         }
       } catch {
         // 뉴스 조회 실패는 브리핑을 차단하지 않음
@@ -482,6 +485,7 @@ export async function createBriefingReport(
     topSectors,
     watchlistMicro,
     newsSentimentByCode,
+    orderSignalByCode,
     watchlistViewItems.filter((item: WatchlistViewItem) => {
       const matched = watchlistItems.find((row: WatchlistRow) => row.code === item.code);
       return matched ? hasVirtualPosition(matched) : false;
@@ -1072,6 +1076,7 @@ async function formatWatchlistSection(
   topSectors: SectorRow[],
   microByCode: Map<string, WatchMicroSignal>,
   newsSentimentByCode: Map<string, SentimentResult> = new Map(),
+  orderSignalByCode: Map<string, OrderIntakeSignalResult> = new Map(),
   viewItemsInput?: WatchlistViewItem[]
 ) {
   if (!items.length) {
@@ -1172,6 +1177,7 @@ async function formatWatchlistSection(
 
     // 뉴스 감성 라벨 (buy-now 또는 감성 주목할 만한 종목만)
     const sentimentResult = newsSentimentByCode.get(item.code);
+    const orderSignalResult = orderSignalByCode.get(item.code);
     const newsTag = sentimentResult
       ? (() => {
           const emoji = sentimentEmoji(sentimentResult.score);
@@ -1182,6 +1188,12 @@ async function formatWatchlistSection(
           return `     뉴스 ${emoji} ${matches.slice(0, 2).join(", ")}`;
         })()
       : null;
+    const orderTag = orderSignalResult
+      ? (() => {
+          const line = formatOrderIntakeLine(orderSignalResult);
+          return line ? `     ${line}` : null;
+        })()
+      : null;
     return [
       `  ▸ <b>${item.name}</b>${isEtf ? " [ETF]" : ""} <code>${fmtInt(item.currentPrice)}원</code>${changeStr}${buyBase}`,
       isEtf
@@ -1190,6 +1202,7 @@ async function formatWatchlistSection(
       `     ${todayAction}`,
       triggerLine,
       ...newsTag ? [newsTag] : [],
+      ...orderTag ? [orderTag] : [],
     ].join("\n");
   });
 

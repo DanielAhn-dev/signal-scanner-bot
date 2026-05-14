@@ -3,9 +3,15 @@ import {
   fetchEconomicCalendar,
   fetchUpcomingHighRiskEvents,
 } from '../../src/utils/fetchEconomicCalendar'
+import {
+  buildEconomicCalendarSnapshotKey,
+  readEconomicCalendarSnapshot,
+  saveEconomicCalendarSnapshot,
+} from '../../src/services/economicCalendarSnapshotService'
 
 const CALENDAR_CACHE_TTL_MS = Math.max(0, Number(process.env.UI_CALENDAR_CACHE_TTL_MS || 3_600_000)) // 1시간
 const CALENDAR_QUERY_TIMEOUT_MS = Math.max(1_000, Number(process.env.UI_CALENDAR_QUERY_TIMEOUT_MS || 5_000))
+const CALENDAR_SNAPSHOT_TTL_MS = Math.max(5 * 60_000, Number(process.env.ECONOMIC_CALENDAR_SNAPSHOT_TTL_MS || 6 * 60 * 60_000))
 
 type CalendarCacheEntry = {
   expiresAt: number
@@ -35,6 +41,11 @@ function setCachedData(key: string, payload: any): void {
   })
 }
 
+async function getFallbackSnapshot<T>(snapshotKey: string): Promise<T | null> {
+  const snapshot = await readEconomicCalendarSnapshot(snapshotKey, { allowStale: true })
+  return snapshot as T | null
+}
+
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   try {
     // CORS 헤더 추가
@@ -47,11 +58,17 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     const { query = 'all', type = 'calendar' } = req.query
+    const snapshotKey = buildEconomicCalendarSnapshotKey(String(type), String(query))
 
     // 다음 고위험 이벤트만 조회
     if (type === 'upcoming-high-risk') {
       const cacheKey = getCacheKey('upcoming-high-risk')
       let cachedData = getCachedData(cacheKey)
+
+      if (!cachedData) {
+        cachedData = await getFallbackSnapshot<{ events: any[]; fetchedAt?: string }>(snapshotKey)
+        if (cachedData) setCachedData(cacheKey, cachedData)
+      }
 
       if (!cachedData) {
         const controller = new AbortController()
@@ -67,6 +84,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           clearTimeout(timeoutId)
           cachedData = { events, fetchedAt: new Date().toISOString() }
           setCachedData(cacheKey, cachedData)
+          await saveEconomicCalendarSnapshot(snapshotKey, cachedData, {
+            sourceLabel: 'live-high-risk',
+            ttlMs: CALENDAR_SNAPSHOT_TTL_MS,
+            queryType: String(type),
+            queryPayload: { query: String(query), type: String(type) },
+          })
         } catch (e) {
           clearTimeout(timeoutId)
           throw e
@@ -79,6 +102,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     // 전체 또는 범위 캘린더 조회
     const cacheKey = getCacheKey(String(query))
     let cachedData = getCachedData(cacheKey)
+
+    if (!cachedData) {
+      cachedData = await getFallbackSnapshot<any>(snapshotKey)
+      if (cachedData) setCachedData(cacheKey, cachedData)
+    }
 
     if (!cachedData) {
       const controller = new AbortController()
@@ -94,8 +122,17 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         clearTimeout(timeoutId)
         cachedData = response
         setCachedData(cacheKey, cachedData)
+        await saveEconomicCalendarSnapshot(snapshotKey, cachedData, {
+          sourceLabel: 'live-calendar',
+          ttlMs: CALENDAR_SNAPSHOT_TTL_MS,
+          queryType: String(type),
+          queryPayload: { query: String(query), type: String(type) },
+        })
       } catch (e) {
         clearTimeout(timeoutId)
+        if (cachedData) {
+          return res.status(200).json({ data: cachedData, ok: true, stale: true })
+        }
         throw e
       }
     }
