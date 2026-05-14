@@ -674,6 +674,7 @@ export default function DiscoveryPage() {
               </Button>
             </div>
           </div>
+          </div>
         </div>
       </details>
 
