@@ -111,6 +111,12 @@ function matchesTrustedOrigin(origin: string, patterns: string[]): boolean {
   return false
 }
 
+function resolvePrimaryOrigin(patterns: string[]): string {
+  const exact = patterns.find((origin) => origin && !origin.includes('*'))
+  if (exact) return exact
+  return ''
+}
+
 export const config = {
   maxDuration: 60,
 }
@@ -125,7 +131,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     .split(',')
     .map((v) => v.trim())
     .filter(Boolean)
-  const primaryOrigin = trustedOriginPatterns.find((origin) => !origin.includes('*')) || trustedOriginPatterns[0] || '*'
+  const primaryOrigin = resolvePrimaryOrigin(trustedOriginPatterns)
   const allowOrigin = requestOrigin && matchesTrustedOrigin(requestOrigin, trustedOriginPatterns)
     ? requestOrigin
     : primaryOrigin
@@ -142,10 +148,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     ...requestedHeaders,
   ])
 
-  res.setHeader('Access-Control-Allow-Origin', allowOrigin)
+  if (allowOrigin) {
+    res.setHeader('Access-Control-Allow-Origin', allowOrigin)
+  }
   res.setHeader('Access-Control-Allow-Methods', 'GET,POST,DELETE,OPTIONS')
   res.setHeader('Access-Control-Allow-Headers', Array.from(allowHeaders).join(','))
-  res.setHeader('Access-Control-Allow-Credentials', 'true')
+  res.setHeader('Access-Control-Allow-Credentials', allowOrigin ? 'true' : 'false')
   res.setHeader('Vary', 'Origin,Access-Control-Request-Headers')
   if (req.method === 'OPTIONS') return res.status(204).end()
 

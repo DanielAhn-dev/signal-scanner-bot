@@ -1,6 +1,7 @@
 import { getApiBase } from './userContext'
 import { getCurrentChatIdFromStore } from '../stores/profileStore'
 import { isReviewMode, getMockResponse } from './review-mode'
+import { supabase } from './supabase'
 
 type CacheEntry = { ts: number; data: any }
 
@@ -63,6 +64,25 @@ function computeRetryDelay(attempt: number): number {
   return exp + jitter
 }
 
+let __tokenCache: { token: string; ts: number } = { token: '', ts: 0 }
+
+async function getAccessToken(): Promise<string> {
+  if (!supabase) return ''
+  const now = Date.now()
+  if (__tokenCache.token && now - __tokenCache.ts < 5000) {
+    return __tokenCache.token
+  }
+  try {
+    const { data } = await supabase.auth.getSession()
+    const token = String(data?.session?.access_token || '')
+    __tokenCache = { token, ts: now }
+    return token
+  } catch {
+    __tokenCache = { token: '', ts: now }
+    return ''
+  }
+}
+
 async function _fetch(url: string, opts: RequestInit, timeoutMs: number): Promise<Response> {
   const ctrl = new AbortController()
   const timer = setTimeout(() => ctrl.abort(), timeoutMs)
@@ -105,19 +125,19 @@ export async function apiFetch(
     return mockData
   }
 
-  const headers: Record<string, string> = {
-    ...(fetchOpts.headers as Record<string, string> || {}),
-  }
+  const headers = new Headers(fetchOpts.headers)
+  const accessToken = await getAccessToken()
+  if (accessToken && !headers.has('authorization')) headers.set('authorization', `Bearer ${accessToken}`)
   const uiKey = import.meta.env.VITE_UI_READ_KEY
-  if (uiKey) headers['x-ui-key'] = uiKey
+  if (uiKey) headers.set('x-ui-key', uiKey)
   const requiresUserChatIdHeader = /\/api\/ui\/(positions|positions-maintenance|watchlist|virtual-trade|decisions|summary|settings|notify|access-users|operations|portfolio-share|simulation-plan|account-policies|advisor-performance)(\?|$)|\/api\/ui\?route=(positions|positions-maintenance|watchlist|virtual-trade|decisions|summary|settings|notify|access-users|operations|portfolio-share|simulation-plan|account-policies|advisor-performance)(&|$)/.test(url)
   const requiresUserChatIdQuery = /\/api\/ui\/(positions|positions-maintenance|watchlist|virtual-trade|decisions|summary|settings|notify|access-users|operations|portfolio-share|simulation-plan|account-policies|advisor-performance|trigger-update|trigger-briefing|sync-history|sync-status|report-pdf|report-share|report-snapshot|report-web)(\?|$)|\/api\/ui\?route=(positions|positions-maintenance|watchlist|virtual-trade|decisions|summary|settings|notify|access-users|operations|portfolio-share|simulation-plan|account-policies|advisor-performance|trigger-update|trigger-briefing|sync-history|sync-status|report-pdf|report-share|report-snapshot|report-web)(&|$)/.test(url)
   if (requiresUserChatIdHeader || requiresUserChatIdQuery) {
     const chatId = getCurrentChatIdFromStore()
-    if (chatId && requiresUserChatIdHeader) headers['x-user-chat-id'] = chatId
+    if (chatId && requiresUserChatIdHeader) headers.set('x-user-chat-id', chatId)
     if (chatId && requiresUserChatIdQuery) url = appendQueryParam(url, 'chat_id', chatId)
   }
-  if (!headers['content-type'] && fetchOpts.body) headers['content-type'] = 'application/json'
+  if (!headers.has('content-type') && fetchOpts.body) headers.set('content-type', 'application/json')
 
   const method = (fetchOpts.method || 'GET').toUpperCase()
   const cacheKey = `${url}:${method}`
@@ -168,7 +188,7 @@ export async function apiFetch(
           if (res.status === 401) {
             throw new Error(
               `API request failed (401) from ${url}: ${preview}. `
-              + `Split deployment detected (web/api): verify backend env UI_READ_KEY and web env VITE_UI_READ_KEY are both set to the same value.`,
+              + `Sign-in session or UI read key may be missing. Verify Supabase login state and check VITE_UI_READ_KEY/UI_READ_KEY only if legacy key auth is still enabled.`,
             )
           }
           throw new Error(`API request failed (${res.status}) from ${url}: ${preview}`)

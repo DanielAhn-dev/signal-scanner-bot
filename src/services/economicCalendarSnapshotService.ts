@@ -25,6 +25,31 @@ function cloneResponse(response: EconomicCalendarResponse): EconomicCalendarResp
   }
 }
 
+function cloneSnapshotPayload<T>(payload: T): T {
+  if (!payload || typeof payload !== 'object') {
+    return payload
+  }
+
+  if (typeof structuredClone === 'function') {
+    return structuredClone(payload)
+  }
+
+  return JSON.parse(JSON.stringify(payload)) as T
+}
+
+export function isValidEconomicCalendarSnapshotPayload(payload: unknown): payload is EconomicCalendarResponse {
+  if (!payload || typeof payload !== 'object') return false
+  const record = payload as Record<string, unknown>
+  return Array.isArray(record.events) && typeof record.timeRange === 'object' && record.timeRange !== null
+}
+
+export function isFreshSnapshotExpiry(expiresAtValue: unknown, allowStale: boolean | undefined): boolean {
+  const expiresAt = expiresAtValue ? new Date(String(expiresAtValue)).getTime() : null
+  if (allowStale) return true
+  if (expiresAt == null || !Number.isFinite(expiresAt)) return false
+  return Date.now() <= expiresAt
+}
+
 export function buildEconomicCalendarSnapshotKey(queryType: string, queryValue: string): string {
   const safeQueryType = String(queryType || 'calendar').trim() || 'calendar'
   const safeQueryValue = String(queryValue || 'all').trim() || 'all'
@@ -44,14 +69,13 @@ export async function readEconomicCalendarSnapshot(
     .eq('snapshot_key', snapshotKey)
     .maybeSingle()
 
-  if (error || !data?.response_payload) return null
+  if (error || !isValidEconomicCalendarSnapshotPayload(data?.response_payload)) return null
 
-  const expiresAt = data.expires_at ? new Date(String(data.expires_at)).getTime() : null
-  if (!options?.allowStale && expiresAt != null && Number.isFinite(expiresAt) && Date.now() > expiresAt) {
+  if (!isFreshSnapshotExpiry(data.expires_at, options?.allowStale)) {
     return null
   }
 
-  return cloneResponse(data.response_payload as EconomicCalendarResponse)
+  return cloneSnapshotPayload(data.response_payload)
 }
 
 export async function saveEconomicCalendarSnapshot(
@@ -76,7 +100,7 @@ export async function saveEconomicCalendarSnapshot(
       snapshot_key: snapshotKey,
       query_type: options?.queryType ?? 'calendar',
       query_payload: options?.queryPayload ?? {},
-      response_payload: cloneResponse(response),
+      response_payload: cloneSnapshotPayload(response),
       source_label: options?.sourceLabel ?? null,
       fetched_at: now,
       expires_at: expiresAt,
