@@ -702,8 +702,10 @@ export default function DBViewPage() {
                 <div className="caption muted">ROE {detailMeta?.profile?.roe == null ? '—' : `${formatNumber(detailMeta.profile.roe, 2)}%`}</div>
                 <div className="caption muted">부채비율 {detailMeta?.profile?.debt_ratio == null ? '—' : `${formatNumber(detailMeta.profile.debt_ratio, 2)}%`}</div>
                 <div className="caption muted">외국인지분율 {detailMeta?.profile?.foreign_ratio == null ? '—' : `${formatNumber(detailMeta.profile.foreign_ratio, 2)}%`}</div>
-                <div className="caption muted">수급(외국인) {formatNumber(detailMeta?.flow?.foreign)}</div>
-                <div className="caption muted">수급(기관) {formatNumber(detailMeta?.flow?.institution)}</div>
+                <div className="caption muted">수급(외국인, 주) {detailMeta?.flow?.foreign == null ? '—' : `${formatNumber(detailMeta.flow.foreign)}주`}</div>
+                <div className="caption muted">수급(기관, 주) {detailMeta?.flow?.institution == null ? '—' : `${formatNumber(detailMeta.flow.institution)}주`}</div>
+                <div className="caption muted">수급대금(외국인) {formatWon(detailMeta?.flow?.foreign_amount)}</div>
+                <div className="caption muted">수급대금(기관) {formatWon(detailMeta?.flow?.institution_amount)}</div>
                 <div className="caption muted">재무기준일 {detailMeta?.profile?.fundamentals_as_of ? formatDateKst(detailMeta.profile.fundamentals_as_of) : '—'}</div>
                 <div className="caption muted">수급기준일 {detailMeta?.flow?.date ? formatDateKst(detailMeta.flow.date) : '—'}</div>
               </div>

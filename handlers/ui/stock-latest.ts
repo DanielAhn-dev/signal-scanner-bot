@@ -21,8 +21,16 @@ type LatestRow = {
 
 type InvestorFlowRow = {
   date: string | null
+  metric: 'volume' | 'amount'
+  personal: number | null
   foreign: number | null
   institution: number | null
+  personal_amount: number | null
+  foreign_amount: number | null
+  institution_amount: number | null
+  personal_volume: number | null
+  foreign_volume: number | null
+  institution_volume: number | null
 }
 
 type IndicatorSnapshot = {
@@ -585,6 +593,30 @@ async function fetchLatestCreditShortDaily(supabase: any, code: string): Promise
 
 async function fetchInvestorFlow(supabase: any, code: string): Promise<InvestorFlowRow | null> {
   const attempts = [
+    {
+      table: 'investor_daily',
+      select: 'date,personal,foreign,institution,personal_amount,foreign_amount,institution_amount,personal_volume,foreign_volume,institution_volume',
+      codeCol: 'ticker',
+      dateCol: 'date',
+    },
+    {
+      table: 'investor_daily',
+      select: 'date,personal,foreign,institution,personal_amount,foreign_amount,institution_amount,personal_volume,foreign_volume,institution_volume',
+      codeCol: 'code',
+      dateCol: 'date',
+    },
+    {
+      table: 'investor_daily',
+      select: 'date,retail_net,foreign_net,institution_net,retail_volume,foreign_volume,institution_volume',
+      codeCol: 'ticker',
+      dateCol: 'date',
+    },
+    {
+      table: 'investor_daily',
+      select: 'date,retail_net,foreign_net,institution_net,retail_volume,foreign_volume,institution_volume',
+      codeCol: 'code',
+      dateCol: 'date',
+    },
     { table: 'investor_daily', select: 'date,foreign,institution', codeCol: 'ticker', dateCol: 'date' },
     { table: 'investor_daily', select: 'date,foreign,institution', codeCol: 'code', dateCol: 'date' },
     { table: 'investor_daily', select: 'date,foreign_net,institution_net', codeCol: 'ticker', dateCol: 'date' },
@@ -602,10 +634,31 @@ async function fetchInvestorFlow(supabase: any, code: string): Promise<InvestorF
 
       if (!error && data && data.length) {
         const row = data[0] as any
+        const personalVolume = asNum(row?.personal_volume ?? row?.retail_volume)
+        const foreignVolume = asNum(row?.foreign_volume)
+        const institutionVolume = asNum(row?.institution_volume)
+
+        const personalAmount = asNum(row?.personal_amount ?? row?.personal ?? row?.retail_net)
+        const foreignAmount = asNum(row?.foreign_amount ?? row?.foreign ?? row?.foreign_net)
+        const institutionAmount = asNum(row?.institution_amount ?? row?.institution ?? row?.institution_net)
+
+        const hasVolume =
+          personalVolume != null ||
+          foreignVolume != null ||
+          institutionVolume != null
+
         return {
           date: row?.date ?? null,
-          foreign: asNum(row?.foreign ?? row?.foreign_net),
-          institution: asNum(row?.institution ?? row?.institution_net),
+          metric: hasVolume ? 'volume' : 'amount',
+          personal: hasVolume ? personalVolume : personalAmount,
+          foreign: hasVolume ? foreignVolume : foreignAmount,
+          institution: hasVolume ? institutionVolume : institutionAmount,
+          personal_amount: personalAmount,
+          foreign_amount: foreignAmount,
+          institution_amount: institutionAmount,
+          personal_volume: personalVolume,
+          foreign_volume: foreignVolume,
+          institution_volume: institutionVolume,
         }
       }
     } catch {
@@ -855,12 +908,13 @@ function computeCreditShortProxy(input: {
   }
 
   const flowNet = (asNum(flow?.foreign) ?? 0) + (asNum(flow?.institution) ?? 0)
-  if (flowNet < -1_000_000) {
+  const strongFlowThreshold = flow?.metric === 'volume' ? -100_000 : -1_000_000_000
+  if (flowNet < strongFlowThreshold) {
     riskScore += 8
-    reasons.push('수급 약세(외인+기관 순매도 강함)')
+    reasons.push(flow?.metric === 'volume' ? '수급 약세(외인+기관 순매도 강함, 거래량 기준)' : '수급 약세(외인+기관 순매도 강함, 거래대금 기준)')
   } else if (flowNet < 0) {
     riskScore += 4
-    reasons.push('수급 약세(외인+기관 순매도)')
+    reasons.push(flow?.metric === 'volume' ? '수급 약세(외인+기관 순매도, 거래량 기준)' : '수급 약세(외인+기관 순매도, 거래대금 기준)')
   }
 
   const level: CreditShortProxy['level'] =
@@ -1432,8 +1486,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       flow: flow
         ? {
             date: flow.date,
+            metric: flow.metric,
+            personal: asNum(flow.personal),
             foreign: asNum(flow.foreign),
             institution: asNum(flow.institution),
+            personal_amount: asNum(flow.personal_amount),
+            foreign_amount: asNum(flow.foreign_amount),
+            institution_amount: asNum(flow.institution_amount),
+            personal_volume: asNum(flow.personal_volume),
+            foreign_volume: asNum(flow.foreign_volume),
+            institution_volume: asNum(flow.institution_volume),
           }
         : null,
       creditShort: creditShort

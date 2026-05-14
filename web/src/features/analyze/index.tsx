@@ -597,8 +597,11 @@ export default function AnalyzePage({ onNavigate }: { onNavigate?: (r: string) =
           <div className="cards-grid cols-3">
             {([
               ['외국인 보유비율', result.foreign_ratio != null ? formatNumber(result.foreign_ratio, 2) + '%' : '—'],
-              ['외국인 순매수', flow?.foreign != null ? formatNumber(flow.foreign, 0) : '—'],
-              ['기관 순매수', flow?.institution != null ? formatNumber(flow.institution, 0) : '—'],
+              ['개인 순매수(주)', flow?.personal != null ? `${formatNumber(flow.personal, 0)}주` : '—'],
+              ['외국인 순매수(주)', flow?.foreign != null ? `${formatNumber(flow.foreign, 0)}주` : '—'],
+              ['기관 순매수(주)', flow?.institution != null ? `${formatNumber(flow.institution, 0)}주` : '—'],
+              ['외국인 순매수대금', flow?.foreign_amount != null ? formatKrw(flow.foreign_amount) : '—'],
+              ['기관 순매수대금', flow?.institution_amount != null ? formatKrw(flow.institution_amount) : '—'],
               ['SMA 20', computedSma20 != null ? formatKrw(computedSma20) : '—'],
               ['SMA 50', computedSma50 != null ? formatKrw(computedSma50) : '—'],
               ['RSI 14', computedRsi14 != null ? formatNumber(computedRsi14, 1) : '—'],

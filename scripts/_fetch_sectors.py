@@ -82,14 +82,14 @@ def get_sector_index_map() -> Dict[str, str]:
     return mapping
 
 # ==========================================
-# 1. 투자자별(기관/외국인) 수급 저장
+# 1. 투자자별(개인/기관/외국인) 수급 저장
 # ==========================================
 def upsert_investor_daily():
     today = date.today()
     all_rows: List[dict] = []
 
     print("="*40)
-    print("수급 데이터 수집 시작 (기관/외국인)")
+    print("수급 데이터 수집 시작 (개인/기관/외국인)")
     print("="*40)
 
     for i in range(35):
@@ -99,32 +99,57 @@ def upsert_investor_daily():
         print(f"[investor_daily] fetching {day_str}")
 
         try:
+            df_personal = stock.get_market_net_purchases_of_equities_by_ticker(day_str, day_str, "ALL", "개인")
+            time.sleep(0.1)
             df_inst = stock.get_market_net_purchases_of_equities_by_ticker(day_str, day_str, "ALL", "기관합계")
             time.sleep(0.1)
             df_foreign = stock.get_market_net_purchases_of_equities_by_ticker(day_str, day_str, "ALL", "외국인")
             time.sleep(0.1)
 
-            if df_inst.empty or df_foreign.empty: continue
+            if df_personal.empty or df_inst.empty or df_foreign.empty: continue
 
             df_merged = pd.merge(
+                df_personal.reset_index(),
                 df_inst.reset_index(),
+                on='티커',
+                suffixes=('_개인', '_기관')
+            )
+            df_merged = pd.merge(
+                df_merged,
                 df_foreign.reset_index(),
                 on='티커',
-                suffixes=('_기관', '_외국인')
+                suffixes=('', '_외국인')
             )
 
             for _, row in df_merged.iterrows():
                 ticker = row['티커']
-                inst_net = float(row.get("순매수거래대금_기관", 0))
-                foreign_net = float(row.get("순매수거래대금_외국인", 0))
+                personal_amt = int(float(row.get("순매수거래대금_개인", 0) or 0))
+                inst_amt = int(float(row.get("순매수거래대금_기관", 0) or 0))
+                foreign_amt = int(float(row.get("순매수거래대금_외국인", 0) or 0))
+                personal_vol = int(float(row.get("순매수거래량_개인", 0) or 0))
+                inst_vol = int(float(row.get("순매수거래량_기관", 0) or 0))
+                foreign_vol = int(float(row.get("순매수거래량_외국인", 0) or 0))
                 
-                if foreign_net == 0 and inst_net == 0: continue
+                if (
+                    foreign_amt == 0 and inst_amt == 0 and personal_amt == 0
+                    and foreign_vol == 0 and inst_vol == 0 and personal_vol == 0
+                ):
+                    continue
 
                 all_rows.append({
                     "date": d.isoformat(),
                     "ticker": ticker,
-                    "foreign": foreign_net,
-                    "institution": inst_net,
+                    # Backward-compatible legacy fields (amount-based)
+                    "personal": personal_amt,
+                    "foreign": foreign_amt,
+                    "institution": inst_amt,
+                    # Explicit amount / volume fields
+                    "personal_amount": personal_amt,
+                    "foreign_amount": foreign_amt,
+                    "institution_amount": inst_amt,
+                    "personal_volume": personal_vol,
+                    "foreign_volume": foreign_vol,
+                    "institution_volume": inst_vol,
                 })
         except Exception:
             continue
