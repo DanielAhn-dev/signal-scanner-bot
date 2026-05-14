@@ -105,7 +105,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
       const { data: position, error: posErr } = await supabase
         .from('virtual_positions')
-        .select('id,code,chat_id')
+        .select('id,code,chat_id,buy_price,quantity,buy_date')
         .eq('chat_id', chatId)
         .eq('code', code)
         .maybeSingle()
@@ -115,7 +115,38 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
       const investedAmount = buyPrice * quantity
       const acquiredAtIso = `${buyDate}T00:00:00.000Z`
+      const nowIso = new Date().toISOString()
 
+      // 기존 값을 저장 (감사 추적용)
+      const oldBuyPrice = Number(position.buy_price || 0)
+      const oldQuantity = Math.max(1, Number(position.quantity || 1))
+
+      // 1. ADJUST 거래 기록 - 수정 내용 추적
+      if (oldBuyPrice !== buyPrice || oldQuantity !== quantity) {
+        const adjustMemo = `web-edit: ${oldQuantity}@${oldBuyPrice}원 → ${quantity}@${buyPrice}원`
+        const { error: adjustErr } = await supabase.from('virtual_trades').insert([{
+          chat_id: chatId,
+          code,
+          side: 'ADJUST',
+          price: buyPrice,
+          quantity: quantity,
+          gross_amount: 0,
+          net_amount: 0,
+          fee_amount: 0,
+          tax_amount: 0,
+          pnl_amount: 0,
+          memo: adjustMemo,
+          broker_name: brokerName,
+          account_name: accountName,
+          created_at: nowIso,
+        }])
+        if (adjustErr) {
+          console.warn('ADJUST 거래 기록 실패:', adjustErr.message)
+          // ADJUST 기록 실패는 치명적이지 않으므로 계속 진행
+        }
+      }
+
+      // 2. 포지션 업데이트
       const { data: updated, error: upErr } = await supabase
         .from('virtual_positions')
         .update({
@@ -133,8 +164,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
       if (upErr) return res.status(500).json({ error: upErr.message })
 
-      await supabase.from('virtual_trade_lots').delete().eq('position_id', position.id)
-      const nowIso = new Date().toISOString()
+      // 3. 기존 로트는 유지하고, 수정된 값으로 새 로트만 추가 기록
+      // (기존 로트 DELETE 제거 - 거래이력 보존)
       const { error: lotErr } = await supabase.from('virtual_trade_lots').insert([{
         chat_id: chatId,
         code,
@@ -145,7 +176,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         acquired_at: acquiredAtIso,
       }])
 
-      if (lotErr) return res.status(500).json({ error: lotErr.message })
+      if (lotErr) {
+        console.warn('새 로트 기록 실패:', lotErr.message)
+        // 로트 기록 실패해도 포지션은 이미 업데이트되었으므로 계속 진행
+      }
 
       return res.status(200).json({ ok: true, mode, data: updated })
     }
@@ -179,6 +213,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           broker_name: String(row?.broker_name || '').trim() || null,
           account_name: String(row?.account_name || '').trim() || null,
           memo: '웹 전체매도',
+          source: 'MANUAL',
           created_at: nowIso,
         }
       })
