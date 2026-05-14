@@ -75,24 +75,18 @@ export default function ProfilePage(){
     setTgError(null)
     setFetchedTg(null)
     try {
-      // First try DB lookup to avoid Telegram API calls
-      const dbRes = await fetch(`/api/getUserByTg?chatId=${encodeURIComponent(id)}`)
-      if (dbRes.ok) {
-        const dbData = await dbRes.json()
-        setFetchedTg({ ...dbData, source: 'db' })
-        toast.show('DB에서 사용자 정보를 불러왔습니다')
-        setTgLoading(false)
-        return
-      }
-
-      const res = await fetch(`/api/getTelegramProfile?chatId=${encodeURIComponent(id)}`)
+      const res = await fetch(`/api/ui?route=telegram-profile&chatId=${encodeURIComponent(id)}`)
       if (!res.ok) {
         const body = await res.json().catch(() => ({}))
         throw new Error(body?.error || 'failed')
       }
       const data = await res.json()
-      setFetchedTg({ ...data, source: 'telegram' })
-      toast.show('텔레그램 프로필을 불러왔습니다')
+      setFetchedTg(data)
+      if (data?.source === 'users') {
+        toast.show('DB에서 사용자 정보를 불러왔습니다')
+      } else {
+        toast.show('텔레그램 프로필을 불러왔습니다')
+      }
     } catch (e: any) {
       setTgError(String(e?.message || e))
       toast.show('텔레그램 프로필 불러오기 실패')

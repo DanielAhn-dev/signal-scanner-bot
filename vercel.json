@@ -27,6 +27,18 @@
     },
     "rewrites": [
         {
+            "source": "/api/getTelegramProfile",
+            "destination": "/api/ui?route=telegram-profile"
+        },
+        {
+            "source": "/api/getUserByTg",
+            "destination": "/api/ui?route=telegram-profile"
+        },
+        {
+            "source": "/api/economic-calendar",
+            "destination": "/api/ui?route=economic-calendar"
+        },
+        {
             "source": "/portfolio/shared",
             "destination": "/api/ui/portfolio-shared"
         },
