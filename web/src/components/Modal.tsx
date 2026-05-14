@@ -14,6 +14,11 @@ export default function Modal({ isOpen, open, title, onClose, children, size = '
   const overlayRef = useRef<HTMLDivElement>(null)
   const dialogRef = useRef<HTMLDivElement>(null)
   const previousFocusedRef = useRef<HTMLElement | null>(null)
+  const onCloseRef = useRef(onClose)
+
+  useEffect(() => {
+    onCloseRef.current = onClose
+  }, [onClose])
 
   const getFocusableElements = React.useCallback((container: HTMLElement | null): HTMLElement[] => {
     if (!container) return []
@@ -36,7 +41,7 @@ export default function Modal({ isOpen, open, title, onClose, children, size = '
 
     const handler = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
-        onClose()
+        onCloseRef.current()
         return
       }
       if (e.key !== 'Tab') return
@@ -68,7 +73,7 @@ export default function Modal({ isOpen, open, title, onClose, children, size = '
       document.body.style.overflow = ''
       previousFocusedRef.current?.focus()
     }
-  }, [getFocusableElements, modalOpen, onClose])
+  }, [getFocusableElements, modalOpen])
 
   if (!modalOpen) return null
 
