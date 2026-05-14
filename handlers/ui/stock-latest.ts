@@ -1255,6 +1255,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
           fund = {
             ...(fund || {}),
+            marketCap: asNum(fund?.marketCap) ?? scrapedFund.marketCap ?? null,
             per: asNum(fund?.per) ?? scrapedFund.per ?? null,
             pbr: asNum(fund?.pbr) ?? scrapedFund.pbr ?? null,
             roe: asNum(fund?.roe) ?? scrapedFund.roe ?? null,
@@ -1370,6 +1371,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       asNum((stock as any)?.peg) ??
       asNum((fund as any)?.peg) ??
       asNum((fund as any)?.computed?.peg)
+    const resolvedMarketCap =
+      asNum((stock as any)?.market_cap) ??
+      asNum((fund as any)?.marketCap)
     const netIncomeForwardGrowthPct =
       asNum((fund as any)?.netIncomeForwardGrowthPct) ??
       asNum((fund as any)?.computed?.netIncomeForwardGrowthPct)
@@ -1456,7 +1460,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             description: stock.description,
             close: currentPrice,
             updated_at: toIsoDate(stock.updated_at),
-            market_cap: asNum((stock as any).market_cap),
+            market_cap: resolvedMarketCap,
             per: resolvedPer,
             pbr: resolvedPbr,
             eps: perShareMetrics.eps,

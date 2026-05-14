@@ -28,6 +28,7 @@ type NaverFinanceData = {
   rows: Record<string, string[]>;
   currentPer?: number;
   currentPbr?: number;
+  marketCap?: number;
   perFromTable?: number;
   pbrFromTable?: number;
   perFromBlind?: number;
@@ -88,6 +89,7 @@ export type FundamentalSnapshot = {
   sectorCategory?: string;
   profileLabel?: string;
   profileNote?: string;
+  marketCap?: number;
   per?: number;
   pbr?: number;
   roe?: number;
@@ -286,6 +288,33 @@ function extractCurrentValuationMetric(
   return found;
 }
 
+function parseKoreanMoneyText(text: string): number | undefined {
+  const normalized = String(text || '')
+    .replace(/\s+/g, '')
+    .replace(/,/g, '')
+    .trim()
+
+  if (!normalized) return undefined
+
+  const tokenMatches = normalized.match(/-?\d+(?:\.\d+)?(?:조|억|만)/g)
+  if (!tokenMatches?.length) return parseNum(normalized)
+
+  let total = 0
+  for (const token of tokenMatches) {
+    const match = token.match(/(-?\d+(?:\.\d+)?)(조|억|만)/)
+    if (!match) continue
+
+    const value = Number(match[1])
+    if (!Number.isFinite(value)) continue
+
+    if (match[2] === '조') total += value * 1_0000_0000_0000
+    else if (match[2] === '억') total += value * 1_0000_0000
+    else if (match[2] === '만') total += value * 10_000
+  }
+
+  return total > 0 ? Math.round(total) : parseNum(normalized)
+}
+
 export function evaluateFundamentalQuality(input: {
   sectorName?: string;
   sectorCategory?: string;
@@ -473,6 +502,14 @@ async function fetchNaverFinanceRows(code: string): Promise<NaverFinanceData> {
 
     const currentPer = extractCurrentValuationMetric($, /^PERlEPS/i, "배");
     const currentPbr = extractCurrentValuationMetric($, /^PBRlBPS/i, "배");
+    const marketCapText = (() => {
+      for (const [key, vals] of rows.entries()) {
+        if (/시가총액/.test(key)) return [key, ...vals].join(' ')
+      }
+      const match = html.match(/시가총액[^<]*?([0-9.,]+(?:\s*(?:조|억|만))?(?:\s*[0-9.,]+\s*(?:억|만))?)/)
+      return match?.[1] || ''
+    })()
+    const marketCap = parseKoreanMoneyText(marketCapText)
 
     // 상세 텍스트(투자지표 요약)를 여러 위치에서 시도해 추출
     const detailText =
@@ -521,6 +558,7 @@ async function fetchNaverFinanceRows(code: string): Promise<NaverFinanceData> {
     const out: Record<string, string[]> = Object.fromEntries(rows.entries());
     if (perFallback !== undefined) out.__PER_FALLBACK__ = [String(perFallback)];
     if (pbrFallback !== undefined) out.__PBR_FALLBACK__ = [String(pbrFallback)];
+    if (marketCap !== undefined) out.__MARKET_CAP__ = [String(marketCap)];
 
     if (perFallback === undefined && pbrFallback === undefined) {
       // 디버깅 용도: 둘 다 못 구하면 짧게 로그 남김
@@ -536,6 +574,7 @@ async function fetchNaverFinanceRows(code: string): Promise<NaverFinanceData> {
       rows: out,
       currentPer,
       currentPbr,
+      marketCap,
       perFromTable,
       pbrFromTable,
       perFromBlind,
@@ -565,6 +604,7 @@ export async function getFundamentalSnapshot(code: string): Promise<FundamentalS
     rows,
     currentPer,
     currentPbr,
+    marketCap,
     perFromTable,
     pbrFromTable,
     perFromBlind,
@@ -659,6 +699,7 @@ export async function getFundamentalSnapshot(code: string): Promise<FundamentalS
     sectorCategory,
     profileLabel: profile.label,
     profileNote: profile.note,
+    marketCap,
     per,
     pbr,
     roe,

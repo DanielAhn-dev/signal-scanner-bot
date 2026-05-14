@@ -158,13 +158,9 @@ export default function AnalyzePage({ onNavigate }: { onNavigate?: (r: string) =
   const computedSma20 = result?.sma20 ?? null
   const computedSma50 = result?.sma50 ?? null
   const computedSma200 = result?.sma200 ?? null
-  const computedSma240 = result?.sma240 ?? null
-  const computedSma244 = result?.sma244 ?? null
   const computedEma20 = result?.ema20 ?? null
   const computedEma50 = result?.ema50 ?? null
   const computedEma200 = result?.ema200 ?? null
-  const computedEma240 = result?.ema240 ?? null
-  const computedEma244 = result?.ema244 ?? null
   const computedRsi14 = result?.rsi14 ?? null
   const flowMetricLabel = getFlowMetricLabel(flow?.metric)
   const hasCreditShortData =
@@ -629,17 +625,13 @@ export default function AnalyzePage({ onNavigate }: { onNavigate?: (r: string) =
                 : null,
               ['SMA 20', computedSma20 != null ? formatKrw(computedSma20) : '—'],
               ['SMA 50', computedSma50 != null ? formatKrw(computedSma50) : '—'],
+              ['SMA 200', computedSma200 != null ? formatKrw(computedSma200) : '—'],
               ['RSI 14', computedRsi14 != null ? formatNumber(computedRsi14, 1) : '—'],
               ...(showExtendedIndicators
                 ? ([
-                    ['SMA 200', computedSma200 != null ? formatKrw(computedSma200) : '—'],
-                    ['SMA 240', computedSma240 != null ? formatKrw(computedSma240) : '—'],
-                    ['SMA 244', computedSma244 != null ? formatKrw(computedSma244) : '—'],
                     ['EMA 20', computedEma20 != null ? formatKrw(computedEma20) : '—'],
                     ['EMA 50', computedEma50 != null ? formatKrw(computedEma50) : '—'],
                     ['EMA 200', computedEma200 != null ? formatKrw(computedEma200) : '—'],
-                    ['EMA 240', computedEma240 != null ? formatKrw(computedEma240) : '—'],
-                    ['EMA 244', computedEma244 != null ? formatKrw(computedEma244) : '—'],
                   ] as [string, string][])
                 : []),
             ].filter(Boolean) as [string, string][]).map(([label, val]) => (
