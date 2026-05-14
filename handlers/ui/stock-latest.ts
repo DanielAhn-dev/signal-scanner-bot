@@ -643,8 +643,8 @@ async function fetchInvestorFlow(supabase: any, code: string): Promise<InvestorF
         const institutionAmount = asNum(row?.institution_amount ?? row?.institution ?? row?.institution_net)
 
         const hasVolume =
-          personalVolume != null ||
-          foreignVolume != null ||
+          personalVolume != null &&
+          foreignVolume != null &&
           institutionVolume != null
 
         return {

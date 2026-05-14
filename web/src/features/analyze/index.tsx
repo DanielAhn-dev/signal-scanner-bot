@@ -52,6 +52,18 @@ function twoStageActionStyle(action?: string): { background: string; color: stri
   return { background: 'var(--color-error-bg)', color: 'var(--color-error)' }
 }
 
+function getFlowMetricLabel(metric?: string | null): string | null {
+  if (metric === 'volume') return '거래량'
+  if (metric === 'amount') return '거래대금'
+  return null
+}
+
+function formatFlowValue(value: number | null, metric?: string | null): string {
+  if (value == null) return '—'
+  if (metric === 'volume') return `${formatNumber(value, 0)}주`
+  return formatKrw(value)
+}
+
 const DIVIDER = (
   <div style={{ borderTop: '1px solid var(--color-border-default)', margin: 'var(--space-4) 0' }} />
 )
@@ -154,6 +166,11 @@ export default function AnalyzePage({ onNavigate }: { onNavigate?: (r: string) =
   const computedEma240 = result?.ema240 ?? null
   const computedEma244 = result?.ema244 ?? null
   const computedRsi14 = result?.rsi14 ?? null
+  const flowMetricLabel = getFlowMetricLabel(flow?.metric)
+  const hasCreditShortData =
+    creditShort?.creditRatio != null ||
+    creditShort?.shortRatio != null ||
+    creditShort?.shortBalance != null
 
   const analyze = async (code?: string) => {
     const q = code ?? query.trim()
@@ -598,12 +615,18 @@ export default function AnalyzePage({ onNavigate }: { onNavigate?: (r: string) =
           </div>
           <div className="cards-grid cols-3">
             {([
-              ['외국인 보유비율', result.foreign_ratio != null ? formatNumber(result.foreign_ratio, 2) + '%' : '—'],
-              ['개인 순매수(주)', flow?.personal != null ? `${formatNumber(flow.personal, 0)}주` : '—'],
-              ['외국인 순매수(주)', flow?.foreign != null ? `${formatNumber(flow.foreign, 0)}주` : '—'],
-              ['기관 순매수(주)', flow?.institution != null ? `${formatNumber(flow.institution, 0)}주` : '—'],
-              ['외국인 순매수대금', flow?.foreign_amount != null ? formatKrw(flow.foreign_amount) : '—'],
-              ['기관 순매수대금', flow?.institution_amount != null ? formatKrw(flow.institution_amount) : '—'],
+              result.foreign_ratio != null
+                ? ['외국인 보유비율', formatNumber(result.foreign_ratio, 2) + '%']
+                : null,
+              flowMetricLabel && flow?.personal != null
+                ? [`개인 순매수(${flowMetricLabel})`, formatFlowValue(flow.personal, flow?.metric)]
+                : null,
+              flowMetricLabel && flow?.foreign != null
+                ? [`외국인 순매수(${flowMetricLabel})`, formatFlowValue(flow.foreign, flow?.metric)]
+                : null,
+              flowMetricLabel && flow?.institution != null
+                ? [`기관 순매수(${flowMetricLabel})`, formatFlowValue(flow.institution, flow?.metric)]
+                : null,
               ['SMA 20', computedSma20 != null ? formatKrw(computedSma20) : '—'],
               ['SMA 50', computedSma50 != null ? formatKrw(computedSma50) : '—'],
               ['RSI 14', computedRsi14 != null ? formatNumber(computedRsi14, 1) : '—'],
@@ -619,7 +642,7 @@ export default function AnalyzePage({ onNavigate }: { onNavigate?: (r: string) =
                     ['EMA 244', computedEma244 != null ? formatKrw(computedEma244) : '—'],
                   ] as [string, string][])
                 : []),
-            ] as [string, string][]).map(([label, val]) => (
+            ].filter(Boolean) as [string, string][]).map(([label, val]) => (
               <div key={label}>
                 <div className="stat-label">{label}</div>
                 <div className="stat-value" style={{ fontSize: 'var(--font-size-base)', color: val === '—' ? 'var(--color-text-disabled)' : undefined }}>{val}</div>
@@ -628,42 +651,48 @@ export default function AnalyzePage({ onNavigate }: { onNavigate?: (r: string) =
           </div>
 
           {/* ── 공매도 / 신용 ── */}
-          <div className="title-md" style={{ marginTop: 'var(--space-6)', marginBottom: 'var(--space-3)' }}>공매도 / 신용</div>
-          <div className="cards-grid cols-3">
-            {([
-              {
-                label: '신용비율',
-                val: creditShort?.creditRatio != null ? formatNumber(creditShort.creditRatio, 2) + '%' : '—',
-                hint: '신용잔고 ÷ 상장주식수',
-                warn: creditShort?.creditRatio != null && creditShort.creditRatio > 5,
-              },
-              {
-                label: '공매도 잔고비율',
-                val: creditShort?.shortRatio != null ? formatNumber(creditShort.shortRatio, 2) + '%' : '—',
-                hint: '공매도 잔고 ÷ 상장주식수',
-                warn: creditShort?.shortRatio != null && creditShort.shortRatio > 1,
-              },
-              {
-                label: '공매도 잔고(주)',
-                val: creditShort?.shortBalance != null ? formatNumber(creditShort.shortBalance, 0) : '—',
-                hint: '최근 KRX 신고 기준',
-                warn: false,
-              },
-            ] as { label: string; val: string; hint: string; warn: boolean }[]).map(({ label, val, hint, warn }) => (
-              <div key={label}>
-                <div className="stat-label">{label}</div>
-                <div className="stat-value" style={{
-                  fontSize: 'var(--font-size-base)',
-                  color: val === '—'
-                    ? 'var(--color-text-disabled)'
-                    : warn
-                    ? 'var(--color-error)'
-                    : undefined,
-                }}>{val}</div>
-                <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-tertiary)', marginTop: 2 }}>{hint}</div>
+          {hasCreditShortData && (
+            <>
+              <div className="title-md" style={{ marginTop: 'var(--space-6)', marginBottom: 'var(--space-3)' }}>공매도 / 신용</div>
+              <div className="cards-grid cols-3">
+                {([
+                  creditShort?.creditRatio != null
+                    ? {
+                        label: '신용비율',
+                        val: formatNumber(creditShort.creditRatio, 2) + '%',
+                        hint: '신용잔고 ÷ 상장주식수',
+                        warn: creditShort.creditRatio > 5,
+                      }
+                    : null,
+                  creditShort?.shortRatio != null
+                    ? {
+                        label: '공매도 잔고비율',
+                        val: formatNumber(creditShort.shortRatio, 2) + '%',
+                        hint: '공매도 잔고 ÷ 상장주식수',
+                        warn: creditShort.shortRatio > 1,
+                      }
+                    : null,
+                  creditShort?.shortBalance != null
+                    ? {
+                        label: '공매도 잔고(주)',
+                        val: formatNumber(creditShort.shortBalance, 0),
+                        hint: '최근 KRX 신고 기준',
+                        warn: false,
+                      }
+                    : null,
+                ] as { label: string; val: string; hint: string; warn: boolean }[]).filter(Boolean).map(({ label, val, hint, warn }) => (
+                  <div key={label}>
+                    <div className="stat-label">{label}</div>
+                    <div className="stat-value" style={{
+                      fontSize: 'var(--font-size-base)',
+                      color: warn ? 'var(--color-error)' : undefined,
+                    }}>{val}</div>
+                    <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-tertiary)', marginTop: 2 }}>{hint}</div>
+                  </div>
+                ))}
               </div>
-            ))}
-          </div>
+            </>
+          )}
 
           {/* ── 캔들 차트 ── */}
           {candles.length > 0 && (
