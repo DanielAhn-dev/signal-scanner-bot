@@ -151,7 +151,7 @@ export default function Portfolio() {
   const [initialCapital, setInitialCapital] = useState<number>(DEFAULT_INITIAL_CAPITAL)
   const [assetAccordionOpen, setAssetAccordionOpen] = useState(true)
   const [filterAccordionOpen, setFilterAccordionOpen] = useState(false)
-  const [includeCost, setIncludeCost] = useState(false)
+  const [includeCost, setIncludeCost] = useState(true)
   const [buyFeeRatePct, setBuyFeeRatePct] = useState(0.015)  // 매수수수료 %
   const [sellFeeRatePct, setSellFeeRatePct] = useState(0.195) // 매도수수료+거래세 %
   const [error, setError] = useState<string | null>(null)
@@ -708,12 +708,12 @@ export default function Portfolio() {
   const applyInitialCapital = () => {
     const next = Number(initialCapitalInput)
     if (!Number.isFinite(next) || next <= 0) {
-      toast.show('초기 투자금은 1원 이상으로 입력해 주세요')
+      toast.show('가상 예수금은 1원 이상으로 입력해 주세요')
       setInitialCapitalInput(String(Math.round(initialCapital || DEFAULT_INITIAL_CAPITAL)))
       return
     }
     setInitialCapital(Math.round(next))
-    toast.show('초기 투자금을 저장했습니다')
+    toast.show('가상 예수금을 저장했습니다')
   }
 
   const captureGeneratedAt = useMemo(
@@ -1251,16 +1251,16 @@ export default function Portfolio() {
           aria-expanded={assetAccordionOpen}
         >
           <div>
-            <div className="title-md">자산 구성 및 리밸런싱 기준</div>
+            <div className="title-md">가상 자산 구성 및 리밸런싱 기준</div>
             <div className="caption muted">
               {selectedAccountKey === 'all' 
-                ? '전체 계좌의 초기 투자금, 평가금, 현금, 종목별 비중을 확인합니다.'
+                ? '전체 가상 계좌의 예수금, 평가금, 현금, 종목별 비중을 확인합니다.'
                 : selectedAccountKey === 'virtual'
-                  ? '가상매매 보유분의 초기 투자금, 평가금, 현금, 종목별 비중을 확인합니다.'
+                  ? '가상매매 보유분의 예수금, 평가금, 현금, 종목별 비중을 확인합니다.'
                   : `${accountLabel(
                       accountFolders.find(f => f.key === selectedAccountKey)?.brokerName,
                       accountFolders.find(f => f.key === selectedAccountKey)?.accountName
-                    )} 계좌의 초기 투자금, 평가금, 현금, 종목별 비중을 확인합니다.`
+                    )} 계좌의 예수금, 평가금, 현금, 종목별 비중을 확인합니다.`
               }
             </div>
           </div>
@@ -1272,7 +1272,7 @@ export default function Portfolio() {
 
             <div className="portfolio-asset-overview-input-row">
               <Input
-                label="초기 투자금"
+                label="가상 예수금"
                 type="number"
                 value={initialCapitalInput}
                 onChange={(e: any) => setInitialCapitalInput(String(e?.target?.value || ''))}
@@ -1282,19 +1282,19 @@ export default function Portfolio() {
 
             <div className="portfolio-asset-metrics">
               <div className="portfolio-asset-metric">
-                <div className="portfolio-capture-label">초기 투자금</div>
+                <div className="portfolio-capture-label">가상 예수금</div>
                 <div className="portfolio-capture-value">{formatKrw(initialCapital)}</div>
               </div>
               <div className="portfolio-asset-metric">
-                <div className="portfolio-capture-label">현재 평가금(보유 종목)</div>
+                <div className="portfolio-capture-label">보유 원금(체결가 기준)</div>
                 <div className="portfolio-capture-value">{formatKrw(totalEvaluationValue)}</div>
               </div>
               <div className="portfolio-asset-metric">
-                <div className="portfolio-capture-label">남은 현금(추정)</div>
+                <div className="portfolio-capture-label">추정 예수금</div>
                 <div className={`portfolio-capture-value ${estimatedCash < 0 ? 'negative' : ''}`}>{formatKrw(estimatedCash)}</div>
               </div>
               <div className="portfolio-asset-metric">
-                <div className="portfolio-capture-label">총 자산(평가금 + 현금)</div>
+                <div className="portfolio-capture-label">총 자산(보유 평가금 + 예수금)</div>
                 <div className={`portfolio-capture-value ${totalAssetValue < 0 ? 'negative' : 'positive'}`}>{formatKrw(totalAssetValue)}</div>
               </div>
             </div>
@@ -1328,7 +1328,7 @@ export default function Portfolio() {
               </div>
             </div>
             <div className="caption muted" style={{ marginTop: 'var(--space-2)' }}>
-              남은 현금은 현재 보유 매수금 기준 추정치입니다. 리밸런싱은 종목별 비중(%)을 기준으로 목표 비중 대비 차이를 확인해 진행하세요.
+              추정 예수금은 현재 보유 원금 기준 역산치입니다. 실제 증권사 예수금이 있으면 그 값을 우선 쓰는 편이 더 정확합니다.
             </div>
           </div>
         )}
@@ -1415,7 +1415,7 @@ export default function Portfolio() {
               <span>손익 계산에 포함</span>
             </label>
             <div className="caption muted" style={{ marginTop: 'var(--space-1)' }}>
-              현재 기준: 매수 {buyFeeRatePct}% + 매도 {sellFeeRatePct}%
+              현재 기준: 매수수수료 {buyFeeRatePct}% + 매도수수료·거래세 {sellFeeRatePct}%
             </div>
           </div>
 
@@ -1535,7 +1535,7 @@ export default function Portfolio() {
                   />
                 </div>
                 <div className="caption muted" style={{ marginTop: 'var(--space-1)' }}>
-                  기본값 매수 0.015% · 매도 0.195% (수수료 0.015% + KOSPI 거래세 0.18%). 증권사·계좌별로 조정하세요.
+                  기본값 매수 0.015% · 매도 0.195% (수수료 0.015% + KOSPI 거래세 0.18%). 실제 증권사 수수료나 시장별 세율이 다르면 직접 조정하세요.
                 </div>
               </div>
             )}
@@ -1971,7 +1971,6 @@ export default function Portfolio() {
                 onChange={(v) => setMaintCode(v.toUpperCase())}
                 onSelect={(s) => setMaintCode(s.code)}
                 placeholder="예) 005930 또는 종목명"
-                onMouseDown={(e) => e.stopPropagation()}
               />
             </div>
             <div style={{ marginBottom: 'var(--space-3)' }}>
