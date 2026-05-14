@@ -1,5 +1,6 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { createClient, SupabaseClient } from '@supabase/supabase-js'
+import { fetchRecentSectorOrderSignalBoost } from '../../src/services/orderIntakeSignalStore'
 
 const ORIGIN = process.env.UI_CORS_ORIGIN || '*'
 const SECTORS_CACHE_TTL_MS = Math.max(0, Number(process.env.UI_SECTORS_CACHE_TTL_MS || 60_000))
@@ -106,7 +107,30 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       if (top > 0) q = q.limit(top)
       const { data, error } = await q
     if (error) return res.status(500).json({ error: error.message })
-    const payload = { data: data ?? [] }
+    
+    // 수주 신호 상위 섹터 조회
+    const orderSignalBoost = await fetchRecentSectorOrderSignalBoost()
+    
+    // 모든 섹터의 ID와 이름으로 boost 값 매칭
+    const sectorBoosts = (data ?? []).map((sector: any) => ({
+      id: sector.id,
+      name: sector.name,
+      orderSignalBoost: 
+        orderSignalBoost.bySectorId.get(sector.id) ?? 
+        orderSignalBoost.bySectorName.get(sector.name) ?? 
+        0,
+    }))
+    
+    // 수주 신호가 0이 아닌 섹터만 필터링 및 정렬
+    const orderSignalTopSectors = sectorBoosts
+      .filter((s: any) => s.orderSignalBoost !== 0)
+      .sort((a: any, b: any) => Math.abs(b.orderSignalBoost) - Math.abs(a.orderSignalBoost))
+      .slice(0, 10) // 상위 10개만
+    
+    const payload = { 
+      data: data ?? [],
+      orderSignalTopSectors,
+    }
 
     if (!bypassCache && SECTORS_CACHE_TTL_MS > 0) {
       sectorsCache.set(cacheKey, {
