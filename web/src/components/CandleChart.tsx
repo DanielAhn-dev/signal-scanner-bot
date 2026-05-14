@@ -562,29 +562,16 @@ export default function CandleChart({
       />
       {showLegend && (
         <div
-          style={{
-            position: 'absolute',
-            top: 10,
-            left: 10,
-            display: 'flex',
-            flexDirection: 'column',
-            gap: 6,
-            padding: '8px 10px',
-            borderRadius: 10,
-            background: 'rgba(15,23,42,0.64)',
-            color: '#e5edf7',
-            backdropFilter: 'blur(4px)',
-            pointerEvents: 'none',
-            maxWidth: '64%',
-          }}
+          className="chart-hud-panel"
         >
-          <div style={{ fontSize: 12, fontWeight: 600, letterSpacing: 0.2 }}>
-            {symbolLabel || 'CHART'} · {signalLabel}
+          <div className="chart-hud-panel__title">
+            <span className="chart-hud-panel__badge">HUD</span>
+            <span>{symbolLabel || 'CHART'} · {signalLabel}</span>
           </div>
-          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-            {showMaEmaOverlay && <span style={{ fontSize: 11, padding: '2px 6px', borderRadius: 999, background: 'rgba(245,158,11,0.22)' }}>EMA21 · SMA50 · SMA200</span>}
-            {showTradeMarkers && <span style={{ fontSize: 11, padding: '2px 6px', borderRadius: 999, background: 'rgba(59,130,246,0.22)' }}>신호 마커</span>}
-            {showForceLine && <span style={{ fontSize: 11, padding: '2px 6px', borderRadius: 999, background: 'rgba(20,184,166,0.22)' }}>세력선</span>}
+          <div className="chart-hud-panel__chips">
+            {showMaEmaOverlay && <span className="chart-hud-panel__chip chart-hud-panel__chip--ma">EMA21 · SMA50 · SMA200</span>}
+            {showTradeMarkers && <span className="chart-hud-panel__chip chart-hud-panel__chip--marker">신호 마커</span>}
+            {showForceLine && <span className="chart-hud-panel__chip chart-hud-panel__chip--force">세력선</span>}
           </div>
         </div>
       )}

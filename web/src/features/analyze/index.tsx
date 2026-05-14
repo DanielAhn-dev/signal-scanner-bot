@@ -583,10 +583,12 @@ export default function AnalyzePage({ onNavigate }: { onNavigate?: (r: string) =
           {DIVIDER}
 
           {/* ── 수급/기술 ── */}
-          <div className="flex-between" style={{ marginBottom: 'var(--space-3)', alignItems: 'center' }}>
-            <div className="title-md">수급/기술</div>
+          <div className="analyze-section-head">
+            <div className="analyze-section-head__title">
+              <div className="title-md">수급/기술</div>
+            </div>
             <button
-              className="btn btn-sm"
+              className="btn btn-sm analyze-section-head__action"
               type="button"
               onClick={() => setShowExtendedIndicators((v) => !v)}
               aria-pressed={showExtendedIndicators}
@@ -667,111 +669,72 @@ export default function AnalyzePage({ onNavigate }: { onNavigate?: (r: string) =
           {candles.length > 0 && (
             <>
               {DIVIDER}
-              <div className="flex-between" style={{ marginBottom: 'var(--space-2)', alignItems: 'flex-start' }}>
-                <div className="title-md">가격 차트</div>
-                <div style={{
-                  display: 'flex',
-                  gap: '6px',
-                  flexWrap: 'wrap',
-                  justifyContent: 'flex-end',
-                  background: 'var(--color-bg-sunken)',
-                  border: '1px solid var(--color-border-default)',
-                  borderRadius: 999,
-                  padding: '4px',
-                }}>
+              <div className="analyze-section-head" style={{ marginBottom: 'var(--space-2)', alignItems: 'flex-start' }}>
+                <div className="analyze-section-head__title">
+                  <div className="title-md">가격 차트</div>
+                </div>
+                <div className="analyze-chart-toolbar">
                   <button
-                    className="btn"
+                    className="analyze-chart-toggle"
                     type="button"
                     onClick={() => setShowChartHud((v) => !v)}
                     aria-pressed={showChartHud}
                     title="HUD"
-                    style={{
-                      height: 28,
-                      minWidth: 70,
-                      padding: '0 10px',
-                      fontSize: '12px',
-                      borderRadius: 999,
-                      border: '1px solid var(--color-border-default)',
-                      background: showChartHud ? 'var(--color-info-bg)' : 'var(--color-bg-surface)',
-                      color: showChartHud ? 'var(--color-info)' : 'var(--color-text-secondary)',
-                      fontWeight: 'var(--font-weight-semibold)',
-                      lineHeight: 1,
-                    }}
+                    data-tone="info"
+                    data-active={showChartHud}
                   >
-                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                    <span className="analyze-chart-toggle__icon">
                       <LayoutDashboard size={14} />
+                    </span>
+                    <span className="analyze-chart-toggle__label">
                       HUD
                     </span>
                   </button>
                   <button
-                    className="btn"
+                    className="analyze-chart-toggle"
                     type="button"
                     onClick={() => setShowMaEmaOverlay((v) => !v)}
                     aria-pressed={showMaEmaOverlay}
                     title="EMA21/SMA50/SMA200"
-                    style={{
-                      height: 28,
-                      minWidth: 78,
-                      padding: '0 10px',
-                      fontSize: '12px',
-                      borderRadius: 999,
-                      border: '1px solid var(--color-border-default)',
-                      background: showMaEmaOverlay ? 'var(--color-warning-bg)' : 'var(--color-bg-surface)',
-                      color: showMaEmaOverlay ? 'var(--color-warning)' : 'var(--color-text-secondary)',
-                      fontWeight: 'var(--font-weight-semibold)',
-                      lineHeight: 1,
-                    }}
+                    data-tone="warning"
+                    data-active={showMaEmaOverlay}
                   >
-                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                    <span className="analyze-chart-toggle__icon">
                       <TrendingUp size={14} />
+                    </span>
+                    <span className="analyze-chart-toggle__label">
                       MA
                     </span>
                   </button>
                   <button
-                    className="btn"
+                    className="analyze-chart-toggle"
                     type="button"
                     onClick={() => setShowTradeMarkers((v) => !v)}
                     aria-pressed={showTradeMarkers}
                     title="신호 마커"
-                    style={{
-                      height: 28,
-                      minWidth: 78,
-                      padding: '0 10px',
-                      fontSize: '12px',
-                      borderRadius: 999,
-                      border: '1px solid var(--color-border-default)',
-                      background: showTradeMarkers ? 'var(--color-success-bg)' : 'var(--color-bg-surface)',
-                      color: showTradeMarkers ? 'var(--color-success)' : 'var(--color-text-secondary)',
-                      fontWeight: 'var(--font-weight-semibold)',
-                      lineHeight: 1,
-                    }}
+                    data-tone="success"
+                    data-active={showTradeMarkers}
                   >
-                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                    <span className="analyze-chart-toggle__icon">
                       <Flag size={14} />
+                    </span>
+                    <span className="analyze-chart-toggle__label">
                       마커
                     </span>
                   </button>
                   <button
-                    className="btn"
+                    className="analyze-chart-toggle"
                     type="button"
                     onClick={() => setShowForceLine((v) => !v)}
                     aria-pressed={showForceLine}
                     title="세력선"
-                    style={{
-                      height: 28,
-                      minWidth: 76,
-                      padding: '0 10px',
-                      fontSize: '12px',
-                      borderRadius: 999,
-                      border: '1px solid var(--color-border-default)',
-                      background: showForceLine ? 'var(--color-success-bg)' : 'var(--color-bg-surface)',
-                      color: showForceLine ? 'var(--color-success)' : 'var(--color-text-secondary)',
-                      fontWeight: 'var(--font-weight-semibold)',
-                      lineHeight: 1,
-                    }}
+                    data-tone="teal"
+                    data-active={showForceLine}
                   >
-                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                    <span className="analyze-chart-toggle__icon">
                       <Activity size={14} />
+                    </span>
+                    <span className="analyze-chart-toggle__label">
                       세력
                     </span>
                   </button>
