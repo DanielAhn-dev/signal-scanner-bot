@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
+import { useCurrentChatId } from '../../stores/profileStore'
 import { EmptyState } from '../../components/StateViews'
 import { formatKrw, formatNumber } from '../../lib/format'
 import { apiFetch } from '../../lib/api'
@@ -82,6 +83,7 @@ function NumInput({
 }
 
 export default function SimulatorPage() {
+  const chatId = useCurrentChatId()
   const initialPlan = useMemo(() => readSimulationPlan(), [])
   const [totalCapital, setTotalCapital] = useState(initialPlan?.totalCapital ?? 10_000_000)
   const [items, setItems] = useState<HighlightPlanItem[]>(
@@ -105,6 +107,9 @@ export default function SimulatorPage() {
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [recommendedPortfolio, setRecommendedPortfolio] = useState<HighlightPlanItem[]>([])
   const [showRecommendation, setShowRecommendation] = useState(false)
+  const [watchlistCandidates, setWatchlistCandidates] = useState<HighlightPlanItem[]>([])
+  const [algoCandidates, setAlgoCandidates] = useState<HighlightPlanItem[]>([])
+  const [loadingCandidates, setLoadingCandidates] = useState(false)
   const addDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const toast = useToast()
 
@@ -179,7 +184,16 @@ export default function SimulatorPage() {
       toast.show('월 목표 수익을 입력하세요.')
       return
     }
-    const recommended = recommendPortfolio(items, totalCapital, monthlyProfitTarget)
+    // 관심종목 > 알고리즘 > items 우선순위
+    let candidates: HighlightPlanItem[] = []
+    if (chatId && watchlistCandidates.length > 0) candidates = watchlistCandidates
+    else if (!chatId && algoCandidates.length > 0) candidates = algoCandidates
+    else candidates = items
+    if (candidates.length === 0) {
+      toast.show('추천할 종목이 없습니다. 관심종목을 추가하거나 포트폴리오에 종목을 추가하세요.')
+      return
+    }
+    const recommended = recommendPortfolio(candidates, totalCapital, monthlyProfitTarget)
     if (recommended.length === 0) {
       toast.show('추천 가능한 종목이 없습니다. (품질 기준 미충족)')
       return
@@ -195,6 +209,117 @@ export default function SimulatorPage() {
     setRecommendedPortfolio([])
     toast.show('추천 포트폴리오를 적용했습니다.')
   }
+
+  const loadWatchlistCandidates = async () => {
+    if (!chatId) {
+      setWatchlistCandidates([])
+      return
+    }
+    setLoadingCandidates(true)
+    try {
+      const res = await apiFetch(`/api/ui/positions?positionType=interest&pageSize=50&cacheMs=30000&chat_id=${encodeURIComponent(chatId)}`, { 
+        cacheMs: 30000, 
+        timeoutMs: 10_000 
+      })
+      const positions = res?.data ?? []
+      // position을 HighlightPlanItem으로 변환
+      const candidates: HighlightPlanItem[] = positions
+        .map((pos: any) => {
+          const code = String(pos.code || pos.symbol || pos.ticker || '').trim()
+          const name = String(pos.stock_name || pos.name || code || '').trim()
+          if (!code || !name) return null
+          // 기본값으로 초기화 (나중에 사용자가 조정 가능)
+          return defaultPlanItem({ code, name, sector_id: pos.sector_id })
+        })
+        .filter((item: any) => item != null)
+      setWatchlistCandidates(candidates)
+    } catch (e: any) {
+      console.warn('관심종목 로드 실패:', e?.message)
+      setWatchlistCandidates([])
+    } finally {
+      setLoadingCandidates(false)
+    }
+  }
+
+  // chatId 없을 때 내부 알고리즘 후보군 fetch
+  const loadAlgoCandidates = async () => {
+    if (chatId) { setAlgoCandidates([]); return }
+    setLoadingCandidates(true)
+    try {
+      console.log('[loadAlgoCandidates] 시작...')
+      // scan-candidates fetch
+      const scanRes = await apiFetch('/api/ui?route=scan-candidates&limit=50', { cacheMs: 10000, timeoutMs: 15000 })
+      const scanList = Array.isArray(scanRes?.data) ? scanRes.data : []
+      console.log('[loadAlgoCandidates] scan-candidates:', scanList.length, '개')
+      // scan-highlights fetch
+      const hlRes = await apiFetch('/api/ui?route=scan-highlights', { cacheMs: 10000, timeoutMs: 15000 })
+      const hlList = Array.isArray(hlRes?.data) ? hlRes.data : []
+      console.log('[loadAlgoCandidates] scan-highlights:', hlList.length, '개')
+      
+      // code 기준 중복 제거 & 품질 등급별 파라미터 설정
+      const merged: Record<string, HighlightPlanItem> = {}
+      
+      // scan-candidates 처리 (entry_grade 기반)
+      for (const row of scanList) {
+        const code = String(row.code || '').trim()
+        const name = String(row.name || code || '').trim()
+        if (!code || !name) continue
+        
+        // entry_grade에 따라 수익/손절 설정
+        let targetPct = 5, stopPct = 3, winProb = 58
+        const grade = String(row.entry_grade || '').toUpperCase()
+        if (grade === 'A') {
+          targetPct = 8
+          stopPct = 2.5
+          winProb = 70
+        } else if (grade === 'B') {
+          targetPct = 5
+          stopPct = 3
+          winProb = 58
+        }
+        
+        // adaptive_score를 활용한 winProb 미세조정 (30~70%)
+        const baseScore = Number(row.adaptive_score ?? 50)
+        if (baseScore > 0) {
+          winProb = Math.max(30, Math.min(70, 50 + (baseScore / 100) * 20))
+        }
+        
+        const item = defaultPlanItem({ code, name, sector_id: row.sector_id })
+        merged[code] = { ...item, targetPct, stopPct, winProb: Math.round(winProb) }
+      }
+      
+      // scan-highlights 처리 (expected_upside_pct 기반)
+      for (const row of hlList) {
+        const code = String(row.code || '').trim()
+        const name = String(row.name || code || '').trim()
+        if (!code || !name) continue
+        
+        // 하이라이트 데이터: upside/downside 직접 사용
+        let targetPct = Number(row.expected_upside_pct ?? 8) || 8
+        let stopPct = Math.abs(Number(row.expected_drawdown_pct ?? 2.5) || 2.5)
+        let winProb = Math.max(30, Math.min(70, Number(row.confidence_pct ?? 58) || 58))
+        
+        // code가 이미 merged에 있으면 건너뛰기 (scan-candidates 우선)
+        if (code in merged) continue
+        
+        const item = defaultPlanItem({ code, name, sector_id: row.sector_id })
+        merged[code] = { ...item, targetPct, stopPct, winProb: Math.round(winProb) }
+      }
+      
+      setAlgoCandidates(Object.values(merged))
+    } catch (e: any) {
+      console.warn('내부 추천 후보 로드 실패:', e?.message)
+      setAlgoCandidates([])
+    } finally {
+      setLoadingCandidates(false)
+    }
+  }
+
+  // 초기화 시 관심종목/내부 알고리즘 후보 자동 로드
+  useEffect(() => {
+    if (chatId) void loadWatchlistCandidates()
+    else void loadAlgoCandidates()
+  }, [chatId])
 
   const buildPlan = () => ({
     createdAt: Date.now(),
@@ -217,9 +342,13 @@ export default function SimulatorPage() {
   }
 
   const saveServer = async () => {
+    if (!chatId) {
+      toast.show('서버 저장은 텔레그램 연동 후 이용 가능합니다.')
+      return
+    }
     setSyncing(true)
     try {
-      await apiFetch('/api/ui/simulation-plan', {
+      await apiFetch(`/api/ui/simulation-plan?chat_id=${encodeURIComponent(chatId)}`, {
         method: 'POST',
         body: JSON.stringify({ plan: buildPlan() }),
         cacheMs: 0, timeoutMs: 15_000,
@@ -234,9 +363,13 @@ export default function SimulatorPage() {
   }
 
   const loadServer = async () => {
+    if (!chatId) {
+      toast.show('서버 불러오기는 텔레그램 연동 후 이용 가능합니다.')
+      return
+    }
     setSyncing(true)
     try {
-      const res = await apiFetch('/api/ui/simulation-plan?mode=latest', { cacheMs: 0, timeoutMs: 12_000 })
+      const res = await apiFetch(`/api/ui/simulation-plan?mode=latest&chat_id=${encodeURIComponent(chatId)}`, { cacheMs: 0, timeoutMs: 12_000 })
       const plan = res?.data?.plan
       if (!plan) { toast.show('저장된 계획이 없습니다.'); return }
       applyPlan(plan)
@@ -275,9 +408,13 @@ export default function SimulatorPage() {
   }
 
   const loadHistory = async () => {
+    if (!chatId) {
+      toast.show('히스토리는 텔레그램 연동 후 이용 가능합니다.')
+      return
+    }
     setHistoryLoading(true)
     try {
-      const res = await apiFetch('/api/ui/simulation-plan?mode=history&limit=10', { cacheMs: 0, timeoutMs: 12_000 })
+      const res = await apiFetch(`/api/ui/simulation-plan?mode=history&limit=10&chat_id=${encodeURIComponent(chatId)}`, { cacheMs: 0, timeoutMs: 12_000 })
       setHistory(res?.data || [])
       setHistoryOpen(true)
     } catch (e: any) {
@@ -364,6 +501,33 @@ export default function SimulatorPage() {
       <div className="sim-section sim-monthly-target-section">
         <div className="sim-section-head">
           <span className="sim-section-label">월 수익 목표</span>
+        </div>
+        <div className="sim-watchlist-status">
+          {chatId ? (
+            watchlistCandidates.length > 0 ? (
+              <div className="sim-watchlist-info">
+                <span className="sim-watchlist-badge">📋 관심종목</span>
+                <span className="sim-watchlist-count">{watchlistCandidates.length}개 로드됨</span>
+                <button 
+                  className="sim-btn sim-btn--ghost sim-btn--sm" 
+                  onClick={() => loadWatchlistCandidates()}
+                  disabled={loadingCandidates}
+                >
+                  {loadingCandidates ? '로딩 중...' : '새로 고침'}
+                </button>
+              </div>
+            ) : (
+              <div className="sim-watchlist-empty">
+                <span className="sim-watchlist-badge">—</span>
+                <span className="sim-watchlist-text">관심종목이 없습니다. 관심종목 페이지에서 종목을 추가하세요.</span>
+              </div>
+            )
+          ) : (
+            <div className="sim-watchlist-empty">
+              <span className="sim-watchlist-badge">—</span>
+              <span className="sim-watchlist-text">관심종목 기반 추천을 위해 텔레그램 연동이 필요합니다.</span>
+            </div>
+          )}
         </div>
         <div className="sim-monthly-target-wrap">
           <div className="sim-input-group">
