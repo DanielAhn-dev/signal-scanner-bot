@@ -17,6 +17,27 @@ type PositionsCacheEntry = {
 
 const positionsCache = new Map<string, PositionsCacheEntry>()
 
+function normalizeDateKey(raw: unknown): string | null {
+  if (!raw) return null
+  const s = String(raw).trim()
+  const ymd = s.match(/^(\d{4}-\d{2}-\d{2})/)
+  if (ymd?.[1]) return ymd[1]
+  const d = new Date(s)
+  if (Number.isNaN(d.getTime())) return null
+  return d.toISOString().slice(0, 10)
+}
+
+function toPositiveNumber(v: unknown): number | null {
+  const n = Number(v)
+  return Number.isFinite(n) && n > 0 ? n : null
+}
+
+function shiftDateKey(dateKey: string, deltaDays: number): string {
+  const d = new Date(`${dateKey}T00:00:00Z`)
+  d.setUTCDate(d.getUTCDate() + deltaDays)
+  return d.toISOString().slice(0, 10)
+}
+
 // Module-level singleton: reused across warm Vercel invocations → avoids connection cold-start overhead
 let _supabase: SupabaseClient | null = null
 function getSupabase(): SupabaseClient {
@@ -238,6 +259,63 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       })
     }
 
+    const addedCloseTargetRows = (data ?? []).map((row: any) => {
+      const code = String(row?.code || '').trim()
+      const addedDateKey = normalizeDateKey(row?.buy_date || row?.created_at)
+      const baseBuyPrice = toPositiveNumber(
+        row?.buy_price ?? ((row?.invested_amount && row?.quantity) ? Number(row.invested_amount) / Number(row.quantity) : null),
+      )
+      return {
+        code,
+        addedDateKey,
+        needsFallback: !!code && !!addedDateKey && baseBuyPrice == null,
+      }
+    }).filter((r: { needsFallback: boolean }) => r.needsFallback)
+
+    const addedCloseByCodeDate = new Map<string, number>()
+    if (addedCloseTargetRows.length > 0) {
+      const codesForAddedClose = Array.from(new Set(addedCloseTargetRows.map((r) => String(r.code))))
+      const datesForAddedClose = Array.from(new Set(addedCloseTargetRows.map((r) => String(r.addedDateKey))))
+      const minAddedDate = datesForAddedClose.reduce((min, cur) => (cur < min ? cur : min), datesForAddedClose[0])
+      const maxAddedDate = datesForAddedClose.reduce((max, cur) => (cur > max ? cur : max), datesForAddedClose[0])
+      const lookupStartDate = shiftDateKey(minAddedDate, -45)
+      const { data: addedCloseRows } = await supabase
+        .from('daily_indicators')
+        .select('code, trade_date, close')
+        .in('code', codesForAddedClose)
+        .gte('trade_date', lookupStartDate)
+        .lte('trade_date', maxAddedDate)
+        .order('trade_date', { ascending: true })
+
+      const closeSeriesByCode = new Map<string, Array<{ tradeDate: string; close: number }>>()
+
+      for (const row of (addedCloseRows ?? []) as any[]) {
+        const code = String(row?.code || '').trim()
+        const tradeDate = normalizeDateKey(row?.trade_date)
+        const close = toPositiveNumber(row?.close)
+        if (!code || !tradeDate || close == null) continue
+        const list = closeSeriesByCode.get(code) ?? []
+        list.push({ tradeDate, close })
+        closeSeriesByCode.set(code, list)
+      }
+
+      for (const target of addedCloseTargetRows) {
+        const code = String(target.code)
+        const addedDateKey = String(target.addedDateKey)
+        const series = closeSeriesByCode.get(code) ?? []
+        let matchedClose: number | null = null
+        for (let i = series.length - 1; i >= 0; i -= 1) {
+          if (series[i].tradeDate <= addedDateKey) {
+            matchedClose = series[i].close
+            break
+          }
+        }
+        if (matchedClose != null) {
+          addedCloseByCodeDate.set(`${code}|${addedDateKey}`, matchedClose)
+        }
+      }
+    }
+
     let fallbackToCloseCount = 0
     const mapped = (data ?? []).map((row: any) => {
       // 현재가 우선, 없으면 DB 종가 (폴백)
@@ -249,11 +327,21 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         ? realtimePrice
         : (Number.isFinite(closeFallback) ? closeFallback : null)
       if (!hasRealtime && Number.isFinite(closeFallback)) fallbackToCloseCount += 1
-      const buyPrice = row.buy_price ?? (row.invested_amount && row.quantity ? Number(row.invested_amount) / Number(row.quantity) : null)
+      const addedDateKey = normalizeDateKey(row.buy_date || row.created_at)
+      const baseBuyPrice = toPositiveNumber(
+        row.buy_price ?? ((row.invested_amount && row.quantity) ? Number(row.invested_amount) / Number(row.quantity) : null),
+      )
+      const addedCloseFallback = (code && addedDateKey)
+        ? (addedCloseByCodeDate.get(`${code}|${addedDateKey}`) ?? null)
+        : null
+      const buyPrice = baseBuyPrice ?? addedCloseFallback
+      const addedPriceSource = baseBuyPrice != null ? 'position' : (addedCloseFallback != null ? 'daily_indicators' : null)
       const unrealized = (close != null && buyPrice != null && row.quantity != null) ? (Number(close) - Number(buyPrice)) * Number(row.quantity) : null
       const percent = (close != null && buyPrice != null && buyPrice > 0) ? ((Number(close) - Number(buyPrice)) / Number(buyPrice)) * 100 : null
-      const buyDate = row.buy_date ? new Date(row.buy_date) : null
-      const holdDays = buyDate ? Math.floor((Date.now() - buyDate.getTime()) / (1000 * 60 * 60 * 24)) : null
+      const referenceDate = (row.buy_date || row.created_at) ? new Date(row.buy_date || row.created_at) : null
+      const holdDays = (referenceDate && !Number.isNaN(referenceDate.getTime()))
+        ? Math.max(0, Math.floor((Date.now() - referenceDate.getTime()) / (1000 * 60 * 60 * 24)))
+        : null
 
       const pid = String(row.id)
       const lots = lotsByPosition[pid] ?? []
@@ -270,12 +358,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           const remaining = Math.max(0, target - currentInvested)
           recommended_buy_qty = Math.floor(remaining / Number(close))
           recommended_buy_amount = recommended_buy_qty > 0 ? recommended_buy_qty * Number(close) : 0
-        } else if (row.quantity == null || row.quantity === 0) {
-          // interest-only entry without invested_amount: suggest 1 lot as placeholder
-          if (close != null) {
-            recommended_buy_qty = 1
-            recommended_buy_amount = Number(close)
-          }
+        // interest-only entry: no recommended qty (leave null, avoid misleading 1-lot placeholder)
         }
       } catch (e) {
         recommended_buy_qty = null
@@ -291,6 +374,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         account_kind: (!String(row.broker_name || '').trim() && !String(row.account_name || '').trim()) ? 'virtual' : 'account',
         account_label: [row.broker_name, row.account_name].filter(Boolean).join(' / ') || null,
         avg_price: buyPrice,
+        added_price: buyPrice,
+        added_price_source: addedPriceSource,
+        added_reference_date: addedDateKey,
+        current_price: close ?? null,
         unrealized_pnl: unrealized,
         unrealized_pct: percent,
         hold_days: holdDays,

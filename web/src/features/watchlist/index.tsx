@@ -8,6 +8,24 @@ import { useToast } from '../../components/ToastProvider'
 import StockDetailModal from '../../components/StockDetailModal'
 import useWatchlistActions from '../../hooks/useWatchlistActions'
 
+function fmtPct(v: number | null) {
+  if (v == null) return null
+  const rounded = Math.round(v * 10) / 10
+  if (Math.abs(rounded) < 0.05) return '0.0%'
+  const sign = rounded > 0 ? '+' : ''
+  return `${sign}${rounded.toFixed(1)}%`
+}
+
+function fmtAddedDate(item: any): string | null {
+  const raw = item.buy_date || item.created_at
+  if (!raw) return null
+  const d = new Date(raw)
+  if (isNaN(d.getTime())) return null
+  const m = d.getMonth() + 1
+  const day = d.getDate()
+  return `${m}/${day} 추가`
+}
+
 const WATCHLIST_SNAPSHOT_KEY = 'watchlist_snapshot_v1'
 
 function readWatchlistSnapshot() {
@@ -33,6 +51,11 @@ function writeWatchlistSnapshot(items: any[]) {
   }
 }
 
+function getSectorName(item: any): string {
+  const name = String(item?.stock?.sector?.name || '').trim()
+  return name || '기타'
+}
+
 export default function WatchlistPage() {
   const snapshot = readWatchlistSnapshot()
   const [items, setItems] = useState<any[]>(() => snapshot?.items ?? [])
@@ -48,6 +71,7 @@ export default function WatchlistPage() {
   const [detailCode, setDetailCode] = useState<string>('')
   const [detailName, setDetailName] = useState<string>('')
   const [detailOpen, setDetailOpen] = useState(false)
+  const [activeSector, setActiveSector] = useState<string>('all')
   const didInitRef = useRef(false)
   const addDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const highlightTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -92,7 +116,7 @@ export default function WatchlistPage() {
   useEffect(() => {
     if (didInitRef.current) return
     didInitRef.current = true
-    if (!snapshot) void load(false)
+    void load(!snapshot)
   }, [load, snapshot])
 
   useEffect(() => {
@@ -132,7 +156,7 @@ export default function WatchlistPage() {
   }
 
   const visibleAddResults = useMemo(() => addResults.slice(0, 6), [addResults])
-  const filteredItems = useMemo(() => {
+  const searchedItems = useMemo(() => {
     const q = listSearch.trim().toLowerCase()
     if (!q) return items
     return items.filter((r: any) =>
@@ -140,6 +164,27 @@ export default function WatchlistPage() {
       String(r.stock_name || '').toLowerCase().includes(q)
     )
   }, [items, listSearch])
+  const sectorTabs = useMemo(() => {
+    const counter = new Map<string, number>()
+    for (const row of items) {
+      const sector = getSectorName(row)
+      counter.set(sector, (counter.get(sector) ?? 0) + 1)
+    }
+    return Array.from(counter.entries())
+      .sort((a, b) => a[0].localeCompare(b[0], 'ko'))
+      .map(([key, count]) => ({ key, count }))
+  }, [items])
+  const filteredItems = useMemo(() => {
+    if (activeSector === 'all') return searchedItems
+    return searchedItems.filter((r: any) => getSectorName(r) === activeSector)
+  }, [searchedItems, activeSector])
+
+  useEffect(() => {
+    if (activeSector === 'all') return
+    const exists = sectorTabs.some((s) => s.key === activeSector)
+    if (!exists) setActiveSector('all')
+  }, [activeSector, sectorTabs])
+
   const watchCount = items.length
   const visibleCount = filteredItems.length
 
@@ -232,7 +277,34 @@ export default function WatchlistPage() {
         </button>
       </div>
 
-      <p className="wl-desc">텔레그램 /watchlist와 동일한 관심 목록입니다.</p>
+      <p className="wl-desc">
+        텔레그램 /watchlist와 동일한 관심 목록입니다. 월 목표 수익 설정은
+        {' '}
+        <a href="#simulator">시뮬레이터</a>
+        에서 관리하세요.
+      </p>
+
+      {!loading && watchCount > 0 && (
+        <div className="wl-sector-tabs" role="tablist" aria-label="섹터 분류">
+          <button
+            type="button"
+            className={`wl-sector-tab${activeSector === 'all' ? ' wl-sector-tab--active' : ''}`}
+            onClick={() => setActiveSector('all')}
+          >
+            전체 {watchCount}
+          </button>
+          {sectorTabs.map((sector) => (
+            <button
+              key={sector.key}
+              type="button"
+              className={`wl-sector-tab${activeSector === sector.key ? ' wl-sector-tab--active' : ''}`}
+              onClick={() => setActiveSector(sector.key)}
+            >
+              {sector.key} {sector.count}
+            </button>
+          ))}
+        </div>
+      )}
 
       {/* 검색 & 추가 패널 */}
       <div className="wl-control">
@@ -332,9 +404,9 @@ export default function WatchlistPage() {
           />
         )}
 
-        {!loading && filteredItems.length === 0 && listSearch && items.length > 0 && (
+        {!loading && filteredItems.length === 0 && items.length > 0 && (
           <div className="wl-list-card wl-no-results">
-            <span>'{listSearch}' 검색 결과가 없습니다.</span>
+            <span>{listSearch ? `'${listSearch}' 검색 결과가 없습니다.` : '선택한 섹터에 종목이 없습니다.'}</span>
           </div>
         )}
 
@@ -347,7 +419,16 @@ export default function WatchlistPage() {
               {filteredItems.map((r: any, idx: number) => {
                 const code = String(r.code)
                 const removing = isRemoving(code)
-                const hasRec = !!r.recommended_buy_qty
+                const sinceAddedPct = Number.isFinite(Number(r.unrealized_pct)) ? Number(r.unrealized_pct) : null
+                const pctStr = fmtPct(sinceAddedPct)
+                const addedStr = fmtAddedDate(r)
+                const addedClose = Number.isFinite(Number(r.avg_price)) && Number(r.avg_price) > 0 ? Number(r.avg_price) : null
+                const addedCloseStr = addedClose != null ? formatKrw(addedClose) : null
+                const currentPrice = Number.isFinite(Number(r.current_price)) && Number(r.current_price) > 0 ? Number(r.current_price) : null
+                const currentPriceStr = currentPrice != null ? formatKrw(currentPrice) : null
+                const pctDirection = sinceAddedPct == null
+                  ? null
+                  : (sinceAddedPct > 0.04 ? 'up' : sinceAddedPct < -0.04 ? 'down' : 'flat')
                 return (
                   <button
                     type="button"
@@ -359,16 +440,20 @@ export default function WatchlistPage() {
                   >
                     <div className="wl-row-left">
                       <span className="wl-row-name">{r.stock_name ?? code}</span>
-                      <span className="wl-row-code">{code}</span>
+                      <span className="wl-row-meta">
+                        <span className="wl-row-code">{code}</span>
+                        {addedStr && <span className="wl-row-added">{addedStr}</span>}
+                        {addedCloseStr && <span className="wl-row-added">기준 {addedCloseStr}</span>}
+                        {currentPriceStr && <span className="wl-row-added">현재 {currentPriceStr}</span>}
+                        {pctStr && (
+                          <span className={`wl-row-pct${pctDirection ? ` wl-row-pct--${pctDirection}` : ''}`}>
+                            {pctStr}
+                          </span>
+                        )}
+                      </span>
                     </div>
                     <div className="wl-row-right">
-                      {hasRec ? (
-                        <span className="wl-row-rec">
-                          {r.recommended_buy_qty}주 · {formatKrw(r.recommended_buy_amount)}
-                        </span>
-                      ) : (
-                        <span className="wl-row-tag">관심</span>
-                      )}
+                      {!pctStr && <span className="wl-row-tag">관심</span>}
                       <button
                         type="button"
                         className="wl-delete-btn"

@@ -1778,6 +1778,37 @@ a:focus-visible {
   text-align: center;
 }
 
+.wl-sector-tabs {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+  margin-bottom: var(--space-3);
+}
+
+.wl-sector-tab {
+  border: 1px solid var(--color-border-default);
+  background: var(--color-bg-surface);
+  color: var(--color-text-secondary);
+  border-radius: 999px;
+  padding: 4px 11px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background var(--duration-fast), color var(--duration-fast), border-color var(--duration-fast);
+}
+
+.wl-sector-tab:hover {
+  background: var(--color-bg-sunken);
+  color: var(--color-text-primary);
+}
+
+.wl-sector-tab--active {
+  background: var(--color-brand);
+  border-color: var(--color-brand);
+  color: #fff;
+}
+
 /* 각 종목 행 */
 .wl-row {
   display: flex;
@@ -1877,6 +1908,152 @@ a:focus-visible {
   color: var(--color-error, #dc2626);
 }
 .wl-delete-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+/* 목표 월 수익 역산 위젯 */
+.wl-target-widget {
+  background: var(--color-bg-surface);
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--radius-lg);
+  padding: var(--space-4);
+  margin-bottom: var(--space-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.wl-target-header {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+
+.wl-target-title {
+  font-size: var(--font-size-sm);
+  font-weight: 700;
+  color: var(--color-text-primary);
+}
+
+.wl-target-hint {
+  font-size: 11px;
+  color: var(--color-text-tertiary);
+  flex: 1;
+}
+
+.wl-target-presets {
+  display: flex;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.wl-target-btn {
+  padding: 5px 13px;
+  border-radius: 999px;
+  border: 1.5px solid var(--color-border-default);
+  background: var(--color-bg-surface);
+  color: var(--color-text-secondary);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background var(--duration-fast), border-color var(--duration-fast), color var(--duration-fast);
+  white-space: nowrap;
+}
+.wl-target-btn:hover { background: var(--color-bg-sunken); color: var(--color-text-primary); }
+.wl-target-btn--active {
+  background: var(--color-brand);
+  border-color: var(--color-brand);
+  color: #fff;
+}
+
+.wl-target-input-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  border: 1.5px solid var(--color-border-default);
+  border-radius: var(--radius-md);
+  padding: 6px 12px;
+  background: var(--color-bg-sunken);
+  max-width: 220px;
+}
+
+.wl-target-input {
+  flex: 1;
+  border: none;
+  background: transparent;
+  outline: none;
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+  color: var(--color-text-primary);
+  min-width: 0;
+}
+.wl-target-input::placeholder { color: var(--color-text-tertiary); font-weight: 400; }
+
+.wl-target-input-unit {
+  font-size: 12px;
+  color: var(--color-text-tertiary);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+/* 종목 행 메타 정보 */
+.wl-row-meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-top: 2px;
+}
+
+.wl-row-added {
+  font-size: 11px;
+  color: var(--color-text-tertiary);
+}
+
+.wl-row-pct {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+.wl-row-pct--up { color: var(--color-error, #dc2626); }
+.wl-row-pct--down { color: var(--color-brand, #2563eb); }
+.wl-row-pct--flat { color: var(--color-text-secondary); }
+
+.wl-row-monthly {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 1px 5px;
+  border-radius: 3px;
+  background: var(--color-bg-sunken);
+}
+
+/* 필요 투자금 표시 */
+.wl-row-required {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 1px;
+  min-width: 80px;
+}
+
+.wl-row-required-label {
+  font-size: 10px;
+  color: var(--color-text-tertiary);
+  font-weight: 500;
+}
+
+.wl-row-required-amt {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--color-text-primary);
+  letter-spacing: -0.02em;
+  white-space: nowrap;
+}
+
+.wl-row-required-shares {
+  font-size: 11px;
+  color: var(--color-text-tertiary);
+  white-space: nowrap;
+}
 
 /* scan 페이지 watchlist 추가 버튼 (기존 유지) */
 .scan-watch-add-btn {
