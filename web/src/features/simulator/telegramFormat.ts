@@ -25,6 +25,62 @@ export function calcSplitInvested(item: HighlightPlanItem, fillRatePct: number) 
   return item.amount * splitRatio * fillRatio
 }
 
+/** 리스크/리워드 비율 (목표 / 손절) */
+export function calcRR(item: HighlightPlanItem): number {
+  if (item.stopPct <= 0) return 0
+  return item.targetPct / item.stopPct
+}
+
+/**
+ * 켈리 기준 추천 투자 비율 (%)
+ * f* = W - (1-W)/R, R = 목표/손절
+ * 보수적 적용을 위해 절반 켈리(half-kelly)로 계산, 최대 25% 캡
+ */
+export function calcKelly(item: HighlightPlanItem): number {
+  const w = item.winProb / 100
+  const rr = calcRR(item)
+  if (rr <= 0 || w <= 0) return 0
+  const fullKelly = w - (1 - w) / rr
+  const halfKelly = fullKelly * 0.5
+  return Math.max(0, Math.min(25, halfKelly * 100))
+}
+
+export type TradeGrade = 'A' | 'B' | 'C' | 'D'
+
+/** 거래 품질 등급 — R:R + 승률 + 기대값 기반 */
+export function getTradeGrade(item: HighlightPlanItem): TradeGrade {
+  const rr = calcRR(item)
+  const w = item.winProb / 100
+  const ev = calcExpectedValue(item)
+  if (ev <= 0) return 'D'
+  if (rr >= 2.5 && w >= 0.58) return 'A'
+  if (rr >= 2.0 && w >= 0.52) return 'B'
+  if (rr >= 1.5 && ev > 0) return 'C'
+  return 'D'
+}
+
+/** 전 종목 손절 시 최대 손실 금액 (음수 반환) */
+export function calcMaxPortfolioLoss(items: HighlightPlanItem[]): number {
+  return -items.reduce((acc, item) => acc + item.amount * (item.stopPct / 100), 0)
+}
+
+/** 특정 등락률 시나리오의 순수익 계산 */
+export function calcScenarioNet(
+  items: HighlightPlanItem[],
+  changePct: number,
+  fillRatePct: number,
+  feePct: number,
+  taxPct: number,
+): number {
+  return items.reduce((acc, item) => {
+    const invested = calcSplitInvested(item, fillRatePct)
+    const gross = invested * (changePct / 100)
+    const fee = invested * (feePct / 100)
+    const tax = changePct > 0 ? gross * (taxPct / 100) : 0
+    return acc + gross - fee - tax
+  }, 0)
+}
+
 export function buildTelegramMessage(params: {
   totalCapital: number
   fillRatePct: number
