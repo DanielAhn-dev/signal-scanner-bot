@@ -300,8 +300,9 @@ export default function SimulatorPage() {
           winProb = Math.max(30, Math.min(70, 50 + (baseScore / 100) * 20))
         }
         
-        // 가격 정보 저장 (current_price 우선, 없으면 close)
-        const currentPrice = Number(row.current_price ?? row.close ?? 0)
+        // 가격 정보 저장 (current_price 우선, 없으면 close, 둘 다 없으면 기본값 50,000원)
+        const currentPrice = Number(row.current_price ?? row.close ?? 0) || 50000
+        const closePrice = Number(row.close ?? 0) || 50000
         
         const item = defaultPlanItem({ code, name, sector_id: row.sector_id })
         merged[code] = {
@@ -309,8 +310,8 @@ export default function SimulatorPage() {
           targetPct,
           stopPct,
           winProb: Math.round(winProb),
-          current_price: currentPrice || undefined,
-          close: Number(row.close ?? 0) || undefined,
+          current_price: currentPrice,
+          close: closePrice,
         }
         scanCandidateCount++
         if (scanCandidateCount <= 3) {
