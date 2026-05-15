@@ -87,9 +87,7 @@ export default function SimulatorPage() {
   const chatId = useCurrentChatId()
   const initialPlan = useMemo(() => readSimulationPlan(), [])
   const [totalCapital, setTotalCapital] = useState(initialPlan?.totalCapital ?? 10_000_000)
-  const [items, setItems] = useState<HighlightPlanItem[]>(
-    initialPlan?.items?.length ? initialPlan.items : [],
-  )
+  const [items, setItems] = useState<HighlightPlanItem[]>([]) // 항상 빈 배열로 시작
   const [monthlyProfitTarget, setMonthlyProfitTarget] = useState(500_000) // 월 500만원 기본값
   const [fillRatePct, setFillRatePct] = useState(100)
   const [feePct, setFeePct] = useState(0.15)
@@ -295,7 +293,8 @@ export default function SimulatorPage() {
         }
         
         // 가격 정보 저장 (current_price 우선, 없으면 close)
-        const currentPrice = Number(row.current_price || 0) || Number(row.close || 0)
+        const currentPrice = Number(row.current_price ?? 0) || Number(row.close ?? 0)
+        const closePrice = Number(row.close ?? 0)
         
         const item = defaultPlanItem({ code, name, sector_id: row.sector_id })
         merged[code] = {
@@ -303,8 +302,8 @@ export default function SimulatorPage() {
           targetPct,
           stopPct,
           winProb: Math.round(winProb),
-          current_price: currentPrice || undefined,
-          close: Number(row.close || 0) || undefined,
+          current_price: currentPrice > 0 ? currentPrice : undefined,
+          close: closePrice > 0 ? closePrice : undefined,
         }
         scanCandidateCount++
       }
@@ -325,7 +324,7 @@ export default function SimulatorPage() {
         if (code in merged) continue
         
         // 가격 정보 저장 (entry_price 우선, 없으면 현황 가격)
-        const entryPrice = Number(row.entry_price || 0)
+        const entryPrice = Number(row.entry_price ?? 0)
         
         const item = defaultPlanItem({ code, name, sector_id: row.sector_id })
         merged[code] = {
@@ -333,7 +332,7 @@ export default function SimulatorPage() {
           targetPct,
           stopPct,
           winProb: Math.round(winProb),
-          current_price: entryPrice || undefined,
+          current_price: entryPrice > 0 ? entryPrice : undefined,
         }
       }
       
