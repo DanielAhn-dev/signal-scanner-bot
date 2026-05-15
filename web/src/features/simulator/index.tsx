@@ -250,6 +250,14 @@ export default function SimulatorPage() {
       const scanRes = await apiFetch('/api/ui?route=scan-candidates&limit=50', { cacheMs: 10000, timeoutMs: 15000 })
       const scanList = Array.isArray(scanRes?.data) ? scanRes.data : []
       console.log('[loadAlgoCandidates] scan-candidates:', scanList.length, '개')
+      if (scanList.length > 0) {
+        console.log('[loadAlgoCandidates] API 원본 첫 종목:', {
+          code: scanList[0].code,
+          current_price: scanList[0].current_price,
+          close: scanList[0].close,
+          entry_grade: scanList[0].entry_grade,
+        })
+      }
       // scan-highlights fetch
       const hlRes = await apiFetch('/api/ui?route=scan-highlights', { cacheMs: 10000, timeoutMs: 15000 })
       const hlList = Array.isArray(hlRes?.data) ? hlRes.data : []
@@ -293,8 +301,7 @@ export default function SimulatorPage() {
         }
         
         // 가격 정보 저장 (current_price 우선, 없으면 close)
-        const currentPrice = Number(row.current_price ?? 0) || Number(row.close ?? 0)
-        const closePrice = Number(row.close ?? 0)
+        const currentPrice = Number(row.current_price ?? row.close ?? 0)
         
         const item = defaultPlanItem({ code, name, sector_id: row.sector_id })
         merged[code] = {
@@ -302,14 +309,18 @@ export default function SimulatorPage() {
           targetPct,
           stopPct,
           winProb: Math.round(winProb),
-          current_price: currentPrice > 0 ? currentPrice : undefined,
-          close: closePrice > 0 ? closePrice : undefined,
+          current_price: currentPrice || undefined,
+          close: Number(row.close ?? 0) || undefined,
         }
         scanCandidateCount++
+        if (scanCandidateCount <= 3) {
+          console.log(`[loadAlgoCandidates] scan-candidates[${scanCandidateCount}] ${code}: current_price=${row.current_price}, close=${row.close} → stored=${currentPrice}`)
+        }
       }
       console.log('[loadAlgoCandidates] scan-candidates 필터 통과:', scanCandidateCount, '개')
       
       // scan-highlights 처리 (expected_upside_pct 기반)
+      let hlCandidateCount = 0
       for (const row of hlList) {
         const code = String(row.code || '').trim()
         const name = String(row.name || code || '').trim()
@@ -332,9 +343,14 @@ export default function SimulatorPage() {
           targetPct,
           stopPct,
           winProb: Math.round(winProb),
-          current_price: entryPrice > 0 ? entryPrice : undefined,
+          current_price: entryPrice || undefined,
+        }
+        hlCandidateCount++
+        if (hlCandidateCount <= 3) {
+          console.log(`[loadAlgoCandidates] scan-highlights[${hlCandidateCount}] ${code}: entry_price=${row.entry_price} → stored=${entryPrice}`)
         }
       }
+      console.log('[loadAlgoCandidates] scan-highlights 필터 통과:', hlCandidateCount, '개')
       
       const finalCandidates = Object.values(merged)
       console.log('[loadAlgoCandidates] 최종 후보:', finalCandidates.length, '개')
