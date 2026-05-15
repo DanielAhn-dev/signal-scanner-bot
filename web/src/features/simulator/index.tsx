@@ -260,15 +260,16 @@ export default function SimulatorPage() {
       // code 기준 중복 제거 & 품질 등급별 파라미터 설정
       const merged: Record<string, HighlightPlanItem> = {}
       
-      // scan-candidates 처리 (entry_grade 기반) - A/B 등급만 필터링
+      // scan-candidates 처리 (entry_grade 기반) - A/B/C는 포함, D만 제외
+      let scanCandidateCount = 0
       for (const row of scanList) {
         const code = String(row.code || '').trim()
         const name = String(row.name || code || '').trim()
         if (!code || !name) continue
         
-        // 품질 필터: entry_grade A/B만 포함, C/D는 제외
+        // 품질 필터: entry_grade D는 제외 (A/B/C는 포함)
         const grade = String(row.entry_grade || '').toUpperCase()
-        if (grade !== 'A' && grade !== 'B') continue
+        if (grade === 'D') continue
         
         // entry_grade에 따라 수익/손절 설정
         let targetPct = 5, stopPct = 3, winProb = 58
@@ -280,6 +281,11 @@ export default function SimulatorPage() {
           targetPct = 5
           stopPct = 3
           winProb = 58
+        } else {
+          // C 등급
+          targetPct = 3
+          stopPct = 4
+          winProb = 52
         }
         
         // adaptive_score를 활용한 winProb 미세조정 (30~70%)
@@ -300,7 +306,9 @@ export default function SimulatorPage() {
           current_price: currentPrice || undefined,
           close: Number(row.close || 0) || undefined,
         }
+        scanCandidateCount++
       }
+      console.log('[loadAlgoCandidates] scan-candidates 필터 통과:', scanCandidateCount, '개')
       
       // scan-highlights 처리 (expected_upside_pct 기반)
       for (const row of hlList) {
@@ -329,7 +337,12 @@ export default function SimulatorPage() {
         }
       }
       
-      setAlgoCandidates(Object.values(merged))
+      const finalCandidates = Object.values(merged)
+      console.log('[loadAlgoCandidates] 최종 후보:', finalCandidates.length, '개')
+      if (finalCandidates.length > 0) {
+        console.log('[loadAlgoCandidates] 첫 후보:', finalCandidates[0].code, finalCandidates[0].name)
+      }
+      setAlgoCandidates(finalCandidates)
     } catch (e: any) {
       console.warn('내부 추천 후보 로드 실패:', e?.message)
       setAlgoCandidates([])
