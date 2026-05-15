@@ -2225,20 +2225,24 @@ a:focus-visible {
 
 /* 하이라이트 섹션 */
 .scan-highlight-section-title {
-  @apply flex items-center;
+  @apply flex;
+  align-items: flex-start;
+  justify-content: space-between;
   gap: var(--space-2);
   @apply mb-3;
+}
+.scan-highlight-section-copy {
+  @apply flex flex-col;
+  gap: 2px;
+  min-width: 0;
 }
 .scan-highlight-section-label {
   @apply text-base font-semibold;
   color: var(--color-text-primary);
 }
-.scan-highlight-section-badge {
-  @apply text-xs font-semibold px-2 py-0;
-  @apply rounded-full;
-  background: var(--color-brand-subtle);
-  color: var(--color-brand);
-  border: 1px solid var(--color-brand-muted);
+.scan-highlight-section-subtitle {
+  @apply text-xs;
+  color: var(--color-text-secondary);
 }
 .scan-highlight-grid {
   @apply grid;
@@ -2289,6 +2293,12 @@ a:focus-visible {
 }
 .scan-highlight-rank--rest {
   color: var(--color-text-tertiary);
+}
+.scan-highlight-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
 }
 .scan-highlight-name {
   @apply text-base font-semibold;
@@ -2800,6 +2810,12 @@ a:focus-visible {
   @apply text-xs;
   color: var(--color-text-tertiary);
 }
+.scan-grade-pair {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  white-space: nowrap;
+}
 
 /* 테이블 */
 .scan-table-wrap {
@@ -2868,6 +2884,15 @@ a:focus-visible {
   @apply text-sm font-semibold;
   color: var(--color-text-secondary);
   @apply mb-2;
+}
+.scan-section-label--plain {
+  padding: 0;
+  border: none;
+  margin-bottom: var(--space-2);
+}
+
+.scan-candidates-stage {
+  background: transparent;
 }
 
 /* 발굴 페이지 순위 배지 */
@@ -3429,16 +3454,12 @@ a:focus-visible {
   .scan-sector-select {
     @apply w-full;
   }
+
+  /* 숨길 컬럼: 섹터(3), 진입점수(6), 유동성(11), 변동%(12), 기준일(13) */
   .scan-table th:nth-child(3),
   .scan-table td:nth-child(3),
   .scan-table th:nth-child(6),
   .scan-table td:nth-child(6),
-  .scan-table th:nth-child(7),
-  .scan-table td:nth-child(7),
-  .scan-table th:nth-child(8),
-  .scan-table td:nth-child(8),
-  .scan-table th:nth-child(9),
-  .scan-table td:nth-child(9),
   .scan-table th:nth-child(11),
   .scan-table td:nth-child(11),
   .scan-table th:nth-child(12),
@@ -3448,9 +3469,8 @@ a:focus-visible {
     display: none;
   }
 
-  .scan-table-wrap {
-    overflow-x: visible;
-  }
+  .scan-table-wrap { overflow-x: visible; }
+  .scan-thead { display: none; }
 
   .scan-table {
     min-width: 0;
@@ -3459,59 +3479,163 @@ a:focus-visible {
     border-spacing: 0;
   }
 
-  .scan-thead {
-    display: none;
-  }
-
   .scan-table tbody {
-    display: grid;
+    display: flex;
+    flex-direction: column;
     gap: var(--space-2);
-    padding: var(--space-2);
+    padding: 0;
   }
 
+  /* 컴팩트 카드: 5열 × 3행 그리드
+     col: [우선순위/추세] [진입/매집] [경고/세력] [여백] [코드/버튼]
+     row: 종목명+코드 / 주요지표 / 보조지표
+  */
   .scan-tr {
     display: grid;
-    gap: var(--space-1);
+    grid-template-columns: auto auto auto 1fr auto;
+    grid-template-rows: auto auto auto;
+    column-gap: var(--space-2);
+    row-gap: 0;
     border: 1px solid var(--color-border-default);
+    border-left: 3px solid var(--color-border-default);
     border-radius: var(--radius-md);
-    padding: var(--space-2);
+    padding: var(--space-3);
     background: var(--color-bg-surface);
+    cursor: pointer;
+    transition: background var(--duration-fast);
+    align-items: center;
   }
 
+  .scan-tr:hover { background: var(--color-bg-sunken); }
+
+  /* 진입등급별 레벨 표시 */
+  .scan-tr--level-a { border-left-color: var(--color-success, #059669); }
+  .scan-tr--level-b { border-left-color: var(--color-brand, #3b82f6); }
+
+  /* 모든 TD 기본 리셋 */
   .scan-td {
     display: flex;
     align-items: center;
-    justify-content: space-between;
-    gap: var(--space-2);
-    padding: var(--space-1) 0;
+    padding: 0;
     white-space: normal;
     border: none;
+    line-height: 1.3;
   }
+  .scan-td::before { display: none; }
 
-  .scan-td::before {
-    content: attr(data-label);
-    color: var(--color-text-tertiary);
+  /* ── 행1: 종목명(col 1-4) + 코드(col 5) ── */
+  .scan-td:nth-child(2) { /* 종목명 */
+    grid-column: 1 / 5;
+    grid-row: 1;
+    font-size: 1rem;
+    font-weight: 700;
+    color: var(--color-text-primary);
+    padding-bottom: var(--space-1);
+  }
+  .scan-td:nth-child(1) { /* 코드 */
+    grid-column: 5;
+    grid-row: 1;
     font-size: var(--font-size-xs);
-    font-weight: var(--font-weight-medium);
+    font-family: var(--font-family-mono);
+    color: var(--color-text-brand);
+    font-weight: 600;
+    justify-content: flex-end;
+    padding-bottom: var(--space-1);
+  }
+
+  /* ── 행2: 우선순위(col1) + 진입(col2) + 경고(col3) + 관리(col5) ── */
+  .scan-td:nth-child(4) { /* 우선순위 */
+    grid-column: 1;
+    grid-row: 2;
+    padding: 3px 0;
+  }
+  .scan-td:nth-child(5) { /* 진입 */
+    grid-column: 2;
+    grid-row: 2;
+    padding: 3px 0;
+  }
+  .scan-td:nth-child(10) { /* 경고 */
+    grid-column: 3;
+    grid-row: 2;
+    padding: 3px 0;
+  }
+  .scan-td:nth-child(14) { /* 관리 버튼 */
+    grid-column: 5;
+    grid-row: 2 / 4;
+    justify-content: flex-end;
+    align-items: center;
+  }
+
+  /* ── 행3: 추세(col1) + 매집(col2) + 세력선(col3) ── */
+  .scan-td:nth-child(7) { /* 추세 */
+    grid-column: 1;
+    grid-row: 3;
+    padding-top: 4px;
+  }
+  .scan-td:nth-child(7)::before {
+    display: inline;
+    content: "추세 ";
+    font-size: 10px;
+    color: var(--color-text-tertiary);
     flex-shrink: 0;
+    margin-right: 2px;
+  }
+  .scan-td:nth-child(8) { /* 매집 */
+    grid-column: 2;
+    grid-row: 3;
+    padding-top: 4px;
+  }
+  .scan-td:nth-child(8)::before {
+    display: inline;
+    content: "매집 ";
+    font-size: 10px;
+    color: var(--color-text-tertiary);
+    flex-shrink: 0;
+    margin-right: 2px;
+  }
+  .scan-td:nth-child(9) { /* 세력선 */
+    grid-column: 3;
+    grid-row: 3;
+    padding-top: 4px;
+  }
+  .scan-td:nth-child(9)::before {
+    display: inline;
+    content: "세력 ";
+    font-size: 10px;
+    color: var(--color-text-tertiary);
+    flex-shrink: 0;
+    margin-right: 2px;
   }
 
-  .scan-td-name {
-    align-items: flex-start;
-    flex-direction: column;
+  /* 행2 주요 배지: 약간 크게 */
+  .scan-td:nth-child(4) .scan-grade-badge {
+    font-size: var(--font-size-sm);
+    font-weight: 700;
+    min-width: 3rem;
+  }
+  .scan-td:nth-child(5) .scan-grade-badge {
+    height: 1.625rem;
+    min-width: 1.625rem;
+    font-size: var(--font-size-sm);
+  }
+  .scan-td:nth-child(10) .scan-warn-badge {
+    font-size: var(--font-size-xs);
   }
 
-  .scan-td-name::before {
-    margin-bottom: 2px;
+  /* 행3 보조 배지: 작게 */
+  .scan-td:nth-child(7) .scan-grade-badge,
+  .scan-td:nth-child(8) .scan-grade-badge,
+  .scan-td:nth-child(9) .scan-grade-badge {
+    height: 1.125rem;
+    min-width: 1.125rem;
+    font-size: 10px;
+    padding: 1px 3px;
   }
 
-  .scan-td-date {
-    align-items: flex-start;
-    flex-direction: column;
-  }
-
-  .scan-td-date::before {
-    margin-bottom: 2px;
+  /* 행3 보조 배지의 텍스트 접미사 숨김 (dist_pct, vol_atr_grade 등) */
+  .scan-td:nth-child(8) .scan-grade-label,
+  .scan-td:nth-child(9) .scan-grade-label {
+    display: none;
   }
 
   .scan-highlight-grid {

@@ -100,6 +100,13 @@ type ScanCandidate = {
   adaptive_score?: number | null
 }
 
+function getEntryLevel(grade: string | null | undefined): 'a' | 'b' | 'c' {
+  const g = String(grade || '').toUpperCase()
+  if (g === 'A') return 'a'
+  if (g === 'B') return 'b'
+  return 'c'
+}
+
 function gradeScore(grade: string | null | undefined): number {
   if (!grade) return -1
   const g = String(grade).trim().toUpperCase()
@@ -133,7 +140,7 @@ function GradeBadge({ grade, label }: { grade: string | null | undefined; label?
   const g = String(grade).toUpperCase()
   const cls = g === 'A' ? 'scan-grade-a' : g === 'B' ? 'scan-grade-b' : g === 'C' ? 'scan-grade-c' : 'scan-grade-other'
   return (
-    <span className="flex-gap-sm" style={{ gap: '3px' }}>
+    <span className="scan-grade-pair">
       {label && <span className="scan-grade-label">{label}</span>}
       <span className={`scan-grade-badge ${cls}`}>{g}</span>
     </span>
@@ -193,8 +200,6 @@ export default function ScanPage({ onNavigate }: { onNavigate?: (r: string) => v
   const [highlightLoading, setHighlightLoading] = useState(true)
   const [selectedSector, setSelectedSector] = useState<string>('all')
   const [conditionFilter, setConditionFilter] = useState<'all' | 'entry' | 'trend' | 'accumulation' | 'stable'>('all')
-  const [shareViewMode, setShareViewMode] = useState<'table' | 'cards'>('table')
-  const [shareCardLimit, setShareCardLimit] = useState<10 | 20 | 30>(20)
   const [sortKey, setSortKey] = useState<SortKey>('priority_score')
   const [sortDirection, setSortDirection] = useState<SortDirection>('desc')
   const [page, setPage] = useState(1)
@@ -503,8 +508,7 @@ export default function ScanPage({ onNavigate }: { onNavigate?: (r: string) => v
     await shareManager.createShare('scan', {
       kind: 'scan',
       payload: {
-        viewMode: shareViewMode,
-        cardLimit: shareViewMode === 'cards' ? shareCardLimit : undefined,
+        viewMode: 'table',
         latestDate,
         marketPhase,
         realtimeAppliedCount,
@@ -542,37 +546,7 @@ export default function ScanPage({ onNavigate }: { onNavigate?: (r: string) => v
   return (
     <section className="container-app container-wide">
       {/* 페이지 헤더 */}
-      <div className="flex-between mb-4">
-        <h1 className="title-xl" style={{ marginBottom: 0 }}>Nexora 눌림목</h1>
-        <div className="scan-header-actions">
-          <select
-            className="input"
-            value={shareViewMode}
-            onChange={(e) => setShareViewMode(e.target.value === 'cards' ? 'cards' : 'table')}
-            title="공유 페이지 표시 방식"
-            style={{ minWidth: 136 }}
-          >
-            <option value="table">공유: 테이블</option>
-            <option value="cards">공유: 카드</option>
-          </select>
-          {shareViewMode === 'cards' && (
-            <select
-              className="input"
-              value={String(shareCardLimit)}
-              onChange={(e) => {
-                const n = Number(e.target.value)
-                setShareCardLimit(n === 10 || n === 20 || n === 30 ? n : 20)
-              }}
-              title="카드 공유 상위 개수"
-              style={{ minWidth: 128 }}
-            >
-              <option value="10">카드 TOP 10</option>
-              <option value="20">카드 TOP 20</option>
-              <option value="30">카드 TOP 30</option>
-            </select>
-          )}
-        </div>
-      </div>
+      <h1 className="title-xl mb-4" style={{ marginBottom: 'var(--space-3)' }}>Nexora 눌림목</h1>
 
 
       <EconomicEventBadge onNavigateToCalendar={() => onNavigate?.('economy')} />
@@ -624,11 +598,13 @@ export default function ScanPage({ onNavigate }: { onNavigate?: (r: string) => v
       {/* 참고용 추천 섹션 */}
       {!loading && !error && !highlightLoading && activeHighlights.length > 0 && conditionFilter === 'all' && selectedSector === 'all' && (
         <div className="card mb-4" id="scan-highlight-section-capture">
-          <div className="scan-highlight-section-title" style={{ gap: 'var(--space-2)', flexWrap: 'wrap' }}>
-            <span className="scan-highlight-section-label">참고용 추천 눌림목</span>
-            <span className="scan-highlight-section-badge">상단 참고 · 하단 실전 기준과 분리</span>
+          <div className="scan-highlight-section-title">
+            <div className="scan-highlight-section-copy">
+              <span className="scan-highlight-section-label">참고용 추천 눌림목</span>
+              <span className="scan-highlight-section-subtitle">상단 참고 · 하단 실전 기준과 분리</span>
+            </div>
             {onNavigate && (
-              <Button variant="secondary" onClick={() => onNavigate('highlights')} style={{ marginLeft: 'auto' }}>
+              <Button variant="secondary" onClick={() => onNavigate('highlights')}>
                 하이라이트 허브
               </Button>
             )}
@@ -643,7 +619,7 @@ export default function ScanPage({ onNavigate }: { onNavigate?: (r: string) => v
                 onClick={() => navigateToAnalyze(c.code)}
                 title={`${c.name} 참고용 상세 보기`}
               >
-                <div className="flex-between">
+                <div className="scan-highlight-card-head">
                   <span className={`scan-highlight-rank${idx > 0 ? ' scan-highlight-rank--rest' : ''}`}>
                     TOP {idx + 1}
                   </span>
@@ -683,21 +659,22 @@ export default function ScanPage({ onNavigate }: { onNavigate?: (r: string) => v
       ) : !error && sortedCandidates.length === 0 ? (
         <EmptyState title="스캔 결과 없음" description="스캔을 실행하거나 필터를 조정해 보세요." />
       ) : (
-        <div className="card" style={{ padding: 0 }} id="scan-candidates-section-capture">
+        <div id="scan-candidates-section-capture">
           {(conditionFilter !== 'all' || selectedSector !== 'all') && (
-            <div className="scan-section-label" style={{ padding: 'var(--space-3) var(--space-4)', borderBottom: '1px solid var(--color-border-default)' }}>
+            <div className="scan-section-label scan-section-label--plain">
               {conditionFilter !== 'all'
                 ? `필터 결과 · ${sortedCandidates.length}개`
                 : `${selectedSector} 섹터 · ${sortedCandidates.length}개`}
             </div>
           )}
           {conditionFilter === 'all' && selectedSector === 'all' && (
-            <div className="scan-section-label" style={{ padding: 'var(--space-3) var(--space-4)', borderBottom: '1px solid var(--color-border-default)' }}>
+            <div className="scan-section-label scan-section-label--plain">
               전체 후보 목록 · {sortedCandidates.length}개 (실전 기준, 오늘 장중/종가 신호 반영)
             </div>
           )}
-          <div className="scan-table-wrap">
-            <table className="scan-table">
+          <div className="scan-candidates-stage">
+            <div className="scan-table-wrap">
+              <table className="scan-table">
               <thead className="scan-thead">
                 <tr>
                   <th className="scan-th">{renderSortableHeader('코드', 'code')}</th>
@@ -716,7 +693,7 @@ export default function ScanPage({ onNavigate }: { onNavigate?: (r: string) => v
                   <th className="scan-th">관리</th>
                 </tr>
               </thead>
-              <tbody>
+                <tbody>
                 {displayRows.map((s: any) => {
                   const code = String(s.code)
                   const isAdded = isWatched(code)
@@ -726,7 +703,7 @@ export default function ScanPage({ onNavigate }: { onNavigate?: (r: string) => v
                   return (
                     <tr
                       key={s.code}
-                      className="scan-tr"
+                      className={`scan-tr scan-tr--level-${getEntryLevel(s.entry_grade)}`}
                       onClick={() => navigateToAnalyze(code)}
                       title={`${s.name} 상세 분석`}
                     >
@@ -807,15 +784,16 @@ export default function ScanPage({ onNavigate }: { onNavigate?: (r: string) => v
                     </tr>
                   )
                 })}
-              </tbody>
-            </table>
-          </div>
-
-          {totalPages > 1 && (
-            <div className="pagination-wrap">
-              <Pagination page={page} pageSize={pageSize} total={sortedCandidates.length} onChange={setPage} />
+                </tbody>
+              </table>
             </div>
-          )}
+
+            {totalPages > 1 && (
+              <div className="pagination-wrap">
+                <Pagination page={page} pageSize={pageSize} total={sortedCandidates.length} onChange={setPage} />
+              </div>
+            )}
+          </div>
         </div>
       )}
       <ShareModal
