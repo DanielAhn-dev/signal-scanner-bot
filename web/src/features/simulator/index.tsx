@@ -6,6 +6,7 @@ import { formatKrw, formatNumber } from '../../lib/format'
 import { apiFetch } from '../../lib/api'
 import { useToast } from '../../components/ToastProvider'
 import { searchStocks } from '../../lib/stockCache'
+import StockDetailModal from '../../components/StockDetailModal'
 import {
   defaultPlanItem,
   readSimulationPlan,
@@ -17,14 +18,19 @@ import {
   calcExpectedValue,
   calcKelly,
   calcMaxPortfolioLoss,
+  calcPositionStatus,
   calcRR,
   calcScenarioNet,
   calcSplitInvested,
+  calcWeeklyCyclePlan,
   clampPercent,
   getTradeGrade,
+  POSITION_STATUS_LABEL,
   recommendPortfolio,
   calcRequiredAnnualReturn,
   calcAllocationWeight,
+  type RecommendationStyle,
+  type PositionStatus,
   type TelegramFormat,
   type TradeGrade,
 } from './telegramFormat'
@@ -38,6 +44,24 @@ function GradeChip({ grade }: { grade: TradeGrade }) {
     : grade === 'C' ? 'sim-grade-c'
     : 'sim-grade-d'
   return <span className={`sim-grade-chip ${cls}`}>{grade}</span>
+}
+
+function PositionStatusBadge({ status, changePct }: { status: PositionStatus; changePct: number | null }) {
+  const cls =
+    status === 'take_profit' ? 'sim-status-badge--profit'
+    : status === 'near_profit' ? 'sim-status-badge--near-profit'
+    : status === 'stop_loss' ? 'sim-status-badge--stop'
+    : status === 'near_stop' ? 'sim-status-badge--near-stop'
+    : 'sim-status-badge--hold'
+  const label = POSITION_STATUS_LABEL[status]
+  return (
+    <span className={`sim-status-badge ${cls}`} title={changePct != null ? `${changePct >= 0 ? '+' : ''}${formatNumber(changePct, 2)}%` : ''}>
+      {label}
+      {changePct != null && (
+        <span className="sim-status-badge-pct">{changePct >= 0 ? '+' : ''}{formatNumber(changePct, 1)}%</span>
+      )}
+    </span>
+  )
 }
 
 function RRBar({ rr }: { rr: number }) {
@@ -83,6 +107,161 @@ function NumInput({
   )
 }
 
+function ComparePanel({
+  algoPortfolio,
+  watchlistPortfolio,
+  totalCapital,
+  monthlyTarget,
+  feePct,
+  taxPct,
+  onClose,
+  onApplyAlgo,
+  onApplyWatchlist,
+}: {
+  algoPortfolio: HighlightPlanItem[]
+  watchlistPortfolio: HighlightPlanItem[]
+  totalCapital: number
+  monthlyTarget: number
+  feePct: number
+  taxPct: number
+  onClose: () => void
+  onApplyAlgo: () => void
+  onApplyWatchlist: () => void
+}) {
+  const CYCLES = 4
+
+  function colSummary(portfolio: HighlightPlanItem[]) {
+    const tradeable = portfolio.filter(i => i.code !== 'CASH')
+    const totalEV = tradeable.reduce((acc, i) => acc + calcExpectedValue(i), 0)
+    const plan = calcWeeklyCyclePlan(tradeable, monthlyTarget, feePct, taxPct)
+    const maxProfit = plan.cycleMaxProfit
+    const cycleEV = plan.cycleEV
+    const monthlyEV = cycleEV * CYCLES
+    const weeksNeeded = cycleEV > 0 ? Math.ceil(monthlyTarget / cycleEV) : Infinity
+    return { totalEV, maxProfit, cycleEV, monthlyEV, weeksNeeded }
+  }
+
+  const algoSummary = colSummary(algoPortfolio)
+  const watchSummary = colSummary(watchlistPortfolio)
+
+  // 어느 쪽이 더 유리한지 표시용
+  const algoWins = algoSummary.monthlyEV >= watchSummary.monthlyEV
+
+  function PortfolioCol({
+    label,
+    portfolio,
+    summary,
+    onApply,
+    highlight,
+  }: {
+    label: string
+    portfolio: HighlightPlanItem[]
+    summary: ReturnType<typeof colSummary>
+    onApply: () => void
+    highlight: boolean
+  }) {
+    const tradeable = portfolio.filter(i => i.code !== 'CASH')
+    return (
+      <div className={`sim-compare-col${highlight ? ' sim-compare-col--winner' : ''}`}>
+        <div className="sim-compare-col-head">
+          <span className="sim-compare-col-title">{label}</span>
+          {highlight && <span className="sim-compare-winner-badge">더 유리</span>}
+          <span className="sim-compare-col-count">{tradeable.length}개 종목</span>
+        </div>
+
+        {tradeable.length === 0 ? (
+          <div className="sim-compare-empty">추천 종목 없음 (품질 기준 미충족)</div>
+        ) : (
+          <div className="sim-compare-stock-list">
+            {tradeable.map((item, idx) => {
+              const ev = calcExpectedValue(item)
+              const rr = calcRR(item)
+              return (
+                <div key={`${item.code}-${idx}`} className="sim-compare-stock-row">
+                  <div className="sim-compare-stock-info">
+                    <span className="sim-compare-stock-name">{item.name}</span>
+                    <span className="sim-compare-stock-code">{item.code}</span>
+                  </div>
+                  <div className="sim-compare-stock-metrics">
+                    <span className="sim-compare-metric">{formatKrw(item.amount)}</span>
+                    <span className="sim-compare-metric sim-compare-metric--rr">R:R {formatNumber(rr, 1)}:1</span>
+                    <span className={`sim-compare-metric ${ev >= 0 ? 'sim-pos' : 'sim-neg'}`}>
+                      {ev >= 0 ? '+' : ''}{formatKrw(ev)}
+                    </span>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        )}
+
+        <div className="sim-compare-summary">
+          <div className="sim-compare-summary-row">
+            <span className="sim-compare-summary-label">1사이클 기대수익</span>
+            <span className={`sim-compare-summary-value ${summary.cycleEV >= 0 ? 'sim-pos' : 'sim-neg'}`}>
+              {summary.cycleEV >= 0 ? '+' : ''}{formatKrw(summary.cycleEV)}
+            </span>
+          </div>
+          <div className="sim-compare-summary-row">
+            <span className="sim-compare-summary-label">전량 목표 달성 시</span>
+            <span className="sim-compare-summary-value sim-pos">+{formatKrw(summary.maxProfit)}</span>
+          </div>
+          <div className="sim-compare-summary-row sim-compare-summary-row--highlight">
+            <span className="sim-compare-summary-label">월 기대수익 (×4)</span>
+            <span className={`sim-compare-summary-value ${summary.monthlyEV >= 0 ? 'sim-pos' : 'sim-neg'}`}>
+              {summary.monthlyEV >= 0 ? '+' : ''}{formatKrw(summary.monthlyEV)}
+            </span>
+          </div>
+          <div className="sim-compare-summary-row">
+            <span className="sim-compare-summary-label">목표 달성 예상</span>
+            <span className="sim-compare-summary-value">
+              {summary.weeksNeeded < 1000
+                ? `${summary.weeksNeeded}주 ≈ ${formatNumber(summary.weeksNeeded / 4, 1)}개월`
+                : '달성 어려움'}
+            </span>
+          </div>
+        </div>
+
+        <button
+          className={`sim-btn ${highlight ? 'sim-btn--primary' : 'sim-btn--ghost'} sim-compare-apply-btn`}
+          onClick={onApply}
+          disabled={tradeable.length === 0}
+        >
+          {label}으로 적용
+        </button>
+      </div>
+    )
+  }
+
+  return (
+    <div className="sim-compare-panel">
+      <div className="sim-compare-header">
+        <h3 className="sim-compare-title">📊 포트폴리오 비교</h3>
+        <button className="sim-btn sim-btn--ghost" onClick={onClose}>닫기</button>
+      </div>
+      <p className="sim-compare-desc">
+        동일 투자금 {formatKrw(totalCapital)} 기준 · 월 목표 {formatKrw(monthlyTarget)} · 주 1사이클 기준
+      </p>
+      <div className="sim-compare-grid">
+        <PortfolioCol
+          label="알고리즘 추천"
+          portfolio={algoPortfolio}
+          summary={algoSummary}
+          onApply={onApplyAlgo}
+          highlight={algoWins}
+        />
+        <PortfolioCol
+          label="관심종목 추천"
+          portfolio={watchlistPortfolio}
+          summary={watchSummary}
+          onApply={onApplyWatchlist}
+          highlight={!algoWins}
+        />
+      </div>
+    </div>
+  )
+}
+
 export default function SimulatorPage() {
   const chatId = useCurrentChatId()
   const initialPlan = useMemo(() => readSimulationPlan(), [])
@@ -108,7 +287,17 @@ export default function SimulatorPage() {
   const [showRecommendation, setShowRecommendation] = useState(false)
   const [watchlistCandidates, setWatchlistCandidates] = useState<HighlightPlanItem[]>([])
   const [algoCandidates, setAlgoCandidates] = useState<HighlightPlanItem[]>([])
-  const [loadingCandidates, setLoadingCandidates] = useState(false)
+  const [loadingAlgo, setLoadingAlgo] = useState(false)
+  const [loadingWatchlist, setLoadingWatchlist] = useState(false)
+  const loadingCandidates = loadingAlgo || loadingWatchlist
+  // 'algo' = 알고리즘 추천 | 'watchlist' = 관심종목 | 'items' = 현재 종목
+  const [recommendSource, setRecommendSource] = useState<'algo' | 'watchlist' | 'items'>('algo')
+  const [recommendStyle, setRecommendStyle] = useState<RecommendationStyle>('stable')
+  const [compareResult, setCompareResult] = useState<{ algo: HighlightPlanItem[]; watchlist: HighlightPlanItem[] } | null>(null)
+  const [showCompare, setShowCompare] = useState(false)
+  const [showStockDetail, setShowStockDetail] = useState(false)
+  const [selectedStockCode, setSelectedStockCode] = useState<string>('')
+  const [selectedStockName, setSelectedStockName] = useState<string>('')
   const addDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const toast = useToast()
 
@@ -161,6 +350,14 @@ export default function SimulatorPage() {
     })),
   [items, fillRatePct])
 
+  const statusMeta = useMemo(() =>
+    items.map((item) => calcPositionStatus(item)),
+  [items])
+
+  const weeklyPlan = useMemo(() =>
+    calcWeeklyCyclePlan(items, monthlyProfitTarget, feePct, taxPct),
+  [items, monthlyProfitTarget, feePct, taxPct])
+
   const updateItem = (idx: number, patch: Partial<HighlightPlanItem>) =>
     setItems((prev) => prev.map((row, i) => i === idx ? { ...row, ...patch } : row))
 
@@ -178,25 +375,70 @@ export default function SimulatorPage() {
     else if (expandedIdx !== null && expandedIdx > idx) setExpandedIdx(expandedIdx - 1)
   }
 
+  const countTradeable = (rows: HighlightPlanItem[]) => rows.filter(r => r.code !== 'CASH').length
+
+  const getCandidatesBySource = (source: 'algo' | 'watchlist' | 'items'): HighlightPlanItem[] => {
+    if (source === 'algo') return algoCandidates
+    if (source === 'watchlist') return watchlistCandidates
+    return items.filter(i => i.code !== 'CASH')
+  }
+
+  const recommendWithStyleFallback = (
+    baseCandidates: HighlightPlanItem[],
+    preferredStyle: RecommendationStyle,
+    allowFallback: boolean,
+  ): { rows: HighlightPlanItem[]; styleUsed: RecommendationStyle } => {
+    const styleOrder: RecommendationStyle[] = !allowFallback
+      ? [preferredStyle]
+      : preferredStyle === 'stable'
+        ? ['stable', 'balanced', 'aggressive']
+        : preferredStyle === 'balanced'
+          ? ['balanced', 'aggressive']
+          : ['aggressive']
+
+    for (const style of styleOrder) {
+      const rows = recommendPortfolio(baseCandidates, totalCapital, monthlyProfitTarget, {
+        style,
+      })
+      if (countTradeable(rows) > 0) {
+        return { rows, styleUsed: style }
+      }
+    }
+
+    const fallbackStyle = styleOrder[styleOrder.length - 1]
+    return {
+      rows: recommendPortfolio(baseCandidates, totalCapital, monthlyProfitTarget, {
+        style: fallbackStyle,
+      }),
+      styleUsed: fallbackStyle,
+    }
+  }
+
   const generateRecommendation = () => {
     if (monthlyProfitTarget <= 0) {
       toast.show('월 목표 수익을 입력하세요.')
       return
     }
-    // 관심종목 > 알고리즘 > items 우선순위
-    let candidates: HighlightPlanItem[] = []
-    if (chatId && watchlistCandidates.length > 0) candidates = watchlistCandidates
-    else if (!chatId && algoCandidates.length > 0) candidates = algoCandidates
-    else candidates = items
+
+    const candidates = getCandidatesBySource(recommendSource)
     if (candidates.length === 0) {
-      toast.show('추천할 종목이 없습니다. 관심종목을 추가하거나 포트폴리오에 종목을 추가하세요.')
+      const srcLabel = recommendSource === 'algo' ? '알고리즘 후보' : recommendSource === 'watchlist' ? '관심종목' : '현재 종목'
+      toast.show(`${srcLabel}이 없습니다. 다른 소스를 선택하거나 종목을 추가하세요.`)
       return
     }
-    const recommended = recommendPortfolio(candidates, totalCapital, monthlyProfitTarget)
-    if (recommended.length === 0) {
+    const allowFallback = recommendSource === 'watchlist'
+    const { rows: recommended, styleUsed } = recommendWithStyleFallback(candidates, recommendStyle, allowFallback)
+
+    if (countTradeable(recommended) === 0) {
       toast.show('추천 가능한 종목이 없습니다. (품질 기준 미충족)')
       return
     }
+
+    if (allowFallback && styleUsed !== recommendStyle) {
+      const label = styleUsed === 'balanced' ? '균형' : '공격'
+      toast.show(`관심종목은 ${recommendStyle === 'stable' ? '안정' : '선택'} 기준 미충족으로 ${label} 기준을 적용했습니다.`)
+    }
+
     setRecommendedPortfolio(recommended)
     setShowRecommendation(true)
   }
@@ -209,12 +451,77 @@ export default function SimulatorPage() {
     toast.show('추천 포트폴리오를 적용했습니다.')
   }
 
+  const generateCompare = () => {
+    if (monthlyProfitTarget <= 0) {
+      toast.show('월 목표 수익을 입력하세요.')
+      return
+    }
+    const algoRec = algoCandidates.length > 0
+      ? recommendWithStyleFallback(algoCandidates, recommendStyle, false).rows
+      : []
+    const watchlistRec = chatId && watchlistCandidates.length > 0
+      ? recommendWithStyleFallback(watchlistCandidates, recommendStyle, true).rows
+      : []
+    if (countTradeable(algoRec) === 0 && countTradeable(watchlistRec) === 0) {
+      toast.show('두 소스 모두 추천 가능한 종목이 없습니다.')
+      return
+    }
+    setCompareResult({ algo: algoRec, watchlist: watchlistRec })
+    setShowCompare(true)
+  }
+
+  // 추천 패널이 열려있는 상태에서 월 목표/성향/소스가 바뀌면 즉시 재계산
+  useEffect(() => {
+    if (!showRecommendation) return
+    if (monthlyProfitTarget <= 0) return
+
+    const candidates = getCandidatesBySource(recommendSource)
+    if (candidates.length === 0) {
+      setRecommendedPortfolio([])
+      return
+    }
+    const allowFallback = recommendSource === 'watchlist'
+    const { rows } = recommendWithStyleFallback(candidates, recommendStyle, allowFallback)
+    setRecommendedPortfolio(rows)
+  }, [
+    showRecommendation,
+    monthlyProfitTarget,
+    recommendSource,
+    recommendStyle,
+    totalCapital,
+    algoCandidates,
+    watchlistCandidates,
+    items,
+  ])
+
+  // 비교 패널이 열려있는 상태에서도 입력 변경 시 즉시 재계산
+  useEffect(() => {
+    if (!showCompare || monthlyProfitTarget <= 0) return
+
+    const algoRec = algoCandidates.length > 0
+      ? recommendWithStyleFallback(algoCandidates, recommendStyle, false).rows
+      : []
+    const watchlistRec = chatId && watchlistCandidates.length > 0
+      ? recommendWithStyleFallback(watchlistCandidates, recommendStyle, true).rows
+      : []
+
+    setCompareResult({ algo: algoRec, watchlist: watchlistRec })
+  }, [
+    showCompare,
+    monthlyProfitTarget,
+    recommendStyle,
+    totalCapital,
+    algoCandidates,
+    watchlistCandidates,
+    chatId,
+  ])
+
   const loadWatchlistCandidates = async () => {
     if (!chatId) {
       setWatchlistCandidates([])
       return
     }
-    setLoadingCandidates(true)
+    setLoadingWatchlist(true)
     try {
       const res = await apiFetch(`/api/ui/positions?positionType=interest&pageSize=50&cacheMs=30000&chat_id=${encodeURIComponent(chatId)}`, { 
         cacheMs: 30000, 
@@ -227,8 +534,18 @@ export default function SimulatorPage() {
           const code = String(pos.code || pos.symbol || pos.ticker || '').trim()
           const name = String(pos.stock_name || pos.name || code || '').trim()
           if (!code || !name) return null
+          const currentPrice = Number(pos.current_price ?? pos.close ?? pos.stock?.close ?? 0) || 50000
+          const closePrice = Number(pos.close ?? pos.stock?.close ?? 0) || currentPrice
           // 기본값으로 초기화 (나중에 사용자가 조정 가능)
-          return defaultPlanItem({ code, name, sector_id: pos.sector_id })
+          return {
+            ...defaultPlanItem({ code, name, sector_id: pos.sector_id }),
+            source: 'watchlist',
+            signal_score: Number(pos.priority ?? 0) || 0,
+            signal_rank: Number(pos.rank ?? 9999) || 9999,
+            market: String(pos.market || pos.market_type || pos.exchange || pos.stock?.market || ''),
+            current_price: currentPrice,
+            close: closePrice,
+          }
         })
         .filter((item: any) => item != null)
       setWatchlistCandidates(candidates)
@@ -236,18 +553,18 @@ export default function SimulatorPage() {
       console.warn('관심종목 로드 실패:', e?.message)
       setWatchlistCandidates([])
     } finally {
-      setLoadingCandidates(false)
+      setLoadingWatchlist(false)
     }
   }
 
-  // chatId 없을 때 내부 알고리즘 후보군 fetch
+  // 알고리즘 후보군 fetch (chatId 여부와 무관하게 항상 로드)
   const loadAlgoCandidates = async () => {
-    if (chatId) { setAlgoCandidates([]); return }
-    setLoadingCandidates(true)
+    setLoadingAlgo(true)
     try {
       console.log('[loadAlgoCandidates] 시작...')
       // scan-candidates fetch
-      const scanRes = await apiFetch('/api/ui?route=scan-candidates&limit=50', { cacheMs: 10000, timeoutMs: 15000 })
+      const ts = Date.now()
+      const scanRes = await apiFetch(`/api/ui/scan-candidates?limit=80&cacheMs=0&_ts=${ts}`, { cacheMs: 0, timeoutMs: 20_000 })
       const scanList = Array.isArray(scanRes?.data) ? scanRes.data : []
       console.log('[loadAlgoCandidates] scan-candidates:', scanList.length, '개')
       if (scanList.length > 0) {
@@ -262,13 +579,48 @@ export default function SimulatorPage() {
       const hlRes = await apiFetch('/api/ui?route=scan-highlights', { cacheMs: 10000, timeoutMs: 15000 })
       const hlList = Array.isArray(hlRes?.data) ? hlRes.data : []
       console.log('[loadAlgoCandidates] scan-highlights:', hlList.length, '개')
+
+      const asNum = (v: any, fallback = 0) => {
+        const n = Number(v)
+        return Number.isFinite(n) ? n : fallback
+      }
+      const getRank = (row: any) => {
+        const rank = asNum(
+          row?.signal_rank ?? row?.pullback_rank ?? row?.rank ?? row?.priority_rank,
+          9999,
+        )
+        return rank > 0 ? rank : 9999
+      }
+      const getSignalScore = (row: any) => asNum(
+        row?.signal_score ?? row?.adaptive_score ?? row?.confidence_pct ?? row?.score,
+        0,
+      )
+
+      // 스캔 페이지 기본 정렬(priority_score desc)과 동일한 우선순위 정렬
+      const sortedScanList = [...scanList].sort((a, b) => {
+        const pa = Number.isFinite(Number(a?.adaptive_score))
+          ? Number(a.adaptive_score)
+          : (Number(a?.entry_score ?? 0) * 20 - Number(a?.warn_score ?? 0) * 3)
+        const pb = Number.isFinite(Number(b?.adaptive_score))
+          ? Number(b.adaptive_score)
+          : (Number(b?.entry_score ?? 0) * 20 - Number(b?.warn_score ?? 0) * 3)
+        if (pb !== pa) return pb - pa
+        const rankDiff = getRank(a) - getRank(b)
+        if (rankDiff !== 0) return rankDiff
+        return getSignalScore(b) - getSignalScore(a)
+      })
+      const sortedHlList = [...hlList].sort((a, b) => {
+        const rankDiff = getRank(a) - getRank(b)
+        if (rankDiff !== 0) return rankDiff
+        return getSignalScore(b) - getSignalScore(a)
+      })
       
       // code 기준 중복 제거 & 품질 등급별 파라미터 설정
       const merged: Record<string, HighlightPlanItem> = {}
       
       // scan-candidates 처리 (entry_grade 기반) - A/B/C는 포함, D만 제외
       let scanCandidateCount = 0
-      for (const row of scanList) {
+      for (const row of sortedScanList) {
         const code = String(row.code || '').trim()
         const name = String(row.name || code || '').trim()
         if (!code || !name) continue
@@ -307,6 +659,10 @@ export default function SimulatorPage() {
         const item = defaultPlanItem({ code, name, sector_id: row.sector_id })
         merged[code] = {
           ...item,
+          source: 'scan-candidates',
+          signal_score: getSignalScore(row),
+          signal_rank: getRank(row),
+          market: String(row.market || row.market_type || row.exchange || ''),
           targetPct,
           stopPct,
           winProb: Math.round(winProb),
@@ -322,7 +678,7 @@ export default function SimulatorPage() {
       
       // scan-highlights 처리 (expected_upside_pct 기반)
       let hlCandidateCount = 0
-      for (const row of hlList) {
+      for (const row of sortedHlList) {
         const code = String(row.code || '').trim()
         const name = String(row.name || code || '').trim()
         if (!code || !name) continue
@@ -332,8 +688,18 @@ export default function SimulatorPage() {
         let stopPct = Math.abs(Number(row.expected_drawdown_pct ?? 2.5) || 2.5)
         let winProb = Math.max(30, Math.min(70, Number(row.confidence_pct ?? 58) || 58))
         
-        // code가 이미 merged에 있으면 건너뛰기 (scan-candidates 우선)
-        if (code in merged) continue
+        // 하이라이트와 후보가 중복되면, 하이라이트 신호 정보를 우선 반영
+        if (code in merged) {
+          merged[code] = {
+            ...merged[code],
+            source: 'scan-highlights',
+            signal_score: Math.max(Number(merged[code].signal_score || 0), getSignalScore(row)),
+            signal_rank: Math.min(Number(merged[code].signal_rank || 9999), getRank(row)),
+            market: String(row.market || row.market_type || row.exchange || merged[code].market || ''),
+            current_price: Number(row.entry_price ?? merged[code].current_price ?? 0) || merged[code].current_price,
+          }
+          continue
+        }
         
         // 가격 정보 저장 (entry_price 우선, 없으면 현황 가격)
         const entryPrice = Number(row.entry_price ?? 0)
@@ -341,6 +707,10 @@ export default function SimulatorPage() {
         const item = defaultPlanItem({ code, name, sector_id: row.sector_id })
         merged[code] = {
           ...item,
+          source: 'scan-highlights',
+          signal_score: getSignalScore(row),
+          signal_rank: getRank(row),
+          market: String(row.market || row.market_type || row.exchange || ''),
           targetPct,
           stopPct,
           winProb: Math.round(winProb),
@@ -363,14 +733,14 @@ export default function SimulatorPage() {
       console.warn('내부 추천 후보 로드 실패:', e?.message)
       setAlgoCandidates([])
     } finally {
-      setLoadingCandidates(false)
+      setLoadingAlgo(false)
     }
   }
 
-  // 초기화 시 관심종목/내부 알고리즘 후보 자동 로드
+  // 초기화 시 항상 알고리즘 후보 로드, chatId 있으면 관심종목도 함께 로드
   useEffect(() => {
+    void loadAlgoCandidates()
     if (chatId) void loadWatchlistCandidates()
-    else void loadAlgoCandidates()
   }, [chatId])
 
   const buildPlan = () => ({
@@ -528,13 +898,13 @@ export default function SimulatorPage() {
           </div>
           <div className="sim-summary-divider" />
           <div className="sim-summary-item">
-            <span className="sim-summary-label">기대손익</span>
+            <span className="sim-summary-label">기대손익 (월 목표 기준)</span>
             <span className={`sim-summary-value sim-summary-value--lg${summary.evAfterCost >= 0 ? ' sim-pos' : ' sim-neg'}`}>
               {summary.evAfterCost >= 0 ? '+' : ''}{formatKrw(summary.evAfterCost)}
             </span>
           </div>
           <div className="sim-summary-item">
-            <span className="sim-summary-label">최대 손실 (전량 손절)</span>
+            <span className="sim-summary-label">최대 손실 (월 목표 기준)</span>
             <span className="sim-summary-value sim-neg">{formatKrw(summary.maxLoss)}</span>
           </div>
           <div className="sim-summary-item">
@@ -554,40 +924,74 @@ export default function SimulatorPage() {
         <div className="sim-section-head">
           <span className="sim-section-label">월 수익 목표</span>
         </div>
-        <div className="sim-watchlist-status">
-          {chatId ? (
-            watchlistCandidates.length > 0 ? (
-              <div className="sim-watchlist-info-row" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, minHeight: 32 }}>
-                <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
-                  <span className="sim-watchlist-badge" style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-                    <LucideIcon name="List" size={18} style={{ marginRight: 2 }} />
-                    관심종목
-                  </span>
-                  <span className="sim-watchlist-count">{watchlistCandidates.length}개 불러옴</span>
-                </div>
-                <button 
-                  className="sim-btn sim-btn--ghost sim-btn--sm" 
-                  onClick={() => loadWatchlistCandidates()}
-                  disabled={loadingCandidates}
-                  title="관심종목 새로고침"
-                  style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}
-                >
-                  {loadingCandidates ? '로딩 중...' : <LucideIcon name="RefreshCw" size={16} />}
-                </button>
-              </div>
-            ) : (
-              <div className="sim-watchlist-empty">
-                <span className="sim-watchlist-badge">—</span>
-                <span className="sim-watchlist-text">관심종목이 없습니다. 관심종목 페이지에서 종목을 추가하세요.</span>
-              </div>
-            )
-          ) : (
-            <div className="sim-watchlist-empty">
-              <span className="sim-watchlist-badge">—</span>
-              <span className="sim-watchlist-text">관심종목 기반 추천을 위해 텔레그램 연동이 필요합니다.</span>
-            </div>
+        {/* 추천 소스 선택 */}
+        <div className="sim-rec-source-group">
+          <button
+            className={`sim-rec-source-btn${recommendSource === 'algo' ? ' sim-rec-source-btn--active' : ''}`}
+            onClick={() => setRecommendSource('algo')}
+          >
+            <span className="sim-rec-source-label">알고리즘 추천</span>
+            <span className="sim-rec-source-count">
+              {loadingAlgo ? '...' : `${algoCandidates.length}개`}
+            </span>
+          </button>
+          {chatId && (
+            <button
+              className={`sim-rec-source-btn${recommendSource === 'watchlist' ? ' sim-rec-source-btn--active' : ''}`}
+              onClick={() => setRecommendSource('watchlist')}
+            >
+              <span className="sim-rec-source-label">관심종목</span>
+              <span className="sim-rec-source-count">
+                {loadingWatchlist ? '...' : `${watchlistCandidates.length}개`}
+              </span>
+            </button>
           )}
+          <button
+            className={`sim-rec-source-btn${recommendSource === 'items' ? ' sim-rec-source-btn--active' : ''}`}
+            onClick={() => setRecommendSource('items')}
+          >
+            <span className="sim-rec-source-label">현재 종목</span>
+            <span className="sim-rec-source-count">{items.filter(i => i.code !== 'CASH').length}개</span>
+          </button>
+          <button
+            className="sim-btn sim-btn--ghost sim-btn--sm sim-rec-refresh-btn"
+            onClick={() => { void loadAlgoCandidates(); if (chatId) void loadWatchlistCandidates() }}
+            disabled={loadingCandidates}
+            title="후보 새로고침"
+          >
+            <LucideIcon name="RefreshCw" size={14} />
+          </button>
         </div>
+
+        <div className="sim-rec-profile-group" role="group" aria-label="추천 성향">
+          <button
+            className={`sim-rec-profile-btn${recommendStyle === 'stable' ? ' sim-rec-profile-btn--active' : ''}`}
+            onClick={() => setRecommendStyle('stable')}
+            disabled={!showRecommendation}
+          >
+            안정
+          </button>
+          <button
+            className={`sim-rec-profile-btn${recommendStyle === 'balanced' ? ' sim-rec-profile-btn--active' : ''}`}
+            onClick={() => setRecommendStyle('balanced')}
+            disabled={!showRecommendation}
+          >
+            균형
+          </button>
+          <button
+            className={`sim-rec-profile-btn${recommendStyle === 'aggressive' ? ' sim-rec-profile-btn--active' : ''}`}
+            onClick={() => setRecommendStyle('aggressive')}
+            disabled={!showRecommendation}
+          >
+            공격
+          </button>
+        </div>
+
+        <div className="sim-cash-reserve-info">
+          <span>💰 현금 보유 추천:</span>
+          <span className="sim-cash-reserve-value">{formatKrw(totalCapital * 0.2)} (20%)</span>
+        </div>
+
         <div className="sim-monthly-target-wrap">
           <div className="sim-input-group">
             <label className="sim-input-label">원하는 월 수익</label>
@@ -627,7 +1031,40 @@ export default function SimulatorPage() {
           >
             최적 포트폴리오 추천 (Half-Kelly 기반)
           </button>
+          {chatId && algoCandidates.length > 0 && watchlistCandidates.length > 0 && (
+            <button
+              className="sim-btn sim-btn--ghost"
+              onClick={generateCompare}
+              disabled={monthlyProfitTarget <= 0 || loadingCandidates}
+              title="알고리즘 추천 vs 관심종목 추천 비교"
+            >
+              포트폴리오 비교
+            </button>
+          )}
         </div>
+
+        {/* 비교 패널 */}
+        {showCompare && compareResult && (
+          <ComparePanel
+            algoPortfolio={compareResult.algo}
+            watchlistPortfolio={compareResult.watchlist}
+            totalCapital={totalCapital}
+            monthlyTarget={monthlyProfitTarget}
+            feePct={feePct}
+            taxPct={taxPct}
+            onClose={() => setShowCompare(false)}
+            onApplyAlgo={() => {
+              setItems(compareResult.algo)
+              setShowCompare(false)
+              toast.show('알고리즘 추천 포트폴리오를 적용했습니다.')
+            }}
+            onApplyWatchlist={() => {
+              setItems(compareResult.watchlist)
+              setShowCompare(false)
+              toast.show('관심종목 추천 포트폴리오를 적용했습니다.')
+            }}
+          />
+        )}
 
         {/* 추천 결과 표시 */}
         {showRecommendation && recommendedPortfolio.length > 0 && (
@@ -642,8 +1079,8 @@ export default function SimulatorPage() {
             </p>
             <div className="sim-rec-list">
               {recommendedPortfolio.map((rec, idx) => {
-                const weights = recommendedPortfolio.reduce((acc, r) => acc + calcAllocationWeight(r), 0)
-                const allocPct = weights > 0 ? (calcAllocationWeight(rec) / weights) * 100 : 0
+                const weights = recommendedPortfolio.reduce((acc, r) => acc + calcAllocationWeight(r, recommendStyle), 0)
+                const allocPct = weights > 0 ? (calcAllocationWeight(rec, recommendStyle) / weights) * 100 : 0
                 const rr = calcRR(rec)
                 const ev = calcExpectedValue(rec)
                 return (
@@ -651,6 +1088,16 @@ export default function SimulatorPage() {
                     <div className="sim-rec-item-name">
                       <span className="sim-rec-code">{rec.code}</span>
                       <span className="sim-rec-name">{rec.name}</span>
+                      <button
+                        className="sim-btn sim-btn--xs sim-btn--ghost"
+                        onClick={() => {
+                          setSelectedStockCode(rec.code)
+                          setSelectedStockName(rec.name)
+                          setShowStockDetail(true)
+                        }}
+                      >
+                        시세
+                      </button>
                     </div>
                     <div className="sim-rec-metrics">
                       <div className="sim-rec-metric">
@@ -803,6 +1250,51 @@ export default function SimulatorPage() {
           )}
         </div>
 
+        {/* ── 이번 주 집행 요약 ── */}
+        {items.filter(i => i.code !== 'CASH').length > 0 && (() => {
+          const signals = statusMeta.filter((s, i) => items[i]?.code !== 'CASH')
+          const takeProfitItems = signals.filter(s => s.status === 'take_profit')
+          const nearProfitItems = signals.filter(s => s.status === 'near_profit')
+          const stopLossItems = signals.filter(s => s.status === 'stop_loss')
+          const nearStopItems = signals.filter(s => s.status === 'near_stop')
+          const holdItems = signals.filter(s => s.status === 'hold')
+          const hasAnySignal = takeProfitItems.length > 0 || stopLossItems.length > 0
+          const realizedOnSignal = items
+            .filter((_, i) => items[i]?.code !== 'CASH' && (statusMeta[i]?.status === 'take_profit' || statusMeta[i]?.status === 'stop_loss'))
+            .reduce((acc, _, i) => acc + (statusMeta[i]?.unrealizedKrw ?? 0), 0)
+          const hasPositions = items.some(i => i.code !== 'CASH' && (i.buyPrice ?? 0) > 0 && (i.shares ?? 0) > 0)
+          if (!hasPositions) return null
+          return (
+            <div className="sim-weekly-summary">
+              <div className="sim-weekly-summary-head">
+                <span className="sim-weekly-summary-title">이번 주 집행 신호</span>
+                {hasAnySignal && (
+                  <span className={`sim-weekly-realized ${realizedOnSignal >= 0 ? 'sim-pos' : 'sim-neg'}`}>
+                    신호대로 실행 시 {realizedOnSignal >= 0 ? '+' : ''}{formatKrw(realizedOnSignal)}
+                  </span>
+                )}
+              </div>
+              <div className="sim-weekly-signals">
+                {takeProfitItems.length > 0 && (
+                  <span className="sim-signal-tag sim-signal-tag--profit">익절 신호 {takeProfitItems.length}종목</span>
+                )}
+                {nearProfitItems.length > 0 && (
+                  <span className="sim-signal-tag sim-signal-tag--near-profit">목표가 근접 {nearProfitItems.length}종목</span>
+                )}
+                {nearStopItems.length > 0 && (
+                  <span className="sim-signal-tag sim-signal-tag--near-stop">손절가 근접 {nearStopItems.length}종목</span>
+                )}
+                {stopLossItems.length > 0 && (
+                  <span className="sim-signal-tag sim-signal-tag--stop">손절 신호 {stopLossItems.length}종목</span>
+                )}
+                {holdItems.length > 0 && (
+                  <span className="sim-signal-tag sim-signal-tag--hold">보유 유지 {holdItems.length}종목</span>
+                )}
+              </div>
+            </div>
+          )
+        })()}
+
         {items.length === 0
           ? <EmptyState title="집행안이 비어 있습니다" description="위 검색창으로 종목을 추가하세요." />
           : (
@@ -826,6 +1318,12 @@ export default function SimulatorPage() {
                         <span className="sim-stock-name">{row.name || '(미입력)'}</span>
                         <span className="sim-stock-code">{row.code || '—'}</span>
                       </div>
+                      {statusMeta[idx].status !== 'no_price' && (
+                        <PositionStatusBadge
+                          status={statusMeta[idx].status}
+                          changePct={statusMeta[idx].changePct}
+                        />
+                      )}
                       <div className="sim-stock-metrics">
                         <div className="sim-metric">
                           <span className="sim-metric-label">배분</span>
@@ -971,6 +1469,82 @@ export default function SimulatorPage() {
         }
       </div>
 
+      {/* ── 목표 달성 경로 ── */}
+      {items.filter(i => i.code !== 'CASH').length > 0 && monthlyProfitTarget > 0 && (
+        <div className="sim-section">
+          <span className="sim-section-label">목표 달성 경로</span>
+          <p className="sim-section-desc">승률 가정 기반 · 주 1사이클(월~금) 기준</p>
+          <div className="sim-goal-plan">
+            <div className="sim-goal-row">
+              <span className="sim-goal-label">1사이클 기대수익</span>
+              <span className={`sim-goal-value ${weeklyPlan.cycleEV >= 0 ? 'sim-pos' : 'sim-neg'}`}>
+                {weeklyPlan.cycleEV >= 0 ? '+' : ''}{formatKrw(weeklyPlan.cycleEV)}
+              </span>
+            </div>
+            <div className="sim-goal-row">
+              <span className="sim-goal-label">1사이클 전량 목표 달성 시</span>
+              <span className="sim-goal-value sim-pos">+{formatKrw(weeklyPlan.cycleMaxProfit)}</span>
+            </div>
+            <div className="sim-goal-row sim-goal-row--highlight">
+              <span className="sim-goal-label">월 4사이클 기준 기대수익</span>
+              <span className={`sim-goal-value ${weeklyPlan.monthlyEV >= 0 ? 'sim-pos' : 'sim-neg'}`}>
+                {weeklyPlan.monthlyEV >= 0 ? '+' : ''}{formatKrw(weeklyPlan.monthlyEV)}
+              </span>
+            </div>
+            <div className="sim-goal-row">
+              <span className="sim-goal-label">월 목표</span>
+              <span className="sim-goal-value">{formatKrw(monthlyProfitTarget)}</span>
+            </div>
+            {/* 달성률 프로그레스 바 */}
+            <div className="sim-goal-progress-wrap">
+              <div className="sim-goal-progress-track">
+                <div
+                  className={`sim-goal-progress-fill ${weeklyPlan.progressPct >= 100 ? 'sim-goal-progress-fill--done' : weeklyPlan.progressPct >= 50 ? 'sim-goal-progress-fill--half' : 'sim-goal-progress-fill--low'}`}
+                  style={{ width: `${Math.min(100, weeklyPlan.progressPct)}%` }}
+                />
+              </div>
+              <span className="sim-goal-progress-label">{formatNumber(weeklyPlan.progressPct, 1)}%</span>
+            </div>
+            {weeklyPlan.cycleEV > 0 ? (
+              <>
+                <div className="sim-goal-row">
+                  <span className="sim-goal-label">달성 예상</span>
+                  <span className="sim-goal-value">
+                    {weeklyPlan.cyclesNeeded < 1000
+                      ? `${weeklyPlan.weeksNeeded}주 ≈ ${formatNumber(weeklyPlan.weeksNeeded / 4, 1)}개월`
+                      : '현재 조건으로 달성 불가'}
+                  </span>
+                </div>
+                {weeklyPlan.gapToTarget > 0 && (
+                  <div className="sim-goal-hint">
+                    💡 목표까지 월 {formatKrw(weeklyPlan.gapToTarget)} 부족 —
+                    투자금을 {formatNumber((monthlyProfitTarget / weeklyPlan.monthlyEV), 1)}배 늘리거나
+                    종목 수익률/승률 개선 필요
+                  </div>
+                )}
+              </>
+            ) : (
+              <div className="sim-goal-hint sim-goal-hint--warn">
+                ⚠️ 현재 포트폴리오의 기대수익이 0 이하입니다. 종목 파라미터를 점검하세요.
+              </div>
+            )}
+            {/* 종목별 목표 기여 */}
+            <div className="sim-goal-perstock">
+              <span className="sim-goal-perstock-title">종목별 1사이클 기여 (목표 달성 시)</span>
+              {weeklyPlan.perStock.map(s => (
+                <div key={s.code} className="sim-goal-perstock-row">
+                  <span className="sim-goal-perstock-name">{s.name}<span className="sim-goal-perstock-code"> {s.code}</span></span>
+                  <span className="sim-goal-perstock-meta">목표 +{formatNumber(s.targetPct, 1)}% / 손절 -{formatNumber(s.stopPct, 1)}%</span>
+                  <span className="sim-goal-perstock-ev sim-pos">목표 달성 +{formatKrw(s.targetGainNet)}</span>
+                  <span className="sim-goal-perstock-ev sim-neg">손절 시 {formatKrw(s.stopLossNet)}</span>
+                  <span className={`sim-goal-perstock-ev ${s.ev >= 0 ? 'sim-pos' : 'sim-neg'}`}>기대 {s.ev >= 0 ? '+' : ''}{formatKrw(s.ev)}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ── 시나리오 분석 ── */}
       {items.length > 0 && (
         <div className="sim-section">
@@ -1032,6 +1606,18 @@ export default function SimulatorPage() {
           </div>
         </div>
       )}
+
+      {/* 시세 상세 모달 */}
+      <StockDetailModal
+        code={selectedStockCode}
+        name={selectedStockName}
+        isOpen={showStockDetail}
+        onClose={() => {
+          setShowStockDetail(false)
+          setSelectedStockCode('')
+          setSelectedStockName('')
+        }}
+      />
     </div>
   )
 }

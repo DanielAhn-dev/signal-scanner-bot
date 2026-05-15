@@ -4,6 +4,10 @@ export type HighlightPlanItem = {
   id: string
   code: string
   name: string
+  market?: string
+  source?: 'scan-candidates' | 'scan-highlights' | 'watchlist' | 'manual'
+  signal_score?: number
+  signal_rank?: number
   sector_id?: string | null
   amount: number
   targetPct: number

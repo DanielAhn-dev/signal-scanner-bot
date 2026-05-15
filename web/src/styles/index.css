@@ -2254,6 +2254,7 @@ a:focus-visible {
   border-color: transparent;
 }
 .sim-btn--danger:hover { background: var(--color-error-bg, #fef2f2); }
+.sim-btn--xs { padding: 4px 8px; font-size: 11px; }
 .sim-btn--sm { padding: 5px 10px; }
 .sim-btn:disabled { opacity: 0.45; cursor: not-allowed; }
 
@@ -2832,8 +2833,9 @@ a:focus-visible {
 
 .sim-rec-item-name {
   display: flex;
-  flex-direction: column;
-  gap: 4px;
+  flex-direction: row;
+  gap: 12px;
+  align-items: center;
   min-width: 120px;
 }
 
@@ -2842,12 +2844,23 @@ a:focus-visible {
   font-weight: 700;
   color: var(--color-text-tertiary);
   font-variant-numeric: tabular-nums;
+  flex-shrink: 0;
 }
 
 .sim-rec-name {
   font-size: 14px;
   font-weight: 600;
   color: var(--color-text-primary);
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sim-rec-item-name .sim-btn--xs {
+  flex-shrink: 0;
+  margin-left: auto;
 }
 
 .sim-rec-metrics {
@@ -2883,7 +2896,440 @@ a:focus-visible {
   justify-content: flex-end;
 }
 
+/* ── 추천 소스 선택 ── */
+.sim-rec-source-group {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+  margin-bottom: var(--space-3);
+}
+.sim-rec-source-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: var(--space-2) var(--space-3);
+  border: 1.5px solid var(--color-border-default);
+  border-radius: var(--radius-md);
+  background: var(--color-bg-surface);
+  cursor: pointer;
+  transition: border-color var(--duration-fast), background var(--duration-fast);
+  min-width: 80px;
+}
+.sim-rec-source-btn:hover { border-color: var(--color-brand); background: var(--color-brand-subtle); }
+.sim-rec-source-btn--active { border-color: var(--color-brand); background: var(--color-brand-subtle); }
+.sim-rec-source-label { font-size: 11px; font-weight: 700; color: var(--color-text-secondary); }
+.sim-rec-source-btn--active .sim-rec-source-label { color: var(--color-brand); }
+.sim-rec-source-count { font-size: 14px; font-weight: 800; color: var(--color-text-primary); }
+.sim-rec-refresh-btn { margin-left: auto; }
+
+.sim-rec-profile-group {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+  margin-bottom: var(--space-3);
+}
+
+.sim-rec-profile-btn {
+  border: 1px solid var(--color-border-default);
+  background: var(--color-bg-surface);
+  color: var(--color-text-secondary);
+  border-radius: 999px;
+  padding: 6px 12px;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: border-color var(--duration-fast), color var(--duration-fast), background var(--duration-fast);
+}
+
+.sim-rec-profile-btn:hover {
+  border-color: var(--color-brand);
+  color: var(--color-brand);
+}
+
+.sim-rec-profile-btn--active {
+  border-color: var(--color-brand);
+  background: var(--color-brand-subtle);
+  color: var(--color-brand);
+}
+
+.sim-rec-profile-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+/* ── 현금 보유 추천 ── */
+.sim-cash-reserve-info {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+  background: linear-gradient(135deg, var(--color-brand-subtle) 0%, var(--color-bg-surface) 100%);
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--radius-md);
+  font-size: 13px;
+  color: var(--color-text-primary);
+  font-weight: 500;
+}
+
+.sim-cash-reserve-value {
+  font-weight: 700;
+  color: var(--color-brand);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── 비교 패널 ── */
+.sim-compare-panel {
+  margin-top: var(--space-4);
+  background: var(--color-bg-surface);
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--radius-lg);
+  padding: var(--space-5);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+.sim-compare-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+.sim-compare-title {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 800;
+  color: var(--color-text-primary);
+}
+.sim-compare-desc {
+  margin: 0;
+  font-size: 12px;
+  color: var(--color-text-tertiary);
+}
+.sim-compare-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-4);
+  align-items: start;
+}
+@media (max-width: 640px) {
+  .sim-compare-grid { grid-template-columns: 1fr; }
+}
+.sim-compare-col {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  border: 1.5px solid var(--color-border-default);
+  border-radius: var(--radius-lg);
+  padding: var(--space-4);
+  background: var(--color-bg-sunken);
+}
+.sim-compare-col--winner {
+  border-color: var(--color-brand);
+  background: var(--color-brand-subtle);
+}
+.sim-compare-col-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+.sim-compare-col-title {
+  font-size: 13px;
+  font-weight: 800;
+  color: var(--color-text-primary);
+  flex: 1;
+}
+.sim-compare-winner-badge {
+  font-size: 10px;
+  font-weight: 700;
+  background: var(--color-brand);
+  color: #fff;
+  padding: 2px 8px;
+  border-radius: 999px;
+}
+.sim-compare-col-count {
+  font-size: 11px;
+  color: var(--color-text-tertiary);
+}
+.sim-compare-empty {
+  font-size: 12px;
+  color: var(--color-text-tertiary);
+  padding: var(--space-3) 0;
+  text-align: center;
+}
+.sim-compare-stock-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+.sim-compare-stock-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-2);
+  background: var(--color-bg-surface);
+  border-radius: var(--radius-sm);
+}
+.sim-compare-stock-info {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+.sim-compare-stock-name {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--color-text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sim-compare-stock-code {
+  font-size: 10px;
+  color: var(--color-text-tertiary);
+}
+.sim-compare-stock-metrics {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-shrink: 0;
+}
+.sim-compare-metric {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--color-text-secondary);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.sim-compare-metric--rr { color: var(--color-text-tertiary); }
+.sim-compare-summary {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  border-top: 1px solid var(--color-border-subtle);
+  padding-top: var(--space-3);
+}
+.sim-compare-summary-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  padding: 3px 0;
+}
+.sim-compare-summary-row--highlight {
+  background: var(--color-bg-surface);
+  border-radius: var(--radius-sm);
+  padding: var(--space-2) var(--space-2);
+  margin: 0 calc(-1 * var(--space-2));
+}
+.sim-compare-summary-label { font-size: 12px; color: var(--color-text-secondary); }
+.sim-compare-summary-value { font-size: 13px; font-weight: 800; font-variant-numeric: tabular-nums; }
+.sim-compare-apply-btn { width: 100%; justify-content: center; margin-top: var(--space-2); }
+
+/* ── 포지션 상태 배지 ── */
+.sim-status-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.sim-status-badge--profit  { background: #ecfdf5; color: #059669; }
+.sim-status-badge--near-profit { background: #f0fdf4; color: #16a34a; }
+.sim-status-badge--hold    { background: var(--color-bg-sunken); color: var(--color-text-secondary); }
+.sim-status-badge--near-stop { background: #fff7ed; color: #ea580c; }
+.sim-status-badge--stop    { background: #fef2f2; color: #dc2626; }
+.sim-status-badge-pct { opacity: 0.85; font-weight: 600; }
+
+/* ── 이번 주 집행 요약 ── */
+.sim-weekly-summary {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  background: var(--color-bg-sunken);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-md);
+  padding: var(--space-3) var(--space-4);
+  margin-bottom: var(--space-3);
+}
+.sim-weekly-summary-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+.sim-weekly-summary-title {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--color-text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.sim-weekly-realized {
+  font-size: 14px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+.sim-weekly-signals {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+.sim-signal-tag {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+.sim-signal-tag--profit     { background: #dcfce7; color: #15803d; }
+.sim-signal-tag--near-profit { background: #f0fdf4; color: #16a34a; }
+.sim-signal-tag--hold       { background: var(--color-bg-surface); color: var(--color-text-tertiary); border: 1px solid var(--color-border-subtle); }
+.sim-signal-tag--near-stop  { background: #ffedd5; color: #c2410c; }
+.sim-signal-tag--stop       { background: #fee2e2; color: #b91c1c; }
+
+/* ── 목표 달성 경로 ── */
+.sim-goal-plan {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  background: var(--color-bg-surface);
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--radius-lg);
+  padding: var(--space-4) var(--space-5);
+}
+.sim-goal-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-2) 0;
+  border-bottom: 1px solid var(--color-border-subtle);
+}
+.sim-goal-row:last-child { border-bottom: none; }
+.sim-goal-row--highlight {
+  background: var(--color-bg-sunken);
+  border-radius: var(--radius-md);
+  padding: var(--space-2) var(--space-3);
+  margin: 0 calc(-1 * var(--space-3));
+  border-bottom: none;
+}
+.sim-goal-label {
+  font-size: 13px;
+  color: var(--color-text-secondary);
+  font-weight: 500;
+}
+.sim-goal-value {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--color-text-primary);
+  font-variant-numeric: tabular-nums;
+}
+.sim-goal-progress-wrap {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-1) 0;
+}
+.sim-goal-progress-track {
+  flex: 1;
+  height: 8px;
+  background: var(--color-bg-sunken);
+  border-radius: 999px;
+  overflow: hidden;
+}
+.sim-goal-progress-fill {
+  height: 100%;
+  border-radius: 999px;
+  transition: width 0.4s ease;
+}
+.sim-goal-progress-fill--done { background: var(--color-success, #059669); }
+.sim-goal-progress-fill--half { background: var(--color-brand); }
+.sim-goal-progress-fill--low  { background: var(--color-warning, #d97706); }
+.sim-goal-progress-label {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--color-text-secondary);
+  min-width: 3rem;
+  text-align: right;
+}
+.sim-goal-hint {
+  font-size: 12px;
+  color: var(--color-text-tertiary);
+  padding: var(--space-2) var(--space-3);
+  background: var(--color-bg-sunken);
+  border-radius: var(--radius-md);
+  line-height: 1.6;
+}
+.sim-goal-hint--warn {
+  color: var(--color-warning, #d97706);
+  background: #fffbeb;
+}
+
+/* 종목별 기여 테이블 */
+.sim-goal-perstock {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  margin-top: var(--space-2);
+}
+.sim-goal-perstock-title {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--color-text-tertiary);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-bottom: var(--space-1);
+}
+.sim-goal-perstock-row {
+  display: grid;
+  grid-template-columns: 1fr auto auto auto auto;
+  align-items: center;
+  gap: var(--space-2) var(--space-4);
+  padding: var(--space-2) var(--space-3);
+  background: var(--color-bg-sunken);
+  border-radius: var(--radius-sm);
+  font-size: 12px;
+}
+.sim-goal-perstock-name {
+  font-weight: 600;
+  color: var(--color-text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.sim-goal-perstock-code {
+  color: var(--color-text-tertiary);
+  font-weight: 400;
+}
+.sim-goal-perstock-meta {
+  color: var(--color-text-tertiary);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.sim-goal-perstock-ev {
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
 /* 반응형 */
+@media (max-width: 640px) {
+  .sim-goal-perstock-row { grid-template-columns: 1fr; gap: var(--space-1); }
+  .sim-goal-perstock-meta { display: none; }
+}
+
+/* ── 반응형 (기존) ── */
 @media (max-width: 640px) {
   .sim-page { padding: var(--space-4) var(--space-3) var(--space-8); }
   .sim-summary-grid { grid-template-columns: repeat(2, 1fr); }
