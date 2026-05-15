@@ -196,18 +196,36 @@ export function recommendPortfolio(
   const topCandidates = normalized.slice(0, 5)
   const topTotalWeight = topCandidates.reduce((acc, x) => acc + x.allocRatio, 0)
 
-  // 4. 최종 배분 금액 결정
-  const recommended = topCandidates.map(x => ({
-    ...x,
-    amount: Math.round((x.allocRatio / topTotalWeight) * totalCapitalKrw),
-  }))
-
-  // 5. 반올림 오차 보정 (마지막 항목에서 조정)
-  const sumAllocated = recommended.reduce((acc, x) => acc + x.amount, 0)
-  if (sumAllocated !== totalCapitalKrw && recommended.length > 0) {
-    const lastIdx = recommended.length - 1
-    recommended[lastIdx].amount += totalCapitalKrw - sumAllocated
+  // 4. 실제 매수 수량/금액 계산 및 현금 보유 반영
+  let remain = totalCapitalKrw
+  const result: HighlightPlanItem[] = []
+  for (const x of topCandidates) {
+    // 장중이면 current_price, 아니면 close 사용
+    const price = Number(x.current_price ?? x.close ?? 0)
+    if (!price || price <= 0) continue
+    // 배분액 계산
+    const alloc = Math.round((x.allocRatio / topTotalWeight) * totalCapitalKrw)
+    // 실제 매수 가능 주수 (정수)
+    const shares = Math.floor(alloc / price)
+    if (shares <= 0) continue
+    const buyAmount = shares * price
+    remain -= buyAmount
+    result.push({ ...x, amount: buyAmount, shares, buyPrice: price })
   }
-
-  return recommended
+  // 현금 보유 항목 추가 (1만원 이상 남으면)
+  if (remain > 10000) {
+    result.push({
+      id: 'cash',
+      code: 'CASH',
+      name: '현금 보유',
+      amount: remain,
+      targetPct: 0,
+      stopPct: 0,
+      winProb: 0,
+      split1: 0,
+      split2: 0,
+      split3: 0,
+    })
+  }
+  return result
 }

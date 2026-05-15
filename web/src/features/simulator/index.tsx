@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
+import { LucideIcon } from '../../components/LucideIcon'
 import { useCurrentChatId } from '../../stores/profileStore'
 import { EmptyState } from '../../components/StateViews'
 import { formatKrw, formatNumber } from '../../lib/format'
@@ -87,7 +88,7 @@ export default function SimulatorPage() {
   const initialPlan = useMemo(() => readSimulationPlan(), [])
   const [totalCapital, setTotalCapital] = useState(initialPlan?.totalCapital ?? 10_000_000)
   const [items, setItems] = useState<HighlightPlanItem[]>(
-    initialPlan?.items?.length ? initialPlan.items : [defaultPlanItem({ code: '000000', name: '예시 종목' })],
+    initialPlan?.items?.length ? initialPlan.items : [],
   )
   const [monthlyProfitTarget, setMonthlyProfitTarget] = useState(500_000) // 월 500만원 기본값
   const [fillRatePct, setFillRatePct] = useState(100)
@@ -259,15 +260,18 @@ export default function SimulatorPage() {
       // code 기준 중복 제거 & 품질 등급별 파라미터 설정
       const merged: Record<string, HighlightPlanItem> = {}
       
-      // scan-candidates 처리 (entry_grade 기반)
+      // scan-candidates 처리 (entry_grade 기반) - A/B 등급만 필터링
       for (const row of scanList) {
         const code = String(row.code || '').trim()
         const name = String(row.name || code || '').trim()
         if (!code || !name) continue
         
+        // 품질 필터: entry_grade A/B만 포함, C/D는 제외
+        const grade = String(row.entry_grade || '').toUpperCase()
+        if (grade !== 'A' && grade !== 'B') continue
+        
         // entry_grade에 따라 수익/손절 설정
         let targetPct = 5, stopPct = 3, winProb = 58
-        const grade = String(row.entry_grade || '').toUpperCase()
         if (grade === 'A') {
           targetPct = 8
           stopPct = 2.5
@@ -284,8 +288,18 @@ export default function SimulatorPage() {
           winProb = Math.max(30, Math.min(70, 50 + (baseScore / 100) * 20))
         }
         
+        // 가격 정보 저장 (current_price 우선, 없으면 close)
+        const currentPrice = Number(row.current_price || 0) || Number(row.close || 0)
+        
         const item = defaultPlanItem({ code, name, sector_id: row.sector_id })
-        merged[code] = { ...item, targetPct, stopPct, winProb: Math.round(winProb) }
+        merged[code] = {
+          ...item,
+          targetPct,
+          stopPct,
+          winProb: Math.round(winProb),
+          current_price: currentPrice || undefined,
+          close: Number(row.close || 0) || undefined,
+        }
       }
       
       // scan-highlights 처리 (expected_upside_pct 기반)
@@ -302,8 +316,17 @@ export default function SimulatorPage() {
         // code가 이미 merged에 있으면 건너뛰기 (scan-candidates 우선)
         if (code in merged) continue
         
+        // 가격 정보 저장 (entry_price 우선, 없으면 현황 가격)
+        const entryPrice = Number(row.entry_price || 0)
+        
         const item = defaultPlanItem({ code, name, sector_id: row.sector_id })
-        merged[code] = { ...item, targetPct, stopPct, winProb: Math.round(winProb) }
+        merged[code] = {
+          ...item,
+          targetPct,
+          stopPct,
+          winProb: Math.round(winProb),
+          current_price: entryPrice || undefined,
+        }
       }
       
       setAlgoCandidates(Object.values(merged))
@@ -505,15 +528,22 @@ export default function SimulatorPage() {
         <div className="sim-watchlist-status">
           {chatId ? (
             watchlistCandidates.length > 0 ? (
-              <div className="sim-watchlist-info">
-                <span className="sim-watchlist-badge">📋 관심종목</span>
-                <span className="sim-watchlist-count">{watchlistCandidates.length}개 로드됨</span>
+              <div className="sim-watchlist-info-row" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, minHeight: 32 }}>
+                <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+                  <span className="sim-watchlist-badge" style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                    <LucideIcon name="List" size={18} style={{ marginRight: 2 }} />
+                    관심종목
+                  </span>
+                  <span className="sim-watchlist-count">{watchlistCandidates.length}개 불러옴</span>
+                </div>
                 <button 
                   className="sim-btn sim-btn--ghost sim-btn--sm" 
                   onClick={() => loadWatchlistCandidates()}
                   disabled={loadingCandidates}
+                  title="관심종목 새로고침"
+                  style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}
                 >
-                  {loadingCandidates ? '로딩 중...' : '새로 고침'}
+                  {loadingCandidates ? '로딩 중...' : <LucideIcon name="RefreshCw" size={16} />}
                 </button>
               </div>
             ) : (
@@ -560,9 +590,13 @@ export default function SimulatorPage() {
           <button 
             className="sim-btn sim-btn--primary" 
             onClick={generateRecommendation}
-            disabled={items.length === 0 || monthlyProfitTarget <= 0}
+            disabled={monthlyProfitTarget <= 0 || 
+              (items.length === 0 && 
+               ((chatId && watchlistCandidates.length === 0) ||
+                (!chatId && algoCandidates.length === 0)))}
+            title="Half-Kelly Criterion: 장기 자본 성장 극대화, 변동성 관리를 위한 최적 배분 비율"
           >
-            최적 포트폴리오 추천 (Kelly 기반)
+            최적 포트폴리오 추천 (Half-Kelly 기반)
           </button>
         </div>
 

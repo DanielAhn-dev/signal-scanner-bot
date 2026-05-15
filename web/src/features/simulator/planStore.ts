@@ -12,6 +12,10 @@ export type HighlightPlanItem = {
   split1: number
   split2: number
   split3: number
+  current_price?: number
+  close?: number
+  shares?: number
+  buyPrice?: number
 }
 
 export type HighlightSimulationPlan = {
