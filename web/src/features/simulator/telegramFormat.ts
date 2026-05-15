@@ -125,3 +125,89 @@ export function buildTelegramMessage(params: {
   }
   return lines.join('\n')
 }
+
+/**
+ * 월 목표 수익 달성에 필요한 연간 수익률 계산
+ * 예: monthlyProfit=500k, totalCapital=10M → requiredAnnualReturnPct ≈ 6%
+ */
+export function calcRequiredAnnualReturn(
+  monthlyProfitKrw: number,
+  totalCapitalKrw: number,
+): number {
+  if (totalCapitalKrw <= 0 || monthlyProfitKrw <= 0) return 0
+  const annualProfit = monthlyProfitKrw * 12
+  return (annualProfit / totalCapitalKrw) * 100
+}
+
+/**
+ * 종목의 Kelly 기반 배분 가중치 계산 (0~1 범위)
+ * - Kelly가 높을수록, EV가 양수일수록 높은 가중치
+ * - R:R < 1.5 또는 EV < 0이면 제외
+ */
+export function calcAllocationWeight(item: HighlightPlanItem): number {
+  const rr = calcRR(item)
+  const ev = calcExpectedValue(item)
+  
+  // 품질 기준: R:R >= 1.5, 승률 >= 50%, EV > 0
+  if (rr < 1.5 || item.winProb < 50 || ev <= 0) return 0
+  
+  const kelly = calcKelly(item)
+  const gradeFactor = getTradeGrade(item) === 'A' ? 1.0 : getTradeGrade(item) === 'B' ? 0.8 : 0.5
+  
+  return (kelly / 25) * gradeFactor // kelly는 최대 25, 정규화
+}
+
+/**
+ * 추천 포트폴리오 생성
+ * - 관심종목 후보에서 품질 좋은 종목 선택
+ * - Kelly + Expected Value 기반 가중치 배분
+ * - 월 수익 목표 달성 가능하도록 종목/금액 구성
+ */
+export function recommendPortfolio(
+  candidates: HighlightPlanItem[],
+  totalCapitalKrw: number,
+  monthlyProfitKrw: number,
+): HighlightPlanItem[] {
+  if (candidates.length === 0 || totalCapitalKrw <= 0 || monthlyProfitKrw <= 0) {
+    return []
+  }
+
+  // 1. 각 종목의 배분 가중치 계산
+  const withWeights = candidates
+    .map(item => ({
+      ...item,
+      weight: calcAllocationWeight(item),
+    }))
+    .filter(x => x.weight > 0) // 품질 기준 통과 종목만
+    .sort((a, b) => b.weight - a.weight) // 가중치 내림차순
+
+  if (withWeights.length === 0) {
+    return [] // 추천할 종목 없음
+  }
+
+  // 2. 가중치 정규화
+  const totalWeight = withWeights.reduce((acc, x) => acc + x.weight, 0)
+  const normalized = withWeights.map(x => ({
+    ...x,
+    allocRatio: x.weight / totalWeight, // 배분 비율
+  }))
+
+  // 3. 총 자본 배분 (상위 5개 종목까지만, 나머지는 제외)
+  const topCandidates = normalized.slice(0, 5)
+  const topTotalWeight = topCandidates.reduce((acc, x) => acc + x.allocRatio, 0)
+
+  // 4. 최종 배분 금액 결정
+  const recommended = topCandidates.map(x => ({
+    ...x,
+    amount: Math.round((x.allocRatio / topTotalWeight) * totalCapitalKrw),
+  }))
+
+  // 5. 반올림 오차 보정 (마지막 항목에서 조정)
+  const sumAllocated = recommended.reduce((acc, x) => acc + x.amount, 0)
+  if (sumAllocated !== totalCapitalKrw && recommended.length > 0) {
+    const lastIdx = recommended.length - 1
+    recommended[lastIdx].amount += totalCapitalKrw - sumAllocated
+  }
+
+  return recommended
+}

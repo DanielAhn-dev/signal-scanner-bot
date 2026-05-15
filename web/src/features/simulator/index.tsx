@@ -20,6 +20,9 @@ import {
   calcSplitInvested,
   clampPercent,
   getTradeGrade,
+  recommendPortfolio,
+  calcRequiredAnnualReturn,
+  calcAllocationWeight,
   type TelegramFormat,
   type TradeGrade,
 } from './telegramFormat'
@@ -84,6 +87,7 @@ export default function SimulatorPage() {
   const [items, setItems] = useState<HighlightPlanItem[]>(
     initialPlan?.items?.length ? initialPlan.items : [defaultPlanItem({ code: '000000', name: '예시 종목' })],
   )
+  const [monthlyProfitTarget, setMonthlyProfitTarget] = useState(500_000) // 월 500만원 기본값
   const [fillRatePct, setFillRatePct] = useState(100)
   const [feePct, setFeePct] = useState(0.15)
   const [taxPct, setTaxPct] = useState(0.2)
@@ -99,6 +103,8 @@ export default function SimulatorPage() {
   const [addResults, setAddResults] = useState<any[]>([])
   const [addFocused, setAddFocused] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
+  const [recommendedPortfolio, setRecommendedPortfolio] = useState<HighlightPlanItem[]>([])
+  const [showRecommendation, setShowRecommendation] = useState(false)
   const addDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const toast = useToast()
 
@@ -166,6 +172,28 @@ export default function SimulatorPage() {
     setItems((prev) => prev.filter((_, i) => i !== idx))
     if (expandedIdx === idx) setExpandedIdx(null)
     else if (expandedIdx !== null && expandedIdx > idx) setExpandedIdx(expandedIdx - 1)
+  }
+
+  const generateRecommendation = () => {
+    if (monthlyProfitTarget <= 0) {
+      toast.show('월 목표 수익을 입력하세요.')
+      return
+    }
+    const recommended = recommendPortfolio(items, totalCapital, monthlyProfitTarget)
+    if (recommended.length === 0) {
+      toast.show('추천 가능한 종목이 없습니다. (품질 기준 미충족)')
+      return
+    }
+    setRecommendedPortfolio(recommended)
+    setShowRecommendation(true)
+  }
+
+  const applyRecommendation = () => {
+    if (recommendedPortfolio.length === 0) return
+    setItems(recommendedPortfolio)
+    setShowRecommendation(false)
+    setRecommendedPortfolio([])
+    toast.show('추천 포트폴리오를 적용했습니다.')
   }
 
   const buildPlan = () => ({
@@ -328,6 +356,102 @@ export default function SimulatorPage() {
         {summary.remaining < 0 && (
           <div className="sim-warning-bar">
             배분 합계가 총 투자금을 {formatKrw(-summary.remaining)} 초과합니다.
+          </div>
+        )}
+      </div>
+
+      {/* ── 월 수익 목표 & 추천 ── */}
+      <div className="sim-section sim-monthly-target-section">
+        <div className="sim-section-head">
+          <span className="sim-section-label">월 수익 목표</span>
+        </div>
+        <div className="sim-monthly-target-wrap">
+          <div className="sim-input-group">
+            <label className="sim-input-label">원하는 월 수익</label>
+            <div className="sim-input-row">
+              <input 
+                className="sim-input" 
+                type="number" 
+                min={0} 
+                value={monthlyProfitTarget}
+                onChange={(e) => setMonthlyProfitTarget(Math.max(0, Number(e.target.value || 0)))} 
+              />
+              <span className="sim-input-suffix">원</span>
+            </div>
+          </div>
+          <div className="sim-monthly-calc">
+            <div className="sim-monthly-item">
+              <span className="sim-monthly-label">필요 연간 수익률</span>
+              <span className="sim-monthly-value">
+                {formatNumber(calcRequiredAnnualReturn(monthlyProfitTarget, totalCapital), 2)}%
+              </span>
+            </div>
+            <div className="sim-monthly-item">
+              <span className="sim-monthly-label">연간 목표 수익</span>
+              <span className="sim-monthly-value">
+                {formatKrw(monthlyProfitTarget * 12)}
+              </span>
+            </div>
+          </div>
+          <button 
+            className="sim-btn sim-btn--primary" 
+            onClick={generateRecommendation}
+            disabled={items.length === 0 || monthlyProfitTarget <= 0}
+          >
+            최적 포트폴리오 추천 (Kelly 기반)
+          </button>
+        </div>
+
+        {/* 추천 결과 표시 */}
+        {showRecommendation && recommendedPortfolio.length > 0 && (
+          <div className="sim-recommendation-panel">
+            <div className="sim-rec-header">
+              <h3 className="sim-rec-title">🎯 추천 포트폴리오</h3>
+              <button className="sim-btn sim-btn--ghost" onClick={() => setShowRecommendation(false)}>닫기</button>
+            </div>
+            <p className="sim-rec-desc">
+              월 {formatKrw(monthlyProfitTarget)} 목표 달성을 위해 Kelly Criterion 기반으로 선정된 포트폴리오입니다.
+              각 종목의 기대값과 위험도를 고려해 배분되었습니다.
+            </p>
+            <div className="sim-rec-list">
+              {recommendedPortfolio.map((rec, idx) => {
+                const weights = recommendedPortfolio.reduce((acc, r) => acc + calcAllocationWeight(r), 0)
+                const allocPct = weights > 0 ? (calcAllocationWeight(rec) / weights) * 100 : 0
+                const rr = calcRR(rec)
+                const ev = calcExpectedValue(rec)
+                return (
+                  <div key={`${rec.code}-${idx}`} className="sim-rec-item">
+                    <div className="sim-rec-item-name">
+                      <span className="sim-rec-code">{rec.code}</span>
+                      <span className="sim-rec-name">{rec.name}</span>
+                    </div>
+                    <div className="sim-rec-metrics">
+                      <div className="sim-rec-metric">
+                        <span className="sim-rec-label">배분액</span>
+                        <span className="sim-rec-value">{formatKrw(rec.amount)}</span>
+                      </div>
+                      <div className="sim-rec-metric">
+                        <span className="sim-rec-label">비중</span>
+                        <span className="sim-rec-value">{formatNumber(allocPct, 1)}%</span>
+                      </div>
+                      <div className="sim-rec-metric">
+                        <span className="sim-rec-label">R:R</span>
+                        <span className="sim-rec-value">{formatNumber(rr, 1)}:1</span>
+                      </div>
+                      <div className="sim-rec-metric">
+                        <span className={`sim-rec-value${ev >= 0 ? ' sim-pos' : ' sim-neg'}`}>
+                          {ev >= 0 ? '+' : ''}{formatKrw(ev)}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+            <div className="sim-rec-footer">
+              <button className="sim-btn sim-btn--ghost" onClick={() => setShowRecommendation(false)}>취소</button>
+              <button className="sim-btn sim-btn--primary" onClick={applyRecommendation}>이 포트폴리오 적용</button>
+            </div>
           </div>
         )}
       </div>
