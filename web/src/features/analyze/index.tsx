@@ -10,7 +10,7 @@ import ShareModal from '../../components/ShareModal'
 import { useShareManager } from '../../hooks/useShareManager'
 import CandleChart from '../../components/CandleChart'
 import EconomicEventBadge from '../../components/EconomicEventBadge'
-import { LayoutDashboard, TrendingUp, Flag, Activity } from 'lucide-react'
+import { LayoutDashboard, TrendingUp, Flag, Activity, Search, Link2, HelpCircle } from 'lucide-react'
 import type { OhlcvCandle } from '../../lib/types'
 import { useCurrentChatId } from '../../stores/profileStore'
 
@@ -85,6 +85,31 @@ function useLocalStorageBool(key: string, defaultValue: boolean): [boolean, (v: 
   return [value, set]
 }
 
+/** 최근 검색 종목을 localStorage에 저장/관리 (최대 5개) */
+function useRecentSearches(): [
+  Array<{ code: string; name: string }>,
+  (stock: { code: string; name: string }) => void,
+] {
+  const KEY = 'analyze.recentSearches'
+  const [list, setList] = useState<Array<{ code: string; name: string }>>(() => {
+    try {
+      const raw = localStorage.getItem(KEY)
+      return raw ? (JSON.parse(raw) as Array<{ code: string; name: string }>) : []
+    } catch {
+      return []
+    }
+  })
+  const push = useCallback((stock: { code: string; name: string }) => {
+    setList(prev => {
+      const filtered = prev.filter(s => s.code !== stock.code)
+      const next = [stock, ...filtered].slice(0, 5)
+      try { localStorage.setItem(KEY, JSON.stringify(next)) } catch { /* ignore */ }
+      return next
+    })
+  }, [])
+  return [list, push]
+}
+
 export default function AnalyzePage({ onNavigate }: { onNavigate?: (r: string) => void }) {
   const chatId = useCurrentChatId()
   const [query, setQuery] = useState('')
@@ -102,7 +127,7 @@ export default function AnalyzePage({ onNavigate }: { onNavigate?: (r: string) =
   const [showTradeMarkers, setShowTradeMarkers] = useLocalStorageBool('chart.showMarkers', true)
   const [showForceLine, setShowForceLine] = useLocalStorageBool('chart.showForce', false)
   const [showPersonalized, setShowPersonalized] = useState(false)
-  const [quickStocks, setQuickStocks] = useState<Array<{ code: string; name: string }>>([])
+  const [recentSearches, pushRecentSearch] = useRecentSearches()
   const inputRef = useRef<HTMLInputElement>(null)
   const toast = useToast()
   const shareManager = useShareManager({
@@ -110,23 +135,6 @@ export default function AnalyzePage({ onNavigate }: { onNavigate?: (r: string) =
     scopeKey: 'kind',
     requiresCode: false,
   })
-
-  useEffect(() => {
-    const load = async () => {
-      try {
-        const all = await getStocks()
-        const codes = ['005930', '000660', '035420', '051910', '207940']
-        const stocks = codes
-          .map(code => all.find(s => s.code === code))
-          .filter(Boolean)
-          .map(s => ({ code: s!.code, name: s!.name }))
-        setQuickStocks(stocks)
-      } catch {
-        setQuickStocks([])
-      }
-    }
-    void load()
-  }, [])
 
   // 데이터 신뢰성 검증
   const dataValidation = useMemo(() => {
@@ -184,7 +192,11 @@ export default function AnalyzePage({ onNavigate }: { onNavigate?: (r: string) =
       const chatQs = chatId ? `&chat_id=${encodeURIComponent(chatId)}` : ''
       const res = await apiFetch(`/api/ui/stock-latest?code=${encodeURIComponent(q)}${chatQs}`, { cacheMs: 0 })
       if (res?.profile || res?.latest) {
-        setResult({ ...res.profile, ...res.latest })
+        const merged = { ...res.profile, ...res.latest }
+        setResult(merged)
+        if (merged.code && (merged.name || merged.code)) {
+          pushRecentSearch({ code: merged.code, name: merged.name ?? merged.code })
+        }
         // OHLCV 캔들 데이터: 서버 series를 OhlcvCandle 형태로 정규화
         const rawData: any[] = res?.data ?? []
         setCandles(
@@ -401,38 +413,83 @@ export default function AnalyzePage({ onNavigate }: { onNavigate?: (r: string) =
       <EconomicEventBadge onNavigateToCalendar={() => onNavigate?.('economy')} />
 
       <div className="card mb-4">
-        <div className="muted" style={{ marginBottom: 'var(--space-3)' }}>
-          종목 코드(6자리) 또는 종목명으로 검색합니다. 텔레그램 <code>/analyze</code> 에 대응합니다.
-        </div>
-        <div style={{ display: 'flex', gap: 'var(--space-2)', flexWrap: 'wrap', alignItems: 'stretch' }}>
-          <StockSearchInput
-            value={query}
-            onChange={setQuery}
-            onSelect={handleStockSelect}
-            placeholder="종목 코드(예: 005930) 또는 한글명(예: 삼성전자)"
-            disabled={loading}
-            style={{ flex: '1 1 auto', minWidth: '200px' }}
-          />
-          <Button variant="primary" onClick={() => analyze()} disabled={loading || !query.trim()}>
-            {loading ? '조회 중…' : '분석'}
+        <div style={{ display: 'flex', gap: 'var(--space-2)', flexWrap: 'nowrap', alignItems: 'center' }}>
+          <div style={{ flex: '1 1 0', minWidth: 0 }}>
+            <StockSearchInput
+              value={query}
+              onChange={setQuery}
+              onSelect={handleStockSelect}
+              placeholder="종목 코드(예: 005930) 또는 한글명(예: 삼성전자)"
+              disabled={loading}
+            />
+          </div>
+          <Button
+            variant="primary"
+            onClick={() => analyze()}
+            disabled={loading || !query.trim()}
+            aria-label="분석"
+            title="분석"
+            style={{ padding: '0 0.75rem', flexShrink: 0 }}
+          >
+            {loading
+              ? <span style={{ display: 'inline-block', width: 16, height: 16, border: '2px solid currentColor', borderTopColor: 'transparent', borderRadius: '50%', animation: 'spin 0.7s linear infinite' }} />
+              : <Search size={16} />}
           </Button>
-          <Button variant="secondary" onClick={onShareAnalyze} disabled={loading || !result?.code}>
-            링크 공유
+          <Button
+            variant="secondary"
+            onClick={onShareAnalyze}
+            disabled={loading || !result?.code}
+            aria-label="링크 공유"
+            title="링크 공유"
+            style={{ padding: '0 0.75rem', flexShrink: 0 }}
+          >
+            <Link2 size={16} />
           </Button>
+          <button
+            type="button"
+            aria-label="검색 도움말"
+            title={'종목 코드(6자리) 또는 종목명으로 검색합니다.\n텔레그램 /analyze 에 대응합니다.'}
+            style={{
+              background: 'none',
+              border: 'none',
+              cursor: 'pointer',
+              padding: '0 var(--space-1)',
+              color: 'var(--color-text-tertiary)',
+              display: 'inline-flex',
+              alignItems: 'center',
+              flexShrink: 0,
+              lineHeight: 1,
+            }}
+          >
+            <HelpCircle size={16} />
+          </button>
         </div>
-        <div className="tag-list" style={{ marginTop: 'var(--space-3)' }}>
-          {quickStocks.length > 0 ? (
-            quickStocks.map(s => (
-              <button key={s.code} className="tag" onClick={() => { setQuery(s.code); analyze(s.code) }} title={s.code}>
+        {recentSearches.length > 0 && (
+          <div
+            style={{
+              marginTop: 'var(--space-3)',
+              display: 'flex',
+              gap: 'var(--space-1)',
+              overflowX: 'auto',
+              WebkitOverflowScrolling: 'touch',
+              scrollbarWidth: 'none',
+              msOverflowStyle: 'none',
+              flexWrap: 'nowrap',
+            }}
+          >
+            {recentSearches.map(s => (
+              <button
+                key={s.code}
+                className="tag"
+                style={{ flexShrink: 0 }}
+                onClick={() => { setQuery(s.code); void analyze(s.code) }}
+                title={s.code}
+              >
                 {s.name}
               </button>
-            ))
-          ) : (
-            ['005930', '000660', '035420', '051910', '207940'].map(c => (
-              <button key={c} className="tag" onClick={() => { setQuery(c); analyze(c) }}>{c}</button>
-            ))
-          )}
-        </div>
+            ))}
+          </div>
+        )}
       </div>
 
       {loading && <div className="card"><Skeleton lines={5} height={14} /></div>}

@@ -1,8 +1,13 @@
 export const HIGHLIGHT_SIM_PLAN_KEY = 'highlight_simulation_plan_v1'
 
 export type HighlightPlanItem = {
+  id: string
   code: string
   name: string
+  market?: string
+  source?: 'scan-candidates' | 'scan-highlights' | 'watchlist' | 'manual'
+  signal_score?: number
+  signal_rank?: number
   sector_id?: string | null
   amount: number
   targetPct: number
@@ -11,6 +16,10 @@ export type HighlightPlanItem = {
   split1: number
   split2: number
   split3: number
+  current_price?: number
+  close?: number
+  shares?: number
+  buyPrice?: number
 }
 
 export type HighlightSimulationPlan = {
@@ -25,10 +34,13 @@ export function defaultPlanItem(input: {
   name: string
   sector_id?: string | null
   amount?: number
+  id?: string
 }): HighlightPlanItem {
+  const code = String(input.code || '')
   return {
-    code: String(input.code || ''),
-    name: String(input.name || input.code || ''),
+    id: input.id || `rs_${code}`,
+    code,
+    name: String(input.name || code || ''),
     sector_id: input.sector_id ?? null,
     amount: Number(input.amount ?? 1_000_000),
     targetPct: 5,
