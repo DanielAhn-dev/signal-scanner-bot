@@ -66,6 +66,8 @@ export type PullbackCandidateSectionItem = {
   trancheBudget: number;
   quantity: number;
   highlight: boolean;
+  candidateBucket: "execution" | "watchlist";
+  stableTag: boolean;
   rationale: string;
 };
 
@@ -471,11 +473,15 @@ export function drawPullbackWeeklySection(
     return;
   }
 
+  const executionCandidates = candidates.filter((item) => item.candidateBucket === "execution");
+  const watchlistCandidates = candidates.filter((item) => item.candidateBucket === "watchlist");
+  const highlightSource = executionCandidates.length > 0 ? executionCandidates : watchlistCandidates;
+
   drawKpiGrid(
     ctx,
     [
-      { label: "주간 후보", value: `${candidates.length}개`, sub: "상위 8개 압축", valueColor: C.text },
-      { label: "하이라이트", value: `${Math.min(3, candidates.length)}개`, sub: "다음 주 우선 관찰", valueColor: C.up },
+      { label: "주간 후보", value: `${candidates.length}개`, sub: `실행 ${executionCandidates.length} / 관찰 ${watchlistCandidates.length}`, valueColor: C.text },
+      { label: "하이라이트", value: `${Math.min(3, highlightSource.length)}개`, sub: executionCandidates.length > 0 ? "실행 우선" : "관찰 우선", valueColor: C.up },
       { label: "가용현금", value: meta.availableCashLabel, sub: `보유 ${meta.holdingCount}종목`, valueColor: C.text },
       { label: "기준 자금", value: meta.seedCapitalLabel, sub: `${meta.riskProfileLabel} 기준`, valueColor: C.text },
     ],
@@ -483,34 +489,45 @@ export function drawPullbackWeeklySection(
   );
 
   ctx.y -= 4;
-  drawSectionHeader(ctx, "하이라이트 3선", "형광펜 우선 표시");
-  drawPullbackHighlightCards(ctx, candidates);
+  drawSectionHeader(ctx, "하이라이트 3선", executionCandidates.length > 0 ? "실행 후보 우선" : "관찰 후보 우선");
+  drawPullbackHighlightCards(ctx, highlightSource);
 
   ctx.y -= 2;
-  drawSectionHeader(ctx, "후보 표", "진입·손절·1차매도·권장비중");
-  drawTable(
-    ctx,
-    [
-      { header: "종목", width: 108, align: "left" },
-      { header: "섹터", width: 70, align: "left" },
-      { header: "진입가", width: 78, align: "right" },
-      { header: "손절가", width: 64, align: "right" },
-      { header: "1차매도", width: 78, align: "right" },
-      { header: "비중", width: 54, align: "right" },
-      { header: "코멘트", width: 105, align: "left" },
-    ],
-    candidates.map((item) => [
-      `${truncate(item.name, 8)} ${item.code}`,
-      truncate(item.sectorName ?? item.market, 10),
-      `${fmtInt(item.entryLow)}~${fmtInt(item.entryHigh)}`,
-      fmtInt(item.stopPrice),
-      fmtInt(item.target1),
-      `${item.targetWeightPct.toFixed(1)}%`,
-      truncate(item.rationale, 20),
-    ]),
-    candidates.map((item) => item.highlight ? C.ink : C.text),
-    candidates.map((item, index) => item.highlight ? (index === 0 ? C.alt : C.surface) : null)
-  );
+  const drawCandidateTable = (title: string, rows: PullbackCandidateSectionItem[]) => {
+    drawSectionHeader(ctx, title, "진입·손절·1차매도·권장비중");
+    if (rows.length === 0) {
+      ctx.text("해당 구간 후보가 없습니다.", ctx.ML + 8, ctx.y - 2, 9, C.muted);
+      ctx.y -= 18;
+      return;
+    }
+    drawTable(
+      ctx,
+      [
+        { header: "종목", width: 108, align: "left" },
+        { header: "섹터", width: 70, align: "left" },
+        { header: "진입가", width: 78, align: "right" },
+        { header: "손절가", width: 64, align: "right" },
+        { header: "1차매도", width: 78, align: "right" },
+        { header: "비중", width: 54, align: "right" },
+        { header: "코멘트", width: 105, align: "left" },
+      ],
+      rows.map((item) => [
+        `${truncate(item.name, 8)} ${item.code}`,
+        truncate(item.sectorName ?? item.market, 10),
+        `${fmtInt(item.entryLow)}~${fmtInt(item.entryHigh)}`,
+        fmtInt(item.stopPrice),
+        fmtInt(item.target1),
+        `${item.targetWeightPct.toFixed(1)}%`,
+        truncate(`${item.stableTag ? "매집관찰 · " : ""}${item.rationale}`, 20),
+      ]),
+      rows.map((item) => item.highlight ? C.ink : C.text),
+      rows.map((item, index) => item.highlight ? (index === 0 ? C.alt : C.surface) : null)
+    );
+  };
+
+  drawCandidateTable("실행 후보 (score>=70)", executionCandidates);
+  ctx.y -= 4;
+  drawCandidateTable("관찰 후보 (stable 매집 태그)", watchlistCandidates);
 
   ctx.y -= 6;
   const tipLineCount = ctx.text(

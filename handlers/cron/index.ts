@@ -84,8 +84,8 @@ function resolveDueTasks(now = new Date()): DueTask[] {
 
   const tasks: DueTask[] = [];
 
-  // scoreSync: 40 6 * * 1-5
-  if (dow >= 1 && dow <= 5 && hour === 6 && minute === 40) {
+  // scoreSync: 25 9 * * 1-5 (daily_data 이후 보정 동기화)
+  if (dow >= 1 && dow <= 5 && hour === 9 && minute === 25) {
     tasks.push({ name: "scoreSync", path: TASK_PATHS.scoreSync });
   }
 

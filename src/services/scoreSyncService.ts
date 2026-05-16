@@ -1,5 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { getDailySeries } from "../adapters";
+import type { StockOHLCV } from "../data/types";
 import { calculateScore, type MarketEnv } from "../score/engine";
 import { fetchAllMarketData } from "../utils/fetchMarketData";
 import { fetchLatestScoresByCodes } from "./scoreSourceService";
@@ -97,6 +97,43 @@ function countConsecutivePositive(values: number[]): number {
     else break;
   }
   return count;
+}
+
+async function fetchDailySeriesFromDb(
+  supabase: SupabaseClient,
+  code: string,
+  lookback: number
+): Promise<StockOHLCV[]> {
+  const { data, error } = await supabase
+    .from("stock_daily")
+    .select("date,open,high,low,close,volume,value")
+    .eq("ticker", code)
+    .order("date", { ascending: false })
+    .limit(Math.max(lookback, 200));
+
+  if (error) {
+    throw new Error(`stock_daily 조회 실패(${code}): ${error.message}`);
+  }
+
+  return ((data ?? []) as Array<Record<string, unknown>>)
+    .map((row) => {
+      const close = Number(row.close ?? 0);
+      const volume = Number(row.volume ?? 0);
+      const value = Number(row.value ?? 0);
+      return {
+        date: String(row.date ?? ""),
+        code,
+        open: Number(row.open ?? close),
+        high: Number(row.high ?? close),
+        low: Number(row.low ?? close),
+        close,
+        volume,
+        amount: Number.isFinite(value) && value > 0 ? value : close * volume,
+        value: Number.isFinite(value) ? value : undefined,
+      } as StockOHLCV;
+    })
+    .filter((row) => row.date && Number.isFinite(row.close) && row.close > 0)
+    .reverse();
 }
 
 async function fetchInvestorFlowByCodes(
@@ -247,7 +284,7 @@ export async function syncScoresFromEngine(
       const code = codes[index];
 
       try {
-        const series = await getDailySeries(code, lookback);
+        const series = await fetchDailySeriesFromDb(supabase, code, lookback);
         if (!series || series.length < 200) {
           skippedInsufficientSeries += 1;
           continue;

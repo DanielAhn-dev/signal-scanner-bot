@@ -14,6 +14,7 @@ KRX API 제약 대응: 전종목 일괄 API 대신 개별 종목 API 사용
 from __future__ import annotations
 
 import os
+import subprocess
 import sys
 import time
 import traceback
@@ -84,6 +85,22 @@ def derive_signal(total_score: int) -> str:
     if score <= 20:
         return "SELL"
     return "HOLD"
+
+
+def run_engine_score_sync(asof: str) -> bool:
+    pnpm_bin = "pnpm.cmd" if os.name == "nt" else "pnpm"
+    cmd = [pnpm_bin, "run", "sync:scores", f"--asof={asof}", "--concurrency=6", "--limit=1500"]
+    try:
+        print("  -> 엔진 기반 점수 동기화 실행 중...", " ".join(cmd))
+        result = subprocess.run(cmd, check=True, capture_output=True, text=True)
+        if result.stdout:
+            lines = [line for line in result.stdout.splitlines() if line.strip()]
+            if lines:
+                print(f"  ✅ {lines[-1]}")
+        return True
+    except Exception as e:
+        print(f"  ⚠️ 엔진 기반 점수 동기화 실패, 레거시 계산으로 폴백: {e}")
+        return False
 
 def get_last_trading_date() -> str:
     """오늘 또는 가장 최근 거래일을 YYYYMMDD로 반환 (여러 종목 기준)
@@ -1045,6 +1062,10 @@ def calculate_stock_scores(trading_date: str):
     asof = date.today().isoformat()
     print(f"\n[5/7] 종목 스코어 계산...")
 
+    if run_engine_score_sync(asof):
+        print("  ✅ 엔진 기반 점수 동기화 완료")
+        return
+
     try:
         res = supabase.table("stocks") \
             .select("code, name, sector_id, universe_level, market_cap, close") \
@@ -1064,6 +1085,16 @@ def calculate_stock_scores(trading_date: str):
                 .eq("trade_date", trading_iso).execute()
             for row in (ind_res.data or []):
                 indicators_map[row["code"]] = row
+
+        existing_scores_map: dict = {}
+        for i in range(0, len(codes), 200):
+            batch = codes[i:i+200]
+            old_res = supabase.table("scores") \
+                .select("code, value_score, momentum_score, liquidity_score, total_score, score, factors") \
+                .eq("asof", asof) \
+                .in_("code", batch).execute()
+            for row in (old_res.data or []):
+                existing_scores_map[row.get("code")] = row
 
         print(f"  -> {len(indicators_map)}개 종목 지표 로드됨")
 
@@ -1125,14 +1156,21 @@ def calculate_stock_scores(trading_date: str):
                 value_score * 0.3 + momentum_score * 0.45 + liquidity_score * 0.25
             ))))
 
+            existing_score = existing_scores_map.get(code, {})
+            existing_factors = existing_score.get("factors") if isinstance(existing_score.get("factors"), dict) else {}
+            merged_factors = dict(existing_factors)
+            merged_factors.update({
+                "rsi14": round(rsi, 2),
+                "roc14": round(roc14, 2),
+                "roc21": round(roc21, 2),
+                "sector_change": round(sec_change, 2),
+            })
+
             upserts.append({
                 "code": code, "asof": asof,
                 "score": float(total_score),
                 "signal": derive_signal(total_score),
-                "factors": {
-                    "rsi14": round(rsi, 2), "roc14": round(roc14, 2),
-                    "roc21": round(roc21, 2), "sector_change": round(sec_change, 2),
-                },
+                "factors": merged_factors,
                 "value_score": int(value_score),
                 "momentum_score": int(momentum_score),
                 "liquidity_score": int(liquidity_score),

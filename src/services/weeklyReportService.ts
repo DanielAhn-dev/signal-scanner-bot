@@ -412,6 +412,9 @@ async function buildPullbackWeeklyReportData(
     const latestFactors = snapshot?.factors && typeof snapshot.factors === "object"
       ? (snapshot.factors as Record<string, any>)
       : null;
+    const stableAccumulationTag =
+      (typeof latestFactors?.stable_accumulation === "boolean" && latestFactors.stable_accumulation) ||
+      Number(latestFactors?.stable_accumulation_days ?? 0) >= 2;
     const scaledFactors = scaleScoreFactorsToReferencePrice(
       {
         sma20: toNum(latestFactors?.sma20 ?? item.sma20 ?? currentPrice),
@@ -469,6 +472,7 @@ async function buildPullbackWeeklyReportData(
       ...item,
       currentPrice,
       technicalScore,
+      stableAccumulationTag,
       safetyScore,
       weeklyScore,
       plan,
@@ -502,6 +506,8 @@ async function buildPullbackWeeklyReportData(
       trancheBudget: item.sizing.budget,
       quantity: item.sizing.quantity,
       highlight: index < 3,
+      candidateBucket: item.technicalScore >= 70 ? "execution" : (item.stableAccumulationTag ? "watchlist" : "watchlist"),
+      stableTag: item.stableAccumulationTag,
       rationale: `${item.entryGrade}등급 ${item.appearanceCount}회 · ${item.plan.statusLabel} · RR ${item.plan.riskReward.toFixed(1)}`,
     }));
 

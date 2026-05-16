@@ -837,11 +837,26 @@ export async function handleScanCommand(
       // exclude explicit fails
       return passesBasicFundFilter(fund);
     })
-    .slice(0, 10);
+    .slice(0, 16);
+
+  const executionPicks = finalPicks
+    .filter((item) => Number(scoreMap.get(item.code)?.total ?? 0) >= 70)
+    .slice(0, 8);
+
+  const watchlistPicks = finalPicks
+    .filter((item) => {
+      const score = Number(scoreMap.get(item.code)?.total ?? 0);
+      const stable = scoreMap.get(item.code);
+      const isStableWatch = Boolean(stable?.stableAccumulation) || Number(stable?.stableAccumulationDays ?? 0) >= 2;
+      return score < 70 && isStableWatch;
+    })
+    .slice(0, 8);
+
+  const displayPicks = [...executionPicks, ...watchlistPicks].slice(0, 10);
 
   const sentimentByCode = new Map<string, string>();
   await Promise.all(
-    finalPicks.map(async (item) => {
+    displayPicks.map(async (item) => {
       try {
         const news = await fetchStockNews(item.code, 5);
         if (!news.length) return;
@@ -857,7 +872,7 @@ export async function handleScanCommand(
     })
   );
 
-  const lines = finalPicks.map((item, idx) => {
+  const formatCandidateLine = (item: PullbackRow, idx: number, mode: "execution" | "watchlist") => {
     const rt = realtimeMap[item.code];
     const price = Number(rt?.price ?? item.stock?.close ?? 0);
     const chg =
@@ -880,11 +895,12 @@ export async function handleScanCommand(
       : "중립";
     const stableTrustLabel =
       stable?.stableTrust != null ? `${Math.round(stable.stableTrust)}점` : "-";
-    const stableAccumulation = stable?.stableAccumulation ? "매집" : "";
+    const stableAccumulationTag = stable?.stableAccumulation || Number(stable?.stableAccumulationDays ?? 0) >= 2;
     const scoreSignal = stable?.signal ? String(stable.signal).toUpperCase() : "-";
     const recentText = stable?.recentText?.slice(0, 2).join(" · ") ?? "";
     const warn = WARN_LABEL[item.warn_grade] ?? item.warn_grade;
     const grade = gradeLabel[item.entry_grade] ?? "○";
+    const modeTag = mode === "execution" ? "실행" : "관찰";
     const details: Array<{ key: string; score: number; text: string }> = [];
     const detailKeys = new Set<string>();
     const pushDetail = (key: string, score: number, text: string) => {
@@ -995,12 +1011,15 @@ export async function handleScanCommand(
       : "";
 
     return (
-      `${idx + 1}. ${grade} <b>${esc(item.stock?.name || item.code)}</b> <code>${price.toLocaleString("ko-KR")}원</code>${chg}\n` +
-      `진입 ${item.entry_grade}(${item.entry_score}/4) · 경고 ${warn}(${item.warn_score}/6) · 점수 ${Math.round(s?.total ?? 0)} · 재무 ${f ?? "-"} · Stable ${stableTurn}/${stableTrustLabel}${stableAccumulation ? ` · ${stableAccumulation}` : ""} · 신호 ${scoreSignal}${recentText ? ` · 최근 ${recentText}` : ""}\n` +
+      `${idx + 1}. [${modeTag}] ${grade} <b>${esc(item.stock?.name || item.code)}</b> <code>${price.toLocaleString("ko-KR")}원</code>${chg}\n` +
+      `진입 ${item.entry_grade}(${item.entry_score}/4) · 경고 ${warn}(${item.warn_score}/6) · 점수 ${Math.round(s?.total ?? 0)} · 재무 ${f ?? "-"} · Stable ${stableTurn}/${stableTrustLabel} · 신호 ${scoreSignal}${stableAccumulationTag ? " · 관찰태그 매집" : ""}${recentText ? ` · 최근 ${recentText}` : ""}\n` +
       `${filterReasonLine ? `필터 근거 ${filterReasonLine}\n` : ""}` +
       `${detailLine}`
     );
-  });
+  };
+
+  const executionLines = executionPicks.map((item, idx) => formatCandidateLine(item, idx, "execution"));
+  const watchlistLines = watchlistPicks.map((item, idx) => formatCandidateLine(item, idx, "watchlist"));
 
   const title = query ? `${sectorName || query} 눌림목 스캔` : "전체 시장 눌림목 스캔";
   const signalStale = isBusinessStale(latestDate, 1);
@@ -1024,7 +1043,8 @@ export async function handleScanCommand(
     section("스캔 조건", [
       "A/B 진입등급 · 매도경고 제외 · 코스피 중심 위험성향 필터",
       ...(filterLabels.length ? [`Stable 필터: ${filterLabels.join(" · ")}`] : []),
-      `후보 ${candidates.length}개 중 필터 통과 ${filteredCandidates.length}개 · 안전성향 통과 ${saferPool.length}개 · 상위 ${finalPicks.length}개`,
+      `후보 ${candidates.length}개 중 필터 통과 ${filteredCandidates.length}개 · 안전성향 통과 ${saferPool.length}개 · 표시 ${displayPicks.length}개`,
+      `실행 후보(score>=70) ${executionPicks.length}개 · 관찰 후보(stable 매집) ${watchlistPicks.length}개`,
       ...(blockedByNews.size > 0 ? [`뉴스 이벤트 리스크로 ${blockedByNews.size}개 제외(공개매수/상폐/거래정지 등)`] : []),
       ...(staleBusinessGap >= 1
         ? [`장중 보정: 실시간 등락 가중치 x${riskAdjustedRealtimeWeight.toFixed(1)} (시그널/점수 지연 ${staleBusinessGap}영업일 · ${riskProfileLabel(riskProfile)} 보정)`]
@@ -1038,7 +1058,14 @@ export async function handleScanCommand(
     ...(personalLines.length > 0
       ? [section("내 상황 제안", personalLines)]
       : []),
-    section("상위 후보", lines),
+    section(
+      "실행 후보 (score>=70)",
+      executionLines.length > 0 ? executionLines : ["현재 실행 후보가 없습니다. (점수 기준 미충족)"]
+    ),
+    section(
+      "관찰 후보 (stable 매집 태그)",
+      watchlistLines.length > 0 ? watchlistLines : ["현재 관찰 후보가 없습니다. (stable 매집 태그 미충족)"]
+    ),
     divider(),
     `거래대금은 장중 추정치가 포함될 수 있습니다.`,
   ]);
@@ -1062,7 +1089,7 @@ export async function handleScanCommand(
     candidateCount: candidates.length,
     filteredCount: filteredCandidates.length,
     saferCount: saferPool.length,
-    finalCount: finalPicks.length,
+    finalCount: displayPicks.length,
     staleBusinessGap,
     realtimeMomentumWeight: riskAdjustedRealtimeWeight,
   });

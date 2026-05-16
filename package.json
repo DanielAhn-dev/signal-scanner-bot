@@ -38,6 +38,7 @@
     "backtest:market-picks": "tsx scripts/backtest_market_picks.ts",
     "backtest:accumulation": "tsx scripts/backtest_accumulation_signal.ts",
     "backtest:stable-accumulation": "tsx scripts/backtest_stable_accumulation.ts",
+    "backfill:stable-factors": "tsx scripts/backfill_stable_factors.ts",
     "analyze:edge": "tsx scripts/analyze_recommendation_edge.ts",
     "ops:check-data-sync": "tsx scripts/check_data_sync_health.ts",
     "prepare": "husky",
