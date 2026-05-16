@@ -10,6 +10,7 @@ import useWatchlistActions from '../../hooks/useWatchlistActions'
 import ShareModal from '../../components/ShareModal'
 import EconomicEventBadge from '../../components/EconomicEventBadge'
 import { useShareManager } from '../../hooks/useShareManager'
+import { scoreLeadAccumulationCandidate } from '../../lib/accumulationSignal'
 
 const SCAN_SNAPSHOT_KEY = 'scan_snapshot_v1'
 const ANALYZE_PENDING_CODE_KEY = 'analyze_pending_code'
@@ -65,6 +66,7 @@ type SortKey =
   | 'name'
   | 'sector_id'
   | 'priority_score'
+  | 'lead_accumulation_score'
   | 'intraday_change_pct'
   | 'entry_grade'
   | 'entry_score'
@@ -98,6 +100,8 @@ type ScanCandidate = {
   adaptive_adjustment?: number | null
   adaptive_reasons?: string[] | null
   adaptive_score?: number | null
+  lead_accumulation_score?: number
+  lead_accumulation_stage?: 'none' | 'lead' | 'breakout'
 }
 
 function getEntryLevel(grade: string | null | undefined): 'a' | 'b' | 'c' {
@@ -126,6 +130,7 @@ function computePriorityScore(item: ScanCandidate): number {
 
 function toComparableValue(item: ScanCandidate, key: SortKey): string | number {
   if (key === 'priority_score') return computePriorityScore(item)
+  if (key === 'lead_accumulation_score') return scoreLeadAccumulationCandidate(item).score
   if (key === 'entry_grade' || key === 'trend_grade' || key === 'dist_grade' || key === 'pivot_grade') {
     return gradeScore(item[key])
   }
@@ -199,7 +204,7 @@ export default function ScanPage({ onNavigate }: { onNavigate?: (r: string) => v
   const [apiHighlights, setApiHighlights] = useState<ScanHighlightItem[]>([])
   const [highlightLoading, setHighlightLoading] = useState(true)
   const [selectedSector, setSelectedSector] = useState<string>('all')
-  const [conditionFilter, setConditionFilter] = useState<'all' | 'entry' | 'trend' | 'accumulation' | 'stable'>('all')
+  const [conditionFilter, setConditionFilter] = useState<'all' | 'entry' | 'trend' | 'accumulation' | 'lead' | 'stable'>('all')
   const [sortKey, setSortKey] = useState<SortKey>('priority_score')
   const [sortDirection, setSortDirection] = useState<SortDirection>('desc')
   const [page, setPage] = useState(1)
@@ -375,6 +380,7 @@ export default function ScanPage({ onNavigate }: { onNavigate?: (r: string) => v
       entry: base.filter(c => ['A', 'B'].includes(String(c.entry_grade || '').toUpperCase())).length,
       trend: base.filter(c => ['A', 'B'].includes(String(c.trend_grade || '').toUpperCase())).length,
       accumulation: base.filter(c => ['A', 'B'].includes(String(c.dist_grade || '').toUpperCase())).length,
+      lead: base.filter((c) => scoreLeadAccumulationCandidate(c).stage !== 'none').length,
       stable: base.filter(c => ['A', 'B'].includes(String(c.pivot_grade || '').toUpperCase())).length,
     }
   }, [candidates, selectedSector])
@@ -384,6 +390,7 @@ export default function ScanPage({ onNavigate }: { onNavigate?: (r: string) => v
     if (conditionFilter === 'entry') return ['A', 'B'].includes(String(item.entry_grade || '').toUpperCase())
     if (conditionFilter === 'trend') return ['A', 'B'].includes(String(item.trend_grade || '').toUpperCase())
     if (conditionFilter === 'accumulation') return ['A', 'B'].includes(String(item.dist_grade || '').toUpperCase())
+    if (conditionFilter === 'lead') return scoreLeadAccumulationCandidate(item).stage !== 'none'
     if (conditionFilter === 'stable') return ['A', 'B'].includes(String(item.pivot_grade || '').toUpperCase())
     return true
   }), [candidates, selectedSector, conditionFilter])
@@ -407,6 +414,8 @@ export default function ScanPage({ onNavigate }: { onNavigate?: (r: string) => v
   const displayRows = useMemo(() => pagedCandidates.map((s) => ({
     ...s,
     priorityScore: Number(computePriorityScore(s).toFixed(1)),
+    leadAccumulationScore: Number(scoreLeadAccumulationCandidate(s).score.toFixed(1)),
+    leadAccumulationStage: scoreLeadAccumulationCandidate(s).stage,
     intradayChangePct: typeof s.intraday_change_pct === 'number' ? s.intraday_change_pct : null,
     tradeDateText: s.trade_date ?? '—',
     updatedAtText: s.stock_updated_at
@@ -439,6 +448,7 @@ export default function ScanPage({ onNavigate }: { onNavigate?: (r: string) => v
     entry: 'entry_score',
     trend: 'trend_grade',
     accumulation: 'dist_grade',
+    lead: 'lead_accumulation_score',
     stable: 'pivot_grade',
   }
 
@@ -521,6 +531,7 @@ export default function ScanPage({ onNavigate }: { onNavigate?: (r: string) => v
           conditionFilter === 'entry' ? '진입(A/B)' :
           conditionFilter === 'trend' ? '추세(A/B)' :
           conditionFilter === 'accumulation' ? '매집(A/B)' :
+          conditionFilter === 'lead' ? '매집 선행형' :
           conditionFilter === 'stable' ? '세력선(A/B)' : '전체',
         selectedSector,
         sectorLabel: selectedSector === 'all' ? '전체 섹터' : selectedSector,
@@ -568,6 +579,7 @@ export default function ScanPage({ onNavigate }: { onNavigate?: (r: string) => v
             { key: 'entry', label: '진입(A/B)' },
             { key: 'trend', label: '추세(A/B)' },
             { key: 'accumulation', label: '매집(A/B)' },
+            { key: 'lead', label: '매집 선행형' },
             { key: 'stable', label: '세력선(A/B)' },
           ] as const).map((option) => (
             <button
@@ -681,6 +693,7 @@ export default function ScanPage({ onNavigate }: { onNavigate?: (r: string) => v
                   <th className="scan-th">{renderSortableHeader('종목명', 'name')}</th>
                   <th className="scan-th">{renderSortableHeader('섹터', 'sector_id')}</th>
                   <th className="scan-th">{renderSortableHeader('우선순위', 'priority_score')}</th>
+                  <th className="scan-th">{renderSortableHeader('선행매집', 'lead_accumulation_score')}</th>
                   <th className="scan-th">{renderSortableHeader('진입', 'entry_grade')}</th>
                   <th className="scan-th">{renderSortableHeader('진입점수', 'entry_score')}</th>
                   <th className="scan-th">{renderSortableHeader('추세', 'trend_grade')}</th>
@@ -714,6 +727,14 @@ export default function ScanPage({ onNavigate }: { onNavigate?: (r: string) => v
                         <span className={s.priorityScore >= 60 ? 'scan-grade-badge scan-grade-a' : s.priorityScore >= 40 ? 'scan-grade-badge scan-grade-b' : 'scan-grade-label'}>
                           {formatNumber(s.priorityScore, 1)}
                         </span>
+                      </td>
+                      <td className="scan-td number" data-label="선행매집" title="매집·세력선·추세·경고·이격 기반 선행형 점수">
+                        <span className={s.leadAccumulationScore >= 75 ? 'scan-grade-badge scan-grade-a' : s.leadAccumulationScore >= 55 ? 'scan-grade-badge scan-grade-b' : 'scan-grade-label'}>
+                          {formatNumber(s.leadAccumulationScore, 0)}
+                        </span>
+                        {s.leadAccumulationStage && s.leadAccumulationStage !== 'none' && (
+                          <span className="scan-grade-label"> ({s.leadAccumulationStage === 'breakout' ? '돌파' : '선행'})</span>
+                        )}
                       </td>
                       <td className="scan-td" data-label="진입">
                         <GradeBadge grade={s.entry_grade} />
