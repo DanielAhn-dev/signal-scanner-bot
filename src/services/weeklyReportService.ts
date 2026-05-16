@@ -33,6 +33,11 @@ import {
 } from "./weeklyReportLayout";
 import { getDecisionReliabilitySummary } from "./decisionLogService";
 import {
+  hasStableAccumulationTag,
+  isExecutionCandidate,
+  resolveStablePromotionPolicy,
+} from "./stablePromotionPolicy";
+import {
   drawCommentarySection,
   drawDecisionLogSection,
   drawEconomySection,
@@ -400,6 +405,7 @@ async function buildPullbackWeeklyReportData(
   );
 
   const codes = preselected.map((item) => item.code);
+  const stablePromotionPolicy = resolveStablePromotionPolicy();
   const [realtimeMap, scoreSnapshot] = await Promise.all([
     fetchRealtimePriceBatch(codes).catch(() => ({} as Record<string, any>)),
     fetchLatestScoresByCodes(supabase, codes),
@@ -412,9 +418,11 @@ async function buildPullbackWeeklyReportData(
     const latestFactors = snapshot?.factors && typeof snapshot.factors === "object"
       ? (snapshot.factors as Record<string, any>)
       : null;
-    const stableAccumulationTag =
-      (typeof latestFactors?.stable_accumulation === "boolean" && latestFactors.stable_accumulation) ||
-      Number(latestFactors?.stable_accumulation_days ?? 0) >= 2;
+    const stableAccumulationTag = hasStableAccumulationTag({
+      stableAccumulation:
+        typeof latestFactors?.stable_accumulation === "boolean" ? latestFactors.stable_accumulation : false,
+      stableAccumulationDays: Number(latestFactors?.stable_accumulation_days ?? 0),
+    });
     const scaledFactors = scaleScoreFactorsToReferencePrice(
       {
         sma20: toNum(latestFactors?.sma20 ?? item.sma20 ?? currentPrice),
@@ -481,10 +489,16 @@ async function buildPullbackWeeklyReportData(
   });
 
   const saferPool = pickSaferCandidates(enriched, Math.min(Math.max(enriched.length, 6), 20), riskProfile);
-  const finalCandidates = saferPool
+  const finalCandidates: PullbackCandidateSectionItem[] = saferPool
     .sort((a, b) => b.weeklyScore - a.weeklyScore || b.appearanceCount - a.appearanceCount || b.technicalScore - a.technicalScore)
     .slice(0, PULLBACK_REPORT_LIMIT)
-    .map((item, index) => ({
+    .map((item, index) => {
+      const promotedExecution = isExecutionCandidate({
+        score: item.technicalScore,
+        hasStableTag: item.stableAccumulationTag,
+        policy: stablePromotionPolicy,
+      });
+      return {
       code: item.code,
       name: item.name,
       market: item.market,
@@ -506,10 +520,11 @@ async function buildPullbackWeeklyReportData(
       trancheBudget: item.sizing.budget,
       quantity: item.sizing.quantity,
       highlight: index < 3,
-      candidateBucket: item.technicalScore >= 70 ? "execution" : (item.stableAccumulationTag ? "watchlist" : "watchlist"),
+      candidateBucket: promotedExecution ? "execution" : "watchlist",
       stableTag: item.stableAccumulationTag,
       rationale: `${item.entryGrade}등급 ${item.appearanceCount}회 · ${item.plan.statusLabel} · RR ${item.plan.riskReward.toFixed(1)}`,
-    }));
+      };
+    });
 
   return {
     candidates: finalCandidates,

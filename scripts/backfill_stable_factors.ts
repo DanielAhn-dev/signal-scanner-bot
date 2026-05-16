@@ -10,6 +10,12 @@ type Args = {
   concurrency?: number;
   onlyMissing: boolean;
   dryRun: boolean;
+  dateSource: "scores" | "stock_daily";
+};
+
+type DateSourceSpec = {
+  table: "scores" | "stock_daily";
+  dateColumn: string;
 };
 
 function parseArg(name: string): string | undefined {
@@ -33,6 +39,8 @@ function parseBoolArg(name: string, fallback: boolean): boolean {
 }
 
 function parseArgs(): Args {
+  const rawDateSource = (parseArg("dateSource") ?? "scores").trim().toLowerCase();
+  const dateSource: "scores" | "stock_daily" = rawDateSource === "stock_daily" ? "stock_daily" : "scores";
   return {
     from: parseArg("from"),
     to: parseArg("to"),
@@ -41,6 +49,7 @@ function parseArgs(): Args {
     concurrency: parseArg("concurrency") ? parseIntArg("concurrency", 0) : undefined,
     onlyMissing: parseBoolArg("onlyMissing", true),
     dryRun: parseBoolArg("dryRun", false),
+    dateSource,
   };
 }
 
@@ -70,6 +79,8 @@ function hasStableFactors(factors: Record<string, unknown> | null | undefined): 
 
 async function collectDistinctAsofDates(
   supabase: SupabaseClient,
+  table: "scores" | "stock_daily",
+  dateColumn: string,
   from?: string,
   to?: string,
   maxRows = 50000,
@@ -79,22 +90,23 @@ async function collectDistinctAsofDates(
 
   for (let offset = 0; offset < maxRows; offset += pageSize) {
     let query = supabase
-      .from("scores")
-      .select("asof")
-      .order("asof", { ascending: true })
+      .from(table)
+      .select(dateColumn)
+      .order(dateColumn, { ascending: true })
       .range(offset, offset + pageSize - 1);
 
-    if (from) query = query.gte("asof", from);
-    if (to) query = query.lte("asof", to);
+    if (from) query = query.gte(dateColumn, from);
+    if (to) query = query.lte(dateColumn, to);
 
     const { data, error } = await query;
-    if (error) throw new Error(`scores asof 조회 실패: ${error.message}`);
+    if (error) throw new Error(`${table}.${dateColumn} 조회 실패: ${error.message}`);
 
-    const rows = (data ?? []) as Array<{ asof?: string | null }>;
+    const rows = (data ?? []) as unknown[];
     if (rows.length === 0) break;
 
     for (const row of rows) {
-      const asof = String(row.asof ?? "").slice(0, 10);
+      const value = (row as Record<string, unknown>)[dateColumn];
+      const asof = String(value ?? "").slice(0, 10);
       if (asof) out.add(asof);
     }
 
@@ -102,6 +114,22 @@ async function collectDistinctAsofDates(
   }
 
   return [...out].sort();
+}
+
+async function resolveDateSourceSpec(supabase: SupabaseClient, dateSource: "scores" | "stock_daily"): Promise<DateSourceSpec> {
+  if (dateSource === "scores") {
+    return { table: "scores", dateColumn: "asof" };
+  }
+
+  const candidates = ["ymd", "asof", "date"];
+  for (const col of candidates) {
+    const { error } = await supabase.from("stock_daily").select(col).order(col, { ascending: true }).range(0, 0);
+    if (!error) {
+      return { table: "stock_daily", dateColumn: col };
+    }
+  }
+
+  throw new Error("stock_daily 날짜 컬럼을 찾지 못했습니다. 시도한 컬럼: ymd, asof, date");
 }
 
 async function inspectDateStableCoverage(
@@ -137,22 +165,23 @@ async function inspectDateStableCoverage(
 async function main() {
   const args = parseArgs();
   const supabase = requireSupabaseClient();
+  const source = await resolveDateSourceSpec(supabase, args.dateSource);
 
-  const dates = await collectDistinctAsofDates(supabase, args.from, args.to);
+  const dates = await collectDistinctAsofDates(supabase, source.table, source.dateColumn, args.from, args.to);
   if (!dates.length) {
     console.log("[backfill-stable] 대상 asof 날짜가 없습니다.");
     return;
   }
 
   console.log(
-    `[backfill-stable] foundDates=${dates.length} range=${dates[0]}..${dates[dates.length - 1]} onlyMissing=${args.onlyMissing} dryRun=${args.dryRun}`,
+    `[backfill-stable] dateSource=${args.dateSource} resolved=${source.table}.${source.dateColumn} foundDates=${dates.length} range=${dates[0]}..${dates[dates.length - 1]} onlyMissing=${args.onlyMissing} dryRun=${args.dryRun}`,
   );
 
   const selectedDates: string[] = [];
   for (const asof of dates) {
     const coverage = await inspectDateStableCoverage(supabase, asof);
     const missing = Math.max(coverage.total - coverage.stablePresent, 0);
-    const needsBackfill = !args.onlyMissing || (coverage.total > 0 && missing > 0);
+    const needsBackfill = !args.onlyMissing || coverage.total === 0 || missing > 0;
 
     console.log(
       `[backfill-stable] asof=${asof} total=${coverage.total} stablePresent=${coverage.stablePresent} missing=${missing} selected=${needsBackfill}`,
