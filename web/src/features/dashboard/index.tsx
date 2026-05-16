@@ -12,6 +12,36 @@ import { useCurrentChatId } from '../../stores/profileStore'
 
 export default function Dashboard({ onNavigate }: { onNavigate?: (r: string) => void }) {
   const chatId = useCurrentChatId()
+  const flowSteps = [
+    {
+      step: '01',
+      title: '시장 확인',
+      desc: '거시·변동성·섹터 흐름부터 먼저 본다.',
+      route: 'economy',
+      action: '경제 / 시장 보기',
+    },
+    {
+      step: '02',
+      title: '후보 압축',
+      desc: '스캔과 눌림목으로 3~5개만 남긴다.',
+      route: 'scan',
+      action: '스캔 열기',
+    },
+    {
+      step: '03',
+      title: '종목 검증',
+      desc: '분석·수급·재무로 진입 전 걸러낸다.',
+      route: 'analyze',
+      action: '분석 열기',
+    },
+    {
+      step: '04',
+      title: '실행 / 복기',
+      desc: '포트폴리오와 리포트로 실행을 닫는다.',
+      route: 'portfolio',
+      action: '포트폴리오 보기',
+    },
+  ]
 
   const {
     data: summaryRaw,
@@ -79,6 +109,28 @@ export default function Dashboard({ onNavigate }: { onNavigate?: (r: string) => 
           />
         </div>
       )}
+
+      <div className="mb-4">
+        <div className="dashboard-section-head">
+          <div className="title-md">오늘의 플로우</div>
+          <button type="button" className="dashboard-section-link" onClick={() => go('reports')}>복기 보기 →</button>
+        </div>
+        <div className="dashboard-flow-grid">
+          {flowSteps.map((step) => (
+            <button
+              key={step.step}
+              type="button"
+              className="card dashboard-flow-card card-action-btn"
+              onClick={() => go(step.route)}
+            >
+              <div className="dashboard-flow-step">{step.step}</div>
+              <div className="dashboard-flow-title">{step.title}</div>
+              <div className="dashboard-flow-desc">{step.desc}</div>
+              <div className="dashboard-flow-action">{step.action} →</div>
+            </button>
+          ))}
+        </div>
+      </div>
 
       <div className="cards-grid cols-2 mb-4">
         {loading && !summary ? (

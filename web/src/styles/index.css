@@ -196,6 +196,61 @@ a:focus-visible {
   flex-shrink: 0;
 }
 
+.dashboard-flow-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: var(--space-3);
+}
+
+.dashboard-flow-card {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  min-height: 148px;
+  border: 1px solid var(--color-border-default);
+  background: linear-gradient(180deg, var(--color-bg-surface) 0%, var(--color-bg-sunken) 100%);
+}
+
+.dashboard-flow-card:hover {
+  border-color: var(--color-brand-muted);
+  box-shadow: var(--shadow-sm);
+}
+
+.dashboard-flow-step {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 36px;
+  height: 24px;
+  padding: 0 8px;
+  border-radius: 999px;
+  background: var(--color-brand-subtle);
+  color: var(--color-brand);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
+.dashboard-flow-title {
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-text-primary);
+}
+
+.dashboard-flow-desc {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-secondary);
+  line-height: var(--line-height-snug);
+}
+
+.dashboard-flow-action {
+  margin-top: auto;
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-brand);
+}
+
 
 
 /* ================================================================
@@ -3332,7 +3387,11 @@ a:focus-visible {
 /* ── 반응형 (기존) ── */
 @media (max-width: 640px) {
   .sim-page { padding: var(--space-4) var(--space-3) var(--space-8); }
+  .sim-page { gap: var(--space-3); }
+  .sim-header { flex-direction: column; align-items: stretch; }
+  .sim-settings-btn { width: 100%; justify-content: center; }
   .sim-summary-grid { grid-template-columns: repeat(2, 1fr); }
+  .sim-summary-item { padding: var(--space-3); }
   .sim-settings-grid { grid-template-columns: 1fr; }
   .sim-params-grid { grid-template-columns: repeat(2, 1fr); }
   .sim-split-grid { grid-template-columns: repeat(2, 1fr); }
@@ -3341,12 +3400,40 @@ a:focus-visible {
   .sim-metric--hide-sm { display: none; }
   .sim-scenario-th--hide-sm { display: none; }
   .sim-settings-actions { flex-direction: column; align-items: stretch; }
+  .sim-settings-actions > .sim-btn,
+  .sim-settings-actions > .sim-telegram-wrap,
+  .sim-settings-actions > .sim-select {
+    width: 100%;
+  }
   .sim-telegram-wrap { margin-left: 0; }
+  .sim-telegram-wrap { flex-direction: column; align-items: stretch; }
+  .sim-telegram-wrap .sim-select,
+  .sim-telegram-wrap .sim-btn {
+    width: 100%;
+  }
   .sim-monthly-calc { grid-template-columns: 1fr; }
+  .sim-monthly-target-wrap { padding: var(--space-4); }
+  .sim-rec-source-group { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .sim-rec-source-btn { min-width: 0; align-items: flex-start; }
+  .sim-rec-profile-group { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .sim-rec-profile-btn { width: 100%; }
+  .sim-rec-item { flex-direction: column; align-items: stretch; }
+  .sim-rec-item-name { width: 100%; flex-wrap: wrap; }
   .sim-rec-metrics { flex-direction: column; align-items: flex-start; }
-  .sim-rec-item { flex-direction: column; align-items: flex-start; }
+  .sim-rec-metric { align-items: flex-start; }
   .sim-rec-footer { width: 100%; }
   .sim-rec-footer .sim-btn { flex: 1; }
+  .sim-cash-reserve-info { align-items: flex-start; flex-direction: column; }
+  .sim-compare-panel { padding: var(--space-4); }
+  .sim-compare-header { align-items: flex-start; flex-direction: column; }
+  .sim-compare-col { padding: var(--space-3); }
+  .sim-input-row { flex-direction: column; align-items: stretch; }
+  .sim-input-suffix {
+    width: 100%;
+    border-left: none;
+    border-top: 1px solid var(--color-border-default);
+    justify-content: flex-end;
+  }
 }
 
 /* ===== DB View ===== */
@@ -4087,6 +4174,14 @@ a:focus-visible {
   .dashboard-section-head {
     align-items: flex-start;
     flex-direction: column;
+  }
+
+  .dashboard-flow-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .dashboard-flow-card {
+    min-height: 0;
   }
 
   .dashboard-section-link {
