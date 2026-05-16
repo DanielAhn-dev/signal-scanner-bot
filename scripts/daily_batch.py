@@ -1265,10 +1265,15 @@ def save_pullback_signals(trading_date: str):
 def cleanup_old_data():
     print(f"\n[7/7] 오래된 데이터 정리...")
     cutoff = (date.today() - timedelta(days=400)).isoformat()
+    # 지표는 스캔/분석 품질(200일 이평 + 계절성 비교)을 위해 더 길게 유지
+    indicators_retention_days = safe_int(os.environ.get("DAILY_INDICATORS_RETENTION_DAYS", 730), 730)
+    indicators_retention_days = max(400, indicators_retention_days)
+    indicators_cutoff = (date.today() - timedelta(days=indicators_retention_days)).isoformat()
     try:
         supabase.table("stock_daily").delete().lt("date", cutoff).execute()
         supabase.table("investor_daily").delete().lt("date", cutoff).execute()
         supabase.table("sector_daily").delete().lt("date", cutoff).execute()
+        supabase.table("daily_indicators").delete().lt("trade_date", indicators_cutoff).execute()
         supabase.table("pullback_signals").delete().lt("trade_date", cutoff).execute()
         try:
             jobs_cutoff = (date.today() - timedelta(days=30)).isoformat()
@@ -1277,6 +1282,7 @@ def cleanup_old_data():
                 .lt("created_at", jobs_cutoff).execute()
         except:
             pass
+        print(f"  -> daily_indicators 보존일수: {indicators_retention_days}일 (컷오프: {indicators_cutoff})")
         print("  ✅ 정리 완료")
     except Exception as e:
         print(f"  ⚠️ 정리 실패 (무시 가능): {e}")
