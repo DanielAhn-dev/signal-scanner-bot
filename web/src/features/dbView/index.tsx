@@ -35,8 +35,13 @@ type DetailMeta = {
   } | null
   flow: {
     date?: string | null
+    metric?: 'volume' | 'amount' | null
     foreign?: number | null
     institution?: number | null
+    foreign_amount?: number | null
+    institution_amount?: number | null
+    foreign_volume?: number | null
+    institution_volume?: number | null
   } | null
 }
 
@@ -432,6 +437,12 @@ export default function DBViewPage() {
 
   const visibleSectors = showAllSectors ? activeSectors : activeSectors.slice(0, 15)
   const totalPages = Math.ceil(total / pageSize)
+  const flowMetric = detailMeta?.flow?.metric
+  const hasVolumeFlow = flowMetric === 'volume'
+  const foreignVolume = detailMeta?.flow?.foreign_volume ?? detailMeta?.flow?.foreign
+  const institutionVolume = detailMeta?.flow?.institution_volume ?? detailMeta?.flow?.institution
+  const foreignAmount = detailMeta?.flow?.foreign_amount ?? (flowMetric === 'amount' ? detailMeta?.flow?.foreign : null)
+  const institutionAmount = detailMeta?.flow?.institution_amount ?? (flowMetric === 'amount' ? detailMeta?.flow?.institution : null)
 
   return (
     <section className="container-app dbview-page">
@@ -702,10 +713,11 @@ export default function DBViewPage() {
                 <div className="caption muted">ROE {detailMeta?.profile?.roe == null ? '—' : `${formatNumber(detailMeta.profile.roe, 2)}%`}</div>
                 <div className="caption muted">부채비율 {detailMeta?.profile?.debt_ratio == null ? '—' : `${formatNumber(detailMeta.profile.debt_ratio, 2)}%`}</div>
                 <div className="caption muted">외국인지분율 {detailMeta?.profile?.foreign_ratio == null ? '—' : `${formatNumber(detailMeta.profile.foreign_ratio, 2)}%`}</div>
-                <div className="caption muted">수급(외국인, 주) {detailMeta?.flow?.foreign == null ? '—' : `${formatNumber(detailMeta.flow.foreign)}주`}</div>
-                <div className="caption muted">수급(기관, 주) {detailMeta?.flow?.institution == null ? '—' : `${formatNumber(detailMeta.flow.institution)}주`}</div>
-                <div className="caption muted">수급대금(외국인) {formatWon(detailMeta?.flow?.foreign_amount)}</div>
-                <div className="caption muted">수급대금(기관) {formatWon(detailMeta?.flow?.institution_amount)}</div>
+                <div className="caption muted">수급(외국인{hasVolumeFlow ? ', 주' : ''}) {hasVolumeFlow ? (foreignVolume == null ? '—' : `${formatNumber(foreignVolume)}주`) : formatWon(foreignAmount)}</div>
+                <div className="caption muted">수급(기관{hasVolumeFlow ? ', 주' : ''}) {hasVolumeFlow ? (institutionVolume == null ? '—' : `${formatNumber(institutionVolume)}주`) : formatWon(institutionAmount)}</div>
+                {hasVolumeFlow && <div className="caption muted">수급대금(외국인) {formatWon(foreignAmount)}</div>}
+                {hasVolumeFlow && <div className="caption muted">수급대금(기관) {formatWon(institutionAmount)}</div>}
+                <div className="caption muted">데이터 기준일(시세) {detailMeta?.latest?.date ?? '—'}</div>
                 <div className="caption muted">재무기준일 {detailMeta?.profile?.fundamentals_as_of ? formatDateKst(detailMeta.profile.fundamentals_as_of) : '—'}</div>
                 <div className="caption muted">수급기준일 {detailMeta?.flow?.date ? formatDateKst(detailMeta.flow.date) : '—'}</div>
               </div>

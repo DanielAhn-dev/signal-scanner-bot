@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import date, timedelta
 import os
 import sys
+from pathlib import Path
 from typing import Dict, List, Tuple
 import time
 import pandas as pd
@@ -11,12 +12,46 @@ import numpy as np
 from pykrx import stock
 from supabase import create_client, Client
 
+
+def load_env_file() -> None:
+    """Load .env into process environment when shell variables are missing."""
+    candidates = [
+        Path.cwd() / ".env",
+        Path(__file__).resolve().parents[1] / ".env",
+    ]
+    seen: set[str] = set()
+    for env_path in candidates:
+        key = str(env_path.resolve()) if env_path.exists() else str(env_path)
+        if key in seen or not env_path.exists() or not env_path.is_file():
+            continue
+        seen.add(key)
+        try:
+            for raw in env_path.read_text(encoding="utf-8").splitlines():
+                line = raw.strip()
+                if not line or line.startswith("#") or "=" not in line:
+                    continue
+                k, v = line.split("=", 1)
+                name = k.strip()
+                if not name or name in os.environ:
+                    continue
+                value = v.strip().strip('"').strip("'")
+                os.environ[name] = value
+        except Exception:
+            continue
+
+
+load_env_file()
+
 # ===== 환경 변수 =====
 SUPABASE_URL = os.environ.get("SUPABASE_URL")
-SUPABASE_KEY = os.environ.get("SUPABASE_SERVICE_ROLE_KEY")
+SUPABASE_KEY = (
+    os.environ.get("SUPABASE_SERVICE_ROLE_KEY")
+    or os.environ.get("SERVICE_ROLE_KEY")
+    or os.environ.get("SUPABASE_KEY")
+)
 
 if not SUPABASE_URL or not SUPABASE_KEY:
-    print("환경 변수 에러: SUPABASE_URL / SERVICE_ROLE_KEY 누락", file=sys.stderr)
+    print("환경 변수 에러: SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY 누락", file=sys.stderr)
     sys.exit(1)
 
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
@@ -41,6 +76,60 @@ def infer_index_code_from_name(name: str) -> str | None:
         if kw in name:
             return code
     return None
+
+
+def fetch_all_stock_codes(batch_size: int = 1000) -> List[str]:
+    """Fetch stock codes from Supabase with pagination.
+
+    Prioritize active core/extended universe used by scan/highlight flows.
+    Falls back to unfiltered code list when schema differs.
+    """
+    codes: List[str] = []
+    start = 0
+    while True:
+        end = start + batch_size - 1
+        try:
+            res = (
+                supabase
+                .table("stocks")
+                .select("code,is_active,universe_level")
+                .range(start, end)
+                .execute()
+            )
+        except Exception:
+            try:
+                res = (
+                    supabase
+                    .table("stocks")
+                    .select("code")
+                    .range(start, end)
+                    .execute()
+                )
+            except Exception:
+                break
+
+        rows = res.data or []
+        if not rows:
+            break
+
+        for row in rows:
+            code = str(row.get("code") or "").strip()
+            if code:
+                is_active = row.get("is_active")
+                universe_level = str(row.get("universe_level") or "").strip().lower()
+                if is_active is False:
+                    continue
+                if universe_level and universe_level not in {"core", "extended"}:
+                    continue
+                codes.append(code)
+
+        if len(rows) < batch_size:
+            break
+        start += batch_size
+
+    # Preserve order while removing duplicates.
+    unique_codes = list(dict.fromkeys(codes))
+    return unique_codes
 
 def get_sector_index_map() -> Dict[str, str]:
     try:
@@ -184,9 +273,12 @@ def upsert_stock_daily():
     print(f"[stock_daily] {start_str}~{end_str} 수집")
 
     try:
-        res = supabase.table("stocks").select("code").execute()
-        tickers = [row["code"] for row in res.data or []]
-    except:
+        tickers = fetch_all_stock_codes()
+    except Exception:
+        return
+
+    if not tickers:
+        print("[stock_daily] 대상 종목 없음")
         return
 
     all_rows = []
@@ -282,7 +374,10 @@ def upsert_daily_indicators():
     start_str = (today - timedelta(days=400)).strftime("%Y%m%d")
     end_str = today.strftime("%Y%m%d")
 
-    tickers = stock.get_market_ticker_list(market="KOSPI") + stock.get_market_ticker_list(market="KOSDAQ")
+    tickers = fetch_all_stock_codes()
+    if not tickers:
+        print("[daily_indicators] 대상 종목 없음")
+        return
     print(f"대상 종목: {len(tickers)}개")
     
     upsert_buffer = []

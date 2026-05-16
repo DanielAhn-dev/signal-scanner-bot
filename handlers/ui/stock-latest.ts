@@ -327,6 +327,24 @@ function toIsoDate(v: unknown): string | null {
   return d.toISOString()
 }
 
+function parseDateValue(v: unknown): Date | null {
+  if (!v) return null
+  const raw = String(v).trim()
+  if (!raw) return null
+  const normalized = /^\d{4}-\d{2}-\d{2}$/.test(raw) ? `${raw}T00:00:00+09:00` : raw
+  const dt = new Date(normalized)
+  return Number.isNaN(dt.getTime()) ? null : dt
+}
+
+function isStaleByDays(v: unknown, maxAgeDays: number): boolean {
+  if (maxAgeDays < 0) return false
+  const dt = parseDateValue(v)
+  if (!dt) return true
+  const ageMs = Date.now() - dt.getTime()
+  const maxAgeMs = maxAgeDays * 24 * 60 * 60 * 1000
+  return ageMs > maxAgeMs
+}
+
 function normalizeSeriesRow(raw: any): LatestRow {
   return {
     date: toIsoDate(raw?.date ?? raw?.traded_at ?? raw?.created_at ?? null),
@@ -592,6 +610,14 @@ async function fetchLatestCreditShortDaily(supabase: any, code: string): Promise
 }
 
 async function fetchInvestorFlow(supabase: any, code: string): Promise<InvestorFlowRow | null> {
+  const disableInvestorFlow = ['1', 'true', 'yes', 'on'].includes(String(process.env.UI_DISABLE_KRX_FLOW ?? process.env.DISABLE_INVESTOR_FLOW ?? '').trim().toLowerCase())
+  if (disableInvestorFlow) {
+    return null
+  }
+
+  const parsedMaxAgeDays = Number(process.env.UI_INVESTOR_FLOW_MAX_AGE_DAYS ?? '14')
+  const maxFlowAgeDays = Number.isFinite(parsedMaxAgeDays) ? Math.max(0, Math.floor(parsedMaxAgeDays)) : 14
+
   const attempts = [
     {
       table: 'investor_daily',
@@ -634,6 +660,10 @@ async function fetchInvestorFlow(supabase: any, code: string): Promise<InvestorF
 
       if (!error && data && data.length) {
         const row = data[0] as any
+        if (isStaleByDays(row?.date, maxFlowAgeDays)) {
+          continue
+        }
+
         const personalVolume = asNum(row?.personal_volume ?? row?.retail_volume)
         const foreignVolume = asNum(row?.foreign_volume)
         const institutionVolume = asNum(row?.institution_volume)
