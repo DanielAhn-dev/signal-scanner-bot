@@ -1,6 +1,7 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { createClient, SupabaseClient } from '@supabase/supabase-js'
 import { applyAdaptiveOverlayToPullbackCandidate, getAdaptiveStrategyInsights } from '../../src/services/adaptiveStrategyService'
+import { scoreLeadAccumulationCandidate } from '../../src/services/accumulationSignalService'
 import { fetchRealtimePriceBatch } from '../../src/utils/fetchRealtimePrice'
 
 const ORIGIN = process.env.UI_CORS_ORIGIN || '*'
@@ -180,6 +181,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const stock = Array.isArray(row.stock) ? (row.stock[0] || {}) : (row.stock || {})
       const adaptive = applyAdaptiveOverlayToPullbackCandidate(row, adaptiveInsights)
       const baseScore = Number(row.entry_score ?? 0) * 20 - Number(row.warn_score ?? 0) * 3
+      const leadSignal = scoreLeadAccumulationCandidate(row)
       const closePrice = Number(stock.close ?? 0)
       const realtimePrice = Number(realtimeMap[row.code]?.price ?? 0)
       const hasRealtime = intraday && Number.isFinite(realtimePrice) && realtimePrice > 0
@@ -217,10 +219,18 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         adaptive_adjustment: adaptive.adjustment,
         adaptive_reasons: adaptive.reasons,
         adaptive_score: round1(baseScore + adaptive.adjustment + intradayDelta),
+        lead_accumulation_score: leadSignal.score,
+        lead_accumulation_stage: leadSignal.stage,
       }
     })
 
-    rows.sort((a: any, b: any) => Number(b.adaptive_score ?? 0) - Number(a.adaptive_score ?? 0) || Number(b.entry_score ?? 0) - Number(a.entry_score ?? 0))
+    rows.sort((a: any, b: any) => {
+      const leadDiff = Number(b.lead_accumulation_score ?? 0) - Number(a.lead_accumulation_score ?? 0)
+      if (leadDiff !== 0) return leadDiff
+      const adaptiveDiff = Number(b.adaptive_score ?? 0) - Number(a.adaptive_score ?? 0)
+      if (adaptiveDiff !== 0) return adaptiveDiff
+      return Number(b.entry_score ?? 0) - Number(a.entry_score ?? 0)
+    })
 
     const payload = {
       marketPhase: intraday ? 'intraday' : 'after-close',

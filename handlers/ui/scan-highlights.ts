@@ -1,6 +1,7 @@
 ﻿import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
 import { createDailyCandidatePlanningReportResult } from '../../src/services/marketInsightService'
+import { scoreLeadAccumulationCandidate } from '../../src/services/accumulationSignalService'
 
 const ORIGIN = process.env.UI_CORS_ORIGIN || '*'
 const CACHE_TTL_MS = 300_000 // 5분 (캐시 자주 갱신되지 않으므로)
@@ -40,6 +41,8 @@ export type ScanHighlightItem = {
   adaptive_adjustment?: number
   adaptive_reasons?: string[]
   adaptive_score?: number
+  lead_accumulation_score?: number
+  lead_accumulation_stage?: 'none' | 'lead' | 'breakout'
   // forecast fields
   entry_price: number | null
   strategy_label: string
@@ -124,6 +127,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     const data: ScanHighlightItem[] = ranked.map((f) => {
       const g = gradeMap.get(f.code)
+      const leadSignal = scoreLeadAccumulationCandidate(g ?? {})
       return {
         code: f.code,
         name: f.name,
@@ -140,6 +144,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         total_score: null,
         highlight_score: f.confidencePct,
         adaptive_score: f.confidencePct,
+        lead_accumulation_score: leadSignal.score,
+        lead_accumulation_stage: leadSignal.stage,
         entry_price: f.entryPrice > 0 ? f.entryPrice : null,
         strategy_label: f.strategyLabel,
         expected_base_pct: f.expectedBasePct,
