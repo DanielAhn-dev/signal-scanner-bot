@@ -1201,23 +1201,110 @@ a:focus-visible {
   box-shadow: 0 3px 10px rgba(12, 32, 64, 0.04);
 }
 
-.portfolio-reason-badges {
+/* ── 카드 헤더: 종목명 + 손익 ── */
+.portfolio-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: var(--space-3);
+}
+
+.portfolio-card-title-group {
   display: flex;
   flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px;
+  min-width: 0;
+}
+
+.portfolio-stock-code {
+  flex-shrink: 0;
+}
+
+.portfolio-pnl-amount {
+  font-weight: var(--font-weight-bold);
+  font-size: var(--font-size-xl);
+  white-space: nowrap;
+}
+
+/* ── 계좌 · 상태 · 등급 칩 ── */
+.portfolio-card-chips {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: var(--space-2);
+}
+
+.portfolio-account-chip {
+  display: inline-flex;
+  align-items: center;
   gap: 4px;
-  margin-top: 6px;
+  padding: 3px 8px;
+  background: var(--color-bg-sunken);
+  border: 1px solid var(--color-border-default);
+  border-radius: 4px;
+  font-size: var(--font-size-xs);
+  font-weight: 600;
+  color: var(--color-text-primary);
+}
+
+.portfolio-state-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 8px;
+  border-radius: 4px;
+  font-size: var(--font-size-xs);
+  font-weight: 600;
+}
+
+.portfolio-state-chip--hold {
+  background: var(--color-bg-sunken);
+  border: 1px solid var(--color-border-default);
+  color: var(--color-text-secondary);
+}
+
+.portfolio-state-chip--add {
+  background: #dbeafe;
+  border: 1px solid #93c5fd;
+  color: #1d4ed8;
+}
+
+.portfolio-state-chip--partial {
+  background: #fff3cd;
+  border: 1px solid #f0c430;
+  color: #7d5800;
+}
+
+.portfolio-grade-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 8px;
+  background: var(--color-bg-sunken);
+  border: 1px solid var(--color-border-default);
+  border-radius: 4px;
+  font-size: var(--font-size-xs);
+  color: var(--color-text-secondary);
+}
+
+/* ── 판정 배지 + 토글 ── */
+.portfolio-card-badges-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: var(--space-2);
 }
 
 .portfolio-reason-toggle {
-  margin-left: 4px;
   padding: 0;
   border: 0;
   background: transparent;
   color: var(--color-text-secondary);
   text-decoration: underline dotted;
   cursor: pointer;
-  font-size: inherit;
-  line-height: inherit;
+  font-size: var(--font-size-xs);
+  line-height: 1.5;
 }
 
 .portfolio-reason-toggle:hover {
@@ -1243,14 +1330,16 @@ a:focus-visible {
 }
 
 .portfolio-reason-badge {
-  display: inline-block;
-  padding: 1px 7px;
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
   border-radius: 999px;
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 600;
-  line-height: 1.6;
+  line-height: 1.5;
   letter-spacing: 0.01em;
   white-space: nowrap;
+  cursor: help;
 }
 
 .portfolio-reason-badge--partial {
@@ -1284,29 +1373,58 @@ a:focus-visible {
 }
 
 .portfolio-position-meta {
-  @apply mt-1;
+  margin-top: var(--space-1);
 }
 
 .portfolio-position-pnl {
-  min-width: 140px;
+  min-width: 130px;
 }
 
 .portfolio-lots {
-  @apply inline-flex;
-  @apply mt-2;
-  @apply px-2 py-1;
-  @apply rounded-sm;
+  display: inline-flex;
+  margin-top: var(--space-2);
+  padding: 4px 8px;
+  border-radius: var(--radius-sm);
   background: var(--color-bg-sunken);
+  border: 1px solid var(--color-border-default);
 }
 
 .portfolio-actions-row {
-  @apply flex;
+  display: flex;
+  flex-wrap: wrap;
   gap: var(--space-2);
-  @apply mt-3;
+  margin-top: var(--space-3);
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--color-border-default);
 }
 
 .portfolio-action-btn {
-  min-width: 5.25rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 5rem;
+}
+
+/* ── 추가매수 모달 로트 내역 ── */
+.portfolio-modal-lots {
+  margin-bottom: var(--space-3);
+  padding: 8px 10px;
+  background: var(--color-bg-sunken);
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--radius-sm);
+}
+
+.portfolio-modal-lots-title {
+  font-size: var(--font-size-xs);
+  font-weight: 600;
+  color: var(--color-text-primary);
+  margin-bottom: 4px;
+}
+
+.portfolio-modal-lots-row {
+  font-size: var(--font-size-xs);
+  color: var(--color-text-secondary);
+  line-height: 1.6;
 }
 
 .portfolio-capture-card {
@@ -4496,7 +4614,11 @@ a:focus-visible {
 
 /* 테이블 */
 .scan-table-wrap {
-  @apply overflow-x-auto;
+  overflow-x: auto;
+  background: var(--color-bg-surface);
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--radius-lg);
+  box-shadow: 0 1px 4px rgba(12, 32, 64, 0.04);
 }
 .scan-table {
   @apply w-full;
@@ -4504,55 +4626,84 @@ a:focus-visible {
   font-size: var(--font-size-sm);
 }
 .scan-thead tr {
-  border-bottom: 2px solid var(--color-border-default);
+  background: var(--color-bg-sunken);
+  border-bottom: 1px solid var(--color-border-default);
   @apply text-left;
 }
 .scan-th {
-  padding: var(--space-2) var(--space-3);
+  padding: 10px var(--space-3);
   @apply whitespace-nowrap;
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-xs);
+  font-weight: 600;
+  letter-spacing: 0.02em;
 }
 .scan-sort-btn {
   @apply bg-transparent border-none cursor-pointer p-0;
-  @apply font-medium text-sm;
+  font-size: var(--font-size-xs);
+  font-weight: 600;
+  letter-spacing: 0.02em;
   @apply whitespace-nowrap;
   color: var(--color-text-secondary);
   transition: color var(--duration-fast);
+}
+.scan-sort-btn:hover {
+  color: var(--color-text-primary);
 }
 .scan-sort-btn--active {
   color: var(--color-text-primary);
   @apply font-semibold;
 }
 .scan-tr {
+  background: var(--color-bg-surface);
   border-bottom: 1px solid var(--color-border-default);
+  border-left: 3px solid transparent;
   cursor: pointer;
   transition: background var(--duration-fast);
+}
+.scan-tr:last-child {
+  border-bottom: none;
 }
 .scan-tr:hover {
   background: var(--color-bg-sunken);
 }
+.scan-tr--level-a {
+  border-left-color: var(--color-success, #059669);
+}
+.scan-tr--level-b {
+  border-left-color: var(--color-brand, #0060FF);
+}
 .scan-td {
-  padding: var(--space-2) var(--space-3);
+  padding: 10px var(--space-3);
   @apply whitespace-nowrap;
+  vertical-align: middle;
 }
 .scan-td-code {
   font-family: var(--font-family-mono);
   color: var(--color-text-brand);
-  @apply font-semibold;
+  font-weight: 600;
+  font-size: var(--font-size-xs);
+  letter-spacing: 0.03em;
 }
 .scan-td-name {
-  @apply font-medium;
+  font-weight: 500;
   color: var(--color-text-primary);
 }
 .scan-td-sector {
   color: var(--color-text-secondary);
+  font-size: var(--font-size-xs);
+  max-width: 160px;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .scan-td-date {
   color: var(--color-text-tertiary);
+  font-size: var(--font-size-xs);
 }
 .scan-td-updated-sub {
-  @apply text-xs;
+  font-size: 11px;
   color: var(--color-text-tertiary);
-  @apply mt-1;
+  margin-top: 2px;
   line-height: var(--line-height-snug);
 }
 
@@ -4570,6 +4721,9 @@ a:focus-visible {
 
 .scan-candidates-stage {
   background: transparent;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
 }
 
 /* 발굴 페이지 순위 배지 */
