@@ -3943,6 +3943,66 @@ a:focus-visible {
   line-height: 1.5;
 }
 
+/* 백테스트 테이블 */
+.bt-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--font-size-sm);
+}
+.bt-table thead th {
+  padding: var(--space-2) var(--space-3);
+  text-align: left;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--color-text-tertiary);
+  background: var(--color-bg-sunken);
+  border-bottom: 2px solid var(--color-border-default);
+  white-space: nowrap;
+}
+.bt-table thead th:first-child { padding-left: var(--space-4); }
+.bt-table thead th:last-child  { padding-right: var(--space-4); text-align: right; }
+.bt-table tbody tr {
+  border-bottom: 1px solid var(--color-border-default);
+  transition: background var(--duration-fast);
+}
+.bt-table tbody tr:last-child { border-bottom: none; }
+.bt-table tbody tr:hover { background: var(--color-bg-sunken); }
+.bt-table tbody td {
+  padding: 10px var(--space-3);
+  color: var(--color-text-primary);
+  vertical-align: middle;
+}
+.bt-table tbody td:first-child { padding-left: var(--space-4); }
+.bt-table tbody td:last-child  { padding-right: var(--space-4); text-align: right; }
+.bt-table-stock-name {
+  font-weight: 600;
+  font-size: var(--font-size-sm);
+  color: var(--color-text-primary);
+}
+.bt-table-stock-code {
+  font-size: 11px;
+  color: var(--color-text-tertiary);
+  font-family: var(--font-family-mono);
+  display: block;
+  margin-top: 1px;
+}
+.bt-table-return-pos { color: var(--color-success); font-weight: 700; font-variant-numeric: tabular-nums; }
+.bt-table-return-neg { color: var(--color-error);   font-weight: 700; font-variant-numeric: tabular-nums; }
+.bt-table-num { font-variant-numeric: tabular-nums; color: var(--color-text-secondary); }
+.bt-table-signal {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 7px;
+  border-radius: var(--radius-full);
+  font-size: 11px;
+  font-weight: 600;
+  background: var(--color-bg-sunken);
+  color: var(--color-text-secondary);
+}
+.bt-table-signal--buy  { background: var(--color-success-bg); color: var(--color-success); }
+.bt-table-signal--sell { background: var(--color-error-bg);   color: var(--color-error);   }
+.bt-table-signal--watch { background: var(--color-info-bg);   color: var(--color-info);    }
+
 /* ===== DB View ===== */
 .dbview-page {
   padding-top: var(--space-6);

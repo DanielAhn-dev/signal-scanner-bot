@@ -26,13 +26,44 @@ type BacktestResponse = {
   risers: BacktestRiser[]
 }
 
+type StockIndicators = {
+  code: string
+  name: string | null
+  market: string | null
+  close: number | null
+  score_date: string | null
+  total_score: number | null
+  signal: string | null
+  indicator_date: string | null
+  rsi14: number | null
+  sma20: number | null
+  sma50: number | null
+  sma200: number | null
+  roc21: number | null
+  pullback_date: string | null
+  entry_grade: string | null
+  entry_score: number | null
+  warn_grade: string | null
+  warn_score: number | null
+  dist_pct: number | null
+}
+
 function pct(value: number | null | undefined, digits = 1): string {
   const n = Number(value)
   if (!Number.isFinite(n)) return '-'
   return `${n.toFixed(digits)}%`
 }
 
-function isBuySignal(signal: string): boolean {
+function signalCls(signal: string): string {
+  const u = signal.toUpperCase()
+  if (u.includes('BUY')) return 'bt-table-signal bt-table-signal--buy'
+  if (u.includes('SELL')) return 'bt-table-signal bt-table-signal--sell'
+  if (u.includes('WATCH')) return 'bt-table-signal bt-table-signal--watch'
+  return 'bt-table-signal'
+}
+
+function isBuySignal(signal: string | null): boolean {
+  if (!signal) return false
   const u = signal.toUpperCase()
   return ['BUY', 'STRONG_BUY', 'ACCUMULATE', '매수'].some((s) => u.includes(s))
 }
@@ -124,8 +155,9 @@ export default function BacktestPage() {
   const [checkResults, setCheckResults] = useState<any[]>([])
   const [checkFocused, setCheckFocused] = useState(false)
   const [selectedStock, setSelectedStock] = useState<{ code: string; name: string } | null>(null)
-  const [scanData, setScanData] = useState<any | null>(null)
+  const [indicators, setIndicators] = useState<StockIndicators | null>(null)
   const [checkLoading, setCheckLoading] = useState(false)
+  const [checkError, setCheckError] = useState<string | null>(null)
   const [investAmount, setInvestAmount] = useState(1_000_000)
   const checkDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
@@ -160,10 +192,7 @@ export default function BacktestPage() {
   useEffect(() => {
     if (checkDebounceRef.current) clearTimeout(checkDebounceRef.current)
     const q = checkSearch.trim()
-    if (q.length < 2) {
-      setCheckResults([])
-      return
-    }
+    if (q.length < 2) { setCheckResults([]); return }
     checkDebounceRef.current = setTimeout(async () => {
       try {
         const results = await searchStocks(q, 8)
@@ -174,19 +203,18 @@ export default function BacktestPage() {
     }, 150)
   }, [checkSearch])
 
-  const fetchScanData = async (code: string) => {
+  const fetchIndicators = async (code: string) => {
     setCheckLoading(true)
-    setScanData(null)
+    setIndicators(null)
+    setCheckError(null)
     try {
-      const res = await apiFetch('/api/ui/scan-candidates?limit=200&cacheMs=60000', {
-        cacheMs: 60_000,
-        timeoutMs: 15_000,
+      const res = await apiFetch(`/api/ui/stock-indicators?code=${encodeURIComponent(code)}`, {
+        cacheMs: 0,
+        timeoutMs: 12_000,
       })
-      const candidates = Array.isArray(res?.data) ? res.data : []
-      const found = candidates.find((c: any) => String(c.code || '').trim() === code.trim())
-      setScanData(found || null)
-    } catch {
-      setScanData(null)
+      setIndicators((res?.data ?? null) as StockIndicators | null)
+    } catch (e: any) {
+      setCheckError(e?.message || '지표 조회 실패')
     } finally {
       setCheckLoading(false)
     }
@@ -196,31 +224,18 @@ export default function BacktestPage() {
     setSelectedStock(stock)
     setCheckSearch(stock.name)
     setCheckResults([])
-    void fetchScanData(stock.code)
+    void fetchIndicators(stock.code)
   }
 
   const patternMatch = useMemo(() => {
-    if (!data || !selectedStock) return null
-    if (!scanData) {
-      return {
-        found: false,
-        score: null as number | null,
-        signal: null as string | null,
-        rsi: null as number | null,
-        scoreMatch: false,
-        buyMatch: false,
-        rsiMatch: false,
-        matchCount: 0,
-      }
-    }
-    const score = Number(scanData.adaptive_score ?? scanData.total_score ?? scanData.score ?? 0)
-    const signal = String(scanData.signal ?? scanData.entry_signal ?? '')
-    const rsi = Number(scanData.rsi14 ?? scanData.rsi ?? 0)
+    if (!data || !selectedStock || !indicators) return null
+    const score = indicators.total_score ?? 0
+    const signal = indicators.signal ?? ''
+    const rsi = indicators.rsi14 ?? 0
     const scoreMatch = score >= 70
     const buyMatch = isBuySignal(signal)
     const rsiMatch = rsi >= 45 && rsi <= 65
     return {
-      found: true,
       score,
       signal,
       rsi,
@@ -228,14 +243,18 @@ export default function BacktestPage() {
       buyMatch,
       rsiMatch,
       matchCount: [scoreMatch, buyMatch, rsiMatch].filter(Boolean).length,
+      entryGrade: indicators.entry_grade,
+      warnGrade: indicators.warn_grade,
+      distPct: indicators.dist_pct,
+      dataDate: indicators.score_date ?? indicators.indicator_date,
     }
-  }, [data, selectedStock, scanData])
+  }, [data, selectedStock, indicators])
 
   const investSim = useMemo(() => {
     if (!data || investAmount <= 0) return null
     const avgReturn = data.riserSummary.avgForwardReturnPct
     const gain = investAmount * (avgReturn / 100)
-    return { gain, total: investAmount + gain, avgReturn }
+    return { gain, avgReturn }
   }, [data, investAmount])
 
   const sorted = useMemo(() => {
@@ -398,12 +417,13 @@ export default function BacktestPage() {
               <div className="sim-add-input-row">
                 <input
                   className="sim-add-input"
-                  placeholder="스캔/하이라이트에서 발견한 종목명 또는 코드..."
+                  placeholder="종목명 또는 코드 입력 (스캔 목록 외 종목도 가능)..."
                   value={checkSearch}
                   onChange={(e) => {
                     setCheckSearch(e.target.value)
                     setSelectedStock(null)
-                    setScanData(null)
+                    setIndicators(null)
+                    setCheckError(null)
                   }}
                   onFocus={() => setCheckFocused(true)}
                   onBlur={() => setTimeout(() => setCheckFocused(false), 150)}
@@ -414,7 +434,8 @@ export default function BacktestPage() {
                     onClick={() => {
                       setCheckSearch('')
                       setSelectedStock(null)
-                      setScanData(null)
+                      setIndicators(null)
+                      setCheckError(null)
                       setCheckResults([])
                     }}
                   >
@@ -443,99 +464,91 @@ export default function BacktestPage() {
             {selectedStock && (
               <div className="bt-check-result">
                 <div className="bt-check-stock-head">
-                  <span className="bt-check-stock-name">{selectedStock.name}</span>
+                  <span className="bt-check-stock-name">
+                    {indicators?.name ?? selectedStock.name}
+                  </span>
                   <span className="bt-check-stock-code">{selectedStock.code}</span>
-                  {checkLoading && <span className="bt-check-loading">분석 중...</span>}
+                  {indicators?.market && (
+                    <span style={{ fontSize: 11, color: 'var(--color-text-tertiary)', background: 'var(--color-bg-sunken)', padding: '2px 6px', borderRadius: 4 }}>
+                      {indicators.market}
+                    </span>
+                  )}
+                  {checkLoading && <span className="bt-check-loading">지표 조회 중...</span>}
                 </div>
 
-                {!checkLoading && patternMatch && (
+                {checkError && (
+                  <div className="bt-check-not-found" style={{ color: 'var(--color-error)' }}>
+                    {checkError}
+                  </div>
+                )}
+
+                {!checkLoading && !checkError && indicators && patternMatch && (
                   <>
-                    {!patternMatch.found ? (
-                      <div className="bt-check-not-found">
-                        현재 스캔 목록에 없는 종목입니다. 이 종목이 스캔·하이라이트에 등장하면
-                        다시 확인해 보세요.
-                        <br />
-                        <span style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-tertiary)' }}>
-                          아래 투자 시뮬레이션은 역추적 평균 수익률 기준입니다.
-                        </span>
-                      </div>
-                    ) : (
-                      <div className="bt-check-criteria">
-                        <div
-                          className={`bt-check-criterion ${
-                            patternMatch.scoreMatch
-                              ? 'bt-check-criterion--match'
-                              : 'bt-check-criterion--miss'
-                          }`}
-                        >
-                          <span className="bt-check-criterion-icon">
-                            {patternMatch.scoreMatch ? '✅' : '❌'}
+                    {/* 현재 지표 요약 */}
+                    {patternMatch.dataDate && (
+                      <div style={{ fontSize: 11, color: 'var(--color-text-tertiary)', marginBottom: 6 }}>
+                        기준일: {patternMatch.dataDate}
+                        {indicators.close != null && (
+                          <span style={{ marginLeft: 10 }}>
+                            현재가 {indicators.close.toLocaleString('ko-KR')}원
                           </span>
-                          <div className="bt-check-criterion-info">
-                            <span className="bt-check-criterion-label">점수 ≥ 70</span>
-                            <span className="bt-check-criterion-current">
-                              현재 점수 {patternMatch.score}
-                            </span>
-                          </div>
-                          <span className="bt-check-criterion-stat">
-                            급등 전 {pct(data.commonFeatures.score70RatePct)}가 해당
+                        )}
+                        {patternMatch.entryGrade && (
+                          <span style={{ marginLeft: 10 }}>
+                            눌림목 등급 <strong>{patternMatch.entryGrade}</strong>
                           </span>
-                        </div>
-                        <div
-                          className={`bt-check-criterion ${
-                            patternMatch.buyMatch
-                              ? 'bt-check-criterion--match'
-                              : 'bt-check-criterion--miss'
-                          }`}
-                        >
-                          <span className="bt-check-criterion-icon">
-                            {patternMatch.buyMatch ? '✅' : '❌'}
+                        )}
+                        {patternMatch.warnGrade && patternMatch.warnGrade !== 'SAFE' && (
+                          <span style={{ marginLeft: 10, color: 'var(--color-warning)' }}>
+                            경고 {patternMatch.warnGrade}
                           </span>
-                          <div className="bt-check-criterion-info">
-                            <span className="bt-check-criterion-label">BUY계열 시그널</span>
-                            <span className="bt-check-criterion-current">
-                              현재 {patternMatch.signal || '-'}
-                            </span>
-                          </div>
-                          <span className="bt-check-criterion-stat">
-                            급등 전 {pct(data.commonFeatures.buySignalRatePct)}가 해당
-                          </span>
-                        </div>
-                        <div
-                          className={`bt-check-criterion ${
-                            patternMatch.rsiMatch
-                              ? 'bt-check-criterion--match'
-                              : 'bt-check-criterion--miss'
-                          }`}
-                        >
-                          <span className="bt-check-criterion-icon">
-                            {patternMatch.rsiMatch ? '✅' : '❌'}
-                          </span>
-                          <div className="bt-check-criterion-info">
-                            <span className="bt-check-criterion-label">RSI 45~65 (매집 구간)</span>
-                            <span className="bt-check-criterion-current">
-                              현재 RSI{' '}
-                              {patternMatch.rsi ? patternMatch.rsi.toFixed(1) : '-'}
-                            </span>
-                          </div>
-                          <span className="bt-check-criterion-stat">
-                            급등 전 {pct(data.commonFeatures.rsi45to65RatePct)}가 해당
-                          </span>
-                        </div>
-                        <div className="bt-check-match-summary">
-                          <span className="bt-check-match-count">
-                            {patternMatch.matchCount}/3 조건 충족
-                          </span>
-                          <span
-                            className={`bt-check-match-badge ${
-                              matchMeta(patternMatch.matchCount).cls
-                            }`}
-                          >
-                            {matchMeta(patternMatch.matchCount).label}
-                          </span>
-                        </div>
+                        )}
                       </div>
                     )}
+
+                    {/* 패턴 조건 체크 */}
+                    <div className="bt-check-criteria">
+                      <div className={`bt-check-criterion ${patternMatch.scoreMatch ? 'bt-check-criterion--match' : 'bt-check-criterion--miss'}`}>
+                        <span className="bt-check-criterion-icon">{patternMatch.scoreMatch ? '✅' : '❌'}</span>
+                        <div className="bt-check-criterion-info">
+                          <span className="bt-check-criterion-label">점수 ≥ 70</span>
+                          <span className="bt-check-criterion-current">현재 점수 {patternMatch.score ?? '-'}</span>
+                        </div>
+                        <span className="bt-check-criterion-stat">
+                          급등 전 {pct(data.commonFeatures.score70RatePct)}가 해당
+                        </span>
+                      </div>
+                      <div className={`bt-check-criterion ${patternMatch.buyMatch ? 'bt-check-criterion--match' : 'bt-check-criterion--miss'}`}>
+                        <span className="bt-check-criterion-icon">{patternMatch.buyMatch ? '✅' : '❌'}</span>
+                        <div className="bt-check-criterion-info">
+                          <span className="bt-check-criterion-label">BUY계열 시그널</span>
+                          <span className="bt-check-criterion-current">현재 {patternMatch.signal || '-'}</span>
+                        </div>
+                        <span className="bt-check-criterion-stat">
+                          급등 전 {pct(data.commonFeatures.buySignalRatePct)}가 해당
+                        </span>
+                      </div>
+                      <div className={`bt-check-criterion ${patternMatch.rsiMatch ? 'bt-check-criterion--match' : 'bt-check-criterion--miss'}`}>
+                        <span className="bt-check-criterion-icon">{patternMatch.rsiMatch ? '✅' : '❌'}</span>
+                        <div className="bt-check-criterion-info">
+                          <span className="bt-check-criterion-label">RSI 45~65 (매집 구간)</span>
+                          <span className="bt-check-criterion-current">
+                            현재 RSI {patternMatch.rsi ? patternMatch.rsi.toFixed(1) : '-'}
+                          </span>
+                        </div>
+                        <span className="bt-check-criterion-stat">
+                          급등 전 {pct(data.commonFeatures.rsi45to65RatePct)}가 해당
+                        </span>
+                      </div>
+                      <div className="bt-check-match-summary">
+                        <span className="bt-check-match-count">
+                          {patternMatch.matchCount}/3 조건 충족
+                        </span>
+                        <span className={`bt-check-match-badge ${matchMeta(patternMatch.matchCount).cls}`}>
+                          {matchMeta(patternMatch.matchCount).label}
+                        </span>
+                      </div>
+                    </div>
 
                     {/* 투자 시뮬레이션 */}
                     <div className="bt-check-invest">
@@ -567,7 +580,7 @@ export default function BacktestPage() {
                         )}
                       </div>
                       <p className="bt-check-invest-note">
-                        ※ 과거 급등 이벤트의 평균 수익률을 기준으로 한 추정값입니다. 패턴 일치도가
+                        ※ 과거 급등 이벤트의 평균 수익률 기준 추정값입니다. 패턴 일치도가
                         높을수록, 스캔·하이라이트에 함께 등장할수록 신뢰도가 높아집니다.
                       </p>
                     </div>
@@ -585,51 +598,53 @@ export default function BacktestPage() {
                 조건에 맞는 급등 이벤트가 없습니다. 기간/기준을 완화해 보세요.
               </p>
             ) : (
-              <div style={{ overflowX: 'auto' }}>
-                <table className="table" style={{ minWidth: 760 }}>
+              <div style={{ overflowX: 'auto', margin: '0 calc(-1 * var(--space-4))' }}>
+                <table className="bt-table" style={{ minWidth: 680 }}>
                   <thead>
                     <tr>
                       <th>종목</th>
                       <th>기준일</th>
-                      <th>Horizon 수익률</th>
-                      <th>점수</th>
+                      <th style={{ textAlign: 'right' }}>Horizon 수익률</th>
+                      <th style={{ textAlign: 'right' }}>점수</th>
                       <th>시그널</th>
-                      <th>RSI14</th>
+                      <th style={{ textAlign: 'right' }}>RSI14</th>
                     </tr>
                   </thead>
                   <tbody>
                     {sorted.map((row) => (
                       <tr key={`${row.code}-${row.asof}`}>
                         <td>
-                          <span style={{ fontWeight: 600 }}>{row.name || row.code}</span>
+                          <span className="bt-table-stock-name">{row.name || row.code}</span>
                           {row.name && (
-                            <span
-                              style={{
-                                fontSize: 'var(--font-size-xs)',
-                                color: 'var(--color-text-tertiary)',
-                                marginLeft: 4,
-                              }}
-                            >
-                              {row.code}
-                            </span>
+                            <span className="bt-table-stock-code">{row.code}</span>
                           )}
                         </td>
-                        <td>{row.asof}</td>
-                        <td
-                          style={{
-                            color:
+                        <td className="bt-table-num">{row.asof}</td>
+                        <td style={{ textAlign: 'right' }}>
+                          <span
+                            className={
                               row.forwardReturnPct >= 0
-                                ? 'var(--color-success)'
-                                : 'var(--color-error)',
-                            fontWeight: 600,
-                          }}
-                        >
-                          {row.forwardReturnPct > 0 ? '+' : ''}
-                          {pct(row.forwardReturnPct, 2)}
+                                ? 'bt-table-return-pos'
+                                : 'bt-table-return-neg'
+                            }
+                          >
+                            {row.forwardReturnPct > 0 ? '+' : ''}
+                            {pct(row.forwardReturnPct, 2)}
+                          </span>
                         </td>
-                        <td>{row.totalScore.toFixed(1)}</td>
-                        <td>{row.signal || '-'}</td>
-                        <td>{row.rsi14 == null ? '-' : row.rsi14.toFixed(1)}</td>
+                        <td style={{ textAlign: 'right' }} className="bt-table-num">
+                          {row.totalScore.toFixed(1)}
+                        </td>
+                        <td>
+                          {row.signal ? (
+                            <span className={signalCls(row.signal)}>{row.signal}</span>
+                          ) : (
+                            <span className="bt-table-num">-</span>
+                          )}
+                        </td>
+                        <td style={{ textAlign: 'right' }} className="bt-table-num">
+                          {row.rsi14 == null ? '-' : row.rsi14.toFixed(1)}
+                        </td>
                       </tr>
                     ))}
                   </tbody>

@@ -33,6 +33,7 @@ import sectorLeaders from '../handlers/ui/sector-leaders'
 import sectors from '../handlers/ui/sectors'
 import simulationPlan from '../handlers/ui/simulation-plan'
 import settings from '../handlers/ui/settings'
+import stockIndicators from '../handlers/ui/stock-indicators'
 import stockLatest from '../handlers/ui/stock-latest'
 import stocks from '../handlers/ui/stocks'
 import strategyAdaptive from '../handlers/ui/strategy-adaptive'
@@ -80,6 +81,7 @@ const ROUTES: Record<string, UiHandler> = {
   sectors,
   'simulation-plan': simulationPlan,
   settings,
+  'stock-indicators': stockIndicators,
   'stock-latest': stockLatest,
   stocks,
   'strategy-adaptive': strategyAdaptive,

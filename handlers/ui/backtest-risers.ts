@@ -19,6 +19,7 @@ type PriceRow = {
 
 type EventRow = {
   code: string
+  name?: string
   asof: string
   totalScore: number
   signal: string
@@ -246,6 +247,23 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       .sort((a, b) => b.forwardReturnPct - a.forwardReturnPct)
       .slice(0, params.topN)
 
+    // 종목명 일괄 조회
+    const riserCodes = Array.from(new Set(risers.map((r) => r.code)))
+    const nameMap = new Map<string, string>()
+    for (const chunk of splitArray(riserCodes, 100)) {
+      const { data: stockRows } = await supabase
+        .from('stocks')
+        .select('code,name')
+        .in('code', chunk)
+      for (const row of (stockRows ?? []) as Array<{ code: string; name: string }>) {
+        if (row.code && row.name) nameMap.set(row.code, row.name)
+      }
+    }
+    const risersWithNames = risers.map((r) => ({
+      ...r,
+      name: nameMap.get(r.code) ?? undefined,
+    }))
+
     const baselineCount = labelableEvents.length
     const riserCount = risers.length
 
@@ -291,7 +309,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           buySignalLiftPct: Number((riserBuySignal - baselineBuySignal).toFixed(1)),
           rsi45to65RatePct: Number(rsiBand45to65.toFixed(1)),
         },
-        risers,
+        risers: risersWithNames,
       },
     })
   } catch (e: any) {
