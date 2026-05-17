@@ -6,6 +6,7 @@ type Args = {
   from?: string;
   to?: string;
   maxDates: number;
+  maxScanRows: number;
   limit?: number;
   concurrency?: number;
   onlyMissing: boolean;
@@ -45,6 +46,7 @@ function parseArgs(): Args {
     from: parseArg("from"),
     to: parseArg("to"),
     maxDates: parseIntArg("maxDates", 20),
+    maxScanRows: parseIntArg("maxScanRows", 300000),
     limit: parseArg("limit") ? parseIntArg("limit", 0) : undefined,
     concurrency: parseArg("concurrency") ? parseIntArg("concurrency", 0) : undefined,
     onlyMissing: parseBoolArg("onlyMissing", true),
@@ -122,11 +124,28 @@ async function resolveDateSourceSpec(supabase: SupabaseClient, dateSource: "scor
   }
 
   const candidates = ["ymd", "asof", "date"];
+  let best: { col: string; maxDate: string } | null = null;
+
   for (const col of candidates) {
-    const { error } = await supabase.from("stock_daily").select(col).order(col, { ascending: true }).range(0, 0);
-    if (!error) {
-      return { table: "stock_daily", dateColumn: col };
+    const { data, error } = await supabase
+      .from("stock_daily")
+      .select(col)
+      .order(col, { ascending: false })
+      .range(0, 0);
+    if (error) continue;
+
+    const first = Array.isArray(data) && data.length > 0 && data[0] && typeof data[0] === "object"
+      ? (data[0] as Record<string, unknown>)
+      : undefined;
+    const value = String(first?.[col] ?? "").slice(0, 10);
+    if (!value) continue;
+    if (!best || value > best.maxDate) {
+      best = { col, maxDate: value };
     }
+  }
+
+  if (best) {
+    return { table: "stock_daily", dateColumn: best.col };
   }
 
   throw new Error("stock_daily 날짜 컬럼을 찾지 못했습니다. 시도한 컬럼: ymd, asof, date");
@@ -167,7 +186,14 @@ async function main() {
   const supabase = requireSupabaseClient();
   const source = await resolveDateSourceSpec(supabase, args.dateSource);
 
-  const dates = await collectDistinctAsofDates(supabase, source.table, source.dateColumn, args.from, args.to);
+  const dates = await collectDistinctAsofDates(
+    supabase,
+    source.table,
+    source.dateColumn,
+    args.from,
+    args.to,
+    args.maxScanRows,
+  );
   if (!dates.length) {
     console.log("[backfill-stable] 대상 asof 날짜가 없습니다.");
     return;
