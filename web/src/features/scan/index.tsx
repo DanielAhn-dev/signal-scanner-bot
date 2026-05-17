@@ -350,6 +350,15 @@ export default function ScanPage({ onNavigate }: { onNavigate?: (r: string) => v
     onNavigate?.('analyze')
   }
 
+  const navigateToBacktest = (code: string) => {
+    try { sessionStorage.setItem('backtest_pending_code', code) } catch { /* ignore */ }
+    if (onNavigate) {
+      onNavigate('backtest')
+    } else {
+      window.location.href = '/backtest'
+    }
+  }
+
   const sectors = useMemo(
     () => ['all', ...new Set(candidates.map((row) => row.sector_id).filter((v): v is string => !!v))],
     [candidates],
@@ -788,7 +797,7 @@ export default function ScanPage({ onNavigate }: { onNavigate?: (r: string) => v
                           <div className="scan-td-updated-sub">{s.updatedAtText}</div>
                         )}
                       </td>
-                      <td className="scan-td" data-label="관리" onClick={(e) => e.stopPropagation()}>
+                      <td className="scan-td" data-label="관리" onClick={(e) => e.stopPropagation()} style={{ whiteSpace: 'nowrap' }}>
                         <Button
                           className="watchlist-icon-btn scan-watch-add-btn"
                           variant="ghost"
@@ -800,6 +809,14 @@ export default function ScanPage({ onNavigate }: { onNavigate?: (r: string) => v
                           <span className="watchlist-btn-label">
                             {isAddingNow ? '추가중' : isRemovingNow ? '제거중' : isAdded ? '제거' : '추가'}
                           </span>
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          onClick={() => navigateToBacktest(code)}
+                          title="백테스트 패턴 점검"
+                          style={{ marginLeft: 4, fontSize: 11, padding: '4px 8px' }}
+                        >
+                          패턴 점검
                         </Button>
                       </td>
                     </tr>

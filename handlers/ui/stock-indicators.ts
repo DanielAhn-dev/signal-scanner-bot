@@ -29,10 +29,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   try {
     // 병렬 조회
-    const [stockRes, scoreRes, indicatorRes, pullbackRes] = await Promise.all([
+    const [stockRes, scoreRes, indicatorRes, pullbackRes, fundRes] = await Promise.all([
       supabase
         .from('stocks')
-        .select('code,name,market,sector_id,close')
+        .select('code,name,market,sector_id,close,per,pbr,roe,debt_ratio,market_cap')
         .eq('code', code)
         .maybeSingle(),
 
@@ -59,12 +59,21 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         .order('trade_date', { ascending: false })
         .limit(1)
         .maybeSingle(),
+
+      supabase
+        .from('fundamentals')
+        .select('code,as_of,per,pbr,roe,debt_ratio')
+        .eq('code', code)
+        .order('as_of', { ascending: false })
+        .limit(1)
+        .maybeSingle(),
     ])
 
     const stock = stockRes.data
     const score = scoreRes.data
     const ind = indicatorRes.data
     const pb = pullbackRes.data
+    const fund = fundRes.data
 
     if (!stock && !score && !ind) {
       return res.status(404).json({ error: '해당 종목 데이터를 찾을 수 없습니다.' })
@@ -74,6 +83,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const rsi14 =
       asNum(ind?.rsi14) ??
       asNum((score?.factors as Record<string, unknown> | null | undefined)?.rsi14)
+
+    // 펀더멘털: stocks 테이블 우선, 없으면 fundamentals 테이블
+    const per = asNum((stock as any)?.per) ?? asNum(fund?.per)
+    const pbr = asNum((stock as any)?.pbr) ?? asNum(fund?.pbr)
+    const roe = asNum((stock as any)?.roe) ?? asNum(fund?.roe)
+    const debtRatio = asNum((stock as any)?.debt_ratio) ?? asNum(fund?.debt_ratio)
+    const marketCap = asNum((stock as any)?.market_cap)
 
     return res.status(200).json({
       ok: true,
@@ -105,6 +121,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         warn_grade: pb?.warn_grade ?? null,
         warn_score: asNum(pb?.warn_score),
         dist_pct: asNum(pb?.dist_pct),
+        // 펀더멘털
+        per,
+        pbr,
+        roe,
+        debt_ratio: debtRatio,
+        market_cap: marketCap,
       },
     })
   } catch (e: any) {

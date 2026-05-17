@@ -1,6 +1,21 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { apiFetch } from '../../lib/api'
 import { searchStocks } from '../../lib/stockCache'
+import {
+  defaultPlanItem,
+  readSimulationPlan,
+  saveSimulationPlan,
+} from '../simulator/planStore'
+
+const ANALYZE_PENDING_CODE_KEY = 'analyze_pending_code'
+const BACKTEST_PENDING_CODE_KEY = 'backtest_pending_code'
+
+function navigateTo(route: string) {
+  try {
+    window.history.pushState({}, '', `/${route}`)
+    window.dispatchEvent(new PopStateEvent('popstate'))
+  } catch { /* ignore */ }
+}
 
 type BacktestRiser = {
   code: string
@@ -39,13 +54,15 @@ type StockIndicators = {
   sma20: number | null
   sma50: number | null
   sma200: number | null
-  roc21: number | null
   pullback_date: string | null
   entry_grade: string | null
-  entry_score: number | null
   warn_grade: string | null
-  warn_score: number | null
   dist_pct: number | null
+  per: number | null
+  pbr: number | null
+  roe: number | null
+  debt_ratio: number | null
+  market_cap: number | null
 }
 
 function pct(value: number | null | undefined, digits = 1): string {
@@ -74,6 +91,16 @@ function matchMeta(n: number): { label: string; cls: string } {
   if (n >= 1) return { label: '패턴 일치 낮음 ★', cls: 'bt-match--low' }
   return { label: '패턴 불일치', cls: 'bt-match--none' }
 }
+
+function pbrMeta(pbr: number): { note: string; cls: string } {
+  if (pbr <= 1.0) return { note: '청산가치 이하 — 강한 저평가', cls: 'bt-check-fund-value--good' }
+  if (pbr <= 1.5) return { note: '저평가 구간', cls: 'bt-check-fund-value--good' }
+  if (pbr <= 2.5) return { note: '적정 수준', cls: '' }
+  return { note: '고평가', cls: 'bt-check-fund-value--warn' }
+}
+
+const HORIZONS = [20, 40, 60, 90, 120] as const
+type Horizon = typeof HORIZONS[number]
 
 const STEPS = ['종목 수집', '이벤트 탐색', '특징 분석', '결과 계산']
 const STEP_THRESHOLDS = [4, 10, 18, 26]
@@ -142,7 +169,7 @@ function BacktestSkeleton() {
 }
 
 export default function BacktestPage() {
-  const [horizon, setHorizon] = useState<20 | 40 | 60>(20)
+  const [horizon, setHorizon] = useState<Horizon>(20)
   const [lookbackDays, setLookbackDays] = useState(180)
   const [rallyPct, setRallyPct] = useState(20)
   const [topN, setTopN] = useState(30)
@@ -188,6 +215,26 @@ export default function BacktestPage() {
     void load()
   }, [])
 
+  // URL param 또는 sessionStorage로 전달된 종목 자동 로드
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    const urlCode = params.get('code')?.trim()
+    let pending: string | null = null
+    try {
+      pending = sessionStorage.getItem(BACKTEST_PENDING_CODE_KEY)
+      if (pending) sessionStorage.removeItem(BACKTEST_PENDING_CODE_KEY)
+    } catch { /* ignore */ }
+    const initCode = urlCode || pending
+    if (!initCode) return
+
+    searchStocks(initCode, 1)
+      .then((results) => {
+        const name = results[0]?.name || initCode
+        selectStock({ code: initCode, name })
+      })
+      .catch(() => selectStock({ code: initCode, name: initCode }))
+  }, [])
+
   // 종목 검색 디바운스
   useEffect(() => {
     if (checkDebounceRef.current) clearTimeout(checkDebounceRef.current)
@@ -227,6 +274,23 @@ export default function BacktestPage() {
     void fetchIndicators(stock.code)
   }
 
+  const goAnalyze = (code: string) => {
+    try { sessionStorage.setItem(ANALYZE_PENDING_CODE_KEY, code) } catch { /* ignore */ }
+    navigateTo('analyze')
+  }
+
+  const goSimulator = (stock: { code: string; name: string }) => {
+    const existing = readSimulationPlan()
+    const newItem = defaultPlanItem(stock)
+    const items = [...(existing?.items ?? []), newItem]
+    saveSimulationPlan({
+      ...(existing ?? { totalCapital: 10_000_000, notes: '' }),
+      createdAt: Date.now(),
+      items,
+    })
+    navigateTo('simulator')
+  }
+
   const patternMatch = useMemo(() => {
     if (!data || !selectedStock || !indicators) return null
     const score = indicators.total_score ?? 0
@@ -264,6 +328,11 @@ export default function BacktestPage() {
   const showCheckDropdown =
     checkFocused && checkSearch.trim().length >= 2 && checkResults.length > 0
 
+  const hasFundamental =
+    indicators &&
+    (indicators.pbr != null || indicators.per != null ||
+     indicators.roe != null || indicators.debt_ratio != null)
+
   return (
     <div className="bt-page">
       {/* 헤더 */}
@@ -285,7 +354,7 @@ export default function BacktestPage() {
           <div className="bt-param-group">
             <span className="bt-param-label">Horizon</span>
             <div className="bt-horizon-tabs">
-              {([20, 40, 60] as const).map((h) => (
+              {HORIZONS.map((h) => (
                 <button
                   key={h}
                   className={`bt-horizon-tab${horizon === h ? ' bt-horizon-tab--active' : ''}`}
@@ -344,6 +413,11 @@ export default function BacktestPage() {
             </div>
           </div>
         </div>
+        {(horizon === 90 || horizon === 120) && (
+          <p style={{ fontSize: 11, color: 'var(--color-text-tertiary)', margin: 'var(--space-3) 0 0', lineHeight: 1.5 }}>
+            ※ 90일·120일 Horizon은 이전 시점 데이터가 충분한 경우에만 표본이 추출됩니다. 표본 수가 적을 수 있습니다.
+          </p>
+        )}
       </div>
 
       {loading && <BacktestSkeleton />}
@@ -409,15 +483,14 @@ export default function BacktestPage() {
             <p className="bt-check-guide">
               스캔·하이라이트에 등장한 종목을 입력하면 위 역추적에서 발견한 급등 전 패턴과 얼마나
               일치하는지 확인하고, 투자 금액 대비 예상 수익을 계산합니다.
-              <br />
-              조건이 많이 맞을수록 과거 급등 전 상황과 유사한 것으로 볼 수 있습니다.
+              스캔 목록 외 임의 종목도 조회 가능합니다.
             </p>
 
             <div className="bt-check-search-wrap">
               <div className="sim-add-input-row">
                 <input
                   className="sim-add-input"
-                  placeholder="종목명 또는 코드 입력 (스캔 목록 외 종목도 가능)..."
+                  placeholder="종목명 또는 코드 입력..."
                   value={checkSearch}
                   onChange={(e) => {
                     setCheckSearch(e.target.value)
@@ -484,29 +557,23 @@ export default function BacktestPage() {
 
                 {!checkLoading && !checkError && indicators && patternMatch && (
                   <>
-                    {/* 현재 지표 요약 */}
+                    {/* 기준일 + 현재가 헤더 */}
                     {patternMatch.dataDate && (
-                      <div style={{ fontSize: 11, color: 'var(--color-text-tertiary)', marginBottom: 6 }}>
-                        기준일: {patternMatch.dataDate}
+                      <div style={{ fontSize: 11, color: 'var(--color-text-tertiary)', marginBottom: 6, display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+                        <span>기준일: {patternMatch.dataDate}</span>
                         {indicators.close != null && (
-                          <span style={{ marginLeft: 10 }}>
-                            현재가 {indicators.close.toLocaleString('ko-KR')}원
-                          </span>
+                          <span>현재가 {indicators.close.toLocaleString('ko-KR')}원</span>
                         )}
                         {patternMatch.entryGrade && (
-                          <span style={{ marginLeft: 10 }}>
-                            눌림목 등급 <strong>{patternMatch.entryGrade}</strong>
-                          </span>
+                          <span>눌림목 등급 <strong>{patternMatch.entryGrade}</strong></span>
                         )}
                         {patternMatch.warnGrade && patternMatch.warnGrade !== 'SAFE' && (
-                          <span style={{ marginLeft: 10, color: 'var(--color-warning)' }}>
-                            경고 {patternMatch.warnGrade}
-                          </span>
+                          <span style={{ color: 'var(--color-warning)' }}>⚠ 경고 {patternMatch.warnGrade}</span>
                         )}
                       </div>
                     )}
 
-                    {/* 패턴 조건 체크 */}
+                    {/* 패턴 조건 3가지 */}
                     <div className="bt-check-criteria">
                       <div className={`bt-check-criterion ${patternMatch.scoreMatch ? 'bt-check-criterion--match' : 'bt-check-criterion--miss'}`}>
                         <span className="bt-check-criterion-icon">{patternMatch.scoreMatch ? '✅' : '❌'}</span>
@@ -514,9 +581,7 @@ export default function BacktestPage() {
                           <span className="bt-check-criterion-label">점수 ≥ 70</span>
                           <span className="bt-check-criterion-current">현재 점수 {patternMatch.score ?? '-'}</span>
                         </div>
-                        <span className="bt-check-criterion-stat">
-                          급등 전 {pct(data.commonFeatures.score70RatePct)}가 해당
-                        </span>
+                        <span className="bt-check-criterion-stat">급등 전 {pct(data.commonFeatures.score70RatePct)}가 해당</span>
                       </div>
                       <div className={`bt-check-criterion ${patternMatch.buyMatch ? 'bt-check-criterion--match' : 'bt-check-criterion--miss'}`}>
                         <span className="bt-check-criterion-icon">{patternMatch.buyMatch ? '✅' : '❌'}</span>
@@ -524,31 +589,69 @@ export default function BacktestPage() {
                           <span className="bt-check-criterion-label">BUY계열 시그널</span>
                           <span className="bt-check-criterion-current">현재 {patternMatch.signal || '-'}</span>
                         </div>
-                        <span className="bt-check-criterion-stat">
-                          급등 전 {pct(data.commonFeatures.buySignalRatePct)}가 해당
-                        </span>
+                        <span className="bt-check-criterion-stat">급등 전 {pct(data.commonFeatures.buySignalRatePct)}가 해당</span>
                       </div>
                       <div className={`bt-check-criterion ${patternMatch.rsiMatch ? 'bt-check-criterion--match' : 'bt-check-criterion--miss'}`}>
                         <span className="bt-check-criterion-icon">{patternMatch.rsiMatch ? '✅' : '❌'}</span>
                         <div className="bt-check-criterion-info">
                           <span className="bt-check-criterion-label">RSI 45~65 (매집 구간)</span>
-                          <span className="bt-check-criterion-current">
-                            현재 RSI {patternMatch.rsi ? patternMatch.rsi.toFixed(1) : '-'}
-                          </span>
+                          <span className="bt-check-criterion-current">현재 RSI {patternMatch.rsi ? patternMatch.rsi.toFixed(1) : '-'}</span>
                         </div>
-                        <span className="bt-check-criterion-stat">
-                          급등 전 {pct(data.commonFeatures.rsi45to65RatePct)}가 해당
-                        </span>
+                        <span className="bt-check-criterion-stat">급등 전 {pct(data.commonFeatures.rsi45to65RatePct)}가 해당</span>
                       </div>
                       <div className="bt-check-match-summary">
-                        <span className="bt-check-match-count">
-                          {patternMatch.matchCount}/3 조건 충족
-                        </span>
+                        <span className="bt-check-match-count">{patternMatch.matchCount}/3 조건 충족</span>
                         <span className={`bt-check-match-badge ${matchMeta(patternMatch.matchCount).cls}`}>
                           {matchMeta(patternMatch.matchCount).label}
                         </span>
                       </div>
                     </div>
+
+                    {/* 펀더멘털 패널 — 장기 보유 판단용 */}
+                    {hasFundamental && (
+                      <div className="bt-check-fundamental">
+                        <div className="bt-check-fundamental-title">펀더멘털 지표 — 장기 보유 판단용</div>
+                        <div className="bt-check-fundamental-grid">
+                          {indicators.pbr != null && (() => {
+                            const m = pbrMeta(indicators.pbr)
+                            return (
+                              <div className="bt-check-fund-item">
+                                <span className="bt-check-fund-label">PBR</span>
+                                <span className={`bt-check-fund-value ${m.cls}`}>{indicators.pbr.toFixed(2)}x</span>
+                                <span className="bt-check-fund-note">{m.note}</span>
+                              </div>
+                            )
+                          })()}
+                          {indicators.per != null && indicators.per > 0 && (
+                            <div className="bt-check-fund-item">
+                              <span className="bt-check-fund-label">PER</span>
+                              <span className={`bt-check-fund-value ${indicators.per < 10 ? 'bt-check-fund-value--good' : indicators.per > 30 ? 'bt-check-fund-value--warn' : ''}`}>
+                                {indicators.per.toFixed(1)}x
+                              </span>
+                              <span className="bt-check-fund-note">{indicators.per < 10 ? '저PER 저평가' : indicators.per > 30 ? '고PER 주의' : '적정 수준'}</span>
+                            </div>
+                          )}
+                          {indicators.roe != null && (
+                            <div className="bt-check-fund-item">
+                              <span className="bt-check-fund-label">ROE</span>
+                              <span className={`bt-check-fund-value ${indicators.roe >= 15 ? 'bt-check-fund-value--good' : indicators.roe < 5 ? 'bt-check-fund-value--warn' : ''}`}>
+                                {indicators.roe.toFixed(1)}%
+                              </span>
+                              <span className="bt-check-fund-note">{indicators.roe >= 15 ? '우수한 수익성' : indicators.roe < 5 ? '수익성 낮음' : '보통'}</span>
+                            </div>
+                          )}
+                          {indicators.debt_ratio != null && (
+                            <div className="bt-check-fund-item">
+                              <span className="bt-check-fund-label">부채비율</span>
+                              <span className={`bt-check-fund-value ${indicators.debt_ratio > 200 ? 'bt-check-fund-value--bad' : indicators.debt_ratio < 100 ? 'bt-check-fund-value--good' : ''}`}>
+                                {indicators.debt_ratio.toFixed(0)}%
+                              </span>
+                              <span className="bt-check-fund-note">{indicators.debt_ratio > 200 ? '고부채 위험' : indicators.debt_ratio < 100 ? '재무 건전' : '보통'}</span>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    )}
 
                     {/* 투자 시뮬레이션 */}
                     <div className="bt-check-invest">
@@ -570,8 +673,7 @@ export default function BacktestPage() {
                         {investSim && (
                           <div className="bt-check-invest-result">
                             <span className="bt-check-invest-desc">
-                              평균 수익률{' '}
-                              <strong>+{pct(investSim.avgReturn, 2)}</strong> ({horizon}일 후 기준)
+                              평균 수익률 <strong>+{pct(investSim.avgReturn, 2)}</strong> ({horizon}일 후 기준)
                             </span>
                             <span className="bt-check-invest-gain">
                               +{investSim.gain.toLocaleString('ko-KR')}원 예상
@@ -580,9 +682,24 @@ export default function BacktestPage() {
                         )}
                       </div>
                       <p className="bt-check-invest-note">
-                        ※ 과거 급등 이벤트의 평균 수익률 기준 추정값입니다. 패턴 일치도가
-                        높을수록, 스캔·하이라이트에 함께 등장할수록 신뢰도가 높아집니다.
+                        ※ 과거 급등 이벤트의 평균 수익률 기준 추정값입니다. 패턴 일치도가 높을수록, 스캔·하이라이트에 함께 등장할수록 신뢰도가 높아집니다.
                       </p>
+                    </div>
+
+                    {/* 다음 단계 액션 */}
+                    <div className="bt-check-actions">
+                      <button
+                        className="sim-btn sim-btn--ghost"
+                        onClick={() => goAnalyze(selectedStock.code)}
+                      >
+                        📈 상세 분석 보기
+                      </button>
+                      <button
+                        className="sim-btn sim-btn--primary"
+                        onClick={() => goSimulator(selectedStock)}
+                      >
+                        ➕ 시뮬레이터에 추가
+                      </button>
                     </div>
                   </>
                 )}
@@ -612,7 +729,14 @@ export default function BacktestPage() {
                   </thead>
                   <tbody>
                     {sorted.map((row) => (
-                      <tr key={`${row.code}-${row.asof}`}>
+                      <tr
+                        key={`${row.code}-${row.asof}`}
+                        style={{ cursor: 'pointer' }}
+                        onClick={() =>
+                          selectStock({ code: row.code, name: row.name || row.code })
+                        }
+                        title={`${row.name || row.code} 패턴 점검`}
+                      >
                         <td>
                           <span className="bt-table-stock-name">{row.name || row.code}</span>
                           {row.name && (
@@ -621,13 +745,7 @@ export default function BacktestPage() {
                         </td>
                         <td className="bt-table-num">{row.asof}</td>
                         <td style={{ textAlign: 'right' }}>
-                          <span
-                            className={
-                              row.forwardReturnPct >= 0
-                                ? 'bt-table-return-pos'
-                                : 'bt-table-return-neg'
-                            }
-                          >
+                          <span className={row.forwardReturnPct >= 0 ? 'bt-table-return-pos' : 'bt-table-return-neg'}>
                             {row.forwardReturnPct > 0 ? '+' : ''}
                             {pct(row.forwardReturnPct, 2)}
                           </span>
@@ -651,6 +769,9 @@ export default function BacktestPage() {
                 </table>
               </div>
             )}
+            <p style={{ fontSize: 11, color: 'var(--color-text-tertiary)', margin: 'var(--space-3) 0 0' }}>
+              종목 클릭 시 위 패턴 점검에 자동 입력됩니다.
+            </p>
           </div>
         </>
       )}

@@ -157,7 +157,7 @@ function buildPriceIndex(rows: PriceRow[]): Map<string, { dates: string[]; close
 }
 
 function parseParams(req: VercelRequest) {
-  const horizonBars = parsePositiveInt(req.query.horizon, 20, 5, 80)
+  const horizonBars = parsePositiveInt(req.query.horizon, 20, 5, 180)
   const lookbackDays = parsePositiveInt(req.query.lookbackDays, 180, 60, 720)
   const rallyThresholdPct = parseNum(req.query.rallyPct, 20)
   const topN = parsePositiveInt(req.query.topN, 30, 5, 100)

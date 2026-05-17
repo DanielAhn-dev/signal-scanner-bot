@@ -3943,6 +3943,62 @@ a:focus-visible {
   line-height: 1.5;
 }
 
+/* 패턴 점검 — 액션 버튼 */
+.bt-check-actions {
+  display: flex;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+.bt-check-actions .sim-btn { flex: 1; justify-content: center; }
+
+/* 패턴 점검 — 펀더멘털 패널 */
+.bt-check-fundamental {
+  background: var(--color-bg-surface);
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--radius-md);
+  padding: var(--space-3) var(--space-4);
+}
+.bt-check-fundamental-title {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--color-text-tertiary);
+  margin-bottom: var(--space-2);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.bt-check-fundamental-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: var(--space-3);
+}
+@media (max-width: 640px) {
+  .bt-check-fundamental-grid { grid-template-columns: repeat(2, 1fr); }
+}
+.bt-check-fund-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.bt-check-fund-label {
+  font-size: 11px;
+  color: var(--color-text-tertiary);
+  font-weight: 500;
+}
+.bt-check-fund-value {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--color-text-primary);
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+}
+.bt-check-fund-note {
+  font-size: 11px;
+  color: var(--color-text-tertiary);
+}
+.bt-check-fund-value--good { color: var(--color-success); }
+.bt-check-fund-value--warn { color: var(--color-warning); }
+.bt-check-fund-value--bad  { color: var(--color-error);   }
+
 /* 백테스트 테이블 */
 .bt-table {
   width: 100%;
