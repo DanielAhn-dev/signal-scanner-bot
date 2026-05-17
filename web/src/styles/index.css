@@ -1033,7 +1033,7 @@ a:focus-visible {
 
 .portfolio-asset-overview-input-row {
   display: grid;
-  grid-template-columns: minmax(180px, 330px) auto;
+  grid-template-columns: 1fr auto;
   gap: var(--space-2);
   align-items: end;
 }
@@ -1059,7 +1059,7 @@ a:focus-visible {
 
 .portfolio-allocation-wrap {
   display: grid;
-  grid-template-columns: minmax(220px, 280px) minmax(0, 1fr);
+  grid-template-columns: minmax(260px, 2fr) 3fr;
   gap: var(--space-3);
   align-items: center;
 }
