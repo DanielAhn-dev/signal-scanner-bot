@@ -7,6 +7,7 @@ import { ADVANCED_ROUTES, enforceAdvancedRouteAccess } from '../handlers/ui/_acc
 
 import decisions from '../handlers/ui/decisions'
 import discoveryPicks from '../handlers/ui/discovery-picks'
+import economicCalendar from '../handlers/ui/economic-calendar'
 import formatStock from '../handlers/ui/format-stock'
 import marketOverview from '../handlers/ui/market-overview'
 import notify from '../handlers/ui/notify'
@@ -28,6 +29,7 @@ import reportSnapshot from '../handlers/ui/report-snapshot'
 import reportWeb from '../handlers/ui/report-web'
 import scanCandidates from '../handlers/ui/scan-candidates'
 import scanHighlights from '../handlers/ui/scan-highlights'
+import sectorLeaders from '../handlers/ui/sector-leaders'
 import sectors from '../handlers/ui/sectors'
 import simulationPlan from '../handlers/ui/simulation-plan'
 import settings from '../handlers/ui/settings'
@@ -52,6 +54,7 @@ const ROUTES: Record<string, UiHandler> = {
   'backtest-risers': backtestRisers,
   decisions,
   'discovery-picks': discoveryPicks,
+  'economic-calendar': economicCalendar,
   'format-stock': formatStock,
   'market-overview': marketOverview,
   news,
@@ -73,6 +76,7 @@ const ROUTES: Record<string, UiHandler> = {
   'report-web': reportWeb,
   'scan-candidates': scanCandidates,
   'scan-highlights': scanHighlights,
+  'sector-leaders': sectorLeaders,
   sectors,
   'simulation-plan': simulationPlan,
   settings,

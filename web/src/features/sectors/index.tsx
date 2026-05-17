@@ -1,4 +1,4 @@
-﻿import React, { useEffect, useState, useCallback, useMemo } from "react"
+﻿import React, { useEffect, useState, useCallback } from "react"
 import { apiFetch } from "../../lib/api"
 import Button from "../../components/ui/Button"
 import Skeleton from "../../components/Skeleton"
@@ -26,31 +26,20 @@ type Sector = {
   name: string
   score: number | null
   change_rate: number | null
+  updated_at?: string | null
   metrics?: Record<string, any>
-}
-
-type ScanCandidate = {
-  code: string
-  name: string
-  sector_id: string | null
-  entry_score: number | null
-  warn_score: number | null
-  adaptive_score?: number | null
 }
 
 type SectorLeader = {
   code: string
   name: string
-  priorityScore: number
-  entryScore: number | null
+  market: string | null
+  market_cap: number | null
+  liquidity: number | null
+  is_sector_leader: boolean | null
 }
 
 const ANALYZE_PENDING_CODE_KEY = "analyze_pending_code"
-
-function computePriorityScore(item: ScanCandidate): number {
-  if (typeof item.adaptive_score === "number" && Number.isFinite(item.adaptive_score)) return item.adaptive_score
-  return (item.entry_score ?? 0) * 20 - (item.warn_score ?? 0) * 3
-}
 
 function toNum(v: unknown): number | null {
   const n = Number(v)
@@ -143,9 +132,10 @@ export default function SectorsPage({ onNavigate }: { onNavigate?: (r: string) =
   const [error, setError] = useState<string | null>(null)
   const [tab, setTab] = useState<Tab>("promising")
   const [expandedSectorId, setExpandedSectorId] = useState<string | null>(null)
-  const [scanCandidates, setScanCandidates] = useState<ScanCandidate[]>([])
+  const [sectorLeaders, setSectorLeaders] = useState<Record<string, SectorLeader[]>>({})
   const [leadersLoading, setLeadersLoading] = useState(false)
   const [leadersError, setLeadersError] = useState<string | null>(null)
+  const [leadersCriteria, setLeadersCriteria] = useState<string>("is_sector_leader desc, market_cap desc, liquidity desc")
 
   const loadData = useCallback(async (force = false) => {
     setLoading(true)
@@ -167,40 +157,29 @@ export default function SectorsPage({ onNavigate }: { onNavigate?: (r: string) =
     else setLoading(false)
   }, [loadData, all.length])
 
-  const loadScanCandidates = useCallback(async () => {
-    if (scanCandidates.length > 0 || leadersLoading) return
+  const loadSectorLeaders = useCallback(async (sectorIds: string[], force = false) => {
+    const normalized = Array.from(new Set(sectorIds.map((id) => id.trim()).filter(Boolean))).slice(0, 30)
+    const target = force ? normalized : normalized.filter((id) => !sectorLeaders[id])
+    if (target.length === 0 || leadersLoading) return
     setLeadersLoading(true)
     setLeadersError(null)
     try {
-      const res = await apiFetch("/api/ui/scan-candidates?limit=120", { cacheMs: 10_000, timeoutMs: 20_000 })
-      const rows: ScanCandidate[] = Array.isArray(res?.data) ? res.data : []
-      setScanCandidates(rows)
+      const joined = target.join(',')
+      const res = await apiFetch(`/api/ui/sector-leaders?sectorIds=${encodeURIComponent(joined)}&limitPerSector=3`, {
+        cacheMs: force ? 0 : SECTORS_TTL,
+        timeoutMs: 15_000,
+      })
+      const rows = (res?.data ?? {}) as Record<string, SectorLeader[]>
+      setSectorLeaders((prev) => ({ ...prev, ...rows }))
+      if (typeof res?.criteria === 'string' && res.criteria.trim()) {
+        setLeadersCriteria(res.criteria.trim())
+      }
     } catch (e: any) {
       setLeadersError(e?.message || String(e))
     } finally {
       setLeadersLoading(false)
     }
-  }, [scanCandidates.length, leadersLoading])
-
-  const sectorLeaders = useMemo(() => {
-    const grouped = new Map<string, SectorLeader[]>()
-    for (const row of scanCandidates) {
-      if (!row.sector_id) continue
-      const list = grouped.get(row.sector_id) ?? []
-      list.push({
-        code: row.code,
-        name: row.name,
-        priorityScore: Math.round(computePriorityScore(row)),
-        entryScore: row.entry_score,
-      })
-      grouped.set(row.sector_id, list)
-    }
-    for (const [sectorId, rows] of grouped) {
-      rows.sort((a, b) => b.priorityScore - a.priorityScore || (b.entryScore ?? 0) - (a.entryScore ?? 0))
-      grouped.set(sectorId, rows.slice(0, 3))
-    }
-    return grouped
-  }, [scanCandidates])
+  }, [leadersLoading, sectorLeaders])
 
   const navigateToAnalyze = useCallback((code: string) => {
     try { sessionStorage.setItem(ANALYZE_PENDING_CODE_KEY, code) } catch { /* ignore */ }
@@ -218,22 +197,36 @@ export default function SectorsPage({ onNavigate }: { onNavigate?: (r: string) =
 
   const onSectorCardClick = useCallback((sectorId: string) => {
     setExpandedSectorId((prev) => prev === sectorId ? null : sectorId)
-    if (scanCandidates.length === 0) {
-      void loadScanCandidates()
+    if (!sectorLeaders[sectorId]) {
+      void loadSectorLeaders([sectorId])
     }
-  }, [scanCandidates.length, loadScanCandidates])
+  }, [loadSectorLeaders, sectorLeaders])
 
   // 탭별 정렬/필터
   const sorted = [...all].sort((a, b) => (b.score ?? 0) - (a.score ?? 0))
 
   // 유망 섹터: score >= 55 (또는 상위 50%)
   const promising = sorted.filter(s => (s.score ?? 0) >= 55)
-  // 다음 섹터: change_rate 내림차순 (수급 유입 기대), score 중간 이상
+  // 다음 섹터: 5일 수급(외+기) 우선, 동률일 때 등락률 우선
   const next = [...all]
-    .filter(s => s.change_rate != null && (s.score ?? 0) >= 40)
-    .sort((a, b) => (b.change_rate ?? 0) - (a.change_rate ?? 0))
+    .filter((s) => {
+      const flow5d = (toNum(s.metrics?.flow_foreign_5d) ?? 0) + (toNum(s.metrics?.flow_inst_5d) ?? 0)
+      return flow5d > 0 || ((s.change_rate ?? 0) > 0 && (s.score ?? 0) >= 40)
+    })
+    .sort((a, b) => {
+      const flowA = (toNum(a.metrics?.flow_foreign_5d) ?? 0) + (toNum(a.metrics?.flow_inst_5d) ?? 0)
+      const flowB = (toNum(b.metrics?.flow_foreign_5d) ?? 0) + (toNum(b.metrics?.flow_inst_5d) ?? 0)
+      const flowDiff = flowB - flowA
+      if (flowDiff !== 0) return flowDiff
+      return (b.change_rate ?? 0) - (a.change_rate ?? 0)
+    })
 
   const displayed = tab === "promising" ? (promising.length > 0 ? promising : sorted) : next
+
+  useEffect(() => {
+    const ids = displayed.slice(0, 20).map((s) => s.id)
+    void loadSectorLeaders(ids)
+  }, [displayed, loadSectorLeaders])
 
   return (
     <section className="container-app">
@@ -272,7 +265,7 @@ export default function SectorsPage({ onNavigate }: { onNavigate?: (r: string) =
           </p>
         ) : (
           <p className="muted" style={{ margin: 0 }}>
-            등락률 기준 <strong>수급 유입이 기대되는 섹터</strong>입니다. 텔레그램 <code>/다음섹터</code> 명령과 동일한 데이터입니다.
+            최근 5일 외국인/기관 수급과 단기 등락률을 함께 반영한 <strong>순환매 후보 섹터</strong>입니다.
           </p>
         )}
       </div>
@@ -314,16 +307,16 @@ export default function SectorsPage({ onNavigate }: { onNavigate?: (r: string) =
                 </button>
                 {expandedSectorId === s.id && (
                   <div className="sector-leader-panel" onClick={(e) => e.stopPropagation()}>
-                    <div className="sector-leader-title">대장주 TOP 3 (우선순위)</div>
+                    <div className="sector-leader-title">대장주 TOP 3 (기준: 리더플래그 → 시총 → 유동성)</div>
                     {leadersLoading ? (
                       <div className="muted">대장주를 계산하는 중입니다…</div>
                     ) : leadersError ? (
                       <div className="muted">대장주 데이터를 불러오지 못했습니다: {leadersError}</div>
-                    ) : (sectorLeaders.get(s.id) ?? []).length === 0 ? (
+                    ) : (sectorLeaders[s.id] ?? []).length === 0 ? (
                       <div className="muted">현재 섹터에 표시할 후보 종목이 없습니다.</div>
                     ) : (
                       <div className="sector-leader-list">
-                        {(sectorLeaders.get(s.id) ?? []).map((leader, leaderIdx) => (
+                        {(sectorLeaders[s.id] ?? []).map((leader, leaderIdx) => (
                           <button
                             key={`${s.id}-${leader.code}`}
                             type="button"
@@ -334,9 +327,12 @@ export default function SectorsPage({ onNavigate }: { onNavigate?: (r: string) =
                             <span className="sector-leader-rank">{leaderIdx + 1}위</span>
                             <span className="sector-leader-name">{leader.name}</span>
                             <span className="sector-leader-code">{leader.code}</span>
-                            <span className="sector-leader-score">우선순위 {leader.priorityScore}</span>
+                            <span className="sector-leader-score">
+                              시총 {leader.market_cap != null ? `${formatKoreanMoney(leader.market_cap)}원` : '-'}
+                            </span>
                           </button>
                         ))}
+                        <div className="caption muted">선정 기준: {leadersCriteria}</div>
                       </div>
                     )}
                   </div>
