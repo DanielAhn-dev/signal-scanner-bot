@@ -1021,7 +1021,7 @@ export default function Portfolio() {
     <section className="container-app portfolio-page">
       <div className="portfolio-head">
         <div className="portfolio-title-wrap">
-          <h1 className="title-xl portfolio-title">가상 포트폴리오</h1>
+          <h1 className="title-xl portfolio-title">포트폴리오</h1>
           <p className="portfolio-subtitle">보유 포지션만 집중해서 관리합니다.</p>
         </div>
         <div className="portfolio-head-toolbar">
@@ -1779,7 +1779,7 @@ export default function Portfolio() {
         <div className="portfolio-capture-card">
           <div className="portfolio-capture-top">
             <div>
-              <div className="portfolio-capture-title">가상 포트폴리오 요약</div>
+              <div className="portfolio-capture-title">포트폴리오 요약</div>
               <div className="portfolio-capture-time">기준시각 {captureGeneratedAt}</div>
             </div>
               <div className="portfolio-capture-count">보유 {holdingAll.length}종목</div>

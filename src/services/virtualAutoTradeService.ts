@@ -2069,6 +2069,41 @@ async function runMondayBuyForUser(payload: {
         continue;
       }
 
+      const { data: existingPositionForCode, error: existingPositionForCodeError } = await payload.supabase
+        .from(PORTFOLIO_TABLES.positionsLegacy)
+        .select("id, broker_name, account_name")
+        .eq("chat_id", chatId)
+        .eq("code", candidate.code)
+        .maybeSingle();
+
+      if (existingPositionForCodeError) {
+        throw existingPositionForCodeError;
+      }
+
+      const hasNonVirtualPositionForCode =
+        !!existingPositionForCode &&
+        (existingPositionForCode.broker_name != null || existingPositionForCode.account_name != null);
+
+      if (hasNonVirtualPositionForCode) {
+        summary.skipped += 1;
+        summary.notes.push(
+          `${candidate.code} 신규 매수 스킵: 실계좌 보유 종목과 코드 충돌(가상 전용 보호)`
+        );
+        await writeActionLog({
+          supabase: payload.supabase,
+          runId: payload.runId,
+          chatId,
+          code: candidate.code,
+          actionType: "SKIP",
+          reason: "non-virtual-position-exists",
+          detail: {
+            opKey,
+            existingPositionId: Number(existingPositionForCode.id ?? 0) || null,
+          },
+        });
+        continue;
+      }
+
       const { data: upserted, error: upsertError } = await payload.supabase
         .from(PORTFOLIO_TABLES.positionsLegacy)
         .upsert(
@@ -2981,7 +3016,9 @@ async function runDailyReviewForUser(payload: {
   const { data: postHoldings, error: postHoldingsError } = await payload.supabase
     .from(PORTFOLIO_TABLES.positionsLegacy)
     .select("id, code, status, quantity, buy_price, invested_amount, created_at, buy_date, memo")
-    .eq("chat_id", chatId);
+    .eq("chat_id", chatId)
+    .is("broker_name", null)
+    .is("account_name", null);
 
   if (postHoldingsError) {
     summary.errors += 1;
@@ -3696,6 +3733,41 @@ async function runDailyReviewForUser(payload: {
               actionType: "SKIP",
               reason: "duplicate-execution",
               detail: { opKey },
+            });
+            continue;
+          }
+
+          const { data: existingPositionForCode, error: existingPositionForCodeError } = await payload.supabase
+            .from(PORTFOLIO_TABLES.positionsLegacy)
+            .select("id, broker_name, account_name")
+            .eq("chat_id", chatId)
+            .eq("code", candidate.code)
+            .maybeSingle();
+
+          if (existingPositionForCodeError) {
+            throw existingPositionForCodeError;
+          }
+
+          const hasNonVirtualPositionForCode =
+            !!existingPositionForCode &&
+            (existingPositionForCode.broker_name != null || existingPositionForCode.account_name != null);
+
+          if (hasNonVirtualPositionForCode) {
+            summary.skipped += 1;
+            summary.notes.push(
+              `${candidate.code} 신규 매수 스킵: 실계좌 보유 종목과 코드 충돌(가상 전용 보호)`
+            );
+            await writeActionLog({
+              supabase: payload.supabase,
+              runId: payload.runId,
+              chatId,
+              code: candidate.code,
+              actionType: "SKIP",
+              reason: "non-virtual-position-exists",
+              detail: {
+                opKey,
+                existingPositionId: Number(existingPositionForCode.id ?? 0) || null,
+              },
             });
             continue;
           }
