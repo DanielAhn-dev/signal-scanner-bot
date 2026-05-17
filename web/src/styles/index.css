@@ -3554,6 +3554,395 @@ a:focus-visible {
   }
 }
 
+/* ================================================================
+   BACKTEST PAGE — 급등 종목 역추적 백테스트
+   ================================================================ */
+
+.bt-page {
+  max-width: 960px;
+  margin: 0 auto;
+  padding: var(--space-5) var(--space-4) var(--space-10);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.bt-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+.bt-title {
+  font-size: 1.375rem;
+  font-weight: 700;
+  color: var(--color-text-primary);
+  letter-spacing: -0.02em;
+  margin: 0 0 4px;
+}
+.bt-desc {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-tertiary);
+  margin: 0;
+}
+
+.bt-params-card {
+  background: var(--color-bg-surface);
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--radius-lg);
+  padding: var(--space-4);
+}
+.bt-params-grid {
+  display: grid;
+  grid-template-columns: auto 1fr 1fr 1fr;
+  gap: var(--space-4);
+  align-items: end;
+}
+.bt-param-group {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.bt-param-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--color-text-tertiary);
+  white-space: nowrap;
+}
+
+.bt-horizon-tabs {
+  display: flex;
+  gap: 4px;
+}
+.bt-horizon-tab {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 6px 14px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border-default);
+  background: var(--color-bg-surface);
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-xs);
+  font-weight: 600;
+  cursor: pointer;
+  transition: all var(--duration-fast);
+  height: 2.375rem;
+}
+.bt-horizon-tab:hover {
+  background: var(--color-bg-sunken);
+  color: var(--color-text-primary);
+}
+.bt-horizon-tab--active {
+  background: var(--color-brand);
+  border-color: var(--color-brand);
+  color: #fff;
+}
+
+.bt-summary-card {
+  background: var(--color-bg-surface);
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+}
+.bt-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+}
+.bt-summary-item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: var(--space-4);
+  border-right: 1px solid var(--color-border-default);
+  border-bottom: 1px solid var(--color-border-default);
+}
+.bt-summary-item:nth-child(3n) { border-right: none; }
+.bt-summary-item:nth-child(n+4) { border-bottom: none; }
+.bt-summary-label {
+  font-size: 11px;
+  color: var(--color-text-tertiary);
+  font-weight: 500;
+}
+.bt-summary-value {
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--color-text-primary);
+  letter-spacing: -0.02em;
+  line-height: 1.2;
+}
+.bt-summary-lift {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-success);
+}
+
+.bt-section {
+  background: var(--color-bg-surface);
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--radius-lg);
+  padding: var(--space-4);
+}
+.bt-section-title {
+  font-size: var(--font-size-base);
+  font-weight: 700;
+  color: var(--color-text-primary);
+  margin: 0 0 var(--space-3);
+}
+
+/* 로딩 스켈레톤 */
+.bt-skeleton {
+  background: var(--color-bg-surface);
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--radius-lg);
+  padding: var(--space-5);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+.bt-skeleton-progress-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: var(--space-2);
+}
+.bt-skeleton-step-label {
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+  color: var(--color-text-primary);
+}
+.bt-skeleton-elapsed {
+  font-size: var(--font-size-xs);
+  color: var(--color-text-tertiary);
+  font-variant-numeric: tabular-nums;
+  flex-shrink: 0;
+}
+.bt-skeleton-track {
+  height: 6px;
+  background: var(--color-gray-200);
+  border-radius: var(--radius-full);
+  overflow: hidden;
+  margin-bottom: var(--space-2);
+}
+.bt-skeleton-fill {
+  height: 100%;
+  background: var(--color-brand);
+  border-radius: var(--radius-full);
+  transition: width 0.8s var(--ease-out);
+}
+.bt-skeleton-step-names {
+  display: flex;
+  justify-content: space-between;
+}
+.bt-skeleton-step-name {
+  font-size: 10px;
+  color: var(--color-text-tertiary);
+  flex: 1;
+  text-align: center;
+}
+.bt-skeleton-step-name:first-child { text-align: left; }
+.bt-skeleton-step-name:last-child { text-align: right; }
+.bt-skeleton-step-name--done { color: var(--color-brand); font-weight: 600; }
+.bt-skeleton-step-name--active { color: var(--color-text-primary); font-weight: 600; }
+.bt-skeleton-divider {
+  border: none;
+  border-top: 1px solid var(--color-border-default);
+  margin: 0;
+}
+.bt-skeleton-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: var(--space-3);
+}
+.bt-skeleton-summary-item {
+  background: var(--color-bg-sunken);
+  border-radius: var(--radius-md);
+  padding: var(--space-4);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.bt-skeleton-rows {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+@media (max-width: 720px) {
+  .bt-params-grid { grid-template-columns: 1fr 1fr; }
+  .bt-summary-grid { grid-template-columns: repeat(2, 1fr); }
+  .bt-summary-item:nth-child(3n) { border-right: 1px solid var(--color-border-default); }
+  .bt-summary-item:nth-child(2n) { border-right: none; }
+  .bt-summary-item:nth-child(n+4) { border-bottom: 1px solid var(--color-border-default); }
+  .bt-summary-item:nth-child(n+5) { border-bottom: none; }
+  .bt-skeleton-summary-grid { grid-template-columns: repeat(2, 1fr); }
+}
+@media (max-width: 480px) {
+  .bt-params-grid { grid-template-columns: 1fr; }
+  .bt-header { flex-direction: column; align-items: stretch; }
+  .bt-page { padding: var(--space-4) var(--space-3) var(--space-8); gap: var(--space-3); }
+}
+
+/* 종목 패턴 점검 */
+.bt-check-guide {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-tertiary);
+  margin: 0 0 var(--space-3);
+  line-height: 1.6;
+}
+.bt-check-search-wrap {
+  position: relative;
+  margin-bottom: var(--space-3);
+}
+.bt-check-result {
+  background: var(--color-bg-sunken);
+  border-radius: var(--radius-md);
+  padding: var(--space-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+.bt-check-stock-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+.bt-check-stock-name {
+  font-size: var(--font-size-base);
+  font-weight: 700;
+  color: var(--color-text-primary);
+}
+.bt-check-stock-code {
+  font-size: var(--font-size-xs);
+  color: var(--color-text-tertiary);
+  font-family: var(--font-family-mono);
+}
+.bt-check-loading {
+  font-size: var(--font-size-xs);
+  color: var(--color-brand);
+  margin-left: auto;
+}
+.bt-check-not-found {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-secondary);
+  padding: var(--space-3) var(--space-4);
+  background: var(--color-bg-surface);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--color-border-default);
+  line-height: 1.6;
+}
+.bt-check-criteria {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.bt-check-criterion {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: 10px var(--space-4);
+  background: var(--color-bg-surface);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border-default);
+}
+.bt-check-criterion--match {
+  border-color: var(--color-success);
+  background: var(--color-success-bg);
+}
+.bt-check-criterion--miss { opacity: 0.65; }
+.bt-check-criterion-icon { font-size: 15px; flex-shrink: 0; width: 20px; }
+.bt-check-criterion-info {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.bt-check-criterion-label {
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+  color: var(--color-text-primary);
+}
+.bt-check-criterion-current {
+  font-size: var(--font-size-xs);
+  color: var(--color-text-tertiary);
+}
+.bt-check-criterion-stat {
+  font-size: 11px;
+  color: var(--color-text-tertiary);
+  flex-shrink: 0;
+  text-align: right;
+  white-space: nowrap;
+}
+.bt-check-match-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-3) var(--space-4);
+  background: var(--color-bg-surface);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border-default);
+}
+.bt-check-match-count {
+  font-size: var(--font-size-sm);
+  font-weight: 700;
+  color: var(--color-text-primary);
+}
+.bt-check-match-badge {
+  font-size: var(--font-size-xs);
+  font-weight: 700;
+  padding: 3px 10px;
+  border-radius: var(--radius-full);
+}
+.bt-match--high { background: var(--color-success-bg); color: var(--color-success); }
+.bt-match--mid  { background: var(--color-warning-bg); color: var(--color-warning);  }
+.bt-match--low  { background: var(--color-info-bg);    color: var(--color-info);     }
+.bt-match--none { background: var(--color-gray-100);   color: var(--color-text-tertiary); }
+
+.bt-check-invest {
+  background: var(--color-bg-surface);
+  border-radius: var(--radius-md);
+  padding: var(--space-4);
+  border: 1px solid var(--color-border-default);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+.bt-check-invest-title {
+  font-size: var(--font-size-sm);
+  font-weight: 700;
+  color: var(--color-text-primary);
+  margin: 0;
+}
+.bt-check-invest-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+.bt-check-invest-result {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.bt-check-invest-desc {
+  font-size: var(--font-size-xs);
+  color: var(--color-text-tertiary);
+}
+.bt-check-invest-gain {
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: var(--color-success);
+}
+.bt-check-invest-note {
+  font-size: 11px;
+  color: var(--color-text-tertiary);
+  margin: 0;
+  line-height: 1.5;
+}
+
 /* ===== DB View ===== */
 .dbview-page {
   padding-top: var(--space-6);
