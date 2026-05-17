@@ -50,6 +50,7 @@ export const CMD = {
   KOSPI: /^(?:\/)?(kospi|코스피)$/i,
   KOSDAQ: /^(?:\/)?(kosdaq|코스닥)$/i,
   DISCOVERY: /^\/(discovery|발굴)(?:\s+(.+))?$/i,
+  PRE_RALLY: /^\/(pre-rally|prerally|프리랠리|랠리패턴)(?:\s+(.+))?$/i,
   ETF: /^(?:\/)?(etf|이티에프)(?:\s+(.+))?$/i,
   ETFHUB: /^(?:\/)?(etfhub|이티에프허브|etf허브)(?:\s+(.+))?$/i,
   ETFCORE: /^\/(etfcore)(?:\s+(.+))?$/i,
