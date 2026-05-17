@@ -30,6 +30,7 @@ const StrategyPage = lazy(() => import('./features/strategy'))
 const HighlightsPage = lazy(() => import('./features/highlights'))
 const SimulatorPage = lazy(() => import('./features/simulator'))
 const DiscoveryPage = lazy(() => import('./features/discovery'))
+const BacktestPage = lazy(() => import('./features/backtest'))
 const PositionMaintenancePage = lazy(() => import('./features/position-maintenance'))
 
 export default function App() {
@@ -221,6 +222,7 @@ function AppContent() {
             <Route path="/highlights" element={<HighlightsPage />} />
             <Route path="/simulator" element={<SimulatorPage />} />
             <Route path="/discovery" element={<DiscoveryPage />} />
+            <Route path="/backtest" element={<BacktestPage />} />
             <Route path="/position-maintenance" element={<PositionMaintenancePage />} />
             <Route path="*" element={<Navigate to="/dashboard" replace />} />
           </Routes>

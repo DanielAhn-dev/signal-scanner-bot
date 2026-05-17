@@ -45,6 +45,7 @@ export const NAV_ITEMS: NavGroup[] = [
     items: [
       { key: 'highlights', label: '하이라이트' },
       { key: 'strategy', label: '전략' },
+      { key: 'backtest', label: '백테스트' },
       { key: 'discovery', label: '발굴' },
       { key: 'feed', label: '피드' },
     ]
