@@ -557,7 +557,7 @@ export default function ScanPage({ onNavigate }: { onNavigate?: (r: string) => v
   return (
     <section className="container-app container-wide">
       {/* 페이지 헤더 */}
-      <h1 className="title-xl mb-4" style={{ marginBottom: 'var(--space-3)' }}>Nexora 눌림목</h1>
+      <h1 className="title-xl mb-4" style={{ marginBottom: 'var(--space-3)' }}>눌림목</h1>
 
 
       <EconomicEventBadge onNavigateToCalendar={() => onNavigate?.('economy')} />
