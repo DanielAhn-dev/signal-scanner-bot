@@ -21,6 +21,10 @@ function normalizeUiUrl(url: string): string {
   return toUiQueryRouteUrl(url) || url
 }
 
+function needsAuthHeader(url: string): boolean {
+  return /\/api\/ui\/(profile)(\?|$)|\/api\/ui\?route=(profile)(&|$)/.test(url)
+}
+
 function appendQueryParam(url: string, key: string, value: string): string {
   if (!value) return url
   const hashIndex = url.indexOf('#')
@@ -127,7 +131,9 @@ export async function apiFetch(
 
   const headers = new Headers(fetchOpts.headers)
   const accessToken = await getAccessToken()
-  if (accessToken && !headers.has('authorization')) headers.set('authorization', `Bearer ${accessToken}`)
+  if (accessToken && needsAuthHeader(url) && !headers.has('authorization')) {
+    headers.set('authorization', `Bearer ${accessToken}`)
+  }
   const uiKey = import.meta.env.VITE_UI_READ_KEY
   if (uiKey) headers.set('x-ui-key', uiKey)
   const requiresUserChatIdHeader = /\/api\/ui\/(positions|positions-maintenance|watchlist|virtual-trade|decisions|summary|settings|notify|access-users|operations|portfolio-share|simulation-plan|account-policies|advisor-performance)(\?|$)|\/api\/ui\?route=(positions|positions-maintenance|watchlist|virtual-trade|decisions|summary|settings|notify|access-users|operations|portfolio-share|simulation-plan|account-policies|advisor-performance)(&|$)/.test(url)

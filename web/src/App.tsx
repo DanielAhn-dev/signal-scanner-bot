@@ -10,28 +10,56 @@ import { isReviewMode } from './lib/review-mode'
 import { useAuthStore } from './stores/authStore'
 import { useProfileStore } from './stores/profileStore'
 
-const Dashboard = lazy(() => import('./features/dashboard'))
-const Trades = lazy(() => import('./features/trades'))
-const Settings = lazy(() => import('./features/settings'))
-const AnalyzePage = lazy(() => import('./features/analyze'))
-const WatchlistPage = lazy(() => import('./features/watchlist'))
-const AlertsPage = lazy(() => import('./features/alerts'))
-const ReportsPage = lazy(() => import('./features/reports'))
-const MarketPage = lazy(() => import('./features/market'))
-const EconomyPage = lazy(() => import('./features/economy'))
-const FeedPage = lazy(() => import('./features/feed'))
-const NewsPage = lazy(() => import('./features/news'))
-const ProfilePage = lazy(() => import('./features/profile'))
-const DBViewPage = lazy(() => import('./features/dbView'))
-const SectorsPage = lazy(() => import('./features/sectors'))
-const AdminUsersPage = lazy(() => import('./features/admin-users'))
-const OperationsPage = lazy(() => import('./features/operations'))
-const StrategyPage = lazy(() => import('./features/strategy'))
-const HighlightsPage = lazy(() => import('./features/highlights'))
-const SimulatorPage = lazy(() => import('./features/simulator'))
-const DiscoveryPage = lazy(() => import('./features/discovery'))
-const BacktestPage = lazy(() => import('./features/backtest'))
-const PositionMaintenancePage = lazy(() => import('./features/position-maintenance'))
+const CHUNK_RELOAD_KEY = '__ssb_chunk_reload_once__'
+
+function lazyWithRecovery<T extends React.ComponentType<any>>(
+  importer: () => Promise<{ default: T }>,
+) {
+  return lazy(async () => {
+    try {
+      const mod = await importer()
+      if (typeof window !== 'undefined') {
+        sessionStorage.removeItem(CHUNK_RELOAD_KEY)
+      }
+      return mod
+    } catch (error: any) {
+      const message = String(error?.message || error || '')
+      const isChunkLoadError = /Failed to fetch dynamically imported module|Importing a module script failed|ChunkLoadError/i.test(message)
+      if (isChunkLoadError && typeof window !== 'undefined') {
+        const hasRetried = sessionStorage.getItem(CHUNK_RELOAD_KEY) === '1'
+        if (!hasRetried) {
+          sessionStorage.setItem(CHUNK_RELOAD_KEY, '1')
+          window.location.reload()
+          return new Promise<never>(() => {})
+        }
+      }
+      throw error
+    }
+  })
+}
+
+const Dashboard = lazyWithRecovery(() => import('./features/dashboard'))
+const Trades = lazyWithRecovery(() => import('./features/trades'))
+const Settings = lazyWithRecovery(() => import('./features/settings'))
+const AnalyzePage = lazyWithRecovery(() => import('./features/analyze'))
+const WatchlistPage = lazyWithRecovery(() => import('./features/watchlist'))
+const AlertsPage = lazyWithRecovery(() => import('./features/alerts'))
+const ReportsPage = lazyWithRecovery(() => import('./features/reports'))
+const MarketPage = lazyWithRecovery(() => import('./features/market'))
+const EconomyPage = lazyWithRecovery(() => import('./features/economy'))
+const FeedPage = lazyWithRecovery(() => import('./features/feed'))
+const NewsPage = lazyWithRecovery(() => import('./features/news'))
+const ProfilePage = lazyWithRecovery(() => import('./features/profile'))
+const DBViewPage = lazyWithRecovery(() => import('./features/dbView'))
+const SectorsPage = lazyWithRecovery(() => import('./features/sectors'))
+const AdminUsersPage = lazyWithRecovery(() => import('./features/admin-users'))
+const OperationsPage = lazyWithRecovery(() => import('./features/operations'))
+const StrategyPage = lazyWithRecovery(() => import('./features/strategy'))
+const HighlightsPage = lazyWithRecovery(() => import('./features/highlights'))
+const SimulatorPage = lazyWithRecovery(() => import('./features/simulator'))
+const DiscoveryPage = lazyWithRecovery(() => import('./features/discovery'))
+const BacktestPage = lazyWithRecovery(() => import('./features/backtest'))
+const PositionMaintenancePage = lazyWithRecovery(() => import('./features/position-maintenance'))
 
 export default function App() {
   return (
