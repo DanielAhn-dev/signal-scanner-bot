@@ -163,7 +163,7 @@ function parseParams(req: VercelRequest) {
   const lookbackDays = parsePositiveInt(req.query.lookbackDays, 180, 60, 720)
   const rallyThresholdPct = parseNum(req.query.rallyPct, 20)
   const topN = parsePositiveInt(req.query.topN, 30, 5, 100)
-  const maxRows = parsePositiveInt(req.query.maxRows, 8000, 1000, 30000)
+  const maxRows = parsePositiveInt(req.query.maxRows, 30000, 1000, 100000)
   return { horizonBars, lookbackDays, rallyThresholdPct, topN, maxRows }
 }
 
@@ -232,9 +232,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   try {
     const params = parseParams(req)
     const fromDate = shiftDate(params.lookbackDays + params.horizonBars + 10)
+    const availabilityLookbackDays = Math.max(params.lookbackDays, 270)
+    const availabilityFromDate = shiftDate(availabilityLookbackDays + 120 + 10)
+    const queryFromDate = fromDate < availabilityFromDate ? fromDate : availabilityFromDate
     const supabase = createClient(url, key)
 
-    const scoreRowsRaw = await fetchScoreRows(supabase, fromDate, params.maxRows)
+    const [scoreRowsRaw, availabilityScoreRowsRaw] = await Promise.all([
+      fetchScoreRows(supabase, fromDate, params.maxRows),
+      fetchScoreRows(supabase, availabilityFromDate, Math.max(params.maxRows, 30000)),
+    ])
     const scoreRows = scoreRowsRaw
       .map((row) => ({
         code: normalizeCode(row.code),
@@ -245,19 +251,39 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       }))
       .filter((row) => row.code && row.asof)
 
-    const codes = Array.from(new Set(scoreRows.map((row) => row.code)))
+    const availabilityScoreRows = availabilityScoreRowsRaw
+      .map((row) => ({
+        code: normalizeCode(row.code),
+        asof: normalizeDate(row.asof),
+        totalScore: parseNum(row.total_score, 0),
+        signal: String(row.signal || '').toUpperCase(),
+        rsi14: asRsi14(row.factors),
+      }))
+      .filter((row) => row.code && row.asof)
+
+    const codes = Array.from(new Set([...scoreRows, ...availabilityScoreRows].map((row) => row.code)))
     if (!codes.length) {
-      return res.status(200).json({ ok: true, data: { params, baseline: { labelableEvents: 0 }, risers: [], commonFeatures: {} } })
+      return res.status(200).json({
+        ok: true,
+        data: {
+          params,
+          availableHorizons: [20, 40, 60],
+          horizonAvailability: { '20': 0, '40': 0, '60': 0, '90': 0, '120': 0 },
+          baseline: { labelableEvents: 0 },
+          risers: [],
+          commonFeatures: {},
+        },
+      })
     }
 
-    const priceRows = await fetchPriceRows(supabase, codes, fromDate)
+    const priceRows = await fetchPriceRows(supabase, codes, queryFromDate)
     const priceIndex = buildPriceIndex(priceRows)
 
     const labelableEvents = buildLabelableEvents(scoreRows, priceIndex, params.horizonBars)
     const horizonAvailability = Object.fromEntries(
-      SUPPORTED_HORIZONS.map((h) => [String(h), buildLabelableEvents(scoreRows, priceIndex, h).length]),
+      SUPPORTED_HORIZONS.map((h) => [String(h), buildLabelableEvents(availabilityScoreRows, priceIndex, h).length]),
     ) as Record<string, number>
-    const availableHorizons = SUPPORTED_HORIZONS.filter((h) => (horizonAvailability[String(h)] ?? 0) > 0)
+    const availableHorizons = SUPPORTED_HORIZONS.filter((h) => h <= 60 || (horizonAvailability[String(h)] ?? 0) > 0)
 
     const risers = labelableEvents
       .filter((row) => row.forwardReturnPct >= params.rallyThresholdPct)
