@@ -4,7 +4,7 @@ import Button from '../../components/ui/Button'
 import Input from '../../components/ui/Input'
 import Skeleton from '../../components/Skeleton'
 import { EmptyState, ErrorState } from '../../components/StateViews'
-import { ChevronDown, RefreshCw } from 'lucide-react'
+import { ChevronDown, ChevronRight, RefreshCw } from 'lucide-react'
 
 const ANALYZE_PENDING_CODE_KEY = 'analyze_pending_code'
 
@@ -758,6 +758,18 @@ export default function DiscoveryPage() {
                     <div className="scan-td-name">{pick.name}</div>
                     <div className="scan-td-code">{pick.code}</div>
                     {pick.sectorName && <div className="caption muted">섹터 {pick.sectorName}</div>}
+                    <div className="discovery-mobile-meta" aria-label="핵심 지표">
+                      <div className="discovery-mobile-meta-item">
+                        <span className="discovery-mobile-meta-label">종합</span>
+                        <ScoreBadge value={pick.score.totalScore} max={100} />
+                      </div>
+                      <div className="discovery-mobile-meta-item">
+                        <span className="discovery-mobile-meta-label">시총</span>
+                        <span className="discovery-mobile-meta-value">
+                          <MarketCapCell value={pick.marketCap} />
+                        </span>
+                      </div>
+                    </div>
                   </td>
                   <td className="scan-td" data-label="종합 점수">
                     <ScoreBadge value={pick.score.totalScore} max={100} />
@@ -806,12 +818,12 @@ export default function DiscoveryPage() {
                   <td className="scan-td discovery-td-action" data-label="">
                     <Button
                       variant="secondary"
-                      size="xs"
+                      size="sm"
                       className="discovery-action-icon-btn"
                       aria-label={`${pick.name} 분석 열기`}
                       onClick={() => handleAnalyze(pick.code)}
                     >
-                      <span aria-hidden>{'>'}</span>
+                      <ChevronRight size={14} aria-hidden="true" />
                     </Button>
                   </td>
                 </tr>
