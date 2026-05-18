@@ -74,6 +74,35 @@ type AdaptiveInsights = {
   topNegativeFactors: AdaptiveFactorStat[]
 }
 
+type PreRallyPattern = {
+  name: string
+  samples: number
+  winRatePct: number
+  liftVsBasePct: number
+  avgForwardReturnPct: number
+  avgMaxDrawdownPct: number
+}
+
+type PreRallyReport = {
+  generatedAt?: string
+  fileName?: string
+  config?: {
+    horizonBars?: number
+    rallyThresholdPct?: number
+  }
+  dataset?: {
+    labeledRows?: number
+  }
+  baseline?: {
+    trainWinRatePct?: number
+    testWinRatePct?: number
+  }
+  stablePatterns?: PreRallyPattern[]
+  notes?: string[]
+}
+
+type PreRallySortKey = 'lift' | 'win' | 'ret' | 'samples'
+
 const STRATEGY_OPTIONS = [
   {
     id: 'HOLD_SAFE',
@@ -163,6 +192,12 @@ function calculateMovingAverage(values: number[], window: number): number[] {
   return result
 }
 
+function getPreRallyBadge(input: { lift: number; win: number; mdd: number }): { label: string; color: string } {
+  if (input.lift >= 5 && input.win >= 45) return { label: '추천', color: 'var(--color-success)' }
+  if (input.mdd <= -15 || input.lift < 0) return { label: '주의', color: 'var(--color-warning)' }
+  return { label: '관찰', color: 'var(--color-brand)' }
+}
+
 export default function StrategyPage() {
   const [tab, setTab] = useState<Tab>('overview')
   const [rows, setRows] = useState<DecisionRow[]>([])
@@ -176,6 +211,11 @@ export default function StrategyPage() {
   const [activityLoading, setActivityLoading] = useState(true)
   const [adaptiveInsights, setAdaptiveInsights] = useState<AdaptiveInsights | null>(null)
   const [adaptiveLoading, setAdaptiveLoading] = useState(true)
+  const [preRallyReport, setPreRallyReport] = useState<PreRallyReport | null>(null)
+  const [preRallyLoading, setPreRallyLoading] = useState(true)
+  const [preRallyHorizon, setPreRallyHorizon] = useState<20 | 40 | 60>(40)
+  const [preRallySortKey, setPreRallySortKey] = useState<PreRallySortKey>('lift')
+  const [preRallyInvestManwon, setPreRallyInvestManwon] = useState<number>(500)
 
   const loadDecisions = async () => {
     setDecLoading(true)
@@ -226,6 +266,18 @@ export default function StrategyPage() {
     }
   }
 
+  const loadPreRallyReport = async (horizon: number) => {
+    setPreRallyLoading(true)
+    try {
+      const res = await apiFetch(`/api/ui/pre-rally-patterns?horizon=${horizon}`, { cacheMs: 60_000, timeoutMs: 20_000 })
+      setPreRallyReport((res?.data ?? null) as PreRallyReport | null)
+    } catch {
+      setPreRallyReport(null)
+    } finally {
+      setPreRallyLoading(false)
+    }
+  }
+
   const saveSettings = async () => {
     if (!settings) return
     setSaving(true)
@@ -255,6 +307,18 @@ export default function StrategyPage() {
     void loadActivity()
     void loadAdaptiveInsights()
   }, [])
+
+  useEffect(() => {
+    void loadPreRallyReport(preRallyHorizon)
+  }, [preRallyHorizon])
+
+  const sortedPreRallyPatterns = useMemo(() => {
+    const rows = (preRallyReport?.stablePatterns ?? []).slice()
+    if (preRallySortKey === 'win') return rows.sort((a, b) => b.winRatePct - a.winRatePct)
+    if (preRallySortKey === 'ret') return rows.sort((a, b) => b.avgForwardReturnPct - a.avgForwardReturnPct)
+    if (preRallySortKey === 'samples') return rows.sort((a, b) => b.samples - a.samples)
+    return rows.sort((a, b) => b.liftVsBasePct - a.liftVsBasePct)
+  }, [preRallyReport, preRallySortKey])
 
   const summary = useMemo(() => {
     const total = rows.length
@@ -498,8 +562,9 @@ export default function StrategyPage() {
             void loadSettings()
             void loadActivity()
             void loadAdaptiveInsights()
+            void loadPreRallyReport(preRallyHorizon)
           }}
-          disabled={decLoading || settingsLoading || activityLoading || adaptiveLoading}
+          disabled={decLoading || settingsLoading || activityLoading || adaptiveLoading || preRallyLoading}
         >
           새로고침
         </Button>
@@ -668,6 +733,127 @@ export default function StrategyPage() {
               </>
             )}
             {!adaptiveLoading && !adaptiveInsights && <div className="muted">적응형 전략 데이터를 아직 계산하지 못했습니다.</div>}
+          </div>
+
+          <div className="card mb-4">
+            <div className="flex-between" style={{ alignItems: 'baseline', marginBottom: 'var(--space-2)' }}>
+              <div className="title-md">프리랠리 패턴 (웹 리포트)</div>
+              {preRallyReport?.generatedAt && (
+                <div className="caption">생성 {new Date(preRallyReport.generatedAt).toLocaleString('ko-KR')}</div>
+              )}
+            </div>
+            <div className="muted" style={{ marginBottom: 12, fontSize: 'var(--font-size-sm)' }}>
+              오프라인 분석 결과를 웹에서 읽기 전용으로 확인합니다. horizon(20/40/60)과 정렬 기준을 바꿔 비교하세요.
+            </div>
+
+            <div style={{ display: 'flex', gap: 8, marginBottom: 12, flexWrap: 'wrap', alignItems: 'center' }}>
+              {[20, 40, 60].map((h) => (
+                <button
+                  key={h}
+                  className={`sector-tab-btn${preRallyHorizon === h ? ' sector-tab-btn--active' : ''}`}
+                  onClick={() => setPreRallyHorizon(h as 20 | 40 | 60)}
+                >
+                  {h}거래일
+                </button>
+              ))}
+              <label className="caption" style={{ marginLeft: 8 }}>정렬</label>
+              <select
+                value={preRallySortKey}
+                onChange={(e) => setPreRallySortKey(e.target.value as PreRallySortKey)}
+                style={{ minWidth: 130 }}
+              >
+                <option value="lift">Lift 순</option>
+                <option value="win">승률 순</option>
+                <option value="ret">평균수익률 순</option>
+                <option value="samples">표본수 순</option>
+              </select>
+              <label className="caption" style={{ marginLeft: 8 }}>가정 투자금(만원)</label>
+              <input
+                type="number"
+                min={10}
+                step={10}
+                value={preRallyInvestManwon}
+                onChange={(e) => setPreRallyInvestManwon(Math.max(10, Number(e.target.value) || 10))}
+                style={{ width: 120 }}
+              />
+            </div>
+
+            {preRallyLoading && <Skeleton lines={4} height={12} />}
+
+            {!preRallyLoading && preRallyReport && (
+              <>
+                <div className="cards-list" style={{ marginBottom: 16 }}>
+                  <div className="card">
+                    <div className="caption">라벨 표본</div>
+                    <div className="title-lg">{preRallyReport.dataset?.labeledRows ?? 0}</div>
+                  </div>
+                  <div className="card">
+                    <div className="caption">테스트 승률</div>
+                    <div className="title-lg">{preRallyReport.baseline?.testWinRatePct ?? 0}%</div>
+                  </div>
+                  <div className="card">
+                    <div className="caption">안정 패턴 수</div>
+                    <div className="title-lg">{preRallyReport.stablePatterns?.length ?? 0}</div>
+                  </div>
+                  <div className="card">
+                    <div className="caption">리포트 파일</div>
+                    <div className="title-md" style={{ fontSize: 'var(--font-size-sm)' }}>{preRallyReport.fileName ?? '-'}</div>
+                  </div>
+                </div>
+
+                {sortedPreRallyPatterns.length === 0 && (
+                  <div className="muted">현재 기준에서 안정 패턴이 없습니다. 분석 파라미터를 조정해 리포트를 다시 생성하세요.</div>
+                )}
+
+                {sortedPreRallyPatterns.map((item) => {
+                  const badge = getPreRallyBadge({
+                    lift: item.liftVsBasePct,
+                    win: item.winRatePct,
+                    mdd: item.avgMaxDrawdownPct,
+                  })
+                  const principal = preRallyInvestManwon * 10_000
+                  const expectedPnl = Math.round(principal * (item.avgForwardReturnPct / 100))
+                  return (
+                  <div key={item.name} style={{ marginBottom: 10 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12 }}>
+                      <span style={{ fontWeight: 600 }}>
+                        {item.name}
+                        <span
+                          style={{
+                            marginLeft: 8,
+                            fontSize: 'var(--font-size-xs)',
+                            color: badge.color,
+                            border: `1px solid ${badge.color}`,
+                            borderRadius: 999,
+                            padding: '2px 8px',
+                          }}
+                        >
+                          {badge.label}
+                        </span>
+                      </span>
+                      <span style={{ color: item.liftVsBasePct >= 0 ? COLOR_POSITIVE : COLOR_NEGATIVE, fontWeight: 700 }}>
+                        Lift {item.liftVsBasePct > 0 ? '+' : ''}{item.liftVsBasePct}%
+                      </span>
+                    </div>
+                    <div className="caption">
+                      승률 {item.winRatePct}% · 평균 {item.avgForwardReturnPct > 0 ? '+' : ''}{item.avgForwardReturnPct}% · MDD {item.avgMaxDrawdownPct}% · 샘플 {item.samples}
+                    </div>
+                    <div className="caption" style={{ marginTop: 2 }}>
+                      과거 가정손익(투자금 {preRallyInvestManwon.toLocaleString('ko-KR')}만원): {expectedPnl >= 0 ? '+' : ''}{expectedPnl.toLocaleString('ko-KR')}원
+                    </div>
+                  </div>
+                  )
+                })}
+
+                {(preRallyReport.notes ?? []).length > 0 && (
+                  <div className="caption" style={{ marginTop: 8 }}>
+                    노트: {(preRallyReport.notes ?? []).join(' | ')}
+                  </div>
+                )}
+              </>
+            )}
+
+            {!preRallyLoading && !preRallyReport && <div className="muted">pre-rally 리포트를 아직 찾지 못했습니다.</div>}
           </div>
 
           {decError && <ErrorState message={decError} onRetry={loadDecisions} />}

@@ -58,6 +58,7 @@ export async function getLeadersForSectorById(
   code: string;
   name: string;
   market?: string | null;
+  market_cap?: number | null;
   liquidity?: number | null;
   universe_level?: string | null;
   is_sector_leader?: boolean | null;
@@ -65,12 +66,13 @@ export async function getLeadersForSectorById(
   try {
     const { data, error } = await supabase
       .from("stocks")
-      .select("code, name, market, liquidity, universe_level, is_sector_leader")
+      .select("code, name, market, market_cap, liquidity, universe_level, is_sector_leader")
       .eq("sector_id", sectorId)
       .eq("is_active", true)
       .in("market", ["KOSPI", "KOSDAQ"])
       .in("universe_level", ["core", "extended"])
       .order("is_sector_leader", { ascending: false })
+      .order("market_cap", { ascending: false, nullsFirst: false })
       .order("liquidity", { ascending: false, nullsFirst: false }) // nullsLast
       .limit(limit);
 
@@ -92,6 +94,7 @@ export async function getLeadersForSector(
   code: string;
   name: string;
   market?: string | null;
+  market_cap?: number | null;
   liquidity?: number | null;
   universe_level?: string | null;
   is_sector_leader?: boolean | null;

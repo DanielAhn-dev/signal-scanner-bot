@@ -2,7 +2,7 @@
  * CandleChart — lightweight-charts 기반 인터랙티브 캔들 차트
  * OhlcvCandle[] 배열을 받아 캔들스틱 + 볼륨 차트를 렌더링한다.
  */
-import React, { useEffect, useRef } from 'react'
+import React, { useEffect, useMemo, useRef } from 'react'
 import {
   createChart,
   ColorType,
@@ -16,6 +16,7 @@ import {
   type ISeriesApi,
 } from 'lightweight-charts'
 import type { OhlcvCandle } from '../lib/types'
+import { evaluateAccumulationSignal } from '../lib/accumulationSignal'
 
 type Props = {
   candles: OhlcvCandle[]
@@ -218,6 +219,7 @@ export default function CandleChart({
   const candleSeriesRef = useRef<ISeriesApi<'Candlestick', any> | null>(null)
   const volSeriesRef = useRef<ISeriesApi<'Histogram', any> | null>(null)
   const safeCandles = sanitizeCandlesForChart(candles)
+  const accumulationSignal = useMemo(() => evaluateAccumulationSignal(safeCandles), [safeCandles])
 
   useEffect(() => {
     if (!containerRef.current || safeCandles.length === 0) return
@@ -414,6 +416,29 @@ export default function CandleChart({
       }
     }
 
+    if (accumulationSignal.stage !== 'none' && accumulationSignal.baseHigh != null) {
+      candleSeries.createPriceLine({
+        price: accumulationSignal.baseHigh,
+        color: accumulationSignal.stage === 'breakout' ? '#a855f7' : '#8b5cf6',
+        lineWidth: 1,
+        lineStyle: 2,
+        title: accumulationSignal.stage === 'breakout' ? '매집 돌파선' : '매집 상단',
+      })
+
+      if (accumulationSignal.breakoutDate) {
+        const breakoutTime = toTimestamp(accumulationSignal.breakoutDate) as any
+        createSeriesMarkers(candleSeries, [
+          {
+            time: breakoutTime,
+            position: 'belowBar',
+            color: '#a855f7',
+            shape: 'circle',
+            text: accumulationSignal.stage === 'breakout' ? '매집 돌파' : '매집 선행',
+          },
+        ])
+      }
+    }
+
     // 가격 라인 — 진입/손절/목표
     if (entryLow != null) {
       candleSeries.createPriceLine({ price: entryLow, color: '#22c55e', lineWidth: 1, lineStyle: 1, title: '진입 하단' })
@@ -572,6 +597,18 @@ export default function CandleChart({
             {showMaEmaOverlay && <span className="chart-hud-panel__chip chart-hud-panel__chip--ma">EMA21 · SMA50 · SMA200</span>}
             {showTradeMarkers && <span className="chart-hud-panel__chip chart-hud-panel__chip--marker">신호 마커</span>}
             {showForceLine && <span className="chart-hud-panel__chip chart-hud-panel__chip--force">세력선</span>}
+            {accumulationSignal.stage !== 'none' && (
+              <span
+                className="chart-hud-panel__chip chart-hud-panel__chip--marker"
+                title={accumulationSignal.reasons.join(' · ')}
+              >
+                {accumulationSignal.stage === 'lead'
+                  ? '매집 선행형'
+                  : accumulationSignal.stage === 'breakout'
+                    ? '매집 돌파'
+                    : '매집 진행형'}
+              </span>
+            )}
           </div>
         </div>
       )}

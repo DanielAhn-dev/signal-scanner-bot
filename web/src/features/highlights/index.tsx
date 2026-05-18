@@ -206,6 +206,11 @@ export default function HighlightsPage({ onNavigate }: { onNavigate?: (r: string
     navigateTo('analyze')
   }
 
+  const goBacktest = (code: string) => {
+    try { sessionStorage.setItem('backtest_pending_code', code) } catch { /* ignore */ }
+    navigateTo('backtest')
+  }
+
   const saveAndGoSimulation = () => {
     if (selectedItems.length === 0) {
       toast.show('최소 1개 종목을 선택해 주세요.')
@@ -460,6 +465,7 @@ export default function HighlightsPage({ onNavigate }: { onNavigate?: (r: string
                     />
                   </div>
                   <Button variant="ghost" onClick={() => goAnalyze(row.code)}>상세분석</Button>
+                  <Button variant="ghost" onClick={() => goBacktest(row.code)}>패턴 점검</Button>
                 </div>
               </div>
             )
@@ -522,6 +528,7 @@ export default function HighlightsPage({ onNavigate }: { onNavigate?: (r: string
                             />
                           </div>
                           <Button variant="ghost" onClick={() => goAnalyze(row.code)}>분석</Button>
+                          <Button variant="ghost" onClick={() => goBacktest(row.code)}>패턴</Button>
                           <button
                             type="button"
                             onClick={() => toggleCode(row.code)}

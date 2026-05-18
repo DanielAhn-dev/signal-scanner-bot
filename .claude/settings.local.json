@@ -16,7 +16,9 @@
       "Bash(curl -s \"https://m.stock.naver.com/api/stock/005930/basic\" -H \"User-Agent: Mozilla/5.0\")",
       "Bash(python3 -c \"import sys,json; d=json.load\\(sys.stdin\\); print\\(json.dumps\\({k:v for k,v in d.items\\(\\) if 'credit' in k.lower\\(\\) or 'shin' in k.lower\\(\\) or '신용' in str\\(v\\) or 'ratio' in k.lower\\(\\)}, ensure_ascii=False, indent=2\\)\\)\")",
       "WebFetch(domain:m.stock.naver.com)",
-      "WebFetch(domain:polling.finance.naver.com)"
+      "WebFetch(domain:polling.finance.naver.com)",
+      "Bash(npx vite *)",
+      "Bash(git -C d:/Dev/Github/signal-scanner-bot status)"
     ]
   }
 }

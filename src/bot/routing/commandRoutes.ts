@@ -30,6 +30,7 @@ import {
   handleEtfThemeCommand,
 } from "../commands/marketPicks";
 import { handleDiscoveryCommand } from "../commands/discovery";
+import { handlePreRallyCommand } from "../commands/preRally";
 import {
   handleEtfDistributionCommand,
   handleEtfHubCommand,
@@ -87,6 +88,12 @@ export const COMMAND_ROUTE_SPECS: CommandRouteSpec[] = [
     userErrorLabel: "브리핑",
     tokens: ["brief", "morning", "브리핑", "장전"],
     run: (_match, ctx, tgSend) => handleBriefCommand(ctx, tgSend),
+  },
+  {
+    pattern: CMD.PRE_RALLY,
+    userErrorLabel: "프리랠리",
+    tokens: ["pre-rally", "prerally", "프리랠리", "랠리패턴"],
+    run: (match, ctx, tgSend) => handlePreRallyCommand(match[2] ?? "", ctx, tgSend),
   },
   {
     pattern: CMD.PREMARKET,

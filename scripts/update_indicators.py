@@ -155,7 +155,7 @@ def update_technical_indicators():
     try:
         existing_res = (
             supabase.table("scores")
-            .select("code, score, total_score, momentum_score, liquidity_score, value_score")
+            .select("code, score, total_score, momentum_score, liquidity_score, value_score, factors")
             .eq("asof", asof)
             .in_("code", target_codes)
             .execute()
@@ -246,6 +246,12 @@ def update_technical_indicators():
             }
 
             existing_score = existing_scores_map.get(code) or {}
+            existing_factors = existing_score.get("factors") if isinstance(existing_score.get("factors"), dict) else {}
+            merged_factors = dict(existing_factors)
+            for k, v in factors_payload.items():
+                if v is not None:
+                    merged_factors[k] = v
+
             score_payload = {
                 "code": code,
                 "asof": asof,
@@ -255,7 +261,7 @@ def update_technical_indicators():
                 "momentum_score": int(existing_score.get("momentum_score") or 50),
                 "liquidity_score": int(existing_score.get("liquidity_score") or 50),
                 "value_score": int(existing_score.get("value_score") or 50),
-                "factors": factors_payload,
+                "factors": merged_factors,
             }
             
             # 개별 업데이트 (배치보다 안전)

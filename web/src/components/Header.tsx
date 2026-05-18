@@ -293,6 +293,37 @@ export default function Header({
               </button>
             </div>
             <div className="nav-drawer-content">
+              <div className="nav-quick-tools">
+                <button
+                  type="button"
+                  className="nav-tool-card"
+                  onClick={() => {
+                    setCmdOpen(true)
+                    setDrawerOpen(false)
+                  }}
+                >
+                  <Command className="nav-tool-icon" aria-hidden />
+                  <span className="nav-tool-text">
+                    <strong>명령 목록</strong>
+                    <small>텔레그램 단축명령</small>
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  className="nav-tool-card"
+                  onClick={() => {
+                    setCreditShortOpen(true)
+                    setDrawerOpen(false)
+                  }}
+                >
+                  <BadgePercent className="nav-tool-icon" aria-hidden />
+                  <span className="nav-tool-text">
+                    <strong>공매도 입력</strong>
+                    <small>보조 지표 수동 반영</small>
+                  </span>
+                </button>
+              </div>
+
               {visibleNavGroups.map((group) => (
                 <div key={group.category} className="nav-group">
                   <div className="nav-group-title">{group.category}</div>

@@ -12,6 +12,12 @@ type NewsItem = {
   date?: string
 }
 
+function decodeHtml(str: string): string {
+  const txt = document.createElement('textarea')
+  txt.innerHTML = str
+  return txt.value
+}
+
 type RelatedStock = { code: string; name: string }
 
 export default function NewsPage() {
@@ -136,7 +142,7 @@ export default function NewsPage() {
               <div className="flex-between" style={{ gap: 'var(--space-2)' }}>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <a href={item.link} target="_blank" rel="noreferrer" className="title-md" style={{ textDecoration: 'none' }}>
-                    {item.title}
+                    {decodeHtml(item.title)}
                   </a>
                   <div className="caption muted" style={{ marginTop: 'var(--space-2)' }}>
                     {[item.source, item.date].filter(Boolean).join(' · ') || '출처 정보 없음'}

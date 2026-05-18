@@ -6,6 +6,9 @@
     "installCommand": null,
     "ignoreCommand": "if [ \"$VERCEL_ENV\" = \"production\" ]; then exit 1; fi; git diff HEAD~1 --name-only | grep -qE '^web/'",
     "functions": {
+        "api/economic-calendar.ts": {
+            "maxDuration": 60
+        },
         "api/market-overview.ts": {
             "maxDuration": 60
         },
@@ -75,7 +78,7 @@
         },
         {
             "path": "/api/cron/scoreSync",
-            "schedule": "40 6 * * 1-5"
+            "schedule": "25 9 * * 1-5"
         }
     ]
 }

@@ -111,19 +111,29 @@ export async function fetchRealtimeStockData(
   }
 }
 
-/** 여러 종목 병렬 조회 (10개씩 청크) */
+/** 여러 종목 병렬 조회 (재시도 로직 포함) */
 export async function fetchRealtimePriceBatch(
-  codes: string[]
+  codes: string[],
+  options: { retries?: number; chunkSize?: number } = {}
 ): Promise<Record<string, RealtimeStockData>> {
   const result: Record<string, RealtimeStockData> = {};
   const uniqueCodes = [...new Set(codes.map((code) => code.trim()).filter(Boolean))];
-  const chunkSize = 20;
+  const chunkSize = options.chunkSize ?? 20;
+  const maxRetries = options.retries ?? 2;
+
+  // 첫 번째 시도
+  const failedCodes = new Set<string>();
+  
   for (let i = 0; i < uniqueCodes.length; i += chunkSize) {
     const chunk = uniqueCodes.slice(i, i + chunkSize);
     const settled = await Promise.allSettled(
       chunk.map(async (code) => {
         const data = await fetchRealtimeStockData(code);
-        if (data) result[code] = data;
+        if (data) {
+          result[code] = data;
+        } else {
+          failedCodes.add(code);
+        }
       })
     );
 
@@ -133,6 +143,52 @@ export async function fetchRealtimePriceBatch(
       }
     }
   }
+
+  // 재시도: 실패한 종목들만 다시 시도
+  let retryCount = 0;
+  while (failedCodes.size > 0 && retryCount < maxRetries) {
+    retryCount++;
+    console.warn(`[fetchRealtimePriceBatch] 재시도 ${retryCount}/${maxRetries}: ${failedCodes.size}개 종목`);
+    
+    const codesForRetry = Array.from(failedCodes);
+    failedCodes.clear();
+
+    for (let i = 0; i < codesForRetry.length; i += chunkSize) {
+      const chunk = codesForRetry.slice(i, i + chunkSize);
+      
+      // 재시도 전 짧은 지연
+      await new Promise(resolve => setTimeout(resolve, 500 * retryCount));
+      
+      const settled = await Promise.allSettled(
+        chunk.map(async (code) => {
+          const data = await fetchRealtimeStockData(code);
+          if (data) {
+            result[code] = data;
+          } else {
+            failedCodes.add(code); // 재시도에서도 실패
+          }
+        })
+      );
+
+      for (const item of settled) {
+        if (item.status === "rejected") {
+          console.error("실시간 배치 재시도 실패:", item.reason);
+        }
+      }
+    }
+  }
+
+  // 최종 실패 로깅
+  if (failedCodes.size > 0) {
+    console.warn(
+      `[fetchRealtimePriceBatch] 최종 실패: ${failedCodes.size}/${uniqueCodes.length}개 종목`,
+      Array.from(failedCodes).slice(0, 5)
+    );
+  }
+
+  const coverage = ((uniqueCodes.length - failedCodes.size) / uniqueCodes.length) * 100;
+  console.info(`[fetchRealtimePriceBatch] 커버리지: ${coverage.toFixed(1)}% (${uniqueCodes.length - failedCodes.size}/${uniqueCodes.length})`);
+
   return result;
 }
 

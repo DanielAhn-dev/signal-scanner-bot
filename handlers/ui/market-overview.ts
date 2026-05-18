@@ -432,11 +432,23 @@ function generateTradingSignal(
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   const origin = (req.headers.origin as string) || process.env.UI_CORS_ORIGIN || '*'
+  const requestedHeaders = String(req.headers['access-control-request-headers'] || '')
+    .split(',')
+    .map((v) => v.trim())
+    .filter(Boolean)
+  const allowHeaders = new Set([
+    'Content-Type',
+    'x-ui-key',
+    'x-user-chat-id',
+    'Authorization',
+    ...requestedHeaders,
+  ])
   res.setHeader('Access-Control-Allow-Origin', origin)
   res.setHeader('Access-Control-Allow-Methods', 'GET,POST,OPTIONS')
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type,x-ui-key,x-user-chat-id')
+  res.setHeader('Access-Control-Allow-Headers', Array.from(allowHeaders).join(','))
   res.setHeader('Access-Control-Allow-Credentials', 'true')
   res.setHeader('Cache-Control', 'private, max-age=10, stale-while-revalidate=30')
+  res.setHeader('Vary', 'Origin,Access-Control-Request-Headers')
   if (req.method === 'OPTIONS') return res.status(204).end()
   if (req.method !== 'GET') return res.status(405).json({ error: 'Method not allowed' })
 

@@ -1,4 +1,5 @@
 ﻿import React, { useEffect, useState, useRef, useCallback, useMemo } from 'react'
+import { Building2, AlertTriangle, TrendingDown, ShieldAlert, TrendingUp, PlusCircle, Eye } from 'lucide-react'
 import { apiFetch, invalidateCache } from '../../lib/api'
 import { formatKrw, formatNumber } from '../../lib/format'
 import Skeleton from '../../components/Skeleton'
@@ -120,6 +121,17 @@ const WARN_REASON_LABELS: Array<{ key: string; label: string }> = [
   { key: 'warn_ma_break', label: '21일선 이탈(종가 < MA21)' },
   { key: 'warn_dead_cross', label: '데드크로스(MA21 < MA50)' },
 ]
+
+const BADGE_TOOLTIPS: Record<string, string> = {
+  '점수부족': '추가매수 기준 점수 미달. 점수가 오르거나 기준 완화 시 추가진입 신호가 생성됩니다.',
+  '경고있음': '기술적 경고 지표 발생 (이격과열·거래량급증·RSI 과매수 등). 판정근거 보기에서 상세 확인.',
+  '매도신호': '종합 점수 기반 매도 신호 발생. 현재 보통 보유 상태이나 주의 관찰 필요.',
+  '관망': '추가매수·부분청산 조건 모두 미충족. 현재 포지션 유지 권장.',
+  '익절구간': '수익률이 부분청산 기준에 도달. 일부 매도를 검토하세요.',
+  '경고강함': '경고 등급 WARN/SELL 수준. 손실 위험 신호 — 청산 조건 재검토 권장.',
+  '추가진입': '추가매수 조건 충족. 점수·진입·추세 등급이 기준 이상입니다.',
+  '보유신호': '추세 유지 신호. 현재 포지션 보유 권장.',
+}
 
 export default function Portfolio() {
   const [allRows, setAllRows] = useState<any[]>([])
@@ -1021,7 +1033,7 @@ export default function Portfolio() {
     <section className="container-app portfolio-page">
       <div className="portfolio-head">
         <div className="portfolio-title-wrap">
-          <h1 className="title-xl portfolio-title">가상 포트폴리오</h1>
+          <h1 className="title-xl portfolio-title">포트폴리오</h1>
           <p className="portfolio-subtitle">보유 포지션만 집중해서 관리합니다.</p>
         </div>
         <div className="portfolio-head-toolbar">
@@ -1614,52 +1626,13 @@ export default function Portfolio() {
 
           return (
             <div key={r.id} className="card card-lg portfolio-position-card">
-              <div className="flex-between portfolio-position-top">
-                <div>
-                  <div className="title-lg">{r.stock_name ?? r.ticker ?? r.symbol}</div>
-                  <div className="caption">{r.code}</div>
-                  <div className="muted portfolio-position-meta">
-                    {r.quantity}주 · 매수가 {formatKrw(r.avg_price)}
-                    {r.buy_date ? ` · ${r.buy_date}` : ''}
-                  </div>
-                  <div className="caption" style={{ marginTop: '4px', marginBottom: 'var(--space-1)' }}>
-                    <span style={{ fontWeight: 'var(--font-weight-bold)', color: 'var(--color-text-primary)', padding: '2px 8px', backgroundColor: 'var(--color-background-secondary)', borderRadius: '4px', fontSize: 'var(--font-size-xs)', display: 'inline-block' }}>
-                      📊 {accountLabel(r?.broker_name, r?.account_name)}
-                    </span>
-                  </div>
-                  <div className="caption" style={{ marginTop: '4px' }}>
-                    상태: {holdingState === 'partial' ? '부분청산 후보' : holdingState === 'add' ? '추가매수(IN진입)' : '보통 보유(홀드)'}
-                    {' · '}등급 {grade}
-                    {' · '}점수 {score != null ? formatNumber(score, 1) : '—'}
-                    {scoreSignal ? ` · 신호 ${toSignalLabel(scoreSignal)}` : ''}
-                    {(entryGrade || trendGrade || warnGrade) ? ` · 진입 ${entryGrade || '-'} / 추세 ${trendGrade || '-'} / 경고 ${toWarnLabel(warnGrade)}` : ''}
-                    {stateEvaluation.reasons.length > 0 ? (
-                      <button
-                        type="button"
-                        className="portfolio-reason-toggle"
-                        onClick={() => setOpenReasonKey(reasonOpen ? null : reasonKey)}
-                        aria-expanded={reasonOpen}
-                      >
-                        [{reasonOpen ? '판정근거 접기' : '판정근거 보기'}]
-                      </button>
-                    ) : null}
-                  </div>
-                  {reasonOpen && stateEvaluation.reasons.length > 0 && (
-                    <div className="portfolio-reason-panel" role="note" aria-label="판정 근거 상세">
-                      {stateEvaluation.reasons.map((reason, idx) => (
-                        <div key={`${reasonKey}-${idx}`} className="portfolio-reason-line">• {reason}</div>
-                      ))}
-                    </div>
-                  )}
-                  {reasonBadges.length > 0 && (
-                    <div className="portfolio-reason-badges">
-                      {reasonBadges.map((b, i) => (
-                        <span key={i} className={`portfolio-reason-badge portfolio-reason-badge--${b.type}`}>{b.label}</span>
-                      ))}
-                    </div>
-                  )}
-                </div>
 
+              {/* ── 헤더: 종목명 + 손익 ── */}
+              <div className="portfolio-card-header">
+                <div className="portfolio-card-title-group">
+                  <span className="title-lg">{r.stock_name ?? r.ticker ?? r.symbol}</span>
+                  <span className="caption muted portfolio-stock-code">{r.code}</span>
+                </div>
                 <div className="text-right portfolio-position-pnl">
                   {(() => {
                     const rawPnl = pnl != null ? Number(pnl) : null
@@ -1675,12 +1648,11 @@ export default function Portfolio() {
                     return (
                       <>
                         <div
-                          className={displayPnl != null ? (displayPnl < 0 ? 'negative' : 'positive') : ''}
-                          style={{ fontWeight: 'var(--font-weight-bold)', fontSize: 'var(--font-size-xl)' }}
+                          className={`portfolio-pnl-amount${displayPnl != null ? (displayPnl < 0 ? ' negative' : ' positive') : ''}`}
                         >
                           {displayPnl != null ? formatKrw(displayPnl) : '—'}
                         </div>
-                        <div className="caption">
+                        <div className="caption muted">
                           {displayPct != null ? `${formatNumber(displayPct, 2)}%` : '—'}
                           {r.hold_days != null ? ` · ${r.hold_days}일` : ''}
                         </div>
@@ -1690,16 +1662,81 @@ export default function Portfolio() {
                 </div>
               </div>
 
+              {/* ── 보유 정보: 수량 · 평균매수가 · 매수일 ── */}
+              <div className="caption muted portfolio-position-meta">
+                {r.quantity}주 · 평균가 {formatKrw(r.avg_price)}{r.buy_date ? ` · ${r.buy_date}` : ''}
+              </div>
+
+              {/* ── 계좌 · 상태 · 등급 칩 ── */}
+              <div className="portfolio-card-chips">
+                <span className="portfolio-account-chip">
+                  <Building2 size={11} />
+                  {accountLabel(r?.broker_name, r?.account_name)}
+                </span>
+                <span className={`portfolio-state-chip portfolio-state-chip--${holdingState}`}>
+                  {holdingState === 'partial' ? '부분청산 후보' : holdingState === 'add' ? '추가매수' : '보통 보유'}
+                </span>
+                <span className="portfolio-grade-chip">
+                  등급 {grade} · 점수 {score != null ? formatNumber(score, 1) : '—'}
+                  {scoreSignal ? ` · ${toSignalLabel(scoreSignal)}` : ''}
+                </span>
+                {(entryGrade || trendGrade || warnGrade) && (
+                  <span className="portfolio-grade-chip">
+                    진입 {entryGrade || '-'} / 추세 {trendGrade || '-'} / 경고 {toWarnLabel(warnGrade)}
+                  </span>
+                )}
+              </div>
+
+              {/* ── 판정 배지 + 판정근거 토글 ── */}
+              <div className="portfolio-card-badges-row">
+                {reasonBadges.map((b, i) => (
+                  <span
+                    key={i}
+                    className={`portfolio-reason-badge portfolio-reason-badge--${b.type}`}
+                    title={BADGE_TOOLTIPS[b.label] || b.label}
+                  >
+                    {b.label}
+                  </span>
+                ))}
+                {stateEvaluation.reasons.length > 0 && (
+                  <button
+                    type="button"
+                    className="portfolio-reason-toggle"
+                    onClick={() => setOpenReasonKey(reasonOpen ? null : reasonKey)}
+                    aria-expanded={reasonOpen}
+                  >
+                    {reasonOpen ? '판정근거 접기' : '판정근거 보기'}
+                  </button>
+                )}
+              </div>
+
+              {/* ── 판정근거 패널 ── */}
+              {reasonOpen && stateEvaluation.reasons.length > 0 && (
+                <div className="portfolio-reason-panel" role="note" aria-label="판정 근거 상세">
+                  {stateEvaluation.reasons.map((reason, idx) => (
+                    <div key={`${reasonKey}-${idx}`} className="portfolio-reason-line">• {reason}</div>
+                  ))}
+                </div>
+              )}
+
+              {/* ── 로트 이력 ── */}
               {r.lots?.length > 0 && (
                 <div className="caption portfolio-lots">
                   로트: {r.lots.map((l: any) => `${l.acquired_quantity}주 @${formatKrw(l.acquired_price)}`).join(' · ')}
                 </div>
               )}
 
+              {/* ── 액션 버튼 ── */}
               <div className="portfolio-actions-row">
-                <Button className="portfolio-action-btn" variant="secondary" onClick={() => openTradeModal(r, 'buy')}>추가매수</Button>
-                <Button className="portfolio-action-btn" variant="secondary" onClick={() => openMaintenanceModal('holdingedit', r)}>보유 수정</Button>
-                <Button className="portfolio-action-btn" variant="ghost" onClick={() => openTradeModal(r, 'sell')}>매도 · 수익기록</Button>
+                <Button className="portfolio-action-btn" variant="secondary" onClick={() => openTradeModal(r, 'buy')}>
+                  <PlusCircle size={14} />추가매수
+                </Button>
+                <Button className="portfolio-action-btn" variant="secondary" onClick={() => openMaintenanceModal('holdingedit', r)}>
+                  보유 수정
+                </Button>
+                <Button className="portfolio-action-btn" variant="ghost" onClick={() => openTradeModal(r, 'sell')}>
+                  매도 · 수익기록
+                </Button>
               </div>
             </div>
           )
@@ -1732,12 +1769,30 @@ export default function Portfolio() {
       >
         {modalRow && (
           <>
-            <div className="muted" style={{ marginBottom: 'var(--space-4)' }}>
+            <div className="muted" style={{ marginBottom: 'var(--space-3)' }}>
               <strong style={{ color: 'var(--color-text-primary)' }}>
                 {modalRow.stock_name ?? modalRow.code}
               </strong>
               <span className="caption"> ({modalRow.code})</span>
             </div>
+
+            {modalSide === 'buy' && modalRow?.lots?.length > 0 && (
+              <div className="portfolio-modal-lots">
+                <div className="portfolio-modal-lots-title">기존 매수 내역</div>
+                {modalRow.lots.map((l: any, i: number) => (
+                  <div key={i} className="portfolio-modal-lots-row">
+                    {l.acquired_quantity}주 @ {formatKrw(l.acquired_price)}
+                    {l.acquired_date ? <span className="muted"> · {l.acquired_date}</span> : null}
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {modalSide === 'buy' && (!modalRow?.lots || modalRow.lots.length === 0) && (
+              <div className="portfolio-modal-lots">
+                <div className="caption muted">현재 매수 내역: {modalRow.quantity}주 · 평균 {formatKrw(modalRow.avg_price)}</div>
+              </div>
+            )}
 
             <div className="grid-two" style={{ marginBottom: 'var(--space-4)' }}>
               <Input
@@ -1779,7 +1834,7 @@ export default function Portfolio() {
         <div className="portfolio-capture-card">
           <div className="portfolio-capture-top">
             <div>
-              <div className="portfolio-capture-title">가상 포트폴리오 요약</div>
+              <div className="portfolio-capture-title">포트폴리오 요약</div>
               <div className="portfolio-capture-time">기준시각 {captureGeneratedAt}</div>
             </div>
               <div className="portfolio-capture-count">보유 {holdingAll.length}종목</div>

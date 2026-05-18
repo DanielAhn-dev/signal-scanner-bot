@@ -2,10 +2,12 @@ import type { VercelRequest, VercelResponse } from '@vercel/node'
 import accountPolicies from '../handlers/ui/account-policies'
 import accessUsers from '../handlers/ui/access-users'
 import advisorPerformance from '../handlers/ui/advisor-performance'
+import backtestRisers from '../handlers/ui/backtest-risers'
 import { ADVANCED_ROUTES, enforceAdvancedRouteAccess } from '../handlers/ui/_accessControl'
 
 import decisions from '../handlers/ui/decisions'
 import discoveryPicks from '../handlers/ui/discovery-picks'
+import economicCalendar from '../handlers/ui/economic-calendar'
 import formatStock from '../handlers/ui/format-stock'
 import marketOverview from '../handlers/ui/market-overview'
 import notify from '../handlers/ui/notify'
@@ -16,6 +18,7 @@ import positions from '../handlers/ui/positions'
 import positionsMaintenance from '../handlers/ui/positions-maintenance'
 import portfolioShare from '../handlers/ui/portfolio-share'
 import portfolioShared from '../handlers/ui/portfolio-shared'
+import preRallyPatterns from '../handlers/ui/pre-rally-patterns'
 import profile from '../handlers/ui/profile'
 import reportPdf from '../handlers/ui/report-pdf'
 import reportShare from '../handlers/ui/report-share'
@@ -26,9 +29,11 @@ import reportSnapshot from '../handlers/ui/report-snapshot'
 import reportWeb from '../handlers/ui/report-web'
 import scanCandidates from '../handlers/ui/scan-candidates'
 import scanHighlights from '../handlers/ui/scan-highlights'
+import sectorLeaders from '../handlers/ui/sector-leaders'
 import sectors from '../handlers/ui/sectors'
 import simulationPlan from '../handlers/ui/simulation-plan'
 import settings from '../handlers/ui/settings'
+import stockIndicators from '../handlers/ui/stock-indicators'
 import stockLatest from '../handlers/ui/stock-latest'
 import stocks from '../handlers/ui/stocks'
 import strategyAdaptive from '../handlers/ui/strategy-adaptive'
@@ -47,8 +52,10 @@ const ROUTES: Record<string, UiHandler> = {
   'account-policies': accountPolicies,
   'access-users': accessUsers,
   'advisor-performance': advisorPerformance,
+  'backtest-risers': backtestRisers,
   decisions,
   'discovery-picks': discoveryPicks,
+  'economic-calendar': economicCalendar,
   'format-stock': formatStock,
   'market-overview': marketOverview,
   news,
@@ -57,6 +64,7 @@ const ROUTES: Record<string, UiHandler> = {
   operations,
   'portfolio-share': portfolioShare,
   'portfolio-shared': portfolioShared,
+  'pre-rally-patterns': preRallyPatterns,
   positions,
   'positions-maintenance': positionsMaintenance,
   profile,
@@ -69,9 +77,11 @@ const ROUTES: Record<string, UiHandler> = {
   'report-web': reportWeb,
   'scan-candidates': scanCandidates,
   'scan-highlights': scanHighlights,
+  'sector-leaders': sectorLeaders,
   sectors,
   'simulation-plan': simulationPlan,
   settings,
+  'stock-indicators': stockIndicators,
   'stock-latest': stockLatest,
   stocks,
   'strategy-adaptive': strategyAdaptive,
