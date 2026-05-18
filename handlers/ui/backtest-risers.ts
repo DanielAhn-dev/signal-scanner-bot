@@ -27,6 +27,8 @@ type EventRow = {
   forwardReturnPct: number
 }
 
+const SUPPORTED_HORIZONS = [20, 40, 60, 90, 120] as const
+
 function parseNum(value: unknown, fallback: number): number {
   const n = Number(value)
   return Number.isFinite(n) ? n : fallback
@@ -165,6 +167,39 @@ function parseParams(req: VercelRequest) {
   return { horizonBars, lookbackDays, rallyThresholdPct, topN, maxRows }
 }
 
+function buildLabelableEvents(
+  scoreRows: Array<{ code: string; asof: string; totalScore: number; signal: string; rsi14: number | null }>,
+  priceIndex: Map<string, { dates: string[]; closes: number[]; indexByDate: Map<string, number> }>,
+  horizonBars: number,
+): EventRow[] {
+  const labelableEvents: EventRow[] = []
+
+  for (const row of scoreRows) {
+    const idx = priceIndex.get(row.code)
+    if (!idx) continue
+    const anchorIndex = idx.indexByDate.get(row.asof)
+    if (anchorIndex == null) continue
+    const targetIndex = anchorIndex + horizonBars
+    if (targetIndex >= idx.closes.length) continue
+
+    const entry = idx.closes[anchorIndex]
+    const exit = idx.closes[targetIndex]
+    if (!(entry > 0 && exit > 0)) continue
+
+    const forwardReturnPct = Number((((exit - entry) / entry) * 100).toFixed(2))
+    labelableEvents.push({
+      code: row.code,
+      asof: row.asof,
+      totalScore: Number(row.totalScore.toFixed(2)),
+      signal: row.signal,
+      rsi14: row.rsi14,
+      forwardReturnPct,
+    })
+  }
+
+  return labelableEvents
+}
+
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   const origin = (req.headers.origin as string) || ORIGIN
   res.setHeader('Access-Control-Allow-Origin', origin)
@@ -218,29 +253,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const priceRows = await fetchPriceRows(supabase, codes, fromDate)
     const priceIndex = buildPriceIndex(priceRows)
 
-    const labelableEvents: EventRow[] = []
-    for (const row of scoreRows) {
-      const idx = priceIndex.get(row.code)
-      if (!idx) continue
-      const anchorIndex = idx.indexByDate.get(row.asof)
-      if (anchorIndex == null) continue
-      const targetIndex = anchorIndex + params.horizonBars
-      if (targetIndex >= idx.closes.length) continue
-
-      const entry = idx.closes[anchorIndex]
-      const exit = idx.closes[targetIndex]
-      if (!(entry > 0 && exit > 0)) continue
-
-      const forwardReturnPct = Number((((exit - entry) / entry) * 100).toFixed(2))
-      labelableEvents.push({
-        code: row.code,
-        asof: row.asof,
-        totalScore: Number(row.totalScore.toFixed(2)),
-        signal: row.signal,
-        rsi14: row.rsi14,
-        forwardReturnPct,
-      })
-    }
+    const labelableEvents = buildLabelableEvents(scoreRows, priceIndex, params.horizonBars)
+    const horizonAvailability = Object.fromEntries(
+      SUPPORTED_HORIZONS.map((h) => [String(h), buildLabelableEvents(scoreRows, priceIndex, h).length]),
+    ) as Record<string, number>
+    const availableHorizons = SUPPORTED_HORIZONS.filter((h) => (horizonAvailability[String(h)] ?? 0) > 0)
 
     const risers = labelableEvents
       .filter((row) => row.forwardReturnPct >= params.rallyThresholdPct)
@@ -293,6 +310,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       ok: true,
       data: {
         params,
+        availableHorizons,
+        horizonAvailability,
         baseline: {
           labelableEvents: baselineCount,
           score70RatePct: Number(baselineScore70.toFixed(1)),

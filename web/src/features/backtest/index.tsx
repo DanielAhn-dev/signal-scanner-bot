@@ -29,6 +29,8 @@ type BacktestRiser = {
 
 type BacktestResponse = {
   params: { horizonBars: number; lookbackDays: number; rallyThresholdPct: number; topN: number }
+  availableHorizons?: number[]
+  horizonAvailability?: Record<string, number>
   baseline: { labelableEvents: number; score70RatePct: number; buySignalRatePct: number }
   riserSummary: { riserEvents: number; avgForwardReturnPct: number }
   commonFeatures: {
@@ -100,6 +102,8 @@ function pbrMeta(pbr: number): { note: string; cls: string } {
 }
 
 const HORIZONS = [20, 40, 60, 90, 120] as const
+const DEFAULT_VISIBLE_HORIZONS = [20, 40, 60] as const
+const EXTENDED_HORIZONS = [90, 120] as const
 type Horizon = typeof HORIZONS[number]
 
 const STEPS = ['종목 수집', '이벤트 탐색', '특징 분석', '결과 계산']
@@ -173,7 +177,8 @@ export default function BacktestPage() {
   const [lookbackDays, setLookbackDays] = useState(180)
   const [rallyPct, setRallyPct] = useState(20)
   const [topN, setTopN] = useState(30)
-  const [loading, setLoading] = useState(true)
+  const [loading, setLoading] = useState(false)
+  const [hasRun, setHasRun] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [data, setData] = useState<BacktestResponse | null>(null)
 
@@ -189,6 +194,7 @@ export default function BacktestPage() {
   const checkDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const load = async () => {
+    setHasRun(true)
     setLoading(true)
     setError(null)
     try {
@@ -210,10 +216,6 @@ export default function BacktestPage() {
       setLoading(false)
     }
   }
-
-  useEffect(() => {
-    void load()
-  }, [])
 
   // URL param 또는 sessionStorage로 전달된 종목 자동 로드
   useEffect(() => {
@@ -328,6 +330,21 @@ export default function BacktestPage() {
   const showCheckDropdown =
     checkFocused && checkSearch.trim().length >= 2 && checkResults.length > 0
 
+  const visibleHorizons = useMemo(() => {
+    const base = new Set<number>(DEFAULT_VISIBLE_HORIZONS)
+    const available = new Set<number>((data?.availableHorizons ?? []).map((h) => Number(h)))
+    for (const h of EXTENDED_HORIZONS) {
+      if (available.has(h)) base.add(h)
+    }
+    base.add(horizon)
+    return HORIZONS.filter((h) => base.has(h))
+  }, [data?.availableHorizons, horizon])
+
+  const hasExtendedHorizon = useMemo(() => {
+    const available = new Set<number>((data?.availableHorizons ?? []).map((h) => Number(h)))
+    return EXTENDED_HORIZONS.some((h) => available.has(h))
+  }, [data?.availableHorizons])
+
   const hasFundamental =
     indicators &&
     (indicators.pbr != null || indicators.per != null ||
@@ -344,7 +361,7 @@ export default function BacktestPage() {
           </p>
         </div>
         <button className="sim-btn sim-btn--primary" onClick={load} disabled={loading}>
-          다시 실행
+          {hasRun ? '다시 실행' : '실행'}
         </button>
       </div>
 
@@ -354,7 +371,7 @@ export default function BacktestPage() {
           <div className="bt-param-group">
             <span className="bt-param-label">Horizon</span>
             <div className="bt-horizon-tabs">
-              {HORIZONS.map((h) => (
+              {visibleHorizons.map((h) => (
                 <button
                   key={h}
                   className={`bt-horizon-tab${horizon === h ? ' bt-horizon-tab--active' : ''}`}
@@ -413,16 +430,22 @@ export default function BacktestPage() {
             </div>
           </div>
         </div>
-        {(horizon === 90 || horizon === 120) && (
-          <p style={{ fontSize: 11, color: 'var(--color-text-tertiary)', margin: 'var(--space-3) 0 0', lineHeight: 1.5 }}>
-            ※ 90일·120일 Horizon은 이전 시점 데이터가 충분한 경우에만 표본이 추출됩니다. 표본 수가 적을 수 있습니다.
-          </p>
-        )}
+        <p style={{ fontSize: 11, color: 'var(--color-text-tertiary)', margin: 'var(--space-3) 0 0', lineHeight: 1.5 }}>
+          {hasExtendedHorizon
+            ? '※ 90일·120일은 데이터가 확인된 경우에만 자동으로 노출됩니다.'
+            : '※ 기본 표시 Horizon은 20·40·60일이며, 90·120일은 데이터가 확인되면 자동 표시됩니다.'}
+        </p>
       </div>
 
       {loading && <BacktestSkeleton />}
       {!loading && error && (
         <div className="bt-section" style={{ color: 'var(--color-error)' }}>{error}</div>
+      )}
+
+      {!loading && !hasRun && !error && (
+        <div className="bt-section" style={{ color: 'var(--color-text-tertiary)' }}>
+          파라미터를 설정한 뒤 실행 버튼을 눌러 백테스트를 시작하세요.
+        </div>
       )}
 
       {!loading && !error && data && (
