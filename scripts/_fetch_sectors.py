@@ -6,6 +6,7 @@ import sys
 from pathlib import Path
 from typing import Dict, List, Tuple
 import time
+import threading
 import pandas as pd
 import numpy as np
 
@@ -55,6 +56,26 @@ if not SUPABASE_URL or not SUPABASE_KEY:
     sys.exit(1)
 
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
+
+
+def run_with_timeout(fn, timeout_sec: float, fallback=None):
+    """Run blocking IO with timeout to avoid hanging the entire batch job."""
+    result: dict = {}
+
+    def _runner():
+        try:
+            result["value"] = fn()
+        except Exception:
+            result["error"] = True
+
+    th = threading.Thread(target=_runner, daemon=True)
+    th.start()
+    th.join(timeout_sec)
+    if th.is_alive():
+        return fallback
+    if result.get("error"):
+        return fallback
+    return result.get("value", fallback)
 
 # ===== 섹터 매핑 규칙 =====
 NAME_TO_INDEX_RULES: List[Tuple[str, str]] = [
@@ -386,8 +407,12 @@ def upsert_daily_indicators():
         if (idx + 1) % 100 == 0: print(f"  -> {idx + 1}/{len(tickers)}")
 
         try:
-            df = stock.get_market_ohlcv(start_str, end_str, code)
-            if df.empty or len(df) < 200: continue
+            df = run_with_timeout(
+                lambda: stock.get_market_ohlcv(start_str, end_str, code),
+                timeout_sec=20,
+                fallback=None,
+            )
+            if df is None or df.empty or len(df) < 200: continue
             
             # 컬럼 표준화
             df = df.rename(columns={"시가":"open","고가":"high","저가":"low","종가":"close","거래량":"volume","거래대금":"value","등락률":"change"})
@@ -451,11 +476,22 @@ def upsert_daily_indicators():
             # 100개씩 저장 시도
             if len(upsert_buffer) >= 100:
                 try:
-                    supabase.table("daily_indicators").upsert(upsert_buffer).execute()
+                    batch_res = run_with_timeout(
+                        lambda: supabase.table("daily_indicators").upsert(upsert_buffer).execute(),
+                        timeout_sec=25,
+                        fallback=False,
+                    )
+                    if batch_res is False:
+                        raise RuntimeError("batch upsert timeout")
                 except Exception:
                     # 실패 시 개별 저장 시도 (FK 에러 무시)
                     for item in upsert_buffer:
-                        try: supabase.table("daily_indicators").upsert(item).execute()
+                        try:
+                            run_with_timeout(
+                                lambda: supabase.table("daily_indicators").upsert(item).execute(),
+                                timeout_sec=10,
+                                fallback=None,
+                            )
                         except: pass
                 upsert_buffer = []
                 time.sleep(0.05)
@@ -466,10 +502,21 @@ def upsert_daily_indicators():
     # 남은 버퍼 처리
     if upsert_buffer:
         try:
-            supabase.table("daily_indicators").upsert(upsert_buffer).execute()
+            batch_res = run_with_timeout(
+                lambda: supabase.table("daily_indicators").upsert(upsert_buffer).execute(),
+                timeout_sec=25,
+                fallback=False,
+            )
+            if batch_res is False:
+                raise RuntimeError("final batch upsert timeout")
         except Exception:
             for item in upsert_buffer:
-                try: supabase.table("daily_indicators").upsert(item).execute()
+                try:
+                    run_with_timeout(
+                        lambda: supabase.table("daily_indicators").upsert(item).execute(),
+                        timeout_sec=10,
+                        fallback=None,
+                    )
                 except: pass
 
     print("[daily_indicators] 완료")
