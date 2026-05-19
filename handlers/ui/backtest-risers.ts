@@ -30,7 +30,9 @@ type EventRow = {
 type FeatureStat = {
   key: string
   label: string
+  baselineMatches: number
   baselineRatePct: number
+  riserMatches: number
   riserRatePct: number
   liftPct: number
   supportPct: number
@@ -174,11 +176,35 @@ function buildPriceIndex(rows: PriceRow[]): Map<string, { dates: string[]; close
 // 무료 플랜 기준: 10s 제한, maxRows 최대 5000
 function parseParams(req: VercelRequest) {
   const horizonBars = parsePositiveInt(req.query.horizon, 20, 5, 180)
-  const lookbackDays = parsePositiveInt(req.query.lookbackDays, 90, 60, 365)
+  const lookbackDays = parsePositiveInt(req.query.lookbackDays, 120, 60, 365)
   const rallyThresholdPct = parseNum(req.query.rallyPct, 20)
   const topN = parsePositiveInt(req.query.topN, 30, 5, 100)
   const maxRows = parsePositiveInt(req.query.maxRows, 3000, 500, 5000)
   return { horizonBars, lookbackDays, rallyThresholdPct, topN, maxRows }
+}
+
+function createFeature(
+  key: string,
+  label: string,
+  test: (row: EventRow) => boolean,
+  labelableEvents: EventRow[],
+  riserUniverse: EventRow[],
+): FeatureStat {
+  const baselineMatches = labelableEvents.filter(test).length
+  const riserMatches = riserUniverse.filter(test).length
+  const baselineRatePct = rate(baselineMatches, labelableEvents.length)
+  const riserRatePct = rate(riserMatches, riserUniverse.length)
+
+  return {
+    key,
+    label,
+    baselineMatches,
+    baselineRatePct: Number(baselineRatePct.toFixed(1)),
+    riserMatches,
+    riserRatePct: Number(riserRatePct.toFixed(1)),
+    liftPct: Number((riserRatePct - baselineRatePct).toFixed(1)),
+    supportPct: Number(riserRatePct.toFixed(1)),
+  }
 }
 
 function buildLabelableEvents(
@@ -226,46 +252,31 @@ function rate(count: number, total: number): number {
 }
 
 function createFeatureStats(labelableEvents: EventRow[], riserUniverse: EventRow[]): FeatureStat[] {
-  const baselineCount = labelableEvents.length
-  const riserCount = riserUniverse.length
-
   const features: Array<{ key: string; label: string; test: (row: EventRow) => boolean }> = [
     { key: 'score70', label: '점수 ≥ 70', test: (row) => row.totalScore >= 70 },
-    { key: 'score65', label: '점수 ≥ 65', test: (row) => row.totalScore >= 65 },
-    { key: 'score60', label: '점수 ≥ 60', test: (row) => row.totalScore >= 60 },
-    { key: 'score55', label: '점수 ≥ 55', test: (row) => row.totalScore >= 55 },
+    { key: 'score65_69', label: '점수 65~69.9', test: (row) => row.totalScore >= 65 && row.totalScore < 70 },
+    { key: 'score60_64', label: '점수 60~64.9', test: (row) => row.totalScore >= 60 && row.totalScore < 65 },
+    { key: 'score55_59', label: '점수 55~59.9', test: (row) => row.totalScore >= 55 && row.totalScore < 60 },
+    { key: 'score50_54', label: '점수 50~54.9', test: (row) => row.totalScore >= 50 && row.totalScore < 55 },
+    { key: 'score_lt_50', label: '점수 < 50', test: (row) => row.totalScore < 50 },
     { key: 'buyFamily', label: 'BUY 계열 시그널', test: (row) => isBuyFamily(row.signal) },
-    {
-      key: 'rsi45to65',
-      label: 'RSI 45~65',
-      test: (row) => row.rsi14 != null && row.rsi14 >= 45 && row.rsi14 <= 65,
-    },
-    {
-      key: 'rsi40to70',
-      label: 'RSI 40~70',
-      test: (row) => row.rsi14 != null && row.rsi14 >= 40 && row.rsi14 <= 70,
-    },
-    {
-      key: 'rsi30to80',
-      label: 'RSI 30~80',
-      test: (row) => row.rsi14 != null && row.rsi14 >= 30 && row.rsi14 <= 80,
-    },
+    { key: 'rsi30_39', label: 'RSI 30~39', test: (row) => row.rsi14 != null && row.rsi14 >= 30 && row.rsi14 < 40 },
+    { key: 'rsi40_44', label: 'RSI 40~44', test: (row) => row.rsi14 != null && row.rsi14 >= 40 && row.rsi14 < 45 },
+    { key: 'rsi45_49', label: 'RSI 45~49', test: (row) => row.rsi14 != null && row.rsi14 >= 45 && row.rsi14 < 50 },
+    { key: 'rsi50_54', label: 'RSI 50~54', test: (row) => row.rsi14 != null && row.rsi14 >= 50 && row.rsi14 < 55 },
+    { key: 'rsi55_59', label: 'RSI 55~59', test: (row) => row.rsi14 != null && row.rsi14 >= 55 && row.rsi14 < 60 },
+    { key: 'rsi60_64', label: 'RSI 60~64', test: (row) => row.rsi14 != null && row.rsi14 >= 60 && row.rsi14 < 65 },
+    { key: 'rsi65_69', label: 'RSI 65~69', test: (row) => row.rsi14 != null && row.rsi14 >= 65 && row.rsi14 < 70 },
+    { key: 'rsi70_74', label: 'RSI 70~74', test: (row) => row.rsi14 != null && row.rsi14 >= 70 && row.rsi14 < 75 },
+    { key: 'rsi75_80', label: 'RSI 75~80', test: (row) => row.rsi14 != null && row.rsi14 >= 75 && row.rsi14 <= 80 },
+    { key: 'rsi45to65', label: 'RSI 45~65', test: (row) => row.rsi14 != null && row.rsi14 >= 45 && row.rsi14 <= 65 },
+    { key: 'rsi40to70', label: 'RSI 40~70', test: (row) => row.rsi14 != null && row.rsi14 >= 40 && row.rsi14 <= 70 },
+    { key: 'rsi30to80', label: 'RSI 30~80', test: (row) => row.rsi14 != null && row.rsi14 >= 30 && row.rsi14 <= 80 },
   ]
 
-  return features.map((feature) => {
-    const baselineMatches = labelableEvents.filter(feature.test).length
-    const riserMatches = riserUniverse.filter(feature.test).length
-    const baselineRatePct = rate(baselineMatches, baselineCount)
-    const riserRatePct = rate(riserMatches, riserCount)
-    return {
-      key: feature.key,
-      label: feature.label,
-      baselineRatePct: Number(baselineRatePct.toFixed(1)),
-      riserRatePct: Number(riserRatePct.toFixed(1)),
-      liftPct: Number((riserRatePct - baselineRatePct).toFixed(1)),
-      supportPct: Number(riserRatePct.toFixed(1)),
-    }
-  })
+  return features.map((feature) =>
+    createFeature(feature.key, feature.label, feature.test, labelableEvents, riserUniverse),
+  )
 }
 
 function createRuleCandidates(labelableEvents: EventRow[], riserUniverse: EventRow[]): RuleCandidate[] {

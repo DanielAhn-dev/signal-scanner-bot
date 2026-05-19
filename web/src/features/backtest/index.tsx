@@ -43,7 +43,9 @@ type BacktestResponse = {
   featureStats?: Array<{
     key: string
     label: string
+    baselineMatches: number
     baselineRatePct: number
+    riserMatches: number
     riserRatePct: number
     liftPct: number
     supportPct: number
@@ -115,6 +117,13 @@ function matchMeta(n: number): { label: string; cls: string } {
   if (n >= 2) return { label: '패턴 일치 중간 ★★', cls: 'bt-match--mid' }
   if (n >= 1) return { label: '패턴 일치 낮음 ★', cls: 'bt-match--low' }
   return { label: '패턴 불일치', cls: 'bt-match--none' }
+}
+
+function confidenceMeta(sampleCount: number): { label: string; cls: string } {
+  if (sampleCount >= 20) return { label: `표본 충분 (${sampleCount})`, cls: 'bt-match--high' }
+  if (sampleCount >= 10) return { label: `표본 보통 (${sampleCount})`, cls: 'bt-match--mid' }
+  if (sampleCount >= 5) return { label: `표본 적음 (${sampleCount})`, cls: 'bt-match--low' }
+  return { label: `표본 매우 적음 (${sampleCount})`, cls: 'bt-match--none' }
 }
 
 function pbrMeta(pbr: number): { note: string; cls: string } {
@@ -203,7 +212,7 @@ function BacktestSkeleton() {
 
 export default function BacktestPage() {
   const [horizon, setHorizon] = useState<Horizon>(20)
-  const [lookbackDays, setLookbackDays] = useState(90)
+  const [lookbackDays, setLookbackDays] = useState(120)
   const [rallyPct, setRallyPct] = useState(20)
   const [topN, setTopN] = useState(30)
   const [loading, setLoading] = useState(false)
@@ -597,11 +606,13 @@ export default function BacktestPage() {
 
             {(data.featureStats ?? []).length > 0 ? (
               <div style={{ overflowX: 'auto', margin: '0 calc(-1 * var(--space-4))' }}>
-                <table className="bt-table" style={{ minWidth: 760 }}>
+                <table className="bt-table" style={{ minWidth: 940 }}>
                   <thead>
                     <tr>
                       <th>특징</th>
+                      <th style={{ textAlign: 'right' }}>Baseline 수</th>
                       <th style={{ textAlign: 'right' }}>Baseline 비중</th>
+                      <th style={{ textAlign: 'right' }}>Riser 수</th>
                       <th style={{ textAlign: 'right' }}>Riser 비중</th>
                       <th style={{ textAlign: 'right' }}>Lift</th>
                       <th style={{ textAlign: 'right' }}>Support</th>
@@ -610,8 +621,15 @@ export default function BacktestPage() {
                   <tbody>
                     {(data.featureStats ?? []).map((row) => (
                       <tr key={row.key}>
-                        <td>{row.label}</td>
+                        <td>
+                          <span>{row.label}</span>
+                          <span className={`bt-check-match-badge ${confidenceMeta(Math.min(row.baselineMatches, row.riserMatches)).cls}`} style={{ marginLeft: 8 }}>
+                            {confidenceMeta(Math.min(row.baselineMatches, row.riserMatches)).label}
+                          </span>
+                        </td>
+                        <td className="bt-table-num" style={{ textAlign: 'right' }}>{row.baselineMatches.toLocaleString('ko-KR')}</td>
                         <td className="bt-table-num" style={{ textAlign: 'right' }}>{pct(row.baselineRatePct)}</td>
+                        <td className="bt-table-num" style={{ textAlign: 'right' }}>{row.riserMatches.toLocaleString('ko-KR')}</td>
                         <td className="bt-table-num" style={{ textAlign: 'right' }}>{pct(row.riserRatePct)}</td>
                         <td style={{ textAlign: 'right' }}>
                           <span className={row.liftPct >= 0 ? 'bt-table-return-pos' : 'bt-table-return-neg'}>
@@ -668,6 +686,7 @@ export default function BacktestPage() {
                           }}
                         >
                           <td>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                             {idx === 0 && (
                               <span
                                 style={{
@@ -684,7 +703,11 @@ export default function BacktestPage() {
                                 추천
                               </span>
                             )}
-                            {row.label}
+                            <span>{row.label}</span>
+                            <span className={`bt-check-match-badge ${confidenceMeta(row.matchedEvents).cls}`}>
+                              {confidenceMeta(row.matchedEvents).label}
+                            </span>
+                            </div>
                           </td>
                           <td className="bt-table-num" style={{ textAlign: 'right' }}>
                             {pct(row.supportPct)}
