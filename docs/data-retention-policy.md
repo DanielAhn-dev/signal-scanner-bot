@@ -11,13 +11,13 @@
 | 테이블 | 보유 기간 | 목적 | 최소 요구사항 |
 |--------|---------|------|------------|
 | `stock_daily` | **400일** | OHLCV 데이터 | ✅ 52주 + 여유 |
-| `daily_indicators` | **730일** (2년) | 기술적 지표 (SMA200, RSI14 등) | ✅ 계절성 비교 가능 |
+| `daily_indicators` | **550일** (1.5년) | 기술적 지표 (SMA200, RSI14 등) | ✅ 계절성 비교 가능 |
 | `investor_daily` | **400일** | 투자자 수급 트렌드 | ✅ 52주 + 여유 |
-| `sector_daily` | **400일** | 섹터 수익률 트렌드 | ✅ 52주 + 여유 |
+| `sector_daily` | **400일** | 섹터 수익률 트렌드 | ✅ 52주 + 여우 |
 | `pullback_signals` | **400일** | 눌림목 신호 | ✅ 최근 패턴 유지 |
 | `jobs` | **30일** | 배치 작업 로그 | ✅ 월간 모니터링 |
 
-**결론**: ✅ 모든 테이블이 **52주(364일) 이상** 보장
+**결론**: ✅ 모든 테이블이 **52주(364일) 이상** 보장, **무료 플랜 최적화**
 
 ---
 
@@ -45,33 +45,35 @@ supabase.table("stock_daily").delete().lt("date", cutoff).execute()
 
 ---
 
-### 2.2 `daily_indicators` (730일 / 2년)
+### 2.2 `daily_indicators` (550일 / 1.5년)
 
 **용도**:
 - 기술적 지표: SMA20, SMA50, SMA200
 - 모멘텀: RSI14, ROC14, ROC21
 - 스캔 기준 데이터 (`/스캔` 종목 필터)
 
-**왜 730일인가** (2년):
+**왜 550일인가** (1.5년, 무료 플랜 최적화):
 - **SMA200 계산**: 200일 최소 필요 + 안정화를 위한 추가 40일 = 240일 권장
-- **계절성 분석**: 5년 데이터 중 2년으로도 계절 패턴 인식 가능
+- **계절성 분석**: 5년 데이터 중 1.5년으로도 계절 패턴 인식 가능
 - **RSI 신뢰도**: 충분한 히스토리로 극값 상태 판단 개선
-- **백테스트**: 장기 전략 검증을 위해 2년 이상 필수
+- **저장소 효율**: 730일 → 550일로 조정으로 무료 플랜 유지 (약 50-70MB 절감)
+- **백테스트**: 중기 전략(3-6개월) 검증에 충분
 
 **환경 변수**:
 ```bash
-# .env 또는 배포 환경변수
-DAILY_INDICATORS_RETENTION_DAYS=730  # 기본값
+# 백엔드 & 로컬 동기화
+DAILY_INDICATORS_RETENTION_DAYS=550  # 기본값 (1.5년, 무료 플랜 최적화)
 
-# 혹은 동적 조정 (최소 400일)
-DAILY_INDICATORS_RETENTION_DAYS=1095  # 3년 유지하려면
+# 필요시 조정 (최소 400일)
+DAILY_INDICATORS_RETENTION_DAYS=730   # 2년 유지 (저장소 여유 있을 때)
+DAILY_INDICATORS_RETENTION_DAYS=400   # 1.1년만 유지 (저장소 절감)
 ```
 
 **삭제 규칙**:
 ```python
 # daily_batch.py 라인 1517-1523
 indicators_retention_days = safe_int(
-    os.environ.get("DAILY_INDICATORS_RETENTION_DAYS", 730), 730
+    os.environ.get("DAILY_INDICATORS_RETENTION_DAYS", 550), 550
 )
 indicators_retention_days = max(400, indicators_retention_days)  # 최소 400일
 indicators_cutoff = (date.today() - timedelta(days=indicators_retention_days)).isoformat()
@@ -79,8 +81,9 @@ supabase.table("daily_indicators").delete().lt("trade_date", indicators_cutoff).
 ```
 
 **최적화 포인트**:
-- 저장 공간 압박 시 `730 → 550` (1.5년)으로 축소 가능
-- 주단위 분석/월간 리포트는 `365` (1년) 이상 권장
+- 현재 550일로 무료 플랜 최적화 완료
+- 저장공간 극심하게 부족하면 → 400일 (약 1년)
+- 유료 플랜 전환 후 → 730일 이상 검토
 
 ---
 

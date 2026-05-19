@@ -23,28 +23,28 @@
 ─────────────────────────────────────────────────────────
 stock_daily          400일        400일    ✅ OK     최신~2025-04-14
 sector_daily         400일        400일    ✅ OK     최신~2025-04-14
-daily_indicators     420일        730일    ⚠️ 부족   2년치 표준 미달
+daily_indicators     420일        550일    ⚠️ 부족   1.5년 표준 (무료 플랜 최적화)
 investor_daily       42일         400일    ❌ 심각   최신 176일 오래됨
 pullback_signals     76일         400일    ⚠️ 부족   최근 신호만 있음
 ```
 
 ---
 
-## 🔧 최적화된 설정
+## 🔧 최적화된 설정 (무료 플랜 최적화)
 
-### 1. 각 테이블별 자동 보유 정책 (이미 적용됨)
+### 1. 각 테이블별 자동 보유 정책 (무료 플랜 적용)
 
 **[daily_batch.py 라인 1513-1530]**:
 ```python
 # Step 7: 오래된 데이터 정리 (자동 실행)
 cutoff = (date.today() - timedelta(days=400)).isoformat()  # 400일 기준
 indicators_retention_days = safe_int(
-    os.environ.get("DAILY_INDICATORS_RETENTION_DAYS", 730), 730
+    os.environ.get("DAILY_INDICATORS_RETENTION_DAYS", 550), 550
 )
 indicators_retention_days = max(400, indicators_retention_days)  # 최소 400일
 
 # stock_daily, investor_daily, sector_daily, pullback_signals: 400일
-# daily_indicators: 환경변수 (기본 730일 = 2년)
+# daily_indicators: 환경변수 (기본 550일 = 1.5년, 무료 플랜 최적화)
 # jobs: 30일 (완료/실패만)
 ```
 
@@ -56,14 +56,12 @@ indicators_retention_days = max(400, indicators_retention_days)  # 최소 400일
 ### 2. 환경 변수 (유연한 조정 가능)
 
 ```bash
-# .env 또는 배포 환경변수
-DAILY_INDICATORS_RETENTION_DAYS=730  # 기본값 (2년)
+# 백엔드 & 로컬 동기화 (무료 플랜 최적화)
+DAILY_INDICATORS_RETENTION_DAYS=550  # 기본값 (1.5년)
 
-# 필요시 조정
-DAILY_INDICATORS_RETENTION_DAYS=1095  # 3년 유지
-DAILY_INDICATORS_RETENTION_DAYS=365   # 1년만 유지 (저장공간 절감)
-
-# 주의: 최소값은 자동 보정되어 400일 이상 유지됨
+# 필요시 조정 (최소값: 400일)
+DAILY_INDICATORS_RETENTION_DAYS=730   # 2년 유지 (저장소 여유 있을 때)
+DAILY_INDICATORS_RETENTION_DAYS=400   # 1.1년만 유지 (저장소 절감 필요시)
 ```
 
 ### 3. 모니터링 명령어
@@ -194,4 +192,4 @@ python scripts/daily_batch.py
 
 ---
 
-**최종 결론**: ✅ 데이터 보유 정책이 최적으로 설정되어 있습니다. 모든 종목 스캔/분석/시뮬레이션에 필요한 백데이터가 자동으로 유지되고 있습니다.
+**최종 결론**: ✅ 데이터 보유 정책이 **무료 플랜 최적화**되어 있습니다. 모든 종목 스캔/분석/시뮬레이션에 필요한 백데이터가 자동으로 유지되고 있으며, 저장소 효율과 기능 완성도의 균형을 맞춘 상태입니다.

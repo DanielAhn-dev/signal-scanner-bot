@@ -14,13 +14,13 @@ KRX API 제약 대응: 전종목 일괄 API 대신 개별 종목 API 사용
 환경 변수:
   SUPABASE_URL                      - Supabase 프로젝트 URL (필수)
   SUPABASE_SERVICE_ROLE_KEY         - Supabase 관리자 키 (필수)
-  DAILY_INDICATORS_RETENTION_DAYS   - daily_indicators 보유일수 (기본: 730일 = 2년)
+  DAILY_INDICATORS_RETENTION_DAYS   - daily_indicators 보유일수 (기본: 550일 = 1.5년, 무료 플랜 최적화)
                                       최소값: 400일 (자동 보정)
                                       SMA200, RSI 신뢰도 & 계절성 분석용
   
 데이터 보유 정책 (자동 정리):
   - stock_daily: 400일 유지 (~1.6년 거래일, OHLCV)
-  - daily_indicators: DAILY_INDICATORS_RETENTION_DAYS (기본 730일, 기술적 지표)
+  - daily_indicators: DAILY_INDICATORS_RETENTION_DAYS (기본 550일, 기술적 지표)
   - investor_daily: 400일 유지 (투자자 수급)
   - sector_daily: 400일 유지 (섹터 수익률)
   - pullback_signals: 400일 유지 (눌림목 신호)

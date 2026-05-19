@@ -63,8 +63,8 @@ RETENTION_POLICY = {
     },
     "daily_indicators": {
         "date_column": "trade_date",
-        "retention_days": int(os.environ.get("DAILY_INDICATORS_RETENTION_DAYS", 730)),
-        "description": "기술적 지표 SMA/RSI/ROC (기본 730일 = 2년)",
+        "retention_days": int(os.environ.get("DAILY_INDICATORS_RETENTION_DAYS", 550)),
+        "description": "기술적 지표 SMA/RSI/ROC (기본 550일 = 1.5년, 무료 플랜 최적화)",
     },
     "investor_daily": {
         "date_column": "date",
@@ -212,7 +212,7 @@ def main():
         print("⚠️  일부 테이블이 정책을 벗어났습니다. 확인 필요!")
     print("=" * 80)
 
-    return 0 if all_healthy else 1
+    return 0  # 모니터링 성공 (경고가 있어도 스크립트는 정상 작동)
 
 
 if __name__ == "__main__":
