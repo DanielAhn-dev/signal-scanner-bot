@@ -7,6 +7,7 @@ scripts/backfill_daily_indicators.py
 """
 from __future__ import annotations
 
+import argparse
 import os
 import sys
 from datetime import datetime, timedelta
@@ -83,6 +84,20 @@ def calculate_avwap(df: pd.DataFrame, anchor_idx: int) -> Optional[float]:
         return None
     pv = (subset["close"] * subset["volume"]).cumsum()
     return float((pv / v_cumsum).iloc[-1])
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="daily_indicators historical backfill")
+    parser.add_argument("--start", default="", help="start date (YYYYMMDD or YYYY-MM-DD)")
+    parser.add_argument("--end", default="", help="end date (YYYYMMDD or YYYY-MM-DD)")
+    return parser.parse_args()
+
+
+def normalize_date(value: str) -> str:
+    s = value.strip().replace("-", "")
+    if len(s) != 8 or not s.isdigit():
+        raise ValueError(f"invalid date: {value}")
+    return f"{s[:4]}-{s[4:6]}-{s[6:8]}"
 
 
 def normalize_numeric(v):
@@ -235,20 +250,34 @@ def dedupe_indicator_rows(rows: list) -> list:
 # =============================================
 # STEP 3: DB에 적재
 # =============================================
-def upsert_daily_indicators(all_rows: list, batch_size: int = 100):
+def upsert_daily_indicators(all_rows: list, batch_size: int = 100, start_date: str = "", end_date: str = ""):
     """2026-02-09 이전 데이터만 insert (기존 데이터와 충돌 방지)"""
     print(f"\n[3/3] daily_indicators 적재 ({len(all_rows):,}행)...")
     
     cutoff_date = datetime.strptime("2026-02-09", "%Y-%m-%d").date()
-    
-    # 2026-02-09 이전 데이터만 필터링
-    filtered_rows = [
-        r for r in all_rows
-        if datetime.strptime(r["trade_date"], "%Y-%m-%d").date() < cutoff_date
-    ]
+
+    start_dt = datetime.strptime(start_date, "%Y-%m-%d").date() if start_date else None
+    end_dt = datetime.strptime(end_date, "%Y-%m-%d").date() if end_date else None
+
+    # 2026-02-09 이전 데이터 + 선택된 범위만 필터링
+    filtered_rows = []
+    for r in all_rows:
+        row_dt = datetime.strptime(r["trade_date"], "%Y-%m-%d").date()
+        if row_dt >= cutoff_date:
+            continue
+        if start_dt and row_dt < start_dt:
+            continue
+        if end_dt and row_dt > end_dt:
+            continue
+        filtered_rows.append(r)
+
     filtered_rows = dedupe_indicator_rows(filtered_rows)
     
-    print(f"  -> 필터링: 2026-02-09 이전만 ({len(filtered_rows):,}행)")
+    print(f"  -> 필터링 결과: {len(filtered_rows):,}행")
+    if start_date or end_date:
+        print(f"  -> 범위 필터: {start_date or 'MIN'} ~ {end_date or 'MAX'}")
+    else:
+        print(f"  -> 기준: 2026-02-09 이전 데이터만 대상")
     
     if not filtered_rows:
         print(f"  ⚠️ 2026-02-09 이전 데이터 없음 (역계산 대상 없음)")
@@ -287,6 +316,7 @@ def upsert_daily_indicators(all_rows: list, batch_size: int = 100):
 # 메인 실행
 # =============================================
 def main():
+    args = parse_args()
     print("="*60)
     print("daily_indicators 역계산 및 적재")
     print("="*60)
@@ -315,7 +345,9 @@ def main():
         return
     
     # STEP 3: DB 적재
-    upsert_daily_indicators(all_rows)
+    start_date = normalize_date(args.start) if args.start else ""
+    end_date = normalize_date(args.end) if args.end else ""
+    upsert_daily_indicators(all_rows, start_date=start_date, end_date=end_date)
     
     print("\n" + "="*60)
     print("✅ 완료!")

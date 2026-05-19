@@ -134,6 +134,79 @@ def get_last_trading_date() -> str:
     print(f"  ⚠️ 거래일 감지 실패 - 오늘 날짜 사용: {today.strftime('%Y%m%d')}")
     return today.strftime("%Y%m%d")
 
+
+def get_latest_stock_daily_date() -> Optional[str]:
+    try:
+        latest_res = supabase.table("stock_daily") \
+            .select("date").order("date", desc=True).limit(1).execute()
+        return latest_res.data[0]["date"] if latest_res.data else None
+    except Exception as e:
+        print(f"  ⚠️ stock_daily 최신일 조회 실패: {e}")
+        return None
+
+
+def run_python_script(script_path: str, args: list[str], label: str) -> bool:
+    cmd = [sys.executable, script_path, *args]
+    print(f"  -> {label}: {' '.join(cmd)}")
+    try:
+        result = subprocess.run(cmd, check=True, capture_output=True, text=True)
+        stdout = (result.stdout or "").strip()
+        if stdout:
+            lines = [line for line in stdout.splitlines() if line.strip()]
+            if lines:
+                print(f"  ✅ {label} 완료: {lines[-1]}")
+        return True
+    except subprocess.CalledProcessError as e:
+        stderr = (e.stderr or "").strip()
+        stdout = (e.stdout or "").strip()
+        if stdout:
+            print(f"  ▸ stdout: {stdout.splitlines()[-1]}")
+        if stderr:
+            print(f"  ▸ stderr: {stderr.splitlines()[-1]}")
+        print(f"  ⚠️ {label} 실패")
+        return False
+    except Exception as e:
+        print(f"  ⚠️ {label} 실행 실패: {e}")
+        return False
+
+
+def auto_backfill_missing_dates(trading_date: str) -> bool:
+    latest_date = get_latest_stock_daily_date()
+    if not latest_date:
+        print("  ℹ️ stock_daily 최신일을 찾지 못해 자동 백필을 건너뜁니다.")
+        return False
+
+    latest_dt = datetime.strptime(latest_date, "%Y-%m-%d").date()
+    trading_dt = datetime.strptime(trading_date, "%Y%m%d").date()
+    if latest_dt >= trading_dt:
+        print(f"  ✅ stock_daily 최신일이 기준일 이상입니다. ({latest_date} >= {trading_date})")
+        return False
+
+    gap_days = (trading_dt - latest_dt).days
+    start_date = (latest_dt + timedelta(days=1)).strftime("%Y%m%d")
+    print(
+        f"  🔄 누락 구간 감지: stock_daily 최신 {latest_date} < 기준 {trading_date} (gap {gap_days}일)"
+    )
+    print(f"  🔄 백필 범위: {start_date} ~ {trading_date}")
+
+    ok_stock = run_python_script(
+        "scripts/backfill_stock_daily_universe.py",
+        ["--start", start_date, "--end", trading_date, "--universe", "core-extended", "--sleep", "0.08"],
+        "stock_daily 백필",
+    )
+    if not ok_stock:
+        return False
+
+    ok_indicators = run_python_script(
+        "scripts/backfill_daily_indicators.py",
+        ["--start", start_date, "--end", trading_date],
+        "daily_indicators 백필",
+    )
+    if not ok_indicators:
+        return False
+
+    return True
+
 def to_iso(yyyymmdd: str) -> str:
     return f"{yyyymmdd[:4]}-{yyyymmdd[4:6]}-{yyyymmdd[6:8]}"
 
@@ -1329,9 +1402,14 @@ if __name__ == "__main__":
         trading_date = get_last_trading_date()
         print(f"📅 기준 거래일: {trading_date}")
 
+    auto_backfill_done = auto_backfill_missing_dates(trading_date)
+
     # 시간 추적
     stage_times = {}
     start_time = time.time()
+
+    if auto_backfill_done:
+        skip_ohlcv = True
     
     if skip_ohlcv:
         print("\n[1/7] OHLCV 수집 스킵 (--skip-ohlcv)")
