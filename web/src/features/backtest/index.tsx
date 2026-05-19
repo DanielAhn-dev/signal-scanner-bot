@@ -339,6 +339,31 @@ export default function BacktestPage() {
     }
   }, [data, selectedStock, indicators])
 
+  const matchedRuleCandidates = useMemo(() => {
+    if (!data || !indicators) return [] as Array<{ key: string; label: string; matched: boolean }>
+
+    const score = indicators.total_score ?? 0
+    const signal = indicators.signal ?? ''
+    const rsi = indicators.rsi14
+    const buy = isBuySignal(signal)
+
+    const isMatched = (key: string): boolean => {
+      if (key === 'rule_score65_buy') return score >= 65 && buy
+      if (key === 'rule_score65_rsi40_70') return score >= 65 && rsi != null && rsi >= 40 && rsi <= 70
+      if (key === 'rule_score70_buy') return score >= 70 && buy
+      if (key === 'rule_buy_rsi45_65') return buy && rsi != null && rsi >= 45 && rsi <= 65
+      if (key === 'rule_score65_buy_rsi40_70') return score >= 65 && buy && rsi != null && rsi >= 40 && rsi <= 70
+      if (key === 'rule_score70_buy_rsi45_65') return score >= 70 && buy && rsi != null && rsi >= 45 && rsi <= 65
+      return false
+    }
+
+    return (data.ruleCandidates ?? []).map((rule) => ({
+      key: rule.key,
+      label: rule.label,
+      matched: isMatched(rule.key),
+    }))
+  }, [data, indicators])
+
   const investSim = useMemo(() => {
     if (!data || investAmount <= 0) return null
     const avgReturn = data.riserSummary.avgForwardReturnPct
@@ -738,6 +763,22 @@ export default function BacktestPage() {
                         </span>
                       </div>
                     </div>
+
+                    {(data.ruleCandidates ?? []).length > 0 && (
+                      <div className="bt-check-rule-candidates">
+                        <div className="bt-check-rule-candidates-title">추천 룰 TOP 5 매칭</div>
+                        <div className="bt-check-rule-candidates-list">
+                          {matchedRuleCandidates.map((rule) => (
+                            <span
+                              key={rule.key}
+                              className={`bt-check-rule-badge ${rule.matched ? 'bt-check-rule-badge--on' : 'bt-check-rule-badge--off'}`}
+                            >
+                              {rule.matched ? '적합' : '미적합'} · {rule.label}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    )}
 
                     {/* 펀더멘털 패널 — 장기 보유 판단용 */}
                     {hasFundamental && (
