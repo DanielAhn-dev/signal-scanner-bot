@@ -226,6 +226,8 @@ function createFeatureStats(labelableEvents: EventRow[], riserUniverse: EventRow
   const features: Array<{ key: string; label: string; test: (row: EventRow) => boolean }> = [
     { key: 'score70', label: '점수 ≥ 70', test: (row) => row.totalScore >= 70 },
     { key: 'score65', label: '점수 ≥ 65', test: (row) => row.totalScore >= 65 },
+    { key: 'score60', label: '점수 ≥ 60', test: (row) => row.totalScore >= 60 },
+    { key: 'score55', label: '점수 ≥ 55', test: (row) => row.totalScore >= 55 },
     { key: 'buyFamily', label: 'BUY 계열 시그널', test: (row) => isBuyFamily(row.signal) },
     {
       key: 'rsi45to65',
@@ -236,6 +238,11 @@ function createFeatureStats(labelableEvents: EventRow[], riserUniverse: EventRow
       key: 'rsi40to70',
       label: 'RSI 40~70',
       test: (row) => row.rsi14 != null && row.rsi14 >= 40 && row.rsi14 <= 70,
+    },
+    {
+      key: 'rsi30to80',
+      label: 'RSI 30~80',
+      test: (row) => row.rsi14 != null && row.rsi14 >= 30 && row.rsi14 <= 80,
     },
   ]
 
@@ -261,26 +268,65 @@ function createRuleCandidates(labelableEvents: EventRow[], riserUniverse: EventR
   if (!(baselineCount > 0 && riserCount > 0)) return []
 
   const rules: Array<{ key: string; label: string; test: (row: EventRow) => boolean }> = [
-    {
-      key: 'rule_score65_buy',
-      label: '점수≥65 + BUY계열',
-      test: (row) => row.totalScore >= 65 && isBuyFamily(row.signal),
-    },
-    {
-      key: 'rule_score65_rsi40_70',
-      label: '점수≥65 + RSI 40~70',
-      test: (row) => row.totalScore >= 65 && row.rsi14 != null && row.rsi14 >= 40 && row.rsi14 <= 70,
-    },
+    // Precision 중심: score 기반 규칙
     {
       key: 'rule_score70_buy',
       label: '점수≥70 + BUY계열',
       test: (row) => row.totalScore >= 70 && isBuyFamily(row.signal),
     },
     {
+      key: 'rule_score65_buy',
+      label: '점수≥65 + BUY계열',
+      test: (row) => row.totalScore >= 65 && isBuyFamily(row.signal),
+    },
+    {
+      key: 'rule_score60_buy',
+      label: '점수≥60 + BUY계열',
+      test: (row) => row.totalScore >= 60 && isBuyFamily(row.signal),
+    },
+    {
+      key: 'rule_score55_buy',
+      label: '점수≥55 + BUY계열',
+      test: (row) => row.totalScore >= 55 && isBuyFamily(row.signal),
+    },
+    // Support 중심: RSI 단독 규칙 (데이터 풍부)
+    {
+      key: 'rule_rsi30_80',
+      label: 'RSI 30~80 (광범위)',
+      test: (row) => row.rsi14 != null && row.rsi14 >= 30 && row.rsi14 <= 80,
+    },
+    {
+      key: 'rule_rsi40_70',
+      label: 'RSI 40~70',
+      test: (row) => row.rsi14 != null && row.rsi14 >= 40 && row.rsi14 <= 70,
+    },
+    {
+      key: 'rule_rsi45_65',
+      label: 'RSI 45~65 (정중간)',
+      test: (row) => row.rsi14 != null && row.rsi14 >= 45 && row.rsi14 <= 65,
+    },
+    // 조합: score + RSI
+    {
+      key: 'rule_score60_rsi40_70',
+      label: '점수≥60 + RSI 40~70',
+      test: (row) => row.totalScore >= 60 && row.rsi14 != null && row.rsi14 >= 40 && row.rsi14 <= 70,
+    },
+    {
+      key: 'rule_score55_rsi40_70',
+      label: '점수≥55 + RSI 40~70',
+      test: (row) => row.totalScore >= 55 && row.rsi14 != null && row.rsi14 >= 40 && row.rsi14 <= 70,
+    },
+    {
       key: 'rule_buy_rsi45_65',
       label: 'BUY계열 + RSI 45~65',
       test: (row) => isBuyFamily(row.signal) && row.rsi14 != null && row.rsi14 >= 45 && row.rsi14 <= 65,
     },
+    {
+      key: 'rule_buy_rsi40_70',
+      label: 'BUY계열 + RSI 40~70',
+      test: (row) => isBuyFamily(row.signal) && row.rsi14 != null && row.rsi14 >= 40 && row.rsi14 <= 70,
+    },
+    // 3중 조합
     {
       key: 'rule_score65_buy_rsi40_70',
       label: '점수≥65 + BUY계열 + RSI 40~70',
@@ -303,7 +349,7 @@ function createRuleCandidates(labelableEvents: EventRow[], riserUniverse: EventR
     },
   ]
 
-  const minimumMatches = Math.max(10, Math.floor(baselineCount * 0.01))
+  const minimumMatches = Math.max(5, Math.floor(baselineCount * 0.01))
   const candidates = rules
     .map((rule) => {
       const matchedEvents = labelableEvents.filter(rule.test).length

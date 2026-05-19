@@ -349,10 +349,17 @@ export default function BacktestPage() {
     const buy = isBuySignal(signal)
 
     const isMatched = (key: string): boolean => {
-      if (key === 'rule_score65_buy') return score >= 65 && buy
-      if (key === 'rule_score65_rsi40_70') return score >= 65 && rsi != null && rsi >= 40 && rsi <= 70
       if (key === 'rule_score70_buy') return score >= 70 && buy
+      if (key === 'rule_score65_buy') return score >= 65 && buy
+      if (key === 'rule_score60_buy') return score >= 60 && buy
+      if (key === 'rule_score55_buy') return score >= 55 && buy
+      if (key === 'rule_rsi30_80') return rsi != null && rsi >= 30 && rsi <= 80
+      if (key === 'rule_rsi40_70') return rsi != null && rsi >= 40 && rsi <= 70
+      if (key === 'rule_rsi45_65') return rsi != null && rsi >= 45 && rsi <= 65
+      if (key === 'rule_score60_rsi40_70') return score >= 60 && rsi != null && rsi >= 40 && rsi <= 70
+      if (key === 'rule_score55_rsi40_70') return score >= 55 && rsi != null && rsi >= 40 && rsi <= 70
       if (key === 'rule_buy_rsi45_65') return buy && rsi != null && rsi >= 45 && rsi <= 65
+      if (key === 'rule_buy_rsi40_70') return buy && rsi != null && rsi >= 40 && rsi <= 70
       if (key === 'rule_score65_buy_rsi40_70') return score >= 65 && buy && rsi != null && rsi >= 40 && rsi <= 70
       if (key === 'rule_score70_buy_rsi45_65') return score >= 70 && buy && rsi != null && rsi >= 45 && rsi <= 65
       return false
