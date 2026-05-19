@@ -1,10 +1,9 @@
 import React from 'react'
 import { createPortal } from 'react-dom'
-import { BadgePercent, Command, Menu, UserRound, X } from 'lucide-react'
+import { Command, Menu, UserRound, X } from 'lucide-react'
 import { TELEGRAM_COMMANDS } from '../data/telegramCommands'
 import { NAV_ITEMS, PRIMARY_NAV_KEYS } from '../navigation'
 import ProfileModal from './ProfileModal'
-import CreditShortForm from './CreditShortForm'
 import { apiFetch } from '../lib/api'
 import { onOpenProfileModal } from '../lib/profileModal'
 import { useAuthStore } from '../stores/authStore'
@@ -25,7 +24,6 @@ export default function Header({
   const [cmdOpen, setCmdOpen] = React.useState(false)
   const [filter, setFilter] = React.useState('')
   const [profileOpen, setProfileOpen] = React.useState(false)
-  const [creditShortOpen, setCreditShortOpen] = React.useState(false)
   const [isAdmin, setIsAdmin] = React.useState(false)
   const [focusChatIdField, setFocusChatIdField] = React.useState(false)
 
@@ -156,37 +154,6 @@ export default function Header({
     }
   }, [drawerOpen, cmdOpen])
 
-  const handleSaveCreditShort = React.useCallback(async (data: { rows: Array<{ code: string; date: string; shortRatio?: number; shortBalance?: number; shortVolume?: number }> }) => {
-    const batchSize = Math.max(50, Number(import.meta.env.VITE_CREDIT_SHORT_UPLOAD_BATCH_SIZE || 250))
-    const timeoutMs = Math.max(20_000, Number(import.meta.env.VITE_CREDIT_SHORT_UPLOAD_TIMEOUT_MS || 60_000))
-    const rows = Array.isArray(data?.rows) ? data.rows : []
-
-    let saved = 0
-    let dropped = 0
-    let updatedStocks = 0
-
-    for (let i = 0; i < rows.length; i += batchSize) {
-      const chunk = rows.slice(i, i + batchSize)
-      const json = await apiFetch('/api/credit-short', {
-        method: 'POST',
-        cacheMs: 0,
-        timeoutMs,
-        body: JSON.stringify({ rows: chunk }),
-      })
-
-      if (!json?.success) {
-        const batchNo = Math.floor(i / batchSize) + 1
-        throw new Error(json?.error || `${batchNo}번 배치 저장 실패`)
-      }
-
-      saved += Number(json?.saved || 0)
-      dropped += Number(json?.filteredOut || 0)
-      updatedStocks += Number(json?.updatedStocks || 0)
-    }
-
-    return { saved, dropped, updatedStocks }
-  }, [])
-
   // 대시보드에서 "Chat ID 연결" 버튼 클릭 시 프로필 모달 열기
   React.useEffect(() => {
     return onOpenProfileModal(() => {
@@ -246,15 +213,6 @@ export default function Header({
           >
             <Command className="top-nav-action-icon" aria-hidden />
             <span className="top-nav-action-label">명령</span>
-          </button>
-          <button
-            className="nav-item top-nav-action"
-            onClick={() => setCreditShortOpen(true)}
-            title="공매도 지표 수동 입력"
-            aria-label="공매도 지표 입력"
-          >
-            <BadgePercent className="top-nav-action-icon" aria-hidden />
-            <span className="top-nav-action-label">공매도</span>
           </button>
           {/* 프로필 아바타 버튼 */}
           <button
@@ -395,11 +353,6 @@ export default function Header({
       onSignOut={signOut}
       isSigningIn={isSigningIn}
       focusChatIdField={focusChatIdField}
-    />
-    <CreditShortForm
-      isOpen={creditShortOpen}
-      onClose={() => setCreditShortOpen(false)}
-      onSave={handleSaveCreditShort}
     />
       </>
     )

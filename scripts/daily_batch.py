@@ -24,6 +24,8 @@ from typing import List, Dict, Tuple, Optional
 
 import pandas as pd
 import numpy as np
+import requests
+from bs4 import BeautifulSoup
 from pykrx import stock
 from supabase import create_client, Client
 
@@ -638,6 +640,175 @@ def fetch_investor_data(trading_date: str):
     
     except Exception as e:
         print(f"  ❌ 투자자 수급 수집 실패: {e}")
+        traceback.print_exc()
+
+
+# STEP 2.6: 공매도/신용 데이터 수집
+# =============================================
+def fetch_credit_short_data(trading_date: str):
+    """공매도 데이터(KRX API) + 신용비율(Naver 스크래핑) 수집"""
+    trading_iso = to_iso(trading_date)
+    print(f"\n[2.6/6] 공매도/신용 데이터 수집...")
+
+    if os.environ.get("DISABLE_CREDIT_SHORT_FETCH", "false").lower() in ("1", "true", "yes"):
+        print("  ℹ️ DISABLE_CREDIT_SHORT_FETCH=true 설정으로 공매도 수집을 건너뜁니다.")
+        return
+    
+    try:
+        res = supabase.table("stocks") \
+            .select("code, name") \
+            .in_("universe_level", ["core", "extended"]) \
+            .eq("is_active", True).execute()
+        codes = [r["code"] for r in (res.data or [])]
+        
+        if not codes:
+            print("  ⚠️ 대상 종목이 없습니다.")
+            return
+        
+        print(f"  대상: {len(codes)}개 종목")
+
+        cs_rows = []
+        success_count = 0
+        fail_count = 0
+        
+        ua = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+        
+        for idx, code in enumerate(codes):
+            if idx % 50 == 0 and idx > 0:
+                print(f"  -> 진행: {idx}/{len(codes)} (성공: {success_count}, 실패: {fail_count})")
+            
+            try:
+                # 1. Naver에서 신용비율 스크래핑
+                credit_ratio = None
+                try:
+                    url = f"https://finance.naver.com/item/main.naver?code={code}"
+                    resp = requests.get(url, headers={"User-Agent": ua}, timeout=7)
+                    if resp.status_code == 200:
+                        soup = BeautifulSoup(resp.text, "html.parser")
+                        # 투자정보 섹션에서 "신용비율" 레이블 찾기
+                        for label_elem in soup.select("th, dt"):
+                            if "신용비율" in label_elem.text:
+                                # th → 다음 td 또는 dt → 다음 dd
+                                next_elem = label_elem.find_next("td") or label_elem.find_next("dd")
+                                if next_elem:
+                                    text = next_elem.text.strip()
+                                    try:
+                                        credit_ratio = float(text.replace("%", "").replace(",", "").strip())
+                                    except:
+                                        pass
+                                break
+                except Exception as naver_err:
+                    pass  # Naver 스크래핑 실패는 무시
+                
+                # 2. KRX API에서 공매도 데이터 조회
+                short_ratio = None
+                short_balance = None
+                try:
+                    isin = f"KR7{code.strip().lstrip('A').zfill(6)}0003"
+                    today = datetime.now()
+                    end_date = today.strftime("%Y%m%d")
+                    start_date = (today - timedelta(days=7)).strftime("%Y%m%d")
+                    
+                    krx_url = "http://data.krx.co.kr/comm/bldAttendant/getJsonData.cmd"
+                    params = {
+                        "bld": "dbms/MDC/STAT/standard/MDCSTAT10401",
+                        "isuCd": isin,
+                        "strtDd": start_date,
+                        "endDd": end_date,
+                        "money": "1",
+                        "csvxls_isNo": "false",
+                    }
+                    
+                    krx_resp = requests.post(
+                        krx_url,
+                        data=params,
+                        headers={
+                            "User-Agent": ua,
+                            "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
+                            "Referer": "http://data.krx.co.kr/contents/MDC/MDI/mdiLoader/index.cmd?menuId=MDC0201020101",
+                            "Accept": "application/json",
+                            "Accept-Language": "ko-KR,ko;q=0.9",
+                            "X-Requested-With": "XMLHttpRequest",
+                        },
+                        timeout=7,
+                    )
+                    
+                    if krx_resp.status_code == 200:
+                        data = krx_resp.json()
+                        block = data.get("OutBlock_1") or data.get("outBlock_1", [])
+                        if isinstance(block, dict):
+                            block = [block]
+                        if block and len(block) > 0:
+                            row = block[0]
+                            # STCK_BAL_RT: 공매도 잔고비율, END_SNTT_STKCNT: 공매도 잔고 수량
+                            sr = str(row.get("STCK_BAL_RT", "")).replace(",", "").strip()
+                            sb = str(row.get("END_SNTT_STKCNT", "")).replace(",", "").strip()
+                            try:
+                                short_ratio = float(sr) if sr else None
+                            except:
+                                pass
+                            try:
+                                short_balance = int(float(sb)) if sb else None
+                            except:
+                                pass
+                except Exception as krx_err:
+                    pass  # KRX API 실패는 무시
+                
+                # 3. 데이터 저장 (하나라도 있으면 저장)
+                if credit_ratio is not None or short_ratio is not None or short_balance is not None:
+                    cs_rows.append({
+                        "code": code,
+                        "date": trading_iso,
+                        "credit_ratio": credit_ratio,
+                        "short_ratio": short_ratio,
+                        "short_balance": short_balance,
+                        "short_volume": None,
+                    })
+                    success_count += 1
+                else:
+                    fail_count += 1
+                
+                time.sleep(0.05)  # Rate limit: 50ms
+            
+            except Exception as e:
+                fail_count += 1
+        
+        if cs_rows:
+            # 배치로 저장
+            for i in range(0, len(cs_rows), 500):
+                batch = cs_rows[i:i+500]
+                try:
+                    supabase.table("stock_credit_short_daily").upsert(batch, on_conflict="code,date").execute()
+                except Exception as e:
+                    print(f"    ⚠️ stock_credit_short_daily upsert 에러: {e}")
+                    # 소분할 재시도
+                    for j in range(0, len(batch), 50):
+                        try:
+                            supabase.table("stock_credit_short_daily").upsert(batch[j:j+50], on_conflict="code,date").execute()
+                        except:
+                            pass
+            
+            # stocks 테이블도 최신값 업데이트
+            for code, row in [(r["code"], r) for r in cs_rows]:
+                try:
+                    stock_update = {}
+                    if row.get("credit_ratio") is not None:
+                        stock_update["credit_ratio"] = row["credit_ratio"]
+                    if row.get("short_ratio") is not None:
+                        stock_update["short_ratio"] = row["short_ratio"]
+                    if row.get("short_balance") is not None:
+                        stock_update["short_balance"] = row["short_balance"]
+                    if stock_update:
+                        supabase.table("stocks").update(stock_update).eq("code", code).execute()
+                except:
+                    pass  # stocks 업데이트 실패는 무시
+            
+            print(f"  ✅ {len(cs_rows)}개 공매도/신용 데이터 저장 완료 (성공: {success_count}개 종목, 실패: {fail_count}개)")
+        else:
+            print(f"  ⚠️ 공매도/신용 데이터 없음 (성공: {success_count}개 종목, 실패: {fail_count}개)")
+    
+    except Exception as e:
+        print(f"  ❌ 공매도/신용 수집 실패: {e}")
         traceback.print_exc()
 
 
@@ -1451,6 +1622,13 @@ if __name__ == "__main__":
         step_start = time.time()
         fetch_investor_data(trading_date)
         stage_times["InvestorData"] = time.time() - step_start
+        
+        time.sleep(1)
+        
+        # Step 2.6: 공매도/신용 데이터 (신규)
+        step_start = time.time()
+        fetch_credit_short_data(trading_date)
+        stage_times["CreditShortData"] = time.time() - step_start
         
         time.sleep(1)
         
