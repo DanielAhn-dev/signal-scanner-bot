@@ -56,6 +56,12 @@ type BacktestResponse = {
     precisionPct: number
     matchedEvents: number
     riserMatches: number
+    filter?: {
+      scoreMin?: number
+      buyOnly?: boolean
+      rsiMin?: number
+      rsiMax?: number
+    }
   }>
   risers: BacktestRiser[]
 }
@@ -382,6 +388,21 @@ export default function BacktestPage() {
   const sorted = useMemo(() => {
     return (data?.risers ?? []).slice().sort((a, b) => b.forwardReturnPct - a.forwardReturnPct)
   }, [data])
+
+  const filteredSamplesByRule = useMemo(() => {
+    if (!selectedRuleKey || !data) return []
+    const rule = (data.ruleCandidates ?? []).find((r) => r.key === selectedRuleKey)
+    if (!rule || !rule.filter) return []
+
+    const { scoreMin, buyOnly, rsiMin, rsiMax } = rule.filter
+    return sorted.filter((row) => {
+      if (scoreMin != null && row.totalScore < scoreMin) return false
+      if (buyOnly && !isBuySignal(row.signal)) return false
+      if (rsiMin != null && (row.rsi14 == null || row.rsi14 < rsiMin)) return false
+      if (rsiMax != null && (row.rsi14 == null || row.rsi14 > rsiMax)) return false
+      return true
+    })
+  }, [selectedRuleKey, data, sorted])
 
   const showCheckDropdown =
     checkFocused && checkSearch.trim().length >= 2 && checkResults.length > 0
@@ -731,6 +752,89 @@ export default function BacktestPage() {
                         </div>
                       )
                     })()}
+                  </div>
+                )}
+
+                {/* 선택한 룰의 실제 샘플 */}
+                {selectedRuleKey && filteredSamplesByRule.length > 0 && (
+                  <div
+                    style={{
+                      marginTop: 'var(--space-4)',
+                      padding: 'var(--space-3) var(--space-4)',
+                      background: 'var(--color-success-bg)',
+                      border: '1px solid var(--color-success)',
+                      borderRadius: 'var(--radius-md)',
+                    }}
+                  >
+                    <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--color-success)', marginBottom: 12 }}>
+                      이 룰이 잡은 급등 샘플 ({filteredSamplesByRule.length}건)
+                    </div>
+                    <div style={{ fontSize: 12, color: 'var(--color-text-secondary)', marginBottom: 10 }}>
+                      아래 {Math.min(5, filteredSamplesByRule.length)}개의 대표 사례를 보면 "{(() => {
+                        const rule = (data.ruleCandidates ?? []).find((r) => r.key === selectedRuleKey)
+                        return rule?.label || ''
+                      })()} 규칙의 정확도 {(() => {
+                        const rule = (data.ruleCandidates ?? []).find((r) => r.key === selectedRuleKey)
+                        return rule?.precisionPct.toFixed(1) || '0'
+                      })()}%가 어떻게 나왔는지" 직관적으로 검증할 수 있습니다.
+                    </div>
+                    <div style={{ overflowX: 'auto' }}>
+                      <table className="bt-table" style={{ minWidth: 680 }}>
+                        <thead>
+                          <tr>
+                            <th>종목</th>
+                            <th>기준일</th>
+                            <th style={{ textAlign: 'right' }}>Horizon 수익률</th>
+                            <th style={{ textAlign: 'right' }}>점수</th>
+                            <th>시그널</th>
+                            <th style={{ textAlign: 'right' }}>RSI14</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {filteredSamplesByRule.slice(0, 5).map((row) => (
+                            <tr
+                              key={`${row.code}-${row.asof}`}
+                              style={{ cursor: 'pointer' }}
+                              onClick={() =>
+                                selectStock({ code: row.code, name: row.name || row.code })
+                              }
+                            >
+                              <td>
+                                <span className="bt-table-stock-name">{row.name || row.code}</span>
+                                {row.name && (
+                                  <span className="bt-table-stock-code">{row.code}</span>
+                                )}
+                              </td>
+                              <td className="bt-table-num">{row.asof}</td>
+                              <td style={{ textAlign: 'right' }}>
+                                <span className={row.forwardReturnPct >= 0 ? 'bt-table-return-pos' : 'bt-table-return-neg'}>
+                                  {row.forwardReturnPct > 0 ? '+' : ''}
+                                  {pct(row.forwardReturnPct, 2)}
+                                </span>
+                              </td>
+                              <td style={{ textAlign: 'right' }} className="bt-table-num">
+                                {row.totalScore.toFixed(1)}
+                              </td>
+                              <td>
+                                {row.signal ? (
+                                  <span className={signalCls(row.signal)}>{row.signal}</span>
+                                ) : (
+                                  <span className="bt-table-num">-</span>
+                                )}
+                              </td>
+                              <td style={{ textAlign: 'right' }} className="bt-table-num">
+                                {row.rsi14 == null ? '-' : row.rsi14.toFixed(1)}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                    {filteredSamplesByRule.length > 5 && (
+                      <p style={{ fontSize: 11, color: 'var(--color-text-secondary)', margin: 'var(--space-3) 0 0' }}>
+                        ※ 이 규칙에 매칭되는 총 {filteredSamplesByRule.length}건 중 상위 5개를 표시합니다. 종목 클릭으로 패턴 점검 가능.
+                      </p>
+                    )}
                   </div>
                 )}
               </>

@@ -44,6 +44,12 @@ type RuleCandidate = {
   precisionPct: number
   matchedEvents: number
   riserMatches: number
+  filter?: {
+    scoreMin?: number
+    buyOnly?: boolean
+    rsiMin?: number
+    rsiMax?: number
+  }
 }
 
 const SUPPORTED_HORIZONS = [20, 40, 60, 90, 120] as const
@@ -267,64 +273,75 @@ function createRuleCandidates(labelableEvents: EventRow[], riserUniverse: EventR
   const riserCount = riserUniverse.length
   if (!(baselineCount > 0 && riserCount > 0)) return []
 
-  const rules: Array<{ key: string; label: string; test: (row: EventRow) => boolean }> = [
+  const rules: Array<{ key: string; label: string; test: (row: EventRow) => boolean; filter?: { scoreMin?: number; buyOnly?: boolean; rsiMin?: number; rsiMax?: number } }> = [
     // Precision 중심: score 기반 규칙
     {
       key: 'rule_score70_buy',
       label: '점수≥70 + BUY계열',
       test: (row) => row.totalScore >= 70 && isBuyFamily(row.signal),
+      filter: { scoreMin: 70, buyOnly: true },
     },
     {
       key: 'rule_score65_buy',
       label: '점수≥65 + BUY계열',
       test: (row) => row.totalScore >= 65 && isBuyFamily(row.signal),
+      filter: { scoreMin: 65, buyOnly: true },
     },
     {
       key: 'rule_score60_buy',
       label: '점수≥60 + BUY계열',
       test: (row) => row.totalScore >= 60 && isBuyFamily(row.signal),
+      filter: { scoreMin: 60, buyOnly: true },
     },
     {
       key: 'rule_score55_buy',
       label: '점수≥55 + BUY계열',
       test: (row) => row.totalScore >= 55 && isBuyFamily(row.signal),
+      filter: { scoreMin: 55, buyOnly: true },
     },
     // Support 중심: RSI 단독 규칙 (데이터 풍부)
     {
       key: 'rule_rsi30_80',
       label: 'RSI 30~80 (광범위)',
       test: (row) => row.rsi14 != null && row.rsi14 >= 30 && row.rsi14 <= 80,
+      filter: { rsiMin: 30, rsiMax: 80 },
     },
     {
       key: 'rule_rsi40_70',
       label: 'RSI 40~70',
       test: (row) => row.rsi14 != null && row.rsi14 >= 40 && row.rsi14 <= 70,
+      filter: { rsiMin: 40, rsiMax: 70 },
     },
     {
       key: 'rule_rsi45_65',
       label: 'RSI 45~65 (정중간)',
       test: (row) => row.rsi14 != null && row.rsi14 >= 45 && row.rsi14 <= 65,
+      filter: { rsiMin: 45, rsiMax: 65 },
     },
     // 조합: score + RSI
     {
       key: 'rule_score60_rsi40_70',
       label: '점수≥60 + RSI 40~70',
       test: (row) => row.totalScore >= 60 && row.rsi14 != null && row.rsi14 >= 40 && row.rsi14 <= 70,
+      filter: { scoreMin: 60, rsiMin: 40, rsiMax: 70 },
     },
     {
       key: 'rule_score55_rsi40_70',
       label: '점수≥55 + RSI 40~70',
       test: (row) => row.totalScore >= 55 && row.rsi14 != null && row.rsi14 >= 40 && row.rsi14 <= 70,
+      filter: { scoreMin: 55, rsiMin: 40, rsiMax: 70 },
     },
     {
       key: 'rule_buy_rsi45_65',
       label: 'BUY계열 + RSI 45~65',
       test: (row) => isBuyFamily(row.signal) && row.rsi14 != null && row.rsi14 >= 45 && row.rsi14 <= 65,
+      filter: { buyOnly: true, rsiMin: 45, rsiMax: 65 },
     },
     {
       key: 'rule_buy_rsi40_70',
       label: 'BUY계열 + RSI 40~70',
       test: (row) => isBuyFamily(row.signal) && row.rsi14 != null && row.rsi14 >= 40 && row.rsi14 <= 70,
+      filter: { buyOnly: true, rsiMin: 40, rsiMax: 70 },
     },
     // 3중 조합
     {
@@ -336,6 +353,7 @@ function createRuleCandidates(labelableEvents: EventRow[], riserUniverse: EventR
         row.rsi14 != null &&
         row.rsi14 >= 40 &&
         row.rsi14 <= 70,
+      filter: { scoreMin: 65, buyOnly: true, rsiMin: 40, rsiMax: 70 },
     },
     {
       key: 'rule_score70_buy_rsi45_65',
@@ -346,6 +364,7 @@ function createRuleCandidates(labelableEvents: EventRow[], riserUniverse: EventR
         row.rsi14 != null &&
         row.rsi14 >= 45 &&
         row.rsi14 <= 65,
+      filter: { scoreMin: 70, buyOnly: true, rsiMin: 45, rsiMax: 65 },
     },
   ]
 
@@ -379,6 +398,8 @@ function createRuleCandidates(labelableEvents: EventRow[], riserUniverse: EventR
     })
     .slice(0, 5)
 
+  const ruleMap = new Map(rules.map((r) => [r.key, r.filter]))
+
   return candidates.map((row) => ({
     key: row.key,
     label: row.label,
@@ -387,6 +408,7 @@ function createRuleCandidates(labelableEvents: EventRow[], riserUniverse: EventR
     precisionPct: Number(row.precisionPct.toFixed(1)),
     matchedEvents: row.matchedEvents,
     riserMatches: row.riserMatches,
+    filter: ruleMap.get(row.key),
   }))
 }
 
