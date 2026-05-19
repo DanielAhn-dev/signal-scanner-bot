@@ -92,6 +92,22 @@ type StockIndicators = {
   market_cap: number | null
 }
 
+type RuleFilter = {
+  scoreMin?: number
+  buyOnly?: boolean
+  rsiMin?: number
+  rsiMax?: number
+}
+
+type AutoPickItem = {
+  code: string
+  name: string
+  score: number
+  signal: string
+  rsi14: number | null
+  market: string | null
+}
+
 function pct(value: number | null | undefined, digits = 1): string {
   const n = Number(value)
   if (!Number.isFinite(n)) return '-'
@@ -110,6 +126,19 @@ function isBuySignal(signal: string | null): boolean {
   if (!signal) return false
   const u = signal.toUpperCase()
   return ['BUY', 'STRONG_BUY', 'ACCUMULATE', '매수'].some((s) => u.includes(s))
+}
+
+function matchesRuleFilter(indicator: StockIndicators, filter?: RuleFilter): boolean {
+  if (!filter) return true
+  const score = Number(indicator.total_score ?? 0)
+  const signal = String(indicator.signal ?? '')
+  const rsi = indicator.rsi14
+
+  if (filter.scoreMin != null && score < filter.scoreMin) return false
+  if (filter.buyOnly && !isBuySignal(signal)) return false
+  if (filter.rsiMin != null && (rsi == null || rsi < filter.rsiMin)) return false
+  if (filter.rsiMax != null && (rsi == null || rsi > filter.rsiMax)) return false
+  return true
 }
 
 function matchMeta(n: number): { label: string; cls: string } {
@@ -230,6 +259,9 @@ export default function BacktestPage() {
   const [indicators, setIndicators] = useState<StockIndicators | null>(null)
   const [checkLoading, setCheckLoading] = useState(false)
   const [checkError, setCheckError] = useState<string | null>(null)
+  const [autoPickLoading, setAutoPickLoading] = useState(false)
+  const [autoPickError, setAutoPickError] = useState<string | null>(null)
+  const [autoPicks, setAutoPicks] = useState<AutoPickItem[]>([])
   const [investAmount, setInvestAmount] = useState(1_000_000)
   const checkDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
@@ -266,6 +298,81 @@ export default function BacktestPage() {
       return candidates[0].key
     })
   }, [data])
+
+  useEffect(() => {
+    const selectedRule = (data?.ruleCandidates ?? []).find((rule) => rule.key === selectedRuleKey)
+      ?? (data?.ruleCandidates ?? [])[0]
+    if (!data || !selectedRule) {
+      setAutoPicks([])
+      setAutoPickError(null)
+      setAutoPickLoading(false)
+      return
+    }
+
+    let disposed = false
+    const run = async () => {
+      setAutoPickLoading(true)
+      setAutoPickError(null)
+      try {
+        const scanRes = await apiFetch('/api/ui/scan-candidates?limit=24&cacheMs=0', {
+          cacheMs: 0,
+          timeoutMs: 12_000,
+        })
+        const candidates = Array.isArray(scanRes?.data)
+          ? (scanRes.data as Array<{ code?: string; name?: string }>).filter((row) => !!row?.code)
+          : []
+
+        if (candidates.length === 0) {
+          if (!disposed) setAutoPicks([])
+          return
+        }
+
+        const settled = await Promise.allSettled(
+          candidates.slice(0, 24).map(async (candidate) => {
+            const code = String(candidate.code || '').trim()
+            if (!code) return null
+            const indicatorRes = await apiFetch(`/api/ui/stock-indicators?code=${encodeURIComponent(code)}`, {
+              cacheMs: 0,
+              timeoutMs: 8_000,
+            })
+            const indicator = (indicatorRes?.data ?? null) as StockIndicators | null
+            if (!indicator) return null
+            if (!matchesRuleFilter(indicator, selectedRule.filter)) return null
+
+            return {
+              code,
+              name: String(indicator.name || candidate.name || code),
+              score: Number(indicator.total_score ?? 0),
+              signal: String(indicator.signal || '-'),
+              rsi14: indicator.rsi14,
+              market: indicator.market,
+            } as AutoPickItem
+          }),
+        )
+
+        const next = settled
+          .filter((row): row is PromiseFulfilledResult<AutoPickItem | null> => row.status === 'fulfilled')
+          .map((row) => row.value)
+          .filter((row): row is AutoPickItem => !!row)
+          .sort((a, b) => b.score - a.score)
+          .slice(0, 6)
+
+        if (!disposed) setAutoPicks(next)
+      } catch (e: any) {
+        if (!disposed) {
+          setAutoPicks([])
+          setAutoPickError(e?.message || '자동 추천 조회 실패')
+        }
+      } finally {
+        if (!disposed) setAutoPickLoading(false)
+      }
+    }
+
+    void run()
+    return () => {
+      disposed = true
+    }
+  }, [data, selectedRuleKey])
 
   // URL param 또는 sessionStorage로 전달된 종목 자동 로드
   useEffect(() => {
@@ -922,6 +1029,65 @@ export default function BacktestPage() {
               일치하는지 확인하고, 투자 금액 대비 예상 수익을 계산합니다.
               스캔 목록 외 임의 종목도 조회 가능합니다.
             </p>
+
+            <div
+              style={{
+                border: '1px solid var(--color-border-muted)',
+                borderRadius: 'var(--radius-md)',
+                padding: 'var(--space-3) var(--space-4)',
+                background: 'var(--color-bg-sunken)',
+                marginBottom: 'var(--space-3)',
+              }}
+            >
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--color-text-primary)' }}>
+                  자동 추천 종목
+                </div>
+                <div style={{ fontSize: 11, color: 'var(--color-text-tertiary)' }}>
+                  선택된 추천 룰을 현재 스캔 종목에 자동 적용
+                </div>
+              </div>
+
+              <div style={{ marginTop: 'var(--space-2)' }}>
+                {autoPickLoading && (
+                  <div style={{ fontSize: 12, color: 'var(--color-text-tertiary)' }}>자동 추천 계산 중...</div>
+                )}
+                {!autoPickLoading && autoPickError && (
+                  <div style={{ fontSize: 12, color: 'var(--color-error)' }}>{autoPickError}</div>
+                )}
+                {!autoPickLoading && !autoPickError && autoPicks.length === 0 && (
+                  <div style={{ fontSize: 12, color: 'var(--color-text-tertiary)' }}>
+                    현재 조건에 맞는 자동 추천 종목이 없습니다. Horizon/급등 기준을 완화하거나 룰을 변경해 보세요.
+                  </div>
+                )}
+                {!autoPickLoading && !autoPickError && autoPicks.length > 0 && (
+                  <div style={{ display: 'grid', gap: 8 }}>
+                    {autoPicks.map((row) => (
+                      <button
+                        key={row.code}
+                        type="button"
+                        className="sim-btn sim-btn--ghost"
+                        style={{ justifyContent: 'space-between', textAlign: 'left' }}
+                        onClick={() => selectStock({ code: row.code, name: row.name })}
+                      >
+                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                          <strong>{row.name}</strong>
+                          <span className="bt-table-stock-code">{row.code}</span>
+                          {row.market && (
+                            <span style={{ fontSize: 11, color: 'var(--color-text-tertiary)' }}>{row.market}</span>
+                          )}
+                        </span>
+                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 10, marginLeft: 12 }}>
+                          <span style={{ fontSize: 12, color: 'var(--color-text-secondary)' }}>점수 {row.score.toFixed(1)}</span>
+                          <span style={{ fontSize: 12, color: 'var(--color-text-secondary)' }}>RSI {row.rsi14 == null ? '-' : row.rsi14.toFixed(1)}</span>
+                          <span className={signalCls(row.signal)}>{row.signal}</span>
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
 
             <div className="bt-check-search-wrap">
               <div className="sim-add-input-row">
