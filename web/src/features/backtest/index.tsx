@@ -78,6 +78,7 @@ type StockIndicators = {
   signal: string | null
   indicator_date: string | null
   rsi14: number | null
+  roc21?: number | null
   sma20: number | null
   sma50: number | null
   sma200: number | null
@@ -112,7 +113,17 @@ type AutoPickItem = {
   ruleMatched: boolean
   coreMatchCount: number
   edgeScore: number
+  expectedReturnPct: number
+  shortMomentumPct: number
+  liquidity: number | null
   tier: AutoPickTier
+}
+
+type ScanCandidateLite = {
+  code: string
+  name?: string
+  intraday_change_pct?: number | null
+  liquidity?: number | null
 }
 
 function pct(value: number | null | undefined, digits = 1): string {
@@ -212,6 +223,33 @@ function signedPct(value: number | null | undefined, digits = 1): string {
   return `${n >= 0 ? '+' : ''}${n.toFixed(digits)}%`
 }
 
+function clampNumber(value: number, min: number, max: number): number {
+  return Math.min(max, Math.max(min, value))
+}
+
+function toEokFromWon(value: number | null | undefined): number {
+  const n = Number(value)
+  if (!Number.isFinite(n) || n <= 0) return 0
+  return n / 100_000_000
+}
+
+function estimateExpectedReturnPct(input: {
+  baseReturnPct: number
+  coreMatchCount: number
+  ruleMatched: boolean
+  score: number
+  shortMomentumPct: number
+  tier: AutoPickTier
+}): number {
+  const tierFactor = input.tier === 'now' ? 1.0 : input.tier === 'prepare' ? 0.72 : 0.45
+  const coreFactor = 0.5 + input.coreMatchCount * 0.15
+  const ruleBonus = input.ruleMatched ? 0.12 : 0
+  const scoreBonus = clampNumber((input.score - 55) / 120, -0.12, 0.2)
+  const momentumBonus = clampNumber(input.shortMomentumPct / 30, -0.18, 0.18)
+  const raw = input.baseReturnPct * (tierFactor * coreFactor + ruleBonus + scoreBonus + momentumBonus)
+  return Number(clampNumber(raw, 1.5, 40).toFixed(1))
+}
+
 const HORIZONS = [20, 40, 60, 90, 120] as const
 const DEFAULT_VISIBLE_HORIZONS = [20, 40, 60] as const
 const EXTENDED_HORIZONS = [90, 120] as const
@@ -306,6 +344,9 @@ export default function BacktestPage() {
   const [autoPickLoading, setAutoPickLoading] = useState(false)
   const [autoPickError, setAutoPickError] = useState<string | null>(null)
   const [autoPicks, setAutoPicks] = useState<AutoPickItem[]>([])
+  const [minExpectedReturnPct, setMinExpectedReturnPct] = useState(5)
+  const [minShortMomentumPct, setMinShortMomentumPct] = useState(0)
+  const [minLiquidityEok, setMinLiquidityEok] = useState(300)
   const [investAmount, setInvestAmount] = useState(1_000_000)
   const checkDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
@@ -358,13 +399,16 @@ export default function BacktestPage() {
       setAutoPickLoading(true)
       setAutoPickError(null)
       try {
-        const scanRes = await apiFetch('/api/ui/scan-candidates?limit=24&cacheMs=0', {
+        const scanRes = await apiFetch('/api/ui/scan-candidates?limit=60&includeIndicatorLiquidity=1&cacheMs=0', {
           cacheMs: 0,
           timeoutMs: 12_000,
         })
         const candidates = Array.isArray(scanRes?.data)
-          ? (scanRes.data as Array<{ code?: string; name?: string }>).filter((row) => !!row?.code)
+          ? (scanRes.data as ScanCandidateLite[]).filter((row) => !!row?.code)
           : []
+        const candidateMap = new Map(
+          candidates.map((row) => [String(row.code || '').trim(), row]),
+        )
 
         if (candidates.length === 0) {
           if (!disposed) setAutoPicks([])
@@ -372,7 +416,7 @@ export default function BacktestPage() {
         }
 
         const settled = await Promise.allSettled(
-          candidates.slice(0, 24).map(async (candidate) => {
+          candidates.slice(0, 36).map(async (candidate) => {
             const code = String(candidate.code || '').trim()
             if (!code) return null
             const indicatorRes = await apiFetch(`/api/ui/stock-indicators?code=${encodeURIComponent(code)}`, {
@@ -386,6 +430,30 @@ export default function BacktestPage() {
             const ruleMatched = matchesRuleFilter(indicator, selectedRule.filter)
             if (!ruleMatched && ranked.coreMatchCount < 2) return null
 
+            const scan = candidateMap.get(code)
+            const intradayChangePct = Number(scan?.intraday_change_pct)
+            const inferredMomentum = Number(indicator.roc21 ?? 0) / 4.2
+            const shortMomentumPct = Number.isFinite(intradayChangePct) && intradayChangePct !== 0
+              ? intradayChangePct
+              : inferredMomentum
+
+            const expectedReturnPct = estimateExpectedReturnPct({
+              baseReturnPct: Number(data.riserSummary.avgForwardReturnPct || 0),
+              coreMatchCount: ranked.coreMatchCount,
+              ruleMatched,
+              score: Number(indicator.total_score ?? 0),
+              shortMomentumPct,
+              tier: ranked.tier,
+            })
+
+            const liquidity = Number(scan?.liquidity)
+            const liquidityWon = Number.isFinite(liquidity) && liquidity > 0 ? liquidity : null
+            const liquidityEok = toEokFromWon(liquidityWon)
+
+            if (expectedReturnPct < minExpectedReturnPct) return null
+            if (shortMomentumPct < minShortMomentumPct) return null
+            if (liquidityEok < minLiquidityEok) return null
+
             return {
               code,
               name: String(indicator.name || candidate.name || code),
@@ -397,6 +465,9 @@ export default function BacktestPage() {
               ruleMatched,
               coreMatchCount: ranked.coreMatchCount,
               edgeScore: ranked.edgeScore,
+              expectedReturnPct,
+              shortMomentumPct: Number(shortMomentumPct.toFixed(1)),
+              liquidity: liquidityWon,
               tier: ranked.tier,
             } as AutoPickItem
           }),
@@ -412,7 +483,7 @@ export default function BacktestPage() {
             if (b.edgeScore !== a.edgeScore) return b.edgeScore - a.edgeScore
             return b.score - a.score
           })
-          .slice(0, 9)
+          .slice(0, 12)
 
         if (!disposed) setAutoPicks(next)
       } catch (e: any) {
@@ -429,7 +500,7 @@ export default function BacktestPage() {
     return () => {
       disposed = true
     }
-  }, [data, selectedRuleKey])
+  }, [data, selectedRuleKey, minExpectedReturnPct, minShortMomentumPct, minLiquidityEok])
 
   // URL param 또는 sessionStorage로 전달된 종목 자동 로드
   useEffect(() => {
@@ -503,6 +574,31 @@ export default function BacktestPage() {
       ...(existing ?? { totalCapital: 10_000_000, notes: '' }),
       createdAt: Date.now(),
       items,
+    })
+    navigateTo('simulator')
+  }
+
+  const addAutoPicksToSimulator = (tiers: AutoPickTier[]) => {
+    const targets = autoPicks.filter((row) => tiers.includes(row.tier))
+    if (targets.length === 0) return
+
+    const existing = readSimulationPlan()
+    const prevItems = existing?.items ?? []
+    const codeSet = new Set(prevItems.map((item) => String(item.code || '')))
+
+    const newItems = targets
+      .filter((row) => !codeSet.has(row.code))
+      .map((row) => defaultPlanItem({ code: row.code, name: row.name }))
+
+    if (newItems.length === 0) {
+      navigateTo('simulator')
+      return
+    }
+
+    saveSimulationPlan({
+      ...(existing ?? { totalCapital: 10_000_000, notes: '' }),
+      createdAt: Date.now(),
+      items: [...prevItems, ...newItems],
     })
     navigateTo('simulator')
   }
@@ -1115,6 +1211,57 @@ export default function BacktestPage() {
               </div>
 
               <div style={{ marginTop: 'var(--space-2)' }}>
+                <div
+                  style={{
+                    display: 'grid',
+                    gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))',
+                    gap: 8,
+                    marginBottom: 'var(--space-3)',
+                  }}
+                >
+                  <label style={{ fontSize: 11, color: 'var(--color-text-tertiary)', display: 'grid', gap: 4 }}>
+                    최소 기대수익률(%)
+                    <input
+                      className="sim-input"
+                      type="number"
+                      min={1}
+                      max={30}
+                      value={minExpectedReturnPct}
+                      onChange={(e) =>
+                        setMinExpectedReturnPct(Math.max(1, Math.min(30, Number(e.target.value) || 1)))
+                      }
+                    />
+                  </label>
+                  <label style={{ fontSize: 11, color: 'var(--color-text-tertiary)', display: 'grid', gap: 4 }}>
+                    최소 단기모멘텀(%)
+                    <input
+                      className="sim-input"
+                      type="number"
+                      min={-5}
+                      max={10}
+                      step={0.1}
+                      value={minShortMomentumPct}
+                      onChange={(e) =>
+                        setMinShortMomentumPct(Math.max(-5, Math.min(10, Number(e.target.value) || 0)))
+                      }
+                    />
+                  </label>
+                  <label style={{ fontSize: 11, color: 'var(--color-text-tertiary)', display: 'grid', gap: 4 }}>
+                    최소 거래대금(억원)
+                    <input
+                      className="sim-input"
+                      type="number"
+                      min={0}
+                      max={50000}
+                      step={50}
+                      value={minLiquidityEok}
+                      onChange={(e) =>
+                        setMinLiquidityEok(Math.max(0, Math.min(50000, Number(e.target.value) || 0)))
+                      }
+                    />
+                  </label>
+                </div>
+
                 {autoPickLoading && (
                   <div style={{ fontSize: 12, color: 'var(--color-text-tertiary)' }}>자동 추천 계산 중...</div>
                 )}
@@ -1158,6 +1305,9 @@ export default function BacktestPage() {
                                 )}
                               </span>
                               <span style={{ display: 'inline-flex', alignItems: 'center', gap: 10, marginLeft: 12 }}>
+                                <span style={{ fontSize: 12, color: 'var(--color-success)' }}>기대 {row.expectedReturnPct.toFixed(1)}%</span>
+                                <span style={{ fontSize: 12, color: 'var(--color-text-secondary)' }}>모멘텀 {signedPct(row.shortMomentumPct, 1)}</span>
+                                <span style={{ fontSize: 12, color: 'var(--color-text-secondary)' }}>거래대금 {toEokFromWon(row.liquidity).toFixed(0)}억</span>
                                 <span style={{ fontSize: 12, color: 'var(--color-text-secondary)' }}>점수 {row.score.toFixed(1)}</span>
                                 <span style={{ fontSize: 12, color: 'var(--color-text-secondary)' }}>RSI {row.rsi14 == null ? '-' : row.rsi14.toFixed(1)}</span>
                                 {row.warnGrade && row.warnGrade !== 'SAFE' && (
@@ -1170,8 +1320,24 @@ export default function BacktestPage() {
                         </div>
                       )
                     })}
+                    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 6 }}>
+                      <button
+                        type="button"
+                        className="sim-btn sim-btn--primary"
+                        onClick={() => addAutoPicksToSimulator(['now'])}
+                      >
+                        즉시 후보 시뮬레이터 추가
+                      </button>
+                      <button
+                        type="button"
+                        className="sim-btn sim-btn--ghost"
+                        onClick={() => addAutoPicksToSimulator(['now', 'prepare'])}
+                      >
+                        즉시+준비 일괄 추가
+                      </button>
+                    </div>
                     <div style={{ fontSize: 11, color: 'var(--color-text-tertiary)', marginTop: 4 }}>
-                      코어 조건: 점수≥70, BUY계열, RSI 45~65. 하락/횡보장에서는 준비·관찰 후보가 먼저 늘어날 수 있습니다.
+                      코어 조건: 점수≥70, BUY계열, RSI 45~65. 단기모멘텀은 장중 등락률 우선, 없으면 ROC21 기반 추정치를 사용합니다.
                     </div>
                   </div>
                 )}
