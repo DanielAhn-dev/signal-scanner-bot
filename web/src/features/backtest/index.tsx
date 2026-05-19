@@ -220,6 +220,7 @@ export default function BacktestPage() {
   const [error, setError] = useState<string | null>(null)
   const [data, setData] = useState<BacktestResponse | null>(null)
   const [selectedRuleKey, setSelectedRuleKey] = useState<string | null>(null)
+  const [showAllFeatureRows, setShowAllFeatureRows] = useState(false)
 
   // 종목 패턴 점검
   const [checkSearch, setCheckSearch] = useState('')
@@ -423,6 +424,15 @@ export default function BacktestPage() {
     })
   }, [selectedRuleKey, data, sorted])
 
+  const visibleFeatureStats = useMemo(() => {
+    const rows = data?.featureStats ?? []
+    if (showAllFeatureRows) return rows
+
+    return rows.filter((row) => Math.min(row.baselineMatches, row.riserMatches) >= 5)
+  }, [data?.featureStats, showAllFeatureRows])
+
+  const hiddenFeatureCount = Math.max(0, (data?.featureStats ?? []).length - visibleFeatureStats.length)
+
   const showCheckDropdown =
     checkFocused && checkSearch.trim().length >= 2 && checkResults.length > 0
 
@@ -605,6 +615,24 @@ export default function BacktestPage() {
             </p>
 
             {(data.featureStats ?? []).length > 0 ? (
+              <>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, marginBottom: 10, flexWrap: 'wrap' }}>
+                  <div style={{ fontSize: 12, color: 'var(--color-text-tertiary)' }}>
+                    기본은 의미 있는 행만 표시하고, 전체보기로 나머지도 확인할 수 있습니다.
+                    {!showAllFeatureRows && hiddenFeatureCount > 0 && (
+                      <span style={{ marginLeft: 8 }}>
+                        숨김 {hiddenFeatureCount}개
+                      </span>
+                    )}
+                  </div>
+                  <button
+                    className="sim-btn sim-btn--ghost"
+                    onClick={() => setShowAllFeatureRows((value) => !value)}
+                    style={{ padding: '6px 10px', minHeight: 'unset' }}
+                  >
+                    {showAllFeatureRows ? '유의미한 값만 보기' : '전체보기'}
+                  </button>
+                </div>
               <div style={{ overflowX: 'auto', margin: '0 calc(-1 * var(--space-4))' }}>
                 <table className="bt-table" style={{ minWidth: 940 }}>
                   <thead>
@@ -619,29 +647,38 @@ export default function BacktestPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {(data.featureStats ?? []).map((row) => (
-                      <tr key={row.key}>
-                        <td>
-                          <span>{row.label}</span>
-                          <span className={`bt-check-match-badge ${confidenceMeta(Math.min(row.baselineMatches, row.riserMatches)).cls}`} style={{ marginLeft: 8 }}>
-                            {confidenceMeta(Math.min(row.baselineMatches, row.riserMatches)).label}
-                          </span>
+                    {visibleFeatureStats.length > 0 ? (
+                      visibleFeatureStats.map((row) => (
+                        <tr key={row.key}>
+                          <td>
+                            <span>{row.label}</span>
+                            <span className={`bt-check-match-badge ${confidenceMeta(Math.min(row.baselineMatches, row.riserMatches)).cls}`} style={{ marginLeft: 8 }}>
+                              {confidenceMeta(Math.min(row.baselineMatches, row.riserMatches)).label}
+                            </span>
+                          </td>
+                          <td className="bt-table-num" style={{ textAlign: 'right' }}>{row.baselineMatches.toLocaleString('ko-KR')}</td>
+                          <td className="bt-table-num" style={{ textAlign: 'right' }}>{pct(row.baselineRatePct)}</td>
+                          <td className="bt-table-num" style={{ textAlign: 'right' }}>{row.riserMatches.toLocaleString('ko-KR')}</td>
+                          <td className="bt-table-num" style={{ textAlign: 'right' }}>{pct(row.riserRatePct)}</td>
+                          <td style={{ textAlign: 'right' }}>
+                            <span className={row.liftPct >= 0 ? 'bt-table-return-pos' : 'bt-table-return-neg'}>
+                              {signedPct(row.liftPct)}
+                            </span>
+                          </td>
+                          <td className="bt-table-num" style={{ textAlign: 'right' }}>{pct(row.supportPct)}</td>
+                        </tr>
+                      ))
+                    ) : (
+                      <tr>
+                        <td colSpan={7} style={{ textAlign: 'center', padding: '18px 12px', color: 'var(--color-text-tertiary)' }}>
+                          기본 필터에서 보여줄 유의미한 행이 없습니다. 전체보기를 눌러 모든 구간을 확인하세요.
                         </td>
-                        <td className="bt-table-num" style={{ textAlign: 'right' }}>{row.baselineMatches.toLocaleString('ko-KR')}</td>
-                        <td className="bt-table-num" style={{ textAlign: 'right' }}>{pct(row.baselineRatePct)}</td>
-                        <td className="bt-table-num" style={{ textAlign: 'right' }}>{row.riserMatches.toLocaleString('ko-KR')}</td>
-                        <td className="bt-table-num" style={{ textAlign: 'right' }}>{pct(row.riserRatePct)}</td>
-                        <td style={{ textAlign: 'right' }}>
-                          <span className={row.liftPct >= 0 ? 'bt-table-return-pos' : 'bt-table-return-neg'}>
-                            {signedPct(row.liftPct)}
-                          </span>
-                        </td>
-                        <td className="bt-table-num" style={{ textAlign: 'right' }}>{pct(row.supportPct)}</td>
                       </tr>
-                    ))}
+                    )}
                   </tbody>
                 </table>
               </div>
+              </>
             ) : (
               <p style={{ color: 'var(--color-text-tertiary)', fontSize: 'var(--font-size-sm)', margin: 0 }}>
                 공통점 통계를 계산할 데이터가 부족합니다.
