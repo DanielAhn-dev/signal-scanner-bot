@@ -9,6 +9,24 @@ import { fetchRealtimeStockData } from '../../src/utils/fetchRealtimePrice'
 
 const ORIGIN = process.env.UI_CORS_ORIGIN || '*'
 
+// 펀더멘탈 스크래핑 인메모리 캐시 (프로세스 재시작 전까지 유지, 6시간 TTL)
+const FUND_SCRAPE_CACHE = new Map<string, { data: any; ts: number }>()
+const FUND_SCRAPE_TTL_MS = 6 * 60 * 60 * 1000 // 6시간
+
+function getCachedFundScrape(code: string): any | null {
+  const cached = FUND_SCRAPE_CACHE.get(code)
+  if (!cached) return null
+  if (Date.now() - cached.ts > FUND_SCRAPE_TTL_MS) {
+    FUND_SCRAPE_CACHE.delete(code)
+    return null
+  }
+  return cached.data
+}
+
+function setCachedFundScrape(code: string, data: any): void {
+  FUND_SCRAPE_CACHE.set(code, { data, ts: Date.now() })
+}
+
 type LatestRow = {
   date: string | null
   open: number | null
@@ -1266,7 +1284,23 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     // DB 데이터가 없거나 PEG 산출 재료가 부족하면 live 스크랩으로 보강
-    if (!hasUsablePegInputs(fund)) {
+    // 단, DB에 최근 6시간 내 스냅샷이 있거나 캐시에 있으면 스킵
+    const fundAsOf = fund?.as_of ? new Date(fund.as_of).getTime() : 0
+    const fundIsRecent = fundAsOf > Date.now() - FUND_SCRAPE_TTL_MS
+    const cachedFund = getCachedFundScrape(code)
+
+    // 캐시 히트: 스크래핑 없이 캐시 데이터로 보강
+    if (!hasUsablePegInputs(fund) && cachedFund) {
+      fund = {
+        ...(fund || {}),
+        per: asNum(fund?.per) ?? cachedFund.per ?? null,
+        pbr: asNum(fund?.pbr) ?? cachedFund.pbr ?? null,
+        roe: asNum(fund?.roe) ?? cachedFund.roe ?? null,
+        as_of: fund?.as_of ?? new Date().toISOString(),
+      }
+    }
+
+    if (!hasUsablePegInputs(fund) && !fundIsRecent && !cachedFund) {
       try {
         const scrapedFund = await getFundamentalSnapshot(code)
         if (scrapedFund && Object.keys(scrapedFund).length > 0) {
@@ -1305,6 +1339,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           }
           // 💾 Save scraped data to DB for future queries (non-blocking)
           void saveFundamentalSnapshot(supabase, code, scrapedFund)
+          // 🚀 인메모리 캐시에 저장하여 같은 프로세스 내 중복 스크래핑 방지
+          setCachedFundScrape(code, scrapedFund)
         }
       } catch (e: any) {
         // Silent fallback - if scraping fails, just proceed with null

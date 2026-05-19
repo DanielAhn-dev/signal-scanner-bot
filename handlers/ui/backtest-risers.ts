@@ -100,14 +100,16 @@ function asRsi14(factors: Record<string, unknown> | null | undefined): number | 
 
 async function fetchScoreRows(supabase: any, fromDate: string, maxRows: number): Promise<ScoreRow[]> {
   const out: ScoreRow[] = []
-  const pageSize = 1000
+  const pageSize = Math.min(500, maxRows) // 페이지 사이즈 감소 (1000→500)
+  const maxPages = Math.ceil(maxRows / pageSize)
 
-  for (let offset = 0; offset < maxRows; offset += pageSize) {
+  for (let offset = 0; offset < maxRows && out.length < maxRows; offset += pageSize) {
     const { data, error } = await supabase
       .from('scores')
       .select('code,asof,total_score,signal,factors')
       .gte('asof', fromDate)
-      .order('asof', { ascending: true })
+      // 정렬 제거 - 이미 데이터베이스에 시간순으로 정렬되어있음
+      .limit(pageSize)
       .range(offset, offset + pageSize - 1)
 
     if (error) throw new Error(`scores 조회 실패: ${error.message}`)
@@ -115,7 +117,7 @@ async function fetchScoreRows(supabase: any, fromDate: string, maxRows: number):
     const rows = (data ?? []) as ScoreRow[]
     if (rows.length === 0) break
     out.push(...rows)
-    if (rows.length < pageSize) break
+    if (rows.length < pageSize || out.length >= maxRows) break
   }
 
   return out.slice(0, maxRows)
@@ -123,7 +125,7 @@ async function fetchScoreRows(supabase: any, fromDate: string, maxRows: number):
 
 async function fetchPriceRows(supabase: any, codes: string[], fromDate: string): Promise<PriceRow[]> {
   const chunks = splitArray(codes, 100)
-  const CONCURRENCY = 10
+  const CONCURRENCY = 20 // 동시성 증가 (10→20)
   const out: PriceRow[] = []
 
   // stock_daily만 사용 (무료 플랜 쿼리 수 절약)
@@ -459,7 +461,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const supabase = createClient(url, key)
 
     // 스코어 단일 조회 (maxRows 제한)
-    const allScoreRowsRaw = await fetchScoreRows(supabase, scoreFromDate, params.maxRows)
+    // 더 느슨한 조회 범위 (데이터 부족 시 확장)
+    let allScoreRowsRaw = await fetchScoreRows(supabase, scoreFromDate, params.maxRows)
+    if (allScoreRowsRaw.length < 100 && params.maxRows > 100) {
+      // 폴백: 더 과거 데이터 조회
+      const earlierFromDate = shiftDate(params.lookbackDays + 120 + 30)
+      allScoreRowsRaw = await fetchScoreRows(supabase, earlierFromDate, params.maxRows)
+    }
     const allScoreRows = allScoreRowsRaw
       .map((row) => ({
         code: normalizeCode(row.code),
@@ -553,6 +561,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     const featureStats = createFeatureStats(labelableEvents, riserUniverse)
     const ruleCandidates = createRuleCandidates(labelableEvents, riserUniverse)
+
+    // 응답 캐싱: 1시간 캐시 (정적 분석이므로 자주 변하지 않음)
+    res.setHeader('Cache-Control', 'public, max-age=3600, s-maxage=3600')
+    res.setHeader('Content-Type', 'application/json')
 
     return res.status(200).json({
       ok: true,
