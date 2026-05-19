@@ -99,6 +99,8 @@ type RuleFilter = {
   rsiMax?: number
 }
 
+type AutoPickTier = 'now' | 'prepare' | 'watch'
+
 type AutoPickItem = {
   code: string
   name: string
@@ -106,6 +108,11 @@ type AutoPickItem = {
   signal: string
   rsi14: number | null
   market: string | null
+  warnGrade: string | null
+  ruleMatched: boolean
+  coreMatchCount: number
+  edgeScore: number
+  tier: AutoPickTier
 }
 
 function pct(value: number | null | undefined, digits = 1): string {
@@ -139,6 +146,43 @@ function matchesRuleFilter(indicator: StockIndicators, filter?: RuleFilter): boo
   if (filter.rsiMin != null && (rsi == null || rsi < filter.rsiMin)) return false
   if (filter.rsiMax != null && (rsi == null || rsi > filter.rsiMax)) return false
   return true
+}
+
+function evaluateAutoPick(indicator: StockIndicators): { tier: AutoPickTier; coreMatchCount: number; edgeScore: number } | null {
+  const score = Number(indicator.total_score ?? 0)
+  const rsi = indicator.rsi14
+  const buyMatch = isBuySignal(indicator.signal)
+  const scoreMatch = score >= 70
+  const rsiMatch = rsi != null && rsi >= 45 && rsi <= 65
+  const coreMatchCount = [scoreMatch, buyMatch, rsiMatch].filter(Boolean).length
+
+  const warn = String(indicator.warn_grade || '').toUpperCase()
+  const rsiBandWide = rsi != null && rsi >= 40 && rsi <= 70
+  const rsiBandLoose = rsi != null && rsi >= 35 && rsi <= 75
+
+  let tier: AutoPickTier | null = null
+  if (coreMatchCount >= 3 && warn !== 'WARN') {
+    tier = 'now'
+  } else if (coreMatchCount >= 2 && score >= 58 && rsiBandWide && warn !== 'WARN') {
+    tier = 'prepare'
+  } else if (coreMatchCount >= 1 && score >= 50 && rsiBandLoose) {
+    tier = 'watch'
+  }
+  if (!tier) return null
+
+  const scoreComponent = Math.max(0, Math.min(45, score - 40))
+  const rsiCenterBonus = rsi == null ? 0 : Math.max(0, 14 - Math.abs(rsi - 55))
+  const buyBonus = buyMatch ? 14 : 0
+  const warnPenalty = warn === 'WARN' ? 18 : warn === 'WATCH' ? 8 : 0
+  const edgeScore = scoreComponent + rsiCenterBonus + buyBonus + coreMatchCount * 7 - warnPenalty
+
+  return { tier, coreMatchCount, edgeScore: Number(edgeScore.toFixed(1)) }
+}
+
+function autoTierLabel(tier: AutoPickTier): string {
+  if (tier === 'now') return '즉시 매수 후보'
+  if (tier === 'prepare') return '반등 준비 후보'
+  return '관찰 후보'
 }
 
 function matchMeta(n: number): { label: string; cls: string } {
@@ -337,7 +381,10 @@ export default function BacktestPage() {
             })
             const indicator = (indicatorRes?.data ?? null) as StockIndicators | null
             if (!indicator) return null
-            if (!matchesRuleFilter(indicator, selectedRule.filter)) return null
+            const ranked = evaluateAutoPick(indicator)
+            if (!ranked) return null
+            const ruleMatched = matchesRuleFilter(indicator, selectedRule.filter)
+            if (!ruleMatched && ranked.coreMatchCount < 2) return null
 
             return {
               code,
@@ -346,16 +393,26 @@ export default function BacktestPage() {
               signal: String(indicator.signal || '-'),
               rsi14: indicator.rsi14,
               market: indicator.market,
+              warnGrade: indicator.warn_grade,
+              ruleMatched,
+              coreMatchCount: ranked.coreMatchCount,
+              edgeScore: ranked.edgeScore,
+              tier: ranked.tier,
             } as AutoPickItem
           }),
         )
 
+        const tierRank: Record<AutoPickTier, number> = { now: 3, prepare: 2, watch: 1 }
         const next = settled
           .filter((row): row is PromiseFulfilledResult<AutoPickItem | null> => row.status === 'fulfilled')
           .map((row) => row.value)
           .filter((row): row is AutoPickItem => !!row)
-          .sort((a, b) => b.score - a.score)
-          .slice(0, 6)
+          .sort((a, b) => {
+            if (tierRank[b.tier] !== tierRank[a.tier]) return tierRank[b.tier] - tierRank[a.tier]
+            if (b.edgeScore !== a.edgeScore) return b.edgeScore - a.edgeScore
+            return b.score - a.score
+          })
+          .slice(0, 9)
 
         if (!disposed) setAutoPicks(next)
       } catch (e: any) {
@@ -562,6 +619,15 @@ export default function BacktestPage() {
     indicators &&
     (indicators.pbr != null || indicators.per != null ||
      indicators.roe != null || indicators.debt_ratio != null)
+
+  const autoPickBuckets = useMemo(
+    () => ({
+      now: autoPicks.filter((row) => row.tier === 'now'),
+      prepare: autoPicks.filter((row) => row.tier === 'prepare'),
+      watch: autoPicks.filter((row) => row.tier === 'watch'),
+    }),
+    [autoPicks],
+  )
 
   return (
     <div className="bt-page">
@@ -1044,7 +1110,7 @@ export default function BacktestPage() {
                   자동 추천 종목
                 </div>
                 <div style={{ fontSize: 11, color: 'var(--color-text-tertiary)' }}>
-                  선택된 추천 룰을 현재 스캔 종목에 자동 적용
+                  장세 무관 공통분모 점수로 즉시매수/준비/관찰 자동 분류
                 </div>
               </div>
 
@@ -1062,28 +1128,51 @@ export default function BacktestPage() {
                 )}
                 {!autoPickLoading && !autoPickError && autoPicks.length > 0 && (
                   <div style={{ display: 'grid', gap: 8 }}>
-                    {autoPicks.map((row) => (
-                      <button
-                        key={row.code}
-                        type="button"
-                        className="sim-btn sim-btn--ghost"
-                        style={{ justifyContent: 'space-between', textAlign: 'left' }}
-                        onClick={() => selectStock({ code: row.code, name: row.name })}
-                      >
-                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                          <strong>{row.name}</strong>
-                          <span className="bt-table-stock-code">{row.code}</span>
-                          {row.market && (
-                            <span style={{ fontSize: 11, color: 'var(--color-text-tertiary)' }}>{row.market}</span>
-                          )}
-                        </span>
-                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 10, marginLeft: 12 }}>
-                          <span style={{ fontSize: 12, color: 'var(--color-text-secondary)' }}>점수 {row.score.toFixed(1)}</span>
-                          <span style={{ fontSize: 12, color: 'var(--color-text-secondary)' }}>RSI {row.rsi14 == null ? '-' : row.rsi14.toFixed(1)}</span>
-                          <span className={signalCls(row.signal)}>{row.signal}</span>
-                        </span>
-                      </button>
-                    ))}
+                    {(['now', 'prepare', 'watch'] as const).map((tier) => {
+                      const rows = autoPickBuckets[tier]
+                      if (rows.length === 0) return null
+                      return (
+                        <div key={tier} style={{ display: 'grid', gap: 6 }}>
+                          <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--color-text-secondary)' }}>
+                            {autoTierLabel(tier)} · {rows.length}개
+                          </div>
+                          {rows.map((row) => (
+                            <button
+                              key={`${tier}-${row.code}`}
+                              type="button"
+                              className="sim-btn sim-btn--ghost"
+                              style={{ justifyContent: 'space-between', textAlign: 'left' }}
+                              onClick={() => selectStock({ code: row.code, name: row.name })}
+                            >
+                              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                                <strong>{row.name}</strong>
+                                <span className="bt-table-stock-code">{row.code}</span>
+                                {row.market && (
+                                  <span style={{ fontSize: 11, color: 'var(--color-text-tertiary)' }}>{row.market}</span>
+                                )}
+                                <span className={`bt-check-match-badge ${matchMeta(row.coreMatchCount).cls}`}>
+                                  코어 {row.coreMatchCount}/3
+                                </span>
+                                {row.ruleMatched && (
+                                  <span className="bt-check-rule-badge bt-check-rule-badge--on">추천 룰 적합</span>
+                                )}
+                              </span>
+                              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 10, marginLeft: 12 }}>
+                                <span style={{ fontSize: 12, color: 'var(--color-text-secondary)' }}>점수 {row.score.toFixed(1)}</span>
+                                <span style={{ fontSize: 12, color: 'var(--color-text-secondary)' }}>RSI {row.rsi14 == null ? '-' : row.rsi14.toFixed(1)}</span>
+                                {row.warnGrade && row.warnGrade !== 'SAFE' && (
+                                  <span style={{ fontSize: 11, color: 'var(--color-warning)' }}>주의 {row.warnGrade}</span>
+                                )}
+                                <span className={signalCls(row.signal)}>{row.signal}</span>
+                              </span>
+                            </button>
+                          ))}
+                        </div>
+                      )
+                    })}
+                    <div style={{ fontSize: 11, color: 'var(--color-text-tertiary)', marginTop: 4 }}>
+                      코어 조건: 점수≥70, BUY계열, RSI 45~65. 하락/횡보장에서는 준비·관찰 후보가 먼저 늘어날 수 있습니다.
+                    </div>
                   </div>
                 )}
               </div>
