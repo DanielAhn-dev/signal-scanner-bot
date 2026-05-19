@@ -204,6 +204,7 @@ export default function BacktestPage() {
   const [hasRun, setHasRun] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [data, setData] = useState<BacktestResponse | null>(null)
+  const [selectedRuleKey, setSelectedRuleKey] = useState<string | null>(null)
 
   // 종목 패턴 점검
   const [checkSearch, setCheckSearch] = useState('')
@@ -597,36 +598,135 @@ export default function BacktestPage() {
               추천 패턴 룰 TOP 5
             </div>
             {(data.ruleCandidates ?? []).length > 0 ? (
-              <div style={{ overflowX: 'auto', margin: '0 calc(-1 * var(--space-4))' }}>
-                <table className="bt-table" style={{ minWidth: 860 }}>
-                  <thead>
-                    <tr>
-                      <th>룰</th>
-                      <th style={{ textAlign: 'right' }}>Support</th>
-                      <th style={{ textAlign: 'right' }}>Lift</th>
-                      <th style={{ textAlign: 'right' }}>Precision</th>
-                      <th style={{ textAlign: 'right' }}>매칭 이벤트</th>
-                      <th style={{ textAlign: 'right' }}>급등 매칭</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {(data.ruleCandidates ?? []).map((row) => (
-                      <tr key={row.key}>
-                        <td>{row.label}</td>
-                        <td className="bt-table-num" style={{ textAlign: 'right' }}>{pct(row.supportPct)}</td>
-                        <td style={{ textAlign: 'right' }}>
-                          <span className={row.liftPct >= 0 ? 'bt-table-return-pos' : 'bt-table-return-neg'}>
-                            {signedPct(row.liftPct)}
-                          </span>
-                        </td>
-                        <td className="bt-table-num" style={{ textAlign: 'right' }}>{pct(row.precisionPct)}</td>
-                        <td className="bt-table-num" style={{ textAlign: 'right' }}>{row.matchedEvents.toLocaleString('ko-KR')}</td>
-                        <td className="bt-table-num" style={{ textAlign: 'right' }}>{row.riserMatches.toLocaleString('ko-KR')}</td>
+              <>
+                <div style={{ marginBottom: 'var(--space-3)', fontSize: 12, color: 'var(--color-text-tertiary)' }}>
+                  지표 기반 자동 순위: 실제 급등 정확도(Precision) 중심으로 정렬됨. 행 클릭 시 선택 가능.
+                </div>
+                <div style={{ overflowX: 'auto', margin: '0 calc(-1 * var(--space-4))' }}>
+                  <table className="bt-table" style={{ minWidth: 860 }}>
+                    <thead>
+                      <tr>
+                        <th>룰</th>
+                        <th style={{ textAlign: 'right' }}>Support</th>
+                        <th style={{ textAlign: 'right' }}>Lift</th>
+                        <th style={{ textAlign: 'right' }}>Precision</th>
+                        <th style={{ textAlign: 'right' }}>매칭 이벤트</th>
+                        <th style={{ textAlign: 'right' }}>급등 매칭</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+                    </thead>
+                    <tbody>
+                      {(data.ruleCandidates ?? []).map((row, idx) => (
+                        <tr
+                          key={row.key}
+                          onClick={() => setSelectedRuleKey(row.key)}
+                          style={{
+                            cursor: 'pointer',
+                            background:
+                              selectedRuleKey === row.key
+                                ? 'var(--color-info-bg)'
+                                : idx === 0
+                                ? 'var(--color-success-bg)'
+                                : 'transparent',
+                            opacity: selectedRuleKey === row.key ? 1 : idx === 0 ? 0.15 : 1,
+                          }}
+                        >
+                          <td>
+                            {idx === 0 && (
+                              <span
+                                style={{
+                                  display: 'inline-block',
+                                  background: 'var(--color-success)',
+                                  color: '#fff',
+                                  padding: '2px 6px',
+                                  borderRadius: 'var(--radius-full)',
+                                  fontSize: 10,
+                                  fontWeight: 700,
+                                  marginRight: 6,
+                                }}
+                              >
+                                추천
+                              </span>
+                            )}
+                            {row.label}
+                          </td>
+                          <td className="bt-table-num" style={{ textAlign: 'right' }}>
+                            {pct(row.supportPct)}
+                          </td>
+                          <td style={{ textAlign: 'right' }}>
+                            <span className={row.liftPct >= 0 ? 'bt-table-return-pos' : 'bt-table-return-neg'}>
+                              {signedPct(row.liftPct)}
+                            </span>
+                          </td>
+                          <td
+                            className="bt-table-num"
+                            style={{
+                              textAlign: 'right',
+                              fontWeight: idx === 0 ? 700 : 400,
+                              color: idx === 0 ? 'var(--color-success)' : 'var(--color-text-secondary)',
+                            }}
+                          >
+                            {pct(row.precisionPct)}
+                          </td>
+                          <td className="bt-table-num" style={{ textAlign: 'right' }}>
+                            {row.matchedEvents.toLocaleString('ko-KR')}
+                          </td>
+                          <td className="bt-table-num" style={{ textAlign: 'right' }}>
+                            {row.riserMatches.toLocaleString('ko-KR')}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                {selectedRuleKey && (
+                  <div
+                    style={{
+                      marginTop: 'var(--space-3)',
+                      padding: 'var(--space-3) var(--space-4)',
+                      background: 'var(--color-info-bg)',
+                      border: '1px solid var(--color-info)',
+                      borderRadius: 'var(--radius-md)',
+                    }}
+                  >
+                    <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--color-info)', marginBottom: 6 }}>
+                      선택한 룰의 성능
+                    </div>
+                    {(() => {
+                      const selected = (data.ruleCandidates ?? []).find((r) => r.key === selectedRuleKey)
+                      if (!selected) return null
+                      return (
+                        <div style={{ fontSize: 12, color: 'var(--color-text-primary)', lineHeight: 1.6 }}>
+                          <div>
+                            <strong>{selected.label}</strong>
+                          </div>
+                          <div style={{ marginTop: 4, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                            <div>
+                              급등 예측 정확도:{' '}
+                              <span style={{ fontWeight: 700, color: 'var(--color-success)' }}>
+                                {pct(selected.precisionPct)}
+                              </span>
+                              <br />
+                              (이 룰에 매칭된 {selected.matchedEvents.toLocaleString('ko-KR')}개 이벤트 중{' '}
+                              {selected.riserMatches.toLocaleString('ko-KR')}개가 실제 급등)
+                            </div>
+                            <div>
+                              급등 이벤트 포괄:{' '}
+                              <span style={{ fontWeight: 700, color: 'var(--color-text-primary)' }}>
+                                {pct(selected.supportPct)}
+                              </span>
+                              <br />
+                              (전체 급등 이벤트 중 이 룰로 잡히는 비중)
+                            </div>
+                          </div>
+                          <div style={{ marginTop: 10, fontSize: 11, color: 'var(--color-text-tertiary)' }}>
+                            ※ 이 룰의 적중률과 커버리지로 성능을 판단할 수 있습니다.
+                          </div>
+                        </div>
+                      )
+                    })()}
+                  </div>
+                )}
+              </>
             ) : (
               <p style={{ color: 'var(--color-text-tertiary)', fontSize: 'var(--font-size-sm)', margin: 0 }}>
                 추천 룰을 계산할 표본이 충분하지 않습니다.

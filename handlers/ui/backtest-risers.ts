@@ -324,8 +324,11 @@ function createRuleCandidates(labelableEvents: EventRow[], riserUniverse: EventR
     })
     .filter((row) => row.matchedEvents >= minimumMatches)
     .sort((a, b) => {
-      const scoreA = a.liftPct * 0.55 + a.supportPct * 0.35 + a.precisionPct * 0.1
-      const scoreB = b.liftPct * 0.55 + b.supportPct * 0.35 + b.precisionPct * 0.1
+      // Precision(실제 적중률)을 핵심(60%), support(25%), lift*confidence(15%)로 재정렬
+      const confA = Math.sqrt(Math.min(a.matchedEvents, 100) / 100) // 샘플 크기 신뢰도
+      const confB = Math.sqrt(Math.min(b.matchedEvents, 100) / 100)
+      const scoreA = a.precisionPct * 0.6 + a.supportPct * 0.25 + a.liftPct * 0.15 * confA
+      const scoreB = b.precisionPct * 0.6 + b.supportPct * 0.25 + b.liftPct * 0.15 * confB
       return scoreB - scoreA
     })
     .slice(0, 5)
