@@ -40,6 +40,23 @@ type BacktestResponse = {
     buySignalLiftPct: number
     rsi45to65RatePct: number
   }
+  featureStats?: Array<{
+    key: string
+    label: string
+    baselineRatePct: number
+    riserRatePct: number
+    liftPct: number
+    supportPct: number
+  }>
+  ruleCandidates?: Array<{
+    key: string
+    label: string
+    supportPct: number
+    liftPct: number
+    precisionPct: number
+    matchedEvents: number
+    riserMatches: number
+  }>
   risers: BacktestRiser[]
 }
 
@@ -99,6 +116,12 @@ function pbrMeta(pbr: number): { note: string; cls: string } {
   if (pbr <= 1.5) return { note: '저평가 구간', cls: 'bt-check-fund-value--good' }
   if (pbr <= 2.5) return { note: '적정 수준', cls: '' }
   return { note: '고평가', cls: 'bt-check-fund-value--warn' }
+}
+
+function signedPct(value: number | null | undefined, digits = 1): string {
+  const n = Number(value)
+  if (!Number.isFinite(n)) return '-'
+  return `${n >= 0 ? '+' : ''}${n.toFixed(digits)}%`
 }
 
 const HORIZONS = [20, 40, 60, 90, 120] as const
@@ -498,6 +521,92 @@ export default function BacktestPage() {
                 </span>
               </div>
             </div>
+          </div>
+
+          {/* 공통점 탐색 리포트 */}
+          <div className="bt-section">
+            <div className="bt-section-title">공통점 탐색 리포트 (Support / Lift / Precision)</div>
+            <p style={{ fontSize: 12, color: 'var(--color-text-tertiary)', margin: '0 0 var(--space-3)', lineHeight: 1.55 }}>
+              Support는 급등 이벤트 내 해당 특징의 커버리지, Lift는 전체 이벤트 대비 강화 정도,
+              Precision은 해당 룰이 잡은 이벤트 중 급등 비율입니다.
+            </p>
+
+            {(data.featureStats ?? []).length > 0 ? (
+              <div style={{ overflowX: 'auto', margin: '0 calc(-1 * var(--space-4))' }}>
+                <table className="bt-table" style={{ minWidth: 760 }}>
+                  <thead>
+                    <tr>
+                      <th>특징</th>
+                      <th style={{ textAlign: 'right' }}>Baseline 비중</th>
+                      <th style={{ textAlign: 'right' }}>Riser 비중</th>
+                      <th style={{ textAlign: 'right' }}>Lift</th>
+                      <th style={{ textAlign: 'right' }}>Support</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(data.featureStats ?? []).map((row) => (
+                      <tr key={row.key}>
+                        <td>{row.label}</td>
+                        <td className="bt-table-num" style={{ textAlign: 'right' }}>{pct(row.baselineRatePct)}</td>
+                        <td className="bt-table-num" style={{ textAlign: 'right' }}>{pct(row.riserRatePct)}</td>
+                        <td style={{ textAlign: 'right' }}>
+                          <span className={row.liftPct >= 0 ? 'bt-table-return-pos' : 'bt-table-return-neg'}>
+                            {signedPct(row.liftPct)}
+                          </span>
+                        </td>
+                        <td className="bt-table-num" style={{ textAlign: 'right' }}>{pct(row.supportPct)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <p style={{ color: 'var(--color-text-tertiary)', fontSize: 'var(--font-size-sm)', margin: 0 }}>
+                공통점 통계를 계산할 데이터가 부족합니다.
+              </p>
+            )}
+
+            <div style={{ height: 'var(--space-3)' }} />
+
+            <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--color-text-primary)', marginBottom: 8 }}>
+              추천 패턴 룰 TOP 5
+            </div>
+            {(data.ruleCandidates ?? []).length > 0 ? (
+              <div style={{ overflowX: 'auto', margin: '0 calc(-1 * var(--space-4))' }}>
+                <table className="bt-table" style={{ minWidth: 860 }}>
+                  <thead>
+                    <tr>
+                      <th>룰</th>
+                      <th style={{ textAlign: 'right' }}>Support</th>
+                      <th style={{ textAlign: 'right' }}>Lift</th>
+                      <th style={{ textAlign: 'right' }}>Precision</th>
+                      <th style={{ textAlign: 'right' }}>매칭 이벤트</th>
+                      <th style={{ textAlign: 'right' }}>급등 매칭</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(data.ruleCandidates ?? []).map((row) => (
+                      <tr key={row.key}>
+                        <td>{row.label}</td>
+                        <td className="bt-table-num" style={{ textAlign: 'right' }}>{pct(row.supportPct)}</td>
+                        <td style={{ textAlign: 'right' }}>
+                          <span className={row.liftPct >= 0 ? 'bt-table-return-pos' : 'bt-table-return-neg'}>
+                            {signedPct(row.liftPct)}
+                          </span>
+                        </td>
+                        <td className="bt-table-num" style={{ textAlign: 'right' }}>{pct(row.precisionPct)}</td>
+                        <td className="bt-table-num" style={{ textAlign: 'right' }}>{row.matchedEvents.toLocaleString('ko-KR')}</td>
+                        <td className="bt-table-num" style={{ textAlign: 'right' }}>{row.riserMatches.toLocaleString('ko-KR')}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <p style={{ color: 'var(--color-text-tertiary)', fontSize: 'var(--font-size-sm)', margin: 0 }}>
+                추천 룰을 계산할 표본이 충분하지 않습니다.
+              </p>
+            )}
           </div>
 
           {/* 종목 패턴 점검 */}

@@ -27,6 +27,25 @@ type EventRow = {
   forwardReturnPct: number
 }
 
+type FeatureStat = {
+  key: string
+  label: string
+  baselineRatePct: number
+  riserRatePct: number
+  liftPct: number
+  supportPct: number
+}
+
+type RuleCandidate = {
+  key: string
+  label: string
+  supportPct: number
+  liftPct: number
+  precisionPct: number
+  matchedEvents: number
+  riserMatches: number
+}
+
 const SUPPORTED_HORIZONS = [20, 40, 60, 90, 120] as const
 
 function parseNum(value: unknown, fallback: number): number {
@@ -189,6 +208,139 @@ function buildLabelableEvents(
   return labelableEvents
 }
 
+function isBuyFamily(signal: string): boolean {
+  const u = String(signal || '').toUpperCase()
+  if (!u) return false
+  return ['BUY', 'STRONG_BUY', 'ACCUMULATE', '매수'].some((token) => u.includes(token))
+}
+
+function rate(count: number, total: number): number {
+  if (!(total > 0)) return 0
+  return (count / total) * 100
+}
+
+function createFeatureStats(labelableEvents: EventRow[], riserUniverse: EventRow[]): FeatureStat[] {
+  const baselineCount = labelableEvents.length
+  const riserCount = riserUniverse.length
+
+  const features: Array<{ key: string; label: string; test: (row: EventRow) => boolean }> = [
+    { key: 'score70', label: '점수 ≥ 70', test: (row) => row.totalScore >= 70 },
+    { key: 'score65', label: '점수 ≥ 65', test: (row) => row.totalScore >= 65 },
+    { key: 'buyFamily', label: 'BUY 계열 시그널', test: (row) => isBuyFamily(row.signal) },
+    {
+      key: 'rsi45to65',
+      label: 'RSI 45~65',
+      test: (row) => row.rsi14 != null && row.rsi14 >= 45 && row.rsi14 <= 65,
+    },
+    {
+      key: 'rsi40to70',
+      label: 'RSI 40~70',
+      test: (row) => row.rsi14 != null && row.rsi14 >= 40 && row.rsi14 <= 70,
+    },
+  ]
+
+  return features.map((feature) => {
+    const baselineMatches = labelableEvents.filter(feature.test).length
+    const riserMatches = riserUniverse.filter(feature.test).length
+    const baselineRatePct = rate(baselineMatches, baselineCount)
+    const riserRatePct = rate(riserMatches, riserCount)
+    return {
+      key: feature.key,
+      label: feature.label,
+      baselineRatePct: Number(baselineRatePct.toFixed(1)),
+      riserRatePct: Number(riserRatePct.toFixed(1)),
+      liftPct: Number((riserRatePct - baselineRatePct).toFixed(1)),
+      supportPct: Number(riserRatePct.toFixed(1)),
+    }
+  })
+}
+
+function createRuleCandidates(labelableEvents: EventRow[], riserUniverse: EventRow[]): RuleCandidate[] {
+  const baselineCount = labelableEvents.length
+  const riserCount = riserUniverse.length
+  if (!(baselineCount > 0 && riserCount > 0)) return []
+
+  const rules: Array<{ key: string; label: string; test: (row: EventRow) => boolean }> = [
+    {
+      key: 'rule_score65_buy',
+      label: '점수≥65 + BUY계열',
+      test: (row) => row.totalScore >= 65 && isBuyFamily(row.signal),
+    },
+    {
+      key: 'rule_score65_rsi40_70',
+      label: '점수≥65 + RSI 40~70',
+      test: (row) => row.totalScore >= 65 && row.rsi14 != null && row.rsi14 >= 40 && row.rsi14 <= 70,
+    },
+    {
+      key: 'rule_score70_buy',
+      label: '점수≥70 + BUY계열',
+      test: (row) => row.totalScore >= 70 && isBuyFamily(row.signal),
+    },
+    {
+      key: 'rule_buy_rsi45_65',
+      label: 'BUY계열 + RSI 45~65',
+      test: (row) => isBuyFamily(row.signal) && row.rsi14 != null && row.rsi14 >= 45 && row.rsi14 <= 65,
+    },
+    {
+      key: 'rule_score65_buy_rsi40_70',
+      label: '점수≥65 + BUY계열 + RSI 40~70',
+      test: (row) =>
+        row.totalScore >= 65 &&
+        isBuyFamily(row.signal) &&
+        row.rsi14 != null &&
+        row.rsi14 >= 40 &&
+        row.rsi14 <= 70,
+    },
+    {
+      key: 'rule_score70_buy_rsi45_65',
+      label: '점수≥70 + BUY계열 + RSI 45~65',
+      test: (row) =>
+        row.totalScore >= 70 &&
+        isBuyFamily(row.signal) &&
+        row.rsi14 != null &&
+        row.rsi14 >= 45 &&
+        row.rsi14 <= 65,
+    },
+  ]
+
+  const minimumMatches = Math.max(10, Math.floor(baselineCount * 0.01))
+  const candidates = rules
+    .map((rule) => {
+      const matchedEvents = labelableEvents.filter(rule.test).length
+      const riserMatches = riserUniverse.filter(rule.test).length
+      const baselineRatePct = rate(matchedEvents, baselineCount)
+      const supportPct = rate(riserMatches, riserCount)
+      const liftPct = supportPct - baselineRatePct
+      const precisionPct = matchedEvents > 0 ? rate(riserMatches, matchedEvents) : 0
+      return {
+        key: rule.key,
+        label: rule.label,
+        supportPct,
+        liftPct,
+        precisionPct,
+        matchedEvents,
+        riserMatches,
+      }
+    })
+    .filter((row) => row.matchedEvents >= minimumMatches)
+    .sort((a, b) => {
+      const scoreA = a.liftPct * 0.55 + a.supportPct * 0.35 + a.precisionPct * 0.1
+      const scoreB = b.liftPct * 0.55 + b.supportPct * 0.35 + b.precisionPct * 0.1
+      return scoreB - scoreA
+    })
+    .slice(0, 5)
+
+  return candidates.map((row) => ({
+    key: row.key,
+    label: row.label,
+    supportPct: Number(row.supportPct.toFixed(1)),
+    liftPct: Number(row.liftPct.toFixed(1)),
+    precisionPct: Number(row.precisionPct.toFixed(1)),
+    matchedEvents: row.matchedEvents,
+    riserMatches: row.riserMatches,
+  }))
+}
+
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   const origin = (req.headers.origin as string) || ORIGIN
   res.setHeader('Access-Control-Allow-Origin', origin)
@@ -250,8 +402,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           availableHorizons: [20, 40, 60],
           horizonAvailability: { '20': 0, '40': 0, '60': 0, '90': 0, '120': 0 },
           baseline: { labelableEvents: 0 },
+          riserSummary: { riserEvents: 0, avgForwardReturnPct: 0 },
           risers: [],
           commonFeatures: {},
+          featureStats: [],
+          ruleCandidates: [],
         },
       })
     }
@@ -265,8 +420,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     ) as Record<string, number>
     const availableHorizons = SUPPORTED_HORIZONS.filter((h) => h <= 60 || (horizonAvailability[String(h)] ?? 0) > 0)
 
-    const risers = labelableEvents
+    const riserUniverse = labelableEvents
       .filter((row) => row.forwardReturnPct >= params.rallyThresholdPct)
+
+    const risers = riserUniverse
       .sort((a, b) => b.forwardReturnPct - a.forwardReturnPct)
       .slice(0, params.topN)
 
@@ -288,29 +445,32 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }))
 
     const baselineCount = labelableEvents.length
-    const riserCount = risers.length
+    const riserCount = riserUniverse.length
 
     const baselineScore70 = baselineCount > 0
       ? (labelableEvents.filter((row) => row.totalScore >= 70).length / baselineCount) * 100
       : 0
     const riserScore70 = riserCount > 0
-      ? (risers.filter((row) => row.totalScore >= 70).length / riserCount) * 100
+      ? (riserUniverse.filter((row) => row.totalScore >= 70).length / riserCount) * 100
       : 0
 
     const baselineBuySignal = baselineCount > 0
       ? (labelableEvents.filter((row) => row.signal === 'BUY' || row.signal === 'STRONG_BUY').length / baselineCount) * 100
       : 0
     const riserBuySignal = riserCount > 0
-      ? (risers.filter((row) => row.signal === 'BUY' || row.signal === 'STRONG_BUY').length / riserCount) * 100
+      ? (riserUniverse.filter((row) => row.signal === 'BUY' || row.signal === 'STRONG_BUY').length / riserCount) * 100
       : 0
 
     const rsiBand45to65 = riserCount > 0
-      ? (risers.filter((row) => row.rsi14 != null && row.rsi14 >= 45 && row.rsi14 <= 65).length / riserCount) * 100
+      ? (riserUniverse.filter((row) => row.rsi14 != null && row.rsi14 >= 45 && row.rsi14 <= 65).length / riserCount) * 100
       : 0
 
     const avgForwardReturn = riserCount > 0
-      ? risers.reduce((acc, row) => acc + row.forwardReturnPct, 0) / riserCount
+      ? riserUniverse.reduce((acc, row) => acc + row.forwardReturnPct, 0) / riserCount
       : 0
+
+    const featureStats = createFeatureStats(labelableEvents, riserUniverse)
+    const ruleCandidates = createRuleCandidates(labelableEvents, riserUniverse)
 
     return res.status(200).json({
       ok: true,
@@ -334,6 +494,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           buySignalLiftPct: Number((riserBuySignal - baselineBuySignal).toFixed(1)),
           rsi45to65RatePct: Number(rsiBand45to65.toFixed(1)),
         },
+        featureStats,
+        ruleCandidates,
         risers: risersWithNames,
       },
     })
