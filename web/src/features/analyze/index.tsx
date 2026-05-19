@@ -824,8 +824,8 @@ export default function AnalyzePage({ onNavigate }: { onNavigate?: (r: string) =
                     ['신호', signalText],
                     ['1단계 레짐', regimeLabel(advisor?.twoStage?.regime)],
                     ['2단계 실행', advisor?.twoStage?.actionLabel ?? '—'],
-                    ['지지 (최근 20봉)', chartHud.support != null ? formatKrw(chartHud.support) : '—'],
-                    ['저항 (최근 20봉)', chartHud.resistance != null ? formatKrw(chartHud.resistance) : '—'],
+                    ['지지선 (최근 20봉 최저)', chartHud.support != null ? formatKrw(chartHud.support) : '—'],
+                    ['저항선 (최근 20봉 최고)', chartHud.resistance != null ? formatKrw(chartHud.resistance) : '—'],
                     ['권장 비중', advisor?.twoStage?.allocationPct != null ? `${formatNumber(advisor.twoStage.allocationPct, 0)}%` : '—'],
                     ['손절', advisor?.stopPrice != null ? formatKrw(advisor.stopPrice) : '—'],
                     ['1차 익절', advisor?.target1 != null ? formatKrw(advisor.target1) : '—'],
@@ -848,6 +848,8 @@ export default function AnalyzePage({ onNavigate }: { onNavigate?: (r: string) =
                 showMaEmaOverlay={showMaEmaOverlay}
                 showTradeMarkers={showTradeMarkers}
                 showForceLine={showForceLine}
+                support={chartHud?.support ?? null}
+                resistance={chartHud?.resistance ?? null}
               />
             </>
           )}

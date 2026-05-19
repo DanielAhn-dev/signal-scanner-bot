@@ -31,6 +31,8 @@ type Props = {
   showForceLine?: boolean
   showLegend?: boolean
   height?: number
+  support?: number | null
+  resistance?: number | null
 }
 
 function toTimestamp(dateStr: string): number {
@@ -213,6 +215,8 @@ export default function CandleChart({
   showForceLine = false,
   showLegend = true,
   height = 340,
+  support,
+  resistance,
 }: Props) {
   const containerRef = useRef<HTMLDivElement>(null)
   const chartRef = useRef<IChartApi | null>(null)
@@ -454,28 +458,38 @@ export default function CandleChart({
     }
 
     if (showTradeMarkers && sorted.length) {
-      const recent = sorted.slice(-20)
-      const recentLows = recent.map((c) => Number(c.low)).filter((v) => Number.isFinite(v))
-      const recentHighs = recent.map((c) => Number(c.high)).filter((v) => Number.isFinite(v))
-      const support = recentLows.length ? Math.min(...recentLows) : null
-      const resistance = recentHighs.length ? Math.max(...recentHighs) : null
+      // Props에서 전달된 지지/저항을 우선 사용, 없으면 계산
+      let displaySupport = support
+      let displayResistance = resistance
+      
+      if (displaySupport == null || displayResistance == null) {
+        const recent = sorted.slice(-20)
+        const recentLows = recent.map((c) => Number(c.low)).filter((v) => Number.isFinite(v))
+        const recentHighs = recent.map((c) => Number(c.high)).filter((v) => Number.isFinite(v))
+        if (displaySupport == null && recentLows.length) {
+          displaySupport = Math.min(...recentLows)
+        }
+        if (displayResistance == null && recentHighs.length) {
+          displayResistance = Math.max(...recentHighs)
+        }
+      }
 
-      if (support != null) {
+      if (displaySupport != null) {
         candleSeries.createPriceLine({
-          price: support,
-          color: 'rgba(16,185,129,0.8)',
+          price: displaySupport,
+          color: 'rgba(59,130,246,0.6)',
           lineWidth: 1,
           lineStyle: LineStyle.Dotted,
-          title: '지지',
+          title: '지지선',
         })
       }
-      if (resistance != null) {
+      if (displayResistance != null) {
         candleSeries.createPriceLine({
-          price: resistance,
-          color: 'rgba(239,68,68,0.8)',
+          price: displayResistance,
+          color: 'rgba(239,68,68,0.6)',
           lineWidth: 1,
           lineStyle: LineStyle.Dotted,
-          title: '저항',
+          title: '저항선',
         })
       }
 
