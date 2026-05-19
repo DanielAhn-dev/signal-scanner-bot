@@ -547,6 +547,10 @@ def fetch_investor_data(trading_date: str):
     """네이버 금융에서 투자자 수급 데이터 수집"""
     trading_iso = to_iso(trading_date)
     print(f"\n[2.5/6] 투자자 수급 데이터 수집...")
+
+    if os.environ.get("DISABLE_INVESTOR_FETCH", "false").lower() in ("1", "true", "yes"):
+        print("  ℹ️ DISABLE_INVESTOR_FETCH=true 설정으로 수급 수집을 건너뜁니다.")
+        return
     
     try:
         res = supabase.table("stocks") \
@@ -562,6 +566,19 @@ def fetch_investor_data(trading_date: str):
         print(f"  대상: {len(codes)}개 종목")
         
         from pykrx import stock
+
+        # pykrx 투자자 수급 API가 특정 버전/응답 변화로 전면 실패할 수 있어
+        # 본격 루프 전에 단일 종목 probe로 가용성을 빠르게 판정한다.
+        try:
+            probe_df = stock.get_market_trading_value_by_investor(trading_date, trading_date, "005930")
+            if probe_df is None or probe_df.empty:
+                print("  ⚠️ 투자자 수급 API 응답이 비어 있어 이번 배치에서는 수집을 건너뜁니다.")
+                return
+        except Exception as probe_error:
+            print(f"  ⚠️ 투자자 수급 API 사용 불가({type(probe_error).__name__}): {probe_error}")
+            print("  ℹ️ 이번 배치에서는 수급 수집 단계를 건너뛰고 다음 단계를 진행합니다.")
+            return
+
         inv_rows = []
         fail_count = 0
         success_count = 0
