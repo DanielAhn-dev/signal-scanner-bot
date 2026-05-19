@@ -95,43 +95,31 @@ async function fetchScoreRows(supabase: any, fromDate: string, maxRows: number):
 }
 
 async function fetchPriceRows(supabase: any, codes: string[], fromDate: string): Promise<PriceRow[]> {
+  const chunks = splitArray(codes, 100)
+  const CONCURRENCY = 10
   const out: PriceRow[] = []
 
-  for (const chunk of splitArray(codes, 100)) {
-    const { data: dailyData, error: dailyError } = await supabase
-      .from('stock_daily')
-      .select('ticker,date,close')
-      .in('ticker', chunk)
-      .gte('date', fromDate)
-      .order('date', { ascending: true })
-
-    if (dailyError) throw new Error(`stock_daily 조회 실패: ${dailyError.message}`)
-
-    for (const row of (dailyData ?? []) as Array<Record<string, unknown>>) {
-      const code = normalizeCode(row.ticker)
-      const tradeDate = normalizeDate(row.date)
-      const close = parseNum(row.close, 0)
-      if (!code || !tradeDate || close <= 0) continue
-      out.push({ code, tradeDate, close })
-    }
-  }
-
-  for (const chunk of splitArray(codes, 100)) {
-    const { data: indicatorData, error: indicatorError } = await supabase
-      .from('daily_indicators')
-      .select('code,trade_date,close')
-      .in('code', chunk)
-      .gte('trade_date', fromDate)
-      .order('trade_date', { ascending: true })
-
-    if (indicatorError) throw new Error(`daily_indicators 조회 실패: ${indicatorError.message}`)
-
-    for (const row of (indicatorData ?? []) as Array<Record<string, unknown>>) {
-      const code = normalizeCode(row.code)
-      const tradeDate = normalizeDate(row.trade_date)
-      const close = parseNum(row.close, 0)
-      if (!code || !tradeDate || close <= 0) continue
-      out.push({ code, tradeDate, close })
+  // stock_daily만 사용 (무료 플랜 쿼리 수 절약)
+  for (let i = 0; i < chunks.length; i += CONCURRENCY) {
+    const batch = chunks.slice(i, i + CONCURRENCY)
+    const results = await Promise.all(
+      batch.map((chunk) =>
+        supabase
+          .from('stock_daily')
+          .select('ticker,date,close')
+          .in('ticker', chunk)
+          .gte('date', fromDate)
+          .order('date', { ascending: true }),
+      ),
+    )
+    for (const { data, error } of results) {
+      if (error) throw new Error(`stock_daily 조회 실패: ${error.message}`)
+      for (const row of (data ?? []) as Array<Record<string, unknown>>) {
+        const code = normalizeCode(row.ticker)
+        const tradeDate = normalizeDate(row.date)
+        const close = parseNum(row.close, 0)
+        if (code && tradeDate && close > 0) out.push({ code, tradeDate, close })
+      }
     }
   }
 
@@ -158,12 +146,13 @@ function buildPriceIndex(rows: PriceRow[]): Map<string, { dates: string[]; close
   return out
 }
 
+// 무료 플랜 기준: 10s 제한, maxRows 최대 5000
 function parseParams(req: VercelRequest) {
   const horizonBars = parsePositiveInt(req.query.horizon, 20, 5, 180)
-  const lookbackDays = parsePositiveInt(req.query.lookbackDays, 180, 60, 720)
+  const lookbackDays = parsePositiveInt(req.query.lookbackDays, 90, 60, 365)
   const rallyThresholdPct = parseNum(req.query.rallyPct, 20)
   const topN = parsePositiveInt(req.query.topN, 30, 5, 100)
-  const maxRows = parsePositiveInt(req.query.maxRows, 30000, 1000, 100000)
+  const maxRows = parsePositiveInt(req.query.maxRows, 3000, 500, 5000)
   return { horizonBars, lookbackDays, rallyThresholdPct, topN, maxRows }
 }
 
@@ -231,17 +220,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   try {
     const params = parseParams(req)
-    const fromDate = shiftDate(params.lookbackDays + params.horizonBars + 10)
-    const availabilityLookbackDays = Math.max(params.lookbackDays, 270)
-    const availabilityFromDate = shiftDate(availabilityLookbackDays + 120 + 10)
-    const queryFromDate = fromDate < availabilityFromDate ? fromDate : availabilityFromDate
+    // 120일 horizon까지 커버할 수 있도록 scoreFromDate 설정 (단일 조회로 모든 horizon 체크 가능)
+    const scoreFromDate = shiftDate(params.lookbackDays + 120 + 10)
     const supabase = createClient(url, key)
 
-    const [scoreRowsRaw, availabilityScoreRowsRaw] = await Promise.all([
-      fetchScoreRows(supabase, fromDate, params.maxRows),
-      fetchScoreRows(supabase, availabilityFromDate, Math.max(params.maxRows, 30000)),
-    ])
-    const scoreRows = scoreRowsRaw
+    // 스코어 단일 조회 (maxRows 제한)
+    const allScoreRowsRaw = await fetchScoreRows(supabase, scoreFromDate, params.maxRows)
+    const allScoreRows = allScoreRowsRaw
       .map((row) => ({
         code: normalizeCode(row.code),
         asof: normalizeDate(row.asof),
@@ -251,17 +236,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       }))
       .filter((row) => row.code && row.asof)
 
-    const availabilityScoreRows = availabilityScoreRowsRaw
-      .map((row) => ({
-        code: normalizeCode(row.code),
-        asof: normalizeDate(row.asof),
-        totalScore: parseNum(row.total_score, 0),
-        signal: String(row.signal || '').toUpperCase(),
-        rsi14: asRsi14(row.factors),
-      }))
-      .filter((row) => row.code && row.asof)
+    // 선택된 horizon에 대한 분석 대상과 availability 체크용 분리
+    const horizonFromDate = shiftDate(params.lookbackDays + params.horizonBars + 10)
+    const scoreRows = allScoreRows.filter((row) => row.asof >= horizonFromDate)
+    const availabilityScoreRows = allScoreRows
 
-    const codes = Array.from(new Set([...scoreRows, ...availabilityScoreRows].map((row) => row.code)))
+    // 코드 수 상한 (무료 플랜: 최대 300 종목)
+    const codes = Array.from(new Set(allScoreRows.map((row) => row.code))).slice(0, 300)
     if (!codes.length) {
       return res.status(200).json({
         ok: true,
@@ -276,7 +257,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       })
     }
 
-    const priceRows = await fetchPriceRows(supabase, codes, queryFromDate)
+    const priceRows = await fetchPriceRows(supabase, codes, scoreFromDate)
     const priceIndex = buildPriceIndex(priceRows)
 
     const labelableEvents = buildLabelableEvents(scoreRows, priceIndex, params.horizonBars)

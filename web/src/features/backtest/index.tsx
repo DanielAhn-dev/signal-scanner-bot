@@ -174,7 +174,7 @@ function BacktestSkeleton() {
 
 export default function BacktestPage() {
   const [horizon, setHorizon] = useState<Horizon>(20)
-  const [lookbackDays, setLookbackDays] = useState(180)
+  const [lookbackDays, setLookbackDays] = useState(90)
   const [rallyPct, setRallyPct] = useState(20)
   const [topN, setTopN] = useState(30)
   const [loading, setLoading] = useState(false)
@@ -206,7 +206,7 @@ export default function BacktestPage() {
       })
       const res = await apiFetch(`/api/ui/backtest-risers?${q.toString()}`, {
         cacheMs: 30_000,
-        timeoutMs: 30_000,
+        timeoutMs: 9_500,
       })
       setData((res?.data ?? null) as BacktestResponse | null)
     } catch (e: any) {
@@ -389,10 +389,10 @@ export default function BacktestPage() {
                 className="sim-input"
                 type="number"
                 min={60}
-                max={720}
+                max={365}
                 value={lookbackDays}
                 onChange={(e) =>
-                  setLookbackDays(Math.max(60, Math.min(720, Number(e.target.value) || 60)))
+                  setLookbackDays(Math.max(60, Math.min(365, Number(e.target.value) || 60)))
                 }
               />
               <span className="sim-input-suffix">일</span>
