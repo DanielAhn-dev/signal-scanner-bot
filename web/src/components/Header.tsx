@@ -266,20 +266,6 @@ export default function Header({
                     <small>텔레그램 단축명령</small>
                   </span>
                 </button>
-                <button
-                  type="button"
-                  className="nav-tool-card"
-                  onClick={() => {
-                    setCreditShortOpen(true)
-                    setDrawerOpen(false)
-                  }}
-                >
-                  <BadgePercent className="nav-tool-icon" aria-hidden />
-                  <span className="nav-tool-text">
-                    <strong>공매도 입력</strong>
-                    <small>보조 지표 수동 반영</small>
-                  </span>
-                </button>
               </div>
 
               {visibleNavGroups.map((group) => (

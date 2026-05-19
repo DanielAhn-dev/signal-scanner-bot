@@ -27,7 +27,6 @@ export const NAV_ITEMS: NavGroup[] = [
     items: [
       { key: 'sectors', label: '섹터' },
       { key: 'market', label: '시장' },
-      { key: 'economy', label: '경제' },
       { key: 'news', label: '뉴스' },
     ]
   },
