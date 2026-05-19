@@ -355,15 +355,15 @@ export default function Header({
 
       {cmdOpen && (
         <div className="modal-overlay" role="dialog" aria-modal aria-label="텔레그램 명령 모달" onClick={() => setCmdOpen(false)}>
-          <div className="modal card" onClick={(e) => e.stopPropagation()} ref={cmdModalRef}>
-            <div className="flex-between">
+          <div className="modal card" style={{ display: 'flex', flexDirection: 'column', maxHeight: 'min(90vh, calc(100vh - 32px))' }} onClick={(e) => e.stopPropagation()} ref={cmdModalRef}>
+            <div className="flex-between" style={{ flexShrink: 0 }}>
               <h2 className="title-lg">텔레그램 명령</h2>
               <button className="nav-item" onClick={() => setCmdOpen(false)}>닫기</button>
             </div>
-            <div className="mt-2">
+            <div className="mt-2" style={{ flexShrink: 0 }}>
               <input ref={cmdInputRef} placeholder="검색(cmd or 설명)" value={filter} onChange={(e) => setFilter(e.target.value)} className="ui-text" />
             </div>
-            <div className="mt-3" style={{maxHeight: '65vh', overflow: 'auto'}}>
+            <div className="mt-3" style={{ flex: 1, minHeight: 0, overflow: 'auto' }}>
               {visible.map(c => (
                 <div key={c.cmd} className="card" style={{marginBottom: 'var(--space-2)'}}>
                   <div style={{display:'flex', justifyContent:'space-between', alignItems:'center'}}>

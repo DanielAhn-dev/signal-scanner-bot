@@ -1,4 +1,5 @@
 ﻿import React, { useEffect, useState, useRef, useCallback, useMemo } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { Building2, AlertTriangle, TrendingDown, ShieldAlert, TrendingUp, PlusCircle, Eye } from 'lucide-react'
 import { apiFetch, invalidateCache } from '../../lib/api'
 import { formatKrw, formatNumber } from '../../lib/format'
@@ -134,6 +135,7 @@ const BADGE_TOOLTIPS: Record<string, string> = {
 }
 
 export default function Portfolio() {
+  const navigate = useNavigate()
   const [allRows, setAllRows] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
@@ -1038,7 +1040,7 @@ export default function Portfolio() {
         </div>
         <div className="portfolio-head-toolbar">
           <div className="portfolio-head-info">
-            <EconomicEventBadge onNavigateToCalendar={() => {}} />
+            <EconomicEventBadge onNavigateToCalendar={() => navigate('/market')} />
             <span className="caption muted portfolio-head-updated">
               {refreshing
                 ? '업데이트 중...'
