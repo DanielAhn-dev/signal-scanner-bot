@@ -247,6 +247,16 @@ export default function BacktestPage() {
     }
   }
 
+  useEffect(() => {
+    const candidates = data?.ruleCandidates ?? []
+    if (candidates.length === 0) return
+
+    setSelectedRuleKey((current) => {
+      if (current && candidates.some((rule) => rule.key === current)) return current
+      return candidates[0].key
+    })
+  }, [data])
+
   // URL param 또는 sessionStorage로 전달된 종목 자동 로드
   useEffect(() => {
     const params = new URLSearchParams(window.location.search)
@@ -655,7 +665,6 @@ export default function BacktestPage() {
                                 : idx === 0
                                 ? 'var(--color-success-bg)'
                                 : 'transparent',
-                            opacity: selectedRuleKey === row.key ? 1 : idx === 0 ? 0.15 : 1,
                           }}
                         >
                           <td>
