@@ -236,9 +236,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       }))
       .filter((row) => row.code && row.asof)
 
-    // 선택된 horizon에 대한 분석 대상과 availability 체크용 분리
-    const horizonFromDate = shiftDate(params.lookbackDays + params.horizonBars + 10)
-    const scoreRows = allScoreRows.filter((row) => row.asof >= horizonFromDate)
+    // scoreRows와 availabilityScoreRows 동일 (priceIndex 구성 시 필요한 가격 있는 것만 자동 필터)
+    const scoreRows = allScoreRows
     const availabilityScoreRows = allScoreRows
 
     // 코드 수 상한 (무료 플랜: 최대 300 종목)
