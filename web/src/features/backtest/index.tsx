@@ -101,6 +101,7 @@ type RuleFilter = {
 }
 
 type AutoPickTier = 'now' | 'prepare' | 'watch'
+type ReturnProfileKey = 'conservative' | 'aggressive'
 
 type AutoPickItem = {
   code: string
@@ -162,21 +163,42 @@ function matchesRuleFilter(indicator: StockIndicators, filter?: RuleFilter): boo
 function evaluateAutoPick(indicator: StockIndicators): { tier: AutoPickTier; coreMatchCount: number; edgeScore: number } | null {
   const score = Number(indicator.total_score ?? 0)
   const rsi = indicator.rsi14
+  const signal = String(indicator.signal || '').toUpperCase()
+  
+  // 기본 필터: 강한 SELL만 제외
+  if (signal.includes('STRONG_SELL')) return null
+  
+  // 핵심: RSI 범위를 현실적으로 완화 (하락장에서는 저RSI 회복이 일반적)
+  const rsiIdeal = rsi != null && rsi >= 40 && rsi <= 70  // 45-65 대신 40-70
+  const rsiGood = rsi != null && rsi >= 30 && rsi <= 75   // 40-70 대신 30-75
+  const rsiBroad = rsi != null && rsi >= 20 && rsi <= 85  // 30-80 대신 20-85
+  
+  // 신호 품질
   const buyMatch = isBuySignal(indicator.signal)
-  const scoreMatch = score >= 70
-  const rsiMatch = rsi != null && rsi >= 45 && rsi <= 65
-  const coreMatchCount = [scoreMatch, buyMatch, rsiMatch].filter(Boolean).length
+  const notSellMatch = !signal.includes('SELL')
+  
+  // 점수 (선택적)
+  const scoreMatch = score >= 50
+  const scoreGood = score >= 35
+  
+  // 매칭 카운트: RSI는 거의 필수, 신호/점수는 추가 보너스
+  let coreMatchCount = 0
+  if (rsiIdeal) coreMatchCount += 2  // RSI 이상적이면 가중치 높음
+  if (rsiGood && !rsiIdeal) coreMatchCount += 1
+  if (buyMatch) coreMatchCount += 1
+  if (scoreMatch) coreMatchCount += 1
 
   const warn = String(indicator.warn_grade || '').toUpperCase()
-  const rsiBandWide = rsi != null && rsi >= 40 && rsi <= 70
-  const rsiBandLoose = rsi != null && rsi >= 35 && rsi <= 75
 
   let tier: AutoPickTier | null = null
-  if (coreMatchCount >= 3 && warn !== 'WARN') {
+  // 즉시 매수: RSI 이상적 + (BUY 또는 점수 50+)
+  if (rsiIdeal && (buyMatch || scoreMatch)) {
     tier = 'now'
-  } else if (coreMatchCount >= 2 && score >= 58 && rsiBandWide && warn !== 'WARN') {
+  // 반등 준비: RSI 좋음 + (점수 35+)
+  } else if (rsiGood && scoreGood) {
     tier = 'prepare'
-  } else if (coreMatchCount >= 1 && score >= 50 && rsiBandLoose) {
+  // 관찰: RSI 넓은 범위 + SELL 신호 아님
+  } else if (rsiBroad && notSellMatch) {
     tier = 'watch'
   }
   if (!tier) return null
@@ -240,13 +262,24 @@ function estimateExpectedReturnPct(input: {
   score: number
   shortMomentumPct: number
   tier: AutoPickTier
+  profile: ReturnProfileKey
 }): number {
-  const tierFactor = input.tier === 'now' ? 1.0 : input.tier === 'prepare' ? 0.72 : 0.45
-  const coreFactor = 0.5 + input.coreMatchCount * 0.15
-  const ruleBonus = input.ruleMatched ? 0.12 : 0
-  const scoreBonus = clampNumber((input.score - 55) / 120, -0.12, 0.2)
-  const momentumBonus = clampNumber(input.shortMomentumPct / 30, -0.18, 0.18)
-  const raw = input.baseReturnPct * (tierFactor * coreFactor + ruleBonus + scoreBonus + momentumBonus)
+  const isConservative = input.profile === 'conservative'
+  
+  // 하락장에서도 기술적 신호 품질로만 평가하도록,
+  // 과거 수익률이 음수/낮으면 고정값(5%)으로 사용
+  const baseReturn = Math.max(5, input.baseReturnPct)
+  
+  const tierFactor = input.tier === 'now'
+    ? 1.0
+    : input.tier === 'prepare'
+      ? (isConservative ? 0.62 : 0.78)
+      : (isConservative ? 0.35 : 0.52)
+  const coreFactor = (isConservative ? 0.46 : 0.54) + input.coreMatchCount * (isConservative ? 0.14 : 0.17)
+  const ruleBonus = input.ruleMatched ? (isConservative ? 0.1 : 0.14) : 0
+  const scoreBonus = clampNumber((input.score - 55) / (isConservative ? 140 : 110), -0.12, isConservative ? 0.16 : 0.22)
+  const momentumBonus = clampNumber(input.shortMomentumPct / (isConservative ? 36 : 25), -0.14, isConservative ? 0.14 : 0.2)
+  const raw = baseReturn * (tierFactor * coreFactor + ruleBonus + scoreBonus + momentumBonus)
   return Number(clampNumber(raw, 1.5, 40).toFixed(1))
 }
 
@@ -344,9 +377,16 @@ export default function BacktestPage() {
   const [autoPickLoading, setAutoPickLoading] = useState(false)
   const [autoPickError, setAutoPickError] = useState<string | null>(null)
   const [autoPicks, setAutoPicks] = useState<AutoPickItem[]>([])
-  const [minExpectedReturnPct, setMinExpectedReturnPct] = useState(5)
-  const [minShortMomentumPct, setMinShortMomentumPct] = useState(0)
-  const [minLiquidityEok, setMinLiquidityEok] = useState(300)
+  const [conditionStats, setConditionStats] = useState({
+    buySignalPct: 0,
+    score50PlusPct: 0,
+    rsi45_65Pct: 0,
+    totalScanned: 0,
+  })
+  const [returnProfile, setReturnProfile] = useState<ReturnProfileKey>('conservative')
+  const [minExpectedReturnPct, setMinExpectedReturnPct] = useState(2)
+  const [minShortMomentumPct, setMinShortMomentumPct] = useState(-10)
+  const [minLiquidityEok, setMinLiquidityEok] = useState(10)
   const [investAmount, setInvestAmount] = useState(1_000_000)
   const checkDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
@@ -363,7 +403,7 @@ export default function BacktestPage() {
       })
       const res = await apiFetch(`/api/ui/backtest-risers?${q.toString()}`, {
         cacheMs: 30_000,
-        timeoutMs: 9_500,
+        timeoutMs: 30_000,
       })
       setData((res?.data ?? null) as BacktestResponse | null)
     } catch (e: any) {
@@ -410,10 +450,29 @@ export default function BacktestPage() {
           candidates.map((row) => [String(row.code || '').trim(), row]),
         )
 
+        console.log(`[Auto-Pick] 스캔 후보: ${candidates.length}개`)
+
         if (candidates.length === 0) {
           if (!disposed) setAutoPicks([])
           return
         }
+
+        // 스캔 후보 신호/점수 분포 확인
+        const signalStats: Record<string, number> = {}
+        const scoreBySignal: Record<string, number[]> = {}
+        candidates.slice(0, 36).forEach((c) => {
+          const sig = String(c.name || 'unknown')
+          signalStats[sig] = (signalStats[sig] || 0) + 1
+        })
+
+        let evaluatedCount = 0
+        let ruleFilteredCount = 0
+        let returnFilteredCount = 0
+        let momentumFilteredCount = 0
+        let liquidityFilteredCount = 0
+        let buySignalCount = 0
+        let score50PlusCount = 0
+        let rsi45_65Count = 0
 
         const settled = await Promise.allSettled(
           candidates.slice(0, 36).map(async (candidate) => {
@@ -425,10 +484,23 @@ export default function BacktestPage() {
             })
             const indicator = (indicatorRes?.data ?? null) as StockIndicators | null
             if (!indicator) return null
+            
+            // 조건별 충족 여부 확인
+            const score = Number(indicator.total_score ?? 0)
+            const rsi = indicator.rsi14
+            if (isBuySignal(indicator.signal)) buySignalCount++
+            if (score >= 50) score50PlusCount++
+            if (rsi != null && rsi >= 45 && rsi <= 65) rsi45_65Count++
+            
             const ranked = evaluateAutoPick(indicator)
             if (!ranked) return null
+            evaluatedCount++
+            
             const ruleMatched = matchesRuleFilter(indicator, selectedRule.filter)
-            if (!ruleMatched && ranked.coreMatchCount < 2) return null
+            if (!ruleMatched && ranked.coreMatchCount < 2) {
+              ruleFilteredCount++
+              return null
+            }
 
             const scan = candidateMap.get(code)
             const intradayChangePct = Number(scan?.intraday_change_pct)
@@ -444,15 +516,25 @@ export default function BacktestPage() {
               score: Number(indicator.total_score ?? 0),
               shortMomentumPct,
               tier: ranked.tier,
+              profile: returnProfile,
             })
 
             const liquidity = Number(scan?.liquidity)
             const liquidityWon = Number.isFinite(liquidity) && liquidity > 0 ? liquidity : null
             const liquidityEok = toEokFromWon(liquidityWon)
 
-            if (expectedReturnPct < minExpectedReturnPct) return null
-            if (shortMomentumPct < minShortMomentumPct) return null
-            if (liquidityEok < minLiquidityEok) return null
+            if (expectedReturnPct < minExpectedReturnPct) {
+              returnFilteredCount++
+              return null
+            }
+            if (shortMomentumPct < minShortMomentumPct) {
+              momentumFilteredCount++
+              return null
+            }
+            if (liquidityEok < minLiquidityEok) {
+              liquidityFilteredCount++
+              return null
+            }
 
             return {
               code,
@@ -485,7 +567,27 @@ export default function BacktestPage() {
           })
           .slice(0, 12)
 
-        if (!disposed) setAutoPicks(next)
+        console.log(`[Auto-Pick] 필터 결과:
+  - 조건 충족률 (36개 중):
+    • BUY 신호: ${buySignalCount}개 (${Math.round(buySignalCount / 36 * 100)}%)
+    • 점수 50+: ${score50PlusCount}개 (${Math.round(score50PlusCount / 36 * 100)}%)
+    • RSI 45-65: ${rsi45_65Count}개 (${Math.round(rsi45_65Count / 36 * 100)}%)
+  - 티어 평가 통과: ${evaluatedCount}개
+  - 규칙 필터 제외: ${ruleFilteredCount}개
+  - 기대수익 필터 제외: ${returnFilteredCount}개 (최소값: ${minExpectedReturnPct}%)
+  - 모멘텀 필터 제외: ${momentumFilteredCount}개 (최소값: ${minShortMomentumPct}%)
+  - 거래대금 필터 제외: ${liquidityFilteredCount}개 (최소값: ${minLiquidityEok}억)
+  - 최종 추천: ${next.length}개`)
+
+        if (!disposed) {
+          setConditionStats({
+            buySignalPct: Math.round(buySignalCount / 36 * 100),
+            score50PlusPct: Math.round(score50PlusCount / 36 * 100),
+            rsi45_65Pct: Math.round(rsi45_65Count / 36 * 100),
+            totalScanned: 36,
+          })
+          setAutoPicks(next)
+        }
       } catch (e: any) {
         if (!disposed) {
           setAutoPicks([])
@@ -500,7 +602,7 @@ export default function BacktestPage() {
     return () => {
       disposed = true
     }
-  }, [data, selectedRuleKey, minExpectedReturnPct, minShortMomentumPct, minLiquidityEok])
+  }, [data, selectedRuleKey, minExpectedReturnPct, minShortMomentumPct, minLiquidityEok, returnProfile])
 
   // URL param 또는 sessionStorage로 전달된 종목 자동 로드
   useEffect(() => {
@@ -601,6 +703,20 @@ export default function BacktestPage() {
       items: [...prevItems, ...newItems],
     })
     navigateTo('simulator')
+  }
+
+  const applyReturnProfile = (profile: ReturnProfileKey) => {
+    setReturnProfile(profile)
+    if (profile === 'conservative') {
+      setMinExpectedReturnPct(4)
+      setMinShortMomentumPct(-5)
+      setMinLiquidityEok(30)
+      return
+    }
+    // 공격형: 필터 거의 없음 (기술지표 신호 품질만 봄)
+    setMinExpectedReturnPct(2)
+    setMinShortMomentumPct(-10)
+    setMinLiquidityEok(10)
   }
 
   const patternMatch = useMemo(() => {
@@ -1219,6 +1335,27 @@ export default function BacktestPage() {
                     marginBottom: 'var(--space-3)',
                   }}
                 >
+                  <div style={{ fontSize: 11, color: 'var(--color-text-tertiary)', display: 'grid', gap: 4 }}>
+                    기대수익 프리셋
+                    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                      <button
+                        type="button"
+                        className={`sim-btn ${returnProfile === 'conservative' ? 'sim-btn--primary' : 'sim-btn--ghost'}`}
+                        style={{ minHeight: 30, padding: '6px 10px' }}
+                        onClick={() => applyReturnProfile('conservative')}
+                      >
+                        보수형
+                      </button>
+                      <button
+                        type="button"
+                        className={`sim-btn ${returnProfile === 'aggressive' ? 'sim-btn--primary' : 'sim-btn--ghost'}`}
+                        style={{ minHeight: 30, padding: '6px 10px' }}
+                        onClick={() => applyReturnProfile('aggressive')}
+                      >
+                        공격형
+                      </button>
+                    </div>
+                  </div>
                   <label style={{ fontSize: 11, color: 'var(--color-text-tertiary)', display: 'grid', gap: 4 }}>
                     최소 기대수익률(%)
                     <input
@@ -1269,8 +1406,14 @@ export default function BacktestPage() {
                   <div style={{ fontSize: 12, color: 'var(--color-error)' }}>{autoPickError}</div>
                 )}
                 {!autoPickLoading && !autoPickError && autoPicks.length === 0 && (
-                  <div style={{ fontSize: 12, color: 'var(--color-text-tertiary)' }}>
-                    현재 조건에 맞는 자동 추천 종목이 없습니다. Horizon/급등 기준을 완화하거나 룰을 변경해 보세요.
+                  <div style={{ display: 'grid', gap: 8, fontSize: 12, color: 'var(--color-text-tertiary)' }}>
+                    <div>
+                      <strong>현재 스캔 후보 조건 충족률:</strong><br/>
+                      BUY 신호: {conditionStats.buySignalPct}% · 점수 50+: {conditionStats.score50PlusPct}% · RSI 45-65: {conditionStats.rsi45_65Pct}%
+                    </div>
+                    <div>
+                      현재 조건에 맞는 자동 추천 종목이 없습니다. Horizon/급등 기준을 완화하거나 룰을 변경해 보세요.
+                    </div>
                   </div>
                 )}
                 {!autoPickLoading && !autoPickError && autoPicks.length > 0 && (
@@ -1334,6 +1477,13 @@ export default function BacktestPage() {
                         onClick={() => addAutoPicksToSimulator(['now', 'prepare'])}
                       >
                         즉시+준비 일괄 추가
+                      </button>
+                      <button
+                        type="button"
+                        className="sim-btn sim-btn--ghost"
+                        onClick={() => addAutoPicksToSimulator(['now', 'prepare', 'watch'])}
+                      >
+                        즉시+준비+관찰 일괄 추가
                       </button>
                     </div>
                     <div style={{ fontSize: 11, color: 'var(--color-text-tertiary)', marginTop: 4 }}>
