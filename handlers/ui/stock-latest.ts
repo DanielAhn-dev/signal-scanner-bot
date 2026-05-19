@@ -1326,6 +1326,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     // 공매도/신용: DB 우선, 없으면 live 스크래핑 fallback
+    const parsedCreditShortMaxAgeDays = Number(process.env.UI_CREDIT_SHORT_MAX_AGE_DAYS ?? '5')
+    const maxCreditShortAgeDays = Number.isFinite(parsedCreditShortMaxAgeDays)
+      ? Math.max(0, Math.floor(parsedCreditShortMaxAgeDays))
+      : 5
+    const creditShortAsOf = (latestCreditShortDaily as any)?.date ?? null
+    const isCreditShortStale = creditShortAsOf
+      ? isStaleByDays(creditShortAsOf, maxCreditShortAgeDays)
+      : false
+
     const dbCreditRatio =
       asNum((stock as any)?.credit_ratio) ??
       asNum((latestCreditShortDaily as any)?.credit_ratio)
@@ -1335,13 +1344,17 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const dbShortBalance =
       asNum((stock as any)?.short_balance) ??
       asNum((latestCreditShortDaily as any)?.short_balance)
-    const hasDbCreditShort = dbCreditRatio != null || dbShortRatio != null
+    const hasDbCreditShort = !isCreditShortStale && (dbCreditRatio != null || dbShortRatio != null)
 
     let creditShort: {
       creditRatio: number | null
       shortRatio: number | null
       shortBalance: number | null
-      source: 'db' | 'live' | 'proxy'
+      source: 'db' | 'live' | 'proxy' | 'stale'
+      asOf: string | null
+      fetchedAt: string | null
+      staleAsOf: string | null
+      staleReason: string | null
       proxyRisk: CreditShortProxy | null
     } | null = null
 
@@ -1358,6 +1371,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         shortRatio: dbShortRatio,
         shortBalance: dbShortBalance,
         source: 'db',
+        asOf: creditShortAsOf,
+        fetchedAt: null,
+        staleAsOf: null,
+        staleReason: null,
         proxyRisk: null,
       }
     } else {
@@ -1369,7 +1386,23 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           shortRatio: live.shortRatio,
           shortBalance: live.shortBalance,
           source: 'live',
+          asOf: null,
+          fetchedAt: new Date().toISOString(),
+          staleAsOf: isCreditShortStale ? String(creditShortAsOf) : null,
+          staleReason: isCreditShortStale ? `DB 기준일이 ${maxCreditShortAgeDays}일 초과로 오래됨` : null,
           proxyRisk: null,
+        }
+      } else if (isCreditShortStale) {
+        creditShort = {
+          creditRatio: null,
+          shortRatio: null,
+          shortBalance: null,
+          source: 'stale',
+          asOf: null,
+          fetchedAt: null,
+          staleAsOf: String(creditShortAsOf),
+          staleReason: `DB 기준일이 ${maxCreditShortAgeDays}일 초과로 오래되어 분석에서 제외`,
+          proxyRisk,
         }
       } else {
         creditShort = {
@@ -1377,6 +1410,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           shortRatio: null,
           shortBalance: null,
           source: 'proxy',
+          asOf: null,
+          fetchedAt: null,
+          staleAsOf: null,
+          staleReason: null,
           proxyRisk,
         }
       }
@@ -1512,6 +1549,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             ema240: resolvedEma240,
             ema244: resolvedEma244,
             rsi14: resolvedRsi14,
+            indicators_as_of: indicatorSnapshot?.trade_date ?? null,
             price_source: priceMeta.source,
             price_market_status: priceMeta.marketStatus,
             price_fetched_at: priceMeta.fetchedAt,
@@ -1538,6 +1576,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             shortRatio: creditShort.shortRatio,
             shortBalance: creditShort.shortBalance,
             source: creditShort.source,
+            asOf: creditShort.asOf,
+            fetchedAt: creditShort.fetchedAt,
+            staleAsOf: creditShort.staleAsOf,
+            staleReason: creditShort.staleReason,
             proxyRisk: creditShort.proxyRisk,
           }
         : null,

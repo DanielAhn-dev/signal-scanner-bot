@@ -175,6 +175,10 @@ export default function AnalyzePage({ onNavigate }: { onNavigate?: (r: string) =
     creditShort?.creditRatio != null ||
     creditShort?.shortRatio != null ||
     creditShort?.shortBalance != null
+  const intradayDelta =
+    result?.close != null && result?.open != null
+      ? Number(result.close) - Number(result.open)
+      : null
 
   const analyze = async (code?: string) => {
     const q = code ?? query.trim()
@@ -550,7 +554,13 @@ export default function AnalyzePage({ onNavigate }: { onNavigate?: (r: string) =
                     width: 12,
                     height: 12,
                     borderRadius: '50%',
-                    background: result.change_pct > 0
+                    background: intradayDelta != null
+                      ? intradayDelta > 0
+                        ? 'var(--color-stock-up)'
+                        : intradayDelta < 0
+                          ? 'var(--color-stock-down)'
+                          : 'var(--color-stock-flat)'
+                      : result.change_pct > 0
                       ? 'var(--color-stock-up)'
                       : result.change_pct < 0
                         ? 'var(--color-stock-down)'
@@ -559,6 +569,9 @@ export default function AnalyzePage({ onNavigate }: { onNavigate?: (r: string) =
                     boxShadow: '0 1px 4px rgba(0,0,0,0.15)',
                   }} />
                 )}
+              </div>
+              <div className="caption muted" style={{ marginTop: 'var(--space-1)' }}>
+                원형 색상 기준: 시가 대비 {intradayDelta == null ? '미확인' : intradayDelta > 0 ? '상승(빨강)' : intradayDelta < 0 ? '하락(파랑)' : '보합'}
               </div>
             </div>
           )}
@@ -698,49 +711,55 @@ export default function AnalyzePage({ onNavigate }: { onNavigate?: (r: string) =
               </div>
             ))}
           </div>
+          <div className="caption" style={{ marginTop: 'var(--space-2)' }}>
+            기술지표 기준일: {result.indicators_as_of ? formatDate(result.indicators_as_of) : '—'}
+            {flow?.date ? ` · 수급 기준일: ${formatDate(flow.date)}` : ''}
+          </div>
 
           {/* ── 공매도 / 신용 ── */}
-          {hasCreditShortData && (
-            <>
-              <div className="title-md" style={{ marginTop: 'var(--space-6)', marginBottom: 'var(--space-3)' }}>공매도 / 신용</div>
-              <div className="cards-grid cols-3">
-                {([
-                  creditShort?.creditRatio != null
-                    ? {
-                        label: '신용비율',
-                        val: formatNumber(creditShort.creditRatio, 2) + '%',
-                        hint: '신용잔고 ÷ 상장주식수',
-                        warn: creditShort.creditRatio > 5,
-                      }
-                    : null,
-                  creditShort?.shortRatio != null
-                    ? {
-                        label: '공매도 잔고비율',
-                        val: formatNumber(creditShort.shortRatio, 2) + '%',
-                        hint: '공매도 잔고 ÷ 상장주식수',
-                        warn: creditShort.shortRatio > 1,
-                      }
-                    : null,
-                  creditShort?.shortBalance != null
-                    ? {
-                        label: '공매도 잔고(주)',
-                        val: formatNumber(creditShort.shortBalance, 0),
-                        hint: '최근 KRX 신고 기준',
-                        warn: false,
-                      }
-                    : null,
-                ] as { label: string; val: string; hint: string; warn: boolean }[]).filter(Boolean).map(({ label, val, hint, warn }) => (
-                  <div key={label}>
-                    <div className="stat-label">{label}</div>
-                    <div className="stat-value" style={{
-                      fontSize: 'var(--font-size-base)',
-                      color: warn ? 'var(--color-error)' : undefined,
-                    }}>{val}</div>
-                    <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-tertiary)', marginTop: 2 }}>{hint}</div>
-                  </div>
-                ))}
+          <div className="title-md" style={{ marginTop: 'var(--space-6)', marginBottom: 'var(--space-3)' }}>공매도 / 신용</div>
+          <div className="cards-grid cols-3">
+            {([
+              {
+                label: '신용비율',
+                val: creditShort?.creditRatio != null ? formatNumber(creditShort.creditRatio, 2) + '%' : '—',
+                hint: '신용잔고 ÷ 상장주식수',
+                warn: creditShort?.creditRatio != null ? creditShort.creditRatio > 5 : false,
+              },
+              {
+                label: '공매도 잔고비율',
+                val: creditShort?.shortRatio != null ? formatNumber(creditShort.shortRatio, 2) + '%' : '—',
+                hint: '공매도 잔고 ÷ 상장주식수',
+                warn: creditShort?.shortRatio != null ? creditShort.shortRatio > 1 : false,
+              },
+              {
+                label: '공매도 잔고(주)',
+                val: creditShort?.shortBalance != null ? formatNumber(creditShort.shortBalance, 0) : '—',
+                hint: '최근 KRX 신고 기준',
+                warn: false,
+              },
+            ] as { label: string; val: string; hint: string; warn: boolean }[]).map(({ label, val, hint, warn }) => (
+              <div key={label}>
+                <div className="stat-label">{label}</div>
+                <div className="stat-value" style={{
+                  fontSize: 'var(--font-size-base)',
+                  color: val === '—' ? 'var(--color-text-disabled)' : warn ? 'var(--color-error)' : undefined,
+                }}>{val}</div>
+                <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-tertiary)', marginTop: 2 }}>{hint}</div>
               </div>
-            </>
+            ))}
+          </div>
+          <div className="caption" style={{ marginTop: 'var(--space-2)' }}>
+            {creditShort?.source === 'db' && `공매도/신용 기준일: ${creditShort.asOf ? formatDate(creditShort.asOf) : '—'}`}
+            {creditShort?.source === 'live' && `공매도/신용 조회시각: ${creditShort.fetchedAt ? formatDateTime(creditShort.fetchedAt) : '—'} (실시간 스크래핑)`}
+            {creditShort?.source === 'stale' && `공매도/신용 마지막 기준일: ${creditShort.staleAsOf ? formatDate(creditShort.staleAsOf) : '—'} · 오래된 데이터로 분석에서 제외`}
+            {creditShort?.source === 'proxy' && '공매도/신용 실데이터 없음 · 프록시 리스크만 반영'}
+            {!creditShort && '공매도/신용 데이터 없음'}
+          </div>
+          {creditShort?.staleReason && (
+            <div className="caption" style={{ marginTop: 'var(--space-1)', color: 'var(--color-warning)' }}>
+              주의: {creditShort.staleReason}
+            </div>
           )}
 
           {/* ── 캔들 차트 ── */}
