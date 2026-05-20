@@ -77,11 +77,12 @@ def calculate_avwap(df: pd.DataFrame, anchor_idx: int) -> Optional[float]:
 
 
 def get_last_trading_date() -> str:
-    """?? ??? ?? ?? (KST ??)"""
+    """Detect the most recent trading date in KST."""
     from pykrx import stock
     
     today = datetime.now(ZoneInfo("Asia/Seoul")).date()
     test_tickers = ["005930", "035420", "035720", "000660"]
+    print("   Detecting latest trading date...", flush=True)
     
     for i in range(0, 60):
         d = today - timedelta(days=i)
@@ -91,16 +92,18 @@ def get_last_trading_date() -> str:
         for ticker in test_tickers:
             try:
                 check = stock.get_market_ohlcv(d_str, d_str, ticker)
-                if not check.empty and check.iloc[0].get("???", 0) > 0:
+                # Treat non-empty OHLCV as a valid trading-day signal.
+                # Avoid hardcoded localized column names that can break under encoding issues.
+                if check is not None and not check.empty:
                     valid_count += 1
-            except:
+            except Exception:
                 pass
         
         if valid_count >= 2:
-            print(f"   ?? ??? ??: {d_str} ({valid_count}/{len(test_tickers)} ?? ??)")
+            print(f"   Latest trading date detected: {d_str} ({valid_count}/{len(test_tickers)})", flush=True)
             return d_str
     
-    print(f"   ??? ?? ?? - ?? ?? ??: {today.strftime('%Y%m%d')}")
+    print(f"   Trading date auto-detect failed, fallback to today: {today.strftime('%Y%m%d')}", flush=True)
     return today.strftime("%Y%m%d")
 
 
@@ -114,7 +117,7 @@ def run_python_script(script_path: str, args: list[str], label: str) -> bool:
         if stdout:
             lines = [line for line in stdout.splitlines() if line.strip()]
             if lines:
-                print(f"   {label} ??: {lines[-1]}")
+                print(f"   {label} output: {lines[-1]}")
         return True
     except subprocess.CalledProcessError as e:
         stderr = (e.stderr or "").strip()
@@ -123,10 +126,10 @@ def run_python_script(script_path: str, args: list[str], label: str) -> bool:
             print(f"  ? stdout: {stdout.splitlines()[-1]}")
         if stderr:
             print(f"  ? stderr: {stderr.splitlines()[-1]}")
-        print(f"   {label} ??")
+        print(f"   {label} failed")
         return False
     except Exception as e:
-        print(f"   {label} ?? ??: {e}")
+        print(f"   {label} execution error: {e}")
         return False
 
 

@@ -156,3 +156,8 @@ vite.config.ts.timestamp-*
 scripts/fundamental_results.json
 .env*.local
 tmp/*
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo

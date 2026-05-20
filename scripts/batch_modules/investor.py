@@ -17,12 +17,12 @@ from .utils import safe_int, to_iso
 
 
 def fetch_investor_data(supabase: Client, trading_date: str):
-    """??? ?? ??? ??"""
+    """Collect investor flow data with multi-strategy fallback."""
     trading_iso = to_iso(trading_date)
-    print(f"\n[2.5/7] ??? ?? ??? ??...")
+    print(f"\n[2.5/7] Collecting investor flow data...")
 
     if os.environ.get("DISABLE_INVESTOR_FETCH", "false").lower() in ("1", "true", "yes"):
-        print("  ? DISABLE_INVESTOR_FETCH=true ???? ?? ??? ?????.")
+        print("  DISABLE_INVESTOR_FETCH=true, skipping investor fetch.")
         return
     
     def _upsert_investor_rows(rows: List[dict]) -> None:
@@ -31,7 +31,7 @@ def fetch_investor_data(supabase: Client, trading_date: str):
             try:
                 supabase.table("investor_daily").upsert(batch).execute()
             except Exception as e:
-                print(f"     investor_daily upsert ??: {e}")
+                print(f"     investor_daily upsert error: {e}")
                 for j in range(0, len(batch), 50):
                     try:
                         supabase.table("investor_daily").upsert(batch[j:j + 50]).execute()
@@ -39,13 +39,13 @@ def fetch_investor_data(supabase: Client, trading_date: str):
                         pass
 
     def _collect_by_investor_value(stock_module, code_list: List[str]) -> Tuple[List[dict], int, int]:
-        """??? ??? ???? API"""
+        """Primary strategy: get_market_trading_value_by_investor."""
         rows: List[dict] = []
         fail_count = 0
         success_count = 0
         for idx, code in enumerate(code_list):
             if idx % 100 == 0 and idx > 0:
-                print(f"  -> [value_by_investor] ??: {idx}/{len(code_list)} (??: {success_count}, ??: {fail_count})")
+                print(f"  -> [value_by_investor] progress: {idx}/{len(code_list)} (success: {success_count}, fail: {fail_count})")
 
             try:
                 df = stock_module.get_market_trading_value_by_investor(trading_date, trading_date, code)
@@ -55,8 +55,8 @@ def fetch_investor_data(supabase: Client, trading_date: str):
                 inst_val = 0
                 foreign_val = 0
                 for _, row in df.iterrows():
-                    inst_val += safe_int(row.get("??", 0))
-                    foreign_val += safe_int(row.get("???", 0))
+                    inst_val += safe_int(row.get("기관합계", 0))
+                    foreign_val += safe_int(row.get("외국인합계", 0))
 
                 if inst_val == 0 and foreign_val == 0:
                     continue
@@ -76,11 +76,11 @@ def fetch_investor_data(supabase: Client, trading_date: str):
         return rows, success_count, fail_count
 
     def _collect_by_net_purchases(stock_module, code_list: List[str]) -> Tuple[List[dict], int, int]:
-        """???? ???(???) ?? fallback"""
+        """Fallback 1: net purchases by ticker."""
         try:
-            df_inst = stock_module.get_market_net_purchases_of_equities_by_ticker(trading_date, trading_date, "ALL", "????")
+            df_inst = stock_module.get_market_net_purchases_of_equities_by_ticker(trading_date, trading_date, "ALL", "기관합계")
             time.sleep(0.05)
-            df_foreign = stock_module.get_market_net_purchases_of_equities_by_ticker(trading_date, trading_date, "ALL", "???")
+            df_foreign = stock_module.get_market_net_purchases_of_equities_by_ticker(trading_date, trading_date, "ALL", "외국인합계")
         except Exception:
             return [], 0, 0
 
@@ -88,14 +88,14 @@ def fetch_investor_data(supabase: Client, trading_date: str):
             return [], 0, 0
 
         inst = df_inst.reset_index().rename(columns={
-            "??": "ticker",
-            "???????": "institution",
-            "???????(?)": "institution",
+            "티커": "ticker",
+            "순매수거래대금": "institution",
+            "순매수거래대금(원)": "institution",
         })
         foreign = df_foreign.reset_index().rename(columns={
-            "??": "ticker",
-            "???????": "foreign",
-            "???????(?)": "foreign",
+            "티커": "ticker",
+            "순매수거래대금": "foreign",
+            "순매수거래대금(원)": "foreign",
         })
 
         merged = inst[["ticker", "institution"]].merge(
@@ -124,7 +124,7 @@ def fetch_investor_data(supabase: Client, trading_date: str):
         return rows, len(rows), 0
 
     def _collect_from_naver_finance(code_list: List[str]) -> Tuple[List[dict], int, int]:
-        """??? ?? HTML ?? fallback"""
+        """Fallback 2: Naver Finance HTML scraping."""
         session = requests.Session()
         session.headers.update({
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
@@ -165,9 +165,9 @@ def fetch_investor_data(supabase: Client, trading_date: str):
             else:
                 temp.columns = [str(c).strip() for c in temp.columns]
 
-            date_col = next((c for c in temp.columns if "??" in c), None)
-            inst_col = next((c for c in temp.columns if "??" in c and "???" in c), None)
-            foreign_col = next((c for c in temp.columns if "???" in c and "???" in c), None)
+            date_col = next((c for c in temp.columns if "날짜" in c), None)
+            inst_col = next((c for c in temp.columns if "기관" in c and "순매" in c), None)
+            foreign_col = next((c for c in temp.columns if "외국인" in c and "순매" in c), None)
 
             if not date_col or not inst_col or not foreign_col:
                 return None
@@ -204,7 +204,7 @@ def fetch_investor_data(supabase: Client, trading_date: str):
         fail_count = 0
         for idx, code in enumerate(code_list):
             if idx % 100 == 0 and idx > 0:
-                print(f"  -> [naver_finance] ??: {idx}/{len(code_list)} (??: {success_count}, ??: {fail_count})")
+                print(f"  -> [naver_finance] progress: {idx}/{len(code_list)} (success: {success_count}, fail: {fail_count})")
             try:
                 url = f"https://finance.naver.com/item/frgn.naver?code={code}&page=1"
                 resp = session.get(url, timeout=8)
@@ -247,16 +247,16 @@ def fetch_investor_data(supabase: Client, trading_date: str):
             .eq("is_active", True).execute()
         codes = [r["code"] for r in (res.data or [])]
         if not codes:
-            print("   ?? ??? ????.")
+            print("   No active stocks found.")
             return
 
-        print(f"  ??: {len(codes)}? ??")
+        print(f"  universe size: {len(codes)} tickers")
 
-        # ??1
+        # Strategy 1
         inv_rows, success_count, fail_count = _collect_by_investor_value(stock, codes)
         strategy_used = "value_by_investor"
 
-        # ??2 fallback
+        # Strategy 2 fallback
         if not inv_rows:
             alt_rows, alt_success, _ = _collect_by_net_purchases(stock, codes)
             if alt_rows:
@@ -265,7 +265,7 @@ def fetch_investor_data(supabase: Client, trading_date: str):
                 fail_count = 0
                 strategy_used = "net_purchases_by_ticker"
 
-        # ??3 fallback
+        # Strategy 3 fallback
         if not inv_rows:
             nav_rows, nav_success, nav_fail = _collect_from_naver_finance(codes)
             if nav_rows:
@@ -276,7 +276,7 @@ def fetch_investor_data(supabase: Client, trading_date: str):
 
         if inv_rows:
             _upsert_investor_rows(inv_rows)
-            print(f"   {len(inv_rows)}? ?? ??? ?? ?? (??: {strategy_used}, ??: {success_count}? ??, ??: {fail_count}?)")
+            print(f"   stored {len(inv_rows)} investor rows (strategy: {strategy_used}, success: {success_count}, fail: {fail_count})")
             return
 
         latest = supabase.table("investor_daily").select("date").order("date", desc=True).limit(1).execute()
@@ -285,12 +285,12 @@ def fetch_investor_data(supabase: Client, trading_date: str):
             from datetime import datetime
             trading_dt = dt_module.datetime.strptime(trading_date, "%Y%m%d").date()
             gap = (trading_dt - datetime.fromisoformat(str(latest_date)).date()).days
-            print(f"  ? investor_daily ?? ??: 3? ?? ?? ?? (latest={latest_date}, stale={gap}?)")
+            print(f"  investor_daily update unavailable after 3 strategies (latest={latest_date}, stale={gap}d)")
         else:
-            print("  ? investor_daily ?? ??: 3? ?? ?? ?? (?? ??? ??)")
+            print("  investor_daily update unavailable after 3 strategies (no prior data)")
 
     except Exception as e:
-        print(f"  ? ??? ?? ?? ??: {e}")
+        print(f"  investor data collection failed: {e}")
         import traceback
         traceback.print_exc()
 

@@ -11,8 +11,8 @@ from .utils import safe_int
 
 
 def cleanup_old_data(supabase: Client):
-    """??? ??? ??"""
-    print(f"\n[7/7] ??? ??? ??...")
+    """Cleanup old rows according to retention policy."""
+    print(f"\n[7/7] Cleaning up old data...")
     
     stock_retention_days = safe_int(os.environ.get("STOCK_DAILY_RETENTION_DAYS", 400), 400)
     stock_retention_days = max(400, stock_retention_days)
@@ -35,10 +35,10 @@ def cleanup_old_data(supabase: Client):
                 .lt("created_at", jobs_cutoff).execute()
         except:
             pass
-        print(f"  -> stock_daily ????: {stock_retention_days}? (???: {cutoff})")
-        print(f"  -> daily_indicators ????: {indicators_retention_days}? (???: {indicators_cutoff})")
-        print("   ?? ??")
+        print(f"  -> stock_daily retention: {stock_retention_days}d (cutoff: {cutoff})")
+        print(f"  -> daily_indicators retention: {indicators_retention_days}d (cutoff: {indicators_cutoff})")
+        print("   cleanup complete")
     except Exception as e:
-        print(f"   ?? ?? (?? ??): {e}")
+        print(f"   cleanup failed (non-fatal): {e}")
 
 

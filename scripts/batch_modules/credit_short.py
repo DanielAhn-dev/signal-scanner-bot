@@ -12,13 +12,13 @@ from .utils import to_iso
 
 
 def fetch_credit_short_data(supabase: Client, trading_date: str):
-    """??? ???(KRX MDC_OUT API) ??"""
+    """Collect credit/short-selling data from KRX MDC_OUT APIs."""
     trading_iso = to_iso(trading_date)
-    print(f"\n[2.6/7] ??? ??? ?? (KRX MDC_OUT API)...")
+    print(f"\n[2.6/7] Collecting credit/short data (KRX MDC_OUT API)...")
 
     import os
     if os.environ.get("DISABLE_CREDIT_SHORT_FETCH", "false").lower() in ("1", "true", "yes"):
-        print("  DISABLE_CREDIT_SHORT_FETCH=true  ??? ?? ???")
+        print("  DISABLE_CREDIT_SHORT_FETCH=true, skipping credit/short fetch")
         return
 
     try:
@@ -31,9 +31,9 @@ def fetch_credit_short_data(supabase: Client, trading_date: str):
         )
         codes = [r["code"] for r in (res.data or [])]
         if not codes:
-            print("  ?? ?? ??")
+            print("  No active stocks found")
             return
-        print(f"  ??: {len(codes)}? ??")
+        print(f"  universe size: {len(codes)} tickers")
 
         krx_ua = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
         krx_headers = {
@@ -50,7 +50,7 @@ def fetch_credit_short_data(supabase: Client, trading_date: str):
         except Exception:
             pass
 
-        # ISIN ?? ??
+        # Build ISIN map
         isin_map = {}
         try:
             r = sess.post(
@@ -61,7 +61,7 @@ def fetch_credit_short_data(supabase: Client, trading_date: str):
             block = r.json().get("block1", [])
             isin_map = {item["short_code"]: item["full_code"] for item in block}
         except Exception as e:
-            print(f"  ISIN ?? ??: {e}")
+            print(f"  ISIN mapping failed: {e}")
 
         cs_rows = []
         success_count = 0
@@ -71,7 +71,7 @@ def fetch_credit_short_data(supabase: Client, trading_date: str):
 
         for idx, code in enumerate(codes):
             if idx % 50 == 0 and idx > 0:
-                print(f"  ??: {idx}/{len(codes)} (??: {success_count}, ??: {fail_count})")
+                print(f"  progress: {idx}/{len(codes)} (success: {success_count}, fail: {fail_count})")
 
             isin = isin_map.get(code)
             if not isin:
@@ -82,7 +82,7 @@ def fetch_credit_short_data(supabase: Client, trading_date: str):
             short_ratio = None
             short_balance = None
 
-            # ??? ??
+            # Short-selling volume/ratio
             try:
                 r = sess.post(
                     krx_api,
@@ -98,7 +98,7 @@ def fetch_credit_short_data(supabase: Client, trading_date: str):
             except Exception:
                 pass
 
-            # ??? ??
+            # Short balance
             try:
                 r = sess.post(
                     krx_api,
@@ -134,14 +134,14 @@ def fetch_credit_short_data(supabase: Client, trading_date: str):
                 try:
                     supabase.table("stock_credit_short_daily").upsert(batch, on_conflict="code,date").execute()
                 except Exception as e:
-                    print(f"    stock_credit_short_daily upsert ??: {e}")
+                    print(f"    stock_credit_short_daily upsert error: {e}")
                     for j in range(0, len(batch), 50):
                         try:
                             supabase.table("stock_credit_short_daily").upsert(batch[j:j + 50], on_conflict="code,date").execute()
                         except Exception:
                             pass
 
-            # stocks ??? ??? ????
+            # Sync latest short fields into stocks table
             for r in cs_rows:
                 try:
                     upd = {}
@@ -154,12 +154,12 @@ def fetch_credit_short_data(supabase: Client, trading_date: str):
                 except Exception:
                     pass
 
-            print(f"  {len(cs_rows)}? ??? ??? ?? ?? (??: {success_count}? ??, ??: {fail_count}?)")
+            print(f"  Stored {len(cs_rows)} credit/short rows (success: {success_count}, fail: {fail_count})")
         else:
-            print(f"  ??? ??? ?? (??: {success_count}, ??: {fail_count})")
+            print(f"  No credit/short rows collected (success: {success_count}, fail: {fail_count})")
 
     except Exception as e:
-        print(f"  ??? ?? ??: {e}")
+        print(f"  credit/short collection failed: {e}")
         import traceback
         traceback.print_exc()
 

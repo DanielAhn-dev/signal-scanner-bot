@@ -13,7 +13,7 @@ from .utils import safe_float, calculate_rsi, to_iso
 
 
 def compute_pullback_signal(rows: list) -> dict:
-    """??? ?? ??? ?? (PineScript ?? ??)"""
+    """Compute pullback signal grades from OHLCV history."""
     if len(rows) < 21:
         return {}
 
@@ -29,19 +29,19 @@ def compute_pullback_signal(rows: list) -> dict:
     volumes = df["volume"].values
     n = len(closes)
 
-    # ????
+    # Moving averages
     ma21 = np.mean(closes[-21:]) if n >= 21 else closes[-1]
     ma50 = np.mean(closes[-50:]) if n >= 50 else ma21
     c = closes[-1]
 
-    # ???
+    # Distance from MA21
     dist = (c - ma21) / ma21 * 100 if ma21 > 0 else 0
 
-    # ??
+    # Pivot/high zones
     pivot_low_10 = np.min(lows[-10:]) if n >= 10 else lows[-1]
     high_5 = np.max(highs[-5:]) if n >= 5 else highs[-1]
 
-    # ???
+    # Volume baseline
     vol_sma20 = np.mean(volumes[-20:]) if n >= 20 else volumes[-1]
 
     # ATR14
@@ -55,7 +55,7 @@ def compute_pullback_signal(rows: list) -> dict:
         trs.append(tr)
     atr14 = np.mean(trs) if trs else 0.0
 
-    # ATR SMA20
+    # ATR SMA20 baseline
     if n >= 34:
         atr_series = []
         for j in range(max(14, n - 20), n):
@@ -76,7 +76,7 @@ def compute_pullback_signal(rows: list) -> dict:
     rsi_series = calculate_rsi(pd.Series(closes), 14)
     rsi14 = float(rsi_series.iloc[-1]) if not pd.isna(rsi_series.iloc[-1]) else 50.0
 
-    # ?? ?? ??
+    # Entry grading
     trend_aligned = ma21 > ma50 and c > ma21
     trend_grade = "A" if trend_aligned else ("B" if ma21 > ma50 else "C")
 
@@ -99,7 +99,7 @@ def compute_pullback_signal(rows: list) -> dict:
     ])
     entry_grade = "A" if entry_score >= 3 else ("B" if entry_score == 2 else "C")
 
-    # ?? ??
+    # Warning grading
     warn_overheat = dist > 7
     warn_vol_spike = volumes[-1] > vol_sma20 * 2
     warn_atr_spike = atr14 > atr_sma20 * 1.5
@@ -139,9 +139,9 @@ def compute_pullback_signal(rows: list) -> dict:
 
 
 def save_pullback_signals(supabase: Client, trading_date: str):
-    """??? ??? ??"""
+    """Generate and store pullback signals."""
     trading_iso = to_iso(trading_date)
-    print(f"\n[6/7] ??? ?? ??? ??...")
+    print(f"\n[6/7] Generating pullback signals...")
 
     try:
         res = supabase.table("stocks") \
@@ -149,7 +149,7 @@ def save_pullback_signals(supabase: Client, trading_date: str):
             .in_("universe_level", ["core", "extended"]).execute()
         codes = [s["code"] for s in (res.data or [])]
         if not codes:
-            print("   ?? ?? ??")
+            print("   No stocks found")
             return
 
         from_date_hist = (date.today() - timedelta(days=100)).isoformat()
@@ -176,9 +176,9 @@ def save_pullback_signals(supabase: Client, trading_date: str):
                 fail_count += 1
 
             if (idx + 1) % 100 == 0:
-                print(f"  -> ??: {idx + 1}/{len(codes)}")
+                print(f"  -> progress: {idx + 1}/{len(codes)}")
 
-        print(f"  -> {len(upserts)}? ??? ?? ?? (??: {fail_count})")
+        print(f"  -> computed {len(upserts)} signals (fail: {fail_count})")
 
         if upserts:
             for i in range(0, len(upserts), 200):
@@ -186,16 +186,16 @@ def save_pullback_signals(supabase: Client, trading_date: str):
                 try:
                     supabase.table("pullback_signals").upsert(batch).execute()
                 except Exception as e:
-                    print(f"   ??? ?? ??: {e}")
+                    print(f"   pullback_signals upsert error: {e}")
                     for j in range(0, len(batch), 50):
                         try:
                             supabase.table("pullback_signals").upsert(batch[j:j+50]).execute()
                         except:
                             pass
-            print(f"   {len(upserts)}? ??? pullback_signals ?? ??")
+            print(f"   stored {len(upserts)} pullback_signals rows")
 
     except Exception as e:
-        print(f"  ? ??? ??? ?? ??: {e}")
+        print(f"  pullback signal generation failed: {e}")
         import traceback
         traceback.print_exc()
 

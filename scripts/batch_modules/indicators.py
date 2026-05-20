@@ -12,23 +12,23 @@ from .utils import safe_float, safe_int, to_iso, calculate_rsi, calculate_avwap
 
 
 def calculate_indicators(supabase: Client, trading_date: str):
-    """??? ?? ??"""
+    """Calculate technical indicators and store daily snapshot."""
     trading_iso = to_iso(trading_date)
-    print(f"\n[2/7] ??? ?? ??...")
+    print(f"\n[2/7] Calculating technical indicators...")
 
     try:
         res = supabase.table("stock_daily") \
             .select("ticker").eq("date", trading_iso).execute()
         target_tickers = list(set(r["ticker"] for r in (res.data or [])))
     except Exception as e:
-        print(f"  ? ?? ?? ?? ??: {e}")
+        print(f"  Failed to load target tickers: {e}")
         return
 
     if not target_tickers:
-        print("   ?? ???? ?? ??? ????.")
+        print("   No tickers found for the trading date.")
         return
 
-    print(f"  -> ?? ??: {len(target_tickers)}?")
+    print(f"  -> target tickers: {len(target_tickers)}")
 
     total_success = 0
     total_fail = 0
@@ -51,12 +51,12 @@ def calculate_indicators(supabase: Client, trading_date: str):
 
     for idx, ticker in enumerate(target_tickers):
         if idx % 100 == 0:
-            print(f"  -> ??: {idx}/{len(target_tickers)}")
+            print(f"  -> progress: {idx}/{len(target_tickers)}")
             if upsert_buffer:
                 try:
                     supabase.table("daily_indicators").upsert(upsert_buffer).execute()
                 except Exception as e:
-                    print(f"     upsert ??: {e}")
+                    print(f"     upsert error: {e}")
                 upsert_buffer = []
 
         try:
@@ -127,16 +127,16 @@ def calculate_indicators(supabase: Client, trading_date: str):
         try:
             supabase.table("daily_indicators").upsert(upsert_buffer).execute()
         except Exception as e:
-            print(f"     ?? upsert ??: {e}")
+            print(f"     final upsert error: {e}")
 
-    print(f"   {total_success}? ?? ?? ?? ?? (??: {total_fail}?)")
+    print(f"   indicator calculation complete: {total_success} success (fail: {total_fail})")
     _sync_stocks_indicators(supabase, trading_date)
 
 
 def _sync_stocks_indicators(supabase: Client, trading_date: str):
-    """stocks ??? ?? ???"""
+    """Sync selected indicators back to stocks table."""
     trading_iso = to_iso(trading_date)
-    print("  -> stocks ??? ?? ???...")
+    print("  -> syncing indicators into stocks...")
     try:
         res = supabase.table("stocks") \
             .select("code, name").in_("universe_level", ["core", "extended"]).execute()
@@ -165,8 +165,8 @@ def _sync_stocks_indicators(supabase: Client, trading_date: str):
                 })
             if updates:
                 supabase.table("stocks").upsert(updates).execute()
-        print(f"   stocks ?? ??? ?? ({len(codes)}?)")
+        print(f"   stocks indicator sync complete ({len(codes)} codes)")
     except Exception as e:
-        print(f"   stocks ?? ??? ??: {e}")
+        print(f"   stocks indicator sync failed: {e}")
 
 

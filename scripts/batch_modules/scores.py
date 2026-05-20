@@ -13,11 +13,11 @@ from .utils import safe_float, safe_int, derive_signal, run_python_script
 
 
 def run_engine_score_sync(asof: str) -> bool:
-    """?? ?? ?? ???"""
+    """Run score sync via engine command."""
     pnpm_bin = "pnpm.cmd" if os.name == "nt" else "pnpm"
     cmd = [pnpm_bin, "run", "sync:scores", f"--asof={asof}", "--concurrency=6", "--limit=1500"]
     try:
-        print("  -> ?? ?? ?? ??? ?? ?...", " ".join(cmd))
+        print("  -> running engine score sync...", " ".join(cmd))
         result = subprocess.run(cmd, check=True, capture_output=True, text=True)
         if result.stdout:
             lines = [line for line in result.stdout.splitlines() if line.strip()]
@@ -25,17 +25,17 @@ def run_engine_score_sync(asof: str) -> bool:
                 print(f"   {lines[-1]}")
         return True
     except Exception as e:
-        print(f"   ?? ?? ?? ??? ??, ??? ???? ??: {e}")
+        print(f"   engine score sync failed, fallback to legacy scoring: {e}")
         return False
 
 
 def calculate_stock_scores(supabase: Client, trading_date: str):
-    """?? ?? ??"""
+    """Calculate stock scores (engine first, legacy fallback)."""
     asof = date.today().isoformat()
-    print(f"\n[5/7] ?? ??? ??...")
+    print(f"\n[5/7] Calculating stock scores...")
 
     if run_engine_score_sync(asof):
-        print("   ?? ?? ?? ??? ??")
+        print("   engine score sync completed")
         return
 
     try:
@@ -47,7 +47,7 @@ def calculate_stock_scores(supabase: Client, trading_date: str):
             .in_("universe_level", ["core", "extended"]).execute()
         all_stocks = res.data or []
         if not all_stocks:
-            print("   ?? ?? ??")
+            print("   No stocks found")
             return
 
         codes = [s["code"] for s in all_stocks]
@@ -71,7 +71,7 @@ def calculate_stock_scores(supabase: Client, trading_date: str):
             for row in (old_res.data or []):
                 existing_scores_map[row.get("code")] = row
 
-        print(f"  -> {len(indicators_map)}? ?? ?? ???")
+        print(f"  -> indicators loaded for {len(indicators_map)} stocks")
 
         sec_res = supabase.table("sectors").select("id, score, change_rate").execute()
         sector_score_map = {
@@ -153,21 +153,21 @@ def calculate_stock_scores(supabase: Client, trading_date: str):
             })
 
         if upserts:
-            print(f"  -> {len(upserts)}? ?? ?? ?? ?...")
+            print(f"  -> upserting {len(upserts)} score rows...")
             for i in range(0, len(upserts), 200):
                 batch = upserts[i:i+200]
                 try:
                     supabase.table("scores").upsert(batch).execute()
                 except Exception as e:
-                    print(f"   ?? ?? ??: {e}")
+                    print(f"   upsert error: {e}")
                     for j in range(0, len(batch), 50):
                         try:
                             supabase.table("scores").upsert(batch[j:j+50]).execute()
                         except:
                             pass
-            print(f"   {len(upserts)}? ?? ?? ?? ??")
+            print(f"   stored {len(upserts)} score rows")
     except Exception as e:
-        print(f"  ? ?? ?? ?? ??: {e}")
+        print(f"  stock score calculation failed: {e}")
         import traceback
         traceback.print_exc()
 

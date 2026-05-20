@@ -55,11 +55,12 @@ Write-Host ""
 
 $StartTime = Get-Date
 
-# Set Python encoding to UTF-8
+# Set Python encoding/output mode
 $env:PYTHONIOENCODING = "utf-8"
+$env:PYTHONUNBUFFERED = "1"
 
 # Execute and capture output
-& $PythonExe @Args 2>&1 | Tee-Object -FilePath $LogFile
+& $PythonExe -u @Args 2>&1 | Tee-Object -FilePath $LogFile
 
 $ExitCode = $LASTEXITCODE
 $EndTime = Get-Date

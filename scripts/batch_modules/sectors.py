@@ -13,9 +13,9 @@ from .utils import safe_float, to_iso
 
 
 def update_sector_data(supabase: Client, trading_date: str):
-    """?? ??? ??"""
+    """Aggregate sector change rates from constituent stocks."""
     trading_iso = to_iso(trading_date)
-    print(f"\n[3/7] ?? ??? ?? (???? ??)...")
+    print(f"\n[3/7] Updating sector change rates (constituent based)...")
 
     try:
         res_stocks = supabase.table("stocks") \
@@ -29,7 +29,7 @@ def update_sector_data(supabase: Client, trading_date: str):
             .lte("date", trading_iso) \
             .order("date", desc=True).limit(1).execute()
         if not dates_res.data:
-            print("   stock_daily ??? ??")
+            print("   No stock_daily data found")
             return
 
         latest = dates_res.data[0]["date"]
@@ -40,10 +40,10 @@ def update_sector_data(supabase: Client, trading_date: str):
         prev_date = prev_res.data[0]["date"] if prev_res.data else None
 
         if not prev_date:
-            print("   ?? ??? ??? ??  ??? ?? ??")
+            print("   Previous trading date not found; cannot compute change")
             return
 
-        print(f"  ???: {prev_date}  {latest}")
+        print(f"  Change window: {prev_date} -> {latest}")
 
         today_res = supabase.table("stock_daily") \
             .select("ticker, close").eq("date", latest).execute()
@@ -89,17 +89,17 @@ def update_sector_data(supabase: Client, trading_date: str):
         if sector_updates:
             for i in range(0, len(sector_updates), 100):
                 supabase.table("sectors").upsert(sector_updates[i:i+100]).execute()
-            print(f"   {len(sector_updates)}? ?? ??? ????")
+            print(f"   Updated {len(sector_updates)} sectors")
 
     except Exception as e:
-        print(f"  ? ?? ??? ?? ??: {e}")
+        print(f"  sector update failed: {e}")
         import traceback
         traceback.print_exc()
 
 
 def populate_sector_daily(supabase: Client):
-    """sector_daily ??? ??"""
-    print(f"\n[3.5/7] sector_daily ??? ??...")
+    """Populate sector_daily time series."""
+    print(f"\n[3.5/7] Populating sector_daily time series...")
 
     try:
         existing_res = supabase.table("sector_daily") \
@@ -113,7 +113,7 @@ def populate_sector_daily(supabase: Client):
                 last_known[sid] = {"date": r["date"], "close": safe_float(r["close"], 1000), "value": safe_float(r.get("value"), 0)}
 
         latest_sector_date = max((v["date"] for v in last_known.values()), default="2025-01-01")
-        print(f"  ?? sector_daily ??: {latest_sector_date}")
+        print(f"  latest sector_daily date: {latest_sector_date}")
 
         stocks_res = supabase.table("stocks") \
             .select("code, sector_id") \
@@ -132,10 +132,10 @@ def populate_sector_daily(supabase: Client):
 
         unique_dates = sorted(set(r["date"] for r in (dates_res.data or [])))
         if not unique_dates:
-            print("   ??? stock_daily ?? ??  ??")
+            print("   No new stock_daily dates found; skipping")
             return
 
-        print(f"  ??? ??: {len(unique_dates)}? ({unique_dates[0]} ~ {unique_dates[-1]})")
+        print(f"  dates to process: {len(unique_dates)} ({unique_dates[0]} ~ {unique_dates[-1]})")
 
         prev_date_data: Dict[str, dict] = {}
         if latest_sector_date > "2025-01-01":
@@ -200,34 +200,34 @@ def populate_sector_daily(supabase: Client):
                 try:
                     supabase.table("sector_daily").upsert(upsert_buffer).execute()
                 except Exception as e:
-                    print(f"     sector_daily upsert ??: {e}")
+                    print(f"     sector_daily upsert error: {e}")
                 upsert_buffer = []
 
             if (di + 1) % 20 == 0:
-                print(f"  -> ??: {di + 1}/{len(unique_dates)}")
+                print(f"  -> progress: {di + 1}/{len(unique_dates)}")
 
         if upsert_buffer:
             try:
                 supabase.table("sector_daily").upsert(upsert_buffer).execute()
             except Exception as e:
-                print(f"     sector_daily upsert ??: {e}")
-        print(f"   sector_daily ??? ?? ?? ({len(unique_dates)}?)")
+                print(f"     sector_daily upsert error: {e}")
+            print(f"   sector_daily population complete ({len(unique_dates)} dates)")
 
     except Exception as e:
-        print(f"  ? sector_daily ?? ??: {e}")
+        print(f"  sector_daily population failed: {e}")
         import traceback
         traceback.print_exc()
 
 
 def calculate_sector_scores(supabase: Client):
-    """?? ?? ??"""
-    print(f"\n[4/7] ?? ?? ??...")
+    """Calculate sector scores from flow/momentum/series factors."""
+    print(f"\n[4/7] Calculating sector scores...")
     try:
         res = supabase.table("sectors") \
             .select("id, name, change_rate, avg_change_rate, metrics").execute()
         sectors = res.data or []
         if not sectors:
-            print("   ?? ??? ??")
+            print("   No sectors found")
             return
 
         from_date = (date.today() - timedelta(days=90)).isoformat()
@@ -281,12 +281,12 @@ def calculate_sector_scores(supabase: Client):
         if updates:
             for i in range(0, len(updates), 100):
                 supabase.table("sectors").upsert(updates[i:i+100]).execute()
-            msg = f"   {len(updates)}? ?? ?? ???? ??"
+            msg = f"   Updated scores for {len(updates)} sectors"
             if nan_count > 0:
-                msg += f" (NaN ??: {nan_count}?)"
+                msg += f" (NaN fallback: {nan_count})"
             print(msg)
     except Exception as e:
-        print(f"  ? ?? ?? ?? ??: {e}")
+        print(f"  sector score calculation failed: {e}")
         import traceback
         traceback.print_exc()
 

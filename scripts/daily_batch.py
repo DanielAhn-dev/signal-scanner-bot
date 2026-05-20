@@ -67,13 +67,13 @@ def main():
     print("[DEBUG] Supabase client initialized", flush=True)
     sys.stdout.flush()
     
-    print(f"[START] Daily Batch Start: {datetime.now().isoformat()}")
+    print(f"[START] Daily Batch Start: {datetime.now().isoformat()}", flush=True)
     sys.stdout.flush()
-    print(f"   Using individual API mode (KRX batch API unavailable)")
-    print(f"\n   Options:")
-    print(f"      --date YYYYMMDD      : Specify trading date (e.g., --date 20260515)")
-    print(f"      --skip-ohlcv         : Skip OHLCV collection (start from indicators)")
-    print(f"      --reset-stock-data   : Reinitialize stock_daily table")
+    print(f"   Using individual API mode (KRX batch API unavailable)", flush=True)
+    print(f"\n   Options:", flush=True)
+    print(f"      --date YYYYMMDD      : Specify trading date (e.g., --date 20260515)", flush=True)
+    print(f"      --skip-ohlcv         : Skip OHLCV collection (start from indicators)", flush=True)
+    print(f"      --reset-stock-data   : Reinitialize stock_daily table", flush=True)
 
     # Parse command-line arguments
     skip_ohlcv = "--skip-ohlcv" in sys.argv
@@ -84,14 +84,14 @@ def main():
         date_idx = sys.argv.index("--date")
         if date_idx + 1 < len(sys.argv):
             trading_date = sys.argv[date_idx + 1]
-            print(f"   Trading date (explicit): {trading_date}")
+            print(f"   Trading date (explicit): {trading_date}", flush=True)
         else:
             print("[WARN] --date argument missing, auto-detecting")
             trading_date = get_last_trading_date()
-            print(f"   Trading date (auto-detected): {trading_date}")
+            print(f"   Trading date (auto-detected): {trading_date}", flush=True)
     else:
         trading_date = get_last_trading_date()
-        print(f"   Trading date (auto-detected): {trading_date}")
+        print(f"   Trading date (auto-detected): {trading_date}", flush=True)
 
     # Reset stock_daily if requested
     if reset_stock_data:
