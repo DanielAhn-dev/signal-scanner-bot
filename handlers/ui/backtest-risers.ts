@@ -503,6 +503,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     const priceRows = await fetchPriceRows(supabase, codes, scoreFromDate)
     const priceIndex = buildPriceIndex(priceRows)
+    const priceIndexCodes = Array.from(priceIndex.keys()).length
 
     const labelableEvents = buildLabelableEvents(scoreRows, priceIndex, params.horizonBars)
     const horizonAvailability = Object.fromEntries(
@@ -512,6 +513,17 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     const riserUniverse = labelableEvents
       .filter((row) => row.forwardReturnPct >= params.rallyThresholdPct)
+    
+    const _debugSteps = {
+      scoreRowsCount: scoreRows.length,
+      uniqueScoreCodes: codes.length,
+      priceRowsCount: priceRows.length,
+      priceIndexCodesCount: priceIndexCodes,
+      labelableEventsCount: labelableEvents.length,
+      riserUniverseCount: riserUniverse.length,
+      rallyThresholdPct: params.rallyThresholdPct,
+      horizonBars: params.horizonBars,
+    }
 
     const risers = riserUniverse
       .sort((a, b) => b.forwardReturnPct - a.forwardReturnPct)
@@ -591,6 +603,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         featureStats,
         ruleCandidates,
         risers: risersWithNames,
+        _debug: _debugSteps,
       },
     })
   } catch (e: any) {

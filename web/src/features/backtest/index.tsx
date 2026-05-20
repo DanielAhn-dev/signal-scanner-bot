@@ -941,7 +941,36 @@ export default function BacktestPage() {
 
       {!loading && !error && data && (
         <>
-          {/* 요약 통계 그리드 */}
+          {/* 디버그 정보 (개발용) */}
+          {(data as any)?._debug && (
+            <div
+              style={{
+                marginBottom: 'var(--space-3)',
+                padding: 'var(--space-3) var(--space-4)',
+                background: 'var(--color-bg-sunken)',
+                border: '1px solid var(--color-border-muted)',
+                borderRadius: 'var(--radius-md)',
+                fontSize: 11,
+                color: 'var(--color-text-tertiary)',
+              }}
+            >
+              <div style={{ fontWeight: 700, marginBottom: 6 }}>📊 데이터 파이프라인 진단</div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 8, fontSize: 10 }}>
+                <div>scores 행: {((data as any)._debug.scoreRowsCount || 0).toLocaleString()}개</div>
+                <div>unique 종목: {((data as any)._debug.uniqueScoreCodes || 0).toLocaleString()}개</div>
+                <div>가격 행: {((data as any)._debug.priceRowsCount || 0).toLocaleString()}개</div>
+                <div>가격 인덱스 종목: {((data as any)._debug.priceIndexCodesCount || 0).toLocaleString()}개</div>
+                <div>레이블링 가능: {((data as any)._debug.labelableEventsCount || 0).toLocaleString()}개</div>
+                <div style={{ fontWeight: 700, color: 'var(--color-text-secondary)' }}>급등 이벤트: {((data as any)._debug.riserUniverseCount || 0).toLocaleString()}개 (기준: {((data as any)._debug.rallyThresholdPct || 20)}%↑)</div>
+              </div>
+              <div style={{ marginTop: 8, fontSize: 10, color: 'var(--color-warning)' }}>
+                💡 0건이 나오면: ① scores 데이터 없음 ② 가격 데이터 부족 ③ {((data as any)._debug.horizonBars || 20)}일치 과거 가격 없음 중 하나입니다. <br/>
+                params: {JSON.stringify(data.params)}
+              </div>
+            </div>
+          )}
+        </>
+      )}
           <div className="bt-summary-card">
             <div className="bt-summary-grid">
               <div className="bt-summary-item">
