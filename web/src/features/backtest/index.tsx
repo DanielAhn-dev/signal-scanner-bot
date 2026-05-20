@@ -395,14 +395,16 @@ export default function BacktestPage() {
     setLoading(true)
     setError(null)
     try {
+      const requestTs = Date.now()
       const q = new URLSearchParams({
         horizon: String(horizon),
         lookbackDays: String(lookbackDays),
         rallyPct: String(rallyPct),
         topN: String(topN),
       })
+      q.set('_ts', String(requestTs))
       const res = await apiFetch(`/api/ui/backtest-risers?${q.toString()}`, {
-        cacheMs: 30_000,
+        cacheMs: 0,
         timeoutMs: 30_000,
       })
       setData((res?.data ?? null) as BacktestResponse | null)
@@ -969,8 +971,6 @@ export default function BacktestPage() {
               </div>
             </div>
           )}
-        </>
-      )}
           <div className="bt-summary-card">
             <div className="bt-summary-grid">
               <div className="bt-summary-item">

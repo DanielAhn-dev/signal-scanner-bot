@@ -108,7 +108,10 @@ async function fetchScoreRows(supabase: any, fromDate: string, maxRows: number):
       .from('scores')
       .select('code,asof,total_score,signal,factors')
       .gte('asof', fromDate)
-      // 정렬 제거 - 이미 데이터베이스에 시간순으로 정렬되어있음
+      // 페이지네이션 안정화를 위해 asof 기준 정렬을 강제한다.
+      // 정렬이 없으면 최근 행 위주로 잘려 40/60일 horizon에서 라벨링 이벤트가 0건이 될 수 있다.
+      .order('asof', { ascending: true })
+      .order('code', { ascending: true })
       .limit(pageSize)
       .range(offset, offset + pageSize - 1)
 
@@ -497,6 +500,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           commonFeatures: {},
           featureStats: [],
           ruleCandidates: [],
+          _debug: {
+            scoreRowsCount: scoreRows.length,
+            uniqueScoreCodes: codes.length,
+            priceRowsCount: 0,
+            priceIndexCodesCount: 0,
+            labelableEventsCount: 0,
+            riserUniverseCount: 0,
+            rallyThresholdPct: params.rallyThresholdPct,
+            horizonBars: params.horizonBars,
+          },
         },
       })
     }
