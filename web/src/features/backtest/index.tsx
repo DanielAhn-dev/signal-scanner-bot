@@ -966,7 +966,9 @@ export default function BacktestPage() {
                 <div style={{ fontWeight: 700, color: 'var(--color-text-secondary)' }}>급등 이벤트: {((data as any)._debug.riserUniverseCount || 0).toLocaleString()}개 (기준: {((data as any)._debug.rallyThresholdPct || 20)}%↑)</div>
               </div>
               <div style={{ marginTop: 8, fontSize: 10, color: 'var(--color-warning)' }}>
-                💡 0건이 나오면: ① scores 데이터 없음 ② 가격 데이터 부족 ③ {((data as any)._debug.horizonBars || 20)}일치 과거 가격 없음 중 하나입니다. <br/>
+                💡 0건이 나오면: ① scores 데이터 없음 ② 가격 데이터 부족 ③ {((data as any)._debug.horizonBars || 20)}일치 과거 가격 없음 중 하나입니다.
+              </div>
+              <div style={{ marginTop: 4, fontSize: 10, color: 'var(--color-text-tertiary)', wordBreak: 'break-all', overflowWrap: 'anywhere' }}>
                 params: {JSON.stringify(data.params)}
               </div>
             </div>
@@ -1460,11 +1462,12 @@ export default function BacktestPage() {
                               key={`${tier}-${row.code}`}
                               type="button"
                               className="sim-btn sim-btn--ghost"
-                              style={{ justifyContent: 'space-between', textAlign: 'left' }}
+                              style={{ flexDirection: 'column', alignItems: 'flex-start', textAlign: 'left', gap: 6 }}
                               onClick={() => selectStock({ code: row.code, name: row.name })}
                             >
-                              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                                <strong>{row.name}</strong>
+                              {/* 종목명 + 배지 줄 */}
+                              <span style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', width: '100%' }}>
+                                <strong style={{ fontSize: 13 }}>{row.name}</strong>
                                 <span className="bt-table-stock-code">{row.code}</span>
                                 {row.market && (
                                   <span style={{ fontSize: 11, color: 'var(--color-text-tertiary)' }}>{row.market}</span>
@@ -1475,17 +1478,18 @@ export default function BacktestPage() {
                                 {row.ruleMatched && (
                                   <span className="bt-check-rule-badge bt-check-rule-badge--on">추천 룰 적합</span>
                                 )}
+                                <span className={signalCls(row.signal)} style={{ marginLeft: 'auto' }}>{row.signal}</span>
                               </span>
-                              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 10, marginLeft: 12 }}>
-                                <span style={{ fontSize: 12, color: 'var(--color-success)' }}>기대 {row.expectedReturnPct.toFixed(1)}%</span>
-                                <span style={{ fontSize: 12, color: 'var(--color-text-secondary)' }}>모멘텀 {signedPct(row.shortMomentumPct, 1)}</span>
-                                <span style={{ fontSize: 12, color: 'var(--color-text-secondary)' }}>거래대금 {toEokFromWon(row.liquidity).toFixed(0)}억</span>
-                                <span style={{ fontSize: 12, color: 'var(--color-text-secondary)' }}>점수 {row.score.toFixed(1)}</span>
-                                <span style={{ fontSize: 12, color: 'var(--color-text-secondary)' }}>RSI {row.rsi14 == null ? '-' : row.rsi14.toFixed(1)}</span>
+                              {/* 지표 줄 — 모바일에서 wrap */}
+                              <span style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', fontSize: 12, width: '100%' }}>
+                                <span style={{ color: 'var(--color-success)', fontWeight: 700 }}>기대 {row.expectedReturnPct.toFixed(1)}%</span>
+                                <span style={{ color: 'var(--color-text-secondary)' }}>모멘텀 {signedPct(row.shortMomentumPct, 1)}</span>
+                                <span style={{ color: 'var(--color-text-secondary)' }}>거래대금 {toEokFromWon(row.liquidity).toFixed(0)}억</span>
+                                <span style={{ color: 'var(--color-text-secondary)' }}>점수 {row.score.toFixed(1)}</span>
+                                <span style={{ color: 'var(--color-text-secondary)' }}>RSI {row.rsi14 == null ? '-' : row.rsi14.toFixed(1)}</span>
                                 {row.warnGrade && row.warnGrade !== 'SAFE' && (
-                                  <span style={{ fontSize: 11, color: 'var(--color-warning)' }}>주의 {row.warnGrade}</span>
+                                  <span style={{ color: 'var(--color-warning)' }}>주의 {row.warnGrade}</span>
                                 )}
-                                <span className={signalCls(row.signal)}>{row.signal}</span>
                               </span>
                             </button>
                           ))}
