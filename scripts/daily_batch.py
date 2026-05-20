@@ -39,6 +39,7 @@ import subprocess
 import sys
 import time
 import traceback
+from io import StringIO
 from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
 from typing import List, Dict, Tuple, Optional
@@ -46,7 +47,6 @@ from typing import List, Dict, Tuple, Optional
 import pandas as pd
 import numpy as np
 import requests
-from bs4 import BeautifulSoup
 from pykrx import stock
 from supabase import create_client, Client
 
@@ -168,6 +168,16 @@ def get_latest_stock_daily_date() -> Optional[str]:
         return None
 
 
+def get_earliest_stock_daily_date() -> Optional[str]:
+    try:
+        earliest_res = supabase.table("stock_daily") \
+            .select("date").order("date", desc=False).limit(1).execute()
+        return earliest_res.data[0]["date"] if earliest_res.data else None
+    except Exception as e:
+        print(f"  ⚠️ stock_daily 최초일 조회 실패: {e}")
+        return None
+
+
 def run_python_script(script_path: str, args: list[str], label: str) -> bool:
     cmd = [sys.executable, script_path, *args]
     print(f"  -> {label}: {' '.join(cmd)}")
@@ -199,36 +209,83 @@ def auto_backfill_missing_dates(trading_date: str) -> bool:
         print("  ℹ️ stock_daily 최신일을 찾지 못해 자동 백필을 건너뜁니다.")
         return False
 
+    backfilled = False
     latest_dt = datetime.strptime(latest_date, "%Y-%m-%d").date()
     trading_dt = datetime.strptime(trading_date, "%Y%m%d").date()
-    if latest_dt >= trading_dt:
+
+    # 1) 최신일 기준 전진 누락 구간 백필
+    if latest_dt < trading_dt:
+        gap_days = (trading_dt - latest_dt).days
+        start_date = (latest_dt + timedelta(days=1)).strftime("%Y%m%d")
+        print(
+            f"  🔄 누락 구간 감지: stock_daily 최신 {latest_date} < 기준 {trading_date} (gap {gap_days}일)"
+        )
+        print(f"  🔄 백필 범위: {start_date} ~ {trading_date}")
+
+        ok_stock = run_python_script(
+            "scripts/backfill_stock_daily_universe.py",
+            ["--start", start_date, "--end", trading_date, "--universe", "core-extended", "--sleep", "0.08"],
+            "stock_daily 백필",
+        )
+        if not ok_stock:
+            return False
+
+        ok_indicators = run_python_script(
+            "scripts/backfill_daily_indicators.py",
+            ["--start", start_date, "--end", trading_date],
+            "daily_indicators 백필",
+        )
+        if not ok_indicators:
+            return False
+
+        backfilled = True
+        latest_dt = trading_dt
+    else:
         print(f"  ✅ stock_daily 최신일이 기준일 이상입니다. ({latest_date} >= {trading_date})")
-        return False
 
-    gap_days = (trading_dt - latest_dt).days
-    start_date = (latest_dt + timedelta(days=1)).strftime("%Y%m%d")
-    print(
-        f"  🔄 누락 구간 감지: stock_daily 최신 {latest_date} < 기준 {trading_date} (gap {gap_days}일)"
-    )
-    print(f"  🔄 백필 범위: {start_date} ~ {trading_date}")
+    # 2) 최소 보유 기간 충족 여부 확인 (롤링 윈도우 유지)
+    stock_retention_days = safe_int(os.environ.get("STOCK_DAILY_RETENTION_DAYS", 400), 400)
+    stock_retention_days = max(400, stock_retention_days)
+    target_start_dt = trading_dt - timedelta(days=stock_retention_days)
 
-    ok_stock = run_python_script(
-        "scripts/backfill_stock_daily_universe.py",
-        ["--start", start_date, "--end", trading_date, "--universe", "core-extended", "--sleep", "0.08"],
-        "stock_daily 백필",
-    )
-    if not ok_stock:
-        return False
+    earliest_date = get_earliest_stock_daily_date()
+    if not earliest_date:
+        print("  ℹ️ stock_daily 최초일을 찾지 못해 최소 보유기간 검증을 건너뜁니다.")
+        return backfilled
 
-    ok_indicators = run_python_script(
-        "scripts/backfill_daily_indicators.py",
-        ["--start", start_date, "--end", trading_date],
-        "daily_indicators 백필",
-    )
-    if not ok_indicators:
-        return False
+    earliest_dt = datetime.strptime(earliest_date, "%Y-%m-%d").date()
+    if earliest_dt > target_start_dt:
+        hist_start = target_start_dt.strftime("%Y%m%d")
+        hist_end = (earliest_dt - timedelta(days=1)).strftime("%Y%m%d")
+        missing_days = (earliest_dt - target_start_dt).days
+        print(
+            f"  🔄 과거 보유 구간 부족: 최초 {earliest_date}, 목표 <= {target_start_dt.isoformat()} (부족 {missing_days}일)"
+        )
+        print(f"  🔄 과거 백필 범위: {hist_start} ~ {hist_end}")
 
-    return True
+        ok_stock_hist = run_python_script(
+            "scripts/backfill_stock_daily_universe.py",
+            ["--start", hist_start, "--end", hist_end, "--universe", "core-extended", "--sleep", "0.08"],
+            "stock_daily 과거 백필",
+        )
+        if not ok_stock_hist:
+            return backfilled
+
+        ok_indicators_hist = run_python_script(
+            "scripts/backfill_daily_indicators.py",
+            ["--start", hist_start, "--end", hist_end],
+            "daily_indicators 과거 백필",
+        )
+        if not ok_indicators_hist:
+            return backfilled
+
+        backfilled = True
+    else:
+        print(
+            f"  ✅ 과거 보유 구간 충족: 최초 {earliest_date}, 목표 시작 <= {target_start_dt.isoformat()}"
+        )
+
+    return backfilled
 
 def to_iso(yyyymmdd: str) -> str:
     return f"{yyyymmdd[:4]}-{yyyymmdd[4:6]}-{yyyymmdd[6:8]}"
@@ -575,90 +632,271 @@ def fetch_investor_data(trading_date: str):
         print("  ℹ️ DISABLE_INVESTOR_FETCH=true 설정으로 수급 수집을 건너뜁니다.")
         return
     
+    def _upsert_investor_rows(rows: list[dict]) -> None:
+        for i in range(0, len(rows), 500):
+            batch = rows[i:i + 500]
+            try:
+                supabase.table("investor_daily").upsert(batch).execute()
+            except Exception as e:
+                print(f"    ⚠️ investor_daily upsert 에러: {e}")
+                for j in range(0, len(batch), 50):
+                    try:
+                        supabase.table("investor_daily").upsert(batch[j:j + 50]).execute()
+                    except Exception:
+                        pass
+
+    def _collect_by_investor_value(stock_module, code_list: list[str]) -> tuple[list[dict], int, int]:
+        rows: list[dict] = []
+        fail_count = 0
+        success_count = 0
+        for idx, code in enumerate(code_list):
+            if idx % 100 == 0 and idx > 0:
+                print(f"  -> [value_by_investor] 진행: {idx}/{len(code_list)} (성공: {success_count}, 실패: {fail_count})")
+
+            try:
+                df = stock_module.get_market_trading_value_by_investor(trading_date, trading_date, code)
+                if df is None or df.empty:
+                    continue
+
+                inst_val = 0
+                foreign_val = 0
+                for _, row in df.iterrows():
+                    inst_val += safe_int(row.get("기관", 0))
+                    foreign_val += safe_int(row.get("외국인", 0))
+
+                if inst_val == 0 and foreign_val == 0:
+                    continue
+
+                rows.append({
+                    "date": trading_iso,
+                    "ticker": code,
+                    "institution": inst_val,
+                    "foreign": foreign_val,
+                })
+                success_count += 1
+                time.sleep(0.05)
+            except Exception:
+                fail_count += 1
+                continue
+
+        return rows, success_count, fail_count
+
+    def _collect_by_net_purchases(stock_module, code_list: list[str]) -> tuple[list[dict], int, int]:
+        # pykrx value-by-investor가 깨졌을 때의 fallback: 투자자별 순매수(티커별) 병합
+        try:
+            df_inst = stock_module.get_market_net_purchases_of_equities_by_ticker(trading_date, trading_date, "ALL", "기관합계")
+            time.sleep(0.05)
+            df_foreign = stock_module.get_market_net_purchases_of_equities_by_ticker(trading_date, trading_date, "ALL", "외국인")
+        except Exception:
+            return [], 0, 0
+
+        if df_inst is None or df_foreign is None or df_inst.empty or df_foreign.empty:
+            return [], 0, 0
+
+        inst = df_inst.reset_index().rename(columns={
+            "티커": "ticker",
+            "순매수거래대금": "institution",
+            "순매수거래대금(원)": "institution",
+        })
+        foreign = df_foreign.reset_index().rename(columns={
+            "티커": "ticker",
+            "순매수거래대금": "foreign",
+            "순매수거래대금(원)": "foreign",
+        })
+
+        merged = inst[["ticker", "institution"]].merge(
+            foreign[["ticker", "foreign"]],
+            on="ticker",
+            how="inner",
+        )
+
+        code_set = set(code_list)
+        rows: list[dict] = []
+        for _, row in merged.iterrows():
+            code = str(row.get("ticker") or "").strip().zfill(6)
+            if not code or code not in code_set:
+                continue
+            inst_val = safe_int(row.get("institution", 0))
+            foreign_val = safe_int(row.get("foreign", 0))
+            if inst_val == 0 and foreign_val == 0:
+                continue
+            rows.append({
+                "date": trading_iso,
+                "ticker": code,
+                "institution": inst_val,
+                "foreign": foreign_val,
+            })
+
+        return rows, len(rows), 0
+
+    def _collect_from_naver_finance(code_list: list[str]) -> tuple[list[dict], int, int]:
+        # pykrx 투자자 API가 장기간 비정상일 때의 최후 fallback
+        session = requests.Session()
+        session.headers.update({
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+                          "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+            "Referer": "https://finance.naver.com/",
+            "Accept-Language": "ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7",
+        })
+
+        target_dt = datetime.strptime(trading_date, "%Y%m%d").date()
+
+        def _parse_signed_int(v) -> int:
+            s = str(v or "").strip()
+            if not s or s.lower() == "nan":
+                return 0
+            s = s.replace(",", "").replace("\u2212", "-")
+            s = "".join(ch for ch in s if ch.isdigit() or ch in ("-", "+"))
+            if not s or s in ("-", "+"):
+                return 0
+            try:
+                return int(s)
+            except Exception:
+                return 0
+
+        def _extract_from_table(df: pd.DataFrame) -> Optional[tuple[str, int, int]]:
+            if df is None or df.empty:
+                return None
+
+            temp = df.copy()
+            if isinstance(temp.columns, pd.MultiIndex):
+                flat_cols = []
+                for c in temp.columns:
+                    if isinstance(c, tuple):
+                        flat = " ".join(str(x) for x in c if str(x) != "nan").strip()
+                    else:
+                        flat = str(c)
+                    flat_cols.append(flat)
+                temp.columns = flat_cols
+            else:
+                temp.columns = [str(c).strip() for c in temp.columns]
+
+            # 날짜/기관/외국인 순매매량 컬럼 후보를 동적으로 탐색
+            date_col = next((c for c in temp.columns if "날짜" in c), None)
+            inst_col = next((c for c in temp.columns if "기관" in c and "순매매" in c), None)
+            foreign_col = next((c for c in temp.columns if "외국인" in c and "순매매" in c), None)
+
+            if not date_col or not inst_col or not foreign_col:
+                return None
+
+            working = temp[[date_col, inst_col, foreign_col]].copy()
+            working = working.dropna(subset=[date_col])
+            if working.empty:
+                return None
+
+            best: Optional[tuple[date, int, int]] = None
+            for _, row in working.iterrows():
+                raw_date = str(row.get(date_col) or "").strip()
+                if not raw_date or raw_date.lower() == "nan":
+                    continue
+                try:
+                    row_dt = datetime.strptime(raw_date.replace(".", "-").replace(" ", ""), "%Y-%m-%d").date()
+                except Exception:
+                    continue
+                if row_dt > target_dt:
+                    continue
+
+                inst_val = _parse_signed_int(row.get(inst_col))
+                foreign_val = _parse_signed_int(row.get(foreign_col))
+
+                if best is None or row_dt > best[0]:
+                    best = (row_dt, inst_val, foreign_val)
+
+            if best is None:
+                return None
+            return best[0].isoformat(), best[1], best[2]
+
+        rows: list[dict] = []
+        success_count = 0
+        fail_count = 0
+        for idx, code in enumerate(code_list):
+            if idx % 100 == 0 and idx > 0:
+                print(f"  -> [naver_finance] 진행: {idx}/{len(code_list)} (성공: {success_count}, 실패: {fail_count})")
+            try:
+                url = f"https://finance.naver.com/item/frgn.naver?code={code}&page=1"
+                resp = session.get(url, timeout=8)
+                resp.raise_for_status()
+                tables = pd.read_html(StringIO(resp.text))
+
+                picked: Optional[tuple[str, int, int]] = None
+                for tbl in tables:
+                    picked = _extract_from_table(tbl)
+                    if picked:
+                        break
+
+                if not picked:
+                    fail_count += 1
+                    continue
+
+                matched_date, inst_val, foreign_val = picked
+                if inst_val == 0 and foreign_val == 0:
+                    fail_count += 1
+                    continue
+
+                rows.append({
+                    "date": matched_date,
+                    "ticker": code,
+                    "institution": inst_val,
+                    "foreign": foreign_val,
+                })
+                success_count += 1
+                time.sleep(0.04)
+            except Exception:
+                fail_count += 1
+                continue
+
+        return rows, success_count, fail_count
+
     try:
         res = supabase.table("stocks") \
-            .select("code, name") \
+            .select("code") \
             .in_("universe_level", ["core", "extended"]) \
             .eq("is_active", True).execute()
         codes = [r["code"] for r in (res.data or [])]
-        
         if not codes:
             print("  ⚠️ 대상 종목이 없습니다.")
             return
-        
+
         print(f"  대상: {len(codes)}개 종목")
-        
         from pykrx import stock
 
-        # pykrx 투자자 수급 API가 특정 버전/응답 변화로 전면 실패할 수 있어
-        # 본격 루프 전에 단일 종목 probe로 가용성을 빠르게 판정한다.
-        try:
-            probe_df = stock.get_market_trading_value_by_investor(trading_date, trading_date, "005930")
-            if probe_df is None or probe_df.empty:
-                print("  ⚠️ 투자자 수급 API 응답이 비어 있어 이번 배치에서는 수집을 건너뜁니다.")
-                return
-        except Exception as probe_error:
-            print(f"  ⚠️ 투자자 수급 API 사용 불가({type(probe_error).__name__}): {probe_error}")
-            print("  ℹ️ 이번 배치에서는 수급 수집 단계를 건너뛰고 다음 단계를 진행합니다.")
+        # 전략1: 종목별 투자자 거래대금 API
+        inv_rows, success_count, fail_count = _collect_by_investor_value(stock, codes)
+        strategy_used = "value_by_investor"
+
+        # 전략2: 투자자별 순매수(티커별) 병합 fallback
+        if not inv_rows:
+            alt_rows, alt_success, _ = _collect_by_net_purchases(stock, codes)
+            if alt_rows:
+                inv_rows = alt_rows
+                success_count = alt_success
+                fail_count = 0
+                strategy_used = "net_purchases_by_ticker"
+
+        # 전략3: 네이버 금융 HTML 파싱 fallback
+        if not inv_rows:
+            nav_rows, nav_success, nav_fail = _collect_from_naver_finance(codes)
+            if nav_rows:
+                inv_rows = nav_rows
+                success_count = nav_success
+                fail_count = nav_fail
+                strategy_used = "naver_finance_html"
+
+        if inv_rows:
+            _upsert_investor_rows(inv_rows)
+            print(f"  ✅ {len(inv_rows)}개 수급 데이터 저장 완료 (전략: {strategy_used}, 성공: {success_count}개 종목, 실패: {fail_count}개)")
             return
 
-        inv_rows = []
-        fail_count = 0
-        success_count = 0
-        
-        for idx, code in enumerate(codes):
-            if idx % 100 == 0 and idx > 0:
-                print(f"  -> 진행: {idx}/{len(codes)} (성공: {success_count}, 실패: {fail_count})")
-            
-            try:
-                # 해당 일자의 투자자별 거래현황
-                df = stock.get_market_trading_value_by_investor(trading_date, trading_date, code)
-                if df.empty:
-                    continue
-                
-                # 컬럼: 기관, 외국인, 개인 등
-                for dt_idx, row in df.iterrows():
-                    inst_val = safe_int(row.get('기관', 0))
-                    foreign_val = safe_int(row.get('외국인', 0))
-                    
-                    if inst_val == 0 and foreign_val == 0:
-                        continue
-                    
-                    inv_rows.append({
-                        "date": trading_iso,
-                        "ticker": code,
-                        "institution": inst_val,
-                        "foreign": foreign_val,
-                    })
-                
-                success_count += 1
-                time.sleep(0.1)
-            
-            except Exception as e:
-                fail_count += 1
-                if fail_count <= 5:
-                    # 무시 가능한 에러 (데이터 없음)
-                    pass
-        
-        if inv_rows:
-            # 배치로 저장
-            for i in range(0, len(inv_rows), 500):
-                batch = inv_rows[i:i+500]
-                try:
-                    supabase.table("investor_daily").upsert(batch).execute()
-                except Exception as e:
-                    print(f"    ⚠️ investor_daily upsert 에러: {e}")
-                    # 소분할 재시도
-                    for j in range(0, len(batch), 50):
-                        try:
-                            supabase.table("investor_daily").upsert(batch[j:j+50]).execute()
-                        except:
-                            pass
-            
-            print(f"  ✅ {len(inv_rows)}개 수급 데이터 저장 완료 (성공: {success_count}개 종목, 실패: {fail_count}개)")
+        # 조용히 넘어가지 않고, 현재 stale 상태를 명확히 알린다.
+        latest = supabase.table("investor_daily").select("date").order("date", desc=True).limit(1).execute()
+        latest_date = (latest.data or [{}])[0].get("date") if latest.data else None
+        if latest_date:
+            trading_dt = datetime.strptime(trading_date, "%Y%m%d").date()
+            gap = (trading_dt - datetime.fromisoformat(str(latest_date)).date()).days
+            print(f"  ❌ investor_daily 수집 실패: 3개 전략 모두 실패 (latest={latest_date}, stale={gap}일)")
         else:
-            print(f"  ⚠️ 수급 데이터 없음 (성공: {success_count}개 종목, 실패: {fail_count}개)")
-    
+            print("  ❌ investor_daily 수집 실패: 3개 전략 모두 실패 (기존 데이터 없음)")
+
     except Exception as e:
         print(f"  ❌ 투자자 수급 수집 실패: {e}")
         traceback.print_exc()
@@ -1532,7 +1770,9 @@ def save_pullback_signals(trading_date: str):
 # =============================================
 def cleanup_old_data():
     print(f"\n[7/7] 오래된 데이터 정리...")
-    cutoff = (date.today() - timedelta(days=400)).isoformat()
+    stock_retention_days = safe_int(os.environ.get("STOCK_DAILY_RETENTION_DAYS", 400), 400)
+    stock_retention_days = max(400, stock_retention_days)
+    cutoff = (date.today() - timedelta(days=stock_retention_days)).isoformat()
     # 지표는 스캔/분석 품질(200일 이평 + 계절성 비교)을 위해 더 길게 유지
     indicators_retention_days = safe_int(os.environ.get("DAILY_INDICATORS_RETENTION_DAYS", 730), 730)
     indicators_retention_days = max(400, indicators_retention_days)
@@ -1550,6 +1790,7 @@ def cleanup_old_data():
                 .lt("created_at", jobs_cutoff).execute()
         except:
             pass
+        print(f"  -> stock_daily 보존일수: {stock_retention_days}일 (컷오프: {cutoff})")
         print(f"  -> daily_indicators 보존일수: {indicators_retention_days}일 (컷오프: {indicators_cutoff})")
         print("  ✅ 정리 완료")
     except Exception as e:
