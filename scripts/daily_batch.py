@@ -1,1928 +1,230 @@
+﻿#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
 """
-scripts/daily_batch.py
-=====================
-매일 장 마감 후 실행 (GitHub Actions or 수동)
-KRX API 제약 대응: 전종목 일괄 API 대신 개별 종목 API 사용
+scripts/daily_batch.py - Daily batch processor
 
-  1. DB 종목 기반 OHLCV 수집          (stock_daily 테이블)
-  2. 기술적 지표 계산                  (daily_indicators 테이블)
-  3. 섹터 등락률 집계                  (sectors 테이블)
-  4. 섹터 점수 계산                    (sectors 테이블)
-  5. 종목 점수 계산                    (scores 테이블)
-  6. 오래된 데이터 정리 (자동)
+Orchestrates data collection, processing, and cleanup operations.
 
-환경 변수:
-  SUPABASE_URL                      - Supabase 프로젝트 URL (필수)
-  SUPABASE_SERVICE_ROLE_KEY         - Supabase 관리자 키 (필수)
-  DAILY_INDICATORS_RETENTION_DAYS   - daily_indicators 보유일수 (기본: 550일 = 1.5년, 무료 플랜 최적화)
-                                      최소값: 400일 (자동 보정)
-                                      SMA200, RSI 신뢰도 & 계절성 분석용
-  
-데이터 보유 정책 (자동 정리):
-  - stock_daily: 400일 유지 (~1.6년 거래일, OHLCV)
-  - daily_indicators: DAILY_INDICATORS_RETENTION_DAYS (기본 550일, 기술적 지표)
-  - investor_daily: 400일 유지 (투자자 수급)
-  - sector_daily: 400일 유지 (섹터 수익률)
-  - pullback_signals: 400일 유지 (눌림목 신호)
-  - jobs: 30일 유지 (배치 로그, 완료/실패만)
-  
-모니터링:
-  pnpm monitor:data-retention          # 기본 모니터링
-  pnpm monitor:data-retention:detailed # 행 개수까지 표시
-  
-상세: docs/data-retention-policy.md
+Steps:
+  0. Auto-backfill missing trading dates
+  1. Collect OHLCV data (stock_daily table)
+  2. Calculate technical indicators (daily_indicators table)
+  2.5. Collect investor flow data
+  2.6. Collect credit/short-selling data
+  3-4. Update sector performance and scoring
+  5. Calculate stock scores and signals
+  6. Generate pullback trading signals
+  7. Cleanup old data per retention policy
+
+Environment variables:
+  SUPABASE_URL                      - Supabase project URL
+  SUPABASE_SERVICE_ROLE_KEY         - Supabase service role API key
+  DAILY_INDICATORS_RETENTION_DAYS   - Retention days for daily_indicators (default: 400)
 """
-from __future__ import annotations
 
 import os
-import subprocess
 import sys
 import time
-import traceback
-from io import StringIO
-from datetime import date, datetime, timedelta
-from zoneinfo import ZoneInfo
-from typing import List, Dict, Tuple, Optional
+from datetime import datetime
+from pathlib import Path
 
-import pandas as pd
-import numpy as np
-import requests
-from pykrx import stock
-from supabase import create_client, Client
+# Add scripts directory to path for batch_modules imports
+sys.path.insert(0, str(Path(__file__).parent))
 
-from _price_adjustment import adjust_ohlcv_for_splits
-
-# ===== 환경 변수 설정 =====
-def load_env_file(filepath=".env"):
-    try:
-        with open(filepath, "r") as f:
-            for line in f:
-                line = line.strip()
-                if not line or line.startswith("#"):
-                    continue
-                if "=" in line:
-                    key, value = line.split("=", 1)
-                    key = key.strip()
-                    if key not in os.environ:
-                        os.environ[key] = value.strip().strip('"').strip("'")
-    except FileNotFoundError:
-        pass
-
-load_env_file()
-
-SUPABASE_URL = os.environ.get("SUPABASE_URL")
-SUPABASE_KEY = os.environ.get("SUPABASE_SERVICE_ROLE_KEY")
-
-if not SUPABASE_URL or not SUPABASE_KEY:
-    print("🚨 [Error] SUPABASE_URL or SERVICE_ROLE_KEY missing", file=sys.stderr)
-    sys.exit(1)
-
-supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
-
-# ===== 유틸리티 =====
-def safe_float(x, default=0.0):
-    try:
-        v = float(x)
-        return default if (np.isnan(v) or np.isinf(v)) else v
-    except:
-        return default
-
-def safe_int(x, default=0):
-    try:
-        v = float(x)
-        if np.isnan(v) or np.isinf(v):
-            return default
-        return int(v)
-    except:
-        return default
+# Import all batch modules
+from batch_modules.utils import load_env_file, get_last_trading_date
+from batch_modules.backfill import auto_backfill_missing_dates
+from batch_modules.ohlcv import fetch_ohlcv_per_ticker
+from batch_modules.indicators import calculate_indicators
+from batch_modules.investor import fetch_investor_data
+from batch_modules.credit_short import fetch_credit_short_data
+from batch_modules.sectors import update_sector_data, populate_sector_daily, calculate_sector_scores
+from batch_modules.scores import calculate_stock_scores
+from batch_modules.signals import save_pullback_signals
+from batch_modules.cleanup import cleanup_old_data
 
 
-def derive_signal(total_score: int) -> str:
-    score = max(0, min(100, safe_int(total_score, 0)))
-    if score >= 85:
-        return "STRONG_BUY"
-    if score >= 70:
-        return "BUY"
-    if score >= 55:
-        return "WATCH"
-    if score <= 20:
-        return "SELL"
-    return "HOLD"
-
-
-def run_engine_score_sync(asof: str) -> bool:
-    pnpm_bin = "pnpm.cmd" if os.name == "nt" else "pnpm"
-    cmd = [pnpm_bin, "run", "sync:scores", f"--asof={asof}", "--concurrency=6", "--limit=1500"]
-    try:
-        print("  -> 엔진 기반 점수 동기화 실행 중...", " ".join(cmd))
-        result = subprocess.run(cmd, check=True, capture_output=True, text=True)
-        if result.stdout:
-            lines = [line for line in result.stdout.splitlines() if line.strip()]
-            if lines:
-                print(f"  ✅ {lines[-1]}")
-        return True
-    except Exception as e:
-        print(f"  ⚠️ 엔진 기반 점수 동기화 실패, 레거시 계산으로 폴백: {e}")
-        return False
-
-def get_last_trading_date() -> str:
-    """오늘 또는 가장 최근 거래일을 YYYYMMDD로 반환 (여러 종목 기준)
-
-    서버/컨테이너의 로컬 타임존 차이로 날짜가 어긋나는 경우가 있어,
-    한국 표준시(Asia/Seoul)를 기준으로 날짜를 계산합니다.
-    최대 60일까지 역추적하며, 여러 종목으로 검증합니다.
-    """
-    today = datetime.now(ZoneInfo("Asia/Seoul")).date()
-    # 여러 종목으로 검증 (삼성전자, NAVER, 카카오, SK하이닉스)
-    test_tickers = ["005930", "035420", "035720", "000660"]
+def main():
+    """Main batch processor entry point"""
     
-    for i in range(0, 60):  # 최대 60일 역추적
-        d = today - timedelta(days=i)
-        d_str = d.strftime("%Y%m%d")
-        
-        valid_count = 0
-        for ticker in test_tickers:
-            try:
-                check = stock.get_market_ohlcv(d_str, d_str, ticker)
-                if not check.empty and check.iloc[0].get("거래량", 0) > 0:
-                    valid_count += 1
-            except:
-                pass
-        
-        # 최소 2개 이상 종목이 거래 데이터 있으면 해당 날짜를 거래일로 판단
-        if valid_count >= 2:
-            print(f"  ✅ 최근 거래일 감지: {d_str} ({valid_count}/{len(test_tickers)} 종목 확인)")
-            return d_str
+    # Load environment configuration
+    print("[DEBUG] Loading environment...", flush=True)
+    load_env_file()
+    print("[DEBUG] Environment loaded", flush=True)
     
-    print(f"  ⚠️ 거래일 감지 실패 - 오늘 날짜 사용: {today.strftime('%Y%m%d')}")
-    return today.strftime("%Y%m%d")
-
-
-def get_latest_stock_daily_date() -> Optional[str]:
-    try:
-        latest_res = supabase.table("stock_daily") \
-            .select("date").order("date", desc=True).limit(1).execute()
-        return latest_res.data[0]["date"] if latest_res.data else None
-    except Exception as e:
-        print(f"  ⚠️ stock_daily 최신일 조회 실패: {e}")
-        return None
-
-
-def get_earliest_stock_daily_date() -> Optional[str]:
-    try:
-        earliest_res = supabase.table("stock_daily") \
-            .select("date").order("date", desc=False).limit(1).execute()
-        return earliest_res.data[0]["date"] if earliest_res.data else None
-    except Exception as e:
-        print(f"  ⚠️ stock_daily 최초일 조회 실패: {e}")
-        return None
-
-
-def run_python_script(script_path: str, args: list[str], label: str) -> bool:
-    cmd = [sys.executable, script_path, *args]
-    print(f"  -> {label}: {' '.join(cmd)}")
-    try:
-        result = subprocess.run(cmd, check=True, capture_output=True, text=True)
-        stdout = (result.stdout or "").strip()
-        if stdout:
-            lines = [line for line in stdout.splitlines() if line.strip()]
-            if lines:
-                print(f"  ✅ {label} 완료: {lines[-1]}")
-        return True
-    except subprocess.CalledProcessError as e:
-        stderr = (e.stderr or "").strip()
-        stdout = (e.stdout or "").strip()
-        if stdout:
-            print(f"  ▸ stdout: {stdout.splitlines()[-1]}")
-        if stderr:
-            print(f"  ▸ stderr: {stderr.splitlines()[-1]}")
-        print(f"  ⚠️ {label} 실패")
-        return False
-    except Exception as e:
-        print(f"  ⚠️ {label} 실행 실패: {e}")
-        return False
-
-
-def auto_backfill_missing_dates(trading_date: str) -> bool:
-    latest_date = get_latest_stock_daily_date()
-    if not latest_date:
-        print("  ℹ️ stock_daily 최신일을 찾지 못해 자동 백필을 건너뜁니다.")
-        return False
-
-    backfilled = False
-    latest_dt = datetime.strptime(latest_date, "%Y-%m-%d").date()
-    trading_dt = datetime.strptime(trading_date, "%Y%m%d").date()
-
-    # 1) 최신일 기준 전진 누락 구간 백필
-    if latest_dt < trading_dt:
-        gap_days = (trading_dt - latest_dt).days
-        start_date = (latest_dt + timedelta(days=1)).strftime("%Y%m%d")
-        print(
-            f"  🔄 누락 구간 감지: stock_daily 최신 {latest_date} < 기준 {trading_date} (gap {gap_days}일)"
-        )
-        print(f"  🔄 백필 범위: {start_date} ~ {trading_date}")
-
-        ok_stock = run_python_script(
-            "scripts/backfill_stock_daily_universe.py",
-            ["--start", start_date, "--end", trading_date, "--universe", "core-extended", "--sleep", "0.08"],
-            "stock_daily 백필",
-        )
-        if not ok_stock:
-            return False
-
-        ok_indicators = run_python_script(
-            "scripts/backfill_daily_indicators.py",
-            ["--start", start_date, "--end", trading_date],
-            "daily_indicators 백필",
-        )
-        if not ok_indicators:
-            return False
-
-        backfilled = True
-        latest_dt = trading_dt
-    else:
-        print(f"  ✅ stock_daily 최신일이 기준일 이상입니다. ({latest_date} >= {trading_date})")
-
-    # 2) 최소 보유 기간 충족 여부 확인 (롤링 윈도우 유지)
-    stock_retention_days = safe_int(os.environ.get("STOCK_DAILY_RETENTION_DAYS", 400), 400)
-    stock_retention_days = max(400, stock_retention_days)
-    target_start_dt = trading_dt - timedelta(days=stock_retention_days)
-
-    earliest_date = get_earliest_stock_daily_date()
-    if not earliest_date:
-        print("  ℹ️ stock_daily 최초일을 찾지 못해 최소 보유기간 검증을 건너뜁니다.")
-        return backfilled
-
-    earliest_dt = datetime.strptime(earliest_date, "%Y-%m-%d").date()
-    if earliest_dt > target_start_dt:
-        hist_start = target_start_dt.strftime("%Y%m%d")
-        hist_end = (earliest_dt - timedelta(days=1)).strftime("%Y%m%d")
-        missing_days = (earliest_dt - target_start_dt).days
-        print(
-            f"  🔄 과거 보유 구간 부족: 최초 {earliest_date}, 목표 <= {target_start_dt.isoformat()} (부족 {missing_days}일)"
-        )
-        print(f"  🔄 과거 백필 범위: {hist_start} ~ {hist_end}")
-
-        ok_stock_hist = run_python_script(
-            "scripts/backfill_stock_daily_universe.py",
-            ["--start", hist_start, "--end", hist_end, "--universe", "core-extended", "--sleep", "0.08"],
-            "stock_daily 과거 백필",
-        )
-        if not ok_stock_hist:
-            return backfilled
-
-        ok_indicators_hist = run_python_script(
-            "scripts/backfill_daily_indicators.py",
-            ["--start", hist_start, "--end", hist_end],
-            "daily_indicators 과거 백필",
-        )
-        if not ok_indicators_hist:
-            return backfilled
-
-        backfilled = True
-    else:
-        print(
-            f"  ✅ 과거 보유 구간 충족: 최초 {earliest_date}, 목표 시작 <= {target_start_dt.isoformat()}"
-        )
-
-    return backfilled
-
-def to_iso(yyyymmdd: str) -> str:
-    return f"{yyyymmdd[:4]}-{yyyymmdd[4:6]}-{yyyymmdd[6:8]}"
-
-def calculate_rsi(series: pd.Series, period: int = 14) -> pd.Series:
-    delta = series.diff()
-    gain = delta.where(delta > 0, 0.0).fillna(0)
-    loss = (-delta.where(delta < 0, 0.0)).fillna(0)
-    avg_gain = gain.ewm(alpha=1/period, min_periods=period, adjust=False).mean()
-    avg_loss = loss.ewm(alpha=1/period, min_periods=period, adjust=False).mean()
-    rs = avg_gain / avg_loss
-    return 100 - (100 / (1 + rs))
-
-def calculate_avwap(df: pd.DataFrame, anchor_idx: int) -> Optional[float]:
-    if len(df) == 0 or anchor_idx < 0 or anchor_idx >= len(df):
-        return None
-    subset = df.iloc[anchor_idx:].copy()
-    v_cumsum = subset["volume"].cumsum()
-    if v_cumsum.iloc[-1] == 0:
-        return None
-    pv = (subset["close"] * subset["volume"]).cumsum()
-    return float((pv / v_cumsum).iloc[-1])
-
-
-# =============================================
-# STEP 1: DB 종목 기반 OHLCV 수집
-# =============================================
-def fetch_ohlcv_per_ticker(trading_date: str) -> bool:
-    """DB에 등록된 core/extended 종목의 OHLCV를 개별 API로 수집"""
-    trading_iso = to_iso(trading_date)
-    print(f"\n[1/6] OHLCV 수집 (개별 종목 API, 기준일: {trading_date})...")
-
-    # DB 최근 stock_daily 날짜
-    latest_res = supabase.table("stock_daily") \
-        .select("date").order("date", desc=True).limit(1).execute()
-    latest_date = latest_res.data[0]["date"] if latest_res.data else "2025-01-01"
-    latest_dt = datetime.strptime(latest_date, "%Y-%m-%d").date()
-    trading_dt = datetime.strptime(trading_date, "%Y%m%d").date()
+    # Initialize Supabase client
+    print("[DEBUG] Initializing Supabase...", flush=True)
+    supabase_url = os.environ.get("SUPABASE_URL")
+    supabase_key = os.environ.get("SUPABASE_SERVICE_ROLE_KEY")
     
-    print(f"  📊 DB 최신 stock_daily: {latest_date} (기준일: {trading_date})")
+    if not supabase_url or not supabase_key:
+        print("[ERROR] SUPABASE_URL or SERVICE_ROLE_KEY missing", file=sys.stderr)
+        sys.exit(1)
     
-    # 데이터 신선도 검증: DB의 최신 데이터가 너무 오래된 경우
-    days_gap = (trading_dt - latest_dt).days
-    if days_gap > 30:
-        print(f"  ⚠️ 경고: DB 데이터가 {days_gap}일 오래됨 (최신: {latest_date}, 기준: {trading_date})")
-        print(f"  🔄 DB를 초기화하고 최근 180일 데이터부터 재수집합니다...")
-        try:
-            # 오래된 stock_daily 전부 삭제
-            supabase.table("stock_daily").delete().gte("date", "2000-01-01").execute()
-            latest_date = "2025-01-01"
-            print(f"  ✅ stock_daily 테이블 초기화 완료")
-        except Exception as e:
-            print(f"  ⚠️ 초기화 실패: {e}, 계속 진행...")
-
-    # 수집 시작일 = DB 최신 + 1일 (또는 최근 180일)
-    from_dt = datetime.strptime(latest_date, "%Y-%m-%d") + timedelta(days=1)
+    from supabase import create_client
+    print("[DEBUG] Creating Supabase client...", flush=True)
+    supabase = create_client(supabase_url, supabase_key)
+    print("[DEBUG] Supabase client initialized", flush=True)
+    sys.stdout.flush()
     
-    # 데이터가 너무 오래된 경우 강제로 최근 180일부터 시작
-    cutoff_dt = trading_dt - timedelta(days=180)
-    if from_dt.date() < cutoff_dt:
-        from_dt = datetime.combine(cutoff_dt, datetime.min.time())
-        print(f"  🔄 수집 시작일을 최근 180일로 조정: {from_dt.date()}")
-    
-    from_str = from_dt.strftime("%Y%m%d")
-
-    if from_str > trading_date:
-        print(f"  ✅ 이미 최신 데이터입니다. 스킵.")
-        return True
-
-    print(f"  수집 범위: {from_str} ~ {trading_date}")
-
-    # core + extended 종목
-    res = supabase.table("stocks") \
-        .select("code, name") \
-        .in_("universe_level", ["core", "extended"]) \
-        .eq("is_active", True) \
-        .execute()
-    tickers = [(r["code"], r["name"]) for r in (res.data or [])]
-
-    if not tickers:
-        print("  ⚠️ 대상 종목이 없습니다.")
-        return False
-
-    print(f"  대상: {len(tickers)}개 종목")
-
-    success = 0
-    fail = 0
-    upsert_buffer: list = []
-    date_range_found = set()  # 실제 수집된 날짜 추적
-
-    for idx, (code, name) in enumerate(tickers):
-        if idx % 50 == 0 and idx > 0:
-            print(f"  -> 진행: {idx}/{len(tickers)} (성공: {success}, 실패: {fail})")
-            if upsert_buffer:
-                _flush_stock_daily(upsert_buffer)
-                upsert_buffer = []
-
-        try:
-            df = stock.get_market_ohlcv(from_str, trading_date, code)
-            if df.empty:
-                continue
-
-            df, split_events = adjust_ohlcv_for_splits(df)
-            if split_events:
-                print(f"    ↳ {code} split-adjust: {', '.join(split_events[:2])}")
-
-            for dt_idx, row in df.iterrows():
-                vol = safe_int(row.get("거래량", 0))
-                if vol == 0:
-                    continue
-                dt_str = dt_idx.strftime("%Y-%m-%d") if hasattr(dt_idx, "strftime") else str(dt_idx)[:10]
-                date_range_found.add(dt_str)
-                close_val = safe_int(row.get("종가"))
-                # 거래대금이 없으면 계산, 있으면 API 값 사용
-                value = row.get("거래대금")
-                if pd.isna(value) or value == 0 or value == '':
-                    value = vol * close_val
-                upsert_buffer.append({
-                    "ticker": code,
-                    "date": dt_str,
-                    "open": safe_int(row.get("시가")),
-                    "high": safe_int(row.get("고가")),
-                    "low": safe_int(row.get("저가")),
-                    "close": close_val,
-                    "volume": vol,
-                    "value": safe_float(value),
-                })
-
-            success += 1
-            time.sleep(0.15)
-
-        except Exception as e:
-            fail += 1
-            if fail <= 5:
-                print(f"    ⚠️ {code} ({name}): {e}")
-            time.sleep(0.3)
-
-    if upsert_buffer:
-        _flush_stock_daily(upsert_buffer)
-
-    print(f"  ✅ OHLCV 수집 완료: {success}개 성공, {fail}개 실패")
-    
-    # 수집된 날짜 범위 확인
-    if date_range_found:
-        min_date = min(date_range_found)
-        max_date = max(date_range_found)
-        print(f"  📅 수집된 날짜 범위: {min_date} ~ {max_date}")
-        
-        # 데이터 신선도 검증: 최신 데이터가 기준일 근처인지 확인
-        max_date_obj = datetime.strptime(max_date, "%Y-%m-%d").date()
-        trading_date_obj = datetime.strptime(trading_date, "%Y%m%d").date()
-        freshness_gap = (trading_date_obj - max_date_obj).days
-        
-        if freshness_gap > 5:
-            print(f"  ⚠️ 경고: 수집된 최신 데이터({max_date})가 기준일({trading_date})보다 {freshness_gap}일 오래됨")
-            print(f"  💡 pykrx API 응답 문제일 가능성. 데이터 수집 재시도 권장")
-            return False
-        else:
-            print(f"  ✅ 데이터 신선도 양호: 기준일까지 {freshness_gap}일 차이")
-
-    # stocks.close 동기화
-    _update_stocks_close(trading_date)
-    return success > 0
-
-
-def _flush_stock_daily(rows: list):
-    for i in range(0, len(rows), 500):
-        try:
-            supabase.table("stock_daily").upsert(rows[i:i+500]).execute()
-        except Exception as e:
-            print(f"    ⚠️ stock_daily upsert 에러: {e}")
-            chunk = rows[i:i+500]
-            for j in range(0, len(chunk), 50):
-                try:
-                    supabase.table("stock_daily").upsert(chunk[j:j+50]).execute()
-                except:
-                    pass
-
-
-def _update_stocks_close(trading_date: str):
-    trading_iso = to_iso(trading_date)
-    print("  -> stocks 종가 동기화...")
-    try:
-        # name이 있는 활성 종목만 가져옴 (null name 오류 방지)
-        stocks_res = supabase.table("stocks") \
-            .select("code, name").eq("is_active", True) \
-            .not_.is_("name", "null").execute()
-        valid_stocks = {r["code"]: r["name"] for r in (stocks_res.data or [])}
-
-        res = supabase.table("stock_daily") \
-            .select("ticker, close") \
-            .eq("date", trading_iso).execute()
-
-        updates = [{
-            "code": r["ticker"],
-            "name": valid_stocks[r["ticker"]],
-            "close": safe_int(r["close"]),
-            "updated_at": datetime.now().isoformat(),
-        } for r in (res.data or []) if r["ticker"] in valid_stocks]
-
-        for i in range(0, len(updates), 200):
-            supabase.table("stocks").upsert(updates[i:i+200]).execute()
-        print(f"  ✅ {len(updates)}개 종목 종가 동기화")
-    except Exception as e:
-        print(f"  ⚠️ 종가 동기화 실패: {e}")
-
-
-# =============================================
-# STEP 2: 기술적 지표 계산
-# =============================================
-def calculate_indicators(trading_date: str):
-    trading_iso = to_iso(trading_date)
-    print(f"\n[2/6] 기술적 지표 계산...")
-
-    try:
-        res = supabase.table("stock_daily") \
-            .select("ticker").eq("date", trading_iso).execute()
-        target_tickers = list(set(r["ticker"] for r in (res.data or [])))
-    except Exception as e:
-        print(f"  ❌ 대상 종목 조회 실패: {e}")
-        return
-
-    if not target_tickers:
-        print("  ⚠️ 오늘 데이터가 있는 종목이 없습니다.")
-        return
-
-    print(f"  -> 대상 종목: {len(target_tickers)}개")
-
-    total_success = 0
-    total_fail = 0
-    upsert_buffer: list = []
-    from_date = (date.today() - timedelta(days=400)).isoformat()
-
-    def n(v):
-        try:
-            fv = float(v)
-            return None if (pd.isna(fv) or np.isinf(fv)) else round(fv, 4)
-        except:
-            return None
-
-    def n_int(v):
-        try:
-            fv = float(v)
-            return None if (pd.isna(fv) or np.isinf(fv)) else int(fv)
-        except:
-            return None
-
-    for idx, ticker in enumerate(target_tickers):
-        if idx % 100 == 0:
-            print(f"  -> 진행: {idx}/{len(target_tickers)}")
-            # flush buffer periodically
-            if upsert_buffer:
-                try:
-                    supabase.table("daily_indicators").upsert(upsert_buffer).execute()
-                except Exception as e:
-                    print(f"    ⚠️ upsert 에러: {e}")
-                upsert_buffer = []
-
-        try:
-            # 종목별로 개별 조회 (PostgREST 1000행 제한 회피)
-            h_res = supabase.table("stock_daily") \
-                .select("*") \
-                .eq("ticker", ticker) \
-                .gte("date", from_date) \
-                .order("date", desc=False) \
-                .limit(500).execute()
-
-            if not h_res.data or len(h_res.data) < 20:
-                continue
-
-            df = pd.DataFrame(h_res.data)
-            df["date"] = pd.to_datetime(df["date"])
-            df = df.sort_values("date")
-
-            close = df["close"].astype(float)
-            df = df.copy()
-            df["rsi14"] = calculate_rsi(close, 14)
-            df["roc14"] = close.pct_change(14) * 100
-            df["roc21"] = close.pct_change(21) * 100
-            df["sma20"] = close.rolling(20).mean()
-            df["sma50"] = close.rolling(50).mean()
-            df["sma200"] = close.rolling(200).mean()
-            df["slope200"] = df["sma200"].diff(5)
-
-            avwap_val = None
-            try:
-                window = min(250, len(df))
-                low_idx = df["low"].astype(float).tail(window).idxmin()
-                idx_loc = df.index.get_loc(low_idx)
-                avwap_val = calculate_avwap(
-                    df.assign(close=df["close"].astype(float), volume=df["volume"].astype(float)),
-                    idx_loc,
-                )
-            except:
-                pass
-
-            last = df.iloc[-1]
-            last_date_str = last["date"].strftime("%Y-%m-%d")
-
-            upsert_buffer.append({
-                "code": ticker,
-                "trade_date": last_date_str,
-                "close": n(last["close"]),
-                "volume": n_int(last.get("volume")),
-                "value_traded": n(last.get("value")),
-                "sma20": n(last.get("sma20")),
-                "sma50": n(last.get("sma50")),
-                "sma200": n(last.get("sma200")),
-                "slope200": n(last.get("slope200")),
-                "rsi14": n(last.get("rsi14")),
-                "roc14": n(last.get("roc14")),
-                "roc21": n(last.get("roc21")),
-                "avwap_breakout": n(avwap_val) if avwap_val else None,
-                "updated_at": datetime.now().isoformat(),
-            })
-            total_success += 1
-
-        except Exception as e:
-            total_fail += 1
-            if total_fail <= 5:
-                print(f"    ⚠️ {ticker}: {e}")
-            continue
-
-    # flush remaining
-    if upsert_buffer:
-        try:
-            supabase.table("daily_indicators").upsert(upsert_buffer).execute()
-        except Exception as e:
-            print(f"    ⚠️ 최종 upsert 에러: {e}")
-
-    print(f"  ✅ {total_success}개 종목 지표 계산 완료 (실패: {total_fail}개)")
-    _sync_stocks_indicators(trading_date)
-
-
-# =============================================
-# STEP 2.5: 투자자 수급 데이터 수집
-# =============================================
-def fetch_investor_data(trading_date: str):
-    """네이버 금융에서 투자자 수급 데이터 수집"""
-    trading_iso = to_iso(trading_date)
-    print(f"\n[2.5/6] 투자자 수급 데이터 수집...")
-
-    if os.environ.get("DISABLE_INVESTOR_FETCH", "false").lower() in ("1", "true", "yes"):
-        print("  ℹ️ DISABLE_INVESTOR_FETCH=true 설정으로 수급 수집을 건너뜁니다.")
-        return
-    
-    def _upsert_investor_rows(rows: list[dict]) -> None:
-        for i in range(0, len(rows), 500):
-            batch = rows[i:i + 500]
-            try:
-                supabase.table("investor_daily").upsert(batch).execute()
-            except Exception as e:
-                print(f"    ⚠️ investor_daily upsert 에러: {e}")
-                for j in range(0, len(batch), 50):
-                    try:
-                        supabase.table("investor_daily").upsert(batch[j:j + 50]).execute()
-                    except Exception:
-                        pass
-
-    def _collect_by_investor_value(stock_module, code_list: list[str]) -> tuple[list[dict], int, int]:
-        rows: list[dict] = []
-        fail_count = 0
-        success_count = 0
-        for idx, code in enumerate(code_list):
-            if idx % 100 == 0 and idx > 0:
-                print(f"  -> [value_by_investor] 진행: {idx}/{len(code_list)} (성공: {success_count}, 실패: {fail_count})")
-
-            try:
-                df = stock_module.get_market_trading_value_by_investor(trading_date, trading_date, code)
-                if df is None or df.empty:
-                    continue
-
-                inst_val = 0
-                foreign_val = 0
-                for _, row in df.iterrows():
-                    inst_val += safe_int(row.get("기관", 0))
-                    foreign_val += safe_int(row.get("외국인", 0))
-
-                if inst_val == 0 and foreign_val == 0:
-                    continue
-
-                rows.append({
-                    "date": trading_iso,
-                    "ticker": code,
-                    "institution": inst_val,
-                    "foreign": foreign_val,
-                })
-                success_count += 1
-                time.sleep(0.05)
-            except Exception:
-                fail_count += 1
-                continue
-
-        return rows, success_count, fail_count
-
-    def _collect_by_net_purchases(stock_module, code_list: list[str]) -> tuple[list[dict], int, int]:
-        # pykrx value-by-investor가 깨졌을 때의 fallback: 투자자별 순매수(티커별) 병합
-        try:
-            df_inst = stock_module.get_market_net_purchases_of_equities_by_ticker(trading_date, trading_date, "ALL", "기관합계")
-            time.sleep(0.05)
-            df_foreign = stock_module.get_market_net_purchases_of_equities_by_ticker(trading_date, trading_date, "ALL", "외국인")
-        except Exception:
-            return [], 0, 0
-
-        if df_inst is None or df_foreign is None or df_inst.empty or df_foreign.empty:
-            return [], 0, 0
-
-        inst = df_inst.reset_index().rename(columns={
-            "티커": "ticker",
-            "순매수거래대금": "institution",
-            "순매수거래대금(원)": "institution",
-        })
-        foreign = df_foreign.reset_index().rename(columns={
-            "티커": "ticker",
-            "순매수거래대금": "foreign",
-            "순매수거래대금(원)": "foreign",
-        })
-
-        merged = inst[["ticker", "institution"]].merge(
-            foreign[["ticker", "foreign"]],
-            on="ticker",
-            how="inner",
-        )
-
-        code_set = set(code_list)
-        rows: list[dict] = []
-        for _, row in merged.iterrows():
-            code = str(row.get("ticker") or "").strip().zfill(6)
-            if not code or code not in code_set:
-                continue
-            inst_val = safe_int(row.get("institution", 0))
-            foreign_val = safe_int(row.get("foreign", 0))
-            if inst_val == 0 and foreign_val == 0:
-                continue
-            rows.append({
-                "date": trading_iso,
-                "ticker": code,
-                "institution": inst_val,
-                "foreign": foreign_val,
-            })
-
-        return rows, len(rows), 0
-
-    def _collect_from_naver_finance(code_list: list[str]) -> tuple[list[dict], int, int]:
-        # pykrx 투자자 API가 장기간 비정상일 때의 최후 fallback
-        session = requests.Session()
-        session.headers.update({
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
-                          "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-            "Referer": "https://finance.naver.com/",
-            "Accept-Language": "ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7",
-        })
-
-        target_dt = datetime.strptime(trading_date, "%Y%m%d").date()
-
-        def _parse_signed_int(v) -> int:
-            s = str(v or "").strip()
-            if not s or s.lower() == "nan":
-                return 0
-            s = s.replace(",", "").replace("\u2212", "-")
-            s = "".join(ch for ch in s if ch.isdigit() or ch in ("-", "+"))
-            if not s or s in ("-", "+"):
-                return 0
-            try:
-                return int(s)
-            except Exception:
-                return 0
-
-        def _extract_from_table(df: pd.DataFrame) -> Optional[tuple[str, int, int]]:
-            if df is None or df.empty:
-                return None
-
-            temp = df.copy()
-            if isinstance(temp.columns, pd.MultiIndex):
-                flat_cols = []
-                for c in temp.columns:
-                    if isinstance(c, tuple):
-                        flat = " ".join(str(x) for x in c if str(x) != "nan").strip()
-                    else:
-                        flat = str(c)
-                    flat_cols.append(flat)
-                temp.columns = flat_cols
-            else:
-                temp.columns = [str(c).strip() for c in temp.columns]
-
-            # 날짜/기관/외국인 순매매량 컬럼 후보를 동적으로 탐색
-            date_col = next((c for c in temp.columns if "날짜" in c), None)
-            inst_col = next((c for c in temp.columns if "기관" in c and "순매매" in c), None)
-            foreign_col = next((c for c in temp.columns if "외국인" in c and "순매매" in c), None)
-
-            if not date_col or not inst_col or not foreign_col:
-                return None
-
-            working = temp[[date_col, inst_col, foreign_col]].copy()
-            working = working.dropna(subset=[date_col])
-            if working.empty:
-                return None
-
-            best: Optional[tuple[date, int, int]] = None
-            for _, row in working.iterrows():
-                raw_date = str(row.get(date_col) or "").strip()
-                if not raw_date or raw_date.lower() == "nan":
-                    continue
-                try:
-                    row_dt = datetime.strptime(raw_date.replace(".", "-").replace(" ", ""), "%Y-%m-%d").date()
-                except Exception:
-                    continue
-                if row_dt > target_dt:
-                    continue
-
-                inst_val = _parse_signed_int(row.get(inst_col))
-                foreign_val = _parse_signed_int(row.get(foreign_col))
-
-                if best is None or row_dt > best[0]:
-                    best = (row_dt, inst_val, foreign_val)
-
-            if best is None:
-                return None
-            return best[0].isoformat(), best[1], best[2]
-
-        rows: list[dict] = []
-        success_count = 0
-        fail_count = 0
-        for idx, code in enumerate(code_list):
-            if idx % 100 == 0 and idx > 0:
-                print(f"  -> [naver_finance] 진행: {idx}/{len(code_list)} (성공: {success_count}, 실패: {fail_count})")
-            try:
-                url = f"https://finance.naver.com/item/frgn.naver?code={code}&page=1"
-                resp = session.get(url, timeout=8)
-                resp.raise_for_status()
-                tables = pd.read_html(StringIO(resp.text))
-
-                picked: Optional[tuple[str, int, int]] = None
-                for tbl in tables:
-                    picked = _extract_from_table(tbl)
-                    if picked:
-                        break
-
-                if not picked:
-                    fail_count += 1
-                    continue
-
-                matched_date, inst_val, foreign_val = picked
-                if inst_val == 0 and foreign_val == 0:
-                    fail_count += 1
-                    continue
-
-                rows.append({
-                    "date": matched_date,
-                    "ticker": code,
-                    "institution": inst_val,
-                    "foreign": foreign_val,
-                })
-                success_count += 1
-                time.sleep(0.04)
-            except Exception:
-                fail_count += 1
-                continue
-
-        return rows, success_count, fail_count
-
-    try:
-        res = supabase.table("stocks") \
-            .select("code") \
-            .in_("universe_level", ["core", "extended"]) \
-            .eq("is_active", True).execute()
-        codes = [r["code"] for r in (res.data or [])]
-        if not codes:
-            print("  ⚠️ 대상 종목이 없습니다.")
-            return
-
-        print(f"  대상: {len(codes)}개 종목")
-        from pykrx import stock
-
-        # 전략1: 종목별 투자자 거래대금 API
-        inv_rows, success_count, fail_count = _collect_by_investor_value(stock, codes)
-        strategy_used = "value_by_investor"
-
-        # 전략2: 투자자별 순매수(티커별) 병합 fallback
-        if not inv_rows:
-            alt_rows, alt_success, _ = _collect_by_net_purchases(stock, codes)
-            if alt_rows:
-                inv_rows = alt_rows
-                success_count = alt_success
-                fail_count = 0
-                strategy_used = "net_purchases_by_ticker"
-
-        # 전략3: 네이버 금융 HTML 파싱 fallback
-        if not inv_rows:
-            nav_rows, nav_success, nav_fail = _collect_from_naver_finance(codes)
-            if nav_rows:
-                inv_rows = nav_rows
-                success_count = nav_success
-                fail_count = nav_fail
-                strategy_used = "naver_finance_html"
-
-        if inv_rows:
-            _upsert_investor_rows(inv_rows)
-            print(f"  ✅ {len(inv_rows)}개 수급 데이터 저장 완료 (전략: {strategy_used}, 성공: {success_count}개 종목, 실패: {fail_count}개)")
-            return
-
-        # 조용히 넘어가지 않고, 현재 stale 상태를 명확히 알린다.
-        latest = supabase.table("investor_daily").select("date").order("date", desc=True).limit(1).execute()
-        latest_date = (latest.data or [{}])[0].get("date") if latest.data else None
-        if latest_date:
-            trading_dt = datetime.strptime(trading_date, "%Y%m%d").date()
-            gap = (trading_dt - datetime.fromisoformat(str(latest_date)).date()).days
-            print(f"  ❌ investor_daily 수집 실패: 3개 전략 모두 실패 (latest={latest_date}, stale={gap}일)")
-        else:
-            print("  ❌ investor_daily 수집 실패: 3개 전략 모두 실패 (기존 데이터 없음)")
-
-    except Exception as e:
-        print(f"  ❌ 투자자 수급 수집 실패: {e}")
-        traceback.print_exc()
-
-
-# STEP 2.6: 공매도/신용 데이터 수집
-# =============================================
-def fetch_credit_short_data(trading_date: str):
-    """공매도 데이터(KRX MDC_OUT API) 수집 — 신용비율은 공개 API 없어 NULL"""
-    trading_iso = to_iso(trading_date)
-    print(f"\n[2.6/6] 공매도 데이터 수집 (KRX MDC_OUT API)...")
-
-    if os.environ.get("DISABLE_CREDIT_SHORT_FETCH", "false").lower() in ("1", "true", "yes"):
-        print("  DISABLE_CREDIT_SHORT_FETCH=true — 공매도 수집 건너뜀")
-        return
-
-    try:
-        res = (
-            supabase.table("stocks")
-            .select("code")
-            .in_("universe_level", ["core", "extended"])
-            .eq("is_active", True)
-            .execute()
-        )
-        codes = [r["code"] for r in (res.data or [])]
-        if not codes:
-            print("  대상 종목 없음")
-            return
-        print(f"  대상: {len(codes)}개 종목")
-
-        # KRX 세션 초기화 및 ISIN 매핑
-        krx_ua = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-        krx_headers = {
-            "User-Agent": krx_ua,
-            "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
-            "X-Requested-With": "XMLHttpRequest",
-            "Referer": "https://data.krx.co.kr/",
-        }
-        krx_api = "https://data.krx.co.kr/comm/bldAttendant/getJsonData.cmd"
-        sess = requests.Session()
-        sess.headers.update(krx_headers)
-        try:
-            sess.get("https://data.krx.co.kr/", timeout=10)
-        except Exception:
-            pass
-
-        # ISIN 매핑 조회
-        isin_map = {}
-        try:
-            r = sess.post(
-                krx_api,
-                data={"bld": "dbms/comm/finder/finder_stkisu", "mktsel": "ALL", "typeNo": "0", "pagePath": "/contents/MDC/STAT/srt/MDCSTAT300.cmd", "codeNm": ""},
-                timeout=30,
-            )
-            block = r.json().get("block1", [])
-            isin_map = {item["short_code"]: item["full_code"] for item in block}
-        except Exception as e:
-            print(f"  ISIN 매핑 실패: {e}")
-
-        cs_rows = []
-        success_count = 0
-        fail_count = 0
-        # 당일 ±7일 범위로 조회 (T+2 지연 고려)
-        start_d = (datetime.strptime(trading_date, "%Y%m%d") - timedelta(days=7)).strftime("%Y%m%d")
-        end_d = trading_date
-
-        for idx, code in enumerate(codes):
-            if idx % 50 == 0 and idx > 0:
-                print(f"  진행: {idx}/{len(codes)} (성공: {success_count}, 실패: {fail_count})")
-
-            isin = isin_map.get(code)
-            if not isin:
-                fail_count += 1
-                continue
-
-            short_volume = None
-            short_ratio = None
-            short_balance = None
-
-            # 공매도 거래 (MDCSTAT30102_OUT)
-            try:
-                r = sess.post(
-                    krx_api,
-                    data={"bld": "dbms/MDC_OUT/STAT/srt/MDCSTAT30102_OUT", "isuCd": isin, "strtDd": start_d, "endDd": end_d, "money": "1", "csvxls_isNo": "false"},
-                    timeout=10,
-                )
-                for row in r.json().get("OutBlock_1", []):
-                    date_str = row.get("TRD_DD", "").replace("/", "")
-                    if date_str == trading_date:
-                        short_volume = int(str(row.get("CVSRTSELL_TRDVOL", "0")).replace(",", "") or "0")
-                        short_ratio = float(str(row.get("TRDVOL_WT", "0")).replace(",", "") or "0")
-                        break
-            except Exception:
-                pass
-
-            # 공매도 잔고 (MDCSTAT30502_OUT)
-            try:
-                r = sess.post(
-                    krx_api,
-                    data={"bld": "dbms/MDC_OUT/STAT/srt/MDCSTAT30502_OUT", "isuCd": isin, "strtDd": start_d, "endDd": end_d, "money": "1", "csvxls_isNo": "false"},
-                    timeout=10,
-                )
-                for row in r.json().get("OutBlock_1", []):
-                    date_str = row.get("RPT_DUTY_OCCR_DD", "").replace("/", "")
-                    if date_str == trading_date:
-                        short_balance = int(str(row.get("BAL_QTY", "0")).replace(",", "") or "0")
-                        break
-            except Exception:
-                pass
-
-            if short_volume is not None or short_ratio is not None or short_balance is not None:
-                cs_rows.append({
-                    "code": code,
-                    "date": trading_iso,
-                    "credit_ratio": None,
-                    "short_ratio": short_ratio,
-                    "short_balance": short_balance,
-                    "short_volume": short_volume,
-                })
-                success_count += 1
-            else:
-                fail_count += 1
-
-            time.sleep(0.05)
-
-        if cs_rows:
-            for i in range(0, len(cs_rows), 500):
-                batch = cs_rows[i:i + 500]
-                try:
-                    supabase.table("stock_credit_short_daily").upsert(batch, on_conflict="code,date").execute()
-                except Exception as e:
-                    print(f"    stock_credit_short_daily upsert 오류: {e}")
-                    for j in range(0, len(batch), 50):
-                        try:
-                            supabase.table("stock_credit_short_daily").upsert(batch[j:j + 50], on_conflict="code,date").execute()
-                        except Exception:
-                            pass
-
-            # stocks 테이블 최신값 업데이트
-            for r in cs_rows:
-                try:
-                    upd = {}
-                    if r.get("short_ratio") is not None:
-                        upd["short_ratio"] = r["short_ratio"]
-                    if r.get("short_balance") is not None:
-                        upd["short_balance"] = r["short_balance"]
-                    if upd:
-                        supabase.table("stocks").update(upd).eq("code", r["code"]).execute()
-                except Exception:
-                    pass
-
-            print(f"  {len(cs_rows)}개 공매도 데이터 저장 완료 (성공: {success_count}개 종목, 실패: {fail_count}개)")
-        else:
-            print(f"  공매도 데이터 없음 (성공: {success_count}, 실패: {fail_count})")
-
-    except Exception as e:
-        print(f"  공매도 수집 실패: {e}")
-        traceback.print_exc()
-
-
-def _sync_stocks_indicators(trading_date: str):
-    trading_iso = to_iso(trading_date)
-    print("  -> stocks 테이블 지표 동기화...")
-    try:
-        res = supabase.table("stocks") \
-            .select("code, name").in_("universe_level", ["core", "extended"]).execute()
-        # name이 있는 종목만 (null name 오류 방지)
-        valid_stocks = {r["code"]: r["name"] for r in (res.data or []) if r.get("name")}
-        codes = list(valid_stocks.keys())
-        if not codes:
-            return
-        for i in range(0, len(codes), 50):
-            batch_codes = codes[i:i+50]
-            ind_res = supabase.table("daily_indicators") \
-                .select("code, close, sma20, sma50, rsi14, roc14") \
-                .in_("code", batch_codes) \
-                .eq("trade_date", trading_iso).execute()
-            updates = []
-            for row in (ind_res.data or []):
-                code = row["code"]
-                if code not in valid_stocks:
-                    continue
-                updates.append({
-                    "code": code,
-                    "name": valid_stocks[code],  # name 포함하여 null 오류 방지
-                    "close": safe_int(row.get("close")),
-                    "sma20": safe_float(row.get("sma20")) if row.get("sma20") else None,
-                    "rsi14": safe_float(row.get("rsi14")) if row.get("rsi14") else None,
-                    "updated_at": datetime.now().isoformat(),
-                })
-            if updates:
-                supabase.table("stocks").upsert(updates).execute()
-        print(f"  ✅ stocks 지표 동기화 완료 ({len(codes)}개)")
-    except Exception as e:
-        print(f"  ⚠️ stocks 지표 동기화 실패: {e}")
-
-
-# =============================================
-# STEP 3: 섹터 등락률 집계 (주식 데이터 기반)
-# =============================================
-def update_sector_data(trading_date: str):
-    trading_iso = to_iso(trading_date)
-    print(f"\n[3/6] 섹터 등락률 집계 (구성종목 기반)...")
-
-    try:
-        res_stocks = supabase.table("stocks") \
-            .select("code, sector_id, close") \
-            .not_.is_("sector_id", "null") \
-            .eq("is_active", True).execute()
-        stock_sector_map = {r["code"]: r["sector_id"] for r in (res_stocks.data or [])}
-
-        # 최근 2일 stock_daily (날짜 내림차순)
-        dates_res = supabase.table("stock_daily") \
-            .select("date") \
-            .lte("date", trading_iso) \
-            .order("date", desc=True).limit(1).execute()
-        if not dates_res.data:
-            print("  ⚠️ stock_daily 데이터 없음")
-            return
-
-        latest = dates_res.data[0]["date"]
-        # latest 기준으로 이전 날짜 찾기
-        prev_res = supabase.table("stock_daily") \
-            .select("date") \
-            .lt("date", latest) \
-            .order("date", desc=True).limit(1).execute()
-        prev_date = prev_res.data[0]["date"] if prev_res.data else None
-
-        if not prev_date:
-            print("  ⚠️ 이전 영업일 데이터 없음 — 등락률 계산 불가")
-            return
-
-        print(f"  등락률: {prev_date} → {latest}")
-
-        # 두 날짜의 종가 로드
-        today_res = supabase.table("stock_daily") \
-            .select("ticker, close").eq("date", latest).execute()
-        prev_day_res = supabase.table("stock_daily") \
-            .select("ticker, close").eq("date", prev_date).execute()
-
-        today_map = {r["ticker"]: safe_float(r["close"]) for r in (today_res.data or [])}
-        prev_map = {r["ticker"]: safe_float(r["close"]) for r in (prev_day_res.data or [])}
-
-        # 섹터별 평균 등락률
-        sector_changes: Dict[str, List[float]] = {}
-        for ticker in today_map:
-            sid = stock_sector_map.get(ticker)
-            if not sid or ticker not in prev_map:
-                continue
-            t_price, p_price = today_map[ticker], prev_map[ticker]
-            if p_price > 0:
-                change = (t_price - p_price) / p_price * 100
-                sector_changes.setdefault(sid, []).append(change)
-
-        # sectors 업데이트
-        res_sectors = supabase.table("sectors") \
-            .select("id, name, metrics").execute()
-
-        sector_updates = []
-        for sec in (res_sectors.data or []):
-            sid = sec["id"]
-            sname = sec.get("name", "")
-            old_metrics = sec.get("metrics") or {}
-            changes = sector_changes.get(sid, [])
-            avg_change = sum(changes) / len(changes) if changes else 0.0
-
-            new_metrics = dict(old_metrics)
-            new_metrics["stock_count"] = len([t for t, s in stock_sector_map.items() if s == sid])
-
-            sector_updates.append({
-                "id": sid,
-                "name": sname,
-                "avg_change_rate": round(avg_change, 4),
-                "change_rate": round(avg_change, 4),
-                "metrics": new_metrics,
-                "updated_at": datetime.now().isoformat(),
-            })
-
-        if sector_updates:
-            for i in range(0, len(sector_updates), 100):
-                supabase.table("sectors").upsert(sector_updates[i:i+100]).execute()
-            print(f"  ✅ {len(sector_updates)}개 섹터 등락률 업데이트")
-
-    except Exception as e:
-        print(f"  ❌ 섹터 데이터 처리 실패: {e}")
-        traceback.print_exc()
-
-
-# =============================================
-# STEP 3.5: sector_daily 시계열 생성 (구성종목 기반)
-# =============================================
-def populate_sector_daily():
-    """
-    sector_daily 테이블에 시계열 데이터를 구성종목 기반으로 생성.
-    - 이전 sector_daily의 마지막 close를 기준으로 등락률을 적용하여 인덱스 계산
-    - sector_daily가 비어있는 경우 기준값 1000으로 시작
-    """
-    print(f"\n[3.5/6] sector_daily 시계열 생성...")
-
-    try:
-        # 1. 섹터별 마지막 sector_daily 조회
-        existing_res = supabase.table("sector_daily") \
-            .select("sector_id, date, close, value") \
-            .order("date", desc=True).limit(1000).execute()
-
-        last_known: Dict[str, dict] = {}
-        for r in (existing_res.data or []):
-            sid = r["sector_id"]
-            if sid not in last_known:
-                last_known[sid] = {"date": r["date"], "close": safe_float(r["close"], 1000), "value": safe_float(r.get("value"), 0)}
-
-        latest_sector_date = max((v["date"] for v in last_known.values()), default="2025-01-01")
-        print(f"  기존 sector_daily 최신: {latest_sector_date}")
-
-        # 2. 종목-섹터 매핑
-        stocks_res = supabase.table("stocks") \
-            .select("code, sector_id") \
-            .not_.is_("sector_id", "null") \
-            .eq("is_active", True).execute()
-        stock_sector = {r["code"]: r["sector_id"] for r in (stocks_res.data or [])}
-        all_sector_ids = set(stock_sector.values())
-
-        # 3. stock_daily에서 latest_sector_date 이후 고유 거래일 조회
-        #    (전체 조회 시 limit 문제 → 기준종목(삼성전자)으로 날짜만 추출)
-        ref_ticker = "005930"
-        dates_res = supabase.table("stock_daily") \
-            .select("date") \
-            .eq("ticker", ref_ticker) \
-            .gt("date", latest_sector_date) \
-            .order("date", desc=False) \
-            .limit(500).execute()
-
-        unique_dates = sorted(set(r["date"] for r in (dates_res.data or [])))
-        if not unique_dates:
-            print("  ⚠️ 새로운 stock_daily 날짜 없음 — 스킵")
-            return
-
-        print(f"  처리할 날짜: {len(unique_dates)}개 ({unique_dates[0]} ~ {unique_dates[-1]})")
-
-        # 이전 날짜 데이터 (등락률 계산용)
-        prev_date_data: Dict[str, dict] = {}
-        # 최초에는 latest_sector_date 당일 데이터를 이전 값으로 사용
-        if latest_sector_date > "2025-01-01":
-            prev_res = supabase.table("stock_daily") \
-                .select("ticker, close") \
-                .eq("date", latest_sector_date) \
-                .limit(2000).execute()
-            for r in (prev_res.data or []):
-                prev_date_data[r["ticker"]] = {"close": safe_float(r["close"])}
-
-        upsert_buffer: list = []
-
-        for di, dt in enumerate(unique_dates):
-            # 해당 날짜의 stock_daily 조회
-            day_res = supabase.table("stock_daily") \
-                .select("ticker, close, value, volume") \
-                .eq("date", dt) \
-                .limit(2000).execute()
-            day_data = {r["ticker"]: {"close": safe_float(r["close"]), "value": safe_float(r.get("value", 0))} for r in (day_res.data or [])}
-
-            if not day_data:
-                continue
-
-            # 섹터별 등락률 및 거래대금 집계
-            sector_agg: Dict[str, Dict] = {}  # sector_id -> {changes: [], values: []}
-            for ticker, td in day_data.items():
-                sid = stock_sector.get(ticker)
-                if not sid:
-                    continue
-                if sid not in sector_agg:
-                    sector_agg[sid] = {"changes": [], "values": []}
-
-                prev = prev_date_data.get(ticker, {}).get("close", 0)
-                cur = td["close"]
-                if prev > 0 and cur > 0:
-                    change_pct = (cur - prev) / prev
-                    sector_agg[sid]["changes"].append(change_pct)
-                sector_agg[sid]["values"].append(td["value"])
-
-            # 섹터별 새 close 계산
-            for sid in all_sector_ids:
-                agg = sector_agg.get(sid)
-                if not agg or not agg["changes"]:
-                    continue
-
-                avg_change = sum(agg["changes"]) / len(agg["changes"])
-                total_value = sum(agg["values"])
-
-                # 이전 close에서 이어서 계산
-                prev_close = last_known.get(sid, {}).get("close", 1000.0)
-                new_close = round(prev_close * (1 + avg_change), 2)
-
-                upsert_buffer.append({
-                    "sector_id": sid,
-                    "date": dt,
-                    "close": new_close,
-                    "value": total_value,
-                    "updated_at": datetime.now().isoformat(),
-                })
-
-                # 다음 날짜 계산을 위해 업데이트
-                last_known[sid] = {"date": dt, "close": new_close, "value": total_value}
-
-            # 다음 날 등락률 계산을 위해 이전 날짜 데이터 업데이트
-            prev_date_data = {t: {"close": d["close"]} for t, d in day_data.items()}
-
-            # 주기적으로 flush
-            if len(upsert_buffer) >= 500:
-                try:
-                    supabase.table("sector_daily").upsert(upsert_buffer).execute()
-                except Exception as e:
-                    print(f"    ⚠️ sector_daily upsert 에러: {e}")
-                upsert_buffer = []
-
-            if (di + 1) % 20 == 0:
-                print(f"  -> 진행: {di + 1}/{len(unique_dates)}")
-
-        # 일괄 upsert
-        if upsert_buffer:
-            try:
-                supabase.table("sector_daily").upsert(upsert_buffer).execute()
-            except Exception as e:
-                print(f"    ⚠️ sector_daily upsert 에러: {e}")
-        print(f"  ✅ sector_daily 시계열 생성 완료 ({len(unique_dates)}일)")
-
-    except Exception as e:
-        print(f"  ❌ sector_daily 생성 실패: {e}")
-        traceback.print_exc()
-
-
-# =============================================
-# STEP 4: 섹터 점수 계산
-# =============================================
-def calculate_sector_scores():
-    print(f"\n[4/6] 섹터 점수 계산...")
-    try:
-        res = supabase.table("sectors") \
-            .select("id, name, change_rate, avg_change_rate, metrics").execute()
-        sectors = res.data or []
-        if not sectors:
-            print("  ⚠️ 섹터 데이터 없음")
-            return
-
-        from_date = (date.today() - timedelta(days=90)).isoformat()
-        sd_res = supabase.table("sector_daily") \
-            .select("sector_id, date, close, value") \
-            .gte("date", from_date) \
-            .order("date", desc=False).execute()
-        sd_df = pd.DataFrame(sd_res.data or [])
-
-        updates = []
-        nan_count = 0
-        for sec in sectors:
-            sid = sec["id"]
-            sname = sec.get("name", "")
-            metrics = sec.get("metrics") or {}
-            change_rate = safe_float(sec.get("change_rate"), 0)
-
-            flow_f = safe_float(metrics.get("flow_foreign_5d", 0), 0)
-            flow_i = safe_float(metrics.get("flow_inst_5d", 0), 0)
-            flow_total = (flow_f + flow_i) / 1e8
-            flow_score = min(30, max(0, safe_float(flow_total * 0.5, 0)))
-
-            # momentum_score: change_rate 기반 (NaN 방지)
-            momentum_score = min(40, max(0, safe_float((change_rate + 3) * 6.67, 0)))
-
-            series_score = 15
-            if not sd_df.empty:
-                sec_series = sd_df[sd_df["sector_id"] == sid].sort_values("date")
-                if len(sec_series) >= 5:
-                    closes = sec_series["close"].astype(float).tolist()
-                    if len(closes) >= 5 and closes[-5] > 0 and closes[-1] > 0:
-                        ret_5d = (closes[-1] - closes[-5]) / closes[-5]
-                        # Inf 값 방지
-                        if np.isfinite(ret_5d):
-                            series_score = min(30, max(0, safe_float((ret_5d + 0.05) * 300, 15)))
-                    if len(closes) >= 20 and closes[-20] > 0 and closes[-1] > 0:
-                        ret_20d = (closes[-1] - closes[-20]) / closes[-20]
-                        if np.isfinite(ret_20d) and ret_20d > 0:
-                            series_score = min(30, series_score + safe_float(5 * min(1, ret_20d), 0))
-
-            # 최종 점수: NaN 검증
-            total_score = int(round(safe_float(flow_score + momentum_score + series_score, 50)))
-            total_score = min(100, max(0, total_score))
-            
-            # NaN 여부 로깅
-            if pd.isna(total_score) or not np.isfinite(total_score):
-                nan_count += 1
-                total_score = 50  # 기본값
-            
-            updates.append({
-                "id": sid, "name": sname, "score": total_score,
-                "updated_at": datetime.now().isoformat(),
-            })
-
-        if updates:
-            for i in range(0, len(updates), 100):
-                supabase.table("sectors").upsert(updates[i:i+100]).execute()
-            msg = f"  ✅ {len(updates)}개 섹터 점수 업데이트 완료"
-            if nan_count > 0:
-                msg += f" (NaN 교정: {nan_count}개)"
-            print(msg)
-    except Exception as e:
-        print(f"  ❌ 섹터 점수 계산 실패: {e}")
-        traceback.print_exc()
-
-
-# =============================================
-# 눌림목 매집 시그널 계산 (PineScript 포팅)
-# =============================================
-def _compute_pullback_signal(rows: list) -> dict:
-    """
-    TradingView PineScript 'KOSPI Pullback Accumulation v6' 로직 포팅.
-    stock_daily 행 리스트를 받아 진입/매도경고 시그널 계산.
-
-    진입 조건 (4가지, A/B/C 등급):
-      1. Trend: MA21>MA50 and Close>MA21
-      2. Dist: MA21 이격도 -3%~+5%
-      3. Pivot: 10일 저점 근접 & 5일 고점 미돌파
-      4. Vol/ATR: 거래량건조 & 변동성축소
-
-    매도 경고 (6가지):
-      1. 과열: 이격도 >7%
-      2. 거래량 폭증: vol > SMA20 * 2
-      3. ATR 급등: ATR > SMA20(ATR) * 1.5
-      4. RSI 과매수: RSI > 70
-      5. MA 이탈: close < MA21
-      6. 데드크로스: MA21 < MA50
-    """
-    if len(rows) < 21:
-        return {}
-
-    df = pd.DataFrame(rows)
-    df["close"] = df["close"].astype(float)
-    df["high"] = df["high"].astype(float)
-    df["low"] = df["low"].astype(float)
-    df["volume"] = df["volume"].astype(float)
-
-    closes = df["close"].values
-    highs = df["high"].values
-    lows = df["low"].values
-    volumes = df["volume"].values
-    n = len(closes)
-
-    # --- 이동평균 ---
-    ma21 = np.mean(closes[-21:]) if n >= 21 else closes[-1]
-    ma50 = np.mean(closes[-50:]) if n >= 50 else ma21
-
-    c = closes[-1]
-
-    # --- 이격도 ---
-    dist = (c - ma21) / ma21 * 100 if ma21 > 0 else 0
-
-    # --- 10일 저점, 5일 고점 ---
-    pivot_low_10 = np.min(lows[-10:]) if n >= 10 else lows[-1]
-    high_5 = np.max(highs[-5:]) if n >= 5 else highs[-1]
-
-    # --- 거래량 SMA20 ---
-    vol_sma20 = np.mean(volumes[-20:]) if n >= 20 else volumes[-1]
-
-    # --- ATR14 ---
-    trs = []
-    for i in range(max(1, n - 14), n):
-        tr = max(
-            highs[i] - lows[i],
-            abs(highs[i] - closes[i - 1]),
-            abs(lows[i] - closes[i - 1])
-        )
-        trs.append(tr)
-    atr14 = np.mean(trs) if trs else 0.0
-
-    # ATR SMA20 (최근 20일 각각의 ATR14)
-    if n >= 34:
-        atr_series = []
-        for j in range(max(14, n - 20), n):
-            local_trs = []
-            for k in range(max(1, j - 13), j + 1):
-                tr = max(
-                    highs[k] - lows[k],
-                    abs(highs[k] - closes[k - 1]),
-                    abs(lows[k] - closes[k - 1])
-                )
-                local_trs.append(tr)
-            atr_series.append(np.mean(local_trs))
-        atr_sma20 = np.mean(atr_series)
-    else:
-        atr_sma20 = atr14
-
-    # --- RSI14 ---
-    rsi_series = calculate_rsi(pd.Series(closes), 14)
-    rsi14 = float(rsi_series.iloc[-1]) if not pd.isna(rsi_series.iloc[-1]) else 50.0
-
-    # =====================
-    # 진입 조건 등급
-    # =====================
-    # 1) Trend
-    trend_aligned = ma21 > ma50 and c > ma21
-    trend_grade = "A" if trend_aligned else ("B" if ma21 > ma50 else "C")
-
-    # 2) Distance
-    dist_ok = -3 < dist < 5
-    dist_grade = "A" if (-1 < dist < 3) else ("B" if dist_ok else "C")
-
-    # 3) Pivot
-    near_pivot = c <= pivot_low_10 * 1.03
-    below_high = c < high_5
-    pivot_grade = "A" if (near_pivot and below_high) else ("B" if (near_pivot or below_high) else "C")
-
-    # 4) Vol/ATR
-    vol_dry = volumes[-1] < vol_sma20
-    atr_ok = atr14 < atr_sma20
-    vol_atr_grade = "A" if (vol_dry and atr_ok) else ("B" if (vol_dry or atr_ok) else "C")
-
-    # Entry Score
-    entry_score = sum([
-        1 if trend_aligned else 0,
-        1 if dist_ok else 0,
-        1 if (near_pivot and below_high) else 0,
-        1 if (vol_dry and atr_ok) else 0,
-    ])
-    entry_grade = "A" if entry_score >= 3 else ("B" if entry_score == 2 else "C")
-
-    # =====================
-    # 매도 경고 시스템
-    # =====================
-    warn_overheat = dist > 7
-    warn_vol_spike = volumes[-1] > vol_sma20 * 2
-    warn_atr_spike = atr14 > atr_sma20 * 1.5
-    warn_rsi_ob = rsi14 > 70
-    warn_ma_break = c < ma21
-    warn_dead_cross = ma21 < ma50
-
-    warn_score = sum([
-        1 if warn_overheat else 0,
-        1 if warn_vol_spike else 0,
-        1 if warn_atr_spike else 0,
-        1 if warn_rsi_ob else 0,
-        1 if warn_ma_break else 0,
-        1 if warn_dead_cross else 0,
-    ])
-    warn_grade = "SELL" if warn_score >= 3 else ("WARN" if warn_score == 2 else ("WATCH" if warn_score == 1 else "SAFE"))
-
-    return {
-        "entry_grade": entry_grade,
-        "entry_score": int(entry_score),
-        "trend_grade": trend_grade,
-        "dist_grade": dist_grade,
-        "dist_pct": round(float(dist), 2),
-        "pivot_grade": pivot_grade,
-        "vol_atr_grade": vol_atr_grade,
-        "warn_grade": warn_grade,
-        "warn_score": int(warn_score),
-        "warn_overheat": bool(warn_overheat),
-        "warn_vol_spike": bool(warn_vol_spike),
-        "warn_atr_spike": bool(warn_atr_spike),
-        "warn_rsi_ob": bool(warn_rsi_ob),
-        "warn_ma_break": bool(warn_ma_break),
-        "warn_dead_cross": bool(warn_dead_cross),
-        "ma21": round(float(ma21), 0),
-        "ma50": round(float(ma50), 0),
-    }
-
-
-# =============================================
-# STEP 5: 종목 점수 계산
-# =============================================
-def calculate_stock_scores(trading_date: str):
-    trading_iso = to_iso(trading_date)
-    asof = date.today().isoformat()
-    print(f"\n[5/7] 종목 스코어 계산...")
-
-    if run_engine_score_sync(asof):
-        print("  ✅ 엔진 기반 점수 동기화 완료")
-        return
-
-    try:
-        res = supabase.table("stocks") \
-            .select("code, name, sector_id, universe_level, market_cap, close") \
-            .in_("universe_level", ["core", "extended"]).execute()
-        all_stocks = res.data or []
-        if not all_stocks:
-            print("  ⚠️ 대상 종목 없음")
-            return
-
-        codes = [s["code"] for s in all_stocks]
-        indicators_map: dict = {}
-        for i in range(0, len(codes), 50):
-            batch = codes[i:i+50]
-            ind_res = supabase.table("daily_indicators") \
-                .select("code, close, rsi14, roc14, roc21, sma20, sma50, sma200, volume, value_traded") \
-                .in_("code", batch) \
-                .eq("trade_date", trading_iso).execute()
-            for row in (ind_res.data or []):
-                indicators_map[row["code"]] = row
-
-        existing_scores_map: dict = {}
-        for i in range(0, len(codes), 200):
-            batch = codes[i:i+200]
-            old_res = supabase.table("scores") \
-                .select("code, value_score, momentum_score, liquidity_score, total_score, score, factors") \
-                .eq("asof", asof) \
-                .in_("code", batch).execute()
-            for row in (old_res.data or []):
-                existing_scores_map[row.get("code")] = row
-
-        print(f"  -> {len(indicators_map)}개 종목 지표 로드됨")
-
-        sec_res = supabase.table("sectors").select("id, score, change_rate").execute()
-        sector_score_map = {
-            r["id"]: {"score": safe_float(r.get("score")), "change": safe_float(r.get("change_rate"))}
-            for r in (sec_res.data or [])
-        }
-
-        upserts = []
-        for s in all_stocks:
-            code = s["code"]
-            ind = indicators_map.get(code, {})
-            sec_info = sector_score_map.get(s.get("sector_id", ""), {})
-
-            value_score = 50
-            if s.get("universe_level") == "core":
-                value_score += 15
-            elif s.get("universe_level") == "extended":
-                value_score += 5
-
-            rsi = safe_float(ind.get("rsi14"), 50)
-            roc14 = safe_float(ind.get("roc14"))
-            roc21 = safe_float(ind.get("roc21"))
-            close_price = safe_float(ind.get("close"), safe_float(s.get("close")))
-            sma20 = safe_float(ind.get("sma20"))
-            sma50 = safe_float(ind.get("sma50"))
-            sma200 = safe_float(ind.get("sma200"))
-
-            momentum_score = 30
-            if 45 <= rsi <= 65:
-                momentum_score += 20
-            elif 35 <= rsi <= 70:
-                momentum_score += 10
-            if roc14 > 0:
-                momentum_score += min(15, roc14 * 3)
-            if roc21 > 0:
-                momentum_score += min(10, roc21 * 2)
-            if close_price > 0 and sma20 > 0 and sma50 > 0:
-                if close_price > sma20 > sma50:
-                    momentum_score += 15
-                elif close_price > sma20:
-                    momentum_score += 8
-            sec_change = sec_info.get("change", 0)
-            if sec_change > 0:
-                momentum_score += min(10, sec_change * 3)
-            momentum_score = min(100, max(0, int(momentum_score)))
-
-            value_traded = safe_float(ind.get("value_traded"))
-            liquidity_score = 30
-            if value_traded > 50_000_000_000:
-                liquidity_score = 90
-            elif value_traded > 10_000_000_000:
-                liquidity_score = 70
-            elif value_traded > 1_000_000_000:
-                liquidity_score = 50
-
-            total_score = min(100, max(0, int(round(
-                value_score * 0.3 + momentum_score * 0.45 + liquidity_score * 0.25
-            ))))
-
-            existing_score = existing_scores_map.get(code, {})
-            existing_factors = existing_score.get("factors") if isinstance(existing_score.get("factors"), dict) else {}
-            merged_factors = dict(existing_factors)
-            merged_factors.update({
-                "rsi14": round(rsi, 2),
-                "roc14": round(roc14, 2),
-                "roc21": round(roc21, 2),
-                "sector_change": round(sec_change, 2),
-            })
-
-            upserts.append({
-                "code": code, "asof": asof,
-                "score": float(total_score),
-                "signal": derive_signal(total_score),
-                "factors": merged_factors,
-                "value_score": int(value_score),
-                "momentum_score": int(momentum_score),
-                "liquidity_score": int(liquidity_score),
-                "total_score": int(total_score),
-            })
-
-        if upserts:
-            print(f"  -> {len(upserts)}개 종목 점수 저장 중...")
-            for i in range(0, len(upserts), 200):
-                batch = upserts[i:i+200]
-                try:
-                    supabase.table("scores").upsert(batch).execute()
-                except Exception as e:
-                    print(f"  ⚠️ 점수 배치 실패: {e}")
-                    for j in range(0, len(batch), 50):
-                        try:
-                            supabase.table("scores").upsert(batch[j:j+50]).execute()
-                        except:
-                            pass
-            print(f"  ✅ {len(upserts)}개 종목 점수 저장 완료")
-    except Exception as e:
-        print(f"  ❌ 종목 점수 계산 실패: {e}")
-        traceback.print_exc()
-
-
-# =============================================
-# STEP 6: 눌림목 매집 시그널 계산 (pullback_signals 테이블)
-# =============================================
-def save_pullback_signals(trading_date: str):
-    trading_iso = to_iso(trading_date)
-    print(f"\n[6/7] 눌림목 매집 시그널 계산...")
-
-    try:
-        res = supabase.table("stocks") \
-            .select("code") \
-            .in_("universe_level", ["core", "extended"]).execute()
-        codes = [s["code"] for s in (res.data or [])]
-        if not codes:
-            print("  ⚠️ 대상 종목 없음")
-            return
-
-        from_date_hist = (date.today() - timedelta(days=100)).isoformat()
-        upserts = []
-        fail_count = 0
-
-        for idx, code in enumerate(codes):
-            try:
-                h_res = supabase.table("stock_daily") \
-                    .select("date, open, high, low, close, volume, value") \
-                    .eq("ticker", code) \
-                    .gte("date", from_date_hist) \
-                    .order("date", desc=False) \
-                    .limit(100).execute()
-                if h_res.data and len(h_res.data) >= 21:
-                    sig = _compute_pullback_signal(h_res.data)
-                    if sig:
-                        upserts.append({
-                            "code": code,
-                            "trade_date": trading_iso,
-                            **sig,
-                        })
-            except:
-                fail_count += 1
-
-            if (idx + 1) % 100 == 0:
-                print(f"  -> 진행: {idx + 1}/{len(codes)}")
-
-        print(f"  -> {len(upserts)}개 시그널 계산 완료 (실패: {fail_count})")
-
-        if upserts:
-            for i in range(0, len(upserts), 200):
-                batch = upserts[i:i+200]
-                try:
-                    supabase.table("pullback_signals").upsert(batch).execute()
-                except Exception as e:
-                    print(f"  ⚠️ 시그널 배치 실패: {e}")
-                    for j in range(0, len(batch), 50):
-                        try:
-                            supabase.table("pullback_signals").upsert(batch[j:j+50]).execute()
-                        except:
-                            pass
-            print(f"  ✅ {len(upserts)}개 시그널 pullback_signals 저장 완료")
-
-    except Exception as e:
-        print(f"  ❌ 눌림목 시그널 계산 실패: {e}")
-        traceback.print_exc()
-
-
-# =============================================
-# STEP 7: 오래된 데이터 정리
-# =============================================
-def cleanup_old_data():
-    print(f"\n[7/7] 오래된 데이터 정리...")
-    stock_retention_days = safe_int(os.environ.get("STOCK_DAILY_RETENTION_DAYS", 400), 400)
-    stock_retention_days = max(400, stock_retention_days)
-    cutoff = (date.today() - timedelta(days=stock_retention_days)).isoformat()
-    # 지표는 스캔/분석 품질(200일 이평 + 계절성 비교)을 위해 더 길게 유지
-    indicators_retention_days = safe_int(os.environ.get("DAILY_INDICATORS_RETENTION_DAYS", 730), 730)
-    indicators_retention_days = max(400, indicators_retention_days)
-    indicators_cutoff = (date.today() - timedelta(days=indicators_retention_days)).isoformat()
-    try:
-        supabase.table("stock_daily").delete().lt("date", cutoff).execute()
-        supabase.table("investor_daily").delete().lt("date", cutoff).execute()
-        supabase.table("sector_daily").delete().lt("date", cutoff).execute()
-        supabase.table("daily_indicators").delete().lt("trade_date", indicators_cutoff).execute()
-        supabase.table("pullback_signals").delete().lt("trade_date", cutoff).execute()
-        try:
-            jobs_cutoff = (date.today() - timedelta(days=30)).isoformat()
-            supabase.table("jobs").delete() \
-                .in_("status", ["done", "failed"]) \
-                .lt("created_at", jobs_cutoff).execute()
-        except:
-            pass
-        print(f"  -> stock_daily 보존일수: {stock_retention_days}일 (컷오프: {cutoff})")
-        print(f"  -> daily_indicators 보존일수: {indicators_retention_days}일 (컷오프: {indicators_cutoff})")
-        print("  ✅ 정리 완료")
-    except Exception as e:
-        print(f"  ⚠️ 정리 실패 (무시 가능): {e}")
-
-
-# =============================================
-# MAIN
-# =============================================
-if __name__ == "__main__":
-    import time
-    
-    print(f"🚀 Daily Batch Start: {datetime.now().isoformat()}")
-    print(f"   ⚠️ KRX batch API 미작동 → 개별 종목 API 모드")
-    print(f"\n   📋 사용 가능 옵션:")
-    print(f"      --date YYYYMMDD      : 기준 거래일 지정 (예: --date 20260515)")
-    print(f"      --skip-ohlcv         : OHLCV 수집 스킵 (지표 계산부터 시작)")
-    print(f"      --reset-stock-data   : stock_daily 테이블 초기화 후 재수집")
-
-    # --skip-ohlcv 플래그로 OHLCV 수집 스킵 가능
+    print(f"[START] Daily Batch Start: {datetime.now().isoformat()}")
+    sys.stdout.flush()
+    print(f"   Using individual API mode (KRX batch API unavailable)")
+    print(f"\n   Options:")
+    print(f"      --date YYYYMMDD      : Specify trading date (e.g., --date 20260515)")
+    print(f"      --skip-ohlcv         : Skip OHLCV collection (start from indicators)")
+    print(f"      --reset-stock-data   : Reinitialize stock_daily table")
+
+    # Parse command-line arguments
     skip_ohlcv = "--skip-ohlcv" in sys.argv
-    
-    # --reset-stock-data 플래그로 강제 초기화
     reset_stock_data = "--reset-stock-data" in sys.argv
-    if reset_stock_data:
-        print(f"\n🔄 --reset-stock-data 플래그 감지: stock_daily 테이블 초기화...")
-        try:
-            supabase.table("stock_daily").delete().gte("date", "2000-01-01").execute()
-            print(f"✅ stock_daily 테이블 초기화 완료")
-        except Exception as e:
-            print(f"⚠️ 초기화 실패: {e}")
-
-    # --date YYYYMMDD 플래그로 기준 거래일 직접 지정
-    trading_date: str
+    
+    # Determine trading date
     if "--date" in sys.argv:
         date_idx = sys.argv.index("--date")
         if date_idx + 1 < len(sys.argv):
             trading_date = sys.argv[date_idx + 1]
-            print(f"📅 기준 거래일 (지정): {trading_date}")
+            print(f"   Trading date (explicit): {trading_date}")
         else:
-            print("⚠️ --date 인수 값 없음, 자동 감지로 전환")
+            print("[WARN] --date argument missing, auto-detecting")
             trading_date = get_last_trading_date()
-            print(f"📅 기준 거래일 (자동): {trading_date}")
+            print(f"   Trading date (auto-detected): {trading_date}")
     else:
         trading_date = get_last_trading_date()
-        print(f"📅 기준 거래일: {trading_date}")
+        print(f"   Trading date (auto-detected): {trading_date}")
 
-    auto_backfill_done = auto_backfill_missing_dates(trading_date)
+    # Reset stock_daily if requested
+    if reset_stock_data:
+        print(f"\n[RESET] --reset-stock-data flag detected")
+        try:
+            supabase.table("stock_daily").delete().gte("date", "2000-01-01").execute()
+            print(f"[OK] stock_daily table reinitialized")
+        except Exception as e:
+            print(f"[WARN] Reinitialization failed: {e}")
 
-    # 시간 추적
+    # Track execution times
     stage_times = {}
     start_time = time.time()
 
-    if auto_backfill_done:
-        skip_ohlcv = True
+    # Step 0: Auto-backfill missing dates
+    print(f"\n[0/7] Auto-backfill missing dates...")
+    auto_backfill_done = auto_backfill_missing_dates(supabase, trading_date)
     
-    if skip_ohlcv:
-        print("\n[1/7] OHLCV 수집 스킵 (--skip-ohlcv)")
+    # Step 1: OHLCV collection (skip if auto-backfill already done or --skip-ohlcv)
+    if skip_ohlcv or auto_backfill_done:
+        if auto_backfill_done:
+            print("\n[1/7] OHLCV collection skipped (auto-backfill completed)")
+        else:
+            print("\n[1/7] OHLCV collection skipped (--skip-ohlcv flag)")
         market_ok = True
     else:
-        # Step 1: OHLCV 수집
+        print("\n[1/7] OHLCV collection starting...")
         step_start = time.time()
-        market_ok = fetch_ohlcv_per_ticker(trading_date)
+        market_ok = fetch_ohlcv_per_ticker(supabase, trading_date)
         stage_times["OHLCV"] = time.time() - step_start
+        print(f"   Completed in {stage_times['OHLCV']:.1f}s")
 
     if market_ok:
         time.sleep(1)
         
-        # Step 2: 기술적 지표
+        # Step 2: Technical indicators
+        print("\n[2/7] Calculating indicators...")
         step_start = time.time()
-        calculate_indicators(trading_date)
+        calculate_indicators(supabase, trading_date)
         stage_times["Indicators"] = time.time() - step_start
+        print(f"   Completed in {stage_times['Indicators']:.1f}s")
         
         time.sleep(1)
         
-        # Step 2.5: 투자자 수급 (신규)
+        # Step 2.5: Investor flow data
+        print("\n[2.5/7] Collecting investor data...")
         step_start = time.time()
-        fetch_investor_data(trading_date)
+        fetch_investor_data(supabase, trading_date)
         stage_times["InvestorData"] = time.time() - step_start
+        print(f"   Completed in {stage_times['InvestorData']:.1f}s")
         
         time.sleep(1)
         
-        # Step 2.6: 공매도/신용 데이터 (신규)
+        # Step 2.6: Credit/short-selling data
+        print("\n[2.6/7] Collecting credit/short data...")
         step_start = time.time()
-        fetch_credit_short_data(trading_date)
+        fetch_credit_short_data(supabase, trading_date)
         stage_times["CreditShortData"] = time.time() - step_start
+        print(f"   Completed in {stage_times['CreditShortData']:.1f}s")
         
         time.sleep(1)
         
-        # Step 3: 섹터 등락률
+        # Step 3-4: Sector processing
+        print("\n[3/7] Updating sector data...")
         step_start = time.time()
-        update_sector_data(trading_date)
-        populate_sector_daily()
+        update_sector_data(supabase, trading_date)
+        print(f"   Completed in {time.time() - step_start:.1f}s")
+        
+        time.sleep(0.5)
+        
+        print("[4/7] Populating sector daily data...")
+        step_start = time.time()
+        populate_sector_daily(supabase)
+        print(f"   Completed in {time.time() - step_start:.1f}s")
+        
+        time.sleep(0.5)
+        
+        print("[4.1/7] Calculating sector scores...")
+        step_start = time.time()
+        calculate_sector_scores(supabase)
+        print(f"   Completed in {time.time() - step_start:.1f}s")
         stage_times["SectorData"] = time.time() - step_start
         
         time.sleep(1)
         
-        # Step 4: 섹터 점수
+        # Step 5: Stock scores
+        print("\n[5/7] Calculating stock scores...")
         step_start = time.time()
-        calculate_sector_scores()
-        stage_times["SectorScores"] = time.time() - step_start
-        
-        # Step 5: 종목 점수
-        step_start = time.time()
-        calculate_stock_scores(trading_date)
+        calculate_stock_scores(supabase, trading_date)
         stage_times["StockScores"] = time.time() - step_start
+        print(f"   Completed in {stage_times['StockScores']:.1f}s")
         
-        # Step 6: 눌림목 시그널
+        time.sleep(1)
+        
+        # Step 6: Pullback signals
+        print("\n[6/7] Generating pullback signals...")
         step_start = time.time()
-        save_pullback_signals(trading_date)
+        save_pullback_signals(supabase, trading_date)
         stage_times["PullbackSignals"] = time.time() - step_start
+        print(f"   Completed in {stage_times['PullbackSignals']:.1f}s")
         
-        # Step 7: 정리
-        step_start = time.time()
-        cleanup_old_data()
-        stage_times["Cleanup"] = time.time() - step_start
+        time.sleep(0.5)
     else:
-        print("⚠️ OHLCV 수집 실패 — 나머지 단계 스킵")
-        print("\n💡 문제 해결 방법:")
-        print("   1. pykrx API 상태 확인 (네이버 금융 등이 차단되었을 가능성)")
-        print("   2. 기준 거래일을 명시적으로 지정: --date 20260515")
-        print("   3. DB 초기화 후 재시작: --reset-stock-data --date 20260515")
+        print("\n[WARN] Market data not available, skipping downstream steps")
+        print("\n[INFO] Troubleshooting:")
+        print("   1. Check pykrx API status (Naver Finance may be blocked)")
+        print("   2. Explicitly specify trading date: --date 20260515")
+        print("   3. Reinit DB and retry: --reset-stock-data --date 20260515")
 
-    # 전체 실행 시간 및 단계별 시간 출력
+    # Step 7: Cleanup
+    print("\n[7/7] Cleaning up old data...")
+    step_start = time.time()
+    cleanup_old_data(supabase)
+    print(f"   Completed in {time.time() - step_start:.1f}s")
+    stage_times["Cleanup"] = time.time() - step_start
+
+    # Summary
     total_time = time.time() - start_time
-    print(f"\n⏱️ 배치 실행 시간 분석:")
-    print(f"  전체: {total_time:.1f}초")
-    for stage, elapsed in sorted(stage_times.items(), key=lambda x: x[1], reverse=True):
-        pct = (elapsed / total_time * 100) if total_time > 0 else 0
-        print(f"    {stage:15s}: {elapsed:6.1f}초 ({pct:5.1f}%)")
+    print(f"\n[COMPLETE] Daily batch completed in {total_time:.1f}s")
+    print(f"   Date processed: {trading_date}")
+    if stage_times:
+        print(f"   Stage times:")
+        for stage, elapsed in sorted(stage_times.items(), key=lambda x: x[1], reverse=True):
+            pct = (elapsed / total_time * 100) if total_time > 0 else 0
+            print(f"      {stage}: {elapsed:.1f}s ({pct:.1f}%)")
     
     if total_time > 600:
-        print(f"⚠️ 경고: 배치가 {total_time/60:.1f}분 소요됨 (목표: 10분 이내)")
+        print(f"[WARN] Batch took {total_time/60:.1f}min (target: <10min)")
 
-    print(f"\n🏁 Daily Batch End: {datetime.now().isoformat()}")
+    print(f"\n[END] Daily Batch End: {datetime.now().isoformat()}")
+    return 0
+
+
+if __name__ == "__main__":
+    exit_code = main()
+    sys.exit(exit_code)
