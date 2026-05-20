@@ -202,11 +202,8 @@ const regimeLabel: Record<MarketRegime, string> = {
 }
 
 function diagnoseEconomicPhase(data: MarketOverview, cpiYoy: number | null): EconomicPhase {
-  // 인플레이션/디플레이션 진단
-  // 금: 인플레이션 헤지 → 금 상승 = 인플레 우려
-  // 유가: 수요-공급 신호 → 유가 상승 = 수요 강함/공급 부족
-  // 금리: 긴축 정도 → 10Y 상승 = 높은 금리
-  // 달러: 안전자산 유입 → 강달러 = 리스크오프
+  // 단일 임계치 기반 분기 대신, 다중 신호를 점수화해 국면을 판정한다.
+  // 목표: 특정 지표 하나로 "스태그플레이션"이 과도하게 트리거되는 오탐을 줄이기.
 
   let severity = 50
   let phase: EconomicPhase['phase'] = 'unknown'
@@ -264,26 +261,130 @@ function diagnoseEconomicPhase(data: MarketOverview, cpiYoy: number | null): Eco
     }
   }
 
-  // 경제 국면 판단
-  const hasHighInflation = indicators.goldTrend === 'up' && indicators.oilTrend === 'up'
-  const hasHighRates = data.us10y && data.us10y.price >= 4.5
-  const hasCpiHot = cpiYoy != null && cpiYoy >= 3.5
-  const hasCpiCool = cpiYoy != null && cpiYoy <= 1.8
-  const hasDeflationarySignals = indicators.oilTrend === 'down' && indicators.goldTrend === 'down'
-  const hasRiskOff = indicators.riskSentiment === 'risk_off'
+  // 경제 국면 다중 신호 점수화
+  // inflationPressure: 인플레 압력, growthStress: 성장 둔화 압력,
+  // policyTightness: 금융여건 경직, riskOffBias: 위험회피 심리
+  let inflationPressure = 0
+  let growthStress = 0
+  let policyTightness = 0
+  let riskOffBias = 0
+  let evidenceCount = 0
 
-  if ((hasHighInflation || hasCpiHot) && hasHighRates) {
+  if (cpiYoy != null) {
+    evidenceCount += 1
+    if (cpiYoy >= 4.0) inflationPressure += 40
+    else if (cpiYoy >= 3.0) inflationPressure += 25
+    else if (cpiYoy <= 1.5) growthStress += 18
+  }
+
+  if (data.us10y && Number.isFinite(data.us10y.price)) {
+    evidenceCount += 1
+    if (data.us10y.price >= 4.8) {
+      policyTightness += 35
+      growthStress += 10
+    } else if (data.us10y.price >= 4.3) {
+      policyTightness += 22
+      growthStress += 6
+    } else if (data.us10y.price <= 3.8) {
+      policyTightness -= 8
+    }
+  }
+
+  if (data.wtiOil && Number.isFinite(data.wtiOil.price)) {
+    evidenceCount += 1
+    if (data.wtiOil.price >= 95) inflationPressure += 22
+    else if (data.wtiOil.price <= 70) growthStress += 16
+  }
+
+  if (data.gold && Number.isFinite(data.gold.price)) {
+    evidenceCount += 1
+    if (data.gold.price >= 2100) {
+      inflationPressure += 10
+      riskOffBias += 8
+    } else if (data.gold.price <= 1850) {
+      inflationPressure -= 4
+    }
+  }
+
+  if (data.usdkrw && Number.isFinite(data.usdkrw.price)) {
+    evidenceCount += 1
+    if (data.usdkrw.price >= 1400) {
+      growthStress += 16
+      riskOffBias += 14
+    } else if (data.usdkrw.price >= 1350) {
+      growthStress += 10
+      riskOffBias += 8
+    } else if (data.usdkrw.price <= 1250) {
+      riskOffBias -= 6
+    }
+  }
+
+  if (data.vix && Number.isFinite(data.vix.price)) {
+    evidenceCount += 1
+    if (data.vix.price >= 30) {
+      riskOffBias += 26
+      growthStress += 12
+    } else if (data.vix.price >= 22) {
+      riskOffBias += 14
+      growthStress += 6
+    } else if (data.vix.price <= 16) {
+      riskOffBias -= 6
+    }
+  }
+
+  if (data.sp500 && Number.isFinite(data.sp500.changeRate)) {
+    evidenceCount += 1
+    if (data.sp500.changeRate <= -1.5) growthStress += 14
+    else if (data.sp500.changeRate >= 1.2) growthStress -= 8
+  }
+
+  if (data.nasdaq && Number.isFinite(data.nasdaq.changeRate)) {
+    evidenceCount += 1
+    if (data.nasdaq.changeRate <= -2.0) growthStress += 14
+    else if (data.nasdaq.changeRate >= 1.5) growthStress -= 8
+  }
+
+  if (data.kospi && Number.isFinite(data.kospi.changeRate)) {
+    evidenceCount += 1
+    if (data.kospi.changeRate <= -1.8) growthStress += 12
+    else if (data.kospi.changeRate >= 1.2) growthStress -= 6
+  }
+
+  if (data.fearGreed && Number.isFinite(data.fearGreed.score)) {
+    evidenceCount += 1
+    if (data.fearGreed.score <= 30) riskOffBias += 18
+    else if (data.fearGreed.score >= 70) riskOffBias -= 8
+  }
+
+  inflationPressure = Math.max(0, Math.min(100, inflationPressure))
+  growthStress = Math.max(0, Math.min(100, growthStress))
+  policyTightness = Math.max(0, Math.min(100, policyTightness))
+  riskOffBias = Math.max(0, Math.min(100, riskOffBias))
+
+  const stagflationScore = inflationPressure * 0.42 + growthStress * 0.32 + policyTightness * 0.2 + riskOffBias * 0.06
+  const inflationScore = inflationPressure * 0.55 + policyTightness * 0.2 + riskOffBias * 0.1 - growthStress * 0.15
+  const deflationScore = growthStress * 0.5 + riskOffBias * 0.3 + (100 - inflationPressure) * 0.2
+  const normalScore = (100 - inflationPressure) * 0.35 + (100 - growthStress) * 0.35 + (100 - riskOffBias) * 0.3
+
+  // 증거 개수가 적으면 "판단 어려움"을 유지하여 오탐 방지.
+  if (evidenceCount < 4) {
+    phase = 'unknown'
+    severity = 55
+  } else if (stagflationScore >= 62 && inflationPressure >= 45 && growthStress >= 35) {
     phase = 'stagflation'
-    severity = 85
-  } else if (hasHighInflation || hasCpiHot) {
+    severity = Math.round(Math.min(95, Math.max(70, stagflationScore)))
+  } else if (inflationScore >= 55 && inflationPressure >= 40) {
     phase = 'high_inflation'
-    severity = 70
-  } else if ((hasDeflationarySignals || hasCpiCool) && hasRiskOff) {
+    severity = Math.round(Math.min(88, Math.max(58, inflationScore)))
+  } else if (deflationScore >= 58 && growthStress >= 40) {
     phase = 'deflation'
-    severity = 75
-  } else if (indicators.goldTrend !== 'up' && indicators.oilTrend !== 'up' && !hasRiskOff) {
+    severity = Math.round(Math.min(90, Math.max(60, deflationScore)))
+  } else if (normalScore >= 55) {
     phase = 'normal'
-    severity = 45
+    severity = Math.round(Math.min(58, Math.max(35, 100 - normalScore)))
+  } else {
+    phase = 'unknown'
+    severity = 52
   }
 
   const phaseLabels: Record<EconomicPhase['phase'], { label: string; description: string }> = {
@@ -423,7 +524,7 @@ function generateTradingSignal(
         : `매매 제한 권고 (신뢰도 ${confidence}%) — ${restrictions[0] || '현금 비중 확대 우선'}`
 
   return {
-    shouldTrade: confidence >= 50,
+    shouldTrade: shouldTrade && confidence >= 50,
     confidence,
     recommendation,
     restrictions,
