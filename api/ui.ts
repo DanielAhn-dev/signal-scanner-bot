@@ -18,6 +18,7 @@ import positions from '../handlers/ui/positions'
 import positionsMaintenance from '../handlers/ui/positions-maintenance'
 import portfolioShare from '../handlers/ui/portfolio-share'
 import portfolioShared from '../handlers/ui/portfolio-shared'
+import portfolioRealtime from './ui/portfolio-realtime'
 import preRallyPatterns from '../handlers/ui/pre-rally-patterns'
 import profile from '../handlers/ui/profile'
 import reportPdf from '../handlers/ui/report-pdf'
@@ -64,6 +65,7 @@ const ROUTES: Record<string, UiHandler> = {
   operations,
   'portfolio-share': portfolioShare,
   'portfolio-shared': portfolioShared,
+  'portfolio-realtime': portfolioRealtime,
   'pre-rally-patterns': preRallyPatterns,
   positions,
   'positions-maintenance': positionsMaintenance,
