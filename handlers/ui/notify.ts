@@ -19,7 +19,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const { message, chat_id } = req.body || {}
   if (!message || typeof message !== 'string') return res.status(400).json({ error: 'Missing message' })
 
-  const user = resolveUiUserContext(req)
+  const user = await resolveUiUserContext(req)
   const target = chat_id || user.chatId
   if (!target) return res.status(500).json({ error: 'No target chat configured' })
 

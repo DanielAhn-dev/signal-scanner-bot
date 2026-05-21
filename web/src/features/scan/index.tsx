@@ -565,54 +565,73 @@ export default function ScanPage({ onNavigate }: { onNavigate?: (r: string) => v
 
   return (
     <section className="container-app container-wide">
-      {/* 페이지 헤더 */}
-      <h1 className="title-xl mb-4" style={{ marginBottom: 'var(--space-3)' }}>눌림목</h1>
-
-
-      <EconomicEventBadge onNavigateToCalendar={() => onNavigate?.('economy')} />
-
-      {/* 상태 표시 */}
-      <div className="card mb-4">
-        <div className="muted">
-          <span className="scan-stat-count">{sortedCandidates.length}</span>개 후보 ·
-          최신 기준일 {latestDate ?? '—'} · {marketPhase === 'intraday' ? `장중 현재가 반영(${realtimeAppliedCount}건)` : '종가 기준'} · 텔레그램 pullback 신호 기반 · 종목 클릭 시 상세 분석으로 이동
-        </div>
-      </div>
-
-      {/* 필터 */}
-      <div className="card mb-4">
-        <div className="muted mb-4" style={{ marginBottom: 'var(--space-2)' }}>필터</div>
-        <div className="scan-filter-section mb-4" style={{ marginBottom: 'var(--space-2)' }}>
-          {([
-            { key: 'all', label: '전체' },
-            { key: 'entry', label: '진입(A/B)' },
-            { key: 'trend', label: '추세(A/B)' },
-            { key: 'accumulation', label: '매집(A/B)' },
-            { key: 'lead', label: '매집 선행형' },
-            { key: 'stable', label: '세력선(A/B)' },
-          ] as const).map((option) => (
-            <button
-              key={option.key}
-              className={`tag${conditionFilter === option.key ? ' active' : ''}`}
-              onClick={() => handleConditionFilter(option.key)}
-            >
-              {option.label} ({filterCounts[option.key]})
-            </button>
-          ))}
-        </div>
-        <div className="scan-filter-section">
-          <span className="scan-filter-label">섹터</span>
-          <select
-            className="input scan-sector-select"
-            value={selectedSector}
-            onChange={(e) => setSelectedSector(e.target.value)}
-          >
-            {sectors.map((sector) => (
-              <option key={sector} value={sector}>{sector === 'all' ? '전체 섹터' : sector}</option>
-            ))}
-          </select>
-        </div>
-      </div>
+      <table className="xls-table" style={{ width: '100%', tableLayout: 'fixed', marginBottom: 'var(--space-4)' }}>
+        <colgroup>
+          <col style={{ width: '18%' }} />
+          <col style={{ width: '18%' }} />
+          <col style={{ width: '16%' }} />
+          <col style={{ width: '16%' }} />
+          <col style={{ width: '16%' }} />
+          <col style={{ width: '16%' }} />
+        </colgroup>
+        <tbody>
+          <tr className="xls-row xls-row--even">
+            <td className="xls-cell" colSpan={4} style={{ fontSize: 18, fontWeight: 700, color: 'var(--color-brand)' }}>
+              눌림목
+            </td>
+            <td className="xls-cell" colSpan={2} style={{ textAlign: 'right' }}>
+              <EconomicEventBadge onNavigateToCalendar={() => onNavigate?.('economy')} />
+            </td>
+          </tr>
+          <tr className="xls-row">
+            <td className="xls-cell" colSpan={6} style={{ color: 'var(--color-text-secondary)', fontSize: 11 }}>
+              <span className="scan-stat-count">{sortedCandidates.length}</span>개 후보 ·
+              최신 기준일 {latestDate ?? '—'} · {marketPhase === 'intraday' ? `장중 현재가 반영(${realtimeAppliedCount}건)` : '종가 기준'} · 텔레그램 pullback 신호 기반 · 종목 클릭 시 상세 분석으로 이동
+            </td>
+          </tr>
+          <tr className="xls-row xls-row--even">
+            <td className="xls-cell" colSpan={6} style={{ padding: '8px 10px' }}>
+              <div className="scan-filter-section" style={{ marginBottom: 0 }}>
+                {([
+                  { key: 'all', label: '전체' },
+                  { key: 'entry', label: '진입(A/B)' },
+                  { key: 'trend', label: '추세(A/B)' },
+                  { key: 'accumulation', label: '매집(A/B)' },
+                  { key: 'lead', label: '매집 선행형' },
+                  { key: 'stable', label: '세력선(A/B)' },
+                ] as const).map((option) => (
+                  <button
+                    key={option.key}
+                    className={`tag${conditionFilter === option.key ? ' active' : ''}`}
+                    onClick={() => handleConditionFilter(option.key)}
+                  >
+                    {option.label} ({filterCounts[option.key]})
+                  </button>
+                ))}
+              </div>
+            </td>
+          </tr>
+          <tr className="xls-row">
+            <td className="xls-cell" colSpan={2} style={{ color: 'var(--color-text-secondary)', fontSize: 11, fontWeight: 600 }}>
+              섹터 필터
+            </td>
+            <td className="xls-cell" colSpan={4} style={{ padding: '8px 10px' }}>
+              <div className="scan-filter-section" style={{ marginBottom: 0 }}>
+                <span className="scan-filter-label">섹터</span>
+                <select
+                  className="input scan-sector-select"
+                  value={selectedSector}
+                  onChange={(e) => setSelectedSector(e.target.value)}
+                >
+                  {sectors.map((sector) => (
+                    <option key={sector} value={sector}>{sector === 'all' ? '전체 섹터' : sector}</option>
+                  ))}
+                </select>
+              </div>
+            </td>
+          </tr>
+        </tbody>
+      </table>
 
       {error && <ErrorState message={error} onRetry={loadCandidates} />}
 
@@ -695,7 +714,7 @@ export default function ScanPage({ onNavigate }: { onNavigate?: (r: string) => v
           )}
           <div className="scan-candidates-stage">
             <div className="scan-table-wrap">
-              <table className="scan-table">
+              <table className="scan-table xls-table" style={{ width: '100%', tableLayout: 'fixed' }}>
               <thead className="scan-thead">
                 <tr>
                   <th className="scan-th">{renderSortableHeader('코드', 'code')}</th>

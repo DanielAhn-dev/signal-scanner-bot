@@ -82,7 +82,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const secret = process.env.SHARE_KEY || process.env.UI_SHARE_KEY || process.env.UI_READ_KEY || process.env.VITE_UI_READ_KEY
   if (!secret) return res.status(500).json({ error: 'Server misconfiguration' })
 
-  const user = resolveUiUserContext(req)
+  const user = await resolveUiUserContext(req)
   const chatId = user.chatId
   if (!chatId) {
     return res.status(400).json({ error: 'chat_id required (header x-user-chat-id, query/body chat_id, or server default)' })

@@ -413,88 +413,113 @@ export default function AnalyzePage({ onNavigate }: { onNavigate?: (r: string) =
 
   return (
     <section className="container-app">
-      <h1 className="title-xl">종목 분석</h1>
-      <EconomicEventBadge onNavigateToCalendar={() => onNavigate?.('economy')} />
-
-      <div className="card mb-4">
-        <div style={{ display: 'flex', gap: 'var(--space-2)', flexWrap: 'nowrap', alignItems: 'center' }}>
-          <div style={{ flex: '1 1 0', minWidth: 0 }}>
-            <StockSearchInput
-              value={query}
-              onChange={setQuery}
-              onSelect={handleStockSelect}
-              placeholder="종목 코드(예: 005930) 또는 한글명(예: 삼성전자)"
-              disabled={loading}
-            />
-          </div>
-          <Button
-            variant="primary"
-            onClick={() => analyze()}
-            disabled={loading || !query.trim()}
-            aria-label="분석"
-            title="분석"
-            style={{ padding: '0 0.75rem', flexShrink: 0 }}
-          >
-            {loading
-              ? <span style={{ display: 'inline-block', width: 16, height: 16, border: '2px solid currentColor', borderTopColor: 'transparent', borderRadius: '50%', animation: 'spin 0.7s linear infinite' }} />
-              : <Search size={16} />}
-          </Button>
-          <Button
-            variant="secondary"
-            onClick={onShareAnalyze}
-            disabled={loading || !result?.code}
-            aria-label="링크 공유"
-            title="링크 공유"
-            style={{ padding: '0 0.75rem', flexShrink: 0 }}
-          >
-            <Link2 size={16} />
-          </Button>
-          <button
-            type="button"
-            aria-label="검색 도움말"
-            title={'종목 코드(6자리) 또는 종목명으로 검색합니다.\n텔레그램 /analyze 에 대응합니다.'}
-            style={{
-              background: 'none',
-              border: 'none',
-              cursor: 'pointer',
-              padding: '0 var(--space-1)',
-              color: 'var(--color-text-tertiary)',
-              display: 'inline-flex',
-              alignItems: 'center',
-              flexShrink: 0,
-              lineHeight: 1,
-            }}
-          >
-            <HelpCircle size={16} />
-          </button>
-        </div>
-        {recentSearches.length > 0 && (
-          <div
-            style={{
-              marginTop: 'var(--space-3)',
-              display: 'flex',
-              gap: 'var(--space-1)',
-              overflowX: 'auto',
-              WebkitOverflowScrolling: 'touch',
-              scrollbarWidth: 'none',
-              msOverflowStyle: 'none',
-              flexWrap: 'nowrap',
-            }}
-          >
-            {recentSearches.map(s => (
-              <button
-                key={s.code}
-                className="tag"
-                style={{ flexShrink: 0 }}
-                onClick={() => { setQuery(s.code); void analyze(s.code) }}
-                title={s.code}
-              >
-                {s.name}
-              </button>
-            ))}
-          </div>
-        )}
-      </div>
+      <table className="xls-table" style={{ width: '100%', tableLayout: 'fixed', marginBottom: 'var(--space-4)' }}>
+        <colgroup>
+          <col style={{ width: '18%' }} />
+          <col style={{ width: '18%' }} />
+          <col style={{ width: '16%' }} />
+          <col style={{ width: '16%' }} />
+          <col style={{ width: '16%' }} />
+          <col style={{ width: '16%' }} />
+        </colgroup>
+        <tbody>
+          <tr className="xls-row xls-row--even">
+            <td className="xls-cell" colSpan={4} style={{ fontSize: 18, fontWeight: 700, color: 'var(--color-brand)' }}>
+              종목 분석
+            </td>
+            <td className="xls-cell" colSpan={2} style={{ textAlign: 'right' }}>
+              <EconomicEventBadge onNavigateToCalendar={() => onNavigate?.('economy')} />
+            </td>
+          </tr>
+          <tr className="xls-row">
+            <td className="xls-cell" colSpan={6} style={{ padding: '8px 10px' }}>
+              <div style={{ display: 'flex', gap: 'var(--space-2)', flexWrap: 'nowrap', alignItems: 'center' }}>
+                <div style={{ flex: '1 1 0', minWidth: 0 }}>
+                  <StockSearchInput
+                    value={query}
+                    onChange={setQuery}
+                    onSelect={handleStockSelect}
+                    placeholder="종목 코드(예: 005930) 또는 한글명(예: 삼성전자)"
+                    disabled={loading}
+                  />
+                </div>
+                <Button
+                  variant="primary"
+                  onClick={() => analyze()}
+                  disabled={loading || !query.trim()}
+                  aria-label="분석"
+                  title="분석"
+                  style={{ padding: '0 0.75rem', flexShrink: 0 }}
+                >
+                  {loading
+                    ? <span style={{ display: 'inline-block', width: 16, height: 16, border: '2px solid currentColor', borderTopColor: 'transparent', borderRadius: '50%', animation: 'spin 0.7s linear infinite' }} />
+                    : <Search size={16} />}
+                </Button>
+                <Button
+                  variant="secondary"
+                  onClick={onShareAnalyze}
+                  disabled={loading || !result?.code}
+                  aria-label="링크 공유"
+                  title="링크 공유"
+                  style={{ padding: '0 0.75rem', flexShrink: 0 }}
+                >
+                  <Link2 size={16} />
+                </Button>
+                <button
+                  type="button"
+                  aria-label="검색 도움말"
+                  title={'종목 코드(6자리) 또는 종목명으로 검색합니다.\n텔레그램 /analyze 에 대응합니다.'}
+                  style={{
+                    background: 'none',
+                    border: 'none',
+                    cursor: 'pointer',
+                    padding: '0 var(--space-1)',
+                    color: 'var(--color-text-tertiary)',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    flexShrink: 0,
+                    lineHeight: 1,
+                  }}
+                >
+                  <HelpCircle size={16} />
+                </button>
+              </div>
+            </td>
+          </tr>
+          {recentSearches.length > 0 && (
+            <tr className="xls-row xls-row--even">
+              <td className="xls-cell" colSpan={2} style={{ color: 'var(--color-text-secondary)', fontSize: 11, fontWeight: 600 }}>
+                최근 조회
+              </td>
+              <td className="xls-cell" colSpan={4} style={{ padding: '8px 10px' }}>
+                <div
+                  style={{
+                    display: 'flex',
+                    gap: 'var(--space-1)',
+                    overflowX: 'auto',
+                    WebkitOverflowScrolling: 'touch',
+                    scrollbarWidth: 'none',
+                    msOverflowStyle: 'none',
+                    flexWrap: 'nowrap',
+                  }}
+                >
+                  {recentSearches.map(s => (
+                    <button
+                      key={s.code}
+                      className="tag"
+                      style={{ flexShrink: 0 }}
+                      onClick={() => { setQuery(s.code); void analyze(s.code) }}
+                      title={s.code}
+                    >
+                      {s.name}
+                    </button>
+                  ))}
+                </div>
+              </td>
+            </tr>
+          )}
+        </tbody>
+      </table>
 
       {loading && <div className="card"><Skeleton lines={5} height={14} /></div>}
 
@@ -506,30 +531,39 @@ export default function AnalyzePage({ onNavigate }: { onNavigate?: (r: string) =
 
       {result && !loading && (
         <div className="card card-lg" id={analyzeCaptureId}>
-          {/* ── 헤더: 종목명 + 현재가 ── */}
-          <div className="flex-between" style={{ marginBottom: 'var(--space-3)' }}>
-            <div>
-              <div className="title-lg">{result.name ?? result.code}</div>
-              <div className="caption">{result.code}</div>
-            </div>
-            {result.close != null && (
-              <div className="text-right">
-                <div style={{ fontSize: 'var(--font-size-2xl)', fontWeight: 'var(--font-weight-bold)', fontVariantNumeric: 'tabular-nums' }}>
-                  {formatKrw(result.close)}
-                </div>
-                {result.change_pct != null && (
-                  <div className={result.change_pct > 0 ? 'positive' : result.change_pct < 0 ? 'negative' : 'neutral'}>
-                    {result.change_pct > 0 ? '+' : ''}{formatNumber(result.change_pct, 2)}%
+          <table className="xls-table" style={{ width: '100%', tableLayout: 'fixed', marginBottom: 'var(--space-4)' }}>
+            <colgroup>
+              <col style={{ width: '22%' }} />
+              <col style={{ width: '22%' }} />
+              <col style={{ width: '18%' }} />
+              <col style={{ width: '18%' }} />
+              <col style={{ width: '20%' }} />
+            </colgroup>
+            <tbody>
+              <tr className="xls-row xls-row--even">
+                <td className="xls-cell" colSpan={3} style={{ fontSize: 18, fontWeight: 700 }}>
+                  {result.name ?? result.code}
+                </td>
+                <td className="xls-cell" colSpan={2} style={{ textAlign: 'right' }}>
+                  <div style={{ fontSize: 'var(--font-size-xl)', fontWeight: 'var(--font-weight-bold)', fontVariantNumeric: 'tabular-nums' }}>
+                    {result.close != null ? formatKrw(result.close) : '—'}
                   </div>
-                )}
-                <div className="caption muted" style={{ marginTop: 'var(--space-1)' }}>
-                  {result.price_source === 'realtime'
+                  {result.change_pct != null && (
+                    <div className={result.change_pct > 0 ? 'positive' : result.change_pct < 0 ? 'negative' : 'neutral'}>
+                      {result.change_pct > 0 ? '+' : ''}{formatNumber(result.change_pct, 2)}%
+                    </div>
+                  )}
+                </td>
+              </tr>
+              <tr className="xls-row">
+                <td className="xls-cell" colSpan={5} style={{ color: 'var(--color-text-secondary)', fontSize: 11 }}>
+                  {result.code} · {result.price_source === 'realtime'
                     ? `실시간 반영${result.price_fetched_at ? ` · ${formatDateTime(result.price_fetched_at)}` : ''}`
                     : '종가 기준'}
-                </div>
-              </div>
-            )}
-          </div>
+                </td>
+              </tr>
+            </tbody>
+          </table>
 
           {/* ── 일중 범위 바 ── */}
           {result.high != null && result.low != null && (

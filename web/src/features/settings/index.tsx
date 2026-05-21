@@ -175,107 +175,137 @@ export default function Settings(){
 
   return (
     <section className="container-app">
-      <h1 className="title-xl">설정 / 알림</h1>
-      <div className="cards-list">
-        {!chatId && (
-          <TelegramLinkCallout
-            description="Chat ID를 연결하면 테스트 알림과 텔레그램 연동 기능을 바로 사용할 수 있습니다."
-            onAction={() => requestOpenProfileModal()}
-          />
-        )}
-
-        <div className="card">
-          <Input label="Telegram Chat ID (선택)" value={chatId} onChange={(e:any) => setChatId(e.target.value)} placeholder="예: 123456789" />
-          <div className="text-xs muted mt-2">웹 기본 기능에는 필수가 아닙니다. 알림 전송/텔레그램 연동 기능에만 사용됩니다.</div>
-          <div className="text-xs muted mt-2">참고: 서버에 `DEFAULT_TELEGRAM_CHAT_ID`가 설정되어 있으면 기본값으로 불러옵니다.</div>
-          <div className="text-xs muted mt-2">
-            현재 권한: {accessInfo?.has_advanced_access ? '고급 기능 사용 가능' : '일반 기능만 사용 가능'}
-            {accessInfo?.is_admin ? ' (관리자)' : ''}
-          </div>
-          {accessInfo?.is_admin && (
-            <div className="mt-2">
-              <Button
-                variant="secondary"
-                onClick={() => {
-                  try {
-                    window.location.hash = 'admin-users'
-                  } catch {
-                    // ignore
-                  }
-                }}
-              >
-                사용자 관리 페이지 열기
-              </Button>
-            </div>
+      <table className="xls-table" style={{ width: '100%', tableLayout: 'fixed', marginBottom: 'var(--space-4)' }}>
+        <colgroup>
+          <col style={{ width: '18%' }} />
+          <col style={{ width: '18%' }} />
+          <col style={{ width: '16%' }} />
+          <col style={{ width: '16%' }} />
+          <col style={{ width: '16%' }} />
+          <col style={{ width: '16%' }} />
+        </colgroup>
+        <tbody>
+          <tr className="xls-row xls-row--even">
+            <td className="xls-cell" colSpan={4} style={{ fontSize: 18, fontWeight: 700, color: 'var(--color-brand)' }}>
+              설정 / 알림
+            </td>
+            <td className="xls-cell" colSpan={2} style={{ textAlign: 'right' }}>
+              {!chatId && (
+                <Button variant="secondary" onClick={() => requestOpenProfileModal()}>
+                  Chat ID 연결
+                </Button>
+              )}
+            </td>
+          </tr>
+          {!chatId && (
+            <tr className="xls-row">
+              <td className="xls-cell" colSpan={6} style={{ padding: '10px' }}>
+                <TelegramLinkCallout
+                  description="Chat ID를 연결하면 테스트 알림과 텔레그램 연동 기능을 바로 사용할 수 있습니다."
+                  onAction={() => requestOpenProfileModal()}
+                />
+              </td>
+            </tr>
           )}
-        </div>
+          <tr className="xls-row xls-row--even">
+            <td className="xls-cell" colSpan={2} style={{ fontSize: 13, fontWeight: 600 }}>Telegram Chat ID</td>
+            <td className="xls-cell" colSpan={4} style={{ padding: '8px 10px' }}>
+              <Input label="Telegram Chat ID (선택)" value={chatId} onChange={(e:any) => setChatId(e.target.value)} placeholder="예: 123456789" />
+              <div className="text-xs muted mt-2">웹 기본 기능에는 필수가 아닙니다. 알림 전송/텔레그램 연동 기능에만 사용됩니다.</div>
+              <div className="text-xs muted mt-2">참고: 서버에 DEFAULT_TELEGRAM_CHAT_ID가 설정되어 있으면 기본값으로 불러옵니다.</div>
+              <div className="text-xs muted mt-2">
+                현재 권한: {accessInfo?.has_advanced_access ? '고급 기능 사용 가능' : '일반 기능만 사용 가능'}
+                {accessInfo?.is_admin ? ' (관리자)' : ''}
+              </div>
+              {accessInfo?.is_admin && (
+                <div className="mt-2">
+                  <Button
+                    variant="secondary"
+                    onClick={() => {
+                      try {
+                        window.location.hash = 'admin-users'
+                      } catch {
+                        // ignore
+                      }
+                    }}
+                  >
+                    사용자 관리 페이지 열기
+                  </Button>
+                </div>
+              )}
+            </td>
+          </tr>
+          <tr className="xls-row">
+            <td className="xls-cell" colSpan={2} style={{ fontSize: 13, fontWeight: 600 }}>가상 자동매매 설정</td>
+            <td className="xls-cell" colSpan={4} style={{ padding: '8px 10px' }}>
+              <label className="block muted">가상 자동매매 설정</label>
+              <div className="mt-2">
+                <Checkbox label="활성화" checked={!!settings?.is_enabled} onChange={(v) => setSettings({...settings, is_enabled: v})} />
+              </div>
+              <div className="mt-2 grid-two">
+                <div>
+                  <Input label="월요일 매수 슬롯" type="number" value={settings?.monday_buy_slots ?? 2} onChange={(e:any) => setSettings({...settings, monday_buy_slots: Number(e.target.value)})} />
+                </div>
+                <div>
+                  <Input label="최대 포지션 수" type="number" value={settings?.max_positions ?? 10} onChange={(e:any) => setSettings({...settings, max_positions: Number(e.target.value)})} />
+                </div>
+              </div>
+              <div className="mt-2 grid-two">
+                <div>
+                  <Input label="최소 매수 점수" type="number" value={settings?.min_buy_score ?? 72} onChange={(e:any) => setSettings({...settings, min_buy_score: Number(e.target.value)})} />
+                </div>
+                <div>
+                  <Input label="장기 비중(%)" type="number" value={settings?.long_term_ratio ?? 70} onChange={(e:any) => setSettings({...settings, long_term_ratio: Number(e.target.value)})} />
+                </div>
+              </div>
+              <div className="mt-2 grid-two">
+                <div>
+                  <Input label="익절(%)" type="number" value={settings?.take_profit_pct ?? 8} onChange={(e:any) => setSettings({...settings, take_profit_pct: Number(e.target.value)})} />
+                </div>
+                <div>
+                  <Input label="손절(%)" type="number" value={settings?.stop_loss_pct ?? 4} onChange={(e:any) => setSettings({...settings, stop_loss_pct: Number(e.target.value)})} />
+                </div>
+              </div>
 
-        <div className="card">
-          <label className="block muted">가상 자동매매 설정</label>
-          <div className="mt-2">
-            <Checkbox label="활성화" checked={!!settings?.is_enabled} onChange={(v) => setSettings({...settings, is_enabled: v})} />
-          </div>
-          <div className="mt-2 grid-two">
-            <div>
-              <Input label="월요일 매수 슬롯" type="number" value={settings?.monday_buy_slots ?? 2} onChange={(e:any) => setSettings({...settings, monday_buy_slots: Number(e.target.value)})} />
-            </div>
-            <div>
-              <Input label="최대 포지션 수" type="number" value={settings?.max_positions ?? 10} onChange={(e:any) => setSettings({...settings, max_positions: Number(e.target.value)})} />
-            </div>
-          </div>
-          <div className="mt-2 grid-two">
-            <div>
-              <Input label="최소 매수 점수" type="number" value={settings?.min_buy_score ?? 72} onChange={(e:any) => setSettings({...settings, min_buy_score: Number(e.target.value)})} />
-            </div>
-            <div>
-              <Input label="장기 비중(%)" type="number" value={settings?.long_term_ratio ?? 70} onChange={(e:any) => setSettings({...settings, long_term_ratio: Number(e.target.value)})} />
-            </div>
-          </div>
-          <div className="mt-2 grid-two">
-            <div>
-              <Input label="익절(%)" type="number" value={settings?.take_profit_pct ?? 8} onChange={(e:any) => setSettings({...settings, take_profit_pct: Number(e.target.value)})} />
-            </div>
-            <div>
-              <Input label="손절(%)" type="number" value={settings?.stop_loss_pct ?? 4} onChange={(e:any) => setSettings({...settings, stop_loss_pct: Number(e.target.value)})} />
-            </div>
-          </div>
+              <div className="mt-4 flex items-center gap-2">
+                <Button onClick={saveSettings} disabled={saving} variant="primary">{saving ? '저장중…' : '저장'}</Button>
+                {status && <div className="muted">{status}</div>}
+              </div>
+            </td>
+          </tr>
+          <tr className="xls-row xls-row--even">
+            <td className="xls-cell" colSpan={2} style={{ fontSize: 13, fontWeight: 600 }}>테스트 알림</td>
+            <td className="xls-cell" colSpan={4} style={{ padding: '8px 10px' }}>
+              <label className="block muted">테스트 알림</label>
+              <div className="mt-2">
+                <label className="block text-sm">테스트 메시지</label>
+                <textarea value={message} onChange={(e) => setMessage(e.target.value)} className="mt-1 w-full p-2 border rounded h-24" />
+              </div>
+              <div className="mt-2 flex items-center gap-2">
+                <Button onClick={sendTest} disabled={loading} variant="secondary">{loading ? '전송중…' : '테스트 전송'}</Button>
+                {status && <div className="muted">{status}</div>}
+              </div>
+            </td>
+          </tr>
+          {accessInfo?.is_admin && (
+            <tr className="xls-row">
+              <td className="xls-cell" colSpan={6} style={{ padding: '8px 10px' }}>
+                <label className="block muted">고급 기능 사용자 관리 (관리자)</label>
+                <div className="mt-2 grid-two">
+                  <Input label="대상 Chat ID" value={adminTargetChatId} onChange={(e:any) => setAdminTargetChatId(e.target.value)} placeholder="예: 123456789" />
+                  <Input label="닉네임(선택)" value={adminNickname} onChange={(e:any) => setAdminNickname(e.target.value)} placeholder="예: 운영팀" />
+                </div>
+                <div className="mt-2">
+                  <Input label="메모(선택)" value={adminNote} onChange={(e:any) => setAdminNote(e.target.value)} placeholder="권한 부여 사유" />
+                </div>
+                <div className="mt-2 flex items-center gap-2">
+                  <Button onClick={upsertAccessUser} disabled={adminLoading} variant="primary">
+                    {adminLoading ? '처리중…' : '추가/갱신'}
+                  </Button>
+                </div>
 
-          <div className="mt-4 flex items-center gap-2">
-            <Button onClick={saveSettings} disabled={saving} variant="primary">{saving ? '저장중…' : '저장'}</Button>
-            {status && <div className="muted">{status}</div>}
-          </div>
-        </div>
-
-        <div className="card">
-          <label className="block muted">테스트 알림</label>
-          <div className="mt-2">
-            <label className="block text-sm">테스트 메시지</label>
-            <textarea value={message} onChange={(e) => setMessage(e.target.value)} className="mt-1 w-full p-2 border rounded h-24" />
-          </div>
-          <div className="mt-2 flex items-center gap-2">
-            <Button onClick={sendTest} disabled={loading} variant="secondary">{loading ? '전송중…' : '테스트 전송'}</Button>
-            {status && <div className="muted">{status}</div>}
-          </div>
-        </div>
-
-        {accessInfo?.is_admin && (
-          <div className="card">
-            <label className="block muted">고급 기능 사용자 관리 (관리자)</label>
-            <div className="mt-2 grid-two">
-              <Input label="대상 Chat ID" value={adminTargetChatId} onChange={(e:any) => setAdminTargetChatId(e.target.value)} placeholder="예: 123456789" />
-              <Input label="닉네임(선택)" value={adminNickname} onChange={(e:any) => setAdminNickname(e.target.value)} placeholder="예: 운영팀" />
-            </div>
-            <div className="mt-2">
-              <Input label="메모(선택)" value={adminNote} onChange={(e:any) => setAdminNote(e.target.value)} placeholder="권한 부여 사유" />
-            </div>
-            <div className="mt-2 flex items-center gap-2">
-              <Button onClick={upsertAccessUser} disabled={adminLoading} variant="primary">
-                {adminLoading ? '처리중…' : '추가/갱신'}
-              </Button>
-            </div>
-
-            <div className="mt-3" style={{ overflowX: 'auto' }}>
-              <table className="w-full text-sm">
+                <div className="mt-3" style={{ overflowX: 'auto' }}>
+                  <table className="w-full text-sm">
                 <thead>
                   <tr>
                     <th style={{ textAlign: 'left', padding: '8px 6px' }}>Chat ID</th>
@@ -316,11 +346,13 @@ export default function Settings(){
                     </tr>
                   )}
                 </tbody>
-              </table>
-            </div>
-          </div>
-        )}
-      </div>
+                  </table>
+                </div>
+              </td>
+            </tr>
+          )}
+        </tbody>
+      </table>
     </section>
   )
 }

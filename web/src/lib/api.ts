@@ -22,7 +22,7 @@ function normalizeUiUrl(url: string): string {
 }
 
 function needsAuthHeader(url: string): boolean {
-  return /\/api\/ui\/(profile)(\?|$)|\/api\/ui\?route=(profile)(&|$)/.test(url)
+  return /\/api\/ui\/(profile|positions|positions-maintenance|watchlist|virtual-trade|decisions|summary|settings|notify|access-users|operations|portfolio-share|simulation-plan|account-policies|advisor-performance|portfolio-realtime|stop-loss-take-profit)(\?|$)|\/api\/ui\?route=(profile|positions|positions-maintenance|watchlist|virtual-trade|decisions|summary|settings|notify|access-users|operations|portfolio-share|simulation-plan|account-policies|advisor-performance|portfolio-realtime|stop-loss-take-profit)(&|$)/.test(url)
 }
 
 function appendQueryParam(url: string, key: string, value: string): string {

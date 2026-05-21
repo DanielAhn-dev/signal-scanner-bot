@@ -1,6 +1,7 @@
 import React from 'react'
 import { useToast } from '../../components/ToastProvider'
 import { normalizeTelegramChatId } from '../../lib/userContext'
+import { useAuthStore } from '../../stores/authStore'
 
 type Profile = {
   fullName: string
@@ -24,6 +25,7 @@ const STORAGE_KEY = 'profile'
 
 export default function ProfilePage(){
   const toast = useToast()
+  const { isSignedIn, authEmail, authName } = useAuthStore()
   const [profile, setProfile] = React.useState<Profile>(DEFAULT)
   const [showApi, setShowApi] = React.useState(false)
 
@@ -110,6 +112,20 @@ export default function ProfilePage(){
     <div className="max-w-3xl">
       <h2 className="title-xl">프로필</h2>
       <div className="card mb-4">
+        <div className="ui-field">
+          <label className="ui-label">Google 계정</label>
+          {isSignedIn ? (
+            <>
+              <div className="muted">{authName || '이름 정보 없음'}</div>
+              <div className="muted">{authEmail || '이메일 정보 없음'}</div>
+              <div className="muted mt-1">메인 로그인은 Google 계정이며, 텔레그램은 알림용 보조 연결입니다.</div>
+            </>
+          ) : (
+            <div className="muted">Google 로그인 상태를 확인할 수 없습니다.</div>
+          )}
+        </div>
+      </div>
+      <div className="card mb-4">
         <div style={{display:'flex', gap: 16, alignItems:'center'}}>
           <div style={{width:96, height:96, borderRadius:12, overflow:'hidden', background:'#f3f4f6'}}>
             {profile.avatar ? (
@@ -137,11 +153,12 @@ export default function ProfilePage(){
 
       <div className="card mb-4">
             <div className="ui-field">
-              <label className="ui-label">텔레그램 아이디</label>
+              <label className="ui-label">텔레그램 알림용 Chat ID</label>
               <div style={{display:'flex', gap:8, alignItems:'center'}}>
                 <input className="ui-text" value={profile.telegramId} onChange={(e) => update({ telegramId: e.target.value })} placeholder="예: 123456789" />
-                <button className="ui-button ui-btn-ghost" onClick={() => fetchTelegramProfile(profile.telegramId || '')} disabled={!profile.telegramId || tgLoading}>불러오기</button>
+                <button className="ui-button ui-btn-ghost" onClick={() => fetchTelegramProfile(profile.telegramId || '')} disabled={!profile.telegramId || tgLoading}>선택적 확인</button>
               </div>
+              <div className="muted mt-1">웹 기본 기능은 Google 로그인으로 동작하고, 텔레그램 ID는 알림 전송에만 사용합니다.</div>
               {tgLoading && <div className="muted mt-1">불러오는 중…</div>}
               {tgError && <div className="muted mt-1">에러: {tgError}</div>}
               {fetchedTg && (

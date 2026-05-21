@@ -78,7 +78,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const pageSize = Math.min(200, Math.max(10, Number(q.pageSize || 20)))
     const withCount = String(qParams.withCount || '') === '1'
 
-    const user = resolveUiUserContext(req)
+    const user = await resolveUiUserContext(req)
     const chatId = user.chatId
     if (!chatId) {
       return res.status(200).json({

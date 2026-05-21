@@ -154,7 +154,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const modeFilterRaw = String(q.mode || '').trim().toLowerCase()
     const modeFilter = modeFilterRaw === 'auto' || modeFilterRaw === 'manual' ? modeFilterRaw : 'all'
 
-    const user = resolveUiUserContext(req)
+    const user = await resolveUiUserContext(req)
     const chatId = user.chatId
     if (!chatId) return res.status(200).json({ data: [], count: withCount ? 0 : undefined, page, pageSize })
 

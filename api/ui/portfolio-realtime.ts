@@ -25,7 +25,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (!url || !key) return res.status(500).json({ error: 'Server not configured' })
 
   const supabase = createClient(url, key)
-  const user = resolveUiUserContext(req)
+  const user = await resolveUiUserContext(req)
   const chatId = user.chatId
 
   if (!chatId) {

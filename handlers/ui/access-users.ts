@@ -40,7 +40,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(401).json({ error: 'Unauthorized' })
   }
 
-  const requesterChatId = resolveRequesterChatId(req)
+  const requesterChatId = await resolveRequesterChatId(req)
   const requesterAccess = await evaluateAdvancedAccess(requesterChatId)
   const isAdmin = requesterAccess.isAdmin
   const supabase = getSupabaseAdminForUi()

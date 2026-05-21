@@ -30,7 +30,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const qty = Number(quantity)
     const pr = Number(price)
     const gross = qty * pr
-    const user = resolveUiUserContext(req)
+    const user = await resolveUiUserContext(req)
     const chatId = user.chatId
     if (!chatId) return res.status(400).json({ error: 'chat_id required (header x-user-chat-id, query/body chat_id, or server default)' })
 

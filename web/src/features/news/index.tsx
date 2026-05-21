@@ -101,32 +101,51 @@ export default function NewsPage() {
 
   return (
     <section className="container-app">
-      <div className="flex-between mb-4">
-        <h1 className="title-xl" style={{ marginBottom: 0 }}>뉴스</h1>
-        <Button variant="secondary" onClick={() => load(appliedQuery)} disabled={loading}>새로고침</Button>
-      </div>
-
-      <div className="card mb-4">
-        <div className="muted" style={{ marginBottom: 'var(--space-3)' }}>
-          텔레그램 <code>/news</code> 명령과 같은 뉴스 소스를 웹에서도 조회합니다.
-        </div>
-        <form
-          style={{ display: 'flex', gap: 'var(--space-2)' }}
-          onSubmit={(e) => {
-            e.preventDefault()
-            applyQuery()
-          }}
-        >
-          <input
-            className="input"
-            style={{ flex: 1 }}
-            placeholder="종목명 또는 코드 (비우면 시장 뉴스)"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-          />
-          <Button variant="primary" type="submit" disabled={loading}>조회</Button>
-        </form>
-      </div>
+      <table className="xls-table" style={{ width: '100%', tableLayout: 'fixed', marginBottom: 'var(--space-4)' }}>
+        <colgroup>
+          <col style={{ width: '18%' }} />
+          <col style={{ width: '18%' }} />
+          <col style={{ width: '16%' }} />
+          <col style={{ width: '16%' }} />
+          <col style={{ width: '16%' }} />
+          <col style={{ width: '16%' }} />
+        </colgroup>
+        <tbody>
+          <tr className="xls-row xls-row--even">
+            <td className="xls-cell" colSpan={4} style={{ fontSize: 18, fontWeight: 700, color: 'var(--color-brand)' }}>
+              뉴스
+            </td>
+            <td className="xls-cell" colSpan={2} style={{ textAlign: 'right' }}>
+              <Button variant="secondary" onClick={() => load(appliedQuery)} disabled={loading}>새로고침</Button>
+            </td>
+          </tr>
+          <tr className="xls-row">
+            <td className="xls-cell" colSpan={6} style={{ color: 'var(--color-text-secondary)', fontSize: 11 }}>
+              텔레그램 /news 명령과 같은 뉴스 소스를 웹에서도 조회합니다.
+            </td>
+          </tr>
+          <tr className="xls-row xls-row--even">
+            <td className="xls-cell" colSpan={6} style={{ padding: '8px 10px' }}>
+              <form
+                style={{ display: 'flex', gap: 'var(--space-2)' }}
+                onSubmit={(e) => {
+                  e.preventDefault()
+                  applyQuery()
+                }}
+              >
+                <input
+                  className="input"
+                  style={{ flex: 1 }}
+                  placeholder="종목명 또는 코드 (비우면 시장 뉴스)"
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                />
+                <Button variant="primary" type="submit" disabled={loading}>조회</Button>
+              </form>
+            </td>
+          </tr>
+        </tbody>
+      </table>
 
       {error && <ErrorState message={error} onRetry={() => load(appliedQuery)} />}
       {loading && <div className="card"><Skeleton lines={6} height={14} /></div>}
@@ -136,55 +155,72 @@ export default function NewsPage() {
       )}
 
       {!loading && !error && items.length > 0 && (
-        <div className="cards-list">
-          {items.map((item, idx) => (
-            <article key={`${item.link}-${idx}`} className="card">
-              <div className="flex-between" style={{ gap: 'var(--space-2)' }}>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <a href={item.link} target="_blank" rel="noreferrer" className="title-md" style={{ textDecoration: 'none' }}>
-                    {decodeHtml(item.title)}
-                  </a>
-                  <div className="caption muted" style={{ marginTop: 'var(--space-2)' }}>
-                    {[item.source, item.date].filter(Boolean).join(' · ') || '출처 정보 없음'}
-                  </div>
-                </div>
-                <Button
-                  variant="ghost"
-                  onClick={() => toggleRelated(item)}
-                  style={{ whiteSpace: 'nowrap', flexShrink: 0 }}
-                >
-                  관련주 {relatedOpenSet.has(item.link || item.title) ? '▲' : '▼'}
-                </Button>
-              </div>
-              {relatedOpenSet.has(item.link || item.title) && (() => {
+        <div className="scan-table-wrap">
+          <table className="scan-table xls-table" style={{ width: '100%', tableLayout: 'fixed' }}>
+            <thead className="scan-thead">
+              <tr>
+                <th className="scan-th">제목</th>
+                <th className="scan-th">출처</th>
+                <th className="scan-th">일자</th>
+                <th className="scan-th">관련주</th>
+              </tr>
+            </thead>
+            <tbody>
+              {items.map((item, idx) => {
                 const key = item.link || item.title
-                const stocks = relatedMap[key]
-                const isLoading = relatedLoadingSet.has(key)
                 return (
-                  <div style={{ marginTop: 'var(--space-3)', borderTop: '1px solid var(--border)', paddingTop: 'var(--space-3)' }}>
-                    {isLoading && <span className="caption muted">조회 중...</span>}
-                    {!isLoading && stocks && stocks.length === 0 && (
-                      <span className="caption muted">제목에서 종목을 찾지 못했습니다.</span>
-                    )}
-                    {!isLoading && stocks && stocks.length === 1 && (
-                      <Button variant="ghost" onClick={() => openModal(stocks[0])}>
-                        {stocks[0].name} 시세
-                      </Button>
-                    )}
-                    {!isLoading && stocks && stocks.length > 1 && (
-                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 'var(--space-2)' }}>
-                        {stocks.map(s => (
-                          <Button key={s.code} variant="ghost" onClick={() => openModal(s)}>
-                            {s.name} 시세
-                          </Button>
-                        ))}
-                      </div>
-                    )}
-                  </div>
+                  <React.Fragment key={`${item.link}-${idx}`}>
+                    <tr className="scan-tr" style={{ cursor: 'pointer' }}>
+                      <td className="scan-td">
+                        <a href={item.link} target="_blank" rel="noreferrer" className="title-md" style={{ textDecoration: 'none' }}>
+                          {decodeHtml(item.title)}
+                        </a>
+                      </td>
+                      <td className="scan-td">{item.source || '—'}</td>
+                      <td className="scan-td">{item.date || '—'}</td>
+                      <td className="scan-td">
+                        <Button
+                          variant="ghost"
+                          onClick={() => toggleRelated(item)}
+                          style={{ whiteSpace: 'nowrap', flexShrink: 0 }}
+                        >
+                          관련주 {relatedOpenSet.has(key) ? '▲' : '▼'}
+                        </Button>
+                      </td>
+                    </tr>
+                    {relatedOpenSet.has(key) && (() => {
+                      const stocks = relatedMap[key]
+                      const isLoading = relatedLoadingSet.has(key)
+                      return (
+                        <tr className="scan-tr xls-row--even">
+                          <td className="scan-td" colSpan={4}>
+                            {isLoading && <span className="caption muted">조회 중...</span>}
+                            {!isLoading && stocks && stocks.length === 0 && (
+                              <span className="caption muted">제목에서 종목을 찾지 못했습니다.</span>
+                            )}
+                            {!isLoading && stocks && stocks.length === 1 && (
+                              <Button variant="ghost" onClick={() => openModal(stocks[0])}>
+                                {stocks[0].name} 시세
+                              </Button>
+                            )}
+                            {!isLoading && stocks && stocks.length > 1 && (
+                              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 'var(--space-2)' }}>
+                                {stocks.map(s => (
+                                  <Button key={s.code} variant="ghost" onClick={() => openModal(s)}>
+                                    {s.name} 시세
+                                  </Button>
+                                ))}
+                              </div>
+                            )}
+                          </td>
+                        </tr>
+                      )
+                    })()}
+                  </React.Fragment>
                 )
-              })()}
-            </article>
-          ))}
+              })}
+            </tbody>
+          </table>
         </div>
       )}
 

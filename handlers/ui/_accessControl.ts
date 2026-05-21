@@ -43,8 +43,8 @@ function getSupabaseAdminClient(): SupabaseClient | null {
   return createClient(url, key)
 }
 
-export function resolveRequesterChatId(req: VercelRequest): number | null {
-  const user = resolveUiUserContext(req)
+export async function resolveRequesterChatId(req: VercelRequest): Promise<number | null> {
+  const user = await resolveUiUserContext(req)
   if (user.source === 'env' || user.source === 'none') return null
   return user.chatId
 }
@@ -91,7 +91,7 @@ export async function evaluateAdvancedAccess(chatId: number | null): Promise<{
 }
 
 export async function enforceAdvancedRouteAccess(req: VercelRequest): Promise<{ allowed: true } | { allowed: false; status: number; error: string }> {
-  const chatId = resolveRequesterChatId(req)
+  const chatId = await resolveRequesterChatId(req)
   if (!chatId) {
     return {
       allowed: false,

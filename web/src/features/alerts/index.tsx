@@ -35,34 +35,57 @@ export default function AlertsPage() {
 
   return (
     <section className="container-app">
-      <h1 className="title-xl">알림 테스트</h1>
-
-      <div className="card">
-        <div className="muted mb-4" style={{ marginBottom: 'var(--space-3)' }}>
-          텔레그램 <code>/alert</code>에 대응합니다. 아래 메시지를 텔레그램으로 전송합니다.
-        </div>
-
-        <div style={{ marginBottom: 'var(--space-3)' }}>
-          <label className="ui-label">알림 메시지</label>
-          <textarea
-            className="ui-textarea"
-            rows={4}
-            value={message}
-            onChange={e => setMessage(e.target.value)}
-            style={{ width: '100%', padding: 'var(--space-2) var(--space-3)', border: '1px solid var(--color-border-default)', borderRadius: 'var(--radius-xs)', fontSize: 'var(--font-size-sm)', resize: 'vertical' }}
-          />
-        </div>
-
-        <Button variant="primary" onClick={send} disabled={sending || !message.trim()}>
-          {sending ? '전송 중…' : '텔레그램으로 전송'}
-        </Button>
-
-        {result && (
-          <div className="muted mt-2" style={{ marginTop: 'var(--space-3)', fontSize: 'var(--font-size-sm)', color: result.startsWith('✓') ? 'var(--color-success)' : 'var(--color-error)' }}>
-            {result}
-          </div>
-        )}
-      </div>
+      <table className="xls-table" style={{ width: '100%', tableLayout: 'fixed', marginBottom: 'var(--space-4)' }}>
+        <colgroup>
+          <col style={{ width: '18%' }} />
+          <col style={{ width: '18%' }} />
+          <col style={{ width: '16%' }} />
+          <col style={{ width: '16%' }} />
+          <col style={{ width: '16%' }} />
+          <col style={{ width: '16%' }} />
+        </colgroup>
+        <tbody>
+          <tr className="xls-row xls-row--even">
+            <td className="xls-cell" colSpan={4} style={{ fontSize: 18, fontWeight: 700, color: 'var(--color-brand)' }}>
+              알림 테스트
+            </td>
+            <td className="xls-cell" colSpan={2} style={{ textAlign: 'right' }}>
+              텔레그램 /alert
+            </td>
+          </tr>
+          <tr className="xls-row">
+            <td className="xls-cell" colSpan={6} style={{ color: 'var(--color-text-secondary)', fontSize: 11 }}>
+              텔레그램 /alert에 대응합니다. 아래 메시지를 텔레그램으로 전송합니다.
+            </td>
+          </tr>
+          <tr className="xls-row xls-row--even">
+            <td className="xls-cell" colSpan={2} style={{ fontSize: 13, fontWeight: 600 }}>알림 메시지</td>
+            <td className="xls-cell" colSpan={4} style={{ padding: '8px 10px' }}>
+              <label className="ui-label">알림 메시지</label>
+              <textarea
+                className="ui-textarea"
+                rows={4}
+                value={message}
+                onChange={e => setMessage(e.target.value)}
+                style={{ width: '100%', padding: 'var(--space-2) var(--space-3)', border: '1px solid var(--color-border-default)', borderRadius: 'var(--radius-xs)', fontSize: 'var(--font-size-sm)', resize: 'vertical' }}
+              />
+            </td>
+          </tr>
+          <tr className="xls-row">
+            <td className="xls-cell" colSpan={2} style={{ fontSize: 13, fontWeight: 600 }}>전송</td>
+            <td className="xls-cell" colSpan={4} style={{ padding: '8px 10px' }}>
+              <Button variant="primary" onClick={send} disabled={sending || !message.trim()}>
+                {sending ? '전송 중…' : '텔레그램으로 전송'}
+              </Button>
+              {result && (
+                <div className="muted mt-2" style={{ marginTop: 'var(--space-3)', fontSize: 'var(--font-size-sm)', color: result.startsWith('✓') ? 'var(--color-success)' : 'var(--color-error)' }}>
+                  {result}
+                </div>
+              )}
+            </td>
+          </tr>
+        </tbody>
+      </table>
     </section>
   )
 }

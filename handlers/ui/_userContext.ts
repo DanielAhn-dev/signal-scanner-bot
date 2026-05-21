@@ -1,8 +1,20 @@
 import type { VercelRequest } from '@vercel/node'
+import { createClient, type SupabaseClient } from '@supabase/supabase-js'
 
 export type UiUserContext = {
   chatId: number | null
-  source: 'header' | 'query' | 'body' | 'env' | 'none'
+  source: 'auth' | 'header' | 'query' | 'body' | 'env' | 'none'
+}
+
+let _supabase: SupabaseClient | null = null
+
+function getSupabase(): SupabaseClient | null {
+  if (_supabase) return _supabase
+  const url = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_KEY
+  if (!url || !key) return null
+  _supabase = createClient(url, key, { auth: { persistSession: false } })
+  return _supabase
 }
 
 function toChatId(raw: unknown): number | null {
@@ -13,7 +25,44 @@ function toChatId(raw: unknown): number | null {
   return Math.trunc(n)
 }
 
-export function resolveUiUserContext(req: VercelRequest): UiUserContext {
+export async function resolveUiUserContext(req: VercelRequest): Promise<UiUserContext> {
+  const authHeader = String(req.headers.authorization || '').trim()
+  const bearer = authHeader.toLowerCase().startsWith('bearer ')
+    ? authHeader.slice(7).trim()
+    : ''
+
+  if (bearer) {
+    const supabase = getSupabase()
+    const url = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL
+    const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_KEY
+    if (supabase && url && key) {
+      try {
+        const authRes = await fetch(`${url.replace(/\/$/, '')}/auth/v1/user`, {
+          method: 'GET',
+          headers: {
+            apikey: key,
+            Authorization: `Bearer ${bearer}`,
+          },
+        })
+        if (authRes.ok) {
+          const authData = await authRes.json().catch(() => null) as { id?: string } | null
+          const clientId = String(authData?.id || '').trim()
+          if (clientId) {
+            const { data } = await supabase
+              .from('web_user_profiles')
+              .select('telegram_id')
+              .eq('client_id', clientId)
+              .maybeSingle()
+            const chatId = toChatId(data?.telegram_id)
+            if (chatId) return { chatId, source: 'auth' }
+          }
+        }
+      } catch {
+        // fall through to legacy sources
+      }
+    }
+  }
+
   const fromHeader = toChatId(req.headers['x-user-chat-id'])
   if (fromHeader) return { chatId: fromHeader, source: 'header' }
 

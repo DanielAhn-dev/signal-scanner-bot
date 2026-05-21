@@ -83,7 +83,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const supabase = createClient(url, key)
 
   try {
-    const user = resolveUiUserContext(req)
+    const user = await resolveUiUserContext(req)
     if (!user.chatId) return res.status(400).json({ error: 'chat_id required' })
 
     const audienceKey = buildAudienceKey(user.chatId)

@@ -1050,129 +1050,92 @@ export default function Portfolio() {
 
   return (
     <section className="container-app portfolio-page">
-      <div className="portfolio-head">
-        <div className="portfolio-title-wrap">
-          <h1 className="title-xl portfolio-title">포트폴리오</h1>
-          <p className="portfolio-subtitle">보유 포지션만 집중해서 관리합니다.</p>
-        </div>
-        <div className="portfolio-head-toolbar">
-          <div className="portfolio-head-info">
-            <EconomicEventBadge onNavigateToCalendar={() => navigate('/market')} />
-            <span className="caption muted portfolio-head-updated">
-              {refreshing
+      <table className="xls-table" style={{ width: '100%', tableLayout: 'fixed', marginBottom: 'var(--space-4)' }}>
+        <colgroup>
+          <col style={{ width: '18%' }} />
+          <col style={{ width: '18%' }} />
+          <col style={{ width: '16%' }} />
+          <col style={{ width: '16%' }} />
+          <col style={{ width: '16%' }} />
+          <col style={{ width: '16%' }} />
+        </colgroup>
+        <tbody>
+          <tr className="xls-row xls-row--even">
+            <td className="xls-cell" colSpan={3} style={{ fontSize: 18, fontWeight: 700, color: 'var(--color-brand)' }}>
+              포트폴리오
+            </td>
+            <td className="xls-cell" colSpan={3} style={{ textAlign: 'right' }}>
+              <EconomicEventBadge onNavigateToCalendar={() => navigate('/market')} />
+            </td>
+          </tr>
+          <tr className="xls-row">
+            <td className="xls-cell" colSpan={6} style={{ color: 'var(--color-text-secondary)', fontSize: 11 }}>
+              보유 포지션만 집중해서 관리합니다. · {refreshing
                 ? '업데이트 중...'
                 : `마지막 갱신 ${lastUpdatedAt
                   ? new Date(lastUpdatedAt).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
                   : '-'}`}
-            </span>
-          </div>
-
-          <div className="portfolio-head-controls" style={{ display: 'flex', gap: 'var(--space-2)', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between' }}>
-            <Button variant="secondary" onClick={() => load({ force: true })} disabled={loading || refreshing}>
-              {refreshing ? '새로고침 중...' : '새로고침'}
-            </Button>
-            <span className="portfolio-total-pill">
-              {allRows.length > 0 ? `총 ${allRows.length}개` : '포지션 집계 준비중'}
-            </span>
-            <Button variant="secondary" onClick={() => setShareModalOpen(true)} disabled={loading || holdingAll.length === 0}>공유 요약 보기</Button>
-          </div>
-
-          <div className="portfolio-head-maintenance" role="group" aria-label="포트폴리오 유지보수 작업" style={{ display: 'flex', gap: 'var(--space-2)', flexWrap: 'wrap', alignItems: 'center' }}>
-            <Button variant="ghost" size="sm" onClick={() => openMaintenanceModal('holdingrestore')} disabled={loading}>
-              계좌/보유 추가
-            </Button>
-            <Button variant="ghost" size="sm" onClick={() => openMaintenanceModal('liquidateall')} disabled={loading || holdingAll.length === 0}>
-              전체매도
-            </Button>
-          </div>
-        </div>
-      </div>
-
-      {/* 계좌별 탭 */}
-      <div className="portfolio-account-tabs" style={{ marginBottom: 'var(--space-3)', borderBottom: '1px solid var(--color-border)', display: 'flex', gap: 'var(--space-1)', padding: '0 0 var(--space-2) 0', overflowX: 'auto' }}>
-        <button
-          className={`portfolio-tab ${selectedAccountKey === 'all' ? 'active' : ''}`}
-          onClick={() => { setSelectedAccountKey('all'); setPage(1) }}
-          style={{
-            padding: 'var(--space-2) var(--space-3)',
-            border: 'none',
-            background: 'transparent',
-            cursor: 'pointer',
-            fontWeight: selectedAccountKey === 'all' ? 'var(--font-weight-bold)' : 'normal',
-            color: selectedAccountKey === 'all' ? 'var(--color-text-primary)' : 'var(--color-text-secondary)',
-            borderBottom: selectedAccountKey === 'all' ? '2px solid var(--color-primary)' : 'none',
-            fontSize: 'var(--font-size-sm)',
-            whiteSpace: 'nowrap',
-            flexShrink: 0,
-          }}
-        >
-          전체
-        </button>
-        <button
-          className={`portfolio-tab ${selectedAccountKey === 'virtual' ? 'active' : ''}`}
-          onClick={() => { setSelectedAccountKey('virtual'); setPage(1) }}
-          style={{
-            padding: 'var(--space-2) var(--space-3)',
-            border: 'none',
-            background: 'transparent',
-            cursor: 'pointer',
-            fontWeight: selectedAccountKey === 'virtual' ? 'var(--font-weight-bold)' : 'normal',
-            color: selectedAccountKey === 'virtual' ? 'var(--color-text-primary)' : 'var(--color-text-secondary)',
-            borderBottom: selectedAccountKey === 'virtual' ? '2px solid var(--color-primary)' : 'none',
-            fontSize: 'var(--font-size-sm)',
-            whiteSpace: 'nowrap',
-            flexShrink: 0,
-          }}
-        >
-          가상매매 ({virtualHoldingRows.length})
-        </button>
-        {accountFolders.map((account) => (
-          <button
-            key={account.key}
-            className={`portfolio-tab ${selectedAccountKey === account.key ? 'active' : ''}`}
-            onClick={() => { setSelectedAccountKey(account.key); setPage(1) }}
-            style={{
-              padding: 'var(--space-2) var(--space-3)',
-              border: 'none',
-              background: 'transparent',
-              cursor: 'pointer',
-              fontWeight: selectedAccountKey === account.key ? 'var(--font-weight-bold)' : 'normal',
-              color: selectedAccountKey === account.key ? 'var(--color-text-primary)' : 'var(--color-text-secondary)',
-              borderBottom: selectedAccountKey === account.key ? '2px solid var(--color-primary)' : 'none',
-              fontSize: 'var(--font-size-sm)',
-              whiteSpace: 'nowrap',
-              flexShrink: 0,
-            }}
-            title={`${accountLabel(account.brokerName, account.accountName)} (${account.count})`}
-          >
-            {accountLabel(account.brokerName, account.accountName)} ({account.count})
-          </button>
-        ))}
-      </div>
-
-      <div className="portfolio-stat-grid">
-        <div className="card portfolio-stat-card">
-          <div className="stat-label">보유 종목</div>
-          <div className="stat-value">{summaryRows.length}</div>
-          <div className="stat-sub">{selectedAccountLabel}</div>
-        </div>
-        <div className="card portfolio-stat-card">
-          <div className="stat-label">현재 실제 매수금</div>
-          <div className="stat-value">{formatKrw(totalInvested)}</div>
-          <div className="stat-sub">보유 수량×평균 매수가</div>
-        </div>
-        <div className="card portfolio-stat-card">
-          <div className="stat-label">평가손익 합계</div>
-          <div className={`stat-value ${adjustedUnrealized < 0 ? 'negative' : 'positive'}`}>
-            {formatKrw(adjustedUnrealized)}
-          </div>
-          <div className="stat-sub">
-            {includeCost
-              ? `비용 ${formatKrw(Math.round(totalTradeCost))} 차감`
-              : '보유 포지션 기준'}
-          </div>
-        </div>
-      </div>
+            </td>
+          </tr>
+          <tr className="xls-row xls-row--even">
+            <td className="xls-cell" colSpan={4} style={{ padding: '8px 10px' }}>
+              <div className="portfolio-head-controls" style={{ display: 'flex', gap: 'var(--space-2)', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between' }}>
+                <Button variant="secondary" onClick={() => load({ force: true })} disabled={loading || refreshing}>
+                  {refreshing ? '새로고침 중...' : '새로고침'}
+                </Button>
+                <span className="portfolio-total-pill">
+                  {allRows.length > 0 ? `총 ${allRows.length}개` : '포지션 집계 준비중'}
+                </span>
+                <Button variant="secondary" onClick={() => setShareModalOpen(true)} disabled={loading || holdingAll.length === 0}>공유 요약 보기</Button>
+              </div>
+            </td>
+            <td className="xls-cell" colSpan={2} style={{ padding: '8px 10px' }}>
+              <div className="portfolio-head-maintenance" role="group" aria-label="포트폴리오 유지보수 작업" style={{ display: 'flex', gap: 'var(--space-2)', flexWrap: 'wrap', alignItems: 'center' }}>
+                <Button variant="ghost" size="sm" onClick={() => openMaintenanceModal('holdingrestore')} disabled={loading}>
+                  계좌/보유 추가
+                </Button>
+                <Button variant="ghost" size="sm" onClick={() => openMaintenanceModal('liquidateall')} disabled={loading || holdingAll.length === 0}>
+                  전체매도
+                </Button>
+              </div>
+            </td>
+          </tr>
+          <tr className="xls-row">
+            <td className="xls-cell" colSpan={6} style={{ padding: '8px 10px' }}>
+              <div className="portfolio-account-tabs" style={{ display: 'flex', gap: 'var(--space-1)', padding: '0', overflowX: 'auto' }}>
+                <button className={`portfolio-tab ${selectedAccountKey === 'all' ? 'active' : ''}`} onClick={() => { setSelectedAccountKey('all'); setPage(1) }} style={{ padding: 'var(--space-2) var(--space-3)', border: 'none', background: 'transparent', cursor: 'pointer', fontWeight: selectedAccountKey === 'all' ? 'var(--font-weight-bold)' : 'normal', color: selectedAccountKey === 'all' ? 'var(--color-text-primary)' : 'var(--color-text-secondary)', borderBottom: selectedAccountKey === 'all' ? '2px solid var(--color-primary)' : 'none', fontSize: 'var(--font-size-sm)', whiteSpace: 'nowrap', flexShrink: 0 }}>전체</button>
+                <button className={`portfolio-tab ${selectedAccountKey === 'virtual' ? 'active' : ''}`} onClick={() => { setSelectedAccountKey('virtual'); setPage(1) }} style={{ padding: 'var(--space-2) var(--space-3)', border: 'none', background: 'transparent', cursor: 'pointer', fontWeight: selectedAccountKey === 'virtual' ? 'var(--font-weight-bold)' : 'normal', color: selectedAccountKey === 'virtual' ? 'var(--color-text-primary)' : 'var(--color-text-secondary)', borderBottom: selectedAccountKey === 'virtual' ? '2px solid var(--color-primary)' : 'none', fontSize: 'var(--font-size-sm)', whiteSpace: 'nowrap', flexShrink: 0 }}>가상매매 ({virtualHoldingRows.length})</button>
+                {accountFolders.map((account) => (
+                  <button key={account.key} className={`portfolio-tab ${selectedAccountKey === account.key ? 'active' : ''}`} onClick={() => { setSelectedAccountKey(account.key); setPage(1) }} style={{ padding: 'var(--space-2) var(--space-3)', border: 'none', background: 'transparent', cursor: 'pointer', fontWeight: selectedAccountKey === account.key ? 'var(--font-weight-bold)' : 'normal', color: selectedAccountKey === account.key ? 'var(--color-text-primary)' : 'var(--color-text-secondary)', borderBottom: selectedAccountKey === account.key ? '2px solid var(--color-primary)' : 'none', fontSize: 'var(--font-size-sm)', whiteSpace: 'nowrap', flexShrink: 0 }} title={`${accountLabel(account.brokerName, account.accountName)} (${account.count})`}>
+                    {accountLabel(account.brokerName, account.accountName)} ({account.count})
+                  </button>
+                ))}
+              </div>
+            </td>
+          </tr>
+          <tr className="xls-row xls-row--even">
+            <td className="xls-cell" colSpan={2} style={{ fontSize: 13, fontWeight: 600 }}>보유 종목</td>
+            <td className="xls-cell" colSpan={2} style={{ fontSize: 13, fontWeight: 600 }}>현재 실제 매수금</td>
+            <td className="xls-cell" colSpan={2} style={{ fontSize: 13, fontWeight: 600 }}>평가손익 합계</td>
+          </tr>
+          <tr className="xls-row">
+            <td className="xls-cell" colSpan={2} style={{ fontSize: 18, fontWeight: 700 }}>{summaryRows.length}</td>
+            <td className="xls-cell" colSpan={2} style={{ fontSize: 18, fontWeight: 700 }}>{formatKrw(totalInvested)}</td>
+            <td className="xls-cell" colSpan={2} style={{ fontSize: 18, fontWeight: 700 }}>
+              <span className={adjustedUnrealized < 0 ? 'negative' : 'positive'}>{formatKrw(adjustedUnrealized)}</span>
+            </td>
+          </tr>
+          <tr className="xls-row xls-row--even">
+            <td className="xls-cell" colSpan={2} style={{ color: 'var(--color-text-tertiary)', fontSize: 11 }}>{selectedAccountLabel}</td>
+            <td className="xls-cell" colSpan={2} style={{ color: 'var(--color-text-tertiary)', fontSize: 11 }}>보유 수량×평균 매수가</td>
+            <td className="xls-cell" colSpan={2} style={{ color: 'var(--color-text-tertiary)', fontSize: 11 }}>
+              {includeCost
+                ? `비용 ${formatKrw(Math.round(totalTradeCost))} 차감`
+                : '보유 포지션 기준'}
+            </td>
+          </tr>
+        </tbody>
+      </table>
 
       <div className="card mb-4 portfolio-macro-card">
         <div className="title-md" style={{ marginBottom: 'var(--space-2)' }}>거시 반영 어드바이저 (금리·유가·CPI)</div>

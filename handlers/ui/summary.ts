@@ -90,7 +90,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   const bypassCache = String((req.query as any)?.cacheMs || '') === '0'
-  const user = resolveUiUserContext(req)
+  const user = await resolveUiUserContext(req)
   const chatId = user.chatId
   if (!chatId) {
     return res.status(200).json({

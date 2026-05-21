@@ -22,7 +22,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const supabase = createClient(url, key)
 
   try {
-    const user = resolveUiUserContext(req)
+    const user = await resolveUiUserContext(req)
     const resolvedChatId = user.chatId
 
     if (req.method === 'GET') {
