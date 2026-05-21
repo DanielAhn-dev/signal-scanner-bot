@@ -458,6 +458,34 @@ a:focus-visible {
    ================================================================ */
 .profile-modal {
   @apply max-w-md;
+  border: 1px solid var(--color-border-default);
+  border-radius: 2px;
+  padding: 0;
+  overflow: hidden;
+}
+.profile-modal .modal-header {
+  margin: 0;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--color-border-default);
+  background: linear-gradient(180deg, #fbfbfb 0%, #f3f3f3 100%);
+}
+.profile-modal .modal-title {
+  font-size: 16px;
+  font-weight: 600;
+}
+.profile-modal .modal-close {
+  min-width: 30px;
+  min-height: 30px;
+}
+.profile-modal .profile-avatar-wrap,
+.profile-modal .profile-section,
+.profile-modal .profile-save-msg,
+.profile-modal .profile-actions {
+  margin-left: 16px;
+  margin-right: 16px;
+}
+.profile-modal .profile-avatar-wrap {
+  margin-top: 14px;
 }
 .profile-avatar-wrap {
   @apply flex flex-col items-center;

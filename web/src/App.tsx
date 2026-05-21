@@ -76,7 +76,7 @@ function AppContent() {
   const location  = useLocation()
   const toast     = useToast()
 
-  const { isSignedIn, isSigningIn, authReady, authError, initAuth, signIn } = useAuthStore()
+  const { isSignedIn, isSigningIn, authReady, authError, authEmail, authName, initAuth, signIn, signOut } = useAuthStore()
   const profileSyncError  = useProfileStore((s) => s.syncError)
   const hydrateFromServer = useProfileStore((s) => s.hydrateFromServer)
 
@@ -249,7 +249,14 @@ function AppContent() {
       {/* 프로필 모달 (ExcelShell 바깥에서 Portal로 렌더) */}
       {profileOpen && (
         <ProfileModal
+          isOpen={profileOpen}
           onClose={() => { setProfileOpen(false); setFocusChatIdField(false) }}
+          isSignedIn={isSignedIn}
+          authEmail={authEmail}
+          authName={authName}
+          onSignIn={signIn}
+          onSignOut={() => { void signOut() }}
+          isSigningIn={isSigningIn}
           focusChatIdField={focusChatIdField}
         />
       )}
