@@ -1,57 +1,63 @@
 /**
  * Design Tokens — Signal Scanner Bot
- * 토스증권 스타일 금융 UI 디자인 토큰
- *
- * 문서: docs/design-tokens.md
- * 이 파일을 직접 수정하기 전에 문서를 먼저 확인할 것.
+ * Microsoft Excel 365 스타일 금융 UI 디자인 토큰
  */
 
 /* ============================================================
    PRIMITIVE — 원시 색상 팔레트 (컴포넌트에서 직접 쓰지 말 것)
    ============================================================ */
 :root {
-  /* Blue */
-  --color-blue-50:  #EBF3FF;
-  --color-blue-100: #C2D9FF;
-  --color-blue-200: #85AEFF;
-  --color-blue-300: #4D85FF;
-  --color-blue-400: #1F63FF;
-  --color-blue-500: #0060FF;
-  --color-blue-600: #0052DB;
-  --color-blue-700: #003FAD;
-  --color-blue-800: #002D80;
-  --color-blue-900: #001B52;
+  /* Excel Green — 브랜드 컬러 */
+  --color-blue-50:  #E2EFDA;
+  --color-blue-100: #C6E0B4;
+  --color-blue-200: #A9D18E;
+  --color-blue-300: #70AD47;
+  --color-blue-400: #548235;
+  --color-blue-500: #217346;
+  --color-blue-600: #1D6B3E;
+  --color-blue-700: #185430;
+  --color-blue-800: #123D22;
+  --color-blue-900: #0C2716;
 
-  /* Red */
+  /* Red — 상승 (한국 시장 규약 유지) */
   --color-red-50:  #FFF0F1;
   --color-red-100: #FFD6D9;
   --color-red-200: #FFB0B6;
   --color-red-300: #FF7F89;
   --color-red-400: #F85C68;
-  --color-red-500: #F04452;
-  --color-red-600: #D0313E;
-  --color-red-700: #A82130;
+  --color-red-500: #C00000;
+  --color-red-600: #A50000;
+  --color-red-700: #840000;
 
-  /* Gray */
+  /* Gray — Excel 365 UI 그레이 스케일 */
   --color-gray-0:   #FFFFFF;
-  --color-gray-50:  #F9FAFB;
-  --color-gray-100: #F2F4F6;
-  --color-gray-200: #E5E8EB;
-  --color-gray-300: #D1D5DB;
-  --color-gray-400: #B0B8C1;
-  --color-gray-500: #8B95A1;
-  --color-gray-600: #6B7280;
-  --color-gray-700: #4E5968;
-  --color-gray-800: #333D4B;
-  --color-gray-900: #191F28;
-  --color-gray-950: #0D1117;
+  --color-gray-50:  #F5F5F5;
+  --color-gray-100: #EFEFEF;
+  --color-gray-200: #E0E0E0;
+  --color-gray-300: #D0D0D0;
+  --color-gray-400: #B0B0B0;
+  --color-gray-500: #8C8C8C;
+  --color-gray-600: #595959;
+  --color-gray-700: #404040;
+  --color-gray-800: #262626;
+  --color-gray-900: #1A1A1A;
+  --color-gray-950: #0D0D0D;
 
-  /* Green, Orange, Yellow */
-  --color-green-500:  #00B493;
-  --color-green-600:  #009E80;
-  --color-orange-500: #FF6B35;
-  --color-orange-600: #E85D2A;
-  --color-yellow-500: #F5B800;
+  /* Green (실적 양수), Orange (경고), Yellow */
+  --color-green-500:  #107C41;
+  --color-green-600:  #0D6535;
+  --color-orange-500: #E66F08;
+  --color-orange-600: #C55E07;
+  --color-yellow-500: #FFCC00;
+
+  /* Excel 전용 — 셀 선택/강조 */
+  --color-excel-cell-selected: #B8CCE4;
+  --color-excel-cell-header:   #DDEBF7;
+  --color-excel-row-stripe:    #F2F2F2;
+  --color-excel-ribbon:        #F3F3F3;
+  --color-excel-title-bar:     #217346;
+  --color-excel-tab-inactive:  #E1E1E1;
+  --color-excel-grid-border:   #D0D0D0;
 }
 
 
@@ -59,37 +65,37 @@
    SEMANTIC — 의미 기반 색상 (컴포넌트에서 이 토큰을 참조)
    ============================================================ */
 :root {
-  /* Brand */
+  /* Brand — Excel Green */
   --color-brand:        var(--color-blue-500);
   --color-brand-hover:  var(--color-blue-600);
   --color-brand-active: var(--color-blue-700);
   --color-brand-subtle: var(--color-blue-50);
   --color-brand-muted:  var(--color-blue-200);
 
-  /* Background */
-  --color-bg-page:     #F0F2F7;
+  /* Background — Excel 365 스타일 */
+  --color-bg-page:     var(--color-excel-ribbon);
   --color-bg-surface:  var(--color-gray-0);
   --color-bg-elevated: var(--color-gray-0);
   --color-bg-sunken:   var(--color-gray-50);
-  --color-bg-overlay:  rgba(0, 0, 0, 0.4);
+  --color-bg-overlay:  rgba(0, 0, 0, 0.35);
 
-  /* Border */
-  --color-border-default: var(--color-gray-200);
-  --color-border-strong:  var(--color-gray-300);
+  /* Border — Excel 1px 그리드 스타일 */
+  --color-border-default: var(--color-excel-grid-border);
+  --color-border-strong:  var(--color-gray-400);
   --color-border-focus:   var(--color-brand);
   --color-border-error:   var(--color-red-500);
 
   /* Text */
-  --color-text-primary:   var(--color-gray-900);
+  --color-text-primary:   var(--color-gray-800);
   --color-text-secondary: var(--color-gray-600);
   --color-text-tertiary:  var(--color-gray-500);
   --color-text-disabled:  var(--color-gray-400);
   --color-text-inverse:   var(--color-gray-0);
   --color-text-brand:     var(--color-brand);
 
-  /* 주식 상태 — 한국 규약: 상승=빨강, 하락=파랑 */
-  --color-stock-up:      #F04452;
-  --color-stock-up-bg:   #FFF0F1;
+  /* 주식 상태 — 한국 규약 유지: 상승=빨강, 하락=파랑 */
+  --color-stock-up:      #C00000;
+  --color-stock-up-bg:   #FFF0F0;
   --color-stock-down:    #1478FF;
   --color-stock-down-bg: #EBF3FF;
   --color-stock-flat:    var(--color-gray-500);
@@ -97,15 +103,15 @@
 
   /* Feedback */
   --color-success:    var(--color-green-500);
-  --color-success-bg: #E6F9F5;
+  --color-success-bg: #E2EFDA;
   --color-warning:    var(--color-orange-500);
-  --color-warning-bg: #FFF4EE;
+  --color-warning-bg: #FFF2CC;
   --color-error:      var(--color-red-500);
   --color-error-bg:   var(--color-red-50);
   --color-info:       var(--color-brand);
   --color-info-bg:    var(--color-brand-subtle);
 
-  /* Compatibility aliases for legacy components */
+  /* Compatibility aliases */
   --color-positive:       var(--color-stock-up);
   --color-negative:       var(--color-stock-down);
   --color-muted:          var(--color-gray-500);
@@ -113,17 +119,17 @@
   --color-surface-muted:  var(--color-bg-sunken);
   --color-surface-card:   var(--color-bg-surface);
   --color-border-subtle:  var(--color-gray-200);
-  --color-border-muted:   var(--color-gray-200);
-  --color-bg-hover:       var(--color-gray-50);
+  --color-border-muted:   var(--color-gray-300);
+  --color-bg-hover:       var(--color-excel-row-stripe);
   --color-bg-tertiary:    var(--color-gray-100);
-  --color-bg-secondary:   var(--color-gray-100);
+  --color-bg-secondary:   var(--color-gray-50);
   --color-border:         var(--color-border-default);
   --color-primary:        var(--color-brand);
   --color-danger:         var(--color-error);
 
   /* Chart visualization colors */
-  --chart-ma-line:        rgba(100, 116, 139, 0.5);
-  --chart-projection-line: rgba(139, 92, 246, 0.55);
+  --chart-ma-line:         rgba(100, 116, 139, 0.5);
+  --chart-projection-line: rgba(33, 115, 70, 0.55);
 }
 
 
@@ -132,24 +138,24 @@
    ============================================================ */
 :root {
   --font-family-sans:
-    'Pretendard Variable', 'Pretendard',
-    -apple-system, BlinkMacSystemFont, 'Segoe UI',
+    'Segoe UI', 'Pretendard Variable', 'Pretendard',
+    -apple-system, BlinkMacSystemFont,
     'Helvetica Neue', Arial, sans-serif;
 
   --font-family-mono:
-    'JetBrains Mono', 'Fira Code', 'Cascadia Code',
-    'Consolas', 'Courier New', monospace;
+    'Consolas', 'Cascadia Code', 'JetBrains Mono',
+    'Fira Code', 'Courier New', monospace;
 
-  /* Size scale */
-  --font-size-xs:   0.75rem;
-  --font-size-sm:   0.875rem;
-  --font-size-base: 1rem;
-  --font-size-md:   1.0625rem;
-  --font-size-lg:   1.125rem;
-  --font-size-xl:   1.25rem;
-  --font-size-2xl:  1.5rem;
-  --font-size-3xl:  1.875rem;
-  --font-size-4xl:  2.25rem;
+  /* Size scale — Excel 기본 11px 기준 */
+  --font-size-xs:   0.6875rem;  /* 11px */
+  --font-size-sm:   0.75rem;    /* 12px */
+  --font-size-base: 0.8125rem;  /* 13px */
+  --font-size-md:   0.875rem;   /* 14px */
+  --font-size-lg:   1rem;       /* 16px */
+  --font-size-xl:   1.125rem;   /* 18px */
+  --font-size-2xl:  1.375rem;   /* 22px */
+  --font-size-3xl:  1.625rem;   /* 26px */
+  --font-size-4xl:  2rem;       /* 32px */
 
   /* Weight */
   --font-weight-regular:   400;
@@ -207,16 +213,16 @@
 
 
 /* ============================================================
-   BORDER RADIUS
+   BORDER RADIUS — Excel은 기본적으로 flat/square
    ============================================================ */
 :root {
   --radius-none: 0;
-  --radius-xs:   4px;
-  --radius-sm:   6px;
-  --radius-md:   8px;
-  --radius-lg:   12px;
-  --radius-xl:   16px;
-  --radius-2xl:  20px;
+  --radius-xs:   2px;
+  --radius-sm:   2px;
+  --radius-md:   2px;
+  --radius-lg:   4px;
+  --radius-xl:   4px;
+  --radius-2xl:  6px;
   --radius-full: 9999px;
 }
 
@@ -226,16 +232,16 @@
    ============================================================ */
 :root {
   --shadow-none: none;
-  --shadow-xs:   0 1px 2px rgba(0, 0, 0, 0.04);
-  --shadow-sm:   0 1px 4px rgba(0, 0, 0, 0.06),
-                 0 1px 2px rgba(0, 0, 0, 0.04);
-  --shadow-md:   0 4px 12px rgba(0, 0, 0, 0.08),
-                 0 2px 4px rgba(0, 0, 0, 0.04);
-  --shadow-lg:   0 8px 24px rgba(0, 0, 0, 0.10),
-                 0 4px 8px rgba(0, 0, 0, 0.06);
+  --shadow-xs:   0 1px 2px rgba(0, 0, 0, 0.10);
+  --shadow-sm:   0 2px 4px rgba(0, 0, 0, 0.14),
+                 0 1px 2px rgba(0, 0, 0, 0.10);
+  --shadow-md:   0 4px 8px rgba(0, 0, 0, 0.16),
+                 0 2px 4px rgba(0, 0, 0, 0.10);
+  --shadow-lg:   0 8px 16px rgba(0, 0, 0, 0.18),
+                 0 4px 8px rgba(0, 0, 0, 0.12);
 
-  --shadow-focus:       0 0 0 3px rgba(0, 96, 255, 0.20);
-  --shadow-focus-error: 0 0 0 3px rgba(240, 68, 82, 0.20);
+  --shadow-focus:       0 0 0 2px rgba(33, 115, 70, 0.40);
+  --shadow-focus-error: 0 0 0 2px rgba(192, 0, 0, 0.25);
 }
 
 
@@ -290,9 +296,9 @@
   --btn-primary-bg-active: var(--color-brand-active);
   --btn-primary-text:      var(--color-text-inverse);
 
-  --btn-secondary-bg:       var(--color-brand-subtle);
-  --btn-secondary-bg-hover: var(--color-blue-100);
-  --btn-secondary-text:     var(--color-brand);
+  --btn-secondary-bg:       var(--color-gray-0);
+  --btn-secondary-bg-hover: var(--color-gray-100);
+  --btn-secondary-text:     var(--color-text-primary);
 
   --btn-ghost-bg:           transparent;
   --btn-ghost-bg-hover:     var(--color-gray-100);
@@ -302,14 +308,15 @@
   --btn-danger-bg-hover:    var(--color-red-600);
   --btn-danger-text:        var(--color-text-inverse);
 
-  --btn-height-sm: 2rem;
-  --btn-height-md: 2.5rem;
-  --btn-height-lg: 3rem;
-  --btn-padding-sm: 0.25rem 0.625rem;
-  --btn-padding-md: 0.5rem 0.875rem;
-  --btn-padding-lg: 0.75rem 1rem;
-  --btn-radius:    var(--radius-md);
-  --btn-font-weight: var(--font-weight-semibold);
+  /* Excel 버튼은 작고 compact */
+  --btn-height-sm: 1.625rem;
+  --btn-height-md: 2rem;
+  --btn-height-lg: 2.375rem;
+  --btn-padding-sm: 0.1875rem 0.5rem;
+  --btn-padding-md: 0.25rem 0.625rem;
+  --btn-padding-lg: 0.375rem 0.875rem;
+  --btn-radius:    var(--radius-xs);
+  --btn-font-weight: var(--font-weight-regular);
 }
 
 
@@ -337,13 +344,14 @@
    COMPONENT TOKENS — Card
    ============================================================ */
 :root {
+  /* Excel 패널 스타일 카드 — flat, 1px 테두리 */
   --card-bg:           var(--color-bg-surface);
-  --card-border:       rgba(0, 0, 0, 0.07);
-  --card-radius:       var(--radius-lg);
-  --card-shadow:       0 1px 4px rgba(0, 0, 0, 0.05), 0 1px 2px rgba(0, 0, 0, 0.04);
-  --card-shadow-hover: 0 4px 12px rgba(0, 0, 0, 0.08), 0 2px 4px rgba(0, 0, 0, 0.04);
-  --card-padding:      var(--spacing-card-md);
-  --card-padding-lg:   var(--spacing-card-lg);
+  --card-border:       var(--color-excel-grid-border);
+  --card-radius:       var(--radius-xs);
+  --card-shadow:       0 1px 3px rgba(0, 0, 0, 0.10);
+  --card-shadow-hover: 0 2px 6px rgba(0, 0, 0, 0.14);
+  --card-padding:      var(--spacing-card-sm);
+  --card-padding-lg:   var(--spacing-card-md);
 }
 
 
@@ -351,17 +359,18 @@
    COMPONENT TOKENS — Input / Form
    ============================================================ */
 :root {
-  --input-bg:           var(--color-bg-sunken);
-  --input-bg-focus:     var(--color-bg-surface);
-  --input-border:       var(--color-border-default);
-  --input-border-hover: var(--color-border-strong);
-  --input-border-focus: var(--color-border-focus);
+  /* Excel 인풋 — 흰 배경, 1px 테두리, flat */
+  --input-bg:           var(--color-gray-0);
+  --input-bg-focus:     var(--color-gray-0);
+  --input-border:       var(--color-gray-400);
+  --input-border-hover: var(--color-gray-600);
+  --input-border-focus: var(--color-brand);
   --input-border-error: var(--color-border-error);
   --input-text:         var(--color-text-primary);
   --input-placeholder:  var(--color-text-tertiary);
-  --input-radius:       var(--radius-xs);
-  --input-height:       2.75rem;
-  --input-padding-x:    var(--space-3);
+  --input-radius:       var(--radius-none);
+  --input-height:       1.75rem;
+  --input-padding-x:    var(--space-2);
 
   --label-color:       var(--color-text-secondary);
   --label-font-size:   var(--font-size-sm);
@@ -373,15 +382,22 @@
    COMPONENT TOKENS — Header / Nav
    ============================================================ */
 :root {
-  --header-bg:     var(--color-bg-surface);
-  --header-border: var(--color-border-default);
-  --header-height: 3.5rem;
-  --header-z:      var(--z-sticky);
+  /* Excel 타이틀바 (초록) + 리본탭바 (흰배경) */
+  --header-bg:          var(--color-excel-title-bar);
+  --header-text:        #FFFFFF;
+  --header-border:      var(--color-border-default);
+  --header-height:      2rem;           /* 타이틀바 높이 */
+  --ribbon-tab-height:  1.875rem;       /* 리본 탭 높이 */
+  --ribbon-body-height: 5.5rem;         /* 리본 버튼 영역 */
+  --formula-bar-height: 1.75rem;        /* 수식 표시줄 */
+  --sheet-tab-height:   1.625rem;       /* 하단 시트탭 */
+  --statusbar-height:   1.375rem;       /* 상태바 */
+  --header-z:           var(--z-sticky);
 
   --nav-item-text:        var(--color-text-secondary);
   --nav-item-text-active: var(--color-text-primary);
-  --nav-item-bg-hover:    var(--color-gray-50);
-  --nav-item-bg-active:   var(--color-gray-100);
+  --nav-item-bg-hover:    var(--color-gray-100);
+  --nav-item-bg-active:   var(--color-excel-cell-selected);
   --nav-item-indicator:   var(--color-brand);
 }
 

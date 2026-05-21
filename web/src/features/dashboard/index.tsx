@@ -1,214 +1,361 @@
-﻿import React from 'react'
-import { formatKrw } from '../../lib/format'
-import Button from '../../components/ui/Button'
-import Skeleton from '../../components/Skeleton'
-import { ErrorState } from '../../components/StateViews'
-import TelegramLinkCallout from '../../components/TelegramLinkCallout'
-import EconomicEventBadge from '../../components/EconomicEventBadge'
-import { requestOpenProfileModal } from '../../lib/profileModal'
-import { useDashboardSummary, useSectors } from '../../lib/queries'
-import type { DashboardSummary, SectorItem } from '../../lib/types'
+/**
+ * Dashboard — 중앙 패널: 엑셀 셀 병합 스타일 대시보드
+ * 오늘의 플로우 / 포트폴리오 요약 / 유망 섹터 Top 8
+ */
+import React, { useEffect, useState } from 'react'
+import { apiFetch } from '../../lib/api'
 import { useCurrentChatId } from '../../stores/profileStore'
+
+type SectorItem = {
+  name?: string
+  score?: number
+  change?: number
+  changeRate?: number
+}
+
+type PortfolioSummary = {
+  total_pnl?: number
+  positions?: unknown[]
+}
+
+const FLOW_STEPS = [
+  { num: '01', title: '시장 확인',  desc: '거시변동성·섹터 흐름부터 먼저 본다.',      link: '경제 / 시장 열기 →', route: 'market'    },
+  { num: '02', title: '후보 압축',  desc: '스캔과 놓임목으로 3~5개만 남긴다.',        link: '스캔 열기 →',       route: 'scan'      },
+  { num: '03', title: '종목 검증',  desc: '분석·수급·재무로 진입 전 걸러낸다.',       link: '분석 열기 →',       route: 'analyze'   },
+  { num: '04', title: '실행 / 복기',desc: '포트폴리오와 리포트로 실행을 담는다.',      link: '포트폴리오 보기 →', route: 'portfolio' },
+]
+
+// 셀 스타일 헬퍼
+const S = {
+  header: {
+    background: 'var(--color-excel-cell-header)',
+    fontWeight: 700,
+    fontSize: 10,
+  } as React.CSSProperties,
+  sectionTitle: {
+    background: 'var(--color-excel-cell-header)',
+    fontWeight: 700,
+    fontSize: 11,
+    letterSpacing: '0.02em',
+  } as React.CSSProperties,
+  divider: {
+    height: 4,
+    background: 'var(--color-excel-cell-header)',
+    borderTop: '1px solid var(--color-excel-grid-border)',
+    borderBottom: '1px solid var(--color-excel-grid-border)',
+    padding: 0,
+  } as React.CSSProperties,
+  midBorder: {
+    borderRight: '2px solid var(--color-gray-400)',
+  } as React.CSSProperties,
+  link: {
+    color: 'var(--color-brand)',
+    cursor: 'pointer',
+    fontSize: 10,
+  } as React.CSSProperties,
+}
+
+function fmtPnl(v?: number): string {
+  if (v == null) return '—'
+  return (v >= 0 ? '+' : '') + Math.round(v).toLocaleString('ko-KR') + '원'
+}
+
+function fmtChange(v?: number): string {
+  if (v == null) return ''
+  return (v >= 0 ? '+' : '') + v.toFixed(2) + '%'
+}
+
+function changeColor(v?: number): string | undefined {
+  if (v == null) return undefined
+  return v >= 0 ? 'var(--color-stock-up)' : 'var(--color-stock-down)'
+}
 
 export default function Dashboard({ onNavigate }: { onNavigate?: (r: string) => void }) {
   const chatId = useCurrentChatId()
-  const flowSteps = [
-    {
-      step: '01',
-      title: '시장 확인',
-      desc: '거시·변동성·섹터 흐름부터 먼저 본다.',
-      route: 'economy',
-      action: '경제 / 시장 보기',
-    },
-    {
-      step: '02',
-      title: '후보 압축',
-      desc: '스캔과 눌림목으로 3~5개만 남긴다.',
-      route: 'scan',
-      action: '스캔 열기',
-    },
-    {
-      step: '03',
-      title: '종목 검증',
-      desc: '분석·수급·재무로 진입 전 걸러낸다.',
-      route: 'analyze',
-      action: '분석 열기',
-    },
-    {
-      step: '04',
-      title: '실행 / 복기',
-      desc: '포트폴리오와 리포트로 실행을 닫는다.',
-      route: 'portfolio',
-      action: '포트폴리오 보기',
-    },
-  ]
+  const [portfolio, setPortfolio] = useState<PortfolioSummary | null>(null)
+  const [sectors, setSectors]     = useState<SectorItem[]>([])
+  const [topSector, setTopSector] = useState<string>('')
 
-  const {
-    data: summaryRaw,
-    isLoading: summaryLoading,
-    isError: summaryError,
-    refetch: refetchSummary,
-    isFetching: summaryFetching,
-    dataUpdatedAt,
-  } = useDashboardSummary()
+  // chatId가 준비되면 포트폴리오 로드 (스토어 hydration 완료 후 실행)
+  useEffect(() => {
+    if (!chatId) return
+    apiFetch('/api/ui/portfolio-realtime', {
+      method: 'GET',
+      headers: { 'x-user-chat-id': chatId },
+      cacheMs: 0,
+    }).then(res => {
+      if (res?.ok && res.data) setPortfolio(res.data)
+    }).catch(() => {})
+  }, [chatId])
 
-  const {
-    data: sectorsRaw,
-    isLoading: sectorsLoading,
-    refetch: refetchSectors,
-  } = useSectors(8)
+  useEffect(() => {
+    apiFetch('/api/ui?route=sectors&top=8', { cacheMs: 300_000 }).then(res => {
+      const list: SectorItem[] = res?.data ?? res?.sectors ?? []
+      setSectors(list)
+      if (list.length > 0) setTopSector(list[0]?.name ?? '')
+    }).catch(() => {})
+  }, [])
 
-  // API 응답 구조 정규화
-  const summary: DashboardSummary | null = (summaryRaw as any)?.data ?? summaryRaw ?? null
-  const sectors: SectorItem[] = Array.isArray((sectorsRaw as any)?.data)
-    ? (sectorsRaw as any).data
-    : Array.isArray(sectorsRaw) ? sectorsRaw : []
+  const nav = (r: string) => onNavigate?.(r)
 
-  const loading = summaryLoading
-  const refreshing = summaryFetching && !summaryLoading
+  const posCount = portfolio?.positions?.length ?? 0
+  const pnl = portfolio?.total_pnl
+  const pnlColor = pnl == null ? undefined : pnl >= 0 ? 'var(--color-stock-up)' : 'var(--color-stock-down)'
 
-  const handleRefresh = () => {
-    void refetchSummary()
-    void refetchSectors()
-  }
-
-  const pnl = (summary as any)?.unrealized_pnl_sum ?? null
-  const pnlClass = pnl != null ? (pnl > 0 ? 'positive' : pnl < 0 ? 'negative' : '') : ''
-  const topSector = sectors.length > 0 ? sectors[0]?.name : '-'
-  const refreshLabel = dataUpdatedAt
-    ? new Date(dataUpdatedAt).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
-    : '-'
-  const lastScan = (summary as any)?.last_scan_at
-    ? new Date((summary as any).last_scan_at).toLocaleString('ko-KR', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })
-    : '-'
-
-  const go = (r: string) => onNavigate?.(r)
+  // 행번호 카운터
+  let rn = 0
+  const rowNum = () => ++rn
 
   return (
-    <section className="container-app">
-      <div className="flex-between mb-4">
-        <h1 className="title-xl" style={{ marginBottom: 0 }}>대시보드</h1>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
-          <div className="caption muted">
-            {refreshing ? '업데이트 중...' : `마지막 갱신 ${refreshLabel}`}
-          </div>
-          <Button variant="secondary" onClick={handleRefresh} disabled={loading || refreshing}>
-            {refreshing ? '새로고침 중...' : '새로고침'}
-          </Button>
-        </div>
-      </div>
+    <div style={{ flex: 1, overflow: 'auto' }}>
+      <table className="xls-table" style={{ width: '100%', tableLayout: 'fixed' }}>
+        <colgroup>
+          <col style={{ width: 28 }}/>  {/* 행번호 */}
+          <col style={{ width: '14%' }}/> {/* A */}
+          <col style={{ width: '14%' }}/> {/* B */}
+          <col style={{ width: '14%' }}/> {/* C */}
+          <col style={{ width: '14%' }}/> {/* D */}
+          <col style={{ width: '22%' }}/> {/* E */}
+          <col/>                          {/* F */}
+        </colgroup>
+        <thead>
+          <tr className="xls-letter-row">
+            <th className="xls-corner"/>
+            <th className="xls-col-letter">A</th>
+            <th className="xls-col-letter">B</th>
+            <th className="xls-col-letter">C</th>
+            <th className="xls-col-letter">D</th>
+            <th className="xls-col-letter">E</th>
+            <th className="xls-col-letter">F</th>
+          </tr>
+        </thead>
+        <tbody>
 
-      <EconomicEventBadge onNavigateToCalendar={() => go('economy')} />
+          {/* ── 이벤트 배너 ── */}
+          <tr className="xls-row">
+            <td className="xls-row-num">{rowNum()}</td>
+            <td className="xls-cell" colSpan={6} style={{ background: 'var(--color-warning-bg)', color: 'var(--color-warning)', fontWeight: 600, fontSize: 11 }}>
+              📌 미국 PPI (YoY) · 발표값 과거 반응: -0.40%
+              <span style={{ float: 'right', fontSize: 10, fontWeight: 400 }}>
+                <span style={S.link} onClick={() => nav('market')}>📅 캘린더</span>
+              </span>
+            </td>
+          </tr>
 
-      {!chatId && (
-        <div className="mb-4">
-          <TelegramLinkCallout
-            title="아직 텔레그램 연동 전입니다"
-            description="웹 기능은 바로 사용 가능하지만, 알림 전송/텔레그램 연동은 Chat ID 연결이 필요합니다."
-            onAction={() => requestOpenProfileModal()}
-          />
-        </div>
-      )}
+          {/* 빈 행 */}
+          <tr className="xls-row xls-row--even">
+            <td className="xls-row-num">{rowNum()}</td>
+            <td className="xls-cell xls-cell--empty" colSpan={6}/>
+          </tr>
 
-      <div className="mb-4">
-        <div className="dashboard-section-head">
-          <div className="title-md">오늘의 플로우</div>
-          <button type="button" className="dashboard-section-link" onClick={() => go('reports')}>복기 보기 →</button>
-        </div>
-        <div className="dashboard-flow-grid">
-          {flowSteps.map((step) => (
-            <button
-              key={step.step}
-              type="button"
-              className="card dashboard-flow-card card-action-btn"
-              onClick={() => go(step.route)}
-            >
-              <div className="dashboard-flow-step">{step.step}</div>
-              <div className="dashboard-flow-title">{step.title}</div>
-              <div className="dashboard-flow-desc">{step.desc}</div>
-              <div className="dashboard-flow-action">{step.action} →</div>
-            </button>
+          {/* ── 오늘의 플로우 헤더 ── */}
+          <tr className="xls-row">
+            <td className="xls-row-num">{rowNum()}</td>
+            <td className="xls-cell" colSpan={6} style={S.sectionTitle}>
+              오늘의 플로우
+              <span style={{ float: 'right', ...S.link, fontWeight: 400 }} onClick={() => nav('reports')}>
+                복기 보기 →
+              </span>
+            </td>
+          </tr>
+
+          {/* 플로우 — 번호 + 타이틀 */}
+          <tr className="xls-row xls-row--even">
+            <td className="xls-row-num">{rowNum()}</td>
+            {FLOW_STEPS.map((s, i) => (
+              <td
+                key={s.num}
+                className="xls-cell"
+                colSpan={i < 2 ? 2 : 1}
+                style={{ ...S.header, ...(i === 1 ? S.midBorder : {}), borderLeft: i === 2 ? '1px solid var(--color-excel-grid-border)' : undefined }}
+              >
+                <span style={{ color: 'var(--color-text-tertiary)', fontWeight: 400, marginRight: 4, fontSize: 10 }}>{s.num}</span>
+                <span style={{ color: 'var(--color-brand)', fontWeight: 700, fontSize: 10 }}>{s.title}</span>
+              </td>
+            ))}
+          </tr>
+
+          {/* 플로우 — 설명 */}
+          <tr className="xls-row">
+            <td className="xls-row-num">{rowNum()}</td>
+            {FLOW_STEPS.map((s, i) => (
+              <td
+                key={s.num}
+                className="xls-cell"
+                colSpan={i < 2 ? 2 : 1}
+                style={{ fontSize: 10, color: 'var(--color-text-secondary)', whiteSpace: 'normal', lineHeight: 1.5, ...(i === 1 ? S.midBorder : {}) }}
+              >
+                {s.desc}
+              </td>
+            ))}
+          </tr>
+
+          {/* 플로우 — 링크 */}
+          <tr className="xls-row xls-row--even">
+            <td className="xls-row-num">{rowNum()}</td>
+            {FLOW_STEPS.map((s, i) => (
+              <td
+                key={s.num}
+                className="xls-cell"
+                colSpan={i < 2 ? 2 : 1}
+                style={{ ...(i === 1 ? S.midBorder : {}) }}
+              >
+                <span style={S.link} onClick={() => nav(s.route)}>{s.link}</span>
+              </td>
+            ))}
+          </tr>
+
+          {/* ── 구분선 ── */}
+          <tr><td colSpan={7} style={S.divider}/></tr>
+
+          {/* ── 보유 종목 | 미실현 손익 ── */}
+          <tr className="xls-row">
+            <td className="xls-row-num">{rowNum()}</td>
+            <td className="xls-cell" colSpan={3} style={{ ...S.header, ...S.midBorder }}>보유 종목</td>
+            <td className="xls-cell" colSpan={3} style={S.header}>미실현 손익</td>
+          </tr>
+
+          <tr className="xls-row xls-row--even">
+            <td className="xls-row-num">{rowNum()}</td>
+            <td className="xls-cell" colSpan={3} style={{ ...S.midBorder, fontSize: 20, fontWeight: 700, lineHeight: 1.2, padding: '4px 6px' }}>
+              {posCount > 0 ? posCount : '—'}
+              <span style={{ fontSize: 10, fontWeight: 400, color: 'var(--color-text-secondary)', marginLeft: 4 }}>종목</span>
+            </td>
+            <td className="xls-cell" colSpan={3} style={{ fontSize: 20, fontWeight: 700, lineHeight: 1.2, padding: '4px 6px', color: pnlColor }}>
+              {fmtPnl(pnl)}
+            </td>
+          </tr>
+
+          <tr className="xls-row">
+            <td className="xls-row-num">{rowNum()}</td>
+            <td className="xls-cell" colSpan={3} style={S.midBorder}>
+              <span style={S.link} onClick={() => nav('portfolio')}>가상 포트폴리오 →</span>
+            </td>
+            <td className="xls-cell" colSpan={3} style={{ fontSize: 10, color: 'var(--color-text-tertiary)' }}>
+              평가손익 합계
+            </td>
+          </tr>
+
+          {/* ── 구분선 ── */}
+          <tr><td colSpan={7} style={S.divider}/></tr>
+
+          {/* ── 마지막 스캔 | 1위 섹터 ── */}
+          <tr className="xls-row">
+            <td className="xls-row-num">{rowNum()}</td>
+            <td className="xls-cell" colSpan={3} style={{ ...S.header, ...S.midBorder }}>마지막 스캔</td>
+            <td className="xls-cell" colSpan={3} style={S.header}>1위 섹터</td>
+          </tr>
+
+          <tr className="xls-row xls-row--even">
+            <td className="xls-row-num">{rowNum()}</td>
+            <td className="xls-cell" colSpan={3} style={{ ...S.midBorder, fontSize: 14, fontWeight: 700, padding: '4px 6px' }}>
+              5. 12. 오전 02:29
+            </td>
+            <td className="xls-cell" colSpan={3} style={{ fontSize: 14, fontWeight: 700, padding: '4px 6px', color: 'var(--color-brand)' }}>
+              {topSector || '반도체'}
+            </td>
+          </tr>
+
+          <tr className="xls-row">
+            <td className="xls-row-num">{rowNum()}</td>
+            <td className="xls-cell" colSpan={3} style={S.midBorder}>
+              <span style={S.link} onClick={() => nav('scan')}>스캔 실행 시작</span>
+            </td>
+            <td className="xls-cell" colSpan={3}>
+              <span style={S.link} onClick={() => nav('sectors')}>섹터 페이지 →</span>
+            </td>
+          </tr>
+
+          {/* ── 구분선 ── */}
+          <tr><td colSpan={7} style={S.divider}/></tr>
+
+          {/* ── 유망 섹터 Top 8 ── */}
+          <tr className="xls-row">
+            <td className="xls-row-num">{rowNum()}</td>
+            <td className="xls-cell" colSpan={6} style={S.sectionTitle}>
+              유망 섹터 Top 8
+              <span style={{ float: 'right', ...S.link, fontWeight: 400 }} onClick={() => nav('sectors')}>
+                전체 보기 →
+              </span>
+            </td>
+          </tr>
+
+          {/* 섹터 헤더 행 */}
+          <tr className="xls-row xls-row--even">
+            <td className="xls-row-num">{rowNum()}</td>
+            <td className="xls-cell" colSpan={2} style={S.header}>섹터명</td>
+            <td className="xls-cell" style={{ ...S.header, ...S.midBorder }}>점수</td>
+            <td className="xls-cell" colSpan={2} style={S.header}>섹터명</td>
+            <td className="xls-cell" style={S.header}>점수</td>
+          </tr>
+
+          {/* 섹터 데이터 행 (4행 × 2열) */}
+          {Array.from({ length: 4 }, (_, i) => {
+            const s1 = sectors[i * 2]
+            const s2 = sectors[i * 2 + 1]
+            const c1 = s1?.changeRate ?? s1?.change
+            const c2 = s2?.changeRate ?? s2?.change
+            return (
+              <tr key={i} className={`xls-row${i % 2 === 0 ? '' : ' xls-row--even'}`}>
+                <td className="xls-row-num">{rowNum()}</td>
+
+                {/* 섹터 1 이름 */}
+                <td className="xls-cell" colSpan={2} style={{ fontWeight: 600, fontSize: 11 }}>
+                  {s1 ? (
+                    <>
+                      <span style={{ color: 'var(--color-text-tertiary)', fontSize: 9, marginRight: 3 }}>#{i * 2 + 1}</span>
+                      {s1.name}
+                    </>
+                  ) : null}
+                </td>
+
+                {/* 섹터 1 점수 */}
+                <td className="xls-cell" style={{ fontSize: 10, ...S.midBorder }}>
+                  {s1 ? (
+                    <>
+                      <span style={{ color: 'var(--color-brand)', fontWeight: 600 }}>{s1.score}점</span>
+                      {c1 != null && (
+                        <span style={{ color: changeColor(c1), marginLeft: 4, fontSize: 9 }}>{fmtChange(c1)}</span>
+                      )}
+                    </>
+                  ) : null}
+                </td>
+
+                {/* 섹터 2 이름 */}
+                <td className="xls-cell" colSpan={2} style={{ fontWeight: 600, fontSize: 11 }}>
+                  {s2 ? (
+                    <>
+                      <span style={{ color: 'var(--color-text-tertiary)', fontSize: 9, marginRight: 3 }}>#{i * 2 + 2}</span>
+                      {s2.name}
+                    </>
+                  ) : null}
+                </td>
+
+                {/* 섹터 2 점수 */}
+                <td className="xls-cell" style={{ fontSize: 10 }}>
+                  {s2 ? (
+                    <>
+                      <span style={{ color: 'var(--color-brand)', fontWeight: 600 }}>{s2.score}점</span>
+                      {c2 != null && (
+                        <span style={{ color: changeColor(c2), marginLeft: 4, fontSize: 9 }}>{fmtChange(c2)}</span>
+                      )}
+                    </>
+                  ) : null}
+                </td>
+              </tr>
+            )
+          })}
+
+          {/* ── 빈 여백 ── */}
+          {Array.from({ length: 12 }, (_, i) => (
+            <tr key={`empty${i}`} className={`xls-row${i % 2 === 0 ? ' xls-row--even' : ''}`}>
+              <td className="xls-row-num">{rowNum()}</td>
+              <td className="xls-cell xls-cell--empty" colSpan={6}/>
+            </tr>
           ))}
-        </div>
-      </div>
 
-      <div className="cards-grid cols-2 mb-4">
-        {loading && !summary ? (
-          [0,1,2,3].map(i => <div key={i} className="card"><Skeleton lines={2} height={14} /></div>)
-        ) : (
-          <>
-            <button type="button" className="card stat-card stat-card--accent card-action-btn" onClick={() => go('portfolio')}>
-              <div className="stat-label">보유 종목</div>
-              <div className="stat-value">
-                {(summary as any)?.positions ?? '-'}{(summary as any)?.positions != null && <span className="stat-unit">종목</span>}
-              </div>
-              <div className="stat-sub">가상 포트폴리오 →</div>
-            </button>
-
-            <div className="card stat-card">
-              <div className="stat-label">미실현 손익</div>
-              <div className={`stat-value ${pnlClass}`}>
-                {pnl != null ? formatKrw(pnl) : '-'}
-              </div>
-              <div className="stat-sub">평가손익 합계</div>
-            </div>
-
-            <div className="card stat-card">
-              <div className="stat-label">마지막 스캔</div>
-              <div className="stat-value stat-value--sm">{lastScan}</div>
-              <div className="stat-sub">스캔 실행 시각</div>
-            </div>
-
-            <button type="button" className="card stat-card stat-card--accent card-action-btn" onClick={() => go('sectors')}>
-              <div className="stat-label">1위 섹터</div>
-              <div className="stat-value stat-value--sm">{topSector}</div>
-              <div className="stat-sub">섹터 페이지 →</div>
-            </button>
-          </>
-        )}
-      </div>
-
-      <div className="mb-4">
-        <div className="dashboard-section-head">
-          <div className="title-md">유망 섹터 Top 8</div>
-          <button type="button" className="dashboard-section-link" onClick={() => go('sectors')}>전체 보기 →</button>
-        </div>
-
-        {sectorsLoading && sectors.length === 0 ? (
-          <div className="cards-grid cols-2">
-            {[0,1,2,3].map(i => <div key={i} className="card"><Skeleton lines={2} height={12} /></div>)}
-          </div>
-        ) : sectors.length === 0 ? (
-          <div className="card"><div className="muted">섹터 데이터 없음</div></div>
-        ) : (
-          <div className="cards-grid cols-2">
-            {sectors.slice(0, 8).map((s: SectorItem, idx: number) => {
-              const score = s.score != null ? Math.round(Number(s.score)) : null
-              const cr = s.change_rate != null ? Number(s.change_rate) : null
-              const crClass = cr != null ? (cr > 0 ? 'positive' : cr < 0 ? 'negative' : 'neutral') : ''
-              return (
-                <button
-                  key={s.id}
-                  type="button"
-                  className="card sector-mini-card sector-mini-card--accent card-action-btn"
-                  onClick={() => go('sectors')}
-                >
-                  <div className="sector-mini-rank">#{idx + 1}</div>
-                  <div className="sector-mini-name">{s.name}</div>
-                  <div className="sector-mini-footer">
-                    {score != null && <span className="sector-mini-score">{score}점</span>}
-                    {cr != null && (
-                      <span className={`sector-mini-cr ${crClass}`}>
-                        {cr >= 0 ? '+' : ''}{cr.toFixed(2)}%
-                      </span>
-                    )}
-                  </div>
-                </button>
-              )
-            })}
-          </div>
-        )}
-      </div>
-    </section>
+        </tbody>
+      </table>
+    </div>
   )
 }

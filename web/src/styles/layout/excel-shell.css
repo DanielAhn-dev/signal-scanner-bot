@@ -1,0 +1,1250 @@
+/* ================================================================
+   EXCEL SHELL — Microsoft Excel 365 스타일 앱 레이아웃
+   반응형: Desktop(1024px+) / Tablet(640-1024px) / Mobile(<640px)
+   ================================================================ */
+
+@keyframes xls-spin {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
+
+@layer components {
+
+/* ── 전체 앱 컨테이너 ── */
+.excel-app {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  overflow: hidden;
+  background: var(--color-excel-ribbon);
+  font-family: var(--font-family-sans);
+  font-size: var(--font-size-base);
+  color: var(--color-text-primary);
+}
+
+/* ================================================================
+   TITLE BAR — 최상단 초록 타이틀 바
+   ================================================================ */
+.excel-titlebar {
+  height: var(--header-height);
+  background: var(--color-excel-title-bar);
+  color: #FFFFFF;
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+  user-select: none;
+  position: relative;
+  z-index: var(--z-sticky);
+}
+
+.excel-titlebar__qs {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 0 8px;
+  flex-shrink: 0;
+}
+
+.excel-titlebar__qs-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border: none;
+  background: transparent;
+  color: rgba(255,255,255,0.85);
+  cursor: pointer;
+  border-radius: var(--radius-xs);
+  transition: background var(--duration-fast);
+}
+.excel-titlebar__qs-btn:hover {
+  background: rgba(255,255,255,0.15);
+  color: #fff;
+}
+.excel-titlebar__qs-btn:active {
+  background: rgba(255,255,255,0.25);
+}
+
+.excel-titlebar__app-name {
+  flex: 1;
+  text-align: center;
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-regular);
+  color: rgba(255,255,255,0.95);
+  letter-spacing: 0.01em;
+  pointer-events: none;
+}
+
+.excel-titlebar__window-controls {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+  margin-left: auto;
+}
+
+.excel-titlebar__user-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 0 10px;
+  height: var(--header-height);
+  border: none;
+  background: transparent;
+  color: rgba(255,255,255,0.9);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-medium);
+  cursor: pointer;
+  transition: background var(--duration-fast);
+}
+.excel-titlebar__user-btn:hover {
+  background: rgba(255,255,255,0.15);
+  color: #fff;
+}
+
+/* ================================================================
+   RIBBON TABS BAR — 탭 이름 줄
+   ================================================================ */
+.excel-ribbon-tabs {
+  height: var(--ribbon-tab-height);
+  background: var(--color-gray-0);
+  border-bottom: 1px solid var(--color-excel-grid-border);
+  display: flex;
+  align-items: flex-end;
+  flex-shrink: 0;
+  padding: 0 4px;
+  gap: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+}
+.excel-ribbon-tabs::-webkit-scrollbar { display: none; }
+
+.excel-ribbon-tab {
+  display: inline-flex;
+  align-items: center;
+  padding: 0 12px;
+  height: calc(var(--ribbon-tab-height) - 1px);
+  border: 1px solid transparent;
+  border-bottom: none;
+  background: transparent;
+  color: var(--color-text-primary);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-medium);
+  cursor: pointer;
+  white-space: nowrap;
+  border-radius: var(--radius-xs) var(--radius-xs) 0 0;
+  transition: background var(--duration-fast), color var(--duration-fast);
+  position: relative;
+  bottom: -1px;
+}
+.excel-ribbon-tab:hover {
+  color: var(--color-brand);
+  background: var(--color-brand-subtle);
+}
+.excel-ribbon-tab--active {
+  background: var(--color-gray-0);
+  color: var(--color-brand);
+  font-weight: var(--font-weight-semibold);
+  border-color: var(--color-excel-grid-border);
+  border-bottom-color: var(--color-gray-0);
+}
+.excel-ribbon-tab--active::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -1px;
+  right: -1px;
+  height: 2px;
+  background: var(--color-brand);
+  border-radius: var(--radius-xs) var(--radius-xs) 0 0;
+}
+
+/* ================================================================
+   RIBBON BODY — 리본 버튼 영역
+   ================================================================ */
+.excel-ribbon-body {
+  height: var(--ribbon-body-height);
+  background: var(--color-gray-0);
+  border-bottom: 1px solid var(--color-excel-grid-border);
+  display: flex;
+  align-items: stretch;
+  flex-shrink: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+}
+.excel-ribbon-body::-webkit-scrollbar { display: none; }
+
+/* 리본 그룹 */
+.excel-ribbon-group {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-end;
+  padding: 4px 6px 0;
+  border-right: 1px solid var(--color-excel-grid-border);
+  min-width: fit-content;
+  flex-shrink: 0;
+}
+.excel-ribbon-group:last-child { border-right: none; }
+
+.excel-ribbon-group__buttons {
+  display: flex;
+  align-items: flex-end;
+  gap: 1px;
+  flex: 1;
+  padding-bottom: 4px;
+}
+
+.excel-ribbon-group__label {
+  font-size: 10px;
+  color: var(--color-text-tertiary);
+  text-align: center;
+  padding: 2px 0 3px;
+  border-top: 1px solid var(--color-excel-grid-border);
+  width: 100%;
+  user-select: none;
+}
+
+/* 리본 버튼 — 큰 (세로 아이콘+텍스트) */
+.ribbon-btn {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  min-width: 40px;
+  padding: 4px 6px;
+  height: calc(var(--ribbon-body-height) - 24px);
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--color-text-primary);
+  font-size: 10px;
+  font-family: var(--font-family-sans);
+  cursor: pointer;
+  border-radius: var(--radius-xs);
+  transition: background var(--duration-fast), border-color var(--duration-fast);
+  white-space: nowrap;
+  text-align: center;
+}
+.ribbon-btn:hover {
+  background: var(--color-brand-subtle);
+  border-color: var(--color-brand-muted);
+  color: var(--color-brand);
+}
+.ribbon-btn:active {
+  background: var(--color-blue-100);
+  border-color: var(--color-brand);
+}
+.ribbon-btn--active {
+  background: var(--color-excel-cell-selected);
+  border-color: var(--color-brand);
+  color: var(--color-brand);
+}
+.ribbon-btn__icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.ribbon-btn__label {
+  line-height: 1.2;
+  max-width: 52px;
+  word-break: keep-all;
+}
+
+/* 리본 버튼 — 작은 (가로 배치) */
+.ribbon-btn-sm {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 6px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--color-text-primary);
+  font-size: var(--font-size-xs);
+  font-family: var(--font-family-sans);
+  cursor: pointer;
+  border-radius: var(--radius-xs);
+  transition: background var(--duration-fast), border-color var(--duration-fast);
+  white-space: nowrap;
+  min-height: 22px;
+}
+.ribbon-btn-sm:hover {
+  background: var(--color-brand-subtle);
+  border-color: var(--color-brand-muted);
+  color: var(--color-brand);
+}
+.ribbon-btn-sm:active {
+  background: var(--color-blue-100);
+}
+
+/* 리본 구분선 */
+.ribbon-separator {
+  width: 1px;
+  height: 60%;
+  background: var(--color-excel-grid-border);
+  margin: 0 3px;
+  align-self: center;
+}
+
+/* ================================================================
+   FORMULA BAR — 수식 표시줄 (현재 선택 종목/컨텍스트 표시)
+   ================================================================ */
+.excel-formula-bar {
+  height: var(--formula-bar-height);
+  background: var(--color-gray-0);
+  border-bottom: 1px solid var(--color-excel-grid-border);
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+  padding: 0;
+}
+
+.excel-formula-bar__name-box {
+  width: 96px;
+  flex-shrink: 0;
+  border-right: 1px solid var(--color-excel-grid-border);
+  padding: 0 6px;
+  font-size: var(--font-size-xs);
+  font-family: var(--font-family-mono);
+  color: var(--color-text-primary);
+  height: 100%;
+  display: flex;
+  align-items: center;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.excel-formula-bar__divider {
+  display: flex;
+  align-items: center;
+  gap: 1px;
+  padding: 0 4px;
+  border-right: 1px solid var(--color-excel-grid-border);
+  height: 100%;
+}
+
+.excel-formula-bar__fn-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border: none;
+  background: transparent;
+  color: var(--color-text-secondary);
+  font-size: 11px;
+  cursor: pointer;
+  border-radius: 1px;
+  font-style: italic;
+  font-family: Georgia, serif;
+}
+.excel-formula-bar__fn-btn:hover {
+  background: var(--color-gray-100);
+  color: var(--color-brand);
+}
+
+.excel-formula-bar__input {
+  flex: 1;
+  height: 100%;
+  border: none;
+  outline: none;
+  padding: 0 8px;
+  font-size: var(--font-size-xs);
+  font-family: var(--font-family-mono);
+  color: var(--color-text-primary);
+  background: transparent;
+}
+.excel-formula-bar__input::placeholder {
+  color: var(--color-text-tertiary);
+}
+
+/* ================================================================
+   MAIN CONTENT — 3패널 메인 영역
+   ================================================================ */
+
+/* ExcelShell이 직접 관리하는 3패널 레이아웃 */
+.excel-main-panels {
+  flex: 1;
+  display: flex;
+  flex-direction: row;
+  overflow: hidden;
+  background: var(--color-excel-grid-border); /* 패널 사이 1px 선처럼 보임 */
+  min-height: 0;
+}
+
+/* 좌/우 고정 패널 */
+.excel-side-panel {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--color-gray-0);
+  flex-shrink: 0;
+}
+.excel-side-panel--left  { border-right: 1px solid var(--color-excel-grid-border); }
+.excel-side-panel--right { border-left:  1px solid var(--color-excel-grid-border); }
+
+/* 중앙 패널 — 현재 페이지 콘텐츠 */
+.excel-center-panel {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  background: var(--color-gray-0);
+}
+
+/* 패널 리사이즈 핸들 */
+.excel-panel-divider {
+  width: 4px;
+  flex-shrink: 0;
+  background: var(--color-excel-grid-border);
+  cursor: col-resize;
+  transition: background var(--duration-fast);
+  position: relative;
+}
+.excel-panel-divider:hover,
+.excel-panel-divider:active {
+  background: var(--color-brand-muted);
+  width: 4px;
+}
+.excel-panel-divider::after {
+  content: '⋮';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  font-size: 10px;
+  color: var(--color-gray-400);
+  pointer-events: none;
+}
+
+/* 패널 헤더 (공통) */
+.xls-panel-header-bar {
+  height: 24px;
+  background: var(--color-excel-cell-header);
+  border-bottom: 1px solid var(--color-excel-grid-border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 6px;
+  flex-shrink: 0;
+  font-size: 10px;
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-text-secondary);
+  user-select: none;
+}
+.xls-panel-header-bar__tools {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+/* 기존 .excel-content 호환용 */
+.excel-content {
+  flex: 1;
+  overflow: auto;
+  background: var(--color-gray-0);
+  position: relative;
+}
+
+/* ================================================================
+   EXCEL CONTENT AREA (ExcelContentArea.tsx)
+   ================================================================ */
+
+.xls-content-area {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  overflow: hidden;
+  height: 100%;
+}
+
+/* native grid (ExcelSpreadsheet / ExcelLayout 직접 사용) */
+.xls-content-area--native {
+  flex: 1;
+  overflow: hidden;
+}
+
+/* 비-native: 그냥 스크롤 영역 */
+.xls-content-area--legacy {
+  flex: 1;
+  overflow: auto;
+  background: var(--color-gray-0);
+}
+
+/* ── 기존 페이지 스타일 정규화 ── */
+/* 컨테이너 최대폭 해제, 엑셀 느낌으로 */
+.xls-content-area--legacy .container-app,
+.xls-content-area--legacy .container-app.container-wide {
+  max-width: none;
+  padding: var(--space-3) var(--space-4);
+  min-height: auto;
+}
+
+/* 카드 → flat 스타일 */
+.xls-content-area--legacy .card {
+  border-radius: 0;
+  border-left: none;
+  border-right: none;
+  border-color: var(--color-excel-grid-border);
+  box-shadow: none;
+}
+
+/* 콘텐츠 내부 패딩 (호환용) */
+.excel-page {
+  padding: var(--space-3) var(--space-4);
+  min-height: 100%;
+}
+.excel-page--wide {
+  max-width: none;
+  padding: var(--space-3) var(--space-3);
+}
+
+/* ================================================================
+   SHEET TABS BAR — 하단 시트 탭 (페이지 네비게이션)
+   ================================================================ */
+.excel-sheet-tabs {
+  height: var(--sheet-tab-height);
+  background: var(--color-excel-ribbon);
+  border-top: 1px solid var(--color-excel-grid-border);
+  display: flex;
+  align-items: stretch;
+  flex-shrink: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+  padding: 0 4px;
+}
+.excel-sheet-tabs::-webkit-scrollbar { display: none; }
+
+.excel-sheet-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 12px;
+  border: 1px solid transparent;
+  border-bottom: none;
+  background: var(--color-excel-tab-inactive);
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-xs);
+  cursor: pointer;
+  white-space: nowrap;
+  position: relative;
+  margin-right: 2px;
+  border-radius: var(--radius-xs) var(--radius-xs) 0 0;
+  transition: background var(--duration-fast), color var(--duration-fast);
+  border-color: var(--color-excel-grid-border);
+}
+.excel-sheet-tab:hover:not(.excel-sheet-tab--active) {
+  background: var(--color-gray-200);
+  color: var(--color-text-primary);
+}
+.excel-sheet-tab--active {
+  background: var(--color-gray-0);
+  color: var(--color-brand);
+  font-weight: var(--font-weight-semibold);
+  border-color: var(--color-excel-grid-border);
+}
+.excel-sheet-tab--active::before {
+  content: '';
+  position: absolute;
+  bottom: -1px;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: var(--color-gray-0);
+}
+
+.excel-sheet-tabs__nav-arrows {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  flex-shrink: 0;
+  border-right: 1px solid var(--color-excel-grid-border);
+  margin-right: 4px;
+}
+.excel-sheet-tabs__nav-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 100%;
+  border: none;
+  background: transparent;
+  color: var(--color-text-tertiary);
+  cursor: pointer;
+}
+.excel-sheet-tabs__nav-btn:hover { color: var(--color-text-primary); }
+.excel-sheet-tabs__nav-btn:disabled { opacity: 0.3; cursor: default; }
+
+/* ================================================================
+   STATUS BAR — 최하단 상태 바
+   ================================================================ */
+.excel-statusbar {
+  height: var(--statusbar-height);
+  background: var(--color-excel-title-bar);
+  color: rgba(255,255,255,0.9);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 8px;
+  flex-shrink: 0;
+  font-size: 10px;
+}
+
+.excel-statusbar__left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.excel-statusbar__right {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.excel-statusbar__item {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  cursor: default;
+}
+.excel-statusbar__item--clickable {
+  cursor: pointer;
+  border-radius: 1px;
+  padding: 0 3px;
+}
+.excel-statusbar__item--clickable:hover {
+  background: rgba(255,255,255,0.15);
+}
+
+.excel-statusbar__zoom {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.excel-statusbar__zoom-slider {
+  width: 60px;
+  height: 2px;
+  appearance: none;
+  background: rgba(255,255,255,0.4);
+  outline: none;
+  cursor: pointer;
+}
+.excel-statusbar__zoom-slider::-webkit-slider-thumb {
+  appearance: none;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #fff;
+  cursor: pointer;
+}
+.excel-statusbar__zoom-pct {
+  min-width: 28px;
+  text-align: right;
+}
+
+/* ================================================================
+   EXCEL GRID TABLE — 데이터 테이블 그리드 스타일
+   ================================================================ */
+.excel-grid-wrap {
+  overflow: auto;
+  border: 1px solid var(--color-excel-grid-border);
+  border-radius: var(--radius-xs);
+}
+
+.excel-grid {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--font-size-xs);
+  font-family: var(--font-family-sans);
+  background: var(--color-gray-0);
+}
+
+.excel-grid thead th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: var(--color-excel-cell-header);
+  border: 1px solid var(--color-excel-grid-border);
+  padding: 3px 6px;
+  font-weight: var(--font-weight-semibold);
+  font-size: 10px;
+  color: var(--color-text-primary);
+  text-align: left;
+  white-space: nowrap;
+  user-select: none;
+}
+
+.excel-grid thead th.num { text-align: right; }
+
+.excel-grid tbody tr:nth-child(even) td {
+  background: var(--color-excel-row-stripe);
+}
+
+.excel-grid tbody td {
+  border: 1px solid var(--color-excel-grid-border);
+  padding: 2px 6px;
+  color: var(--color-text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.excel-grid tbody td.num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum";
+}
+
+.excel-grid tbody tr:hover td {
+  background: var(--color-excel-cell-header) !important;
+}
+
+.excel-grid tbody tr.selected td {
+  background: var(--color-excel-cell-selected) !important;
+}
+
+/* 행 번호 열 */
+.excel-grid__row-num {
+  width: 32px;
+  min-width: 32px;
+  text-align: right;
+  background: var(--color-excel-cell-header) !important;
+  color: var(--color-text-tertiary);
+  font-size: 10px;
+  padding: 2px 4px !important;
+  border-right: 1px solid var(--color-excel-grid-border);
+  user-select: none;
+}
+
+/* ================================================================
+   EXCEL PANEL — 사이드 패널 (정보/필터)
+   ================================================================ */
+.excel-panel {
+  background: var(--color-gray-0);
+  border-left: 1px solid var(--color-excel-grid-border);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.excel-panel__header {
+  background: var(--color-excel-cell-header);
+  border-bottom: 1px solid var(--color-excel-grid-border);
+  padding: 4px 8px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-shrink: 0;
+}
+
+.excel-panel__title {
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-text-primary);
+}
+
+.excel-panel__body {
+  flex: 1;
+  overflow: auto;
+  padding: 8px;
+}
+
+/* ================================================================
+   CONTEXT MENU (우클릭/더보기 메뉴)
+   ================================================================ */
+.excel-context-menu {
+  position: fixed;
+  background: var(--color-gray-0);
+  border: 1px solid var(--color-gray-400);
+  box-shadow: var(--shadow-md);
+  padding: 2px;
+  z-index: var(--z-dropdown);
+  min-width: 160px;
+  border-radius: var(--radius-xs);
+}
+
+.excel-context-menu__item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 4px 8px;
+  border: none;
+  background: transparent;
+  color: var(--color-text-primary);
+  font-size: var(--font-size-xs);
+  font-family: var(--font-family-sans);
+  cursor: pointer;
+  text-align: left;
+  border-radius: 1px;
+}
+.excel-context-menu__item:hover {
+  background: var(--color-excel-cell-selected);
+  color: var(--color-text-primary);
+}
+.excel-context-menu__item:disabled {
+  color: var(--color-text-disabled);
+  cursor: default;
+}
+.excel-context-menu__item--danger:hover {
+  background: var(--color-red-50);
+  color: var(--color-red-500);
+}
+
+.excel-context-menu__separator {
+  height: 1px;
+  background: var(--color-excel-grid-border);
+  margin: 2px 0;
+}
+
+/* ================================================================
+   LEGACY container-app 오버라이드 (기존 페이지 통합)
+   ================================================================ */
+.excel-content .container-app {
+  max-width: none;
+  padding: var(--space-3) var(--space-4);
+  min-height: auto;
+}
+.excel-content .container-app.container-wide {
+  max-width: none;
+}
+
+/* ================================================================
+   EXCEL SPREADSHEET GRID — ExcelSpreadsheet.tsx 스타일
+   행번호 + 열헤더 + 셀 그리드
+   ================================================================ */
+
+/* 외부 래퍼: 가로 스크롤 + 고정 헤더 */
+.xls-wrap {
+  flex: 1;
+  overflow: auto;
+  position: relative;
+  background: var(--color-gray-0);
+}
+
+.xls-table {
+  border-collapse: collapse;
+  table-layout: fixed;
+  font-size: var(--font-size-xs);
+  font-family: var(--font-family-sans);
+  background: var(--color-gray-0);
+  min-width: 100%;
+}
+
+/* ── 열 문자 행 (A, B, C...) ── */
+.xls-letter-row {
+  position: sticky;
+  top: 0;
+  z-index: 4;
+}
+
+.xls-corner,
+.xls-row-num-header {
+  position: sticky;
+  left: 0;
+  z-index: 5;
+  background: var(--color-excel-cell-header);
+  border: 1px solid var(--color-excel-grid-border);
+  width: 32px;
+  min-width: 32px;
+  max-width: 32px;
+}
+
+.xls-col-letter {
+  background: var(--color-excel-cell-header);
+  border: 1px solid var(--color-excel-grid-border);
+  padding: 1px 4px;
+  text-align: center;
+  font-size: 10px;
+  color: var(--color-text-secondary);
+  font-weight: var(--font-weight-regular);
+  white-space: nowrap;
+  user-select: none;
+}
+
+/* ── 열 레이블 헤더 행 ── */
+.xls-header-row {
+  position: sticky;
+  top: 18px; /* letter 행 높이 */
+  z-index: 4;
+}
+
+.xls-th {
+  background: var(--color-excel-cell-header);
+  border: 1px solid var(--color-excel-grid-border);
+  padding: 2px 6px;
+  font-size: 10px;
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-text-primary);
+  white-space: nowrap;
+  user-select: none;
+}
+
+/* letter 행 없을 때 */
+.xls-table:not(:has(.xls-letter-row)) .xls-header-row {
+  top: 0;
+}
+
+/* ── 행 번호 셀 ── */
+.xls-row-num {
+  position: sticky;
+  left: 0;
+  z-index: 2;
+  background: var(--color-excel-cell-header);
+  border: 1px solid var(--color-excel-grid-border);
+  padding: 0 4px;
+  text-align: right;
+  font-size: 10px;
+  color: var(--color-text-tertiary);
+  white-space: nowrap;
+  user-select: none;
+  width: 32px;
+  min-width: 32px;
+}
+
+/* ── 데이터 행 ── */
+.xls-row {
+  height: 18px;
+}
+.xls-row:hover .xls-cell {
+  background: var(--color-excel-cell-header) !important;
+}
+.xls-row--even .xls-cell {
+  background: var(--color-excel-row-stripe);
+}
+.xls-row--frozen .xls-cell {
+  font-weight: var(--font-weight-semibold);
+  background: var(--color-blue-50) !important;
+}
+
+/* ── 데이터 셀 ── */
+.xls-cell {
+  border: 1px solid var(--color-excel-grid-border);
+  padding: 1px 6px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: default;
+  outline: none;
+  line-height: 16px;
+}
+.xls-cell--num {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum";
+}
+.xls-cell--empty {
+  color: transparent;
+}
+.xls-cell--selected {
+  background: var(--color-excel-cell-selected) !important;
+  outline: 2px solid var(--color-brand);
+  outline-offset: -2px;
+  z-index: 1;
+  position: relative;
+}
+.xls-cell:focus-visible {
+  outline: 2px solid var(--color-brand);
+  outline-offset: -2px;
+}
+
+/* ── 셀 내 특수 콘텐츠 ── */
+.xls-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 0 5px;
+  font-size: 10px;
+  font-weight: var(--font-weight-semibold);
+  border-radius: 1px;
+  height: 14px;
+  line-height: 14px;
+  white-space: nowrap;
+}
+.xls-badge--up     { background: var(--color-stock-up-bg);   color: var(--color-stock-up); }
+.xls-badge--down   { background: var(--color-stock-down-bg); color: var(--color-stock-down); }
+.xls-badge--flat   { background: var(--color-gray-100);       color: var(--color-text-secondary); }
+.xls-badge--green  { background: var(--color-success-bg);     color: var(--color-success); }
+.xls-badge--orange { background: var(--color-warning-bg);     color: var(--color-warning); }
+.xls-badge--blue   { background: var(--color-blue-50);        color: var(--color-brand); }
+
+.xls-up   { color: var(--color-stock-up);   font-weight: var(--font-weight-semibold); }
+.xls-down { color: var(--color-stock-down); font-weight: var(--font-weight-semibold); }
+.xls-flat { color: var(--color-text-tertiary); }
+
+/* ── 미니 바 차트 (셀 내부) ── */
+.xls-minibar {
+  display: inline-block;
+  height: 8px;
+  min-width: 2px;
+  border-radius: 0;
+  vertical-align: middle;
+}
+
+/* ================================================================
+   EXCEL LAYOUT — 3패널 수평 분할 (ExcelLayout.tsx)
+   ================================================================ */
+
+.xls-layout {
+  display: flex;
+  flex-direction: row;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: var(--color-excel-grid-border);
+  gap: 0;
+}
+
+/* 패널 래퍼 */
+.xls-panel-wrap {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--color-gray-0);
+  min-width: 0;
+}
+
+/* 패널 헤더 */
+.xls-panel-header {
+  height: 26px;
+  background: var(--color-excel-cell-header);
+  border-bottom: 1px solid var(--color-excel-grid-border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 6px;
+  flex-shrink: 0;
+  gap: 6px;
+  overflow: hidden;
+}
+.xls-panel-header__title {
+  font-size: 10px;
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-text-secondary);
+  white-space: nowrap;
+  user-select: none;
+}
+.xls-panel-header__toolbar {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  flex-shrink: 0;
+}
+
+/* 패널 본체 */
+.xls-panel-body {
+  flex: 1;
+  overflow: auto;
+  position: relative;
+}
+
+/* 드래그 핸들 */
+.xls-divider {
+  width: 5px;
+  flex-shrink: 0;
+  background: var(--color-excel-grid-border);
+  cursor: col-resize;
+  position: relative;
+  display: flex;
+  align-items: stretch;
+  justify-content: center;
+  user-select: none;
+  transition: background var(--duration-fast);
+}
+.xls-divider:hover,
+.xls-divider:active {
+  background: var(--color-brand-muted);
+}
+.xls-divider__bar {
+  width: 1px;
+  background: var(--color-gray-400);
+  pointer-events: none;
+}
+.xls-divider:hover .xls-divider__bar,
+.xls-divider:active .xls-divider__bar {
+  background: var(--color-brand);
+}
+
+/* 모바일 탭 전환 */
+.xls-layout__mobile-tabs {
+  display: flex;
+  background: var(--color-excel-cell-header);
+  border-bottom: 1px solid var(--color-excel-grid-border);
+  overflow-x: auto;
+  scrollbar-width: none;
+  flex-shrink: 0;
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 10;
+  height: 28px;
+}
+.xls-layout__mobile-tabs::-webkit-scrollbar { display: none; }
+.xls-layout__mobile-tab {
+  display: inline-flex;
+  align-items: center;
+  padding: 0 12px;
+  height: 28px;
+  border: none;
+  background: transparent;
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-xs);
+  cursor: pointer;
+  white-space: nowrap;
+  border-bottom: 2px solid transparent;
+  transition: all var(--duration-fast);
+}
+.xls-layout__mobile-tab--active {
+  color: var(--color-brand);
+  border-bottom-color: var(--color-brand);
+  font-weight: var(--font-weight-semibold);
+}
+
+/* 패널 내 툴바 버튼 */
+.xls-toolbar-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 1px 6px;
+  height: 18px;
+  border: 1px solid var(--color-excel-grid-border);
+  background: var(--color-gray-0);
+  color: var(--color-text-primary);
+  font-size: 10px;
+  font-family: var(--font-family-sans);
+  cursor: pointer;
+  border-radius: 1px;
+  white-space: nowrap;
+  transition: background var(--duration-fast);
+}
+.xls-toolbar-btn:hover {
+  background: var(--color-brand-subtle);
+  border-color: var(--color-brand-muted);
+  color: var(--color-brand);
+}
+.xls-toolbar-btn:active {
+  background: var(--color-blue-100);
+}
+
+/* 패널 내 탭 바 */
+.xls-panel-tabs {
+  display: flex;
+  background: var(--color-gray-0);
+  border-bottom: 1px solid var(--color-excel-grid-border);
+  overflow-x: auto;
+  scrollbar-width: none;
+  flex-shrink: 0;
+}
+.xls-panel-tabs::-webkit-scrollbar { display: none; }
+.xls-panel-tab {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 10px;
+  border: none;
+  background: transparent;
+  color: var(--color-text-secondary);
+  font-size: 10px;
+  cursor: pointer;
+  white-space: nowrap;
+  border-bottom: 2px solid transparent;
+  transition: all var(--duration-fast);
+}
+.xls-panel-tab:hover { color: var(--color-text-primary); }
+.xls-panel-tab--active {
+  color: var(--color-brand);
+  border-bottom-color: var(--color-brand);
+  font-weight: var(--font-weight-semibold);
+}
+
+/* ================================================================
+   RESPONSIVE — 반응형
+   Desktop: 1024px+   Tablet: 640-1023px   Mobile: <640px
+   ================================================================ */
+
+/* ── 태블릿 (640px ~ 1023px) ── */
+@media (max-width: 1023px) {
+  /* 리본 바디 축소 */
+  .excel-ribbon-body {
+    height: 3.5rem;
+  }
+
+  /* 리본 버튼: 아이콘만, 텍스트 숨김 */
+  .ribbon-btn {
+    min-width: 32px;
+    padding: 3px 4px;
+    height: calc(3.5rem - 20px);
+  }
+  .ribbon-btn__label { display: none; }
+  .ribbon-btn__icon svg { width: 18px; height: 18px; }
+
+  /* 리본 그룹 레이블 폰트 */
+  .excel-ribbon-group__label { font-size: 9px; }
+
+  /* 수식 표시줄 이름 박스 축소 */
+  .excel-formula-bar__name-box { width: 64px; }
+
+  /* 시트 탭 텍스트 숨기고 아이콘만 */
+  .excel-sheet-tab { padding: 0 8px; }
+
+  /* 스프레드시트 행 높이 약간 증가 (터치) */
+  .xls-row { height: 22px; }
+  .xls-cell { padding: 2px 6px; line-height: 18px; }
+}
+
+/* ── 모바일 (<640px) ── */
+@media (max-width: 639px) {
+  /* 타이틀바 간소화 */
+  .excel-titlebar__qs { padding: 0 6px; }
+  .excel-titlebar__qs-btn { width: 20px; height: 20px; }
+
+  /* 리본 탭 숨기기 (모바일에선 시트탭으로만 이동) */
+  .excel-ribbon-tabs { display: none; }
+
+  /* 리본 바디 → 스크롤 가능한 아이콘 바 */
+  .excel-ribbon-body {
+    height: 2.75rem;
+  }
+  .ribbon-btn {
+    min-width: 28px;
+    padding: 2px 4px;
+    height: calc(2.75rem - 18px);
+  }
+  .ribbon-btn__label { display: none; }
+  .ribbon-btn__icon svg { width: 16px; height: 16px; }
+  .excel-ribbon-group__label { display: none; }
+  .excel-ribbon-group { border-right: none; padding: 4px 2px 0; }
+
+  /* 수식 표시줄 간소화 */
+  .excel-formula-bar__name-box { width: 48px; font-size: 10px; }
+  .excel-formula-bar__divider { padding: 0 2px; }
+  .excel-formula-bar__fn-btn { display: none; }
+
+  /* 시트탭: 아이콘만 표시 */
+  .excel-sheet-tab { padding: 0 6px; gap: 0; }
+  .excel-sheet-tab span:last-child { display: none; }
+  .excel-sheet-tabs__nav-arrows { display: none; }
+
+  /* 상태바 */
+  .excel-statusbar__left .excel-statusbar__item:not(:first-child) { display: none; }
+  .excel-statusbar__zoom-slider { width: 40px; }
+
+  /* 그리드: 행번호 숨기기 */
+  .xls-row-num,
+  .xls-row-num-header,
+  .xls-corner { display: none; }
+
+  /* 그리드 터치 최적화 */
+  .xls-row { height: 28px; }
+  .xls-cell { padding: 4px 8px; line-height: 20px; font-size: 11px; }
+  .xls-th { padding: 4px 8px; font-size: 11px; }
+  .xls-col-letter { font-size: 9px; padding: 1px 2px; }
+}
+
+}
+

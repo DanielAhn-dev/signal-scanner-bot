@@ -1,6 +1,7 @@
 ﻿@import './tokens.css';
 @import "tailwindcss";
 @import './layout/shell.css';
+@import './layout/excel-shell.css';
 @import './components/navigation.css';
 @import './components/controls.css';
 @import './components/chips.css';
@@ -4636,53 +4637,112 @@ a:focus-visible {
 }
 
 /* ================================================================
-   AUTH STATUS (?몄쬆 ?곹깭 ?붾㈃)
+   AUTH STATUS — Microsoft 365 스타일
    ================================================================ */
 .auth-status-main {
-  @apply min-h-screen flex items-center justify-center;
-  @apply p-6;
-  background:
-    radial-gradient(circle at 12% 18%, rgba(0, 96, 255, 0.10), transparent 46%),
-    radial-gradient(circle at 88% 82%, rgba(31, 99, 255, 0.08), transparent 42%),
-    var(--color-bg-page);
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  background: #FFFFFF;
+  padding: var(--space-6);
+}
+
+/* 상단 Excel 로고 바 */
+.auth-status-main::before {
+  content: '';
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 4px;
+  background: var(--color-excel-title-bar);
 }
 
 .auth-status-card {
-  @apply w-full max-w-136 text-center;
-  background: var(--color-bg-surface);
-  border: 1px solid var(--color-border-default);
-  @apply rounded-xl;
-  @apply px-6 py-8;
-  box-shadow: var(--shadow-md);
+  width: 100%;
+  max-width: 440px;
+  text-align: center;
+  background: #FFFFFF;
+  border: 1px solid var(--color-excel-grid-border);
+  border-radius: 0;
+  padding: 40px 48px 36px;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.12);
+}
+
+/* Excel 아이콘 영역 */
+.auth-status-card::before {
+  content: '';
+  display: block;
+  width: 40px;
+  height: 40px;
+  margin: 0 auto 20px;
+  background: var(--color-excel-title-bar);
+  clip-path: polygon(0 0, 60% 0, 100% 20%, 100% 100%, 0 100%);
 }
 
 .auth-status-spinner {
-  width: 2.75rem;
-  height: 2.75rem;
-  margin: 0 auto var(--space-4);
+  width: 24px;
+  height: 24px;
+  margin: 0 auto 20px;
   border-radius: 50%;
-  border: 3px solid var(--color-blue-100);
-  border-top-color: var(--color-brand);
-  animation: auth-spin var(--duration-slower) linear infinite;
+  border: 2px solid var(--color-excel-grid-border);
+  border-top-color: var(--color-excel-title-bar);
+  animation: auth-spin 0.8s linear infinite;
 }
 
 .auth-status-title {
-  margin: 0 0 var(--space-2);
-  @apply text-2xl;
-  @apply font-bold;
+  margin: 0 0 8px;
+  font-size: 1rem;
+  font-weight: var(--font-weight-semibold);
   color: var(--color-text-primary);
-  letter-spacing: var(--letter-spacing-tight);
+  font-family: var(--font-family-sans);
 }
 
 .auth-status-desc {
   margin: 0;
-  @apply text-sm;
+  font-size: var(--font-size-xs);
   color: var(--color-text-secondary);
+  font-family: var(--font-family-sans);
+  line-height: 1.5;
+}
+
+/* 로그인 버튼 오버라이드 */
+.auth-status-card .ui-button.ui-btn-primary {
+  background: var(--color-excel-title-bar);
+  border-color: var(--color-excel-title-bar);
+  border-radius: 0;
+  font-size: var(--font-size-sm);
+  height: 2.25rem;
+  letter-spacing: 0.01em;
+}
+.auth-status-card .ui-button.ui-btn-primary:hover {
+  background: var(--color-blue-600);
+  border-color: var(--color-blue-600);
+}
+
+.access-required-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  margin: 0 auto 16px;
+  background: var(--color-brand-subtle);
+  color: var(--color-brand);
+  border-radius: 0;
 }
 
 @keyframes auth-spin {
   from { transform: rotate(0deg); }
-  to { transform: rotate(360deg); }
+  to   { transform: rotate(360deg); }
+}
+
+@media (max-width: 640px) {
+  .auth-status-card {
+    padding: 32px 24px 28px;
+  }
 }
 
 /* ================================================================
