@@ -58,17 +58,8 @@ type RibbonTabKey = typeof RIBBON_TABS[number]['key']
 
 type RibbonBtn = { key: string; label: string; icon: React.ReactNode; route?: string; priority?: 1 | 2 | 3 }
 type RibbonGroup = { label: string; buttons: RibbonBtn[] }
-
-function toExcelColumnLabel(index: number): string {
-  let value = index
-  let label = ''
-  while (value > 0) {
-    const remainder = (value - 1) % 26
-    label = String.fromCharCode(65 + remainder) + label
-    value = Math.floor((value - 1) / 26)
-  }
-  return label
-}
+type RibbonScaffoldBtn = { key: string; label: string; icon: React.ReactNode }
+type RibbonScaffoldGroup = { label: string; buttons: RibbonScaffoldBtn[] }
 
 function getRibbonGroups(tab: RibbonTabKey): RibbonGroup[] {
   switch (tab) {
@@ -130,6 +121,70 @@ function getRibbonGroups(tab: RibbonTabKey): RibbonGroup[] {
       ]},
     ]
     default: return []
+  }
+}
+
+function getRibbonScaffoldGroups(tab: RibbonTabKey): RibbonScaffoldGroup[] {
+  switch (tab) {
+    case 'home':
+      return [
+        {
+          label: '클립보드',
+          buttons: [
+            { key: 'paste', label: '붙여넣기', icon: <Upload size={20} /> },
+            { key: 'copy', label: '복사', icon: <BookMarked size={20} /> },
+          ],
+        },
+        {
+          label: '정렬/필터',
+          buttons: [
+            { key: 'sort', label: '정렬', icon: <SortAsc size={20} /> },
+            { key: 'filter', label: '필터', icon: <Filter size={20} /> },
+          ],
+        },
+      ]
+    case 'insert':
+      return [
+        {
+          label: '삽입 요소',
+          buttons: [
+            { key: 'chart', label: '차트', icon: <PieChart size={20} /> },
+            { key: 'table', label: '테이블', icon: <List size={20} /> },
+          ],
+        },
+      ]
+    case 'data':
+      return [
+        {
+          label: '새로고침',
+          buttons: [
+            { key: 'all-refresh', label: '전체 새로고침', icon: <RefreshCw size={20} /> },
+            { key: 'sync-cache', label: '캐시 동기화', icon: <Download size={20} /> },
+          ],
+        },
+      ]
+    case 'view':
+      return [
+        {
+          label: '창',
+          buttons: [
+            { key: 'window-list', label: '창 목록', icon: <LayoutDashboard size={20} /> },
+            { key: 'focus', label: '포커스', icon: <Eye size={20} /> },
+          ],
+        },
+      ]
+    case 'tools':
+      return [
+        {
+          label: '보안',
+          buttons: [
+            { key: 'audit', label: '감사', icon: <Shield size={20} /> },
+            { key: 'policy', label: '정책', icon: <Settings size={20} /> },
+          ],
+        },
+      ]
+    default:
+      return []
   }
 }
 
@@ -232,6 +287,7 @@ export default function ExcelShell({
   const pageLabel   = activeSheet?.label ?? activeRoute ?? ''
   const nameBox     = activeRoute ? activeRoute.toUpperCase().slice(0, 6) : 'A1'
   const groups      = getRibbonGroups(ribbonTab)
+  const scaffoldGroups = getRibbonScaffoldGroups(ribbonTab)
   const workbookTitle = useMemo(() => {
     const now = new Date()
     const y = now.getFullYear()
@@ -239,12 +295,7 @@ export default function ExcelShell({
     const d = String(now.getDate()).padStart(2, '0')
     return `market_brief_${y}${m}${d}.xlsx`
   }, [])
-  const [dummyColumnCount, setDummyColumnCount] = useState(12)
   const [isUltraCompact, setIsUltraCompact] = useState(false)
-  const dummyHeaders = useMemo(
-    () => Array.from({ length: dummyColumnCount }, (_, index) => toExcelColumnLabel(index + 27)),
-    [dummyColumnCount],
-  )
 
   const routeByMenuQuery = useCallback((query: string) => {
     const normalized = query.trim().toLowerCase()
@@ -362,7 +413,6 @@ export default function ExcelShell({
     const update = () => {
       const w = window.innerWidth
       setIsUltraCompact(w < 640)
-      setDummyColumnCount(Math.max(8, Math.min(22, Math.floor(w / 96))))
       if (w < 640)       setVisiblePanels('center-only')
       else if (w < 1024) setVisiblePanels('no-right')
       else               setVisiblePanels('all')
@@ -533,21 +583,26 @@ export default function ExcelShell({
               <div className="excel-ribbon-group__label">{g.label}</div>
             </div>
           ))}
-        </div>
 
-        <div className="excel-ribbon-body__filler" aria-hidden>
-          <div className="excel-ribbon-body__hint excel-tooltip-target" data-tooltip="버튼 균등 배치와 엑셀형 더미 셀 영역으로 넓은 화면 균형을 맞춥니다.">
-            넓은 화면 모드: 균등 버튼 배치 + 더미 셀
-          </div>
-          <div
-            className="excel-ribbon-body__dummy-head"
-            style={{ gridTemplateColumns: `repeat(${dummyHeaders.length}, minmax(0, 1fr))` }}
-          >
-            {dummyHeaders.map(head => (
-              <span key={head}>{head}</span>
-            ))}
-          </div>
-          <div className="excel-ribbon-body__dummy-grid" />
+          {!isUltraCompact && scaffoldGroups.map((g, gi) => (
+            <div key={`scaffold-${gi}`} className="excel-ribbon-group excel-ribbon-group--scaffold" aria-hidden>
+              <div className="excel-ribbon-group__buttons">
+                {g.buttons.map(btn => (
+                  <button
+                    key={btn.key}
+                    type="button"
+                    className="ribbon-btn ribbon-btn--dummy excel-tooltip-target"
+                    onClick={() => {}}
+                    data-tooltip={`${btn.label} (준비 중)`}
+                  >
+                    <span className="ribbon-btn__icon">{btn.icon}</span>
+                    <span className="ribbon-btn__label">{btn.label}</span>
+                  </button>
+                ))}
+              </div>
+              <div className="excel-ribbon-group__label">{g.label}</div>
+            </div>
+          ))}
         </div>
       </div>
 
