@@ -1,5 +1,6 @@
 import React from 'react'
 import { useToast } from '../../components/ToastProvider'
+import { normalizeTelegramChatId } from '../../lib/userContext'
 
 type Profile = {
   fullName: string
@@ -46,7 +47,11 @@ export default function ProfilePage(){
 
   const save = () => {
     if (!profile.fullName) return toast.show('이름을 입력하세요')
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(profile))
+    const telegramId = normalizeTelegramChatId(profile.telegramId)
+    if (profile.telegramId && !telegramId) {
+      return toast.show('텔레그램 Chat ID는 숫자만 입력해 주세요')
+    }
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({ ...profile, telegramId: telegramId || undefined }))
     toast.show('프로필이 저장되었습니다')
   }
 
@@ -71,11 +76,17 @@ export default function ProfilePage(){
   const [fetchedTg, setFetchedTg] = React.useState<any | null>(null)
 
   const fetchTelegramProfile = async (id: string) => {
+    const telegramId = normalizeTelegramChatId(id)
+    if (!telegramId) {
+      setTgError('숫자 Chat ID를 입력해 주세요')
+      toast.show('숫자 Chat ID를 입력해 주세요')
+      return
+    }
     setTgLoading(true)
     setTgError(null)
     setFetchedTg(null)
     try {
-      const res = await fetch(`/api/ui?route=telegram-profile&chatId=${encodeURIComponent(id)}`)
+      const res = await fetch(`/api/ui?route=telegram-profile&chatId=${encodeURIComponent(telegramId)}`)
       if (!res.ok) {
         const body = await res.json().catch(() => ({}))
         throw new Error(body?.error || 'failed')
@@ -128,7 +139,7 @@ export default function ProfilePage(){
             <div className="ui-field">
               <label className="ui-label">텔레그램 아이디</label>
               <div style={{display:'flex', gap:8, alignItems:'center'}}>
-                <input className="ui-text" value={profile.telegramId} onChange={(e) => update({ telegramId: e.target.value })} placeholder="@yourid 또는 숫자 ID" />
+                <input className="ui-text" value={profile.telegramId} onChange={(e) => update({ telegramId: e.target.value })} placeholder="예: 123456789" />
                 <button className="ui-button ui-btn-ghost" onClick={() => fetchTelegramProfile(profile.telegramId || '')} disabled={!profile.telegramId || tgLoading}>불러오기</button>
               </div>
               {tgLoading && <div className="muted mt-1">불러오는 중…</div>}

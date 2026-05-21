@@ -19,6 +19,17 @@ export type SaveProfileResult = {
 
 import { supabase } from './supabase'
 
+export function normalizeTelegramChatId(raw: unknown): string {
+  const value = String(raw ?? '').trim().replace(/\s+/g, '')
+  if (!value) return ''
+
+  const compact = value.replace(/[^0-9-]/g, '')
+  if (!compact) return ''
+  if (!/^-?\d+$/.test(compact)) return ''
+
+  return compact
+}
+
 const RUNTIME_API_BASE_KEY = 'signal_scanner_api_base'
 const PROFILE_STORAGE_KEY = 'profile'
 
@@ -37,7 +48,8 @@ export function readProfile(): StoredProfile | null {
 function normalizeStoredProfile(profile: StoredProfile): StoredProfile {
   const next: StoredProfile = {}
   if (profile.clientId) next.clientId = String(profile.clientId).trim()
-  if (profile.telegramId) next.telegramId = String(profile.telegramId).trim()
+  const telegramId = normalizeTelegramChatId(profile.telegramId)
+  if (telegramId) next.telegramId = telegramId
   if (profile.nickname) next.nickname = String(profile.nickname).trim()
   if (profile.telegramUsername) next.telegramUsername = String(profile.telegramUsername).trim()
   if (profile.telegramName) next.telegramName = String(profile.telegramName).trim()
@@ -60,6 +72,8 @@ async function syncProfileToServer(profile: StoredProfile): Promise<{ synced: bo
     const clientId = String(profile.clientId || identity.userId || '')
     if (!clientId) return { synced: false, error: 'client_id missing' }
 
+    const telegramId = normalizeTelegramChatId(profile.telegramId)
+
     const base = getApiBase() || ''
     const url = base ? `${base.replace(/\/$/, '')}/api/ui/profile` : `/api/ui/profile`
     const headers = buildProfileHeaders(identity.accessToken)
@@ -68,7 +82,7 @@ async function syncProfileToServer(profile: StoredProfile): Promise<{ synced: bo
       headers,
       body: JSON.stringify({
         client_id: clientId,
-        telegram_id: profile.telegramId || undefined,
+        telegram_id: telegramId || undefined,
         nickname: profile.nickname || undefined,
       }),
     })
@@ -150,8 +164,9 @@ export async function loadProfileFromServer(): Promise<StoredProfile | null> {
 
   const data = json.data ?? null
   const mapped: StoredProfile = { clientId }
-  if (data?.telegram_id != null && String(data.telegram_id).trim() !== '') {
-    mapped.telegramId = String(data.telegram_id)
+  const telegramId = normalizeTelegramChatId(data?.telegram_id)
+  if (telegramId) {
+    mapped.telegramId = telegramId
   }
   if (data?.nickname != null && String(data.nickname).trim() !== '') {
     mapped.nickname = String(data.nickname)

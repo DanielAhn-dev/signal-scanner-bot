@@ -1,6 +1,17 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { createClient } from '@supabase/supabase-js'
 
+function normalizeTelegramChatId(raw: unknown): string {
+  const value = String(raw ?? '').trim().replace(/\s+/g, '')
+  if (!value) return ''
+
+  const compact = value.replace(/[^0-9-]/g, '')
+  if (!compact) return ''
+  if (!/^-?\d+$/.test(compact)) return ''
+
+  return compact
+}
+
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   const origin = (req.headers.origin as string) || process.env.UI_CORS_ORIGIN || '*'
   res.setHeader('Access-Control-Allow-Origin', origin)
@@ -64,9 +75,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const clientId = authenticatedUserId || String(body.client_id || body.clientId || '')
       if (!clientId) return res.status(400).json({ error: 'client_id required' })
 
+      const telegramIdInput = body.telegram_id ?? body.telegramId
+      const telegramId = normalizeTelegramChatId(telegramIdInput)
+      if (telegramIdInput != null && String(telegramIdInput).trim() !== '' && !telegramId) {
+        return res.status(400).json({ error: 'telegram_id must be a numeric Chat ID' })
+      }
+
       const payload: any = {
         client_id: clientId,
-        telegram_id: body.telegram_id ? Number(body.telegram_id) : null,
+        telegram_id: telegramId ? Number(telegramId) : null,
         nickname: body.nickname || null,
       }
 

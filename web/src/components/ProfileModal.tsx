@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react'
-import { type StoredProfile } from '../lib/userContext'
+import { normalizeTelegramChatId, type StoredProfile } from '../lib/userContext'
 import { invalidateCache } from '../lib/api'
 import { useToast } from './ToastProvider'
 import { apiFetch } from '../lib/api'
@@ -78,7 +78,7 @@ export default function ProfileModal({
 
   useEffect(() => {
     if (!isOpen || !isSignedIn) return
-    const normalized = telegramId.trim().replace(/[^0-9-]/g, '')
+    const normalized = normalizeTelegramChatId(telegramId)
     if (!normalized) return
     if (autoResolved) return
 
@@ -133,8 +133,8 @@ export default function ProfileModal({
       setVerifyMsg('Google 로그인 후 텔레그램 연동을 진행해 주세요.')
       return
     }
-    const id = telegramId.trim().replace(/[^0-9-]/g, '')
-    if (!id) { setVerifyMsg('텔레그램 Chat ID를 입력해 주세요.'); setVerifyStatus(STATUS_ERR); return }
+    const id = normalizeTelegramChatId(telegramId)
+    if (!id) { setVerifyMsg('숫자 Chat ID를 입력해 주세요.'); setVerifyStatus(STATUS_ERR); return }
     setVerifyStatus(STATUS_LOADING)
     setVerifyMsg('')
     try {
@@ -168,9 +168,10 @@ export default function ProfileModal({
     }
     setSaving(true)
     setSaveMsg('')
-    const previousTelegramId = profile?.telegramId || ''
+    const previousTelegramId = normalizeTelegramChatId(profile?.telegramId)
+    const nextTelegramId = normalizeTelegramChatId(telegramId)
     const patch: StoredProfile = {
-      telegramId:       telegramId.trim().replace(/[^0-9-]/g, '') || undefined,
+      telegramId:       nextTelegramId || undefined,
       nickname:         nickname.trim() || undefined,
       telegramName:     tgName || undefined,
       telegramUsername: tgUsername || undefined,
@@ -219,7 +220,7 @@ export default function ProfileModal({
     .toUpperCase()
     .slice(0, 2)
 
-  const isConnected = isSignedIn && verifyStatus === STATUS_OK && !!telegramId.trim()
+  const isConnected = isSignedIn && verifyStatus === STATUS_OK && !!normalizeTelegramChatId(telegramId)
 
   return (
     <div
