@@ -1,7 +1,7 @@
 /**
  * NewsSidePanel — 우측 고정 패널: 뉴스피드
  */
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { apiFetch } from '../../lib/api'
 import { RefreshCw } from 'lucide-react'
 
@@ -28,20 +28,21 @@ export default function NewsSidePanel() {
   const [selected, setSelected]   = useState<number | null>(null)
   const [fetchedAt, setFetchedAt] = useState('')
   const [page, setPage] = useState(1)
+  const [hasMore, setHasMore] = useState(false)
 
-  const totalPages = Math.max(1, Math.ceil(news.length / PAGE_SIZE))
-  const pageNews = useMemo(() => {
-    const from = (page - 1) * PAGE_SIZE
-    return news.slice(from, from + PAGE_SIZE)
-  }, [news, page])
+  const totalPages = hasMore ? page + 1 : page
 
-  const load = async (force = false) => {
+  const load = async (nextPage: number, force = false) => {
     try {
       setRefreshing(true)
-      const res = await apiFetch('/api/ui/news', { cacheMs: force ? 0 : 20_000, timeoutMs: 12_000 })
+      const res = await apiFetch(`/api/ui/news?page=${nextPage}&pageSize=${PAGE_SIZE}`, {
+        cacheMs: force ? 0 : 20_000,
+        timeoutMs: 12_000,
+      })
       const items: NewsItem[] = res?.data ?? []
       setNews(items)
-      setPage(1)
+      setPage(nextPage)
+      setHasMore(Boolean(res?.hasMore))
       setFetchedAt(new Date().toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', second: '2-digit' }))
     } catch {
       // 실패 시 기존 데이터 유지
@@ -51,11 +52,11 @@ export default function NewsSidePanel() {
     }
   }
 
-  useEffect(() => { load() }, [])
+  useEffect(() => { void load(1) }, [])
   useEffect(() => {
-    const id = setInterval(() => load(), 60_000)
+    const id = setInterval(() => { void load(page) }, 60_000)
     return () => clearInterval(id)
-  }, [])
+  }, [page])
 
   return (
     <div className="news-side-panel" style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
@@ -72,7 +73,7 @@ export default function NewsSidePanel() {
         <div className="xls-panel-header-bar__tools">
           <button
             className="xls-toolbar-btn"
-            onClick={() => load(true)}
+            onClick={() => { void load(page, true) }}
             disabled={refreshing}
             title="새로고침"
           >
@@ -110,7 +111,7 @@ export default function NewsSidePanel() {
               </tr>
             </thead>
             <tbody>
-              {pageNews.map((item, idx) => {
+              {news.map((item, idx) => {
                 const i = (page - 1) * PAGE_SIZE + idx
                 return (
                 <tr
@@ -159,12 +160,12 @@ export default function NewsSidePanel() {
       {!loading && news.length > 0 && (
         <div className="xls-panel-header-bar" style={{ borderTop: '1px solid var(--color-excel-grid-border)', borderBottom: 'none', minHeight: 22 }}>
           <span style={{ fontSize: 10, color: 'var(--color-text-secondary)' }}>
-            페이지 {page}/{totalPages} · 총 {news.length}건
+            페이지 {page}/{totalPages} · 현재 {news.length}건
           </span>
           <div className="xls-panel-header-bar__tools" style={{ gap: 4 }}>
             <button
               className="xls-toolbar-btn"
-              onClick={() => setPage((p) => Math.max(1, p - 1))}
+              onClick={() => { if (page > 1) void load(page - 1, true) }}
               disabled={page <= 1}
               title="이전 페이지"
             >
@@ -172,8 +173,8 @@ export default function NewsSidePanel() {
             </button>
             <button
               className="xls-toolbar-btn"
-              onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-              disabled={page >= totalPages}
+              onClick={() => { if (hasMore) void load(page + 1, true) }}
+              disabled={!hasMore}
               title="다음 페이지"
             >
               다음

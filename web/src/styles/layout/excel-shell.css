@@ -325,6 +325,22 @@
   align-items: stretch;
 }
 
+.excel-ribbon-body__zone {
+  display: flex;
+  align-items: stretch;
+  min-width: 0;
+}
+
+.excel-ribbon-body__zone--primary {
+  flex: 0 0 42%;
+  border-right: 1px solid var(--color-excel-grid-border);
+}
+
+.excel-ribbon-body__zone--scaffold {
+  flex: 1 1 auto;
+  background: linear-gradient(180deg, #fcfdfd 0%, #f6faf7 100%);
+}
+
 /* 리본 그룹 */
 .excel-ribbon-group {
   display: flex;
@@ -479,6 +495,14 @@
   .excel-ribbon-body__content {
     min-width: max-content;
     justify-content: flex-start;
+  }
+
+  .excel-ribbon-body__zone {
+    flex: 0 0 auto;
+  }
+
+  .excel-ribbon-body__zone--primary {
+    border-right: none;
   }
 
   .excel-ribbon-group {

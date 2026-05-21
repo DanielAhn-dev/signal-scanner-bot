@@ -21,7 +21,9 @@ import {
   Bell, User, Settings, Database, Shield,
   Zap, BookMarked, History,
   Search, RefreshCw, Download, Upload, Filter, SortAsc,
-  PieChart, Activity, Target, Eye, List, BookOpen
+  PieChart, Activity, Target, Eye, List, BookOpen,
+  Plus, Type, Bold, AlignLeft, AlignCenter, AlignRight,
+  Percent, Hash, Palette, Table2, Trash2, Sigma, PaintBucket, Eraser
 } from 'lucide-react'
 import { useAuthStore } from '../stores/authStore'
 import { useProfileStore } from '../stores/profileStore'
@@ -129,26 +131,58 @@ function getRibbonScaffoldGroups(tab: RibbonTabKey): RibbonScaffoldGroup[] {
     case 'home':
       return [
         {
-          label: '클립보드',
+          label: '붙여넣기',
           buttons: [
             { key: 'paste', label: '붙여넣기', icon: <Upload size={20} /> },
             { key: 'copy', label: '복사', icon: <BookMarked size={20} /> },
-            { key: 'quick-save', label: '저장', icon: <Save size={20} /> },
           ],
         },
         {
-          label: '정렬/필터',
+          label: '글꼴',
           buttons: [
-            { key: 'sort', label: '정렬', icon: <SortAsc size={20} /> },
-            { key: 'filter', label: '필터', icon: <Filter size={20} /> },
-            { key: 'redo', label: '다시 실행', icon: <Redo2 size={20} /> },
+            { key: 'font-family', label: '글꼴', icon: <Type size={20} /> },
+            { key: 'font-bold', label: '굵게', icon: <Bold size={20} /> },
+            { key: 'font-color', label: '색상', icon: <Palette size={20} /> },
+          ],
+        },
+        {
+          label: '맞춤',
+          buttons: [
+            { key: 'align-left', label: '왼쪽', icon: <AlignLeft size={20} /> },
+            { key: 'align-center', label: '가운데', icon: <AlignCenter size={20} /> },
+            { key: 'align-right', label: '오른쪽', icon: <AlignRight size={20} /> },
+          ],
+        },
+        {
+          label: '숫자',
+          buttons: [
+            { key: 'num-currency', label: '통화', icon: <Hash size={20} /> },
+            { key: 'num-percent', label: '백분율', icon: <Percent size={20} /> },
+            { key: 'num-digit', label: '자리수', icon: <SortAsc size={20} /> },
           ],
         },
         {
           label: '스타일',
           buttons: [
-            { key: 'style-theme', label: '스타일', icon: <PieChart size={20} /> },
-            { key: 'cell-format', label: '셀 서식', icon: <Settings size={20} /> },
+            { key: 'style-conditional', label: '조건부', icon: <Filter size={20} /> },
+            { key: 'style-format', label: '서식', icon: <Table2 size={20} /> },
+            { key: 'style-theme', label: '테마', icon: <PaintBucket size={20} /> },
+          ],
+        },
+        {
+          label: '셀',
+          buttons: [
+            { key: 'cell-insert', label: '삽입', icon: <Plus size={20} /> },
+            { key: 'cell-delete', label: '삭제', icon: <Trash2 size={20} /> },
+            { key: 'cell-format', label: '서식', icon: <Settings size={20} /> },
+          ],
+        },
+        {
+          label: '편집',
+          buttons: [
+            { key: 'edit-sum', label: '자동합계', icon: <Sigma size={20} /> },
+            { key: 'edit-fill', label: '채우기', icon: <Upload size={20} /> },
+            { key: 'edit-clear', label: '지우기', icon: <Eraser size={20} /> },
           ],
         },
       ]
@@ -243,16 +277,16 @@ const SHEET_TABS = [
 
 // ── 3패널 리사이즈 ────────────────────────────────────────────────
 
-const MIN_LEFT  = 200  // px
+const MIN_LEFT  = 240  // px
 const MIN_MID   = 300  // px
-const MIN_RIGHT = 220  // px
+const MIN_RIGHT = 280  // px
 const RECENT_MENU_STORAGE_KEY = 'excel-shell:recent-menu-routes:v1'
 const RIBBON_FOLD_STORAGE_KEY = 'excel-shell:ribbon-fold-state:v1'
 const MAX_RECENT_MENU_ITEMS = 6
 
 function usePanelResize(containerRef: React.RefObject<HTMLDivElement | null>) {
-  const [leftW, setLeftW]   = useState(270)
-  const [rightW, setRightW] = useState(300)
+  const [leftW, setLeftW]   = useState(300)
+  const [rightW, setRightW] = useState(360)
   const drag = useRef<{ side: 'left' | 'right'; startX: number; startW: number } | null>(null)
 
   const startDrag = useCallback((side: 'left' | 'right', e: React.MouseEvent) => {
@@ -369,10 +403,17 @@ export default function ExcelShell({
       .filter((tab): tab is typeof SHEET_TABS[number] => !!tab)
   }, [recommendedRoutes])
 
+  const navigateSheetIndex = useCallback((index: number) => {
+    const clamped = Math.max(0, Math.min(SHEET_TABS.length - 1, index))
+    onNavigate(SHEET_TABS[clamped].key)
+  }, [onNavigate])
+
   const navigateSheetOffset = useCallback((offset: number) => {
-    const nextIndex = (activeSheetIndex + offset + SHEET_TABS.length) % SHEET_TABS.length
-    onNavigate(SHEET_TABS[nextIndex].key)
-  }, [activeSheetIndex, onNavigate])
+    navigateSheetIndex(activeSheetIndex + offset)
+  }, [activeSheetIndex, navigateSheetIndex])
+
+  const isAtFirstSheet = activeSheetIndex <= 0
+  const isAtLastSheet = activeSheetIndex >= SHEET_TABS.length - 1
 
   const commitMenuNavigation = useCallback((route: string) => {
     const tab = SHEET_TABS.find(item => item.key === route)
@@ -465,8 +506,6 @@ export default function ExcelShell({
         <div className="excel-titlebar__qs">
           <button className="excel-titlebar__qs-btn excel-tooltip-target" data-tooltip="즐겨찾기 목록" onClick={() => onNavigate('watchlist')}><Star size={13}/></button>
           <button className="excel-titlebar__qs-btn excel-tooltip-target" data-tooltip={quickSaveTooltip || '현재 화면 저장'} onClick={() => void handleQuickSave()}><Save size={13}/></button>
-          <button className="excel-titlebar__qs-btn excel-tooltip-target" data-tooltip="이전 시트" onClick={() => navigateSheetOffset(-1)}><ChevronLeft size={13}/></button>
-          <button className="excel-titlebar__qs-btn excel-tooltip-target" data-tooltip="다음 시트" onClick={() => navigateSheetOffset(1)}><ChevronRight size={13}/></button>
           <button className="excel-titlebar__qs-btn excel-tooltip-target" data-tooltip="실행 취소" onClick={() => window.history.back()}><Undo2 size={13}/></button>
           <button className="excel-titlebar__qs-btn excel-tooltip-target" data-tooltip="다시 실행" onClick={() => window.history.forward()}><Redo2 size={13}/></button>
         </div>
@@ -565,79 +604,85 @@ export default function ExcelShell({
       {/* ── 3. 리본 바디 ── */}
       <div className="excel-ribbon-body" role="toolbar">
         <div className="excel-ribbon-body__content">
-          {groups.map((g, gi) => (
-            <div key={gi} className="excel-ribbon-group">
-              <div className="excel-ribbon-group__buttons">
-                {(isUltraCompact
-                  ? [...g.buttons].sort((a, b) => (a.priority ?? 2) - (b.priority ?? 2)).slice(0, 3)
-                  : g.buttons
-                ).map(btn => (
-                  <button
-                    key={btn.key}
-                    className={`ribbon-btn excel-tooltip-target${btn.route === activeRoute ? ' ribbon-btn--active' : ''}`}
-                    onClick={() => btn.route && onNavigate(btn.route)}
-                    data-tooltip={btn.label}
-                  >
-                    <span className="ribbon-btn__icon">{btn.icon}</span>
-                    <span className="ribbon-btn__label">{btn.label}</span>
-                  </button>
-                ))}
+          <div className="excel-ribbon-body__zone excel-ribbon-body__zone--primary">
+            {groups.map((g, gi) => (
+              <div key={gi} className="excel-ribbon-group">
+                <div className="excel-ribbon-group__buttons">
+                  {(isUltraCompact
+                    ? [...g.buttons].sort((a, b) => (a.priority ?? 2) - (b.priority ?? 2)).slice(0, 3)
+                    : g.buttons
+                  ).map(btn => (
+                    <button
+                      key={btn.key}
+                      className={`ribbon-btn excel-tooltip-target${btn.route === activeRoute ? ' ribbon-btn--active' : ''}`}
+                      onClick={() => btn.route && onNavigate(btn.route)}
+                      data-tooltip={btn.label}
+                    >
+                      <span className="ribbon-btn__icon">{btn.icon}</span>
+                      <span className="ribbon-btn__label">{btn.label}</span>
+                    </button>
+                  ))}
 
-                {isUltraCompact && g.buttons.length > 3 && (() => {
-                  const foldStateKey = `${ribbonTab}:${g.label}`
-                  const isOpen = !!ribbonFoldState[foldStateKey]
-                  return (
-                    <div className="ribbon-fold">
+                  {isUltraCompact && g.buttons.length > 3 && (() => {
+                    const foldStateKey = `${ribbonTab}:${g.label}`
+                    const isOpen = !!ribbonFoldState[foldStateKey]
+                    return (
+                      <div className="ribbon-fold">
+                        <button
+                          type="button"
+                          className="ribbon-fold__summary"
+                          aria-expanded={isOpen}
+                          onClick={() => setRibbonFoldState(prev => ({ ...prev, [foldStateKey]: !isOpen }))}
+                        >
+                          더보기
+                        </button>
+                        {isOpen && (
+                          <div className="ribbon-fold__menu">
+                            {[...g.buttons].sort((a, b) => (a.priority ?? 2) - (b.priority ?? 2)).slice(3).map(btn => (
+                              <button
+                                key={`fold-${btn.key}`}
+                                className="ribbon-fold__item"
+                                onClick={() => {
+                                  if (btn.route) onNavigate(btn.route)
+                                }}
+                              >
+                                {btn.label}
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    )
+                  })()}
+                </div>
+                <div className="excel-ribbon-group__label">{g.label}</div>
+              </div>
+            ))}
+          </div>
+
+          {!isUltraCompact && (
+            <div className="excel-ribbon-body__zone excel-ribbon-body__zone--scaffold">
+              {scaffoldGroups.map((g, gi) => (
+                <div key={`scaffold-${gi}`} className="excel-ribbon-group excel-ribbon-group--scaffold" aria-hidden>
+                  <div className="excel-ribbon-group__buttons">
+                    {g.buttons.map(btn => (
                       <button
+                        key={btn.key}
                         type="button"
-                        className="ribbon-fold__summary"
-                        aria-expanded={isOpen}
-                        onClick={() => setRibbonFoldState(prev => ({ ...prev, [foldStateKey]: !isOpen }))}
+                        className="ribbon-btn ribbon-btn--dummy excel-tooltip-target"
+                        onClick={() => {}}
+                        data-tooltip={`${btn.label} (준비 중)`}
                       >
-                        더보기
+                        <span className="ribbon-btn__icon">{btn.icon}</span>
+                        <span className="ribbon-btn__label">{btn.label}</span>
                       </button>
-                      {isOpen && (
-                        <div className="ribbon-fold__menu">
-                          {[...g.buttons].sort((a, b) => (a.priority ?? 2) - (b.priority ?? 2)).slice(3).map(btn => (
-                            <button
-                              key={`fold-${btn.key}`}
-                              className="ribbon-fold__item"
-                              onClick={() => {
-                                if (btn.route) onNavigate(btn.route)
-                              }}
-                            >
-                              {btn.label}
-                            </button>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  )
-                })()}
-              </div>
-              <div className="excel-ribbon-group__label">{g.label}</div>
+                    ))}
+                  </div>
+                  <div className="excel-ribbon-group__label">{g.label}</div>
+                </div>
+              ))}
             </div>
-          ))}
-
-          {!isUltraCompact && scaffoldGroups.map((g, gi) => (
-            <div key={`scaffold-${gi}`} className="excel-ribbon-group excel-ribbon-group--scaffold" aria-hidden>
-              <div className="excel-ribbon-group__buttons">
-                {g.buttons.map(btn => (
-                  <button
-                    key={btn.key}
-                    type="button"
-                    className="ribbon-btn ribbon-btn--dummy excel-tooltip-target"
-                    onClick={() => {}}
-                    data-tooltip={`${btn.label} (준비 중)`}
-                  >
-                    <span className="ribbon-btn__icon">{btn.icon}</span>
-                    <span className="ribbon-btn__label">{btn.label}</span>
-                  </button>
-                ))}
-              </div>
-              <div className="excel-ribbon-group__label">{g.label}</div>
-            </div>
-          ))}
+          )}
         </div>
       </div>
 
@@ -700,10 +745,10 @@ export default function ExcelShell({
       {/* ── 6. 시트 탭 ── */}
       <div className="excel-sheet-tabs">
         <div className="excel-sheet-tabs__nav-arrows">
-          <button className="excel-sheet-tabs__nav-btn"><ChevronLeft size={10}/></button>
-          <button className="excel-sheet-tabs__nav-btn"><ChevronLeft size={10}/></button>
-          <button className="excel-sheet-tabs__nav-btn"><ChevronRight size={10}/></button>
-          <button className="excel-sheet-tabs__nav-btn"><ChevronRight size={10}/></button>
+          <button className="excel-sheet-tabs__nav-btn" onClick={() => navigateSheetIndex(0)} disabled={isAtFirstSheet} aria-label="첫 시트"><ChevronLeft size={10}/></button>
+          <button className="excel-sheet-tabs__nav-btn" onClick={() => navigateSheetOffset(-1)} disabled={isAtFirstSheet} aria-label="이전 시트"><ChevronLeft size={10}/></button>
+          <button className="excel-sheet-tabs__nav-btn" onClick={() => navigateSheetOffset(1)} disabled={isAtLastSheet} aria-label="다음 시트"><ChevronRight size={10}/></button>
+          <button className="excel-sheet-tabs__nav-btn" onClick={() => navigateSheetIndex(SHEET_TABS.length - 1)} disabled={isAtLastSheet} aria-label="마지막 시트"><ChevronRight size={10}/></button>
         </div>
         {SHEET_TABS.map(tab => (
           <button
