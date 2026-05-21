@@ -1,7 +1,7 @@
 /**
  * NewsSidePanel — 우측 고정 패널: 뉴스피드
  */
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { apiFetch } from '../../lib/api'
 import { RefreshCw } from 'lucide-react'
 
@@ -22,6 +22,7 @@ function fmtTime(dateStr?: string): string {
 
 export default function NewsSidePanel() {
   const PAGE_SIZE = 16
+  const BASE_MIN_RENDER_ROWS = 28
   const [news, setNews]           = useState<NewsItem[]>([])
   const [loading, setLoading]     = useState(true)
   const [refreshing, setRefreshing] = useState(false)
@@ -29,6 +30,8 @@ export default function NewsSidePanel() {
   const [fetchedAt, setFetchedAt] = useState('')
   const [page, setPage] = useState(1)
   const [hasMore, setHasMore] = useState(false)
+  const [minRenderRows, setMinRenderRows] = useState(BASE_MIN_RENDER_ROWS)
+  const viewportRef = useRef<HTMLDivElement | null>(null)
 
   const totalPages = hasMore ? page + 1 : page
 
@@ -58,6 +61,30 @@ export default function NewsSidePanel() {
     return () => clearInterval(id)
   }, [page])
 
+  useEffect(() => {
+    const el = viewportRef.current
+    if (!el) return
+
+    const updateRows = () => {
+      const viewportHeight = el.clientHeight
+      const headerRowsHeight = 40
+      const approxRowHeight = 22
+      const visibleRows = Math.ceil(Math.max(0, viewportHeight - headerRowsHeight) / approxRowHeight)
+      const next = Math.max(BASE_MIN_RENDER_ROWS, visibleRows + 2)
+      setMinRenderRows((prev) => (prev === next ? prev : next))
+    }
+
+    updateRows()
+    if (typeof ResizeObserver !== 'undefined') {
+      const observer = new ResizeObserver(updateRows)
+      observer.observe(el)
+      return () => observer.disconnect()
+    }
+
+    window.addEventListener('resize', updateRows)
+    return () => window.removeEventListener('resize', updateRows)
+  }, [])
+
   return (
     <div className="news-side-panel" style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
       {/* 패널 헤더 */}
@@ -83,7 +110,7 @@ export default function NewsSidePanel() {
       </div>
 
       {/* 뉴스 목록 */}
-      <div style={{ flex: 1, overflow: 'auto' }}>
+      <div ref={viewportRef} style={{ flex: 1, overflow: 'auto' }}>
         {loading ? (
           <div style={{ padding: 12, textAlign: 'center', fontSize: 10, color: 'var(--color-text-tertiary)' }}>
             불러오는 중...
@@ -152,6 +179,17 @@ export default function NewsSidePanel() {
                   </td>
                 </tr>
               )})}
+              {Array.from({ length: Math.max(0, minRenderRows - news.length) }, (_, idx) => {
+                const rn = (page - 1) * PAGE_SIZE + news.length + idx + 1
+                return (
+                  <tr key={`e${rn}`} className={`xls-row${rn % 2 === 0 ? ' xls-row--even' : ''}`}>
+                    <td className="xls-row-num">{rn}</td>
+                    <td className="xls-cell xls-cell--empty" />
+                    <td className="xls-cell xls-cell--empty" />
+                    <td className="xls-cell xls-cell--empty" />
+                  </tr>
+                )
+              })}
             </tbody>
           </table>
         )}

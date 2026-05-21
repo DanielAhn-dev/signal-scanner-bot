@@ -71,7 +71,7 @@ export default function WatchlistGrid() {
 
   const handleAdd = useCallback(async (code: string, name: string) => {
     try {
-      await apiFetch('/api/ui/watchlist', { method: 'POST', body: JSON.stringify({ stock_code: code }) })
+      await apiFetch('/api/ui/watchlist', { method: 'POST', body: JSON.stringify({ code }) })
       toast.show(`${name} (${code}) 추가됨`, 2000)
       setSuggestions([])
       setAddInput('')
@@ -83,7 +83,7 @@ export default function WatchlistGrid() {
 
   const handleRemove = useCallback(async (code: string, name: string) => {
     try {
-      await apiFetch(`/api/ui/watchlist/${code}`, { method: 'DELETE' })
+      await apiFetch(`/api/ui/watchlist?code=${encodeURIComponent(code)}`, { method: 'DELETE' })
       toast.show(`${name} 삭제됨`, 2000)
       load()
     } catch {

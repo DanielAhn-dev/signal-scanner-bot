@@ -2,7 +2,7 @@
  * MarketSidePanel — 좌측 고정 패널: 실시간 시세
  * /api/ui/market-overview의 indices 데이터를 스프레드시트로 표시
  */
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { apiFetch } from '../../lib/api'
 import { RefreshCw } from 'lucide-react'
 
@@ -107,6 +107,8 @@ export default function MarketSidePanel() {
   const [refreshing, setRefreshing] = useState(false)
   const [selected, setSelected] = useState<number | null>(null)
   const [fetchedAt, setFetchedAt] = useState<string>('')
+  const [minRenderRows, setMinRenderRows] = useState(30)
+  const viewportRef = useRef<HTMLDivElement | null>(null)
 
   const load = async (force = false) => {
     try {
@@ -128,6 +130,30 @@ export default function MarketSidePanel() {
   useEffect(() => {
     const id = setInterval(() => load(), 30_000)
     return () => clearInterval(id)
+  }, [])
+
+  useEffect(() => {
+    const el = viewportRef.current
+    if (!el) return
+
+    const updateRows = () => {
+      const viewportHeight = el.clientHeight
+      const headerRowsHeight = 40
+      const approxRowHeight = 18
+      const visibleRows = Math.ceil(Math.max(0, viewportHeight - headerRowsHeight) / approxRowHeight)
+      const next = Math.max(30, visibleRows + 2)
+      setMinRenderRows((prev) => (prev === next ? prev : next))
+    }
+
+    updateRows()
+    if (typeof ResizeObserver !== 'undefined') {
+      const observer = new ResizeObserver(updateRows)
+      observer.observe(el)
+      return () => observer.disconnect()
+    }
+
+    window.addEventListener('resize', updateRows)
+    return () => window.removeEventListener('resize', updateRows)
   }, [])
 
   const rows = buildRows(data)
@@ -158,7 +184,7 @@ export default function MarketSidePanel() {
       </div>
 
       {/* 스프레드시트 */}
-      <div style={{ flex: 1, overflow: 'auto' }}>
+      <div ref={viewportRef} style={{ flex: 1, overflow: 'auto' }}>
         <table className="xls-table" style={{ width: '100%', tableLayout: 'fixed' }}>
           <colgroup>
             <col style={{ width: 28 }}/>
@@ -227,7 +253,7 @@ export default function MarketSidePanel() {
                   )
                 ))}
                 {/* 빈 행 */}
-                {Array.from({ length: Math.max(0, 30 - rows.length) }, (_, i) => (
+                {Array.from({ length: Math.max(0, minRenderRows - rows.length) }, (_, i) => (
                   <tr key={`e${i}`} className={`xls-row${(rows.length + i) % 2 === 0 ? ' xls-row--even' : ''}`}>
                     <td className="xls-row-num">{rows.length + i + 1}</td>
                     <td className="xls-cell xls-cell--empty"/>

@@ -18,15 +18,28 @@ function normalizeCode(input: unknown): string {
   return String(input || '').trim().toUpperCase()
 }
 
+type WatchlistPositionRow = {
+  code?: string | null
+  buy_price?: number | null
+  buy_date?: string | null
+  created_at?: string | null
+  memo?: string | null
+  quantity?: number | null
+  stock?: {
+    name?: string | null
+    close?: number | null
+  } | null
+}
+
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   const origin = (req.headers.origin as string) || ORIGIN || '*'
   res.setHeader('Access-Control-Allow-Origin', origin)
-  res.setHeader('Access-Control-Allow-Methods', 'POST,DELETE,OPTIONS')
+  res.setHeader('Access-Control-Allow-Methods', 'GET,POST,DELETE,OPTIONS')
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type,x-ui-key,x-user-chat-id')
   res.setHeader('Access-Control-Allow-Credentials', 'true')
 
   if (req.method === 'OPTIONS') return res.status(204).end()
-  if (!['POST', 'DELETE'].includes(String(req.method || ''))) {
+  if (!['GET', 'POST', 'DELETE'].includes(String(req.method || ''))) {
     return res.status(405).json({ error: 'Method not allowed' })
   }
 
@@ -47,8 +60,36 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (!chatId) return res.status(400).json({ error: 'chat_id required (header x-user-chat-id, query/body chat_id, or server default)' })
 
   try {
+    if (req.method === 'GET') {
+      const { data, error } = await supabase
+        .from('virtual_positions')
+        .select('code, buy_price, buy_date, created_at, memo, quantity, stock:stocks(name, close)')
+        .eq('chat_id', chatId)
+        .eq('status', 'interest')
+        .order('created_at', { ascending: false })
+
+      if (error) return res.status(500).json({ error: error.message })
+
+      const items = (Array.isArray(data) ? data : []).map((row) => {
+        const r = row as unknown as WatchlistPositionRow
+        return {
+          stock_code: String(r.code || ''),
+          stock_name: String(r.stock?.name || r.code || ''),
+          buy_price: r.buy_price == null ? null : Number(r.buy_price),
+          current_price: r.stock?.close == null ? null : Number(r.stock.close),
+          change_rate: null,
+          buy_date: r.buy_date || null,
+          created_at: r.created_at || null,
+          memo: r.memo || null,
+        }
+      })
+
+      return res.status(200).json({ ok: true, data: { items } })
+    }
+
     if (req.method === 'POST') {
-      const code = normalizeCode((req.body || {}).code)
+      const body = req.body || {}
+      const code = normalizeCode((body as any).code || (body as any).stock_code)
       if (!code) return res.status(400).json({ error: 'code is required' })
 
       const { data: stock, error: stockErr } = await supabase
