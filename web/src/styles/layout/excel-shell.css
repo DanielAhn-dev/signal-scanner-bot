@@ -843,6 +843,43 @@
   padding: 8px;
 }
 
+@media (max-width: 639px) {
+  .excel-app {
+    height: auto;
+    min-height: 100dvh;
+    overflow-y: auto;
+    overflow-x: hidden;
+  }
+
+  .excel-main-panels {
+    flex: 0 0 auto;
+    min-height: 0;
+    overflow: visible;
+  }
+
+  .excel-center-panel {
+    overflow: visible;
+  }
+
+  .xls-content-area,
+  .xls-content-area--legacy,
+  .xls-content-body,
+  .xls-content-data {
+    height: auto;
+    min-height: 0;
+    overflow: visible;
+  }
+
+  .xls-content-inner {
+    min-height: 0;
+  }
+
+  .excel-sheet-tabs,
+  .excel-statusbar {
+    flex-shrink: 0;
+  }
+}
+
 /* ================================================================
    CONTEXT MENU (우클릭/더보기 메뉴)
    ================================================================ */
