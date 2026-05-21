@@ -187,8 +187,10 @@ export default function Portfolio() {
   const [revokingShareId, setRevokingShareId] = useState('')
   const [deletingShareId, setDeletingShareId] = useState('')
   const [maintModalOpen, setMaintModalOpen] = useState(false)
-  const [maintMode, setMaintMode] = useState<'liquidateall' | 'holdingedit' | 'holdingrestore'>('holdingrestore')
+  const [maintMode, setMaintMode] = useState<'liquidateall' | 'holdingedit' | 'holdingrestore' | 'holdingdelete'>('holdingrestore')
   const [maintRow, setMaintRow] = useState<any | null>(null)
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
+  const [deleteConfirmCode, setDeleteConfirmCode] = useState('')
   const [maintCode, setMaintCode] = useState('')
   const [maintBuyPrice, setMaintBuyPrice] = useState<number | ''>('')
   const [maintBuyDate, setMaintBuyDate] = useState<string>(getTodayLocalYmd())
@@ -762,7 +764,7 @@ export default function Portfolio() {
     setModalOpen(true)
   }
 
-  const openMaintenanceModal = (mode: 'liquidateall' | 'holdingedit' | 'holdingrestore', row?: any) => {
+  const openMaintenanceModal = (mode: 'liquidateall' | 'holdingedit' | 'holdingrestore' | 'holdingdelete', row?: any) => {
     setMaintMode(mode)
     setMaintRow(row ?? null)
     setMaintError(null)
@@ -785,6 +787,13 @@ export default function Portfolio() {
       setMaintStep(1)
       setMaintAccountMode(accountFolders.length > 0 ? 'select' : 'manual')
     }
+    if (mode === 'holdingdelete') {
+      const code = String(row?.code || '')
+      setMaintCode(code)
+      setDeleteConfirmOpen(true)
+      setDeleteConfirmCode(code)
+      return
+    }
     setMaintModalOpen(true)
   }
 
@@ -801,6 +810,9 @@ export default function Portfolio() {
         body.broker_name = String(maintBrokerName || '').trim()
         body.account_name = String(maintAccountName || '').trim()
       }
+      if (maintMode === 'holdingdelete') {
+        body.code = maintCode
+      }
 
       const json = await apiFetch('/api/ui/positions-maintenance', {
         method: 'POST',
@@ -816,12 +828,15 @@ export default function Portfolio() {
         const label = json?.data?.stock_name || json?.data?.code || maintCode
         const action = json?.created ? '신규 추가' : '기존 포지션 수정'
         toast.show(`${label} 계좌/보유 저장(${action}) 완료 ✓`)
+      } else if (maintMode === 'holdingdelete') {
+        toast.show(`${maintCode} 종목이 완전 삭제되었습니다 (기록 포함)`)
       } else {
         toast.show('보유수정 완료 ✓')
       }
 
       invalidateCache('/api/ui/positions')
       setMaintModalOpen(false)
+      setDeleteConfirmOpen(false)
       await load({ soft: true, force: true })
     } catch (e: any) {
       setMaintError(String(e?.message || e))
@@ -1050,7 +1065,7 @@ export default function Portfolio() {
             </span>
           </div>
 
-          <div className="portfolio-head-controls">
+          <div className="portfolio-head-controls" style={{ display: 'flex', gap: 'var(--space-2)', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between' }}>
             <Button variant="secondary" onClick={() => load({ force: true })} disabled={loading || refreshing}>
               {refreshing ? '새로고침 중...' : '새로고침'}
             </Button>
@@ -1060,7 +1075,7 @@ export default function Portfolio() {
             <Button variant="secondary" onClick={() => setShareModalOpen(true)} disabled={loading || holdingAll.length === 0}>공유 요약 보기</Button>
           </div>
 
-          <div className="portfolio-head-maintenance" role="group" aria-label="포트폴리오 유지보수 작업">
+          <div className="portfolio-head-maintenance" role="group" aria-label="포트폴리오 유지보수 작업" style={{ display: 'flex', gap: 'var(--space-2)', flexWrap: 'wrap', alignItems: 'center' }}>
             <Button variant="ghost" size="sm" onClick={() => openMaintenanceModal('holdingrestore')} disabled={loading}>
               계좌/보유 추가
             </Button>
@@ -1729,15 +1744,18 @@ export default function Portfolio() {
               )}
 
               {/* ── 액션 버튼 ── */}
-              <div className="portfolio-actions-row">
-                <Button className="portfolio-action-btn" variant="secondary" onClick={() => openTradeModal(r, 'buy')}>
+              <div className="portfolio-actions-row" style={{ display: 'flex', gap: 'var(--space-2)', flexWrap: 'wrap', alignItems: 'center', marginTop: 'var(--space-2)' }}>
+                <Button className="portfolio-action-btn" variant="secondary" onClick={() => openTradeModal(r, 'buy')} style={{ flex: '1 1 auto', minWidth: '80px' }}>
                   <PlusCircle size={14} />추가매수
                 </Button>
-                <Button className="portfolio-action-btn" variant="secondary" onClick={() => openMaintenanceModal('holdingedit', r)}>
+                <Button className="portfolio-action-btn" variant="secondary" onClick={() => openMaintenanceModal('holdingedit', r)} style={{ flex: '1 1 auto', minWidth: '80px' }}>
                   보유 수정
                 </Button>
-                <Button className="portfolio-action-btn" variant="ghost" onClick={() => openTradeModal(r, 'sell')}>
+                <Button className="portfolio-action-btn" variant="ghost" onClick={() => openTradeModal(r, 'sell')} style={{ flex: '1 1 auto', minWidth: '100px' }}>
                   매도 · 수익기록
+                </Button>
+                <Button className="portfolio-action-btn" variant="ghost" onClick={() => openMaintenanceModal('holdingdelete', r)} style={{ flex: '1 1 auto', minWidth: '60px', color: 'var(--color-error)' }}>
+                  삭제
                 </Button>
               </div>
             </div>
@@ -2266,6 +2284,29 @@ export default function Portfolio() {
             </div>
           </>
         )}
+      </Modal>
+
+      <Modal
+        isOpen={deleteConfirmOpen}
+        title="종목 완전 삭제"
+        onClose={() => setDeleteConfirmOpen(false)}
+        size="sm"
+      >
+        <div className="muted" style={{ marginBottom: 'var(--space-3)' }}>
+          <strong style={{ color: 'var(--color-error)' }}>{deleteConfirmCode || '종목'}</strong>을(를) 포트폴리오에서 완전히 삭제합니다.
+        </div>
+        <div className="muted" style={{ marginBottom: 'var(--space-4)', fontSize: 'var(--font-size-sm)', opacity: 0.8 }}>
+          • 보유 수량 및 평가손익이 제거됩니다<br />
+          • 모든 거래 기록이 삭제됩니다 (복구 불가)<br />
+          • 스냅샷도 함께 제거됩니다
+        </div>
+
+        <div style={{ display: 'flex', gap: 'var(--space-2)' }}>
+          <Button variant="primary" onClick={() => { setMaintMode('holdingdelete'); setMaintCode(deleteConfirmCode); runMaintenance() }} disabled={maintLoading} style={{ background: 'var(--color-error)' }}>
+            {maintLoading ? '삭제 중…' : '삭제 확인'}
+          </Button>
+          <Button variant="ghost" onClick={() => setDeleteConfirmOpen(false)}>취소</Button>
+        </div>
       </Modal>
     </section>
   )

@@ -239,6 +239,54 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.status(200).json({ ok: true, mode, soldCount: rows.length })
     }
 
+    if (mode === 'holdingdelete') {
+      const code = normalizeCode(body.code)
+      if (!code) return res.status(400).json({ error: 'code required' })
+
+      // 포지션 조회
+      const { data: position, error: posErr } = await supabase
+        .from('virtual_positions')
+        .select('id,code,chat_id')
+        .eq('chat_id', chatId)
+        .eq('code', code)
+        .maybeSingle()
+
+      if (posErr) return res.status(500).json({ error: posErr.message })
+      if (!position) return res.status(404).json({ error: 'position not found' })
+
+      const positionId = (position as any).id
+
+      // 1. 거래 기록 삭제 (해당 종목의 모든 거래)
+      const { error: tradeDelErr } = await supabase
+        .from('virtual_trades')
+        .delete()
+        .eq('chat_id', chatId)
+        .eq('code', code)
+      if (tradeDelErr) {
+        console.warn('거래 기록 삭제 실패:', tradeDelErr.message)
+        // 계속 진행
+      }
+
+      // 2. 로트 정보 삭제
+      const { error: lotDelErr } = await supabase
+        .from('virtual_trade_lots')
+        .delete()
+        .eq('position_id', positionId)
+      if (lotDelErr) {
+        console.warn('로트 정보 삭제 실패:', lotDelErr.message)
+        // 계속 진행
+      }
+
+      // 3. 포지션 삭제
+      const { error: posDelErr } = await supabase
+        .from('virtual_positions')
+        .delete()
+        .eq('id', positionId)
+      if (posDelErr) return res.status(500).json({ error: posDelErr.message })
+
+      return res.status(200).json({ ok: true, mode, deleted: true, code })
+    }
+
     if (mode === 'holdingrestore') {
       const code = normalizeCode(body.code)
       const buyPrice = asPositiveNumber(body.buy_price)
