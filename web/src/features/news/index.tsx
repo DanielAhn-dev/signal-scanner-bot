@@ -1,7 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react'
 import Button from '../../components/ui/Button'
-import Skeleton from '../../components/Skeleton'
-import { ErrorState, EmptyState } from '../../components/StateViews'
 import { apiFetch } from '../../lib/api'
 import StockDetailModal from '../../components/StockDetailModal'
 
@@ -99,8 +97,14 @@ export default function NewsPage() {
   const openModal = (stock: RelatedStock) => setModalStock(stock)
   const closeModal = () => setModalStock(null)
 
+  const renderedRows = items.length + items.reduce((acc, item) => {
+    const key = item.link || item.title
+    return acc + (relatedOpenSet.has(key) ? 1 : 0)
+  }, 0)
+  const minRenderRows = 24
+
   return (
-    <section className="container-app">
+    <section className="container-app news-sheet">
       <table className="xls-table" style={{ width: '100%', tableLayout: 'fixed', marginBottom: 'var(--space-4)' }}>
         <colgroup>
           <col style={{ width: '18%' }} />
@@ -147,82 +151,133 @@ export default function NewsPage() {
         </tbody>
       </table>
 
-      {error && <ErrorState message={error} onRetry={() => load(appliedQuery)} />}
-      {loading && <div className="card"><Skeleton lines={6} height={14} /></div>}
-
-      {!loading && !error && items.length === 0 && (
-        <EmptyState title="뉴스 없음" description="조건에 맞는 뉴스를 찾지 못했습니다." />
-      )}
-
-      {!loading && !error && items.length > 0 && (
-        <div className="scan-table-wrap">
-          <table className="scan-table xls-table" style={{ width: '100%', tableLayout: 'fixed' }}>
-            <thead className="scan-thead">
-              <tr>
-                <th className="scan-th">제목</th>
-                <th className="scan-th">출처</th>
-                <th className="scan-th">일자</th>
-                <th className="scan-th">관련주</th>
+      <div className="scan-table-wrap">
+        <table className="xls-table news-sheet__list" style={{ width: '100%', tableLayout: 'fixed' }}>
+          <colgroup>
+            <col style={{ width: 34 }} />
+            <col style={{ width: '58%' }} />
+            <col style={{ width: '12%' }} />
+            <col style={{ width: '14%' }} />
+            <col style={{ width: '16%' }} />
+          </colgroup>
+          <thead>
+            <tr className="xls-letter-row">
+              <th className="xls-corner" />
+              <th className="xls-col-letter">A</th>
+              <th className="xls-col-letter">B</th>
+              <th className="xls-col-letter">C</th>
+              <th className="xls-col-letter">D</th>
+            </tr>
+            <tr className="xls-header-row">
+              <th className="xls-row-num-header" />
+              <th className="xls-th">제목</th>
+              <th className="xls-th">출처</th>
+              <th className="xls-th">일자</th>
+              <th className="xls-th">관련주</th>
+            </tr>
+          </thead>
+          <tbody>
+            {loading && (
+              <tr className="xls-row xls-row--even">
+                <td className="xls-row-num">1</td>
+                <td className="xls-cell" colSpan={4} style={{ color: 'var(--color-text-tertiary)' }}>불러오는 중...</td>
               </tr>
-            </thead>
-            <tbody>
-              {items.map((item, idx) => {
-                const key = item.link || item.title
-                return (
-                  <React.Fragment key={`${item.link}-${idx}`}>
-                    <tr className="scan-tr" style={{ cursor: 'pointer' }}>
-                      <td className="scan-td">
-                        <a href={item.link} target="_blank" rel="noreferrer" className="title-md" style={{ textDecoration: 'none' }}>
-                          {decodeHtml(item.title)}
-                        </a>
-                      </td>
-                      <td className="scan-td">{item.source || '—'}</td>
-                      <td className="scan-td">{item.date || '—'}</td>
-                      <td className="scan-td">
-                        <Button
-                          variant="ghost"
-                          onClick={() => toggleRelated(item)}
-                          style={{ whiteSpace: 'nowrap', flexShrink: 0 }}
-                        >
-                          관련주 {relatedOpenSet.has(key) ? '▲' : '▼'}
-                        </Button>
-                      </td>
-                    </tr>
-                    {relatedOpenSet.has(key) && (() => {
-                      const stocks = relatedMap[key]
-                      const isLoading = relatedLoadingSet.has(key)
-                      return (
-                        <tr className="scan-tr xls-row--even">
-                          <td className="scan-td" colSpan={4}>
-                            {isLoading && <span className="caption muted">조회 중...</span>}
-                            {!isLoading && stocks && stocks.length === 0 && (
-                              <span className="caption muted">제목에서 종목을 찾지 못했습니다.</span>
-                            )}
-                            {!isLoading && stocks && stocks.length === 1 && (
-                              <Button variant="ghost" onClick={() => openModal(stocks[0])}>
-                                {stocks[0].name} 시세
-                              </Button>
-                            )}
-                            {!isLoading && stocks && stocks.length > 1 && (
-                              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 'var(--space-2)' }}>
-                                {stocks.map(s => (
-                                  <Button key={s.code} variant="ghost" onClick={() => openModal(s)}>
-                                    {s.name} 시세
-                                  </Button>
-                                ))}
-                              </div>
-                            )}
-                          </td>
-                        </tr>
-                      )
-                    })()}
-                  </React.Fragment>
-                )
-              })}
-            </tbody>
-          </table>
-        </div>
-      )}
+            )}
+
+            {!loading && error && (
+              <tr className="xls-row xls-row--even">
+                <td className="xls-row-num">1</td>
+                <td className="xls-cell" colSpan={3} style={{ color: 'var(--color-error)' }}>
+                  {error}
+                </td>
+                <td className="xls-cell" style={{ textAlign: 'right' }}>
+                  <Button variant="secondary" onClick={() => load(appliedQuery)}>재시도</Button>
+                </td>
+              </tr>
+            )}
+
+            {!loading && !error && items.length === 0 && (
+              <tr className="xls-row xls-row--even">
+                <td className="xls-row-num">1</td>
+                <td className="xls-cell" colSpan={4} style={{ color: 'var(--color-text-tertiary)' }}>
+                  조건에 맞는 뉴스를 찾지 못했습니다.
+                </td>
+              </tr>
+            )}
+
+            {!loading && !error && items.map((item, idx) => {
+              const key = item.link || item.title
+              const rowNumber = idx + 1
+              return (
+                <React.Fragment key={`${item.link}-${idx}`}>
+                  <tr className={`xls-row${rowNumber % 2 === 0 ? ' xls-row--even' : ''}`}>
+                    <td className="xls-row-num">{rowNumber}</td>
+                    <td className="xls-cell" style={{ fontSize: 12 }}>
+                      <a href={item.link} target="_blank" rel="noreferrer" className="title-md" style={{ textDecoration: 'none' }}>
+                        {decodeHtml(item.title)}
+                      </a>
+                    </td>
+                    <td className="xls-cell">{item.source || '—'}</td>
+                    <td className="xls-cell">{item.date || '—'}</td>
+                    <td className="xls-cell">
+                      <Button
+                        variant="ghost"
+                        onClick={() => toggleRelated(item)}
+                        style={{ whiteSpace: 'nowrap', flexShrink: 0 }}
+                      >
+                        관련주 {relatedOpenSet.has(key) ? '▲' : '▼'}
+                      </Button>
+                    </td>
+                  </tr>
+
+                  {relatedOpenSet.has(key) && (() => {
+                    const stocks = relatedMap[key]
+                    const isLoading = relatedLoadingSet.has(key)
+                    return (
+                      <tr className={`xls-row${rowNumber % 2 === 0 ? '' : ' xls-row--even'}`}>
+                        <td className="xls-row-num">{rowNumber}</td>
+                        <td className="xls-cell" colSpan={4}>
+                          {isLoading && <span className="caption muted">조회 중...</span>}
+                          {!isLoading && stocks && stocks.length === 0 && (
+                            <span className="caption muted">제목에서 종목을 찾지 못했습니다.</span>
+                          )}
+                          {!isLoading && stocks && stocks.length === 1 && (
+                            <Button variant="ghost" onClick={() => openModal(stocks[0])}>
+                              {stocks[0].name} 시세
+                            </Button>
+                          )}
+                          {!isLoading && stocks && stocks.length > 1 && (
+                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 'var(--space-2)' }}>
+                              {stocks.map(s => (
+                                <Button key={s.code} variant="ghost" onClick={() => openModal(s)}>
+                                  {s.name} 시세
+                                </Button>
+                              ))}
+                            </div>
+                          )}
+                        </td>
+                      </tr>
+                    )
+                  })()}
+                </React.Fragment>
+              )
+            })}
+
+            {!loading && !error && Array.from({ length: Math.max(0, minRenderRows - renderedRows) }, (_, idx) => {
+              const rn = renderedRows + idx + 1
+              return (
+                <tr key={`empty-${rn}`} className={`xls-row${rn % 2 === 0 ? ' xls-row--even' : ''}`}>
+                  <td className="xls-row-num">{rn}</td>
+                  <td className="xls-cell xls-cell--empty" />
+                  <td className="xls-cell xls-cell--empty" />
+                  <td className="xls-cell xls-cell--empty" />
+                  <td className="xls-cell xls-cell--empty" />
+                </tr>
+              )
+            })}
+          </tbody>
+        </table>
+      </div>
 
       <StockDetailModal
         code={modalStock?.code ?? ''}

@@ -295,57 +295,87 @@ export default function ReportsPage() {
   }
 
   return (
-    <section className="container-app">
-      <h1 className="title-xl">리포트</h1>
-
-      {simPlan && simPlan.items?.length > 0 && (
-        <div className="card mb-4" style={{ borderLeft: '3px solid var(--color-stock-up)' }}>
-          <div className="flex-between" style={{ flexWrap: 'wrap', gap: 'var(--space-2)' }}>
-            <div>
-              <div className="title-md">시뮬레이터 저장 계획</div>
-              <div className="caption mt-1">
-                {new Date(simPlan.createdAt).toLocaleString('ko-KR')} · 총 {formatKrw(simPlan.totalCapital)} · 종목 {simPlan.items.length}개
-              </div>
-              {simPlan.notes && <div className="muted mt-1">{String(simPlan.notes).slice(0, 80)}</div>}
-              <div className="caption mt-2">
-                {simPlan.items.slice(0, 5).map((it: any) => it.name || it.code).join(', ')}
-                {simPlan.items.length > 5 ? ` 외 ${simPlan.items.length - 5}개` : ''}
-              </div>
-            </div>
-            <div className="flex-gap-sm">
-              <Button variant="secondary" onClick={navigateSimulator}>시뮬레이터 열기</Button>
-              <Button variant="ghost" onClick={sendSimPlanTelegram} disabled={simSending}>텔레그램 전송</Button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      <div className="card mb-4">
-        <div className="muted">텔레그램 명령(/리포트, /브리핑, /guidepdf)에 대응하는 기능을 웹에서 실행/다운로드합니다.</div>
-      </div>
-
-      <div className="cards-list">
-        {REPORT_ACTIONS.map(r => {
-          const s = states[r.key]
-          return (
-            <div key={r.key} className="card">
-              <div className="report-action-card-body">
-                <div className="report-action-card-info">
-                  <div className="title-md">{r.label}</div>
-                  <div className="muted mt-1">{r.desc}</div>
-                  {s?.msg && (
-                    <div className="caption mt-2" style={{ color: 'var(--color-text-secondary)' }}>{s.msg}</div>
-                  )}
-                </div>
-                {r.kind === 'download' ? (
-                  <div className="report-action-card-btns">
-                    <Button variant="secondary" onClick={() => runDownload(r.key, r.endpoint, r.fileName)} disabled={s?.loading}>
-                      {s?.loading ? '처리 중…' : '다운로드'}
-                    </Button>
-                    <Button variant="secondary" onClick={() => runShare(r.endpoint)} disabled={states['share']?.loading}>공유</Button>
+    <section className="container-app reports-sheet">
+      <table className="xls-table" style={{ width: '100%', tableLayout: 'fixed', marginBottom: 'var(--space-4)' }}>
+        <colgroup>
+          <col style={{ width: '30%' }} />
+          <col style={{ width: '70%' }} />
+        </colgroup>
+        <tbody>
+          <tr className="xls-row xls-row--even">
+            <td className="xls-cell" style={{ fontSize: 18, fontWeight: 700, color: 'var(--color-brand)' }}>리포트</td>
+            <td className="xls-cell" style={{ color: 'var(--color-text-secondary)', fontSize: 11 }}>
+              텔레그램 명령(/리포트, /브리핑, /guidepdf)에 대응하는 기능을 웹에서 실행/다운로드합니다.
+            </td>
+          </tr>
+          {simPlan && simPlan.items?.length > 0 && (
+            <tr className="xls-row">
+              <td className="xls-cell" style={{ fontWeight: 600 }}>시뮬레이터 저장 계획</td>
+              <td className="xls-cell">
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 'var(--space-2)', flexWrap: 'wrap' }}>
+                  <div>
+                    <div className="caption">
+                      {new Date(simPlan.createdAt).toLocaleString('ko-KR')} · 총 {formatKrw(simPlan.totalCapital)} · 종목 {simPlan.items.length}개
+                    </div>
+                    {simPlan.notes && <div className="muted mt-1">{String(simPlan.notes).slice(0, 80)}</div>}
+                    <div className="caption mt-1">
+                      {simPlan.items.slice(0, 5).map((it: any) => it.name || it.code).join(', ')}
+                      {simPlan.items.length > 5 ? ` 외 ${simPlan.items.length - 5}개` : ''}
+                    </div>
                   </div>
-                ) : (
-                  <div className="report-action-card-btns">
+                  <div style={{ display: 'flex', gap: 'var(--space-2)', flexWrap: 'wrap' }}>
+                    <Button variant="secondary" onClick={navigateSimulator}>시뮬레이터 열기</Button>
+                    <Button variant="ghost" onClick={sendSimPlanTelegram} disabled={simSending}>텔레그램 전송</Button>
+                  </div>
+                </div>
+              </td>
+            </tr>
+          )}
+        </tbody>
+      </table>
+
+      <table className="xls-table reports-sheet__list" style={{ width: '100%', tableLayout: 'fixed' }}>
+        <colgroup>
+          <col style={{ width: 34 }} />
+          <col style={{ width: '20%' }} />
+          <col style={{ width: '50%' }} />
+          <col style={{ width: '18%' }} />
+          <col style={{ width: '12%' }} />
+        </colgroup>
+        <thead>
+          <tr className="xls-letter-row">
+            <th className="xls-corner" />
+            <th className="xls-col-letter">A</th>
+            <th className="xls-col-letter">B</th>
+            <th className="xls-col-letter">C</th>
+            <th className="xls-col-letter">D</th>
+          </tr>
+          <tr className="xls-header-row">
+            <th className="xls-row-num-header" />
+            <th className="xls-th">기능</th>
+            <th className="xls-th">설명</th>
+            <th className="xls-th">실행</th>
+            <th className="xls-th">상태</th>
+          </tr>
+        </thead>
+        <tbody>
+          {REPORT_ACTIONS.map((r, idx) => {
+            const s = states[r.key]
+            const rowNo = idx + 1
+            return (
+              <tr key={r.key} className={`xls-row${rowNo % 2 === 0 ? ' xls-row--even' : ''}`}>
+                <td className="xls-row-num">{rowNo}</td>
+                <td className="xls-cell" style={{ fontWeight: 600 }}>{r.label}</td>
+                <td className="xls-cell">{r.desc}</td>
+                <td className="xls-cell">
+                  {r.kind === 'download' ? (
+                    <div style={{ display: 'flex', gap: 'var(--space-2)', flexWrap: 'wrap' }}>
+                      <Button variant="secondary" onClick={() => runDownload(r.key, r.endpoint, r.fileName)} disabled={s?.loading}>
+                        {s?.loading ? '처리 중…' : '다운로드'}
+                      </Button>
+                      <Button variant="secondary" onClick={() => runShare(r.endpoint)} disabled={states['share']?.loading}>공유</Button>
+                    </div>
+                  ) : (
                     <Button
                       variant="secondary"
                       onClick={() => runTrigger(r.key, r.endpoint, r.method)}
@@ -353,13 +383,28 @@ export default function ReportsPage() {
                     >
                       {s?.loading ? '처리 중…' : '실행'}
                     </Button>
-                  </div>
-                )}
-              </div>
-            </div>
-          )
-        })}
-      </div>
+                  )}
+                </td>
+                <td className="xls-cell" style={{ color: s?.msg ? 'var(--color-text-secondary)' : 'var(--color-text-tertiary)' }}>
+                  {s?.msg || '대기'}
+                </td>
+              </tr>
+            )
+          })}
+          {Array.from({ length: Math.max(0, 24 - REPORT_ACTIONS.length) }, (_, idx) => {
+            const rowNo = REPORT_ACTIONS.length + idx + 1
+            return (
+              <tr key={`empty-${rowNo}`} className={`xls-row${rowNo % 2 === 0 ? ' xls-row--even' : ''}`}>
+                <td className="xls-row-num">{rowNo}</td>
+                <td className="xls-cell xls-cell--empty" />
+                <td className="xls-cell xls-cell--empty" />
+                <td className="xls-cell xls-cell--empty" />
+                <td className="xls-cell xls-cell--empty" />
+              </tr>
+            )
+          })}
+        </tbody>
+      </table>
       <ShareModal
         open={shareManager.open}
         onClose={shareManager.close}
