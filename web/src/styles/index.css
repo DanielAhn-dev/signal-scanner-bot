@@ -751,6 +751,329 @@ a:focus-visible {
     @apply font-semibold;
   }
 
+  /* ================================================================
+     SECTOR NATURE BADGE
+     ================================================================ */
+  .sector-nature-badge {
+    @apply inline-flex items-center;
+    @apply text-xs font-semibold;
+    padding: 2px 7px;
+    border-radius: 99px;
+    white-space: nowrap;
+    flex-shrink: 0;
+  }
+
+  /* ================================================================
+     SECTOR CYCLE HINT (확장 패널 내부)
+     ================================================================ */
+  .sector-cycle-hint {
+    @apply flex items-center flex-wrap;
+    gap: var(--space-2);
+    padding: var(--space-2) var(--space-3);
+    background: var(--color-bg-sunken);
+    border-radius: var(--radius-sm);
+    margin-bottom: var(--space-3);
+  }
+  .sector-cycle-hint__label {
+    @apply text-xs font-semibold;
+    color: var(--color-text-tertiary);
+  }
+  .sector-cycle-hint__tag {
+    @apply text-xs font-semibold;
+    padding: 2px 8px;
+    border-radius: 99px;
+  }
+
+  /* ================================================================
+     ALL SECTORS VIEW
+     ================================================================ */
+  .sector-all-legend {
+    @apply flex flex-wrap;
+    gap: var(--space-2);
+    margin-bottom: var(--space-5);
+    padding: var(--space-3) var(--space-4);
+    background: var(--color-bg-sunken);
+    border-radius: var(--radius-md);
+  }
+  .sector-all-group {
+    margin-bottom: var(--space-6);
+  }
+  .sector-all-group-title {
+    @apply text-sm font-bold;
+    color: var(--color-text-secondary);
+    padding: var(--space-1) 0 var(--space-2);
+    border-bottom: 2px solid var(--color-border-default);
+    margin-bottom: var(--space-3);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+  .sector-all-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    gap: var(--space-3);
+  }
+  .sector-all-card {
+    @apply border border-solid;
+    background: var(--color-bg-surface);
+    border-color: var(--color-border-default);
+    border-radius: var(--radius-md);
+    padding: var(--space-3) var(--space-4);
+    transition: border-color var(--duration-fast) var(--ease-out), box-shadow var(--duration-fast) var(--ease-out);
+  }
+  .sector-all-card--no-data {
+    opacity: 0.55;
+  }
+  .sector-all-card:not(.sector-all-card--no-data):hover {
+    border-color: var(--color-brand-muted);
+    box-shadow: var(--shadow-sm);
+  }
+  .sector-all-card--expanded {
+    border-color: var(--color-brand-muted);
+  }
+  .sector-all-card__trigger {
+    width: 100%;
+    background: transparent;
+    border: none;
+    text-align: left;
+    color: inherit;
+    cursor: pointer;
+    padding: 0;
+  }
+  .sector-all-card__trigger:focus-visible {
+    outline: 2px solid var(--color-border-focus);
+    outline-offset: 2px;
+    border-radius: var(--radius-xs);
+  }
+  .sector-all-card__name {
+    @apply text-sm font-semibold;
+    line-height: var(--line-height-snug);
+  }
+  .sector-all-card__footer {
+    @apply flex items-center justify-between;
+    margin-top: var(--space-1);
+  }
+
+  /* ================================================================
+     SECTOR GUIDE
+     ================================================================ */
+  .sector-guide {
+    @apply flex flex-col;
+    gap: var(--space-6);
+  }
+  .sector-guide-section {
+    /* no extra padding — uses card spacing naturally */
+  }
+  .sector-guide-section__title {
+    @apply text-base font-bold;
+    margin-bottom: var(--space-3);
+    padding-bottom: var(--space-2);
+    border-bottom: 2px solid var(--color-border-default);
+  }
+
+  /* Rotation Flow — 가로 (md+) */
+  .rotation-flow {
+    @apply hidden;
+    align-items: stretch;
+    gap: 0;
+    overflow-x: auto;
+    padding-bottom: var(--space-2);
+    margin-bottom: var(--space-4);
+  }
+  @media (min-width: 768px) {
+    .rotation-flow { @apply flex; }
+    .rotation-flow-vertical { @apply hidden; }
+  }
+  .rotation-flow-vertical {
+    @apply flex flex-col;
+    gap: 0;
+    margin-bottom: var(--space-4);
+  }
+  .rotation-flow-vertical__item {
+    @apply flex;
+    gap: var(--space-3);
+    align-items: flex-start;
+  }
+  .rotation-flow-vertical__connector {
+    @apply flex flex-col items-center;
+    flex-shrink: 0;
+    width: 20px;
+  }
+  .rotation-flow-vertical__dot {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    flex-shrink: 0;
+    margin-top: 4px;
+  }
+  .rotation-flow-vertical__line {
+    width: 2px;
+    flex: 1;
+    min-height: 16px;
+    background: var(--color-border-default);
+    margin: 4px 0;
+  }
+
+  .rotation-arrow {
+    @apply flex items-center justify-center;
+    flex-shrink: 0;
+    width: 28px;
+    font-size: 1.2rem;
+    color: var(--color-text-tertiary);
+    padding-bottom: 24px; /* visual alignment */
+  }
+  .rotation-arrow--loop {
+    color: var(--color-brand);
+  }
+
+  .rotation-phase-card {
+    @apply flex flex-col;
+    min-width: 160px;
+    max-width: 210px;
+    flex: 1;
+    border: 2px solid;
+    border-radius: var(--radius-md);
+    padding: var(--space-4);
+    background: var(--color-bg-surface);
+    gap: var(--space-2);
+  }
+  .rotation-phase-card--vertical {
+    min-width: 0;
+    max-width: none;
+    flex: 1;
+    margin-bottom: 0;
+    padding: var(--space-3) var(--space-4);
+  }
+  .rotation-phase-card__emoji {
+    font-size: 1.75rem;
+    line-height: 1;
+  }
+  .rotation-phase-card__label {
+    @apply text-base font-bold;
+    line-height: 1.2;
+  }
+  .rotation-phase-card__desc {
+    @apply text-xs;
+    color: var(--color-text-secondary);
+    line-height: 1.55;
+    margin: 0;
+  }
+  .rotation-phase-card__sectors {
+    @apply flex flex-wrap;
+    gap: var(--space-1);
+    margin-top: var(--space-1);
+  }
+  .rotation-phase-card__sector-tag {
+    @apply text-xs font-semibold;
+    padding: 2px 8px;
+    border-radius: 99px;
+  }
+  .rotation-phase-card__indicators {
+    @apply flex flex-col;
+    gap: 2px;
+    margin-top: var(--space-1);
+  }
+  .rotation-phase-card__indicator {
+    line-height: 1.5;
+  }
+
+  /* Nature cards */
+  .sector-guide-nature-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+    gap: var(--space-3);
+    margin-bottom: var(--space-2);
+  }
+  .sector-guide-nature-card {
+    @apply border border-solid;
+    background: var(--color-bg-surface);
+    border-color: var(--color-border-default);
+    border-radius: var(--radius-md);
+    padding: var(--space-4);
+  }
+  .sector-guide-cat-tag {
+    @apply text-xs;
+    padding: 2px 8px;
+    border-radius: 99px;
+    background: var(--color-bg-sunken);
+    color: var(--color-text-secondary);
+    border: 1px solid var(--color-border-default);
+  }
+  .sector-guide-cat-tag--positive {
+    background: rgba(0,180,147,0.1);
+    color: var(--color-green-500);
+    border-color: rgba(0,180,147,0.2);
+  }
+  .sector-guide-cat-tag--negative {
+    background: rgba(240,68,82,0.1);
+    color: var(--color-red-500, #F04452);
+    border-color: rgba(240,68,82,0.2);
+  }
+
+  /* Macro sensitivity */
+  .sector-guide-macro-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+    gap: var(--space-3);
+  }
+  .sector-guide-macro-card {
+    @apply border border-solid;
+    background: var(--color-bg-surface);
+    border-color: var(--color-border-default);
+    border-radius: var(--radius-md);
+    padding: var(--space-4);
+    @apply flex flex-col;
+    gap: var(--space-3);
+  }
+  .sector-guide-macro-card__header {
+    @apply flex items-center;
+    gap: var(--space-2);
+  }
+  .sector-guide-macro-row {
+    @apply flex;
+    gap: var(--space-2);
+    align-items: flex-start;
+  }
+  .sector-guide-macro-row__label {
+    @apply text-xs font-bold;
+    padding: 2px 6px;
+    border-radius: var(--radius-xs);
+    flex-shrink: 0;
+    margin-top: 2px;
+  }
+  .sector-guide-macro-row__label.positive {
+    background: rgba(0,180,147,0.12);
+    color: var(--color-green-500);
+  }
+  .sector-guide-macro-row__label.negative {
+    background: rgba(240,68,82,0.12);
+    color: var(--color-red-500, #F04452);
+  }
+
+  /* Top-Down Process */
+  .sector-guide-process {
+    @apply flex flex-col;
+    gap: var(--space-1);
+  }
+  .sector-guide-process-step {
+    @apply flex;
+    gap: var(--space-4);
+    padding: var(--space-3) var(--space-4);
+    border-radius: var(--radius-md);
+    background: var(--color-bg-surface);
+    border: 1px solid var(--color-border-default);
+    align-items: flex-start;
+  }
+  .sector-guide-process-step__num {
+    @apply text-lg font-extrabold;
+    color: var(--color-brand);
+    min-width: 28px;
+    flex-shrink: 0;
+    line-height: 1.4;
+  }
+  .sector-guide-process-step__title {
+    @apply text-sm font-semibold;
+    margin-bottom: var(--space-1);
+  }
 
 /* controls moved: components/controls.css */
 
