@@ -790,46 +790,48 @@ a:focus-visible {
   .sector-all-legend {
     @apply flex flex-wrap;
     gap: var(--space-2);
-    margin-bottom: var(--space-5);
-    padding: var(--space-3) var(--space-4);
+    margin-bottom: var(--space-4);
+    padding: var(--space-2) var(--space-3);
     background: var(--color-bg-sunken);
     border-radius: var(--radius-md);
   }
   .sector-all-group {
-    margin-bottom: var(--space-6);
+    margin-bottom: var(--space-5);
   }
   .sector-all-group-title {
-    @apply text-sm font-bold;
-    color: var(--color-text-secondary);
+    @apply text-xs font-bold;
+    color: var(--color-text-tertiary);
     padding: var(--space-1) 0 var(--space-2);
-    border-bottom: 2px solid var(--color-border-default);
-    margin-bottom: var(--space-3);
+    border-bottom: 1px solid var(--color-border-default);
+    margin-bottom: var(--space-2);
     text-transform: uppercase;
-    letter-spacing: 0.04em;
+    letter-spacing: 0.06em;
   }
   .sector-all-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
-    gap: var(--space-3);
+    grid-template-columns: repeat(2, 1fr);
+    gap: var(--space-2);
+  }
+  @media (min-width: 480px) {
+    .sector-all-grid { grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); }
+  }
+  @media (min-width: 768px) {
+    .sector-all-grid { grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: var(--space-3); }
   }
   .sector-all-card {
     @apply border border-solid;
     background: var(--color-bg-surface);
     border-color: var(--color-border-default);
     border-radius: var(--radius-md);
-    padding: var(--space-3) var(--space-4);
+    padding: var(--space-3);
     transition: border-color var(--duration-fast) var(--ease-out), box-shadow var(--duration-fast) var(--ease-out);
   }
-  .sector-all-card--no-data {
-    opacity: 0.55;
-  }
+  .sector-all-card--no-data { opacity: 0.5; }
   .sector-all-card:not(.sector-all-card--no-data):hover {
     border-color: var(--color-brand-muted);
     box-shadow: var(--shadow-sm);
   }
-  .sector-all-card--expanded {
-    border-color: var(--color-brand-muted);
-  }
+  .sector-all-card--expanded { border-color: var(--color-brand-muted); }
   .sector-all-card__trigger {
     width: 100%;
     background: transparent;
@@ -850,7 +852,7 @@ a:focus-visible {
   }
   .sector-all-card__footer {
     @apply flex items-center justify-between;
-    margin-top: var(--space-1);
+    margin-top: var(--space-2);
   }
 
   /* ================================================================
@@ -858,16 +860,50 @@ a:focus-visible {
      ================================================================ */
   .sector-guide {
     @apply flex flex-col;
-    gap: var(--space-6);
+    gap: var(--space-5);
   }
-  .sector-guide-section {
-    /* no extra padding — uses card spacing naturally */
+  @media (min-width: 768px) {
+    .sector-guide { gap: var(--space-6); }
   }
   .sector-guide-section__title {
     @apply text-base font-bold;
     margin-bottom: var(--space-3);
     padding-bottom: var(--space-2);
     border-bottom: 2px solid var(--color-border-default);
+  }
+
+  /* 현재 국면 배너 */
+  .sector-phase-banner {
+    @apply flex items-start justify-between flex-wrap;
+    gap: var(--space-3);
+    border: 2px solid;
+    border-radius: var(--radius-md);
+    padding: var(--space-3) var(--space-4);
+  }
+  .sector-phase-banner__left {
+    @apply flex items-center;
+    gap: var(--space-3);
+  }
+  .sector-phase-banner__emoji {
+    font-size: 1.75rem;
+    line-height: 1;
+    flex-shrink: 0;
+  }
+  .sector-phase-banner__label {
+    @apply text-sm font-semibold;
+    color: var(--color-text-secondary);
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    flex-wrap: wrap;
+    margin-bottom: 2px;
+  }
+  .sector-phase-banner__phase {
+    @apply text-base font-bold;
+  }
+  .sector-phase-banner__note {
+    flex-shrink: 0;
+    align-self: center;
   }
 
   /* Rotation Flow — 가로 (md+) */
@@ -878,15 +914,17 @@ a:focus-visible {
     overflow-x: auto;
     padding-bottom: var(--space-2);
     margin-bottom: var(--space-4);
+    -webkit-overflow-scrolling: touch;
   }
-  @media (min-width: 768px) {
+  @media (min-width: 700px) {
     .rotation-flow { @apply flex; }
     .rotation-flow-vertical { @apply hidden; }
   }
+
+  /* 수직 플로우 — 모바일 */
   .rotation-flow-vertical {
     @apply flex flex-col;
-    gap: 0;
-    margin-bottom: var(--space-4);
+    margin-bottom: var(--space-3);
   }
   .rotation-flow-vertical__item {
     @apply flex;
@@ -896,59 +934,69 @@ a:focus-visible {
   .rotation-flow-vertical__connector {
     @apply flex flex-col items-center;
     flex-shrink: 0;
-    width: 20px;
+    padding-top: 3px;
+    width: 16px;
   }
   .rotation-flow-vertical__dot {
-    width: 12px;
-    height: 12px;
+    width: 10px;
+    height: 10px;
     border-radius: 50%;
     flex-shrink: 0;
-    margin-top: 4px;
   }
   .rotation-flow-vertical__line {
     width: 2px;
     flex: 1;
-    min-height: 16px;
+    min-height: 12px;
     background: var(--color-border-default);
-    margin: 4px 0;
+    margin: 3px 0;
   }
 
   .rotation-arrow {
     @apply flex items-center justify-center;
     flex-shrink: 0;
-    width: 28px;
-    font-size: 1.2rem;
+    width: 24px;
+    font-size: 1rem;
     color: var(--color-text-tertiary);
-    padding-bottom: 24px; /* visual alignment */
+    padding-bottom: 20px;
   }
-  .rotation-arrow--loop {
-    color: var(--color-brand);
-  }
+  .rotation-arrow--loop { color: var(--color-brand); }
 
   .rotation-phase-card {
     @apply flex flex-col;
-    min-width: 160px;
-    max-width: 210px;
+    min-width: 150px;
+    max-width: 200px;
     flex: 1;
     border: 2px solid;
     border-radius: var(--radius-md);
-    padding: var(--space-4);
+    padding: var(--space-3) var(--space-4);
     background: var(--color-bg-surface);
     gap: var(--space-2);
+    transition: box-shadow var(--duration-fast) var(--ease-out);
+  }
+  .rotation-phase-card--active {
+    box-shadow: 0 0 0 2px var(--phase-color, var(--color-brand));
   }
   .rotation-phase-card--vertical {
     min-width: 0;
     max-width: none;
     flex: 1;
+    padding: var(--space-3);
     margin-bottom: 0;
-    padding: var(--space-3) var(--space-4);
+  }
+  .rotation-phase-card__now-badge {
+    @apply text-xs font-bold;
+    padding: 1px 7px;
+    border-radius: 99px;
+    background: var(--color-brand);
+    color: #fff;
+    flex-shrink: 0;
   }
   .rotation-phase-card__emoji {
-    font-size: 1.75rem;
+    font-size: 1.5rem;
     line-height: 1;
   }
   .rotation-phase-card__label {
-    @apply text-base font-bold;
+    @apply text-sm font-bold;
     line-height: 1.2;
   }
   .rotation-phase-card__desc {
@@ -960,39 +1008,44 @@ a:focus-visible {
   .rotation-phase-card__sectors {
     @apply flex flex-wrap;
     gap: var(--space-1);
-    margin-top: var(--space-1);
   }
   .rotation-phase-card__sector-tag {
     @apply text-xs font-semibold;
-    padding: 2px 8px;
+    padding: 2px 7px;
     border-radius: 99px;
   }
   .rotation-phase-card__indicators {
     @apply flex flex-col;
-    gap: 2px;
-    margin-top: var(--space-1);
+    gap: 1px;
   }
   .rotation-phase-card__indicator {
     line-height: 1.5;
   }
 
-  /* Nature cards */
+  /* Nature / Category grids — 모바일 1열 기본, 넓어지면 다열 */
   .sector-guide-nature-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
-    gap: var(--space-3);
+    grid-template-columns: 1fr;
+    gap: var(--space-2);
     margin-bottom: var(--space-2);
+  }
+  @media (min-width: 520px) {
+    .sector-guide-nature-grid { grid-template-columns: repeat(2, 1fr); gap: var(--space-3); }
+  }
+  @media (min-width: 900px) {
+    .sector-guide-nature-grid { grid-template-columns: repeat(4, 1fr); }
   }
   .sector-guide-nature-card {
     @apply border border-solid;
     background: var(--color-bg-surface);
     border-color: var(--color-border-default);
     border-radius: var(--radius-md);
-    padding: var(--space-4);
+    padding: var(--space-3) var(--space-4);
   }
+
   .sector-guide-cat-tag {
     @apply text-xs;
-    padding: 2px 8px;
+    padding: 2px 7px;
     border-radius: 99px;
     background: var(--color-bg-sunken);
     color: var(--color-text-secondary);
@@ -1012,15 +1065,21 @@ a:focus-visible {
   /* Macro sensitivity */
   .sector-guide-macro-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
-    gap: var(--space-3);
+    grid-template-columns: 1fr;
+    gap: var(--space-2);
+  }
+  @media (min-width: 520px) {
+    .sector-guide-macro-grid { grid-template-columns: repeat(2, 1fr); gap: var(--space-3); }
+  }
+  @media (min-width: 900px) {
+    .sector-guide-macro-grid { grid-template-columns: repeat(3, 1fr); }
   }
   .sector-guide-macro-card {
     @apply border border-solid;
     background: var(--color-bg-surface);
     border-color: var(--color-border-default);
     border-radius: var(--radius-md);
-    padding: var(--space-4);
+    padding: var(--space-3) var(--space-4);
     @apply flex flex-col;
     gap: var(--space-3);
   }
@@ -1052,27 +1111,30 @@ a:focus-visible {
   /* Top-Down Process */
   .sector-guide-process {
     @apply flex flex-col;
-    gap: var(--space-1);
+    gap: var(--space-2);
   }
   .sector-guide-process-step {
     @apply flex;
-    gap: var(--space-4);
-    padding: var(--space-3) var(--space-4);
+    gap: var(--space-3);
+    padding: var(--space-3);
     border-radius: var(--radius-md);
     background: var(--color-bg-surface);
     border: 1px solid var(--color-border-default);
     align-items: flex-start;
   }
+  @media (min-width: 480px) {
+    .sector-guide-process-step { gap: var(--space-4); padding: var(--space-3) var(--space-4); }
+  }
   .sector-guide-process-step__num {
-    @apply text-lg font-extrabold;
+    @apply text-base font-extrabold;
     color: var(--color-brand);
-    min-width: 28px;
+    min-width: 24px;
     flex-shrink: 0;
-    line-height: 1.4;
+    line-height: 1.5;
   }
   .sector-guide-process-step__title {
     @apply text-sm font-semibold;
-    margin-bottom: var(--space-1);
+    margin-bottom: 2px;
   }
 
 /* controls moved: components/controls.css */

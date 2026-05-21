@@ -54,6 +54,26 @@ type Tab = "promising" | "next" | "all" | "guide"
 
 const ANALYZE_PENDING_CODE_KEY = "analyze_pending_code"
 
+// 현재 경기 국면 자동 추정 — WICS 대분류별 평균 점수로 가장 강한 로테이션 단계 판정
+function detectCurrentPhase(all: Sector[]): EconomicPhase | null {
+  if (all.length === 0) return null
+  const catScores: Record<string, number[]> = {}
+  for (const s of all) {
+    const meta = getSectorMeta(s.name)
+    if (!meta || s.score == null) continue
+    if (!catScores[meta.wicsCategory]) catScores[meta.wicsCategory] = []
+    catScores[meta.wicsCategory].push(s.score)
+  }
+  const avg = (cats: string[]): number => {
+    const scores = cats.flatMap((c) => catScores[c] ?? [])
+    if (scores.length === 0) return 0
+    return scores.reduce((a, b) => a + b, 0) / scores.length
+  }
+  const ranked = ROTATION_CYCLE.map((p) => ({ phase: p.phase, score: avg(p.sectorCategories) }))
+    .sort((a, b) => b.score - a.score)
+  return ranked[0].score > 0 ? ranked[0].phase : null
+}
+
 function toNum(v: unknown): number | null {
   const n = Number(v)
   return Number.isFinite(n) ? n : null
@@ -405,9 +425,38 @@ function AllSectorsView({
 
 // ── 섹터 가이드 탭 ───────────────────────────────────────────────────────
 
-function SectorGuideView() {
+function SectorGuideView({ detectedPhase }: { detectedPhase: EconomicPhase | null }) {
+  const activePhaseData = detectedPhase ? ROTATION_CYCLE.find((p) => p.phase === detectedPhase) : null
+
   return (
     <div className="sector-guide">
+
+      {/* 현재 추정 국면 배너 */}
+      {activePhaseData && (
+        <div
+          className="sector-phase-banner"
+          style={{
+            borderColor: PHASE_COLORS[activePhaseData.phase],
+            background: PHASE_BG[activePhaseData.phase],
+          }}
+        >
+          <div className="sector-phase-banner__left">
+            <span className="sector-phase-banner__emoji">{activePhaseData.emoji}</span>
+            <div>
+              <div className="sector-phase-banner__label">
+                현재 추정 국면
+                <span className="sector-phase-banner__phase" style={{ color: PHASE_COLORS[activePhaseData.phase] }}>
+                  {activePhaseData.label}
+                </span>
+              </div>
+              <div className="caption muted">
+                섹터 점수 기반 자동 추정 — 주도 섹터 범주: {activePhaseData.sectorCategories.join(" · ")}
+              </div>
+            </div>
+          </div>
+          <div className="caption muted sector-phase-banner__note">참고용 · 실제 국면과 다를 수 있음</div>
+        </div>
+      )}
 
       {/* 섹터 로테이션 사이클 */}
       <section className="sector-guide-section">
@@ -417,77 +466,91 @@ function SectorGuideView() {
           현재 경기 위치를 파악하고 유리한 섹터로 자금을 이동하는 것이 섹터 로테이션 전략입니다.
         </p>
 
-        {/* 사이클 플로우 */}
+        {/* 사이클 플로우 — 데스크탑 가로 */}
         <div className="rotation-flow">
-          {ROTATION_CYCLE.map((phase, idx) => (
-            <React.Fragment key={phase.phase}>
-              <div
-                className="rotation-phase-card"
-                style={{ borderColor: PHASE_COLORS[phase.phase], "--phase-color": PHASE_COLORS[phase.phase] } as React.CSSProperties}
-              >
-                <div className="rotation-phase-card__emoji">{phase.emoji}</div>
-                <div className="rotation-phase-card__label" style={{ color: PHASE_COLORS[phase.phase] }}>
-                  {phase.label}
-                </div>
-                <p className="rotation-phase-card__desc">{phase.description}</p>
-                <div className="rotation-phase-card__sectors">
-                  {phase.sectorCategories.map((sc) => (
-                    <span key={sc} className="rotation-phase-card__sector-tag" style={{ color: PHASE_COLORS[phase.phase], background: PHASE_BG[phase.phase] }}>
-                      {sc}
-                    </span>
-                  ))}
-                </div>
-                <div className="rotation-phase-card__indicators">
-                  {phase.indicators.map((ind) => (
-                    <div key={ind} className="caption muted rotation-phase-card__indicator">· {ind}</div>
-                  ))}
-                </div>
-              </div>
-              {idx < ROTATION_CYCLE.length - 1 && (
-                <div className="rotation-arrow">→</div>
-              )}
-              {idx === ROTATION_CYCLE.length - 1 && (
-                <div className="rotation-arrow rotation-arrow--loop">↩</div>
-              )}
-            </React.Fragment>
-          ))}
-        </div>
-
-        {/* 모바일: 수직 플로우 */}
-        <div className="rotation-flow-vertical">
-          {ROTATION_CYCLE.map((phase, idx) => (
-            <div key={phase.phase} className="rotation-flow-vertical__item">
-              <div className="rotation-flow-vertical__connector">
+          {ROTATION_CYCLE.map((phase, idx) => {
+            const isActive = detectedPhase === phase.phase
+            return (
+              <React.Fragment key={phase.phase}>
                 <div
-                  className="rotation-flow-vertical__dot"
-                  style={{ background: PHASE_COLORS[phase.phase] }}
-                />
-                {idx < ROTATION_CYCLE.length - 1 && <div className="rotation-flow-vertical__line" />}
-              </div>
-              <div
-                className="rotation-phase-card rotation-phase-card--vertical"
-                style={{ borderColor: PHASE_COLORS[phase.phase] }}
-              >
-                <div style={{ display: "flex", alignItems: "center", gap: "var(--space-2)", marginBottom: "var(--space-2)" }}>
-                  <span className="rotation-phase-card__emoji" style={{ fontSize: "1.2rem" }}>{phase.emoji}</span>
-                  <span className="rotation-phase-card__label" style={{ color: PHASE_COLORS[phase.phase] }}>{phase.label}</span>
-                  <div style={{ display: "flex", gap: "var(--space-1)", flexWrap: "wrap", marginLeft: "auto" }}>
+                  className={`rotation-phase-card${isActive ? " rotation-phase-card--active" : ""}`}
+                  style={{
+                    borderColor: PHASE_COLORS[phase.phase],
+                    "--phase-color": PHASE_COLORS[phase.phase],
+                    background: isActive ? PHASE_BG[phase.phase] : undefined,
+                  } as React.CSSProperties}
+                >
+                  <div style={{ display: "flex", alignItems: "center", gap: "var(--space-2)" }}>
+                    <span className="rotation-phase-card__emoji">{phase.emoji}</span>
+                    {isActive && <span className="rotation-phase-card__now-badge">현재</span>}
+                  </div>
+                  <div className="rotation-phase-card__label" style={{ color: PHASE_COLORS[phase.phase] }}>
+                    {phase.label}
+                  </div>
+                  <p className="rotation-phase-card__desc">{phase.description}</p>
+                  <div className="rotation-phase-card__sectors">
                     {phase.sectorCategories.map((sc) => (
                       <span key={sc} className="rotation-phase-card__sector-tag" style={{ color: PHASE_COLORS[phase.phase], background: PHASE_BG[phase.phase] }}>
                         {sc}
                       </span>
                     ))}
                   </div>
+                  <div className="rotation-phase-card__indicators">
+                    {phase.indicators.map((ind) => (
+                      <div key={ind} className="caption muted rotation-phase-card__indicator">· {ind}</div>
+                    ))}
+                  </div>
                 </div>
-                <p className="rotation-phase-card__desc">{phase.description}</p>
-                <div className="rotation-phase-card__indicators" style={{ marginTop: "var(--space-1)" }}>
-                  {phase.indicators.map((ind) => (
-                    <span key={ind} className="caption muted rotation-phase-card__indicator">· {ind}</span>
-                  ))}
+                {idx < ROTATION_CYCLE.length - 1 && (
+                  <div className="rotation-arrow">→</div>
+                )}
+                {idx === ROTATION_CYCLE.length - 1 && (
+                  <div className="rotation-arrow rotation-arrow--loop">↩</div>
+                )}
+              </React.Fragment>
+            )
+          })}
+        </div>
+
+        {/* 모바일: 수직 플로우 */}
+        <div className="rotation-flow-vertical">
+          {ROTATION_CYCLE.map((phase, idx) => {
+            const isActive = detectedPhase === phase.phase
+            return (
+              <div key={phase.phase} className="rotation-flow-vertical__item">
+                <div className="rotation-flow-vertical__connector">
+                  <div
+                    className="rotation-flow-vertical__dot"
+                    style={{ background: PHASE_COLORS[phase.phase], boxShadow: isActive ? `0 0 0 3px ${PHASE_BG[phase.phase]}` : undefined }}
+                  />
+                  {idx < ROTATION_CYCLE.length - 1 && <div className="rotation-flow-vertical__line" />}
+                </div>
+                <div
+                  className={`rotation-phase-card rotation-phase-card--vertical${isActive ? " rotation-phase-card--active" : ""}`}
+                  style={{ borderColor: PHASE_COLORS[phase.phase], background: isActive ? PHASE_BG[phase.phase] : undefined }}
+                >
+                  <div style={{ display: "flex", alignItems: "center", gap: "var(--space-2)", marginBottom: "var(--space-2)", flexWrap: "wrap" }}>
+                    <span className="rotation-phase-card__emoji" style={{ fontSize: "1.1rem" }}>{phase.emoji}</span>
+                    <span className="rotation-phase-card__label" style={{ color: PHASE_COLORS[phase.phase] }}>{phase.label}</span>
+                    {isActive && <span className="rotation-phase-card__now-badge">현재</span>}
+                    <div style={{ display: "flex", gap: "var(--space-1)", flexWrap: "wrap", marginLeft: "auto" }}>
+                      {phase.sectorCategories.map((sc) => (
+                        <span key={sc} className="rotation-phase-card__sector-tag" style={{ color: PHASE_COLORS[phase.phase], background: PHASE_BG[phase.phase] }}>
+                          {sc}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                  <p className="rotation-phase-card__desc">{phase.description}</p>
+                  <div className="rotation-phase-card__indicators" style={{ marginTop: "var(--space-1)" }}>
+                    {phase.indicators.map((ind) => (
+                      <span key={ind} className="caption muted rotation-phase-card__indicator">· {ind}　</span>
+                    ))}
+                  </div>
                 </div>
               </div>
-            </div>
-          ))}
+            )
+          })}
           <div className="rotation-flow-vertical__item">
             <div className="rotation-flow-vertical__connector">
               <div className="rotation-flow-vertical__dot" style={{ background: PHASE_COLORS["recovery"] }} />
@@ -799,7 +862,7 @@ export default function SectorsPage({ onNavigate }: { onNavigate?: (r: string) =
       )}
 
       {/* 섹터 가이드 */}
-      {tab === "guide" && <SectorGuideView />}
+      {tab === "guide" && <SectorGuideView detectedPhase={detectCurrentPhase(all)} />}
     </section>
   )
 }
