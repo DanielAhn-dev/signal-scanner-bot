@@ -4,7 +4,7 @@
  */
 import { useEffect, useState } from 'react'
 import { apiFetch } from '../../lib/api'
-import { RefreshCw, Plus } from 'lucide-react'
+import { RefreshCw } from 'lucide-react'
 
 type MarketIndex = {
   name?: string
@@ -137,7 +137,7 @@ export default function MarketSidePanel() {
       {/* 패널 헤더 */}
       <div className="xls-panel-header-bar">
         <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-          📈 실시간 시세
+          실시간 시세
           {fetchedAt && (
             <span style={{ fontSize: 9, color: 'var(--color-text-tertiary)', fontWeight: 400 }}>
               · {fetchedAt}
@@ -159,12 +159,12 @@ export default function MarketSidePanel() {
 
       {/* 스프레드시트 */}
       <div style={{ flex: 1, overflow: 'auto' }}>
-        <table className="xls-table" style={{ width: '100%' }}>
+        <table className="xls-table" style={{ width: '100%', tableLayout: 'fixed' }}>
           <colgroup>
             <col style={{ width: 28 }}/>
-            <col style={{ minWidth: 72 }}/>
-            <col style={{ minWidth: 68 }}/>
-            <col style={{ minWidth: 58 }}/>
+            <col style={{ width: 132 }}/>
+            <col style={{ width: 92 }}/>
+            <col style={{ width: 78 }}/>
           </colgroup>
           <thead>
             <tr className="xls-letter-row">
@@ -204,7 +204,7 @@ export default function MarketSidePanel() {
                             {row.source}
                           </span>
                         )}
-                        {row.label}
+                        <span title={row.label}>{row.label}</span>
                       </td>
                       <td className="xls-cell xls-cell--num" style={{ fontSize: 10 }}>
                         {row.price}

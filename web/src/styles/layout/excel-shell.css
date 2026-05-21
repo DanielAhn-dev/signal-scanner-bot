@@ -1275,11 +1275,14 @@
 .xls-row {
   height: 18px;
 }
-.xls-row:hover .xls-cell {
+.xls-cell:hover {
   background: var(--color-excel-cell-header) !important;
 }
 .xls-row--even .xls-cell {
   background: var(--color-excel-row-stripe);
+}
+.xls-row--selected .xls-cell {
+  background: var(--color-excel-cell-selected) !important;
 }
 .xls-row--frozen .xls-cell {
   font-weight: var(--font-weight-semibold);
@@ -1314,6 +1317,15 @@
 .xls-cell:focus-visible {
   outline: 2px solid var(--color-brand);
   outline-offset: -2px;
+}
+
+.news-side-panel .xls-row {
+  height: auto;
+  min-height: 22px;
+}
+
+.news-side-panel .xls-cell {
+  vertical-align: top;
 }
 
 /* ── 셀 내 특수 콘텐츠 ── */

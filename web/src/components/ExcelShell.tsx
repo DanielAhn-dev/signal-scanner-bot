@@ -133,6 +133,7 @@ function getRibbonScaffoldGroups(tab: RibbonTabKey): RibbonScaffoldGroup[] {
           buttons: [
             { key: 'paste', label: '붙여넣기', icon: <Upload size={20} /> },
             { key: 'copy', label: '복사', icon: <BookMarked size={20} /> },
+            { key: 'quick-save', label: '저장', icon: <Save size={20} /> },
           ],
         },
         {
@@ -140,6 +141,14 @@ function getRibbonScaffoldGroups(tab: RibbonTabKey): RibbonScaffoldGroup[] {
           buttons: [
             { key: 'sort', label: '정렬', icon: <SortAsc size={20} /> },
             { key: 'filter', label: '필터', icon: <Filter size={20} /> },
+            { key: 'redo', label: '다시 실행', icon: <Redo2 size={20} /> },
+          ],
+        },
+        {
+          label: '스타일',
+          buttons: [
+            { key: 'style-theme', label: '스타일', icon: <PieChart size={20} /> },
+            { key: 'cell-format', label: '셀 서식', icon: <Settings size={20} /> },
           ],
         },
       ]
@@ -150,6 +159,14 @@ function getRibbonScaffoldGroups(tab: RibbonTabKey): RibbonScaffoldGroup[] {
           buttons: [
             { key: 'chart', label: '차트', icon: <PieChart size={20} /> },
             { key: 'table', label: '테이블', icon: <List size={20} /> },
+            { key: 'ins-link', label: '연결', icon: <Globe2 size={20} /> },
+          ],
+        },
+        {
+          label: '개체',
+          buttons: [
+            { key: 'ins-shape', label: '도형', icon: <LayoutDashboard size={20} /> },
+            { key: 'ins-note', label: '메모', icon: <FileText size={20} /> },
           ],
         },
       ]
@@ -160,6 +177,14 @@ function getRibbonScaffoldGroups(tab: RibbonTabKey): RibbonScaffoldGroup[] {
           buttons: [
             { key: 'all-refresh', label: '전체 새로고침', icon: <RefreshCw size={20} /> },
             { key: 'sync-cache', label: '캐시 동기화', icon: <Download size={20} /> },
+            { key: 'data-query', label: '쿼리', icon: <Search size={20} /> },
+          ],
+        },
+        {
+          label: '정리',
+          buttons: [
+            { key: 'dedupe', label: '중복 제거', icon: <Minus size={20} /> },
+            { key: 'inspect', label: '검사', icon: <Eye size={20} /> },
           ],
         },
       ]
@@ -170,6 +195,8 @@ function getRibbonScaffoldGroups(tab: RibbonTabKey): RibbonScaffoldGroup[] {
           buttons: [
             { key: 'window-list', label: '창 목록', icon: <LayoutDashboard size={20} /> },
             { key: 'focus', label: '포커스', icon: <Eye size={20} /> },
+            { key: 'zoom-in', label: '확대', icon: <Plus size={20} /> },
+            { key: 'zoom-out', label: '축소', icon: <Minus size={20} /> },
           ],
         },
       ]
@@ -180,6 +207,14 @@ function getRibbonScaffoldGroups(tab: RibbonTabKey): RibbonScaffoldGroup[] {
           buttons: [
             { key: 'audit', label: '감사', icon: <Shield size={20} /> },
             { key: 'policy', label: '정책', icon: <Settings size={20} /> },
+            { key: 'history', label: '기록', icon: <History size={20} /> },
+          ],
+        },
+        {
+          label: '자동화',
+          buttons: [
+            { key: 'auto-plan', label: '자동 실행', icon: <Zap size={20} /> },
+            { key: 'ops-watch', label: '운영 보기', icon: <Activity size={20} /> },
           ],
         },
       ]
@@ -618,7 +653,7 @@ export default function ExcelShell({
         <input
           className="excel-formula-bar__input"
           readOnly
-          value={contextLabel ?? pageLabel}
+          value="=MARKETBRIEF(AUTO)"
           placeholder="페이지를 선택하세요"
         />
       </div>
