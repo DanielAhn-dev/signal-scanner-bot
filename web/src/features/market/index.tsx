@@ -331,7 +331,7 @@ function Collapsible({
   children: React.ReactNode
 }) {
   return (
-    <div className="card" style={{ '--card-padding': '0', overflow: 'hidden' } as React.CSSProperties}>
+    <div className="card market-sheet__block" style={{ '--card-padding': '0', overflow: 'hidden' } as React.CSSProperties}>
       <button
         onClick={onToggle}
         style={{
@@ -376,6 +376,7 @@ function SegmentControl<T extends string>({
 }) {
   return (
     <div
+      className="market-sheet__segment"
       style={{
         display: 'flex',
         background: 'var(--color-bg-sunken)',
@@ -419,6 +420,7 @@ function SegmentControl<T extends string>({
 function PageHeader({ loading, onRefresh }: { loading: boolean; onRefresh: () => void }) {
   return (
     <div
+      className="market-sheet__header"
       style={{
         display: 'flex',
         alignItems: 'center',
@@ -918,7 +920,7 @@ export default function MarketPage() {
 
   if (error) {
     return (
-      <section className="container-app">
+      <section className="container-app market-sheet">
         <PageHeader loading={isRefreshing} onRefresh={handleRefresh} />
         <ErrorState message={error} onRetry={load} />
       </section>
@@ -927,7 +929,7 @@ export default function MarketPage() {
 
   if (loading || !data) {
     return (
-      <section className="container-app">
+      <section className="container-app market-sheet">
         <PageHeader loading={isRefreshing} onRefresh={handleRefresh} />
         <div className="card"><Skeleton lines={12} height={14} /></div>
       </section>
@@ -935,7 +937,7 @@ export default function MarketPage() {
   }
 
   return (
-    <section className="container-app">
+    <section className="container-app market-sheet">
       <PageHeader loading={isRefreshing} onRefresh={handleRefresh} />
 
       <SegmentControl
