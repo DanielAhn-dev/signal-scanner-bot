@@ -13,6 +13,7 @@ import { isReviewMode } from './lib/review-mode'
 import { useAuthStore } from './stores/authStore'
 import { useProfileStore } from './stores/profileStore'
 import { onOpenProfileModal } from './lib/profileModal'
+import { apiFetch } from './lib/api'
 
 const CHUNK_RELOAD_KEY = '__ssb_chunk_reload_once__'
 
@@ -89,6 +90,12 @@ function AppContent() {
   const activeRoute = location.pathname.replace(/^\//, '') || 'dashboard'
   const contentMode = activeRoute === 'dashboard' ? 'native' : 'legacy'
 
+  const saveActionLabelByRoute: Record<string, string> = {
+    watchlist: '감시목록 내보내기',
+    reports: '리포트 스냅샷 저장',
+  }
+  const quickSaveTooltip = saveActionLabelByRoute[activeRoute] || '리포트 페이지로 이동'
+
   useEffect(() => {
     const cleanup = initAuth()
     return cleanup
@@ -145,6 +152,58 @@ function AppContent() {
 
   const handleNavigate = (r: string) => navigate(`/${r}`)
 
+  const runWatchlistExport = async () => {
+    const res = await apiFetch('/api/ui/watchlist', { cacheMs: 0, timeoutMs: 15_000 })
+    const items = Array.isArray(res?.data?.items) ? res.data.items : []
+    const headers = ['stock_code', 'stock_name', 'buy_price', 'current_price', 'change_rate', 'buy_date', 'created_at', 'memo']
+    const escapeCsv = (value: unknown) => {
+      const text = String(value ?? '')
+      const escaped = text.replace(/"/g, '""')
+      return `"${escaped}"`
+    }
+    const rows = items.map((item: Record<string, unknown>) => headers.map((h) => escapeCsv(item[h])).join(','))
+    const csv = [headers.join(','), ...rows].join('\n')
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    const now = new Date()
+    const y = now.getFullYear()
+    const m = String(now.getMonth() + 1).padStart(2, '0')
+    const d = String(now.getDate()).padStart(2, '0')
+    a.href = url
+    a.download = `watchlist_export_${y}${m}${d}.csv`
+    document.body.appendChild(a)
+    a.click()
+    a.remove()
+    URL.revokeObjectURL(url)
+  }
+
+  const runReportSnapshot = async () => {
+    const response = await apiFetch('/api/ui/report-snapshot', { method: 'POST', cacheMs: 0, timeoutMs: 20_000 })
+    if (!response?.ok) {
+      throw new Error(response?.error || response?.message || '스냅샷 저장 실패')
+    }
+  }
+
+  const handleQuickSave = async ({ activeRoute: route }: { activeRoute: string; pageLabel: string }) => {
+    try {
+      if (route === 'watchlist') {
+        await runWatchlistExport()
+        toast.show('감시목록 CSV 내보내기 완료 ✓')
+        return
+      }
+      if (route === 'reports') {
+        await runReportSnapshot()
+        toast.show('리포트 스냅샷 저장 완료 ✓')
+        return
+      }
+      navigate('/reports')
+      toast.show('현재 화면은 리포트 저장으로 이동합니다.')
+    } catch (error: any) {
+      toast.show(`저장 실패: ${error?.message || String(error)}`)
+    }
+  }
+
   // ── 로딩 / 비로그인 상태 ─────────────────────────────────────────
   if (!authReady && isSupabaseConfigured && !isReview) {
     return (
@@ -195,6 +254,8 @@ function AppContent() {
       <ExcelShell
         activeRoute={activeRoute}
         onNavigate={handleNavigate}
+        onQuickSave={handleQuickSave}
+        quickSaveTooltip={quickSaveTooltip}
         onOpenProfile={() => setProfileOpen(true)}
         contentMode={contentMode}
         leftPanel={<MarketSidePanel />}

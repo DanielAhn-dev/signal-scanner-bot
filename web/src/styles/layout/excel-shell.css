@@ -97,6 +97,10 @@
   color: rgba(255,255,255,0.92);
 }
 
+.excel-titlebar__search-wrap {
+  position: relative;
+}
+
 .excel-titlebar__search-input {
   border: none;
   outline: none;
@@ -108,6 +112,69 @@
 
 .excel-titlebar__search-input::placeholder {
   color: rgba(255,255,255,0.72);
+}
+
+.excel-search-panel {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  width: min(420px, 70vw);
+  max-height: min(420px, 70vh);
+  overflow: auto;
+  background: #FFFFFF;
+  border: 1px solid rgba(18, 127, 73, 0.24);
+  box-shadow: var(--shadow-lg);
+  border-radius: 6px;
+  color: var(--color-text-primary);
+  z-index: var(--z-dropdown);
+}
+
+.excel-search-panel__section {
+  padding: 6px;
+  border-bottom: 1px solid var(--color-gray-100);
+}
+
+.excel-search-panel__section:last-child {
+  border-bottom: none;
+}
+
+.excel-search-panel__title {
+  font-size: 10px;
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-text-tertiary);
+  padding: 2px 6px 5px;
+}
+
+.excel-search-panel__item {
+  width: 100%;
+  border: none;
+  background: transparent;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  text-align: left;
+  padding: 6px;
+  border-radius: 4px;
+  cursor: pointer;
+  color: var(--color-text-primary);
+  font-size: 12px;
+}
+
+.excel-search-panel__item small {
+  color: var(--color-text-tertiary);
+  font-family: var(--font-family-mono);
+  font-size: 10px;
+}
+
+.excel-search-panel__item:hover {
+  background: var(--color-brand-subtle);
+}
+
+.excel-search-panel__empty {
+  padding: 8px 6px;
+  font-size: 11px;
+  color: var(--color-text-tertiary);
 }
 
 .excel-tooltip-target {
@@ -396,7 +463,6 @@
 }
 
 .ribbon-fold__summary {
-  list-style: none;
   cursor: pointer;
   height: 22px;
   border: 1px solid var(--color-excel-grid-border);
@@ -406,10 +472,6 @@
   padding: 0 6px;
   display: inline-flex;
   align-items: center;
-}
-
-.ribbon-fold__summary::-webkit-details-marker {
-  display: none;
 }
 
 .ribbon-fold__menu {

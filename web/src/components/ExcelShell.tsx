@@ -33,8 +33,10 @@ type Props = {
   children: React.ReactNode        // 중앙 패널 콘텐츠 (현재 페이지)
   activeRoute?: string
   onNavigate: (route: string) => void
+  onQuickSave?: (context: { activeRoute: string; pageLabel: string }) => void | Promise<void>
   onOpenProfile?: () => void
   contextLabel?: string            // 수식 표시줄에 표시할 텍스트
+  quickSaveTooltip?: string
   /** 중앙 콘텐츠 프레임 모드 */
   contentMode?: 'native' | 'legacy'
   /** 좌측 고정 패널 (시세 등) */
@@ -154,6 +156,9 @@ const SHEET_TABS = [
 const MIN_LEFT  = 200  // px
 const MIN_MID   = 300  // px
 const MIN_RIGHT = 220  // px
+const RECENT_MENU_STORAGE_KEY = 'excel-shell:recent-menu-routes:v1'
+const RIBBON_FOLD_STORAGE_KEY = 'excel-shell:ribbon-fold-state:v1'
+const MAX_RECENT_MENU_ITEMS = 6
 
 function usePanelResize(containerRef: React.RefObject<HTMLDivElement | null>) {
   const [leftW, setLeftW]   = useState(270)
@@ -201,8 +206,10 @@ export default function ExcelShell({
   children,
   activeRoute = '',
   onNavigate,
+  onQuickSave,
   onOpenProfile,
   contextLabel,
+  quickSaveTooltip,
   contentMode = 'legacy',
   leftPanel,
   rightPanel,
@@ -212,7 +219,11 @@ export default function ExcelShell({
   const [ribbonTab, setRibbonTab] = useState<RibbonTabKey>('home')
   const [zoom, setZoom] = useState(100)
   const [menuQuery, setMenuQuery] = useState('')
+  const [searchPanelOpen, setSearchPanelOpen] = useState(false)
+  const [recentMenuRoutes, setRecentMenuRoutes] = useState<string[]>([])
+  const [ribbonFoldState, setRibbonFoldState] = useState<Record<string, boolean>>({})
   const containerRef = useRef<HTMLDivElement>(null)
+  const searchContainerRef = useRef<HTMLDivElement>(null)
   const { leftW, rightW, startDrag } = usePanelResize(containerRef)
 
   const displayName = profile.nickname || profile.telegramName || authName || authEmail || '사용자'
@@ -244,17 +255,106 @@ export default function ExcelShell({
     return partial?.key ?? ''
   }, [])
 
+  const recommendedRoutes = useMemo(() => {
+    const routes = groups
+      .flatMap(group => group.buttons)
+      .map(button => button.route)
+      .filter((route): route is string => !!route)
+    return Array.from(new Set(routes)).slice(0, 5)
+  }, [groups])
+
+  const filteredMenuTabs = useMemo(() => {
+    const normalized = menuQuery.trim().toLowerCase()
+    const list = normalized
+      ? SHEET_TABS.filter(tab => tab.label.toLowerCase().includes(normalized) || tab.key.includes(normalized))
+      : SHEET_TABS
+    return list.slice(0, 12)
+  }, [menuQuery])
+
+  const recentMenuTabs = useMemo(() => {
+    return recentMenuRoutes
+      .map(route => SHEET_TABS.find(tab => tab.key === route))
+      .filter((tab): tab is typeof SHEET_TABS[number] => !!tab)
+  }, [recentMenuRoutes])
+
+  const recommendedMenuTabs = useMemo(() => {
+    return recommendedRoutes
+      .map(route => SHEET_TABS.find(tab => tab.key === route))
+      .filter((tab): tab is typeof SHEET_TABS[number] => !!tab)
+  }, [recommendedRoutes])
+
   const navigateSheetOffset = useCallback((offset: number) => {
     const nextIndex = (activeSheetIndex + offset + SHEET_TABS.length) % SHEET_TABS.length
     onNavigate(SHEET_TABS[nextIndex].key)
   }, [activeSheetIndex, onNavigate])
 
+  const commitMenuNavigation = useCallback((route: string) => {
+    const tab = SHEET_TABS.find(item => item.key === route)
+    if (!tab) return
+    onNavigate(route)
+    setMenuQuery(tab.label)
+    setRecentMenuRoutes(prev => {
+      const next = [route, ...prev.filter(item => item !== route)].slice(0, MAX_RECENT_MENU_ITEMS)
+      return next
+    })
+    setSearchPanelOpen(false)
+  }, [onNavigate])
+
   const handleMenuSearch = useCallback((e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault()
     const route = routeByMenuQuery(menuQuery)
     if (!route) return
-    onNavigate(route)
-  }, [menuQuery, onNavigate, routeByMenuQuery])
+    commitMenuNavigation(route)
+  }, [commitMenuNavigation, menuQuery, routeByMenuQuery])
+
+  const handleQuickSave = useCallback(async () => {
+    if (onQuickSave) {
+      await onQuickSave({ activeRoute, pageLabel })
+      return
+    }
+    onNavigate('reports')
+  }, [activeRoute, onNavigate, onQuickSave, pageLabel])
+
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (!searchContainerRef.current) return
+      if (!searchContainerRef.current.contains(e.target as Node)) {
+        setSearchPanelOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [])
+
+  useEffect(() => {
+    try {
+      const rawRecent = window.localStorage.getItem(RECENT_MENU_STORAGE_KEY)
+      if (rawRecent) {
+        const parsed = JSON.parse(rawRecent)
+        if (Array.isArray(parsed)) {
+          setRecentMenuRoutes(parsed.filter((item): item is string => typeof item === 'string').slice(0, MAX_RECENT_MENU_ITEMS))
+        }
+      }
+      const rawFold = window.localStorage.getItem(RIBBON_FOLD_STORAGE_KEY)
+      if (rawFold) {
+        const parsed = JSON.parse(rawFold)
+        if (parsed && typeof parsed === 'object') {
+          setRibbonFoldState(parsed as Record<string, boolean>)
+        }
+      }
+    } catch {
+      setRecentMenuRoutes([])
+      setRibbonFoldState({})
+    }
+  }, [])
+
+  useEffect(() => {
+    window.localStorage.setItem(RECENT_MENU_STORAGE_KEY, JSON.stringify(recentMenuRoutes))
+  }, [recentMenuRoutes])
+
+  useEffect(() => {
+    window.localStorage.setItem(RIBBON_FOLD_STORAGE_KEY, JSON.stringify(ribbonFoldState))
+  }, [ribbonFoldState])
 
   // 좌/우 패널 표시 여부 (반응형)
   const [visiblePanels, setVisiblePanels] = useState<'all' | 'no-right' | 'center-only'>('all')
@@ -279,7 +379,7 @@ export default function ExcelShell({
       <div className="excel-titlebar">
         <div className="excel-titlebar__qs">
           <button className="excel-titlebar__qs-btn excel-tooltip-target" data-tooltip="즐겨찾기 목록" onClick={() => onNavigate('watchlist')}><Star size={13}/></button>
-          <button className="excel-titlebar__qs-btn excel-tooltip-target" data-tooltip="보고서 저장" onClick={() => onNavigate('reports')}><Save size={13}/></button>
+          <button className="excel-titlebar__qs-btn excel-tooltip-target" data-tooltip={quickSaveTooltip || '현재 화면 저장'} onClick={() => void handleQuickSave()}><Save size={13}/></button>
           <button className="excel-titlebar__qs-btn excel-tooltip-target" data-tooltip="이전 시트" onClick={() => navigateSheetOffset(-1)}><ChevronLeft size={13}/></button>
           <button className="excel-titlebar__qs-btn excel-tooltip-target" data-tooltip="다음 시트" onClick={() => navigateSheetOffset(1)}><ChevronRight size={13}/></button>
           <button className="excel-titlebar__qs-btn excel-tooltip-target" data-tooltip="실행 취소" onClick={() => window.history.back()}><Undo2 size={13}/></button>
@@ -287,21 +387,73 @@ export default function ExcelShell({
         </div>
         <div className="excel-titlebar__app-name">{workbookTitle} - {pageLabel || '시트1'} - Excel</div>
         <div className="excel-titlebar__window-controls">
-          <form className="excel-titlebar__search" onSubmit={handleMenuSearch}>
-            <Search size={12} />
-            <input
-              className="excel-titlebar__search-input"
-              list="excel-menu-search-options"
-              value={menuQuery}
-              onChange={e => setMenuQuery(e.target.value)}
-              placeholder="메뉴 이동 (예: 스캔, 포트폴리오)"
-            />
-            <datalist id="excel-menu-search-options">
-              {SHEET_TABS.map(tab => (
-                <option key={tab.key} value={tab.label} />
-              ))}
-            </datalist>
-          </form>
+          <div className="excel-titlebar__search-wrap" ref={searchContainerRef}>
+            <form className="excel-titlebar__search" onSubmit={handleMenuSearch}>
+              <Search size={12} />
+              <input
+                className="excel-titlebar__search-input"
+                value={menuQuery}
+                onFocus={() => setSearchPanelOpen(true)}
+                onChange={e => {
+                  setMenuQuery(e.target.value)
+                  setSearchPanelOpen(true)
+                }}
+                placeholder="메뉴 이동 (예: 스캔, 포트폴리오)"
+              />
+            </form>
+            {searchPanelOpen && (
+              <div className="excel-search-panel" role="listbox" aria-label="메뉴 검색 추천">
+                {recentMenuTabs.length > 0 && (
+                  <div className="excel-search-panel__section">
+                    <div className="excel-search-panel__title">최근 사용</div>
+                    {recentMenuTabs.map(tab => (
+                      <button
+                        key={`recent-${tab.key}`}
+                        className="excel-search-panel__item"
+                        onClick={() => commitMenuNavigation(tab.key)}
+                      >
+                        <span>{tab.label}</span>
+                        <small>{tab.key}</small>
+                      </button>
+                    ))}
+                  </div>
+                )}
+
+                {recommendedMenuTabs.length > 0 && (
+                  <div className="excel-search-panel__section">
+                    <div className="excel-search-panel__title">추천 메뉴</div>
+                    {recommendedMenuTabs.map(tab => (
+                      <button
+                        key={`recommended-${tab.key}`}
+                        className="excel-search-panel__item"
+                        onClick={() => commitMenuNavigation(tab.key)}
+                      >
+                        <span>{tab.label}</span>
+                        <small>{tab.key}</small>
+                      </button>
+                    ))}
+                  </div>
+                )}
+
+                <div className="excel-search-panel__section">
+                  <div className="excel-search-panel__title">전체 메뉴</div>
+                  {filteredMenuTabs.map(tab => (
+                    <button
+                      key={`all-${tab.key}`}
+                      className="excel-search-panel__item"
+                      onClick={() => commitMenuNavigation(tab.key)}
+                    >
+                      <span>{tab.label}</span>
+                      <small>{tab.key}</small>
+                    </button>
+                  ))}
+                  {filteredMenuTabs.length === 0 && (
+                    <div className="excel-search-panel__empty">검색 결과가 없습니다.</div>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
           {isSignedIn && (
             <button className="excel-titlebar__user-btn" onClick={onOpenProfile}>
               <User size={13}/>{displayName}<ChevronDown size={10}/>
@@ -346,22 +498,37 @@ export default function ExcelShell({
                   </button>
                 ))}
 
-                {isUltraCompact && g.buttons.length > 3 && (
-                  <details className="ribbon-fold">
-                    <summary className="ribbon-fold__summary">더보기</summary>
-                    <div className="ribbon-fold__menu">
-                      {[...g.buttons].sort((a, b) => (a.priority ?? 2) - (b.priority ?? 2)).slice(3).map(btn => (
-                        <button
-                          key={`fold-${btn.key}`}
-                          className="ribbon-fold__item"
-                          onClick={() => btn.route && onNavigate(btn.route)}
-                        >
-                          {btn.label}
-                        </button>
-                      ))}
+                {isUltraCompact && g.buttons.length > 3 && (() => {
+                  const foldStateKey = `${ribbonTab}:${g.label}`
+                  const isOpen = !!ribbonFoldState[foldStateKey]
+                  return (
+                    <div className="ribbon-fold">
+                      <button
+                        type="button"
+                        className="ribbon-fold__summary"
+                        aria-expanded={isOpen}
+                        onClick={() => setRibbonFoldState(prev => ({ ...prev, [foldStateKey]: !isOpen }))}
+                      >
+                        더보기
+                      </button>
+                      {isOpen && (
+                        <div className="ribbon-fold__menu">
+                          {[...g.buttons].sort((a, b) => (a.priority ?? 2) - (b.priority ?? 2)).slice(3).map(btn => (
+                            <button
+                              key={`fold-${btn.key}`}
+                              className="ribbon-fold__item"
+                              onClick={() => {
+                                if (btn.route) onNavigate(btn.route)
+                              }}
+                            >
+                              {btn.label}
+                            </button>
+                          ))}
+                        </div>
+                      )}
                     </div>
-                  </details>
-                )}
+                  )
+                })()}
               </div>
               <div className="excel-ribbon-group__label">{g.label}</div>
             </div>
