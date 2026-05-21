@@ -1,6 +1,6 @@
 ﻿import React, { useEffect, useState, useRef, useCallback, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Building2, AlertTriangle, TrendingDown, ShieldAlert, TrendingUp, PlusCircle, Eye } from 'lucide-react'
+import { Building2, AlertTriangle, TrendingDown, ShieldAlert, TrendingUp, PlusCircle, Eye, ChevronDown } from 'lucide-react'
 import { apiFetch, invalidateCache } from '../../lib/api'
 import { formatKrw, formatNumber } from '../../lib/format'
 import Skeleton from '../../components/Skeleton'
@@ -164,6 +164,8 @@ export default function Portfolio() {
   const [initialCapitalInput, setInitialCapitalInput] = useState(String(DEFAULT_INITIAL_CAPITAL))
   const [initialCapital, setInitialCapital] = useState<number>(DEFAULT_INITIAL_CAPITAL)
   const [assetAccordionOpen, setAssetAccordionOpen] = useState(true)
+  const [policyAccordionOpen, setPolicyAccordionOpen] = useState(false)
+  const [performanceAccordionOpen, setPerformanceAccordionOpen] = useState(false)
   const [filterAccordionOpen, setFilterAccordionOpen] = useState(false)
   const [includeCost, setIncludeCost] = useState(true)
   const [buyFeeRatePct, setBuyFeeRatePct] = useState(0.015)  // 매수수수료 %
@@ -1187,88 +1189,156 @@ export default function Portfolio() {
       </div>
 
       <div className="card mb-4 portfolio-policy-card">
-        <div className="title-md" style={{ marginBottom: 'var(--space-2)' }}>계좌별 위험정책</div>
-        {selectedAccountKey === 'all' ? (
-          <div className="caption muted">계좌 폴더를 선택하면 해당 계좌의 정책(최대보유/일손실/현금비중/점수 가감)을 설정할 수 있습니다.</div>
-        ) : selectedAccountKey === 'virtual' ? (
-          <div className="caption muted">가상매매 탭은 개별 계좌 정책 대상이 아닙니다. 특정 계좌 탭을 선택하면 정책을 설정할 수 있습니다.</div>
-        ) : policyDraft ? (
-          <>
-            <div className="caption muted" style={{ marginBottom: 'var(--space-2)' }}>
-              대상: {accountLabel(policyDraft.broker_name, policyDraft.account_name)}
-              {policyLoading ? ' · 정책 조회 중...' : ''}
+        <button
+          type="button"
+          className="portfolio-policy-head"
+          onClick={() => setPolicyAccordionOpen((prev) => !prev)}
+          aria-expanded={policyAccordionOpen}
+          style={{
+            background: 'none',
+            border: 'none',
+            padding: 0,
+            cursor: 'pointer',
+            width: '100%',
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            marginBottom: policyAccordionOpen ? 'var(--space-3)' : 0,
+          }}
+        >
+          <div>
+            <div className="title-md">계좌별 위험정책</div>
+            <div className="caption muted" style={{ marginTop: 'var(--space-1)' }}>
+              {selectedAccountKey === 'all' 
+                ? '계좌 폴더를 선택하면 정책 설정'
+                : selectedAccountKey === 'virtual'
+                  ? '가상매매는 개별 정책 미적용'
+                  : `${accountLabel(policyDraft?.broker_name, policyDraft?.account_name)} ${policyLoading ? '조회 중...' : ''}`
+              }
             </div>
-            <div className="portfolio-policy-grid">
-              <label className="ui-label">
-                <span>리스크 프로필</span>
-                <select
-                  className="input"
-                  value={String(policyDraft.risk_profile)}
-                  onChange={(e: any) => setPolicyDraft((prev) => prev ? { ...prev, risk_profile: (String(e?.target?.value || 'balanced') as any) } : prev)}
-                >
-                  <option value="safe">safe</option>
-                  <option value="balanced">balanced</option>
-                  <option value="active">active</option>
-                </select>
-              </label>
-              <Input
-                label="최대 보유 종목 수"
-                type="number"
-                value={policyDraft.max_positions == null ? '' : String(policyDraft.max_positions)}
-                onChange={(e: any) => setPolicyDraft((prev) => prev ? { ...prev, max_positions: e?.target?.value === '' ? null : Number(e?.target?.value) } : prev)}
-              />
-              <Input
-                label="일손실 한도(%)"
-                type="number"
-                value={policyDraft.daily_loss_limit_pct == null ? '' : String(policyDraft.daily_loss_limit_pct)}
-                onChange={(e: any) => setPolicyDraft((prev) => prev ? { ...prev, daily_loss_limit_pct: e?.target?.value === '' ? null : Number(e?.target?.value) } : prev)}
-              />
-              <Input
-                label="최소 현금 비중(%)"
-                type="number"
-                value={policyDraft.min_cash_reserve_pct == null ? '' : String(policyDraft.min_cash_reserve_pct)}
-                onChange={(e: any) => setPolicyDraft((prev) => prev ? { ...prev, min_cash_reserve_pct: e?.target?.value === '' ? null : Number(e?.target?.value) } : prev)}
-              />
-              <Input
-                label="추가매수 점수 가감"
-                type="number"
-                value={String(policyDraft.add_entry_score_adjust || 0)}
-                onChange={(e: any) => setPolicyDraft((prev) => prev ? { ...prev, add_entry_score_adjust: Number(e?.target?.value || 0) } : prev)}
-              />
-              <Input
-                label="부분익절 기준 가감(%p)"
-                type="number"
-                value={String(policyDraft.partial_take_profit_adjust_pct || 0)}
-                onChange={(e: any) => setPolicyDraft((prev) => prev ? { ...prev, partial_take_profit_adjust_pct: Number(e?.target?.value || 0) } : prev)}
-              />
-            </div>
-            <div style={{ display: 'flex', gap: 'var(--space-2)', marginTop: 'var(--space-2)' }}>
-              <Button variant="secondary" onClick={() => { void savePolicyDraft() }} disabled={policySaving}>
-                {policySaving ? '저장 중...' : '정책 저장'}
-              </Button>
-            </div>
-          </>
-        ) : null}
+          </div>
+          <ChevronDown size={20} style={{ transform: policyAccordionOpen ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.2s', flexShrink: 0 }} />
+        </button>
+
+        {policyAccordionOpen && (
+          <div className="portfolio-policy-body" style={{ paddingTop: 'var(--space-3)' }}>
+            {selectedAccountKey === 'all' ? (
+              <div className="caption muted">계좌 폴더를 선택하면 해당 계좌의 정책(최대보유/일손실/현금비중/점수 가감)을 설정할 수 있습니다.</div>
+            ) : selectedAccountKey === 'virtual' ? (
+              <div className="caption muted">가상매매 탭은 개별 계좌 정책 대상이 아닙니다. 특정 계좌 탭을 선택하면 정책을 설정할 수 있습니다.</div>
+            ) : policyDraft ? (
+              <>
+                <div className="caption muted" style={{ marginBottom: 'var(--space-3)' }}>
+                  대상: {accountLabel(policyDraft.broker_name, policyDraft.account_name)}
+                  {policyLoading ? ' · 정책 조회 중...' : ''}
+                </div>
+                <div className="portfolio-policy-grid">
+                  <label className="ui-label">
+                    <span>리스크 프로필</span>
+                    <select
+                      className="input"
+                      value={String(policyDraft.risk_profile)}
+                      onChange={(e: any) => setPolicyDraft((prev) => prev ? { ...prev, risk_profile: (String(e?.target?.value || 'balanced') as any) } : prev)}
+                    >
+                      <option value="safe">safe</option>
+                      <option value="balanced">balanced</option>
+                      <option value="active">active</option>
+                    </select>
+                  </label>
+                  <Input
+                    label="최대 보유 종목 수"
+                    type="number"
+                    value={policyDraft.max_positions == null ? '' : String(policyDraft.max_positions)}
+                    onChange={(e: any) => setPolicyDraft((prev) => prev ? { ...prev, max_positions: e?.target?.value === '' ? null : Number(e?.target?.value) } : prev)}
+                  />
+                  <Input
+                    label="일손실 한도(%)"
+                    type="number"
+                    value={policyDraft.daily_loss_limit_pct == null ? '' : String(policyDraft.daily_loss_limit_pct)}
+                    onChange={(e: any) => setPolicyDraft((prev) => prev ? { ...prev, daily_loss_limit_pct: e?.target?.value === '' ? null : Number(e?.target?.value) } : prev)}
+                  />
+                  <Input
+                    label="최소 현금 비중(%)"
+                    type="number"
+                    value={policyDraft.min_cash_reserve_pct == null ? '' : String(policyDraft.min_cash_reserve_pct)}
+                    onChange={(e: any) => setPolicyDraft((prev) => prev ? { ...prev, min_cash_reserve_pct: e?.target?.value === '' ? null : Number(e?.target?.value) } : prev)}
+                  />
+                  <Input
+                    label="추가매수 점수 가감"
+                    type="number"
+                    value={String(policyDraft.add_entry_score_adjust || 0)}
+                    onChange={(e: any) => setPolicyDraft((prev) => prev ? { ...prev, add_entry_score_adjust: Number(e?.target?.value || 0) } : prev)}
+                  />
+                  <Input
+                    label="부분익절 기준 가감(%p)"
+                    type="number"
+                    value={String(policyDraft.partial_take_profit_adjust_pct || 0)}
+                    onChange={(e: any) => setPolicyDraft((prev) => prev ? { ...prev, partial_take_profit_adjust_pct: Number(e?.target?.value || 0) } : prev)}
+                  />
+                </div>
+                <div style={{ display: 'flex', gap: 'var(--space-2)', marginTop: 'var(--space-3)' }}>
+                  <Button variant="secondary" onClick={() => { void savePolicyDraft() }} disabled={policySaving}>
+                    {policySaving ? '저장 중...' : '정책 저장'}
+                  </Button>
+                </div>
+              </>
+            ) : null}
+          </div>
+        )}
       </div>
 
       <div className="card mb-4 portfolio-performance-card">
-        <div className="title-md" style={{ marginBottom: 'var(--space-2)' }}>어드바이저 성과(최근 90일)</div>
-        {advisorPerfLoading ? (
-          <div className="caption muted">성과 데이터 조회 중...</div>
-        ) : advisorPerf?.summary ? (
-          <>
-            <div className="portfolio-performance-grid">
-              <div className="portfolio-performance-metric"><span>신뢰 점수</span><strong>{advisorPerf.summary.trustScore ?? '—'}</strong></div>
-              <div className="portfolio-performance-metric"><span>의사결정 수</span><strong>{advisorPerf.summary.totalDecisions ?? 0}</strong></div>
-              <div className="portfolio-performance-metric"><span>매도 승률</span><strong>{advisorPerf.summary.linkedSellWinRatePct != null ? `${formatNumber(advisorPerf.summary.linkedSellWinRatePct, 1)}%` : '—'}</strong></div>
-              <div className="portfolio-performance-metric"><span>누적 실현손익</span><strong>{formatKrw(Number(advisorPerf.summary.linkedRealizedPnl || 0))}</strong></div>
+        <button
+          type="button"
+          className="portfolio-performance-head"
+          onClick={() => setPerformanceAccordionOpen((prev) => !prev)}
+          aria-expanded={performanceAccordionOpen}
+          style={{
+            background: 'none',
+            border: 'none',
+            padding: 0,
+            cursor: 'pointer',
+            width: '100%',
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            marginBottom: performanceAccordionOpen ? 'var(--space-3)' : 0,
+          }}
+        >
+          <div>
+            <div className="title-md">어드바이저 성과(최근 90일)</div>
+            <div className="caption muted" style={{ marginTop: 'var(--space-1)' }}>
+              {advisorPerfLoading
+                ? '성과 데이터 조회 중...'
+                : advisorPerf?.summary
+                  ? `신뢰점수 ${advisorPerf.summary.trustScore ?? '—'} · 의사결정 ${advisorPerf.summary.totalDecisions ?? 0}건`
+                  : '데이터 없음'
+              }
             </div>
-            <div className="caption muted" style={{ marginTop: 'var(--space-2)' }}>
-              최근 액션 샘플: {(advisorPerf.recent ?? []).slice(0, 3).map((row) => `${row.code || '-'} ${row.action || '-'} (${row.confidence != null ? `${formatNumber(Number(row.confidence), 0)}%` : '신뢰도 없음'})`).join(' · ') || '없음'}
-            </div>
-          </>
-        ) : (
-          <div className="caption muted">성과 데이터가 아직 없습니다. 거래/의사결정 로그가 쌓이면 자동 집계됩니다.</div>
+          </div>
+          <ChevronDown size={20} style={{ transform: performanceAccordionOpen ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.2s', flexShrink: 0 }} />
+        </button>
+
+        {performanceAccordionOpen && (
+          <div className="portfolio-performance-body" style={{ paddingTop: 'var(--space-3)' }}>
+            {advisorPerfLoading ? (
+              <div className="caption muted">성과 데이터 조회 중...</div>
+            ) : advisorPerf?.summary ? (
+              <>
+                <div className="portfolio-performance-grid">
+                  <div className="portfolio-performance-metric"><span>신뢰 점수</span><strong>{advisorPerf.summary.trustScore ?? '—'}</strong></div>
+                  <div className="portfolio-performance-metric"><span>의사결정 수</span><strong>{advisorPerf.summary.totalDecisions ?? 0}</strong></div>
+                  <div className="portfolio-performance-metric"><span>매도 승률</span><strong>{advisorPerf.summary.linkedSellWinRatePct != null ? `${formatNumber(advisorPerf.summary.linkedSellWinRatePct, 1)}%` : '—'}</strong></div>
+                  <div className="portfolio-performance-metric"><span>누적 실현손익</span><strong>{formatKrw(Number(advisorPerf.summary.linkedRealizedPnl || 0))}</strong></div>
+                </div>
+                <div className="caption muted" style={{ marginTop: 'var(--space-3)' }}>
+                  최근 액션 샘플: {(advisorPerf.recent ?? []).slice(0, 3).map((row) => `${row.code || '-'} ${row.action || '-'} (${row.confidence != null ? `${formatNumber(Number(row.confidence), 0)}%` : '신뢰도 없음'})`).join(' · ') || '없음'}
+                </div>
+              </>
+            ) : (
+              <div className="caption muted">성과 데이터가 아직 없습니다. 거래/의사결정 로그가 쌓이면 자동 집계됩니다.</div>
+            )}
+          </div>
         )}
       </div>
 
@@ -1293,7 +1363,9 @@ export default function Portfolio() {
               }
             </div>
           </div>
-          <span className="portfolio-asset-overview-toggle" aria-hidden>{assetAccordionOpen ? '접기 ▲' : '펼치기 ▼'}</span>
+          <span className="portfolio-asset-overview-toggle" aria-hidden>
+            <ChevronDown size={20} style={{ transform: assetAccordionOpen ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.2s' }} />
+          </span>
         </button>
 
         {assetAccordionOpen && (
