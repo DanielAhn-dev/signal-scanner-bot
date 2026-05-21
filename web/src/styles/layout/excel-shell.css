@@ -463,6 +463,93 @@
   height: 100%;
 }
 
+.xls-col-header-strip {
+  display: grid;
+  grid-template-columns: 32px repeat(26, minmax(0, 1fr));
+  height: 22px;
+  background: var(--color-excel-cell-header);
+  border-bottom: 1px solid var(--color-excel-grid-border);
+  flex-shrink: 0;
+}
+
+.xls-col-header-strip__corner,
+.xls-col-header-strip__cell {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  color: var(--color-text-tertiary);
+  border-right: 1px solid var(--color-excel-grid-border);
+  user-select: none;
+}
+
+.xls-col-header-strip__corner {
+  position: sticky;
+  left: 0;
+  z-index: 3;
+  background: var(--color-excel-cell-header);
+}
+
+.xls-content-body {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.xls-row-num-strip {
+  width: 32px;
+  flex-shrink: 0;
+  background: var(--color-excel-cell-header);
+  border-right: 1px solid var(--color-excel-grid-border);
+  overflow: hidden;
+}
+
+.xls-row-num-strip__cell {
+  height: 22px;
+  line-height: 22px;
+  text-align: right;
+  padding-right: 4px;
+  font-size: 10px;
+  color: var(--color-text-tertiary);
+  border-bottom: 1px solid var(--color-excel-grid-border);
+  user-select: none;
+}
+
+.xls-content-data {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  overflow: auto;
+  background-color: var(--color-gray-0);
+  background-image:
+    linear-gradient(to right, rgba(148, 163, 184, 0.08) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(148, 163, 184, 0.08) 1px, transparent 1px);
+  background-size: 72px 22px;
+}
+
+.xls-grid-bg {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background:
+    linear-gradient(to right, rgba(148, 163, 184, 0.10) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(148, 163, 184, 0.10) 1px, transparent 1px);
+  background-size: 72px 22px;
+  opacity: 0.45;
+}
+
+.xls-content-inner {
+  position: relative;
+  z-index: 1;
+  min-height: 100%;
+}
+
+.xls-content-area--native {
+  flex: 1;
+  overflow: hidden;
+}
+
 /* native grid (ExcelSpreadsheet / ExcelLayout 직접 사용) */
 .xls-content-area--native {
   flex: 1;

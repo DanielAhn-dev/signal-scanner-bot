@@ -25,6 +25,7 @@ import {
 } from 'lucide-react'
 import { useAuthStore } from '../stores/authStore'
 import { useProfileStore } from '../stores/profileStore'
+import ExcelContentArea from './ExcelContentArea'
 
 // ── 타입 ─────────────────────────────────────────────────────────
 
@@ -34,6 +35,8 @@ type Props = {
   onNavigate: (route: string) => void
   onOpenProfile?: () => void
   contextLabel?: string            // 수식 표시줄에 표시할 텍스트
+  /** 중앙 콘텐츠 프레임 모드 */
+  contentMode?: 'native' | 'legacy'
   /** 좌측 고정 패널 (시세 등) */
   leftPanel?: React.ReactNode
   /** 우측 고정 패널 (알림/채팅 등) */
@@ -189,6 +192,7 @@ export default function ExcelShell({
   onNavigate,
   onOpenProfile,
   contextLabel,
+  contentMode = 'legacy',
   leftPanel,
   rightPanel,
 }: Props) {
@@ -312,7 +316,9 @@ export default function ExcelShell({
 
         {/* 중앙 패널 (현재 페이지) */}
         <div className="excel-center-panel">
-          {children}
+          <ExcelContentArea isNativeGrid={contentMode === 'native'}>
+            {children}
+          </ExcelContentArea>
         </div>
 
         {/* 우측 패널 (알림/채팅) */}

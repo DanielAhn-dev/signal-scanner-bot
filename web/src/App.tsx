@@ -87,6 +87,7 @@ function AppContent() {
   const isReview = isReviewMode()
 
   const activeRoute = location.pathname.replace(/^\//, '') || 'dashboard'
+  const contentMode = activeRoute === 'dashboard' ? 'native' : 'legacy'
 
   useEffect(() => {
     const cleanup = initAuth()
@@ -195,6 +196,7 @@ function AppContent() {
         activeRoute={activeRoute}
         onNavigate={handleNavigate}
         onOpenProfile={() => setProfileOpen(true)}
+        contentMode={contentMode}
         leftPanel={<MarketSidePanel />}
         rightPanel={<NewsSidePanel />}
       >
