@@ -1,302 +1,219 @@
-﻿"""
+"""
 batch_modules/investor.py
 ========================
-STEP 2.5: ??? ?? ??? ??
+STEP 2.5: KIS Open API 기반 투자자 수급 수집
+- endpoint: GET /uapi/domestic-stock/v1/quotations/inquire-investor
+- tr_id: FHKST01010900
+- 기관/외국인 순매수 거래대금(백만원) → investor_daily 저장
 """
 
 import os
 import time
+import json
 import requests
-import pandas as pd
-from io import StringIO
-import datetime as dt_module
-from typing import Optional, Tuple, Dict, List
+from typing import Optional
 from supabase import Client
-from pykrx import stock
-from .utils import safe_int, to_iso
+from .utils import to_iso
+
+
+KIS_BASE = "https://openapi.koreainvestment.com:9443"
+KIS_TOKEN_CACHE = os.path.join(os.path.dirname(__file__), ".._kis_token.json")
+_token_cache: dict = {}
+
+
+def _get_kis_token(app_key: str, app_secret: str) -> Optional[str]:
+    """KIS 접근 토큰 발급 (24h 캐시)."""
+    global _token_cache
+    now = time.time()
+
+    # 인-메모리 캐시
+    if _token_cache.get("token") and now < _token_cache.get("expires_at", 0) - 300:
+        return _token_cache["token"]
+
+    # 파일 캐시
+    cache_path = os.path.join(os.path.dirname(__file__), "_kis_token_cache.json")
+    try:
+        with open(cache_path) as f:
+            cached = json.load(f)
+        if now < cached.get("expires_at", 0) - 300:
+            _token_cache = cached
+            return cached["token"]
+    except Exception:
+        pass
+
+    # 신규 발급 (1분에 1회 제한)
+    try:
+        resp = requests.post(
+            f"{KIS_BASE}/oauth2/tokenP",
+            headers={"content-type": "application/json"},
+            json={"grant_type": "client_credentials", "appkey": app_key, "appsecret": app_secret},
+            timeout=15,
+        )
+        body = resp.json()
+        if "access_token" not in body:
+            print(f"   KIS 토큰 발급 실패: {body}")
+            return None
+        token = body["access_token"]
+        expires_at = now + body.get("expires_in", 86400)
+        _token_cache = {"token": token, "expires_at": expires_at}
+        with open(cache_path, "w") as f:
+            json.dump(_token_cache, f)
+        return token
+    except Exception as e:
+        print(f"   KIS 토큰 발급 에러: {e}")
+        return None
+
+
+def _fetch_stock_investor(app_key: str, app_secret: str, token: str, code: str) -> Optional[dict]:
+    """종목별 투자자 순매수 금액 (오늘 기준) 반환.
+    Returns: {"institution": int, "foreign": int} (단위: 원)
+    """
+    try:
+        resp = requests.get(
+            f"{KIS_BASE}/uapi/domestic-stock/v1/quotations/inquire-investor",
+            headers={
+                "content-type": "application/json",
+                "authorization": f"Bearer {token}",
+                "appkey": app_key,
+                "appsecret": app_secret,
+                "tr_id": "FHKST01010900",
+            },
+            params={
+                "FID_COND_MRKT_DIV_CODE": "J",
+                "FID_INPUT_ISCD": code,
+                "FID_DIV_CLS_CODE": "0",
+            },
+            timeout=10,
+        )
+        body = resp.json()
+        if body.get("rt_cd") != "0":
+            return None
+        output = body.get("output", [])
+        if not output:
+            return None
+        # output[0] = 가장 최근 거래일
+        row = output[0]
+        # pbmn = 백만원 → 원 변환
+        institution = int(row.get("orgn_ntby_tr_pbmn", 0) or 0) * 1_000_000
+        foreign = int(row.get("frgn_ntby_tr_pbmn", 0) or 0) * 1_000_000
+        personal = int(row.get("prsn_ntby_tr_pbmn", 0) or 0) * 1_000_000
+        date_str = row.get("stck_bsop_date", "")
+        if len(date_str) == 8:
+            date_iso = f"{date_str[:4]}-{date_str[4:6]}-{date_str[6:]}"
+        else:
+            return None
+        if institution == 0 and foreign == 0:
+            return None
+        return {
+            "date": date_iso,
+            "institution": institution,
+            "foreign": foreign,
+            "personal": personal,
+        }
+    except Exception:
+        return None
 
 
 def fetch_investor_data(supabase: Client, trading_date: str):
-    """Collect investor flow data with multi-strategy fallback."""
+    """KIS Open API로 투자자 수급 수집 → investor_daily 저장."""
     trading_iso = to_iso(trading_date)
-    print(f"\n[2.5/7] Collecting investor flow data...")
+    print(f"\n[2.5/7] Collecting investor flow data (KIS API)...")
 
-    if os.environ.get("DISABLE_INVESTOR_FETCH", "false").lower() in ("1", "true", "yes"):
+    if os.environ.get("DISABLE_INVESTOR_FETCH", "").lower() in ("1", "true", "yes"):
         print("  DISABLE_INVESTOR_FETCH=true, skipping investor fetch.")
         return
-    
-    def _upsert_investor_rows(rows: List[dict]) -> None:
-        for i in range(0, len(rows), 500):
-            batch = rows[i:i + 500]
-            try:
-                supabase.table("investor_daily").upsert(batch).execute()
-            except Exception as e:
-                print(f"     investor_daily upsert error: {e}")
-                for j in range(0, len(batch), 50):
-                    try:
-                        supabase.table("investor_daily").upsert(batch[j:j + 50]).execute()
-                    except Exception:
-                        pass
 
-    def _collect_by_investor_value(stock_module, code_list: List[str]) -> Tuple[List[dict], int, int]:
-        """Primary strategy: get_market_trading_value_by_investor."""
-        rows: List[dict] = []
-        fail_count = 0
-        success_count = 0
-        for idx, code in enumerate(code_list):
-            if idx % 100 == 0 and idx > 0:
-                print(f"  -> [value_by_investor] progress: {idx}/{len(code_list)} (success: {success_count}, fail: {fail_count})")
+    app_key = os.environ.get("KOREA_APP_KEY", "")
+    app_secret = os.environ.get("KOREA_APP_SECRET", "")
+    if not app_key or not app_secret:
+        print("  KOREA_APP_KEY / KOREA_APP_SECRET 환경변수 없음, 스킵")
+        return
 
-            try:
-                df = stock_module.get_market_trading_value_by_investor(trading_date, trading_date, code)
-                if df is None or df.empty:
-                    continue
+    token = _get_kis_token(app_key, app_secret)
+    if not token:
+        print("  KIS 토큰 발급 실패, 스킵")
+        return
 
-                inst_val = 0
-                foreign_val = 0
-                for _, row in df.iterrows():
-                    inst_val += safe_int(row.get("기관합계", 0))
-                    foreign_val += safe_int(row.get("외국인합계", 0))
-
-                if inst_val == 0 and foreign_val == 0:
-                    continue
-
-                rows.append({
-                    "date": trading_iso,
-                    "ticker": code,
-                    "institution": inst_val,
-                    "foreign": foreign_val,
-                })
-                success_count += 1
-                time.sleep(0.05)
-            except Exception:
-                fail_count += 1
-                continue
-
-        return rows, success_count, fail_count
-
-    def _collect_by_net_purchases(stock_module, code_list: List[str]) -> Tuple[List[dict], int, int]:
-        """Fallback 1: net purchases by ticker."""
-        try:
-            df_inst = stock_module.get_market_net_purchases_of_equities_by_ticker(trading_date, trading_date, "ALL", "기관합계")
-            time.sleep(0.05)
-            df_foreign = stock_module.get_market_net_purchases_of_equities_by_ticker(trading_date, trading_date, "ALL", "외국인합계")
-        except Exception:
-            return [], 0, 0
-
-        if df_inst is None or df_foreign is None or df_inst.empty or df_foreign.empty:
-            return [], 0, 0
-
-        inst = df_inst.reset_index().rename(columns={
-            "티커": "ticker",
-            "순매수거래대금": "institution",
-            "순매수거래대금(원)": "institution",
-        })
-        foreign = df_foreign.reset_index().rename(columns={
-            "티커": "ticker",
-            "순매수거래대금": "foreign",
-            "순매수거래대금(원)": "foreign",
-        })
-
-        merged = inst[["ticker", "institution"]].merge(
-            foreign[["ticker", "foreign"]],
-            on="ticker",
-            how="inner",
-        )
-
-        code_set = set(code_list)
-        rows: List[dict] = []
-        for _, row in merged.iterrows():
-            code = str(row.get("ticker") or "").strip().zfill(6)
-            if not code or code not in code_set:
-                continue
-            inst_val = safe_int(row.get("institution", 0))
-            foreign_val = safe_int(row.get("foreign", 0))
-            if inst_val == 0 and foreign_val == 0:
-                continue
-            rows.append({
-                "date": trading_iso,
-                "ticker": code,
-                "institution": inst_val,
-                "foreign": foreign_val,
-            })
-
-        return rows, len(rows), 0
-
-    def _collect_from_naver_finance(code_list: List[str]) -> Tuple[List[dict], int, int]:
-        """Fallback 2: Naver Finance HTML scraping."""
-        session = requests.Session()
-        session.headers.update({
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
-                          "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-            "Referer": "https://finance.naver.com/",
-            "Accept-Language": "ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7",
-        })
-
-        target_dt = dt_module.datetime.strptime(trading_date, "%Y%m%d").date()
-
-        def _parse_signed_int(v) -> int:
-            s = str(v or "").strip()
-            if not s or s.lower() == "nan":
-                return 0
-            s = s.replace(",", "").replace("\u2212", "-")
-            s = "".join(ch for ch in s if ch.isdigit() or ch in ("-", "+"))
-            if not s or s in ("-", "+"):
-                return 0
-            try:
-                return int(s)
-            except Exception:
-                return 0
-
-        def _extract_from_table(df: pd.DataFrame) -> Optional[Tuple[str, int, int]]:
-            if df is None or df.empty:
-                return None
-
-            temp = df.copy()
-            if isinstance(temp.columns, pd.MultiIndex):
-                flat_cols = []
-                for c in temp.columns:
-                    if isinstance(c, tuple):
-                        flat = " ".join(str(x) for x in c if str(x) != "nan").strip()
-                    else:
-                        flat = str(c)
-                    flat_cols.append(flat)
-                temp.columns = flat_cols
-            else:
-                temp.columns = [str(c).strip() for c in temp.columns]
-
-            date_col = next((c for c in temp.columns if "날짜" in c), None)
-            inst_col = next((c for c in temp.columns if "기관" in c and "순매" in c), None)
-            foreign_col = next((c for c in temp.columns if "외국인" in c and "순매" in c), None)
-
-            if not date_col or not inst_col or not foreign_col:
-                return None
-
-            working = temp[[date_col, inst_col, foreign_col]].copy()
-            working = working.dropna(subset=[date_col])
-            if working.empty:
-                return None
-
-            best: Optional[Tuple[dt_module.date, int, int]] = None
-            for _, row in working.iterrows():
-                raw_date = str(row.get(date_col) or "").strip()
-                if not raw_date or raw_date.lower() == "nan":
-                    continue
-                try:
-                    row_dt = dt_module.datetime.strptime(raw_date.replace(".", "-").replace(" ", ""), "%Y-%m-%d").date()
-                except Exception:
-                    continue
-                if row_dt > target_dt:
-                    continue
-
-                inst_val = _parse_signed_int(row.get(inst_col))
-                foreign_val = _parse_signed_int(row.get(foreign_col))
-
-                if best is None or row_dt > best[0]:
-                    best = (row_dt, inst_val, foreign_val)
-
-            if best is None:
-                return None
-            return best[0].isoformat(), best[1], best[2]
-
-        rows: List[dict] = []
-        success_count = 0
-        fail_count = 0
-        for idx, code in enumerate(code_list):
-            if idx % 100 == 0 and idx > 0:
-                print(f"  -> [naver_finance] progress: {idx}/{len(code_list)} (success: {success_count}, fail: {fail_count})")
-            # 초반 30개 시도 후 전부 실패면 조기 탈출 (Naver 구조 변경 or 차단)
-            if idx == 30 and success_count == 0:
-                print(f"  -> [naver_finance] 초반 30개 전부 실패, 조기 중단")
-                break
-            try:
-                url = f"https://finance.naver.com/item/frgn.naver?code={code}&page=1"
-                resp = session.get(url, timeout=8)
-                resp.raise_for_status()
-                tables = pd.read_html(StringIO(resp.text))
-
-                picked: Optional[Tuple[str, int, int]] = None
-                for tbl in tables:
-                    picked = _extract_from_table(tbl)
-                    if picked:
-                        break
-
-                if not picked:
-                    fail_count += 1
-                    continue
-
-                matched_date, inst_val, foreign_val = picked
-                if inst_val == 0 and foreign_val == 0:
-                    fail_count += 1
-                    continue
-
-                rows.append({
-                    "date": matched_date,
-                    "ticker": code,
-                    "institution": inst_val,
-                    "foreign": foreign_val,
-                })
-                success_count += 1
-                time.sleep(0.04)
-            except Exception:
-                fail_count += 1
-                continue
-
-        return rows, success_count, fail_count
-
+    # 대상 종목 로딩
     try:
         res = supabase.table("stocks") \
             .select("code") \
             .in_("universe_level", ["core", "extended"]) \
             .eq("is_active", True).execute()
         codes = [r["code"] for r in (res.data or [])]
-        if not codes:
-            print("   No active stocks found.")
-            return
-
-        print(f"  universe size: {len(codes)} tickers")
-
-        # Strategy 1
-        inv_rows, success_count, fail_count = _collect_by_investor_value(stock, codes)
-        strategy_used = "value_by_investor"
-
-        # Strategy 2 fallback
-        if not inv_rows:
-            alt_rows, alt_success, _ = _collect_by_net_purchases(stock, codes)
-            if alt_rows:
-                inv_rows = alt_rows
-                success_count = alt_success
-                fail_count = 0
-                strategy_used = "net_purchases_by_ticker"
-
-        # Strategy 3 fallback
-        if not inv_rows:
-            nav_rows, nav_success, nav_fail = _collect_from_naver_finance(codes)
-            if nav_rows:
-                inv_rows = nav_rows
-                success_count = nav_success
-                fail_count = nav_fail
-                strategy_used = "naver_finance_html"
-
-        if inv_rows:
-            _upsert_investor_rows(inv_rows)
-            print(f"   stored {len(inv_rows)} investor rows (strategy: {strategy_used}, success: {success_count}, fail: {fail_count})")
-            return
-
-        latest = supabase.table("investor_daily").select("date").order("date", desc=True).limit(1).execute()
-        latest_date = (latest.data or [{}])[0].get("date") if latest.data else None
-        if latest_date:
-            from datetime import datetime
-            trading_dt = dt_module.datetime.strptime(trading_date, "%Y%m%d").date()
-            gap = (trading_dt - datetime.fromisoformat(str(latest_date)).date()).days
-            print(f"  investor_daily update unavailable after 3 strategies (latest={latest_date}, stale={gap}d)")
-        else:
-            print("  investor_daily update unavailable after 3 strategies (no prior data)")
-
     except Exception as e:
-        print(f"  investor data collection failed: {e}")
-        import traceback
-        traceback.print_exc()
+        print(f"  종목 로딩 실패: {e}")
+        return
 
+    if not codes:
+        print("  대상 종목 없음")
+        return
 
+    print(f"  대상 종목: {len(codes)}개")
 
+    rows: list[dict] = []
+    success = fail = token_err = 0
+
+    for idx, code in enumerate(codes):
+        if idx % 100 == 0 and idx > 0:
+            print(f"  -> {idx}/{len(codes)} (success={success}, fail={fail})")
+
+        result = _fetch_stock_investor(app_key, app_secret, token, code)
+
+        if result is None:
+            fail += 1
+            # 토큰 만료 감지: 연속 실패 50개면 토큰 재발급 시도
+            token_err += 1
+            if token_err >= 50 and success == 0:
+                print("  -> 연속 실패, 토큰 재발급 시도...")
+                # 캐시 삭제 후 재발급
+                cache_path = os.path.join(os.path.dirname(__file__), "_kis_token_cache.json")
+                try:
+                    os.remove(cache_path)
+                except Exception:
+                    pass
+                global _token_cache
+                _token_cache = {}
+                time.sleep(65)  # 1분 대기 (KIS 1분 1회 제한)
+                token = _get_kis_token(app_key, app_secret)
+                if not token:
+                    print("  -> 재발급 실패, 중단")
+                    break
+                token_err = 0
+        else:
+            token_err = 0
+            success += 1
+            rows.append({
+                "date": result["date"],
+                "ticker": code,
+                "institution": result["institution"],
+                "institution_amount": result["institution"],
+                "foreign": result["foreign"],
+                "foreign_amount": result["foreign"],
+                "personal": result["personal"],
+                "personal_amount": result["personal"],
+            })
+
+        time.sleep(0.12)  # ~8 req/sec (KIS 제한 여유있게)
+
+    print(f"  -> 수집 완료: success={success}, fail={fail}")
+
+    if not rows:
+        print("  수집된 데이터 없음")
+        return
+
+    # investor_daily 저장
+    batch_size = 500
+    for i in range(0, len(rows), batch_size):
+        try:
+            supabase.table("investor_daily").upsert(rows[i:i+batch_size]).execute()
+        except Exception as e:
+            print(f"  investor_daily 저장 에러: {e}")
+            # 소규모 배치로 재시도
+            for j in range(0, len(rows[i:i+batch_size]), 50):
+                try:
+                    supabase.table("investor_daily").upsert(rows[i+j:i+j+50]).execute()
+                except Exception:
+                    pass
+
+    print(f"  저장 완료: {len(rows)}개 종목 수급 데이터")

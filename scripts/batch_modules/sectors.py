@@ -219,6 +219,68 @@ def populate_sector_daily(supabase: Client):
         traceback.print_exc()
 
 
+def aggregate_sector_investor_flows(supabase: Client, lookback_days: int = 5):
+    """investor_daily 최근 N일 합계를 섹터별로 집계 → sectors.metrics 업데이트."""
+    print(f"\n[2.8/7] Aggregating sector investor flows (last {lookback_days}d)...")
+    try:
+        from datetime import date, timedelta
+        cutoff = (date.today() - timedelta(days=lookback_days + 3)).isoformat()
+
+        # 최근 investor_daily 로딩
+        inv_res = supabase.table("investor_daily") \
+            .select("ticker, date, institution_amount, foreign_amount") \
+            .gte("date", cutoff) \
+            .execute()
+        inv_rows = inv_res.data or []
+        if not inv_rows:
+            print("   investor_daily 데이터 없음, 스킵")
+            return
+
+        # 종목 → 섹터 매핑
+        stocks_res = supabase.table("stocks") \
+            .select("code, sector_id") \
+            .not_.is_("sector_id", "null") \
+            .eq("is_active", True).execute()
+        code_to_sector = {r["code"]: r["sector_id"] for r in (stocks_res.data or [])}
+
+        # 섹터별 최근 N일 수급 합산
+        from collections import defaultdict
+        sector_inst: dict[str, float] = defaultdict(float)
+        sector_frgn: dict[str, float] = defaultdict(float)
+
+        for r in inv_rows:
+            sid = code_to_sector.get(r["ticker"])
+            if not sid:
+                continue
+            sector_inst[sid] += float(r.get("institution_amount") or 0)
+            sector_frgn[sid] += float(r.get("foreign_amount") or 0)
+
+        if not sector_inst:
+            print("   집계 결과 없음, 스킵")
+            return
+
+        # sectors.metrics 업데이트
+        sectors_res = supabase.table("sectors").select("id, metrics").execute()
+        updates = []
+        for sec in (sectors_res.data or []):
+            sid = sec["id"]
+            if sid not in sector_inst and sid not in sector_frgn:
+                continue
+            metrics = dict(sec.get("metrics") or {})
+            metrics["flow_inst_5d"] = int(sector_inst.get(sid, 0))
+            metrics["flow_foreign_5d"] = int(sector_frgn.get(sid, 0))
+            updates.append({"id": sid, "metrics": metrics})
+
+        for i in range(0, len(updates), 100):
+            supabase.table("sectors").upsert(updates[i:i+100]).execute()
+
+        print(f"   {len(updates)}개 섹터 수급 집계 완료")
+    except Exception as e:
+        print(f"  aggregate_sector_investor_flows failed: {e}")
+        import traceback
+        traceback.print_exc()
+
+
 def mark_sector_leaders(supabase: Client, top_n: int = 3):
     """각 섹터 내 시총 상위 top_n 종목을 is_sector_leader=true 로 마킹."""
     print(f"\n[3.8/7] Marking sector leaders (top {top_n} by market_cap per sector)...")
