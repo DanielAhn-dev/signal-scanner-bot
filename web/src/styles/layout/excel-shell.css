@@ -74,6 +74,22 @@
   color: rgba(255,255,255,0.95);
   letter-spacing: 0.01em;
   pointer-events: none;
+  padding: 0 8px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.excel-titlebar__search-toggle {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border: 1px solid rgba(255,255,255,0.4);
+  border-radius: 2px;
+  background: rgba(255,255,255,0.12);
+  color: rgba(255,255,255,0.92);
 }
 
 .excel-titlebar__window-controls {
@@ -784,22 +800,15 @@
   min-width: 0;
   overflow: auto;
   background-color: var(--color-gray-0);
+  /* 26열 × 22px 행 — 셀 배경(불투명)이 덮어주므로 표 밖 빈 영역에만 보임 */
   background-image:
-    linear-gradient(to right, rgba(148, 163, 184, 0.08) 1px, transparent 1px),
-    linear-gradient(to bottom, rgba(148, 163, 184, 0.08) 1px, transparent 1px);
-  background-size: 72px 22px;
+    linear-gradient(to right,  var(--color-excel-grid-border) 1px, transparent 1px),
+    linear-gradient(to bottom, var(--color-excel-grid-border) 1px, transparent 1px);
+  background-size: calc(100% / 26) 22px;
+  background-attachment: local;
 }
 
-.xls-grid-bg {
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-  background:
-    linear-gradient(to right, rgba(148, 163, 184, 0.10) 1px, transparent 1px),
-    linear-gradient(to bottom, rgba(148, 163, 184, 0.10) 1px, transparent 1px);
-  background-size: 72px 22px;
-  opacity: 0.45;
-}
+.xls-grid-bg { display: none; }
 
 .xls-content-inner {
   position: relative;
@@ -822,7 +831,7 @@
 .xls-content-area--legacy {
   flex: 1;
   overflow: auto;
-  background: var(--color-gray-0);
+  background-color: var(--color-gray-0);
 }
 
 /* ── 기존 페이지 스타일 정규화 ── */
@@ -841,6 +850,44 @@
   border-right: none;
   border-color: var(--color-excel-grid-border);
   box-shadow: none;
+}
+
+/* ================================================================
+   NESTED TABLE RULES
+   ExcelContentArea 가 이미 외부 열헤더/행번호를 제공하므로,
+   xls-content-data 안에 중첩된 xls-table의 중복 요소를 숨김
+   ================================================================ */
+
+/* 내부 xls-table의 열 문자 행 제거 (외부 strip이 담당) */
+.xls-content-data .xls-letter-row,
+.xls-content-data .xls-letter-row * {
+  display: none !important;
+}
+
+/* 내부 xls-table의 행번호 셀 제거 (외부 strip이 담당) */
+.xls-content-data .xls-row-num,
+.xls-content-data .xls-corner,
+.xls-content-data .xls-row-num-header {
+  display: none !important;
+}
+
+/* 내부 xls-table의 행번호 col 너비 0 처리 */
+.xls-content-data .xls-table col:first-child {
+  width: 0 !important;
+  min-width: 0 !important;
+}
+
+/* 내부 데이터 헤더 — 외부 xls 열 헤더(파랑)와 전혀 다른 스타일 */
+.xls-content-data .xls-header-row .xls-th,
+.xls-content-data thead .xls-th {
+  background: #f5f5f5;
+  color: var(--color-text-secondary);
+  border-top: 1px solid #bbb;
+  border-bottom: 2px solid #aaa;
+  font-size: 10px;
+  font-weight: var(--font-weight-semibold);
+  letter-spacing: 0.02em;
+  text-transform: none;
 }
 
 /* 콘텐츠 내부 패딩 (호환용) */
@@ -1107,38 +1154,37 @@
 
 @media (max-width: 639px) {
   .excel-app {
-    height: auto;
+    height: 100dvh;
     min-height: 100dvh;
-    overflow-y: auto;
+    overflow: hidden;
     overflow-x: hidden;
   }
 
   .excel-main-panels {
-    flex: 0 0 auto;
+    flex: 1 1 auto;
     min-height: 0;
-    overflow: visible;
+    overflow: hidden;
   }
 
   .excel-center-panel {
-    overflow: visible;
+    overflow: hidden;
   }
 
   .xls-content-area,
   .xls-content-area--legacy,
-  .xls-content-body,
-  .xls-content-data {
-    height: auto;
+  .xls-content-body {
+    height: 100%;
     min-height: 0;
-    overflow: visible;
+    overflow: hidden;
+  }
+
+  .xls-content-data {
+    overflow: auto;
+    height: 100%;
   }
 
   .xls-content-inner {
-    min-height: 0;
-  }
-
-  .excel-sheet-tabs,
-  .excel-statusbar {
-    flex-shrink: 0;
+    min-height: 100%;
   }
 }
 
@@ -1297,7 +1343,7 @@
 
 /* ── 데이터 행 ── */
 .xls-row {
-  height: 18px;
+  height: 22px;
 }
 .xls-cell:hover {
   background: var(--color-excel-cell-header) !important;
@@ -1323,6 +1369,7 @@
   cursor: default;
   outline: none;
   line-height: 16px;
+  background: var(--color-gray-0); /* 배경 패턴이 투명 셀을 통해 비치지 않도록 */
 }
 .xls-cell--num {
   font-variant-numeric: tabular-nums;
@@ -1352,6 +1399,58 @@
   vertical-align: top;
 }
 
+/* ── 페이지 4면 안전 여백 (B2 시작 컨벤션) ──
+   상하: 1행(22px)  /  좌우: 1열(calc(100%/26))
+   - row 1 & col A: 배경 격자가 보이는 여백 (안전 영역)
+   - 콘텐츠: B2 ~ Y(N)까지 딱 맞게 채워짐
+   - 우측·하단도 동일 여백 → 시각적 균형 확보
+──────────────────────────────────────── */
+.xls-page-inset {
+  padding: 22px calc(100% / 26);
+  min-height: 100%;
+  box-sizing: border-box;
+}
+
+/* ── News sheet page ── */
+.news-sheet {
+  /* min-height는 xls-page-inset이 담당 */
+}
+
+.news-sheet__search-input {
+  width: 100%;
+  border: none;
+  outline: none;
+  background: transparent;
+  font-size: var(--font-size-xs);
+  font-family: var(--font-family-sans);
+  color: var(--color-text-primary);
+  height: 18px;
+  line-height: 18px;
+}
+
+.news-sheet__search-input::placeholder {
+  color: var(--color-text-tertiary);
+}
+
+/* 뉴스 제목 셀 — 줄임표 + hover 시 제목 표시 */
+.news-cell--title {
+  cursor: pointer;
+}
+
+.news-cell--title a {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--color-text-primary);
+  font-size: var(--font-size-xs);
+}
+
+.news-cell--title a:hover {
+  color: var(--color-brand);
+  text-decoration: underline;
+}
+
 /* ── Market page: excel-sheet mode ── */
 .market-sheet {
   --market-grid-border: var(--color-excel-grid-border);
@@ -1374,8 +1473,9 @@
   margin-bottom: 0 !important;
   padding: 2px 8px;
   border: 1px solid var(--market-grid-border);
-  border-bottom: none;
-  background: var(--color-excel-cell-header);
+  border-bottom: 1px solid #A9D18E;
+  background: #E2EFDA;
+  font-weight: 700;
 }
 
 .market-sheet .market-sheet__segment {
@@ -1647,8 +1747,8 @@
   .excel-sheet-tab { padding: 0 8px; }
 
   /* 스프레드시트 행 높이 약간 증가 (터치) */
-  .xls-row { height: 22px; }
-  .xls-cell { padding: 2px 6px; line-height: 18px; }
+  .xls-row { height: 26px; }
+  .xls-cell { padding: 2px 6px; line-height: 22px; }
 }
 
 /* ── 모바일 (<640px) ── */
@@ -1656,6 +1756,56 @@
   .excel-tooltip-target::before,
   .excel-tooltip-target::after {
     display: none;
+  }
+
+  .excel-titlebar__window-controls {
+    gap: 4px;
+    padding-right: 6px;
+  }
+
+  .excel-titlebar__app-name {
+    font-size: 10px;
+    text-align: left;
+  }
+
+  .excel-titlebar__search-toggle {
+    display: inline-flex;
+  }
+
+  .excel-titlebar__search-wrap.is-mobile {
+    position: absolute;
+    top: calc(100% + 4px);
+    right: 6px;
+    left: 6px;
+    display: none;
+  }
+
+  .excel-titlebar__search-wrap.is-mobile.is-open {
+    display: block;
+  }
+
+  .excel-titlebar__search-wrap.is-mobile .excel-titlebar__search {
+    width: 100%;
+    height: 28px;
+    border-color: rgba(18, 127, 73, 0.28);
+    background: #ffffff;
+    color: var(--color-text-primary);
+  }
+
+  .excel-titlebar__search-wrap.is-mobile .excel-titlebar__search-input {
+    color: var(--color-text-primary);
+  }
+
+  .excel-titlebar__search-wrap.is-mobile .excel-titlebar__search-input::placeholder {
+    color: var(--color-text-tertiary);
+  }
+
+  .excel-titlebar__search-wrap.is-mobile .excel-search-panel {
+    position: static;
+    width: 100%;
+    max-height: min(320px, 52vh);
+    margin-top: 4px;
+    border-radius: 4px;
   }
 
   .excel-titlebar__search {
@@ -1708,9 +1858,17 @@
   .xls-row-num-header,
   .xls-corner { display: none; }
 
+  /* 행번호 col 너비 완전 제거 */
+  .xls-table col:first-child {
+    width: 0 !important;
+    min-width: 0 !important;
+    max-width: 0 !important;
+  }
+
   /* 그리드 터치 최적화 */
-  .xls-row { height: 28px; }
-  .xls-cell { padding: 4px 8px; line-height: 20px; font-size: 11px; }
+  .xls-row { height: 26px; }
+  .xls-content-data { background-size: 100% 26px; }
+  .xls-cell { padding: 2px 8px; line-height: 22px; font-size: 11px; }
   .xls-th { padding: 4px 8px; font-size: 11px; }
   .xls-col-letter { font-size: 9px; padding: 1px 2px; }
 }

@@ -456,7 +456,7 @@ a:focus-visible {
 /* ================================================================
    PROFILE MODAL
    ================================================================ */
-.profile-modal {
+.modal.profile-modal {
   @apply max-w-md;
   border: 1px solid var(--color-border-default);
   border-radius: 2px;

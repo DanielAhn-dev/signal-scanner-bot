@@ -344,10 +344,12 @@ export default function ExcelShell({
   const [zoom, setZoom] = useState(100)
   const [menuQuery, setMenuQuery] = useState('')
   const [searchPanelOpen, setSearchPanelOpen] = useState(false)
+  const [mobileSearchOpen, setMobileSearchOpen] = useState(false)
   const [recentMenuRoutes, setRecentMenuRoutes] = useState<string[]>([])
   const [ribbonFoldState, setRibbonFoldState] = useState<Record<string, boolean>>({})
   const containerRef = useRef<HTMLDivElement>(null)
   const searchContainerRef = useRef<HTMLDivElement>(null)
+  const searchInputRef = useRef<HTMLInputElement>(null)
   const { leftW, rightW, startDrag } = usePanelResize(containerRef)
 
   const displayName = profile.nickname || profile.telegramName || authName || authEmail || '사용자'
@@ -365,6 +367,10 @@ export default function ExcelShell({
     return `market_brief_${y}${m}${d}.xlsx`
   }, [])
   const [isUltraCompact, setIsUltraCompact] = useState(false)
+  const titlebarText = isUltraCompact
+    ? workbookTitle
+    : `${workbookTitle} - ${pageLabel || '시트1'} - Excel`
+  const isSearchVisible = !isUltraCompact || mobileSearchOpen
 
   const routeByMenuQuery = useCallback((query: string) => {
     const normalized = query.trim().toLowerCase()
@@ -425,6 +431,7 @@ export default function ExcelShell({
       return next
     })
     setSearchPanelOpen(false)
+    setMobileSearchOpen(false)
   }, [onNavigate])
 
   const handleMenuSearch = useCallback((e: React.FormEvent<HTMLFormElement>) => {
@@ -447,11 +454,20 @@ export default function ExcelShell({
       if (!searchContainerRef.current) return
       if (!searchContainerRef.current.contains(e.target as Node)) {
         setSearchPanelOpen(false)
+        setMobileSearchOpen(false)
       }
     }
     document.addEventListener('mousedown', handleClickOutside)
     return () => document.removeEventListener('mousedown', handleClickOutside)
   }, [])
+
+  useEffect(() => {
+    if (!isUltraCompact || !mobileSearchOpen) return
+    const tid = window.setTimeout(() => {
+      searchInputRef.current?.focus()
+    }, 0)
+    return () => window.clearTimeout(tid)
+  }, [isUltraCompact, mobileSearchOpen])
 
   useEffect(() => {
     try {
@@ -492,6 +508,7 @@ export default function ExcelShell({
       if (w < 640)       setVisiblePanels('center-only')
       else if (w < 1024) setVisiblePanels('no-right')
       else               setVisiblePanels('all')
+      if (w >= 640) setMobileSearchOpen(false)
     }
     update()
     window.addEventListener('resize', update)
@@ -509,12 +526,34 @@ export default function ExcelShell({
           <button className="excel-titlebar__qs-btn excel-tooltip-target" data-tooltip="실행 취소" onClick={() => window.history.back()}><Undo2 size={13}/></button>
           <button className="excel-titlebar__qs-btn excel-tooltip-target" data-tooltip="다시 실행" onClick={() => window.history.forward()}><Redo2 size={13}/></button>
         </div>
-        <div className="excel-titlebar__app-name">{workbookTitle} - {pageLabel || '시트1'} - Excel</div>
+        <div className="excel-titlebar__app-name">{titlebarText}</div>
         <div className="excel-titlebar__window-controls">
-          <div className="excel-titlebar__search-wrap" ref={searchContainerRef}>
+          {isUltraCompact && (
+            <button
+              type="button"
+              className="excel-titlebar__search-toggle"
+              aria-label="메뉴 검색 열기"
+              aria-expanded={mobileSearchOpen}
+              onClick={() => {
+                setMobileSearchOpen(prev => {
+                  const next = !prev
+                  if (!next) setSearchPanelOpen(false)
+                  return next
+                })
+                if (!searchPanelOpen) setSearchPanelOpen(true)
+              }}
+            >
+              <Search size={12} />
+            </button>
+          )}
+          <div
+            className={`excel-titlebar__search-wrap${isUltraCompact ? ' is-mobile' : ''}${isUltraCompact && mobileSearchOpen ? ' is-open' : ''}`}
+            ref={searchContainerRef}
+          >
             <form className="excel-titlebar__search" onSubmit={handleMenuSearch}>
               <Search size={12} />
               <input
+                ref={searchInputRef}
                 className="excel-titlebar__search-input"
                 value={menuQuery}
                 onFocus={() => setSearchPanelOpen(true)}
@@ -525,7 +564,7 @@ export default function ExcelShell({
                 placeholder="메뉴 이동 (예: 스캔, 포트폴리오)"
               />
             </form>
-            {searchPanelOpen && (
+            {isSearchVisible && searchPanelOpen && (
               <div className="excel-search-panel" role="listbox" aria-label="메뉴 검색 추천">
                 {recentMenuTabs.length > 0 && (
                   <div className="excel-search-panel__section">

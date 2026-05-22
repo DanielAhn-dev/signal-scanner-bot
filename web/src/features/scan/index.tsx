@@ -564,34 +564,35 @@ export default function ScanPage({ onNavigate }: { onNavigate?: (r: string) => v
   }
 
   return (
-    <section className="container-app container-wide">
-      <table className="xls-table" style={{ width: '100%', tableLayout: 'fixed', marginBottom: 'var(--space-4)' }}>
+    <div className="xls-page-inset">
+      {/* ── 헤더 테이블 (제목·필터·섹터) — 4열, B2 안전 여백 내 ── */}
+      <table className="xls-table" style={{ width: '100%', tableLayout: 'fixed' }}>
         <colgroup>
-          <col style={{ width: '18%' }} />
-          <col style={{ width: '18%' }} />
-          <col style={{ width: '16%' }} />
-          <col style={{ width: '16%' }} />
-          <col style={{ width: '16%' }} />
-          <col style={{ width: '16%' }} />
+          <col style={{ width: '20%' }} />
+          <col style={{ width: '30%' }} />
+          <col style={{ width: '30%' }} />
+          <col style={{ width: '20%' }} />
         </colgroup>
         <tbody>
           <tr className="xls-row xls-row--even">
-            <td className="xls-cell" colSpan={4} style={{ fontSize: 18, fontWeight: 700, color: 'var(--color-brand)' }}>
+            <td className="xls-cell" colSpan={3}
+              style={{ fontSize: 15, fontWeight: 700, color: 'var(--color-brand)' }}>
               눌림목
             </td>
-            <td className="xls-cell" colSpan={2} style={{ textAlign: 'right' }}>
+            <td className="xls-cell" style={{ textAlign: 'right', padding: '1px 4px' }}>
               <EconomicEventBadge onNavigateToCalendar={() => onNavigate?.('economy')} />
             </td>
           </tr>
           <tr className="xls-row">
-            <td className="xls-cell" colSpan={6} style={{ color: 'var(--color-text-secondary)', fontSize: 11 }}>
+            <td className="xls-cell" colSpan={4}
+              style={{ color: 'var(--color-text-secondary)', fontSize: 11, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
               <span className="scan-stat-count">{sortedCandidates.length}</span>개 후보 ·
               최신 기준일 {latestDate ?? '—'} · {marketPhase === 'intraday' ? `장중 현재가 반영(${realtimeAppliedCount}건)` : '종가 기준'} · 텔레그램 pullback 신호 기반 · 종목 클릭 시 상세 분석으로 이동
             </td>
           </tr>
           <tr className="xls-row xls-row--even">
-            <td className="xls-cell" colSpan={6} style={{ padding: '8px 10px' }}>
-              <div className="scan-filter-section" style={{ marginBottom: 0 }}>
+            <td className="xls-cell" colSpan={4} style={{ padding: '3px 6px' }}>
+              <div style={{ display: 'flex', gap: 4, flexWrap: 'nowrap', overflow: 'hidden' }}>
                 {([
                   { key: 'all', label: '전체' },
                   { key: 'entry', label: '진입(A/B)' },
@@ -612,22 +613,20 @@ export default function ScanPage({ onNavigate }: { onNavigate?: (r: string) => v
             </td>
           </tr>
           <tr className="xls-row">
-            <td className="xls-cell" colSpan={2} style={{ color: 'var(--color-text-secondary)', fontSize: 11, fontWeight: 600 }}>
+            <td className="xls-cell" style={{ fontWeight: 600, fontSize: 11, color: 'var(--color-text-secondary)' }}>
               섹터 필터
             </td>
-            <td className="xls-cell" colSpan={4} style={{ padding: '8px 10px' }}>
-              <div className="scan-filter-section" style={{ marginBottom: 0 }}>
-                <span className="scan-filter-label">섹터</span>
-                <select
-                  className="input scan-sector-select"
-                  value={selectedSector}
-                  onChange={(e) => setSelectedSector(e.target.value)}
-                >
-                  {sectors.map((sector) => (
-                    <option key={sector} value={sector}>{sector === 'all' ? '전체 섹터' : sector}</option>
-                  ))}
-                </select>
-              </div>
+            <td className="xls-cell" colSpan={3} style={{ padding: '2px 6px' }}>
+              <select
+                className="input scan-sector-select"
+                value={selectedSector}
+                onChange={(e) => setSelectedSector(e.target.value)}
+                style={{ width: '100%', height: 18, fontSize: 11, padding: '0 4px', border: '1px solid var(--color-excel-grid-border)', background: 'var(--color-gray-0)' }}
+              >
+                {sectors.map((sector) => (
+                  <option key={sector} value={sector}>{sector === 'all' ? '전체 섹터' : sector}</option>
+                ))}
+              </select>
             </td>
           </tr>
         </tbody>
@@ -637,60 +636,94 @@ export default function ScanPage({ onNavigate }: { onNavigate?: (r: string) => v
 
       {/* 참고용 추천 섹션 */}
       {!loading && !error && !highlightLoading && activeHighlights.length > 0 && conditionFilter === 'all' && selectedSector === 'all' && (
-        <div className="card mb-4" id="scan-highlight-section-capture">
-          <div className="scan-highlight-section-title">
-            <div className="scan-highlight-section-copy">
-              <span className="scan-highlight-section-label">참고용 추천 눌림목</span>
-              <span className="scan-highlight-section-subtitle">상단 참고 · 하단 실전 기준과 분리</span>
-            </div>
-            {onNavigate && (
-              <Button variant="secondary" onClick={() => onNavigate('highlights')}>
-                하이라이트 허브
-              </Button>
-            )}
-          </div>
-
-          <div className="scan-highlight-grid">
-            {activeHighlights.map((c, idx) => (
-              <button
-                key={c.code}
-                type="button"
-                className={`scan-highlight-card${idx === 0 ? ' scan-highlight-card--top' : ''}`}
-                onClick={() => navigateToAnalyze(c.code)}
-                title={`${c.name} 참고용 상세 보기`}
-              >
-                <div className="scan-highlight-card-head">
-                  <span className={`scan-highlight-rank${idx > 0 ? ' scan-highlight-rank--rest' : ''}`}>
-                    TOP {idx + 1}
-                  </span>
-                  <WarnBadge grade={c.warn_grade} />
-                </div>
-                <div>
-                  <div className="scan-highlight-name">{c.name}</div>
-                  <div className="scan-highlight-code">{c.code}</div>
-                </div>
-                <div className="scan-highlight-grades">
-                  <GradeBadge grade={c.entry_grade} label="진입" />
-                  <GradeBadge grade={c.trend_grade} label="추세" />
-                  <GradeBadge grade={c.dist_grade} label="매집" />
-                  {c.pivot_grade && <GradeBadge grade={c.pivot_grade} label="세력" />}
-                  {c.signal && <SignalBadge signal={c.signal} />}
-                </div>
-                <div className="scan-highlight-meta">
-                  {c.sector_id && <span>{c.sector_id}</span>}
-                  {c.entry_score != null && <span>진입 {formatNumber(c.entry_score, 1)}</span>}
-                  {c.total_score != null && <span>종합 {formatNumber(c.total_score, 0)}</span>}
-                  {typeof c.adaptive_adjustment === 'number' && Math.abs(c.adaptive_adjustment) >= 0.1 && (
-                    <span style={{ color: c.adaptive_adjustment >= 0 ? 'var(--color-positive)' : 'var(--color-negative)' }}>
-                      적응 {c.adaptive_adjustment > 0 ? '+' : ''}{formatNumber(c.adaptive_adjustment, 1)}
-                    </span>
-                  )}
-                </div>
-                <div className="scan-highlight-hint">참고용 상세 분석 →</div>
-              </button>
-            ))}
-          </div>
-        </div>
+        <table className="xls-table" style={{ width: '100%', tableLayout: 'fixed' }} id="scan-highlight-section-capture">
+          <colgroup>
+            {Array.from({ length: 26 }, (_, i) => <col key={i} />)}
+          </colgroup>
+          <tbody>
+            {/* 추천 섹션 제목 행 */}
+            <tr className="xls-row xls-row--even">
+              <td className="xls-cell" colSpan={20}
+                style={{ fontWeight: 700, fontSize: 12, color: 'var(--color-brand)' }}>
+                참고용 추천 눌림목
+                <span style={{ fontWeight: 400, fontSize: 10, color: 'var(--color-text-tertiary)', marginLeft: 8 }}>
+                  상단 참고 · 하단 실전 기준과 분리
+                </span>
+              </td>
+              <td className="xls-cell" colSpan={6} style={{ textAlign: 'right', padding: '1px 4px' }}>
+                {onNavigate && (
+                  <Button variant="secondary" onClick={() => onNavigate('highlights')}>
+                    하이라이트 허브
+                  </Button>
+                )}
+              </td>
+            </tr>
+            {/* 카드 행 — 각 카드를 8행(8×22=176px) 병합 셀로 표현 */}
+            {[0, 3].map((startIdx) => {
+              const rowCards = activeHighlights.slice(startIdx, startIdx + 3)
+              if (rowCards.length === 0) return null
+              const colsPerCard = Math.floor(26 / Math.max(rowCards.length, 1))
+              const CARD_ROWS = 8
+              return (
+                <React.Fragment key={`card-row-${startIdx}`}>
+                  <tr className="xls-row">
+                    {rowCards.map((c, i) => (
+                      <td
+                        key={c.code}
+                        className="xls-cell"
+                        colSpan={i === rowCards.length - 1 ? 26 - colsPerCard * i : colsPerCard}
+                        rowSpan={CARD_ROWS}
+                        style={{
+                          height: CARD_ROWS * 22,
+                          verticalAlign: 'top',
+                          padding: 4,
+                          cursor: 'pointer',
+                          borderBottom: '2px solid var(--color-excel-grid-border)',
+                          background: startIdx === 0 && i === 0
+                            ? 'linear-gradient(135deg,#f0faf4 0%,#e8f5ee 100%)'
+                            : 'var(--color-gray-0)',
+                        }}
+                        onClick={() => navigateToAnalyze(c.code)}
+                        title={`${c.name} 참고용 상세 보기`}
+                      >
+                        <div style={{ height: '100%', display: 'flex', flexDirection: 'column', gap: 2 }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <span style={{ fontSize: 10, fontWeight: 600, color: 'var(--color-text-tertiary)' }}>
+                              TOP {startIdx + i + 1}
+                            </span>
+                            <WarnBadge grade={c.warn_grade} />
+                          </div>
+                          <div style={{ fontWeight: 700, fontSize: 13, color: 'var(--color-text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                            {c.name}
+                          </div>
+                          <div style={{ fontSize: 10, color: 'var(--color-text-tertiary)', fontFamily: 'var(--font-family-mono)' }}>
+                            {c.code}
+                          </div>
+                          <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+                            <GradeBadge grade={c.entry_grade} label="진입" />
+                            <GradeBadge grade={c.trend_grade} label="추세" />
+                            <GradeBadge grade={c.dist_grade} label="매집" />
+                            {c.pivot_grade && <GradeBadge grade={c.pivot_grade} label="세력" />}
+                          </div>
+                          <div style={{ fontSize: 10, color: 'var(--color-text-secondary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                            {c.sector_id}
+                            {c.entry_score != null && ` · 진입 ${formatNumber(c.entry_score, 1)}`}
+                          </div>
+                          <div style={{ fontSize: 10, color: 'var(--color-brand)', marginTop: 'auto' }}>
+                            참고용 상세 분석 →
+                          </div>
+                        </div>
+                      </td>
+                    ))}
+                  </tr>
+                  {Array.from({ length: CARD_ROWS - 1 }, (_, ri) => (
+                    <tr key={`spacer-${startIdx}-${ri}`} className="xls-row" />
+                  ))}
+                </React.Fragment>
+              )
+            })}
+          </tbody>
+        </table>
       )}
 
       {/* 전체 목록 */}
@@ -713,137 +746,152 @@ export default function ScanPage({ onNavigate }: { onNavigate?: (r: string) => v
             </div>
           )}
           <div className="scan-candidates-stage">
-            <div className="scan-table-wrap">
-              <table className="scan-table xls-table" style={{ width: '100%', tableLayout: 'fixed' }}>
-              <thead className="scan-thead">
-                <tr>
-                  <th className="scan-th">{renderSortableHeader('코드', 'code')}</th>
-                  <th className="scan-th">{renderSortableHeader('종목명', 'name')}</th>
-                  <th className="scan-th">{renderSortableHeader('섹터', 'sector_id')}</th>
-                  <th className="scan-th">{renderSortableHeader('우선순위', 'priority_score')}</th>
-                  <th className="scan-th">{renderSortableHeader('선행매집', 'lead_accumulation_score')}</th>
-                  <th className="scan-th">{renderSortableHeader('진입', 'entry_grade')}</th>
-                  <th className="scan-th">{renderSortableHeader('진입점수', 'entry_score')}</th>
-                  <th className="scan-th">{renderSortableHeader('추세', 'trend_grade')}</th>
-                  <th className="scan-th">{renderSortableHeader('매집', 'dist_grade')}</th>
-                  <th className="scan-th">{renderSortableHeader('세력선', 'pivot_grade')}</th>
-                  <th className="scan-th">{renderSortableHeader('경고', 'warn_score')}</th>
-                  <th className="scan-th">{renderSortableHeader('유동성', 'liquidity')}</th>
-                  <th className="scan-th">{renderSortableHeader('변동(%)', 'intraday_change_pct')}</th>
-                  <th className="scan-th">{renderSortableHeader('기준일', 'trade_date')}</th>
-                  <th className="scan-th">관리</th>
+            <table className="xls-table" style={{ width: '100%', tableLayout: 'fixed' }}>
+              <colgroup>
+                <col style={{ width: '6%' }} />    {/* 코드 */}
+                <col style={{ width: '9%' }} />    {/* 종목명 */}
+                <col style={{ width: '8%' }} />    {/* 섹터 */}
+                <col style={{ width: '6%' }} />    {/* 우선순위 */}
+                <col style={{ width: '6%' }} />    {/* 선행매집 */}
+                <col style={{ width: '4%' }} />    {/* 진입 */}
+                <col style={{ width: '5%' }} />    {/* 진입점수 */}
+                <col style={{ width: '4%' }} />    {/* 추세 */}
+                <col style={{ width: '7%' }} />    {/* 매집 */}
+                <col style={{ width: '6%' }} />    {/* 세력선 */}
+                <col style={{ width: '5%' }} />    {/* 경고 */}
+                <col style={{ width: '6%' }} />    {/* 유동성 */}
+                <col style={{ width: '5%' }} />    {/* 변동(%) */}
+                <col style={{ width: '7%' }} />    {/* 기준일 */}
+                <col style={{ width: '16%' }} />   {/* 관리 */}
+              </colgroup>
+              <thead>
+                <tr className="xls-header-row">
+                  <th className="xls-th">{renderSortableHeader('코드', 'code')}</th>
+                  <th className="xls-th">{renderSortableHeader('종목명', 'name')}</th>
+                  <th className="xls-th">{renderSortableHeader('섹터', 'sector_id')}</th>
+                  <th className="xls-th">{renderSortableHeader('우선순위▼', 'priority_score')}</th>
+                  <th className="xls-th">{renderSortableHeader('선행매집', 'lead_accumulation_score')}</th>
+                  <th className="xls-th">{renderSortableHeader('진입', 'entry_grade')}</th>
+                  <th className="xls-th">{renderSortableHeader('진입점수', 'entry_score')}</th>
+                  <th className="xls-th">{renderSortableHeader('추세', 'trend_grade')}</th>
+                  <th className="xls-th">{renderSortableHeader('매집', 'dist_grade')}</th>
+                  <th className="xls-th">{renderSortableHeader('세력선', 'pivot_grade')}</th>
+                  <th className="xls-th">{renderSortableHeader('경고', 'warn_score')}</th>
+                  <th className="xls-th">{renderSortableHeader('유동성', 'liquidity')}</th>
+                  <th className="xls-th">{renderSortableHeader('변동(%)', 'intraday_change_pct')}</th>
+                  <th className="xls-th">{renderSortableHeader('기준일', 'trade_date')}</th>
+                  <th className="xls-th">관리</th>
                 </tr>
               </thead>
-                <tbody>
-                {displayRows.map((s: any) => {
+              <tbody>
+                {displayRows.map((s: any, idx: number) => {
                   const code = String(s.code)
                   const isAdded = isWatched(code)
                   const isAddingNow = isAdding(code)
                   const isRemovingNow = isRemoving(code)
                   const isMutating = isAddingNow || isRemovingNow
+                  /* 진입 등급별 코드 셀 색상 */
+                  const codeColor = getEntryLevel(s.entry_grade) === 'a'
+                    ? 'var(--color-success)'
+                    : getEntryLevel(s.entry_grade) === 'b'
+                      ? 'var(--color-brand)'
+                      : 'var(--color-text-secondary)'
                   return (
                     <tr
                       key={s.code}
-                      className={`scan-tr scan-tr--level-${getEntryLevel(s.entry_grade)}`}
+                      className={`xls-row${idx % 2 === 1 ? ' xls-row--even' : ''}`}
                       onClick={() => navigateToAnalyze(code)}
+                      style={{ cursor: 'pointer' }}
                       title={`${s.name} 상세 분석`}
                     >
-                      <td className="scan-td scan-td-code" data-label="코드">{s.code}</td>
-                      <td className="scan-td scan-td-name" data-label="종목명">{s.name}</td>
-                      <td className="scan-td scan-td-sector" data-label="섹터">{s.sector_id ?? '—'}</td>
-                      <td className="scan-td number" data-label="우선순위" title="진입점수×20 − 경고점수×3 + 장중 현재가 보정">
+                      {/* 코드 */}
+                      <td className="xls-cell" style={{ fontFamily: 'var(--font-family-mono)', fontSize: 11, color: codeColor, fontWeight: 600 }}>
+                        {s.code}
+                      </td>
+                      {/* 종목명 — 말줄임 */}
+                      <td className="xls-cell" title={s.name} style={{ fontWeight: 500 }}>
+                        {s.name}
+                      </td>
+                      {/* 섹터 — 말줄임 */}
+                      <td className="xls-cell" title={s.sector_id ?? ''} style={{ fontSize: 11, color: 'var(--color-text-secondary)' }}>
+                        {s.sector_id ?? '—'}
+                      </td>
+                      {/* 우선순위 */}
+                      <td className="xls-cell xls-cell--num" title="진입점수×20 − 경고점수×3 + 장중 현재가 보정">
                         <span className={s.priorityScore >= 60 ? 'scan-grade-badge scan-grade-a' : s.priorityScore >= 40 ? 'scan-grade-badge scan-grade-b' : 'scan-grade-label'}>
                           {formatNumber(s.priorityScore, 1)}
                         </span>
                       </td>
-                      <td className="scan-td number" data-label="선행매집" title="매집·세력선·추세·경고·이격 기반 선행형 점수">
+                      {/* 선행매집 */}
+                      <td className="xls-cell xls-cell--num">
                         <span className={s.leadAccumulationScore >= 75 ? 'scan-grade-badge scan-grade-a' : s.leadAccumulationScore >= 55 ? 'scan-grade-badge scan-grade-b' : 'scan-grade-label'}>
                           {formatNumber(s.leadAccumulationScore, 0)}
                         </span>
-                        {s.leadAccumulationStage && s.leadAccumulationStage !== 'none' && (
-                          <span className="scan-grade-label"> ({s.leadAccumulationStage === 'breakout' ? '돌파' : '선행'})</span>
-                        )}
                       </td>
-                      <td className="scan-td" data-label="진입">
-                        <GradeBadge grade={s.entry_grade} />
-                      </td>
-                      <td className="scan-td number" data-label="진입점수">
+                      {/* 진입 */}
+                      <td className="xls-cell"><GradeBadge grade={s.entry_grade} /></td>
+                      {/* 진입점수 */}
+                      <td className="xls-cell xls-cell--num" style={{ fontSize: 11 }}>
                         {s.entry_score != null ? formatNumber(s.entry_score, 2) : '—'}
                       </td>
-                      <td className="scan-td" data-label="추세">
-                        <GradeBadge grade={s.trend_grade} />
-                      </td>
-                      <td className="scan-td" data-label="매집">
+                      {/* 추세 */}
+                      <td className="xls-cell"><GradeBadge grade={s.trend_grade} /></td>
+                      {/* 매집 */}
+                      <td className="xls-cell">
                         <GradeBadge grade={s.dist_grade} />
                         {s.dist_pct != null && (
-                          <span className="scan-grade-label"> ({formatNumber(s.dist_pct, 2)}%)</span>
+                          <span className="scan-grade-label" style={{ fontSize: 10 }}> ({formatNumber(s.dist_pct, 1)}%)</span>
                         )}
                       </td>
-                      <td className="scan-td" data-label="세력선">
+                      {/* 세력선 */}
+                      <td className="xls-cell">
                         <GradeBadge grade={s.pivot_grade} />
                         {s.vol_atr_grade && (
-                          <span className="scan-grade-label"> / {s.vol_atr_grade}</span>
+                          <span className="scan-grade-label" style={{ fontSize: 10 }}> /{s.vol_atr_grade}</span>
                         )}
                       </td>
-                      <td className="scan-td" data-label="경고">
+                      {/* 경고 */}
+                      <td className="xls-cell">
                         <WarnBadge grade={s.warn_grade} />
-                        {s.warn_score != null && s.warn_score > 0 && (
-                          <span className="scan-grade-label"> ({Math.round(s.warn_score)})</span>
-                        )}
                       </td>
-                      <td className="scan-td number number-right" data-label="유동성">
+                      {/* 유동성 */}
+                      <td className="xls-cell xls-cell--num" style={{ fontSize: 11, color: 'var(--color-text-secondary)' }}>
                         {s.liquidity != null ? formatNumber(s.liquidity, 0) : '—'}
                       </td>
-                      <td className="scan-td number number-right" data-label="변동(%)">
-                        {typeof s.intradayChangePct === 'number'
-                          ? (
-                            <span style={{
-                              color: s.intradayChangePct > 0
-                                ? 'var(--color-success)'
-                                : s.intradayChangePct < 0
-                                  ? 'var(--color-error)'
-                                  : undefined,
-                              fontWeight: 600,
-                            }}>
-                              {s.intradayChangePct > 0 ? '+' : ''}{formatNumber(s.intradayChangePct, 2)}%
-                            </span>
-                            )
-                          : '—'}
-                      </td>
-                      <td className="scan-td scan-td-date" data-label="기준일">
-                        <div>{s.tradeDateText}</div>
-                        {s.updatedAtText && (
-                          <div className="scan-td-updated-sub">{s.updatedAtText}</div>
-                        )}
-                      </td>
-                      <td className="scan-td" data-label="관리" onClick={(e) => e.stopPropagation()} style={{ whiteSpace: 'nowrap' }}>
-                        <Button
-                          className="watchlist-icon-btn scan-watch-add-btn"
-                          variant="ghost"
-                          onClick={(e: React.MouseEvent) => onToggleWatchlist(e, code)}
-                          disabled={isMutating}
-                          title={isAdded ? '관심 종목에서 제거' : '관심 종목에 추가'}
-                        >
-                          <span className="watchlist-btn-symbol" aria-hidden>{isAdded ? 'x' : '+'}</span>
-                          <span className="watchlist-btn-label">
-                            {isAddingNow ? '추가중' : isRemovingNow ? '제거중' : isAdded ? '제거' : '추가'}
+                      {/* 변동(%) */}
+                      <td className="xls-cell xls-cell--num">
+                        {typeof s.intradayChangePct === 'number' ? (
+                          <span style={{
+                            color: s.intradayChangePct > 0 ? 'var(--color-stock-up)' : s.intradayChangePct < 0 ? 'var(--color-stock-down)' : undefined,
+                            fontWeight: 600, fontSize: 11,
+                          }}>
+                            {s.intradayChangePct > 0 ? '+' : ''}{formatNumber(s.intradayChangePct, 2)}%
                           </span>
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          onClick={() => navigateToBacktest(code)}
-                          title="백테스트 패턴 점검"
-                          style={{ marginLeft: 4, fontSize: 11, padding: '4px 8px' }}
-                        >
-                          패턴 점검
-                        </Button>
+                        ) : '—'}
+                      </td>
+                      {/* 기준일 — 단일 행 말줄임 */}
+                      <td className="xls-cell" style={{ fontSize: 11, color: 'var(--color-text-tertiary)' }}>
+                        {s.tradeDateText}
+                      </td>
+                      {/* 관리 */}
+                      <td className="xls-cell" onClick={(e) => e.stopPropagation()}>
+                        <div style={{ display: 'flex', gap: 2, alignItems: 'center' }}>
+                          <Button
+                            variant="ghost"
+                            onClick={(e: React.MouseEvent) => onToggleWatchlist(e, code)}
+                            disabled={isMutating}
+                            title={isAdded ? '관심 종목에서 제거' : '관심 종목에 추가'}
+                            style={{ fontSize: 11, padding: '1px 6px' }}
+                          >
+                            {isAdded ? '⊖제거' : '⊕추가'}
+                          </Button>
+                        </div>
                       </td>
                     </tr>
                   )
                 })}
-                </tbody>
-              </table>
-            </div>
+              </tbody>
+            </table>
 
             {totalPages > 1 && (
               <div className="pagination-wrap">
@@ -868,6 +916,6 @@ export default function ScanPage({ onNavigate }: { onNavigate?: (r: string) => v
         onRevoke={shareManager.revokeShare}
         revokingId={shareManager.revokingId}
       />
-    </section>
+    </div>
   )
 }

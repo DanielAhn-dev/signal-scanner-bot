@@ -18,6 +18,14 @@ function decodeHtml(str: string): string {
 
 type RelatedStock = { code: string; name: string }
 
+/** "2026-05-22 09:45:10" → "09:45" (당일) / "05-22 09:45" (다른 날) */
+function formatDate(raw: string | undefined): string {
+  if (!raw) return '—'
+  const today = new Date().toISOString().slice(0, 10)
+  if (raw.startsWith(today)) return raw.slice(11, 16)
+  return raw.slice(5, 16)
+}
+
 export default function NewsPage() {
   const [query, setQuery] = useState('')
   const [appliedQuery, setAppliedQuery] = useState('')
@@ -54,9 +62,7 @@ export default function NewsPage() {
     }
   }
 
-  useEffect(() => {
-    void load('')
-  }, [])
+  useEffect(() => { void load('') }, [])
 
   const applyQuery = () => {
     const next = query.trim()
@@ -66,14 +72,11 @@ export default function NewsPage() {
 
   const toggleRelated = async (item: NewsItem) => {
     const key = item.link || item.title
-    // 토글: 이미 열려있으면 닫기
     if (relatedOpenSet.has(key)) {
       setRelatedOpenSet(prev => { const s = new Set(prev); s.delete(key); return s })
       return
     }
-    // 열기
     setRelatedOpenSet(prev => new Set(prev).add(key))
-    // 이미 로드됐으면 재요청 X
     if (fetchedRelated.current.has(key)) return
     fetchedRelated.current.add(key)
     setRelatedLoadingSet(prev => new Set(prev).add(key))
@@ -97,187 +100,185 @@ export default function NewsPage() {
   const openModal = (stock: RelatedStock) => setModalStock(stock)
   const closeModal = () => setModalStock(null)
 
-  const renderedRows = items.length + items.reduce((acc, item) => {
+  const dataRowCount = items.length + items.reduce((acc, item) => {
     const key = item.link || item.title
     return acc + (relatedOpenSet.has(key) ? 1 : 0)
   }, 0)
-  const minRenderRows = 24
+  const emptyCount = Math.max(0, 30 - dataRowCount)
+
+  /*
+   * ──────────────────────────────────────────────────────────────
+   * ▶ row-num 셀을 완전히 제거한 4열 구조
+   *   xls-content-data 안에서 display:none 된 row-num td가
+   *   나머지 열을 한 칸씩 앞으로 당기는 버그를 근본 해결
+   * ──────────────────────────────────────────────────────────────
+   */
+  const colGroup = (
+    <colgroup>
+      <col style={{ width: '55%' }} />  {/* 제목 */}
+      <col style={{ width: '15%' }} />  {/* 출처 */}
+      <col style={{ width: '14%' }} />  {/* 일자 */}
+      <col style={{ width: '16%' }} />  {/* 관련주 */}
+    </colgroup>
+  )
 
   return (
-    <section className="container-app news-sheet">
-      <table className="xls-table" style={{ width: '100%', tableLayout: 'fixed', marginBottom: 'var(--space-4)' }}>
-        <colgroup>
-          <col style={{ width: '18%' }} />
-          <col style={{ width: '18%' }} />
-          <col style={{ width: '16%' }} />
-          <col style={{ width: '16%' }} />
-          <col style={{ width: '16%' }} />
-          <col style={{ width: '16%' }} />
-        </colgroup>
+    <div className="news-sheet xls-page-inset">
+
+      {/* ═══ 메타 헤더 테이블 ═══ */}
+      <table className="xls-table" style={{ width: '100%', tableLayout: 'fixed' }}>
+        {colGroup}
         <tbody>
           <tr className="xls-row xls-row--even">
-            <td className="xls-cell" colSpan={4} style={{ fontSize: 18, fontWeight: 700, color: 'var(--color-brand)' }}>
+            <td className="xls-cell" colSpan={3}
+              style={{ fontSize: 15, fontWeight: 700, color: 'var(--color-brand)', letterSpacing: '0.01em' }}>
               뉴스
             </td>
-            <td className="xls-cell" colSpan={2} style={{ textAlign: 'right' }}>
-              <Button variant="secondary" onClick={() => load(appliedQuery)} disabled={loading}>새로고침</Button>
+            <td className="xls-cell" style={{ textAlign: 'right', padding: '1px 4px' }}>
+              <Button variant="secondary" onClick={() => load(appliedQuery)} disabled={loading}>
+                새로고침
+              </Button>
             </td>
           </tr>
           <tr className="xls-row">
-            <td className="xls-cell" colSpan={6} style={{ color: 'var(--color-text-secondary)', fontSize: 11 }}>
+            <td className="xls-cell" colSpan={4}
+              style={{ color: 'var(--color-text-secondary)', fontSize: 11 }}>
               텔레그램 /news 명령과 같은 뉴스 소스를 웹에서도 조회합니다.
             </td>
           </tr>
           <tr className="xls-row xls-row--even">
-            <td className="xls-cell" colSpan={6} style={{ padding: '8px 10px' }}>
-              <form
-                style={{ display: 'flex', gap: 'var(--space-2)' }}
-                onSubmit={(e) => {
-                  e.preventDefault()
-                  applyQuery()
-                }}
-              >
-                <input
-                  className="input"
-                  style={{ flex: 1 }}
-                  placeholder="종목명 또는 코드 (비우면 시장 뉴스)"
-                  value={query}
-                  onChange={(e) => setQuery(e.target.value)}
-                />
-                <Button variant="primary" type="submit" disabled={loading}>조회</Button>
-              </form>
+            <td className="xls-cell" colSpan={3} style={{ padding: '2px 6px' }}>
+              <input
+                className="news-sheet__search-input"
+                placeholder="종목명 또는 코드 (비우면 시장 뉴스)"
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); applyQuery() } }}
+              />
+            </td>
+            <td className="xls-cell" style={{ padding: '2px 4px', textAlign: 'right' }}>
+              <Button variant="primary" onClick={applyQuery} disabled={loading}>조회</Button>
             </td>
           </tr>
         </tbody>
       </table>
 
-      <div className="scan-table-wrap">
-        <table className="xls-table news-sheet__list" style={{ width: '100%', tableLayout: 'fixed' }}>
-          <colgroup>
-            <col style={{ width: 34 }} />
-            <col style={{ width: '58%' }} />
-            <col style={{ width: '12%' }} />
-            <col style={{ width: '14%' }} />
-            <col style={{ width: '16%' }} />
-          </colgroup>
-          <thead>
-            <tr className="xls-letter-row">
-              <th className="xls-corner" />
-              <th className="xls-col-letter">A</th>
-              <th className="xls-col-letter">B</th>
-              <th className="xls-col-letter">C</th>
-              <th className="xls-col-letter">D</th>
+      {/* ═══ 데이터 테이블 (sticky 헤더) ═══ */}
+      <table className="xls-table" style={{ width: '100%', tableLayout: 'fixed' }}>
+        {colGroup}
+        <thead>
+          <tr className="xls-header-row">
+            <th className="xls-th">제목</th>
+            <th className="xls-th">출처</th>
+            <th className="xls-th">일자</th>
+            <th className="xls-th">관련주</th>
+          </tr>
+        </thead>
+        <tbody>
+
+          {loading && (
+            <tr className="xls-row xls-row--even">
+              <td className="xls-cell" colSpan={4} style={{ color: 'var(--color-text-tertiary)' }}>
+                불러오는 중...
+              </td>
             </tr>
-            <tr className="xls-header-row">
-              <th className="xls-row-num-header" />
-              <th className="xls-th">제목</th>
-              <th className="xls-th">출처</th>
-              <th className="xls-th">일자</th>
-              <th className="xls-th">관련주</th>
+          )}
+
+          {!loading && error && (
+            <tr className="xls-row xls-row--even">
+              <td className="xls-cell" colSpan={3} style={{ color: 'var(--color-error)' }}>
+                {error}
+              </td>
+              <td className="xls-cell" style={{ textAlign: 'right' }}>
+                <Button variant="secondary" onClick={() => load(appliedQuery)}>재시도</Button>
+              </td>
             </tr>
-          </thead>
-          <tbody>
-            {loading && (
-              <tr className="xls-row xls-row--even">
-                <td className="xls-row-num">1</td>
-                <td className="xls-cell" colSpan={4} style={{ color: 'var(--color-text-tertiary)' }}>불러오는 중...</td>
-              </tr>
-            )}
+          )}
 
-            {!loading && error && (
-              <tr className="xls-row xls-row--even">
-                <td className="xls-row-num">1</td>
-                <td className="xls-cell" colSpan={3} style={{ color: 'var(--color-error)' }}>
-                  {error}
-                </td>
-                <td className="xls-cell" style={{ textAlign: 'right' }}>
-                  <Button variant="secondary" onClick={() => load(appliedQuery)}>재시도</Button>
-                </td>
-              </tr>
-            )}
+          {!loading && !error && items.length === 0 && (
+            <tr className="xls-row xls-row--even">
+              <td className="xls-cell" colSpan={4} style={{ color: 'var(--color-text-tertiary)' }}>
+                조건에 맞는 뉴스를 찾지 못했습니다.
+              </td>
+            </tr>
+          )}
 
-            {!loading && !error && items.length === 0 && (
-              <tr className="xls-row xls-row--even">
-                <td className="xls-row-num">1</td>
-                <td className="xls-cell" colSpan={4} style={{ color: 'var(--color-text-tertiary)' }}>
-                  조건에 맞는 뉴스를 찾지 못했습니다.
-                </td>
-              </tr>
-            )}
-
-            {!loading && !error && items.map((item, idx) => {
-              const key = item.link || item.title
-              const rowNumber = idx + 1
-              return (
-                <React.Fragment key={`${item.link}-${idx}`}>
-                  <tr className={`xls-row${rowNumber % 2 === 0 ? ' xls-row--even' : ''}`}>
-                    <td className="xls-row-num">{rowNumber}</td>
-                    <td className="xls-cell" style={{ fontSize: 12 }}>
-                      <a href={item.link} target="_blank" rel="noreferrer" className="title-md" style={{ textDecoration: 'none' }}>
-                        {decodeHtml(item.title)}
-                      </a>
-                    </td>
-                    <td className="xls-cell">{item.source || '—'}</td>
-                    <td className="xls-cell">{item.date || '—'}</td>
-                    <td className="xls-cell">
-                      <Button
-                        variant="ghost"
-                        onClick={() => toggleRelated(item)}
-                        style={{ whiteSpace: 'nowrap', flexShrink: 0 }}
-                      >
-                        관련주 {relatedOpenSet.has(key) ? '▲' : '▼'}
-                      </Button>
-                    </td>
-                  </tr>
-
-                  {relatedOpenSet.has(key) && (() => {
-                    const stocks = relatedMap[key]
-                    const isLoading = relatedLoadingSet.has(key)
-                    return (
-                      <tr className={`xls-row${rowNumber % 2 === 0 ? '' : ' xls-row--even'}`}>
-                        <td className="xls-row-num">{rowNumber}</td>
-                        <td className="xls-cell" colSpan={4}>
-                          {isLoading && <span className="caption muted">조회 중...</span>}
-                          {!isLoading && stocks && stocks.length === 0 && (
-                            <span className="caption muted">제목에서 종목을 찾지 못했습니다.</span>
-                          )}
-                          {!isLoading && stocks && stocks.length === 1 && (
-                            <Button variant="ghost" onClick={() => openModal(stocks[0])}>
-                              {stocks[0].name} 시세
-                            </Button>
-                          )}
-                          {!isLoading && stocks && stocks.length > 1 && (
-                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 'var(--space-2)' }}>
-                              {stocks.map(s => (
-                                <Button key={s.code} variant="ghost" onClick={() => openModal(s)}>
-                                  {s.name} 시세
-                                </Button>
-                              ))}
-                            </div>
-                          )}
-                        </td>
-                      </tr>
-                    )
-                  })()}
-                </React.Fragment>
-              )
-            })}
-
-            {!loading && !error && Array.from({ length: Math.max(0, minRenderRows - renderedRows) }, (_, idx) => {
-              const rn = renderedRows + idx + 1
-              return (
-                <tr key={`empty-${rn}`} className={`xls-row${rn % 2 === 0 ? ' xls-row--even' : ''}`}>
-                  <td className="xls-row-num">{rn}</td>
-                  <td className="xls-cell xls-cell--empty" />
-                  <td className="xls-cell xls-cell--empty" />
-                  <td className="xls-cell xls-cell--empty" />
-                  <td className="xls-cell xls-cell--empty" />
+          {!loading && !error && items.map((item, idx) => {
+            const key = item.link || item.title
+            const rowNumber = idx + 1
+            const isEven = rowNumber % 2 === 0
+            return (
+              <React.Fragment key={`${item.link}-${idx}`}>
+                <tr className={`xls-row${isEven ? ' xls-row--even' : ''}`}>
+                  <td className="xls-cell news-cell--title">
+                    <a
+                      href={item.link}
+                      target="_blank"
+                      rel="noreferrer"
+                      title={decodeHtml(item.title)}
+                    >
+                      {decodeHtml(item.title)}
+                    </a>
+                  </td>
+                  <td className="xls-cell" style={{ fontSize: 11, color: 'var(--color-text-secondary)' }}>
+                    {item.source || '—'}
+                  </td>
+                  <td className="xls-cell" style={{ fontSize: 11, color: 'var(--color-text-secondary)', fontVariantNumeric: 'tabular-nums' }}>
+                    {formatDate(item.date)}
+                  </td>
+                  <td className="xls-cell" style={{ padding: '0 2px' }}>
+                    <Button
+                      variant="ghost"
+                      onClick={() => toggleRelated(item)}
+                      style={{ whiteSpace: 'nowrap', width: '100%', justifyContent: 'center' }}
+                    >
+                      관련주 {relatedOpenSet.has(key) ? '▲' : '▼'}
+                    </Button>
+                  </td>
                 </tr>
-              )
-            })}
-          </tbody>
-        </table>
-      </div>
+
+                {relatedOpenSet.has(key) && (() => {
+                  const stocks = relatedMap[key]
+                  const isLoading = relatedLoadingSet.has(key)
+                  return (
+                    <tr className={`xls-row${isEven ? '' : ' xls-row--even'}`}>
+                      <td className="xls-cell" colSpan={4} style={{ padding: '4px 8px' }}>
+                        {isLoading && <span style={{ fontSize: 11, color: 'var(--color-text-tertiary)' }}>조회 중...</span>}
+                        {!isLoading && stocks && stocks.length === 0 && (
+                          <span style={{ fontSize: 11, color: 'var(--color-text-tertiary)' }}>제목에서 종목을 찾지 못했습니다.</span>
+                        )}
+                        {!isLoading && stocks && stocks.length > 0 && (
+                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+                            {stocks.map(s => (
+                              <Button key={s.code} variant="ghost" onClick={() => openModal(s)}>
+                                {s.name} 시세
+                              </Button>
+                            ))}
+                          </div>
+                        )}
+                      </td>
+                    </tr>
+                  )
+                })()}
+              </React.Fragment>
+            )
+          })}
+
+          {/* 빈 행으로 그리드 채우기 */}
+          {!loading && !error && Array.from({ length: emptyCount }, (_, idx) => {
+            const rn = dataRowCount + idx + 1
+            return (
+              <tr key={`empty-${rn}`} className={`xls-row${rn % 2 === 0 ? ' xls-row--even' : ''}`}>
+                <td className="xls-cell xls-cell--empty" />
+                <td className="xls-cell xls-cell--empty" />
+                <td className="xls-cell xls-cell--empty" />
+                <td className="xls-cell xls-cell--empty" />
+              </tr>
+            )
+          })}
+
+        </tbody>
+      </table>
 
       <StockDetailModal
         code={modalStock?.code ?? ''}
@@ -285,6 +286,6 @@ export default function NewsPage() {
         isOpen={!!modalStock}
         onClose={closeModal}
       />
-    </section>
+    </div>
   )
 }

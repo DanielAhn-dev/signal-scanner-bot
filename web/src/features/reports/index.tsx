@@ -336,22 +336,13 @@ export default function ReportsPage() {
 
       <table className="xls-table reports-sheet__list" style={{ width: '100%', tableLayout: 'fixed' }}>
         <colgroup>
-          <col style={{ width: 34 }} />
-          <col style={{ width: '20%' }} />
-          <col style={{ width: '50%' }} />
-          <col style={{ width: '18%' }} />
-          <col style={{ width: '12%' }} />
+          <col style={{ width: '22%' }} />
+          <col style={{ width: '52%' }} />
+          <col style={{ width: '16%' }} />
+          <col style={{ width: '10%' }} />
         </colgroup>
         <thead>
-          <tr className="xls-letter-row">
-            <th className="xls-corner" />
-            <th className="xls-col-letter">A</th>
-            <th className="xls-col-letter">B</th>
-            <th className="xls-col-letter">C</th>
-            <th className="xls-col-letter">D</th>
-          </tr>
           <tr className="xls-header-row">
-            <th className="xls-row-num-header" />
             <th className="xls-th">기능</th>
             <th className="xls-th">설명</th>
             <th className="xls-th">실행</th>
@@ -364,12 +355,11 @@ export default function ReportsPage() {
             const rowNo = idx + 1
             return (
               <tr key={r.key} className={`xls-row${rowNo % 2 === 0 ? ' xls-row--even' : ''}`}>
-                <td className="xls-row-num">{rowNo}</td>
                 <td className="xls-cell" style={{ fontWeight: 600 }}>{r.label}</td>
                 <td className="xls-cell">{r.desc}</td>
                 <td className="xls-cell">
                   {r.kind === 'download' ? (
-                    <div style={{ display: 'flex', gap: 'var(--space-2)', flexWrap: 'wrap' }}>
+                    <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
                       <Button variant="secondary" onClick={() => runDownload(r.key, r.endpoint, r.fileName)} disabled={s?.loading}>
                         {s?.loading ? '처리 중…' : '다운로드'}
                       </Button>
@@ -385,7 +375,7 @@ export default function ReportsPage() {
                     </Button>
                   )}
                 </td>
-                <td className="xls-cell" style={{ color: s?.msg ? 'var(--color-text-secondary)' : 'var(--color-text-tertiary)' }}>
+                <td className="xls-cell" style={{ color: s?.msg ? 'var(--color-text-secondary)' : 'var(--color-text-tertiary)', fontSize: 10 }}>
                   {s?.msg || '대기'}
                 </td>
               </tr>
@@ -395,7 +385,6 @@ export default function ReportsPage() {
             const rowNo = REPORT_ACTIONS.length + idx + 1
             return (
               <tr key={`empty-${rowNo}`} className={`xls-row${rowNo % 2 === 0 ? ' xls-row--even' : ''}`}>
-                <td className="xls-row-num">{rowNo}</td>
                 <td className="xls-cell xls-cell--empty" />
                 <td className="xls-cell xls-cell--empty" />
                 <td className="xls-cell xls-cell--empty" />

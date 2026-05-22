@@ -33,16 +33,18 @@ const S = {
     fontSize: 10,
   } as React.CSSProperties,
   sectionTitle: {
-    background: 'var(--color-excel-cell-header)',
+    background: '#E2EFDA',
+    borderBottom: '1px solid #A9D18E',
     fontWeight: 700,
     fontSize: 11,
     letterSpacing: '0.02em',
+    color: '#276221',
   } as React.CSSProperties,
   divider: {
-    height: 4,
-    background: 'var(--color-excel-cell-header)',
-    borderTop: '1px solid var(--color-excel-grid-border)',
-    borderBottom: '1px solid var(--color-excel-grid-border)',
+    height: 3,
+    background: '#E2EFDA',
+    borderTop: '1px solid #A9D18E',
+    borderBottom: '1px solid #A9D18E',
     padding: 0,
   } as React.CSSProperties,
   midBorder: {
@@ -75,6 +77,7 @@ export default function Dashboard({ onNavigate }: { onNavigate?: (r: string) => 
   const [portfolio, setPortfolio] = useState<PortfolioSummary | null>(null)
   const [sectors, setSectors]     = useState<SectorItem[]>([])
   const [topSector, setTopSector] = useState<string>('')
+  const [fillerRows, setFillerRows] = useState(0)
 
   // chatId가 준비되면 포트폴리오 로드 (스토어 hydration 완료 후 실행)
   useEffect(() => {
@@ -96,6 +99,22 @@ export default function Dashboard({ onNavigate }: { onNavigate?: (r: string) => 
     }).catch(() => {})
   }, [])
 
+  useEffect(() => {
+    const BASE_ROWS = 21
+    const updateFillerRows = () => {
+      const width = window.innerWidth
+      const height = window.innerHeight
+      const rowHeight = width < 640 ? 26 : width < 1024 ? 26 : 22
+      const chromeHeight = width < 640 ? 280 : 230
+      const estimatedVisibleRows = Math.floor(Math.max(0, height - chromeHeight) / rowHeight)
+      const needed = Math.max(0, estimatedVisibleRows - BASE_ROWS)
+      setFillerRows(Math.min(60, needed))
+    }
+    updateFillerRows()
+    window.addEventListener('resize', updateFillerRows)
+    return () => window.removeEventListener('resize', updateFillerRows)
+  }, [])
+
   const nav = (r: string) => onNavigate?.(r)
 
   const posCount = portfolio?.positions?.length ?? 0
@@ -110,12 +129,12 @@ export default function Dashboard({ onNavigate }: { onNavigate?: (r: string) => 
     <div style={{ flex: 1, overflow: 'auto' }}>
       <table className="xls-table" style={{ width: '100%', tableLayout: 'fixed' }}>
         <colgroup>
-          <col style={{ width: 28 }}/>  {/* 행번호 */}
-          <col style={{ width: '14%' }}/> {/* A */}
-          <col style={{ width: '14%' }}/> {/* B */}
-          <col style={{ width: '14%' }}/> {/* C */}
-          <col style={{ width: '14%' }}/> {/* D */}
-          <col style={{ width: '22%' }}/> {/* E */}
+          <col style={{ width: 28 }}/>  {/* 행번호 — CSS로 숨겨지면 width 0 처리됨 */}
+          <col style={{ width: '17%' }}/> {/* A */}
+          <col style={{ width: '17%' }}/> {/* B */}
+          <col style={{ width: '17%' }}/> {/* C */}
+          <col style={{ width: '17%' }}/> {/* D */}
+          <col style={{ width: '20%' }}/> {/* E */}
           <col/>                          {/* F */}
         </colgroup>
         <thead>
@@ -153,7 +172,7 @@ export default function Dashboard({ onNavigate }: { onNavigate?: (r: string) => 
             <td className="xls-row-num">{rowNum()}</td>
             <td className="xls-cell" colSpan={6} style={S.sectionTitle}>
               오늘의 플로우
-              <span style={{ float: 'right', ...S.link, fontWeight: 400 }} onClick={() => nav('reports')}>
+              <span style={{ float: 'right', color: 'var(--color-brand)', cursor: 'pointer', fontSize: 10, fontWeight: 400 }} onClick={() => nav('reports')}>
                 복기 보기 →
               </span>
             </td>
@@ -206,7 +225,10 @@ export default function Dashboard({ onNavigate }: { onNavigate?: (r: string) => 
           </tr>
 
           {/* ── 구분선 ── */}
-          <tr><td colSpan={7} style={S.divider}/></tr>
+          <tr className="xls-row">
+            <td className="xls-row-num">{rowNum()}</td>
+            <td className="xls-cell" colSpan={6} style={S.divider} />
+          </tr>
 
           {/* ── 보유 종목 | 미실현 손익 ── */}
           <tr className="xls-row">
@@ -237,7 +259,10 @@ export default function Dashboard({ onNavigate }: { onNavigate?: (r: string) => 
           </tr>
 
           {/* ── 구분선 ── */}
-          <tr><td colSpan={7} style={S.divider}/></tr>
+          <tr className="xls-row">
+            <td className="xls-row-num">{rowNum()}</td>
+            <td className="xls-cell" colSpan={6} style={S.divider} />
+          </tr>
 
           {/* ── 마지막 스캔 | 1위 섹터 ── */}
           <tr className="xls-row">
@@ -267,14 +292,17 @@ export default function Dashboard({ onNavigate }: { onNavigate?: (r: string) => 
           </tr>
 
           {/* ── 구분선 ── */}
-          <tr><td colSpan={7} style={S.divider}/></tr>
+          <tr className="xls-row">
+            <td className="xls-row-num">{rowNum()}</td>
+            <td className="xls-cell" colSpan={6} style={S.divider} />
+          </tr>
 
           {/* ── 유망 섹터 Top 8 ── */}
           <tr className="xls-row">
             <td className="xls-row-num">{rowNum()}</td>
             <td className="xls-cell" colSpan={6} style={S.sectionTitle}>
               유망 섹터 Top 8
-              <span style={{ float: 'right', ...S.link, fontWeight: 400 }} onClick={() => nav('sectors')}>
+              <span style={{ float: 'right', color: 'var(--color-brand)', cursor: 'pointer', fontSize: 10, fontWeight: 400 }} onClick={() => nav('sectors')}>
                 전체 보기 →
               </span>
             </td>
@@ -346,8 +374,8 @@ export default function Dashboard({ onNavigate }: { onNavigate?: (r: string) => 
             )
           })}
 
-          {/* ── 빈 여백 ── */}
-          {Array.from({ length: 12 }, (_, i) => (
+          {/* ── 남는 높이만 채우는 빈 여백 ── */}
+          {Array.from({ length: fillerRows }, (_, i) => (
             <tr key={`empty${i}`} className={`xls-row${i % 2 === 0 ? ' xls-row--even' : ''}`}>
               <td className="xls-row-num">{rowNum()}</td>
               <td className="xls-cell xls-cell--empty" colSpan={6}/>

@@ -7,12 +7,12 @@
   align-items: center;
   justify-content: space-between;
   gap: var(--space-2);
-  padding: var(--space-2) var(--space-3);
-  border-radius: var(--radius-md);
-  border: 1px solid var(--color-border-default);
+  padding: 3px var(--space-2);
+  border-radius: 0;
+  border: 1px solid var(--color-excel-grid-border);
   border-left: 3px solid var(--color-warning);
   background: var(--color-warning-bg);
-  margin-bottom: var(--space-3);
+  margin-bottom: 0;
 }
 
 .economic-event-badge.is-critical {
@@ -29,14 +29,14 @@
   display: inline-flex;
   align-items: center;
   gap: var(--space-1);
-  font-size: var(--font-size-sm);
+  font-size: var(--font-size-xs);
   font-weight: var(--font-weight-semibold);
   color: var(--color-text-primary);
 }
 
 .economic-event-badge-meta {
-  margin-top: 2px;
-  font-size: var(--font-size-xs);
+  margin-top: 1px;
+  font-size: 10px;
   color: var(--color-text-secondary);
 }
 
@@ -49,31 +49,32 @@
    ================================================================ */
 .tag-list {
   @apply flex flex-wrap;
-  gap: var(--space-1);
+  gap: 2px;
 }
 
 .tag {
   @apply inline-flex items-center cursor-pointer;
-  @apply px-3 py-1;
-  @apply rounded-full;
-  border: 1px solid var(--chip-border, var(--color-border-default));
-  @apply text-xs;
-  @apply font-medium;
-  background: var(--chip-bg, var(--color-bg-sunken));
+  padding: 1px 6px;
+  border-radius: 0;
+  border: 1px solid var(--chip-border, var(--color-excel-grid-border));
+  font-size: 10px;
+  font-weight: var(--font-weight-regular);
+  background: var(--chip-bg, var(--color-gray-0));
   color: var(--chip-text, var(--color-text-secondary));
-  transition: color var(--duration-fast) var(--ease-out), border-color var(--duration-fast) var(--ease-out), background var(--duration-fast) var(--ease-out);
+  height: 20px;
+  transition: color var(--duration-fast), border-color var(--duration-fast), background var(--duration-fast);
 }
 
 .tag:hover {
-  color: var(--color-text-primary);
-  border-color: var(--chip-border-active, var(--color-brand-muted));
-  background: var(--chip-bg-hover, var(--color-gray-100));
+  color: var(--color-brand);
+  border-color: var(--color-brand-muted);
+  background: var(--color-brand-subtle);
 }
 
 .tag.active {
-  border-color: var(--chip-border-active, var(--color-brand-muted));
-  color: var(--chip-text-active, var(--color-brand));
-  background: var(--chip-bg-active, var(--color-brand-subtle));
-  font-weight: 600;
+  border-color: var(--color-brand);
+  color: var(--color-brand);
+  background: var(--color-brand-subtle);
+  font-weight: var(--font-weight-semibold);
 }
 }
