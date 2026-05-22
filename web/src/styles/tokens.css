@@ -51,13 +51,13 @@
   --color-yellow-500: #FFCC00;
 
   /* Excel 전용 — 셀 선택/강조 */
-  --color-excel-cell-selected: #B8CCE4;
-  --color-excel-cell-header:   #DDEBF7;
-  --color-excel-row-stripe:    #F2F2F2;
+  --color-excel-cell-selected: #D6E4F0;
+  --color-excel-cell-header:   #F2F2F2;
+  --color-excel-row-stripe:    #F9F9F9;
   --color-excel-ribbon:        #F3F3F3;
   --color-excel-title-bar:     #217346;
   --color-excel-tab-inactive:  #E1E1E1;
-  --color-excel-grid-border:   #D0D0D0;
+  --color-excel-grid-border:   #D9D9D9;
 }
 
 

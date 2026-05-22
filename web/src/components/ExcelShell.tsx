@@ -50,11 +50,16 @@ type Props = {
 // ── 리본 정의 ────────────────────────────────────────────────────
 
 const RIBBON_TABS = [
-  { key: 'home',   label: '홈' },
-  { key: 'insert', label: '삽입' },
-  { key: 'data',   label: '데이터' },
-  { key: 'view',   label: '보기' },
-  { key: 'tools',  label: '도구' },
+  { key: 'home',       label: '홈' },
+  { key: 'insert',     label: '삽입' },
+  { key: 'draw',       label: '그리기' },
+  { key: 'pagelayout', label: '페이지 레이아웃' },
+  { key: 'formula',    label: '수식' },
+  { key: 'data',       label: '데이터' },
+  { key: 'review',     label: '검토' },
+  { key: 'view',       label: '보기' },
+  { key: 'automation', label: '자동화' },
+  { key: 'tools',      label: '도움말' },
 ] as const
 type RibbonTabKey = typeof RIBBON_TABS[number]['key']
 
@@ -366,10 +371,21 @@ export default function ExcelShell({
     const d = String(now.getDate()).padStart(2, '0')
     return `market_brief_${y}${m}${d}.xlsx`
   }, [])
+
+  const userInitials = useMemo(() => {
+    const name = profile.nickname || profile.telegramName || authName || ''
+    if (!name) return '?'
+    const parts = name.trim().split(/\s+/)
+    if (parts.length >= 2) return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase()
+    return name.slice(0, 2).toUpperCase()
+  }, [profile, authName])
+
+  const [currentTime, setCurrentTime] = useState(() => {
+    const now = new Date()
+    return `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')} ${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`
+  })
+
   const [isUltraCompact, setIsUltraCompact] = useState(false)
-  const titlebarText = isUltraCompact
-    ? workbookTitle
-    : `${workbookTitle} - ${pageLabel || '시트1'} - Excel`
   const isSearchVisible = !isUltraCompact || mobileSearchOpen
 
   const routeByMenuQuery = useCallback((query: string) => {
@@ -499,6 +515,15 @@ export default function ExcelShell({
     window.localStorage.setItem(RIBBON_FOLD_STORAGE_KEY, JSON.stringify(ribbonFoldState))
   }, [ribbonFoldState])
 
+  useEffect(() => {
+    const tick = () => {
+      const now = new Date()
+      setCurrentTime(`${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')} ${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`)
+    }
+    const id = window.setInterval(tick, 60000)
+    return () => window.clearInterval(id)
+  }, [])
+
   // 좌/우 패널 표시 여부 (반응형)
   const [visiblePanels, setVisiblePanels] = useState<'all' | 'no-right' | 'center-only'>('all')
   useEffect(() => {
@@ -520,14 +545,29 @@ export default function ExcelShell({
 
       {/* ── 1. 타이틀 바 ── */}
       <div className="excel-titlebar">
-        <div className="excel-titlebar__qs">
-          <button className="excel-titlebar__qs-btn excel-tooltip-target" data-tooltip="즐겨찾기 목록" onClick={() => onNavigate('watchlist')}><Star size={13}/></button>
-          <button className="excel-titlebar__qs-btn excel-tooltip-target" data-tooltip={quickSaveTooltip || '현재 화면 저장'} onClick={() => void handleQuickSave()}><Save size={13}/></button>
-          <button className="excel-titlebar__qs-btn excel-tooltip-target" data-tooltip="실행 취소" onClick={() => window.history.back()}><Undo2 size={13}/></button>
-          <button className="excel-titlebar__qs-btn excel-tooltip-target" data-tooltip="다시 실행" onClick={() => window.history.forward()}><Redo2 size={13}/></button>
+
+        {/* 좌측: 앱 아이콘 + 빠른 실행 도구 */}
+        <div className="excel-titlebar__left">
+          <div className="excel-titlebar__app-icon" aria-label="Excel">
+            <span className="excel-titlebar__app-icon-x">X</span>
+          </div>
+          <div className="excel-titlebar__qs">
+            <button className="excel-titlebar__qs-btn excel-tooltip-target" data-tooltip="즐겨찾기 목록" onClick={() => onNavigate('watchlist')}><Star size={13}/></button>
+            <button className="excel-titlebar__qs-btn excel-tooltip-target" data-tooltip={quickSaveTooltip || '현재 화면 저장'} onClick={() => void handleQuickSave()}><Save size={13}/></button>
+            <button className="excel-titlebar__qs-btn excel-tooltip-target" data-tooltip="실행 취소" onClick={() => window.history.back()}><Undo2 size={13}/></button>
+            <button className="excel-titlebar__qs-btn excel-tooltip-target" data-tooltip="다시 실행" onClick={() => window.history.forward()}><Redo2 size={13}/></button>
+            <button className="excel-titlebar__qs-chevron" aria-label="빠른 실행 도구 모음 사용자 지정"><ChevronDown size={10}/></button>
+          </div>
         </div>
-        <div className="excel-titlebar__app-name">{titlebarText}</div>
-        <div className="excel-titlebar__window-controls">
+
+        {/* 중앙: 파일명 */}
+        <div className="excel-titlebar__center">
+          <button className="excel-titlebar__star-btn excel-tooltip-target" data-tooltip="즐겨찾기에 추가" onClick={() => onNavigate('watchlist')}><Star size={12}/></button>
+          <span className="excel-titlebar__app-name">{workbookTitle}</span>
+        </div>
+
+        {/* 우측: 검색 + 사용자 아바타 + 창 컨트롤 */}
+        <div className="excel-titlebar__right">
           {isUltraCompact && (
             <button
               type="button"
@@ -581,7 +621,6 @@ export default function ExcelShell({
                     ))}
                   </div>
                 )}
-
                 {recommendedMenuTabs.length > 0 && (
                   <div className="excel-search-panel__section">
                     <div className="excel-search-panel__title">추천 메뉴</div>
@@ -597,7 +636,6 @@ export default function ExcelShell({
                     ))}
                   </div>
                 )}
-
                 <div className="excel-search-panel__section">
                   <div className="excel-search-panel__title">전체 메뉴</div>
                   {filteredMenuTabs.map(tab => (
@@ -618,15 +656,26 @@ export default function ExcelShell({
             )}
           </div>
           {isSignedIn && (
-            <button className="excel-titlebar__user-btn" onClick={onOpenProfile}>
-              <User size={13}/>{displayName}<ChevronDown size={10}/>
+            <button className="excel-titlebar__user-avatar excel-tooltip-target" data-tooltip={displayName} onClick={onOpenProfile}>
+              {userInitials}
             </button>
           )}
+          {!isUltraCompact && (
+            <div className="excel-titlebar__window-btns">
+              <button className="excel-titlebar__win-btn" aria-label="최소화">─</button>
+              <button className="excel-titlebar__win-btn" aria-label="최대화">□</button>
+              <button className="excel-titlebar__win-btn excel-titlebar__win-btn--close" aria-label="닫기">✕</button>
+            </div>
+          )}
         </div>
+
       </div>
 
       {/* ── 2. 리본 탭 ── */}
       <div className="excel-ribbon-tabs" role="tablist">
+        <button className="excel-ribbon-tab" aria-label="파일 메뉴"> {/* excel-ribbon-tab--file */}
+          파일
+        </button>
         {RIBBON_TABS.map(t => (
           <button
             key={t.key}
@@ -812,7 +861,13 @@ export default function ExcelShell({
           </span>
         </div>
         <div className="excel-statusbar__right">
-          <span className="excel-statusbar__item">시트: {pageLabel}</span>
+          {isSignedIn && (
+            <span className="excel-statusbar__item excel-statusbar__item--user excel-statusbar__item--clickable" onClick={onOpenProfile}>
+              @{displayName}
+            </span>
+          )}
+          <span className="excel-statusbar__item excel-statusbar__item--datetime">{currentTime}</span>
+          <span className="excel-statusbar__item">국장 본장 / 미장 데이터핫</span>
           <div className="excel-statusbar__zoom">
             <Minus size={9} style={{ cursor: 'pointer' }} onClick={() => setZoom(z => Math.max(50, z - 10))}/>
             <input type="range" className="excel-statusbar__zoom-slider" min={50} max={200} step={10}
