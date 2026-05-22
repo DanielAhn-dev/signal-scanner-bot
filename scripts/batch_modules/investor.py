@@ -205,6 +205,10 @@ def fetch_investor_data(supabase: Client, trading_date: str):
         for idx, code in enumerate(code_list):
             if idx % 100 == 0 and idx > 0:
                 print(f"  -> [naver_finance] progress: {idx}/{len(code_list)} (success: {success_count}, fail: {fail_count})")
+            # 초반 30개 시도 후 전부 실패면 조기 탈출 (Naver 구조 변경 or 차단)
+            if idx == 30 and success_count == 0:
+                print(f"  -> [naver_finance] 초반 30개 전부 실패, 조기 중단")
+                break
             try:
                 url = f"https://finance.naver.com/item/frgn.naver?code={code}&page=1"
                 resp = session.get(url, timeout=8)

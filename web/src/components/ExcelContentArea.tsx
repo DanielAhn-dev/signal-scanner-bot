@@ -34,7 +34,7 @@ export default function ExcelContentArea({
   }
 
   return (
-    <div className="xls-content-area xls-content-area--legacy">
+    <div className="xls-content-area">
       {/* 열 문자 헤더 행 */}
       {showColLetters && (
         <div className="xls-col-header-strip">

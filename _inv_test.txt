@@ -1,0 +1,24 @@
+﻿.venv\Scripts\python.exe : Traceback (most recent call last):
+At line:1 char:45
++ ... d:\Work\dev\github\signal-scanner-bot"; .venv\Scripts\python.exe -c "
++                                             ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (Traceback (most recent call last)::String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+  File "<string>", line 11, in <module>
+    tables = pd.read_html(StringIO(resp.text))
+  File "D:\Work\dev\github\signal-scanner-bot\.venv\Lib\site-packages\pandas\io\html.py", line 1240, in read_html
+    return _parse(
+        flavor=flavor,
+    ...<16 lines>...
+        storage_options=storage_options,
+    )
+  File "D:\Work\dev\github\signal-scanner-bot\.venv\Lib\site-packages\pandas\io\html.py", line 1003, in _parse
+    raise retained
+  File "D:\Work\dev\github\signal-scanner-bot\.venv\Lib\site-packages\pandas\io\html.py", line 983, in _parse
+    tables = p.parse_tables()
+  File "D:\Work\dev\github\signal-scanner-bot\.venv\Lib\site-packages\pandas\io\html.py", line 249, in parse_tables
+    tables = self._parse_tables(self._build_doc(), self.match, self.attrs)
+  File "D:\Work\dev\github\signal-scanner-bot\.venv\Lib\site-packages\pandas\io\html.py", line 598, in _parse_tables
+    raise ValueError("No tables found")
+ValueError: No tables found

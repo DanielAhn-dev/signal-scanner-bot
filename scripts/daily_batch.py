@@ -38,7 +38,7 @@ from batch_modules.ohlcv import fetch_ohlcv_per_ticker
 from batch_modules.indicators import calculate_indicators
 from batch_modules.investor import fetch_investor_data
 from batch_modules.credit_short import fetch_credit_short_data
-from batch_modules.sectors import update_sector_data, populate_sector_daily, calculate_sector_scores
+from batch_modules.sectors import update_sector_data, populate_sector_daily, calculate_sector_scores, mark_sector_leaders
 from batch_modules.scores import calculate_stock_scores
 from batch_modules.signals import save_pullback_signals
 from batch_modules.cleanup import cleanup_old_data
@@ -174,9 +174,13 @@ def main():
         calculate_sector_scores(supabase)
         print(f"   Completed in {time.time() - step_start:.1f}s")
         stage_times["SectorData"] = time.time() - step_start
-        
+
+        step_start = time.time()
+        mark_sector_leaders(supabase)
+        print(f"   Completed in {time.time() - step_start:.1f}s")
+
         time.sleep(1)
-        
+
         # Step 5: Stock scores
         print("\n[5/7] Calculating stock scores...")
         step_start = time.time()

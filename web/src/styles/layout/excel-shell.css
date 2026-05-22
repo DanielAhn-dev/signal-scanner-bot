@@ -986,11 +986,85 @@
 /* ── Sectors sheet page ── */
 .sector-sheet {
   min-width: 0;
+  width: 100%;
+  max-width: none;
+  margin: 0;
+}
+
+.sector-head {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4) 0;
+  margin-bottom: var(--space-4);
+}
+
+.sector-title-wrap {
+  min-width: 0;
+}
+
+.sector-title {
+  margin-bottom: var(--space-1);
+}
+
+.sector-subtitle {
+  margin: 0;
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-sm);
+  line-height: 1.45;
+}
+
+.sector-head-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+
+.sector-head-controls {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+  margin-left: auto;
+}
+
+.sector-sheet__summary-meta {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.sector-sheet__summary-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+  margin-left: auto;
 }
 
 .sector-sheet__header-row {
   min-height: var(--xls-grid-row-height-double);
   margin-bottom: 0 !important;
+}
+
+.sector-sheet--excel {
+  --space-1: 2px;
+  --space-2: 4px;
+  --space-3: 8px;
+  --space-4: 10px;
+  font-size: 11px;
+}
+
+.sector-sheet--excel .sector-sheet__tabs .sector-tab-btn {
+  min-height: var(--xls-grid-row-height-double);
+  padding: 0 14px;
+  font-size: var(--font-size-sm);
 }
 
 .sector-sheet__tabs {
@@ -1025,6 +1099,31 @@
   align-items: center;
 }
 
+.sector-sheet--excel .sector-sheet__desc-card {
+  padding: 0 14px !important;
+  line-height: 1.45;
+}
+
+.sector-sheet--excel .sector-sheet__summary-table .xls-row {
+  height: var(--xls-grid-row-height-double);
+}
+
+.sector-sheet__summary-table .sector-sheet__section-row-inner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.sector-sheet__summary-table .sector-sheet__section-action {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+  text-align: right;
+}
+
 .sector-sheet__cards-list {
   gap: 0;
 }
@@ -1037,11 +1136,21 @@
   margin-top: -1px;
 }
 
+.sector-sheet--excel .sector-row-card,
+.sector-sheet--excel .sector-all-card {
+  background: #fff;
+}
+
 .sector-sheet .sector-row-trigger,
 .sector-sheet .sector-all-card__trigger {
   min-height: calc(var(--xls-grid-row-height) * 4);
   padding: 0 var(--xls-grid-cell-padding-x);
   align-items: center;
+}
+
+.sector-sheet--excel .sector-row-trigger,
+.sector-sheet--excel .sector-all-card__trigger {
+  min-height: calc(var(--xls-grid-row-height) * 4.5);
 }
 
 .sector-sheet .sector-row-rank,
@@ -1180,14 +1289,6 @@
   background: linear-gradient(to bottom, #f8f9f9 0%, #f2f4f5 100%);
 }
 
-/* 기존 .excel-content 호환용 */
-.excel-content {
-  flex: 1;
-  overflow: auto;
-  background: var(--color-gray-0);
-  position: relative;
-}
-
 /* ================================================================
    EXCEL CONTENT AREA (ExcelContentArea.tsx)
    ================================================================ */
@@ -1275,40 +1376,10 @@
   min-height: 100%;
 }
 
-.xls-content-area--native {
-  flex: 1;
-  overflow: hidden;
-}
-
 /* native grid (ExcelSpreadsheet / ExcelLayout 직접 사용) */
 .xls-content-area--native {
   flex: 1;
   overflow: hidden;
-}
-
-/* 비-native: 그냥 스크롤 영역 */
-.xls-content-area--legacy {
-  flex: 1;
-  overflow: auto;
-  background-color: var(--color-gray-0);
-}
-
-/* ── 기존 페이지 스타일 정규화 ── */
-/* 컨테이너 최대폭 해제, 엑셀 느낌으로 */
-.xls-content-area--legacy .container-app,
-.xls-content-area--legacy .container-app.container-wide {
-  max-width: none;
-  padding: var(--space-3) var(--space-4);
-  min-height: auto;
-}
-
-/* 카드 → flat 스타일 */
-.xls-content-area--legacy .card {
-  border-radius: 0;
-  border-left: none;
-  border-right: none;
-  border-color: var(--color-excel-grid-border);
-  box-shadow: none;
 }
 
 /* ================================================================
@@ -1644,7 +1715,6 @@
   }
 
   .xls-content-area,
-  .xls-content-area--legacy,
   .xls-content-body {
     height: 100%;
     min-height: 0;
@@ -1707,18 +1777,6 @@
   height: 1px;
   background: var(--color-excel-grid-border);
   margin: 2px 0;
-}
-
-/* ================================================================
-   LEGACY container-app 오버라이드 (기존 페이지 통합)
-   ================================================================ */
-.excel-content .container-app {
-  max-width: none;
-  padding: var(--space-3) var(--space-4);
-  min-height: auto;
-}
-.excel-content .container-app.container-wide {
-  max-width: none;
 }
 
 /* ================================================================
@@ -1944,7 +2002,6 @@
 }
 
 /* ── Reports sheet ── */
-.excel-content .container-app.reports-sheet,
 .container-app.reports-sheet {
   padding: 0 !important;
   margin: 0 !important;
@@ -2036,6 +2093,83 @@
   cursor: pointer;
 }
 
+/* ── Analyze sheet page ── */
+.analyze-sheet {
+  min-width: 0;
+}
+
+.analyze-sheet .xls-row {
+  height: var(--xls-grid-row-height);
+}
+
+.analyze-sheet__meta-table .xls-th,
+.analyze-sheet__meta-table .xls-cell,
+.analyze-sheet__result-head .xls-th,
+.analyze-sheet__result-head .xls-cell {
+  padding-top: 4px;
+  padding-bottom: 4px;
+  padding-left: 10px;
+  padding-right: 10px;
+  line-height: var(--xls-grid-cell-line-height);
+  vertical-align: middle;
+}
+
+.analyze-sheet__meta-table tbody > tr:nth-child(1) {
+  height: var(--xls-grid-row-height-double);
+}
+
+.analyze-sheet__meta-table tbody > tr:nth-child(2) {
+  height: var(--xls-grid-row-height-double);
+}
+
+.analyze-sheet .card {
+  border-radius: 0;
+  border: 1px solid var(--color-excel-grid-border);
+  box-shadow: none;
+}
+
+.analyze-sheet .card-lg {
+  padding: var(--space-3);
+}
+
+.analyze-sheet .title-md {
+  font-size: var(--font-size-sm);
+  line-height: var(--xls-grid-cell-line-height);
+}
+
+.analyze-sheet .stat-label {
+  margin-bottom: 2px;
+}
+
+.analyze-sheet .stat-value {
+  font-size: var(--font-size-lg);
+  line-height: var(--line-height-snug);
+}
+
+.analyze-sheet .cards-grid {
+  gap: 0;
+  border-top: 1px solid var(--color-excel-grid-border);
+  border-left: 1px solid var(--color-excel-grid-border);
+}
+
+.analyze-sheet .cards-grid > div {
+  border-right: 1px solid var(--color-excel-grid-border);
+  border-bottom: 1px solid var(--color-excel-grid-border);
+  padding: 8px 10px;
+  min-height: var(--xls-grid-row-height-double);
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+
+.analyze-sheet .analyze-section-head {
+  margin-bottom: var(--space-1);
+}
+
+.analyze-sheet .caption {
+  line-height: var(--xls-grid-cell-line-height);
+}
+
 .news-cell--title a {
   display: block;
   overflow: hidden;
@@ -2091,6 +2225,60 @@
   padding-bottom: var(--xls-grid-cell-padding-y);
   padding-left: 8px;
   padding-right: 8px;
+}
+
+.market-sheet__summary-table .xls-cell,
+.sector-sheet__summary-table .xls-cell {
+  vertical-align: middle;
+  line-height: var(--xls-grid-cell-line-height);
+  padding-top: var(--xls-grid-cell-padding-y);
+  padding-bottom: var(--xls-grid-cell-padding-y);
+}
+
+.market-sheet--excel .market-sheet__summary-table .xls-row,
+.market-sheet--excel .market-sheet__table .xls-row {
+  height: var(--xls-grid-row-height-double);
+}
+
+.market-sheet--excel .market-sheet__summary-table .xls-cell,
+.market-sheet--excel .market-sheet__table .xls-cell {
+  padding-top: 8px;
+  padding-bottom: 8px;
+}
+
+.market-sheet--excel .market-sheet__summary-table .market-sheet__summary-value,
+.market-sheet--excel .market-sheet__summary-table .market-sheet__summary-sub,
+.market-sheet--excel .market-sheet__table .market-sheet__signal-title,
+.market-sheet--excel .market-sheet__table .market-sheet__signal-sub,
+.market-sheet--excel .market-sheet__table .market-sheet__indicator-value-main,
+.market-sheet--excel .market-sheet__table .market-sheet__indicator-value-sub {
+  font-size: var(--font-size-sm);
+}
+
+.market-sheet--excel .market-sheet__summary-table .market-sheet__summary-value {
+  font-size: var(--font-size-base);
+}
+
+.market-sheet--excel .market-sheet__summary-table .market-sheet__summary-sub,
+.market-sheet--excel .market-sheet__table .market-sheet__signal-sub,
+.market-sheet--excel .market-sheet__table .market-sheet__indicator-value-sub {
+  font-size: 10px;
+}
+
+.market-sheet__summary-value,
+.sector-sheet__summary-value {
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-text-primary);
+  line-height: 1.25;
+}
+
+.market-sheet__summary-sub,
+.sector-sheet__summary-sub {
+  margin-top: 2px;
+  font-size: 10px;
+  color: var(--color-text-secondary);
+  line-height: 1.35;
 }
 
 .market-sheet .market-sheet__signal-head-inner {
@@ -2213,6 +2401,9 @@
   font-size: 11px;
   padding: 0 !important;
   gap: 0;
+  width: 100%;
+  max-width: none;
+  margin: 0;
 }
 .market-sheet--excel .card {
   background: #fff !important;

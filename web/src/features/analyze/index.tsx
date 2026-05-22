@@ -64,12 +64,22 @@ function formatFlowValue(value: number | null, metric?: string | null): string {
   return formatKrw(value)
 }
 
+function buildAnalyzeShareUrl(code: string): string {
+  if (typeof window === 'undefined') return ''
+  const url = new URL(window.location.href)
+  url.searchParams.set('code', code)
+  return url.toString()
+}
+
 const DIVIDER = (
   <div style={{ borderTop: '1px solid var(--color-border-default)', margin: 'var(--space-4) 0' }} />
 )
 
 /** 차트 토글 상태를 localStorage에 영속 저장하는 훅 */
-function useLocalStorageBool(key: string, defaultValue: boolean): [boolean, (v: boolean) => void] {
+function useLocalStorageBool(
+  key: string,
+  defaultValue: boolean,
+): [boolean, React.Dispatch<React.SetStateAction<boolean>>] {
   const [value, setValue] = useState<boolean>(() => {
     try {
       const stored = localStorage.getItem(key)
@@ -78,9 +88,12 @@ function useLocalStorageBool(key: string, defaultValue: boolean): [boolean, (v: 
       return defaultValue
     }
   })
-  const set = useCallback((v: boolean) => {
-    setValue(v)
-    try { localStorage.setItem(key, String(v)) } catch { /* ignore */ }
+  const set = useCallback((next: React.SetStateAction<boolean>) => {
+    setValue((prev) => {
+      const resolved = typeof next === 'function' ? (next as (v: boolean) => boolean)(prev) : next
+      try { localStorage.setItem(key, String(resolved)) } catch { /* ignore */ }
+      return resolved
+    })
   }, [key])
   return [value, set]
 }
@@ -377,6 +390,11 @@ export default function AnalyzePage({ onNavigate }: { onNavigate?: (r: string) =
       toast.show('먼저 종목을 조회해 주세요')
       return
     }
+    const recentCloses = candles
+      .slice(-10)
+      .map((c) => Number(c.close))
+      .filter((v) => Number.isFinite(v))
+      .reverse()
 
     await shareManager.createShare('analyze', {
       kind: 'analyze',
@@ -406,14 +424,14 @@ export default function AnalyzePage({ onNavigate }: { onNavigate?: (r: string) =
           stopPrice: advisor?.stopPrice,
         },
         summaryLines: shareSummaryLines,
-        recentCloses: closes.slice(0, 10).reverse(),
+        recentCloses,
       },
     })
   }
 
   return (
-    <section className="container-app">
-      <table className="xls-table" style={{ width: '100%', tableLayout: 'fixed', marginBottom: 'var(--space-4)' }}>
+    <section className="container-app analyze-sheet xls-page-inset">
+      <table className="xls-table analyze-sheet__meta-table" style={{ width: '100%', tableLayout: 'fixed', marginBottom: 'var(--space-4)' }}>
         <colgroup>
           <col style={{ width: '18%' }} />
           <col style={{ width: '18%' }} />
@@ -431,8 +449,17 @@ export default function AnalyzePage({ onNavigate }: { onNavigate?: (r: string) =
               <EconomicEventBadge onNavigateToCalendar={() => onNavigate?.('economy')} />
             </td>
           </tr>
-          <tr className="xls-row">
-            <td className="xls-cell" colSpan={6} style={{ padding: '8px 10px' }}>
+          <tr className="xls-row" style={{ position: 'relative', zIndex: 30 }}>
+            <td
+              className="xls-cell"
+              colSpan={6}
+              style={{
+                padding: '8px 10px',
+                overflow: 'visible',
+                position: 'relative',
+                zIndex: 30,
+              }}
+            >
               <div style={{ display: 'flex', gap: 'var(--space-2)', flexWrap: 'nowrap', alignItems: 'center' }}>
                 <div style={{ flex: '1 1 0', minWidth: 0 }}>
                   <StockSearchInput
@@ -530,8 +557,8 @@ export default function AnalyzePage({ onNavigate }: { onNavigate?: (r: string) =
       )}
 
       {result && !loading && (
-        <div className="card card-lg" id={analyzeCaptureId}>
-          <table className="xls-table" style={{ width: '100%', tableLayout: 'fixed', marginBottom: 'var(--space-4)' }}>
+        <div className="card card-lg analyze-sheet__result" id={analyzeCaptureId}>
+          <table className="xls-table analyze-sheet__result-head" style={{ width: '100%', tableLayout: 'fixed', marginBottom: 'var(--space-4)' }}>
             <colgroup>
               <col style={{ width: '22%' }} />
               <col style={{ width: '22%' }} />
@@ -915,7 +942,9 @@ export default function AnalyzePage({ onNavigate }: { onNavigate?: (r: string) =
                 <div className="title-md">Nexora 어드바이저</div>
                 <div style={{ display: 'flex', gap: 'var(--space-2)', alignItems: 'center', flexWrap: 'wrap' }}>
                   {dataValidation.warnings.length > 0 && (
-                    <span style={{
+                    <span
+                      title={dataValidation.warnings.join('; ')}
+                      style={{
                       display: 'inline-block',
                       padding: '0.2rem 0.75rem',
                       borderRadius: 999,
@@ -923,7 +952,6 @@ export default function AnalyzePage({ onNavigate }: { onNavigate?: (r: string) =
                       fontSize: 'var(--font-size-sm)',
                       background: 'var(--color-warning-bg)',
                       color: 'var(--color-warning)',
-                      title: dataValidation.warnings.join('; '),
                       cursor: 'help',
                     }}>
                       ⚠️ 데이터 검증 필요

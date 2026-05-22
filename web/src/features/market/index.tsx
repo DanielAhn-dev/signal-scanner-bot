@@ -112,6 +112,18 @@ function fmtKorMoney(n: number): string {
   return `${sign}${Math.abs(eok).toLocaleString('ko-KR')}억`
 }
 
+function formatKoDateTime(value?: string): string {
+  if (!value) return '—'
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return '—'
+  return new Intl.DateTimeFormat('ko-KR', {
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(date)
+}
+
 function riskColor(score: number) {
   if (score >= 70) return 'var(--color-error)'
   if (score >= 40) return 'var(--color-warning)'
@@ -149,12 +161,13 @@ function Chip({
       style={{
         display: 'inline-flex',
         alignItems: 'center',
-        padding: '2px 8px',
+        padding: '4px 10px',
         borderRadius: 'var(--radius-full)',
-        fontSize: 'var(--font-size-xs)',
+        fontSize: 'var(--font-size-sm)',
         fontWeight: 'var(--font-weight-semibold)',
         color,
         background: bg,
+        lineHeight: 1.2,
         whiteSpace: 'nowrap',
       }}
     >
@@ -452,6 +465,83 @@ function PageHeader({ loading, onRefresh }: { loading: boolean; onRefresh: () =>
         </button>
       </div>
     </div>
+  )
+}
+
+function canTradeTextColor(shouldTrade: boolean): string {
+  return shouldTrade ? 'var(--color-success)' : 'var(--color-error)'
+}
+
+function MarketSummaryTable({ data }: { data: MarketOverviewData }) {
+  const { diagnosis, topSectors, economicPhase, globalCorrelation, tradingSignal, indices, fetchedAt } = data
+  const leadingSectors = topSectors.slice(0, 3).map((sector) => sector.name).join(' · ') || '—'
+  const warningSignals = diagnosis.signals.slice(0, 2).join(' · ') || '—'
+  const restrictions = tradingSignal.restrictions.slice(0, 2).join(' · ') || '없음'
+  const phaseLabel = economicPhase.label
+  const usdTrend = globalCorrelation.usdStrength === 'strengthening' ? '강세' : globalCorrelation.usdStrength === 'weakening' ? '약세' : '중립'
+  const vixText = indices.vix ? `${indices.vix.price.toFixed(2)} · ${indices.vix.changeRate >= 0 ? '+' : ''}${indices.vix.changeRate.toFixed(2)}%` : '—'
+
+  return (
+    <table className="xls-table market-sheet__summary-table" style={{ width: '100%', tableLayout: 'fixed', marginBottom: 'var(--space-4)' }}>
+      <colgroup>
+        <col style={{ width: 96 }} />
+        <col />
+        <col style={{ width: 96 }} />
+        <col />
+        <col style={{ width: 96 }} />
+        <col />
+      </colgroup>
+      <tbody>
+        <SheetSectionHeader
+          label="오늘의 시장 요약"
+          value={<span className="caption">업데이트 {formatKoDateTime(fetchedAt)} · 주도 섹터 {topSectors.length}개</span>}
+        />
+        <tr className="xls-row">
+          <td className="xls-cell">시장 판단</td>
+          <td className="xls-cell" colSpan={2}>
+            <div className="market-sheet__summary-value" style={{ color: canTradeTextColor(tradingSignal.shouldTrade) }}>
+              {tradingSignal.shouldTrade ? '매매 가능' : '매매 제한'}
+            </div>
+            <div className="market-sheet__summary-sub">{tradingSignal.recommendation}</div>
+          </td>
+          <td className="xls-cell">경제 국면</td>
+          <td className="xls-cell" colSpan={2}>
+            <div className="market-sheet__summary-value">{phaseLabel}</div>
+            <div className="market-sheet__summary-sub">{economicPhase.description}</div>
+          </td>
+        </tr>
+        <tr className="xls-row xls-row--even">
+          <td className="xls-cell">리스크</td>
+          <td className="xls-cell" colSpan={2}>
+            <div className="market-sheet__summary-value" style={{ color: riskColor(diagnosis.riskScore) }}>{diagnosis.riskScore}/100</div>
+            <div className="market-sheet__summary-sub">권장 현금 {diagnosis.riskScore >= 80 ? '50%+' : diagnosis.riskScore >= 60 ? '30~50%' : diagnosis.riskScore >= 40 ? '20~30%' : '10~20%'}</div>
+          </td>
+          <td className="xls-cell">신뢰도</td>
+          <td className="xls-cell" colSpan={2}>
+            <div className="market-sheet__summary-value">{tradingSignal.confidence}%</div>
+            <div className="market-sheet__summary-sub">제한 {restrictions}</div>
+          </td>
+        </tr>
+        <tr className="xls-row">
+          <td className="xls-cell">주도 섹터</td>
+          <td className="xls-cell" colSpan={2}>
+            <div className="market-sheet__summary-value">{leadingSectors}</div>
+            <div className="market-sheet__summary-sub">수급과 점수 기준 상위 섹터</div>
+          </td>
+          <td className="xls-cell">달러/변동성</td>
+          <td className="xls-cell" colSpan={2}>
+            <div className="market-sheet__summary-value">USD {usdTrend} · VIX {vixText}</div>
+            <div className="market-sheet__summary-sub">외인 수급과 위험자산 환경 확인</div>
+          </td>
+        </tr>
+        <tr className="xls-row xls-row--even">
+          <td className="xls-cell">핵심 신호</td>
+          <td className="xls-cell" colSpan={5}>
+            <div className="market-sheet__summary-sub" style={{ color: 'var(--color-text-primary)' }}>{warningSignals}</div>
+          </td>
+        </tr>
+      </tbody>
+    </table>
   )
 }
 
@@ -773,7 +863,7 @@ export default function MarketPage() {
 
   if (error) {
     return (
-      <section className="container-app market-sheet market-sheet--excel xls-page-inset">
+      <section className="market-sheet market-sheet--excel xls-page-inset">
         <PageHeader loading={isRefreshing} onRefresh={handleRefresh} />
         <ErrorState message={error} onRetry={load} />
       </section>
@@ -782,7 +872,7 @@ export default function MarketPage() {
 
   if (loading || !data) {
     return (
-      <section className="container-app market-sheet market-sheet--excel xls-page-inset">
+      <section className="market-sheet market-sheet--excel xls-page-inset">
         <PageHeader loading={isRefreshing} onRefresh={handleRefresh} />
         <div className="card"><Skeleton lines={12} height={14} /></div>
       </section>
@@ -790,8 +880,10 @@ export default function MarketPage() {
   }
 
   return (
-    <section className="container-app market-sheet market-sheet--excel xls-page-inset">
+    <section className="market-sheet market-sheet--excel xls-page-inset">
       <PageHeader loading={isRefreshing} onRefresh={handleRefresh} />
+
+      <MarketSummaryTable data={data} />
 
       <SegmentControl
         tabs={[

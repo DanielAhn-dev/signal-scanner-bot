@@ -219,6 +219,64 @@ def populate_sector_daily(supabase: Client):
         traceback.print_exc()
 
 
+def mark_sector_leaders(supabase: Client, top_n: int = 3):
+    """각 섹터 내 시총 상위 top_n 종목을 is_sector_leader=true 로 마킹."""
+    print(f"\n[3.8/7] Marking sector leaders (top {top_n} by market_cap per sector)...")
+    try:
+        stocks_res = supabase.table("stocks") \
+            .select("code, sector_id, market_cap, is_sector_leader") \
+            .not_.is_("sector_id", "null") \
+            .eq("is_active", True) \
+            .in_("market", ["KOSPI", "KOSDAQ"]) \
+            .execute()
+        rows = stocks_res.data or []
+        if not rows:
+            print("   No stocks found")
+            return
+
+        # 섹터별 시총 기준 정렬 → top_n 리더 선정
+        from collections import defaultdict
+        sector_stocks: dict[str, list] = defaultdict(list)
+        for r in rows:
+            if r.get("market_cap") is not None:
+                sector_stocks[r["sector_id"]].append(r)
+
+        leader_codes: set[str] = set()
+        for stocks_in_sector in sector_stocks.values():
+            stocks_in_sector.sort(key=lambda x: (x["market_cap"] or 0), reverse=True)
+            for r in stocks_in_sector[:top_n]:
+                leader_codes.add(r["code"])
+
+        # 변경이 필요한 종목만 업데이트
+        updates: list[dict] = []
+        for r in rows:
+            should_be_leader = r["code"] in leader_codes
+            current = r.get("is_sector_leader")
+            if current != should_be_leader:
+                updates.append({"code": r["code"], "is_sector_leader": should_be_leader})
+
+        if updates:
+            # upsert 대신 in_() 필터 update — name 등 NOT NULL 컬럼 불필요
+            true_codes  = [r["code"] for r in updates if r["is_sector_leader"]]
+            false_codes = [r["code"] for r in updates if not r["is_sector_leader"]]
+            batch_size = 200
+            for i in range(0, len(true_codes), batch_size):
+                supabase.table("stocks") \
+                    .update({"is_sector_leader": True}) \
+                    .in_("code", true_codes[i:i+batch_size]).execute()
+            for i in range(0, len(false_codes), batch_size):
+                supabase.table("stocks") \
+                    .update({"is_sector_leader": False}) \
+                    .in_("code", false_codes[i:i+batch_size]).execute()
+            print(f"   Updated is_sector_leader for {len(updates)} stocks ({len(leader_codes)} leaders across {len(sector_stocks)} sectors)")
+        else:
+            print("   No changes needed")
+    except Exception as e:
+        print(f"  mark_sector_leaders failed: {e}")
+        import traceback
+        traceback.print_exc()
+
+
 def calculate_sector_scores(supabase: Client):
     """Calculate sector scores from flow/momentum/series factors."""
     print(f"\n[4/7] Calculating sector scores...")

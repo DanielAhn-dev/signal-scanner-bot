@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback } from "react"
+import React, { useEffect, useState, useCallback, useMemo } from "react"
 import { apiFetch } from "../../lib/api"
 import Button from "../../components/ui/Button"
 import Skeleton from "../../components/Skeleton"
@@ -137,6 +137,31 @@ function buildSectorReason(s: Sector, tab: Tab): string {
 
   if (tab === "promising") return `${scoreText}. ${flowText}.`
   return `${changeText}. ${flowText}.`
+}
+
+function formatKoDateTime(value?: string | null): string {
+  if (!value) return "—"
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return "—"
+  return new Intl.DateTimeFormat("ko-KR", {
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(date)
+}
+
+function formatKoDateTimeLong(value?: string | null): string {
+  if (!value) return "—"
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return "—"
+  return new Intl.DateTimeFormat("ko-KR", {
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  }).format(date)
 }
 
 // ── 공통 컴포넌트 ─────────────────────────────────────────────────────────
@@ -287,6 +312,111 @@ function SectorCard({
         </div>
       )}
     </div>
+  )
+}
+
+function SectorSummaryTable({
+  all,
+  tab,
+  detectedPhase,
+  latestUpdatedAt,
+  onRefresh,
+  refreshing,
+}: {
+  all: Sector[]
+  tab: Tab
+  detectedPhase: EconomicPhase | null
+  latestUpdatedAt: string | null
+  onRefresh?: () => void
+  refreshing?: boolean
+}) {
+  const sorted = [...all].sort((a, b) => (b.score ?? 0) - (a.score ?? 0))
+  const promisingCount = sorted.filter((sector) => (sector.score ?? 0) >= 55).length
+  const nextCount = all.filter((sector) => {
+    const flow5d = (toNum(sector.metrics?.flow_foreign_5d) ?? 0) + (toNum(sector.metrics?.flow_inst_5d) ?? 0)
+    return flow5d > 0 || ((sector.change_rate ?? 0) > 0 && (sector.score ?? 0) >= 40)
+  }).length
+  const topNames = sorted.slice(0, 3).map((sector) => sector.name).join(" · ") || "—"
+  const phaseLabel = detectedPhase ? PHASE_LABELS[detectedPhase] : "판단중"
+  const phaseMeta = detectedPhase ? ROTATION_CYCLE.find((phase) => phase.phase === detectedPhase) : null
+
+  return (
+    <table className="xls-table sector-sheet__summary-table" style={{ width: "100%", tableLayout: "fixed", marginBottom: "var(--space-4)" }}>
+      <colgroup>
+        <col style={{ width: 96 }} />
+        <col />
+        <col style={{ width: 96 }} />
+        <col />
+        <col style={{ width: 96 }} />
+        <col />
+      </colgroup>
+      <tbody>
+        <SheetSectionHeader
+          label="섹터 요약"
+          value={
+            <div className="sector-sheet__summary-meta">
+              <span className="caption">탭 {tab === "guide" ? "가이드" : tab === "all" ? "전체" : tab === "next" ? "다음" : "유망"} · 전체 {all.length}개</span>
+              <div className="sector-sheet__summary-actions">
+                <span className="caption muted">마지막 갱신 {formatKoDateTimeLong(latestUpdatedAt)}</span>
+                {tab !== "guide" && onRefresh ? (
+                  <Button variant="secondary" onClick={onRefresh} disabled={!!refreshing}>
+                    {refreshing ? "⟳ 새로고침 중…" : "새로고침"}
+                  </Button>
+                ) : null}
+              </div>
+            </div>
+          }
+        />
+        <tr className="xls-row">
+          <td className="xls-cell">현재 국면</td>
+          <td className="xls-cell" colSpan={2}>
+            <div className="sector-sheet__summary-value">{phaseLabel}</div>
+            <div className="sector-sheet__summary-sub">{phaseMeta?.description ?? "섹터 점수 기반으로 경기 국면을 추정합니다."}</div>
+          </td>
+          <td className="xls-cell">탭 현황</td>
+          <td className="xls-cell" colSpan={2}>
+            <div className="sector-sheet__summary-value">유망 {promisingCount} · 다음 {nextCount}</div>
+            <div className="sector-sheet__summary-sub">점수와 수급을 함께 반영한 후보군</div>
+          </td>
+        </tr>
+        <tr className="xls-row xls-row--even">
+          <td className="xls-cell">상위 섹터</td>
+          <td className="xls-cell" colSpan={2}>
+            <div className="sector-sheet__summary-value">{topNames}</div>
+            <div className="sector-sheet__summary-sub">점수 기준 상위 섹터</div>
+          </td>
+          <td className="xls-cell">가이드</td>
+          <td className="xls-cell" colSpan={2}>
+            <div className="sector-sheet__summary-value">로테이션 추적</div>
+            <div className="sector-sheet__summary-sub">경기 국면에 맞는 섹터를 우선 확인</div>
+          </td>
+        </tr>
+      </tbody>
+    </table>
+  )
+}
+
+function SheetSectionHeader({
+  label,
+  value,
+  colSpan = 6,
+  onClick,
+}: {
+  label: string
+  value?: React.ReactNode
+  colSpan?: number
+  onClick?: () => void
+}) {
+  const clickable = typeof onClick === "function"
+  return (
+    <tr className={`xls-row xls-row--even${clickable ? " sector-sheet__section-row--clickable" : ""}`} onClick={onClick}>
+      <td className="xls-cell" colSpan={colSpan}>
+        <div className="sector-sheet__section-row-inner">
+          <span className="sector-sheet__section-label-inline">{label}</span>
+          {value ? <div className="sector-sheet__section-action">{value}</div> : null}
+        </div>
+      </td>
+    </tr>
   )
 }
 
@@ -668,6 +798,18 @@ export default function SectorsPage({ onNavigate }: { onNavigate?: (r: string) =
   const [leadersLoading, setLeadersLoading] = useState(false)
   const [leadersError, setLeadersError] = useState<string | null>(null)
   const [leadersCriteria, setLeadersCriteria] = useState<string>("is_sector_leader desc, market_cap desc, liquidity desc")
+  const [lastLoadedAt, setLastLoadedAt] = useState<string | null>(initAll.length > 0 ? new Date().toISOString() : null)
+  const detectedPhase = detectCurrentPhase(all)
+  const latestUpdatedAt = useMemo(() => {
+    const values = all
+      .map((sector) => sector.updated_at)
+      .filter((value): value is string => Boolean(value))
+      .map((value) => new Date(value).getTime())
+      .filter((value) => Number.isFinite(value))
+    if (values.length === 0) return null
+    return new Date(Math.max(...values)).toISOString()
+  }, [all])
+  const displayUpdatedAt = latestUpdatedAt ?? lastLoadedAt
 
   const loadData = useCallback(async (force = false) => {
     setLoading(true)
@@ -676,6 +818,7 @@ export default function SectorsPage({ onNavigate }: { onNavigate?: (r: string) =
       const res = await apiFetch("/api/ui/sectors", { cacheMs: force ? 0 : SECTORS_TTL, timeoutMs: 15_000 })
       const data: Sector[] = res?.data ?? []
       setAll(data)
+      setLastLoadedAt(new Date().toISOString())
       writeLS(LS_KEY, data)
     } catch (e: any) {
       setError(e?.message || String(e))
@@ -765,16 +908,29 @@ export default function SectorsPage({ onNavigate }: { onNavigate?: (r: string) =
   ]
 
   return (
-    <section className="container-app sector-sheet xls-page-inset">
-      <div className="flex-between mb-4 sector-sheet__header-row">
-        <h1 className="title-xl" style={{ marginBottom: 0 }}>섹터</h1>
-        {tab !== "guide" && (
-          <Button variant="secondary" onClick={() => loadData(true)} disabled={loading}>
-            {loading ? "⟳ 새로고침 중…" : "새로고침"}
-          </Button>
-        )}
+    <section className="sector-sheet sector-sheet--excel xls-page-inset">
+      <div className="sector-head">
+        <div className="sector-head-toolbar">
+          <div className="sector-title-wrap">
+            <h1 className="title-xl sector-title" style={{ marginBottom: 0 }}>섹터</h1>
+            <p className="sector-subtitle">
+              경기 국면과 수급을 함께 보고, 상위 섹터를 엑셀 시트처럼 빠르게 훑어보는 화면입니다.
+            </p>
+          </div>
+          <div className="sector-head-controls">
+            <EconomicEventBadge onNavigateToCalendar={() => onNavigate?.("economy")} />
+          </div>
+        </div>
       </div>
-      <EconomicEventBadge onNavigateToCalendar={() => onNavigate?.("economy")} />
+
+      <SectorSummaryTable
+        all={all}
+        tab={tab}
+        detectedPhase={detectedPhase}
+        latestUpdatedAt={displayUpdatedAt}
+        onRefresh={() => loadData(true)}
+        refreshing={loading}
+      />
 
       {loading && all.length > 0 && tab !== "guide" && (
         <div className="muted" style={{ marginBottom: "var(--space-3)", fontSize: "var(--font-size-sm)" }}>
@@ -948,7 +1104,7 @@ export default function SectorsPage({ onNavigate }: { onNavigate?: (r: string) =
       )}
 
       {/* 섹터 가이드 */}
-      {tab === "guide" && <SectorGuideView detectedPhase={detectCurrentPhase(all)} />}
+      {tab === "guide" && <SectorGuideView detectedPhase={detectedPhase} />}
     </section>
   )
 }

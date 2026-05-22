@@ -347,17 +347,39 @@ const RECENT_MENU_STORAGE_KEY = 'excel-shell:recent-menu-routes:v1'
 const RIBBON_FOLD_STORAGE_KEY = 'excel-shell:ribbon-fold-state:v1'
 const MAX_RECENT_MENU_ITEMS = 6
 
+function getDefaultPanelWidths(viewportWidth: number) {
+  if (viewportWidth >= 1800) return { left: 320, right: 520 }
+  if (viewportWidth >= 1600) return { left: 310, right: 480 }
+  if (viewportWidth >= 1400) return { left: 300, right: 440 }
+  return { left: 300, right: 360 }
+}
+
 function usePanelResize(containerRef: React.RefObject<HTMLDivElement | null>) {
-  const [leftW, setLeftW]   = useState(300)
-  const [rightW, setRightW] = useState(360)
+  const [leftW, setLeftW]   = useState(() => getDefaultPanelWidths(typeof window !== 'undefined' ? window.innerWidth : 1440).left)
+  const [rightW, setRightW] = useState(() => getDefaultPanelWidths(typeof window !== 'undefined' ? window.innerWidth : 1440).right)
   const drag = useRef<{ side: 'left' | 'right'; startX: number; startW: number } | null>(null)
+  const userAdjustedRef = useRef(false)
 
   const startDrag = useCallback((side: 'left' | 'right', e: React.MouseEvent) => {
     e.preventDefault()
+    userAdjustedRef.current = true
     drag.current = { side, startX: e.clientX, startW: side === 'left' ? leftW : rightW }
     document.body.style.cursor = 'col-resize'
     document.body.style.userSelect = 'none'
   }, [leftW, rightW])
+
+  useEffect(() => {
+    const applyDefaultWidths = () => {
+      if (userAdjustedRef.current) return
+      const next = getDefaultPanelWidths(window.innerWidth)
+      setLeftW(next.left)
+      setRightW(next.right)
+    }
+
+    applyDefaultWidths()
+    window.addEventListener('resize', applyDefaultWidths)
+    return () => window.removeEventListener('resize', applyDefaultWidths)
+  }, [])
 
   useEffect(() => {
     const onMove = (e: MouseEvent) => {

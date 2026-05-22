@@ -2011,7 +2011,6 @@ a:focus-visible {
 }
 
 /* 포트폴리오를 셀/병합 셀 중심 레이아웃으로 평탄화 */
-.excel-content .container-app.portfolio-page,
 .container-app.portfolio-page {
   max-width: none;
   width: 100%;
