@@ -82,17 +82,42 @@ export async function fetchMarketNews(limit = 7): Promise<NewsItem[]> {
     const items: NewsItem[] = [];
     const seen = new Set<string>();
 
-    // .articleSubject a — 뉴스 제목 링크 (출처·날짜도 같은 li에서 추출)
-    $(".articleSubject a").each((_, el) => {
-      if (items.length >= limit) return;
-      const $a = $(el);
-      const title = $a.text().trim();
-      const href = $a.attr("href") || "";
+    const pushIfValid = (titleRaw: string, hrefRaw: string, sourceRaw?: string, dateRaw?: string) => {
+      const title = String(titleRaw || "").trim();
+      const href = String(hrefRaw || "").trim();
       if (!title || title.length < 5 || seen.has(title)) return;
       seen.add(title);
       const fullLink = href.startsWith("http")
         ? href
         : `https://finance.naver.com${href}`;
+      const source = String(sourceRaw || "").trim();
+      const date = String(dateRaw || "").trim();
+      items.push({
+        title,
+        link: fullLink,
+        source: source || undefined,
+        date: date || undefined,
+      });
+    };
+
+    // 1) li 단위로 파싱: 제목/출처/일자를 같은 뉴스 블록에서 추출
+    $(".mainNewsList .newsList li").each((_, li) => {
+      if (items.length >= limit) return;
+      const $li = $(li);
+      const $titleAnchor = $li.find(".articleSubject a").first();
+      const title = $titleAnchor.text().trim();
+      const href = $titleAnchor.attr("href") || "";
+      const source = $li.find(".articleSummary .press").first().text().trim();
+      const date = $li.find(".articleSummary .wdate").first().text().trim();
+      pushIfValid(title, href, source, date);
+    });
+
+    // 2) 기존 셀렉터 폴백
+    $(".articleSubject a").each((_, el) => {
+      if (items.length >= limit) return;
+      const $a = $(el);
+      const title = $a.text().trim();
+      const href = $a.attr("href") || "";
       const $li = $a.closest("li");
       const source = $li.find(".articleSummary .press").text().trim()
         || $li.find(".press").text().trim()
@@ -100,7 +125,7 @@ export async function fetchMarketNews(limit = 7): Promise<NewsItem[]> {
       const date = $li.find(".articleSummary .wdate").text().trim()
         || $li.find(".wdate").text().trim()
         || "";
-      items.push({ title, link: fullLink, source: source || undefined, date: date || undefined });
+      pushIfValid(title, href, source, date);
     });
 
     // fallback: dl dt a

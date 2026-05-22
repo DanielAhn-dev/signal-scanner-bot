@@ -871,8 +871,9 @@
   display: none !important;
 }
 
-/* 내부 xls-table의 행번호 col 너비 0 처리 */
-.xls-content-data .xls-table col:first-child {
+/* 내부 xls-table의 행번호 col 너비 0 처리
+   - 행번호 헤더가 있는 테이블에만 적용해서 일반 colgroup 첫 열(예: 뉴스 제목)을 보호 */
+.xls-content-data .xls-table:has(.xls-row-num-header) col:first-child {
   width: 0 !important;
   min-width: 0 !important;
 }
@@ -1858,8 +1859,8 @@
   .xls-row-num-header,
   .xls-corner { display: none; }
 
-  /* 행번호 col 너비 완전 제거 */
-  .xls-table col:first-child {
+  /* 행번호 col 너비 완전 제거 (행번호 헤더가 있는 테이블만) */
+  .xls-table:has(.xls-row-num-header) col:first-child {
     width: 0 !important;
     min-width: 0 !important;
     max-width: 0 !important;

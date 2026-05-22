@@ -2,12 +2,78 @@ import React, { useEffect, useRef, useState } from 'react'
 import Button from '../../components/ui/Button'
 import { apiFetch } from '../../lib/api'
 import StockDetailModal from '../../components/StockDetailModal'
+import { ChevronDown, ChevronUp } from 'lucide-react'
 
 type NewsItem = {
   title: string
   link: string
   source?: string
   date?: string
+}
+
+const PRESS_NAME_RE = /^[가-힣A-Za-z0-9·\s]{2,20}$/
+const DATE_LIKE_RE = /^\d{4}[-.]\d{2}[-.]\d{2}(\s+\d{2}:\d{2}(:\d{2})?)?$|^\d{2}[:.]\d{2}(:\d{2})?$/
+
+function asText(value: unknown): string {
+  return String(value ?? '').trim()
+}
+
+function pickText(obj: Record<string, unknown>, keys: string[]): string {
+  for (const key of keys) {
+    const value = asText(obj[key])
+    if (value) return value
+  }
+  return ''
+}
+
+function looksLikePressName(value: string): boolean {
+  if (!value) return false
+  if (DATE_LIKE_RE.test(value)) return false
+  return PRESS_NAME_RE.test(value)
+}
+
+function looksLikeDate(value: string): boolean {
+  return !!value && DATE_LIKE_RE.test(value)
+}
+
+function normalizeNewsItem(raw: unknown): NewsItem | null {
+  if (!raw || typeof raw !== 'object') return null
+  const row = raw as Record<string, unknown>
+
+  let title = pickText(row, ['title', 'headline', 'subject', 'newsTitle', 'titleFull'])
+  const link = pickText(row, ['link', 'url', 'newsUrl', 'mobileNewsUrl'])
+  let source = pickText(row, ['source', 'press', 'officeName', 'publisher'])
+  let date = pickText(row, ['date', 'datetime', 'publishedAt', 'createdAt'])
+
+  // 과거 응답/스크래핑 오염 케이스: title<-출처, source<-시간으로 밀리는 경우 복원
+  if (looksLikePressName(title) && looksLikeDate(source) && !date) {
+    date = source
+    source = title
+    title = pickText(row, ['headline', 'subject', 'newsTitle'])
+  }
+
+  if (!title) {
+    title = pickText(row, ['headline', 'subject', 'newsTitle'])
+  }
+  if (!source && looksLikePressName(title)) {
+    source = title
+  }
+  if (!date && looksLikeDate(source)) {
+    date = source
+    source = ''
+  }
+
+  // 제목이 완전히 비어도 행 유지(관련주 조회/링크 이동 방지 목적)
+  if (!title) title = '제목 없음'
+
+  return { title, link, source: source || undefined, date: date || undefined }
+}
+
+function normalizeNewsItems(payload: unknown): NewsItem[] {
+  if (!Array.isArray(payload)) return []
+  return payload
+    .map(normalizeNewsItem)
+    .filter((item): item is NewsItem => !!item)
 }
 
 function decodeHtml(str: string): string {
@@ -47,7 +113,7 @@ export default function NewsPage() {
         ? `/api/ui/news?q=${encodeURIComponent(nextQuery.trim())}`
         : '/api/ui/news'
       const res = await apiFetch(endpoint, { cacheMs: 20_000, timeoutMs: 12_000 })
-      setItems(Array.isArray(res?.data) ? res.data : [])
+      setItems(normalizeNewsItems(res?.data))
       const code = String(res?.code || '')
       const name = String(res?.name || '')
       setBaseStock(code && name ? { code, name } : null)
@@ -232,7 +298,15 @@ export default function NewsPage() {
                       onClick={() => toggleRelated(item)}
                       style={{ whiteSpace: 'nowrap', width: '100%', justifyContent: 'center' }}
                     >
-                      관련주 {relatedOpenSet.has(key) ? '▲' : '▼'}
+                      {relatedOpenSet.has(key) ? (
+                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                          관련주 접기 <ChevronUp size={14} />
+                        </span>
+                      ) : (
+                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                          관련주 보기 <ChevronDown size={14} />
+                        </span>
+                      )}
                     </Button>
                   </td>
                 </tr>
