@@ -658,66 +658,128 @@ export default function ScanPage({ onNavigate }: { onNavigate?: (r: string) => v
                 )}
               </td>
             </tr>
-            {/* 카드 행 — 각 카드를 8행(8×22=176px) 병합 셀로 표현 */}
+            {/* ── 추천 카드 ──
+                각 카드 = colSpan(열 분할) × rowSpan(9행 × 22px = 198px)
+                내용은 자연스럽게 위→아래 배치, height:100% 사용 안 함
+            ── */}
             {[0, 3].map((startIdx) => {
               const rowCards = activeHighlights.slice(startIdx, startIdx + 3)
               if (rowCards.length === 0) return null
-              const colsPerCard = Math.floor(26 / Math.max(rowCards.length, 1))
-              const CARD_ROWS = 8
+              const count = rowCards.length
+              const CARD_ROWS = 9  // 9행 × 22px = 198px
+              /* 열 균등 분배: 26열을 카드 수로 나눔 */
+              const colsPerCard = Math.floor(26 / count)
               return (
                 <React.Fragment key={`card-row-${startIdx}`}>
-                  <tr className="xls-row">
-                    {rowCards.map((c, i) => (
-                      <td
-                        key={c.code}
-                        className="xls-cell"
-                        colSpan={i === rowCards.length - 1 ? 26 - colsPerCard * i : colsPerCard}
-                        rowSpan={CARD_ROWS}
-                        style={{
-                          height: CARD_ROWS * 22,
-                          verticalAlign: 'top',
-                          padding: 4,
-                          cursor: 'pointer',
-                          borderBottom: '2px solid var(--color-excel-grid-border)',
-                          background: startIdx === 0 && i === 0
-                            ? 'linear-gradient(135deg,#f0faf4 0%,#e8f5ee 100%)'
-                            : 'var(--color-gray-0)',
-                        }}
-                        onClick={() => navigateToAnalyze(c.code)}
-                        title={`${c.name} 참고용 상세 보기`}
-                      >
-                        <div style={{ height: '100%', display: 'flex', flexDirection: 'column', gap: 2 }}>
-                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                            <span style={{ fontSize: 10, fontWeight: 600, color: 'var(--color-text-tertiary)' }}>
-                              TOP {startIdx + i + 1}
+                  <tr>
+                    {rowCards.map((c, i) => {
+                      const rank = startIdx + i + 1
+                      const isTop1 = rank === 1
+                      const colSpan = i === count - 1 ? 26 - colsPerCard * i : colsPerCard
+                      return (
+                        <td
+                          key={c.code}
+                          className="xls-cell"
+                          colSpan={colSpan}
+                          rowSpan={CARD_ROWS}
+                          onClick={() => navigateToAnalyze(c.code)}
+                          title={`${c.name} 참고용 상세 보기`}
+                          style={{
+                            verticalAlign: 'top',
+                            cursor: 'pointer',
+                            padding: '12px 14px',
+                            background: isTop1
+                              ? 'linear-gradient(160deg, #eaf5ef 0%, #d8eee3 100%)'
+                              : 'var(--color-brand-subtle)',
+                            borderLeft: `3px solid ${isTop1 ? 'var(--color-brand)' : 'var(--color-brand-muted)'}`,
+                            borderBottom: '2px solid var(--color-excel-grid-border)',
+                          }}
+                        >
+                          {/* ① 랭크 + 경고 뱃지 */}
+                          <div style={{
+                            display: 'flex',
+                            justifyContent: 'space-between',
+                            alignItems: 'center',
+                            marginBottom: 6,
+                          }}>
+                            <span style={{
+                              fontSize: 10,
+                              fontWeight: 700,
+                              color: isTop1 ? 'var(--color-brand)' : 'var(--color-text-tertiary)',
+                              letterSpacing: '0.05em',
+                            }}>
+                              TOP {rank}
                             </span>
                             <WarnBadge grade={c.warn_grade} />
                           </div>
-                          <div style={{ fontWeight: 700, fontSize: 13, color: 'var(--color-text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+
+                          {/* ② 종목명 */}
+                          <div style={{
+                            fontWeight: 700,
+                            fontSize: 15,
+                            color: 'var(--color-text-primary)',
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                            whiteSpace: 'nowrap',
+                            marginBottom: 2,
+                          }}>
                             {c.name}
                           </div>
-                          <div style={{ fontSize: 10, color: 'var(--color-text-tertiary)', fontFamily: 'var(--font-family-mono)' }}>
+
+                          {/* ③ 종목코드 */}
+                          <div style={{
+                            fontSize: 11,
+                            color: 'var(--color-text-tertiary)',
+                            fontFamily: 'var(--font-family-mono)',
+                            marginBottom: 10,
+                          }}>
                             {c.code}
                           </div>
-                          <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+
+                          {/* ④ 등급 뱃지 */}
+                          <div style={{
+                            display: 'flex',
+                            gap: 5,
+                            flexWrap: 'wrap',
+                            marginBottom: 8,
+                          }}>
                             <GradeBadge grade={c.entry_grade} label="진입" />
                             <GradeBadge grade={c.trend_grade} label="추세" />
                             <GradeBadge grade={c.dist_grade} label="매집" />
                             {c.pivot_grade && <GradeBadge grade={c.pivot_grade} label="세력" />}
+                            {c.signal && <SignalBadge signal={c.signal} />}
                           </div>
-                          <div style={{ fontSize: 10, color: 'var(--color-text-secondary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                            {c.sector_id}
-                            {c.entry_score != null && ` · 진입 ${formatNumber(c.entry_score, 1)}`}
+
+                          {/* ⑤ 섹터 · 진입점수 */}
+                          <div style={{
+                            fontSize: 11,
+                            color: 'var(--color-text-secondary)',
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                            whiteSpace: 'nowrap',
+                            marginBottom: 10,
+                          }}>
+                            {[
+                              c.sector_id,
+                              c.entry_score != null ? `진입 ${formatNumber(c.entry_score, 1)}` : null,
+                            ].filter(Boolean).join(' · ')}
                           </div>
-                          <div style={{ fontSize: 10, color: 'var(--color-brand)', marginTop: 'auto' }}>
+
+                          {/* ⑥ 상세 링크 힌트 */}
+                          <div style={{
+                            fontSize: 11,
+                            color: 'var(--color-brand)',
+                            fontWeight: 500,
+                          }}>
                             참고용 상세 분석 →
                           </div>
-                        </div>
-                      </td>
-                    ))}
+                        </td>
+                      )
+                    })}
                   </tr>
+                  {/* rowSpan 채우는 더미 행 */}
                   {Array.from({ length: CARD_ROWS - 1 }, (_, ri) => (
-                    <tr key={`spacer-${startIdx}-${ri}`} className="xls-row" />
+                    <tr key={`spacer-${startIdx}-${ri}`} style={{ height: 22 }} />
                   ))}
                 </React.Fragment>
               )
