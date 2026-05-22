@@ -765,8 +765,8 @@ export default function SectorsPage({ onNavigate }: { onNavigate?: (r: string) =
   ]
 
   return (
-    <section className="container-app">
-      <div className="flex-between mb-4">
+    <section className="container-app sector-sheet xls-page-inset">
+      <div className="flex-between mb-4 sector-sheet__header-row">
         <h1 className="title-xl" style={{ marginBottom: 0 }}>섹터</h1>
         {tab !== "guide" && (
           <Button variant="secondary" onClick={() => loadData(true)} disabled={loading}>
@@ -783,7 +783,7 @@ export default function SectorsPage({ onNavigate }: { onNavigate?: (r: string) =
       )}
 
       {/* 탭 */}
-      <div style={{ display: "flex", gap: 0, marginBottom: "var(--space-4)", borderBottom: "1px solid var(--color-border-default)" }}>
+      <div className="sector-sheet__tabs" style={{ display: "flex", gap: 0, marginBottom: "var(--space-4)", borderBottom: "1px solid var(--color-border-default)" }}>
         {TAB_ITEMS.map(({ key, label }) => (
           <button
             key={key}
@@ -799,7 +799,7 @@ export default function SectorsPage({ onNavigate }: { onNavigate?: (r: string) =
 
       {/* 탭 설명 */}
       {(tab === "promising" || tab === "next") && (
-        <div className="card mb-4" style={{ padding: "var(--space-3) var(--space-4)" }}>
+        <div className="card mb-4 sector-sheet__desc-card" style={{ padding: "var(--space-3) var(--space-4)" }}>
           {tab === "promising" ? (
             <p className="muted" style={{ margin: 0 }}>
               현재 점수 기준 <strong>상위 섹터</strong>입니다. 텔레그램 <code>/섹터</code> 명령과 동일한 데이터입니다.
@@ -814,31 +814,117 @@ export default function SectorsPage({ onNavigate }: { onNavigate?: (r: string) =
 
       {/* 유망·다음 섹터 */}
       {(tab === "promising" || tab === "next") && (
-        loading && displayed.length === 0 ? (
-          <div className="cards-list">
-            {[0,1,2,3,4].map((i) => <div key={i} className="card"><Skeleton lines={2} height={14} /></div>)}
-          </div>
-        ) : displayed.length === 0 ? (
-          <div className="card"><div className="muted">데이터 없음</div></div>
-        ) : (
-          <div className="cards-list" style={{ opacity: loading ? 0.55 : 1, transition: "opacity 0.25s" }}>
-            {displayed.map((s, idx) => (
-              <SectorCard
-                key={s.id}
-                s={s}
-                idx={idx}
-                tab={tab}
-                expanded={expandedSectorId === s.id}
-                leaders={sectorLeaders[s.id]}
-                leadersLoading={leadersLoading}
-                leadersError={leadersError}
-                leadersCriteria={leadersCriteria}
-                onCardClick={onSectorCardClick}
-                onNavigateToAnalyze={navigateToAnalyze}
-              />
-            ))}
-          </div>
-        )
+        <table className="xls-table sector-sheet__table" style={{ width: "100%", tableLayout: "fixed", opacity: loading ? 0.6 : 1, transition: "opacity 0.2s" }}>
+          <colgroup>
+            <col style={{ width: 52 }} />
+            <col style={{ width: 220 }} />
+            <col style={{ width: 94 }} />
+            <col style={{ width: 110 }} />
+            <col style={{ width: 90 }} />
+            <col style={{ width: 92 }} />
+            <col />
+            <col style={{ width: 92 }} />
+          </colgroup>
+          <thead>
+            <tr className="xls-header-row">
+              <th className="xls-th">순위</th>
+              <th className="xls-th">섹터</th>
+              <th className="xls-th">성격</th>
+              <th className="xls-th">분류</th>
+              <th className="xls-th">점수</th>
+              <th className="xls-th">등락</th>
+              <th className="xls-th">요약</th>
+              <th className="xls-th">상세</th>
+            </tr>
+          </thead>
+          <tbody>
+            {loading && displayed.length === 0 && (
+              <tr className="xls-row xls-row--even">
+                <td className="xls-cell" colSpan={8}><Skeleton lines={2} height={14} /></td>
+              </tr>
+            )}
+
+            {!loading && displayed.length === 0 && (
+              <tr className="xls-row xls-row--even">
+                <td className="xls-cell" colSpan={8} style={{ color: "var(--color-text-tertiary)" }}>데이터 없음</td>
+              </tr>
+            )}
+
+            {displayed.map((s, idx) => {
+              const meta = getSectorMeta(s.name)
+              const expanded = expandedSectorId === s.id
+              const isEven = idx % 2 === 1
+              const metricsSummary = buildMetricsSummary(s)
+              const reason = buildSectorReason(s, tab)
+              return (
+                <React.Fragment key={s.id}>
+                  <tr className={`xls-row${isEven ? " xls-row--even" : ""}`}>
+                    <td className="xls-cell sector-sheet__cell-rank">#{idx + 1}</td>
+                    <td className="xls-cell sector-sheet__cell-name">{s.name}</td>
+                    <td className="xls-cell">{meta ? <NatureBadge nature={meta.nature} /> : "-"}</td>
+                    <td className="xls-cell">{meta?.wicsCategory ?? "-"}</td>
+                    <td className="xls-cell sector-sheet__cell-score"><ScoreBadge score={s.score} /></td>
+                    <td className="xls-cell sector-sheet__cell-change"><ChangeRate val={s.change_rate} /></td>
+                    <td className="xls-cell sector-sheet__cell-summary" title={metricsSummary ?? reason}>{metricsSummary ?? reason}</td>
+                    <td className="xls-cell sector-sheet__cell-action">
+                      <Button variant="secondary" onClick={() => onSectorCardClick(s.id)}>
+                        {expanded ? "접기" : "상세"}
+                      </Button>
+                    </td>
+                  </tr>
+
+                  {expanded && (
+                    <tr className={`xls-row sector-sheet__detail-row${isEven ? " xls-row--even" : ""}`}>
+                      <td className="xls-cell" colSpan={8}>
+                        <div className="sector-sheet__detail-merged">
+                          <div className="sector-sheet__detail-reason">{reason}</div>
+                          {meta && meta.favorablePhases.length > 0 && (
+                            <div className="sector-sheet__detail-phases">
+                              <span className="sector-cycle-hint__label">유리한 국면</span>
+                              {meta.favorablePhases.map((p) => (
+                                <span key={p} className="sector-cycle-hint__tag" style={{ color: PHASE_COLORS[p], background: PHASE_BG[p] }}>
+                                  {PHASE_LABELS[p]}
+                                </span>
+                              ))}
+                            </div>
+                          )}
+
+                          <div className="sector-sheet__detail-subtitle">대장주 TOP 3 (기준: 리더플래그 → 시총 → 유동성)</div>
+
+                          {leadersLoading ? (
+                            <div className="muted">대장주를 계산하는 중입니다…</div>
+                          ) : leadersError ? (
+                            <div className="muted">대장주 데이터를 불러오지 못했습니다: {leadersError}</div>
+                          ) : (sectorLeaders[s.id] ?? []).length === 0 ? (
+                            <div className="muted">현재 섹터에 표시할 후보 종목이 없습니다.</div>
+                          ) : (
+                            <div className="sector-sheet__leader-grid">
+                              {(sectorLeaders[s.id] ?? []).map((leader, leaderIdx) => (
+                                <button
+                                  key={`${s.id}-${leader.code}`}
+                                  type="button"
+                                  className="sector-sheet__leader-btn"
+                                  onClick={() => navigateToAnalyze(leader.code)}
+                                  title={`${leader.name} 분석으로 이동`}
+                                >
+                                  <span className="sector-leader-rank">{leaderIdx + 1}위</span>
+                                  <span className="sector-leader-name">{leader.name}</span>
+                                  <span className="sector-leader-code">{leader.code}</span>
+                                  <span className="sector-leader-score">시총 {leader.market_cap != null ? `${formatKoreanMoney(leader.market_cap)}원` : "-"}</span>
+                                </button>
+                              ))}
+                              <div className="caption muted">선정 기준: {leadersCriteria}</div>
+                            </div>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+                </React.Fragment>
+              )
+            })}
+          </tbody>
+        </table>
       )}
 
       {/* 전체 섹터 */}

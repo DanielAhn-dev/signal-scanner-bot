@@ -11,12 +11,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const page = Number.isFinite(pageRaw) ? Math.max(1, Math.floor(pageRaw)) : 1
   const pageSize = Number.isFinite(pageSizeRaw) ? Math.min(40, Math.max(8, Math.floor(pageSizeRaw))) : 16
   const offset = (page - 1) * pageSize
-  const fetchLimit = Math.min(240, page * pageSize)
+  // hasMore를 정확히 계산하려면 현재 페이지 끝보다 1건 이상 더 가져와야 함
+  const fetchLimit = Math.min(320, offset + pageSize + 1)
 
   const toPaged = (items: any[]) => {
     const list = Array.isArray(items) ? items : []
     const data = list.slice(offset, offset + pageSize)
-    const hasMore = list.length > offset + pageSize
+    const hasMore = list.length > offset + data.length
     return { data, hasMore }
   }
 

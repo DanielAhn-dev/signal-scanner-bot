@@ -107,8 +107,9 @@ export default function MarketSidePanel() {
   const [refreshing, setRefreshing] = useState(false)
   const [selected, setSelected] = useState<number | null>(null)
   const [fetchedAt, setFetchedAt] = useState<string>('')
-  const [minRenderRows, setMinRenderRows] = useState(30)
+  const [dummyRows, setDummyRows] = useState(0)
   const viewportRef = useRef<HTMLDivElement | null>(null)
+  const tableRef = useRef<HTMLTableElement | null>(null)
 
   const load = async (force = false) => {
     try {
@@ -132,31 +133,35 @@ export default function MarketSidePanel() {
     return () => clearInterval(id)
   }, [])
 
-  useEffect(() => {
-    const el = viewportRef.current
-    if (!el) return
+  const rows = buildRows(data)
 
-    const updateRows = () => {
-      const viewportHeight = el.clientHeight
-      const headerRowsHeight = 40
-      const approxRowHeight = 18
-      const visibleRows = Math.ceil(Math.max(0, viewportHeight - headerRowsHeight) / approxRowHeight)
-      const next = Math.max(30, visibleRows + 2)
-      setMinRenderRows((prev) => (prev === next ? prev : next))
+  useEffect(() => {
+    const viewport = viewportRef.current
+    const table = tableRef.current
+    if (!viewport || !table) return
+
+    const updateDummyRows = () => {
+      const headerHeight = table.tHead?.offsetHeight ?? 40
+      const firstRow = table.tBodies[0]?.querySelector('tr.xls-row') as HTMLTableRowElement | null
+      const rowHeight = firstRow?.offsetHeight || 22
+      const availableHeight = Math.max(0, viewport.clientHeight - headerHeight)
+      const maxRows = Math.floor(availableHeight / rowHeight)
+      const baseRows = loading || rows.length === 0 ? 1 : rows.length
+      const next = Math.max(0, maxRows - baseRows)
+      setDummyRows((prev) => (prev === next ? prev : next))
     }
 
-    updateRows()
+    updateDummyRows()
     if (typeof ResizeObserver !== 'undefined') {
-      const observer = new ResizeObserver(updateRows)
-      observer.observe(el)
+      const observer = new ResizeObserver(updateDummyRows)
+      observer.observe(viewport)
+      observer.observe(table)
       return () => observer.disconnect()
     }
 
-    window.addEventListener('resize', updateRows)
-    return () => window.removeEventListener('resize', updateRows)
-  }, [])
-
-  const rows = buildRows(data)
+    window.addEventListener('resize', updateDummyRows)
+    return () => window.removeEventListener('resize', updateDummyRows)
+  }, [loading, rows.length])
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
@@ -184,8 +189,8 @@ export default function MarketSidePanel() {
       </div>
 
       {/* 스프레드시트 */}
-      <div ref={viewportRef} style={{ flex: 1, overflow: 'auto' }}>
-        <table className="xls-table" style={{ width: '100%', tableLayout: 'fixed' }}>
+      <div ref={viewportRef} className="xls-side-panel-viewport" style={{ flex: 1, overflow: 'auto' }}>
+        <table ref={tableRef} className="xls-table" style={{ width: '100%', tableLayout: 'fixed', background: 'transparent', minHeight: '100%' }}>
           <colgroup>
             <col style={{ width: 28 }}/>
             <col style={{ width: 132 }}/>
@@ -252,17 +257,20 @@ export default function MarketSidePanel() {
                     </tr>
                   )
                 ))}
-                {/* 빈 행 */}
-                {Array.from({ length: Math.max(0, minRenderRows - rows.length) }, (_, i) => (
-                  <tr key={`e${i}`} className={`xls-row${(rows.length + i) % 2 === 0 ? ' xls-row--even' : ''}`}>
-                    <td className="xls-row-num">{rows.length + i + 1}</td>
-                    <td className="xls-cell xls-cell--empty"/>
-                    <td className="xls-cell xls-cell--empty"/>
-                    <td className="xls-cell xls-cell--empty"/>
-                  </tr>
-                ))}
               </>
             )}
+
+            {Array.from({ length: dummyRows }, (_, i) => {
+              const rowNo = (loading || rows.length === 0 ? 1 : rows.length) + i + 1
+              return (
+                <tr key={`dummy-${rowNo}`} className={`xls-row${rowNo % 2 === 0 ? ' xls-row--even' : ''}`}>
+                  <td className="xls-row-num">{rowNo}</td>
+                  <td className="xls-cell xls-cell--empty" />
+                  <td className="xls-cell xls-cell--empty" />
+                  <td className="xls-cell xls-cell--empty" />
+                </tr>
+              )
+            })}
           </tbody>
         </table>
       </div>

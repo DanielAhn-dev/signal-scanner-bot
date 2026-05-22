@@ -2010,6 +2010,186 @@ a:focus-visible {
   color: var(--color-text-primary);
 }
 
+/* 포트폴리오를 셀/병합 셀 중심 레이아웃으로 평탄화 */
+.excel-content .container-app.portfolio-page,
+.container-app.portfolio-page {
+  max-width: none;
+  width: 100%;
+  margin: 0;
+  padding: 0 !important;
+}
+
+.container-app.portfolio-page .portfolio-stat-card,
+.container-app.portfolio-page .portfolio-filter-card,
+.container-app.portfolio-page .portfolio-macro-card,
+.container-app.portfolio-page .portfolio-policy-card,
+.container-app.portfolio-page .portfolio-performance-card,
+.container-app.portfolio-page .portfolio-asset-overview-card,
+.container-app.portfolio-page .portfolio-capture-card {
+  background: var(--color-bg-surface);
+}
+
+.container-app.portfolio-page .card,
+.container-app.portfolio-page .portfolio-position-card,
+.container-app.portfolio-page .portfolio-loading-card,
+.container-app.portfolio-page .portfolio-share-history-item,
+.container-app.portfolio-page .portfolio-asset-metric,
+.container-app.portfolio-page .portfolio-allocation-item,
+.container-app.portfolio-page .portfolio-capture-metric,
+.container-app.portfolio-page .portfolio-reason-panel {
+  border-radius: 0;
+  box-shadow: none;
+  border-color: var(--color-border-default);
+}
+
+.container-app.portfolio-page .portfolio-macro-metric,
+.container-app.portfolio-page .portfolio-performance-metric {
+  border-radius: 0;
+  border-color: var(--color-border-default);
+  background: var(--color-bg-surface);
+}
+
+.container-app.portfolio-page .portfolio-cards-list,
+.container-app.portfolio-page .portfolio-filter-stack {
+  gap: var(--space-2);
+}
+
+.container-app.portfolio-page .portfolio-card-badges-row {
+  row-gap: 4px;
+  column-gap: 4px;
+}
+
+/* 최소 영역/좌우 채움 기준: 메시지 버블처럼 일관된 레이아웃 밀도 유지 */
+.container-app.portfolio-page {
+  --portfolio-cell-min-h: 38px;
+  --portfolio-card-min-h: 186px;
+  --portfolio-value-col-min: 188px;
+  --portfolio-summary-label-h: 34px;
+  --portfolio-summary-value-h: 46px;
+  --portfolio-summary-note-h: 32px;
+}
+
+.container-app.portfolio-page .xls-table .xls-row {
+  min-height: var(--portfolio-cell-min-h);
+}
+
+.container-app.portfolio-page .xls-table .xls-cell {
+  min-height: var(--portfolio-cell-min-h);
+  vertical-align: middle;
+}
+
+.container-app.portfolio-page .portfolio-summary-row--label .xls-cell {
+  min-height: var(--portfolio-summary-label-h);
+}
+
+.container-app.portfolio-page .portfolio-summary-row--value .xls-cell {
+  min-height: var(--portfolio-summary-value-h);
+}
+
+.container-app.portfolio-page .portfolio-summary-row--note .xls-cell {
+  min-height: var(--portfolio-summary-note-h);
+}
+
+.container-app.portfolio-page .portfolio-cell-num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.container-app.portfolio-page .portfolio-position-card {
+  min-height: var(--portfolio-card-min-h);
+}
+
+.container-app.portfolio-page .portfolio-card-header {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(var(--portfolio-value-col-min), auto);
+  align-items: start;
+}
+
+.container-app.portfolio-page .portfolio-position-pnl {
+  min-width: var(--portfolio-value-col-min);
+  justify-self: end;
+  text-align: right;
+}
+
+.container-app.portfolio-page .portfolio-macro-metric,
+.container-app.portfolio-page .portfolio-performance-metric,
+.container-app.portfolio-page .portfolio-asset-metric,
+.container-app.portfolio-page .portfolio-capture-metric,
+.container-app.portfolio-page .portfolio-allocation-item,
+.container-app.portfolio-page .portfolio-share-history-item,
+.container-app.portfolio-page .portfolio-action-btn,
+.container-app.portfolio-page .portfolio-total-pill {
+  min-height: 36px;
+}
+
+.container-app.portfolio-page .portfolio-macro-grid,
+.container-app.portfolio-page .portfolio-performance-grid,
+.container-app.portfolio-page .portfolio-policy-grid,
+.container-app.portfolio-page .portfolio-asset-metrics,
+.container-app.portfolio-page .portfolio-capture-metrics {
+  gap: var(--space-2);
+}
+
+.container-app.portfolio-page .portfolio-macro-grid > *,
+.container-app.portfolio-page .portfolio-performance-grid > *,
+.container-app.portfolio-page .portfolio-policy-grid > *,
+.container-app.portfolio-page .portfolio-asset-metrics > *,
+.container-app.portfolio-page .portfolio-capture-metrics > * {
+  margin: 0;
+}
+
+.container-app.portfolio-page .xls-table .xls-cell {
+  padding: 10px 12px !important;
+  line-height: 1.45;
+}
+
+.container-app.portfolio-page .portfolio-position-card {
+  padding: 12px 14px;
+}
+
+.container-app.portfolio-page .portfolio-macro-metric,
+.container-app.portfolio-page .portfolio-performance-metric,
+.container-app.portfolio-page .portfolio-asset-metric,
+.container-app.portfolio-page .portfolio-capture-metric,
+.container-app.portfolio-page .portfolio-allocation-item,
+.container-app.portfolio-page .portfolio-share-history-item,
+.container-app.portfolio-page .portfolio-reason-panel,
+.container-app.portfolio-page .portfolio-modal-lots {
+  padding: 10px 12px;
+  line-height: 1.45;
+}
+
+.container-app.portfolio-page .portfolio-capture-table th,
+.container-app.portfolio-page .portfolio-capture-table td {
+  padding: 9px 12px;
+  line-height: 1.45;
+}
+
+.container-app.portfolio-page .portfolio-capture-table th:nth-child(3),
+.container-app.portfolio-page .portfolio-capture-table th:nth-child(4),
+.container-app.portfolio-page .portfolio-capture-table th:nth-child(6),
+.container-app.portfolio-page .portfolio-capture-table th:nth-child(7),
+.container-app.portfolio-page .portfolio-capture-table td:nth-child(3),
+.container-app.portfolio-page .portfolio-capture-table td:nth-child(4),
+.container-app.portfolio-page .portfolio-capture-table td:nth-child(6),
+.container-app.portfolio-page .portfolio-capture-table td:nth-child(7) {
+  text-align: right;
+}
+
+.container-app.portfolio-page .portfolio-macro-metric strong,
+.container-app.portfolio-page .portfolio-performance-metric strong,
+.container-app.portfolio-page .portfolio-capture-value,
+.container-app.portfolio-page .portfolio-allocation-item-values {
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.container-app.portfolio-page .portfolio-card-chips,
+.container-app.portfolio-page .portfolio-card-badges-row,
+.container-app.portfolio-page .portfolio-actions-row {
+  gap: 8px;
+}
+
 @media (max-width: 1024px) {
   .portfolio-stat-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -2035,6 +2215,22 @@ a:focus-visible {
 }
 
 @media (max-width: 640px) {
+  .container-app.portfolio-page {
+    --portfolio-value-col-min: 140px;
+    --portfolio-card-min-h: 164px;
+  }
+
+  .container-app.portfolio-page .portfolio-card-header {
+    grid-template-columns: 1fr;
+    gap: var(--space-1);
+  }
+
+  .container-app.portfolio-page .portfolio-position-pnl {
+    min-width: 0;
+    justify-self: start;
+    text-align: left;
+  }
+
   .portfolio-stat-grid,
   .portfolio-asset-metrics {
     grid-template-columns: 1fr;
@@ -2050,7 +2246,7 @@ a:focus-visible {
   }
 
   .portfolio-page {
-    padding-top: var(--space-4);
+    padding-top: 0;
   }
 
   .portfolio-head {
@@ -2684,12 +2880,22 @@ a:focus-visible {
 /* ===== Simulator (Toss-style) ===== */
 
 .sim-page {
-  max-width: 680px;
-  margin: 0 auto;
-  padding: var(--space-5) var(--space-4) var(--space-10);
+  max-width: none;
+  width: 100%;
+  margin: 0;
+  padding: 0;
   display: flex;
   flex-direction: column;
   gap: var(--space-4);
+}
+
+.sim-page > * {
+  margin-left: 10px;
+  margin-right: 10px;
+}
+
+.sim-page > .sim-header {
+  margin-top: 8px;
 }
 
 /* 헤더 */
@@ -3918,8 +4124,12 @@ a:focus-visible {
 
 /* ── 반응형 (기존) ── */
 @media (max-width: 640px) {
-  .sim-page { padding: var(--space-4) var(--space-3) var(--space-8); }
   .sim-page { gap: var(--space-3); }
+  .sim-page > * {
+    margin-left: var(--space-2);
+    margin-right: var(--space-2);
+  }
+  .sim-page > .sim-header { margin-top: var(--space-2); }
   .sim-header { flex-direction: column; align-items: stretch; }
   .sim-settings-btn { width: 100%; justify-content: center; }
   .sim-summary-grid { grid-template-columns: repeat(2, 1fr); }
@@ -6741,5 +6951,213 @@ a:focus-visible {
 
   .admin-users-table td[data-label='작업']::before {
     margin-bottom: 2px;
+  }
+}
+
+/* ================================================================
+   SECTOR EXCEL GRID OVERRIDES (high priority, unlayered)
+   - index.css 후반에 배치해 기존 sector 스타일보다 우선 적용
+   ================================================================ */
+.sector-sheet {
+  min-width: 0;
+}
+
+.sector-sheet__header-row {
+  min-height: var(--xls-grid-row-height-double);
+  margin-bottom: 0 !important;
+}
+
+.sector-sheet__tabs {
+  margin-bottom: 0 !important;
+  border-top: 1px solid var(--color-excel-grid-border);
+  border-left: 1px solid var(--color-excel-grid-border);
+}
+
+.sector-sheet .sector-tab-btn {
+  min-height: var(--xls-grid-row-height-double);
+  padding: 0 var(--xls-grid-cell-padding-x);
+  line-height: var(--xls-grid-cell-line-height);
+  border-right: 1px solid var(--color-excel-grid-border);
+  border-bottom: 1px solid var(--color-excel-grid-border);
+  border-top: none;
+  border-left: none;
+  border-radius: 0;
+  background: var(--color-gray-0);
+}
+
+.sector-sheet .sector-tab-btn--active {
+  background: var(--color-excel-cell-selected);
+}
+
+.sector-sheet__desc-card {
+  border-radius: 0;
+  border: 1px solid var(--color-excel-grid-border);
+  min-height: var(--xls-grid-row-height-double);
+  margin-bottom: 0 !important;
+  padding: 0 var(--xls-grid-cell-padding-x) !important;
+  display: flex;
+  align-items: center;
+}
+
+.sector-sheet__cards-list {
+  gap: 0;
+}
+
+.sector-sheet .sector-row-card,
+.sector-sheet .sector-all-card {
+  border-radius: 0;
+  border: 1px solid var(--color-excel-grid-border);
+  box-shadow: none;
+  margin-top: -1px;
+}
+
+.sector-sheet .sector-row-trigger,
+.sector-sheet .sector-all-card__trigger {
+  min-height: calc(var(--xls-grid-row-height) * 4);
+  padding: 0 var(--xls-grid-cell-padding-x);
+  align-items: center;
+}
+
+.sector-sheet .sector-row-rank,
+.sector-sheet .sector-leader-rank,
+.sector-sheet .sector-leader-code {
+  font-variant-numeric: tabular-nums;
+}
+
+.sector-sheet .sector-row-name,
+.sector-sheet .sector-all-card__name,
+.sector-sheet .sector-row-meta,
+.sector-sheet .sector-leader-title,
+.sector-sheet .sector-cycle-hint,
+.sector-sheet .sector-leader-list {
+  line-height: var(--xls-grid-cell-line-height);
+}
+
+.sector-sheet .sector-row-meta,
+.sector-sheet .muted {
+  margin-top: 0;
+  margin-bottom: 0;
+}
+
+.sector-sheet .sector-leader-panel {
+  border-top: 1px solid var(--color-excel-grid-border);
+  border-radius: 0;
+  box-shadow: none;
+  padding: var(--xls-grid-cell-padding-y) var(--xls-grid-cell-padding-x);
+}
+
+.sector-sheet .sector-leader-item {
+  border-radius: 0;
+  min-height: var(--xls-grid-row-height-double);
+  border: 1px solid var(--color-excel-grid-border);
+}
+
+.sector-sheet .sector-all-group-title {
+  min-height: var(--xls-grid-row-height-double);
+  line-height: var(--xls-grid-cell-line-height);
+  display: flex;
+  align-items: center;
+  padding: 0 var(--xls-grid-cell-padding-x);
+  border: 1px solid var(--color-excel-grid-border);
+  border-bottom: none;
+}
+
+.sector-sheet__table .xls-th,
+.sector-sheet__table .xls-cell {
+  line-height: var(--xls-grid-cell-line-height);
+}
+
+.sector-sheet__table .xls-th {
+  white-space: nowrap;
+}
+
+.sector-sheet__table .xls-cell {
+  padding-top: var(--xls-grid-cell-padding-y);
+  padding-bottom: var(--xls-grid-cell-padding-y);
+}
+
+.sector-sheet__cell-rank,
+.sector-sheet__cell-score,
+.sector-sheet__cell-change,
+.sector-sheet__cell-action {
+  text-align: center;
+}
+
+.sector-sheet__cell-name {
+  font-weight: var(--font-weight-semibold);
+}
+
+.sector-sheet__cell-summary {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sector-sheet__detail-row .xls-cell {
+  padding: 0;
+}
+
+.sector-sheet__detail-merged {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 6px var(--xls-grid-cell-padding-x);
+  min-height: var(--xls-grid-row-height-double);
+}
+
+.sector-sheet__detail-reason {
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-sm);
+}
+
+.sector-sheet__detail-phases {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.sector-sheet__detail-subtitle {
+  font-size: var(--font-size-xs);
+  color: var(--color-text-tertiary);
+  font-weight: var(--font-weight-semibold);
+}
+
+.sector-sheet__leader-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.sector-sheet__leader-btn {
+  width: 100%;
+  display: grid;
+  grid-template-columns: 48px minmax(120px, 1fr) 78px 150px;
+  align-items: center;
+  gap: 6px;
+  min-height: var(--xls-grid-row-height);
+  border: 1px solid var(--color-excel-grid-border);
+  border-radius: 0;
+  background: var(--color-gray-0);
+  color: var(--color-text-primary);
+  padding: 0 var(--xls-grid-cell-padding-x);
+  text-align: left;
+  cursor: pointer;
+}
+
+.sector-sheet__leader-btn:hover {
+  background: var(--color-excel-cell-header);
+}
+
+@media (max-width: 900px) {
+  .sector-sheet__leader-btn {
+    grid-template-columns: 44px minmax(100px, 1fr);
+    row-gap: 2px;
+  }
+
+  .sector-sheet .sector-leader-code,
+  .sector-sheet .sector-leader-score {
+    grid-column: 2;
+    font-size: var(--font-size-xs);
   }
 }

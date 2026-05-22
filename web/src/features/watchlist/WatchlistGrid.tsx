@@ -24,6 +24,18 @@ function fmtDate(raw: string | null): string {
   return `${d.getMonth() + 1}/${d.getDate()}`
 }
 
+function fmtMemo(raw: string | null | undefined): string {
+  if (!raw) return ''
+  const memo = raw.trim()
+  if (!memo) return ''
+
+  if (memo === 'watch-only') return '관심 전용'
+  if (memo.startsWith('strategy=core')) return '전략: 코어'
+  if (memo === 'web-restore:v1') return '웹 복원(v1)'
+
+  return memo
+}
+
 type WatchItem = {
   stock_code: string
   stock_name: string
@@ -33,6 +45,7 @@ type WatchItem = {
   buy_date?: string | null
   created_at?: string | null
   memo?: string | null
+  status?: string | null
 }
 
 export default function WatchlistGrid() {
@@ -98,7 +111,7 @@ export default function WatchlistGrid() {
   )
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+    <div className="watchlist-sheet" style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
 
       {/* 패널 툴바 */}
       <div className="xls-panel-header-bar">
@@ -220,22 +233,22 @@ export default function WatchlistGrid() {
             {error}
           </div>
         ) : (
-          <table className="xls-table" style={{ width: '100%', tableLayout: 'fixed' }}>
+          <table className="xls-table watchlist-sheet__table" style={{ width: '100%', tableLayout: 'fixed' }}>
             <colgroup>
               <col style={{ width: 28 }}/>   {/* 행번호 */}
-              <col style={{ width: 60 }}/>   {/* A: 코드 */}
-              <col style={{ width: '22%' }}/>{/* B: 종목명 */}
-              <col style={{ width: 48 }}/>   {/* C: 추가일 */}
-              <col style={{ width: 75 }}/>   {/* D: 기준가 */}
-              <col style={{ width: 75 }}/>   {/* E: 현재가 */}
-              <col style={{ width: 65 }}/>   {/* F: 수익률 */}
-              <col/>                          {/* G: 메모 */}
-              <col style={{ width: 24 }}/>   {/* 삭제 */}
+              <col style={{ width: 300 }}/>  {/* A: 종목명 */}
+              <col style={{ width: 56 }}/>   {/* B: 상태 */}
+              <col style={{ width: 82 }}/>   {/* C: 추가일 */}
+              <col style={{ width: 94 }}/>   {/* D: 기준가 */}
+              <col style={{ width: 94 }}/>   {/* E: 현재가 */}
+              <col style={{ width: 88 }}/>   {/* F: 수익률 */}
+              <col style={{ width: 180 }}/>  {/* G: 메모 */}
+              <col style={{ width: 52 }}/>   {/* H: 관리 */}
             </colgroup>
             <thead>
               {/* 열 문자 */}
               <tr className="xls-letter-row">
-                <th className="xls-corner"/>
+                <th className="xls-col-letter">#</th>
                 <th className="xls-col-letter">A</th>
                 <th className="xls-col-letter">B</th>
                 <th className="xls-col-letter">C</th>
@@ -243,26 +256,28 @@ export default function WatchlistGrid() {
                 <th className="xls-col-letter">E</th>
                 <th className="xls-col-letter">F</th>
                 <th className="xls-col-letter">G</th>
-                <th className="xls-col-letter"/>
+                <th className="xls-col-letter">H</th>
               </tr>
               {/* 열 레이블 */}
-              <tr className="xls-header-row">
-                <th className="xls-row-num-header"/>
-                <th className="xls-th">코드</th>
+              <tr className="xls-header-row" style={{ top: 0 }}>
+                <th className="xls-th" style={{ textAlign: 'right' }}>#</th>
                 <th className="xls-th">종목명</th>
+                <th className="xls-th">상태</th>
                 <th className="xls-th">추가일</th>
                 <th className="xls-th" style={{ textAlign: 'right' }}>기준가</th>
                 <th className="xls-th" style={{ textAlign: 'right' }}>현재가</th>
-                <th className="xls-th" style={{ textAlign: 'right' }}>수익률</th>
+                <th className="xls-th" style={{ textAlign: 'right' }}>추가일 대비</th>
                 <th className="xls-th">메모</th>
-                <th className="xls-th"/>
+                <th className="xls-th" style={{ textAlign: 'center' }}>관리</th>
               </tr>
             </thead>
             <tbody>
               {filtered.map((item, i) => {
+                const rowNo = i + 1
                 const rate = item.change_rate ?? null
                 const isUp   = rate != null && rate > 0
                 const isDown = rate != null && rate < 0
+                const statusLabel = item.status === 'holding' ? '보유' : '관심'
                 return (
                   <tr
                     key={item.stock_code}
@@ -270,12 +285,30 @@ export default function WatchlistGrid() {
                     onClick={() => setSelected(i === selected ? null : i)}
                     style={{ cursor: 'default' }}
                   >
-                    <td className="xls-row-num">{i + 1}</td>
-                    <td className="xls-cell" style={{ fontSize: 10, fontFamily: 'var(--font-family-mono)', color: 'var(--color-brand)' }}>
-                      {item.stock_code}
+                    <td
+                      style={{
+                        padding: '0 4px',
+                        textAlign: 'right',
+                        fontSize: 9,
+                        color: 'var(--color-text-tertiary)',
+                        background: 'var(--color-gray-0)',
+                        border: '1px solid var(--color-excel-grid-border)',
+                        whiteSpace: 'nowrap',
+                        userSelect: 'none',
+                      }}
+                    >
+                      {rowNo}
                     </td>
-                    <td className="xls-cell" style={{ fontSize: 11, fontWeight: 600 }}>
-                      {item.stock_name}
+                    <td className="xls-cell xls-cell--name" style={{ fontSize: 11, fontWeight: 600 }} title={`${item.stock_name} (${item.stock_code})`}>
+                      <span>{item.stock_name}</span>
+                      <span style={{ marginLeft: 4, fontSize: 9, fontFamily: 'var(--font-family-mono)', color: 'var(--color-text-tertiary)' }}>
+                        {item.stock_code}
+                      </span>
+                    </td>
+                    <td className="xls-cell" style={{ fontSize: 10, color: 'var(--color-text-secondary)', textAlign: 'center' }}>
+                      <span className={`xls-badge ${item.status === 'holding' ? 'xls-badge--green' : 'xls-badge--blue'}`} style={{ height: 14, lineHeight: '14px' }}>
+                        {statusLabel}
+                      </span>
                     </td>
                     <td className="xls-cell" style={{ fontSize: 10, color: 'var(--color-text-tertiary)' }}>
                       {fmtDate(item.buy_date ?? item.created_at ?? null)}
@@ -296,8 +329,8 @@ export default function WatchlistGrid() {
                     >
                       {fmtPct(rate)}
                     </td>
-                    <td className="xls-cell" style={{ fontSize: 10, color: 'var(--color-text-secondary)' }}>
-                      {item.memo ?? ''}
+                    <td className="xls-cell xls-cell--memo" style={{ fontSize: 10, color: 'var(--color-text-secondary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={fmtMemo(item.memo)}>
+                      {fmtMemo(item.memo)}
                     </td>
                     <td className="xls-cell" style={{ padding: '0 2px', textAlign: 'center' }}>
                       <button
@@ -323,13 +356,6 @@ export default function WatchlistGrid() {
                   </tr>
                 )
               })}
-              {/* 빈 행 */}
-              {Array.from({ length: Math.max(0, 30 - filtered.length) }, (_, i) => (
-                <tr key={`e${i}`} className={`xls-row${(filtered.length + i) % 2 === 0 ? ' xls-row--even' : ''}`}>
-                  <td className="xls-row-num">{filtered.length + i + 1}</td>
-                  {Array.from({ length: 8 }, (_, ci) => <td key={ci} className="xls-cell xls-cell--empty"/>)}
-                </tr>
-              ))}
             </tbody>
           </table>
         )}

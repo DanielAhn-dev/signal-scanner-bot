@@ -21,8 +21,7 @@ function fmtTime(dateStr?: string): string {
 }
 
 export default function NewsSidePanel() {
-  const PAGE_SIZE = 16
-  const BASE_MIN_RENDER_ROWS = 28
+  const PAGE_SIZE = 40
   const [news, setNews]           = useState<NewsItem[]>([])
   const [loading, setLoading]     = useState(true)
   const [refreshing, setRefreshing] = useState(false)
@@ -30,8 +29,9 @@ export default function NewsSidePanel() {
   const [fetchedAt, setFetchedAt] = useState('')
   const [page, setPage] = useState(1)
   const [hasMore, setHasMore] = useState(false)
-  const [minRenderRows, setMinRenderRows] = useState(BASE_MIN_RENDER_ROWS)
+  const [dummyRows, setDummyRows] = useState(0)
   const viewportRef = useRef<HTMLDivElement | null>(null)
+  const tableRef = useRef<HTMLTableElement | null>(null)
 
   const totalPages = hasMore ? page + 1 : page
 
@@ -62,28 +62,31 @@ export default function NewsSidePanel() {
   }, [page])
 
   useEffect(() => {
-    const el = viewportRef.current
-    if (!el) return
+    const viewport = viewportRef.current
+    const table = tableRef.current
+    if (!viewport || !table || loading) return
 
-    const updateRows = () => {
-      const viewportHeight = el.clientHeight
-      const headerRowsHeight = 40
-      const approxRowHeight = 22
-      const visibleRows = Math.ceil(Math.max(0, viewportHeight - headerRowsHeight) / approxRowHeight)
-      const next = Math.max(BASE_MIN_RENDER_ROWS, visibleRows + 2)
-      setMinRenderRows((prev) => (prev === next ? prev : next))
+    const updateDummyRows = () => {
+      const headerHeight = table.tHead?.offsetHeight ?? 40
+      const rowHeight = 22
+      const availableHeight = Math.max(0, viewport.clientHeight - headerHeight)
+      const maxRows = Math.ceil(availableHeight / rowHeight)
+      const baseRows = news.length
+      const next = Math.max(0, maxRows - baseRows)
+      setDummyRows((prev) => (prev === next ? prev : next))
     }
 
-    updateRows()
+    updateDummyRows()
     if (typeof ResizeObserver !== 'undefined') {
-      const observer = new ResizeObserver(updateRows)
-      observer.observe(el)
+      const observer = new ResizeObserver(updateDummyRows)
+      observer.observe(viewport)
+      observer.observe(table)
       return () => observer.disconnect()
     }
 
-    window.addEventListener('resize', updateRows)
-    return () => window.removeEventListener('resize', updateRows)
-  }, [])
+    window.addEventListener('resize', updateDummyRows)
+    return () => window.removeEventListener('resize', updateDummyRows)
+  }, [loading, news.length, page])
 
   return (
     <div className="news-side-panel" style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
@@ -110,13 +113,13 @@ export default function NewsSidePanel() {
       </div>
 
       {/* 뉴스 목록 */}
-      <div ref={viewportRef} style={{ flex: 1, overflow: 'auto' }}>
+      <div ref={viewportRef} className="xls-side-panel-viewport" style={{ flex: 1, overflow: 'auto' }}>
         {loading ? (
           <div style={{ padding: 12, textAlign: 'center', fontSize: 10, color: 'var(--color-text-tertiary)' }}>
             불러오는 중...
           </div>
         ) : (
-          <table className="xls-table" style={{ width: '100%', tableLayout: 'fixed' }}>
+          <table ref={tableRef} className="xls-table" style={{ width: '100%', tableLayout: 'fixed', background: 'transparent', minHeight: '100%' }}>
             <colgroup>
               <col style={{ width: 28 }}/>
               <col style={{ width: 84 }}/>
@@ -164,12 +167,12 @@ export default function NewsSidePanel() {
                   <td className="xls-cell xls-cell--num" style={{ fontSize: 10, color: 'var(--color-text-secondary)' }}>
                     {fmtTime(item.date)}
                   </td>
-                  <td className="xls-cell" style={{ fontSize: 11, whiteSpace: 'normal', lineHeight: 1.3, paddingTop: 2, paddingBottom: 2 }}>
+                  <td className="xls-cell" style={{ fontSize: 10, paddingTop: 1, paddingBottom: 1 }}>
                     <span
                       style={{
-                        display: '-webkit-box',
-                        WebkitLineClamp: 2,
-                        WebkitBoxOrient: 'vertical',
+                        display: 'block',
+                        whiteSpace: 'nowrap',
+                        textOverflow: 'ellipsis',
                         overflow: 'hidden',
                       }}
                       title={item.title}
@@ -179,10 +182,11 @@ export default function NewsSidePanel() {
                   </td>
                 </tr>
               )})}
-              {Array.from({ length: Math.max(0, minRenderRows - news.length) }, (_, idx) => {
-                const rn = (page - 1) * PAGE_SIZE + news.length + idx + 1
+
+              {Array.from({ length: dummyRows }, (_, i) => {
+                const rn = (page - 1) * PAGE_SIZE + news.length + i + 1
                 return (
-                  <tr key={`e${rn}`} className={`xls-row${rn % 2 === 0 ? ' xls-row--even' : ''}`}>
+                  <tr key={`dummy-${rn}`} className={`xls-row${rn % 2 === 0 ? ' xls-row--even' : ''}`}>
                     <td className="xls-row-num">{rn}</td>
                     <td className="xls-cell xls-cell--empty" />
                     <td className="xls-cell xls-cell--empty" />

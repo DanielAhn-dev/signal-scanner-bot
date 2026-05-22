@@ -295,8 +295,8 @@ export default function ReportsPage() {
   }
 
   return (
-    <section className="container-app reports-sheet">
-      <table className="xls-table" style={{ width: '100%', tableLayout: 'fixed', marginBottom: 'var(--space-4)' }}>
+    <section className="container-app reports-sheet" style={{ padding: 0, margin: 0, maxWidth: 'none', width: '100%' }}>
+      <table className="xls-table" style={{ width: '100%', tableLayout: 'fixed', marginBottom: 0 }}>
         <colgroup>
           <col style={{ width: '30%' }} />
           <col style={{ width: '70%' }} />

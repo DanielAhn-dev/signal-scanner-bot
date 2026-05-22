@@ -25,6 +25,7 @@ type WatchlistPositionRow = {
   created_at?: string | null
   memo?: string | null
   quantity?: number | null
+  status?: string | null
   stock?: {
     name?: string | null
     close?: number | null
@@ -63,9 +64,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (req.method === 'GET') {
       const { data, error } = await supabase
         .from('virtual_positions')
-        .select('code, buy_price, buy_date, created_at, memo, quantity, stock:stocks(name, close)')
+        .select('code, buy_price, buy_date, created_at, memo, quantity, status, stock:stocks(name, close)')
         .eq('chat_id', chatId)
-        .eq('status', 'interest')
         .order('created_at', { ascending: false })
 
       if (error) return res.status(500).json({ error: error.message })
@@ -77,10 +77,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           stock_name: String(r.stock?.name || r.code || ''),
           buy_price: r.buy_price == null ? null : Number(r.buy_price),
           current_price: r.stock?.close == null ? null : Number(r.stock.close),
-          change_rate: null,
+          change_rate: r.buy_price && r.stock?.close
+            ? ((Number(r.stock.close) - Number(r.buy_price)) / Number(r.buy_price)) * 100
+            : null,
           buy_date: r.buy_date || null,
           created_at: r.created_at || null,
           memo: r.memo || null,
+          status: r.status || null,
         }
       })
 

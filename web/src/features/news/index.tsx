@@ -83,6 +83,7 @@ function decodeHtml(str: string): string {
 }
 
 type RelatedStock = { code: string; name: string }
+const PAGE_SIZE = 40
 
 /** "2026-05-22 09:45:10" → "09:45" (당일) / "05-22 09:45" (다른 날) */
 function formatDate(raw: string | undefined): string {
@@ -95,6 +96,8 @@ function formatDate(raw: string | undefined): string {
 export default function NewsPage() {
   const [query, setQuery] = useState('')
   const [appliedQuery, setAppliedQuery] = useState('')
+  const [page, setPage] = useState(1)
+  const [hasMore, setHasMore] = useState(false)
   const [items, setItems] = useState<NewsItem[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -103,17 +106,26 @@ export default function NewsPage() {
   const [relatedOpenSet, setRelatedOpenSet] = useState<Set<string>>(new Set())
   const [modalStock, setModalStock] = useState<RelatedStock | null>(null)
   const [baseStock, setBaseStock] = useState<RelatedStock | null>(null)
+  const [dummyRows, setDummyRows] = useState(0)
   const fetchedRelated = useRef<Set<string>>(new Set())
+  const sheetRef = useRef<HTMLDivElement | null>(null)
+  const metaTableRef = useRef<HTMLTableElement | null>(null)
+  const dataTableRef = useRef<HTMLTableElement | null>(null)
 
-  const load = async (nextQuery = appliedQuery) => {
+  const load = async (nextQuery = appliedQuery, nextPage = page) => {
     setLoading(true)
     setError(null)
     try {
-      const endpoint = nextQuery.trim()
-        ? `/api/ui/news?q=${encodeURIComponent(nextQuery.trim())}`
-        : '/api/ui/news'
+      const qs = new URLSearchParams({
+        page: String(nextPage),
+        pageSize: String(PAGE_SIZE),
+      })
+      if (nextQuery.trim()) qs.set('q', nextQuery.trim())
+      const endpoint = `/api/ui/news?${qs.toString()}`
       const res = await apiFetch(endpoint, { cacheMs: 20_000, timeoutMs: 12_000 })
       setItems(normalizeNewsItems(res?.data))
+      setPage(nextPage)
+      setHasMore(Boolean(res?.hasMore))
       const code = String(res?.code || '')
       const name = String(res?.name || '')
       setBaseStock(code && name ? { code, name } : null)
@@ -128,12 +140,12 @@ export default function NewsPage() {
     }
   }
 
-  useEffect(() => { void load('') }, [])
+  useEffect(() => { void load('', 1) }, [])
 
   const applyQuery = () => {
     const next = query.trim()
     setAppliedQuery(next)
-    void load(next)
+    void load(next, 1)
   }
 
   const toggleRelated = async (item: NewsItem) => {
@@ -170,7 +182,43 @@ export default function NewsPage() {
     const key = item.link || item.title
     return acc + (relatedOpenSet.has(key) ? 1 : 0)
   }, 0)
-  const emptyCount = Math.max(0, 30 - dataRowCount)
+
+  useEffect(() => {
+    const sheet = sheetRef.current
+    const metaTable = metaTableRef.current
+    const dataTable = dataTableRef.current
+    if (!sheet || !metaTable || !dataTable) return
+    const viewport = sheet.closest('.xls-content-data') as HTMLElement | null
+    if (!viewport) return
+
+    const updateDummyRows = () => {
+      const sheetStyle = window.getComputedStyle(sheet)
+      const padV = (parseFloat(sheetStyle.paddingTop) || 0) + (parseFloat(sheetStyle.paddingBottom) || 0)
+      const metaHeight = metaTable.offsetHeight
+      const headHeight = dataTable.tHead?.offsetHeight ?? 24
+      const firstRow = dataTable.tBodies[0]?.querySelector('tr.xls-row') as HTMLTableRowElement | null
+      const rowHeight = firstRow?.offsetHeight || 22
+
+      const baseRows = loading || error || items.length === 0 ? 1 : dataRowCount
+      const availableHeight = Math.max(0, viewport.clientHeight - padV - metaHeight - headHeight)
+      const maxRows = Math.floor(availableHeight / rowHeight)
+      const next = Math.max(0, maxRows - baseRows)
+      setDummyRows((prev) => (prev === next ? prev : next))
+    }
+
+    updateDummyRows()
+    if (typeof ResizeObserver !== 'undefined') {
+      const observer = new ResizeObserver(updateDummyRows)
+      observer.observe(viewport)
+      observer.observe(sheet)
+      observer.observe(metaTable)
+      observer.observe(dataTable)
+      return () => observer.disconnect()
+    }
+
+    window.addEventListener('resize', updateDummyRows)
+    return () => window.removeEventListener('resize', updateDummyRows)
+  }, [loading, error, items.length, dataRowCount])
 
   /*
    * ──────────────────────────────────────────────────────────────
@@ -181,18 +229,18 @@ export default function NewsPage() {
    */
   const colGroup = (
     <colgroup>
-      <col style={{ width: '55%' }} />  {/* 제목 */}
-      <col style={{ width: '15%' }} />  {/* 출처 */}
-      <col style={{ width: '14%' }} />  {/* 일자 */}
-      <col style={{ width: '16%' }} />  {/* 관련주 */}
+      <col />                          {/* 제목 (가변폭 최대 확보) */}
+      <col style={{ width: 104 }} />   {/* 출처 */}
+      <col style={{ width: 76 }} />    {/* 일자 */}
+      <col style={{ width: 112 }} />   {/* 관련주 */}
     </colgroup>
   )
 
   return (
-    <div className="news-sheet xls-page-inset">
+    <div ref={sheetRef} className="news-sheet xls-page-inset">
 
       {/* ═══ 메타 헤더 테이블 ═══ */}
-      <table className="xls-table" style={{ width: '100%', tableLayout: 'fixed' }}>
+      <table ref={metaTableRef} className="xls-table news-sheet__table" style={{ width: '100%', tableLayout: 'fixed' }}>
         {colGroup}
         <tbody>
           <tr className="xls-row xls-row--even">
@@ -201,7 +249,7 @@ export default function NewsPage() {
               뉴스
             </td>
             <td className="xls-cell" style={{ textAlign: 'right', padding: '1px 4px' }}>
-              <Button variant="secondary" onClick={() => load(appliedQuery)} disabled={loading}>
+              <Button variant="secondary" onClick={() => load(appliedQuery, page)} disabled={loading}>
                 새로고침
               </Button>
             </td>
@@ -230,7 +278,7 @@ export default function NewsPage() {
       </table>
 
       {/* ═══ 데이터 테이블 (sticky 헤더) ═══ */}
-      <table className="xls-table" style={{ width: '100%', tableLayout: 'fixed' }}>
+      <table ref={dataTableRef} className="xls-table" style={{ width: '100%', tableLayout: 'fixed' }}>
         {colGroup}
         <thead>
           <tr className="xls-header-row">
@@ -256,7 +304,7 @@ export default function NewsPage() {
                 {error}
               </td>
               <td className="xls-cell" style={{ textAlign: 'right' }}>
-                <Button variant="secondary" onClick={() => load(appliedQuery)}>재시도</Button>
+                <Button variant="secondary" onClick={() => load(appliedQuery, page)}>재시도</Button>
               </td>
             </tr>
           )}
@@ -271,10 +319,10 @@ export default function NewsPage() {
 
           {!loading && !error && items.map((item, idx) => {
             const key = item.link || item.title
-            const rowNumber = idx + 1
+            const rowNumber = (page - 1) * PAGE_SIZE + idx + 1
             const isEven = rowNumber % 2 === 0
             return (
-              <React.Fragment key={`${item.link}-${idx}`}>
+              <React.Fragment key={`${page}-${item.link}-${idx}`}>
                 <tr className={`xls-row${isEven ? ' xls-row--even' : ''}`}>
                   <td className="xls-cell news-cell--title">
                     <a
@@ -300,11 +348,11 @@ export default function NewsPage() {
                     >
                       {relatedOpenSet.has(key) ? (
                         <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-                          관련주 접기 <ChevronUp size={14} />
+                          접기 <ChevronUp size={14} />
                         </span>
                       ) : (
                         <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-                          관련주 보기 <ChevronDown size={14} />
+                          관련주 <ChevronDown size={14} />
                         </span>
                       )}
                     </Button>
@@ -338,11 +386,11 @@ export default function NewsPage() {
             )
           })}
 
-          {/* 빈 행으로 그리드 채우기 */}
-          {!loading && !error && Array.from({ length: emptyCount }, (_, idx) => {
-            const rn = dataRowCount + idx + 1
+          {Array.from({ length: dummyRows }, (_, i) => {
+            const baseRows = loading || error || items.length === 0 ? 1 : dataRowCount
+            const rn = baseRows + i + 1
             return (
-              <tr key={`empty-${rn}`} className={`xls-row${rn % 2 === 0 ? ' xls-row--even' : ''}`}>
+              <tr key={`dummy-${rn}`} className={`xls-row${rn % 2 === 0 ? ' xls-row--even' : ''}`}>
                 <td className="xls-cell xls-cell--empty" />
                 <td className="xls-cell xls-cell--empty" />
                 <td className="xls-cell xls-cell--empty" />
@@ -353,6 +401,32 @@ export default function NewsPage() {
 
         </tbody>
       </table>
+
+      {!loading && !error && (
+        <div className="xls-panel-header-bar" style={{ borderTop: '1px solid var(--color-excel-grid-border)', borderBottom: 'none', minHeight: 22 }}>
+          <span style={{ fontSize: 10, color: 'var(--color-text-secondary)' }}>
+            페이지 {page} · 현재 {items.length}건
+          </span>
+          <div className="xls-panel-header-bar__tools" style={{ gap: 4 }}>
+            <button
+              className="xls-toolbar-btn"
+              onClick={() => { if (page > 1) void load(appliedQuery, page - 1) }}
+              disabled={page <= 1 || loading}
+              title="이전 페이지"
+            >
+              이전
+            </button>
+            <button
+              className="xls-toolbar-btn"
+              onClick={() => { if (hasMore) void load(appliedQuery, page + 1) }}
+              disabled={!hasMore || loading}
+              title="다음 페이지"
+            >
+              다음
+            </button>
+          </div>
+        </div>
+      )}
 
       <StockDetailModal
         code={modalStock?.code ?? ''}

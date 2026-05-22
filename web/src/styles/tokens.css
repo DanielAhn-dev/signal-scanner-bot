@@ -399,6 +399,13 @@
   --nav-item-bg-hover:    var(--color-gray-100);
   --nav-item-bg-active:   var(--color-excel-cell-selected);
   --nav-item-indicator:   var(--color-brand);
+
+  /* Excel Grid Layout Contract (전 페이지 공통 기준) */
+  --xls-grid-row-height:        22px;
+  --xls-grid-row-height-double: 44px;
+  --xls-grid-cell-line-height:  20px;
+  --xls-grid-cell-padding-y:    0;
+  --xls-grid-cell-padding-x:    6px;
 }
 
 

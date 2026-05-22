@@ -132,6 +132,7 @@ function EventItem({ event }: { event: EconomicEvent }) {
     <div>
       {/* 메인 행 */}
       <button
+        className={`market-calendar__event-row${released ? ' is-released' : ''}${open ? ' is-open' : ''}`}
         onClick={() => setOpen(v => !v)}
         style={{
           width: '100%',
@@ -152,9 +153,10 @@ function EventItem({ event }: { event: EconomicEvent }) {
         onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--color-bg-surface)')}
         onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
       >
-        <div style={{ flex: 1, minWidth: 0 }}>
+        <div className="market-calendar__event-main" style={{ flex: 1, minWidth: 0 }}>
           {/* 이벤트명 */}
           <div
+            className="market-calendar__event-title"
             style={{
               fontSize: 'var(--font-size-sm)',
               fontWeight: 'var(--font-weight-semibold)',
@@ -167,6 +169,7 @@ function EventItem({ event }: { event: EconomicEvent }) {
           </div>
           {/* 메타 */}
           <div
+            className="market-calendar__event-meta"
             style={{
               display: 'flex',
               alignItems: 'center',
@@ -180,18 +183,19 @@ function EventItem({ event }: { event: EconomicEvent }) {
               : <Clock size={11} style={{ flexShrink: 0 }} />}
             <span>{event.country}</span>
             <span>·</span>
-            <span style={{ color: released ? 'var(--color-text-tertiary)' : importanceColor(event.importance) }}>
+            <span className="market-calendar__event-time" style={{ color: released ? 'var(--color-text-tertiary)' : importanceColor(event.importance) }}>
               {timeLabel}
             </span>
           </div>
         </div>
 
         {/* 우측: 값 + 중요도 chip */}
-        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4, flexShrink: 0 }}>
+        <div className="market-calendar__event-side" style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4, flexShrink: 0 }}>
           {/* 실제값 또는 예측값 */}
           {hasActual ? (
             <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
               <span
+                className="market-calendar__event-value"
                 style={{
                   fontSize: 'var(--font-size-base)',
                   fontWeight: 'var(--font-weight-bold)',
@@ -206,12 +210,13 @@ function EventItem({ event }: { event: EconomicEvent }) {
               {beat === 'flat' && <Minus     size={12} style={{ color: 'var(--color-text-tertiary)' }} />}
             </div>
           ) : hasForecast ? (
-            <span style={{ fontSize: 'var(--font-size-sm)', fontWeight: 'var(--font-weight-semibold)', color: 'var(--color-text-primary)', fontVariantNumeric: 'tabular-nums' }}>
+            <span className="market-calendar__event-forecast" style={{ fontSize: 'var(--font-size-sm)', fontWeight: 'var(--font-weight-semibold)', color: 'var(--color-text-primary)', fontVariantNumeric: 'tabular-nums' }}>
               예측 {event.forecastValue!.toFixed(1)}{event.unit}
             </span>
           ) : null}
           {/* 중요도 chip */}
           <span
+            className="market-calendar__importance-chip"
             style={{
               padding: '2px 7px',
               borderRadius: 'var(--radius-full)',
@@ -227,7 +232,7 @@ function EventItem({ event }: { event: EconomicEvent }) {
         </div>
 
         {/* 접기/펼치기 */}
-        <span style={{ color: 'var(--color-text-tertiary)', flexShrink: 0, alignSelf: 'center', display: 'flex' }}>
+        <span className="market-calendar__event-chevron" style={{ color: 'var(--color-text-tertiary)', flexShrink: 0, alignSelf: 'center', display: 'flex' }}>
           {open ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
         </span>
       </button>
@@ -235,6 +240,7 @@ function EventItem({ event }: { event: EconomicEvent }) {
       {/* 상세 펼침 */}
       {open && (
         <div
+          className="market-calendar__event-detail"
           style={{
             padding: '0 var(--space-5) var(--space-4)',
             display: 'flex',
@@ -244,7 +250,7 @@ function EventItem({ event }: { event: EconomicEvent }) {
         >
           {/* 발표 수치 그리드 */}
           {(hasActual || hasForecast || hasPrevious) && (
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 'var(--space-2)' }}>
+            <div className="market-calendar__value-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 'var(--space-2)' }}>
               {hasActual && (
                 <ValueTile
                   label="실제"
@@ -268,7 +274,7 @@ function EventItem({ event }: { event: EconomicEvent }) {
               <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-tertiary)', fontWeight: 'var(--font-weight-medium)', marginBottom: 8, letterSpacing: '0.04em' }}>
                 과거 평균 시장 반응
               </div>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-2)' }}>
+              <div className="market-calendar__market-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-2)' }}>
                 <div style={{ padding: 'var(--space-3)', background: 'var(--color-bg-sunken)', borderRadius: 'var(--radius-md)' }}>
                   <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-tertiary)', marginBottom: 4 }}>KOSPI</div>
                   <div
@@ -323,6 +329,7 @@ function EventItem({ event }: { event: EconomicEvent }) {
 
           {/* 거래 제약 메시지 */}
           <div
+            className="market-calendar__restriction"
             style={{
               padding: 'var(--space-3) var(--space-4)',
               background: 'var(--color-bg-sunken)',
@@ -346,6 +353,7 @@ function EventItem({ event }: { event: EconomicEvent }) {
 function ValueTile({ label, value, color, highlight }: { label: string; value: string; color?: string; highlight?: boolean }) {
   return (
     <div
+      className={`market-calendar__value-tile${highlight ? ' is-highlight' : ''}`}
       style={{
         padding: 'var(--space-3)',
         background: highlight ? 'var(--color-bg-surface)' : 'var(--color-bg-sunken)',
@@ -412,11 +420,12 @@ export default function EconomicCalendar({ events, loading, fetchedAt }: Economi
   }
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
+    <div className="market-calendar" style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
 
       {/* 요약 배너 */}
       {upcomingImportant.length > 0 && (
         <div
+          className="market-calendar__summary"
           style={{
             display: 'flex',
             alignItems: 'center',
@@ -450,9 +459,10 @@ export default function EconomicCalendar({ events, loading, fetchedAt }: Economi
 
       {/* 날짜 그룹별 리스트 */}
       {groups.map(group => (
-        <div key={group.key}>
+        <div key={group.key} className={`market-calendar__group market-calendar__group--${group.key}`}>
           {/* 섹션 레이블 */}
           <div
+            className="market-calendar__group-head"
             style={{
               display: 'flex',
               alignItems: 'center',
@@ -464,6 +474,7 @@ export default function EconomicCalendar({ events, loading, fetchedAt }: Economi
               <CheckCircle2 size={12} style={{ color: 'var(--color-success)' }} />
             )}
             <span
+              className="market-calendar__group-label"
               style={{
                 fontSize: 'var(--font-size-xs)',
                 fontWeight: 'var(--font-weight-semibold)',
@@ -475,6 +486,7 @@ export default function EconomicCalendar({ events, loading, fetchedAt }: Economi
               {group.label}
             </span>
             <span
+              className="market-calendar__group-count"
               style={{
                 fontSize: 'var(--font-size-xs)',
                 color: 'var(--color-text-tertiary)',
@@ -489,7 +501,7 @@ export default function EconomicCalendar({ events, loading, fetchedAt }: Economi
 
           {/* 이벤트 카드 */}
           <div
-            className="card"
+            className="card market-calendar__group-card"
             style={{
               '--card-padding': '0',
               overflow: 'hidden',
@@ -498,7 +510,7 @@ export default function EconomicCalendar({ events, loading, fetchedAt }: Economi
             {group.events.map((event, idx) => (
               <React.Fragment key={event.id}>
                 {idx > 0 && (
-                  <div style={{ height: 1, background: 'var(--color-border-default)', margin: '0 var(--space-5)' }} />
+                  <div className="market-calendar__event-divider" style={{ height: 1, background: 'var(--color-border-default)', margin: '0 var(--space-5)' }} />
                 )}
                 <EventItem event={event} />
               </React.Fragment>

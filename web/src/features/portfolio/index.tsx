@@ -1113,22 +1113,22 @@ export default function Portfolio() {
               </div>
             </td>
           </tr>
-          <tr className="xls-row xls-row--even">
+          <tr className="xls-row xls-row--even portfolio-summary-row portfolio-summary-row--label">
             <td className="xls-cell" colSpan={2} style={{ fontSize: 13, fontWeight: 600 }}>보유 종목</td>
             <td className="xls-cell" colSpan={2} style={{ fontSize: 13, fontWeight: 600 }}>현재 실제 매수금</td>
             <td className="xls-cell" colSpan={2} style={{ fontSize: 13, fontWeight: 600 }}>평가손익 합계</td>
           </tr>
-          <tr className="xls-row">
-            <td className="xls-cell" colSpan={2} style={{ fontSize: 18, fontWeight: 700 }}>{summaryRows.length}</td>
-            <td className="xls-cell" colSpan={2} style={{ fontSize: 18, fontWeight: 700 }}>{formatKrw(totalInvested)}</td>
-            <td className="xls-cell" colSpan={2} style={{ fontSize: 18, fontWeight: 700 }}>
+          <tr className="xls-row portfolio-summary-row portfolio-summary-row--value">
+            <td className="xls-cell portfolio-cell-num" colSpan={2} style={{ fontSize: 18, fontWeight: 700 }}>{summaryRows.length}</td>
+            <td className="xls-cell portfolio-cell-num" colSpan={2} style={{ fontSize: 18, fontWeight: 700 }}>{formatKrw(totalInvested)}</td>
+            <td className="xls-cell portfolio-cell-num" colSpan={2} style={{ fontSize: 18, fontWeight: 700 }}>
               <span className={adjustedUnrealized < 0 ? 'negative' : 'positive'}>{formatKrw(adjustedUnrealized)}</span>
             </td>
           </tr>
-          <tr className="xls-row xls-row--even">
+          <tr className="xls-row xls-row--even portfolio-summary-row portfolio-summary-row--note">
             <td className="xls-cell" colSpan={2} style={{ color: 'var(--color-text-tertiary)', fontSize: 11 }}>{selectedAccountLabel}</td>
-            <td className="xls-cell" colSpan={2} style={{ color: 'var(--color-text-tertiary)', fontSize: 11 }}>보유 수량×평균 매수가</td>
-            <td className="xls-cell" colSpan={2} style={{ color: 'var(--color-text-tertiary)', fontSize: 11 }}>
+            <td className="xls-cell portfolio-cell-num" colSpan={2} style={{ color: 'var(--color-text-tertiary)', fontSize: 11 }}>보유 수량×평균 매수가</td>
+            <td className="xls-cell portfolio-cell-num" colSpan={2} style={{ color: 'var(--color-text-tertiary)', fontSize: 11 }}>
               {includeCost
                 ? `비용 ${formatKrw(Math.round(totalTradeCost))} 차감`
                 : '보유 포지션 기준'}

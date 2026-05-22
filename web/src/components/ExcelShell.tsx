@@ -97,6 +97,13 @@ function getRibbonGroups(tab: RibbonTabKey): RibbonGroup[] {
         { key: 'highlights', label: '하이라이트', icon: <Zap size={20}/>,         route: 'highlights', priority: 3 },
       ]},
     ]
+    case 'draw': return [
+      { label: '시장', buttons: [
+        { key: 'sectors', label: '섹터', icon: <PieChart size={20}/>,  route: 'sectors', priority: 1 },
+        { key: 'market',  label: '시장', icon: <Globe2 size={20}/>,    route: 'market', priority: 1 },
+        { key: 'news',    label: '뉴스', icon: <Newspaper size={20}/>, route: 'news', priority: 2 },
+      ]},
+    ]
     case 'data': return [
       { label: '데이터', buttons: [
         { key: 'trades', label: '거래기록', icon: <History size={20}/>,  route: 'trades', priority: 1 },
@@ -206,6 +213,57 @@ function getRibbonScaffoldGroups(tab: RibbonTabKey): RibbonScaffoldGroup[] {
           buttons: [
             { key: 'ins-shape', label: '도형', icon: <LayoutDashboard size={20} /> },
             { key: 'ins-note', label: '메모', icon: <FileText size={20} /> },
+          ],
+        },
+      ]
+    case 'draw':
+      return [
+        {
+          label: '불러오기',
+          buttons: [
+            { key: 'draw-load', label: '불러오기', icon: <Download size={20} /> },
+            { key: 'draw-save', label: '복사', icon: <BookMarked size={20} /> },
+          ],
+        },
+        {
+          label: '색상',
+          buttons: [
+            { key: 'draw-palette', label: '색상', icon: <Palette size={20} /> },
+            { key: 'draw-fill', label: '채우기', icon: <PaintBucket size={20} /> },
+          ],
+        },
+        {
+          label: '오류폭',
+          buttons: [
+            { key: 'draw-trace', label: '추세선', icon: <Activity size={20} /> },
+            { key: 'draw-guide', label: '보조선', icon: <AlignCenter size={20} /> },
+          ],
+        },
+        {
+          label: '자리수',
+          buttons: [
+            { key: 'draw-digit-up', label: '증가', icon: <Plus size={20} /> },
+            { key: 'draw-digit-down', label: '감소', icon: <Minus size={20} /> },
+          ],
+        },
+        {
+          label: '테마',
+          buttons: [
+            { key: 'draw-theme', label: '테마', icon: <PaintBucket size={20} /> },
+            { key: 'draw-style', label: '스타일', icon: <Table2 size={20} /> },
+          ],
+        },
+        {
+          label: '서식',
+          buttons: [
+            { key: 'draw-format', label: '서식', icon: <Type size={20} /> },
+            { key: 'draw-align', label: '맞춤', icon: <AlignLeft size={20} /> },
+          ],
+        },
+        {
+          label: '지우기',
+          buttons: [
+            { key: 'draw-clear', label: '지우기', icon: <Eraser size={20} /> },
           ],
         },
       ]
@@ -690,7 +748,7 @@ export default function ExcelShell({
       </div>
 
       {/* ── 3. 리본 바디 ── */}
-      <div className="excel-ribbon-body" role="toolbar">
+      <div className={`excel-ribbon-body${ribbonTab === 'draw' ? ' excel-ribbon-body--draw' : ''}`} role="toolbar">
         <div className="excel-ribbon-body__content">
           <div className="excel-ribbon-body__zone excel-ribbon-body__zone--primary">
             {groups.map((g, gi) => (
@@ -750,25 +808,146 @@ export default function ExcelShell({
 
           {!isUltraCompact && (
             <div className="excel-ribbon-body__zone excel-ribbon-body__zone--scaffold">
-              {scaffoldGroups.map((g, gi) => (
-                <div key={`scaffold-${gi}`} className="excel-ribbon-group excel-ribbon-group--scaffold" aria-hidden>
-                  <div className="excel-ribbon-group__buttons">
-                    {g.buttons.map(btn => (
-                      <button
-                        key={btn.key}
-                        type="button"
-                        className="ribbon-btn ribbon-btn--dummy excel-tooltip-target"
-                        onClick={() => {}}
-                        data-tooltip={`${btn.label} (준비 중)`}
-                      >
-                        <span className="ribbon-btn__icon">{btn.icon}</span>
-                        <span className="ribbon-btn__label">{btn.label}</span>
+              {ribbonTab === 'draw' ? (
+                <div className="excel-draw-ribbon" aria-hidden>
+                  <div className="excel-draw-group excel-draw-group--clipboard">
+                    <div className="excel-draw-tools">
+                      <button type="button" className="excel-draw-tool excel-draw-tool--big">
+                        <span className="excel-draw-tool__icon"><Upload size={16} /></span>
+                        <span className="excel-draw-tool__label">붙여넣기</span>
                       </button>
-                    ))}
+                      <div className="excel-draw-commandcol">
+                        <button type="button" className="excel-draw-split"><Type size={12} />잘라내기</button>
+                        <button type="button" className="excel-draw-split"><BookMarked size={12} />복사</button>
+                        <button type="button" className="excel-draw-split"><PaintBucket size={12} />서식 복사</button>
+                      </div>
+                    </div>
+                    <div className="excel-draw-group__label">클립보드</div>
                   </div>
-                  <div className="excel-ribbon-group__label">{g.label}</div>
+
+                  <div className="excel-draw-group excel-draw-group--font">
+                    <div className="excel-draw-stack">
+                      <div className="excel-draw-selectrow">
+                        <button type="button" className="excel-draw-combo excel-draw-combo--font">기본값</button>
+                        <button type="button" className="excel-draw-combo excel-draw-combo--size">11</button>
+                        <button type="button" className="excel-draw-tool">가+</button>
+                        <button type="button" className="excel-draw-tool">가-</button>
+                      </div>
+                      <div className="excel-draw-selectrow">
+                        <button type="button" className="excel-draw-tool"><Bold size={13} /></button>
+                        <button type="button" className="excel-draw-tool"><Type size={13} /></button>
+                        <button type="button" className="excel-draw-tool"><AlignLeft size={13} /></button>
+                        <button type="button" className="excel-draw-tool"><Table2 size={13} /></button>
+                        <button type="button" className="excel-draw-tool"><PaintBucket size={13} /></button>
+                        <button type="button" className="excel-draw-tool"><Palette size={13} /></button>
+                      </div>
+                    </div>
+                    <div className="excel-draw-group__label">글꼴</div>
+                  </div>
+
+                  <div className="excel-draw-group excel-draw-group--align">
+                    <div className="excel-draw-stack">
+                      <div className="excel-draw-selectrow">
+                        <button type="button" className="excel-draw-tool"><AlignLeft size={13} /></button>
+                        <button type="button" className="excel-draw-tool"><AlignCenter size={13} /></button>
+                        <button type="button" className="excel-draw-tool"><AlignRight size={13} /></button>
+                        <button type="button" className="excel-draw-tool">↺</button>
+                      </div>
+                      <div className="excel-draw-selectrow">
+                        <button type="button" className="excel-draw-tool"><AlignLeft size={13} /></button>
+                        <button type="button" className="excel-draw-tool"><AlignCenter size={13} /></button>
+                        <button type="button" className="excel-draw-tool"><AlignRight size={13} /></button>
+                        <button type="button" className="excel-draw-tool">↵</button>
+                      </div>
+                      <button type="button" className="excel-draw-split excel-draw-split--wide"><AlignCenter size={12} />병합하고 가운데</button>
+                    </div>
+                    <div className="excel-draw-group__label">맞춤</div>
+                  </div>
+
+                  <div className="excel-draw-group excel-draw-group--number">
+                    <div className="excel-draw-stack">
+                      <button type="button" className="excel-draw-combo">일반</button>
+                      <div className="excel-draw-selectrow">
+                        <button type="button" className="excel-draw-tool"><Hash size={13} /></button>
+                        <button type="button" className="excel-draw-tool"><Percent size={13} /></button>
+                        <button type="button" className="excel-draw-tool">,</button>
+                        <button type="button" className="excel-draw-tool"><Plus size={13} /></button>
+                        <button type="button" className="excel-draw-tool"><Minus size={13} /></button>
+                      </div>
+                    </div>
+                    <div className="excel-draw-group__label">표시 형식</div>
+                  </div>
+
+                  <div className="excel-draw-group excel-draw-group--styles">
+                    <div className="excel-draw-tools">
+                      <button type="button" className="excel-draw-tool excel-draw-tool--big"><Filter size={14} />조건부 서식</button>
+                      <button type="button" className="excel-draw-tool excel-draw-tool--big"><Table2 size={14} />표 서식</button>
+                      <button type="button" className="excel-draw-tool excel-draw-tool--big"><PaintBucket size={14} />셀 스타일</button>
+                    </div>
+                    <div className="excel-draw-group__label">스타일</div>
+                  </div>
+
+                  <div className="excel-draw-group excel-draw-group--cells">
+                    <div className="excel-draw-commandcol">
+                      <button type="button" className="excel-draw-split"><Plus size={12} />삽입</button>
+                      <button type="button" className="excel-draw-split"><Trash2 size={12} />삭제</button>
+                      <button type="button" className="excel-draw-split"><Settings size={12} />서식</button>
+                    </div>
+                    <div className="excel-draw-group__label">셀</div>
+                  </div>
+
+                  <div className="excel-draw-group excel-draw-group--editing">
+                    <div className="excel-draw-tools">
+                      <button type="button" className="excel-draw-tool excel-draw-tool--big"><Sigma size={14} />자동 합계</button>
+                      <div className="excel-draw-commandcol">
+                        <button type="button" className="excel-draw-split"><Upload size={12} />채우기</button>
+                        <button type="button" className="excel-draw-split"><Eraser size={12} />지우기</button>
+                        <button type="button" className="excel-draw-split"><SortAsc size={12} />정렬 및 필터</button>
+                        <button type="button" className="excel-draw-split"><Search size={12} />찾기 및 선택</button>
+                      </div>
+                    </div>
+                    <div className="excel-draw-group__label">편집</div>
+                  </div>
+
+                  <div className="excel-draw-group excel-draw-group--data">
+                    <div className="excel-draw-tools">
+                      <button type="button" className="excel-draw-tool excel-draw-tool--big"><RefreshCw size={14} />새로 고침</button>
+                      <div className="excel-draw-commandcol">
+                        <button type="button" className="excel-draw-split"><Globe2 size={12} />연결</button>
+                        <button type="button" className="excel-draw-split"><Database size={12} />쿼리</button>
+                      </div>
+                    </div>
+                    <div className="excel-draw-group__label">데이터</div>
+                  </div>
+
+                  <div className="excel-draw-ribbon__spacer" />
+
+                  <div className="excel-draw-ribbon__actions">
+                    <button type="button" className="excel-draw-action" onClick={() => onNavigate('news')}>메모</button>
+                    <a className="excel-draw-action excel-draw-action--share" href="#" target="_blank" rel="noopener noreferrer">공유</a>
+                  </div>
                 </div>
-              ))}
+              ) : (
+                scaffoldGroups.map((g, gi) => (
+                  <div key={`scaffold-${gi}`} className="excel-ribbon-group excel-ribbon-group--scaffold" aria-hidden>
+                    <div className="excel-ribbon-group__buttons">
+                      {g.buttons.map(btn => (
+                        <button
+                          key={btn.key}
+                          type="button"
+                          className="ribbon-btn ribbon-btn--dummy excel-tooltip-target"
+                          onClick={() => {}}
+                          data-tooltip={`${btn.label} (준비 중)`}
+                        >
+                          <span className="ribbon-btn__icon">{btn.icon}</span>
+                          <span className="ribbon-btn__label">{btn.label}</span>
+                        </button>
+                      ))}
+                    </div>
+                    <div className="excel-ribbon-group__label">{g.label}</div>
+                  </div>
+                ))
+              )}
             </div>
           )}
         </div>

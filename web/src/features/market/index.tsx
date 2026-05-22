@@ -167,7 +167,7 @@ function Chip({
 function ListRow({
   label,
   children,
-  minHeight = 48,
+  minHeight = 34,
 }: {
   label: string
   children: React.ReactNode
@@ -175,13 +175,14 @@ function ListRow({
 }) {
   return (
     <div
+      className="market-sheet__list-row"
       style={{
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'space-between',
         gap: 'var(--space-4)',
         minHeight,
-        padding: '0 var(--space-5)',
+        padding: '0 10px',
       }}
     >
       <span
@@ -213,10 +214,11 @@ function ListRow({
 function ListDivider() {
   return (
     <div
+      className="market-sheet__divider"
       style={{
         height: 1,
         background: 'var(--color-border-default)',
-        margin: '0 var(--space-5)',
+        margin: '0 10px',
       }}
     />
   )
@@ -225,13 +227,13 @@ function ListDivider() {
 function SectionLabel({ children }: { children: React.ReactNode }) {
   return (
     <div
+      className="market-sheet__section-label"
       style={{
-        padding: 'var(--space-4) var(--space-5) var(--space-2)',
-        fontSize: 'var(--font-size-xs)',
+        padding: '8px 10px 4px',
+        fontSize: '10px',
         fontWeight: 'var(--font-weight-semibold)',
         color: 'var(--color-text-tertiary)',
-        letterSpacing: 'var(--letter-spacing-wider)',
-        textTransform: 'uppercase',
+        letterSpacing: '0.02em',
       }}
     >
       {children}
@@ -258,13 +260,14 @@ function IndexRow({
 
   return (
     <div
+      className="market-sheet__index-row"
       style={{
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'space-between',
         gap: 'var(--space-4)',
-        padding: 'var(--space-3) var(--space-5)',
-        minHeight: 52,
+        padding: '6px 10px',
+        minHeight: 38,
       }}
     >
       <div>
@@ -333,17 +336,18 @@ function Collapsible({
   return (
     <div className="card market-sheet__block" style={{ '--card-padding': '0', overflow: 'hidden' } as React.CSSProperties}>
       <button
+        className="market-sheet__collapse-btn"
         onClick={onToggle}
         style={{
           width: '100%',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',
-          padding: 'var(--space-4) var(--space-5)',
+          padding: '6px 10px',
           background: 'none',
           border: 'none',
           cursor: 'pointer',
-          minHeight: 52,
+          minHeight: 34,
           WebkitTapHighlightColor: 'transparent',
         }}
       >
@@ -419,54 +423,34 @@ function SegmentControl<T extends string>({
 
 function PageHeader({ loading, onRefresh }: { loading: boolean; onRefresh: () => void }) {
   return (
-    <div
-      className="market-sheet__header"
-      style={{
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        marginBottom: 'var(--space-4)',
-        gap: 'var(--space-3)',
-      }}
-    >
-      <h1
-        style={{
-          fontSize: 'var(--font-size-xl)',
-          fontWeight: 'var(--font-weight-bold)',
-          color: 'var(--color-text-primary)',
-          letterSpacing: 'var(--letter-spacing-tight)',
-          margin: 0,
-        }}
-      >
-        시장 진단
-      </h1>
-      <button
-        onClick={onRefresh}
-        disabled={loading}
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: 'var(--space-2)',
-          padding: '0 var(--space-4)',
-          height: 36,
-          background: 'none',
-          color: loading ? 'var(--color-text-tertiary)' : 'var(--color-brand)',
-          border: 'none',
-          borderRadius: 'var(--radius-sm)',
-          fontSize: 'var(--font-size-sm)',
-          fontWeight: 'var(--font-weight-semibold)',
-          cursor: loading ? 'not-allowed' : 'pointer',
-          flexShrink: 0,
-          WebkitTapHighlightColor: 'transparent',
-        }}
-      >
-        <RefreshCw
-          size={14}
-          strokeWidth={2.5}
-          style={loading ? { animation: 'spin 1s linear infinite' } : undefined}
-        />
-        새로고침
-      </button>
+    <div className="market-sheet__header-row">
+      <div className="market-sheet__header">
+        <h1>시장 진단</h1>
+        <button
+          onClick={onRefresh}
+          disabled={loading}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 'var(--space-2)',
+            color: loading ? 'var(--color-text-tertiary)' : 'var(--color-brand)',
+            border: 'none',
+            borderRadius: 0,
+            fontSize: 'var(--font-size-sm)',
+            fontWeight: 'var(--font-weight-semibold)',
+            cursor: loading ? 'not-allowed' : 'pointer',
+            flexShrink: 0,
+            WebkitTapHighlightColor: 'transparent',
+          }}
+        >
+          <RefreshCw
+            size={14}
+            strokeWidth={2.5}
+            style={loading ? { animation: 'spin 1s linear infinite' } : undefined}
+          />
+          새로고침
+        </button>
+      </div>
     </div>
   )
 }
@@ -480,281 +464,137 @@ function DiagnosisTab({ data }: { data: MarketOverviewData }) {
   const toggle = (k: string) => setExpanded(p => ({ ...p, [k]: !p[k] }))
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
-
-      {/* 매매 신호 카드 */}
-      <div
-        className="card"
-        style={{
-          background: canTrade ? 'var(--color-success-bg)' : 'var(--color-error-bg)',
-          borderColor: canTrade ? 'var(--color-success)' : 'var(--color-error)',
-          '--card-padding': '0',
-        } as React.CSSProperties}
-      >
-        {/* 상단: 상태 + 신뢰도 */}
-        <div
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            padding: 'var(--space-4) var(--space-5)',
-          }}
-        >
-          <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)' }}>
-            <StatusDot color={canTrade ? 'var(--color-success)' : 'var(--color-error)'} />
-            <div>
-              <div
-                style={{
-                  fontSize: 'var(--font-size-base)',
-                  fontWeight: 'var(--font-weight-bold)',
-                  color: canTrade ? 'var(--color-success)' : 'var(--color-error)',
-                  lineHeight: 1.2,
-                }}
-              >
-                {canTrade ? '매매 가능' : '매매 제한'}
-              </div>
-              <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)', marginTop: 2 }}>
-                {canTrade && diagnosis.riskScore >= 60
-                  ? '주의사항 확인 후 진입'
-                  : canTrade
-                    ? '양호한 진입 환경'
-                    : '현금 비중 먼저 확대'}
-              </div>
-            </div>
-          </div>
-          <div style={{ textAlign: 'right' }}>
-            <div
-              style={{
-                fontSize: 'var(--font-size-3xl)',
-                fontWeight: 'var(--font-weight-bold)',
-                color: canTrade ? 'var(--color-success)' : 'var(--color-error)',
-                lineHeight: 1,
-                fontVariantNumeric: 'tabular-nums',
-              }}
-            >
-              {tradingSignal.confidence}
-              <span style={{ fontSize: 'var(--font-size-sm)', fontWeight: 400, color: 'var(--color-text-tertiary)' }}>%</span>
-            </div>
-            <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-tertiary)', marginTop: 2 }}>신뢰도</div>
-          </div>
-        </div>
-
-        {/* 핵심 지표 행 목록 */}
-        <div style={{ height: 1, background: 'var(--color-border-default)' }} />
-
-        <ListRow label="경제국면">
-          <EconomicPhaseChip phase={economicPhase.phase} />
-        </ListRow>
-        <ListDivider />
-        <ListRow label="미국 선물">
-          <FuturesValue signal={globalCorrelation.americanFuturesSignal} />
-        </ListRow>
-        <ListDivider />
-        <ListRow label="리스크">
-          <RiskValue score={diagnosis.riskScore} />
-        </ListRow>
-        {indices.fearGreed && (
-          <>
-            <ListDivider />
-            <ListRow label="공포/탐욕">
-              <FearGreedValue score={indices.fearGreed.score} rating={indices.fearGreed.rating} />
-            </ListRow>
-          </>
-        )}
-
-        {/* 주의사항 */}
-        {tradingSignal.restrictions.length > 0 && (
-          <>
-            <div style={{ height: 1, background: 'var(--color-border-default)', margin: 'var(--space-1) 0' }} />
-            <div style={{ padding: 'var(--space-3) var(--space-5) var(--space-4)' }}>
-              {tradingSignal.restrictions.slice(0, 3).map((r, i) => (
-                <div
-                  key={i}
-                  style={{
-                    display: 'flex',
-                    gap: 'var(--space-2)',
-                    alignItems: 'flex-start',
-                    fontSize: 'var(--font-size-xs)',
-                    color: 'var(--color-text-secondary)',
-                    lineHeight: 1.6,
-                    marginTop: i > 0 ? 'var(--space-1)' : 0,
-                  }}
-                >
-                  <AlertTriangle size={12} strokeWidth={2} style={{ color: 'var(--color-warning)', flexShrink: 0, marginTop: 2 }} />
-                  {r}
+    <table className="xls-table market-sheet__table" style={{ width: '100%', tableLayout: 'fixed' }}>
+      <colgroup>
+        <col style={{ width: 120 }} />
+        <col />
+        <col style={{ width: 104 }} />
+        <col style={{ width: 110 }} />
+        <col style={{ width: 88 }} />
+        <col style={{ width: 104 }} />
+      </colgroup>
+      <tbody>
+        <tr className="xls-row xls-row--even market-sheet__signal-head">
+          <td className="xls-cell" colSpan={4}>
+            <div className="market-sheet__signal-head-inner">
+              <StatusDot color={canTrade ? 'var(--color-success)' : 'var(--color-error)'} />
+              <div>
+                <div className="market-sheet__signal-title" style={{ color: canTrade ? 'var(--color-success)' : 'var(--color-error)' }}>
+                  {canTrade ? '매매 가능' : '매매 제한'}
                 </div>
-              ))}
+                <div className="market-sheet__signal-sub">
+                  {canTrade && diagnosis.riskScore >= 60 ? '주의사항 확인 후 진입' : canTrade ? '양호한 진입 환경' : '현금 비중 먼저 확대'}
+                </div>
+              </div>
             </div>
-          </>
-        )}
-      </div>
+          </td>
+          <td className="xls-cell market-sheet__signal-confidence" colSpan={2}>
+            <div className="market-sheet__signal-confidence-value" style={{ color: canTrade ? 'var(--color-success)' : 'var(--color-error)' }}>
+              {tradingSignal.confidence}<span>%</span>
+            </div>
+            <div className="market-sheet__signal-confidence-label">신뢰도</div>
+          </td>
+        </tr>
 
-      {/* 핵심 메트릭 타일 3개 */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 'var(--space-2)' }}>
-        <MetricTile
-          label="경제심각도"
-          value={String(economicPhase.severity)}
-          valueColor={riskColor(economicPhase.severity)}
-          sub={economicPhase.severity >= 80 ? '위험' : economicPhase.severity >= 60 ? '경계' : '양호'}
-          subColor={riskColor(economicPhase.severity)}
-        />
-        <MetricTile
-          label="한미 동조도"
-          value={
-            globalCorrelation.kospiToSp500Correlation !== null
-              ? `${(globalCorrelation.kospiToSp500Correlation * 100).toFixed(0)}%`
-              : '—'
-          }
-          sub={
-            globalCorrelation.kospiToSp500Correlation !== null && globalCorrelation.kospiToSp500Correlation > 0.7
-              ? '높은동조'
-              : '낮은동조'
-          }
-        />
-        <MetricTile
-          label="신흥압박"
-          value={
-            globalCorrelation.emergingMarketsPressure === 'high' ? '높음'
-              : globalCorrelation.emergingMarketsPressure === 'moderate' ? '중간' : '낮음'
-          }
-          valueColor={
-            globalCorrelation.emergingMarketsPressure === 'high' ? 'var(--color-error)'
-              : globalCorrelation.emergingMarketsPressure === 'moderate' ? 'var(--color-warning)'
-                : 'var(--color-success)'
-          }
-          sub={
-            globalCorrelation.emergingMarketsPressure === 'high' ? '이탈주의'
-              : globalCorrelation.emergingMarketsPressure === 'moderate' ? '모니터링' : '안정'
-          }
-        />
-      </div>
+        <SheetSectionHeader label="핵심 진단" value={<span className="caption">경제국면 · 미국선물 · 리스크 · 공포탐욕</span>} />
+        <tr className="xls-row">
+          <td className="xls-cell">경제국면</td>
+          <td className="xls-cell" colSpan={2}><EconomicPhaseChip phase={economicPhase.phase} /></td>
+          <td className="xls-cell">미국 선물</td>
+          <td className="xls-cell" colSpan={2}><FuturesValue signal={globalCorrelation.americanFuturesSignal} /></td>
+        </tr>
+        <tr className="xls-row xls-row--even">
+          <td className="xls-cell">리스크</td>
+          <td className="xls-cell" colSpan={2}><RiskValue score={diagnosis.riskScore} /></td>
+          <td className="xls-cell">공포/탐욕</td>
+          <td className="xls-cell" colSpan={2}>
+            {indices.fearGreed ? <FearGreedValue score={indices.fearGreed.score} rating={indices.fearGreed.rating} /> : '—'}
+          </td>
+        </tr>
 
-      {/* 주도 섹터 */}
-      {topSectors.length > 0 && (
-        <Collapsible label="주도 섹터" expanded={expanded.sectors} onToggle={() => toggle('sectors')}>
-          <div style={{ padding: 'var(--space-3) var(--space-5) var(--space-4)', display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
-            {topSectors.slice(0, 5).map(s => {
+        <SheetSectionHeader label="핵심 메트릭" />
+        <tr className="xls-row">
+          <td className="xls-cell">경제심각도</td>
+          <td className="xls-cell"><span style={{ color: riskColor(economicPhase.severity), fontWeight: 700 }}>{economicPhase.severity}</span></td>
+          <td className="xls-cell">한미 동조도</td>
+          <td className="xls-cell">{globalCorrelation.kospiToSp500Correlation !== null ? `${(globalCorrelation.kospiToSp500Correlation * 100).toFixed(0)}%` : '—'}</td>
+          <td className="xls-cell">신흥압박</td>
+          <td className="xls-cell">{globalCorrelation.emergingMarketsPressure === 'high' ? '높음' : globalCorrelation.emergingMarketsPressure === 'moderate' ? '중간' : '낮음'}</td>
+        </tr>
+
+        {topSectors.length > 0 && (
+          <>
+            <SheetSectionHeader
+              label="주도 섹터"
+              value={expanded.sectors ? '접기' : '펼치기'}
+              onClick={() => toggle('sectors')}
+            />
+            {expanded.sectors && topSectors.slice(0, 5).map((s, idx) => {
               const strong = s.score >= 75
               const weak = s.score < 55
-              const barColor = strong ? 'var(--color-success)' : weak ? 'var(--color-error)' : 'var(--color-brand)'
               const chipColor = strong ? 'var(--color-success)' : weak ? 'var(--color-error)' : 'var(--color-brand)'
               const chipBg = strong ? 'var(--color-success-bg)' : weak ? 'var(--color-error-bg)' : 'var(--color-brand-subtle)'
               return (
-                <div key={s.id}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8, gap: 'var(--space-2)' }}>
-                    <span style={{ fontSize: 'var(--font-size-sm)', fontWeight: 'var(--font-weight-semibold)', color: 'var(--color-text-primary)', minWidth: 0 }}>
-                      {s.name}
-                    </span>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', flexShrink: 0 }}>
+                <tr className={`xls-row${idx % 2 === 1 ? ' xls-row--even' : ''}`} key={s.id}>
+                  <td className="xls-cell">#{idx + 1}</td>
+                  <td className="xls-cell" colSpan={3}>
+                    <div className="market-sheet__sector-name">{s.name}</div>
+                    <div className="market-sheet__sector-flow">
                       {(s.flowF5 !== undefined || s.flowI5 !== undefined) && (
-                        <span style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-tertiary)' }}>
-                          {s.flowF5 !== undefined && `외${fmtKorMoney(s.flowF5)}`}
-                          {s.flowF5 !== undefined && s.flowI5 !== undefined && ' '}
-                          {s.flowI5 !== undefined && `기${fmtKorMoney(s.flowI5)}`}
-                        </span>
+                        <span>{s.flowF5 !== undefined && `외${fmtKorMoney(s.flowF5)}`}{s.flowF5 !== undefined && s.flowI5 !== undefined && ' '}{s.flowI5 !== undefined && `기${fmtKorMoney(s.flowI5)}`}</span>
                       )}
-                      <Chip label={`${Math.round(s.score)} · ${strong ? '강함' : weak ? '약함' : '유지'}`} color={chipColor} bg={chipBg} />
                     </div>
-                  </div>
-                  <div style={{ height: 4, background: 'var(--color-bg-sunken)', borderRadius: 'var(--radius-full)', overflow: 'hidden' }}>
-                    <div style={{ width: `${Math.min(100, s.score)}%`, height: '100%', background: barColor, borderRadius: 'var(--radius-full)', transition: 'width 0.4s ease' }} />
-                  </div>
-                </div>
+                  </td>
+                  <td className="xls-cell"><Chip label={`${Math.round(s.score)} · ${strong ? '강함' : weak ? '약함' : '유지'}`} color={chipColor} bg={chipBg} /></td>
+                  <td className="xls-cell"><div style={{ height: 4, background: 'var(--color-bg-sunken)', borderRadius: 0, overflow: 'hidden' }}><div style={{ width: `${Math.min(100, s.score)}%`, height: '100%', background: chipColor }} /></div></td>
+                </tr>
               )
             })}
-          </div>
-        </Collapsible>
-      )}
+          </>
+        )}
 
-      {/* 리스크 프로필 */}
-      <Collapsible label="리스크 프로필" expanded={expanded.risk} onToggle={() => toggle('risk')}>
-        <div style={{ padding: 'var(--space-4) var(--space-5)', display: 'flex', flexDirection: 'column', gap: 'var(--space-5)' }}>
-
-          {/* 게이지 */}
-          <div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 'var(--space-2)' }}>
-              <span style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-tertiary)', fontWeight: 'var(--font-weight-medium)' }}>현재 리스크</span>
-              <span style={{ fontSize: 'var(--font-size-lg)', fontWeight: 'var(--font-weight-bold)', color: riskColor(diagnosis.riskScore), fontVariantNumeric: 'tabular-nums' }}>
-                {diagnosis.riskScore}<span style={{ fontSize: 'var(--font-size-xs)', fontWeight: 400, color: 'var(--color-text-tertiary)' }}>/100</span>
-              </span>
-            </div>
-            <div style={{ height: 8, background: 'var(--color-bg-sunken)', borderRadius: 'var(--radius-full)', overflow: 'hidden' }}>
-              <div style={{ width: `${diagnosis.riskScore}%`, height: '100%', background: riskColor(diagnosis.riskScore), borderRadius: 'var(--radius-full)', transition: 'width 0.4s ease' }} />
-            </div>
-          </div>
-
-          {/* 2-col: 현금비중 + 달러강도 */}
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-3)' }}>
-            <div style={{ padding: 'var(--space-3)', background: 'var(--color-bg-sunken)', borderRadius: 'var(--radius-md)' }}>
-              <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-tertiary)', marginBottom: 6 }}>권장 현금 비중</div>
-              <div style={{ fontSize: 'var(--font-size-lg)', fontWeight: 'var(--font-weight-bold)', color: riskColor(diagnosis.riskScore), lineHeight: 1.1 }}>
-                {diagnosis.riskScore >= 80 ? '50%+' : diagnosis.riskScore >= 60 ? '30~50%' : diagnosis.riskScore >= 40 ? '20~30%' : '10~20%'}
-              </div>
-              <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-tertiary)', marginTop: 4 }}>리스크 기반 조정</div>
-            </div>
-            <div style={{ padding: 'var(--space-3)', background: 'var(--color-bg-sunken)', borderRadius: 'var(--radius-md)' }}>
-              <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-tertiary)', marginBottom: 6 }}>달러 강도</div>
-              <div style={{ fontSize: 'var(--font-size-base)', fontWeight: 'var(--font-weight-bold)', display: 'flex', alignItems: 'center', gap: 4, lineHeight: 1.2,
-                color: globalCorrelation.usdStrength === 'strengthening' ? 'var(--color-error)' : globalCorrelation.usdStrength === 'weakening' ? 'var(--color-success)' : 'var(--color-text-secondary)',
-              }}>
-                {globalCorrelation.usdStrength === 'strengthening' && <><TrendingUp size={14} />강세</>}
-                {globalCorrelation.usdStrength === 'weakening' && <><TrendingDown size={14} />약세</>}
-                {globalCorrelation.usdStrength === 'neutral' && <><Minus size={14} />중립</>}
-              </div>
-              <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-tertiary)', marginTop: 4 }}>외국인 수급 영향</div>
-            </div>
-          </div>
-
-          {/* 투자 전략 */}
-          {diagnosis.advice.length > 0 && (
-            <div>
-              <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-tertiary)', fontWeight: 'var(--font-weight-medium)', marginBottom: 'var(--space-2)' }}>투자 전략</div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' }}>
-                {diagnosis.advice.slice(0, 4).map((adv, i) => (
-                  <div
-                    key={i}
-                    style={{
-                      padding: 'var(--space-3) var(--space-4)',
-                      background: 'var(--color-bg-surface)',
-                      border: '1px solid var(--color-border-default)',
-                      borderLeft: '2px solid var(--color-brand)',
-                      borderRadius: 'var(--radius-sm)',
-                      fontSize: 'var(--font-size-sm)',
-                      color: 'var(--color-text-secondary)',
-                      lineHeight: 1.65,
-                    }}
-                  >
-                    {adv}
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* 경제국면 설명 */}
-          <div>
-            <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-tertiary)', fontWeight: 'var(--font-weight-medium)', marginBottom: 'var(--space-2)' }}>경제 국면</div>
-            <div style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)', lineHeight: 1.7 }}>{economicPhase.description}</div>
-          </div>
-
-          {/* 진단 신호 */}
-          {diagnosis.signals.length > 0 && (
-            <div>
-              <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-tertiary)', fontWeight: 'var(--font-weight-medium)', marginBottom: 'var(--space-2)' }}>진단 신호</div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' }}>
-                {diagnosis.signals.slice(0, 5).map((sig, i) => (
-                  <div key={i} style={{ display: 'flex', gap: 'var(--space-2)', alignItems: 'flex-start', fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)', lineHeight: 1.6 }}>
-                    <div style={{ width: 5, height: 5, borderRadius: '50%', background: 'var(--color-error)', flexShrink: 0, marginTop: 7 }} />
-                    {sig}
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-        </div>
-      </Collapsible>
-
-    </div>
+        <SheetSectionHeader
+          label="리스크 프로필"
+          value={expanded.risk ? '접기' : '펼치기'}
+          onClick={() => toggle('risk')}
+        />
+        {expanded.risk && (
+          <>
+            <tr className="xls-row">
+              <td className="xls-cell">현재 리스크</td>
+              <td className="xls-cell" colSpan={5}>
+                <div className="market-sheet__risk-gauge">
+                  <div className="market-sheet__risk-gauge-value" style={{ color: riskColor(diagnosis.riskScore) }}>{diagnosis.riskScore}<span>/100</span></div>
+                  <div className="market-sheet__risk-gauge-bar"><div style={{ width: `${diagnosis.riskScore}%`, background: riskColor(diagnosis.riskScore) }} /></div>
+                </div>
+              </td>
+            </tr>
+            <tr className="xls-row xls-row--even">
+              <td className="xls-cell">권장 현금</td>
+              <td className="xls-cell" colSpan={2}>{diagnosis.riskScore >= 80 ? '50%+' : diagnosis.riskScore >= 60 ? '30~50%' : diagnosis.riskScore >= 40 ? '20~30%' : '10~20%'}</td>
+              <td className="xls-cell">달러 강도</td>
+              <td className="xls-cell" colSpan={2}>{globalCorrelation.usdStrength === 'strengthening' ? '강세' : globalCorrelation.usdStrength === 'weakening' ? '약세' : '중립'}</td>
+            </tr>
+            {diagnosis.advice.slice(0, 3).map((adv, i) => (
+              <tr className={`xls-row${i % 2 === 1 ? ' xls-row--even' : ''}`} key={i}>
+                <td className="xls-cell">전략 {i + 1}</td>
+                <td className="xls-cell" colSpan={5}>{adv}</td>
+              </tr>
+            ))}
+            <tr className="xls-row xls-row--even">
+              <td className="xls-cell">경제 국면</td>
+              <td className="xls-cell" colSpan={5}>{economicPhase.description}</td>
+            </tr>
+            {diagnosis.signals.slice(0, 5).map((sig, i) => (
+              <tr className={`xls-row${i % 2 === 1 ? ' xls-row--even' : ''}`} key={sig}>
+                <td className="xls-cell">신호 {i + 1}</td>
+                <td className="xls-cell" colSpan={5}>{sig}</td>
+              </tr>
+            ))}
+          </>
+        )}
+      </tbody>
+    </table>
   )
 }
 
@@ -811,45 +651,58 @@ function IndicatorsTab({ data }: { data: MarketOverviewData }) {
   ].filter(g => g.items.some(i => i.index))
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
-      {indices.fearGreed && (
-        <div
-          className="card"
-          style={{ '--card-padding': '0' } as React.CSSProperties}
-        >
-          <ListRow label="공포/탐욕 지수">
-            <span style={{ fontSize: 'var(--font-size-xl)', fontWeight: 'var(--font-weight-bold)', fontVariantNumeric: 'tabular-nums',
-              color: indices.fearGreed.score >= 60 ? 'var(--color-success)' : indices.fearGreed.score <= 40 ? 'var(--color-error)' : 'var(--color-text-secondary)',
-            }}>
-              {indices.fearGreed.score}
-            </span>
-            <Chip
-              label={indices.fearGreed.rating}
-              color={indices.fearGreed.score >= 60 ? 'var(--color-success)' : indices.fearGreed.score <= 40 ? 'var(--color-error)' : 'var(--color-text-secondary)'}
-              bg={indices.fearGreed.score >= 60 ? 'var(--color-success-bg)' : indices.fearGreed.score <= 40 ? 'var(--color-error-bg)' : 'var(--color-gray-100)'}
-            />
-          </ListRow>
-        </div>
-      )}
+    <table className="xls-table market-sheet__table" style={{ width: '100%', tableLayout: 'fixed' }}>
+      <colgroup>
+        <col style={{ width: 116 }} />
+        <col />
+        <col style={{ width: 84 }} />
+        <col style={{ width: 152 }} />
+      </colgroup>
+      <tbody>
+        {indices.fearGreed && (
+          <>
+            <SheetSectionHeader label="공포/탐욕 지수" colSpan={4} />
+            <tr className="xls-row">
+              <td className="xls-cell">지수</td>
+              <td className="xls-cell"><span style={{ fontSize: 'var(--font-size-xl)', fontWeight: 'var(--font-weight-bold)', fontVariantNumeric: 'tabular-nums', color: indices.fearGreed.score >= 60 ? 'var(--color-success)' : indices.fearGreed.score <= 40 ? 'var(--color-error)' : 'var(--color-text-secondary)' }}>{indices.fearGreed.score}</span></td>
+              <td className="xls-cell">등급</td>
+              <td className="xls-cell"><Chip label={indices.fearGreed.rating} color={indices.fearGreed.score >= 60 ? 'var(--color-success)' : indices.fearGreed.score <= 40 ? 'var(--color-error)' : 'var(--color-text-secondary)'} bg={indices.fearGreed.score >= 60 ? 'var(--color-success-bg)' : indices.fearGreed.score <= 40 ? 'var(--color-error-bg)' : 'var(--color-gray-100)'} /></td>
+            </tr>
+          </>
+        )}
 
-      {groups.map(group => (
-        <div key={group.label} className="card" style={{ '--card-padding': '0', overflow: 'hidden' } as React.CSSProperties}>
-          <SectionLabel>{group.label}</SectionLabel>
-          {group.items.map((item, idx) => (
-            <React.Fragment key={item.label}>
-              {idx > 0 && <ListDivider />}
-              <IndexRow
-                label={item.label}
-                desc={item.desc}
-                index={item.index}
-                decimals={item.decimals}
-                isPercent={item.isPercent}
-              />
-            </React.Fragment>
-          ))}
-        </div>
-      ))}
-    </div>
+        {groups.map(group => (
+          <React.Fragment key={group.label}>
+            <SheetSectionHeader label={group.label} colSpan={4} />
+            {group.items.map((item, idx) => (
+              (() => {
+                const up = (item.index?.changeRate ?? 0) >= 0
+                const color = up ? 'var(--color-stock-up)' : 'var(--color-stock-down)'
+                const value = item.index
+                  ? item.isPercent
+                    ? `${formatNumber(item.index.price, 2)}%`
+                    : item.index.price.toLocaleString(undefined, { maximumFractionDigits: item.decimals ?? 0 })
+                  : '—'
+                return (
+              <tr className={`xls-row${idx % 2 === 1 ? ' xls-row--even' : ''}`} key={item.label}>
+                <td className="xls-cell">{item.label}</td>
+                <td className="xls-cell" colSpan={2}>
+                  <div className="market-sheet__indicator-desc">{item.desc}</div>
+                </td>
+                <td className="xls-cell market-sheet__indicator-value" style={{ color }}>
+                  <div className="market-sheet__indicator-value-main">{value}</div>
+                  <div className="market-sheet__indicator-value-sub">
+                    {item.index ? `${up ? '+' : ''}${Math.abs(item.index.changeRate).toFixed(2)}%` : '—'}
+                  </div>
+                </td>
+              </tr>
+                )
+              })()
+            ))}
+          </React.Fragment>
+        ))}
+      </tbody>
+    </table>
   )
 }
 
@@ -920,7 +773,7 @@ export default function MarketPage() {
 
   if (error) {
     return (
-      <section className="container-app market-sheet">
+      <section className="container-app market-sheet market-sheet--excel xls-page-inset">
         <PageHeader loading={isRefreshing} onRefresh={handleRefresh} />
         <ErrorState message={error} onRetry={load} />
       </section>
@@ -929,7 +782,7 @@ export default function MarketPage() {
 
   if (loading || !data) {
     return (
-      <section className="container-app market-sheet">
+      <section className="container-app market-sheet market-sheet--excel xls-page-inset">
         <PageHeader loading={isRefreshing} onRefresh={handleRefresh} />
         <div className="card"><Skeleton lines={12} height={14} /></div>
       </section>
@@ -937,7 +790,7 @@ export default function MarketPage() {
   }
 
   return (
-    <section className="container-app market-sheet">
+    <section className="container-app market-sheet market-sheet--excel xls-page-inset">
       <PageHeader loading={isRefreshing} onRefresh={handleRefresh} />
 
       <SegmentControl
@@ -1019,6 +872,7 @@ function MetricTile({
 }) {
   return (
     <div
+      className="market-sheet__metric"
       style={{
         background: 'var(--color-bg-sunken)',
         borderRadius: 'var(--radius-lg)',
@@ -1048,5 +902,29 @@ function MetricTile({
         {sub}
       </div>
     </div>
+  )
+}
+
+function SheetSectionHeader({
+  label,
+  value,
+  colSpan = 6,
+  onClick,
+}: {
+  label: string
+  value?: React.ReactNode
+  colSpan?: number
+  onClick?: () => void
+}) {
+  const clickable = typeof onClick === 'function'
+  return (
+    <tr className={`xls-row xls-row--even market-sheet__section-row${clickable ? ' market-sheet__section-row--clickable' : ''}`} onClick={onClick}>
+      <td className="xls-cell" colSpan={colSpan}>
+        <div className="market-sheet__section-row-inner">
+          <span className="market-sheet__section-label-inline">{label}</span>
+          {value ? <span className="market-sheet__section-action">{value}</span> : null}
+        </div>
+      </td>
+    </tr>
   )
 }

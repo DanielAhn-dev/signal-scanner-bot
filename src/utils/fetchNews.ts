@@ -65,31 +65,22 @@ export async function fetchStockNews(
 /** 시장 전체 주요 뉴스 — 네이버 금융 HTML 스크래핑 */
 export async function fetchMarketNews(limit = 7): Promise<NewsItem[]> {
   try {
-    const url = "https://finance.naver.com/news/mainnews.naver";
-    const res = (await fetch(url, {
-      headers: { "User-Agent": UA },
-    })) as FetchLikeResponse;
-    if (!res.ok) return [];
-    // 네이버 금융은 EUC-KR 응답이므로 ArrayBuffer로 받아 수동 디코딩
-    const ab = await res.arrayBuffer();
-    let html: string;
-    try {
-      html = iconv.decode(Buffer.from(ab), "euc-kr");
-    } catch {
-      html = new TextDecoder("utf-8").decode(ab);
-    }
-    const $ = cheerio.load(html);
     const items: NewsItem[] = [];
     const seen = new Set<string>();
+    const maxPages = Math.min(30, Math.max(2, Math.ceil(limit / 20) + 2));
 
     const pushIfValid = (titleRaw: string, hrefRaw: string, sourceRaw?: string, dateRaw?: string) => {
       const title = String(titleRaw || "").trim();
       const href = String(hrefRaw || "").trim();
-      if (!title || title.length < 5 || seen.has(title)) return;
-      seen.add(title);
+      if (!title || title.length < 5 || !href) return;
+
       const fullLink = href.startsWith("http")
         ? href
         : `https://finance.naver.com${href}`;
+      const key = `${title}|${fullLink}`;
+      if (seen.has(key)) return;
+      seen.add(key);
+
       const source = String(sourceRaw || "").trim();
       const date = String(dateRaw || "").trim();
       items.push({
@@ -100,51 +91,70 @@ export async function fetchMarketNews(limit = 7): Promise<NewsItem[]> {
       });
     };
 
-    // 1) li 단위로 파싱: 제목/출처/일자를 같은 뉴스 블록에서 추출
-    $(".mainNewsList .newsList li").each((_, li) => {
-      if (items.length >= limit) return;
-      const $li = $(li);
-      const $titleAnchor = $li.find(".articleSubject a").first();
-      const title = $titleAnchor.text().trim();
-      const href = $titleAnchor.attr("href") || "";
-      const source = $li.find(".articleSummary .press").first().text().trim();
-      const date = $li.find(".articleSummary .wdate").first().text().trim();
-      pushIfValid(title, href, source, date);
-    });
+    for (let page = 1; page <= maxPages && items.length < limit; page += 1) {
+      const url = `https://finance.naver.com/news/mainnews.naver?page=${page}`;
+      const res = (await fetch(url, {
+        headers: { "User-Agent": UA },
+      })) as FetchLikeResponse;
+      if (!res.ok) break;
 
-    // 2) 기존 셀렉터 폴백
-    $(".articleSubject a").each((_, el) => {
-      if (items.length >= limit) return;
-      const $a = $(el);
-      const title = $a.text().trim();
-      const href = $a.attr("href") || "";
-      const $li = $a.closest("li");
-      const source = $li.find(".articleSummary .press").text().trim()
-        || $li.find(".press").text().trim()
-        || "";
-      const date = $li.find(".articleSummary .wdate").text().trim()
-        || $li.find(".wdate").text().trim()
-        || "";
-      pushIfValid(title, href, source, date);
-    });
+      const ab = await res.arrayBuffer();
+      let html: string;
+      try {
+        html = iconv.decode(Buffer.from(ab), "euc-kr");
+      } catch {
+        html = new TextDecoder("utf-8").decode(ab);
+      }
 
-    // fallback: dl dt a
-    if (!items.length) {
-      $("dl dt a").each((_, el) => {
+      const $ = cheerio.load(html);
+      const beforeCount = items.length;
+
+      // 1) li 단위 파싱
+      $(".mainNewsList .newsList li").each((_, li) => {
         if (items.length >= limit) return;
-        const $a = $(el);
-        const title = $a.text().trim();
-        const href = $a.attr("href") || "";
-        if (!title || title.length < 5 || seen.has(title)) return;
-        seen.add(title);
-        const fullLink = href.startsWith("http")
-          ? href
-          : `https://finance.naver.com${href}`;
-        items.push({ title, link: fullLink });
+        const $li = $(li);
+        const $titleAnchor = $li.find(".articleSubject a").first();
+        const title = $titleAnchor.text().trim();
+        const href = $titleAnchor.attr("href") || "";
+        const source = $li.find(".articleSummary .press").first().text().trim();
+        const date = $li.find(".articleSummary .wdate").first().text().trim();
+        pushIfValid(title, href, source, date);
       });
+
+      // 2) 폴백
+      if (items.length < limit) {
+        $(".articleSubject a").each((_, el) => {
+          if (items.length >= limit) return;
+          const $a = $(el);
+          const title = $a.text().trim();
+          const href = $a.attr("href") || "";
+          const $li = $a.closest("li");
+          const source = $li.find(".articleSummary .press").text().trim()
+            || $li.find(".press").text().trim()
+            || "";
+          const date = $li.find(".articleSummary .wdate").text().trim()
+            || $li.find(".wdate").text().trim()
+            || "";
+          pushIfValid(title, href, source, date);
+        });
+      }
+
+      // 3) 구버전 구조 폴백
+      if (items.length < limit) {
+        $("dl dt a").each((_, el) => {
+          if (items.length >= limit) return;
+          const $a = $(el);
+          const title = $a.text().trim();
+          const href = $a.attr("href") || "";
+          pushIfValid(title, href);
+        });
+      }
+
+      // 해당 페이지에서 신규 뉴스가 전혀 없으면 순회 종료
+      if (items.length === beforeCount) break;
     }
 
-    return items;
+    return items.slice(0, limit);
   } catch (e) {
     console.error("시장 뉴스 조회 실패:", e);
     return [];
