@@ -1,4 +1,15 @@
 import React, { useEffect, useState, useCallback, useMemo } from "react"
+import {
+  ArrowRight,
+  Compass,
+  Flame,
+  Layers3,
+  Rocket,
+  Snowflake,
+  Sprout,
+  TrendingDown,
+  TrendingUp,
+} from "lucide-react"
 import { apiFetch } from "../../lib/api"
 import Button from "../../components/ui/Button"
 import Skeleton from "../../components/Skeleton"
@@ -216,6 +227,14 @@ const PHASE_BG: Record<EconomicPhase, string> = {
   expansion: "rgba(0,96,255,0.08)",
   slowdown:  "rgba(255,107,53,0.08)",
   recession: "rgba(240,68,82,0.08)",
+}
+
+function PhaseIcon({ phase, size = 18 }: { phase: EconomicPhase; size?: number }) {
+  const color = PHASE_COLORS[phase]
+  if (phase === "recovery") return <Sprout size={size} color={color} strokeWidth={2.2} />
+  if (phase === "expansion") return <Rocket size={size} color={color} strokeWidth={2.2} />
+  if (phase === "slowdown") return <TrendingDown size={size} color={color} strokeWidth={2.2} />
+  return <Snowflake size={size} color={color} strokeWidth={2.2} />
 }
 
 // ── 섹터 카드 (유망/다음 탭 공통) ────────────────────────────────────────
@@ -574,7 +593,9 @@ function SectorGuideView({ detectedPhase }: { detectedPhase: EconomicPhase | nul
           }}
         >
           <div className="sector-phase-banner__left">
-            <span className="sector-phase-banner__emoji">{activePhaseData.emoji}</span>
+            <span className="sector-phase-banner__emoji" aria-hidden>
+              <PhaseIcon phase={activePhaseData.phase} size={20} />
+            </span>
             <div>
               <div className="sector-phase-banner__label">
                 현재 추정 국면
@@ -614,7 +635,9 @@ function SectorGuideView({ detectedPhase }: { detectedPhase: EconomicPhase | nul
                   } as React.CSSProperties}
                 >
                   <div style={{ display: "flex", alignItems: "center", gap: "var(--space-2)" }}>
-                    <span className="rotation-phase-card__emoji">{phase.emoji}</span>
+                    <span className="rotation-phase-card__emoji" aria-hidden>
+                      <PhaseIcon phase={phase.phase} size={18} />
+                    </span>
                     {isActive && <span className="rotation-phase-card__now-badge">현재</span>}
                   </div>
                   <div className="rotation-phase-card__label" style={{ color: PHASE_COLORS[phase.phase] }}>
@@ -635,10 +658,14 @@ function SectorGuideView({ detectedPhase }: { detectedPhase: EconomicPhase | nul
                   </div>
                 </div>
                 {idx < ROTATION_CYCLE.length - 1 && (
-                  <div className="rotation-arrow">→</div>
+                  <div className="rotation-arrow" aria-hidden>
+                    <ArrowRight size={16} />
+                  </div>
                 )}
                 {idx === ROTATION_CYCLE.length - 1 && (
-                  <div className="rotation-arrow rotation-arrow--loop">↩</div>
+                  <div className="rotation-arrow rotation-arrow--loop" aria-hidden>
+                    <ArrowRight size={16} />
+                  </div>
                 )}
               </React.Fragment>
             )
@@ -663,7 +690,9 @@ function SectorGuideView({ detectedPhase }: { detectedPhase: EconomicPhase | nul
                   style={{ borderColor: PHASE_COLORS[phase.phase], background: isActive ? PHASE_BG[phase.phase] : undefined }}
                 >
                   <div style={{ display: "flex", alignItems: "center", gap: "var(--space-2)", marginBottom: "var(--space-2)", flexWrap: "wrap" }}>
-                    <span className="rotation-phase-card__emoji" style={{ fontSize: "1.1rem" }}>{phase.emoji}</span>
+                    <span className="rotation-phase-card__emoji" aria-hidden>
+                      <PhaseIcon phase={phase.phase} size={16} />
+                    </span>
                     <span className="rotation-phase-card__label" style={{ color: PHASE_COLORS[phase.phase] }}>{phase.label}</span>
                     {isActive && <span className="rotation-phase-card__now-badge">현재</span>}
                     <div style={{ display: "flex", gap: "var(--space-1)", flexWrap: "wrap", marginLeft: "auto" }}>
@@ -688,7 +717,9 @@ function SectorGuideView({ detectedPhase }: { detectedPhase: EconomicPhase | nul
             <div className="rotation-flow-vertical__connector">
               <div className="rotation-flow-vertical__dot" style={{ background: PHASE_COLORS["recovery"] }} />
             </div>
-            <div className="caption muted" style={{ paddingTop: 4 }}>↩ 다시 회복기로 반복</div>
+            <div className="caption muted" style={{ paddingTop: 4, display: "inline-flex", alignItems: "center", gap: 6 }}>
+              <ArrowRight size={12} /> 다시 회복기로 반복
+            </div>
           </div>
         </div>
       </section>
@@ -729,15 +760,17 @@ function SectorGuideView({ detectedPhase }: { detectedPhase: EconomicPhase | nul
         <h2 className="sector-guide-section__title">금리 · 물가 환경별 선호 섹터</h2>
         <div className="sector-guide-macro-grid">
           {[
-            { key: "rateUp" as const,      icon: "📈", label: "금리 상승기",   color: "var(--color-stock-up)" },
-            { key: "rateDown" as const,    icon: "📉", label: "금리 하락기",   color: "var(--color-stock-down)" },
-            { key: "inflationUp" as const, icon: "🔥", label: "물가 상승기",   color: "var(--color-orange-500)" },
-          ].map(({ key, icon, label, color }) => {
+            { key: "rateUp" as const,      Icon: TrendingUp,   label: "금리 상승기", color: "var(--color-stock-up)" },
+            { key: "rateDown" as const,    Icon: TrendingDown, label: "금리 하락기", color: "var(--color-stock-down)" },
+            { key: "inflationUp" as const, Icon: Flame,        label: "물가 상승기", color: "var(--color-orange-500)" },
+          ].map(({ key, Icon, label, color }) => {
             const data = MACRO_SENSITIVITY[key]
             return (
               <div key={key} className="sector-guide-macro-card">
                 <div className="sector-guide-macro-card__header">
-                  <span style={{ fontSize: "1.25rem" }}>{icon}</span>
+                  <span className="sector-guide-macro-card__icon" aria-hidden>
+                    <Icon size={17} color={color} strokeWidth={2.2} />
+                  </span>
                   <span className="title-md" style={{ color }}>{label}</span>
                 </div>
                 <div className="sector-guide-macro-row">
@@ -910,6 +943,13 @@ export default function SectorsPage({ onNavigate }: { onNavigate?: (r: string) =
     { key: "guide",     label: "섹터 가이드" },
   ]
 
+  const TAB_ICON: Record<Tab, React.ComponentType<{ size?: number; strokeWidth?: number }>> = {
+    promising: Compass,
+    next: TrendingUp,
+    all: Layers3,
+    guide: Rocket,
+  }
+
   return (
     <section className="sector-sheet sector-sheet--excel xls-page-inset">
       <div className="sector-head">
@@ -940,15 +980,21 @@ export default function SectorsPage({ onNavigate }: { onNavigate?: (r: string) =
 
       {/* 탭 */}
       <div className="sector-sheet__tabs" style={{ display: "flex", gap: 0, marginBottom: "var(--space-4)", borderBottom: "1px solid var(--color-border-default)" }}>
-        {TAB_ITEMS.map(({ key, label }) => (
+        {TAB_ITEMS.map(({ key, label }) => {
+          const Icon = TAB_ICON[key]
+          return (
           <button
             key={key}
             className={`sector-tab-btn${tab === key ? " sector-tab-btn--active" : ""}`}
             onClick={() => { setTab(key); setExpandedSectorId(null) }}
           >
-            {label}
+            <span className="sector-tab-btn__icon" aria-hidden>
+              <Icon size={14} strokeWidth={2.2} />
+            </span>
+            <span className="sector-tab-btn__label">{label}</span>
           </button>
-        ))}
+          )
+        })}
       </div>
 
       {error && <ErrorState message={error} onRetry={() => loadData(true)} />}

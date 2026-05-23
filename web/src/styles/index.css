@@ -914,8 +914,14 @@ a:focus-visible {
     gap: var(--space-3);
   }
   .sector-phase-banner__emoji {
-    font-size: 1.75rem;
-    line-height: 1;
+    width: 30px;
+    height: 30px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: var(--radius-sm);
+    background: rgba(255, 255, 255, 0.72);
+    border: 1px solid rgba(0, 0, 0, 0.06);
     flex-shrink: 0;
   }
   .sector-phase-banner__label {
@@ -984,11 +990,13 @@ a:focus-visible {
     @apply flex items-center justify-center;
     flex-shrink: 0;
     width: 24px;
-    font-size: 1rem;
     color: var(--color-text-tertiary);
     padding-bottom: 20px;
   }
-  .rotation-arrow--loop { color: var(--color-brand); }
+  .rotation-arrow--loop {
+    color: var(--color-brand);
+    transform: rotate(180deg);
+  }
 
   .rotation-phase-card {
     @apply flex flex-col;
@@ -1021,8 +1029,15 @@ a:focus-visible {
     flex-shrink: 0;
   }
   .rotation-phase-card__emoji {
-    font-size: 1.5rem;
-    line-height: 1;
+    width: 24px;
+    height: 24px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: var(--radius-xs);
+    background: rgba(255, 255, 255, 0.72);
+    border: 1px solid rgba(0, 0, 0, 0.06);
+    line-height: 0;
   }
   .rotation-phase-card__label {
     @apply text-sm font-bold;
@@ -1115,6 +1130,17 @@ a:focus-visible {
   .sector-guide-macro-card__header {
     @apply flex items-center;
     gap: var(--space-2);
+  }
+  .sector-guide-macro-card__icon {
+    width: 24px;
+    height: 24px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: var(--radius-xs);
+    background: rgba(255, 255, 255, 0.72);
+    border: 1px solid rgba(0, 0, 0, 0.06);
+    flex-shrink: 0;
   }
   .sector-guide-macro-row {
     @apply flex;
@@ -6992,22 +7018,53 @@ a:focus-visible {
   margin-bottom: 0 !important;
   border-top: 1px solid var(--color-excel-grid-border);
   border-left: 1px solid var(--color-excel-grid-border);
+  background: linear-gradient(180deg, #f8f9fa 0%, #f2f4f6 100%);
 }
 
 .sector-sheet .sector-tab-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   min-height: var(--xls-grid-row-height-double);
-  padding: 0 var(--xls-grid-cell-padding-x);
+  padding: 0 12px;
   line-height: var(--xls-grid-cell-line-height);
   border-right: 1px solid var(--color-excel-grid-border);
   border-bottom: 1px solid var(--color-excel-grid-border);
   border-top: none;
   border-left: none;
   border-radius: 0;
-  background: var(--color-gray-0);
+  background: transparent;
+  color: var(--color-text-secondary);
+  transition: color var(--duration-fast), background var(--duration-fast);
+}
+
+.sector-sheet .sector-tab-btn:hover {
+  background: #edf2f7;
+  color: var(--color-text-primary);
+}
+
+.sector-sheet .sector-tab-btn__icon {
+  width: 16px;
+  height: 16px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0.82;
+}
+
+.sector-sheet .sector-tab-btn__label {
+  font-weight: var(--font-weight-medium);
+  letter-spacing: 0.01em;
 }
 
 .sector-sheet .sector-tab-btn--active {
   background: var(--color-excel-cell-selected);
+  color: var(--color-brand-hover);
+  box-shadow: inset 0 2px 0 0 var(--color-brand);
+}
+
+.sector-sheet .sector-tab-btn--active .sector-tab-btn__icon {
+  opacity: 1;
 }
 
 .sector-sheet__desc-card {
