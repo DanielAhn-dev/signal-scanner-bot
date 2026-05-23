@@ -209,6 +209,9 @@ export default function ScanPage({ onNavigate }: { onNavigate?: (r: string) => v
   const [sortKey, setSortKey] = useState<SortKey>('priority_score')
   const [sortDirection, setSortDirection] = useState<SortDirection>('desc')
   const [page, setPage] = useState(1)
+  const [isMobileViewport, setIsMobileViewport] = useState(() => (
+    typeof window !== 'undefined' ? window.matchMedia('(max-width: 640px)').matches : false
+  ))
   const pageSize = 20
   const toast = useToast()
   const shareManager = useShareManager({
@@ -242,6 +245,15 @@ export default function ScanPage({ onNavigate }: { onNavigate?: (r: string) => v
     if (['all', 'entry', 'trend', 'accumulation', 'stable'].includes(nextFilter)) {
       setConditionFilter(nextFilter as typeof conditionFilter)
     }
+  }, [])
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const mediaQuery = window.matchMedia('(max-width: 640px)')
+    const syncViewport = () => setIsMobileViewport(mediaQuery.matches)
+    syncViewport()
+    mediaQuery.addEventListener('change', syncViewport)
+    return () => mediaQuery.removeEventListener('change', syncViewport)
   }, [])
 
   const loadCandidates = useCallback(async (options?: { silent?: boolean }) => {
@@ -664,11 +676,13 @@ export default function ScanPage({ onNavigate }: { onNavigate?: (r: string) => v
                 각 카드 = colSpan(열 분할) × rowSpan(9행 × 22px = 198px)
                 내용은 자연스럽게 위→아래 배치, height:100% 사용 안 함
             ── */}
-            {[0, 3].map((startIdx) => {
-              const rowCards = activeHighlights.slice(startIdx, startIdx + 3)
+            {(isMobileViewport ? activeHighlights.map((_, i) => i) : [0, 3]).map((startIdx) => {
+              const rowCards = isMobileViewport
+                ? activeHighlights.slice(startIdx, startIdx + 1)
+                : activeHighlights.slice(startIdx, startIdx + 3)
               if (rowCards.length === 0) return null
               const count = rowCards.length
-              const CARD_ROWS = 9  // 9행 × 22px = 198px
+              const CARD_ROWS = isMobileViewport ? 7 : 9
               /* 열 균등 분배: 26열을 카드 수로 나눔 */
               const colsPerCard = Math.floor(26 / count)
               return (

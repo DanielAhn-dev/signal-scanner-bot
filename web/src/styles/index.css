@@ -6574,17 +6574,17 @@ a:focus-visible {
     border: none;
   }
 
-  /* 숨길 컬럼: 섹터(3), 진입점수(6), 유동성(11), 변동%(12), 기준일(13) */
-  .scan-table th:nth-child(3),
-  .scan-table td:nth-child(3),
-  .scan-table th:nth-child(6),
-  .scan-table td:nth-child(6),
-  .scan-table th:nth-child(11),
-  .scan-table td:nth-child(11),
-  .scan-table th:nth-child(12),
-  .scan-table td:nth-child(12),
-  .scan-table th:nth-child(13),
-  .scan-table td:nth-child(13) {
+  /* discovery 전용 컬럼 축약 (scan 페이지 본문 테이블은 전체 컬럼 유지) */
+  .discovery-table th:nth-child(3),
+  .discovery-table td:nth-child(3),
+  .discovery-table th:nth-child(6),
+  .discovery-table td:nth-child(6),
+  .discovery-table th:nth-child(11),
+  .discovery-table td:nth-child(11),
+  .discovery-table th:nth-child(12),
+  .discovery-table td:nth-child(12),
+  .discovery-table th:nth-child(13),
+  .discovery-table td:nth-child(13) {
     display: none;
   }
 
