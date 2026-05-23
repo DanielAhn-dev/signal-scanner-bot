@@ -883,7 +883,9 @@ export default function MarketPage() {
     <section className="market-sheet market-sheet--excel xls-page-inset">
       <PageHeader loading={isRefreshing} onRefresh={handleRefresh} />
 
-      <MarketSummaryTable data={data} />
+      <div className="market-sheet__summary-scroll xls-scroll-frame" style={{ ['--xls-table-min-width' as any]: '640px' }}>
+        <MarketSummaryTable data={data} />
+      </div>
 
       <SegmentControl
         tabs={[

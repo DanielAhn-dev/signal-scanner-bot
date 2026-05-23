@@ -2684,35 +2684,33 @@
     align-self: flex-end;
   }
 
-  .market-sheet__summary-table .xls-row {
-    display: flex;
-    flex-wrap: wrap;
-  }
-
   .market-sheet__summary-table .xls-cell {
     min-width: 0;
     padding-left: 8px;
     padding-right: 8px;
     box-sizing: border-box;
-  }
-
-  .market-sheet__summary-table .xls-cell:nth-child(odd) {
-    flex: 0 0 34%;
-    white-space: nowrap;
-  }
-
-  .market-sheet__summary-table .xls-cell:nth-child(even) {
-    flex: 1 1 66%;
-  }
-
-  .market-sheet__summary-table .xls-cell[colspan='5'] {
-    flex: 1 1 100%;
+    white-space: normal;
+    word-break: keep-all;
   }
 
   .market-sheet__summary-table .market-sheet__summary-value,
   .market-sheet__summary-table .market-sheet__summary-sub {
     white-space: normal;
     word-break: keep-all;
+  }
+
+  .market-sheet__summary-scroll {
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    overflow-x: auto;
+    overflow-y: hidden;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .market-sheet__summary-scroll > .xls-table {
+    width: 100%;
+    min-width: var(--xls-table-min-width, 640px);
   }
 
   .market-sheet .market-sheet__segment {
