@@ -126,7 +126,7 @@ export default function Dashboard({ onNavigate }: { onNavigate?: (r: string) => 
   const rowNum = () => ++rn
 
   return (
-    <div style={{ flex: 1, overflow: 'auto' }}>
+    <div className="dashboard-sheet" style={{ flex: 1, overflow: 'auto', width: '100%', minWidth: 0 }}>
       <table className="xls-table" style={{ width: '100%', tableLayout: 'fixed' }}>
         <colgroup>
           <col style={{ width: 28 }}/>  {/* 행번호 — CSS로 숨겨지면 width 0 처리됨 */}

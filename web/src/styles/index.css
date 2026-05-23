@@ -5957,6 +5957,15 @@ a:focus-visible {
   display: flex;
   flex-direction: column;
   gap: var(--space-3);
+  width: 100%;
+  min-width: 0;
+}
+
+.scan-page,
+.dashboard-sheet,
+.sector-sheet {
+  width: 100%;
+  min-width: 0;
 }
 
 /* 발굴 페이지 순위 배지 */
@@ -6519,6 +6528,13 @@ a:focus-visible {
 }
 
 @media (max-width: 640px) {
+  .scan-page,
+  .dashboard-sheet,
+  .sector-sheet {
+    width: 100%;
+    min-width: 0;
+  }
+
   .scan-sector-select {
     @apply w-full;
   }
@@ -6572,7 +6588,10 @@ a:focus-visible {
     display: none;
   }
 
-  .scan-table-wrap { overflow-x: visible; }
+  .scan-table-wrap {
+    overflow-x: auto;
+    overflow-y: hidden;
+  }
   .scan-thead { display: none; }
 
   .scan-table {

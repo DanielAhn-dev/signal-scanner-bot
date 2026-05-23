@@ -341,6 +341,7 @@ function SectorSummaryTable({
   const phaseMeta = detectedPhase ? ROTATION_CYCLE.find((phase) => phase.phase === detectedPhase) : null
 
   return (
+    <div className="xls-scroll-frame sector-sheet__summary-scroll" style={{ ['--xls-table-min-width' as any]: '500px' }}>
     <table className="xls-table sector-sheet__summary-table" style={{ width: "100%", tableLayout: "fixed", minWidth: 500, marginBottom: "var(--space-4)" }}>
       <colgroup>
         <col style={{ width: 96 }} />
@@ -393,6 +394,7 @@ function SectorSummaryTable({
         </tr>
       </tbody>
     </table>
+    </div>
   )
 }
 
@@ -970,6 +972,7 @@ export default function SectorsPage({ onNavigate }: { onNavigate?: (r: string) =
 
       {/* 유망·다음 섹터 */}
       {(tab === "promising" || tab === "next") && (
+        <div className="xls-scroll-frame sector-sheet__list-scroll" style={{ ['--xls-table-min-width' as any]: '700px' }}>
         <table className="xls-table sector-sheet__table" style={{ width: "100%", tableLayout: "fixed", minWidth: 700, opacity: loading ? 0.6 : 1, transition: "opacity 0.2s" }}>
           <colgroup>
             <col style={{ width: 52 }} />
@@ -1081,6 +1084,7 @@ export default function SectorsPage({ onNavigate }: { onNavigate?: (r: string) =
             })}
           </tbody>
         </table>
+        </div>
       )}
 
       {/* 전체 섹터 */}

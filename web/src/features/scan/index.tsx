@@ -564,8 +564,9 @@ export default function ScanPage({ onNavigate }: { onNavigate?: (r: string) => v
   }
 
   return (
-    <div className="xls-page-inset">
+    <div className="xls-page-inset scan-page">
       {/* ── 헤더 테이블 (제목·필터·섹터) — 4열, B2 안전 여백 내 ── */}
+      <div className="xls-scroll-frame" style={{ ['--xls-table-min-width' as any]: '360px' }}>
       <table className="xls-table" style={{ width: '100%', tableLayout: 'fixed' }}>
         <colgroup>
           <col style={{ width: '20%' }} />
@@ -631,6 +632,7 @@ export default function ScanPage({ onNavigate }: { onNavigate?: (r: string) => v
           </tr>
         </tbody>
       </table>
+      </div>
 
       {error && <ErrorState message={error} onRetry={loadCandidates} />}
 
@@ -808,7 +810,8 @@ export default function ScanPage({ onNavigate }: { onNavigate?: (r: string) => v
             </div>
           )}
           <div className="scan-candidates-stage">
-            <table className="xls-table" style={{ width: '100%', tableLayout: 'fixed', minWidth: 720 }}>
+            <div className="scan-table-wrap xls-scroll-frame" style={{ ['--xls-table-min-width' as any]: '720px' }}>
+            <table className="xls-table scan-table" style={{ width: '100%', tableLayout: 'fixed', minWidth: 720 }}>
               <colgroup>
                 <col style={{ width: '6%' }} />    {/* 코드 */}
                 <col style={{ width: '9%' }} />    {/* 종목명 */}
@@ -954,6 +957,7 @@ export default function ScanPage({ onNavigate }: { onNavigate?: (r: string) => v
                 })}
               </tbody>
             </table>
+            </div>
 
             {totalPages > 1 && (
               <div className="pagination-wrap">

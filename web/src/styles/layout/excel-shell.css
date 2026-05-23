@@ -1378,7 +1378,29 @@
 .xls-content-inner {
   position: relative;
   z-index: 1;
+  width: 100%;
+  min-width: 100%;
   min-height: 100%;
+}
+
+.xls-content-inner > * {
+  width: 100%;
+  max-width: 100%;
+}
+
+/* 공통 표 스크롤 컨트랙트: 페이지 폭은 유지하고 표만 가로 스크롤 */
+.xls-scroll-frame {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  -webkit-overflow-scrolling: touch;
+}
+
+.xls-scroll-frame > .xls-table {
+  width: 100%;
+  min-width: var(--xls-table-min-width, 640px);
 }
 
 /* native grid (ExcelSpreadsheet / ExcelLayout 직접 사용) */
@@ -3015,7 +3037,12 @@
   /* 수식 표시줄 간소화 */
   .excel-formula-bar__name-box { width: 70px; font-size: 10px; }
   .excel-formula-bar__divider { padding: 0 2px; }
-  .excel-formula-bar__fn-btn { display: none; }
+  .excel-formula-bar__fn-btn {
+    display: inline-flex;
+    min-width: 20px;
+    height: 18px;
+    padding: 0 3px;
+  }
 
   /* 시트탭: 아이콘만 표시 */
   .excel-sheet-tab { padding: 0 6px; gap: 0; }
@@ -3049,6 +3076,14 @@
 
   /* 그리드 터치 최적화 */
   .xls-row { height: 26px; }
+  .xls-content-inner {
+    width: 100%;
+    min-width: 100%;
+  }
+  .xls-content-inner > * {
+    width: 100%;
+    max-width: 100%;
+  }
   .xls-content-data { background-size: 100% 26px; }
   .xls-cell { padding: 2px 8px; line-height: 22px; font-size: 11px; }
   .xls-th { padding: 4px 8px; font-size: 11px; }
