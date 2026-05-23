@@ -1068,7 +1068,7 @@ export default function ExcelShell({
             </span>
           )}
           <span className="excel-statusbar__item excel-statusbar__item--datetime">{currentTime}</span>
-          <span className="excel-statusbar__item">국장 본장 / 미장 데이터핫</span>
+          <span className="excel-statusbar__item excel-statusbar__item--market">국장 본장 / 미장 데이터핫</span>
           <div className="excel-statusbar__zoom">
             <Minus size={9} style={{ cursor: 'pointer' }} onClick={() => setZoom(z => Math.max(50, z - 10))}/>
             <input type="range" className="excel-statusbar__zoom-slider" min={50} max={200} step={10}

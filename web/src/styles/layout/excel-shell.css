@@ -3013,7 +3013,7 @@
   .excel-ribbon-group__buttons { flex-wrap: nowrap; }
 
   /* 수식 표시줄 간소화 */
-  .excel-formula-bar__name-box { width: 48px; font-size: 10px; }
+  .excel-formula-bar__name-box { width: 70px; font-size: 10px; }
   .excel-formula-bar__divider { padding: 0 2px; }
   .excel-formula-bar__fn-btn { display: none; }
 
@@ -3024,7 +3024,11 @@
 
   /* 상태바 */
   .excel-statusbar__left .excel-statusbar__item:not(:first-child) { display: none; }
+  .excel-statusbar__item--market { display: none; }
   .excel-statusbar__zoom-slider { width: 40px; }
+
+  /* 리본 폴드 드롭다운이 잘리지 않도록 overflow 해제 */
+  .excel-ribbon-body { overflow: visible; }
 
   /* ExcelContentArea: 행번호 스트립·열 문자 헤더 숨기기 */
   .xls-row-num-strip { display: none; }
@@ -3036,7 +3040,8 @@
   .xls-corner { display: none; }
 
   /* 행번호 col 너비 완전 제거 (행번호 헤더가 있는 테이블만) */
-  .xls-table:has(.xls-row-num-header) col:first-child {
+  .xls-table:has(.xls-row-num-header) col:first-child,
+  .xls-table:has(.xls-corner) col:first-child {
     width: 0 !important;
     min-width: 0 !important;
     max-width: 0 !important;

@@ -341,7 +341,7 @@ function SectorSummaryTable({
   const phaseMeta = detectedPhase ? ROTATION_CYCLE.find((phase) => phase.phase === detectedPhase) : null
 
   return (
-    <table className="xls-table sector-sheet__summary-table" style={{ width: "100%", tableLayout: "fixed", marginBottom: "var(--space-4)" }}>
+    <table className="xls-table sector-sheet__summary-table" style={{ width: "100%", tableLayout: "fixed", minWidth: 500, marginBottom: "var(--space-4)" }}>
       <colgroup>
         <col style={{ width: 96 }} />
         <col />
@@ -970,7 +970,7 @@ export default function SectorsPage({ onNavigate }: { onNavigate?: (r: string) =
 
       {/* 유망·다음 섹터 */}
       {(tab === "promising" || tab === "next") && (
-        <table className="xls-table sector-sheet__table" style={{ width: "100%", tableLayout: "fixed", opacity: loading ? 0.6 : 1, transition: "opacity 0.2s" }}>
+        <table className="xls-table sector-sheet__table" style={{ width: "100%", tableLayout: "fixed", minWidth: 700, opacity: loading ? 0.6 : 1, transition: "opacity 0.2s" }}>
           <colgroup>
             <col style={{ width: 52 }} />
             <col style={{ width: 220 }} />

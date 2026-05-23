@@ -808,7 +808,7 @@ export default function ScanPage({ onNavigate }: { onNavigate?: (r: string) => v
             </div>
           )}
           <div className="scan-candidates-stage">
-            <table className="xls-table" style={{ width: '100%', tableLayout: 'fixed' }}>
+            <table className="xls-table" style={{ width: '100%', tableLayout: 'fixed', minWidth: 720 }}>
               <colgroup>
                 <col style={{ width: '6%' }} />    {/* 코드 */}
                 <col style={{ width: '9%' }} />    {/* 종목명 */}
