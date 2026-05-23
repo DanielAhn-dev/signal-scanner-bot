@@ -1045,7 +1045,7 @@ export default function ExcelShell({
             className={`excel-sheet-tab${activeRoute === tab.key ? ' excel-sheet-tab--active' : ''}`}
             onClick={() => onNavigate(tab.key)}
           >
-            {tab.icon}{tab.label}
+            {tab.icon}<span className="excel-sheet-tab__label">{tab.label}</span>
           </button>
         ))}
       </div>

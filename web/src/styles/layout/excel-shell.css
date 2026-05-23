@@ -3004,6 +3004,8 @@
   .ribbon-btn__icon svg { width: 16px; height: 16px; }
   .excel-ribbon-group__label { display: none; }
   .excel-ribbon-group { border-right: none; padding: 4px 2px 0; }
+  /* 버튼 줄바꿈 방지 — 세로 클리핑 대신 가로 스크롤로 처리 */
+  .excel-ribbon-group__buttons { flex-wrap: nowrap; }
 
   /* 수식 표시줄 간소화 */
   .excel-formula-bar__name-box { width: 48px; font-size: 10px; }
@@ -3012,12 +3014,16 @@
 
   /* 시트탭: 아이콘만 표시 */
   .excel-sheet-tab { padding: 0 6px; gap: 0; }
-  .excel-sheet-tab span:last-child { display: none; }
+  .excel-sheet-tab__label { display: none; }
   .excel-sheet-tabs__nav-arrows { display: none; }
 
   /* 상태바 */
   .excel-statusbar__left .excel-statusbar__item:not(:first-child) { display: none; }
   .excel-statusbar__zoom-slider { width: 40px; }
+
+  /* ExcelContentArea: 행번호 스트립·열 문자 헤더 숨기기 */
+  .xls-row-num-strip { display: none; }
+  .xls-col-header-strip { display: none; }
 
   /* 그리드: 행번호 숨기기 */
   .xls-row-num,
