@@ -3133,10 +3133,21 @@
   .xls-row-num-strip { display: none; }
   .xls-col-header-strip { display: none; }
 
-  /* 그리드: 행번호 숨기기 */
+  /* 그리드: 행번호 숨기기
+     display:none 을 쓰면 첫 열 매핑이 밀려 A/F 정렬이 깨질 수 있어
+     테이블 레이아웃은 유지하고 시각적으로만 숨긴다. */
   .xls-row-num,
   .xls-row-num-header,
-  .xls-corner { display: none; }
+  .xls-corner {
+    visibility: hidden;
+    padding: 0 !important;
+    border: 0 !important;
+    width: 0 !important;
+    min-width: 0 !important;
+    max-width: 0 !important;
+    font-size: 0 !important;
+    line-height: 0 !important;
+  }
 
   /* 행번호 col 너비 완전 제거 (행번호 헤더가 있는 테이블만) */
   .xls-table:has(.xls-row-num-header) col:first-child,
