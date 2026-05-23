@@ -1071,7 +1071,12 @@
   margin-bottom: 0 !important;
   border-top: 1px solid var(--color-excel-grid-border);
   border-left: 1px solid var(--color-excel-grid-border);
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+  flex-wrap: nowrap;
 }
+.sector-sheet__tabs::-webkit-scrollbar { display: none; }
 
 .sector-sheet .sector-tab-btn {
   min-height: var(--xls-grid-row-height-double);
@@ -3044,6 +3049,18 @@
   .xls-th { padding: 4px 8px; font-size: 11px; }
   .xls-col-letter { font-size: 9px; padding: 1px 2px; }
 }
+
+/* ── 필터 칩 가로 스크롤 컨테이너 ── */
+.scan-cond-chips {
+  display: flex;
+  gap: 4px;
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+}
+.scan-cond-chips::-webkit-scrollbar { display: none; }
 
 }
 

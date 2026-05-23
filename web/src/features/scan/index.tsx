@@ -591,8 +591,8 @@ export default function ScanPage({ onNavigate }: { onNavigate?: (r: string) => v
             </td>
           </tr>
           <tr className="xls-row xls-row--even">
-            <td className="xls-cell" colSpan={4} style={{ padding: '3px 6px' }}>
-              <div style={{ display: 'flex', gap: 4, flexWrap: 'nowrap', overflow: 'hidden' }}>
+            <td className="xls-cell" colSpan={4} style={{ padding: '3px 6px', overflow: 'visible' }}>
+              <div className="scan-cond-chips">
                 {([
                   { key: 'all', label: '전체' },
                   { key: 'entry', label: '진입(A/B)' },
