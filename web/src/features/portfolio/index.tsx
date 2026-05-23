@@ -12,6 +12,7 @@ import { EmptyState, ErrorState } from '../../components/StateViews'
 import { useToast } from '../../components/ToastProvider'
 import Pagination from '../../components/Pagination'
 import EconomicEventBadge from '../../components/EconomicEventBadge'
+import SheetHeaderBar from '../../components/SheetHeaderBar'
 
 type PortfolioShareHistoryItem = {
   shareId: string
@@ -1061,11 +1062,11 @@ export default function Portfolio() {
         </colgroup>
         <tbody>
           <tr className="xls-row xls-row--even">
-            <td className="xls-cell" colSpan={3} style={{ fontSize: 18, fontWeight: 700, color: 'var(--color-brand)' }}>
-              포트폴리오
-            </td>
-            <td className="xls-cell" colSpan={3} style={{ textAlign: 'right' }}>
-              <EconomicEventBadge onNavigateToCalendar={() => navigate('/market')} />
+            <td className="xls-cell" colSpan={6} style={{ padding: '8px 10px' }}>
+              <SheetHeaderBar
+                title="포트폴리오"
+                action={<EconomicEventBadge onNavigateToCalendar={() => navigate('/market')} />}
+              />
             </td>
           </tr>
           <tr className="xls-row">

@@ -9,6 +9,7 @@ import Pagination from '../../components/Pagination'
 import useWatchlistActions from '../../hooks/useWatchlistActions'
 import ShareModal from '../../components/ShareModal'
 import EconomicEventBadge from '../../components/EconomicEventBadge'
+import SheetHeaderBar from '../../components/SheetHeaderBar'
 import { useShareManager } from '../../hooks/useShareManager'
 import { scoreLeadAccumulationCandidate } from '../../lib/accumulationSignal'
 
@@ -576,12 +577,11 @@ export default function ScanPage({ onNavigate }: { onNavigate?: (r: string) => v
         </colgroup>
         <tbody>
           <tr className="xls-row xls-row--even">
-            <td className="xls-cell" colSpan={3}
-              style={{ fontSize: 15, fontWeight: 700, color: 'var(--color-brand)' }}>
-              눌림목
-            </td>
-            <td className="xls-cell" style={{ textAlign: 'right', padding: '1px 4px' }}>
-              <EconomicEventBadge onNavigateToCalendar={() => onNavigate?.('economy')} />
+            <td className="xls-cell" colSpan={4} style={{ padding: '8px 10px' }}>
+              <SheetHeaderBar
+                title="눌림목"
+                action={<EconomicEventBadge onNavigateToCalendar={() => onNavigate?.('economy')} />}
+              />
             </td>
           </tr>
           <tr className="xls-row">

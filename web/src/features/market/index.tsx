@@ -895,8 +895,16 @@ export default function MarketPage() {
         onChange={setTab}
       />
 
-      {tab === 'diagnosis' && <DiagnosisTab data={data} />}
-      {tab === 'indicators' && <IndicatorsTab data={data} />}
+      {tab === 'diagnosis' && (
+        <div className="market-sheet__table-scroll xls-scroll-frame" style={{ ['--xls-table-min-width' as any]: '720px' }}>
+          <DiagnosisTab data={data} />
+        </div>
+      )}
+      {tab === 'indicators' && (
+        <div className="market-sheet__table-scroll xls-scroll-frame" style={{ ['--xls-table-min-width' as any]: '760px' }}>
+          <IndicatorsTab data={data} />
+        </div>
+      )}
       {tab === 'calendar' && (
         calendarError ? (
           <ErrorState message={calendarError} onRetry={loadCalendar} />

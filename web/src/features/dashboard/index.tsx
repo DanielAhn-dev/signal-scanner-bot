@@ -5,6 +5,8 @@
 import React, { useEffect, useState } from 'react'
 import { apiFetch } from '../../lib/api'
 import { useCurrentChatId } from '../../stores/profileStore'
+import EconomicEventBadge from '../../components/EconomicEventBadge'
+import SheetHeaderBar from '../../components/SheetHeaderBar'
 
 type SectorItem = {
   name?: string
@@ -149,6 +151,17 @@ export default function Dashboard({ onNavigate }: { onNavigate?: (r: string) => 
           </tr>
         </thead>
         <tbody>
+
+          {/* ── 상단 헤더 ── */}
+          <tr className="xls-row xls-row--even">
+            <td className="xls-row-num">{rowNum()}</td>
+            <td className="xls-cell" colSpan={6} style={{ padding: '8px 10px' }}>
+              <SheetHeaderBar
+                title="대시보드"
+                action={<EconomicEventBadge onNavigateToCalendar={() => nav('market')} />}
+              />
+            </td>
+          </tr>
 
           {/* ── 이벤트 배너 ── */}
           <tr className="xls-row">

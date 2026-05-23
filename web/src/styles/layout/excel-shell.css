@@ -2674,6 +2674,78 @@
   }
 }
 
+@media (max-width: 640px) {
+  .market-sheet .market-sheet__header {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .market-sheet .market-sheet__header button {
+    align-self: flex-end;
+  }
+
+  .market-sheet__summary-table .xls-row {
+    display: flex;
+    flex-wrap: wrap;
+  }
+
+  .market-sheet__summary-table .xls-cell {
+    min-width: 0;
+    padding-left: 8px;
+    padding-right: 8px;
+    box-sizing: border-box;
+  }
+
+  .market-sheet__summary-table .xls-cell:nth-child(odd) {
+    flex: 0 0 34%;
+    white-space: nowrap;
+  }
+
+  .market-sheet__summary-table .xls-cell:nth-child(even) {
+    flex: 1 1 66%;
+  }
+
+  .market-sheet__summary-table .xls-cell[colspan='5'] {
+    flex: 1 1 100%;
+  }
+
+  .market-sheet__summary-table .market-sheet__summary-value,
+  .market-sheet__summary-table .market-sheet__summary-sub {
+    white-space: normal;
+    word-break: keep-all;
+  }
+
+  .market-sheet .market-sheet__segment {
+    min-width: 0;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .market-sheet .market-sheet__segment button {
+    min-width: 92px;
+    flex: 1 0 auto;
+  }
+
+  .market-sheet__table-scroll {
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    overflow-x: auto;
+    overflow-y: hidden;
+    -webkit-overflow-scrolling: touch;
+    margin-top: 0;
+  }
+
+  .market-sheet__table-scroll > .xls-table {
+    width: 100%;
+    min-width: var(--xls-table-min-width, 720px);
+  }
+
+  .market-sheet__table-scroll .market-sheet__section-row .xls-cell {
+    white-space: normal;
+  }
+}
+
 /* ── 셀 내 특수 콘텐츠 ── */
 .xls-badge {
   display: inline-flex;

@@ -4,6 +4,7 @@ import Button from "../../components/ui/Button"
 import Skeleton from "../../components/Skeleton"
 import { ErrorState } from "../../components/StateViews"
 import EconomicEventBadge from "../../components/EconomicEventBadge"
+import SheetHeaderBar from "../../components/SheetHeaderBar"
 import {
   SECTOR_META_DATA,
   ROTATION_CYCLE,
@@ -913,15 +914,12 @@ export default function SectorsPage({ onNavigate }: { onNavigate?: (r: string) =
     <section className="sector-sheet sector-sheet--excel xls-page-inset">
       <div className="sector-head">
         <div className="sector-head-toolbar">
-          <div className="sector-title-wrap">
-            <h1 className="title-xl sector-title" style={{ marginBottom: 0 }}>섹터</h1>
-            <p className="sector-subtitle">
-              경기 국면과 수급을 함께 보고, 상위 섹터를 엑셀 시트처럼 빠르게 훑어보는 화면입니다.
-            </p>
-          </div>
-          <div className="sector-head-controls">
-            <EconomicEventBadge onNavigateToCalendar={() => onNavigate?.("economy")} />
-          </div>
+          <SheetHeaderBar
+            title="섹터"
+            subtitle="경기 국면과 수급을 함께 보고, 상위 섹터를 엑셀 시트처럼 빠르게 훑어보는 화면입니다."
+            action={<EconomicEventBadge onNavigateToCalendar={() => onNavigate?.("economy")} />}
+            className="sector-title-wrap"
+          />
         </div>
       </div>
 

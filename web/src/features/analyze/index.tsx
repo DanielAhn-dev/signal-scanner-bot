@@ -10,6 +10,7 @@ import ShareModal from '../../components/ShareModal'
 import { useShareManager } from '../../hooks/useShareManager'
 import CandleChart from '../../components/CandleChart'
 import EconomicEventBadge from '../../components/EconomicEventBadge'
+import SheetHeaderBar from '../../components/SheetHeaderBar'
 import { LayoutDashboard, TrendingUp, Flag, Activity, Search, Link2, HelpCircle } from 'lucide-react'
 import type { OhlcvCandle } from '../../lib/types'
 import { useCurrentChatId } from '../../stores/profileStore'
@@ -442,11 +443,11 @@ export default function AnalyzePage({ onNavigate }: { onNavigate?: (r: string) =
         </colgroup>
         <tbody>
           <tr className="xls-row xls-row--even">
-            <td className="xls-cell" colSpan={4} style={{ fontSize: 18, fontWeight: 700, color: 'var(--color-brand)' }}>
-              종목 분석
-            </td>
-            <td className="xls-cell" colSpan={2} style={{ textAlign: 'right' }}>
-              <EconomicEventBadge onNavigateToCalendar={() => onNavigate?.('economy')} />
+            <td className="xls-cell" colSpan={6} style={{ padding: '8px 10px' }}>
+              <SheetHeaderBar
+                title="종목 분석"
+                action={<EconomicEventBadge onNavigateToCalendar={() => onNavigate?.('economy')} />}
+              />
             </td>
           </tr>
           <tr className="xls-row" style={{ position: 'relative', zIndex: 30 }}>
