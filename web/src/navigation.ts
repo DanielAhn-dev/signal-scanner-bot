@@ -42,7 +42,7 @@ export const NAV_ITEMS: NavGroup[] = [
   {
     category: '실험실',
     items: [
-      { key: 'highlights', label: '하이라이트' },
+      { key: 'highlights', label: '집행우선' },
       { key: 'strategy', label: '전략' },
       { key: 'backtest', label: '백테스트' },
       { key: 'discovery', label: '발굴' },

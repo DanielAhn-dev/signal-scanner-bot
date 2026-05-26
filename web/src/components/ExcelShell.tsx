@@ -94,7 +94,7 @@ function getRibbonGroups(tab: RibbonTabKey): RibbonGroup[] {
         { key: 'backtest',   label: '백테스트',   icon: <Activity size={20}/>,    route: 'backtest', priority: 2 },
         { key: 'strategy',   label: '전략',       icon: <Target size={20}/>,      route: 'strategy', priority: 2 },
         { key: 'discovery',  label: '발굴',       icon: <Search size={20}/>,      route: 'discovery', priority: 3 },
-        { key: 'highlights', label: '하이라이트', icon: <Zap size={20}/>,         route: 'highlights', priority: 3 },
+        { key: 'highlights', label: '집행우선',   icon: <Zap size={20}/>,         route: 'highlights', priority: 3 },
       ]},
     ]
     case 'draw': return [

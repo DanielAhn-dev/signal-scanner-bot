@@ -129,6 +129,54 @@ function computePriorityScore(item: ScanCandidate): number {
   return (item.entry_score ?? 0) * 20 - (item.warn_score ?? 0) * 3
 }
 
+function clampScanValue(value: number, min: number, max: number): number {
+  if (!Number.isFinite(value)) return min
+  return Math.max(min, Math.min(max, value))
+}
+
+function normalizeScanScoreToPct(raw: number | null | undefined): number {
+  const safe = Number(raw ?? 0)
+  if (!Number.isFinite(safe)) return 0
+  if (safe > 5) return clampScanValue(safe, 0, 100)
+  return clampScanValue(safe * 20, 0, 100)
+}
+
+function computeQuickTradeScore(item: ScanCandidate): number {
+  const entryPct = normalizeScanScoreToPct(item.entry_score)
+  const warnPct = normalizeScanScoreToPct(item.warn_score)
+  const safetyPct = 100 - warnPct
+  const liquidity = Number(item.liquidity ?? 0)
+  const liquidityScore =
+    liquidity >= 80_000_000_000 ? 100 :
+    liquidity >= 30_000_000_000 ? 85 :
+    liquidity >= 10_000_000_000 ? 70 :
+    liquidity >= 3_000_000_000 ? 55 :
+    liquidity >= 1_000_000_000 ? 40 : 20
+  const intraday = Number(item.intraday_change_pct ?? 0)
+  const intradayFit = clampScanValue(100 - Math.abs(intraday - 1.8) * 18, 0, 100)
+  return clampScanValue(
+    entryPct * 0.46 +
+    safetyPct * 0.16 +
+    liquidityScore * 0.24 +
+    intradayFit * 0.14,
+    0,
+    100,
+  )
+}
+
+function isQuickTradeCandidate(item: ScanCandidate): boolean {
+  const warn = String(item.warn_grade || '').toUpperCase().trim()
+  if (warn === 'SELL') return false
+  const entry = String(item.entry_grade || '').toUpperCase().trim()
+  const trend = String(item.trend_grade || '').toUpperCase().trim()
+  const hasQuality = entry === 'A' || entry === 'B' || trend === 'A' || trend === 'B'
+  if (!hasQuality) return false
+  const intraday = Number(item.intraday_change_pct ?? 0)
+  if (Number.isFinite(intraday) && (intraday < -3.5 || intraday > 8.5)) return false
+  if (Number(item.liquidity ?? 0) < 1_000_000_000) return false
+  return computeQuickTradeScore(item) >= 58
+}
+
 function toComparableValue(item: ScanCandidate, key: SortKey): string | number {
   if (key === 'priority_score') return computePriorityScore(item)
   if (key === 'lead_accumulation_score') return scoreLeadAccumulationCandidate(item).score
@@ -205,7 +253,7 @@ export default function ScanPage({ onNavigate }: { onNavigate?: (r: string) => v
   const [apiHighlights, setApiHighlights] = useState<ScanHighlightItem[]>([])
   const [highlightLoading, setHighlightLoading] = useState(true)
   const [selectedSector, setSelectedSector] = useState<string>('all')
-  const [conditionFilter, setConditionFilter] = useState<'all' | 'entry' | 'trend' | 'accumulation' | 'lead' | 'stable'>('all')
+  const [conditionFilter, setConditionFilter] = useState<'all' | 'entry' | 'trend' | 'accumulation' | 'lead' | 'stable' | 'quick'>('all')
   const [sortKey, setSortKey] = useState<SortKey>('priority_score')
   const [sortDirection, setSortDirection] = useState<SortDirection>('desc')
   const [page, setPage] = useState(1)
@@ -242,7 +290,7 @@ export default function ScanPage({ onNavigate }: { onNavigate?: (r: string) => v
     const nextFilter = String(params.get('filter') || '').trim()
 
     if (nextSector) setSelectedSector(nextSector)
-    if (['all', 'entry', 'trend', 'accumulation', 'stable'].includes(nextFilter)) {
+    if (['all', 'entry', 'trend', 'accumulation', 'lead', 'stable', 'quick'].includes(nextFilter)) {
       setConditionFilter(nextFilter as typeof conditionFilter)
     }
   }, [])
@@ -405,6 +453,7 @@ export default function ScanPage({ onNavigate }: { onNavigate?: (r: string) => v
       accumulation: base.filter(c => ['A', 'B'].includes(String(c.dist_grade || '').toUpperCase())).length,
       lead: base.filter((c) => scoreLeadAccumulationCandidate(c).stage !== 'none').length,
       stable: base.filter(c => ['A', 'B'].includes(String(c.pivot_grade || '').toUpperCase())).length,
+      quick: base.filter((c) => isQuickTradeCandidate(c)).length,
     }
   }, [candidates, selectedSector])
 
@@ -415,6 +464,7 @@ export default function ScanPage({ onNavigate }: { onNavigate?: (r: string) => v
     if (conditionFilter === 'accumulation') return ['A', 'B'].includes(String(item.dist_grade || '').toUpperCase())
     if (conditionFilter === 'lead') return scoreLeadAccumulationCandidate(item).stage !== 'none'
     if (conditionFilter === 'stable') return ['A', 'B'].includes(String(item.pivot_grade || '').toUpperCase())
+    if (conditionFilter === 'quick') return isQuickTradeCandidate(item)
     return true
   }), [candidates, selectedSector, conditionFilter])
 
@@ -480,6 +530,7 @@ export default function ScanPage({ onNavigate }: { onNavigate?: (r: string) => v
     accumulation: 'dist_grade',
     lead: 'lead_accumulation_score',
     stable: 'pivot_grade',
+    quick: 'intraday_change_pct',
   }
 
   const handleConditionFilter = (filter: typeof conditionFilter) => {
@@ -553,7 +604,7 @@ export default function ScanPage({ onNavigate }: { onNavigate?: (r: string) => v
         marketPhase,
         realtimeAppliedCount,
         sectionLabels: {
-          highlights: '참고용 추천 눌림목',
+          highlights: '눌림목(스윙/중기) TOP 카드',
           candidates: '실전 기준 후보 목록',
         },
         conditionFilter,
@@ -562,7 +613,8 @@ export default function ScanPage({ onNavigate }: { onNavigate?: (r: string) => v
           conditionFilter === 'trend' ? '추세(A/B)' :
           conditionFilter === 'accumulation' ? '매집(A/B)' :
           conditionFilter === 'lead' ? '매집 선행형' :
-          conditionFilter === 'stable' ? '세력선(A/B)' : '전체',
+          conditionFilter === 'stable' ? '세력선(A/B)' :
+          conditionFilter === 'quick' ? '퀵트레이드(2~5%)' : '전체',
         selectedSector,
         sectorLabel: selectedSector === 'all' ? '전체 섹터' : selectedSector,
         rows,
@@ -599,7 +651,7 @@ export default function ScanPage({ onNavigate }: { onNavigate?: (r: string) => v
           <tr className="xls-row xls-row--even">
             <td className="xls-cell" colSpan={4} style={{ padding: '8px 10px' }}>
               <SheetHeaderBar
-                title="눌림목"
+                title="눌림목(스윙/중기)"
                 action={<EconomicEventBadge onNavigateToCalendar={() => onNavigate?.('economy')} />}
               />
             </td>
@@ -621,6 +673,7 @@ export default function ScanPage({ onNavigate }: { onNavigate?: (r: string) => v
                   { key: 'accumulation', label: '매집(A/B)' },
                   { key: 'lead', label: '매집 선행형' },
                   { key: 'stable', label: '세력선(A/B)' },
+                  { key: 'quick', label: '퀵트레이드(2~5%)' },
                 ] as const).map((option) => (
                   <button
                     key={option.key}
@@ -670,13 +723,13 @@ export default function ScanPage({ onNavigate }: { onNavigate?: (r: string) => v
                 style={{ fontWeight: 700, fontSize: 12, color: 'var(--color-brand)' }}>
                 눌림목 집행 TOP 카드
                 <span style={{ fontWeight: 400, fontSize: 10, color: 'var(--color-text-tertiary)', marginLeft: 8 }}>
-                  눌림목 A/B+경고 중심 · 하단 잔여 후보와 분리
+                  스윙/중기 기준 · 하단 잔여 후보와 분리
                 </span>
               </td>
               <td className="xls-cell" colSpan={6} style={{ textAlign: 'right', padding: '1px 4px' }}>
                 {onNavigate && (
                   <Button variant="secondary" onClick={() => onNavigate('highlights')}>
-                    하이라이트 허브
+                    집행우선 허브
                   </Button>
                 )}
               </td>

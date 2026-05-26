@@ -47,8 +47,8 @@ const REPORT_ACTIONS: ReportAction[] = [
   },
   {
     key: 'conviction-candidate-pdf',
-    label: '하이라이트 종목',
-    desc: '눌림목·점수·리스크를 종합한 확신 후보 하이라이트 리포트를 생성합니다. (/리포트 확신추천 대응)',
+    label: '집행우선 종목',
+    desc: '눌림목·점수·리스크를 종합한 확신 후보 집행우선 리포트를 생성합니다. (/리포트 확신추천 대응)',
     kind: 'download',
     endpoint: '/api/ui/report-pdf?topic=확신추천',
     method: 'GET',
@@ -74,7 +74,7 @@ const REPORT_ACTIONS: ReportAction[] = [
   },
   {
     key: 'pullback-report-pdf',
-    label: '눌림목 리포트 PDF',
+    label: '눌림목(스윙/중기) 리포트 PDF',
     desc: '다음 주 선진입 후보 중심 리포트를 다운로드합니다. (/리포트 눌림목 대응)',
     kind: 'download',
     endpoint: '/api/ui/report-pdf?topic=눌림목',

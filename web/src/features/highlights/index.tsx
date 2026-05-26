@@ -230,7 +230,7 @@ export default function HighlightsPage({ onNavigate }: { onNavigate?: (r: string
       saveSimulationPlan({
         createdAt: Date.now(),
         totalCapital: Math.max(0, Number(totalCapital || 0)),
-        notes: '하이라이트 허브에서 생성',
+        notes: '집행우선 허브에서 생성',
         items: rows,
       })
       toast.show('시뮬레이터로 계획을 전송했습니다.')
@@ -277,7 +277,7 @@ export default function HighlightsPage({ onNavigate }: { onNavigate?: (r: string
 
   return (
     <div className="container-app">
-      <div className="title-xl">하이라이트</div>
+      <div className="title-xl">집행우선</div>
       <EconomicEventBadge onNavigateToCalendar={() => onNavigate?.('economy')} />
       <div className="muted mb-4">오늘의 최종 진입 후보를 고르고 바로 배분/수익 시뮬레이션으로 넘길 수 있습니다.</div>
 
@@ -289,7 +289,7 @@ export default function HighlightsPage({ onNavigate }: { onNavigate?: (r: string
           </div>
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
             <Button variant="secondary" onClick={onShareHighlights} disabled={selectedItems.length === 0}>링크 공유</Button>
-            <Button variant="secondary" onClick={load} disabled={loading}>하이라이트 새로고침</Button>
+            <Button variant="secondary" onClick={load} disabled={loading}>집행우선 새로고침</Button>
           </div>
         </div>
         <div style={{ display: 'flex', gap: 'var(--space-3)', alignItems: 'stretch', marginTop: 'var(--space-3)', flexWrap: 'wrap' }}>
@@ -329,7 +329,7 @@ export default function HighlightsPage({ onNavigate }: { onNavigate?: (r: string
       ) : error ? (
         <ErrorState message={error} onRetry={load} />
       ) : items.length === 0 ? (
-        <div className="card"><EmptyState title="하이라이트 후보가 없습니다" description="스캔 실행 이후 다시 시도해 주세요." /></div>
+        <div className="card"><EmptyState title="집행우선 후보가 없습니다" description="스캔 실행 이후 다시 시도해 주세요." /></div>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
           {/* TOP 3: 풀 카드 */}
