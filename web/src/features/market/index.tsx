@@ -16,6 +16,7 @@ import Skeleton from '../../components/Skeleton'
 import { ErrorState } from '../../components/StateViews'
 import EconomicCalendar from '../../components/EconomicCalendar'
 import type { EconomicCalendarResponse } from '../../../../src/types/economics'
+import SheetHeaderBar from '../../components/SheetHeaderBar'
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -436,34 +437,26 @@ function SegmentControl<T extends string>({
 
 function PageHeader({ loading, onRefresh }: { loading: boolean; onRefresh: () => void }) {
   return (
-    <div className="market-sheet__header-row">
-      <div className="market-sheet__header">
-        <h1>시장 진단</h1>
-        <button
-          onClick={onRefresh}
-          disabled={loading}
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: 'var(--space-2)',
-            color: loading ? 'var(--color-text-tertiary)' : 'var(--color-brand)',
-            border: 'none',
-            borderRadius: 0,
-            fontSize: 'var(--font-size-sm)',
-            fontWeight: 'var(--font-weight-semibold)',
-            cursor: loading ? 'not-allowed' : 'pointer',
-            flexShrink: 0,
-            WebkitTapHighlightColor: 'transparent',
-          }}
-        >
-          <RefreshCw
-            size={14}
-            strokeWidth={2.5}
-            style={loading ? { animation: 'spin 1s linear infinite' } : undefined}
-          />
-          새로고침
-        </button>
-      </div>
+    <div className="sheet-page-header-row">
+      <SheetHeaderBar
+        title="시장 진단"
+        subtitle="진단 · 지표 · 캘린더를 같은 헤더 규격으로 확인합니다."
+        action={(
+          <button
+            className="xls-toolbar-btn market-sheet__header-refresh"
+            onClick={onRefresh}
+            disabled={loading}
+            title="새로고침"
+          >
+            <RefreshCw
+              size={14}
+              strokeWidth={2.5}
+              style={loading ? { animation: 'spin 1s linear infinite' } : undefined}
+            />
+            새로고침
+          </button>
+        )}
+      />
     </div>
   )
 }
@@ -911,12 +904,14 @@ export default function MarketPage() {
         calendarError ? (
           <ErrorState message={calendarError} onRetry={loadCalendar} />
         ) : (
-          <EconomicCalendar
-            events={calendar?.events || []}
-            loading={calendarLoading}
-            onRefresh={loadCalendar}
-            fetchedAt={calendar?.fetchedAt}
-          />
+          <div className="market-sheet__calendar-scroll xls-scroll-frame" style={{ ['--xls-table-min-width' as any]: '0px' }}>
+            <EconomicCalendar
+              events={calendar?.events || []}
+              loading={calendarLoading}
+              onRefresh={loadCalendar}
+              fetchedAt={calendar?.fetchedAt}
+            />
+          </div>
         )
       )}
     </section>

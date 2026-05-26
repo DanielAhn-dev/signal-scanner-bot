@@ -1049,6 +1049,12 @@ export default function Portfolio() {
     }
   }, [shareModalOpen, shareCreating, createPublicShareUrl, loadShareHistory])
 
+  const portfolioHeaderSubtitle = refreshing
+    ? '보유 포지션만 집중해서 관리합니다. · 업데이트 중...'
+    : `보유 포지션만 집중해서 관리합니다. · 마지막 갱신 ${lastUpdatedAt
+      ? new Date(lastUpdatedAt).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+      : '-'}`
+
   return (
     <section className="container-app portfolio-page">
       <table className="xls-table" style={{ width: '100%', tableLayout: 'fixed', marginBottom: 'var(--space-4)' }}>
@@ -1065,17 +1071,9 @@ export default function Portfolio() {
             <td className="xls-cell" colSpan={6} style={{ padding: '8px 10px' }}>
               <SheetHeaderBar
                 title="포트폴리오"
+                subtitle={portfolioHeaderSubtitle}
                 action={<EconomicEventBadge onNavigateToCalendar={() => navigate('/market')} />}
               />
-            </td>
-          </tr>
-          <tr className="xls-row">
-            <td className="xls-cell" colSpan={6} style={{ color: 'var(--color-text-secondary)', fontSize: 11 }}>
-              보유 포지션만 집중해서 관리합니다. · {refreshing
-                ? '업데이트 중...'
-                : `마지막 갱신 ${lastUpdatedAt
-                  ? new Date(lastUpdatedAt).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
-                  : '-'}`}
             </td>
           </tr>
           <tr className="xls-row xls-row--even">

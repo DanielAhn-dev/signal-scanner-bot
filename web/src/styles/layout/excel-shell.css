@@ -2116,6 +2116,51 @@
   min-height: var(--xls-grid-row-height);
 }
 
+/* ── Shared page header (news/market/portfolio 공통) ── */
+.sheet-page-header-row {
+  border: 1px solid var(--color-excel-grid-border);
+  border-bottom: none;
+  background: var(--color-excel-cell-header);
+}
+
+.sheet-page-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+  min-height: var(--xls-grid-row-height-double);
+  width: 100%;
+  padding: 6px 10px;
+}
+
+.sheet-page-header__content {
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.sheet-page-header__title {
+  font-size: var(--font-size-lg);
+  font-weight: var(--font-weight-bold);
+  color: var(--color-brand);
+  line-height: 1.2;
+}
+
+.sheet-page-header__subtitle {
+  margin-top: 2px;
+  color: var(--color-text-secondary);
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.sheet-page-header__actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+  justify-content: flex-end;
+}
+
 /* ── News sheet page ── */
 .news-sheet {
   min-width: 0;
@@ -2133,24 +2178,16 @@
 }
 
 /* 뉴스 상단 메타 영역 행 싱크
-   1~2행: 뉴스 영역(44px), 3행: 설명(22px), 4~5행: 검색 영역(44px) */
+   1행: 검색 영역(44px) */
 .news-sheet__table tbody > tr:nth-child(1) {
   height: var(--xls-grid-row-height-double);
 }
 
-.news-sheet__table tbody > tr:nth-child(2) {
-  height: var(--xls-grid-row-height);
-}
-
-.news-sheet__table tbody > tr:nth-child(3) {
-  height: var(--xls-grid-row-height-double);
-}
-
-.news-sheet__table tbody > tr:nth-child(3) .xls-cell {
+.news-sheet__table tbody > tr:nth-child(1) .xls-cell {
   vertical-align: middle;
 }
 
-.news-sheet__table tbody > tr:nth-child(3) .news-sheet__search-input {
+.news-sheet__table tbody > tr:nth-child(1) .news-sheet__search-input {
   height: 40px;
   line-height: 40px;
 }
@@ -2295,6 +2332,17 @@
 
 .market-sheet .market-sheet__header button {
   white-space: nowrap;
+}
+
+.market-sheet .market-sheet__header-refresh {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--color-brand);
+}
+
+.market-sheet .market-sheet__header-refresh:disabled {
+  color: var(--color-text-tertiary);
 }
 
 .market-sheet .market-sheet__table .xls-row {
@@ -2599,10 +2647,17 @@
 
 /* ── Market calendar tab: 카드형 → 엑셀 셀형 톤으로 정리 ── */
 .market-sheet--excel .market-calendar {
+  min-width: 0;
   gap: 0;
   border: 1px solid var(--market-grid-border);
   border-top: none;
   background: var(--color-gray-0);
+}
+
+.market-sheet__calendar-scroll {
+  width: 100%;
+  min-width: 0;
+  overflow-x: hidden;
 }
 
 .market-sheet--excel .market-calendar__summary {
@@ -2648,9 +2703,18 @@
 }
 
 .market-sheet--excel .market-calendar__event-row {
+  width: 100%;
   min-height: 20px;
   padding: 3px 10px !important;
   border-bottom: none !important;
+}
+
+.market-sheet--excel .market-calendar__event-main {
+  min-width: 0;
+}
+
+.market-sheet--excel .market-calendar__event-side {
+  min-width: 72px;
 }
 
 .market-sheet--excel .market-calendar__event-row:hover {
@@ -2731,6 +2795,24 @@
 }
 
 @media (max-width: 640px) {
+  .sheet-page-header {
+    align-items: flex-start;
+    padding: 6px 8px;
+  }
+
+  .sheet-page-header__title {
+    font-size: 15px;
+  }
+
+  .sheet-page-header__subtitle {
+    font-size: 10px;
+  }
+
+  .sheet-page-header__actions {
+    width: 100%;
+    justify-content: flex-end;
+  }
+
   .market-sheet .market-sheet__header {
     flex-direction: column;
     align-items: flex-start;
@@ -2797,6 +2879,20 @@
 
   .market-sheet__table-scroll .market-sheet__section-row .xls-cell {
     white-space: normal;
+  }
+
+  .market-sheet__calendar-scroll {
+    overflow-x: auto;
+    overflow-y: hidden;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .market-sheet--excel .market-calendar__event-row {
+    gap: 6px !important;
+  }
+
+  .market-sheet--excel .market-calendar__event-side {
+    min-width: 62px;
   }
 }
 

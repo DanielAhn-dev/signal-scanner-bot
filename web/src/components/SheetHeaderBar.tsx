@@ -8,27 +8,19 @@ type SheetHeaderBarProps = {
 }
 
 export default function SheetHeaderBar({ title, subtitle, action, className }: SheetHeaderBarProps) {
+  const rootClassName = ['sheet-page-header', className].filter(Boolean).join(' ')
+
   return (
-    <div
-      className={className}
-      style={{
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        gap: 'var(--space-3)',
-        flexWrap: 'wrap',
-        width: '100%',
-      }}
-    >
-      <div style={{ minWidth: 0, flex: '1 1 auto' }}>
-        <div style={{ fontSize: 18, fontWeight: 700, color: 'var(--color-brand)' }}>{title}</div>
+    <div className={rootClassName}>
+      <div className="sheet-page-header__content">
+        <div className="sheet-page-header__title">{title}</div>
         {subtitle && (
-          <div style={{ marginTop: 4, color: 'var(--color-text-secondary)', fontSize: 11, lineHeight: 1.45 }}>
+          <div className="sheet-page-header__subtitle">
             {subtitle}
           </div>
         )}
       </div>
-      {action && <div style={{ flexShrink: 0 }}>{action}</div>}
+      {action && <div className="sheet-page-header__actions">{action}</div>}
     </div>
   )
 }

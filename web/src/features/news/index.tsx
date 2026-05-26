@@ -3,6 +3,7 @@ import Button from '../../components/ui/Button'
 import { apiFetch } from '../../lib/api'
 import StockDetailModal from '../../components/StockDetailModal'
 import { ChevronDown, ChevronUp } from 'lucide-react'
+import SheetHeaderBar from '../../components/SheetHeaderBar'
 
 type NewsItem = {
   title: string
@@ -239,27 +240,22 @@ export default function NewsPage() {
   return (
     <div ref={sheetRef} className="news-sheet xls-page-inset">
 
+      <div className="sheet-page-header-row">
+        <SheetHeaderBar
+          title="뉴스"
+          subtitle="텔레그램 /news 명령과 같은 뉴스 소스를 웹에서도 조회합니다."
+          action={(
+            <Button variant="secondary" onClick={() => load(appliedQuery, page)} disabled={loading}>
+              새로고침
+            </Button>
+          )}
+        />
+      </div>
+
       {/* ═══ 메타 헤더 테이블 ═══ */}
       <table ref={metaTableRef} className="xls-table news-sheet__table" style={{ width: '100%', tableLayout: 'fixed' }}>
         {colGroup}
         <tbody>
-          <tr className="xls-row xls-row--even">
-            <td className="xls-cell" colSpan={3}
-              style={{ fontSize: 15, fontWeight: 700, color: 'var(--color-brand)', letterSpacing: '0.01em' }}>
-              뉴스
-            </td>
-            <td className="xls-cell" style={{ textAlign: 'right', padding: '1px 4px' }}>
-              <Button variant="secondary" onClick={() => load(appliedQuery, page)} disabled={loading}>
-                새로고침
-              </Button>
-            </td>
-          </tr>
-          <tr className="xls-row">
-            <td className="xls-cell" colSpan={4}
-              style={{ color: 'var(--color-text-secondary)', fontSize: 11 }}>
-              텔레그램 /news 명령과 같은 뉴스 소스를 웹에서도 조회합니다.
-            </td>
-          </tr>
           <tr className="xls-row xls-row--even">
             <td className="xls-cell" colSpan={3} style={{ padding: '2px 6px' }}>
               <input
