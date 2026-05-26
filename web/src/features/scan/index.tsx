@@ -392,8 +392,9 @@ export default function ScanPage({ onNavigate }: { onNavigate?: (r: string) => v
       .slice(0, 5)
   }, [candidates])
 
-  // API 하이라이트가 있으면 우선 사용, 없으면 로컈 폴백
-  const activeHighlights = apiHighlights.length > 0 ? apiHighlights : localHighlights
+  // 스캔 화면은 눌림목 원본 후보 기반 TOP 카드로 유지한다.
+  const activeHighlights = localHighlights
+  const highlightOverlapSet = useMemo(() => new Set(apiHighlights.map((row) => row.code)), [apiHighlights])
 
   const filterCounts = useMemo(() => {
     const base = selectedSector === 'all' ? candidates : candidates.filter(c => c.sector_id === selectedSector)
@@ -417,14 +418,21 @@ export default function ScanPage({ onNavigate }: { onNavigate?: (r: string) => v
     return true
   }), [candidates, selectedSector, conditionFilter])
 
-  const sortedCandidates = useMemo(() => [...filteredCandidates].sort((a, b) => {
+  const tableCandidates = useMemo(() => {
+    if (conditionFilter !== 'all' || selectedSector !== 'all') return filteredCandidates
+    if (activeHighlights.length === 0) return filteredCandidates
+    const highlightCodes = new Set(activeHighlights.map((row) => row.code))
+    return filteredCandidates.filter((row) => !highlightCodes.has(row.code))
+  }, [activeHighlights, conditionFilter, filteredCandidates, selectedSector])
+
+  const sortedCandidates = useMemo(() => [...tableCandidates].sort((a, b) => {
     const av = toComparableValue(a, sortKey)
     const bv = toComparableValue(b, sortKey)
     const result = typeof av === 'number' && typeof bv === 'number'
       ? av - bv
       : String(av).localeCompare(String(bv), 'ko-KR')
     return sortDirection === 'asc' ? result : -result
-  }), [filteredCandidates, sortKey, sortDirection])
+  }), [tableCandidates, sortKey, sortDirection])
 
   const pagedCandidates = useMemo(() => {
     const from = (page - 1) * pageSize
@@ -649,7 +657,7 @@ export default function ScanPage({ onNavigate }: { onNavigate?: (r: string) => v
       {error && <ErrorState message={error} onRetry={loadCandidates} />}
 
       {/* 참고용 추천 섹션 */}
-      {!loading && !error && !highlightLoading && activeHighlights.length > 0 && conditionFilter === 'all' && selectedSector === 'all' && (
+      {!loading && !error && activeHighlights.length > 0 && conditionFilter === 'all' && selectedSector === 'all' && (
         <div className="scan-highlights-section">
         <table className="xls-table scan-highlight-table" style={{ width: '100%', tableLayout: 'fixed' }} id="scan-highlight-section-capture">
           <colgroup>
@@ -660,9 +668,9 @@ export default function ScanPage({ onNavigate }: { onNavigate?: (r: string) => v
             <tr className="xls-row xls-row--even">
               <td className="xls-cell" colSpan={20}
                 style={{ fontWeight: 700, fontSize: 12, color: 'var(--color-brand)' }}>
-                참고용 추천 눌림목
+                눌림목 집행 TOP 카드
                 <span style={{ fontWeight: 400, fontSize: 10, color: 'var(--color-text-tertiary)', marginLeft: 8 }}>
-                  상단 참고 · 하단 실전 기준과 분리
+                  눌림목 A/B+경고 중심 · 하단 잔여 후보와 분리
                 </span>
               </td>
               <td className="xls-cell" colSpan={6} style={{ textAlign: 'right', padding: '1px 4px' }}>
@@ -746,6 +754,9 @@ export default function ScanPage({ onNavigate }: { onNavigate?: (r: string) => v
                             marginBottom: 10,
                           }}>
                             {c.code}
+                            <span style={{ marginLeft: 8, color: 'var(--color-text-secondary)', fontFamily: 'var(--font-family-base)' }}>
+                              {highlightOverlapSet.has(c.code) ? '하이라이트 공통' : '스캔 전용'}
+                            </span>
                           </div>
 
                           {/* ④ 등급 뱃지 */}
@@ -783,7 +794,7 @@ export default function ScanPage({ onNavigate }: { onNavigate?: (r: string) => v
                             color: 'var(--color-brand)',
                             fontWeight: 500,
                           }}>
-                            참고용 상세 분석 →
+                            눌림목 상세 분석 →
                           </div>
                         </td>
                       )
@@ -817,7 +828,7 @@ export default function ScanPage({ onNavigate }: { onNavigate?: (r: string) => v
           )}
           {conditionFilter === 'all' && selectedSector === 'all' && (
             <div className="scan-section-label scan-section-label--plain">
-              전체 후보 목록 · {sortedCandidates.length}개 (실전 기준, 오늘 장중/종가 신호 반영)
+              TOP 카드 제외 잔여 후보 · {sortedCandidates.length}개 (실전 기준, 오늘 장중/종가 신호 반영)
             </div>
           )}
           <div className="scan-candidates-stage">

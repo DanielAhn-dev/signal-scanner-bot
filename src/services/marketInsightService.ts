@@ -397,6 +397,22 @@ function round1(value: number): number {
   return Math.round(value * 10) / 10;
 }
 
+function normalizePullbackScoreToPct(rawScore: number): number {
+  // 구 스키마(0~5)와 신 스키마(0~100)를 모두 허용한다.
+  const safe = Number(rawScore ?? 0);
+  if (!Number.isFinite(safe)) return 0;
+  if (safe > 5) return clampDailyCandidateValue(safe, 0, 100);
+  return clampDailyCandidateValue(safe * 20, 0, 100);
+}
+
+function normalizePullbackWarnToPct(rawWarn: number): number {
+  // warn_score도 동일하게 0~5 / 0~100 혼재를 허용한다.
+  const safe = Number(rawWarn ?? 0);
+  if (!Number.isFinite(safe)) return 50;
+  if (safe > 5) return clampDailyCandidateValue(safe, 0, 100);
+  return clampDailyCandidateValue(safe * 20, 0, 100);
+}
+
 function estimateForecastFromMarketPick(input: {
   pick: PickCandidate;
   budgetPerCandidate: number;
@@ -447,14 +463,16 @@ function estimateForecastFromPullback(input: {
   sizingBaseCapital: number;
 }): DailyCandidateForecast {
   const price = Number(input.item.stock?.close ?? 0);
-  const entryScore = Number(input.item.entry_score ?? 0);
-  const warnScore = Number(input.item.warn_score ?? 0);
-  const strength = clampDailyCandidateValue((entryScore * 25 - warnScore * 6 + 42) / 100, 0, 1);
+  const entryScorePct = normalizePullbackScoreToPct(Number(input.item.entry_score ?? 0));
+  const warnScorePct = normalizePullbackWarnToPct(Number(input.item.warn_score ?? 0));
+  const safetyPct = 100 - warnScorePct;
+  const strength = clampDailyCandidateValue((entryScorePct * 0.62 + safetyPct * 0.38) / 100, 0, 1);
+  const riskPenalty = clampDailyCandidateValue(warnScorePct / 100, 0, 1);
 
-  const expectedBasePct = round1(clampDailyCandidateValue(1.2 + strength * 7.6, -2, 12));
-  const expectedUpsidePct = round1(clampDailyCandidateValue(expectedBasePct + 3.6 + strength * 2.3, 0.8, 18));
-  const expectedDrawdownPct = round1(clampDailyCandidateValue(2.8 + (1 - strength) * 3.9 + warnScore * 0.15, 1.2, 10));
-  const confidencePct = round1(clampDailyCandidateValue(48 + strength * 30 - warnScore * 1.8, 32, 88));
+  const expectedBasePct = round1(clampDailyCandidateValue(1.2 + strength * 7.6 - riskPenalty * 1.6, -2, 12));
+  const expectedUpsidePct = round1(clampDailyCandidateValue(expectedBasePct + 3.6 + strength * 2.3 - riskPenalty * 0.8, 0.8, 18));
+  const expectedDrawdownPct = round1(clampDailyCandidateValue(2.8 + (1 - strength) * 3.9 + riskPenalty * 2.1, 1.2, 10));
+  const confidencePct = round1(clampDailyCandidateValue(48 + strength * 30 - riskPenalty * 15, 32, 88));
 
   const quantity = resolveSuggestedQuantity({
     entryPrice: price,
@@ -462,8 +480,8 @@ function estimateForecastFromPullback(input: {
     sizingBaseCapital: input.sizingBaseCapital,
   });
 
-  const safetyFromWarn = round1(clampDailyCandidateValue((5 - warnScore) / 5 * 100, 0, 100));
-  const momentumFromEntry = round1(clampDailyCandidateValue(entryScore / 5 * 100, 0, 100));
+  const safetyFromWarn = round1(clampDailyCandidateValue(safetyPct, 0, 100));
+  const momentumFromEntry = round1(clampDailyCandidateValue(entryScorePct, 0, 100));
 
   return {
     code: input.item.code,
