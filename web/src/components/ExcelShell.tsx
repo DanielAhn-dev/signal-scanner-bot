@@ -345,7 +345,11 @@ const MIN_MID   = 300  // px
 const MIN_RIGHT = 280  // px
 const RECENT_MENU_STORAGE_KEY = 'excel-shell:recent-menu-routes:v1'
 const RIBBON_FOLD_STORAGE_KEY = 'excel-shell:ribbon-fold-state:v1'
+const ZOOM_STORAGE_KEY = 'excel-shell:zoom:v1'
 const MAX_RECENT_MENU_ITEMS = 6
+const ZOOM_MIN = 50
+const ZOOM_MAX = 200
+const ZOOM_STEP = 10
 
 function getDefaultPanelWidths(viewportWidth: number) {
   if (viewportWidth >= 1800) return { left: 320, right: 520 }
@@ -426,7 +430,16 @@ export default function ExcelShell({
   const { authName, authEmail, isSignedIn } = useAuthStore()
   const profile = useProfileStore(s => s.profile)
   const [ribbonTab, setRibbonTab] = useState<RibbonTabKey>('home')
-  const [zoom, setZoom] = useState(100)
+  const [zoom, setZoom] = useState(() => {
+    try {
+      const raw = window.localStorage.getItem(ZOOM_STORAGE_KEY)
+      const value = Number(raw)
+      if (Number.isFinite(value)) return Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, Math.round(value / ZOOM_STEP) * ZOOM_STEP))
+    } catch {
+      // ignore
+    }
+    return 100
+  })
   const [menuQuery, setMenuQuery] = useState('')
   const [searchPanelOpen, setSearchPanelOpen] = useState(false)
   const [mobileSearchOpen, setMobileSearchOpen] = useState(false)
@@ -451,6 +464,7 @@ export default function ExcelShell({
     const d = String(now.getDate()).padStart(2, '0')
     return `market_brief_${y}${m}${d}.xlsx`
   }, [])
+  const zoomFactor = zoom / 100
 
   const userInitials = useMemo(() => {
     const name = profile.nickname || profile.telegramName || authName || ''
@@ -596,6 +610,10 @@ export default function ExcelShell({
   }, [ribbonFoldState])
 
   useEffect(() => {
+    window.localStorage.setItem(ZOOM_STORAGE_KEY, String(zoom))
+  }, [zoom])
+
+  useEffect(() => {
     const tick = () => {
       const now = new Date()
       setCurrentTime(`${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')} ${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`)
@@ -621,7 +639,13 @@ export default function ExcelShell({
   }, [])
 
   return (
-    <div className="excel-app">
+    <div
+      className="excel-app"
+      style={{
+        ['--excel-ui-zoom' as any]: `${zoomFactor}`,
+        ['--excel-sheet-zoom' as any]: 1,
+      }}
+    >
 
       {/* ── 1. 타이틀 바 ── */}
       <div className="excel-titlebar">
@@ -1070,11 +1094,32 @@ export default function ExcelShell({
           <span className="excel-statusbar__item excel-statusbar__item--datetime">{currentTime}</span>
           <span className="excel-statusbar__item excel-statusbar__item--market">국장 본장 / 미장 데이터핫</span>
           <div className="excel-statusbar__zoom">
-            <Minus size={9} style={{ cursor: 'pointer' }} onClick={() => setZoom(z => Math.max(50, z - 10))}/>
-            <input type="range" className="excel-statusbar__zoom-slider" min={50} max={200} step={10}
+            <button
+              type="button"
+              className="excel-statusbar__zoom-btn"
+              aria-label="축소"
+              onClick={() => setZoom(z => Math.max(ZOOM_MIN, z - ZOOM_STEP))}
+            >
+              <Minus size={9} />
+            </button>
+            <input type="range" className="excel-statusbar__zoom-slider" min={ZOOM_MIN} max={ZOOM_MAX} step={ZOOM_STEP}
               value={zoom} onChange={e => setZoom(Number(e.target.value))}/>
-            <ChevronRight size={9} style={{ cursor: 'pointer' }} onClick={() => setZoom(z => Math.min(200, z + 10))}/>
-            <span className="excel-statusbar__zoom-pct">{zoom}%</span>
+            <button
+              type="button"
+              className="excel-statusbar__zoom-btn"
+              aria-label="확대"
+              onClick={() => setZoom(z => Math.min(ZOOM_MAX, z + ZOOM_STEP))}
+            >
+              <Plus size={9} />
+            </button>
+            <button
+              type="button"
+              className="excel-statusbar__zoom-pct"
+              title="100%로 초기화"
+              onClick={() => setZoom(100)}
+            >
+              {zoom}%
+            </button>
           </div>
         </div>
       </div>

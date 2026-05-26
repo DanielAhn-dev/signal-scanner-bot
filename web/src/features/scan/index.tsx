@@ -824,25 +824,8 @@ export default function ScanPage({ onNavigate }: { onNavigate?: (r: string) => v
             </div>
           )}
           <div className="scan-candidates-stage">
-            <div className="scan-table-wrap xls-scroll-frame" style={{ ['--xls-table-min-width' as any]: '720px' }}>
-            <table className="xls-table scan-table" style={{ width: '100%', tableLayout: 'fixed', minWidth: 720 }}>
-              <colgroup>
-                <col style={{ width: '6%' }} />    {/* 코드 */}
-                <col style={{ width: '9%' }} />    {/* 종목명 */}
-                <col style={{ width: '8%' }} />    {/* 섹터 */}
-                <col style={{ width: '6%' }} />    {/* 우선순위 */}
-                <col style={{ width: '6%' }} />    {/* 선행매집 */}
-                <col style={{ width: '4%' }} />    {/* 진입 */}
-                <col style={{ width: '5%' }} />    {/* 진입점수 */}
-                <col style={{ width: '4%' }} />    {/* 추세 */}
-                <col style={{ width: '7%' }} />    {/* 매집 */}
-                <col style={{ width: '6%' }} />    {/* 세력선 */}
-                <col style={{ width: '5%' }} />    {/* 경고 */}
-                <col style={{ width: '6%' }} />    {/* 유동성 */}
-                <col style={{ width: '5%' }} />    {/* 변동(%) */}
-                <col style={{ width: '7%' }} />    {/* 기준일 */}
-                <col style={{ width: '16%' }} />   {/* 관리 */}
-              </colgroup>
+            <div className="scan-table-wrap xls-scroll-frame" style={{ ['--xls-table-min-width' as any]: '1280px' }}>
+            <table className="xls-table scan-table scan-candidates-table" style={{ width: 'max-content', tableLayout: 'auto', minWidth: 1280 }}>
               <thead>
                 <tr className="xls-header-row">
                   <th className="xls-th">{renderSortableHeader('코드', 'code')}</th>

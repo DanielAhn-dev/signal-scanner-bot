@@ -122,6 +122,7 @@ export default function Dashboard({ onNavigate }: { onNavigate?: (r: string) => 
   const posCount = portfolio?.positions?.length ?? 0
   const pnl = portfolio?.total_pnl
   const pnlColor = pnl == null ? undefined : pnl >= 0 ? 'var(--color-stock-up)' : 'var(--color-stock-down)'
+  const colWidths: Array<number | string | undefined> = [28, '17%', '17%', '17%', '17%', '20%', undefined]
 
   // 행번호 카운터
   let rn = 0
@@ -130,15 +131,9 @@ export default function Dashboard({ onNavigate }: { onNavigate?: (r: string) => 
   return (
     <div className="dashboard-sheet" style={{ flex: 1, overflow: 'auto', width: '100%', minWidth: 0 }}>
       <table className="xls-table" style={{ width: '100%', tableLayout: 'fixed' }}>
-        <colgroup>
-          <col style={{ width: 28 }}/>  {/* 행번호 — CSS로 숨겨지면 width 0 처리됨 */}
-          <col style={{ width: '17%' }}/> {/* A */}
-          <col style={{ width: '17%' }}/> {/* B */}
-          <col style={{ width: '17%' }}/> {/* C */}
-          <col style={{ width: '17%' }}/> {/* D */}
-          <col style={{ width: '20%' }}/> {/* E */}
-          <col/>                          {/* F */}
-        </colgroup>
+        <colgroup>{colWidths.map((width, index) => (
+          <col key={index} style={width == null ? undefined : { width }} />
+        ))}</colgroup>
         <thead>
           <tr className="xls-letter-row">
             <th className="xls-corner"/>

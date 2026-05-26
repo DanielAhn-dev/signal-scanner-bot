@@ -12,6 +12,24 @@
 
 /* ── 전체 앱 컨테이너 ── */
 .excel-app {
+  --excel-ui-zoom: 1;
+  --font-size-xs: calc(0.6875rem * var(--excel-ui-zoom));
+  --font-size-sm: calc(0.75rem * var(--excel-ui-zoom));
+  --font-size-base: calc(0.8125rem * var(--excel-ui-zoom));
+  --font-size-md: calc(0.875rem * var(--excel-ui-zoom));
+  --font-size-lg: calc(1rem * var(--excel-ui-zoom));
+  --font-size-xl: calc(1.125rem * var(--excel-ui-zoom));
+  --font-size-2xl: calc(1.375rem * var(--excel-ui-zoom));
+  --header-height: calc(2rem * var(--excel-ui-zoom));
+  --ribbon-tab-height: calc(1.875rem * var(--excel-ui-zoom));
+  --ribbon-body-height: calc(5.5rem * var(--excel-ui-zoom));
+  --formula-bar-height: calc(1.75rem * var(--excel-ui-zoom));
+  --sheet-tab-height: calc(1.625rem * var(--excel-ui-zoom));
+  --statusbar-height: calc(1.375rem * var(--excel-ui-zoom));
+  --xls-grid-row-height: calc(22px * var(--excel-ui-zoom));
+  --xls-grid-row-height-double: calc(44px * var(--excel-ui-zoom));
+  --xls-grid-cell-line-height: calc(20px * var(--excel-ui-zoom));
+  --xls-grid-cell-padding-x: calc(6px * var(--excel-ui-zoom));
   display: flex;
   flex-direction: column;
   height: 100vh;
@@ -1381,6 +1399,16 @@
   width: 100%;
   min-width: 100%;
   min-height: 100%;
+  zoom: var(--excel-sheet-zoom, 1);
+  transform-origin: top left;
+}
+
+@supports not (zoom: 1) {
+  .xls-content-inner {
+    transform: scale(var(--excel-sheet-zoom, 1));
+    width: calc(100% / var(--excel-sheet-zoom, 1));
+    min-height: calc(100% / var(--excel-sheet-zoom, 1));
+  }
 }
 
 .xls-content-inner > * {
@@ -1595,6 +1623,21 @@
   align-items: center;
   gap: 4px;
 }
+.excel-statusbar__zoom-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border: none;
+  border-radius: 2px;
+  background: transparent;
+  color: rgba(255,255,255,0.9);
+  cursor: pointer;
+}
+.excel-statusbar__zoom-btn:hover {
+  background: rgba(255,255,255,0.18);
+}
 .excel-statusbar__zoom-slider {
   width: 60px;
   height: 2px;
@@ -1614,6 +1657,15 @@
 .excel-statusbar__zoom-pct {
   min-width: 28px;
   text-align: right;
+  border: none;
+  background: transparent;
+  color: rgba(255,255,255,0.92);
+  cursor: pointer;
+  font: inherit;
+  padding: 0;
+}
+.excel-statusbar__zoom-pct:hover {
+  text-decoration: underline;
 }
 
 /* ================================================================
@@ -3095,14 +3147,25 @@
   .ribbon-btn {
     min-width: 28px;
     padding: 2px 4px;
-    height: calc(2.75rem - 18px);
+    height: 100%;
+    min-height: 0;
   }
   .ribbon-btn__label { display: none; }
   .ribbon-btn__icon svg { width: 16px; height: 16px; }
   .excel-ribbon-group__label { display: none; }
-  .excel-ribbon-group { border-right: none; padding: 4px 2px 0; }
+  .excel-ribbon-group {
+    border-right: none;
+    padding: 0 2px;
+    justify-content: stretch;
+  }
   /* 버튼 줄바꿈 방지 — 세로 클리핑 대신 가로 스크롤로 처리 */
-  .excel-ribbon-group__buttons { flex-wrap: nowrap; }
+  .excel-ribbon-group__buttons {
+    flex-wrap: nowrap;
+    align-items: stretch;
+    align-content: stretch;
+    padding-bottom: 0;
+    height: 100%;
+  }
 
   /* 수식 표시줄 간소화 */
   .excel-formula-bar__name-box { width: 70px; font-size: 10px; }
