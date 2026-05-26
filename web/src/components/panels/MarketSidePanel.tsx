@@ -142,8 +142,8 @@ export default function MarketSidePanel() {
 
     const updateDummyRows = () => {
       const headerHeight = table.tHead?.offsetHeight ?? 40
-      const firstRow = table.tBodies[0]?.querySelector('tr.xls-row') as HTMLTableRowElement | null
-      const rowHeight = firstRow?.offsetHeight || 22
+      const cssRowHeight = parseFloat(getComputedStyle(viewport).getPropertyValue('--xls-grid-row-height'))
+      const rowHeight = Number.isFinite(cssRowHeight) && cssRowHeight > 0 ? cssRowHeight : 22
       const availableHeight = Math.max(0, viewport.clientHeight - headerHeight)
       const maxRows = Math.floor(availableHeight / rowHeight)
       const baseRows = loading || rows.length === 0 ? 1 : rows.length
@@ -152,15 +152,30 @@ export default function MarketSidePanel() {
     }
 
     updateDummyRows()
+    const appRoot = viewport.closest('.excel-app')
+    const mutationObserver = typeof MutationObserver !== 'undefined' && appRoot
+      ? new MutationObserver(updateDummyRows)
+      : null
+
+    if (mutationObserver && appRoot) {
+      mutationObserver.observe(appRoot, { attributes: true, attributeFilter: ['style'] })
+    }
+
     if (typeof ResizeObserver !== 'undefined') {
       const observer = new ResizeObserver(updateDummyRows)
       observer.observe(viewport)
       observer.observe(table)
-      return () => observer.disconnect()
+      return () => {
+        observer.disconnect()
+        mutationObserver?.disconnect()
+      }
     }
 
     window.addEventListener('resize', updateDummyRows)
-    return () => window.removeEventListener('resize', updateDummyRows)
+    return () => {
+      window.removeEventListener('resize', updateDummyRows)
+      mutationObserver?.disconnect()
+    }
   }, [loading, rows.length])
 
   return (
