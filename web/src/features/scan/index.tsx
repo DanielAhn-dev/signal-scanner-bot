@@ -869,7 +869,9 @@ export default function ScanPage({ onNavigate }: { onNavigate?: (r: string) => v
       {loading && candidates.length === 0 ? (
         <div className="card"><Skeleton lines={6} height={16} /></div>
       ) : !error && sortedCandidates.length === 0 ? (
-        <EmptyState title="스캔 결과 없음" description="스캔을 실행하거나 필터를 조정해 보세요." />
+        <div className={conditionFilter === 'quick' ? 'scan-empty-viewport-center' : undefined}>
+          <EmptyState title="스캔 결과 없음" description="스캔을 실행하거나 필터를 조정해 보세요." />
+        </div>
       ) : (
         <div id="scan-candidates-section-capture" className="scan-candidates-section">
           {(conditionFilter !== 'all' || selectedSector !== 'all') && (
@@ -886,7 +888,7 @@ export default function ScanPage({ onNavigate }: { onNavigate?: (r: string) => v
           )}
           <div className="scan-candidates-stage">
             <div className="scan-table-wrap xls-scroll-frame" style={{ ['--xls-table-min-width' as any]: '1280px' }}>
-            <table className="xls-table scan-table scan-candidates-table" style={{ width: 'max-content', tableLayout: 'auto', minWidth: 1280 }}>
+            <table className="xls-table scan-table scan-candidates-table" style={{ width: 'max(100%, 1280px)', tableLayout: 'auto', minWidth: 1280 }}>
               <thead>
                 <tr className="xls-header-row">
                   <th className="xls-th">{renderSortableHeader('코드', 'code')}</th>

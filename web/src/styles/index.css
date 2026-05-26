@@ -6060,6 +6060,13 @@ a:focus-visible {
   min-width: 0;
 }
 
+.scan-empty-viewport-center {
+  min-height: clamp(280px, calc(100vh - 320px), 640px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
 /* 발굴 페이지 순위 배지 */
 .discovery-rank-badge {
   display: inline-flex;
@@ -6684,6 +6691,11 @@ a:focus-visible {
     overflow-x: auto;
     overflow-y: hidden;
   }
+
+  .scan-empty-viewport-center {
+    min-height: clamp(220px, 48vh, 420px);
+  }
+
   .discovery-table .scan-thead,
   .discovery-table thead.scan-thead {
     display: none;
