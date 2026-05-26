@@ -5981,7 +5981,7 @@ a:focus-visible {
 .scan-highlights-section {
   background: var(--color-gray-0);
   border: 1px solid var(--color-excel-grid-border);
-  box-shadow: 0 1px 2px rgba(12, 32, 64, 0.05);
+  box-shadow: 0 1px 2px rgba(12, 32, 64, 0.035);
   margin-bottom: var(--space-2);
 }
 
@@ -5995,16 +5995,16 @@ a:focus-visible {
 }
 
 .scan-highlight-card-cell {
-  background: linear-gradient(160deg, #eef8f2 0%, #deefe5 100%) !important;
-  border-left: 3px solid var(--color-brand-muted) !important;
-  border-top: 1px solid #cfe3d5 !important;
-  border-right: 1px solid #cfe3d5 !important;
-  border-bottom: 2px solid #c7dccd !important;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.65), 0 1px 2px rgba(18, 42, 30, 0.06);
+  background: linear-gradient(160deg, #f3faf6 0%, #e8f4ed 100%) !important;
+  border-left: 2px solid var(--color-brand-muted) !important;
+  border-top: 1px solid #d9e8de !important;
+  border-right: 1px solid #d9e8de !important;
+  border-bottom: 1px solid #d4e3d9 !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.75), 0 1px 1px rgba(18, 42, 30, 0.05);
 }
 
 .scan-highlight-card-cell--top {
-  background: linear-gradient(160deg, #e4f5eb 0%, #cce7d8 100%) !important;
+  background: linear-gradient(160deg, #ecf8f1 0%, #ddefe3 100%) !important;
   border-left-color: var(--color-brand) !important;
 }
 
@@ -6016,12 +6016,12 @@ a:focus-visible {
 .scan-candidates-section {
   background: var(--color-gray-0);
   border: 1px solid var(--color-excel-grid-border);
-  box-shadow: 0 1px 2px rgba(12, 32, 64, 0.05);
+  box-shadow: 0 1px 2px rgba(12, 32, 64, 0.03);
 }
 
 .scan-candidates-section .scan-section-label--plain {
   margin: 0;
-  padding: 8px 10px 6px;
+  padding: 8px 10px 7px;
   border-bottom: 1px solid var(--color-excel-grid-border);
   background: var(--color-gray-0);
 }
@@ -6044,8 +6044,13 @@ a:focus-visible {
 .scan-candidates-section .scan-table-wrap {
   background: var(--color-gray-0);
   border: 1px solid var(--color-excel-grid-border);
+  border-top: none;
   border-radius: 0;
   box-shadow: none;
+}
+
+.scan-candidates-section .xls-scroll-frame {
+  background: var(--color-gray-0);
 }
 
 .scan-page,

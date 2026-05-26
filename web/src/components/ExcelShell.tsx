@@ -642,8 +642,9 @@ export default function ExcelShell({
     <div
       className="excel-app"
       style={{
-        ['--excel-ui-zoom' as any]: `${zoomFactor}`,
+        ['--excel-ui-zoom' as any]: 1,
         ['--excel-sheet-zoom' as any]: 1,
+        ['--excel-global-zoom' as any]: `${zoomFactor}`,
       }}
     >
 

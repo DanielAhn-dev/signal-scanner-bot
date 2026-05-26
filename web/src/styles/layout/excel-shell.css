@@ -13,6 +13,7 @@
 /* ── 전체 앱 컨테이너 ── */
 .excel-app {
   --excel-ui-zoom: 1;
+  --excel-global-zoom: 1;
   --font-size-xs: calc(0.6875rem * var(--excel-ui-zoom));
   --font-size-sm: calc(0.75rem * var(--excel-ui-zoom));
   --font-size-base: calc(0.8125rem * var(--excel-ui-zoom));
@@ -32,12 +33,15 @@
   --xls-grid-cell-padding-x: calc(6px * var(--excel-ui-zoom));
   display: flex;
   flex-direction: column;
-  height: 100vh;
+  width: calc(100% / var(--excel-global-zoom));
+  height: calc(100vh / var(--excel-global-zoom));
   overflow: hidden;
   background: var(--color-excel-ribbon);
   font-family: var(--font-family-sans);
   font-size: var(--font-size-base);
   color: var(--color-text-primary);
+  transform-origin: top left;
+  transform: scale(var(--excel-global-zoom));
 }
 
 /* ================================================================
