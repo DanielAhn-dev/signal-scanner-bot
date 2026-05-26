@@ -6053,6 +6053,63 @@ a:focus-visible {
   background: var(--color-gray-0);
 }
 
+.scan-strategy-sparkline-wrap {
+  margin-top: 2px;
+}
+
+.scan-strategy-sparkline {
+  width: 116px;
+  height: 26px;
+  border: 1px solid var(--color-excel-grid-border);
+  background: rgba(255, 255, 255, 0.9);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.scan-strategy-sparkline svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.scan-strategy-sparkline__baseline {
+  stroke: rgba(100, 116, 139, 0.35);
+  stroke-width: 0.8;
+}
+
+.scan-strategy-sparkline__bar {
+  fill: rgba(16, 185, 129, 0.22);
+}
+
+.scan-strategy-sparkline__line {
+  fill: none;
+  stroke: var(--color-stock-up);
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.scan-strategy-sparkline--down .scan-strategy-sparkline__bar {
+  fill: rgba(239, 68, 68, 0.22);
+}
+
+.scan-strategy-sparkline--down .scan-strategy-sparkline__line {
+  stroke: var(--color-stock-down);
+}
+
+.scan-strategy-sparkline--empty {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  color: var(--color-text-tertiary);
+}
+
+.scan-strategy-drilldown {
+  border: 1px solid var(--color-excel-grid-border);
+  background: var(--color-gray-0);
+}
+
 .scan-page,
 .dashboard-sheet,
 .sector-sheet {

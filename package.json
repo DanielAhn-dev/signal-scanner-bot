@@ -43,6 +43,8 @@
     "analyze:pre-rally": "tsx scripts/discover_pre_rally_patterns.ts",
     "backfill:stable-factors": "tsx scripts/backfill_stable_factors.ts",
     "backfill:stable-factors:deep": "tsx scripts/backfill_stable_factors.ts --dateSource=stock_daily",
+    "backfill:scan-signal-history": "tsx scripts/backfill_scan_signal_history.ts",
+    "backfill:scan-signal-history:dry": "tsx scripts/backfill_scan_signal_history.ts --dryRun=true",
     "backfill:stock-daily": "python scripts/backfill_stock_daily_universe.py",
     "backfill:stock-daily:core": "python scripts/backfill_stock_daily_universe.py --universe=core-extended",
     "backfill:investor-daily": "python scripts/backfill_investor_daily.py",

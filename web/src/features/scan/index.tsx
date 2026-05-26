@@ -55,7 +55,47 @@ type StrategyMetricSummary = {
   bestReturnPct: number
   worstReturnPct: number
   sumReturnPct: number
+  recentReturns20?: number[]
 }
+
+type StrategyDrilldownItem = {
+  tradeDate: string
+  code: string
+  name: string
+  strategyKey: StrategyMetricSummary['key']
+  strategyLabel: string
+  returnPct: number
+}
+
+type StrategyCoverageEntry = {
+  key: StrategyMetricSummary['key']
+  label: string
+  signalCount: number
+  returnCount: number
+  coveragePct: number
+  minRequired: number
+  hasEnoughSamples: boolean
+}
+
+type StrategyCoverageSummary = {
+  lookbackDays: number
+  generatedAt: string
+  history: {
+    signalCount: number
+    signalDateCount: number
+    signalCodeCount: number
+  }
+  price: {
+    priceRowCount: number
+    priceDateCount: number
+    priceCodeCount: number
+  }
+  strategies: Record<StrategyMetricSummary['key'], StrategyCoverageEntry>
+  alerts: string[]
+  needsBackfill: boolean
+}
+
+type StrategyRiskTier = 'good' | 'caution' | 'warning'
 
 type StrategyGuide = {
   title: string
@@ -74,6 +114,18 @@ const STRATEGY_FILTER_BY_METRIC_KEY: Record<StrategyMetricSummary['key'], Condit
   day: 'strategy_day',
   overnight: 'strategy_overnight',
   weekly: 'strategy_weekly',
+}
+
+const STRATEGY_METRIC_KEY_BY_FILTER: Partial<Record<ConditionFilter, StrategyMetricSummary['key']>> = {
+  strategy_day: 'day',
+  strategy_overnight: 'overnight',
+  strategy_weekly: 'weekly',
+}
+
+const STRATEGY_BASE_POSITION_R: Record<StrategyMetricSummary['key'], number> = {
+  day: 0.5,
+  overnight: 0.7,
+  weekly: 1.0,
 }
 
 const STRATEGY_GUIDE_BY_FILTER: Partial<Record<ConditionFilter, StrategyGuide>> = {
@@ -454,6 +506,71 @@ function SignalBadge({ signal }: { signal: string | null | undefined }) {
   return <span className={`scan-grade-badge ${cls}`} title="종합시그널">{label}</span>
 }
 
+function getStrategyRiskTier(statusLabel: string | undefined): StrategyRiskTier {
+  const label = String(statusLabel || '')
+  if (label.includes('경고')) return 'warning'
+  if (label.includes('주의')) return 'caution'
+  return 'good'
+}
+
+function getTierAdjustedPosition(baseR: number, tier: StrategyRiskTier): number {
+  if (tier === 'warning') return Math.max(0.2, Math.round(baseR * 0.5 * 10) / 10)
+  if (tier === 'caution') return Math.max(0.3, Math.round(baseR * 0.7 * 10) / 10)
+  return Math.round(baseR * 10) / 10
+}
+
+function StrategySparkline({ values }: { values: number[] }) {
+  const safeValues = Array.isArray(values)
+    ? values.filter((value) => Number.isFinite(Number(value))).map((value) => Number(value))
+    : []
+  if (safeValues.length < 2) {
+    return <div className="scan-strategy-sparkline scan-strategy-sparkline--empty">신호 부족</div>
+  }
+
+  const width = 116
+  const height = 26
+  const min = Math.min(...safeValues)
+  const max = Math.max(...safeValues)
+  const span = Math.max(0.001, max - min)
+  const stepX = safeValues.length > 1 ? width / (safeValues.length - 1) : width
+
+  const points = safeValues
+    .map((value, idx) => {
+      const x = Math.round(idx * stepX * 100) / 100
+      const y = Math.round((height - ((value - min) / span) * height) * 100) / 100
+      return `${x},${y}`
+    })
+    .join(' ')
+
+  const last = safeValues[safeValues.length - 1] ?? 0
+  const trendClass = last >= 0 ? 'scan-strategy-sparkline--up' : 'scan-strategy-sparkline--down'
+
+  return (
+    <div className={`scan-strategy-sparkline ${trendClass}`}>
+      <svg viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="none" aria-hidden="true">
+        <line x1="0" y1={height / 2} x2={width} y2={height / 2} className="scan-strategy-sparkline__baseline" />
+        {safeValues.map((value, idx) => {
+          const x = safeValues.length > 1 ? idx * stepX : width / 2
+          const normalized = (value - min) / span
+          const barHeight = Math.max(2, normalized * height)
+          const y = height - barHeight
+          return (
+            <rect
+              key={`spark-bar-${idx}`}
+              x={Math.max(0, x - 1)}
+              y={y}
+              width="2"
+              height={barHeight}
+              className="scan-strategy-sparkline__bar"
+            />
+          )
+        })}
+        <polyline points={points} className="scan-strategy-sparkline__line" />
+      </svg>
+    </div>
+  )
+}
+
 export default function ScanPage({ onNavigate }: { onNavigate?: (r: string) => void }) {
   const snapshot = readScanSnapshot()
   const [signalHistory, setSignalHistory] = useState<SignalHistoryMap>(() => readSignalHistory())
@@ -475,6 +592,11 @@ export default function ScanPage({ onNavigate }: { onNavigate?: (r: string) => v
   })
   const [strategyMetricsLoading, setStrategyMetricsLoading] = useState(true)
   const [strategyLookbackDays, setStrategyLookbackDays] = useState<StrategyLookbackDays>(120)
+  const [strategyCoverage, setStrategyCoverage] = useState<StrategyCoverageSummary | null>(null)
+  const [strategyCoverageLoading, setStrategyCoverageLoading] = useState(false)
+  const [strategyDrilldown, setStrategyDrilldown] = useState<StrategyDrilldownItem[]>([])
+  const [strategyDrilldownLoading, setStrategyDrilldownLoading] = useState(false)
+  const [strategyDrilldownError, setStrategyDrilldownError] = useState<string | null>(null)
   const [apiHighlights, setApiHighlights] = useState<ScanHighlightItem[]>([])
   const [highlightLoading, setHighlightLoading] = useState(true)
   const [selectedSector, setSelectedSector] = useState<string>('all')
@@ -496,6 +618,10 @@ export default function ScanPage({ onNavigate }: { onNavigate?: (r: string) => v
   const lastSignatureRef = useRef<string | null>(null)
   const hasFetchedRef = useRef(false)
   const filterChipScrollRef = useRef<HTMLDivElement | null>(null)
+  const activeStrategyMetricKey = useMemo(
+    () => STRATEGY_METRIC_KEY_BY_FILTER[conditionFilter] ?? null,
+    [conditionFilter],
+  )
 
   useEffect(() => {
     toastRef.current = toast
@@ -713,6 +839,21 @@ export default function ScanPage({ onNavigate }: { onNavigate?: (r: string) => v
   }, [strategyLookbackDays])
 
   useEffect(() => {
+    setStrategyCoverageLoading(true)
+    apiFetch(`/api/ui/scan-strategy-coverage?lookbackDays=${strategyLookbackDays}`, { cacheMs: 120_000, timeoutMs: 35_000 })
+      .then((res) => {
+        const hasStrategies = res?.strategies && typeof res.strategies === 'object'
+        if (!hasStrategies) {
+          setStrategyCoverage(null)
+          return
+        }
+        setStrategyCoverage(res as StrategyCoverageSummary)
+      })
+      .catch(() => setStrategyCoverage(null))
+      .finally(() => setStrategyCoverageLoading(false))
+  }, [strategyLookbackDays])
+
+  useEffect(() => {
     apiFetch('/api/ui/scan-strategy-metrics?lookbackDays=30', { cacheMs: 120_000, timeoutMs: 35_000 })
       .then((res) => {
         const metrics = (Array.isArray(res?.summary?.metrics) ? res.summary.metrics : []) as StrategyMetricSummary[]
@@ -728,6 +869,32 @@ export default function ScanPage({ onNavigate }: { onNavigate?: (r: string) => v
         setRecent30MetricsMap({ day: null, overnight: null, weekly: null })
       })
   }, [])
+
+  useEffect(() => {
+    if (!activeStrategyMetricKey) {
+      setStrategyDrilldown([])
+      setStrategyDrilldownError(null)
+      setStrategyDrilldownLoading(false)
+      return
+    }
+
+    setStrategyDrilldownLoading(true)
+    setStrategyDrilldownError(null)
+    apiFetch(
+      `/api/ui/scan-strategy-drilldown?strategy=${activeStrategyMetricKey}&lookbackDays=${strategyLookbackDays}&limit=30`,
+      { cacheMs: 60_000, timeoutMs: 35_000 },
+    )
+      .then((res) => {
+        const items = Array.isArray(res?.items) ? (res.items as StrategyDrilldownItem[]) : []
+        setStrategyDrilldown(items)
+      })
+      .catch((e: any) => {
+        setStrategyDrilldown([])
+        setStrategyDrilldownError(String(e?.message || '근거 데이터를 불러오지 못했습니다.'))
+      })
+      .finally(() => setStrategyDrilldownLoading(false))
+  }, [activeStrategyMetricKey, strategyLookbackDays])
+
   useEffect(() => {
     loadWatchlistCodes().catch(() => {
       // 관심종목 조회 실패 시에도 스캔 화면은 계속 사용 가능해야 함
@@ -1028,6 +1195,36 @@ export default function ScanPage({ onNavigate }: { onNavigate?: (r: string) => v
     }
   }, [recent30MetricsMap])
 
+  const activeStrategyMetric = useMemo(() => {
+    if (!activeStrategyMetricKey) return null
+    return strategyMetricDisplay.find((metric) => metric.key === activeStrategyMetricKey) ?? null
+  }, [activeStrategyMetricKey, strategyMetricDisplay])
+
+  const activeStrategyStatus = useMemo(
+    () => (activeStrategyMetric ? getStrategyMetricStatus(activeStrategyMetric) : null),
+    [activeStrategyMetric, getStrategyMetricStatus],
+  )
+
+  const activeStrategyPositionText = useMemo(() => {
+    if (!activeStrategyMetric || !activeStrategyStatus) return null
+    const baseR = STRATEGY_BASE_POSITION_R[activeStrategyMetric.key]
+    const tier = getStrategyRiskTier(activeStrategyStatus.label)
+    const recommendedR = getTierAdjustedPosition(baseR, tier)
+    const tierLabel = tier === 'warning' ? '경고 감산 적용' : tier === 'caution' ? '주의 감산 적용' : '양호 유지'
+    return `현재 권장 ${formatNumber(recommendedR, 1)}R (${tierLabel})`
+  }, [activeStrategyMetric, activeStrategyStatus])
+
+  const activeStrategyCoverage = useMemo(() => {
+    if (!activeStrategyMetricKey) return null
+    return strategyCoverage?.strategies?.[activeStrategyMetricKey] ?? null
+  }, [activeStrategyMetricKey, strategyCoverage])
+
+  const activeStrategyBackfillGuard = useMemo(() => {
+    if (!activeStrategyCoverage) return null
+    if (activeStrategyCoverage.hasEnoughSamples) return null
+    return `백필 필요: 수익 표본 ${activeStrategyCoverage.returnCount}/${activeStrategyCoverage.minRequired}, 커버리지 ${formatNumber(activeStrategyCoverage.coveragePct, 1)}%`
+  }, [activeStrategyCoverage])
+
   const onAddToWatchlist = async (code: string) => {
     try {
       const result = await addToWatchlist(code)
@@ -1155,7 +1352,6 @@ export default function ScanPage({ onNavigate }: { onNavigate?: (r: string) => v
                 ref={filterChipScrollRef}
                 role="tablist"
                 aria-label="스캔 필터"
-                tabIndex={0}
                 onWheel={handleFilterChipWheel}
                 onKeyDown={handleFilterChipKeyDown}
               >
@@ -1178,8 +1374,11 @@ export default function ScanPage({ onNavigate }: { onNavigate?: (r: string) => v
                     key={option.key}
                     data-filter-chip="1"
                     className={`tag${conditionFilter === option.key ? ' active' : ''}`}
+                    id={`scan-filter-tab-${option.key}`}
                     role="tab"
                     aria-selected={conditionFilter === option.key}
+                    aria-controls="scan-candidates-section-capture"
+                    tabIndex={conditionFilter === option.key ? 0 : -1}
                     onClick={() => handleConditionFilter(option.key)}
                   >
                     {option.label} ({filterCounts[option.key]})
@@ -1237,6 +1436,11 @@ export default function ScanPage({ onNavigate }: { onNavigate?: (r: string) => v
                       </button>
                     ))}
                   </div>
+                  {!!strategyCoverage?.alerts?.length && (
+                    <div style={{ marginTop: 4, fontSize: 10, color: 'var(--color-warning)' }}>
+                      {strategyCoverage.alerts[0]}
+                    </div>
+                  )}
                 </td>
                 {(strategyMetricsLoading
                   ? [
@@ -1249,10 +1453,18 @@ export default function ScanPage({ onNavigate }: { onNavigate?: (r: string) => v
                   (() => {
                     const typedMetric = metric as StrategyMetricSummary
                     const status = getStrategyMetricStatus(typedMetric)
+                    const coverage = strategyCoverage?.strategies?.[typedMetric.key]
                     return (
                   <td
                     key={metric.key}
                     className="xls-cell"
+                    role={strategyMetricsLoading ? undefined : 'button'}
+                    tabIndex={strategyMetricsLoading ? -1 : 0}
+                    aria-label={strategyMetricsLoading ? undefined : `${metric.label} 전략 필터 적용`}
+                    aria-pressed={
+                      !strategyMetricsLoading &&
+                      conditionFilter === STRATEGY_FILTER_BY_METRIC_KEY[metric.key as StrategyMetricSummary['key']]
+                    }
                     style={{
                       padding: '6px 8px',
                       cursor: strategyMetricsLoading ? 'default' : 'pointer',
@@ -1261,6 +1473,13 @@ export default function ScanPage({ onNavigate }: { onNavigate?: (r: string) => v
                         : undefined,
                     }}
                     onClick={() => { if (!strategyMetricsLoading) onStrategyMetricCardClick(metric.key as StrategyMetricSummary['key']) }}
+                    onKeyDown={(event) => {
+                      if (strategyMetricsLoading) return
+                      if (event.key === 'Enter' || event.key === ' ') {
+                        event.preventDefault()
+                        onStrategyMetricCardClick(metric.key as StrategyMetricSummary['key'])
+                      }
+                    }}
                     title={strategyMetricsLoading ? '' : '클릭하면 해당 전략 필터로 이동'}
                   >
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 4, marginBottom: 4 }}>
@@ -1300,6 +1519,16 @@ export default function ScanPage({ onNavigate }: { onNavigate?: (r: string) => v
                           최고 {Number(metric.bestReturnPct ?? 0) > 0 ? '+' : ''}{formatNumber(metric.bestReturnPct ?? 0, 2)}% ·
                           최저 {Number(metric.worstReturnPct ?? 0) > 0 ? '+' : ''}{formatNumber(metric.worstReturnPct ?? 0, 2)}%
                         </div>
+                        <div style={{ color: coverage && !coverage.hasEnoughSamples ? 'var(--color-warning)' : 'var(--color-text-tertiary)' }}>
+                          {strategyCoverageLoading
+                            ? '커버리지 집계 중…'
+                            : coverage
+                              ? `커버리지 ${formatNumber(coverage.coveragePct, 1)}% · 표본 ${formatNumber(coverage.returnCount, 0)}/${formatNumber(coverage.minRequired, 0)}`
+                              : '커버리지 정보 없음'}
+                        </div>
+                        <div className="scan-strategy-sparkline-wrap" aria-label="최근 20신호 수익률 추이">
+                          <StrategySparkline values={Array.isArray(typedMetric.recentReturns20) ? typedMetric.recentReturns20 : []} />
+                        </div>
                       </div>
                     )}
                   </td>
@@ -1325,7 +1554,17 @@ export default function ScanPage({ onNavigate }: { onNavigate?: (r: string) => v
                   {activeStrategyGuide.title}
                 </td>
                 <td className="xls-cell" style={{ fontSize: 11, color: 'var(--color-text-secondary)' }}>
-                  실전 실행 기준(권장): 최근 30일 경보(주의/경고)가 뜨면 포지션을 한 단계 축소하세요.
+                  실전 감산 규칙: 양호 1.0R · 주의 0.7R · 경고 0.5R
+                  {activeStrategyStatus && (
+                    <span style={{ marginLeft: 8, color: activeStrategyStatus.textColor, fontWeight: 700 }}>
+                      현재 상태 {activeStrategyStatus.label}
+                    </span>
+                  )}
+                  {activeStrategyBackfillGuard && (
+                    <span style={{ marginLeft: 8, color: 'var(--color-warning)', fontWeight: 700 }}>
+                      {activeStrategyBackfillGuard}
+                    </span>
+                  )}
                 </td>
               </tr>
               <tr className="xls-row">
@@ -1334,7 +1573,14 @@ export default function ScanPage({ onNavigate }: { onNavigate?: (r: string) => v
               </tr>
               <tr className="xls-row xls-row--even">
                 <td className="xls-cell" style={{ fontSize: 11, fontWeight: 600 }}>포지션</td>
-                <td className="xls-cell" style={{ fontSize: 11 }}>{activeStrategyGuide.positionSize}</td>
+                <td className="xls-cell" style={{ fontSize: 11 }}>
+                  {activeStrategyGuide.positionSize}
+                  {activeStrategyPositionText && (
+                    <span style={{ marginLeft: 8, color: 'var(--color-brand)', fontWeight: 600 }}>
+                      {activeStrategyPositionText}
+                    </span>
+                  )}
+                </td>
               </tr>
               <tr className="xls-row">
                 <td className="xls-cell" style={{ fontSize: 11, fontWeight: 600 }}>보유</td>
@@ -1356,6 +1602,60 @@ export default function ScanPage({ onNavigate }: { onNavigate?: (r: string) => v
                 <td className="xls-cell" style={{ fontSize: 11, fontWeight: 600 }}>주의</td>
                 <td className="xls-cell" style={{ fontSize: 11 }}>{activeStrategyGuide.caution}</td>
               </tr>
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {!error && activeStrategyMetricKey && (
+        <div className="xls-scroll-frame scan-strategy-drilldown" style={{ ['--xls-table-min-width' as any]: '680px', marginTop: 6 }}>
+          <table className="xls-table" style={{ width: '100%', tableLayout: 'fixed' }}>
+            <colgroup>
+              <col style={{ width: '18%' }} />
+              <col style={{ width: '20%' }} />
+              <col style={{ width: '20%' }} />
+              <col style={{ width: '22%' }} />
+              <col style={{ width: '20%' }} />
+            </colgroup>
+            <tbody>
+              <tr className="xls-row xls-row--even">
+                <td className="xls-cell" colSpan={5} style={{ fontSize: 11, fontWeight: 700, color: 'var(--color-text-secondary)' }}>
+                  전략 근거 리스트 · {activeStrategyMetric?.label ?? '선택 전략'} · 최근 {strategyLookbackDays}일
+                </td>
+              </tr>
+              <tr className="xls-row">
+                <td className="xls-cell" style={{ fontSize: 11, fontWeight: 600 }}>날짜</td>
+                <td className="xls-cell" style={{ fontSize: 11, fontWeight: 600 }}>종목코드</td>
+                <td className="xls-cell" style={{ fontSize: 11, fontWeight: 600 }}>종목명</td>
+                <td className="xls-cell" style={{ fontSize: 11, fontWeight: 600 }}>전략</td>
+                <td className="xls-cell" style={{ fontSize: 11, fontWeight: 600 }}>수익률</td>
+              </tr>
+              {strategyDrilldownLoading && (
+                <tr className="xls-row xls-row--even">
+                  <td className="xls-cell" colSpan={5} style={{ fontSize: 11, color: 'var(--color-text-tertiary)' }}>근거 데이터를 불러오는 중…</td>
+                </tr>
+              )}
+              {!strategyDrilldownLoading && strategyDrilldownError && (
+                <tr className="xls-row xls-row--even">
+                  <td className="xls-cell" colSpan={5} style={{ fontSize: 11, color: 'var(--color-stock-down)' }}>{strategyDrilldownError}</td>
+                </tr>
+              )}
+              {!strategyDrilldownLoading && !strategyDrilldownError && strategyDrilldown.length === 0 && (
+                <tr className="xls-row xls-row--even">
+                  <td className="xls-cell" colSpan={5} style={{ fontSize: 11, color: 'var(--color-text-tertiary)' }}>표시할 근거 데이터가 없습니다.</td>
+                </tr>
+              )}
+              {!strategyDrilldownLoading && !strategyDrilldownError && strategyDrilldown.map((row, idx) => (
+                <tr key={`${row.strategyKey}-${row.code}-${row.tradeDate}-${idx}`} className={`xls-row${idx % 2 === 1 ? ' xls-row--even' : ''}`}>
+                  <td className="xls-cell" style={{ fontSize: 11 }}>{row.tradeDate}</td>
+                  <td className="xls-cell" style={{ fontSize: 11, fontFamily: 'var(--font-family-mono)' }}>{row.code}</td>
+                  <td className="xls-cell" style={{ fontSize: 11 }}>{row.name}</td>
+                  <td className="xls-cell" style={{ fontSize: 11 }}>{row.strategyLabel}</td>
+                  <td className="xls-cell" style={{ fontSize: 11, fontWeight: 600, color: row.returnPct >= 0 ? 'var(--color-stock-up)' : 'var(--color-stock-down)' }}>
+                    {row.returnPct > 0 ? '+' : ''}{formatNumber(row.returnPct, 2)}%
+                  </td>
+                </tr>
+              ))}
             </tbody>
           </table>
         </div>

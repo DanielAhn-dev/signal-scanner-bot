@@ -4,6 +4,8 @@ import { createClient, type SupabaseClient } from '@supabase/supabase-js'
 const ORIGIN = process.env.UI_CORS_ORIGIN || '*'
 const CACHE_TTL_MS = 120_000
 
+type StrategyKey = 'day' | 'overnight' | 'weekly'
+
 type SignalRow = {
   code: string
   trade_date: string
@@ -18,23 +20,21 @@ type PriceRow = {
   close: number | null
 }
 
-type StrategyMetric = {
-  key: 'day' | 'overnight' | 'weekly'
-  label: string
-  trades: number
-  winRatePct: number
-  avgReturnPct: number
-  bestReturnPct: number
-  worstReturnPct: number
-  sumReturnPct: number
-  recentReturns20: number[]
-}
-
 type PriceIndex = {
   dates: string[]
   opens: number[]
   closes: number[]
   indexByDate: Map<string, number>
+}
+
+type StrategyCoverage = {
+  key: StrategyKey
+  label: string
+  signalCount: number
+  returnCount: number
+  coveragePct: number
+  minRequired: number
+  hasEnoughSamples: boolean
 }
 
 type CacheEntry = {
@@ -107,36 +107,22 @@ function buildPriceIndex(rows: PriceRow[]): Map<string, PriceIndex> {
   return out
 }
 
-function summarizeReturns(key: StrategyMetric['key'], label: string, returns: number[]): StrategyMetric {
-  const recentReturns20 = returns.slice(-20).map((value) => round2(value))
-  const trades = returns.length
-  if (trades === 0) {
-    return {
-      key,
-      label,
-      trades: 0,
-      winRatePct: 0,
-      avgReturnPct: 0,
-      bestReturnPct: 0,
-      worstReturnPct: 0,
-      sumReturnPct: 0,
-      recentReturns20,
-    }
-  }
-
-  const wins = returns.filter((value) => value > 0).length
-  const sum = returns.reduce((acc, value) => acc + value, 0)
-
+function summarizeCoverage(
+  key: StrategyKey,
+  label: string,
+  signalCount: number,
+  returnCount: number,
+): StrategyCoverage {
+  const minRequired = key === 'day' ? 12 : 8
+  const coveragePct = signalCount > 0 ? round2((returnCount / signalCount) * 100) : 0
   return {
     key,
     label,
-    trades,
-    winRatePct: round2((wins / trades) * 100),
-    avgReturnPct: round2(sum / trades),
-    bestReturnPct: round2(Math.max(...returns)),
-    worstReturnPct: round2(Math.min(...returns)),
-    sumReturnPct: round2(sum),
-    recentReturns20,
+    signalCount,
+    returnCount,
+    coveragePct,
+    minRequired,
+    hasEnoughSamples: returnCount >= minRequired,
   }
 }
 
@@ -186,47 +172,38 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       .select('code,trade_date,is_quick_strict,is_quick_lite')
       .gte('trade_date', fromDate)
       .order('trade_date', { ascending: true })
-      .limit(40_000)
+      .limit(50_000)
 
     if (signalError) return res.status(500).json({ error: signalError.message })
 
     const signalRows = ((signals ?? []) as SignalRow[]).filter((row) => !!row.code && !!row.trade_date)
-    if (signalRows.length === 0) {
-      const payload = {
-        lookbackDays,
-        summary: {
-          totalSignals: 0,
-          metrics: [
-            summarizeReturns('day', '데이(당일 시가→종가)', []),
-            summarizeReturns('overnight', '오버나이트(당일 종가→익일 시가)', []),
-            summarizeReturns('weekly', '주간(당일 종가→5거래일 종가)', []),
-          ],
-        },
-      }
-      cache.set(cacheKey, { expiresAt: Date.now() + CACHE_TTL_MS, payload })
-      return res.status(200).json(payload)
-    }
+    const signalCodes = Array.from(new Set(signalRows.map((row) => normalizeCode(row.code)).filter(Boolean)))
+    const signalDates = new Set(signalRows.map((row) => normalizeDate(row.trade_date)).filter(Boolean))
 
-    const codes = Array.from(new Set(signalRows.map((row) => normalizeCode(row.code)).filter(Boolean)))
-    const codeChunks = chunk(codes, 200)
     const priceRows: PriceRow[] = []
-
-    for (const codeChunk of codeChunks) {
-      const { data: prices, error: priceError } = await supabase
-        .from('stock_daily')
-        .select('ticker,date,open,close')
-        .in('ticker', codeChunk)
-        .gte('date', fromDate)
-        .order('date', { ascending: true })
-      if (priceError) return res.status(500).json({ error: priceError.message })
-      priceRows.push(...((prices ?? []) as PriceRow[]))
+    if (signalCodes.length > 0) {
+      const codeChunks = chunk(signalCodes, 200)
+      for (const codeChunk of codeChunks) {
+        const { data: prices, error: priceError } = await supabase
+          .from('stock_daily')
+          .select('ticker,date,open,close')
+          .in('ticker', codeChunk)
+          .gte('date', fromDate)
+          .order('date', { ascending: true })
+        if (priceError) return res.status(500).json({ error: priceError.message })
+        priceRows.push(...((prices ?? []) as PriceRow[]))
+      }
     }
 
     const priceIndex = buildPriceIndex(priceRows)
+    const priceDates = new Set(priceRows.map((row) => normalizeDate(row.date)).filter(Boolean))
 
-    const dayReturns: number[] = []
-    const overnightReturns: number[] = []
-    const weeklyReturns: number[] = []
+    let daySignals = 0
+    let dayReturns = 0
+    let overnightSignals = 0
+    let overnightReturns = 0
+    let weeklySignals = 0
+    let weeklyReturns = 0
 
     for (const row of signalRows) {
       const code = normalizeCode(row.code)
@@ -237,42 +214,64 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       if (anchor == null) continue
 
       if (row.is_quick_strict) {
+        daySignals += 1
         const entry = idx.opens[anchor]
         const exit = idx.closes[anchor]
-        if (entry > 0 && exit > 0) {
-          dayReturns.push(((exit - entry) / entry) * 100)
-        }
+        if (entry > 0 && exit > 0) dayReturns += 1
       }
 
       if (row.is_quick_lite) {
+        overnightSignals += 1
         if (anchor + 1 < idx.closes.length && anchor + 1 < idx.opens.length) {
           const entryClose = idx.closes[anchor]
           const nextOpen = idx.opens[anchor + 1]
-          if (entryClose > 0 && nextOpen > 0) {
-            overnightReturns.push(((nextOpen - entryClose) / entryClose) * 100)
-          }
+          if (entryClose > 0 && nextOpen > 0) overnightReturns += 1
         }
 
+        weeklySignals += 1
         if (anchor + 5 < idx.closes.length) {
           const entryClose = idx.closes[anchor]
           const weekClose = idx.closes[anchor + 5]
-          if (entryClose > 0 && weekClose > 0) {
-            weeklyReturns.push(((weekClose - entryClose) / entryClose) * 100)
-          }
+          if (entryClose > 0 && weekClose > 0) weeklyReturns += 1
         }
+      }
+    }
+
+    const strategies = {
+      day: summarizeCoverage('day', '데이(당일 시가→종가)', daySignals, dayReturns),
+      overnight: summarizeCoverage('overnight', '오버나이트(당일 종가→익일 시가)', overnightSignals, overnightReturns),
+      weekly: summarizeCoverage('weekly', '주간(당일 종가→5거래일 종가)', weeklySignals, weeklyReturns),
+    }
+
+    const alerts: string[] = []
+    if (signalRows.length === 0) {
+      alerts.push('scan_signal_history 이력이 비어 있습니다. 백필이 필요합니다.')
+    }
+    if (signalRows.length > 0 && priceRows.length === 0) {
+      alerts.push('stock_daily 가격 데이터가 부족하여 전략 수익률 계산이 불가능합니다.')
+    }
+    for (const metric of Object.values(strategies)) {
+      if (!metric.hasEnoughSamples) {
+        alerts.push(`${metric.label} 표본 부족: ${metric.returnCount}/${metric.minRequired} (커버리지 ${metric.coveragePct}%)`)
       }
     }
 
     const payload = {
       lookbackDays,
-      summary: {
-        totalSignals: signalRows.length,
-        metrics: [
-          summarizeReturns('day', '데이(당일 시가→종가)', dayReturns),
-          summarizeReturns('overnight', '오버나이트(당일 종가→익일 시가)', overnightReturns),
-          summarizeReturns('weekly', '주간(당일 종가→5거래일 종가)', weeklyReturns),
-        ],
+      generatedAt: new Date().toISOString(),
+      history: {
+        signalCount: signalRows.length,
+        signalDateCount: signalDates.size,
+        signalCodeCount: signalCodes.length,
       },
+      price: {
+        priceRowCount: priceRows.length,
+        priceDateCount: priceDates.size,
+        priceCodeCount: priceIndex.size,
+      },
+      strategies,
+      alerts,
+      needsBackfill: alerts.length > 0,
     }
 
     cache.set(cacheKey, { expiresAt: Date.now() + CACHE_TTL_MS, payload })

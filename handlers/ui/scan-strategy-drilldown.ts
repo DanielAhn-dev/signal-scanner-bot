@@ -2,7 +2,9 @@ import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
 
 const ORIGIN = process.env.UI_CORS_ORIGIN || '*'
-const CACHE_TTL_MS = 120_000
+const CACHE_TTL_MS = 90_000
+
+type StrategyKey = 'day' | 'overnight' | 'weekly'
 
 type SignalRow = {
   code: string
@@ -18,16 +20,13 @@ type PriceRow = {
   close: number | null
 }
 
-type StrategyMetric = {
-  key: 'day' | 'overnight' | 'weekly'
-  label: string
-  trades: number
-  winRatePct: number
-  avgReturnPct: number
-  bestReturnPct: number
-  worstReturnPct: number
-  sumReturnPct: number
-  recentReturns20: number[]
+type DrilldownItem = {
+  tradeDate: string
+  code: string
+  name: string
+  strategyKey: StrategyKey
+  strategyLabel: string
+  returnPct: number
 }
 
 type PriceIndex = {
@@ -107,37 +106,16 @@ function buildPriceIndex(rows: PriceRow[]): Map<string, PriceIndex> {
   return out
 }
 
-function summarizeReturns(key: StrategyMetric['key'], label: string, returns: number[]): StrategyMetric {
-  const recentReturns20 = returns.slice(-20).map((value) => round2(value))
-  const trades = returns.length
-  if (trades === 0) {
-    return {
-      key,
-      label,
-      trades: 0,
-      winRatePct: 0,
-      avgReturnPct: 0,
-      bestReturnPct: 0,
-      worstReturnPct: 0,
-      sumReturnPct: 0,
-      recentReturns20,
-    }
-  }
+function parseStrategyKey(raw: unknown): StrategyKey | 'all' {
+  const text = String(raw || '').trim().toLowerCase()
+  if (text === 'day' || text === 'overnight' || text === 'weekly') return text
+  return 'all'
+}
 
-  const wins = returns.filter((value) => value > 0).length
-  const sum = returns.reduce((acc, value) => acc + value, 0)
-
-  return {
-    key,
-    label,
-    trades,
-    winRatePct: round2((wins / trades) * 100),
-    avgReturnPct: round2(sum / trades),
-    bestReturnPct: round2(Math.max(...returns)),
-    worstReturnPct: round2(Math.min(...returns)),
-    sumReturnPct: round2(sum),
-    recentReturns20,
-  }
+function strategyLabel(key: StrategyKey): string {
+  if (key === 'day') return '데이'
+  if (key === 'overnight') return '오버나이트'
+  return '주간'
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
@@ -165,7 +143,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   const lookbackDays = Math.min(365, Math.max(20, Math.floor(Number(req.query.lookbackDays || 120))))
-  const cacheKey = JSON.stringify({ lookbackDays })
+  const limit = Math.min(120, Math.max(10, Math.floor(Number(req.query.limit || 40))))
+  const strategy = parseStrategyKey(req.query.strategy)
+
+  const cacheKey = JSON.stringify({ lookbackDays, limit, strategy })
   const cached = cache.get(cacheKey)
   if (cached && Date.now() <= cached.expiresAt) {
     return res.status(200).json(cached.payload)
@@ -186,7 +167,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       .select('code,trade_date,is_quick_strict,is_quick_lite')
       .gte('trade_date', fromDate)
       .order('trade_date', { ascending: true })
-      .limit(40_000)
+      .limit(45_000)
 
     if (signalError) return res.status(500).json({ error: signalError.message })
 
@@ -194,14 +175,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (signalRows.length === 0) {
       const payload = {
         lookbackDays,
-        summary: {
-          totalSignals: 0,
-          metrics: [
-            summarizeReturns('day', '데이(당일 시가→종가)', []),
-            summarizeReturns('overnight', '오버나이트(당일 종가→익일 시가)', []),
-            summarizeReturns('weekly', '주간(당일 종가→5거래일 종가)', []),
-          ],
-        },
+        strategy,
+        count: 0,
+        items: [] as DrilldownItem[],
       }
       cache.set(cacheKey, { expiresAt: Date.now() + CACHE_TTL_MS, payload })
       return res.status(200).json(payload)
@@ -223,10 +199,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     const priceIndex = buildPriceIndex(priceRows)
+    const items: DrilldownItem[] = []
 
-    const dayReturns: number[] = []
-    const overnightReturns: number[] = []
-    const weeklyReturns: number[] = []
+    const includeDay = strategy === 'all' || strategy === 'day'
+    const includeOvernight = strategy === 'all' || strategy === 'overnight'
+    const includeWeekly = strategy === 'all' || strategy === 'weekly'
 
     for (const row of signalRows) {
       const code = normalizeCode(row.code)
@@ -236,43 +213,85 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const anchor = idx.indexByDate.get(tradeDate)
       if (anchor == null) continue
 
-      if (row.is_quick_strict) {
+      if (includeDay && row.is_quick_strict) {
         const entry = idx.opens[anchor]
         const exit = idx.closes[anchor]
         if (entry > 0 && exit > 0) {
-          dayReturns.push(((exit - entry) / entry) * 100)
+          items.push({
+            tradeDate,
+            code,
+            name: code,
+            strategyKey: 'day',
+            strategyLabel: strategyLabel('day'),
+            returnPct: round2(((exit - entry) / entry) * 100),
+          })
         }
       }
 
-      if (row.is_quick_lite) {
-        if (anchor + 1 < idx.closes.length && anchor + 1 < idx.opens.length) {
-          const entryClose = idx.closes[anchor]
-          const nextOpen = idx.opens[anchor + 1]
-          if (entryClose > 0 && nextOpen > 0) {
-            overnightReturns.push(((nextOpen - entryClose) / entryClose) * 100)
-          }
+      if (row.is_quick_lite && includeOvernight && anchor + 1 < idx.opens.length && anchor < idx.closes.length) {
+        const entryClose = idx.closes[anchor]
+        const nextOpen = idx.opens[anchor + 1]
+        if (entryClose > 0 && nextOpen > 0) {
+          items.push({
+            tradeDate,
+            code,
+            name: code,
+            strategyKey: 'overnight',
+            strategyLabel: strategyLabel('overnight'),
+            returnPct: round2(((nextOpen - entryClose) / entryClose) * 100),
+          })
         }
+      }
 
-        if (anchor + 5 < idx.closes.length) {
-          const entryClose = idx.closes[anchor]
-          const weekClose = idx.closes[anchor + 5]
-          if (entryClose > 0 && weekClose > 0) {
-            weeklyReturns.push(((weekClose - entryClose) / entryClose) * 100)
-          }
+      if (row.is_quick_lite && includeWeekly && anchor + 5 < idx.closes.length) {
+        const entryClose = idx.closes[anchor]
+        const weekClose = idx.closes[anchor + 5]
+        if (entryClose > 0 && weekClose > 0) {
+          items.push({
+            tradeDate,
+            code,
+            name: code,
+            strategyKey: 'weekly',
+            strategyLabel: strategyLabel('weekly'),
+            returnPct: round2(((weekClose - entryClose) / entryClose) * 100),
+          })
         }
       }
     }
 
+    items.sort((a, b) => {
+      const dateCompare = b.tradeDate.localeCompare(a.tradeDate)
+      if (dateCompare !== 0) return dateCompare
+      return Math.abs(b.returnPct) - Math.abs(a.returnPct)
+    })
+
+    const limitedItems = items.slice(0, limit)
+    const nameCodes = Array.from(new Set(limitedItems.map((item) => item.code)))
+    const names = new Map<string, string>()
+
+    if (nameCodes.length > 0) {
+      for (const codeChunk of chunk(nameCodes, 200)) {
+        const { data: stocks } = await supabase
+          .from('stocks')
+          .select('code,name')
+          .in('code', codeChunk)
+        for (const row of stocks ?? []) {
+          const code = normalizeCode((row as any)?.code)
+          const name = String((row as any)?.name || code)
+          if (code) names.set(code, name)
+        }
+      }
+    }
+
+    for (const item of limitedItems) {
+      item.name = names.get(item.code) || item.name
+    }
+
     const payload = {
       lookbackDays,
-      summary: {
-        totalSignals: signalRows.length,
-        metrics: [
-          summarizeReturns('day', '데이(당일 시가→종가)', dayReturns),
-          summarizeReturns('overnight', '오버나이트(당일 종가→익일 시가)', overnightReturns),
-          summarizeReturns('weekly', '주간(당일 종가→5거래일 종가)', weeklyReturns),
-        ],
-      },
+      strategy,
+      count: limitedItems.length,
+      items: limitedItems,
     }
 
     cache.set(cacheKey, { expiresAt: Date.now() + CACHE_TTL_MS, payload })

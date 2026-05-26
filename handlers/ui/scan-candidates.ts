@@ -120,6 +120,44 @@ function computeSignalAgeDays(signalDate: string | null | undefined, asOfDate: s
   return Math.floor(diff / 86_400_000)
 }
 
+function shiftDateText(baseDateText: string, days: number): string {
+  const base = Date.parse(`${baseDateText}T00:00:00+09:00`)
+  if (Number.isNaN(base)) {
+    const fallback = new Date(Date.now() - days * 86_400_000)
+    return fallback.toISOString().slice(0, 10)
+  }
+  const shifted = new Date(base - days * 86_400_000)
+  return shifted.toISOString().slice(0, 10)
+}
+
+async function fetchStockDailyLiquidityByCode(
+  supabase: SupabaseClient,
+  codes: string[],
+  asOfDate: string,
+): Promise<Map<string, number>> {
+  const map = new Map<string, number>()
+  if (codes.length === 0) return map
+
+  const fromDate = shiftDateText(asOfDate, 15)
+  const { data } = await supabase
+    .from('stock_daily')
+    .select('ticker,date,value')
+    .in('ticker', codes)
+    .gte('date', fromDate)
+    .lte('date', asOfDate)
+    .order('date', { ascending: false })
+
+  for (const row of data ?? []) {
+    const code = String((row as any)?.ticker || '').trim()
+    if (!code || map.has(code)) continue
+    const value = Number((row as any)?.value)
+    if (!Number.isFinite(value) || value <= 0) continue
+    map.set(code, value)
+  }
+
+  return map
+}
+
 let _supabase: SupabaseClient | null = null
 function getSupabase(): SupabaseClient {
   if (_supabase) return _supabase
@@ -265,6 +303,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     const codes = (data ?? []).map((row: any) => String(row?.code || '')).filter(Boolean)
+    const stockDailyLiquidityByCode = await fetchStockDailyLiquidityByCode(supabase, codes, String(latestDate))
     const realtimeMap = intraday && codes.length > 0
       ? await fetchRealtimePriceBatch(codes).catch(() => ({} as Record<string, any>))
       : ({} as Record<string, any>)
@@ -290,7 +329,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         ? clamp(intradayChangePct * 2.4, -15, 15)
         : 0
 
-      const liquidity = stock.liquidity ?? indicatorLiquidityByCode.get(String(row.code)) ?? null
+      const rawStockLiquidity = Number(stock.liquidity)
+      const stockLiquidity = Number.isFinite(rawStockLiquidity) && rawStockLiquidity > 0 ? rawStockLiquidity : null
+      const liquidity = stockLiquidity ?? indicatorLiquidityByCode.get(String(row.code)) ?? stockDailyLiquidityByCode.get(String(row.code)) ?? null
       const quickScore = computeQuickTradeScore({
         entry_score: row.entry_score,
         warn_score: row.warn_score,
