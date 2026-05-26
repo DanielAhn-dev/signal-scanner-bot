@@ -650,7 +650,8 @@ export default function ScanPage({ onNavigate }: { onNavigate?: (r: string) => v
 
       {/* 참고용 추천 섹션 */}
       {!loading && !error && !highlightLoading && activeHighlights.length > 0 && conditionFilter === 'all' && selectedSector === 'all' && (
-        <table className="xls-table" style={{ width: '100%', tableLayout: 'fixed' }} id="scan-highlight-section-capture">
+        <div className="scan-highlights-section">
+        <table className="xls-table scan-highlight-table" style={{ width: '100%', tableLayout: 'fixed' }} id="scan-highlight-section-capture">
           <colgroup>
             {Array.from({ length: 26 }, (_, i) => <col key={i} />)}
           </colgroup>
@@ -695,7 +696,7 @@ export default function ScanPage({ onNavigate }: { onNavigate?: (r: string) => v
                       return (
                         <td
                           key={c.code}
-                          className="xls-cell"
+                          className={`xls-cell scan-highlight-card-cell${isTop1 ? ' scan-highlight-card-cell--top' : ''}`}
                           colSpan={colSpan}
                           rowSpan={CARD_ROWS}
                           onClick={() => navigateToAnalyze(c.code)}
@@ -704,11 +705,6 @@ export default function ScanPage({ onNavigate }: { onNavigate?: (r: string) => v
                             verticalAlign: 'top',
                             cursor: 'pointer',
                             padding: '12px 14px',
-                            background: isTop1
-                              ? 'linear-gradient(160deg, #eaf5ef 0%, #d8eee3 100%)'
-                              : 'var(--color-brand-subtle)',
-                            borderLeft: `3px solid ${isTop1 ? 'var(--color-brand)' : 'var(--color-brand-muted)'}`,
-                            borderBottom: '2px solid var(--color-excel-grid-border)',
                           }}
                         >
                           {/* ① 랭크 + 경고 뱃지 */}
@@ -802,6 +798,7 @@ export default function ScanPage({ onNavigate }: { onNavigate?: (r: string) => v
             })}
           </tbody>
         </table>
+        </div>
       )}
 
       {/* 전체 목록 */}
@@ -810,7 +807,7 @@ export default function ScanPage({ onNavigate }: { onNavigate?: (r: string) => v
       ) : !error && sortedCandidates.length === 0 ? (
         <EmptyState title="스캔 결과 없음" description="스캔을 실행하거나 필터를 조정해 보세요." />
       ) : (
-        <div id="scan-candidates-section-capture">
+        <div id="scan-candidates-section-capture" className="scan-candidates-section">
           {(conditionFilter !== 'all' || selectedSector !== 'all') && (
             <div className="scan-section-label scan-section-label--plain">
               {conditionFilter !== 'all'

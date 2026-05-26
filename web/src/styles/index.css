@@ -5978,6 +5978,54 @@ a:focus-visible {
   margin-bottom: var(--space-2);
 }
 
+.scan-highlights-section {
+  background: var(--color-gray-0);
+  border: 1px solid var(--color-excel-grid-border);
+  box-shadow: 0 1px 2px rgba(12, 32, 64, 0.05);
+  margin-bottom: var(--space-2);
+}
+
+.scan-highlight-table {
+  background: var(--color-gray-0);
+}
+
+.scan-highlight-table .xls-row--even .xls-cell,
+.scan-highlight-table .xls-cell {
+  background: var(--color-gray-0);
+}
+
+.scan-highlight-card-cell {
+  background: linear-gradient(160deg, #eef8f2 0%, #deefe5 100%) !important;
+  border-left: 3px solid var(--color-brand-muted) !important;
+  border-top: 1px solid #cfe3d5 !important;
+  border-right: 1px solid #cfe3d5 !important;
+  border-bottom: 2px solid #c7dccd !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.65), 0 1px 2px rgba(18, 42, 30, 0.06);
+}
+
+.scan-highlight-card-cell--top {
+  background: linear-gradient(160deg, #e4f5eb 0%, #cce7d8 100%) !important;
+  border-left-color: var(--color-brand) !important;
+}
+
+.scan-highlight-card-cell:hover,
+.scan-highlight-card-cell--top:hover {
+  background: inherit !important;
+}
+
+.scan-candidates-section {
+  background: var(--color-gray-0);
+  border: 1px solid var(--color-excel-grid-border);
+  box-shadow: 0 1px 2px rgba(12, 32, 64, 0.05);
+}
+
+.scan-candidates-section .scan-section-label--plain {
+  margin: 0;
+  padding: 8px 10px 6px;
+  border-bottom: 1px solid var(--color-excel-grid-border);
+  background: var(--color-gray-0);
+}
+
 .scan-candidates-stage {
   background: transparent;
   display: flex;
@@ -5985,6 +6033,19 @@ a:focus-visible {
   gap: var(--space-3);
   width: 100%;
   min-width: 0;
+}
+
+.scan-candidates-section .scan-candidates-stage {
+  background: var(--color-gray-0);
+  gap: var(--space-2);
+  padding: 0 8px 8px;
+}
+
+.scan-candidates-section .scan-table-wrap {
+  background: var(--color-gray-0);
+  border: 1px solid var(--color-excel-grid-border);
+  border-radius: 0;
+  box-shadow: none;
 }
 
 .scan-page,
