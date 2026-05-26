@@ -12,6 +12,13 @@ type ScanCacheEntry = {
   payload: any
 }
 
+type SignalHistoryRow = {
+  code: string
+  trade_date: string
+  is_quick_strict: boolean
+  is_quick_lite: boolean
+}
+
 const scanCache = new Map<string, ScanCacheEntry>()
 
 function isKrxIntradaySession(base = new Date()): boolean {
@@ -24,6 +31,93 @@ function isKrxIntradaySession(base = new Date()): boolean {
 
 function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value))
+}
+
+function normalizeScanScoreToPct(raw: number | null | undefined): number {
+  const safe = Number(raw ?? 0)
+  if (!Number.isFinite(safe)) return 0
+  if (safe > 5) return clamp(safe, 0, 100)
+  return clamp(safe * 20, 0, 100)
+}
+
+function computeQuickTradeScore(item: {
+  entry_score?: number | null
+  warn_score?: number | null
+  liquidity?: number | null
+  intraday_change_pct?: number | null
+}): number {
+  const entryPct = normalizeScanScoreToPct(item.entry_score)
+  const warnPct = normalizeScanScoreToPct(item.warn_score)
+  const safetyPct = 100 - warnPct
+  const liquidity = Number(item.liquidity ?? 0)
+  const liquidityScore =
+    liquidity >= 80_000_000_000 ? 100 :
+    liquidity >= 30_000_000_000 ? 85 :
+    liquidity >= 10_000_000_000 ? 70 :
+    liquidity >= 3_000_000_000 ? 55 :
+    liquidity >= 1_000_000_000 ? 40 : 20
+  const intraday = Number(item.intraday_change_pct ?? 0)
+  const intradayFit = clamp(100 - Math.abs(intraday - 1.8) * 18, 0, 100)
+  return clamp(
+    entryPct * 0.46 +
+    safetyPct * 0.16 +
+    liquidityScore * 0.24 +
+    intradayFit * 0.14,
+    0,
+    100,
+  )
+}
+
+function isQuickTradeStrict(item: {
+  warn_grade?: string | null
+  entry_grade?: string | null
+  trend_grade?: string | null
+  liquidity?: number | null
+  intraday_change_pct?: number | null
+  entry_score?: number | null
+  warn_score?: number | null
+}): boolean {
+  const warn = String(item.warn_grade || '').toUpperCase().trim()
+  if (warn === 'SELL') return false
+  const entry = String(item.entry_grade || '').toUpperCase().trim()
+  const trend = String(item.trend_grade || '').toUpperCase().trim()
+  const hasQuality = entry === 'A' || entry === 'B' || trend === 'A' || trend === 'B'
+  if (!hasQuality) return false
+  const intraday = Number(item.intraday_change_pct ?? 0)
+  if (Number.isFinite(intraday) && (intraday < -3.5 || intraday > 8.5)) return false
+  if (Number(item.liquidity ?? 0) < 1_000_000_000) return false
+  return computeQuickTradeScore(item) >= 58
+}
+
+function isQuickTradeLite(item: {
+  warn_grade?: string | null
+  entry_grade?: string | null
+  trend_grade?: string | null
+  liquidity?: number | null
+  intraday_change_pct?: number | null
+  entry_score?: number | null
+  warn_score?: number | null
+}): boolean {
+  const warn = String(item.warn_grade || '').toUpperCase().trim()
+  if (warn === 'SELL') return false
+  const entry = String(item.entry_grade || '').toUpperCase().trim()
+  const trend = String(item.trend_grade || '').toUpperCase().trim()
+  const hasQuality = entry === 'A' || entry === 'B' || trend === 'A' || trend === 'B'
+  if (!hasQuality) return false
+  const intraday = Number(item.intraday_change_pct ?? 0)
+  if (Number.isFinite(intraday) && (intraday < -5.5 || intraday > 10.5)) return false
+  if (Number(item.liquidity ?? 0) < 500_000_000) return false
+  return computeQuickTradeScore(item) >= 52
+}
+
+function computeSignalAgeDays(signalDate: string | null | undefined, asOfDate: string): number | null {
+  if (!signalDate) return null
+  const signalMs = Date.parse(`${signalDate}T00:00:00+09:00`)
+  const asOfMs = Date.parse(`${asOfDate}T00:00:00+09:00`)
+  if (Number.isNaN(signalMs) || Number.isNaN(asOfMs)) return null
+  const diff = asOfMs - signalMs
+  if (diff < 0) return null
+  return Math.floor(diff / 86_400_000)
 }
 
 let _supabase: SupabaseClient | null = null
@@ -196,6 +290,34 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         ? clamp(intradayChangePct * 2.4, -15, 15)
         : 0
 
+      const liquidity = stock.liquidity ?? indicatorLiquidityByCode.get(String(row.code)) ?? null
+      const quickScore = computeQuickTradeScore({
+        entry_score: row.entry_score,
+        warn_score: row.warn_score,
+        liquidity,
+        intraday_change_pct: hasRealtime ? round2(intradayChangePct) : 0,
+      })
+
+      const quickStrict = isQuickTradeStrict({
+        warn_grade: row.warn_grade,
+        entry_grade: row.entry_grade,
+        trend_grade: row.trend_grade,
+        liquidity,
+        intraday_change_pct: hasRealtime ? round2(intradayChangePct) : 0,
+        entry_score: row.entry_score,
+        warn_score: row.warn_score,
+      })
+
+      const quickLite = isQuickTradeLite({
+        warn_grade: row.warn_grade,
+        entry_grade: row.entry_grade,
+        trend_grade: row.trend_grade,
+        liquidity,
+        intraday_change_pct: hasRealtime ? round2(intradayChangePct) : 0,
+        entry_score: row.entry_score,
+        warn_score: row.warn_score,
+      })
+
       return {
         code: row.code,
         trade_date: row.trade_date,
@@ -210,12 +332,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         warn_score: row.warn_score,
         name: stock.name || row.code,
         sector_id: stock.sector_id || null,
-        liquidity: stock.liquidity ?? indicatorLiquidityByCode.get(String(row.code)) ?? null,
+        liquidity,
         close: stock.close ?? null,
         current_price: currentPrice,
         price_source: hasRealtime ? 'realtime' : 'close',
         intraday_change_pct: hasRealtime ? round2(intradayChangePct) : 0,
         stock_updated_at: stock.updated_at ?? null,
+        quick_trade_score: round1(quickScore),
+        quick_trade_strict: quickStrict,
+        quick_trade_lite: quickLite,
         adaptive_adjustment: adaptive.adjustment,
         adaptive_reasons: adaptive.reasons,
         adaptive_score: round1(baseScore + adaptive.adjustment + intradayDelta),
@@ -223,6 +348,57 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         lead_accumulation_stage: leadSignal.stage,
       }
     })
+
+    // 스캔 신호 이력을 DB에 저장(중복은 upsert로 무시)하고, D-n 계산용 최신일을 병합한다.
+    try {
+      const historyUpserts = rows.map((row: any) => ({
+        code: String(row.code),
+        trade_date: String(latestDate),
+        is_quick_strict: !!row.quick_trade_strict,
+        is_quick_lite: !!row.quick_trade_lite,
+        quick_score: Number(row.quick_trade_score ?? 0),
+      }))
+
+      if (historyUpserts.length > 0) {
+        await supabase
+          .from('scan_signal_history')
+          .upsert(historyUpserts, { onConflict: 'code,trade_date' })
+      }
+
+      const historyCodes = rows.map((row: any) => String(row.code)).filter(Boolean)
+      if (historyCodes.length > 0) {
+        const { data: historyRows } = await supabase
+          .from('scan_signal_history')
+          .select('code,trade_date,is_quick_strict,is_quick_lite')
+          .in('code', historyCodes)
+          .lte('trade_date', String(latestDate))
+          .order('trade_date', { ascending: false })
+
+        const strictDateByCode = new Map<string, string>()
+        const liteDateByCode = new Map<string, string>()
+
+        for (const item of (historyRows ?? []) as SignalHistoryRow[]) {
+          const code = String(item.code || '')
+          if (!code) continue
+          const tradeDate = String(item.trade_date || '')
+          if (!tradeDate) continue
+          if (item.is_quick_strict && !strictDateByCode.has(code)) strictDateByCode.set(code, tradeDate)
+          if (item.is_quick_lite && !liteDateByCode.has(code)) liteDateByCode.set(code, tradeDate)
+        }
+
+        for (const row of rows as any[]) {
+          const code = String(row.code || '')
+          const strictDate = strictDateByCode.get(code) || null
+          const liteDate = liteDateByCode.get(code) || null
+          row.quick_last_signal_date = strictDate
+          row.quick_lite_last_signal_date = liteDate
+          row.quick_signal_age_days = computeSignalAgeDays(strictDate, String(latestDate))
+          row.quick_lite_signal_age_days = computeSignalAgeDays(liteDate, String(latestDate))
+        }
+      }
+    } catch {
+      // 테이블 미구성/권한 이슈가 있어도 기존 스캔 응답은 유지
+    }
 
     rows.sort((a: any, b: any) => {
       const leadDiff = Number(b.lead_accumulation_score ?? 0) - Number(a.lead_accumulation_score ?? 0)

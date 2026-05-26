@@ -15,8 +15,166 @@ import { scoreLeadAccumulationCandidate } from '../../lib/accumulationSignal'
 
 const SCAN_SNAPSHOT_KEY = 'scan_snapshot_v1'
 const ANALYZE_PENDING_CODE_KEY = 'analyze_pending_code'
+const SCAN_SIGNAL_HISTORY_KEY = 'scan_signal_history_v1'
 
 type MarketPhase = 'intraday' | 'after-close'
+type ConditionFilter =
+  | 'all'
+  | 'entry'
+  | 'trend'
+  | 'accumulation'
+  | 'lead'
+  | 'stable'
+  | 'quick'
+  | 'quick_lite'
+  | 'signal_d1'
+  | 'signal_d2'
+  | 'strategy_day'
+  | 'strategy_overnight'
+  | 'strategy_weekly'
+
+type SignalHistoryEntry = {
+  seenDates: string[]
+  strictQuickDates: string[]
+  quickLiteDates: string[]
+}
+
+type SignalHistoryMap = Record<string, SignalHistoryEntry>
+
+type SignalAgeMeta = {
+  strictAgeDays: number | null
+  quickLiteAgeDays: number | null
+}
+
+type StrategyMetricSummary = {
+  key: 'day' | 'overnight' | 'weekly'
+  label: string
+  trades: number
+  winRatePct: number
+  avgReturnPct: number
+  bestReturnPct: number
+  worstReturnPct: number
+  sumReturnPct: number
+}
+
+type StrategyGuide = {
+  title: string
+  entry: string
+  positionSize: string
+  holding: string
+  stopLoss: string
+  takeProfit: string
+  forceExit: string
+  caution: string
+}
+
+type StrategyLookbackDays = 30 | 60 | 120 | 240
+
+const STRATEGY_FILTER_BY_METRIC_KEY: Record<StrategyMetricSummary['key'], ConditionFilter> = {
+  day: 'strategy_day',
+  overnight: 'strategy_overnight',
+  weekly: 'strategy_weekly',
+}
+
+const STRATEGY_GUIDE_BY_FILTER: Partial<Record<ConditionFilter, StrategyGuide>> = {
+  strategy_day: {
+    title: '데이 전략 실행 가이드',
+    entry: '09:10~10:30 분할 진입(추격 금지)',
+    positionSize: '권장 0.5R (총자금 8~12% 이내)',
+    holding: '당일 청산 원칙(오버나이트 금지)',
+    stopLoss: '-1.8% 이탈 시 즉시 축소, -2.5% 전량 정리',
+    takeProfit: '+2.2% 1차 분할, +3.5% 이상 잔량 추세 청산',
+    forceExit: '14:50 이후 모멘텀 둔화 시 종가 전 정리',
+    caution: '거래대금 급감/VI 급증 구간은 진입 보류',
+  },
+  strategy_overnight: {
+    title: '오버나이트 전략 실행 가이드',
+    entry: '14:20~15:15 분할 매수(D-1/D-2 신호 우선)',
+    positionSize: '권장 0.7R (총자금 12~18% 이내)',
+    holding: '1박2일 기준, 익일 시가 중심 청산',
+    stopLoss: '익일 시가 -2.0% 이탈 시 즉시 정리',
+    takeProfit: '익일 시가 +1.8%~+3.0% 구간 분할 청산',
+    forceExit: '익일 장초반 10:00 이전 미청산분 원칙 정리',
+    caution: '이벤트/실적 발표일 전일은 비중 절반 이하',
+  },
+  strategy_weekly: {
+    title: '주간 전략 실행 가이드',
+    entry: '신호일 포함 2거래일 내 2~3회 분할',
+    positionSize: '권장 1.0R (총자금 18~28% 이내)',
+    holding: '3~5거래일 보유, 추세 유지 시 연장 검토',
+    stopLoss: '-3.5% 하회 또는 기준선 이탈 시 정리',
+    takeProfit: '+4.0% 1차, +6.5% 2차, 잔량은 추세 추종',
+    forceExit: '5거래일 경과 시 수익/손실 무관 비중 축소',
+    caution: '장대음봉+거래량 급증 동반 시 방어 우선',
+  },
+}
+
+function getKstDateKey(date: Date = new Date()): string {
+  return date.toLocaleDateString('sv-SE', { timeZone: 'Asia/Seoul' })
+}
+
+function normalizeDateKey(raw: unknown): string | null {
+  if (!raw) return null
+  const text = String(raw).trim()
+  const match = text.match(/^(\d{4}-\d{2}-\d{2})/)
+  if (match) return match[1]
+  const parsed = new Date(text)
+  if (Number.isNaN(parsed.getTime())) return null
+  return getKstDateKey(parsed)
+}
+
+function toKstMidnightMs(dateKey: string): number | null {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(dateKey)) return null
+  const ms = Date.parse(`${dateKey}T00:00:00+09:00`)
+  if (Number.isNaN(ms)) return null
+  return ms
+}
+
+function uniqueSortedDateKeys(values: string[], limit: number): string[] {
+  return [...new Set(values)]
+    .filter((value) => /^\d{4}-\d{2}-\d{2}$/.test(value))
+    .sort((a, b) => (a < b ? 1 : a > b ? -1 : 0))
+    .slice(0, limit)
+}
+
+function computeSignalAgeDays(signalDate: string | null | undefined, asOfDate: string): number | null {
+  if (!signalDate) return null
+  const signalMs = toKstMidnightMs(signalDate)
+  const asOfMs = toKstMidnightMs(asOfDate)
+  if (signalMs == null || asOfMs == null) return null
+  const diff = asOfMs - signalMs
+  if (diff < 0) return null
+  return Math.floor(diff / 86_400_000)
+}
+
+function readSignalHistory(): SignalHistoryMap {
+  try {
+    const raw = sessionStorage.getItem(SCAN_SIGNAL_HISTORY_KEY)
+    if (!raw) return {}
+    const parsed = JSON.parse(raw)
+    if (!parsed || typeof parsed !== 'object') return {}
+    const next: SignalHistoryMap = {}
+    for (const [code, value] of Object.entries(parsed as Record<string, any>)) {
+      if (!value || typeof value !== 'object') continue
+      next[code] = {
+        seenDates: uniqueSortedDateKeys(Array.isArray(value.seenDates) ? value.seenDates.map(String) : [], 20),
+        strictQuickDates: uniqueSortedDateKeys(Array.isArray(value.strictQuickDates) ? value.strictQuickDates.map(String) : [], 20),
+        quickLiteDates: uniqueSortedDateKeys(Array.isArray(value.quickLiteDates) ? value.quickLiteDates.map(String) : [], 20),
+      }
+    }
+    return next
+  } catch {
+    return {}
+  }
+}
+
+function writeSignalHistory(payload: SignalHistoryMap) {
+  try {
+    sessionStorage.setItem(SCAN_SIGNAL_HISTORY_KEY, JSON.stringify(payload))
+  } catch {
+    // ignore
+  }
+}
 
 function readScanSnapshot() {
   try {
@@ -101,6 +259,13 @@ type ScanCandidate = {
   adaptive_adjustment?: number | null
   adaptive_reasons?: string[] | null
   adaptive_score?: number | null
+  quick_trade_score?: number | null
+  quick_trade_strict?: boolean
+  quick_trade_lite?: boolean
+  quick_last_signal_date?: string | null
+  quick_lite_last_signal_date?: string | null
+  quick_signal_age_days?: number | null
+  quick_lite_signal_age_days?: number | null
   lead_accumulation_score?: number
   lead_accumulation_stage?: 'none' | 'lead' | 'breakout'
 }
@@ -177,6 +342,57 @@ function isQuickTradeCandidate(item: ScanCandidate): boolean {
   return computeQuickTradeScore(item) >= 58
 }
 
+function isQuickTradeLiteCandidate(item: ScanCandidate): boolean {
+  const warn = String(item.warn_grade || '').toUpperCase().trim()
+  if (warn === 'SELL') return false
+  const entry = String(item.entry_grade || '').toUpperCase().trim()
+  const trend = String(item.trend_grade || '').toUpperCase().trim()
+  const hasQuality = entry === 'A' || entry === 'B' || trend === 'A' || trend === 'B'
+  if (!hasQuality) return false
+  const intraday = Number(item.intraday_change_pct ?? 0)
+  if (Number.isFinite(intraday) && (intraday < -5.5 || intraday > 10.5)) return false
+  if (Number(item.liquidity ?? 0) < 500_000_000) return false
+  return computeQuickTradeScore(item) >= 52
+}
+
+function isDayStrategyCandidate(item: ScanCandidate): boolean {
+  if (!isQuickTradeLiteCandidate(item)) return false
+  const warn = String(item.warn_grade || '').toUpperCase().trim()
+  if (warn === 'WARN' || warn === 'SELL') return false
+  const intraday = Number(item.intraday_change_pct ?? 0)
+  if (Number.isFinite(intraday) && (intraday < -1.5 || intraday > 4.5)) return false
+  if (Number(item.liquidity ?? 0) < 3_000_000_000) return false
+  return computeQuickTradeScore(item) >= 56
+}
+
+function isOvernightStrategyCandidate(item: ScanCandidate, ageMeta?: SignalAgeMeta): boolean {
+  const warn = String(item.warn_grade || '').toUpperCase().trim()
+  if (warn === 'WARN' || warn === 'SELL') return false
+  const entry = String(item.entry_grade || '').toUpperCase().trim()
+  const trend = String(item.trend_grade || '').toUpperCase().trim()
+  const hasQuality = entry === 'A' || entry === 'B' || trend === 'A' || trend === 'B'
+  if (!hasQuality) return false
+  const age = ageMeta?.quickLiteAgeDays
+  if (age !== 1 && age !== 2) return false
+  return Number(item.liquidity ?? 0) >= 1_000_000_000
+}
+
+function isWeeklyStrategyCandidate(item: ScanCandidate): boolean {
+  const warn = String(item.warn_grade || '').toUpperCase().trim()
+  if (warn === 'SELL') return false
+  const lead = scoreLeadAccumulationCandidate(item)
+  const pivot = String(item.pivot_grade || '').toUpperCase().trim()
+  const entry = String(item.entry_grade || '').toUpperCase().trim()
+  const trend = String(item.trend_grade || '').toUpperCase().trim()
+  const hasTrendBase = entry === 'A' || entry === 'B' || trend === 'A' || trend === 'B'
+  if (!hasTrendBase) return false
+  if (lead.stage === 'none' && lead.score < 60) return false
+  if (pivot && !['A', 'B', 'C'].includes(pivot)) return false
+  const intraday = Number(item.intraday_change_pct ?? 0)
+  if (Number.isFinite(intraday) && Math.abs(intraday) > 6.5) return false
+  return true
+}
+
 function toComparableValue(item: ScanCandidate, key: SortKey): string | number {
   if (key === 'priority_score') return computePriorityScore(item)
   if (key === 'lead_accumulation_score') return scoreLeadAccumulationCandidate(item).score
@@ -240,6 +456,7 @@ function SignalBadge({ signal }: { signal: string | null | undefined }) {
 
 export default function ScanPage({ onNavigate }: { onNavigate?: (r: string) => void }) {
   const snapshot = readScanSnapshot()
+  const [signalHistory, setSignalHistory] = useState<SignalHistoryMap>(() => readSignalHistory())
   const [candidates, setCandidates] = useState<ScanCandidate[]>(() => snapshot?.candidates ?? [])
   const [total, setTotal] = useState(() => snapshot?.total ?? 0)
   const [latestDate, setLatestDate] = useState<string | null>(() => snapshot?.latestDate ?? null)
@@ -250,10 +467,18 @@ export default function ScanPage({ onNavigate }: { onNavigate?: (r: string) => v
   const [loading, setLoading] = useState(() => !snapshot)
   const [error, setError] = useState<string | null>(null)
   const [scanLoading, setScanLoading] = useState(false)
+  const [strategyMetrics, setStrategyMetrics] = useState<StrategyMetricSummary[]>([])
+  const [recent30MetricsMap, setRecent30MetricsMap] = useState<Record<StrategyMetricSummary['key'], StrategyMetricSummary | null>>({
+    day: null,
+    overnight: null,
+    weekly: null,
+  })
+  const [strategyMetricsLoading, setStrategyMetricsLoading] = useState(true)
+  const [strategyLookbackDays, setStrategyLookbackDays] = useState<StrategyLookbackDays>(120)
   const [apiHighlights, setApiHighlights] = useState<ScanHighlightItem[]>([])
   const [highlightLoading, setHighlightLoading] = useState(true)
   const [selectedSector, setSelectedSector] = useState<string>('all')
-  const [conditionFilter, setConditionFilter] = useState<'all' | 'entry' | 'trend' | 'accumulation' | 'lead' | 'stable' | 'quick'>('all')
+  const [conditionFilter, setConditionFilter] = useState<ConditionFilter>('all')
   const [sortKey, setSortKey] = useState<SortKey>('priority_score')
   const [sortDirection, setSortDirection] = useState<SortDirection>('desc')
   const [page, setPage] = useState(1)
@@ -270,6 +495,7 @@ export default function ScanPage({ onNavigate }: { onNavigate?: (r: string) => v
   const toastRef = useRef(toast)
   const lastSignatureRef = useRef<string | null>(null)
   const hasFetchedRef = useRef(false)
+  const filterChipScrollRef = useRef<HTMLDivElement | null>(null)
 
   useEffect(() => {
     toastRef.current = toast
@@ -290,10 +516,43 @@ export default function ScanPage({ onNavigate }: { onNavigate?: (r: string) => v
     const nextFilter = String(params.get('filter') || '').trim()
 
     if (nextSector) setSelectedSector(nextSector)
-    if (['all', 'entry', 'trend', 'accumulation', 'lead', 'stable', 'quick'].includes(nextFilter)) {
-      setConditionFilter(nextFilter as typeof conditionFilter)
+    if (['all', 'entry', 'trend', 'accumulation', 'lead', 'stable', 'quick', 'quick_lite', 'signal_d1', 'signal_d2', 'strategy_day', 'strategy_overnight', 'strategy_weekly'].includes(nextFilter)) {
+      setConditionFilter(nextFilter as ConditionFilter)
     }
   }, [])
+
+  const asOfDateKey = useMemo(() => normalizeDateKey(latestDate) ?? getKstDateKey(), [latestDate])
+  const signalAgeByCode = useMemo(() => {
+    const map = new Map<string, SignalAgeMeta>()
+
+    for (const item of candidates) {
+      const code = String(item.code || '').trim()
+      if (!code) continue
+      const strictAge = Number(item.quick_signal_age_days)
+      const quickLiteAge = Number(item.quick_lite_signal_age_days)
+      const hasStrictAge = Number.isFinite(strictAge) && strictAge >= 0
+      const hasQuickLiteAge = Number.isFinite(quickLiteAge) && quickLiteAge >= 0
+      if (hasStrictAge || hasQuickLiteAge) {
+        map.set(code, {
+          strictAgeDays: hasStrictAge ? strictAge : null,
+          quickLiteAgeDays: hasQuickLiteAge ? quickLiteAge : null,
+        })
+      }
+    }
+
+    const entries = Object.entries(signalHistory)
+    if (entries.length === 0) return map
+    for (const [code, record] of entries) {
+      if (map.has(code)) continue
+      const strictDate = record.strictQuickDates[0] ?? null
+      const quickLiteDate = record.quickLiteDates[0] ?? null
+      map.set(code, {
+        strictAgeDays: computeSignalAgeDays(strictDate, asOfDateKey),
+        quickLiteAgeDays: computeSignalAgeDays(quickLiteDate, asOfDateKey),
+      })
+    }
+    return map
+  }, [asOfDateKey, candidates, signalHistory])
 
   useEffect(() => {
     if (typeof window === 'undefined') return
@@ -302,6 +561,65 @@ export default function ScanPage({ onNavigate }: { onNavigate?: (r: string) => v
     syncViewport()
     mediaQuery.addEventListener('change', syncViewport)
     return () => mediaQuery.removeEventListener('change', syncViewport)
+  }, [])
+
+  useEffect(() => {
+    const container = filterChipScrollRef.current
+    if (!container) return
+    const active = container.querySelector<HTMLButtonElement>('button.tag.active')
+    if (!active) return
+    active.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' })
+  }, [conditionFilter])
+
+  const handleFilterChipWheel = useCallback((event: React.WheelEvent<HTMLDivElement>) => {
+    const container = filterChipScrollRef.current
+    if (!container) return
+    const horizontalDelta = Math.abs(event.deltaX) > 0 ? event.deltaX : event.deltaY
+    if (!horizontalDelta) return
+    container.scrollLeft += horizontalDelta
+    event.preventDefault()
+  }, [])
+
+  const handleFilterChipKeyDown = useCallback((event: React.KeyboardEvent<HTMLDivElement>) => {
+    const container = filterChipScrollRef.current
+    if (!container) return
+    const chips = Array.from(container.querySelectorAll<HTMLButtonElement>('button.tag'))
+    if (chips.length === 0) return
+    const activeElement = document.activeElement as HTMLElement | null
+    const currentIdx = chips.findIndex((chip) => chip === activeElement)
+    const startIdx = currentIdx >= 0 ? currentIdx : chips.findIndex((chip) => chip.classList.contains('active'))
+
+    if (event.key === 'ArrowRight' || event.key === 'ArrowLeft') {
+      const delta = event.key === 'ArrowRight' ? 1 : -1
+      const base = startIdx >= 0 ? startIdx : 0
+      const nextIdx = (base + delta + chips.length) % chips.length
+      const target = chips[nextIdx]
+      target?.focus()
+      target?.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' })
+      event.preventDefault()
+      return
+    }
+
+    if (event.key === 'Enter' || event.key === ' ') {
+      const idx = startIdx >= 0 ? startIdx : 0
+      chips[idx]?.click()
+      event.preventDefault()
+      return
+    }
+
+    if (event.key === 'Home') {
+      chips[0]?.focus()
+      chips[0]?.scrollIntoView({ behavior: 'smooth', inline: 'start', block: 'nearest' })
+      event.preventDefault()
+      return
+    }
+
+    if (event.key === 'End') {
+      const last = chips[chips.length - 1]
+      last?.focus()
+      last?.scrollIntoView({ behavior: 'smooth', inline: 'end', block: 'nearest' })
+      event.preventDefault()
+    }
   }, [])
 
   const loadCandidates = useCallback(async (options?: { silent?: boolean }) => {
@@ -333,6 +651,28 @@ export default function ScanPage({ onNavigate }: { onNavigate?: (r: string) => v
       setLatestDate(res?.latestDate ?? null)
       setMarketPhase(res?.marketPhase === 'intraday' ? 'intraday' : 'after-close')
       setRealtimeAppliedCount(Number(res?.realtimeAppliedCount ?? 0))
+      setSignalHistory((prev) => {
+        const dateKey = normalizeDateKey(res?.latestDate) ?? getKstDateKey()
+        const next: SignalHistoryMap = { ...prev }
+        for (const item of nextCandidates) {
+          const code = String(item.code || '').trim()
+          if (!code) continue
+          const current = next[code] ?? { seenDates: [], strictQuickDates: [], quickLiteDates: [] }
+          next[code] = {
+            seenDates: uniqueSortedDateKeys([...current.seenDates, dateKey], 20),
+            strictQuickDates: uniqueSortedDateKeys(
+              isQuickTradeCandidate(item) ? [...current.strictQuickDates, dateKey] : current.strictQuickDates,
+              20,
+            ),
+            quickLiteDates: uniqueSortedDateKeys(
+              isQuickTradeLiteCandidate(item) ? [...current.quickLiteDates, dateKey] : current.quickLiteDates,
+              20,
+            ),
+          }
+        }
+        writeSignalHistory(next)
+        return next
+      })
       writeScanSnapshot({
         candidates: nextCandidates,
         total: res?.count ?? 0,
@@ -357,6 +697,36 @@ export default function ScanPage({ onNavigate }: { onNavigate?: (r: string) => v
       .then((res) => { if (Array.isArray(res?.data)) setApiHighlights(res.data) })
       .catch(() => { /* API 호출 실패 시 로컈 폴백 사용 */ })
       .finally(() => setHighlightLoading(false))
+  }, [])
+
+  useEffect(() => {
+    setStrategyMetricsLoading(true)
+    apiFetch(`/api/ui/scan-strategy-metrics?lookbackDays=${strategyLookbackDays}`, { cacheMs: 90_000, timeoutMs: 35_000 })
+      .then((res) => {
+        const metrics = Array.isArray(res?.summary?.metrics) ? res.summary.metrics : []
+        setStrategyMetrics(metrics as StrategyMetricSummary[])
+      })
+      .catch(() => {
+        setStrategyMetrics([])
+      })
+      .finally(() => setStrategyMetricsLoading(false))
+  }, [strategyLookbackDays])
+
+  useEffect(() => {
+    apiFetch('/api/ui/scan-strategy-metrics?lookbackDays=30', { cacheMs: 120_000, timeoutMs: 35_000 })
+      .then((res) => {
+        const metrics = (Array.isArray(res?.summary?.metrics) ? res.summary.metrics : []) as StrategyMetricSummary[]
+        const next: Record<StrategyMetricSummary['key'], StrategyMetricSummary | null> = { day: null, overnight: null, weekly: null }
+        for (const metric of metrics) {
+          if (metric?.key && Object.prototype.hasOwnProperty.call(next, metric.key)) {
+            next[metric.key] = metric
+          }
+        }
+        setRecent30MetricsMap(next)
+      })
+      .catch(() => {
+        setRecent30MetricsMap({ day: null, overnight: null, weekly: null })
+      })
   }, [])
   useEffect(() => {
     loadWatchlistCodes().catch(() => {
@@ -454,8 +824,14 @@ export default function ScanPage({ onNavigate }: { onNavigate?: (r: string) => v
       lead: base.filter((c) => scoreLeadAccumulationCandidate(c).stage !== 'none').length,
       stable: base.filter(c => ['A', 'B'].includes(String(c.pivot_grade || '').toUpperCase())).length,
       quick: base.filter((c) => isQuickTradeCandidate(c)).length,
+      quick_lite: base.filter((c) => isQuickTradeLiteCandidate(c)).length,
+      signal_d1: base.filter((c) => signalAgeByCode.get(c.code)?.quickLiteAgeDays === 1).length,
+      signal_d2: base.filter((c) => signalAgeByCode.get(c.code)?.quickLiteAgeDays === 2).length,
+      strategy_day: base.filter((c) => isDayStrategyCandidate(c)).length,
+      strategy_overnight: base.filter((c) => isOvernightStrategyCandidate(c, signalAgeByCode.get(c.code))).length,
+      strategy_weekly: base.filter((c) => isWeeklyStrategyCandidate(c)).length,
     }
-  }, [candidates, selectedSector])
+  }, [candidates, selectedSector, signalAgeByCode])
 
   const filteredCandidates = useMemo(() => candidates.filter((item) => {
     if (selectedSector !== 'all' && item.sector_id !== selectedSector) return false
@@ -465,8 +841,14 @@ export default function ScanPage({ onNavigate }: { onNavigate?: (r: string) => v
     if (conditionFilter === 'lead') return scoreLeadAccumulationCandidate(item).stage !== 'none'
     if (conditionFilter === 'stable') return ['A', 'B'].includes(String(item.pivot_grade || '').toUpperCase())
     if (conditionFilter === 'quick') return isQuickTradeCandidate(item)
+    if (conditionFilter === 'quick_lite') return isQuickTradeLiteCandidate(item)
+    if (conditionFilter === 'signal_d1') return signalAgeByCode.get(item.code)?.quickLiteAgeDays === 1
+    if (conditionFilter === 'signal_d2') return signalAgeByCode.get(item.code)?.quickLiteAgeDays === 2
+    if (conditionFilter === 'strategy_day') return isDayStrategyCandidate(item)
+    if (conditionFilter === 'strategy_overnight') return isOvernightStrategyCandidate(item, signalAgeByCode.get(item.code))
+    if (conditionFilter === 'strategy_weekly') return isWeeklyStrategyCandidate(item)
     return true
-  }), [candidates, selectedSector, conditionFilter])
+  }), [candidates, selectedSector, conditionFilter, signalAgeByCode])
 
   const tableCandidates = useMemo(() => {
     if (conditionFilter !== 'all' || selectedSector !== 'all') return filteredCandidates
@@ -492,10 +874,19 @@ export default function ScanPage({ onNavigate }: { onNavigate?: (r: string) => v
   const totalPages = Math.ceil(sortedCandidates.length / pageSize)
 
   const displayRows = useMemo(() => pagedCandidates.map((s) => ({
+    strategyLabel: isDayStrategyCandidate(s)
+      ? '데이'
+      : isOvernightStrategyCandidate(s, signalAgeByCode.get(s.code))
+        ? '오버나이트'
+        : isWeeklyStrategyCandidate(s)
+          ? '주간'
+          : '관찰',
     ...s,
     priorityScore: Number(computePriorityScore(s).toFixed(1)),
+    quickTradeScore: Number(computeQuickTradeScore(s).toFixed(1)),
     leadAccumulationScore: Number(scoreLeadAccumulationCandidate(s).score.toFixed(1)),
     leadAccumulationStage: scoreLeadAccumulationCandidate(s).stage,
+    quickLiteAgeDays: signalAgeByCode.get(s.code)?.quickLiteAgeDays ?? null,
     intradayChangePct: typeof s.intraday_change_pct === 'number' ? s.intraday_change_pct : null,
     tradeDateText: s.trade_date ?? '—',
     updatedAtText: s.stock_updated_at
@@ -516,14 +907,14 @@ export default function ScanPage({ onNavigate }: { onNavigate?: (r: string) => v
         day: '2-digit',
       })
       : '—',
-  })), [pagedCandidates])
+  })), [pagedCandidates, signalAgeByCode])
 
   useEffect(() => {
     setPage(1)
   }, [selectedSector])
 
   // 필터 탭별 기본 정렬 기준
-  const FILTER_DEFAULT_SORT: Record<typeof conditionFilter, SortKey> = {
+  const FILTER_DEFAULT_SORT: Record<ConditionFilter, SortKey> = {
     all: 'priority_score',
     entry: 'entry_score',
     trend: 'trend_grade',
@@ -531,9 +922,15 @@ export default function ScanPage({ onNavigate }: { onNavigate?: (r: string) => v
     lead: 'lead_accumulation_score',
     stable: 'pivot_grade',
     quick: 'intraday_change_pct',
+    quick_lite: 'intraday_change_pct',
+    signal_d1: 'priority_score',
+    signal_d2: 'priority_score',
+    strategy_day: 'intraday_change_pct',
+    strategy_overnight: 'priority_score',
+    strategy_weekly: 'lead_accumulation_score',
   }
 
-  const handleConditionFilter = (filter: typeof conditionFilter) => {
+  const handleConditionFilter = (filter: ConditionFilter) => {
     setConditionFilter(filter)
     setSortKey(FILTER_DEFAULT_SORT[filter])
     setSortDirection('desc')
@@ -548,6 +945,88 @@ export default function ScanPage({ onNavigate }: { onNavigate?: (r: string) => v
     setSortKey(key)
     setSortDirection(key === 'code' || key === 'name' || key === 'sector_id' ? 'asc' : 'desc')
   }
+
+  const strategyMetricDisplay = useMemo<StrategyMetricSummary[]>(() => {
+    if (strategyMetrics.length > 0) return strategyMetrics
+    return [
+      { key: 'day', label: '데이(당일 시가→종가)', trades: 0, winRatePct: 0, avgReturnPct: 0, bestReturnPct: 0, worstReturnPct: 0, sumReturnPct: 0 },
+      { key: 'overnight', label: '오버나이트(당일 종가→익일 시가)', trades: 0, winRatePct: 0, avgReturnPct: 0, bestReturnPct: 0, worstReturnPct: 0, sumReturnPct: 0 },
+      { key: 'weekly', label: '주간(당일 종가→5거래일 종가)', trades: 0, winRatePct: 0, avgReturnPct: 0, bestReturnPct: 0, worstReturnPct: 0, sumReturnPct: 0 },
+    ]
+  }, [strategyMetrics])
+
+  const onStrategyMetricCardClick = (key: StrategyMetricSummary['key']) => {
+    const filter = STRATEGY_FILTER_BY_METRIC_KEY[key]
+    if (!filter) return
+    const recommendedLookback: StrategyLookbackDays = key === 'day' ? 30 : key === 'overnight' ? 60 : 120
+    if (strategyLookbackDays !== recommendedLookback) {
+      setStrategyLookbackDays(recommendedLookback)
+    }
+    handleConditionFilter(filter)
+    if (key === 'day') {
+      setSortKey('intraday_change_pct')
+      setSortDirection('desc')
+    } else if (key === 'overnight') {
+      setSortKey('priority_score')
+      setSortDirection('desc')
+    } else {
+      setSortKey('lead_accumulation_score')
+      setSortDirection('desc')
+    }
+    setPage(1)
+  }
+
+  const activeStrategyGuide = useMemo(() => STRATEGY_GUIDE_BY_FILTER[conditionFilter] ?? null, [conditionFilter])
+
+  const getStrategyMetricStatus = useCallback((metric: StrategyMetricSummary) => {
+    const recent30 = recent30MetricsMap[metric.key]
+
+    if (metric.trades < 12 && !(recent30 && recent30.trades >= 8)) {
+      return {
+        label: '데이터부족',
+        textColor: 'var(--color-text-secondary)',
+        bgColor: 'var(--color-gray-100)',
+      }
+    }
+
+    // 최근 30일 악화를 우선 감지해 실전 대응 속도를 높인다.
+    if (recent30 && recent30.trades >= 8) {
+      if (recent30.sumReturnPct < 0 || recent30.avgReturnPct < 0) {
+        return {
+          label: '경고(최근악화)',
+          textColor: 'var(--color-stock-down)',
+          bgColor: 'var(--color-stock-down-bg)',
+        }
+      }
+      if (recent30.winRatePct < 48) {
+        return {
+          label: '주의(최근약화)',
+          textColor: 'var(--color-warning)',
+          bgColor: 'var(--color-warning-bg)',
+        }
+      }
+    }
+
+    if (metric.sumReturnPct < 0 || metric.avgReturnPct < 0) {
+      return {
+        label: '경고',
+        textColor: 'var(--color-stock-down)',
+        bgColor: 'var(--color-stock-down-bg)',
+      }
+    }
+    if (metric.winRatePct < 48) {
+      return {
+        label: '주의',
+        textColor: 'var(--color-warning)',
+        bgColor: 'var(--color-warning-bg)',
+      }
+    }
+    return {
+      label: '양호',
+      textColor: 'var(--color-stock-up)',
+      bgColor: 'var(--color-stock-up-bg)',
+    }
+  }, [recent30MetricsMap])
 
   const onAddToWatchlist = async (code: string) => {
     try {
@@ -614,6 +1093,12 @@ export default function ScanPage({ onNavigate }: { onNavigate?: (r: string) => v
           conditionFilter === 'accumulation' ? '매집(A/B)' :
           conditionFilter === 'lead' ? '매집 선행형' :
           conditionFilter === 'stable' ? '세력선(A/B)' :
+          conditionFilter === 'quick_lite' ? '퀵라이트(완화형)' :
+          conditionFilter === 'signal_d1' ? 'D-1 신호(전일)' :
+          conditionFilter === 'signal_d2' ? 'D-2 신호(2일전)' :
+          conditionFilter === 'strategy_day' ? '데이 전략(당일)' :
+          conditionFilter === 'strategy_overnight' ? '오버나이트(D-1/D-2)' :
+          conditionFilter === 'strategy_weekly' ? '주간 전략(3~5일)' :
           conditionFilter === 'quick' ? '퀵트레이드(2~5%)' : '전체',
         selectedSector,
         sectorLabel: selectedSector === 'all' ? '전체 섹터' : selectedSector,
@@ -665,7 +1150,15 @@ export default function ScanPage({ onNavigate }: { onNavigate?: (r: string) => v
           </tr>
           <tr className="xls-row xls-row--even">
             <td className="xls-cell" colSpan={4} style={{ padding: '3px 6px', overflow: 'visible' }}>
-              <div className="scan-cond-chips">
+              <div
+                className="scan-cond-chips"
+                ref={filterChipScrollRef}
+                role="tablist"
+                aria-label="스캔 필터"
+                tabIndex={0}
+                onWheel={handleFilterChipWheel}
+                onKeyDown={handleFilterChipKeyDown}
+              >
                 {([
                   { key: 'all', label: '전체' },
                   { key: 'entry', label: '진입(A/B)' },
@@ -674,10 +1167,19 @@ export default function ScanPage({ onNavigate }: { onNavigate?: (r: string) => v
                   { key: 'lead', label: '매집 선행형' },
                   { key: 'stable', label: '세력선(A/B)' },
                   { key: 'quick', label: '퀵트레이드(2~5%)' },
-                ] as const).map((option) => (
+                  { key: 'quick_lite', label: '퀵라이트(완화형)' },
+                  { key: 'signal_d1', label: 'D-1 신호' },
+                  { key: 'signal_d2', label: 'D-2 신호' },
+                  { key: 'strategy_day', label: '데이(당일)' },
+                  { key: 'strategy_overnight', label: '오버나이트' },
+                  { key: 'strategy_weekly', label: '주간(3~5일)' },
+                ] as Array<{ key: ConditionFilter; label: string }>).map((option) => (
                   <button
                     key={option.key}
+                    data-filter-chip="1"
                     className={`tag${conditionFilter === option.key ? ' active' : ''}`}
+                    role="tab"
+                    aria-selected={conditionFilter === option.key}
                     onClick={() => handleConditionFilter(option.key)}
                   >
                     {option.label} ({filterCounts[option.key]})
@@ -708,6 +1210,156 @@ export default function ScanPage({ onNavigate }: { onNavigate?: (r: string) => v
       </div>
 
       {error && <ErrorState message={error} onRetry={loadCandidates} />}
+
+      {!error && (
+        <div className="xls-scroll-frame" style={{ ['--xls-table-min-width' as any]: '760px', marginTop: 6 }}>
+          <table className="xls-table" style={{ width: '100%', tableLayout: 'fixed' }}>
+            <colgroup>
+              <col style={{ width: '20%' }} />
+              <col style={{ width: '26.666%' }} />
+              <col style={{ width: '26.666%' }} />
+              <col style={{ width: '26.666%' }} />
+            </colgroup>
+            <tbody>
+              <tr className="xls-row xls-row--even">
+                <td className="xls-cell" style={{ fontWeight: 700, color: 'var(--color-text-secondary)', fontSize: 11, overflow: 'visible' }}>
+                  <div style={{ marginBottom: 4 }}>전략 성과({strategyLookbackDays}일)</div>
+                  <div className="scan-cond-chips" style={{ gap: 2 }}>
+                    {([30, 60, 120, 240] as StrategyLookbackDays[]).map((days) => (
+                      <button
+                        key={days}
+                        type="button"
+                        className={`tag${strategyLookbackDays === days ? ' active' : ''}`}
+                        onClick={() => setStrategyLookbackDays(days)}
+                        disabled={strategyMetricsLoading && strategyLookbackDays === days}
+                      >
+                        {days}D
+                      </button>
+                    ))}
+                  </div>
+                </td>
+                {(strategyMetricsLoading
+                  ? [
+                    { key: 'day', label: '데이(당일)' },
+                    { key: 'overnight', label: '오버나이트' },
+                    { key: 'weekly', label: '주간(5거래일)' },
+                  ]
+                  : strategyMetricDisplay
+                ).map((metric: any) => (
+                  (() => {
+                    const typedMetric = metric as StrategyMetricSummary
+                    const status = getStrategyMetricStatus(typedMetric)
+                    return (
+                  <td
+                    key={metric.key}
+                    className="xls-cell"
+                    style={{
+                      padding: '6px 8px',
+                      cursor: strategyMetricsLoading ? 'default' : 'pointer',
+                      background: !strategyMetricsLoading && conditionFilter === STRATEGY_FILTER_BY_METRIC_KEY[metric.key as StrategyMetricSummary['key']]
+                        ? 'var(--color-brand-subtle)'
+                        : undefined,
+                    }}
+                    onClick={() => { if (!strategyMetricsLoading) onStrategyMetricCardClick(metric.key as StrategyMetricSummary['key']) }}
+                    title={strategyMetricsLoading ? '' : '클릭하면 해당 전략 필터로 이동'}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 4, marginBottom: 4 }}>
+                      <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--color-text-primary)' }}>
+                        {metric.label}
+                      </div>
+                      {!strategyMetricsLoading && (
+                        <span
+                          style={{
+                            fontSize: 10,
+                            padding: '1px 6px',
+                            borderRadius: 999,
+                            color: status.textColor,
+                            background: status.bgColor,
+                            border: `1px solid ${status.textColor}`,
+                            fontWeight: 700,
+                          }}
+                        >
+                          {status.label}
+                        </span>
+                      )}
+                    </div>
+                    {strategyMetricsLoading ? (
+                      <div style={{ fontSize: 11, color: 'var(--color-text-tertiary)' }}>집계 중…</div>
+                    ) : (
+                      <div style={{ display: 'grid', gap: 2, fontSize: 11 }}>
+                        <div style={{ color: 'var(--color-text-secondary)' }}>
+                          거래 {formatNumber(metric.trades ?? 0, 0)}건 · 승률 {formatNumber(metric.winRatePct ?? 0, 1)}%
+                        </div>
+                        <div style={{ color: Number(metric.avgReturnPct ?? 0) >= 0 ? 'var(--color-stock-up)' : 'var(--color-stock-down)', fontWeight: 600 }}>
+                          평균 {Number(metric.avgReturnPct ?? 0) > 0 ? '+' : ''}{formatNumber(metric.avgReturnPct ?? 0, 2)}%
+                        </div>
+                        <div style={{ color: Number(metric.sumReturnPct ?? 0) >= 0 ? 'var(--color-stock-up)' : 'var(--color-stock-down)' }}>
+                          누적 {Number(metric.sumReturnPct ?? 0) > 0 ? '+' : ''}{formatNumber(metric.sumReturnPct ?? 0, 2)}%
+                        </div>
+                        <div style={{ color: 'var(--color-text-tertiary)' }}>
+                          최고 {Number(metric.bestReturnPct ?? 0) > 0 ? '+' : ''}{formatNumber(metric.bestReturnPct ?? 0, 2)}% ·
+                          최저 {Number(metric.worstReturnPct ?? 0) > 0 ? '+' : ''}{formatNumber(metric.worstReturnPct ?? 0, 2)}%
+                        </div>
+                      </div>
+                    )}
+                  </td>
+                    )
+                  })()
+                ))}
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {!error && activeStrategyGuide && (
+        <div className="xls-scroll-frame" style={{ ['--xls-table-min-width' as any]: '680px', marginTop: 6 }}>
+          <table className="xls-table" style={{ width: '100%', tableLayout: 'fixed' }}>
+            <colgroup>
+              <col style={{ width: '22%' }} />
+              <col style={{ width: '78%' }} />
+            </colgroup>
+            <tbody>
+              <tr className="xls-row xls-row--even">
+                <td className="xls-cell" style={{ fontSize: 11, fontWeight: 700, color: 'var(--color-brand)' }}>
+                  {activeStrategyGuide.title}
+                </td>
+                <td className="xls-cell" style={{ fontSize: 11, color: 'var(--color-text-secondary)' }}>
+                  실전 실행 기준(권장): 최근 30일 경보(주의/경고)가 뜨면 포지션을 한 단계 축소하세요.
+                </td>
+              </tr>
+              <tr className="xls-row">
+                <td className="xls-cell" style={{ fontSize: 11, fontWeight: 600 }}>진입</td>
+                <td className="xls-cell" style={{ fontSize: 11 }}>{activeStrategyGuide.entry}</td>
+              </tr>
+              <tr className="xls-row xls-row--even">
+                <td className="xls-cell" style={{ fontSize: 11, fontWeight: 600 }}>포지션</td>
+                <td className="xls-cell" style={{ fontSize: 11 }}>{activeStrategyGuide.positionSize}</td>
+              </tr>
+              <tr className="xls-row">
+                <td className="xls-cell" style={{ fontSize: 11, fontWeight: 600 }}>보유</td>
+                <td className="xls-cell" style={{ fontSize: 11 }}>{activeStrategyGuide.holding}</td>
+              </tr>
+              <tr className="xls-row xls-row--even">
+                <td className="xls-cell" style={{ fontSize: 11, fontWeight: 600 }}>손절</td>
+                <td className="xls-cell" style={{ fontSize: 11, color: 'var(--color-stock-down)' }}>{activeStrategyGuide.stopLoss}</td>
+              </tr>
+              <tr className="xls-row">
+                <td className="xls-cell" style={{ fontSize: 11, fontWeight: 600 }}>익절</td>
+                <td className="xls-cell" style={{ fontSize: 11, color: 'var(--color-stock-up)' }}>{activeStrategyGuide.takeProfit}</td>
+              </tr>
+              <tr className="xls-row xls-row--even">
+                <td className="xls-cell" style={{ fontSize: 11, fontWeight: 600 }}>강제청산</td>
+                <td className="xls-cell" style={{ fontSize: 11 }}>{activeStrategyGuide.forceExit}</td>
+              </tr>
+              <tr className="xls-row">
+                <td className="xls-cell" style={{ fontSize: 11, fontWeight: 600 }}>주의</td>
+                <td className="xls-cell" style={{ fontSize: 11 }}>{activeStrategyGuide.caution}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      )}
 
       {/* 참고용 추천 섹션 */}
       {!loading && !error && activeHighlights.length > 0 && conditionFilter === 'all' && selectedSector === 'all' && (
@@ -903,6 +1555,8 @@ export default function ScanPage({ onNavigate }: { onNavigate?: (r: string) => v
                   <th className="xls-th">{renderSortableHeader('세력선', 'pivot_grade')}</th>
                   <th className="xls-th">{renderSortableHeader('경고', 'warn_score')}</th>
                   <th className="xls-th">{renderSortableHeader('유동성', 'liquidity')}</th>
+                  <th className="xls-th">전략</th>
+                  <th className="xls-th">신호경과</th>
                   <th className="xls-th">{renderSortableHeader('변동(%)', 'intraday_change_pct')}</th>
                   <th className="xls-th">{renderSortableHeader('기준일', 'trade_date')}</th>
                   <th className="xls-th">관리</th>
@@ -982,6 +1636,26 @@ export default function ScanPage({ onNavigate }: { onNavigate?: (r: string) => v
                       {/* 유동성 */}
                       <td className="xls-cell xls-cell--num" style={{ fontSize: 11, color: 'var(--color-text-secondary)' }}>
                         {s.liquidity != null ? formatNumber(s.liquidity, 0) : '—'}
+                      </td>
+                      {/* 전략 */}
+                      <td className="xls-cell" style={{ fontSize: 11 }}>
+                        <span className={
+                          s.strategyLabel === '데이'
+                            ? 'scan-grade-badge scan-grade-a'
+                            : s.strategyLabel === '오버나이트'
+                              ? 'scan-grade-badge scan-grade-b'
+                              : s.strategyLabel === '주간'
+                                ? 'scan-grade-badge scan-grade-c'
+                                : 'scan-grade-label'
+                        }>
+                          {s.strategyLabel}
+                        </span>
+                      </td>
+                      {/* 신호경과 */}
+                      <td className="xls-cell" style={{ fontSize: 11 }}>
+                        {typeof s.quickLiteAgeDays === 'number'
+                          ? (s.quickLiteAgeDays === 0 ? '당일' : `D-${s.quickLiteAgeDays}`)
+                          : '—'}
                       </td>
                       {/* 변동(%) */}
                       <td className="xls-cell xls-cell--num">

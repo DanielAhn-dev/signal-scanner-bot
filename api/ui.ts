@@ -30,6 +30,7 @@ import reportSnapshot from '../handlers/ui/report-snapshot'
 import reportWeb from '../handlers/ui/report-web'
 import scanCandidates from '../handlers/ui/scan-candidates'
 import scanHighlights from '../handlers/ui/scan-highlights'
+import scanStrategyMetrics from '../handlers/ui/scan-strategy-metrics'
 import sectorLeaders from '../handlers/ui/sector-leaders'
 import sectors from '../handlers/ui/sectors'
 import simulationPlan from '../handlers/ui/simulation-plan'
@@ -79,6 +80,7 @@ const ROUTES: Record<string, UiHandler> = {
   'report-web': reportWeb,
   'scan-candidates': scanCandidates,
   'scan-highlights': scanHighlights,
+  'scan-strategy-metrics': scanStrategyMetrics,
   'sector-leaders': sectorLeaders,
   sectors,
   'simulation-plan': simulationPlan,
