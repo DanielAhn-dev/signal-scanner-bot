@@ -3,6 +3,7 @@ import { apiFetch } from '../../lib/api'
 import Button from '../../components/ui/Button'
 import { useToast } from '../../components/ToastProvider'
 import ShareModal from '../../components/ShareModal'
+import { Download, FlaskConical, Play, Send, Share2 } from 'lucide-react'
 import { readSimulationPlan, type HighlightSimulationPlan } from '../simulator/planStore'
 import { buildTelegramMessage, calcExpectedValue, calcSplitInvested } from '../simulator/telegramFormat'
 import { formatKrw } from '../../lib/format'
@@ -324,8 +325,14 @@ export default function ReportsPage() {
                     </div>
                   </div>
                   <div style={{ display: 'flex', gap: 'var(--space-2)', flexWrap: 'wrap' }}>
-                    <Button variant="secondary" onClick={navigateSimulator}>시뮬레이터 열기</Button>
-                    <Button variant="ghost" onClick={sendSimPlanTelegram} disabled={simSending}>텔레그램 전송</Button>
+                    <Button size="sm" className="reports-action-btn reports-action-btn--sim" variant="secondary" onClick={navigateSimulator} title="시뮬레이터 열기" aria-label="시뮬레이터 열기">
+                      <FlaskConical size={14} />
+                      <span className="reports-action-btn__label">시뮬레이터 열기</span>
+                    </Button>
+                    <Button size="sm" className="reports-action-btn reports-action-btn--sim" variant="ghost" onClick={sendSimPlanTelegram} disabled={simSending} title="텔레그램 전송" aria-label="텔레그램 전송">
+                      <Send size={14} />
+                      <span className="reports-action-btn__label">텔레그램 전송</span>
+                    </Button>
                   </div>
                 </div>
               </td>
@@ -359,19 +366,44 @@ export default function ReportsPage() {
                 <td className="xls-cell">{r.desc}</td>
                 <td className="xls-cell">
                   {r.kind === 'download' ? (
-                    <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
-                      <Button variant="secondary" onClick={() => runDownload(r.key, r.endpoint, r.fileName)} disabled={s?.loading}>
-                        {s?.loading ? '처리 중…' : '다운로드'}
+                    <div className="reports-action-btns">
+                      <Button
+                        size="sm"
+                        className="reports-action-btn"
+                        variant="secondary"
+                        onClick={() => runDownload(r.key, r.endpoint, r.fileName)}
+                        disabled={s?.loading}
+                        title="다운로드"
+                        aria-label="다운로드"
+                      >
+                        <Download size={14} />
+                        <span className="reports-action-btn__label">{s?.loading ? '처리 중…' : '다운로드'}</span>
                       </Button>
-                      <Button variant="secondary" onClick={() => runShare(r.endpoint)} disabled={states['share']?.loading}>공유</Button>
+                      <Button
+                        size="sm"
+                        className="reports-action-btn"
+                        variant="secondary"
+                        onClick={() => runShare(r.endpoint)}
+                        disabled={states['share']?.loading}
+                        title="공유"
+                        aria-label="공유"
+                      >
+                        <Share2 size={14} />
+                        <span className="reports-action-btn__label">공유</span>
+                      </Button>
                     </div>
                   ) : (
                     <Button
+                      size="sm"
+                      className="reports-action-btn"
                       variant="secondary"
                       onClick={() => runTrigger(r.key, r.endpoint, r.method)}
                       disabled={s?.loading}
+                      title="실행"
+                      aria-label="실행"
                     >
-                      {s?.loading ? '처리 중…' : '실행'}
+                      <Play size={14} />
+                      <span className="reports-action-btn__label">{s?.loading ? '처리 중…' : '실행'}</span>
                     </Button>
                   )}
                 </td>
