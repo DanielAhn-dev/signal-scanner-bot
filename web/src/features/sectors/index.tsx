@@ -614,11 +614,13 @@ function SectorGuideView({ detectedPhase }: { detectedPhase: EconomicPhase | nul
 
       {/* 섹터 로테이션 사이클 */}
       <section className="sector-guide-section">
-        <h2 className="sector-guide-section__title">섹터 로테이션 사이클</h2>
-        <p className="muted" style={{ marginBottom: "var(--space-4)", lineHeight: 1.6 }}>
-          경기는 네 국면을 반복하며 순환합니다. 국면마다 강세를 보이는 섹터가 다르므로,
-          현재 경기 위치를 파악하고 유리한 섹터로 자금을 이동하는 것이 섹터 로테이션 전략입니다.
-        </p>
+        <div className="sector-guide-section__head">
+          <h2 className="sector-guide-section__title">섹터 로테이션 사이클</h2>
+          <p className="sector-guide-section__desc">
+            경기는 네 국면을 반복하며 순환합니다. 국면마다 강세를 보이는 섹터가 다르므로,
+            현재 경기 위치를 파악하고 유리한 섹터로 자금을 이동하는 것이 섹터 로테이션 전략입니다.
+          </p>
+        </div>
 
         {/* 사이클 플로우 — 데스크탑 가로 */}
         <div className="rotation-flow">
@@ -651,11 +653,11 @@ function SectorGuideView({ detectedPhase }: { detectedPhase: EconomicPhase | nul
                       </span>
                     ))}
                   </div>
-                  <div className="rotation-phase-card__indicators">
+                  <ul className="rotation-phase-card__indicators">
                     {phase.indicators.map((ind) => (
-                      <div key={ind} className="caption muted rotation-phase-card__indicator">· {ind}</div>
+                      <li key={ind} className="caption muted rotation-phase-card__indicator">{ind}</li>
                     ))}
-                  </div>
+                  </ul>
                 </div>
                 {idx < ROTATION_CYCLE.length - 1 && (
                   <div className="rotation-arrow" aria-hidden>
@@ -689,26 +691,26 @@ function SectorGuideView({ detectedPhase }: { detectedPhase: EconomicPhase | nul
                   className={`rotation-phase-card rotation-phase-card--vertical${isActive ? " rotation-phase-card--active" : ""}`}
                   style={{ borderColor: PHASE_COLORS[phase.phase], background: isActive ? PHASE_BG[phase.phase] : undefined }}
                 >
-                  <div style={{ display: "flex", alignItems: "center", gap: "var(--space-2)", marginBottom: "var(--space-2)", flexWrap: "wrap" }}>
+                  <div className="rotation-phase-card__header rotation-phase-card__header--vertical">
                     <span className="rotation-phase-card__emoji" aria-hidden>
                       <PhaseIcon phase={phase.phase} size={16} />
                     </span>
                     <span className="rotation-phase-card__label" style={{ color: PHASE_COLORS[phase.phase] }}>{phase.label}</span>
                     {isActive && <span className="rotation-phase-card__now-badge">현재</span>}
-                    <div style={{ display: "flex", gap: "var(--space-1)", flexWrap: "wrap", marginLeft: "auto" }}>
-                      {phase.sectorCategories.map((sc) => (
-                        <span key={sc} className="rotation-phase-card__sector-tag" style={{ color: PHASE_COLORS[phase.phase], background: PHASE_BG[phase.phase] }}>
-                          {sc}
-                        </span>
-                      ))}
-                    </div>
                   </div>
-                  <p className="rotation-phase-card__desc">{phase.description}</p>
-                  <div className="rotation-phase-card__indicators" style={{ marginTop: "var(--space-1)" }}>
-                    {phase.indicators.map((ind) => (
-                      <span key={ind} className="caption muted rotation-phase-card__indicator">· {ind}　</span>
+                  <div className="rotation-phase-card__sectors rotation-phase-card__sectors--stacked">
+                    {phase.sectorCategories.map((sc) => (
+                      <span key={sc} className="rotation-phase-card__sector-tag" style={{ color: PHASE_COLORS[phase.phase], background: PHASE_BG[phase.phase] }}>
+                        {sc}
+                      </span>
                     ))}
                   </div>
+                  <p className="rotation-phase-card__desc">{phase.description}</p>
+                  <ul className="rotation-phase-card__indicators rotation-phase-card__indicators--vertical">
+                    {phase.indicators.map((ind) => (
+                      <li key={ind} className="caption muted rotation-phase-card__indicator">{ind}</li>
+                    ))}
+                  </ul>
                 </div>
               </div>
             )
@@ -717,7 +719,7 @@ function SectorGuideView({ detectedPhase }: { detectedPhase: EconomicPhase | nul
             <div className="rotation-flow-vertical__connector">
               <div className="rotation-flow-vertical__dot" style={{ background: PHASE_COLORS["recovery"] }} />
             </div>
-            <div className="caption muted" style={{ paddingTop: 4, display: "inline-flex", alignItems: "center", gap: 6 }}>
+            <div className="caption muted rotation-flow-vertical__loop-note">
               <ArrowRight size={12} /> 다시 회복기로 반복
             </div>
           </div>
@@ -726,7 +728,10 @@ function SectorGuideView({ detectedPhase }: { detectedPhase: EconomicPhase | nul
 
       {/* 경기민감 vs 방어주 */}
       <section className="sector-guide-section">
-        <h2 className="sector-guide-section__title">섹터 성격 분류</h2>
+        <div className="sector-guide-section__head">
+          <h2 className="sector-guide-section__title">섹터 성격 분류</h2>
+          <p className="sector-guide-section__desc">섹터의 수익 구조와 경기/금리 민감도를 기준으로 분류한 요약입니다.</p>
+        </div>
         <div className="sector-guide-nature-grid">
           {(["cyclical", "defensive", "interest_sensitive", "growth"] as SectorNature[]).map((nature) => {
             const sectors = SECTOR_META_DATA.filter((m) => m.nature === nature)
@@ -739,12 +744,12 @@ function SectorGuideView({ detectedPhase }: { detectedPhase: EconomicPhase | nul
             }
             return (
               <div key={nature} className="sector-guide-nature-card">
-                <div style={{ display: "flex", alignItems: "center", gap: "var(--space-2)", marginBottom: "var(--space-2)" }}>
+                <div className="sector-guide-nature-card__head">
                   <NatureBadge nature={nature} />
                   <span className="title-md">{NATURE_LABELS[nature]}</span>
                 </div>
-                <p className="muted" style={{ marginBottom: "var(--space-3)", lineHeight: 1.55 }}>{descriptions[nature]}</p>
-                <div style={{ display: "flex", flexWrap: "wrap", gap: "var(--space-1)" }}>
+                <p className="muted sector-guide-nature-card__desc">{descriptions[nature]}</p>
+                <div className="sector-guide-nature-card__tags">
                   {cats.map((c) => (
                     <span key={c} className="sector-guide-cat-tag">{c}</span>
                   ))}
@@ -757,7 +762,10 @@ function SectorGuideView({ detectedPhase }: { detectedPhase: EconomicPhase | nul
 
       {/* 금리·물가 민감도 */}
       <section className="sector-guide-section">
-        <h2 className="sector-guide-section__title">금리 · 물가 환경별 선호 섹터</h2>
+        <div className="sector-guide-section__head">
+          <h2 className="sector-guide-section__title">금리 · 물가 환경별 선호 섹터</h2>
+          <p className="sector-guide-section__desc">거시 환경 변화가 섹터 퍼포먼스에 미치는 방향성을 빠르게 확인할 수 있습니다.</p>
+        </div>
         <div className="sector-guide-macro-grid">
           {[
             { key: "rateUp" as const,      Icon: TrendingUp,   label: "금리 상승기", color: "var(--color-stock-up)" },
