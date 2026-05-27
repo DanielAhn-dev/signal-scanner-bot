@@ -83,6 +83,53 @@ function chunk<T>(items: T[], size: number): T[][] {
   return out
 }
 
+async function fetchSignalRowsPaged(supabase: SupabaseClient, fromDate: string): Promise<SignalRow[]> {
+  const out: SignalRow[] = []
+  const pageSize = 1000
+  let offset = 0
+
+  while (true) {
+    const { data, error } = await supabase
+      .from('scan_signal_history')
+      .select('code,trade_date,is_quick_strict,is_quick_lite')
+      .gte('trade_date', fromDate)
+      .order('trade_date', { ascending: true })
+      .range(offset, offset + pageSize - 1)
+
+    if (error) throw error
+    const rows = (data ?? []) as SignalRow[]
+    out.push(...rows)
+    if (rows.length < pageSize) break
+    offset += pageSize
+  }
+
+  return out
+}
+
+async function fetchPriceRowsPaged(supabase: SupabaseClient, codeChunk: string[], fromDate: string): Promise<PriceRow[]> {
+  const out: PriceRow[] = []
+  const pageSize = 1000
+  let offset = 0
+
+  while (true) {
+    const { data, error } = await supabase
+      .from('stock_daily')
+      .select('ticker,date,open,close')
+      .in('ticker', codeChunk)
+      .gte('date', fromDate)
+      .order('date', { ascending: true })
+      .range(offset, offset + pageSize - 1)
+
+    if (error) throw error
+    const rows = (data ?? []) as PriceRow[]
+    out.push(...rows)
+    if (rows.length < pageSize) break
+    offset += pageSize
+  }
+
+  return out
+}
+
 function buildPriceIndex(rows: PriceRow[]): Map<string, PriceIndex> {
   const byCode = new Map<string, Map<string, { open: number; close: number }>>()
   for (const row of rows) {
@@ -167,16 +214,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   try {
     const fromDate = shiftDate(lookbackDays + 10)
 
-    const { data: signals, error: signalError } = await supabase
-      .from('scan_signal_history')
-      .select('code,trade_date,is_quick_strict,is_quick_lite')
-      .gte('trade_date', fromDate)
-      .order('trade_date', { ascending: true })
-      .limit(50_000)
-
-    if (signalError) return res.status(500).json({ error: signalError.message })
-
-    const signalRows = ((signals ?? []) as SignalRow[]).filter((row) => !!row.code && !!row.trade_date)
+    const signals = await fetchSignalRowsPaged(supabase, fromDate)
+    const signalRows = (signals as SignalRow[]).filter((row) => !!row.code && !!row.trade_date)
     const signalCodes = Array.from(new Set(signalRows.map((row) => normalizeCode(row.code)).filter(Boolean)))
     const signalDates = new Set(signalRows.map((row) => normalizeDate(row.trade_date)).filter(Boolean))
 
@@ -184,14 +223,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (signalCodes.length > 0) {
       const codeChunks = chunk(signalCodes, 200)
       for (const codeChunk of codeChunks) {
-        const { data: prices, error: priceError } = await supabase
-          .from('stock_daily')
-          .select('ticker,date,open,close')
-          .in('ticker', codeChunk)
-          .gte('date', fromDate)
-          .order('date', { ascending: true })
-        if (priceError) return res.status(500).json({ error: priceError.message })
-        priceRows.push(...((prices ?? []) as PriceRow[]))
+        const prices = await fetchPriceRowsPaged(supabase, codeChunk, fromDate)
+        priceRows.push(...prices)
       }
     }
 

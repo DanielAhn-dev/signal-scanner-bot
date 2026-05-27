@@ -25,6 +25,7 @@ Environment variables:
 import os
 import sys
 import time
+import subprocess
 from datetime import datetime
 from pathlib import Path
 
@@ -42,6 +43,38 @@ from batch_modules.sectors import update_sector_data, populate_sector_daily, cal
 from batch_modules.scores import calculate_stock_scores
 from batch_modules.signals import save_pullback_signals
 from batch_modules.cleanup import cleanup_old_data
+
+
+def sync_scan_signal_history_for_date(trading_date: str) -> bool:
+    """Sync scan_signal_history for the processed trading date."""
+    trade_iso = f"{trading_date[:4]}-{trading_date[4:6]}-{trading_date[6:8]}"
+    cmd = [
+        "pnpm",
+        "-s",
+        "tsx",
+        "scripts/backfill_scan_signal_history.ts",
+        f"--from={trade_iso}",
+        f"--to={trade_iso}",
+        "--limitDates=7",
+    ]
+    print("\n[6.1/7] Syncing scan signal history...")
+    print(f"  -> {' '.join(cmd)}")
+    try:
+        result = subprocess.run(
+            cmd,
+            check=True,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+        )
+        out = (result.stdout or "").strip().splitlines()
+        if out:
+            print(f"   {out[-1]}")
+        return True
+    except Exception as e:
+        print(f"  [WARN] scan signal history sync skipped: {e}")
+        return False
 
 
 def main():
@@ -200,6 +233,11 @@ def main():
         save_pullback_signals(supabase, trading_date)
         stage_times["PullbackSignals"] = time.time() - step_start
         print(f"   Completed in {stage_times['PullbackSignals']:.1f}s")
+
+        step_start = time.time()
+        sync_scan_signal_history_for_date(trading_date)
+        stage_times["ScanSignalHistorySync"] = time.time() - step_start
+        print(f"   Completed in {stage_times['ScanSignalHistorySync']:.1f}s")
         
         time.sleep(0.5)
     else:
