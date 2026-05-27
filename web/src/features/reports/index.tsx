@@ -2,8 +2,9 @@ import React, { useEffect, useState } from 'react'
 import { apiFetch } from '../../lib/api'
 import Button from '../../components/ui/Button'
 import { useToast } from '../../components/ToastProvider'
+import ReportPreviewModal from '../../components/ReportPreviewModal'
 import ShareModal from '../../components/ShareModal'
-import { Download, FlaskConical, Play, Send, Share2 } from 'lucide-react'
+import { Download, Eye, FlaskConical, Play, Send, Share2 } from 'lucide-react'
 import { readSimulationPlan, type HighlightSimulationPlan } from '../simulator/planStore'
 import { buildTelegramMessage, calcExpectedValue, calcSplitInvested } from '../simulator/telegramFormat'
 import { formatKrw } from '../../lib/format'
@@ -153,6 +154,7 @@ export default function ReportsPage() {
   const toast = useToast()
   const [simPlan, setSimPlan] = useState<HighlightSimulationPlan | null>(null)
   const [simSending, setSimSending] = useState(false)
+  const [preview, setPreview] = useState<{ open: boolean; title: string; url: string }>({ open: false, title: '', url: '' })
   const shareManager = useShareManager({
     endpoint: '/api/ui/report-share',
     scopeKey: 'topic',
@@ -295,6 +297,17 @@ export default function ReportsPage() {
     }
   }
 
+  const runPreview = (endpoint: string, title: string) => {
+    const topicMatch = endpoint.match(/topic=([^&]+)/)
+    const topic = topicMatch ? decodeURIComponent(topicMatch[1]) : ''
+    if (!topic) {
+      toast.show('미리보기를 지원하지 않는 항목입니다.')
+      return
+    }
+    const request = buildUiRequest(`/api/ui/report-web?topic=${encodeURIComponent(topic)}`)
+    setPreview({ open: true, title, url: request.url })
+  }
+
   return (
     <section className="container-app reports-sheet" style={{ padding: 0, margin: 0, maxWidth: 'none', width: '100%' }}>
       <table className="xls-table" style={{ width: '100%', tableLayout: 'fixed', marginBottom: 0 }}>
@@ -384,6 +397,18 @@ export default function ReportsPage() {
                         size="sm"
                         className="reports-action-btn"
                         variant="secondary"
+                        onClick={() => runPreview(r.endpoint, r.label)}
+                        title="미리보기"
+                        aria-label="미리보기"
+                        data-action-label="미리보기"
+                      >
+                        <Eye size={14} />
+                        <span className="reports-action-btn__label">미리보기</span>
+                      </Button>
+                      <Button
+                        size="sm"
+                        className="reports-action-btn"
+                        variant="secondary"
                         onClick={() => runShare(r.endpoint)}
                         disabled={states['share']?.loading}
                         title="공유"
@@ -443,6 +468,12 @@ export default function ReportsPage() {
         onChangeIncludeAll={shareManager.setIncludeAll}
         onRevoke={shareManager.revokeShare}
         revokingId={shareManager.revokingId}
+      />
+      <ReportPreviewModal
+        open={preview.open}
+        onClose={() => setPreview((prev) => ({ ...prev, open: false }))}
+        title={preview.title}
+        url={preview.url}
       />
     </section>
   )
