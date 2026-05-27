@@ -110,7 +110,7 @@ def fetch_credit_short_data(supabase: Client, trading_date: str):
             vol_query_ok = False
             bal_query_ok = False
 
-            # Short-selling volume/ratio
+            # Short-selling volume only. short_ratio column is reserved for balance ratio.
             payload, ok = post_json_with_retry(
                 sess,
                 krx_api,
@@ -125,15 +125,13 @@ def fetch_credit_short_data(supabase: Client, trading_date: str):
                     date_str = row.get("TRD_DD", "").replace("/", "")
                     if date_str == trading_date:
                         short_volume = int(str(row.get("CVSRTSELL_TRDVOL", "0")).replace(",", "") or "0")
-                        short_ratio = float(str(row.get("TRDVOL_WT", "0")).replace(",", "") or "0")
                         matched = True
                         break
                 if not matched:
                     # 정상 응답이지만 해당일 데이터가 없으면 0으로 저장
                     short_volume = 0
-                    short_ratio = 0.0
 
-            # Short balance
+            # Short balance and balance ratio
             payload, ok = post_json_with_retry(
                 sess,
                 krx_api,
@@ -148,10 +146,12 @@ def fetch_credit_short_data(supabase: Client, trading_date: str):
                     date_str = row.get("RPT_DUTY_OCCR_DD", "").replace("/", "")
                     if date_str == trading_date:
                         short_balance = int(str(row.get("BAL_QTY", "0")).replace(",", "") or "0")
+                        short_ratio = float(str(row.get("BAL_RT") or row.get("STCK_BAL_RT") or row.get("SLVL_RT") or "0").replace(",", "") or "0")
                         matched = True
                         break
                 if not matched:
                     short_balance = 0
+                    short_ratio = 0.0
 
             if short_volume is not None or short_ratio is not None or short_balance is not None or vol_query_ok or bal_query_ok:
                 cs_rows.append({

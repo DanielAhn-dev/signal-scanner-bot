@@ -30,7 +30,7 @@ from pykrx import stock as pykrx_stock
 # ===== 환경 변수 설정 =====
 def load_env_file(filepath: str = ".env") -> None:
     try:
-        with open(filepath, "r") as f:
+        with open(filepath, "r", encoding="utf-8") as f:
             for line in f:
                 line = line.strip()
                 if not line or line.startswith("#"):
@@ -143,7 +143,7 @@ def load_target_codes() -> list:
 def fetch_short_trade(sess: requests.Session, isin: str, start_date: str, end_date: str) -> dict:
     """
     MDCSTAT30102_OUT: 개별종목 일별 공매도 거래 데이터.
-    Returns: {"20260515": {"short_volume": 136584, "short_ratio": 3.93}, ...}
+    Returns: {"20260515": {"short_volume": 136584}, ...}
     """
     result = {}
     try:
@@ -166,8 +166,7 @@ def fetch_short_trade(sess: requests.Session, isin: str, start_date: str, end_da
                 continue
             try:
                 volume = int(str(row.get("CVSRTSELL_TRDVOL", "0")).replace(",", "") or "0")
-                ratio = float(str(row.get("TRDVOL_WT", "0")).replace(",", "") or "0")
-                result[date_str] = {"short_volume": volume, "short_ratio": ratio}
+                result[date_str] = {"short_volume": volume}
             except (ValueError, TypeError):
                 pass
     except Exception:
@@ -178,7 +177,7 @@ def fetch_short_trade(sess: requests.Session, isin: str, start_date: str, end_da
 def fetch_short_balance(sess: requests.Session, isin: str, start_date: str, end_date: str) -> dict:
     """
     MDCSTAT30502_OUT: 개별종목 공매도 잔고 데이터.
-    Returns: {"20260514": {"short_balance": 316122, "short_balance_ratio": 0.01}, ...}
+    Returns: {"20260514": {"short_balance": 316122, "short_ratio": 0.01}, ...}
     보고의무 기준이므로 일부 날짜만 존재할 수 있음.
     """
     result = {}
@@ -202,7 +201,8 @@ def fetch_short_balance(sess: requests.Session, isin: str, start_date: str, end_
                 continue
             try:
                 balance = int(str(row.get("BAL_QTY", "0")).replace(",", "") or "0")
-                result[date_str] = {"short_balance": balance}
+                ratio = float(str(row.get("BAL_RT") or row.get("STCK_BAL_RT") or row.get("SLVL_RT") or "0").replace(",", "") or "0")
+                result[date_str] = {"short_balance": balance, "short_ratio": ratio}
             except (ValueError, TypeError):
                 pass
     except Exception:
@@ -280,7 +280,7 @@ def backfill_credit_short_daily(
             balance = balance_data.get(date_str, {})
 
             short_volume = trade.get("short_volume")
-            short_ratio = trade.get("short_ratio")
+            short_ratio = balance.get("short_ratio")
             short_balance = balance.get("short_balance")
 
             if short_volume is not None or short_ratio is not None or short_balance is not None:

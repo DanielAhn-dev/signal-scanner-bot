@@ -1380,6 +1380,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const dbShortBalance =
       asNum((stock as any)?.short_balance) ??
       asNum((latestCreditShortDaily as any)?.short_balance)
+    const hasSuspiciousDbShortRatio =
+      dbShortRatio != null &&
+      dbShortRatio > 0 &&
+      (dbShortBalance == null || dbShortBalance <= 0)
     const hasDbCreditShort = !isCreditShortStale && (dbCreditRatio != null || dbShortRatio != null)
 
     let creditShort: {
@@ -1401,7 +1405,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       flow,
     })
 
-    if (hasDbCreditShort) {
+    const shouldRefreshLiveCreditShort = !isCreditShortStale && (!hasDbCreditShort || hasSuspiciousDbShortRatio)
+    const live = shouldRefreshLiveCreditShort
+      ? await fetchCreditShortSnapshot(code).catch(() => null)
+      : null
+
+    if (hasDbCreditShort && !hasSuspiciousDbShortRatio) {
       creditShort = {
         creditRatio: dbCreditRatio,
         shortRatio: dbShortRatio,
@@ -1413,9 +1422,36 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         staleReason: null,
         proxyRisk: null,
       }
+    } else if (live && (live.creditRatio != null || live.shortRatio != null || live.shortBalance != null)) {
+      creditShort = {
+        creditRatio: live.creditRatio ?? dbCreditRatio,
+        shortRatio: live.shortRatio,
+        shortBalance: live.shortBalance ?? dbShortBalance,
+        source: 'live',
+        asOf: null,
+        fetchedAt: new Date().toISOString(),
+        staleAsOf: isCreditShortStale ? String(creditShortAsOf) : null,
+        staleReason: hasSuspiciousDbShortRatio
+          ? 'DB 공매도 비율이 잔고 데이터와 불일치해 실시간 잔고비율로 보정'
+          : (isCreditShortStale ? `DB 기준일이 ${maxCreditShortAgeDays}일 초과로 오래됨` : null),
+        proxyRisk: null,
+      }
+    } else if (hasDbCreditShort) {
+      creditShort = {
+        creditRatio: dbCreditRatio,
+        shortRatio: hasSuspiciousDbShortRatio ? null : dbShortRatio,
+        shortBalance: dbShortBalance,
+        source: 'db',
+        asOf: creditShortAsOf,
+        fetchedAt: null,
+        staleAsOf: null,
+        staleReason: hasSuspiciousDbShortRatio
+          ? 'DB 공매도 비율이 잔고 데이터와 불일치해 비율 표시를 숨김'
+          : null,
+        proxyRisk: null,
+      }
     } else {
       // ETL 아직 미실행 또는 migration 미적용 → 실시간 스크래핑 fallback
-      const live = await fetchCreditShortSnapshot(code).catch(() => null)
       if (live && (live.creditRatio != null || live.shortRatio != null || live.shortBalance != null)) {
         creditShort = {
           creditRatio: live.creditRatio,
