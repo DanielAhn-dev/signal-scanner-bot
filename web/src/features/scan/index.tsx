@@ -64,7 +64,8 @@ type StrategyDrilldownItem = {
   name: string
   strategyKey: StrategyMetricSummary['key']
   strategyLabel: string
-  returnPct: number
+  returnPct: number | null
+  outcomeStatus?: 'realized' | 'pending'
 }
 
 type StrategyCoverageEntry = {
@@ -1723,8 +1724,10 @@ export default function ScanPage({ onNavigate }: { onNavigate?: (r: string) => v
                   <td className="xls-cell" style={{ fontSize: 11, fontFamily: 'var(--font-family-mono)' }}>{row.code}</td>
                   <td className="xls-cell" style={{ fontSize: 11 }}>{row.name}</td>
                   <td className="xls-cell" style={{ fontSize: 11 }}>{row.strategyLabel}</td>
-                  <td className="xls-cell" style={{ fontSize: 11, fontWeight: 600, color: row.returnPct >= 0 ? 'var(--color-stock-up)' : 'var(--color-stock-down)' }}>
-                    {row.returnPct > 0 ? '+' : ''}{formatNumber(row.returnPct, 2)}%
+                  <td className="xls-cell" style={{ fontSize: 11, fontWeight: 600, color: typeof row.returnPct === 'number' ? (row.returnPct >= 0 ? 'var(--color-stock-up)' : 'var(--color-stock-down)') : 'var(--color-text-tertiary)' }}>
+                    {typeof row.returnPct === 'number'
+                      ? `${row.returnPct > 0 ? '+' : ''}${formatNumber(row.returnPct, 2)}%`
+                      : '대기중'}
                   </td>
                 </tr>
               ))}

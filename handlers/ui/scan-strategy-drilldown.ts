@@ -26,7 +26,8 @@ type DrilldownItem = {
   name: string
   strategyKey: StrategyKey
   strategyLabel: string
-  returnPct: number
+  returnPct: number | null
+  outcomeStatus: 'realized' | 'pending'
 }
 
 type PriceIndex = {
@@ -224,6 +225,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             strategyKey: 'day',
             strategyLabel: strategyLabel('day'),
             returnPct: round2(((exit - entry) / entry) * 100),
+            outcomeStatus: 'realized',
           })
         }
       }
@@ -239,6 +241,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             strategyKey: 'overnight',
             strategyLabel: strategyLabel('overnight'),
             returnPct: round2(((nextOpen - entryClose) / entryClose) * 100),
+            outcomeStatus: 'realized',
           })
         }
       }
@@ -254,6 +257,20 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             strategyKey: 'weekly',
             strategyLabel: strategyLabel('weekly'),
             returnPct: round2(((weekClose - entryClose) / entryClose) * 100),
+            outcomeStatus: 'realized',
+          })
+        }
+      } else if (row.is_quick_lite && includeWeekly) {
+        const entryClose = idx.closes[anchor]
+        if (entryClose > 0) {
+          items.push({
+            tradeDate,
+            code,
+            name: code,
+            strategyKey: 'weekly',
+            strategyLabel: `${strategyLabel('weekly')} · 대기`,
+            returnPct: null,
+            outcomeStatus: 'pending',
           })
         }
       }
@@ -262,7 +279,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     items.sort((a, b) => {
       const dateCompare = b.tradeDate.localeCompare(a.tradeDate)
       if (dateCompare !== 0) return dateCompare
-      return Math.abs(b.returnPct) - Math.abs(a.returnPct)
+      if (a.outcomeStatus !== b.outcomeStatus) {
+        return a.outcomeStatus === 'realized' ? -1 : 1
+      }
+      return Math.abs(Number(b.returnPct ?? 0)) - Math.abs(Number(a.returnPct ?? 0))
     })
 
     const limitedItems = items.slice(0, limit)
