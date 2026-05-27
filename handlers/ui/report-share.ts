@@ -103,7 +103,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     let bodyText = ''
     let sourceLabel = ''
     const persisted = await getPersistedReportBody({ supabase, topic, audienceKey, reportDate })
-    const needsConvictionHtmlRefresh = topic === '확신추천'
+    const needsConvictionHtmlRefresh = ['추천', '공개추천', '확신추천', '눌림목'].includes(topic)
       && Boolean(persisted?.bodyText)
       && !String(persisted?.bodyText || '').startsWith(HTML_BODY_PREFIX)
 

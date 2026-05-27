@@ -430,6 +430,42 @@ ${cards}
 </div>`
 }
 
+export function buildCandidateCardsWebHtml(params: {
+  forecasts: DailyCandidateForecast[]
+  title: string
+  subtitle: string
+  note?: string
+  limit?: number
+}): string {
+  const { forecasts, title, subtitle, note, limit = 8 } = params
+  const ranked = [...(forecasts || [])]
+    .sort((a, b) => {
+      if (b.confidencePct !== a.confidencePct) return b.confidencePct - a.confidencePct
+      const aEdge = a.expectedUpsidePct - a.expectedDrawdownPct
+      const bEdge = b.expectedUpsidePct - b.expectedDrawdownPct
+      return bEdge - aEdge
+    })
+    .slice(0, Math.max(1, limit))
+
+  if (!ranked.length) {
+    return '<p style="color:#718096;padding:24px 0;text-align:center;font-size:14px">현재 조건에서 표시할 후보를 찾지 못했습니다.<br>잠시 후 다시 확인해 주세요.</p>'
+  }
+
+  const cards = ranked.map((item, i) => buildConvictionCard(item, i)).join('\n')
+  const footerNote = note
+    ? escapeHtml(note)
+    : '실전 체결가·슬리피지에 따라 결과는 달라질 수 있습니다. 분할 진입과 손절 기준을 먼저 고정해 주세요.'
+
+  return `<div style="margin-bottom:16px;padding:13px 15px;background:linear-gradient(135deg,#EBF3FF 0%,#E6FAF5 100%);border-radius:10px;border:1px solid #C2D6FF">
+  <div style="font-size:13px;font-weight:700;color:#191F28;margin-bottom:3px">${escapeHtml(title)}</div>
+  <div style="font-size:11px;color:#8B95A1">${escapeHtml(subtitle)}</div>
+</div>
+${cards}
+<div style="padding:14px 16px;background:#F9FAFB;border-radius:10px;border:1px solid #E5E8EB;font-size:12px;line-height:1.85;color:#6B7280">
+  <strong style="color:#191F28">운용 메모</strong>&nbsp; ${footerNote}
+</div>`
+}
+
 // ─── Page Layout ─────────────────────────────────────────────────────────────
 
 export function renderLayout(params: {

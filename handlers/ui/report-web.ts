@@ -12,6 +12,7 @@ import {
   type ReportTopic,
 } from '../../src/services/reportSnapshotService'
 import {
+  HTML_BODY_PREFIX,
   renderBodyText,
   renderLayout,
   toPreHtml,
@@ -108,7 +109,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       reportDate,
     })
 
-    if (persisted?.bodyText) {
+    const needsRichRefresh = ['추천', '공개추천', '확신추천', '눌림목'].includes(topic)
+      && Boolean(persisted?.bodyText)
+      && !String(persisted?.bodyText || '').startsWith(HTML_BODY_PREFIX)
+
+    if (persisted?.bodyText && !needsRichRefresh) {
       const html = renderLayout({
         title: topicTitle(topic),
         topic,

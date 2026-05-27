@@ -104,6 +104,13 @@ type WatchItem = {
   horizonReason?: string | null;
 };
 
+type PositionHorizonRow = {
+  code: string;
+  target_horizon?: string | null;
+  planned_review_at?: string | null;
+  horizon_reason?: string | null;
+};
+
 type PullbackSignalWeekRow = {
   code: string;
   trade_date: string;
@@ -802,7 +809,7 @@ export async function createWeeklyReportPdf(
     runReportStep("watchlist_query", () =>
       supabase
         .from("watchlist")
-        .select("code, buy_price, quantity, invested_amount, status, target_horizon, planned_review_at, horizon_reason, stock:stocks(code,name,close)")
+        .select("code, buy_price, quantity, invested_amount, status, stock:stocks(code,name,close)")
         .eq("chat_id", chatId)
         .returns<WatchlistRow[]>()
     ),
@@ -871,6 +878,20 @@ export async function createWeeklyReportPdf(
     : { latestAsof: null, byCode: new Map(), fallbackCodes: [] } as ScoreSnapshotResult;
 
   const watchRows: WatchlistRow[] = (watchRes.data ?? []) as WatchlistRow[];
+  const horizonByCode = await runReportStep<Map<string, PositionHorizonRow>>("watchlist_query", async () => {
+    try {
+      const { data, error } = await supabase
+        .from("virtual_positions")
+        .select("code, target_horizon, planned_review_at, horizon_reason")
+        .eq("chat_id", chatId)
+        .returns<PositionHorizonRow[]>();
+
+      if (error) return new Map<string, PositionHorizonRow>();
+      return new Map<string, PositionHorizonRow>((data ?? []).map((row) => [String(row.code), row]));
+    } catch {
+      return new Map<string, PositionHorizonRow>();
+    }
+  });
   const codes: string[] = watchRows.map((r: WatchlistRow) => r.code);
   const realtimeMap = codes.length
     ? await runReportStep("realtime_price", async () => {
@@ -883,6 +904,7 @@ export async function createWeeklyReportPdf(
     : {};
 
   const watchItems: WatchItem[] = watchRows.map((row: WatchlistRow) => {
+    const horizonMeta = horizonByCode.get(row.code);
     const stock = unwrapStock(row.stock);
     const buyPrice = row.buy_price != null ? toNum(row.buy_price) : null;
     const qtyRaw = row.quantity != null ? Math.floor(toNum(row.quantity)) : 0;
@@ -905,9 +927,9 @@ export async function createWeeklyReportPdf(
       value,
       unrealized,
       pnlPct,
-      targetHorizon: row.target_horizon ?? null,
-      plannedReviewAt: row.planned_review_at ?? null,
-      horizonReason: row.horizon_reason ?? null,
+      targetHorizon: horizonMeta?.target_horizon ?? row.target_horizon ?? null,
+      plannedReviewAt: horizonMeta?.planned_review_at ?? row.planned_review_at ?? null,
+      horizonReason: horizonMeta?.horizon_reason ?? row.horizon_reason ?? null,
     };
   }).sort((a: WatchItem, b: WatchItem) => Math.abs(b.unrealized) - Math.abs(a.unrealized));
 
