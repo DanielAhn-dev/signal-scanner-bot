@@ -1454,6 +1454,16 @@ export default function ScanPage({ onNavigate }: { onNavigate?: (r: string) => v
                     const typedMetric = metric as StrategyMetricSummary
                     const status = getStrategyMetricStatus(typedMetric)
                     const coverage = strategyCoverage?.strategies?.[typedMetric.key]
+                    const sampleProgressPct = coverage
+                      ? Math.max(0, Math.min(100, (coverage.returnCount / Math.max(1, coverage.minRequired)) * 100))
+                      : 0
+                    const sampleStageLabel = coverage
+                      ? coverage.hasEnoughSamples
+                        ? '충분'
+                        : sampleProgressPct >= 70
+                          ? '축적중'
+                          : '초기'
+                      : '-'
                     return (
                   <td
                     key={metric.key}
@@ -1525,6 +1535,29 @@ export default function ScanPage({ onNavigate }: { onNavigate?: (r: string) => v
                             : coverage
                               ? `커버리지 ${formatNumber(coverage.coveragePct, 1)}% · 표본 ${formatNumber(coverage.returnCount, 0)}/${formatNumber(coverage.minRequired, 0)}`
                               : '커버리지 정보 없음'}
+                        </div>
+                        <div style={{ color: 'var(--color-text-tertiary)' }}>
+                          {strategyCoverageLoading
+                            ? '표본 진행상태 계산 중…'
+                            : coverage
+                              ? `신호 ${formatNumber(coverage.signalCount, 0)}건 · 유효수익 ${formatNumber(coverage.returnCount, 0)}건 · ${coverage.hasEnoughSamples ? '의미 기준 충족' : `기준까지 ${formatNumber(Math.max(0, coverage.minRequired - coverage.returnCount), 0)}건`}`
+                              : '표본 진행상태 정보 없음'}
+                        </div>
+                        <div style={{ display: 'grid', gap: 2, marginTop: 1 }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', color: 'var(--color-text-tertiary)', fontSize: 10 }}>
+                            <span>표본 진행률</span>
+                            <span>{strategyCoverageLoading ? '-' : `${formatNumber(sampleProgressPct, 0)}% · ${sampleStageLabel}`}</span>
+                          </div>
+                          <div style={{ height: 4, borderRadius: 999, background: 'var(--color-border-subtle)', overflow: 'hidden' }}>
+                            <div
+                              style={{
+                                width: `${strategyCoverageLoading ? 0 : sampleProgressPct}%`,
+                                height: '100%',
+                                background: coverage?.hasEnoughSamples ? 'var(--color-stock-up)' : 'var(--color-warning)',
+                                transition: 'width 0.35s ease',
+                              }}
+                            />
+                          </div>
                         </div>
                         <div className="scan-strategy-sparkline-wrap" aria-label="최근 20신호 수익률 추이">
                           <StrategySparkline values={Array.isArray(typedMetric.recentReturns20) ? typedMetric.recentReturns20 : []} />
