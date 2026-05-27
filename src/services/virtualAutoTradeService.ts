@@ -75,6 +75,8 @@ import {
   resolveStrategyGateStatus,
 } from "./strategyGateStateService";
 import { businessDaysBehind } from "../utils/dataFreshness";
+import { fetchStockNews } from "../utils/fetchNews";
+import { analyzeNewsSentiment, analyzeOrderIntakeSignal } from "../lib/newsSentiment";
 
 type RunMode = SelectionAutoTradeRunMode;
 type RunType = AutoTradeRunType;
@@ -150,6 +152,17 @@ type AutoTradeSellPerformance = {
   profitFactor: number | null;
   maxLossStreak: number;
 };
+
+type NewsAssistSignal = {
+  bias: number;
+  blocked: boolean;
+  note: string;
+};
+
+const NEWS_ASSIST_CACHE_TTL_MS = 10 * 60 * 1000;
+const NEWS_ASSIST_NEWS_LIMIT = 6;
+const NEWS_ASSIST_PROBE_LIMIT = Math.max(4, toPositiveInt(process.env.AUTO_TRADE_NEWS_ASSIST_PROBE_LIMIT, 8));
+const newsAssistCache = new Map<string, { expiresAt: number; signal: NewsAssistSignal }>();
 
 function toGateLabel(status: "promote" | "hold" | "watch" | "pause"): string {
   if (status === "promote") return "승격 후보";
@@ -402,6 +415,140 @@ function formatTopRejectReasons(input?: {
     .slice(0, 2);
   if (!entries.length) return null;
   return entries.map(([reason, count]) => `${reason}:${count}`).join(" · ");
+}
+
+async function buildNewsAssistSignalsByCode(codes: string[]): Promise<Map<string, NewsAssistSignal>> {
+  const uniqueCodes = Array.from(new Set(codes.filter(Boolean))).slice(0, NEWS_ASSIST_PROBE_LIMIT);
+  const now = Date.now();
+  const out = new Map<string, NewsAssistSignal>();
+
+  await Promise.all(
+    uniqueCodes.map(async (code) => {
+      const cached = newsAssistCache.get(code);
+      if (cached && cached.expiresAt > now) {
+        out.set(code, cached.signal);
+        return;
+      }
+
+      try {
+        const news = await fetchStockNews(code, NEWS_ASSIST_NEWS_LIMIT);
+        if (!news.length) {
+          const neutral: NewsAssistSignal = { bias: 0, blocked: false, note: "뉴스 신호 없음" };
+          newsAssistCache.set(code, { expiresAt: now + NEWS_ASSIST_CACHE_TTL_MS, signal: neutral });
+          out.set(code, neutral);
+          return;
+        }
+
+        const titles = news.map((entry) => String(entry.title || "")).filter(Boolean);
+        const sentiment = analyzeNewsSentiment(titles);
+        const orderSignal = analyzeOrderIntakeSignal(titles);
+        const rawBias = sentiment.score * 0.7 + orderSignal.score * 1.0;
+        const bias = Number(clamp(rawBias, -8, 8).toFixed(1));
+        const blocked = sentiment.score <= -6 || orderSignal.score <= -5;
+
+        let note = "중립";
+        if (blocked) {
+          note = `강한 악재 감지(s=${sentiment.score}, o=${orderSignal.score})`;
+        } else if (bias >= 2.5) {
+          note = `호재 가중치 +${bias}`;
+        } else if (bias <= -2.5) {
+          note = `악재 감점 ${bias}`;
+        }
+
+        const signal: NewsAssistSignal = { bias, blocked, note };
+        newsAssistCache.set(code, { expiresAt: now + NEWS_ASSIST_CACHE_TTL_MS, signal });
+        out.set(code, signal);
+      } catch {
+        const neutral: NewsAssistSignal = { bias: 0, blocked: false, note: "뉴스 조회 실패(중립 처리)" };
+        newsAssistCache.set(code, { expiresAt: now + NEWS_ASSIST_CACHE_TTL_MS, signal: neutral });
+        out.set(code, neutral);
+      }
+    })
+  );
+
+  return out;
+}
+
+async function applyNewsAssistToSelection(
+  selection: AutoTradeCandidateSelectionResult,
+  contextLabel: string
+): Promise<{ selection: AutoTradeCandidateSelectionResult; notes: string[] }> {
+  if (!selection.candidates.length) return { selection, notes: [] };
+
+  const signalsByCode = await buildNewsAssistSignalsByCode(
+    selection.candidates.map((candidate) => candidate.code)
+  );
+  let boosted = 0;
+  let penalized = 0;
+  let blocked = 0;
+  const boostedDetails: string[] = [];
+  const penalizedDetails: string[] = [];
+  const blockedDetails: string[] = [];
+
+  const candidates = selection.candidates
+    .filter((candidate) => {
+      const signal = signalsByCode.get(candidate.code);
+      if (signal?.blocked) {
+        blocked += 1;
+        blockedDetails.push(`${candidate.name}(${candidate.code}, ${signal.note})`);
+        return false;
+      }
+      return true;
+    })
+    .map((candidate) => {
+      const signal = signalsByCode.get(candidate.code);
+      if (!signal || Math.abs(signal.bias) < 0.1) return candidate;
+      if (signal.bias > 0) {
+        boosted += 1;
+        boostedDetails.push(`${candidate.name}(${candidate.code}, +${signal.bias})`);
+      }
+      if (signal.bias < 0) {
+        penalized += 1;
+        penalizedDetails.push(`${candidate.name}(${candidate.code}, ${signal.bias})`);
+      }
+      return {
+        ...candidate,
+        score: Number((candidate.score + signal.bias).toFixed(1)),
+      };
+    })
+    .sort((a, b) => b.score - a.score);
+
+  const notes: string[] = [];
+  if (boosted > 0 || penalized > 0 || blocked > 0) {
+    notes.push(`${contextLabel} 뉴스보정: 가산 ${boosted} · 감산 ${penalized} · 악재차단 ${blocked}`);
+    if (boostedDetails.length > 0) {
+      notes.push(`${contextLabel} 가산 근거: ${boostedDetails.slice(0, 3).join(" · ")}`);
+    }
+    if (penalizedDetails.length > 0) {
+      notes.push(`${contextLabel} 감산 근거: ${penalizedDetails.slice(0, 3).join(" · ")}`);
+    }
+    if (blockedDetails.length > 0) {
+      notes.push(`${contextLabel} 차단 근거: ${blockedDetails.slice(0, 3).join(" · ")}`);
+    }
+  }
+
+  const nextRejectedByReason = {
+    ...(selection.filteringMetrics?.rejectedByReason ?? {}),
+  };
+  if (blocked > 0) {
+    nextRejectedByReason.newsAssistBlocked =
+      Number(nextRejectedByReason.newsAssistBlocked ?? 0) + blocked;
+  }
+
+  return {
+    selection: {
+      ...selection,
+      candidates,
+      filteringMetrics: selection.filteringMetrics
+        ? {
+            ...selection.filteringMetrics,
+            selectedCount: candidates.length,
+            rejectedByReason: nextRejectedByReason,
+          }
+        : selection.filteringMetrics,
+    },
+    notes,
+  };
 }
 
 async function fetchExecutionPriceMap(
@@ -1920,7 +2067,7 @@ async function runMondayBuyForUser(payload: {
     return summary;
   }
 
-  const candidateSelection = await selectMondayCandidates({
+  const candidateSelectionRaw = await selectMondayCandidates({
     supabase: payload.supabase,
     chatId,
     minBuyScore: marketRegimeGuard.minBuyScore,
@@ -1930,6 +2077,9 @@ async function runMondayBuyForUser(payload: {
     selectedStrategy,
     riskProfile: prefs.risk_profile ?? null,
   });
+  const newsAssistMonday = await applyNewsAssistToSelection(candidateSelectionRaw, "신규매수");
+  const candidateSelection = newsAssistMonday.selection;
+  summary.notes.push(...newsAssistMonday.notes);
   if (candidateSelection.guardNote) {
     summary.notes.push(candidateSelection.guardNote);
   }
@@ -3285,7 +3435,7 @@ async function runDailyReviewForUser(payload: {
     });
 
     if (!dailyBuyBlocked && availableCash > 0 && addOnConstraint.buySlots > 0 && activeHoldings.length > 0) {
-      const addOnSelection = await selectDailyAddOnCandidates({
+      const addOnSelectionRaw = await selectDailyAddOnCandidates({
         supabase: payload.supabase,
         holdings: activeHoldings,
         limit: addOnConstraint.buySlots,
@@ -3296,6 +3446,9 @@ async function runDailyReviewForUser(payload: {
         sellSplitCount,
         marketPolicy,
       });
+      const addOnNewsAssist = await applyNewsAssistToSelection(addOnSelectionRaw, "추가매수");
+      const addOnSelection = addOnNewsAssist.selection;
+      summary.notes.push(...addOnNewsAssist.notes);
 
       if (addOnSelection.latestAsof) {
         summary.notes.push(`보유 추가매수 점수 기준일: ${addOnSelection.latestAsof}`);
@@ -3751,7 +3904,7 @@ async function runDailyReviewForUser(payload: {
         },
       });
     } else {
-      const candidateSelection = await selectMondayCandidates({
+      const candidateSelectionRaw = await selectMondayCandidates({
         supabase: payload.supabase,
         chatId,
         minBuyScore: buyConstraint.minBuyScore,
@@ -3759,6 +3912,9 @@ async function runDailyReviewForUser(payload: {
         heldCodes,
         marketPolicy,
       });
+      const rebalanceNewsAssist = await applyNewsAssistToSelection(candidateSelectionRaw, "리밸런싱 신규매수");
+      const candidateSelection = rebalanceNewsAssist.selection;
+      summary.notes.push(...rebalanceNewsAssist.notes);
       const candidates = candidateSelection.candidates;
       const rebalanceBuyPriceResolution = await resolveBuyExecutionPrices(candidates, {
         apiBudget: payload.apiBudget,
