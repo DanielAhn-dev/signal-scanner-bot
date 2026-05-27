@@ -136,7 +136,7 @@ def run_python_script(script_path: str, args: list[str], label: str) -> bool:
 def load_env_file(filepath=".env"):
     """?? ?? ??"""
     try:
-        with open(filepath, "r") as f:
+        with open(filepath, "r", encoding="utf-8-sig") as f:
             for line in f:
                 line = line.strip()
                 if not line or line.startswith("#"):
