@@ -13,6 +13,40 @@ type NewsItem = {
   market?: string
 }
 
+function asText(value: unknown): string {
+  return String(value ?? '').trim()
+}
+
+function pickText(obj: Record<string, unknown>, keys: string[]): string {
+  for (const key of keys) {
+    const value = asText(obj[key])
+    if (value) return value
+  }
+  return ''
+}
+
+function normalizeNewsItem(raw: unknown): NewsItem | null {
+  if (!raw || typeof raw !== 'object') return null
+  const row = raw as Record<string, unknown>
+  const title = pickText(row, ['title', 'headline', 'subject', 'newsTitle', 'titleFull'])
+  if (!title) return null
+
+  return {
+    title,
+    link: pickText(row, ['link', 'url', 'newsUrl', 'mobileNewsUrl']) || undefined,
+    source: pickText(row, ['source', 'press', 'officeName', 'publisher']) || undefined,
+    date: pickText(row, ['date', 'datetime', 'publishedAt', 'createdAt']) || undefined,
+    market: pickText(row, ['market']) || undefined,
+  }
+}
+
+function normalizeNewsItems(payload: unknown): NewsItem[] {
+  if (!Array.isArray(payload)) return []
+  return payload
+    .map(normalizeNewsItem)
+    .filter((item): item is NewsItem => !!item)
+}
+
 function fmtTime(dateStr?: string): string {
   if (!dateStr) return ''
   const d = new Date(dateStr)
@@ -42,7 +76,7 @@ export default function NewsSidePanel() {
         cacheMs: force ? 0 : 20_000,
         timeoutMs: 12_000,
       })
-      const items: NewsItem[] = res?.data ?? []
+      const items = normalizeNewsItems(res?.data)
       setNews(items)
       setPage(nextPage)
       setHasMore(Boolean(res?.hasMore))
@@ -148,8 +182,7 @@ export default function NewsSidePanel() {
                   key={i}
                   className={`xls-row${i % 2 === 0 ? ' xls-row--even' : ''}${selected === i ? ' xls-row--selected' : ''}`}
                   onClick={() => setSelected(i === selected ? null : i)}
-                  style={{ cursor: item.link ? 'pointer' : 'default' }}
-                  onDoubleClick={() => item.link && window.open(item.link, '_blank', 'noopener')}
+                  style={{ cursor: 'default' }}
                 >
                   <td className="xls-row-num">{i + 1}</td>
                   <td className="xls-cell" style={{ fontSize: 9 }}>
@@ -168,17 +201,38 @@ export default function NewsSidePanel() {
                     {fmtTime(item.date)}
                   </td>
                   <td className="xls-cell" style={{ fontSize: 10, paddingTop: 1, paddingBottom: 1 }}>
-                    <span
-                      style={{
-                        display: 'block',
-                        whiteSpace: 'nowrap',
-                        textOverflow: 'ellipsis',
-                        overflow: 'hidden',
-                      }}
-                      title={item.title}
-                    >
-                    {item.title}
-                    </span>
+                    {item.link ? (
+                      <a
+                        href={item.link}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        onClick={(e) => e.stopPropagation()}
+                        style={{
+                          display: 'block',
+                          whiteSpace: 'nowrap',
+                          textOverflow: 'ellipsis',
+                          overflow: 'hidden',
+                          textDecoration: 'none',
+                          color: 'inherit',
+                          cursor: 'pointer',
+                        }}
+                        title={item.title}
+                      >
+                        {item.title}
+                      </a>
+                    ) : (
+                      <span
+                        style={{
+                          display: 'block',
+                          whiteSpace: 'nowrap',
+                          textOverflow: 'ellipsis',
+                          overflow: 'hidden',
+                        }}
+                        title={item.title}
+                      >
+                        {item.title}
+                      </span>
+                    )}
                   </td>
                 </tr>
               )})}
