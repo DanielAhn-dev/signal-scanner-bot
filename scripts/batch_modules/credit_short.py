@@ -26,6 +26,11 @@ def post_json_with_retry(sess: requests.Session, url: str, data: dict, timeout: 
     return None, False
 
 
+def build_isin_fallback(code6: str) -> str:
+    """Fallback ISIN pattern used by KRX endpoints for stock code lookup."""
+    return f"KR7{str(code6).zfill(6)}0003"
+
+
 def fetch_credit_short_data(supabase: Client, trading_date: str):
     """Collect credit/short-selling data from KRX MDC_OUT APIs."""
     trading_iso = to_iso(trading_date)
@@ -82,7 +87,7 @@ def fetch_credit_short_data(supabase: Client, trading_date: str):
         cs_rows = []
         success_count = 0
         fail_count = 0
-        fail_reasons: dict[str, int] = {"missing_isin": 0, "api_error": 0}
+        fail_reasons: dict[str, int] = {"missing_isin": 0, "fallback_isin": 0, "api_error": 0}
         sample_failed_codes: list[str] = []
         request_retries = max(1, int(os.environ.get("CREDIT_SHORT_API_RETRIES", "3")))
         start_d = (datetime.strptime(trading_date, "%Y%m%d") - timedelta(days=7)).strftime("%Y%m%d")
@@ -94,11 +99,10 @@ def fetch_credit_short_data(supabase: Client, trading_date: str):
 
             isin = isin_map.get(code)
             if not isin:
-                fail_count += 1
-                fail_reasons["missing_isin"] += 1
-                if len(sample_failed_codes) < 10:
-                    sample_failed_codes.append(code)
-                continue
+                # Some valid listed tickers are occasionally absent from finder_stkisu.
+                # Try deterministic fallback ISIN before counting as failure.
+                fail_reasons["fallback_isin"] += 1
+                isin = build_isin_fallback(code)
 
             short_volume = None
             short_ratio = None
@@ -161,7 +165,10 @@ def fetch_credit_short_data(supabase: Client, trading_date: str):
                 success_count += 1
             else:
                 fail_count += 1
-                fail_reasons["api_error"] += 1
+                if code in isin_map:
+                    fail_reasons["api_error"] += 1
+                else:
+                    fail_reasons["missing_isin"] += 1
                 if len(sample_failed_codes) < 10:
                     sample_failed_codes.append(code)
 
@@ -198,6 +205,7 @@ def fetch_credit_short_data(supabase: Client, trading_date: str):
                 print(
                     "  fail detail: "
                     f"missing_isin={fail_reasons.get('missing_isin', 0)}, "
+                    f"fallback_isin={fail_reasons.get('fallback_isin', 0)}, "
                     f"api_error={fail_reasons.get('api_error', 0)}"
                 )
                 if sample_failed_codes:
