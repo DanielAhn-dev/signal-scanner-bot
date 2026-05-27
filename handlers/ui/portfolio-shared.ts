@@ -17,6 +17,17 @@ type PortfolioSharePayload = {
     currentValue?: number
     unrealized?: number
     returnPct?: number
+    horizonDistribution?: {
+      scalp?: number
+      swing?: number
+      position?: number
+      unknown?: number
+    }
+    reviewSchedule?: {
+      due_now?: number
+      due_soon?: number
+      due_later?: number
+    }
   }
   rows?: Array<{
     stockName?: string
@@ -27,6 +38,8 @@ type PortfolioSharePayload = {
     currentPrice?: number
     unrealizedPnl?: number
     unrealizedPct?: number
+    targetHorizon?: string | null
+    plannedReviewAt?: string | null
   }>
 }
 
@@ -75,6 +88,8 @@ function renderPortfolioSummary(payload: PortfolioSharePayload): string {
       <tr style="border-bottom:1px solid var(--color-border-default);">
         <td style="padding:12px 10px;line-height:1.5;">${escapeHtml(String(row.stockName || '-'))}</td>
         <td style="padding:12px 10px;color:var(--color-text-secondary);line-height:1.5;">${escapeHtml(String(row.code || '-'))}</td>
+        <td style="padding:12px 10px;line-height:1.5;">${escapeHtml(String(row.targetHorizon === 'scalp' ? '단타' : row.targetHorizon === 'swing' ? '스윙' : row.targetHorizon === 'position' ? '중장기' : '-'))}</td>
+        <td style="padding:12px 10px;color:var(--color-text-secondary);line-height:1.5;">${escapeHtml(String(row.plannedReviewAt ? new Date(String(row.plannedReviewAt)).toLocaleDateString('ko-KR') : '-'))}</td>
         <td style="padding:12px 10px;line-height:1.5;">${escapeHtml(`${Number(row.quantity || 0).toLocaleString('ko-KR')}주`)}</td>
         <td style="padding:12px 10px;line-height:1.5;">${escapeHtml(formatKrw(Number(row.buyPrice || 0)))}</td>
         <td style="padding:12px 10px;color:var(--color-text-secondary);line-height:1.5;">${escapeHtml(String(row.buyDate || '-'))}</td>
@@ -100,6 +115,16 @@ function renderPortfolioSummary(payload: PortfolioSharePayload): string {
         const returnColor = returnPct > 0 ? 'var(--color-stock-up)' : returnPct < 0 ? 'var(--color-stock-down)' : undefined
         return renderMetric('현재 수익률', `${returnPct > 0 ? '+' : ''}${returnPct.toFixed(2)}%`, returnColor)
       })()}
+      ${(() => {
+        const h = totals.horizonDistribution || {}
+        const text = `단타 ${Number(h.scalp || 0)} · 스윙 ${Number(h.swing || 0)} · 중장기 ${Number(h.position || 0)}`
+        return renderMetric('보유수평선', text)
+      })()}
+      ${(() => {
+        const s = totals.reviewSchedule || {}
+        const text = `리뷰필요 ${Number(s.due_now || 0)} · 2일내 ${Number(s.due_soon || 0)} · 예정 ${Number(s.due_later || 0)}`
+        return renderMetric('리뷰 캘린더', text)
+      })()}
     </section>
 
     <section style="border:1px solid var(--color-border-default);border-radius:var(--radius-xl);overflow:hidden;background:var(--color-bg-surface);box-shadow:0 1px 0 rgba(255,255,255,0.8)">
@@ -108,6 +133,8 @@ function renderPortfolioSummary(payload: PortfolioSharePayload): string {
           <tr style="background:var(--color-bg-sunken);color:var(--color-text-secondary)">
             <th style="text-align:left;padding:13px 10px 12px;border-bottom:1px solid var(--color-border-default);font-size:13px;font-weight:var(--font-weight-semibold);letter-spacing:-0.01em;">종목명</th>
             <th style="text-align:left;padding:13px 10px 12px;border-bottom:1px solid var(--color-border-default);font-size:13px;font-weight:var(--font-weight-semibold);letter-spacing:-0.01em;">종목코드</th>
+            <th style="text-align:left;padding:13px 10px 12px;border-bottom:1px solid var(--color-border-default);font-size:13px;font-weight:var(--font-weight-semibold);letter-spacing:-0.01em;">수평선</th>
+            <th style="text-align:left;padding:13px 10px 12px;border-bottom:1px solid var(--color-border-default);font-size:13px;font-weight:var(--font-weight-semibold);letter-spacing:-0.01em;">리뷰예정</th>
             <th style="text-align:left;padding:13px 10px 12px;border-bottom:1px solid var(--color-border-default);font-size:13px;font-weight:var(--font-weight-semibold);letter-spacing:-0.01em;">보유수량</th>
             <th style="text-align:left;padding:13px 10px 12px;border-bottom:1px solid var(--color-border-default);font-size:13px;font-weight:var(--font-weight-semibold);letter-spacing:-0.01em;">매수가</th>
             <th style="text-align:left;padding:13px 10px 12px;border-bottom:1px solid var(--color-border-default);font-size:13px;font-weight:var(--font-weight-semibold);letter-spacing:-0.01em;">매수일</th>
@@ -116,7 +143,7 @@ function renderPortfolioSummary(payload: PortfolioSharePayload): string {
           </tr>
         </thead>
         <tbody>
-          ${tableRows || '<tr><td colspan="7" style="padding:16px 12px;color:var(--color-text-secondary);font-size:14px;line-height:1.5;">표시할 보유 종목이 없습니다.</td></tr>'}
+          ${tableRows || '<tr><td colspan="9" style="padding:16px 12px;color:var(--color-text-secondary);font-size:14px;line-height:1.5;">표시할 보유 종목이 없습니다.</td></tr>'}
         </tbody>
       </table>
     </section>`

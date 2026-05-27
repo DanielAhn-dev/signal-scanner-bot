@@ -18,6 +18,9 @@ interface PositionWithPrice {
   stop_loss_percent?: number
   take_profit_targets?: Array<{ target: number; percentage: number }>
   auto_trading_enabled?: boolean
+  target_horizon?: 'scalp' | 'swing' | 'position' | null
+  horizon_reason?: string | null
+  planned_review_at?: string | null
   status: string
 }
 
@@ -26,6 +29,17 @@ interface PortfolioSummary {
   total_current_value: number
   total_pnl: number
   total_pnl_percent: number
+  horizon_distribution?: {
+    scalp: number
+    swing: number
+    position: number
+    unknown: number
+  }
+  review_schedule?: {
+    due_now: number
+    due_soon: number
+    due_later: number
+  }
   positions: PositionWithPrice[]
   last_updated: string
 }
@@ -88,6 +102,18 @@ export default function RealtimeDashboard() {
   }
 
   const positions = portfolio.positions || []
+  const horizon = portfolio.horizon_distribution || {
+    scalp: 0,
+    swing: 0,
+    position: 0,
+    unknown: 0,
+  }
+  const reviewSchedule = portfolio.review_schedule || {
+    due_now: 0,
+    due_soon: 0,
+    due_later: 0,
+  }
+  const horizonTotal = Math.max(1, positions.length)
   const riskLevel =
     portfolio.total_pnl_percent < -5 ? 'RED' : portfolio.total_pnl_percent < -3 ? 'YELLOW' : 'GREEN'
   const riskEmoji = riskLevel === 'RED' ? '🔴' : riskLevel === 'YELLOW' ? '🟡' : '🟢'
@@ -102,6 +128,64 @@ export default function RealtimeDashboard() {
         <p style={{ fontSize: 14, color: 'var(--color-text-secondary)' }}>
           마지막 업데이트: {lastUpdate?.toLocaleTimeString('ko-KR')}
         </p>
+      </div>
+
+      <div
+        className="card"
+        style={{
+          padding: 'var(--space-5)',
+          marginBottom: 'var(--space-6)',
+          display: 'grid',
+          gap: 'var(--space-4)',
+        }}
+      >
+        <h2 className="title-md" style={{ margin: 0 }}>
+          보유수평선 분포 / 리뷰 일정
+        </h2>
+
+        <div style={{ display: 'grid', gap: 'var(--space-2)' }}>
+          {[
+            { key: 'scalp', label: '단타', color: 'var(--color-warning)', count: horizon.scalp },
+            { key: 'swing', label: '스윙', color: 'var(--color-primary)', count: horizon.swing },
+            { key: 'position', label: '중장기', color: 'var(--color-success)', count: horizon.position },
+            { key: 'unknown', label: '미분류', color: 'var(--color-text-secondary)', count: horizon.unknown },
+          ].map((item) => {
+            const pct = (item.count / horizonTotal) * 100
+            return (
+              <div key={item.key}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, marginBottom: 4 }}>
+                  <span>{item.label}</span>
+                  <span>{item.count}개 ({pct.toFixed(1)}%)</span>
+                </div>
+                <div style={{ height: 8, background: 'var(--color-bg-sunken)', borderRadius: 999 }}>
+                  <div
+                    style={{
+                      width: `${Math.max(2, pct)}%`,
+                      height: '100%',
+                      borderRadius: 999,
+                      background: item.color,
+                    }}
+                  />
+                </div>
+              </div>
+            )
+          })}
+        </div>
+
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 'var(--space-3)' }}>
+          <div style={{ padding: 'var(--space-3)', border: '1px solid var(--color-border-default)', borderRadius: 8 }}>
+            <p style={{ fontSize: 12, color: 'var(--color-text-secondary)' }}>리뷰 필요</p>
+            <p style={{ fontSize: 18, fontWeight: 700, color: 'var(--color-error)' }}>{reviewSchedule.due_now}개</p>
+          </div>
+          <div style={{ padding: 'var(--space-3)', border: '1px solid var(--color-border-default)', borderRadius: 8 }}>
+            <p style={{ fontSize: 12, color: 'var(--color-text-secondary)' }}>2일 이내</p>
+            <p style={{ fontSize: 18, fontWeight: 700, color: 'var(--color-warning)' }}>{reviewSchedule.due_soon}개</p>
+          </div>
+          <div style={{ padding: 'var(--space-3)', border: '1px solid var(--color-border-default)', borderRadius: 8 }}>
+            <p style={{ fontSize: 12, color: 'var(--color-text-secondary)' }}>향후 예정</p>
+            <p style={{ fontSize: 18, fontWeight: 700, color: 'var(--color-success)' }}>{reviewSchedule.due_later}개</p>
+          </div>
+        </div>
       </div>
 
       {/* 포트폴리오 요약 */}
@@ -266,6 +350,22 @@ export default function RealtimeDashboard() {
                         <p style={{ fontSize: 12, color: 'var(--color-text-secondary)' }}>현재가</p>
                         <p style={{ fontSize: 14, fontWeight: 'bold', color: pnlColor }}>
                           {pos.current_price ? formatKrw(pos.current_price) : '조회 중...'}
+                        </p>
+                      </div>
+
+                      <div>
+                        <p style={{ fontSize: 12, color: 'var(--color-text-secondary)' }}>보유수평선</p>
+                        <p style={{ fontSize: 14, fontWeight: 'bold' }}>
+                          {pos.target_horizon === 'scalp'
+                            ? '단타'
+                            : pos.target_horizon === 'swing'
+                              ? '스윙'
+                              : pos.target_horizon === 'position'
+                                ? '중장기'
+                                : '미분류'}
+                        </p>
+                        <p style={{ fontSize: 11, color: 'var(--color-text-secondary)', marginTop: 2 }}>
+                          리뷰: {pos.planned_review_at ? new Date(pos.planned_review_at).toLocaleDateString('ko-KR') : '-'}
                         </p>
                       </div>
                     </div>

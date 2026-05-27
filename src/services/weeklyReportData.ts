@@ -17,6 +17,9 @@ export type WatchlistRow = {
   quantity: number | null;
   invested_amount: number | null;
   status: string | null;
+  target_horizon?: string | null;
+  planned_review_at?: string | null;
+  horizon_reason?: string | null;
   stock:
     | { code: string; name: string; close: number | null }
     | { code: string; name: string; close: number | null }[]

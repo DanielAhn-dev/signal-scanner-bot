@@ -99,6 +99,9 @@ type WatchItem = {
   value: number;
   unrealized: number;
   pnlPct: number | null;
+  targetHorizon?: string | null;
+  plannedReviewAt?: string | null;
+  horizonReason?: string | null;
 };
 
 type PullbackSignalWeekRow = {
@@ -799,7 +802,7 @@ export async function createWeeklyReportPdf(
     runReportStep("watchlist_query", () =>
       supabase
         .from("watchlist")
-        .select("code, buy_price, quantity, invested_amount, status, stock:stocks(code,name,close)")
+        .select("code, buy_price, quantity, invested_amount, status, target_horizon, planned_review_at, horizon_reason, stock:stocks(code,name,close)")
         .eq("chat_id", chatId)
         .returns<WatchlistRow[]>()
     ),
@@ -902,6 +905,9 @@ export async function createWeeklyReportPdf(
       value,
       unrealized,
       pnlPct,
+      targetHorizon: row.target_horizon ?? null,
+      plannedReviewAt: row.planned_review_at ?? null,
+      horizonReason: row.horizon_reason ?? null,
     };
   }).sort((a: WatchItem, b: WatchItem) => Math.abs(b.unrealized) - Math.abs(a.unrealized));
 

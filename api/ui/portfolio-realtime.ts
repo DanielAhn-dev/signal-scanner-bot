@@ -50,6 +50,17 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           total_current_value: 0,
           total_pnl: 0,
           total_pnl_percent: 0,
+          horizon_distribution: {
+            scalp: 0,
+            swing: 0,
+            position: 0,
+            unknown: 0,
+          },
+          review_schedule: {
+            due_now: 0,
+            due_soon: 0,
+            due_later: 0,
+          },
           positions: [],
           last_updated: new Date().toISOString(),
         },
@@ -73,6 +84,17 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const positionsWithPrice: any[] = []
     let totalInvested = 0
     let totalCurrentValue = 0
+    const horizonDistribution = {
+      scalp: 0,
+      swing: 0,
+      position: 0,
+      unknown: 0,
+    }
+    const reviewSchedule = {
+      due_now: 0,
+      due_soon: 0,
+      due_later: 0,
+    }
 
     for (const pos of positions) {
       const invested = Number(pos.invested_amount || 0)
@@ -104,6 +126,22 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
       const pnlAmount = currentValue - invested
       const pnlPercent = invested > 0 ? (pnlAmount / invested) * 100 : 0
+      const targetHorizon = String(pos.target_horizon || '').trim().toLowerCase()
+      if (targetHorizon === 'scalp') horizonDistribution.scalp += 1
+      else if (targetHorizon === 'swing') horizonDistribution.swing += 1
+      else if (targetHorizon === 'position') horizonDistribution.position += 1
+      else horizonDistribution.unknown += 1
+
+      const plannedReviewAt = pos.planned_review_at ? String(pos.planned_review_at) : null
+      if (plannedReviewAt) {
+        const ts = Date.parse(plannedReviewAt)
+        if (Number.isFinite(ts)) {
+          const daysLeft = Math.ceil((ts - Date.now()) / (24 * 60 * 60 * 1000))
+          if (daysLeft <= 0) reviewSchedule.due_now += 1
+          else if (daysLeft <= 2) reviewSchedule.due_soon += 1
+          else reviewSchedule.due_later += 1
+        }
+      }
 
       positionsWithPrice.push({
         id: pos.id,
@@ -118,6 +156,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         stop_loss_percent: pos.stop_loss_percent,
         take_profit_targets: pos.take_profit_targets,
         auto_trading_enabled: pos.auto_trading_enabled,
+        target_horizon: pos.target_horizon ?? null,
+        horizon_reason: pos.horizon_reason ?? null,
+        planned_review_at: pos.planned_review_at ?? null,
         status: pos.status,
       })
     }
@@ -132,6 +173,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         total_current_value: totalCurrentValue,
         total_pnl: totalPnL,
         total_pnl_percent: totalPnLPercent,
+        horizon_distribution: horizonDistribution,
+        review_schedule: reviewSchedule,
         positions: positionsWithPrice,
         last_updated: new Date().toISOString(),
       },

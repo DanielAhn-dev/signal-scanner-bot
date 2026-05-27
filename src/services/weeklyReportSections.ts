@@ -35,6 +35,9 @@ type WatchItem = {
   invested: number;
   unrealized: number;
   pnlPct: number | null;
+  targetHorizon?: string | null;
+  plannedReviewAt?: string | null;
+  horizonReason?: string | null;
 };
 
 type SectorRow = {
@@ -271,6 +274,110 @@ export function drawPortfolioSection(
     { label: "이전 2주 대비", value: fmtSignedInt(curr.realizedPnl - prev.realizedPnl), sub: `${FIFO_REALIZED_LABEL} 증감`, valueColor: pnlColor(curr.realizedPnl - prev.realizedPnl) },
   ];
   drawKpiGrid(ctx, cards, 4);
+
+  const horizonCounts = {
+    scalp: 0,
+    swing: 0,
+    position: 0,
+    unknown: 0,
+  };
+
+  for (const item of watchItems) {
+    const raw = String(item.targetHorizon ?? "").trim().toLowerCase();
+    if (raw === "scalp") horizonCounts.scalp += 1;
+    else if (raw === "swing") horizonCounts.swing += 1;
+    else if (raw === "position") horizonCounts.position += 1;
+    else horizonCounts.unknown += 1;
+  }
+
+  const total = Math.max(1, watchItems.length);
+  const horizonRows = [
+    ["단타(scalp)", `${horizonCounts.scalp}개`, `${((horizonCounts.scalp / total) * 100).toFixed(1)}%`],
+    ["스윙", `${horizonCounts.swing}개`, `${((horizonCounts.swing / total) * 100).toFixed(1)}%`],
+    ["중장기(position)", `${horizonCounts.position}개`, `${((horizonCounts.position / total) * 100).toFixed(1)}%`],
+    ["미분류", `${horizonCounts.unknown}개`, `${((horizonCounts.unknown / total) * 100).toFixed(1)}%`],
+  ];
+
+  ctx.y -= 6;
+  drawSectionHeader(ctx, "보유수평선 분포", "단타/스윙/중장기 구성 비율");
+  drawTable(
+    ctx,
+    [
+      { header: "구분", width: 160, align: "left" },
+      { header: "종목수", width: 90, align: "right" },
+      { header: "비중", width: 90, align: "right" },
+      { header: "비고", width: 197, align: "left" },
+    ],
+    horizonRows.map((row) => {
+      const note = row[0].includes("단타")
+        ? "빠른 회전/리스크 축소"
+        : row[0].includes("스윙")
+          ? "추세 연장 수익 구간"
+          : row[0].includes("중장기")
+            ? "핵심 보유/복리 구간"
+            : "프로필 미기록";
+      return [row[0], row[1], row[2], note];
+    }),
+    [C.text, C.text, C.text, C.text]
+  );
+
+  const reviewRows = watchItems
+    .filter((item) => item.plannedReviewAt)
+    .map((item) => {
+      const reviewAt = new Date(String(item.plannedReviewAt));
+      const time = Number.isNaN(reviewAt.getTime())
+        ? "-"
+        : `${reviewAt.getFullYear()}-${String(reviewAt.getMonth() + 1).padStart(2, "0")}-${String(reviewAt.getDate()).padStart(2, "0")}`;
+      const daysLeft = Number.isNaN(reviewAt.getTime())
+        ? null
+        : Math.ceil((reviewAt.getTime() - Date.now()) / (24 * 60 * 60 * 1000));
+      return {
+        code: item.code,
+        name: item.name,
+        reviewDate: time,
+        daysLeft,
+        horizon: String(item.targetHorizon ?? "-").toUpperCase(),
+      };
+    })
+    .sort((a, b) => {
+      const av = a.daysLeft == null ? Number.POSITIVE_INFINITY : a.daysLeft;
+      const bv = b.daysLeft == null ? Number.POSITIVE_INFINITY : b.daysLeft;
+      return av - bv;
+    })
+    .slice(0, 8);
+
+  if (reviewRows.length > 0) {
+    ctx.y -= 6;
+    drawSectionHeader(ctx, "예정 리뷰 캘린더", "가까운 재점검 일정 순");
+    drawTable(
+      ctx,
+      [
+        { header: "종목", width: 126, align: "left" },
+        { header: "코드", width: 68, align: "center" },
+        { header: "수평선", width: 74, align: "center" },
+        { header: "예정일", width: 90, align: "center" },
+        { header: "D-day", width: 72, align: "center" },
+        { header: "상태", width: 107, align: "left" },
+      ],
+      reviewRows.map((row) => {
+        const ddayText = row.daysLeft == null ? "-" : row.daysLeft <= 0 ? `D+${Math.abs(row.daysLeft)}` : `D-${row.daysLeft}`;
+        const status = row.daysLeft == null
+          ? "일정 미확인"
+          : row.daysLeft <= 0
+            ? "리뷰 필요"
+            : row.daysLeft <= 2
+              ? "임박"
+              : "예정";
+        return [truncate(row.name, 10), row.code, row.horizon, row.reviewDate, ddayText, status];
+      }),
+      reviewRows.map((row) => {
+        if (row.daysLeft == null) return C.text;
+        if (row.daysLeft <= 0) return C.down;
+        if (row.daysLeft <= 2) return C.up;
+        return C.text;
+      })
+    );
+  }
 }
 
 export function drawTradesSection(ctx: ReportRenderContext, windows: TradeWindows, scoreByCode?: Map<string, ScoreSnapshotRow>) {

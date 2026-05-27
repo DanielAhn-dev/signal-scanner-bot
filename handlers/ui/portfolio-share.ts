@@ -23,6 +23,8 @@ type PortfolioShareRow = {
   currentPrice: number
   unrealizedPnl: number
   unrealizedPct: number
+  targetHorizon?: string | null
+  plannedReviewAt?: string | null
 }
 
 function firstHeaderValue(value: string | string[] | undefined): string {
@@ -165,7 +167,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     const { data, error } = await supabase
       .from('virtual_positions')
-      .select('code,buy_price,buy_date,quantity,stock:stocks(name,close)')
+      .select('code,buy_price,buy_date,quantity,target_horizon,planned_review_at,stock:stocks(name,close)')
       .eq('chat_id', chatId)
       .gt('quantity', 0)
       .order('updated_at', { ascending: false })
@@ -202,6 +204,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         currentPrice,
         unrealizedPnl,
         unrealizedPct,
+        targetHorizon: row.target_horizon ? String(row.target_horizon) : null,
+        plannedReviewAt: row.planned_review_at ? String(row.planned_review_at) : null,
       }
     })
 
@@ -209,6 +213,30 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const totalCurrent = rows.reduce((acc, row) => acc + row.quantity * row.currentPrice, 0)
     const totalUnrealized = totalCurrent - totalInvested
     const totalReturnPct = totalInvested > 0 ? (totalUnrealized / totalInvested) * 100 : 0
+    const horizonDistribution = rows.reduce(
+      (acc, row) => {
+        const h = String(row.targetHorizon || '').toLowerCase()
+        if (h === 'scalp') acc.scalp += 1
+        else if (h === 'swing') acc.swing += 1
+        else if (h === 'position') acc.position += 1
+        else acc.unknown += 1
+        return acc
+      },
+      { scalp: 0, swing: 0, position: 0, unknown: 0 },
+    )
+    const reviewSchedule = rows.reduce(
+      (acc, row) => {
+        if (!row.plannedReviewAt) return acc
+        const ts = Date.parse(String(row.plannedReviewAt))
+        if (!Number.isFinite(ts)) return acc
+        const daysLeft = Math.ceil((ts - Date.now()) / (24 * 60 * 60 * 1000))
+        if (daysLeft <= 0) acc.due_now += 1
+        else if (daysLeft <= 2) acc.due_soon += 1
+        else acc.due_later += 1
+        return acc
+      },
+      { due_now: 0, due_soon: 0, due_later: 0 },
+    )
 
     logRealtimeCoverageMetric({
       context: 'ui.portfolio-share',
@@ -229,6 +257,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         currentValue: round(totalCurrent, 0),
         unrealized: round(totalUnrealized, 0),
         returnPct: round(totalReturnPct, 2),
+        horizonDistribution,
+        reviewSchedule,
       },
       rows: rows.map((row) => ({
         ...row,
