@@ -1,4 +1,5 @@
 import React from 'react'
+import { createPortal } from 'react-dom'
 
 type ShareItem = {
   shareId: string
@@ -119,9 +120,11 @@ export default function ShareModal({
     })
   }, [shares, sortBy])
 
-  return (
+  if (typeof document === 'undefined') return null
+
+  return createPortal(
     <div className="modal-overlay" role="dialog" aria-modal aria-label="공유 링크">
-      <div className="modal card" style={{ maxWidth: '100%', width: '100%' }}>
+      <div className="modal card share-modal">
         <div className="flex-between" style={{ alignItems: 'flex-start' }}>
           <h2 className="title-lg">공유 링크 생성됨</h2>
           <button className="nav-item" onClick={onClose} style={{ marginLeft: 'auto' }}>닫기</button>
@@ -190,7 +193,7 @@ export default function ShareModal({
               </select>
               <button className="ui-button ui-btn-secondary" onClick={onRefresh} disabled={loading} style={{ width: '100%' }}>새로고침</button>
             </div>
-            <div style={{ marginTop: 12, display: 'grid', gap: 10, maxHeight: 280, overflow: 'auto' }}>
+            <div className="share-modal__recent-list" style={{ marginTop: 12, display: 'grid', gap: 10 }}>
               {sortedShares.length === 0 ? (
                 <div className="muted">표시할 공유 링크가 없습니다.</div>
               ) : sortedShares.map((share) => {
@@ -199,7 +202,7 @@ export default function ShareModal({
                   <div key={share.shareId} className="card" style={{ margin: 0, padding: 12 }}>
                     <div className="caption">생성 {formatDate(share.createdAt)}</div>
                     <div className="muted" style={{ marginTop: 4 }}>만료 {formatDate(share.expiresAt)} · 조회 {share.accessCount || 0}회</div>
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginTop: 10 }}>
+                    <div className="share-modal__item-actions" style={{ marginTop: 10 }}>
                         <button className="ui-button ui-btn-secondary" onClick={() => copy(share.url || link)}>링크 복사</button>
                       <button className="ui-button ui-btn-secondary" onClick={() => onRevoke?.(share.shareId)} disabled={revokingId === share.shareId}>
                         {revokingId === share.shareId ? '철회 중…' : '철회'}
@@ -212,6 +215,7 @@ export default function ShareModal({
           </div>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   )
 }

@@ -1,12 +1,8 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import {
-  claimReportShareAccess,
-  generateShareAccessToken,
   getReportShareByPublicToken,
-  hashShareAccessTokenForStorage,
   markReportShareAccessed,
   verifyInviteCode,
-  verifyShareAccessToken,
 } from '../../src/services/reportShareService'
 import { createSupabaseServiceClientFromEnv } from '../../src/services/reportSnapshotService'
 import { escapeHtml, renderLayout } from '../../src/services/reportWebRenderService'
@@ -14,21 +10,6 @@ import { escapeHtml, renderLayout } from '../../src/services/reportWebRenderServ
 const ORIGIN = process.env.UI_CORS_ORIGIN || '*'
 
 type ShareKind = 'scan' | 'analyze' | 'highlights'
-
-function parseCookies(req: VercelRequest): Record<string, string> {
-  const raw = String(req.headers.cookie || '')
-  if (!raw) return {}
-  return raw.split(';').reduce<Record<string, string>>((acc, token) => {
-    const [key, ...rest] = token.trim().split('=')
-    if (!key) return acc
-    acc[key] = decodeURIComponent(rest.join('='))
-    return acc
-  }, {})
-}
-
-function claimCookieName(shareId: string): string {
-  return `ssb_share_claim_${shareId.replace(/[^A-Za-z0-9_]/g, '')}`
-}
 
 function renderCodeGate(params: {
   share: string
@@ -521,9 +502,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.status(410).send('만료된 공유 링크입니다.')
     }
 
-    const cookieName = claimCookieName(String(record.id || ''))
-    const cookieValue = parseCookies(req)[cookieName]
-
     let payload: any = {}
     try {
       payload = JSON.parse(String(record.body_text || '{}')) as any
@@ -532,48 +510,21 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     const requiresCode = payload?.sharePolicy?.requiresCode === true
-    let accessAlreadyCounted = false
     if (requiresCode) {
-      const storedClaimerHash = String(record.claimer_token_hash || '')
       const providedCode = String(req.query.code || '').trim().toUpperCase()
-      const maxAgeSec = Math.max(60, Math.floor((new Date(String(record.expires_at)).getTime() - Date.now()) / 1000))
-
-      if (storedClaimerHash) {
-        if (!cookieValue || !verifyShareAccessToken({ secret, accessToken: cookieValue, accessTokenHash: storedClaimerHash })) {
-          return res.status(403).send(renderCodeGate({ share, kind, error: '이 초대코드는 이미 1회 사용되었습니다. 최초 인증 기기에서만 재접속할 수 있습니다.' }))
-        }
-      } else {
-        if (!providedCode) {
-          return res.status(200).send(renderCodeGate({ share, kind }))
-        }
-        if (!verifyInviteCode({ secret, inviteCode: providedCode, inviteCodeHash: String(record.invite_code_hash || '') })) {
-          return res.status(403).send(renderCodeGate({ share, kind, error: '초대코드가 올바르지 않습니다.' }))
-        }
-
-        const claimerToken = generateShareAccessToken()
-        const claimerTokenHash = hashShareAccessTokenForStorage(secret, claimerToken)
-        const claimed = await claimReportShareAccess({
-          supabase,
-          shareId: String(record.id),
-          accessCount: Number(record.access_count || 0),
-          claimerTokenHash,
-        })
-        if (!claimed) {
-          return res.status(409).send(renderCodeGate({ share, kind, error: '이미 다른 사용자가 초대코드를 등록했습니다.' }))
-        }
-
-        accessAlreadyCounted = true
-        res.setHeader('Set-Cookie', `${cookieName}=${encodeURIComponent(claimerToken)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${maxAgeSec}`)
+      if (!providedCode) {
+        return res.status(200).send(renderCodeGate({ share, kind }))
+      }
+      if (!verifyInviteCode({ secret, inviteCode: providedCode, inviteCodeHash: String(record.invite_code_hash || '') })) {
+        return res.status(403).send(renderCodeGate({ share, kind, error: '초대코드가 올바르지 않습니다.' }))
       }
     }
 
-    if (!accessAlreadyCounted) {
-      await markReportShareAccessed({
-        supabase,
-        shareId: String(record.id),
-        accessCount: Number(record.access_count || 0),
-      }).catch(() => undefined)
-    }
+    await markReportShareAccessed({
+      supabase,
+      shareId: String(record.id),
+      accessCount: Number(record.access_count || 0),
+    }).catch(() => undefined)
 
     const contentHtml = kind === 'analyze'
       ? renderAnalyzeShared(payload)
