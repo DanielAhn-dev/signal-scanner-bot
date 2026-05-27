@@ -10,7 +10,7 @@ export function topicLabel(topic: string): string {
   if (topic === '거시') return '거시'
   if (topic === '수급') return '수급'
   if (topic === '섹터') return '섹터'
-  if (topic === '확신추천') return '하이라이트추천'
+  if (topic === '확신추천') return '집행우선 종목'
   if (topic === '공개추천') return '공개추천'
   if (topic === '가이드') return '운영 가이드'
   if (topic === '자동매매') return '자동매매 가이드'
@@ -25,7 +25,7 @@ export function topicTitle(topic: string): string {
   if (topic === '거시') return '거시 지표 리포트'
   if (topic === '수급') return '수급 리포트'
   if (topic === '섹터') return '섹터 리포트'
-  if (topic === '확신추천') return '하이라이트 종목 추천'
+  if (topic === '확신추천') return '집행우선 종목 리포트'
   if (topic === '공개추천') return '공유용 오늘의 투자 후보 리포트'
   if (topic === '가이드') return 'Signal Scanner Bot 운영 가이드'
   if (topic === '자동매매') return '자동매매 명령어 운영 가이드'
@@ -156,7 +156,13 @@ export function toRichHtml(text: string): string {
   }
 
   closeAll()
-  return out.join('') || '<p>표시할 내용이 없습니다.</p>'
+
+  const html = out.join('') || '<p>표시할 내용이 없습니다.</p>'
+  const chunks = html.split(/(?=<h2>)/g).map((chunk) => chunk.trim()).filter(Boolean)
+  if (!chunks.length) return '<section class="report-section"><p>표시할 내용이 없습니다.</p></section>'
+  return chunks
+    .map((chunk) => `<section class="report-section">${chunk}</section>`)
+    .join('')
 }
 
 export function toPreHtml(text: string): string {
@@ -169,9 +175,9 @@ export function toPreHtml(text: string): string {
  */
 export function renderBodyText(bodyText: string): string {
   if (bodyText.startsWith(HTML_BODY_PREFIX)) {
-    return bodyText.slice(HTML_BODY_PREFIX.length)
+    return `<div class="rich-share rich-share--html">${bodyText.slice(HTML_BODY_PREFIX.length)}</div>`
   }
-  return toRichHtml(bodyText)
+  return `<div class="rich-share rich-share--text">${toRichHtml(bodyText)}</div>`
 }
 
 // ─── Conviction (하이라이트 종목 추천) Web HTML Builder ───────────────────────
@@ -542,16 +548,24 @@ export function renderLayout(params: {
     }
     .meta { color: var(--color-text-secondary); font-size: 13px; }
     .content { padding: 20px 22px; font-size: 15px; }
+    .rich-share { display: flex; flex-direction: column; gap: 12px; }
+    .report-section {
+      background: linear-gradient(180deg, #ffffff 0%, #fcfdff 100%);
+      border: 1px solid var(--color-border-default);
+      border-radius: 14px;
+      padding: 14px 14px 12px;
+      box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+    }
     .content p { margin: 0.68em 0; line-height: 1.75; }
     .content h2 {
-      margin: 1.25em 0 0.5em;
+      margin: 0 0 0.62em;
       font-size: 1.05rem;
       font-weight: var(--font-weight-bold);
       line-height: 1.35;
       letter-spacing: -0.01em;
       color: var(--color-text-primary);
-      padding-bottom: 0.25em;
-      border-bottom: 2px solid var(--color-brand-subtle);
+      padding-bottom: 0.38em;
+      border-bottom: 1px solid color-mix(in srgb, var(--color-brand) 18%, #ffffff);
     }
     .content h2:first-child { margin-top: 0.2em; }
     .content hr { border: 0; border-top: 1px solid var(--color-border-default); margin: 0.9em 0; }
@@ -583,6 +597,7 @@ export function renderLayout(params: {
       body { padding: 10px 8px 32px; }
       .hero, .content, .footer { padding-left: 14px; padding-right: 14px; }
       .content { padding-top: 16px; }
+      .report-section { padding: 12px 11px; border-radius: 12px; }
     }
     @media (max-width: 500px) {
       /* Conviction grid: stack to 2x2 on very small screens */

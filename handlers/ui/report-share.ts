@@ -14,6 +14,7 @@ import {
   listReportShares,
   revokeReportShare,
 } from '../../src/services/reportShareService'
+import { HTML_BODY_PREFIX } from '../../src/services/reportWebRenderService'
 
 const ORIGIN = process.env.UI_CORS_ORIGIN || '*'
 
@@ -102,7 +103,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     let bodyText = ''
     let sourceLabel = ''
     const persisted = await getPersistedReportBody({ supabase, topic, audienceKey, reportDate })
-    if (persisted?.bodyText) {
+    const needsConvictionHtmlRefresh = topic === '확신추천'
+      && Boolean(persisted?.bodyText)
+      && !String(persisted?.bodyText || '').startsWith(HTML_BODY_PREFIX)
+
+    if (persisted?.bodyText && !needsConvictionHtmlRefresh) {
       bodyText = persisted.bodyText
       sourceLabel = persisted.sourceLabel
     } else {
