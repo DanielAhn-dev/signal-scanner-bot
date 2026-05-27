@@ -430,8 +430,8 @@ export function selectRunType(
 ): AutoTradeRunType {
   if (mode === "monday") return "MONDAY_BUY";
   if (mode === "daily") return "DAILY_REVIEW";
-  // auto: 신호 기반으로 매일 진입/매도 검토 (달력 제약 없음)
-  return "DAILY_REVIEW";
+  // auto: 월요일은 진입 중심, 나머지 영업일은 일일 대응 중심
+  return isKstMonday(now) ? "MONDAY_BUY" : "DAILY_REVIEW";
 }
 
 export function applyStrategyBuyConstraint(input: {

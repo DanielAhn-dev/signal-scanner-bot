@@ -74,15 +74,15 @@
     "crons": [
         {
             "path": "/api/cron",
-            "schedule": "10 1 * * 1-5"
+            "schedule": "8 0 * * 1-5"
         },
         {
             "path": "/api/cron",
-            "schedule": "20 4 * * 1-5"
+            "schedule": "35 1 * * 1-5"
         },
         {
             "path": "/api/cron",
-            "schedule": "0 6 * * 1-5"
+            "schedule": "10 5 * * 1-5"
         },
         {
             "path": "/api/cron/scoreSync",

@@ -761,6 +761,40 @@ function buildAutoTradeFilterReason(candidate: {
   return reasons.slice(0, 2).join(" · ");
 }
 
+const AUTO_TRADE_CHECKPOINTS_KST = [
+  { hour: 9, minute: 8, label: "09:08" },
+  { hour: 10, minute: 35, label: "10:35" },
+  { hour: 14, minute: 10, label: "14:10" },
+];
+
+function resolveExecutionPriorityLine(action: AutoTradeActionSummary): string {
+  if (action.sells > 0) {
+    return "대응우선도: 높음 (매도 체결 발생, 리스크/익절 체결 확인)";
+  }
+  if (action.buys > 0) {
+    return "대응우선도: 중간 (신규/추가 진입 근거 및 비중 확인)";
+  }
+  return "대응우선도: 낮음 (체결 없음)";
+}
+
+function resolveNextAutoTradeCheckpoint(base = new Date()): string {
+  const kst = new Date(base.getTime() + 9 * 60 * 60 * 1000);
+  const day = kst.getUTCDay();
+  const minutesNow = kst.getUTCHours() * 60 + kst.getUTCMinutes();
+  const isWeekday = day >= 1 && day <= 5;
+
+  if (isWeekday) {
+    for (const slot of AUTO_TRADE_CHECKPOINTS_KST) {
+      const slotMinutes = slot.hour * 60 + slot.minute;
+      if (minutesNow < slotMinutes) {
+        return `다음 자동점검: 오늘 ${slot.label} (KST)`;
+      }
+    }
+  }
+
+  return `다음 자동점검: 다음 영업일 ${AUTO_TRADE_CHECKPOINTS_KST[0].label} (KST)`;
+}
+
 function buildAutoTradeExecutionAlert(input: {
   runType: RunType;
   action: AutoTradeActionSummary;
@@ -777,10 +811,14 @@ function buildAutoTradeExecutionAlert(input: {
         : "수동 실행";
 
   const shadowPrefix = input.isShadow ? "[섀도우] " : "";
+  const priorityLine = resolveExecutionPriorityLine(input.action);
+  const nextCheckpointLine = resolveNextAutoTradeCheckpoint();
 
   const lines = [
     `${shadowPrefix}[자동사이클 체결 알림] ${runLabel}`,
     `매수 ${input.action.buys}건 · 매도 ${input.action.sells}건 · 미체결 ${input.action.skipped}건`,
+    priorityLine,
+    nextCheckpointLine,
     ...pickExecutionLines(input.action.notes || []).map((line) => `- ${line}`),
     input.isShadow ? "※ 섀도우 모드: 실반영 없음. 실전 전환은 /섀도우 off" : "다음 점검: /보유 · /보유대응",
   ];

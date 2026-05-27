@@ -81,22 +81,22 @@ function resolveDueTasks(now = new Date()): DueTask[] {
   if (CRON_HOBBY_DAILY_MODE) {
     const dailyTasks: DueTask[] = [];
 
-    // KST 10:10
-    if (ENABLE_INTRADAY_AGENT_CYCLE && isWeekday && isUtcTime(1, 10)) {
+    // KST 09:08
+    if (ENABLE_INTRADAY_AGENT_CYCLE && isWeekday && isUtcTime(0, 8)) {
       dailyTasks.push({
         name: "virtualAutoTradeMorning",
         path: TASK_PATHS.virtualAutoTradeMorning,
       });
     }
-    // KST 13:20
-    if (ENABLE_INTRADAY_AGENT_CYCLE && isWeekday && isUtcTime(4, 20)) {
+    // KST 10:35
+    if (ENABLE_INTRADAY_AGENT_CYCLE && isWeekday && isUtcTime(1, 35)) {
       dailyTasks.push({
         name: "virtualAutoTradeAfternoon",
         path: TASK_PATHS.virtualAutoTradeAfternoon,
       });
     }
-    // KST 15:00
-    if (ENABLE_INTRADAY_AGENT_CYCLE && isWeekday && isUtcTime(6, 0)) {
+    // KST 14:10
+    if (ENABLE_INTRADAY_AGENT_CYCLE && isWeekday && isUtcTime(5, 10)) {
       dailyTasks.push({
         name: "virtualAutoTradeClose",
         path: TASK_PATHS.virtualAutoTradeClose,
@@ -151,24 +151,24 @@ function resolveDueTasks(now = new Date()): DueTask[] {
   }
 
   if (ENABLE_INTRADAY_AGENT_CYCLE) {
-    // KST 10:10
-    if (isWeekday && isUtcTime(1, 10)) {
+    // KST 09:08
+    if (isWeekday && isUtcTime(0, 8)) {
       tasks.push({
         name: "virtualAutoTradeMorning",
         path: TASK_PATHS.virtualAutoTradeMorning,
       });
     }
 
-    // KST 13:20
-    if (isWeekday && isUtcTime(4, 20)) {
+    // KST 10:35
+    if (isWeekday && isUtcTime(1, 35)) {
       tasks.push({
         name: "virtualAutoTradeAfternoon",
         path: TASK_PATHS.virtualAutoTradeAfternoon,
       });
     }
 
-    // KST 15:00
-    if (isWeekday && isUtcTime(6, 0)) {
+    // KST 14:10
+    if (isWeekday && isUtcTime(5, 10)) {
       tasks.push({
         name: "virtualAutoTradeClose",
         path: TASK_PATHS.virtualAutoTradeClose,

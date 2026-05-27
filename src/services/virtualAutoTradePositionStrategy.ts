@@ -212,6 +212,10 @@ export function classifyAutoTradeEntryProfile(input: {
     return "SHORT_SWING";
   }
 
+  if (conservativeBias && score >= 82 && strongSignal && calmRsi && highLiquidity && !stableBear) {
+    return "POSITION_CORE";
+  }
+
   if (score >= 82 && strongSignal && calmRsi && highLiquidity && (macroAggressive || newsSupportive || strongTrust || stableBull)) {
     return aggressiveBias ? "SWING" : "POSITION_CORE";
   }
