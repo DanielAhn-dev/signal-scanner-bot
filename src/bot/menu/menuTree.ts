@@ -90,6 +90,8 @@ const MENU_NODES: Record<string, MenuNode> = {
       { text: "온보딩 가이드", callback_data: "cmd:onboarding" },
       { text: "투자성향", callback_data: "cmd:riskprofile" },
       { text: "투자금 설정", callback_data: "prompt:capital" },
+      { text: "발굴전략", callback_data: "cmd:discoveryprofile" },
+      { text: "발굴비교", callback_data: "cmd:discoverycompare" },
       { text: "프로필", callback_data: "cmd:profile" },
       { text: "뒤로", callback_data: "menu:root" },
     ],

@@ -94,6 +94,7 @@ export type InvestmentPrefs = {
   signal_trust_add_on?: number;
   signal_trust_rebalance?: number;
   virtual_shadow_mode?: boolean;
+  discovery_profile?: "BLEND" | "HIGHLIGHT" | "PULLBACK" | "MULTIBAGGER" | "BACKTEST_EDGE";
 };
 
 function resolveDefaultAutoTradeStrategy(
@@ -181,6 +182,15 @@ export async function getUserInvestmentPrefs(
   const signalTrustRebalance = Number(prefs.signal_trust_rebalance);
   const virtualShadowMode =
     typeof prefs.virtual_shadow_mode === "boolean" ? prefs.virtual_shadow_mode : undefined;
+  const discoveryProfileRaw = String(prefs.discovery_profile ?? "").trim().toUpperCase();
+  const discoveryProfile =
+    discoveryProfileRaw === "BLEND" ||
+    discoveryProfileRaw === "HIGHLIGHT" ||
+    discoveryProfileRaw === "PULLBACK" ||
+    discoveryProfileRaw === "MULTIBAGGER" ||
+    discoveryProfileRaw === "BACKTEST_EDGE"
+      ? (discoveryProfileRaw as InvestmentPrefs["discovery_profile"])
+      : undefined;
 
   if (Number.isFinite(cap) && cap > 0) out.capital_krw = cap;
   if (Number.isFinite(split) && split > 0) out.split_count = Math.floor(split);
@@ -247,6 +257,9 @@ export async function getUserInvestmentPrefs(
   }
   if (typeof virtualShadowMode === "boolean") {
     out.virtual_shadow_mode = virtualShadowMode;
+  }
+  if (discoveryProfile) {
+    out.discovery_profile = discoveryProfile;
   }
 
   return out;
@@ -405,6 +418,14 @@ export async function setUserInvestmentPrefs(
       virtual_shadow_mode:
         typeof merged.virtual_shadow_mode === "boolean"
           ? merged.virtual_shadow_mode
+          : undefined,
+      discovery_profile:
+        merged.discovery_profile === "BLEND" ||
+        merged.discovery_profile === "HIGHLIGHT" ||
+        merged.discovery_profile === "PULLBACK" ||
+        merged.discovery_profile === "MULTIBAGGER" ||
+        merged.discovery_profile === "BACKTEST_EDGE"
+          ? (merged.discovery_profile as InvestmentPrefs["discovery_profile"])
           : undefined,
     },
   };

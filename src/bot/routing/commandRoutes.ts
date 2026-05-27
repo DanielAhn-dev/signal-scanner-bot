@@ -30,6 +30,10 @@ import {
   handleEtfThemeCommand,
 } from "../commands/marketPicks";
 import { handleDiscoveryCommand } from "../commands/discovery";
+import {
+  handleDiscoveryCompareCommand,
+  handleDiscoveryProfileCommand,
+} from "../commands/discoveryProfile";
 import { handlePreRallyCommand } from "../commands/preRally";
 import {
   handleEtfDistributionCommand,
@@ -370,6 +374,18 @@ export const COMMAND_ROUTE_SPECS: CommandRouteSpec[] = [
     userErrorLabel: "발굴",
     tokens: ["discovery", "발굴"],
     run: (match, ctx, tgSend) => handleDiscoveryCommand(match[2] ?? "", ctx, tgSend),
+  },
+  {
+    pattern: CMD.DISCOVERY_PROFILE,
+    userErrorLabel: "발굴 전략",
+    tokens: ["discoveryprofile", "발굴전략"],
+    run: (match, ctx, tgSend) => handleDiscoveryProfileCommand(match[2] ?? "", ctx, tgSend),
+  },
+  {
+    pattern: CMD.DISCOVERY_COMPARE,
+    userErrorLabel: "발굴 비교",
+    tokens: ["discoverycompare", "발굴비교"],
+    run: (match, ctx, tgSend) => handleDiscoveryCompareCommand(match[2] ?? "", ctx, tgSend),
   },
   {
     pattern: CMD.ETFINFO,

@@ -213,6 +213,21 @@ export async function routeCallbackData(
       }
     }
 
+    if (prefix === "discoverysrc") {
+      try {
+        const { handleDiscoveryProfileCallback } = await import("./commands/discoveryProfile.js");
+        await handleDiscoveryProfileCallback(ctx, tgSend, payload);
+        return;
+      } catch (error) {
+        console.error("[callbackRouter] discovery source callback 처리 실패:", error);
+        await tgSend("sendMessage", {
+          chat_id: ctx.chatId,
+          text: "⚠️ 발굴 소스 설정 처리 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.",
+        });
+        return;
+      }
+    }
+
     const resolved = resolveCallbackPrefixedCommandText(prefix, payload);
     if (resolved) {
       await routeMessage(resolved, ctx, tgSend);

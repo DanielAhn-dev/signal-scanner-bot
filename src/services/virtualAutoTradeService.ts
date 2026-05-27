@@ -41,6 +41,7 @@ import {
   type RankedCandidate,
 } from "./virtualAutoTradeSelection";
 import { fetchLatestPullbackCandidateCodes } from "./virtualAutoTradePullbackIntegration";
+import { discoverMultibaggerCandidates } from "./discoveryService";
 import { computeAutoTradePacingMetrics } from "./virtualAutoTradePacingService";
 import {
   fetchRealtimePriceBatch,
@@ -122,6 +123,97 @@ type SignalTrustThresholds = {
   addOn: number;
   rebalance: number;
 };
+
+type DiscoveryProfile = "BLEND" | "HIGHLIGHT" | "PULLBACK" | "MULTIBAGGER" | "BACKTEST_EDGE";
+
+function normalizeDiscoveryProfile(value: unknown): DiscoveryProfile {
+  const normalized = String(value ?? "").trim().toUpperCase();
+  if (normalized === "HIGHLIGHT") return "HIGHLIGHT";
+  if (normalized === "PULLBACK") return "PULLBACK";
+  if (normalized === "MULTIBAGGER") return "MULTIBAGGER";
+  if (normalized === "BACKTEST_EDGE") return "BACKTEST_EDGE";
+  return "BLEND";
+}
+
+function discoveryProfileLabel(profile: DiscoveryProfile): string {
+  if (profile === "HIGHLIGHT") return "하이라이트(기본점수)";
+  if (profile === "PULLBACK") return "눌림목 우선";
+  if (profile === "MULTIBAGGER") return "멀티배거 우선";
+  if (profile === "BACKTEST_EDGE") return "백테스트 우선";
+  return "혼합(추천)";
+}
+
+async function fetchBacktestEdgeCodes(input: {
+  supabase: SupabaseClientAny;
+  chatId: number;
+  limit: number;
+}): Promise<Set<string>> {
+  const since = new Date(Date.now() - 120 * 24 * 60 * 60 * 1000).toISOString();
+  const { data, error } = await input.supabase
+    .from(PORTFOLIO_TABLES.trades)
+    .select("code,pnl_amount,memo")
+    .eq("chat_id", input.chatId)
+    .eq("side", "SELL")
+    .is("broker_name", null)
+    .is("account_name", null)
+    .gte("traded_at", since)
+    .order("traded_at", { ascending: false })
+    .limit(1200);
+
+  if (error || !Array.isArray(data)) return new Set<string>();
+
+  const scoreByCode = new Map<string, number>();
+  const winByCode = new Map<string, number>();
+
+  for (const row of data as Array<{ code?: string | null; pnl_amount?: number | null; memo?: string | null }>) {
+    const code = String(row.code ?? "").trim();
+    if (!code) continue;
+    if (parseStrategyMemo(row.memo).strategyId !== AUTO_TRADE_STRATEGY_ID) continue;
+    const pnl = toNumber(row.pnl_amount, 0);
+    if (pnl <= 0) continue;
+    scoreByCode.set(code, (scoreByCode.get(code) ?? 0) + pnl);
+    winByCode.set(code, (winByCode.get(code) ?? 0) + 1);
+  }
+
+  const topCodes = Array.from(scoreByCode.keys())
+    .sort((a, b) => {
+      const winDiff = (winByCode.get(b) ?? 0) - (winByCode.get(a) ?? 0);
+      if (winDiff !== 0) return winDiff;
+      return (scoreByCode.get(b) ?? 0) - (scoreByCode.get(a) ?? 0);
+    })
+    .slice(0, Math.max(0, Math.floor(input.limit)));
+
+  return new Set(topCodes);
+}
+
+function applyDiscoveryBoostToRows(input: {
+  rows: RankedCandidate[];
+  multibaggerCodes?: Set<string>;
+  backtestEdgeCodes?: Set<string>;
+  multibaggerBoost?: number;
+  backtestBoost?: number;
+}): RankedCandidate[] {
+  const multibaggerBoost = toNumber(input.multibaggerBoost, 0);
+  const backtestBoost = toNumber(input.backtestBoost, 0);
+
+  if (
+    (!input.multibaggerCodes || input.multibaggerCodes.size <= 0 || multibaggerBoost === 0) &&
+    (!input.backtestEdgeCodes || input.backtestEdgeCodes.size <= 0 || backtestBoost === 0)
+  ) {
+    return input.rows;
+  }
+
+  return input.rows.map((row) => {
+    let boosted = row.score;
+    if (input.multibaggerCodes?.has(row.code)) boosted += multibaggerBoost;
+    if (input.backtestEdgeCodes?.has(row.code)) boosted += backtestBoost;
+    if (boosted === row.score) return row;
+    return {
+      ...row,
+      score: Number(boosted.toFixed(3)),
+    };
+  });
+}
 
 export type AutoTradeRunMode = SelectionAutoTradeRunMode;
 
@@ -1734,6 +1826,7 @@ async function selectMondayCandidates(payload: {
   marketPolicy?: AutoTradeMarketPolicy;
   selectedStrategy?: string | null;
   riskProfile?: string | null;
+  discoveryProfile?: DiscoveryProfile;
 }): Promise<AutoTradeCandidateSelectionResult> {
   const { rows: rankedRows, latestAsof } = await fetchLatestRankedRows({
     supabase: payload.supabase,
@@ -1801,10 +1894,18 @@ async function selectMondayCandidates(payload: {
       ? Math.min(95, toPositiveInt(payload.minBuyScore, 70) + 2)
       : toPositiveInt(payload.minBuyScore, 70);
 
-  const entryProfile = deriveEntryProfile({
+  const discoveryProfile = normalizeDiscoveryProfile(payload.discoveryProfile);
+
+  const baseEntryProfile = deriveEntryProfile({
     selectedStrategy: payload.selectedStrategy,
     riskProfile: payload.riskProfile,
   });
+
+  const entryProfile =
+    discoveryProfile === "PULLBACK" || discoveryProfile === "BLEND"
+      ? "pullback-first"
+      : baseEntryProfile;
+
   const pullbackCandidateCodes =
     entryProfile === "pullback-first"
       ? await fetchLatestPullbackCandidateCodes({
@@ -1813,8 +1914,34 @@ async function selectMondayCandidates(payload: {
         })
       : undefined;
 
-  const selection = pickAutoTradeCandidates({
+  const multibaggerCodes =
+    discoveryProfile === "MULTIBAGGER" || discoveryProfile === "BLEND"
+      ? new Set(
+          (await discoverMultibaggerCandidates(Math.max(payload.limit * 3, 20)).catch(() => []))
+            .map((pick) => pick.code)
+            .filter(Boolean)
+        )
+      : undefined;
+
+  const backtestEdgeCodes =
+    discoveryProfile === "BACKTEST_EDGE" || discoveryProfile === "BLEND"
+      ? await fetchBacktestEdgeCodes({
+          supabase: payload.supabase,
+          chatId: payload.chatId,
+          limit: Math.max(payload.limit * 2, 12),
+        })
+      : undefined;
+
+  const boostedRows = applyDiscoveryBoostToRows({
     rows: rankedRows,
+    multibaggerCodes,
+    backtestEdgeCodes,
+    multibaggerBoost: discoveryProfile === "MULTIBAGGER" ? 6 : discoveryProfile === "BLEND" ? 3 : 0,
+    backtestBoost: discoveryProfile === "BACKTEST_EDGE" ? 5 : discoveryProfile === "BLEND" ? 3 : 0,
+  });
+
+  const selection = pickAutoTradeCandidates({
+    rows: boostedRows,
     preferredMinBuyScore: staleAdjustedMinBuyScore,
     limit: payload.limit,
     heldCodes: heldAndCooldownCodes,
@@ -1828,10 +1955,24 @@ async function selectMondayCandidates(payload: {
     latestAsof,
     guardNote:
       staleBusinessDays === 1
-        ? `점수 기준일 1영업일 지연으로 최소점수 +2 보수 적용 (기준일 ${latestAsof})${cooldownCodes.size > 0 ? ` · 스탑로스 쿨다운 ${cooldownCodes.size}종목 제외` : ""}`
-        : cooldownCodes.size > 0
-          ? `스탑로스 쿨다운 ${cooldownCodes.size}종목 제외`
-          : undefined,
+        ? `점수 기준일 1영업일 지연으로 최소점수 +2 보수 적용 (기준일 ${latestAsof}) · 발굴프로필 ${discoveryProfileLabel(discoveryProfile)}${cooldownCodes.size > 0 ? ` · 스탑로스 쿨다운 ${cooldownCodes.size}종목 제외` : ""}`
+        : `발굴프로필 ${discoveryProfileLabel(discoveryProfile)}${
+            discoveryProfile === "PULLBACK"
+              ? ` · 눌림목 연동 ${pullbackCandidateCodes?.size ?? 0}종목`
+              : ""
+          }${
+            discoveryProfile === "MULTIBAGGER"
+              ? ` · 멀티배거 연동 ${multibaggerCodes?.size ?? 0}종목`
+              : ""
+          }${
+            discoveryProfile === "BACKTEST_EDGE"
+              ? ` · 백테스트 우수 연동 ${backtestEdgeCodes?.size ?? 0}종목`
+              : ""
+          }${
+            discoveryProfile === "BLEND"
+              ? ` · 멀티배거 ${multibaggerCodes?.size ?? 0} · 백테스트 ${backtestEdgeCodes?.size ?? 0}`
+              : ""
+          }${cooldownCodes.size > 0 ? ` · 스탑로스 쿨다운 ${cooldownCodes.size}종목 제외` : ""}`,
   };
 }
 
@@ -1853,6 +1994,7 @@ async function runMondayBuyForUser(payload: {
   };
 
   const prefs = await getUserInvestmentPrefs(chatId);
+  const discoveryProfile = normalizeDiscoveryProfile(prefs.discovery_profile);
   const signalTrustThresholds = resolveSignalTrustThresholdsFromPrefs(prefs);
 
   const { data: holdingRows, error: holdingError } = await payload.supabase
@@ -1887,6 +2029,7 @@ async function runMondayBuyForUser(payload: {
   if (selectedStrategy) {
     summary.notes.push(`전략: ${getStrategyLabel(selectedStrategy) || selectedStrategy}`);
   }
+  summary.notes.push(`발굴 소스: ${discoveryProfileLabel(discoveryProfile)}`);
   const longTermRatio = normalizeLongTermRatio(payload.setting.long_term_ratio, 70);
   summary.notes.push(`자산 비중: 장기 ${longTermRatio}% · 단기 ${100 - longTermRatio}%`);
   summary.notes.push(
@@ -2114,6 +2257,7 @@ async function runMondayBuyForUser(payload: {
     marketPolicy,
     selectedStrategy,
     riskProfile: prefs.risk_profile ?? null,
+    discoveryProfile,
   });
   const newsAssistMonday = await applyNewsAssistToSelection(candidateSelectionRaw, "신규매수");
   const candidateSelection = newsAssistMonday.selection;
@@ -3009,6 +3153,7 @@ async function runDailyReviewForUser(payload: {
   const chatId = payload.setting.chat_id;
   const prefs = await getUserInvestmentPrefs(chatId);
   const signalTrustThresholds = resolveSignalTrustThresholdsFromPrefs(prefs);
+  const discoveryProfile = normalizeDiscoveryProfile(prefs.discovery_profile);
   const summary: AutoTradeActionSummary = {
     chatId,
     buys: 0,
@@ -3051,6 +3196,7 @@ async function runDailyReviewForUser(payload: {
   if (selectedStrategy) {
     summary.notes.push(`기본 전략: ${getStrategyLabel(selectedStrategy) || selectedStrategy}`);
   }
+  summary.notes.push(`발굴 소스: ${discoveryProfileLabel(discoveryProfile)}`);
   summary.notes.push(
     `신뢰도 임계값(${signalTrustThresholds.variant}): 신규 ${signalTrustThresholds.newBuy} · 추가 ${signalTrustThresholds.addOn} · 리밸런싱 ${signalTrustThresholds.rebalance}`
   );
@@ -3949,6 +4095,9 @@ async function runDailyReviewForUser(payload: {
         limit: resolveCandidateProbeLimit(buySlots),
         heldCodes,
         marketPolicy,
+        selectedStrategy: payload.setting.selected_strategy,
+        riskProfile: prefs.risk_profile ?? null,
+        discoveryProfile,
       });
       const rebalanceNewsAssist = await applyNewsAssistToSelection(candidateSelectionRaw, "리밸런싱 신규매수");
       const candidateSelection = rebalanceNewsAssist.selection;
