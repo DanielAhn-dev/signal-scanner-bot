@@ -20,7 +20,7 @@ from supabase import create_client, Client
 # ===== 환경 변수 설정 =====
 def load_env_file(filepath=".env"):
     try:
-        with open(filepath, "r") as f:
+        with open(filepath, "r", encoding="utf-8-sig") as f:
             for line in f:
                 line = line.strip()
                 if not line or line.startswith("#"):

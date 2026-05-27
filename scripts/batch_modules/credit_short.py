@@ -5,10 +5,25 @@ STEP 2.6: ???/?? ??? ??
 """
 
 import time
+import os
 import requests
 from datetime import datetime, timedelta
 from supabase import Client
 from .utils import to_iso
+
+
+def post_json_with_retry(sess: requests.Session, url: str, data: dict, timeout: int = 10, retries: int = 3) -> tuple[dict | None, bool]:
+    """POST JSON with small retry/backoff. Returns (json, ok)."""
+    for attempt in range(1, retries + 1):
+        try:
+            r = sess.post(url, data=data, timeout=timeout)
+            r.raise_for_status()
+            return r.json(), True
+        except Exception:
+            if attempt >= retries:
+                break
+            time.sleep(0.2 * attempt)
+    return None, False
 
 
 def fetch_credit_short_data(supabase: Client, trading_date: str):
@@ -16,7 +31,6 @@ def fetch_credit_short_data(supabase: Client, trading_date: str):
     trading_iso = to_iso(trading_date)
     print(f"\n[2.6/7] Collecting credit/short data (KRX MDC_OUT API)...")
 
-    import os
     if os.environ.get("DISABLE_CREDIT_SHORT_FETCH", "false").lower() in ("1", "true", "yes"):
         print("  DISABLE_CREDIT_SHORT_FETCH=true, skipping credit/short fetch")
         return
@@ -53,12 +67,14 @@ def fetch_credit_short_data(supabase: Client, trading_date: str):
         # Build ISIN map
         isin_map = {}
         try:
-            r = sess.post(
+            payload, ok = post_json_with_retry(
+                sess,
                 krx_api,
-                data={"bld": "dbms/comm/finder/finder_stkisu", "mktsel": "ALL", "typeNo": "0", "pagePath": "/contents/MDC/STAT/srt/MDCSTAT300.cmd", "codeNm": ""},
+                {"bld": "dbms/comm/finder/finder_stkisu", "mktsel": "ALL", "typeNo": "0", "pagePath": "/contents/MDC/STAT/srt/MDCSTAT300.cmd", "codeNm": ""},
                 timeout=30,
+                retries=3,
             )
-            block = r.json().get("block1", [])
+            block = (payload or {}).get("block1", []) if ok else []
             isin_map = {item["short_code"]: item["full_code"] for item in block}
         except Exception as e:
             print(f"  ISIN mapping failed: {e}")
@@ -66,6 +82,9 @@ def fetch_credit_short_data(supabase: Client, trading_date: str):
         cs_rows = []
         success_count = 0
         fail_count = 0
+        fail_reasons: dict[str, int] = {"missing_isin": 0, "api_error": 0}
+        sample_failed_codes: list[str] = []
+        request_retries = max(1, int(os.environ.get("CREDIT_SHORT_API_RETRIES", "3")))
         start_d = (datetime.strptime(trading_date, "%Y%m%d") - timedelta(days=7)).strftime("%Y%m%d")
         end_d = trading_date
 
@@ -76,44 +95,61 @@ def fetch_credit_short_data(supabase: Client, trading_date: str):
             isin = isin_map.get(code)
             if not isin:
                 fail_count += 1
+                fail_reasons["missing_isin"] += 1
+                if len(sample_failed_codes) < 10:
+                    sample_failed_codes.append(code)
                 continue
 
             short_volume = None
             short_ratio = None
             short_balance = None
+            vol_query_ok = False
+            bal_query_ok = False
 
             # Short-selling volume/ratio
-            try:
-                r = sess.post(
-                    krx_api,
-                    data={"bld": "dbms/MDC_OUT/STAT/srt/MDCSTAT30102_OUT", "isuCd": isin, "strtDd": start_d, "endDd": end_d, "money": "1", "csvxls_isNo": "false"},
-                    timeout=10,
-                )
-                for row in r.json().get("OutBlock_1", []):
+            payload, ok = post_json_with_retry(
+                sess,
+                krx_api,
+                {"bld": "dbms/MDC_OUT/STAT/srt/MDCSTAT30102_OUT", "isuCd": isin, "strtDd": start_d, "endDd": end_d, "money": "1", "csvxls_isNo": "false"},
+                timeout=10,
+                retries=request_retries,
+            )
+            if ok:
+                vol_query_ok = True
+                matched = False
+                for row in (payload or {}).get("OutBlock_1", []):
                     date_str = row.get("TRD_DD", "").replace("/", "")
                     if date_str == trading_date:
                         short_volume = int(str(row.get("CVSRTSELL_TRDVOL", "0")).replace(",", "") or "0")
                         short_ratio = float(str(row.get("TRDVOL_WT", "0")).replace(",", "") or "0")
+                        matched = True
                         break
-            except Exception:
-                pass
+                if not matched:
+                    # 정상 응답이지만 해당일 데이터가 없으면 0으로 저장
+                    short_volume = 0
+                    short_ratio = 0.0
 
             # Short balance
-            try:
-                r = sess.post(
-                    krx_api,
-                    data={"bld": "dbms/MDC_OUT/STAT/srt/MDCSTAT30502_OUT", "isuCd": isin, "strtDd": start_d, "endDd": end_d, "money": "1", "csvxls_isNo": "false"},
-                    timeout=10,
-                )
-                for row in r.json().get("OutBlock_1", []):
+            payload, ok = post_json_with_retry(
+                sess,
+                krx_api,
+                {"bld": "dbms/MDC_OUT/STAT/srt/MDCSTAT30502_OUT", "isuCd": isin, "strtDd": start_d, "endDd": end_d, "money": "1", "csvxls_isNo": "false"},
+                timeout=10,
+                retries=request_retries,
+            )
+            if ok:
+                bal_query_ok = True
+                matched = False
+                for row in (payload or {}).get("OutBlock_1", []):
                     date_str = row.get("RPT_DUTY_OCCR_DD", "").replace("/", "")
                     if date_str == trading_date:
                         short_balance = int(str(row.get("BAL_QTY", "0")).replace(",", "") or "0")
+                        matched = True
                         break
-            except Exception:
-                pass
+                if not matched:
+                    short_balance = 0
 
-            if short_volume is not None or short_ratio is not None or short_balance is not None:
+            if short_volume is not None or short_ratio is not None or short_balance is not None or vol_query_ok or bal_query_ok:
                 cs_rows.append({
                     "code": code,
                     "date": trading_iso,
@@ -125,6 +161,9 @@ def fetch_credit_short_data(supabase: Client, trading_date: str):
                 success_count += 1
             else:
                 fail_count += 1
+                fail_reasons["api_error"] += 1
+                if len(sample_failed_codes) < 10:
+                    sample_failed_codes.append(code)
 
             time.sleep(0.05)
 
@@ -155,6 +194,14 @@ def fetch_credit_short_data(supabase: Client, trading_date: str):
                     pass
 
             print(f"  Stored {len(cs_rows)} credit/short rows (success: {success_count}, fail: {fail_count})")
+            if fail_count > 0:
+                print(
+                    "  fail detail: "
+                    f"missing_isin={fail_reasons.get('missing_isin', 0)}, "
+                    f"api_error={fail_reasons.get('api_error', 0)}"
+                )
+                if sample_failed_codes:
+                    print(f"  failed sample codes: {', '.join(sample_failed_codes)}")
         else:
             print(f"  No credit/short rows collected (success: {success_count}, fail: {fail_count})")
 
