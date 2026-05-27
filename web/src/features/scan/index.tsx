@@ -425,7 +425,7 @@ function isOvernightStrategyCandidate(item: ScanCandidate, ageMeta?: SignalAgeMe
   const hasQuality = entry === 'A' || entry === 'B' || trend === 'A' || trend === 'B'
   if (!hasQuality) return false
   const age = ageMeta?.quickLiteAgeDays
-  if (age !== 1 && age !== 2) return false
+  if (age == null || age < 0 || age > 2) return false
   return Number(item.liquidity ?? 0) >= 1_000_000_000
 }
 
