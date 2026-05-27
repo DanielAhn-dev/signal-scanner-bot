@@ -344,7 +344,6 @@ const MIN_LEFT  = 240  // px
 const MIN_MID   = 300  // px
 const MIN_RIGHT = 280  // px
 const RECENT_MENU_STORAGE_KEY = 'excel-shell:recent-menu-routes:v1'
-const RIBBON_FOLD_STORAGE_KEY = 'excel-shell:ribbon-fold-state:v1'
 const ZOOM_STORAGE_KEY = 'excel-shell:zoom:v1'
 const MAX_RECENT_MENU_ITEMS = 6
 const ZOOM_MIN = 50
@@ -468,8 +467,9 @@ export default function ExcelShell({
   const [searchPanelOpen, setSearchPanelOpen] = useState(false)
   const [mobileSearchOpen, setMobileSearchOpen] = useState(false)
   const [recentMenuRoutes, setRecentMenuRoutes] = useState<string[]>([])
-  const [ribbonFoldState, setRibbonFoldState] = useState<Record<string, boolean>>({})
+  const [ribbonScrollHint, setRibbonScrollHint] = useState({ left: false, right: false })
   const containerRef = useRef<HTMLDivElement>(null)
+  const ribbonBodyRef = useRef<HTMLDivElement>(null)
   const searchContainerRef = useRef<HTMLDivElement>(null)
   const searchInputRef = useRef<HTMLInputElement>(null)
   const { leftW, rightW, startDrag } = usePanelResize(containerRef)
@@ -612,26 +612,14 @@ export default function ExcelShell({
           setRecentMenuRoutes(parsed.filter((item): item is string => typeof item === 'string').slice(0, MAX_RECENT_MENU_ITEMS))
         }
       }
-      const rawFold = window.localStorage.getItem(RIBBON_FOLD_STORAGE_KEY)
-      if (rawFold) {
-        const parsed = JSON.parse(rawFold)
-        if (parsed && typeof parsed === 'object') {
-          setRibbonFoldState(parsed as Record<string, boolean>)
-        }
-      }
     } catch {
       setRecentMenuRoutes([])
-      setRibbonFoldState({})
     }
   }, [])
 
   useEffect(() => {
     window.localStorage.setItem(RECENT_MENU_STORAGE_KEY, JSON.stringify(recentMenuRoutes))
   }, [recentMenuRoutes])
-
-  useEffect(() => {
-    window.localStorage.setItem(RIBBON_FOLD_STORAGE_KEY, JSON.stringify(ribbonFoldState))
-  }, [ribbonFoldState])
 
   useEffect(() => {
     window.localStorage.setItem(getZoomStorageKey(isUltraCompact), String(zoom))
@@ -671,6 +659,39 @@ export default function ExcelShell({
       return next === normalizedPrev ? normalizedPrev : next
     })
   }, [isUltraCompact])
+
+  useEffect(() => {
+    const el = ribbonBodyRef.current
+    if (!el || !isUltraCompact) {
+      setRibbonScrollHint({ left: false, right: false })
+      return
+    }
+
+    const updateRibbonScrollHint = () => {
+      const maxScrollLeft = el.scrollWidth - el.clientWidth
+      if (maxScrollLeft <= 2) {
+        setRibbonScrollHint({ left: false, right: false })
+        return
+      }
+      const nextLeft = el.scrollLeft > 2
+      const nextRight = el.scrollLeft < maxScrollLeft - 2
+      setRibbonScrollHint((prev) => {
+        if (prev.left === nextLeft && prev.right === nextRight) return prev
+        return { left: nextLeft, right: nextRight }
+      })
+    }
+
+    updateRibbonScrollHint()
+    el.addEventListener('scroll', updateRibbonScrollHint, { passive: true })
+    window.addEventListener('resize', updateRibbonScrollHint)
+    const rafId = window.requestAnimationFrame(updateRibbonScrollHint)
+
+    return () => {
+      el.removeEventListener('scroll', updateRibbonScrollHint)
+      window.removeEventListener('resize', updateRibbonScrollHint)
+      window.cancelAnimationFrame(rafId)
+    }
+  }, [isUltraCompact, ribbonTab])
 
   return (
     <div
@@ -829,16 +850,17 @@ export default function ExcelShell({
       </div>
 
       {/* ── 3. 리본 바디 ── */}
-      <div className={`excel-ribbon-body${ribbonTab === 'draw' ? ' excel-ribbon-body--draw' : ''}`} role="toolbar">
+      <div
+        ref={ribbonBodyRef}
+        className={`excel-ribbon-body${ribbonTab === 'draw' ? ' excel-ribbon-body--draw' : ''}${ribbonScrollHint.left ? ' excel-ribbon-body--hint-left' : ''}${ribbonScrollHint.right ? ' excel-ribbon-body--hint-right' : ''}`}
+        role="toolbar"
+      >
         <div className="excel-ribbon-body__content">
           <div className="excel-ribbon-body__zone excel-ribbon-body__zone--primary">
             {groups.map((g, gi) => (
               <div key={gi} className="excel-ribbon-group">
                 <div className="excel-ribbon-group__buttons">
-                  {(isUltraCompact
-                    ? [...g.buttons].sort((a, b) => (a.priority ?? 2) - (b.priority ?? 2)).slice(0, 3)
-                    : g.buttons
-                  ).map(btn => (
+                  {g.buttons.map(btn => (
                     <button
                       key={btn.key}
                       className={`ribbon-btn excel-tooltip-target${btn.route === activeRoute ? ' ribbon-btn--active' : ''}`}
@@ -849,38 +871,6 @@ export default function ExcelShell({
                       <span className="ribbon-btn__label">{btn.label}</span>
                     </button>
                   ))}
-
-                  {isUltraCompact && g.buttons.length > 3 && (() => {
-                    const foldStateKey = `${ribbonTab}:${g.label}`
-                    const isOpen = !!ribbonFoldState[foldStateKey]
-                    return (
-                      <div className="ribbon-fold">
-                        <button
-                          type="button"
-                          className="ribbon-fold__summary"
-                          aria-expanded={isOpen}
-                          onClick={() => setRibbonFoldState(prev => ({ ...prev, [foldStateKey]: !isOpen }))}
-                        >
-                          더보기
-                        </button>
-                        {isOpen && (
-                          <div className="ribbon-fold__menu">
-                            {[...g.buttons].sort((a, b) => (a.priority ?? 2) - (b.priority ?? 2)).slice(3).map(btn => (
-                              <button
-                                key={`fold-${btn.key}`}
-                                className="ribbon-fold__item"
-                                onClick={() => {
-                                  if (btn.route) onNavigate(btn.route)
-                                }}
-                              >
-                                {btn.label}
-                              </button>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                    )
-                  })()}
                 </div>
                 <div className="excel-ribbon-group__label">{g.label}</div>
               </div>

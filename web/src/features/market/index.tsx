@@ -439,6 +439,7 @@ function PageHeader({ loading, onRefresh }: { loading: boolean; onRefresh: () =>
   return (
     <div className="sheet-page-header-row">
       <SheetHeaderBar
+        className="market-sheet__page-header"
         title="시장 진단"
         subtitle="진단 · 지표 · 캘린더를 같은 헤더 규격으로 확인합니다."
         action={(
@@ -453,7 +454,7 @@ function PageHeader({ loading, onRefresh }: { loading: boolean; onRefresh: () =>
               strokeWidth={2.5}
               style={loading ? { animation: 'spin 1s linear infinite' } : undefined}
             />
-            새로고침
+            <span className="market-sheet__header-refresh-label">새로고침</span>
           </button>
         )}
       />
