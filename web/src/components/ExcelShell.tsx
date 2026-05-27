@@ -350,6 +350,39 @@ const MAX_RECENT_MENU_ITEMS = 6
 const ZOOM_MIN = 50
 const ZOOM_MAX = 200
 const ZOOM_STEP = 10
+const ULTRA_COMPACT_MEDIA_QUERY = '(max-width: 639px)'
+
+function isUltraCompactViewport() {
+  if (typeof window === 'undefined') return false
+  return window.matchMedia(ULTRA_COMPACT_MEDIA_QUERY).matches
+}
+
+function getZoomStorageKey(isUltraCompact: boolean) {
+  return `${ZOOM_STORAGE_KEY}:${isUltraCompact ? 'mobile' : 'desktop'}`
+}
+
+function clampZoom(value: number, min = ZOOM_MIN) {
+  return Math.max(min, Math.min(ZOOM_MAX, Math.round(value / ZOOM_STEP) * ZOOM_STEP))
+}
+
+function readInitialZoom() {
+  const ultraCompact = isUltraCompactViewport()
+  const minZoom = ultraCompact ? 100 : ZOOM_MIN
+
+  try {
+    const scopedRaw = window.localStorage.getItem(getZoomStorageKey(ultraCompact))
+    const scopedValue = Number(scopedRaw)
+    if (Number.isFinite(scopedValue)) return clampZoom(scopedValue, minZoom)
+
+    const legacyRaw = window.localStorage.getItem(ZOOM_STORAGE_KEY)
+    const legacyValue = Number(legacyRaw)
+    if (Number.isFinite(legacyValue)) return clampZoom(legacyValue, minZoom)
+  } catch {
+    // ignore
+  }
+
+  return 100
+}
 
 function getDefaultPanelWidths(viewportWidth: number) {
   if (viewportWidth >= 1800) return { left: 320, right: 520 }
@@ -430,16 +463,7 @@ export default function ExcelShell({
   const { authName, authEmail, isSignedIn } = useAuthStore()
   const profile = useProfileStore(s => s.profile)
   const [ribbonTab, setRibbonTab] = useState<RibbonTabKey>('home')
-  const [zoom, setZoom] = useState(() => {
-    try {
-      const raw = window.localStorage.getItem(ZOOM_STORAGE_KEY)
-      const value = Number(raw)
-      if (Number.isFinite(value)) return Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, Math.round(value / ZOOM_STEP) * ZOOM_STEP))
-    } catch {
-      // ignore
-    }
-    return 100
-  })
+  const [zoom, setZoom] = useState(readInitialZoom)
   const [menuQuery, setMenuQuery] = useState('')
   const [searchPanelOpen, setSearchPanelOpen] = useState(false)
   const [mobileSearchOpen, setMobileSearchOpen] = useState(false)
@@ -610,8 +634,9 @@ export default function ExcelShell({
   }, [ribbonFoldState])
 
   useEffect(() => {
+    window.localStorage.setItem(getZoomStorageKey(isUltraCompact), String(zoom))
     window.localStorage.setItem(ZOOM_STORAGE_KEY, String(zoom))
-  }, [zoom])
+  }, [isUltraCompact, zoom])
 
   useEffect(() => {
     const tick = () => {
@@ -637,6 +662,15 @@ export default function ExcelShell({
     window.addEventListener('resize', update)
     return () => window.removeEventListener('resize', update)
   }, [])
+
+  useEffect(() => {
+    setZoom(prev => {
+      const minZoom = isUltraCompact ? 100 : ZOOM_MIN
+      const next = readInitialZoom()
+      const normalizedPrev = clampZoom(prev, minZoom)
+      return next === normalizedPrev ? normalizedPrev : next
+    })
+  }, [isUltraCompact])
 
   return (
     <div
