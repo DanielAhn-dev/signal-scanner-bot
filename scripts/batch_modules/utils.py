@@ -112,7 +112,17 @@ def run_python_script(script_path: str, args: list[str], label: str) -> bool:
     cmd = [sys.executable, script_path, *args]
     print(f"  -> {label}: {' '.join(cmd)}")
     try:
-        result = subprocess.run(cmd, check=True, capture_output=True, text=True)
+        env = os.environ.copy()
+        env.setdefault("PYTHONIOENCODING", "utf-8")
+        result = subprocess.run(
+            cmd,
+            check=True,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            env=env,
+        )
         stdout = (result.stdout or "").strip()
         if stdout:
             lines = [line for line in stdout.splitlines() if line.strip()]

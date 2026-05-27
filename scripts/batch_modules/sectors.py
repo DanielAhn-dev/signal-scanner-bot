@@ -271,10 +271,15 @@ def aggregate_sector_investor_flows(supabase: Client, lookback_days: int = 5):
             metrics["flow_foreign_5d"] = int(sector_frgn.get(sid, 0))
             updates.append({"id": sid, "metrics": metrics})
 
-        for i in range(0, len(updates), 100):
-            supabase.table("sectors").upsert(updates[i:i+100]).execute()
+        updated_count = 0
+        for row in updates:
+            sid = row["id"]
+            metrics = row["metrics"]
+            res = supabase.table("sectors").update({"metrics": metrics}).eq("id", sid).execute()
+            if res.data:
+                updated_count += 1
 
-        print(f"   {len(updates)}개 섹터 수급 집계 완료")
+        print(f"   {updated_count}개 섹터 수급 집계 완료")
     except Exception as e:
         print(f"  aggregate_sector_investor_flows failed: {e}")
         import traceback
