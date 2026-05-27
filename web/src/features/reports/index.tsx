@@ -325,11 +325,11 @@ export default function ReportsPage() {
                     </div>
                   </div>
                   <div style={{ display: 'flex', gap: 'var(--space-2)', flexWrap: 'wrap' }}>
-                    <Button size="sm" className="reports-action-btn reports-action-btn--sim" variant="secondary" onClick={navigateSimulator} title="시뮬레이터 열기" aria-label="시뮬레이터 열기">
+                    <Button size="sm" className="reports-action-btn reports-action-btn--sim" variant="secondary" onClick={navigateSimulator} title="시뮬레이터 열기" aria-label="시뮬레이터 열기" data-action-label="시뮬레이터 열기">
                       <FlaskConical size={14} />
                       <span className="reports-action-btn__label">시뮬레이터 열기</span>
                     </Button>
-                    <Button size="sm" className="reports-action-btn reports-action-btn--sim" variant="ghost" onClick={sendSimPlanTelegram} disabled={simSending} title="텔레그램 전송" aria-label="텔레그램 전송">
+                    <Button size="sm" className="reports-action-btn reports-action-btn--sim" variant="ghost" onClick={sendSimPlanTelegram} disabled={simSending} title="텔레그램 전송" aria-label="텔레그램 전송" data-action-label="텔레그램 전송">
                       <Send size={14} />
                       <span className="reports-action-btn__label">텔레그램 전송</span>
                     </Button>
@@ -375,6 +375,7 @@ export default function ReportsPage() {
                         disabled={s?.loading}
                         title="다운로드"
                         aria-label="다운로드"
+                        data-action-label={s?.loading ? '처리 중' : '다운로드'}
                       >
                         <Download size={14} />
                         <span className="reports-action-btn__label">{s?.loading ? '처리 중…' : '다운로드'}</span>
@@ -387,6 +388,7 @@ export default function ReportsPage() {
                         disabled={states['share']?.loading}
                         title="공유"
                         aria-label="공유"
+                        data-action-label="공유"
                       >
                         <Share2 size={14} />
                         <span className="reports-action-btn__label">공유</span>
@@ -401,6 +403,7 @@ export default function ReportsPage() {
                       disabled={s?.loading}
                       title="실행"
                       aria-label="실행"
+                      data-action-label={s?.loading ? '처리 중' : '실행'}
                     >
                       <Play size={14} />
                       <span className="reports-action-btn__label">{s?.loading ? '처리 중…' : '실행'}</span>
