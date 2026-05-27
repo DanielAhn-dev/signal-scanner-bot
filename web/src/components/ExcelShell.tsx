@@ -368,14 +368,22 @@ function readInitialZoom() {
   const ultraCompact = isUltraCompactViewport()
   const minZoom = ultraCompact ? 100 : ZOOM_MIN
 
+  const parseStoredZoom = (raw: string | null) => {
+    if (raw == null) return null
+    const trimmed = raw.trim()
+    if (!trimmed) return null
+    const parsed = Number(trimmed)
+    return Number.isFinite(parsed) ? parsed : null
+  }
+
   try {
     const scopedRaw = window.localStorage.getItem(getZoomStorageKey(ultraCompact))
-    const scopedValue = Number(scopedRaw)
-    if (Number.isFinite(scopedValue)) return clampZoom(scopedValue, minZoom)
+    const scopedValue = parseStoredZoom(scopedRaw)
+    if (scopedValue != null) return clampZoom(scopedValue, minZoom)
 
     const legacyRaw = window.localStorage.getItem(ZOOM_STORAGE_KEY)
-    const legacyValue = Number(legacyRaw)
-    if (Number.isFinite(legacyValue)) return clampZoom(legacyValue, minZoom)
+    const legacyValue = parseStoredZoom(legacyRaw)
+    if (legacyValue != null) return clampZoom(legacyValue, minZoom)
   } catch {
     // ignore
   }
