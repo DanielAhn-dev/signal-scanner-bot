@@ -1411,13 +1411,13 @@ export default function ScanPage({ onNavigate }: { onNavigate?: (r: string) => v
       {error && <ErrorState message={error} onRetry={loadCandidates} />}
 
       {!error && (
-        <div className="xls-scroll-frame" style={{ ['--xls-table-min-width' as any]: '760px', marginTop: 6 }}>
-          <table className="xls-table" style={{ width: '100%', tableLayout: 'fixed' }}>
+        <div className="xls-scroll-frame scan-strategy-summary-frame" style={{ ['--xls-table-min-width' as any]: '1040px', marginTop: 6 }}>
+          <table className="xls-table scan-strategy-summary-table" style={{ width: 'max-content', minWidth: '100%', tableLayout: 'auto' }}>
             <colgroup>
-              <col style={{ width: '20%' }} />
-              <col style={{ width: '26.666%' }} />
-              <col style={{ width: '26.666%' }} />
-              <col style={{ width: '26.666%' }} />
+              <col style={{ width: 190 }} />
+              <col style={{ width: 280 }} />
+              <col style={{ width: 280 }} />
+              <col style={{ width: 280 }} />
             </colgroup>
             <tbody>
               <tr className="xls-row xls-row--even">
@@ -1663,8 +1663,64 @@ export default function ScanPage({ onNavigate }: { onNavigate?: (r: string) => v
 
       {/* 참고용 추천 섹션 */}
       {!loading && !error && activeHighlights.length > 0 && conditionFilter === 'all' && selectedSector === 'all' && (
-        <div className="scan-highlights-section">
-        <table className="xls-table scan-highlight-table" style={{ width: '100%', tableLayout: 'fixed' }} id="scan-highlight-section-capture">
+        <div className="scan-highlights-section" id="scan-highlight-section-capture">
+        {isMobileViewport ? (
+          <>
+            <div className="scan-highlight-section-head">
+              <div className="scan-highlight-section-copy">
+                <div className="scan-highlight-section-title">눌림목 집행 TOP 카드</div>
+                <div className="scan-highlight-section-subtitle">스윙/중기 기준 · 하단 잔여 후보와 분리</div>
+              </div>
+              {onNavigate && (
+                <Button variant="secondary" onClick={() => onNavigate('highlights')}>
+                  집행우선 허브
+                </Button>
+              )}
+            </div>
+            <div className="scan-highlight-mobile-list">
+              {activeHighlights.map((c, idx) => {
+                const rank = idx + 1
+                const isTop1 = rank === 1
+                return (
+                  <button
+                    key={c.code}
+                    type="button"
+                    className={`scan-highlight-mobile-card${isTop1 ? ' scan-highlight-mobile-card--top' : ''}`}
+                    onClick={() => navigateToAnalyze(c.code)}
+                    title={`${c.name} 참고용 상세 보기`}
+                  >
+                    <div className="scan-highlight-mobile-card__head">
+                      <span className="scan-highlight-mobile-card__rank">TOP {rank}</span>
+                      <WarnBadge grade={c.warn_grade} />
+                    </div>
+                    <div className="scan-highlight-mobile-card__name">{c.name}</div>
+                    <div className="scan-highlight-mobile-card__code">
+                      {c.code}
+                      <span className="scan-highlight-mobile-card__source">
+                        {highlightOverlapSet.has(c.code) ? '하이라이트 공통' : '스캔 전용'}
+                      </span>
+                    </div>
+                    <div className="scan-highlight-mobile-card__grades">
+                      <GradeBadge grade={c.entry_grade} label="진입" />
+                      <GradeBadge grade={c.trend_grade} label="추세" />
+                      <GradeBadge grade={c.dist_grade} label="매집" />
+                      {c.pivot_grade && <GradeBadge grade={c.pivot_grade} label="세력" />}
+                      {c.signal && <SignalBadge signal={c.signal} />}
+                    </div>
+                    <div className="scan-highlight-mobile-card__meta">
+                      {[
+                        c.sector_id,
+                        c.entry_score != null ? `진입 ${formatNumber(c.entry_score, 1)}` : null,
+                      ].filter(Boolean).join(' · ')}
+                    </div>
+                    <div className="scan-highlight-mobile-card__cta">눌림목 상세 분석 →</div>
+                  </button>
+                )
+              })}
+            </div>
+          </>
+        ) : (
+        <table className="xls-table scan-highlight-table" style={{ width: '100%', tableLayout: 'fixed' }}>
           <colgroup>
             {Array.from({ length: 26 }, (_, i) => <col key={i} />)}
           </colgroup>
@@ -1814,6 +1870,7 @@ export default function ScanPage({ onNavigate }: { onNavigate?: (r: string) => v
             })}
           </tbody>
         </table>
+        )}
         </div>
       )}
 

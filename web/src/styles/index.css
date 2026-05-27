@@ -5985,6 +5985,104 @@ a:focus-visible {
   margin-bottom: var(--space-2);
 }
 
+.scan-highlight-section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--color-excel-grid-border);
+  background: var(--color-gray-0);
+}
+
+.scan-highlight-section-title {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--color-brand);
+}
+
+.scan-highlight-section-subtitle {
+  margin-top: 2px;
+  font-size: 10px;
+  color: var(--color-text-tertiary);
+}
+
+.scan-highlight-mobile-list {
+  display: grid;
+  gap: 1px;
+  background: var(--color-excel-grid-border);
+}
+
+.scan-highlight-mobile-card {
+  appearance: none;
+  border: 0;
+  width: 100%;
+  text-align: left;
+  cursor: pointer;
+  padding: 14px 14px 16px;
+  background: linear-gradient(160deg, #f3faf6 0%, #e8f4ed 100%);
+  display: grid;
+  gap: 10px;
+}
+
+.scan-highlight-mobile-card--top {
+  background: linear-gradient(160deg, #ecf8f1 0%, #ddefe3 100%);
+}
+
+.scan-highlight-mobile-card__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.scan-highlight-mobile-card__rank {
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--color-brand);
+  letter-spacing: 0.05em;
+}
+
+.scan-highlight-mobile-card__name {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--color-text-primary);
+  line-height: 1.25;
+}
+
+.scan-highlight-mobile-card__code {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 8px;
+  align-items: center;
+  font-size: 11px;
+  color: var(--color-text-tertiary);
+  font-family: var(--font-family-mono);
+}
+
+.scan-highlight-mobile-card__source {
+  color: var(--color-text-secondary);
+  font-family: var(--font-family-base);
+}
+
+.scan-highlight-mobile-card__grades {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.scan-highlight-mobile-card__meta {
+  font-size: 11px;
+  color: var(--color-text-secondary);
+  line-height: 1.45;
+}
+
+.scan-highlight-mobile-card__cta {
+  font-size: 11px;
+  color: var(--color-brand);
+  font-weight: 500;
+}
+
 .scan-highlight-table {
   background: var(--color-gray-0);
 }
@@ -6055,6 +6153,7 @@ a:focus-visible {
 
 .scan-strategy-sparkline-wrap {
   margin-top: 2px;
+  min-width: 116px;
 }
 
 .scan-strategy-sparkline {
@@ -6110,6 +6209,15 @@ a:focus-visible {
   background: var(--color-gray-0);
 }
 
+.scan-strategy-summary-frame {
+  background: var(--color-gray-0);
+}
+
+.scan-strategy-summary-table .xls-cell {
+  min-width: 0;
+  vertical-align: top;
+}
+
 .scan-page,
 .dashboard-sheet,
 .sector-sheet {
@@ -6122,6 +6230,25 @@ a:focus-visible {
   display: flex;
   align-items: center;
   justify-content: center;
+}
+
+@media (max-width: 640px) {
+  .scan-highlight-section-head {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .scan-highlight-section-head .ui-button {
+    width: 100%;
+  }
+
+  .scan-strategy-summary-frame {
+    margin-top: 6px;
+  }
+
+  .scan-strategy-summary-table .xls-cell {
+    padding: 8px 10px;
+  }
 }
 
 /* 발굴 페이지 순위 배지 */
