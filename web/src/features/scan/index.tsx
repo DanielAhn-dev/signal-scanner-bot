@@ -1437,8 +1437,27 @@ export default function ScanPage({ onNavigate }: { onNavigate?: (r: string) => v
                     ))}
                   </div>
                   {!!strategyCoverage?.alerts?.length && (
-                    <div style={{ marginTop: 4, fontSize: 10, color: 'var(--color-warning)' }}>
-                      {strategyCoverage.alerts[0]}
+                    <div style={{ marginTop: 4, display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+                      {strategyCoverage.alerts.slice(0, 2).map((alert, idx) => (
+                        <span
+                          key={`${idx}-${alert}`}
+                          style={{
+                            fontSize: 10,
+                            color: 'var(--color-warning)',
+                            background: 'var(--color-warning-bg)',
+                            border: '1px solid var(--color-warning)',
+                            borderRadius: 999,
+                            padding: '1px 6px',
+                            maxWidth: 182,
+                            whiteSpace: 'nowrap',
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                          }}
+                          title={alert}
+                        >
+                          백필 필요
+                        </span>
+                      ))}
                     </div>
                   )}
                 </td>
@@ -1464,6 +1483,15 @@ export default function ScanPage({ onNavigate }: { onNavigate?: (r: string) => v
                           ? '축적중'
                           : '초기'
                       : '-'
+                    const sampleDailyRate = coverage && strategyCoverage?.lookbackDays
+                      ? coverage.returnCount / Math.max(1, strategyCoverage.lookbackDays)
+                      : 0
+                    const missingSamples = coverage
+                      ? Math.max(0, coverage.minRequired - coverage.returnCount)
+                      : 0
+                    const expectedDaysToReady = coverage && !coverage.hasEnoughSamples && sampleDailyRate > 0
+                      ? Math.ceil(missingSamples / sampleDailyRate)
+                      : null
                     return (
                   <td
                     key={metric.key}
@@ -1543,8 +1571,19 @@ export default function ScanPage({ onNavigate }: { onNavigate?: (r: string) => v
                               ? `신호 ${formatNumber(coverage.signalCount, 0)}건 · 유효수익 ${formatNumber(coverage.returnCount, 0)}건 · ${coverage.hasEnoughSamples ? '의미 기준 충족' : `기준까지 ${formatNumber(Math.max(0, coverage.minRequired - coverage.returnCount), 0)}건`}`
                               : '표본 진행상태 정보 없음'}
                         </div>
+                        <div style={{ color: 'var(--color-text-tertiary)', fontSize: 10 }}>
+                          {strategyCoverageLoading
+                            ? '충족 시점 추정 중…'
+                            : coverage
+                              ? coverage.hasEnoughSamples
+                                ? '표본 기준 이미 충족됨'
+                                : expectedDaysToReady != null && Number.isFinite(expectedDaysToReady)
+                                  ? `최근 ${formatNumber(strategyCoverage?.lookbackDays ?? 0, 0)}일 적재 속도 기준, 예상 D+${formatNumber(expectedDaysToReady, 0)}`
+                                  : '충족 시점 추정 불가 (표본 축적 필요)'
+                              : '충족 시점 정보 없음'}
+                        </div>
                         <div style={{ display: 'grid', gap: 2, marginTop: 1 }}>
-                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', color: 'var(--color-text-tertiary)', fontSize: 10 }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', color: 'var(--color-text-tertiary)', fontSize: 10, gap: 6, flexWrap: 'wrap' }}>
                             <span>표본 진행률</span>
                             <span>{strategyCoverageLoading ? '-' : `${formatNumber(sampleProgressPct, 0)}% · ${sampleStageLabel}`}</span>
                           </div>
