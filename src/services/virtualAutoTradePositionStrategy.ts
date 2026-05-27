@@ -33,6 +33,8 @@ export type EntryProfileCandidate = {
   signal?: string | null;
   rsi14?: number | null;
   liquidity?: number | null;
+  stableTurn?: string | null;
+  stableTrust?: number | null;
 };
 
 export type PlannedAutoTradeExit =
@@ -163,6 +165,8 @@ export function buildPositionStrategyMemo(input: {
 export function classifyAutoTradeEntryProfile(input: {
   accountStrategy?: string | null;
   riskProfile?: string | null;
+  marketMode?: "large-cap-defense" | "balanced" | "rotation" | null;
+  newsBias?: "risk-on" | "neutral" | "risk-off" | null;
   candidate: EntryProfileCandidate;
 }): PositionStrategyProfile {
   const fixedAccountProfile = normalizePositionStrategyProfile(input.accountStrategy);
@@ -178,19 +182,37 @@ export function classifyAutoTradeEntryProfile(input: {
   const score = toNumber(input.candidate.score, 0);
   const rsi14 = toNumber(input.candidate.rsi14, 50);
   const liquidity = toNumber(input.candidate.liquidity, 0);
+  const stableTurn = String(input.candidate.stableTurn ?? "").trim().toLowerCase();
+  const stableTrust = toNumber(input.candidate.stableTrust, 0);
   const accountStrategy = normalizePositionStrategyProfile(input.accountStrategy);
   const riskProfile = String(input.riskProfile ?? "").trim().toLowerCase();
+  const marketMode = String(input.marketMode ?? "balanced").trim().toLowerCase();
+  const newsBias = String(input.newsBias ?? "neutral").trim().toLowerCase();
 
   const strongSignal = signal === "BUY" || signal === "STRONG_BUY";
   const preferredSignal = strongSignal || signal === "WATCH";
   const calmRsi = rsi14 >= 45 && rsi14 <= 60;
   const healthyRsi = rsi14 >= 42 && rsi14 <= 68;
   const highLiquidity = liquidity <= 0 || liquidity >= 15_000_000_000;
+  const stableBull = stableTurn === "bull-weak" || stableTurn === "bull-strong";
+  const stableBear = stableTurn === "bear-weak" || stableTurn === "bear-strong";
+  const strongTrust = stableTrust >= 70;
   const conservativeBias = accountStrategy === "HOLD_SAFE" || riskProfile === "safe";
   const defensiveBias = conservativeBias || accountStrategy === "REDUCE_TIGHT";
   const aggressiveBias = riskProfile === "active";
+  const macroDefensive = marketMode === "large-cap-defense";
+  const macroAggressive = marketMode === "rotation";
+  const newsDefensive = newsBias === "risk-off";
+  const newsSupportive = newsBias === "risk-on";
 
-  if (score >= 82 && strongSignal && calmRsi && highLiquidity) {
+  if (macroDefensive || newsDefensive || stableBear) {
+    if (score >= 78 && strongSignal && highLiquidity && !stableBear) {
+      return "SWING";
+    }
+    return "SHORT_SWING";
+  }
+
+  if (score >= 82 && strongSignal && calmRsi && highLiquidity && (macroAggressive || newsSupportive || strongTrust || stableBull)) {
     return aggressiveBias ? "SWING" : "POSITION_CORE";
   }
 

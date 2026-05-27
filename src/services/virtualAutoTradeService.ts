@@ -101,6 +101,15 @@ type BuyPriceResolution = {
   priceByCode: Map<string, { price: number; source: BuyPriceSource }>;
   marketPhase: "intraday" | "after-close";
   realtimeAppliedCount: number;
+  realtimeSkippedByBudget: boolean;
+};
+
+type ApiBudgetScope = "market_overview" | "realtime_price_batch";
+
+type ApiBudget = {
+  limit: number;
+  used: number;
+  usageByScope: Record<ApiBudgetScope, number>;
 };
 
 const AUTO_TRADE_STRATEGY_ID = "core.autotrade.v1";
@@ -225,8 +234,63 @@ function clamp(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, value));
 }
 
+function resolveApiBudgetLimit(input: { intradayOnly: boolean }): number {
+  const slotLimit = toPositiveInt(process.env.API_SLOT_BUDGET, 4);
+  const dailyLimit = toPositiveInt(process.env.API_DAILY_BUDGET, 12);
+  return input.intradayOnly ? slotLimit : dailyLimit;
+}
+
+function createApiBudget(limit: number): ApiBudget {
+  return {
+    limit: Math.max(1, Math.floor(limit)),
+    used: 0,
+    usageByScope: {
+      market_overview: 0,
+      realtime_price_batch: 0,
+    },
+  };
+}
+
+function tryConsumeApiBudget(
+  budget: ApiBudget | undefined,
+  scope: ApiBudgetScope,
+  cost = 1
+): boolean {
+  if (!budget) return true;
+  const normalizedCost = Math.max(1, Math.floor(cost));
+  if (budget.used + normalizedCost > budget.limit) {
+    return false;
+  }
+  budget.used += normalizedCost;
+  budget.usageByScope[scope] += normalizedCost;
+  return true;
+}
+
 function normalizeSignalValue(signal: unknown): string {
   return String(signal ?? "").trim().toUpperCase();
+}
+
+function resolveTargetHorizon(input: {
+  profile: string;
+  expectedHorizonDays: number;
+}): "scalp" | "swing" | "position" {
+  const profile = String(input.profile ?? "").trim().toUpperCase();
+  const days = Math.max(1, Math.floor(toNumber(input.expectedHorizonDays, 5)));
+
+  if (profile === "SHORT_SWING" || profile === "REDUCE_TIGHT" || days <= 3) {
+    return "scalp";
+  }
+  if (profile === "POSITION_CORE" || days >= 15) {
+    return "position";
+  }
+  return "swing";
+}
+
+function resolvePlannedReviewAt(expectedHorizonDays: number): string {
+  const clampedDays = Math.max(1, Math.min(90, Math.floor(toNumber(expectedHorizonDays, 5))));
+  const d = new Date();
+  d.setUTCDate(d.getUTCDate() + clampedDays);
+  return d.toISOString();
 }
 
 function resolveAdaptiveExitThreshold(input: {
@@ -349,6 +413,34 @@ async function fetchExecutionPriceMap(
   } catch {
     return {};
   }
+}
+
+async function fetchMarketOverviewWithBudget(input: {
+  apiBudget?: ApiBudget;
+}): Promise<{ overview: Awaited<ReturnType<typeof fetchAllMarketData>> | null; skippedByBudget: boolean }> {
+  if (!tryConsumeApiBudget(input.apiBudget, "market_overview", 1)) {
+    return { overview: null, skippedByBudget: true };
+  }
+  const overview = await fetchAllMarketData().catch(() => null);
+  return { overview, skippedByBudget: false };
+}
+
+function resolveNewsBiasFromFactors(
+  factors: Record<string, unknown> | null | undefined
+): "risk-on" | "neutral" | "risk-off" {
+  if (!factors) return "neutral";
+
+  const sentimentRaw = Number((factors as Record<string, unknown>).news_sentiment_score);
+  if (Number.isFinite(sentimentRaw)) {
+    if (sentimentRaw >= 0.25) return "risk-on";
+    if (sentimentRaw <= -0.25) return "risk-off";
+  }
+
+  const flag = String((factors as Record<string, unknown>).news_risk ?? "").trim().toLowerCase();
+  if (["risk-off", "high", "negative", "warn"].includes(flag)) return "risk-off";
+  if (["risk-on", "low", "positive", "good"].includes(flag)) return "risk-on";
+
+  return "neutral";
 }
 
 function resolveExecutionPrice(input: {
@@ -549,6 +641,61 @@ function buildAutoTradeExecutionAlert(input: {
   return lines.join("\n");
 }
 
+async function buildRealHoldingResponseSnippet(input: {
+  supabase: SupabaseClientAny;
+  chatId: number;
+}): Promise<string | null> {
+  const { data, error } = await input.supabase
+    .from("watchlist")
+    .select("code,buy_price,quantity,stock:stocks!inner(name,close)")
+    .eq("chat_id", input.chatId)
+    .order("created_at", { ascending: true })
+    .limit(30);
+
+  if (error || !Array.isArray(data) || data.length <= 0) {
+    return null;
+  }
+
+  const rows = data
+    .map((row) => {
+      const rec = row as Record<string, unknown>;
+      const stock = rec.stock as Record<string, unknown> | Record<string, unknown>[] | null;
+      const stockRow = Array.isArray(stock) ? stock[0] : stock;
+      const code = String(rec.code ?? "").trim();
+      const name = String(stockRow?.name ?? code).trim();
+      const buyPrice = Number(rec.buy_price ?? 0);
+      const quantity = Math.max(0, Math.floor(Number(rec.quantity ?? 0)));
+      const close = Number(stockRow?.close ?? 0);
+      if (!code || buyPrice <= 0 || close <= 0 || quantity <= 0) return null;
+      const pnlPct = ((close - buyPrice) / buyPrice) * 100;
+      return { code, name, quantity, close, pnlPct };
+    })
+    .filter((row): row is { code: string; name: string; quantity: number; close: number; pnlPct: number } => Boolean(row));
+
+  if (rows.length <= 0) {
+    return null;
+  }
+
+  const topLines = rows
+    .sort((a, b) => Math.abs(b.pnlPct) - Math.abs(a.pnlPct))
+    .slice(0, 3)
+    .map((row) => {
+      const action =
+        row.pnlPct <= -4
+          ? "방어우선"
+          : row.pnlPct >= 6
+            ? "익절검토"
+            : "보유관찰";
+      return `- ${row.name}(${row.code}) ${row.quantity}주 · 손익 ${row.pnlPct.toFixed(1)}% · ${action}`;
+    });
+
+  return [
+    "[실보유 대응 요약]",
+    ...topLines,
+    "상세 점검: /보유대응",
+  ].join("\n");
+}
+
 function isKrxIntradaySession(base = new Date()): boolean {
   const kst = new Date(base.getTime() + 9 * 60 * 60 * 1000);
   const day = kst.getUTCDay();
@@ -558,7 +705,8 @@ function isKrxIntradaySession(base = new Date()): boolean {
 }
 
 async function resolveBuyExecutionPrices(
-  candidates: RankedCandidate[]
+  candidates: RankedCandidate[],
+  options?: { apiBudget?: ApiBudget }
 ): Promise<BuyPriceResolution> {
   const priceByCode = new Map<string, { price: number; source: BuyPriceSource }>();
   for (const candidate of candidates) {
@@ -572,6 +720,16 @@ async function resolveBuyExecutionPrices(
       priceByCode,
       marketPhase: "after-close",
       realtimeAppliedCount: 0,
+      realtimeSkippedByBudget: false,
+    };
+  }
+
+  if (!tryConsumeApiBudget(options?.apiBudget, "realtime_price_batch", 1)) {
+    return {
+      priceByCode,
+      marketPhase: "intraday",
+      realtimeAppliedCount: 0,
+      realtimeSkippedByBudget: true,
     };
   }
 
@@ -590,6 +748,7 @@ async function resolveBuyExecutionPrices(
     priceByCode,
     marketPhase: "intraday",
     realtimeAppliedCount,
+    realtimeSkippedByBudget: false,
   };
 }
 
@@ -639,6 +798,21 @@ function isMissingScoresSignalColumn(error: unknown): boolean {
   return (
     code === "42703" ||
     (message.includes("scores.signal") && message.includes("does not exist"))
+  );
+}
+
+function isMissingVirtualPositionHorizonColumns(error: unknown): boolean {
+  if (!error || typeof error !== "object") return false;
+  const rec = error as Record<string, unknown>;
+  const code = String(rec.code ?? "").trim();
+  const message = String(rec.message ?? rec.details ?? "").toLowerCase();
+  if (code !== "42703") return false;
+  return (
+    message.includes("target_horizon") ||
+    message.includes("horizon_reason") ||
+    message.includes("macro_context_at_entry") ||
+    message.includes("news_context_at_entry") ||
+    message.includes("planned_review_at")
   );
 }
 
@@ -1481,6 +1655,7 @@ async function runMondayBuyForUser(payload: {
   setting: AutoTradeSettingRow;
   runId: number | null;
   dryRun: boolean;
+  apiBudget?: ApiBudget;
 }): Promise<AutoTradeActionSummary> {
   const chatId = payload.setting.chat_id;
   const summary: AutoTradeActionSummary = {
@@ -1569,7 +1744,10 @@ async function runMondayBuyForUser(payload: {
     summary.notes.push(`가상현금 보정 적용: ${Math.round(availableCash).toLocaleString("ko-KR")}원`);
   }
 
-  const marketOverview = await fetchAllMarketData().catch(() => null);
+  const marketOverviewResult = await fetchMarketOverviewWithBudget({
+    apiBudget: payload.apiBudget,
+  });
+  const marketOverview = marketOverviewResult.overview;
   const marketPolicy = detectAutoTradeMarketPolicy({ overview: marketOverview });
   let deployableCash = resolveDeployableCash({
     availableCash,
@@ -1579,6 +1757,9 @@ async function runMondayBuyForUser(payload: {
   summary.notes.push(
     `시장모드: ${marketPolicy.label} · ${marketPolicy.reason} · 최소현금 ${marketPolicy.minCashReservePct}% 유지`
   );
+  if (marketOverviewResult.skippedByBudget) {
+    summary.notes.push("API 예산 보호: 시장 개요 조회 생략(기본 방어모드 규칙 사용)");
+  }
 
   const dailyLossLimitPct = Math.max(0.5, toNumber(prefs.daily_loss_limit_pct, 5));
   const dailyRealizedPnl = await getDailyRealizedPnl({
@@ -1753,7 +1934,9 @@ async function runMondayBuyForUser(payload: {
     summary.notes.push(candidateSelection.guardNote);
   }
   const candidates = candidateSelection.candidates;
-  const buyPriceResolution = await resolveBuyExecutionPrices(candidates);
+  const buyPriceResolution = await resolveBuyExecutionPrices(candidates, {
+    apiBudget: payload.apiBudget,
+  });
   const mondayScoreSnapshot = candidates.length
     ? await fetchLatestScoresByCodes(payload.supabase, candidates.map((candidate) => candidate.code)).catch(
         () => null
@@ -1791,11 +1974,15 @@ async function runMondayBuyForUser(payload: {
   }
 
   if (buyPriceResolution.marketPhase === "intraday") {
-    summary.notes.push(
-      buyPriceResolution.realtimeAppliedCount > 0
-        ? `매수가 기준: 장중 실시간가 우선 (${buyPriceResolution.realtimeAppliedCount}/${candidates.length}종목 반영)`
-        : "매수가 기준: 장중 실시간가 조회 실패로 종가 기준 적용"
-    );
+    if (buyPriceResolution.realtimeSkippedByBudget) {
+      summary.notes.push("매수가 기준: API 예산 보호로 장중 종가 스냅샷 기준 적용");
+    } else {
+      summary.notes.push(
+        buyPriceResolution.realtimeAppliedCount > 0
+          ? `매수가 기준: 장중 실시간가 우선 (${buyPriceResolution.realtimeAppliedCount}/${candidates.length}종목 반영)`
+          : "매수가 기준: 장중 실시간가 조회 실패로 종가 기준 적용"
+      );
+    }
   } else {
     summary.notes.push("매수가 기준: 장마감 이후 종가 기준 적용");
   }
@@ -1936,10 +2123,18 @@ async function runMondayBuyForUser(payload: {
 
       const qty = sizing.quantity;
       const investedAmount = sizing.investedAmount;
+      const factors = extractScoreFactors((scoreRow as Record<string, unknown> | undefined)?.factors);
+      const newsBias = resolveNewsBiasFromFactors(factors);
       const candidateProfile = classifyAutoTradeEntryProfile({
         accountStrategy: selectedStrategy,
         riskProfile: prefs.risk_profile,
-        candidate,
+        marketMode: marketPolicy.mode,
+        newsBias,
+        candidate: {
+          ...candidate,
+          stableTurn: candidate.stableTurn ?? null,
+          stableTrust: candidate.stableTrust ?? null,
+        },
       });
       let tradeProfile = resolvePositionTradeProfile({
         accountStrategy: candidateProfile,
@@ -1949,8 +2144,6 @@ async function runMondayBuyForUser(payload: {
       });
       // Adjust tradeProfile using ATR if available in score factors
       try {
-        const scoreRow = mondayFactorsByCode.get(candidate.code) as Record<string, unknown> | undefined;
-        const factors = extractScoreFactors(scoreRow?.factors);
         const atrPct = factors && Number.isFinite(Number(factors.atrPct)) ? Number(factors.atrPct) : null;
         if (atrPct != null) {
           // stopLossPct: at least base, or atrPct * 2; cap to 15%
@@ -2104,34 +2297,74 @@ async function runMondayBuyForUser(payload: {
         continue;
       }
 
-      const { data: upserted, error: upsertError } = await payload.supabase
+      const targetHorizon = resolveTargetHorizon({
+        profile: tradeProfile.profile,
+        expectedHorizonDays: tradeProfile.expectedHorizonDays,
+      });
+      const horizonReason = `profile=${tradeProfile.profile};market=${marketPolicy.mode};news=${newsBias};signal=${String(candidate.signal ?? "").trim() || "NA"}`;
+      const positionUpsertPayload: Record<string, unknown> = {
+        chat_id: chatId,
+        code: candidate.code,
+        buy_price: executionPrice,
+        buy_date: new Date().toISOString().slice(0, 10),
+        quantity: qty,
+        invested_amount: investedAmount,
+        bucket: resolvePositionBucketFromProfile(tradeProfile.profile),
+        status: "holding",
+        broker_name: null,
+        account_name: null,
+        memo: buildPositionStrategyMemo({
+          event: "monday-buy",
+          note: "autotrade-monday-buy",
+          profile: tradeProfile.profile,
+          takeProfitTranchesDone: 0,
+        }),
+        target_horizon: targetHorizon,
+        horizon_reason: horizonReason,
+        macro_context_at_entry: {
+          mode: marketPolicy.mode,
+          label: marketPolicy.label,
+          reason: marketPolicy.reason,
+          minCashReservePct: marketPolicy.minCashReservePct,
+        },
+        news_context_at_entry: {
+          bias: newsBias,
+          signal: candidate.signal ?? null,
+          stableTurn: candidate.stableTurn ?? null,
+          stableTrust: candidate.stableTrust ?? null,
+        },
+        planned_review_at: resolvePlannedReviewAt(tradeProfile.expectedHorizonDays),
+      };
+
+      let upserted: Record<string, unknown> | null = null;
+      const upsertTry = await payload.supabase
         .from(PORTFOLIO_TABLES.positionsLegacy)
-        .upsert(
-          {
-            chat_id: chatId,
-            code: candidate.code,
-            buy_price: executionPrice,
-            buy_date: new Date().toISOString().slice(0, 10),
-            quantity: qty,
-            invested_amount: investedAmount,
-            bucket: resolvePositionBucketFromProfile(tradeProfile.profile),
-            status: "holding",
-            broker_name: null,
-            account_name: null,
-            memo: buildPositionStrategyMemo({
-              event: "monday-buy",
-              note: "autotrade-monday-buy",
-              profile: tradeProfile.profile,
-              takeProfitTranchesDone: 0,
-            }),
-          },
-          { onConflict: "chat_id,code", ignoreDuplicates: true }
-        )
+        .upsert(positionUpsertPayload, { onConflict: "chat_id,code", ignoreDuplicates: true })
         .select("id, created_at, buy_date")
         .maybeSingle();
 
-      if (upsertError) {
-        throw upsertError;
+      if (upsertTry.error && isMissingVirtualPositionHorizonColumns(upsertTry.error)) {
+        const fallbackPayload = { ...positionUpsertPayload };
+        delete fallbackPayload.target_horizon;
+        delete fallbackPayload.horizon_reason;
+        delete fallbackPayload.macro_context_at_entry;
+        delete fallbackPayload.news_context_at_entry;
+        delete fallbackPayload.planned_review_at;
+
+        const fallbackTry = await payload.supabase
+          .from(PORTFOLIO_TABLES.positionsLegacy)
+          .upsert(fallbackPayload, { onConflict: "chat_id,code", ignoreDuplicates: true })
+          .select("id, created_at, buy_date")
+          .maybeSingle();
+        if (fallbackTry.error) {
+          throw fallbackTry.error;
+        }
+        upserted = (fallbackTry.data as Record<string, unknown> | null) ?? null;
+      } else {
+        if (upsertTry.error) {
+          throw upsertTry.error;
+        }
+        upserted = (upsertTry.data as Record<string, unknown> | null) ?? null;
       }
 
       const tradeId = await appendTradeLog({
@@ -2215,6 +2448,8 @@ async function runMondayBuyForUser(payload: {
           deployableCashAfter: deployableCash,
           marketMode: marketPolicy.mode,
           marketReason: marketPolicy.reason,
+          targetHorizon,
+          horizonReason,
           signalTrust: {
             score: signalGate.trustScore,
             grade: signalGate.grade,
@@ -2581,6 +2816,7 @@ async function runDailyReviewForUser(payload: {
   setting: AutoTradeSettingRow;
   runId: number | null;
   dryRun: boolean;
+  apiBudget?: ApiBudget;
 }): Promise<AutoTradeActionSummary> {
   const chatId = payload.setting.chat_id;
   const prefs = await getUserInvestmentPrefs(chatId);
@@ -2730,7 +2966,10 @@ async function runDailyReviewForUser(payload: {
     availableCash = derivedCash;
     summary.notes.push(`가상현금 보정 적용: ${Math.round(availableCash).toLocaleString("ko-KR")}원`);
   }
-  const marketOverview = await fetchAllMarketData().catch(() => null);
+  const marketOverviewResult = await fetchMarketOverviewWithBudget({
+    apiBudget: payload.apiBudget,
+  });
+  const marketOverview = marketOverviewResult.overview;
   const marketPolicy = detectAutoTradeMarketPolicy({ overview: marketOverview });
   let deployableCash = resolveDeployableCash({
     availableCash,
@@ -2740,6 +2979,9 @@ async function runDailyReviewForUser(payload: {
   summary.notes.push(
     `시장모드: ${marketPolicy.label} · ${marketPolicy.reason} · 최소현금 ${marketPolicy.minCashReservePct}% 유지`
   );
+  if (marketOverviewResult.skippedByBudget) {
+    summary.notes.push("API 예산 보호: 시장 개요 조회 생략(기본 방어모드 규칙 사용)");
+  }
   const dailyLossLimitPct = Math.max(0.5, toNumber(prefs.daily_loss_limit_pct, 5));
   const dailyRealizedPnl = await getDailyRealizedPnl({
     supabase: payload.supabase,
@@ -3071,7 +3313,9 @@ async function runDailyReviewForUser(payload: {
         summary.notes.push(`추가매수 탈락 상위: ${addOnRejectReasons}`);
       }
 
-      const addOnBuyPriceResolution = await resolveBuyExecutionPrices(addOnSelection.candidates);
+      const addOnBuyPriceResolution = await resolveBuyExecutionPrices(addOnSelection.candidates, {
+        apiBudget: payload.apiBudget,
+      });
       const addOnScoreSnapshot = addOnSelection.candidates.length
         ? await fetchLatestScoresByCodes(
             payload.supabase,
@@ -3082,11 +3326,15 @@ async function runDailyReviewForUser(payload: {
 
       if (addOnSelection.candidates.length > 0) {
         if (addOnBuyPriceResolution.marketPhase === "intraday") {
-          summary.notes.push(
-            addOnBuyPriceResolution.realtimeAppliedCount > 0
-              ? `추가매수 매수가 기준: 장중 실시간가 우선 (${addOnBuyPriceResolution.realtimeAppliedCount}/${addOnSelection.candidates.length}종목 반영)`
-              : "추가매수 매수가 기준: 장중 실시간가 조회 실패로 종가 기준 적용"
-          );
+          if (addOnBuyPriceResolution.realtimeSkippedByBudget) {
+            summary.notes.push("추가매수 매수가 기준: API 예산 보호로 장중 종가 스냅샷 기준 적용");
+          } else {
+            summary.notes.push(
+              addOnBuyPriceResolution.realtimeAppliedCount > 0
+                ? `추가매수 매수가 기준: 장중 실시간가 우선 (${addOnBuyPriceResolution.realtimeAppliedCount}/${addOnSelection.candidates.length}종목 반영)`
+                : "추가매수 매수가 기준: 장중 실시간가 조회 실패로 종가 기준 적용"
+            );
+          }
         } else {
           summary.notes.push("추가매수 매수가 기준: 장마감 이후 종가 기준 적용");
         }
@@ -3512,7 +3760,9 @@ async function runDailyReviewForUser(payload: {
         marketPolicy,
       });
       const candidates = candidateSelection.candidates;
-      const rebalanceBuyPriceResolution = await resolveBuyExecutionPrices(candidates);
+      const rebalanceBuyPriceResolution = await resolveBuyExecutionPrices(candidates, {
+        apiBudget: payload.apiBudget,
+      });
       const rebalanceScoreSnapshot = candidates.length
         ? await fetchLatestScoresByCodes(payload.supabase, candidates.map((candidate) => candidate.code)).catch(
             () => null
@@ -3537,11 +3787,15 @@ async function runDailyReviewForUser(payload: {
 
       if (candidates.length > 0) {
         if (rebalanceBuyPriceResolution.marketPhase === "intraday") {
-          summary.notes.push(
-            rebalanceBuyPriceResolution.realtimeAppliedCount > 0
-              ? `신규매수 매수가 기준: 장중 실시간가 우선 (${rebalanceBuyPriceResolution.realtimeAppliedCount}/${candidates.length}종목 반영)`
-              : "신규매수 매수가 기준: 장중 실시간가 조회 실패로 종가 기준 적용"
-          );
+          if (rebalanceBuyPriceResolution.realtimeSkippedByBudget) {
+            summary.notes.push("신규매수 매수가 기준: API 예산 보호로 장중 종가 스냅샷 기준 적용");
+          } else {
+            summary.notes.push(
+              rebalanceBuyPriceResolution.realtimeAppliedCount > 0
+                ? `신규매수 매수가 기준: 장중 실시간가 우선 (${rebalanceBuyPriceResolution.realtimeAppliedCount}/${candidates.length}종목 반영)`
+                : "신규매수 매수가 기준: 장중 실시간가 조회 실패로 종가 기준 적용"
+            );
+          }
         } else {
           summary.notes.push("신규매수 매수가 기준: 장마감 이후 종가 기준 적용");
         }
@@ -3561,10 +3815,20 @@ async function runDailyReviewForUser(payload: {
       for (const candidate of candidates) {
         if (slotsLeft <= 0) break;
 
+        const scoreRow = rebalanceFactorsByCode.get(candidate.code);
+        const rebalanceFactors = extractScoreFactors(scoreRow?.factors);
+        const newsBias = resolveNewsBiasFromFactors(rebalanceFactors);
+
         const candidateProfile = classifyAutoTradeEntryProfile({
           accountStrategy: payload.setting.selected_strategy,
           riskProfile: prefs.risk_profile,
-          candidate,
+          marketMode: marketPolicy.mode,
+          newsBias,
+          candidate: {
+            ...candidate,
+            stableTurn: candidate.stableTurn ?? null,
+            stableTrust: candidate.stableTrust ?? null,
+          },
         });
         const entryProfile = resolvePositionTradeProfile({
           accountStrategy: candidateProfile,
@@ -3576,11 +3840,10 @@ async function runDailyReviewForUser(payload: {
         const executionEntry = rebalanceBuyPriceResolution.priceByCode.get(candidate.code);
         const executionPrice = executionEntry?.price ?? candidate.close;
         const executionSource = executionEntry?.source ?? "close";
-        const scoreRow = rebalanceFactorsByCode.get(candidate.code);
         const signalGate = evaluateAutoTradeSignalGate({
           currentPrice: executionPrice,
           score: candidate.score,
-          factors: extractScoreFactors(scoreRow?.factors),
+          factors: rebalanceFactors,
           minTrustScore: signalTrustThresholds.rebalance,
           requireAboveSma200: true,
         });
@@ -3772,34 +4035,74 @@ async function runDailyReviewForUser(payload: {
             continue;
           }
 
-          const { data: upserted, error: upsertError } = await payload.supabase
+          const targetHorizon = resolveTargetHorizon({
+            profile: entryProfile.profile,
+            expectedHorizonDays: entryProfile.expectedHorizonDays,
+          });
+          const horizonReason = `profile=${entryProfile.profile};market=${marketPolicy.mode};news=${newsBias};signal=${String(candidate.signal ?? "").trim() || "NA"}`;
+          const positionUpsertPayload: Record<string, unknown> = {
+            chat_id: chatId,
+            code: candidate.code,
+            buy_price: executionPrice,
+            buy_date: new Date().toISOString().slice(0, 10),
+            quantity: qty,
+            invested_amount: investedAmount,
+            bucket: resolvePositionBucketFromProfile(entryProfile.profile),
+            broker_name: null,
+            account_name: null,
+            memo: buildPositionStrategyMemo({
+              event: "rebalance-buy",
+              note: "autotrade-rebalance-buy",
+              profile: entryProfile.profile,
+              takeProfitTranchesDone: 0,
+            }),
+            status: "holding",
+            target_horizon: targetHorizon,
+            horizon_reason: horizonReason,
+            macro_context_at_entry: {
+              mode: marketPolicy.mode,
+              label: marketPolicy.label,
+              reason: marketPolicy.reason,
+              minCashReservePct: marketPolicy.minCashReservePct,
+            },
+            news_context_at_entry: {
+              bias: newsBias,
+              signal: candidate.signal ?? null,
+              stableTurn: candidate.stableTurn ?? null,
+              stableTrust: candidate.stableTrust ?? null,
+            },
+            planned_review_at: resolvePlannedReviewAt(entryProfile.expectedHorizonDays),
+          };
+
+          let upserted: Record<string, unknown> | null = null;
+          const upsertTry = await payload.supabase
             .from(PORTFOLIO_TABLES.positionsLegacy)
-            .upsert(
-              {
-                chat_id: chatId,
-                code: candidate.code,
-                buy_price: executionPrice,
-                buy_date: new Date().toISOString().slice(0, 10),
-                quantity: qty,
-                invested_amount: investedAmount,
-                bucket: resolvePositionBucketFromProfile(entryProfile.profile),
-                broker_name: null,
-                account_name: null,
-                memo: buildPositionStrategyMemo({
-                  event: "rebalance-buy",
-                  note: "autotrade-rebalance-buy",
-                  profile: entryProfile.profile,
-                  takeProfitTranchesDone: 0,
-                }),
-                status: "holding",
-              },
-              { onConflict: "chat_id,code", ignoreDuplicates: true }
-            )
+            .upsert(positionUpsertPayload, { onConflict: "chat_id,code", ignoreDuplicates: true })
             .select("id, created_at, buy_date")
             .maybeSingle();
 
-          if (upsertError) {
-            throw upsertError;
+          if (upsertTry.error && isMissingVirtualPositionHorizonColumns(upsertTry.error)) {
+            const fallbackPayload = { ...positionUpsertPayload };
+            delete fallbackPayload.target_horizon;
+            delete fallbackPayload.horizon_reason;
+            delete fallbackPayload.macro_context_at_entry;
+            delete fallbackPayload.news_context_at_entry;
+            delete fallbackPayload.planned_review_at;
+
+            const fallbackTry = await payload.supabase
+              .from(PORTFOLIO_TABLES.positionsLegacy)
+              .upsert(fallbackPayload, { onConflict: "chat_id,code", ignoreDuplicates: true })
+              .select("id, created_at, buy_date")
+              .maybeSingle();
+            if (fallbackTry.error) {
+              throw fallbackTry.error;
+            }
+            upserted = (fallbackTry.data as Record<string, unknown> | null) ?? null;
+          } else {
+            if (upsertTry.error) {
+              throw upsertTry.error;
+            }
+            upserted = (upsertTry.data as Record<string, unknown> | null) ?? null;
           }
 
           const tradeId = await appendTradeLog({
@@ -3875,6 +4178,8 @@ async function runDailyReviewForUser(payload: {
               deployableCashAfter: deployableCash,
               marketMode: marketPolicy.mode,
               marketReason: marketPolicy.reason,
+              targetHorizon,
+              horizonReason,
               signalTrust: {
                 score: signalGate.trustScore,
                 grade: signalGate.grade,
@@ -4211,6 +4516,7 @@ export async function runVirtualAutoTradingCycle(input?: {
   const intradayOnly = Boolean(input?.intradayOnly);
   const now = input?.now ?? new Date();
   const windowMinutes = Math.max(1, Math.floor(input?.windowMinutes ?? 10));
+  const apiBudget = createApiBudget(resolveApiBudgetLimit({ intradayOnly }));
 
   const supabase: SupabaseClientAny = createClient(
     process.env.SUPABASE_URL!,
@@ -4320,13 +4626,19 @@ export async function runVirtualAutoTradingCycle(input?: {
             setting,
             runId,
             dryRun: userDryRun,
+            apiBudget,
           })
         : await runDailyReviewForUser({
             supabase,
             setting,
             runId,
             dryRun: userDryRun,
+            apiBudget,
           });
+
+      actionSummary.notes.push(
+        `API 예산 사용: ${apiBudget.used}/${apiBudget.limit} (시장개요 ${apiBudget.usageByScope.market_overview}, 실시간시세 ${apiBudget.usageByScope.realtime_price_batch})`
+      );
 
       if (prefs.virtual_shadow_mode) {
         actionSummary.notes.unshift("[SHADOW] 실반영 없이 신호 동시 검증");
@@ -4413,9 +4725,17 @@ export async function runVirtualAutoTradingCycle(input?: {
           isShadow: isShadowRun,
         });
         if (executionAlert) {
+          const holdingSnippet = await buildRealHoldingResponseSnippet({
+            supabase,
+            chatId: setting.chat_id,
+          }).catch(() => null);
+          const combinedAlert = holdingSnippet
+            ? `${executionAlert}\n\n${holdingSnippet}`
+            : executionAlert;
+
           await sendMessage(
             setting.chat_id,
-            executionAlert,
+            combinedAlert,
             actionButtons(buildAutoTradeExecutionButtons(actionSummary.notes || []))
           ).catch((err: unknown) => {
             console.error("[autoTrade] execution alert send failed", err);

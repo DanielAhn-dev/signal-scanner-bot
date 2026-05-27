@@ -11,6 +11,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method === 'OPTIONS') return res.status(204).end()
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' })
 
+  const disabled = String(process.env.DISABLE_BRIEFING_MESSAGES ?? 'true').toLowerCase() !== 'false'
+  if (disabled) {
+    return res.status(410).json({
+      ok: false,
+      error: 'Briefing delivery has been disabled',
+      code: 'briefing_disabled',
+    })
+  }
+
   const readKey = req.headers['x-ui-key'] || req.query.ui_key || process.env.UI_READ_KEY || process.env.VITE_UI_READ_KEY
   if (!readKey || String(readKey) !== (process.env.UI_READ_KEY || process.env.VITE_UI_READ_KEY)) {
     return res.status(401).json({ error: 'Unauthorized' })

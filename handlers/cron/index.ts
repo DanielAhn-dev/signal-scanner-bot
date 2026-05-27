@@ -13,6 +13,10 @@ const CRON_HOBBY_INCLUDE_GATE_REFRESH =
   String(process.env.CRON_HOBBY_INCLUDE_GATE_REFRESH ?? "false").toLowerCase() === "true";
 const CRON_HOBBY_INCLUDE_WEEKLY_REPORT =
   String(process.env.CRON_HOBBY_INCLUDE_WEEKLY_REPORT ?? "false").toLowerCase() === "true";
+const DISABLE_BRIEFING_MESSAGES =
+  String(process.env.DISABLE_BRIEFING_MESSAGES ?? "true").toLowerCase() !== "false";
+const ENABLE_INTRADAY_AGENT_CYCLE =
+  String(process.env.ENABLE_INTRADAY_AGENT_CYCLE ?? "true").toLowerCase() !== "false";
 const AUTO_TRADE_ALERT_CHAT_ID = Number(process.env.AUTO_TRADE_ALERT_CHAT_ID || "0");
 
 type CronTaskName =
@@ -20,6 +24,9 @@ type CronTaskName =
   | "briefing"
   | "report"
   | "virtualAutoTrade"
+  | "virtualAutoTradeMorning"
+  | "virtualAutoTradeAfternoon"
+  | "virtualAutoTradeClose"
   | "virtualAutoTradeIntraday"
   | "strategyGateRefresh";
 
@@ -33,6 +40,12 @@ const TASK_PATHS: Record<CronTaskName, string> = {
   briefing: "/api/cron/briefing?type=pre_market",
   report: "/api/cron/report",
   virtualAutoTrade: "/api/cron/virtualAutoTrade",
+  virtualAutoTradeMorning:
+    "/api/cron/virtualAutoTrade?mode=auto&intradayOnly=true&windowMinutes=180&maxUsers=60",
+  virtualAutoTradeAfternoon:
+    "/api/cron/virtualAutoTrade?mode=auto&intradayOnly=true&windowMinutes=180&maxUsers=60",
+  virtualAutoTradeClose:
+    "/api/cron/virtualAutoTrade?mode=auto&intradayOnly=true&windowMinutes=30&maxUsers=40",
   virtualAutoTradeIntraday:
     "/api/cron/virtualAutoTrade?mode=auto&intradayOnly=true&windowMinutes=10&maxUsers=60",
   strategyGateRefresh: "/api/cron/strategyGateRefresh",
@@ -61,22 +74,48 @@ function utcNowParts(date: Date): { dow: number; hour: number; minute: number } 
 
 function resolveDueTasks(now = new Date()): DueTask[] {
   const { dow, hour, minute } = utcNowParts(now);
+  const isWeekday = dow >= 1 && dow <= 5;
+  const isUtcTime = (targetHour: number, targetMinute: number) =>
+    hour === targetHour && minute === targetMinute;
 
   if (CRON_HOBBY_DAILY_MODE) {
-    if (hour !== 23 || minute !== 0) return [];
+    const dailyTasks: DueTask[] = [];
 
-    // 무료 플랜(60초 제한)에서는 장전 브리핑을 우선 단독 실행.
-    // 점수 동기화는 vercel.json의 /api/cron/scoreSync 스케줄로 분리 처리한다.
-    const dailyTasks: DueTask[] = [{ name: "briefing", path: TASK_PATHS.briefing }];
+    // KST 10:10
+    if (ENABLE_INTRADAY_AGENT_CYCLE && isWeekday && isUtcTime(1, 10)) {
+      dailyTasks.push({
+        name: "virtualAutoTradeMorning",
+        path: TASK_PATHS.virtualAutoTradeMorning,
+      });
+    }
+    // KST 13:20
+    if (ENABLE_INTRADAY_AGENT_CYCLE && isWeekday && isUtcTime(4, 20)) {
+      dailyTasks.push({
+        name: "virtualAutoTradeAfternoon",
+        path: TASK_PATHS.virtualAutoTradeAfternoon,
+      });
+    }
+    // KST 15:00
+    if (ENABLE_INTRADAY_AGENT_CYCLE && isWeekday && isUtcTime(6, 0)) {
+      dailyTasks.push({
+        name: "virtualAutoTradeClose",
+        path: TASK_PATHS.virtualAutoTradeClose,
+      });
+    }
 
-    if (CRON_HOBBY_INCLUDE_AUTOTRADE) {
+    if (CRON_HOBBY_INCLUDE_AUTOTRADE && isUtcTime(23, 45)) {
       dailyTasks.push({ name: "virtualAutoTrade", path: TASK_PATHS.virtualAutoTrade });
     }
     if (CRON_HOBBY_INCLUDE_GATE_REFRESH) {
-      dailyTasks.push({ name: "strategyGateRefresh", path: TASK_PATHS.strategyGateRefresh });
+      if (isUtcTime(23, 55)) {
+        dailyTasks.push({ name: "strategyGateRefresh", path: TASK_PATHS.strategyGateRefresh });
+      }
     }
-    if (CRON_HOBBY_INCLUDE_WEEKLY_REPORT && dow === 5) {
+    if (CRON_HOBBY_INCLUDE_WEEKLY_REPORT && dow === 5 && isUtcTime(23, 35)) {
       dailyTasks.push({ name: "report", path: TASK_PATHS.report });
+    }
+    if (!DISABLE_BRIEFING_MESSAGES && isWeekday && isUtcTime(6, 10)) {
+      dailyTasks.push({ name: "briefing", path: TASK_PATHS.briefing });
     }
 
     return dailyTasks;
@@ -85,7 +124,7 @@ function resolveDueTasks(now = new Date()): DueTask[] {
   const tasks: DueTask[] = [];
 
   // scoreSync: 25 9 * * 1-5 (daily_data 이후 보정 동기화)
-  if (dow >= 1 && dow <= 5 && hour === 9 && minute === 25) {
+  if (isWeekday && hour === 9 && minute === 25) {
     tasks.push({ name: "scoreSync", path: TASK_PATHS.scoreSync });
   }
 
@@ -94,14 +133,16 @@ function resolveDueTasks(now = new Date()): DueTask[] {
     tasks.push({ name: "scoreSync", path: TASK_PATHS.scoreSync });
   }
 
-  // briefing: 30 23 * * 0-4
-  if (dow >= 0 && dow <= 4 && hour === 23 && minute === 30) {
-    tasks.push({ name: "briefing", path: TASK_PATHS.briefing });
-  }
+  if (!DISABLE_BRIEFING_MESSAGES) {
+    // briefing: 30 23 * * 0-4
+    if (dow >= 0 && dow <= 4 && hour === 23 && minute === 30) {
+      tasks.push({ name: "briefing", path: TASK_PATHS.briefing });
+    }
 
-  // briefing: 10 6 * * 1-5
-  if (dow >= 1 && dow <= 5 && hour === 6 && minute === 10) {
-    tasks.push({ name: "briefing", path: TASK_PATHS.briefing });
+    // briefing: 10 6 * * 1-5
+    if (isWeekday && hour === 6 && minute === 10) {
+      tasks.push({ name: "briefing", path: TASK_PATHS.briefing });
+    }
   }
 
   // report: 35 23 * * 5
@@ -109,9 +150,35 @@ function resolveDueTasks(now = new Date()): DueTask[] {
     tasks.push({ name: "report", path: TASK_PATHS.report });
   }
 
-  // virtualAutoTrade: 45 23 * * 0-4
-  if (dow >= 0 && dow <= 4 && hour === 23 && minute === 45) {
-    tasks.push({ name: "virtualAutoTrade", path: TASK_PATHS.virtualAutoTrade });
+  if (ENABLE_INTRADAY_AGENT_CYCLE) {
+    // KST 10:10
+    if (isWeekday && isUtcTime(1, 10)) {
+      tasks.push({
+        name: "virtualAutoTradeMorning",
+        path: TASK_PATHS.virtualAutoTradeMorning,
+      });
+    }
+
+    // KST 13:20
+    if (isWeekday && isUtcTime(4, 20)) {
+      tasks.push({
+        name: "virtualAutoTradeAfternoon",
+        path: TASK_PATHS.virtualAutoTradeAfternoon,
+      });
+    }
+
+    // KST 15:00
+    if (isWeekday && isUtcTime(6, 0)) {
+      tasks.push({
+        name: "virtualAutoTradeClose",
+        path: TASK_PATHS.virtualAutoTradeClose,
+      });
+    }
+  } else {
+    // virtualAutoTrade: 45 23 * * 0-4
+    if (dow >= 0 && dow <= 4 && hour === 23 && minute === 45) {
+      tasks.push({ name: "virtualAutoTrade", path: TASK_PATHS.virtualAutoTrade });
+    }
   }
 
   // 장중 10분 자동사이클은 무료 플랜 소모를 고려해 수동 트리거(task=virtualAutoTradeIntraday)로만 실행
@@ -245,7 +312,13 @@ async function notifyDailyBundleSummary(input: {
 
     lines.push(`- ${result.task}: ${result.ok ? "성공" : "실패"} (HTTP ${result.status ?? 0})`);
 
-    if (result.task === "virtualAutoTrade" || result.task === "virtualAutoTradeIntraday") {
+    if (
+      result.task === "virtualAutoTrade" ||
+      result.task === "virtualAutoTradeIntraday" ||
+      result.task === "virtualAutoTradeMorning" ||
+      result.task === "virtualAutoTradeAfternoon" ||
+      result.task === "virtualAutoTradeClose"
+    ) {
       const counts = extractAutoTradeCounts(result.body);
       buyTotal += counts.buy;
       sellTotal += counts.sell;

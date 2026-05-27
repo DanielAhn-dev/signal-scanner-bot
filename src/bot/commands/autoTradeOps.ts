@@ -295,8 +295,8 @@ function resolveAutoTriggerStep(input: string): AutoTriggerStep | "menu" | null 
     if (isNext) {
       return {
         key: "ready-2",
-        label: "장전 2/2 브리핑",
-        path: "/api/cron/briefing?type=pre_market",
+        label: "장전 2/2 브리핑 비활성 안내",
+        inlineRun: async () => "장전 브리핑은 현재 비활성화되어 점수 동기화만 수행됩니다.",
       };
     }
     return {
@@ -304,7 +304,7 @@ function resolveAutoTriggerStep(input: string): AutoTriggerStep | "menu" | null 
       label: "장전 1/2 점수 동기화",
       inlineRun: makeScoreSyncRunner(),
       nextCallback: "cmd:autotrigger:ready:next",
-      nextLabel: "다음 2/2 장전 브리핑",
+      nextLabel: "다음 2/2 비활성 안내",
     };
   }
 

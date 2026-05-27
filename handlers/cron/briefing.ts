@@ -12,6 +12,8 @@ const ADMIN_CHAT_ID = process.env.TELEGRAM_ADMIN_CHAT_ID;
 const CRON_SECRET = process.env.CRON_SECRET;
 const SUPABASE_URL = process.env.SUPABASE_URL!;
 const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY!;
+const DISABLE_BRIEFING_MESSAGES =
+  String(process.env.DISABLE_BRIEFING_MESSAGES ?? "true").toLowerCase() !== "false";
 
 export const config = {
   maxDuration: 60,
@@ -33,6 +35,14 @@ function resolveBriefingType(raw?: string): "pre_market" | "market_close" {
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== "GET") {
     return res.status(405).send("Method Not Allowed");
+  }
+
+  if (DISABLE_BRIEFING_MESSAGES) {
+    return res.status(200).json({
+      ok: true,
+      skipped: "briefing_disabled",
+      message: "Briefing delivery is disabled by DISABLE_BRIEFING_MESSAGES.",
+    });
   }
 
   const authHeader = req.headers.authorization;
