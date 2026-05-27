@@ -34,7 +34,7 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Build TypeScript
-        run: pnpm exec tsc scripts/intraday_pullback_signals.ts --outDir dist --module esnext --target es2020 --skipLibCheck true 2>/dev/null || true
+        run: pnpm exec tsc scripts/intraday_pullback_signals.ts --noEmit --module node16 --moduleResolution node16 --target es2020 --skipLibCheck || true
 
       - name: Run Intraday Signal Generation
         run: |
