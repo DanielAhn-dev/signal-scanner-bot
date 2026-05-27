@@ -1275,6 +1275,10 @@ function buildTodaySignalReasonNote(input: {
 function buildAutoTradeFilterReason(candidate: {
   score: number;
   signal?: string | null;
+  todayBuyScore?: number | null;
+  holdExtensionScore?: number | null;
+  immediateExcludeSignal?: boolean | null;
+  flowReason?: string | null;
   stableTurn?: string | null;
   stableTrust?: number | null;
   stableAboveAvg?: boolean | null;
@@ -1305,7 +1309,21 @@ function buildAutoTradeFilterReason(candidate: {
     }
   );
 
-  return reasons.slice(0, 2).join(" · ");
+  const flowParts: string[] = [];
+  if (candidate.todayBuyScore != null) {
+    flowParts.push(`오늘매수 ${Math.round(toNumber(candidate.todayBuyScore, 0))}`);
+  }
+  if (candidate.holdExtensionScore != null) {
+    flowParts.push(`보유연장 ${Math.round(toNumber(candidate.holdExtensionScore, 0))}`);
+  }
+  if (candidate.immediateExcludeSignal === true) {
+    flowParts.push("즉시제외 신호");
+  }
+  if (candidate.flowReason) {
+    flowParts.push(String(candidate.flowReason));
+  }
+
+  return [...reasons.slice(0, 2), ...flowParts].filter(Boolean).join(" · ");
 }
 
 const AUTO_TRADE_CHECKPOINTS_KST = [
