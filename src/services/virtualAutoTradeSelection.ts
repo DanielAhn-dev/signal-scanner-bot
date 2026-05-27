@@ -2,6 +2,11 @@ export type RankedCandidate = {
   code: string;
   close: number;
   score: number;
+  rankBoost?: number | null;
+  discoveryOverlapCount?: number | null;
+  discoverySourceCount?: number | null;
+  discoverySources?: string[] | null;
+  discoveryReason?: string | null;
   name: string;
   peg?: number | null;
   per?: number | null;
@@ -152,7 +157,7 @@ function resolvePegRankBoost(row: RankedCandidate): number {
 function resolveCompositeRankScore(row: RankedCandidate): number {
   // 섹터 리더 종목에 +4점 보너스 (동점 시 섹터 선도주 우선 매수)
   const sectorLeaderBonus = row.isSectorLeader === true ? 4 : 0;
-  return row.score + resolvePegRankBoost(row) + sectorLeaderBonus;
+  return row.score + resolvePegRankBoost(row) + sectorLeaderBonus + toNumber(row.rankBoost, 0);
 }
 
 function normalizeSignal(signal: unknown): string {
@@ -337,6 +342,17 @@ function prioritizeRowsByMarketPolicy(
   }
 ): RankedCandidate[] {
   return [...rows].sort((a, b) => {
+    const aOverlapCount = toNumber(a.discoveryOverlapCount, 0);
+    const bOverlapCount = toNumber(b.discoveryOverlapCount, 0);
+    const toOverlapTier = (count: number) => {
+      if (count >= 3) return 3;
+      if (count >= 2) return 2;
+      if (count >= 1) return 1;
+      return 0;
+    };
+    const overlapTierDiff = toOverlapTier(bOverlapCount) - toOverlapTier(aOverlapCount);
+    if (overlapTierDiff !== 0) return overlapTierDiff;
+
     if (
       options?.entryProfile === "pullback-first" &&
       options.pullbackCandidateCodes &&

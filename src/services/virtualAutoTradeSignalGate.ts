@@ -32,10 +32,12 @@ export type TrendBreakExitSignal = {
   exitAction: "HOLD" | "STOP_LOSS" | "TAKE_PROFIT";
   reason:
     | "none"
+    | "hold-override-strong-trend"
     | "trend-break-sma200"
     | "trend-break-sma50"
     | "signal-strong-sell"
     | "signal-sell";
+  overrideDetails?: string[];
 };
 
 function toNumber(value: unknown, fallback = 0): number {
@@ -180,13 +182,47 @@ export function detectTrendBreakExitSignal(input: {
   pnlPct: number;
   factors?: Record<string, unknown> | null;
   signal?: string | null;
+  trustScore?: number;
+  minTrustForOverride?: number;
 }): TrendBreakExitSignal {
   const currentPrice = Math.max(0, toNumber(input.currentPrice, 0));
   const pnlPct = toNumber(input.pnlPct, 0);
   const factors = (input.factors ?? {}) as SignalGateFactors;
   const sma200 = Math.max(0, toNumber(factors.sma200, 0));
   const sma50 = Math.max(0, toNumber(factors.sma50, 0));
+  const rsi14 = toNumber(factors.rsi14, 50);
+  const volRatio = Math.max(0, toNumber(factors.vol_ratio, 1));
+  const stableTurn = normalizeStableTurn(factors.stable_turn);
+  const stableTrust = clamp(toNumber(factors.stable_turn_trust, 60), 0, 100);
+  const stableAboveAvg =
+    factors.stable_above_avg == null ? true : Boolean(factors.stable_above_avg);
+  const macdCross = normalizeMacdCross(factors.macd_cross);
+  const trustScore = clamp(toNumber(input.trustScore, 0), 0, 100);
+  const minTrustForOverride = clamp(toNumber(input.minTrustForOverride, 76), 0, 100);
   const normalizedSignal = String(input.signal ?? "").trim().toUpperCase();
+
+  const overrideDetails: string[] = [];
+  const stableBullTrend = stableTurn === "bull-weak" || stableTurn === "bull-strong";
+  const volumeHeld = volRatio >= 1.0;
+  const noSharpDrop =
+    (sma50 <= 0 || currentPrice >= sma50 * 0.98) &&
+    rsi14 >= 40 &&
+    macdCross !== "dead";
+  const trustTop = trustScore >= minTrustForOverride;
+  const canHoldOverride =
+    stableBullTrend &&
+    stableTrust >= 68 &&
+    stableAboveAvg &&
+    volumeHeld &&
+    noSharpDrop &&
+    trustTop;
+
+  if (stableBullTrend) overrideDetails.push(`stable-turn:${stableTurn}`);
+  if (stableTrust >= 68) overrideDetails.push(`stable-trust:${Math.round(stableTrust)}`);
+  if (stableAboveAvg) overrideDetails.push("stable-above-avg");
+  if (volumeHeld) overrideDetails.push(`vol-ratio:${volRatio.toFixed(2)}`);
+  if (noSharpDrop) overrideDetails.push("no-sharp-drop");
+  if (trustTop) overrideDetails.push(`trust:${Math.round(trustScore)}`);
 
   // SMA200 이탈 → 즉시 손절 (최우선)
   if (sma200 > 0 && currentPrice < sma200) {
@@ -198,6 +234,13 @@ export function detectTrendBreakExitSignal(input: {
 
   // STRONG_SELL 신호 → 수익이면 익절, 손실이면 손절로 즉시 청산
   if (normalizedSignal === "STRONG_SELL") {
+    if (canHoldOverride) {
+      return {
+        exitAction: "HOLD",
+        reason: "hold-override-strong-trend",
+        overrideDetails,
+      };
+    }
     return {
       exitAction: pnlPct > 0 ? "TAKE_PROFIT" : "STOP_LOSS",
       reason: "signal-strong-sell",
@@ -206,6 +249,13 @@ export function detectTrendBreakExitSignal(input: {
 
   // SELL 신호 → 수익이면 익절, 손실이면 손절로 즉시 축소/청산 우선
   if (normalizedSignal === "SELL") {
+    if (canHoldOverride) {
+      return {
+        exitAction: "HOLD",
+        reason: "hold-override-strong-trend",
+        overrideDetails,
+      };
+    }
     return {
       exitAction: pnlPct > 0 ? "TAKE_PROFIT" : "STOP_LOSS",
       reason: "signal-sell",
@@ -214,6 +264,13 @@ export function detectTrendBreakExitSignal(input: {
 
   // SMA50 이탈 + 소폭 수익 → 익절
   if (sma50 > 0 && currentPrice < sma50 && pnlPct > 1.0) {
+    if (canHoldOverride) {
+      return {
+        exitAction: "HOLD",
+        reason: "hold-override-strong-trend",
+        overrideDetails,
+      };
+    }
     return {
       exitAction: "TAKE_PROFIT",
       reason: "trend-break-sma50",

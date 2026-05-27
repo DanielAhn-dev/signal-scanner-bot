@@ -143,15 +143,41 @@ function discoveryProfileLabel(profile: DiscoveryProfile): string {
   return "혼합(추천)";
 }
 
-async function fetchBacktestEdgeCodes(input: {
+type BacktestEdgeStat = {
+  tradeCount: number;
+  wins: number;
+  losses: number;
+  winRate: number;
+  profitFactor: number;
+  avgHoldDays: number;
+  score: number;
+  boost: number;
+};
+
+type BacktestEdgeProfile = {
+  codes: Set<string>;
+  boostByCode: Map<string, number>;
+  statsByCode: Map<string, BacktestEdgeStat>;
+  regimeScale: number;
+};
+
+function daysBetweenIso(laterIso: string, earlierIso: string): number {
+  const later = Date.parse(laterIso);
+  const earlier = Date.parse(earlierIso);
+  if (!Number.isFinite(later) || !Number.isFinite(earlier)) return 0;
+  const diff = Math.max(0, later - earlier);
+  return diff / (24 * 60 * 60 * 1000);
+}
+
+async function fetchBacktestEdgeProfile(input: {
   supabase: SupabaseClientAny;
   chatId: number;
   limit: number;
-}): Promise<Set<string>> {
+}): Promise<BacktestEdgeProfile> {
   const since = new Date(Date.now() - 120 * 24 * 60 * 60 * 1000).toISOString();
   const { data, error } = await input.supabase
     .from(PORTFOLIO_TABLES.trades)
-    .select("code,pnl_amount,memo")
+    .select("id,code,pnl_amount,memo,traded_at")
     .eq("chat_id", input.chatId)
     .eq("side", "SELL")
     .is("broker_name", null)
@@ -160,57 +186,301 @@ async function fetchBacktestEdgeCodes(input: {
     .order("traded_at", { ascending: false })
     .limit(1200);
 
-  if (error || !Array.isArray(data)) return new Set<string>();
-
-  const scoreByCode = new Map<string, number>();
-  const winByCode = new Map<string, number>();
-
-  for (const row of data as Array<{ code?: string | null; pnl_amount?: number | null; memo?: string | null }>) {
-    const code = String(row.code ?? "").trim();
-    if (!code) continue;
-    if (parseStrategyMemo(row.memo).strategyId !== AUTO_TRADE_STRATEGY_ID) continue;
-    const pnl = toNumber(row.pnl_amount, 0);
-    if (pnl <= 0) continue;
-    scoreByCode.set(code, (scoreByCode.get(code) ?? 0) + pnl);
-    winByCode.set(code, (winByCode.get(code) ?? 0) + 1);
+  if (error || !Array.isArray(data)) {
+    return {
+      codes: new Set<string>(),
+      boostByCode: new Map<string, number>(),
+      statsByCode: new Map<string, BacktestEdgeStat>(),
+      regimeScale: 1,
+    };
   }
 
-  const topCodes = Array.from(scoreByCode.keys())
+  const trades = (data as Array<{
+    id?: number | null;
+    code?: string | null;
+    pnl_amount?: number | null;
+    memo?: string | null;
+    traded_at?: string | null;
+  }>).filter((row) => parseStrategyMemo(row.memo).strategyId === AUTO_TRADE_STRATEGY_ID);
+
+  if (trades.length <= 0) {
+    return {
+      codes: new Set<string>(),
+      boostByCode: new Map<string, number>(),
+      statsByCode: new Map<string, BacktestEdgeStat>(),
+      regimeScale: 1,
+    };
+  }
+
+  const tradeById = new Map<number, { tradedAt: string; code: string }>();
+  for (const trade of trades) {
+    const id = Math.floor(toNumber(trade.id, 0));
+    const code = String(trade.code ?? "").trim();
+    const tradedAt = String(trade.traded_at ?? "").trim();
+    if (id > 0 && code && tradedAt) {
+      tradeById.set(id, { tradedAt, code });
+    }
+  }
+
+  const tradeIds = Array.from(tradeById.keys()).slice(0, 1000);
+  const holdDaysByTrade = new Map<number, { weightedDays: number; qty: number }>();
+
+  if (tradeIds.length > 0) {
+    const { data: lotMatches } = await input.supabase
+      .from(PORTFOLIO_TABLES.lotMatches)
+      .select("trade_id,lot_id,quantity")
+      .in("trade_id", tradeIds)
+      .limit(5000);
+
+    const matches = (lotMatches ?? []) as Array<{
+      trade_id?: number | null;
+      lot_id?: number | null;
+      quantity?: number | null;
+    }>;
+    const lotIds = Array.from(
+      new Set(matches.map((row) => Math.floor(toNumber(row.lot_id, 0))).filter((id) => id > 0))
+    ).slice(0, 5000);
+
+    const lotAcquiredAt = new Map<number, string>();
+    if (lotIds.length > 0) {
+      const { data: lots } = await input.supabase
+        .from(PORTFOLIO_TABLES.lots)
+        .select("id,acquired_at")
+        .in("id", lotIds)
+        .limit(5000);
+      for (const lot of (lots ?? []) as Array<{ id?: number | null; acquired_at?: string | null }>) {
+        const lotId = Math.floor(toNumber(lot.id, 0));
+        const acquiredAt = String(lot.acquired_at ?? "").trim();
+        if (lotId > 0 && acquiredAt) {
+          lotAcquiredAt.set(lotId, acquiredAt);
+        }
+      }
+    }
+
+    for (const row of matches) {
+      const tradeId = Math.floor(toNumber(row.trade_id, 0));
+      const lotId = Math.floor(toNumber(row.lot_id, 0));
+      const qty = Math.max(0, Math.floor(toNumber(row.quantity, 0)));
+      if (tradeId <= 0 || lotId <= 0 || qty <= 0) continue;
+      const tradeMeta = tradeById.get(tradeId);
+      const acquiredAt = lotAcquiredAt.get(lotId);
+      if (!tradeMeta || !acquiredAt) continue;
+
+      const holdDays = daysBetweenIso(tradeMeta.tradedAt, acquiredAt);
+      const prev = holdDaysByTrade.get(tradeId) ?? { weightedDays: 0, qty: 0 };
+      holdDaysByTrade.set(tradeId, {
+        weightedDays: prev.weightedDays + holdDays * qty,
+        qty: prev.qty + qty,
+      });
+    }
+  }
+
+  const aggregateByCode = new Map<
+    string,
+    {
+      tradeCount: number;
+      wins: number;
+      losses: number;
+      grossWin: number;
+      grossLoss: number;
+      holdDaysWeighted: number;
+      holdQty: number;
+    }
+  >();
+
+  let recentWins = 0;
+  let recentLosses = 0;
+  let recentGrossWin = 0;
+  let recentGrossLoss = 0;
+  let recentCount = 0;
+  const recentSinceMs = Date.now() - 21 * 24 * 60 * 60 * 1000;
+
+  for (const row of trades) {
+    const code = String(row.code ?? "").trim();
+    if (!code) continue;
+    const pnl = toNumber(row.pnl_amount, 0);
+    const tradeId = Math.floor(toNumber(row.id, 0));
+    const tradedAtMs = Date.parse(String(row.traded_at ?? ""));
+    const hold = holdDaysByTrade.get(tradeId);
+
+    const prev =
+      aggregateByCode.get(code) ??
+      {
+        tradeCount: 0,
+        wins: 0,
+        losses: 0,
+        grossWin: 0,
+        grossLoss: 0,
+        holdDaysWeighted: 0,
+        holdQty: 0,
+      };
+
+    prev.tradeCount += 1;
+    if (pnl > 0) {
+      prev.wins += 1;
+      prev.grossWin += pnl;
+    } else if (pnl < 0) {
+      prev.losses += 1;
+      prev.grossLoss += Math.abs(pnl);
+    }
+
+    if (hold && hold.qty > 0) {
+      prev.holdDaysWeighted += hold.weightedDays;
+      prev.holdQty += hold.qty;
+    }
+
+    aggregateByCode.set(code, prev);
+
+    if (Number.isFinite(tradedAtMs) && tradedAtMs >= recentSinceMs) {
+      recentCount += 1;
+      if (pnl > 0) {
+        recentWins += 1;
+        recentGrossWin += pnl;
+      } else if (pnl < 0) {
+        recentLosses += 1;
+        recentGrossLoss += Math.abs(pnl);
+      }
+    }
+  }
+
+  const recentWinRate =
+    recentWins + recentLosses > 0 ? (recentWins / (recentWins + recentLosses)) * 100 : 0;
+  const recentProfitFactor =
+    recentGrossLoss > 0 ? recentGrossWin / recentGrossLoss : recentGrossWin > 0 ? 2.5 : 0;
+  const regimeScale =
+    recentCount < 6
+      ? 1
+      : recentProfitFactor < 0.85 || recentWinRate < 40
+      ? 0.45
+      : recentProfitFactor < 1 || recentWinRate < 50
+      ? 0.7
+      : recentProfitFactor >= 1.25 && recentWinRate >= 56
+      ? 1.1
+      : 1;
+
+  const statsByCode = new Map<string, BacktestEdgeStat>();
+  for (const [code, stat] of aggregateByCode.entries()) {
+    const winRate = stat.tradeCount > 0 ? (stat.wins / stat.tradeCount) * 100 : 0;
+    const profitFactor =
+      stat.grossLoss > 0 ? stat.grossWin / stat.grossLoss : stat.grossWin > 0 ? 2.5 : 0;
+    const avgHoldDays = stat.holdQty > 0 ? stat.holdDaysWeighted / stat.holdQty : 5;
+    const holdFactor = clamp(avgHoldDays / 12, 0.45, 1.3);
+    const rawScore =
+      winRate * 0.42 +
+      profitFactor * 26 +
+      holdFactor * 22 +
+      Math.log1p(stat.tradeCount) * 5;
+    const score = rawScore * regimeScale;
+    const boost = clamp((score - 30) / 14, 0, 8);
+
+    statsByCode.set(code, {
+      tradeCount: stat.tradeCount,
+      wins: stat.wins,
+      losses: stat.losses,
+      winRate,
+      profitFactor,
+      avgHoldDays,
+      score,
+      boost: Number(boost.toFixed(3)),
+    });
+  }
+
+  const sortedCodes = Array.from(statsByCode.entries())
     .sort((a, b) => {
-      const winDiff = (winByCode.get(b) ?? 0) - (winByCode.get(a) ?? 0);
+      const scoreDiff = b[1].score - a[1].score;
+      if (scoreDiff !== 0) return scoreDiff;
+      const winDiff = b[1].winRate - a[1].winRate;
       if (winDiff !== 0) return winDiff;
-      return (scoreByCode.get(b) ?? 0) - (scoreByCode.get(a) ?? 0);
+      return b[1].profitFactor - a[1].profitFactor;
     })
     .slice(0, Math.max(0, Math.floor(input.limit)));
 
-  return new Set(topCodes);
+  return {
+    codes: new Set(sortedCodes.map(([code]) => code)),
+    boostByCode: new Map(sortedCodes.map(([code, stat]) => [code, stat.boost])),
+    statsByCode,
+    regimeScale,
+  };
 }
 
 function applyDiscoveryBoostToRows(input: {
   rows: RankedCandidate[];
+  discoveryProfile: DiscoveryProfile;
+  highlightCodes?: Set<string>;
+  pullbackCandidateCodes?: Set<string>;
   multibaggerCodes?: Set<string>;
   backtestEdgeCodes?: Set<string>;
-  multibaggerBoost?: number;
-  backtestBoost?: number;
+  backtestBoostByCode?: Map<string, number>;
 }): RankedCandidate[] {
-  const multibaggerBoost = toNumber(input.multibaggerBoost, 0);
-  const backtestBoost = toNumber(input.backtestBoost, 0);
+  const hasAnySource =
+    (input.highlightCodes?.size ?? 0) > 0 ||
+    (input.pullbackCandidateCodes?.size ?? 0) > 0 ||
+    (input.multibaggerCodes?.size ?? 0) > 0 ||
+    (input.backtestEdgeCodes?.size ?? 0) > 0;
 
-  if (
-    (!input.multibaggerCodes || input.multibaggerCodes.size <= 0 || multibaggerBoost === 0) &&
-    (!input.backtestEdgeCodes || input.backtestEdgeCodes.size <= 0 || backtestBoost === 0)
-  ) {
+  if (!hasAnySource) {
     return input.rows;
   }
 
   return input.rows.map((row) => {
-    let boosted = row.score;
-    if (input.multibaggerCodes?.has(row.code)) boosted += multibaggerBoost;
-    if (input.backtestEdgeCodes?.has(row.code)) boosted += backtestBoost;
-    if (boosted === row.score) return row;
+    const sources: string[] = [];
+    if (input.highlightCodes?.has(row.code)) sources.push("하이라이트");
+    if (input.pullbackCandidateCodes?.has(row.code)) sources.push("눌림목");
+    if (input.multibaggerCodes?.has(row.code)) sources.push("멀티배거");
+    if (input.backtestEdgeCodes?.has(row.code)) sources.push("백테스트");
+
+    const sourceCount = sources.length;
+    const overlapCount = sourceCount;
+    let rankBoost = 0;
+
+    if (sourceCount >= 2) rankBoost += 3.2;
+    if (sourceCount >= 3) rankBoost += 2.8;
+    if (sourceCount >= 4) rankBoost += 1.5;
+
+    if (input.discoveryProfile === "HIGHLIGHT" && input.highlightCodes?.has(row.code)) {
+      rankBoost += 1.8;
+    }
+    if (input.discoveryProfile === "PULLBACK" && input.pullbackCandidateCodes?.has(row.code)) {
+      rankBoost += 2.4;
+    }
+    if (input.discoveryProfile === "MULTIBAGGER" && input.multibaggerCodes?.has(row.code)) {
+      rankBoost += 2.6;
+    }
+    if (input.discoveryProfile === "BACKTEST_EDGE" && input.backtestEdgeCodes?.has(row.code)) {
+      rankBoost += 1.6;
+    }
+    if (input.discoveryProfile === "BLEND" && sourceCount === 1) {
+      rankBoost += 0.6;
+    }
+
+    rankBoost += toNumber(input.backtestBoostByCode?.get(row.code), 0);
+
+    if (rankBoost <= 0 && sourceCount <= 0) {
+      return row;
+    }
+
+    const discoveryReason =
+      sourceCount >= 3
+        ? `교집합 ${sourceCount}개 소스 일치`
+        : sourceCount === 2
+        ? "교집합 2개 소스 일치"
+        : input.discoveryProfile === "BACKTEST_EDGE" && input.backtestEdgeCodes?.has(row.code)
+        ? "백테스트 우수체결 가중"
+        : input.discoveryProfile === "MULTIBAGGER" && input.multibaggerCodes?.has(row.code)
+        ? "멀티배거 우선 소스"
+        : input.discoveryProfile === "PULLBACK" && input.pullbackCandidateCodes?.has(row.code)
+        ? "눌림목 우선 소스"
+        : sourceCount > 0
+        ? `${sources[0]} 소스 반영`
+        : null;
+
     return {
       ...row,
-      score: Number(boosted.toFixed(3)),
+      rankBoost: Number(rankBoost.toFixed(3)),
+      discoveryOverlapCount: overlapCount,
+      discoverySourceCount: sourceCount,
+      discoverySources: sourceCount > 0 ? sources : null,
+      discoveryReason,
     };
   });
 }
@@ -1655,9 +1925,9 @@ async function getLatestScoreAsof(
     .order("asof", { ascending: false })
     .limit(1)
     .maybeSingle();
-
   if (error) return null;
-  return (data as { asof?: string } | null)?.asof ?? null;
+  if (!data) return null;
+  return String((data as Record<string, unknown>).asof ?? "") || null;
 }
 
 async function fetchLatestRankedRows(payload: {
@@ -1670,22 +1940,13 @@ async function fetchLatestRankedRows(payload: {
     return { rows: [], latestAsof: null };
   }
 
-  const queryLimit = Math.max(payload.limit, 30);
-  const selectWithSignal = [
-    "code",
-    "total_score",
-    "signal",
-    "factors",
-    "stock:stocks!inner(code, name, close, rsi14, liquidity, market, market_cap, universe_level, is_sector_leader)",
-  ].join(",");
-  const selectWithoutSignal = [
-    "code",
-    "total_score",
-    "factors",
-    "stock:stocks!inner(code, name, close, rsi14, liquidity, market, market_cap, universe_level, is_sector_leader)",
-  ].join(",");
+  const queryLimit = Math.max(1, Math.min(2000, Math.floor(payload.limit)));
+  const selectWithSignal =
+    "code,total_score,signal,factors,stock:stocks!inner(code,name,close,rsi14,liquidity,market,market_cap,universe_level,is_sector_leader)";
+  const selectWithoutSignal =
+    "code,total_score,factors,stock:stocks!inner(code,name,close,rsi14,liquidity,market,market_cap,universe_level,is_sector_leader)";
 
-  const buildQuery = (selectClause: string) => {
+  const buildQuery = async (selectClause: string) => {
     let query = payload.supabase
       .from("scores")
       .select(selectClause)
@@ -1723,11 +1984,12 @@ async function fetchLatestRankedRows(payload: {
     const per = Number.isFinite(rawPer) && rawPer > 0 ? rawPer : null;
     const earningsGrowthPct = resolveEarningsGrowthPctFromFactors(rawFactors);
     const rawPeg = Number(rawFactors.peg);
-    const peg = Number.isFinite(rawPeg) && rawPeg > 0
-      ? rawPeg
-      : per != null && earningsGrowthPct != null && earningsGrowthPct > 0
-      ? per / earningsGrowthPct
-      : null;
+    const peg =
+      Number.isFinite(rawPeg) && rawPeg > 0
+        ? rawPeg
+        : per != null && earningsGrowthPct != null && earningsGrowthPct > 0
+        ? per / earningsGrowthPct
+        : null;
 
     const rawSma20 = Number(rawFactors.sma20);
     const sma20 = Number.isFinite(rawSma20) && rawSma20 > 0 ? rawSma20 : null;
@@ -1753,18 +2015,19 @@ async function fetchLatestRankedRows(payload: {
       stableTrust: Number.isFinite(Number(rawFactors.stable_turn_trust))
         ? Number(rawFactors.stable_turn_trust)
         : null,
-      stableAboveAvg: typeof rawFactors.stable_above_avg === "boolean"
-        ? rawFactors.stable_above_avg
-        : null,
-      stableAccumulation: typeof rawFactors.stable_accumulation === "boolean"
-        ? rawFactors.stable_accumulation
-        : null,
+      stableAboveAvg:
+        typeof rawFactors.stable_above_avg === "boolean"
+          ? (rawFactors.stable_above_avg as boolean)
+          : null,
+      stableAccumulation:
+        typeof rawFactors.stable_accumulation === "boolean"
+          ? (rawFactors.stable_accumulation as boolean)
+          : null,
     });
   }
 
   return { rows: rankedRows, latestAsof };
 }
-
 async function selectDailyAddOnCandidates(payload: {
   supabase: SupabaseClientAny;
   holdings: HoldingRow[];
@@ -1914,6 +2177,17 @@ async function selectMondayCandidates(payload: {
         })
       : undefined;
 
+  const highlightCodes = new Set(
+    rankedRows
+      .filter((row) => {
+        const signal = String(row.signal ?? "").trim().toUpperCase();
+        return signal === "BUY" || signal === "STRONG_BUY" || signal === "WATCH";
+      })
+      .slice(0, Math.max(payload.limit * 6, 24))
+      .map((row) => row.code)
+      .filter(Boolean)
+  );
+
   const multibaggerCodes =
     discoveryProfile === "MULTIBAGGER" || discoveryProfile === "BLEND"
       ? new Set(
@@ -1923,22 +2197,29 @@ async function selectMondayCandidates(payload: {
         )
       : undefined;
 
-  const backtestEdgeCodes =
+  const backtestEdgeProfile =
     discoveryProfile === "BACKTEST_EDGE" || discoveryProfile === "BLEND"
-      ? await fetchBacktestEdgeCodes({
+      ? await fetchBacktestEdgeProfile({
           supabase: payload.supabase,
           chatId: payload.chatId,
           limit: Math.max(payload.limit * 2, 12),
         })
-      : undefined;
+      : null;
+
+  const backtestEdgeCodes = backtestEdgeProfile?.codes;
 
   const boostedRows = applyDiscoveryBoostToRows({
     rows: rankedRows,
+    discoveryProfile,
+    highlightCodes,
+    pullbackCandidateCodes,
     multibaggerCodes,
     backtestEdgeCodes,
-    multibaggerBoost: discoveryProfile === "MULTIBAGGER" ? 6 : discoveryProfile === "BLEND" ? 3 : 0,
-    backtestBoost: discoveryProfile === "BACKTEST_EDGE" ? 5 : discoveryProfile === "BLEND" ? 3 : 0,
+    backtestBoostByCode: backtestEdgeProfile?.boostByCode,
   });
+
+  const overlap2Count = boostedRows.filter((row) => toNumber(row.discoverySourceCount, 0) >= 2).length;
+  const overlap3Count = boostedRows.filter((row) => toNumber(row.discoverySourceCount, 0) >= 3).length;
 
   const selection = pickAutoTradeCandidates({
     rows: boostedRows,
@@ -1966,13 +2247,15 @@ async function selectMondayCandidates(payload: {
               : ""
           }${
             discoveryProfile === "BACKTEST_EDGE"
-              ? ` · 백테스트 우수 연동 ${backtestEdgeCodes?.size ?? 0}종목`
+              ? ` · 백테스트 우수 연동 ${backtestEdgeCodes?.size ?? 0}종목${
+                  backtestEdgeProfile ? ` (성과스케일 x${backtestEdgeProfile.regimeScale.toFixed(2)})` : ""
+                }`
               : ""
           }${
             discoveryProfile === "BLEND"
-              ? ` · 멀티배거 ${multibaggerCodes?.size ?? 0} · 백테스트 ${backtestEdgeCodes?.size ?? 0}`
+              ? ` · 하이라이트 ${highlightCodes.size} · 눌림목 ${pullbackCandidateCodes?.size ?? 0} · 멀티배거 ${multibaggerCodes?.size ?? 0} · 백테스트 ${backtestEdgeCodes?.size ?? 0}`
               : ""
-          }${cooldownCodes.size > 0 ? ` · 스탑로스 쿨다운 ${cooldownCodes.size}종목 제외` : ""}`,
+          } · 교집합(2+) ${overlap2Count}종목 · 교집합(3+) ${overlap3Count}종목${cooldownCodes.size > 0 ? ` · 스탑로스 쿨다운 ${cooldownCodes.size}종목 제외` : ""}`,
   };
 }
 
@@ -3415,6 +3698,14 @@ async function runDailyReviewForUser(payload: {
       pnlPct,
       factors: extractScoreFactors(holdingScoreRow?.factors),
       signal: holdingSignal,
+      trustScore: evaluateAutoTradeSignalGate({
+        currentPrice: close,
+        score: toNumber(holdingScoreRow?.score, 0),
+        factors: extractScoreFactors(holdingScoreRow?.factors),
+        minTrustScore: signalTrustThresholds.rebalance,
+        requireAboveSma200: false,
+      }).trustScore,
+      minTrustForOverride: Math.max(signalTrustThresholds.rebalance, 72),
     });
     const exitPlan: PlannedAutoTradeExit =
       trailingStopBreached
@@ -3480,7 +3771,10 @@ async function runDailyReviewForUser(payload: {
         chatId,
         code: holding.code,
         actionType: "HOLD",
-        reason: "within-range",
+        reason:
+          trendExitSignal.reason === "hold-override-strong-trend"
+            ? "hold-override-strong-trend"
+            : "within-range",
         detail: {
           strategyProfile: tradeProfile.profile,
           takeProfitPct: adaptiveExitThreshold.takeProfitPct,
@@ -3491,8 +3785,17 @@ async function runDailyReviewForUser(payload: {
           signal: holdingSignal,
           market: holdingMarket,
           marketMode: marketPolicy.mode,
+          overrideDetails:
+            trendExitSignal.reason === "hold-override-strong-trend"
+              ? trendExitSignal.overrideDetails ?? []
+              : undefined,
         },
       });
+      if (trendExitSignal.reason === "hold-override-strong-trend") {
+        summary.notes.push(
+          `[보유유지 오버라이드] ${holding.code} · 강세 지속으로 즉시 매도 보류 (${(trendExitSignal.overrideDetails ?? []).join(", ") || "조건 충족"})`
+        );
+      }
       continue;
     }
 
