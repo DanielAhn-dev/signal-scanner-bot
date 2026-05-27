@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from 'react'
 import Button from '../../components/ui/Button'
 import { apiFetch } from '../../lib/api'
 import StockDetailModal from '../../components/StockDetailModal'
-import { ChevronDown, ChevronUp } from 'lucide-react'
+import { ChevronDown, ChevronUp, RefreshCw } from 'lucide-react'
 import SheetHeaderBar from '../../components/SheetHeaderBar'
 
 type NewsItem = {
@@ -242,49 +242,54 @@ export default function NewsPage() {
 
       <div className="sheet-page-header-row">
         <SheetHeaderBar
+          className="news-sheet__page-header"
           title="뉴스"
           subtitle="텔레그램 /news 명령과 같은 뉴스 소스를 웹에서도 조회합니다."
           action={(
-            <Button variant="secondary" onClick={() => load(appliedQuery, page)} disabled={loading}>
-              새로고침
+            <Button className="news-sheet__header-refresh" variant="secondary" onClick={() => load(appliedQuery, page)} disabled={loading} title="새로고침" aria-label="새로고침">
+              <RefreshCw size={14} style={loading ? { animation: 'spin 1s linear infinite' } : undefined} />
+              <span className="news-sheet__header-refresh-label">새로고침</span>
             </Button>
           )}
         />
       </div>
 
       {/* ═══ 메타 헤더 테이블 ═══ */}
-      <table ref={metaTableRef} className="xls-table news-sheet__table" style={{ width: '100%', tableLayout: 'fixed' }}>
-        {colGroup}
-        <tbody>
-          <tr className="xls-row xls-row--even">
-            <td className="xls-cell" colSpan={3} style={{ padding: '2px 6px' }}>
-              <input
-                className="news-sheet__search-input"
-                placeholder="종목명 또는 코드 (비우면 시장 뉴스)"
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-                onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); applyQuery() } }}
-              />
-            </td>
-            <td className="xls-cell" style={{ padding: '2px 4px', textAlign: 'right' }}>
-              <Button variant="primary" onClick={applyQuery} disabled={loading}>조회</Button>
-            </td>
-          </tr>
-        </tbody>
-      </table>
+      <div className="news-sheet__meta-scroll xls-scroll-frame" style={{ ['--xls-table-min-width' as any]: '860px' }}>
+        <table ref={metaTableRef} className="xls-table news-sheet__table" style={{ width: 'max-content', minWidth: '100%', tableLayout: 'auto' }}>
+          {colGroup}
+          <tbody>
+            <tr className="xls-row xls-row--even">
+              <td className="xls-cell" colSpan={3} style={{ padding: '2px 6px' }}>
+                <input
+                  className="news-sheet__search-input"
+                  placeholder="종목명 또는 코드 (비우면 시장 뉴스)"
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); applyQuery() } }}
+                />
+              </td>
+              <td className="xls-cell" style={{ padding: '2px 4px', textAlign: 'right' }}>
+                <Button variant="primary" onClick={applyQuery} disabled={loading}>조회</Button>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
 
       {/* ═══ 데이터 테이블 (sticky 헤더) ═══ */}
-      <table ref={dataTableRef} className="xls-table" style={{ width: '100%', tableLayout: 'fixed' }}>
-        {colGroup}
-        <thead>
-          <tr className="xls-header-row">
-            <th className="xls-th">제목</th>
-            <th className="xls-th">출처</th>
-            <th className="xls-th">일자</th>
-            <th className="xls-th">관련주</th>
-          </tr>
-        </thead>
-        <tbody>
+      <div className="news-sheet__table-scroll xls-scroll-frame" style={{ ['--xls-table-min-width' as any]: '860px' }}>
+        <table ref={dataTableRef} className="xls-table" style={{ width: 'max-content', minWidth: '100%', tableLayout: 'auto' }}>
+          {colGroup}
+          <thead>
+            <tr className="xls-header-row">
+              <th className="xls-th">제목</th>
+              <th className="xls-th">출처</th>
+              <th className="xls-th">일자</th>
+              <th className="xls-th">관련주</th>
+            </tr>
+          </thead>
+          <tbody>
 
           {loading && (
             <tr className="xls-row xls-row--even">
@@ -338,17 +343,19 @@ export default function NewsPage() {
                   </td>
                   <td className="xls-cell" style={{ padding: '0 2px' }}>
                     <Button
+                      size="sm"
+                      className="news-related-toggle"
                       variant="ghost"
                       onClick={() => toggleRelated(item)}
                       style={{ whiteSpace: 'nowrap', width: '100%', justifyContent: 'center' }}
                     >
                       {relatedOpenSet.has(key) ? (
                         <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-                          접기 <ChevronUp size={14} />
+                          접기 <ChevronUp size={12} />
                         </span>
                       ) : (
                         <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-                          관련주 <ChevronDown size={14} />
+                          관련주 <ChevronDown size={12} />
                         </span>
                       )}
                     </Button>
@@ -368,7 +375,7 @@ export default function NewsPage() {
                         {!isLoading && stocks && stocks.length > 0 && (
                           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
                             {stocks.map(s => (
-                              <Button key={s.code} variant="ghost" onClick={() => openModal(s)}>
+                              <Button key={s.code} variant="ghost" size="sm" onClick={() => openModal(s)}>
                                 {s.name} 시세
                               </Button>
                             ))}
@@ -395,8 +402,9 @@ export default function NewsPage() {
             )
           })}
 
-        </tbody>
-      </table>
+          </tbody>
+        </table>
+      </div>
 
       {!loading && !error && (
         <div className="xls-panel-header-bar" style={{ borderTop: '1px solid var(--color-excel-grid-border)', borderBottom: 'none', minHeight: 22 }}>
