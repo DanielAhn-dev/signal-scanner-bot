@@ -171,6 +171,65 @@ test("pickAutoTradeCandidates: 3개 이상 교집합 후보를 2개 교집합보
   assert.equal(result.candidates[0]?.code, "B");
 });
 
+test("pickAutoTradeCandidates: todayBuyScore가 높은 후보를 우선 배치한다", () => {
+  const result = pickAutoTradeCandidates({
+    rows: [
+      {
+        code: "A",
+        close: 10000,
+        score: 84,
+        name: "Alpha",
+        signal: "BUY",
+        todayBuyScore: 62,
+      },
+      {
+        code: "B",
+        close: 10000,
+        score: 80,
+        name: "Beta",
+        signal: "BUY",
+        todayBuyScore: 88,
+      },
+    ],
+    preferredMinBuyScore: 70,
+    limit: 1,
+    heldCodes: new Set<string>(),
+  });
+
+  assert.equal(result.candidates[0]?.code, "B");
+});
+
+test("pickAutoTradeCandidates: immediateExcludeSignal 종목은 후보에서 제외한다", () => {
+  const result = pickAutoTradeCandidates({
+    rows: [
+      {
+        code: "A",
+        close: 10000,
+        score: 85,
+        name: "Alpha",
+        signal: "BUY",
+        immediateExcludeSignal: true,
+      },
+      {
+        code: "B",
+        close: 9800,
+        score: 79,
+        name: "Beta",
+        signal: "BUY",
+      },
+    ],
+    preferredMinBuyScore: 70,
+    limit: 2,
+    heldCodes: new Set<string>(),
+  });
+
+  assert.deepEqual(
+    result.candidates.map((candidate) => candidate.code),
+    ["B"]
+  );
+  assert.equal(result.filteringMetrics?.rejectedByReason?.immediateExclude, 1);
+});
+
 test("detectAutoTradeMarketPolicy: 고변동 구간은 대형주 방어 모드로 전환한다", () => {
   const policy = detectAutoTradeMarketPolicy({
     overview: {

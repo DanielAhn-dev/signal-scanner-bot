@@ -3,6 +3,10 @@ export type RankedCandidate = {
   close: number;
   score: number;
   rankBoost?: number | null;
+  todayBuyScore?: number | null;
+  holdExtensionScore?: number | null;
+  immediateExcludeSignal?: boolean | null;
+  flowReason?: string | null;
   discoveryOverlapCount?: number | null;
   discoverySourceCount?: number | null;
   discoverySources?: string[] | null;
@@ -65,6 +69,10 @@ export type AutoTradeCandidateSelectionResult = {
     code: string;
     close: number;
     score: number;
+    todayBuyScore?: number | null;
+    holdExtensionScore?: number | null;
+    immediateExcludeSignal?: boolean | null;
+    flowReason?: string | null;
     name: string;
     signal?: string | null;
     rsi14?: number | null;
@@ -375,6 +383,13 @@ function prioritizeRowsByMarketPolicy(
       if (accumulationDiff !== 0) return accumulationDiff;
     }
 
+    const todayBuyDiff = toNumber(b.todayBuyScore, 0) - toNumber(a.todayBuyScore, 0);
+    if (todayBuyDiff !== 0) return todayBuyDiff;
+
+    const holdExtensionDiff =
+      toNumber(b.holdExtensionScore, 0) - toNumber(a.holdExtensionScore, 0);
+    if (holdExtensionDiff !== 0) return holdExtensionDiff;
+
     const scoreDiff = resolveCompositeRankScore(b) - resolveCompositeRankScore(a);
     if (scoreDiff !== 0) return scoreDiff;
 
@@ -631,6 +646,7 @@ export function pickAutoTradeCandidates(input: {
   const baseFilteredRows = marketPolicyRows
     .filter((row) => {
       if (row.close <= 0 || input.heldCodes.has(row.code)) return false;
+      if (row.immediateExcludeSignal === true) return false;
       // Scan Edge 필터: RSI 45~65, 거래대금 ≥100억, 종가 > SMA20
       // 데이터 미비 시(null) 해당 조건은 통과 처리
       const rsi = row.rsi14 ?? null;
@@ -651,6 +667,10 @@ export function pickAutoTradeCandidates(input: {
     rejectedByReason: {
       marketPolicy: Math.max(0, initialCount - marketPolicyRows.length),
       invalidOrHeld: Math.max(0, marketPolicyRows.length - rows.length),
+      immediateExclude: marketPolicyRows.reduce(
+        (sum, row) => sum + (row.immediateExcludeSignal === true ? 1 : 0),
+        0
+      ),
     },
   };
 
@@ -667,10 +687,14 @@ export function pickAutoTradeCandidates(input: {
       policy: input.marketPolicy,
       entryProfile,
       pullbackCandidateCodes: input.pullbackCandidateCodes,
-    }).map(({ code, close, score, name, signal, rsi14, liquidity, market, marketCap, universeLevel, isSectorLeader, stableTurn, stableTrust, stableAboveAvg, stableAccumulation }) => ({
+    }).map(({ code, close, score, todayBuyScore, holdExtensionScore, immediateExcludeSignal, flowReason, name, signal, rsi14, liquidity, market, marketCap, universeLevel, isSectorLeader, stableTurn, stableTrust, stableAboveAvg, stableAccumulation }) => ({
       code,
       close,
       score,
+      todayBuyScore: todayBuyScore ?? null,
+      holdExtensionScore: holdExtensionScore ?? null,
+      immediateExcludeSignal: immediateExcludeSignal ?? null,
+      flowReason: flowReason ?? null,
       name,
       signal: signal ?? null,
       rsi14: rsi14 ?? null,

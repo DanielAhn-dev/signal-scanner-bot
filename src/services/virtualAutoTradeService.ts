@@ -485,6 +485,191 @@ function applyDiscoveryBoostToRows(input: {
   });
 }
 
+type DailyIndicatorFlowRow = {
+  code?: string | null;
+  trade_date?: string | null;
+  close?: number | null;
+  volume?: number | null;
+  value_traded?: number | null;
+  sma20?: number | null;
+  sma50?: number | null;
+  rsi14?: number | null;
+  roc14?: number | null;
+  roc21?: number | null;
+};
+
+type FlowSignalProfile = {
+  todayBuyScore: number;
+  holdExtensionScore: number;
+  immediateExcludeSignal: boolean;
+  reason: string;
+};
+
+function mean(values: number[]): number {
+  if (!values.length) return 0;
+  return values.reduce((sum, value) => sum + value, 0) / values.length;
+}
+
+function percentileRank(values: number[], target: number): number {
+  if (!values.length || !Number.isFinite(target)) return 0;
+  const sorted = [...values].sort((a, b) => a - b);
+  const belowOrEqual = sorted.filter((value) => value <= target).length;
+  return belowOrEqual / sorted.length;
+}
+
+function buildFlowSignalProfile(series: DailyIndicatorFlowRow[]): FlowSignalProfile {
+  if (!series.length) {
+    return {
+      todayBuyScore: 0,
+      holdExtensionScore: 0,
+      immediateExcludeSignal: false,
+      reason: "수급데이터 없음",
+    };
+  }
+
+  const latest = series[series.length - 1] ?? {};
+  const valueSeries = series.map((row) => Math.max(0, toNumber(row.value_traded, 0))).filter((v) => v > 0);
+  const volumeSeries = series.map((row) => Math.max(0, toNumber(row.volume, 0))).filter((v) => v > 0);
+  const closeSeries = series.map((row) => Math.max(0, toNumber(row.close, 0))).filter((v) => v > 0);
+  const recent20Value = valueSeries.slice(-20);
+  const recent20Volume = volumeSeries.slice(-20);
+  const recent5Close = closeSeries.slice(-5);
+  const recent3Value = valueSeries.slice(-3);
+
+  const latestValue = Math.max(0, toNumber(latest.value_traded, 0));
+  const latestVolume = Math.max(0, toNumber(latest.volume, 0));
+  const latestClose = Math.max(0, toNumber(latest.close, 0));
+  const sma20 = Math.max(0, toNumber(latest.sma20, 0));
+  const sma50 = Math.max(0, toNumber(latest.sma50, 0));
+  const rsi14 = toNumber(latest.rsi14, 50);
+  const roc14 = toNumber(latest.roc14, 0);
+  const roc21 = toNumber(latest.roc21, 0);
+
+  const valuePercentile = percentileRank(recent20Value, latestValue);
+  const avg20Value = mean(recent20Value);
+  const avg20Volume = mean(recent20Volume);
+  const valueRatio = avg20Value > 0 ? latestValue / avg20Value : 1;
+  const volumeRatio = avg20Volume > 0 ? latestVolume / avg20Volume : 1;
+  const priorHigh5 = recent5Close.length >= 2 ? Math.max(...recent5Close.slice(0, -1)) : latestClose;
+  const breakoutHeld = latestClose > 0 && priorHigh5 > 0 ? latestClose >= priorHigh5 * 0.998 : false;
+  const stableTrend = (sma20 <= 0 || latestClose >= sma20) && (sma50 <= 0 || latestClose >= sma50 * 0.985);
+  const recentValueStreak = recent3Value.filter((value) => avg20Value > 0 && value >= avg20Value * 1.2).length;
+
+  let todayBuyScore = 0;
+  if (valuePercentile >= 0.8) todayBuyScore += 22;
+  else if (valuePercentile >= 0.65) todayBuyScore += 12;
+
+  if (valueRatio >= 1.8) todayBuyScore += 18;
+  else if (valueRatio >= 1.3) todayBuyScore += 12;
+
+  if (volumeRatio >= 1.8) todayBuyScore += 16;
+  else if (volumeRatio >= 1.3) todayBuyScore += 10;
+
+  if (recentValueStreak >= 2) todayBuyScore += 12;
+  if (breakoutHeld) todayBuyScore += 12;
+  if (stableTrend) todayBuyScore += 10;
+  if (rsi14 >= 48 && rsi14 <= 72) todayBuyScore += 6;
+  if (roc14 > 0) todayBuyScore += 6;
+  if (roc21 > 0) todayBuyScore += 6;
+  todayBuyScore = clamp(Math.round(todayBuyScore), 0, 100);
+
+  let holdExtensionScore = 0;
+  holdExtensionScore += Math.round(todayBuyScore * 0.45);
+  if (valueRatio >= 1.2) holdExtensionScore += 12;
+  if (volumeRatio >= 1.1) holdExtensionScore += 10;
+  if (stableTrend) holdExtensionScore += 16;
+  if (rsi14 >= 45 && rsi14 <= 70) holdExtensionScore += 10;
+  if (roc14 > 0 && roc21 > 0) holdExtensionScore += 12;
+  holdExtensionScore = clamp(holdExtensionScore, 0, 100);
+
+  const breakdown = latestClose > 0 && sma20 > 0 ? latestClose < sma20 * 0.97 : false;
+  const flowDry = valueRatio < 0.65 && volumeRatio < 0.7;
+  const momentumFail = roc14 < -1.5 && roc21 < -2.5;
+  const immediateExcludeSignal = breakdown || flowDry || momentumFail;
+
+  const reason = immediateExcludeSignal
+    ? "즉시제외: 추세이탈/수급둔화"
+    : todayBuyScore >= 80
+    ? "오늘매수 강신호: 수급 누적 + 구조 유지"
+    : todayBuyScore >= 65
+    ? "오늘매수 후보: 수급 우위"
+    : "관찰: 수급 강도 보통";
+
+  return {
+    todayBuyScore,
+    holdExtensionScore,
+    immediateExcludeSignal,
+    reason,
+  };
+}
+
+async function fetchFlowSignalProfilesByCode(input: {
+  supabase: SupabaseClientAny;
+  codes: string[];
+}): Promise<Map<string, FlowSignalProfile>> {
+  const codeSet = Array.from(new Set(input.codes.map((code) => String(code ?? "").trim()).filter(Boolean)));
+  const out = new Map<string, FlowSignalProfile>();
+  if (!codeSet.length) return out;
+
+  const fromDate = new Date(Date.now() - 45 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+  const chunks: string[][] = [];
+  for (let i = 0; i < codeSet.length; i += 200) {
+    chunks.push(codeSet.slice(i, i + 200));
+  }
+
+  const grouped = new Map<string, DailyIndicatorFlowRow[]>();
+  for (const chunk of chunks) {
+    const { data } = await input.supabase
+      .from("daily_indicators")
+      .select("code,trade_date,close,volume,value_traded,sma20,sma50,rsi14,roc14,roc21")
+      .in("code", chunk)
+      .gte("trade_date", fromDate)
+      .order("trade_date", { ascending: true })
+      .limit(8000);
+
+    for (const row of (data ?? []) as DailyIndicatorFlowRow[]) {
+      const code = String(row.code ?? "").trim();
+      if (!code) continue;
+      const list = grouped.get(code) ?? [];
+      list.push(row);
+      grouped.set(code, list);
+    }
+  }
+
+  for (const code of codeSet) {
+    out.set(code, buildFlowSignalProfile(grouped.get(code) ?? []));
+  }
+
+  return out;
+}
+
+function applyFlowSignalProfilesToRows(input: {
+  rows: RankedCandidate[];
+  profileByCode: Map<string, FlowSignalProfile>;
+}): RankedCandidate[] {
+  return input.rows.map((row) => {
+    const profile = input.profileByCode.get(row.code);
+    if (!profile) return row;
+
+    let rankBoost = toNumber(row.rankBoost, 0);
+    if (profile.todayBuyScore >= 85) rankBoost += 6;
+    else if (profile.todayBuyScore >= 75) rankBoost += 4;
+    else if (profile.todayBuyScore >= 65) rankBoost += 2;
+
+    if (profile.holdExtensionScore >= 75) rankBoost += 1.5;
+    if (profile.immediateExcludeSignal) rankBoost -= 12;
+
+    return {
+      ...row,
+      rankBoost: Number(rankBoost.toFixed(3)),
+      todayBuyScore: profile.todayBuyScore,
+      holdExtensionScore: profile.holdExtensionScore,
+      immediateExcludeSignal: profile.immediateExcludeSignal,
+      flowReason: profile.reason,
+    };
+  });
+}
+
 export type AutoTradeRunMode = SelectionAutoTradeRunMode;
 
 export type ChatAutoTradeRunSummary = {
@@ -2218,11 +2403,22 @@ async function selectMondayCandidates(payload: {
     backtestBoostByCode: backtestEdgeProfile?.boostByCode,
   });
 
-  const overlap2Count = boostedRows.filter((row) => toNumber(row.discoverySourceCount, 0) >= 2).length;
-  const overlap3Count = boostedRows.filter((row) => toNumber(row.discoverySourceCount, 0) >= 3).length;
+  const flowProfilesByCode = await fetchFlowSignalProfilesByCode({
+    supabase: payload.supabase,
+    codes: boostedRows.map((row) => row.code),
+  });
+  const scoredRows = applyFlowSignalProfilesToRows({
+    rows: boostedRows,
+    profileByCode: flowProfilesByCode,
+  });
+
+  const overlap2Count = scoredRows.filter((row) => toNumber(row.discoverySourceCount, 0) >= 2).length;
+  const overlap3Count = scoredRows.filter((row) => toNumber(row.discoverySourceCount, 0) >= 3).length;
+  const strongTodayBuyCount = scoredRows.filter((row) => toNumber(row.todayBuyScore, 0) >= 75).length;
+  const immediateExcludeCount = scoredRows.filter((row) => row.immediateExcludeSignal === true).length;
 
   const selection = pickAutoTradeCandidates({
-    rows: boostedRows,
+    rows: scoredRows,
     preferredMinBuyScore: staleAdjustedMinBuyScore,
     limit: payload.limit,
     heldCodes: heldAndCooldownCodes,
@@ -2255,7 +2451,7 @@ async function selectMondayCandidates(payload: {
             discoveryProfile === "BLEND"
               ? ` · 하이라이트 ${highlightCodes.size} · 눌림목 ${pullbackCandidateCodes?.size ?? 0} · 멀티배거 ${multibaggerCodes?.size ?? 0} · 백테스트 ${backtestEdgeCodes?.size ?? 0}`
               : ""
-          } · 교집합(2+) ${overlap2Count}종목 · 교집합(3+) ${overlap3Count}종목${cooldownCodes.size > 0 ? ` · 스탑로스 쿨다운 ${cooldownCodes.size}종목 제외` : ""}`,
+          } · 교집합(2+) ${overlap2Count}종목 · 교집합(3+) ${overlap3Count}종목 · 오늘매수강신호 ${strongTodayBuyCount}종목 · 즉시제외 ${immediateExcludeCount}종목${cooldownCodes.size > 0 ? ` · 스탑로스 쿨다운 ${cooldownCodes.size}종목 제외` : ""}`,
   };
 }
 
