@@ -57,6 +57,17 @@ const parseInt2 = (s?: string): number | undefined => {
 
 const FETCH_TIMEOUT_MS = 2500;
 
+function isAbortError(error: unknown): boolean {
+  if (!error || typeof error !== "object") return false;
+  const name = (error as { name?: unknown }).name;
+  return name === "AbortError";
+}
+
+function errorMessage(error: unknown): string {
+  if (error instanceof Error) return error.message;
+  return String(error);
+}
+
 /** 하위 호환: 실시간 가격만 반환 */
 export async function fetchRealtimePrice(code: string): Promise<number | null> {
   const data = await fetchRealtimeStockData(code);
@@ -104,7 +115,11 @@ export async function fetchRealtimeStockData(
       fetchedAt,
     };
   } catch (e) {
-    console.error(`실시간 데이터 조회 실패 (${code}):`, e);
+    if (isAbortError(e)) {
+      console.warn(`실시간 데이터 조회 타임아웃 (${code})`);
+    } else {
+      console.error(`실시간 데이터 조회 실패 (${code}): ${errorMessage(e)}`);
+    }
     return null;
   } finally {
     clearTimeout(timer);
@@ -139,7 +154,7 @@ export async function fetchRealtimePriceBatch(
 
     for (const item of settled) {
       if (item.status === "rejected") {
-        console.error("실시간 배치 조회 실패:", item.reason);
+        console.error(`실시간 배치 조회 실패: ${errorMessage(item.reason)}`);
       }
     }
   }
@@ -172,7 +187,7 @@ export async function fetchRealtimePriceBatch(
 
       for (const item of settled) {
         if (item.status === "rejected") {
-          console.error("실시간 배치 재시도 실패:", item.reason);
+          console.error(`실시간 배치 재시도 실패: ${errorMessage(item.reason)}`);
         }
       }
     }
