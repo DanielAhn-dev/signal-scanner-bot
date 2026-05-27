@@ -19,6 +19,10 @@ type SignalHistoryRow = {
   is_quick_lite: boolean
 }
 
+type RecentSignalRow = {
+  trade_date: string
+}
+
 const scanCache = new Map<string, ScanCacheEntry>()
 
 function isKrxIntradaySession(base = new Date()): boolean {
@@ -237,6 +241,25 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       })
     }
 
+    const { data: recentRows, error: recentError } = await supabase
+      .from('pullback_signals')
+      .select('trade_date')
+      .order('trade_date', { ascending: false })
+      .limit(5000)
+
+    if (recentError) return res.status(500).json({ error: recentError.message })
+
+    const recentDates = Array.from(
+      new Set(
+        ((recentRows ?? []) as RecentSignalRow[])
+          .map((row) => String(row.trade_date || '').slice(0, 10))
+          .filter(Boolean)
+      )
+    ).slice(0, 3)
+
+    const activeTradeDates = recentDates.length > 0 ? recentDates : [latestDate]
+    const effectiveLimit = Math.max(Number(limit), activeTradeDates.length > 1 ? 240 : 80)
+
     const { data, error } = await supabase
       .from('pullback_signals')
       .select(`
@@ -253,11 +276,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         warn_score,
         stock:stocks!inner(code,name,sector_id,liquidity,updated_at,close)
       `)
-      .eq('trade_date', latestDate)
+      .in('trade_date', activeTradeDates)
       .neq('warn_grade', 'SELL')
       .in('entry_grade', ['A', 'B'])
+      .order('trade_date', { ascending: false })
       .order('entry_score', { ascending: false })
-      .limit(limit)
+      .limit(effectiveLimit)
 
     if (error) return res.status(500).json({ error: error.message })
 
@@ -390,9 +414,39 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       }
     })
 
+    const uniqueRowsByCode = new Map<string, any>()
+    for (const row of rows) {
+      const code = String(row.code || '').trim()
+      if (!code) continue
+      const existing = uniqueRowsByCode.get(code)
+      if (!existing) {
+        uniqueRowsByCode.set(code, row)
+        continue
+      }
+
+      const existingDate = String(existing.trade_date || '')
+      const nextDate = String(row.trade_date || '')
+      if (nextDate > existingDate) {
+        uniqueRowsByCode.set(code, row)
+        continue
+      }
+
+      if (nextDate === existingDate) {
+        const existingScore = Number(existing.entry_score ?? 0)
+        const nextScore = Number(row.entry_score ?? 0)
+        const existingAdaptive = Number(existing.adaptive_score ?? 0)
+        const nextAdaptive = Number(row.adaptive_score ?? 0)
+        if (nextAdaptive > existingAdaptive || (nextAdaptive === existingAdaptive && nextScore > existingScore)) {
+          uniqueRowsByCode.set(code, row)
+        }
+      }
+    }
+
+    const dedupedRows = [...uniqueRowsByCode.values()]
+
     // 스캔 신호 이력을 DB에 저장(중복은 upsert로 무시)하고, D-n 계산용 최신일을 병합한다.
     try {
-      const historyUpserts = rows.map((row: any) => ({
+      const historyUpserts = dedupedRows.map((row: any) => ({
         code: String(row.code),
         trade_date: String(latestDate),
         is_quick_strict: !!row.quick_trade_strict,
@@ -406,7 +460,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           .upsert(historyUpserts, { onConflict: 'code,trade_date' })
       }
 
-      const historyCodes = rows.map((row: any) => String(row.code)).filter(Boolean)
+      const historyCodes = dedupedRows.map((row: any) => String(row.code)).filter(Boolean)
       if (historyCodes.length > 0) {
         const { data: historyRows } = await supabase
           .from('scan_signal_history')
@@ -427,7 +481,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           if (item.is_quick_lite && !liteDateByCode.has(code)) liteDateByCode.set(code, tradeDate)
         }
 
-        for (const row of rows as any[]) {
+        for (const row of dedupedRows as any[]) {
           const code = String(row.code || '')
           const strictDate = strictDateByCode.get(code) || null
           const liteDate = liteDateByCode.get(code) || null
@@ -441,7 +495,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       // 테이블 미구성/권한 이슈가 있어도 기존 스캔 응답은 유지
     }
 
-    rows.sort((a: any, b: any) => {
+    dedupedRows.sort((a: any, b: any) => {
       const leadDiff = Number(b.lead_accumulation_score ?? 0) - Number(a.lead_accumulation_score ?? 0)
       if (leadDiff !== 0) return leadDiff
       const adaptiveDiff = Number(b.adaptive_score ?? 0) - Number(a.adaptive_score ?? 0)
@@ -453,8 +507,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       marketPhase: intraday ? 'intraday' : 'after-close',
       realtimeAppliedCount,
       latestDate,
-      count: rows.length,
-      data: rows,
+      count: dedupedRows.length,
+      data: dedupedRows,
     }
 
     if (!bypassCache && SCAN_CACHE_TTL_MS > 0) {
