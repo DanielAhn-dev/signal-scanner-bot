@@ -155,7 +155,7 @@ export default function ReportsPage() {
   const toast = useToast()
   const [simPlan, setSimPlan] = useState<HighlightSimulationPlan | null>(null)
   const [simSending, setSimSending] = useState(false)
-  const [preview, setPreview] = useState<{ open: boolean; title: string; url: string }>({ open: false, title: '', url: '' })
+  const [preview, setPreview] = useState<{ open: boolean; title: string; url: string; generatedAt?: string }>({ open: false, title: '', url: '' })
   const shareManager = useShareManager({
     endpoint: '/api/ui/report-share',
     scopeKey: 'topic',
@@ -307,7 +307,7 @@ export default function ReportsPage() {
       return
     }
     const request = buildUiRequest(`/api/ui/report-web?topic=${encodeURIComponent(topic)}&fresh=1`)
-    setPreview({ open: true, title, url: request.url })
+    setPreview({ open: true, title, url: request.url, generatedAt: new Date().toISOString() })
   }
 
   return (
@@ -476,6 +476,7 @@ export default function ReportsPage() {
         onClose={() => setPreview((prev) => ({ ...prev, open: false }))}
         title={preview.title}
         url={preview.url}
+        generatedAt={preview.generatedAt}
       />
     </section>
   )

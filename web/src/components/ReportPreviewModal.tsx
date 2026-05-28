@@ -6,11 +6,19 @@ type Props = {
   onClose: () => void
   url: string
   title: string
+  generatedAt?: string
 }
 
-export default function ReportPreviewModal({ open, onClose, url, title }: Props) {
+export default function ReportPreviewModal({ open, onClose, url, title, generatedAt }: Props) {
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState<string | null>(null)
+
+  const generatedLabel = useMemo(() => {
+    if (!generatedAt) return ''
+    const t = new Date(generatedAt)
+    if (Number.isNaN(t.getTime())) return ''
+    return t.toLocaleString('ko-KR', { hour12: false })
+  }, [generatedAt])
 
   useEffect(() => {
     if (!open) return
@@ -32,6 +40,26 @@ export default function ReportPreviewModal({ open, onClose, url, title }: Props)
           <div>
             <div className="title-md" style={{ margin: 0 }}>공유 전 미리보기</div>
             <div className="caption" style={{ marginTop: 4 }}>{title}</div>
+            <div style={{ marginTop: 8, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+              <span style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                padding: '2px 9px',
+                borderRadius: 999,
+                border: '1px solid #bfdbfe',
+                background: '#eff6ff',
+                color: '#1d4ed8',
+                fontSize: 11,
+                fontWeight: 700,
+              }}>
+                실시간 생성 미리보기
+              </span>
+              {generatedLabel && (
+                <span style={{ fontSize: 11, color: '#64748b' }}>
+                  생성 시각 {generatedLabel}
+                </span>
+              )}
+            </div>
           </div>
           <button className="nav-item" onClick={onClose}>닫기</button>
         </div>
