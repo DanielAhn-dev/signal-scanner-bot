@@ -37,6 +37,11 @@ export type EntryProfileCandidate = {
   stableTrust?: number | null;
 };
 
+export type DynamicTradeProfileContext = EntryProfileCandidate & {
+  marketMode?: "large-cap-defense" | "balanced" | "rotation" | null;
+  isSectorLeader?: boolean | null;
+};
+
 export type PlannedAutoTradeExit =
   | {
       action: "HOLD";
@@ -315,6 +320,107 @@ export function resolvePositionTradeProfile(input: {
         expectedHorizonDays: 5,
       };
   }
+}
+
+export function applyDynamicTradeProfileAdjustments(input: {
+  tradeProfile: ResolvedPositionTradeProfile;
+  context: DynamicTradeProfileContext;
+}): ResolvedPositionTradeProfile {
+  const profile = input.tradeProfile;
+  const score = toNumber(input.context.score, 0);
+  const stableTrust = toNumber(input.context.stableTrust, 0);
+  const rsi14 = toNumber(input.context.rsi14, 50);
+  const liquidity = toNumber(input.context.liquidity, 0);
+  const signal = normalizeSignal(input.context.signal);
+  const stableTurn = String(input.context.stableTurn ?? "").trim().toLowerCase();
+  const marketMode = String(input.context.marketMode ?? "balanced").trim().toLowerCase();
+  const isSectorLeader = Boolean(input.context.isSectorLeader);
+
+  let takeProfitAdj = 0;
+  let stopLossAdj = 0;
+  let horizonAdj = 0;
+
+  const strongSetup =
+    score >= 82 &&
+    stableTrust >= 70 &&
+    (signal === "BUY" || signal === "STRONG_BUY") &&
+    (stableTurn === "bull-weak" || stableTurn === "bull-strong");
+
+  if (score >= 85) {
+    takeProfitAdj += 1.2;
+    horizonAdj += 3;
+  } else if (score <= 66) {
+    takeProfitAdj -= 0.8;
+    horizonAdj -= 1;
+  }
+
+  if (stableTrust >= 75) {
+    takeProfitAdj += 1.0;
+    horizonAdj += 2;
+  } else if (stableTrust > 0 && stableTrust < 55) {
+    takeProfitAdj -= 0.7;
+  }
+
+  if (stableTurn === "bull-strong") {
+    takeProfitAdj += 1.0;
+    horizonAdj += 3;
+  } else if (stableTurn === "bear-strong") {
+    takeProfitAdj -= 1.4;
+    horizonAdj -= 3;
+    stopLossAdj -= 0.4;
+  }
+
+  if (liquidity > 0 && liquidity < 5_000_000_000) {
+    takeProfitAdj -= 1.0;
+    horizonAdj -= 2;
+    stopLossAdj -= 0.3;
+  } else if (liquidity >= 30_000_000_000) {
+    takeProfitAdj += 0.6;
+  }
+
+  if (rsi14 >= 45 && rsi14 <= 62) {
+    takeProfitAdj += 0.3;
+  } else if (rsi14 >= 72) {
+    takeProfitAdj -= 0.6;
+    horizonAdj -= 1;
+  }
+
+  if (marketMode === "large-cap-defense") {
+    takeProfitAdj -= 1.0;
+    horizonAdj -= 2;
+  } else if (marketMode === "rotation") {
+    takeProfitAdj += 0.4;
+  }
+
+  if (isSectorLeader) {
+    takeProfitAdj += 0.7;
+    horizonAdj += 2;
+  }
+
+  if (strongSetup && profile.profile === "POSITION_CORE") {
+    takeProfitAdj += 1.3;
+    horizonAdj += 5;
+    stopLossAdj += 0.5;
+  }
+
+  const takeProfitPct = Number(
+    Math.max(3.5, Math.min(22, profile.takeProfitPct + takeProfitAdj)).toFixed(2)
+  );
+  const stopLossPct = Number(
+    Math.max(2, Math.min(12, profile.stopLossPct + stopLossAdj)).toFixed(2)
+  );
+  const expectedHorizonDays = clampInt(profile.expectedHorizonDays + horizonAdj, 3, 45);
+  const takeProfitSplitCount = strongSetup
+    ? Math.min(4, Math.max(profile.takeProfitSplitCount, 3))
+    : profile.takeProfitSplitCount;
+
+  return {
+    ...profile,
+    takeProfitPct,
+    stopLossPct,
+    expectedHorizonDays,
+    takeProfitSplitCount,
+  };
 }
 
 export function resolvePositionBucketFromProfile(

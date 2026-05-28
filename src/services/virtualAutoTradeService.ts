@@ -17,6 +17,7 @@ import { parseStrategyMemo } from "../lib/strategyMemo";
 import { appendVirtualDecisionLog } from "./decisionLogService";
 import { calculateAutoTradeBuySizing } from "./virtualAutoTradeSizing";
 import {
+  applyDynamicTradeProfileAdjustments,
   classifyAutoTradeEntryProfile,
   buildPositionStrategyMemo,
   parsePositionStrategyState,
@@ -1590,6 +1591,58 @@ function queryErrorMessage(error: unknown): string {
   return String(error);
 }
 
+type StopLossActionRow = {
+  code?: string | null;
+  created_at?: string | null;
+  detail?: Record<string, unknown> | null;
+};
+
+function resolveStopLossCooldownDays(action: StopLossActionRow): number {
+  const detail = (action.detail && typeof action.detail === "object") ? action.detail : null;
+  const context = String(detail?.stopLossContext ?? "").trim().toLowerCase();
+  const pnl = toNumber(detail?.pnl, 0);
+
+  if (context === "trend-break-major" || context === "signal-strong-sell") return 10;
+  if (context === "signal-reversal") return 8;
+  if (pnl <= -8) return 10;
+  if (pnl <= -5) return 7;
+  return 5;
+}
+
+function isStopLossCooldownActive(action: StopLossActionRow, nowMs: number): boolean {
+  const createdAtMs = Date.parse(String(action.created_at ?? ""));
+  if (!Number.isFinite(createdAtMs)) return false;
+  const cooldownDays = resolveStopLossCooldownDays(action);
+  const elapsedMs = nowMs - createdAtMs;
+  return elapsedMs < cooldownDays * 24 * 60 * 60 * 1000;
+}
+
+async function fetchStopLossCooldownCodes(payload: {
+  supabase: SupabaseClientAny;
+  chatId: number;
+  lookbackDays?: number;
+}): Promise<Set<string>> {
+  const nowMs = Date.now();
+  const lookbackDays = Math.max(10, Math.floor(payload.lookbackDays ?? 21));
+  const since = new Date(nowMs - lookbackDays * 24 * 60 * 60 * 1000).toISOString();
+  const { data } = await payload.supabase
+    .from("virtual_autotrade_actions")
+    .select("code, created_at, detail")
+    .eq("chat_id", payload.chatId)
+    .eq("action_type", "SELL")
+    .eq("reason", "stop-loss")
+    .gte("created_at", since)
+    .limit(500);
+
+  const codes = new Set<string>();
+  for (const row of (data ?? []) as StopLossActionRow[]) {
+    const code = String(row.code ?? "").trim();
+    if (!code) continue;
+    if (isStopLossCooldownActive(row, nowMs)) codes.add(code);
+  }
+  return codes;
+}
+
 async function fetchLegacyVirtualPositionsForChat(payload: {
   supabase: SupabaseClientAny;
   chatId: number;
@@ -2425,19 +2478,12 @@ async function selectMondayCandidates(payload: {
     limit: Math.max(payload.limit * 20, 300),
   });
 
-  // 스탑로스 쿨다운: 최근 5영업일(7일) 내 stop-loss 매도 종목은 재진입 차단
-  const cooldownSince = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
-  const { data: stoplossActions } = await payload.supabase
-    .from("virtual_autotrade_actions")
-    .select("code")
-    .eq("chat_id", payload.chatId)
-    .eq("action_type", "SELL")
-    .eq("reason", "stop-loss")
-    .gte("created_at", cooldownSince)
-    .limit(100);
-  const cooldownCodes = new Set<string>(
-    (stoplossActions ?? []).map((r: { code?: string | null }) => String(r.code ?? "")).filter(Boolean)
-  );
+  // 손절 쿨다운: 손절 원인/손실폭에 따라 5~10일 차등 적용
+  const cooldownCodes = await fetchStopLossCooldownCodes({
+    supabase: payload.supabase,
+    chatId: payload.chatId,
+    lookbackDays: 21,
+  });
   const heldAndCooldownCodes = new Set<string>([...payload.heldCodes, ...cooldownCodes]);
   if (!latestAsof) {
     return {
@@ -3097,6 +3143,19 @@ async function runMondayBuyForUser(payload: {
         baseStopLossPct: Math.abs(toNumber(payload.setting.stop_loss_pct, 4)),
         sellSplitCount: Math.max(1, Math.min(4, toPositiveInt(prefs.virtual_sell_split_count, 2))),
       });
+      tradeProfile = applyDynamicTradeProfileAdjustments({
+        tradeProfile,
+        context: {
+          score: candidate.score,
+          signal: candidate.signal,
+          rsi14: candidate.rsi14,
+          liquidity: candidate.liquidity,
+          stableTurn: candidate.stableTurn,
+          stableTrust: candidate.stableTrust,
+          marketMode: marketPolicy.mode,
+          isSectorLeader: candidate.isSectorLeader,
+        },
+      });
       // Adjust tradeProfile using ATR if available in score factors
       try {
         const atrPct = factors && Number.isFinite(Number(factors.atrPct)) ? Number(factors.atrPct) : null;
@@ -3143,11 +3202,12 @@ async function runMondayBuyForUser(payload: {
       }
 
       if (payload.dryRun) {
-        const targetPrice = Math.round(executionPrice * (1 + Math.abs(toNumber(payload.setting.take_profit_pct, 8)) / 100));
+        const targetPct = Math.abs(toNumber(tradeProfile.takeProfitPct, 8));
+        const targetPrice = Math.round(executionPrice * (1 + targetPct / 100));
         const expectedPnl = Math.max(0, Math.round((targetPrice - executionPrice) * qty));
         summary.buys += 1;
         summary.notes.push(
-          `[테스트 매수안] ${candidate.name}(${candidate.code}) ${qty}주 · 전략 ${profileLabel} · 매수가 ${fmtKrw(executionPrice)} · 투입 ${fmtKrw(investedAmount)} · 목표가 ${fmtKrw(targetPrice)} · 기대수익 ${fmtKrw(expectedPnl)} (${Math.abs(toNumber(payload.setting.take_profit_pct, 8)).toFixed(1)}%) · ${formatPriceSourceLabel(executionSource)}${todaySignalReason ? ` · ${todaySignalReason}` : ""}${filterReason ? ` · 필터근거 ${filterReason}` : ""}`
+          `[테스트 매수안] ${candidate.name}(${candidate.code}) ${qty}주 · 전략 ${profileLabel} · 매수가 ${fmtKrw(executionPrice)} · 투입 ${fmtKrw(investedAmount)} · 목표가 ${fmtKrw(targetPrice)} · 기대수익 ${fmtKrw(expectedPnl)} (${targetPct.toFixed(1)}%) · ${formatPriceSourceLabel(executionSource)}${todaySignalReason ? ` · ${todaySignalReason}` : ""}${filterReason ? ` · 필터근거 ${filterReason}` : ""}`
         );
         summary.notes.push(
           buildResponseGuideNote({
@@ -3483,6 +3543,7 @@ async function executeAutoTradeSell(payload: {
   taxRate: number;
   sellQty: number;
   reason: "take-profit-partial" | "take-profit-final" | "stop-loss";
+  stopLossContext?: string | null;
   profileLabel: string;
   strategyProfile: string;
   takeProfitTranchesDone: number;
@@ -3618,6 +3679,7 @@ async function executeAutoTradeSell(payload: {
         close: payload.close,
         pnl,
         isFullExit,
+        stopLossContext: payload.reason === "stop-loss" ? payload.stopLossContext ?? null : null,
         takeProfitTranchesDone: payload.takeProfitTranchesDone,
         nextTakeProfitTranchesDone: payload.nextTakeProfitTranchesDone,
       },
@@ -3724,6 +3786,7 @@ async function executeAutoTradeSell(payload: {
       net,
       pnl,
       isFullExit,
+      stopLossContext: payload.reason === "stop-loss" ? payload.stopLossContext ?? null : null,
       takeProfitTranchesDone: payload.takeProfitTranchesDone,
       nextTakeProfitTranchesDone: payload.nextTakeProfitTranchesDone,
       tradeId,
@@ -3745,6 +3808,7 @@ async function executeAutoTradeSell(payload: {
       : `자동 손절 (${payload.profileLabel})`,
     reasonDetails: {
       trigger: payload.reason,
+      stopLossContext: payload.reason === "stop-loss" ? payload.stopLossContext ?? null : null,
       sellQty,
       remainQty,
       buyPrice: payload.buyPrice,
@@ -4150,6 +4214,15 @@ async function runDailyReviewForUser(payload: {
     })();
 
     try {
+      const stopLossContext = exitPlan.action === "STOP_LOSS"
+        ? ((): string => {
+            if (trendExitSignal.reason === "signal-strong-sell") return "signal-strong-sell";
+            if (trendExitSignal.reason === "signal-sell") return "signal-reversal";
+            if (trendExitSignal.reason === "trend-break-sma200") return "trend-break-major";
+            if (trendExitSignal.reason === "trend-break-sma50") return "trend-break-minor";
+            return "hard-stop";
+          })()
+        : null;
       const result = await executeAutoTradeSell({
         supabase: payload.supabase,
         runId: payload.runId,
@@ -4161,6 +4234,7 @@ async function runDailyReviewForUser(payload: {
         taxRate,
         sellQty: exitPlan.quantityToSell,
         reason: exitPlan.reason,
+        stopLossContext,
         profileLabel: getStrategyLabel(tradeProfile.profile) || tradeProfile.profile,
         strategyProfile: tradeProfile.profile,
         takeProfitTranchesDone: strategyState.takeProfitTranchesDone,
@@ -4821,7 +4895,20 @@ async function runDailyReviewForUser(payload: {
           baseStopLossPct,
           sellSplitCount,
         });
-        const profileLabel = getStrategyLabel(entryProfile.profile) || entryProfile.profile;
+        const adjustedEntryProfile = applyDynamicTradeProfileAdjustments({
+          tradeProfile: entryProfile,
+          context: {
+            score: candidate.score,
+            signal: candidate.signal,
+            rsi14: candidate.rsi14,
+            liquidity: candidate.liquidity,
+            stableTurn: candidate.stableTurn,
+            stableTrust: candidate.stableTrust,
+            marketMode: marketPolicy.mode,
+            isSectorLeader: candidate.isSectorLeader,
+          },
+        });
+        const profileLabel = getStrategyLabel(adjustedEntryProfile.profile) || adjustedEntryProfile.profile;
         const executionEntry = rebalanceBuyPriceResolution.priceByCode.get(candidate.code);
         const executionPrice = executionEntry?.price ?? candidate.close;
         const executionSource = executionEntry?.source ?? "close";
@@ -4861,7 +4948,7 @@ async function runDailyReviewForUser(payload: {
           slotsLeft,
           currentHoldingCount: plannedHoldingCount,
           maxPositions,
-          stopLossPct: entryProfile.stopLossPct,
+          stopLossPct: adjustedEntryProfile.stopLossPct,
           riskBudgetScale: dailyRiskBudget.scale,
           prefs,
         });
@@ -4911,7 +4998,7 @@ async function runDailyReviewForUser(payload: {
 
         try {
           if (payload.dryRun) {
-            const targetPct = Math.abs(toNumber(payload.setting.take_profit_pct, 8));
+            const targetPct = Math.abs(toNumber(adjustedEntryProfile.takeProfitPct, 8));
             const targetPrice = Math.round(executionPrice * (1 + targetPct / 100));
             const expectedPnl = Math.max(0, Math.round((targetPrice - executionPrice) * qty));
             rebalanceBuyCount += 1;
@@ -4926,8 +5013,8 @@ async function runDailyReviewForUser(payload: {
                 basePrice: executionPrice,
                 quantity: qty,
                 investedAmount,
-                takeProfitPct: entryProfile.takeProfitPct,
-                stopLossPct: entryProfile.stopLossPct,
+                takeProfitPct: adjustedEntryProfile.takeProfitPct,
+                stopLossPct: adjustedEntryProfile.stopLossPct,
               })
             );
             await writeActionLog({
@@ -4945,7 +5032,7 @@ async function runDailyReviewForUser(payload: {
                 totalBudget: sizing.totalBudget,
                 splitCount: sizing.splitCount,
                 score: candidate.score,
-                strategyProfile: entryProfile.profile,
+                strategyProfile: adjustedEntryProfile.profile,
                 targetPrice,
                 expectedPnl,
                 signalTrust: {
@@ -4968,7 +5055,7 @@ async function runDailyReviewForUser(payload: {
             opKey,
             chatId,
             strategy: AUTO_TRADE_STRATEGY_ID,
-            meta: { event: "rebalance-buy", profile: entryProfile.profile, runId: payload.runId },
+            meta: { event: "rebalance-buy", profile: adjustedEntryProfile.profile, runId: payload.runId },
           }).catch((err) => { throw err; });
 
           if (!registered) {
@@ -5020,8 +5107,8 @@ async function runDailyReviewForUser(payload: {
           }
 
           const targetHorizon = resolveTargetHorizon({
-            profile: entryProfile.profile,
-            expectedHorizonDays: entryProfile.expectedHorizonDays,
+            profile: adjustedEntryProfile.profile,
+            expectedHorizonDays: adjustedEntryProfile.expectedHorizonDays,
           });
           const horizonReason = `profile=${entryProfile.profile};market=${marketPolicy.mode};news=${newsBias};signal=${String(candidate.signal ?? "").trim() || "NA"}`;
           const positionUpsertPayload: Record<string, unknown> = {
@@ -5031,13 +5118,13 @@ async function runDailyReviewForUser(payload: {
             buy_date: new Date().toISOString().slice(0, 10),
             quantity: qty,
             invested_amount: investedAmount,
-            bucket: resolvePositionBucketFromProfile(entryProfile.profile),
+            bucket: resolvePositionBucketFromProfile(adjustedEntryProfile.profile),
             broker_name: null,
             account_name: null,
             memo: buildPositionStrategyMemo({
               event: "rebalance-buy",
               note: "autotrade-rebalance-buy",
-              profile: entryProfile.profile,
+              profile: adjustedEntryProfile.profile,
               takeProfitTranchesDone: 0,
             }),
             status: "holding",
@@ -5055,7 +5142,7 @@ async function runDailyReviewForUser(payload: {
               stableTurn: candidate.stableTurn ?? null,
               stableTrust: candidate.stableTrust ?? null,
             },
-            planned_review_at: resolvePlannedReviewAt(entryProfile.expectedHorizonDays),
+            planned_review_at: resolvePlannedReviewAt(adjustedEntryProfile.expectedHorizonDays),
           };
 
           let upserted: Record<string, unknown> | null = null;
