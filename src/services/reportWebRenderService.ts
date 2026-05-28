@@ -329,7 +329,8 @@ function buildExecutionGuideStructuredHtml(bodyText: string): string {
   const autoHtml = autoCandidates.length > 0
     ? `<div class="execution-guide-web-cards">${autoCandidates.map((row, idx) => {
       const parsed = parseExecutionGuideAutoCandidate(row)
-      return `<article class="execution-guide-web-candidate"><div class="execution-guide-web-candidate__rank">${idx + 1}</div><div class="execution-guide-web-candidate__body"><div class="execution-guide-web-candidate__top"><strong class="execution-guide-web-candidate__name">${escapeHtml(parsed.nameCode)}</strong>${parsed.strategy ? `<span class="execution-guide-web-candidate__chip">${escapeHtml(parsed.strategy)}</span>` : ''}${parsed.scoreText ? `<span class="execution-guide-web-candidate__score">점수 ${escapeHtml(parsed.scoreText)}</span>` : ''}</div>${parsed.details.length > 0 ? `<div class="execution-guide-web-candidate__meta">${parsed.details.map((detail) => `<span class="execution-guide-web-candidate__meta-item">${escapeHtml(detail)}</span>`).join('')}</div>` : `<div class="execution-guide-web-candidate__text">${escapeHtml(row)}</div>`}</div></article>`
+      const rankClass = idx === 0 ? ' execution-guide-web-candidate--r1' : idx === 1 ? ' execution-guide-web-candidate--r2' : idx === 2 ? ' execution-guide-web-candidate--r3' : ''
+      return `<article class="execution-guide-web-candidate${rankClass}"><div class="execution-guide-web-candidate__rank">${idx + 1}</div><div class="execution-guide-web-candidate__body"><div class="execution-guide-web-candidate__top"><strong class="execution-guide-web-candidate__name">${escapeHtml(parsed.nameCode)}</strong>${parsed.strategy ? `<span class="execution-guide-web-candidate__chip">${escapeHtml(parsed.strategy)}</span>` : ''}${parsed.scoreText ? `<span class="execution-guide-web-candidate__score">점수 ${escapeHtml(parsed.scoreText)}</span>` : ''}</div>${parsed.details.length > 0 ? `<div class="execution-guide-web-candidate__meta">${parsed.details.map((detail) => `<span class="execution-guide-web-candidate__meta-item">${escapeHtml(detail)}</span>`).join('')}</div>` : `<div class="execution-guide-web-candidate__text">${escapeHtml(row)}</div>`}</div></article>`
     }).join('')}</div>`
     : '<p>자동 추천 후보가 없습니다.</p>'
 
@@ -1679,6 +1680,18 @@ export function renderLayout(params: {
       align-items: center;
       box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
     }
+    .execution-guide-web-candidate--r1 {
+      border-color: #d6e5ff;
+      background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
+    }
+    .execution-guide-web-candidate--r2 {
+      border-color: #dbe7fb;
+      background: linear-gradient(180deg, #ffffff 0%, #fafcff 100%);
+    }
+    .execution-guide-web-candidate--r3 {
+      border-color: #e3eaf7;
+      background: linear-gradient(180deg, #ffffff 0%, #fbfcfe 100%);
+    }
     .execution-guide-web-candidate__body {
       display: grid;
       gap: 8px;
@@ -1719,12 +1732,33 @@ export function renderLayout(params: {
       padding: 2px 8px;
       white-space: nowrap;
     }
+    .execution-guide-web-candidate--r1 .execution-guide-web-candidate__score {
+      color: #135fd6;
+      background: #eaf2ff;
+    }
+    .execution-guide-web-candidate--r2 .execution-guide-web-candidate__score {
+      color: #2b6de5;
+      background: #edf3ff;
+    }
+    .execution-guide-web-candidate--r3 .execution-guide-web-candidate__score {
+      color: #4268a4;
+      background: #f1f4f9;
+    }
     .execution-guide-web-candidate__rank {
       width: 24px;
       text-align: center;
       font-size: 12px;
       font-weight: 700;
       color: #6b7684;
+    }
+    .execution-guide-web-candidate--r1 .execution-guide-web-candidate__rank {
+      color: #1f6feb;
+    }
+    .execution-guide-web-candidate--r2 .execution-guide-web-candidate__rank {
+      color: #3a6ab5;
+    }
+    .execution-guide-web-candidate--r3 .execution-guide-web-candidate__rank {
+      color: #587099;
     }
     .execution-guide-web-candidate__meta {
       display: flex;
