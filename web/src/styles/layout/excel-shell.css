@@ -2137,7 +2137,12 @@
 }
 
 .execution-guide-form-grid {
-  margin-top: var(--space-2);
+  margin-top: 0;
+}
+
+.execution-guide-form-grid > .ui-field,
+.execution-guide-form-grid > .ui-field + .ui-field {
+  margin-top: 0;
 }
 
 .execution-guide-form-grid .ui-input,
@@ -2225,6 +2230,7 @@
 
 @media (max-width: 900px) {
   .execution-guide-form-grid {
+    margin-top: var(--space-2);
     grid-template-columns: 1fr;
   }
 
