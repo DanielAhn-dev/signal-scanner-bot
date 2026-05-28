@@ -1,4 +1,6 @@
 import type { DailyCandidateForecast } from './marketInsightService'
+import type { PullbackCandidateSectionItem, PullbackSectionMeta } from './weeklyReportSections'
+import type { WeeklyWebPayload } from './weeklyReportService'
 
 export const HTML_BODY_PREFIX = '__HTML__\n'
 
@@ -470,29 +472,61 @@ export function buildPullbackWebHtml(input: {
   title: string
   summaryText: string
   caption: string
+  candidates?: PullbackCandidateSectionItem[]
+  meta?: PullbackSectionMeta | null
 }): string {
   const title = escapeHtml(input.title || '다음 주 눌림목 리포트')
   const sectionHeadline = title === '다음 주 눌림목 리포트' ? '다음 주 선진입 후보 요약' : `${title} 요약`
   const summary = String(input.summaryText || '').trim()
   const caption = escapeHtml(input.caption || '')
+  const candidates = [...(input.candidates || [])].slice(0, 3)
+  const meta = input.meta ?? null
   const lines = summary.split(/\r?\n/).map((line) => line.trim()).filter(Boolean)
-  const topLine = lines.find((line) => line.includes('상위 후보')) || lines[0] || ''
-  const candidates = (() => {
-    const raw = topLine.split(':').slice(1).join(':').trim()
-    if (!raw) return [] as string[]
-    return raw
-      .split('/')
-      .map((part) => part.replace(/\s+/g, ' ').trim())
-      .filter(Boolean)
-      .slice(0, 6)
-  })()
   const metaLine = lines.find((line) => line.includes('데이터 상태')) || ''
   const guideLine = lines.find((line) => line.includes('진입 밴드') || line.includes('목표가'))
     || lines.find((line) => line.includes('분할 진입'))
     || '분할 진입 밴드와 목표가 기준을 먼저 고정하고 대응하세요.'
   const narrative = lines
-    .filter((line) => line !== topLine && line !== metaLine)
+    .filter((line) => !line.includes('상위 후보') && line !== metaLine)
     .slice(0, 3)
+
+  const summaryChips = candidates.length
+    ? candidates.map((candidate, idx) => {
+        const chipLabel = `${candidate.name} · ${candidate.entryGrade}등급`
+        return `<span style="display:inline-flex;align-items:center;gap:6px;padding:6px 10px;border-radius:999px;border:1px solid #cfe0ff;background:#ffffff;color:#1b3b70;font-size:12px;font-weight:600"><span style="display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;border-radius:50%;background:${idx === 0 ? '#2a5bb8' : '#9eb8e5'};color:#fff;font-size:10px;font-weight:700">${idx + 1}</span>${escapeHtml(chipLabel)}</span>`
+      }).join('')
+    : '<span style="font-size:12px;color:#6b7280">상위 후보 데이터가 아직 준비되지 않았습니다.</span>'
+
+  const cardHtml = candidates.length
+    ? `<section style="margin-top:12px;display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px">${candidates.map((candidate, idx) => {
+        const bucketLabel = candidate.candidateBucket === 'execution' ? '집행우선' : '관찰우선'
+        const stableTag = candidate.stableTag ? '<span style="display:inline-flex;align-items:center;padding:2px 8px;border-radius:999px;background:#eefbf4;border:1px solid #ccebd7;color:#198754;font-size:10px;font-weight:700">안정턴</span>' : ''
+        return `<article style="border:1px solid #dbe7fb;background:${idx === 0 ? 'linear-gradient(180deg,#f6f9ff 0%,#ffffff 100%)' : '#ffffff'};border-radius:14px;padding:14px 14px 12px;box-shadow:0 2px 8px rgba(21,67,138,0.05)">
+  <div style="display:flex;align-items:center;justify-content:space-between;gap:8px">
+    <div style="font-size:11px;font-weight:700;color:#2a5bb8">TOP ${idx + 1} · ${escapeHtml(bucketLabel)}</div>
+    <div style="font-size:10px;color:#61748f">주간점수 ${escapeHtml(candidate.weeklyScore.toFixed(1))}</div>
+  </div>
+  <div style="margin-top:8px;font-size:17px;line-height:1.25;font-weight:800;color:#102542">${escapeHtml(candidate.name)}</div>
+  <div style="margin-top:4px;font-size:11px;color:#5f6f86">${escapeHtml(candidate.code)} · ${escapeHtml(candidate.market)}${candidate.sectorName ? ` · ${escapeHtml(candidate.sectorName)}` : ''}</div>
+  <div style="margin-top:10px;display:flex;gap:6px;flex-wrap:wrap">
+    <span style="display:inline-flex;align-items:center;padding:2px 8px;border-radius:999px;background:#eef4ff;border:1px solid #d7e4ff;color:#2a5bb8;font-size:10px;font-weight:700">진입 ${escapeHtml(fmtInt(candidate.entryLow))}~${escapeHtml(fmtInt(candidate.entryHigh))}원</span>
+    <span style="display:inline-flex;align-items:center;padding:2px 8px;border-radius:999px;background:#fff6eb;border:1px solid #ffe1b5;color:#aa5a00;font-size:10px;font-weight:700">1차 ${escapeHtml(fmtInt(candidate.target1))}원</span>
+    <span style="display:inline-flex;align-items:center;padding:2px 8px;border-radius:999px;background:#fff1f1;border:1px solid #ffd3d3;color:#c03d3d;font-size:10px;font-weight:700">손절 ${escapeHtml(fmtInt(candidate.stopPrice))}원</span>
+    ${stableTag}
+  </div>
+  <div style="margin-top:10px;padding:10px 11px;border-radius:10px;background:#f8fbff;border:1px solid #e5eefc">
+    <div style="display:flex;justify-content:space-between;gap:8px;font-size:11px;color:#42556f"><span>권장비중</span><strong style="color:#102542">${escapeHtml(candidate.targetWeightPct.toFixed(1))}%</strong></div>
+    <div style="display:flex;justify-content:space-between;gap:8px;font-size:11px;color:#42556f;margin-top:4px"><span>권장예산</span><strong style="color:#102542">${escapeHtml(fmtInt(candidate.recommendedBudget))}원</strong></div>
+    <div style="display:flex;justify-content:space-between;gap:8px;font-size:11px;color:#42556f;margin-top:4px"><span>1회 진입</span><strong style="color:#102542">${escapeHtml(fmtInt(candidate.trancheBudget))}원</strong></div>
+  </div>
+  <div style="margin-top:10px;font-size:11px;line-height:1.7;color:#5f6f86">${escapeHtml(candidate.rationale)}</div>
+</article>`
+      }).join('')}</section>`
+    : ''
+
+  const rangeLine = meta
+    ? `${meta.rangeLabel} · ${meta.riskProfileLabel} · 보유 ${meta.holdingCount}종목`
+    : ''
 
   return `<section style="border:1px solid #d8e5ff;background:linear-gradient(135deg,#f0f6ff 0%,#ffffff 62%);border-radius:16px;padding:16px 16px 14px;box-shadow:0 2px 10px rgba(20,80,180,0.06)">
   <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap">
@@ -506,9 +540,11 @@ export function buildPullbackWebHtml(input: {
     ${escapeHtml(guideLine)}
   </div>
   <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap">
-    ${candidates.length ? candidates.map((candidate, idx) => `<span style="display:inline-flex;align-items:center;gap:6px;padding:6px 10px;border-radius:999px;border:1px solid #cfe0ff;background:#ffffff;color:#1b3b70;font-size:12px;font-weight:600"><span style="display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;border-radius:50%;background:${idx === 0 ? '#2a5bb8' : '#9eb8e5'};color:#fff;font-size:10px;font-weight:700">${idx + 1}</span>${escapeHtml(candidate)}</span>`).join('') : '<span style="font-size:12px;color:#6b7280">상위 후보 데이터가 아직 준비되지 않았습니다.</span>'}
+    ${summaryChips}
   </div>
 </section>
+${rangeLine ? `<section style="margin-top:12px;border:1px solid #e5edf7;background:#ffffff;border-radius:12px;padding:10px 12px;font-size:11.5px;color:#5a6a7f">${escapeHtml(rangeLine)}</section>` : ''}
+${cardHtml}
 ${narrative.length ? `<section style="margin-top:12px;border:1px solid #e4ebf5;background:#ffffff;border-radius:14px;padding:14px 14px 12px"><div style="font-size:12px;color:#415168;line-height:1.8">${narrative.map((line) => `<p style=\"margin:0 0 6px\">${escapeHtml(line)}</p>`).join('')}</div></section>` : ''}
 ${metaLine ? `<section style="margin-top:12px;border:1px solid #e8edf2;background:#f7fafc;border-radius:12px;padding:10px 12px;font-size:11.5px;color:#5a6a7f">${escapeHtml(metaLine)}</section>` : ''}
 ${caption ? `<section style="margin-top:10px;color:#6f7f93;font-size:13px;font-style:italic">${caption}</section>` : ''}`
@@ -646,6 +682,183 @@ ${items.length ? `<section style="margin-top:12px;border:1px solid #e4ebf5;backg
 ${metaLine ? `<section style="margin-top:12px;border:1px solid #e8edf2;background:#f7fafc;border-radius:12px;padding:10px 12px;font-size:11.5px;color:#5a6a7f">${escapeHtml(metaLine)}</section>` : ''}`
 }
 
+// ─── Portfolio Web HTML Builder ───────────────────────────────────────────────
+
+export type PortfolioWebItem = {
+  code: string
+  name: string
+  qty: number
+  buyPrice: number | null
+  currentPrice: number | null
+  invested: number
+  unrealized: number
+  pnlPct: number | null
+  targetHorizon?: string | null
+  plannedReviewAt?: string | null
+}
+
+function horizonLabel(h?: string | null): string {
+  const s = String(h || '').toLowerCase()
+  if (s === 'scalp') return '단타'
+  if (s === 'swing') return '스윙'
+  if (s === 'position') return '중장기'
+  return '-'
+}
+
+function horizonBadgeColor(h?: string | null): string {
+  const s = String(h || '').toLowerCase()
+  if (s === 'scalp') return '#FF8A00'
+  if (s === 'swing') return '#0060FF'
+  if (s === 'position') return '#007B5F'
+  return '#8B95A1'
+}
+
+function fmtReviewDate(raw?: string | null): string {
+  if (!raw) return '-'
+  const d = new Date(raw)
+  if (Number.isNaN(d.getTime())) return '-'
+  const daysLeft = Math.ceil((d.getTime() - Date.now()) / (24 * 60 * 60 * 1000))
+  const label = `${d.getMonth() + 1}/${d.getDate()}`
+  if (daysLeft <= 0) return `<span style="color:#F04452;font-weight:600">${label} 리뷰필요</span>`
+  if (daysLeft <= 2) return `<span style="color:#FF8A00;font-weight:600">${label} (${daysLeft}일)</span>`
+  return `<span style="color:#8B95A1">${label}</span>`
+}
+
+export function buildPortfolioWebHtml(input: {
+  title: string
+  summaryText: string
+  caption: string
+  items: PortfolioWebItem[]
+}): string {
+  const allLines = String(input.summaryText || '').split(/\r?\n/).map(l => l.trim()).filter(Boolean)
+  const titleLine = allLines[0] || ''
+  const dateM = titleLine.match(/\((\d{4}-\d{2}-\d{2})\)/)
+  const datePart = dateM ? dateM[1] : ''
+  const bodyLines = allLines.slice(1)
+  const qualityLine = bodyLines.find(l => /데이터 상태|조회 \d/.test(l)) || ''
+  const { metrics } = parseWeeklyMetrics(bodyLines.filter(l => l !== qualityLine))
+
+  const items = [...(input.items || [])].sort((a, b) => Math.abs(b.unrealized) - Math.abs(a.unrealized))
+  const holdingCount = items.filter(i => i.qty > 0).length
+  const totalInvested = items.reduce((s, i) => s + i.invested, 0)
+  const totalValue = items.reduce((s, i) => {
+    const price = i.currentPrice
+    return s + (price != null && i.qty > 0 ? price * i.qty : i.invested)
+  }, 0)
+  const totalUnrealized = totalValue - totalInvested
+  const returnPct = totalInvested > 0 ? (totalUnrealized / totalInvested) * 100 : 0
+  const unrealizedColor = totalUnrealized > 0 ? '#F04452' : totalUnrealized < 0 ? '#1478FF' : '#8B95A1'
+  const returnColor = returnPct > 0 ? '#F04452' : returnPct < 0 ? '#1478FF' : '#8B95A1'
+
+  const horizonCounts = items.reduce((acc, i) => {
+    const h = String(i.targetHorizon || '').toLowerCase()
+    if (h === 'scalp') acc.scalp += 1
+    else if (h === 'swing') acc.swing += 1
+    else if (h === 'position') acc.position += 1
+    return acc
+  }, { scalp: 0, swing: 0, position: 0 })
+
+  const reviewCounts = items.reduce((acc, i) => {
+    if (!i.plannedReviewAt) return acc
+    const ts = Date.parse(String(i.plannedReviewAt))
+    if (!Number.isFinite(ts)) return acc
+    const daysLeft = Math.ceil((ts - Date.now()) / (24 * 60 * 60 * 1000))
+    if (daysLeft <= 0) acc.due += 1
+    else if (daysLeft <= 2) acc.soon += 1
+    return acc
+  }, { due: 0, soon: 0 })
+
+  const headerHtml = `<section style="border:1px solid #dce8ff;background:linear-gradient(135deg,#eef5ff 0%,#ffffff 64%);border-radius:16px;padding:16px 16px 14px;box-shadow:0 2px 10px rgba(20,80,180,0.05)">
+  <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:10px;flex-wrap:wrap">
+    <div>
+      <div style="font-size:11px;font-weight:700;letter-spacing:0.06em;color:#2a5bb8;text-transform:uppercase">Portfolio Report</div>
+      <div style="margin-top:4px;font-size:22px;line-height:1.22;font-weight:800;letter-spacing:-0.02em;color:#102542">${escapeHtml(input.title)}</div>
+    </div>
+    ${datePart ? `<div style="font-size:11px;color:#4b668f;background:#e8f0ff;border:1px solid #c8dafd;padding:4px 10px;border-radius:999px">${escapeHtml(datePart)}</div>` : ''}
+  </div>
+  <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap">
+    <span style="font-size:11px;color:#1f4b8f;background:#f3f8ff;border:1px solid #d9e7ff;padding:5px 10px;border-radius:999px">보유 ${holdingCount}종목</span>
+    ${horizonCounts.scalp > 0 ? `<span style="font-size:11px;color:#b85a00;background:#fff5eb;border:1px solid #ffd9b0;padding:5px 10px;border-radius:999px">단타 ${horizonCounts.scalp}</span>` : ''}
+    ${horizonCounts.swing > 0 ? `<span style="font-size:11px;color:#1f4b8f;background:#f3f8ff;border:1px solid #c8dafd;padding:5px 10px;border-radius:999px">스윙 ${horizonCounts.swing}</span>` : ''}
+    ${horizonCounts.position > 0 ? `<span style="font-size:11px;color:#007B5F;background:#e8faf5;border:1px solid #b0ecd9;padding:5px 10px;border-radius:999px">중장기 ${horizonCounts.position}</span>` : ''}
+    ${reviewCounts.due > 0 ? `<span style="font-size:11px;color:#b00020;background:#fff0f2;border:1px solid #ffc0c8;padding:5px 10px;border-radius:999px">리뷰필요 ${reviewCounts.due}</span>` : ''}
+    ${reviewCounts.soon > 0 ? `<span style="font-size:11px;color:#b85a00;background:#fff5eb;border:1px solid #ffd9b0;padding:5px 10px;border-radius:999px">2일내 ${reviewCounts.soon}</span>` : ''}
+  </div>
+</section>`
+
+  const portfolioMetrics: ParsedMetric[] = [
+    { label: '보유 종목', value: `${holdingCount}개` },
+    { label: '총 매수원금', value: `${Math.round(totalInvested).toLocaleString('ko-KR')}원` },
+    { label: '평가금액', value: `${Math.round(totalValue).toLocaleString('ko-KR')}원` },
+    { label: '평가손익', value: `${totalUnrealized >= 0 ? '+' : ''}${Math.round(totalUnrealized).toLocaleString('ko-KR')}원`, color: unrealizedColor },
+    { label: '수익률', value: `${returnPct >= 0 ? '+' : ''}${returnPct.toFixed(2)}%`, color: returnColor },
+    ...metrics,
+  ]
+
+  const metricsHtml = `<section style="margin-top:12px;display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:10px">
+    ${portfolioMetrics.map(m =>
+      `<div style="background:#ffffff;border:1px solid #e5e8eb;border-radius:12px;padding:12px 14px;box-shadow:0 1px 3px rgba(0,0,0,0.04)">
+        <div style="font-size:10px;color:#8b95a1;margin-bottom:5px;letter-spacing:0.04em">${escapeHtml(m.label)}</div>
+        <div style="font-size:15px;font-weight:700;color:${m.color ?? '#191f28'};letter-spacing:-0.01em">${escapeHtml(m.value)}</div>
+      </div>`
+    ).join('')}
+  </section>`
+
+  const tableRows = items.filter(i => i.qty > 0).map((item, idx) => {
+    const pnl = item.unrealized
+    const pct = item.pnlPct ?? 0
+    const pnlColor = pnl > 0 ? '#F04452' : pnl < 0 ? '#1478FF' : '#8B95A1'
+    const pctColor = pct > 0 ? '#F04452' : pct < 0 ? '#1478FF' : '#8B95A1'
+    const hLabel = horizonLabel(item.targetHorizon)
+    const hColor = horizonBadgeColor(item.targetHorizon)
+    const reviewHtml = fmtReviewDate(item.plannedReviewAt)
+    const currentPriceFmt = item.currentPrice != null ? Math.round(item.currentPrice).toLocaleString('ko-KR') : '-'
+    const buyPriceFmt = item.buyPrice != null ? Math.round(item.buyPrice).toLocaleString('ko-KR') : '-'
+
+    return `<tr style="background:${idx % 2 === 0 ? '#ffffff' : '#fafbfc'}">
+      <td style="padding:10px 10px;border-bottom:1px solid #edf1f6;font-weight:600;color:#1f2937;white-space:nowrap">
+        <div style="font-size:13px">${escapeHtml(item.name)}</div>
+        <div style="font-size:10px;color:#8b95a1;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;margin-top:1px">${escapeHtml(item.code)}</div>
+      </td>
+      <td style="padding:10px 10px;border-bottom:1px solid #edf1f6;text-align:center">
+        <span style="display:inline-block;font-size:11px;font-weight:600;color:${hColor};background:${hColor}18;border:1px solid ${hColor}30;padding:2px 8px;border-radius:10px">${escapeHtml(hLabel)}</span>
+      </td>
+      <td style="padding:10px 10px;border-bottom:1px solid #edf1f6;font-size:11.5px;text-align:center">${reviewHtml}</td>
+      <td style="padding:10px 10px;border-bottom:1px solid #edf1f6;color:#374151;font-size:12px;text-align:right">${escapeHtml(`${item.qty.toLocaleString('ko-KR')}주`)}</td>
+      <td style="padding:10px 10px;border-bottom:1px solid #edf1f6;color:#374151;font-size:12px;text-align:right">${escapeHtml(buyPriceFmt)}원</td>
+      <td style="padding:10px 10px;border-bottom:1px solid #edf1f6;color:#374151;font-size:12px;text-align:right">${escapeHtml(currentPriceFmt)}원</td>
+      <td style="padding:10px 10px;border-bottom:1px solid #edf1f6;color:${pnlColor};font-size:12px;font-weight:700;text-align:right">${escapeHtml(`${pnl >= 0 ? '+' : ''}${Math.round(pnl).toLocaleString('ko-KR')}원`)}</td>
+      <td style="padding:10px 10px;border-bottom:1px solid #edf1f6;color:${pctColor};font-size:12px;font-weight:700;text-align:right">${escapeHtml(`${pct >= 0 ? '+' : ''}${pct.toFixed(2)}%`)}</td>
+    </tr>`
+  }).join('')
+
+  const tableHtml = items.filter(i => i.qty > 0).length > 0
+    ? `<section style="margin-top:12px;border:1px solid #e4ebf5;background:#ffffff;border-radius:14px;padding:12px 12px 8px;overflow:auto">
+  <table style="width:100%;min-width:660px;border-collapse:collapse">
+    <thead>
+      <tr style="background:#f8fafc">
+        <th style="padding:9px 10px;border-bottom:2px solid #dce6f4;color:#607089;font-size:10.5px;text-align:left;font-weight:600">종목</th>
+        <th style="padding:9px 10px;border-bottom:2px solid #dce6f4;color:#607089;font-size:10.5px;text-align:center;font-weight:600">수평선</th>
+        <th style="padding:9px 10px;border-bottom:2px solid #dce6f4;color:#607089;font-size:10.5px;text-align:center;font-weight:600">리뷰일</th>
+        <th style="padding:9px 10px;border-bottom:2px solid #dce6f4;color:#607089;font-size:10.5px;text-align:right;font-weight:600">수량</th>
+        <th style="padding:9px 10px;border-bottom:2px solid #dce6f4;color:#607089;font-size:10.5px;text-align:right;font-weight:600">매수가</th>
+        <th style="padding:9px 10px;border-bottom:2px solid #dce6f4;color:#607089;font-size:10.5px;text-align:right;font-weight:600">현재가</th>
+        <th style="padding:9px 10px;border-bottom:2px solid #dce6f4;color:#607089;font-size:10.5px;text-align:right;font-weight:600">평가손익</th>
+        <th style="padding:9px 10px;border-bottom:2px solid #dce6f4;color:#607089;font-size:10.5px;text-align:right;font-weight:600">수익률</th>
+      </tr>
+    </thead>
+    <tbody>${tableRows}</tbody>
+  </table>
+</section>`
+    : `<section style="margin-top:12px;border:1px solid #e4ebf5;background:#ffffff;border-radius:14px;padding:20px 16px;font-size:12px;color:#64748b">현재 보유 중인 종목이 없습니다. 가상 매매 또는 보유 종목을 추가하면 여기서 확인할 수 있습니다.</section>`
+
+  const qualityHtml = qualityLine
+    ? `<div style="margin-top:10px;font-size:11px;color:#8b95a1;padding:0 2px">${escapeHtml(qualityLine)}</div>`
+    : ''
+
+  return `${headerHtml}${metricsHtml}${tableHtml}${qualityHtml}`
+}
+
 // ─── Generic Weekly Report Web HTML Builder ───────────────────────────────────
 
 type ParsedMetric = { label: string; value: string; color?: string }
@@ -752,6 +965,142 @@ export function buildGenericWeeklyWebHtml(input: {
     : ''
 
   return `${headerHtml}${metricsHtml}${narrativeHtml}${qualityHtml}`
+}
+
+function toneColor(tone?: 'up' | 'down' | 'neutral'): string {
+  if (tone === 'up') return '#F04452'
+  if (tone === 'down') return '#1478FF'
+  return '#8B95A1'
+}
+
+function dashboardName(topic: string): string {
+  if (topic === '주간') return 'Weekly Dashboard'
+  if (topic === '거시') return 'Macro Dashboard'
+  if (topic === '수급') return 'Flow Dashboard'
+  if (topic === '섹터') return 'Sector Dashboard'
+  return 'Report Dashboard'
+}
+
+export function buildStructuredWeeklyWebHtml(input: {
+  title: string
+  topic: string
+  summaryText: string
+  caption: string
+  payload?: WeeklyWebPayload | null
+}): string {
+  const payload = input.payload ?? null
+  const allLines = String(input.summaryText || '').split(/\r?\n/).map((line) => line.trim()).filter(Boolean)
+  const titleLine = allLines[0] || ''
+  const dateM = titleLine.match(/\((\d{4}-\d{2}-\d{2})\)/)
+  const datePart = dateM ? dateM[1] : ''
+  const qualityLine = allLines.find((line) => /데이터 상태|조회 \d/.test(line)) || ''
+  const narrativeLines = allLines.slice(1).filter((line) => line !== qualityLine).slice(0, 4)
+  const headerHtml = `<section style="border:1px solid #dce8ff;background:linear-gradient(135deg,#eef5ff 0%,#ffffff 64%);border-radius:16px;padding:16px 16px 14px;box-shadow:0 2px 10px rgba(20,80,180,0.05)">
+  <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:10px;flex-wrap:wrap">
+    <div>
+      <div style="font-size:11px;font-weight:700;letter-spacing:0.06em;color:#2a5bb8;text-transform:uppercase">${escapeHtml(dashboardName(input.topic))}</div>
+      <div style="margin-top:4px;font-size:22px;line-height:1.22;font-weight:800;letter-spacing:-0.02em;color:#102542">${escapeHtml(input.title)}</div>
+    </div>
+    ${datePart ? `<div style="font-size:11px;color:#4b668f;background:#e8f0ff;border:1px solid #c8dafd;padding:4px 10px;border-radius:999px">${escapeHtml(datePart)}</div>` : ''}
+  </div>
+</section>`
+
+  const marketCardsHtml = payload?.marketCards?.length
+    ? `<section style="margin-top:12px;display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:10px">${payload.marketCards.map((card) => `<div style="background:#ffffff;border:1px solid #e5e8eb;border-radius:12px;padding:12px 14px;box-shadow:0 1px 3px rgba(0,0,0,0.04)">
+  <div style="font-size:10px;color:#8b95a1;margin-bottom:5px;letter-spacing:0.04em">${escapeHtml(card.label)}</div>
+  <div style="font-size:15px;font-weight:700;color:#191f28;letter-spacing:-0.01em">${escapeHtml(card.value)}</div>
+  ${card.delta ? `<div style="margin-top:4px;font-size:11px;font-weight:700;color:${toneColor(card.tone)}">${escapeHtml(card.delta)}</div>` : ''}
+</div>`).join('')}</section>`
+    : ''
+
+  const summaryHtml = payload?.summary
+    ? `<section style="margin-top:12px;display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:10px">
+  ${[
+    { label: '거래', value: `${payload.summary.tradeCount}건`, color: '#191f28' },
+    { label: '매수/매도', value: `${payload.summary.buyCount}/${payload.summary.sellCount}`, color: '#191f28' },
+    { label: '실현손익', value: `${payload.summary.realizedPnl >= 0 ? '+' : ''}${Math.round(payload.summary.realizedPnl).toLocaleString('ko-KR')}원`, color: payload.summary.realizedPnl > 0 ? '#F04452' : payload.summary.realizedPnl < 0 ? '#1478FF' : '#8B95A1' },
+    { label: '승률', value: `${payload.summary.winRate.toFixed(1)}%`, color: '#191f28' },
+    { label: '평가손익', value: `${payload.summary.totalUnrealized >= 0 ? '+' : ''}${Math.round(payload.summary.totalUnrealized).toLocaleString('ko-KR')}원`, color: payload.summary.totalUnrealized > 0 ? '#F04452' : payload.summary.totalUnrealized < 0 ? '#1478FF' : '#8B95A1' },
+    { label: '평가수익률', value: `${payload.summary.totalUnrealizedPct >= 0 ? '+' : ''}${payload.summary.totalUnrealizedPct.toFixed(2)}%`, color: payload.summary.totalUnrealizedPct > 0 ? '#F04452' : payload.summary.totalUnrealizedPct < 0 ? '#1478FF' : '#8B95A1' },
+    { label: '보유 종목', value: `${payload.summary.holdingCount}개`, color: '#191f28' },
+  ].map((item) => `<div style="background:#ffffff;border:1px solid #e5e8eb;border-radius:12px;padding:12px 14px;box-shadow:0 1px 3px rgba(0,0,0,0.04)">
+    <div style="font-size:10px;color:#8b95a1;margin-bottom:5px;letter-spacing:0.04em">${escapeHtml(item.label)}</div>
+    <div style="font-size:15px;font-weight:700;color:${item.color};letter-spacing:-0.01em">${escapeHtml(item.value)}</div>
+  </div>`).join('')}
+</section>`
+    : ''
+
+  const sectorHtml = payload?.sectors?.length
+    ? `<section style="margin-top:12px;border:1px solid #e4ebf5;background:#ffffff;border-radius:14px;padding:12px 12px 8px">
+  <div style="font-size:13px;font-weight:700;color:#191f28;margin:0 0 10px">상위 섹터/수급 축</div>
+  <div style="overflow:auto"><table style="width:100%;min-width:640px;border-collapse:collapse">
+    <thead><tr>
+      <th style="padding:8px;border-bottom:1px solid #dce6f4;color:#607089;font-size:10.5px;text-align:left">섹터</th>
+      <th style="padding:8px;border-bottom:1px solid #dce6f4;color:#607089;font-size:10.5px;text-align:right">점수</th>
+      <th style="padding:8px;border-bottom:1px solid #dce6f4;color:#607089;font-size:10.5px;text-align:right">수익률</th>
+      <th style="padding:8px;border-bottom:1px solid #dce6f4;color:#607089;font-size:10.5px;text-align:left">대표 종목</th>
+    </tr></thead>
+    <tbody>${payload.sectors.map((sector) => `<tr>
+      <td style="padding:9px 8px;border-bottom:1px solid #edf1f6;font-weight:600;color:#1f2937">${escapeHtml(sector.name)}</td>
+      <td style="padding:9px 8px;border-bottom:1px solid #edf1f6;color:#334155;font-size:11px;text-align:right">${sector.score != null ? escapeHtml(Number(sector.score).toFixed(1)) : '-'}</td>
+      <td style="padding:9px 8px;border-bottom:1px solid #edf1f6;color:${toneColor(sector.changeRate != null ? (sector.changeRate > 0 ? 'up' : sector.changeRate < 0 ? 'down' : 'neutral') : 'neutral')};font-size:11px;text-align:right;font-weight:700">${escapeHtml(fmtPct(sector.changeRate))}</td>
+      <td style="padding:9px 8px;border-bottom:1px solid #edf1f6;color:#64748b;font-size:11px">${escapeHtml((sector.leaders || []).slice(0, 4).join(', ') || '대표 종목 없음')}</td>
+    </tr>`).join('')}</tbody>
+  </table></div>
+</section>`
+    : ''
+
+  const holdingHtml = payload?.holdings?.length
+    ? `<section style="margin-top:12px;border:1px solid #e4ebf5;background:#ffffff;border-radius:14px;padding:12px 12px 8px">
+  <div style="font-size:13px;font-weight:700;color:#191f28;margin:0 0 10px">보유 종목 스냅샷</div>
+  <div style="overflow:auto"><table style="width:100%;min-width:700px;border-collapse:collapse">
+    <thead><tr>
+      <th style="padding:8px;border-bottom:1px solid #dce6f4;color:#607089;font-size:10.5px;text-align:left">종목</th>
+      <th style="padding:8px;border-bottom:1px solid #dce6f4;color:#607089;font-size:10.5px;text-align:right">수량</th>
+      <th style="padding:8px;border-bottom:1px solid #dce6f4;color:#607089;font-size:10.5px;text-align:right">매수가</th>
+      <th style="padding:8px;border-bottom:1px solid #dce6f4;color:#607089;font-size:10.5px;text-align:right">현재가</th>
+      <th style="padding:8px;border-bottom:1px solid #dce6f4;color:#607089;font-size:10.5px;text-align:right">평가손익</th>
+      <th style="padding:8px;border-bottom:1px solid #dce6f4;color:#607089;font-size:10.5px;text-align:right">수익률</th>
+    </tr></thead>
+    <tbody>${payload.holdings.map((item) => `<tr>
+      <td style="padding:9px 8px;border-bottom:1px solid #edf1f6;font-weight:600;color:#1f2937"><div>${escapeHtml(item.name)}</div><div style="margin-top:2px;font-size:10px;color:#8b95a1;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace">${escapeHtml(item.code)}</div></td>
+      <td style="padding:9px 8px;border-bottom:1px solid #edf1f6;color:#334155;font-size:11px;text-align:right">${escapeHtml(item.qty.toLocaleString('ko-KR'))}주</td>
+      <td style="padding:9px 8px;border-bottom:1px solid #edf1f6;color:#334155;font-size:11px;text-align:right">${escapeHtml(fmtInt(item.buyPrice))}원</td>
+      <td style="padding:9px 8px;border-bottom:1px solid #edf1f6;color:#334155;font-size:11px;text-align:right">${escapeHtml(fmtInt(item.currentPrice))}원</td>
+      <td style="padding:9px 8px;border-bottom:1px solid #edf1f6;color:${item.unrealized > 0 ? '#F04452' : item.unrealized < 0 ? '#1478FF' : '#8B95A1'};font-size:11px;text-align:right;font-weight:700">${escapeHtml(`${item.unrealized >= 0 ? '+' : ''}${Math.round(item.unrealized).toLocaleString('ko-KR')}원`)}</td>
+      <td style="padding:9px 8px;border-bottom:1px solid #edf1f6;color:${(item.pnlPct ?? 0) > 0 ? '#F04452' : (item.pnlPct ?? 0) < 0 ? '#1478FF' : '#8B95A1'};font-size:11px;text-align:right;font-weight:700">${escapeHtml(item.pnlPct != null ? `${item.pnlPct >= 0 ? '+' : ''}${item.pnlPct.toFixed(2)}%` : '-')}</td>
+    </tr>`).join('')}</tbody>
+  </table></div>
+</section>`
+    : ''
+
+  const reliabilityHtml = payload?.reliability
+    ? `<section style="margin-top:12px;display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:10px">
+  ${[
+    { label: '판단 신뢰점수', value: payload.reliability.trustScore != null ? `${payload.reliability.trustScore}점` : '계산중', color: payload.reliability.trustScore != null && payload.reliability.trustScore >= 70 ? '#F04452' : payload.reliability.trustScore != null && payload.reliability.trustScore < 40 ? '#1478FF' : '#191f28' },
+    { label: '총 의사결정', value: `${payload.reliability.totalDecisions}건`, color: '#191f28' },
+    { label: '근거 기록률', value: `${payload.reliability.explanationCoveragePct.toFixed(1)}%`, color: '#191f28' },
+    { label: '연결 매도 승률', value: payload.reliability.linkedSellWinRatePct != null ? `${payload.reliability.linkedSellWinRatePct.toFixed(1)}%` : '-', color: '#191f28' },
+  ].map((item) => `<div style="background:#ffffff;border:1px solid #e5e8eb;border-radius:12px;padding:12px 14px;box-shadow:0 1px 3px rgba(0,0,0,0.04)">
+    <div style="font-size:10px;color:#8b95a1;margin-bottom:5px;letter-spacing:0.04em">${escapeHtml(item.label)}</div>
+    <div style="font-size:15px;font-weight:700;color:${item.color};letter-spacing:-0.01em">${escapeHtml(item.value)}</div>
+  </div>`).join('')}
+</section>`
+    : ''
+
+  const narrativeHtml = narrativeLines.length
+    ? `<section style="margin-top:12px;border:1px solid #e4ebf5;background:#ffffff;border-radius:14px;padding:14px 16px">${narrativeLines.map((line) => `<p style="margin:0 0 7px;font-size:13px;color:#374151;line-height:1.75">${escapeHtml(line)}</p>`).join('')}</section>`
+    : ''
+
+  const qualityHtml = qualityLine
+    ? `<div style="margin-top:10px;font-size:11px;color:#8b95a1;padding:0 2px">${escapeHtml(qualityLine)}</div>`
+    : ''
+
+  const captionHtml = input.caption
+    ? `<section style="margin-top:10px;color:#6f7f93;font-size:13px;font-style:italic">${escapeHtml(input.caption)}</section>`
+    : ''
+
+  return `${headerHtml}${marketCardsHtml}${summaryHtml}${sectorHtml}${holdingHtml}${reliabilityHtml}${narrativeHtml}${qualityHtml}${captionHtml}`
 }
 
 // ─── Page Layout ─────────────────────────────────────────────────────────────

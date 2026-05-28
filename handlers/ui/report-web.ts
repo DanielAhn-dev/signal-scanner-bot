@@ -116,9 +116,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     // 스냅샷이 HTML 형식이더라도 토픽별 고유 마커가 없으면 구 버전 스냅샷으로 간주해 재생성
     // (토픽 분기 렌더 적용 전 저장된 동일 내용 스냅샷 문제 해소)
     const needsRichRefresh = (
-      ['추천', '공개추천', '확신추천', '눌림목', '관심종목'].includes(topic)
+      ['추천', '공개추천', '확신추천', '눌림목', '관심종목', '포트폴리오', '주간', '거시', '수급', '섹터'].includes(topic)
       && Boolean(persistedBody)
       && !persistedBody.startsWith(HTML_BODY_PREFIX)
+    ) || (
+      // 포트폴리오 전용 마커 미포함 → 구 스냅샷 → 재생성
+      topic === '포트폴리오'
+      && Boolean(persistedBody)
+      && persistedBody.startsWith(HTML_BODY_PREFIX)
+      && !persistedBody.includes('Portfolio Report')
     ) || (
       topic === '눌림목'
       && persistedBody.includes('Next Week Pullback')
@@ -135,6 +141,26 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       && Boolean(persistedBody)
       && persistedBody.startsWith(HTML_BODY_PREFIX)
       && !persistedBody.includes('공유용 오늘의 후보 리포트')
+    ) || (
+      topic === '주간'
+      && Boolean(persistedBody)
+      && persistedBody.startsWith(HTML_BODY_PREFIX)
+      && !persistedBody.includes('Weekly Dashboard')
+    ) || (
+      topic === '거시'
+      && Boolean(persistedBody)
+      && persistedBody.startsWith(HTML_BODY_PREFIX)
+      && !persistedBody.includes('Macro Dashboard')
+    ) || (
+      topic === '수급'
+      && Boolean(persistedBody)
+      && persistedBody.startsWith(HTML_BODY_PREFIX)
+      && !persistedBody.includes('Flow Dashboard')
+    ) || (
+      topic === '섹터'
+      && Boolean(persistedBody)
+      && persistedBody.startsWith(HTML_BODY_PREFIX)
+      && !persistedBody.includes('Sector Dashboard')
     )
 
     if (persisted?.bodyText && !needsRichRefresh) {

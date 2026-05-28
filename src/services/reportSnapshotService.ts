@@ -5,7 +5,7 @@ import { createDailyCandidatePlanningReportResult } from './marketInsightService
 import { getUserInvestmentPrefs } from './userService'
 import { createWeeklyReportPdf } from './weeklyReportService'
 import { fetchRealtimePriceBatch } from '../utils/fetchRealtimePrice'
-import { buildCandidateCardsWebHtml, buildConvictionWebHtml, buildGenericWeeklyWebHtml, buildPullbackWebHtml, buildWatchOnlyWebHtml, HTML_BODY_PREFIX } from './reportWebRenderService'
+import { buildCandidateCardsWebHtml, buildConvictionWebHtml, buildPortfolioWebHtml, buildPullbackWebHtml, buildStructuredWeeklyWebHtml, buildWatchOnlyWebHtml, HTML_BODY_PREFIX } from './reportWebRenderService'
 import { selectForecastsForTopic } from './reportTopicForecasts'
 
 export type ReportTopic =
@@ -354,6 +354,8 @@ export async function buildReportBodyText(params: {
           title: weekly.title,
           summaryText: weekly.summaryText,
           caption: weekly.caption,
+          candidates: weekly.pullbackCandidates ?? [],
+          meta: weekly.pullbackMeta ?? null,
         }),
         sourceLabel: '/리포트 명령 결과',
       }
@@ -373,20 +375,38 @@ export async function buildReportBodyText(params: {
       }
     }
 
-    const topicLabelMap: Partial<Record<ReportTopic, string>> = {
-      주간: 'Weekly',
-      포트폴리오: 'Portfolio',
-      거시: 'Macro',
-      수급: 'Flow',
-      섹터: 'Sector',
+    if (topic === '포트폴리오') {
+      log('done')
+      return {
+        bodyText: HTML_BODY_PREFIX + buildPortfolioWebHtml({
+          title: weekly.title,
+          summaryText: weekly.summaryText,
+          caption: weekly.caption,
+          items: (weekly.portfolioItems ?? []).map(i => ({
+            code: i.code,
+            name: i.name,
+            qty: i.qty,
+            buyPrice: i.buyPrice,
+            currentPrice: i.currentPrice,
+            invested: i.invested,
+            unrealized: i.unrealized,
+            pnlPct: i.pnlPct,
+            targetHorizon: i.targetHorizon,
+            plannedReviewAt: i.plannedReviewAt,
+          })),
+        }),
+        sourceLabel: '/리포트 명령 결과',
+      }
     }
+
     log('done')
     return {
-      bodyText: HTML_BODY_PREFIX + buildGenericWeeklyWebHtml({
+      bodyText: HTML_BODY_PREFIX + buildStructuredWeeklyWebHtml({
         title: weekly.title,
+        topic,
         summaryText: weekly.summaryText,
         caption: weekly.caption,
-        topicLabel: topicLabelMap[topic] ?? 'Report',
+        payload: weekly.webPayload ?? null,
       }),
       sourceLabel: '/리포트 명령 결과',
     }

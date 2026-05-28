@@ -174,6 +174,52 @@ type PullbackWeeklyReportData = {
   meta: PullbackSectionMeta;
 };
 
+export type WeeklyPortfolioItem = {
+  code: string;
+  name: string;
+  qty: number;
+  buyPrice: number | null;
+  currentPrice: number | null;
+  invested: number;
+  unrealized: number;
+  pnlPct: number | null;
+  targetHorizon?: string | null;
+  plannedReviewAt?: string | null;
+};
+
+export type WeeklyWebMetricCard = {
+  label: string;
+  value: string;
+  delta?: string | null;
+  tone?: "up" | "down" | "neutral";
+};
+
+export type WeeklyWebSectorItem = {
+  name: string;
+  score: number | null;
+  changeRate: number | null;
+  leaders: string[];
+};
+
+export type WeeklyWebSummary = {
+  tradeCount: number;
+  buyCount: number;
+  sellCount: number;
+  realizedPnl: number;
+  winRate: number;
+  totalUnrealized: number;
+  totalUnrealizedPct: number;
+  holdingCount: number;
+};
+
+export type WeeklyWebPayload = {
+  marketCards?: WeeklyWebMetricCard[];
+  sectors?: WeeklyWebSectorItem[];
+  holdings?: WeeklyPortfolioItem[];
+  summary?: WeeklyWebSummary;
+  reliability?: DecisionReliabilityForSection | null;
+};
+
 export type WeeklyPdfReport = {
   bytes: Uint8Array;
   fileName: string;
@@ -181,6 +227,10 @@ export type WeeklyPdfReport = {
   summaryText: string;
   title: string;
   topic: ReportTopic;
+  portfolioItems?: WeeklyPortfolioItem[];
+  pullbackCandidates?: PullbackCandidateSectionItem[];
+  pullbackMeta?: PullbackSectionMeta | null;
+  webPayload?: WeeklyWebPayload | null;
 };
 
 type RenderReportInput = {
@@ -236,6 +286,108 @@ function warnGradePenalty(grade: string): number {
 
 function clampPullbackScore(value: number): number {
   return Math.max(0, Math.min(100, Number.isFinite(value) ? value : 0));
+}
+
+function formatSignedPct(value: number | null | undefined, digits = 1): string {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return "-";
+  return `${n > 0 ? "+" : ""}${n.toFixed(digits)}%`;
+}
+
+function formatIntLabel(value: number | null | undefined, suffix = ""): string {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return "-";
+  return `${Math.round(n).toLocaleString("ko-KR")}${suffix}`;
+}
+
+function toneFromChange(value: number | null | undefined): "up" | "down" | "neutral" {
+  const n = Number(value);
+  if (!Number.isFinite(n) || n === 0) return "neutral";
+  return n > 0 ? "up" : "down";
+}
+
+function buildWeeklyWebPayload(input: {
+  topic: ReportTopic;
+  market: Awaited<ReturnType<typeof fetchReportMarketData>> | Awaited<ReturnType<typeof fetchAllMarketData>>;
+  sectors: SectorRow[];
+  sectorStocksMap: Record<string, string[]>;
+  holdingItems: WatchItem[];
+  curr: WindowSummary;
+  totalUnrealized: number;
+  totalUnrealizedPct: number;
+  reliability: DecisionReliabilityForSection | null;
+}): WeeklyWebPayload | null {
+  const { topic, market, sectors, sectorStocksMap, holdingItems, curr, totalUnrealized, totalUnrealizedPct, reliability } = input;
+  const sectorItems: WeeklyWebSectorItem[] = sectors.slice(0, 8).map((sector) => ({
+    name: sector.name,
+    score: sector.score,
+    changeRate: sector.change_rate,
+    leaders: sectorStocksMap[sector.name] ?? [],
+  }));
+  const summary: WeeklyWebSummary = {
+    tradeCount: curr.tradeCount,
+    buyCount: curr.buyCount,
+    sellCount: curr.sellCount,
+    realizedPnl: curr.realizedPnl,
+    winRate: curr.winRate,
+    totalUnrealized,
+    totalUnrealizedPct,
+    holdingCount: holdingItems.length,
+  };
+  const holdings: WeeklyPortfolioItem[] = holdingItems.slice(0, 12).map((item) => ({
+    code: item.code,
+    name: item.name,
+    qty: item.qty,
+    buyPrice: item.buyPrice,
+    currentPrice: item.currentPrice,
+    invested: item.invested,
+    unrealized: item.unrealized,
+    pnlPct: item.pnlPct,
+    targetHorizon: item.targetHorizon,
+    plannedReviewAt: item.plannedReviewAt,
+  }));
+
+  if (topic === "economy") {
+    const cards: WeeklyWebMetricCard[] = [];
+    if (market.kospi) cards.push({ label: "KOSPI", value: formatIntLabel(market.kospi.price), delta: formatSignedPct(market.kospi.changeRate), tone: toneFromChange(market.kospi.changeRate) });
+    if (market.kosdaq) cards.push({ label: "KOSDAQ", value: formatIntLabel(market.kosdaq.price), delta: formatSignedPct(market.kosdaq.changeRate), tone: toneFromChange(market.kosdaq.changeRate) });
+    if (market.sp500) cards.push({ label: "S&P 500", value: formatIntLabel(market.sp500.price), delta: formatSignedPct(market.sp500.changeRate), tone: toneFromChange(market.sp500.changeRate) });
+    if (market.nasdaq) cards.push({ label: "NASDAQ", value: formatIntLabel(market.nasdaq.price), delta: formatSignedPct(market.nasdaq.changeRate), tone: toneFromChange(market.nasdaq.changeRate) });
+    if (market.vix) cards.push({ label: "VIX", value: Number(market.vix.price).toFixed(1), delta: formatSignedPct(market.vix.changeRate), tone: toneFromChange(-(Number(market.vix.changeRate) || 0)) });
+    if (market.usdkrw) cards.push({ label: "USD/KRW", value: formatIntLabel(market.usdkrw.price, "원"), delta: formatSignedPct(market.usdkrw.changeRate), tone: toneFromChange(-Number(market.usdkrw.changeRate || 0)) });
+    if (market.us10y) cards.push({ label: "미국 10년물", value: `${Number(market.us10y.price).toFixed(2)}%`, delta: formatSignedPct(market.us10y.changeRate), tone: toneFromChange(-Number(market.us10y.changeRate || 0)) });
+    if (market.fearGreed) cards.push({ label: "공포/탐욕", value: `${formatIntLabel(market.fearGreed.score)}점`, delta: String((market.fearGreed as any).rating || "중립"), tone: "neutral" });
+    return { marketCards: cards };
+  }
+
+  if (topic === "flow" || topic === "sector") {
+    return { sectors: sectorItems };
+  }
+
+  if (topic === "full") {
+    const cards: WeeklyWebMetricCard[] = [];
+    if (market.kospi) cards.push({ label: "KOSPI", value: formatIntLabel(market.kospi.price), delta: formatSignedPct(market.kospi.changeRate), tone: toneFromChange(market.kospi.changeRate) });
+    if (market.kosdaq) cards.push({ label: "KOSDAQ", value: formatIntLabel(market.kosdaq.price), delta: formatSignedPct(market.kosdaq.changeRate), tone: toneFromChange(market.kosdaq.changeRate) });
+    if (market.vix) cards.push({ label: "VIX", value: Number(market.vix.price).toFixed(1), delta: formatSignedPct(market.vix.changeRate), tone: toneFromChange(-(Number(market.vix.changeRate) || 0)) });
+    if (market.usdkrw) cards.push({ label: "USD/KRW", value: formatIntLabel(market.usdkrw.price, "원"), delta: formatSignedPct(market.usdkrw.changeRate), tone: toneFromChange(-Number(market.usdkrw.changeRate || 0)) });
+    return {
+      marketCards: cards,
+      sectors: sectorItems.slice(0, 5),
+      holdings,
+      summary,
+      reliability,
+    };
+  }
+
+  if (topic === "watchlist") {
+    return {
+      holdings,
+      summary,
+      reliability,
+    };
+  }
+
+  return null;
 }
 
 const PULLBACK_ENRICHMENT_LIMIT = 16;
@@ -692,6 +844,9 @@ export async function renderReportPdf(input: RenderReportInput): Promise<WeeklyP
     summaryText,
     title: topicMeta.title,
     topic: topicMeta.topic,
+    pullbackCandidates: pullbackReport?.candidates ?? [],
+    pullbackMeta: pullbackReport?.meta ?? null,
+    webPayload: null,
   };
 }
 
@@ -795,7 +950,16 @@ export async function createWeeklyReportPdf(
         pullbackCandidates: pullbackReport?.candidates,
         pullbackMeta: pullbackReport?.meta,
       });
-      return { bytes: new Uint8Array(0), fileName: '', caption, summaryText, title: topicMeta.title, topic: topicMeta.topic };
+      return {
+        bytes: new Uint8Array(0),
+        fileName: '',
+        caption,
+        summaryText,
+        title: topicMeta.title,
+        topic: topicMeta.topic,
+        pullbackCandidates: pullbackReport?.candidates ?? [],
+        pullbackMeta: pullbackReport?.meta ?? null,
+      };
     }
 
     return runReportStep("pdf_render", () =>
@@ -1005,6 +1169,17 @@ export async function createWeeklyReportPdf(
     : null;
 
   const pullbackReport = null;
+  const webPayload = buildWeeklyWebPayload({
+    topic: topicMeta.topic,
+    market,
+    sectors,
+    sectorStocksMap: sectorStocksNameMap,
+    holdingItems: watchItems.filter((item) => item.qty > 0),
+    curr,
+    totalUnrealized,
+    totalUnrealizedPct,
+    reliability: reliability ?? null,
+  });
 
   // 웹 미리보기 전용: PDF 렌더(폰트 로딩·PDF 생성, ~1-2초)를 건너뛰고 summary/caption만 반환
   if (webOnly) {
@@ -1041,7 +1216,22 @@ export async function createWeeklyReportPdf(
         })
       );
     }
-    return { bytes: new Uint8Array(0), fileName: '', caption, summaryText, title: topicMeta.title, topic: topicMeta.topic };
+    const portfolioItems: WeeklyPortfolioItem[] | undefined =
+      topicMeta.topic === 'watchlist'
+        ? watchItems.map((item) => ({
+            code: item.code,
+            name: item.name,
+            qty: item.qty,
+            buyPrice: item.buyPrice,
+            currentPrice: item.currentPrice,
+            invested: item.invested,
+            unrealized: item.unrealized,
+            pnlPct: item.pnlPct,
+            targetHorizon: item.targetHorizon,
+            plannedReviewAt: item.plannedReviewAt,
+          }))
+        : undefined
+    return { bytes: new Uint8Array(0), fileName: '', caption, summaryText, title: topicMeta.title, topic: topicMeta.topic, portfolioItems, webPayload };
   }
 
   try {
