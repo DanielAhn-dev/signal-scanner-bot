@@ -112,9 +112,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       reportDate,
     })
 
-    const needsRichRefresh = ['추천', '공개추천', '확신추천', '눌림목'].includes(topic)
-      && Boolean(persisted?.bodyText)
-      && !String(persisted?.bodyText || '').startsWith(HTML_BODY_PREFIX)
+    const persistedBody = String(persisted?.bodyText || '')
+    const needsRichRefresh = (
+      ['추천', '공개추천', '확신추천', '눌림목', '관심종목'].includes(topic)
+      && Boolean(persistedBody)
+      && !persistedBody.startsWith(HTML_BODY_PREFIX)
+    ) || (
+      topic === '눌림목'
+      && persistedBody.includes('Next Week Pullback')
+      && persistedBody.includes('다음 주 눌림목 리포트</div>')
+    )
 
     if (persisted?.bodyText && !needsRichRefresh) {
       const html = renderLayout({

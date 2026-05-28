@@ -514,6 +514,246 @@ ${metaLine ? `<section style="margin-top:12px;border:1px solid #e8edf2;backgroun
 ${caption ? `<section style="margin-top:10px;color:#6f7f93;font-size:13px;font-style:italic">${caption}</section>` : ''}`
 }
 
+type WatchOnlyWebItem = {
+  code: string
+  name: string
+  status?: string | null
+  buyPrice?: number | null
+  currentPrice?: number | null
+  changePct?: number | null
+  addedAt?: string | null
+  memo?: string | null
+}
+
+function toNum(value: unknown): number | null {
+  const n = Number(value)
+  return Number.isFinite(n) ? n : null
+}
+
+function fmtInt(v: number | null | undefined): string {
+  if (v == null || !Number.isFinite(v)) return '-'
+  return Math.round(v).toLocaleString('ko-KR')
+}
+
+function fmtPct(v: number | null | undefined): string {
+  if (v == null || !Number.isFinite(v)) return '-'
+  const rounded = Math.round(v * 10) / 10
+  return `${rounded > 0 ? '+' : ''}${rounded.toFixed(1)}%`
+}
+
+function fmtAddedDate(raw?: string | null): string {
+  if (!raw) return '-'
+  const d = new Date(raw)
+  if (Number.isNaN(d.getTime())) return '-'
+  return `${d.getMonth() + 1}/${d.getDate()}`
+}
+
+function toStatusLabel(raw?: string | null): string {
+  const status = String(raw || '').trim().toLowerCase()
+  if (status === 'interest') return '관심'
+  if (status === 'holding') return '보유'
+  if (status === 'closed') return '종료'
+  return '관심'
+}
+
+function resolveChangeColor(v?: number | null): string {
+  if (v == null || !Number.isFinite(v)) return '#8b95a1'
+  if (v > 0) return '#f04452'
+  if (v < 0) return '#1478ff'
+  return '#8b95a1'
+}
+
+export function buildWatchOnlyWebHtml(input: {
+  title: string
+  summaryText: string
+  caption: string
+  items: WatchOnlyWebItem[]
+}): string {
+  const title = escapeHtml(input.title || '관심종목 리포트')
+  const sectionHeadline = title === '관심종목 리포트' ? '관심 추적 목록 스냅샷' : `${title} 스냅샷`
+  const summaryLines = String(input.summaryText || '').split(/\r?\n/).map((line) => line.trim()).filter(Boolean)
+  const metaLine = summaryLines.find((line) => line.includes('데이터 상태')) || ''
+  const items = [...(input.items || [])]
+    .slice(0, 40)
+    .sort((a, b) => {
+      const av = Math.abs(toNum(a.changePct) ?? -1)
+      const bv = Math.abs(toNum(b.changePct) ?? -1)
+      return bv - av
+    })
+
+  const riseCount = items.filter((item) => (toNum(item.changePct) ?? 0) > 0).length
+  const fallCount = items.filter((item) => (toNum(item.changePct) ?? 0) < 0).length
+  const flatCount = Math.max(0, items.length - riseCount - fallCount)
+
+  const tableRows = items.map((item, idx) => {
+    const statusLabel = toStatusLabel(item.status)
+    const memo = String(item.memo || '').trim()
+    const memoLabel = memo || '관심 전용'
+    const changePct = toNum(item.changePct)
+    const changeColor = resolveChangeColor(changePct)
+    const code = escapeHtml(item.code || '-')
+    const name = escapeHtml(item.name || item.code || '-')
+
+    return `<tr>
+      <td style="padding:9px 8px;border-bottom:1px solid #edf1f6;color:#8b95a1;font-size:11px;text-align:right">${idx + 1}</td>
+      <td style="padding:9px 8px;border-bottom:1px solid #edf1f6;font-weight:600;color:#1f2937;white-space:nowrap">
+        <div>${name}</div>
+        <div style="margin-top:2px;font-size:10px;color:#8b95a1;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace">${code}</div>
+      </td>
+      <td style="padding:9px 8px;border-bottom:1px solid #edf1f6;color:#334155;font-size:11px;text-align:center">${escapeHtml(statusLabel)}</td>
+      <td style="padding:9px 8px;border-bottom:1px solid #edf1f6;color:#334155;font-size:11px;text-align:center">${escapeHtml(fmtAddedDate(item.addedAt))}</td>
+      <td style="padding:9px 8px;border-bottom:1px solid #edf1f6;color:#334155;font-size:11px;text-align:right">${escapeHtml(fmtInt(toNum(item.buyPrice)))}</td>
+      <td style="padding:9px 8px;border-bottom:1px solid #edf1f6;color:#334155;font-size:11px;text-align:right">${escapeHtml(fmtInt(toNum(item.currentPrice)))}</td>
+      <td style="padding:9px 8px;border-bottom:1px solid #edf1f6;color:${changeColor};font-size:11px;text-align:right;font-weight:700">${escapeHtml(fmtPct(changePct))}</td>
+      <td style="padding:9px 8px;border-bottom:1px solid #edf1f6;color:#64748b;font-size:10.5px;max-width:190px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${escapeHtml(memoLabel)}">${escapeHtml(memoLabel)}</td>
+    </tr>`
+  }).join('')
+
+  return `<section style="border:1px solid #dce8ff;background:linear-gradient(135deg,#eef5ff 0%,#ffffff 64%);border-radius:16px;padding:16px 16px 14px;box-shadow:0 2px 10px rgba(20,80,180,0.05)">
+  <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:10px;flex-wrap:wrap">
+    <div>
+      <div style="font-size:11px;font-weight:700;letter-spacing:0.06em;color:#2a5bb8;text-transform:uppercase">Watchlist Snapshot</div>
+      <div style="margin-top:4px;font-size:22px;line-height:1.22;font-weight:800;letter-spacing:-0.02em;color:#102542">${sectionHeadline}</div>
+    </div>
+    <div style="font-size:11px;color:#4b668f;background:#e8f0ff;border:1px solid #c8dafd;padding:4px 10px;border-radius:999px">총 ${items.length}개 추적</div>
+  </div>
+  <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap">
+    <span style="font-size:11px;color:#1f4b8f;background:#f3f8ff;border:1px solid #d9e7ff;padding:5px 10px;border-radius:999px">상승 ${riseCount}개</span>
+    <span style="font-size:11px;color:#1f4b8f;background:#f3f8ff;border:1px solid #d9e7ff;padding:5px 10px;border-radius:999px">하락 ${fallCount}개</span>
+    <span style="font-size:11px;color:#1f4b8f;background:#f3f8ff;border:1px solid #d9e7ff;padding:5px 10px;border-radius:999px">보합/미집계 ${flatCount}개</span>
+  </div>
+</section>
+${items.length ? `<section style="margin-top:12px;border:1px solid #e4ebf5;background:#ffffff;border-radius:14px;padding:12px 12px 8px">
+  <div style="overflow:auto">
+    <table style="width:100%;min-width:760px;border-collapse:collapse">
+      <thead>
+        <tr>
+          <th style="padding:8px 8px;border-bottom:1px solid #dce6f4;color:#607089;font-size:10.5px;text-align:right">#</th>
+          <th style="padding:8px 8px;border-bottom:1px solid #dce6f4;color:#607089;font-size:10.5px;text-align:left">종목</th>
+          <th style="padding:8px 8px;border-bottom:1px solid #dce6f4;color:#607089;font-size:10.5px;text-align:center">상태</th>
+          <th style="padding:8px 8px;border-bottom:1px solid #dce6f4;color:#607089;font-size:10.5px;text-align:center">추가일</th>
+          <th style="padding:8px 8px;border-bottom:1px solid #dce6f4;color:#607089;font-size:10.5px;text-align:right">기준가</th>
+          <th style="padding:8px 8px;border-bottom:1px solid #dce6f4;color:#607089;font-size:10.5px;text-align:right">현재가</th>
+          <th style="padding:8px 8px;border-bottom:1px solid #dce6f4;color:#607089;font-size:10.5px;text-align:right">등락</th>
+          <th style="padding:8px 8px;border-bottom:1px solid #dce6f4;color:#607089;font-size:10.5px;text-align:left">메모</th>
+        </tr>
+      </thead>
+      <tbody>${tableRows}</tbody>
+    </table>
+  </div>
+  <div style="margin-top:8px;font-size:11px;color:#708199">기준가는 종목을 관심 목록에 추가할 때 저장된 참고 가격입니다.</div>
+</section>` : `<section style="margin-top:12px;border:1px solid #e4ebf5;background:#ffffff;border-radius:14px;padding:20px 16px;font-size:12px;color:#64748b">등록된 관심 종목이 없습니다. 관심종목 페이지에서 종목을 추가하면 여기서 바로 확인할 수 있습니다.</section>`}
+${metaLine ? `<section style="margin-top:12px;border:1px solid #e8edf2;background:#f7fafc;border-radius:12px;padding:10px 12px;font-size:11.5px;color:#5a6a7f">${escapeHtml(metaLine)}</section>` : ''}`
+}
+
+// ─── Generic Weekly Report Web HTML Builder ───────────────────────────────────
+
+type ParsedMetric = { label: string; value: string; color?: string }
+
+function parseWeeklyMetrics(lines: string[]): { metrics: ParsedMetric[]; rest: string[] } {
+  const metrics: ParsedMetric[] = []
+  const rest: string[] = []
+
+  for (const line of lines) {
+    // 거래 N건 / 실현손익(FIFO) ±N원 / 승률(FIFO) N.N%
+    if (/거래\s+\d+건/.test(line)) {
+      const tradeM = line.match(/거래\s+(\d+)건/)
+      if (tradeM) metrics.push({ label: '거래', value: `${tradeM[1]}건` })
+      const pnlM = line.match(/실현손익[^)]+\)\s*([+-]?[\d,]+)원/)
+      if (pnlM) {
+        const n = parseInt(pnlM[1].replace(/,/g, ''))
+        metrics.push({ label: '실현손익', value: `${n >= 0 ? '+' : ''}${pnlM[1]}원`, color: n > 0 ? '#f04452' : n < 0 ? '#1478ff' : '#8b95a1' })
+      }
+      const winM = line.match(/승률[^)]+\)\s*([\d.]+)%/)
+      if (winM) metrics.push({ label: '승률', value: `${winM[1]}%` })
+      continue
+    }
+    // 보유평가 ±N원 (±N.N%)
+    if (/보유평가/.test(line)) {
+      const portM = line.match(/보유평가\s+([+-]?[\d,]+)원/)
+      if (portM) {
+        const n = parseInt(portM[1].replace(/,/g, ''))
+        const pctM = line.match(/\(([+-]?[\d.]+)%\)/)
+        metrics.push({
+          label: '보유평가',
+          value: `${portM[1]}원${pctM ? ` (${pctM[1]}%)` : ''}`,
+          color: n > 0 ? '#f04452' : n < 0 ? '#1478ff' : '#8b95a1',
+        })
+      }
+      continue
+    }
+    // VIX N.N / 환율 N원
+    if (/^VIX\s/.test(line)) {
+      const vixM = line.match(/VIX\s+([\d.]+)/)
+      const fxM = line.match(/환율\s+([\d,]+)원/)
+      if (vixM) metrics.push({ label: 'VIX', value: vixM[1] })
+      if (fxM) metrics.push({ label: 'USD/KRW', value: `${fxM[1]}원` })
+      continue
+    }
+    // Skip PDF-only lines
+    if (/다운로드 후 인쇄/.test(line)) continue
+    rest.push(line)
+  }
+
+  return { metrics, rest }
+}
+
+export function buildGenericWeeklyWebHtml(input: {
+  title: string
+  summaryText: string
+  caption: string
+  topicLabel?: string
+}): string {
+  const allLines = String(input.summaryText || '').split(/\r?\n/).map(l => l.trim()).filter(Boolean)
+  // First line is usually the title with date — keep it for the date chip
+  const titleLine = allLines[0] || ''
+  const dateM = titleLine.match(/\((\d{4}-\d{2}-\d{2})\)/)
+  const datePart = dateM ? dateM[1] : ''
+
+  const bodyLines = allLines.slice(1)
+  const qualityLine = bodyLines.find(l => /데이터 상태|조회 \d/.test(l)) || ''
+  const mainLines = bodyLines.filter(l => l !== qualityLine)
+
+  const { metrics, rest: narrativeLines } = parseWeeklyMetrics(mainLines)
+
+  const topicLbl = escapeHtml(input.topicLabel || 'Weekly')
+
+  const headerHtml = `<section style="border:1px solid #dce8ff;background:linear-gradient(135deg,#eef5ff 0%,#ffffff 64%);border-radius:16px;padding:16px 16px 14px;box-shadow:0 2px 10px rgba(20,80,180,0.05)">
+  <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:10px;flex-wrap:wrap">
+    <div>
+      <div style="font-size:11px;font-weight:700;letter-spacing:0.06em;color:#2a5bb8;text-transform:uppercase">${topicLbl} Report</div>
+      <div style="margin-top:4px;font-size:22px;line-height:1.22;font-weight:800;letter-spacing:-0.02em;color:#102542">${escapeHtml(input.title)}</div>
+    </div>
+    ${datePart ? `<div style="font-size:11px;color:#4b668f;background:#e8f0ff;border:1px solid #c8dafd;padding:4px 10px;border-radius:999px">${escapeHtml(datePart)}</div>` : ''}
+  </div>
+</section>`
+
+  const metricsHtml = metrics.length
+    ? `<section style="margin-top:12px;display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:10px">
+        ${metrics.map(m =>
+          `<div style="background:#ffffff;border:1px solid #e5e8eb;border-radius:12px;padding:12px 14px;box-shadow:0 1px 3px rgba(0,0,0,0.04)">
+            <div style="font-size:10px;color:#8b95a1;margin-bottom:5px;letter-spacing:0.04em">${escapeHtml(m.label)}</div>
+            <div style="font-size:15px;font-weight:700;color:${m.color ?? '#191f28'};letter-spacing:-0.01em">${escapeHtml(m.value)}</div>
+          </div>`
+        ).join('')}
+      </section>`
+    : ''
+
+  const narrativeHtml = narrativeLines.length
+    ? `<section style="margin-top:12px;border:1px solid #e4ebf5;background:#ffffff;border-radius:14px;padding:14px 16px">
+        ${narrativeLines.map(l =>
+          `<p style="margin:0 0 7px;font-size:13px;color:#374151;line-height:1.75">${escapeHtml(l)}</p>`
+        ).join('')}
+      </section>`
+    : ''
+
+  const qualityHtml = qualityLine
+    ? `<div style="margin-top:10px;font-size:11px;color:#8b95a1;padding:0 2px">${escapeHtml(qualityLine)}</div>`
+    : ''
+
+  return `${headerHtml}${metricsHtml}${narrativeHtml}${qualityHtml}`
+}
+
 // ─── Page Layout ─────────────────────────────────────────────────────────────
 
 export function renderLayout(params: {
@@ -609,14 +849,17 @@ export function renderLayout(params: {
       box-shadow: var(--shadow-sm);
     }
     .hero {
-      padding: 22px 22px 18px;
+      padding: 10px 22px;
       border-bottom: 1px solid var(--color-border-default);
-      background: linear-gradient(120deg, var(--color-brand-subtle), rgba(255,255,255,0.97) 55%);
+      background: color-mix(in srgb, var(--color-brand-subtle) 28%, var(--color-bg-surface));
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
     }
     .topic-pullback .hero {
-      background:
-        radial-gradient(circle at 20% -10%, rgba(42, 91, 184, 0.22), transparent 34%),
-        linear-gradient(120deg, #eaf2ff 0%, #f8fbff 52%, #ffffff 100%);
+      background: color-mix(in srgb, #e7f0ff 40%, var(--color-bg-surface));
+      border-left: 3px solid #2a5bb8;
     }
     .topic-pullback .badge {
       color: #1f4f9d;
@@ -638,13 +881,14 @@ export function renderLayout(params: {
       border: 1px solid color-mix(in srgb, var(--color-brand) 20%, transparent);
     }
     h1 {
-      margin: 10px 0 6px;
-      font-size: clamp(20px, 3.2vw, 28px);
-      line-height: 1.25;
-      letter-spacing: -0.02em;
+      margin: 0;
+      font-size: 15px;
+      font-weight: var(--font-weight-semibold);
+      line-height: 1.3;
+      letter-spacing: -0.01em;
       color: var(--color-text-primary);
     }
-    .meta { color: var(--color-text-secondary); font-size: 13px; }
+    .meta { margin-left: auto; color: var(--color-text-tertiary); font-size: 11px; }
     .content { padding: 20px 22px; font-size: 15px; }
     .rich-share { display: flex; flex-direction: column; gap: 12px; }
     .report-section {
@@ -713,7 +957,7 @@ export function renderLayout(params: {
     <header class="hero">
       <span class="badge">${escapeHtml(badge)}</span>
       <h1>${escapeHtml(title)}</h1>
-      <div class="meta">출처: ${escapeHtml(sourceLabel)} · 웹 렌더링 뷰</div>
+      <div class="meta">${escapeHtml(sourceLabel)}</div>
     </header>
     <article class="content">${contentHtml}</article>
     <footer class="footer">공유 링크는 만료되거나 철회될 수 있습니다.</footer>

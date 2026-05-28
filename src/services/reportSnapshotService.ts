@@ -4,7 +4,8 @@ import path from 'node:path'
 import { createDailyCandidatePlanningReportResult } from './marketInsightService'
 import { getUserInvestmentPrefs } from './userService'
 import { createWeeklyReportPdf } from './weeklyReportService'
-import { buildCandidateCardsWebHtml, buildConvictionWebHtml, buildPullbackWebHtml, HTML_BODY_PREFIX } from './reportWebRenderService'
+import { fetchRealtimePriceBatch } from '../utils/fetchRealtimePrice'
+import { buildCandidateCardsWebHtml, buildConvictionWebHtml, buildGenericWeeklyWebHtml, buildPullbackWebHtml, buildWatchOnlyWebHtml, HTML_BODY_PREFIX } from './reportWebRenderService'
 import { selectForecastsForTopic } from './reportTopicForecasts'
 
 export type ReportTopic =
@@ -151,6 +152,109 @@ const WEEKLY_REPORT_TOPIC_MAP: Partial<Record<ReportTopic, string>> = {
   섹터: 'sector',
 }
 
+type WatchlistSnapshotRow = {
+  code?: string | null
+  buy_price?: number | null
+  buy_date?: string | null
+  created_at?: string | null
+  quantity?: number | null
+  status?: string | null
+  memo?: string | null
+  stock?:
+    | {
+        name?: string | null
+        close?: number | null
+      }
+    | Array<{
+        name?: string | null
+        close?: number | null
+      }>
+    | null
+}
+
+function unwrapJoinedStock(value: WatchlistSnapshotRow['stock']) {
+  if (!value) return null
+  return Array.isArray(value) ? value[0] ?? null : value
+}
+
+function toFiniteNumber(value: unknown): number | null {
+  const n = Number(value)
+  return Number.isFinite(n) ? n : null
+}
+
+async function buildWatchOnlyWebItems(supabase: SupabaseClient, chatId: number | null): Promise<Array<{
+  code: string
+  name: string
+  status?: string | null
+  buyPrice?: number | null
+  currentPrice?: number | null
+  changePct?: number | null
+  addedAt?: string | null
+  memo?: string | null
+}>> {
+  if (!chatId || chatId <= 0) return []
+
+  const { data } = await supabase
+    .from('watchlist')
+    .select('code,buy_price,buy_date,created_at,quantity,status,memo,stock:stocks(name,close)')
+    .eq('chat_id', chatId)
+    .order('created_at', { ascending: false })
+    .limit(120)
+
+  const rows = (data ?? []) as WatchlistSnapshotRow[]
+  if (!rows.length) return []
+
+  const codes = [...new Set(rows.map((row) => String(row.code || '').trim()).filter(Boolean))]
+  let realtimeMap: Record<string, { price?: number }> = {}
+  if (codes.length) {
+    try {
+      realtimeMap = await fetchRealtimePriceBatch(codes)
+    } catch {
+      realtimeMap = {}
+    }
+  }
+
+  return rows
+    .map((row) => {
+      const stock = unwrapJoinedStock(row.stock)
+      const code = String(row.code || '').trim()
+      const qty = Math.max(0, Math.floor(toFiniteNumber(row.quantity) ?? 0))
+      if (!code || qty > 0) return null
+      const buyPrice = toFiniteNumber(row.buy_price)
+      const realtimePrice = toFiniteNumber(realtimeMap[code]?.price)
+      const closePrice = toFiniteNumber(stock?.close)
+      const currentPrice = realtimePrice && realtimePrice > 0
+        ? realtimePrice
+        : closePrice && closePrice > 0
+          ? closePrice
+          : null
+      const changePct = buyPrice && currentPrice
+        ? ((currentPrice - buyPrice) / buyPrice) * 100
+        : null
+
+      return {
+        code,
+        name: String(stock?.name || code),
+        status: row.status || null,
+        buyPrice,
+        currentPrice,
+        changePct,
+        addedAt: row.created_at || row.buy_date || null,
+        memo: row.memo || null,
+      }
+    })
+    .filter((item): item is {
+      code: string
+      name: string
+      status: string | null
+      buyPrice: number | null
+      currentPrice: number | null
+      changePct: number | null
+      addedAt: string | null
+      memo: string | null
+    } => Boolean(item))
+}
+
 export async function buildReportBodyText(params: {
   topic: ReportTopic
   chatId: number | null
@@ -237,13 +341,33 @@ export async function buildReportBodyText(params: {
       }
     }
 
+    if (topic === '관심종목') {
+      const watchOnlyItems = await buildWatchOnlyWebItems(supabase, chatId)
+      return {
+        bodyText: HTML_BODY_PREFIX + buildWatchOnlyWebHtml({
+          title: weekly.title,
+          summaryText: weekly.summaryText,
+          caption: weekly.caption,
+          items: watchOnlyItems,
+        }),
+        sourceLabel: '/리포트 명령 결과',
+      }
+    }
+
+    const topicLabelMap: Partial<Record<ReportTopic, string>> = {
+      주간: 'Weekly',
+      포트폴리오: 'Portfolio',
+      거시: 'Macro',
+      수급: 'Flow',
+      섹터: 'Sector',
+    }
     return {
-      bodyText: [
-        `<b>${weekly.title}</b>`,
-        weekly.summaryText,
-        '',
-        `<i>${weekly.caption}</i>`,
-      ].join('\n'),
+      bodyText: HTML_BODY_PREFIX + buildGenericWeeklyWebHtml({
+        title: weekly.title,
+        summaryText: weekly.summaryText,
+        caption: weekly.caption,
+        topicLabel: topicLabelMap[topic] ?? 'Report',
+      }),
       sourceLabel: '/리포트 명령 결과',
     }
   }
