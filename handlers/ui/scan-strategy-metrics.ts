@@ -1,5 +1,6 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
+import { chunkValues, getPagingRunStatsSummary, resetPagingRunStats, selectPaged } from '../../src/services/supabasePaging'
 
 const ORIGIN = process.env.UI_CORS_ORIGIN || '*'
 const CACHE_TTL_MS = 120_000
@@ -77,57 +78,44 @@ function shiftDate(days: number): string {
   return d.toISOString().slice(0, 10)
 }
 
-function chunk<T>(items: T[], size: number): T[][] {
-  const out: T[][] = []
-  for (let i = 0; i < items.length; i += size) out.push(items.slice(i, i + size))
-  return out
-}
-
 async function fetchSignalRowsPaged(supabase: SupabaseClient, fromDate: string): Promise<SignalRow[]> {
-  const out: SignalRow[] = []
-  const pageSize = 1000
-  let offset = 0
-
-  while (true) {
-    const { data, error } = await supabase
-      .from('scan_signal_history')
-      .select('code,trade_date,is_quick_strict,is_quick_lite')
-      .gte('trade_date', fromDate)
-      .order('trade_date', { ascending: true })
-      .range(offset, offset + pageSize - 1)
-
-    if (error) throw error
-    const rows = (data ?? []) as SignalRow[]
-    out.push(...rows)
-    if (rows.length < pageSize) break
-    offset += pageSize
-  }
-
-  return out
+  return await selectPaged<SignalRow>(
+    async (from, to) =>
+      await supabase
+        .from('scan_signal_history')
+        .select('code,trade_date,is_quick_strict,is_quick_lite')
+        .gte('trade_date', fromDate)
+        .order('trade_date', { ascending: true })
+        .range(from, to),
+    {
+      pageSize: 1000,
+      maxRows: 120000,
+      logLabel: 'handler.scan_strategy_metrics.signals',
+    }
+  ).catch((error) => {
+    throw new Error(String((error as Error)?.message || error))
+  })
 }
 
 async function fetchPriceRowsPaged(supabase: SupabaseClient, codeChunk: string[], fromDate: string): Promise<PriceRow[]> {
-  const out: PriceRow[] = []
-  const pageSize = 1000
-  let offset = 0
-
-  while (true) {
-    const { data, error } = await supabase
-      .from('stock_daily')
-      .select('ticker,date,open,close')
-      .in('ticker', codeChunk)
-      .gte('date', fromDate)
-      .order('date', { ascending: true })
-      .range(offset, offset + pageSize - 1)
-
-    if (error) throw error
-    const rows = (data ?? []) as PriceRow[]
-    out.push(...rows)
-    if (rows.length < pageSize) break
-    offset += pageSize
-  }
-
-  return out
+  const maxRows = Math.max(10000, Math.min(120000, codeChunk.length * 450))
+  return await selectPaged<PriceRow>(
+    async (from, to) =>
+      await supabase
+        .from('stock_daily')
+        .select('ticker,date,open,close')
+        .in('ticker', codeChunk)
+        .gte('date', fromDate)
+        .order('date', { ascending: true })
+        .range(from, to),
+    {
+      pageSize: 1000,
+      maxRows,
+      logLabel: 'handler.scan_strategy_metrics.prices',
+    }
+  ).catch((error) => {
+    throw new Error(String((error as Error)?.message || error))
+  })
 }
 
 function buildPriceIndex(rows: PriceRow[]): Map<string, PriceIndex> {
@@ -226,6 +214,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   try {
+    resetPagingRunStats()
+
     const fromDate = shiftDate(lookbackDays + 10)
 
     const signals = await fetchSignalRowsPaged(supabase, fromDate)
@@ -241,13 +231,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             summarizeReturns('weekly', '주간(당일 종가→5거래일 종가)', []),
           ],
         },
+        meta: {
+          paging: getPagingRunStatsSummary(),
+        },
       }
       cache.set(cacheKey, { expiresAt: Date.now() + CACHE_TTL_MS, payload })
       return res.status(200).json(payload)
     }
 
     const codes = Array.from(new Set(signalRows.map((row) => normalizeCode(row.code)).filter(Boolean)))
-    const codeChunks = chunk(codes, 200)
+    const codeChunks = chunkValues(codes)
     const priceRows: PriceRow[] = []
 
     for (const codeChunk of codeChunks) {
@@ -305,6 +298,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           summarizeReturns('overnight', '오버나이트(당일 종가→익일 시가)', overnightReturns),
           summarizeReturns('weekly', '주간(당일 종가→5거래일 종가)', weeklyReturns),
         ],
+      },
+      meta: {
+        paging: getPagingRunStatsSummary(),
       },
     }
 

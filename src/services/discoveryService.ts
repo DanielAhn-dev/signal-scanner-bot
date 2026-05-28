@@ -210,6 +210,7 @@ async function fetchLatestTwoTrendsByCode(
   const chunks = chunkValues(codes);
   for (const part of chunks) {
     const partNeed = new Set(part);
+    const trendMaxRows = Math.max(6000, Math.min(60000, part.length * 120));
     await selectPaged<FundamentalTrendRow>(
       async (from, to) =>
         await supabase
@@ -219,8 +220,8 @@ async function fetchLatestTwoTrendsByCode(
           .order("period_end", { ascending: false })
           .range(from, to),
       {
-        pageSize: 1000,
-        maxRows: 100000,
+        pageSize: 800,
+        maxRows: trendMaxRows,
         logLabel: "discovery.fundamental_trends",
         collectRows: false,
         onPage: (rows) => {
@@ -256,6 +257,7 @@ async function fetchSmartMoney12wByCode(
 
   const chunks = chunkValues(codes);
   for (const part of chunks) {
+    const investorMaxRows = Math.max(12000, Math.min(60000, part.length * 160));
     const rows = await selectPaged<InvestorDailyRow>(
       async (from, to) =>
         await supabase
@@ -265,7 +267,7 @@ async function fetchSmartMoney12wByCode(
           .gte("date", since)
           .order("date", { ascending: false })
           .range(from, to),
-      { pageSize: 1000, maxRows: 100000, logLabel: "discovery.investor_12w" }
+      { pageSize: 800, maxRows: investorMaxRows, logLabel: "discovery.investor_12w" }
     ).catch((e) => {
       throw new Error(`investor_daily 조회 실패: ${String((e as Error).message || e)}`);
     });
