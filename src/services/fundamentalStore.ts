@@ -1,5 +1,5 @@
 import { createClient } from "@supabase/supabase-js";
-import { chunkValues } from "./supabasePaging";
+import { chunkValues, selectPaged } from "./supabasePaging";
 
 const supabase = createClient(
   process.env.SUPABASE_URL!,
@@ -101,28 +101,32 @@ export async function getFundamentalSnapshotsForCodes(
     const grouped = new Map<string, FundamentalSnapshot>();
     for (const part of chunkValues(codes)) {
       const need = new Set(part);
-      for (let offset = 0; ; offset += 1000) {
-        const { data, error } = await supabase
-          .from(FUNDAMENTALS_TABLE)
-          .select("*")
-          .in("code", part)
-          .order("as_of", { ascending: false })
-          .range(offset, offset + 999);
-
-        if (error) {
-          console.error("getFundamentalSnapshotsForCodes error:", error);
-          return codes.reduce((acc, c) => ({ ...acc, [c]: null }), {} as Record<string, null>);
+      await selectPaged<FundamentalSnapshot>(
+        async (from, to) =>
+          await supabase
+            .from(FUNDAMENTALS_TABLE)
+            .select("*")
+            .in("code", part)
+            .order("as_of", { ascending: false })
+            .range(from, to),
+        {
+          pageSize: 1000,
+          maxRows: 100000,
+          logLabel: "fundamentalStore.latest_snapshots",
+          collectRows: false,
+          onPage: (rows) => {
+            for (const r of rows) {
+              if (!r?.code || grouped.has(r.code)) continue;
+              grouped.set(r.code, r);
+              need.delete(r.code);
+            }
+          },
+          shouldStop: () => need.size === 0,
         }
-
-        const rows = (data ?? []) as FundamentalSnapshot[];
-        for (const r of rows) {
-          if (!r?.code || grouped.has(r.code)) continue;
-          grouped.set(r.code, r);
-          need.delete(r.code);
-        }
-
-        if (rows.length < 1000 || need.size === 0) break;
-      }
+      ).catch((error) => {
+        console.error("getFundamentalSnapshotsForCodes error:", error);
+        throw error;
+      });
     }
 
     for (const code of codes) result[code] = grouped.get(code) ?? null;

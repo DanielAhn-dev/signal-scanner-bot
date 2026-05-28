@@ -10,7 +10,7 @@ import { computeDynamicLargeCapFloor, detectAutoTradeMarketPolicy, resolveDeploy
 import type { MarketOverview } from "../utils/fetchMarketData";
 import { fetchAllMarketData, fetchReportMarketData } from "../utils/fetchMarketData";
 import type { AutoTradeMarketPolicy } from "./virtualAutoTradeSelection";
-import { chunkValues } from "./supabasePaging";
+import { chunkValues, selectPaged } from "./supabasePaging";
 
 export type SectorFlowInsightRow = {
   name: string;
@@ -841,29 +841,32 @@ async function fetchIndicatorsByCodesForDailyCandidates(
   const chunks = chunkValues(codes);
   for (const part of chunks) {
     const need = new Set(part);
-
-    for (let offset = 0; ; offset += 1000) {
-      const { data, error } = await supabase
-        .from("daily_indicators")
-        .select("code, close, value_traded, rsi14, roc14, sma20, sma50, sma200, trade_date")
-        .in("code", part)
-        .order("trade_date", { ascending: false })
-        .range(offset, offset + 999);
-
-      if (error) {
-        throw new Error(`지표 조회 실패: ${error.message}`);
+    await selectPaged<IndicatorRow>(
+      async (from, to) =>
+        await supabase
+          .from("daily_indicators")
+          .select("code, close, value_traded, rsi14, roc14, sma20, sma50, sma200, trade_date")
+          .in("code", part)
+          .order("trade_date", { ascending: false })
+          .range(from, to),
+      {
+        pageSize: 1000,
+        maxRows: 100000,
+        logLabel: "marketInsight.daily_indicators_latest",
+        collectRows: false,
+        onPage: (rows) => {
+          for (const row of rows) {
+            if (!out.has(row.code)) {
+              out.set(row.code, row);
+              need.delete(row.code);
+            }
+          }
+        },
+        shouldStop: () => need.size === 0,
       }
-
-      const rows = (data ?? []) as IndicatorRow[];
-      for (const row of rows) {
-        if (!out.has(row.code)) {
-          out.set(row.code, row);
-          need.delete(row.code);
-        }
-      }
-
-      if (rows.length < 1000 || need.size === 0) break;
-    }
+    ).catch((e) => {
+      throw new Error(`지표 조회 실패: ${String((e as Error).message || e)}`);
+    });
   }
 
   return out;

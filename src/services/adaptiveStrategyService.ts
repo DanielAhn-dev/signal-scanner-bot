@@ -156,30 +156,34 @@ async function getHistoricalPullbackRows(supabase: SupabaseClient, tradeDates: s
   // 각 코드별 최신 scores 데이터 조회
   for (const part of chunkValues(codeSet)) {
     const need = new Set(part)
-    for (let offset = 0; ; offset += 1000) {
-      const { data: scoresData, error } = await supabase
-        .from('scores')
-        .select('code,signal,stable_turn,asof')
-        .in('code', part)
-        .order('asof', { ascending: false })
-        .range(offset, offset + 999)
-
-      if (error) break
-
-      const rows = scoresData ?? []
-      for (const scoreRow of rows) {
-        const code = String((scoreRow as { code?: string }).code || '')
-        if (code && !scoresByCode.has(code)) {
-          scoresByCode.set(code, {
-            signal: (scoreRow as { signal?: string }).signal ?? null,
-            stable_turn: (scoreRow as { stable_turn?: string }).stable_turn ?? null,
-          })
-          need.delete(code)
-        }
+    await selectPaged<Record<string, unknown>>(
+      async (from, to) =>
+        await supabase
+          .from('scores')
+          .select('code,signal,stable_turn,asof')
+          .in('code', part)
+          .order('asof', { ascending: false })
+          .range(from, to),
+      {
+        pageSize: 1000,
+        maxRows: 100000,
+        logLabel: 'adaptive.scores_latest',
+        collectRows: false,
+        onPage: (pageRows) => {
+          for (const scoreRow of pageRows) {
+            const code = String((scoreRow as { code?: string }).code || '')
+            if (code && !scoresByCode.has(code)) {
+              scoresByCode.set(code, {
+                signal: (scoreRow as { signal?: string }).signal ?? null,
+                stable_turn: (scoreRow as { stable_turn?: string }).stable_turn ?? null,
+              })
+              need.delete(code)
+            }
+          }
+        },
+        shouldStop: () => need.size === 0,
       }
-
-      if (rows.length < 1000 || need.size === 0) break
-    }
+    ).catch(() => undefined)
   }
 
   const regimeByCode = new Map<string, string>()
@@ -187,28 +191,32 @@ async function getHistoricalPullbackRows(supabase: SupabaseClient, tradeDates: s
   // 각 코드별 최신 market_regime 조회 (decisions 테이블에서)
   for (const part of chunkValues(codeSet)) {
     const need = new Set(part)
-    for (let offset = 0; ; offset += 1000) {
-      const { data: decisionData, error } = await supabase
-        .from('decisions')
-        .select('code,market_regime,created_at')
-        .in('code', part)
-        .order('created_at', { ascending: false })
-        .range(offset, offset + 999)
-
-      if (error) break
-
-      const rows = decisionData ?? []
-      for (const decRow of rows) {
-        const code = String((decRow as { code?: string }).code || '')
-        const regime = (decRow as { market_regime?: string }).market_regime ?? null
-        if (code && regime && !regimeByCode.has(code)) {
-          regimeByCode.set(code, regime)
-          need.delete(code)
-        }
+    await selectPaged<Record<string, unknown>>(
+      async (from, to) =>
+        await supabase
+          .from('decisions')
+          .select('code,market_regime,created_at')
+          .in('code', part)
+          .order('created_at', { ascending: false })
+          .range(from, to),
+      {
+        pageSize: 1000,
+        maxRows: 100000,
+        logLabel: 'adaptive.decisions_regime_latest',
+        collectRows: false,
+        onPage: (pageRows) => {
+          for (const decRow of pageRows) {
+            const code = String((decRow as { code?: string }).code || '')
+            const regime = (decRow as { market_regime?: string }).market_regime ?? null
+            if (code && regime && !regimeByCode.has(code)) {
+              regimeByCode.set(code, regime)
+              need.delete(code)
+            }
+          }
+        },
+        shouldStop: () => need.size === 0,
       }
-
-      if (rows.length < 1000 || need.size === 0) break
-    }
+    ).catch(() => undefined)
   }
 
   // rows에 signal, stable_turn, market_regime 병합

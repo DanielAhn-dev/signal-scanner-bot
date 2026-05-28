@@ -210,28 +210,34 @@ async function fetchLatestTwoTrendsByCode(
   const chunks = chunkValues(codes);
   for (const part of chunks) {
     const partNeed = new Set(part);
-    for (let offset = 0; ; offset += 1000) {
-      const { data, error } = await supabase
-        .from("fundamental_trends")
-        .select("code, period_end, rev_qoq, op_qoq, rev_acceleration, op_acceleration")
-        .in("code", part)
-        .order("period_end", { ascending: false })
-        .range(offset, offset + 999);
-
-      if (error) throw new Error(`fundamental_trends 조회 실패: ${error.message}`);
-
-      const rows = (data ?? []) as FundamentalTrendRow[];
-      for (const row of rows) {
-        const list = out.get(row.code) ?? [];
-        if (list.length < 2) {
-          list.push(row);
-          if (list.length >= 2) partNeed.delete(row.code);
-        }
-        out.set(row.code, list);
+    await selectPaged<FundamentalTrendRow>(
+      async (from, to) =>
+        await supabase
+          .from("fundamental_trends")
+          .select("code, period_end, rev_qoq, op_qoq, rev_acceleration, op_acceleration")
+          .in("code", part)
+          .order("period_end", { ascending: false })
+          .range(from, to),
+      {
+        pageSize: 1000,
+        maxRows: 100000,
+        logLabel: "discovery.fundamental_trends",
+        collectRows: false,
+        onPage: (rows) => {
+          for (const row of rows) {
+            const list = out.get(row.code) ?? [];
+            if (list.length < 2) {
+              list.push(row);
+              if (list.length >= 2) partNeed.delete(row.code);
+            }
+            out.set(row.code, list);
+          }
+        },
+        shouldStop: () => partNeed.size === 0,
       }
-
-      if (rows.length < 1000 || partNeed.size === 0) break;
-    }
+    ).catch((e) => {
+      throw new Error(`fundamental_trends 조회 실패: ${String((e as Error).message || e)}`);
+    });
   }
 
   return out;

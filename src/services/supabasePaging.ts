@@ -26,7 +26,7 @@ export const DEFAULT_MAX_ROWS = getEnvNumber("SUPABASE_PAGING_MAX_ROWS", 100000)
 export const DEFAULT_IN_CHUNK_SIZE = getEnvNumber("SUPABASE_IN_CHUNK_SIZE", 200);
 export const DEFAULT_PAGING_DEBUG = getEnvBool("SUPABASE_PAGING_DEBUG", false);
 
-type PagingStopReason = "short_page" | "max_rows";
+type PagingStopReason = "short_page" | "max_rows" | "custom_stop";
 
 export type PagingRunStat = {
   label: string;
@@ -94,6 +94,9 @@ export async function selectPaged<T>(
     logLabel?: string;
     debug?: boolean;
     logger?: (message: string) => void;
+    collectRows?: boolean;
+    onPage?: (rows: T[], context: { offset: number; page: number; pageSize: number }) => void;
+    shouldStop?: () => boolean;
   }
 ): Promise<T[]> {
   const pageSize = Math.max(1, options?.pageSize ?? DEFAULT_PAGE_SIZE);
@@ -101,10 +104,12 @@ export async function selectPaged<T>(
   const debug = options?.debug ?? DEFAULT_PAGING_DEBUG;
   const logLabel = options?.logLabel ?? "paged_select";
   const logger = options?.logger ?? ((msg: string) => console.log(msg));
+  const collectRows = options?.collectRows ?? true;
 
   const out: T[] = [];
   let pages = 0;
-  let stoppedByShortPage = false;
+  let totalRows = 0;
+  let reason: PagingStopReason = "max_rows";
 
   for (let offset = 0; offset < maxRows; offset += pageSize) {
     const { data, error } = await fetchPage(offset, offset + pageSize - 1);
@@ -113,18 +118,26 @@ export async function selectPaged<T>(
     }
     const rows = data ?? [];
     pages += 1;
-    out.push(...rows);
+    totalRows += rows.length;
+    if (collectRows) {
+      out.push(...rows);
+    }
+
+    options?.onPage?.(rows, { offset, page: pages, pageSize });
+    if (options?.shouldStop?.()) {
+      reason = "custom_stop";
+      break;
+    }
+
     if (rows.length < pageSize) {
-      stoppedByShortPage = true;
+      reason = "short_page";
       break;
     }
   }
 
-  const reason: PagingStopReason = stoppedByShortPage ? "short_page" : "max_rows";
-
   pagingRunStats.push({
     label: logLabel,
-    rows: out.length,
+    rows: totalRows,
     pages,
     pageSize,
     stop: reason,
