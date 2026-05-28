@@ -183,7 +183,10 @@ async function getHistoricalPullbackRows(supabase: SupabaseClient, tradeDates: s
         },
         shouldStop: () => need.size === 0,
       }
-    ).catch(() => undefined)
+    ).catch((error) => {
+      console.warn('adaptive.scores_latest fetch failed:', error)
+      return undefined
+    })
   }
 
   const regimeByCode = new Map<string, string>()
@@ -216,7 +219,10 @@ async function getHistoricalPullbackRows(supabase: SupabaseClient, tradeDates: s
         },
         shouldStop: () => need.size === 0,
       }
-    ).catch(() => undefined)
+    ).catch((error) => {
+      console.warn('adaptive.decisions_regime_latest fetch failed:', error)
+      return undefined
+    })
   }
 
   // rows에 signal, stable_turn, market_regime 병합
@@ -255,7 +261,10 @@ async function getPriceRows(
             .order('date', { ascending: true })
             .range(from, to),
         { pageSize: 1000, maxRows: 100000, logLabel: `adaptive.price.${tableName}` }
-      ).catch(() => [])
+      ).catch((error) => {
+        console.warn(`adaptive.price.${tableName} fetch failed:`, error)
+        return []
+      })
 
       for (const row of rows) {
         const code = String((row as { code?: string }).code || '')

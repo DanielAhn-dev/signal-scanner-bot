@@ -65,7 +65,10 @@ export async function fetchLatestPullbackCandidateCodes(input: {
           .order("asof", { ascending: false })
           .range(from, to),
       { logLabel: "virtualAutoTrade.pullback_factors" }
-    ).catch(() => []);
+    ).catch((error) => {
+      console.warn("virtualAutoTrade.pullback_factors fetch failed:", error);
+      return [];
+    });
 
     for (const row of rows) {
       const code = String(row.code ?? "").trim();

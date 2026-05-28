@@ -173,7 +173,10 @@ async function fetchInvestorFlowByCodes(
           .range(from, to)
           .returns<InvestorDailyRow[]>(),
       { logLabel: "scoreSync.investor_flow" }
-    ).catch(() => []);
+    ).catch((error) => {
+      console.warn("scoreSync.investor_flow fetch failed:", error);
+      return [];
+    });
     data.push(...rows);
   }
 
