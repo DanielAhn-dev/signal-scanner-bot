@@ -31,6 +31,7 @@ type GuideRow = {
   riskReward: number | null
   warnings: string[]
   headlines: string[]
+  headlineLinks: Array<{ title: string; url: string | null }>
   plannedBudget: number
   qty: number
   firstOrderAmount: number
@@ -97,8 +98,11 @@ function toExecutionGuideSnapshotText(input: {
       lines.push(`  - 예산/수량: ${formatKrw(row.plannedBudget)} / ${row.qty.toLocaleString()}주`)
       if (row.warnings.length > 0) lines.push(`  - 주의: ${row.warnings.join(' / ')}`)
       if (row.headlines.length > 0) {
-        for (const headline of row.headlines.slice(0, 3)) {
-          lines.push(`    · ${headline}`)
+        const entries = row.headlineLinks.length > 0
+          ? row.headlineLinks.slice(0, 3)
+          : row.headlines.slice(0, 3).map((title) => ({ title, url: null }))
+        for (const headline of entries) {
+          lines.push(`    · ${headline.title}${headline.url ? ` | ${headline.url}` : ''}`)
         }
       }
     }
@@ -163,6 +167,14 @@ function decodeHeadlineText(input: string): string {
     })
 
   return base.replace(/\s{2,}/g, ' ').trim()
+}
+
+function normalizeNewsUrl(input: unknown): string | null {
+  const value = String(input || '').trim()
+  if (!value) return null
+  if (/^https?:\/\//i.test(value)) return value
+  if (value.startsWith('//')) return `https:${value}`
+  return null
 }
 
 function clampValue(value: number, min: number, max: number): number {
@@ -378,14 +390,23 @@ export default function ExecutionGuidePage() {
           const advisor = stockRes.advisor || {}
 
           let headlines: string[] = []
+          let headlineLinks: Array<{ title: string; url: string | null }> = []
           if (includeNews) {
             const newsRes = await apiFetch(`/api/ui/news?q=${encodeURIComponent(code)}&page=1&pageSize=3`, {
               cacheMs: 30_000,
               timeoutMs: 10_000,
             }).catch(() => null)
-            headlines = Array.isArray(newsRes?.data)
-              ? newsRes.data.map((item: any) => String(item?.title || '')).filter(Boolean).slice(0, 3)
+            headlineLinks = Array.isArray(newsRes?.data)
+              ? newsRes.data
+                .map((item: any) => {
+                  const title = decodeHeadlineText(String(item?.title || ''))
+                  const url = normalizeNewsUrl(item?.originallink ?? item?.link ?? item?.url)
+                  return { title, url }
+                })
+                .filter((item: { title: string }) => Boolean(item.title))
+                .slice(0, 3)
               : []
+            headlines = headlineLinks.map((item) => item.title)
           }
 
           const entryLow = Number.isFinite(Number(advisor.entryLow)) ? Number(advisor.entryLow) : null
@@ -427,6 +448,7 @@ export default function ExecutionGuidePage() {
               ? advisor.warnings.map((w: any) => decodeHeadlineText(String(w))).slice(0, 2)
               : [],
             headlines: headlines.map(decodeHeadlineText),
+            headlineLinks,
             plannedBudget: budgetPerName,
             qty,
             firstOrderAmount,

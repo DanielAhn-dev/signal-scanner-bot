@@ -180,7 +180,21 @@ function stripSimpleHtmlTags(text: string): string {
 type ExecutionGuidePlanItem = {
   title: string
   facts: string[]
-  headlines: string[]
+  headlines: Array<{ title: string; url: string | null }>
+}
+
+function parseExecutionGuideHeadline(raw: string): { title: string; url: string | null } {
+  const text = String(raw || '').trim()
+  if (!text) return { title: '', url: null }
+  const chunks = text.split(' | ')
+  if (chunks.length < 2) return { title: text, url: null }
+  const maybeUrl = chunks[chunks.length - 1].trim()
+  const isHttp = /^https?:\/\//i.test(maybeUrl)
+  if (!isHttp) return { title: text, url: null }
+  return {
+    title: chunks.slice(0, -1).join(' | ').trim(),
+    url: maybeUrl,
+  }
 }
 
 function buildExecutionGuideStructuredHtml(bodyText: string): string {
@@ -249,7 +263,8 @@ function buildExecutionGuideStructuredHtml(bodyText: string): string {
         continue
       }
       if (line.startsWith('· ')) {
-        currentPlan.headlines.push(line.replace(/^·\s*/, ''))
+        const parsed = parseExecutionGuideHeadline(line.replace(/^·\s*/, ''))
+        if (parsed.title) currentPlan.headlines.push(parsed)
         continue
       }
       if (line.startsWith('주의:')) {
@@ -268,7 +283,7 @@ function buildExecutionGuideStructuredHtml(bodyText: string): string {
     : '<p>설정 정보가 없습니다.</p>'
 
   const autoHtml = autoCandidates.length > 0
-    ? `<div class="execution-guide-web-cards">${autoCandidates.map((row) => `<article class="execution-guide-web-candidate"><div class="execution-guide-web-candidate__bullet">추천</div><div class="execution-guide-web-candidate__text">${escapeHtml(row)}</div></article>`).join('')}</div>`
+    ? `<div class="execution-guide-web-cards">${autoCandidates.map((row, idx) => `<article class="execution-guide-web-candidate"><div class="execution-guide-web-candidate__rank">${idx + 1}</div><div class="execution-guide-web-candidate__text">${escapeHtml(row)}</div></article>`).join('')}</div>`
     : '<p>자동 추천 후보가 없습니다.</p>'
 
   const plansHtml = plans.length > 0
@@ -276,7 +291,7 @@ function buildExecutionGuideStructuredHtml(bodyText: string): string {
       <article class="execution-guide-web-plan-card">
         <h3>${escapeHtml(plan.title)}</h3>
         ${plan.facts.length > 0 ? `<ul class="execution-guide-web-facts">${plan.facts.map((fact) => `<li>${escapeHtml(fact)}</li>`).join('')}</ul>` : ''}
-        ${plan.headlines.length > 0 ? `<div class="execution-guide-web-headlines"><div class="execution-guide-web-headlines__title">관련 뉴스</div><ul>${plan.headlines.map((news) => `<li>${escapeHtml(news)}</li>`).join('')}</ul></div>` : ''}
+        ${plan.headlines.length > 0 ? `<div class="execution-guide-web-headlines"><div class="execution-guide-web-headlines__title">관련 뉴스</div><ul>${plan.headlines.map((news) => `<li>${news.url ? `<a href="${escapeHtml(news.url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(news.title)}</a>` : `${escapeHtml(news.title)}`}</li>`).join('')}</ul></div>` : ''}
       </article>
     `).join('')}</div>`
     : '<p>종목별 실행 계획이 없습니다.</p>'
@@ -1515,6 +1530,9 @@ export function renderLayout(params: {
       padding: 14px 14px 12px;
       box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
     }
+    .report-section + .report-section {
+      margin-top: 14px;
+    }
     .content p { margin: 0.68em 0; line-height: 1.75; }
     .content h2 {
       margin: 0 0 0.62em;
@@ -1538,6 +1556,9 @@ export function renderLayout(params: {
       border: 1px solid #dfe7f3;
       background: linear-gradient(180deg, #ffffff 0%, #fbfdff 100%);
       box-shadow: 0 2px 8px rgba(20, 80, 170, 0.05);
+    }
+    .topic-execution-guide .report-section + .report-section {
+      margin-top: 18px;
     }
     .topic-execution-guide .content p {
       margin: 0.55em 0;
@@ -1598,68 +1619,74 @@ export function renderLayout(params: {
     .execution-guide-web-cards {
       margin-top: 8px;
       display: grid;
-      gap: 8px;
+      gap: 12px;
     }
     .execution-guide-web-candidate {
-      border: 1px solid #e2e8f4;
-      border-radius: 10px;
-      background: #fbfdff;
-      padding: 9px 10px;
+      border: 1px solid #e9eef5;
+      border-radius: 14px;
+      background: #ffffff;
+      padding: 12px 14px;
       display: grid;
       grid-template-columns: auto 1fr;
-      gap: 8px;
-      align-items: start;
+      gap: 12px;
+      align-items: center;
+      box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
     }
-    .execution-guide-web-candidate__bullet {
-      font-size: 11px;
+    .execution-guide-web-candidate__rank {
+      width: 24px;
+      text-align: center;
+      font-size: 12px;
       font-weight: 700;
-      color: #245fbe;
-      background: #eaf2ff;
-      border: 1px solid #cfe0ff;
-      border-radius: 999px;
-      padding: 1px 7px;
-      line-height: 1.5;
+      color: #6b7684;
     }
     .execution-guide-web-candidate__text {
-      font-size: 13.5px;
-      color: #1f2d3d;
-      line-height: 1.56;
+      font-size: 14px;
+      color: #191f28;
+      line-height: 1.62;
       word-break: break-word;
     }
     .execution-guide-web-plans {
       margin-top: 8px;
       display: grid;
-      gap: 12px;
+      gap: 18px;
     }
     .execution-guide-web-plan-card {
-      border: 1px solid #dfe8f7;
-      border-radius: 12px;
+      border: 1px solid #e7ecf3;
+      border-radius: 16px;
       background: #ffffff;
-      box-shadow: 0 1px 3px rgba(28, 85, 176, 0.06);
-      padding: 11px 12px 10px;
+      box-shadow: 0 1px 2px rgba(15, 23, 42, 0.05);
+      padding: 16px 16px 14px;
     }
     .execution-guide-web-plan-card h3 {
       margin: 0;
-      font-size: 15px;
-      color: #123257;
+      font-size: 24px;
+      color: #1f6feb;
       font-weight: 700;
       line-height: 1.35;
+      padding-bottom: 9px;
+      border-bottom: 1px solid #eef2f7;
+      letter-spacing: -0.01em;
     }
     .execution-guide-web-facts {
-      margin: 9px 0 0;
+      margin: 11px 0 0;
       padding-left: 1.05rem;
       display: grid;
-      gap: 4px;
+      gap: 6px;
     }
     .execution-guide-web-facts li {
       font-size: 13.5px;
-      line-height: 1.55;
+      line-height: 1.62;
       color: #263547;
     }
     .execution-guide-web-headlines {
-      margin-top: 10px;
-      border-top: 1px dashed #d9e3f4;
-      padding-top: 8px;
+      margin-top: 12px;
+      border-top: 1px solid #eef2f7;
+      padding-top: 12px;
+      background: #fafbfc;
+      border-radius: 10px;
+      padding-left: 12px;
+      padding-right: 12px;
+      padding-bottom: 10px;
     }
     .execution-guide-web-headlines__title {
       font-size: 11px;
@@ -1678,6 +1705,14 @@ export function renderLayout(params: {
       font-size: 13px;
       color: #3a485c;
       line-height: 1.5;
+    }
+    .execution-guide-web-headlines a {
+      color: #2b6de5;
+      text-decoration: none;
+      font-weight: 500;
+    }
+    .execution-guide-web-headlines a:hover {
+      text-decoration: underline;
     }
     .content hr { border: 0; border-top: 1px solid var(--color-border-default); margin: 0.9em 0; }
     .content ul, .content ol { margin: 0.55em 0 0.9em; padding-left: 1.4em; }
