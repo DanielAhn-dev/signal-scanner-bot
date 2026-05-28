@@ -4,7 +4,8 @@ import path from 'node:path'
 import { createDailyCandidatePlanningReportResult } from './marketInsightService'
 import { getUserInvestmentPrefs } from './userService'
 import { createWeeklyReportPdf } from './weeklyReportService'
-import { buildCandidateCardsWebHtml, buildConvictionWebHtml, HTML_BODY_PREFIX } from './reportWebRenderService'
+import { buildCandidateCardsWebHtml, buildConvictionWebHtml, buildPullbackWebHtml, HTML_BODY_PREFIX } from './reportWebRenderService'
+import { selectForecastsForTopic } from './reportTopicForecasts'
 
 export type ReportTopic =
   | '추천'
@@ -56,8 +57,17 @@ export function getKstDateKey(now = new Date()): string {
   return `${year}-${month}-${day}`
 }
 
-export function buildAudienceKey(chatId: number | null): string {
-  return chatId ? `chat:${chatId}` : 'anon'
+export function buildAudienceKey(input: number | null | { chatId?: number | null; clientId?: string | null }): string {
+  if (typeof input === 'object' && input !== null) {
+    const clientId = String(input.clientId || '').trim()
+    if (clientId) return `client:${clientId}`
+    const chatId = Number(input.chatId ?? 0)
+    if (Number.isFinite(chatId) && chatId > 0) return `chat:${Math.trunc(chatId)}`
+    return 'anon'
+  }
+  const chatId = Number(input ?? 0)
+  if (Number.isFinite(chatId) && chatId > 0) return `chat:${Math.trunc(chatId)}`
+  return 'anon'
 }
 
 export function createSupabaseServiceClientFromEnv(): SupabaseClient {
@@ -168,13 +178,18 @@ export async function buildReportBodyText(params: {
   const report = await createDailyCandidatePlanningReportResult(supabase, {
     riskProfile,
     chatId: chatId ?? undefined,
+    fixedDisplayLimit: 5,
+    excludeHoldingCodes: true,
   })
+  const dailyForecasts = selectForecastsForTopic('추천', report.forecasts)
+  const convictionForecasts = selectForecastsForTopic('확신추천', report.forecasts)
+  const publicForecasts = selectForecastsForTopic('공개추천', report.forecasts)
 
   const baseText = report.text || ''
 
   if (topic === '확신추천') {
     return {
-      bodyText: HTML_BODY_PREFIX + buildConvictionWebHtml(report.forecasts),
+      bodyText: HTML_BODY_PREFIX + buildConvictionWebHtml(convictionForecasts),
       sourceLabel: '/리포트 명령 결과',
     }
   }
@@ -182,7 +197,7 @@ export async function buildReportBodyText(params: {
   if (topic === '추천') {
     return {
       bodyText: HTML_BODY_PREFIX + buildCandidateCardsWebHtml({
-        forecasts: report.forecasts,
+        forecasts: dailyForecasts,
         title: '오늘의 후보 리포트 · 우선 점검 카드',
         subtitle: '눌림목·점수·리스크를 종합해 오늘 바로 볼 후보를 신뢰도 순으로 정렬했습니다.',
         note: '상위 1~2개에 우선 집중하고 추격보다 분할 진입을 기본으로 운용하세요.',
@@ -195,7 +210,7 @@ export async function buildReportBodyText(params: {
   if (topic === '공개추천') {
     return {
       bodyText: HTML_BODY_PREFIX + buildCandidateCardsWebHtml({
-        forecasts: report.forecasts,
+        forecasts: publicForecasts,
         title: '공유용 오늘의 후보 리포트',
         subtitle: '개인 보유/자금 정보는 제외하고 후보 핵심 지표만 공개용으로 구성했습니다.',
         note: '공유용 리포트는 참고 자료이며 최종 투자 판단은 본인 책임입니다.',
@@ -210,6 +225,17 @@ export async function buildReportBodyText(params: {
       chatId: chatId ?? 999999,
       topic: WEEKLY_REPORT_TOPIC_MAP[topic],
     })
+
+    if (topic === '눌림목') {
+      return {
+        bodyText: HTML_BODY_PREFIX + buildPullbackWebHtml({
+          title: weekly.title,
+          summaryText: weekly.summaryText,
+          caption: weekly.caption,
+        }),
+        sourceLabel: '/리포트 명령 결과',
+      }
+    }
 
     return {
       bodyText: [

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useToast } from '../components/ToastProvider'
-import { getCurrentChatIdFromStore } from '../stores/profileStore'
+import { getCurrentChatIdFromStore, getCurrentClientIdFromStore } from '../stores/profileStore'
 
 type ShareListItem = {
   shareId: string
@@ -36,10 +36,12 @@ function appendQueryParam(url: string, key: string, value: string): string {
 function buildUiRequest(endpoint: string) {
   const base = import.meta.env.VITE_API_BASE || ''
   const uiKey = import.meta.env.VITE_UI_READ_KEY
+  const clientId = getCurrentClientIdFromStore()
   const chatId = getCurrentChatIdFromStore()
 
   let resolvedEndpoint = endpoint
   if (uiKey) resolvedEndpoint = appendQueryParam(resolvedEndpoint, 'ui_key', uiKey)
+  if (clientId) resolvedEndpoint = appendQueryParam(resolvedEndpoint, 'client_id', clientId)
   if (chatId) resolvedEndpoint = appendQueryParam(resolvedEndpoint, 'chat_id', chatId)
 
   const url = base

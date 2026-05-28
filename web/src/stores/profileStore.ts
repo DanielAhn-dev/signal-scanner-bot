@@ -18,6 +18,7 @@ type ProfileActions = {
 }
 
 export const selectProfile = (state: ProfileState) => state.profile
+export const selectCurrentClientId = (state: ProfileState) => state.profile.clientId || ''
 export const selectCurrentChatId = (state: ProfileState) => state.profile.telegramId || ''
 export const selectIsTelegramLinked = (state: ProfileState) => !!state.profile.telegramId
 
@@ -63,6 +64,14 @@ export const useProfileStore = create<ProfileState & ProfileActions>((set) => ({
 
 export function getCurrentChatIdFromStore(): string {
   return useProfileStore.getState().profile.telegramId || ''
+}
+
+export function getCurrentClientIdFromStore(): string {
+  return useProfileStore.getState().profile.clientId || ''
+}
+
+export function useCurrentClientId(): string {
+  return useProfileStore(selectCurrentClientId)
 }
 
 export function useCurrentChatId(): string {

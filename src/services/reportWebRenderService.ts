@@ -466,6 +466,53 @@ ${cards}
 </div>`
 }
 
+export function buildPullbackWebHtml(input: {
+  title: string
+  summaryText: string
+  caption: string
+}): string {
+  const title = escapeHtml(input.title || '다음 주 눌림목 리포트')
+  const summary = String(input.summaryText || '').trim()
+  const caption = escapeHtml(input.caption || '')
+  const lines = summary.split(/\r?\n/).map((line) => line.trim()).filter(Boolean)
+  const topLine = lines.find((line) => line.includes('상위 후보')) || lines[0] || ''
+  const candidates = (() => {
+    const raw = topLine.split(':').slice(1).join(':').trim()
+    if (!raw) return [] as string[]
+    return raw
+      .split('/')
+      .map((part) => part.replace(/\s+/g, ' ').trim())
+      .filter(Boolean)
+      .slice(0, 6)
+  })()
+  const metaLine = lines.find((line) => line.includes('데이터 상태')) || ''
+  const guideLine = lines.find((line) => line.includes('진입 밴드') || line.includes('목표가'))
+    || lines.find((line) => line.includes('분할 진입'))
+    || '분할 진입 밴드와 목표가 기준을 먼저 고정하고 대응하세요.'
+  const narrative = lines
+    .filter((line) => line !== topLine && line !== metaLine)
+    .slice(0, 3)
+
+  return `<section style="border:1px solid #d8e5ff;background:linear-gradient(135deg,#f0f6ff 0%,#ffffff 62%);border-radius:16px;padding:16px 16px 14px;box-shadow:0 2px 10px rgba(20,80,180,0.06)">
+  <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap">
+    <div>
+      <div style="font-size:11px;font-weight:700;letter-spacing:0.06em;color:#2a5bb8;text-transform:uppercase">Next Week Pullback</div>
+      <div style="margin-top:4px;font-size:23px;line-height:1.2;font-weight:800;letter-spacing:-0.02em;color:#102542">${title}</div>
+    </div>
+    <div style="font-size:11px;color:#4b668f;background:#e8f0ff;border:1px solid #c8dafd;padding:4px 10px;border-radius:999px">스윙/중기 선진입 후보</div>
+  </div>
+  <div style="margin-top:12px;padding:11px 12px;border-radius:12px;background:#ffffff;border:1px solid #dce6f4;color:#2a3547;font-size:12.5px;line-height:1.7">
+    ${escapeHtml(guideLine)}
+  </div>
+  <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap">
+    ${candidates.length ? candidates.map((candidate, idx) => `<span style="display:inline-flex;align-items:center;gap:6px;padding:6px 10px;border-radius:999px;border:1px solid #cfe0ff;background:#ffffff;color:#1b3b70;font-size:12px;font-weight:600"><span style="display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;border-radius:50%;background:${idx === 0 ? '#2a5bb8' : '#9eb8e5'};color:#fff;font-size:10px;font-weight:700">${idx + 1}</span>${escapeHtml(candidate)}</span>`).join('') : '<span style="font-size:12px;color:#6b7280">상위 후보 데이터가 아직 준비되지 않았습니다.</span>'}
+  </div>
+</section>
+${narrative.length ? `<section style="margin-top:12px;border:1px solid #e4ebf5;background:#ffffff;border-radius:14px;padding:14px 14px 12px"><div style="font-size:12px;color:#415168;line-height:1.8">${narrative.map((line) => `<p style=\"margin:0 0 6px\">${escapeHtml(line)}</p>`).join('')}</div></section>` : ''}
+${metaLine ? `<section style="margin-top:12px;border:1px solid #e8edf2;background:#f7fafc;border-radius:12px;padding:10px 12px;font-size:11.5px;color:#5a6a7f">${escapeHtml(metaLine)}</section>` : ''}
+${caption ? `<section style="margin-top:10px;color:#6f7f93;font-size:13px;font-style:italic">${caption}</section>` : ''}`
+}
+
 // ─── Page Layout ─────────────────────────────────────────────────────────────
 
 export function renderLayout(params: {
@@ -479,6 +526,7 @@ export function renderLayout(params: {
   const { title, topic, sourceLabel, contentHtml, description, shareLocked = false } = params
   const desc = description || `${topicLabel(topic)} 리포트를 웹에서 열람합니다.`
   const badge = shareLocked ? '공유 링크' : topicLabel(topic)
+  const topicClass = topic === '눌림목' ? 'topic-pullback' : ''
 
   return `<!doctype html>
 <html lang="ko">
@@ -564,6 +612,19 @@ export function renderLayout(params: {
       border-bottom: 1px solid var(--color-border-default);
       background: linear-gradient(120deg, var(--color-brand-subtle), rgba(255,255,255,0.97) 55%);
     }
+    .topic-pullback .hero {
+      background:
+        radial-gradient(circle at 20% -10%, rgba(42, 91, 184, 0.22), transparent 34%),
+        linear-gradient(120deg, #eaf2ff 0%, #f8fbff 52%, #ffffff 100%);
+    }
+    .topic-pullback .badge {
+      color: #1f4f9d;
+      background: #e7f0ff;
+      border-color: rgba(31, 79, 157, 0.24);
+    }
+    .topic-pullback h1 {
+      color: #102542;
+    }
     .badge {
       display: inline-block;
       color: var(--color-brand);
@@ -647,7 +708,7 @@ export function renderLayout(params: {
   </style>
 </head>
 <body>
-  <main class="shell">
+  <main class="shell ${topicClass}">
     <header class="hero">
       <span class="badge">${escapeHtml(badge)}</span>
       <h1>${escapeHtml(title)}</h1>

@@ -53,7 +53,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const origin = (req.headers.origin as string) || process.env.UI_CORS_ORIGIN || '*'
   res.setHeader('Access-Control-Allow-Origin', origin)
   res.setHeader('Access-Control-Allow-Methods', 'GET,POST,OPTIONS')
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type,x-ui-key,x-user-chat-id')
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type,x-ui-key,x-user-chat-id,x-user-client-id,Authorization')
   res.setHeader('Access-Control-Allow-Credentials', 'true')
   res.setHeader('Cache-Control', 'private, max-age=8, stale-while-revalidate=30')
   if (req.method === 'OPTIONS') return res.status(204).end()
@@ -79,8 +79,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const withCount = String(qParams.withCount || '') === '1'
 
     const user = await resolveUiUserContext(req)
-    const chatId = user.chatId
-    if (!chatId) {
+    const filterColumn = user.clientId ? 'client_id' : (user.chatId ? 'chat_id' : null)
+    const filterValue = user.clientId || user.chatId || null
+    if (!filterColumn || !filterValue) {
       return res.status(200).json({
         data: [],
         count: withCount ? 0 : undefined,
@@ -102,7 +103,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const bypassCache = String(qParams.cacheMs || '') === '0'
 
     const cacheKey = JSON.stringify({
-      chatId,
+      filterColumn,
+      filterValue,
       page,
       pageSize,
       codeOrQ,
@@ -125,10 +127,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     // build base query
     let base = withCount
-      ? supabase.from('virtual_positions').select('id, chat_id, code, buy_price, buy_date, memo, created_at, updated_at, quantity, invested_amount, status, broker_name, account_name, stock:stocks(code,name,close,sector_id,sector:sectors(id,name))', { count: 'exact' })
-      : supabase.from('virtual_positions').select('id, chat_id, code, buy_price, buy_date, memo, created_at, updated_at, quantity, invested_amount, status, broker_name, account_name, stock:stocks(code,name,close,sector_id,sector:sectors(id,name))')
+      ? supabase.from('virtual_positions').select('id, chat_id, client_id, code, buy_price, buy_date, memo, created_at, updated_at, quantity, invested_amount, status, broker_name, account_name, stock:stocks(code,name,close,sector_id,sector:sectors(id,name))', { count: 'exact' })
+      : supabase.from('virtual_positions').select('id, chat_id, client_id, code, buy_price, buy_date, memo, created_at, updated_at, quantity, invested_amount, status, broker_name, account_name, stock:stocks(code,name,close,sector_id,sector:sectors(id,name))')
 
-    base = base.eq('chat_id', chatId)
+    base = base.eq(filterColumn, filterValue)
 
     if (codeOrQ) {
       const like = `%${codeOrQ.replace(/%/g, '')}%`
@@ -434,7 +436,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       realtimeMap: realtimePriceMap,
       fallbackToCloseCount,
       extra: {
-        chatId,
+        audience: `${filterColumn}:${String(filterValue)}`,
         page,
         pageSize,
         positionType,

@@ -125,7 +125,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const origin = (req.headers.origin as string) || process.env.UI_CORS_ORIGIN || '*'
   res.setHeader('Access-Control-Allow-Origin', origin)
   res.setHeader('Access-Control-Allow-Methods', 'GET,POST,OPTIONS')
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type,x-ui-key,x-user-chat-id')
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type,x-ui-key,x-user-chat-id,x-user-client-id,Authorization')
   res.setHeader('Access-Control-Allow-Credentials', 'true')
   res.setHeader('Cache-Control', 'private, max-age=3, stale-while-revalidate=20')
   if (req.method === 'OPTIONS') return res.status(204).end()
@@ -155,14 +155,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const modeFilter = modeFilterRaw === 'auto' || modeFilterRaw === 'manual' ? modeFilterRaw : 'all'
 
     const user = await resolveUiUserContext(req)
-    const chatId = user.chatId
-    if (!chatId) return res.status(200).json({ data: [], count: withCount ? 0 : undefined, page, pageSize })
+    const filterColumn = user.clientId ? 'client_id' : (user.chatId ? 'chat_id' : null)
+    const filterValue = user.clientId || user.chatId || null
+    if (!filterColumn || !filterValue) return res.status(200).json({ data: [], count: withCount ? 0 : undefined, page, pageSize })
 
     const from = (page - 1) * pageSize
     const to = from + pageSize - 1
 
     const bypassCache = String((q as any).cacheMs || '') === '0'
-    const cacheKey = JSON.stringify({ chatId, page, pageSize, withCount, keyword, actionFilter, modeFilter })
+    const cacheKey = JSON.stringify({ filterColumn, filterValue, page, pageSize, withCount, keyword, actionFilter, modeFilter })
 
     if (!bypassCache && DECISIONS_CACHE_TTL_MS > 0) {
       const cached = decisionsCache.get(cacheKey)
@@ -173,8 +174,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     const query = withCount
-      ? supabase.from('virtual_decision_logs').select('*', { count: 'exact' }).eq('chat_id', chatId).order('created_at', { ascending: false })
-      : supabase.from('virtual_decision_logs').select('*').eq('chat_id', chatId).order('created_at', { ascending: false })
+      ? supabase.from('virtual_decision_logs').select('*', { count: 'exact' }).eq(filterColumn, filterValue).order('created_at', { ascending: false })
+      : supabase.from('virtual_decision_logs').select('*').eq(filterColumn, filterValue).order('created_at', { ascending: false })
 
     if (actionFilter) {
       query.eq('action', actionFilter)

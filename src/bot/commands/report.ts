@@ -1226,6 +1226,7 @@ export async function createDailyCandidateReportPdf(
     captionTitle?: string;
     captionSubtitle?: string;
     summaryText?: string;
+    renderBodyFromText?: boolean;
   }
 ): Promise<{
   bytes: Uint8Array;
@@ -1253,6 +1254,7 @@ export async function createDailyCandidateReportPdf(
   const captionTitle = options?.captionTitle ?? "오늘의 투자 후보 리포트";
   const captionSubtitle = options?.captionSubtitle ?? "추천 엔진 기준 일일 대응 후보 PDF";
   const summaryText = options?.summaryText ?? "오늘의 투자 후보 리포트 PDF를 보냈습니다.";
+  const renderBodyFromText = options?.renderBodyFromText ?? true;
   ctx.pageTitle = title;
   drawTopicHero(
     ctx,
@@ -1265,6 +1267,20 @@ export async function createDailyCandidateReportPdf(
   const isConvictionReport = filePrefix.includes("conviction") || title.includes("확신추천");
   if (isConvictionReport) {
     drawConvictionCandidateSection(ctx, report.forecasts ?? []);
+    ctx.finalizePage();
+    return {
+      bytes: await pdf.save(),
+      fileName: `${filePrefix}_${chatId}_${ymd}.pdf`,
+      caption: [
+        captionTitle,
+        `기준일: ${krDate}`,
+        captionSubtitle,
+      ].join("\n"),
+      summaryText,
+    };
+  }
+
+  if (!renderBodyFromText) {
     ctx.finalizePage();
     return {
       bytes: await pdf.save(),

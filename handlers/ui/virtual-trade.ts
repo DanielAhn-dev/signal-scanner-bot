@@ -7,7 +7,7 @@ const ORIGIN = process.env.UI_CORS_ORIGIN || '*'
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   res.setHeader('Access-Control-Allow-Origin', ORIGIN)
   res.setHeader('Access-Control-Allow-Methods', 'GET,POST,OPTIONS')
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type,x-ui-key,x-user-chat-id')
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type,x-ui-key,x-user-chat-id,x-user-client-id,Authorization')
   res.setHeader('Access-Control-Allow-Credentials', 'true')
   if (req.method === 'OPTIONS') return res.status(204).end()
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' })
@@ -31,8 +31,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const pr = Number(price)
     const gross = qty * pr
     const user = await resolveUiUserContext(req)
-    const chatId = user.chatId
-    if (!chatId) return res.status(400).json({ error: 'chat_id required (header x-user-chat-id, query/body chat_id, or server default)' })
+    const filterColumn = user.clientId ? 'client_id' : (user.chatId ? 'chat_id' : null)
+    const filterValue = user.clientId || user.chatId || null
+    if (!filterColumn || !filterValue) return res.status(400).json({ error: 'identity required (client_id or chat_id)' })
 
     let brokerName = String(broker_name || '').trim() || null
     let accountName = String(account_name || '').trim() || null
@@ -40,7 +41,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const { data: posRows } = await supabase
         .from('virtual_positions')
         .select('broker_name,account_name,quantity,status,id')
-        .eq('chat_id', chatId)
+        .eq(filterColumn, filterValue)
         .eq('code', String(code))
         .order('quantity', { ascending: false })
         .order('id', { ascending: false })
@@ -51,7 +52,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     const insertResp = await supabase.from('virtual_trades').insert([{ 
-      chat_id: chatId,
+      chat_id: user.chatId ?? null,
+      client_id: user.clientId ?? null,
       code: String(code),
       side: String(side).toUpperCase(),
       price: pr,
@@ -87,7 +89,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const positionSelectBase = supabase
         .from('virtual_positions')
         .select('id, quantity, invested_amount, buy_price, buy_date, broker_name, account_name')
-        .eq('chat_id', chatId)
+        .eq(filterColumn, filterValue)
         .eq('code', codeText)
       const positionSelect = applyAccountScope(positionSelectBase)
       const { data: existingRows, error: posErr } = await positionSelect.order('id', { ascending: false }).limit(1)
@@ -122,7 +124,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         const { data: insertedPos, error: insErr } = await supabase
           .from('virtual_positions')
           .insert([{
-            chat_id: chatId,
+            chat_id: user.chatId ?? null,
+            client_id: user.clientId ?? null,
             code: codeText,
             quantity: qty,
             invested_amount: gross,
@@ -139,7 +142,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       }
 
       const { error: lotInsertErr } = await supabase.from('virtual_trade_lots').insert([{
-        chat_id: chatId,
+        chat_id: user.chatId ?? null,
+        client_id: user.clientId ?? null,
         code: codeText,
         position_id: positionRow?.id || null,
         acquired_price: pr,
@@ -160,7 +164,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         const scopedPosQueryBase = supabase
           .from('virtual_positions')
           .select('id')
-          .eq('chat_id', chatId)
+          .eq(filterColumn, filterValue)
           .eq('code', codeText)
         const scopedPosQuery = applyAccountScope(scopedPosQueryBase)
         const { data: scopedPosRows } = await scopedPosQuery.limit(200)
@@ -169,7 +173,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         let lotsQuery = supabase
           .from('virtual_trade_lots')
           .select('id, position_id, acquired_price, remaining_quantity')
-          .eq('chat_id', chatId)
+          .eq(filterColumn, filterValue)
           .eq('code', codeText)
           .gt('remaining_quantity', 0)
         let lots: any[] = []
@@ -193,7 +197,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             await supabase.from('virtual_trade_lot_matches').insert([{
               trade_id: trade.id,
               lot_id: lot.id,
-              chat_id: chatId,
+              chat_id: user.chatId ?? null,
+              client_id: user.clientId ?? null,
               code: codeText,
               quantity: take,
               unit_cost: unitCost,
@@ -237,7 +242,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           const posQueryBase = supabase
             .from('virtual_positions')
             .select('id, quantity, invested_amount, buy_price')
-            .eq('chat_id', chatId)
+            .eq(filterColumn, filterValue)
             .eq('code', codeText)
           const posQuery = applyAccountScope(posQueryBase)
           const { data: posRows } = await posQuery.order('id', { ascending: false }).limit(1)

@@ -36,7 +36,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const origin = (req.headers.origin as string) || ORIGIN || '*'
   res.setHeader('Access-Control-Allow-Origin', origin)
   res.setHeader('Access-Control-Allow-Methods', 'GET,POST,DELETE,OPTIONS')
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type,x-ui-key,x-user-chat-id')
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type,x-ui-key,x-user-chat-id,x-user-client-id,Authorization')
   res.setHeader('Access-Control-Allow-Credentials', 'true')
 
   if (req.method === 'OPTIONS') return res.status(204).end()
@@ -57,15 +57,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   const user = await resolveUiUserContext(req)
-  const chatId = user.chatId
-  if (!chatId) return res.status(400).json({ error: 'chat_id required (header x-user-chat-id, query/body chat_id, or server default)' })
+  const filterColumn = user.clientId ? 'client_id' : (user.chatId ? 'chat_id' : null)
+  const filterValue = user.clientId || user.chatId || null
+  if (!filterColumn || !filterValue) return res.status(400).json({ error: 'identity required (client_id or chat_id)' })
 
   try {
     if (req.method === 'GET') {
       const { data, error } = await supabase
         .from('virtual_positions')
         .select('code, buy_price, buy_date, created_at, memo, quantity, status, stock:stocks(name, close)')
-        .eq('chat_id', chatId)
+        .eq(filterColumn, filterValue)
         .order('created_at', { ascending: false })
 
       if (error) return res.status(500).json({ error: error.message })
@@ -106,7 +107,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const { data: existing, error: exErr } = await supabase
         .from('virtual_positions')
         .select('id, code, status, quantity, invested_amount')
-        .eq('chat_id', chatId)
+        .eq(filterColumn, filterValue)
         .eq('code', code)
         .maybeSingle()
       if (exErr) return res.status(500).json({ error: exErr.message })
@@ -136,7 +137,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const { data: inserted, error: insErr } = await supabase
         .from('virtual_positions')
         .insert([{
-          chat_id: chatId,
+          chat_id: user.chatId ?? null,
+          client_id: user.clientId ?? null,
           code,
           buy_price: close,
           buy_date: today,
@@ -157,7 +159,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const { data: existing, error: exErr } = await supabase
       .from('virtual_positions')
       .select('id, code, status, quantity')
-      .eq('chat_id', chatId)
+      .eq(filterColumn, filterValue)
       .eq('code', code)
       .maybeSingle()
     if (exErr) return res.status(500).json({ error: exErr.message })

@@ -6,7 +6,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const origin = (req.headers.origin as string) || process.env.UI_CORS_ORIGIN || '*'
   res.setHeader('Access-Control-Allow-Origin', origin)
   res.setHeader('Access-Control-Allow-Methods', 'GET,POST,OPTIONS')
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type,x-ui-key,x-user-chat-id')
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type,x-ui-key,x-user-chat-id,x-user-client-id,Authorization')
   res.setHeader('Access-Control-Allow-Credentials', 'true')
   if (req.method === 'OPTIONS') return res.status(204).end()
 
@@ -23,15 +23,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   try {
     const user = await resolveUiUserContext(req)
-    const resolvedChatId = user.chatId
+    const filterColumn = user.clientId ? 'client_id' : (user.chatId ? 'chat_id' : null)
+    const filterValue = user.clientId || user.chatId || null
 
     if (req.method === 'GET') {
-      const chatId = resolvedChatId
-      if (!chatId) return res.status(200).json({ data: null })
+      if (!filterColumn || !filterValue) return res.status(200).json({ data: null })
       const { data, error } = await supabase
         .from('virtual_autotrade_settings')
         .select('*')
-        .eq('chat_id', Number(chatId))
+        .eq(filterColumn, filterValue)
         .limit(1)
 
       if (error) return res.status(500).json({ error: error.message })
@@ -40,14 +40,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     if (req.method === 'POST') {
       const body = req.body || {}
-      const chatId = resolvedChatId
-      if (!chatId) return res.status(400).json({ error: 'chat_id required' })
+      if (!filterColumn || !filterValue) return res.status(400).json({ error: 'identity required' })
 
       const VALID_STRATEGIES = ['HOLD_SAFE', 'REDUCE_TIGHT', 'WAIT_AND_DIP_BUY']
       const rawStrategy = String(body.selected_strategy || '').trim().toUpperCase()
 
       const payload: any = {
-        chat_id: Number(chatId),
+        chat_id: user.chatId ? Number(user.chatId) : null,
+        client_id: user.clientId || null,
         is_enabled: body.is_enabled === true || body.is_enabled === 'true' || false,
         monday_buy_slots: body.monday_buy_slots != null ? Number(body.monday_buy_slots) : undefined,
         max_positions: body.max_positions != null ? Number(body.max_positions) : undefined,
@@ -59,9 +59,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       }
 
       // upsert
+      const onConflict = filterColumn
       const { data, error } = await supabase
         .from('virtual_autotrade_settings')
-        .upsert(payload, { onConflict: 'chat_id' })
+        .upsert(payload, { onConflict })
 
       if (error) return res.status(500).json({ error: error.message })
       return res.status(200).json({ data: data && data[0] ? data[0] : null })

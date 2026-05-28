@@ -1,6 +1,21 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { createClient } from '@supabase/supabase-js'
 
+function errorMessage(error: unknown): string {
+  return String((error as { message?: string })?.message || error || '')
+}
+
+function isMissingTableError(error: unknown, table: string): boolean {
+  const msg = errorMessage(error)
+  return msg.includes(`Could not find the table 'public.${table}'`)
+    || (msg.includes('relation') && msg.includes(table) && msg.includes('does not exist'))
+}
+
+function isMissingColumnError(error: unknown, column: string): boolean {
+  const msg = errorMessage(error)
+  return msg.includes(`column ${column} does not exist`) || (msg.includes('column') && msg.includes(column) && msg.includes('does not exist'))
+}
+
 function normalizeTelegramChatId(raw: unknown): string {
   const value = String(raw ?? '').trim().replace(/\s+/g, '')
   if (!value) return ''
@@ -60,12 +75,31 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const clientId = authenticatedUserId || String(req.query.client_id || req.query.clientId || '')
       if (!clientId) return res.status(400).json({ error: 'client_id required' })
 
-      const { data, error } = await supabase
+      let data: Array<Record<string, unknown>> | null = null
+      let error: { message?: string } | null = null
+
+      const first = await supabase
         .from('web_user_profiles')
         .select('client_id,telegram_id,nickname')
         .eq('client_id', clientId)
         .limit(1)
 
+      data = first.data as Array<Record<string, unknown>> | null
+      error = first.error
+
+      if (error && isMissingColumnError(error, 'nickname')) {
+        const fallback = await supabase
+          .from('web_user_profiles')
+          .select('client_id,telegram_id')
+          .eq('client_id', clientId)
+          .limit(1)
+        data = (fallback.data as Array<Record<string, unknown>> | null)?.map((row) => ({ ...row, nickname: null })) || null
+        error = fallback.error
+      }
+
+      if (error && isMissingTableError(error, 'web_user_profiles')) {
+        return res.status(200).json({ data: null })
+      }
       if (error) return res.status(500).json({ error: error.message })
       return res.status(200).json({ data: data && data[0] ? data[0] : null })
     }
@@ -87,9 +121,25 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         nickname: body.nickname || null,
       }
 
-      const { data, error } = await supabase
+      let { data, error } = await supabase
         .from('web_user_profiles')
         .upsert(payload, { onConflict: 'client_id' })
+
+      if (error && isMissingColumnError(error, 'nickname')) {
+        const fallbackPayload = {
+          client_id: clientId,
+          telegram_id: telegramId ? Number(telegramId) : null,
+        }
+        const fallback = await supabase
+          .from('web_user_profiles')
+          .upsert(fallbackPayload, { onConflict: 'client_id' })
+        data = fallback.data
+        error = fallback.error
+      }
+
+      if (error && isMissingTableError(error, 'web_user_profiles')) {
+        return res.status(200).json({ data: null })
+      }
 
       if (error) return res.status(500).json({ error: error.message })
       return res.status(200).json({ data: data && data[0] ? data[0] : null })

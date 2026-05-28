@@ -15,6 +15,11 @@ export const ADVANCED_ROUTES = new Set([
 
 const ACCESS_TABLE = 'web_advanced_access_users'
 
+type AccessIdentity = {
+  clientId: string | null
+  chatId: number | null
+}
+
 function parsePositiveInt(raw: unknown): number | null {
   const value = Number(String(raw ?? '').trim())
   if (!Number.isFinite(value) || value <= 0) return null
@@ -36,6 +41,17 @@ function getOwnerAdminChatId(): number | null {
   return parsePositiveInt(process.env.TELEGRAM_OWNER_USER_ID)
 }
 
+function parseAdminClientIdSet(): Set<string> {
+  const raw = String(process.env.UI_ADMIN_CLIENT_IDS || process.env.UI_ADMIN_CLIENT_ID || '').trim()
+  if (!raw) return new Set<string>()
+  return new Set(
+    raw
+      .split(',')
+      .map((v) => String(v).trim())
+      .filter(Boolean),
+  )
+}
+
 function getSupabaseAdminClient(): SupabaseClient | null {
   const url = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_KEY
@@ -49,6 +65,15 @@ export async function resolveRequesterChatId(req: VercelRequest): Promise<number
   return user.chatId
 }
 
+export async function resolveRequesterIdentity(req: VercelRequest): Promise<AccessIdentity | null> {
+  const user = await resolveUiUserContext(req)
+  if (user.source === 'env' || user.source === 'none') return null
+  return {
+    clientId: user.clientId,
+    chatId: user.chatId,
+  }
+}
+
 export function isAdminChatId(chatId: number | null): boolean {
   if (!chatId) return false
   const owner = getOwnerAdminChatId()
@@ -56,11 +81,20 @@ export function isAdminChatId(chatId: number | null): boolean {
   return parseAdminChatIdSet().has(chatId)
 }
 
-async function getAccessRowFromTable(supabase: SupabaseClient, chatId: number): Promise<{ isEnabled: boolean; isAdmin: boolean }> {
+export function isAdminClientId(clientId: string | null): boolean {
+  if (!clientId) return false
+  return parseAdminClientIdSet().has(clientId)
+}
+
+async function getAccessRowFromTable(supabase: SupabaseClient, identity: AccessIdentity): Promise<{ isEnabled: boolean; isAdmin: boolean }> {
+  const column = identity.clientId ? 'client_id' : 'chat_id'
+  const value = identity.clientId || identity.chatId
+  if (!value) return { isEnabled: false, isAdmin: false }
+
   const { data, error } = await supabase
     .from(ACCESS_TABLE)
-    .select('chat_id,is_enabled,is_admin')
-    .eq('chat_id', chatId)
+    .select('chat_id,client_id,is_enabled,is_admin')
+    .eq(column, value)
     .limit(1)
 
   if (error || !data || !data[0]) return { isEnabled: false, isAdmin: false }
@@ -71,36 +105,38 @@ async function getAccessRowFromTable(supabase: SupabaseClient, chatId: number): 
   }
 }
 
-export async function evaluateAdvancedAccess(chatId: number | null): Promise<{
+export async function evaluateAdvancedAccess(identity: AccessIdentity | null): Promise<{
   allowed: boolean
   isAdmin: boolean
   hasAdvancedAccess: boolean
 }> {
-  if (!chatId) return { allowed: false, isAdmin: false, hasAdvancedAccess: false }
+  if (!identity || (!identity.clientId && !identity.chatId)) {
+    return { allowed: false, isAdmin: false, hasAdvancedAccess: false }
+  }
 
-  const isOwnerAdmin = isAdminChatId(chatId)
+  const isOwnerAdmin = isAdminChatId(identity.chatId) || isAdminClientId(identity.clientId)
   if (isOwnerAdmin) return { allowed: true, isAdmin: true, hasAdvancedAccess: true }
 
   const supabase = getSupabaseAdminClient()
   if (!supabase) return { allowed: false, isAdmin: false, hasAdvancedAccess: false }
 
-  const access = await getAccessRowFromTable(supabase, chatId)
+  const access = await getAccessRowFromTable(supabase, identity)
   const isAdmin = access.isAdmin
   const hasAdvancedAccess = access.isEnabled || isAdmin
   return { allowed: hasAdvancedAccess, isAdmin, hasAdvancedAccess }
 }
 
 export async function enforceAdvancedRouteAccess(req: VercelRequest): Promise<{ allowed: true } | { allowed: false; status: number; error: string }> {
-  const chatId = await resolveRequesterChatId(req)
-  if (!chatId) {
+  const identity = await resolveRequesterIdentity(req)
+  if (!identity || (!identity.clientId && !identity.chatId)) {
     return {
       allowed: false,
       status: 400,
-      error: 'chat_id required for advanced routes',
+      error: 'client_id or chat_id required for advanced routes',
     }
   }
 
-  const access = await evaluateAdvancedAccess(chatId)
+  const access = await evaluateAdvancedAccess(identity)
   if (access.allowed) return { allowed: true }
 
   return {

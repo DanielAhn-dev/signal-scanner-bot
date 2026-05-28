@@ -93,6 +93,22 @@ function buildCacheKey(): string {
   return 'adaptive:pullback:20:3'
 }
 
+function errorMessage(error: unknown): string {
+  return String((error as { message?: string })?.message || error || '')
+}
+
+function isMissingColumnError(error: unknown, table: string, column: string): boolean {
+  const msg = errorMessage(error)
+  return msg.includes(`column ${table}.${column} does not exist`)
+    || (msg.includes('does not exist') && msg.includes(table) && msg.includes(column))
+}
+
+function isMissingTableError(error: unknown, table: string): boolean {
+  const msg = errorMessage(error)
+  return msg.includes(`Could not find the table 'public.${table}'`)
+    || (msg.includes('relation') && msg.includes(table) && msg.includes('does not exist'))
+}
+
 function calcWeight(acc: FactorAccumulator): number {
   if (acc.count < 4) return 0
   const avgReturnPct = acc.returnSum / acc.count
@@ -152,77 +168,98 @@ async function getHistoricalPullbackRows(supabase: SupabaseClient, tradeDates: s
   if (codeSet.length === 0) return rows
 
   const scoresByCode = new Map<string, { signal: string | null; stable_turn: string | null }>()
+  let canReadStableTurn = true
 
   // 각 코드별 최신 scores 데이터 조회
   for (const part of chunkValues(codeSet)) {
     const need = new Set(part)
-    await selectPaged<Record<string, unknown>>(
-      async (from, to) =>
-        await supabase
-          .from('scores')
-          .select('code,signal,stable_turn,asof')
-          .in('code', part)
-          .order('asof', { ascending: false })
-          .range(from, to),
-      {
-        pageSize: 1000,
-        maxRows: 100000,
-        logLabel: 'adaptive.scores_latest',
-        collectRows: false,
-        onPage: (pageRows) => {
-          for (const scoreRow of pageRows) {
-            const code = String((scoreRow as { code?: string }).code || '')
-            if (code && !scoresByCode.has(code)) {
-              scoresByCode.set(code, {
-                signal: (scoreRow as { signal?: string }).signal ?? null,
-                stable_turn: (scoreRow as { stable_turn?: string }).stable_turn ?? null,
-              })
-              need.delete(code)
+    const runScoresPaged = async (selectColumns: string) => {
+      await selectPaged<Record<string, unknown>>(
+        async (from, to) =>
+          (await supabase
+            .from('scores')
+            .select(selectColumns)
+            .in('code', part)
+            .order('asof', { ascending: false })
+            .range(from, to)) as unknown as { data?: Record<string, unknown>[] | null; error?: { message?: string } | null },
+        {
+          pageSize: 1000,
+          maxRows: 100000,
+          logLabel: 'adaptive.scores_latest',
+          collectRows: false,
+          onPage: (pageRows) => {
+            for (const scoreRow of pageRows) {
+              const code = String((scoreRow as { code?: string }).code || '')
+              if (code && !scoresByCode.has(code)) {
+                scoresByCode.set(code, {
+                  signal: (scoreRow as { signal?: string }).signal ?? null,
+                  stable_turn: canReadStableTurn ? ((scoreRow as { stable_turn?: string }).stable_turn ?? null) : null,
+                })
+                need.delete(code)
+              }
             }
-          }
-        },
-        shouldStop: () => need.size === 0,
+          },
+          shouldStop: () => need.size === 0,
+        }
+      )
+    }
+
+    try {
+      await runScoresPaged(canReadStableTurn ? 'code,signal,stable_turn,asof' : 'code,signal,asof')
+    } catch (error) {
+      if (canReadStableTurn && isMissingColumnError(error, 'scores', 'stable_turn')) {
+        canReadStableTurn = false
+        await runScoresPaged('code,signal,asof').catch((fallbackError) => {
+          console.warn('adaptive.scores_latest fallback fetch failed:', errorMessage(fallbackError))
+          return undefined
+        })
+      } else if (!isMissingTableError(error, 'scores')) {
+        console.warn('adaptive.scores_latest fetch failed:', errorMessage(error))
       }
-    ).catch((error) => {
-      console.warn('adaptive.scores_latest fetch failed:', error)
-      return undefined
-    })
+    }
   }
 
   const regimeByCode = new Map<string, string>()
+  let decisionsAvailable = true
 
   // 각 코드별 최신 market_regime 조회 (decisions 테이블에서)
   for (const part of chunkValues(codeSet)) {
+    if (!decisionsAvailable) break
     const need = new Set(part)
-    await selectPaged<Record<string, unknown>>(
-      async (from, to) =>
-        await supabase
-          .from('decisions')
-          .select('code,market_regime,created_at')
-          .in('code', part)
-          .order('created_at', { ascending: false })
-          .range(from, to),
-      {
-        pageSize: 1000,
-        maxRows: 100000,
-        logLabel: 'adaptive.decisions_regime_latest',
-        collectRows: false,
-        onPage: (pageRows) => {
-          for (const decRow of pageRows) {
-            const code = String((decRow as { code?: string }).code || '')
-            const regime = (decRow as { market_regime?: string }).market_regime ?? null
-            if (code && regime && !regimeByCode.has(code)) {
-              regimeByCode.set(code, regime)
-              need.delete(code)
+    try {
+      await selectPaged<Record<string, unknown>>(
+        async (from, to) =>
+          await supabase
+            .from('decisions')
+            .select('code,market_regime,created_at')
+            .in('code', part)
+            .order('created_at', { ascending: false })
+            .range(from, to),
+        {
+          pageSize: 1000,
+          maxRows: 100000,
+          logLabel: 'adaptive.decisions_regime_latest',
+          collectRows: false,
+          onPage: (pageRows) => {
+            for (const decRow of pageRows) {
+              const code = String((decRow as { code?: string }).code || '')
+              const regime = (decRow as { market_regime?: string }).market_regime ?? null
+              if (code && regime && !regimeByCode.has(code)) {
+                regimeByCode.set(code, regime)
+                need.delete(code)
+              }
             }
-          }
-        },
-        shouldStop: () => need.size === 0,
+          },
+          shouldStop: () => need.size === 0,
+        }
+      )
+    } catch (error) {
+      if (isMissingTableError(error, 'decisions')) {
+        decisionsAvailable = false
+      } else {
+        console.warn('adaptive.decisions_regime_latest fetch failed:', errorMessage(error))
       }
-    ).catch((error) => {
-      console.warn('adaptive.decisions_regime_latest fetch failed:', error)
-      return undefined
-    })
+    }
   }
 
   // rows에 signal, stable_turn, market_regime 병합
@@ -248,8 +285,10 @@ async function getPriceRows(
 
   for (const tableName of PRICE_TABLES) {
     const merged: PriceRow[] = []
+    let tableUnavailable = false
 
     for (const part of chunkValues(codes)) {
+      if (tableUnavailable) break
       const rows = await selectPaged<Record<string, unknown>>(
         async (from, to) =>
           await supabase
@@ -262,7 +301,11 @@ async function getPriceRows(
             .range(from, to),
         { pageSize: 1000, maxRows: 100000, logLabel: `adaptive.price.${tableName}` }
       ).catch((error) => {
-        console.warn(`adaptive.price.${tableName} fetch failed:`, error)
+        if (isMissingTableError(error, tableName)) {
+          tableUnavailable = true
+          return []
+        }
+        console.warn(`adaptive.price.${tableName} fetch failed:`, errorMessage(error))
         return []
       })
 

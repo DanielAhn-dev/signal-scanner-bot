@@ -3,7 +3,7 @@ import {
   evaluateAdvancedAccess,
   getAccessTableName,
   getSupabaseAdminForUi,
-  resolveRequesterChatId,
+  resolveRequesterIdentity,
 } from './_accessControl'
 
 function toChatId(raw: unknown): number | null {
@@ -31,7 +31,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const origin = (req.headers.origin as string) || process.env.UI_CORS_ORIGIN || '*'
   res.setHeader('Access-Control-Allow-Origin', origin)
   res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PATCH,DELETE,OPTIONS')
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type,x-ui-key,x-user-chat-id')
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type,x-ui-key,x-user-chat-id,x-user-client-id,Authorization')
   res.setHeader('Access-Control-Allow-Credentials', 'true')
   if (req.method === 'OPTIONS') return res.status(204).end()
 
@@ -40,8 +40,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(401).json({ error: 'Unauthorized' })
   }
 
-  const requesterChatId = await resolveRequesterChatId(req)
-  const requesterAccess = await evaluateAdvancedAccess(requesterChatId)
+  const requesterIdentity = await resolveRequesterIdentity(req)
+  const requesterAccess = await evaluateAdvancedAccess(requesterIdentity)
+  const requesterChatId = requesterIdentity?.chatId || null
+  const requesterClientId = requesterIdentity?.clientId || null
   const isAdmin = requesterAccess.isAdmin
   const supabase = getSupabaseAdminForUi()
   if (!supabase) return res.status(500).json({ error: 'Server not configured' })
@@ -59,14 +61,22 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           await supabase
             .from(table)
             .upsert(
-              { chat_id: requesterChatId, is_enabled: true, is_admin: true },
-              { onConflict: 'chat_id', ignoreDuplicates: false }
+              {
+                chat_id: requesterChatId,
+                client_id: requesterClientId,
+                is_enabled: true,
+                is_admin: true,
+                updated_by_chat_id: requesterChatId,
+                updated_by_client_id: requesterClientId,
+              },
+              { onConflict: requesterClientId ? 'client_id' : 'chat_id', ignoreDuplicates: false }
             )
         }
       }
 
       return res.status(200).json({
         data: {
+          client_id: requesterClientId,
           chat_id: requesterChatId,
           is_admin: requesterAccess.isAdmin,
           has_advanced_access: requesterAccess.hasAdvancedAccess,
@@ -241,7 +251,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
       const { data, error } = await supabase
         .from(table)
-        .select('chat_id,nickname,note,is_enabled,is_admin,updated_by_chat_id,created_at,updated_at')
+        .select('chat_id,client_id,nickname,note,is_enabled,is_admin,updated_by_chat_id,updated_by_client_id,created_at,updated_at')
         .order('updated_at', { ascending: false })
 
       if (error) return res.status(500).json({ error: error.message })
@@ -251,21 +261,24 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (req.method === 'POST') {
       const body = req.body || {}
       const targetChatId = toChatId(body.chat_id ?? body.chatId)
-      if (!targetChatId) return res.status(400).json({ error: 'chat_id required' })
+      const targetClientId = String(body.client_id ?? body.clientId ?? '').trim() || null
+      if (!targetChatId && !targetClientId) return res.status(400).json({ error: 'client_id or chat_id required' })
 
       const payload = {
         chat_id: targetChatId,
+        client_id: targetClientId,
         nickname: body.nickname ? String(body.nickname) : null,
         note: body.note ? String(body.note) : null,
         is_enabled: body.is_enabled !== false,
         is_admin: body.is_admin === true,
         updated_by_chat_id: requesterChatId,
+        updated_by_client_id: requesterClientId,
       }
 
       const { data, error } = await supabase
         .from(table)
-        .upsert(payload, { onConflict: 'chat_id' })
-        .select('chat_id,nickname,note,is_enabled,is_admin,updated_by_chat_id,created_at,updated_at')
+        .upsert(payload, { onConflict: targetClientId ? 'client_id' : 'chat_id' })
+        .select('chat_id,client_id,nickname,note,is_enabled,is_admin,updated_by_chat_id,updated_by_client_id,created_at,updated_at')
         .limit(1)
 
       if (error) return res.status(500).json({ error: error.message })
@@ -275,21 +288,27 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (req.method === 'PATCH') {
       const body = req.body || {}
       const targetChatId = toChatId(body.chat_id ?? body.chatId)
-      if (!targetChatId) return res.status(400).json({ error: 'chat_id required' })
+      const targetClientId = String(body.client_id ?? body.clientId ?? '').trim() || null
+      if (!targetChatId && !targetClientId) return res.status(400).json({ error: 'client_id or chat_id required' })
 
       const patch: Record<string, unknown> = {
         updated_by_chat_id: requesterChatId,
+        updated_by_client_id: requesterClientId,
       }
       if (body.nickname !== undefined) patch.nickname = body.nickname ? String(body.nickname) : null
       if (body.note !== undefined) patch.note = body.note ? String(body.note) : null
       if (body.is_enabled !== undefined) patch.is_enabled = Boolean(body.is_enabled)
       if (body.is_admin !== undefined) patch.is_admin = Boolean(body.is_admin)
 
-      const { data, error } = await supabase
+      let updateQuery = supabase
         .from(table)
         .update(patch)
-        .eq('chat_id', targetChatId)
-        .select('chat_id,nickname,note,is_enabled,is_admin,updated_by_chat_id,created_at,updated_at')
+      updateQuery = targetClientId
+        ? updateQuery.eq('client_id', targetClientId)
+        : updateQuery.eq('chat_id', targetChatId)
+
+      const { data, error } = await updateQuery
+        .select('chat_id,client_id,nickname,note,is_enabled,is_admin,updated_by_chat_id,updated_by_client_id,created_at,updated_at')
         .limit(1)
 
       if (error) return res.status(500).json({ error: error.message })
@@ -299,12 +318,17 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (req.method === 'DELETE') {
       const body = req.body || {}
       const targetChatId = toChatId(body.chat_id ?? body.chatId ?? req.query.chat_id ?? req.query.chatId)
-      if (!targetChatId) return res.status(400).json({ error: 'chat_id required' })
+      const targetClientId = String(body.client_id ?? body.clientId ?? req.query.client_id ?? req.query.clientId ?? '').trim() || null
+      if (!targetChatId && !targetClientId) return res.status(400).json({ error: 'client_id or chat_id required' })
 
-      const { error } = await supabase
+      let deleteQuery = supabase
         .from(table)
         .delete()
-        .eq('chat_id', targetChatId)
+      deleteQuery = targetClientId
+        ? deleteQuery.eq('client_id', targetClientId)
+        : deleteQuery.eq('chat_id', targetChatId)
+
+      const { error } = await deleteQuery
 
       if (error) return res.status(500).json({ error: error.message })
       return res.status(200).json({ ok: true })

@@ -11,6 +11,7 @@ import {
   saveReportBodySnapshot,
   type ReportTopic,
 } from '../../src/services/reportSnapshotService'
+import { resolveUiUserContext } from './_userContext'
 import {
   HTML_BODY_PREFIX,
   renderBodyText,
@@ -36,8 +37,8 @@ const reportWebCache = (() => {
   return g[key] as Map<string, CacheEntry>
 })()
 
-function buildCacheKey(topic: ReportTopic, chatId: number | null): string {
-  return `${topic}|${chatId ?? 'anon'}`
+function buildCacheKey(topic: ReportTopic, audienceKey: string): string {
+  return `${topic}|${audienceKey}`
 }
 
 function getCachedHtml(cacheKey: string): string | null {
@@ -74,8 +75,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   const topic = resolveReportTopic(req.query.topic)
-  const chatId = parseChatId(req.query.chatId ?? req.query.chat_id ?? req.headers['x-user-chat-id'])
-  const cacheKey = buildCacheKey(topic, chatId)
+  const user = await resolveUiUserContext(req)
+  const chatId = user.chatId ?? parseChatId(req.query.chatId ?? req.query.chat_id ?? req.headers['x-user-chat-id'])
+  const audienceKey = buildAudienceKey({ clientId: user.clientId, chatId })
+  const cacheKey = buildCacheKey(topic, audienceKey)
   const cachedHtml = getCachedHtml(cacheKey)
   if (cachedHtml) {
     res.setHeader('Content-Type', 'text/html; charset=utf-8')
@@ -100,7 +103,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     const supabase = createSupabaseServiceClientFromEnv()
     const reportDate = getKstDateKey()
-    const audienceKey = buildAudienceKey(chatId)
+    const audienceKey = buildAudienceKey({ clientId: user.clientId, chatId })
 
     const persisted = await getPersistedReportBody({
       supabase,

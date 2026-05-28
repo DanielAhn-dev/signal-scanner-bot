@@ -10,6 +10,7 @@ import {
   resolveReportTopic,
   saveReportBodySnapshot,
 } from '../../src/services/reportSnapshotService'
+import { resolveUiUserContext } from './_userContext'
 
 const ORIGIN = process.env.UI_CORS_ORIGIN || '*'
 
@@ -28,7 +29,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   const topic = resolveReportTopic(req.body?.topic || req.query.topic)
-  const chatId = parseChatId(req.body?.chatId || req.body?.chat_id || req.query.chatId || req.query.chat_id || req.headers['x-user-chat-id'])
+  const user = await resolveUiUserContext(req)
+  const chatId = user.chatId ?? parseChatId(req.body?.chatId || req.body?.chat_id || req.query.chatId || req.query.chat_id || req.headers['x-user-chat-id'])
 
   try {
     if (isGuideTopic(topic)) {
@@ -38,7 +40,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     const supabase = createSupabaseServiceClientFromEnv()
     const reportDate = getKstDateKey()
-    const audienceKey = buildAudienceKey(chatId)
+    const audienceKey = buildAudienceKey({ clientId: user.clientId, chatId })
 
     const persisted = await getPersistedReportBody({
       supabase,

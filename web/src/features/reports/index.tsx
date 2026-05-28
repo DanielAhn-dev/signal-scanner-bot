@@ -9,7 +9,7 @@ import { readSimulationPlan, type HighlightSimulationPlan } from '../simulator/p
 import { buildTelegramMessage, calcExpectedValue, calcSplitInvested } from '../simulator/telegramFormat'
 import { formatKrw } from '../../lib/format'
 import { useShareManager } from '../../hooks/useShareManager'
-import { useCurrentChatId } from '../../stores/profileStore'
+import { useCurrentChatId, useCurrentClientId } from '../../stores/profileStore'
 
 type ReportAction = {
   key: string
@@ -150,6 +150,7 @@ const REPORT_ACTIONS: ReportAction[] = [
 
 export default function ReportsPage() {
   const chatId = useCurrentChatId()
+  const clientId = useCurrentClientId()
   const [states, setStates] = useState<Record<string, { loading: boolean; msg?: string }>>({})
   const toast = useToast()
   const [simPlan, setSimPlan] = useState<HighlightSimulationPlan | null>(null)
@@ -170,6 +171,7 @@ export default function ReportsPage() {
     const uiKey = import.meta.env.VITE_UI_READ_KEY
     let resolvedEndpoint = endpoint
     if (uiKey) resolvedEndpoint = `${resolvedEndpoint}${resolvedEndpoint.includes('?') ? '&' : '?'}ui_key=${encodeURIComponent(uiKey)}`
+    if (clientId) resolvedEndpoint = `${resolvedEndpoint}${resolvedEndpoint.includes('?') ? '&' : '?'}client_id=${encodeURIComponent(clientId)}`
     if (chatId) resolvedEndpoint = `${resolvedEndpoint}${resolvedEndpoint.includes('?') ? '&' : '?'}chat_id=${encodeURIComponent(chatId)}`
     const url = base
       ? `${base.replace(/\/$/, '')}${resolvedEndpoint.startsWith('/') ? resolvedEndpoint : `/${resolvedEndpoint}`}`

@@ -10,6 +10,7 @@ import {
 } from '../../src/bot/commands/report'
 import { getUserInvestmentPrefs } from '../../src/services/userService'
 import { createWeeklyReportPdf } from '../../src/services/weeklyReportService'
+import { selectForecastsForTopic } from '../../src/services/reportTopicForecasts'
 
 const ORIGIN = process.env.UI_CORS_ORIGIN || '*'
 
@@ -70,6 +71,15 @@ function resolveChatId(req: VercelRequest): number | null {
   return asInt(req.query.chatId ?? req.query.chat_id ?? req.headers['x-user-chat-id'])
 }
 
+function buildPublicSummaryText() {
+  return [
+    '<b>공유용 오늘의 후보 리포트</b>',
+    '─────────────────',
+    '개인 보유/자금 정보는 제외하고 후보 핵심 지표만 공개용으로 구성했습니다.',
+    '요약 표 중심으로 확인해 주세요.',
+  ].join('\n')
+}
+
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   res.setHeader('Access-Control-Allow-Origin', ORIGIN)
   res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS')
@@ -124,12 +134,22 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     let report = await createDailyCandidatePlanningReportResult(supabase, {
       riskProfile,
       chatId: chatId ?? undefined,
+      fixedDisplayLimit: 5,
+      excludeHoldingCodes: true,
     })
+    const topicForecasts = selectForecastsForTopic(
+      topic === '확신추천' || topic === '공개추천' ? topic : '추천',
+      report.forecasts,
+    )
+    report = {
+      ...report,
+      forecasts: topicForecasts,
+    }
 
     if (topic === '공개추천') {
       report = {
         ...report,
-        text: buildPublicDailyCandidateText(report.text),
+        text: buildPublicDailyCandidateText(buildPublicSummaryText()),
       }
     } else if (topic === '확신추천') {
       report = {
@@ -149,6 +169,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             captionTitle: '오늘의 투자 후보 리포트',
             captionSubtitle: '추천 엔진 기준 일일 후보 PDF (개인정보 제외)',
             summaryText: '오늘의 투자 후보 리포트 PDF를 생성했습니다.',
+            renderBodyFromText: false,
           }
         : topic === '확신추천'
           ? {

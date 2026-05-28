@@ -69,7 +69,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const origin = (req.headers.origin as string) || process.env.UI_CORS_ORIGIN || '*'
   res.setHeader('Access-Control-Allow-Origin', origin)
   res.setHeader('Access-Control-Allow-Methods', 'GET,POST,OPTIONS')
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type,x-ui-key,x-user-chat-id')
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type,x-ui-key,x-user-chat-id,x-user-client-id,Authorization')
   res.setHeader('Access-Control-Allow-Credentials', 'true')
   res.setHeader('Cache-Control', 'private, max-age=5, stale-while-revalidate=30')
   if (req.method === 'OPTIONS') return res.status(204).end()
@@ -91,8 +91,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   const bypassCache = String((req.query as any)?.cacheMs || '') === '0'
   const user = await resolveUiUserContext(req)
-  const chatId = user.chatId
-  if (!chatId) {
+  const filterColumn = user.clientId ? 'client_id' : (user.chatId ? 'chat_id' : null)
+  const filterValue = user.clientId || user.chatId || null
+  if (!filterColumn || !filterValue) {
     return res.status(200).json({
       data: {
         positions: 0,
@@ -103,7 +104,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     })
   }
 
-  const cacheKey = `summary:${chatId}`
+  const cacheKey = `summary:${filterColumn}:${String(filterValue)}`
   if (!bypassCache && SUMMARY_CACHE_TTL_MS > 0) {
     const cached = summaryCache.get(cacheKey)
     if (cached && Date.now() <= cached.expiresAt) {
@@ -124,7 +125,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       supabase
         .from('virtual_positions')
         .select('id,code,quantity,buy_price,invested_amount,stock:stocks(code,close)')
-        .eq('chat_id', chatId)
+        .eq(filterColumn, filterValue)
         .gt('quantity', 0)
         .returns<PositionSummaryRow[]>(),
       SUMMARY_QUERY_TIMEOUT_MS,
@@ -136,7 +137,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         supabase
           .from('virtual_decision_logs')
           .select('id', { count: 'planned', head: true })
-          .eq('chat_id', chatId),
+          .eq(filterColumn, filterValue),
         SUMMARY_QUERY_TIMEOUT_MS,
         'virtual_decision_logs summary query',
       ),
@@ -144,7 +145,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         supabase
           .from('scan_run_logs')
           .select('created_at')
-          .eq('chat_id', chatId)
+          .eq(filterColumn, filterValue)
           .order('created_at', { ascending: false })
           .limit(1)
           .returns<ScanRunRow[]>(),
@@ -213,7 +214,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       requestedCodes: positionCodes,
       realtimeMap: realtimePriceMap,
       fallbackToCloseCount,
-      extra: { chatId, positions: posCount ?? 0 },
+      extra: { audience: `${filterColumn}:${String(filterValue)}`, positions: posCount ?? 0 },
     })
 
     const payload = { data: summary }

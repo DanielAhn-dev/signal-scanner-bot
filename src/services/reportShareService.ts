@@ -109,10 +109,11 @@ export async function createReportShare(params: {
 export async function listReportShares(params: {
   supabase: SupabaseClient
   topic?: string
+  audienceKey?: string
   activeOnly?: boolean
   limit?: number
 }) {
-  const { supabase, topic, activeOnly = true, limit = 20 } = params
+  const { supabase, topic, audienceKey, activeOnly = true, limit = 20 } = params
   let query = supabase
     .from(REPORT_SHARE_TABLE)
     .select('id,public_token,topic,report_date,audience_key,source_label,expires_at,created_at,revoked_at,access_count,last_accessed_at')
@@ -120,6 +121,7 @@ export async function listReportShares(params: {
     .limit(limit)
 
   if (topic) query = query.eq('topic', topic)
+  if (audienceKey) query = query.eq('audience_key', audienceKey)
   if (activeOnly) {
     query = query.is('revoked_at', null).gt('expires_at', new Date().toISOString())
   }

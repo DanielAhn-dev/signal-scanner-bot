@@ -1,5 +1,5 @@
 import { getApiBase } from './userContext'
-import { getCurrentChatIdFromStore } from '../stores/profileStore'
+import { getCurrentChatIdFromStore, getCurrentClientIdFromStore } from '../stores/profileStore'
 import { isReviewMode, getMockResponse } from './review-mode'
 import { supabase } from './supabase'
 
@@ -136,12 +136,12 @@ export async function apiFetch(
   }
   const uiKey = import.meta.env.VITE_UI_READ_KEY
   if (uiKey) headers.set('x-ui-key', uiKey)
-  const requiresUserChatIdHeader = /\/api\/ui\/(positions|positions-maintenance|watchlist|virtual-trade|decisions|summary|settings|notify|access-users|operations|portfolio-share|simulation-plan|account-policies|advisor-performance)(\?|$)|\/api\/ui\?route=(positions|positions-maintenance|watchlist|virtual-trade|decisions|summary|settings|notify|access-users|operations|portfolio-share|simulation-plan|account-policies|advisor-performance)(&|$)/.test(url)
-  const requiresUserChatIdQuery = /\/api\/ui\/(positions|positions-maintenance|watchlist|virtual-trade|decisions|summary|settings|notify|access-users|operations|portfolio-share|simulation-plan|account-policies|advisor-performance|trigger-update|trigger-briefing|sync-history|sync-status|report-pdf|report-share|report-snapshot|report-web)(\?|$)|\/api\/ui\?route=(positions|positions-maintenance|watchlist|virtual-trade|decisions|summary|settings|notify|access-users|operations|portfolio-share|simulation-plan|account-policies|advisor-performance|trigger-update|trigger-briefing|sync-history|sync-status|report-pdf|report-share|report-snapshot|report-web)(&|$)/.test(url)
-  if (requiresUserChatIdHeader || requiresUserChatIdQuery) {
+  const requiresUserIdentityQuery = /\/api\/ui\/(positions|positions-maintenance|watchlist|virtual-trade|decisions|summary|settings|notify|access-users|operations|portfolio-share|simulation-plan|account-policies|advisor-performance|trigger-update|trigger-briefing|sync-history|sync-status|report-pdf|report-share|report-snapshot|report-web)(\?|$)|\/api\/ui\?route=(positions|positions-maintenance|watchlist|virtual-trade|decisions|summary|settings|notify|access-users|operations|portfolio-share|simulation-plan|account-policies|advisor-performance|trigger-update|trigger-briefing|sync-history|sync-status|report-pdf|report-share|report-snapshot|report-web)(&|$)/.test(url)
+  if (requiresUserIdentityQuery) {
+    const clientId = getCurrentClientIdFromStore()
     const chatId = getCurrentChatIdFromStore()
-    if (chatId && requiresUserChatIdHeader) headers.set('x-user-chat-id', chatId)
-    if (chatId && requiresUserChatIdQuery) url = appendQueryParam(url, 'chat_id', chatId)
+    if (clientId) url = appendQueryParam(url, 'client_id', clientId)
+    if (chatId) url = appendQueryParam(url, 'chat_id', chatId)
   }
   if (!headers.has('content-type') && fetchOpts.body) headers.set('content-type', 'application/json')
 

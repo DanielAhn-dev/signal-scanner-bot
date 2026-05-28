@@ -2,6 +2,7 @@ import type { VercelRequest } from '@vercel/node'
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
 
 export type UiUserContext = {
+  clientId: string | null
   chatId: number | null
   source: 'auth' | 'header' | 'query' | 'body' | 'env' | 'none'
 }
@@ -23,6 +24,11 @@ function toChatId(raw: unknown): number | null {
   const n = Number(v)
   if (!Number.isFinite(n) || n <= 0) return null
   return Math.trunc(n)
+}
+
+function toClientId(raw: unknown): string | null {
+  const v = String(raw ?? '').trim()
+  return v ? v : null
 }
 
 export async function resolveUiUserContext(req: VercelRequest): Promise<UiUserContext> {
@@ -54,7 +60,7 @@ export async function resolveUiUserContext(req: VercelRequest): Promise<UiUserCo
               .eq('client_id', clientId)
               .maybeSingle()
             const chatId = toChatId(data?.telegram_id)
-            if (chatId) return { chatId, source: 'auth' }
+            return { clientId, chatId, source: 'auth' }
           }
         }
       } catch {
@@ -63,23 +69,31 @@ export async function resolveUiUserContext(req: VercelRequest): Promise<UiUserCo
     }
   }
 
-  const fromHeader = toChatId(req.headers['x-user-chat-id'])
-  if (fromHeader) return { chatId: fromHeader, source: 'header' }
-
   const q = req.query || {}
-  const fromQuery = toChatId((q as any).chat_id ?? (q as any).chatId)
-  if (fromQuery) return { chatId: fromQuery, source: 'query' }
-
   const body = (req.body || {}) as any
+  const clientId = toClientId(
+    req.headers['x-user-client-id']
+      ?? (q as any).client_id
+      ?? (q as any).clientId
+      ?? body.client_id
+      ?? body.clientId
+  )
+
+  const fromHeader = toChatId(req.headers['x-user-chat-id'])
+  if (fromHeader) return { clientId, chatId: fromHeader, source: 'header' }
+
+  const fromQuery = toChatId((q as any).chat_id ?? (q as any).chatId)
+  if (fromQuery) return { clientId, chatId: fromQuery, source: 'query' }
+
   const fromBody = toChatId(body.chat_id ?? body.chatId)
-  if (fromBody) return { chatId: fromBody, source: 'body' }
+  if (fromBody) return { clientId, chatId: fromBody, source: 'body' }
 
   const fromEnv = toChatId(
     process.env.DEFAULT_TELEGRAM_CHAT_ID ||
     process.env.TELEGRAM_DEFAULT_CHAT_ID ||
     process.env.VITE_DEFAULT_TELEGRAM_CHAT_ID,
   )
-  if (fromEnv) return { chatId: fromEnv, source: 'env' }
+  if (fromEnv) return { clientId, chatId: fromEnv, source: 'env' }
 
-  return { chatId: null, source: 'none' }
+  return { clientId, chatId: null, source: 'none' }
 }

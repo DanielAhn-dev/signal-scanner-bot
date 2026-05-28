@@ -938,6 +938,32 @@ async function getHoldingCountForPlan(
   }).length;
 }
 
+async function getHoldingCodesForPlan(
+  supabase: SupabaseClient,
+  chatId: number
+): Promise<Set<string>> {
+  const out = new Set<string>()
+  const { data, error } = await supabase
+    .from('watchlist')
+    .select('code, buy_price, quantity')
+    .eq('chat_id', chatId)
+
+  if (error) {
+    throw new Error(`보유 코드 조회 실패: ${error.message}`)
+  }
+
+  for (const row of data ?? []) {
+    const code = String((row as { code?: string }).code || '').trim()
+    const buyPrice = Number((row as { buy_price?: number | null }).buy_price ?? 0)
+    const quantity = Math.max(0, Math.floor(Number((row as { quantity?: number | null }).quantity ?? 0)))
+    if (code && buyPrice > 0 && quantity > 0) {
+      out.add(code)
+    }
+  }
+
+  return out
+}
+
 async function getSectorOverlapWarningsForPlan(
   supabase: SupabaseClient,
   chatId?: number
@@ -1322,7 +1348,14 @@ async function fetchPullbackCandidatesForDailyPlan(
 
 export async function createDailyCandidatePlanningReportResult(
   supabase: SupabaseClient,
-  options?: { riskProfile?: RiskProfile; mode?: "full" | "briefing"; chatId?: number; compactActionText?: boolean }
+  options?: {
+    riskProfile?: RiskProfile;
+    mode?: "full" | "briefing";
+    chatId?: number;
+    compactActionText?: boolean;
+    fixedDisplayLimit?: number;
+    excludeHoldingCodes?: boolean;
+  }
 ): Promise<DailyCandidatePlanningReportResult> {
   const riskProfile = options?.riskProfile ?? "safe";
   const mode = options?.mode ?? "full";
@@ -1363,9 +1396,22 @@ export async function createDailyCandidatePlanningReportResult(
     checkLimit: 40,
   });
 
-  const visiblePullbackItems = visiblePullbackItemsByOverlap.filter((item) => !blockedByNews.has(item.code));
-  const visibleKospiPicks = visibleKospiPicksByOverlap.filter((item) => !blockedByNews.has(item.code));
-  const visibleKosdaqPicks = visibleKosdaqPicksByOverlap.filter((item) => !blockedByNews.has(item.code));
+  let visiblePullbackItems = visiblePullbackItemsByOverlap.filter((item) => !blockedByNews.has(item.code));
+  let visibleKospiPicks = visibleKospiPicksByOverlap.filter((item) => !blockedByNews.has(item.code));
+  let visibleKosdaqPicks = visibleKosdaqPicksByOverlap.filter((item) => !blockedByNews.has(item.code));
+
+  let hiddenByHoldingCount = 0
+  if (options?.excludeHoldingCodes && options?.chatId) {
+    const holdingCodes = await getHoldingCodesForPlan(supabase, options.chatId).catch(() => new Set<string>())
+    if (holdingCodes.size > 0) {
+      const beforeCount = visiblePullbackItems.length + visibleKospiPicks.length + visibleKosdaqPicks.length
+      visiblePullbackItems = visiblePullbackItems.filter((item) => !holdingCodes.has(item.code))
+      visibleKospiPicks = visibleKospiPicks.filter((item) => !holdingCodes.has(item.code))
+      visibleKosdaqPicks = visibleKosdaqPicks.filter((item) => !holdingCodes.has(item.code))
+      const afterCount = visiblePullbackItems.length + visibleKospiPicks.length + visibleKosdaqPicks.length
+      hiddenByHoldingCount = Math.max(0, beforeCount - afterCount)
+    }
+  }
 
   const hiddenByOverlapCount =
     orderedPullbackItems.length - visiblePullbackItemsByOverlap.length +
@@ -1438,7 +1484,7 @@ export async function createDailyCandidatePlanningReportResult(
     kospiPicks: visibleKospiPicks,
     kosdaqPicks: visibleKosdaqPicks,
   });
-  const displayLimit = Math.max(1, planningConstraints?.displayLimit ?? 5);
+  const displayLimit = Math.max(1, Number(options?.fixedDisplayLimit ?? planningConstraints?.displayLimit ?? 5));
   const forecasts = buildDailyCandidateForecasts({
     pullbackItems: visiblePullbackItems,
     kospiPicks: visibleKospiPicks,
@@ -1556,6 +1602,9 @@ export async function createDailyCandidatePlanningReportResult(
       : []),
     ...(hiddenByNewsCount > 0
       ? ["", `<b>이벤트 리스크 제외</b>`, `• 뉴스 기반 이벤트 리스크(공개매수/상폐/거래정지 등)로 ${hiddenByNewsCount}개 후보를 본문에서 제외했습니다.`]
+      : []),
+    ...(hiddenByHoldingCount > 0
+      ? ["", `<b>보유 종목 제외</b>`, `• 신규 발굴 목적에 맞춰 현재 보유 중인 ${hiddenByHoldingCount}개 후보를 제외했습니다.`]
       : []),
     ...(sectorOverlapWarnings.size > 0
       ? ["", `<b>분산 경고</b>`, ...[...sectorOverlapWarnings.values()].slice(0, 2).map((warning) => `• 보유 섹터 ${warning.sectorName} 비중 ${warning.ratio.toFixed(1)}%로 높습니다. 같은 섹터 신규 진입은 보수적으로 보세요.`), ...(hiddenByOverlapCount > 0 ? [`• 강한 중복 섹터 후보 ${hiddenByOverlapCount}개는 이번 리포트 본문에서 제외했습니다.`] : [])]
