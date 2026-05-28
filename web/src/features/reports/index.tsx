@@ -57,6 +57,15 @@ const REPORT_ACTIONS: ReportAction[] = [
     fileName: 'conviction_candidate_report.pdf',
   },
   {
+    key: 'execution-guide-report-pdf',
+    label: '실행 가이드 리포트 PDF',
+    desc: '실행가이드 화면에서 생성한 자동추천 후보/진입계획 스냅샷을 PDF로 다운로드합니다.',
+    kind: 'download',
+    endpoint: '/api/ui/report-pdf?topic=실행가이드',
+    method: 'GET',
+    fileName: 'execution_guide_report.pdf',
+  },
+  {
     key: 'public-candidate-pdf',
     label: '공유용 후보 PDF',
     desc: '개인 보유/자금 정보를 제거한 버전을 다운로드합니다. (/리포트 공개추천 대응)',

@@ -46,6 +46,65 @@ type AutoCandidate = {
   reason: string
 }
 
+function toExecutionGuideSnapshotText(input: {
+  generatedAtIso: string
+  sourceLabel: string
+  codeList: string[]
+  capital: string
+  maxWeightPct: string
+  splitCount: string
+  riskMode: RiskMode
+  includeNews: boolean
+  autoCandidates: AutoCandidate[]
+  rows: GuideRow[]
+}): string {
+  const lines: string[] = []
+  const generatedAtText = new Date(input.generatedAtIso).toLocaleString('ko-KR')
+  lines.push('<b>실행 가이드 리포트</b>')
+  lines.push('─────────────────')
+  lines.push(`생성시각: ${generatedAtText}`)
+  lines.push(`출처: ${input.sourceLabel}`)
+  lines.push(`코드 ${input.codeList.length}개: ${input.codeList.join(', ') || '-'}`)
+  lines.push('')
+  lines.push('<b>설정</b>')
+  lines.push(`• 총 투자금: ${formatKrw(Math.max(0, Number(input.capital || 0)))}`)
+  lines.push(`• 종목당 최대 비중: ${Math.max(1, Math.min(100, Number(input.maxWeightPct || 25)))}%`)
+  lines.push(`• 분할 횟수: ${Math.max(1, Number(input.splitCount || 2))}`)
+  lines.push(`• 리스크 모드: ${input.riskMode}`)
+  lines.push(`• 뉴스 요약 포함: ${input.includeNews ? '예' : '아니오'}`)
+
+  if (input.autoCandidates.length > 0) {
+    lines.push('')
+    lines.push('<b>자동 추천 후보 TOP</b>')
+    for (const item of input.autoCandidates.slice(0, 8)) {
+      lines.push(`• ${item.name}(${item.code}) [${item.source === 'highlights' ? '집행우선' : '눌림목'}] 점수 ${formatNumber(item.score, 1)} · ${item.reason}`)
+    }
+  }
+
+  lines.push('')
+  lines.push('<b>종목별 실행 계획</b>')
+  if (input.rows.length === 0) {
+    lines.push('• 생성된 계획이 없습니다.')
+  } else {
+    for (const row of input.rows) {
+      lines.push(`• ${row.name}(${row.code})`) 
+      lines.push(`  - 점수/판정: ${row.score != null ? formatNumber(row.score, 1) : '—'} / ${row.statusLabel || '—'}`)
+      lines.push(`  - 진입: ${row.entryLow != null && row.entryHigh != null ? `${formatKrw(row.entryLow)} ~ ${formatKrw(row.entryHigh)}` : '—'}`)
+      lines.push(`  - 기준가: ${row.entryRef != null ? formatKrw(row.entryRef) : '—'}`)
+      lines.push(`  - 손절: ${row.stopPrice != null ? formatKrw(row.stopPrice) : '—'}`)
+      lines.push(`  - 목표1/목표2: ${row.target1 != null ? formatKrw(row.target1) : '—'} / ${row.target2 != null ? formatKrw(row.target2) : '—'}`)
+      lines.push(`  - 예산/수량: ${formatKrw(row.plannedBudget)} / ${row.qty.toLocaleString()}주`)
+      if (row.warnings.length > 0) lines.push(`  - 주의: ${row.warnings.join(' / ')}`)
+      if (row.headlines.length > 0) {
+        for (const headline of row.headlines.slice(0, 3)) {
+          lines.push(`    · ${headline}`)
+        }
+      }
+    }
+  }
+  return lines.join('\n')
+}
+
 function parseCodes(text: string): string[] {
   const seen = new Set<string>()
   const out: string[] = []
@@ -217,6 +276,37 @@ export default function ExecutionGuidePage() {
   const [autoError, setAutoError] = useState<string | null>(null)
   const [compactView, setCompactView] = useState(false)
 
+  const persistGuideSnapshot = async (payload: { generatedAtIso: string; rows: GuideRow[] }) => {
+    if (payload.rows.length === 0) return
+    const bodyText = toExecutionGuideSnapshotText({
+      generatedAtIso: payload.generatedAtIso,
+      sourceLabel,
+      codeList,
+      capital,
+      maxWeightPct,
+      splitCount,
+      riskMode,
+      includeNews,
+      autoCandidates,
+      rows: payload.rows,
+    })
+
+    try {
+      await apiFetch('/api/ui/report-snapshot', {
+        method: 'POST',
+        cacheMs: 0,
+        timeoutMs: 15_000,
+        body: JSON.stringify({
+          topic: '실행가이드',
+          bodyText,
+          sourceLabel: '/실행가이드 스냅샷',
+        }),
+      })
+    } catch {
+      // 공유/PDF를 위한 스냅샷 저장 실패는 화면 사용성을 방해하지 않는다.
+    }
+  }
+
   useEffect(() => {
     try {
       const params = new URLSearchParams(window.location.search)
@@ -331,7 +421,9 @@ export default function ExecutionGuidePage() {
       )
 
       setRows(fetched)
-      setGeneratedAt(new Date().toISOString())
+      const nextGeneratedAt = new Date().toISOString()
+      setGeneratedAt(nextGeneratedAt)
+      void persistGuideSnapshot({ generatedAtIso: nextGeneratedAt, rows: fetched })
     } catch (e: any) {
       setError(e?.message || String(e))
       setRows([])
