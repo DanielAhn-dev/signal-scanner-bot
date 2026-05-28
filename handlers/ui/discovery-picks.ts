@@ -1,5 +1,6 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { discoverMultibagger, type DiscoveryQoqMode } from '../../src/services/discoveryService'
+import { getPagingRunStatsSummary, resetPagingRunStats } from '../../src/services/supabasePaging'
 
 const ORIGIN = process.env.UI_CORS_ORIGIN || '*'
 
@@ -54,6 +55,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   try {
+    resetPagingRunStats()
     const result = await discoverMultibagger(limit, criteriaInput)
     return res.status(200).json({
       picks: result.picks,
@@ -68,6 +70,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       },
       funnel: result.funnel,
       fetchedAt: new Date().toISOString(),
+      meta: {
+        paging: getPagingRunStatsSummary(),
+      },
     })
   } catch (err: any) {
     console.error('[discovery-picks] error:', err)

@@ -2,6 +2,7 @@ import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { createClient } from '@supabase/supabase-js'
 import { resolveUiUserContext } from './_userContext'
 import { getDecisionReliabilitySummary } from '../../src/services/decisionLogService'
+import { getPagingRunStatsSummary, resetPagingRunStats } from '../../src/services/supabasePaging'
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   const origin = (req.headers.origin as string) || process.env.UI_CORS_ORIGIN || '*'
@@ -24,6 +25,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const supabase = createClient(url, key)
 
   try {
+    resetPagingRunStats()
+
     const user = await resolveUiUserContext(req)
     const chatId = user.chatId
     if (!chatId) return res.status(200).json({ data: null })
@@ -101,6 +104,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       data: {
         summary,
         recent,
+      },
+      meta: {
+        paging: getPagingRunStatsSummary(),
       },
     })
   } catch (e: any) {
