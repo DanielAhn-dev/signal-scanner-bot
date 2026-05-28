@@ -207,7 +207,7 @@ async function fetchLatestTwoTrendsByCode(
   const out = new Map<string, FundamentalTrendRow[]>();
   if (!codes.length) return out;
 
-  const chunks = chunkValues(codes, 200);
+  const chunks = chunkValues(codes);
   for (const part of chunks) {
     const partNeed = new Set(part);
     for (let offset = 0; ; offset += 1000) {
@@ -248,7 +248,7 @@ async function fetchSmartMoney12wByCode(
     .toISOString()
     .slice(0, 10);
 
-  const chunks = chunkValues(codes, 200);
+  const chunks = chunkValues(codes);
   for (const part of chunks) {
     const rows = await selectPaged<InvestorDailyRow>(
       async (from, to) =>
@@ -309,7 +309,7 @@ export async function discoverMultibagger(
   if (!codes.length) return { picks: [], criteria, funnel };
 
   const stocks: StockRow[] = [];
-  for (const codePart of chunkValues(codes, 200)) {
+  for (const codePart of chunkValues(codes)) {
     const { data, error } = await supabase
       .from("stocks")
       .select("code, name, market_cap, sector_id, market")

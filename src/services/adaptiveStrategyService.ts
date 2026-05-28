@@ -154,7 +154,7 @@ async function getHistoricalPullbackRows(supabase: SupabaseClient, tradeDates: s
   const scoresByCode = new Map<string, { signal: string | null; stable_turn: string | null }>()
 
   // 각 코드별 최신 scores 데이터 조회
-  for (const part of chunkValues(codeSet, 200)) {
+  for (const part of chunkValues(codeSet)) {
     const need = new Set(part)
     for (let offset = 0; ; offset += 1000) {
       const { data: scoresData, error } = await supabase
@@ -185,7 +185,7 @@ async function getHistoricalPullbackRows(supabase: SupabaseClient, tradeDates: s
   const regimeByCode = new Map<string, string>()
 
   // 각 코드별 최신 market_regime 조회 (decisions 테이블에서)
-  for (const part of chunkValues(codeSet, 200)) {
+  for (const part of chunkValues(codeSet)) {
     const need = new Set(part)
     for (let offset = 0; ; offset += 1000) {
       const { data: decisionData, error } = await supabase
@@ -235,7 +235,7 @@ async function getPriceRows(
   for (const tableName of PRICE_TABLES) {
     const merged: PriceRow[] = []
 
-    for (const part of chunkValues(codes, 200)) {
+    for (const part of chunkValues(codes)) {
       const rows = await selectPaged<Record<string, unknown>>(
         async (from, to) =>
           await supabase

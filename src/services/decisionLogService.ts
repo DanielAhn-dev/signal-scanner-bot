@@ -162,7 +162,7 @@ export async function getDecisionReliabilitySummary(
 
   const tradeMap = new Map<number, { side: string; pnlAmount: number }>();
   if (linkedTradeIds.length) {
-    for (const ids of chunkValues(linkedTradeIds, 200)) {
+    for (const ids of chunkValues(linkedTradeIds)) {
       const { data: tradeRows, error: tradeError } = await supabase
         .from(PORTFOLIO_TABLES.trades)
         .select("id, side, pnl_amount")

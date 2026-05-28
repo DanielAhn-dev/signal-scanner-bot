@@ -838,7 +838,7 @@ async function fetchIndicatorsByCodesForDailyCandidates(
   const out = new Map<string, IndicatorRow>();
   if (!codes.length) return out;
 
-  const chunks = chunkValues(codes, 200);
+  const chunks = chunkValues(codes);
   for (const part of chunks) {
     const need = new Set(part);
 

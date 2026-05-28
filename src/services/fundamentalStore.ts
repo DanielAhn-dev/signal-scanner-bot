@@ -99,7 +99,7 @@ export async function getFundamentalSnapshotsForCodes(
   if (!codes.length) return result;
   try {
     const grouped = new Map<string, FundamentalSnapshot>();
-    for (const part of chunkValues(codes, 200)) {
+    for (const part of chunkValues(codes)) {
       const need = new Set(part);
       for (let offset = 0; ; offset += 1000) {
         const { data, error } = await supabase
@@ -140,7 +140,7 @@ export async function getStockClosePrices(
   const map = new Map<string, number>();
   if (!codes.length) return map;
   try {
-    for (const part of chunkValues(codes, 200)) {
+    for (const part of chunkValues(codes)) {
       const { data, error } = await supabase
         .from("stocks")
         .select("code,close")
