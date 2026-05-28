@@ -1566,6 +1566,132 @@ function isMissingVirtualPositionHorizonColumns(error: unknown): boolean {
   );
 }
 
+function isMissingLegacyPositionAccountColumns(error: unknown): boolean {
+  if (!error || typeof error !== "object") return false;
+  const rec = error as Record<string, unknown>;
+  const code = String(rec.code ?? "").trim();
+  const message = String(rec.message ?? rec.details ?? "").toLowerCase();
+  if (code !== "42703") return false;
+  return (
+    message.includes("watchlist.broker_name") ||
+    message.includes("watchlist.account_name") ||
+    message.includes("broker_name") ||
+    message.includes("account_name")
+  );
+}
+
+function queryErrorMessage(error: unknown): string {
+  if (!error) return "unknown error";
+  if (typeof error === "object") {
+    const rec = error as Record<string, unknown>;
+    const message = String(rec.message ?? rec.details ?? rec.hint ?? "").trim();
+    if (message) return message;
+  }
+  return String(error);
+}
+
+async function fetchLegacyVirtualPositionsForChat(payload: {
+  supabase: SupabaseClientAny;
+  chatId: number;
+  select: string;
+  status?: string;
+}): Promise<{ data: Record<string, unknown>[] | null; error: unknown }> {
+  let query = payload.supabase
+    .from(PORTFOLIO_TABLES.positionsLegacy)
+    .select(payload.select)
+    .eq("chat_id", payload.chatId)
+    .is("broker_name", null)
+    .is("account_name", null);
+
+  if (payload.status) {
+    query = query.eq("status", payload.status);
+  }
+
+  const primary = await query;
+  if (!primary.error) {
+    return {
+      data: (primary.data ?? null) as Record<string, unknown>[] | null,
+      error: null,
+    };
+  }
+
+  if (!isMissingLegacyPositionAccountColumns(primary.error)) {
+    return {
+      data: null,
+      error: primary.error,
+    };
+  }
+
+  // Legacy schema fallback: watchlist 테이블에 broker/account 컬럼이 없으면 필터 없이 조회한다.
+  let fallbackQuery = payload.supabase
+    .from(PORTFOLIO_TABLES.positionsLegacy)
+    .select(payload.select)
+    .eq("chat_id", payload.chatId);
+
+  if (payload.status) {
+    fallbackQuery = fallbackQuery.eq("status", payload.status);
+  }
+
+  const fallback = await fallbackQuery;
+  return {
+    data: (fallback.data ?? null) as Record<string, unknown>[] | null,
+    error: fallback.error,
+  };
+}
+
+async function fetchLegacyPositionByCode(payload: {
+  supabase: SupabaseClientAny;
+  chatId: number;
+  code: string;
+}): Promise<{ data: { id?: number | null; broker_name?: string | null; account_name?: string | null } | null; error: unknown }> {
+  const primary = await payload.supabase
+    .from(PORTFOLIO_TABLES.positionsLegacy)
+    .select("id, broker_name, account_name")
+    .eq("chat_id", payload.chatId)
+    .eq("code", payload.code)
+    .maybeSingle();
+
+  if (!primary.error) {
+    return {
+      data: (primary.data as { id?: number | null; broker_name?: string | null; account_name?: string | null } | null) ?? null,
+      error: null,
+    };
+  }
+
+  if (!isMissingLegacyPositionAccountColumns(primary.error)) {
+    return {
+      data: null,
+      error: primary.error,
+    };
+  }
+
+  const fallback = await payload.supabase
+    .from(PORTFOLIO_TABLES.positionsLegacy)
+    .select("id")
+    .eq("chat_id", payload.chatId)
+    .eq("code", payload.code)
+    .maybeSingle();
+
+  if (fallback.error) {
+    return {
+      data: null,
+      error: fallback.error,
+    };
+  }
+
+  const row = (fallback.data as { id?: number | null } | null) ?? null;
+  return {
+    data: row
+      ? {
+          id: row.id ?? null,
+          broker_name: null,
+          account_name: null,
+        }
+      : null,
+    error: null,
+  };
+}
+
 async function appendTradeLog(payload: {
   supabase: SupabaseClientAny;
   chatId: number;
@@ -2494,23 +2620,23 @@ async function runMondayBuyForUser(payload: {
   const discoveryProfile = normalizeDiscoveryProfile(prefs.discovery_profile);
   const signalTrustThresholds = resolveSignalTrustThresholdsFromPrefs(prefs);
 
-  const { data: holdingRows, error: holdingError } = await payload.supabase
-    .from(PORTFOLIO_TABLES.positionsLegacy)
-    .select("id, code, status")
-    .eq("chat_id", chatId)
-    .is("broker_name", null)
-    .is("account_name", null);
+  const { data: holdingRows, error: holdingError } = await fetchLegacyVirtualPositionsForChat({
+    supabase: payload.supabase,
+    chatId,
+    select: "id, code, status",
+  });
 
   if (holdingError) {
+    const holdingErrorMessage = queryErrorMessage(holdingError);
     summary.errors += 1;
-    summary.notes.push(`보유 조회 실패: ${holdingError.message}`);
+    summary.notes.push(`보유 조회 실패: ${holdingErrorMessage}`);
     await writeActionLog({
       supabase: payload.supabase,
       runId: payload.runId,
       chatId,
       actionType: "ERROR",
       reason: "holdings-fetch-failed",
-      detail: { error: holdingError.message },
+      detail: { error: holdingErrorMessage },
     });
     return summary;
   }
@@ -3091,12 +3217,11 @@ async function runMondayBuyForUser(payload: {
         continue;
       }
 
-      const { data: existingPositionForCode, error: existingPositionForCodeError } = await payload.supabase
-        .from(PORTFOLIO_TABLES.positionsLegacy)
-        .select("id, broker_name, account_name")
-        .eq("chat_id", chatId)
-        .eq("code", candidate.code)
-        .maybeSingle();
+      const { data: existingPositionForCode, error: existingPositionForCodeError } = await fetchLegacyPositionByCode({
+        supabase: payload.supabase,
+        chatId,
+        code: candidate.code,
+      });
 
       if (existingPositionForCodeError) {
         throw existingPositionForCodeError;
@@ -3698,24 +3823,24 @@ async function runDailyReviewForUser(payload: {
     `신뢰도 임계값(${signalTrustThresholds.variant}): 신규 ${signalTrustThresholds.newBuy} · 추가 ${signalTrustThresholds.addOn} · 리밸런싱 ${signalTrustThresholds.rebalance}`
   );
 
-  const { data: holdingsData, error: holdingsError } = await payload.supabase
-    .from(PORTFOLIO_TABLES.positionsLegacy)
-    .select("id, code, buy_price, buy_date, created_at, quantity, invested_amount, status, memo")
-    .eq("chat_id", chatId)
-    .is("broker_name", null)
-    .is("account_name", null)
-    .eq("status", "holding");
+  const { data: holdingsData, error: holdingsError } = await fetchLegacyVirtualPositionsForChat({
+    supabase: payload.supabase,
+    chatId,
+    select: "id, code, buy_price, buy_date, created_at, quantity, invested_amount, status, memo",
+    status: "holding",
+  });
 
   if (holdingsError) {
+    const holdingsErrorMessage = queryErrorMessage(holdingsError);
     summary.errors += 1;
-    summary.notes.push(`보유 조회 실패: ${holdingsError.message}`);
+    summary.notes.push(`보유 조회 실패: ${holdingsErrorMessage}`);
     await writeActionLog({
       supabase: payload.supabase,
       runId: payload.runId,
       chatId,
       actionType: "ERROR",
       reason: "daily-holdings-fetch-failed",
-      detail: { error: holdingsError.message },
+      detail: { error: holdingsErrorMessage },
     });
     return summary;
   }
@@ -4106,16 +4231,16 @@ async function runDailyReviewForUser(payload: {
   }
 
   // 매도 이후 재조회 기준으로 추가매수/신규 매수 후보를 판단한다.
-  const { data: postHoldings, error: postHoldingsError } = await payload.supabase
-    .from(PORTFOLIO_TABLES.positionsLegacy)
-    .select("id, code, status, quantity, buy_price, invested_amount, created_at, buy_date, memo")
-    .eq("chat_id", chatId)
-    .is("broker_name", null)
-    .is("account_name", null);
+  const { data: postHoldings, error: postHoldingsError } = await fetchLegacyVirtualPositionsForChat({
+    supabase: payload.supabase,
+    chatId,
+    select: "id, code, status, quantity, buy_price, invested_amount, created_at, buy_date, memo",
+  });
 
   if (postHoldingsError) {
+    const postHoldingsErrorMessage = queryErrorMessage(postHoldingsError);
     summary.errors += 1;
-    summary.notes.push(`매도 후 보유 재조회 실패: ${postHoldingsError.message}`);
+    summary.notes.push(`매도 후 보유 재조회 실패: ${postHoldingsErrorMessage}`);
   } else {
     const activeHoldings = ((postHoldings ?? []) as HoldingRow[]).filter(
       (row) => (row.status ?? "holding") !== "closed"
@@ -4860,12 +4985,11 @@ async function runDailyReviewForUser(payload: {
             continue;
           }
 
-          const { data: existingPositionForCode, error: existingPositionForCodeError } = await payload.supabase
-            .from(PORTFOLIO_TABLES.positionsLegacy)
-            .select("id, broker_name, account_name")
-            .eq("chat_id", chatId)
-            .eq("code", candidate.code)
-            .maybeSingle();
+          const { data: existingPositionForCode, error: existingPositionForCodeError } = await fetchLegacyPositionByCode({
+            supabase: payload.supabase,
+            chatId,
+            code: candidate.code,
+          });
 
           if (existingPositionForCodeError) {
             throw existingPositionForCodeError;
