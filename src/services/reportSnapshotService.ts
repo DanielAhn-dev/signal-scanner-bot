@@ -261,10 +261,17 @@ export async function buildReportBodyText(params: {
   supabase?: SupabaseClient
 }): Promise<{ bodyText: string; sourceLabel: string }> {
   const { topic, chatId, supabase } = params
+  const t0 = Date.now()
+  const log = (step: string) => {
+    if (process.env.NODE_ENV !== 'production') {
+      console.log(JSON.stringify({ scope: 'report_web', step, topic, duration_ms: Date.now() - t0, ts: new Date().toISOString() }))
+    }
+  }
 
   if (isGuideTopic(topic)) {
     const fullPath = resolveGuideMarkdownPath(topic)
     const bodyText = await readFile(fullPath, 'utf8')
+    log('guide_file_read')
     return {
       bodyText,
       sourceLabel: path.basename(fullPath),
@@ -278,6 +285,7 @@ export async function buildReportBodyText(params: {
   const riskProfile = chatId
     ? ((await getUserInvestmentPrefs(chatId)).risk_profile ?? 'safe') as 'safe' | 'balanced' | 'active'
     : 'balanced'
+  log('risk_profile')
 
   const report = await createDailyCandidatePlanningReportResult(supabase, {
     riskProfile,
@@ -285,6 +293,7 @@ export async function buildReportBodyText(params: {
     fixedDisplayLimit: 5,
     excludeHoldingCodes: true,
   })
+  log('candidate_report')
   const dailyForecasts = selectForecastsForTopic('추천', report.forecasts)
   const convictionForecasts = selectForecastsForTopic('확신추천', report.forecasts)
   const publicForecasts = selectForecastsForTopic('공개추천', report.forecasts)
@@ -292,6 +301,7 @@ export async function buildReportBodyText(params: {
   const baseText = report.text || ''
 
   if (topic === '확신추천') {
+    log('done')
     return {
       bodyText: HTML_BODY_PREFIX + buildConvictionWebHtml(convictionForecasts),
       sourceLabel: '/리포트 명령 결과',
@@ -299,6 +309,7 @@ export async function buildReportBodyText(params: {
   }
 
   if (topic === '추천') {
+    log('done')
     return {
       bodyText: HTML_BODY_PREFIX + buildCandidateCardsWebHtml({
         forecasts: dailyForecasts,
@@ -312,6 +323,7 @@ export async function buildReportBodyText(params: {
   }
 
   if (topic === '공개추천') {
+    log('done')
     return {
       bodyText: HTML_BODY_PREFIX + buildCandidateCardsWebHtml({
         forecasts: publicForecasts,
@@ -325,12 +337,17 @@ export async function buildReportBodyText(params: {
   }
 
   if (WEEKLY_REPORT_TOPIC_MAP[topic]) {
+    // webOnly: true — PDF 렌더(폰트 로딩·pdf-lib 생성, ~1-2초)를 건너뛰고
+    // 데이터 조회 + summary/caption 빌드만 수행해 웹 미리보기 응답을 빠르게 반환
     const weekly = await createWeeklyReportPdf(supabase, {
       chatId: chatId ?? 999999,
       topic: WEEKLY_REPORT_TOPIC_MAP[topic],
+      webOnly: true,
     })
+    log('weekly_data')
 
     if (topic === '눌림목') {
+      log('done')
       return {
         bodyText: HTML_BODY_PREFIX + buildPullbackWebHtml({
           title: weekly.title,
@@ -343,6 +360,7 @@ export async function buildReportBodyText(params: {
 
     if (topic === '관심종목') {
       const watchOnlyItems = await buildWatchOnlyWebItems(supabase, chatId)
+      log('done')
       return {
         bodyText: HTML_BODY_PREFIX + buildWatchOnlyWebHtml({
           title: weekly.title,
@@ -361,6 +379,7 @@ export async function buildReportBodyText(params: {
       수급: 'Flow',
       섹터: 'Sector',
     }
+    log('done')
     return {
       bodyText: HTML_BODY_PREFIX + buildGenericWeeklyWebHtml({
         title: weekly.title,
@@ -372,6 +391,7 @@ export async function buildReportBodyText(params: {
     }
   }
 
+  log('done')
   return {
     bodyText: baseText,
     sourceLabel: '/리포트 명령 결과',

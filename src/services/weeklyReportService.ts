@@ -698,9 +698,10 @@ export async function renderReportPdf(input: RenderReportInput): Promise<WeeklyP
 // ─── 메인 export ──────────────────────────────────────────────────────────
 export async function createWeeklyReportPdf(
   supabase: SupabaseClient,
-  options: { chatId: number; topic?: string | null }
+  options: { chatId: number; topic?: string | null; webOnly?: boolean }
 ): Promise<WeeklyPdfReport> {
   const startedAt = Date.now();
+  const webOnly = options.webOnly ?? false;
   const chatId = options.chatId;
   const topicMeta = parseReportTopic(options.topic);
   const now = new Date();
@@ -767,6 +768,35 @@ export async function createWeeklyReportPdf(
       payoffRatio: null,
       maxSingleLoss: 0,
     };
+
+    // 웹 미리보기 전용: PDF 렌더(폰트 로딩·PDF 생성, ~1-2초)를 건너뛰고 summary/caption만 반환
+    if (webOnly) {
+      const caption = buildReportCaption({
+        title: topicMeta.captionTitle,
+        topic: topicMeta.topic,
+        krDate,
+        curr: emptySummary,
+        totalUnrealized: 0,
+        totalUnrealizedPct: 0,
+        sectors: sectorRes.data ?? [],
+        market,
+        pullbackCandidates: pullbackReport?.candidates,
+        pullbackMeta: pullbackReport?.meta,
+      });
+      const summaryText = buildReportSummaryText({
+        title: topicMeta.title,
+        topic: topicMeta.topic,
+        ymd,
+        curr: emptySummary,
+        totalUnrealized: 0,
+        totalUnrealizedPct: 0,
+        sectors: sectorRes.data ?? [],
+        market,
+        pullbackCandidates: pullbackReport?.candidates,
+        pullbackMeta: pullbackReport?.meta,
+      });
+      return { bytes: new Uint8Array(0), fileName: '', caption, summaryText, title: topicMeta.title, topic: topicMeta.topic };
+    }
 
     return runReportStep("pdf_render", () =>
       renderReportPdf({
@@ -975,6 +1005,44 @@ export async function createWeeklyReportPdf(
     : null;
 
   const pullbackReport = null;
+
+  // 웹 미리보기 전용: PDF 렌더(폰트 로딩·PDF 생성, ~1-2초)를 건너뛰고 summary/caption만 반환
+  if (webOnly) {
+    const caption = buildReportCaption({
+      title: topicMeta.captionTitle,
+      topic: topicMeta.topic,
+      krDate,
+      curr,
+      totalUnrealized,
+      totalUnrealizedPct,
+      sectors,
+      market,
+    });
+    const summaryText = buildReportSummaryText({
+      title: topicMeta.title,
+      topic: topicMeta.topic,
+      ymd,
+      curr,
+      totalUnrealized,
+      totalUnrealizedPct,
+      sectors,
+      market,
+    });
+    if (process.env.NODE_ENV !== "production") {
+      console.log(
+        JSON.stringify({
+          scope: "weekly_report",
+          event: "report_done",
+          step: "create_weekly_report_web_summary",
+          duration_ms: Date.now() - startedAt,
+          chat_id: chatId,
+          topic: topicMeta.topic,
+          ts: new Date().toISOString(),
+        })
+      );
+    }
+    return { bytes: new Uint8Array(0), fileName: '', caption, summaryText, title: topicMeta.title, topic: topicMeta.topic };
+  }
 
   try {
     const report = await runReportStep("pdf_render", () =>
