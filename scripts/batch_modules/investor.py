@@ -13,7 +13,7 @@ import json
 import requests
 from typing import Optional
 from supabase import Client
-from .utils import to_iso
+from .utils import to_iso, safe_int
 
 
 KIS_BASE = "https://openapi.koreainvestment.com:9443"
@@ -89,15 +89,24 @@ def _fetch_stock_investor(app_key: str, app_secret: str, token: str, code: str) 
         if body.get("rt_cd") != "0":
             return None
         output = body.get("output", [])
+        if isinstance(output, dict):
+            output = [output]
         if not output:
             return None
         # output[0] = 가장 최근 거래일
         row = output[0]
+
+        def pick(*keys: str):
+            for key in keys:
+                if key in row and row.get(key) not in (None, ""):
+                    return row.get(key)
+            return None
+
         # pbmn = 백만원 → 원 변환
-        institution = int(row.get("orgn_ntby_tr_pbmn", 0) or 0) * 1_000_000
-        foreign = int(row.get("frgn_ntby_tr_pbmn", 0) or 0) * 1_000_000
-        personal = int(row.get("prsn_ntby_tr_pbmn", 0) or 0) * 1_000_000
-        date_str = row.get("stck_bsop_date", "")
+        institution = safe_int(pick("orgn_ntby_tr_pbmn", "orgn_ntby_tr_pbmn1"), 0) * 1_000_000
+        foreign = safe_int(pick("frgn_ntby_tr_pbmn", "frgn_ntby_tr_pbmn1"), 0) * 1_000_000
+        personal = safe_int(pick("prsn_ntby_tr_pbmn", "prsn_ntby_tr_pbmn1"), 0) * 1_000_000
+        date_str = str(pick("stck_bsop_date", "bsop_date", "stck_bsop_dt") or "")
         if len(date_str) == 8:
             date_iso = f"{date_str[:4]}-{date_str[4:6]}-{date_str[6:]}"
         else:
@@ -204,16 +213,19 @@ def fetch_investor_data(supabase: Client, trading_date: str):
 
     # investor_daily 저장
     batch_size = 500
+    sub_batch_fail = 0
     for i in range(0, len(rows), batch_size):
         try:
-            supabase.table("investor_daily").upsert(rows[i:i+batch_size]).execute()
+            supabase.table("investor_daily").upsert(rows[i:i+batch_size], on_conflict="date,ticker").execute()
         except Exception as e:
             print(f"  investor_daily 저장 에러: {e}")
             # 소규모 배치로 재시도
             for j in range(0, len(rows[i:i+batch_size]), 50):
                 try:
-                    supabase.table("investor_daily").upsert(rows[i+j:i+j+50]).execute()
+                    supabase.table("investor_daily").upsert(rows[i+j:i+j+50], on_conflict="date,ticker").execute()
                 except Exception:
-                    pass
+                    sub_batch_fail += 1
 
     print(f"  저장 완료: {len(rows)}개 종목 수급 데이터")
+    if sub_batch_fail > 0:
+        print(f"  [WARN] investor_daily 소배치 저장 실패: {sub_batch_fail}건")

@@ -15,8 +15,17 @@ from typing import Optional
 
 
 def safe_float(x, default=0.0):
-    """??? float ??"""
+    """Safely parse numeric-like values into float.
+
+    Accepts strings with commas or surrounding spaces.
+    """
     try:
+        if x is None:
+            return default
+        if isinstance(x, str):
+            x = x.strip().replace(",", "")
+            if x == "":
+                return default
         v = float(x)
         return default if (np.isnan(v) or np.isinf(v)) else v
     except:
@@ -24,9 +33,14 @@ def safe_float(x, default=0.0):
 
 
 def safe_int(x, default=0):
-    """??? int ??"""
+    """Safely parse numeric-like values into int.
+
+    Accepts strings with commas or surrounding spaces.
+    """
     try:
-        v = float(x)
+        v = safe_float(x, None)
+        if v is None:
+            return default
         if np.isnan(v) or np.isinf(v):
             return default
         return int(v)

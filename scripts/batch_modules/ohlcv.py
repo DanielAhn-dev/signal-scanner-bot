@@ -146,17 +146,20 @@ def fetch_ohlcv_per_ticker(supabase: Client, trading_date: str) -> bool:
 
 def _flush_stock_daily(supabase: Client, rows: list):
     """Upsert stock_daily in batches."""
+    sub_batch_fail = 0
     for i in range(0, len(rows), 500):
         try:
-            supabase.table("stock_daily").upsert(rows[i:i+500]).execute()
+            supabase.table("stock_daily").upsert(rows[i:i+500], on_conflict="ticker,date").execute()
         except Exception as e:
             print(f"     stock_daily upsert error: {e}")
             chunk = rows[i:i+500]
             for j in range(0, len(chunk), 50):
                 try:
-                    supabase.table("stock_daily").upsert(chunk[j:j+50]).execute()
+                    supabase.table("stock_daily").upsert(chunk[j:j+50], on_conflict="ticker,date").execute()
                 except:
-                    pass
+                    sub_batch_fail += 1
+    if sub_batch_fail > 0:
+        print(f"     [WARN] stock_daily sub-batch upsert failures: {sub_batch_fail}")
 
 
 def _update_stocks_close(supabase: Client, trading_date: str):

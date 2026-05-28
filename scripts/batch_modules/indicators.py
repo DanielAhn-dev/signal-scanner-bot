@@ -32,6 +32,7 @@ def calculate_indicators(supabase: Client, trading_date: str):
 
     total_success = 0
     total_fail = 0
+    upsert_sub_fail = 0
     upsert_buffer: list = []
     from_date = (date.today() - timedelta(days=400)).isoformat()
 
@@ -54,9 +55,14 @@ def calculate_indicators(supabase: Client, trading_date: str):
             print(f"  -> progress: {idx}/{len(target_tickers)}")
             if upsert_buffer:
                 try:
-                    supabase.table("daily_indicators").upsert(upsert_buffer).execute()
+                    supabase.table("daily_indicators").upsert(upsert_buffer, on_conflict="code,trade_date").execute()
                 except Exception as e:
                     print(f"     upsert error: {e}")
+                    for j in range(0, len(upsert_buffer), 50):
+                        try:
+                            supabase.table("daily_indicators").upsert(upsert_buffer[j:j+50], on_conflict="code,trade_date").execute()
+                        except Exception:
+                            upsert_sub_fail += 1
                 upsert_buffer = []
 
         try:
@@ -125,11 +131,18 @@ def calculate_indicators(supabase: Client, trading_date: str):
 
     if upsert_buffer:
         try:
-            supabase.table("daily_indicators").upsert(upsert_buffer).execute()
+            supabase.table("daily_indicators").upsert(upsert_buffer, on_conflict="code,trade_date").execute()
         except Exception as e:
             print(f"     final upsert error: {e}")
+            for j in range(0, len(upsert_buffer), 50):
+                try:
+                    supabase.table("daily_indicators").upsert(upsert_buffer[j:j+50], on_conflict="code,trade_date").execute()
+                except Exception:
+                    upsert_sub_fail += 1
 
     print(f"   indicator calculation complete: {total_success} success (fail: {total_fail})")
+    if upsert_sub_fail > 0:
+        print(f"   [WARN] daily_indicators sub-batch upsert failures: {upsert_sub_fail}")
     _sync_stocks_indicators(supabase, trading_date)
 
 
