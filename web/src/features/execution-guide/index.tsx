@@ -5,6 +5,8 @@ import Button from '../../components/ui/Button'
 import Input from '../../components/ui/Input'
 import SheetHeaderBar from '../../components/SheetHeaderBar'
 import EconomicEventBadge from '../../components/EconomicEventBadge'
+import ShareModal from '../../components/ShareModal'
+import { useShareManager } from '../../hooks/useShareManager'
 import { useCurrentChatId } from '../../stores/profileStore'
 
 const EXECUTION_GUIDE_PENDING_KEY = 'execution_guide_pending_v1'
@@ -61,7 +63,6 @@ function toExecutionGuideSnapshotText(input: {
   const lines: string[] = []
   const generatedAtText = new Date(input.generatedAtIso).toLocaleString('ko-KR')
   lines.push('<b>실행 가이드 리포트</b>')
-  lines.push('─────────────────')
   lines.push(`생성시각: ${generatedAtText}`)
   lines.push(`출처: ${input.sourceLabel}`)
   lines.push(`코드 ${input.codeList.length}개: ${input.codeList.join(', ') || '-'}`)
@@ -275,9 +276,15 @@ export default function ExecutionGuidePage() {
   const [autoLoading, setAutoLoading] = useState(false)
   const [autoError, setAutoError] = useState<string | null>(null)
   const [compactView, setCompactView] = useState(false)
+  const [snapshotReady, setSnapshotReady] = useState(false)
+  const shareManager = useShareManager({
+    endpoint: '/api/ui/report-share',
+    scopeKey: 'topic',
+    requiresCode: true,
+  })
 
-  const persistGuideSnapshot = async (payload: { generatedAtIso: string; rows: GuideRow[] }) => {
-    if (payload.rows.length === 0) return
+  const persistGuideSnapshot = async (payload: { generatedAtIso: string; rows: GuideRow[] }): Promise<boolean> => {
+    if (payload.rows.length === 0) return false
     const bodyText = toExecutionGuideSnapshotText({
       generatedAtIso: payload.generatedAtIso,
       sourceLabel,
@@ -292,7 +299,7 @@ export default function ExecutionGuidePage() {
     })
 
     try {
-      await apiFetch('/api/ui/report-snapshot', {
+      const saved = await apiFetch('/api/ui/report-snapshot', {
         method: 'POST',
         cacheMs: 0,
         timeoutMs: 15_000,
@@ -302,9 +309,16 @@ export default function ExecutionGuidePage() {
           sourceLabel: '/실행가이드 스냅샷',
         }),
       })
+      return Boolean(saved?.ok)
     } catch {
       // 공유/PDF를 위한 스냅샷 저장 실패는 화면 사용성을 방해하지 않는다.
+      return false
     }
+  }
+
+  const openExecutionGuideShare = async () => {
+    if (!snapshotReady) return
+    await shareManager.createShare('실행가이드', { topic: '실행가이드' })
   }
 
   useEffect(() => {
@@ -423,10 +437,12 @@ export default function ExecutionGuidePage() {
       setRows(fetched)
       const nextGeneratedAt = new Date().toISOString()
       setGeneratedAt(nextGeneratedAt)
-      void persistGuideSnapshot({ generatedAtIso: nextGeneratedAt, rows: fetched })
+      const saved = await persistGuideSnapshot({ generatedAtIso: nextGeneratedAt, rows: fetched })
+      setSnapshotReady(saved)
     } catch (e: any) {
       setError(e?.message || String(e))
       setRows([])
+      setSnapshotReady(false)
     } finally {
       setLoading(false)
     }
@@ -537,6 +553,11 @@ export default function ExecutionGuidePage() {
             <Button size="sm" onClick={buildGuide} disabled={loading || codeList.length === 0}>
               {loading ? '생성 중…' : '가이드 생성'}
             </Button>
+            {snapshotReady && (
+              <Button size="sm" variant="secondary" onClick={openExecutionGuideShare} disabled={shareManager.creating}>
+                {shareManager.creating ? '공유 준비 중…' : '공유'}
+              </Button>
+            )}
           </div>
         </div>
 
@@ -750,6 +771,22 @@ export default function ExecutionGuidePage() {
         <div>잔여 현금: {formatKrw(Math.max(0, totalCapital - totalPlanned))}</div>
         <div>출처: {sourceLabel}</div>
       </div>
+
+      <ShareModal
+        open={shareManager.open}
+        onClose={shareManager.close}
+        url={shareManager.info?.url}
+        code={shareManager.info?.code}
+        requiresCode={shareManager.requiresCode}
+        expiresAt={shareManager.info?.expiresAt}
+        shares={shareManager.list}
+        loading={shareManager.loading}
+        onRefresh={() => { void shareManager.loadList('실행가이드') }}
+        includeAll={shareManager.includeAll}
+        onChangeIncludeAll={shareManager.setIncludeAll}
+        onRevoke={shareManager.revokeShare}
+        revokingId={shareManager.revokingId}
+      />
       </section>
     </section>
   )

@@ -1231,7 +1231,11 @@ export function renderLayout(params: {
   const { title, topic, sourceLabel, contentHtml, description, shareLocked = false } = params
   const desc = description || `${topicLabel(topic)} 리포트를 웹에서 열람합니다.`
   const badge = shareLocked ? '공유 링크' : topicLabel(topic)
-  const topicClass = topic === '눌림목' ? 'topic-pullback' : ''
+  const topicClass = topic === '눌림목'
+    ? 'topic-pullback'
+    : topic === '실행가이드'
+      ? 'topic-execution-guide'
+      : ''
 
   return `<!doctype html>
 <html lang="ko">
@@ -1325,6 +1329,22 @@ export function renderLayout(params: {
       background: color-mix(in srgb, #e7f0ff 40%, var(--color-bg-surface));
       border-left: 3px solid #2a5bb8;
     }
+    .topic-execution-guide .hero {
+      background: linear-gradient(90deg, #eef7ff 0%, #f5f9ff 45%, #f8fbff 100%);
+      border-left: 4px solid #1f6feb;
+    }
+    .topic-execution-guide .badge {
+      color: #1954b8;
+      background: #e7f0ff;
+      border-color: rgba(25, 84, 184, 0.24);
+    }
+    .topic-execution-guide h1 {
+      color: #102542;
+      font-size: 16px;
+    }
+    .topic-execution-guide .meta {
+      font-weight: 500;
+    }
     .topic-pullback .badge {
       color: #1f4f9d;
       background: #e7f0ff;
@@ -1374,6 +1394,39 @@ export function renderLayout(params: {
       border-bottom: 1px solid color-mix(in srgb, var(--color-brand) 18%, #ffffff);
     }
     .content h2:first-child { margin-top: 0.2em; }
+    .topic-execution-guide .content h2 {
+      margin-bottom: 0.5em;
+      padding-bottom: 0.3em;
+      border-bottom: 1px solid #d8e6fb;
+      color: #123257;
+      font-size: 1.08rem;
+    }
+    .topic-execution-guide .report-section {
+      border: 1px solid #dfe7f3;
+      background: linear-gradient(180deg, #ffffff 0%, #fbfdff 100%);
+      box-shadow: 0 2px 8px rgba(20, 80, 170, 0.05);
+    }
+    .topic-execution-guide .content p {
+      margin: 0.55em 0;
+      line-height: 1.72;
+      color: #2b3543;
+      font-size: 14px;
+    }
+    .topic-execution-guide .content ul {
+      margin-top: 0.45em;
+      margin-bottom: 0.65em;
+      padding-left: 1.2em;
+    }
+    .topic-execution-guide .content li {
+      margin-top: 0.14em;
+      line-height: 1.62;
+      color: #253041;
+      font-size: 14px;
+    }
+    .topic-execution-guide .content li::marker {
+      color: #1f6feb;
+      font-weight: 700;
+    }
     .content hr { border: 0; border-top: 1px solid var(--color-border-default); margin: 0.9em 0; }
     .content ul, .content ol { margin: 0.55em 0 0.9em; padding-left: 1.4em; }
     .content li { line-height: 1.7; }
