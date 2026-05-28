@@ -75,6 +75,7 @@ function getRibbonGroups(tab: RibbonTabKey): RibbonGroup[] {
         { key: 'dashboard', label: '대시보드', icon: <LayoutDashboard size={20}/>, route: 'dashboard', priority: 1 },
         { key: 'scan',      label: '스캔',     icon: <ScanSearch size={20}/>,     route: 'scan', priority: 1 },
         { key: 'analyze',   label: '분석',     icon: <BarChart2 size={20}/>,      route: 'analyze', priority: 1 },
+        { key: 'execution-guide', label: '실행가이드', icon: <Target size={20}/>, route: 'execution-guide', priority: 2 },
         { key: 'portfolio', label: '포트폴리오',icon: <BriefcaseBusiness size={20}/>, route: 'portfolio', priority: 2 },
       ]},
       { label: '시장', buttons: [
@@ -326,6 +327,7 @@ const SHEET_TABS = [
   { key: 'dashboard',  label: '대시보드',   icon: <LayoutDashboard size={10}/> },
   { key: 'scan',       label: '스캔',       icon: <ScanSearch size={10}/> },
   { key: 'analyze',    label: '분석',       icon: <BarChart2 size={10}/> },
+  { key: 'execution-guide', label: '실행가이드', icon: <Target size={10}/> },
   { key: 'portfolio',  label: '포트폴리오', icon: <BriefcaseBusiness size={10}/> },
   { key: 'sectors',    label: '섹터',       icon: <PieChart size={10}/> },
   { key: 'market',     label: '시장',       icon: <Globe2 size={10}/> },

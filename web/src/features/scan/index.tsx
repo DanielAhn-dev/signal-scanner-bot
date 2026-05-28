@@ -15,6 +15,7 @@ import { scoreLeadAccumulationCandidate } from '../../lib/accumulationSignal'
 
 const SCAN_SNAPSHOT_KEY = 'scan_snapshot_v1'
 const ANALYZE_PENDING_CODE_KEY = 'analyze_pending_code'
+const EXECUTION_GUIDE_PENDING_KEY = 'execution_guide_pending_v1'
 const SCAN_SIGNAL_HISTORY_KEY = 'scan_signal_history_v1'
 
 type MarketPhase = 'intraday' | 'after-close'
@@ -947,6 +948,18 @@ export default function ScanPage({ onNavigate }: { onNavigate?: (r: string) => v
   const navigateToAnalyze = (code: string) => {
     try { sessionStorage.setItem(ANALYZE_PENDING_CODE_KEY, code) } catch { /* ignore */ }
     onNavigate?.('analyze')
+  }
+
+  const navigateToExecutionGuide = (code: string) => {
+    try {
+      sessionStorage.setItem(
+        EXECUTION_GUIDE_PENDING_KEY,
+        JSON.stringify({ codes: [code], source: 'scan' }),
+      )
+    } catch {
+      // ignore
+    }
+    onNavigate?.('execution-guide')
   }
 
   const navigateToBacktest = (code: string) => {
@@ -2107,6 +2120,14 @@ export default function ScanPage({ onNavigate }: { onNavigate?: (r: string) => v
                       {/* 관리 */}
                       <td className="xls-cell" onClick={(e) => e.stopPropagation()}>
                         <div style={{ display: 'flex', gap: 2, alignItems: 'center' }}>
+                          <Button
+                            variant="ghost"
+                            onClick={() => navigateToExecutionGuide(code)}
+                            title="실행 가이드 열기"
+                            style={{ fontSize: 11, padding: '1px 6px' }}
+                          >
+                            가이드
+                          </Button>
                           <Button
                             variant="ghost"
                             onClick={(e: React.MouseEvent) => onToggleWatchlist(e, code)}

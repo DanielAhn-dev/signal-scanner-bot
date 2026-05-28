@@ -124,6 +124,7 @@ function calcPrices(item: HighlightItem) {
 }
 
 const ANALYZE_PENDING_CODE_KEY = 'analyze_pending_code'
+const EXECUTION_GUIDE_PENDING_KEY = 'execution_guide_pending_v1'
 
 function navigateTo(route: string) {
   try {
@@ -204,6 +205,18 @@ export default function HighlightsPage({ onNavigate }: { onNavigate?: (r: string
       // ignore
     }
     navigateTo('analyze')
+  }
+
+  const goExecutionGuide = (code: string) => {
+    try {
+      sessionStorage.setItem(
+        EXECUTION_GUIDE_PENDING_KEY,
+        JSON.stringify({ codes: [code], source: 'highlights' }),
+      )
+    } catch {
+      // ignore
+    }
+    navigateTo('execution-guide')
   }
 
   const goBacktest = (code: string) => {
@@ -465,6 +478,7 @@ export default function HighlightsPage({ onNavigate }: { onNavigate?: (r: string
                     />
                   </div>
                   <Button variant="ghost" onClick={() => goAnalyze(row.code)}>상세분석</Button>
+                  <Button variant="ghost" onClick={() => goExecutionGuide(row.code)}>실행가이드</Button>
                   <Button variant="ghost" onClick={() => goBacktest(row.code)}>패턴 점검</Button>
                 </div>
               </div>
@@ -528,6 +542,7 @@ export default function HighlightsPage({ onNavigate }: { onNavigate?: (r: string
                             />
                           </div>
                           <Button variant="ghost" onClick={() => goAnalyze(row.code)}>분석</Button>
+                          <Button variant="ghost" onClick={() => goExecutionGuide(row.code)}>가이드</Button>
                           <Button variant="ghost" onClick={() => goBacktest(row.code)}>패턴</Button>
                           <button
                             type="button"

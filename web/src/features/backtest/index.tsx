@@ -9,6 +9,7 @@ import {
 
 const ANALYZE_PENDING_CODE_KEY = 'analyze_pending_code'
 const BACKTEST_PENDING_CODE_KEY = 'backtest_pending_code'
+const EXECUTION_GUIDE_PENDING_KEY = 'execution_guide_pending_v1'
 
 function navigateTo(route: string) {
   try {
@@ -680,6 +681,18 @@ export default function BacktestPage() {
   const goAnalyze = (code: string) => {
     try { sessionStorage.setItem(ANALYZE_PENDING_CODE_KEY, code) } catch { /* ignore */ }
     navigateTo('analyze')
+  }
+
+  const goExecutionGuide = (code: string) => {
+    try {
+      sessionStorage.setItem(
+        EXECUTION_GUIDE_PENDING_KEY,
+        JSON.stringify({ codes: [code], source: 'backtest' }),
+      )
+    } catch {
+      // ignore
+    }
+    navigateTo('execution-guide')
   }
 
   const goSimulator = (stock: { code: string; name: string }) => {
@@ -1828,6 +1841,12 @@ export default function BacktestPage() {
                         onClick={() => goAnalyze(selectedStock.code)}
                       >
                         📈 상세 분석 보기
+                      </button>
+                      <button
+                        className="sim-btn sim-btn--ghost"
+                        onClick={() => goExecutionGuide(selectedStock.code)}
+                      >
+                        🧭 실행 가이드
                       </button>
                       <button
                         className="sim-btn sim-btn--primary"

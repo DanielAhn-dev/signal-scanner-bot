@@ -45,6 +45,7 @@ const Dashboard            = lazyWithRecovery(() => import('./features/dashboard
 const Trades               = lazyWithRecovery(() => import('./features/trades'))
 const Settings             = lazyWithRecovery(() => import('./features/settings'))
 const AnalyzePage          = lazyWithRecovery(() => import('./features/analyze'))
+const ExecutionGuidePage   = lazyWithRecovery(() => import('./features/execution-guide'))
 const WatchlistPage        = lazyWithRecovery(() => import('./features/watchlist'))
 const AlertsPage           = lazyWithRecovery(() => import('./features/alerts'))
 const ReportsPage          = lazyWithRecovery(() => import('./features/reports'))
@@ -284,6 +285,7 @@ function AppContent() {
             <Route path="/settings"               element={<Settings />} />
             <Route path="/scan"                   element={<ScanPage onNavigate={handleNavigate} />} />
             <Route path="/analyze"                element={<AnalyzePage />} />
+            <Route path="/execution-guide"        element={<ExecutionGuidePage />} />
             <Route path="/watchlist"              element={<WatchlistPage />} />
             <Route path="/alerts"                 element={<AlertsPage />} />
             <Route path="/reports"                element={<ReportsPage />} />

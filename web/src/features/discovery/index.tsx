@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react'
 import { apiFetch } from '../../lib/api'
 
 const ANALYZE_PENDING_CODE_KEY = 'analyze_pending_code'
+const EXECUTION_GUIDE_PENDING_KEY = 'execution_guide_pending_v1'
 
 type ScoreBreakdown = {
   totalScore: number
@@ -409,6 +410,18 @@ export default function DiscoveryPage() {
       // ignore
     }
     navigateTo('analyze')
+  }
+
+  function handleExecutionGuide(code: string) {
+    try {
+      sessionStorage.setItem(
+        EXECUTION_GUIDE_PENDING_KEY,
+        JSON.stringify({ codes: [code], source: 'discovery' }),
+      )
+    } catch {
+      // ignore
+    }
+    navigateTo('execution-guide')
   }
 
   function handleLimitChange(n: number) {
@@ -839,14 +852,24 @@ export default function DiscoveryPage() {
                       <MarketCapCell value={pick.marketCap} />
                     </td>
                     <td>
-                      <button
-                        className="sim-btn sim-btn--ghost"
-                        style={{ minHeight: 28, padding: '4px 10px', fontSize: 11 }}
-                        aria-label={`${pick.name} 분석 열기`}
-                        onClick={() => handleAnalyze(pick.code)}
-                      >
-                        분석 →
-                      </button>
+                      <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
+                        <button
+                          className="sim-btn sim-btn--ghost"
+                          style={{ minHeight: 28, padding: '4px 10px', fontSize: 11 }}
+                          aria-label={`${pick.name} 분석 열기`}
+                          onClick={() => handleAnalyze(pick.code)}
+                        >
+                          분석
+                        </button>
+                        <button
+                          className="sim-btn sim-btn--ghost"
+                          style={{ minHeight: 28, padding: '4px 10px', fontSize: 11 }}
+                          aria-label={`${pick.name} 실행가이드 열기`}
+                          onClick={() => handleExecutionGuide(pick.code)}
+                        >
+                          가이드
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))}
