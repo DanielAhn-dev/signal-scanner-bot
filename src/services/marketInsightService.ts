@@ -838,6 +838,13 @@ async function fetchIndicatorsByCodesForDailyCandidates(
   const out = new Map<string, IndicatorRow>();
   if (!codes.length) return out;
 
+  // 최신 지표만 조회하기 위해 최근 14일로 날짜 범위를 제한.
+  // 필터 없이 전체 이력을 date DESC 스캔하면 일부 코드가 최근 배치에서 누락될 경우
+  // shouldStop이 늦게 트리거되어 20+ 페이지(20,000+ 행)를 스캔하는 문제가 발생함.
+  const cutoffDate = new Date();
+  cutoffDate.setDate(cutoffDate.getDate() - 14);
+  const tradeDateCutoff = cutoffDate.toISOString().slice(0, 10);
+
   const chunks = chunkValues(codes);
   for (const part of chunks) {
     const need = new Set(part);
@@ -847,6 +854,7 @@ async function fetchIndicatorsByCodesForDailyCandidates(
           .from("daily_indicators")
           .select("code, close, value_traded, rsi14, roc14, sma20, sma50, sma200, trade_date")
           .in("code", part)
+          .gte("trade_date", tradeDateCutoff)
           .order("trade_date", { ascending: false })
           .range(from, to),
       {

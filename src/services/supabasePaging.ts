@@ -147,7 +147,8 @@ export async function selectPaged<T>(
   }
 
   if (debug) {
-    logger(`[supabasePaging] ${logLabel} rows=${out.length} pages=${pages} page_size=${pageSize} stop=${reason}`);
+    // collectRows=false 시 out.length는 항상 0이므로 실제 스캔 행 수(totalRows)를 사용
+    logger(`[supabasePaging] ${logLabel} rows=${totalRows} pages=${pages} page_size=${pageSize} stop=${reason}`);
   }
 
   return out;
