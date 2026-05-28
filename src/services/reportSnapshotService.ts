@@ -12,6 +12,7 @@ export type ReportTopic =
   | '추천'
   | '확신추천'
   | '공개추천'
+  | '실행가이드'
   | '가이드'
   | '자동매매'
   | '주간'
@@ -28,6 +29,7 @@ export function resolveReportTopic(raw: unknown): ReportTopic {
   const v = String(raw || '').trim().toLowerCase()
   if (v === '확신추천' || v === '확실추천' || v === '핵심추천' || v === 'conviction') return '확신추천'
   if (v === '공개추천' || v === 'public') return '공개추천'
+  if (v === '실행가이드' || v === '실행 가이드' || v === 'execution-guide' || v === 'execution_guide' || v === 'executionguide') return '실행가이드'
   if (v === '가이드' || v === 'guide') return '가이드'
   if (v === '자동매매' || v === 'auto-guide') return '자동매매'
   if (v === '주간' || v === 'full' || v === 'weekly') return '주간'
@@ -275,6 +277,19 @@ export async function buildReportBodyText(params: {
     return {
       bodyText,
       sourceLabel: path.basename(fullPath),
+    }
+  }
+
+  if (topic === '실행가이드') {
+    log('execution_guide_snapshot_missing')
+    return {
+      bodyText: [
+        '<b>실행 가이드 스냅샷이 없습니다.</b>',
+        '─────────────────',
+        '실행가이드 화면에서 자동 후보를 선택하고 가이드 생성 후,',
+        '리포트 페이지에서 PDF/웹 공유를 다시 실행해 주세요.',
+      ].join('\n'),
+      sourceLabel: '/실행가이드 스냅샷 미존재',
     }
   }
 

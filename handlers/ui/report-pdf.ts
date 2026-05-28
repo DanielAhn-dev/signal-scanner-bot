@@ -8,9 +8,15 @@ import {
   buildPublicDailyCandidateText,
   createDailyCandidateReportPdf,
 } from '../../src/bot/commands/report'
+import {
+  buildAudienceKey,
+  getKstDateKey,
+  getPersistedReportBody,
+} from '../../src/services/reportSnapshotService'
 import { getUserInvestmentPrefs } from '../../src/services/userService'
 import { createWeeklyReportPdf } from '../../src/services/weeklyReportService'
 import { selectForecastsForTopic } from '../../src/services/reportTopicForecasts'
+import { resolveUiUserContext } from './_userContext'
 
 const ORIGIN = process.env.UI_CORS_ORIGIN || '*'
 
@@ -18,6 +24,7 @@ type ReportTopic =
   | '추천'
   | '확신추천'
   | '공개추천'
+  | '실행가이드'
   | '가이드'
   | '자동매매'
   | '주간'
@@ -42,6 +49,7 @@ function resolveTopic(raw: unknown): ReportTopic {
   const v = String(raw || '').trim().toLowerCase()
   if (v === '확신추천' || v === '확실추천' || v === '핵심추천' || v === 'conviction') return '확신추천'
   if (v === 'public' || v === '공개추천') return '공개추천'
+  if (v === '실행가이드' || v === '실행 가이드' || v === 'execution-guide' || v === 'execution_guide' || v === 'executionguide') return '실행가이드'
   if (v === 'guide' || v === '가이드') return '가이드'
   if (v === 'auto-guide' || v === '자동매매') return '자동매매'
   if (v === '주간' || v === 'full' || v === 'weekly') return '주간'
@@ -104,7 +112,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     const supabase = createClient(SUPABASE_URL, SUPABASE_KEY)
-    const chatId = resolveChatId(req)
+    const user = await resolveUiUserContext(req)
+    const chatId = user.chatId ?? resolveChatId(req)
 
     if (topic === '가이드' || topic === '자동매매') {
       const fullPath = resolveGuidePath(topic)
@@ -125,6 +134,48 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       res.setHeader('Content-Type', 'application/pdf')
       res.setHeader('Content-Disposition', `${inline ? 'inline' : 'attachment'}; filename="${weekly.fileName}"`)
       return res.status(200).send(Buffer.from(weekly.bytes))
+    }
+
+    if (topic === '실행가이드') {
+      const audienceKey = buildAudienceKey({ clientId: user.clientId, chatId })
+      const reportDate = getKstDateKey()
+      const persisted = await getPersistedReportBody({
+        supabase,
+        topic,
+        audienceKey,
+        reportDate,
+      })
+
+      const bodyText = persisted?.bodyText || [
+        '<b>실행 가이드 스냅샷이 없습니다.</b>',
+        '─────────────────',
+        '실행가이드 화면에서 자동 후보를 찾고 가이드를 생성한 뒤',
+        '리포트 페이지에서 다시 PDF를 생성해 주세요.',
+      ].join('\n')
+
+      const pdf = await createDailyCandidateReportPdf(
+        chatId ?? 999999,
+        {
+          text: bodyText,
+          topAnalyzeCodes: [],
+          sectorLeaderCodes: [],
+          actionItems: [],
+          forecasts: [],
+        },
+        {
+          title: '실행 가이드 리포트',
+          subtitle: '자동 추천 후보 및 진입/청산 계획 스냅샷',
+          filePrefix: 'execution_guide_report',
+          captionTitle: '실행 가이드 리포트',
+          captionSubtitle: '실행가이드 화면 기준 스냅샷 PDF',
+          summaryText: '실행 가이드 리포트 PDF를 생성했습니다.',
+        },
+      )
+
+      const inline = String(req.query.inline || req.query.display || '').toLowerCase() === 'inline' || String(req.query.inline) === '1'
+      res.setHeader('Content-Type', 'application/pdf')
+      res.setHeader('Content-Disposition', `${inline ? 'inline' : 'attachment'}; filename="${pdf.fileName}"`)
+      return res.status(200).send(Buffer.from(pdf.bytes))
     }
 
     const riskProfile = chatId

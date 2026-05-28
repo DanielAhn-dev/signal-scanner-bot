@@ -5,6 +5,7 @@ import type { WeeklyWebPayload } from './weeklyReportService'
 export const HTML_BODY_PREFIX = '__HTML__\n'
 
 export function topicLabel(topic: string): string {
+  if (topic === '실행가이드') return '실행 가이드'
   if (topic === '주간') return '주간'
   if (topic === '눌림목') return '눌림목'
   if (topic === '포트폴리오') return '포트폴리오'
@@ -20,6 +21,7 @@ export function topicLabel(topic: string): string {
 }
 
 export function topicTitle(topic: string): string {
+  if (topic === '실행가이드') return '실행 가이드 리포트'
   if (topic === '주간') return '주간 증시 리포트'
   if (topic === '눌림목') return '다음 주 눌림목 리포트'
   if (topic === '포트폴리오') return '보유 포트폴리오 리포트'

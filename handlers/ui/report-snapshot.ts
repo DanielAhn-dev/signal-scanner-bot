@@ -33,6 +33,32 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const chatId = user.chatId ?? parseChatId(req.body?.chatId || req.body?.chat_id || req.query.chatId || req.query.chat_id || req.headers['x-user-chat-id'])
 
   try {
+    const customBodyText = String(req.body?.bodyText || '').trim()
+    const customSourceLabel = String(req.body?.sourceLabel || '/실행가이드 스냅샷')
+
+    if (topic === '실행가이드' && customBodyText) {
+      const supabase = createSupabaseServiceClientFromEnv()
+      const reportDate = getKstDateKey()
+      const audienceKey = buildAudienceKey({ clientId: user.clientId, chatId })
+
+      await saveReportBodySnapshot({
+        supabase,
+        topic,
+        audienceKey,
+        reportDate,
+        bodyText: customBodyText,
+        sourceLabel: customSourceLabel,
+      })
+
+      return res.status(200).json({
+        ok: true,
+        topic,
+        cached: false,
+        reportDate,
+        sourceLabel: customSourceLabel,
+      })
+    }
+
     if (isGuideTopic(topic)) {
       const built = await buildReportBodyText({ topic, chatId: null })
       return res.status(200).json({ ok: true, topic, cached: false, sourceLabel: built.sourceLabel })
