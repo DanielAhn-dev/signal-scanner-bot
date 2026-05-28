@@ -1,5 +1,6 @@
 import { createClient } from "@supabase/supabase-js";
 import { calculateLongtermScore, type LongtermScoreBreakdown } from "./longtermEngine";
+import { chunkValues, selectPaged } from "./supabasePaging";
 
 type StockRow = {
   code: string;
@@ -131,12 +132,6 @@ function sanitizeDiscoveryCriteria(input?: Partial<DiscoveryCriteria>): Discover
   };
 }
 
-function chunk<T>(arr: T[], size: number): T[][] {
-  const out: T[][] = [];
-  for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size));
-  return out;
-}
-
 function toNum(v: unknown): number | null {
   const n = Number(v);
   return Number.isFinite(n) ? n : null;
@@ -154,15 +149,20 @@ function mapLatestByCode<T extends { code: string; as_of?: string | null }>(rows
 async function fetchLatestAnnualByCode(
   supabase: any
 ): Promise<Map<string, FundamentalAnnualRow>> {
-  const { data, error } = await supabase
-    .from("fundamentals")
-    .select("code, as_of, per, pbr, roe, period_type, computed")
-    .eq("period_type", "annual")
-    .order("as_of", { ascending: false })
-    .limit(6000);
+  const rows = await selectPaged<FundamentalAnnualRow>(
+    async (from, to) =>
+      await supabase
+        .from("fundamentals")
+        .select("code, as_of, per, pbr, roe, period_type, computed")
+        .eq("period_type", "annual")
+        .order("as_of", { ascending: false })
+        .range(from, to),
+    { pageSize: 1000, maxRows: 30000 }
+  ).catch((e) => {
+    throw new Error(`annual fundamentals 조회 실패: ${String((e as Error).message || e)}`);
+  });
 
-  if (error) throw new Error(`annual fundamentals 조회 실패: ${error.message}`);
-  return mapLatestByCode((data ?? []) as FundamentalAnnualRow[]);
+  return mapLatestByCode(rows);
 }
 
 function resolvePeg(row: FundamentalAnnualRow): { peg: number | null; pegSource: 'net_income_forward' | 'net_income' | 'op_income' | 'sales' | null } {
@@ -207,20 +207,30 @@ async function fetchLatestTwoTrendsByCode(
   const out = new Map<string, FundamentalTrendRow[]>();
   if (!codes.length) return out;
 
-  const chunks = chunk(codes, 300);
+  const chunks = chunkValues(codes, 200);
   for (const part of chunks) {
-    const { data, error } = await supabase
-      .from("fundamental_trends")
-      .select("code, period_end, rev_qoq, op_qoq, rev_acceleration, op_acceleration")
-      .in("code", part)
-      .order("period_end", { ascending: false });
+    const partNeed = new Set(part);
+    for (let offset = 0; ; offset += 1000) {
+      const { data, error } = await supabase
+        .from("fundamental_trends")
+        .select("code, period_end, rev_qoq, op_qoq, rev_acceleration, op_acceleration")
+        .in("code", part)
+        .order("period_end", { ascending: false })
+        .range(offset, offset + 999);
 
-    if (error) throw new Error(`fundamental_trends 조회 실패: ${error.message}`);
+      if (error) throw new Error(`fundamental_trends 조회 실패: ${error.message}`);
 
-    for (const row of (data ?? []) as FundamentalTrendRow[]) {
-      const list = out.get(row.code) ?? [];
-      if (list.length < 2) list.push(row);
-      out.set(row.code, list);
+      const rows = (data ?? []) as FundamentalTrendRow[];
+      for (const row of rows) {
+        const list = out.get(row.code) ?? [];
+        if (list.length < 2) {
+          list.push(row);
+          if (list.length >= 2) partNeed.delete(row.code);
+        }
+        out.set(row.code, list);
+      }
+
+      if (rows.length < 1000 || partNeed.size === 0) break;
     }
   }
 
@@ -238,17 +248,23 @@ async function fetchSmartMoney12wByCode(
     .toISOString()
     .slice(0, 10);
 
-  const chunks = chunk(codes, 300);
+  const chunks = chunkValues(codes, 200);
   for (const part of chunks) {
-    const { data, error } = await supabase
-      .from("investor_daily")
-      .select("ticker, date, foreign, institution")
-      .in("ticker", part)
-      .gte("date", since);
+    const rows = await selectPaged<InvestorDailyRow>(
+      async (from, to) =>
+        await supabase
+          .from("investor_daily")
+          .select("ticker, date, foreign, institution")
+          .in("ticker", part)
+          .gte("date", since)
+          .order("date", { ascending: false })
+          .range(from, to),
+      { pageSize: 1000, maxRows: 100000 }
+    ).catch((e) => {
+      throw new Error(`investor_daily 조회 실패: ${String((e as Error).message || e)}`);
+    });
 
-    if (error) throw new Error(`investor_daily 조회 실패: ${error.message}`);
-
-    for (const row of (data ?? []) as InvestorDailyRow[]) {
+    for (const row of rows) {
       const code = String(row.ticker ?? "");
       if (!code) continue;
       const sum = (out.get(code) ?? 0) + Number(row.foreign ?? 0) + Number(row.institution ?? 0);
@@ -292,13 +308,17 @@ export async function discoverMultibagger(
 
   if (!codes.length) return { picks: [], criteria, funnel };
 
-  const { data: stocks, error: stockErr } = await supabase
-    .from("stocks")
-    .select("code, name, market_cap, sector_id, market")
-    .in("code", codes)
-    .returns<StockRow[]>();
+  const stocks: StockRow[] = [];
+  for (const codePart of chunkValues(codes, 200)) {
+    const { data, error } = await supabase
+      .from("stocks")
+      .select("code, name, market_cap, sector_id, market")
+      .in("code", codePart)
+      .returns<StockRow[]>();
 
-  if (stockErr) throw new Error(`stocks 조회 실패: ${stockErr.message}`);
+    if (error) throw new Error(`stocks 조회 실패: ${error.message}`);
+    stocks.push(...(data ?? []));
+  }
 
   const [trendMap, smartMoneyMap, sectorResp] = await Promise.all([
     fetchLatestTwoTrendsByCode(supabase, codes),

@@ -33,6 +33,7 @@ import {
   fetchLatestScoresByCodes,
   type ScoreSnapshotRow,
 } from "./scoreSourceService";
+import { chunkValues, selectPaged } from "./supabasePaging";
 import { buildFreshnessLabel, isBusinessStale } from "../utils/dataFreshness";
 import { PORTFOLIO_TABLES } from "../db/portfolioSchema";
 
@@ -1244,19 +1245,28 @@ async function fetchSectorMomentum(
   from.setDate(from.getDate() - 10);
   const fromStr = from.toISOString().slice(0, 10);
 
-  const { data } = await supabase
-    .from("sector_daily")
-    .select("sector_id, date, close")
-    .in("sector_id", sectorIds)
-    .gte("date", fromStr)
-    .lte("date", asOf)
-    .order("date", { ascending: true });
+  const rows: Array<{ sector_id: string; date: string; close: number }> = [];
+  for (const part of chunkValues(sectorIds, 100)) {
+    const partRows = await selectPaged<{ sector_id: string; date: string; close: number }>(
+      async (from, to) =>
+        await supabase
+          .from("sector_daily")
+          .select("sector_id, date, close")
+          .in("sector_id", part)
+          .gte("date", fromStr)
+          .lte("date", asOf)
+          .order("date", { ascending: true })
+          .range(from, to),
+      { pageSize: 1000, maxRows: 10000 }
+    );
+    rows.push(...partRows);
+  }
 
-  if (!data?.length) return map;
+  if (!rows.length) return map;
 
   // 섹터별로 그룹핑
   const bySector = new Map<string, { date: string; close: number }[]>();
-  for (const row of data) {
+  for (const row of rows) {
     const list = bySector.get(row.sector_id) ?? [];
     list.push({ date: row.date as string, close: Number(row.close) });
     bySector.set(row.sector_id, list);

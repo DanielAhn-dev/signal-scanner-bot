@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { AutoTradeSkipReasonStat } from "./virtualAutoTradeObservability";
 import { buildFreshnessLabel, isBusinessStale } from "../utils/dataFreshness";
+import { selectPaged } from "./supabasePaging";
 
 type AutoTradeRunSummaryLike = {
   skipReasonStats?: Array<{
@@ -131,13 +132,17 @@ async function fetchTodayAutoTradeSkipReasonStats(
   startIso: string,
   endIso: string
 ): Promise<AutoTradeSkipReasonStat[]> {
-  const { data, error } = await supabase
-    .from("virtual_autotrade_runs")
-    .select("summary")
-    .gte("started_at", startIso)
-    .lt("started_at", endIso)
-    .limit(1000);
-  if (error) return [];
+  const data = await selectPaged<Record<string, unknown>>(
+    async (from, to) =>
+      await supabase
+        .from("virtual_autotrade_runs")
+        .select("summary")
+        .gte("started_at", startIso)
+        .lt("started_at", endIso)
+        .order("started_at", { ascending: false })
+        .range(from, to),
+    { pageSize: 1000, maxRows: 50000 }
+  ).catch(() => []);
 
   const summaries = (data ?? []).map((row: { summary?: unknown }) => {
     const rec = row as Record<string, unknown>;

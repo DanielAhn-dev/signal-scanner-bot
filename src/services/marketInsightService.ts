@@ -10,6 +10,7 @@ import { computeDynamicLargeCapFloor, detectAutoTradeMarketPolicy, resolveDeploy
 import type { MarketOverview } from "../utils/fetchMarketData";
 import { fetchAllMarketData, fetchReportMarketData } from "../utils/fetchMarketData";
 import type { AutoTradeMarketPolicy } from "./virtualAutoTradeSelection";
+import { chunkValues } from "./supabasePaging";
 
 export type SectorFlowInsightRow = {
   name: string;
@@ -837,19 +838,32 @@ async function fetchIndicatorsByCodesForDailyCandidates(
   const out = new Map<string, IndicatorRow>();
   if (!codes.length) return out;
 
-  const { data, error } = await supabase
-    .from("daily_indicators")
-    .select("code, close, value_traded, rsi14, roc14, sma20, sma50, sma200, trade_date")
-    .in("code", codes)
-    .order("trade_date", { ascending: false })
-    .limit(Math.max(300, codes.length * 3));
+  const chunks = chunkValues(codes, 200);
+  for (const part of chunks) {
+    const need = new Set(part);
 
-  if (error) {
-    throw new Error(`지표 조회 실패: ${error.message}`);
-  }
+    for (let offset = 0; ; offset += 1000) {
+      const { data, error } = await supabase
+        .from("daily_indicators")
+        .select("code, close, value_traded, rsi14, roc14, sma20, sma50, sma200, trade_date")
+        .in("code", part)
+        .order("trade_date", { ascending: false })
+        .range(offset, offset + 999);
 
-  for (const row of (data ?? []) as IndicatorRow[]) {
-    if (!out.has(row.code)) out.set(row.code, row);
+      if (error) {
+        throw new Error(`지표 조회 실패: ${error.message}`);
+      }
+
+      const rows = (data ?? []) as IndicatorRow[];
+      for (const row of rows) {
+        if (!out.has(row.code)) {
+          out.set(row.code, row);
+          need.delete(row.code);
+        }
+      }
+
+      if (rows.length < 1000 || need.size === 0) break;
+    }
   }
 
   return out;

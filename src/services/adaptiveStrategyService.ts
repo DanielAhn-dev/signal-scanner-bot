@@ -1,4 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
+import { chunkValues, selectPaged } from './supabasePaging'
 
 type FactorKey = 'entry_grade' | 'trend_grade' | 'pivot_grade' | 'warn_grade' | 'signal' | 'stable_turn' | 'market_regime'
 
@@ -122,16 +123,20 @@ async function getRecentTradeDates(supabase: SupabaseClient, limit: number): Pro
 async function getHistoricalPullbackRows(supabase: SupabaseClient, tradeDates: string[]): Promise<PullbackHistoryRow[]> {
   if (tradeDates.length === 0) return []
 
-  const { data: pullbackData, error: pullbackError } = await supabase
-    .from('pullback_signals')
-    .select('trade_date,code,entry_grade,trend_grade,pivot_grade,warn_grade')
-    .in('trade_date', tradeDates)
-    .in('entry_grade', ['A', 'B'])
-    .neq('warn_grade', 'SELL')
+  const pullbackData = await selectPaged<Record<string, unknown>>(
+    async (from, to) =>
+      await supabase
+        .from('pullback_signals')
+        .select('trade_date,code,entry_grade,trend_grade,pivot_grade,warn_grade')
+        .in('trade_date', tradeDates)
+        .in('entry_grade', ['A', 'B'])
+        .neq('warn_grade', 'SELL')
+        .order('trade_date', { ascending: false })
+        .range(from, to),
+    { pageSize: 1000, maxRows: 50000 }
+  )
 
-  if (pullbackError) throw new Error(pullbackError.message)
-
-  const rows: PullbackHistoryRow[] = (pullbackData ?? []).map((row: unknown) => ({
+  const rows: PullbackHistoryRow[] = pullbackData.map((row: unknown) => ({
     trade_date: String((row as PullbackHistoryRow).trade_date || ''),
     code: String((row as PullbackHistoryRow).code || ''),
     entry_grade: (row as PullbackHistoryRow).entry_grade ?? null,
@@ -146,39 +151,63 @@ async function getHistoricalPullbackRows(supabase: SupabaseClient, tradeDates: s
   const codeSet = Array.from(new Set(rows.map((row) => row.code).filter(Boolean)))
   if (codeSet.length === 0) return rows
 
-  // 각 코드별 최신 scores 데이터 조회
-  const { data: scoresData } = await supabase
-    .from('scores')
-    .select('code,signal,stable_turn')
-    .in('code', codeSet)
-    .order('trade_date', { ascending: false })
-    .limit(Math.max(50, codeSet.length))
-
   const scoresByCode = new Map<string, { signal: string | null; stable_turn: string | null }>()
-  for (const scoreRow of scoresData ?? []) {
-    const code = String((scoreRow as { code?: string }).code || '')
-    if (code && !scoresByCode.has(code)) {
-      scoresByCode.set(code, {
-        signal: (scoreRow as { signal?: string }).signal ?? null,
-        stable_turn: (scoreRow as { stable_turn?: string }).stable_turn ?? null,
-      })
+
+  // 각 코드별 최신 scores 데이터 조회
+  for (const part of chunkValues(codeSet, 200)) {
+    const need = new Set(part)
+    for (let offset = 0; ; offset += 1000) {
+      const { data: scoresData, error } = await supabase
+        .from('scores')
+        .select('code,signal,stable_turn,asof')
+        .in('code', part)
+        .order('asof', { ascending: false })
+        .range(offset, offset + 999)
+
+      if (error) break
+
+      const rows = scoresData ?? []
+      for (const scoreRow of rows) {
+        const code = String((scoreRow as { code?: string }).code || '')
+        if (code && !scoresByCode.has(code)) {
+          scoresByCode.set(code, {
+            signal: (scoreRow as { signal?: string }).signal ?? null,
+            stable_turn: (scoreRow as { stable_turn?: string }).stable_turn ?? null,
+          })
+          need.delete(code)
+        }
+      }
+
+      if (rows.length < 1000 || need.size === 0) break
     }
   }
 
-  // 각 코드별 최신 market_regime 조회 (decisions 테이블에서)
-  const { data: decisionData } = await supabase
-    .from('decisions')
-    .select('code,market_regime')
-    .in('code', codeSet)
-    .order('created_at', { ascending: false })
-    .limit(Math.max(50, codeSet.length))
-
   const regimeByCode = new Map<string, string>()
-  for (const decRow of decisionData ?? []) {
-    const code = String((decRow as { code?: string }).code || '')
-    const regime = (decRow as { market_regime?: string }).market_regime ?? null
-    if (code && regime && !regimeByCode.has(code)) {
-      regimeByCode.set(code, regime)
+
+  // 각 코드별 최신 market_regime 조회 (decisions 테이블에서)
+  for (const part of chunkValues(codeSet, 200)) {
+    const need = new Set(part)
+    for (let offset = 0; ; offset += 1000) {
+      const { data: decisionData, error } = await supabase
+        .from('decisions')
+        .select('code,market_regime,created_at')
+        .in('code', part)
+        .order('created_at', { ascending: false })
+        .range(offset, offset + 999)
+
+      if (error) break
+
+      const rows = decisionData ?? []
+      for (const decRow of rows) {
+        const code = String((decRow as { code?: string }).code || '')
+        const regime = (decRow as { market_regime?: string }).market_regime ?? null
+        if (code && regime && !regimeByCode.has(code)) {
+          regimeByCode.set(code, regime)
+          need.delete(code)
+        }
+      }
+
+      if (rows.length < 1000 || need.size === 0) break
     }
   }
 
@@ -204,24 +233,35 @@ async function getPriceRows(
   if (codes.length === 0) return []
 
   for (const tableName of PRICE_TABLES) {
-    const { data, error } = await supabase
-      .from(tableName)
-      .select('code,date,close')
-      .in('code', codes)
-      .gte('date', startDate)
-      .lte('date', endDate)
-      .order('date', { ascending: true })
+    const merged: PriceRow[] = []
 
-    if (error) continue
-    if (!Array.isArray(data) || data.length === 0) continue
+    for (const part of chunkValues(codes, 200)) {
+      const rows = await selectPaged<Record<string, unknown>>(
+        async (from, to) =>
+          await supabase
+            .from(tableName)
+            .select('code,date,close')
+            .in('code', part)
+            .gte('date', startDate)
+            .lte('date', endDate)
+            .order('date', { ascending: true })
+            .range(from, to),
+        { pageSize: 1000, maxRows: 100000 }
+      ).catch(() => [])
 
-    return data
-      .map((row) => ({
-        code: String((row as { code?: string }).code || ''),
-        date: String((row as { date?: string }).date || ''),
-        close: Number((row as { close?: number }).close || 0),
-      }))
-      .filter((row) => row.code && row.date && Number.isFinite(row.close) && row.close > 0)
+      for (const row of rows) {
+        const code = String((row as { code?: string }).code || '')
+        const date = String((row as { date?: string }).date || '')
+        const close = Number((row as { close?: number }).close || 0)
+        if (code && date && Number.isFinite(close) && close > 0) {
+          merged.push({ code, date, close })
+        }
+      }
+    }
+
+    if (merged.length > 0) {
+      return merged
+    }
   }
 
   return []
