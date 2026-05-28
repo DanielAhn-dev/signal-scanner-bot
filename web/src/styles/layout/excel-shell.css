@@ -2218,14 +2218,26 @@
 
 .execution-guide-headline-list {
   margin: 0;
-  padding-left: 16px;
+  padding-left: 0;
   display: grid;
-  gap: 4px;
+  gap: 6px;
+  list-style: none;
 }
 
 .execution-guide-headline-item {
+  position: relative;
+  padding-left: 12px;
   line-height: 1.45;
   color: var(--color-text-secondary);
+}
+
+.execution-guide-headline-item::before {
+  content: '•';
+  position: absolute;
+  left: 0;
+  top: 0;
+  color: var(--color-brand);
+  font-weight: var(--font-weight-bold);
 }
 
 @media (max-width: 900px) {
