@@ -1,4 +1,4 @@
-import { chunkValues } from "./supabasePaging";
+import { chunkValues, selectPaged } from "./supabasePaging";
 
 type SupabaseClientAny = any;
 
@@ -54,29 +54,28 @@ export async function fetchLatestPullbackCandidateCodes(input: {
   }
 
   const factorsByCode = new Map<string, Record<string, unknown>>();
-  for (const part of chunkValues(codes, 200)) {
+  for (const part of chunkValues(codes)) {
     const need = new Set(part);
-    for (let offset = 0; ; offset += 1000) {
-      const { data: scoreRows, error } = await input.supabase
-        .from("scores")
-        .select("code, factors")
-        .in("code", part)
-        .order("asof", { ascending: false })
-        .range(offset, offset + 999);
+    const rows = await selectPaged<Record<string, unknown>>(
+      async (from, to) =>
+        await input.supabase
+          .from("scores")
+          .select("code, factors")
+          .in("code", part)
+          .order("asof", { ascending: false })
+          .range(from, to),
+      { logLabel: "virtualAutoTrade.pullback_factors" }
+    ).catch(() => []);
 
-      if (error) {
-        break;
-      }
+    for (const row of rows) {
+      const code = String(row.code ?? "").trim();
+      if (!code || factorsByCode.has(code)) continue;
+      factorsByCode.set(code, (row.factors ?? {}) as Record<string, unknown>);
+      need.delete(code);
+    }
 
-      const rows = (scoreRows ?? []) as Array<Record<string, unknown>>;
-      for (const row of rows) {
-        const code = String(row.code ?? "").trim();
-        if (!code || factorsByCode.has(code)) continue;
-        factorsByCode.set(code, (row.factors ?? {}) as Record<string, unknown>);
-        need.delete(code);
-      }
-
-      if (rows.length < 1000 || need.size === 0) break;
+    if (need.size === 0) {
+      continue;
     }
   }
 

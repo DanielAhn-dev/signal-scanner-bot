@@ -1,5 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { chunkValues } from "./supabasePaging";
+import { chunkValues, selectPaged } from "./supabasePaging";
 
 type Json = Record<string, any>;
 
@@ -69,7 +69,7 @@ export async function fetchLatestScoresByCodes(
   const byCode = new Map<string, ScoreSnapshotRow>();
 
   if (latestAsof) {
-    for (const part of chunkValues(targets, 200)) {
+    for (const part of chunkValues(targets)) {
       const { data: currentRows, error: currentError } = await supabase
         .from("scores")
         .select(
@@ -101,41 +101,45 @@ export async function fetchLatestScoresByCodes(
   const missingCodes = targets.filter((code) => !byCode.has(code));
 
   if (missingCodes.length) {
-    for (const part of chunkValues(missingCodes, 200)) {
+    for (const part of chunkValues(missingCodes)) {
       const need = new Set(part);
-      for (let offset = 0; ; offset += 1000) {
-        const { data: fallbackRows, error: fallbackError } = await supabase
-          .from("scores")
-          .select(
-            [
-              "code",
-              "total_score",
-              "momentum_score",
-              "liquidity_score",
-              "value_score",
-              "factors",
-              "asof",
-              "signal",
-            ].join(", ")
-          )
-          .in("code", part)
-          .order("asof", { ascending: false })
-          .range(offset, offset + 999)
-          .returns<ScoreSnapshotRow[]>();
+      const rows = await selectPaged<ScoreSnapshotRow>(
+        async (from, to) =>
+          await supabase
+            .from("scores")
+            .select(
+              [
+                "code",
+                "total_score",
+                "momentum_score",
+                "liquidity_score",
+                "value_score",
+                "factors",
+                "asof",
+                "signal",
+              ].join(", ")
+            )
+            .in("code", part)
+            .order("asof", { ascending: false })
+            .range(from, to)
+            .returns<ScoreSnapshotRow[]>(),
+        { logLabel: "scoreSource.latest_fallback" }
+      ).catch((e) => {
+        throw new Error(`Fallback score fetch failed: ${String((e as Error).message || e)}`);
+      });
 
-        if (fallbackError) {
-          throw new Error(`Fallback score fetch failed: ${fallbackError.message}`);
-        }
-
-        const rows = fallbackRows ?? [];
-        for (const row of rows) {
-          if (!row?.code || byCode.has(row.code)) continue;
-          byCode.set(row.code, row);
-          need.delete(row.code);
-        }
-
-        if (rows.length < 1000 || need.size === 0) break;
+      for (const row of rows) {
+        if (!row?.code || byCode.has(row.code)) continue;
+        byCode.set(row.code, row);
+        need.delete(row.code);
       }
+
+      if (need.size === 0) {
+        continue;
+      }
+
+      // Some codes can still be missing if source table has no rows for them.
+      // Keep behavior unchanged and move on.
     }
   }
 
@@ -161,40 +165,37 @@ export async function fetchRecentScoreHistoryByCodes(
 
   if (!targets.length) return historyMap;
 
-  for (const part of chunkValues(targets, 200)) {
+  for (const part of chunkValues(targets)) {
     const need = new Set(part);
-    for (let offset = 0; ; offset += 1000) {
-      const { data, error } = await supabase
-        .from("scores")
-        .select("code, asof, signal, total_score, factors")
-        .in("code", part)
-        .order("asof", { ascending: false })
-        .range(offset, offset + 999)
-        .returns<Array<RecentScoreHistoryPoint & { code: string }>>();
+    const rows = await selectPaged<RecentScoreHistoryPoint & { code: string }>(
+      async (from, to) =>
+        await supabase
+          .from("scores")
+          .select("code, asof, signal, total_score, factors")
+          .in("code", part)
+          .order("asof", { ascending: false })
+          .range(from, to)
+          .returns<Array<RecentScoreHistoryPoint & { code: string }>>(),
+      { logLabel: "scoreSource.recent_history" }
+    ).catch((e) => {
+      throw new Error(`Recent score history fetch failed: ${String((e as Error).message || e)}`);
+    });
 
-      if (error) {
-        throw new Error(`Recent score history fetch failed: ${error.message}`);
+    for (const row of rows) {
+      const code = String(row.code ?? "").trim();
+      if (!code) continue;
+      const current = historyMap.get(code) ?? [];
+      if (current.length >= lookbackPerCode) continue;
+      current.push({
+        asof: row.asof,
+        signal: row.signal,
+        total_score: row.total_score,
+        factors: row.factors,
+      });
+      historyMap.set(code, current);
+      if (current.length >= lookbackPerCode) {
+        need.delete(code);
       }
-
-      const rows = data ?? [];
-      for (const row of rows) {
-        const code = String(row.code ?? "").trim();
-        if (!code) continue;
-        const current = historyMap.get(code) ?? [];
-        if (current.length >= lookbackPerCode) continue;
-        current.push({
-          asof: row.asof,
-          signal: row.signal,
-          total_score: row.total_score,
-          factors: row.factors,
-        });
-        historyMap.set(code, current);
-        if (current.length >= lookbackPerCode) {
-          need.delete(code);
-        }
-      }
-
-      if (rows.length < 1000 || need.size === 0) break;
     }
   }
 

@@ -3,6 +3,7 @@ import type { StockOHLCV } from "../data/types";
 import { calculateScore, type MarketEnv } from "../score/engine";
 import { fetchAllMarketData } from "../utils/fetchMarketData";
 import { fetchLatestScoresByCodes } from "./scoreSourceService";
+import { chunkValues, selectPaged } from "./supabasePaging";
 
 type InvestorDailyRow = {
   ticker: string;
@@ -158,30 +159,22 @@ async function fetchInvestorFlowByCodes(
     .toISOString()
     .slice(0, 10);
 
-  const CODE_CHUNK = 100;
-  const PAGE_SIZE = 1000;
   const data: InvestorDailyRow[] = [];
 
-  for (let i = 0; i < codes.length; i += CODE_CHUNK) {
-    const codeChunk = codes.slice(i, i + CODE_CHUNK);
-    for (let offset = 0; ; offset += PAGE_SIZE) {
-      const { data: pageData, error } = await supabase
-        .from("investor_daily")
-        .select("ticker, date, foreign, institution")
-        .in("ticker", codeChunk)
-        .gte("date", since30)
-        .order("date", { ascending: false })
-        .range(offset, offset + PAGE_SIZE - 1)
-        .returns<InvestorDailyRow[]>();
-
-      if (error) {
-        break;
-      }
-
-      const rows = pageData ?? [];
-      data.push(...rows);
-      if (rows.length < PAGE_SIZE) break;
-    }
+  for (const codeChunk of chunkValues(codes)) {
+    const rows = await selectPaged<InvestorDailyRow>(
+      async (from, to) =>
+        await supabase
+          .from("investor_daily")
+          .select("ticker, date, foreign, institution")
+          .in("ticker", codeChunk)
+          .gte("date", since30)
+          .order("date", { ascending: false })
+          .range(from, to)
+          .returns<InvestorDailyRow[]>(),
+      { logLabel: "scoreSync.investor_flow" }
+    ).catch(() => []);
+    data.push(...rows);
   }
 
   const grouped = new Map<string, InvestorDailyRow[]>();
