@@ -5,7 +5,7 @@ import { createDailyCandidatePlanningReportResult } from './marketInsightService
 import { getUserInvestmentPrefs } from './userService'
 import { createWeeklyReportPdf } from './weeklyReportService'
 import { fetchRealtimePriceBatch } from '../utils/fetchRealtimePrice'
-import { buildCandidateCardsWebHtml, buildConvictionWebHtml, buildPortfolioWebHtml, buildPullbackWebHtml, buildStructuredWeeklyWebHtml, buildWatchOnlyWebHtml, HTML_BODY_PREFIX } from './reportWebRenderService'
+import { buildCandidateCardsWebHtml, buildConvictionWebHtml, buildPortfolioWebHtml, buildPublicCandidateWebHtml, buildPullbackWebHtml, buildStructuredWeeklyWebHtml, buildWatchOnlyWebHtml, HTML_BODY_PREFIX } from './reportWebRenderService'
 import { selectForecastsForTopic } from './reportTopicForecasts'
 
 export type ReportTopic =
@@ -326,12 +326,12 @@ export async function buildReportBodyText(params: {
   if (topic === '공개추천') {
     log('done')
     return {
-      bodyText: HTML_BODY_PREFIX + buildCandidateCardsWebHtml({
+      bodyText: HTML_BODY_PREFIX + buildPublicCandidateWebHtml({
         forecasts: publicForecasts,
         title: '공유용 오늘의 후보 리포트',
         subtitle: '개인 보유/자금 정보는 제외하고 후보 핵심 지표만 공개용으로 구성했습니다.',
         note: '공유용 리포트는 참고 자료이며 최종 투자 판단은 본인 책임입니다.',
-        limit: 8,
+        limit: 6,
       }),
       sourceLabel: '/리포트 명령 결과',
     }

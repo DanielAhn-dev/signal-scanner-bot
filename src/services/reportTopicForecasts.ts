@@ -98,16 +98,24 @@ export function selectForecastsForTopic(
     const filtered = base.filter(
       (item) => item.confidencePct >= 64 && edgeScore(item) >= 3 && item.expectedDrawdownPct <= 8,
     )
-    const ranked = sortForConviction(filtered.length >= 3 ? filtered : base)
-    return pickDiversified(ranked, 5, 2)
+    const relaxed = base.filter(
+      (item) => item.confidencePct >= 58 && edgeScore(item) >= 1.5 && item.expectedDrawdownPct <= 9,
+    )
+    const source = filtered.length >= 3 ? filtered : (relaxed.length >= 3 ? relaxed : base)
+    const ranked = sortForConviction(source)
+    return pickDiversified(ranked, 5, 1)
   }
 
   if (topic === '공개추천') {
     const filtered = base.filter(
       (item) => item.scoreComponents.safety >= 55 && item.expectedDrawdownPct <= 7.5,
     )
-    const ranked = sortForPublic(filtered.length >= 4 ? filtered : base)
-    return pickDiversified(ranked, 6, 2)
+    const relaxed = base.filter(
+      (item) => item.scoreComponents.safety >= 48 && item.expectedDrawdownPct <= 9,
+    )
+    const source = filtered.length >= 4 ? filtered : (relaxed.length >= 4 ? relaxed : base)
+    const ranked = sortForPublic(source)
+    return pickDiversified(ranked, 6, 1)
   }
 
   const ranked = sortForDaily(base)

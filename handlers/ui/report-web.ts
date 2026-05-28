@@ -75,15 +75,20 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   const topic = resolveReportTopic(req.query.topic)
+  const freshRaw = String(req.query.fresh || '').trim().toLowerCase()
+  const forceFreshFromQuery = freshRaw === '1' || freshRaw === 'true' || freshRaw === 'yes'
   const user = await resolveUiUserContext(req)
   const chatId = user.chatId ?? parseChatId(req.query.chatId ?? req.query.chat_id ?? req.headers['x-user-chat-id'])
   const audienceKey = buildAudienceKey({ clientId: user.clientId, chatId })
+  const forceFreshReportTopics = forceFreshFromQuery || topic === '추천' || topic === '확신추천' || topic === '공개추천' || topic === '눌림목'
   const cacheKey = buildCacheKey(topic, audienceKey)
-  const cachedHtml = getCachedHtml(cacheKey)
-  if (cachedHtml) {
-    res.setHeader('Content-Type', 'text/html; charset=utf-8')
-    res.setHeader('X-Report-Web-Cache', 'HIT')
-    return res.status(200).send(cachedHtml)
+  if (!forceFreshReportTopics) {
+    const cachedHtml = getCachedHtml(cacheKey)
+    if (cachedHtml) {
+      res.setHeader('Content-Type', 'text/html; charset=utf-8')
+      res.setHeader('X-Report-Web-Cache', 'HIT')
+      return res.status(200).send(cachedHtml)
+    }
   }
 
   try {
@@ -113,6 +118,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     })
 
     const persistedBody = String(persisted?.bodyText || '')
+    // 추천/확신추천/공개추천/눌림목은 사용자 기대(토픽별 분기/최신성)를 위해 항상 재생성한다.
+    const forceFreshCandidateTopics = forceFreshReportTopics
     // 스냅샷이 HTML 형식이더라도 토픽별 고유 마커가 없으면 구 버전 스냅샷으로 간주해 재생성
     // (토픽 분기 렌더 적용 전 저장된 동일 내용 스냅샷 문제 해소)
     const needsRichRefresh = (
@@ -163,14 +170,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       && !persistedBody.includes('Sector Dashboard')
     )
 
-    if (persisted?.bodyText && !needsRichRefresh) {
+    if (persisted?.bodyText && !needsRichRefresh && !forceFreshCandidateTopics) {
       const html = renderLayout({
         title: topicTitle(topic),
         topic,
         sourceLabel: persisted.sourceLabel,
         contentHtml: renderBodyText(persisted.bodyText),
       })
-      setCachedHtml(cacheKey, html)
+      if (!forceFreshReportTopics) setCachedHtml(cacheKey, html)
       res.setHeader('Content-Type', 'text/html; charset=utf-8')
       res.setHeader('X-Report-Web-Cache', 'PERSISTED')
       return res.status(200).send(html)
@@ -193,16 +200,18 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       contentHtml: renderBodyText(bodyText),
     })
 
-    setCachedHtml(cacheKey, html)
+    if (!forceFreshReportTopics) setCachedHtml(cacheKey, html)
     res.setHeader('Content-Type', 'text/html; charset=utf-8')
     res.setHeader('X-Report-Web-Cache', 'MISS')
     return res.status(200).send(html)
   } catch (e: any) {
-    const staleCached = reportWebCache.get(cacheKey)
-    if (staleCached?.html) {
-      res.setHeader('Content-Type', 'text/html; charset=utf-8')
-      res.setHeader('X-Report-Web-Cache', 'STALE')
-      return res.status(200).send(staleCached.html)
+    if (!forceFreshReportTopics) {
+      const staleCached = reportWebCache.get(cacheKey)
+      if (staleCached?.html) {
+        res.setHeader('Content-Type', 'text/html; charset=utf-8')
+        res.setHeader('X-Report-Web-Cache', 'STALE')
+        return res.status(200).send(staleCached.html)
+      }
     }
 
     const html = renderLayout({

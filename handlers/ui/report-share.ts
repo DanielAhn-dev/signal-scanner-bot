@@ -111,11 +111,26 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     let bodyText = ''
     let sourceLabel = ''
     const persisted = await getPersistedReportBody({ supabase, topic, audienceKey, reportDate })
-    const needsConvictionHtmlRefresh = ['추천', '공개추천', '확신추천', '눌림목'].includes(topic)
-      && Boolean(persisted?.bodyText)
-      && !String(persisted?.bodyText || '').startsWith(HTML_BODY_PREFIX)
+    const persistedBody = String(persisted?.bodyText || '')
+    const forceFreshCandidateTopics = topic === '추천' || topic === '확신추천' || topic === '공개추천' || topic === '눌림목'
+    const needsTopicMarkerRefresh = (
+      topic === '확신추천'
+      && persistedBody.startsWith(HTML_BODY_PREFIX)
+      && !persistedBody.includes('확신 후보')
+    ) || (
+      topic === '공개추천'
+      && persistedBody.startsWith(HTML_BODY_PREFIX)
+      && !persistedBody.includes('공유용 오늘의 후보 리포트')
+    ) || (
+      topic === '추천'
+      && persistedBody.startsWith(HTML_BODY_PREFIX)
+      && !persistedBody.includes('오늘의 후보 리포트 · 우선 점검 카드')
+    )
+    const needsHtmlPrefixRefresh = ['추천', '공개추천', '확신추천', '눌림목'].includes(topic)
+      && Boolean(persistedBody)
+      && !persistedBody.startsWith(HTML_BODY_PREFIX)
 
-    if (persisted?.bodyText && !needsConvictionHtmlRefresh) {
+    if (persisted?.bodyText && !needsHtmlPrefixRefresh && !needsTopicMarkerRefresh && !forceFreshCandidateTopics) {
       bodyText = persisted.bodyText
       sourceLabel = persisted.sourceLabel
     } else {

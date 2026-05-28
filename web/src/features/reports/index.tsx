@@ -306,7 +306,7 @@ export default function ReportsPage() {
       toast.show('미리보기를 지원하지 않는 항목입니다.')
       return
     }
-    const request = buildUiRequest(`/api/ui/report-web?topic=${encodeURIComponent(topic)}`)
+    const request = buildUiRequest(`/api/ui/report-web?topic=${encodeURIComponent(topic)}&fresh=1`)
     setPreview({ open: true, title, url: request.url })
   }
 

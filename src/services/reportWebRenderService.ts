@@ -419,7 +419,7 @@ export function buildConvictionWebHtml(
     return '<p style="color:#718096;padding:24px 0;text-align:center;font-size:14px">현재 조건에서 확신 후보를 찾지 못했습니다.<br>시장 변동성이 낮아지면 추천 리포트로 다시 확인하세요.</p>'
   }
 
-  const cards = ranked.map((item, i) => buildConvictionCard(item, i)).join('\n')
+  const cards = ranked.map((item, i) => buildConvictionFocusedCard(item, i)).join('\n')
 
   return `<div style="margin-bottom:16px;padding:13px 15px;background:linear-gradient(135deg,#EBF3FF 0%,#E6FAF5 100%);border-radius:10px;border:1px solid #C2D6FF">
   <div style="font-size:13px;font-weight:700;color:#191F28;margin-bottom:3px">눌림목·점수·리스크를 종합한 확신 후보 ${ranked.length}개 종목 — 신뢰도 높은 순 정렬</div>
@@ -430,6 +430,119 @@ ${cards}
   <strong style="color:#191F28">매수 원칙</strong>&nbsp; 상위 1~2개에 우선 집중하고, 추격 진입보다 분할 매수로 평단을 낮추세요. 진입 전 손절가와 익절가를 먼저 고정하는 습관이 중요합니다.<br>
   <span style="color:#8B95A1;font-size:11px">이 리포트는 SSB의 복합 지표 모델이 자동 생성합니다. 투자 판단은 최종적으로 본인 책임 하에 이루어져야 합니다.</span>
 </div>`
+}
+
+function buildConvictionFocusedCard(item: DailyCandidateForecast, index: number): string {
+  const conf = convictionConfidenceLevel(item.confidencePct)
+  const edge = item.expectedUpsidePct - item.expectedDrawdownPct
+  const edgeColor = edge >= 7 ? '#007B5F' : edge >= 4 ? '#C85700' : '#F04452'
+  const entryLow = Math.round(item.entryPrice * (1 - item.expectedDrawdownPct / 100)).toLocaleString('ko-KR')
+  const entryHigh = Math.round(item.entryPrice * (1 + Math.max(0.8, item.expectedBasePct) / 100)).toLocaleString('ko-KR')
+  const t1 = Math.round(item.entryPrice * (1 + item.expectedBasePct / 100)).toLocaleString('ko-KR')
+  const t2 = Math.round(item.entryPrice * (1 + item.expectedUpsidePct / 100)).toLocaleString('ko-KR')
+  const stop = Math.round(item.entryPrice * (1 - item.expectedDrawdownPct / 100)).toLocaleString('ko-KR')
+  const rationale = convictionRationalePoints(item)
+  const strat = convictionStrategyInfo(item.strategyLabel)
+
+  return `<article style="margin-bottom:16px;border:1px solid #d8e6ff;border-radius:14px;background:linear-gradient(180deg,#fbfdff 0%,#ffffff 100%);overflow:hidden;box-shadow:0 3px 14px rgba(20,49,96,0.06)">
+  <header style="display:flex;align-items:flex-start;justify-content:space-between;gap:14px;padding:14px 16px 12px;border-bottom:1px solid #edf3ff;background:linear-gradient(135deg,#eef4ff 0%,#f6fbff 100%)">
+    <div>
+      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+        <span style="display:inline-flex;align-items:center;justify-content:center;width:26px;height:26px;border-radius:999px;background:#0f4bd6;color:#fff;font-size:12px;font-weight:800">${index + 1}</span>
+        <strong style="font-size:21px;line-height:1.15;color:#13203a;letter-spacing:-0.02em">${escapeHtml(item.name)}</strong>
+        <code style="font-size:11px;background:#ffffff;padding:3px 8px;border-radius:999px;border:1px solid #d7e2f6;color:#4f5f79">${escapeHtml(item.code)}</code>
+      </div>
+      <div style="margin-top:6px;font-size:12px;color:#36527a">${escapeHtml(item.strategyLabel)} · ${escapeHtml(strat.description)}</div>
+    </div>
+    <div style="text-align:right;min-width:118px">
+      <div style="font-size:11px;color:#6b7c96">종합 신뢰도</div>
+      <div style="font-size:30px;line-height:1;font-weight:900;color:${conf.color};margin-top:3px">${item.confidencePct.toFixed(1)}<span style="font-size:13px;font-weight:700">%</span></div>
+      <div style="font-size:11px;font-weight:700;color:${conf.color};margin-top:2px">${conf.label}</div>
+    </div>
+  </header>
+
+  <section style="padding:12px 16px;border-bottom:1px solid #eef2f7;display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px">
+    <div style="padding:10px 10px;border:1px solid #e6ebf2;border-radius:10px;background:#fff"><div style="font-size:10px;color:#6b7c96">진입 구간</div><div style="margin-top:3px;font-size:13px;font-weight:800;color:#1f2f49">${entryLow} ~ ${entryHigh}원</div></div>
+    <div style="padding:10px 10px;border:1px solid #e6ebf2;border-radius:10px;background:#fff"><div style="font-size:10px;color:#6b7c96">1차 목표</div><div style="margin-top:3px;font-size:13px;font-weight:800;color:#d14343">${t1}원</div></div>
+    <div style="padding:10px 10px;border:1px solid #e6ebf2;border-radius:10px;background:#fff"><div style="font-size:10px;color:#6b7c96">2차 목표</div><div style="margin-top:3px;font-size:13px;font-weight:800;color:#c72c2c">${t2}원</div></div>
+    <div style="padding:10px 10px;border:1px solid #e6ebf2;border-radius:10px;background:#fff"><div style="font-size:10px;color:#6b7c96">손절 기준</div><div style="margin-top:3px;font-size:13px;font-weight:800;color:#1b64d8">${stop}원</div></div>
+  </section>
+
+  <section style="padding:14px 16px;display:grid;grid-template-columns:minmax(180px,1fr) minmax(220px,1.3fr);gap:14px">
+    <div style="border:1px solid #e8eef8;border-radius:12px;padding:12px;background:#fbfdff">
+      <div style="font-size:11px;color:#5c6f8d;font-weight:700;margin-bottom:8px">점수 패널</div>
+      <div style="display:flex;flex-direction:column;gap:8px">
+        <div style="display:flex;align-items:center;gap:8px"><span style="width:44px;font-size:11px;color:#54647c">모멘텀</span>${convictionScoreBar(item.scoreComponents.momentum, '#f04452')}<span style="width:26px;text-align:right;font-size:12px;font-weight:700;color:#13203a">${item.scoreComponents.momentum.toFixed(0)}</span></div>
+        <div style="display:flex;align-items:center;gap:8px"><span style="width:44px;font-size:11px;color:#54647c">밸류</span>${convictionScoreBar(item.scoreComponents.value, '#f57f17')}<span style="width:26px;text-align:right;font-size:12px;font-weight:700;color:#13203a">${item.scoreComponents.value.toFixed(0)}</span></div>
+        <div style="display:flex;align-items:center;gap:8px"><span style="width:44px;font-size:11px;color:#54647c">안전성</span>${convictionScoreBar(item.scoreComponents.safety, '#00a77e')}<span style="width:26px;text-align:right;font-size:12px;font-weight:700;color:#13203a">${item.scoreComponents.safety.toFixed(0)}</span></div>
+      </div>
+      <div style="margin-top:10px;padding:9px 10px;border-radius:8px;background:#fff;border:1px solid #dbe4f3;display:flex;justify-content:space-between;align-items:center">
+        <span style="font-size:11px;color:#607089">기대 여지</span>
+        <strong style="font-size:17px;color:${edgeColor}">+${edge.toFixed(1)}%</strong>
+      </div>
+    </div>
+
+    <div>
+      <div style="font-size:11px;color:#5c6f8d;font-weight:700;margin-bottom:8px">매수 확신 근거</div>
+      <div style="display:flex;flex-direction:column;gap:6px">
+        ${rationale.map((r) => `<div style="padding:8px 10px;border:1px solid #e7edf7;border-left:3px solid #2d66dc;border-radius:9px;background:#ffffff;font-size:12px;line-height:1.55;color:#1c2b45">${escapeHtml(r)}</div>`).join('')}
+      </div>
+    </div>
+  </section>
+</article>`
+}
+
+export function buildPublicCandidateWebHtml(params: {
+  forecasts: DailyCandidateForecast[]
+  title: string
+  subtitle: string
+  note?: string
+  limit?: number
+}): string {
+  const { forecasts, title, subtitle, note, limit = 6 } = params
+  const ranked = [...(forecasts || [])]
+    .sort((a, b) => {
+      if (b.scoreComponents.safety !== a.scoreComponents.safety) return b.scoreComponents.safety - a.scoreComponents.safety
+      if (a.expectedDrawdownPct !== b.expectedDrawdownPct) return a.expectedDrawdownPct - b.expectedDrawdownPct
+      if (b.confidencePct !== a.confidencePct) return b.confidencePct - a.confidencePct
+      return b.expectedUpsidePct - a.expectedUpsidePct
+    })
+    .slice(0, Math.max(1, limit))
+
+  if (!ranked.length) {
+    return '<p style="color:#718096;padding:24px 0;text-align:center;font-size:14px">현재 조건에서 공개 가능한 후보를 찾지 못했습니다.<br>잠시 후 다시 확인해 주세요.</p>'
+  }
+
+  const items = ranked.map((item, idx) => {
+    const risk = item.expectedDrawdownPct
+    const safety = item.scoreComponents.safety
+    const riskLabel = risk <= 4.5 ? '낮음' : risk <= 7 ? '보통' : '주의'
+    const riskColor = risk <= 4.5 ? '#0f9d76' : risk <= 7 ? '#c07a00' : '#d14343'
+    return `<article style="border:1px solid #e4eaf3;border-radius:12px;background:#fff;padding:12px 13px;display:grid;grid-template-columns:1.2fr 1fr 1fr 1fr;gap:8px;align-items:center">
+      <div>
+        <div style="display:flex;align-items:center;gap:7px;flex-wrap:wrap">
+          <span style="display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;border-radius:999px;background:#3f5f8f;color:#fff;font-size:11px;font-weight:800">${idx + 1}</span>
+          <strong style="font-size:16px;color:#12233f">${escapeHtml(item.name)}</strong>
+          <code style="font-size:10px;padding:2px 7px;border-radius:999px;border:1px solid #dde5f3;background:#f8fbff;color:#5a6b84">${escapeHtml(item.code)}</code>
+        </div>
+        <div style="margin-top:4px;font-size:11px;color:#64748b">${escapeHtml(item.strategyLabel)} · 신뢰 ${item.confidencePct.toFixed(1)}%</div>
+      </div>
+      <div style="text-align:right"><div style="font-size:10px;color:#72839c">안전성</div><div style="font-size:18px;font-weight:800;color:#0f5f4a">${safety.toFixed(0)}</div></div>
+      <div style="text-align:right"><div style="font-size:10px;color:#72839c">예상 손실</div><div style="font-size:18px;font-weight:800;color:${riskColor}">-${risk.toFixed(1)}%</div></div>
+      <div style="text-align:right"><div style="font-size:10px;color:#72839c">리스크 등급</div><div style="font-size:13px;font-weight:800;color:${riskColor}">${riskLabel}</div></div>
+    </article>`
+  }).join('')
+
+  const footerNote = note
+    ? escapeHtml(note)
+    : '공개용 리포트는 개인정보/보유금액을 제외한 요약 정보만 제공합니다.'
+
+  return `<div style="margin-bottom:14px;padding:12px 14px;border:1px solid #d8e3f3;border-radius:11px;background:linear-gradient(135deg,#f7fbff 0%,#f9fbfe 100%)">
+  <div style="font-size:13px;font-weight:800;color:#13233f">${escapeHtml(title)}</div>
+  <div style="margin-top:4px;font-size:11px;color:#5d6f8a">${escapeHtml(subtitle)}</div>
+</div>
+<div style="display:flex;flex-direction:column;gap:8px">${items}</div>
+<div style="margin-top:12px;padding:11px 12px;border-radius:10px;border:1px solid #e5ebf3;background:#f8fafd;font-size:12px;color:#5f6e84;line-height:1.6">${footerNote}</div>`
 }
 
 export function buildCandidateCardsWebHtml(params: {
