@@ -141,7 +141,7 @@ async function fetchTodayAutoTradeSkipReasonStats(
         .lt("started_at", endIso)
         .order("started_at", { ascending: false })
         .range(from, to),
-    { pageSize: 1000, maxRows: 50000 }
+    { pageSize: 1000, maxRows: 50000, logLabel: "ops.autotrade_skip_stats" }
   ).catch(() => []);
 
   const summaries = (data ?? []).map((row: { summary?: unknown }) => {

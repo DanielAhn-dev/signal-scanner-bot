@@ -157,7 +157,7 @@ async function fetchLatestAnnualByCode(
         .eq("period_type", "annual")
         .order("as_of", { ascending: false })
         .range(from, to),
-    { pageSize: 1000, maxRows: 30000 }
+    { pageSize: 1000, maxRows: 30000, logLabel: "discovery.fundamentals.annual" }
   ).catch((e) => {
     throw new Error(`annual fundamentals 조회 실패: ${String((e as Error).message || e)}`);
   });
@@ -259,7 +259,7 @@ async function fetchSmartMoney12wByCode(
           .gte("date", since)
           .order("date", { ascending: false })
           .range(from, to),
-      { pageSize: 1000, maxRows: 100000 }
+      { pageSize: 1000, maxRows: 100000, logLabel: "discovery.investor_12w" }
     ).catch((e) => {
       throw new Error(`investor_daily 조회 실패: ${String((e as Error).message || e)}`);
     });

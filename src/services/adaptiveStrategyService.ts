@@ -133,7 +133,7 @@ async function getHistoricalPullbackRows(supabase: SupabaseClient, tradeDates: s
         .neq('warn_grade', 'SELL')
         .order('trade_date', { ascending: false })
         .range(from, to),
-    { pageSize: 1000, maxRows: 50000 }
+    { pageSize: 1000, maxRows: 50000, logLabel: 'adaptive.pullback_history' }
   )
 
   const rows: PullbackHistoryRow[] = pullbackData.map((row: unknown) => ({
@@ -246,7 +246,7 @@ async function getPriceRows(
             .lte('date', endDate)
             .order('date', { ascending: true })
             .range(from, to),
-        { pageSize: 1000, maxRows: 100000 }
+        { pageSize: 1000, maxRows: 100000, logLabel: `adaptive.price.${tableName}` }
       ).catch(() => [])
 
       for (const row of rows) {

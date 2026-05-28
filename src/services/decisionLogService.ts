@@ -118,7 +118,7 @@ export async function getDecisionReliabilitySummary(
         .gte("decision_at", sinceIso)
         .order("decision_at", { ascending: false })
         .range(from, to),
-    { pageSize: 1000, maxRows: 50000 }
+    { pageSize: 1000, maxRows: 50000, logLabel: "decision.reliability_logs" }
   ).catch((e) => {
     console.error("getDecisionReliabilitySummary decision query error:", e);
     return null;

@@ -1257,7 +1257,7 @@ async function fetchSectorMomentum(
           .lte("date", asOf)
           .order("date", { ascending: true })
           .range(from, to),
-      { pageSize: 1000, maxRows: 10000 }
+      { pageSize: 1000, maxRows: 10000, logLabel: "briefing.sector_momentum" }
     );
     rows.push(...partRows);
   }
