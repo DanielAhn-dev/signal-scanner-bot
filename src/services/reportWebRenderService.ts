@@ -180,20 +180,64 @@ function stripSimpleHtmlTags(text: string): string {
 type ExecutionGuidePlanItem = {
   title: string
   facts: string[]
-  headlines: Array<{ title: string; url: string | null }>
+  headlines: Array<{ title: string; url: string | null; source: string | null }>
 }
 
-function parseExecutionGuideHeadline(raw: string): { title: string; url: string | null } {
+type ExecutionGuideAutoCandidateItem = {
+  nameCode: string
+  strategy: string | null
+  scoreText: string | null
+  details: string[]
+}
+
+function parseExecutionGuideAutoCandidate(raw: string): ExecutionGuideAutoCandidateItem {
   const text = String(raw || '').trim()
-  if (!text) return { title: '', url: null }
-  const chunks = text.split(' | ')
-  if (chunks.length < 2) return { title: text, url: null }
-  const maybeUrl = chunks[chunks.length - 1].trim()
-  const isHttp = /^https?:\/\//i.test(maybeUrl)
-  if (!isHttp) return { title: text, url: null }
+  const match = text.match(/^(.+?)\s+\[([^\]]+)\]\s+점수\s+([0-9.]+)\s+·\s+(.+)$/)
+  if (!match) {
+    return {
+      nameCode: text,
+      strategy: null,
+      scoreText: null,
+      details: [],
+    }
+  }
+  const nameCode = String(match[1] || '').trim()
+  const strategy = String(match[2] || '').trim() || null
+  const scoreText = String(match[3] || '').trim() || null
+  const details = String(match[4] || '')
+    .split(' · ')
+    .map((item) => item.trim())
+    .filter(Boolean)
+  return { nameCode, strategy, scoreText, details }
+}
+
+function parseExecutionGuideHeadline(raw: string): { title: string; url: string | null; source: string | null } {
+  const text = String(raw || '').trim()
+  if (!text) return { title: '', url: null, source: null }
+
+  let remain = text
+  let url: string | null = null
+  const chunks = remain.split(' | ')
+  if (chunks.length >= 2) {
+    const maybeUrl = chunks[chunks.length - 1].trim()
+    if (/^https?:\/\//i.test(maybeUrl)) {
+      url = maybeUrl
+      remain = chunks.slice(0, -1).join(' | ').trim()
+    }
+  }
+
+  let source: string | null = null
+  const sourceMatch = remain.match(/\(출처:\s*([^\)]+)\)\s*$/)
+  if (sourceMatch) {
+    source = String(sourceMatch[1] || '').trim() || null
+    remain = remain.slice(0, sourceMatch.index).trim()
+  }
+
+  const title = remain || text
   return {
-    title: chunks.slice(0, -1).join(' | ').trim(),
-    url: maybeUrl,
+    title,
+    url,
+    source,
   }
 }
 
@@ -283,7 +327,10 @@ function buildExecutionGuideStructuredHtml(bodyText: string): string {
     : '<p>설정 정보가 없습니다.</p>'
 
   const autoHtml = autoCandidates.length > 0
-    ? `<div class="execution-guide-web-cards">${autoCandidates.map((row, idx) => `<article class="execution-guide-web-candidate"><div class="execution-guide-web-candidate__rank">${idx + 1}</div><div class="execution-guide-web-candidate__text">${escapeHtml(row)}</div></article>`).join('')}</div>`
+    ? `<div class="execution-guide-web-cards">${autoCandidates.map((row, idx) => {
+      const parsed = parseExecutionGuideAutoCandidate(row)
+      return `<article class="execution-guide-web-candidate"><div class="execution-guide-web-candidate__rank">${idx + 1}</div><div class="execution-guide-web-candidate__body"><div class="execution-guide-web-candidate__top"><strong class="execution-guide-web-candidate__name">${escapeHtml(parsed.nameCode)}</strong>${parsed.strategy ? `<span class="execution-guide-web-candidate__chip">${escapeHtml(parsed.strategy)}</span>` : ''}${parsed.scoreText ? `<span class="execution-guide-web-candidate__score">점수 ${escapeHtml(parsed.scoreText)}</span>` : ''}</div>${parsed.details.length > 0 ? `<div class="execution-guide-web-candidate__meta">${parsed.details.map((detail) => `<span class="execution-guide-web-candidate__meta-item">${escapeHtml(detail)}</span>`).join('')}</div>` : `<div class="execution-guide-web-candidate__text">${escapeHtml(row)}</div>`}</div></article>`
+    }).join('')}</div>`
     : '<p>자동 추천 후보가 없습니다.</p>'
 
   const plansHtml = plans.length > 0
@@ -291,7 +338,7 @@ function buildExecutionGuideStructuredHtml(bodyText: string): string {
       <article class="execution-guide-web-plan-card">
         <h3>${escapeHtml(plan.title)}</h3>
         ${plan.facts.length > 0 ? `<ul class="execution-guide-web-facts">${plan.facts.map((fact) => `<li>${escapeHtml(fact)}</li>`).join('')}</ul>` : ''}
-        ${plan.headlines.length > 0 ? `<div class="execution-guide-web-headlines"><div class="execution-guide-web-headlines__title">관련 뉴스</div><ul>${plan.headlines.map((news) => `<li>${news.url ? `<a href="${escapeHtml(news.url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(news.title)}</a>` : `${escapeHtml(news.title)}`}</li>`).join('')}</ul></div>` : ''}
+        ${plan.headlines.length > 0 ? `<div class="execution-guide-web-headlines"><div class="execution-guide-web-headlines__title">관련 뉴스</div><ul>${plan.headlines.map((news) => `<li>${news.url ? `<a href="${escapeHtml(news.url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(news.title)}</a>` : `<span>${escapeHtml(news.title)}</span>`}${news.source ? `<span class="execution-guide-web-news-source">${escapeHtml(news.source)}</span>` : ''}</li>`).join('')}</ul></div>` : ''}
       </article>
     `).join('')}</div>`
     : '<p>종목별 실행 계획이 없습니다.</p>'
@@ -1632,12 +1679,67 @@ export function renderLayout(params: {
       align-items: center;
       box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
     }
+    .execution-guide-web-candidate__body {
+      display: grid;
+      gap: 8px;
+      min-width: 0;
+    }
+    .execution-guide-web-candidate__top {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+    .execution-guide-web-candidate__name {
+      font-size: 15px;
+      color: #191f28;
+      line-height: 1.4;
+      font-weight: 700;
+      letter-spacing: -0.01em;
+    }
+    .execution-guide-web-candidate__chip {
+      display: inline-flex;
+      align-items: center;
+      font-size: 11px;
+      color: #4b5b73;
+      background: #f2f5f9;
+      border-radius: 999px;
+      padding: 2px 8px;
+      line-height: 1.4;
+      white-space: nowrap;
+    }
+    .execution-guide-web-candidate__score {
+      display: inline-flex;
+      align-items: center;
+      font-size: 12px;
+      color: #2b6de5;
+      font-weight: 700;
+      background: #eef4ff;
+      border-radius: 999px;
+      padding: 2px 8px;
+      white-space: nowrap;
+    }
     .execution-guide-web-candidate__rank {
       width: 24px;
       text-align: center;
       font-size: 12px;
       font-weight: 700;
       color: #6b7684;
+    }
+    .execution-guide-web-candidate__meta {
+      display: flex;
+      gap: 6px;
+      flex-wrap: wrap;
+    }
+    .execution-guide-web-candidate__meta-item {
+      display: inline-flex;
+      align-items: center;
+      font-size: 12px;
+      color: #4d5968;
+      background: #f7f9fb;
+      border-radius: 8px;
+      padding: 4px 8px;
+      line-height: 1.45;
     }
     .execution-guide-web-candidate__text {
       font-size: 14px;
@@ -1705,6 +1807,10 @@ export function renderLayout(params: {
       font-size: 13px;
       color: #3a485c;
       line-height: 1.5;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
     }
     .execution-guide-web-headlines a {
       color: #2b6de5;
@@ -1713,6 +1819,16 @@ export function renderLayout(params: {
     }
     .execution-guide-web-headlines a:hover {
       text-decoration: underline;
+    }
+    .execution-guide-web-news-source {
+      display: inline-flex;
+      align-items: center;
+      font-size: 11px;
+      color: #6b7684;
+      background: #eef2f6;
+      border-radius: 999px;
+      padding: 2px 7px;
+      line-height: 1.4;
     }
     .content hr { border: 0; border-top: 1px solid var(--color-border-default); margin: 0.9em 0; }
     .content ul, .content ol { margin: 0.55em 0 0.9em; padding-left: 1.4em; }

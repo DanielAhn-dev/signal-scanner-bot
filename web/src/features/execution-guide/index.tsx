@@ -31,7 +31,7 @@ type GuideRow = {
   riskReward: number | null
   warnings: string[]
   headlines: string[]
-  headlineLinks: Array<{ title: string; url: string | null }>
+  headlineLinks: Array<{ title: string; url: string | null; source: string | null }>
   plannedBudget: number
   qty: number
   firstOrderAmount: number
@@ -100,9 +100,9 @@ function toExecutionGuideSnapshotText(input: {
       if (row.headlines.length > 0) {
         const entries = row.headlineLinks.length > 0
           ? row.headlineLinks.slice(0, 3)
-          : row.headlines.slice(0, 3).map((title) => ({ title, url: null }))
+          : row.headlines.slice(0, 3).map((title) => ({ title, url: null, source: null }))
         for (const headline of entries) {
-          lines.push(`    · ${headline.title}${headline.url ? ` | ${headline.url}` : ''}`)
+          lines.push(`    · ${headline.title}${headline.source ? ` (출처: ${headline.source})` : ''}${headline.url ? ` | ${headline.url}` : ''}`)
         }
       }
     }
@@ -175,6 +175,11 @@ function normalizeNewsUrl(input: unknown): string | null {
   if (/^https?:\/\//i.test(value)) return value
   if (value.startsWith('//')) return `https:${value}`
   return null
+}
+
+function normalizeNewsSource(input: unknown): string | null {
+  const value = decodeHeadlineText(String(input || ''))
+  return value || null
 }
 
 function clampValue(value: number, min: number, max: number): number {
@@ -390,7 +395,7 @@ export default function ExecutionGuidePage() {
           const advisor = stockRes.advisor || {}
 
           let headlines: string[] = []
-          let headlineLinks: Array<{ title: string; url: string | null }> = []
+          let headlineLinks: Array<{ title: string; url: string | null; source: string | null }> = []
           if (includeNews) {
             const newsRes = await apiFetch(`/api/ui/news?q=${encodeURIComponent(code)}&page=1&pageSize=3`, {
               cacheMs: 30_000,
@@ -401,7 +406,8 @@ export default function ExecutionGuidePage() {
                 .map((item: any) => {
                   const title = decodeHeadlineText(String(item?.title || ''))
                   const url = normalizeNewsUrl(item?.originallink ?? item?.link ?? item?.url)
-                  return { title, url }
+                  const source = normalizeNewsSource(item?.source ?? item?.press ?? item?.officeName ?? item?.publisher ?? item?.media)
+                  return { title, url, source }
                 })
                 .filter((item: { title: string }) => Boolean(item.title))
                 .slice(0, 3)
