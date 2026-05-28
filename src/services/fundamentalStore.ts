@@ -1,4 +1,5 @@
 import { createClient } from "@supabase/supabase-js";
+import { chunkValues } from "./supabasePaging";
 
 const supabase = createClient(
   process.env.SUPABASE_URL!,
@@ -97,23 +98,33 @@ export async function getFundamentalSnapshotsForCodes(
   const result: Record<string, FundamentalSnapshot | null> = {};
   if (!codes.length) return result;
   try {
-    const { data, error } = await supabase
-      .from(FUNDAMENTALS_TABLE)
-      .select("*")
-      .in("code", codes)
-      .order("as_of", { ascending: false })
-      .limit(1000);
-
-    if (error) {
-      console.error("getFundamentalSnapshotsForCodes error:", error);
-      return codes.reduce((acc, c) => ({ ...acc, [c]: null }), {} as Record<string, null>);
-    }
-
-    const rows = (data ?? []) as FundamentalSnapshot[];
     const grouped = new Map<string, FundamentalSnapshot>();
-    for (const r of rows) {
-      if (!grouped.has(r.code)) grouped.set(r.code, r);
+    for (const part of chunkValues(codes, 200)) {
+      const need = new Set(part);
+      for (let offset = 0; ; offset += 1000) {
+        const { data, error } = await supabase
+          .from(FUNDAMENTALS_TABLE)
+          .select("*")
+          .in("code", part)
+          .order("as_of", { ascending: false })
+          .range(offset, offset + 999);
+
+        if (error) {
+          console.error("getFundamentalSnapshotsForCodes error:", error);
+          return codes.reduce((acc, c) => ({ ...acc, [c]: null }), {} as Record<string, null>);
+        }
+
+        const rows = (data ?? []) as FundamentalSnapshot[];
+        for (const r of rows) {
+          if (!r?.code || grouped.has(r.code)) continue;
+          grouped.set(r.code, r);
+          need.delete(r.code);
+        }
+
+        if (rows.length < 1000 || need.size === 0) break;
+      }
     }
+
     for (const code of codes) result[code] = grouped.get(code) ?? null;
     return result;
   } catch (e) {
@@ -129,16 +140,18 @@ export async function getStockClosePrices(
   const map = new Map<string, number>();
   if (!codes.length) return map;
   try {
-    const { data, error } = await supabase
-      .from("stocks")
-      .select("code,close")
-      .in("code", codes);
-    if (error) {
-      console.error("getStockClosePrices error:", error);
-      return map;
-    }
-    for (const row of data ?? []) {
-      if (row.close != null) map.set(row.code, Number(row.close));
+    for (const part of chunkValues(codes, 200)) {
+      const { data, error } = await supabase
+        .from("stocks")
+        .select("code,close")
+        .in("code", part);
+      if (error) {
+        console.error("getStockClosePrices error:", error);
+        return map;
+      }
+      for (const row of data ?? []) {
+        if ((row as any).close != null) map.set((row as any).code, Number((row as any).close));
+      }
     }
   } catch (e) {
     console.error("getStockClosePrices exception:", e);

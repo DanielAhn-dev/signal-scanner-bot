@@ -1,5 +1,6 @@
 import { createClient } from "@supabase/supabase-js";
 import { PORTFOLIO_TABLES } from "../db/portfolioSchema";
+import { chunkValues, selectPaged } from "./supabasePaging";
 
 export type DecisionAction = "BUY" | "SELL" | "ADJUST" | "HOLD" | "SKIP";
 
@@ -108,16 +109,22 @@ export async function getDecisionReliabilitySummary(
     Date.now() - safeWindowDays * 24 * 60 * 60 * 1000
   ).toISOString();
 
-  const { data: decisionRows, error: decisionError } = await supabase
-    .from(PORTFOLIO_TABLES.decisionLogs)
-    .select("id, action, confidence, reason_summary, strategy_version, linked_trade_id")
-    .eq("chat_id", chatId)
-    .gte("decision_at", sinceIso)
-    .order("decision_at", { ascending: false })
-    .limit(1000);
+  const decisionRows = await selectPaged<Record<string, unknown>>(
+    async (from, to) =>
+      await supabase
+        .from(PORTFOLIO_TABLES.decisionLogs)
+        .select("id, action, confidence, reason_summary, strategy_version, linked_trade_id")
+        .eq("chat_id", chatId)
+        .gte("decision_at", sinceIso)
+        .order("decision_at", { ascending: false })
+        .range(from, to),
+    { pageSize: 1000, maxRows: 50000 }
+  ).catch((e) => {
+    console.error("getDecisionReliabilitySummary decision query error:", e);
+    return null;
+  });
 
-  if (decisionError) {
-    console.error("getDecisionReliabilitySummary decision query error:", decisionError);
+  if (!decisionRows) {
     return null;
   }
 
@@ -155,23 +162,25 @@ export async function getDecisionReliabilitySummary(
 
   const tradeMap = new Map<number, { side: string; pnlAmount: number }>();
   if (linkedTradeIds.length) {
-    const { data: tradeRows, error: tradeError } = await supabase
-      .from(PORTFOLIO_TABLES.trades)
-      .select("id, side, pnl_amount")
-      .in("id", linkedTradeIds);
+    for (const ids of chunkValues(linkedTradeIds, 200)) {
+      const { data: tradeRows, error: tradeError } = await supabase
+        .from(PORTFOLIO_TABLES.trades)
+        .select("id, side, pnl_amount")
+        .in("id", ids);
 
-    if (tradeError) {
-      console.error("getDecisionReliabilitySummary trade query error:", tradeError);
-      return null;
-    }
+      if (tradeError) {
+        console.error("getDecisionReliabilitySummary trade query error:", tradeError);
+        return null;
+      }
 
-    for (const row of tradeRows ?? []) {
-      const id = Number((row as any).id ?? 0);
-      if (!id) continue;
-      tradeMap.set(id, {
-        side: String((row as any).side ?? "").toUpperCase(),
-        pnlAmount: Number((row as any).pnl_amount ?? 0),
-      });
+      for (const row of tradeRows ?? []) {
+        const id = Number((row as any).id ?? 0);
+        if (!id) continue;
+        tradeMap.set(id, {
+          side: String((row as any).side ?? "").toUpperCase(),
+          pnlAmount: Number((row as any).pnl_amount ?? 0),
+        });
+      }
     }
   }
 

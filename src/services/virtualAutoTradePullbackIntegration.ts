@@ -1,3 +1,5 @@
+import { chunkValues } from "./supabasePaging";
+
 type SupabaseClientAny = any;
 
 function toNumber(value: unknown, fallback = 0): number {
@@ -51,18 +53,31 @@ export async function fetchLatestPullbackCandidateCodes(input: {
     return new Set<string>();
   }
 
-  const { data: scoreRows } = await input.supabase
-    .from("scores")
-    .select("code, factors")
-    .in("code", codes)
-    .order("asof", { ascending: false })
-    .limit(Math.max(codes.length * 2, 120));
-
   const factorsByCode = new Map<string, Record<string, unknown>>();
-  for (const row of (scoreRows ?? []) as Array<Record<string, unknown>>) {
-    const code = String(row.code ?? "").trim();
-    if (!code || factorsByCode.has(code)) continue;
-    factorsByCode.set(code, (row.factors ?? {}) as Record<string, unknown>);
+  for (const part of chunkValues(codes, 200)) {
+    const need = new Set(part);
+    for (let offset = 0; ; offset += 1000) {
+      const { data: scoreRows, error } = await input.supabase
+        .from("scores")
+        .select("code, factors")
+        .in("code", part)
+        .order("asof", { ascending: false })
+        .range(offset, offset + 999);
+
+      if (error) {
+        break;
+      }
+
+      const rows = (scoreRows ?? []) as Array<Record<string, unknown>>;
+      for (const row of rows) {
+        const code = String(row.code ?? "").trim();
+        if (!code || factorsByCode.has(code)) continue;
+        factorsByCode.set(code, (row.factors ?? {}) as Record<string, unknown>);
+        need.delete(code);
+      }
+
+      if (rows.length < 1000 || need.size === 0) break;
+    }
   }
 
   const refined = codes.filter((code: string) => {
