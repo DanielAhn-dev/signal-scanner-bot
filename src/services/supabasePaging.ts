@@ -26,6 +26,57 @@ export const DEFAULT_MAX_ROWS = getEnvNumber("SUPABASE_PAGING_MAX_ROWS", 100000)
 export const DEFAULT_IN_CHUNK_SIZE = getEnvNumber("SUPABASE_IN_CHUNK_SIZE", 200);
 export const DEFAULT_PAGING_DEBUG = getEnvBool("SUPABASE_PAGING_DEBUG", false);
 
+type PagingStopReason = "short_page" | "max_rows";
+
+export type PagingRunStat = {
+  label: string;
+  rows: number;
+  pages: number;
+  pageSize: number;
+  stop: PagingStopReason;
+};
+
+const MAX_PAGING_STATS = 300;
+const pagingRunStats: PagingRunStat[] = [];
+
+export function resetPagingRunStats(): void {
+  pagingRunStats.length = 0;
+}
+
+export function getPagingRunStats(): PagingRunStat[] {
+  return pagingRunStats.slice();
+}
+
+export function getPagingRunStatsSummary(): {
+  runs: number;
+  rows: number;
+  pages: number;
+  byLabel: Array<{ label: string; runs: number; rows: number; pages: number }>;
+} {
+  const byLabel = new Map<string, { runs: number; rows: number; pages: number }>();
+  let rows = 0;
+  let pages = 0;
+
+  for (const stat of pagingRunStats) {
+    rows += stat.rows;
+    pages += stat.pages;
+    const current = byLabel.get(stat.label) ?? { runs: 0, rows: 0, pages: 0 };
+    current.runs += 1;
+    current.rows += stat.rows;
+    current.pages += stat.pages;
+    byLabel.set(stat.label, current);
+  }
+
+  return {
+    runs: pagingRunStats.length,
+    rows,
+    pages,
+    byLabel: Array.from(byLabel.entries())
+      .map(([label, v]) => ({ label, runs: v.runs, rows: v.rows, pages: v.pages }))
+      .sort((a, b) => b.rows - a.rows),
+  };
+}
+
 export function chunkValues<T>(items: T[], size = DEFAULT_IN_CHUNK_SIZE): T[][] {
   if (size <= 0) return [items.slice()];
   const out: T[][] = [];
@@ -69,8 +120,20 @@ export async function selectPaged<T>(
     }
   }
 
+  const reason: PagingStopReason = stoppedByShortPage ? "short_page" : "max_rows";
+
+  pagingRunStats.push({
+    label: logLabel,
+    rows: out.length,
+    pages,
+    pageSize,
+    stop: reason,
+  });
+  if (pagingRunStats.length > MAX_PAGING_STATS) {
+    pagingRunStats.splice(0, pagingRunStats.length - MAX_PAGING_STATS);
+  }
+
   if (debug) {
-    const reason = stoppedByShortPage ? "short_page" : "max_rows";
     logger(`[supabasePaging] ${logLabel} rows=${out.length} pages=${pages} page_size=${pageSize} stop=${reason}`);
   }
 
