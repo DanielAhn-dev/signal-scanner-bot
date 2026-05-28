@@ -113,6 +113,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     })
 
     const persistedBody = String(persisted?.bodyText || '')
+    // 스냅샷이 HTML 형식이더라도 토픽별 고유 마커가 없으면 구 버전 스냅샷으로 간주해 재생성
+    // (토픽 분기 렌더 적용 전 저장된 동일 내용 스냅샷 문제 해소)
     const needsRichRefresh = (
       ['추천', '공개추천', '확신추천', '눌림목', '관심종목'].includes(topic)
       && Boolean(persistedBody)
@@ -121,6 +123,18 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       topic === '눌림목'
       && persistedBody.includes('Next Week Pullback')
       && persistedBody.includes('다음 주 눌림목 리포트</div>')
+    ) || (
+      // 확신추천 전용 마커 미포함 → 구 스냅샷(추천과 동일 내용) → 재생성
+      topic === '확신추천'
+      && Boolean(persistedBody)
+      && persistedBody.startsWith(HTML_BODY_PREFIX)
+      && !persistedBody.includes('확신 후보')
+    ) || (
+      // 공개추천 전용 마커 미포함 → 구 스냅샷(추천과 동일 내용) → 재생성
+      topic === '공개추천'
+      && Boolean(persistedBody)
+      && persistedBody.startsWith(HTML_BODY_PREFIX)
+      && !persistedBody.includes('공유용 오늘의 후보 리포트')
     )
 
     if (persisted?.bodyText && !needsRichRefresh) {

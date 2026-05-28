@@ -540,6 +540,8 @@ function buildDailyCandidateForecasts(input: {
   kosdaqPicks: PickCandidate[];
   topAnalyzeCodes: string[];
   displayLimit: number;
+  /** 토픽별 필터링을 위한 후보 풀 크기 (기본 15). displayLimit 과 독립적으로 관리됨 */
+  poolLimit?: number;
   deployableCash?: number;
   availableCash?: number;
   seedCapital?: number;
@@ -590,7 +592,7 @@ function buildDailyCandidateForecasts(input: {
       );
     }
 
-    if (forecasts.length >= Math.min(input.displayLimit, 5)) break;
+    if (forecasts.length >= (input.poolLimit ?? input.displayLimit)) break;
   }
 
   return forecasts;
@@ -1362,6 +1364,8 @@ export async function createDailyCandidatePlanningReportResult(
     chatId?: number;
     compactActionText?: boolean;
     fixedDisplayLimit?: number;
+    /** 토픽별 필터(확신추천·공개추천 등) 적용 전 후보 풀 크기. fixedDisplayLimit과 독립적으로 관리됨 */
+    forecastPoolLimit?: number;
     excludeHoldingCodes?: boolean;
   }
 ): Promise<DailyCandidatePlanningReportResult> {
@@ -1499,6 +1503,7 @@ export async function createDailyCandidatePlanningReportResult(
     kosdaqPicks: visibleKosdaqPicks,
     topAnalyzeCodes,
     displayLimit,
+    poolLimit: options?.forecastPoolLimit,
     deployableCash: planningConstraints?.deployableCash,
     availableCash: planningConstraints?.availableCash,
     seedCapital: planningConstraints?.seedCapital,

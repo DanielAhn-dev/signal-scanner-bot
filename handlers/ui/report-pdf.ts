@@ -135,6 +135,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       riskProfile,
       chatId: chatId ?? undefined,
       fixedDisplayLimit: 5,
+      forecastPoolLimit: 15,
       excludeHoldingCodes: true,
     })
     const topicForecasts = selectForecastsForTopic(

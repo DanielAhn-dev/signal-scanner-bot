@@ -291,6 +291,7 @@ export async function buildReportBodyText(params: {
     riskProfile,
     chatId: chatId ?? undefined,
     fixedDisplayLimit: 5,
+    forecastPoolLimit: 15,
     excludeHoldingCodes: true,
   })
   log('candidate_report')
