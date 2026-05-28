@@ -472,6 +472,7 @@ export function buildPullbackWebHtml(input: {
   caption: string
 }): string {
   const title = escapeHtml(input.title || '다음 주 눌림목 리포트')
+  const sectionHeadline = title === '다음 주 눌림목 리포트' ? '다음 주 선진입 후보 요약' : `${title} 요약`
   const summary = String(input.summaryText || '').trim()
   const caption = escapeHtml(input.caption || '')
   const lines = summary.split(/\r?\n/).map((line) => line.trim()).filter(Boolean)
@@ -497,7 +498,7 @@ export function buildPullbackWebHtml(input: {
   <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap">
     <div>
       <div style="font-size:11px;font-weight:700;letter-spacing:0.06em;color:#2a5bb8;text-transform:uppercase">Next Week Pullback</div>
-      <div style="margin-top:4px;font-size:23px;line-height:1.2;font-weight:800;letter-spacing:-0.02em;color:#102542">${title}</div>
+      <div style="margin-top:4px;font-size:22px;line-height:1.22;font-weight:800;letter-spacing:-0.02em;color:#102542">${sectionHeadline}</div>
     </div>
     <div style="font-size:11px;color:#4b668f;background:#e8f0ff;border:1px solid #c8dafd;padding:4px 10px;border-radius:999px">스윙/중기 선진입 후보</div>
   </div>
