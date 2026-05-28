@@ -87,9 +87,37 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const sector = qParams.sector || null
     const minLiquidity = qParams.minLiquidity ? Number(qParams.minLiquidity) : null
     const allMode = String(qParams.all || '') === '1'
+    const metaMode = String(qParams.meta || '') === '1'
 
     const withCount = String(qParams.withCount || '') === '1'
     const filterOptions = { sector, codeOrQ, minLiquidity }
+
+    if (metaMode) {
+      const countQuery = applyStockFilters(
+        supabase.from('stocks').select('code', { count: 'exact', head: true }),
+        filterOptions,
+      )
+      const { count, error: countError } = await countQuery
+      if (countError) return res.status(500).json({ error: countError.message })
+
+      const latestQuery = applyStockFilters(
+        supabase
+          .from('stocks')
+          .select('updated_at')
+          .order('updated_at', { ascending: false })
+          .limit(1),
+        filterOptions,
+      )
+      const { data: latestRows, error: latestError } = await latestQuery
+      if (latestError) return res.status(500).json({ error: latestError.message })
+
+      const latestUpdatedAt = latestRows?.[0]?.updated_at ?? null
+      return res.status(200).json({
+        count: count ?? 0,
+        latestUpdatedAt,
+        signature: `${count ?? 0}:${String(latestUpdatedAt ?? '')}`,
+      })
+    }
 
     if (allMode) {
       // Supabase max rows(예: 1000) 제한으로 잘리는 상황을 피하기 위해 range 배치 조회

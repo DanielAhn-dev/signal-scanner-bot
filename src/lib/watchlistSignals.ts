@@ -16,6 +16,17 @@ interface InvestorDailyRow {
   institution: number | null;
 }
 
+const PAGE_SIZE = 1000;
+const CODE_CHUNK_SIZE = 100;
+
+function chunkArray<T>(items: T[], size: number): T[][] {
+  const out: T[][] = [];
+  for (let i = 0; i < items.length; i += size) {
+    out.push(items.slice(i, i + size));
+  }
+  return out;
+}
+
 export interface WatchMicroSignal {
   valueRatio: number | null;
   valueZ: number | null;
@@ -208,28 +219,48 @@ export async function fetchWatchMicroSignalsByCodes(
     .toISOString()
     .slice(0, 10);
 
-  const [{ data: dailyRows }, { data: flowRows }] = await Promise.all([
-    supabase
-      .from("stock_daily")
-      .select("ticker, date, value")
-      .in("ticker", uniqCodes)
-      .gte("date", since90),
-    supabase
-      .from("investor_daily")
-      .select("ticker, date, foreign, institution")
-      .in("ticker", uniqCodes)
-      .gte("date", since30),
-  ]);
+  const dailyRows: StockDailyRow[] = [];
+  const flowRows: InvestorDailyRow[] = [];
+
+  for (const codeChunk of chunkArray(uniqCodes, CODE_CHUNK_SIZE)) {
+    for (let offset = 0; ; offset += PAGE_SIZE) {
+      const { data, error } = await supabase
+        .from("stock_daily")
+        .select("ticker, date, value")
+        .in("ticker", codeChunk)
+        .gte("date", since90)
+        .order("date", { ascending: false })
+        .range(offset, offset + PAGE_SIZE - 1);
+      if (error) break;
+      const rows = (data ?? []) as StockDailyRow[];
+      dailyRows.push(...rows);
+      if (rows.length < PAGE_SIZE) break;
+    }
+
+    for (let offset = 0; ; offset += PAGE_SIZE) {
+      const { data, error } = await supabase
+        .from("investor_daily")
+        .select("ticker, date, foreign, institution")
+        .in("ticker", codeChunk)
+        .gte("date", since30)
+        .order("date", { ascending: false })
+        .range(offset, offset + PAGE_SIZE - 1);
+      if (error) break;
+      const rows = (data ?? []) as InvestorDailyRow[];
+      flowRows.push(...rows);
+      if (rows.length < PAGE_SIZE) break;
+    }
+  }
 
   const dailyByCode = new Map<string, StockDailyRow[]>();
   const flowByCode = new Map<string, InvestorDailyRow[]>();
 
-  for (const row of (dailyRows ?? []) as StockDailyRow[]) {
+  for (const row of dailyRows) {
     const list = dailyByCode.get(row.ticker) ?? [];
     list.push(row);
     dailyByCode.set(row.ticker, list);
   }
-  for (const row of (flowRows ?? []) as InvestorDailyRow[]) {
+  for (const row of flowRows) {
     const list = flowByCode.get(row.ticker) ?? [];
     list.push(row);
     flowByCode.set(row.ticker, list);

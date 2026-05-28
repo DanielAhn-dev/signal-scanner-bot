@@ -17,32 +17,69 @@ export interface StockItem {
 
 const CACHE_KEY = 'stock_cache_v2'
 const CACHE_TTL = 24 * 60 * 60 * 1000 // 24시간
+const META_REVALIDATE_MS = 5 * 60 * 1000 // 5분
 const MIN_EXPECTED_STOCKS = 1500
+
+type StockCachePayload = {
+  items: StockItem[]
+  ts: number
+  signature?: string
+  metaCheckedAt?: number
+}
+
+type StockMeta = {
+  count: number
+  latestUpdatedAt: string | null
+  signature: string
+}
 
 // 모듈 수준 메모리 캐시 (페이지 전환해도 유지됨)
 let _memCache: StockItem[] | null = null
 let _fetchPromise: Promise<StockItem[]> | null = null
 
-function readFromStorage(): StockItem[] | null {
+function readFromStorage(): StockCachePayload | null {
   try {
     const raw = localStorage.getItem(CACHE_KEY)
     if (!raw) return null
-    const parsed = JSON.parse(raw) as { items: StockItem[]; ts: number }
+    const parsed = JSON.parse(raw) as StockCachePayload
     if (!Array.isArray(parsed?.items)) return null
+    if (!Number.isFinite(Number(parsed.ts))) return null
     if (Date.now() - Number(parsed.ts) > CACHE_TTL) return null
     // 과거 버전/불완전 캐시 방어: 종목 수가 비정상적으로 적으면 무효화
     if (parsed.items.length > 0 && parsed.items.length < MIN_EXPECTED_STOCKS) return null
-    return parsed.items
+    return {
+      items: parsed.items,
+      ts: Number(parsed.ts),
+      signature: typeof parsed.signature === 'string' ? parsed.signature : undefined,
+      metaCheckedAt: Number(parsed.metaCheckedAt || 0) || undefined,
+    }
   } catch {
     return null
   }
 }
 
-function writeToStorage(items: StockItem[]) {
+function writeToStorage(payload: StockCachePayload) {
   try {
-    localStorage.setItem(CACHE_KEY, JSON.stringify({ items, ts: Date.now() }))
+    localStorage.setItem(CACHE_KEY, JSON.stringify(payload))
   } catch {
     // localStorage 쿼터 초과 무시
+  }
+}
+
+async function fetchMeta(): Promise<StockMeta | null> {
+  try {
+    const res = await apiFetch('/api/ui/stocks?meta=1', {
+      cacheMs: 5_000,
+      timeoutMs: 10_000,
+      retries: 1,
+    })
+    const count = Number(res?.count ?? 0)
+    const latestUpdatedAt = res?.latestUpdatedAt ? String(res.latestUpdatedAt) : null
+    const signature = String(res?.signature || `${count}:${latestUpdatedAt ?? ''}`)
+    if (!Number.isFinite(count)) return null
+    return { count, latestUpdatedAt, signature }
+  } catch {
+    return null
   }
 }
 
@@ -64,8 +101,30 @@ export async function getStocks(): Promise<StockItem[]> {
 
   const stored = readFromStorage()
   if (stored !== null) {
-    _memCache = stored
-    return stored
+    const now = Date.now()
+    const recentlyChecked = stored.metaCheckedAt && now - stored.metaCheckedAt < META_REVALIDATE_MS
+    if (recentlyChecked) {
+      _memCache = stored.items
+      return stored.items
+    }
+
+    const meta = await fetchMeta()
+    if (meta && stored.signature && meta.signature === stored.signature) {
+      const refreshed: StockCachePayload = {
+        ...stored,
+        ts: now,
+        metaCheckedAt: now,
+      }
+      _memCache = stored.items
+      writeToStorage(refreshed)
+      return stored.items
+    }
+
+    // meta 조회 실패 시 기존 캐시를 재사용해 과도한 전체 재조회 방지
+    if (!meta) {
+      _memCache = stored.items
+      return stored.items
+    }
   }
 
   if (!_fetchPromise) {
@@ -76,7 +135,18 @@ export async function getStocks(): Promise<StockItem[]> {
           return items
         }
         _memCache = items
-        writeToStorage(items)
+        const now = Date.now()
+        let latestUpdatedAt = ''
+        for (const item of items) {
+          const value = String(item.updated_at || '')
+          if (value > latestUpdatedAt) latestUpdatedAt = value
+        }
+        writeToStorage({
+          items,
+          ts: now,
+          signature: `${items.length}:${latestUpdatedAt}`,
+          metaCheckedAt: now,
+        })
         return items
       })
       .finally(() => {

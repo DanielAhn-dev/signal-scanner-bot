@@ -129,30 +129,37 @@ async function fetchScoreRows(supabase: any, fromDate: string, maxRows: number):
 async function fetchPriceRows(supabase: any, codes: string[], fromDate: string): Promise<PriceRow[]> {
   const chunks = splitArray(codes, 100)
   const CONCURRENCY = 20 // 동시성 증가 (10→20)
+  const PAGE_SIZE = 1000
   const out: PriceRow[] = []
 
   // stock_daily만 사용 (무료 플랜 쿼리 수 절약)
   for (let i = 0; i < chunks.length; i += CONCURRENCY) {
     const batch = chunks.slice(i, i + CONCURRENCY)
-    const results = await Promise.all(
-      batch.map((chunk) =>
-        supabase
-          .from('stock_daily')
-          .select('ticker,date,close')
-          .in('ticker', chunk)
-          .gte('date', fromDate)
-          .order('date', { ascending: true }),
-      ),
+    await Promise.all(
+      batch.map(async (chunk) => {
+        for (let offset = 0; ; offset += PAGE_SIZE) {
+          const { data, error } = await supabase
+            .from('stock_daily')
+            .select('ticker,date,close')
+            .in('ticker', chunk)
+            .gte('date', fromDate)
+            .order('date', { ascending: true })
+            .range(offset, offset + PAGE_SIZE - 1)
+
+          if (error) throw new Error(`stock_daily 조회 실패: ${error.message}`)
+
+          const rows = (data ?? []) as Array<Record<string, unknown>>
+          for (const row of rows) {
+            const code = normalizeCode(row.ticker)
+            const tradeDate = normalizeDate(row.date)
+            const close = parseNum(row.close, 0)
+            if (code && tradeDate && close > 0) out.push({ code, tradeDate, close })
+          }
+
+          if (rows.length < PAGE_SIZE) break
+        }
+      }),
     )
-    for (const { data, error } of results) {
-      if (error) throw new Error(`stock_daily 조회 실패: ${error.message}`)
-      for (const row of (data ?? []) as Array<Record<string, unknown>>) {
-        const code = normalizeCode(row.ticker)
-        const tradeDate = normalizeDate(row.date)
-        const close = parseNum(row.close, 0)
-        if (code && tradeDate && close > 0) out.push({ code, tradeDate, close })
-      }
-    }
   }
 
   return out

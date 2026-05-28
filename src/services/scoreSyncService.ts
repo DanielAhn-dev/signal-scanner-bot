@@ -158,20 +158,34 @@ async function fetchInvestorFlowByCodes(
     .toISOString()
     .slice(0, 10);
 
-  const { data, error } = await supabase
-    .from("investor_daily")
-    .select("ticker, date, foreign, institution")
-    .in("ticker", codes)
-    .gte("date", since30)
-    .order("date", { ascending: false })
-    .returns<InvestorDailyRow[]>();
+  const CODE_CHUNK = 100;
+  const PAGE_SIZE = 1000;
+  const data: InvestorDailyRow[] = [];
 
-  if (error) {
-    return map;
+  for (let i = 0; i < codes.length; i += CODE_CHUNK) {
+    const codeChunk = codes.slice(i, i + CODE_CHUNK);
+    for (let offset = 0; ; offset += PAGE_SIZE) {
+      const { data: pageData, error } = await supabase
+        .from("investor_daily")
+        .select("ticker, date, foreign, institution")
+        .in("ticker", codeChunk)
+        .gte("date", since30)
+        .order("date", { ascending: false })
+        .range(offset, offset + PAGE_SIZE - 1)
+        .returns<InvestorDailyRow[]>();
+
+      if (error) {
+        break;
+      }
+
+      const rows = pageData ?? [];
+      data.push(...rows);
+      if (rows.length < PAGE_SIZE) break;
+    }
   }
 
   const grouped = new Map<string, InvestorDailyRow[]>();
-  for (const row of data ?? []) {
+  for (const row of data) {
     const code = String(row.ticker ?? "").trim();
     if (!code) continue;
     const list = grouped.get(code) ?? [];

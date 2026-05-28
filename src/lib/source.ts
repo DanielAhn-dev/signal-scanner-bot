@@ -56,6 +56,17 @@ type SectorScoreRow = {
 };
 type StockBasicRow = { code: string; name: string };
 
+const PAGE_SIZE = 1000;
+const IN_CHUNK_SIZE = 200;
+
+function chunkArray<T>(items: T[], size: number): T[][] {
+  const out: T[][] = [];
+  for (let i = 0; i < items.length; i += size) {
+    out.push(items.slice(i, i + size));
+  }
+  return out;
+}
+
 // --- 유틸리티 함수: SMA 계산 ---
 function sma(values: number[], period: number): (number | undefined)[] {
   const out: (number | undefined)[] = new Array(values.length).fill(undefined);
@@ -73,7 +84,8 @@ function sma(values: number[], period: number): (number | undefined)[] {
 export async function fetchSectorPriceSeries(
   today: string
 ): Promise<SectorSeries[]> {
-  const { data: sectors } = await supa()
+  const client = supa();
+  const { data: sectors } = await client
     .from("sectors")
     .select("id, name, metrics");
   if (!sectors?.length) return [];
@@ -81,13 +93,25 @@ export async function fetchSectorPriceSeries(
   // 약 1년간의 데이터 조회
   const from = `${new Date(today).getFullYear() - 1}-01-01`;
 
-  const { data: rows } = await supa()
-    .from("sector_daily")
-    .select("sector_id, date, close")
-    .gte("date", from)
-    .lte("date", today);
+  const rows: Array<{ sector_id: string; date: string; close: number }> = [];
+  for (let offset = 0; ; offset += PAGE_SIZE) {
+    const { data, error } = await client
+      .from("sector_daily")
+      .select("sector_id, date, close")
+      .gte("date", from)
+      .lte("date", today)
+      .order("date", { ascending: true })
+      .range(offset, offset + PAGE_SIZE - 1);
+    if (error) {
+      console.error("fetchSectorPriceSeries error:", error);
+      break;
+    }
+    const page = (data ?? []) as Array<{ sector_id: string; date: string; close: number }>;
+    rows.push(...page);
+    if (page.length < PAGE_SIZE) break;
+  }
 
-  if (!rows?.length) return [];
+  if (!rows.length) return [];
 
   const bySector: Record<string, { date: string; close: number }[]> = {};
   for (const r of rows) {
@@ -122,15 +146,28 @@ export async function fetchSectorPriceSeries(
 export async function fetchSectorVolumeSeries(
   today: string
 ): Promise<Record<string, VolumeRow[]>> {
+  const client = supa();
   const from = `${new Date(today).getFullYear() - 1}-01-01`;
-  const { data } = await supa()
-    .from("sector_daily")
-    .select("sector_id, date, value")
-    .gte("date", from)
-    .lte("date", today);
+  const rows: Array<{ sector_id: string; date: string; value: number }> = [];
+  for (let offset = 0; ; offset += PAGE_SIZE) {
+    const { data, error } = await client
+      .from("sector_daily")
+      .select("sector_id, date, value")
+      .gte("date", from)
+      .lte("date", today)
+      .order("date", { ascending: true })
+      .range(offset, offset + PAGE_SIZE - 1);
+    if (error) {
+      console.error("fetchSectorVolumeSeries error:", error);
+      break;
+    }
+    const page = (data ?? []) as Array<{ sector_id: string; date: string; value: number }>;
+    rows.push(...page);
+    if (page.length < PAGE_SIZE) break;
+  }
 
   const out: Record<string, VolumeRow[]> = {};
-  for (const r of data || []) {
+  for (const r of rows) {
     if (!out[r.sector_id]) out[r.sector_id] = [];
     out[r.sector_id].push({ date: r.date, value: Number(r.value) });
   }
@@ -141,21 +178,31 @@ export async function fetchInvestorNetByTicker(
   from: string,
   to: string
 ): Promise<InvestorRow[]> {
-  const { data, error } = await supa()
-    .from("investor_daily")
-    .select("ticker, date, foreign, institution")
-    .gte("date", from)
-    .lte("date", to);
+  const client = supa();
+  const data: InvestorRow[] = [];
+  for (let offset = 0; ; offset += PAGE_SIZE) {
+    const { data: pageData, error } = await client
+      .from("investor_daily")
+      .select("ticker, date, foreign, institution")
+      .gte("date", from)
+      .lte("date", to)
+      .order("date", { ascending: true })
+      .range(offset, offset + PAGE_SIZE - 1);
 
-  if (error) {
-    console.error("fetchInvestorNetByTicker error:", error);
-    return [];
+    if (error) {
+      console.error("fetchInvestorNetByTicker error:", error);
+      return [];
+    }
+
+    const page = (pageData ?? []) as InvestorRow[];
+    data.push(...page);
+    if (page.length < PAGE_SIZE) break;
   }
 
   // ticker 기준으로 5일/20일 합산
   const agg = new Map<string, { foreign: number; institution: number }>();
 
-  for (const r of data ?? []) {
+  for (const r of data) {
     const ticker = r.ticker as string;
     if (!agg.has(ticker)) {
       agg.set(ticker, { foreign: 0, institution: 0 });
@@ -175,9 +222,23 @@ export async function fetchInvestorNetByTicker(
 }
 
 export async function fetchTickerMetaInSector(): Promise<TickerMeta[]> {
-  const { data } = await supa().from("stocks").select("code, name, sector_id"); // ✅ where 조건 없이 전체 조회
+  const client = supa();
+  const rows: StockMetaRow[] = [];
+  for (let offset = 0; ; offset += PAGE_SIZE) {
+    const { data, error } = await client
+      .from("stocks")
+      .select("code, name, sector_id")
+      .order("code", { ascending: true })
+      .range(offset, offset + PAGE_SIZE - 1);
+    if (error) {
+      console.error("fetchTickerMetaInSector error:", error);
+      break;
+    }
+    const page = (data || []) as StockMetaRow[];
+    rows.push(...page);
+    if (page.length < PAGE_SIZE) break;
+  }
 
-  const rows = (data || []) as StockMetaRow[];
   return rows.map((r) => ({
     code: r.code,
     name: r.name,
@@ -195,10 +256,19 @@ export async function fetchTopStocksBySectors(
 ): Promise<Record<string, string[]>> {
   if (sectorIds.length === 0) return {};
 
-  const { data } = await supa()
-    .from("stocks")
-    .select("name, sector_id, liquidity")
-    .in("sector_id", sectorIds);
+  const client = supa();
+  const data: Array<{ name: string; sector_id: string | null; liquidity: number | null }> = [];
+  for (const ids of chunkArray(sectorIds, IN_CHUNK_SIZE)) {
+    const { data: pageData, error } = await client
+      .from("stocks")
+      .select("name, sector_id, liquidity")
+      .in("sector_id", ids);
+    if (error) {
+      console.error("fetchTopStocksBySectors error:", error);
+      continue;
+    }
+    data.push(...((pageData || []) as Array<{ name: string; sector_id: string | null; liquidity: number | null }>));
+  }
 
   type StockLiqRow = { name: string; sector_id: string | null; liquidity: number | null };
   const grouped: Record<string, { name: string; liquidity: number }[]> = {};
@@ -230,7 +300,8 @@ export async function fetchPrecomputedSectorScores(): Promise<
     metrics: any;
   }[]
 > {
-  const { data } = await supa()
+  const client = supa();
+  const { data } = await client
     .from("sectors")
     .select("id, name, score, change_rate, avg_change_rate, metrics")
     .order("score", { ascending: false });
@@ -249,8 +320,9 @@ export async function fetchStockPriceSeries(
   today: string,
   sectorId: string
 ): Promise<StockPriceSeries[]> {
+  const client = supa();
   // 1. 해당 섹터에 속한 종목 목록을 가져온다.
-  const { data: stocks } = await supa()
+  const { data: stocks } = await client
     .from("stocks")
     .select("code, name")
     .eq("sector_id", sectorId);
@@ -261,14 +333,28 @@ export async function fetchStockPriceSeries(
 
   // 2. 해당 종목들의 시세 데이터를 가져온다.
   const from = `${new Date(today).getFullYear() - 1}-01-01`;
-  const { data: rows } = await supa()
-    .from("stock_daily") // 'stock_daily' 테이블 사용
-    .select("ticker, date, close")
-    .in("ticker", tickers)
-    .gte("date", from)
-    .lte("date", today);
+  const rows: Array<{ ticker: string; date: string; close: number }> = [];
+  for (const tickerChunk of chunkArray(tickers, IN_CHUNK_SIZE)) {
+    for (let offset = 0; ; offset += PAGE_SIZE) {
+      const { data, error } = await client
+        .from("stock_daily") // 'stock_daily' 테이블 사용
+        .select("ticker, date, close")
+        .in("ticker", tickerChunk)
+        .gte("date", from)
+        .lte("date", today)
+        .order("date", { ascending: true })
+        .range(offset, offset + PAGE_SIZE - 1);
+      if (error) {
+        console.error("fetchStockPriceSeries error:", error);
+        break;
+      }
+      const page = (data ?? []) as Array<{ ticker: string; date: string; close: number }>;
+      rows.push(...page);
+      if (page.length < PAGE_SIZE) break;
+    }
+  }
 
-  if (!rows?.length) return [];
+  if (!rows.length) return [];
 
   // 3. 종목별로 시세 데이터를 묶고 SMA 계산
   const byTicker: Record<string, { date: string; close: number }[]> = {};
