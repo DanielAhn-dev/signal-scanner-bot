@@ -133,6 +133,7 @@ function resolveGuideMarkdownPath(topic: ReportTopic): string {
 
 const WEEKLY_REPORT_TOPIC_MAP: Partial<Record<ReportTopic, string>> = {
   주간: 'full',
+  눌림목: 'pullback',
   포트폴리오: 'portfolio',
   관심종목: 'watchonly',
   거시: 'economy',
@@ -199,19 +200,6 @@ export async function buildReportBodyText(params: {
         subtitle: '개인 보유/자금 정보는 제외하고 후보 핵심 지표만 공개용으로 구성했습니다.',
         note: '공유용 리포트는 참고 자료이며 최종 투자 판단은 본인 책임입니다.',
         limit: 8,
-      }),
-      sourceLabel: '/리포트 명령 결과',
-    }
-  }
-
-  if (topic === '눌림목') {
-    return {
-      bodyText: HTML_BODY_PREFIX + buildCandidateCardsWebHtml({
-        forecasts: report.forecasts,
-        title: '다음 주 눌림목 리포트 · 선진입 후보',
-        subtitle: '주간 운용 관점에서 재진입 가능성이 높은 후보를 카드형으로 압축했습니다.',
-        note: '다음 주 장 시작 전 갭/거래대금 변화를 확인한 뒤 진입 구간을 재조정하세요.',
-        limit: 6,
       }),
       sourceLabel: '/리포트 명령 결과',
     }

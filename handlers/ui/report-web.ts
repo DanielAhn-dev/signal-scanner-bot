@@ -74,7 +74,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   const topic = resolveReportTopic(req.query.topic)
-  const chatId = parseChatId(req.query.chatId)
+  const chatId = parseChatId(req.query.chatId ?? req.query.chat_id ?? req.headers['x-user-chat-id'])
   const cacheKey = buildCacheKey(topic, chatId)
   const cachedHtml = getCachedHtml(cacheKey)
   if (cachedHtml) {

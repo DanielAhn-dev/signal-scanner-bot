@@ -28,7 +28,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   const topic = resolveReportTopic(req.body?.topic || req.query.topic)
-  const chatId = parseChatId(req.body?.chatId || req.query.chatId)
+  const chatId = parseChatId(req.body?.chatId || req.body?.chat_id || req.query.chatId || req.query.chat_id || req.headers['x-user-chat-id'])
 
   try {
     if (isGuideTopic(topic)) {

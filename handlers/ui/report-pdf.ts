@@ -66,6 +66,10 @@ function asInt(value: unknown): number | null {
   return Math.floor(n)
 }
 
+function resolveChatId(req: VercelRequest): number | null {
+  return asInt(req.query.chatId ?? req.query.chat_id ?? req.headers['x-user-chat-id'])
+}
+
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   res.setHeader('Access-Control-Allow-Origin', ORIGIN)
   res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS')
@@ -90,7 +94,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     const supabase = createClient(SUPABASE_URL, SUPABASE_KEY)
-    const chatId = asInt(req.query.chatId)
+    const chatId = resolveChatId(req)
 
     if (topic === '가이드' || topic === '자동매매') {
       const fullPath = resolveGuidePath(topic)
