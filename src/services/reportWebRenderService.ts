@@ -173,13 +173,146 @@ export function toPreHtml(text: string): string {
   return `<pre>${escapeHtml(text || '')}</pre>`
 }
 
+function stripSimpleHtmlTags(text: string): string {
+  return String(text || '').replace(/<[^>]+>/g, '').trim()
+}
+
+type ExecutionGuidePlanItem = {
+  title: string
+  facts: string[]
+  headlines: string[]
+}
+
+function buildExecutionGuideStructuredHtml(bodyText: string): string {
+  const lines = String(bodyText || '')
+    .split('\n')
+    .map((line) => line.trimEnd())
+
+  const meta: Array<{ label: string; value: string }> = []
+  const settings: string[] = []
+  const autoCandidates: string[] = []
+  const plans: ExecutionGuidePlanItem[] = []
+
+  let section: 'none' | 'settings' | 'auto' | 'plan' = 'none'
+  let currentPlan: ExecutionGuidePlanItem | null = null
+
+  for (const raw of lines) {
+    const line = raw.trim()
+    if (!line) continue
+
+    const headingMatch = line.match(/^<b>(.+)<\/b>$/i)
+    if (headingMatch) {
+      const heading = stripSimpleHtmlTags(headingMatch[1])
+      if (heading === '설정') section = 'settings'
+      else if (heading === '자동 추천 후보 TOP') section = 'auto'
+      else if (heading === '종목별 실행 계획') section = 'plan'
+      else section = 'none'
+      continue
+    }
+
+    if (line.startsWith('생성시각:')) {
+      meta.push({ label: '생성시각', value: line.replace('생성시각:', '').trim() })
+      continue
+    }
+    if (line.startsWith('출처:')) {
+      meta.push({ label: '출처', value: line.replace('출처:', '').trim() })
+      continue
+    }
+    if (line.startsWith('코드 ')) {
+      meta.push({ label: '대상 코드', value: line.replace(/^코드\s+\d+개:/, '').trim() || line })
+      continue
+    }
+
+    if (section === 'settings' && line.startsWith('• ')) {
+      settings.push(line.replace(/^•\s*/, ''))
+      continue
+    }
+
+    if (section === 'auto' && line.startsWith('• ')) {
+      autoCandidates.push(line.replace(/^•\s*/, ''))
+      continue
+    }
+
+    if (section === 'plan') {
+      if (line.startsWith('• ')) {
+        currentPlan = {
+          title: line.replace(/^•\s*/, ''),
+          facts: [],
+          headlines: [],
+        }
+        plans.push(currentPlan)
+        continue
+      }
+      if (!currentPlan) continue
+      if (line.startsWith('- ')) {
+        currentPlan.facts.push(line.replace(/^-\s*/, ''))
+        continue
+      }
+      if (line.startsWith('· ')) {
+        currentPlan.headlines.push(line.replace(/^·\s*/, ''))
+        continue
+      }
+      if (line.startsWith('주의:')) {
+        currentPlan.facts.push(line)
+        continue
+      }
+    }
+  }
+
+  const metaHtml = meta.length > 0
+    ? `<div class="execution-guide-web-meta">${meta.map((item) => `<div class="execution-guide-web-meta__item"><span class="execution-guide-web-meta__label">${escapeHtml(item.label)}</span><span class="execution-guide-web-meta__value">${escapeHtml(item.value)}</span></div>`).join('')}</div>`
+    : ''
+
+  const settingsHtml = settings.length > 0
+    ? `<ul class="execution-guide-web-list">${settings.map((row) => `<li>${escapeHtml(row)}</li>`).join('')}</ul>`
+    : '<p>설정 정보가 없습니다.</p>'
+
+  const autoHtml = autoCandidates.length > 0
+    ? `<div class="execution-guide-web-cards">${autoCandidates.map((row) => `<article class="execution-guide-web-candidate"><div class="execution-guide-web-candidate__bullet">추천</div><div class="execution-guide-web-candidate__text">${escapeHtml(row)}</div></article>`).join('')}</div>`
+    : '<p>자동 추천 후보가 없습니다.</p>'
+
+  const plansHtml = plans.length > 0
+    ? `<div class="execution-guide-web-plans">${plans.map((plan) => `
+      <article class="execution-guide-web-plan-card">
+        <h3>${escapeHtml(plan.title)}</h3>
+        ${plan.facts.length > 0 ? `<ul class="execution-guide-web-facts">${plan.facts.map((fact) => `<li>${escapeHtml(fact)}</li>`).join('')}</ul>` : ''}
+        ${plan.headlines.length > 0 ? `<div class="execution-guide-web-headlines"><div class="execution-guide-web-headlines__title">관련 뉴스</div><ul>${plan.headlines.map((news) => `<li>${escapeHtml(news)}</li>`).join('')}</ul></div>` : ''}
+      </article>
+    `).join('')}</div>`
+    : '<p>종목별 실행 계획이 없습니다.</p>'
+
+  return `
+    <div class="execution-guide-web">
+      <section class="report-section">
+        <h2>실행 가이드 리포트</h2>
+        ${metaHtml}
+      </section>
+      <section class="report-section">
+        <h2>설정</h2>
+        ${settingsHtml}
+      </section>
+      <section class="report-section">
+        <h2>자동 추천 후보 TOP</h2>
+        ${autoHtml}
+      </section>
+      <section class="report-section">
+        <h2>종목별 실행 계획</h2>
+        ${plansHtml}
+      </section>
+    </div>
+  `
+}
+
 /**
  * Returns the body content HTML, handling pre-rendered HTML with HTML_BODY_PREFIX.
  * Use this instead of calling toRichHtml() directly.
  */
-export function renderBodyText(bodyText: string): string {
+export function renderBodyText(bodyText: string, topic?: string): string {
   if (bodyText.startsWith(HTML_BODY_PREFIX)) {
     return `<div class="rich-share rich-share--html">${bodyText.slice(HTML_BODY_PREFIX.length)}</div>`
+  }
+  if (topic === '실행가이드') {
+    return `<div class="rich-share rich-share--execution-guide">${buildExecutionGuideStructuredHtml(bodyText)}</div>`
   }
   return `<div class="rich-share rich-share--text">${toRichHtml(bodyText)}</div>`
 }
@@ -1426,6 +1559,125 @@ export function renderLayout(params: {
     .topic-execution-guide .content li::marker {
       color: #1f6feb;
       font-weight: 700;
+    }
+    .execution-guide-web-meta {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 10px;
+      margin-top: 6px;
+    }
+    .execution-guide-web-meta__item {
+      border: 1px solid #e3eaf6;
+      border-radius: 10px;
+      background: #f8fbff;
+      padding: 10px 12px;
+      display: grid;
+      gap: 3px;
+    }
+    .execution-guide-web-meta__label {
+      font-size: 11px;
+      color: #64748b;
+      font-weight: 600;
+    }
+    .execution-guide-web-meta__value {
+      font-size: 14px;
+      color: #1f2937;
+      font-weight: 600;
+      word-break: break-word;
+    }
+    .execution-guide-web-list {
+      margin: 8px 0 0;
+      padding-left: 1.15rem;
+      display: grid;
+      gap: 5px;
+    }
+    .execution-guide-web-list li {
+      font-size: 14px;
+      color: #243244;
+    }
+    .execution-guide-web-cards {
+      margin-top: 8px;
+      display: grid;
+      gap: 8px;
+    }
+    .execution-guide-web-candidate {
+      border: 1px solid #e2e8f4;
+      border-radius: 10px;
+      background: #fbfdff;
+      padding: 9px 10px;
+      display: grid;
+      grid-template-columns: auto 1fr;
+      gap: 8px;
+      align-items: start;
+    }
+    .execution-guide-web-candidate__bullet {
+      font-size: 11px;
+      font-weight: 700;
+      color: #245fbe;
+      background: #eaf2ff;
+      border: 1px solid #cfe0ff;
+      border-radius: 999px;
+      padding: 1px 7px;
+      line-height: 1.5;
+    }
+    .execution-guide-web-candidate__text {
+      font-size: 13.5px;
+      color: #1f2d3d;
+      line-height: 1.56;
+      word-break: break-word;
+    }
+    .execution-guide-web-plans {
+      margin-top: 8px;
+      display: grid;
+      gap: 12px;
+    }
+    .execution-guide-web-plan-card {
+      border: 1px solid #dfe8f7;
+      border-radius: 12px;
+      background: #ffffff;
+      box-shadow: 0 1px 3px rgba(28, 85, 176, 0.06);
+      padding: 11px 12px 10px;
+    }
+    .execution-guide-web-plan-card h3 {
+      margin: 0;
+      font-size: 15px;
+      color: #123257;
+      font-weight: 700;
+      line-height: 1.35;
+    }
+    .execution-guide-web-facts {
+      margin: 9px 0 0;
+      padding-left: 1.05rem;
+      display: grid;
+      gap: 4px;
+    }
+    .execution-guide-web-facts li {
+      font-size: 13.5px;
+      line-height: 1.55;
+      color: #263547;
+    }
+    .execution-guide-web-headlines {
+      margin-top: 10px;
+      border-top: 1px dashed #d9e3f4;
+      padding-top: 8px;
+    }
+    .execution-guide-web-headlines__title {
+      font-size: 11px;
+      color: #5f6f84;
+      font-weight: 700;
+      margin-bottom: 5px;
+      letter-spacing: 0.02em;
+    }
+    .execution-guide-web-headlines ul {
+      margin: 0;
+      padding-left: 1rem;
+      display: grid;
+      gap: 3px;
+    }
+    .execution-guide-web-headlines li {
+      font-size: 13px;
+      color: #3a485c;
+      line-height: 1.5;
     }
     .content hr { border: 0; border-top: 1px solid var(--color-border-default); margin: 0.9em 0; }
     .content ul, .content ol { margin: 0.55em 0 0.9em; padding-left: 1.4em; }

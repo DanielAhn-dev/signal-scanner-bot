@@ -93,7 +93,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       title: topicTitle(topic),
       topic,
       sourceLabel: String(record.source_label || 'shared-report'),
-      contentHtml: renderBodyText(String(record.body_text || '')),
+      contentHtml: renderBodyText(String(record.body_text || ''), String(topic)),
       description: `${topicTitle(topic)} 공유 페이지`,
       shareLocked: true,
     })

@@ -175,7 +175,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         title: topicTitle(topic),
         topic,
         sourceLabel: persisted.sourceLabel,
-        contentHtml: renderBodyText(persisted.bodyText),
+        contentHtml: renderBodyText(persisted.bodyText, topic),
       })
       if (!forceFreshReportTopics) setCachedHtml(cacheKey, html)
       res.setHeader('Content-Type', 'text/html; charset=utf-8')
@@ -197,7 +197,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       title: topicTitle(topic),
       topic,
       sourceLabel,
-      contentHtml: renderBodyText(bodyText),
+      contentHtml: renderBodyText(bodyText, topic),
     })
 
     if (!forceFreshReportTopics) setCachedHtml(cacheKey, html)
