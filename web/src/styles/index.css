@@ -4295,12 +4295,12 @@ a:focus-visible {
    ================================================================ */
 
 .bt-page {
-  max-width: 960px;
-  margin: 0 auto;
-  padding: var(--space-5) var(--space-4) var(--space-10);
+  width: 100%;
+  min-width: 0;
+  padding: var(--space-3) var(--space-4) var(--space-8);
   display: flex;
   flex-direction: column;
-  gap: var(--space-4);
+  gap: var(--space-3);
 }
 
 .bt-header {
@@ -4325,8 +4325,8 @@ a:focus-visible {
 .bt-params-card {
   background: var(--color-bg-surface);
   border: 1px solid var(--color-border-default);
-  border-radius: var(--radius-lg);
-  padding: var(--space-4);
+  border-radius: var(--radius-xs);
+  padding: var(--space-3) var(--space-4);
 }
 .bt-params-grid {
   display: grid;
@@ -4378,7 +4378,7 @@ a:focus-visible {
 .bt-summary-card {
   background: var(--color-bg-surface);
   border: 1px solid var(--color-border-default);
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-xs);
   overflow: hidden;
 }
 .bt-summary-grid {
@@ -4416,7 +4416,7 @@ a:focus-visible {
 .bt-section {
   background: var(--color-bg-surface);
   border: 1px solid var(--color-border-default);
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-xs);
   padding: var(--space-4);
 }
 .bt-section-title {
@@ -4430,7 +4430,7 @@ a:focus-visible {
 .bt-skeleton {
   background: var(--color-bg-surface);
   border: 1px solid var(--color-border-default);
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-xs);
   padding: var(--space-5);
   display: flex;
   flex-direction: column;
@@ -4512,11 +4512,14 @@ a:focus-visible {
   .bt-summary-item:nth-child(n+4) { border-bottom: 1px solid var(--color-border-default); }
   .bt-summary-item:nth-child(n+5) { border-bottom: none; }
   .bt-skeleton-summary-grid { grid-template-columns: repeat(2, 1fr); }
+  .bt-tab { padding: 7px 10px; font-size: var(--font-size-xs); }
 }
 @media (max-width: 480px) {
   .bt-params-grid { grid-template-columns: 1fr; }
   .bt-header { flex-direction: column; align-items: stretch; }
-  .bt-page { padding: var(--space-4) var(--space-3) var(--space-8); gap: var(--space-3); }
+  .bt-page { padding: var(--space-3) var(--space-3) var(--space-8); gap: var(--space-3); }
+  .bt-tab-bar { overflow-x: auto; scrollbar-width: none; }
+  .bt-tab-bar::-webkit-scrollbar { display: none; }
 }
 
 /* 종목 패턴 점검 */
@@ -4774,6 +4777,53 @@ a:focus-visible {
 .bt-check-fund-value--warn { color: var(--color-warning); }
 .bt-check-fund-value--bad  { color: var(--color-error);   }
 
+/* 백테스트 탭 */
+.bt-tab-bar {
+  display: flex;
+  gap: 0;
+  border-bottom: 2px solid var(--color-border-default);
+  margin-bottom: var(--space-1);
+}
+.bt-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 7px 14px;
+  font-size: var(--font-size-sm);
+  font-weight: 500;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  border: none;
+  background: none;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -2px;
+  transition: color var(--duration-fast), border-color var(--duration-fast);
+  white-space: nowrap;
+}
+.bt-tab:hover { color: var(--color-text-primary); }
+.bt-tab--active {
+  color: var(--color-brand);
+  border-bottom-color: var(--color-brand);
+  font-weight: 600;
+}
+.bt-tab-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  background: var(--color-bg-sunken);
+  border-radius: var(--radius-full);
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--color-text-tertiary);
+}
+.bt-tab--active .bt-tab-badge {
+  background: var(--color-brand);
+  color: #fff;
+}
+
 /* 백테스트 테이블 */
 .bt-table {
   width: 100%;
@@ -4789,7 +4839,22 @@ a:focus-visible {
   background: var(--color-bg-sunken);
   border-bottom: 2px solid var(--color-border-default);
   white-space: nowrap;
+  position: sticky;
+  top: 0;
+  z-index: 2;
 }
+.bt-table thead th[data-sortable] {
+  cursor: pointer;
+  user-select: none;
+}
+.bt-table thead th[data-sortable]:hover { color: var(--color-text-primary); }
+.bt-sort-icon {
+  display: inline-block;
+  margin-left: 3px;
+  font-size: 10px;
+  opacity: 0.5;
+}
+.bt-sort-icon--active { opacity: 1; color: var(--color-brand); }
 .bt-table thead th:first-child { padding-left: var(--space-4); }
 .bt-table thead th:last-child  { padding-right: var(--space-4); text-align: right; }
 .bt-table tbody tr {

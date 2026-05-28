@@ -1,10 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import { apiFetch } from '../../lib/api'
-import Button from '../../components/ui/Button'
-import Input from '../../components/ui/Input'
-import Skeleton from '../../components/Skeleton'
-import { EmptyState, ErrorState } from '../../components/StateViews'
-import { ChevronDown, ChevronRight, RefreshCw } from 'lucide-react'
 
 const ANALYZE_PENDING_CODE_KEY = 'analyze_pending_code'
 
@@ -296,19 +291,19 @@ function ScoreBadge({ value, max }: { value: number; max: number }) {
 }
 
 function QoQCell({ value }: { value: number | null | undefined }) {
-  if (value == null || !Number.isFinite(value)) return <span className="scan-grade-label">—</span>
+  if (value == null || !Number.isFinite(value)) return <span className="bt-table-num">—</span>
   const pos = value >= 0
   return (
-    <span style={{ color: pos ? 'var(--color-success, #22c55e)' : 'var(--color-danger, #ef4444)', fontWeight: 600 }}>
+    <span style={{ color: pos ? 'var(--color-success)' : 'var(--color-error)', fontWeight: 600, fontVariantNumeric: 'tabular-nums' }}>
       {pos ? '+' : ''}{value.toFixed(1)}%
     </span>
   )
 }
 
 function MarketCapCell({ value }: { value: number }) {
-  if (!value) return <span className="scan-grade-label">—</span>
-  if (value >= 1_000_000_000_000) return <span>{(value / 1_000_000_000_000).toFixed(1)}조</span>
-  return <span>{Math.round(value / 100_000_000).toLocaleString()}억</span>
+  if (!value) return <span className="bt-table-num">—</span>
+  if (value >= 1_000_000_000_000) return <span className="bt-table-num">{(value / 1_000_000_000_000).toFixed(1)}조</span>
+  return <span className="bt-table-num">{Math.round(value / 100_000_000).toLocaleString()}억</span>
 }
 
 function navigateTo(route: string) {
@@ -318,6 +313,13 @@ function navigateTo(route: string) {
   } catch {
     // ignore
   }
+}
+
+const SECTOR_MODE_LABELS: Record<SectorFilterMode, string> = {
+  all: '전체 섹터',
+  promising: '유망 섹터',
+  next: '다음 섹터',
+  'promising-or-next': '유망+다음',
 }
 
 export default function DiscoveryPage() {
@@ -488,361 +490,381 @@ export default function DiscoveryPage() {
     : null
 
   return (
-    <section className="container-app container-wide">
-      <div className="discovery-page-head mb-4">
-        <div className="discovery-page-head__copy">
-          <h1 className="title-xl" style={{ marginBottom: 0 }}>멀티배거 발굴</h1>
-          <div className="muted" style={{ marginTop: 'var(--space-1)' }}>
+    <div className="bt-page">
+      {/* 헤더 */}
+      <div className="bt-header">
+        <div>
+          <h1 className="bt-title">멀티배거 발굴</h1>
+          <p className="bt-desc">
             펀더멘털(PBR·ROE·PEG·QoQ) × 스마트머니(12주 수급) × 섹터 복합 점수 기반 중장기 후보
-          </div>
+          </p>
         </div>
-        <div className="discovery-page-head__actions">
-          <div className="discovery-top-group" role="group" aria-label="TOP 후보 수">
-            {([10, 20, 30] as const).map((n) => (
-              <Button
-                key={n}
-                variant={limit === n ? 'primary' : 'secondary'}
-                size="sm"
-                className="discovery-top-button"
-                onClick={() => handleLimitChange(n)}
-                disabled={loading}
-                aria-pressed={limit === n}
-                data-active={limit === n}
-              >
-                TOP {n}
-              </Button>
-            ))}
-          </div>
-          <Button
-            variant="ghost"
-            size="sm"
-            className="discovery-refresh-button"
+        <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+          {([10, 20, 30] as const).map((n) => (
+            <button
+              key={n}
+              className={`sim-btn ${limit === n ? 'sim-btn--primary' : 'sim-btn--ghost'}`}
+              style={{ minHeight: 32, padding: '6px 10px' }}
+              onClick={() => handleLimitChange(n)}
+              disabled={loading}
+            >
+              TOP {n}
+            </button>
+          ))}
+          <button
+            className="sim-btn sim-btn--ghost"
+            style={{ minHeight: 32, padding: '6px 12px' }}
             onClick={() => fetchPicks(limit, criteria, sectorMode)}
             disabled={loading}
           >
-            <RefreshCw size={14} style={loading ? { animation: 'spin 1s linear infinite' } : undefined} />
             {loading ? '조회 중...' : '새로고침'}
-          </Button>
+          </button>
         </div>
       </div>
 
-      <div className="card mb-4 discovery-summary-card">
-        <div className="muted">
-          후보 <strong>{filteredPicks.length}</strong>개 · 섹터 모드 <strong>{sectorModeSummary}</strong> · 필터 기준: 시총 {appliedCriteria.minMarketCapBillion}억↑,
-          {' '}PBR {'<'} {appliedCriteria.maxPbr.toFixed(1)}, ROE {'>'} {appliedCriteria.minRoe.toFixed(1)}%,
-          {' '}PEG {appliedCriteria.minPeg != null ? `${appliedCriteria.minPeg.toFixed(1)}↑` : '하한 없음'}
-          {appliedCriteria.maxPeg != null ? ` · ${appliedCriteria.maxPeg.toFixed(1)}↓` : ''},
-          {' '}{appliedCriteria.qoqMode === 'two-quarter-positive' ? '최근 2분기 매출·영업이익 QoQ 양수' : '최신 분기 매출·영업이익 QoQ 양수'}
-          {updatedLabel ? ` · ${updatedLabel}` : ''}
-        </div>
-      </div>
-
-      <details className="card mb-4 discovery-filter-card discovery-config-card">
-        <summary className="discovery-config-summary">
-          <div className="discovery-config-summary-main">
-            <div className="title-md" style={{ marginBottom: 0 }}>기준 설정</div>
-            <div className="caption" style={{ marginTop: 'var(--space-1)' }}>
-              프리셋과 기준값은 펼쳐서 조정
-            </div>
+      {/* 요약 */}
+      <div className="bt-summary-card">
+        <div className="bt-summary-grid">
+          <div className="bt-summary-item">
+            <span className="bt-summary-label">후보</span>
+            <span className="bt-summary-value">{filteredPicks.length}개</span>
           </div>
-          <div className="discovery-config-summary-meta">
-            <span className="discovery-config-pill discovery-config-pill--strong">{appliedPresetLabel}</span>
-            <span className="discovery-config-pill">{sectorModeSummary}</span>
-            <span className="discovery-config-chevron" aria-hidden="true">
-              <ChevronDown size={16} />
+          <div className="bt-summary-item">
+            <span className="bt-summary-label">섹터 모드</span>
+            <span className="bt-summary-value">{sectorModeSummary}</span>
+          </div>
+          <div className="bt-summary-item">
+            <span className="bt-summary-label">최소 시총</span>
+            <span className="bt-summary-value">{appliedCriteria.minMarketCapBillion}억↑</span>
+          </div>
+          <div className="bt-summary-item">
+            <span className="bt-summary-label">PBR / ROE</span>
+            <span className="bt-summary-value">&lt;{appliedCriteria.maxPbr.toFixed(1)} / &gt;{appliedCriteria.minRoe.toFixed(1)}%</span>
+          </div>
+          <div className="bt-summary-item">
+            <span className="bt-summary-label">PEG 범위</span>
+            <span className="bt-summary-value">
+              {appliedCriteria.minPeg != null ? `${appliedCriteria.minPeg}↑` : '하한없음'} · {appliedCriteria.maxPeg != null ? `${appliedCriteria.maxPeg}↓` : '상한없음'}
             </span>
           </div>
-        </summary>
-        <div className="discovery-config-body">
-          <div className="discovery-filter-group">
-            <div className="caption" style={{ marginBottom: 'var(--space-2)' }}>초보자 추천 프리셋</div>
-            <div className="discovery-filter-chip-row discovery-preset-row" style={{ flexWrap: 'wrap' }}>
+          <div className="bt-summary-item">
+            <span className="bt-summary-label">적용 기준</span>
+            <span className="bt-summary-value" style={{ fontSize: 11 }}>
+              {appliedPresetLabel}{updatedLabel ? ` · ${updatedLabel}` : ''}
+            </span>
+          </div>
+        </div>
+      </div>
+
+      {/* 기준 설정 */}
+      <div className="bt-params-card">
+        <div style={{ marginBottom: 'var(--space-3)' }}>
+          <span className="bt-param-label" style={{ display: 'block', marginBottom: 'var(--space-2)' }}>프리셋</span>
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
             {visiblePresets.map((preset) => (
-              <Button
+              <button
                 key={preset.key}
-                variant={appliedPresetKey === preset.key ? 'primary' : 'secondary'}
-                size="sm"
-                className="discovery-preset-button"
+                className={`sim-btn ${appliedPresetKey === preset.key ? 'sim-btn--primary' : 'sim-btn--ghost'}`}
+                style={{ minHeight: 30, padding: '6px 10px' }}
                 onClick={() => applyPreset(preset)}
                 disabled={loading}
                 title={preset.hint}
-                aria-pressed={appliedPresetKey === preset.key}
-                data-active={appliedPresetKey === preset.key}
               >
                 {preset.label}
-              </Button>
+              </button>
             ))}
             {DISCOVERY_PRESETS.length > DISCOVERY_PRESET_COLLAPSED_COUNT && (
-              <Button
-                variant="ghost"
-                size="sm"
-                className="discovery-preset-more-button"
+              <button
+                className="sim-btn sim-btn--ghost"
+                style={{ minHeight: 30, padding: '6px 10px' }}
                 onClick={() => setShowAllPresets((prev) => !prev)}
                 disabled={loading}
               >
                 {showAllPresets
-                  ? '프리셋 접기'
-                  : `+${DISCOVERY_PRESETS.length - DISCOVERY_PRESET_COLLAPSED_COUNT}개 더보기`}
-              </Button>
+                  ? '접기'
+                  : `+${DISCOVERY_PRESETS.length - DISCOVERY_PRESET_COLLAPSED_COUNT}개 더`}
+              </button>
             )}
           </div>
-          <div className="discovery-sector-panel">
-            <div className="caption" style={{ marginBottom: 'var(--space-2)' }}>섹터 범위</div>
-            <div className="discovery-sector-row discovery-filter-chip-row">
-              <Button variant={sectorMode === 'all' ? 'primary' : 'secondary'} size="sm" className="discovery-sector-button" onClick={() => setSectorMode('all')} disabled={loading} aria-pressed={sectorMode === 'all'} data-active={sectorMode === 'all'}>전체 섹터</Button>
-              <Button variant={sectorMode === 'promising' ? 'primary' : 'secondary'} size="sm" className="discovery-sector-button" onClick={() => setSectorMode('promising')} disabled={loading} aria-pressed={sectorMode === 'promising'} data-active={sectorMode === 'promising'}>유망 섹터</Button>
-              <Button variant={sectorMode === 'next' ? 'primary' : 'secondary'} size="sm" className="discovery-sector-button" onClick={() => setSectorMode('next')} disabled={loading} aria-pressed={sectorMode === 'next'} data-active={sectorMode === 'next'}>다음 섹터</Button>
-              <Button variant={sectorMode === 'promising-or-next' ? 'primary' : 'secondary'} size="sm" className="discovery-sector-button" onClick={() => setSectorMode('promising-or-next')} disabled={loading} aria-pressed={sectorMode === 'promising-or-next'} data-active={sectorMode === 'promising-or-next'}>유망 + 다음</Button>
-            </div>
-          </div>
-          <div className="cards-grid cols-4 discovery-criteria-grid" style={{ marginBottom: 'var(--space-2)' }}>
-            <Input
-              label="최소 시총(억)"
-              type="number"
-              min={100}
-              step={50}
-              value={criteria.minMarketCapBillion}
-              onChange={(e) => setCriteria((prev) => ({ ...prev, minMarketCapBillion: Number(e.target.value || 0) }))}
-            />
-            <Input
-              label="최소 ROE(%)"
-              type="number"
-              min={0}
-              max={50}
-              step={0.5}
-              value={criteria.minRoe}
-              onChange={(e) => setCriteria((prev) => ({ ...prev, minRoe: Number(e.target.value || 0) }))}
-            />
-            <Input
-              label="최대 PBR"
-              type="number"
-              min={0.1}
-              max={10}
-              step={0.1}
-              value={criteria.maxPbr}
-              onChange={(e) => setCriteria((prev) => ({ ...prev, maxPbr: Number(e.target.value || 0) }))}
-            />
-            <Input
-              label="최소 PEG"
-              type="number"
-              min={0.1}
-              max={100}
-              step={0.1}
-              value={criteria.minPeg ?? ''}
-              onChange={(e) => setCriteria((prev) => ({ ...prev, minPeg: e.target.value === '' ? null : Number(e.target.value) }))}
-            />
-            <Input
-              label="최대 PEG"
-              type="number"
-              min={0.1}
-              max={100}
-              step={0.1}
-              value={criteria.maxPeg ?? ''}
-              onChange={(e) => setCriteria((prev) => ({ ...prev, maxPeg: e.target.value === '' ? null : Number(e.target.value) }))}
-            />
-          </div>
-          <div className="discovery-filter-actions discovery-actions-stack" style={{ gap: 'var(--space-2)', flexWrap: 'wrap' }}>
-            <div className="ui-field discovery-growth-field" style={{ minWidth: 260 }}>
-              <label className="ui-label">성장 조건</label>
-              <select
-                className="input"
-                value={criteria.qoqMode}
-                onChange={(e) => setCriteria((prev) => ({
-                  ...prev,
-                  qoqMode: e.target.value === 'latest-quarter-positive' ? 'latest-quarter-positive' : 'two-quarter-positive',
-                }))}
-              >
-                <option value="two-quarter-positive">최근 2분기 모두 QoQ 양수</option>
-                <option value="latest-quarter-positive">최신 분기 QoQ 양수</option>
-              </select>
-            </div>
-            <div className="discovery-filter-action-buttons">
-              <Button
-                variant="ghost"
-                size="sm"
-                className="discovery-reset-button"
-                onClick={() => {
-                  setCriteria(appliedCriteria)
-                  setSectorMode(appliedSectorMode)
-                }}
+        </div>
+
+        <div style={{ marginBottom: 'var(--space-3)' }}>
+          <span className="bt-param-label" style={{ display: 'block', marginBottom: 'var(--space-2)' }}>섹터 범위</span>
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+            {(['all', 'promising', 'next', 'promising-or-next'] as const).map((mode) => (
+              <button
+                key={mode}
+                className={`sim-btn ${sectorMode === mode ? 'sim-btn--primary' : 'sim-btn--ghost'}`}
+                style={{ minHeight: 30, padding: '6px 10px' }}
+                onClick={() => setSectorMode(mode)}
                 disabled={loading}
               >
-                적용값으로 되돌리기
-              </Button>
-              <Button variant="primary" size="sm" className="discovery-apply-button" onClick={applyCriteria} disabled={loading}>
-                기준 적용
-              </Button>
+                {SECTOR_MODE_LABELS[mode]}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="bt-params-grid">
+          <div className="bt-param-group">
+            <span className="bt-param-label">최소 시총(억)</span>
+            <div className="sim-input-row">
+              <input
+                className="sim-input"
+                type="number"
+                min={100}
+                step={50}
+                value={criteria.minMarketCapBillion}
+                onChange={(e) => setCriteria((prev) => ({ ...prev, minMarketCapBillion: Number(e.target.value || 0) }))}
+              />
             </div>
           </div>
+          <div className="bt-param-group">
+            <span className="bt-param-label">최소 ROE(%)</span>
+            <div className="sim-input-row">
+              <input
+                className="sim-input"
+                type="number"
+                min={0}
+                max={50}
+                step={0.5}
+                value={criteria.minRoe}
+                onChange={(e) => setCriteria((prev) => ({ ...prev, minRoe: Number(e.target.value || 0) }))}
+              />
+            </div>
+          </div>
+          <div className="bt-param-group">
+            <span className="bt-param-label">최대 PBR</span>
+            <div className="sim-input-row">
+              <input
+                className="sim-input"
+                type="number"
+                min={0.1}
+                max={10}
+                step={0.1}
+                value={criteria.maxPbr}
+                onChange={(e) => setCriteria((prev) => ({ ...prev, maxPbr: Number(e.target.value || 0) }))}
+              />
+            </div>
+          </div>
+          <div className="bt-param-group">
+            <span className="bt-param-label">최소 PEG</span>
+            <div className="sim-input-row">
+              <input
+                className="sim-input"
+                type="number"
+                min={0.1}
+                max={100}
+                step={0.1}
+                value={criteria.minPeg ?? ''}
+                onChange={(e) => setCriteria((prev) => ({ ...prev, minPeg: e.target.value === '' ? null : Number(e.target.value) }))}
+              />
+            </div>
+          </div>
+          <div className="bt-param-group">
+            <span className="bt-param-label">최대 PEG</span>
+            <div className="sim-input-row">
+              <input
+                className="sim-input"
+                type="number"
+                min={0.1}
+                max={100}
+                step={0.1}
+                value={criteria.maxPeg ?? ''}
+                onChange={(e) => setCriteria((prev) => ({ ...prev, maxPeg: e.target.value === '' ? null : Number(e.target.value) }))}
+              />
+            </div>
+          </div>
+          <div className="bt-param-group">
+            <span className="bt-param-label">성장 조건</span>
+            <select
+              className="sim-input"
+              value={criteria.qoqMode}
+              onChange={(e) => setCriteria((prev) => ({
+                ...prev,
+                qoqMode: e.target.value === 'latest-quarter-positive' ? 'latest-quarter-positive' : 'two-quarter-positive',
+              }))}
+            >
+              <option value="two-quarter-positive">최근 2분기 QoQ 양수</option>
+              <option value="latest-quarter-positive">최신 분기 QoQ 양수</option>
+            </select>
           </div>
         </div>
-      </details>
 
+        <div style={{ display: 'flex', gap: 8, marginTop: 'var(--space-3)', flexWrap: 'wrap' }}>
+          <button
+            className="sim-btn sim-btn--ghost"
+            onClick={() => {
+              setCriteria(appliedCriteria)
+              setSectorMode(appliedSectorMode)
+            }}
+            disabled={loading}
+          >
+            적용값으로 되돌리기
+          </button>
+          <button
+            className="sim-btn sim-btn--primary"
+            onClick={applyCriteria}
+            disabled={loading}
+          >
+            기준 적용
+          </button>
+        </div>
+      </div>
+
+      {/* 필터 퍼널 */}
       {funnel && (
-        <div className="card mb-4 discovery-funnel-card">
-          <div className="title-md" style={{ marginBottom: 'var(--space-2)' }}>필터 퍼널</div>
-          <div className="caption discovery-funnel-copy" style={{ lineHeight: 1.8 }}>
+        <div className="bt-section">
+          <div className="bt-section-title">필터 퍼널</div>
+          <p style={{ fontSize: 12, color: 'var(--color-text-tertiary)', margin: 0, lineHeight: 1.8 }}>
             연간 재무 유니버스 {funnel.annualUniverse}개 → 시총 통과 {funnel.afterMarketCap}개 → 가치 통과 {funnel.afterValue}개 →
             PEG 조건 통과 {funnel.afterPeg}개 → 최근 2분기 데이터 보유 {funnel.afterTrendData}개 → 최종 성장 조건 통과 {funnel.afterGrowth}개
+          </p>
+        </div>
+      )}
+
+      {/* 로딩 */}
+      {loading && (
+        <div className="bt-section">
+          <div className="bt-skeleton-rows">
+            {Array.from({ length: 8 }).map((_, i) => (
+              <div key={i} className="skeleton" style={{ height: 42, marginBottom: i < 7 ? 8 : 0 }} />
+            ))}
           </div>
         </div>
       )}
 
-      {loading && (
-        <div className="card mb-4">
-          {Array.from({ length: 8 }).map((_, i) => (
-            <Skeleton key={i} height={42} style={{ marginBottom: i === 7 ? 0 : 8 }} />
-          ))}
-        </div>
-      )}
-
+      {/* 에러 */}
       {!loading && error && (
-        <ErrorState message={error} onRetry={() => fetchPicks(limit, criteria, sectorMode)} />
+        <div className="bt-section" style={{ color: 'var(--color-error)' }}>{error}</div>
       )}
 
+      {/* 빈 상태 */}
       {!loading && !error && picks.length === 0 && (
-        <div className="card mb-4">
-          <EmptyState
-            message={
-              funnel
-                ? `조건에 맞는 후보가 없습니다. 현재 퍼널 마지막 단계 통과: ${funnel.afterGrowth}개`
-                : '조건에 맞는 후보가 없습니다. ETL 실행 후 다시 확인해 주세요.'
-            }
-          />
+        <div className="bt-section" style={{ color: 'var(--color-text-tertiary)', fontSize: 'var(--font-size-sm)' }}>
+          {funnel
+            ? `조건에 맞는 후보가 없습니다. 현재 퍼널 마지막 단계 통과: ${funnel.afterGrowth}개`
+            : '조건에 맞는 후보가 없습니다. ETL 실행 후 다시 확인해 주세요.'}
         </div>
       )}
 
       {!loading && !error && picks.length > 0 && filteredPicks.length === 0 && (
-        <div className="card mb-4">
-          <EmptyState message="현재 섹터 모드 조건에 맞는 후보가 없습니다. 섹터 모드 또는 기준을 조정해 보세요." />
+        <div className="bt-section" style={{ color: 'var(--color-text-tertiary)', fontSize: 'var(--font-size-sm)' }}>
+          현재 섹터 모드 조건에 맞는 후보가 없습니다. 섹터 모드 또는 기준을 조정해 보세요.
         </div>
       )}
 
+      {/* 결과 테이블 */}
       {!loading && !error && filteredPicks.length > 0 && (
-        <div className="card mb-4 discovery-result-card">
-          <div className="scan-table-wrap">
-          <table className="scan-table discovery-table">
-            <thead className="scan-thead">
-              <tr>
-                <th className="scan-th">#</th>
-                <th className="scan-th">종목</th>
-                <th className="scan-th" title="종합 점수 (100점 만점)">점수</th>
-                <th className="scan-th">가치<br /><small>30pt</small></th>
-                <th className="scan-th">모멘텀<br /><small>40pt</small></th>
-                <th className="scan-th">수급<br /><small>20pt</small></th>
-                <th className="scan-th">섹터<br /><small>10pt</small></th>
-                <th className="scan-th">PEG</th>
-                <th className="scan-th">PBR</th>
-                <th className="scan-th">ROE</th>
-                <th className="scan-th">매출QoQ</th>
-                <th className="scan-th">영업이익QoQ</th>
-                <th className="scan-th">시총</th>
-                <th className="scan-th">분석</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filteredPicks.map((pick, idx) => {
-                const rankNum = idx + 1;
-                let rankClass = 'discovery-rank-badge--rest';
-                if (rankNum === 1) rankClass = 'discovery-rank-badge--first';
-                else if (rankNum === 2) rankClass = 'discovery-rank-badge--second';
-                else if (rankNum === 3) rankClass = 'discovery-rank-badge--third';
-                return (
-                <tr key={pick.code} className="scan-tr discovery-tr">
-                  <td className="scan-td discovery-td-rank" data-label="순위">
-                    <span className={`discovery-rank-badge discovery-rank-badge--circle ${rankClass}`}>
-                      {rankNum}
-                    </span>
-                  </td>
-                  <td className="scan-td discovery-td-stock" data-label="종목">
-                    <div className="scan-td-name">{pick.name}</div>
-                    <div className="scan-td-code">{pick.code}</div>
-                    {pick.sectorName && <div className="caption muted">섹터 {pick.sectorName}</div>}
-                    <div className="discovery-mobile-meta" aria-label="핵심 지표">
-                      <div className="discovery-mobile-meta-item">
-                        <span className="discovery-mobile-meta-label">종합</span>
-                        <ScoreBadge value={pick.score.totalScore} max={100} />
-                      </div>
-                      <div className="discovery-mobile-meta-item">
-                        <span className="discovery-mobile-meta-label">시총</span>
-                        <span className="discovery-mobile-meta-value">
-                          <MarketCapCell value={pick.marketCap} />
-                        </span>
-                      </div>
-                    </div>
-                  </td>
-                  <td className="scan-td" data-label="종합 점수">
-                    <ScoreBadge value={pick.score.totalScore} max={100} />
-                  </td>
-                  <td className="scan-td" data-label="가치">
-                    <ScoreBadge value={pick.score.value} max={30} />
-                  </td>
-                  <td className="scan-td" data-label="모멘텀">
-                    <ScoreBadge value={pick.score.momentum} max={40} />
-                  </td>
-                  <td className="scan-td" data-label="수급">
-                    <ScoreBadge value={pick.score.smartMoney} max={20} />
-                  </td>
-                  <td className="scan-td" data-label="섹터">
-                    <ScoreBadge value={pick.score.sector} max={10} />
-                  </td>
-                  <td className="scan-td" data-label="PEG">
-                    <div>{pick.peg != null ? pick.peg.toFixed(2) : '—'}</div>
-                    {pick.pegSource && (
-                      <div className="caption muted">
-                        {pick.pegSource === 'net_income_forward'
-                          ? '순이익 선행'
-                          : pick.pegSource === 'net_income'
-                            ? '순이익'
-                            : pick.pegSource === 'op_income'
-                              ? '영업이익'
-                              : '매출'} 기반
-                      </div>
-                    )}
-                  </td>
-                  <td className="scan-td" data-label="PBR">
-                    {pick.pbr != null ? pick.pbr.toFixed(2) : '—'}
-                  </td>
-                  <td className="scan-td" data-label="ROE">
-                    {pick.roe != null ? `${pick.roe.toFixed(1)}%` : '—'}
-                  </td>
-                  <td className="scan-td" data-label="매출 QoQ">
-                    <QoQCell value={pick.revQoq} />
-                  </td>
-                  <td className="scan-td" data-label="영업이익 QoQ">
-                    <QoQCell value={pick.opQoq} />
-                  </td>
-                  <td className="scan-td" data-label="시총">
-                    <MarketCapCell value={pick.marketCap} />
-                  </td>
-                  <td className="scan-td discovery-td-action" data-label="">
-                    <Button
-                      variant="secondary"
-                      size="sm"
-                      className="discovery-action-icon-btn"
-                      aria-label={`${pick.name} 분석 열기`}
-                      onClick={() => handleAnalyze(pick.code)}
-                    >
-                      <ChevronRight size={14} aria-hidden="true" />
-                    </Button>
-                  </td>
+        <div className="bt-section">
+          <div style={{ overflowX: 'auto', margin: '0 calc(-1 * var(--space-4))' }}>
+            <table className="bt-table" style={{ minWidth: 960 }}>
+              <thead>
+                <tr>
+                  <th style={{ width: 36 }}>#</th>
+                  <th>종목</th>
+                  <th title="종합 점수 (100점 만점)" style={{ textAlign: 'center' }}>점수</th>
+                  <th style={{ textAlign: 'center' }}>가치<br /><small style={{ fontWeight: 400, opacity: 0.7 }}>30pt</small></th>
+                  <th style={{ textAlign: 'center' }}>모멘텀<br /><small style={{ fontWeight: 400, opacity: 0.7 }}>40pt</small></th>
+                  <th style={{ textAlign: 'center' }}>수급<br /><small style={{ fontWeight: 400, opacity: 0.7 }}>20pt</small></th>
+                  <th style={{ textAlign: 'center' }}>섹터<br /><small style={{ fontWeight: 400, opacity: 0.7 }}>10pt</small></th>
+                  <th style={{ textAlign: 'right' }}>PEG</th>
+                  <th style={{ textAlign: 'right' }}>PBR</th>
+                  <th style={{ textAlign: 'right' }}>ROE</th>
+                  <th style={{ textAlign: 'right' }}>매출QoQ</th>
+                  <th style={{ textAlign: 'right' }}>영업이익QoQ</th>
+                  <th style={{ textAlign: 'right' }}>시총</th>
+                  <th></th>
                 </tr>
-              );
-              })}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {filteredPicks.map((pick, idx) => (
+                  <tr key={pick.code}>
+                    <td>
+                      <span className="bt-table-num" style={{ fontWeight: idx < 3 ? 700 : 400, color: idx === 0 ? 'var(--color-success)' : idx < 3 ? 'var(--color-text-primary)' : 'var(--color-text-tertiary)' }}>
+                        {idx + 1}
+                      </span>
+                    </td>
+                    <td>
+                      <span className="bt-table-stock-name">{pick.name}</span>
+                      <span className="bt-table-stock-code">{pick.code}</span>
+                      {pick.sectorName && (
+                        <span style={{ display: 'block', fontSize: 10, color: 'var(--color-text-tertiary)', marginTop: 1 }}>
+                          {pick.sectorName}
+                        </span>
+                      )}
+                    </td>
+                    <td style={{ textAlign: 'center' }}>
+                      <ScoreBadge value={pick.score.totalScore} max={100} />
+                    </td>
+                    <td style={{ textAlign: 'center' }}>
+                      <ScoreBadge value={pick.score.value} max={30} />
+                    </td>
+                    <td style={{ textAlign: 'center' }}>
+                      <ScoreBadge value={pick.score.momentum} max={40} />
+                    </td>
+                    <td style={{ textAlign: 'center' }}>
+                      <ScoreBadge value={pick.score.smartMoney} max={20} />
+                    </td>
+                    <td style={{ textAlign: 'center' }}>
+                      <ScoreBadge value={pick.score.sector} max={10} />
+                    </td>
+                    <td style={{ textAlign: 'right' }}>
+                      <div className="bt-table-num">{pick.peg != null ? pick.peg.toFixed(2) : '—'}</div>
+                      {pick.pegSource && (
+                        <div style={{ fontSize: 10, color: 'var(--color-text-tertiary)' }}>
+                          {pick.pegSource === 'net_income_forward'
+                            ? '순이익 선행'
+                            : pick.pegSource === 'net_income'
+                              ? '순이익'
+                              : pick.pegSource === 'op_income'
+                                ? '영업이익'
+                                : '매출'}
+                        </div>
+                      )}
+                    </td>
+                    <td style={{ textAlign: 'right' }} className="bt-table-num">
+                      {pick.pbr != null ? pick.pbr.toFixed(2) : '—'}
+                    </td>
+                    <td style={{ textAlign: 'right' }} className="bt-table-num">
+                      {pick.roe != null ? `${pick.roe.toFixed(1)}%` : '—'}
+                    </td>
+                    <td style={{ textAlign: 'right' }}>
+                      <QoQCell value={pick.revQoq} />
+                    </td>
+                    <td style={{ textAlign: 'right' }}>
+                      <QoQCell value={pick.opQoq} />
+                    </td>
+                    <td style={{ textAlign: 'right' }}>
+                      <MarketCapCell value={pick.marketCap} />
+                    </td>
+                    <td>
+                      <button
+                        className="sim-btn sim-btn--ghost"
+                        style={{ minHeight: 28, padding: '4px 10px', fontSize: 11 }}
+                        aria-label={`${pick.name} 분석 열기`}
+                        onClick={() => handleAnalyze(pick.code)}
+                      >
+                        분석 →
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         </div>
       )}
 
-      <div className="card discovery-footnote-card">
-        <div className="caption discovery-footnote-copy" style={{ lineHeight: 1.7 }}>
+      {/* 각주 */}
+      <div className="bt-section">
+        <p style={{ fontSize: 11, color: 'var(--color-text-tertiary)', margin: 0, lineHeight: 1.7 }}>
           · <strong>가치(30pt)</strong>: PBR 구간 + ROE + PER + PEG 보정 기반<br />
           · <strong>모멘텀(40pt)</strong>: 최신 매출/영업이익 QoQ + 가속도<br />
           · <strong>수급(20pt)</strong>: 최근 12주 외국인+기관 순매수 누적<br />
           · <strong>섹터(10pt)</strong>: 해당 섹터 점수 비례
-        </div>
+        </p>
       </div>
-    </section>
+    </div>
   )
 }

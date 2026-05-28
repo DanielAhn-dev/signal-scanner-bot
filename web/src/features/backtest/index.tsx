@@ -360,11 +360,14 @@ export default function BacktestPage() {
   const [rallyPct, setRallyPct] = useState(20)
   const [topN, setTopN] = useState(30)
   const [loading, setLoading] = useState(false)
-  const [hasRun, setHasRun] = useState(false)
+  const [hasRun, setHasRun] = useState(false) // auto-run 후 재실행 여부 추적용
   const [error, setError] = useState<string | null>(null)
   const [data, setData] = useState<BacktestResponse | null>(null)
   const [selectedRuleKey, setSelectedRuleKey] = useState<string | null>(null)
   const [showAllFeatureRows, setShowAllFeatureRows] = useState(false)
+  const [activeTab, setActiveTab] = useState<'summary' | 'check' | 'samples'>('summary')
+  const [sortKey, setSortKey] = useState<'forwardReturnPct' | 'totalScore' | 'rsi14' | 'asof'>('forwardReturnPct')
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc')
 
   // 종목 패턴 점검
   const [checkSearch, setCheckSearch] = useState('')
@@ -476,8 +479,9 @@ export default function BacktestPage() {
         let score50PlusCount = 0
         let rsi45_65Count = 0
 
+        const scanSlice = candidates.slice(0, 36)
         const settled = await Promise.allSettled(
-          candidates.slice(0, 36).map(async (candidate) => {
+          scanSlice.map(async (candidate) => {
             const code = String(candidate.code || '').trim()
             if (!code) return null
             const indicatorRes = await apiFetch(`/api/ui/stock-indicators?code=${encodeURIComponent(code)}`, {
@@ -581,12 +585,13 @@ export default function BacktestPage() {
   - 거래대금 필터 제외: ${liquidityFilteredCount}개 (최소값: ${minLiquidityEok}억)
   - 최종 추천: ${next.length}개`)
 
+        const scanned = scanSlice.length
         if (!disposed) {
           setConditionStats({
-            buySignalPct: Math.round(buySignalCount / 36 * 100),
-            score50PlusPct: Math.round(score50PlusCount / 36 * 100),
-            rsi45_65Pct: Math.round(rsi45_65Count / 36 * 100),
-            totalScanned: 36,
+            buySignalPct: scanned > 0 ? Math.round(buySignalCount / scanned * 100) : 0,
+            score50PlusPct: scanned > 0 ? Math.round(score50PlusCount / scanned * 100) : 0,
+            rsi45_65Pct: scanned > 0 ? Math.round(rsi45_65Count / scanned * 100) : 0,
+            totalScanned: scanned,
           })
           setAutoPicks(next)
         }
@@ -605,6 +610,12 @@ export default function BacktestPage() {
       disposed = true
     }
   }, [data, selectedRuleKey, minExpectedReturnPct, minShortMomentumPct, minLiquidityEok, returnProfile])
+
+  // 최초 마운트 시 자동 실행
+  useEffect(() => {
+    void load()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   // URL param 또는 sessionStorage로 전달된 종목 자동 로드
   useEffect(() => {
@@ -663,6 +674,7 @@ export default function BacktestPage() {
     setCheckSearch(stock.name)
     setCheckResults([])
     void fetchIndicators(stock.code)
+    setActiveTab('check')
   }
 
   const goAnalyze = (code: string) => {
@@ -776,16 +788,45 @@ export default function BacktestPage() {
     }))
   }, [data, indicators])
 
+  const selectedStockAutoPick = useMemo(
+    () => (!selectedStock ? null : (autoPicks.find((row) => row.code === selectedStock.code) ?? null)),
+    [selectedStock, autoPicks],
+  )
+
   const investSim = useMemo(() => {
     if (!data || investAmount <= 0) return null
     const avgReturn = data.riserSummary.avgForwardReturnPct
-    const gain = investAmount * (avgReturn / 100)
-    return { gain, avgReturn }
-  }, [data, investAmount])
+    const patternReturn = selectedStockAutoPick?.expectedReturnPct ?? null
+    const avgGain = investAmount * (avgReturn / 100)
+    const patternGain = patternReturn != null ? investAmount * (patternReturn / 100) : null
+    return { avgGain, avgReturn, patternReturn, patternGain }
+  }, [data, investAmount, selectedStockAutoPick])
 
   const sorted = useMemo(() => {
-    return (data?.risers ?? []).slice().sort((a, b) => b.forwardReturnPct - a.forwardReturnPct)
-  }, [data])
+    const mult = sortDir === 'desc' ? -1 : 1
+    return (data?.risers ?? []).slice().sort((a, b) => {
+      if (sortKey === 'forwardReturnPct') return (a.forwardReturnPct - b.forwardReturnPct) * mult
+      if (sortKey === 'totalScore') return (a.totalScore - b.totalScore) * mult
+      if (sortKey === 'rsi14') return ((a.rsi14 ?? 0) - (b.rsi14 ?? 0)) * mult
+      if (sortKey === 'asof') return a.asof.localeCompare(b.asof) * mult
+      return 0
+    })
+  }, [data, sortKey, sortDir])
+
+  const toggleSort = (key: typeof sortKey) => {
+    if (sortKey === key) {
+      setSortDir((d) => (d === 'desc' ? 'asc' : 'desc'))
+    } else {
+      setSortKey(key)
+      setSortDir('desc')
+    }
+  }
+
+  const sortIcon = (key: typeof sortKey) => {
+    const active = sortKey === key
+    const icon = active ? (sortDir === 'desc' ? '▼' : '▲') : '⇅'
+    return <span className={`bt-sort-icon${active ? ' bt-sort-icon--active' : ''}`}>{icon}</span>
+  }
 
   const filteredSamplesByRule = useMemo(() => {
     if (!selectedRuleKey || !data) return []
@@ -850,11 +891,11 @@ export default function BacktestPage() {
         <div>
           <h1 className="bt-title">급등 종목 역추적 백테스트</h1>
           <p className="bt-desc">
-            최근 크게 오른 종목을 자동 추출한 뒤, 상승 전 공통 특징(점수/시그널/RSI)을 검증합니다.
+            최근 크게 오른 종목을 역추적해 상승 전 공통 패턴(점수·시그널·RSI)을 발굴하고, 현재 종목과 비교합니다.
           </p>
         </div>
         <button className="sim-btn sim-btn--primary" onClick={load} disabled={loading}>
-          {hasRun ? '다시 실행' : '실행'}
+          {loading ? '분석 중...' : '재실행'}
         </button>
       </div>
 
@@ -935,28 +976,21 @@ export default function BacktestPage() {
         <div className="bt-section" style={{ color: 'var(--color-error)' }}>{error}</div>
       )}
 
-      {!loading && !hasRun && !error && (
-        <div className="bt-section" style={{ color: 'var(--color-text-tertiary)' }}>
-          파라미터를 설정한 뒤 실행 버튼을 눌러 백테스트를 시작하세요.
-        </div>
-      )}
-
       {!loading && !error && data && (
         <>
           {/* 디버그 정보 (개발용) */}
           {(data as any)?._debug && (
             <div
               style={{
-                marginBottom: 'var(--space-3)',
                 padding: 'var(--space-3) var(--space-4)',
                 background: 'var(--color-bg-sunken)',
                 border: '1px solid var(--color-border-muted)',
-                borderRadius: 'var(--radius-md)',
+                borderRadius: 'var(--radius-xs)',
                 fontSize: 11,
                 color: 'var(--color-text-tertiary)',
               }}
             >
-              <div style={{ fontWeight: 700, marginBottom: 6 }}>📊 데이터 파이프라인 진단</div>
+              <div style={{ fontWeight: 700, marginBottom: 6 }}>데이터 파이프라인 진단</div>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 8, fontSize: 10 }}>
                 <div>scores 행: {((data as any)._debug.scoreRowsCount || 0).toLocaleString()}개</div>
                 <div>unique 종목: {((data as any)._debug.uniqueScoreCodes || 0).toLocaleString()}개</div>
@@ -966,13 +1000,45 @@ export default function BacktestPage() {
                 <div style={{ fontWeight: 700, color: 'var(--color-text-secondary)' }}>급등 이벤트: {((data as any)._debug.riserUniverseCount || 0).toLocaleString()}개 (기준: {((data as any)._debug.rallyThresholdPct || 20)}%↑)</div>
               </div>
               <div style={{ marginTop: 8, fontSize: 10, color: 'var(--color-warning)' }}>
-                💡 0건이 나오면: ① scores 데이터 없음 ② 가격 데이터 부족 ③ {((data as any)._debug.horizonBars || 20)}일치 과거 가격 없음 중 하나입니다.
+                0건이 나오면: ① scores 데이터 없음 ② 가격 데이터 부족 ③ {((data as any)._debug.horizonBars || 20)}일치 과거 가격 없음 중 하나입니다.
               </div>
               <div style={{ marginTop: 4, fontSize: 10, color: 'var(--color-text-tertiary)', wordBreak: 'break-all', overflowWrap: 'anywhere' }}>
                 params: {JSON.stringify(data.params)}
               </div>
             </div>
           )}
+
+          {/* 탭 바 */}
+          <div className="bt-tab-bar">
+            <button
+              className={`bt-tab${activeTab === 'summary' ? ' bt-tab--active' : ''}`}
+              onClick={() => setActiveTab('summary')}
+            >
+              백테스트 결과
+            </button>
+            <button
+              className={`bt-tab${activeTab === 'check' ? ' bt-tab--active' : ''}`}
+              onClick={() => setActiveTab('check')}
+            >
+              종목 점검
+              {selectedStock && (
+                <span className="bt-tab-badge">{selectedStock.name}</span>
+              )}
+            </button>
+            <button
+              className={`bt-tab${activeTab === 'samples' ? ' bt-tab--active' : ''}`}
+              onClick={() => setActiveTab('samples')}
+            >
+              이벤트 샘플
+              {sorted.length > 0 && (
+                <span className="bt-tab-badge">{sorted.length}</span>
+              )}
+            </button>
+          </div>
+
+          {/* ── 백테스트 결과 탭: 요약 + 공통 패턴 ── */}
+          {activeTab === 'summary' && (
+          <>
           <div className="bt-summary-card">
             <div className="bt-summary-grid">
               <div className="bt-summary-item">
@@ -1021,8 +1087,6 @@ export default function BacktestPage() {
               </div>
             </div>
           </div>
-
-          {/* 공통점 탐색 리포트 */}
           <div className="bt-section">
             <div className="bt-section-title">공통점 탐색 리포트 (Support / Lift / Precision)</div>
             <p style={{ fontSize: 12, color: 'var(--color-text-tertiary)', margin: '0 0 var(--space-3)', lineHeight: 1.55 }}>
@@ -1329,8 +1393,10 @@ export default function BacktestPage() {
               </p>
             )}
           </div>
+          </> )}
 
-          {/* 종목 패턴 점검 */}
+          {/* ── 종목 점검 탭 ── */}
+          {activeTab === 'check' && (
           <div className="bt-section">
             <div className="bt-section-title">종목 패턴 점검</div>
             <p className="bt-check-guide">
@@ -1728,18 +1794,30 @@ export default function BacktestPage() {
                           <span className="sim-input-suffix">원</span>
                         </div>
                         {investSim && (
-                          <div className="bt-check-invest-result">
-                            <span className="bt-check-invest-desc">
-                              평균 수익률 <strong>+{pct(investSim.avgReturn, 2)}</strong> ({horizon}일 후 기준)
-                            </span>
-                            <span className="bt-check-invest-gain">
-                              +{investSim.gain.toLocaleString('ko-KR')}원 예상
-                            </span>
+                          <div style={{ display: 'flex', gap: 'var(--space-4)', flexWrap: 'wrap' }}>
+                            <div className="bt-check-invest-result">
+                              <span className="bt-check-invest-desc">
+                                급등 평균 수익률 <strong>+{pct(investSim.avgReturn, 2)}</strong> ({horizon}일)
+                              </span>
+                              <span className="bt-check-invest-gain">
+                                +{Math.round(investSim.avgGain).toLocaleString('ko-KR')}원
+                              </span>
+                            </div>
+                            {investSim.patternReturn != null && investSim.patternGain != null && (
+                              <div className="bt-check-invest-result">
+                                <span className="bt-check-invest-desc">
+                                  패턴 기반 예상 <strong>+{pct(investSim.patternReturn, 1)}</strong>
+                                </span>
+                                <span className="bt-check-invest-gain">
+                                  +{Math.round(investSim.patternGain).toLocaleString('ko-KR')}원
+                                </span>
+                              </div>
+                            )}
                           </div>
                         )}
                       </div>
                       <p className="bt-check-invest-note">
-                        ※ 과거 급등 이벤트의 평균 수익률 기준 추정값입니다. 패턴 일치도가 높을수록, 스캔·하이라이트에 함께 등장할수록 신뢰도가 높아집니다.
+                        ※ 급등 평균은 과거 이벤트 기준, 패턴 기반은 현재 종목의 조건 일치도·점수·모멘텀을 반영한 추정값입니다.
                       </p>
                     </div>
 
@@ -1763,8 +1841,10 @@ export default function BacktestPage() {
               </div>
             )}
           </div>
+          )}
 
-          {/* 급등 이벤트 샘플 테이블 */}
+          {/* ── 이벤트 샘플 탭 ── */}
+          {activeTab === 'samples' && (
           <div className="bt-section">
             <div className="bt-section-title">급등 이벤트 샘플</div>
             {sorted.length === 0 ? (
@@ -1777,11 +1857,19 @@ export default function BacktestPage() {
                   <thead>
                     <tr>
                       <th>종목</th>
-                      <th>기준일</th>
-                      <th style={{ textAlign: 'right' }}>Horizon 수익률</th>
-                      <th style={{ textAlign: 'right' }}>점수</th>
+                      <th data-sortable onClick={() => toggleSort('asof')} style={{ textAlign: 'left' }}>
+                        기준일{sortIcon('asof')}
+                      </th>
+                      <th data-sortable onClick={() => toggleSort('forwardReturnPct')} style={{ textAlign: 'right' }}>
+                        Horizon 수익률{sortIcon('forwardReturnPct')}
+                      </th>
+                      <th data-sortable onClick={() => toggleSort('totalScore')} style={{ textAlign: 'right' }}>
+                        점수{sortIcon('totalScore')}
+                      </th>
                       <th>시그널</th>
-                      <th style={{ textAlign: 'right' }}>RSI14</th>
+                      <th data-sortable onClick={() => toggleSort('rsi14')} style={{ textAlign: 'right' }}>
+                        RSI14{sortIcon('rsi14')}
+                      </th>
                     </tr>
                   </thead>
                   <tbody>
@@ -1827,9 +1915,10 @@ export default function BacktestPage() {
               </div>
             )}
             <p style={{ fontSize: 11, color: 'var(--color-text-tertiary)', margin: 'var(--space-3) 0 0' }}>
-              종목 클릭 시 위 패턴 점검에 자동 입력됩니다.
+              종목 클릭 시 종목 점검 탭에 자동 입력됩니다.
             </p>
           </div>
+          )}
         </>
       )}
     </div>
