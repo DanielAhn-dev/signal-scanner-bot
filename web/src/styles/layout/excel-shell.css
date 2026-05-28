@@ -2124,6 +2124,120 @@
   width: 100% !important;
 }
 
+/* ── Execution guide sheet: 스캔처럼 가로폭 최대 사용 ── */
+.execution-guide-page {
+  padding: 0;
+  margin: 0;
+  max-width: none;
+  width: 100%;
+}
+
+.execution-guide-form-block {
+  margin-top: var(--space-3);
+}
+
+.execution-guide-form-grid {
+  margin-top: var(--space-2);
+}
+
+.execution-guide-form-grid .ui-input,
+.execution-guide-form-grid .input,
+.execution-guide-form-grid select {
+  min-height: 38px;
+}
+
+.execution-guide-meta-row {
+  border-top: 1px solid var(--color-border-default);
+  padding-top: var(--space-2);
+}
+
+.execution-guide-code-chip-row {
+  margin-top: var(--space-2);
+}
+
+.execution-guide-table .xls-row {
+  height: auto;
+}
+
+.execution-guide-table .xls-th {
+  font-size: 11px;
+  padding: 6px 8px;
+}
+
+.execution-guide-table .xls-cell {
+  white-space: normal;
+  line-height: 1.45;
+  padding: 10px 10px;
+  vertical-align: top;
+}
+
+.execution-guide-stock-title {
+  font-size: 13px;
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-text-primary);
+  margin-bottom: 6px;
+}
+
+.execution-guide-summary {
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--color-text-secondary);
+  margin-top: 6px;
+}
+
+.execution-guide-kv-line {
+  display: grid;
+  grid-template-columns: 64px 1fr;
+  gap: 8px;
+  align-items: start;
+  margin-bottom: 4px;
+}
+
+.execution-guide-kv-label {
+  color: var(--color-text-tertiary);
+  font-size: 11px;
+}
+
+.execution-guide-kv-value {
+  color: var(--color-text-primary);
+  font-size: 12px;
+  font-weight: var(--font-weight-medium);
+}
+
+.execution-guide-warning {
+  color: var(--color-warning);
+  font-size: 12px;
+  font-weight: var(--font-weight-semibold);
+  margin-bottom: 6px;
+}
+
+.execution-guide-headline-list {
+  margin: 0;
+  padding-left: 16px;
+  display: grid;
+  gap: 4px;
+}
+
+.execution-guide-headline-item {
+  line-height: 1.45;
+  color: var(--color-text-secondary);
+}
+
+@media (max-width: 900px) {
+  .execution-guide-form-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .execution-guide-table .xls-cell {
+    padding: 8px;
+  }
+
+  .execution-guide-kv-line {
+    grid-template-columns: 56px 1fr;
+    gap: 6px;
+  }
+}
+
 .reports-sheet {
   display: flex;
   flex-direction: column;
