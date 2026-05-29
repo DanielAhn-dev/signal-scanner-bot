@@ -64,6 +64,7 @@ export function useShareManager(options: UseShareManagerOptions) {
   const [list, setList] = useState<ShareListItem[]>([])
   const [loading, setLoading] = useState(false)
   const [revokingId, setRevokingId] = useState<string | null>(null)
+  const [revokingAll, setRevokingAll] = useState(false)
   const [creating, setCreating] = useState(false)
   const [includeAll, setIncludeAll] = useState(false)
 
@@ -146,6 +147,24 @@ export function useShareManager(options: UseShareManagerOptions) {
     }
   }, [endpoint, includeAll, loadList, scope, scopeKey, toast])
 
+  const revokeAllShares = useCallback(async () => {
+    if (!scope) return
+    setRevokingAll(true)
+    try {
+      const request = buildUiRequest(`${endpoint}?all=1&${scopeKey}=${encodeURIComponent(scope)}`)
+      const res = await fetch(request.url, { method: 'DELETE', headers: request.headers })
+      const json = await res.json()
+      if (!res.ok) throw new Error(json?.error || '공유 일괄 철회 실패')
+      const count = Number(json?.revokedCount ?? 0)
+      toast.show(count > 0 ? `활성 공유 링크 ${count}건을 철회했습니다.` : '철회할 활성 링크가 없습니다.')
+      await loadList(scope, includeAll)
+    } catch (e: any) {
+      toast.show(String(e?.message || e))
+    } finally {
+      setRevokingAll(false)
+    }
+  }, [endpoint, includeAll, loadList, scope, scopeKey, toast])
+
   useEffect(() => {
     if (!open) return
     void loadList(scope, includeAll)
@@ -158,6 +177,7 @@ export function useShareManager(options: UseShareManagerOptions) {
     list,
     loading,
     revokingId,
+    revokingAll,
     creating,
     includeAll,
     setIncludeAll,
@@ -165,6 +185,7 @@ export function useShareManager(options: UseShareManagerOptions) {
     createShare,
     loadList,
     revokeShare,
+    revokeAllShares,
     close: () => {
       setOpen(false)
       setInfo(null)

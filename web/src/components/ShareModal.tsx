@@ -24,7 +24,9 @@ type Props = {
   loading?: boolean
   onRefresh?: () => void
   onRevoke?: (shareId: string) => void
+  onRevokeAll?: () => void
   revokingId?: string | null
+  revokingAll?: boolean
   includeAll?: boolean
   onChangeIncludeAll?: (next: boolean) => void
 }
@@ -50,7 +52,9 @@ export default function ShareModal({
   loading,
   onRefresh,
   onRevoke,
+  onRevokeAll,
   revokingId,
+  revokingAll = false,
   includeAll = false,
   onChangeIncludeAll,
 }: Props) {
@@ -192,6 +196,9 @@ export default function ShareModal({
                 <option value="expires">만료임박순</option>
               </select>
               <button className="ui-button ui-btn-secondary" onClick={onRefresh} disabled={loading} style={{ width: '100%' }}>새로고침</button>
+              <button className="ui-button ui-btn-secondary" onClick={onRevokeAll} disabled={revokingAll || !onRevokeAll} style={{ width: '100%' }}>
+                {revokingAll ? '전체 철회 중…' : '활성 전체 철회'}
+              </button>
             </div>
             <div className="share-modal__recent-list" style={{ marginTop: 12, display: 'grid', gap: 10 }}>
               {sortedShares.length === 0 ? (

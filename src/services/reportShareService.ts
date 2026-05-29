@@ -156,6 +156,26 @@ export async function revokeReportShare(params: {
   if (error) throw error
 }
 
+export async function revokeReportSharesByScope(params: {
+  supabase: SupabaseClient
+  topic: string
+  audienceKey?: string
+}) {
+  const { supabase, topic, audienceKey } = params
+  let query = supabase
+    .from(REPORT_SHARE_TABLE)
+    .update({ revoked_at: new Date().toISOString() })
+    .eq('topic', topic)
+    .is('revoked_at', null)
+    .gt('expires_at', new Date().toISOString())
+
+  if (audienceKey) query = query.eq('audience_key', audienceKey)
+
+  const { data, error } = await query.select('id')
+  if (error) throw error
+  return Array.isArray(data) ? data.length : 0
+}
+
 export async function getReportShareByPublicToken(params: {
   supabase: SupabaseClient
   publicToken: string

@@ -14,6 +14,7 @@ import {
   createReportShare,
   listReportShares,
   revokeReportShare,
+  revokeReportSharesByScope,
 } from '../../src/services/reportShareService'
 import { HTML_BODY_PREFIX } from '../../src/services/reportWebRenderService'
 
@@ -98,6 +99,17 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     if (req.method === 'DELETE') {
+      const revokeAll = String(req.query.all || req.body?.all || '') === '1'
+      if (revokeAll) {
+        const topic = resolveReportTopic(req.query.topic || req.body?.topic)
+        const revokedCount = await revokeReportSharesByScope({
+          supabase,
+          topic,
+          audienceKey,
+        })
+        return res.status(200).json({ ok: true, revokedCount })
+      }
+
       const shareId = String(req.query.shareId || req.body?.shareId || '')
       if (!shareId) return res.status(400).json({ error: 'shareId required' })
       await revokeReportShare({ supabase, shareId })
