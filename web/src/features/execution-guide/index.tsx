@@ -34,6 +34,8 @@ type GuideRow = {
   warnings: string[]
   headlines: string[]
   headlineLinks: Array<{ title: string; url: string | null; source: string | null }>
+  marketDataDate: string | null
+  newsDataDate: string | null
   plannedBudget: number
   qty: number
   firstOrderAmount: number
@@ -67,10 +69,19 @@ function toExecutionGuideSnapshotText(input: {
 }): string {
   const lines: string[] = []
   const generatedAtText = new Date(input.generatedAtIso).toLocaleString('ko-KR')
+  const marketDateText = formatDateRangeLabel(input.rows.map((row) => row.marketDataDate))
+  const newsDateText = formatDateRangeLabel(input.rows.map((row) => row.newsDataDate))
+  const asOfParts = [
+    marketDateText ? `시세 ${marketDateText}` : null,
+    newsDateText ? `뉴스 ${newsDateText}` : null,
+  ].filter(Boolean)
   lines.push('<b>실행 가이드 리포트</b>')
   lines.push(`생성시각: ${generatedAtText}`)
   lines.push(`출처: ${input.sourceLabel}`)
   lines.push(`코드 ${input.codeList.length}개: ${input.codeList.join(', ') || '-'}`)
+  if (asOfParts.length > 0) {
+    lines.push(`데이터 기준일: ${asOfParts.join(' · ')}`)
+  }
   lines.push('')
   lines.push('<b>설정</b>')
   lines.push(`• 총 투자금: ${formatKrw(Math.max(0, Number(input.capital || 0)))}`)
@@ -97,6 +108,7 @@ function toExecutionGuideSnapshotText(input: {
       lines.push(`  - 점수/판정: ${row.score != null ? formatNumber(row.score, 1) : '—'} / ${row.statusLabel || '—'}`)
       lines.push(`  - 진입: ${row.entryLow != null && row.entryHigh != null ? `${formatKrw(row.entryLow)} ~ ${formatKrw(row.entryHigh)}` : '—'}`)
       lines.push(`  - 기준가: ${row.entryRef != null ? formatKrw(row.entryRef) : '—'}`)
+      lines.push(`  - 데이터 기준일: ${formatRowDataAsOf(row.marketDataDate, row.newsDataDate)}`)
       lines.push(`  - 손절: ${row.stopPrice != null ? formatKrw(row.stopPrice) : '—'}`)
       lines.push(`  - 목표1/목표2: ${row.target1 != null ? formatKrw(row.target1) : '—'} / ${row.target2 != null ? formatKrw(row.target2) : '—'}`)
       lines.push(`  - 예산/수량: ${formatKrw(row.plannedBudget)} / ${row.qty.toLocaleString()}주`)
@@ -150,6 +162,8 @@ function toExecutionGuideSnapshotText(input: {
       warnings: r.warnings,
       headlines: r.headlines.slice(0, 3),
       headlineLinks: r.headlineLinks.slice(0, 3),
+      marketDataDate: r.marketDataDate,
+      newsDataDate: r.newsDataDate,
       plannedBudget: r.plannedBudget,
       qty: r.qty,
       firstOrderAmount: r.firstOrderAmount,
@@ -245,6 +259,42 @@ function normalizeNewsUrl(input: unknown): string | null {
 function normalizeNewsSource(input: unknown): string | null {
   const value = decodeHeadlineText(String(input || ''))
   return value || null
+}
+
+function normalizeDateLabel(input: unknown): string | null {
+  const raw = String(input || '').trim()
+  if (!raw) return null
+  const dateOnly = raw.match(/\d{4}-\d{2}-\d{2}/)?.[0]
+  if (dateOnly) return dateOnly
+  const compact = raw.match(/(\d{4})[./](\d{1,2})[./](\d{1,2})/)
+  if (compact) {
+    const y = compact[1]
+    const m = compact[2].padStart(2, '0')
+    const d = compact[3].padStart(2, '0')
+    return `${y}-${m}-${d}`
+  }
+  const ts = Date.parse(raw)
+  if (Number.isFinite(ts)) {
+    return new Date(ts).toISOString().slice(0, 10)
+  }
+  return null
+}
+
+function formatDateRangeLabel(values: Array<string | null | undefined>): string | null {
+  const uniq = Array.from(new Set(values.map((value) => normalizeDateLabel(value)).filter(Boolean) as string[])).sort()
+  if (uniq.length === 0) return null
+  if (uniq.length === 1) return uniq[0]
+  return `${uniq[0]}~${uniq[uniq.length - 1]}`
+}
+
+function formatRowDataAsOf(marketDataDate: string | null, newsDataDate: string | null): string {
+  const market = normalizeDateLabel(marketDataDate)
+  const news = normalizeDateLabel(newsDataDate)
+  const parts = [
+    market ? `시세 ${market}` : null,
+    news ? `뉴스 ${news}` : null,
+  ].filter(Boolean)
+  return parts.length > 0 ? parts.join(' · ') : '—'
 }
 
 function clampValue(value: number, min: number, max: number): number {
@@ -813,8 +863,9 @@ export default function ExecutionGuidePage() {
 
           let headlines: string[] = []
           let headlineLinks: Array<{ title: string; url: string | null; source: string | null }> = []
+          let newsRes: any = null
           if (includeNews) {
-            const newsRes = await apiFetch(`/api/ui/news?q=${encodeURIComponent(code)}&page=1&pageSize=3`, {
+            newsRes = await apiFetch(`/api/ui/news?q=${encodeURIComponent(code)}&page=1&pageSize=3`, {
               cacheMs: 30_000,
               timeoutMs: 10_000,
             }).catch(() => null)
@@ -831,6 +882,26 @@ export default function ExecutionGuidePage() {
               : []
             headlines = headlineLinks.map((item) => item.title)
           }
+
+          const marketDataDate = formatDateRangeLabel([
+            stockRes?.latest?.trade_date,
+            stockRes?.profile?.indicators_as_of,
+            stockRes?.data?.[0]?.trade_date,
+            stockRes?.data?.[0]?.date,
+            stockRes?.flow?.date,
+            stockRes?.profile?.updated_at,
+          ])
+          const newsDataDate = includeNews
+            ? formatDateRangeLabel(
+              (Array.isArray(newsRes?.data) ? newsRes.data : []).slice(0, 3).flatMap((item: any) => [
+                item?.pubDate,
+                item?.published_at,
+                item?.publishedAt,
+                item?.datetime,
+                item?.date,
+              ])
+            )
+            : null
 
           const entryLow = Number.isFinite(Number(advisor.entryLow)) ? Number(advisor.entryLow) : null
           const entryHigh = Number.isFinite(Number(advisor.entryHigh)) ? Number(advisor.entryHigh) : null
@@ -872,6 +943,8 @@ export default function ExecutionGuidePage() {
               : [],
             headlines: headlines.map(decodeHeadlineText),
             headlineLinks,
+            marketDataDate,
+            newsDataDate,
             plannedBudget: budgetPerName,
             qty,
             firstOrderAmount,
@@ -1169,6 +1242,10 @@ export default function ExecutionGuidePage() {
               <tr key={row.code} className={`xls-row${idx % 2 ? ' xls-row--even' : ''}`}>
                 <td className="xls-cell" style={{ verticalAlign: 'top' }}>
                   <div className="execution-guide-stock-title">{row.name} ({row.code})</div>
+                  <div className="execution-guide-kv-line">
+                    <span className="execution-guide-kv-label">데이터일자</span>
+                    <span className="execution-guide-kv-value">{formatRowDataAsOf(row.marketDataDate, row.newsDataDate)}</span>
+                  </div>
                   <div className="execution-guide-kv-line">
                     <span className="execution-guide-kv-label">점수/판정</span>
                     <span className="execution-guide-kv-value">{row.score != null ? formatNumber(row.score, 1) : '—'} / {row.statusLabel || '—'}</span>
