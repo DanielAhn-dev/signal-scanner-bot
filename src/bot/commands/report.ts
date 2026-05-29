@@ -1793,7 +1793,7 @@ function drawEgHero(ctx: ReportContext, data: ExGuideData): void {
   ctx.textLight("EXECUTION GUIDE", ML + 12, topY - 10, 6, egHeroSub);
 
   // Title
-  ctx.textBold("실행 가이드 리포트", ML + 12, topY - 28, 20, egWhite, BODY_W - 100);
+  ctx.textBold("매매 실행 계획서", ML + 12, topY - 28, 20, egWhite, BODY_W - 100);
 
   // Right metadata block
   const dateText = (() => {
@@ -1886,12 +1886,15 @@ function drawEgCandidatesTable(ctx: ReportContext, data: ExGuideData): void {
   // Table header row
   ctx.ensureSpace(ROW_H + 4);
   ctx.rect(ML, ctx.y - ROW_H + 4, BODY_W, ROW_H, rgb(0.91, 0.94, 0.98));
-  ctx.textLight("종목명 (코드)", C_NAME,  ctx.y, 6.5, egDim);
-  ctx.textCenter("구분",         SRC_BADGE_CX, ctx.y, 6.5, egDim);
-  ctx.textLight("점수",          C_SCORE, ctx.y, 6.5, egDim);
-  ctx.textLight("수급 5D",       C_F5,    ctx.y, 6.5, egDim);
-  ctx.textLight("수급 20D",      C_F20,   ctx.y, 6.5, egDim);
-  ctx.textRight("순위 근거",     C_RIGHT, ctx.y, 6.5, egDim);
+  // Row rect spans ctx.y-17 to ctx.y+4; row visual center = ctx.y-6.5.
+  // For 6.5pt font: center at ctx.y-3 (y param = ctx.y-3 → draw at ctx.y-8.2, cap-top ≈ ctx.y-3.6)
+  const HDR_TY = ctx.y - 3;
+  ctx.textLight("종목명 (코드)", C_NAME,  HDR_TY, 6.5, egDim);
+  ctx.textCenter("구분",         SRC_BADGE_CX, HDR_TY, 6.5, egDim);
+  ctx.textLight("점수",          C_SCORE, HDR_TY, 6.5, egDim);
+  ctx.textLight("수급 5D",       C_F5,    HDR_TY, 6.5, egDim);
+  ctx.textLight("수급 20D",      C_F20,   HDR_TY, 6.5, egDim);
+  ctx.textRight("순위 근거",     C_RIGHT, HDR_TY, 6.5, egDim);
   ctx.y -= ROW_H;
 
   const items = data.autoCandidates.slice(0, 10);
@@ -1901,25 +1904,30 @@ function drawEgCandidatesTable(ctx: ReportContext, data: ExGuideData): void {
     ctx.rect(ML, ctx.y - ROW_H + 4, BODY_W, ROW_H, i % 2 === 0 ? egSoft : egWhite);
     ctx.line(ML, ctx.y + 4, ML + BODY_W, ctx.y + 4, egBorder, 0.25);
 
-    // Name + code
-    ctx.text(`${item.name} (${item.code})`, C_NAME, ctx.y, 7.5, egInk, 140);
+    // Row visual center = ctx.y-6.5; for 7.5pt text: y param ctx.y-3 centers the text
+    const ROW_TY = ctx.y - 3;
 
-    // Source badge
+    // Name + code
+    ctx.text(`${item.name} (${item.code})`, C_NAME, ROW_TY, 7.5, egInk, 140);
+
+    // Source badge — centered in the row
     const isHL  = item.source === "highlights";
     const srcBg = isHL ? egBlueBg : egGreenBg;
     const srcFg = isHL ? egAccent : egGreen;
-    ctx.rect(C_SRC, ctx.y - ROW_H + 7, SRC_BADGE_W, SRC_BADGE_H, srcBg);
-    ctx.textCenter(isHL ? "집행우선" : "눌림목", SRC_BADGE_CX, ctx.y - 1, 6.5, srcFg);
+    // Badge rect centered in row (row center = ctx.y-6.5, badge height 14 → bottom at ctx.y-13.5)
+    ctx.rect(C_SRC, ctx.y - ROW_H + 7.5, SRC_BADGE_W, SRC_BADGE_H, srcBg);
+    // Badge text: for 6.5pt centered at badge center ctx.y-7 → y param ≈ ctx.y-4
+    ctx.textCenter(isHL ? "집행우선" : "눌림목", SRC_BADGE_CX, ctx.y - 4, 6.5, srcFg);
 
     // Score (color-coded)
-    ctx.textBold(item.score.toFixed(1), C_SCORE, ctx.y, 8, egScoreColorFn(item.score));
+    ctx.textBold(item.score.toFixed(1), C_SCORE, ROW_TY, 8, egScoreColorFn(item.score));
 
     // Investor flows
-    ctx.text(egFlowFmt(item.netFlow5d),  C_F5,  ctx.y, 7.5, egFlowColor(item.netFlow5d));
-    ctx.text(egFlowFmt(item.netFlow20d), C_F20, ctx.y, 7.5, egFlowColor(item.netFlow20d));
+    ctx.text(egFlowFmt(item.netFlow5d),  C_F5,  ROW_TY, 7.5, egFlowColor(item.netFlow5d));
+    ctx.text(egFlowFmt(item.netFlow20d), C_F20, ROW_TY, 7.5, egFlowColor(item.netFlow20d));
 
     // Reason snippet
-    ctx.textRight(String(item.reason || "").slice(0, 36), C_RIGHT, ctx.y, 6, egMuted);
+    ctx.textRight(String(item.reason || "").slice(0, 36), C_RIGHT, ROW_TY, 6, egMuted);
 
     ctx.y -= ROW_H;
   }
@@ -1964,7 +1972,8 @@ function drawEgStockCard(
       const color = valueColors?.[i] ?? egInk;
       ctx.textBold(value, x, y - 16, sectionValueSize, color, colWidth);
     }
-    return y - 34;
+    // y - 38: value visual bottom is ~y-24.3, separator placed at return+2 → ~8pt gap
+    return y - 38;
   };
 
   // ── Card header band ───────────────────────────────────────────
@@ -1982,11 +1991,12 @@ function drawEgStockCard(
   if (parts.length > 0) {
     ctx.textRight(parts.join("  ·  "), ML + BODY_W - 8, hTop - 8, 7.5, rgb(0.72, 0.78, 0.90));
   }
-  ctx.y = hTop - HEADER_H - 16;
+  // Reduce top gap: was -16 then -6 = 22pt above first label; now -10 then -2 = 12pt
+  ctx.y = hTop - HEADER_H - 10;
 
   // ── Price grid ─────────────────────────────────────────────────
   let gridY = ctx.y;
-  gridY -= 6;
+  gridY -= 2;
   const entryText = (row.entryLow != null && row.entryHigh != null)
     ? `${egPriceFmt(row.entryLow)} ~ ${egPriceFmt(row.entryHigh)}`
     : egPriceFmt(row.entryRef);
@@ -2009,7 +2019,8 @@ function drawEgStockCard(
     [egAccent, egAccent, egInk],
   );
 
-  ctx.line(ML, gridY + 6, ML + BODY_W, gridY + 6, egBorder, 0.3);
+  // Separator: place at gridY+2 so there's ~8pt gap above the value visual bottom (~y-24.3)
+  ctx.line(ML, gridY + 2, ML + BODY_W, gridY + 2, egBorder, 0.3);
   gridY -= 12;
 
   // ── Budget grid ────────────────────────────────────────────────
@@ -2028,7 +2039,8 @@ function drawEgStockCard(
   // ── Summary ────────────────────────────────────────────────────
   if (hasSummary) {
     ctx.ensureSpace(LH_SM * 2 + 12);
-    ctx.line(ML, ctx.y + 4, ML + BODY_W, ctx.y + 4, egBorder, 0.3);
+    // +1 gives ~8pt clearance above budget value visual bottom
+    ctx.line(ML, ctx.y + 1, ML + BODY_W, ctx.y + 1, egBorder, 0.3);
     ctx.y -= 6;
     const n = ctx.textLight(String(row.summary), PX, ctx.y, 7.5, egMuted, BODY_W - 10);
     ctx.y -= n * LH_SM + 4;
@@ -2037,7 +2049,7 @@ function drawEgStockCard(
   // ── Warnings ───────────────────────────────────────────────────
   if (hasWarnings) {
     ctx.ensureSpace(row.warnings.length * (LH_SM + 2) + 14);
-    ctx.line(ML, ctx.y + 4, ML + BODY_W, ctx.y + 4, rgb(0.92, 0.80, 0.80), 0.5);
+    ctx.line(ML, ctx.y + 1, ML + BODY_W, ctx.y + 1, rgb(0.92, 0.80, 0.80), 0.5);
     ctx.y -= 6;
     for (const w of row.warnings) {
       const n = ctx.text(`[주의] ${w}`, PX, ctx.y, 7.5, egRed, BODY_W - 10);
@@ -2049,7 +2061,7 @@ function drawEgStockCard(
   // ── News ───────────────────────────────────────────────────────
   if (hasNews) {
     ctx.ensureSpace(newsItems.length * (LH_SM + 2) + 18);
-    ctx.line(ML, ctx.y + 4, ML + BODY_W, ctx.y + 4, egBorder, 0.3);
+    ctx.line(ML, ctx.y + 1, ML + BODY_W, ctx.y + 1, egBorder, 0.3);
     ctx.y -= 6;
     ctx.textLight("뉴스 요약", PX, ctx.y, 6.5, egDim);
     ctx.y -= LH_SM;
@@ -2115,10 +2127,10 @@ export async function createExecutionGuideReportPdf(
     bytes: await pdf.save(),
     fileName: `execution_guide_report_${chatId}_${ymd}.pdf`,
     caption: [
-      "실행 가이드 리포트",
+      "매매 실행 계획서",
       `기준일: ${krDate}`,
       "실행가이드 화면 기준 스냅샷 PDF",
     ].join("\n"),
-    summaryText: "실행 가이드 리포트 PDF를 생성했습니다.",
+    summaryText: "매매 실행 계획서 PDF를 생성했습니다.",
   };
 }

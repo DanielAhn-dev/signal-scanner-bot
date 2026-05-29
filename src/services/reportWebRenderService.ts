@@ -21,7 +21,7 @@ export function topicLabel(topic: string): string {
 }
 
 export function topicTitle(topic: string): string {
-  if (topic === '실행가이드') return '실행 가이드 리포트'
+  if (topic === '실행가이드') return '매매 실행 계획서'
   if (topic === '주간') return '주간 증시 리포트'
   if (topic === '눌림목') return '다음 주 눌림목 리포트'
   if (topic === '포트폴리오') return '보유 포트폴리오 리포트'
@@ -416,7 +416,7 @@ function buildExecutionGuideStructuredHtml(bodyText: string): string {
   return `
     <div class="execution-guide-web">
       <section class="report-section">
-        <h2>실행 가이드 리포트</h2>
+        <h2>매매 실행 계획서</h2>
         ${metaHtml}
       </section>
       <section class="report-section">

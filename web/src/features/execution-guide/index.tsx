@@ -84,7 +84,7 @@ function toExecutionGuideSnapshotText(input: {
     marketDateText ? `시세 ${marketDateText}` : null,
     newsDateText ? `뉴스 ${newsDateText}` : null,
   ].filter(Boolean)
-  lines.push('<b>실행 가이드 리포트</b>')
+  lines.push('<b>매매 실행 계획서</b>')
   lines.push(`생성시각: ${generatedAtText}`)
   lines.push(`출처: ${input.sourceLabel}`)
   lines.push(`코드 ${input.codeList.length}개: ${input.codeList.join(', ') || '-'}`)

@@ -176,12 +176,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           forecasts: [],
         },
         {
-          title: '실행 가이드 리포트',
+          title: '매매 실행 계획서',
           subtitle: '자동 추천 후보 및 진입/청산 계획 스냅샷',
           filePrefix: 'execution_guide_report',
-          captionTitle: '실행 가이드 리포트',
+          captionTitle: '매매 실행 계획서',
           captionSubtitle: '실행가이드 화면 기준 스냅샷 PDF',
-          summaryText: '실행 가이드 리포트 PDF를 생성했습니다.',
+          summaryText: '매매 실행 계획서 PDF를 생성했습니다.',
         },
       )
 

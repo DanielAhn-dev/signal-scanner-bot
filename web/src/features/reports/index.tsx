@@ -58,7 +58,7 @@ const REPORT_ACTIONS: ReportAction[] = [
   },
   {
     key: 'execution-guide-report-pdf',
-    label: '실행 가이드 리포트 PDF',
+    label: '매매 실행 계획서 PDF',
     desc: '실행가이드 화면에서 생성한 자동추천 후보/진입계획 스냅샷을 PDF로 다운로드합니다.',
     kind: 'download',
     endpoint: '/api/ui/report-pdf?topic=실행가이드',
