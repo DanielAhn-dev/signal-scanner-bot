@@ -14,6 +14,7 @@ const EXECUTION_GUIDE_PENDING_KEY = 'execution_guide_pending_v1'
 
 type RiskMode = 'conservative' | 'neutral' | 'aggressive'
 type CandidateMode = 'balanced' | 'multibagger' | 'swing'
+type ScoreVersion = 'v2' | 'legacy'
 
 type GuideRow = {
   code: string
@@ -47,12 +48,19 @@ type AutoCandidate = {
   source: 'highlights' | 'scan'
   sector: string | null
   score: number
+  scoreLegacy: number
+  upsideSignal: number | null
+  riskSignal: number | null
   confidencePct: number | null
   liquidity: number | null
   intradayChangePct: number | null
   netFlow5d: number | null
   netFlow20d: number | null
   reason: string
+}
+
+function getCandidateScoreByVersion(candidate: AutoCandidate, version: ScoreVersion): number {
+  return version === 'legacy' ? candidate.scoreLegacy : candidate.score
 }
 
 function toExecutionGuideSnapshotText(input: {
@@ -63,6 +71,7 @@ function toExecutionGuideSnapshotText(input: {
   maxWeightPct: string
   splitCount: string
   riskMode: RiskMode
+  scoreVersion: ScoreVersion
   includeNews: boolean
   autoCandidates: AutoCandidate[]
   rows: GuideRow[]
@@ -88,13 +97,20 @@ function toExecutionGuideSnapshotText(input: {
   lines.push(`• 종목당 최대 비중: ${Math.max(1, Math.min(100, Number(input.maxWeightPct || 25)))}%`)
   lines.push(`• 분할 횟수: ${Math.max(3, Number(input.splitCount || 4))}`)
   lines.push(`• 리스크 모드: ${input.riskMode}`)
+  lines.push(`• 후보 점수 버전: ${input.scoreVersion === 'v2' ? 'v2(상승잠재-리스크 분리)' : 'legacy(기존 가중합)'}`)
   lines.push(`• 뉴스 요약 포함: ${input.includeNews ? '예' : '아니오'}`)
 
   if (input.autoCandidates.length > 0) {
     lines.push('')
     lines.push('<b>자동 추천 후보 TOP</b>')
     for (const item of input.autoCandidates.slice(0, 8)) {
-      lines.push(`• ${item.name}(${item.code}) [${item.source === 'highlights' ? '집행우선' : '눌림목'}] 점수 ${formatNumber(item.score, 1)} · ${item.reason}`)
+      const displayScore = getCandidateScoreByVersion(item, input.scoreVersion)
+      const detailParts = [
+        `v2 ${formatNumber(item.score, 1)} / legacy ${formatNumber(item.scoreLegacy, 1)}`,
+        `상승잠재 ${item.upsideSignal != null ? formatNumber(item.upsideSignal, 1) : '—'} / 리스크 ${item.riskSignal != null ? formatNumber(item.riskSignal, 1) : '—'}`,
+        item.reason,
+      ]
+      lines.push(`• ${item.name}(${item.code}) [${item.source === 'highlights' ? '집행우선' : '눌림목'}] 점수 ${formatNumber(displayScore, 1)} · ${detailParts.join(' · ')}`)
     }
   }
 
@@ -133,12 +149,17 @@ function toExecutionGuideSnapshotText(input: {
     maxWeightPct: input.maxWeightPct,
     splitCount: input.splitCount,
     riskMode: input.riskMode as string,
+    scoreVersion: input.scoreVersion,
     includeNews: input.includeNews,
     autoCandidates: input.autoCandidates.slice(0, 10).map((c) => ({
       code: c.code,
       name: c.name,
       source: c.source as string,
       score: c.score,
+      scoreLegacy: c.scoreLegacy,
+      displayScore: getCandidateScoreByVersion(c, input.scoreVersion),
+      upsideSignal: c.upsideSignal,
+      riskSignal: c.riskSignal,
       reason: c.reason,
       netFlow5d: c.netFlow5d ?? null,
       netFlow20d: c.netFlow20d ?? null,
@@ -374,6 +395,38 @@ function computeNetFlowScore(item: any): { score: number; label: string | null; 
   return { score, label, net5d: flow.net5d, net20d: flow.net20d }
 }
 
+function computeFlowAccelerationScore(net5d: number | null, net20d: number | null): { score: number; label: string | null } {
+  if (net5d == null && net20d == null) return { score: 50, label: null }
+  const daily5 = (net5d ?? 0) / 5
+  const daily20 = (net20d ?? 0) / 20
+  const delta = daily5 - daily20
+  const score = clampValue(50 + (delta / 200_000_000) * 18 + ((net5d ?? 0) / 1_000_000_000) * 1.2, 0, 100)
+  const label = delta >= 0
+    ? `수급 가속(최근) +${formatKrw(Math.round(Math.abs(delta * 5)))}`
+    : `수급 둔화(최근) -${formatKrw(Math.round(Math.abs(delta * 5)))}`
+  return { score, label }
+}
+
+function scoreSignalFreshness(ageDays: number | null | undefined, liteAgeDays: number | null | undefined): { score: number; label: string | null } {
+  const strictAge = Number(ageDays)
+  const liteAge = Number(liteAgeDays)
+  if (Number.isFinite(strictAge) && strictAge >= 0) {
+    const score = strictAge <= 0 ? 100 : strictAge <= 1 ? 92 : strictAge <= 3 ? 80 : strictAge <= 5 ? 68 : strictAge <= 10 ? 52 : 36
+    return { score, label: `신호 신선도(D-${strictAge})` }
+  }
+  if (Number.isFinite(liteAge) && liteAge >= 0) {
+    const score = liteAge <= 0 ? 92 : liteAge <= 1 ? 84 : liteAge <= 3 ? 72 : liteAge <= 5 ? 60 : liteAge <= 10 ? 46 : 32
+    return { score, label: `라이트 신호(D-${liteAge})` }
+  }
+  return { score: 55, label: null }
+}
+
+function computeOverheatRisk(intradayPct: number): number {
+  const upRisk = Math.max(0, intradayPct - 4.2)
+  const downRisk = Math.max(0, -intradayPct - 4.8)
+  return clampValue(upRisk * 18 + downRisk * 10, 0, 100)
+}
+
 function formatStageLabel(stage: unknown): string {
   const value = String(stage || '').trim().toLowerCase()
   if (value === 'breakout') return '리드 돌파'
@@ -424,10 +477,46 @@ function rankScanCandidate(item: any, mode: CandidateMode): AutoCandidate {
   const leadStage = formatStageLabel(item?.lead_accumulation_stage)
   // swing: 리드 축적(아직 안 터진 것)을 최우대, 리드 돌파는 이미 움직임
   const stageBoost = mode === 'swing'
-    ? (leadStage === '리드 축적' ? 8 : (leadStage === '리드 돌파' ? 3 : 0))
+    ? (leadStage === '리드 축적' ? 9 : (leadStage === '리드 돌파' ? 3 : 0))
     : (leadStage === '리드 돌파' ? 5 : (leadStage === '리드 축적' ? 2.5 : 0))
   const flow = computeNetFlowScore(item)
-  const baseScore = mode === 'multibagger'
+  const flowAcceleration = computeFlowAccelerationScore(flow.net5d, flow.net20d)
+  const signalFresh = scoreSignalFreshness(item?.quick_signal_age_days, item?.quick_lite_signal_age_days)
+  const overheatRisk = computeOverheatRisk(intraday)
+  const earlyStageFit = clampValue(
+    leadStage === '리드 축적'
+      ? 100 - Math.max(0, intraday - 3.0) * 12
+      : leadStage === '리드 돌파'
+      ? 70 - Math.max(0, intraday - 5.0) * 10
+      : 52,
+    0,
+    100,
+  )
+
+  const upsideSignal = clampValue(
+    leadPct * 0.24 +
+    trendPct * 0.17 +
+    entryPct * 0.14 +
+    adaptivePct * 0.1 +
+    quickPct * 0.08 +
+    flow.score * 0.1 +
+    flowAcceleration.score * 0.08 +
+    signalFresh.score * 0.05 +
+    earlyStageFit * 0.04,
+    0,
+    100,
+  )
+  const riskSignal = clampValue(
+    warnPct * 0.46 +
+    (100 - liquidityPct) * 0.24 +
+    overheatRisk * 0.2 +
+    (100 - intradayFit) * 0.1,
+    0,
+    100,
+  )
+  const v2Base = clampValue(upsideSignal * 0.74 + (100 - riskSignal) * 0.26, 0, 100)
+
+  const legacyBaseScore = mode === 'multibagger'
     ? (
       quickPct * 0.16 +
       adaptivePct * 0.17 +
@@ -441,8 +530,6 @@ function rankScanCandidate(item: any, mode: CandidateMode): AutoCandidate {
     )
     : mode === 'swing'
     ? (
-      // 추세(trendPct) + 진입구간(entryPct) 최우선 / 퀵 단타 비중 최소
-      // 안전성(warnPct) 강화 / 20D 장기수급 보너스 항상 적용
       quickPct * 0.07 +
       adaptivePct * 0.12 +
       leadPct * 0.20 +
@@ -465,16 +552,41 @@ function rankScanCandidate(item: any, mode: CandidateMode): AutoCandidate {
       flow.score * 0.06
     )
 
+  const baseScore = mode === 'multibagger'
+    ? (
+      v2Base * 0.7 +
+      leadPct * 0.12 +
+      flow.score * 0.08 +
+      flowAcceleration.score * 0.1
+    )
+    : mode === 'swing'
+    ? (
+      // 스윙은 초기 추세와 신호 신선도, 과열 회피를 최우선으로 본다.
+      v2Base * 0.68 +
+      signalFresh.score * 0.14 +
+      earlyStageFit * 0.12 +
+      (100 - overheatRisk) * 0.06
+    )
+    : (
+      v2Base * 0.78 +
+      quickPct * 0.1 +
+      flowAcceleration.score * 0.12
+    )
+
   const theme = getThemeBoost(item?.name, item?.sector_id)
   // swing: 20D 장기수급 보너스 항상 반영 (더 강하게)
   const longFlowBonus = flow.net20d != null && (mode === 'multibagger' || mode === 'swing')
     ? clampValue((flow.net20d / 1_000_000_000) * (mode === 'swing' ? 0.9 : 0.5), -8, 14)
     : 0
   // swing: 당일 급등 패널티 (intraday > 4%는 점수 추가 차감)
-  const swingPenalty = mode === 'swing' ? clampValue((intraday - 4.0) * 2.5, 0, 20) : 0
-  const finalScore = clampValue(baseScore + stageBoost + longFlowBonus + theme.score - swingPenalty, 0, 100)
+  const swingPenalty = mode === 'swing' ? clampValue((intraday - 3.5) * 3.0, 0, 24) : 0
+  const finalScore = clampValue(baseScore + stageBoost + longFlowBonus + theme.score - swingPenalty - overheatRisk * 0.06, 0, 100)
+  const legacySwingPenalty = mode === 'swing' ? clampValue((intraday - 4.0) * 2.5, 0, 20) : 0
+  const legacyScore = clampValue(legacyBaseScore + stageBoost + longFlowBonus + theme.score - legacySwingPenalty, 0, 100)
   const modeLabel = mode === 'multibagger' ? '모드 멀티배거' : mode === 'swing' ? '모드 스윙' : '모드 밸런스'
   const reasons = [
+    `상승잠재 ${formatNumber(upsideSignal, 1)}`,
+    `리스크 ${formatNumber(riskSignal, 1)}`,
     `퀵점수 ${formatNumber(quickPct, 1)}`,
     `적응점수 ${formatNumber(adaptivePct, 1)}`,
     `거래대금 ${formatKrw(liquidity)}`,
@@ -483,6 +595,8 @@ function rankScanCandidate(item: any, mode: CandidateMode): AutoCandidate {
     modeLabel,
   ]
   if (flow.label) reasons.push(flow.label)
+  if (flowAcceleration.label) reasons.push(flowAcceleration.label)
+  if (signalFresh.label) reasons.push(signalFresh.label)
   if (theme.labels.length > 0) reasons.push(`테마 ${theme.labels.join(', ')}`)
 
   return {
@@ -491,6 +605,9 @@ function rankScanCandidate(item: any, mode: CandidateMode): AutoCandidate {
     source: 'scan',
     sector: item?.sector_id ? String(item.sector_id) : null,
     score: finalScore,
+    scoreLegacy: legacyScore,
+    upsideSignal,
+    riskSignal,
     confidencePct: null,
     liquidity: Number.isFinite(liquidity) ? liquidity : null,
     intradayChangePct: Number.isFinite(intraday) ? intraday : null,
@@ -510,12 +627,36 @@ function rankHighlightCandidate(item: any, mode: CandidateMode): AutoCandidate {
   const safetyPct = clampValue(Number(item?.score_safety ?? 0), 0, 100)
   const leadPct = clampValue(Number(item?.lead_accumulation_score ?? 0), 0, 100)
   const flow = computeNetFlowScore(item)
+  const flowAcceleration = computeFlowAccelerationScore(flow.net5d, flow.net20d)
   const leadStage = formatStageLabel(item?.lead_accumulation_stage)
   // swing: 리드 축적(예열 중) 최우대
   const stageBoost = mode === 'swing'
     ? (leadStage === '리드 축적' ? 7 : (leadStage === '리드 돌파' ? 2 : 0))
     : (leadStage === '리드 돌파' ? 4 : (leadStage === '리드 축적' ? 2 : 0))
-  const baseScore = mode === 'multibagger'
+  const drawdownAbs = Math.abs(drawdownPct)
+  const drawdownRisk = clampValue(drawdownAbs * 11.5, 0, 100)
+  const confidenceRisk = clampValue((70 - confidencePct) * 1.25, 0, 100)
+  const upsideSignal = clampValue(
+    confidencePct * 0.23 +
+    edgePct * 0.28 +
+    momentumPct * 0.12 +
+    safetyPct * 0.11 +
+    leadPct * 0.1 +
+    flow.score * 0.08 +
+    flowAcceleration.score * 0.08,
+    0,
+    100,
+  )
+  const riskSignal = clampValue(
+    (100 - safetyPct) * 0.45 +
+    drawdownRisk * 0.35 +
+    confidenceRisk * 0.2,
+    0,
+    100,
+  )
+  const v2Base = clampValue(upsideSignal * 0.76 + (100 - riskSignal) * 0.24, 0, 100)
+
+  const legacyBaseScore = mode === 'multibagger'
     ? (
       confidencePct * 0.28 +
       edgePct * 0.29 +
@@ -526,7 +667,6 @@ function rankHighlightCandidate(item: any, mode: CandidateMode): AutoCandidate {
     )
     : mode === 'swing'
     ? (
-      // 손익비(edgePct) + 안전성(safetyPct) 최우선 / 모멘텀 축소 / 리드 강화
       confidencePct * 0.24 +
       edgePct * 0.30 +
       momentumPct * 0.10 +
@@ -542,14 +682,39 @@ function rankHighlightCandidate(item: any, mode: CandidateMode): AutoCandidate {
       leadPct * 0.1 +
       flow.score * 0.05
     )
+
+  const baseScore = mode === 'multibagger'
+    ? (
+      v2Base * 0.72 +
+      momentumPct * 0.1 +
+      leadPct * 0.1 +
+      flowAcceleration.score * 0.08
+    )
+    : mode === 'swing'
+    ? (
+      // 스윙은 손익비/안전성과 초기 단계 신호에 더 높은 비중을 둔다.
+      v2Base * 0.67 +
+      edgePct * 0.14 +
+      safetyPct * 0.1 +
+      (leadStage === '리드 축적' ? 9 : 0)
+    )
+    : (
+      v2Base * 0.8 +
+      confidencePct * 0.1 +
+      flowAcceleration.score * 0.1
+    )
   const theme = getThemeBoost(item?.name, item?.sector_id)
   // swing: 20D 장기수급 보너스 항상 반영
   const longFlowBonus = flow.net20d != null && (mode === 'multibagger' || mode === 'swing')
     ? clampValue((flow.net20d / 1_000_000_000) * (mode === 'swing' ? 0.85 : 0.45), -8, 12)
     : 0
-  const finalScore = clampValue(baseScore + stageBoost + longFlowBonus + theme.score * 0.5, 0, 100)
+  const weakEdgePenalty = upsidePct < drawdownAbs * 1.4 ? clampValue((drawdownAbs * 1.4 - upsidePct) * 1.6, 0, 18) : 0
+  const finalScore = clampValue(baseScore + stageBoost + longFlowBonus + theme.score * 0.5 - weakEdgePenalty, 0, 100)
+  const legacyScore = clampValue(legacyBaseScore + stageBoost + longFlowBonus + theme.score * 0.5, 0, 100)
   const modeLabel = mode === 'multibagger' ? '모드 멀티배거' : mode === 'swing' ? '모드 스윙' : '모드 밸런스'
   const reasons = [
+    `상승잠재 ${formatNumber(upsideSignal, 1)}`,
+    `리스크 ${formatNumber(riskSignal, 1)}`,
     `전략 ${String(item?.strategy_label || '집행우선')}`,
     `신뢰도 ${Number.isFinite(confidence) ? `${formatNumber(confidence, 1)}%` : '—'}`,
     `기대상승 ${formatNumber(upsidePct, 1)}% / 기대낙폭 ${formatNumber(Math.abs(drawdownPct), 1)}%`,
@@ -558,6 +723,7 @@ function rankHighlightCandidate(item: any, mode: CandidateMode): AutoCandidate {
     modeLabel,
   ]
   if (flow.label) reasons.push(flow.label)
+  if (flowAcceleration.label) reasons.push(flowAcceleration.label)
   if (theme.labels.length > 0) reasons.push(`테마 ${theme.labels.join(', ')}`)
 
   return {
@@ -566,6 +732,9 @@ function rankHighlightCandidate(item: any, mode: CandidateMode): AutoCandidate {
     source: 'highlights',
     sector: item?.sector_id ? String(item.sector_id) : null,
     score: finalScore,
+    scoreLegacy: legacyScore,
+    upsideSignal,
+    riskSignal,
     confidencePct: Number.isFinite(confidence) ? confidence : null,
     liquidity: null,
     intradayChangePct: null,
@@ -644,6 +813,7 @@ export default function ExecutionGuidePage() {
   const [autoLoading, setAutoLoading] = useState(false)
   const [autoError, setAutoError] = useState<string | null>(null)
   const [candidateMode, setCandidateMode] = useState<CandidateMode>('balanced')
+  const [scoreVersion, setScoreVersion] = useState<ScoreVersion>('v2')
   const [compactView, setCompactView] = useState(false)
   const [snapshotReady, setSnapshotReady] = useState(false)
   const [lastSnapshotAt, setLastSnapshotAt] = useState<string | null>(null)
@@ -657,6 +827,9 @@ export default function ExecutionGuidePage() {
   const persistGuideSnapshot = async (payload: { generatedAtIso: string; rows: GuideRow[]; codeList: string[]; sourceLabel?: string }): Promise<boolean> => {
     if (payload.rows.length === 0) return false
     const resolvedSourceLabel = payload.sourceLabel ?? sourceLabel
+    const snapshotAutoCandidates = [...autoCandidates].sort(
+      (a, b) => getCandidateScoreByVersion(b, scoreVersion) - getCandidateScoreByVersion(a, scoreVersion),
+    )
     const bodyText = toExecutionGuideSnapshotText({
       generatedAtIso: payload.generatedAtIso,
       sourceLabel: resolvedSourceLabel,
@@ -665,8 +838,9 @@ export default function ExecutionGuidePage() {
       maxWeightPct,
       splitCount,
       riskMode,
+      scoreVersion,
       includeNews,
-      autoCandidates,
+      autoCandidates: snapshotAutoCandidates,
       rows: payload.rows,
     })
 
@@ -816,6 +990,10 @@ export default function ExecutionGuidePage() {
   }, [])
 
   const codeList = useMemo(() => parseCodes(codesText), [codesText])
+  const visibleAutoCandidates = useMemo(
+    () => [...autoCandidates].sort((a, b) => getCandidateScoreByVersion(b, scoreVersion) - getCandidateScoreByVersion(a, scoreVersion)),
+    [autoCandidates, scoreVersion],
+  )
 
   const buildGuide = async () => {
     if (codeList.length === 0 && autoCandidates.length === 0) {
@@ -830,7 +1008,7 @@ export default function ExecutionGuidePage() {
       const slots = Math.max(3, Number(splitCount || 4))
       const manualCodes = codeList
       const autoFillPool = manualCodes.length < 3
-        ? (autoCandidates.length > 0 ? autoCandidates : await fetchAutoCandidates())
+        ? (visibleAutoCandidates.length > 0 ? visibleAutoCandidates : await fetchAutoCandidates())
         : []
       const autoFillCodes = autoFillPool.map((candidate) => candidate.code).filter(Boolean)
       const autoCodeSet = new Set(autoCandidates.map((candidate) => candidate.code))
@@ -1022,7 +1200,8 @@ export default function ExecutionGuidePage() {
       const autoLabel = autoSourceLabelByMode(candidateMode)
       setSourceLabel(autoLabel)
       if (codeList.length === 0 && diversified.length > 0) {
-        setCodesText(diversified.slice(0, 6).map((row) => row.code).join(', '))
+        const sortedForView = [...diversified].sort((a, b) => getCandidateScoreByVersion(b, scoreVersion) - getCandidateScoreByVersion(a, scoreVersion))
+        setCodesText(sortedForView.slice(0, 6).map((row) => row.code).join(', '))
       }
     } catch (e: any) {
       setAutoError(e?.message || String(e))
@@ -1037,7 +1216,7 @@ export default function ExecutionGuidePage() {
       setError('먼저 자동 후보 찾기를 실행해 주세요.')
       return
     }
-    const next = autoCandidates.slice(0, 8).map((row) => row.code).join(', ')
+    const next = visibleAutoCandidates.slice(0, 8).map((row) => row.code).join(', ')
     setCodesText(next)
     setSourceLabel(autoSourceLabelByMode(candidateMode))
     setError(null)
@@ -1093,6 +1272,27 @@ export default function ExecutionGuidePage() {
             >
               멀티배거 모드
             </Button>
+            <Button
+              variant={candidateMode === 'swing' ? 'primary' : 'secondary'}
+              onClick={() => setCandidateMode('swing')}
+              disabled={autoLoading}
+            >
+              스윙 모드
+            </Button>
+            <Button
+              variant={scoreVersion === 'v2' ? 'primary' : 'secondary'}
+              onClick={() => setScoreVersion('v2')}
+              disabled={autoLoading}
+            >
+              점수 v2
+            </Button>
+            <Button
+              variant={scoreVersion === 'legacy' ? 'primary' : 'secondary'}
+              onClick={() => setScoreVersion('legacy')}
+              disabled={autoLoading}
+            >
+              점수 legacy
+            </Button>
             <Button variant="secondary" onClick={loadAutoCandidates} disabled={autoLoading}>
               {autoLoading ? '후보 탐색 중…' : '자동 후보 찾기'}
             </Button>
@@ -1116,15 +1316,16 @@ export default function ExecutionGuidePage() {
 
         <div className="caption" style={{ marginTop: 8 }}>
           자동 후보 모드: {candidateMode === 'multibagger' ? '멀티배거(수급 20D·리드·상승여력 강화)' : candidateMode === 'swing' ? '스윙(눌림·추세·안전성·20D수급 우선 / 당일급등 제외)' : '밸런스(단기 집행 안정성 중심)'}
+          {' · '}점수 버전: {scoreVersion === 'v2' ? 'v2(상승잠재-리스크 분리)' : 'legacy(기존 가중합)'}
           {' · '}스냅샷: {snapshotReady ? '준비됨' : '미준비'}
           {lastSnapshotAt ? ` · 최근 저장 ${new Date(lastSnapshotAt).toLocaleString('ko-KR')}` : ''}
         </div>
 
         {autoError && <div className="caption" style={{ color: 'var(--color-error)', marginTop: 8 }}>{autoError}</div>}
 
-        {autoCandidates.length > 0 && (
+        {visibleAutoCandidates.length > 0 && (
           <div style={{ marginTop: 'var(--space-2)', display: 'grid', gap: 8, gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))' }}>
-            {autoCandidates.map((row) => (
+            {visibleAutoCandidates.map((row) => (
               <button
                 key={`${row.code}-${row.source}`}
                 type="button"
@@ -1145,7 +1346,15 @@ export default function ExecutionGuidePage() {
               >
                 <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8 }}>
                   <div style={{ fontWeight: 700 }}>{row.name} ({row.code})</div>
-                  <span className="scan-grade-badge scan-grade-a" style={{ fontSize: 11 }}>{formatNumber(row.score, 1)}</span>
+                  <span className="scan-grade-badge scan-grade-a" style={{ fontSize: 11 }}>
+                    {formatNumber(getCandidateScoreByVersion(row, scoreVersion), 1)}
+                  </span>
+                </div>
+                <div className="caption" style={{ marginTop: 4 }}>
+                  상승잠재 {row.upsideSignal != null ? formatNumber(row.upsideSignal, 1) : '—'} · 리스크 {row.riskSignal != null ? formatNumber(row.riskSignal, 1) : '—'}
+                </div>
+                <div className="caption" style={{ marginTop: 2 }}>
+                  v2 {formatNumber(row.score, 1)} / legacy {formatNumber(row.scoreLegacy, 1)}
                 </div>
                 <div className="caption" style={{ marginTop: 4, color: row.netFlow5d != null && row.netFlow5d < 0 ? 'var(--color-error)' : 'var(--color-text-secondary)' }}>
                   {formatFlowBadgeLabel(row.netFlow5d, row.netFlow20d)}
