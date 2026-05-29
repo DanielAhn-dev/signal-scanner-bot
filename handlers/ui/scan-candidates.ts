@@ -134,6 +134,85 @@ function shiftDateText(baseDateText: string, days: number): string {
   return shifted.toISOString().slice(0, 10)
 }
 
+type InvestorFlowWindow = {
+  foreignNetBuy5d: number
+  institutionNetBuy5d: number
+  foreignNetBuy20d: number
+  institutionNetBuy20d: number
+}
+
+async function fetchInvestorFlowByCode(
+  supabase: SupabaseClient,
+  codes: string[],
+  asOfDate: string,
+): Promise<Map<string, InvestorFlowWindow>> {
+  const out = new Map<string, InvestorFlowWindow>()
+  if (codes.length === 0) return out
+
+  const fromDate = shiftDateText(asOfDate, 35)
+  const attempts: Array<{ codeCol: 'ticker' | 'code'; select: string }> = [
+    { codeCol: 'ticker', select: 'ticker,date,foreign,institution,foreign_amount,institution_amount' },
+    { codeCol: 'code', select: 'code,date,foreign,institution,foreign_amount,institution_amount' },
+  ]
+
+  for (const spec of attempts) {
+    try {
+      const { data, error } = await supabase
+        .from('investor_daily')
+        .select(spec.select)
+        .in(spec.codeCol, codes)
+        .gte('date', fromDate)
+        .lte('date', asOfDate)
+        .order('date', { ascending: false })
+
+      if (error || !Array.isArray(data)) continue
+
+      const grouped = new Map<string, any[]>()
+      for (const row of data) {
+        const code = String((row as any)?.[spec.codeCol] || '').trim()
+        if (!code) continue
+        const rows = grouped.get(code) ?? []
+        rows.push(row)
+        grouped.set(code, rows)
+      }
+
+      for (const code of codes) {
+        const rows = grouped.get(code) ?? []
+        const rows5d = rows.slice(0, 5)
+        const rows20d = rows.slice(0, 20)
+        let foreignNetBuy5d = 0
+        let institutionNetBuy5d = 0
+        let foreignNetBuy20d = 0
+        let institutionNetBuy20d = 0
+        for (const row of rows5d) {
+          const foreign = Number((row as any)?.foreign_amount ?? (row as any)?.foreign ?? 0)
+          const institution = Number((row as any)?.institution_amount ?? (row as any)?.institution ?? 0)
+          foreignNetBuy5d += Number.isFinite(foreign) ? foreign : 0
+          institutionNetBuy5d += Number.isFinite(institution) ? institution : 0
+        }
+        for (const row of rows20d) {
+          const foreign = Number((row as any)?.foreign_amount ?? (row as any)?.foreign ?? 0)
+          const institution = Number((row as any)?.institution_amount ?? (row as any)?.institution ?? 0)
+          foreignNetBuy20d += Number.isFinite(foreign) ? foreign : 0
+          institutionNetBuy20d += Number.isFinite(institution) ? institution : 0
+        }
+        out.set(code, {
+          foreignNetBuy5d,
+          institutionNetBuy5d,
+          foreignNetBuy20d,
+          institutionNetBuy20d,
+        })
+      }
+
+      if (out.size > 0) return out
+    } catch {
+      // continue
+    }
+  }
+
+  return out
+}
+
 async function fetchStockDailyLiquidityByCode(
   supabase: SupabaseClient,
   codes: string[],
@@ -328,6 +407,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     const codes = (data ?? []).map((row: any) => String(row?.code || '')).filter(Boolean)
     const stockDailyLiquidityByCode = await fetchStockDailyLiquidityByCode(supabase, codes, String(latestDate))
+    const investorFlowByCode = await fetchInvestorFlowByCode(supabase, codes, String(latestDate))
     const realtimeMap = intraday && codes.length > 0
       ? await fetchRealtimePriceBatch(codes).catch(() => ({} as Record<string, any>))
       : ({} as Record<string, any>)
@@ -383,6 +463,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         warn_score: row.warn_score,
       })
 
+      const investorFlow = investorFlowByCode.get(String(row.code))
+      const foreignNetBuy5d = investorFlow?.foreignNetBuy5d ?? null
+      const institutionNetBuy5d = investorFlow?.institutionNetBuy5d ?? null
+      const foreignNetBuy20d = investorFlow?.foreignNetBuy20d ?? null
+      const institutionNetBuy20d = investorFlow?.institutionNetBuy20d ?? null
+
       return {
         code: row.code,
         trade_date: row.trade_date,
@@ -411,6 +497,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         adaptive_score: round1(baseScore + adaptive.adjustment + intradayDelta),
         lead_accumulation_score: leadSignal.score,
         lead_accumulation_stage: leadSignal.stage,
+        foreign_net_buy_5d: foreignNetBuy5d,
+        institution_net_buy_5d: institutionNetBuy5d,
+        foreign5d: foreignNetBuy5d,
+        institution5d: institutionNetBuy5d,
+        foreign_net_buy_20d: foreignNetBuy20d,
+        institution_net_buy_20d: institutionNetBuy20d,
+        foreign20d: foreignNetBuy20d,
+        institution20d: institutionNetBuy20d,
       }
     })
 

@@ -13,6 +13,95 @@ type CacheEntry = {
 
 const cache = new Map<string, CacheEntry>()
 
+type InvestorFlowWindow = {
+  foreignNetBuy5d: number
+  institutionNetBuy5d: number
+  foreignNetBuy20d: number
+  institutionNetBuy20d: number
+}
+
+function shiftDateText(baseDateText: string, days: number): string {
+  const base = Date.parse(`${baseDateText}T00:00:00+09:00`)
+  if (Number.isNaN(base)) {
+    const fallback = new Date(Date.now() - days * 86_400_000)
+    return fallback.toISOString().slice(0, 10)
+  }
+  const shifted = new Date(base - days * 86_400_000)
+  return shifted.toISOString().slice(0, 10)
+}
+
+async function fetchInvestorFlowByCode(
+  supabase: SupabaseClient,
+  codes: string[],
+  asOfDate: string,
+): Promise<Map<string, InvestorFlowWindow>> {
+  const out = new Map<string, InvestorFlowWindow>()
+  if (codes.length === 0) return out
+
+  const fromDate = shiftDateText(asOfDate, 35)
+  const attempts: Array<{ codeCol: 'ticker' | 'code'; select: string }> = [
+    { codeCol: 'ticker', select: 'ticker,date,foreign,institution,foreign_amount,institution_amount' },
+    { codeCol: 'code', select: 'code,date,foreign,institution,foreign_amount,institution_amount' },
+  ]
+
+  for (const spec of attempts) {
+    try {
+      const { data, error } = await supabase
+        .from('investor_daily')
+        .select(spec.select)
+        .in(spec.codeCol, codes)
+        .gte('date', fromDate)
+        .lte('date', asOfDate)
+        .order('date', { ascending: false })
+
+      if (error || !Array.isArray(data)) continue
+
+      const grouped = new Map<string, any[]>()
+      for (const row of data) {
+        const code = String((row as any)?.[spec.codeCol] || '').trim()
+        if (!code) continue
+        const rows = grouped.get(code) ?? []
+        rows.push(row)
+        grouped.set(code, rows)
+      }
+
+      for (const code of codes) {
+        const rows = grouped.get(code) ?? []
+        const rows5d = rows.slice(0, 5)
+        const rows20d = rows.slice(0, 20)
+        let foreignNetBuy5d = 0
+        let institutionNetBuy5d = 0
+        let foreignNetBuy20d = 0
+        let institutionNetBuy20d = 0
+        for (const row of rows5d) {
+          const foreign = Number((row as any)?.foreign_amount ?? (row as any)?.foreign ?? 0)
+          const institution = Number((row as any)?.institution_amount ?? (row as any)?.institution ?? 0)
+          foreignNetBuy5d += Number.isFinite(foreign) ? foreign : 0
+          institutionNetBuy5d += Number.isFinite(institution) ? institution : 0
+        }
+        for (const row of rows20d) {
+          const foreign = Number((row as any)?.foreign_amount ?? (row as any)?.foreign ?? 0)
+          const institution = Number((row as any)?.institution_amount ?? (row as any)?.institution ?? 0)
+          foreignNetBuy20d += Number.isFinite(foreign) ? foreign : 0
+          institutionNetBuy20d += Number.isFinite(institution) ? institution : 0
+        }
+        out.set(code, {
+          foreignNetBuy5d,
+          institutionNetBuy5d,
+          foreignNetBuy20d,
+          institutionNetBuy20d,
+        })
+      }
+
+      if (out.size > 0) return out
+    } catch {
+      // continue
+    }
+  }
+
+  return out
+}
+
 let _supabase: SupabaseClient | null = null
 function getSupabase(): SupabaseClient {
   if (_supabase) return _supabase
@@ -53,6 +142,14 @@ export type ScanHighlightItem = {
   score_momentum: number
   score_value: number
   score_safety: number
+  foreign_net_buy_5d?: number | null
+  institution_net_buy_5d?: number | null
+  foreign5d?: number | null
+  institution5d?: number | null
+  foreign_net_buy_20d?: number | null
+  institution_net_buy_20d?: number | null
+  foreign20d?: number | null
+  institution20d?: number | null
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
@@ -110,9 +207,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const bEdge = b.expectedUpsidePct - b.expectedDrawdownPct
       return bEdge - aEdge
     }).slice(0, 5)
+    const rankedCodes = ranked.map((f) => f.code)
+    const asOfDate = new Date().toISOString().slice(0, 10)
+    const investorFlowByCode = await fetchInvestorFlowByCode(supabase, rankedCodes, asOfDate)
 
     // ranked 코드에 대한 grade 데이터 조회
-    const rankedCodes = ranked.map((f) => f.code)
     const { data: gradeRows } = await supabase
       .from('pullback_signals')
       .select('code, entry_grade, entry_score, trend_grade, dist_grade, pivot_grade, warn_grade, warn_score, trade_date, stock:stocks!inner(sector_id)')
@@ -128,6 +227,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const data: ScanHighlightItem[] = ranked.map((f) => {
       const g = gradeMap.get(f.code)
       const leadSignal = scoreLeadAccumulationCandidate(g ?? {})
+      const investorFlow = investorFlowByCode.get(f.code)
+      const foreignNetBuy5d = investorFlow?.foreignNetBuy5d ?? null
+      const institutionNetBuy5d = investorFlow?.institutionNetBuy5d ?? null
+      const foreignNetBuy20d = investorFlow?.foreignNetBuy20d ?? null
+      const institutionNetBuy20d = investorFlow?.institutionNetBuy20d ?? null
       return {
         code: f.code,
         name: f.name,
@@ -155,6 +259,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         score_momentum: f.scoreComponents.momentum,
         score_value: f.scoreComponents.value,
         score_safety: f.scoreComponents.safety,
+        foreign_net_buy_5d: foreignNetBuy5d,
+        institution_net_buy_5d: institutionNetBuy5d,
+        foreign5d: foreignNetBuy5d,
+        institution5d: institutionNetBuy5d,
+        foreign_net_buy_20d: foreignNetBuy20d,
+        institution_net_buy_20d: institutionNetBuy20d,
+        foreign20d: foreignNetBuy20d,
+        institution20d: institutionNetBuy20d,
       }
     })
 
