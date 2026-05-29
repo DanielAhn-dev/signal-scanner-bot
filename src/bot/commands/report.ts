@@ -1944,8 +1944,8 @@ function drawEgStockCard(
 
   const newsItems = includeNews
     ? (row.headlineLinks.length > 0
-        ? row.headlineLinks.slice(0, 2)
-        : row.headlines.slice(0, 2).map((t) => ({ title: t, url: null, source: null })))
+        ? row.headlineLinks.slice(0, 3)
+        : row.headlines.slice(0, 3).map((t) => ({ title: t, url: null, source: null })))
     : [];
   const hasWarnings     = row.warnings.length > 0;
   const hasSummary      = Boolean(row.summary);
@@ -1959,12 +1959,12 @@ function drawEgStockCard(
   const drawMetricRow = (labels: string[], values: Array<string | number>, y: number, colWidth: number, valueColors?: Array<RGB | undefined>): number => {
     for (let i = 0; i < labels.length; i += 1) {
       const x = PX + i * (colWidth + gridGap);
-      ctx.textLight(labels[i], x, y, sectionLabelSize, egDim, colWidth);
+      ctx.textLight(labels[i], x, y - 3, sectionLabelSize, egDim, colWidth);
       const value = String(values[i] ?? '—');
       const color = valueColors?.[i] ?? egInk;
-      ctx.textBold(value, x, y - 9, sectionValueSize, color, colWidth);
+      ctx.textBold(value, x, y - 16, sectionValueSize, color, colWidth);
     }
-    return y - 24;
+    return y - 34;
   };
 
   // ── Card header band ───────────────────────────────────────────
@@ -1982,10 +1982,11 @@ function drawEgStockCard(
   if (parts.length > 0) {
     ctx.textRight(parts.join("  ·  "), ML + BODY_W - 8, hTop - 8, 7.5, rgb(0.72, 0.78, 0.90));
   }
-  ctx.y = hTop - HEADER_H - 7;
+  ctx.y = hTop - HEADER_H - 16;
 
   // ── Price grid ─────────────────────────────────────────────────
   let gridY = ctx.y;
+  gridY -= 6;
   const entryText = (row.entryLow != null && row.entryHigh != null)
     ? `${egPriceFmt(row.entryLow)} ~ ${egPriceFmt(row.entryHigh)}`
     : egPriceFmt(row.entryRef);
@@ -2009,7 +2010,7 @@ function drawEgStockCard(
   );
 
   ctx.line(ML, gridY + 6, ML + BODY_W, gridY + 6, egBorder, 0.3);
-  gridY -= 5;
+  gridY -= 12;
 
   // ── Budget grid ────────────────────────────────────────────────
   const holdText = row.holdDays != null
