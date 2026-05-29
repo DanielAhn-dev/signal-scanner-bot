@@ -1799,8 +1799,10 @@ function drawEgHero(ctx: ReportContext, data: ExGuideData): void {
   const dateText = (() => {
     try {
       return new Date(data.generatedAtIso).toLocaleString("ko-KR", {
+        timeZone: "Asia/Seoul",
         year: "numeric", month: "2-digit", day: "2-digit",
         hour: "2-digit", minute: "2-digit",
+        hour12: false,
       });
     } catch { return data.generatedAtIso; }
   })();
