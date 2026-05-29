@@ -1652,3 +1652,459 @@ export async function handleReportCommand(
     });
   }
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Execution Guide Report PDF  (전문 편집 디자인 레이아웃)
+// ─────────────────────────────────────────────────────────────────────────────
+
+export const EG_SNAP_PREFIX = "__EXGUIDE__\n";
+
+export type ExGuideData = {
+  v: number;
+  generatedAtIso: string;
+  sourceLabel: string;
+  capital: string;
+  maxWeightPct: string;
+  splitCount: string;
+  riskMode: string;
+  includeNews: boolean;
+  autoCandidates: Array<{
+    code: string;
+    name: string;
+    source: string;
+    score: number;
+    reason: string;
+    netFlow5d: number | null;
+    netFlow20d: number | null;
+  }>;
+  rows: Array<{
+    code: string;
+    name: string;
+    score: number | null;
+    statusLabel: string | null;
+    summary: string | null;
+    entryLow: number | null;
+    entryHigh: number | null;
+    entryRef: number | null;
+    stopPrice: number | null;
+    target1: number | null;
+    target2: number | null;
+    target1Pct: number | null;
+    target2Pct: number | null;
+    holdDays: [number, number] | null;
+    riskReward: number | null;
+    warnings: string[];
+    headlines: string[];
+    headlineLinks: Array<{ title: string; url: string | null; source: string | null }>;
+    plannedBudget: number;
+    qty: number;
+    firstOrderAmount: number;
+  }>;
+};
+
+export function parseExGuideSnapshot(bodyText: string): ExGuideData | null {
+  if (!String(bodyText || "").startsWith(EG_SNAP_PREFIX)) return null;
+  try {
+    const rest = bodyText.slice(EG_SNAP_PREFIX.length);
+    const sepIdx = rest.indexOf("\n__EGTEXT__\n");
+    const jsonStr = sepIdx >= 0 ? rest.slice(0, sepIdx) : rest;
+    return JSON.parse(jsonStr) as ExGuideData;
+  } catch {
+    return null;
+  }
+}
+
+// ── EG Color Palette ──────────────────────────────────────────────────────────
+const egNavy    = rgb(0.07, 0.09, 0.16);
+const egAccent  = rgb(0.13, 0.34, 0.62);
+const egGreen   = rgb(0.10, 0.44, 0.26);
+const egRed     = rgb(0.68, 0.14, 0.14);
+const egInk     = rgb(0.10, 0.10, 0.14);
+const egMuted   = rgb(0.40, 0.42, 0.48);
+const egDim     = rgb(0.54, 0.56, 0.62);
+const egBorder  = rgb(0.84, 0.87, 0.93);
+const egSoft    = rgb(0.97, 0.97, 0.99);
+const egWhite   = rgb(1.00, 1.00, 1.00);
+const egGreenBg = rgb(0.93, 0.99, 0.95);
+const egBlueBg  = rgb(0.93, 0.96, 1.00);
+const egHeroSub = rgb(0.55, 0.62, 0.78);
+const egHeroTxt = rgb(0.82, 0.86, 0.94);
+
+// ── EG Format Helpers ─────────────────────────────────────────────────────────
+function egPriceFmt(v: number | null | undefined): string {
+  if (v == null) return "—";
+  return `${Math.round(Number(v)).toLocaleString("ko-KR")}원`;
+}
+
+function egBudgetFmt(v: number | null | undefined): string {
+  if (v == null) return "—";
+  const n = Math.round(Number(v));
+  if (n >= 100_000_000) return `${(n / 100_000_000).toFixed(1)}억원`;
+  if (n >= 10_000_000)  return `${Math.round(n / 10_000_000)}천만원`;
+  if (n >= 1_000_000)   return `${Math.round(n / 10_000)}만원`;
+  if (n >= 10_000)      return `${Math.round(n / 10_000)}만원`;
+  return `${n.toLocaleString("ko-KR")}원`;
+}
+
+function egFlowFmt(v: number | null | undefined): string {
+  if (v == null) return "—";
+  const n = Number(v);
+  const sign = n >= 0 ? "+" : "-";
+  const abs = Math.abs(n);
+  if (abs >= 100_000_000) return `${sign}${(abs / 100_000_000).toFixed(1)}억`;
+  if (abs >= 10_000_000)  return `${sign}${Math.round(abs / 10_000_000)}천만`;
+  if (abs >= 10_000)      return `${sign}${Math.round(abs / 10_000)}만`;
+  return `${sign}${Math.round(abs).toLocaleString()}`;
+}
+
+function egFlowColor(v: number | null | undefined): RGB {
+  if (v == null) return egMuted;
+  return Number(v) >= 0 ? egGreen : egRed;
+}
+
+function egScoreColorFn(score: number | null | undefined): RGB {
+  const s = Number(score ?? 0);
+  if (s >= 75) return egGreen;
+  if (s >= 55) return egAccent;
+  return egMuted;
+}
+
+function egRiskLabel(mode: string): string {
+  if (mode === "conservative") return "보수";
+  if (mode === "aggressive")   return "공격";
+  return "중립";
+}
+
+// ── Drawing: Hero band ────────────────────────────────────────────────────────
+function drawEgHero(ctx: ReportContext, data: ExGuideData): void {
+  const { ML, BODY_W } = ctx;
+  const HERO_H = 78;
+  const topY = ctx.y;
+  const botY = topY - HERO_H;
+
+  // Background + decorative panels
+  ctx.rect(ML, botY, BODY_W, HERO_H, egNavy);
+  ctx.rect(ML + BODY_W - 82, botY, 82, HERO_H, rgb(0.09, 0.12, 0.22));
+  // Left accent stripe
+  ctx.rect(ML, botY, 4, HERO_H, egAccent);
+  // Bottom accent rule
+  ctx.line(ML, botY, ML + BODY_W, botY, egAccent, 2);
+
+  // Category label
+  ctx.textLight("EXECUTION GUIDE", ML + 12, topY - 10, 6, egHeroSub);
+
+  // Title
+  ctx.textBold("실행 가이드 리포트", ML + 12, topY - 28, 20, egWhite, BODY_W - 100);
+
+  // Right metadata block
+  const dateText = (() => {
+    try {
+      return new Date(data.generatedAtIso).toLocaleString("ko-KR", {
+        year: "numeric", month: "2-digit", day: "2-digit",
+        hour: "2-digit", minute: "2-digit",
+      });
+    } catch { return data.generatedAtIso; }
+  })();
+  ctx.textRight(dateText, ML + BODY_W - 8, topY - 10, 7, egHeroSub);
+  ctx.textRight(data.sourceLabel, ML + BODY_W - 8, topY - 24, 7.5, egHeroTxt);
+  ctx.textRight(`종목 ${data.rows.length}개`, ML + BODY_W - 8, topY - 40, 7, egHeroSub);
+
+  ctx.y = botY;
+}
+
+// ── Drawing: Summary strip (4-metric bar) ─────────────────────────────────────
+function drawEgSummaryStrip(ctx: ReportContext, data: ExGuideData): void {
+  const { ML, BODY_W } = ctx;
+  const STRIP_H = 44;
+  const topY = ctx.y;
+  const botY = topY - STRIP_H;
+
+  ctx.rect(ML, botY, BODY_W, STRIP_H, rgb(0.95, 0.96, 0.99));
+  ctx.line(ML, botY, ML + BODY_W, botY, egBorder, 0.6);
+
+  const colW = BODY_W / 4;
+  const items = [
+    { label: "총 투자금",        value: egBudgetFmt(Number(data.capital || 0)) },
+    { label: "분할 횟수",        value: `${Math.max(3, Number(data.splitCount || 4))}회` },
+    { label: "리스크 모드",      value: egRiskLabel(data.riskMode) },
+    { label: "종목당 최대 비중", value: `${data.maxWeightPct}%` },
+  ];
+
+  for (let i = 0; i < items.length; i++) {
+    const x = ML + i * colW + 10;
+    ctx.textLight(items[i].label, x, topY - 10, 6.5, egDim);
+    ctx.textBold(items[i].value, x, topY - 26, 9.5, egInk);
+    if (i < items.length - 1) {
+      ctx.line(ML + (i + 1) * colW, topY - 8, ML + (i + 1) * colW, botY + 6, egBorder, 0.4);
+    }
+  }
+
+  ctx.y = botY - 6;
+}
+
+// ── Drawing: Section header ───────────────────────────────────────────────────
+function drawEgSectionHeader(ctx: ReportContext, title: string, badge?: string): void {
+  const { ML, BODY_W } = ctx;
+  const H = 24;
+  ctx.ensureSpace(H + 14);
+  const topY = ctx.y;
+  const botY = topY - H;
+
+  ctx.rect(ML, botY, BODY_W, H, rgb(0.94, 0.96, 0.99));
+  ctx.rect(ML, botY, 3, H, egAccent);
+  ctx.line(ML, topY, ML + BODY_W, topY, egBorder, 0.4);
+  ctx.line(ML, botY, ML + BODY_W, botY, egBorder, 0.4);
+
+  ctx.textBold(title, ML + 10, topY - 8, 9, egAccent, BODY_W - 70);
+  if (badge) ctx.textRight(badge, ML + BODY_W - 8, topY - 8, 7.5, egMuted);
+
+  ctx.y = botY - 8;
+}
+
+// ── Drawing: Auto-candidates table ────────────────────────────────────────────
+function drawEgCandidatesTable(ctx: ReportContext, data: ExGuideData): void {
+  if (!data.autoCandidates.length) return;
+  drawEgSectionHeader(ctx, "자동 추천 후보", `${data.autoCandidates.length}개`);
+
+  const { ML, BODY_W } = ctx;
+  const ROW_H = 21;
+  const C_NAME  = ML + 4;
+  const C_SRC   = ML + 154;
+  const C_SCORE = ML + 210;
+  const C_F5    = ML + 268;
+  const C_F20   = ML + 346;
+  const C_RIGHT = ML + BODY_W - 4;
+
+  // Table header row
+  ctx.ensureSpace(ROW_H + 4);
+  ctx.rect(ML, ctx.y - ROW_H + 4, BODY_W, ROW_H, rgb(0.91, 0.94, 0.98));
+  ctx.textLight("종목명 (코드)", C_NAME,  ctx.y, 6.5, egDim);
+  ctx.textLight("구분",          C_SRC,   ctx.y, 6.5, egDim);
+  ctx.textLight("점수",          C_SCORE, ctx.y, 6.5, egDim);
+  ctx.textLight("수급 5D",       C_F5,    ctx.y, 6.5, egDim);
+  ctx.textLight("수급 20D",      C_F20,   ctx.y, 6.5, egDim);
+  ctx.textRight("순위 근거",     C_RIGHT, ctx.y, 6.5, egDim);
+  ctx.y -= ROW_H;
+
+  const items = data.autoCandidates.slice(0, 10);
+  for (let i = 0; i < items.length; i++) {
+    const item = items[i];
+    ctx.ensureSpace(ROW_H + 2);
+    ctx.rect(ML, ctx.y - ROW_H + 4, BODY_W, ROW_H, i % 2 === 0 ? egSoft : egWhite);
+    ctx.line(ML, ctx.y + 4, ML + BODY_W, ctx.y + 4, egBorder, 0.25);
+
+    // Name + code
+    ctx.text(`${item.name} (${item.code})`, C_NAME, ctx.y, 7.5, egInk, 140);
+
+    // Source badge
+    const isHL  = item.source === "highlights";
+    const srcBg = isHL ? egBlueBg : egGreenBg;
+    const srcFg = isHL ? egAccent : egGreen;
+    ctx.rect(C_SRC, ctx.y - ROW_H + 7, 40, 14, srcBg);
+    ctx.textLight(isHL ? "집행우선" : "눌림목", C_SRC + 3, ctx.y - 1, 6.5, srcFg);
+
+    // Score (color-coded)
+    ctx.textBold(item.score.toFixed(1), C_SCORE, ctx.y, 8, egScoreColorFn(item.score));
+
+    // Investor flows
+    ctx.text(egFlowFmt(item.netFlow5d),  C_F5,  ctx.y, 7.5, egFlowColor(item.netFlow5d));
+    ctx.text(egFlowFmt(item.netFlow20d), C_F20, ctx.y, 7.5, egFlowColor(item.netFlow20d));
+
+    // Reason snippet
+    ctx.textRight(String(item.reason || "").slice(0, 36), C_RIGHT, ctx.y, 6, egMuted);
+
+    ctx.y -= ROW_H;
+  }
+  ctx.y -= 8;
+}
+
+// ── Drawing: Per-stock execution card ─────────────────────────────────────────
+function drawEgStockCard(
+  ctx: ReportContext,
+  row: ExGuideData["rows"][number],
+  index: number,
+  includeNews: boolean,
+): void {
+  const { ML, BODY_W } = ctx;
+  const LH_SM = 11;
+  const LH_MD = 14;
+
+  const newsItems = includeNews
+    ? (row.headlineLinks.length > 0
+        ? row.headlineLinks.slice(0, 2)
+        : row.headlines.slice(0, 2).map((t) => ({ title: t, url: null, source: null })))
+    : [];
+  const hasWarnings     = row.warnings.length > 0;
+  const hasSummary      = Boolean(row.summary);
+  const hasNews         = newsItems.length > 0;
+  const hasPriceTargets = row.target1 != null || row.target2 != null;
+
+  // Ensure enough space for the card header + at least the price section
+  ctx.ensureSpace(24 + LH_SM + LH_MD + LH_MD + LH_SM + LH_MD + 32);
+
+  const PX = ML + 6;  // content left padding
+
+  // ── Card header band ───────────────────────────────────────────
+  const HEADER_H = 24;
+  const hTop = ctx.y;
+  ctx.rect(ML, hTop - HEADER_H, BODY_W, HEADER_H, rgb(0.09, 0.12, 0.20));
+  ctx.rect(ML, hTop - HEADER_H, 4, HEADER_H, egScoreColorFn(row.score));
+
+  ctx.textBold(`${index + 1}. ${row.name} (${row.code})`, PX + 2, hTop - 8, 9.5, egWhite, BODY_W - 115);
+
+  // Right: score + status
+  const parts: string[] = [];
+  if (row.score != null) parts.push(`점수 ${row.score.toFixed(1)}`);
+  if (row.statusLabel)   parts.push(row.statusLabel);
+  if (parts.length > 0) {
+    ctx.textRight(parts.join("  ·  "), ML + BODY_W - 8, hTop - 8, 7.5, rgb(0.72, 0.78, 0.90));
+  }
+  ctx.y = hTop - HEADER_H - 7;
+
+  // ── Price section ──────────────────────────────────────────────
+  ctx.textLight("진입 구간", PX,        ctx.y, 6.5, egDim);
+  ctx.textLight("기준가",   PX + 170,   ctx.y, 6.5, egDim);
+  ctx.textLight("손절",     PX + 296,   ctx.y, 6.5, egDim);
+  ctx.y -= LH_SM;
+
+  const entryText = (row.entryLow != null && row.entryHigh != null)
+    ? `${egPriceFmt(row.entryLow)} ~ ${egPriceFmt(row.entryHigh)}`
+    : egPriceFmt(row.entryRef);
+  ctx.text(entryText,                    PX,       ctx.y, 8.5, egGreen, 160);
+  ctx.textBold(egPriceFmt(row.entryRef), PX + 170, ctx.y, 8.5, egInk);
+  ctx.textBold(egPriceFmt(row.stopPrice),PX + 296, ctx.y, 8.5, egRed);
+  ctx.y -= LH_MD + 3;
+
+  // Target prices + risk-reward
+  if (hasPriceTargets) {
+    ctx.textLight("목표1", PX,        ctx.y, 6.5, egDim);
+    ctx.textLight("목표2", PX + 188,  ctx.y, 6.5, egDim);
+    if (row.riskReward != null) ctx.textLight("손익비", PX + 362, ctx.y, 6.5, egDim);
+    ctx.y -= LH_SM;
+
+    const pct1 = row.target1Pct != null ? ` (+${(row.target1Pct * 100).toFixed(1)}%)` : "";
+    const pct2 = row.target2Pct != null ? ` (+${(row.target2Pct * 100).toFixed(1)}%)` : "";
+    ctx.text(`${egPriceFmt(row.target1)}${pct1}`, PX,       ctx.y, 8, egAccent, 178);
+    ctx.text(`${egPriceFmt(row.target2)}${pct2}`, PX + 188, ctx.y, 8, egAccent, 164);
+    if (row.riskReward != null) ctx.text(`${row.riskReward.toFixed(1)}:1`, PX + 362, ctx.y, 8, egInk);
+    ctx.y -= LH_MD + 2;
+  }
+
+  // ── Budget row ─────────────────────────────────────────────────
+  ctx.line(ML, ctx.y + 4, ML + BODY_W, ctx.y + 4, egBorder, 0.3);
+  ctx.y -= 5;
+
+  ctx.textLight("예산",       PX,       ctx.y, 6.5, egDim);
+  ctx.textLight("수량",       PX + 128, ctx.y, 6.5, egDim);
+  ctx.textLight("1차 주문액", PX + 228, ctx.y, 6.5, egDim);
+  if (row.holdDays != null) ctx.textLight("예상 보유", PX + 358, ctx.y, 6.5, egDim);
+  ctx.y -= LH_SM;
+
+  ctx.text(egBudgetFmt(row.plannedBudget),   PX,       ctx.y, 8, egInk);
+  ctx.text(`${row.qty.toLocaleString()}주`,  PX + 128, ctx.y, 8, egInk);
+  ctx.text(egBudgetFmt(row.firstOrderAmount),PX + 228, ctx.y, 8, egInk);
+  if (row.holdDays != null) {
+    const hd = Array.isArray(row.holdDays)
+      ? `${row.holdDays[0]}~${row.holdDays[1]}일`
+      : `${row.holdDays}일`;
+    ctx.text(hd, PX + 358, ctx.y, 8, egInk);
+  }
+  ctx.y -= LH_MD + 2;
+
+  // ── Summary ────────────────────────────────────────────────────
+  if (hasSummary) {
+    ctx.ensureSpace(LH_SM * 2 + 12);
+    ctx.line(ML, ctx.y + 4, ML + BODY_W, ctx.y + 4, egBorder, 0.3);
+    ctx.y -= 6;
+    const n = ctx.textLight(String(row.summary), PX, ctx.y, 7.5, egMuted, BODY_W - 10);
+    ctx.y -= n * LH_SM + 4;
+  }
+
+  // ── Warnings ───────────────────────────────────────────────────
+  if (hasWarnings) {
+    ctx.ensureSpace(row.warnings.length * (LH_SM + 2) + 14);
+    ctx.line(ML, ctx.y + 4, ML + BODY_W, ctx.y + 4, rgb(0.92, 0.80, 0.80), 0.5);
+    ctx.y -= 6;
+    for (const w of row.warnings) {
+      const n = ctx.text(`[주의] ${w}`, PX, ctx.y, 7.5, egRed, BODY_W - 10);
+      ctx.y -= n * LH_SM + 2;
+    }
+    ctx.y -= 2;
+  }
+
+  // ── News ───────────────────────────────────────────────────────
+  if (hasNews) {
+    ctx.ensureSpace(newsItems.length * (LH_SM + 2) + 18);
+    ctx.line(ML, ctx.y + 4, ML + BODY_W, ctx.y + 4, egBorder, 0.3);
+    ctx.y -= 6;
+    ctx.textLight("뉴스 요약", PX, ctx.y, 6.5, egDim);
+    ctx.y -= LH_SM;
+    for (const news of newsItems) {
+      const src = news.source ? ` · ${news.source}` : "";
+      const n = ctx.textLight(`• ${news.title}${src}`, PX, ctx.y, 7.5, egMuted, BODY_W - 10);
+      ctx.y -= n * LH_SM + 2;
+    }
+    ctx.y -= 2;
+  }
+
+  // Bottom rule + gap
+  ctx.line(ML, ctx.y + 4, ML + BODY_W, ctx.y + 4, egBorder, 0.6);
+  ctx.y -= 12;
+}
+
+// ── Main export ───────────────────────────────────────────────────────────────
+export async function createExecutionGuideReportPdf(
+  chatId: number,
+  data: ExGuideData,
+): Promise<{ bytes: Uint8Array; fileName: string; caption: string; summaryText: string }> {
+  const now = new Date();
+  const ymd = toYmd(asKstDate(now));
+  const krDate = toKrDate(now);
+  const theme = getReportTheme("full");
+
+  const pdf = await PDFDocument.create();
+  pdf.registerFontkit(fontkit);
+  const fontBytesData = await loadFontBytes();
+  const fontLight = await pdf.embedFont(fontBytesData.light);
+  const font      = await pdf.embedFont(fontBytesData.regular);
+  const fontBold  = await pdf.embedFont(fontBytesData.bold);
+  const ctx = new ReportContext(pdf, fontLight, font, fontBold, theme);
+  ctx.footerLabel = ymd;
+  ctx.addPage(null);
+
+  drawEgHero(ctx, data);
+  drawEgSummaryStrip(ctx, data);
+
+  if (data.autoCandidates.length > 0) {
+    ctx.y -= 4;
+    drawEgCandidatesTable(ctx, data);
+  }
+
+  if (data.rows.length > 0) {
+    ctx.y -= 4;
+    drawEgSectionHeader(ctx, "종목별 실행 계획", `${data.rows.length}개 종목`);
+    for (let i = 0; i < data.rows.length; i++) {
+      drawEgStockCard(ctx, data.rows[i], i, data.includeNews);
+    }
+  } else {
+    ctx.y -= 8;
+    ctx.textLight(
+      "생성된 실행 계획이 없습니다. 실행가이드 화면에서 가이드를 생성한 뒤 다시 시도해 주세요.",
+      ctx.ML, ctx.y, 8, egMuted, ctx.BODY_W,
+    );
+    ctx.y -= 16;
+  }
+
+  ctx.finalizePage();
+
+  return {
+    bytes: await pdf.save(),
+    fileName: `execution_guide_report_${chatId}_${ymd}.pdf`,
+    caption: [
+      "실행 가이드 리포트",
+      `기준일: ${krDate}`,
+      "실행가이드 화면 기준 스냅샷 PDF",
+    ].join("\n"),
+    summaryText: "실행 가이드 리포트 PDF를 생성했습니다.",
+  };
+}

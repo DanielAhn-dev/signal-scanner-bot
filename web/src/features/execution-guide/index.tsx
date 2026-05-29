@@ -6,12 +6,14 @@ import Input from '../../components/ui/Input'
 import SheetHeaderBar from '../../components/SheetHeaderBar'
 import EconomicEventBadge from '../../components/EconomicEventBadge'
 import ShareModal from '../../components/ShareModal'
+import { useToast } from '../../components/ToastProvider'
 import { useShareManager } from '../../hooks/useShareManager'
-import { useCurrentChatId } from '../../stores/profileStore'
+import { getCurrentClientIdFromStore, useCurrentChatId } from '../../stores/profileStore'
 
 const EXECUTION_GUIDE_PENDING_KEY = 'execution_guide_pending_v1'
 
 type RiskMode = 'conservative' | 'neutral' | 'aggressive'
+type CandidateMode = 'balanced' | 'multibagger'
 
 type GuideRow = {
   code: string
@@ -46,6 +48,8 @@ type AutoCandidate = {
   confidencePct: number | null
   liquidity: number | null
   intradayChangePct: number | null
+  netFlow5d: number | null
+  netFlow20d: number | null
   reason: string
 }
 
@@ -71,7 +75,7 @@ function toExecutionGuideSnapshotText(input: {
   lines.push('<b>설정</b>')
   lines.push(`• 총 투자금: ${formatKrw(Math.max(0, Number(input.capital || 0)))}`)
   lines.push(`• 종목당 최대 비중: ${Math.max(1, Math.min(100, Number(input.maxWeightPct || 25)))}%`)
-  lines.push(`• 분할 횟수: ${Math.max(1, Number(input.splitCount || 2))}`)
+  lines.push(`• 분할 횟수: ${Math.max(3, Number(input.splitCount || 4))}`)
   lines.push(`• 리스크 모드: ${input.riskMode}`)
   lines.push(`• 뉴스 요약 포함: ${input.includeNews ? '예' : '아니오'}`)
 
@@ -107,7 +111,51 @@ function toExecutionGuideSnapshotText(input: {
       }
     }
   }
-  return lines.join('\n')
+
+  // Structured JSON prefix for high-quality PDF rendering
+  const egData = {
+    v: 1,
+    generatedAtIso: input.generatedAtIso,
+    sourceLabel: input.sourceLabel,
+    capital: input.capital,
+    maxWeightPct: input.maxWeightPct,
+    splitCount: input.splitCount,
+    riskMode: input.riskMode as string,
+    includeNews: input.includeNews,
+    autoCandidates: input.autoCandidates.slice(0, 10).map((c) => ({
+      code: c.code,
+      name: c.name,
+      source: c.source as string,
+      score: c.score,
+      reason: c.reason,
+      netFlow5d: c.netFlow5d ?? null,
+      netFlow20d: c.netFlow20d ?? null,
+    })),
+    rows: input.rows.map((r) => ({
+      code: r.code,
+      name: r.name,
+      score: r.score,
+      statusLabel: r.statusLabel,
+      summary: r.summary,
+      entryLow: r.entryLow,
+      entryHigh: r.entryHigh,
+      entryRef: r.entryRef,
+      stopPrice: r.stopPrice,
+      target1: r.target1,
+      target2: r.target2,
+      target1Pct: r.target1Pct,
+      target2Pct: r.target2Pct,
+      holdDays: r.holdDays,
+      riskReward: r.riskReward,
+      warnings: r.warnings,
+      headlines: r.headlines.slice(0, 3),
+      headlineLinks: r.headlineLinks.slice(0, 3),
+      plannedBudget: r.plannedBudget,
+      qty: r.qty,
+      firstOrderAmount: r.firstOrderAmount,
+    })),
+  }
+  return `__EXGUIDE__\n${JSON.stringify(egData)}\n__EGTEXT__\n${lines.join('\n')}`
 }
 
 function parseCodes(text: string): string[] {
@@ -123,6 +171,17 @@ function parseCodes(text: string): string[] {
     out.push(code)
   }
   return out
+}
+
+function normalizeSourceLabel(input: string | null | undefined): string {
+  const value = String(input || '').trim().toLowerCase()
+  if (!value) return '수동 입력'
+  if (value === 'manual' || value === 'manual-input') return '수동 입력'
+  if (value === 'auto-scan' || value === 'autoscan') return '자동 후보(스캔)'
+  if (value === 'scan') return '스캔 연동'
+  if (value === 'highlights') return '집행우선 연동'
+  if (value === 'execution-guide') return '실행가이드'
+  return String(input || '').trim()
 }
 
 function applyRiskMode(v: number | null, mode: RiskMode, kind: 'target' | 'stop'): number | null {
@@ -194,13 +253,85 @@ function normalizeScoreFrom5(value: number | null | undefined): number {
   return clampValue(n * 20, 0, 100)
 }
 
+function gradeToPct(grade: unknown): number {
+  const value = String(grade || '').trim().toUpperCase()
+  if (value === 'A') return 92
+  if (value === 'B') return 78
+  if (value === 'C') return 60
+  if (value === 'D') return 42
+  return 50
+}
+
+function pickFirstFiniteNumber(obj: any, keys: string[]): number | null {
+  for (const key of keys) {
+    const value = Number(obj?.[key])
+    if (Number.isFinite(value)) return value
+  }
+  return null
+}
+
+function computeNetFlow(item: any): { net5d: number | null; net20d: number | null } {
+  const foreign = pickFirstFiniteNumber(item, [
+    'foreign_net_buy_5d',
+    'foreignNetBuy5d',
+    'foreign5d',
+  ])
+  const institution = pickFirstFiniteNumber(item, [
+    'institution_net_buy_5d',
+    'institutionNetBuy5d',
+    'institution5d',
+  ])
+  const foreign20 = pickFirstFiniteNumber(item, [
+    'foreign_net_buy_20d',
+    'foreignNetBuy20d',
+    'foreign20d',
+  ])
+  const institution20 = pickFirstFiniteNumber(item, [
+    'institution_net_buy_20d',
+    'institutionNetBuy20d',
+    'institution20d',
+  ])
+
+  const net5d = foreign == null && institution == null
+    ? null
+    : (foreign ?? 0) + (institution ?? 0)
+  const net20d = foreign20 == null && institution20 == null
+    ? null
+    : (foreign20 ?? 0) + (institution20 ?? 0)
+
+  return { net5d, net20d }
+}
+
+function computeNetFlowScore(item: any): { score: number; label: string | null; net5d: number | null; net20d: number | null } {
+  const flow = computeNetFlow(item)
+  if (flow.net5d == null && flow.net20d == null) return { score: 50, label: null, net5d: null, net20d: null }
+
+  const net5d = flow.net5d ?? 0
+  const net20d = flow.net20d ?? 0
+  const billions5d = net5d / 1_000_000_000
+  const billions20d = net20d / 1_000_000_000
+  const score = clampValue(50 + billions5d * 3.6 + billions20d * 1.4, 0, 100)
+  const leadNet = flow.net5d ?? flow.net20d ?? 0
+  const label = leadNet >= 0
+    ? `수급 순유입(5D) ${formatKrw(Math.round(Math.abs(net5d)))}`
+    : `수급 순유출(5D) ${formatKrw(Math.round(Math.abs(net5d)))}`
+  return { score, label, net5d: flow.net5d, net20d: flow.net20d }
+}
+
+function formatStageLabel(stage: unknown): string {
+  const value = String(stage || '').trim().toLowerCase()
+  if (value === 'breakout') return '리드 돌파'
+  if (value === 'lead') return '리드 축적'
+  return '일반'
+}
+
 function getThemeBoost(name?: string | null, sector?: string | null): { score: number; labels: string[] } {
   const text = `${name || ''} ${sector || ''}`.toLowerCase()
   const tags: Array<{ score: number; label: string; tokens: string[] }> = [
-    { score: 12, label: 'LG그룹/전장', tokens: ['lg', '엘지', '전장'] },
-    { score: 14, label: '반도체/소부장', tokens: ['반도체', 'semiconductor', '소부장', 'hbm', '메모리'] },
-    { score: 12, label: '로봇/자동화', tokens: ['로봇', 'robot', '자동화'] },
-    { score: 10, label: '현대차그룹', tokens: ['현대차', '현대모비스', '오토에버', 'hl만도', '기아'] },
+    { score: 1.6, label: 'LG그룹/전장', tokens: ['lg', '엘지', '전장'] },
+    { score: 2, label: '반도체/소부장', tokens: ['반도체', 'semiconductor', '소부장', 'hbm', '메모리'] },
+    { score: 1.8, label: '로봇/자동화', tokens: ['로봇', 'robot', '자동화'] },
+    { score: 1.4, label: '현대차그룹', tokens: ['현대차', '현대모비스', '오토에버', 'hl만도', '기아'] },
   ]
 
   let score = 0
@@ -214,9 +345,12 @@ function getThemeBoost(name?: string | null, sector?: string | null): { score: n
   return { score, labels }
 }
 
-function rankScanCandidate(item: any): AutoCandidate {
+function rankScanCandidate(item: any, mode: CandidateMode): AutoCandidate {
   const entryPct = normalizeScoreFrom5(item?.entry_score)
-  const trendPct = normalizeScoreFrom5(item?.trend_score)
+  const trendPct = gradeToPct(item?.trend_grade)
+  const quickPct = clampValue(Number(item?.quick_trade_score ?? 0), 0, 100)
+  const adaptivePct = clampValue(Number(item?.adaptive_score ?? 0), 0, 100)
+  const leadPct = clampValue(Number(item?.lead_accumulation_score ?? 0), 0, 100)
   const warnPct = normalizeScoreFrom5(item?.warn_score)
   const liquidity = Number(item?.liquidity ?? 0)
   const liquidityPct =
@@ -226,15 +360,48 @@ function rankScanCandidate(item: any): AutoCandidate {
     liquidity >= 3_000_000_000 ? 55 :
     liquidity >= 1_000_000_000 ? 40 : 20
   const intraday = Number(item?.intraday_change_pct ?? 0)
-  const intradayFit = clampValue(100 - Math.abs(intraday - 2.0) * 16, 0, 100)
-  const baseScore = entryPct * 0.34 + trendPct * 0.18 + (100 - warnPct) * 0.2 + liquidityPct * 0.2 + intradayFit * 0.08
+  const intradayFit = clampValue(100 - Math.abs(intraday - 2.8) * 12, 0, 100)
+  const leadStage = formatStageLabel(item?.lead_accumulation_stage)
+  const stageBoost = leadStage === '리드 돌파' ? 5 : (leadStage === '리드 축적' ? 2.5 : 0)
+  const flow = computeNetFlowScore(item)
+  const baseScore = mode === 'multibagger'
+    ? (
+      quickPct * 0.16 +
+      adaptivePct * 0.17 +
+      leadPct * 0.2 +
+      entryPct * 0.06 +
+      trendPct * 0.1 +
+      (100 - warnPct) * 0.08 +
+      liquidityPct * 0.05 +
+      intradayFit * 0.02 +
+      flow.score * 0.16
+    )
+    : (
+      quickPct * 0.26 +
+      adaptivePct * 0.2 +
+      leadPct * 0.13 +
+      entryPct * 0.11 +
+      trendPct * 0.08 +
+      (100 - warnPct) * 0.1 +
+      liquidityPct * 0.08 +
+      intradayFit * 0.04 +
+      flow.score * 0.06
+    )
 
   const theme = getThemeBoost(item?.name, item?.sector_id)
-  const finalScore = clampValue(baseScore + theme.score, 0, 100)
+  const longFlowBonus = mode === 'multibagger' && flow.net20d != null
+    ? clampValue((flow.net20d / 1_000_000_000) * 0.5, -6, 10)
+    : 0
+  const finalScore = clampValue(baseScore + stageBoost + longFlowBonus + theme.score, 0, 100)
   const reasons = [
+    `퀵점수 ${formatNumber(quickPct, 1)}`,
+    `적응점수 ${formatNumber(adaptivePct, 1)}`,
     `거래대금 ${formatKrw(liquidity)}`,
     `당일변동 ${Number.isFinite(intraday) ? `${formatNumber(intraday, 2)}%` : '—'}`,
+    `리드단계 ${leadStage}`,
+    mode === 'multibagger' ? '모드 멀티배거' : '모드 밸런스',
   ]
+  if (flow.label) reasons.push(flow.label)
   if (theme.labels.length > 0) reasons.push(`테마 ${theme.labels.join(', ')}`)
 
   return {
@@ -246,20 +413,56 @@ function rankScanCandidate(item: any): AutoCandidate {
     confidencePct: null,
     liquidity: Number.isFinite(liquidity) ? liquidity : null,
     intradayChangePct: Number.isFinite(intraday) ? intraday : null,
+    netFlow5d: flow.net5d,
+    netFlow20d: flow.net20d,
     reason: reasons.join(' · '),
   }
 }
 
-function rankHighlightCandidate(item: any): AutoCandidate {
+function rankHighlightCandidate(item: any, mode: CandidateMode): AutoCandidate {
   const confidence = Number(item?.confidence_pct ?? 0)
-  const baseScore = clampValue(Number.isFinite(confidence) ? confidence : 0, 0, 100)
+  const confidencePct = clampValue(Number.isFinite(confidence) ? confidence : 0, 0, 100)
+  const upsidePct = clampValue(Number(item?.expected_upside_pct ?? 0), -100, 200)
+  const drawdownPct = clampValue(Number(item?.expected_drawdown_pct ?? 0), -100, 100)
+  const edgePct = clampValue(50 + (upsidePct - Math.abs(drawdownPct)) * 4, 0, 100)
+  const momentumPct = clampValue(Number(item?.score_momentum ?? 0), 0, 100)
+  const safetyPct = clampValue(Number(item?.score_safety ?? 0), 0, 100)
+  const leadPct = clampValue(Number(item?.lead_accumulation_score ?? 0), 0, 100)
+  const flow = computeNetFlowScore(item)
+  const leadStage = formatStageLabel(item?.lead_accumulation_stage)
+  const stageBoost = leadStage === '리드 돌파' ? 4 : (leadStage === '리드 축적' ? 2 : 0)
+  const baseScore = mode === 'multibagger'
+    ? (
+      confidencePct * 0.28 +
+      edgePct * 0.29 +
+      momentumPct * 0.2 +
+      safetyPct * 0.06 +
+      leadPct * 0.1 +
+      flow.score * 0.07
+    )
+    : (
+      confidencePct * 0.37 +
+      edgePct * 0.23 +
+      momentumPct * 0.16 +
+      safetyPct * 0.09 +
+      leadPct * 0.1 +
+      flow.score * 0.05
+    )
   const theme = getThemeBoost(item?.name, item?.sector_id)
-  const finalScore = clampValue(baseScore + theme.score * 0.6, 0, 100)
+  const longFlowBonus = mode === 'multibagger' && flow.net20d != null
+    ? clampValue((flow.net20d / 1_000_000_000) * 0.45, -6, 10)
+    : 0
+  const finalScore = clampValue(baseScore + stageBoost + longFlowBonus + theme.score * 0.5, 0, 100)
 
   const reasons = [
     `전략 ${String(item?.strategy_label || '집행우선')}`,
     `신뢰도 ${Number.isFinite(confidence) ? `${formatNumber(confidence, 1)}%` : '—'}`,
+    `기대상승 ${formatNumber(upsidePct, 1)}% / 기대낙폭 ${formatNumber(Math.abs(drawdownPct), 1)}%`,
+    `모멘텀 ${formatNumber(momentumPct, 1)}`,
+    `리드단계 ${leadStage}`,
+    mode === 'multibagger' ? '모드 멀티배거' : '모드 밸런스',
   ]
+  if (flow.label) reasons.push(flow.label)
   if (theme.labels.length > 0) reasons.push(`테마 ${theme.labels.join(', ')}`)
 
   return {
@@ -271,8 +474,19 @@ function rankHighlightCandidate(item: any): AutoCandidate {
     confidencePct: Number.isFinite(confidence) ? confidence : null,
     liquidity: null,
     intradayChangePct: null,
+    netFlow5d: flow.net5d,
+    netFlow20d: flow.net20d,
     reason: reasons.join(' · '),
   }
+}
+
+function formatFlowBadgeLabel(flow5d: number | null, flow20d: number | null): string {
+  const base = flow5d != null ? flow5d : flow20d
+  if (base == null) return '수급데이터 없음'
+  const sign = base >= 0 ? '유입' : '유출'
+  const fiveText = flow5d == null ? '—' : formatKrw(Math.abs(flow5d))
+  const twentyText = flow20d == null ? '—' : formatKrw(Math.abs(flow20d))
+  return `수급 ${sign} 5D ${fiveText} · 20D ${twentyText}`
 }
 
 function normalizeSectorKey(value: string | null | undefined): string {
@@ -318,12 +532,13 @@ function pickDiversifiedCandidates(input: AutoCandidate[], limit = 16, perSector
 
 export default function ExecutionGuidePage() {
   const chatId = useCurrentChatId()
+  const toast = useToast()
   const [codesText, setCodesText] = useState('')
   const [capital, setCapital] = useState('10000000')
   const [maxWeightPct, setMaxWeightPct] = useState('25')
-  const [splitCount, setSplitCount] = useState('2')
+  const [splitCount, setSplitCount] = useState('4')
   const [riskMode, setRiskMode] = useState<RiskMode>('neutral')
-  const [sourceLabel, setSourceLabel] = useState('manual')
+  const [sourceLabel, setSourceLabel] = useState('수동 입력')
   const [includeNews, setIncludeNews] = useState(true)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -333,8 +548,11 @@ export default function ExecutionGuidePage() {
   const [autoCandidates, setAutoCandidates] = useState<AutoCandidate[]>([])
   const [autoLoading, setAutoLoading] = useState(false)
   const [autoError, setAutoError] = useState<string | null>(null)
+  const [candidateMode, setCandidateMode] = useState<CandidateMode>('balanced')
   const [compactView, setCompactView] = useState(false)
   const [snapshotReady, setSnapshotReady] = useState(false)
+  const [lastSnapshotAt, setLastSnapshotAt] = useState<string | null>(null)
+  const [pdfLoading, setPdfLoading] = useState(false)
   const shareManager = useShareManager({
     endpoint: '/api/ui/report-share',
     scopeKey: 'topic',
@@ -375,8 +593,100 @@ export default function ExecutionGuidePage() {
   }
 
   const openExecutionGuideShare = async () => {
-    if (!snapshotReady) return
+    if (rows.length === 0) {
+      setError('먼저 가이드를 생성해 주세요.')
+      return
+    }
+
+    const nextGeneratedAt = generatedAt || new Date().toISOString()
+    if (!generatedAt) setGeneratedAt(nextGeneratedAt)
+    const saved = await persistGuideSnapshot({ generatedAtIso: nextGeneratedAt, rows })
+    setSnapshotReady(saved)
+    if (!saved) {
+      setError('스냅샷 저장에 실패했습니다. 잠시 후 다시 시도해 주세요.')
+      return
+    }
+    setLastSnapshotAt(new Date().toISOString())
+    setError(null)
     await shareManager.createShare('실행가이드', { topic: '실행가이드' })
+  }
+
+  const openExecutionGuideShareManager = async () => {
+    await shareManager.loadList('실행가이드')
+    shareManager.setOpen(true)
+  }
+
+  const appendQueryParam = (url: string, key: string, value: string): string => {
+    if (!value) return url
+    if (new RegExp(`(?:\\?|&)${key}=`).test(url)) return url
+    return `${url}${url.includes('?') ? '&' : '?'}${encodeURIComponent(key)}=${encodeURIComponent(value)}`
+  }
+
+  const buildUiRequest = (endpoint: string): { url: string; headers: Record<string, string> } => {
+    const base = import.meta.env.VITE_API_BASE || ''
+    const uiKey = import.meta.env.VITE_UI_READ_KEY
+    const clientId = getCurrentClientIdFromStore()
+
+    let resolvedEndpoint = endpoint
+    if (uiKey) resolvedEndpoint = appendQueryParam(resolvedEndpoint, 'ui_key', uiKey)
+    if (clientId) resolvedEndpoint = appendQueryParam(resolvedEndpoint, 'client_id', clientId)
+    if (chatId) resolvedEndpoint = appendQueryParam(resolvedEndpoint, 'chat_id', chatId)
+
+    const url = base
+      ? `${base.replace(/\/$/, '')}${resolvedEndpoint.startsWith('/') ? resolvedEndpoint : `/${resolvedEndpoint}`}`
+      : resolvedEndpoint
+
+    const headers: Record<string, string> = {}
+    if (uiKey) headers['x-ui-key'] = uiKey
+    if (chatId) headers['x-user-chat-id'] = chatId
+    return { url, headers }
+  }
+
+  const downloadExecutionGuidePdf = async () => {
+    if (rows.length === 0) {
+      setError('먼저 가이드를 생성해 주세요.')
+      return
+    }
+
+    setPdfLoading(true)
+    try {
+      const nextGeneratedAt = generatedAt || new Date().toISOString()
+      if (!generatedAt) setGeneratedAt(nextGeneratedAt)
+      const saved = await persistGuideSnapshot({ generatedAtIso: nextGeneratedAt, rows })
+      setSnapshotReady(saved)
+      if (!saved) {
+        throw new Error('스냅샷 저장 실패')
+      }
+      setLastSnapshotAt(new Date().toISOString())
+
+      const request = buildUiRequest('/api/ui/report-pdf?topic=실행가이드')
+      const res = await fetch(request.url, { method: 'GET', headers: request.headers })
+      if (!res.ok) {
+        const text = await res.text().catch(() => '')
+        throw new Error(text || `다운로드 실패 (${res.status})`)
+      }
+
+      const blob = await res.blob()
+      const downloadUrl = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = downloadUrl
+      const today = new Date()
+      const dateStr = `${today.getFullYear()}${String(today.getMonth() + 1).padStart(2, '0')}${String(today.getDate()).padStart(2, '0')}`
+      a.download = `execution_guide_report_${dateStr}.pdf`
+      document.body.appendChild(a)
+      a.click()
+      a.remove()
+      URL.revokeObjectURL(downloadUrl)
+
+      setError(null)
+      toast.show('실행가이드 PDF 다운로드 완료 ✓')
+    } catch (e: any) {
+      const msg = String(e?.message || e)
+      setError(`PDF 생성 실패: ${msg}`)
+      toast.show(`PDF 생성 실패: ${msg}`)
+    } finally {
+      setPdfLoading(false)
+    }
   }
 
   useEffect(() => {
@@ -388,7 +698,7 @@ export default function ExecutionGuidePage() {
         const normalized = parseCodes(urlCodes).join(', ')
         if (normalized) setCodesText(normalized)
       }
-      if (urlSource) setSourceLabel(urlSource)
+      if (urlSource) setSourceLabel(normalizeSourceLabel(urlSource))
 
       const pendingRaw = sessionStorage.getItem(EXECUTION_GUIDE_PENDING_KEY)
       if (pendingRaw) {
@@ -397,7 +707,7 @@ export default function ExecutionGuidePage() {
           setCodesText(parseCodes(parsed.codes.join(',')).join(', '))
           setHydratedByPending(true)
         }
-        if (parsed?.source) setSourceLabel(String(parsed.source))
+        if (parsed?.source) setSourceLabel(normalizeSourceLabel(String(parsed.source)))
         sessionStorage.removeItem(EXECUTION_GUIDE_PENDING_KEY)
       }
     } catch {
@@ -417,7 +727,7 @@ export default function ExecutionGuidePage() {
     try {
       const totalCapital = Math.max(0, Number(capital || 0))
       const maxWeight = Math.max(1, Math.min(100, Number(maxWeightPct || 25)))
-      const slots = Math.max(1, Number(splitCount || 2))
+      const slots = Math.max(3, Number(splitCount || 4))
       const budgetPerName = Math.floor(Math.min(totalCapital / codeList.length, totalCapital * (maxWeight / 100)))
 
       const fetched = await Promise.all(
@@ -508,10 +818,12 @@ export default function ExecutionGuidePage() {
       setGeneratedAt(nextGeneratedAt)
       const saved = await persistGuideSnapshot({ generatedAtIso: nextGeneratedAt, rows: fetched })
       setSnapshotReady(saved)
+      setLastSnapshotAt(saved ? new Date().toISOString() : null)
     } catch (e: any) {
       setError(e?.message || String(e))
       setRows([])
       setSnapshotReady(false)
+      setLastSnapshotAt(null)
     } finally {
       setLoading(false)
     }
@@ -532,8 +844,8 @@ export default function ExecutionGuidePage() {
       const highlightItems = Array.isArray(highlightsRes?.data) ? highlightsRes.data : []
       const scanItems = Array.isArray(scanRes?.data) ? scanRes.data : []
       const ranked = [
-        ...highlightItems.map(rankHighlightCandidate),
-        ...scanItems.map(rankScanCandidate),
+        ...highlightItems.map((row: any) => rankHighlightCandidate(row, candidateMode)),
+        ...scanItems.map((row: any) => rankScanCandidate(row, candidateMode)),
       ].filter((item) => item.code)
 
       if (ranked.length === 0) {
@@ -573,7 +885,7 @@ export default function ExecutionGuidePage() {
     }
     const next = autoCandidates.slice(0, 8).map((row) => row.code).join(', ')
     setCodesText(next)
-    setSourceLabel('auto-scan')
+    setSourceLabel('자동 후보(스캔)')
     setError(null)
   }
 
@@ -595,7 +907,7 @@ export default function ExecutionGuidePage() {
               <td className="xls-cell" style={{ padding: '8px 10px' }}>
                 <SheetHeaderBar
                   title="실행 가이드"
-                  subtitle="종목을 직접 고르지 않아도, 스캔/집행우선 데이터에서 자동 후보를 찾아 진입·청산 계획으로 변환합니다."
+                  subtitle="종목을 직접 고르지 않아도, 스캔/집행우선 데이터에서 수급·추세·유동성 중심의 자동 후보를 찾아 진입·청산 계획으로 변환합니다."
                   action={<EconomicEventBadge />}
                 />
               </td>
@@ -610,9 +922,23 @@ export default function ExecutionGuidePage() {
         <div className="flex-between" style={{ gap: 'var(--space-2)', flexWrap: 'wrap' }}>
           <div>
             <div className="title-md">자동 후보 찾기</div>
-            <div className="caption">눌림목/집행우선 데이터를 합쳐 거래대금·변동성·테마(반도체/소부장/로봇/현대차그룹/LG계열) 기반으로 우선순위를 제시합니다.</div>
+            <div className="caption">눌림목/집행우선 데이터를 합쳐 퀵점수·적응점수·리드단계·수급(5D/20D)·거래대금 중심으로 우선순위를 제시합니다.</div>
           </div>
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            <Button
+              variant={candidateMode === 'balanced' ? 'primary' : 'secondary'}
+              onClick={() => setCandidateMode('balanced')}
+              disabled={autoLoading}
+            >
+              밸런스 모드
+            </Button>
+            <Button
+              variant={candidateMode === 'multibagger' ? 'primary' : 'secondary'}
+              onClick={() => setCandidateMode('multibagger')}
+              disabled={autoLoading}
+            >
+              멀티배거 모드
+            </Button>
             <Button variant="secondary" onClick={loadAutoCandidates} disabled={autoLoading}>
               {autoLoading ? '후보 탐색 중…' : '자동 후보 찾기'}
             </Button>
@@ -622,12 +948,22 @@ export default function ExecutionGuidePage() {
             <Button size="sm" onClick={buildGuide} disabled={loading || codeList.length === 0}>
               {loading ? '생성 중…' : '가이드 생성'}
             </Button>
-            {snapshotReady && (
-              <Button size="sm" variant="secondary" onClick={openExecutionGuideShare} disabled={shareManager.creating}>
-                {shareManager.creating ? '공유 준비 중…' : '공유'}
-              </Button>
-            )}
+            <Button size="sm" variant="secondary" onClick={openExecutionGuideShare} disabled={shareManager.creating || rows.length === 0}>
+              {shareManager.creating ? '공유 준비 중…' : '공유'}
+            </Button>
+            <Button size="sm" variant="secondary" onClick={downloadExecutionGuidePdf} disabled={pdfLoading || rows.length === 0}>
+              {pdfLoading ? 'PDF 생성 중…' : '리포트 PDF'}
+            </Button>
+            <Button size="sm" variant="secondary" onClick={openExecutionGuideShareManager}>
+              공유 관리
+            </Button>
           </div>
+        </div>
+
+        <div className="caption" style={{ marginTop: 8 }}>
+          자동 후보 모드: {candidateMode === 'multibagger' ? '멀티배거(수급 20D·리드·상승여력 강화)' : '밸런스(단기 집행 안정성 중심)'}
+          {' · '}스냅샷: {snapshotReady ? '준비됨' : '미준비'}
+          {lastSnapshotAt ? ` · 최근 저장 ${new Date(lastSnapshotAt).toLocaleString('ko-KR')}` : ''}
         </div>
 
         {autoError && <div className="caption" style={{ color: 'var(--color-error)', marginTop: 8 }}>{autoError}</div>}
@@ -642,7 +978,7 @@ export default function ExecutionGuidePage() {
                   const next = new Set(parseCodes(codesText))
                   next.add(row.code)
                   setCodesText([...next].join(', '))
-                  setSourceLabel('auto-scan')
+                  setSourceLabel('자동 후보(스캔)')
                 }}
                 style={{
                   border: '1px solid var(--color-border-default)',
@@ -657,6 +993,9 @@ export default function ExecutionGuidePage() {
                   <div style={{ fontWeight: 700 }}>{row.name} ({row.code})</div>
                   <span className="scan-grade-badge scan-grade-a" style={{ fontSize: 11 }}>{formatNumber(row.score, 1)}</span>
                 </div>
+                <div className="caption" style={{ marginTop: 4, color: row.netFlow5d != null && row.netFlow5d < 0 ? 'var(--color-error)' : 'var(--color-text-secondary)' }}>
+                  {formatFlowBadgeLabel(row.netFlow5d, row.netFlow20d)}
+                </div>
                 <div className="caption" style={{ marginTop: 4 }}>[{row.source === 'highlights' ? '집행우선' : '눌림목'}] {row.reason}</div>
               </button>
             ))}
@@ -669,14 +1008,13 @@ export default function ExecutionGuidePage() {
             textarea
             value={codesText}
             onChange={(e) => setCodesText(e.target.value)}
-            rows={3}
             placeholder="005930, 000660, 272210"
           />
 
           <div className="execution-guide-form-grid" style={{ display: 'grid', gap: 'var(--space-2)', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))' }}>
             <Input label="총 투자금" value={capital} onChange={(e) => setCapital(e.target.value)} />
             <Input label="종목당 최대 비중(%)" value={maxWeightPct} onChange={(e) => setMaxWeightPct(e.target.value)} />
-            <Input label="분할 횟수" value={splitCount} onChange={(e) => setSplitCount(e.target.value)} />
+            <Input label="분할 횟수(권장 3~5)" value={splitCount} onChange={(e) => setSplitCount(e.target.value)} />
             <div className="ui-field">
               <label className="ui-label">리스크 모드</label>
               <select className="ui-input ui-text" value={riskMode} onChange={(e) => setRiskMode(e.target.value as RiskMode)}>
@@ -854,7 +1192,9 @@ export default function ExecutionGuidePage() {
         includeAll={shareManager.includeAll}
         onChangeIncludeAll={shareManager.setIncludeAll}
         onRevoke={shareManager.revokeShare}
+        onRevokeAll={shareManager.revokeAllShares}
         revokingId={shareManager.revokingId}
+        revokingAll={shareManager.revokingAll}
       />
       </section>
     </section>

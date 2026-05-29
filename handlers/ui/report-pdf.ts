@@ -7,6 +7,8 @@ import {
   buildConvictionRecommendationText,
   buildPublicDailyCandidateText,
   createDailyCandidateReportPdf,
+  parseExGuideSnapshot,
+  createExecutionGuideReportPdf,
 } from '../../src/bot/commands/report'
 import {
   buildAudienceKey,
@@ -153,6 +155,17 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         '리포트 페이지에서 다시 PDF를 생성해 주세요.',
       ].join('\n')
 
+      // Try new structured execution guide PDF (premium layout)
+      const exGuideData = parseExGuideSnapshot(bodyText)
+      if (exGuideData) {
+        const pdf = await createExecutionGuideReportPdf(chatId ?? 999999, exGuideData)
+        const inline = String(req.query.inline || req.query.display || '').toLowerCase() === 'inline' || String(req.query.inline) === '1'
+        res.setHeader('Content-Type', 'application/pdf')
+        res.setHeader('Content-Disposition', `${inline ? 'inline' : 'attachment'}; filename="${pdf.fileName}"`)
+        return res.status(200).send(Buffer.from(pdf.bytes))
+      }
+
+      // Fallback: plain-text renderer for older snapshots
       const pdf = await createDailyCandidateReportPdf(
         chatId ?? 999999,
         {
