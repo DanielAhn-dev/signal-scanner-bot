@@ -1805,15 +1805,14 @@ function drawEgHero(ctx: ReportContext, data: ExGuideData): void {
     } catch { return data.generatedAtIso; }
   })();
   const metaW = 104;
-  const metaH = HERO_H - 12;
-  const metaX = ML + BODY_W - metaW - 10;
-  const metaY = botY + 6;
-  ctx.rect(metaX, metaY, metaW, metaH, rgb(0.12, 0.16, 0.29));
+  const metaX = ML + BODY_W - metaW;
+  ctx.rect(metaX, botY, metaW, HERO_H, rgb(0.12, 0.16, 0.29));
 
-  const metaRight = metaX + metaW - 8;
-  ctx.textRight(dateText, metaRight, topY - 10, 7, egHeroSub);
-  ctx.textRight(data.sourceLabel, metaRight, topY - 24, 7.5, egHeroTxt);
-  ctx.textRight(`종목 ${data.rows.length}개`, metaRight, topY - 40, 7, egHeroSub);
+  const metaLeft = metaX + 8;
+  const metaTextW = metaW - 16;
+  ctx.textLight(dateText, metaLeft, topY - 10, 7, egHeroSub, metaTextW);
+  ctx.text(data.sourceLabel, metaX + 8, topY - 24, 7.5, egHeroTxt, metaTextW);
+  ctx.textLight(`종목 ${data.rows.length}개`, metaLeft, topY - 40, 7, egHeroSub, metaTextW);
 
   ctx.y = botY;
 }
@@ -1880,12 +1879,15 @@ function drawEgCandidatesTable(ctx: ReportContext, data: ExGuideData): void {
   const C_F5    = ML + 268;
   const C_F20   = ML + 346;
   const C_RIGHT = ML + BODY_W - 4;
+  const SRC_BADGE_W = 46;
+  const SRC_BADGE_H = 14;
+  const SRC_BADGE_CX = C_SRC + SRC_BADGE_W / 2;
 
   // Table header row
   ctx.ensureSpace(ROW_H + 4);
   ctx.rect(ML, ctx.y - ROW_H + 4, BODY_W, ROW_H, rgb(0.91, 0.94, 0.98));
   ctx.textLight("종목명 (코드)", C_NAME,  ctx.y, 6.5, egDim);
-  ctx.textLight("구분",          C_SRC,   ctx.y, 6.5, egDim);
+  ctx.textCenter("구분",         SRC_BADGE_CX, ctx.y, 6.5, egDim);
   ctx.textLight("점수",          C_SCORE, ctx.y, 6.5, egDim);
   ctx.textLight("수급 5D",       C_F5,    ctx.y, 6.5, egDim);
   ctx.textLight("수급 20D",      C_F20,   ctx.y, 6.5, egDim);
@@ -1906,8 +1908,8 @@ function drawEgCandidatesTable(ctx: ReportContext, data: ExGuideData): void {
     const isHL  = item.source === "highlights";
     const srcBg = isHL ? egBlueBg : egGreenBg;
     const srcFg = isHL ? egAccent : egGreen;
-    ctx.rect(C_SRC, ctx.y - ROW_H + 7, 40, 14, srcBg);
-    ctx.textLight(isHL ? "집행우선" : "눌림목", C_SRC + 3, ctx.y - 1, 6.5, srcFg);
+    ctx.rect(C_SRC, ctx.y - ROW_H + 7, SRC_BADGE_W, SRC_BADGE_H, srcBg);
+    ctx.textCenter(isHL ? "집행우선" : "눌림목", SRC_BADGE_CX, ctx.y - 1, 6.5, srcFg);
 
     // Score (color-coded)
     ctx.textBold(item.score.toFixed(1), C_SCORE, ctx.y, 8, egScoreColorFn(item.score));
