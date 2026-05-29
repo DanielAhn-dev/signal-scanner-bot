@@ -91,19 +91,32 @@ def compute_pullback_signal(rows: list) -> dict:
     atr_ok = atr14 < atr_sma20
     vol_atr_grade = "A" if (vol_dry and atr_ok) else ("B" if (vol_dry or atr_ok) else "C")
 
+    # RSI 진입 적정 구간
+    rsi_entry_ok = 40 <= rsi14 <= 60    # 골든존: A 승격 조건
+    rsi_entry_ok_b = 35 <= rsi14 <= 68  # 허용 구간
+
     entry_score = sum([
         1 if trend_aligned else 0,
         1 if dist_ok else 0,
         1 if (near_pivot and below_high) else 0,
         1 if (vol_dry and atr_ok) else 0,
     ])
-    entry_grade = "A" if entry_score >= 3 else ("B" if entry_score == 2 else "C")
+    # RSI를 entry_grade 승격/강등 조건으로 사용 (entry_score 범위 0-4 유지)
+    entry_grade_base = "A" if entry_score >= 3 else ("B" if entry_score == 2 else "C")
+    if entry_grade_base == "B" and rsi_entry_ok:
+        entry_grade = "A"   # RSI 골든존이면 B→A 승격
+    elif entry_grade_base == "C" and rsi_entry_ok_b and entry_score == 1:
+        entry_grade = "B"   # RSI 허용구간 + 1점이면 C→B 승격
+    elif entry_grade_base == "A" and rsi14 > 72:
+        entry_grade = "B"   # RSI 과매수면 A→B 강등
+    else:
+        entry_grade = entry_grade_base
 
     # Warning grading
     warn_overheat = dist > 7
     warn_vol_spike = volumes[-1] > vol_sma20 * 2
     warn_atr_spike = atr14 > atr_sma20 * 1.5
-    warn_rsi_ob = rsi14 > 70
+    warn_rsi_ob = rsi14 > 70 or rsi14 < 30  # 과매수 또는 과매도(급락 중)
     warn_ma_break = c < ma21
     warn_dead_cross = ma21 < ma50
 
