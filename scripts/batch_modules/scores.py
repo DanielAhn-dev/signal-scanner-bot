@@ -73,6 +73,28 @@ def calculate_stock_scores(supabase: Client, trading_date: str):
 
         print(f"  -> indicators loaded for {len(indicators_map)} stocks")
 
+        # 기관/외국인 최근 5일 순매수 합계 로드
+        from datetime import date, timedelta
+        five_days_ago = (date.fromisoformat(trading_iso) - timedelta(days=7)).isoformat()
+        investor_map: dict = {}
+        try:
+            for i in range(0, len(codes), 200):
+                batch = codes[i:i+200]
+                inv_res = supabase.table("investor_daily") \
+                    .select("ticker, institution, foreign") \
+                    .in_("ticker", batch) \
+                    .gte("date", five_days_ago) \
+                    .lte("date", trading_iso).execute()
+                for row in (inv_res.data or []):
+                    t = row["ticker"]
+                    if t not in investor_map:
+                        investor_map[t] = {"institution_5d": 0, "foreign_5d": 0}
+                    investor_map[t]["institution_5d"] += safe_int(row.get("institution", 0))
+                    investor_map[t]["foreign_5d"] += safe_int(row.get("foreign", 0))
+            print(f"  -> investor flow loaded for {len(investor_map)} stocks")
+        except Exception as e:
+            print(f"  -> investor flow load skipped: {e}")
+
         sec_res = supabase.table("sectors").select("id, score, change_rate").execute()
         sector_score_map = {
             r["id"]: {"score": safe_float(r.get("score")), "change": safe_float(r.get("change_rate"))}
@@ -99,6 +121,10 @@ def calculate_stock_scores(supabase: Client, trading_date: str):
             sma50 = safe_float(ind.get("sma50"))
             sma200 = safe_float(ind.get("sma200"))
 
+            inv = investor_map.get(code, {})
+            institution_5d = inv.get("institution_5d", 0)
+            foreign_5d = inv.get("foreign_5d", 0)
+
             momentum_score = 30
             if 45 <= rsi <= 65:
                 momentum_score += 20
@@ -116,6 +142,15 @@ def calculate_stock_scores(supabase: Client, trading_date: str):
             sec_change = sec_info.get("change", 0)
             if sec_change > 0:
                 momentum_score += min(10, sec_change * 3)
+            # 기관/외국인 5일 순매수 가산 (최대 +12점)
+            if institution_5d > 0 and foreign_5d > 0:
+                momentum_score += 12  # 쌍끌이 매수
+            elif institution_5d > 0:
+                momentum_score += 8
+            elif foreign_5d > 0:
+                momentum_score += 5
+            elif institution_5d < 0 and foreign_5d < 0:
+                momentum_score -= 8  # 동반 매도
             momentum_score = min(100, max(0, int(momentum_score)))
 
             value_traded = safe_float(ind.get("value_traded"))
@@ -139,6 +174,8 @@ def calculate_stock_scores(supabase: Client, trading_date: str):
                 "roc14": round(roc14, 2),
                 "roc21": round(roc21, 2),
                 "sector_change": round(sec_change, 2),
+                "institution_5d": institution_5d,
+                "foreign_5d": foreign_5d,
             })
 
             upserts.append({

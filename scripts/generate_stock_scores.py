@@ -1,6 +1,24 @@
 #!/usr/bin/env python3
 # scripts/generate_stock_scores.py
-# 개선판: integer 타입 강제, 업서트 전 페이로드 검사 및 디버그 출력
+#
+# ⚠️  DEPRECATED — 직접 실행하지 마세요.
+#
+# 이 스크립트는 시가총액 + 섹터 변화율만으로 점수를 계산하는 초기 버전입니다.
+# 기술 지표(RSI, MACD, AVWAP), 기관 수급, SMA 정렬을 반영하지 않아
+# 실행 시 DB의 좋은 점수가 덮어씌워집니다.
+#
+# 올바른 점수 계산 경로:
+#   pnpm run sync:scores        ← TS 엔진 (권장)
+#   python scripts/daily_batch.py  ← 배치 (TS 엔진 실패 시 fallback 포함)
+#
+import sys
+print("=" * 60)
+print("⚠️  DEPRECATED: generate_stock_scores.py")
+print("   이 스크립트는 시가총액/섹터만으로 점수를 계산하여")
+print("   실행 시 DB 점수를 덮어씁니다. 실행을 중단합니다.")
+print("   대신: pnpm run sync:scores")
+print("=" * 60)
+sys.exit(1)
 
 import os
 import time

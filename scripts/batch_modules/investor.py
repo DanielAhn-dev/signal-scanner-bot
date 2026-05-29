@@ -135,7 +135,12 @@ def fetch_investor_data(supabase: Client, trading_date: str):
     app_key = os.environ.get("KOREA_APP_KEY", "")
     app_secret = os.environ.get("KOREA_APP_SECRET", "")
     if not app_key or not app_secret:
-        print("  KOREA_APP_KEY / KOREA_APP_SECRET 환경변수 없음, 스킵")
+        print("  [WARN] ============================================================")
+        print("  [WARN] KOREA_APP_KEY / KOREA_APP_SECRET 환경변수 없음")
+        print("  [WARN] investor_daily 수집 불가 → 기관/외국인 수급 데이터 미갱신")
+        print("  [WARN] 매매 신호의 수급 기반 판단이 부정확해집니다.")
+        print("  [WARN] .env 파일에 KIS Open API 키를 추가하세요.")
+        print("  [WARN] ============================================================")
         return
 
     token = _get_kis_token(app_key, app_secret)
