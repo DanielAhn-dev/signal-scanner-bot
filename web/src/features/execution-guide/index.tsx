@@ -13,7 +13,7 @@ import { getCurrentClientIdFromStore, useCurrentChatId } from '../../stores/prof
 const EXECUTION_GUIDE_PENDING_KEY = 'execution_guide_pending_v1'
 
 type RiskMode = 'conservative' | 'neutral' | 'aggressive'
-type CandidateMode = 'balanced' | 'multibagger'
+type CandidateMode = 'balanced' | 'multibagger' | 'swing'
 
 type GuideRow = {
   code: string
@@ -360,9 +360,16 @@ function rankScanCandidate(item: any, mode: CandidateMode): AutoCandidate {
     liquidity >= 3_000_000_000 ? 55 :
     liquidity >= 1_000_000_000 ? 40 : 20
   const intraday = Number(item?.intraday_change_pct ?? 0)
-  const intradayFit = clampValue(100 - Math.abs(intraday - 2.8) * 12, 0, 100)
+  // balanced/multibagger: 당일 +2.8% 부근 최고점
+  // swing: 오늘 아직 안 튄 것이 최고점 (+1.5% 이상 급등은 강하게 감점)
+  const intradayFit = mode === 'swing'
+    ? clampValue(100 - Math.max(0, intraday - 1.5) * 18 - Math.max(0, -intraday - 3.0) * 5, 0, 100)
+    : clampValue(100 - Math.abs(intraday - 2.8) * 12, 0, 100)
   const leadStage = formatStageLabel(item?.lead_accumulation_stage)
-  const stageBoost = leadStage === '리드 돌파' ? 5 : (leadStage === '리드 축적' ? 2.5 : 0)
+  // swing: 리드 축적(아직 안 터진 것)을 최우대, 리드 돌파는 이미 움직임
+  const stageBoost = mode === 'swing'
+    ? (leadStage === '리드 축적' ? 8 : (leadStage === '리드 돌파' ? 3 : 0))
+    : (leadStage === '리드 돌파' ? 5 : (leadStage === '리드 축적' ? 2.5 : 0))
   const flow = computeNetFlowScore(item)
   const baseScore = mode === 'multibagger'
     ? (
@@ -375,6 +382,20 @@ function rankScanCandidate(item: any, mode: CandidateMode): AutoCandidate {
       liquidityPct * 0.05 +
       intradayFit * 0.02 +
       flow.score * 0.16
+    )
+    : mode === 'swing'
+    ? (
+      // 추세(trendPct) + 진입구간(entryPct) 최우선 / 퀵 단타 비중 최소
+      // 안전성(warnPct) 강화 / 20D 장기수급 보너스 항상 적용
+      quickPct * 0.07 +
+      adaptivePct * 0.12 +
+      leadPct * 0.20 +
+      entryPct * 0.20 +
+      trendPct * 0.20 +
+      (100 - warnPct) * 0.14 +
+      liquidityPct * 0.05 +
+      intradayFit * 0.02 +
+      flow.score * 0.00
     )
     : (
       quickPct * 0.26 +
@@ -389,17 +410,21 @@ function rankScanCandidate(item: any, mode: CandidateMode): AutoCandidate {
     )
 
   const theme = getThemeBoost(item?.name, item?.sector_id)
-  const longFlowBonus = mode === 'multibagger' && flow.net20d != null
-    ? clampValue((flow.net20d / 1_000_000_000) * 0.5, -6, 10)
+  // swing: 20D 장기수급 보너스 항상 반영 (더 강하게)
+  const longFlowBonus = flow.net20d != null && (mode === 'multibagger' || mode === 'swing')
+    ? clampValue((flow.net20d / 1_000_000_000) * (mode === 'swing' ? 0.9 : 0.5), -8, 14)
     : 0
-  const finalScore = clampValue(baseScore + stageBoost + longFlowBonus + theme.score, 0, 100)
+  // swing: 당일 급등 패널티 (intraday > 4%는 점수 추가 차감)
+  const swingPenalty = mode === 'swing' ? clampValue((intraday - 4.0) * 2.5, 0, 20) : 0
+  const finalScore = clampValue(baseScore + stageBoost + longFlowBonus + theme.score - swingPenalty, 0, 100)
+  const modeLabel = mode === 'multibagger' ? '모드 멀티배거' : mode === 'swing' ? '모드 스윙' : '모드 밸런스'
   const reasons = [
     `퀵점수 ${formatNumber(quickPct, 1)}`,
     `적응점수 ${formatNumber(adaptivePct, 1)}`,
     `거래대금 ${formatKrw(liquidity)}`,
     `당일변동 ${Number.isFinite(intraday) ? `${formatNumber(intraday, 2)}%` : '—'}`,
     `리드단계 ${leadStage}`,
-    mode === 'multibagger' ? '모드 멀티배거' : '모드 밸런스',
+    modeLabel,
   ]
   if (flow.label) reasons.push(flow.label)
   if (theme.labels.length > 0) reasons.push(`테마 ${theme.labels.join(', ')}`)
@@ -430,7 +455,10 @@ function rankHighlightCandidate(item: any, mode: CandidateMode): AutoCandidate {
   const leadPct = clampValue(Number(item?.lead_accumulation_score ?? 0), 0, 100)
   const flow = computeNetFlowScore(item)
   const leadStage = formatStageLabel(item?.lead_accumulation_stage)
-  const stageBoost = leadStage === '리드 돌파' ? 4 : (leadStage === '리드 축적' ? 2 : 0)
+  // swing: 리드 축적(예열 중) 최우대
+  const stageBoost = mode === 'swing'
+    ? (leadStage === '리드 축적' ? 7 : (leadStage === '리드 돌파' ? 2 : 0))
+    : (leadStage === '리드 돌파' ? 4 : (leadStage === '리드 축적' ? 2 : 0))
   const baseScore = mode === 'multibagger'
     ? (
       confidencePct * 0.28 +
@@ -439,6 +467,16 @@ function rankHighlightCandidate(item: any, mode: CandidateMode): AutoCandidate {
       safetyPct * 0.06 +
       leadPct * 0.1 +
       flow.score * 0.07
+    )
+    : mode === 'swing'
+    ? (
+      // 손익비(edgePct) + 안전성(safetyPct) 최우선 / 모멘텀 축소 / 리드 강화
+      confidencePct * 0.24 +
+      edgePct * 0.30 +
+      momentumPct * 0.10 +
+      safetyPct * 0.20 +
+      leadPct * 0.16 +
+      flow.score * 0.00
     )
     : (
       confidencePct * 0.37 +
@@ -449,18 +487,19 @@ function rankHighlightCandidate(item: any, mode: CandidateMode): AutoCandidate {
       flow.score * 0.05
     )
   const theme = getThemeBoost(item?.name, item?.sector_id)
-  const longFlowBonus = mode === 'multibagger' && flow.net20d != null
-    ? clampValue((flow.net20d / 1_000_000_000) * 0.45, -6, 10)
+  // swing: 20D 장기수급 보너스 항상 반영
+  const longFlowBonus = flow.net20d != null && (mode === 'multibagger' || mode === 'swing')
+    ? clampValue((flow.net20d / 1_000_000_000) * (mode === 'swing' ? 0.85 : 0.45), -8, 12)
     : 0
   const finalScore = clampValue(baseScore + stageBoost + longFlowBonus + theme.score * 0.5, 0, 100)
-
+  const modeLabel = mode === 'multibagger' ? '모드 멀티배거' : mode === 'swing' ? '모드 스윙' : '모드 밸런스'
   const reasons = [
     `전략 ${String(item?.strategy_label || '집행우선')}`,
     `신뢰도 ${Number.isFinite(confidence) ? `${formatNumber(confidence, 1)}%` : '—'}`,
     `기대상승 ${formatNumber(upsidePct, 1)}% / 기대낙폭 ${formatNumber(Math.abs(drawdownPct), 1)}%`,
     `모멘텀 ${formatNumber(momentumPct, 1)}`,
     `리드단계 ${leadStage}`,
-    mode === 'multibagger' ? '모드 멀티배거' : '모드 밸런스',
+    modeLabel,
   ]
   if (flow.label) reasons.push(flow.label)
   if (theme.labels.length > 0) reasons.push(`테마 ${theme.labels.join(', ')}`)
@@ -961,7 +1000,7 @@ export default function ExecutionGuidePage() {
         </div>
 
         <div className="caption" style={{ marginTop: 8 }}>
-          자동 후보 모드: {candidateMode === 'multibagger' ? '멀티배거(수급 20D·리드·상승여력 강화)' : '밸런스(단기 집행 안정성 중심)'}
+          자동 후보 모드: {candidateMode === 'multibagger' ? '멀티배거(수급 20D·리드·상승여력 강화)' : candidateMode === 'swing' ? '스윙(눌림·추세·안전성·20D수급 우선 / 당일급등 제외)' : '밸런스(단기 집행 안정성 중심)'}
           {' · '}스냅샷: {snapshotReady ? '준비됨' : '미준비'}
           {lastSnapshotAt ? ` · 최근 저장 ${new Date(lastSnapshotAt).toLocaleString('ko-KR')}` : ''}
         </div>
