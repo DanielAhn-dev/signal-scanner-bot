@@ -1784,7 +1784,6 @@ function drawEgHero(ctx: ReportContext, data: ExGuideData): void {
 
   // Background + decorative panels
   ctx.rect(ML, botY, BODY_W, HERO_H, egNavy);
-  ctx.rect(ML + BODY_W - 82, botY, 82, HERO_H, rgb(0.09, 0.12, 0.22));
   // Left accent stripe
   ctx.rect(ML, botY, 4, HERO_H, egAccent);
   // Bottom accent rule
@@ -1805,9 +1804,16 @@ function drawEgHero(ctx: ReportContext, data: ExGuideData): void {
       });
     } catch { return data.generatedAtIso; }
   })();
-  ctx.textRight(dateText, ML + BODY_W - 8, topY - 10, 7, egHeroSub);
-  ctx.textRight(data.sourceLabel, ML + BODY_W - 8, topY - 24, 7.5, egHeroTxt);
-  ctx.textRight(`종목 ${data.rows.length}개`, ML + BODY_W - 8, topY - 40, 7, egHeroSub);
+  const metaW = 104;
+  const metaH = HERO_H - 12;
+  const metaX = ML + BODY_W - metaW - 10;
+  const metaY = botY + 6;
+  ctx.rect(metaX, metaY, metaW, metaH, rgb(0.12, 0.16, 0.29));
+
+  const metaRight = metaX + metaW - 8;
+  ctx.textRight(dateText, metaRight, topY - 10, 7, egHeroSub);
+  ctx.textRight(data.sourceLabel, metaRight, topY - 24, 7.5, egHeroTxt);
+  ctx.textRight(`종목 ${data.rows.length}개`, metaRight, topY - 40, 7, egHeroSub);
 
   ctx.y = botY;
 }

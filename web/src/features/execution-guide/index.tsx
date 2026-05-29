@@ -184,6 +184,12 @@ function normalizeSourceLabel(input: string | null | undefined): string {
   return String(input || '').trim()
 }
 
+function autoSourceLabelByMode(mode: CandidateMode): string {
+  if (mode === 'multibagger') return '자동 후보(멀티배거)'
+  if (mode === 'swing') return '자동 후보(스윙)'
+  return '자동 후보(밸런스)'
+}
+
 function applyRiskMode(v: number | null, mode: RiskMode, kind: 'target' | 'stop'): number | null {
   if (v == null) return null
   const targetFactor: Record<RiskMode, number> = {
@@ -598,11 +604,12 @@ export default function ExecutionGuidePage() {
     requiresCode: true,
   })
 
-  const persistGuideSnapshot = async (payload: { generatedAtIso: string; rows: GuideRow[]; codeList: string[] }): Promise<boolean> => {
+  const persistGuideSnapshot = async (payload: { generatedAtIso: string; rows: GuideRow[]; codeList: string[]; sourceLabel?: string }): Promise<boolean> => {
     if (payload.rows.length === 0) return false
+    const resolvedSourceLabel = payload.sourceLabel ?? sourceLabel
     const bodyText = toExecutionGuideSnapshotText({
       generatedAtIso: payload.generatedAtIso,
-      sourceLabel,
+      sourceLabel: resolvedSourceLabel,
       codeList: payload.codeList,
       capital,
       maxWeightPct,
@@ -776,6 +783,12 @@ export default function ExecutionGuidePage() {
         ? (autoCandidates.length > 0 ? autoCandidates : await fetchAutoCandidates())
         : []
       const autoFillCodes = autoFillPool.map((candidate) => candidate.code).filter(Boolean)
+      const autoCodeSet = new Set(autoCandidates.map((candidate) => candidate.code))
+      const usedAutoMode = autoFillCodes.length > 0 || (manualCodes.length > 0 && manualCodes.every((code) => autoCodeSet.has(code)))
+      const resolvedSourceLabel = usedAutoMode ? autoSourceLabelByMode(candidateMode) : (sourceLabel.trim() || '수동 입력')
+      if (resolvedSourceLabel !== sourceLabel) {
+        setSourceLabel(resolvedSourceLabel)
+      }
       if (autoCandidates.length === 0 && autoFillPool.length > 0) {
         setAutoCandidates(autoFillPool)
       }
@@ -872,7 +885,12 @@ export default function ExecutionGuidePage() {
       }
       const nextGeneratedAt = new Date().toISOString()
       setGeneratedAt(nextGeneratedAt)
-      const saved = await persistGuideSnapshot({ generatedAtIso: nextGeneratedAt, rows: fetched, codeList: finalCodes })
+      const saved = await persistGuideSnapshot({
+        generatedAtIso: nextGeneratedAt,
+        rows: fetched,
+        codeList: finalCodes,
+        sourceLabel: resolvedSourceLabel,
+      })
       setSnapshotReady(saved)
       setLastSnapshotAt(saved ? new Date().toISOString() : null)
     } catch (e: any) {
@@ -928,6 +946,8 @@ export default function ExecutionGuidePage() {
       }
 
       setAutoCandidates(diversified)
+      const autoLabel = autoSourceLabelByMode(candidateMode)
+      setSourceLabel(autoLabel)
       if (codeList.length === 0 && diversified.length > 0) {
         setCodesText(diversified.slice(0, 6).map((row) => row.code).join(', '))
       }
@@ -946,7 +966,7 @@ export default function ExecutionGuidePage() {
     }
     const next = autoCandidates.slice(0, 8).map((row) => row.code).join(', ')
     setCodesText(next)
-    setSourceLabel('자동 후보(스캔)')
+    setSourceLabel(autoSourceLabelByMode(candidateMode))
     setError(null)
   }
 
@@ -1039,7 +1059,7 @@ export default function ExecutionGuidePage() {
                   const next = new Set(parseCodes(codesText))
                   next.add(row.code)
                   setCodesText([...next].join(', '))
-                  setSourceLabel('자동 후보(스캔)')
+                  setSourceLabel(autoSourceLabelByMode(candidateMode))
                 }}
                 style={{
                   border: '1px solid var(--color-border-default)',

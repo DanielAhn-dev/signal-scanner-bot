@@ -2130,6 +2130,17 @@
   margin: 0;
   max-width: none;
   width: 100%;
+  min-width: 0;
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.execution-guide-page > * {
+  min-width: 0;
+}
+
+.execution-guide-table-wrap {
+  min-width: 0;
+  max-width: 100%;
 }
 
 .execution-guide-form-block {
