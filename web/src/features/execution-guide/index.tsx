@@ -103,10 +103,16 @@ function toExecutionGuideSnapshotText(input: {
   if (input.autoCandidates.length > 0) {
     lines.push('')
     lines.push('<b>자동 추천 후보 TOP</b>')
-    for (const item of input.autoCandidates.slice(0, 8)) {
+    const topItems = input.autoCandidates.slice(0, 8)
+    const avgV2 = topItems.reduce((acc, item) => acc + item.score, 0) / Math.max(1, topItems.length)
+    const avgLegacy = topItems.reduce((acc, item) => acc + item.scoreLegacy, 0) / Math.max(1, topItems.length)
+    lines.push(`• 점수 버전 비교 요약: 평균 v2 ${formatNumber(avgV2, 1)} / 평균 legacy ${formatNumber(avgLegacy, 1)} / 평균 Δ ${formatNumber(avgV2 - avgLegacy, 1)}`)
+    for (const item of topItems) {
       const displayScore = getCandidateScoreByVersion(item, input.scoreVersion)
+      const scoreDelta = item.score - item.scoreLegacy
       const detailParts = [
         `v2 ${formatNumber(item.score, 1)} / legacy ${formatNumber(item.scoreLegacy, 1)}`,
+        `Δ ${formatNumber(scoreDelta, 1)}`,
         `상승잠재 ${item.upsideSignal != null ? formatNumber(item.upsideSignal, 1) : '—'} / 리스크 ${item.riskSignal != null ? formatNumber(item.riskSignal, 1) : '—'}`,
         item.reason,
       ]

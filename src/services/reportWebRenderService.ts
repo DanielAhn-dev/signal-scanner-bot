@@ -187,7 +187,38 @@ type ExecutionGuideAutoCandidateItem = {
   nameCode: string
   strategy: string | null
   scoreText: string | null
+  scoreValue: number | null
+  scoreV2: number | null
+  scoreLegacy: number | null
+  scoreDelta: number | null
   details: string[]
+}
+
+function parseExecutionGuideScoreDetail(details: string[]): { scoreV2: number | null; scoreLegacy: number | null; scoreDelta: number | null } {
+  let scoreV2: number | null = null
+  let scoreLegacy: number | null = null
+  let scoreDelta: number | null = null
+
+  for (const detail of details) {
+    const bothMatch = detail.match(/v2\s+(-?[0-9.]+)\s*\/\s*legacy\s+(-?[0-9.]+)/i)
+    if (bothMatch) {
+      const v2 = Number(bothMatch[1])
+      const legacy = Number(bothMatch[2])
+      if (Number.isFinite(v2)) scoreV2 = v2
+      if (Number.isFinite(legacy)) scoreLegacy = legacy
+      continue
+    }
+    const deltaMatch = detail.match(/^Δ\s*(-?[0-9.]+)$/)
+    if (deltaMatch) {
+      const delta = Number(deltaMatch[1])
+      if (Number.isFinite(delta)) scoreDelta = delta
+    }
+  }
+
+  if (scoreDelta == null && scoreV2 != null && scoreLegacy != null) {
+    scoreDelta = scoreV2 - scoreLegacy
+  }
+  return { scoreV2, scoreLegacy, scoreDelta }
 }
 
 function parseExecutionGuideAutoCandidate(raw: string): ExecutionGuideAutoCandidateItem {
@@ -198,17 +229,24 @@ function parseExecutionGuideAutoCandidate(raw: string): ExecutionGuideAutoCandid
       nameCode: text,
       strategy: null,
       scoreText: null,
+      scoreValue: null,
+      scoreV2: null,
+      scoreLegacy: null,
+      scoreDelta: null,
       details: [],
     }
   }
   const nameCode = String(match[1] || '').trim()
   const strategy = String(match[2] || '').trim() || null
   const scoreText = String(match[3] || '').trim() || null
+  const scoreValueRaw = Number(scoreText)
+  const scoreValue = Number.isFinite(scoreValueRaw) ? scoreValueRaw : null
   const details = String(match[4] || '')
     .split(' · ')
     .map((item) => item.trim())
     .filter(Boolean)
-  return { nameCode, strategy, scoreText, details }
+  const scoreDetail = parseExecutionGuideScoreDetail(details)
+  return { nameCode, strategy, scoreText, scoreValue, scoreV2: scoreDetail.scoreV2, scoreLegacy: scoreDetail.scoreLegacy, scoreDelta: scoreDetail.scoreDelta, details }
 }
 
 function parseExecutionGuideHeadline(raw: string): { title: string; url: string | null; source: string | null } {
@@ -326,11 +364,42 @@ function buildExecutionGuideStructuredHtml(bodyText: string): string {
     ? `<ul class="execution-guide-web-list">${settings.map((row) => `<li>${escapeHtml(row)}</li>`).join('')}</ul>`
     : '<p>설정 정보가 없습니다.</p>'
 
-  const autoHtml = autoCandidates.length > 0
-    ? `<div class="execution-guide-web-cards">${autoCandidates.map((row, idx) => {
-      const parsed = parseExecutionGuideAutoCandidate(row)
+  const parsedAutoCandidates = autoCandidates
+    .map((row) => parseExecutionGuideAutoCandidate(row))
+    .sort((a, b) => {
+      const scoreA = a.scoreValue ?? -Infinity
+      const scoreB = b.scoreValue ?? -Infinity
+      return scoreB - scoreA
+    })
+
+  const autoSummaryHtml = parsedAutoCandidates.length > 0
+    ? (() => {
+      const scored = parsedAutoCandidates.filter((item) => item.scoreValue != null)
+      const v2Scored = parsedAutoCandidates.filter((item) => item.scoreV2 != null)
+      const legacyScored = parsedAutoCandidates.filter((item) => item.scoreLegacy != null)
+      const deltaScored = parsedAutoCandidates.filter((item) => item.scoreDelta != null)
+      const avgDisplay = scored.length > 0 ? scored.reduce((acc, item) => acc + Number(item.scoreValue), 0) / scored.length : null
+      const avgV2 = v2Scored.length > 0 ? v2Scored.reduce((acc, item) => acc + Number(item.scoreV2), 0) / v2Scored.length : null
+      const avgLegacy = legacyScored.length > 0 ? legacyScored.reduce((acc, item) => acc + Number(item.scoreLegacy), 0) / legacyScored.length : null
+      const avgDelta = deltaScored.length > 0 ? deltaScored.reduce((acc, item) => acc + Number(item.scoreDelta), 0) / deltaScored.length : null
+      const parts = [
+        avgDisplay != null ? `표시 점수 ${avgDisplay.toFixed(1)}` : null,
+        avgV2 != null ? `v2 ${avgV2.toFixed(1)}` : null,
+        avgLegacy != null ? `legacy ${avgLegacy.toFixed(1)}` : null,
+        avgDelta != null ? `Δ ${avgDelta.toFixed(1)}` : null,
+      ].filter(Boolean)
+      if (parts.length === 0) return ''
+      return `<div class="execution-guide-web-score-summary">점수 버전 비교 요약: ${parts.map((part) => `<span class="execution-guide-web-score-summary__chip">${escapeHtml(String(part))}</span>`).join('')}</div>`
+    })()
+    : ''
+
+  const autoHtml = parsedAutoCandidates.length > 0
+    ? `${autoSummaryHtml}<div class="execution-guide-web-cards">${parsedAutoCandidates.map((parsed, idx) => {
       const rankClass = idx === 0 ? ' execution-guide-web-candidate--r1' : idx === 1 ? ' execution-guide-web-candidate--r2' : idx === 2 ? ' execution-guide-web-candidate--r3' : ''
-      return `<article class="execution-guide-web-candidate${rankClass}"><div class="execution-guide-web-candidate__rank">${idx + 1}</div><div class="execution-guide-web-candidate__body"><div class="execution-guide-web-candidate__top"><strong class="execution-guide-web-candidate__name">${escapeHtml(parsed.nameCode)}</strong>${parsed.strategy ? `<span class="execution-guide-web-candidate__chip">${escapeHtml(parsed.strategy)}</span>` : ''}${parsed.scoreText ? `<span class="execution-guide-web-candidate__score">점수 ${escapeHtml(parsed.scoreText)}</span>` : ''}</div>${parsed.details.length > 0 ? `<div class="execution-guide-web-candidate__meta">${parsed.details.map((detail) => `<span class="execution-guide-web-candidate__meta-item">${escapeHtml(detail)}</span>`).join('')}</div>` : `<div class="execution-guide-web-candidate__text">${escapeHtml(row)}</div>`}</div></article>`
+      const deltaBadge = parsed.scoreDelta != null
+        ? `<span class="execution-guide-web-candidate__delta${parsed.scoreDelta >= 0 ? ' is-positive' : ' is-negative'}">Δ ${escapeHtml(parsed.scoreDelta.toFixed(1))}</span>`
+        : ''
+      return `<article class="execution-guide-web-candidate${rankClass}"><div class="execution-guide-web-candidate__rank">${idx + 1}</div><div class="execution-guide-web-candidate__body"><div class="execution-guide-web-candidate__top"><strong class="execution-guide-web-candidate__name">${escapeHtml(parsed.nameCode)}</strong>${parsed.strategy ? `<span class="execution-guide-web-candidate__chip">${escapeHtml(parsed.strategy)}</span>` : ''}${parsed.scoreText ? `<span class="execution-guide-web-candidate__score">점수 ${escapeHtml(parsed.scoreText)}</span>` : ''}${deltaBadge}</div>${parsed.details.length > 0 ? `<div class="execution-guide-web-candidate__meta">${parsed.details.map((detail) => `<span class="execution-guide-web-candidate__meta-item">${escapeHtml(detail)}</span>`).join('')}</div>` : `<div class="execution-guide-web-candidate__text">${escapeHtml(parsed.nameCode)}</div>`}</div></article>`
     }).join('')}</div>`
     : '<p>자동 추천 후보가 없습니다.</p>'
 
@@ -1669,6 +1738,26 @@ export function renderLayout(params: {
       display: grid;
       gap: 12px;
     }
+    .execution-guide-web-score-summary {
+      margin-top: 8px;
+      display: flex;
+      gap: 6px;
+      flex-wrap: wrap;
+      align-items: center;
+      font-size: 12px;
+      color: #3b4f67;
+    }
+    .execution-guide-web-score-summary__chip {
+      display: inline-flex;
+      align-items: center;
+      border-radius: 999px;
+      padding: 2px 8px;
+      border: 1px solid #dbe7fb;
+      background: #f3f8ff;
+      color: #2457a6;
+      font-weight: 600;
+      line-height: 1.45;
+    }
     .execution-guide-web-candidate {
       border: 1px solid #e9eef5;
       border-radius: 14px;
@@ -1731,6 +1820,28 @@ export function renderLayout(params: {
       border-radius: 999px;
       padding: 2px 8px;
       white-space: nowrap;
+    }
+    .execution-guide-web-candidate__delta {
+      display: inline-flex;
+      align-items: center;
+      font-size: 12px;
+      font-weight: 700;
+      border-radius: 999px;
+      padding: 2px 8px;
+      white-space: nowrap;
+      border: 1px solid #dbe7fb;
+      background: #f7f9fc;
+      color: #4b5563;
+    }
+    .execution-guide-web-candidate__delta.is-positive {
+      background: #edf6ff;
+      border-color: #cfe4ff;
+      color: #135fd6;
+    }
+    .execution-guide-web-candidate__delta.is-negative {
+      background: #fff2f2;
+      border-color: #ffdede;
+      color: #d14343;
     }
     .execution-guide-web-candidate--r1 .execution-guide-web-candidate__score {
       color: #135fd6;
