@@ -136,7 +136,7 @@ export default function ShareModal({
         <div className="mt-2">
           <div className="muted">
             {requiresCode
-              ? '다음 URL을 받은 사용자에게 전달하세요. 접근 시 초대코드가 필요합니다.'
+              ? '다음 URL을 받은 사용자에게 전달하세요. 링크만으로도 열 수 있고, 초대코드가 있으면 추가로 확인할 수 있습니다.'
               : '다음 URL을 받은 사용자에게 전달하세요. 링크를 열면 바로 공유 화면이 표시됩니다.'}
           </div>
           <div
@@ -151,7 +151,7 @@ export default function ShareModal({
             <div className="caption" style={{ color: 'var(--color-text-primary, #111827)', fontWeight: 700 }}>안내</div>
             <div className="muted" style={{ marginTop: 6, lineHeight: 1.6 }}>
               {requiresCode
-                ? '초대코드는 새로 공유 링크를 다시 생성하기 전까지 계속 사용할 수 있습니다. 다시 생성하면 이전 링크와 초대코드는 즉시 만료되고, 새로 발급된 정보만 사용할 수 있습니다.'
+                ? '초대코드는 참고용입니다. 링크만으로도 열 수 있으며, 다시 생성하면 이전 링크와 새 정보가 바뀝니다.'
                 : '공유 링크를 다시 생성하면 이전 링크는 즉시 만료되고, 새로 발급된 링크만 사용할 수 있습니다.'}
             </div>
           </div>

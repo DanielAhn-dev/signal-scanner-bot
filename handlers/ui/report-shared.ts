@@ -74,11 +74,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     const providedCode = String(req.query.code || '').trim().toUpperCase()
-    if (!providedCode) {
-      return res.status(200).send(renderCodeGate({ share, topic: String(record.topic) }))
-    }
-
-    if (!verifyInviteCode({ secret, inviteCode: providedCode, inviteCodeHash: String(record.invite_code_hash) })) {
+    if (providedCode && !verifyInviteCode({ secret, inviteCode: providedCode, inviteCodeHash: String(record.invite_code_hash) })) {
       return res.status(403).send(renderCodeGate({ share, topic: String(record.topic), error: '초대코드가 올바르지 않습니다.' }))
     }
 

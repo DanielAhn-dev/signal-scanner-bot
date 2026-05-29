@@ -598,12 +598,12 @@ export default function ExecutionGuidePage() {
     requiresCode: true,
   })
 
-  const persistGuideSnapshot = async (payload: { generatedAtIso: string; rows: GuideRow[] }): Promise<boolean> => {
+  const persistGuideSnapshot = async (payload: { generatedAtIso: string; rows: GuideRow[]; codeList: string[] }): Promise<boolean> => {
     if (payload.rows.length === 0) return false
     const bodyText = toExecutionGuideSnapshotText({
       generatedAtIso: payload.generatedAtIso,
       sourceLabel,
-      codeList,
+      codeList: payload.codeList,
       capital,
       maxWeightPct,
       splitCount,
@@ -637,15 +637,17 @@ export default function ExecutionGuidePage() {
       return
     }
 
-    const nextGeneratedAt = generatedAt || new Date().toISOString()
-    if (!generatedAt) setGeneratedAt(nextGeneratedAt)
-    const saved = await persistGuideSnapshot({ generatedAtIso: nextGeneratedAt, rows })
-    setSnapshotReady(saved)
-    if (!saved) {
-      setError('스냅샷 저장에 실패했습니다. 잠시 후 다시 시도해 주세요.')
-      return
+    if (!snapshotReady) {
+      const nextGeneratedAt = generatedAt || new Date().toISOString()
+      if (!generatedAt) setGeneratedAt(nextGeneratedAt)
+      const saved = await persistGuideSnapshot({ generatedAtIso: nextGeneratedAt, rows, codeList })
+      setSnapshotReady(saved)
+      if (!saved) {
+        setError('스냅샷 저장에 실패했습니다. 잠시 후 다시 시도해 주세요.')
+        return
+      }
+      setLastSnapshotAt(new Date().toISOString())
     }
-    setLastSnapshotAt(new Date().toISOString())
     setError(null)
     await shareManager.createShare('실행가이드', { topic: '실행가이드' })
   }
@@ -689,14 +691,16 @@ export default function ExecutionGuidePage() {
 
     setPdfLoading(true)
     try {
-      const nextGeneratedAt = generatedAt || new Date().toISOString()
-      if (!generatedAt) setGeneratedAt(nextGeneratedAt)
-      const saved = await persistGuideSnapshot({ generatedAtIso: nextGeneratedAt, rows })
-      setSnapshotReady(saved)
-      if (!saved) {
-        throw new Error('스냅샷 저장 실패')
+      if (!snapshotReady) {
+        const nextGeneratedAt = generatedAt || new Date().toISOString()
+        if (!generatedAt) setGeneratedAt(nextGeneratedAt)
+        const saved = await persistGuideSnapshot({ generatedAtIso: nextGeneratedAt, rows, codeList })
+        setSnapshotReady(saved)
+        if (!saved) {
+          throw new Error('스냅샷 저장 실패')
+        }
+        setLastSnapshotAt(new Date().toISOString())
       }
-      setLastSnapshotAt(new Date().toISOString())
 
       const request = buildUiRequest('/api/ui/report-pdf?topic=실행가이드')
       const res = await fetch(request.url, { method: 'GET', headers: request.headers })
@@ -757,7 +761,7 @@ export default function ExecutionGuidePage() {
   const codeList = useMemo(() => parseCodes(codesText), [codesText])
 
   const buildGuide = async () => {
-    if (codeList.length === 0) {
+    if (codeList.length === 0 && autoCandidates.length === 0) {
       setError('종목 코드를 1개 이상 입력해 주세요.')
       return
     }
@@ -767,10 +771,20 @@ export default function ExecutionGuidePage() {
       const totalCapital = Math.max(0, Number(capital || 0))
       const maxWeight = Math.max(1, Math.min(100, Number(maxWeightPct || 25)))
       const slots = Math.max(3, Number(splitCount || 4))
-      const budgetPerName = Math.floor(Math.min(totalCapital / codeList.length, totalCapital * (maxWeight / 100)))
+      const manualCodes = codeList
+      const autoFillPool = manualCodes.length < 3
+        ? (autoCandidates.length > 0 ? autoCandidates : await fetchAutoCandidates())
+        : []
+      const autoFillCodes = autoFillPool.map((candidate) => candidate.code).filter(Boolean)
+      if (autoCandidates.length === 0 && autoFillPool.length > 0) {
+        setAutoCandidates(autoFillPool)
+      }
+      const effectiveCodes = [...new Set([...manualCodes, ...autoFillCodes])].slice(0, Math.max(3, manualCodes.length || 0, autoFillCodes.length > 0 ? 4 : 0))
+      const finalCodes = effectiveCodes.length > 0 ? effectiveCodes : manualCodes
+      const budgetPerName = Math.floor(Math.min(totalCapital / finalCodes.length, totalCapital * (maxWeight / 100)))
 
       const fetched = await Promise.all(
-        codeList.map(async (code) => {
+        finalCodes.map(async (code) => {
           const chatQs = chatId ? `&chat_id=${encodeURIComponent(chatId)}` : ''
           const stockRes = await apiFetch(`/api/ui/stock-latest?code=${encodeURIComponent(code)}${chatQs}`, {
             cacheMs: 0,
@@ -853,9 +867,12 @@ export default function ExecutionGuidePage() {
       )
 
       setRows(fetched)
+      if (finalCodes.length !== codeList.length) {
+        setCodesText(finalCodes.join(', '))
+      }
       const nextGeneratedAt = new Date().toISOString()
       setGeneratedAt(nextGeneratedAt)
-      const saved = await persistGuideSnapshot({ generatedAtIso: nextGeneratedAt, rows: fetched })
+      const saved = await persistGuideSnapshot({ generatedAtIso: nextGeneratedAt, rows: fetched, codeList: finalCodes })
       setSnapshotReady(saved)
       setLastSnapshotAt(saved ? new Date().toISOString() : null)
     } catch (e: any) {
@@ -871,39 +888,44 @@ export default function ExecutionGuidePage() {
   const totalPlanned = useMemo(() => rows.reduce((acc, row) => acc + (row.entryRef && row.qty > 0 ? row.entryRef * row.qty : 0), 0), [rows])
   const totalCapital = Math.max(0, Number(capital || 0))
 
+  const fetchAutoCandidates = async (): Promise<AutoCandidate[]> => {
+    const [highlightsRes, scanRes] = await Promise.all([
+      apiFetch('/api/ui/scan-highlights', { cacheMs: 30_000, timeoutMs: 30_000 }).catch(() => null),
+      apiFetch('/api/ui/scan-candidates?limit=120&cacheMs=0', { cacheMs: 0, timeoutMs: 30_000 }).catch(() => null),
+    ])
+
+    const highlightItems = Array.isArray(highlightsRes?.data) ? highlightsRes.data : []
+    const scanItems = Array.isArray(scanRes?.data) ? scanRes.data : []
+    const ranked = [
+      ...highlightItems.map((row: any) => rankHighlightCandidate(row, candidateMode)),
+      ...scanItems.map((row: any) => rankScanCandidate(row, candidateMode)),
+    ].filter((item) => item.code)
+
+    if (ranked.length === 0) return []
+
+    const merged = new Map<string, AutoCandidate>()
+    for (const row of ranked) {
+      const prev = merged.get(row.code)
+      if (!prev || row.score > prev.score) {
+        merged.set(row.code, row)
+      }
+    }
+
+    const sorted = [...merged.values()].sort((a, b) => b.score - a.score)
+    return pickDiversifiedCandidates(sorted, 16, 2)
+  }
+
   const loadAutoCandidates = async () => {
     setAutoLoading(true)
     setAutoError(null)
     try {
-      const [highlightsRes, scanRes] = await Promise.all([
-        apiFetch('/api/ui/scan-highlights', { cacheMs: 30_000, timeoutMs: 30_000 }).catch(() => null),
-        apiFetch('/api/ui/scan-candidates?limit=120&cacheMs=0', { cacheMs: 0, timeoutMs: 30_000 }).catch(() => null),
-      ])
+      const diversified = await fetchAutoCandidates()
 
-      const highlightItems = Array.isArray(highlightsRes?.data) ? highlightsRes.data : []
-      const scanItems = Array.isArray(scanRes?.data) ? scanRes.data : []
-      const ranked = [
-        ...highlightItems.map((row: any) => rankHighlightCandidate(row, candidateMode)),
-        ...scanItems.map((row: any) => rankScanCandidate(row, candidateMode)),
-      ].filter((item) => item.code)
-
-      if (ranked.length === 0) {
+      if (diversified.length === 0) {
         setAutoCandidates([])
         setAutoError('자동 후보를 찾지 못했습니다. 스캔 데이터 동기화 후 다시 시도해 주세요.')
         return
       }
-
-      const merged = new Map<string, AutoCandidate>()
-      for (const row of ranked) {
-        const prev = merged.get(row.code)
-        if (!prev || row.score > prev.score) {
-          merged.set(row.code, row)
-        }
-      }
-
-      const sorted = [...merged.values()]
-        .sort((a, b) => b.score - a.score)
-      const diversified = pickDiversifiedCandidates(sorted, 16, 2)
 
       setAutoCandidates(diversified)
       if (codeList.length === 0 && diversified.length > 0) {
