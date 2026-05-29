@@ -940,7 +940,7 @@ export default function ExecutionGuidePage() {
   return (
     <section className="xls-page-inset">
       <div className="xls-scroll-frame" style={{ ['--xls-table-min-width' as any]: '360px' }}>
-        <table className="xls-table" style={{ width: '100%', tableLayout: 'fixed' }}>
+        <table className="xls-table" style={{ width: 'max-content', minWidth: '100%', tableLayout: 'auto' }}>
           <tbody>
             <tr className="xls-row xls-row--even">
               <td className="xls-cell" style={{ padding: '8px 10px' }}>
@@ -1098,8 +1098,9 @@ export default function ExecutionGuidePage() {
 
       {error && <div className="card" style={{ color: 'var(--color-error)' }}>{error}</div>}
 
-      <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
-        <table className="xls-table execution-guide-table" style={{ width: '100%', tableLayout: 'fixed' }}>
+      <div className="card" style={{ padding: 0 }}>
+        <div className="xls-scroll-frame execution-guide-table-wrap" style={{ ['--xls-table-min-width' as any]: '980px' }}>
+          <table className="xls-table execution-guide-table" style={{ width: 'max-content', minWidth: '100%', tableLayout: 'auto' }}>
           <colgroup>
             <col style={{ width: compactView ? '25%' : '24%' }} />
             <col style={{ width: compactView ? '26%' : '28%' }} />
@@ -1114,15 +1115,15 @@ export default function ExecutionGuidePage() {
               <th className="xls-th">가이드</th>
             </tr>
           </thead>
-          <tbody>
-            {loading && (
+            <tbody>
+              {loading && (
               <tr className="xls-row">
                 <td colSpan={4} className="xls-cell" style={{ color: 'var(--color-text-secondary)' }}>
                   종목 분석과 뉴스를 조합해 실행 가이드를 생성 중입니다.
                 </td>
               </tr>
-            )}
-            {!loading && rows.map((row, idx) => (
+              )}
+              {!loading && rows.map((row, idx) => (
               <tr key={row.code} className={`xls-row${idx % 2 ? ' xls-row--even' : ''}`}>
                 <td className="xls-cell" style={{ verticalAlign: 'top' }}>
                   <div className="execution-guide-stock-title">{row.name} ({row.code})</div>
@@ -1200,16 +1201,17 @@ export default function ExecutionGuidePage() {
                   )}
                 </td>
               </tr>
-            ))}
-            {!loading && rows.length === 0 && (
+              ))}
+              {!loading && rows.length === 0 && (
               <tr className="xls-row">
                 <td colSpan={4} className="xls-cell" style={{ color: 'var(--color-text-tertiary)' }}>
                   종목 코드를 입력한 뒤 가이드 생성을 눌러 주세요.
                 </td>
               </tr>
-            )}
-          </tbody>
-        </table>
+              )}
+            </tbody>
+          </table>
+        </div>
       </div>
 
       <div className="card" style={{ display: 'flex', gap: 'var(--space-3)', flexWrap: 'wrap' }}>

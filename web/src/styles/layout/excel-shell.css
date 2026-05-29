@@ -2176,6 +2176,10 @@
   vertical-align: top;
 }
 
+.execution-guide-table {
+  min-width: 980px;
+}
+
 .execution-guide-stock-title {
   font-size: 13px;
   font-weight: var(--font-weight-semibold);
@@ -2248,6 +2252,10 @@
 
   .execution-guide-table .xls-cell {
     padding: 8px;
+  }
+
+  .execution-guide-table {
+    min-width: 1080px;
   }
 
   .execution-guide-kv-line {

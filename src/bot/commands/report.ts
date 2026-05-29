@@ -1928,6 +1928,11 @@ function drawEgStockCard(
   const { ML, BODY_W } = ctx;
   const LH_SM = 11;
   const LH_MD = 14;
+  const sectionLabelSize = 6.2;
+  const sectionValueSize = 8.3;
+  const gridGap = 10;
+  const threeColWidth = (BODY_W - gridGap * 2) / 3;
+  const fourColWidth = (BODY_W - gridGap * 3) / 4;
 
   const newsItems = includeNews
     ? (row.headlineLinks.length > 0
@@ -1937,12 +1942,22 @@ function drawEgStockCard(
   const hasWarnings     = row.warnings.length > 0;
   const hasSummary      = Boolean(row.summary);
   const hasNews         = newsItems.length > 0;
-  const hasPriceTargets = row.target1 != null || row.target2 != null;
 
   // Ensure enough space for the card header + at least the price section
   ctx.ensureSpace(24 + LH_SM + LH_MD + LH_MD + LH_SM + LH_MD + 32);
 
   const PX = ML + 6;  // content left padding
+
+  const drawMetricRow = (labels: string[], values: Array<string | number>, y: number, colWidth: number, valueColors?: Array<RGB | undefined>): number => {
+    for (let i = 0; i < labels.length; i += 1) {
+      const x = PX + i * (colWidth + gridGap);
+      ctx.textLight(labels[i], x, y, sectionLabelSize, egDim, colWidth);
+      const value = String(values[i] ?? '—');
+      const color = valueColors?.[i] ?? egInk;
+      ctx.textBold(value, x, y - 9, sectionValueSize, color, colWidth);
+    }
+    return y - 24;
+  };
 
   // ── Card header band ───────────────────────────────────────────
   const HEADER_H = 24;
@@ -1961,55 +1976,45 @@ function drawEgStockCard(
   }
   ctx.y = hTop - HEADER_H - 7;
 
-  // ── Price section ──────────────────────────────────────────────
-  ctx.textLight("진입 구간", PX,        ctx.y, 6.5, egDim);
-  ctx.textLight("기준가",   PX + 170,   ctx.y, 6.5, egDim);
-  ctx.textLight("손절",     PX + 296,   ctx.y, 6.5, egDim);
-  ctx.y -= LH_SM;
-
+  // ── Price grid ─────────────────────────────────────────────────
+  let gridY = ctx.y;
   const entryText = (row.entryLow != null && row.entryHigh != null)
     ? `${egPriceFmt(row.entryLow)} ~ ${egPriceFmt(row.entryHigh)}`
     : egPriceFmt(row.entryRef);
-  ctx.text(entryText,                    PX,       ctx.y, 8.5, egGreen, 160);
-  ctx.textBold(egPriceFmt(row.entryRef), PX + 170, ctx.y, 8.5, egInk);
-  ctx.textBold(egPriceFmt(row.stopPrice),PX + 296, ctx.y, 8.5, egRed);
-  ctx.y -= LH_MD + 3;
+  gridY = drawMetricRow(
+    ["진입 구간", "기준가", "손절"],
+    [entryText, egPriceFmt(row.entryRef), egPriceFmt(row.stopPrice)],
+    gridY,
+    threeColWidth,
+    [egGreen, egInk, egRed],
+  );
 
-  // Target prices + risk-reward
-  if (hasPriceTargets) {
-    ctx.textLight("목표1", PX,        ctx.y, 6.5, egDim);
-    ctx.textLight("목표2", PX + 188,  ctx.y, 6.5, egDim);
-    if (row.riskReward != null) ctx.textLight("손익비", PX + 362, ctx.y, 6.5, egDim);
-    ctx.y -= LH_SM;
+  const pct1 = row.target1Pct != null ? ` (+${row.target1Pct.toFixed(1)}%)` : "";
+  const pct2 = row.target2Pct != null ? ` (+${row.target2Pct.toFixed(1)}%)` : "";
+  const rrText = row.riskReward != null ? `${row.riskReward.toFixed(1)}:1` : "—";
+  gridY = drawMetricRow(
+    ["목표1", "목표2", "손익비"],
+    [row.target1 != null ? `${egPriceFmt(row.target1)}${pct1}` : "—", row.target2 != null ? `${egPriceFmt(row.target2)}${pct2}` : "—", rrText],
+    gridY,
+    threeColWidth,
+    [egAccent, egAccent, egInk],
+  );
 
-    const pct1 = row.target1Pct != null ? ` (+${(row.target1Pct * 100).toFixed(1)}%)` : "";
-    const pct2 = row.target2Pct != null ? ` (+${(row.target2Pct * 100).toFixed(1)}%)` : "";
-    ctx.text(`${egPriceFmt(row.target1)}${pct1}`, PX,       ctx.y, 8, egAccent, 178);
-    ctx.text(`${egPriceFmt(row.target2)}${pct2}`, PX + 188, ctx.y, 8, egAccent, 164);
-    if (row.riskReward != null) ctx.text(`${row.riskReward.toFixed(1)}:1`, PX + 362, ctx.y, 8, egInk);
-    ctx.y -= LH_MD + 2;
-  }
+  ctx.line(ML, gridY + 6, ML + BODY_W, gridY + 6, egBorder, 0.3);
+  gridY -= 5;
 
-  // ── Budget row ─────────────────────────────────────────────────
-  ctx.line(ML, ctx.y + 4, ML + BODY_W, ctx.y + 4, egBorder, 0.3);
-  ctx.y -= 5;
-
-  ctx.textLight("예산",       PX,       ctx.y, 6.5, egDim);
-  ctx.textLight("수량",       PX + 128, ctx.y, 6.5, egDim);
-  ctx.textLight("1차 주문액", PX + 228, ctx.y, 6.5, egDim);
-  if (row.holdDays != null) ctx.textLight("예상 보유", PX + 358, ctx.y, 6.5, egDim);
-  ctx.y -= LH_SM;
-
-  ctx.text(egBudgetFmt(row.plannedBudget),   PX,       ctx.y, 8, egInk);
-  ctx.text(`${row.qty.toLocaleString()}주`,  PX + 128, ctx.y, 8, egInk);
-  ctx.text(egBudgetFmt(row.firstOrderAmount),PX + 228, ctx.y, 8, egInk);
-  if (row.holdDays != null) {
-    const hd = Array.isArray(row.holdDays)
-      ? `${row.holdDays[0]}~${row.holdDays[1]}일`
-      : `${row.holdDays}일`;
-    ctx.text(hd, PX + 358, ctx.y, 8, egInk);
-  }
-  ctx.y -= LH_MD + 2;
+  // ── Budget grid ────────────────────────────────────────────────
+  const holdText = row.holdDays != null
+    ? (Array.isArray(row.holdDays) ? `${row.holdDays[0]}~${row.holdDays[1]}일` : `${row.holdDays}일`)
+    : "—";
+  gridY = drawMetricRow(
+    ["예산", "권장 수량", "1차 주문액", "예상 보유"],
+    [egBudgetFmt(row.plannedBudget), `${row.qty.toLocaleString()}주`, egBudgetFmt(row.firstOrderAmount), holdText],
+    gridY,
+    fourColWidth,
+    [egInk, egInk, egInk, egInk],
+  );
+  ctx.y = gridY + 2;
 
   // ── Summary ────────────────────────────────────────────────────
   if (hasSummary) {
