@@ -385,6 +385,17 @@ function computeNetFlow(item: any): { net5d: number | null; net20d: number | nul
   return { net5d, net20d }
 }
 
+function formatCompactKrw(value: number | null | undefined): string {
+  if (value == null) return '—'
+  const n = Number(value)
+  if (!Number.isFinite(n)) return '—'
+  const sign = n >= 0 ? '+' : '-'
+  const abs = Math.abs(Math.round(n))
+  if (abs >= 100_000_000) return `${sign}${formatNumber(abs / 100_000_000, abs >= 1_000_000_000 ? 1 : 0)}억원`
+  if (abs >= 10_000) return `${sign}${formatNumber(Math.round(abs / 10_000))}만원`
+  return `${sign}${formatNumber(abs)}원`
+}
+
 function computeNetFlowScore(item: any): { score: number; label: string | null; net5d: number | null; net20d: number | null } {
   const flow = computeNetFlow(item)
   if (flow.net5d == null && flow.net20d == null) return { score: 50, label: null, net5d: null, net20d: null }
@@ -752,11 +763,11 @@ function rankHighlightCandidate(item: any, mode: CandidateMode): AutoCandidate {
 
 function formatFlowBadgeLabel(flow5d: number | null, flow20d: number | null): string {
   const base = flow5d != null ? flow5d : flow20d
-  if (base == null) return '수급데이터 없음'
+  if (base == null) return '수급액 데이터 없음'
   const sign = base >= 0 ? '유입' : '유출'
-  const fiveText = flow5d == null ? '—' : formatKrw(Math.abs(flow5d))
-  const twentyText = flow20d == null ? '—' : formatKrw(Math.abs(flow20d))
-  return `수급 ${sign} 5D ${fiveText} · 20D ${twentyText}`
+  const fiveText = flow5d == null ? '—' : formatCompactKrw(flow5d)
+  const twentyText = flow20d == null ? '—' : formatCompactKrw(flow20d)
+  return `수급액 ${sign} 5D ${fiveText} · 20D ${twentyText}`
 }
 
 function normalizeSectorKey(value: string | null | undefined): string {
@@ -1261,7 +1272,7 @@ export default function ExecutionGuidePage() {
         <div className="flex-between" style={{ gap: 'var(--space-2)', flexWrap: 'wrap' }}>
           <div>
             <div className="title-md">자동 후보 찾기</div>
-            <div className="caption">눌림목/집행우선 데이터를 합쳐 퀵점수·적응점수·리드단계·수급(5D/20D)·거래대금 중심으로 우선순위를 제시합니다.</div>
+            <div className="caption">눌림목/집행우선 데이터를 합쳐 퀵점수·적응점수·리드단계·수급액(5D/20D)·거래대금 중심으로 우선순위를 제시합니다.</div>
           </div>
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
             <Button

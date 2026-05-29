@@ -151,8 +151,8 @@ async function fetchInvestorFlowByCode(
 
   const fromDate = shiftDateText(asOfDate, 35)
   const attempts: Array<{ codeCol: 'ticker' | 'code'; select: string }> = [
-    { codeCol: 'ticker', select: 'ticker,date,foreign,institution,foreign_amount,institution_amount' },
-    { codeCol: 'code', select: 'code,date,foreign,institution,foreign_amount,institution_amount' },
+    { codeCol: 'ticker', select: 'ticker,date,foreign_amount,institution_amount' },
+    { codeCol: 'code', select: 'code,date,foreign_amount,institution_amount' },
   ]
 
   for (const spec of attempts) {
@@ -185,14 +185,14 @@ async function fetchInvestorFlowByCode(
         let foreignNetBuy20d = 0
         let institutionNetBuy20d = 0
         for (const row of rows5d) {
-          const foreign = Number((row as any)?.foreign_amount ?? (row as any)?.foreign ?? 0)
-          const institution = Number((row as any)?.institution_amount ?? (row as any)?.institution ?? 0)
+          const foreign = Number((row as any)?.foreign_amount ?? 0)
+          const institution = Number((row as any)?.institution_amount ?? 0)
           foreignNetBuy5d += Number.isFinite(foreign) ? foreign : 0
           institutionNetBuy5d += Number.isFinite(institution) ? institution : 0
         }
         for (const row of rows20d) {
-          const foreign = Number((row as any)?.foreign_amount ?? (row as any)?.foreign ?? 0)
-          const institution = Number((row as any)?.institution_amount ?? (row as any)?.institution ?? 0)
+          const foreign = Number((row as any)?.foreign_amount ?? 0)
+          const institution = Number((row as any)?.institution_amount ?? 0)
           foreignNetBuy20d += Number.isFinite(foreign) ? foreign : 0
           institutionNetBuy20d += Number.isFinite(institution) ? institution : 0
         }

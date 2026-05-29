@@ -1751,10 +1751,9 @@ function egFlowFmt(v: number | null | undefined): string {
   const n = Number(v);
   const sign = n >= 0 ? "+" : "-";
   const abs = Math.abs(n);
-  if (abs >= 100_000_000) return `${sign}${(abs / 100_000_000).toFixed(1)}억`;
-  if (abs >= 10_000_000)  return `${sign}${Math.round(abs / 10_000_000)}천만`;
-  if (abs >= 10_000)      return `${sign}${Math.round(abs / 10_000)}만`;
-  return `${sign}${Math.round(abs).toLocaleString()}`;
+  if (abs >= 100_000_000) return `${sign}${(abs / 100_000_000).toFixed(abs >= 1_000_000_000 ? 1 : 0)}억원`;
+  if (abs >= 10_000)      return `${sign}${Math.round(abs / 10_000).toLocaleString("ko-KR")}만원`;
+  return `${sign}${Math.round(abs).toLocaleString("ko-KR")}원`;
 }
 
 function egFlowColor(v: number | null | undefined): RGB {
@@ -1894,8 +1893,8 @@ function drawEgCandidatesTable(ctx: ReportContext, data: ExGuideData): void {
   ctx.textLight("종목명 (코드)", C_NAME,  HDR_TY, 6.5, egDim);
   ctx.textCenter("구분",         SRC_BADGE_CX, HDR_TY, 6.5, egDim);
   ctx.textLight("점수",          C_SCORE, HDR_TY, 6.5, egDim);
-  ctx.textLight("수급 5D",       C_F5,    HDR_TY, 6.5, egDim);
-  ctx.textLight("수급 20D",      C_F20,   HDR_TY, 6.5, egDim);
+  ctx.textLight("수급액 5D",     C_F5,    HDR_TY, 6.5, egDim);
+  ctx.textLight("수급액 20D",    C_F20,   HDR_TY, 6.5, egDim);
   ctx.textRight("순위 근거",     C_RIGHT, HDR_TY, 6.5, egDim);
   ctx.y -= ROW_H;
 
@@ -2010,8 +2009,8 @@ function drawEgStockCard(
     [egGreen, egInk, egRed],
   );
 
-  const pct1 = row.target1Pct != null ? ` (+${row.target1Pct.toFixed(1)}%)` : "";
-  const pct2 = row.target2Pct != null ? ` (+${row.target2Pct.toFixed(1)}%)` : "";
+  const pct1 = row.target1Pct != null ? ` (+${(row.target1Pct * 100).toFixed(1)}%)` : "";
+  const pct2 = row.target2Pct != null ? ` (+${(row.target2Pct * 100).toFixed(1)}%)` : "";
   const rrText = row.riskReward != null ? `${row.riskReward.toFixed(1)}:1` : "—";
   gridY = drawMetricRow(
     ["목표1", "목표2", "손익비"],
