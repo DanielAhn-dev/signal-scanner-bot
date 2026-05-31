@@ -1,4 +1,11 @@
-export type ScanFilterKey = "trend" | "accumulation" | "entry" | "stable";
+export type ScanFilterKey =
+  | "trend"
+  | "accumulation"
+  | "entry"
+  | "stable"
+  | "seed"
+  | "trigger"
+  | "execute";
 
 export type ParsedScanInput = {
   query: string;
@@ -45,6 +52,9 @@ const FILTER_TOKEN_MAP: Array<{ filter: ScanFilterKey; tokens: string[] }> = [
   { filter: "accumulation", tokens: ["acc", "매집", "accumulation"] },
   { filter: "entry", tokens: ["in", "진입", "신규", "entry"] },
   { filter: "stable", tokens: ["stable", "세력", "세력선", "평단"] },
+  { filter: "seed", tokens: ["seed", "선행", "후보", "candidate", "프리랠리", "pre", "prerally"] },
+  { filter: "trigger", tokens: ["trigger", "점화", "확인", "confirm", "전환"] },
+  { filter: "execute", tokens: ["execute", "실행", "집행", "매수검토", "buycheck"] },
 ];
 
 const FILTER_LABELS: Record<ScanFilterKey, string> = {
@@ -52,6 +62,9 @@ const FILTER_LABELS: Record<ScanFilterKey, string> = {
   accumulation: "매집",
   entry: "IN 타이밍",
   stable: "세력선 우위",
+  seed: "후보",
+  trigger: "확인",
+  execute: "매수검토",
 };
 
 function normalizeToken(token: string): string {
@@ -184,6 +197,35 @@ function evaluateScanFilters(
     rsi14 >= 45 &&
     rsi14 <= 64;
 
+  const seedLike =
+    !bearTurn &&
+    (
+      stableAccumulationDays >= 2 ||
+      recentAccumulationDays >= 2 ||
+      (stableAboveAvgDays5 >= 3 && Number.isFinite(netBuyingPressure5d) && netBuyingPressure5d > 0) ||
+      (stableAccumulation && stableTrust >= 55)
+    ) &&
+    (
+      !Number.isFinite(rsi14) ||
+      (rsi14 >= 42 && rsi14 <= 64)
+    );
+
+  const triggerLike =
+    !bearTurn &&
+    (
+      bullTurn ||
+      recentBullDays >= 1 ||
+      recentInDays >= 1 ||
+      (stableAboveAvg && stableTrust >= 60 && trendByIndicator)
+    );
+
+  const executeLike =
+    entryLike &&
+    (
+      total >= 70 ||
+      (stableAccumulationDays >= 2 && total >= 66 && stableAboveAvg)
+    );
+
   return {
     stable: {
       matched: stableMatched,
@@ -246,6 +288,42 @@ function evaluateScanFilters(
               : bearTurn
                 ? "하락턴"
                 : "진입 신호 부족",
+    },
+    seed: {
+      matched: seedLike,
+      reason: stableAccumulationDays >= 2
+        ? `연속 매집 ${stableAccumulationDays}일`
+        : recentAccumulationDays >= 2
+          ? `최근 매집 ${recentAccumulationDays}일`
+          : stableAboveAvgDays5 >= 3 && Number.isFinite(netBuyingPressure5d) && netBuyingPressure5d > 0
+            ? `세력선 위 ${stableAboveAvgDays5}일·매수세 ${Math.round(netBuyingPressure5d * 100)}%`
+            : stableAccumulation && stableTrust >= 55
+              ? `매집 + 신뢰도 ${Math.round(stableTrust)}점`
+              : bearTurn
+                ? "하락턴"
+                : "선행 신호 부족",
+    },
+    trigger: {
+      matched: triggerLike,
+      reason: bullTurn
+        ? "상승턴 전환"
+        : recentBullDays >= 1
+          ? `최근 상승턴 ${recentBullDays}회`
+          : recentInDays >= 1
+            ? `최근 IN ${recentInDays}일`
+            : stableAboveAvg && stableTrust >= 60 && trendByIndicator
+              ? `세력선 우위·신뢰도 ${Math.round(stableTrust)}점`
+              : bearTurn
+                ? "하락턴"
+                : "점화 신호 부족",
+    },
+    execute: {
+      matched: executeLike,
+      reason: total >= 70
+        ? `점수 ${Math.round(total)}점`
+        : stableAccumulationDays >= 2 && total >= 66 && stableAboveAvg
+          ? `매집 연속 + 점수 ${Math.round(total)}점`
+          : "실행 기준 미충족",
     },
   };
 }

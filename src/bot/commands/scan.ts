@@ -40,6 +40,7 @@ import {
   formatScanFilterLabels,
   matchesScanFilters,
   parseScanInput,
+  type ScanFilterKey,
 } from "./scanFilters";
 
 const supabase = createClient(
@@ -294,6 +295,34 @@ function riskProfileLabel(profile?: RiskProfile): string {
   return "안전형";
 }
 
+type ScanStage = "seed" | "trigger" | "execute";
+
+function resolveScanStage(snapshot: {
+  total?: number;
+  stableAccumulation?: boolean;
+  stableAccumulationDays?: number;
+  stableAboveAvgDays5?: number;
+  netBuyingPressure5d?: number;
+} | undefined): ScanStage {
+  const executeMatched = matchesScanFilters(snapshot, ["execute"] as ScanFilterKey[]);
+  if (executeMatched) return "execute";
+  const triggerMatched = matchesScanFilters(snapshot, ["trigger"] as ScanFilterKey[]);
+  if (triggerMatched) return "trigger";
+  return "seed";
+}
+
+function stageLabel(stage: ScanStage): string {
+  if (stage === "execute") return "매수검토";
+  if (stage === "trigger") return "확인";
+  return "후보";
+}
+
+function stageNextAction(stage: ScanStage): string {
+  if (stage === "execute") return "다음: 분할 진입·손절 기준 고정";
+  if (stage === "trigger") return "다음: 매수검토 기준(score/신호) 확인";
+  return "다음: 확인 단계 전환(상승턴/IN) 대기";
+}
+
 function summarizeRecentScoreContext(
   history: Array<{
     asof: string | null;
@@ -396,10 +425,17 @@ export async function handleScanCommand(
       chat_id: ctx.chatId,
       text: [
         "/스캔 하위 옵션 도움말",
-        "사용법: /스캔 [섹터] [추세|매집|진입|세력]",
+        "사용법: /스캔 [섹터] [추세|매집|진입|세력|후보|확인|매수검토]",
         "옵션: 추세(추세) · 매집(매집) · 진입(진입) · 세력(세력)",
+        "단계: 후보(seed) · 확인(trigger) · 매수검토(execute)",
+        "별칭: 선행/점화/실행도 계속 사용 가능",
+        "권장 간단 사용:",
+        "- /스캔 후보      (먼저 후보 찾기)",
+        "- /스캔 확인      (전환 종목 찾기)",
+        "- /스캔 매수검토  (오늘 집행 후보 찾기)",
         "예시: /스캔 반도체 추세",
-        "예시: /스캔 매집",
+        "예시: /스캔 매집 후보",
+        "예시: /스캔 확인 매수검토",
         "예시: /스캔 눌림목  (기본 눌림목 스캔)",
       ].join('\n'),
     });
@@ -509,6 +545,9 @@ export async function handleScanCommand(
   }
 
   const variantSalt = `${Date.now()}|${ctx.chatId}|${query || "all"}`;
+  const isSeedFocus =
+    parsedInput.filters.includes("seed") &&
+    !parsedInput.filters.includes("execute");
 
   const candidatePool = candidates.map((item) => ({
     ...item,
@@ -808,6 +847,21 @@ export async function handleScanCommand(
       const adjustedMomentumB = rtIndB 
         ? (momentumB * 0.4) + ((rtIndB.adjustedMomentumScore - 50) * 0.1 * rtIndB.confidence)
         : momentumB;
+      const seedBonusA = isSeedFocus
+        ? (Number(sa?.stableAccumulationDays ?? 0) * 6) +
+          (Number(sa?.stableAboveAvgDays5 ?? 0) * 3) +
+          Math.max(0, Number(sa?.netBuyingPressure5d ?? 0) * 20) -
+          Math.abs(momentumA) * 1.2
+        : 0;
+      const seedBonusB = isSeedFocus
+        ? (Number(sb?.stableAccumulationDays ?? 0) * 6) +
+          (Number(sb?.stableAboveAvgDays5 ?? 0) * 3) +
+          Math.max(0, Number(sb?.netBuyingPressure5d ?? 0) * 20) -
+          Math.abs(momentumB) * 1.2
+        : 0;
+      const momentumWeight = isSeedFocus
+        ? riskAdjustedRealtimeWeight * 0.5
+        : riskAdjustedRealtimeWeight;
 
       const scoreA =
         (a.entry_score ?? 0) * 20 +
@@ -816,7 +870,8 @@ export async function handleScanCommand(
         (sa?.value ?? 0) * 0.5 +
         stableBoostA +
         qa * 0.6 +
-        adjustedMomentumA * riskAdjustedRealtimeWeight -
+        adjustedMomentumA * momentumWeight +
+        seedBonusA -
         warnPenaltyA;
       const scoreB =
         (b.entry_score ?? 0) * 20 +
@@ -825,7 +880,8 @@ export async function handleScanCommand(
         (sb?.value ?? 0) * 0.5 +
         stableBoostB +
         qb * 0.6 +
-        adjustedMomentumB * riskAdjustedRealtimeWeight -
+        adjustedMomentumB * momentumWeight +
+        seedBonusB -
         warnPenaltyB;
       return scoreB - scoreA;
     });
@@ -924,6 +980,7 @@ export async function handleScanCommand(
       policy: stablePromotionPolicy,
     });
     const scoreSignal = stable?.signal ? String(stable.signal).toUpperCase() : "-";
+    const stage = resolveScanStage(stable);
     const recentText = stable?.recentText?.slice(0, 2).join(" · ") ?? "";
     const warn = WARN_LABEL[item.warn_grade] ?? item.warn_grade;
     const grade = gradeLabel[item.entry_grade] ?? "○";
@@ -1040,9 +1097,9 @@ export async function handleScanCommand(
 
     return (
       `${idx + 1}. [${modeTag}${promotionTag}] ${grade} <b>${esc(item.stock?.name || item.code)}</b> <code>${price.toLocaleString("ko-KR")}원</code>${chg}\n` +
-      `진입 ${item.entry_grade}(${item.entry_score}/4) · 경고 ${warn}(${item.warn_score}/6) · 점수 ${Math.round(s?.total ?? 0)} · 재무 ${f ?? "-"} · Stable ${stableTurn}/${stableTrustLabel} · 신호 ${scoreSignal}${stableAccumulationTag ? " · 관찰태그 매집" : ""}${recentText ? ` · 최근 ${recentText}` : ""}\n` +
+      `진입 ${item.entry_grade}(${item.entry_score}/4) · 경고 ${warn}(${item.warn_score}/6) · 점수 ${Math.round(s?.total ?? 0)} · 재무 ${f ?? "-"} · 단계 ${stageLabel(stage)} · Stable ${stableTurn}/${stableTrustLabel} · 신호 ${scoreSignal}${stableAccumulationTag ? " · 관찰태그 매집" : ""}${recentText ? ` · 최근 ${recentText}` : ""}\n` +
       `${filterReasonLine ? `필터 근거 ${filterReasonLine}\n` : ""}` +
-      `${detailLine}`
+      `${detailLine} · ${stageNextAction(stage)}`
     );
   };
 
@@ -1071,6 +1128,9 @@ export async function handleScanCommand(
     section("스캔 조건", [
       "A/B 진입등급 · 매도경고 제외 · 코스피 중심 위험성향 필터",
       ...(filterLabels.length ? [`Stable 필터: ${filterLabels.join(" · ")}`] : []),
+      ...(parsedInput.filters.some((f) => ["seed", "trigger", "execute"].includes(f))
+        ? ["단계 필터 활성화: 후보(Seed) → 확인(Trigger) → 매수검토(Execute)"]
+        : []),
       `후보 ${candidates.length}개 중 필터 통과 ${filteredCandidates.length}개 · 안전성향 통과 ${saferPool.length}개 · 표시 ${displayPicks.length}개`,
       `실행 후보(score>=70${stablePromotionPolicy.enabled ? ` 또는 승격>=${stablePromotionPolicy.minScore}` : ""}) ${executionPicks.length}개 · 관찰 후보(stable 매집) ${watchlistPicks.length}개`,
       ...(stablePromotionPolicy.enabled ? [`승격 규칙 활성화: stable 매집 태그 + 점수 ${stablePromotionPolicy.minScore} 이상은 실행 후보로 승격`] : []),
