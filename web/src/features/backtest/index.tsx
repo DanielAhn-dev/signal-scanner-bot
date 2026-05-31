@@ -102,7 +102,7 @@ type RuleFilter = {
 }
 
 type AutoPickTier = 'now' | 'prepare' | 'watch'
-type ReturnProfileKey = 'conservative' | 'aggressive'
+type ReturnProfileKey = 'strict' | 'conservative' | 'aggressive'
 
 type AutoPickItem = {
   code: string
@@ -387,10 +387,10 @@ export default function BacktestPage() {
     rsi45_65Pct: 0,
     totalScanned: 0,
   })
-  const [returnProfile, setReturnProfile] = useState<ReturnProfileKey>('conservative')
-  const [minExpectedReturnPct, setMinExpectedReturnPct] = useState(2)
-  const [minShortMomentumPct, setMinShortMomentumPct] = useState(-10)
-  const [minLiquidityEok, setMinLiquidityEok] = useState(10)
+  const [returnProfile, setReturnProfile] = useState<ReturnProfileKey>('strict')
+  const [minExpectedReturnPct, setMinExpectedReturnPct] = useState(6)
+  const [minShortMomentumPct, setMinShortMomentumPct] = useState(-2)
+  const [minLiquidityEok, setMinLiquidityEok] = useState(50)
   const [investAmount, setInvestAmount] = useState(1_000_000)
   const checkDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
@@ -501,6 +501,7 @@ export default function BacktestPage() {
             
             const ranked = evaluateAutoPick(indicator)
             if (!ranked) return null
+            if (ranked.tier === 'watch') return null
             evaluatedCount++
             
             const ruleMatched = matchesRuleFilter(indicator, selectedRule.filter)
@@ -734,6 +735,12 @@ export default function BacktestPage() {
 
   const applyReturnProfile = (profile: ReturnProfileKey) => {
     setReturnProfile(profile)
+    if (profile === 'strict') {
+      setMinExpectedReturnPct(6)
+      setMinShortMomentumPct(-2)
+      setMinLiquidityEok(50)
+      return
+    }
     if (profile === 'conservative') {
       setMinExpectedReturnPct(4)
       setMinShortMomentumPct(-5)
@@ -1448,6 +1455,14 @@ export default function BacktestPage() {
                   <div style={{ fontSize: 11, color: 'var(--color-text-tertiary)', display: 'grid', gap: 4 }}>
                     기대수익 프리셋
                     <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                      <button
+                        type="button"
+                        className={`sim-btn ${returnProfile === 'strict' ? 'sim-btn--primary' : 'sim-btn--ghost'}`}
+                        style={{ minHeight: 30, padding: '6px 10px' }}
+                        onClick={() => applyReturnProfile('strict')}
+                      >
+                        실전형
+                      </button>
                       <button
                         type="button"
                         className={`sim-btn ${returnProfile === 'conservative' ? 'sim-btn--primary' : 'sim-btn--ghost'}`}

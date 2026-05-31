@@ -471,7 +471,7 @@ function isQuickTradeLiteCandidate(item: ScanCandidate): boolean {
   if (!hasQuality) return false
   const intraday = Number(item.intraday_change_pct ?? 0)
   if (Number.isFinite(intraday) && (intraday < -5.5 || intraday > 10.5)) return false
-  if (Number(item.liquidity ?? 0) < 500_000_000) return false
+  if (Number(item.liquidity ?? 0) < 3_000_000_000) return false
   return computeQuickTradeScore(item) >= 52
 }
 
