@@ -347,7 +347,9 @@ function gradeToPct(grade: unknown): number {
 
 function pickFirstFiniteNumber(obj: any, keys: string[]): number | null {
   for (const key of keys) {
-    const value = Number(obj?.[key])
+    const raw = obj?.[key]
+    if (raw == null || raw === '') continue
+    const value = Number(raw)
     if (Number.isFinite(value)) return value
   }
   return null

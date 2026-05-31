@@ -40,8 +40,8 @@ async function fetchInvestorFlowByCode(
 
   const fromDate = shiftDateText(asOfDate, 35)
   const attempts: Array<{ codeCol: 'ticker' | 'code'; select: string }> = [
-    { codeCol: 'ticker', select: 'ticker,date,foreign_amount,institution_amount' },
-    { codeCol: 'code', select: 'code,date,foreign_amount,institution_amount' },
+    { codeCol: 'ticker', select: 'ticker,date,foreign_amount,institution_amount,foreign,institution,foreign_net,institution_net' },
+    { codeCol: 'code', select: 'code,date,foreign_amount,institution_amount,foreign,institution,foreign_net,institution_net' },
   ]
 
   for (const spec of attempts) {
@@ -67,24 +67,33 @@ async function fetchInvestorFlowByCode(
 
       for (const code of codes) {
         const rows = grouped.get(code) ?? []
+        if (rows.length === 0) continue
         const rows5d = rows.slice(0, 5)
         const rows20d = rows.slice(0, 20)
         let foreignNetBuy5d = 0
         let institutionNetBuy5d = 0
         let foreignNetBuy20d = 0
         let institutionNetBuy20d = 0
+        let hasAnyFlowValue = false
         for (const row of rows5d) {
-          const foreign = Number((row as any)?.foreign_amount ?? 0)
-          const institution = Number((row as any)?.institution_amount ?? 0)
+          const foreignRaw = (row as any)?.foreign_amount ?? (row as any)?.foreign ?? (row as any)?.foreign_net
+          const institutionRaw = (row as any)?.institution_amount ?? (row as any)?.institution ?? (row as any)?.institution_net
+          const foreign = Number(foreignRaw)
+          const institution = Number(institutionRaw)
+          if (Number.isFinite(foreign) || Number.isFinite(institution)) hasAnyFlowValue = true
           foreignNetBuy5d += Number.isFinite(foreign) ? foreign : 0
           institutionNetBuy5d += Number.isFinite(institution) ? institution : 0
         }
         for (const row of rows20d) {
-          const foreign = Number((row as any)?.foreign_amount ?? 0)
-          const institution = Number((row as any)?.institution_amount ?? 0)
+          const foreignRaw = (row as any)?.foreign_amount ?? (row as any)?.foreign ?? (row as any)?.foreign_net
+          const institutionRaw = (row as any)?.institution_amount ?? (row as any)?.institution ?? (row as any)?.institution_net
+          const foreign = Number(foreignRaw)
+          const institution = Number(institutionRaw)
+          if (Number.isFinite(foreign) || Number.isFinite(institution)) hasAnyFlowValue = true
           foreignNetBuy20d += Number.isFinite(foreign) ? foreign : 0
           institutionNetBuy20d += Number.isFinite(institution) ? institution : 0
         }
+        if (!hasAnyFlowValue) continue
         out.set(code, {
           foreignNetBuy5d,
           institutionNetBuy5d,
