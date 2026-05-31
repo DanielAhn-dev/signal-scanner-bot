@@ -141,7 +141,10 @@ def run_python_script(script_path: str, args: list[str], label: str) -> bool:
         if stdout:
             lines = [line for line in stdout.splitlines() if line.strip()]
             if lines:
-                print(f"   {label} output: {lines[-1]}")
+                tail = lines[-5:]
+                print(f"   {label} output (last {len(tail)} lines):")
+                for line in tail:
+                    print(f"     {line}")
         return True
     except subprocess.CalledProcessError as e:
         stderr = (e.stderr or "").strip()
