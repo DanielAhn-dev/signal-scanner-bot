@@ -48,8 +48,9 @@ from batch_modules.cleanup import cleanup_old_data
 def sync_scan_signal_history_for_date(trading_date: str) -> bool:
     """Sync scan_signal_history for the processed trading date."""
     trade_iso = f"{trading_date[:4]}-{trading_date[4:6]}-{trading_date[6:8]}"
+    pnpm_bin = "pnpm.cmd" if os.name == "nt" else "pnpm"
     cmd = [
-        "pnpm",
+        pnpm_bin,
         "-s",
         "tsx",
         "scripts/backfill_scan_signal_history.ts",

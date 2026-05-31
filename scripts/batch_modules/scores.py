@@ -31,7 +31,8 @@ def run_engine_score_sync(asof: str) -> bool:
 
 def calculate_stock_scores(supabase: Client, trading_date: str):
     """Calculate stock scores (engine first, legacy fallback)."""
-    asof = date.today().isoformat()
+    from .utils import to_iso
+    asof = to_iso(trading_date)
     print(f"\n[5/7] Calculating stock scores...")
 
     if run_engine_score_sync(asof):
@@ -39,8 +40,7 @@ def calculate_stock_scores(supabase: Client, trading_date: str):
         return
 
     try:
-        from .utils import to_iso
-        trading_iso = to_iso(trading_date)
+        trading_iso = asof
         
         res = supabase.table("stocks") \
             .select("code, name, sector_id, universe_level, market_cap, close") \
