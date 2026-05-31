@@ -17,6 +17,7 @@ const SCAN_SNAPSHOT_KEY = 'scan_snapshot_v1'
 const ANALYZE_PENDING_CODE_KEY = 'analyze_pending_code'
 const EXECUTION_GUIDE_PENDING_KEY = 'execution_guide_pending_v1'
 const SCAN_SIGNAL_HISTORY_KEY = 'scan_signal_history_v1'
+const SCAN_BUYCHECK_SETTINGS_KEY = 'scan_buycheck_settings_v1'
 
 type MarketPhase = 'intraday' | 'after-close'
 type ConditionFilter =
@@ -665,6 +666,52 @@ function StrategySparkline({ values }: { values: number[] }) {
   )
 }
 
+function ConfirmTrendSparkline({ values }: { values: number[] }) {
+  const safeValues = Array.isArray(values)
+    ? values.filter((value) => Number.isFinite(Number(value))).map((value) => Number(value))
+    : []
+
+  if (safeValues.length < 2) {
+    return <span style={{ fontSize: 10, color: 'var(--color-text-tertiary)' }}>추세 데이터 부족</span>
+  }
+
+  const width = 72
+  const height = 16
+  const min = Math.min(...safeValues)
+  const max = Math.max(...safeValues)
+  const span = Math.max(0.1, max - min)
+  const stepX = safeValues.length > 1 ? width / (safeValues.length - 1) : width
+  const points = safeValues
+    .map((value, idx) => {
+      const x = Math.round(idx * stepX * 100) / 100
+      const y = Math.round((height - ((value - min) / span) * height) * 100) / 100
+      return `${x},${y}`
+    })
+    .join(' ')
+  const last = safeValues[safeValues.length - 1] ?? 0
+  const first = safeValues[0] ?? 0
+  const trendUp = last >= first
+
+  return (
+    <svg
+      viewBox={`0 0 ${width} ${height}`}
+      preserveAspectRatio="none"
+      aria-hidden="true"
+      style={{ width: 72, height: 16, verticalAlign: 'middle', marginLeft: 4 }}
+    >
+      <line x1="0" y1={height - 0.5} x2={width} y2={height - 0.5} stroke="var(--color-border-subtle)" strokeWidth="1" />
+      <polyline
+        points={points}
+        fill="none"
+        stroke={trendUp ? 'var(--color-stock-up)' : 'var(--color-stock-down)'}
+        strokeWidth="1.8"
+        strokeLinejoin="round"
+        strokeLinecap="round"
+      />
+    </svg>
+  )
+}
+
 export default function ScanPage({ onNavigate }: { onNavigate?: (r: string) => void }) {
   const snapshot = readScanSnapshot()
   const [signalHistory, setSignalHistory] = useState<SignalHistoryMap>(() => readSignalHistory())
@@ -681,6 +728,8 @@ export default function ScanPage({ onNavigate }: { onNavigate?: (r: string) => v
   const [holdingCount, setHoldingCount] = useState<number | null>(null)
   const [holdingCountLoading, setHoldingCountLoading] = useState(false)
   const [holdingCountUpdatedAt, setHoldingCountUpdatedAt] = useState<number | null>(null)
+  const [buycheckMaxHoldings, setBuycheckMaxHoldings] = useState<number>(8)
+  const [buycheckHighlightTopN, setBuycheckHighlightTopN] = useState<number>(5)
   const [loading, setLoading] = useState(() => !snapshot)
   const [error, setError] = useState<string | null>(null)
   const [scanLoading, setScanLoading] = useState(false)
@@ -975,6 +1024,37 @@ export default function ScanPage({ onNavigate }: { onNavigate?: (r: string) => v
   }, [conditionFilter, holdingCountUpdatedAt, holdingCountLoading, loadHoldingCount])
 
   useEffect(() => {
+    if (typeof window === 'undefined') return
+    try {
+      const raw = window.localStorage.getItem(SCAN_BUYCHECK_SETTINGS_KEY)
+      if (!raw) return
+      const parsed = JSON.parse(raw)
+      const maxHoldings = Number(parsed?.maxHoldings)
+      const highlightTopN = Number(parsed?.highlightTopN)
+      if (Number.isFinite(maxHoldings)) {
+        setBuycheckMaxHoldings(Math.max(1, Math.min(30, Math.trunc(maxHoldings))))
+      }
+      if (Number.isFinite(highlightTopN)) {
+        setBuycheckHighlightTopN(Math.max(1, Math.min(15, Math.trunc(highlightTopN))))
+      }
+    } catch {
+      // ignore malformed local storage value
+    }
+  }, [])
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    try {
+      window.localStorage.setItem(SCAN_BUYCHECK_SETTINGS_KEY, JSON.stringify({
+        maxHoldings: buycheckMaxHoldings,
+        highlightTopN: buycheckHighlightTopN,
+      }))
+    } catch {
+      // ignore local storage write errors
+    }
+  }, [buycheckMaxHoldings, buycheckHighlightTopN])
+
+  useEffect(() => {
     setHighlightLoading(true)
     apiFetch('/api/ui/scan-highlights', { cacheMs: 60_000, timeoutMs: 30_000 })
       .then((res) => { if (Array.isArray(res?.data)) setApiHighlights(res.data) })
@@ -1187,11 +1267,18 @@ export default function ScanPage({ onNavigate }: { onNavigate?: (r: string) => v
       latest5AvgRatioPct: safeLatest5Avg,
       trendDeltaPct: safeTrendDelta,
       trendSampleDays: Number(confirmPromotionTrend?.sampleDays ?? 0),
+      recentRatios: Array.isArray(confirmPromotionTrend?.daily)
+        ? confirmPromotionTrend.daily
+            .slice()
+            .reverse()
+            .map((item) => Number(item.ratioPct))
+            .filter((value) => Number.isFinite(value))
+        : [],
     }
   }, [filterCounts, confirmPromotionTrend])
 
   const buycheckRiskGuard = useMemo(() => {
-    const recommendedMax = 8
+    const recommendedMax = Math.max(1, Math.min(30, Math.trunc(buycheckMaxHoldings || 8)))
     const count = holdingCount
     const overLimit = count != null && count > recommendedMax
     const remainingSlots = count != null ? Math.max(0, recommendedMax - count) : null
@@ -1206,8 +1293,10 @@ export default function ScanPage({ onNavigate }: { onNavigate?: (r: string) => v
     return {
       label,
       overLimit,
+      recommendedMax,
+      remainingSlots,
     }
-  }, [holdingCount, holdingCountLoading])
+  }, [holdingCount, holdingCountLoading, buycheckMaxHoldings])
 
   const filteredCandidates = useMemo(() => candidates.filter((item) => {
     if (selectedSector !== 'all' && item.sector_id !== selectedSector) return false
@@ -1236,23 +1325,39 @@ export default function ScanPage({ onNavigate }: { onNavigate?: (r: string) => v
     return filteredCandidates.filter((row) => !highlightCodes.has(row.code))
   }, [activeHighlights, conditionFilter, filteredCandidates, selectedSector])
 
-  const sortedCandidates = useMemo(() => [...tableCandidates].sort((a, b) => {
-    const av = toComparableValue(a, sortKey)
-    const bv = toComparableValue(b, sortKey)
-    const result = typeof av === 'number' && typeof bv === 'number'
-      ? av - bv
-      : String(av).localeCompare(String(bv), 'ko-KR')
-    return sortDirection === 'asc' ? result : -result
-  }), [tableCandidates, sortKey, sortDirection])
+  const sortedCandidates = useMemo(() => {
+    const forceBuycheckPrioritySort = conditionFilter === 'buycheck' && buycheckRiskGuard.overLimit
+    const effectiveSortKey: SortKey = forceBuycheckPrioritySort ? 'priority_score' : sortKey
+    const effectiveSortDirection: SortDirection = forceBuycheckPrioritySort ? 'desc' : sortDirection
+
+    return [...tableCandidates].sort((a, b) => {
+      const av = toComparableValue(a, effectiveSortKey)
+      const bv = toComparableValue(b, effectiveSortKey)
+      const result = typeof av === 'number' && typeof bv === 'number'
+        ? av - bv
+        : String(av).localeCompare(String(bv), 'ko-KR')
+      return effectiveSortDirection === 'asc' ? result : -result
+    })
+  }, [tableCandidates, sortKey, sortDirection, conditionFilter, buycheckRiskGuard.overLimit])
 
   const pagedCandidates = useMemo(() => {
     const from = (page - 1) * pageSize
-    return sortedCandidates.slice(from, from + pageSize)
-  }, [sortedCandidates, page])
+    const topHighlightCount = Math.max(1, Math.min(15, Math.trunc(buycheckHighlightTopN || 5)))
+    const highlightTopMode = conditionFilter === 'buycheck' && buycheckRiskGuard.overLimit
+    return sortedCandidates.slice(from, from + pageSize).map((s, localIdx) => {
+      const absoluteIdx = from + localIdx
+      const isExecutionPriority = highlightTopMode && absoluteIdx < topHighlightCount
+      return {
+        ...s,
+        isExecutionPriority,
+        executionPriorityRank: isExecutionPriority ? absoluteIdx + 1 : null,
+      }
+    })
+  }, [sortedCandidates, page, buycheckHighlightTopN, conditionFilter, buycheckRiskGuard.overLimit])
 
   const totalPages = Math.ceil(sortedCandidates.length / pageSize)
 
-  const displayRows = useMemo(() => pagedCandidates.map((s) => ({
+  const displayRows = useMemo(() => pagedCandidates.map((s: any) => ({
     strategyLabel: isDayStrategyCandidate(s)
       ? '데이'
       : isOvernightStrategyCandidate(s, signalAgeByCode.get(s.code))
@@ -1286,6 +1391,8 @@ export default function ScanPage({ onNavigate }: { onNavigate?: (r: string) => v
         day: '2-digit',
       })
       : '—',
+    isExecutionPriority: !!s.isExecutionPriority,
+    executionPriorityRank: s.executionPriorityRank,
   })), [pagedCandidates, signalAgeByCode])
 
   useEffect(() => {
@@ -1567,6 +1674,7 @@ export default function ScanPage({ onNavigate }: { onNavigate?: (r: string) => v
                   후보→확인 승격 {confirmPromotionMeta.ratioPct}%
                   {' · '}
                   최근5일 평균 {confirmPromotionMeta.latest5AvgRatioPct != null ? `${formatNumber(confirmPromotionMeta.latest5AvgRatioPct, 1)}%` : '—'}
+                  <ConfirmTrendSparkline values={confirmPromotionMeta.recentRatios} />
                   {confirmPromotionMeta.trendDeltaPct != null && (
                     <>
                       {' '}
@@ -1689,6 +1797,42 @@ export default function ScanPage({ onNavigate }: { onNavigate?: (r: string) => v
                 }}
               >
                 {buycheckRiskGuard.label}
+              </td>
+            </tr>
+          )}
+          {conditionFilter === 'buycheck' && (
+            <tr className="xls-row xls-row--even">
+              <td className="xls-cell" colSpan={4} style={{ fontSize: 11, padding: '4px 6px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+                  <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                    <span style={{ color: 'var(--color-text-secondary)' }}>최대 보유 기준</span>
+                    <input
+                      className="input"
+                      type="number"
+                      min={1}
+                      max={30}
+                      value={buycheckMaxHoldings}
+                      onChange={(e) => setBuycheckMaxHoldings(Math.max(1, Math.min(30, Number(e.target.value || 8))))}
+                      style={{ width: 74, height: 22, fontSize: 11, padding: '0 6px' }}
+                    />
+                    <span style={{ color: 'var(--color-text-tertiary)' }}>종목</span>
+                  </label>
+                  <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                    <span style={{ color: 'var(--color-text-secondary)' }}>초과 시 강조 TOP</span>
+                    <input
+                      className="input"
+                      type="number"
+                      min={1}
+                      max={15}
+                      value={buycheckHighlightTopN}
+                      onChange={(e) => setBuycheckHighlightTopN(Math.max(1, Math.min(15, Number(e.target.value || 5))))}
+                      style={{ width: 66, height: 22, fontSize: 11, padding: '0 6px' }}
+                    />
+                  </label>
+                  <span style={{ color: 'var(--color-text-tertiary)', fontSize: 10 }}>
+                    보유 초과 시 매수검토는 우선순위 기준 자동 정렬됩니다.
+                  </span>
+                </div>
               </td>
             </tr>
           )}
@@ -2250,6 +2394,11 @@ export default function ScanPage({ onNavigate }: { onNavigate?: (r: string) => v
               {conditionFilter !== 'all'
                 ? `필터 결과 · ${sortedCandidates.length}개`
                 : `${selectedSector} 섹터 · ${sortedCandidates.length}개`}
+              {conditionFilter === 'buycheck' && buycheckRiskGuard.overLimit && (
+                <span style={{ marginLeft: 8, color: 'var(--color-error)', fontWeight: 700 }}>
+                  자동 우선정렬 ON · 상위 {buycheckHighlightTopN}개 강조
+                </span>
+              )}
             </div>
           )}
           {conditionFilter === 'all' && selectedSector === 'all' && (
@@ -2299,12 +2448,30 @@ export default function ScanPage({ onNavigate }: { onNavigate?: (r: string) => v
                       key={s.code}
                       className={`xls-row${idx % 2 === 1 ? ' xls-row--even' : ''}`}
                       onClick={() => navigateToAnalyze(code)}
-                      style={{ cursor: 'pointer' }}
+                      style={{
+                        cursor: 'pointer',
+                        background: s.isExecutionPriority ? 'var(--color-brand-subtle)' : undefined,
+                        outline: s.isExecutionPriority ? '1px solid var(--color-brand)' : undefined,
+                        outlineOffset: s.isExecutionPriority ? '-1px' : undefined,
+                      }}
                       title={`${s.name} 상세 분석`}
                     >
                       {/* 코드 */}
                       <td className="xls-cell" style={{ fontFamily: 'var(--font-family-mono)', fontSize: 11, color: codeColor, fontWeight: 600 }}>
                         {s.code}
+                        {s.isExecutionPriority && (
+                          <span
+                            style={{
+                              marginLeft: 4,
+                              fontSize: 10,
+                              fontWeight: 700,
+                              color: 'var(--color-brand)',
+                            }}
+                            title="보유 초과 구간의 집행 우선 후보"
+                          >
+                            #{s.executionPriorityRank}
+                          </span>
+                        )}
                       </td>
                       {/* 종목명 — 말줄임 */}
                       <td className="xls-cell" title={s.name} style={{ fontWeight: 500 }}>
