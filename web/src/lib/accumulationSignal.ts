@@ -8,6 +8,8 @@ export type AccumulationSignal = {
   baseLow: number | null
   baseHigh: number | null
   baseRangePct: number | null
+  baseStartDate: string | null
+  baseEndDate: string | null
   breakoutDate: string | null
   reasons: string[]
 }
@@ -81,6 +83,8 @@ export function evaluateAccumulationSignal(candles: OhlcvCandle[]): Accumulation
       baseLow: null,
       baseHigh: null,
       baseRangePct: null,
+      baseStartDate: null,
+      baseEndDate: null,
       breakoutDate: null,
       reasons: [],
     }
@@ -156,6 +160,8 @@ export function evaluateAccumulationSignal(candles: OhlcvCandle[]): Accumulation
     baseLow: Number.isFinite(baseLow) ? baseLow : null,
     baseHigh: Number.isFinite(baseHigh) ? baseHigh : null,
     baseRangePct: baseRangePct != null && Number.isFinite(baseRangePct) ? baseRangePct : null,
+    baseStartDate: String(baseWindow[0]?.date || null),
+    baseEndDate: String(baseWindow[baseWindow.length - 1]?.date || null),
     breakoutDate: stage === 'none' ? null : String(latest.date || null),
     reasons,
   }

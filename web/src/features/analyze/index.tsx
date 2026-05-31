@@ -233,6 +233,7 @@ export default function AnalyzePage({ onNavigate }: { onNavigate?: (r: string) =
               if (c.open <= 0 || c.high <= 0 || c.low <= 0 || c.close <= 0) return false
               return c.high >= Math.max(c.open, c.close, c.low) && c.low <= Math.min(c.open, c.close, c.high)
             })
+            .sort((a, b) => a.date.localeCompare(b.date))
         )
         setFlow(res?.flow ?? null)
         setCreditShort(res?.creditShort ?? null)
@@ -361,7 +362,7 @@ export default function AnalyzePage({ onNavigate }: { onNavigate?: (r: string) =
       }
     }
 
-    const recent = [...candles].slice(-20)
+    const recent = [...candles].sort((a, b) => a.date.localeCompare(b.date)).slice(-20)
     const lows = recent.map((c) => Number(c.low)).filter((v) => Number.isFinite(v))
     const highs = recent.map((c) => Number(c.high)).filter((v) => Number.isFinite(v))
 

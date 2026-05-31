@@ -101,6 +101,157 @@ function sanitizeCandlesForChart(candles: OhlcvCandle[]): OhlcvCandle[] {
 
 type TimeValue = { time: any; value: number; color?: string }
 
+type PriceLevel = {
+  key: string
+  price: number
+  title: string
+  color: string
+  lineStyle: LineStyle
+  priority: number
+}
+
+function relativeGap(a: number, b: number): number {
+  const base = Math.max(Math.abs(a), Math.abs(b), 1)
+  return Math.abs(a - b) / base
+}
+
+function compressPriceLevels(levels: PriceLevel[], mergeThreshold = 0.01): PriceLevel[] {
+  const valid = levels
+    .filter((level) => Number.isFinite(level.price) && level.price > 0)
+    .slice()
+    .sort((a, b) => a.price - b.price)
+
+  if (valid.length <= 1) return valid
+
+  const clusters: PriceLevel[][] = []
+  for (const level of valid) {
+    const lastCluster = clusters[clusters.length - 1]
+    const lastLevel = lastCluster?.[lastCluster.length - 1]
+    if (!lastLevel || relativeGap(lastLevel.price, level.price) > mergeThreshold) {
+      clusters.push([level])
+      continue
+    }
+    lastCluster.push(level)
+  }
+
+  return clusters.map((cluster) => {
+    const sorted = [...cluster].sort((a, b) => b.priority - a.priority || a.price - b.price)
+    return sorted[0]
+  })
+}
+
+function buildVisiblePriceLevels(input: {
+  entryLow?: number | null
+  entryHigh?: number | null
+  stopLoss?: number | null
+  target1?: number | null
+  support?: number | null
+  resistance?: number | null
+}): PriceLevel[] {
+  const raw: PriceLevel[] = []
+  const entryLow = Number(input.entryLow)
+  const entryHigh = Number(input.entryHigh)
+
+  if (Number.isFinite(entryLow) && Number.isFinite(entryHigh) && entryLow > 0 && entryHigh > 0) {
+    if (relativeGap(entryLow, entryHigh) <= 0.012) {
+      raw.push({
+        key: 'entry-zone',
+        price: (entryLow + entryHigh) / 2,
+        title: '진입구간',
+        color: '#22c55e',
+        lineStyle: LineStyle.Dashed,
+        priority: 30,
+      })
+    } else {
+      raw.push(
+        {
+          key: 'entry-low',
+          price: entryLow,
+          title: '진입 하단',
+          color: '#22c55e',
+          lineStyle: LineStyle.Dashed,
+          priority: 28,
+        },
+        {
+          key: 'entry-high',
+          price: entryHigh,
+          title: '진입 상단',
+          color: '#22c55e',
+          lineStyle: LineStyle.Dashed,
+          priority: 29,
+        },
+      )
+    }
+  } else {
+    if (Number.isFinite(entryLow) && entryLow > 0) {
+      raw.push({
+        key: 'entry-low',
+        price: entryLow,
+        title: '진입 하단',
+        color: '#22c55e',
+        lineStyle: LineStyle.Dashed,
+        priority: 28,
+      })
+    }
+    if (Number.isFinite(entryHigh) && entryHigh > 0) {
+      raw.push({
+        key: 'entry-high',
+        price: entryHigh,
+        title: '진입 상단',
+        color: '#22c55e',
+        lineStyle: LineStyle.Dashed,
+        priority: 29,
+      })
+    }
+  }
+
+  if (Number.isFinite(Number(input.stopLoss)) && Number(input.stopLoss) > 0) {
+    raw.push({
+      key: 'stop-loss',
+      price: Number(input.stopLoss),
+      title: '손절',
+      color: '#ef4444',
+      lineStyle: LineStyle.Solid,
+      priority: 40,
+    })
+  }
+
+  if (Number.isFinite(Number(input.target1)) && Number(input.target1) > 0) {
+    raw.push({
+      key: 'target-1',
+      price: Number(input.target1),
+      title: '목표1',
+      color: '#3b82f6',
+      lineStyle: LineStyle.Solid,
+      priority: 50,
+    })
+  }
+
+  if (Number.isFinite(Number(input.support)) && Number(input.support) > 0) {
+    raw.push({
+      key: 'support',
+      price: Number(input.support),
+      title: '지지선',
+      color: 'rgba(59,130,246,0.75)',
+      lineStyle: LineStyle.Dotted,
+      priority: 10,
+    })
+  }
+
+  if (Number.isFinite(Number(input.resistance)) && Number(input.resistance) > 0) {
+    raw.push({
+      key: 'resistance',
+      price: Number(input.resistance),
+      title: '저항선',
+      color: 'rgba(239,68,68,0.75)',
+      lineStyle: LineStyle.Dotted,
+      priority: 10,
+    })
+  }
+
+  return compressPriceLevels(raw, 0.01)
+}
+
 function computeSmaLine(candles: OhlcvCandle[], period: number): TimeValue[] {
   if (period <= 0) return []
   const out: TimeValue[] = []
@@ -222,6 +373,8 @@ export default function CandleChart({
   const chartRef = useRef<IChartApi | null>(null)
   const candleSeriesRef = useRef<ISeriesApi<'Candlestick', any> | null>(null)
   const volSeriesRef = useRef<ISeriesApi<'Histogram', any> | null>(null)
+  const accumulationBackdropRef = useRef<HTMLDivElement | null>(null)
+  const accumulationBandRef = useRef<HTMLDivElement | null>(null)
   const safeCandles = sanitizeCandlesForChart(candles)
   const accumulationSignal = useMemo(() => evaluateAccumulationSignal(safeCandles), [safeCandles])
 
@@ -267,6 +420,58 @@ export default function CandleChart({
 
     chartRef.current = chart
 
+    const backdrop = document.createElement('div')
+    backdrop.style.position = 'absolute'
+    backdrop.style.inset = '0'
+    backdrop.style.pointerEvents = 'none'
+    backdrop.style.zIndex = '1'
+    backdrop.style.overflow = 'hidden'
+
+    const band = document.createElement('div')
+    band.style.position = 'absolute'
+    band.style.top = '0'
+    band.style.bottom = '0'
+    band.style.borderRadius = '4px'
+    band.style.background = isDark
+      ? 'linear-gradient(90deg, rgba(168,85,247,0.04), rgba(168,85,247,0.10), rgba(168,85,247,0.04))'
+      : 'linear-gradient(90deg, rgba(168,85,247,0.03), rgba(168,85,247,0.08), rgba(168,85,247,0.03))'
+    band.style.borderLeft = '1px solid rgba(168,85,247,0.16)'
+    band.style.borderRight = '1px solid rgba(168,85,247,0.16)'
+    band.style.boxShadow = 'inset 0 0 0 1px rgba(168,85,247,0.04)'
+    backdrop.appendChild(band)
+    el.insertBefore(backdrop, el.firstChild)
+    accumulationBackdropRef.current = backdrop
+    accumulationBandRef.current = band
+
+    const updateAccumulationBackdrop = () => {
+      const backdropEl = accumulationBackdropRef.current
+      const bandEl = accumulationBandRef.current
+      if (!backdropEl || !bandEl) return
+      if (accumulationSignal.stage === 'none' || !accumulationSignal.baseStartDate || !accumulationSignal.baseEndDate) {
+        backdropEl.style.display = 'none'
+        return
+      }
+
+      const startTime = toTimestamp(accumulationSignal.baseStartDate) as any
+      const endTime = toTimestamp(accumulationSignal.baseEndDate) as any
+      const startX = chart.timeScale().timeToCoordinate(startTime)
+      const endX = chart.timeScale().timeToCoordinate(endTime)
+      if (startX == null || endX == null) {
+        backdropEl.style.display = 'none'
+        return
+      }
+
+      const left = Math.min(startX, endX)
+      const right = Math.max(startX, endX)
+      backdropEl.style.display = 'block'
+      backdropEl.style.left = '0px'
+      backdropEl.style.top = '0px'
+      backdropEl.style.width = '100%'
+      backdropEl.style.height = '100%'
+      bandEl.style.left = `${Math.max(0, left - 2)}px`
+      bandEl.style.width = `${Math.max(2, right - left + 4)}px`
+    }
+
     // 캔들 시리즈
     const candleSeries = chart.addSeries(CandlestickSeries, {
       upColor,
@@ -305,13 +510,14 @@ export default function CandleChart({
 
     candleSeries.setData(candleData)
     volSeries.setData(volData)
+    updateAccumulationBackdrop()
 
     if (showMaEmaOverlay) {
       // EMA21(단기 추세) + SMA50(중기) + SMA200(장기 추세) — 3선으로 시인성 확보
       const lineSpecs = [
-        { label: 'EMA21', period: 21, type: 'ema' as const, color: '#fb923c', width: 2 },
-        { label: 'SMA50', period: 50, type: 'sma' as const, color: '#2dd4bf', width: 2 },
-        { label: 'SMA200', period: 200, type: 'sma' as const, color: '#3b82f6', width: 2 },
+        { label: 'EMA21', period: 21, type: 'ema' as const, color: '#fb923c', width: 2 as const },
+        { label: 'SMA50', period: 50, type: 'sma' as const, color: '#2dd4bf', width: 2 as const },
+        { label: 'SMA200', period: 200, type: 'sma' as const, color: '#3b82f6', width: 2 as const },
       ]
 
       for (const spec of lineSpecs) {
@@ -429,6 +635,30 @@ export default function CandleChart({
         title: accumulationSignal.stage === 'breakout' ? '매집 돌파선' : '매집 상단',
       })
 
+      const accumulationMarkers: any[] = []
+      if (accumulationSignal.baseStartDate) {
+        accumulationMarkers.push({
+          time: toTimestamp(accumulationSignal.baseStartDate) as any,
+          position: 'belowBar',
+          color: '#a855f7',
+          shape: 'circle',
+          text: '매집 추정',
+        })
+      }
+      if (accumulationSignal.baseEndDate) {
+        accumulationMarkers.push({
+          time: toTimestamp(accumulationSignal.baseEndDate) as any,
+          position: 'belowBar',
+          color: '#a855f7',
+          shape: 'circle',
+          text: accumulationSignal.stage === 'breakout' ? '돌파 직전' : '매집 종료',
+        })
+      }
+
+      if (accumulationMarkers.length) {
+        createSeriesMarkers(candleSeries, accumulationMarkers)
+      }
+
       if (accumulationSignal.breakoutDate) {
         const breakoutTime = toTimestamp(accumulationSignal.breakoutDate) as any
         createSeriesMarkers(candleSeries, [
@@ -461,7 +691,7 @@ export default function CandleChart({
       // Props에서 전달된 지지/저항을 우선 사용, 없으면 계산
       let displaySupport = support
       let displayResistance = resistance
-      
+
       if (displaySupport == null || displayResistance == null) {
         const recent = sorted.slice(-20)
         const recentLows = recent.map((c) => Number(c.low)).filter((v) => Number.isFinite(v))
@@ -474,22 +704,22 @@ export default function CandleChart({
         }
       }
 
-      if (displaySupport != null) {
+      const visibleLevels = buildVisiblePriceLevels({
+        entryLow,
+        entryHigh,
+        stopLoss,
+        target1,
+        support: displaySupport,
+        resistance: displayResistance,
+      })
+
+      for (const level of visibleLevels) {
         candleSeries.createPriceLine({
-          price: displaySupport,
-          color: 'rgba(59,130,246,0.6)',
-          lineWidth: 1,
-          lineStyle: LineStyle.Dotted,
-          title: '지지선',
-        })
-      }
-      if (displayResistance != null) {
-        candleSeries.createPriceLine({
-          price: displayResistance,
-          color: 'rgba(239,68,68,0.6)',
-          lineWidth: 1,
-          lineStyle: LineStyle.Dotted,
-          title: '저항선',
+          price: level.price,
+          color: level.color,
+          lineWidth: level.priority >= 40 ? 2 : 1,
+          lineStyle: level.lineStyle,
+          title: level.title,
         })
       }
 
@@ -555,17 +785,26 @@ export default function CandleChart({
     }
 
     chart.timeScale().fitContent()
+    updateAccumulationBackdrop()
+
+    const timeScale = chart.timeScale()
+    timeScale.subscribeVisibleTimeRangeChange(updateAccumulationBackdrop)
 
     // 리사이즈 옵저버
     const ro = new ResizeObserver(() => {
       chart.applyOptions({ width: el.clientWidth })
+      updateAccumulationBackdrop()
     })
     ro.observe(el)
 
     return () => {
       ro.disconnect()
+      timeScale.unsubscribeVisibleTimeRangeChange(updateAccumulationBackdrop)
+      backdrop.remove()
       chart.remove()
       chartRef.current = null
+      accumulationBackdropRef.current = null
+      accumulationBandRef.current = null
     }
   }, [
     safeCandles,
@@ -578,6 +817,7 @@ export default function CandleChart({
     showTradeMarkers,
     showForceLine,
     height,
+    accumulationSignal,
   ])
 
   if (safeCandles.length === 0) return null
