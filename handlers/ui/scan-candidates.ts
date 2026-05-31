@@ -23,6 +23,16 @@ type RecentSignalRow = {
   trade_date: string
 }
 
+type PromotionSummaryRow = {
+  trade_date: string
+  code: string
+  entry_grade: string | null
+  trend_grade: string | null
+  dist_grade: string | null
+  pivot_grade: string | null
+  warn_grade: string | null
+}
+
 const scanCache = new Map<string, ScanCacheEntry>()
 
 function isKrxIntradaySession(base = new Date()): boolean {
@@ -112,6 +122,29 @@ function isQuickTradeLite(item: {
   if (Number.isFinite(intraday) && (intraday < -5.5 || intraday > 10.5)) return false
   if (Number(item.liquidity ?? 0) < 500_000_000) return false
   return computeQuickTradeScore(item) >= 52
+}
+
+function isCandidateStageForPromotion(item: PromotionSummaryRow): boolean {
+  const warn = String(item.warn_grade || '').toUpperCase().trim()
+  if (warn === 'SELL') return false
+  const dist = String(item.dist_grade || '').toUpperCase().trim()
+  const pivot = String(item.pivot_grade || '').toUpperCase().trim()
+  return ['A', 'B'].includes(dist) || ['A', 'B'].includes(pivot)
+}
+
+function isConfirmStageForPromotion(item: PromotionSummaryRow): boolean {
+  if (!isCandidateStageForPromotion(item)) return false
+  const entry = String(item.entry_grade || '').toUpperCase().trim()
+  const trend = String(item.trend_grade || '').toUpperCase().trim()
+  const pivot = String(item.pivot_grade || '').toUpperCase().trim()
+  const hasTrendTurn = ['A', 'B'].includes(trend) || ['A', 'B'].includes(pivot)
+  return ['A', 'B'].includes(entry) || hasTrendTurn
+}
+
+function average(nums: number[]): number {
+  if (!Array.isArray(nums) || nums.length === 0) return 0
+  const sum = nums.reduce((acc, n) => acc + n, 0)
+  return sum / nums.length
 }
 
 function computeSignalAgeDays(signalDate: string | null | undefined, asOfDate: string): number | null {
@@ -334,10 +367,78 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           .map((row) => String(row.trade_date || '').slice(0, 10))
           .filter(Boolean)
       )
-    ).slice(0, 3)
+    )
 
-    const activeTradeDates = recentDates.length > 0 ? recentDates : [latestDate]
+    const promotionTrendDates = recentDates.slice(0, 10)
+    const recentScanDates = recentDates.slice(0, 3)
+
+    const activeTradeDates = recentScanDates.length > 0 ? recentScanDates : [latestDate]
     const effectiveLimit = Math.max(Number(limit), activeTradeDates.length > 1 ? 240 : 80)
+
+    let confirmPromotionTrend = {
+      latest5AvgRatioPct: 0,
+      previous5AvgRatioPct: null as number | null,
+      trendDeltaPct: null as number | null,
+      sampleDays: 0,
+      daily: [] as Array<{
+        tradeDate: string
+        candidateCount: number
+        confirmCount: number
+        ratioPct: number
+      }>,
+    }
+
+    if (promotionTrendDates.length > 0) {
+      const { data: promotionRows, error: promotionError } = await supabase
+        .from('pullback_signals')
+        .select('trade_date,code,entry_grade,trend_grade,dist_grade,pivot_grade,warn_grade')
+        .in('trade_date', promotionTrendDates)
+        .neq('warn_grade', 'SELL')
+        .in('entry_grade', ['A', 'B'])
+        .order('trade_date', { ascending: false })
+
+      if (!promotionError && Array.isArray(promotionRows)) {
+        const groupedByDate = new Map<string, Map<string, PromotionSummaryRow>>()
+        for (const row of promotionRows as PromotionSummaryRow[]) {
+          const tradeDate = String(row.trade_date || '').slice(0, 10)
+          const code = String(row.code || '').trim()
+          if (!tradeDate || !code) continue
+          if (!groupedByDate.has(tradeDate)) groupedByDate.set(tradeDate, new Map())
+          const byCode = groupedByDate.get(tradeDate)
+          if (!byCode) continue
+          if (!byCode.has(code)) byCode.set(code, row)
+        }
+
+        const daily = [...groupedByDate.entries()]
+          .sort((a, b) => (a[0] < b[0] ? 1 : a[0] > b[0] ? -1 : 0))
+          .map(([tradeDate, byCode]) => {
+            const rows = [...byCode.values()]
+            const candidateCount = rows.filter((item) => isCandidateStageForPromotion(item)).length
+            const confirmCount = rows.filter((item) => isConfirmStageForPromotion(item)).length
+            const ratioPct = candidateCount > 0 ? (confirmCount / candidateCount) * 100 : 0
+            return {
+              tradeDate,
+              candidateCount,
+              confirmCount,
+              ratioPct: Number(ratioPct.toFixed(1)),
+            }
+          })
+
+        const latest5 = daily.slice(0, 5)
+        const prev5 = daily.slice(5, 10)
+        const latest5Avg = average(latest5.map((item) => item.ratioPct))
+        const prev5Avg = prev5.length > 0 ? average(prev5.map((item) => item.ratioPct)) : null
+        const trendDelta = prev5Avg != null ? latest5Avg - prev5Avg : null
+
+        confirmPromotionTrend = {
+          latest5AvgRatioPct: Number(latest5Avg.toFixed(1)),
+          previous5AvgRatioPct: prev5Avg != null ? Number(prev5Avg.toFixed(1)) : null,
+          trendDeltaPct: trendDelta != null ? Number(trendDelta.toFixed(1)) : null,
+          sampleDays: latest5.length,
+          daily: latest5,
+        }
+      }
+    }
 
     const { data, error } = await supabase
       .from('pullback_signals')
@@ -601,6 +702,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       marketPhase: intraday ? 'intraday' : 'after-close',
       realtimeAppliedCount,
       latestDate,
+      confirmPromotionTrend,
       count: dedupedRows.length,
       data: dedupedRows,
     }

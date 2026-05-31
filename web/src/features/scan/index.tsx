@@ -21,6 +21,9 @@ const SCAN_SIGNAL_HISTORY_KEY = 'scan_signal_history_v1'
 type MarketPhase = 'intraday' | 'after-close'
 type ConditionFilter =
   | 'all'
+  | 'candidate'
+  | 'confirm'
+  | 'buycheck'
   | 'entry'
   | 'trend'
   | 'accumulation'
@@ -34,6 +37,53 @@ type ConditionFilter =
   | 'strategy_overnight'
   | 'strategy_weekly'
 
+const CONDITION_FILTER_OPTIONS: Array<{ key: ConditionFilter; label: string; advanced?: boolean }> = [
+  { key: 'all', label: '전체', advanced: true },
+  { key: 'candidate', label: '후보' },
+  { key: 'confirm', label: '확인' },
+  { key: 'buycheck', label: '매수검토' },
+  { key: 'entry', label: '진입(A/B)', advanced: true },
+  { key: 'trend', label: '추세(A/B)', advanced: true },
+  { key: 'accumulation', label: '매집(A/B)', advanced: true },
+  { key: 'lead', label: '매집 선행형', advanced: true },
+  { key: 'stable', label: '세력선(A/B)', advanced: true },
+  { key: 'quick', label: '퀵트레이드(2~5%)', advanced: true },
+  { key: 'quick_lite', label: '퀵라이트(완화형)', advanced: true },
+  { key: 'signal_d1', label: 'D-1 신호', advanced: true },
+  { key: 'signal_d2', label: 'D-2 신호', advanced: true },
+  { key: 'strategy_day', label: '데이(당일)', advanced: true },
+  { key: 'strategy_overnight', label: '오버나이트', advanced: true },
+  { key: 'strategy_weekly', label: '주간(3~5일)', advanced: true },
+]
+
+const PRIMARY_MODE_OPTIONS: Array<{ key: ConditionFilter; label: string }> = [
+  { key: 'candidate', label: '후보' },
+  { key: 'confirm', label: '확인' },
+  { key: 'buycheck', label: '매수검토' },
+]
+
+const BASIC_CONDITION_FILTER_KEYS = new Set<ConditionFilter>(['candidate', 'confirm', 'buycheck'])
+const ALL_CONDITION_FILTER_KEYS = CONDITION_FILTER_OPTIONS.map((option) => option.key)
+
+const CONDITION_FILTER_LABEL_MAP: Record<ConditionFilter, string> = {
+  all: '전체',
+  candidate: '후보',
+  confirm: '확인',
+  buycheck: '매수검토',
+  entry: '진입(A/B)',
+  trend: '추세(A/B)',
+  accumulation: '매집(A/B)',
+  lead: '매집 선행형',
+  stable: '세력선(A/B)',
+  quick: '퀵트레이드(2~5%)',
+  quick_lite: '퀵라이트(완화형)',
+  signal_d1: 'D-1 신호(전일)',
+  signal_d2: 'D-2 신호(2일전)',
+  strategy_day: '데이 전략(당일)',
+  strategy_overnight: '오버나이트(D-1/D-2)',
+  strategy_weekly: '주간 전략(3~5일)',
+}
+
 type SignalHistoryEntry = {
   seenDates: string[]
   strictQuickDates: string[]
@@ -45,6 +95,19 @@ type SignalHistoryMap = Record<string, SignalHistoryEntry>
 type SignalAgeMeta = {
   strictAgeDays: number | null
   quickLiteAgeDays: number | null
+}
+
+type ConfirmPromotionTrendMeta = {
+  latest5AvgRatioPct: number
+  previous5AvgRatioPct: number | null
+  trendDeltaPct: number | null
+  sampleDays: number
+  daily: Array<{
+    tradeDate: string
+    candidateCount: number
+    confirmCount: number
+    ratioPct: number
+  }>
 }
 
 type StrategyMetricSummary = {
@@ -242,6 +305,7 @@ function readScanSnapshot() {
       latestDate: parsed.latestDate ? String(parsed.latestDate) : null,
       marketPhase: parsed.marketPhase === 'intraday' ? 'intraday' : 'after-close',
       realtimeAppliedCount: Number(parsed.realtimeAppliedCount || 0),
+      confirmPromotionTrend: parsed.confirmPromotionTrend ?? null,
     }
   } catch {
     return null
@@ -254,6 +318,7 @@ function writeScanSnapshot(payload: {
   latestDate: string | null
   marketPhase: MarketPhase
   realtimeAppliedCount: number
+  confirmPromotionTrend: ConfirmPromotionTrendMeta | null
 }) {
   try {
     sessionStorage.setItem(SCAN_SNAPSHOT_KEY, JSON.stringify(payload))
@@ -447,6 +512,33 @@ function isWeeklyStrategyCandidate(item: ScanCandidate): boolean {
   return true
 }
 
+function isCandidateStage(item: ScanCandidate): boolean {
+  const warn = String(item.warn_grade || '').toUpperCase().trim()
+  if (warn === 'SELL') return false
+  const lead = scoreLeadAccumulationCandidate(item)
+  if (lead.stage !== 'none' && lead.score >= 55) return true
+  const dist = String(item.dist_grade || '').toUpperCase().trim()
+  const pivot = String(item.pivot_grade || '').toUpperCase().trim()
+  return ['A', 'B'].includes(dist) || ['A', 'B'].includes(pivot)
+}
+
+function isConfirmStage(item: ScanCandidate): boolean {
+  if (!isCandidateStage(item)) return false
+  const entry = String(item.entry_grade || '').toUpperCase().trim()
+  const trend = String(item.trend_grade || '').toUpperCase().trim()
+  const pivot = String(item.pivot_grade || '').toUpperCase().trim()
+  const hasTrendTurn = ['A', 'B'].includes(trend) || ['A', 'B'].includes(pivot)
+  return ['A', 'B'].includes(entry) || hasTrendTurn
+}
+
+function isBuycheckStage(item: ScanCandidate): boolean {
+  if (!isConfirmStage(item)) return false
+  const warn = String(item.warn_grade || '').toUpperCase().trim()
+  if (!(warn === '' || warn === 'SAFE' || warn === 'WATCH')) return false
+  const priority = computePriorityScore(item)
+  return priority >= 55 || isQuickTradeLiteCandidate(item)
+}
+
 function toComparableValue(item: ScanCandidate, key: SortKey): string | number {
   if (key === 'priority_score') return computePriorityScore(item)
   if (key === 'lead_accumulation_score') return scoreLeadAccumulationCandidate(item).score
@@ -583,6 +675,12 @@ export default function ScanPage({ onNavigate }: { onNavigate?: (r: string) => v
     snapshot?.marketPhase === 'intraday' ? 'intraday' : 'after-close'
   ))
   const [realtimeAppliedCount, setRealtimeAppliedCount] = useState<number>(() => snapshot?.realtimeAppliedCount ?? 0)
+  const [confirmPromotionTrend, setConfirmPromotionTrend] = useState<ConfirmPromotionTrendMeta | null>(
+    () => snapshot?.confirmPromotionTrend ?? null,
+  )
+  const [holdingCount, setHoldingCount] = useState<number | null>(null)
+  const [holdingCountLoading, setHoldingCountLoading] = useState(false)
+  const [holdingCountUpdatedAt, setHoldingCountUpdatedAt] = useState<number | null>(null)
   const [loading, setLoading] = useState(() => !snapshot)
   const [error, setError] = useState<string | null>(null)
   const [scanLoading, setScanLoading] = useState(false)
@@ -603,6 +701,7 @@ export default function ScanPage({ onNavigate }: { onNavigate?: (r: string) => v
   const [highlightLoading, setHighlightLoading] = useState(true)
   const [selectedSector, setSelectedSector] = useState<string>('all')
   const [conditionFilter, setConditionFilter] = useState<ConditionFilter>('all')
+  const [showAdvancedFilters, setShowAdvancedFilters] = useState(false)
   const [sortKey, setSortKey] = useState<SortKey>('priority_score')
   const [sortDirection, setSortDirection] = useState<SortDirection>('desc')
   const [page, setPage] = useState(1)
@@ -644,10 +743,24 @@ export default function ScanPage({ onNavigate }: { onNavigate?: (r: string) => v
     const nextFilter = String(params.get('filter') || '').trim()
 
     if (nextSector) setSelectedSector(nextSector)
-    if (['all', 'entry', 'trend', 'accumulation', 'lead', 'stable', 'quick', 'quick_lite', 'signal_d1', 'signal_d2', 'strategy_day', 'strategy_overnight', 'strategy_weekly'].includes(nextFilter)) {
+    if (ALL_CONDITION_FILTER_KEYS.includes(nextFilter as ConditionFilter)) {
       setConditionFilter(nextFilter as ConditionFilter)
     }
   }, [])
+
+  useEffect(() => {
+    if (conditionFilter !== 'all' && !BASIC_CONDITION_FILTER_KEYS.has(conditionFilter)) {
+      setShowAdvancedFilters(true)
+    }
+  }, [conditionFilter])
+
+  const advancedConditionOptions = useMemo(() => {
+    return CONDITION_FILTER_OPTIONS.filter((option) => {
+      if (!option.advanced) return false
+      if (showAdvancedFilters) return true
+      return option.key === conditionFilter
+    })
+  }, [showAdvancedFilters, conditionFilter])
 
   const asOfDateKey = useMemo(() => normalizeDateKey(latestDate) ?? getKstDateKey(), [latestDate])
   const signalAgeByCode = useMemo(() => {
@@ -750,6 +863,34 @@ export default function ScanPage({ onNavigate }: { onNavigate?: (r: string) => v
     }
   }, [])
 
+  const loadHoldingCount = useCallback(async () => {
+    setHoldingCountLoading(true)
+    try {
+      const params = new URLSearchParams({
+        page: '1',
+        pageSize: '1',
+        includeLots: '0',
+        positionType: 'holding',
+        withCount: '1',
+        cacheMs: '0',
+      })
+      const json = await apiFetch(`/api/ui/positions?${params.toString()}`, {
+        cacheMs: 0,
+        timeoutMs: 12_000,
+        retries: 1,
+      })
+      const nextCountRaw = Number(json?.count)
+      const fallbackCount = Array.isArray(json?.data) ? json.data.length : 0
+      const nextCount = Number.isFinite(nextCountRaw) ? nextCountRaw : fallbackCount
+      setHoldingCount(Math.max(0, Math.trunc(nextCount)))
+      setHoldingCountUpdatedAt(Date.now())
+    } catch {
+      // 보유수 조회 실패는 스캔 기능을 막지 않는다.
+    } finally {
+      setHoldingCountLoading(false)
+    }
+  }, [])
+
   const loadCandidates = useCallback(async (options?: { silent?: boolean }) => {
     if (!options?.silent) setLoading(true)
     setError(null)
@@ -779,6 +920,7 @@ export default function ScanPage({ onNavigate }: { onNavigate?: (r: string) => v
       setLatestDate(res?.latestDate ?? null)
       setMarketPhase(res?.marketPhase === 'intraday' ? 'intraday' : 'after-close')
       setRealtimeAppliedCount(Number(res?.realtimeAppliedCount ?? 0))
+      setConfirmPromotionTrend(res?.confirmPromotionTrend ?? null)
       setSignalHistory((prev) => {
         const dateKey = normalizeDateKey(res?.latestDate) ?? getKstDateKey()
         const next: SignalHistoryMap = { ...prev }
@@ -807,6 +949,7 @@ export default function ScanPage({ onNavigate }: { onNavigate?: (r: string) => v
         latestDate: res?.latestDate ?? null,
         marketPhase: res?.marketPhase === 'intraday' ? 'intraday' : 'after-close',
         realtimeAppliedCount: Number(res?.realtimeAppliedCount ?? 0),
+        confirmPromotionTrend: (res?.confirmPromotionTrend ?? null) as ConfirmPromotionTrendMeta | null,
       })
     } catch (e: any) {
       setError(e?.message || String(e))
@@ -818,6 +961,18 @@ export default function ScanPage({ onNavigate }: { onNavigate?: (r: string) => v
   useEffect(() => {
     void loadCandidates()
   }, [loadCandidates])
+
+  useEffect(() => {
+    void loadHoldingCount()
+  }, [loadHoldingCount])
+
+  useEffect(() => {
+    if (conditionFilter !== 'buycheck') return
+    const staleMs = holdingCountUpdatedAt == null ? Number.POSITIVE_INFINITY : Date.now() - holdingCountUpdatedAt
+    if (staleMs > 60_000 && !holdingCountLoading) {
+      void loadHoldingCount()
+    }
+  }, [conditionFilter, holdingCountUpdatedAt, holdingCountLoading, loadHoldingCount])
 
   useEffect(() => {
     setHighlightLoading(true)
@@ -928,7 +1083,7 @@ export default function ScanPage({ onNavigate }: { onNavigate?: (r: string) => v
         } else {
           toast.show('장중 눌림목 재계산 완료 ✓')
         }
-        await loadCandidates()
+        await Promise.all([loadCandidates(), loadHoldingCount()])
       } else {
         const detail = res?.body?.error || res?.error || '스캔 요청 실패'
         toast.show(`동기화 실패: ${String(detail)}`)
@@ -999,6 +1154,9 @@ export default function ScanPage({ onNavigate }: { onNavigate?: (r: string) => v
     const base = selectedSector === 'all' ? candidates : candidates.filter(c => c.sector_id === selectedSector)
     return {
       all: base.length,
+      candidate: base.filter((c) => isCandidateStage(c)).length,
+      confirm: base.filter((c) => isConfirmStage(c)).length,
+      buycheck: base.filter((c) => isBuycheckStage(c)).length,
       entry: base.filter(c => ['A', 'B'].includes(String(c.entry_grade || '').toUpperCase())).length,
       trend: base.filter(c => ['A', 'B'].includes(String(c.trend_grade || '').toUpperCase())).length,
       accumulation: base.filter(c => ['A', 'B'].includes(String(c.dist_grade || '').toUpperCase())).length,
@@ -1014,8 +1172,48 @@ export default function ScanPage({ onNavigate }: { onNavigate?: (r: string) => v
     }
   }, [candidates, selectedSector, signalAgeByCode])
 
+  const confirmPromotionMeta = useMemo(() => {
+    const base = Number(filterCounts.candidate ?? 0)
+    const promoted = Number(filterCounts.confirm ?? 0)
+    const ratio = base > 0 ? (promoted / base) * 100 : 0
+    const latest5Avg = Number(confirmPromotionTrend?.latest5AvgRatioPct)
+    const trendDelta = Number(confirmPromotionTrend?.trendDeltaPct)
+    const safeLatest5Avg = Number.isFinite(latest5Avg) ? latest5Avg : null
+    const safeTrendDelta = Number.isFinite(trendDelta) ? trendDelta : null
+    return {
+      base,
+      promoted,
+      ratioPct: Number.isFinite(ratio) ? Math.round(ratio) : 0,
+      latest5AvgRatioPct: safeLatest5Avg,
+      trendDeltaPct: safeTrendDelta,
+      trendSampleDays: Number(confirmPromotionTrend?.sampleDays ?? 0),
+    }
+  }, [filterCounts, confirmPromotionTrend])
+
+  const buycheckRiskGuard = useMemo(() => {
+    const recommendedMax = 8
+    const count = holdingCount
+    const overLimit = count != null && count > recommendedMax
+    const remainingSlots = count != null ? Math.max(0, recommendedMax - count) : null
+    const label = holdingCountLoading
+      ? '매수검토 리스크 가드: 현재 보유 종목 수 확인 중...'
+      : count == null
+        ? `매수검토 리스크 가드: 1회 손절 -3.5% 고정 · 동시 보유 최대 ${recommendedMax}종목 권장 · 신규 진입은 분할(2~3회) 기준`
+        : overLimit
+          ? `매수검토 리스크 가드: 현재 실제 보유 ${count}종목(권장 ${recommendedMax}종목 초과) · 신규 진입 보류 + 기존 포지션 리밸런싱 우선`
+          : `매수검토 리스크 가드: 현재 실제 보유 ${count}종목 · 추가 가능 슬롯 ${remainingSlots}개 · 신규 진입은 분할(2~3회) 기준`
+
+    return {
+      label,
+      overLimit,
+    }
+  }, [holdingCount, holdingCountLoading])
+
   const filteredCandidates = useMemo(() => candidates.filter((item) => {
     if (selectedSector !== 'all' && item.sector_id !== selectedSector) return false
+    if (conditionFilter === 'candidate') return isCandidateStage(item)
+    if (conditionFilter === 'confirm') return isConfirmStage(item)
+    if (conditionFilter === 'buycheck') return isBuycheckStage(item)
     if (conditionFilter === 'entry') return ['A', 'B'].includes(String(item.entry_grade || '').toUpperCase())
     if (conditionFilter === 'trend') return ['A', 'B'].includes(String(item.trend_grade || '').toUpperCase())
     if (conditionFilter === 'accumulation') return ['A', 'B'].includes(String(item.dist_grade || '').toUpperCase())
@@ -1097,6 +1295,9 @@ export default function ScanPage({ onNavigate }: { onNavigate?: (r: string) => v
   // 필터 탭별 기본 정렬 기준
   const FILTER_DEFAULT_SORT: Record<ConditionFilter, SortKey> = {
     all: 'priority_score',
+    candidate: 'lead_accumulation_score',
+    confirm: 'priority_score',
+    buycheck: 'priority_score',
     entry: 'entry_score',
     trend: 'trend_grade',
     accumulation: 'dist_grade',
@@ -1298,19 +1499,7 @@ export default function ScanPage({ onNavigate }: { onNavigate?: (r: string) => v
           candidates: '실전 기준 후보 목록',
         },
         conditionFilter,
-        conditionFilterLabel:
-          conditionFilter === 'entry' ? '진입(A/B)' :
-          conditionFilter === 'trend' ? '추세(A/B)' :
-          conditionFilter === 'accumulation' ? '매집(A/B)' :
-          conditionFilter === 'lead' ? '매집 선행형' :
-          conditionFilter === 'stable' ? '세력선(A/B)' :
-          conditionFilter === 'quick_lite' ? '퀵라이트(완화형)' :
-          conditionFilter === 'signal_d1' ? 'D-1 신호(전일)' :
-          conditionFilter === 'signal_d2' ? 'D-2 신호(2일전)' :
-          conditionFilter === 'strategy_day' ? '데이 전략(당일)' :
-          conditionFilter === 'strategy_overnight' ? '오버나이트(D-1/D-2)' :
-          conditionFilter === 'strategy_weekly' ? '주간 전략(3~5일)' :
-          conditionFilter === 'quick' ? '퀵트레이드(2~5%)' : '전체',
+        conditionFilterLabel: CONDITION_FILTER_LABEL_MAP[conditionFilter] ?? '전체',
         selectedSector,
         sectorLabel: selectedSector === 'all' ? '전체 섹터' : selectedSector,
         rows,
@@ -1357,47 +1546,111 @@ export default function ScanPage({ onNavigate }: { onNavigate?: (r: string) => v
               style={{ color: 'var(--color-text-secondary)', fontSize: 11, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
               <span className="scan-stat-count">{sortedCandidates.length}</span>개 후보 ·
               최신 기준일 {latestDate ?? '—'} · {marketPhase === 'intraday' ? `장중 현재가 반영(${realtimeAppliedCount}건)` : '종가 기준'} · 텔레그램 pullback 신호 기반 · 종목 클릭 시 상세 분석으로 이동
+              {conditionFilter === 'confirm' && (
+                <span
+                  style={{
+                    marginLeft: 8,
+                    padding: '1px 6px',
+                    borderRadius: 999,
+                    border: '1px solid var(--color-brand)',
+                    color: 'var(--color-brand)',
+                    fontWeight: 700,
+                    background: 'var(--color-brand-subtle)',
+                  }}
+                  title={[
+                    `후보 ${formatNumber(confirmPromotionMeta.base, 0)}개 중 확인 ${formatNumber(confirmPromotionMeta.promoted, 0)}개`,
+                    confirmPromotionMeta.latest5AvgRatioPct != null
+                      ? `최근 ${Math.max(1, confirmPromotionMeta.trendSampleDays)}일 평균 ${formatNumber(confirmPromotionMeta.latest5AvgRatioPct, 1)}%`
+                      : '최근 5일 평균 데이터 없음',
+                  ].join(' · ')}
+                >
+                  후보→확인 승격 {confirmPromotionMeta.ratioPct}%
+                  {' · '}
+                  최근5일 평균 {confirmPromotionMeta.latest5AvgRatioPct != null ? `${formatNumber(confirmPromotionMeta.latest5AvgRatioPct, 1)}%` : '—'}
+                  {confirmPromotionMeta.trendDeltaPct != null && (
+                    <>
+                      {' '}
+                      ({confirmPromotionMeta.trendDeltaPct > 0 ? '↗' : confirmPromotionMeta.trendDeltaPct < 0 ? '↘' : '→'}
+                      {' '}
+                      {confirmPromotionMeta.trendDeltaPct > 0 ? '+' : ''}{formatNumber(confirmPromotionMeta.trendDeltaPct, 1)}%p)
+                    </>
+                  )}
+                </span>
+              )}
             </td>
           </tr>
           <tr className="xls-row xls-row--even">
             <td className="xls-cell" colSpan={4} style={{ padding: '3px 6px', overflow: 'visible' }}>
-              <div
-                className="scan-cond-chips"
-                ref={filterChipScrollRef}
-                role="tablist"
-                aria-label="스캔 필터"
-                onWheel={handleFilterChipWheel}
-                onKeyDown={handleFilterChipKeyDown}
-              >
-                {([
-                  { key: 'all', label: '전체' },
-                  { key: 'entry', label: '진입(A/B)' },
-                  { key: 'trend', label: '추세(A/B)' },
-                  { key: 'accumulation', label: '매집(A/B)' },
-                  { key: 'lead', label: '매집 선행형' },
-                  { key: 'stable', label: '세력선(A/B)' },
-                  { key: 'quick', label: '퀵트레이드(2~5%)' },
-                  { key: 'quick_lite', label: '퀵라이트(완화형)' },
-                  { key: 'signal_d1', label: 'D-1 신호' },
-                  { key: 'signal_d2', label: 'D-2 신호' },
-                  { key: 'strategy_day', label: '데이(당일)' },
-                  { key: 'strategy_overnight', label: '오버나이트' },
-                  { key: 'strategy_weekly', label: '주간(3~5일)' },
-                ] as Array<{ key: ConditionFilter; label: string }>).map((option) => (
+              <div style={{ display: 'grid', gap: 6 }}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 6 }}>
+                  {PRIMARY_MODE_OPTIONS.map((option) => (
+                    <Button
+                      key={option.key}
+                      variant={conditionFilter === option.key ? 'primary' : 'secondary'}
+                      size="lg"
+                      onClick={() => handleConditionFilter(option.key)}
+                      title={`${option.label} 모드`}
+                      style={{ width: '100%' }}
+                    >
+                      {option.label} ({filterCounts[option.key]})
+                    </Button>
+                  ))}
+                </div>
+
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
+                  <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                    <button
+                      type="button"
+                      className={`tag${conditionFilter === 'all' ? ' active' : ''}`}
+                      onClick={() => handleConditionFilter('all')}
+                    >
+                      전체 ({filterCounts.all})
+                    </button>
+                    <span style={{ fontSize: 10, color: 'var(--color-text-tertiary)' }}>
+                      기본은 후보·확인·매수검토만 표시됩니다.
+                    </span>
+                  </div>
                   <button
-                    key={option.key}
-                    data-filter-chip="1"
-                    className={`tag${conditionFilter === option.key ? ' active' : ''}`}
-                    id={`scan-filter-tab-${option.key}`}
-                    role="tab"
-                    aria-selected={conditionFilter === option.key}
-                    aria-controls="scan-candidates-section-capture"
-                    tabIndex={conditionFilter === option.key ? 0 : -1}
-                    onClick={() => handleConditionFilter(option.key)}
+                    type="button"
+                    className="tag"
+                    style={{ fontSize: 10, padding: '1px 8px' }}
+                    onClick={() => setShowAdvancedFilters((prev) => !prev)}
                   >
-                    {option.label} ({filterCounts[option.key]})
+                    {showAdvancedFilters ? '고급 필터 접기' : '고급 필터 펼치기'}
                   </button>
-                ))}
+                </div>
+
+                <div
+                  className="scan-cond-chips"
+                  ref={filterChipScrollRef}
+                  role="tablist"
+                  aria-label="스캔 고급 필터"
+                  onWheel={handleFilterChipWheel}
+                  onKeyDown={handleFilterChipKeyDown}
+                  style={{
+                    display:
+                      showAdvancedFilters ||
+                      (conditionFilter !== 'all' && !BASIC_CONDITION_FILTER_KEYS.has(conditionFilter))
+                        ? 'flex'
+                        : 'none',
+                  }}
+                >
+                  {advancedConditionOptions.map((option) => (
+                    <button
+                      key={option.key}
+                      data-filter-chip="1"
+                      className={`tag${conditionFilter === option.key ? ' active' : ''}`}
+                      id={`scan-filter-tab-${option.key}`}
+                      role="tab"
+                      aria-selected={conditionFilter === option.key}
+                      aria-controls="scan-candidates-section-capture"
+                      tabIndex={conditionFilter === option.key ? 0 : -1}
+                      onClick={() => handleConditionFilter(option.key)}
+                    >
+                      {option.label} ({filterCounts[option.key]})
+                    </button>
+                  ))}
+                </div>
               </div>
             </td>
           </tr>
@@ -1418,6 +1671,27 @@ export default function ScanPage({ onNavigate }: { onNavigate?: (r: string) => v
               </select>
             </td>
           </tr>
+          <tr className="xls-row xls-row--even">
+            <td className="xls-cell" colSpan={4} style={{ fontSize: 11, color: 'var(--color-text-tertiary)' }}>
+              권장 사용: 후보(먼저 찾기) → 확인(전환 체크) → 매수검토(집행 후보)
+            </td>
+          </tr>
+          {conditionFilter === 'buycheck' && (
+            <tr className="xls-row">
+              <td
+                className="xls-cell"
+                colSpan={4}
+                style={{
+                  fontSize: 11,
+                  color: buycheckRiskGuard.overLimit ? 'var(--color-error)' : 'var(--color-warning)',
+                  fontWeight: 700,
+                  background: buycheckRiskGuard.overLimit ? 'var(--color-error-bg)' : 'transparent',
+                }}
+              >
+                {buycheckRiskGuard.label}
+              </td>
+            </tr>
+          )}
         </tbody>
       </table>
       </div>
