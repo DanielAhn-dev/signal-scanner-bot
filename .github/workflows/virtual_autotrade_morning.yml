@@ -1,0 +1,50 @@
+name: Virtual AutoTrade Morning (KST 10:30)
+
+on:
+  schedule:
+    # KST 10:30 = UTC 01:30 (월~금)
+    - cron: "30 1 * * 1-5"
+  workflow_dispatch:
+
+jobs:
+  run-virtual-autotrade-morning:
+    runs-on: ubuntu-latest
+    environment: production
+    timeout-minutes: 5
+    env:
+      TZ: "Asia/Seoul"
+
+    steps:
+      - name: Call Vercel VirtualAutoTrade API (intraday)
+        env:
+          VERCEL_APP_URL: ${{ secrets.VERCEL_APP_URL }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: |
+          if [ -z "${VERCEL_APP_URL}" ]; then
+            echo "::error::VERCEL_APP_URL secret is not set"
+            exit 1
+          fi
+          if [ -z "${CRON_SECRET}" ]; then
+            echo "::error::CRON_SECRET secret is not set"
+            exit 1
+          fi
+
+          BASE_URL="${VERCEL_APP_URL%/}"
+          TARGET_URL="${BASE_URL}/api/cron/virtualAutoTrade?mode=auto&intradayOnly=true&windowMinutes=180&maxUsers=60"
+
+          echo "📤 Triggering morning intraday virtual autotrade..."
+          echo "Target: ${TARGET_URL}"
+
+          HTTP_CODE=$(curl -s -L -o /tmp/response.txt -w "%{http_code}" \
+            -H "Authorization: Bearer ${CRON_SECRET}" \
+            "${TARGET_URL}")
+
+          echo "HTTP Status: ${HTTP_CODE}"
+          cat /tmp/response.txt
+
+          if [ "${HTTP_CODE}" != "200" ]; then
+            echo "::error::VirtualAutoTrade API returned ${HTTP_CODE}"
+            exit 1
+          fi
+
+          echo "✅ Morning intraday virtual autotrade completed"
