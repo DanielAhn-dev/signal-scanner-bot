@@ -582,6 +582,9 @@ type ScanHighlightItem = {
   stable_turn?: string | null
   total_score?: number | null
   highlight_score?: number
+  leadAccumulationStage?: 'none' | 'lead' | 'breakout'
+  leadAccumulationScore?: number
+  isAccumulationSignal?: boolean
   adaptive_adjustment?: number | null
   adaptive_reasons?: string[] | null
   adaptive_score?: number | null
@@ -602,6 +605,21 @@ function SignalBadge({ signal }: { signal: string | null | undefined }) {
   const cls = s === 'STRONG_BUY' ? 'scan-grade-a' : s === 'BUY' ? 'scan-grade-b' : s === 'WATCH' ? 'scan-grade-c' : 'scan-grade-other'
   const label = s === 'STRONG_BUY' ? '강력매수' : s === 'BUY' ? '매수' : s === 'SELL' ? '매도' : s === 'WATCH' ? '관찰' : s
   return <span className={`scan-grade-badge ${cls}`} title="종합시그널">{label}</span>
+}
+
+function AccumulationBadge({ stage }: { stage: 'lead' | 'breakout' | null | undefined }) {
+  if (!stage) return null
+  const label = stage === 'breakout' ? '매집 돌파' : '매집형'
+  const title = stage === 'breakout' ? '매집 구간 돌파 후보' : '매집 선행 후보'
+  return (
+    <span
+      className="scan-grade-badge scan-grade-b"
+      title={title}
+      style={{ background: 'rgba(34,197,94,0.10)', color: 'var(--color-success)', borderColor: 'rgba(34,197,94,0.22)' }}
+    >
+      {label}
+    </span>
+  )
 }
 
 function getStrategyRiskTier(statusLabel: string | undefined): StrategyRiskTier {
@@ -1216,8 +1234,23 @@ export default function ScanPage({ onNavigate }: { onNavigate?: (r: string) => v
 
   const localHighlights = useMemo<ScanHighlightItem[]>(() => {
     return [...candidates]
+      .map((c) => {
+        const lead = scoreLeadAccumulationCandidate(c)
+        return {
+          ...c,
+          leadAccumulationStage: lead.stage,
+          leadAccumulationScore: lead.score,
+          isAccumulationSignal: lead.stage !== 'none' && lead.score >= 55,
+        }
+      })
       .filter(c => ['A', 'B'].includes(String(c.entry_grade || '').toUpperCase()))
       .sort((a, b) => {
+        const aAcc = a.isAccumulationSignal ? 1 : 0
+        const bAcc = b.isAccumulationSignal ? 1 : 0
+        if (aAcc !== bAcc) return bAcc - aAcc
+        const leadA = a.leadAccumulationScore ?? 0
+        const leadB = b.leadAccumulationScore ?? 0
+        if (leadA !== leadB) return leadB - leadA
         const ga = gradeScore(a.entry_grade)
         const gb = gradeScore(b.entry_grade)
         if (ga !== gb) return gb - ga
@@ -2309,7 +2342,10 @@ export default function ScanPage({ onNavigate }: { onNavigate?: (r: string) => v
                             }}>
                               TOP {rank}
                             </span>
-                            <WarnBadge grade={c.warn_grade} />
+                            <div style={{ display: 'flex', gap: 4, alignItems: 'center', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+                              <AccumulationBadge stage={c.leadAccumulationStage} />
+                              <WarnBadge grade={c.warn_grade} />
+                            </div>
                           </div>
 
                           {/* ② 종목명 */}
@@ -2349,6 +2385,7 @@ export default function ScanPage({ onNavigate }: { onNavigate?: (r: string) => v
                             <GradeBadge grade={c.trend_grade} label="추세" />
                             <GradeBadge grade={c.dist_grade} label="매집" />
                             {c.pivot_grade && <GradeBadge grade={c.pivot_grade} label="세력" />}
+                            <AccumulationBadge stage={c.leadAccumulationStage} />
                             {c.signal && <SignalBadge signal={c.signal} />}
                           </div>
 
@@ -2501,9 +2538,12 @@ export default function ScanPage({ onNavigate }: { onNavigate?: (r: string) => v
                       </td>
                       {/* 선행매집 */}
                       <td className="xls-cell xls-cell--num">
-                        <span className={s.leadAccumulationScore >= 75 ? 'scan-grade-badge scan-grade-a' : s.leadAccumulationScore >= 55 ? 'scan-grade-badge scan-grade-b' : 'scan-grade-label'}>
-                          {formatNumber(s.leadAccumulationScore, 0)}
-                        </span>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 4, justifyContent: 'center', flexWrap: 'wrap' }}>
+                          <span className={s.leadAccumulationScore >= 75 ? 'scan-grade-badge scan-grade-a' : s.leadAccumulationScore >= 55 ? 'scan-grade-badge scan-grade-b' : 'scan-grade-label'}>
+                            {formatNumber(s.leadAccumulationScore, 0)}
+                          </span>
+                          {s.isAccumulationSignal && <AccumulationBadge stage={s.leadAccumulationStage} />}
+                        </div>
                       </td>
                       {/* 진입 */}
                       <td className="xls-cell"><GradeBadge grade={s.entry_grade} /></td>
