@@ -7,7 +7,7 @@ STEP 5: ?? ?? ??
 import subprocess
 import sys
 import os
-from datetime import date
+from datetime import date, timedelta
 from supabase import Client
 from .utils import safe_float, safe_int, derive_signal, run_python_script
 
@@ -74,7 +74,6 @@ def calculate_stock_scores(supabase: Client, trading_date: str):
         print(f"  -> indicators loaded for {len(indicators_map)} stocks")
 
         # 기관/외국인 최근 5일 순매수 합계 로드
-        from datetime import date, timedelta
         five_days_ago = (date.fromisoformat(trading_iso) - timedelta(days=7)).isoformat()
         investor_map: dict = {}
         try:
