@@ -17,6 +17,7 @@ import {
 } from 'lightweight-charts'
 import type { OhlcvCandle } from '../lib/types'
 import { evaluateAccumulationSignal } from '../lib/accumulationSignal'
+import type { AccumulationSignal } from '../lib/accumulationSignal'
 
 type Props = {
   candles: OhlcvCandle[]
@@ -108,6 +109,33 @@ type PriceLevel = {
   color: string
   lineStyle: LineStyle
   priority: number
+}
+
+function getAccumulationBackdropStyle(signal: AccumulationSignal, isDark: boolean): { background: string; borderColor: string } {
+  if (signal.stage === 'breakout') {
+    return {
+      background: isDark
+        ? 'linear-gradient(90deg, rgba(239,68,68,0.04), rgba(239,68,68,0.10), rgba(239,68,68,0.04))'
+        : 'linear-gradient(90deg, rgba(239,68,68,0.03), rgba(239,68,68,0.08), rgba(239,68,68,0.03))',
+      borderColor: 'rgba(239,68,68,0.18)',
+    }
+  }
+
+  if (signal.stage === 'lead' || signal.stage === 'extended') {
+    return {
+      background: isDark
+        ? 'linear-gradient(90deg, rgba(34,197,94,0.04), rgba(34,197,94,0.10), rgba(34,197,94,0.04))'
+        : 'linear-gradient(90deg, rgba(34,197,94,0.03), rgba(34,197,94,0.08), rgba(34,197,94,0.03))',
+      borderColor: 'rgba(34,197,94,0.18)',
+    }
+  }
+
+  return {
+    background: isDark
+      ? 'linear-gradient(90deg, rgba(168,85,247,0.04), rgba(168,85,247,0.10), rgba(168,85,247,0.04))'
+      : 'linear-gradient(90deg, rgba(168,85,247,0.03), rgba(168,85,247,0.08), rgba(168,85,247,0.03))',
+    borderColor: 'rgba(168,85,247,0.16)',
+  }
 }
 
 function relativeGap(a: number, b: number): number {
@@ -424,7 +452,7 @@ export default function CandleChart({
     backdrop.style.position = 'absolute'
     backdrop.style.inset = '0'
     backdrop.style.pointerEvents = 'none'
-    backdrop.style.zIndex = '1'
+    backdrop.style.zIndex = '8'
     backdrop.style.overflow = 'hidden'
 
     const band = document.createElement('div')
@@ -432,14 +460,12 @@ export default function CandleChart({
     band.style.top = '0'
     band.style.bottom = '0'
     band.style.borderRadius = '4px'
-    band.style.background = isDark
-      ? 'linear-gradient(90deg, rgba(168,85,247,0.04), rgba(168,85,247,0.10), rgba(168,85,247,0.04))'
-      : 'linear-gradient(90deg, rgba(168,85,247,0.03), rgba(168,85,247,0.08), rgba(168,85,247,0.03))'
+    band.style.background = 'linear-gradient(90deg, rgba(168,85,247,0.04), rgba(168,85,247,0.10), rgba(168,85,247,0.04))'
     band.style.borderLeft = '1px solid rgba(168,85,247,0.16)'
     band.style.borderRight = '1px solid rgba(168,85,247,0.16)'
     band.style.boxShadow = 'inset 0 0 0 1px rgba(168,85,247,0.04)'
     backdrop.appendChild(band)
-    el.insertBefore(backdrop, el.firstChild)
+    el.appendChild(backdrop)
     accumulationBackdropRef.current = backdrop
     accumulationBandRef.current = band
 
@@ -463,11 +489,17 @@ export default function CandleChart({
 
       const left = Math.min(startX, endX)
       const right = Math.max(startX, endX)
+      const backdropStyle = getAccumulationBackdropStyle(accumulationSignal, isDark)
       backdropEl.style.display = 'block'
       backdropEl.style.left = '0px'
       backdropEl.style.top = '0px'
       backdropEl.style.width = '100%'
       backdropEl.style.height = '100%'
+      backdropEl.style.zIndex = '8'
+      bandEl.style.background = backdropStyle.background
+      bandEl.style.borderLeft = `1px solid ${backdropStyle.borderColor}`
+      bandEl.style.borderRight = `1px solid ${backdropStyle.borderColor}`
+      bandEl.style.boxShadow = `inset 0 0 0 1px ${backdropStyle.borderColor.replace('0.18', '0.06')}`
       bandEl.style.left = `${Math.max(0, left - 2)}px`
       bandEl.style.width = `${Math.max(2, right - left + 4)}px`
     }

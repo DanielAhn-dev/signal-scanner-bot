@@ -29,6 +29,7 @@ type ConditionFilter =
   | 'trend'
   | 'accumulation'
   | 'lead'
+  | 'accumulation_signal'
   | 'stable'
   | 'quick'
   | 'quick_lite'
@@ -47,6 +48,7 @@ const CONDITION_FILTER_OPTIONS: Array<{ key: ConditionFilter; label: string; adv
   { key: 'trend', label: '추세(A/B)', advanced: true },
   { key: 'accumulation', label: '매집(A/B)', advanced: true },
   { key: 'lead', label: '매집 선행형', advanced: true },
+  { key: 'accumulation_signal', label: '매집형(신호)', advanced: true },
   { key: 'stable', label: '세력선(A/B)', advanced: true },
   { key: 'quick', label: '퀵트레이드(2~5%)', advanced: true },
   { key: 'quick_lite', label: '퀵라이트(완화형)', advanced: true },
@@ -75,6 +77,7 @@ const CONDITION_FILTER_LABEL_MAP: Record<ConditionFilter, string> = {
   trend: '추세(A/B)',
   accumulation: '매집(A/B)',
   lead: '매집 선행형',
+  accumulation_signal: '매집형(신호)',
   stable: '세력선(A/B)',
   quick: '퀵트레이드(2~5%)',
   quick_lite: '퀵라이트(완화형)',
@@ -1241,6 +1244,10 @@ export default function ScanPage({ onNavigate }: { onNavigate?: (r: string) => v
       trend: base.filter(c => ['A', 'B'].includes(String(c.trend_grade || '').toUpperCase())).length,
       accumulation: base.filter(c => ['A', 'B'].includes(String(c.dist_grade || '').toUpperCase())).length,
       lead: base.filter((c) => scoreLeadAccumulationCandidate(c).stage !== 'none').length,
+      accumulation_signal: base.filter((c) => {
+        const lead = scoreLeadAccumulationCandidate(c)
+        return lead.stage !== 'none' && lead.score >= 55
+      }).length,
       stable: base.filter(c => ['A', 'B'].includes(String(c.pivot_grade || '').toUpperCase())).length,
       quick: base.filter((c) => isQuickTradeCandidate(c)).length,
       quick_lite: base.filter((c) => isQuickTradeLiteCandidate(c)).length,
@@ -1307,6 +1314,10 @@ export default function ScanPage({ onNavigate }: { onNavigate?: (r: string) => v
     if (conditionFilter === 'trend') return ['A', 'B'].includes(String(item.trend_grade || '').toUpperCase())
     if (conditionFilter === 'accumulation') return ['A', 'B'].includes(String(item.dist_grade || '').toUpperCase())
     if (conditionFilter === 'lead') return scoreLeadAccumulationCandidate(item).stage !== 'none'
+    if (conditionFilter === 'accumulation_signal') {
+      const lead = scoreLeadAccumulationCandidate(item)
+      return lead.stage !== 'none' && lead.score >= 55
+    }
     if (conditionFilter === 'stable') return ['A', 'B'].includes(String(item.pivot_grade || '').toUpperCase())
     if (conditionFilter === 'quick') return isQuickTradeCandidate(item)
     if (conditionFilter === 'quick_lite') return isQuickTradeLiteCandidate(item)
@@ -1409,6 +1420,7 @@ export default function ScanPage({ onNavigate }: { onNavigate?: (r: string) => v
     trend: 'trend_grade',
     accumulation: 'dist_grade',
     lead: 'lead_accumulation_score',
+    accumulation_signal: 'lead_accumulation_score',
     stable: 'pivot_grade',
     quick: 'intraday_change_pct',
     quick_lite: 'intraday_change_pct',
