@@ -103,7 +103,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         : (prevQty * Math.max(0, Number(positionRow?.buy_price || 0)))
       const nextQty = prevQty + qty
       const nextInvested = prevInvested + gross
-      const nextAvg = nextQty > 0 ? (nextInvested / nextQty) : pr
+      const nextAvg = nextQty > 0 ? Math.round(nextInvested / nextQty) : Math.round(pr)
       const defaultBuyDate = new Date().toISOString().slice(0, 10)
 
       if (positionRow?.id) {

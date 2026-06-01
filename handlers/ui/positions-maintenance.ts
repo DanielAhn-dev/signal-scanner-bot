@@ -164,10 +164,21 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
       if (upErr) return res.status(500).json({ error: upErr.message })
 
-      // 3. 기존 로트는 유지하고, 수정된 값으로 새 로트만 추가 기록
-      // (기존 로트 DELETE 제거 - 거래이력 보존)
+      // 3. 미결 lot(remaining_quantity > 0)을 교체: 누적 방지
+      // 기존 미결 lot을 삭제하고 수정된 수량/단가로 단일 lot 재생성.
+      // 이미 매칭 완료된 lot(remaining=0)은 거래이력이므로 보존.
+      try {
+        await supabase
+          .from('virtual_trade_lots')
+          .delete()
+          .eq('chat_id', chatId)
+          .eq('code', code)
+          .gt('remaining_quantity', 0)
+      } catch { /* best-effort: 실패해도 포지션 수정은 진행 */ }
+
       const { error: lotErr } = await supabase.from('virtual_trade_lots').insert([{
         chat_id: chatId,
+        client_id: user.clientId ?? null,
         code,
         position_id: position.id,
         acquired_price: buyPrice,
@@ -177,7 +188,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       }])
 
       if (lotErr) {
-        console.warn('새 로트 기록 실패:', lotErr.message)
+        console.warn('보정 로트 기록 실패:', lotErr.message)
         // 로트 기록 실패해도 포지션은 이미 업데이트되었으므로 계속 진행
       }
 
