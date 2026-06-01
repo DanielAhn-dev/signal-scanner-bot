@@ -20,8 +20,10 @@ import {
   applyDynamicTradeProfileAdjustments,
   classifyAutoTradeEntryProfile,
   buildPositionStrategyMemo,
+  evaluateTimeStop,
   parsePositionStrategyState,
   planAutoTradeExit,
+  planOverweightReduction,
   resolvePositionBucketFromProfile,
   resolvePositionTradeProfile,
   type PlannedAutoTradeExit,
@@ -764,6 +766,8 @@ export type AutoTradeActionSummary = {
   skipped: number;
   errors: number;
   notes: string[];
+  /** 이번 실행에서 비중 초과로 분할 매도된 종목 코드 목록 */
+  overweightReducedCodes?: string[];
 };
 
 export type AutoTradeRunSummary = {
@@ -1395,10 +1399,12 @@ function buildAutoTradeExecutionAlert(input: {
 async function buildRealHoldingResponseSnippet(input: {
   supabase: SupabaseClientAny;
   chatId: number;
+  /** 가상매매에서 이번 실행에 비중조정 매도된 종목 코드 목록 */
+  overweightReducedCodes?: string[];
 }): Promise<string | null> {
   const { data, error } = await input.supabase
     .from("watchlist")
-    .select("code,buy_price,quantity,stock:stocks!inner(name,close)")
+    .select("code,buy_price,quantity,invested_amount,stock:stocks!inner(name,close)")
     .eq("chat_id", input.chatId)
     .order("created_at", { ascending: true })
     .limit(30);
@@ -1417,34 +1423,54 @@ async function buildRealHoldingResponseSnippet(input: {
       const buyPrice = Number(rec.buy_price ?? 0);
       const quantity = Math.max(0, Math.floor(Number(rec.quantity ?? 0)));
       const close = Number(stockRow?.close ?? 0);
+      const invested = Math.max(0, Number(rec.invested_amount ?? 0)) || (buyPrice * quantity);
       if (!code || buyPrice <= 0 || close <= 0 || quantity <= 0) return null;
       const pnlPct = ((close - buyPrice) / buyPrice) * 100;
-      return { code, name, quantity, close, pnlPct };
+      const currentValue = close * quantity;
+      return { code, name, quantity, close, pnlPct, currentValue, invested };
     })
-    .filter((row): row is { code: string; name: string; quantity: number; close: number; pnlPct: number } => Boolean(row));
+    .filter((row): row is { code: string; name: string; quantity: number; close: number; pnlPct: number; currentValue: number; invested: number } => Boolean(row));
 
   if (rows.length <= 0) {
     return null;
   }
 
+  const totalValue = rows.reduce((sum, r) => sum + r.currentValue, 0);
+  const OVERWEIGHT_THRESHOLD = 25;
+
+  const overweightRows = totalValue > 0
+    ? rows.filter(r => (r.currentValue / totalValue) * 100 >= OVERWEIGHT_THRESHOLD)
+    : [];
+
   const topLines = rows
     .sort((a, b) => Math.abs(b.pnlPct) - Math.abs(a.pnlPct))
     .slice(0, 3)
     .map((row) => {
+      const weightPct = totalValue > 0 ? ((row.currentValue / totalValue) * 100).toFixed(1) : null;
+      const isOverweight = overweightRows.some(r => r.code === row.code);
+      const wasVirtuallyReduced = (input.overweightReducedCodes ?? []).includes(row.code);
       const action =
-        row.pnlPct <= -4
-          ? "방어우선"
-          : row.pnlPct >= 6
-            ? "익절검토"
-            : "보유관찰";
-      return `- ${row.name}(${row.code}) ${row.quantity}주 · 손익 ${row.pnlPct.toFixed(1)}% · ${action}`;
+        wasVirtuallyReduced
+          ? `⚠ 가상매매 비중조정 실행 → 실계좌 분할매도 검토`
+          : isOverweight
+            ? `⚠ 비중과다(${weightPct}%) · 분할매도 검토`
+            : row.pnlPct <= -4
+              ? "방어우선"
+              : row.pnlPct >= 6
+                ? "익절검토"
+                : "보유관찰";
+      const weightNote = weightPct ? ` · 비중 ${weightPct}%` : "";
+      return `- ${name}: ${row.name}(${row.code}) ${row.quantity}주 · 손익 ${row.pnlPct.toFixed(1)}%${weightNote} · ${action}`;
     });
 
-  return [
-    "[실보유 대응 요약]",
-    ...topLines,
-    "상세 점검: /보유대응",
-  ].join("\n");
+  const lines: string[] = ["[실보유 대응 요약]", ...topLines];
+
+  if (overweightRows.length > 0 || (input.overweightReducedCodes ?? []).length > 0) {
+    lines.push("💡 비중 25% 초과 종목은 분할 매도로 리스크 분산 권장");
+  }
+
+  lines.push("상세 점검: /보유대응");
+  return lines.join("\n");
 }
 
 function isKrxIntradaySession(base = new Date()): boolean {
@@ -3849,6 +3875,20 @@ async function runDailyReviewForUser(payload: {
     notes: [],
   };
 
+  // 크론 공백 감사 (Re-entry Audit): 마지막 daily review 이후 N일 이상 공백이면 경고
+  const lastReviewAt = payload.setting.last_daily_review_at;
+  if (lastReviewAt) {
+    const lastTs = Date.parse(String(lastReviewAt));
+    if (Number.isFinite(lastTs)) {
+      const gapDays = Math.floor((Date.now() - lastTs) / (24 * 60 * 60 * 1000));
+      if (gapDays >= 3) {
+        summary.notes.push(
+          `[재시작 감사] 마지막 일일점검 ${gapDays}일 경과 · 시간손절/비중조정 우선 적용`
+        );
+      }
+    }
+  }
+
   // 적용된 전략 기록
   const selectedStrategy = payload.setting.selected_strategy;
   const dailySellPerf = await getRecentAutoTradeSellPerformance({
@@ -4028,10 +4068,23 @@ async function runDailyReviewForUser(payload: {
   let addOnBuyCount = 0;
   let rebalanceBuyCount = 0;
   let insufficientCashCount = 0;
+  const overweightReducedCodes: string[] = [];
   let holdTakeProfitMin = Number.POSITIVE_INFINITY;
   let holdTakeProfitMax = 0;
   let holdStopLossMin = Number.POSITIVE_INFINITY;
   let holdStopLossMax = 0;
+
+  // 포트폴리오 총 평가액: 보유 종목 현재가 합산 + 가용 현금
+  const totalHoldingsValue = holdings.reduce((sum, row) => {
+    const qty = Math.max(0, Math.floor(toNumber(row.quantity, 0)));
+    const close = closeByCode.get(row.code) ?? 0;
+    const invested = Math.max(0, toNumber(row.invested_amount, 0));
+    return sum + (close > 0 && qty > 0 ? close * qty : invested);
+  }, 0);
+  const totalPortfolioValue = totalHoldingsValue + availableCash;
+  // 비중 초과 감지 임계값: 단일 종목이 포트폴리오의 25% 이상이면 분할 매도
+  const MAX_WEIGHT_PCT = 25;
+  const TARGET_WEIGHT_PCT = 20;
 
   for (const holding of holdings) {
     const qty = Math.max(0, Math.floor(toNumber(holding.quantity, 0)));
@@ -4145,7 +4198,43 @@ async function runDailyReviewForUser(payload: {
           }
         : baseExitPlan;
 
-    if (exitPlan.action === "HOLD") {
+    // 비중 초과 감지 + 시간 기반 손절: HOLD인 경우에만 체크 (이미 다른 exit이 결정된 종목은 제외)
+    const finalExitPlan: PlannedAutoTradeExit = (() => {
+      if (exitPlan.action !== "HOLD") return exitPlan;
+
+      // 1) 시간 기반 손절 (Time-Stop): 장기 물림 손실 종목 단계적 정리
+      const timeStop = evaluateTimeStop({
+        quantity: qty,
+        pnlPct,
+        buyDate: holding.buy_date ?? holding.created_at,
+      });
+      if (timeStop.triggered) {
+        return {
+          action: timeStop.phase === "full" ? "STOP_LOSS" : "TAKE_PROFIT",
+          quantityToSell: timeStop.quantityToSell,
+          isPartial: timeStop.phase === "partial",
+          nextTakeProfitTranchesDone: strategyState.takeProfitTranchesDone,
+          reason: timeStop.phase === "full" ? "stop-loss" : "take-profit-partial",
+        } as PlannedAutoTradeExit;
+      }
+
+      // 2) 비중 초과 감지: 포트폴리오 내 단일 종목 비중이 MAX_WEIGHT_PCT 초과 시 분할 매도
+      if (totalPortfolioValue <= 0) return exitPlan;
+      const currentValue = close * qty;
+      const currentWeightPct = (currentValue / totalPortfolioValue) * 100;
+      if (currentWeightPct <= MAX_WEIGHT_PCT) return exitPlan;
+      return planOverweightReduction({
+        currentWeightPct,
+        maxWeightPct: MAX_WEIGHT_PCT,
+        targetWeightPct: TARGET_WEIGHT_PCT,
+        quantity: qty,
+        currentPrice: close,
+        totalPortfolioValue,
+        takeProfitTranchesDone: strategyState.takeProfitTranchesDone,
+      });
+    })();
+
+    if (finalExitPlan.action === "HOLD") {
       holdCount += 1;
       holdTakeProfitMin = Math.min(holdTakeProfitMin, adaptiveExitThreshold.takeProfitPct);
       holdTakeProfitMax = Math.max(holdTakeProfitMax, adaptiveExitThreshold.takeProfitPct);
@@ -4202,7 +4291,7 @@ async function runDailyReviewForUser(payload: {
       continue;
     }
 
-    // 매도 이유 노트 (signal/regime 기반이면 명시)
+    // 매도 이유 노트 (signal/regime/time-stop/overweight 기반이면 명시)
     const exitReasonLabel: string = (() => {
       if (trailingStopBreached) return `[트레일링익절] 고점(${fmtKrw(updatedPeakPrice)}) 대비 -${TRAILING_STOP_FROM_PEAK_PCT}% 이탈 · 수익률 ${pnlPct.toFixed(2)}%`;
       if (trendExitSignal.reason === "signal-strong-sell") return "[신호청산] STRONG_SELL 전환";
@@ -4210,11 +4299,24 @@ async function runDailyReviewForUser(payload: {
       if (trendExitSignal.reason === "trend-break-sma200") return "[추세이탈] SMA200 하향이탈";
       if (trendExitSignal.reason === "trend-break-sma50") return "[추세익절] SMA50 하향이탈";
       if (regimeEarlyExit) return "[레짐익절] 방어모드 KOSDAQ 선익절";
+      // time-stop: baseExitPlan이 HOLD였다가 finalExitPlan에서 변경된 경우
+      if (exitPlan.action === "HOLD" && (finalExitPlan.action === "STOP_LOSS" || finalExitPlan.action === "TAKE_PROFIT")) {
+        const timeStop = evaluateTimeStop({ quantity: qty, pnlPct, buyDate: holding.buy_date ?? holding.created_at });
+        if (timeStop.triggered) {
+          return `[시간손절] ${timeStop.reason}`;
+        }
+      }
+      if (finalExitPlan.action === "OVERWEIGHT_REDUCTION") {
+        const currentWeightPct = totalPortfolioValue > 0
+          ? ((close * qty) / totalPortfolioValue * 100).toFixed(1)
+          : "?";
+        return `[비중조정] ${currentWeightPct}% 초과 → ${(finalExitPlan as { targetWeightPct: number }).targetWeightPct}%로 분할 매도`;
+      }
       return "";
     })();
 
     try {
-      const stopLossContext = exitPlan.action === "STOP_LOSS"
+      const stopLossContext = finalExitPlan.action === "STOP_LOSS"
         ? ((): string => {
             if (trendExitSignal.reason === "signal-strong-sell") return "signal-strong-sell";
             if (trendExitSignal.reason === "signal-sell") return "signal-reversal";
@@ -4232,13 +4334,13 @@ async function runDailyReviewForUser(payload: {
         buyPrice,
         feeRate,
         taxRate,
-        sellQty: exitPlan.quantityToSell,
-        reason: exitPlan.reason,
+        sellQty: finalExitPlan.quantityToSell,
+        reason: finalExitPlan.action === "OVERWEIGHT_REDUCTION" ? "take-profit-partial" : finalExitPlan.reason,
         stopLossContext,
         profileLabel: getStrategyLabel(tradeProfile.profile) || tradeProfile.profile,
         strategyProfile: tradeProfile.profile,
         takeProfitTranchesDone: strategyState.takeProfitTranchesDone,
-        nextTakeProfitTranchesDone: exitPlan.nextTakeProfitTranchesDone,
+        nextTakeProfitTranchesDone: finalExitPlan.nextTakeProfitTranchesDone,
         dryRun: payload.dryRun,
       });
 
@@ -4258,10 +4360,13 @@ async function runDailyReviewForUser(payload: {
       } catch (e) {
         console.error("[autoTrade] update virtual cash/pnl after sell failed", e);
       }
-      if (exitPlan.action === "STOP_LOSS") {
+      if (finalExitPlan.action === "STOP_LOSS") {
         stopLossCount += 1;
       } else {
         takeProfitCount += 1;
+      }
+      if (finalExitPlan.action === "OVERWEIGHT_REDUCTION") {
+        overweightReducedCodes.push(holding.code);
       }
       summary.sells += 1;
       summary.notes.push(`${result.note} · 손익률 ${pnlPct.toFixed(2)}%`);
@@ -4327,9 +4432,22 @@ async function runDailyReviewForUser(payload: {
     const currentCount = heldCodes.size;
     const room = Math.max(0, maxPositions - currentCount);
     summary.notes.push(`보유 현황: ${currentCount}/${maxPositions}종목 · 신규 여력 ${room}종목`);
+
+    // 계좌 복구 모드: 포트폴리오 전체 수익률이 -5% 이하면 신규/추가 매수 차단
+    const RECOVERY_MODE_THRESHOLD_PCT = -5;
+    const portfolioReturnPct = seedCapital > 0
+      ? ((totalHoldingsValue + availableCash - seedCapital) / seedCapital) * 100
+      : 0;
+    const recoveryModeActive = portfolioReturnPct <= RECOVERY_MODE_THRESHOLD_PCT;
+    if (recoveryModeActive) {
+      summary.notes.push(
+        `[복구모드] 전체 수익률 ${portfolioReturnPct.toFixed(1)}% · 신규/추가 매수 차단 · 기존 포지션 정리 우선`
+      );
+    }
+
     const addOnConstraint = applyStrategyBuyConstraint({
       selectedStrategy: payload.setting.selected_strategy,
-      requestedSlots: persistedGuard.requestedSlots,
+      requestedSlots: recoveryModeActive ? 0 : persistedGuard.requestedSlots,
       baseMinBuyScore: persistedGuard.baseMinBuyScore,
       activeCount: currentCount,
     });
@@ -4710,7 +4828,8 @@ async function runDailyReviewForUser(payload: {
 
     // 기존 monday_buy_slots를 회차당 신규매수 상한으로 재사용한다.
     const maxNewBuysPerRun = toPositiveInt(payload.setting.monday_buy_slots, 2);
-    const rawBuySlots = Math.min(room, maxNewBuysPerRun);
+    // 복구 모드 시 신규 매수 슬롯을 0으로 강제
+    const rawBuySlots = recoveryModeActive ? 0 : Math.min(room, maxNewBuysPerRun);
     const perfAdjustedRebalance = applyPerformanceBuyGuard({
       requestedSlots: rawBuySlots,
       baseMinBuyScore: toPositiveInt(payload.setting.min_buy_score, 72),
@@ -5306,6 +5425,10 @@ async function runDailyReviewForUser(payload: {
     await syncVirtualPortfolio(chatId, chatId);
   }
 
+  if (overweightReducedCodes.length > 0) {
+    summary.overweightReducedCodes = overweightReducedCodes;
+  }
+
   return summary;
 }
 
@@ -5799,6 +5922,7 @@ export async function runVirtualAutoTradingCycle(input?: {
           const holdingSnippet = await buildRealHoldingResponseSnippet({
             supabase,
             chatId: setting.chat_id,
+            overweightReducedCodes: actionSummary.overweightReducedCodes,
           }).catch(() => null);
           const combinedAlert = holdingSnippet
             ? `${executionAlert}\n\n${holdingSnippet}`

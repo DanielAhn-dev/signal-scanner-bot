@@ -1184,7 +1184,18 @@ export function buildPortfolioWebHtml(input: {
     ).join('')}
   </section>`
 
-  const tableRows = items.filter(i => i.qty > 0).map((item, idx) => {
+  // 종목별 포트폴리오 비중 계산 (비중 과다 경고용)
+  const OVERWEIGHT_THRESHOLD = 25
+  const itemsWithWeight = items.filter(i => i.qty > 0).map(item => {
+    const currentValue = item.currentPrice != null && item.qty > 0
+      ? item.currentPrice * item.qty
+      : item.invested
+    const weightPct = totalValue > 0 ? (currentValue / totalValue) * 100 : 0
+    return { ...item, weightPct }
+  })
+  const overweightItems = itemsWithWeight.filter(i => i.weightPct >= OVERWEIGHT_THRESHOLD)
+
+  const tableRows = itemsWithWeight.map((item, idx) => {
     const pnl = item.unrealized
     const pct = item.pnlPct ?? 0
     const pnlColor = pnl > 0 ? '#F04452' : pnl < 0 ? '#1478FF' : '#8B95A1'
@@ -1194,10 +1205,14 @@ export function buildPortfolioWebHtml(input: {
     const reviewHtml = fmtReviewDate(item.plannedReviewAt)
     const currentPriceFmt = item.currentPrice != null ? Math.round(item.currentPrice).toLocaleString('ko-KR') : '-'
     const buyPriceFmt = item.buyPrice != null ? Math.round(item.buyPrice).toLocaleString('ko-KR') : '-'
+    const isOverweight = item.weightPct >= OVERWEIGHT_THRESHOLD
+    const weightBadge = isOverweight
+      ? `<span style="display:inline-block;font-size:10px;font-weight:700;color:#b00020;background:#fff0f2;border:1px solid #ffc0c8;padding:1px 6px;border-radius:8px;margin-left:4px">비중과다 ${item.weightPct.toFixed(1)}%</span>`
+      : `<span style="font-size:10px;color:#8b95a1;margin-left:4px">${item.weightPct.toFixed(1)}%</span>`
 
-    return `<tr style="background:${idx % 2 === 0 ? '#ffffff' : '#fafbfc'}">
+    return `<tr style="background:${isOverweight ? '#fff8f8' : idx % 2 === 0 ? '#ffffff' : '#fafbfc'};${isOverweight ? 'border-left:3px solid #f04452;' : ''}">
       <td style="padding:10px 10px;border-bottom:1px solid #edf1f6;font-weight:600;color:#1f2937;white-space:nowrap">
-        <div style="font-size:13px">${escapeHtml(item.name)}</div>
+        <div style="font-size:13px;display:flex;align-items:center;flex-wrap:wrap;gap:2px">${escapeHtml(item.name)}${weightBadge}</div>
         <div style="font-size:10px;color:#8b95a1;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;margin-top:1px">${escapeHtml(item.code)}</div>
       </td>
       <td style="padding:10px 10px;border-bottom:1px solid #edf1f6;text-align:center">
@@ -1236,7 +1251,27 @@ export function buildPortfolioWebHtml(input: {
     ? `<div style="margin-top:10px;font-size:11px;color:#8b95a1;padding:0 2px">${escapeHtml(qualityLine)}</div>`
     : ''
 
-  return `${headerHtml}${metricsHtml}${tableHtml}${qualityHtml}`
+  // 비중 과다 경고 배너 (실계좌 대응 안내 포함)
+  const overweightBannerHtml = overweightItems.length > 0
+    ? `<section style="margin-top:12px;border:1px solid #ffc0c8;background:#fff0f2;border-radius:12px;padding:12px 14px">
+    <div style="font-size:12px;font-weight:700;color:#b00020;margin-bottom:6px">⚠ 비중 과다 종목 감지</div>
+    ${overweightItems.map(item => {
+      const pct = item.pnlPct ?? 0
+      const pctText = `${pct >= 0 ? '+' : ''}${pct.toFixed(1)}%`
+      const action = pct >= 0
+        ? `수익 구간 · 분할 익절 검토 (목표 비중 20% 이하)`
+        : `손실 구간 · 비중 축소 후 리스크 관리 우선`
+      return `<div style="font-size:11.5px;color:#7f1d1d;margin-bottom:4px;padding:6px 8px;background:#ffffff80;border-radius:8px">
+        <strong>${escapeHtml(item.name)}</strong> · 현재 비중 <strong>${item.weightPct.toFixed(1)}%</strong> (손익 ${escapeHtml(pctText)}) — ${escapeHtml(action)}
+      </div>`
+    }).join('')}
+    <div style="margin-top:8px;font-size:10.5px;color:#9b1c1c;border-top:1px solid #ffd0d4;padding-top:6px">
+      💡 실계좌 보유 중이라면: 가상매매 비중 조정 시점에 맞춰 동일 종목 분할 매도를 검토하세요.
+    </div>
+  </section>`
+    : ''
+
+  return `${headerHtml}${metricsHtml}${overweightBannerHtml}${tableHtml}${qualityHtml}`
 }
 
 // ─── Generic Weekly Report Web HTML Builder ───────────────────────────────────

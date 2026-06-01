@@ -63,6 +63,15 @@ export type PlannedAutoTradeExit =
       isPartial: boolean;
       nextTakeProfitTranchesDone: number;
       reason: "take-profit-partial" | "take-profit-final";
+    }
+  | {
+      action: "OVERWEIGHT_REDUCTION";
+      quantityToSell: number;
+      isPartial: true;
+      nextTakeProfitTranchesDone: number;
+      reason: "overweight-reduction";
+      /** 매도 후 예상 비중 % */
+      targetWeightPct: number;
     };
 
 const VALID_PROFILES = new Set<PositionStrategyProfile>([
@@ -502,4 +511,146 @@ export function planAutoTradeExit(input: {
     nextTakeProfitTranchesDone: isFinal ? normalizedTranchesDone : nextTakeProfitTranchesDone,
     reason: isFinal ? "take-profit-final" : "take-profit-partial",
   };
+}
+
+/**
+ * 비중 초과 감지 시 분할 매도 계획 수립.
+ * 한 번에 전량 매도하지 않고 초과분의 절반씩 나눠서 매도한다.
+ * targetWeightPct까지 줄이는 데 필요한 수량을 계산한다.
+ *
+ * @param currentWeightPct - 현재 포지션 비중 (%)
+ * @param maxWeightPct - 허용 최대 비중 (%)
+ * @param targetWeightPct - 매도 후 목표 비중 (%)
+ * @param quantity - 현재 보유 수량
+ * @param currentPrice - 현재가
+ * @param totalPortfolioValue - 포트폴리오 총 평가액
+ * @param takeProfitTranchesDone - 기존 트랜치 진행 수 (HOLD 시 그대로 유지)
+ */
+export function planOverweightReduction(input: {
+  currentWeightPct: number;
+  maxWeightPct: number;
+  targetWeightPct: number;
+  quantity: number;
+  currentPrice: number;
+  totalPortfolioValue: number;
+  takeProfitTranchesDone: number;
+}): PlannedAutoTradeExit {
+  const {
+    currentWeightPct,
+    maxWeightPct,
+    targetWeightPct,
+    quantity,
+    currentPrice,
+    totalPortfolioValue,
+    takeProfitTranchesDone,
+  } = input;
+
+  if (currentWeightPct <= maxWeightPct || quantity <= 0 || currentPrice <= 0 || totalPortfolioValue <= 0) {
+    return {
+      action: "HOLD",
+      quantityToSell: 0,
+      isPartial: false,
+      nextTakeProfitTranchesDone: takeProfitTranchesDone,
+      reason: "within-range",
+    };
+  }
+
+  const targetValue = (targetWeightPct / 100) * totalPortfolioValue;
+  const currentValue = currentPrice * quantity;
+  const excessValue = currentValue - targetValue;
+
+  if (excessValue <= 0) {
+    return {
+      action: "HOLD",
+      quantityToSell: 0,
+      isPartial: false,
+      nextTakeProfitTranchesDone: takeProfitTranchesDone,
+      reason: "within-range",
+    };
+  }
+
+  // 초과분의 절반씩 분할 매도 (너무 급격한 청산 방지)
+  const sellValue = excessValue / 2;
+  const rawQtyToSell = Math.floor(sellValue / currentPrice);
+  const quantityToSell = Math.max(1, Math.min(rawQtyToSell, quantity - 1)); // 최소 1주 유지
+  const remainingQty = quantity - quantityToSell;
+  const remainingValue = remainingQty * currentPrice;
+  const afterWeightPct = Number(((remainingValue / totalPortfolioValue) * 100).toFixed(1));
+
+  return {
+    action: "OVERWEIGHT_REDUCTION",
+    quantityToSell,
+    isPartial: true,
+    nextTakeProfitTranchesDone: takeProfitTranchesDone,
+    reason: "overweight-reduction",
+    targetWeightPct: afterWeightPct,
+  };
+}
+
+export type TimeStopResult =
+  | { triggered: false }
+  | {
+      triggered: true;
+      /** "partial": 50% 매도, "full": 전량 매도 */
+      phase: "partial" | "full";
+      quantityToSell: number;
+      holdingDays: number;
+      reason: string;
+    };
+
+/**
+ * 시간 기반 손절(Time-Stop).
+ * 손실 구간에서 일정 기간 이상 방치된 포지션을 단계적으로 정리한다.
+ *
+ * Phase 1 (30일 초과 + -10% 이하): 50% 분할 매도
+ * Phase 2 (45일 초과 + -10% 이하): 나머지 전량 매도
+ *
+ * 수익 중인 종목에는 적용하지 않는다.
+ */
+export function evaluateTimeStop(input: {
+  quantity: number;
+  pnlPct: number;
+  buyDate: string | null | undefined;
+  now?: Date;
+}): TimeStopResult {
+  const { quantity, pnlPct } = input;
+  if (quantity <= 0 || pnlPct >= 0) return { triggered: false };
+
+  const now = input.now ?? new Date();
+  const rawDate = String(input.buyDate ?? "").trim();
+  if (!rawDate) return { triggered: false };
+
+  const buyTs = Date.parse(rawDate);
+  if (!Number.isFinite(buyTs)) return { triggered: false };
+
+  const holdingDays = Math.floor((now.getTime() - buyTs) / (24 * 60 * 60 * 1000));
+
+  const PHASE1_DAYS = 30;
+  const PHASE2_DAYS = 45;
+  const LOSS_THRESHOLD_PCT = -10;
+
+  if (pnlPct > LOSS_THRESHOLD_PCT) return { triggered: false };
+
+  if (holdingDays >= PHASE2_DAYS) {
+    return {
+      triggered: true,
+      phase: "full",
+      quantityToSell: quantity,
+      holdingDays,
+      reason: `보유 ${holdingDays}일 초과 + 손실 ${pnlPct.toFixed(1)}% → 전량 시간손절`,
+    };
+  }
+
+  if (holdingDays >= PHASE1_DAYS) {
+    const quantityToSell = Math.max(1, Math.floor(quantity / 2));
+    return {
+      triggered: true,
+      phase: "partial",
+      quantityToSell,
+      holdingDays,
+      reason: `보유 ${holdingDays}일 초과 + 손실 ${pnlPct.toFixed(1)}% → 절반 시간손절`,
+    };
+  }
+
+  return { triggered: false };
 }
