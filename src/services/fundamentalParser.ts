@@ -94,6 +94,18 @@ export function analyzeGrowthRow(
   };
 }
 
+export function cagrFromRow(row: string[], years: number = 3): number | undefined {
+  const nums = takeActualAnnualNumbers(row);
+  if (nums.length < 2) return undefined;
+  const take = Math.min(years + 1, nums.length);
+  const subset = nums.slice(nums.length - take);
+  const oldest = subset[0];
+  const latest = subset[subset.length - 1];
+  if (oldest <= 0 || latest <= 0) return undefined;
+  const actualYears = subset.length - 1;
+  return (Math.pow(latest / oldest, 1 / actualYears) - 1) * 100;
+}
+
 export function findFirstNumberInText(text: string): number | undefined {
   const m = (text || "").match(/-?\d+(?:,\d{3})*(?:\.\d+)?/);
   if (!m) return undefined;

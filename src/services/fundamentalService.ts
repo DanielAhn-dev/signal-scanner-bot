@@ -3,6 +3,7 @@ import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { fetchRealtimeStockData } from "../utils/fetchRealtimePrice";
 import {
   analyzeGrowthRow,
+  cagrFromRow,
   clamp,
   extractMetricValue,
   findFirstNumberInText,
@@ -104,10 +105,11 @@ export type FundamentalSnapshot = {
   opIncomeTurnaround?: boolean;
   netIncomeForwardGrowthPct?: number;
   netIncomeGrowthPct?: number;
+  netIncomeCagrPct?: number;
   netIncomeGrowthLowBase?: boolean;
   netIncomeTurnaround?: boolean;
   peg?: number;
-  pegSource?: 'net_income_forward' | 'net_income' | 'op_income' | 'sales' | null;
+  pegSource?: 'net_income_forward' | 'net_income' | 'net_income_cagr' | 'op_income' | 'sales' | null;
   pegGrowthPct?: number;
   qualityScore: number;
   commentary: string;
@@ -117,17 +119,19 @@ export function resolvePegFromGrowth(input: {
   per?: number;
   netIncomeForwardGrowthPct?: number;
   netIncomeGrowthPct?: number;
+  netIncomeCagrPct?: number;
   opIncomeGrowthPct?: number;
   salesGrowthPct?: number;
-}): { peg?: number; pegSource?: 'net_income_forward' | 'net_income' | 'op_income' | 'sales' | null; pegGrowthPct?: number } {
+}): { peg?: number; pegSource?: 'net_income_forward' | 'net_income' | 'net_income_cagr' | 'op_income' | 'sales' | null; pegGrowthPct?: number } {
   const per = Number(input.per ?? NaN);
   if (!Number.isFinite(per) || per <= 0) {
     return { peg: undefined, pegSource: null, pegGrowthPct: undefined };
   }
 
-  const candidates: Array<{ source: 'net_income_forward' | 'net_income' | 'op_income' | 'sales'; growthPct?: number }> = [
+  const candidates: Array<{ source: 'net_income_forward' | 'net_income' | 'net_income_cagr' | 'op_income' | 'sales'; growthPct?: number }> = [
     { source: 'net_income_forward', growthPct: input.netIncomeForwardGrowthPct },
     { source: 'net_income', growthPct: input.netIncomeGrowthPct },
+    { source: 'net_income_cagr', growthPct: input.netIncomeCagrPct },
     { source: 'op_income', growthPct: input.opIncomeGrowthPct },
     { source: 'sales', growthPct: input.salesGrowthPct },
   ];
@@ -623,6 +627,9 @@ export async function getFundamentalSnapshot(code: string): Promise<FundamentalS
   const opIncomeGrowthPct = opIncomeGrowth.pct ?? growthPctFromRow(rows["영업이익"] || []);
   const netIncomeForwardGrowthPct = forwardGrowthPctFromAnnualRow(rows["당기순이익"] || []);
   const netIncomeGrowthPct = netIncomeGrowth.pct ?? growthPctFromRow(rows["당기순이익"] || []);
+  const netIncomeCagrPct =
+    cagrFromRow(rows["EPS"] || [], 3) ??
+    cagrFromRow(rows["당기순이익"] || [], 3);
   const debtRatio = findLatestActualAnnualValue(
     rows["부채비율"] || rows["부채비율(%)"] || rows["부채비율연결"] || []
   );
@@ -647,6 +654,18 @@ export async function getFundamentalSnapshot(code: string): Promise<FundamentalS
 
   let per: number | undefined = perPick.value;
   let pbr: number | undefined = pbrPick.value;
+
+  // PER fallback: rt.price / EPS row 값으로 추정
+  if (per === undefined && rt?.price) {
+    const epsFromRows = findLatestActualAnnualValue(rows["EPS"] || []);
+    if (epsFromRows !== undefined && epsFromRows > 0) {
+      const computedPer = rt.price / epsFromRows;
+      if (computedPer > 0 && computedPer <= 500) {
+        per = Math.round(computedPer * 10) / 10;
+        console.info(`fundamental: computed PER from price/EPS for ${code}: ${per}`);
+      }
+    }
+  }
 
   if (perPick.source && perPick.source !== "rt") {
     console.info(
@@ -673,6 +692,7 @@ export async function getFundamentalSnapshot(code: string): Promise<FundamentalS
     per,
     netIncomeForwardGrowthPct,
     netIncomeGrowthPct,
+    netIncomeCagrPct,
     opIncomeGrowthPct,
     salesGrowthPct,
   });
@@ -713,6 +733,7 @@ export async function getFundamentalSnapshot(code: string): Promise<FundamentalS
     opIncomeGrowthLowBase: opIncomeGrowth.lowBase,
     opIncomeTurnaround: opIncomeGrowth.turnaround,
     netIncomeGrowthPct,
+    netIncomeCagrPct,
     netIncomeGrowthLowBase: netIncomeGrowth.lowBase,
     netIncomeTurnaround: netIncomeGrowth.turnaround,
     peg: pegResolved.peg,
