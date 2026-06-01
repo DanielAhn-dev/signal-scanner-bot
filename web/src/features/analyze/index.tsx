@@ -15,6 +15,59 @@ import { LayoutDashboard, TrendingUp, Flag, Activity, Search, Link2, HelpCircle 
 import type { OhlcvCandle } from '../../lib/types'
 import { useCurrentChatId } from '../../stores/profileStore'
 
+type SignalTone = 'positive' | 'warning' | 'negative' | 'neutral'
+type NarrativeSignal = { label: string; detail: string; tone: SignalTone }
+
+function pegNarrativeSignal(peg: number | null): NarrativeSignal | null {
+  if (peg == null) return null
+  if (peg < 0.5) return { label: `PEG ${formatNumber(peg, 2)}`, detail: '극저평가 — 고점에서도 추가 상승 근거', tone: 'positive' }
+  if (peg < 1.0) return { label: `PEG ${formatNumber(peg, 2)}`, detail: '저평가 — 성장 대비 주가 매력적', tone: 'positive' }
+  if (peg < 1.5) return { label: `PEG ${formatNumber(peg, 2)}`, detail: '적정가 — 성장률에 맞는 밸류에이션', tone: 'neutral' }
+  if (peg < 3.0) return { label: `PEG ${formatNumber(peg, 2)}`, detail: '다소 고평가 — 성장률 대비 주가 부담', tone: 'warning' }
+  return { label: `PEG ${formatNumber(peg, 2)}`, detail: '고평가 — 수익 성장 대비 과열', tone: 'negative' }
+}
+
+function flowNarrativeSignal(institution: number | null, foreign: number | null): NarrativeSignal | null {
+  if (institution == null && foreign == null) return null
+  const instPos = institution != null && institution > 0
+  const instNeg = institution != null && institution < 0
+  const forPos = foreign != null && foreign > 0
+  const forNeg = foreign != null && foreign < 0
+  if (instPos && forPos) return { label: '기관·외인 동반 매수', detail: '수급 강세 — 추가 상승 여지', tone: 'positive' }
+  if (instNeg && forNeg) return { label: '기관·외인 동반 매도', detail: '수급 이탈 — 단기 조정 주의', tone: 'negative' }
+  if (instPos && (institution! / Math.max(1, Math.abs(foreign ?? 0))) > 1.5) return { label: '기관 주도 매수', detail: '외인 혼조이나 기관 우세', tone: 'positive' }
+  if (forPos && (foreign! / Math.max(1, Math.abs(institution ?? 0))) > 1.5) return { label: '외인 주도 매수', detail: '기관 혼조이나 외인 우세', tone: 'positive' }
+  if (instPos || forPos) return { label: instPos ? '기관 순매수' : '외인 순매수', detail: '단일 주체 매수 진행', tone: 'neutral' }
+  if (instNeg || forNeg) return { label: instNeg ? '기관 순매도' : '외인 순매도', detail: '이탈 주의, 방향 확인 필요', tone: 'warning' }
+  return null
+}
+
+function shortNarrativeSignal(shortRatio: number | null): NarrativeSignal | null {
+  if (shortRatio == null) return null
+  if (shortRatio > 2) return { label: `공매도 ${formatNumber(shortRatio, 1)}%`, detail: '높음 — 하방 압력 상존', tone: 'negative' }
+  if (shortRatio > 0.5) return { label: `공매도 ${formatNumber(shortRatio, 1)}%`, detail: '보통 — 단기 주의', tone: 'warning' }
+  return { label: `공매도 ${formatNumber(shortRatio, 1)}%`, detail: '낮음 — 세력 압박 제한적', tone: 'positive' }
+}
+
+function buildNarrativeLine(
+  peg: NarrativeSignal | null,
+  flowSig: NarrativeSignal | null,
+  shortSig: NarrativeSignal | null,
+): string | null {
+  const parts: string[] = []
+  if (peg) parts.push(peg.detail.split('—')[1]?.trim() ?? peg.detail)
+  if (flowSig) parts.push(flowSig.detail.split('—')[1]?.trim() ?? flowSig.detail)
+  if (shortSig && shortSig.tone !== 'positive') parts.push(`공매도 ${shortSig.detail.split('—')[0]?.trim()}`)
+  return parts.length > 0 ? parts.join('. ') + '.' : null
+}
+
+function toneStyle(tone: SignalTone): { bg: string; color: string; border: string } {
+  if (tone === 'positive') return { bg: 'var(--color-success-bg)', color: 'var(--color-success)', border: 'rgba(0,180,147,0.2)' }
+  if (tone === 'negative') return { bg: 'var(--color-error-bg)', color: 'var(--color-error)', border: 'rgba(240,68,82,0.2)' }
+  if (tone === 'warning') return { bg: 'var(--color-warning-bg)', color: 'var(--color-warning)', border: 'rgba(200,140,0,0.2)' }
+  return { bg: 'var(--color-bg-sunken)', color: 'var(--color-text-secondary)', border: 'var(--color-border-default)' }
+}
+
 function scoreColor(score: number | null): string {
   if (score == null) return 'var(--color-text-tertiary)'
   if (score >= 70) return 'var(--color-success)'
@@ -935,6 +988,55 @@ export default function AnalyzePage({ onNavigate }: { onNavigate?: (r: string) =
               />
             </>
           )}
+
+          {/* ── 현황 요약 ── */}
+          {(() => {
+            const pegSig = pegNarrativeSignal(result.peg ?? null)
+            const flowSig = flowNarrativeSignal(flow?.institution ?? null, flow?.foreign ?? null)
+            const shortSig = shortNarrativeSignal(creditShort?.shortRatio ?? null)
+            if (!pegSig && !flowSig && !shortSig) return null
+            const summaryLine = buildNarrativeLine(pegSig, flowSig, shortSig)
+            const signals = [
+              pegSig ? { title: '밸류에이션', sig: pegSig } : null,
+              flowSig ? { title: '수급 방향', sig: flowSig } : null,
+              shortSig ? { title: '공매도', sig: shortSig } : null,
+            ].filter(Boolean) as Array<{ title: string; sig: NarrativeSignal }>
+            return (
+              <>
+                {DIVIDER}
+                <div className="title-md" style={{ marginBottom: 'var(--space-3)' }}>현황 요약</div>
+                <div className="cards-grid cols-3" style={{ marginBottom: summaryLine ? 'var(--space-3)' : undefined }}>
+                  {signals.map(({ title, sig }) => {
+                    const s = toneStyle(sig.tone)
+                    return (
+                      <div key={title} style={{
+                        background: s.bg,
+                        border: `1px solid ${s.border}`,
+                        borderRadius: 'var(--radius-md)',
+                        padding: 'var(--space-3)',
+                      }}>
+                        <div className="stat-label" style={{ color: s.color, marginBottom: 'var(--space-1)' }}>{title}</div>
+                        <div style={{ fontWeight: 'var(--font-weight-semibold)', fontSize: 'var(--font-size-base)', color: s.color }}>{sig.label}</div>
+                        <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)', marginTop: 2 }}>{sig.detail}</div>
+                      </div>
+                    )
+                  })}
+                </div>
+                {summaryLine && (
+                  <div style={{
+                    padding: 'var(--space-3)',
+                    background: 'var(--color-bg-sunken)',
+                    borderRadius: 'var(--radius-md)',
+                    borderLeft: '3px solid var(--color-border-emphasis)',
+                  }}>
+                    <div className="caption" style={{ color: 'var(--color-text-primary)', lineHeight: 1.7 }}>
+                      {summaryLine}
+                    </div>
+                  </div>
+                )}
+              </>
+            )
+          })()}
 
           {/* ── 어드바이저 ── */}
           {advisor && (
