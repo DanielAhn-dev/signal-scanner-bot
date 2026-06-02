@@ -1887,7 +1887,7 @@ export default function ScanPage({ onNavigate }: { onNavigate?: (r: string) => v
 
       {error && <ErrorState message={error} onRetry={loadCandidates} />}
 
-      {!error && (
+      {!error && !!activeStrategyMetricKey && (
         <div className="xls-scroll-frame scan-strategy-summary-frame" style={{ ['--xls-table-min-width' as any]: '1040px', marginTop: 6 }}>
           <table className="xls-table scan-strategy-summary-table" style={{ width: 'max-content', minWidth: '100%', tableLayout: 'auto' }}>
             <colgroup>
@@ -2343,7 +2343,7 @@ export default function ScanPage({ onNavigate }: { onNavigate?: (r: string) => v
                               TOP {rank}
                             </span>
                             <div style={{ display: 'flex', gap: 4, alignItems: 'center', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
-                              <AccumulationBadge stage={c.leadAccumulationStage} />
+                              <AccumulationBadge stage={c.leadAccumulationStage === 'none' ? null : c.leadAccumulationStage} />
                               <WarnBadge grade={c.warn_grade} />
                             </div>
                           </div>
@@ -2385,7 +2385,7 @@ export default function ScanPage({ onNavigate }: { onNavigate?: (r: string) => v
                             <GradeBadge grade={c.trend_grade} label="추세" />
                             <GradeBadge grade={c.dist_grade} label="매집" />
                             {c.pivot_grade && <GradeBadge grade={c.pivot_grade} label="세력" />}
-                            <AccumulationBadge stage={c.leadAccumulationStage} />
+                            <AccumulationBadge stage={c.leadAccumulationStage === 'none' ? null : c.leadAccumulationStage} />
                             {c.signal && <SignalBadge signal={c.signal} />}
                           </div>
 
