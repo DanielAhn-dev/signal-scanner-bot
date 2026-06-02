@@ -19,12 +19,14 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
 import pandas as pd
+import requests
 from pykrx import stock
 from supabase import Client, create_client
 
@@ -34,7 +36,32 @@ class UniverseConfig:
     core_top_n: int
     extended_top_n: int
     min_price: int
+    min_market_cap: int
+    min_liquidity: int
+    allowed_markets: set[str]
     mark_missing_inactive: bool
+    missing_grace_runs: int
+    min_listed_count_guard: int
+    notify_always: bool
+
+
+EXCLUDED_NAME_PATTERNS = [
+    r"스팩",
+    r"리츠",
+    r"레버리지",
+    r"인버스",
+    r"선물",
+    r"채권",
+    r"ETN",
+    r"ETF",
+    r"우B?$",
+    r"우선주",
+    r"풋",
+    r"콜",
+    r"BLANK",
+]
+
+EXCLUDED_NAME_REGEX = [re.compile(pat, re.IGNORECASE) for pat in EXCLUDED_NAME_PATTERNS]
 
 
 def env_bool(name: str, default: bool) -> bool:
@@ -56,6 +83,11 @@ def env_int(name: str, default: int) -> int:
         return value if value > 0 else default
     except Exception:
         return default
+
+
+def env_csv_set(name: str, default_csv: str) -> set[str]:
+    raw = str(os.environ.get(name, default_csv))
+    return {item.strip().upper() for item in raw.split(",") if item.strip()}
 
 
 def load_env_file(filepath: str = ".env") -> None:
@@ -96,6 +128,10 @@ def status_paths() -> Tuple[Path, Path]:
     return base / "universe_membership_status.json", base / "universe_membership_history.ndjson"
 
 
+def missing_tracker_path() -> Path:
+    return Path(__file__).resolve().parents[1] / "logs" / "universe_missing_tracker.json"
+
+
 def write_status(snapshot: dict) -> None:
     status_path, history_path = status_paths()
     status_path.parent.mkdir(parents=True, exist_ok=True)
@@ -103,6 +139,56 @@ def write_status(snapshot: dict) -> None:
         json.dump(snapshot, f, ensure_ascii=False, indent=2)
     with history_path.open("a", encoding="utf-8") as f:
         f.write(json.dumps(snapshot, ensure_ascii=False) + "\n")
+
+
+def load_missing_tracker() -> dict:
+    path = missing_tracker_path()
+    if not path.exists():
+        return {}
+    try:
+        with path.open("r", encoding="utf-8") as f:
+            data = json.load(f)
+            return data if isinstance(data, dict) else {}
+    except Exception:
+        return {}
+
+
+def save_missing_tracker(tracker: dict) -> None:
+    path = missing_tracker_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", encoding="utf-8") as f:
+        json.dump(tracker, f, ensure_ascii=False, indent=2)
+
+
+def should_exclude_name(name: str) -> bool:
+    normalized = str(name or "").strip()
+    if not normalized:
+        return True
+    return any(regex.search(normalized) for regex in EXCLUDED_NAME_REGEX)
+
+
+def send_telegram_alert(text: str) -> bool:
+    token = str(os.environ.get("TELEGRAM_BOT_TOKEN", "")).strip()
+    chat_id = (
+        str(os.environ.get("UNIVERSE_ALERT_CHAT_ID", "")).strip()
+        or str(os.environ.get("AUTO_TRADE_ALERT_CHAT_ID", "")).strip()
+        or str(os.environ.get("TELEGRAM_ADMIN_CHAT_ID", "")).strip()
+    )
+    if not token or not chat_id:
+        return False
+    try:
+        resp = requests.post(
+            f"https://api.telegram.org/bot{token}/sendMessage",
+            json={
+                "chat_id": chat_id,
+                "text": text,
+                "disable_web_page_preview": True,
+            },
+            timeout=10,
+        )
+        return bool(resp.ok)
+    except Exception:
+        return False
 
 
 def load_market_frames(trading_date: str) -> Tuple[pd.DataFrame, Dict[str, str], Dict[str, str]]:
@@ -146,7 +232,7 @@ def load_market_frame_from_db(supabase: Client) -> Tuple[pd.DataFrame, Dict[str,
     while True:
         res = (
             supabase.table("stocks")
-            .select("code,name,market,market_cap,close,liquidity,is_active")
+            .select("code,name,market,market_cap,close,liquidity,avg_volume_20d,is_active")
             .eq("is_active", True)
             .range(offset, offset + page_size - 1)
             .execute()
@@ -176,7 +262,11 @@ def load_market_frame_from_db(supabase: Client) -> Tuple[pd.DataFrame, Dict[str,
                 "code": code,
                 "종가": int(row.get("close") or 0),
                 "시가총액": int(row.get("market_cap") or 0),
-                "거래대금": int(row.get("liquidity") or 0),
+                "거래대금": int(
+                    row.get("liquidity")
+                    or (int(row.get("avg_volume_20d") or 0) * int(row.get("close") or 0))
+                    or 0
+                ),
                 "market": str(row.get("market") or ""),
             }
         )
@@ -198,6 +288,20 @@ def build_universe_level(rank: int, close_price: int, cfg: UniverseConfig) -> st
         if rank <= cfg.extended_top_n:
             return "extended"
     return "tail"
+
+
+def is_eligible_candidate(name: str, market: str, close_price: int, market_cap: int, liquidity: int, cfg: UniverseConfig) -> bool:
+    if should_exclude_name(name):
+        return False
+    if market and market.upper() not in cfg.allowed_markets:
+        return False
+    if close_price < cfg.min_price:
+        return False
+    if market_cap < cfg.min_market_cap:
+        return False
+    if liquidity < cfg.min_liquidity:
+        return False
+    return True
 
 
 def fetch_existing_map(supabase: Client) -> Dict[str, dict]:
@@ -283,8 +387,14 @@ def main() -> int:
         core_top_n=env_int("UNIVERSE_CORE_TOP_N", 200),
         extended_top_n=env_int("UNIVERSE_EXTENDED_TOP_N", 500),
         min_price=env_int("UNIVERSE_MIN_PRICE", 1000),
+        min_market_cap=env_int("UNIVERSE_MIN_MARKET_CAP", 300_000_000_000),
+        min_liquidity=env_int("UNIVERSE_MIN_LIQUIDITY", 5_000_000_000),
+        allowed_markets=env_csv_set("UNIVERSE_ALLOWED_MARKETS", "KOSPI,KOSDAQ"),
         mark_missing_inactive=args.mark_missing_inactive
         or env_bool("UNIVERSE_MARK_MISSING_INACTIVE", False),
+        missing_grace_runs=env_int("UNIVERSE_MISSING_GRACE_RUNS", 3),
+        min_listed_count_guard=env_int("UNIVERSE_MIN_LISTED_COUNT_GUARD", 1000),
+        notify_always=env_bool("UNIVERSE_ALERT_ALWAYS", False),
     )
 
     run_id = f"universe-refresh-{datetime.now().strftime('%Y%m%d%H%M%S')}"
@@ -302,7 +412,12 @@ def main() -> int:
             "core_top_n": cfg.core_top_n,
             "extended_top_n": cfg.extended_top_n,
             "min_price": cfg.min_price,
+            "min_market_cap": cfg.min_market_cap,
+            "min_liquidity": cfg.min_liquidity,
+            "allowed_markets": sorted(cfg.allowed_markets),
             "mark_missing_inactive": cfg.mark_missing_inactive,
+            "missing_grace_runs": cfg.missing_grace_runs,
+            "min_listed_count_guard": cfg.min_listed_count_guard,
         },
         "summary": {},
     }
@@ -328,26 +443,47 @@ def main() -> int:
         promoted_to_extended = 0
         demoted_to_tail = 0
         reactivated_or_new = 0
+        excluded_by_rule = 0
+        promoted_samples: List[str] = []
+        demoted_samples: List[str] = []
 
         for ticker, row in frame.iterrows():
             code = str(ticker)
+            prev = existing.get(code, {})
             close_price = int(row.get("종가") or 0)
             rank = int(row.get("rank") or 999999)
             mcap = int(row.get("시가총액") or 0)
             value = row.get("거래대금")
             liquidity = int(value) if pd.notnull(value) else None
-            universe_level = build_universe_level(rank, close_price, cfg)
+            name = name_by_code.get(code, prev.get("name") or code)
+            market = market_by_code.get(code) or prev.get("market")
+            eligible = is_eligible_candidate(
+                name=name,
+                market=str(market or ""),
+                close_price=close_price,
+                market_cap=mcap,
+                liquidity=int(liquidity or 0),
+                cfg=cfg,
+            )
+            universe_level = build_universe_level(rank, close_price, cfg) if eligible else "tail"
+            if not eligible:
+                excluded_by_rule += 1
 
-            prev = existing.get(code, {})
             prev_level = str(prev.get("universe_level") or "")
             prev_active = bool(prev.get("is_active")) if prev.get("is_active") is not None else False
 
             if universe_level == "core" and prev_level != "core":
                 promoted_to_core += 1
+                if len(promoted_samples) < 8:
+                    promoted_samples.append(code)
             elif universe_level == "extended" and prev_level not in ("core", "extended"):
                 promoted_to_extended += 1
+                if len(promoted_samples) < 8:
+                    promoted_samples.append(code)
             elif universe_level == "tail" and prev_level in ("core", "extended"):
                 demoted_to_tail += 1
+                if len(demoted_samples) < 8:
+                    demoted_samples.append(code)
 
             if not prev_active:
                 reactivated_or_new += 1
@@ -355,8 +491,8 @@ def main() -> int:
             upserts.append(
                 {
                     "code": code,
-                    "name": name_by_code.get(code, prev.get("name") or code),
-                    "market": market_by_code.get(code) or prev.get("market"),
+                    "name": name,
+                    "market": market,
                     "market_cap": mcap,
                     "mcap_rank": rank,
                     "close": close_price,
@@ -368,14 +504,30 @@ def main() -> int:
             )
 
         missing_active_codes: List[str] = []
+        missing_tracker = load_missing_tracker()
+        next_tracker: dict = {}
         if cfg.mark_missing_inactive:
+            listed_count = len(listed_codes)
+            inactivation_guard = listed_count >= cfg.min_listed_count_guard
             for code, prev in existing.items():
                 was_active = bool(prev.get("is_active")) if prev.get("is_active") is not None else False
-                if was_active and code not in listed_codes:
+                if not was_active:
+                    continue
+                if code in listed_codes:
+                    continue
+                prev_info = missing_tracker.get(code, {}) if isinstance(missing_tracker.get(code, {}), dict) else {}
+                miss_count = int(prev_info.get("missing_runs", 0)) + 1
+                next_tracker[code] = {
+                    "missing_runs": miss_count,
+                    "last_missing_at": datetime.now().isoformat(),
+                }
+                if inactivation_guard and miss_count > cfg.missing_grace_runs:
                     missing_active_codes.append(code)
 
         upserted = len(upserts) if args.dry_run else apply_upserts(supabase, upserts)
         inactivated = len(missing_active_codes) if args.dry_run else apply_inactive_updates(supabase, missing_active_codes)
+        if not args.dry_run:
+            save_missing_tracker(next_tracker)
 
         status["status"] = "success"
         status["summary"] = {
@@ -386,9 +538,25 @@ def main() -> int:
             "promoted_to_extended": promoted_to_extended,
             "demoted_to_tail": demoted_to_tail,
             "reactivated_or_new": reactivated_or_new,
+            "excluded_by_rule": excluded_by_rule,
             "core_count": int((frame["rank"] <= cfg.core_top_n).sum()),
             "extended_count": int(((frame["rank"] > cfg.core_top_n) & (frame["rank"] <= cfg.extended_top_n)).sum()),
+            "promoted_samples": promoted_samples,
+            "demoted_samples": demoted_samples,
+            "inactivated_samples": missing_active_codes[:8],
         }
+
+        changed = (promoted_to_core + promoted_to_extended + demoted_to_tail + inactivated) > 0
+        if (cfg.notify_always or changed) and not args.dry_run:
+            alert_lines = [
+                f"[유니버스 자동화] {trading_date}",
+                f"listed={len(listed_codes)} core+={promoted_to_core} ext+={promoted_to_extended} tail+={demoted_to_tail}",
+                f"inactive={inactivated} excludedByRule={excluded_by_rule}",
+                f"samples promoted={','.join(promoted_samples[:5]) if promoted_samples else '-'}",
+                f"samples demoted={','.join(demoted_samples[:5]) if demoted_samples else '-'}",
+            ]
+            sent = send_telegram_alert("\n".join(alert_lines))
+            status["summary"]["telegram_alert_sent"] = bool(sent)
 
         print("[universe-refresh] success")
         print(
@@ -399,6 +567,7 @@ def main() -> int:
     except Exception as e:
         status["status"] = "failed"
         status["reason"] = str(e)
+        send_telegram_alert(f"[유니버스 자동화 실패] {trading_date}\nreason={e}")
         print(f"[universe-refresh] failed: {e}")
         return 1
     finally:

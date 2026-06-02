@@ -161,3 +161,4 @@ tmp/*
 __pycache__/
 *.pyc
 *.pyo
+scripts/batch_modules/_kis_token_cache.json
