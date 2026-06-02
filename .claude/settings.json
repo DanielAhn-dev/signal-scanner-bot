@@ -6,7 +6,12 @@
       "Bash(gh run *)",
       "Bash(gh workflow *)",
       "Bash(python3 -)",
-      "Bash(grep -A 14 'const expectedReadKey' d:/Work/dev/github/signal-scanner-bot/handlers/ui/__TRACKED_VAR__)"
+      "Bash(grep -A 14 'const expectedReadKey' d:/Work/dev/github/signal-scanner-bot/handlers/ui/__TRACKED_VAR__)",
+      "Bash(curl -s \"http://localhost:3000/api/ui?route=stocks&meta=1\" -H \"X-Ui-Key: OvyyrNaHJZkbC0aqThOp30UpmhpOyoR/mnJO6O+MaqA=\")",
+      "Bash(curl -s \"http://localhost:3000/api/ui?route=stocks\")",
+      "Bash(node -e \"require\\('./api/ui.ts'\\)\")",
+      "Bash(npx ts-node *)",
+      "Bash(curl -v \"http://localhost:3000/api/ui?route=stocks\" -H \"X-Ui-Key: OvyyrNaHJZkbC0aqThOp30UpmhpOyoR/mnJO6O+MaqA=\")"
     ]
   }
 }
