@@ -15,6 +15,9 @@ export default function Settings(){
   const [loading, setLoading] = useState(false)
 
   const [settings, setSettings] = useState<any | null>(null)
+  const [seedCapital, setSeedCapital] = useState<string>('')
+  const [seedCapitalStatus, setSeedCapitalStatus] = useState<string | undefined>()
+  const [savingSeed, setSavingSeed] = useState(false)
   const [saving, setSaving] = useState(false)
   const [resettingAutoOnly, setResettingAutoOnly] = useState(false)
   const [runningDryRun, setRunningDryRun] = useState(false)
@@ -35,6 +38,14 @@ export default function Settings(){
       try {
         const json = await apiFetch('/api/ui/settings', { cacheMs: 0, timeoutMs: 10_000 })
         setSettings(json?.data ?? null)
+      } catch (e) {
+        // ignore
+      }
+
+      try {
+        const json = await apiFetch('/api/ui/investment-prefs', { cacheMs: 0, timeoutMs: 10_000 })
+        const seed = json?.data?.virtual_seed_capital
+        if (seed != null) setSeedCapital(String(Math.round(seed)))
       } catch (e) {
         // ignore
       }
@@ -142,6 +153,29 @@ export default function Settings(){
       setStatus(String(e))
     } finally {
       setLoading(false)
+    }
+  }
+
+  const saveSeedCapital = async (resetCash = false) => {
+    const parsed = Number(seedCapital.replace(/,/g, '').trim())
+    if (!Number.isFinite(parsed) || parsed <= 0) {
+      setSeedCapitalStatus('1원 이상의 금액을 입력해 주세요')
+      return
+    }
+    setSavingSeed(true)
+    setSeedCapitalStatus(undefined)
+    try {
+      await apiFetch('/api/ui/investment-prefs', {
+        method: 'POST',
+        cacheMs: 0,
+        timeoutMs: 10_000,
+        body: JSON.stringify({ virtual_seed_capital: Math.round(parsed), reset_cash: resetCash }),
+      })
+      setSeedCapitalStatus(resetCash ? '저장 및 잔여 현금 초기화 완료' : '저장 완료')
+    } catch (e: any) {
+      setSeedCapitalStatus(String(e?.message || e))
+    } finally {
+      setSavingSeed(false)
     }
   }
 
@@ -321,6 +355,33 @@ export default function Settings(){
                   </Button>
                 </div>
               )}
+            </td>
+          </tr>
+          <tr className="xls-row xls-row--even">
+            <td className="xls-cell" colSpan={2} style={{ fontSize: 13, fontWeight: 600 }}>자동매매 시드 자본금</td>
+            <td className="xls-cell" colSpan={4} style={{ padding: '8px 10px' }}>
+              <label className="block muted">자동매매 예산의 기준이 되는 시드 자본금입니다. 자동매매 실행 시 이 금액을 기준으로 종목당 투자 비중이 계산됩니다.</label>
+              <div className="mt-2 grid-two">
+                <Input
+                  label="시드 자본금 (원)"
+                  type="number"
+                  value={seedCapital}
+                  onChange={(e: any) => setSeedCapital(String(e?.target?.value || ''))}
+                  placeholder="예: 10000000"
+                />
+              </div>
+              <div className="mt-2" style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', alignItems: 'center' }}>
+                <Button onClick={() => saveSeedCapital(false)} disabled={savingSeed} variant="primary">
+                  {savingSeed ? '저장중…' : '저장'}
+                </Button>
+                <Button onClick={() => saveSeedCapital(true)} disabled={savingSeed} variant="secondary">
+                  {savingSeed ? '처리중…' : '저장 + 잔여 현금 초기화'}
+                </Button>
+                {seedCapitalStatus && <div className="muted">{seedCapitalStatus}</div>}
+              </div>
+              <div className="text-xs muted mt-2">
+                잔여 현금 초기화: 자동매매로 누적된 매수/매도 내역을 리셋하고 현금을 시드 자본금으로 복원합니다. 포트폴리오 초기화 없이 예산만 재설정할 때 사용하세요.
+              </div>
             </td>
           </tr>
           <tr className="xls-row">

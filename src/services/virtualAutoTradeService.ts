@@ -3325,6 +3325,8 @@ async function runMondayBuyForUser(payload: {
       if (qty <= 0 || investedAmount <= 0) {
         summary.skipped += 1;
         insufficientCashCount += 1;
+        // 슬롯을 소모하여 다음 후보가 더 큰 예산을 배정받도록 함
+        slotsLeft -= 1;
         await writeActionLog({
           supabase: payload.supabase,
           runId: payload.runId,
@@ -5207,6 +5209,8 @@ async function runDailyReviewForUser(payload: {
         if (qty <= 0) {
           insufficientCashCount += 1;
           summary.skipped += 1;
+          // 슬롯을 소모하여 다음 후보가 더 큰 예산을 배정받도록 함
+          slotsLeft -= 1;
           await writeActionLog({
             supabase: payload.supabase,
             runId: payload.runId,

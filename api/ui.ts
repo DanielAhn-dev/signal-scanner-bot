@@ -36,6 +36,7 @@ import scanStrategyMetrics from '../handlers/ui/scan-strategy-metrics'
 import sectorLeaders from '../handlers/ui/sector-leaders'
 import sectors from '../handlers/ui/sectors'
 import simulationPlan from '../handlers/ui/simulation-plan'
+import investmentPrefs from '../handlers/ui/investment-prefs'
 import settings from '../handlers/ui/settings'
 import stockIndicators from '../handlers/ui/stock-indicators'
 import stockLatest from '../handlers/ui/stock-latest'
@@ -88,6 +89,7 @@ const ROUTES: Record<string, UiHandler> = {
   'sector-leaders': sectorLeaders,
   sectors,
   'simulation-plan': simulationPlan,
+  'investment-prefs': investmentPrefs,
   settings,
   'stock-indicators': stockIndicators,
   'stock-latest': stockLatest,

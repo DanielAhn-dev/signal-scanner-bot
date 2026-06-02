@@ -162,8 +162,9 @@ export default function Portfolio() {
   const [partialTakeProfitPct, setPartialTakeProfitPct] = useState(8)
   const [partialWarnScoreMin, setPartialWarnScoreMin] = useState(3)
   const [showAllSectors, setShowAllSectors] = useState(false)
-  const [initialCapitalInput, setInitialCapitalInput] = useState(String(DEFAULT_INITIAL_CAPITAL))
   const [initialCapital, setInitialCapital] = useState<number>(DEFAULT_INITIAL_CAPITAL)
+  const [dbSeedCapital, setDbSeedCapital] = useState<number | null>(null)
+  const [dbVirtualCash, setDbVirtualCash] = useState<number | null>(null)
   const [assetAccordionOpen, setAssetAccordionOpen] = useState(true)
   const [policyAccordionOpen, setPolicyAccordionOpen] = useState(false)
   const [performanceAccordionOpen, setPerformanceAccordionOpen] = useState(false)
@@ -417,6 +418,20 @@ export default function Portfolio() {
 
   useEffect(() => { load() }, [load])
 
+  useEffect(() => {
+    apiFetch('/api/ui/investment-prefs', { cacheMs: 0, timeoutMs: 10_000 })
+      .then((json: any) => {
+        const seed = Number(json?.data?.virtual_seed_capital)
+        const cash = Number(json?.data?.virtual_cash)
+        if (Number.isFinite(seed) && seed > 0) {
+          setDbSeedCapital(seed)
+          setInitialCapital(seed)
+        }
+        if (Number.isFinite(cash) && cash >= 0) setDbVirtualCash(cash)
+      })
+      .catch(() => {/* ignore */})
+  }, [])
+
   const loadMacroSnapshot = useCallback(async () => {
     setMacroLoading(true)
     try {
@@ -570,7 +585,6 @@ export default function Portfolio() {
       const nextOpen = parsed?.assetAccordionOpen
       if (Number.isFinite(nextInitialCapital) && nextInitialCapital > 0) {
         setInitialCapital(nextInitialCapital)
-        setInitialCapitalInput(String(Math.round(nextInitialCapital)))
       }
       if (typeof nextOpen === 'boolean') setAssetAccordionOpen(nextOpen)
     } catch {
@@ -723,17 +737,6 @@ export default function Portfolio() {
     })
     return `conic-gradient(${parts.join(', ')})`
   }, [allocationRows])
-
-  const applyInitialCapital = () => {
-    const next = Number(initialCapitalInput)
-    if (!Number.isFinite(next) || next <= 0) {
-      toast.show('가상 예수금은 1원 이상으로 입력해 주세요')
-      setInitialCapitalInput(String(Math.round(initialCapital || DEFAULT_INITIAL_CAPITAL)))
-      return
-    }
-    setInitialCapital(Math.round(next))
-    toast.show('가상 예수금을 저장했습니다')
-  }
 
   const captureGeneratedAt = useMemo(
     () => new Intl.DateTimeFormat('ko-KR', {
@@ -1333,19 +1336,9 @@ export default function Portfolio() {
         {assetAccordionOpen && (
           <div className="portfolio-asset-overview-body">
 
-            <div className="portfolio-asset-overview-input-row">
-              <Input
-                label="가상 예수금"
-                type="number"
-                value={initialCapitalInput}
-                onChange={(e: any) => setInitialCapitalInput(String(e?.target?.value || ''))}
-              />
-              <Button variant="secondary" onClick={applyInitialCapital}>적용</Button>
-            </div>
-
             <div className="portfolio-asset-metrics">
               <div className="portfolio-asset-metric">
-                <div className="portfolio-capture-label">가상 예수금</div>
+                <div className="portfolio-capture-label">시드 자본금</div>
                 <div className="portfolio-capture-value">{formatKrw(initialCapital)}</div>
               </div>
               <div className="portfolio-asset-metric">
@@ -1353,8 +1346,12 @@ export default function Portfolio() {
                 <div className="portfolio-capture-value">{formatKrw(totalEvaluationValue)}</div>
               </div>
               <div className="portfolio-asset-metric">
-                <div className="portfolio-capture-label">추정 예수금</div>
-                <div className={`portfolio-capture-value ${estimatedCash < 0 ? 'negative' : ''}`}>{formatKrw(estimatedCash)}</div>
+                <div className="portfolio-capture-label">
+                  {dbVirtualCash != null ? '잔여 현금 (자동매매)' : '추정 예수금'}
+                </div>
+                <div className={`portfolio-capture-value ${(dbVirtualCash ?? estimatedCash) < 0 ? 'negative' : ''}`}>
+                  {formatKrw(dbVirtualCash ?? estimatedCash)}
+                </div>
               </div>
               <div className="portfolio-asset-metric">
                 <div className="portfolio-capture-label">총 자산(보유 평가금 + 예수금)</div>
@@ -1391,7 +1388,9 @@ export default function Portfolio() {
               </div>
             </div>
             <div className="caption muted" style={{ marginTop: 'var(--space-2)' }}>
-              추정 예수금은 시작 자금에서 보유 투자금액을 뺀 값입니다. 실제 증권사 예수금이 있으면 그 값을 우선 쓰는 편이 더 정확합니다.
+              {dbSeedCapital != null
+                ? '시드 자본금은 설정 화면에서 변경할 수 있습니다. 자동매매 예산과 잔여 현금도 설정에서 관리하세요.'
+                : '시드 자본금을 설정 화면에서 입력하면 자동매매 예산이 정확하게 계산됩니다.'}
             </div>
           </div>
         )}
