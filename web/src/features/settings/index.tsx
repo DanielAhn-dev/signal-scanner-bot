@@ -16,6 +16,9 @@ export default function Settings(){
 
   const [settings, setSettings] = useState<any | null>(null)
   const [saving, setSaving] = useState(false)
+  const [resettingAutoOnly, setResettingAutoOnly] = useState(false)
+  const [runningDryRun, setRunningDryRun] = useState(false)
+  const [runningLiveRun, setRunningLiveRun] = useState(false)
   const [accessInfo, setAccessInfo] = useState<{ chat_id: number | null; is_admin: boolean; has_advanced_access: boolean } | null>(null)
   const [accessRows, setAccessRows] = useState<Array<{ chat_id: number; nickname?: string | null; note?: string | null; is_enabled?: boolean | null; updated_at?: string | null }>>([])
   const [adminLoading, setAdminLoading] = useState(false)
@@ -142,7 +145,7 @@ export default function Settings(){
     }
   }
 
-  const saveSettings = async () => {
+  const saveSettings = async (): Promise<boolean> => {
     setSaving(true)
     try {
       const payload = {
@@ -161,16 +164,101 @@ export default function Settings(){
         timeoutMs: 10_000,
         body: JSON.stringify(payload)
       })
-      if (json?.error) setStatus(String(json?.error || '저장 실패'))
+      if (json?.error) {
+        setStatus(String(json?.error || '저장 실패'))
+        return false
+      }
       else {
         setStatus('저장 성공')
         setSettings(json.data)
+        return true
       }
     } catch (e: any) {
       setStatus(String(e))
+      return false
     } finally {
       setSaving(false)
     }
+  }
+
+  const resetAutoTradeOnly = async () => {
+    const confirmed = window.confirm(
+      '자동매매로 생성된 이력/로그만 초기화합니다.\\n직접 추가한 수동 보유/거래는 유지됩니다.\\n계속할까요?'
+    )
+    if (!confirmed) return
+
+    const secondConfirm = window.confirm('정말 실행할까요? 이 작업은 되돌릴 수 없습니다.')
+    if (!secondConfirm) return
+
+    setResettingAutoOnly(true)
+    setStatus(undefined)
+    try {
+      const json = await apiFetch('/api/ui/operations', {
+        method: 'POST',
+        cacheMs: 0,
+        timeoutMs: 60_000,
+        body: JSON.stringify({ mode: 'reset_autotrade_auto_only' }),
+      })
+
+      if (json?.error) throw new Error(String(json.error))
+
+      const data = json?.data || {}
+      const autoTrades = Number(data.auto_trade_count || 0)
+      const autoPositions = Number(data.auto_position_count || 0)
+      const autoLots = Number(data.auto_lot_count || 0)
+      setStatus(
+        `자동매매 초기화 완료 (AUTO 거래 ${autoTrades}건, AUTO 포지션 ${autoPositions}건, AUTO lot ${autoLots}건 정리)`
+      )
+    } catch (e: any) {
+      setStatus(`자동매매 초기화 실패: ${String(e?.message || e)}`)
+    } finally {
+      setResettingAutoOnly(false)
+    }
+  }
+
+  const runAutoCycleOnce = async (dryRun: boolean, saveFirst = true) => {
+    if (saveFirst) {
+      const ok = await saveSettings()
+      if (!ok) return
+    }
+
+    if (dryRun) setRunningDryRun(true)
+    else setRunningLiveRun(true)
+
+    setStatus(undefined)
+    try {
+      const json = await apiFetch('/api/ui/operations', {
+        method: 'POST',
+        cacheMs: 0,
+        timeoutMs: 90_000,
+        body: JSON.stringify({ mode: 'autocycle', dry_run: dryRun }),
+      })
+
+      if (json?.error) throw new Error(String(json.error))
+
+      const jobId = String(json?.job_id || '').trim()
+      const runLabel = dryRun ? '점검 1회' : '실행 1회'
+      if (json?.execution_error) {
+        setStatus(`자동매매 ${runLabel} 실패: ${String(json.execution_error)}`)
+      } else {
+        setStatus(`자동매매 ${runLabel} 요청 완료${jobId ? ` (job_id: ${jobId})` : ''}`)
+      }
+    } catch (e: any) {
+      setStatus(`자동매매 ${dryRun ? '점검' : '실행'} 실패: ${String(e?.message || e)}`)
+    } finally {
+      if (dryRun) setRunningDryRun(false)
+      else setRunningLiveRun(false)
+    }
+  }
+
+  const resetAndRunLiveOnce = async () => {
+    const confirmed = window.confirm(
+      '자동매매(AUTO) 데이터 초기화 후 즉시 1회 실행합니다.\\n직접 추가한 수동 데이터는 유지됩니다. 진행할까요?'
+    )
+    if (!confirmed) return
+
+    await resetAutoTradeOnly()
+    await runAutoCycleOnce(false, true)
   }
 
   return (
@@ -269,7 +357,43 @@ export default function Settings(){
 
               <div className="mt-4 flex items-center gap-2">
                 <Button onClick={saveSettings} disabled={saving} variant="primary">{saving ? '저장중…' : '저장'}</Button>
+                <Button onClick={resetAutoTradeOnly} disabled={resettingAutoOnly} variant="ghost">
+                  {resettingAutoOnly ? '초기화중…' : '자동매매 데이터만 초기화'}
+                </Button>
                 {status && <div className="muted">{status}</div>}
+              </div>
+              <div className="text-xs muted mt-2">
+                안내: 이 버튼은 자동매매(AUTO)로 생성된 이력만 정리합니다. 직접 추가한 수동 보유/거래는 유지됩니다.
+              </div>
+              <div className="mt-3 flex items-center gap-2" style={{ flexWrap: 'wrap' }}>
+                <Button
+                  onClick={() => runAutoCycleOnce(true, true)}
+                  disabled={runningDryRun || saving || resettingAutoOnly || runningLiveRun}
+                  variant="secondary"
+                >
+                  {runningDryRun ? '점검중…' : '저장 후 점검 1회'}
+                </Button>
+                <Button
+                  onClick={() => {
+                    const ok = window.confirm('현재 설정으로 자동매매를 1회 실실행할까요?')
+                    if (!ok) return
+                    void runAutoCycleOnce(false, true)
+                  }}
+                  disabled={runningLiveRun || saving || resettingAutoOnly || runningDryRun}
+                  variant="primary"
+                >
+                  {runningLiveRun ? '실행중…' : '저장 후 실행 1회'}
+                </Button>
+                <Button
+                  onClick={resetAndRunLiveOnce}
+                  disabled={runningLiveRun || saving || resettingAutoOnly || runningDryRun}
+                  variant="ghost"
+                >
+                  초기화 후 실행 1회
+                </Button>
+              </div>
+              <div className="text-xs muted mt-2">
+                권장 순서: 저장 후 점검 1회 → 결과 확인 → 저장 후 실행 1회
               </div>
             </td>
           </tr>

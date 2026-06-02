@@ -2,6 +2,25 @@ import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { createClient } from '@supabase/supabase-js'
 import { resolveUiUserContext } from './_userContext'
 
+function toPositiveInt(raw: unknown): number | null {
+  const num = Number(String(raw ?? '').trim())
+  if (!Number.isFinite(num) || num <= 0) return null
+  return Math.trunc(num)
+}
+
+function resolveTargetChatId(req: VercelRequest, userChatId: number | null): number | null {
+  const body = (req.body || {}) as any
+  return (
+    userChatId
+    || toPositiveInt(req.headers['x-user-chat-id'])
+    || toPositiveInt(req.query.chat_id)
+    || toPositiveInt(req.query.chatId)
+    || toPositiveInt(body.chat_id)
+    || toPositiveInt(body.chatId)
+    || null
+  )
+}
+
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   const origin = (req.headers.origin as string) || process.env.UI_CORS_ORIGIN || '*'
   res.setHeader('Access-Control-Allow-Origin', origin)
@@ -23,15 +42,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   try {
     const user = await resolveUiUserContext(req)
-    const filterColumn = user.clientId ? 'client_id' : (user.chatId ? 'chat_id' : null)
-    const filterValue = user.clientId || user.chatId || null
+    const targetChatId = resolveTargetChatId(req, user.chatId)
 
     if (req.method === 'GET') {
-      if (!filterColumn || !filterValue) return res.status(200).json({ data: null })
+      if (!targetChatId) return res.status(200).json({ data: null })
       const { data, error } = await supabase
         .from('virtual_autotrade_settings')
         .select('*')
-        .eq(filterColumn, filterValue)
+        .eq('chat_id', targetChatId)
         .limit(1)
 
       if (error) return res.status(500).json({ error: error.message })
@@ -40,14 +58,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     if (req.method === 'POST') {
       const body = req.body || {}
-      if (!filterColumn || !filterValue) return res.status(400).json({ error: 'identity required' })
+      if (!targetChatId) return res.status(400).json({ error: 'chat_id required' })
 
       const VALID_STRATEGIES = ['HOLD_SAFE', 'REDUCE_TIGHT', 'WAIT_AND_DIP_BUY']
       const rawStrategy = String(body.selected_strategy || '').trim().toUpperCase()
 
       const payload: any = {
-        chat_id: user.chatId ? Number(user.chatId) : null,
-        client_id: user.clientId || null,
+        chat_id: targetChatId,
         is_enabled: body.is_enabled === true || body.is_enabled === 'true' || false,
         monday_buy_slots: body.monday_buy_slots != null ? Number(body.monday_buy_slots) : undefined,
         max_positions: body.max_positions != null ? Number(body.max_positions) : undefined,
@@ -58,14 +75,20 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         selected_strategy: VALID_STRATEGIES.includes(rawStrategy) ? rawStrategy : undefined,
       }
 
-      // upsert
-      const onConflict = filterColumn
+      const { error: upsertError } = await supabase
+        .from('virtual_autotrade_settings')
+        .upsert(payload, { onConflict: 'chat_id' })
+
+      if (upsertError) return res.status(500).json({ error: upsertError.message })
+
       const { data, error } = await supabase
         .from('virtual_autotrade_settings')
-        .upsert(payload, { onConflict })
+        .select('*')
+        .eq('chat_id', targetChatId)
+        .maybeSingle()
 
       if (error) return res.status(500).json({ error: error.message })
-      return res.status(200).json({ data: data && data[0] ? data[0] : null })
+      return res.status(200).json({ data: data ?? null })
     }
 
     return res.status(405).json({ error: 'Method not allowed' })

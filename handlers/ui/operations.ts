@@ -4,6 +4,8 @@ import { resolveUiUserContext } from './_userContext'
 import { denyIfUnauthorizedRead } from './_accessControl'
 import { runVirtualAutoTradingCycle } from '../../src/services/virtualAutoTradeService'
 import { replaceTradeLotsForHolding } from '../../src/services/virtualLotService'
+import { parseStrategyMemo } from '../../src/lib/strategyMemo'
+import { syncVirtualPortfolio } from '../../src/services/portfolioService'
 
 type ActivityRow = {
   id: string
@@ -63,6 +65,289 @@ type ConsistencyIssue = {
   position_qty: number
   lot_qty: number
   detail: string
+}
+
+type AutoOnlyResetResult = {
+  auto_trade_count: number
+  auto_position_count: number
+  auto_lot_count: number
+  auto_lot_match_count: number
+  autotrade_run_count: number
+  autotrade_action_count: number
+  decision_log_count: number
+  snapshot_count: number
+  sltp_execution_count: number
+  strategy_gate_count: number
+  realized_pnl_after_reset: number
+}
+
+function isAutoTradeMemo(memo?: string | null): boolean {
+  const parsed = parseStrategyMemo(memo)
+  return parsed.strategyId === 'core.autotrade.v1' || parsed.raw.startsWith('autotrade-')
+}
+
+function toFiniteNumber(value: unknown, fallback = 0): number {
+  const n = Number(value)
+  return Number.isFinite(n) ? n : fallback
+}
+
+async function resetAutoTradeOnlyData(
+  supabase: SupabaseClient,
+  chatId: string | number,
+): Promise<AutoOnlyResetResult> {
+  const chatIdNum = Number(chatId)
+  if (!Number.isFinite(chatIdNum) || chatIdNum <= 0) {
+    throw new Error('invalid chat_id')
+  }
+
+  const [tradesRes, positionsRes, lotsRes, runsRes, actionsRes, decisionsRes, snapshotsRes, sltpRes, gateRes] = await Promise.all([
+    supabase
+      .from('virtual_trades')
+      .select('id,memo')
+      .eq('chat_id', chatIdNum),
+    supabase
+      .from('virtual_positions')
+      .select('id,memo')
+      .eq('chat_id', chatIdNum),
+    supabase
+      .from('virtual_trade_lots')
+      .select('id,note,source_trade_id')
+      .eq('chat_id', chatIdNum),
+    supabase
+      .from('virtual_autotrade_runs')
+      .select('id', { count: 'exact' })
+      .eq('chat_id', chatIdNum),
+    supabase
+      .from('virtual_autotrade_actions')
+      .select('id', { count: 'exact' })
+      .eq('chat_id', chatIdNum),
+    supabase
+      .from('virtual_decision_logs')
+      .select('id,linked_trade_id,strategy_id')
+      .eq('chat_id', chatIdNum),
+    supabase
+      .from('portfolio_snapshots')
+      .select('id', { count: 'exact' })
+      .eq('chat_id', chatIdNum),
+    supabase
+      .from('stop_loss_take_profit_executions')
+      .select('id', { count: 'exact' })
+      .eq('chat_id', chatIdNum),
+    supabase
+      .from('virtual_strategy_gate_states')
+      .select('chat_id', { count: 'exact' })
+      .eq('chat_id', chatIdNum),
+  ])
+
+  if (tradesRes.error) throw new Error(tradesRes.error.message)
+  if (positionsRes.error) throw new Error(positionsRes.error.message)
+  if (lotsRes.error) throw new Error(lotsRes.error.message)
+  if (decisionsRes.error) throw new Error(decisionsRes.error.message)
+
+  const trades = Array.isArray(tradesRes.data) ? tradesRes.data : []
+  const positions = Array.isArray(positionsRes.data) ? positionsRes.data : []
+  const lots = Array.isArray(lotsRes.data) ? lotsRes.data : []
+  const decisionLogs = Array.isArray(decisionsRes.data) ? decisionsRes.data : []
+
+  const autoTradeIds = trades
+    .filter((row) => isAutoTradeMemo(String((row as Record<string, unknown>)?.memo || '')))
+    .map((row) => Number((row as Record<string, unknown>)?.id || 0))
+    .filter((id) => Number.isFinite(id) && id > 0)
+
+  const autoPositionIds = positions
+    .filter((row) => isAutoTradeMemo(String((row as Record<string, unknown>)?.memo || '')))
+    .map((row) => Number((row as Record<string, unknown>)?.id || 0))
+    .filter((id) => Number.isFinite(id) && id > 0)
+
+  const autoLotIds = lots
+    .filter((row) => {
+      const record = row as Record<string, unknown>
+      const sourceTradeId = Number(record.source_trade_id || 0)
+      const note = String(record.note || '').toLowerCase()
+      return (Number.isFinite(sourceTradeId) && autoTradeIds.includes(sourceTradeId))
+        || note.includes('autotrade')
+    })
+    .map((row) => Number((row as Record<string, unknown>)?.id || 0))
+    .filter((id) => Number.isFinite(id) && id > 0)
+
+  let autoLotMatchCount = 0
+  if (autoTradeIds.length > 0 || autoLotIds.length > 0) {
+    let query = supabase
+      .from('virtual_trade_lot_matches')
+      .select('id', { count: 'exact' })
+      .limit(1)
+
+    if (autoTradeIds.length > 0) query = query.in('trade_id', autoTradeIds)
+    if (autoLotIds.length > 0) query = query.in('lot_id', autoLotIds)
+
+    const matchCountRes = await query
+    autoLotMatchCount = matchCountRes.count || 0
+  }
+
+  if (autoTradeIds.length > 0 || autoLotIds.length > 0) {
+    if (autoTradeIds.length > 0) {
+      const { error } = await supabase
+        .from('virtual_trade_lot_matches')
+        .delete()
+        .in('trade_id', autoTradeIds)
+      if (error) throw new Error(error.message)
+    }
+
+    if (autoLotIds.length > 0) {
+      const { error } = await supabase
+        .from('virtual_trade_lot_matches')
+        .delete()
+        .in('lot_id', autoLotIds)
+      if (error) throw new Error(error.message)
+    }
+  }
+
+  if (autoLotIds.length > 0) {
+    const { error } = await supabase
+      .from('virtual_trade_lots')
+      .delete()
+      .in('id', autoLotIds)
+    if (error) throw new Error(error.message)
+  }
+
+  if (autoTradeIds.length > 0) {
+    const { error } = await supabase
+      .from('virtual_trades')
+      .delete()
+      .in('id', autoTradeIds)
+    if (error) throw new Error(error.message)
+  }
+
+  if (autoPositionIds.length > 0) {
+    const { error } = await supabase
+      .from('virtual_positions')
+      .delete()
+      .in('id', autoPositionIds)
+    if (error) throw new Error(error.message)
+  }
+
+  const autoDecisionIds = decisionLogs
+    .filter((row) => {
+      const record = row as Record<string, unknown>
+      const strategyId = String(record.strategy_id || '').trim()
+      const linkedTradeId = Number(record.linked_trade_id || 0)
+      return strategyId === 'core.autotrade.v1' || autoTradeIds.includes(linkedTradeId)
+    })
+    .map((row) => Number((row as Record<string, unknown>)?.id || 0))
+    .filter((id) => Number.isFinite(id) && id > 0)
+
+  if (autoDecisionIds.length > 0) {
+    const { error } = await supabase
+      .from('virtual_decision_logs')
+      .delete()
+      .in('id', autoDecisionIds)
+    if (error) throw new Error(error.message)
+  }
+
+  const [
+    delActionsRes,
+    delRunsRes,
+    delSnapshotsRes,
+    delSltpRes,
+    delGateRes,
+    resetSettingsRes,
+  ] = await Promise.all([
+    supabase
+      .from('virtual_autotrade_actions')
+      .delete()
+      .eq('chat_id', chatIdNum)
+      .select('id'),
+    supabase
+      .from('virtual_autotrade_runs')
+      .delete()
+      .eq('chat_id', chatIdNum)
+      .select('id'),
+    supabase
+      .from('portfolio_snapshots')
+      .delete()
+      .eq('chat_id', chatIdNum)
+      .select('id'),
+    supabase
+      .from('stop_loss_take_profit_executions')
+      .delete()
+      .eq('chat_id', chatIdNum)
+      .select('id'),
+    supabase
+      .from('virtual_strategy_gate_states')
+      .delete()
+      .eq('chat_id', chatIdNum)
+      .select('chat_id'),
+    supabase
+      .from('virtual_autotrade_settings')
+      .update({
+        last_monday_buy_at: null,
+        last_daily_review_at: null,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('chat_id', chatIdNum),
+  ])
+
+  if (delActionsRes.error) throw new Error(delActionsRes.error.message)
+  if (delRunsRes.error) throw new Error(delRunsRes.error.message)
+  if (delSnapshotsRes.error) throw new Error(delSnapshotsRes.error.message)
+  if (delSltpRes.error) throw new Error(delSltpRes.error.message)
+  if (delGateRes.error) throw new Error(delGateRes.error.message)
+  if (resetSettingsRes.error) throw new Error(resetSettingsRes.error.message)
+
+  const remainingTradesRes = await supabase
+    .from('virtual_trades')
+    .select('side,pnl_amount')
+    .eq('chat_id', chatIdNum)
+    .eq('side', 'SELL')
+
+  if (remainingTradesRes.error) throw new Error(remainingTradesRes.error.message)
+
+  const realizedPnl = (Array.isArray(remainingTradesRes.data) ? remainingTradesRes.data : [])
+    .reduce((sum, row) => sum + toFiniteNumber((row as Record<string, unknown>)?.pnl_amount, 0), 0)
+
+  const userRes = await supabase
+    .from('users')
+    .select('prefs')
+    .eq('tg_id', chatIdNum)
+    .maybeSingle()
+
+  if (userRes.error) throw new Error(userRes.error.message)
+  const currentPrefs = (userRes.data?.prefs || {}) as Record<string, unknown>
+  const nextPrefs: Record<string, unknown> = {
+    ...currentPrefs,
+    virtual_realized_pnl: Math.round(realizedPnl),
+    virtual_shadow_mode: false,
+  }
+
+  delete nextPrefs.trade_freeze_reason
+  delete nextPrefs.pacing_state
+  delete nextPrefs.pacing_last_updated_at
+  delete nextPrefs.last_auto_cycle_key
+  delete nextPrefs.last_manual_cycle_key
+  delete nextPrefs.last_cycle_summary
+
+  const prefsUpdate = await supabase
+    .from('users')
+    .update({ prefs: nextPrefs })
+    .eq('tg_id', chatIdNum)
+
+  if (prefsUpdate.error) throw new Error(prefsUpdate.error.message)
+
+  await syncVirtualPortfolio(chatIdNum, chatIdNum)
+
+  return {
+    auto_trade_count: autoTradeIds.length,
+    auto_position_count: autoPositionIds.length,
+    auto_lot_count: autoLotIds.length,
+    auto_lot_match_count: autoLotMatchCount,
+    autotrade_run_count: (Array.isArray(delRunsRes.data) ? delRunsRes.data.length : 0) || runsRes.count || 0,
+    autotrade_action_count: (Array.isArray(delActionsRes.data) ? delActionsRes.data.length : 0) || actionsRes.count || 0,
+    decision_log_count: autoDecisionIds.length,
+    snapshot_count: (Array.isArray(delSnapshotsRes.data) ? delSnapshotsRes.data.length : 0) || snapshotsRes.count || 0,
+    sltp_execution_count: (Array.isArray(delSltpRes.data) ? delSltpRes.data.length : 0) || sltpRes.count || 0,
+    strategy_gate_count: (Array.isArray(delGateRes.data) ? delGateRes.data.length : 0) || gateRes.count || 0,
+    realized_pnl_after_reset: Math.round(realizedPnl),
+  }
 }
 
 function kstDayRangeIso(base = new Date()): { startIso: string; endIso: string; ymd: string } {
@@ -795,6 +1080,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         const code = String(body.code || '').trim() || null
         const result = await repairLotConsistency(supabase, chatId, code)
         return res.status(200).json({ ok: true, mode, data: result })
+      }
+
+      if (mode === 'reset_autotrade_auto_only') {
+        const result = await resetAutoTradeOnlyData(supabase, chatId)
+        return res.status(200).json({
+          ok: true,
+          mode,
+          message: '자동매매 이력만 초기화되었습니다. 직접 추가 보유/거래는 유지됩니다.',
+          data: result,
+        })
       }
 
       return res.status(400).json({ error: 'unsupported mode' })
