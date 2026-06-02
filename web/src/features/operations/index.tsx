@@ -161,6 +161,8 @@ type AutoCycleInsights = {
     name: string | null
     score: number
     signal: string | null
+    exclusion_reason?: string | null
+    reason_detail?: string | null
   }>
 }
 
@@ -951,7 +953,7 @@ export default function OperationsPage() {
                           const included = Boolean(compareEntry)
                           const estimatedReason = compareEntry
                             ? compareEntry.reason
-                            : estimateMissingReason({ signal: row.signal, latest: autocycleInsights.latest })
+                            : (row.exclusion_reason || estimateMissingReason({ signal: row.signal, latest: autocycleInsights.latest }))
                           return (
                             <tr key={`scan-top-${idx}`}>
                               <td style={{ padding: '8px', borderBottom: '1px solid #F0F2F5' }}>{row.name || row.code}{row.name ? ` (${row.code})` : ''}</td>

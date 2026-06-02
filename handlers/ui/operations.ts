@@ -6,6 +6,8 @@ import { runVirtualAutoTradingCycle } from '../../src/services/virtualAutoTradeS
 import { replaceTradeLotsForHolding } from '../../src/services/virtualLotService'
 import { parseStrategyMemo } from '../../src/lib/strategyMemo'
 import { syncVirtualPortfolio } from '../../src/services/portfolioService'
+import { fetchLatestScoresByCodes } from '../../src/services/scoreSourceService'
+import { evaluateAutoTradeSignalGate } from '../../src/services/virtualAutoTradeSignalGate'
 
 type ActivityRow = {
   id: string
@@ -105,6 +107,8 @@ type AutoCycleInsights = {
     name: string | null
     score: number
     signal: string | null
+    exclusion_reason?: string | null
+    reason_detail?: string | null
   }>
 }
 
@@ -543,10 +547,10 @@ function buildDiagnosisLine(input: {
   return `이번 실행은 매수 ${input.run.buys}건, 매도 ${input.run.sells}건이 반영되었습니다.`
 }
 
-function buildDiagnosisBreakdown(input: {
-  notes: string[]
-  compareRows: AutoCycleInsightRun['compare_rows']
-}): Array<{ label: string; count: number; ratio: number }> {
+function buildDiagnosisBreakdown(
+  input: { notes: string[]; compareRows: AutoCycleInsightRun['compare_rows'] },
+  scanExclusions?: Array<{ code: string; exclusion_reason?: string | null }>,
+): Array<{ label: string; count: number; ratio: number }> {
   const counter = new Map<string, number>()
 
   const add = (label: string, value = 1) => {
@@ -568,6 +572,19 @@ function buildDiagnosisBreakdown(input: {
     if (/일손실 한도 도달|복구모드|매수 슬롯 없음/i.test(note)) add('리스크/정책')
     if (/투자 가능 현금 0원|현금 하한 유지 구간|현금 부족/i.test(note)) add('자금/현금')
     if (/신뢰도 .*점 < 기준|signal-gate/i.test(note)) add('신뢰도 게이트')
+  }
+
+  // incorporate scan TOP exclusion classifications (server-side)
+  if (Array.isArray(scanExclusions) && scanExclusions.length > 0) {
+    for (const ex of scanExclusions) {
+      const reasonText = String(ex.exclusion_reason || '').trim()
+      if (!reasonText) continue
+      if (/신뢰도|signal|trust/i.test(reasonText)) add('신뢰도 게이트')
+      else if (/현금|자금|주문 가능 금액|투자 가능 현금/i.test(reasonText)) add('자금/현금')
+      else if (/일손실|리스크|복구모드|슬롯|정책/i.test(reasonText)) add('리스크/정책')
+      else if (/후보|필터|우선순위/i.test(reasonText)) add('후보 부족')
+      else add('기타')
+    }
   }
 
   const total = Array.from(counter.values()).reduce((sum, value) => sum + value, 0)
@@ -754,11 +771,127 @@ async function getAutoCycleInsights(
     getScanTopRows(supabase),
   ])
 
+  // classify scan top rows that were NOT present in compare_rows of latest run
+  const latestCompareCodes = new Set<string>((mapped[0]?.compare_rows || []).map((r) => String(r.code || '').trim()))
+  const missingCodes = scanTop.rows.map((r) => r.code).filter((c) => c && !latestCompareCodes.has(c))
+
+  let scoreMap = { byCode: new Map<string, any>(), latestAsof: null as string | null }
+  if (missingCodes.length > 0) {
+    scoreMap = await fetchLatestScoresByCodes(supabase, missingCodes)
+  }
+
+  // fetch current prices for missing codes
+  let priceMap: Record<string, number> = {}
+  if (missingCodes.length > 0) {
+    const { data: stocks } = await supabase
+      .from('stocks')
+      .select('code,close')
+      .in('code', missingCodes)
+    if (Array.isArray(stocks)) {
+      for (const s of stocks) {
+        const code = String((s as Record<string, unknown>)?.code || '').trim()
+        priceMap[code] = Number((s as Record<string, unknown>)?.close || 0)
+      }
+    }
+  }
+
+  // fetch held codes to mark as held
+  const heldCodes = new Set<string>()
+  if (missingCodes.length > 0) {
+    const { data: held } = await supabase
+      .from('virtual_positions')
+      .select('code')
+      .eq('chat_id', chatId)
+      .eq('status', 'holding')
+      .gt('quantity', 0)
+      .in('code', missingCodes)
+    if (Array.isArray(held)) {
+      for (const h of held) heldCodes.add(String((h as Record<string, unknown>)?.code || '').trim())
+    }
+  }
+
+  // fetch user's autotrade settings for min_buy_score if available
+  const { data: settingsRow } = await supabase
+    .from('virtual_autotrade_settings')
+    .select('min_buy_score')
+    .eq('chat_id', chatId)
+    .maybeSingle()
+  const userMinBuy = Number((settingsRow as Record<string, unknown> | null)?.min_buy_score || 0)
+
+  const enrichedScanRows = scanTop.rows.map((r) => ({ ...r }))
+  for (const row of enrichedScanRows) {
+    if (!row.code) continue
+    if (latestCompareCodes.has(row.code)) {
+      row.exclusion_reason = null
+      row.reason_detail = null
+      continue
+    }
+
+    if (heldCodes.has(row.code)) {
+      row.exclusion_reason = '보유 중(후보에서 제외)'
+      row.reason_detail = '현재 보유 포지션이 있어 신규 매수 후보에서 제외되었습니다.'
+      continue
+    }
+
+    const scoreEntry = scoreMap.byCode?.get(row.code)
+    const totalScore = scoreEntry ? Number(scoreEntry.total_score || row.score || 0) : row.score
+    const factors = scoreEntry ? (scoreEntry.factors || null) : null
+    const signal = scoreEntry ? String(scoreEntry.signal || row.signal || '').trim() : row.signal
+    const currentPrice = Number(priceMap[row.code] || 0)
+
+    // score below user min buy
+    if (userMinBuy > 0 && totalScore < userMinBuy) {
+      row.exclusion_reason = '점수 미달'
+      row.reason_detail = `점수 ${Math.round(totalScore)}점 < 최소 ${userMinBuy}점`
+      continue
+    }
+
+    // evaluate signal gate
+    try {
+      const gate = evaluateAutoTradeSignalGate({ currentPrice, score: totalScore, factors, minTrustScore: undefined })
+      if (!gate.passed) {
+        row.exclusion_reason = '신뢰도 게이트 미통과'
+        row.reason_detail = `신뢰도 ${gate.trustScore}점 미달 및 사유: ${gate.reasons.join(', ')}`
+        continue
+      }
+    } catch (e: any) {
+      // swallow and fallback
+    }
+
+    // volume/liquidity fallback
+    const volRatio = factors && typeof factors.vol_ratio === 'number' ? Number(factors.vol_ratio) : null
+    if (volRatio != null && volRatio < 0.9) {
+      row.exclusion_reason = '거래량/유동성 부족'
+      row.reason_detail = `vol_ratio=${volRatio.toFixed(2)}`
+      continue
+    }
+
+    // fallback unknown
+    row.exclusion_reason = '미확인(필터/자금/정책)'
+    row.reason_detail = '정밀 검사를 위한 추가 로그 또는 실행 환경이 필요합니다.'
+  }
+
+  // recompute diagnosis breakdown for latest run using scan-top classifications
+  const mappedWithBreakdown = mapped.map((run, idx) => {
+    if (idx !== 0) return run
+    try {
+      const scanExclusionsForRun = enrichedScanRows.filter((r) => {
+        return !(run.compare_rows || []).some((cr) => String(cr.code || '').trim() === String(r.code || '').trim())
+      }).map((r) => ({ code: r.code, exclusion_reason: r.exclusion_reason || null }))
+      return {
+        ...run,
+        diagnosis_breakdown: buildDiagnosisBreakdown({ notes: run.notes, compareRows: run.compare_rows }, scanExclusionsForRun),
+      }
+    } catch (e) {
+      return run
+    }
+  })
+
   return {
-    latest: mapped[0] || null,
-    recent_runs: mapped,
+    latest: mappedWithBreakdown[0] || null,
+    recent_runs: mappedWithBreakdown,
     score_asof: scanTop.scoreAsof,
-    scan_top_rows: scanTop.rows,
+    scan_top_rows: enrichedScanRows,
   }
 }
 
