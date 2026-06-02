@@ -4,7 +4,9 @@
       "Bash(git commit -m ' *)",
       "Bash(python -c ' *)",
       "Bash(gh run *)",
-      "Bash(gh workflow *)"
+      "Bash(gh workflow *)",
+      "Bash(python3 -)",
+      "Bash(grep -A 14 'const expectedReadKey' d:/Work/dev/github/signal-scanner-bot/handlers/ui/__TRACKED_VAR__)"
     ]
   }
 }
