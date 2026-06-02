@@ -26,6 +26,10 @@ jobs:
     env:
       SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
       SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      KRX_ID: ${{ secrets.KRX_ID }}
+      KRX_PW: ${{ secrets.KRX_PW }}
+      KOREA_APP_KEY: ${{ secrets.KOREA_APP_KEY }}
+      KOREA_APP_SECRET: ${{ secrets.KOREA_APP_SECRET }}
       TZ: "Asia/Seoul"
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
 
@@ -42,6 +46,19 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install pandas numpy pykrx supabase requests
+
+      - name: Validate required environment variables
+        run: |
+          missing=()
+          for key in SUPABASE_URL SUPABASE_SERVICE_ROLE_KEY KRX_ID KRX_PW KOREA_APP_KEY KOREA_APP_SECRET; do
+            if [ -z "${!key}" ]; then
+              missing+=("$key")
+            fi
+          done
+          if [ ${#missing[@]} -gt 0 ]; then
+            echo "::error::Missing required env vars: ${missing[*]}"
+            exit 1
+          fi
 
       - name: Run Daily Batch (All-in-one)
         run: |
