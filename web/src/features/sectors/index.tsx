@@ -95,13 +95,19 @@ type PhaseDetectionResult = {
   reason: string
 }
 
+const PHASE_CONFIDENCE_THRESHOLD = {
+  high: 80,
+  medium: 60,
+  weakGapRatio: 0.12,
+} as const
+
 function clampNum(v: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, v))
 }
 
 function confidenceLabel(v: number): "높음" | "보통" | "낮음" {
-  if (v >= 75) return "높음"
-  if (v >= 55) return "보통"
+  if (v >= PHASE_CONFIDENCE_THRESHOLD.high) return "높음"
+  if (v >= PHASE_CONFIDENCE_THRESHOLD.medium) return "보통"
   return "낮음"
 }
 
@@ -155,7 +161,7 @@ function detectCurrentPhase(all: Sector[], marketOverview?: SectorMarketOverview
   const gapRatio = top.score > 0 ? gap / top.score : 0
   const coverage = clampNum(usableScoreCount / 12, 0, 1)
 
-  const sectorConfidence = clampNum(Math.round(35 + gapRatio * 40 + coverage * 20), 20, 90)
+  const sectorConfidence = clampNum(Math.round(30 + gapRatio * 42 + coverage * 18), 15, 90)
   const macroPhase = mapMacroPhaseToRotation(marketOverview?.economicPhase?.phase)
   const macroLabel = marketOverview?.economicPhase?.label
   const macroSignalConfidence = Number(marketOverview?.tradingSignal?.confidence)
@@ -174,7 +180,7 @@ function detectCurrentPhase(all: Sector[], marketOverview?: SectorMarketOverview
     reason = `${reason} · 거시 국면 ${macroLabel ?? "참고"} ${agree ? "정합" : "불일치"}`
   }
 
-  const weakDistinction = gapRatio < 0.08 && !macroPhase
+  const weakDistinction = gapRatio < PHASE_CONFIDENCE_THRESHOLD.weakGapRatio && !macroPhase
   if (weakDistinction) {
     return {
       phase: null,
