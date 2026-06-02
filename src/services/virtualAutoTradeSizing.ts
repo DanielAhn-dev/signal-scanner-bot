@@ -31,7 +31,13 @@ export type AutoTradeSizingResult = {
   minOrderAmount: number;
 };
 
-const MIN_ORDER_AMOUNT_KRW = 500_000;
+const MIN_ORDER_FLOOR_KRW = 100_000;
+const MIN_ORDER_CAP_KRW = 500_000;
+
+function resolveMinOrderAmount(seedCapital: number): number {
+  const dynamic = Math.floor(seedCapital * 0.03);
+  return Math.min(MIN_ORDER_CAP_KRW, Math.max(MIN_ORDER_FLOOR_KRW, dynamic));
+}
 
 function toPositiveNumber(value: unknown): number | null {
   const num = Number(value);
@@ -81,6 +87,8 @@ export function calculateAutoTradeBuySizing(
     toPositiveNumber(input.prefs?.capital_krw) ??
     availableCash;
 
+  const minOrderAmount = resolveMinOrderAmount(seedCapital);
+
   const configuredTargetPositions = toPositiveNumber(input.prefs?.virtual_target_positions);
   const configuredSplitCount = resolveSplitCount(input.prefs?.split_count);
   const targetPositions = clampInt(
@@ -107,14 +115,14 @@ export function calculateAutoTradeBuySizing(
     ? Math.max(0, Math.floor(Math.min(...candidateBudgets) * riskBudgetScale))
     : 0;
   let splitCount = configuredSplitCount;
-  while (splitCount > 1 && Math.floor(scaledTotalBudget / splitCount) < MIN_ORDER_AMOUNT_KRW) {
+  while (splitCount > 1 && Math.floor(scaledTotalBudget / splitCount) < minOrderAmount) {
     splitCount -= 1;
   }
 
   const budget = Math.max(0, Math.floor(scaledTotalBudget / splitCount));
   let quantity = price > 0 ? Math.max(0, Math.floor(budget / price)) : 0;
   let investedAmount = quantity > 0 ? quantity * price : 0;
-  if (investedAmount > 0 && investedAmount < MIN_ORDER_AMOUNT_KRW) {
+  if (investedAmount > 0 && investedAmount < minOrderAmount) {
     quantity = 0;
     investedAmount = 0;
   }
@@ -132,7 +140,7 @@ export function calculateAutoTradeBuySizing(
     configuredSplitCount,
     riskBudgetScale,
     targetPositions,
-    minOrderAmount: MIN_ORDER_AMOUNT_KRW,
+    minOrderAmount: minOrderAmount,
     targetWeightPct:
       seedCapital > 0 && scaledTotalBudget > 0
         ? Number(((scaledTotalBudget / seedCapital) * 100).toFixed(2))

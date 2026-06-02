@@ -111,6 +111,8 @@ type OperationsKpi = {
   holding_count: number
   latest_failed_reason?: string | null
   latest_failed_at?: string | null
+  virtual_cash?: number | null
+  virtual_seed_capital?: number | null
 }
 
 type AutoCycleInsightFunnel = {
@@ -785,6 +787,22 @@ export default function OperationsPage() {
               <div className="title-lg" style={{ marginTop: 'var(--space-1)' }}>{dashboardKpi.queue_waiting} / {dashboardKpi.holding_count}</div>
               <div className="caption muted" style={{ marginTop: 'var(--space-1)' }}>대기작업 / 보유종목</div>
             </div>
+            {dashboardKpi.virtual_seed_capital != null && (
+              <div className="card">
+                <div className="caption muted">가상 현금 잔액</div>
+                <div className="title-lg" style={{ marginTop: 'var(--space-1)' }}>
+                  {dashboardKpi.virtual_cash != null ? formatKrw(dashboardKpi.virtual_cash) : '-'}
+                </div>
+                <div className="caption muted" style={{ marginTop: 'var(--space-1)' }}>
+                  시드 {formatKrw(dashboardKpi.virtual_seed_capital)}
+                  {dashboardKpi.virtual_cash != null && dashboardKpi.virtual_seed_capital > 0 && (
+                    <span style={{ marginLeft: 6 }}>
+                      ({((dashboardKpi.virtual_cash / dashboardKpi.virtual_seed_capital) * 100).toFixed(1)}%)
+                    </span>
+                  )}
+                </div>
+              </div>
+            )}
           </>
         )}
       </div>

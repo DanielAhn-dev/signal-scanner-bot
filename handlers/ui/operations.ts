@@ -57,6 +57,8 @@ type OpsDashboardKpi = {
   holding_count: number
   latest_failed_reason: string | null
   latest_failed_at: string | null
+  virtual_cash: number | null
+  virtual_seed_capital: number | null
 }
 
 type AutoCycleInsightFunnel = {
@@ -1112,6 +1114,12 @@ async function getJobSnapshot(
   }
 }
 
+function toKpiCash(prefs: unknown, key: string, minValue: number): number | null {
+  const p = (prefs && typeof prefs === 'object') ? prefs as Record<string, unknown> : {}
+  const v = Number(p[key])
+  return Number.isFinite(v) && v >= minValue ? v : null
+}
+
 async function getOperationsDashboardKpi(
   supabase: SupabaseClient,
   chatId: string | number
@@ -1145,16 +1153,23 @@ async function getOperationsDashboardKpi(
       .gt('quantity', 0),
   ])
 
-  const latestFailedRes = await supabase
-    .from('virtual_autotrade_runs')
-    .select('started_at,summary')
-    .eq('chat_id', chatId)
-    .eq('status', 'FAILED')
-    .gte('started_at', startIso)
-    .lt('started_at', endIso)
-    .order('started_at', { ascending: false })
-    .limit(1)
-    .maybeSingle()
+  const [latestFailedRes, userPrefsRes] = await Promise.all([
+    supabase
+      .from('virtual_autotrade_runs')
+      .select('started_at,summary')
+      .eq('chat_id', chatId)
+      .eq('status', 'FAILED')
+      .gte('started_at', startIso)
+      .lt('started_at', endIso)
+      .order('started_at', { ascending: false })
+      .limit(1)
+      .maybeSingle(),
+    supabase
+      .from('users')
+      .select('prefs')
+      .eq('tg_id', chatId)
+      .maybeSingle(),
+  ])
 
   const trades = Array.isArray(tradesRes.data) ? tradesRes.data : []
   const runs = Array.isArray(runsRes.data) ? runsRes.data : []
@@ -1210,6 +1225,8 @@ async function getOperationsDashboardKpi(
     holding_count: holdingsRes.count || 0,
     latest_failed_reason: latestFailedReason,
     latest_failed_at: latestFailed?.started_at ? String(latestFailed.started_at) : null,
+    virtual_cash: toKpiCash((userPrefsRes.data as Record<string, unknown> | null)?.prefs, 'virtual_cash', 0),
+    virtual_seed_capital: toKpiCash((userPrefsRes.data as Record<string, unknown> | null)?.prefs, 'virtual_seed_capital', 1),
   }
 }
 
