@@ -355,12 +355,16 @@ export default function Settings(){
                 </div>
               </div>
 
-              <div className="mt-4 flex items-center gap-2">
-                <Button onClick={saveSettings} disabled={saving} variant="primary">{saving ? '저장중…' : '저장'}</Button>
-                <Button onClick={resetAutoTradeOnly} disabled={resettingAutoOnly} variant="ghost">
-                  {resettingAutoOnly ? '초기화중…' : '자동매매 데이터만 초기화'}
-                </Button>
-                {status && <div className="muted">{status}</div>}
+              <div className="mt-4" style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', alignItems: 'center' }}>
+                <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+                  <Button onClick={saveSettings} disabled={saving} variant="primary">{saving ? '저장중…' : '저장'}</Button>
+                  <Button onClick={resetAutoTradeOnly} disabled={resettingAutoOnly} variant="ghost">
+                    {resettingAutoOnly ? '초기화중…' : '자동매매 데이터만 초기화'}
+                  </Button>
+                </div>
+                {status && (
+                  <div className="muted" style={{ minWidth: 0, marginLeft: 8, wordBreak: 'break-word' }}>{status}</div>
+                )}
               </div>
               <div className="text-xs muted mt-2">
                 안내: 이 버튼은 자동매매(AUTO)로 생성된 이력만 정리합니다. 직접 추가한 수동 보유/거래는 유지됩니다.
