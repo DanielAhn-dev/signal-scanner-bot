@@ -113,6 +113,57 @@ type OperationsKpi = {
   latest_failed_at?: string | null
 }
 
+type AutoCycleInsightFunnel = {
+  initial: number
+  policy: number
+  base: number
+  pool: number
+  selected: number
+}
+
+type AutoCycleInsightRun = {
+  id: number
+  run_type: string
+  run_key: string
+  status: 'SUCCESS' | 'SKIPPED' | 'FAILED'
+  started_at: string
+  finished_at: string | null
+  buys: number
+  sells: number
+  skipped: number
+  errors: number
+  top_reject_reasons: string[]
+  key_gate_reasons: string[]
+  funnel: AutoCycleInsightFunnel | null
+  notes: string[]
+  diagnosis_line: string
+  diagnosis_breakdown: Array<{
+    label: string
+    count: number
+    ratio: number
+  }>
+  compare_rows: Array<{
+    code: string
+    decision: 'BUY' | 'SKIP' | 'HOLD' | 'SELL' | 'ERROR'
+    reason: string
+    score: number | null
+    trust_score: number | null
+    min_trust_score: number | null
+  }>
+}
+
+type AutoCycleInsights = {
+  latest: AutoCycleInsightRun | null
+  recent_runs: AutoCycleInsightRun[]
+  score_asof: string | null
+  scan_top_rows: Array<{
+    code: string
+    name: string | null
+    score: number
+    signal: string | null
+  }>
+}
+
 type ConsistencyIssue = {
   code: string
   name: string | null
@@ -313,6 +364,66 @@ function normalizeStep(value: unknown): 'intraday' | 'ready' {
   return String(value || '').toLowerCase() === 'ready' ? 'ready' : 'intraday'
 }
 
+function runStatusLabel(status: AutoCycleInsightRun['status']): string {
+  if (status === 'SUCCESS') return '성공'
+  if (status === 'FAILED') return '실패'
+  return '스킵'
+}
+
+function runStatusTone(status: AutoCycleInsightRun['status']): { color: string; bg: string } {
+  if (status === 'SUCCESS') return { color: '#0F766E', bg: '#E8F7F3' }
+  if (status === 'FAILED') return { color: '#B42318', bg: '#FFF0F1' }
+  return { color: '#92400E', bg: '#FFF4E5' }
+}
+
+function decisionTone(decision: AutoCycleInsightRun['compare_rows'][number]['decision']): { color: string; bg: string } {
+  if (decision === 'BUY') return { color: '#0F766E', bg: '#E8F7F3' }
+  if (decision === 'SELL') return { color: '#0B57D0', bg: '#EBF3FF' }
+  if (decision === 'SKIP') return { color: '#92400E', bg: '#FFF4E5' }
+  if (decision === 'ERROR') return { color: '#B42318', bg: '#FFF0F1' }
+  return { color: '#475467', bg: '#F5F7FA' }
+}
+
+function normalizeDecisionFilter(
+  value: unknown,
+): 'ALL' | 'BUY' | 'SKIP' | 'HOLD' | 'SELL' | 'ERROR' {
+  const upper = String(value || 'ALL').toUpperCase()
+  if (upper === 'BUY' || upper === 'SKIP' || upper === 'HOLD' || upper === 'SELL' || upper === 'ERROR') {
+    return upper
+  }
+  return 'ALL'
+}
+
+function reasonCategoryFromText(reason: string): string {
+  const text = String(reason || '').toLowerCase()
+  if (/신뢰도|signal|trust/.test(text)) return '신뢰도 게이트'
+  if (/현금|자금|주문 가능 금액/.test(text)) return '자금/현금'
+  if (/일손실|리스크|복구모드|슬롯|정책/.test(text)) return '리스크/정책'
+  if (/후보 없음|후보|필터/.test(text)) return '후보 부족'
+  return '기타'
+}
+
+function estimateMissingReason(input: {
+  signal: string | null
+  latest: AutoCycleInsightRun
+}): string {
+  const signal = String(input.signal || '').toUpperCase().trim()
+  if (signal && !['BUY', 'STRONG_BUY', 'WATCH'].includes(signal)) {
+    return `신호 우선순위 미달(${signal})`
+  }
+
+  if (input.latest.funnel && input.latest.funnel.selected <= 0) {
+    return '후보 선별 단계 미통과'
+  }
+
+  const gate = input.latest.key_gate_reasons[0] || ''
+  if (gate) {
+    return `계좌 게이트 우선 차단(${gate})`
+  }
+
+  return '상위 후보 우선순위 밀림 또는 보유/중복 제외'
+}
+
 export default function OperationsPage() {
   const toast = useToast()
 
@@ -339,6 +450,13 @@ export default function OperationsPage() {
 
   const [dashboardKpi, setDashboardKpi] = useState<OperationsKpi | null>(null)
   const [dashboardLoading, setDashboardLoading] = useState(true)
+  const [autocycleInsights, setAutocycleInsights] = useState<AutoCycleInsights | null>(null)
+  const [autocycleInsightsLoading, setAutocycleInsightsLoading] = useState(true)
+  const [insightTab, setInsightTab] = useState<'summary' | 'details'>('summary')
+  const [expandedInsightRunIds, setExpandedInsightRunIds] = useState<number[]>([])
+  const [latestCompareDecisionFilter, setLatestCompareDecisionFilter] = useState<'ALL' | 'BUY' | 'SKIP' | 'HOLD' | 'SELL' | 'ERROR'>('ALL')
+  const [latestReasonCategoryFilter, setLatestReasonCategoryFilter] = useState<string>('ALL')
+  const [runCompareDecisionFilterById, setRunCompareDecisionFilterById] = useState<Record<number, 'ALL' | 'BUY' | 'SKIP' | 'HOLD' | 'SELL' | 'ERROR'>>({})
   const [consistency, setConsistency] = useState<ConsistencyReport | null>(null)
   const [consistencyLoading, setConsistencyLoading] = useState(false)
   const [consistencyRepairing, setConsistencyRepairing] = useState(false)
@@ -370,6 +488,20 @@ export default function OperationsPage() {
   }, [toast])
 
   useEffect(() => { loadDashboard() }, [loadDashboard])
+
+  const loadAutoCycleInsights = useCallback(async () => {
+    setAutocycleInsightsLoading(true)
+    try {
+      const json = await apiFetch('/api/ui/operations?view=autocycle_insights', { cacheMs: 0, timeoutMs: 15_000 })
+      setAutocycleInsights((json?.data || null) as AutoCycleInsights | null)
+    } catch (e: any) {
+      toast.show('자동매매 인사이트 조회 실패: ' + String(e?.message || e))
+    } finally {
+      setAutocycleInsightsLoading(false)
+    }
+  }, [toast])
+
+  useEffect(() => { void loadAutoCycleInsights() }, [loadAutoCycleInsights])
 
   const loadConsistency = useCallback(async () => {
     setConsistencyLoading(true)
@@ -405,6 +537,7 @@ export default function OperationsPage() {
         setWatchingJobIds(prev => prev.filter(id => id !== jobId))
         setTimeout(loadActivity, 500)
         setTimeout(loadDashboard, 600)
+        setTimeout(loadAutoCycleInsights, 700)
         setTimeout(loadConsistency, 800)
 
         if (state === 'failed' && !silent) {
@@ -425,7 +558,7 @@ export default function OperationsPage() {
         toast.show('실시간 상태 조회 실패: ' + String(e?.message || e))
       }
     }
-  }, [loadActivity, loadConsistency, loadDashboard, toast])
+  }, [loadActivity, loadAutoCycleInsights, loadConsistency, loadDashboard, toast])
 
   useEffect(() => {
     if (watchingJobIds.length === 0) return
@@ -650,6 +783,451 @@ export default function OperationsPage() {
               <div className="title-lg" style={{ marginTop: 'var(--space-1)' }}>{dashboardKpi.queue_waiting} / {dashboardKpi.holding_count}</div>
               <div className="caption muted" style={{ marginTop: 'var(--space-1)' }}>대기작업 / 보유종목</div>
             </div>
+          </>
+        )}
+      </div>
+
+      <div className="card card-lg" style={{ marginBottom: 'var(--space-6)' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 'var(--space-3)', flexWrap: 'wrap', marginBottom: 'var(--space-3)' }}>
+          <div>
+            <div className="title-lg">자동매매 실행 인사이트</div>
+            <div className="caption muted" style={{ marginTop: 'var(--space-1)' }}>
+              후보 생성부터 최종 체결까지, 왜 매수가 없었는지 퍼널과 게이트 사유를 시각적으로 보여줍니다.
+            </div>
+          </div>
+          <div style={{ display: 'flex', gap: 'var(--space-2)', flexWrap: 'wrap' }}>
+            <Button variant={insightTab === 'summary' ? 'primary' : 'ghost'} onClick={() => setInsightTab('summary')}>
+              요약
+            </Button>
+            <Button variant={insightTab === 'details' ? 'primary' : 'ghost'} onClick={() => setInsightTab('details')}>
+              상세
+            </Button>
+            <Button variant="ghost" onClick={() => { void loadAutoCycleInsights() }} disabled={autocycleInsightsLoading}>
+              {autocycleInsightsLoading ? '조회 중...' : '새로고침'}
+            </Button>
+          </div>
+        </div>
+
+        {!autocycleInsightsLoading && !autocycleInsights?.latest && (
+          <div className="caption muted">최근 실행 데이터가 없습니다. 자동사이클을 한 번 실행하면 인사이트가 생성됩니다.</div>
+        )}
+
+        {!autocycleInsightsLoading && autocycleInsights?.latest && (
+          <>
+            {insightTab === 'summary' && (
+            <div className="card" style={{ marginBottom: 'var(--space-3)', background: '#FAFCFF' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 'var(--space-2)', flexWrap: 'wrap' }}>
+                <div>
+                  <div className="font-medium">최신 실행: {autocycleInsights.latest.run_type} · {autocycleInsights.latest.run_key}</div>
+                  <div className="caption muted" style={{ marginTop: 4 }}>{new Date(autocycleInsights.latest.started_at).toLocaleString('ko-KR')}</div>
+                </div>
+                {(() => {
+                  const tone = runStatusTone(autocycleInsights.latest.status)
+                  return (
+                    <span className="caption" style={{ borderRadius: 999, padding: '4px 10px', background: tone.bg, color: tone.color, fontWeight: 700 }}>
+                      {runStatusLabel(autocycleInsights.latest.status)}
+                    </span>
+                  )
+                })()}
+              </div>
+
+              <div className="caption" style={{ marginTop: 'var(--space-2)', color: 'var(--color-text-secondary)' }}>
+                매수 {autocycleInsights.latest.buys} · 매도 {autocycleInsights.latest.sells} · 스킵 {autocycleInsights.latest.skipped} · 오류 {autocycleInsights.latest.errors}
+              </div>
+
+              <div className="card" style={{ marginTop: 'var(--space-2)', padding: 'var(--space-2)', background: '#F7FAFF', borderColor: '#D7E6FF' }}>
+                <div className="caption muted" style={{ marginBottom: 4 }}>한줄 진단</div>
+                <div className="caption" style={{ color: 'var(--color-text-secondary)', fontWeight: 600 }}>
+                  {autocycleInsights.latest.diagnosis_line || '진단 데이터가 아직 없습니다.'}
+                </div>
+              </div>
+
+              {autocycleInsights.latest.diagnosis_breakdown.length > 0 && (
+                <div className="card" style={{ marginTop: 'var(--space-2)', padding: 'var(--space-2)' }}>
+                  <div className="caption muted" style={{ marginBottom: 6 }}>원인 비중 (클릭하면 아래 비교표 필터)</div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                    {autocycleInsights.latest.diagnosis_breakdown.map((item, idx) => (
+                      <button
+                        key={`diag-breakdown-${idx}`}
+                        onClick={() => {
+                          setLatestReasonCategoryFilter((prev) => prev === item.label ? 'ALL' : item.label)
+                          setLatestCompareDecisionFilter('ALL')
+                        }}
+                        style={{
+                          border: latestReasonCategoryFilter === item.label ? '1px solid #2563EB' : '1px solid #E4E7EC',
+                          borderRadius: 8,
+                          background: latestReasonCategoryFilter === item.label ? '#EFF6FF' : '#fff',
+                          padding: '6px 8px',
+                          cursor: 'pointer',
+                          textAlign: 'left',
+                        }}
+                      >
+                        <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                          <span className="caption" style={{ color: 'var(--color-text-secondary)' }}>{item.label}</span>
+                          <span className="caption muted">{item.ratio.toFixed(1)}% ({item.count})</span>
+                        </div>
+                        <div style={{ marginTop: 4, height: 6, borderRadius: 999, background: '#EDF2F7', overflow: 'hidden' }}>
+                          <div style={{ width: `${Math.max(3, Math.min(100, item.ratio))}%`, height: '100%', background: '#3B82F6' }} />
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {autocycleInsights.latest.funnel && (
+                <div style={{ marginTop: 'var(--space-3)', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: 'var(--space-2)' }}>
+                  <div className="card" style={{ padding: 'var(--space-2)' }}>
+                    <div className="caption muted">초기</div>
+                    <div className="font-medium">{autocycleInsights.latest.funnel.initial}</div>
+                  </div>
+                  <div className="card" style={{ padding: 'var(--space-2)' }}>
+                    <div className="caption muted">정책 통과</div>
+                    <div className="font-medium">{autocycleInsights.latest.funnel.policy}</div>
+                  </div>
+                  <div className="card" style={{ padding: 'var(--space-2)' }}>
+                    <div className="caption muted">기본 필터</div>
+                    <div className="font-medium">{autocycleInsights.latest.funnel.base}</div>
+                  </div>
+                  <div className="card" style={{ padding: 'var(--space-2)' }}>
+                    <div className="caption muted">후보 풀</div>
+                    <div className="font-medium">{autocycleInsights.latest.funnel.pool}</div>
+                  </div>
+                  <div className="card" style={{ padding: 'var(--space-2)' }}>
+                    <div className="caption muted">최종 후보</div>
+                    <div className="font-medium">{autocycleInsights.latest.funnel.selected}</div>
+                  </div>
+                </div>
+              )}
+
+              {(autocycleInsights.latest.key_gate_reasons.length > 0 || autocycleInsights.latest.top_reject_reasons.length > 0) && (
+                <div style={{ marginTop: 'var(--space-3)', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 'var(--space-2)' }}>
+                  <div className="card" style={{ padding: 'var(--space-2)' }}>
+                    <div className="caption muted" style={{ marginBottom: 6 }}>왜 매수가 없었나(게이트)</div>
+                    {autocycleInsights.latest.key_gate_reasons.length > 0 ? (
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                        {autocycleInsights.latest.key_gate_reasons.map((reason, idx) => (
+                          <span key={`gate-${idx}`} className="caption" style={{ borderRadius: 999, padding: '2px 8px', background: '#FFF4E5', color: '#92400E', fontWeight: 700 }}>{reason}</span>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="caption muted">주요 게이트 차단 신호 없음</div>
+                    )}
+                  </div>
+                  <div className="card" style={{ padding: 'var(--space-2)' }}>
+                    <div className="caption muted" style={{ marginBottom: 6 }}>탈락 상위 사유</div>
+                    {autocycleInsights.latest.top_reject_reasons.length > 0 ? (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                        {autocycleInsights.latest.top_reject_reasons.map((reason, idx) => (
+                          <div key={`reject-${idx}`} className="caption" style={{ color: 'var(--color-text-secondary)' }}>{reason}</div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="caption muted">탈락 사유 데이터 없음</div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              <div style={{ marginTop: 'var(--space-3)' }}>
+                <div className="title-md" style={{ marginBottom: 'var(--space-2)' }}>
+                  스캔 TOP 원본 (점수순)
+                </div>
+                {autocycleInsights.scan_top_rows.length > 0 ? (
+                  <div style={{ overflowX: 'auto', marginBottom: 'var(--space-3)' }}>
+                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.82rem' }}>
+                      <thead>
+                        <tr>
+                          <th style={{ textAlign: 'left', padding: '8px', borderBottom: '1px solid var(--color-border-default)' }}>종목</th>
+                          <th style={{ textAlign: 'right', padding: '8px', borderBottom: '1px solid var(--color-border-default)' }}>점수</th>
+                          <th style={{ textAlign: 'left', padding: '8px', borderBottom: '1px solid var(--color-border-default)' }}>신호</th>
+                          <th style={{ textAlign: 'left', padding: '8px', borderBottom: '1px solid var(--color-border-default)' }}>집행후보 포함</th>
+                          <th style={{ textAlign: 'left', padding: '8px', borderBottom: '1px solid var(--color-border-default)' }}>미포함/차단 추정</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {autocycleInsights.scan_top_rows.map((row, idx) => {
+                          const compareEntry = autocycleInsights.latest.compare_rows.find((item) => item.code === row.code)
+                          const included = Boolean(compareEntry)
+                          const estimatedReason = compareEntry
+                            ? compareEntry.reason
+                            : estimateMissingReason({ signal: row.signal, latest: autocycleInsights.latest })
+                          return (
+                            <tr key={`scan-top-${idx}`}>
+                              <td style={{ padding: '8px', borderBottom: '1px solid #F0F2F5' }}>{row.name || row.code}{row.name ? ` (${row.code})` : ''}</td>
+                              <td style={{ padding: '8px', borderBottom: '1px solid #F0F2F5', textAlign: 'right' }}>{row.score.toFixed(1)}</td>
+                              <td style={{ padding: '8px', borderBottom: '1px solid #F0F2F5' }}>{row.signal || '-'}</td>
+                              <td style={{ padding: '8px', borderBottom: '1px solid #F0F2F5' }}>
+                                <span className="caption" style={{ borderRadius: 999, padding: '2px 8px', background: included ? '#E8F7F3' : '#F5F7FA', color: included ? '#0F766E' : '#667085', fontWeight: 700 }}>
+                                  {included ? '포함' : '미포함'}
+                                </span>
+                              </td>
+                              <td style={{ padding: '8px', borderBottom: '1px solid #F0F2F5', color: 'var(--color-text-secondary)' }}>{estimatedReason}</td>
+                            </tr>
+                          )
+                        })}
+                      </tbody>
+                    </table>
+                    <div className="caption muted" style={{ marginTop: 6 }}>
+                      score asof: {autocycleInsights.score_asof || '-'}
+                    </div>
+                  </div>
+                ) : (
+                  <div className="caption muted" style={{ marginBottom: 'var(--space-3)' }}>스캔 TOP 원본 데이터가 없습니다.</div>
+                )}
+
+                <div className="title-md" style={{ marginBottom: 'var(--space-2)' }}>TOP 후보 vs 최종 미체결</div>
+                {autocycleInsights.latest.compare_rows.length > 0 ? (
+                  <div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 8 }}>
+                      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                        {(['ALL', 'BUY', 'SKIP', 'HOLD', 'SELL', 'ERROR'] as const).map((kind) => {
+                          const active = latestCompareDecisionFilter === kind
+                          return (
+                            <button
+                              key={`latest-compare-filter-${kind}`}
+                              onClick={() => setLatestCompareDecisionFilter(kind)}
+                              style={{
+                                border: active ? '1px solid #2563EB' : '1px solid #D0D5DD',
+                                background: active ? '#EBF3FF' : '#fff',
+                                color: active ? '#0B57D0' : '#475467',
+                                borderRadius: 999,
+                                padding: '2px 10px',
+                                fontSize: '0.72rem',
+                                fontWeight: 700,
+                                cursor: 'pointer',
+                              }}
+                            >
+                              {kind}
+                            </button>
+                          )
+                        })}
+                      </div>
+                      {latestReasonCategoryFilter !== 'ALL' && (
+                        <button
+                          onClick={() => setLatestReasonCategoryFilter('ALL')}
+                          style={{
+                            border: '1px solid #D0D5DD',
+                            background: '#fff',
+                            color: '#475467',
+                            borderRadius: 999,
+                            padding: '2px 10px',
+                            fontSize: '0.72rem',
+                            fontWeight: 700,
+                            cursor: 'pointer',
+                          }}
+                        >
+                          원인필터 해제
+                        </button>
+                      )}
+                    </div>
+
+                    {(() => {
+                      const filteredRows = autocycleInsights.latest.compare_rows.filter((row) => {
+                        if (latestCompareDecisionFilter !== 'ALL' && row.decision !== latestCompareDecisionFilter) {
+                          return false
+                        }
+                        if (latestReasonCategoryFilter !== 'ALL') {
+                          return reasonCategoryFromText(row.reason) === latestReasonCategoryFilter
+                        }
+                        return true
+                      })
+
+                      if (filteredRows.length <= 0) {
+                        return <div className="caption muted">현재 필터 조건에 맞는 비교 행이 없습니다.</div>
+                      }
+
+                      return (
+                  <div style={{ overflowX: 'auto' }}>
+                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.82rem' }}>
+                      <thead>
+                        <tr>
+                          <th style={{ textAlign: 'left', padding: '8px', borderBottom: '1px solid var(--color-border-default)' }}>종목</th>
+                          <th style={{ textAlign: 'left', padding: '8px', borderBottom: '1px solid var(--color-border-default)' }}>결과</th>
+                          <th style={{ textAlign: 'left', padding: '8px', borderBottom: '1px solid var(--color-border-default)' }}>사유</th>
+                          <th style={{ textAlign: 'right', padding: '8px', borderBottom: '1px solid var(--color-border-default)' }}>점수</th>
+                          <th style={{ textAlign: 'right', padding: '8px', borderBottom: '1px solid var(--color-border-default)' }}>신뢰도</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {filteredRows.map((row, idx) => {
+                          const tone = decisionTone(row.decision)
+                          const trustText = row.trust_score != null
+                            ? row.min_trust_score != null
+                              ? `${row.trust_score.toFixed(0)} / ${row.min_trust_score.toFixed(0)}`
+                              : `${row.trust_score.toFixed(0)}`
+                            : '-'
+                          return (
+                            <tr key={`compare-row-${idx}`}>
+                              <td style={{ padding: '8px', borderBottom: '1px solid #F0F2F5' }}>{row.code}</td>
+                              <td style={{ padding: '8px', borderBottom: '1px solid #F0F2F5' }}>
+                                <span className="caption" style={{ borderRadius: 999, padding: '2px 8px', background: tone.bg, color: tone.color, fontWeight: 700 }}>{row.decision}</span>
+                              </td>
+                              <td style={{ padding: '8px', borderBottom: '1px solid #F0F2F5', color: 'var(--color-text-secondary)' }}>{row.reason}</td>
+                              <td style={{ padding: '8px', borderBottom: '1px solid #F0F2F5', textAlign: 'right' }}>{row.score != null ? row.score.toFixed(1) : '-'}</td>
+                              <td style={{ padding: '8px', borderBottom: '1px solid #F0F2F5', textAlign: 'right' }}>{trustText}</td>
+                            </tr>
+                          )
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                      )
+                    })()}
+                  </div>
+                ) : (
+                  <div className="caption muted">비교 가능한 액션 로그가 없습니다.</div>
+                )}
+              </div>
+            </div>
+            )}
+
+            {insightTab === 'details' && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' }}>
+              {autocycleInsights.recent_runs.slice(0, 5).map((run) => {
+                const tone = runStatusTone(run.status)
+                const expanded = expandedInsightRunIds.includes(run.id)
+                return (
+                  <div key={`insight-run-${run.id}`} className="card" style={{ padding: 'var(--space-3)' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 'var(--space-2)', flexWrap: 'wrap' }}>
+                      <div className="caption" style={{ color: 'var(--color-text-secondary)' }}>
+                        {run.run_type} · {run.run_key} · {new Date(run.started_at).toLocaleString('ko-KR')}
+                      </div>
+                      <span className="caption" style={{ borderRadius: 999, padding: '2px 8px', background: tone.bg, color: tone.color, fontWeight: 700 }}>
+                        {runStatusLabel(run.status)}
+                      </span>
+                    </div>
+                    <div className="caption muted" style={{ marginTop: 4 }}>
+                      매수 {run.buys} · 매도 {run.sells} · 스킵 {run.skipped} · 오류 {run.errors}
+                    </div>
+                    <div className="caption" style={{ marginTop: 6, color: 'var(--color-text-secondary)' }}>
+                      {run.diagnosis_line || '요약 진단 없음'}
+                    </div>
+
+                    <div style={{ marginTop: 'var(--space-2)' }}>
+                      <Button
+                        variant="ghost"
+                        onClick={() => {
+                          setExpandedInsightRunIds((prev) => prev.includes(run.id) ? prev.filter((id) => id !== run.id) : [...prev, run.id])
+                        }}
+                      >
+                        {expanded ? '상세 접기' : '상세 펼치기'}
+                      </Button>
+                    </div>
+
+                    {expanded && (
+                      <div style={{ marginTop: 'var(--space-2)', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: 'var(--space-2)' }}>
+                        <div className="card" style={{ padding: 'var(--space-2)' }}>
+                          <div className="caption muted" style={{ marginBottom: 6 }}>주요 노트</div>
+                          {run.notes.length > 0 ? (
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                              {run.notes.slice(0, 6).map((note, idx) => (
+                                <div key={`run-note-${run.id}-${idx}`} className="caption" style={{ color: 'var(--color-text-secondary)' }}>{note}</div>
+                              ))}
+                            </div>
+                          ) : (
+                            <div className="caption muted">노트 없음</div>
+                          )}
+                        </div>
+                        <div className="card" style={{ padding: 'var(--space-2)' }}>
+                          <div className="caption muted" style={{ marginBottom: 6 }}>주요 차단 사유</div>
+                          {run.key_gate_reasons.length > 0 ? (
+                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                              {run.key_gate_reasons.map((reason, idx) => (
+                                <span key={`run-gate-${run.id}-${idx}`} className="caption" style={{ borderRadius: 999, padding: '2px 8px', background: '#FFF4E5', color: '#92400E', fontWeight: 700 }}>{reason}</span>
+                              ))}
+                            </div>
+                          ) : (
+                            <div className="caption muted">게이트 차단 없음</div>
+                          )}
+                        </div>
+
+                        <div className="card" style={{ padding: 'var(--space-2)', gridColumn: '1 / -1' }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 8 }}>
+                            <div className="caption muted">액션 비교 행</div>
+                            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                              {(['ALL', 'BUY', 'SKIP', 'HOLD', 'SELL', 'ERROR'] as const).map((kind) => {
+                                const current = normalizeDecisionFilter(runCompareDecisionFilterById[run.id])
+                                const active = current === kind
+                                return (
+                                  <button
+                                    key={`run-filter-${run.id}-${kind}`}
+                                    onClick={() => {
+                                      setRunCompareDecisionFilterById((prev) => ({ ...prev, [run.id]: kind }))
+                                    }}
+                                    style={{
+                                      border: active ? '1px solid #2563EB' : '1px solid #D0D5DD',
+                                      background: active ? '#EBF3FF' : '#fff',
+                                      color: active ? '#0B57D0' : '#475467',
+                                      borderRadius: 999,
+                                      padding: '2px 10px',
+                                      fontSize: '0.72rem',
+                                      fontWeight: 700,
+                                      cursor: 'pointer',
+                                    }}
+                                  >
+                                    {kind}
+                                  </button>
+                                )
+                              })}
+                            </div>
+                          </div>
+
+                          {(() => {
+                            const decisionFilter = normalizeDecisionFilter(runCompareDecisionFilterById[run.id])
+                            const filteredRows = decisionFilter === 'ALL'
+                              ? run.compare_rows
+                              : run.compare_rows.filter((row) => row.decision === decisionFilter)
+
+                            if (filteredRows.length <= 0) {
+                              return <div className="caption muted">해당 필터의 액션 행이 없습니다.</div>
+                            }
+
+                            return (
+                              <div style={{ overflowX: 'auto' }}>
+                                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.8rem' }}>
+                                  <thead>
+                                    <tr>
+                                      <th style={{ textAlign: 'left', padding: '6px', borderBottom: '1px solid #E4E7EC' }}>종목</th>
+                                      <th style={{ textAlign: 'left', padding: '6px', borderBottom: '1px solid #E4E7EC' }}>결과</th>
+                                      <th style={{ textAlign: 'left', padding: '6px', borderBottom: '1px solid #E4E7EC' }}>사유</th>
+                                      <th style={{ textAlign: 'right', padding: '6px', borderBottom: '1px solid #E4E7EC' }}>점수</th>
+                                      <th style={{ textAlign: 'right', padding: '6px', borderBottom: '1px solid #E4E7EC' }}>신뢰도</th>
+                                    </tr>
+                                  </thead>
+                                  <tbody>
+                                    {filteredRows.map((row, idx) => {
+                                      const tone = decisionTone(row.decision)
+                                      const trustText = row.trust_score != null
+                                        ? row.min_trust_score != null
+                                          ? `${row.trust_score.toFixed(0)} / ${row.min_trust_score.toFixed(0)}`
+                                          : `${row.trust_score.toFixed(0)}`
+                                        : '-'
+                                      return (
+                                        <tr key={`run-compare-${run.id}-${idx}`}>
+                                          <td style={{ padding: '6px', borderBottom: '1px solid #F0F2F5' }}>{row.code}</td>
+                                          <td style={{ padding: '6px', borderBottom: '1px solid #F0F2F5' }}>
+                                            <span className="caption" style={{ borderRadius: 999, padding: '2px 8px', background: tone.bg, color: tone.color, fontWeight: 700 }}>{row.decision}</span>
+                                          </td>
+                                          <td style={{ padding: '6px', borderBottom: '1px solid #F0F2F5', color: 'var(--color-text-secondary)' }}>{row.reason}</td>
+                                          <td style={{ padding: '6px', borderBottom: '1px solid #F0F2F5', textAlign: 'right' }}>{row.score != null ? row.score.toFixed(1) : '-'}</td>
+                                          <td style={{ padding: '6px', borderBottom: '1px solid #F0F2F5', textAlign: 'right' }}>{trustText}</td>
+                                        </tr>
+                                      )
+                                    })}
+                                  </tbody>
+                                </table>
+                              </div>
+                            )
+                          })()}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+            )}
           </>
         )}
       </div>

@@ -57,6 +57,57 @@ type OpsDashboardKpi = {
   latest_failed_at: string | null
 }
 
+type AutoCycleInsightFunnel = {
+  initial: number
+  policy: number
+  base: number
+  pool: number
+  selected: number
+}
+
+type AutoCycleInsightRun = {
+  id: number
+  run_type: string
+  run_key: string
+  status: 'SUCCESS' | 'SKIPPED' | 'FAILED'
+  started_at: string
+  finished_at: string | null
+  buys: number
+  sells: number
+  skipped: number
+  errors: number
+  top_reject_reasons: string[]
+  key_gate_reasons: string[]
+  funnel: AutoCycleInsightFunnel | null
+  notes: string[]
+  diagnosis_line: string
+  diagnosis_breakdown: Array<{
+    label: string
+    count: number
+    ratio: number
+  }>
+  compare_rows: Array<{
+    code: string
+    decision: 'BUY' | 'SKIP' | 'HOLD' | 'SELL' | 'ERROR'
+    reason: string
+    score: number | null
+    trust_score: number | null
+    min_trust_score: number | null
+  }>
+}
+
+type AutoCycleInsights = {
+  latest: AutoCycleInsightRun | null
+  recent_runs: AutoCycleInsightRun[]
+  score_asof: string | null
+  scan_top_rows: Array<{
+    code: string
+    name: string | null
+    score: number
+    signal: string | null
+  }>
+}
+
 type ConsistencyIssue = {
   code: string
   name: string | null
@@ -362,6 +413,352 @@ function kstDayRangeIso(base = new Date()): { startIso: string; endIso: string; 
     startIso: startUtc.toISOString(),
     endIso: endUtc.toISOString(),
     ymd: `${y}-${m}-${d}`,
+  }
+}
+
+function extractFunnelFromNotes(notes: string[]): AutoCycleInsightFunnel | null {
+  const line = notes.find((note) => note.includes('후보 필터링: 초기') || note.includes('추가매수 필터링: 초기'))
+  if (!line) return null
+
+  const match = line.match(/초기\s*(\d+)건\s*->\s*정책\s*(\d+)건\s*->\s*기본\s*(\d+)건\s*->\s*후보\s*(\d+)건\s*->\s*최종\s*(\d+)건/)
+  if (!match) return null
+
+  return {
+    initial: Number(match[1] || 0),
+    policy: Number(match[2] || 0),
+    base: Number(match[3] || 0),
+    pool: Number(match[4] || 0),
+    selected: Number(match[5] || 0),
+  }
+}
+
+function extractTopRejectReasons(notes: string[]): string[] {
+  const line = notes.find((note) => note.includes('후보 탈락 상위:') || note.includes('추가매수 탈락 상위:'))
+  if (!line) return []
+
+  const payload = line.split(':').slice(1).join(':').trim()
+  if (!payload) return []
+  return payload
+    .split('·')
+    .map((item) => item.trim())
+    .filter(Boolean)
+    .slice(0, 3)
+}
+
+function extractKeyGateReasons(notes: string[]): string[] {
+  const reasonMatchers: Array<{ pattern: RegExp; label: string }> = [
+    { pattern: /신규\/추가 매수 차단: 일손실 한도 도달|신규 매수 차단: 일손실 한도 도달|일손실 한도 도달/, label: '일손실 한도 도달' },
+    { pattern: /투자 가능 현금 0원/, label: '투자 가능 현금 부족' },
+    { pattern: /현금 하한 유지 구간/, label: '현금 리저브 하한 유지' },
+    { pattern: /추가 매수 슬롯 없음|신규 매수 불가: 추가 매수 슬롯 0건|매수 슬롯 없음/, label: '매수 슬롯 부족' },
+    { pattern: /매수 후보 없음|신규 매수 후보 0건/, label: '후보 없음(필터/점수/신호)' },
+    { pattern: /signal-gate|신뢰도 .*점 < 기준/, label: '신뢰도 게이트 미통과' },
+    { pattern: /복구모드/, label: '복구모드로 신규매수 차단' },
+    { pattern: /장중 외 시간 스킵/, label: '장중 시간 외 실행' },
+  ]
+
+  const out: string[] = []
+  for (const matcher of reasonMatchers) {
+    if (notes.some((note) => matcher.pattern.test(note))) {
+      out.push(matcher.label)
+    }
+  }
+  return out.slice(0, 4)
+}
+
+function reasonLabel(reason: string): string {
+  const normalized = String(reason || '').trim().toLowerCase()
+  const map: Record<string, string> = {
+    'signal-gate-reject': '신뢰도 게이트 미통과',
+    'add-on-signal-gate-reject': '추가매수 신뢰도 게이트 미통과',
+    'rebalance-signal-gate-reject': '리밸런싱 신뢰도 게이트 미통과',
+    'daily-loss-limit-reached': '일손실 한도 도달',
+    'no-available-cash': '투자 가능 현금 부족',
+    'cash-reserve-floor': '현금 리저브 하한 유지',
+    'no-candidates': '후보 없음',
+    'no-buy-slots': '매수 슬롯 없음',
+    'insufficient-cash': '주문 가능 금액 부족',
+    'duplicate-window': '동일 실행창 중복 스킵',
+    'duplicate-execution': '중복 체결 방지',
+  }
+  return map[normalized] || (normalized ? normalized.replace(/-/g, ' ') : '사유 없음')
+}
+
+function extractNumericDetail(detail: Record<string, unknown>, keys: string[]): number | null {
+  for (const key of keys) {
+    const value = Number(detail[key])
+    if (Number.isFinite(value)) return value
+  }
+  return null
+}
+
+function extractSignalTrustFromDetail(detail: Record<string, unknown>): {
+  trustScore: number | null
+  minTrustScore: number | null
+} {
+  const signalTrust = detail.signalTrust as Record<string, unknown> | undefined
+  const trustScore = signalTrust
+    ? extractNumericDetail(signalTrust, ['score', 'trustScore'])
+    : extractNumericDetail(detail, ['trustScore', 'signalTrustScore'])
+
+  const minTrustScore = extractNumericDetail(detail, ['minTrustScore'])
+  return { trustScore, minTrustScore }
+}
+
+function buildDiagnosisLine(input: {
+  run: { buys: number; sells: number; skipped: number; errors: number }
+  notes: string[]
+  compareRows: AutoCycleInsightRun['compare_rows']
+}): string {
+  if (input.run.errors > 0) {
+    return `오류 ${input.run.errors}건 발생으로 실행 품질이 저하되었습니다. 오류 상세를 우선 점검하세요.`
+  }
+
+  if (input.run.buys === 0 && input.run.sells === 0 && input.run.skipped === 0) {
+    return '실행은 되었지만 액션 로그가 없어 대상 사용자/실행 조건을 먼저 확인해야 합니다.'
+  }
+
+  if (input.run.buys === 0) {
+    const gateLine = input.notes.find((note) =>
+      /일손실 한도 도달|투자 가능 현금 0원|현금 하한 유지 구간|매수 후보 없음|신규 매수 후보 0건|매수 슬롯/i.test(note)
+    )
+    if (gateLine) {
+      return `이번 실행은 매수 0건입니다. 주된 원인: ${gateLine}`
+    }
+
+    const topBlocked = input.compareRows
+      .filter((row) => row.decision === 'SKIP')
+      .reduce<Record<string, number>>((acc, row) => {
+        acc[row.reason] = (acc[row.reason] || 0) + 1
+        return acc
+      }, {})
+    const top = Object.entries(topBlocked).sort((a, b) => b[1] - a[1])[0]
+    if (top) {
+      return `이번 실행은 매수 0건입니다. 주된 차단: ${top[0]} (${top[1]}건)`
+    }
+
+    return '이번 실행은 매수 0건입니다. 후보/신뢰도/자금 게이트 중 한 곳에서 모두 차단되었습니다.'
+  }
+
+  return `이번 실행은 매수 ${input.run.buys}건, 매도 ${input.run.sells}건이 반영되었습니다.`
+}
+
+function buildDiagnosisBreakdown(input: {
+  notes: string[]
+  compareRows: AutoCycleInsightRun['compare_rows']
+}): Array<{ label: string; count: number; ratio: number }> {
+  const counter = new Map<string, number>()
+
+  const add = (label: string, value = 1) => {
+    counter.set(label, (counter.get(label) || 0) + value)
+  }
+
+  for (const row of input.compareRows) {
+    if (row.decision !== 'SKIP' && row.decision !== 'ERROR') continue
+    const reason = String(row.reason || '')
+    if (/신뢰도/i.test(reason)) add('신뢰도 게이트')
+    else if (/현금|자금|주문 가능 금액/i.test(reason)) add('자금/현금')
+    else if (/슬롯|복구모드|일손실/i.test(reason)) add('리스크/정책')
+    else if (/후보 없음/i.test(reason)) add('후보 부족')
+    else add('기타')
+  }
+
+  for (const note of input.notes) {
+    if (/매수 후보 없음|신규 매수 후보 0건/i.test(note)) add('후보 부족')
+    if (/일손실 한도 도달|복구모드|매수 슬롯 없음/i.test(note)) add('리스크/정책')
+    if (/투자 가능 현금 0원|현금 하한 유지 구간|현금 부족/i.test(note)) add('자금/현금')
+    if (/신뢰도 .*점 < 기준|signal-gate/i.test(note)) add('신뢰도 게이트')
+  }
+
+  const total = Array.from(counter.values()).reduce((sum, value) => sum + value, 0)
+  if (total <= 0) return []
+
+  return Array.from(counter.entries())
+    .map(([label, count]) => ({
+      label,
+      count,
+      ratio: Number(((count / total) * 100).toFixed(1)),
+    }))
+    .sort((a, b) => b.count - a.count)
+    .slice(0, 5)
+}
+
+async function getScanTopRows(
+  supabase: SupabaseClient,
+  limit = 12,
+): Promise<{ scoreAsof: string | null; rows: AutoCycleInsights['scan_top_rows'] }> {
+  const { data: asofRows, error: asofError } = await supabase
+    .from('scores')
+    .select('asof')
+    .order('asof', { ascending: false })
+    .limit(1)
+
+  if (asofError) throw new Error(asofError.message)
+  const scoreAsof = String((asofRows?.[0] as Record<string, unknown> | undefined)?.asof || '').trim() || null
+  if (!scoreAsof) {
+    return { scoreAsof: null, rows: [] }
+  }
+
+  const { data: scoreRows, error: scoreError } = await supabase
+    .from('scores')
+    .select('code,total_score,signal')
+    .eq('asof', scoreAsof)
+    .order('total_score', { ascending: false })
+    .limit(limit)
+
+  if (scoreError) throw new Error(scoreError.message)
+
+  const rows = (Array.isArray(scoreRows) ? scoreRows : []) as Array<Record<string, unknown>>
+  const codes = rows.map((row) => String(row.code || '').trim()).filter(Boolean)
+  let nameMap: Record<string, string> = {}
+
+  if (codes.length > 0) {
+    const { data: stockRows } = await supabase
+      .from('stocks')
+      .select('code,name')
+      .in('code', codes)
+
+    if (Array.isArray(stockRows)) {
+      nameMap = stockRows.reduce((acc, current) => {
+        const code = String((current as Record<string, unknown>)?.code || '').trim()
+        const name = String((current as Record<string, unknown>)?.name || '').trim()
+        if (code) acc[code] = name
+        return acc
+      }, {} as Record<string, string>)
+    }
+  }
+
+  return {
+    scoreAsof,
+    rows: rows.map((row) => {
+      const code = String(row.code || '').trim()
+      return {
+        code,
+        name: nameMap[code] || null,
+        score: Number(row.total_score || 0),
+        signal: String(row.signal || '').trim() || null,
+      }
+    }),
+  }
+}
+
+async function enrichAutoCycleInsightRun(
+  supabase: SupabaseClient,
+  chatId: string | number,
+  base: AutoCycleInsightRun,
+): Promise<AutoCycleInsightRun> {
+  const { data, error } = await supabase
+    .from('virtual_autotrade_actions')
+    .select('code,action_type,reason,detail,created_at')
+    .eq('chat_id', chatId)
+    .eq('run_id', base.id)
+    .order('created_at', { ascending: false })
+    .limit(200)
+
+  if (error) {
+    return {
+      ...base,
+      diagnosis_line: buildDiagnosisLine({ run: base, notes: base.notes, compareRows: [] }),
+      diagnosis_breakdown: [],
+      compare_rows: [],
+    }
+  }
+
+  const rows = (Array.isArray(data) ? data : []) as Array<Record<string, unknown>>
+  const compareRows = rows
+    .filter((row) => {
+      const actionType = String(row.action_type || '').toUpperCase()
+      const code = String(row.code || '').trim()
+      return Boolean(code) && ['BUY', 'SKIP', 'HOLD', 'SELL', 'ERROR'].includes(actionType)
+    })
+    .map((row) => {
+      const detail = (row.detail || {}) as Record<string, unknown>
+      const { trustScore, minTrustScore } = extractSignalTrustFromDetail(detail)
+      const score = extractNumericDetail(detail, ['score'])
+      const actionType = String(row.action_type || '').toUpperCase() as 'BUY' | 'SKIP' | 'HOLD' | 'SELL' | 'ERROR'
+      return {
+        code: String(row.code || '').trim(),
+        decision: actionType,
+        reason: reasonLabel(String(row.reason || '')),
+        score,
+        trust_score: trustScore,
+        min_trust_score: minTrustScore,
+      }
+    })
+    .sort((a, b) => {
+      const scoreDiff = (b.score ?? -1) - (a.score ?? -1)
+      if (scoreDiff !== 0) return scoreDiff
+      return (b.trust_score ?? -1) - (a.trust_score ?? -1)
+    })
+    .slice(0, 12)
+
+  const diagnosis = buildDiagnosisLine({
+    run: base,
+    notes: base.notes,
+    compareRows,
+  })
+
+  return {
+    ...base,
+    diagnosis_line: diagnosis,
+    diagnosis_breakdown: buildDiagnosisBreakdown({ notes: base.notes, compareRows }),
+    compare_rows: compareRows,
+  }
+}
+
+function toAutoCycleInsightRun(row: Record<string, unknown>): AutoCycleInsightRun {
+  const summary = (row.summary || {}) as Record<string, unknown>
+  const notes = Array.isArray(summary.notes)
+    ? summary.notes.map((v) => String(v || '').trim()).filter(Boolean)
+    : []
+
+  return {
+    id: Number(row.id || 0),
+    run_type: String(row.run_type || ''),
+    run_key: String(row.run_key || ''),
+    status: String(row.status || 'SKIPPED').toUpperCase() as 'SUCCESS' | 'SKIPPED' | 'FAILED',
+    started_at: String(row.started_at || ''),
+    finished_at: row.finished_at ? String(row.finished_at) : null,
+    buys: Number(summary.buys ?? summary.buyCount ?? 0),
+    sells: Number(summary.sells ?? summary.sellCount ?? 0),
+    skipped: Number(summary.skipped ?? summary.skippedCount ?? 0),
+    errors: Number(summary.errors ?? summary.errorCount ?? 0),
+    top_reject_reasons: extractTopRejectReasons(notes),
+    key_gate_reasons: extractKeyGateReasons(notes),
+    funnel: extractFunnelFromNotes(notes),
+    notes,
+    diagnosis_line: '',
+    diagnosis_breakdown: [],
+    compare_rows: [],
+  }
+}
+
+async function getAutoCycleInsights(
+  supabase: SupabaseClient,
+  chatId: string | number,
+  limit = 8,
+): Promise<AutoCycleInsights> {
+  const { data, error } = await supabase
+    .from('virtual_autotrade_runs')
+    .select('id,run_type,run_key,status,summary,started_at,finished_at')
+    .eq('chat_id', chatId)
+    .order('started_at', { ascending: false })
+    .limit(limit)
+
+  if (error) throw new Error(error.message)
+
+  const rows = (Array.isArray(data) ? data : []) as Array<Record<string, unknown>>
+  const baseRuns = rows.map(toAutoCycleInsightRun)
+  const [mapped, scanTop] = await Promise.all([
+    Promise.all(baseRuns.map((run) => enrichAutoCycleInsightRun(supabase, chatId, run))),
+    getScanTopRows(supabase),
+  ])
+
+  return {
+    latest: mapped[0] || null,
+    recent_runs: mapped,
+    score_asof: scanTop.scoreAsof,
+    scan_top_rows: scanTop.rows,
   }
 }
 
@@ -1012,6 +1409,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       if (view === 'dashboard') {
         const kpi = await getOperationsDashboardKpi(supabase, chatId)
         return res.status(200).json({ ok: true, data: kpi })
+      }
+
+      if (view === 'autocycle_insights') {
+        const insights = await getAutoCycleInsights(supabase, chatId)
+        return res.status(200).json({ ok: true, data: insights })
       }
 
       if (view === 'autosellcheck') {
