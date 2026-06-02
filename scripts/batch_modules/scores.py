@@ -29,7 +29,7 @@ def run_engine_score_sync(asof: str) -> bool:
         return False
 
 
-def calculate_stock_scores(supabase: Client, trading_date: str):
+def calculate_stock_scores(supabase: Client, trading_date: str) -> dict:
     """Calculate stock scores (engine first, legacy fallback)."""
     from .utils import to_iso
     asof = to_iso(trading_date)
@@ -37,7 +37,11 @@ def calculate_stock_scores(supabase: Client, trading_date: str):
 
     if run_engine_score_sync(asof):
         print("   engine score sync completed")
-        return
+        return {
+            "ok": True,
+            "source": "engine",
+            "rows": 0,
+        }
 
     try:
         trading_iso = asof
@@ -48,7 +52,12 @@ def calculate_stock_scores(supabase: Client, trading_date: str):
         all_stocks = res.data or []
         if not all_stocks:
             print("   No stocks found")
-            return
+            return {
+                "ok": False,
+                "source": "legacy",
+                "reason": "no_stocks",
+                "rows": 0,
+            }
 
         codes = [s["code"] for s in all_stocks]
         indicators_map: dict = {}
@@ -80,7 +89,7 @@ def calculate_stock_scores(supabase: Client, trading_date: str):
             for i in range(0, len(codes), 200):
                 batch = codes[i:i+200]
                 inv_res = supabase.table("investor_daily") \
-                    .select("ticker, institution, foreign") \
+                    .select("ticker, institution_amount, foreign_amount") \
                     .in_("ticker", batch) \
                     .gte("date", five_days_ago) \
                     .lte("date", trading_iso).execute()
@@ -88,8 +97,8 @@ def calculate_stock_scores(supabase: Client, trading_date: str):
                     t = row["ticker"]
                     if t not in investor_map:
                         investor_map[t] = {"institution_5d": 0, "foreign_5d": 0}
-                    investor_map[t]["institution_5d"] += safe_int(row.get("institution", 0))
-                    investor_map[t]["foreign_5d"] += safe_int(row.get("foreign", 0))
+                    investor_map[t]["institution_5d"] += safe_int(row.get("institution_amount", 0))
+                    investor_map[t]["foreign_5d"] += safe_int(row.get("foreign_amount", 0))
             print(f"  -> investor flow loaded for {len(investor_map)} stocks")
         except Exception as e:
             print(f"  -> investor flow load skipped: {e}")
@@ -169,6 +178,7 @@ def calculate_stock_scores(supabase: Client, trading_date: str):
             existing_factors = existing_score.get("factors") if isinstance(existing_score.get("factors"), dict) else {}
             merged_factors = dict(existing_factors)
             merged_factors.update({
+                "score_source": "legacy_fallback",
                 "rsi14": round(rsi, 2),
                 "roc14": round(roc14, 2),
                 "roc21": round(roc21, 2),
@@ -202,9 +212,28 @@ def calculate_stock_scores(supabase: Client, trading_date: str):
                         except:
                             pass
             print(f"   stored {len(upserts)} score rows")
+            return {
+                "ok": True,
+                "source": "legacy",
+                "rows": len(upserts),
+            }
+        print("   no score rows generated")
+        return {
+            "ok": False,
+            "source": "legacy",
+            "reason": "no_rows",
+            "rows": 0,
+        }
     except Exception as e:
         print(f"  stock score calculation failed: {e}")
         import traceback
         traceback.print_exc()
+        return {
+            "ok": False,
+            "source": "legacy",
+            "reason": "exception",
+            "rows": 0,
+            "error": str(e),
+        }
 
 

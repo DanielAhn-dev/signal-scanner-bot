@@ -2338,6 +2338,89 @@ async function getLatestScoreAsof(
   return String((data as Record<string, unknown>).asof ?? "") || null;
 }
 
+async function getLatestInvestorAsof(
+  supabase: SupabaseClientAny
+): Promise<string | null> {
+  const { data, error } = await supabase
+    .from("investor_daily")
+    .select("date")
+    .order("date", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (error || !data) return null;
+  return String((data as Record<string, unknown>).date ?? "") || null;
+}
+
+type AutoTradeDataQuality = {
+  qualityScore: number;
+  band: "high" | "medium" | "low";
+  limitScale: number;
+  minScoreBoost: number;
+  blockNewBuys: boolean;
+  note: string;
+  investorStaleBusinessDays: number | null;
+};
+
+function assessAutoTradeDataQuality(input: {
+  scoreStaleBusinessDays: number;
+  investorStaleBusinessDays: number | null;
+}): AutoTradeDataQuality {
+  const scoreLag = Math.max(0, Math.floor(toNumber(input.scoreStaleBusinessDays, 0)));
+  const invLag =
+    input.investorStaleBusinessDays == null
+      ? null
+      : Math.max(0, Math.floor(toNumber(input.investorStaleBusinessDays, 0)));
+
+  let qualityScore = 100;
+  qualityScore -= scoreLag * 12;
+  if (invLag == null) {
+    qualityScore -= 40;
+  } else {
+    qualityScore -= invLag * 8;
+  }
+  qualityScore = clamp(qualityScore, 0, 100);
+
+  if (scoreLag >= 2 || invLag == null || invLag >= 6) {
+    return {
+      qualityScore,
+      band: "low",
+      limitScale: 0.0,
+      minScoreBoost: 8,
+      blockNewBuys: true,
+      note:
+        invLag == null
+          ? "수급 기준일 확인 불가로 신규 매수 차단"
+          : `수급 기준일 지연(${invLag}영업일)으로 신규 매수 차단`,
+      investorStaleBusinessDays: invLag,
+    };
+  }
+
+  if (scoreLag >= 1 || (invLag != null && invLag >= 3)) {
+    return {
+      qualityScore,
+      band: "medium",
+      limitScale: 0.6,
+      minScoreBoost: 4,
+      blockNewBuys: false,
+      note:
+        invLag != null && invLag >= 3
+          ? `수급 지연(${invLag}영업일)으로 진입 수 축소(60%) + 최소점수 +4 보수화`
+          : "점수 기준일 1영업일 지연으로 진입 수 축소(60%) + 최소점수 +4 보수화",
+      investorStaleBusinessDays: invLag,
+    };
+  }
+
+  return {
+    qualityScore,
+    band: "high",
+    limitScale: 1,
+    minScoreBoost: 0,
+    blockNewBuys: false,
+    note: invLag == null ? "데이터 품질 판단 제한" : "데이터 품질 양호",
+    investorStaleBusinessDays: invLag,
+  };
+}
+
 async function fetchLatestRankedRows(payload: {
   supabase: SupabaseClientAny;
   limit: number;
@@ -2558,6 +2641,43 @@ async function selectMondayCandidates(payload: {
       ? Math.min(95, toPositiveInt(payload.minBuyScore, 70) + 2)
       : toPositiveInt(payload.minBuyScore, 70);
 
+  const latestInvestorAsof = await getLatestInvestorAsof(payload.supabase);
+  const investorStaleBusinessDays = businessDaysBehind(latestInvestorAsof);
+  const dataQuality = assessAutoTradeDataQuality({
+    scoreStaleBusinessDays: staleBusinessDays,
+    investorStaleBusinessDays,
+  });
+
+  if (dataQuality.blockNewBuys) {
+    return {
+      candidates: [],
+      selectionMode: "none",
+      thresholdUsed: Math.min(98, staleAdjustedMinBuyScore + dataQuality.minScoreBoost),
+      latestTopScore: rankedRows[0]?.score ?? 0,
+      latestAsof,
+      filteringMetrics: {
+        initialCount: rankedRows.length,
+        afterMarketPolicyCount: 0,
+        afterBaseFilterCount: 0,
+        candidatePoolCount: 0,
+        selectedCount: 0,
+      },
+      entryProfile: "score-first",
+      pullbackCandidatesUsed: 0,
+      aggressiveCandidatesUsed: 0,
+      guardNote: `데이터 품질 게이트: ${dataQuality.note} (품질점수 ${dataQuality.qualityScore}, 점수기준일 ${latestAsof}, 수급기준일 ${latestInvestorAsof ?? "없음"})`,
+    };
+  }
+
+  const qualityAdjustedMinBuyScore = Math.min(
+    98,
+    staleAdjustedMinBuyScore + dataQuality.minScoreBoost
+  );
+  const qualityAdjustedLimit = Math.max(
+    1,
+    Math.floor(payload.limit * dataQuality.limitScale)
+  );
+
   const discoveryProfile = normalizeDiscoveryProfile(payload.discoveryProfile);
 
   const baseEntryProfile = deriveEntryProfile({
@@ -2635,8 +2755,8 @@ async function selectMondayCandidates(payload: {
 
   const selection = pickAutoTradeCandidates({
     rows: scoredRows,
-    preferredMinBuyScore: staleAdjustedMinBuyScore,
-    limit: payload.limit,
+    preferredMinBuyScore: qualityAdjustedMinBuyScore,
+    limit: qualityAdjustedLimit,
     heldCodes: heldAndCooldownCodes,
     marketPolicy: payload.marketPolicy,
     entryProfile,
@@ -2646,9 +2766,10 @@ async function selectMondayCandidates(payload: {
   return {
     ...selection,
     latestAsof,
+    thresholdUsed: Math.max(selection.thresholdUsed, qualityAdjustedMinBuyScore),
     guardNote:
       staleBusinessDays === 1
-        ? `점수 기준일 1영업일 지연으로 최소점수 +2 보수 적용 (기준일 ${latestAsof}) · 발굴프로필 ${discoveryProfileLabel(discoveryProfile)}${cooldownCodes.size > 0 ? ` · 스탑로스 쿨다운 ${cooldownCodes.size}종목 제외` : ""}`
+        ? `점수 기준일 1영업일 지연 보수 적용 · 데이터품질 ${dataQuality.band.toUpperCase()}(${dataQuality.qualityScore}) · ${dataQuality.note} · 발굴프로필 ${discoveryProfileLabel(discoveryProfile)}${cooldownCodes.size > 0 ? ` · 스탑로스 쿨다운 ${cooldownCodes.size}종목 제외` : ""}`
         : `발굴프로필 ${discoveryProfileLabel(discoveryProfile)}${
             discoveryProfile === "PULLBACK"
               ? ` · 눌림목 연동 ${pullbackCandidateCodes?.size ?? 0}종목`
@@ -2667,7 +2788,7 @@ async function selectMondayCandidates(payload: {
             discoveryProfile === "BLEND"
               ? ` · 하이라이트 ${highlightCodes.size} · 눌림목 ${pullbackCandidateCodes?.size ?? 0} · 멀티배거 ${multibaggerCodes?.size ?? 0} · 백테스트 ${backtestEdgeCodes?.size ?? 0}`
               : ""
-          } · 교집합(2+) ${overlap2Count}종목 · 교집합(3+) ${overlap3Count}종목 · 오늘매수강신호 ${strongTodayBuyCount}종목 · 즉시제외 ${immediateExcludeCount}종목${cooldownCodes.size > 0 ? ` · 스탑로스 쿨다운 ${cooldownCodes.size}종목 제외` : ""}`,
+          } · 데이터품질 ${dataQuality.band.toUpperCase()}(${dataQuality.qualityScore}) · ${dataQuality.note} · 교집합(2+) ${overlap2Count}종목 · 교집합(3+) ${overlap3Count}종목 · 오늘매수강신호 ${strongTodayBuyCount}종목 · 즉시제외 ${immediateExcludeCount}종목${cooldownCodes.size > 0 ? ` · 스탑로스 쿨다운 ${cooldownCodes.size}종목 제외` : ""}`,
   };
 }
 

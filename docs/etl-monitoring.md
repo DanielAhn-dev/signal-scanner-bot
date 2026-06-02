@@ -44,3 +44,28 @@ CREATE TABLE etl_runs (
     webhook_url: ${{ secrets.SLACK_WEBHOOK }}
     message: "ETL 실패: ${{ github.workflow }} ${{ github.run_id }}"
 ```
+
+일배치 신뢰성 게이트 (2026-06-02 추가)
+- `scripts/daily_batch.py`는 실행 결과를 아래 파일로 기록합니다.
+  - `logs/daily_batch_status.json`: 최신 실행 1건 상태
+  - `logs/daily_batch_history.ndjson`: 실행 이력 append 로그
+- 기록 항목: `run_id`, `status`, `reason`, `processed_date`, `duration_seconds`, `stages.*.ok/elapsed/detail`
+
+신규 환경변수
+```bash
+# 수급 데이터 실패/지연 시 배치 실패 처리 여부
+BATCH_REQUIRE_INVESTOR_DATA=true|false
+
+# investor_daily 허용 지연(영업일)
+INVESTOR_MAX_STALE_BUSINESS_DAYS=1
+
+# 점수 단계 실패 시 배치 실패 처리 여부
+BATCH_REQUIRE_SCORE_SYNC=true|false
+
+# 엔진 점수만 허용 (legacy fallback 성공이어도 실패로 처리)
+BATCH_REQUIRE_ENGINE_SCORE=true|false
+```
+
+권장 운영값
+- 운영 안정화 초기: `BATCH_REQUIRE_SCORE_SYNC=true`, `BATCH_REQUIRE_INVESTOR_DATA=true`, `INVESTOR_MAX_STALE_BUSINESS_DAYS=1`
+- 점수 정합성 강제 기간: `BATCH_REQUIRE_ENGINE_SCORE=true`

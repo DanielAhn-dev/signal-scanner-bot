@@ -25,6 +25,8 @@ Environment variables:
 import os
 import sys
 import time
+import json
+import uuid
 import subprocess
 from datetime import datetime
 from pathlib import Path
@@ -78,6 +80,20 @@ def sync_scan_signal_history_for_date(trading_date: str) -> bool:
         return False
 
 
+def _status_paths() -> tuple[Path, Path]:
+    base = Path(__file__).resolve().parents[1] / "logs"
+    return base / "daily_batch_status.json", base / "daily_batch_history.ndjson"
+
+
+def _write_batch_status(snapshot: dict):
+    status_path, history_path = _status_paths()
+    status_path.parent.mkdir(parents=True, exist_ok=True)
+    with status_path.open("w", encoding="utf-8") as f:
+        json.dump(snapshot, f, ensure_ascii=False, indent=2)
+    with history_path.open("a", encoding="utf-8") as f:
+        f.write(json.dumps(snapshot, ensure_ascii=False) + "\n")
+
+
 def main():
     """Main batch processor entry point"""
     
@@ -112,6 +128,56 @@ def main():
     # Parse command-line arguments
     skip_ohlcv = "--skip-ohlcv" in sys.argv
     reset_stock_data = "--reset-stock-data" in sys.argv
+    require_investor_data = os.environ.get("BATCH_REQUIRE_INVESTOR_DATA", "false").lower() in ("1", "true", "yes")
+    require_score_sync = os.environ.get("BATCH_REQUIRE_SCORE_SYNC", "true").lower() in ("1", "true", "yes")
+    require_engine_score = os.environ.get("BATCH_REQUIRE_ENGINE_SCORE", "false").lower() in ("1", "true", "yes")
+    investor_max_stale_business_days = int(os.environ.get("INVESTOR_MAX_STALE_BUSINESS_DAYS", "1"))
+
+    run_id = f"daily-batch-{datetime.now().strftime('%Y%m%d%H%M%S')}-{uuid.uuid4().hex[:8]}"
+    run_started_at = datetime.now().isoformat()
+    run_status = {
+        "run_id": run_id,
+        "started_at": run_started_at,
+        "finished_at": None,
+        "status": "running",
+        "processed_date": None,
+        "reason": "",
+        "duration_seconds": None,
+        "config": {
+            "skip_ohlcv": skip_ohlcv,
+            "reset_stock_data": reset_stock_data,
+            "require_investor_data": require_investor_data,
+            "require_score_sync": require_score_sync,
+            "require_engine_score": require_engine_score,
+            "investor_max_stale_business_days": investor_max_stale_business_days,
+        },
+        "stages": {},
+        "summary": {},
+    }
+    finalized = False
+
+    def mark_stage(stage: str, ok: bool, elapsed_sec: float, detail: dict | None = None):
+        run_status["stages"][stage] = {
+            "ok": bool(ok),
+            "elapsed_seconds": round(float(elapsed_sec), 3),
+            "detail": detail or {},
+        }
+
+    def finalize(status: str, reason: str = "", code: int = 0):
+        nonlocal finalized
+        if finalized:
+            return code
+        finished_at = datetime.now().isoformat()
+        run_status["finished_at"] = finished_at
+        run_status["status"] = status
+        run_status["reason"] = reason
+        run_status["processed_date"] = run_status.get("processed_date")
+        started = datetime.fromisoformat(run_started_at)
+        finished = datetime.fromisoformat(finished_at)
+        run_status["duration_seconds"] = round((finished - started).total_seconds(), 3)
+        _write_batch_status(run_status)
+        finalized = True
+        return code
     
     # Determine trading date
     if "--date" in sys.argv:
@@ -126,6 +192,7 @@ def main():
     else:
         trading_date = get_last_trading_date()
         print(f"   Trading date (auto-detected): {trading_date}", flush=True)
+    run_status["processed_date"] = trading_date
 
     # Reset stock_daily if requested
     if reset_stock_data:
@@ -142,7 +209,9 @@ def main():
 
     # Step 0: Auto-backfill missing dates
     print(f"\n[0/7] Auto-backfill missing dates...")
+    step_start = time.time()
     auto_backfill_done = auto_backfill_missing_dates(supabase, trading_date)
+    mark_stage("AutoBackfill", True, time.time() - step_start, {"auto_backfill_done": bool(auto_backfill_done)})
     
     # Step 1: OHLCV collection (skip if auto-backfill already done or --skip-ohlcv)
     if skip_ohlcv or auto_backfill_done:
@@ -157,6 +226,7 @@ def main():
         market_ok = fetch_ohlcv_per_ticker(supabase, trading_date)
         stage_times["OHLCV"] = time.time() - step_start
         print(f"   Completed in {stage_times['OHLCV']:.1f}s")
+        mark_stage("OHLCV", bool(market_ok), stage_times["OHLCV"])
 
     if market_ok:
         time.sleep(1)
@@ -167,15 +237,35 @@ def main():
         calculate_indicators(supabase, trading_date)
         stage_times["Indicators"] = time.time() - step_start
         print(f"   Completed in {stage_times['Indicators']:.1f}s")
+        mark_stage("Indicators", True, stage_times["Indicators"])
         
         time.sleep(1)
         
         # Step 2.5: Investor flow data
         print("\n[2.5/7] Collecting investor data...")
         step_start = time.time()
-        fetch_investor_data(supabase, trading_date)
+        investor_status = fetch_investor_data(supabase, trading_date)
         stage_times["InvestorData"] = time.time() - step_start
         print(f"   Completed in {stage_times['InvestorData']:.1f}s")
+
+        investor_stage_ok = bool(investor_status.get("ok"))
+        stale_days = investor_status.get("stale_business_days")
+        if stale_days is not None and stale_days > investor_max_stale_business_days:
+            investor_stage_ok = False
+            print(
+                "[WARN] Investor freshness gate failed: "
+                f"lag={stale_days} business days (max={investor_max_stale_business_days})"
+            )
+
+        if not investor_stage_ok:
+            reason = investor_status.get("reason") or "unknown"
+            print(f"[WARN] Investor data quality gate failed: reason={reason}, status={investor_status}")
+            mark_stage("InvestorData", False, stage_times["InvestorData"], investor_status)
+            if require_investor_data:
+                print("[ERROR] BATCH_REQUIRE_INVESTOR_DATA=true and investor data gate failed")
+                return finalize("failed", f"investor_gate_failed:{reason}", 2)
+        else:
+            mark_stage("InvestorData", True, stage_times["InvestorData"], investor_status)
         
         time.sleep(1)
         
@@ -185,6 +275,7 @@ def main():
         fetch_credit_short_data(supabase, trading_date)
         stage_times["CreditShortData"] = time.time() - step_start
         print(f"   Completed in {stage_times['CreditShortData']:.1f}s")
+        mark_stage("CreditShortData", True, stage_times["CreditShortData"])
         
         time.sleep(1)
         
@@ -212,6 +303,7 @@ def main():
         calculate_sector_scores(supabase)
         print(f"   Completed in {time.time() - step_start:.1f}s")
         stage_times["SectorData"] = time.time() - step_start
+        mark_stage("SectorData", True, stage_times["SectorData"])
 
         step_start = time.time()
         mark_sector_leaders(supabase)
@@ -222,23 +314,42 @@ def main():
         # Step 5: Stock scores
         print("\n[5/7] Calculating stock scores...")
         step_start = time.time()
-        calculate_stock_scores(supabase, trading_date)
+        score_result = calculate_stock_scores(supabase, trading_date)
         stage_times["StockScores"] = time.time() - step_start
         print(f"   Completed in {stage_times['StockScores']:.1f}s")
+        score_ok = bool(score_result.get("ok"))
+        score_source = str(score_result.get("source") or "unknown")
+        mark_stage("StockScores", score_ok, stage_times["StockScores"], score_result)
+
+        if not score_ok:
+            print("[WARN] Stock score stage failed (engine and fallback unavailable)")
+            if require_score_sync:
+                print("[ERROR] BATCH_REQUIRE_SCORE_SYNC=true and score stage failed")
+                return finalize("failed", "score_stage_failed", 3)
+
+        if score_ok and require_engine_score and score_source != "engine":
+            print("[ERROR] BATCH_REQUIRE_ENGINE_SCORE=true but engine sync was not used")
+            return finalize("failed", f"engine_required_but_used_{score_source}", 4)
         
         time.sleep(1)
         
         # Step 6: Pullback signals
-        print("\n[6/7] Generating pullback signals...")
-        step_start = time.time()
-        save_pullback_signals(supabase, trading_date)
-        stage_times["PullbackSignals"] = time.time() - step_start
-        print(f"   Completed in {stage_times['PullbackSignals']:.1f}s")
+        if score_ok:
+            print("\n[6/7] Generating pullback signals...")
+            step_start = time.time()
+            save_pullback_signals(supabase, trading_date)
+            stage_times["PullbackSignals"] = time.time() - step_start
+            print(f"   Completed in {stage_times['PullbackSignals']:.1f}s")
+            mark_stage("PullbackSignals", True, stage_times["PullbackSignals"])
 
-        step_start = time.time()
-        sync_scan_signal_history_for_date(trading_date)
-        stage_times["ScanSignalHistorySync"] = time.time() - step_start
-        print(f"   Completed in {stage_times['ScanSignalHistorySync']:.1f}s")
+            step_start = time.time()
+            scan_sync_ok = sync_scan_signal_history_for_date(trading_date)
+            stage_times["ScanSignalHistorySync"] = time.time() - step_start
+            print(f"   Completed in {stage_times['ScanSignalHistorySync']:.1f}s")
+            mark_stage("ScanSignalHistorySync", bool(scan_sync_ok), stage_times["ScanSignalHistorySync"])
+        else:
+            print("\n[6/7] Pullback signals skipped (score stage failed)")
+            mark_stage("PullbackSignals", False, 0.0, {"reason": "score_stage_failed"})
         
         time.sleep(0.5)
     else:
@@ -247,6 +358,7 @@ def main():
         print("   1. Check pykrx API status (Naver Finance may be blocked)")
         print("   2. Explicitly specify trading date: --date 20260515")
         print("   3. Reinit DB and retry: --reset-stock-data --date 20260515")
+        mark_stage("OHLCV", False, stage_times.get("OHLCV", 0.0), {"reason": "market_not_available"})
 
     # Step 7: Cleanup
     print("\n[7/7] Cleaning up old data...")
@@ -254,6 +366,7 @@ def main():
     cleanup_old_data(supabase)
     print(f"   Completed in {time.time() - step_start:.1f}s")
     stage_times["Cleanup"] = time.time() - step_start
+    mark_stage("Cleanup", True, stage_times["Cleanup"])
 
     # Summary
     total_time = time.time() - start_time
@@ -268,8 +381,13 @@ def main():
     if total_time > 600:
         print(f"[WARN] Batch took {total_time/60:.1f}min (target: <10min)")
 
+    run_status["summary"] = {
+        "total_time_seconds": round(total_time, 3),
+        "stage_times": {k: round(v, 3) for k, v in stage_times.items()},
+    }
+
     print(f"\n[END] Daily Batch End: {datetime.now().isoformat()}")
-    return 0
+    return finalize("success", "", 0)
 
 
 if __name__ == "__main__":
