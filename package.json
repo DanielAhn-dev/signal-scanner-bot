@@ -47,6 +47,7 @@
     "backfill:scan-signal-history:dry": "tsx scripts/backfill_scan_signal_history.ts --dryRun=true",
     "backfill:stock-daily": "python scripts/backfill_stock_daily_universe.py",
     "backfill:stock-daily:core": "python scripts/backfill_stock_daily_universe.py --universe=core-extended",
+    "universe:refresh": "python scripts/refresh_universe_membership.py",
     "backfill:investor-daily": "python scripts/backfill_investor_daily.py",
     "monitor:data-retention": "python scripts/monitor_data_retention.py",
     "monitor:data-retention:detailed": "python scripts/monitor_data_retention.py --show-counts",

@@ -80,6 +80,34 @@ def sync_scan_signal_history_for_date(trading_date: str) -> bool:
         return False
 
 
+def refresh_universe_membership_for_date(trading_date: str) -> bool:
+    """Refresh universe membership before downstream batch stages."""
+    cmd = [
+        sys.executable,
+        "scripts/refresh_universe_membership.py",
+        "--date",
+        trading_date,
+    ]
+    print("\n[-1/7] Refreshing universe membership...")
+    print(f"  -> {' '.join(cmd)}")
+    try:
+        result = subprocess.run(
+            cmd,
+            check=True,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+        )
+        out = (result.stdout or "").strip().splitlines()
+        if out:
+            print(f"   {out[-1]}")
+        return True
+    except Exception as e:
+        print(f"  [WARN] universe refresh failed: {e}")
+        return False
+
+
 def _status_paths() -> tuple[Path, Path]:
     base = Path(__file__).resolve().parents[1] / "logs"
     return base / "daily_batch_status.json", base / "daily_batch_history.ndjson"
@@ -131,6 +159,8 @@ def main():
     require_investor_data = os.environ.get("BATCH_REQUIRE_INVESTOR_DATA", "false").lower() in ("1", "true", "yes")
     require_score_sync = os.environ.get("BATCH_REQUIRE_SCORE_SYNC", "true").lower() in ("1", "true", "yes")
     require_engine_score = os.environ.get("BATCH_REQUIRE_ENGINE_SCORE", "false").lower() in ("1", "true", "yes")
+    auto_refresh_universe = os.environ.get("BATCH_AUTO_REFRESH_UNIVERSE", "false").lower() in ("1", "true", "yes")
+    require_universe_refresh = os.environ.get("BATCH_REQUIRE_UNIVERSE_REFRESH", "false").lower() in ("1", "true", "yes")
     investor_max_stale_business_days = int(os.environ.get("INVESTOR_MAX_STALE_BUSINESS_DAYS", "1"))
 
     run_id = f"daily-batch-{datetime.now().strftime('%Y%m%d%H%M%S')}-{uuid.uuid4().hex[:8]}"
@@ -149,6 +179,8 @@ def main():
             "require_investor_data": require_investor_data,
             "require_score_sync": require_score_sync,
             "require_engine_score": require_engine_score,
+            "auto_refresh_universe": auto_refresh_universe,
+            "require_universe_refresh": require_universe_refresh,
             "investor_max_stale_business_days": investor_max_stale_business_days,
         },
         "stages": {},
@@ -193,6 +225,17 @@ def main():
         trading_date = get_last_trading_date()
         print(f"   Trading date (auto-detected): {trading_date}", flush=True)
     run_status["processed_date"] = trading_date
+
+    # Optional universe automation
+    if auto_refresh_universe:
+        step_start = time.time()
+        universe_ok = refresh_universe_membership_for_date(trading_date)
+        elapsed = time.time() - step_start
+        stage_times["UniverseRefresh"] = elapsed
+        mark_stage("UniverseRefresh", bool(universe_ok), elapsed, {"trading_date": trading_date})
+        if not universe_ok and require_universe_refresh:
+            print("[ERROR] BATCH_REQUIRE_UNIVERSE_REFRESH=true and universe refresh failed")
+            return finalize("failed", "universe_refresh_failed", 5)
 
     # Reset stock_daily if requested
     if reset_stock_data:
