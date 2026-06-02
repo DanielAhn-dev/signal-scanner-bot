@@ -338,6 +338,8 @@ const SHEET_TABS = [
   { key: 'alerts',     label: '알림',       icon: <Bell size={10}/> },
   { key: 'simulator',  label: '시뮬레이터', icon: <FlaskConical size={10}/> },
   { key: 'settings',   label: '설정',       icon: <Settings size={10}/> },
+  { key: 'operations', label: '운영',       icon: <Shield size={10} /> },
+
 ]
 
 // ── 3패널 리사이즈 ────────────────────────────────────────────────
@@ -724,6 +726,7 @@ export default function ExcelShell({
           <div className="excel-titlebar__qs">
             <button className="excel-titlebar__qs-btn excel-tooltip-target" data-tooltip="즐겨찾기 목록" onClick={() => onNavigate('watchlist')}><Star size={13}/></button>
             <button className="excel-titlebar__qs-btn excel-tooltip-target" data-tooltip={quickSaveTooltip || '현재 화면 저장'} onClick={() => void handleQuickSave()}><Save size={13}/></button>
+            <button className="excel-titlebar__qs-btn excel-tooltip-target" data-tooltip="운영 패널" onClick={() => onNavigate('operations')}><Shield size={13}/></button>
             <button className="excel-titlebar__qs-btn excel-tooltip-target" data-tooltip="실행 취소" onClick={() => window.history.back()}><Undo2 size={13}/></button>
             <button className="excel-titlebar__qs-btn excel-tooltip-target" data-tooltip="다시 실행" onClick={() => window.history.forward()}><Redo2 size={13}/></button>
             <button className="excel-titlebar__qs-chevron" aria-label="빠른 실행 도구 모음 사용자 지정"><ChevronDown size={10}/></button>
