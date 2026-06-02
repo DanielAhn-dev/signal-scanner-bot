@@ -1188,7 +1188,13 @@ async function getOperationsDashboardKpi(
     ? latestSummary.notes.map((v) => String(v || '').trim()).filter(Boolean)
     : []
   const noteReason = latestNotes.find((note) => /오류|실패|error|fail|timeout/i.test(note)) || null
-  const latestFailedReason = String(latestSummary.error || noteReason || '').trim() || null
+  const rawError = latestSummary.error
+  const errorStr = rawError instanceof Error
+    ? rawError.message
+    : (typeof rawError === 'object' && rawError !== null && 'message' in (rawError as Record<string, unknown>))
+      ? String((rawError as Record<string, unknown>).message)
+      : rawError ? String(rawError) : ''
+  const latestFailedReason = (errorStr || noteReason || '').trim() || null
 
   return {
     asof: ymd,

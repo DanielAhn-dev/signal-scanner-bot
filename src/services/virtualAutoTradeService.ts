@@ -129,6 +129,16 @@ type SignalTrustThresholds = {
 
 type DiscoveryProfile = "BLEND" | "HIGHLIGHT" | "PULLBACK" | "MULTIBAGGER" | "BACKTEST_EDGE";
 
+function extractErrorMessage(error: unknown): string {
+  if (error instanceof Error) return error.message;
+  if (typeof error === 'object' && error !== null) {
+    const obj = error as Record<string, unknown>;
+    if (typeof obj.message === 'string' && obj.message) return obj.message;
+    if (typeof obj.details === 'string' && obj.details) return obj.details;
+  }
+  return String(error);
+}
+
 function normalizeDiscoveryProfile(value: unknown): DiscoveryProfile {
   const normalized = String(value ?? "").trim().toUpperCase();
   if (normalized === "HIGHLIGHT") return "HIGHLIGHT";
@@ -3635,7 +3645,7 @@ async function runMondayBuyForUser(payload: {
       }).catch((err: unknown) => console.error("[autoTrade] decision log BUY failed", err));
       slotsLeft -= 1;
     } catch (error: unknown) {
-      const message = error instanceof Error ? error.message : String(error);
+      const message = extractErrorMessage(error);
       summary.errors += 1;
       summary.notes.push(`${candidate.code} 매수 실패: ${message}`);
       await writeActionLog({
@@ -4499,7 +4509,7 @@ async function runDailyReviewForUser(payload: {
         summary.notes.push(`[추세이탈 청산] ${holding.code} · ${trendExitSignal.reason}`);
       }
     } catch (error: unknown) {
-      const message = error instanceof Error ? error.message : String(error);
+      const message = extractErrorMessage(error);
       summary.errors += 1;
       summary.notes.push(`${holding.code} 매도 실패: ${message}`);
       await writeActionLog({
@@ -4933,7 +4943,7 @@ async function runDailyReviewForUser(payload: {
             linkedTradeId: tradeId ?? undefined,
           }).catch((err: unknown) => console.error("[autoTrade] decision log add-on BUY failed", err));
         } catch (error: unknown) {
-          const message = error instanceof Error ? error.message : String(error);
+          const message = extractErrorMessage(error);
           summary.errors += 1;
           summary.notes.push(`${candidate.code} 추가매수 실패: ${message}`);
           await writeActionLog({
@@ -5516,7 +5526,7 @@ async function runDailyReviewForUser(payload: {
             linkedTradeId: tradeId ?? undefined,
           }).catch((err: unknown) => console.error("[autoTrade] decision log rebalance BUY failed", err));
         } catch (error: unknown) {
-          const message = error instanceof Error ? error.message : String(error);
+          const message = extractErrorMessage(error);
           summary.errors += 1;
           summary.notes.push(`${candidate.code} 신규 매수 실패: ${message}`);
           await writeActionLog({
@@ -6088,7 +6098,7 @@ export async function runVirtualAutoTradingCycle(input?: {
       summary.errorCount += actionSummary.errors;
       summary.actions.push(actionSummary);
     } catch (error: unknown) {
-      const message = error instanceof Error ? error.message : String(error);
+      const message = extractErrorMessage(error);
       await finishRun({
         supabase,
         runId,
