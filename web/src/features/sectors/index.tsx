@@ -66,13 +66,69 @@ type Tab = "promising" | "next" | "all" | "guide"
 
 const ANALYZE_PENDING_CODE_KEY = "analyze_pending_code"
 
+type MacroPhase = "normal" | "high_inflation" | "deflation" | "stagflation" | "unknown"
+
+type SectorMarketOverviewSnapshot = {
+  economicPhase?: {
+    phase?: MacroPhase
+    label?: string
+    severity?: number
+    indicators?: {
+      cpiYoy?: number | null
+      us10y?: number | null
+    }
+  }
+  tradingSignal?: {
+    confidence?: number | null
+  }
+  diagnosis?: {
+    riskScore?: number | null
+  }
+  fetchedAt?: string
+}
+
+type PhaseDetectionResult = {
+  phase: EconomicPhase | null
+  confidence: number
+  confidenceLabel: "높음" | "보통" | "낮음"
+  basisLabel: string
+  reason: string
+}
+
+function clampNum(v: number, min: number, max: number): number {
+  return Math.max(min, Math.min(max, v))
+}
+
+function confidenceLabel(v: number): "높음" | "보통" | "낮음" {
+  if (v >= 75) return "높음"
+  if (v >= 55) return "보통"
+  return "낮음"
+}
+
+function mapMacroPhaseToRotation(phase?: MacroPhase): EconomicPhase | null {
+  if (!phase || phase === "unknown") return null
+  if (phase === "normal") return "expansion"
+  if (phase === "high_inflation") return "slowdown"
+  return "recession"
+}
+
 // 현재 경기 국면 자동 추정 — WICS 대분류별 평균 점수로 가장 강한 로테이션 단계 판정
-function detectCurrentPhase(all: Sector[]): EconomicPhase | null {
-  if (all.length === 0) return null
+function detectCurrentPhase(all: Sector[], marketOverview?: SectorMarketOverviewSnapshot | null): PhaseDetectionResult {
+  if (all.length === 0) {
+    return {
+      phase: null,
+      confidence: 0,
+      confidenceLabel: "낮음",
+      basisLabel: "데이터 부족",
+      reason: "섹터 점수 데이터가 없어 국면을 판단할 수 없습니다.",
+    }
+  }
   const catScores: Record<string, number[]> = {}
+  let usableScoreCount = 0
   for (const s of all) {
     const meta = getSectorMeta(s.name)
     if (!meta || s.score == null) continue
+    usableScoreCount += 1
     if (!catScores[meta.wicsCategory]) catScores[meta.wicsCategory] = []
     catScores[meta.wicsCategory].push(s.score)
   }
@@ -83,7 +139,59 @@ function detectCurrentPhase(all: Sector[]): EconomicPhase | null {
   }
   const ranked = ROTATION_CYCLE.map((p) => ({ phase: p.phase, score: avg(p.sectorCategories) }))
     .sort((a, b) => b.score - a.score)
-  return ranked[0].score > 0 ? ranked[0].phase : null
+  if (ranked.length === 0 || ranked[0].score <= 0) {
+    return {
+      phase: null,
+      confidence: 0,
+      confidenceLabel: "낮음",
+      basisLabel: "데이터 부족",
+      reason: "유효한 섹터 점수가 부족해 국면을 산출하지 못했습니다.",
+    }
+  }
+
+  const top = ranked[0]
+  const second = ranked[1] ?? { phase: top.phase, score: 0 }
+  const gap = Math.max(0, top.score - second.score)
+  const gapRatio = top.score > 0 ? gap / top.score : 0
+  const coverage = clampNum(usableScoreCount / 12, 0, 1)
+
+  const sectorConfidence = clampNum(Math.round(35 + gapRatio * 40 + coverage * 20), 20, 90)
+  const macroPhase = mapMacroPhaseToRotation(marketOverview?.economicPhase?.phase)
+  const macroLabel = marketOverview?.economicPhase?.label
+  const macroSignalConfidence = Number(marketOverview?.tradingSignal?.confidence)
+
+  let finalConfidence = sectorConfidence
+  let basisLabel = "섹터 점수 기반"
+  let reason = `1위-2위 격차 ${gap.toFixed(1)}점 · 유효 섹터 ${usableScoreCount}개`
+
+  if (macroPhase) {
+    const macroWeight = Number.isFinite(macroSignalConfidence)
+      ? clampNum(Math.round(macroSignalConfidence * 0.2), 8, 20)
+      : 12
+    const agree = macroPhase === top.phase
+    finalConfidence = clampNum(finalConfidence + (agree ? macroWeight : -macroWeight), 15, 95)
+    basisLabel = "섹터+거시 혼합"
+    reason = `${reason} · 거시 국면 ${macroLabel ?? "참고"} ${agree ? "정합" : "불일치"}`
+  }
+
+  const weakDistinction = gapRatio < 0.08 && !macroPhase
+  if (weakDistinction) {
+    return {
+      phase: null,
+      confidence: clampNum(Math.min(finalConfidence, 45), 15, 45),
+      confidenceLabel: "낮음",
+      basisLabel,
+      reason: `${reason} · 상위 국면 간 점수 차가 작아 판단 보류`,
+    }
+  }
+
+  return {
+    phase: top.phase,
+    confidence: finalConfidence,
+    confidenceLabel: confidenceLabel(finalConfidence),
+    basisLabel,
+    reason,
+  }
 }
 
 function toNum(v: unknown): number | null {
@@ -338,14 +446,14 @@ function SectorCard({
 function SectorSummaryTable({
   all,
   tab,
-  detectedPhase,
+  detected,
   latestUpdatedAt,
   onRefresh,
   refreshing,
 }: {
   all: Sector[]
   tab: Tab
-  detectedPhase: EconomicPhase | null
+  detected: PhaseDetectionResult
   latestUpdatedAt: string | null
   onRefresh?: () => void
   refreshing?: boolean
@@ -357,8 +465,8 @@ function SectorSummaryTable({
     return flow5d > 0 || ((sector.change_rate ?? 0) > 0 && (sector.score ?? 0) >= 40)
   }).length
   const topNames = sorted.slice(0, 3).map((sector) => sector.name).join(" · ") || "—"
-  const phaseLabel = detectedPhase ? PHASE_LABELS[detectedPhase] : "판단중"
-  const phaseMeta = detectedPhase ? ROTATION_CYCLE.find((phase) => phase.phase === detectedPhase) : null
+  const phaseLabel = detected.phase ? PHASE_LABELS[detected.phase] : "판단중"
+  const phaseMeta = detected.phase ? ROTATION_CYCLE.find((phase) => phase.phase === detected.phase) : null
 
   return (
     <div className="xls-scroll-frame sector-sheet__summary-scroll" style={{ ['--xls-table-min-width' as any]: '500px' }}>
@@ -392,7 +500,8 @@ function SectorSummaryTable({
           <td className="xls-cell">현재 국면</td>
           <td className="xls-cell" colSpan={2}>
             <div className="sector-sheet__summary-value">{phaseLabel}</div>
-            <div className="sector-sheet__summary-sub">{phaseMeta?.description ?? "섹터 점수 기반으로 경기 국면을 추정합니다."}</div>
+            <div className="sector-sheet__summary-sub">{phaseMeta?.description ?? "국면 신호를 집계 중입니다."}</div>
+            <div className="sector-sheet__summary-sub">{detected.reason}</div>
           </td>
           <td className="xls-cell">탭 현황</td>
           <td className="xls-cell" colSpan={2}>
@@ -406,10 +515,10 @@ function SectorSummaryTable({
             <div className="sector-sheet__summary-value">{topNames}</div>
             <div className="sector-sheet__summary-sub">점수 기준 상위 섹터</div>
           </td>
-          <td className="xls-cell">가이드</td>
+          <td className="xls-cell">신뢰도</td>
           <td className="xls-cell" colSpan={2}>
-            <div className="sector-sheet__summary-value">로테이션 추적</div>
-            <div className="sector-sheet__summary-sub">경기 국면에 맞는 섹터를 우선 확인</div>
+            <div className="sector-sheet__summary-value">{detected.confidence}% · {detected.confidenceLabel}</div>
+            <div className="sector-sheet__summary-sub">{detected.basisLabel}</div>
           </td>
         </tr>
       </tbody>
@@ -577,8 +686,8 @@ function AllSectorsView({
 
 // ── 섹터 가이드 탭 ───────────────────────────────────────────────────────
 
-function SectorGuideView({ detectedPhase }: { detectedPhase: EconomicPhase | null }) {
-  const activePhaseData = detectedPhase ? ROTATION_CYCLE.find((p) => p.phase === detectedPhase) : null
+function SectorGuideView({ detected }: { detected: PhaseDetectionResult }) {
+  const activePhaseData = detected.phase ? ROTATION_CYCLE.find((p) => p.phase === detected.phase) : null
 
   return (
     <div className="sector-guide">
@@ -604,7 +713,7 @@ function SectorGuideView({ detectedPhase }: { detectedPhase: EconomicPhase | nul
                 </span>
               </div>
               <div className="caption muted">
-                섹터 점수 기반 자동 추정 — 주도 섹터 범주: {activePhaseData.sectorCategories.join(" · ")}
+                {detected.basisLabel} · 신뢰도 {detected.confidence}% ({detected.confidenceLabel}) · 주도 섹터 범주: {activePhaseData.sectorCategories.join(" · ")}
               </div>
             </div>
           </div>
@@ -625,7 +734,7 @@ function SectorGuideView({ detectedPhase }: { detectedPhase: EconomicPhase | nul
         {/* 사이클 플로우 — 데스크탑 가로 */}
         <div className="rotation-flow">
           {ROTATION_CYCLE.map((phase, idx) => {
-            const isActive = detectedPhase === phase.phase
+            const isActive = detected.phase === phase.phase
             return (
               <React.Fragment key={phase.phase}>
                 <div
@@ -677,7 +786,7 @@ function SectorGuideView({ detectedPhase }: { detectedPhase: EconomicPhase | nul
         {/* 모바일: 수직 플로우 */}
         <div className="rotation-flow-vertical">
           {ROTATION_CYCLE.map((phase, idx) => {
-            const isActive = detectedPhase === phase.phase
+            const isActive = detected.phase === phase.phase
             return (
               <div key={phase.phase} className="rotation-flow-vertical__item">
                 <div className="rotation-flow-vertical__connector">
@@ -842,8 +951,9 @@ export default function SectorsPage({ onNavigate }: { onNavigate?: (r: string) =
   const [leadersLoading, setLeadersLoading] = useState(false)
   const [leadersError, setLeadersError] = useState<string | null>(null)
   const [leadersCriteria, setLeadersCriteria] = useState<string>("is_sector_leader desc, market_cap desc, liquidity desc")
+  const [marketOverview, setMarketOverview] = useState<SectorMarketOverviewSnapshot | null>(null)
   const [lastLoadedAt, setLastLoadedAt] = useState<string | null>(initAll.length > 0 ? new Date().toISOString() : null)
-  const detectedPhase = detectCurrentPhase(all)
+  const detected = useMemo(() => detectCurrentPhase(all, marketOverview), [all, marketOverview])
   const latestUpdatedAt = useMemo(() => {
     const values = all
       .map((sector) => sector.updated_at)
@@ -859,9 +969,17 @@ export default function SectorsPage({ onNavigate }: { onNavigate?: (r: string) =
     setLoading(true)
     setError(null)
     try {
-      const res = await apiFetch("/api/ui/sectors", { cacheMs: force ? 0 : SECTORS_TTL, timeoutMs: 15_000 })
-      const data: Sector[] = res?.data ?? []
+      const [sectorResult, marketResult] = await Promise.allSettled([
+        apiFetch("/api/ui/sectors", { cacheMs: force ? 0 : SECTORS_TTL, timeoutMs: 15_000 }),
+        apiFetch("/api/ui/market-overview", { cacheMs: force ? 0 : SECTORS_TTL, timeoutMs: 12_000, retries: 0 }),
+      ])
+      if (sectorResult.status !== "fulfilled") throw sectorResult.reason
+      const data: Sector[] = sectorResult.value?.data ?? []
       setAll(data)
+      if (marketResult.status === "fulfilled") {
+        const marketData = marketResult.value?.data ?? marketResult.value ?? null
+        setMarketOverview(marketData)
+      }
       setLastLoadedAt(new Date().toISOString())
       writeLS(LS_KEY, data)
     } catch (e: any) {
@@ -974,7 +1092,7 @@ export default function SectorsPage({ onNavigate }: { onNavigate?: (r: string) =
       <SectorSummaryTable
         all={all}
         tab={tab}
-        detectedPhase={detectedPhase}
+        detected={detected}
         latestUpdatedAt={displayUpdatedAt}
         onRefresh={() => loadData(true)}
         refreshing={loading}
@@ -1160,7 +1278,7 @@ export default function SectorsPage({ onNavigate }: { onNavigate?: (r: string) =
       )}
 
       {/* 섹터 가이드 */}
-      {tab === "guide" && <SectorGuideView detectedPhase={detectedPhase} />}
+      {tab === "guide" && <SectorGuideView detected={detected} />}
     </section>
   )
 }
