@@ -1,6 +1,42 @@
-import type { VercelRequest } from '@vercel/node'
+import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
 import { resolveUiUserContext } from './_userContext'
+
+function parseTrustedOrigins(): string[] {
+  return String(
+    process.env.UI_TRUSTED_WEB_ORIGINS ||
+    'https://signal-scanner-web.vercel.app,http://localhost:5173',
+  )
+    .split(',')
+    .map((v) => v.trim())
+    .filter(Boolean)
+}
+
+/**
+ * read-only 엔드포인트 공통 인증.
+ * Origin/Referer 중 하나가 trusted origins에 포함되면 키 없이 통과.
+ * 그 외엔 x-ui-key 또는 ui_key 쿼리가 UI_READ_KEY와 일치해야 함.
+ * 반환값이 true면 거부됐으므로 핸들러는 즉시 return 해야 함.
+ */
+export function denyIfUnauthorizedRead(req: VercelRequest, res: VercelResponse): boolean {
+  const expectedKey = process.env.UI_READ_KEY || process.env.VITE_UI_READ_KEY
+  if (!expectedKey) return false
+
+  const trustedOrigins = parseTrustedOrigins()
+  const origin = String(req.headers.origin || '')
+  const referer = String(req.headers.referer || req.headers.referrer || '')
+  const isTrusted =
+    (!!origin && trustedOrigins.includes(origin)) ||
+    trustedOrigins.some((o) => referer.startsWith(o))
+
+  if (isTrusted) return false
+
+  const readKey = String(req.headers['x-ui-key'] || req.query.ui_key || '')
+  if (readKey === expectedKey) return false
+
+  res.status(401).json({ error: 'Unauthorized', detail: 'Invalid UI read key' })
+  return true
+}
 
 export const ADVANCED_ROUTES = new Set([
   'trigger-update',

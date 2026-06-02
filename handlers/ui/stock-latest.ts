@@ -6,6 +6,7 @@ import { scaleScoreFactorsToReferencePrice } from '../../src/lib/priceScale'
 import { getFundamentalSnapshot } from '../../src/services/fundamentalService'
 import { fetchCreditShortSnapshot } from '../../src/utils/fetchCreditShortData'
 import { fetchRealtimeStockData } from '../../src/utils/fetchRealtimePrice'
+import { denyIfUnauthorizedRead } from './_accessControl'
 
 const ORIGIN = process.env.UI_CORS_ORIGIN || '*'
 
@@ -1239,12 +1240,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method === 'OPTIONS') return res.status(204).end()
   if (req.method !== 'GET') return res.status(405).json({ error: 'Method not allowed' })
 
-  const expectedReadKey = process.env.UI_READ_KEY || process.env.VITE_UI_READ_KEY
-  const readKey = req.headers['x-ui-key'] || req.query.ui_key
-  const isTrustedOrigin = !!requestOrigin && trustedOrigins.includes(requestOrigin)
-  if (expectedReadKey && !isTrustedOrigin && String(readKey || '') !== expectedReadKey) {
-    return res.status(401).json({ error: 'Unauthorized' })
-  }
+  if (denyIfUnauthorizedRead(req, res)) return
+
 
   const url = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_KEY

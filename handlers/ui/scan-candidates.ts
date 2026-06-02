@@ -3,6 +3,7 @@ import { createClient, SupabaseClient } from '@supabase/supabase-js'
 import { applyAdaptiveOverlayToPullbackCandidate, getAdaptiveStrategyInsights } from '../../src/services/adaptiveStrategyService'
 import { scoreLeadAccumulationCandidate } from '../../src/services/accumulationSignalService'
 import { fetchRealtimePriceBatch } from '../../src/utils/fetchRealtimePrice'
+import { denyIfUnauthorizedRead } from './_accessControl'
 
 const ORIGIN = process.env.UI_CORS_ORIGIN || '*'
 const SCAN_CACHE_TTL_MS = Math.max(0, Number(process.env.UI_SCAN_CANDIDATES_CACHE_TTL_MS || 15_000))
@@ -307,19 +308,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   if (req.method !== 'GET') return res.status(405).json({ error: 'Method not allowed' })
 
-  const expectedReadKey = process.env.UI_READ_KEY || process.env.VITE_UI_READ_KEY
-  const readKey = req.headers['x-ui-key'] || req.query.ui_key
-  const trustedOrigins = String(
-    process.env.UI_TRUSTED_WEB_ORIGINS ||
-    'https://signal-scanner-web.vercel.app,http://localhost:5173',
-  )
-    .split(',')
-    .map((v) => v.trim())
-    .filter(Boolean)
-  const isTrustedOrigin = !!origin && trustedOrigins.includes(origin)
-  if (expectedReadKey && !isTrustedOrigin && String(readKey || '') !== expectedReadKey) {
-    return res.status(401).json({ error: 'Unauthorized', detail: 'Invalid UI read key' })
-  }
+  if (denyIfUnauthorizedRead(req, res)) return
 
   let supabase: SupabaseClient
   try {

@@ -1,5 +1,6 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { createClient } from '@supabase/supabase-js'
+import { denyIfUnauthorizedRead } from './_accessControl'
 
 type TgProfile = {
   id: number | null
@@ -37,24 +38,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method === 'OPTIONS') return res.status(204).end()
   if (req.method !== 'GET') return res.status(405).json({ error: 'Method not allowed' })
 
-  const expectedReadKey = process.env.UI_READ_KEY || process.env.VITE_UI_READ_KEY
-  const readKey = req.headers['x-ui-key'] || req.query.ui_key
-  const trustedOrigins = String(
-    process.env.UI_TRUSTED_WEB_ORIGINS ||
-    process.env.UI_CORS_ORIGIN ||
-    'https://signal-scanner-web.vercel.app,http://localhost:5173',
-  )
-    .split(',')
-    .map((v) => v.trim())
-    .filter(Boolean)
-  const isTrustedOrigin = !!requestOrigin && trustedOrigins.includes(requestOrigin)
-  
-  // 인증 체크: (trusted origin 또는 UI key 일치) 해야 함
-  // 둘 다 만족하지 않으면 401
-  const hasValidAuth = isTrustedOrigin || (expectedReadKey && String(readKey || '') === expectedReadKey)
-  if (expectedReadKey && !hasValidAuth) {
-    return res.status(401).json({ error: 'Unauthorized' })
-  }
+  if (denyIfUnauthorizedRead(req, res)) return
+
 
   const chatId = normalizeChatId(req.query.chatId)
   if (!chatId) return res.status(400).json({ error: 'chatId required' })

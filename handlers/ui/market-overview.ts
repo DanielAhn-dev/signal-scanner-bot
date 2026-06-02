@@ -3,6 +3,7 @@ import {
   fetchAllMarketData,
   type MarketOverview,
 } from '../../src/utils/fetchMarketData'
+import { denyIfUnauthorizedRead } from './_accessControl'
 import {
   scoreSectors,
   getTopSectors,
@@ -553,19 +554,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method === 'OPTIONS') return res.status(204).end()
   if (req.method !== 'GET') return res.status(405).json({ error: 'Method not allowed' })
 
-  const expectedReadKey = process.env.UI_READ_KEY || process.env.VITE_UI_READ_KEY
-  const readKey = req.headers['x-ui-key'] || req.query.ui_key
-  const trustedOrigins = String(
-    process.env.UI_TRUSTED_WEB_ORIGINS ||
-    'https://signal-scanner-web.vercel.app,http://localhost:5173',
-  )
-    .split(',')
-    .map((v) => v.trim())
-    .filter(Boolean)
-  const isTrustedOrigin = !!origin && trustedOrigins.includes(origin)
-  if (expectedReadKey && !isTrustedOrigin && String(readKey || '') !== expectedReadKey) {
-    return res.status(401).json({ error: 'Unauthorized', detail: 'Invalid UI read key' })
-  }
+  if (denyIfUnauthorizedRead(req, res)) return
 
   try {
     const bypassCache = String((req.query as any)?.cacheMs || '') === '0'

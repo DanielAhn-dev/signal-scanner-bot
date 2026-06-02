@@ -1,6 +1,7 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { createClient, SupabaseClient } from '@supabase/supabase-js'
 import { resolveUiUserContext } from './_userContext'
+import { denyIfUnauthorizedRead } from './_accessControl'
 import { runVirtualAutoTradingCycle } from '../../src/services/virtualAutoTradeService'
 import { replaceTradeLotsForHolding } from '../../src/services/virtualLotService'
 
@@ -698,19 +699,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   for (const [k, v] of Object.entries(headers)) res.setHeader(k, v)
   if (req.method === 'OPTIONS') return res.status(204).end()
 
-  const expectedReadKey = process.env.UI_READ_KEY || process.env.VITE_UI_READ_KEY
-  const readKey = req.headers['x-ui-key'] || req.query.ui_key
-  const requestOrigin = String(req.headers.origin || '').trim()
-  const trustedOrigins = String(
-    process.env.UI_TRUSTED_WEB_ORIGINS ||
-    process.env.UI_CORS_ORIGIN ||
-    'https://signal-scanner-web.vercel.app,http://localhost:5173',
-  ).split(',').map((v) => v.trim()).filter(Boolean)
-  const isTrustedOrigin = !!requestOrigin && trustedOrigins.includes(requestOrigin)
-
-  if (expectedReadKey && !isTrustedOrigin && String(readKey || '') !== expectedReadKey) {
-    return res.status(401).json({ error: 'Unauthorized' })
-  }
+  if (denyIfUnauthorizedRead(req, res)) return
 
   const user = await resolveUiUserContext(req)
   const chatId = user.chatId
