@@ -16,6 +16,7 @@ export default function Settings(){
 
   const [settings, setSettings] = useState<any | null>(null)
   const [seedCapital, setSeedCapital] = useState<string>('')
+  const [virtualCash, setVirtualCash] = useState<number | null>(null)
   const [seedCapitalStatus, setSeedCapitalStatus] = useState<string | undefined>()
   const [savingSeed, setSavingSeed] = useState(false)
   const [saving, setSaving] = useState(false)
@@ -46,6 +47,8 @@ export default function Settings(){
         const json = await apiFetch('/api/ui/investment-prefs', { cacheMs: 0, timeoutMs: 10_000 })
         const seed = json?.data?.virtual_seed_capital
         if (seed != null) setSeedCapital(String(Math.round(seed)))
+        const cash = json?.data?.virtual_cash
+        if (cash != null) setVirtualCash(cash)
       } catch (e) {
         // ignore
       }
@@ -165,12 +168,14 @@ export default function Settings(){
     setSavingSeed(true)
     setSeedCapitalStatus(undefined)
     try {
-      await apiFetch('/api/ui/investment-prefs', {
+      const result = await apiFetch('/api/ui/investment-prefs', {
         method: 'POST',
         cacheMs: 0,
         timeoutMs: 10_000,
         body: JSON.stringify({ virtual_seed_capital: Math.round(parsed), reset_cash: resetCash }),
       })
+      const updatedCash = result?.data?.virtual_cash
+      if (updatedCash != null) setVirtualCash(updatedCash)
       setSeedCapitalStatus(resetCash ? '저장 및 잔여 현금 초기화 완료' : '저장 완료')
     } catch (e: any) {
       setSeedCapitalStatus(String(e?.message || e))
@@ -361,6 +366,15 @@ export default function Settings(){
             <td className="xls-cell" colSpan={2} style={{ fontSize: 13, fontWeight: 600 }}>자동매매 시드 자본금</td>
             <td className="xls-cell" colSpan={4} style={{ padding: '8px 10px' }}>
               <label className="block muted">자동매매 예산의 기준이 되는 시드 자본금입니다. 자동매매 실행 시 이 금액을 기준으로 종목당 투자 비중이 계산됩니다.</label>
+              <div className="mt-1" style={{ fontSize: 13, fontWeight: 600, color: virtualCash == null ? '#888' : virtualCash < 100000 ? '#c0392b' : '#27ae60' }}>
+                {virtualCash == null
+                  ? '현재 투자 가능 현금: 미초기화 — 아래 "저장 + 잔여 현금 초기화"로 설정하세요'
+                  : <>
+                      현재 투자 가능 현금: {virtualCash.toLocaleString('ko-KR')}원
+                      {virtualCash < 100000 && <span style={{ marginLeft: 8, fontWeight: 400, color: '#c0392b' }}>⚠ 현금 부족 — 자동매매 실행 불가</span>}
+                    </>
+                }
+              </div>
               <div className="mt-2 grid-two">
                 <Input
                   label="시드 자본금 (원)"

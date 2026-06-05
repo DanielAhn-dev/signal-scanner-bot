@@ -57,13 +57,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
       const prefs = (data?.prefs || {}) as Record<string, unknown>
       const virtualSeedCapital = Number(prefs.virtual_seed_capital)
-      const virtualCash = Number(prefs.virtual_cash)
+      const rawCash = prefs.virtual_cash
+      const virtualCash = rawCash != null ? Number(rawCash) : null
       const capitalKrw = Number(prefs.capital_krw)
 
       return res.status(200).json({
         data: {
           virtual_seed_capital: Number.isFinite(virtualSeedCapital) && virtualSeedCapital > 0 ? virtualSeedCapital : null,
-          virtual_cash: Number.isFinite(virtualCash) && virtualCash >= 0 ? virtualCash : null,
+          virtual_cash: virtualCash != null && Number.isFinite(virtualCash) && virtualCash >= 0 ? virtualCash : null,
           capital_krw: Number.isFinite(capitalKrw) && capitalKrw > 0 ? capitalKrw : null,
         }
       })

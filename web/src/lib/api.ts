@@ -22,7 +22,7 @@ function normalizeUiUrl(url: string): string {
 }
 
 function needsAuthHeader(url: string): boolean {
-  return /\/api\/ui\/(profile|positions|positions-maintenance|watchlist|virtual-trade|decisions|summary|settings|notify|access-users|operations|portfolio-share|simulation-plan|account-policies|advisor-performance|portfolio-realtime|stop-loss-take-profit)(\?|$)|\/api\/ui\?route=(profile|positions|positions-maintenance|watchlist|virtual-trade|decisions|summary|settings|notify|access-users|operations|portfolio-share|simulation-plan|account-policies|advisor-performance|portfolio-realtime|stop-loss-take-profit)(&|$)/.test(url)
+  return /\/api\/ui\/(profile|positions|positions-maintenance|watchlist|virtual-trade|decisions|summary|settings|notify|access-users|operations|portfolio-share|simulation-plan|account-policies|advisor-performance|portfolio-realtime|stop-loss-take-profit|investment-prefs)(\?|$)|\/api\/ui\?route=(profile|positions|positions-maintenance|watchlist|virtual-trade|decisions|summary|settings|notify|access-users|operations|portfolio-share|simulation-plan|account-policies|advisor-performance|portfolio-realtime|stop-loss-take-profit|investment-prefs)(&|$)/.test(url)
 }
 
 function appendQueryParam(url: string, key: string, value: string): string {
@@ -136,7 +136,7 @@ export async function apiFetch(
   }
   const uiKey = import.meta.env.VITE_UI_READ_KEY
   if (uiKey) headers.set('x-ui-key', uiKey)
-  const requiresUserIdentityQuery = /\/api\/ui\/(positions|positions-maintenance|watchlist|virtual-trade|decisions|summary|settings|notify|access-users|operations|portfolio-share|simulation-plan|account-policies|advisor-performance|trigger-update|trigger-briefing|sync-history|sync-status|report-pdf|report-share|report-snapshot|report-web)(\?|$)|\/api\/ui\?route=(positions|positions-maintenance|watchlist|virtual-trade|decisions|summary|settings|notify|access-users|operations|portfolio-share|simulation-plan|account-policies|advisor-performance|trigger-update|trigger-briefing|sync-history|sync-status|report-pdf|report-share|report-snapshot|report-web)(&|$)/.test(url)
+  const requiresUserIdentityQuery = /\/api\/ui\/(positions|positions-maintenance|watchlist|virtual-trade|decisions|summary|settings|notify|access-users|operations|portfolio-share|simulation-plan|account-policies|advisor-performance|trigger-update|trigger-briefing|sync-history|sync-status|report-pdf|report-share|report-snapshot|report-web|investment-prefs)(\?|$)|\/api\/ui\?route=(positions|positions-maintenance|watchlist|virtual-trade|decisions|summary|settings|notify|access-users|operations|portfolio-share|simulation-plan|account-policies|advisor-performance|trigger-update|trigger-briefing|sync-history|sync-status|report-pdf|report-share|report-snapshot|report-web|investment-prefs)(&|$)/.test(url)
   if (requiresUserIdentityQuery) {
     const clientId = getCurrentClientIdFromStore()
     const chatId = getCurrentChatIdFromStore()
