@@ -81,25 +81,11 @@ function resolveDueTasks(now = new Date()): DueTask[] {
   if (CRON_HOBBY_DAILY_MODE) {
     const dailyTasks: DueTask[] = [];
 
-    // KST 09:08
-    if (ENABLE_INTRADAY_AGENT_CYCLE && isWeekday && isUtcTime(0, 8)) {
-      dailyTasks.push({
-        name: "virtualAutoTradeMorning",
-        path: TASK_PATHS.virtualAutoTradeMorning,
-      });
-    }
-    // KST 10:35
-    if (ENABLE_INTRADAY_AGENT_CYCLE && isWeekday && isUtcTime(1, 35)) {
+    // KST 13:30 (아침은 GitHub Actions virtual_autotrade_morning.yml 에서 10:30 처리)
+    if (ENABLE_INTRADAY_AGENT_CYCLE && isWeekday && isUtcTime(4, 30)) {
       dailyTasks.push({
         name: "virtualAutoTradeAfternoon",
         path: TASK_PATHS.virtualAutoTradeAfternoon,
-      });
-    }
-    // KST 14:10
-    if (ENABLE_INTRADAY_AGENT_CYCLE && isWeekday && isUtcTime(5, 10)) {
-      dailyTasks.push({
-        name: "virtualAutoTradeClose",
-        path: TASK_PATHS.virtualAutoTradeClose,
       });
     }
 
@@ -151,27 +137,11 @@ function resolveDueTasks(now = new Date()): DueTask[] {
   }
 
   if (ENABLE_INTRADAY_AGENT_CYCLE) {
-    // KST 09:08
-    if (isWeekday && isUtcTime(0, 8)) {
-      tasks.push({
-        name: "virtualAutoTradeMorning",
-        path: TASK_PATHS.virtualAutoTradeMorning,
-      });
-    }
-
-    // KST 10:35
-    if (isWeekday && isUtcTime(1, 35)) {
+    // KST 13:30 (아침은 GitHub Actions virtual_autotrade_morning.yml 에서 10:30 처리)
+    if (isWeekday && isUtcTime(4, 30)) {
       tasks.push({
         name: "virtualAutoTradeAfternoon",
         path: TASK_PATHS.virtualAutoTradeAfternoon,
-      });
-    }
-
-    // KST 14:10
-    if (isWeekday && isUtcTime(5, 10)) {
-      tasks.push({
-        name: "virtualAutoTradeClose",
-        path: TASK_PATHS.virtualAutoTradeClose,
       });
     }
   } else {
