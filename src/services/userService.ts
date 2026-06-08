@@ -28,7 +28,7 @@ function getSupabaseReadClient(): any {
   const url = getRequiredEnv("SUPABASE_URL");
   const anonKey = process.env.SUPABASE_ANON_KEY;
   const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  const key = anonKey || serviceRoleKey;
+  const key = serviceRoleKey || anonKey;
 
   if (!key) {
     throw new Error("SUPABASE_ANON_KEY or SUPABASE_SERVICE_ROLE_KEY is required.");
@@ -201,8 +201,8 @@ export async function getUserInvestmentPrefs(
   if (riskProfile === "safe" || riskProfile === "balanced" || riskProfile === "active") {
     out.risk_profile = riskProfile;
   }
-  if (Number.isFinite(virtualSeed) && virtualSeed >= 0) out.virtual_seed_capital = virtualSeed;
-  if (Number.isFinite(virtualCash) && virtualCash >= 0) out.virtual_cash = virtualCash;
+  if (prefs.virtual_seed_capital != null && Number.isFinite(virtualSeed) && virtualSeed >= 0) out.virtual_seed_capital = virtualSeed;
+  if (prefs.virtual_cash != null && Number.isFinite(virtualCash) && virtualCash >= 0) out.virtual_cash = virtualCash;
   if (Number.isFinite(virtualRealizedPnl)) out.virtual_realized_pnl = virtualRealizedPnl;
   if (Number.isFinite(virtualTargetPositions) && virtualTargetPositions > 0) {
     out.virtual_target_positions = Math.floor(virtualTargetPositions);
