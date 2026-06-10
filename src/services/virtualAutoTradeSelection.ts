@@ -22,6 +22,7 @@ export type RankedCandidate = {
   marketCap?: number | null;
   universeLevel?: string | null;
   isSectorLeader?: boolean | null;
+  sectorId?: string | null;
   aboveSma20?: boolean | null;
   stableTurn?: string | null;
   stableTrust?: number | null;
@@ -85,6 +86,7 @@ export type AutoTradeCandidateSelectionResult = {
     marketCap?: number | null;
     universeLevel?: string | null;
     isSectorLeader?: boolean | null;
+    sectorId?: string | null;
     stableTurn?: string | null;
     stableTrust?: number | null;
     stableAboveAvg?: boolean | null;
@@ -166,10 +168,13 @@ function resolvePegRankBoost(row: RankedCandidate): number {
   return -2.5;
 }
 
-function resolveCompositeRankScore(row: RankedCandidate): number {
-  // 섹터 리더 종목에 +4점 보너스 (동점 시 섹터 선도주 우선 매수)
+function resolveCompositeRankScore(
+  row: RankedCandidate,
+  sectorBoostById?: Map<string, number>
+): number {
   const sectorLeaderBonus = row.isSectorLeader === true ? 4 : 0;
-  return row.score + resolvePegRankBoost(row) + sectorLeaderBonus + toNumber(row.rankBoost, 0);
+  const sectorBoost = (row.sectorId ? (sectorBoostById?.get(row.sectorId) ?? 0) : 0);
+  return row.score + resolvePegRankBoost(row) + sectorLeaderBonus + sectorBoost + toNumber(row.rankBoost, 0);
 }
 
 function normalizeSignal(signal: unknown): string {
@@ -664,6 +669,7 @@ export function pickAutoTradeCandidates(input: {
   marketPolicy?: AutoTradeMarketPolicy;
   entryProfile?: AutoTradeEntryProfile;
   pullbackCandidateCodes?: Set<string>;
+  sectorBoostById?: Map<string, number>;
 }): AutoTradeCandidateSelectionResult {
   const limit = Math.max(1, Math.floor(input.limit));
   const preferredMinBuyScore = toPositiveInt(input.preferredMinBuyScore, 70);
@@ -686,7 +692,7 @@ export function pickAutoTradeCandidates(input: {
       if (row.aboveSma20 === false) return false;
       return true;
     })
-    .sort((a, b) => resolveCompositeRankScore(b) - resolveCompositeRankScore(a));
+    .sort((a, b) => resolveCompositeRankScore(b, input.sectorBoostById) - resolveCompositeRankScore(a, input.sectorBoostById));
 
   // 상대 점수 퍼센타일 필터: 20개 이상 후보가 있을 때 상위 25%만 우선 선발.
   // 상승장에서 절대점수가 모두 높아지는 문제를 보완 — 상대적으로 강한 종목만 선택.
@@ -733,7 +739,7 @@ export function pickAutoTradeCandidates(input: {
       policy: input.marketPolicy,
       entryProfile,
       pullbackCandidateCodes: input.pullbackCandidateCodes,
-    }).map(({ code, close, score, todayBuyScore, holdExtensionScore, immediateExcludeSignal, flowReason, name, signal, rsi14, liquidity, market, marketCap, universeLevel, isSectorLeader, stableTurn, stableTrust, stableAboveAvg, stableAccumulation }) => ({
+    }).map(({ code, close, score, todayBuyScore, holdExtensionScore, immediateExcludeSignal, flowReason, name, signal, rsi14, liquidity, market, marketCap, universeLevel, isSectorLeader, sectorId, stableTurn, stableTrust, stableAboveAvg, stableAccumulation }) => ({
       code,
       close,
       score,
@@ -749,6 +755,7 @@ export function pickAutoTradeCandidates(input: {
       marketCap: marketCap ?? null,
       universeLevel: universeLevel ?? null,
       isSectorLeader: isSectorLeader ?? null,
+      sectorId: sectorId ?? null,
       stableTurn: stableTurn ?? null,
       stableTrust: stableTrust ?? null,
       stableAboveAvg: stableAboveAvg ?? null,

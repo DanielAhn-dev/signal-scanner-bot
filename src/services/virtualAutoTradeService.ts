@@ -82,6 +82,7 @@ import { businessDaysBehind } from "../utils/dataFreshness";
 import { checkAutotradeBuyBlock } from "./macroEventWarningService";
 import { fetchStockNews } from "../utils/fetchNews";
 import { analyzeNewsSentiment, analyzeOrderIntakeSignal } from "../lib/newsSentiment";
+import { scoreSectors, getTopSectors, getNextSectorCandidates } from "../lib/sectors";
 
 type RunMode = SelectionAutoTradeRunMode;
 type RunType = AutoTradeRunType;
@@ -758,6 +759,8 @@ type ScoreCandidateRow = {
     market?: string | null;
     market_cap?: number | null;
     universe_level?: string | null;
+    is_sector_leader?: boolean | null;
+    sector_id?: string | null;
   } | Array<{
     code: string;
     name: string | null;
@@ -767,6 +770,8 @@ type ScoreCandidateRow = {
     market?: string | null;
     market_cap?: number | null;
     universe_level?: string | null;
+    is_sector_leader?: boolean | null;
+    sector_id?: string | null;
   }> | null;
 };
 
@@ -1600,6 +1605,7 @@ function normalizeStock(input: ScoreCandidateRow["stock"]): {
   marketCap?: number | null;
   universeLevel?: string | null;
   isSectorLeader?: boolean | null;
+  sectorId?: string | null;
 } | null {
   const row = Array.isArray(input) ? input[0] : input;
   if (!row) return null;
@@ -1616,6 +1622,7 @@ function normalizeStock(input: ScoreCandidateRow["stock"]): {
     isSectorLeader: typeof (row as Record<string, unknown>).is_sector_leader === "boolean"
       ? (row as Record<string, unknown>).is_sector_leader as boolean
       : null,
+    sectorId: String((row as Record<string, unknown>).sector_id ?? "") || null,
   };
 }
 
@@ -2421,9 +2428,9 @@ async function fetchLatestRankedRows(payload: {
 
   const queryLimit = Math.max(1, Math.min(2000, Math.floor(payload.limit)));
   const selectWithSignal =
-    "code,total_score,signal,factors,stock:stocks!inner(code,name,close,rsi14,liquidity,market,market_cap,universe_level,is_sector_leader)";
+    "code,total_score,signal,factors,stock:stocks!inner(code,name,close,rsi14,liquidity,market,market_cap,universe_level,is_sector_leader,sector_id)";
   const selectWithoutSignal =
-    "code,total_score,factors,stock:stocks!inner(code,name,close,rsi14,liquidity,market,market_cap,universe_level,is_sector_leader)";
+    "code,total_score,factors,stock:stocks!inner(code,name,close,rsi14,liquidity,market,market_cap,universe_level,is_sector_leader,sector_id)";
 
   const buildQuery = async (selectClause: string) => {
     let query = payload.supabase
@@ -2489,6 +2496,7 @@ async function fetchLatestRankedRows(payload: {
       marketCap: stock.marketCap ?? null,
       universeLevel: stock.universeLevel ?? null,
       isSectorLeader: stock.isSectorLeader ?? null,
+      sectorId: stock.sectorId ?? null,
       aboveSma20,
       stableTurn: String(rawFactors.stable_turn ?? "").trim() || null,
       stableTrust: Number.isFinite(Number(rawFactors.stable_turn_trust))
@@ -2764,6 +2772,23 @@ async function selectMondayCandidates(payload: {
   const strongTodayBuyCount = scoredRows.filter((row) => toNumber(row.todayBuyScore, 0) >= 75).length;
   const immediateExcludeCount = scoredRows.filter((row) => row.immediateExcludeSignal === true).length;
 
+  // 섹터 부스트 맵: 유망섹터(Grade A) +10, Grade B +5, 다음섹터(순환매 후보) +6
+  const sectorBoostById = await (async () => {
+    try {
+      const sectorScores = await scoreSectors(kstDateKey());
+      const boostMap = new Map<string, number>();
+      for (const s of getTopSectors(sectorScores)) {
+        boostMap.set(s.id, s.grade === "A" ? 10 : 5);
+      }
+      for (const s of getNextSectorCandidates(sectorScores, 3e9)) {
+        if (!boostMap.has(s.id)) boostMap.set(s.id, 6);
+      }
+      return boostMap;
+    } catch {
+      return new Map<string, number>();
+    }
+  })();
+
   const selection = pickAutoTradeCandidates({
     rows: scoredRows,
     preferredMinBuyScore: qualityAdjustedMinBuyScore,
@@ -2772,6 +2797,7 @@ async function selectMondayCandidates(payload: {
     marketPolicy: payload.marketPolicy,
     entryProfile,
     pullbackCandidateCodes,
+    sectorBoostById,
   });
 
   return {
