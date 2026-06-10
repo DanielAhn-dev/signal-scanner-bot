@@ -302,7 +302,7 @@ async function main() {
       .eq("tg_id", args.chatId)
       .maybeSingle(),
     supabase
-      .from(PORTFOLIO_TABLES.positionsLegacy)
+      .from(PORTFOLIO_TABLES.positions)
       .select("id, code, quantity, buy_price, invested_amount, status, memo")
       .eq("chat_id", args.chatId)
       .eq("code", stock.code),
