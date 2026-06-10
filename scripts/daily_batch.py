@@ -28,6 +28,7 @@ import time
 import json
 import uuid
 import subprocess
+import urllib.request
 from datetime import datetime
 from pathlib import Path
 
@@ -45,6 +46,34 @@ from batch_modules.sectors import update_sector_data, populate_sector_daily, cal
 from batch_modules.scores import calculate_stock_scores
 from batch_modules.signals import save_pullback_signals
 from batch_modules.cleanup import cleanup_old_data
+
+
+def send_telegram_alert(text: str) -> bool:
+    """배치 장애 발생 시 텔레그램으로 관리자 알림 전송."""
+    token = str(os.environ.get("TELEGRAM_BOT_TOKEN", "")).strip()
+    chat_id = (
+        str(os.environ.get("TELEGRAM_ADMIN_CHAT_ID", "")).strip()
+        or str(os.environ.get("AUTO_TRADE_ALERT_CHAT_ID", "")).strip()
+    )
+    if not token or not chat_id:
+        return False
+    try:
+        data = json.dumps({
+            "chat_id": chat_id,
+            "text": text,
+            "disable_web_page_preview": True,
+        }).encode("utf-8")
+        req = urllib.request.Request(
+            f"https://api.telegram.org/bot{token}/sendMessage",
+            data=data,
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            return resp.status == 200
+    except Exception as e:
+        print(f"[WARN] Telegram alert failed: {e}")
+        return False
 
 
 def sync_scan_signal_history_for_date(trading_date: str) -> bool:
@@ -302,8 +331,17 @@ def main():
 
         if not investor_stage_ok:
             reason = investor_status.get("reason") or "unknown"
+            stale_info = f" (lag={stale_days}일)" if stale_days is not None else ""
             print(f"[WARN] Investor data quality gate failed: reason={reason}, status={investor_status}")
             mark_stage("InvestorData", False, stage_times["InvestorData"], investor_status)
+            alert_msg = (
+                f"⚠️ [배치 경보] investor_daily 수집 실패\n"
+                f"날짜: {trading_date}\n"
+                f"사유: {reason}{stale_info}\n"
+                f"영향: 외국인/기관 수급 신호 부정확 → 자동매매 신호 품질 저하\n"
+                f"조치: GitHub Actions 로그 확인 필요"
+            )
+            send_telegram_alert(alert_msg)
             if require_investor_data:
                 print("[ERROR] BATCH_REQUIRE_INVESTOR_DATA=true and investor data gate failed")
                 return finalize("failed", f"investor_gate_failed:{reason}", 2)
