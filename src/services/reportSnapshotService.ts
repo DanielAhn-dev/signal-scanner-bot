@@ -197,7 +197,7 @@ async function buildWatchOnlyWebItems(supabase: SupabaseClient, chatId: number |
   if (!chatId || chatId <= 0) return []
 
   const { data } = await supabase
-    .from('watchlist')
+    .from('virtual_positions')
     .select('code,buy_price,buy_date,created_at,quantity,status,memo,stock:stocks(name,close)')
     .eq('chat_id', chatId)
     .order('created_at', { ascending: false })

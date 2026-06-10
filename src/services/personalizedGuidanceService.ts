@@ -105,7 +105,7 @@ export async function buildPersonalizedGuidance(input: {
       .limit(1)
       .maybeSingle(),
     supabase
-      .from(PORTFOLIO_TABLES.positionsLegacy)
+      .from(PORTFOLIO_TABLES.positions)
       .select("code, status")
       .eq("chat_id", chatId),
   ]);

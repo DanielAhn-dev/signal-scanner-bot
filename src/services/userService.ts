@@ -459,7 +459,7 @@ export async function getUserProfile(tgId: number) {
         .select("id", { count: "exact", head: true })
         .eq("tg_id", tgId),
       supabaseRead
-        .from("watchlist")
+        .from("virtual_positions")
         .select("id", { count: "exact", head: true })
         .eq("chat_id", tgId),
       supabaseRead
@@ -485,7 +485,7 @@ export async function getUserProfile(tgId: number) {
 
 export async function getPortfolioRanking(limit = 15) {
   const { data: items } = await supabaseRead
-    .from("watchlist")
+    .from("virtual_positions")
     .select("chat_id, buy_price, stock:stocks!inner(close)")
     .not("buy_price", "is", null)
     .gt("buy_price", 0);
@@ -616,7 +616,7 @@ export async function getFollowingFeed(myTgId: number) {
   const tgIds = follows.map((f: any) => f.following_tg_id);
 
   const { data: items } = await supabaseRead
-    .from("watchlist")
+    .from("virtual_positions")
     .select("chat_id, code, buy_price, buy_date, stock:stocks!inner(name, close)")
     .in("chat_id", tgIds)
     .order("created_at", { ascending: false })

@@ -933,7 +933,7 @@ async function getHoldingCountForPlan(
   chatId: number
 ): Promise<number> {
   const { data, error } = await supabase
-    .from("watchlist")
+    .from("virtual_positions")
     .select("buy_price, quantity")
     .eq("chat_id", chatId);
 
@@ -954,7 +954,7 @@ async function getHoldingCodesForPlan(
 ): Promise<Set<string>> {
   const out = new Set<string>()
   const { data, error } = await supabase
-    .from('watchlist')
+    .from('virtual_positions')
     .select('code, buy_price, quantity')
     .eq('chat_id', chatId)
 
@@ -982,7 +982,7 @@ async function getSectorOverlapWarningsForPlan(
   if (!chatId) return out;
 
   const { data, error } = await supabase
-    .from("watchlist")
+    .from("virtual_positions")
     .select("invested_amount, stock:stocks!inner(sector_id)")
     .eq("chat_id", chatId);
 

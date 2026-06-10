@@ -883,7 +883,7 @@ export async function createWeeklyReportPdf(
       }),
       runReportStep("watchlist_query", async () => {
         const { data, error } = await supabase
-          .from("watchlist")
+          .from("virtual_positions")
           .select("buy_price, quantity")
           .eq("chat_id", chatId);
 
@@ -1002,7 +1002,7 @@ export async function createWeeklyReportPdf(
     ),
     runReportStep("watchlist_query", () =>
       supabase
-        .from("watchlist")
+        .from("virtual_positions")
         .select("code, buy_price, quantity, invested_amount, status, stock:stocks(code,name,close)")
         .eq("chat_id", chatId)
         .returns<WatchlistRow[]>()

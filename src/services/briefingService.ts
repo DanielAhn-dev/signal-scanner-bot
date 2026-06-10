@@ -758,7 +758,7 @@ async function fetchWatchlistItems(
   chatId: number
 ) {
   const { data, error } = await supabase
-    .from(PORTFOLIO_TABLES.positionsLegacy)
+    .from(PORTFOLIO_TABLES.positions)
     .select(
       [
         "code",
