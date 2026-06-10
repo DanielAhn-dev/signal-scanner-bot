@@ -670,6 +670,7 @@ export function pickAutoTradeCandidates(input: {
   entryProfile?: AutoTradeEntryProfile;
   pullbackCandidateCodes?: Set<string>;
   sectorBoostById?: Map<string, number>;
+  heldSectorCounts?: Map<string, number>;
 }): AutoTradeCandidateSelectionResult {
   const limit = Math.max(1, Math.floor(input.limit));
   const preferredMinBuyScore = toPositiveInt(input.preferredMinBuyScore, 70);
@@ -679,6 +680,10 @@ export function pickAutoTradeCandidates(input: {
     rows: input.rows,
     policy: input.marketPolicy,
   });
+  // 포트폴리오 내 단일 섹터 최대 종목 수: 이미 2종목 보유한 섹터는 추가 매수 차단
+  // 섹터 리더는 예외 허용 (시장 대표주는 집중도를 감수)
+  const MAX_STOCKS_PER_SECTOR = 2;
+
   const baseFilteredRows = marketPolicyRows
     .filter((row) => {
       if (row.close <= 0 || input.heldCodes.has(row.code)) return false;
@@ -690,6 +695,12 @@ export function pickAutoTradeCandidates(input: {
       const liq = row.liquidity ?? null;
       if (liq != null && liq > 0 && liq < 10_000_000_000) return false;
       if (row.aboveSma20 === false) return false;
+      // 섹터 집중도 상한: 이미 MAX_STOCKS_PER_SECTOR 이상 보유한 섹터는 제외
+      // 섹터 리더는 예외 허용
+      if (row.sectorId && row.isSectorLeader !== true) {
+        const heldCount = input.heldSectorCounts?.get(row.sectorId) ?? 0;
+        if (heldCount >= MAX_STOCKS_PER_SECTOR) return false;
+      }
       return true;
     })
     .sort((a, b) => resolveCompositeRankScore(b, input.sectorBoostById) - resolveCompositeRankScore(a, input.sectorBoostById));

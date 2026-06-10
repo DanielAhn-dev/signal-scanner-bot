@@ -2789,6 +2789,14 @@ async function selectMondayCandidates(payload: {
     }
   })();
 
+  // 보유 종목의 섹터 카운트 — scoredRows에서 held 코드를 역조회 (best-effort)
+  const heldSectorCounts = new Map<string, number>();
+  for (const row of scoredRows) {
+    if (payload.heldCodes.has(row.code) && row.sectorId) {
+      heldSectorCounts.set(row.sectorId, (heldSectorCounts.get(row.sectorId) ?? 0) + 1);
+    }
+  }
+
   const selection = pickAutoTradeCandidates({
     rows: scoredRows,
     preferredMinBuyScore: qualityAdjustedMinBuyScore,
@@ -2798,6 +2806,7 @@ async function selectMondayCandidates(payload: {
     entryProfile,
     pullbackCandidateCodes,
     sectorBoostById,
+    heldSectorCounts,
   });
 
   return {
