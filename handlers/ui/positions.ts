@@ -79,8 +79,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const withCount = String(qParams.withCount || '') === '1'
 
     const user = await resolveUiUserContext(req)
-    const filterColumn = user.clientId ? 'client_id' : (user.chatId ? 'chat_id' : null)
-    const filterValue = user.clientId || user.chatId || null
+    // virtual_positions has chat_id only (no client_id column)
+    const filterColumn = user.chatId ? 'chat_id' : null
+    const filterValue = user.chatId || null
     if (!filterColumn || !filterValue) {
       return res.status(200).json({
         data: [],
@@ -127,8 +128,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     // build base query
     let base = withCount
-      ? supabase.from('virtual_positions').select('id, chat_id, client_id, code, buy_price, buy_date, memo, created_at, updated_at, quantity, invested_amount, status, broker_name, account_name, stock:stocks(code,name,close,sector_id,sector:sectors(id,name))', { count: 'exact' })
-      : supabase.from('virtual_positions').select('id, chat_id, client_id, code, buy_price, buy_date, memo, created_at, updated_at, quantity, invested_amount, status, broker_name, account_name, stock:stocks(code,name,close,sector_id,sector:sectors(id,name))')
+      ? supabase.from('virtual_positions').select('id, chat_id, code, buy_price, buy_date, memo, created_at, updated_at, quantity, invested_amount, status, broker_name, account_name, stock:stocks(code,name,close,sector_id,sector:sectors(id,name))', { count: 'exact' })
+      : supabase.from('virtual_positions').select('id, chat_id, code, buy_price, buy_date, memo, created_at, updated_at, quantity, invested_amount, status, broker_name, account_name, stock:stocks(code,name,close,sector_id,sector:sectors(id,name))')
 
     base = base.eq(filterColumn, filterValue)
 
