@@ -46,15 +46,15 @@ function toPositiveNumber(value: unknown): number | null {
 }
 
 function resolveDefaultTargetPositions(riskProfile?: InvestmentPrefs["risk_profile"]): number {
-  if (riskProfile === "active") return 10;
-  if (riskProfile === "balanced") return 8;
-  return 6;
+  if (riskProfile === "active") return 8;
+  if (riskProfile === "balanced") return 6;
+  return 5;
 }
 
 function resolveRiskBudgetPct(riskProfile?: InvestmentPrefs["risk_profile"]): number {
-  if (riskProfile === "active") return 0.0125;
-  if (riskProfile === "balanced") return 0.01;
-  return 0.0075;
+  if (riskProfile === "active") return 0.02;
+  if (riskProfile === "balanced") return 0.015;
+  return 0.01;
 }
 
 function clampInt(value: number, lo: number, hi: number): number {
@@ -62,7 +62,7 @@ function clampInt(value: number, lo: number, hi: number): number {
 }
 
 function resolveSplitCount(raw?: number): number {
-  return clampInt(raw ?? 3, 1, 5);
+  return clampInt(raw ?? 1, 1, 5);
 }
 
 function clampScale(value: unknown): number {
