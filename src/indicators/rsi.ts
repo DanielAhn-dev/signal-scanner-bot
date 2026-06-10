@@ -34,8 +34,14 @@ export function rsiWilder(closes: number[], period: number = 14): number[] {
     avgGain = (avgGain * (period - 1) + Math.max(delta, 0)) / period;
     avgLoss = (avgLoss * (period - 1) + Math.max(-delta, 0)) / period;
 
-    const rs = avgLoss === 0 ? Infinity : avgGain / avgLoss;
-    result[i] = 100 - 100 / (1 + rs);
+    // 가격 변동 없음(flat) → 중립 RSI 50, 상승만 있으면 100
+    if (avgGain === 0 && avgLoss === 0) {
+      result[i] = 50;
+    } else if (avgLoss === 0) {
+      result[i] = 100;
+    } else {
+      result[i] = 100 - 100 / (1 + avgGain / avgLoss);
+    }
   }
 
   return result;

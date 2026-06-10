@@ -15,7 +15,7 @@ export function roc(data: number[], period: number): number[] {
     const current = data[i];
     const previous = data[i - period];
 
-    if (previous !== 0) {
+    if (Number.isFinite(current) && Number.isFinite(previous) && previous > 0) {
       result[i] = ((current - previous) / previous) * 100;
     }
   }

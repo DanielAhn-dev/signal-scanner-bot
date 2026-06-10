@@ -464,6 +464,29 @@ export function planAutoTradeExit(input: {
     };
   }
 
+  // 경직 손절: 사용자 설정과 무관하게 큰 손실에서 반드시 청산
+  // -10% 초과 → 전량 즉시 청산 (파국적 손실 방지)
+  if (pnlPct <= -10) {
+    return {
+      action: "STOP_LOSS",
+      quantityToSell: quantity,
+      isPartial: false,
+      nextTakeProfitTranchesDone: takeProfitTranchesDone,
+      reason: "stop-loss",
+    };
+  }
+  // -7% 초과 → 절반 청산 (손실 한정 + 추가 하락 여지 확보)
+  if (pnlPct <= -7) {
+    const halfQty = Math.max(1, Math.ceil(quantity / 2));
+    return {
+      action: "TAKE_PROFIT",
+      quantityToSell: halfQty,
+      isPartial: halfQty < quantity,
+      nextTakeProfitTranchesDone: takeProfitTranchesDone,
+      reason: "take-profit-partial",
+    };
+  }
+
   if (pnlPct <= -stopLossPct) {
     return {
       action: "STOP_LOSS",

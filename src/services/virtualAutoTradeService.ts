@@ -1125,13 +1125,64 @@ async function fetchExecutionPriceMap(
   }
 }
 
+/**
+ * KODEX 200 (069500) / KODEX KOSDAQ150 (229200) 를 프록시로 사용해
+ * 코스피/코스닥 200일선 대비 현재가 비율을 계산한다.
+ * 실패 시 null 반환 (마켓 레짐 판단에서 무시).
+ */
+async function fetchIndexSma200Ratios(
+  supabase: SupabaseClientAny
+): Promise<{ kospi: number | null; kosdaq: number | null }> {
+  const KOSPI_PROXY = "069500";  // KODEX 200
+  const KOSDAQ_PROXY = "229200"; // KODEX KOSDAQ 150
+  try {
+    const [kospiRes, kosdaqRes] = await Promise.all([
+      supabase
+        .from("stock_daily")
+        .select("close")
+        .eq("code", KOSPI_PROXY)
+        .order("date", { ascending: false })
+        .limit(201),
+      supabase
+        .from("stock_daily")
+        .select("close")
+        .eq("code", KOSDAQ_PROXY)
+        .order("date", { ascending: false })
+        .limit(201),
+    ]);
+    const calcRatio = (rows: { close: number }[] | null): number | null => {
+      if (!rows || rows.length < 201) return null;
+      const closes = rows.map((r) => r.close).filter(Number.isFinite);
+      if (closes.length < 201) return null;
+      const current = closes[0];
+      const sma200 = closes.slice(1, 201).reduce((s, v) => s + v, 0) / 200;
+      if (sma200 <= 0) return null;
+      return current / sma200;
+    };
+    return {
+      kospi: calcRatio(kospiRes.data),
+      kosdaq: calcRatio(kosdaqRes.data),
+    };
+  } catch {
+    return { kospi: null, kosdaq: null };
+  }
+}
+
 async function fetchMarketOverviewWithBudget(input: {
   apiBudget?: ApiBudget;
+  supabase?: SupabaseClientAny;
 }): Promise<{ overview: Awaited<ReturnType<typeof fetchAllMarketData>> | null; skippedByBudget: boolean }> {
   if (!tryConsumeApiBudget(input.apiBudget, "market_overview", 1)) {
     return { overview: null, skippedByBudget: true };
   }
-  const overview = await fetchAllMarketData().catch(() => null);
+  const [overview, sma200Ratios] = await Promise.all([
+    fetchAllMarketData().catch(() => null),
+    input.supabase ? fetchIndexSma200Ratios(input.supabase).catch(() => ({ kospi: null, kosdaq: null })) : Promise.resolve({ kospi: null, kosdaq: null }),
+  ]);
+  if (overview && sma200Ratios) {
+    (overview as Record<string, unknown>).kospiSma200Ratio = sma200Ratios.kospi;
+    (overview as Record<string, unknown>).kosdaqSma200Ratio = sma200Ratios.kosdaq;
+  }
   return { overview, skippedByBudget: false };
 }
 
@@ -2850,6 +2901,7 @@ async function runMondayBuyForUser(payload: {
 
   const marketOverviewResult = await fetchMarketOverviewWithBudget({
     apiBudget: payload.apiBudget,
+    supabase: payload.supabase,
   });
   const marketOverview = marketOverviewResult.overview;
   const marketPolicy = detectAutoTradeMarketPolicy({ overview: marketOverview });
@@ -4111,6 +4163,7 @@ async function runDailyReviewForUser(payload: {
   }
   const marketOverviewResult = await fetchMarketOverviewWithBudget({
     apiBudget: payload.apiBudget,
+    supabase: payload.supabase,
   });
   const marketOverview = marketOverviewResult.overview;
   const marketPolicy = detectAutoTradeMarketPolicy({ overview: marketOverview });
@@ -4643,6 +4696,32 @@ async function runDailyReviewForUser(payload: {
           0,
           toNumber(holding.invested_amount, currentQty * currentBuyPrice)
         );
+
+        // 역피라미딩 방지: 현재가가 평균단가 대비 +3% 이상 상승했을 때만 추매 허용.
+        // 손실 or 소폭 상승 상태에서 추매하면 평단 끌어내리기(물타기)가 되어 리스크 증폭.
+        const addOnPnlPct = currentBuyPrice > 0
+          ? ((executionPrice - currentBuyPrice) / currentBuyPrice) * 100
+          : 0;
+        const ADD_ON_MIN_GAIN_PCT = 3;
+        if (addOnPnlPct < ADD_ON_MIN_GAIN_PCT) {
+          summary.skipped += 1;
+          await writeActionLog({
+            supabase: payload.supabase,
+            runId: payload.runId,
+            chatId,
+            code: candidate.code,
+            actionType: "SKIP",
+            reason: "add-on-anti-pyramiding",
+            detail: {
+              currentBuyPrice,
+              executionPrice,
+              addOnPnlPct: Math.round(addOnPnlPct * 100) / 100,
+              requiredPct: ADD_ON_MIN_GAIN_PCT,
+            },
+          });
+          continue;
+        }
+
         const holdingProfile = resolvePositionTradeProfile({
           accountStrategy: payload.setting.selected_strategy,
           positionMemo: holding.memo,

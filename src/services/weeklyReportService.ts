@@ -31,7 +31,7 @@ import {
   drawCoverPage,
   drawTopicHero,
 } from "./weeklyReportLayout";
-import { getDecisionReliabilitySummary } from "./decisionLogService";
+import { getDecisionReliabilitySummary, getFactorWinRateSummary, type FactorWinRateSummary } from "./decisionLogService";
 import {
   hasStableAccumulationTag,
   isExecutionCandidate,
@@ -1168,6 +1168,16 @@ export async function createWeeklyReportPdf(
       })
     : null;
 
+  // 팩터별 승률 분석 (90일, 포트폴리오/종합 토픽에서만)
+  let factorWinRate: FactorWinRateSummary | null = null;
+  if (needsReliability) {
+    try {
+      factorWinRate = await getFactorWinRateSummary(chatId, 90);
+    } catch {
+      factorWinRate = null;
+    }
+  }
+
   const pullbackReport = null;
   const webPayload = buildWeeklyWebPayload({
     topic: topicMeta.topic,
@@ -1235,7 +1245,7 @@ export async function createWeeklyReportPdf(
   }
 
   try {
-    const report = await runReportStep("pdf_render", () =>
+    let report = await runReportStep("pdf_render", () =>
       renderReportPdf({
         topicMeta,
         chatId,
@@ -1257,6 +1267,29 @@ export async function createWeeklyReportPdf(
         scoreSnapshot,
       })
     );
+
+    // 팩터별 승률 분석 섹션을 summaryText에 추가
+    if (factorWinRate && factorWinRate.scoreBands.length > 0) {
+      const lines: string[] = ["\n\n📊 <b>팩터 승률 분석</b> (최근 90일 거래 기준)"];
+      const topBands = factorWinRate.scoreBands.filter((b) => b.total >= 3);
+      if (topBands.length > 0) {
+        lines.push("점수대별:");
+        for (const b of topBands) {
+          const wr = b.winRatePct != null ? `${b.winRatePct.toFixed(0)}%` : "?";
+          const avg = b.avgPnl != null ? (b.avgPnl >= 0 ? `+${b.avgPnl.toLocaleString("ko-KR")}원` : `${b.avgPnl.toLocaleString("ko-KR")}원`) : "";
+          lines.push(`  · ${b.label}점 → 승률 ${wr} (${b.total}건)${avg ? ` · 평균 ${avg}` : ""}`);
+        }
+      }
+      const topGrades = factorWinRate.signalTrustGrades.filter((b) => b.total >= 3);
+      if (topGrades.length > 0) {
+        lines.push("신호등급별:");
+        for (const b of topGrades) {
+          const wr = b.winRatePct != null ? `${b.winRatePct.toFixed(0)}%` : "?";
+          lines.push(`  · 등급 ${b.label} → 승률 ${wr} (${b.total}건)`);
+        }
+      }
+      report = { ...report, summaryText: report.summaryText + lines.join("\n") };
+    }
 
     if (process.env.NODE_ENV !== "production") {
       console.log(

@@ -239,3 +239,137 @@ export async function getDecisionReliabilitySummary(
     trustScore,
   };
 }
+
+export type FactorWinRateBucket = {
+  label: string;
+  wins: number;
+  total: number;
+  winRatePct: number | null;
+  avgPnl: number | null;
+};
+
+export type FactorWinRateSummary = {
+  windowDays: number;
+  scoreBands: FactorWinRateBucket[];
+  signalTrustGrades: FactorWinRateBucket[];
+  strategyProfiles: FactorWinRateBucket[];
+};
+
+/**
+ * 팩터별 승률 분석: 진입 당시 점수대, 신호 신뢰등급, 전략 프로파일별
+ * 수익 거래 비율과 평균 P&L을 반환한다.
+ * weekly report에서 "어떤 조건에서 진입한 거래가 수익이 났는가"를 파악하는 용도.
+ */
+export async function getFactorWinRateSummary(
+  chatId: number,
+  windowDays = 90
+): Promise<FactorWinRateSummary | null> {
+  const safeWindowDays = Math.max(14, Math.min(365, Math.floor(windowDays)));
+  const sinceIso = new Date(
+    Date.now() - safeWindowDays * 24 * 60 * 60 * 1000
+  ).toISOString();
+
+  const decisionRows = await selectPaged<Record<string, unknown>>(
+    async (from, to) =>
+      await supabase
+        .from(PORTFOLIO_TABLES.decisionLogs)
+        .select("action, reason_details, linked_trade_id")
+        .eq("chat_id", chatId)
+        .eq("action", "BUY")
+        .gte("decision_at", sinceIso)
+        .not("linked_trade_id", "is", null)
+        .range(from, to),
+    { pageSize: 500, maxRows: 5000, logLabel: "decision.factor_winrate" }
+  ).catch(() => null);
+
+  if (!decisionRows || !decisionRows.length) return null;
+
+  const linkedIds = Array.from(
+    new Set(decisionRows.map((r) => Number(r.linked_trade_id ?? 0)).filter((n) => n > 0))
+  );
+  if (!linkedIds.length) return null;
+
+  const tradeMap = new Map<number, { pnl: number }>();
+  for (const ids of chunkValues(linkedIds)) {
+    const { data } = await supabase
+      .from(PORTFOLIO_TABLES.trades)
+      .select("id, pnl_amount")
+      .in("id", ids);
+    for (const row of data ?? []) {
+      const id = Number((row as any).id ?? 0);
+      const pnl = Number((row as any).pnl_amount ?? NaN);
+      if (id > 0 && Number.isFinite(pnl)) tradeMap.set(id, { pnl });
+    }
+  }
+
+  type Bucket = { wins: number; total: number; pnlSum: number };
+  const scoreBands: Record<string, Bucket> = {
+    "70+": { wins: 0, total: 0, pnlSum: 0 },
+    "60-69": { wins: 0, total: 0, pnlSum: 0 },
+    "50-59": { wins: 0, total: 0, pnlSum: 0 },
+    "40-49": { wins: 0, total: 0, pnlSum: 0 },
+    "~39": { wins: 0, total: 0, pnlSum: 0 },
+  };
+  const trustGrades: Record<string, Bucket> = {};
+  const profiles: Record<string, Bucket> = {};
+
+  for (const row of decisionRows) {
+    const tradeId = Number(row.linked_trade_id ?? 0);
+    const trade = tradeMap.get(tradeId);
+    if (!trade) continue;
+
+    const details = (row.reason_details ?? {}) as Record<string, unknown>;
+    const score = Number(details.score ?? NaN);
+    const grade = String((details.signalTrust as any)?.grade ?? details.trustGrade ?? "?");
+    const profile = String(details.strategyProfile ?? "?");
+    const pnl = trade.pnl;
+    const win = pnl > 0;
+
+    // 점수대
+    let band = "~39";
+    if (Number.isFinite(score)) {
+      if (score >= 70) band = "70+";
+      else if (score >= 60) band = "60-69";
+      else if (score >= 50) band = "50-59";
+      else if (score >= 40) band = "40-49";
+    }
+    scoreBands[band].total += 1;
+    if (win) scoreBands[band].wins += 1;
+    scoreBands[band].pnlSum += pnl;
+
+    // 신호 신뢰등급
+    if (grade) {
+      if (!trustGrades[grade]) trustGrades[grade] = { wins: 0, total: 0, pnlSum: 0 };
+      trustGrades[grade].total += 1;
+      if (win) trustGrades[grade].wins += 1;
+      trustGrades[grade].pnlSum += pnl;
+    }
+
+    // 전략 프로파일
+    if (profile) {
+      if (!profiles[profile]) profiles[profile] = { wins: 0, total: 0, pnlSum: 0 };
+      profiles[profile].total += 1;
+      if (win) profiles[profile].wins += 1;
+      profiles[profile].pnlSum += pnl;
+    }
+  }
+
+  const toBuckets = (map: Record<string, Bucket>): FactorWinRateBucket[] =>
+    Object.entries(map)
+      .filter(([, b]) => b.total > 0)
+      .map(([label, b]) => ({
+        label,
+        wins: b.wins,
+        total: b.total,
+        winRatePct: round1((b.wins / b.total) * 100),
+        avgPnl: Math.round(b.pnlSum / b.total),
+      }))
+      .sort((a, b) => b.total - a.total);
+
+  return {
+    windowDays: safeWindowDays,
+    scoreBands: toBuckets(scoreBands),
+    signalTrustGrades: toBuckets(trustGrades),
+    strategyProfiles: toBuckets(profiles),
+  };
+}

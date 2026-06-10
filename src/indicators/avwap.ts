@@ -15,8 +15,11 @@ export function avwap(
   let cumulativeV = 0;
 
   for (let i = anchorIdx; i < prices.length; i++) {
-    cumulativePV += prices[i] * volumes[i];
-    cumulativeV += volumes[i];
+    const p = prices[i];
+    const v = volumes[i];
+    if (!Number.isFinite(p) || !Number.isFinite(v) || v < 0) continue;
+    cumulativePV += p * v;
+    cumulativeV += v;
     result[i] = cumulativeV > 0 ? cumulativePV / cumulativeV : NaN;
   }
 

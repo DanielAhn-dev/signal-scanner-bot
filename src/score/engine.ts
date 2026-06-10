@@ -85,6 +85,11 @@ function lin(x: number, x0: number, x1: number, y0: number, y1: number) {
   return y0 + (y1 - y0) * ((x - x0) / (x1 - x0));
 }
 
+/** NaN/Inf/undefined 를 안전한 숫자로 변환. ?? 와 달리 NaN도 잡는다. */
+function safeNum(v: number | undefined | null, fallback: number): number {
+  return Number.isFinite(v as number) ? (v as number) : fallback;
+}
+
 function roundTo(n: number, step = 1): number {
   if (!Number.isFinite(n)) return n;
   return Math.round(n / step) * step;
@@ -110,19 +115,19 @@ export function calculateScore(
     const sma20Arr = sma(closes, 20);
     const sma50Arr = sma(closes, 50);
     const sma200Arr = sma(closes, 200);
-    const s20 = sma20Arr[lastIdx] ?? 0;
-    const s50 = sma50Arr[lastIdx] ?? 0;
-    const s200 = sma200Arr[lastIdx] ?? 0;
-    const s200Prev = sma200Arr[lastIdx - 1] ?? s200;
+    const s20 = safeNum(sma20Arr[lastIdx], 0);
+    const s50 = safeNum(sma50Arr[lastIdx], 0);
+    const s200 = safeNum(sma200Arr[lastIdx], 0);
+    const s200Prev = safeNum(sma200Arr[lastIdx - 1], s200);
     const s200Slope = s200 - s200Prev;
 
     // 모멘텀
     const rsi14Arr = rsiWilder(closes, 14);
-    const rsi14 = rsi14Arr[lastIdx] ?? 50;
+    const rsi14 = safeNum(rsi14Arr[lastIdx], 50);
     const roc14Arr = roc(closes, 14);
     const roc21Arr = roc(closes, 21);
-    const roc14 = roc14Arr[lastIdx] ?? 0;
-    const roc21 = roc21Arr[lastIdx] ?? 0;
+    const roc14 = safeNum(roc14Arr[lastIdx], 0);
+    const roc21 = safeNum(roc21Arr[lastIdx], 0);
 
     // AVWAP 지지: 과거 비율 앵커(20%, 50%, 80%)
     const anchors = [0.2, 0.5, 0.8].map((p) =>

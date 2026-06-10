@@ -47,12 +47,16 @@ export type AutoTradeMarketPolicy = {
 };
 
 type MarketOverviewLike = {
-  kospi?: { changeRate?: number | null } | null;
-  kosdaq?: { changeRate?: number | null } | null;
+  kospi?: { changeRate?: number | null; price?: number | null } | null;
+  kosdaq?: { changeRate?: number | null; price?: number | null } | null;
   usdkrw?: { changeRate?: number | null } | null;
   vix?: { price?: number | null } | null;
   fearGreed?: { score?: number | null } | null;
   breadth?: { advancingRatio?: number | null } | null;
+  /** 코스피 현재가 / 200일 SMA 비율 (1.0 = 200일선, <1.0 = 아래, >1.0 = 위). 미제공 시 무시. */
+  kospiSma200Ratio?: number | null;
+  /** 코스닥 현재가 / 200일 SMA 비율 */
+  kosdaqSma200Ratio?: number | null;
 };
 
 export type AutoTradeCandidateSelectionMode =
@@ -218,12 +222,23 @@ export function detectAutoTradeMarketPolicy(input?: {
   const relativeStrength = kosdaqChange - kospiChange;
   const breadthAdvancingRatio = toNumber(overview?.breadth?.advancingRatio, 50);
 
+  // 200일선 레짐: ratio < 0.98 = 200일선 하방 (단기 하락 레짐), ratio < 0.95 = 뚜렷한 하락장
+  const kospiSma200Ratio = overview?.kospiSma200Ratio ?? null;
+  const kosdaqSma200Ratio = overview?.kosdaqSma200Ratio ?? null;
+  const kospiBelow200 = kospiSma200Ratio != null && kospiSma200Ratio < 0.98;
+  const kosdaqBelow200 = kosdaqSma200Ratio != null && kosdaqSma200Ratio < 0.98;
+  // 두 지수 모두 200일선 하방 → 명확한 하락장
+  const clearBearMarket = kospiBelow200 && kosdaqBelow200;
+  // 코스피만 200일선 하방 → 주의 구간
+  const cautionZone = kospiBelow200 && !kosdaqBelow200;
+
   if (
     (vix > 0 && vix >= 28) ||
     fearGreed <= 30 ||
     breadthAdvancingRatio <= 30 ||
     usdKrwChange >= 0.8 ||
-    kospiChange <= -1.5
+    kospiChange <= -1.5 ||
+    clearBearMarket
   ) {
     return {
       mode: "large-cap-defense",
@@ -253,6 +268,21 @@ export function detectAutoTradeMarketPolicy(input?: {
       kosdaqMaxRatio: 0.2,
       requireLargeCapKospi: false,
       minLiquidity: 8_000_000_000,
+      minMarketCap: 0,
+    };
+  }
+
+  // 주의 구간: 코스피 200일선 하방 진입 → 코스닥 비중 축소 + 현금 확대
+  if (cautionZone) {
+    return {
+      mode: "balanced",
+      label: "주의-균형",
+      reason: "코스피 200일선 하방 — 코스닥 비중 제한",
+      minCashReservePct: 35,
+      allowedMarkets: ["KOSPI", "KOSDAQ"],
+      kosdaqMaxRatio: 0.1,
+      requireLargeCapKospi: false,
+      minLiquidity: 15_000_000_000,
       minMarketCap: 0,
     };
   }
@@ -657,7 +687,23 @@ export function pickAutoTradeCandidates(input: {
       return true;
     })
     .sort((a, b) => resolveCompositeRankScore(b) - resolveCompositeRankScore(a));
-  const rows = baseFilteredRows;
+
+  // 상대 점수 퍼센타일 필터: 20개 이상 후보가 있을 때 상위 25%만 우선 선발.
+  // 상승장에서 절대점수가 모두 높아지는 문제를 보완 — 상대적으로 강한 종목만 선택.
+  const PERCENTILE_MIN_POOL = 20;
+  const PERCENTILE_KEEP_RATIO = 0.25; // 상위 25%
+  const rows: typeof baseFilteredRows = (() => {
+    if (baseFilteredRows.length < PERCENTILE_MIN_POOL) return baseFilteredRows;
+    const cutoffIdx = Math.max(1, Math.ceil(baseFilteredRows.length * PERCENTILE_KEEP_RATIO));
+    const cutoffScore = baseFilteredRows[cutoffIdx - 1]?.score ?? 0;
+    // 퍼센타일 기준 + 섹터 리더 / 세력 강매집은 예외 허용
+    return baseFilteredRows.filter((row) => {
+      if (row.score >= cutoffScore) return true;
+      if (row.isSectorLeader === true) return true;
+      if (row.stableTurn === "bull-strong" && (row.stableTrust ?? 0) >= 72) return true;
+      return false;
+    });
+  })();
 
   const filteringMetricsBase = {
     initialCount,

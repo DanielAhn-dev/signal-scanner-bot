@@ -13,10 +13,13 @@ export function sma(data: number[], period: number): number[] {
 
   for (let i = period - 1; i < data.length; i++) {
     let sum = 0;
+    let valid = true;
     for (let j = 0; j < period; j++) {
-      sum += data[i - j];
+      const v = data[i - j];
+      if (!Number.isFinite(v)) { valid = false; break; }
+      sum += v;
     }
-    result[i] = sum / period;
+    if (valid) result[i] = sum / period;
   }
 
   return result;
