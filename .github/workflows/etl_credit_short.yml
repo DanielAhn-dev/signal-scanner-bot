@@ -34,7 +34,7 @@ jobs:
 
       - name: Install dependencies
         run: |
-          pip install pykrx supabase requests beautifulsoup4 python-dotenv
+          pip install "pykrx<1.0.0" supabase requests beautifulsoup4 python-dotenv
           # playwright는 KRX 차단 시 브라우저 폴백용 (선택적)
           pip install playwright || true
           python -m playwright install chromium --with-deps || true
