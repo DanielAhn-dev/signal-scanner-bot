@@ -1413,7 +1413,7 @@ async function buildRealHoldingResponseSnippet(input: {
   overweightReducedCodes?: string[];
 }): Promise<string | null> {
   const { data, error } = await input.supabase
-    .from("watchlist")
+    .from("virtual_positions")
     .select("code,buy_price,quantity,invested_amount,stock:stocks!inner(name,close)")
     .eq("chat_id", input.chatId)
     .order("created_at", { ascending: true })
@@ -1603,20 +1603,6 @@ function isMissingVirtualPositionHorizonColumns(error: unknown): boolean {
   );
 }
 
-function isMissingLegacyPositionAccountColumns(error: unknown): boolean {
-  if (!error || typeof error !== "object") return false;
-  const rec = error as Record<string, unknown>;
-  const code = String(rec.code ?? "").trim();
-  const message = String(rec.message ?? rec.details ?? "").toLowerCase();
-  if (code !== "42703") return false;
-  return (
-    message.includes("watchlist.broker_name") ||
-    message.includes("watchlist.account_name") ||
-    message.includes("broker_name") ||
-    message.includes("account_name")
-  );
-}
-
 function queryErrorMessage(error: unknown): string {
   if (!error) return "unknown error";
   if (typeof error === "object") {
@@ -1686,7 +1672,7 @@ async function fetchLegacyVirtualPositionsForChat(payload: {
   status?: string;
 }): Promise<{ data: Record<string, unknown>[] | null; error: unknown }> {
   let query = payload.supabase
-    .from(PORTFOLIO_TABLES.positionsLegacy)
+    .from(PORTFOLIO_TABLES.positions)
     .select(payload.select)
     .eq("chat_id", payload.chatId)
     .is("broker_name", null)
@@ -1696,35 +1682,10 @@ async function fetchLegacyVirtualPositionsForChat(payload: {
     query = query.eq("status", payload.status);
   }
 
-  const primary = await query;
-  if (!primary.error) {
-    return {
-      data: (primary.data ?? null) as Record<string, unknown>[] | null,
-      error: null,
-    };
-  }
-
-  if (!isMissingLegacyPositionAccountColumns(primary.error)) {
-    return {
-      data: null,
-      error: primary.error,
-    };
-  }
-
-  // Legacy schema fallback: watchlist 테이블에 broker/account 컬럼이 없으면 필터 없이 조회한다.
-  let fallbackQuery = payload.supabase
-    .from(PORTFOLIO_TABLES.positionsLegacy)
-    .select(payload.select)
-    .eq("chat_id", payload.chatId);
-
-  if (payload.status) {
-    fallbackQuery = fallbackQuery.eq("status", payload.status);
-  }
-
-  const fallback = await fallbackQuery;
+  const result = await query;
   return {
-    data: (fallback.data ?? null) as Record<string, unknown>[] | null,
-    error: fallback.error,
+    data: (result.data ?? null) as Record<string, unknown>[] | null,
+    error: result.error,
   };
 }
 
@@ -1733,51 +1694,16 @@ async function fetchLegacyPositionByCode(payload: {
   chatId: number;
   code: string;
 }): Promise<{ data: { id?: number | null; broker_name?: string | null; account_name?: string | null } | null; error: unknown }> {
-  const primary = await payload.supabase
-    .from(PORTFOLIO_TABLES.positionsLegacy)
+  const result = await payload.supabase
+    .from(PORTFOLIO_TABLES.positions)
     .select("id, broker_name, account_name")
     .eq("chat_id", payload.chatId)
     .eq("code", payload.code)
     .maybeSingle();
 
-  if (!primary.error) {
-    return {
-      data: (primary.data as { id?: number | null; broker_name?: string | null; account_name?: string | null } | null) ?? null,
-      error: null,
-    };
-  }
-
-  if (!isMissingLegacyPositionAccountColumns(primary.error)) {
-    return {
-      data: null,
-      error: primary.error,
-    };
-  }
-
-  const fallback = await payload.supabase
-    .from(PORTFOLIO_TABLES.positionsLegacy)
-    .select("id")
-    .eq("chat_id", payload.chatId)
-    .eq("code", payload.code)
-    .maybeSingle();
-
-  if (fallback.error) {
-    return {
-      data: null,
-      error: fallback.error,
-    };
-  }
-
-  const row = (fallback.data as { id?: number | null } | null) ?? null;
   return {
-    data: row
-      ? {
-          id: row.id ?? null,
-          broker_name: null,
-          account_name: null,
-        }
-      : null,
-    error: null,
+    data: (result.data as { id?: number | null; broker_name?: string | null; account_name?: string | null } | null) ?? null,
+    error: result.error,
   };
 }
 
@@ -3511,7 +3437,7 @@ async function runMondayBuyForUser(payload: {
 
       let upserted: Record<string, unknown> | null = null;
       const upsertTry = await payload.supabase
-        .from(PORTFOLIO_TABLES.positionsLegacy)
+        .from(PORTFOLIO_TABLES.positions)
         .upsert(positionUpsertPayload, { onConflict: "chat_id,code", ignoreDuplicates: true })
         .select("id, created_at, buy_date")
         .maybeSingle();
@@ -3525,7 +3451,7 @@ async function runMondayBuyForUser(payload: {
         delete fallbackPayload.planned_review_at;
 
         const fallbackTry = await payload.supabase
-          .from(PORTFOLIO_TABLES.positionsLegacy)
+          .from(PORTFOLIO_TABLES.positions)
           .upsert(fallbackPayload, { onConflict: "chat_id,code", ignoreDuplicates: true })
           .select("id, created_at, buy_date")
           .maybeSingle();
@@ -3856,7 +3782,7 @@ async function executeAutoTradeSell(payload: {
 
   if (isFullExit) {
     const { error: deleteError } = await payload.supabase
-      .from(PORTFOLIO_TABLES.positionsLegacy)
+      .from(PORTFOLIO_TABLES.positions)
       .delete()
       .eq("chat_id", payload.chatId)
       .eq("id", payload.holding.id);
@@ -3870,7 +3796,7 @@ async function executeAutoTradeSell(payload: {
       takeProfitTranchesDone: payload.nextTakeProfitTranchesDone,
     });
     const { error: updateError } = await payload.supabase
-      .from(PORTFOLIO_TABLES.positionsLegacy)
+      .from(PORTFOLIO_TABLES.positions)
       .update({
         quantity: remainQty,
         invested_amount: remainInvested,
@@ -4383,7 +4309,7 @@ async function runDailyReviewForUser(payload: {
           peakPrice: updatedPeakPrice,
         });
         await payload.supabase
-          .from(PORTFOLIO_TABLES.positionsLegacy)
+          .from(PORTFOLIO_TABLES.positions)
           .update({ memo: nextMemo })
           .eq("chat_id", chatId)
           .eq("id", holding.id)
@@ -4803,7 +4729,7 @@ async function runDailyReviewForUser(payload: {
           }
 
           const { error: updateError } = await payload.supabase
-            .from(PORTFOLIO_TABLES.positionsLegacy)
+            .from(PORTFOLIO_TABLES.positions)
             .update({
               quantity: nextQty,
               invested_amount: nextInvested,
@@ -5401,7 +5327,7 @@ async function runDailyReviewForUser(payload: {
 
           let upserted: Record<string, unknown> | null = null;
           const upsertTry = await payload.supabase
-            .from(PORTFOLIO_TABLES.positionsLegacy)
+            .from(PORTFOLIO_TABLES.positions)
             .upsert(positionUpsertPayload, { onConflict: "chat_id,code", ignoreDuplicates: true })
             .select("id, created_at, buy_date")
             .maybeSingle();
@@ -5415,7 +5341,7 @@ async function runDailyReviewForUser(payload: {
             delete fallbackPayload.planned_review_at;
 
             const fallbackTry = await payload.supabase
-              .from(PORTFOLIO_TABLES.positionsLegacy)
+              .from(PORTFOLIO_TABLES.positions)
               .upsert(fallbackPayload, { onConflict: "chat_id,code", ignoreDuplicates: true })
               .select("id, created_at, buy_date")
               .maybeSingle();

@@ -210,7 +210,7 @@ export async function syncVirtualPortfolio(
 ): Promise<SyncedPortfolioState> {
   const prefs = await getUserInvestmentPrefs(tgId);
   const { data, error } = await supabase
-    .from(PORTFOLIO_TABLES.positionsLegacy)
+    .from(PORTFOLIO_TABLES.positions)
     .select("id, quantity, buy_price, invested_amount, status")
     .eq("chat_id", chatId);
 
@@ -247,7 +247,7 @@ export async function syncVirtualPortfolio(
     }
 
     const { error: updateError } = await supabase
-      .from(PORTFOLIO_TABLES.positionsLegacy)
+      .from(PORTFOLIO_TABLES.positions)
       .update({
         quantity: next.quantity > 0 ? next.quantity : null,
         buy_price: next.buyPrice,
