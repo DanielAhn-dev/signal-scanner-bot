@@ -4138,7 +4138,7 @@ async function runDailyReviewForUser(payload: {
 
   const { data: stockRows, error: stockError } = await payload.supabase
     .from("stocks")
-    .select("code, close, market")
+    .select("code, close, market, sector_id, is_sector_leader")
     .in("code", codeList);
 
   if (stockError) {
@@ -4149,13 +4149,29 @@ async function runDailyReviewForUser(payload: {
 
   const closeByCode = new Map<string, number>();
   const marketByCode = new Map<string, string>();
+  const sectorIdByCode = new Map<string, string>();
+  const isSectorLeaderByCode = new Map<string, boolean>();
   for (const row of stockRows ?? []) {
     const code = String((row as Record<string, unknown>).code ?? "");
     const close = toNumber((row as Record<string, unknown>).close, 0);
     const market = String((row as Record<string, unknown>).market ?? "");
+    const sectorId = String((row as Record<string, unknown>).sector_id ?? "") || null;
+    const isSectorLeader = (row as Record<string, unknown>).is_sector_leader === true;
     if (code && close > 0) closeByCode.set(code, close);
     if (code && market) marketByCode.set(code, market);
+    if (code && sectorId) sectorIdByCode.set(code, sectorId);
+    if (code) isSectorLeaderByCode.set(code, isSectorLeader);
   }
+
+  // 섹터 등급 맵: 보유 종목 섹터 강도 체크용 (Grade C 하락 시 리밸런싱 트리거)
+  const sectorGradeById = await (async () => {
+    try {
+      const sectorScores = await scoreSectors(kstDateKey());
+      return new Map(sectorScores.map((s) => [s.id, s.grade] as [string, "A" | "B" | "C"]));
+    } catch {
+      return new Map<string, "A" | "B" | "C">();
+    }
+  })();
 
   const feeRate = toNumber(prefs.virtual_fee_rate, 0.00015);
   const taxRate = toNumber(prefs.virtual_tax_rate, 0.0018);
@@ -4393,16 +4409,38 @@ async function runDailyReviewForUser(payload: {
       if (totalPortfolioValue <= 0) return exitPlan;
       const currentValue = close * qty;
       const currentWeightPct = (currentValue / totalPortfolioValue) * 100;
-      if (currentWeightPct <= MAX_WEIGHT_PCT) return exitPlan;
-      return planOverweightReduction({
-        currentWeightPct,
-        maxWeightPct: MAX_WEIGHT_PCT,
-        targetWeightPct: TARGET_WEIGHT_PCT,
-        quantity: qty,
-        currentPrice: close,
-        totalPortfolioValue,
-        takeProfitTranchesDone: strategyState.takeProfitTranchesDone,
-      });
+      if (currentWeightPct > MAX_WEIGHT_PCT) {
+        return planOverweightReduction({
+          currentWeightPct,
+          maxWeightPct: MAX_WEIGHT_PCT,
+          targetWeightPct: TARGET_WEIGHT_PCT,
+          quantity: qty,
+          currentPrice: close,
+          totalPortfolioValue,
+          takeProfitTranchesDone: strategyState.takeProfitTranchesDone,
+        });
+      }
+
+      // 3) 섹터 강도 하락 리밸런싱: 섹터가 Grade C로 하락 + 손실 -3% 이내 → 전량 매도
+      // 섹터 리더는 예외 (대표주는 섹터 부진에도 보유 유지)
+      // 손실 구간(-3% 미만)은 트리거 안 함 — 불필요한 손실 확정 방지
+      const isSectorLeader = isSectorLeaderByCode.get(holding.code) === true;
+      if (!isSectorLeader) {
+        const holdingSectorId = sectorIdByCode.get(holding.code);
+        const sectorGrade = holdingSectorId ? sectorGradeById.get(holdingSectorId) : undefined;
+        if (sectorGrade === "C" && pnlPct >= -3) {
+          return {
+            action: "SECTOR_ROTATION",
+            quantityToSell: qty,
+            isPartial: false,
+            nextTakeProfitTranchesDone: strategyState.takeProfitTranchesDone,
+            reason: "sector-rotation",
+            sectorGrade: "C",
+          } as PlannedAutoTradeExit;
+        }
+      }
+
+      return exitPlan;
     })();
 
     if (finalExitPlan.action === "HOLD") {
@@ -4483,6 +4521,10 @@ async function runDailyReviewForUser(payload: {
           : "?";
         return `[비중조정] ${currentWeightPct}% 초과 → ${(finalExitPlan as { targetWeightPct: number }).targetWeightPct}%로 분할 매도`;
       }
+      if (finalExitPlan.action === "SECTOR_ROTATION") {
+        const sid = sectorIdByCode.get(holding.code) ?? "미분류";
+        return `[섹터리밸런싱] 섹터 Grade C 하락(${sid}) · 손익률 ${pnlPct.toFixed(2)}% → 비손실 청산`;
+      }
       return "";
     })();
 
@@ -4506,7 +4548,7 @@ async function runDailyReviewForUser(payload: {
         feeRate,
         taxRate,
         sellQty: finalExitPlan.quantityToSell,
-        reason: finalExitPlan.action === "OVERWEIGHT_REDUCTION" ? "take-profit-partial" : finalExitPlan.reason,
+        reason: (finalExitPlan.action === "OVERWEIGHT_REDUCTION" || finalExitPlan.action === "SECTOR_ROTATION") ? "take-profit-partial" : finalExitPlan.reason,
         stopLossContext,
         profileLabel: getStrategyLabel(tradeProfile.profile) || tradeProfile.profile,
         strategyProfile: tradeProfile.profile,

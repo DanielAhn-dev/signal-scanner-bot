@@ -72,6 +72,15 @@ export type PlannedAutoTradeExit =
       reason: "overweight-reduction";
       /** 매도 후 예상 비중 % */
       targetWeightPct: number;
+    }
+  | {
+      action: "SECTOR_ROTATION";
+      quantityToSell: number;
+      isPartial: boolean;
+      nextTakeProfitTranchesDone: number;
+      reason: "sector-rotation";
+      /** 매도 시점 섹터 등급 */
+      sectorGrade: "C";
     };
 
 const VALID_PROFILES = new Set<PositionStrategyProfile>([
