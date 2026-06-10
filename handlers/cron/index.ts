@@ -81,7 +81,7 @@ function resolveDueTasks(now = new Date()): DueTask[] {
   if (CRON_HOBBY_DAILY_MODE) {
     const dailyTasks: DueTask[] = [];
 
-    // KST 13:30 (아침은 GitHub Actions virtual_autotrade_morning.yml 에서 10:30 처리)
+    // KST 13:30 (아침은 GitHub Actions virtual_autotrade_morning.yml 에서 처리)
     if (ENABLE_INTRADAY_AGENT_CYCLE && isWeekday && isUtcTime(4, 30)) {
       dailyTasks.push({
         name: "virtualAutoTradeAfternoon",

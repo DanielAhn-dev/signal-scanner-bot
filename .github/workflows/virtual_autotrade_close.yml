@@ -1,13 +1,13 @@
-name: Virtual AutoTrade Morning (KST 09:30)
+name: Virtual AutoTrade Close (KST 14:50)
 
 on:
   schedule:
-    # KST 09:30 = UTC 00:30 (월~금) — 장 시작 30분 후 오전 매수
-    - cron: "30 0 * * 1-5"
+    # KST 14:50 = UTC 05:50 (월~금) — 장마감 40분 전 마지막 매수/매도
+    - cron: "50 5 * * 1-5"
   workflow_dispatch:
 
 jobs:
-  run-virtual-autotrade-morning:
+  run-virtual-autotrade-close:
     runs-on: ubuntu-latest
     environment: production
     timeout-minutes: 5
@@ -15,7 +15,7 @@ jobs:
       TZ: "Asia/Seoul"
 
     steps:
-      - name: Call Vercel VirtualAutoTrade API (morning)
+      - name: Call Vercel VirtualAutoTrade API (pre-close)
         env:
           VERCEL_APP_URL: ${{ secrets.VERCEL_APP_URL }}
           CRON_SECRET: ${{ secrets.CRON_SECRET }}
@@ -30,10 +30,10 @@ jobs:
           fi
 
           BASE_URL="${VERCEL_APP_URL%/}"
-          # windowMinutes=60: 09:00 버킷 — 오후(13:30, T12:00버킷)와 중복 없음
-          TARGET_URL="${BASE_URL}/api/cron/virtualAutoTrade?mode=auto&intradayOnly=true&windowMinutes=60&maxUsers=60"
+          # windowMinutes=30: T14:30 버킷 — 오후 13:30(T12:00버킷)과 중복 없음
+          TARGET_URL="${BASE_URL}/api/cron/virtualAutoTrade?mode=auto&intradayOnly=true&windowMinutes=30&maxUsers=60"
 
-          echo "📤 Triggering morning intraday virtual autotrade (KST ~09:30)..."
+          echo "📤 Triggering pre-close virtual autotrade (KST ~14:50)..."
           echo "Target: ${TARGET_URL}"
 
           HTTP_CODE=$(curl -s -L -o /tmp/response.txt -w "%{http_code}" \
@@ -48,4 +48,4 @@ jobs:
             exit 1
           fi
 
-          echo "✅ Morning intraday virtual autotrade completed"
+          echo "✅ Pre-close virtual autotrade completed"
