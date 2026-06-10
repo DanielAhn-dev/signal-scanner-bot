@@ -276,7 +276,7 @@ async function handleMonthlyReportCommand(
     }).catch(() => null);
 
     const { data: watchRows } = await supabase
-      .from("watchlist")
+      .from("virtual_positions")
       .select(
         `
         code, buy_price,

@@ -422,7 +422,7 @@ export async function handlePreMarketPlanCommand(
   };
 
   const { data: holdingsData } = await supabase
-    .from(PORTFOLIO_TABLES.positionsLegacy)
+    .from(PORTFOLIO_TABLES.positions)
     .select("code, status")
     .eq("chat_id", tgId);
 

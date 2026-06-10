@@ -173,7 +173,7 @@ function normalizePositionBucket(value: unknown): "LONG" | "SWING" {
 
 async function fetchWatchlistRows(chatId: number): Promise<{ items: any[]; error: any }> {
   const { data, error } = await supabaseRead
-    .from("watchlist")
+    .from("virtual_positions")
     .select(
       `
       code, buy_price, buy_date, memo, created_at, quantity, invested_amount, bucket,
@@ -653,7 +653,7 @@ export async function handleWatchOnlyAdd(
   }
 
   const { count } = await supabaseRead
-    .from("watchlist")
+    .from("virtual_positions")
     .select("id", { count: "exact", head: true })
     .eq("chat_id", ctx.chatId);
 
@@ -674,7 +674,7 @@ export async function handleWatchOnlyAdd(
 
   const { code, name } = hits[0];
   const { data: existing } = await supabaseRead
-    .from("watchlist")
+    .from("virtual_positions")
     .select("id, buy_price, quantity")
     .eq("chat_id", ctx.chatId)
     .eq("code", code)
@@ -696,7 +696,7 @@ export async function handleWatchOnlyAdd(
   }
 
   const { error } = await supabase
-    .from("watchlist")
+    .from("virtual_positions")
     .insert({
       chat_id: ctx.chatId,
       code,
@@ -746,7 +746,7 @@ export async function handleWatchOnlyRemove(
 
   const { code, name } = hits[0];
   const { data: row, error: rowError } = await supabaseRead
-    .from("watchlist")
+    .from("virtual_positions")
     .select("id, buy_price, quantity")
     .eq("chat_id", ctx.chatId)
     .eq("code", code)
@@ -777,7 +777,7 @@ export async function handleWatchOnlyRemove(
   }
 
   const { error } = await supabase
-    .from("watchlist")
+    .from("virtual_positions")
     .delete()
     .eq("chat_id", ctx.chatId)
     .eq("code", code);
@@ -828,7 +828,7 @@ export async function handleWatchOnlyReset(
     }
 
     const { error: deleteError, count } = await supabase
-      .from("watchlist")
+      .from("virtual_positions")
       .delete({ count: "exact" })
       .eq("chat_id", ctx.chatId);
 
@@ -907,7 +907,7 @@ export async function handleWatchOnlyReset(
   }
 
   const { error: deleteError, count } = await supabase
-    .from("watchlist")
+    .from("virtual_positions")
     .delete({ count: "exact" })
     .eq("chat_id", ctx.chatId)
     .in("id", deleteIds);
@@ -1298,7 +1298,7 @@ export async function handleWatchlistAdd(
 
   // 종목 수 제한 체크
   const { count } = await supabaseRead
-    .from("watchlist")
+    .from("virtual_positions")
     .select("id", { count: "exact", head: true })
     .eq("chat_id", ctx.chatId);
 
@@ -1322,7 +1322,7 @@ export async function handleWatchlistAdd(
   const explicitBuyPrice = rawPrice ? Number(rawPrice.replace(/,/g, "")) : null;
 
   const { data: existing } = await supabaseRead
-    .from("watchlist")
+    .from("virtual_positions")
     .select("id")
     .eq("chat_id", ctx.chatId)
     .eq("code", code)
@@ -1355,7 +1355,7 @@ export async function handleWatchlistAdd(
 
   // 중복 확인 & 업서트
   const { data: inserted, error } = await supabase
-    .from("watchlist")
+    .from("virtual_positions")
     .insert(
       {
         chat_id: ctx.chatId,
@@ -1494,7 +1494,7 @@ export async function handleWatchlistRemove(
   }
 
   const { data: row, error: rowError } = await supabaseRead
-    .from("watchlist")
+    .from("virtual_positions")
     .select("id, code, buy_price, buy_date, created_at, quantity, invested_amount, stock:stocks(close)")
     .eq("chat_id", ctx.chatId)
     .eq("code", code)
@@ -1612,7 +1612,7 @@ export async function handleWatchlistRemove(
 
   if (qty > 0 && !isFullExit) {
     const { error: updateError, count: updateCount } = await supabase
-      .from("watchlist")
+      .from("virtual_positions")
       .update({
         quantity: remainQty,
         buy_price: nextBuyPrice,
@@ -1625,7 +1625,7 @@ export async function handleWatchlistRemove(
     affectedCount = updateCount ?? 0;
   } else {
     const { error: deleteError, count: deleteCount } = await supabase
-      .from("watchlist")
+      .from("virtual_positions")
       .delete({ count: "exact" })
       .eq("chat_id", ctx.chatId)
       .eq("code", code);
@@ -1810,7 +1810,7 @@ export async function handleWatchlistLiquidateAllCommand(
   }
 
   const { data: rows, error } = await supabaseRead
-    .from("watchlist")
+    .from("virtual_positions")
     .select("code, quantity, buy_price, stock:stocks(name)")
     .eq("chat_id", ctx.chatId)
     .order("created_at", { ascending: true });
@@ -1963,7 +1963,7 @@ export async function handleWatchlistAutoCommand(
   tgSend: any
 ): Promise<void> {
   const { data: items, error } = await supabaseRead
-    .from("watchlist")
+    .from("virtual_positions")
     .select(
       `
       code, buy_price, quantity,
@@ -2153,7 +2153,7 @@ export async function handleWatchlistResponseCommand(
   tgSend: any
 ): Promise<void> {
   const { data: items, error } = await supabaseRead
-    .from("watchlist")
+    .from("virtual_positions")
     .select(
       `
       code, buy_price, buy_date, quantity, created_at,
@@ -2362,7 +2362,7 @@ export async function handleWatchlistEdit(
 
   // 기존 관심종목인지 확인
   const { data: existing } = await supabaseRead
-    .from("watchlist")
+    .from("virtual_positions")
     .select("id, quantity, buy_price, invested_amount, buy_date, created_at")
     .eq("chat_id", ctx.chatId)
     .eq("code", code)
@@ -2387,7 +2387,7 @@ export async function handleWatchlistEdit(
   const nextInvested = Math.round(nextQty * newPrice);
 
   const { error } = await supabase
-    .from("watchlist")
+    .from("virtual_positions")
     .update({
       buy_price: newPrice,
       quantity: nextQty,
@@ -2463,7 +2463,7 @@ export async function handleWatchlistEdit(
 
   let integrityWarning = "";
   const { data: verifyRow, error: verifyError } = await supabaseRead
-    .from("watchlist")
+    .from("virtual_positions")
     .select("code, buy_price, quantity, status")
     .eq("id", watchlistId)
     .maybeSingle();
@@ -2536,7 +2536,7 @@ export async function handleWatchlistRestoreCommand(
   const investedAmount = Math.round(buyPrice * qty);
   const today = new Date().toISOString().slice(0, 10);
   const { data: existing } = await supabaseRead
-    .from("watchlist")
+    .from("virtual_positions")
     .select("id, buy_date, created_at")
     .eq("chat_id", ctx.chatId)
     .eq("code", code)
@@ -2548,7 +2548,7 @@ export async function handleWatchlistRestoreCommand(
 
   if (watchlistId) {
     const { error: updateError } = await supabase
-      .from("watchlist")
+      .from("virtual_positions")
       .update({
         buy_price: buyPrice,
         quantity: qty,
@@ -2567,7 +2567,7 @@ export async function handleWatchlistRestoreCommand(
     }
   } else {
     const { data: inserted, error: insertError } = await supabase
-      .from("watchlist")
+      .from("virtual_positions")
       .insert({
         chat_id: ctx.chatId,
         code,
@@ -2676,7 +2676,7 @@ export async function handleWatchlistQuickAdd(
   const name = stockRow?.name || code;
 
   const { data: existing } = await supabaseRead
-    .from("watchlist")
+    .from("virtual_positions")
     .select("id")
     .eq("chat_id", ctx.chatId)
     .eq("code", code)
@@ -2692,7 +2692,7 @@ export async function handleWatchlistQuickAdd(
 
   // 종목 수 제한 체크
   const { count } = await supabaseRead
-    .from("watchlist")
+    .from("virtual_positions")
     .select("id", { count: "exact", head: true })
     .eq("chat_id", ctx.chatId);
 
@@ -2713,7 +2713,7 @@ export async function handleWatchlistQuickAdd(
   });
 
   const { data: inserted, error } = await supabase
-    .from("watchlist")
+    .from("virtual_positions")
     .insert({
       chat_id: ctx.chatId,
       code,
@@ -2725,7 +2725,7 @@ export async function handleWatchlistQuickAdd(
     
   const insertedRow = !error
     ? await supabase
-      .from("watchlist")
+      .from("virtual_positions")
       .select("id, created_at, buy_date")
       .eq("chat_id", ctx.chatId)
       .eq("code", code)

@@ -471,7 +471,7 @@ export async function handleBuyCommand(
   const targetSectorId = (stock as any).sector_id as string | null | undefined;
   if (targetSectorId) {
     const { data: watchHoldings } = await supabase
-      .from("watchlist")
+      .from("virtual_positions")
       .select("invested_amount, stock:stocks!inner(sector_id)")
       .eq("chat_id", ctx.chatId);
 

@@ -132,7 +132,7 @@ function unwrapStockName(
 
 async function detectWatchlistAnomalies(chatId: number): Promise<string[]> {
   const { data } = await supabase
-    .from("watchlist")
+    .from("virtual_positions")
     .select("code, stock:stocks(code, name)")
     .eq("chat_id", chatId)
     .limit(40)
