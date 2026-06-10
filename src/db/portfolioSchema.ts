@@ -1,7 +1,4 @@
 export const PORTFOLIO_TABLES = {
-  // Legacy physical table name kept for backward compatibility.
-  positionsLegacy: "watchlist",
-  // Canonical logical name for gradual migration.
   positions: "virtual_positions",
   trades: "virtual_trades",
   decisionLogs: "virtual_decision_logs",
@@ -14,8 +11,6 @@ export const PORTFOLIO_TABLES = {
 } as const;
 
 export const PORTFOLIO_LOT_COLUMNS = {
-  legacyPositionId: "watchlist_id",
-  legacySeedPositionId: "seed_watchlist_id",
-  nextPositionId: "position_id",
-  nextSeedPositionId: "seed_position_id",
+  positionId: "position_id",
+  seedPositionId: "seed_position_id",
 } as const;
