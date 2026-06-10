@@ -79,6 +79,7 @@ import {
   resolveStrategyGateStatus,
 } from "./strategyGateStateService";
 import { businessDaysBehind } from "../utils/dataFreshness";
+import { checkAutotradeBuyBlock } from "./macroEventWarningService";
 import { fetchStockNews } from "../utils/fetchNews";
 import { analyzeNewsSentiment, analyzeOrderIntakeSignal } from "../lib/newsSentiment";
 
@@ -2602,6 +2603,29 @@ async function selectMondayCandidates(payload: {
       pullbackCandidatesUsed: 0,
       aggressiveCandidatesUsed: 0,
       guardNote: `데이터 품질 게이트: ${dataQuality.note} (품질점수 ${dataQuality.qualityScore}, 점수기준일 ${latestAsof}, 수급기준일 ${latestInvestorAsof ?? "없음"})`,
+    };
+  }
+
+  // 거시경제 이벤트 위험 구간 게이트 (FOMC D-1, 네마녀 당일 등)
+  const macroBlock = await checkAutotradeBuyBlock().catch(() => ({ blocked: false, reason: null }));
+  if (macroBlock.blocked) {
+    return {
+      candidates: [],
+      selectionMode: "none",
+      thresholdUsed: 99,
+      latestTopScore: rankedRows[0]?.score ?? 0,
+      latestAsof,
+      filteringMetrics: {
+        initialCount: rankedRows.length,
+        afterMarketPolicyCount: 0,
+        afterBaseFilterCount: 0,
+        candidatePoolCount: 0,
+        selectedCount: 0,
+      },
+      entryProfile: "score-first",
+      pullbackCandidatesUsed: 0,
+      aggressiveCandidatesUsed: 0,
+      guardNote: `매크로 이벤트 게이트: ${macroBlock.reason}`,
     };
   }
 

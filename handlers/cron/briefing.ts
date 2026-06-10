@@ -7,6 +7,8 @@ import { createClient } from "@supabase/supabase-js";
 import { getUserInvestmentPrefs } from "../../src/services/userService";
 import { ACTIONS, actionButtons, buildRecommendationActionButtons } from "../../src/bot/messages/layout";
 import { buildOpsStatusDigest } from "../../src/services/opsStatusService";
+import { getMacroWarnings } from "../../src/services/macroEventWarningService";
+import { checkDataFreshness } from "../../src/services/dataFreshnessMonitorService";
 
 const ADMIN_CHAT_ID = process.env.TELEGRAM_ADMIN_CHAT_ID;
 const CRON_SECRET = process.env.CRON_SECRET;
@@ -58,10 +60,30 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const requestedType =
       typeof req.query.type === "string" ? req.query.type : undefined;
     const briefingType = resolveBriefingType(requestedType);
-    const opsDigest = await buildOpsStatusDigest(supabase).catch((error) => {
-      console.warn("[briefing-cron] 운영 상태 체크 생성 실패:", error);
-      return "";
-    });
+
+    // 거시경제 이벤트 경고 + 데이터 신선도 병렬 체크
+    const [opsDigest, macroWarning, freshnessReport] = await Promise.all([
+      buildOpsStatusDigest(supabase).catch((error) => {
+        console.warn("[briefing-cron] 운영 상태 체크 생성 실패:", error);
+        return "";
+      }),
+      getMacroWarnings().catch(() => null),
+      checkDataFreshness(supabase).catch(() => null),
+    ]);
+
+    // 데이터 지연 발견 시 관리자에게 별도 알림 (pre_market 브리핑에서만)
+    if (briefingType === "pre_market" && freshnessReport && !freshnessReport.isHealthy && ADMIN_CHAT_ID) {
+      const alertMsg = freshnessReport.telegramMessage;
+      if (alertMsg) {
+        await tg("sendMessage", {
+          chat_id: Number(ADMIN_CHAT_ID),
+          text: alertMsg,
+          parse_mode: "HTML",
+          disable_web_page_preview: true,
+        }).catch(() => {});
+        console.warn("[briefing-cron] 데이터 신선도 경고 발송:", freshnessReport.staleItems.map((i) => i.label).join(", "));
+      }
+    }
 
     // 활성 사용자 목록 조회
     const { data: users, error: usersError } = await supabase
@@ -105,7 +127,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           : null;
         const briefingText = planningResult?.text ? `${report}\n\n${planningResult.text}` : report;
         const withAutoCycle = autoCyclePreview ? `${briefingText}\n\n${autoCyclePreview}` : briefingText;
-        const finalText = opsDigest ? `${withAutoCycle}\n\n${opsDigest}` : withAutoCycle;
+        const withOps = opsDigest ? `${withAutoCycle}\n\n${opsDigest}` : withAutoCycle;
+        // 이벤트 경고가 있으면 브리핑 하단에 추가 (caution 이상만)
+        const macroMsg = macroWarning?.highestUrgency &&
+          macroWarning.highestUrgency !== 'watch'
+          ? macroWarning.telegramMessage
+          : null;
+        const finalText = macroMsg ? `${withOps}\n\n${macroMsg}` : withOps;
 
         await tg("sendMessage", {
           chat_id: chatId,

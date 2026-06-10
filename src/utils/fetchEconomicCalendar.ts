@@ -11,6 +11,7 @@ import type {
   HistoricalImpact,
   EventImportance,
 } from '../types/economics'
+import { getUpcomingMarketEvents, type MarketEvent } from './marketEventCalendar'
 
 /**
  * 주요 경제 지표 이벤트 데이터베이스
@@ -182,10 +183,203 @@ const MAJOR_ECONOMIC_EVENTS: EconomicEvent[] = [
     averageVolatilityIncrease: 1.9,
     impactSeverity: 88,
   },
+
+  // ════════════════════ 2026년 하반기 ════════════════════
+
+  // ── 미국 CPI (6월, 7월, 8월, 9월, 10월, 11월) ────────────────────────────
+  {
+    id: 'us-cpi-may-2026-rev',
+    name: '미국 CPI (YoY)',
+    country: 'US', category: 'inflation', importance: 'critical',
+    scheduledAt: '2026-06-11T12:30:00Z',
+    forecastValue: 3.5, unit: '%', source: 'BLS',
+    averageKospiReaction: -0.15, averageVolatilityIncrease: 2.1, impactSeverity: 95,
+  },
+  {
+    id: 'us-cpi-jun-2026',
+    name: '미국 CPI (YoY)',
+    country: 'US', category: 'inflation', importance: 'critical',
+    scheduledAt: '2026-07-14T12:30:00Z',
+    forecastValue: 3.4, unit: '%', source: 'BLS',
+    averageKospiReaction: -0.15, averageVolatilityIncrease: 2.1, impactSeverity: 95,
+  },
+  {
+    id: 'us-cpi-jul-2026',
+    name: '미국 CPI (YoY)',
+    country: 'US', category: 'inflation', importance: 'critical',
+    scheduledAt: '2026-08-12T12:30:00Z',
+    forecastValue: 3.3, unit: '%', source: 'BLS',
+    averageKospiReaction: -0.15, averageVolatilityIncrease: 2.1, impactSeverity: 95,
+  },
+  {
+    id: 'us-cpi-aug-2026',
+    name: '미국 CPI (YoY)',
+    country: 'US', category: 'inflation', importance: 'critical',
+    scheduledAt: '2026-09-11T12:30:00Z',
+    forecastValue: 3.2, unit: '%', source: 'BLS',
+    averageKospiReaction: -0.15, averageVolatilityIncrease: 2.1, impactSeverity: 95,
+  },
+  {
+    id: 'us-cpi-sep-2026',
+    name: '미국 CPI (YoY)',
+    country: 'US', category: 'inflation', importance: 'critical',
+    scheduledAt: '2026-10-14T12:30:00Z',
+    forecastValue: 3.1, unit: '%', source: 'BLS',
+    averageKospiReaction: -0.15, averageVolatilityIncrease: 2.1, impactSeverity: 95,
+  },
+  {
+    id: 'us-cpi-oct-2026',
+    name: '미국 CPI (YoY)',
+    country: 'US', category: 'inflation', importance: 'critical',
+    scheduledAt: '2026-11-12T13:30:00Z',
+    forecastValue: 3.0, unit: '%', source: 'BLS',
+    averageKospiReaction: -0.15, averageVolatilityIncrease: 2.1, impactSeverity: 95,
+  },
+  {
+    id: 'us-cpi-nov-2026',
+    name: '미국 CPI (YoY)',
+    country: 'US', category: 'inflation', importance: 'critical',
+    scheduledAt: '2026-12-10T13:30:00Z',
+    forecastValue: 2.9, unit: '%', source: 'BLS',
+    averageKospiReaction: -0.15, averageVolatilityIncrease: 2.1, impactSeverity: 95,
+  },
+
+  // ── FOMC 금리 결정 (7월, 9월, 11월, 12월) ────────────────────────────────
+  {
+    id: 'us-fomc-jul-2026',
+    name: 'FOMC 금리 결정',
+    country: 'US', category: 'interest_rate', importance: 'critical',
+    scheduledAt: '2026-07-29T18:00:00Z',
+    source: 'Fed',
+    averageKospiReaction: 0.5, averageVolatilityIncrease: -0.8, impactSeverity: 98,
+  },
+  {
+    id: 'us-fomc-sep-2026',
+    name: 'FOMC 금리 결정',
+    country: 'US', category: 'interest_rate', importance: 'critical',
+    scheduledAt: '2026-09-16T18:00:00Z',
+    source: 'Fed',
+    averageKospiReaction: 0.5, averageVolatilityIncrease: -0.8, impactSeverity: 98,
+  },
+  {
+    id: 'us-fomc-nov-2026',
+    name: 'FOMC 금리 결정',
+    country: 'US', category: 'interest_rate', importance: 'critical',
+    scheduledAt: '2026-11-04T19:00:00Z',
+    source: 'Fed',
+    averageKospiReaction: 0.5, averageVolatilityIncrease: -0.8, impactSeverity: 98,
+  },
+  {
+    id: 'us-fomc-dec-2026',
+    name: 'FOMC 금리 결정',
+    country: 'US', category: 'interest_rate', importance: 'critical',
+    scheduledAt: '2026-12-16T19:00:00Z',
+    source: 'Fed',
+    averageKospiReaction: 0.5, averageVolatilityIncrease: -0.8, impactSeverity: 98,
+  },
+
+  // ── 미국 NFP / 실업률 (7~12월) ───────────────────────────────────────────
+  {
+    id: 'us-nfp-jun-2026',
+    name: '미국 비농업고용 / 실업률',
+    country: 'US', category: 'employment', importance: 'critical',
+    scheduledAt: '2026-07-02T12:30:00Z',
+    unit: '%', source: 'BLS',
+    averageKospiReaction: -0.8, averageVolatilityIncrease: 2.8, impactSeverity: 92,
+  },
+  {
+    id: 'us-nfp-jul-2026',
+    name: '미국 비농업고용 / 실업률',
+    country: 'US', category: 'employment', importance: 'critical',
+    scheduledAt: '2026-08-07T12:30:00Z',
+    unit: '%', source: 'BLS',
+    averageKospiReaction: -0.8, averageVolatilityIncrease: 2.8, impactSeverity: 92,
+  },
+  {
+    id: 'us-nfp-aug-2026',
+    name: '미국 비농업고용 / 실업률',
+    country: 'US', category: 'employment', importance: 'critical',
+    scheduledAt: '2026-09-04T12:30:00Z',
+    unit: '%', source: 'BLS',
+    averageKospiReaction: -0.8, averageVolatilityIncrease: 2.8, impactSeverity: 92,
+  },
+  {
+    id: 'us-nfp-sep-2026',
+    name: '미국 비농업고용 / 실업률',
+    country: 'US', category: 'employment', importance: 'critical',
+    scheduledAt: '2026-10-02T12:30:00Z',
+    unit: '%', source: 'BLS',
+    averageKospiReaction: -0.8, averageVolatilityIncrease: 2.8, impactSeverity: 92,
+  },
+  {
+    id: 'us-nfp-oct-2026',
+    name: '미국 비농업고용 / 실업률',
+    country: 'US', category: 'employment', importance: 'critical',
+    scheduledAt: '2026-11-06T13:30:00Z',
+    unit: '%', source: 'BLS',
+    averageKospiReaction: -0.8, averageVolatilityIncrease: 2.8, impactSeverity: 92,
+  },
+  {
+    id: 'us-nfp-nov-2026',
+    name: '미국 비농업고용 / 실업률',
+    country: 'US', category: 'employment', importance: 'critical',
+    scheduledAt: '2026-12-04T13:30:00Z',
+    unit: '%', source: 'BLS',
+    averageKospiReaction: -0.8, averageVolatilityIncrease: 2.8, impactSeverity: 92,
+  },
+
+  // ── 한국 기준금리 결정 (하반기) ──────────────────────────────────────────
+  {
+    id: 'kr-base-rate-jul-2026',
+    name: '한국 기준금리 결정',
+    country: 'KR', category: 'interest_rate', importance: 'critical',
+    scheduledAt: '2026-07-16T01:00:00Z',
+    source: 'BOK',
+    averageKospiReaction: 0.3, averageVolatilityIncrease: 1.2, impactSeverity: 85,
+  },
+  {
+    id: 'kr-base-rate-aug-2026',
+    name: '한국 기준금리 결정',
+    country: 'KR', category: 'interest_rate', importance: 'critical',
+    scheduledAt: '2026-08-27T01:00:00Z',
+    source: 'BOK',
+    averageKospiReaction: 0.3, averageVolatilityIncrease: 1.2, impactSeverity: 85,
+  },
+  {
+    id: 'kr-base-rate-oct-2026',
+    name: '한국 기준금리 결정',
+    country: 'KR', category: 'interest_rate', importance: 'critical',
+    scheduledAt: '2026-10-15T01:00:00Z',
+    source: 'BOK',
+    averageKospiReaction: 0.3, averageVolatilityIncrease: 1.2, impactSeverity: 85,
+  },
+  {
+    id: 'kr-base-rate-nov-2026',
+    name: '한국 기준금리 결정',
+    country: 'KR', category: 'interest_rate', importance: 'critical',
+    scheduledAt: '2026-11-26T01:00:00Z',
+    source: 'BOK',
+    averageKospiReaction: 0.3, averageVolatilityIncrease: 1.2, impactSeverity: 85,
+  },
 ]
 
+function marketEventToEconomicEvent(e: MarketEvent): EconomicEvent {
+  return {
+    id: `market-${e.type.toLowerCase()}-${e.date}`,
+    name: e.label,
+    country: e.type.startsWith('US') ? 'US' : 'KR',
+    category: 'options_expiry' as any,
+    importance: e.importance,
+    scheduledAt: `${e.date}T00:00:00Z`,
+    source: e.type.startsWith('US') ? 'CBOE' : 'KRX',
+    averageKospiReaction: e.averageKospiReaction,
+    averageVolatilityIncrease: 1.5,
+    impactSeverity: e.impactSeverity,
+  }
+}
+
 /**
- * 지정된 시간 범위의 경제 이벤트 조회
+ * 지정된 시간 범위의 경제 이벤트 조회 (네마녀/옵션만기 자동 포함)
  */
 export async function fetchEconomicCalendar(
   startDate?: string,
@@ -198,7 +392,12 @@ export async function fetchEconomicCalendar(
       ? new Date(endDate)
       : new Date(Date.now() + 90 * 24 * 60 * 60 * 1000)
 
-    const filteredEvents = MAJOR_ECONOMIC_EVENTS.filter(event => {
+    const daysAhead = Math.ceil((end.getTime() - start.getTime()) / (24 * 60 * 60 * 1000)) + 1
+    const marketEvents = getUpcomingMarketEvents(daysAhead, start).map(marketEventToEconomicEvent)
+
+    const allEvents = [...MAJOR_ECONOMIC_EVENTS, ...marketEvents]
+
+    const filteredEvents = allEvents.filter(event => {
       const eventDate = new Date(event.scheduledAt)
       const dateInRange = eventDate >= start && eventDate <= end
       const importanceMatch =
