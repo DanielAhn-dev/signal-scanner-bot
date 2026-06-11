@@ -10,6 +10,11 @@ import {
   type RankedCandidate,
 } from "../../services/virtualAutoTradeSelection";
 import { calculateAutoTradeBuySizing } from "../../services/virtualAutoTradeSizing";
+import {
+  resolveMirrorScale,
+  scaleMirrorQuantity,
+  type MirrorScale,
+} from "../../services/mtsMirrorOrderService";
 import { fetchAllMarketData } from "../../utils/fetchMarketData";
 import { buildInvestmentPlan } from "../../lib/investPlan";
 import { scaleScoreFactorsToReferencePrice } from "../../lib/priceScale";
@@ -227,13 +232,19 @@ function buildOrderLines(input: {
   remainingQty: number;
   expectedProfit1: number;
   expectedProfit2: number;
+  mirrorScale?: MirrorScale;
 }): string[] {
   const statusLabel = input.plan.status === "buy-now" ? "즉시" : input.plan.status === "buy-on-pullback" ? "눌림대기" : "관망";
+  const mirrorLine =
+    input.mirrorScale && input.mirrorScale.basis === "real-capital" && input.mirrorScale.ratio !== 1
+      ? `- 실계좌 환산 <code>${scaleMirrorQuantity(input.quantity, input.mirrorScale)}주</code> (×${input.mirrorScale.ratio.toFixed(2)})`
+      : null;
 
   return [
     `<b>${input.rank}. ${esc(input.candidate.name)}</b> <code>${input.candidate.code}</code>`,
     `- 판단 ${statusLabel} · 점수 <code>${input.candidate.score.toFixed(1)}</code> · 손익비 <code>${input.plan.riskReward}:1</code>`,
     `- 매수주문 <code>${input.quantity}주 x ${fmtInt(input.orderPrice)}원</code> = <code>${fmtInt(input.investedAmount)}원</code>`,
+    ...(mirrorLine ? [mirrorLine] : []),
     `- 진입구간 <code>${fmtInt(input.plan.entryLow)}원</code> ~ <code>${fmtInt(input.plan.entryHigh)}원</code>`,
     `- 손절 <code>${fmtInt(input.plan.stopPrice)}원</code> (${fmtPct(-input.plan.stopPct * 100)})`,
     `- 1차매도 <code>${input.trancheQty}주 @ ${fmtInt(input.plan.target1)}원</code> (${fmtPct(input.plan.target1Pct * 100)}) · 기대 <code>${formatSignedKrw(input.expectedProfit1)}</code>`,
@@ -649,8 +660,14 @@ export async function handlePreMarketPlanCommand(
     return;
   }
 
+  const mirrorScale = resolveMirrorScale({
+    realCapitalKrw: prefs.capital_krw,
+    virtualSeedCapital: prefs.virtual_seed_capital ?? prefs.capital_krw,
+  });
+
   const blocks = actionable.flatMap((item, index) => ["", ...buildOrderLines({
     rank: index + 1,
+    mirrorScale,
     candidate: item.candidate,
     plan: item.plan,
     quantity: item.quantity,

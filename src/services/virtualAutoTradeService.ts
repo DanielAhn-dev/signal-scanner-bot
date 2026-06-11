@@ -70,6 +70,14 @@ import {
   pickExecutionLines,
 } from "./virtualAutoTradeAlert";
 import {
+  buildBuyMirrorOrder,
+  buildSellMirrorOrder,
+  buildMirrorOrderSheet,
+  resolveMirrorScale,
+  type MirrorOrderEntry,
+  type MirrorSellKind,
+} from "./mtsMirrorOrderService";
+import {
   buildAutoTradeSkipReasonStats,
   type AutoTradeSkipReasonStat,
 } from "./virtualAutoTradeObservability";
@@ -785,6 +793,8 @@ export type AutoTradeActionSummary = {
   notes: string[];
   /** 이번 실행에서 비중 초과로 분할 매도된 종목 코드 목록 */
   overweightReducedCodes?: string[];
+  /** MTS 따라하기 주문서 항목 (Phase 3) */
+  mirrorOrders?: MirrorOrderEntry[];
 };
 
 export type AutoTradeRunSummary = {
@@ -3422,6 +3432,17 @@ async function runMondayBuyForUser(payload: {
             stopLossPct: tradeProfile.stopLossPct,
           })
         );
+        (summary.mirrorOrders ??= []).push(
+          buildBuyMirrorOrder({
+            kind: "new-buy",
+            code: candidate.code,
+            name: candidate.name,
+            quantity: qty,
+            limitPrice: executionPrice,
+            takeProfitPct: tradeProfile.takeProfitPct,
+            stopLossPct: tradeProfile.stopLossPct,
+          })
+        );
         await writeActionLog({
           supabase: payload.supabase,
           runId: payload.runId,
@@ -3639,6 +3660,17 @@ async function runMondayBuyForUser(payload: {
           basePrice: executionPrice,
           quantity: qty,
           investedAmount,
+          takeProfitPct: tradeProfile.takeProfitPct,
+          stopLossPct: tradeProfile.stopLossPct,
+        })
+      );
+      (summary.mirrorOrders ??= []).push(
+        buildBuyMirrorOrder({
+          kind: "new-buy",
+          code: candidate.code,
+          name: candidate.name,
+          quantity: qty,
+          limitPrice: executionPrice,
           takeProfitPct: tradeProfile.takeProfitPct,
           stopLossPct: tradeProfile.stopLossPct,
         })
@@ -4144,7 +4176,7 @@ async function runDailyReviewForUser(payload: {
 
   const { data: stockRows, error: stockError } = await payload.supabase
     .from("stocks")
-    .select("code, close, market, sector_id, is_sector_leader")
+    .select("code, name, close, market, sector_id, is_sector_leader")
     .in("code", codeList);
 
   if (stockError) {
@@ -4154,16 +4186,19 @@ async function runDailyReviewForUser(payload: {
   }
 
   const closeByCode = new Map<string, number>();
+  const nameByCode = new Map<string, string>();
   const marketByCode = new Map<string, string>();
   const sectorIdByCode = new Map<string, string>();
   const isSectorLeaderByCode = new Map<string, boolean>();
   for (const row of stockRows ?? []) {
     const code = String((row as Record<string, unknown>).code ?? "");
+    const name = String((row as Record<string, unknown>).name ?? "").trim();
     const close = toNumber((row as Record<string, unknown>).close, 0);
     const market = String((row as Record<string, unknown>).market ?? "");
     const sectorId = String((row as Record<string, unknown>).sector_id ?? "") || null;
     const isSectorLeader = (row as Record<string, unknown>).is_sector_leader === true;
     if (code && close > 0) closeByCode.set(code, close);
+    if (code && name) nameByCode.set(code, name);
     if (code && market) marketByCode.set(code, market);
     if (code && sectorId) sectorIdByCode.set(code, sectorId);
     if (code) isSectorLeaderByCode.set(code, isSectorLeader);
@@ -4595,6 +4630,30 @@ async function runDailyReviewForUser(payload: {
       } else if (trendExitSignal.reason !== "none") {
         summary.notes.push(`[추세이탈 청산] ${holding.code} · ${trendExitSignal.reason}`);
       }
+      {
+        const soldQty = Math.max(0, Math.min(qty, Math.floor(finalExitPlan.quantityToSell)));
+        const mirrorSellKind: MirrorSellKind =
+          finalExitPlan.action === "OVERWEIGHT_REDUCTION"
+            ? "overweight-trim"
+            : finalExitPlan.action === "SECTOR_ROTATION"
+              ? "sector-rotation"
+              : finalExitPlan.action === "STOP_LOSS"
+                ? "stop-loss"
+                : result.partial
+                  ? "take-profit-partial"
+                  : "take-profit-final";
+        (summary.mirrorOrders ??= []).push(
+          buildSellMirrorOrder({
+            kind: mirrorSellKind,
+            code: holding.code,
+            name: nameByCode.get(holding.code) ?? null,
+            quantity: soldQty,
+            limitPrice: close,
+            remainQuantity: Math.max(0, qty - soldQty),
+            pnlPct,
+          })
+        );
+      }
     } catch (error: unknown) {
       const message = extractErrorMessage(error);
       summary.errors += 1;
@@ -4869,6 +4928,18 @@ async function runDailyReviewForUser(payload: {
                 stopLossPct: holdingProfile.stopLossPct,
               })
             );
+            (summary.mirrorOrders ??= []).push(
+              buildBuyMirrorOrder({
+                kind: "add-on-buy",
+                code: candidate.code,
+                name: candidate.name,
+                quantity: addOnQty,
+                limitPrice: executionPrice,
+                exitBasePrice: nextBuyPrice,
+                takeProfitPct: holdingProfile.takeProfitPct,
+                stopLossPct: holdingProfile.stopLossPct,
+              })
+            );
             await writeActionLog({
               supabase: payload.supabase,
               runId: payload.runId,
@@ -5002,6 +5073,18 @@ async function runDailyReviewForUser(payload: {
               basePrice: nextBuyPrice,
               quantity: nextQty,
               investedAmount: nextInvested,
+              takeProfitPct: holdingProfile.takeProfitPct,
+              stopLossPct: holdingProfile.stopLossPct,
+            })
+          );
+          (summary.mirrorOrders ??= []).push(
+            buildBuyMirrorOrder({
+              kind: "add-on-buy",
+              code: candidate.code,
+              name: candidate.name,
+              quantity: addOnQty,
+              limitPrice: executionPrice,
+              exitBasePrice: nextBuyPrice,
               takeProfitPct: holdingProfile.takeProfitPct,
               stopLossPct: holdingProfile.stopLossPct,
             })
@@ -5394,6 +5477,17 @@ async function runDailyReviewForUser(payload: {
                 stopLossPct: adjustedEntryProfile.stopLossPct,
               })
             );
+            (summary.mirrorOrders ??= []).push(
+              buildBuyMirrorOrder({
+                kind: "new-buy",
+                code: candidate.code,
+                name: candidate.name,
+                quantity: qty,
+                limitPrice: executionPrice,
+                takeProfitPct: adjustedEntryProfile.takeProfitPct,
+                stopLossPct: adjustedEntryProfile.stopLossPct,
+              })
+            );
             await writeActionLog({
               supabase: payload.supabase,
               runId: payload.runId,
@@ -5601,6 +5695,17 @@ async function runDailyReviewForUser(payload: {
               basePrice: executionPrice,
               quantity: qty,
               investedAmount,
+              takeProfitPct: entryProfile.takeProfitPct,
+              stopLossPct: entryProfile.stopLossPct,
+            })
+          );
+          (summary.mirrorOrders ??= []).push(
+            buildBuyMirrorOrder({
+              kind: "new-buy",
+              code: candidate.code,
+              name: candidate.name,
+              quantity: qty,
+              limitPrice: executionPrice,
               takeProfitPct: entryProfile.takeProfitPct,
               stopLossPct: entryProfile.stopLossPct,
             })
@@ -6193,6 +6298,21 @@ export async function runVirtualAutoTradingCycle(input?: {
           ).catch((err: unknown) => {
             console.error("[autoTrade] execution alert send failed", err);
           });
+
+          // MTS 따라하기 주문서 (Phase 3): 체결 내역을 실계좌 주문 형태로 환산해 발송
+          const mirrorSheet = buildMirrorOrderSheet({
+            entries: actionSummary.mirrorOrders ?? [],
+            scale: resolveMirrorScale({
+              realCapitalKrw: prefs.capital_krw,
+              virtualSeedCapital: prefs.virtual_seed_capital ?? prefs.capital_krw,
+            }),
+            isShadow: isShadowRun,
+          });
+          if (mirrorSheet) {
+            await sendMessage(setting.chat_id, mirrorSheet).catch((err: unknown) => {
+              console.error("[autoTrade] mirror order sheet send failed", err);
+            });
+          }
         }
       }
 
