@@ -15,7 +15,7 @@ import { syncVirtualPortfolio } from "./portfolioService";
 import { buildStrategyMemo } from "../lib/strategyMemo";
 import { parseStrategyMemo } from "../lib/strategyMemo";
 import { appendVirtualDecisionLog } from "./decisionLogService";
-import { calculateAutoTradeBuySizing } from "./virtualAutoTradeSizing";
+import { calculateAutoTradeBuySizing, resolveConvictionScale } from "./virtualAutoTradeSizing";
 import {
   applyDynamicTradeProfileAdjustments,
   classifyAutoTradeEntryProfile,
@@ -3300,6 +3300,11 @@ async function runMondayBuyForUser(payload: {
         maxPositions,
         stopLossPct: Math.abs(toNumber(payload.setting.stop_loss_pct, 4)),
         riskBudgetScale: dailyRiskBudget.scale,
+        conviction: resolveConvictionScale({
+          score: candidate.score,
+          trustGrade: signalGate.grade,
+          isSectorLeader: candidate.isSectorLeader,
+        }),
         prefs,
       });
 
@@ -4816,6 +4821,11 @@ async function runDailyReviewForUser(payload: {
           maxPositions: Math.max(1, maxPositions),
           stopLossPct: holdingProfile.stopLossPct,
           riskBudgetScale: dailyRiskBudget.scale,
+          conviction: resolveConvictionScale({
+            score: candidate.score,
+            trustGrade: signalGate.grade,
+            isSectorLeader: candidate.isSectorLeader,
+          }),
           prefs,
         });
         const addOnBudget = Math.max(
@@ -5310,6 +5320,11 @@ async function runDailyReviewForUser(payload: {
           maxPositions,
           stopLossPct: adjustedEntryProfile.stopLossPct,
           riskBudgetScale: dailyRiskBudget.scale,
+          conviction: resolveConvictionScale({
+            score: candidate.score,
+            trustGrade: signalGate.grade,
+            isSectorLeader: candidate.isSectorLeader,
+          }),
           prefs,
         });
 
