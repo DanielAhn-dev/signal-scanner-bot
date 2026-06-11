@@ -106,12 +106,19 @@ BEGIN
 END $$;
 
 -- 3) virtual_trade_lots: watchlist_id → position_id 동기화
-UPDATE public.virtual_trade_lots
-SET
-  position_id      = COALESCE(position_id, watchlist_id),
-  seed_position_id = COALESCE(seed_position_id, seed_watchlist_id)
-WHERE (position_id IS NULL AND watchlist_id IS NOT NULL)
-   OR (seed_position_id IS NULL AND seed_watchlist_id IS NOT NULL);
+-- 참조하는 포지션이 이미 삭제된 legacy 포인터(예: 청산 후 삭제된 포지션)는
+-- FK 위반을 피하기 위해 건너뛴다 (재실행 멱등성 보장).
+UPDATE public.virtual_trade_lots l
+SET position_id = l.watchlist_id
+WHERE l.position_id IS NULL
+  AND l.watchlist_id IS NOT NULL
+  AND EXISTS (SELECT 1 FROM public.virtual_positions p WHERE p.id = l.watchlist_id);
+
+UPDATE public.virtual_trade_lots l
+SET seed_position_id = l.seed_watchlist_id
+WHERE l.seed_position_id IS NULL
+  AND l.seed_watchlist_id IS NOT NULL
+  AND EXISTS (SELECT 1 FROM public.virtual_positions p WHERE p.id = l.seed_watchlist_id);
 
 -- 4) watchlist VIEW 최신 상태 보장 (watchlist가 이제 VIEW여야 함)
 DO $$
