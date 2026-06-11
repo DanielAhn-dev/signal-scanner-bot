@@ -6,6 +6,7 @@ import report from '../handlers/cron/report'
 import scoreSync from '../handlers/cron/scoreSync'
 import strategyGateRefresh from '../handlers/cron/strategyGateRefresh'
 import virtualAutoTrade from '../handlers/cron/virtualAutoTrade'
+import integrityAudit from '../handlers/cron/integrityAudit'
 
 type CronHandler = (req: VercelRequest, res: VercelResponse) => unknown | Promise<unknown>
 
@@ -15,6 +16,7 @@ const TASK_ROUTES: Record<string, CronHandler> = {
   scoreSync,
   strategyGateRefresh,
   virtualAutoTrade,
+  integrityAudit,
 }
 
 function normalizeTask(value: string | string[] | undefined): string {

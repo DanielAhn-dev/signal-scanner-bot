@@ -30,6 +30,7 @@
     "cron:trigger": "tsx scripts/ops/trigger_cron_dispatch.ts",
     "cron:trigger:intraday": "tsx scripts/ops/trigger_cron_dispatch.ts --task virtualAutoTradeIntraday",
     "cron:trigger:gate": "tsx scripts/ops/trigger_cron_dispatch.ts --task strategyGateRefresh",
+    "cron:trigger:integrity": "tsx scripts/ops/trigger_cron_dispatch.ts --task integrityAudit",
     "ops:stable-maintenance": "tsx scripts/ops/stable_maintenance_daily.ts",
     "ops:stable-maintenance:dry": "tsx scripts/ops/stable_maintenance_daily.ts --dryRun=true",
     "autotrade:enable": "tsx scripts/ops/virtual_autotrade_enable.ts",
