@@ -54,16 +54,14 @@ const EconomyPage          = lazyWithRecovery(() => import('./features/economy')
 const FeedPage             = lazyWithRecovery(() => import('./features/feed'))
 const NewsPage             = lazyWithRecovery(() => import('./features/news'))
 const ProfilePage          = lazyWithRecovery(() => import('./features/profile'))
-const DBViewPage           = lazyWithRecovery(() => import('./features/dbView'))
 const SectorsPage          = lazyWithRecovery(() => import('./features/sectors'))
 const AdminUsersPage       = lazyWithRecovery(() => import('./features/admin-users'))
-const OperationsPage       = lazyWithRecovery(() => import('./features/operations'))
 const StrategyPage         = lazyWithRecovery(() => import('./features/strategy'))
 const HighlightsPage       = lazyWithRecovery(() => import('./features/highlights'))
 const SimulatorPage        = lazyWithRecovery(() => import('./features/simulator'))
 const DiscoveryPage        = lazyWithRecovery(() => import('./features/discovery'))
 const BacktestPage         = lazyWithRecovery(() => import('./features/backtest'))
-const PositionMaintenancePage = lazyWithRecovery(() => import('./features/position-maintenance'))
+const ControlPage          = lazyWithRecovery(() => import('./features/control'))
 
 export default function App() {
   return (
@@ -295,15 +293,17 @@ function AppContent() {
             <Route path="/news"                   element={<NewsPage />} />
             <Route path="/profile"                element={<ProfilePage />} />
             <Route path="/sectors"                element={<SectorsPage onNavigate={handleNavigate} />} />
-            <Route path="/dbview"                 element={<DBViewPage />} />
             <Route path="/admin-users"            element={<AdminUsersPage />} />
-            <Route path="/operations"             element={<OperationsPage />} />
             <Route path="/strategy"               element={<StrategyPage />} />
             <Route path="/highlights"             element={<HighlightsPage />} />
             <Route path="/simulator"              element={<SimulatorPage />} />
             <Route path="/discovery"              element={<DiscoveryPage />} />
             <Route path="/backtest"               element={<BacktestPage />} />
-            <Route path="/position-maintenance"   element={<PositionMaintenancePage />} />
+            <Route path="/control"                element={<ControlPage />} />
+            {/* 관제 통합 이전 경로 호환 리다이렉트 */}
+            <Route path="/dbview"                 element={<Navigate to="/control?tab=data" replace />} />
+            <Route path="/operations"             element={<Navigate to="/control?tab=operations" replace />} />
+            <Route path="/position-maintenance"   element={<Navigate to="/control?tab=maintenance" replace />} />
             <Route path="*"                       element={<Navigate to="/dashboard" replace />} />
           </Routes>
         </Suspense>

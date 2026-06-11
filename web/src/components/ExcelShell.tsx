@@ -15,18 +15,16 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import {
   Save, Undo2, Redo2, Star,
-  ChevronLeft, ChevronRight, ChevronDown, Minus,
+  ChevronLeft, ChevronRight, ChevronDown, ChevronUp, Minus, Plus,
   LayoutDashboard, ScanSearch, BarChart2, FlaskConical,
   BriefcaseBusiness, FileText, Globe2, Newspaper,
-  Bell, User, Settings, Database, Shield,
-  Zap, BookMarked, History,
-  Search, RefreshCw, Download, Upload, Filter, SortAsc,
-  PieChart, Activity, Target, Eye, List, BookOpen,
-  Plus, Type, Bold, AlignLeft, AlignCenter, AlignRight,
-  Percent, Hash, Palette, Table2, Trash2, Sigma, PaintBucket, Eraser
+  Bell, User, Settings, Database, Shield, ShieldCheck, Wrench,
+  Zap, History, Search,
+  PieChart, Activity, Target, Eye, List,
 } from 'lucide-react'
 import { useAuthStore } from '../stores/authStore'
 import { useProfileStore } from '../stores/profileStore'
+import { PRIMARY_NAV_ITEMS, CONTROL_NAV_ITEM, TOOL_NAV_GROUPS, TOOL_NAV_ITEMS, ALL_NAV_ITEMS } from '../navigation'
 import ExcelContentArea from './ExcelContentArea'
 
 // ── 타입 ─────────────────────────────────────────────────────────
@@ -47,300 +45,95 @@ type Props = {
   rightPanel?: React.ReactNode
 }
 
+// ── 내비게이션 아이콘 ─────────────────────────────────────────────
+
+const NAV_ICON_COMPONENTS: Record<string, React.ComponentType<{ size?: number | string }>> = {
+  'dashboard': LayoutDashboard,
+  'scan': ScanSearch,
+  'analyze': BarChart2,
+  'simulator': FlaskConical,
+  'portfolio': BriefcaseBusiness,
+  'reports': FileText,
+  'control': Shield,
+  'sectors': PieChart,
+  'market': Globe2,
+  'news': Newspaper,
+  'economy': Activity,
+  'trades': History,
+  'watchlist': Eye,
+  'alerts': Bell,
+  'execution-guide': Target,
+  'highlights': Zap,
+  'strategy': Target,
+  'backtest': Activity,
+  'discovery': Search,
+  'feed': List,
+  'settings': Settings,
+  'profile': User,
+  'admin-users': User,
+}
+
+function navIcon(key: string, size: number): React.ReactNode {
+  const Icon = NAV_ICON_COMPONENTS[key] ?? FileText
+  return <Icon size={size} />
+}
+
 // ── 리본 정의 ────────────────────────────────────────────────────
+// 더미(준비 중) 버튼 없이 실제 동작하는 액션만 노출한다.
 
 const RIBBON_TABS = [
-  { key: 'home',       label: '홈' },
-  { key: 'insert',     label: '삽입' },
-  { key: 'draw',       label: '그리기' },
-  { key: 'pagelayout', label: '페이지 레이아웃' },
-  { key: 'formula',    label: '수식' },
-  { key: 'data',       label: '데이터' },
-  { key: 'review',     label: '검토' },
-  { key: 'view',       label: '보기' },
-  { key: 'automation', label: '자동화' },
-  { key: 'tools',      label: '도움말' },
+  { key: 'home',    label: '홈' },
+  { key: 'control', label: '관제' },
+  { key: 'tools',   label: '도구' },
 ] as const
 type RibbonTabKey = typeof RIBBON_TABS[number]['key']
 
-type RibbonBtn = { key: string; label: string; icon: React.ReactNode; route?: string; priority?: 1 | 2 | 3 }
+type RibbonBtn = { key: string; label: string; icon: React.ReactNode; route?: string }
 type RibbonGroup = { label: string; buttons: RibbonBtn[] }
-type RibbonScaffoldBtn = { key: string; label: string; icon: React.ReactNode }
-type RibbonScaffoldGroup = { label: string; buttons: RibbonScaffoldBtn[] }
 
 function getRibbonGroups(tab: RibbonTabKey): RibbonGroup[] {
   switch (tab) {
     case 'home': return [
-      { label: '이동', buttons: [
-        { key: 'dashboard', label: '대시보드', icon: <LayoutDashboard size={20}/>, route: 'dashboard', priority: 1 },
-        { key: 'scan',      label: '스캔',     icon: <ScanSearch size={20}/>,     route: 'scan', priority: 1 },
-        { key: 'analyze',   label: '분석',     icon: <BarChart2 size={20}/>,      route: 'analyze', priority: 1 },
-        { key: 'execution-guide', label: '실행가이드', icon: <Target size={20}/>, route: 'execution-guide', priority: 2 },
-        { key: 'portfolio', label: '포트폴리오',icon: <BriefcaseBusiness size={20}/>, route: 'portfolio', priority: 2 },
-      ]},
-      { label: '시장', buttons: [
-        { key: 'sectors', label: '섹터', icon: <PieChart size={20}/>,  route: 'sectors', priority: 2 },
-        { key: 'market',  label: '시장', icon: <Globe2 size={20}/>,    route: 'market', priority: 2 },
-        { key: 'news',    label: '뉴스', icon: <Newspaper size={20}/>, route: 'news', priority: 3 },
-      ]},
-      { label: '관리', buttons: [
-        { key: 'watchlist', label: '감시목록', icon: <Eye size={20}/>,     route: 'watchlist', priority: 2 },
-        { key: 'alerts',    label: '알림',     icon: <Bell size={20}/>,    route: 'alerts', priority: 2 },
-        { key: 'reports',   label: '리포트',   icon: <FileText size={20}/>, route: 'reports', priority: 3 },
+      { label: '핵심 플로우', buttons: PRIMARY_NAV_ITEMS.map(item => ({
+        key: item.key, label: item.label, icon: navIcon(item.key, 20), route: item.key,
+      }))},
+      { label: '관제', buttons: [
+        { key: 'control', label: '관제', icon: <Shield size={20}/>, route: 'control' },
       ]},
     ]
-    case 'insert': return [
-      { label: '분석', buttons: [
-        { key: 'simulator',  label: '시뮬레이터', icon: <FlaskConical size={20}/>, route: 'simulator', priority: 1 },
-        { key: 'backtest',   label: '백테스트',   icon: <Activity size={20}/>,    route: 'backtest', priority: 2 },
-        { key: 'strategy',   label: '전략',       icon: <Target size={20}/>,      route: 'strategy', priority: 2 },
-        { key: 'discovery',  label: '발굴',       icon: <Search size={20}/>,      route: 'discovery', priority: 3 },
-        { key: 'highlights', label: '집행우선',   icon: <Zap size={20}/>,         route: 'highlights', priority: 3 },
+    case 'control': return [
+      { label: '관제 바로가기', buttons: [
+        { key: 'control-audit',       label: '검산',     icon: <ShieldCheck size={20}/>, route: 'control?tab=audit' },
+        { key: 'control-operations',  label: '운영',     icon: <Activity size={20}/>,    route: 'control?tab=operations' },
+        { key: 'control-data',        label: '데이터',   icon: <Database size={20}/>,    route: 'control?tab=data' },
+        { key: 'control-maintenance', label: '유지보수', icon: <Wrench size={20}/>,      route: 'control?tab=maintenance' },
       ]},
     ]
-    case 'draw': return [
-      { label: '시장', buttons: [
-        { key: 'sectors', label: '섹터', icon: <PieChart size={20}/>,  route: 'sectors', priority: 1 },
-        { key: 'market',  label: '시장', icon: <Globe2 size={20}/>,    route: 'market', priority: 1 },
-        { key: 'news',    label: '뉴스', icon: <Newspaper size={20}/>, route: 'news', priority: 2 },
-      ]},
-    ]
-    case 'data': return [
-      { label: '데이터', buttons: [
-        { key: 'trades', label: '거래기록', icon: <History size={20}/>,  route: 'trades', priority: 1 },
-        { key: 'dbview', label: 'DB 뷰',   icon: <Database size={20}/>, route: 'dbview', priority: 1 },
-      ]},
-      { label: '조작', buttons: [
-        { key: 'sort',    label: '정렬',     icon: <SortAsc size={20}/>, priority: 1 },
-        { key: 'filter',  label: '필터',     icon: <Filter size={20}/>, priority: 1 },
-        { key: 'refresh', label: '새로고침', icon: <RefreshCw size={20}/>, priority: 2 },
-        { key: 'import',  label: '가져오기', icon: <Upload size={20}/>, priority: 3 },
-        { key: 'export',  label: '내보내기', icon: <Download size={20}/>, priority: 3 },
-      ]},
-    ]
-    case 'view': return [
-      { label: '화면', buttons: [
-        { key: 'portfolio', label: '포트폴리오', icon: <BriefcaseBusiness size={20}/>, route: 'portfolio', priority: 1 },
-        { key: 'watchlist', label: '감시목록',   icon: <BookMarked size={20}/>,        route: 'watchlist', priority: 1 },
-        { key: 'market',    label: '시장 현황',  icon: <Globe2 size={20}/>,            route: 'market', priority: 2 },
-        { key: 'sectors',   label: '섹터 현황',  icon: <PieChart size={20}/>,          route: 'sectors', priority: 2 },
-        { key: 'reports',   label: '리포트',     icon: <FileText size={20}/>,          route: 'reports', priority: 3 },
-      ]},
-    ]
-    case 'tools': return [
-      { label: '운영', buttons: [
-        { key: 'settings',   label: '설정',   icon: <Settings size={20}/>, route: 'settings', priority: 1 },
-        { key: 'profile',    label: '프로필', icon: <User size={20}/>,     route: 'profile', priority: 2 },
-        { key: 'operations', label: '운영',   icon: <Shield size={20}/>,   route: 'operations', priority: 2 },
-        { key: 'commands',   label: '명령',   icon: <BookOpen size={20}/>, route: 'commands', priority: 3 },
-      ]},
-    ]
+    case 'tools': return TOOL_NAV_GROUPS.map(group => ({
+      label: group.category,
+      buttons: group.items
+        .filter(item => !item.adminOnly)
+        .map(item => ({ key: item.key, label: item.label, icon: navIcon(item.key, 20), route: item.key })),
+    }))
     default: return []
   }
 }
 
-function getRibbonScaffoldGroups(tab: RibbonTabKey): RibbonScaffoldGroup[] {
-  switch (tab) {
-    case 'home':
-      return [
-        {
-          label: '붙여넣기',
-          buttons: [
-            { key: 'paste', label: '붙여넣기', icon: <Upload size={20} /> },
-            { key: 'copy', label: '복사', icon: <BookMarked size={20} /> },
-          ],
-        },
-        {
-          label: '글꼴',
-          buttons: [
-            { key: 'font-family', label: '글꼴', icon: <Type size={20} /> },
-            { key: 'font-bold', label: '굵게', icon: <Bold size={20} /> },
-            { key: 'font-color', label: '색상', icon: <Palette size={20} /> },
-          ],
-        },
-        {
-          label: '맞춤',
-          buttons: [
-            { key: 'align-left', label: '왼쪽', icon: <AlignLeft size={20} /> },
-            { key: 'align-center', label: '가운데', icon: <AlignCenter size={20} /> },
-            { key: 'align-right', label: '오른쪽', icon: <AlignRight size={20} /> },
-          ],
-        },
-        {
-          label: '숫자',
-          buttons: [
-            { key: 'num-currency', label: '통화', icon: <Hash size={20} /> },
-            { key: 'num-percent', label: '백분율', icon: <Percent size={20} /> },
-            { key: 'num-digit', label: '자리수', icon: <SortAsc size={20} /> },
-          ],
-        },
-        {
-          label: '스타일',
-          buttons: [
-            { key: 'style-conditional', label: '조건부', icon: <Filter size={20} /> },
-            { key: 'style-format', label: '서식', icon: <Table2 size={20} /> },
-            { key: 'style-theme', label: '테마', icon: <PaintBucket size={20} /> },
-          ],
-        },
-        {
-          label: '셀',
-          buttons: [
-            { key: 'cell-insert', label: '삽입', icon: <Plus size={20} /> },
-            { key: 'cell-delete', label: '삭제', icon: <Trash2 size={20} /> },
-            { key: 'cell-format', label: '서식', icon: <Settings size={20} /> },
-          ],
-        },
-        {
-          label: '편집',
-          buttons: [
-            { key: 'edit-sum', label: '자동합계', icon: <Sigma size={20} /> },
-            { key: 'edit-fill', label: '채우기', icon: <Upload size={20} /> },
-            { key: 'edit-clear', label: '지우기', icon: <Eraser size={20} /> },
-          ],
-        },
-      ]
-    case 'insert':
-      return [
-        {
-          label: '삽입 요소',
-          buttons: [
-            { key: 'chart', label: '차트', icon: <PieChart size={20} /> },
-            { key: 'table', label: '테이블', icon: <List size={20} /> },
-            { key: 'ins-link', label: '연결', icon: <Globe2 size={20} /> },
-          ],
-        },
-        {
-          label: '개체',
-          buttons: [
-            { key: 'ins-shape', label: '도형', icon: <LayoutDashboard size={20} /> },
-            { key: 'ins-note', label: '메모', icon: <FileText size={20} /> },
-          ],
-        },
-      ]
-    case 'draw':
-      return [
-        {
-          label: '불러오기',
-          buttons: [
-            { key: 'draw-load', label: '불러오기', icon: <Download size={20} /> },
-            { key: 'draw-save', label: '복사', icon: <BookMarked size={20} /> },
-          ],
-        },
-        {
-          label: '색상',
-          buttons: [
-            { key: 'draw-palette', label: '색상', icon: <Palette size={20} /> },
-            { key: 'draw-fill', label: '채우기', icon: <PaintBucket size={20} /> },
-          ],
-        },
-        {
-          label: '오류폭',
-          buttons: [
-            { key: 'draw-trace', label: '추세선', icon: <Activity size={20} /> },
-            { key: 'draw-guide', label: '보조선', icon: <AlignCenter size={20} /> },
-          ],
-        },
-        {
-          label: '자리수',
-          buttons: [
-            { key: 'draw-digit-up', label: '증가', icon: <Plus size={20} /> },
-            { key: 'draw-digit-down', label: '감소', icon: <Minus size={20} /> },
-          ],
-        },
-        {
-          label: '테마',
-          buttons: [
-            { key: 'draw-theme', label: '테마', icon: <PaintBucket size={20} /> },
-            { key: 'draw-style', label: '스타일', icon: <Table2 size={20} /> },
-          ],
-        },
-        {
-          label: '서식',
-          buttons: [
-            { key: 'draw-format', label: '서식', icon: <Type size={20} /> },
-            { key: 'draw-align', label: '맞춤', icon: <AlignLeft size={20} /> },
-          ],
-        },
-        {
-          label: '지우기',
-          buttons: [
-            { key: 'draw-clear', label: '지우기', icon: <Eraser size={20} /> },
-          ],
-        },
-      ]
-    case 'data':
-      return [
-        {
-          label: '새로고침',
-          buttons: [
-            { key: 'all-refresh', label: '전체 새로고침', icon: <RefreshCw size={20} /> },
-            { key: 'sync-cache', label: '캐시 동기화', icon: <Download size={20} /> },
-            { key: 'data-query', label: '쿼리', icon: <Search size={20} /> },
-          ],
-        },
-        {
-          label: '정리',
-          buttons: [
-            { key: 'dedupe', label: '중복 제거', icon: <Minus size={20} /> },
-            { key: 'inspect', label: '검사', icon: <Eye size={20} /> },
-          ],
-        },
-      ]
-    case 'view':
-      return [
-        {
-          label: '창',
-          buttons: [
-            { key: 'window-list', label: '창 목록', icon: <LayoutDashboard size={20} /> },
-            { key: 'focus', label: '포커스', icon: <Eye size={20} /> },
-            { key: 'zoom-in', label: '확대', icon: <Plus size={20} /> },
-            { key: 'zoom-out', label: '축소', icon: <Minus size={20} /> },
-          ],
-        },
-      ]
-    case 'tools':
-      return [
-        {
-          label: '보안',
-          buttons: [
-            { key: 'audit', label: '감사', icon: <Shield size={20} /> },
-            { key: 'policy', label: '정책', icon: <Settings size={20} /> },
-            { key: 'history', label: '기록', icon: <History size={20} /> },
-          ],
-        },
-        {
-          label: '자동화',
-          buttons: [
-            { key: 'auto-plan', label: '자동 실행', icon: <Zap size={20} /> },
-            { key: 'ops-watch', label: '운영 보기', icon: <Activity size={20} /> },
-          ],
-        },
-      ]
-    default:
-      return []
-  }
-}
+// ── 시트 탭 / 메뉴 정의 ───────────────────────────────────────────
+// 시트 탭은 핵심 6개 + 관제만 1차 노출, 나머지는 "도구" 서랍으로.
 
-// ── 시트 탭 정의 ──────────────────────────────────────────────────
+const SHEET_TABS = [...PRIMARY_NAV_ITEMS, CONTROL_NAV_ITEM].map(item => ({
+  key: item.key,
+  label: item.label,
+  icon: navIcon(item.key, 10),
+}))
 
-const SHEET_TABS = [
-  { key: 'dashboard',  label: '대시보드',   icon: <LayoutDashboard size={10}/> },
-  { key: 'scan',       label: '스캔',       icon: <ScanSearch size={10}/> },
-  { key: 'analyze',    label: '분석',       icon: <BarChart2 size={10}/> },
-  { key: 'execution-guide', label: '실행가이드', icon: <Target size={10}/> },
-  { key: 'portfolio',  label: '포트폴리오', icon: <BriefcaseBusiness size={10}/> },
-  { key: 'sectors',    label: '섹터',       icon: <PieChart size={10}/> },
-  { key: 'market',     label: '시장',       icon: <Globe2 size={10}/> },
-  { key: 'trades',     label: '거래기록',   icon: <History size={10}/> },
-  { key: 'watchlist',  label: '감시목록',   icon: <Eye size={10}/> },
-  { key: 'reports',    label: '리포트',     icon: <FileText size={10}/> },
-  { key: 'news',       label: '뉴스',       icon: <Newspaper size={10}/> },
-  { key: 'alerts',     label: '알림',       icon: <Bell size={10}/> },
-  { key: 'simulator',  label: '시뮬레이터', icon: <FlaskConical size={10}/> },
-  { key: 'settings',   label: '설정',       icon: <Settings size={10}/> },
-  { key: 'operations', label: '운영',       icon: <Shield size={10} /> },
-
-]
+/** 메뉴 검색용 전체 목록 (도구 서랍 포함) */
+const MENU_TABS = ALL_NAV_ITEMS.map(item => ({
+  key: item.key,
+  label: item.label,
+  icon: navIcon(item.key, 10),
+}))
 
 // ── 3패널 리사이즈 ────────────────────────────────────────────────
 
@@ -480,6 +273,8 @@ export default function ExcelShell({
   const [mobileSearchOpen, setMobileSearchOpen] = useState(false)
   const [recentMenuRoutes, setRecentMenuRoutes] = useState<string[]>([])
   const [ribbonScrollHint, setRibbonScrollHint] = useState({ left: false, right: false })
+  const [toolsDrawerOpen, setToolsDrawerOpen] = useState(false)
+  const toolsDrawerRef = useRef<HTMLDivElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
   const ribbonBodyRef = useRef<HTMLDivElement>(null)
   const searchContainerRef = useRef<HTMLDivElement>(null)
@@ -487,12 +282,12 @@ export default function ExcelShell({
   const { leftW, rightW, startDrag } = usePanelResize(containerRef)
 
   const displayName = profile.nickname || profile.telegramName || authName || authEmail || '사용자'
-  const activeSheet = SHEET_TABS.find(t => t.key === activeRoute)
+  const activeMenu = MENU_TABS.find(t => t.key === activeRoute)
+  const isToolRouteActive = TOOL_NAV_ITEMS.some(item => item.key === activeRoute)
   const activeSheetIndex = Math.max(0, SHEET_TABS.findIndex(t => t.key === activeRoute))
-  const pageLabel   = activeSheet?.label ?? activeRoute ?? ''
+  const pageLabel   = activeMenu?.label ?? activeRoute ?? ''
   const nameBox     = activeRoute ? activeRoute.toUpperCase().slice(0, 6) : 'A1'
   const groups      = getRibbonGroups(ribbonTab)
-  const scaffoldGroups = getRibbonScaffoldGroups(ribbonTab)
   const workbookTitle = useMemo(() => {
     const now = new Date()
     const y = now.getFullYear()
@@ -521,16 +316,16 @@ export default function ExcelShell({
   const routeByMenuQuery = useCallback((query: string) => {
     const normalized = query.trim().toLowerCase()
     if (!normalized) return ''
-    const exact = SHEET_TABS.find(tab => tab.key === normalized || tab.label.toLowerCase() === normalized)
+    const exact = MENU_TABS.find(tab => tab.key === normalized || tab.label.toLowerCase() === normalized)
     if (exact) return exact.key
-    const partial = SHEET_TABS.find(tab => tab.label.toLowerCase().includes(normalized) || tab.key.includes(normalized))
+    const partial = MENU_TABS.find(tab => tab.label.toLowerCase().includes(normalized) || tab.key.includes(normalized))
     return partial?.key ?? ''
   }, [])
 
   const recommendedRoutes = useMemo(() => {
     const routes = groups
       .flatMap(group => group.buttons)
-      .map(button => button.route)
+      .map(button => button.route?.split('?')[0])
       .filter((route): route is string => !!route)
     return Array.from(new Set(routes)).slice(0, 5)
   }, [groups])
@@ -538,21 +333,21 @@ export default function ExcelShell({
   const filteredMenuTabs = useMemo(() => {
     const normalized = menuQuery.trim().toLowerCase()
     const list = normalized
-      ? SHEET_TABS.filter(tab => tab.label.toLowerCase().includes(normalized) || tab.key.includes(normalized))
-      : SHEET_TABS
+      ? MENU_TABS.filter(tab => tab.label.toLowerCase().includes(normalized) || tab.key.includes(normalized))
+      : MENU_TABS
     return list.slice(0, 12)
   }, [menuQuery])
 
   const recentMenuTabs = useMemo(() => {
     return recentMenuRoutes
-      .map(route => SHEET_TABS.find(tab => tab.key === route))
-      .filter((tab): tab is typeof SHEET_TABS[number] => !!tab)
+      .map(route => MENU_TABS.find(tab => tab.key === route))
+      .filter((tab): tab is typeof MENU_TABS[number] => !!tab)
   }, [recentMenuRoutes])
 
   const recommendedMenuTabs = useMemo(() => {
     return recommendedRoutes
-      .map(route => SHEET_TABS.find(tab => tab.key === route))
-      .filter((tab): tab is typeof SHEET_TABS[number] => !!tab)
+      .map(route => MENU_TABS.find(tab => tab.key === route))
+      .filter((tab): tab is typeof MENU_TABS[number] => !!tab)
   }, [recommendedRoutes])
 
   const navigateSheetIndex = useCallback((index: number) => {
@@ -568,7 +363,7 @@ export default function ExcelShell({
   const isAtLastSheet = activeSheetIndex >= SHEET_TABS.length - 1
 
   const commitMenuNavigation = useCallback((route: string) => {
-    const tab = SHEET_TABS.find(item => item.key === route)
+    const tab = MENU_TABS.find(item => item.key === route)
     if (!tab) return
     onNavigate(route)
     setMenuQuery(tab.label)
@@ -606,6 +401,16 @@ export default function ExcelShell({
     document.addEventListener('mousedown', handleClickOutside)
     return () => document.removeEventListener('mousedown', handleClickOutside)
   }, [])
+
+  useEffect(() => {
+    if (!toolsDrawerOpen) return
+    const handleClickOutside = (e: MouseEvent) => {
+      if (!toolsDrawerRef.current) return
+      if (!toolsDrawerRef.current.contains(e.target as Node)) setToolsDrawerOpen(false)
+    }
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [toolsDrawerOpen])
 
   useEffect(() => {
     if (!isUltraCompact || !mobileSearchOpen) return
@@ -726,7 +531,7 @@ export default function ExcelShell({
           <div className="excel-titlebar__qs">
             <button className="excel-titlebar__qs-btn excel-tooltip-target" data-tooltip="즐겨찾기 목록" onClick={() => onNavigate('watchlist')}><Star size={13}/></button>
             <button className="excel-titlebar__qs-btn excel-tooltip-target" data-tooltip={quickSaveTooltip || '현재 화면 저장'} onClick={() => void handleQuickSave()}><Save size={13}/></button>
-            <button className="excel-titlebar__qs-btn excel-tooltip-target" data-tooltip="운영 패널" onClick={() => onNavigate('operations')}><Shield size={13}/></button>
+            <button className="excel-titlebar__qs-btn excel-tooltip-target" data-tooltip="관제" onClick={() => onNavigate('control')}><Shield size={13}/></button>
             <button className="excel-titlebar__qs-btn excel-tooltip-target" data-tooltip="실행 취소" onClick={() => window.history.back()}><Undo2 size={13}/></button>
             <button className="excel-titlebar__qs-btn excel-tooltip-target" data-tooltip="다시 실행" onClick={() => window.history.forward()}><Redo2 size={13}/></button>
             <button className="excel-titlebar__qs-chevron" aria-label="빠른 실행 도구 모음 사용자 지정"><ChevronDown size={10}/></button>
@@ -865,7 +670,7 @@ export default function ExcelShell({
       {/* ── 3. 리본 바디 ── */}
       <div
         ref={ribbonBodyRef}
-        className={`excel-ribbon-body${ribbonTab === 'draw' ? ' excel-ribbon-body--draw' : ''}${ribbonScrollHint.left ? ' excel-ribbon-body--hint-left' : ''}${ribbonScrollHint.right ? ' excel-ribbon-body--hint-right' : ''}`}
+        className={`excel-ribbon-body${ribbonScrollHint.left ? ' excel-ribbon-body--hint-left' : ''}${ribbonScrollHint.right ? ' excel-ribbon-body--hint-right' : ''}`}
         role="toolbar"
       >
         <div className="excel-ribbon-body__content">
@@ -876,7 +681,7 @@ export default function ExcelShell({
                   {g.buttons.map(btn => (
                     <button
                       key={btn.key}
-                      className={`ribbon-btn excel-tooltip-target${btn.route === activeRoute ? ' ribbon-btn--active' : ''}`}
+                      className={`ribbon-btn excel-tooltip-target${btn.route?.split('?')[0] === activeRoute ? ' ribbon-btn--active' : ''}`}
                       onClick={() => btn.route && onNavigate(btn.route)}
                       data-tooltip={btn.label}
                     >
@@ -890,150 +695,6 @@ export default function ExcelShell({
             ))}
           </div>
 
-          {!isUltraCompact && (
-            <div className="excel-ribbon-body__zone excel-ribbon-body__zone--scaffold">
-              {ribbonTab === 'draw' ? (
-                <div className="excel-draw-ribbon" aria-hidden>
-                  <div className="excel-draw-group excel-draw-group--clipboard">
-                    <div className="excel-draw-tools">
-                      <button type="button" className="excel-draw-tool excel-draw-tool--big">
-                        <span className="excel-draw-tool__icon"><Upload size={16} /></span>
-                        <span className="excel-draw-tool__label">붙여넣기</span>
-                      </button>
-                      <div className="excel-draw-commandcol">
-                        <button type="button" className="excel-draw-split"><Type size={12} />잘라내기</button>
-                        <button type="button" className="excel-draw-split"><BookMarked size={12} />복사</button>
-                        <button type="button" className="excel-draw-split"><PaintBucket size={12} />서식 복사</button>
-                      </div>
-                    </div>
-                    <div className="excel-draw-group__label">클립보드</div>
-                  </div>
-
-                  <div className="excel-draw-group excel-draw-group--font">
-                    <div className="excel-draw-stack">
-                      <div className="excel-draw-selectrow">
-                        <button type="button" className="excel-draw-combo excel-draw-combo--font">기본값</button>
-                        <button type="button" className="excel-draw-combo excel-draw-combo--size">11</button>
-                        <button type="button" className="excel-draw-tool">가+</button>
-                        <button type="button" className="excel-draw-tool">가-</button>
-                      </div>
-                      <div className="excel-draw-selectrow">
-                        <button type="button" className="excel-draw-tool"><Bold size={13} /></button>
-                        <button type="button" className="excel-draw-tool"><Type size={13} /></button>
-                        <button type="button" className="excel-draw-tool"><AlignLeft size={13} /></button>
-                        <button type="button" className="excel-draw-tool"><Table2 size={13} /></button>
-                        <button type="button" className="excel-draw-tool"><PaintBucket size={13} /></button>
-                        <button type="button" className="excel-draw-tool"><Palette size={13} /></button>
-                      </div>
-                    </div>
-                    <div className="excel-draw-group__label">글꼴</div>
-                  </div>
-
-                  <div className="excel-draw-group excel-draw-group--align">
-                    <div className="excel-draw-stack">
-                      <div className="excel-draw-selectrow">
-                        <button type="button" className="excel-draw-tool"><AlignLeft size={13} /></button>
-                        <button type="button" className="excel-draw-tool"><AlignCenter size={13} /></button>
-                        <button type="button" className="excel-draw-tool"><AlignRight size={13} /></button>
-                        <button type="button" className="excel-draw-tool">↺</button>
-                      </div>
-                      <div className="excel-draw-selectrow">
-                        <button type="button" className="excel-draw-tool"><AlignLeft size={13} /></button>
-                        <button type="button" className="excel-draw-tool"><AlignCenter size={13} /></button>
-                        <button type="button" className="excel-draw-tool"><AlignRight size={13} /></button>
-                        <button type="button" className="excel-draw-tool">↵</button>
-                      </div>
-                      <button type="button" className="excel-draw-split excel-draw-split--wide"><AlignCenter size={12} />병합하고 가운데</button>
-                    </div>
-                    <div className="excel-draw-group__label">맞춤</div>
-                  </div>
-
-                  <div className="excel-draw-group excel-draw-group--number">
-                    <div className="excel-draw-stack">
-                      <button type="button" className="excel-draw-combo">일반</button>
-                      <div className="excel-draw-selectrow">
-                        <button type="button" className="excel-draw-tool"><Hash size={13} /></button>
-                        <button type="button" className="excel-draw-tool"><Percent size={13} /></button>
-                        <button type="button" className="excel-draw-tool">,</button>
-                        <button type="button" className="excel-draw-tool"><Plus size={13} /></button>
-                        <button type="button" className="excel-draw-tool"><Minus size={13} /></button>
-                      </div>
-                    </div>
-                    <div className="excel-draw-group__label">표시 형식</div>
-                  </div>
-
-                  <div className="excel-draw-group excel-draw-group--styles">
-                    <div className="excel-draw-tools">
-                      <button type="button" className="excel-draw-tool excel-draw-tool--big"><Filter size={14} />조건부 서식</button>
-                      <button type="button" className="excel-draw-tool excel-draw-tool--big"><Table2 size={14} />표 서식</button>
-                      <button type="button" className="excel-draw-tool excel-draw-tool--big"><PaintBucket size={14} />셀 스타일</button>
-                    </div>
-                    <div className="excel-draw-group__label">스타일</div>
-                  </div>
-
-                  <div className="excel-draw-group excel-draw-group--cells">
-                    <div className="excel-draw-commandcol">
-                      <button type="button" className="excel-draw-split"><Plus size={12} />삽입</button>
-                      <button type="button" className="excel-draw-split"><Trash2 size={12} />삭제</button>
-                      <button type="button" className="excel-draw-split"><Settings size={12} />서식</button>
-                    </div>
-                    <div className="excel-draw-group__label">셀</div>
-                  </div>
-
-                  <div className="excel-draw-group excel-draw-group--editing">
-                    <div className="excel-draw-tools">
-                      <button type="button" className="excel-draw-tool excel-draw-tool--big"><Sigma size={14} />자동 합계</button>
-                      <div className="excel-draw-commandcol">
-                        <button type="button" className="excel-draw-split"><Upload size={12} />채우기</button>
-                        <button type="button" className="excel-draw-split"><Eraser size={12} />지우기</button>
-                        <button type="button" className="excel-draw-split"><SortAsc size={12} />정렬 및 필터</button>
-                        <button type="button" className="excel-draw-split"><Search size={12} />찾기 및 선택</button>
-                      </div>
-                    </div>
-                    <div className="excel-draw-group__label">편집</div>
-                  </div>
-
-                  <div className="excel-draw-group excel-draw-group--data">
-                    <div className="excel-draw-tools">
-                      <button type="button" className="excel-draw-tool excel-draw-tool--big"><RefreshCw size={14} />새로 고침</button>
-                      <div className="excel-draw-commandcol">
-                        <button type="button" className="excel-draw-split"><Globe2 size={12} />연결</button>
-                        <button type="button" className="excel-draw-split"><Database size={12} />쿼리</button>
-                      </div>
-                    </div>
-                    <div className="excel-draw-group__label">데이터</div>
-                  </div>
-
-                  <div className="excel-draw-ribbon__spacer" />
-
-                  <div className="excel-draw-ribbon__actions">
-                    <button type="button" className="excel-draw-action" onClick={() => onNavigate('news')}>메모</button>
-                    <a className="excel-draw-action excel-draw-action--share" href="#" target="_blank" rel="noopener noreferrer">공유</a>
-                  </div>
-                </div>
-              ) : (
-                scaffoldGroups.map((g, gi) => (
-                  <div key={`scaffold-${gi}`} className="excel-ribbon-group excel-ribbon-group--scaffold" aria-hidden>
-                    <div className="excel-ribbon-group__buttons">
-                      {g.buttons.map(btn => (
-                        <button
-                          key={btn.key}
-                          type="button"
-                          className="ribbon-btn ribbon-btn--dummy excel-tooltip-target"
-                          onClick={() => {}}
-                          data-tooltip={`${btn.label} (준비 중)`}
-                        >
-                          <span className="ribbon-btn__icon">{btn.icon}</span>
-                          <span className="ribbon-btn__label">{btn.label}</span>
-                        </button>
-                      ))}
-                    </div>
-                    <div className="excel-ribbon-group__label">{g.label}</div>
-                  </div>
-                ))
-              )}
-            </div>
-          )}
         </div>
       </div>
 
@@ -1094,22 +755,77 @@ export default function ExcelShell({
       </div>
 
       {/* ── 6. 시트 탭 ── */}
-      <div className="excel-sheet-tabs">
-        <div className="excel-sheet-tabs__nav-arrows">
-          <button className="excel-sheet-tabs__nav-btn" onClick={() => navigateSheetIndex(0)} disabled={isAtFirstSheet} aria-label="첫 시트"><ChevronLeft size={10}/></button>
-          <button className="excel-sheet-tabs__nav-btn" onClick={() => navigateSheetOffset(-1)} disabled={isAtFirstSheet} aria-label="이전 시트"><ChevronLeft size={10}/></button>
-          <button className="excel-sheet-tabs__nav-btn" onClick={() => navigateSheetOffset(1)} disabled={isAtLastSheet} aria-label="다음 시트"><ChevronRight size={10}/></button>
-          <button className="excel-sheet-tabs__nav-btn" onClick={() => navigateSheetIndex(SHEET_TABS.length - 1)} disabled={isAtLastSheet} aria-label="마지막 시트"><ChevronRight size={10}/></button>
-        </div>
-        {SHEET_TABS.map(tab => (
-          <button
-            key={tab.key}
-            className={`excel-sheet-tab${activeRoute === tab.key ? ' excel-sheet-tab--active' : ''}`}
-            onClick={() => onNavigate(tab.key)}
+      <div style={{ position: 'relative' }} ref={toolsDrawerRef}>
+        {toolsDrawerOpen && (
+          <div
+            role="menu"
+            aria-label="도구 메뉴"
+            style={{
+              position: 'absolute',
+              bottom: '100%',
+              left: 8,
+              marginBottom: 4,
+              zIndex: 320,
+              minWidth: 220,
+              maxWidth: 420,
+              maxHeight: '60vh',
+              overflowY: 'auto',
+              background: 'var(--color-bg-elevated, #fff)',
+              border: '1px solid var(--color-excel-grid-border)',
+              borderRadius: 6,
+              boxShadow: '0 8px 24px rgba(16, 24, 40, 0.16)',
+              padding: 'var(--space-2, 8px)',
+            }}
           >
-            {tab.icon}<span className="excel-sheet-tab__label">{tab.label}</span>
+            {TOOL_NAV_GROUPS.map(group => {
+              const items = group.items.filter(item => !item.adminOnly)
+              if (items.length === 0) return null
+              return (
+                <div key={group.category} style={{ marginBottom: 6 }}>
+                  <div className="caption muted" style={{ padding: '2px 6px', fontWeight: 700 }}>{group.category}</div>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+                    {items.map(item => (
+                      <button
+                        key={item.key}
+                        role="menuitem"
+                        className={`excel-sheet-tab${activeRoute === item.key ? ' excel-sheet-tab--active' : ''}`}
+                        style={{ borderRadius: 4, padding: '4px 8px' }}
+                        onClick={() => { onNavigate(item.key); setToolsDrawerOpen(false) }}
+                      >
+                        {navIcon(item.key, 10)}<span className="excel-sheet-tab__label">{item.label}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        )}
+        <div className="excel-sheet-tabs">
+          <div className="excel-sheet-tabs__nav-arrows">
+            <button className="excel-sheet-tabs__nav-btn" onClick={() => navigateSheetIndex(0)} disabled={isAtFirstSheet} aria-label="첫 시트"><ChevronLeft size={10}/></button>
+            <button className="excel-sheet-tabs__nav-btn" onClick={() => navigateSheetOffset(-1)} disabled={isAtFirstSheet} aria-label="이전 시트"><ChevronLeft size={10}/></button>
+            <button className="excel-sheet-tabs__nav-btn" onClick={() => navigateSheetOffset(1)} disabled={isAtLastSheet} aria-label="다음 시트"><ChevronRight size={10}/></button>
+            <button className="excel-sheet-tabs__nav-btn" onClick={() => navigateSheetIndex(SHEET_TABS.length - 1)} disabled={isAtLastSheet} aria-label="마지막 시트"><ChevronRight size={10}/></button>
+          </div>
+          {SHEET_TABS.map(tab => (
+            <button
+              key={tab.key}
+              className={`excel-sheet-tab${activeRoute === tab.key ? ' excel-sheet-tab--active' : ''}`}
+              onClick={() => onNavigate(tab.key)}
+            >
+              {tab.icon}<span className="excel-sheet-tab__label">{tab.label}</span>
+            </button>
+          ))}
+          <button
+            className={`excel-sheet-tab${isToolRouteActive ? ' excel-sheet-tab--active' : ''}`}
+            aria-haspopup="menu"
+            aria-expanded={toolsDrawerOpen}
+            onClick={() => setToolsDrawerOpen(prev => !prev)}
+          >
+            <Wrench size={10}/><span className="excel-sheet-tab__label">도구</span>{toolsDrawerOpen ? <ChevronDown size={10}/> : <ChevronUp size={10}/>}
           </button>
-        ))}
+        </div>
       </div>
 
       {/* ── 7. 상태 바 ── */}
