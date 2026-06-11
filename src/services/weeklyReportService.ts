@@ -32,6 +32,7 @@ import {
   drawTopicHero,
 } from "./weeklyReportLayout";
 import { getDecisionReliabilitySummary, getFactorWinRateSummary, type FactorWinRateSummary } from "./decisionLogService";
+import { buildAdaptiveConvictionRule, describeAdaptiveRuleLines } from "./adaptiveConvictionService";
 import {
   hasStableAccumulationTag,
   isExecutionCandidate,
@@ -1288,6 +1289,17 @@ export async function createWeeklyReportPdf(
           lines.push(`  · 등급 ${b.label} → 승률 ${wr} (${b.total}건)`);
         }
       }
+
+      // 적응형 튜닝 현황: 위 승률이 사이징 확신도에 어떻게 반영되는지 보여준다 (Phase 5)
+      const adaptiveRule = buildAdaptiveConvictionRule(factorWinRate);
+      const adaptiveLines = describeAdaptiveRuleLines(adaptiveRule);
+      lines.push("\n🛠 <b>적응형 튜닝 적용 현황</b> (다음 매수 사이징에 자동 반영)");
+      if (adaptiveLines.length > 0) {
+        for (const line of adaptiveLines) lines.push(`  · ${line}`);
+      } else {
+        lines.push("  · 표본 부족으로 자동 조정 없음 (버킷당 8건 이상 필요)");
+      }
+
       report = { ...report, summaryText: report.summaryText + lines.join("\n") };
     }
 

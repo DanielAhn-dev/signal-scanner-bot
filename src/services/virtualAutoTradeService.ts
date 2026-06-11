@@ -17,6 +17,11 @@ import { parseStrategyMemo } from "../lib/strategyMemo";
 import { appendVirtualDecisionLog } from "./decisionLogService";
 import { calculateAutoTradeBuySizing, resolveConvictionScale } from "./virtualAutoTradeSizing";
 import {
+  getAdaptiveConvictionRule,
+  resolveAdaptiveAdjustment,
+  formatAdaptiveRuleSummary,
+} from "./adaptiveConvictionService";
+import {
   applyDynamicTradeProfileAdjustments,
   classifyAutoTradeEntryProfile,
   buildPositionStrategyMemo,
@@ -3250,6 +3255,11 @@ async function runMondayBuyForUser(payload: {
   let slotsLeft = remainSlots;
   let insufficientCashCount = 0;
 
+  // 적응형 피드백: 최근 90일 점수대·등급별 승률로 확신도를 가감하고, 반복 손실 패턴은 신규 매수에서 제외
+  const adaptiveRule = await getAdaptiveConvictionRule(chatId);
+  const adaptiveRuleNote = formatAdaptiveRuleSummary(adaptiveRule);
+  if (adaptiveRuleNote) summary.notes.push(adaptiveRuleNote);
+
   for (const candidate of candidates) {
     if (slotsLeft <= 0) break;
 
@@ -3302,6 +3312,30 @@ async function runMondayBuyForUser(payload: {
         continue;
       }
 
+      const adaptive = resolveAdaptiveAdjustment(adaptiveRule, {
+        score: candidate.score,
+        trustGrade: signalGate.grade,
+      });
+      if (adaptive.excluded) {
+        summary.skipped += 1;
+        await writeActionLog({
+          supabase: payload.supabase,
+          runId: payload.runId,
+          chatId,
+          code: candidate.code,
+          actionType: "SKIP",
+          reason: "adaptive-pattern-exclude",
+          detail: {
+            score: candidate.score,
+            trustGrade: signalGate.grade,
+            adaptiveReasons: adaptive.reasons,
+            price: executionPrice,
+            priceSource: executionSource,
+          },
+        });
+        continue;
+      }
+
       const sizing = calculateAutoTradeBuySizing({
         availableCash: deployableCash,
         price: executionPrice,
@@ -3314,6 +3348,7 @@ async function runMondayBuyForUser(payload: {
           score: candidate.score,
           trustGrade: signalGate.grade,
           isSectorLeader: candidate.isSectorLeader,
+          adaptiveDelta: adaptive.delta,
         }),
         prefs,
       });
@@ -4872,6 +4907,11 @@ async function runDailyReviewForUser(payload: {
           baseStopLossPct,
           sellSplitCount,
         });
+        // 적응형 피드백: 추매는 기존 보유 관리이므로 제외 없이 확신도 가감만 반영
+        const addOnAdaptive = resolveAdaptiveAdjustment(await getAdaptiveConvictionRule(chatId), {
+          score: candidate.score,
+          trustGrade: signalGate.grade,
+        });
         const sizing = calculateAutoTradeBuySizing({
           availableCash: deployableCash,
           price: executionPrice,
@@ -4884,6 +4924,7 @@ async function runDailyReviewForUser(payload: {
             score: candidate.score,
             trustGrade: signalGate.grade,
             isSectorLeader: candidate.isSectorLeader,
+            adaptiveDelta: addOnAdaptive.delta,
           }),
           prefs,
         });
@@ -5395,6 +5436,31 @@ async function runDailyReviewForUser(payload: {
           continue;
         }
 
+        // 적응형 피드백: 리밸런싱 매수도 신규 진입이므로 반복 손실 패턴은 제외
+        const rebalanceAdaptive = resolveAdaptiveAdjustment(await getAdaptiveConvictionRule(chatId), {
+          score: candidate.score,
+          trustGrade: signalGate.grade,
+        });
+        if (rebalanceAdaptive.excluded) {
+          summary.skipped += 1;
+          await writeActionLog({
+            supabase: payload.supabase,
+            runId: payload.runId,
+            chatId,
+            code: candidate.code,
+            actionType: "SKIP",
+            reason: "rebalance-adaptive-pattern-exclude",
+            detail: {
+              score: candidate.score,
+              trustGrade: signalGate.grade,
+              adaptiveReasons: rebalanceAdaptive.reasons,
+              price: executionPrice,
+              priceSource: executionSource,
+            },
+          });
+          continue;
+        }
+
         const sizing = calculateAutoTradeBuySizing({
           availableCash: deployableCash,
           price: executionPrice,
@@ -5407,6 +5473,7 @@ async function runDailyReviewForUser(payload: {
             score: candidate.score,
             trustGrade: signalGate.grade,
             isSectorLeader: candidate.isSectorLeader,
+            adaptiveDelta: rebalanceAdaptive.delta,
           }),
           prefs,
         });

@@ -108,11 +108,14 @@ export type ConvictionInput = {
   /** 진입게이트 신뢰등급 (A/B/C/D) */
   trustGrade?: string | null;
   isSectorLeader?: boolean | null;
+  /** 적응형 피드백 가감 (최근 승률 기반, resolveAdaptiveAdjustment().delta). 미지정 시 0. */
+  adaptiveDelta?: number | null;
 };
 
 /**
  * 점수·신뢰등급·섹터리더 여부로 확신도 계수(0.7~1.3)를 산출한다.
  * 확신이 높은 자리에는 목표비중보다 크게, 낮은 자리에는 작게 들어가기 위한 입력값.
+ * adaptiveDelta(최근 승률 기반 가감)도 합산 후 동일 범위로 클램프된다.
  */
 export function resolveConvictionScale(input: ConvictionInput): number {
   const score = Number(input.score);
@@ -128,6 +131,8 @@ export function resolveConvictionScale(input: ConvictionInput): number {
   if (grade === "A") conviction += 0.05;
   else if (grade === "D") conviction -= 0.1;
   if (input.isSectorLeader === true) conviction += 0.1;
+  const adaptiveDelta = Number(input.adaptiveDelta);
+  if (Number.isFinite(adaptiveDelta)) conviction += adaptiveDelta;
   return clampConviction(Number(conviction.toFixed(2)));
 }
 
