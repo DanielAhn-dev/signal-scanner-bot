@@ -109,6 +109,7 @@ function IntegrityAuditPanel() {
   const [rows, setRows] = useState<AuditRow[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [missingTable, setMissingTable] = useState(false)
   const [expandedId, setExpandedId] = useState<number | null>(null)
 
   const load = useCallback(async () => {
@@ -119,13 +120,21 @@ function IntegrityAuditPanel() {
     }
     setLoading(true)
     setError(null)
+    setMissingTable(false)
     try {
       const { data, error: queryError } = await supabase
         .from('integrity_audit_results')
         .select('id, run_at, audit_date, is_healthy, issue_count, account_count, summary, detail')
         .order('run_at', { ascending: false })
         .limit(14)
-      if (queryError) throw new Error(queryError.message)
+      if (queryError) {
+        // PGRST205: 테이블이 스키마 캐시에 없음 = 마이그레이션 미적용
+        if (queryError.code === 'PGRST205' || /schema cache/i.test(queryError.message)) {
+          setMissingTable(true)
+          return
+        }
+        throw new Error(queryError.message)
+      }
       setRows((data ?? []) as AuditRow[])
     } catch (e: any) {
       setError(String(e?.message || e))
@@ -155,13 +164,26 @@ function IntegrityAuditPanel() {
 
       {loading && <Skeleton lines={6} height={16} />}
 
+      {!loading && missingTable && (
+        <div className="card" style={{ borderColor: 'var(--color-warning, #F59E0B)' }}>
+          <div className="title-md" style={{ marginBottom: 'var(--space-2)' }}>검산 테이블이 아직 생성되지 않았습니다</div>
+          <div className="caption" style={{ color: 'var(--color-text-secondary)', lineHeight: 1.6 }}>
+            Supabase에 <code>integrity_audit_results</code> 테이블 마이그레이션이 적용되지 않은 상태입니다.
+            <br />Supabase 대시보드 → SQL Editor에서 아래 파일 내용을 한 번 실행해 주세요:
+            <br /><code>supabase/migrations/20260612_create_integrity_audit_results.sql</code>
+            <br />적용 후 이 화면을 새로고침하면 검산 결과가 표시됩니다. (결과 적재는 평일 16:10 KST 자동 검산
+            또는 <code>pnpm cron:trigger:integrity</code> 수동 실행)
+          </div>
+        </div>
+      )}
+
       {!loading && error && (
         <div className="card" style={{ borderColor: 'var(--color-error)', color: 'var(--color-error)' }}>
           검산 결과 조회 실패: {error}
         </div>
       )}
 
-      {!loading && !error && rows.length === 0 && (
+      {!loading && !missingTable && !error && rows.length === 0 && (
         <div className="card muted">
           아직 저장된 검산 결과가 없습니다. 평일 16:10(KST) 자동 검산이 돌거나, <code>pnpm cron:trigger:integrity</code>로 수동 실행하면 여기에 쌓입니다.
         </div>
