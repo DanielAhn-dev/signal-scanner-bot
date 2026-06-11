@@ -382,6 +382,7 @@ function prioritizeRowsByMarketPolicy(
   options?: {
     entryProfile?: AutoTradeEntryProfile;
     pullbackCandidateCodes?: Set<string>;
+    sectorBoostById?: Map<string, number>;
   }
 ): RankedCandidate[] {
   return [...rows].sort((a, b) => {
@@ -425,7 +426,9 @@ function prioritizeRowsByMarketPolicy(
       toNumber(b.holdExtensionScore, 0) - toNumber(a.holdExtensionScore, 0);
     if (holdExtensionDiff !== 0) return holdExtensionDiff;
 
-    const scoreDiff = resolveCompositeRankScore(b) - resolveCompositeRankScore(a);
+    const scoreDiff =
+      resolveCompositeRankScore(b, options?.sectorBoostById) -
+      resolveCompositeRankScore(a, options?.sectorBoostById);
     if (scoreDiff !== 0) return scoreDiff;
 
     const rawScoreDiff = b.score - a.score;
@@ -453,10 +456,12 @@ function takeRowsWithinMarketPolicy(input: {
   policy?: AutoTradeMarketPolicy;
   entryProfile?: AutoTradeEntryProfile;
   pullbackCandidateCodes?: Set<string>;
+  sectorBoostById?: Map<string, number>;
 }): RankedCandidate[] {
   const prioritized = prioritizeRowsByMarketPolicy(input.rows, input.policy, {
     entryProfile: input.entryProfile,
     pullbackCandidateCodes: input.pullbackCandidateCodes,
+    sectorBoostById: input.sectorBoostById,
   });
   if (!input.policy) return prioritized.slice(0, input.limit);
 
@@ -750,6 +755,7 @@ export function pickAutoTradeCandidates(input: {
       policy: input.marketPolicy,
       entryProfile,
       pullbackCandidateCodes: input.pullbackCandidateCodes,
+      sectorBoostById: input.sectorBoostById,
     }).map(({ code, close, score, todayBuyScore, holdExtensionScore, immediateExcludeSignal, flowReason, name, signal, rsi14, liquidity, market, marketCap, universeLevel, isSectorLeader, sectorId, stableTurn, stableTrust, stableAboveAvg, stableAccumulation }) => ({
       code,
       close,

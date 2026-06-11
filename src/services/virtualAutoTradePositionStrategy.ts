@@ -686,3 +686,24 @@ export function evaluateTimeStop(input: {
 
   return { triggered: false };
 }
+
+export type SectorRotationResult =
+  | { triggered: false }
+  | { triggered: true; quantityToSell: number };
+
+/** 섹터 강도 하락 리밸런싱: 섹터 등급이 C로 하락하고 손실이 -3% 이내일 때만 전량 청산 (불필요한 손실 확정 방지) */
+const SECTOR_ROTATION_LOSS_FLOOR_PCT = -3;
+
+export function evaluateSectorRotationExit(input: {
+  quantity: number;
+  pnlPct: number;
+  isSectorLeader: boolean;
+  sectorGrade: "A" | "B" | "C" | undefined;
+}): SectorRotationResult {
+  const { quantity, pnlPct, isSectorLeader, sectorGrade } = input;
+  if (quantity <= 0) return { triggered: false };
+  if (isSectorLeader) return { triggered: false };
+  if (sectorGrade !== "C") return { triggered: false };
+  if (pnlPct < SECTOR_ROTATION_LOSS_FLOOR_PCT) return { triggered: false };
+  return { triggered: true, quantityToSell: quantity };
+}

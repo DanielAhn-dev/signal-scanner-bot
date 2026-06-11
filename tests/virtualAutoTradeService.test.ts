@@ -14,6 +14,7 @@ import {
 import {
   classifyAutoTradeEntryProfile,
   buildPositionStrategyMemo,
+  evaluateSectorRotationExit,
   parsePositionStrategyState,
   planAutoTradeExit,
   resolvePositionTradeProfile,
@@ -228,6 +229,59 @@ test("pickAutoTradeCandidates: immediateExcludeSignal 종목은 후보에서 제
     ["B"]
   );
   assert.equal(result.filteringMetrics?.rejectedByReason?.immediateExclude, 1);
+});
+
+test("pickAutoTradeCandidates: 유망섹터 부스트가 적용되면 점수가 낮은 종목도 우선 선택될 수 있다", () => {
+  const result = pickAutoTradeCandidates({
+    rows: [
+      { code: "A", close: 10000, score: 75, name: "Alpha", signal: "BUY" },
+      { code: "B", close: 10000, score: 72, name: "Beta", signal: "BUY", sectorId: "SEC1" },
+    ],
+    preferredMinBuyScore: 70,
+    limit: 2,
+    heldCodes: new Set<string>(),
+    sectorBoostById: new Map([["SEC1", 10]]),
+  });
+
+  assert.deepEqual(
+    result.candidates.map((candidate) => candidate.code),
+    ["B", "A"]
+  );
+});
+
+test("pickAutoTradeCandidates: 동일 섹터에 이미 2종목 보유 중이면 추가 후보를 제외한다", () => {
+  const result = pickAutoTradeCandidates({
+    rows: [
+      { code: "A", close: 10000, score: 80, name: "Alpha", signal: "BUY", sectorId: "SEC1" },
+      { code: "B", close: 10000, score: 75, name: "Beta", signal: "BUY", sectorId: "SEC2" },
+    ],
+    preferredMinBuyScore: 70,
+    limit: 2,
+    heldCodes: new Set<string>(),
+    heldSectorCounts: new Map([["SEC1", 2]]),
+  });
+
+  assert.deepEqual(
+    result.candidates.map((candidate) => candidate.code),
+    ["B"]
+  );
+});
+
+test("pickAutoTradeCandidates: 섹터 리더는 섹터 비중 상한 예외를 허용한다", () => {
+  const result = pickAutoTradeCandidates({
+    rows: [
+      { code: "A", close: 10000, score: 80, name: "Alpha", signal: "BUY", sectorId: "SEC1", isSectorLeader: true },
+    ],
+    preferredMinBuyScore: 70,
+    limit: 2,
+    heldCodes: new Set<string>(),
+    heldSectorCounts: new Map([["SEC1", 2]]),
+  });
+
+  assert.deepEqual(
+    result.candidates.map((candidate) => candidate.code),
+    ["A"]
+  );
 });
 
 test("detectAutoTradeMarketPolicy: 고변동 구간은 대형주 방어 모드로 전환한다", () => {
@@ -673,4 +727,52 @@ test("isKrxIntradayAutoTradeWindow: 평일 장마감 후는 false", () => {
 test("kstWindowKey: 장중 실행 키를 10분 창으로 버킷팅한다", () => {
   assert.equal(kstWindowKey(new Date("2026-04-24T01:07:00.000Z"), 10), "2026-04-24T10:00");
   assert.equal(kstWindowKey(new Date("2026-04-24T01:19:00.000Z"), 10), "2026-04-24T10:10");
+});
+
+test("evaluateSectorRotationExit: 섹터 Grade C + 손실 -3% 이내면 전량 매도를 트리거한다", () => {
+  const result = evaluateSectorRotationExit({
+    quantity: 10,
+    pnlPct: -1,
+    isSectorLeader: false,
+    sectorGrade: "C",
+  });
+
+  assert.deepEqual(result, { triggered: true, quantityToSell: 10 });
+});
+
+test("evaluateSectorRotationExit: 손실이 -3%를 초과하면 트리거하지 않는다 (손실 확정 방지)", () => {
+  const result = evaluateSectorRotationExit({
+    quantity: 10,
+    pnlPct: -5,
+    isSectorLeader: false,
+    sectorGrade: "C",
+  });
+
+  assert.deepEqual(result, { triggered: false });
+});
+
+test("evaluateSectorRotationExit: 섹터 리더는 Grade C여도 트리거하지 않는다", () => {
+  const result = evaluateSectorRotationExit({
+    quantity: 10,
+    pnlPct: 2,
+    isSectorLeader: true,
+    sectorGrade: "C",
+  });
+
+  assert.deepEqual(result, { triggered: false });
+});
+
+test("evaluateSectorRotationExit: 섹터 등급이 A/B이거나 미상이면 트리거하지 않는다", () => {
+  assert.deepEqual(
+    evaluateSectorRotationExit({ quantity: 10, pnlPct: 1, isSectorLeader: false, sectorGrade: "A" }),
+    { triggered: false }
+  );
+  assert.deepEqual(
+    evaluateSectorRotationExit({ quantity: 10, pnlPct: 1, isSectorLeader: false, sectorGrade: "B" }),
+    { triggered: false }
+  );
+  assert.deepEqual(
+    evaluateSectorRotationExit({ quantity: 10, pnlPct: 1, isSectorLeader: false, sectorGrade: undefined }),
+    { triggered: false }
+  );
 });

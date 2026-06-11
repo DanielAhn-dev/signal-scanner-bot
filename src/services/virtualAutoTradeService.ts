@@ -20,6 +20,7 @@ import {
   applyDynamicTradeProfileAdjustments,
   classifyAutoTradeEntryProfile,
   buildPositionStrategyMemo,
+  evaluateSectorRotationExit,
   evaluateTimeStop,
   parsePositionStrategyState,
   planAutoTradeExit,
@@ -4423,21 +4424,22 @@ async function runDailyReviewForUser(payload: {
 
       // 3) 섹터 강도 하락 리밸런싱: 섹터가 Grade C로 하락 + 손실 -3% 이내 → 전량 매도
       // 섹터 리더는 예외 (대표주는 섹터 부진에도 보유 유지)
-      // 손실 구간(-3% 미만)은 트리거 안 함 — 불필요한 손실 확정 방지
-      const isSectorLeader = isSectorLeaderByCode.get(holding.code) === true;
-      if (!isSectorLeader) {
-        const holdingSectorId = sectorIdByCode.get(holding.code);
-        const sectorGrade = holdingSectorId ? sectorGradeById.get(holdingSectorId) : undefined;
-        if (sectorGrade === "C" && pnlPct >= -3) {
-          return {
-            action: "SECTOR_ROTATION",
-            quantityToSell: qty,
-            isPartial: false,
-            nextTakeProfitTranchesDone: strategyState.takeProfitTranchesDone,
-            reason: "sector-rotation",
-            sectorGrade: "C",
-          } as PlannedAutoTradeExit;
-        }
+      const holdingSectorId = sectorIdByCode.get(holding.code);
+      const sectorRotation = evaluateSectorRotationExit({
+        quantity: qty,
+        pnlPct,
+        isSectorLeader: isSectorLeaderByCode.get(holding.code) === true,
+        sectorGrade: holdingSectorId ? sectorGradeById.get(holdingSectorId) : undefined,
+      });
+      if (sectorRotation.triggered) {
+        return {
+          action: "SECTOR_ROTATION",
+          quantityToSell: sectorRotation.quantityToSell,
+          isPartial: false,
+          nextTakeProfitTranchesDone: strategyState.takeProfitTranchesDone,
+          reason: "sector-rotation",
+          sectorGrade: "C",
+        } as PlannedAutoTradeExit;
       }
 
       return exitPlan;
