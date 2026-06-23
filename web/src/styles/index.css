@@ -369,6 +369,20 @@ a:focus-visible {
   word-break: keep-all;
 }
 
+.trades-log-pnl {
+  margin-top: 4px;
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+}
+
+.trades-log-pnl.is-profit {
+  color: #1f5fd6;
+}
+
+.trades-log-pnl.is-loss {
+  color: #c24141;
+}
+
 .trades-empty-card {
   color: var(--color-text-secondary);
 }

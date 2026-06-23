@@ -190,22 +190,34 @@ export default function Trades() {
       <div className="cards-list trades-log-list">
         {loading && <Skeleton lines={3} height={18} />}
         {!loading && rows.length === 0 && <div className="card trades-empty-card">기록 없음</div>}
-        {!loading && rows.map((r: any) => (
-          <div key={r.id} className="card trades-log-card">
-            <div className="trades-log-top">
-              <div className="trades-log-title-wrap">
-                <div className="trades-log-title">
-                  {r.stock_name || r.ticker || r.symbol || r.code} ({r.code || '-'})
-                  <span className={`trades-log-action ${String(r.action || '').toUpperCase() === 'BUY' ? 'is-buy' : 'is-sell'}`}>
-                    {String(r.action || '-').toUpperCase()}
-                  </span>
+        {!loading && rows.map((r: any) => {
+          const action = String(r.action || '').toUpperCase()
+          const pnlAmount = Number(r.reason_details?.pnl)
+          const hasPnl = action === 'SELL' && Number.isFinite(pnlAmount)
+          const pnlPct = r.pnl_pct as string | null | undefined
+          return (
+            <div key={r.id} className="card trades-log-card">
+              <div className="trades-log-top">
+                <div className="trades-log-title-wrap">
+                  <div className="trades-log-title">
+                    {r.stock_name || r.ticker || r.symbol || r.code} ({r.code || '-'})
+                    <span className={`trades-log-action ${action === 'BUY' ? 'is-buy' : 'is-sell'}`}>
+                      {action || '-'}
+                    </span>
+                  </div>
                 </div>
+                <div className="trades-log-time">{new Date(r.created_at).toLocaleString('ko-KR')}</div>
               </div>
-              <div className="trades-log-time">{new Date(r.created_at).toLocaleString('ko-KR')}</div>
+              <div className="trades-log-reason">이유: {r.reason_summary ?? r.reason ?? r.notes ?? '-'}</div>
+              {hasPnl && (
+                <div className={`trades-log-pnl ${pnlAmount >= 0 ? 'is-profit' : 'is-loss'}`}>
+                  손익: {pnlAmount >= 0 ? '+' : ''}{Math.round(pnlAmount).toLocaleString('ko-KR')}원
+                  {pnlPct ? ` (${pnlAmount >= 0 ? '+' : ''}${pnlPct})` : ''}
+                </div>
+              )}
             </div>
-            <div className="trades-log-reason">이유: {r.reason_summary ?? r.reason ?? r.notes ?? '-'}</div>
-          </div>
-        ))}
+          )
+        })}
       </div>
 
       <div className="pagination-wrap trades-pagination-wrap">
