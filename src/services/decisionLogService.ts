@@ -50,16 +50,36 @@ function round1(value: number): number {
   return Math.round(value * 10) / 10;
 }
 
+const clientIdByChatIdCache = new Map<number, { value: string | null; expiresAt: number }>();
+const CLIENT_ID_CACHE_TTL_MS = 5 * 60 * 1000;
+
+async function resolveClientIdForChat(chatId: number): Promise<string | null> {
+  const cached = clientIdByChatIdCache.get(chatId);
+  if (cached && Date.now() <= cached.expiresAt) return cached.value;
+
+  const { data, error } = await supabase
+    .from("web_user_profiles")
+    .select("client_id")
+    .eq("telegram_id", chatId)
+    .maybeSingle();
+
+  const value = error ? null : String((data as any)?.client_id ?? "").trim() || null;
+  clientIdByChatIdCache.set(chatId, { value, expiresAt: Date.now() + CLIENT_ID_CACHE_TTL_MS });
+  return value;
+}
+
 export async function appendVirtualDecisionLog(
   payload: DecisionLogInput
 ): Promise<{ ok: boolean; id?: number; error?: string }> {
   try {
     const confidencePct = normalizeConfidence(payload.confidence);
+    const clientId = await resolveClientIdForChat(payload.chatId).catch(() => null);
 
     const { data, error } = await supabase
       .from(PORTFOLIO_TABLES.decisionLogs)
       .insert({
         chat_id: payload.chatId,
+        client_id: clientId,
         code: payload.code,
         action: payload.action,
         strategy_id: payload.strategyId ?? null,

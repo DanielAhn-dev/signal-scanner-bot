@@ -3,6 +3,24 @@ import { createClient } from "@supabase/supabase-js";
 const supaService = () =>
   createClient(process.env.SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!);
 
+const clientIdByChatIdCache = new Map<number, { value: string | null; expiresAt: number }>();
+const CLIENT_ID_CACHE_TTL_MS = 5 * 60 * 1000;
+
+async function resolveClientIdForChat(chatId: number): Promise<string | null> {
+  const cached = clientIdByChatIdCache.get(chatId);
+  if (cached && Date.now() <= cached.expiresAt) return cached.value;
+
+  const { data, error } = await supaService()
+    .from("web_user_profiles")
+    .select("client_id")
+    .eq("telegram_id", chatId)
+    .maybeSingle();
+
+  const value = error ? null : String((data as any)?.client_id ?? "").trim() || null;
+  clientIdByChatIdCache.set(chatId, { value, expiresAt: Date.now() + CLIENT_ID_CACHE_TTL_MS });
+  return value;
+}
+
 export type ExecInput = {
   chatId: number;
   code: string;
@@ -31,11 +49,13 @@ export async function executeOrder(input: ExecInput): Promise<{ ok: boolean; id?
     const fee = 0; // placeholder
     const tax = 0;
     const net = gross - fee - tax;
+    const clientId = await resolveClientIdForChat(chatId).catch(() => null);
 
     const { data, error } = await supa
       .from("virtual_trades")
       .insert({
         chat_id: chatId,
+        client_id: clientId,
         code,
         side: side === "BUY" ? "BUY" : "SELL",
         price,
