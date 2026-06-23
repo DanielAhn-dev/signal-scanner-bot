@@ -195,6 +195,7 @@ export default function Trades() {
           const pnlAmount = Number(r.reason_details?.pnl)
           const hasPnl = action === 'SELL' && Number.isFinite(pnlAmount)
           const pnlPct = r.pnl_pct as string | null | undefined
+          const detailLines = Array.isArray(r.detail_lines) ? (r.detail_lines as string[]) : []
           return (
             <div key={r.id} className="card trades-log-card">
               <div className="trades-log-top">
@@ -213,6 +214,15 @@ export default function Trades() {
                 <div className={`trades-log-pnl ${pnlAmount >= 0 ? 'is-profit' : 'is-loss'}`}>
                   손익: {pnlAmount >= 0 ? '+' : ''}{Math.round(pnlAmount).toLocaleString('ko-KR')}원
                   {pnlPct ? ` (${pnlAmount >= 0 ? '+' : ''}${pnlPct})` : ''}
+                </div>
+              )}
+              {detailLines.length > 0 && (
+                <div className="trades-log-details">
+                  {detailLines
+                    .filter((line) => !line.startsWith('realized_pnl:'))
+                    .map((line, idx) => (
+                      <span key={idx} className="trades-log-detail-chip">{line}</span>
+                    ))}
                 </div>
               )}
             </div>

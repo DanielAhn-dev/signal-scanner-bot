@@ -383,6 +383,21 @@ a:focus-visible {
   color: #c24141;
 }
 
+.trades-log-details {
+  margin-top: 6px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.trades-log-detail-chip {
+  background: var(--color-surface-secondary, #f4f5f7);
+  color: var(--color-text-tertiary);
+  border-radius: 6px;
+  padding: 2px 8px;
+  font-size: var(--font-size-xs);
+}
+
 .trades-empty-card {
   color: var(--color-text-secondary);
 }
