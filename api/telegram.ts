@@ -3,7 +3,7 @@ import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { createClient } from "@supabase/supabase-js";
 
 const supa = () =>
-  createClient(process.env.SUPABASE_URL!, process.env.SUPABASE_ANON_KEY!, {
+  createClient(process.env.SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!, {
     auth: { persistSession: false },
   });
 
@@ -65,7 +65,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       : null;
 
     // 잡 큐에 적재(Upsert로 중복 방지)
-    await supa()
+    const { error: upsertError } = await supa()
       .from("jobs")
       .upsert(
         {
@@ -77,6 +77,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         },
         { onConflict: "type,dedup_key" }
       );
+    if (upsertError) {
+      console.error("[telegram] jobs upsert failed:", upsertError);
+    }
 
     // 워커 트리거(fire-and-forget: 잡이 큐에 적재된 후 즉시 200 반환)
     const base = resolveBase();
