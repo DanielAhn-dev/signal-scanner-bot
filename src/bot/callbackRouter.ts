@@ -95,7 +95,7 @@ export async function routeCallbackData(
 
   if (data.startsWith("risk:")) {
     const profile = data.slice(5);
-    if (profile === "safe" || profile === "balanced" || profile === "active") {
+    if (profile === "safe" || profile === "balanced" || profile === "active" || profile === "value-swing") {
       await handleRiskProfileSelection(profile, ctx, tgSend);
       return;
     }
