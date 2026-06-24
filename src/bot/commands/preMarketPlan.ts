@@ -68,7 +68,7 @@ type AutoTradeSettingLike = {
   selected_strategy?: string | null;
 };
 
-type RiskProfile = "safe" | "balanced" | "active";
+type RiskProfile = "safe" | "balanced" | "active" | "value-swing";
 
 type ProfilePlanTuning = {
   scoreDelta: number;
@@ -93,9 +93,10 @@ function clampInt(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, Math.floor(value)));
 }
 
-function riskProfileLabel(profile?: "safe" | "balanced" | "active"): string {
+function riskProfileLabel(profile?: "safe" | "balanced" | "active" | "value-swing"): string {
   if (profile === "balanced") return "균형형";
   if (profile === "active") return "공격형";
+  if (profile === "value-swing") return "가치투자 스윙형";
   return "안전형";
 }
 
@@ -167,12 +168,15 @@ function isMissingScoresSignalColumn(error: unknown): boolean {
   return code === "42703" || (message.includes("scores.signal") && message.includes("does not exist"));
 }
 
-function buildDefaultSetting(profile?: "safe" | "balanced" | "active"): AutoTradeSettingLike {
+function buildDefaultSetting(profile?: "safe" | "balanced" | "active" | "value-swing"): AutoTradeSettingLike {
   if (profile === "active") {
     return { monday_buy_slots: 3, max_positions: 12, min_buy_score: 74 };
   }
   if (profile === "balanced") {
     return { monday_buy_slots: 2, max_positions: 10, min_buy_score: 72 };
+  }
+  if (profile === "value-swing") {
+    return { monday_buy_slots: 1, max_positions: 6, min_buy_score: 72 };
   }
   return { monday_buy_slots: 2, max_positions: 8, min_buy_score: 70 };
 }
@@ -199,6 +203,17 @@ function resolveProfilePlanTuning(input: {
       scoreDelta: 0,
       minRiskReward: adaptive.minRiskReward,
       maxOrders: adaptive.maxOrders,
+      allowStrongWait: false,
+      waitScoreBuffer: 999,
+    };
+  }
+
+  if (profile === "value-swing") {
+    // 가치투자 스윙: 진입 빈도를 낮추고 리스크리워드 기준을 높여 우량주 위주로 선별
+    return {
+      scoreDelta: 1,
+      minRiskReward: adaptive.minRiskReward + 0.2,
+      maxOrders: Math.max(1, adaptive.maxOrders - 1),
       allowStrongWait: false,
       waitScoreBuffer: 999,
     };

@@ -10,18 +10,20 @@ import {
 } from "../messages/layout";
 import { getUserInvestmentPrefs, setUserInvestmentPrefs } from "../../services/userService";
 
-function riskProfileLabel(profile?: "safe" | "balanced" | "active"): string {
+function riskProfileLabel(profile?: "safe" | "balanced" | "active" | "value-swing"): string {
   if (profile === "balanced") return "균형형";
   if (profile === "active") return "공격형";
+  if (profile === "value-swing") return "가치투자 스윙형";
   return "안전형";
 }
 
-function parseRiskProfileInput(raw?: string): "safe" | "balanced" | "active" | null {
+function parseRiskProfileInput(raw?: string): "safe" | "balanced" | "active" | "value-swing" | null {
   if (!raw) return null;
   const value = raw.trim().toLowerCase();
   if (["safe", "안전", "안전형", "보수", "보수형"].includes(value)) return "safe";
   if (["balanced", "균형", "균형형"].includes(value)) return "balanced";
   if (["active", "aggressive", "공격", "공격형"].includes(value)) return "active";
+  if (["value-swing", "value_swing", "가치투자", "가치스윙", "가치투자스윙"].includes(value)) return "value-swing";
   return null;
 }
 
@@ -54,13 +56,14 @@ export async function handleRiskProfileCommand(
       { text: "안전형", callback_data: "risk:safe" },
       { text: "균형형", callback_data: "risk:balanced" },
       { text: "공격형", callback_data: "risk:active" },
+      { text: "가치투자 스윙형", callback_data: "risk:value-swing" },
       { text: "전략선택", callback_data: "cmd:strategy" },
     ], 2),
   });
 }
 
 export async function handleRiskProfileSelection(
-  profile: "safe" | "balanced" | "active",
+  profile: "safe" | "balanced" | "active" | "value-swing",
   ctx: ChatContext,
   tgSend: any
 ): Promise<void> {

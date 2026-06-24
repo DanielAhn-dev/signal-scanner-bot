@@ -3797,6 +3797,7 @@ function getStrategyLabel(strategy?: string | null): string | null {
     SHORT_SWING: "단기 스윙",
     SWING: "스윙",
     POSITION_CORE: "중장기 코어",
+    VALUE_SWING_CORE: "가치투자 스윙",
   };
   return strategyLabels[strategy] || strategy;
 }
@@ -4394,6 +4395,9 @@ async function runDailyReviewForUser(payload: {
       stopLossPct: adaptiveExitThreshold.stopLossPct,
       takeProfitSplitCount: tradeProfile.takeProfitSplitCount,
       takeProfitTranchesDone: strategyState.takeProfitTranchesDone,
+      // 가치투자+스윙(VALUE_SWING_CORE)은 단기 노이즈에 흔들리지 않도록 경직 손절선을 넓게 적용
+      catastrophicStopPct: tradeProfile.profile === "VALUE_SWING_CORE" ? 15 : 10,
+      halfExitStopPct: tradeProfile.profile === "VALUE_SWING_CORE" ? 12 : 7,
     });
 
     // 트레일링 스탑: 보유 중 최고가 추적 → 고점 대비 -10% 이탈 시 익절
@@ -4461,6 +4465,11 @@ async function runDailyReviewForUser(payload: {
           }
         : baseExitPlan;
 
+    // 가치투자 스윙(VALUE_SWING_CORE)은 단기 물림을 장기 손실로 오판하지 않도록 시간손절 기준을 늘림
+    const timeStopParams = tradeProfile.profile === "VALUE_SWING_CORE"
+      ? { phase1Days: 60, phase2Days: 90, lossThresholdPct: -15 }
+      : {};
+
     // 비중 초과 감지 + 시간 기반 손절: HOLD인 경우에만 체크 (이미 다른 exit이 결정된 종목은 제외)
     const finalExitPlan: PlannedAutoTradeExit = (() => {
       if (exitPlan.action !== "HOLD") return exitPlan;
@@ -4470,6 +4479,7 @@ async function runDailyReviewForUser(payload: {
         quantity: qty,
         pnlPct,
         buyDate: holding.buy_date ?? holding.created_at,
+        ...timeStopParams,
       });
       if (timeStop.triggered) {
         return {
@@ -4587,7 +4597,7 @@ async function runDailyReviewForUser(payload: {
       if (regimeEarlyExit) return "[레짐익절] 방어모드 KOSDAQ 선익절";
       // time-stop: baseExitPlan이 HOLD였다가 finalExitPlan에서 변경된 경우
       if (exitPlan.action === "HOLD" && (finalExitPlan.action === "STOP_LOSS" || finalExitPlan.action === "TAKE_PROFIT")) {
-        const timeStop = evaluateTimeStop({ quantity: qty, pnlPct, buyDate: holding.buy_date ?? holding.created_at });
+        const timeStop = evaluateTimeStop({ quantity: qty, pnlPct, buyDate: holding.buy_date ?? holding.created_at, ...timeStopParams });
         if (timeStop.triggered) {
           return `[시간손절] ${timeStop.reason}`;
         }
@@ -5864,7 +5874,21 @@ async function runDailyReviewForUser(payload: {
   return summary;
 }
 
-function buildDefaultSettingForChat(chatId: number, riskProfile?: "safe" | "balanced" | "active"): AutoTradeSettingRow {
+function buildDefaultSettingForChat(chatId: number, riskProfile?: "safe" | "balanced" | "active" | "value-swing"): AutoTradeSettingRow {
+  if (riskProfile === "value-swing") {
+    // 가치투자+스윙: 매매 빈도를 낮추고 손절선을 넓혀 단기 노이즈에 흔들리지 않도록 함
+    return {
+      chat_id: chatId,
+      is_enabled: true,
+      monday_buy_slots: 1,
+      max_positions: 6,
+      min_buy_score: 72,
+      take_profit_pct: 15,
+      stop_loss_pct: 12,
+      long_term_ratio: 85,
+      selected_strategy: "VALUE_SWING_CORE",
+    };
+  }
   if (riskProfile === "active") {
     return {
       chat_id: chatId,

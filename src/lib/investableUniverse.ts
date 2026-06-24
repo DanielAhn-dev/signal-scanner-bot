@@ -12,7 +12,7 @@ type CandidateLike = {
   market_cap?: number | null;
 };
 
-export type RiskProfile = "safe" | "balanced" | "active";
+export type RiskProfile = "safe" | "balanced" | "active" | "value-swing";
 
 const EXCLUDED_NAME_PATTERNS = [
   /스팩/i,
@@ -36,10 +36,15 @@ export function isExcludedStockName(name?: string | null): boolean {
   return EXCLUDED_NAME_PATTERNS.some((pattern) => pattern.test(normalized));
 }
 
-const PROFILE_BONUS: Record<RiskProfile, { kospi: number; kosdaq: number; liquidityPenalty: number; passScore: number }> = {
-  safe: { kospi: 45, kosdaq: -10, liquidityPenalty: -12, passScore: 35 },
-  balanced: { kospi: 32, kosdaq: -2, liquidityPenalty: -8, passScore: 24 },
-  active: { kospi: 20, kosdaq: 6, liquidityPenalty: -3, passScore: 15 },
+const PROFILE_BONUS: Record<
+  RiskProfile,
+  { kospi: number; kosdaq: number; liquidityPenalty: number; passScore: number; momentumWeight: number; valueWeight: number }
+> = {
+  safe: { kospi: 45, kosdaq: -10, liquidityPenalty: -12, passScore: 35, momentumWeight: 0.12, valueWeight: 0.1 },
+  balanced: { kospi: 32, kosdaq: -2, liquidityPenalty: -8, passScore: 24, momentumWeight: 0.12, valueWeight: 0.1 },
+  active: { kospi: 20, kosdaq: 6, liquidityPenalty: -3, passScore: 15, momentumWeight: 0.12, valueWeight: 0.1 },
+  // 가치투자+스윙 혼합: 단기 모멘텀 가중치를 낮추고 가치(저PER/52주저점) 가중치를 높임
+  "value-swing": { kospi: 38, kosdaq: -6, liquidityPenalty: -10, passScore: 28, momentumWeight: 0.05, valueWeight: 0.2 },
 };
 
 export function getSafetyPreferenceScore(stock: CandidateLike, profile: RiskProfile = "safe"): number {
@@ -72,8 +77,8 @@ export function getSafetyPreferenceScore(stock: CandidateLike, profile: RiskProf
   const momentumScore = Number(stock.momentum_score ?? 0);
   const valueScore = Number(stock.value_score ?? 0);
   if (Number.isFinite(totalScore)) score += Math.max(0, Math.min(18, totalScore * 0.18));
-  if (Number.isFinite(momentumScore)) score += Math.max(0, Math.min(10, momentumScore * 0.12));
-  if (Number.isFinite(valueScore)) score += Math.max(0, Math.min(8, valueScore * 0.1));
+  if (Number.isFinite(momentumScore)) score += Math.max(0, Math.min(10, momentumScore * policy.momentumWeight));
+  if (Number.isFinite(valueScore)) score += Math.max(0, Math.min(8, valueScore * policy.valueWeight));
 
   const rsi = Number(stock.rsi14 ?? 50);
   if (Number.isFinite(rsi)) {

@@ -7,7 +7,8 @@ export type PositionStrategyProfile =
   | "WAIT_AND_DIP_BUY"
   | "SHORT_SWING"
   | "SWING"
-  | "POSITION_CORE";
+  | "POSITION_CORE"
+  | "VALUE_SWING_CORE";
 
 export type PositionBucket = "LONG" | "SWING";
 
@@ -91,6 +92,7 @@ const VALID_PROFILES = new Set<PositionStrategyProfile>([
   "SHORT_SWING",
   "SWING",
   "POSITION_CORE",
+  "VALUE_SWING_CORE",
 ]);
 
 function toNumber(value: unknown, fallback = 0): number {
@@ -196,7 +198,8 @@ export function classifyAutoTradeEntryProfile(input: {
   if (
     fixedAccountProfile === "SHORT_SWING" ||
     fixedAccountProfile === "SWING" ||
-    fixedAccountProfile === "POSITION_CORE"
+    fixedAccountProfile === "POSITION_CORE" ||
+    fixedAccountProfile === "VALUE_SWING_CORE"
   ) {
     return fixedAccountProfile;
   }
@@ -327,6 +330,17 @@ export function resolvePositionTradeProfile(input: {
         blockNewBuy: false,
         expectedHorizonDays: 7,
       };
+    case "VALUE_SWING_CORE":
+      // 가치투자+스윙 혼합: 단기 노이즈 손절을 피하기 위해 손절선을 넓히고 목표보유기간을 늘림
+      return {
+        profile: state.profile,
+        takeProfitPct: Math.max(15, baseTakeProfitPct),
+        stopLossPct: Math.max(12, baseStopLossPct),
+        takeProfitSplitCount: Math.max(2, sellSplitCount),
+        allowAddOn: true,
+        blockNewBuy: false,
+        expectedHorizonDays: 30,
+      };
     default:
       return {
         profile: "DEFAULT",
@@ -455,6 +469,10 @@ export function planAutoTradeExit(input: {
   stopLossPct: number;
   takeProfitSplitCount: number;
   takeProfitTranchesDone: number;
+  /** 사용자 설정과 무관하게 즉시 전량 청산되는 경직 손절선 (기본 -10%) */
+  catastrophicStopPct?: number;
+  /** 경직 손절선 도달 전 절반 청산되는 1차 방어선 (기본 -7%) */
+  halfExitStopPct?: number;
 }): PlannedAutoTradeExit {
   const quantity = Math.max(0, Math.floor(toNumber(input.quantity, 0)));
   const pnlPct = toNumber(input.pnlPct, 0);
@@ -462,6 +480,8 @@ export function planAutoTradeExit(input: {
   const stopLossPct = Math.abs(toNumber(input.stopLossPct, 4));
   const takeProfitSplitCount = clampInt(toPositiveInt(input.takeProfitSplitCount, 2), 1, 4);
   const takeProfitTranchesDone = Math.max(0, Math.floor(toNumber(input.takeProfitTranchesDone, 0)));
+  const catastrophicStopPct = Math.abs(toNumber(input.catastrophicStopPct, 10));
+  const halfExitStopPct = Math.abs(toNumber(input.halfExitStopPct, 7));
 
   if (quantity <= 0) {
     return {
@@ -474,8 +494,8 @@ export function planAutoTradeExit(input: {
   }
 
   // 경직 손절: 사용자 설정과 무관하게 큰 손실에서 반드시 청산
-  // -10% 초과 → 전량 즉시 청산 (파국적 손실 방지)
-  if (pnlPct <= -10) {
+  // catastrophicStopPct 초과 → 전량 즉시 청산 (파국적 손실 방지, 기본 -10%)
+  if (pnlPct <= -catastrophicStopPct) {
     return {
       action: "STOP_LOSS",
       quantityToSell: quantity,
@@ -484,8 +504,8 @@ export function planAutoTradeExit(input: {
       reason: "stop-loss",
     };
   }
-  // -7% 초과 → 절반 청산 (손실 한정 + 추가 하락 여지 확보)
-  if (pnlPct <= -7) {
+  // halfExitStopPct 초과 → 절반 청산 (손실 한정 + 추가 하락 여지 확보, 기본 -7%)
+  if (pnlPct <= -halfExitStopPct) {
     const halfQty = Math.max(1, Math.ceil(quantity / 2));
     return {
       action: "TAKE_PROFIT",
@@ -644,6 +664,12 @@ export function evaluateTimeStop(input: {
   pnlPct: number;
   buyDate: string | null | undefined;
   now?: Date;
+  /** 절반 매도가 시작되는 보유일 (기본 30일) */
+  phase1Days?: number;
+  /** 전량 매도되는 보유일 (기본 45일) */
+  phase2Days?: number;
+  /** 시간손절이 적용되는 손실 기준 (기본 -10%) */
+  lossThresholdPct?: number;
 }): TimeStopResult {
   const { quantity, pnlPct } = input;
   if (quantity <= 0 || pnlPct >= 0) return { triggered: false };
@@ -657,9 +683,9 @@ export function evaluateTimeStop(input: {
 
   const holdingDays = Math.floor((now.getTime() - buyTs) / (24 * 60 * 60 * 1000));
 
-  const PHASE1_DAYS = 30;
-  const PHASE2_DAYS = 45;
-  const LOSS_THRESHOLD_PCT = -10;
+  const PHASE1_DAYS = input.phase1Days ?? 30;
+  const PHASE2_DAYS = input.phase2Days ?? 45;
+  const LOSS_THRESHOLD_PCT = input.lossThresholdPct ?? -10;
 
   if (pnlPct > LOSS_THRESHOLD_PCT) return { triggered: false };
 

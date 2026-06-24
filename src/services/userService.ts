@@ -72,7 +72,7 @@ export type InvestmentPrefs = {
   split_count?: number;
   virtual_sell_split_count?: number;
   target_profit_pct?: number;
-  risk_profile?: "safe" | "balanced" | "active";
+  risk_profile?: "safe" | "balanced" | "active" | "value-swing";
   virtual_seed_capital?: number;
   virtual_cash?: number;
   virtual_realized_pnl?: number;
@@ -102,6 +102,7 @@ function resolveDefaultAutoTradeStrategy(
 ): string {
   if (riskProfile === "active") return "POSITION_CORE";
   if (riskProfile === "balanced") return "SWING";
+  if (riskProfile === "value-swing") return "VALUE_SWING_CORE";
   return "HOLD_SAFE";
 }
 

@@ -35,7 +35,7 @@ type AccountPolicy = {
   chat_id?: number
   broker_name: string
   account_name: string
-  risk_profile: 'safe' | 'balanced' | 'active'
+  risk_profile: 'safe' | 'balanced' | 'active' | 'value-swing'
   max_positions: number | null
   daily_loss_limit_pct: number | null
   min_cash_reserve_pct: number | null
@@ -1208,6 +1208,7 @@ export default function Portfolio() {
                       <option value="safe">safe</option>
                       <option value="balanced">balanced</option>
                       <option value="active">active</option>
+                      <option value="value-swing">value-swing (가치투자 스윙)</option>
                     </select>
                   </label>
                   <Input

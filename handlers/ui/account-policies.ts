@@ -62,7 +62,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       }
 
       const riskProfileRaw = normalizeLabel(body.risk_profile).toLowerCase()
-      const riskProfile = ['safe', 'balanced', 'active'].includes(riskProfileRaw)
+      const riskProfile = ['safe', 'balanced', 'active', 'value-swing'].includes(riskProfileRaw)
         ? riskProfileRaw
         : 'balanced'
 
