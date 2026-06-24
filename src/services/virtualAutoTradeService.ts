@@ -3811,7 +3811,7 @@ async function executeAutoTradeSell(payload: {
   feeRate: number;
   taxRate: number;
   sellQty: number;
-  reason: "take-profit-partial" | "take-profit-final" | "stop-loss";
+  reason: "take-profit-partial" | "take-profit-final" | "stop-loss" | "loss-trim";
   stopLossContext?: string | null;
   profileLabel: string;
   strategyProfile: string;
@@ -4477,7 +4477,7 @@ async function runDailyReviewForUser(payload: {
           quantityToSell: timeStop.quantityToSell,
           isPartial: timeStop.phase === "partial",
           nextTakeProfitTranchesDone: strategyState.takeProfitTranchesDone,
-          reason: timeStop.phase === "full" ? "stop-loss" : "take-profit-partial",
+          reason: timeStop.phase === "full" ? "stop-loss" : pnlPct >= 0 ? "take-profit-partial" : "loss-trim",
         } as PlannedAutoTradeExit;
       }
 
@@ -4625,7 +4625,9 @@ async function runDailyReviewForUser(payload: {
         feeRate,
         taxRate,
         sellQty: finalExitPlan.quantityToSell,
-        reason: (finalExitPlan.action === "OVERWEIGHT_REDUCTION" || finalExitPlan.action === "SECTOR_ROTATION") ? "take-profit-partial" : finalExitPlan.reason,
+        reason: (finalExitPlan.action === "OVERWEIGHT_REDUCTION" || finalExitPlan.action === "SECTOR_ROTATION")
+          ? (pnlPct >= 0 ? "take-profit-partial" : "loss-trim")
+          : finalExitPlan.reason,
         stopLossContext,
         profileLabel: getStrategyLabel(tradeProfile.profile) || tradeProfile.profile,
         strategyProfile: tradeProfile.profile,
