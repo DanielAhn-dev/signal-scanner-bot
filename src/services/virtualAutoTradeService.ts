@@ -3271,6 +3271,19 @@ async function runMondayBuyForUser(payload: {
       const stableTurn = scoreRow?.factors
         ? String(((scoreRow.factors as Record<string, unknown>).stable_turn ?? "")).trim()
         : null;
+      const factors = extractScoreFactors((scoreRow as Record<string, unknown> | undefined)?.factors);
+      const newsBias = resolveNewsBiasFromFactors(factors);
+      const candidateProfile = classifyAutoTradeEntryProfile({
+        accountStrategy: selectedStrategy,
+        riskProfile: prefs.risk_profile,
+        marketMode: marketPolicy.mode,
+        newsBias,
+        candidate: {
+          ...candidate,
+          stableTurn: candidate.stableTurn ?? null,
+          stableTrust: candidate.stableTrust ?? null,
+        },
+      });
       const signalGate = evaluateAutoTradeSignalGate({
         currentPrice: executionPrice,
         score: candidate.score,
@@ -3315,6 +3328,7 @@ async function runMondayBuyForUser(payload: {
       const adaptive = resolveAdaptiveAdjustment(adaptiveRule, {
         score: candidate.score,
         trustGrade: signalGate.grade,
+        profile: candidateProfile,
       });
       if (adaptive.excluded) {
         summary.skipped += 1;
@@ -3369,19 +3383,6 @@ async function runMondayBuyForUser(payload: {
 
       const qty = sizing.quantity;
       const investedAmount = sizing.investedAmount;
-      const factors = extractScoreFactors((scoreRow as Record<string, unknown> | undefined)?.factors);
-      const newsBias = resolveNewsBiasFromFactors(factors);
-      const candidateProfile = classifyAutoTradeEntryProfile({
-        accountStrategy: selectedStrategy,
-        riskProfile: prefs.risk_profile,
-        marketMode: marketPolicy.mode,
-        newsBias,
-        candidate: {
-          ...candidate,
-          stableTurn: candidate.stableTurn ?? null,
-          stableTrust: candidate.stableTrust ?? null,
-        },
-      });
       let tradeProfile = resolvePositionTradeProfile({
         accountStrategy: candidateProfile,
         baseTakeProfitPct: Math.abs(toNumber(payload.setting.take_profit_pct, 8)),
@@ -4948,6 +4949,7 @@ async function runDailyReviewForUser(payload: {
         const addOnAdaptive = resolveAdaptiveAdjustment(await getAdaptiveConvictionRule(chatId), {
           score: candidate.score,
           trustGrade: signalGate.grade,
+          profile: holdingProfile.profile,
         });
         const sizing = calculateAutoTradeBuySizing({
           availableCash: deployableCash,
@@ -5477,6 +5479,7 @@ async function runDailyReviewForUser(payload: {
         const rebalanceAdaptive = resolveAdaptiveAdjustment(await getAdaptiveConvictionRule(chatId), {
           score: candidate.score,
           trustGrade: signalGate.grade,
+          profile: adjustedEntryProfile.profile,
         });
         if (rebalanceAdaptive.excluded) {
           summary.skipped += 1;

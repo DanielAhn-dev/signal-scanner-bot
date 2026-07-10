@@ -23,12 +23,13 @@ function bucket(label: string, wins: number, total: number, avgPnl: number): Fac
 function summaryOf(input: {
   scoreBands?: FactorWinRateBucket[];
   signalTrustGrades?: FactorWinRateBucket[];
+  strategyProfiles?: FactorWinRateBucket[];
 }): FactorWinRateSummary {
   return {
     windowDays: 90,
     scoreBands: input.scoreBands ?? [],
     signalTrustGrades: input.signalTrustGrades ?? [],
-    strategyProfiles: [],
+    strategyProfiles: input.strategyProfiles ?? [],
   };
 }
 
@@ -129,6 +130,46 @@ test("adaptive: 규칙 null이면 무조정", () => {
   assert.deepEqual(adj, { delta: 0, excluded: false, reasons: [] });
   assert.equal(buildAdaptiveConvictionRule(null), null);
   assert.equal(formatAdaptiveRuleSummary(null), null);
+});
+
+test("adaptive: 전략프로필 버킷도 점수대·등급과 동일한 규칙으로 조정된다", () => {
+  const rule = buildAdaptiveConvictionRule(
+    summaryOf({ strategyProfiles: [bucket("SWING", 8, 10, 90_000)] }) // 80% → +0.05
+  );
+  assert.ok(rule);
+  const adj = resolveAdaptiveAdjustment(rule, { profile: "SWING" });
+  assert.equal(adj.delta, 0.05);
+  assert.equal(adj.excluded, false);
+});
+
+test("adaptive: 전략프로필 승률 25% 미만 + 손익 음수 + 표본 12건 이상이면 신규매수 제외", () => {
+  const rule = buildAdaptiveConvictionRule(
+    summaryOf({ strategyProfiles: [bucket("VALUE_SWING_CORE", 2, 12, -30_000)] }) // 16.7%
+  );
+  assert.ok(rule);
+  const adj = resolveAdaptiveAdjustment(rule, { profile: "value_swing_core" }); // 대소문자 무관
+  assert.equal(adj.excluded, true);
+  assert.equal(adj.delta, -0.1);
+});
+
+test("adaptive: 전략프로필 표본 부족 시 조정하지 않는다", () => {
+  const rule = buildAdaptiveConvictionRule(
+    summaryOf({ strategyProfiles: [bucket("DEFAULT", 1, 5, -20_000)] })
+  );
+  assert.equal(rule, null);
+});
+
+test("adaptive: 점수대 + 전략프로필 델타가 합산된다", () => {
+  const rule = buildAdaptiveConvictionRule(
+    summaryOf({
+      scoreBands: [bucket("70+", 8, 10, 100_000)], // 80% → +0.05
+      strategyProfiles: [bucket("SWING", 9, 12, 150_000)], // 75% → +0.05
+    })
+  );
+  assert.ok(rule);
+  const adj = resolveAdaptiveAdjustment(rule, { score: 72, profile: "SWING" });
+  assert.equal(adj.delta, 0.1);
+  assert.equal(adj.reasons.length, 2);
 });
 
 test("adaptive: 등급 키는 대소문자·공백을 정규화해 매칭한다", () => {

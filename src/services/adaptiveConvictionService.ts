@@ -49,6 +49,7 @@ export type AdaptiveConvictionRule = {
   windowDays: number;
   scoreBands: Record<string, AdaptiveBucketDecision>;
   trustGrades: Record<string, AdaptiveBucketDecision>;
+  strategyProfiles: Record<string, AdaptiveBucketDecision>;
 };
 
 export type AdaptiveAdjustment = {
@@ -120,10 +121,20 @@ export function buildAdaptiveConvictionRule(
     if (decision) trustGrades[bucket.label.trim().toUpperCase()] = decision;
   }
 
-  if (Object.keys(scoreBands).length === 0 && Object.keys(trustGrades).length === 0) {
+  const strategyProfiles: Record<string, AdaptiveBucketDecision> = {};
+  for (const bucket of summary.strategyProfiles) {
+    const decision = decideBucket(bucket);
+    if (decision) strategyProfiles[bucket.label.trim().toUpperCase()] = decision;
+  }
+
+  if (
+    Object.keys(scoreBands).length === 0 &&
+    Object.keys(trustGrades).length === 0 &&
+    Object.keys(strategyProfiles).length === 0
+  ) {
     return null;
   }
-  return { windowDays: summary.windowDays, scoreBands, trustGrades };
+  return { windowDays: summary.windowDays, scoreBands, trustGrades, strategyProfiles };
 }
 
 function describeDecision(prefix: string, decision: AdaptiveBucketDecision): string {
@@ -139,7 +150,7 @@ function describeDecision(prefix: string, decision: AdaptiveBucketDecision): str
  */
 export function resolveAdaptiveAdjustment(
   rule: AdaptiveConvictionRule | null,
-  input: { score?: number | null; trustGrade?: string | null }
+  input: { score?: number | null; trustGrade?: string | null; profile?: string | null }
 ): AdaptiveAdjustment {
   if (!rule) return { delta: 0, excluded: false, reasons: [] };
 
@@ -162,6 +173,14 @@ export function resolveAdaptiveAdjustment(
     reasons.push(describeDecision("등급", grade));
   }
 
+  const profileKey = String(input.profile ?? "").trim().toUpperCase();
+  const profile = profileKey ? rule.strategyProfiles[profileKey] : undefined;
+  if (profile) {
+    delta += profile.delta;
+    excluded = excluded || profile.excluded;
+    reasons.push(describeDecision("전략프로필", profile));
+  }
+
   delta = Math.min(DELTA_CEIL, Math.max(DELTA_FLOOR, Number(delta.toFixed(2))));
   return { delta, excluded, reasons };
 }
@@ -175,6 +194,9 @@ export function describeAdaptiveRuleLines(rule: AdaptiveConvictionRule | null): 
   }
   for (const decision of Object.values(rule.trustGrades)) {
     lines.push(describeDecision("등급", decision));
+  }
+  for (const decision of Object.values(rule.strategyProfiles)) {
+    lines.push(describeDecision("전략프로필", decision));
   }
   return lines;
 }
