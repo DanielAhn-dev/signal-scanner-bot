@@ -4212,12 +4212,37 @@ async function runDailyReviewForUser(payload: {
 
   const { data: stockRows, error: stockError } = await payload.supabase
     .from("stocks")
-    .select("code, name, close, market, sector_id, is_sector_leader")
+    .select("code, name, close, market, sector_id, is_sector_leader, updated_at")
     .in("code", codeList);
 
   if (stockError) {
     summary.errors += 1;
     summary.notes.push(`시세 조회 실패: ${stockError.message}`);
+    return summary;
+  }
+
+  // 종가 데이터 신선도 가드: 배치(daily_data) 파이프라인이 조용히 멈춰
+  // 오래된 종가로 손절/익절을 잘못 판단·기록하는 사고를 막기 위한 안전장치.
+  // (2026-06-12~07-11 발생한 pykrx 다운그레이드로 인한 시세 정지 사고 재발 방지)
+  const STALE_PRICE_GUARD_MS = 3 * 24 * 60 * 60 * 1000;
+  const updatedAtValues = (stockRows ?? [])
+    .map((row: Record<string, unknown>) => Date.parse(String(row.updated_at ?? "")))
+    .filter((ts: number) => Number.isFinite(ts));
+  const freshestUpdatedAt = updatedAtValues.length ? Math.max(...updatedAtValues) : null;
+  if (holdings.length > 0 && (freshestUpdatedAt === null || Date.now() - freshestUpdatedAt > STALE_PRICE_GUARD_MS)) {
+    const staleDays = freshestUpdatedAt !== null ? Math.floor((Date.now() - freshestUpdatedAt) / (24 * 60 * 60 * 1000)) : null;
+    summary.errors += 1;
+    summary.notes.push(
+      `[시세 신선도 가드] stocks.close 최신화 ${staleDays ?? "알수없음"}일 경과 → 매도/익절 판단 스킵 (일일 배치 점검 필요)`
+    );
+    await writeActionLog({
+      supabase: payload.supabase,
+      runId: payload.runId,
+      chatId,
+      actionType: "ERROR",
+      reason: "stale-price-data-guard",
+      detail: { staleDays, freshestUpdatedAt },
+    });
     return summary;
   }
 

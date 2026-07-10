@@ -167,21 +167,31 @@ def _update_stocks_close(supabase: Client, trading_date: str):
     trading_iso = to_iso(trading_date)
     print("  -> syncing latest close into stocks...")
     try:
-        stocks_res = supabase.table("stocks") \
-            .select("code, name").eq("is_active", True) \
-            .not_.is_("name", "null").execute()
-        valid_stocks = {r["code"]: r["name"] for r in (stocks_res.data or [])}
-
         res = supabase.table("stock_daily") \
             .select("ticker, close") \
             .eq("date", trading_iso).execute()
+        daily_rows = res.data or []
+        if not daily_rows:
+            print("   no stock_daily rows for this date, skipping close sync")
+            return
+
+        # stock_daily 대상 종목만 조회 (전체 활성 종목을 조회하면 PostgREST
+        # 기본 페이지 제한(1000행)에 걸려 일부 종목만 갱신되던 문제 방지)
+        tickers = list({r["ticker"] for r in daily_rows})
+        valid_stocks: dict = {}
+        for i in range(0, len(tickers), 500):
+            chunk_res = supabase.table("stocks") \
+                .select("code, name").eq("is_active", True) \
+                .not_.is_("name", "null") \
+                .in_("code", tickers[i:i + 500]).execute()
+            valid_stocks.update({r["code"]: r["name"] for r in (chunk_res.data or [])})
 
         updates = [{
             "code": r["ticker"],
             "name": valid_stocks[r["ticker"]],
             "close": safe_int(r["close"]),
             "updated_at": datetime.now().isoformat(),
-        } for r in (res.data or []) if r["ticker"] in valid_stocks]
+        } for r in daily_rows if r["ticker"] in valid_stocks]
 
         for i in range(0, len(updates), 200):
             supabase.table("stocks").upsert(updates[i:i+200]).execute()

@@ -262,6 +262,10 @@ def main() -> None:
         f"rows={total_rows:,} upserted={upserted_rows:,}"
     )
 
+    if success_codes == 0 and fail_codes > 0:
+        print("[ERROR] all codes failed — treating as fatal so caller does not mistake this for a completed backfill", file=sys.stderr)
+        sys.exit(1)
+
 
 if __name__ == "__main__":
     main()
