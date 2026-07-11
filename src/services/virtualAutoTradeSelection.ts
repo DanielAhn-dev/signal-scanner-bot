@@ -1,3 +1,38 @@
+/**
+ * 익절/손실정리(휘핑쏘) 재매수 쿨다운.
+ * 손절과 달리 "틀린 판단"이 아니라 단기 반복매매 자체의 수수료·세금 손실을 줄이는 목적이라
+ * 손절 쿨다운보다 짧게 잡고(2~6일), 실현손익률(pnlPct)로 강도를 차등한다.
+ */
+export function resolveExitPnlPct(detail: Record<string, unknown> | null): number | null {
+  if (!detail) return null;
+  const buyPrice = Number(detail.buyPrice);
+  const close = Number(detail.close);
+  if (!Number.isFinite(buyPrice) || !Number.isFinite(close) || buyPrice <= 0 || close <= 0) return null;
+  return ((close - buyPrice) / buyPrice) * 100;
+}
+
+export function resolveTakeProfitCooldownDays(reason: string, pnlPct: number | null): number {
+  if (reason === "loss-trim") {
+    if (pnlPct != null && pnlPct <= -8) return 6;
+    if (pnlPct != null && pnlPct <= -4) return 4;
+    return 2;
+  }
+  // take-profit-partial / take-profit-final: 실제 수익 실현이라 짧게만 유지
+  return 2;
+}
+
+/** 아주 강한 신선 신호는 휘핑쏘 쿨다운을 건너뛸 수 있게 하는 오버라이드 기준 */
+export const TAKE_PROFIT_COOLDOWN_OVERRIDE_SCORE = 80;
+
+export function shouldOverrideTakeProfitCooldown(
+  row: { score?: number | null; signal?: string | null } | undefined
+): boolean {
+  if (!row) return false;
+  const signal = String(row.signal ?? "").trim().toUpperCase();
+  const score = Number(row.score);
+  return signal === "STRONG_BUY" && Number.isFinite(score) && score >= TAKE_PROFIT_COOLDOWN_OVERRIDE_SCORE;
+}
+
 export type RankedCandidate = {
   code: string;
   close: number;

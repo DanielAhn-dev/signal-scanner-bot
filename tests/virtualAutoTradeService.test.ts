@@ -9,7 +9,10 @@ import {
   pickAutoTradeAddOnCandidates,
   pickAutoTradeCandidates,
   resolveDeployableCash,
+  resolveExitPnlPct,
+  resolveTakeProfitCooldownDays,
   selectRunType,
+  shouldOverrideTakeProfitCooldown,
 } from "../src/services/virtualAutoTradeSelection";
 import {
   classifyAutoTradeEntryProfile,
@@ -775,4 +778,28 @@ test("evaluateSectorRotationExit: 섹터 등급이 A/B이거나 미상이면 트
     evaluateSectorRotationExit({ quantity: 10, pnlPct: 1, isSectorLeader: false, sectorGrade: undefined }),
     { triggered: false }
   );
+});
+
+test("resolveExitPnlPct: buyPrice/close로 손익률을 계산한다", () => {
+  assert.equal(resolveExitPnlPct({ buyPrice: 50000, close: 45000 }), -10);
+  assert.equal(resolveExitPnlPct({ buyPrice: 50000, close: 55000 }), 10);
+  assert.equal(resolveExitPnlPct(null), null);
+  assert.equal(resolveExitPnlPct({ buyPrice: 0, close: 45000 }), null);
+  assert.equal(resolveExitPnlPct({ buyPrice: 50000, close: "not-a-number" }), null);
+});
+
+test("resolveTakeProfitCooldownDays: 손실정리는 손실폭에 따라 2~6일 차등, 익절은 항상 2일", () => {
+  assert.equal(resolveTakeProfitCooldownDays("loss-trim", -10), 6);
+  assert.equal(resolveTakeProfitCooldownDays("loss-trim", -5), 4);
+  assert.equal(resolveTakeProfitCooldownDays("loss-trim", -1), 2);
+  assert.equal(resolveTakeProfitCooldownDays("loss-trim", null), 2);
+  assert.equal(resolveTakeProfitCooldownDays("take-profit-partial", -20), 2);
+  assert.equal(resolveTakeProfitCooldownDays("take-profit-final", 30), 2);
+});
+
+test("shouldOverrideTakeProfitCooldown: STRONG_BUY + 고득점만 쿨다운을 건너뛴다", () => {
+  assert.equal(shouldOverrideTakeProfitCooldown({ score: 85, signal: "STRONG_BUY" }), true);
+  assert.equal(shouldOverrideTakeProfitCooldown({ score: 79, signal: "STRONG_BUY" }), false);
+  assert.equal(shouldOverrideTakeProfitCooldown({ score: 90, signal: "BUY" }), false);
+  assert.equal(shouldOverrideTakeProfitCooldown(undefined), false);
 });

@@ -42,7 +42,10 @@ import {
   pickAutoTradeAddOnCandidates,
   pickAutoTradeCandidates,
   resolveDeployableCash,
+  resolveExitPnlPct,
+  resolveTakeProfitCooldownDays,
   selectRunType,
+  shouldOverrideTakeProfitCooldown,
   type AutoTradeCandidateSelectionResult,
   type AutoTradeMarketPolicy,
   type AutoTradeRunMode as SelectionAutoTradeRunMode,
@@ -1740,6 +1743,37 @@ async function fetchStopLossCooldownCodes(payload: {
   return codes;
 }
 
+async function fetchTakeProfitCooldownCodes(payload: {
+  supabase: SupabaseClientAny;
+  chatId: number;
+  lookbackDays?: number;
+}): Promise<Set<string>> {
+  const nowMs = Date.now();
+  const lookbackDays = Math.max(6, Math.floor(payload.lookbackDays ?? 10));
+  const since = new Date(nowMs - lookbackDays * 24 * 60 * 60 * 1000).toISOString();
+  const { data } = await payload.supabase
+    .from("virtual_autotrade_actions")
+    .select("code, created_at, detail, reason")
+    .eq("chat_id", payload.chatId)
+    .eq("action_type", "SELL")
+    .in("reason", ["take-profit-partial", "take-profit-final", "loss-trim"])
+    .gte("created_at", since)
+    .limit(500);
+
+  const codes = new Set<string>();
+  for (const row of (data ?? []) as (StopLossActionRow & { reason?: string | null })[]) {
+    const code = String(row.code ?? "").trim();
+    if (!code) continue;
+    const createdAtMs = Date.parse(String(row.created_at ?? ""));
+    if (!Number.isFinite(createdAtMs)) continue;
+    const detail = (row.detail && typeof row.detail === "object") ? row.detail : null;
+    const reason = String(row.reason ?? "").trim();
+    const cooldownDays = resolveTakeProfitCooldownDays(reason, resolveExitPnlPct(detail));
+    if (nowMs - createdAtMs < cooldownDays * 24 * 60 * 60 * 1000) codes.add(code);
+  }
+  return codes;
+}
+
 async function fetchLegacyVirtualPositionsForChat(payload: {
   supabase: SupabaseClientAny;
   chatId: number;
@@ -2600,11 +2634,11 @@ async function selectMondayCandidates(payload: {
   });
 
   // 손절 쿨다운: 손절 원인/손실폭에 따라 5~10일 차등 적용
-  const cooldownCodes = await fetchStopLossCooldownCodes({
-    supabase: payload.supabase,
-    chatId: payload.chatId,
-    lookbackDays: 21,
-  });
+  // 익절/손실정리 쿨다운: 휘핑쏘(반복 재매매) 방지용 2~6일 (강한 신선 신호는 아래에서 오버라이드)
+  const [cooldownCodes, takeProfitCooldownCodes] = await Promise.all([
+    fetchStopLossCooldownCodes({ supabase: payload.supabase, chatId: payload.chatId, lookbackDays: 21 }),
+    fetchTakeProfitCooldownCodes({ supabase: payload.supabase, chatId: payload.chatId, lookbackDays: 10 }),
+  ]);
   const heldAndCooldownCodes = new Set<string>([...payload.heldCodes, ...cooldownCodes]);
   if (!latestAsof) {
     return {
@@ -2813,11 +2847,21 @@ async function selectMondayCandidates(payload: {
     }
   }
 
+  // 익절/손실정리 쿨다운 종목이라도 오늘 신호가 STRONG_BUY + 고득점이면 재매수 배제하지 않음
+  // (휘핑쏘 방지가 목적이지, 진짜 살아있는 추세의 재진입 기회까지 막을 필요는 없음)
+  const scoredRowByCode = new Map(scoredRows.map((row) => [row.code, row]));
+  const activeTakeProfitCooldownCodes = new Set(
+    [...takeProfitCooldownCodes].filter(
+      (code) => !shouldOverrideTakeProfitCooldown(scoredRowByCode.get(code))
+    )
+  );
+  const finalHeldCodes = new Set<string>([...heldAndCooldownCodes, ...activeTakeProfitCooldownCodes]);
+
   const selection = pickAutoTradeCandidates({
     rows: scoredRows,
     preferredMinBuyScore: qualityAdjustedMinBuyScore,
     limit: qualityAdjustedLimit,
-    heldCodes: heldAndCooldownCodes,
+    heldCodes: finalHeldCodes,
     marketPolicy: payload.marketPolicy,
     entryProfile,
     pullbackCandidateCodes,
