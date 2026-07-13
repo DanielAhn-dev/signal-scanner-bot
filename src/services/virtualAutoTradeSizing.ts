@@ -45,8 +45,14 @@ export type AutoTradeSizingResult = {
 
 const MIN_ORDER_FLOOR_KRW = 100_000;
 const MIN_ORDER_CAP_KRW = 500_000;
-/** 한 종목이 시드에서 차지할 수 있는 최대 비중 */
-const MAX_POSITION_WEIGHT = 0.25;
+/**
+ * 한 종목이 시드에서 차지할 수 있는 최대 비중.
+ * 예전엔 0.25였는데, 출구 쪽 비중조정 매도 트리거(virtualAutoTradeService.ts MAX_WEIGHT_PCT=25)와
+ * 겨우 0~1%p 차이라 확신도 높은 매수(시드/5종목=20% × 1.2 = 24%) 직후 가격이 조금만 올라도
+ * 바로 비중조정 매도가 트리거되는 핑퐁이 있었다. 0.22로 낮춰 exit 트리거까지 최소 3%p 버퍼를
+ * 두되, safe(5종목·기본 20%) 계정도 확신도가 여전히 base 대비 위쪽 여지를 갖도록 한다.
+ */
+const MAX_POSITION_WEIGHT = 0.22;
 /** 기본 목표 예산 대비 이 비율 미만으로 줄어들면 매수 자체를 보류 (꼬마 포지션 방지) */
 const MIN_MEANINGFUL_RATIO = 0.5;
 /** 분할 미설정 시 60/40 두 번에 나눠 진입 (검증 후 추매 여력 확보) */

@@ -597,7 +597,13 @@ export function planOverweightReduction(input: {
     takeProfitTranchesDone,
   } = input;
 
-  if (currentWeightPct <= maxWeightPct || quantity <= 0 || currentPrice <= 0 || totalPortfolioValue <= 0) {
+  // quantity가 1주면 "절반만 팔고 최소 1주는 유지"가 불가능하므로 비중조정 자체를 건너뛴다.
+  if (
+    currentWeightPct <= maxWeightPct ||
+    quantity <= 1 ||
+    currentPrice <= 0 ||
+    totalPortfolioValue <= 0
+  ) {
     return {
       action: "HOLD",
       quantityToSell: 0,
@@ -621,10 +627,11 @@ export function planOverweightReduction(input: {
     };
   }
 
-  // 초과분의 절반씩 분할 매도 (너무 급격한 청산 방지)
+  // 초과분의 절반씩 분할 매도 (너무 급격한 청산 방지). quantity > 1이 보장되므로
+  // quantityToSell은 항상 [1, quantity-1] 범위 — 최소 1주는 항상 남는다.
   const sellValue = excessValue / 2;
   const rawQtyToSell = Math.floor(sellValue / currentPrice);
-  const quantityToSell = Math.max(1, Math.min(rawQtyToSell, quantity - 1)); // 최소 1주 유지
+  const quantityToSell = Math.min(Math.max(1, rawQtyToSell), quantity - 1);
   const remainingQty = quantity - quantityToSell;
   const remainingValue = remainingQty * currentPrice;
   const afterWeightPct = Number(((remainingValue / totalPortfolioValue) * 100).toFixed(1));

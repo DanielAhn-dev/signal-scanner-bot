@@ -35,7 +35,7 @@ test("sizing: 목표비중 기반 — 시드 2천만원·safe(5종목)이면 종
   assert.equal(result.skipReason, null);
 });
 
-test("sizing: 확신도 1.2면 목표 예산이 20% 증액된다", () => {
+test("sizing: 확신도 1.2면 목표 예산이 비중상한(22%) 이내에서 증액된다", () => {
   const result = calculateAutoTradeBuySizing({
     availableCash: 20_000_000,
     price: 50_000,
@@ -47,12 +47,13 @@ test("sizing: 확신도 1.2면 목표 예산이 20% 증액된다", () => {
     prefs: BASE_PREFS,
   });
 
+  // 4M * 1.2 = 4.8M > 22% 상한(4.4M) → 4.4M으로 캡
   assert.equal(result.conviction, 1.2);
-  assert.equal(result.totalBudget, 4_800_000);
-  assert.equal(result.targetWeightPct, 24);
+  assert.equal(result.totalBudget, 4_400_000);
+  assert.equal(result.targetWeightPct, 22);
 });
 
-test("sizing: 확신도가 높아도 한 종목 비중은 시드의 25%를 넘지 않는다", () => {
+test("sizing: 확신도가 높아도 한 종목 비중은 시드의 22%를 넘지 않는다", () => {
   const result = calculateAutoTradeBuySizing({
     availableCash: 20_000_000,
     price: 50_000,
@@ -64,9 +65,9 @@ test("sizing: 확신도가 높아도 한 종목 비중은 시드의 25%를 넘�
     prefs: BASE_PREFS,
   });
 
-  // 4M * 1.3 = 5.2M > 25% 상한(5M) → 5M으로 캡
-  assert.equal(result.totalBudget, 5_000_000);
-  assert.equal(result.targetWeightPct, 25);
+  // 4M * 1.3 = 5.2M > 22% 상한(4.4M) → 4.4M으로 캡
+  assert.equal(result.totalBudget, 4_400_000);
+  assert.equal(result.targetWeightPct, 22);
 });
 
 test("sizing: 손절폭이 크면 리스크예산이 상한으로 작동한다", () => {
@@ -160,21 +161,21 @@ test("sizing: 1차 진입 금액이 최소주문에 못 미치면 분할을 자�
     slotsLeft: 1,
     currentHoldingCount: 0,
     maxPositions: 8,
-    stopLossPct: 4,
+    stopLossPct: 2,
     prefs: {
-      capital_krw: 2_000_000,
+      capital_krw: 900_000,
       risk_profile: "safe",
-      virtual_target_positions: 2,
+      virtual_target_positions: 3,
       split_count: 4,
     },
   });
 
-  // 시드 2M·2종목 → 기본 목표 1M이지만 리스크 상한(2M*1%/4% = 500k)이 캡
-  // 4분할 1차(50%) = 250k ≥ 최소주문 100k → 축소 불필요
+  // 시드 900k·3종목 → 기본 목표 300k, 비중상한(900k*22% = 198k)이 캡 (리스크상한 450k는 안 걸림)
+  // 4분할 1차(50%) = 99k < 최소주문 100k → 3분할(50%)도 99k로 동일 → 2분할(60%) = 118.8k ≥ 100k에서 멈춤
   assert.equal(result.configuredSplitCount, 4);
-  assert.equal(result.splitCount, 4);
-  assert.equal(result.totalBudget, 500_000);
-  assert.equal(result.budget, 250_000);
+  assert.equal(result.splitCount, 2);
+  assert.equal(result.totalBudget, 198_000);
+  assert.equal(result.budget, 118_800);
   assert.ok(result.quantity > 0);
 });
 

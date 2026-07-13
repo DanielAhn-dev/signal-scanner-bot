@@ -1,6 +1,7 @@
 import { createClient } from "@supabase/supabase-js";
 import { PORTFOLIO_TABLES } from "../db/portfolioSchema";
 import { chunkValues, selectPaged } from "./supabasePaging";
+import { resolveStatsSinceIso } from "./virtualAutoTradeSelection";
 
 export type DecisionAction = "BUY" | "SELL" | "ADJUST" | "HOLD" | "SKIP";
 
@@ -285,9 +286,11 @@ export async function getFactorWinRateSummary(
   windowDays = 90
 ): Promise<FactorWinRateSummary | null> {
   const safeWindowDays = Math.max(14, Math.min(365, Math.floor(windowDays)));
-  const sinceIso = new Date(
+  const rawSinceIso = new Date(
     Date.now() - safeWindowDays * 24 * 60 * 60 * 1000
   ).toISOString();
+  // 종가 동결 사고 오염 기간 배제: 버그로 만들어진 가짜 익절이 팩터 승률을 왜곡하지 않도록.
+  const sinceIso = resolveStatsSinceIso(rawSinceIso);
 
   const decisionRows = await selectPaged<Record<string, unknown>>(
     async (from, to) =>

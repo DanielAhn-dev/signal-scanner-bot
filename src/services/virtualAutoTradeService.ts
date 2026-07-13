@@ -35,21 +35,28 @@ import {
   type PlannedAutoTradeExit,
 } from "./virtualAutoTradePositionStrategy";
 import {
+  applyAdaptiveExitGuard,
   applyStrategyBuyConstraint,
   deriveEntryProfile,
   detectAutoTradeMarketPolicy,
   isActionableTodayBuySignal,
   pickAutoTradeAddOnCandidates,
   pickAutoTradeCandidates,
+  evaluateCloseFreshness,
+  isTakeProfitCooldownOverridable,
   resolveDeployableCash,
   resolveExitPnlPct,
+  resolveLossStreakSizeScale,
+  resolveStatsSinceIso,
   resolveTakeProfitCooldownDays,
+  resolveVolatilityAdjustedStopPct,
   selectRunType,
   shouldOverrideTakeProfitCooldown,
   type AutoTradeCandidateSelectionResult,
   type AutoTradeMarketPolicy,
   type AutoTradeRunMode as SelectionAutoTradeRunMode,
   type AutoTradeRunType,
+  type AutoTradeSellPerformance,
   type RankedCandidate,
 } from "./virtualAutoTradeSelection";
 import { fetchLatestPullbackCandidateCodes } from "./virtualAutoTradePullbackIntegration";
@@ -90,6 +97,7 @@ import {
   type AutoTradeSkipReasonStat,
 } from "./virtualAutoTradeObservability";
 import { runLongTermCoachForChat } from "./longTermCoachService";
+import { calcATR } from "../indicators/atr";
 import {
   fetchStrategyGateState,
   upsertStrategyGateState,
@@ -724,14 +732,6 @@ export type AutoTradeRecentMetrics = {
   topSkipReasons: Array<{ reason: string; count: number }>;
 };
 
-type AutoTradeSellPerformance = {
-  windowDays: number;
-  sellCount: number;
-  winRate: number;
-  profitFactor: number | null;
-  maxLossStreak: number;
-};
-
 type NewsAssistSignal = {
   bias: number;
   blocked: boolean;
@@ -939,7 +939,8 @@ function resolveAdaptiveExitThreshold(input: {
   }
 
   takeProfitPct = Number(clamp(takeProfitPct, 3, 14).toFixed(1));
-  stopLossPct = Number(clamp(stopLossPct, 1.5, 8).toFixed(1));
+  // 상한 12: ATR 기반 변동성 확장(resolveVolatilityAdjustedStopPct)이 여기서 다시 깎이지 않도록.
+  stopLossPct = Number(clamp(stopLossPct, 1.5, 12).toFixed(1));
   if (takeProfitPct < stopLossPct + 1.5) {
     takeProfitPct = Number(Math.min(14, stopLossPct + 1.5).toFixed(1));
   }
@@ -1743,13 +1744,18 @@ async function fetchStopLossCooldownCodes(payload: {
   return codes;
 }
 
+/**
+ * 익절/손실정리 매도 후 재매수 쿨다운 종목.
+ * canOverride=true(진짜 익절 후 재진입)만 아래 shouldOverrideTakeProfitCooldown 대상이 되고,
+ * 손실정리(loss-trim) 쿨다운은 신호 강도와 무관하게 무조건 유지된다 (isTakeProfitCooldownOverridable).
+ */
 async function fetchTakeProfitCooldownCodes(payload: {
   supabase: SupabaseClientAny;
   chatId: number;
   lookbackDays?: number;
-}): Promise<Set<string>> {
+}): Promise<Map<string, { canOverride: boolean }>> {
   const nowMs = Date.now();
-  const lookbackDays = Math.max(6, Math.floor(payload.lookbackDays ?? 10));
+  const lookbackDays = Math.max(6, Math.floor(payload.lookbackDays ?? 12));
   const since = new Date(nowMs - lookbackDays * 24 * 60 * 60 * 1000).toISOString();
   const { data } = await payload.supabase
     .from("virtual_autotrade_actions")
@@ -1760,7 +1766,7 @@ async function fetchTakeProfitCooldownCodes(payload: {
     .gte("created_at", since)
     .limit(500);
 
-  const codes = new Set<string>();
+  const codes = new Map<string, { canOverride: boolean }>();
   for (const row of (data ?? []) as (StopLossActionRow & { reason?: string | null })[]) {
     const code = String(row.code ?? "").trim();
     if (!code) continue;
@@ -1769,9 +1775,65 @@ async function fetchTakeProfitCooldownCodes(payload: {
     const detail = (row.detail && typeof row.detail === "object") ? row.detail : null;
     const reason = String(row.reason ?? "").trim();
     const cooldownDays = resolveTakeProfitCooldownDays(reason, resolveExitPnlPct(detail));
-    if (nowMs - createdAtMs < cooldownDays * 24 * 60 * 60 * 1000) codes.add(code);
+    if (nowMs - createdAtMs < cooldownDays * 24 * 60 * 60 * 1000) {
+      // 같은 종목이 손실정리(canOverride=false)와 익절 양쪽에 걸리면 보수적으로 false를 유지
+      const existing = codes.get(code);
+      const canOverride = isTakeProfitCooldownOverridable(reason);
+      codes.set(code, { canOverride: existing ? existing.canOverride && canOverride : canOverride });
+    }
   }
   return codes;
+}
+
+export type StockDailyHistoryRow = {
+  date: string;
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+  volume: number;
+};
+
+/**
+ * 보유 종목들의 최근 종가 히스토리를 일괄 조회한다.
+ * P0(종목별 종가 신선도/동결 감지)와 P2(ATR 기반 손절)가 공유해서 쓴다.
+ */
+async function fetchStockDailyHistoryForCodes(
+  supabase: SupabaseClientAny,
+  codes: string[],
+  lookbackDays = 60
+): Promise<Map<string, StockDailyHistoryRow[]>> {
+  const result = new Map<string, StockDailyHistoryRow[]>();
+  const uniqueCodes = [...new Set(codes.map((code) => String(code ?? "").trim()).filter(Boolean))];
+  if (!uniqueCodes.length) return result;
+
+  const fromDate = new Date(Date.now() - lookbackDays * 24 * 60 * 60 * 1000)
+    .toISOString()
+    .slice(0, 10);
+
+  const { data } = await supabase
+    .from("stock_daily")
+    .select("code, date, open, high, low, close, volume")
+    .in("code", uniqueCodes)
+    .gte("date", fromDate)
+    .order("date", { ascending: true })
+    .limit(uniqueCodes.length * (lookbackDays + 5));
+
+  for (const row of (data ?? []) as Record<string, unknown>[]) {
+    const code = String(row.code ?? "").trim();
+    if (!code) continue;
+    const list = result.get(code) ?? [];
+    list.push({
+      date: String(row.date ?? ""),
+      open: toNumber(row.open, 0),
+      high: toNumber(row.high, 0),
+      low: toNumber(row.low, 0),
+      close: toNumber(row.close, 0),
+      volume: toNumber(row.volume, 0),
+    });
+    result.set(code, list);
+  }
+  return result;
 }
 
 async function fetchLegacyVirtualPositionsForChat(payload: {
@@ -2006,7 +2068,9 @@ async function getRecentAutoTradeSellPerformance(payload: {
   windowDays?: number;
 }): Promise<AutoTradeSellPerformance | null> {
   const windowDays = Math.max(7, Math.floor(payload.windowDays ?? 45));
-  const since = new Date(Date.now() - windowDays * 24 * 60 * 60 * 1000).toISOString();
+  const rawSince = new Date(Date.now() - windowDays * 24 * 60 * 60 * 1000).toISOString();
+  // 종가 동결 사고 오염 기간 배제: 실제 전략이 아니라 버그로 만들어진 손익을 학습하지 않도록.
+  const since = resolveStatsSinceIso(rawSince);
 
   const { data, error } = await payload.supabase
     .from(PORTFOLIO_TABLES.trades)
@@ -2092,8 +2156,9 @@ function applyPerformanceBuyGuard(input: {
     };
   }
 
+  // 표본 20건 미만은 완화 신호로 쓰지 않음 (소표본 노이즈가 게이트를 흔드는 것 방지)
   const isRiskOn =
-    perf.sellCount >= 12 &&
+    perf.sellCount >= 20 &&
     pf != null &&
     pf >= 1.25 &&
     perf.winRate >= 55;
@@ -2110,58 +2175,6 @@ function applyPerformanceBuyGuard(input: {
     baseMinBuyScore,
     note: `성과게이트(유지): 최근 ${perf.windowDays}일 PF ${pf != null ? pf.toFixed(2) : "N/A"}, 승률 ${perf.winRate.toFixed(1)}%`,
   };
-}
-
-/**
- * 적응형 출구 전략 조정 엔진
- * 최근 매도 성과(손절 연속 패턴, 익절 비율) → stopLossPct / takeProfitPct 자동 조정
- * - 연속 손절 3회 이상: 손절 기준 타이트하게 (더 일찍 끊기)
- * - 익절 비율 높고 PF 양호: 익절 목표를 소폭 늘려 수익 연장
- * - 평균 손절 비율 분석: 실제 -X%에서 끊기는지 파악 후 기준 조정
- */
-export function applyAdaptiveExitGuard(input: {
-  baseStopLossPct: number;
-  baseTakeProfitPct: number;
-  perf: AutoTradeSellPerformance | null;
-}): { stopLossPct: number; takeProfitPct: number; note?: string } {
-  const stopLossPct = Math.abs(toNumber(input.baseStopLossPct, 4));
-  const takeProfitPct = Math.abs(toNumber(input.baseTakeProfitPct, 8));
-  const perf = input.perf;
-
-  if (!perf || perf.sellCount < 5) {
-    return { stopLossPct, takeProfitPct };
-  }
-
-  const notes: string[] = [];
-
-  // 연속 손절 3회 이상 → 손절 기준 더 타이트하게 (빠른 손절)
-  if (perf.maxLossStreak >= 3) {
-    const tighterStop = Math.max(2, stopLossPct - 1.0);
-    notes.push(`연속손실 ${perf.maxLossStreak}회 → 손절 ${stopLossPct.toFixed(1)}% → ${tighterStop.toFixed(1)}%`);
-    return {
-      stopLossPct: tighterStop,
-      takeProfitPct,
-      note: notes.join(" · "),
-    };
-  }
-
-  // 승률 높고 PF 양호 → 익절 목표 소폭 연장 (수익 더 끌기)
-  if (
-    perf.sellCount >= 10 &&
-    perf.winRate >= 55 &&
-    perf.profitFactor != null &&
-    perf.profitFactor >= 1.2
-  ) {
-    const extendedTP = Math.min(15, takeProfitPct + 1.5);
-    notes.push(`승률 ${perf.winRate.toFixed(1)}% PF ${perf.profitFactor.toFixed(2)} → 익절 ${takeProfitPct.toFixed(1)}% → ${extendedTP.toFixed(1)}%`);
-    return {
-      stopLossPct,
-      takeProfitPct: extendedTP,
-      note: notes.join(" · "),
-    };
-  }
-
-  return { stopLossPct, takeProfitPct };
 }
 
 function applyPersistedGateGuard(input: {
@@ -2634,10 +2647,10 @@ async function selectMondayCandidates(payload: {
   });
 
   // 손절 쿨다운: 손절 원인/손실폭에 따라 5~10일 차등 적용
-  // 익절/손실정리 쿨다운: 휘핑쏘(반복 재매매) 방지용 2~6일 (강한 신선 신호는 아래에서 오버라이드)
+  // 익절/손실정리 쿨다운: 손실정리는 5~8일(오버라이드 불가), 진짜 익절은 2일(강한 신선 신호는 아래에서 오버라이드)
   const [cooldownCodes, takeProfitCooldownCodes] = await Promise.all([
     fetchStopLossCooldownCodes({ supabase: payload.supabase, chatId: payload.chatId, lookbackDays: 21 }),
-    fetchTakeProfitCooldownCodes({ supabase: payload.supabase, chatId: payload.chatId, lookbackDays: 10 }),
+    fetchTakeProfitCooldownCodes({ supabase: payload.supabase, chatId: payload.chatId, lookbackDays: 12 }),
   ]);
   const heldAndCooldownCodes = new Set<string>([...payload.heldCodes, ...cooldownCodes]);
   if (!latestAsof) {
@@ -2847,13 +2860,17 @@ async function selectMondayCandidates(payload: {
     }
   }
 
-  // 익절/손실정리 쿨다운 종목이라도 오늘 신호가 STRONG_BUY + 고득점이면 재매수 배제하지 않음
-  // (휘핑쏘 방지가 목적이지, 진짜 살아있는 추세의 재진입 기회까지 막을 필요는 없음)
+  // 진짜 익절(take-profit-*) 쿨다운 종목은 오늘 신호가 STRONG_BUY + 고득점이면 재매수 배제하지 않음.
+  // 손실정리(loss-trim) 쿨다운은 신호 강도와 무관하게 무조건 유지 — 손실 매도 후 재매수는
+  // "판단이 틀렸다"는 신호이므로 신호 재평가만으로 즉시 되돌리면 손실→재매수→재손실 악순환이 된다.
   const scoredRowByCode = new Map(scoredRows.map((row) => [row.code, row]));
   const activeTakeProfitCooldownCodes = new Set(
-    [...takeProfitCooldownCodes].filter(
-      (code) => !shouldOverrideTakeProfitCooldown(scoredRowByCode.get(code))
-    )
+    [...takeProfitCooldownCodes.entries()]
+      .filter(([code, info]) => {
+        if (!info.canOverride) return true;
+        return !shouldOverrideTakeProfitCooldown(scoredRowByCode.get(code));
+      })
+      .map(([code]) => code)
   );
   const finalHeldCodes = new Set<string>([...heldAndCooldownCodes, ...activeTakeProfitCooldownCodes]);
 
@@ -3057,6 +3074,16 @@ async function runMondayBuyForUser(payload: {
     chatId,
     windowDays: 45,
   });
+  // 연속손실 시 손절폭이 아니라 매수 사이즈를 축소 (applyAdaptiveExitGuard와 동일 원칙)
+  const mondayBuySizeScale =
+    mondaySellPerf && mondaySellPerf.sellCount >= 10
+      ? resolveLossStreakSizeScale(mondaySellPerf.maxLossStreak)
+      : 1;
+  if (mondayBuySizeScale < 1) {
+    summary.notes.push(
+      `연속손실 ${mondaySellPerf?.maxLossStreak ?? 0}회 → 매수사이즈 ${(mondayBuySizeScale * 100).toFixed(0)}%로 축소`
+    );
+  }
   const persistedGateState = await fetchStrategyGateState({
     supabase: payload.supabase,
     chatId,
@@ -3101,15 +3128,20 @@ async function runMondayBuyForUser(payload: {
     summary.notes.push(marketRegimeGuard.note);
   }
 
-  const remainSlots = buyConstraint.buySlots;
+  // 대형주 방어 모드: 하락장에서 현금 보유가 전략이 되도록 신규 매수를 완전 차단하고
+  // 기존 포지션 관리(손절/익절/리밸런싱)만 수행한다.
+  const regimeDefenseBlock = marketPolicy.mode === "large-cap-defense";
+  const remainSlots = regimeDefenseBlock ? 0 : buyConstraint.buySlots;
 
-  if (buyConstraint.note) {
+  if (regimeDefenseBlock) {
+    summary.notes.push(`[레짐게이트] 대형주 방어 모드: 신규 매수 중단 (${marketPolicy.reason}) · 기존 포지션 관리만`);
+  } else if (buyConstraint.note) {
     summary.notes.push(buyConstraint.note);
   }
 
   if (remainSlots <= 0) {
     summary.skipped += 1;
-    if (!buyConstraint.note) {
+    if (!regimeDefenseBlock && !buyConstraint.note) {
       summary.notes.push("추가 매수 슬롯 없음");
     }
     await writeActionLog({
@@ -3117,7 +3149,9 @@ async function runMondayBuyForUser(payload: {
       runId: payload.runId,
       chatId,
       actionType: "SKIP",
-      reason: buyConstraint.reason === "default"
+      reason: regimeDefenseBlock
+        ? "regime-defense-no-new-buy"
+        : buyConstraint.reason === "default"
         ? "no-buy-slots"
         : buyConstraint.reason,
       detail: {
@@ -3401,7 +3435,7 @@ async function runMondayBuyForUser(payload: {
         currentHoldingCount: plannedHoldingCount,
         maxPositions,
         stopLossPct: Math.abs(toNumber(payload.setting.stop_loss_pct, 4)),
-        riskBudgetScale: dailyRiskBudget.scale,
+        riskBudgetScale: dailyRiskBudget.scale * mondayBuySizeScale,
         conviction: resolveConvictionScale({
           score: candidate.score,
           trustGrade: signalGate.grade,
@@ -4310,6 +4344,20 @@ async function runDailyReviewForUser(payload: {
     if (code) isSectorLeaderByCode.set(code, isSectorLeader);
   }
 
+  // 종목별 종가 신선도/동결 가드: 계정 단위 가드(위 STALE_PRICE_GUARD_MS)를 통과해도
+  // 특정 종목만 파이프라인이 멈춘 채 동결된 종가로 매도 판단하는 사고를 막는다.
+  // (2026-06-12~07-10 pykrx 다운그레이드로 일부 종목 종가가 수일간 고정됐던 사고 재발 방지)
+  // 이 히스토리는 P2(ATR 기반 손절)에서도 재사용한다.
+  const priceHistoryByCode = await fetchStockDailyHistoryForCodes(payload.supabase, codeList, 60);
+  const staleOrFrozenCodes = new Set<string>();
+  for (const code of codeList) {
+    const history = priceHistoryByCode.get(code) ?? [];
+    const freshness = evaluateCloseFreshness(history);
+    if (!freshness.ok) {
+      staleOrFrozenCodes.add(code);
+    }
+  }
+
   // 섹터 등급 맵: 보유 종목 섹터 강도 체크용 (Grade C 하락 시 리밸런싱 트리거)
   const sectorGradeById = await (async () => {
     try {
@@ -4438,6 +4486,20 @@ async function runDailyReviewForUser(payload: {
       continue;
     }
 
+    if (staleOrFrozenCodes.has(holding.code)) {
+      summary.skipped += 1;
+      summary.notes.push(`[종가 신선도 가드] ${holding.code} 종가 오래됨/동결 → 매도 판단 스킵`);
+      await writeActionLog({
+        supabase: payload.supabase,
+        runId: payload.runId,
+        chatId,
+        code: holding.code,
+        actionType: "SKIP",
+        reason: "stale-or-frozen-close",
+      });
+      continue;
+    }
+
     const strategyState = parsePositionStrategyState(holding.memo, selectedStrategy);
     const tradeProfile = resolvePositionTradeProfile({
       accountStrategy: selectedStrategy,
@@ -4450,9 +4512,22 @@ async function runDailyReviewForUser(payload: {
     const holdingScoreRow = holdingFactorsByCode.get(holding.code);
     const holdingSignal = holdingScoreRow?.signal ?? null;
     const holdingMarket = marketByCode.get(holding.code) ?? "";
+    // 변동성(ATR%) 기반 손절폭 보정: 고정 손절폭이 종목 일봉 변동성보다 좁으면
+    // 정상 노이즈에도 끊기므로, ATR% 기반 하한을 적용한다.
+    const holdingAtr = calcATR(
+      (priceHistoryByCode.get(holding.code) ?? []).map((row) => ({
+        ...row,
+        code: holding.code,
+        amount: 0,
+      }))
+    );
+    const volatilityAdjustedStopLossPct = resolveVolatilityAdjustedStopPct({
+      baseStopLossPct: tradeProfile.stopLossPct,
+      atrPct: holdingAtr?.atrPct ?? null,
+    });
     const adaptiveExitThreshold = resolveAdaptiveExitThreshold({
       takeProfitPct: tradeProfile.takeProfitPct,
-      stopLossPct: tradeProfile.stopLossPct,
+      stopLossPct: volatilityAdjustedStopLossPct,
       signal: holdingSignal,
       market: holdingMarket,
       marketPolicy,
@@ -4841,14 +4916,20 @@ async function runDailyReviewForUser(payload: {
       );
     }
 
+    // 대형주 방어 모드: 하락장에서 현금 보유가 전략이 되도록 신규 매수뿐 아니라 추가매수도 차단한다.
+    const regimeDefenseBlockDaily = marketPolicy.mode === "large-cap-defense";
+    if (regimeDefenseBlockDaily) {
+      summary.notes.push(`[레짐게이트] 대형주 방어 모드: 추가매수 중단 (${marketPolicy.reason})`);
+    }
+
     const addOnConstraint = applyStrategyBuyConstraint({
       selectedStrategy: payload.setting.selected_strategy,
-      requestedSlots: recoveryModeActive ? 0 : persistedGuard.requestedSlots,
+      requestedSlots: recoveryModeActive || regimeDefenseBlockDaily ? 0 : persistedGuard.requestedSlots,
       baseMinBuyScore: persistedGuard.baseMinBuyScore,
       activeCount: currentCount,
     });
 
-    if (!dailyBuyBlocked && availableCash > 0 && addOnConstraint.buySlots > 0 && activeHoldings.length > 0) {
+    if (!dailyBuyBlocked && !regimeDefenseBlockDaily && availableCash > 0 && addOnConstraint.buySlots > 0 && activeHoldings.length > 0) {
       const addOnSelectionRaw = await selectDailyAddOnCandidates({
         supabase: payload.supabase,
         holdings: activeHoldings,
@@ -5002,7 +5083,7 @@ async function runDailyReviewForUser(payload: {
           currentHoldingCount: Math.max(0, currentCount - 1),
           maxPositions: Math.max(1, maxPositions),
           stopLossPct: holdingProfile.stopLossPct,
-          riskBudgetScale: dailyRiskBudget.scale,
+          riskBudgetScale: dailyRiskBudget.scale * adaptiveExitGuard.buySizeScale,
           conviction: resolveConvictionScale({
             score: candidate.score,
             trustGrade: signalGate.grade,
@@ -5286,8 +5367,8 @@ async function runDailyReviewForUser(payload: {
 
     // 기존 monday_buy_slots를 회차당 신규매수 상한으로 재사용한다.
     const maxNewBuysPerRun = toPositiveInt(payload.setting.monday_buy_slots, 2);
-    // 복구 모드 시 신규 매수 슬롯을 0으로 강제
-    const rawBuySlots = recoveryModeActive ? 0 : Math.min(room, maxNewBuysPerRun);
+    // 복구 모드 또는 대형주 방어 모드 시 신규 매수 슬롯을 0으로 강제
+    const rawBuySlots = recoveryModeActive || regimeDefenseBlockDaily ? 0 : Math.min(room, maxNewBuysPerRun);
     const perfAdjustedRebalance = applyPerformanceBuyGuard({
       requestedSlots: rawBuySlots,
       baseMinBuyScore: toPositiveInt(payload.setting.min_buy_score, 72),
@@ -5552,7 +5633,7 @@ async function runDailyReviewForUser(payload: {
           currentHoldingCount: plannedHoldingCount,
           maxPositions,
           stopLossPct: adjustedEntryProfile.stopLossPct,
-          riskBudgetScale: dailyRiskBudget.scale,
+          riskBudgetScale: dailyRiskBudget.scale * adaptiveExitGuard.buySizeScale,
           conviction: resolveConvictionScale({
             score: candidate.score,
             trustGrade: signalGate.grade,

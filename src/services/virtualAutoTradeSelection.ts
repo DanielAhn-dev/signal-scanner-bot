@@ -1,7 +1,162 @@
 /**
+ * 종목별 종가 신선도/동결 감지.
+ * 2026-06-12~07-10 pykrx 다운그레이드로 stock_daily 종가 파이프라인이 조용히 멈췄는데,
+ * 계정 단위 신선도 가드(stocks.updated_at 최대값)만으로는 일부 종목만 갱신돼도 통과하고
+ * updated_at은 찍히는데 close 값 자체가 동결되는 부분 장애를 못 잡았다. 종목별로 한 번 더 검증한다.
+ */
+export type CloseFreshnessRow = { date: string; close: number; volume?: number | null };
+
+export type CloseFreshnessResult = {
+  ok: boolean;
+  reason: "no-data" | "stale-date" | "frozen-close" | null;
+  staleDays: number | null;
+};
+
+/** 유동성 있는 종목의 종가가 이 세션 수만큼 연속 동일하면 파이프라인 동결로 간주 */
+const FROZEN_CLOSE_SESSIONS = 4;
+/** 최신 종가 날짜가 이 캘린더일을 초과하면 신선도 실패 (주말+연휴 감안) */
+const MAX_STALE_CALENDAR_DAYS = 5;
+
+export function evaluateCloseFreshness(
+  rows: CloseFreshnessRow[],
+  opts?: { nowMs?: number; maxStaleCalendarDays?: number; frozenCloseSessions?: number }
+): CloseFreshnessResult {
+  if (!rows.length) return { ok: false, reason: "no-data", staleDays: null };
+
+  // 최신순 정렬 보장 (호출측 정렬을 신뢰하지 않음)
+  const sorted = [...rows].sort((a, b) => Date.parse(b.date) - Date.parse(a.date));
+  const latest = sorted[0];
+  const latestTs = Date.parse(latest.date);
+  if (!Number.isFinite(latestTs)) return { ok: false, reason: "no-data", staleDays: null };
+
+  const nowMs = opts?.nowMs ?? Date.now();
+  const maxStaleCalendarDays = opts?.maxStaleCalendarDays ?? MAX_STALE_CALENDAR_DAYS;
+  const staleDays = Math.floor((nowMs - latestTs) / (24 * 60 * 60 * 1000));
+  if (staleDays > maxStaleCalendarDays) {
+    return { ok: false, reason: "stale-date", staleDays };
+  }
+
+  const frozenCloseSessions = opts?.frozenCloseSessions ?? FROZEN_CLOSE_SESSIONS;
+  if (sorted.length >= frozenCloseSessions) {
+    const window = sorted.slice(0, frozenCloseSessions);
+    const allSameClose = window.every((row) => row.close === window[0].close);
+    const hasLiquidity = window.some((row) => Number(row.volume ?? 0) > 0);
+    if (allSameClose && hasLiquidity) {
+      return { ok: false, reason: "frozen-close", staleDays };
+    }
+  }
+
+  return { ok: true, reason: null, staleDays };
+}
+
+/**
+ * 종가 파이프라인 동결 사고(2026-06-12~07-10, pykrx 다운그레이드, 4eee429에서 수정) 기간의
+ * 매도 기록은 실제 전략 성과가 아니라 오염된 종가로 판단한 가짜 손익이다.
+ * 적응형 성과게이트/승률 통계는 이 시각 이후 데이터만 사용해야 한다.
+ */
+export const ADAPTIVE_STATS_EXCLUDE_BEFORE_ISO = "2026-07-11T00:00:00+09:00";
+
+/** since와 오염기간 컷오프 중 더 늦은(=더 짧은 조회 구간) 시각을 반환한다. */
+export function resolveStatsSinceIso(rawSinceIso: string): string {
+  const cutoffMs = Date.parse(ADAPTIVE_STATS_EXCLUDE_BEFORE_ISO);
+  const rawMs = Date.parse(rawSinceIso);
+  if (!Number.isFinite(cutoffMs)) return rawSinceIso;
+  if (!Number.isFinite(rawMs)) return ADAPTIVE_STATS_EXCLUDE_BEFORE_ISO;
+  return rawMs >= cutoffMs ? rawSinceIso : ADAPTIVE_STATS_EXCLUDE_BEFORE_ISO;
+}
+
+export type AutoTradeSellPerformance = {
+  windowDays: number;
+  sellCount: number;
+  winRate: number;
+  profitFactor: number | null;
+  maxLossStreak: number;
+};
+
+/**
+ * 연속손실 발생 시 매수 사이즈 축소 계수.
+ * 과거에는 연속손실 시 손절폭을 더 타이트하게 조였는데, 이는 방향이 반대다 —
+ * 손절을 더 좁히면 정상 변동성에도 더 자주 끊겨 휘핑쏘가 악화된다.
+ * 연속손실은 "전략이 지금 시장과 안 맞다"는 신호이므로 포지션 크기를 줄이는 게 맞다.
+ */
+export function resolveLossStreakSizeScale(maxLossStreak: number): number {
+  if (maxLossStreak >= 5) return 0.4;
+  if (maxLossStreak >= 3) return 0.6;
+  return 1.0;
+}
+
+/**
+ * 적응형 출구 전략 조정 엔진
+ * 최근 매도 성과(손절 연속 패턴, 익절 비율) → stopLossPct / takeProfitPct / 매수 사이즈 자동 조정
+ * - 연속 손절 3회 이상: 손절 기준을 조이지 않고(휘핑쏘 악화 방지) 매수 사이즈를 축소
+ * - 익절 비율 높고 PF 양호(표본 20건 이상): 익절 목표를 소폭 늘려 수익 연장
+ */
+export function applyAdaptiveExitGuard(input: {
+  baseStopLossPct: number;
+  baseTakeProfitPct: number;
+  perf: AutoTradeSellPerformance | null;
+}): { stopLossPct: number; takeProfitPct: number; buySizeScale: number; note?: string } {
+  const stopLossPct = Math.abs(toNumber(input.baseStopLossPct, 4));
+  const takeProfitPct = Math.abs(toNumber(input.baseTakeProfitPct, 8));
+  const perf = input.perf;
+
+  if (!perf || perf.sellCount < 10) {
+    return { stopLossPct, takeProfitPct, buySizeScale: 1 };
+  }
+
+  const notes: string[] = [];
+
+  // 연속 손절 3회 이상 → 손절폭은 그대로 두고 매수 사이즈를 축소 (리스크 축소가 목적)
+  if (perf.maxLossStreak >= 3) {
+    const buySizeScale = resolveLossStreakSizeScale(perf.maxLossStreak);
+    notes.push(`연속손실 ${perf.maxLossStreak}회 → 매수사이즈 ${(buySizeScale * 100).toFixed(0)}%로 축소`);
+    return {
+      stopLossPct,
+      takeProfitPct,
+      buySizeScale,
+      note: notes.join(" · "),
+    };
+  }
+
+  // 승률 높고 PF 양호(표본 20건 이상) → 익절 목표 소폭 연장 (수익 더 끌기)
+  if (
+    perf.sellCount >= 20 &&
+    perf.winRate >= 55 &&
+    perf.profitFactor != null &&
+    perf.profitFactor >= 1.2
+  ) {
+    const extendedTP = Math.min(15, takeProfitPct + 1.5);
+    notes.push(`승률 ${perf.winRate.toFixed(1)}% PF ${perf.profitFactor.toFixed(2)} → 익절 ${takeProfitPct.toFixed(1)}% → ${extendedTP.toFixed(1)}%`);
+    return {
+      stopLossPct,
+      takeProfitPct: extendedTP,
+      buySizeScale: 1,
+      note: notes.join(" · "),
+    };
+  }
+
+  return { stopLossPct, takeProfitPct, buySizeScale: 1 };
+}
+
+/**
+ * 변동성(ATR%) 기반 손절폭 보정.
+ * 고정 손절폭(예: 2~3%)은 종목의 일봉 변동성보다 좁을 수 있어 정상 노이즈에도 끊긴다.
+ * ATR%가 있으면 기준 손절폭과 "2.2 * ATR%" 중 더 넓은 쪽을 쓴다 (상한 12%).
+ */
+export function resolveVolatilityAdjustedStopPct(input: {
+  baseStopLossPct: number;
+  atrPct: number | null;
+}): number {
+  const base = Math.abs(input.baseStopLossPct);
+  if (input.atrPct == null || !Number.isFinite(input.atrPct) || input.atrPct <= 0) return base;
+  return Math.max(base, Math.min(12, 2.2 * input.atrPct));
+}
+
+/**
  * 익절/손실정리(휘핑쏘) 재매수 쿨다운.
- * 손절과 달리 "틀린 판단"이 아니라 단기 반복매매 자체의 수수료·세금 손실을 줄이는 목적이라
- * 손절 쿨다운보다 짧게 잡고(2~6일), 실현손익률(pnlPct)로 강도를 차등한다.
+ * 손절과 달리 "틀린 판단"이 아니라 단기 반복매매 자체의 수수료·세금 손실을 줄이는 목적이지만,
+ * 손실 매도(loss-trim) 직후 재매수는 같은 종목을 반대 방향으로 다시 물타는 셈이라
+ * 진짜 익절(take-profit-*)보다 길게 잡는다.
  */
 export function resolveExitPnlPct(detail: Record<string, unknown> | null): number | null {
   if (!detail) return null;
@@ -13,9 +168,9 @@ export function resolveExitPnlPct(detail: Record<string, unknown> | null): numbe
 
 export function resolveTakeProfitCooldownDays(reason: string, pnlPct: number | null): number {
   if (reason === "loss-trim") {
-    if (pnlPct != null && pnlPct <= -8) return 6;
-    if (pnlPct != null && pnlPct <= -4) return 4;
-    return 2;
+    if (pnlPct != null && pnlPct <= -8) return 8;
+    if (pnlPct != null && pnlPct <= -4) return 6;
+    return 5;
   }
   // take-profit-partial / take-profit-final: 실제 수익 실현이라 짧게만 유지
   return 2;
@@ -31,6 +186,15 @@ export function shouldOverrideTakeProfitCooldown(
   const signal = String(row.signal ?? "").trim().toUpperCase();
   const score = Number(row.score);
   return signal === "STRONG_BUY" && Number.isFinite(score) && score >= TAKE_PROFIT_COOLDOWN_OVERRIDE_SCORE;
+}
+
+/**
+ * 손실 매도(loss-trim) 쿨다운은 오버라이드 대상이 아니다 — "틀린 판단"을 신호 강도만 보고
+ * 즉시 되돌리면 손실 매도 → 재매수 → 재손실의 악순환이 된다. 오버라이드는 진짜 수익
+ * 실현(take-profit-*) 이후 살아있는 추세의 재진입에만 허용한다.
+ */
+export function isTakeProfitCooldownOverridable(reason: string): boolean {
+  return reason === "take-profit-partial" || reason === "take-profit-final";
 }
 
 export type RankedCandidate = {

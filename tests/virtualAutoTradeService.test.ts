@@ -1,16 +1,22 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
+  applyAdaptiveExitGuard,
   applyStrategyBuyConstraint,
   computeDynamicLargeCapFloor,
   detectAutoTradeMarketPolicy,
   deriveAdaptiveMinBuyScore,
+  evaluateCloseFreshness,
   isActionableTodayBuySignal,
+  isTakeProfitCooldownOverridable,
   pickAutoTradeAddOnCandidates,
   pickAutoTradeCandidates,
   resolveDeployableCash,
   resolveExitPnlPct,
+  resolveLossStreakSizeScale,
+  resolveStatsSinceIso,
   resolveTakeProfitCooldownDays,
+  resolveVolatilityAdjustedStopPct,
   selectRunType,
   shouldOverrideTakeProfitCooldown,
 } from "../src/services/virtualAutoTradeSelection";
@@ -20,6 +26,7 @@ import {
   evaluateSectorRotationExit,
   parsePositionStrategyState,
   planAutoTradeExit,
+  planOverweightReduction,
   resolvePositionTradeProfile,
 } from "../src/services/virtualAutoTradePositionStrategy";
 import {
@@ -788,11 +795,11 @@ test("resolveExitPnlPct: buyPrice/close로 손익률을 계산한다", () => {
   assert.equal(resolveExitPnlPct({ buyPrice: 50000, close: "not-a-number" }), null);
 });
 
-test("resolveTakeProfitCooldownDays: 손실정리는 손실폭에 따라 2~6일 차등, 익절은 항상 2일", () => {
-  assert.equal(resolveTakeProfitCooldownDays("loss-trim", -10), 6);
-  assert.equal(resolveTakeProfitCooldownDays("loss-trim", -5), 4);
-  assert.equal(resolveTakeProfitCooldownDays("loss-trim", -1), 2);
-  assert.equal(resolveTakeProfitCooldownDays("loss-trim", null), 2);
+test("resolveTakeProfitCooldownDays: 손실정리는 손실폭에 따라 5~8일 차등, 익절은 항상 2일", () => {
+  assert.equal(resolveTakeProfitCooldownDays("loss-trim", -10), 8);
+  assert.equal(resolveTakeProfitCooldownDays("loss-trim", -5), 6);
+  assert.equal(resolveTakeProfitCooldownDays("loss-trim", -1), 5);
+  assert.equal(resolveTakeProfitCooldownDays("loss-trim", null), 5);
   assert.equal(resolveTakeProfitCooldownDays("take-profit-partial", -20), 2);
   assert.equal(resolveTakeProfitCooldownDays("take-profit-final", 30), 2);
 });
@@ -802,4 +809,170 @@ test("shouldOverrideTakeProfitCooldown: STRONG_BUY + 고득점만 쿨다운을 �
   assert.equal(shouldOverrideTakeProfitCooldown({ score: 79, signal: "STRONG_BUY" }), false);
   assert.equal(shouldOverrideTakeProfitCooldown({ score: 90, signal: "BUY" }), false);
   assert.equal(shouldOverrideTakeProfitCooldown(undefined), false);
+});
+
+test("isTakeProfitCooldownOverridable: 손실정리(loss-trim)는 오버라이드 불가, 익절만 가능", () => {
+  assert.equal(isTakeProfitCooldownOverridable("loss-trim"), false);
+  assert.equal(isTakeProfitCooldownOverridable("take-profit-partial"), true);
+  assert.equal(isTakeProfitCooldownOverridable("take-profit-final"), true);
+  assert.equal(isTakeProfitCooldownOverridable("stop-loss"), false);
+});
+
+test("resolveStatsSinceIso: 오염기간 컷오프보다 이른 since는 컷오프로 당겨진다", () => {
+  assert.equal(
+    resolveStatsSinceIso("2026-01-01T00:00:00.000Z"),
+    "2026-07-11T00:00:00+09:00"
+  );
+  assert.equal(
+    resolveStatsSinceIso("2026-08-01T00:00:00.000Z"),
+    "2026-08-01T00:00:00.000Z"
+  );
+});
+
+test("resolveLossStreakSizeScale: 연속손실이 클수록 매수 사이즈를 축소한다", () => {
+  assert.equal(resolveLossStreakSizeScale(0), 1.0);
+  assert.equal(resolveLossStreakSizeScale(2), 1.0);
+  assert.equal(resolveLossStreakSizeScale(3), 0.6);
+  assert.equal(resolveLossStreakSizeScale(4), 0.6);
+  assert.equal(resolveLossStreakSizeScale(5), 0.4);
+  assert.equal(resolveLossStreakSizeScale(10), 0.4);
+});
+
+test("resolveVolatilityAdjustedStopPct: ATR%가 기준 손절폭보다 넓으면 ATR 기준으로 확장한다", () => {
+  assert.equal(resolveVolatilityAdjustedStopPct({ baseStopLossPct: 3, atrPct: null }), 3);
+  // 2.2 * 1% = 2.2% < 기준 3% → 기준 유지
+  assert.equal(resolveVolatilityAdjustedStopPct({ baseStopLossPct: 3, atrPct: 1 }), 3);
+  // 2.2 * 5% = 11% > 기준 3% → ATR 기준으로 확장 (상한 12)
+  assert.equal(resolveVolatilityAdjustedStopPct({ baseStopLossPct: 3, atrPct: 5 }), 11);
+  // 2.2 * 10% = 22% > 상한 12 → 12로 캡
+  assert.equal(resolveVolatilityAdjustedStopPct({ baseStopLossPct: 3, atrPct: 10 }), 12);
+});
+
+test("evaluateCloseFreshness: 데이터가 없으면 no-data", () => {
+  const result = evaluateCloseFreshness([]);
+  assert.equal(result.ok, false);
+  assert.equal(result.reason, "no-data");
+});
+
+test("evaluateCloseFreshness: 최신 종가 날짜가 오래되면 stale-date", () => {
+  const nowMs = Date.parse("2026-07-13T00:00:00Z");
+  const result = evaluateCloseFreshness(
+    [{ date: "2026-07-01", close: 50000, volume: 100000 }],
+    { nowMs }
+  );
+  assert.equal(result.ok, false);
+  assert.equal(result.reason, "stale-date");
+});
+
+test("evaluateCloseFreshness: 유동성 있는 종목의 종가가 여러 세션 동결되면 frozen-close", () => {
+  const nowMs = Date.parse("2026-07-13T00:00:00Z");
+  const rows = [
+    { date: "2026-07-13", close: 65000, volume: 120000 },
+    { date: "2026-07-12", close: 65000, volume: 90000 },
+    { date: "2026-07-11", close: 65000, volume: 110000 },
+    { date: "2026-07-10", close: 65000, volume: 80000 },
+    { date: "2026-07-09", close: 64000, volume: 70000 },
+  ];
+  const result = evaluateCloseFreshness(rows, { nowMs });
+  assert.equal(result.ok, false);
+  assert.equal(result.reason, "frozen-close");
+});
+
+test("evaluateCloseFreshness: 종가가 동일해도 거래량이 전부 0이면 동결로 보지 않는다(거래정지 등)", () => {
+  const nowMs = Date.parse("2026-07-13T00:00:00Z");
+  const rows = [
+    { date: "2026-07-13", close: 65000, volume: 0 },
+    { date: "2026-07-12", close: 65000, volume: 0 },
+    { date: "2026-07-11", close: 65000, volume: 0 },
+    { date: "2026-07-10", close: 65000, volume: 0 },
+  ];
+  const result = evaluateCloseFreshness(rows, { nowMs });
+  assert.equal(result.ok, true);
+});
+
+test("evaluateCloseFreshness: 신선하고 정상적으로 변동하는 종가는 통과한다", () => {
+  const nowMs = Date.parse("2026-07-13T00:00:00Z");
+  const rows = [
+    { date: "2026-07-13", close: 65000, volume: 120000 },
+    { date: "2026-07-12", close: 64500, volume: 90000 },
+    { date: "2026-07-11", close: 64000, volume: 110000 },
+    { date: "2026-07-10", close: 63500, volume: 80000 },
+  ];
+  const result = evaluateCloseFreshness(rows, { nowMs });
+  assert.equal(result.ok, true);
+  assert.equal(result.reason, null);
+});
+
+test("applyAdaptiveExitGuard: 표본 10건 미만이면 조정하지 않는다", () => {
+  const result = applyAdaptiveExitGuard({
+    baseStopLossPct: 4,
+    baseTakeProfitPct: 8,
+    perf: { windowDays: 45, sellCount: 5, winRate: 20, profitFactor: 0.5, maxLossStreak: 4 },
+  });
+  assert.equal(result.stopLossPct, 4);
+  assert.equal(result.takeProfitPct, 8);
+  assert.equal(result.buySizeScale, 1);
+});
+
+test("applyAdaptiveExitGuard: 연속손실 3회 이상이면 손절폭은 그대로 두고 매수 사이즈만 축소한다", () => {
+  const result = applyAdaptiveExitGuard({
+    baseStopLossPct: 4,
+    baseTakeProfitPct: 8,
+    perf: { windowDays: 45, sellCount: 10, winRate: 30, profitFactor: 0.7, maxLossStreak: 3 },
+  });
+  assert.equal(result.stopLossPct, 4);
+  assert.equal(result.takeProfitPct, 8);
+  assert.equal(result.buySizeScale, 0.6);
+  assert.ok(result.note?.includes("매수사이즈"));
+});
+
+test("applyAdaptiveExitGuard: 승률/PF 양호 + 표본 20건 이상이면 익절 목표를 연장한다", () => {
+  const result = applyAdaptiveExitGuard({
+    baseStopLossPct: 4,
+    baseTakeProfitPct: 8,
+    perf: { windowDays: 45, sellCount: 20, winRate: 60, profitFactor: 1.3, maxLossStreak: 1 },
+  });
+  assert.equal(result.stopLossPct, 4);
+  assert.equal(result.takeProfitPct, 9.5);
+  assert.equal(result.buySizeScale, 1);
+});
+
+test("applyAdaptiveExitGuard: 표본 20건 미만이면 승률이 좋아도 익절을 연장하지 않는다", () => {
+  const result = applyAdaptiveExitGuard({
+    baseStopLossPct: 4,
+    baseTakeProfitPct: 8,
+    perf: { windowDays: 45, sellCount: 15, winRate: 60, profitFactor: 1.3, maxLossStreak: 1 },
+  });
+  assert.equal(result.takeProfitPct, 8);
+  assert.equal(result.buySizeScale, 1);
+});
+
+test("planOverweightReduction: 1주만 보유 중이면 최소 1주 유지를 위해 매도하지 않는다", () => {
+  const result = planOverweightReduction({
+    currentWeightPct: 40,
+    maxWeightPct: 25,
+    targetWeightPct: 20,
+    quantity: 1,
+    currentPrice: 100000,
+    totalPortfolioValue: 1000000,
+    takeProfitTranchesDone: 0,
+  });
+  assert.equal(result.action, "HOLD");
+  assert.equal(result.quantityToSell, 0);
+});
+
+test("planOverweightReduction: 2주 이상이면 최소 1주를 남기고 초과분을 분할 매도한다", () => {
+  // quantity=2 * price=300,000 = 600,000 → 포트폴리오(1,000,000)의 60% 비중
+  const result = planOverweightReduction({
+    currentWeightPct: 60,
+    maxWeightPct: 25,
+    targetWeightPct: 20,
+    quantity: 2,
+    currentPrice: 300000,
+    totalPortfolioValue: 1000000,
+    takeProfitTranchesDone: 0,
+  });
+  assert.equal(result.action, "OVERWEIGHT_REDUCTION");
+  assert.ok(result.quantityToSell >= 1);
+  assert.ok(result.quantityToSell < 2);
 });
