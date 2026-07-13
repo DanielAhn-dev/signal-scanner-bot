@@ -99,6 +99,12 @@ import {
 import { runLongTermCoachForChat } from "./longTermCoachService";
 import { calcATR } from "../indicators/atr";
 import {
+  CASH_SWEEP_CANDIDATE_CODES,
+  CASH_SWEEP_STRATEGY_ID,
+  resolveCashSweepIdleAmount,
+  shouldLiquidateCashSweep,
+} from "./virtualAutoTradeCashSweep";
+import {
   fetchStrategyGateState,
   upsertStrategyGateState,
   resolveStrategyGateStatus,
@@ -1924,6 +1930,199 @@ async function appendTradeLog(payload: {
   return Number((data as Record<string, unknown> | null)?.id ?? 0) || null;
 }
 
+/**
+ * 유휴현금 스윕 실행 단계. 매수/매도 판단이 모두 끝난 뒤 마지막에 한 번 호출한다.
+ * - 실거래용 현금이 부족하면(CASH_SWEEP_LIQUIDATE_THRESHOLD 미만) 스윕 포지션을 전량 현금화해
+ *   다음 회차 매수 자금으로 돌려준다.
+ * - 그렇지 않고 유휴현금이 충분히 쌓였으면 CD금리/KOFR 연동 ETF를 매수(또는 추가매수 평단 갱신)한다.
+ * 매매 실패는 자동매매 본 로직에 영향을 주지 않도록 통째로 삼킨다(best-effort).
+ */
+async function runCashSweepStep(payload: {
+  supabase: SupabaseClientAny;
+  chatId: number;
+  dryRun: boolean;
+}): Promise<{ notes: string[] }> {
+  const notes: string[] = [];
+  try {
+    const prefs = await getUserInvestmentPrefs(payload.chatId);
+    const seedCapital = Math.max(
+      0,
+      toNumber(prefs.virtual_seed_capital, toNumber(prefs.capital_krw, 0))
+    );
+    const availableCash = Math.max(0, toNumber(prefs.virtual_cash, 0));
+    if (seedCapital <= 0) return { notes };
+
+    const { data: priceRows } = await payload.supabase
+      .from("stocks")
+      .select("code, name, close")
+      .in("code", CASH_SWEEP_CANDIDATE_CODES);
+    const priceByCode = new Map(
+      ((priceRows ?? []) as Record<string, unknown>[]).map((row) => [
+        String(row.code ?? ""),
+        { close: toNumber(row.close, 0), name: String(row.name ?? "") },
+      ])
+    );
+    const sweepCode = CASH_SWEEP_CANDIDATE_CODES.find(
+      (code) => (priceByCode.get(code)?.close ?? 0) > 0
+    );
+    // 배치가 아직 CD금리/KOFR ETF 종가를 추적하지 않으면(유니버스 화이트리스트 미적용) 조용히 건너뜀
+    if (!sweepCode) return { notes };
+    const sweepPrice = priceByCode.get(sweepCode)!.close;
+    const sweepName = priceByCode.get(sweepCode)!.name || sweepCode;
+
+    const { data: sweepPositionRow } = await payload.supabase
+      .from(PORTFOLIO_TABLES.positions)
+      .select("id, code, quantity, invested_amount, memo")
+      .eq("chat_id", payload.chatId)
+      .eq("code", sweepCode)
+      .eq("status", "holding")
+      .is("broker_name", null)
+      .is("account_name", null)
+      .maybeSingle();
+
+    const existingSweep =
+      sweepPositionRow &&
+      parseStrategyMemo((sweepPositionRow as Record<string, unknown>).memo as string | null)
+        .strategyId === CASH_SWEEP_STRATEGY_ID
+        ? (sweepPositionRow as { id: number; quantity: number; invested_amount: number })
+        : null;
+    const sweepQty = Math.max(0, Math.floor(toNumber(existingSweep?.quantity, 0)));
+    const sweepInvested = Math.max(0, toNumber(existingSweep?.invested_amount, 0));
+    const sweepCurrentValue = sweepQty > 0 ? sweepQty * sweepPrice : 0;
+
+    // 1) 실거래 자금 부족 → 스윕 포지션 전량 현금화
+    if (existingSweep && shouldLiquidateCashSweep({ availableCash, sweepPositionValue: sweepCurrentValue })) {
+      if (payload.dryRun) {
+        notes.push(
+          `[유휴현금 스윕][테스트] ${sweepName} 전량 현금화 예정 (평가액 ${fmtKrw(sweepCurrentValue)})`
+        );
+        return { notes };
+      }
+
+      const feeRate = toNumber(prefs.virtual_fee_rate, 0.00015);
+      const taxRate = toNumber(prefs.virtual_tax_rate, 0.0018);
+      const gross = Math.round(sweepPrice * sweepQty);
+      const feeAmount = Math.round(gross * feeRate);
+      const taxAmount = Math.round(gross * taxRate);
+      const net = Math.max(0, gross - feeAmount - taxAmount);
+      const pnl = net - sweepInvested;
+
+      await payload.supabase
+        .from(PORTFOLIO_TABLES.positions)
+        .delete()
+        .eq("chat_id", payload.chatId)
+        .eq("id", existingSweep.id);
+
+      await appendTradeLog({
+        supabase: payload.supabase,
+        chatId: payload.chatId,
+        code: sweepCode,
+        side: "SELL",
+        price: sweepPrice,
+        quantity: sweepQty,
+        grossAmount: gross,
+        netAmount: net,
+        feeAmount,
+        taxAmount,
+        pnlAmount: pnl,
+        memo: buildStrategyMemo({
+          strategyId: CASH_SWEEP_STRATEGY_ID,
+          event: "sweep-liquidate",
+          note: "cash-sweep-liquidate",
+        }),
+        source: "AUTO",
+        brokerName: null,
+        accountName: null,
+      });
+
+      await setUserInvestmentPrefs(payload.chatId, {
+        virtual_cash: Math.max(0, Math.round(availableCash + net)),
+        virtual_realized_pnl: toNumber(prefs.virtual_realized_pnl, 0) + pnl,
+      });
+
+      notes.push(
+        `[유휴현금 스윕] ${sweepName} 전량 현금화 · 실거래 자금 확보 (${fmtKrw(net)}, 손익 ${pnl >= 0 ? "+" : ""}${fmtKrw(pnl)})`
+      );
+      return { notes };
+    }
+
+    // 2) 유휴현금 충분 → 스윕 매수(신규 진입 또는 추가매수 평단 갱신)
+    const idleAmount = resolveCashSweepIdleAmount({ availableCash, seedCapital });
+    if (idleAmount <= 0) return { notes };
+    const buyQty = Math.floor(idleAmount / sweepPrice);
+    if (buyQty <= 0) return { notes };
+    const buyInvested = Math.round(buyQty * sweepPrice);
+
+    if (payload.dryRun) {
+      notes.push(`[유휴현금 스윕][테스트] ${sweepName} ${buyQty}주 매수 예정 (${fmtKrw(buyInvested)})`);
+      return { notes };
+    }
+
+    if (existingSweep) {
+      const nextQty = sweepQty + buyQty;
+      const nextInvested = sweepInvested + buyInvested;
+      await payload.supabase
+        .from(PORTFOLIO_TABLES.positions)
+        .update({
+          quantity: nextQty,
+          invested_amount: nextInvested,
+          buy_price: Number((nextInvested / nextQty).toFixed(4)),
+        })
+        .eq("chat_id", payload.chatId)
+        .eq("id", existingSweep.id);
+    } else {
+      await payload.supabase.from(PORTFOLIO_TABLES.positions).insert({
+        chat_id: payload.chatId,
+        code: sweepCode,
+        buy_price: sweepPrice,
+        buy_date: new Date().toISOString().slice(0, 10),
+        quantity: buyQty,
+        invested_amount: buyInvested,
+        bucket: "SWING",
+        status: "holding",
+        broker_name: null,
+        account_name: null,
+        memo: buildStrategyMemo({
+          strategyId: CASH_SWEEP_STRATEGY_ID,
+          event: "sweep-buy",
+          note: "cash-sweep-buy",
+        }),
+      });
+    }
+
+    await appendTradeLog({
+      supabase: payload.supabase,
+      chatId: payload.chatId,
+      code: sweepCode,
+      side: "BUY",
+      price: sweepPrice,
+      quantity: buyQty,
+      grossAmount: buyInvested,
+      netAmount: buyInvested,
+      memo: buildStrategyMemo({
+        strategyId: CASH_SWEEP_STRATEGY_ID,
+        event: "sweep-buy",
+        note: "cash-sweep-buy",
+      }),
+      source: "AUTO",
+      brokerName: null,
+      accountName: null,
+    });
+
+    await setUserInvestmentPrefs(payload.chatId, {
+      virtual_cash: Math.max(0, Math.round(availableCash - buyInvested)),
+    });
+
+    notes.push(
+      `[유휴현금 스윕] ${sweepName} ${buyQty}주 매수 · 유휴현금 ${fmtKrw(buyInvested)} 투입 (누적 ${fmtKrw(sweepInvested + buyInvested)})`
+    );
+    return { notes };
+  } catch (e) {
+    console.error("[autoTrade] cash sweep step failed", e);
+    return { notes: [] };
+  }
+}
+
 async function tryRegisterOperation(params: {
   supabase: SupabaseClientAny;
   opKey: string;
@@ -2939,7 +3138,7 @@ async function runMondayBuyForUser(payload: {
   const { data: holdingRows, error: holdingError } = await fetchLegacyVirtualPositionsForChat({
     supabase: payload.supabase,
     chatId,
-    select: "id, code, status",
+    select: "id, code, status, memo",
   });
 
   if (holdingError) {
@@ -2957,7 +3156,10 @@ async function runMondayBuyForUser(payload: {
     return summary;
   }
 
-  const holdings = (holdingRows ?? []) as Array<{ id: number; code: string; status?: string | null }>;
+  // 유휴현금 스윕(cash-sweep) 포지션은 실제 매매 베팅이 아니므로 종목 슬롯/보유수에서 제외한다.
+  const holdings = (
+    (holdingRows ?? []) as Array<{ id: number; code: string; status?: string | null; memo?: string | null }>
+  ).filter((row) => parseStrategyMemo(row.memo).strategyId !== CASH_SWEEP_STRATEGY_ID);
   const heldCodes = new Set(
     holdings
       .filter((row) => (row.status ?? "holding") !== "closed")
@@ -4272,7 +4474,11 @@ async function runDailyReviewForUser(payload: {
     return summary;
   }
 
-  const holdings = (holdingsData ?? []) as HoldingRow[];
+  // 유휴현금 스윕(cash-sweep) 포지션은 실제 매매 베팅이 아니므로 손절/익절/비중조정 등
+  // 일반 보유종목 처리 루프에서 제외한다 (별도의 runCashSweepStep에서만 관리).
+  const holdings = ((holdingsData ?? []) as HoldingRow[]).filter(
+    (row) => parseStrategyMemo(row.memo).strategyId !== CASH_SWEEP_STRATEGY_ID
+  );
   if (!holdings.length) {
     summary.notes.push("보유 종목 없음");
   }
@@ -6165,6 +6371,11 @@ export async function runVirtualAutoTradingForChat(input: {
         dryRun,
       });
 
+  const cashSweep = await runCashSweepStep({ supabase, chatId: input.chatId, dryRun }).catch(
+    () => ({ notes: [] })
+  );
+  action.notes.push(...cashSweep.notes);
+
   if (prefs.virtual_shadow_mode) {
     action.notes.unshift("[SHADOW] 실반영 없이 신호 동시 검증 모드");
   }
@@ -6438,6 +6649,13 @@ export async function runVirtualAutoTradingCycle(input?: {
             dryRun: userDryRun,
             apiBudget,
           });
+
+      const cashSweep = await runCashSweepStep({
+        supabase,
+        chatId: setting.chat_id,
+        dryRun: userDryRun,
+      }).catch(() => ({ notes: [] }));
+      actionSummary.notes.push(...cashSweep.notes);
 
       actionSummary.notes.push(
         `API 예산 사용: ${apiBudget.used}/${apiBudget.limit} (시장개요 ${apiBudget.usageByScope.market_overview}, 실시간시세 ${apiBudget.usageByScope.realtime_price_batch})`

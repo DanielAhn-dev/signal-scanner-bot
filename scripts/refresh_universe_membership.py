@@ -61,6 +61,15 @@ EXCLUDED_NAME_PATTERNS = [
     r"BLANK",
 ]
 
+# 유휴현금 스윕(cash-sweep)에 쓰는 CD금리/KOFR 연동 ETF는 위 ETF 제외 규칙에 걸리지만,
+# 봇이 실거래 매수 신호가 없을 때 유휴현금을 굴리는 용도로 종가 추적이 필요해 예외로 허용한다.
+# (src/services/virtualAutoTradeCashSweep.ts의 CASH_SWEEP_CANDIDATE_CODES와 동일하게 유지)
+CASH_SWEEP_WHITELIST_CODES = {
+    "459580",  # KODEX CD금리액티브(합성)
+    "357870",  # TIGER CD금리투자KIS(합성)
+    "423160",  # KODEX KOFR금리액티브(합성)
+}
+
 EXCLUDED_NAME_REGEX = [re.compile(pat, re.IGNORECASE) for pat in EXCLUDED_NAME_PATTERNS]
 
 
@@ -290,7 +299,9 @@ def build_universe_level(rank: int, close_price: int, cfg: UniverseConfig) -> st
     return "tail"
 
 
-def is_eligible_candidate(name: str, market: str, close_price: int, market_cap: int, liquidity: int, cfg: UniverseConfig) -> bool:
+def is_eligible_candidate(code: str, name: str, market: str, close_price: int, market_cap: int, liquidity: int, cfg: UniverseConfig) -> bool:
+    if code in CASH_SWEEP_WHITELIST_CODES:
+        return True
     if should_exclude_name(name):
         return False
     if market and market.upper() not in cfg.allowed_markets:
@@ -458,6 +469,7 @@ def main() -> int:
             name = name_by_code.get(code, prev.get("name") or code)
             market = market_by_code.get(code) or prev.get("market")
             eligible = is_eligible_candidate(
+                code=code,
                 name=name,
                 market=str(market or ""),
                 close_price=close_price,
@@ -466,6 +478,10 @@ def main() -> int:
                 cfg=cfg,
             )
             universe_level = build_universe_level(rank, close_price, cfg) if eligible else "tail"
+            # 스윕 화이트리스트 종목은 시가총액 순위와 무관하게 종가 추적이 필요하므로
+            # extended 밑으로 떨어지지 않도록 강제한다 (배치 OHLCV 수집이 core/extended만 대상으로 함).
+            if code in CASH_SWEEP_WHITELIST_CODES and universe_level == "tail":
+                universe_level = "extended"
             if not eligible:
                 excluded_by_rule += 1
 
