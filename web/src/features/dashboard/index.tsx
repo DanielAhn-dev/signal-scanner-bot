@@ -262,7 +262,7 @@ export default function Dashboard({ onNavigate }: { onNavigate?: (r: string) => 
               <span style={S.link} onClick={() => nav('portfolio')}>가상 포트폴리오 →</span>
             </td>
             <td className="xls-cell" colSpan={3} style={{ fontSize: 10, color: 'var(--color-text-tertiary)' }}>
-              평가손익 합계
+              평가손익 합계 (수수료·세금 반영)
             </td>
           </tr>
 

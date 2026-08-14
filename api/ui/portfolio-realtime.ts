@@ -7,6 +7,11 @@ const ORIGIN = process.env.UI_CORS_ORIGIN || '*'
 
 const REALTIME_BATCH_TOTAL_TIMEOUT_MS = Math.max(1000, Number(process.env.UI_REALTIME_BATCH_TIMEOUT_MS || 4000))
 
+// 포트폴리오 상세 페이지(web/src/features/portfolio/index.tsx)의 기본 수수료율과 동일한 값.
+// 두 화면의 "평가손익 합계"가 같은 기준(매도 시 실제 손에 남는 금액)으로 일치하도록 여기서도 차감한다.
+const BUY_FEE_RATE_PCT = 0.015
+const SELL_FEE_RATE_PCT = 0.195
+
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   res.setHeader('Access-Control-Allow-Origin', ORIGIN)
   res.setHeader('Access-Control-Allow-Methods', 'GET,POST,OPTIONS')
@@ -84,6 +89,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const positionsWithPrice: any[] = []
     let totalInvested = 0
     let totalCurrentValue = 0
+    let totalTradeCost = 0
     const horizonDistribution = {
       scalp: 0,
       swing: 0,
@@ -123,6 +129,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
       const currentValue = Number(pos.quantity || 0) * currentPrice
       totalCurrentValue += currentValue
+      totalTradeCost += invested * (BUY_FEE_RATE_PCT / 100) + (currentValue > 0 ? currentValue * (SELL_FEE_RATE_PCT / 100) : 0)
 
       const pnlAmount = currentValue - invested
       const pnlPercent = invested > 0 ? (pnlAmount / invested) * 100 : 0
@@ -163,7 +170,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       })
     }
 
-    const totalPnL = totalCurrentValue - totalInvested
+    // 포트폴리오 상세 페이지와 동일하게, 매수·매도 수수료+세금을 차감한 "실제 손에 남는" 손익 기준으로 통일
+    const totalPnL = totalCurrentValue - totalInvested - totalTradeCost
     const totalPnLPercent = totalInvested > 0 ? (totalPnL / totalInvested) * 100 : 0
 
     return res.status(200).json({
@@ -171,6 +179,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       data: {
         total_invested: totalInvested,
         total_current_value: totalCurrentValue,
+        total_trade_cost: totalTradeCost,
         total_pnl: totalPnL,
         total_pnl_percent: totalPnLPercent,
         horizon_distribution: horizonDistribution,

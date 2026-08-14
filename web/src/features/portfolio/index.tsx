@@ -418,6 +418,16 @@ export default function Portfolio() {
 
   useEffect(() => { load() }, [load])
 
+  // 초기 페이지(20건) 로드 후 나머지 페이지를 백그라운드로 이어서 불러와
+  // 상단 요약(보유 종목 수/평가손익 합계 등)이 일부 데이터가 아닌 전체 보유 기준으로 계산되도록 함.
+  // (대시보드의 /api/ui/portfolio-realtime는 항상 전체 포지션을 합산하므로, 이 페이지의 요약도 전체 기준이어야 두 값이 일치함)
+  useEffect(() => {
+    if (serverTotal == null) return
+    if (allRows.length >= serverTotal) return
+    if (loadMoreLoading) return
+    loadMore()
+  }, [serverTotal, allRows.length, loadMoreLoading, loadMore])
+
   useEffect(() => {
     apiFetch('/api/ui/investment-prefs', { cacheMs: 0, timeoutMs: 10_000 })
       .then((json: any) => {
@@ -1128,7 +1138,10 @@ export default function Portfolio() {
             </td>
           </tr>
           <tr className="xls-row xls-row--even portfolio-summary-row portfolio-summary-row--note">
-            <td className="xls-cell" colSpan={2} style={{ color: 'var(--color-text-tertiary)', fontSize: 11 }}>{selectedAccountLabel}</td>
+            <td className="xls-cell" colSpan={2} style={{ color: 'var(--color-text-tertiary)', fontSize: 11 }}>
+              {selectedAccountLabel}
+              {serverTotal != null && allRows.length < serverTotal ? ` · 전체 집계 중 (${allRows.length}/${serverTotal})` : ''}
+            </td>
             <td className="xls-cell portfolio-cell-num" colSpan={2} style={{ color: 'var(--color-text-tertiary)', fontSize: 11 }}>보유 수량×평균 매수가</td>
             <td className="xls-cell portfolio-cell-num" colSpan={2} style={{ color: 'var(--color-text-tertiary)', fontSize: 11 }}>
               {includeCost
