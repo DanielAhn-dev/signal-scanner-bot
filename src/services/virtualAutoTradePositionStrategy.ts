@@ -740,3 +740,70 @@ export function evaluateSectorRotationExit(input: {
   if (pnlPct < SECTOR_ROTATION_LOSS_FLOOR_PCT) return { triggered: false };
   return { triggered: true, quantityToSell: quantity };
 }
+
+export type PlannedReviewExitResult =
+  | { action: "none" }
+  | { action: "extend"; nextReviewAt: string }
+  | { action: "exit"; plan: PlannedAutoTradeExit };
+
+/**
+ * 예정 검토일(planned_review_at) 도달 시 재평가.
+ * 매수 시점에 세운 기대 보유기간이 끝났는데도 목표수익(takeProfitPct)에 못 미치면,
+ * 신호가 아직 살아있는지(BUY/STRONG_BUY + 최소 점수)로 갈라서
+ * - 살아있으면: 매도하지 않고 검토일만 다음 기대 보유기간만큼 연장
+ * - 죽었으면: 정리(수익 중이면 익절 종료, 손실 중이면 손절)로 자본을 회수한다
+ *
+ * 다른 손절/익절/리밸런싱 조건이 이미 청산을 결정한 경우에는 호출하지 않는 것을 전제로 한다
+ * (이 함수는 "아직 HOLD인 포지션"에 대한 마지막 재평가 단계).
+ */
+export function evaluatePlannedReviewExit(input: {
+  plannedReviewAt: string | null | undefined;
+  pnlPct: number;
+  takeProfitPct: number;
+  signal: string | null | undefined;
+  /** 보유 종목의 최신 점수. 조회 실패 등으로 알 수 없으면 undefined/NaN을 전달한다(모른다는 뜻으로 취급). */
+  score: number | null | undefined;
+  quantity: number;
+  takeProfitTranchesDone: number;
+  /** 연장 시 다음 검토일 계산에 쓸 기대 보유기간(일). */
+  expectedHorizonDays: number;
+  now?: Date;
+  /** 신호가 살아있다고 인정하는 최소 점수 (기본 55 — 점수엔진 WATCH 등급 하한과 동일) */
+  minAliveScore?: number;
+}): PlannedReviewExitResult {
+  const now = input.now ?? new Date();
+  const dueAt = input.plannedReviewAt ? Date.parse(input.plannedReviewAt) : NaN;
+  if (!Number.isFinite(dueAt) || now.getTime() < dueAt) return { action: "none" };
+
+  const quantity = Math.max(0, Math.floor(toNumber(input.quantity, 0)));
+  if (quantity <= 0) return { action: "none" };
+
+  const pnlPct = toNumber(input.pnlPct, 0);
+  const takeProfitPct = Math.abs(toNumber(input.takeProfitPct, 8));
+  if (pnlPct >= takeProfitPct) return { action: "none" };
+
+  const minAliveScore = toNumber(input.minAliveScore, 55);
+  const scoreVal = Number(input.score);
+  const signal = normalizeSignal(input.signal);
+  const stillAlive =
+    (signal === "BUY" || signal === "STRONG_BUY") &&
+    (!Number.isFinite(scoreVal) || scoreVal >= minAliveScore);
+
+  if (stillAlive) {
+    const clampedDays = clampInt(toNumber(input.expectedHorizonDays, 5), 1, 90);
+    const next = new Date(now.getTime());
+    next.setUTCDate(next.getUTCDate() + clampedDays);
+    return { action: "extend", nextReviewAt: next.toISOString() };
+  }
+
+  return {
+    action: "exit",
+    plan: {
+      action: pnlPct >= 0 ? "TAKE_PROFIT" : "STOP_LOSS",
+      quantityToSell: quantity,
+      isPartial: false,
+      nextTakeProfitTranchesDone: Math.max(0, Math.floor(toNumber(input.takeProfitTranchesDone, 0))),
+      reason: pnlPct >= 0 ? "take-profit-final" : "stop-loss",
+    } as PlannedAutoTradeExit,
+  };
+}

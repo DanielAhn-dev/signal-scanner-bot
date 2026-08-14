@@ -23,6 +23,7 @@ import {
 import {
   classifyAutoTradeEntryProfile,
   buildPositionStrategyMemo,
+  evaluatePlannedReviewExit,
   evaluateSectorRotationExit,
   parsePositionStrategyState,
   planAutoTradeExit,
@@ -577,6 +578,114 @@ test("planAutoTradeExit: 마지막 익절 tranche 는 잔량 전부 매도한다
   assert.equal(plan.isPartial, false);
   assert.equal(plan.quantityToSell, 3);
   assert.equal(plan.reason, "take-profit-final");
+});
+
+test("evaluatePlannedReviewExit: 검토일 전이면 아무 것도 하지 않는다", () => {
+  const now = new Date("2026-08-14T00:00:00.000Z");
+  const result = evaluatePlannedReviewExit({
+    plannedReviewAt: "2026-08-20T00:00:00.000Z",
+    pnlPct: -2,
+    takeProfitPct: 8,
+    signal: "HOLD",
+    score: 40,
+    quantity: 10,
+    takeProfitTranchesDone: 0,
+    expectedHorizonDays: 5,
+    now,
+  });
+  assert.equal(result.action, "none");
+});
+
+test("evaluatePlannedReviewExit: 검토일 도달 + 이미 목표수익 달성이면 아무 것도 하지 않는다(다른 익절 경로에 맡김)", () => {
+  const now = new Date("2026-08-14T00:00:00.000Z");
+  const result = evaluatePlannedReviewExit({
+    plannedReviewAt: "2026-08-10T00:00:00.000Z",
+    pnlPct: 12,
+    takeProfitPct: 8,
+    signal: "HOLD",
+    score: 40,
+    quantity: 10,
+    takeProfitTranchesDone: 0,
+    expectedHorizonDays: 5,
+    now,
+  });
+  assert.equal(result.action, "none");
+});
+
+test("evaluatePlannedReviewExit: 검토일 도달 + 목표 미달 + 신호 약화(HOLD)면 수익 중이어도 정리(익절 종료)한다", () => {
+  const now = new Date("2026-08-14T00:00:00.000Z");
+  const result = evaluatePlannedReviewExit({
+    plannedReviewAt: "2026-08-10T00:00:00.000Z",
+    pnlPct: 3,
+    takeProfitPct: 8,
+    signal: "HOLD",
+    score: 50,
+    quantity: 10,
+    takeProfitTranchesDone: 0,
+    expectedHorizonDays: 5,
+    now,
+  });
+  assert.equal(result.action, "exit");
+  if (result.action === "exit") {
+    assert.equal(result.plan.action, "TAKE_PROFIT");
+    assert.equal(result.plan.reason, "take-profit-final");
+    assert.equal(result.plan.quantityToSell, 10);
+  }
+});
+
+test("evaluatePlannedReviewExit: 검토일 도달 + 손실 + 신호 약화면 손절로 정리한다", () => {
+  const now = new Date("2026-08-14T00:00:00.000Z");
+  const result = evaluatePlannedReviewExit({
+    plannedReviewAt: "2026-08-10T00:00:00.000Z",
+    pnlPct: -3,
+    takeProfitPct: 8,
+    signal: "WATCH",
+    score: 45,
+    quantity: 10,
+    takeProfitTranchesDone: 0,
+    expectedHorizonDays: 5,
+    now,
+  });
+  assert.equal(result.action, "exit");
+  if (result.action === "exit") {
+    assert.equal(result.plan.action, "STOP_LOSS");
+    assert.equal(result.plan.reason, "stop-loss");
+  }
+});
+
+test("evaluatePlannedReviewExit: 검토일 도달했지만 BUY 신호 + 고득점이면 매도하지 않고 검토일을 연장한다", () => {
+  const now = new Date("2026-08-14T00:00:00.000Z");
+  const result = evaluatePlannedReviewExit({
+    plannedReviewAt: "2026-08-10T00:00:00.000Z",
+    pnlPct: 3,
+    takeProfitPct: 8,
+    signal: "STRONG_BUY",
+    score: 70,
+    quantity: 10,
+    takeProfitTranchesDone: 0,
+    expectedHorizonDays: 7,
+    now,
+  });
+  assert.equal(result.action, "extend");
+  if (result.action === "extend") {
+    assert.equal(result.nextReviewAt, "2026-08-21T00:00:00.000Z");
+  }
+});
+
+test("evaluatePlannedReviewExit: BUY 신호여도 점수가 최소 기준 미만이면 신호를 신뢰하지 않고 정리한다", () => {
+  const now = new Date("2026-08-14T00:00:00.000Z");
+  const result = evaluatePlannedReviewExit({
+    plannedReviewAt: "2026-08-10T00:00:00.000Z",
+    pnlPct: 1,
+    takeProfitPct: 8,
+    signal: "BUY",
+    score: 40,
+    quantity: 10,
+    takeProfitTranchesDone: 0,
+    expectedHorizonDays: 5,
+    now,
+  });
+  assert.equal(result.action, "exit");
 });
 
 test("pickAutoTradeCandidates: filteringMetrics에 정책/기본/최종 단계 수가 기록된다", () => {

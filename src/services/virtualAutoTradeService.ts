@@ -25,6 +25,7 @@ import {
   applyDynamicTradeProfileAdjustments,
   classifyAutoTradeEntryProfile,
   buildPositionStrategyMemo,
+  evaluatePlannedReviewExit,
   evaluateSectorRotationExit,
   evaluateTimeStop,
   parsePositionStrategyState,
@@ -766,6 +767,7 @@ type HoldingRow = {
   invested_amount: number | null;
   status?: string | null;
   memo?: string | null;
+  planned_review_at?: string | null;
 };
 
 type ScoreCandidateRow = {
@@ -4455,7 +4457,7 @@ async function runDailyReviewForUser(payload: {
   const { data: holdingsData, error: holdingsError } = await fetchLegacyVirtualPositionsForChat({
     supabase: payload.supabase,
     chatId,
-    select: "id, code, buy_price, buy_date, created_at, quantity, invested_amount, status, memo",
+    select: "id, code, buy_price, buy_date, created_at, quantity, invested_amount, status, memo, planned_review_at",
     status: "holding",
   });
 
@@ -4821,6 +4823,11 @@ async function runDailyReviewForUser(payload: {
       ? { phase1Days: 60, phase2Days: 90, lossThresholdPct: -15 }
       : {};
 
+    // 예정 검토일(planned_review_at) 재평가 결과를 finalExitPlan IIFE 밖(HOLD 분기)에서도
+    // 참조해야 하므로 루프 스코프 변수로 선언한다.
+    let plannedReviewExtensionAt: string | null = null;
+    let plannedReviewExitTriggered = false;
+
     // 비중 초과 감지 + 시간 기반 손절: HOLD인 경우에만 체크 (이미 다른 exit이 결정된 종목은 제외)
     const finalExitPlan: PlannedAutoTradeExit = (() => {
       if (exitPlan.action !== "HOLD") return exitPlan;
@@ -4878,6 +4885,27 @@ async function runDailyReviewForUser(payload: {
         } as PlannedAutoTradeExit;
       }
 
+      // 4) 예정 검토일(planned_review_at) 도달: 매수 시점에 세운 기대 보유기간이 끝났는데도
+      // 목표수익에 못 미치면, 자본을 무기한 묶어두지 않고 정리하거나(모멘텀 소진) 검토일을
+      // 연장한다(신호가 아직 살아있음). 지금까지 다른 손절/익절/리밸런싱 조건에 걸리지 않은
+      // 경우에만(=이 시점까지 HOLD인 경우에만) 평가한다.
+      const reviewResult = evaluatePlannedReviewExit({
+        plannedReviewAt: holding.planned_review_at,
+        pnlPct,
+        takeProfitPct: adaptiveExitThreshold.takeProfitPct,
+        signal: holdingSignal,
+        score: holdingScoreRow?.score,
+        quantity: qty,
+        takeProfitTranchesDone: strategyState.takeProfitTranchesDone,
+        expectedHorizonDays: tradeProfile.expectedHorizonDays,
+      });
+      if (reviewResult.action === "extend") {
+        plannedReviewExtensionAt = reviewResult.nextReviewAt;
+      } else if (reviewResult.action === "exit") {
+        plannedReviewExitTriggered = true;
+        return reviewResult.plan;
+      }
+
       return exitPlan;
     })();
 
@@ -4887,22 +4915,33 @@ async function runDailyReviewForUser(payload: {
       holdTakeProfitMax = Math.max(holdTakeProfitMax, adaptiveExitThreshold.takeProfitPct);
       holdStopLossMin = Math.min(holdStopLossMin, adaptiveExitThreshold.stopLossPct);
       holdStopLossMax = Math.max(holdStopLossMax, adaptiveExitThreshold.stopLossPct);
-      // peak_price 갱신 (HOLD 시에도 최고가 트래킹)
-      if (updatedPeakPrice !== prevPeak) {
-        const nextMemo = buildPositionStrategyMemo({
-          event: "hold-peak-update",
-          note: "trailing-stop-track",
-          profile: tradeProfile.profile,
-          takeProfitTranchesDone: strategyState.takeProfitTranchesDone,
-          peakPrice: updatedPeakPrice,
-        });
+      // peak_price 갱신 (HOLD 시에도 최고가 트래킹) + 예정 검토일 연장(해당 시)
+      if (updatedPeakPrice !== prevPeak || plannedReviewExtensionAt) {
+        const holdUpdatePayload: Record<string, unknown> = {};
+        if (updatedPeakPrice !== prevPeak) {
+          holdUpdatePayload.memo = buildPositionStrategyMemo({
+            event: "hold-peak-update",
+            note: "trailing-stop-track",
+            profile: tradeProfile.profile,
+            takeProfitTranchesDone: strategyState.takeProfitTranchesDone,
+            peakPrice: updatedPeakPrice,
+          });
+        }
+        if (plannedReviewExtensionAt) {
+          holdUpdatePayload.planned_review_at = plannedReviewExtensionAt;
+        }
         await payload.supabase
           .from(PORTFOLIO_TABLES.positions)
-          .update({ memo: nextMemo })
+          .update(holdUpdatePayload)
           .eq("chat_id", chatId)
           .eq("id", holding.id)
-          .then(() => { /* peak update - best effort */ })
+          .then(() => { /* peak/review-date update - best effort */ })
           .catch(() => { /* ignore */ });
+      }
+      if (plannedReviewExtensionAt) {
+        summary.notes.push(
+          `[예정검토일 연장] ${holding.code} · 목표 미달이지만 신호(${holdingSignal ?? "-"}) 유지로 검토일 재설정 (~${plannedReviewExtensionAt.slice(0, 10)})`
+        );
       }
       await writeActionLog({
         supabase: payload.supabase,
@@ -4940,6 +4979,7 @@ async function runDailyReviewForUser(payload: {
 
     // 매도 이유 노트 (signal/regime/time-stop/overweight 기반이면 명시)
     const exitReasonLabel: string = (() => {
+      if (plannedReviewExitTriggered) return `[예정검토일 도달] 기대 보유기간 종료 + 목표 미달 · 수익률 ${pnlPct.toFixed(2)}% → 정리`;
       if (trailingStopBreached) return `[트레일링익절] 고점(${fmtKrw(updatedPeakPrice)}) 대비 -${TRAILING_STOP_FROM_PEAK_PCT}% 이탈 · 수익률 ${pnlPct.toFixed(2)}%`;
       if (trendExitSignal.reason === "signal-strong-sell") return "[신호청산] STRONG_SELL 전환";
       if (trendExitSignal.reason === "signal-sell") return pnlPct > 0 ? "[신호익절] SELL 전환 + 수익 중" : "[신호손절] SELL 전환 + 손실 구간";
@@ -4969,6 +5009,7 @@ async function runDailyReviewForUser(payload: {
     try {
       const stopLossContext = finalExitPlan.action === "STOP_LOSS"
         ? ((): string => {
+            if (plannedReviewExitTriggered) return "planned-review-miss";
             if (trendExitSignal.reason === "signal-strong-sell") return "signal-strong-sell";
             if (trendExitSignal.reason === "signal-sell") return "signal-reversal";
             if (trendExitSignal.reason === "trend-break-sma200") return "trend-break-major";
