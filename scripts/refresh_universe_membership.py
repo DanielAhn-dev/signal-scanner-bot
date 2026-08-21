@@ -70,6 +70,14 @@ CASH_SWEEP_WHITELIST_CODES = {
     "423160",  # KODEX KOFR금리액티브(합성)
 }
 
+# 코스피/코스닥 200일선 레짐 판정(대형주 방어 모드 트리거)에 쓰는 지수 추종 ETF.
+# 위 ETF 제외 규칙에 걸리지만 src/services/virtualAutoTradeService.ts의
+# fetchIndexSma200Ratios()가 매일 종가를 추적해야 하므로 예외로 허용한다.
+REGIME_PROXY_WHITELIST_CODES = {
+    "069500",  # KODEX 200 (코스피 200일선 프록시)
+    "229200",  # KODEX 코스닥150 (코스닥 200일선 프록시)
+}
+
 EXCLUDED_NAME_REGEX = [re.compile(pat, re.IGNORECASE) for pat in EXCLUDED_NAME_PATTERNS]
 
 
@@ -300,7 +308,7 @@ def build_universe_level(rank: int, close_price: int, cfg: UniverseConfig) -> st
 
 
 def is_eligible_candidate(code: str, name: str, market: str, close_price: int, market_cap: int, liquidity: int, cfg: UniverseConfig) -> bool:
-    if code in CASH_SWEEP_WHITELIST_CODES:
+    if code in CASH_SWEEP_WHITELIST_CODES or code in REGIME_PROXY_WHITELIST_CODES:
         return True
     if should_exclude_name(name):
         return False
@@ -337,6 +345,42 @@ def fetch_existing_map(supabase: Client) -> Dict[str, dict]:
             break
         offset += page_size
     return existing
+
+
+def fetch_held_position_codes(supabase: Client) -> set[str]:
+    """사용자들이 현재 보유 중인 종목 코드.
+
+    보유 중인 종목이 시총 순위가 밀렸다는 이유만으로 tail로 강등되면
+    배치 OHLCV/지표 수집 대상에서 빠져 봇이 그 종목만 가격이 멈춘 채로
+    손절/익절 판단을 하게 된다. 그런 사각지대를 막기 위해 보유 종목은
+    항상 extended 이상으로 유지한다.
+    """
+    codes: set[str] = set()
+    page_size = 1000
+    offset = 0
+    while True:
+        try:
+            res = (
+                supabase.table("virtual_positions")
+                .select("code")
+                .eq("status", "holding")
+                .range(offset, offset + page_size - 1)
+                .execute()
+            )
+        except Exception as e:
+            print(f"[WARN] failed to fetch held position codes: {e}")
+            return codes
+        rows = res.data or []
+        if not rows:
+            break
+        for row in rows:
+            code = str(row.get("code") or "").strip()
+            if code:
+                codes.add(code)
+        if len(rows) < page_size:
+            break
+        offset += page_size
+    return codes
 
 
 def apply_upserts(supabase: Client, rows: List[dict]) -> int:
@@ -448,6 +492,9 @@ def main() -> int:
 
         existing = fetch_existing_map(supabase)
         listed_codes = set(frame.index.astype(str).tolist())
+        held_codes = fetch_held_position_codes(supabase)
+        # tail로 강등되지 않도록 보호할 코드 전체 (스윕 ETF + 레짐 프록시 ETF + 사용자 보유 종목)
+        protected_codes = CASH_SWEEP_WHITELIST_CODES | REGIME_PROXY_WHITELIST_CODES | held_codes
 
         upserts: List[dict] = []
         promoted_to_core = 0
@@ -478,9 +525,10 @@ def main() -> int:
                 cfg=cfg,
             )
             universe_level = build_universe_level(rank, close_price, cfg) if eligible else "tail"
-            # 스윕 화이트리스트 종목은 시가총액 순위와 무관하게 종가 추적이 필요하므로
-            # extended 밑으로 떨어지지 않도록 강제한다 (배치 OHLCV 수집이 core/extended만 대상으로 함).
-            if code in CASH_SWEEP_WHITELIST_CODES and universe_level == "tail":
+            # 보호 대상(스윕 ETF·레짐 프록시 ETF·사용자 보유 종목)은 시가총액 순위와 무관하게
+            # 종가 추적이 필요하므로 extended 밑으로 떨어지지 않도록 강제한다
+            # (배치 OHLCV 수집이 core/extended만 대상으로 함).
+            if code in protected_codes and universe_level == "tail":
                 universe_level = "extended"
             if not eligible:
                 excluded_by_rule += 1
