@@ -1173,13 +1173,13 @@ async function fetchIndexSma200Ratios(
       supabase
         .from("stock_daily")
         .select("close")
-        .eq("code", KOSPI_PROXY)
+        .eq("ticker", KOSPI_PROXY)
         .order("date", { ascending: false })
         .limit(201),
       supabase
         .from("stock_daily")
         .select("close")
-        .eq("code", KOSDAQ_PROXY)
+        .eq("ticker", KOSDAQ_PROXY)
         .order("date", { ascending: false })
         .limit(201),
     ]);

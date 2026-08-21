@@ -32,6 +32,9 @@ jobs:
       KOREA_APP_SECRET: ${{ secrets.KOREA_APP_SECRET }}
       TZ: "Asia/Seoul"
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+      # universe_level(core/extended/tail) 자동 갱신 — 이게 꺼져 있으면 종목이 tail로
+      # 강등된 뒤에도 영원히 재평가되지 않아 가격/지표 수집 대상에서 빠진 채로 방치된다.
+      BATCH_AUTO_REFRESH_UNIVERSE: "true"
 
     steps:
       - name: Checkout repo
