@@ -123,6 +123,8 @@ const SKIP_REASON_KO: Record<string, string> = {
   "no-candidates": "후보없음",
   "invalid-holding-or-price": "보유/가격오류",
   "within-range": "목표범위내",
+  "stale-or-frozen-close": "시세동결",
+  "regime-defense-no-new-buy": "방어장중지",
   "holdings-fetch-failed": "보유조회실패",
   "daily-holdings-fetch-failed": "일간보유조회실패",
   "daily-sell-failed": "매도실패",

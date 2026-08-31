@@ -11,6 +11,8 @@ const SKIP_REASON_KO: Record<string, string> = {
   "no-candidates": "후보없음",
   "market-policy-filtered": "시장정책필터",
   "daily-loss-limit-reached": "일손실한도",
+  "stale-or-frozen-close": "시세동결",
+  "regime-defense-no-new-buy": "방어장중지",
 };
 
 function resolveCurrentRunCause(action: { buys: number; sells: number; skipped: number }, notes: string[]): string {

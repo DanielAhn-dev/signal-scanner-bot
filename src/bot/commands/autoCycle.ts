@@ -274,6 +274,8 @@ function buildThreeLineSummary(input: {
     "no-candidates": "후보없음",
     "market-policy-filtered": "시장정책필터",
     "daily-loss-limit-reached": "일손실한도",
+    "stale-or-frozen-close": "시세동결",
+    "regime-defense-no-new-buy": "방어장중지",
   };
 
   const topReasons = (metrics?.topSkipReasons ?? []).slice(0, 2);
@@ -439,6 +441,8 @@ function buildRecentMetricsLines(metrics: AutoTradeRecentMetrics | null): string
       "stop-loss": "손절",
       "take-profit-partial": "부분익절",
       "take-profit-final": "최종익절",
+      "stale-or-frozen-close": "시세동결",
+      "regime-defense-no-new-buy": "방어장중지",
     };
     lines.push(
       `- 미체결 상위 사유: ${metrics.topSkipReasons

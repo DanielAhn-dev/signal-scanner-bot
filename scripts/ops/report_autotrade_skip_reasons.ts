@@ -11,6 +11,9 @@ const SKIP_REASON_LABELS: Record<string, string> = {
   cash_reserve_floor: "현금 하한 유지",
   insufficient_cash: "현금 부족",
   no_buy_slots: "매수 슬롯 없음",
+  stale_or_frozen_close: "시세 동결/신선도 미달",
+  strategy_blocked_buy: "전략 매수 차단",
+  regime_defense_no_new_buy: "방어장 신규매수 중지",
   other: "기타(원문 미분류)",
 };
 
