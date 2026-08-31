@@ -56,6 +56,7 @@
     "analyze:pre-rally-coverage": "tsx scripts/audit_pre_rally_coverage.ts",
     "ops:paging-report": "tsx scripts/ops/report_supabase_paging.ts",
     "ops:paging-report:compare": "tsx scripts/ops/report_supabase_paging.ts",
+    "ops:skip-reasons": "tsx scripts/ops/report_autotrade_skip_reasons.ts",
     "ops:check-data-sync": "tsx scripts/check_data_sync_health.ts",
     "prepare": "husky",
     "reconcile:duplicates": "tsx scripts/reconcile_duplicates.ts",
