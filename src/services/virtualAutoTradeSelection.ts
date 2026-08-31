@@ -875,6 +875,8 @@ export function pickAutoTradeCandidates(input: {
   pullbackCandidateCodes?: Set<string>;
   sectorBoostById?: Map<string, number>;
   heldSectorCounts?: Map<string, number>;
+  /** 섹터별 보유 비중(0~100, 원화 기준). 제공되면 종목수 기준 상한 대신 비중 상한을 우선 적용한다. */
+  heldSectorWeightPct?: Map<string, number>;
 }): AutoTradeCandidateSelectionResult {
   const limit = Math.max(1, Math.floor(input.limit));
   const preferredMinBuyScore = toPositiveInt(input.preferredMinBuyScore, 70);
@@ -884,9 +886,14 @@ export function pickAutoTradeCandidates(input: {
     rows: input.rows,
     policy: input.marketPolicy,
   });
-  // 포트폴리오 내 단일 섹터 최대 종목 수: 이미 2종목 보유한 섹터는 추가 매수 차단
-  // 섹터 리더는 예외 허용 (시장 대표주는 집중도를 감수)
+  // 포트폴리오 내 단일 섹터 최대 종목 수(fallback, 비중 데이터 미제공 시): 이미 2종목 보유한 섹터는 추가 매수 차단
+  // 섹터 리더는 이 종목수 기준 fallback에서만 예외 허용 (시장 대표주는 집중도를 감수)
   const MAX_STOCKS_PER_SECTOR = 2;
+  // 섹터 합계 비중 상한(원화 기준): 리더 여부와 무관하게 적용한다.
+  // 종목수 기준 상한은 "몇 종목이냐"만 볼 뿐 실제 원화 비중을 보지 않아, 대형 리더주 2종목만으로도
+  // 포트폴리오의 30~40%가 한 섹터에 쏠리는 사고(예: 보험주 2종목 몰빵)를 막지 못했다.
+  // 비중 데이터가 있으면 리더 예외 없이 이 상한을 우선 적용한다.
+  const SECTOR_WEIGHT_CAP_PCT = 30;
 
   const baseFilteredRows = marketPolicyRows
     .filter((row) => {
@@ -899,11 +906,17 @@ export function pickAutoTradeCandidates(input: {
       const liq = row.liquidity ?? null;
       if (liq != null && liq > 0 && liq < 10_000_000_000) return false;
       if (row.aboveSma20 === false) return false;
-      // 섹터 집중도 상한: 이미 MAX_STOCKS_PER_SECTOR 이상 보유한 섹터는 제외
-      // 섹터 리더는 예외 허용
-      if (row.sectorId && row.isSectorLeader !== true) {
-        const heldCount = input.heldSectorCounts?.get(row.sectorId) ?? 0;
-        if (heldCount >= MAX_STOCKS_PER_SECTOR) return false;
+      // 섹터 집중도 상한
+      if (row.sectorId) {
+        const heldWeightPct = input.heldSectorWeightPct?.get(row.sectorId);
+        if (heldWeightPct != null) {
+          // 비중 기준 상한: 리더 여부와 무관하게 적용 (몰빵 방지가 목적이므로 예외를 두지 않는다)
+          if (heldWeightPct >= SECTOR_WEIGHT_CAP_PCT) return false;
+        } else if (row.isSectorLeader !== true) {
+          // 비중 데이터가 없을 때는 기존 종목수 기준 상한만 적용 (리더는 예외)
+          const heldCount = input.heldSectorCounts?.get(row.sectorId) ?? 0;
+          if (heldCount >= MAX_STOCKS_PER_SECTOR) return false;
+        }
       }
       return true;
     })

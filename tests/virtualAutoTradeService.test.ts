@@ -278,7 +278,7 @@ test("pickAutoTradeCandidates: 동일 섹터에 이미 2종목 보유 중이면 
   );
 });
 
-test("pickAutoTradeCandidates: 섹터 리더는 섹터 비중 상한 예외를 허용한다", () => {
+test("pickAutoTradeCandidates: 비중 데이터가 없을 때(fallback)는 섹터 리더가 종목수 상한 예외를 허용한다", () => {
   const result = pickAutoTradeCandidates({
     rows: [
       { code: "A", close: 10000, score: 80, name: "Alpha", signal: "BUY", sectorId: "SEC1", isSectorLeader: true },
@@ -287,6 +287,43 @@ test("pickAutoTradeCandidates: 섹터 리더는 섹터 비중 상한 예외를 �
     limit: 2,
     heldCodes: new Set<string>(),
     heldSectorCounts: new Map([["SEC1", 2]]),
+  });
+
+  assert.deepEqual(
+    result.candidates.map((candidate) => candidate.code),
+    ["A"]
+  );
+});
+
+test("pickAutoTradeCandidates: 비중 데이터가 있으면 섹터 리더도 예외 없이 비중 상한에 걸린다", () => {
+  const result = pickAutoTradeCandidates({
+    rows: [
+      { code: "A", close: 10000, score: 80, name: "Alpha", signal: "BUY", sectorId: "SEC1", isSectorLeader: true },
+      { code: "B", close: 10000, score: 75, name: "Beta", signal: "BUY", sectorId: "SEC2" },
+    ],
+    preferredMinBuyScore: 70,
+    limit: 2,
+    heldCodes: new Set<string>(),
+    heldSectorCounts: new Map([["SEC1", 1]]),
+    heldSectorWeightPct: new Map([["SEC1", 32]]),
+  });
+
+  assert.deepEqual(
+    result.candidates.map((candidate) => candidate.code),
+    ["B"]
+  );
+});
+
+test("pickAutoTradeCandidates: 비중 데이터가 있어도 상한 미만이면 섹터 리더 매수를 허용한다", () => {
+  const result = pickAutoTradeCandidates({
+    rows: [
+      { code: "A", close: 10000, score: 80, name: "Alpha", signal: "BUY", sectorId: "SEC1", isSectorLeader: true },
+    ],
+    preferredMinBuyScore: 70,
+    limit: 2,
+    heldCodes: new Set<string>(),
+    heldSectorCounts: new Map([["SEC1", 1]]),
+    heldSectorWeightPct: new Map([["SEC1", 15]]),
   });
 
   assert.deepEqual(

@@ -2043,7 +2043,7 @@ async function runCashSweepStep(payload: {
       });
 
       notes.push(
-        `[유휴현금 스윕] ${sweepName} 전량 현금화 · 실거래 자금 확보 (${fmtKrw(net)}, 손익 ${pnl >= 0 ? "+" : ""}${fmtKrw(pnl)})`
+        `[유휴현금 스윕] ${sweepName} 전량 현금화 · 실거래 자금 확보 (${fmtKrw(net)}, 손익 ${pnl >= 0 ? "+" : ""}${fmtKrw(pnl)}) · 참고: 유휴현금 파킹용이며 투자 신호가 아닙니다`
       );
       return { notes };
     }
@@ -2056,7 +2056,7 @@ async function runCashSweepStep(payload: {
     const buyInvested = Math.round(buyQty * sweepPrice);
 
     if (payload.dryRun) {
-      notes.push(`[유휴현금 스윕][테스트] ${sweepName} ${buyQty}주 매수 예정 (${fmtKrw(buyInvested)})`);
+      notes.push(`[유휴현금 스윕][테스트] ${sweepName} ${buyQty}주 매수 예정 (${fmtKrw(buyInvested)}) · 매수신호 아님, 유휴현금 파킹`);
       return { notes };
     }
 
@@ -2116,7 +2116,7 @@ async function runCashSweepStep(payload: {
     });
 
     notes.push(
-      `[유휴현금 스윕] ${sweepName} ${buyQty}주 매수 · 유휴현금 ${fmtKrw(buyInvested)} 투입 (누적 ${fmtKrw(sweepInvested + buyInvested)})`
+      `[유휴현금 스윕] ${sweepName} ${buyQty}주 매수 · 유휴현금 ${fmtKrw(buyInvested)} 투입 (누적 ${fmtKrw(sweepInvested + buyInvested)}) · 참고: 매수신호가 아닌 유휴현금 파킹입니다`
     );
     return { notes };
   } catch (e) {
@@ -2841,6 +2841,8 @@ async function selectMondayCandidates(payload: {
   selectedStrategy?: string | null;
   riskProfile?: string | null;
   discoveryProfile?: DiscoveryProfile;
+  /** 섹터별 보유 비중(0~100, 원화 기준). 제공되면 리더 예외 없는 섹터 비중 상한을 적용한다. */
+  heldSectorWeightPct?: Map<string, number>;
 }): Promise<AutoTradeCandidateSelectionResult> {
   const { rows: rankedRows, latestAsof } = await fetchLatestRankedRows({
     supabase: payload.supabase,
@@ -3085,6 +3087,7 @@ async function selectMondayCandidates(payload: {
     pullbackCandidateCodes,
     sectorBoostById,
     heldSectorCounts,
+    heldSectorWeightPct: payload.heldSectorWeightPct,
   });
 
   return {
@@ -3140,7 +3143,7 @@ async function runMondayBuyForUser(payload: {
   const { data: holdingRows, error: holdingError } = await fetchLegacyVirtualPositionsForChat({
     supabase: payload.supabase,
     chatId,
-    select: "id, code, status, memo",
+    select: "id, code, status, memo, quantity, invested_amount, buy_price",
   });
 
   if (holdingError) {
@@ -3160,7 +3163,15 @@ async function runMondayBuyForUser(payload: {
 
   // 유휴현금 스윕(cash-sweep) 포지션은 실제 매매 베팅이 아니므로 종목 슬롯/보유수에서 제외한다.
   const holdings = (
-    (holdingRows ?? []) as Array<{ id: number; code: string; status?: string | null; memo?: string | null }>
+    (holdingRows ?? []) as Array<{
+      id: number;
+      code: string;
+      status?: string | null;
+      memo?: string | null;
+      quantity?: number | null;
+      invested_amount?: number | null;
+      buy_price?: number | null;
+    }>
   ).filter((row) => parseStrategyMemo(row.memo).strategyId !== CASH_SWEEP_STRATEGY_ID);
   const heldCodes = new Set(
     holdings
@@ -3409,6 +3420,47 @@ async function runMondayBuyForUser(payload: {
     return summary;
   }
 
+  // 섹터별 보유 비중(원화 기준): 월요일 신규 매수도 섹터 리더 예외 없는 비중캡을 적용하기 위함
+  const heldSectorWeightPctMonday = new Map<string, number>();
+  if (holdings.length > 0) {
+    const heldCodeList = holdings.map((row) => String(row.code));
+    const { data: heldStockRows } = await payload.supabase
+      .from("stocks")
+      .select("code, close, sector_id")
+      .in("code", heldCodeList);
+    const closeByCodeMonday = new Map<string, number>();
+    const sectorIdByCodeMonday = new Map<string, string>();
+    for (const row of (heldStockRows ?? []) as Record<string, unknown>[]) {
+      const code = String(row.code ?? "");
+      const close = toNumber(row.close, 0);
+      const sectorId = String(row.sector_id ?? "") || null;
+      if (code && close > 0) closeByCodeMonday.set(code, close);
+      if (code && sectorId) sectorIdByCodeMonday.set(code, sectorId);
+    }
+    let totalHoldingsValueMonday = 0;
+    const valueByCode = new Map<string, number>();
+    for (const row of holdings) {
+      const qty = Math.max(0, Math.floor(toNumber(row.quantity, 0)));
+      const close = closeByCodeMonday.get(row.code) ?? 0;
+      const invested = Math.max(0, toNumber(row.invested_amount, 0));
+      const value = close > 0 && qty > 0 ? close * qty : invested;
+      valueByCode.set(row.code, value);
+      totalHoldingsValueMonday += value;
+    }
+    const totalPortfolioValueMonday = totalHoldingsValueMonday + availableCash;
+    if (totalPortfolioValueMonday > 0) {
+      for (const row of holdings) {
+        const sectorId = sectorIdByCodeMonday.get(row.code);
+        if (!sectorId) continue;
+        const value = valueByCode.get(row.code) ?? 0;
+        heldSectorWeightPctMonday.set(
+          sectorId,
+          (heldSectorWeightPctMonday.get(sectorId) ?? 0) + (value / totalPortfolioValueMonday) * 100
+        );
+      }
+    }
+  }
+
   const candidateSelectionRaw = await selectMondayCandidates({
     supabase: payload.supabase,
     chatId,
@@ -3419,6 +3471,7 @@ async function runMondayBuyForUser(payload: {
     selectedStrategy,
     riskProfile: prefs.risk_profile ?? null,
     discoveryProfile,
+    heldSectorWeightPct: heldSectorWeightPctMonday,
   });
   const newsAssistMonday = await applyNewsAssistToSelection(candidateSelectionRaw, "신규매수");
   const candidateSelection = newsAssistMonday.selection;
@@ -4676,6 +4729,24 @@ async function runDailyReviewForUser(payload: {
   const MAX_WEIGHT_PCT = 25;
   const TARGET_WEIGHT_PCT = 20;
 
+  // 섹터별 보유 비중(원화 기준): 신규 매수 후보 선정 시 섹터 몰빵을 리더 예외 없이 차단하기 위함
+  // (예: 대형 보험주 2종목이 모두 "섹터 리더"로 마킹돼 종목수 기준 상한을 무력화하는 문제 방지)
+  const heldSectorWeightPct = new Map<string, number>();
+  if (totalPortfolioValue > 0) {
+    for (const row of holdings) {
+      const sectorId = sectorIdByCode.get(row.code);
+      if (!sectorId) continue;
+      const qty = Math.max(0, Math.floor(toNumber(row.quantity, 0)));
+      const close = closeByCode.get(row.code) ?? 0;
+      const invested = Math.max(0, toNumber(row.invested_amount, 0));
+      const value = close > 0 && qty > 0 ? close * qty : invested;
+      heldSectorWeightPct.set(
+        sectorId,
+        (heldSectorWeightPct.get(sectorId) ?? 0) + (value / totalPortfolioValue) * 100
+      );
+    }
+  }
+
   for (const holding of holdings) {
     const qty = Math.max(0, Math.floor(toNumber(holding.quantity, 0)));
     const buyPrice = toNumber(holding.buy_price, 0);
@@ -5719,6 +5790,7 @@ async function runDailyReviewForUser(payload: {
         selectedStrategy: payload.setting.selected_strategy,
         riskProfile: prefs.risk_profile ?? null,
         discoveryProfile,
+        heldSectorWeightPct,
       });
       const rebalanceNewsAssist = await applyNewsAssistToSelection(candidateSelectionRaw, "리밸런싱 신규매수");
       const candidateSelection = rebalanceNewsAssist.selection;

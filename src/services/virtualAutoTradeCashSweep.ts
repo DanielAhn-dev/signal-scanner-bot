@@ -22,8 +22,13 @@ export const CASH_SWEEP_CANDIDATE_CODES = [
 
 /** 시드 대비 항상 순수 현금으로 남겨두는 비율 (레짐과 무관하게 고정) */
 const FLAT_RESERVE_PCT = 10;
-/** 이 금액 미만의 유휴현금은 스윕하지 않는다 (거래 비용 대비 실익 없음) */
-const CASH_SWEEP_MIN_BUY_AMOUNT = 500_000;
+/**
+ * 이 금액 미만의 유휴현금은 스윕하지 않는다.
+ * 청산 임계값(CASH_SWEEP_LIQUIDATE_THRESHOLD, 30만원)과의 간격(히스테리시스)을 넓게 둬서
+ * 현금이 30만~50만원대를 오갈 때마다 스윕 매수/청산이 반복되며 수수료·세금만 나가는
+ * 왕복 손실(휘핑쏘)을 줄인다. 예전엔 50만원이라 간격이 20만원뿐이었다.
+ */
+const CASH_SWEEP_MIN_BUY_AMOUNT = 1_000_000;
 /** 실거래용 가용현금이 이 밑으로 떨어지면 스윕 포지션을 전량 현금화한다 */
 export const CASH_SWEEP_LIQUIDATE_THRESHOLD = 300_000;
 
