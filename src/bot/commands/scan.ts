@@ -558,7 +558,6 @@ export async function handleScanCommand(
   }));
 
   const codes = candidatePool.map((c) => c.code);
-  const realtimeMap = await fetchRealtimePriceBatch(codes);
 
   const scoreMap = new Map<
     string,
@@ -714,6 +713,9 @@ export async function handleScanCommand(
     return;
   }
 
+  const saferCodes = saferPool.map((c) => c.code);
+  const realtimeMap = await fetchRealtimePriceBatch(saferCodes);
+
   const rerankPool = saferPool.slice(0, 12);
   // Fetch latest stored fundamentals from DB instead of on-demand scraping
   const fundamentals = await Promise.all(
@@ -759,7 +761,7 @@ export async function handleScanCommand(
   const signalBusinessGap = businessDaysBehind(latestDate) ?? 0;
   const scoreBusinessGap = businessDaysBehind(scoreResult.latestAsof) ?? 0;
   const staleBusinessGap = Math.max(signalBusinessGap, scoreBusinessGap);
-  const realtimeCoverage = codes.length > 0 ? Object.keys(realtimeMap).length / codes.length : 0;
+  const realtimeCoverage = saferCodes.length > 0 ? Object.keys(realtimeMap).length / saferCodes.length : 0;
   const realtimeMomentumWeight =
     realtimeCoverage < scanConfig.minCoverage
       ? scanConfig.freshWeight

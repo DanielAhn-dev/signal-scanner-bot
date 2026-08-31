@@ -1,6 +1,7 @@
 export type CommandCategory =
   | "default"
   | "trade"
+  | "scan"
   | "autocycle"
   | "opstrigger"
   | "weekly"
@@ -29,6 +30,7 @@ export const DEFAULT_WORKER_TIMEOUTS: WorkerTimeouts = {
     byCategory: {
       default: 20000,
       trade: 45000,
+      scan: 45000,
       autocycle: 30000,
       opstrigger: 58000,
       weekly: 54000,
@@ -60,6 +62,7 @@ export function resolveWorkerTimeoutsFromEnv(
       byCategory: {
         default: toPositiveInt(env.WORKER_JOB_TIMEOUT_DEFAULT_MS, base.job.byCategory.default),
         trade: toPositiveInt(env.WORKER_JOB_TIMEOUT_TRADE_MS, base.job.byCategory.trade),
+        scan: toPositiveInt(env.WORKER_JOB_TIMEOUT_SCAN_MS, base.job.byCategory.scan),
         autocycle: toPositiveInt(env.WORKER_JOB_TIMEOUT_AUTOCYCLE_MS, base.job.byCategory.autocycle),
         opstrigger: toPositiveInt(
           env.WORKER_JOB_TIMEOUT_OPSTRIGGER_MS,
@@ -110,6 +113,10 @@ export function isBriefCallbackData(data: string): boolean {
   return data.trim() === "cmd:brief";
 }
 
+export function isScanCommandText(text: string): boolean {
+  return /^\/(scan|pullback|scanlog|스캔|눌림목)(?:\s|$)/i.test(text.trim());
+}
+
 export function isReportCommandText(text: string): boolean {
   return /^\/(report|리포트)(?:\s|$)/i.test(text.trim());
 }
@@ -121,6 +128,7 @@ export function resolveCommandCategoryFromMessageText(text: string): CommandCate
   if (isWeeklyCopilotCommandText(value)) return "weekly";
   if (isBriefCommandText(value)) return "briefing";
   if (isTradeCommandText(value)) return "trade";
+  if (isScanCommandText(value)) return "scan";
   if (isReportCommandText(value)) return "report";
   return "default";
 }
@@ -130,6 +138,7 @@ export function resolveCommandCategoryFromCallbackData(data: string): CommandCat
   if (value === "cmd:report" || value.startsWith("cmd:report:")) return "report";
   if (isBriefCallbackData(value)) return "briefing";
   if (isTradeCallbackData(value)) return "trade";
+  if (value.startsWith("cmd:scan") || value.startsWith("cmd:pullback")) return "scan";
   if (value.startsWith("cmd:opstrigger:") || value.startsWith("cmd:autotrigger")) return "opstrigger";
   if (value.startsWith("cmd:autocycle") || value.includes("autocycle")) return "autocycle";
   return "default";
@@ -164,6 +173,18 @@ export function buildFailureMessage(input: {
   const { error, category, commandText, context = "message" } = input;
   const message = error instanceof Error ? error.message : String(error);
   const isTimeout = /^TIMEOUT:/i.test(message);
+
+  if (category === "scan") {
+    return isTimeout
+      ? [
+          "스캔 처리 시간이 길어져 이번 요청은 중단되었습니다.",
+          "잠시 후 다시 시도해주세요.",
+        ].join("\n")
+      : [
+          "스캔 처리 중 오류가 발생했습니다.",
+          "잠시 후 다시 시도해주세요.",
+        ].join("\n");
+  }
 
   if (category === "report") {
     return isTimeout
