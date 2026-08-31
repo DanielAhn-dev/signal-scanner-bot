@@ -40,6 +40,7 @@ import {
   applyStrategyBuyConstraint,
   deriveEntryProfile,
   detectAutoTradeMarketPolicy,
+  evaluateBuyRotationCandidate,
   isActionableTodayBuySignal,
   pickAutoTradeAddOnCandidates,
   pickAutoTradeCandidates,
@@ -59,6 +60,7 @@ import {
   type AutoTradeRunType,
   type AutoTradeSellPerformance,
   type RankedCandidate,
+  type RotationHeldPosition,
 } from "./virtualAutoTradeSelection";
 import { fetchLatestPullbackCandidateCodes } from "./virtualAutoTradePullbackIntegration";
 import { discoverMultibaggerCandidates } from "./discoveryService";
@@ -4223,7 +4225,7 @@ async function executeAutoTradeSell(payload: {
   feeRate: number;
   taxRate: number;
   sellQty: number;
-  reason: "take-profit-partial" | "take-profit-final" | "stop-loss" | "loss-trim";
+  reason: "take-profit-partial" | "take-profit-final" | "stop-loss" | "loss-trim" | "rotation-sell";
   stopLossContext?: string | null;
   profileLabel: string;
   strategyProfile: string;
@@ -4315,7 +4317,7 @@ async function executeAutoTradeSell(payload: {
   const taxAmount = Math.round(gross * payload.taxRate);
   const net = Math.max(0, gross - feeAmount - taxAmount);
   const pnl = net - soldCost;
-  const isTakeProfit = payload.reason !== "stop-loss";
+  const isTakeProfit = payload.reason !== "stop-loss" && payload.reason !== "rotation-sell";
 
   const sellOpKey = `${payload.chatId}:SELL:${payload.holding.code}:${Math.round(payload.close)}:${sellQty}:${new Date().toISOString().slice(0,16)}`;
   const sellRegistered = await tryRegisterOperation({
@@ -4507,6 +4509,125 @@ async function executeAutoTradeSell(payload: {
     note: isFullExit
       ? `[실행 매도] ${payload.holding.code} ${sellQty}주 · 전략 ${payload.profileLabel} · 매도가 ${fmtKrw(payload.close)}`
       : `[실행 부분익절] ${payload.holding.code} ${sellQty}주 · 잔여 ${remainQty}주 · 전략 ${payload.profileLabel} · 매도가 ${fmtKrw(payload.close)}`,
+  };
+}
+
+/** 로테이션 기능 자체를 켤지 여부. 실계좌 미러링에 영향을 주는 새 매도 트리거라 기본 비활성(옵트인). */
+const AUTO_TRADE_ROTATION_ENABLED = String(process.env.AUTO_TRADE_ROTATION_ENABLED ?? "").trim().toLowerCase() === "true";
+/** 계좌당 로테이션 매도 최소 간격(일). 잦은 갈아타기로 인한 수수료·세금 누적을 막는다. */
+const ROTATION_MIN_INTERVAL_DAYS = 7;
+
+async function hasRecentRotationSell(payload: {
+  supabase: SupabaseClientAny;
+  chatId: number;
+}): Promise<boolean> {
+  const since = new Date(Date.now() - ROTATION_MIN_INTERVAL_DAYS * 24 * 60 * 60 * 1000).toISOString();
+  const { data } = await payload.supabase
+    .from("virtual_autotrade_actions")
+    .select("id")
+    .eq("chat_id", payload.chatId)
+    .eq("action_type", "SELL")
+    .eq("reason", "rotation-sell")
+    .gte("created_at", since)
+    .limit(1);
+  return Boolean(data && data.length > 0);
+}
+
+/**
+ * 현금 부족으로 신규매수가 막힌 회차에서, 옵트인(AUTO_TRADE_ROTATION_ENABLED) 시에만
+ * 손실 중인 최약체 보유종목을 정리해 명백히 더 강한 신규 후보에 자리를 내준다.
+ * "강제 정리"가 아니라 evaluateBuyRotationCandidate 기준(신규 후보 75점 이상 + 격차 15점 이상)을
+ * 만족할 때만 동작하며, HOLD_SAFE 전략과 계좌당 주 1회 빈도 제한으로 과도한 회전을 막는다.
+ */
+async function tryRotateForCashRoom(payload: {
+  supabase: SupabaseClientAny;
+  runId: number | null;
+  chatId: number;
+  activeHoldings: HoldingRow[];
+  holdingFactorsByCode: Map<string, { score?: number | null }>;
+  closeByCode: Map<string, number>;
+  feeRate: number;
+  taxRate: number;
+  marketPolicy: AutoTradeMarketPolicy;
+  heldCodes: Set<string>;
+  discoveryProfile: DiscoveryProfile;
+  riskProfile?: string | null;
+  minBuyScore: number;
+  selectedStrategy?: string | null;
+  dryRun: boolean;
+}): Promise<{ rotated: boolean; proceeds: number; note: string } | null> {
+  if (!AUTO_TRADE_ROTATION_ENABLED) return null;
+  if (String(payload.selectedStrategy ?? "").toUpperCase() === "HOLD_SAFE") return null;
+  if (!payload.activeHoldings.length) return null;
+
+  const alreadyRotated = await hasRecentRotationSell({
+    supabase: payload.supabase,
+    chatId: payload.chatId,
+  }).catch(() => true);
+  if (alreadyRotated) return null;
+
+  const heldPositions: RotationHeldPosition[] = payload.activeHoldings
+    .map((h) => ({
+      code: h.code,
+      score: toNumber(payload.holdingFactorsByCode.get(h.code)?.score, 0),
+      buyPrice: toNumber(h.buy_price, 0),
+      currentClose: toNumber(payload.closeByCode.get(h.code), 0),
+    }))
+    .filter((p) => p.score > 0 && p.buyPrice > 0 && p.currentClose > 0);
+  if (!heldPositions.length) return null;
+
+  // 신규 후보 프로브: 매수 없이 최상위 점수만 확인 (여기서 얻은 종목은 이후 정상 매수 로직에서 다시 선정됨)
+  const probe = await selectMondayCandidates({
+    supabase: payload.supabase,
+    chatId: payload.chatId,
+    minBuyScore: payload.minBuyScore,
+    limit: 1,
+    heldCodes: payload.heldCodes,
+    marketPolicy: payload.marketPolicy,
+    selectedStrategy: payload.selectedStrategy,
+    riskProfile: payload.riskProfile,
+    discoveryProfile: payload.discoveryProfile,
+  }).catch(() => null);
+  const topCandidate = probe?.candidates?.[0];
+  if (!topCandidate) return null;
+
+  const evaluation = evaluateBuyRotationCandidate({
+    heldPositions,
+    topNewCandidateScore: topCandidate.score,
+  });
+  if (!evaluation.shouldRotate || !evaluation.target) return null;
+
+  const targetHolding = payload.activeHoldings.find((h) => h.code === evaluation.target!.code);
+  if (!targetHolding) return null;
+  const close = payload.closeByCode.get(targetHolding.code) ?? 0;
+  const buyPrice = toNumber(targetHolding.buy_price, close);
+  if (close <= 0) return null;
+
+  const result = await executeAutoTradeSell({
+    supabase: payload.supabase,
+    runId: payload.runId,
+    chatId: payload.chatId,
+    holding: targetHolding,
+    close,
+    buyPrice,
+    feeRate: payload.feeRate,
+    taxRate: payload.taxRate,
+    sellQty: Math.max(0, Math.floor(toNumber(targetHolding.quantity, 0))),
+    reason: "rotation-sell",
+    profileLabel: "로테이션",
+    strategyProfile: "ROTATION",
+    takeProfitTranchesDone: 0,
+    nextTakeProfitTranchesDone: 0,
+    dryRun: payload.dryRun,
+  });
+
+  if (!result.sold) return null;
+
+  const pnlPct = buyPrice > 0 ? ((close - buyPrice) / buyPrice) * 100 : 0;
+  return {
+    rotated: true,
+    proceeds: result.proceeds,
+    note: `[로테이션 정리] ${targetHolding.code} 전량매도 · 신규후보(${topCandidate.code}) 점수 ${topCandidate.score.toFixed(1)} vs 보유 점수 ${evaluation.target.score.toFixed(1)} · 손익률 ${pnlPct.toFixed(2)}% · 참고: 현금부족으로 신규매수가 막혀 최약체 손실종목을 정리했습니다`,
   };
 }
 
@@ -5791,6 +5912,37 @@ async function runDailyReviewForUser(payload: {
 
     if (buyConstraint.note) {
       summary.notes.push(buyConstraint.note);
+    }
+
+    // 현금 부족으로 이번 회차 신규매수가 막힐 상황이면, 옵트인 시에만 로테이션을 시도해
+    // availableCash/deployableCash를 갱신한다 (아래 분기는 갱신된 값을 그대로 사용한다).
+    if (buySlots > 0 && !dailyBuyBlocked && (availableCash <= 0 || deployableCash <= 0)) {
+      const rotation = await tryRotateForCashRoom({
+        supabase: payload.supabase,
+        runId: payload.runId,
+        chatId,
+        activeHoldings,
+        holdingFactorsByCode,
+        closeByCode,
+        feeRate,
+        taxRate,
+        marketPolicy,
+        heldCodes,
+        discoveryProfile,
+        riskProfile: prefs.risk_profile ?? null,
+        minBuyScore: buyConstraint.minBuyScore,
+        selectedStrategy: payload.setting.selected_strategy,
+        dryRun: payload.dryRun,
+      }).catch((e) => {
+        console.error("[autoTrade] rotation check failed", e);
+        return null;
+      });
+      if (rotation?.rotated) {
+        availableCash += rotation.proceeds;
+        deployableCash += rotation.proceeds;
+        summary.sells += 1;
+        summary.notes.push(rotation.note);
+      }
     }
 
     if (buySlots <= 0) {

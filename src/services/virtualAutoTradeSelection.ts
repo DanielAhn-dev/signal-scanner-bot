@@ -1274,3 +1274,58 @@ export function pickAutoTradeAddOnCandidates(input: {
     },
   };
 }
+
+/**
+ * 현금부족 로테이션 판단용 보유종목 입력.
+ * score는 신규 후보와 같은 척도(scores.total_score)로 재조회한 "현재" 점수여야 한다.
+ */
+export type RotationHeldPosition = {
+  code: string;
+  score: number;
+  buyPrice: number;
+  currentClose: number;
+};
+
+export type RotationEvaluation = {
+  shouldRotate: boolean;
+  target?: RotationHeldPosition;
+  reason:
+    | "candidate-score-below-threshold"
+    | "no-losing-position"
+    | "score-gap-too-small"
+    | "rotation-approved";
+};
+
+/** 신규 후보 최소 점수 (이 밑이면 로테이션 자체를 고려하지 않음) */
+export const ROTATION_MIN_CANDIDATE_SCORE = 75;
+/** 로테이션 대상 보유종목 대비 신규 후보의 최소 점수 격차 */
+export const ROTATION_MIN_SCORE_GAP = 15;
+
+/**
+ * 현금 부족으로 신규매수가 막힌 상황에서, 손실 중인 보유종목 중 점수가 가장 낮은 종목을
+ * 정리해 자금을 확보할지 판단한다. "강제 정리"가 아니라 신규 후보가 명백히 더 강할 때만
+ * (점수 75 이상 + 격차 15점 이상) 승인하며, 손실 중이 아닌(수익 중인) 종목은 후보에서 제외한다.
+ */
+export function evaluateBuyRotationCandidate(input: {
+  heldPositions: RotationHeldPosition[];
+  topNewCandidateScore: number;
+}): RotationEvaluation {
+  if (input.topNewCandidateScore < ROTATION_MIN_CANDIDATE_SCORE) {
+    return { shouldRotate: false, reason: "candidate-score-below-threshold" };
+  }
+
+  const losers = input.heldPositions.filter(
+    (p) => p.buyPrice > 0 && p.currentClose > 0 && p.currentClose < p.buyPrice
+  );
+  if (losers.length === 0) {
+    return { shouldRotate: false, reason: "no-losing-position" };
+  }
+
+  const weakest = losers.reduce((min, p) => (p.score < min.score ? p : min), losers[0]);
+  const gap = input.topNewCandidateScore - weakest.score;
+  if (gap < ROTATION_MIN_SCORE_GAP) {
+    return { shouldRotate: false, reason: "score-gap-too-small" };
+  }
+
+  return { shouldRotate: true, target: weakest, reason: "rotation-approved" };
+}

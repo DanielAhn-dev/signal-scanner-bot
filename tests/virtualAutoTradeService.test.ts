@@ -6,6 +6,7 @@ import {
   computeDynamicLargeCapFloor,
   detectAutoTradeMarketPolicy,
   deriveAdaptiveMinBuyScore,
+  evaluateBuyRotationCandidate,
   evaluateCloseFreshness,
   isActionableTodayBuySignal,
   isTakeProfitCooldownOverridable,
@@ -1122,4 +1123,45 @@ test("planOverweightReduction: 2주 이상이면 최소 1주를 남기고 초과
   assert.equal(result.action, "OVERWEIGHT_REDUCTION");
   assert.ok(result.quantityToSell >= 1);
   assert.ok(result.quantityToSell < 2);
+});
+
+test("evaluateBuyRotationCandidate: 신규 후보 점수가 75 미만이면 로테이션하지 않는다", () => {
+  const result = evaluateBuyRotationCandidate({
+    heldPositions: [{ code: "000001", score: 40, buyPrice: 10000, currentClose: 9000 }],
+    topNewCandidateScore: 70,
+  });
+  assert.equal(result.shouldRotate, false);
+  assert.equal(result.reason, "candidate-score-below-threshold");
+});
+
+test("evaluateBuyRotationCandidate: 손실 중인 보유종목이 없으면 로테이션하지 않는다", () => {
+  const result = evaluateBuyRotationCandidate({
+    heldPositions: [{ code: "000001", score: 40, buyPrice: 10000, currentClose: 11000 }],
+    topNewCandidateScore: 90,
+  });
+  assert.equal(result.shouldRotate, false);
+  assert.equal(result.reason, "no-losing-position");
+});
+
+test("evaluateBuyRotationCandidate: 점수 격차가 15점 미만이면 로테이션하지 않는다", () => {
+  const result = evaluateBuyRotationCandidate({
+    heldPositions: [{ code: "000001", score: 65, buyPrice: 10000, currentClose: 9000 }],
+    topNewCandidateScore: 78,
+  });
+  assert.equal(result.shouldRotate, false);
+  assert.equal(result.reason, "score-gap-too-small");
+});
+
+test("evaluateBuyRotationCandidate: 손실 중 + 점수 최저 + 격차 15점 이상이면 로테이션을 승인한다", () => {
+  const result = evaluateBuyRotationCandidate({
+    heldPositions: [
+      { code: "000001", score: 60, buyPrice: 10000, currentClose: 9000 }, // 손실, 점수 낮음 → 대상
+      { code: "000002", score: 80, buyPrice: 10000, currentClose: 9500 }, // 손실이지만 점수 높음
+      { code: "000003", score: 30, buyPrice: 10000, currentClose: 11000 }, // 점수는 최저지만 수익 중(제외)
+    ],
+    topNewCandidateScore: 80,
+  });
+  assert.equal(result.shouldRotate, true);
+  assert.equal(result.reason, "rotation-approved");
+  assert.equal(result.target?.code, "000001");
 });
