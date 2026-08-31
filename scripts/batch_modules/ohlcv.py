@@ -156,6 +156,7 @@ def _flush_stock_daily(supabase: Client, rows: list):
             chunk = rows[i:i+500]
             for j in range(0, len(chunk), 50):
                 try:
+                    time.sleep(0.5)
                     supabase.table("stock_daily").upsert(chunk[j:j+50], on_conflict="ticker,date").execute()
                 except:
                     sub_batch_fail += 1

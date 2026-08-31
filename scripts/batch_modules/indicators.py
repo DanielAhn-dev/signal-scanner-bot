@@ -4,6 +4,7 @@ batch_modules/indicators.py
 STEP 2: ??? ?? ??
 """
 
+import time
 import pandas as pd
 import numpy as np
 from datetime import datetime, date, timedelta
@@ -60,6 +61,7 @@ def calculate_indicators(supabase: Client, trading_date: str):
                     print(f"     upsert error: {e}")
                     for j in range(0, len(upsert_buffer), 50):
                         try:
+                            time.sleep(0.5)
                             supabase.table("daily_indicators").upsert(upsert_buffer[j:j+50], on_conflict="code,trade_date").execute()
                         except Exception:
                             upsert_sub_fail += 1
@@ -136,6 +138,7 @@ def calculate_indicators(supabase: Client, trading_date: str):
             print(f"     final upsert error: {e}")
             for j in range(0, len(upsert_buffer), 50):
                 try:
+                    time.sleep(0.5)
                     supabase.table("daily_indicators").upsert(upsert_buffer[j:j+50], on_conflict="code,trade_date").execute()
                 except Exception:
                     upsert_sub_fail += 1

@@ -61,7 +61,8 @@ def update_sector_data(supabase: Client, trading_date: str):
             t_price, p_price = today_map[ticker], prev_map[ticker]
             if p_price > 0:
                 change = (t_price - p_price) / p_price * 100
-                sector_changes.setdefault(sid, []).append(change)
+                if np.isfinite(change):
+                    sector_changes.setdefault(sid, []).append(change)
 
         res_sectors = supabase.table("sectors") \
             .select("id, name, metrics").execute()
@@ -71,7 +72,7 @@ def update_sector_data(supabase: Client, trading_date: str):
             sid = sec["id"]
             sname = sec.get("name", "")
             old_metrics = sec.get("metrics") or {}
-            changes = sector_changes.get(sid, [])
+            changes = [c for c in sector_changes.get(sid, []) if np.isfinite(c)]
             avg_change = sum(changes) / len(changes) if changes else 0.0
 
             new_metrics = dict(old_metrics)
