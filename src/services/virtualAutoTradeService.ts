@@ -69,6 +69,7 @@ import {
   fetchRealtimePriceBatch,
   type RealtimeStockData,
 } from "../utils/fetchRealtimePrice";
+import { resolveVirtualExecutionPrice } from "./virtualAutoTradeExecution";
 import { describeScanFilterReasons } from "../bot/commands/scanFilters";
 import { fetchAllMarketData } from "../utils/fetchMarketData";
 import { fetchLatestScoresByCodes } from "./scoreSourceService";
@@ -1585,7 +1586,13 @@ async function resolveBuyExecutionPrices(
   const priceByCode = new Map<string, { price: number; source: BuyPriceSource }>();
   for (const candidate of candidates) {
     if (candidate.close > 0) {
-      priceByCode.set(candidate.code, { price: candidate.close, source: "close" });
+      priceByCode.set(candidate.code, {
+        price: resolveVirtualExecutionPrice({
+          referencePrice: candidate.close,
+          side: "BUY",
+        }).executionPrice,
+        source: "close",
+      });
     }
   }
 
@@ -1613,7 +1620,13 @@ async function resolveBuyExecutionPrices(
   for (const candidate of candidates) {
     const realtimePrice = Number(realtimeByCode[candidate.code]?.price ?? 0);
     if (Number.isFinite(realtimePrice) && realtimePrice > 0) {
-      priceByCode.set(candidate.code, { price: realtimePrice, source: "realtime" });
+      priceByCode.set(candidate.code, {
+        price: resolveVirtualExecutionPrice({
+          referencePrice: realtimePrice,
+          side: "BUY",
+        }).executionPrice,
+        source: "realtime",
+      });
       realtimeAppliedCount += 1;
     }
   }
@@ -4312,14 +4325,19 @@ async function executeAutoTradeSell(payload: {
     remainQty > 0 && remainInvested > 0
       ? Number((remainInvested / remainQty).toFixed(4))
       : null;
-  const gross = Math.round(payload.close * sellQty);
+  const execution = resolveVirtualExecutionPrice({
+    referencePrice: payload.close,
+    side: "SELL",
+  });
+  const executionPrice = execution.executionPrice;
+  const gross = Math.round(executionPrice * sellQty);
   const feeAmount = Math.round(gross * payload.feeRate);
   const taxAmount = Math.round(gross * payload.taxRate);
   const net = Math.max(0, gross - feeAmount - taxAmount);
   const pnl = net - soldCost;
   const isTakeProfit = payload.reason !== "stop-loss" && payload.reason !== "rotation-sell";
 
-  const sellOpKey = `${payload.chatId}:SELL:${payload.holding.code}:${Math.round(payload.close)}:${sellQty}:${new Date().toISOString().slice(0,16)}`;
+  const sellOpKey = `${payload.chatId}:SELL:${payload.holding.code}:${Math.round(executionPrice)}:${sellQty}:${new Date().toISOString().slice(0,16)}`;
   const sellRegistered = await tryRegisterOperation({
     supabase: payload.supabase,
     opKey: sellOpKey,
@@ -4360,6 +4378,8 @@ async function executeAutoTradeSell(payload: {
         remainQty,
         buyPrice: payload.buyPrice,
         close: payload.close,
+        executionPrice,
+        slippageBps: execution.slippageBps,
         pnl,
         isFullExit,
         stopLossContext: payload.reason === "stop-loss" ? payload.stopLossContext ?? null : null,
@@ -4373,7 +4393,7 @@ async function executeAutoTradeSell(payload: {
       proceeds: net,
       realizedPnlDelta: pnl,
       note: isFullExit
-        ? `[테스트 매도안] ${payload.holding.code} ${sellQty}주 전량매도 · 전략 ${payload.profileLabel} · 손익률 ${(((payload.close - payload.buyPrice) / payload.buyPrice) * 100).toFixed(2)}%`
+        ? `[테스트 매도안] ${payload.holding.code} ${sellQty}주 전량매도 · 전략 ${payload.profileLabel} · 손익률 ${(((executionPrice - payload.buyPrice) / payload.buyPrice) * 100).toFixed(2)}%`
         : `[테스트 부분익절안] ${payload.holding.code} ${sellQty}주 매도 · 잔여 ${remainQty}주 · 전략 ${payload.profileLabel}`,
     };
   }
@@ -4413,7 +4433,7 @@ async function executeAutoTradeSell(payload: {
     chatId: payload.chatId,
     code: payload.holding.code,
     side: "SELL",
-    price: payload.close,
+    price: executionPrice,
     quantity: sellQty,
     grossAmount: gross,
     netAmount: net,
@@ -4434,7 +4454,7 @@ async function executeAutoTradeSell(payload: {
     await applyFifoSale({
       chatId: payload.chatId,
       code: payload.holding.code,
-      exitPrice: payload.close,
+      exitPrice: executionPrice,
       tradeId,
       allocations: fifo.allocations,
     });
@@ -4465,6 +4485,8 @@ async function executeAutoTradeSell(payload: {
       remainQty,
       buyPrice: payload.buyPrice,
       close: payload.close,
+      executionPrice,
+      slippageBps: execution.slippageBps,
       gross,
       net,
       pnl,
@@ -4495,7 +4517,9 @@ async function executeAutoTradeSell(payload: {
       sellQty,
       remainQty,
       buyPrice: payload.buyPrice,
-      sellPrice: payload.close,
+      sellPrice: executionPrice,
+      referencePrice: payload.close,
+      slippageBps: execution.slippageBps,
       pnl,
     },
     linkedTradeId: tradeId ?? undefined,
@@ -4507,8 +4531,8 @@ async function executeAutoTradeSell(payload: {
     proceeds: net,
     realizedPnlDelta: pnl,
     note: isFullExit
-      ? `[실행 매도] ${payload.holding.code} ${sellQty}주 · 전략 ${payload.profileLabel} · 매도가 ${fmtKrw(payload.close)}`
-      : `[실행 부분익절] ${payload.holding.code} ${sellQty}주 · 잔여 ${remainQty}주 · 전략 ${payload.profileLabel} · 매도가 ${fmtKrw(payload.close)}`,
+      ? `[실행 매도] ${payload.holding.code} ${sellQty}주 · 전략 ${payload.profileLabel} · 매도가 ${fmtKrw(executionPrice)}`
+      : `[실행 부분익절] ${payload.holding.code} ${sellQty}주 · 잔여 ${remainQty}주 · 전략 ${payload.profileLabel} · 매도가 ${fmtKrw(executionPrice)}`,
   };
 }
 
