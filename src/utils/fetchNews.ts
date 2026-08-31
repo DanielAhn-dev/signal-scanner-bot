@@ -14,12 +14,31 @@ export interface NewsItem {
 const UA =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36";
 
+// 개별 뉴스 요청이 지연/응답 지연 시 스캔 전체를 막지 않도록 요청별 타임아웃을 둡니다.
+const NEWS_FETCH_TIMEOUT_MS = 3000;
+
 type FetchLikeResponse = {
   ok: boolean;
   json(): Promise<unknown>;
   text(): Promise<string>;
   arrayBuffer(): Promise<ArrayBuffer>;
 };
+
+async function fetchWithTimeout(
+  url: string,
+  timeoutMs = NEWS_FETCH_TIMEOUT_MS
+): Promise<FetchLikeResponse> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return (await fetch(url, {
+      headers: { "User-Agent": UA },
+      signal: controller.signal,
+    })) as FetchLikeResponse;
+  } finally {
+    clearTimeout(timer);
+  }
+}
 
 /** 개별 종목 뉴스 — 네이버 모바일 주식 API */
 export async function fetchStockNews(
@@ -28,9 +47,7 @@ export async function fetchStockNews(
 ): Promise<NewsItem[]> {
   try {
     const url = `https://m.stock.naver.com/api/news/stock/${code}?pageSize=${limit}`;
-    const res = (await fetch(url, {
-      headers: { "User-Agent": UA },
-    })) as FetchLikeResponse;
+    const res = await fetchWithTimeout(url);
     if (!res.ok) return [];
     const data = await res.json();
     if (!Array.isArray(data)) return [];
@@ -93,9 +110,7 @@ export async function fetchMarketNews(limit = 7): Promise<NewsItem[]> {
 
     for (let page = 1; page <= maxPages && items.length < limit; page += 1) {
       const url = `https://finance.naver.com/news/mainnews.naver?page=${page}`;
-      const res = (await fetch(url, {
-        headers: { "User-Agent": UA },
-      })) as FetchLikeResponse;
+      const res = await fetchWithTimeout(url);
       if (!res.ok) break;
 
       const ab = await res.arrayBuffer();

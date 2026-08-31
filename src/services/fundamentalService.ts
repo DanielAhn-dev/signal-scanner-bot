@@ -21,6 +21,9 @@ import {
 const UA =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36";
 
+// 온디맨드 재무 스크래핑이 지연 시 스캔 전체를 막지 않도록 요청 타임아웃을 둡니다.
+const FINANCE_FETCH_TIMEOUT_MS = 3000;
+
 type FetchLikeResponse = {
   text(): Promise<string>;
 };
@@ -467,9 +470,17 @@ export function evaluateFundamentalQuality(input: {
 async function fetchNaverFinanceRows(code: string): Promise<NaverFinanceData> {
   try {
     const url = `https://finance.naver.com/item/main.naver?code=${code}`;
-    const res = (await fetch(url, {
-      headers: { "User-Agent": UA },
-    })) as FetchLikeResponse;
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), FINANCE_FETCH_TIMEOUT_MS);
+    let res: FetchLikeResponse;
+    try {
+      res = (await fetch(url, {
+        headers: { "User-Agent": UA },
+        signal: controller.signal,
+      })) as FetchLikeResponse;
+    } finally {
+      clearTimeout(timer);
+    }
     const html = await res.text();
 
     const $ = cheerio.load(html);
