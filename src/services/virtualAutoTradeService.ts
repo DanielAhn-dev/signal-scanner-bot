@@ -3322,6 +3322,7 @@ async function runMondayBuyForUser(payload: {
     baseMinBuyScore: persistedGuardForMonday.baseMinBuyScore,
     activeCount,
     pacingRelaxLevel: pacingMetrics.relaxLevel,
+    maxPositions,
   });
 
   if (perfGuardForMonday.note) {
@@ -5245,6 +5246,7 @@ async function runDailyReviewForUser(payload: {
       requestedSlots: recoveryModeActive || regimeDefenseBlockDaily ? 0 : persistedGuard.requestedSlots,
       baseMinBuyScore: persistedGuard.baseMinBuyScore,
       activeCount: currentCount,
+      maxPositions,
     });
 
     if (!dailyBuyBlocked && !regimeDefenseBlockDaily && availableCash > 0 && addOnConstraint.buySlots > 0 && activeHoldings.length > 0) {
@@ -5702,6 +5704,7 @@ async function runDailyReviewForUser(payload: {
       requestedSlots: persistedRebalanceGuard.requestedSlots,
       baseMinBuyScore: persistedRebalanceGuard.baseMinBuyScore,
       activeCount: currentCount,
+      maxPositions,
     });
 
     if (perfAdjustedRebalance.note) {

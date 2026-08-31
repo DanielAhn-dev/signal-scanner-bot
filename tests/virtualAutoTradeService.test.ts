@@ -440,7 +440,7 @@ test("pickAutoTradeCandidates: 대형주 방어 모드에서는 코스피 대형
   );
 });
 
-test("applyStrategyBuyConstraint: HOLD_SAFE 무보유면 1종목만 최소 진입 허용", () => {
+test("applyStrategyBuyConstraint: HOLD_SAFE는 종목수 상한 없이 요청 슬롯을 그대로 통과시킨다(적응형 게이트에 위임)", () => {
   const result = applyStrategyBuyConstraint({
     selectedStrategy: "HOLD_SAFE",
     requestedSlots: 3,
@@ -448,35 +448,36 @@ test("applyStrategyBuyConstraint: HOLD_SAFE 무보유면 1종목만 최소 진�
     activeCount: 0,
   });
 
-  assert.equal(result.buySlots, 1);
+  assert.equal(result.buySlots, 3);
   assert.equal(result.blocked, false);
-  assert.equal(result.reason, "hold-safe-probe");
+  assert.equal(result.reason, "hold-safe-adaptive");
 });
 
-test("applyStrategyBuyConstraint: HOLD_SAFE 기존 보유 1종목이면 1종목 추가 진입을 허용", () => {
+test("applyStrategyBuyConstraint: HOLD_SAFE는 보유 종목수가 많아도(예: 4종목) 요청 슬롯을 그대로 허용한다", () => {
   const result = applyStrategyBuyConstraint({
     selectedStrategy: "HOLD_SAFE",
     requestedSlots: 2,
     baseMinBuyScore: 70,
-    activeCount: 1,
+    activeCount: 4,
+    maxPositions: 10,
   });
 
-  assert.equal(result.buySlots, 1);
+  assert.equal(result.buySlots, 2);
   assert.equal(result.blocked, false);
-  assert.equal(result.reason, "hold-safe-probe");
+  assert.equal(result.reason, "hold-safe-adaptive");
 });
 
-test("applyStrategyBuyConstraint: HOLD_SAFE 기존 보유 2종목이면 신규 매수를 차단", () => {
+test("applyStrategyBuyConstraint: HOLD_SAFE는 상위 호출부가 슬롯을 0으로 계산하면 차단으로 표시한다", () => {
   const result = applyStrategyBuyConstraint({
     selectedStrategy: "HOLD_SAFE",
-    requestedSlots: 2,
+    requestedSlots: 0,
     baseMinBuyScore: 70,
     activeCount: 2,
   });
 
   assert.equal(result.buySlots, 0);
   assert.equal(result.blocked, true);
-  assert.equal(result.reason, "strategy-blocked-buy");
+  assert.equal(result.reason, "no-buy-slots");
 });
 
 test("applyStrategyBuyConstraint: 페이싱 완화 레벨이 있으면 최소점수가 낮아진다", () => {

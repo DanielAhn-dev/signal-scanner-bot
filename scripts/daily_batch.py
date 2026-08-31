@@ -255,6 +255,10 @@ def main():
         print(f"   Trading date (auto-detected): {trading_date}", flush=True)
     run_status["processed_date"] = trading_date
 
+    # Track execution times
+    stage_times = {}
+    start_time = time.time()
+
     # Optional universe automation
     if auto_refresh_universe:
         step_start = time.time()
@@ -274,10 +278,6 @@ def main():
             print(f"[OK] stock_daily table reinitialized")
         except Exception as e:
             print(f"[WARN] Reinitialization failed: {e}")
-
-    # Track execution times
-    stage_times = {}
-    start_time = time.time()
 
     # Step 0: Auto-backfill missing dates
     print(f"\n[0/7] Auto-backfill missing dates...")

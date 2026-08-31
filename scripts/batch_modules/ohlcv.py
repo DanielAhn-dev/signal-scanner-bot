@@ -111,7 +111,8 @@ def fetch_ohlcv_per_ticker(supabase: Client, trading_date: str) -> bool:
                 })
 
             success += 1
-            time.sleep(0.15)
+            # KRX 자동화 대량조회 탐지(IP 접속제한)를 피하기 위해 종목당 간격을 넉넉히 둔다.
+            time.sleep(0.3)
 
         except Exception as e:
             fail += 1

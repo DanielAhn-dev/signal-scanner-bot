@@ -118,6 +118,8 @@ const SKIP_REASON_KO: Record<string, string> = {
   "cash-reserve-floor": "현금하한도달",
   "strategy-blocked-buy": "전략차단",
   "hold-safe-probe": "안전탐색보류",
+  "hold-safe-adaptive": "안전적응매수",
+  "no-buy-slots": "슬롯없음",
   "no-candidates": "후보없음",
   "invalid-holding-or-price": "보유/가격오류",
   "within-range": "목표범위내",

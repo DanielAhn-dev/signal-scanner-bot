@@ -317,7 +317,7 @@ export type AutoTradeBuyConstraint = {
   minBuyScore: number;
   blocked: boolean;
   note?: string;
-  reason: "strategy-blocked-buy" | "hold-safe-probe" | "default";
+  reason: "strategy-blocked-buy" | "hold-safe-probe" | "hold-safe-adaptive" | "no-buy-slots" | "default";
 };
 
 export type HeldPositionForAddOn = {
@@ -710,6 +710,7 @@ export function applyStrategyBuyConstraint(input: {
   baseMinBuyScore: number;
   activeCount: number;
   pacingRelaxLevel?: 0 | 1 | 2;
+  maxPositions?: number;
 }): AutoTradeBuyConstraint {
   const requestedSlots = Math.max(0, Math.floor(input.requestedSlots));
   const relaxLevel = input.pacingRelaxLevel ?? 0;
@@ -729,29 +730,15 @@ export function applyStrategyBuyConstraint(input: {
   }
 
   if (selectedStrategy === "HOLD_SAFE") {
-    const remainingSafeSlots = Math.max(0, 2 - activeCount);
-    if (remainingSafeSlots <= 0) {
-      return {
-        buySlots: 0,
-        minBuyScore: baseMinBuyScore,
-        blocked: true,
-        note: "안전 전략 유지: 총 2종목까지 보수 분산 후 기존 포지션만 관리",
-        reason: "strategy-blocked-buy",
-      };
-    }
-
-    const safeSlots = Math.min(requestedSlots, 1, remainingSafeSlots);
+    // 과거에는 총 2(또는 목표치의 40%) 종목 고정 상한으로 그 이상 매수를 영구 정지시켰으나,
+    // 상위 호출부의 maxPositions 슬롯 계산과 pacing/성과가드/영속게이트/현금스윕 등
+    // 기존 적응형 게이트들과 중복 규제되어 장기간 매매 정체를 유발했다.
+    // 여기서는 별도 종목수 상한을 두지 않고, 이미 계산된 requestedSlots(적응형 결과)를 그대로 사용한다.
     return {
-      buySlots: safeSlots,
+      buySlots: requestedSlots,
       minBuyScore: baseMinBuyScore,
-      blocked: safeSlots <= 0,
-      note:
-        safeSlots > 0
-          ? activeCount <= 0
-            ? "안전 전략 최소 진입: 상위 후보 1종목부터 보수적으로 시작"
-            : "안전 전략 제한 진입: 총 2종목까지 보수 분산 허용"
-          : "안전 전략 유지: 추가 매수 슬롯 없음",
-      reason: safeSlots > 0 ? "hold-safe-probe" : "strategy-blocked-buy",
+      blocked: requestedSlots <= 0,
+      reason: requestedSlots > 0 ? "hold-safe-adaptive" : "no-buy-slots",
     };
   }
 

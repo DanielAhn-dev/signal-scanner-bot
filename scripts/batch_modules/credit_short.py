@@ -172,7 +172,10 @@ def fetch_credit_short_data(supabase: Client, trading_date: str):
                 if len(sample_failed_codes) < 10:
                     sample_failed_codes.append(code)
 
-            time.sleep(0.05)
+            # 종목당 KRX 요청 2건 x 0.05초 대기 = 초당 약 40건의 지속 트래픽이었고,
+            # 이는 KRX Data Marketplace의 "자동화 수단을 통한 비정상 대량 조회" 탐지 기준에
+            # 해당해 IP 접속 제한(1일)을 유발했다. 종목당 요청 간격을 늘려 자동화 탐지를 피한다.
+            time.sleep(0.5)
 
         if cs_rows:
             for i in range(0, len(cs_rows), 500):

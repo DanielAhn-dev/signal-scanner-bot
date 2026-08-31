@@ -20,6 +20,7 @@ import argparse
 import json
 import os
 import re
+import time
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -208,6 +209,30 @@ def send_telegram_alert(text: str) -> bool:
         return False
 
 
+def _get_market_cap_with_retry(trading_date: str, market: str, max_back_days: int = 2) -> Optional[pd.DataFrame]:
+    """당일 시가총액 스냅샷이 아직 게시되지 않아 실패하는 경우를 대비해 직전 영업일로
+    최소한만 물러나며 재시도한다. KRX Data Marketplace는 자동화 수단을 통한 비정상
+    대량 조회를 탐지해 IP 접속을 제한하므로(실제로 이 저장소 IP가 1일 제한을 받은 적
+    있음), 재시도 횟수를 크게 늘리거나 요청 간격 없이 반복 호출하지 않는다.
+    """
+    cursor = datetime.strptime(trading_date, "%Y%m%d")
+    last_error: Optional[Exception] = None
+    for attempt in range(max_back_days + 1):
+        d_str = cursor.strftime("%Y%m%d")
+        try:
+            df = stock.get_market_cap(d_str, market=market)
+            if df is not None and not df.empty:
+                return df
+        except Exception as e:
+            last_error = e
+        if attempt < max_back_days:
+            time.sleep(0.5)
+        cursor -= timedelta(days=1)
+    if last_error is not None:
+        raise last_error
+    return None
+
+
 def load_market_frames(trading_date: str) -> Tuple[pd.DataFrame, Dict[str, str], Dict[str, str]]:
     market_tickers = {
         "KOSPI": stock.get_market_ticker_list(trading_date, market="KOSPI"),
@@ -226,7 +251,7 @@ def load_market_frames(trading_date: str) -> Tuple[pd.DataFrame, Dict[str, str],
 
     cap_frames: List[pd.DataFrame] = []
     for market in ("KOSPI", "KOSDAQ"):
-        df = stock.get_market_cap(trading_date, market=market)
+        df = _get_market_cap_with_retry(trading_date, market)
         if df is None or df.empty:
             continue
         df = df.copy()
