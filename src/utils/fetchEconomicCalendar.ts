@@ -72,6 +72,63 @@ const MAJOR_ECONOMIC_EVENTS: EconomicEvent[] = [
     averageVolatilityIncrease: 1.5,
     impactSeverity: 70,
   },
+  // 5월~11월 PPI: CPI 발표 이틀 뒤 통상 발표 (누락되어 있던 후속 월 보강)
+  {
+    id: 'us-ppi-may-2026',
+    name: '미국 PPI (YoY)',
+    country: 'US', category: 'inflation', importance: 'high',
+    scheduledAt: '2026-06-13T12:30:00Z',
+    forecastValue: 2.7, unit: '%', source: 'BLS',
+    averageKospiReaction: -0.4, averageVolatilityIncrease: 1.5, impactSeverity: 70,
+  },
+  {
+    id: 'us-ppi-jun-2026',
+    name: '미국 PPI (YoY)',
+    country: 'US', category: 'inflation', importance: 'high',
+    scheduledAt: '2026-07-16T12:30:00Z',
+    forecastValue: 2.6, unit: '%', source: 'BLS',
+    averageKospiReaction: -0.4, averageVolatilityIncrease: 1.5, impactSeverity: 70,
+  },
+  {
+    id: 'us-ppi-jul-2026',
+    name: '미국 PPI (YoY)',
+    country: 'US', category: 'inflation', importance: 'high',
+    scheduledAt: '2026-08-14T12:30:00Z',
+    forecastValue: 2.5, unit: '%', source: 'BLS',
+    averageKospiReaction: -0.4, averageVolatilityIncrease: 1.5, impactSeverity: 70,
+  },
+  {
+    id: 'us-ppi-aug-2026',
+    name: '미국 PPI (YoY)',
+    country: 'US', category: 'inflation', importance: 'high',
+    scheduledAt: '2026-09-13T12:30:00Z',
+    forecastValue: 2.4, unit: '%', source: 'BLS',
+    averageKospiReaction: -0.4, averageVolatilityIncrease: 1.5, impactSeverity: 70,
+  },
+  {
+    id: 'us-ppi-sep-2026',
+    name: '미국 PPI (YoY)',
+    country: 'US', category: 'inflation', importance: 'high',
+    scheduledAt: '2026-10-16T12:30:00Z',
+    forecastValue: 2.3, unit: '%', source: 'BLS',
+    averageKospiReaction: -0.4, averageVolatilityIncrease: 1.5, impactSeverity: 70,
+  },
+  {
+    id: 'us-ppi-oct-2026',
+    name: '미국 PPI (YoY)',
+    country: 'US', category: 'inflation', importance: 'high',
+    scheduledAt: '2026-11-14T13:30:00Z',
+    forecastValue: 2.2, unit: '%', source: 'BLS',
+    averageKospiReaction: -0.4, averageVolatilityIncrease: 1.5, impactSeverity: 70,
+  },
+  {
+    id: 'us-ppi-nov-2026',
+    name: '미국 PPI (YoY)',
+    country: 'US', category: 'inflation', importance: 'high',
+    scheduledAt: '2026-12-12T13:30:00Z',
+    forecastValue: 2.1, unit: '%', source: 'BLS',
+    averageKospiReaction: -0.4, averageVolatilityIncrease: 1.5, impactSeverity: 70,
+  },
 
   // ── FOMC 의사록 (5월 6-7일 회의록) ───────────────────────────────────────
   {
