@@ -41,8 +41,8 @@ function setCachedData(key: string, payload: any): void {
   })
 }
 
-async function getFallbackSnapshot<T>(snapshotKey: string): Promise<T | null> {
-  const snapshot = await readEconomicCalendarSnapshot(snapshotKey, { allowStale: true })
+async function getSnapshot<T>(snapshotKey: string, allowStale = false): Promise<T | null> {
+  const snapshot = await readEconomicCalendarSnapshot(snapshotKey, { allowStale })
   return snapshot as T | null
 }
 
@@ -82,7 +82,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       let cachedData = getCachedData(cacheKey)
 
       if (!cachedData) {
-        cachedData = await getFallbackSnapshot<{ events: any[]; fetchedAt?: string }>(snapshotKey)
+        cachedData = await getSnapshot<{ events: any[]; fetchedAt?: string }>(snapshotKey)
         if (cachedData) setCachedData(cacheKey, cachedData)
       }
 
@@ -108,6 +108,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           })
         } catch (e) {
           clearTimeout(timeoutId)
+          const staleData = await getSnapshot<{ events: any[]; fetchedAt?: string }>(snapshotKey, true)
+          if (staleData) {
+            return res.status(200).json({ data: staleData, ok: true, stale: true })
+          }
           throw e
         }
       }
@@ -120,7 +124,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     let cachedData = getCachedData(cacheKey)
 
     if (!cachedData) {
-      cachedData = await getFallbackSnapshot<any>(snapshotKey)
+      cachedData = await getSnapshot<any>(snapshotKey)
       if (cachedData) setCachedData(cacheKey, cachedData)
     }
 
@@ -148,6 +152,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         clearTimeout(timeoutId)
         if (cachedData) {
           return res.status(200).json({ data: cachedData, ok: true, stale: true })
+        }
+        const staleData = await getSnapshot<any>(snapshotKey, true)
+        if (staleData) {
+          return res.status(200).json({ data: staleData, ok: true, stale: true })
         }
         throw e
       }
