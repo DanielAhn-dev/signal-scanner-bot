@@ -485,18 +485,26 @@ export function detectAutoTradeMarketPolicy(input?: {
   // 코스피만 200일선 하방 → 주의 구간
   const cautionZone = kospiBelow200 && !kosdaqBelow200;
 
-  if (
-    (vix > 0 && vix >= 28) ||
-    fearGreed <= 30 ||
-    breadthAdvancingRatio <= 30 ||
-    usdKrwChange >= 0.8 ||
-    kospiChange <= -1.5 ||
-    clearBearMarket
-  ) {
+  // 방어모드 하드 트리거를 단일 신호가 아니라 "동시에 2건 이상"으로 완화한다.
+  // 단일 신호(예: breadth만 살짝 나쁨)만으로 코스닥 전면 배제 + 신규매수 전면중단까지 가면
+  // 정상적인 시장 노이즈에도 계속 거래가 끊겨 "시장 좋을 때만 대응하는" 봇이 된다.
+  // 2건 이상 동시 발생 또는 200일선 확인 하락장(clearBearMarket)만 하드 방어로 승격한다.
+  const defenseSignals = [
+    vix > 0 && vix >= 28,
+    fearGreed <= 30,
+    breadthAdvancingRatio <= 30,
+    usdKrwChange >= 0.8,
+    kospiChange <= -1.5,
+  ];
+  const defenseSignalCount = defenseSignals.filter(Boolean).length;
+
+  if (clearBearMarket || defenseSignalCount >= 2) {
     return {
       mode: "large-cap-defense",
       label: "대형주 방어",
-      reason: "VIX/환율/심리/breadth 악화 또는 지수 급락",
+      reason: clearBearMarket
+        ? "200일선 하방 확인 하락장"
+        : `위험신호 ${defenseSignalCount}건 동시 발생(VIX/환율/심리/breadth/지수급락)`,
       minCashReservePct: 35,
       allowedMarkets: ["KOSPI"],
       kosdaqMaxRatio: 0,
@@ -521,6 +529,21 @@ export function detectAutoTradeMarketPolicy(input?: {
       kosdaqMaxRatio: 0.2,
       requireLargeCapKospi: false,
       minLiquidity: 8_000_000_000,
+      minMarketCap: 0,
+    };
+  }
+
+  // 위험신호 1건만 감지: 신규매수 자체는 막지 않고 코스닥 비중·유동성 기준만 보수화한다.
+  if (defenseSignalCount === 1) {
+    return {
+      mode: "balanced",
+      label: "경계",
+      reason: "위험신호 1건 감지(VIX/환율/심리/breadth/지수급락 중 1건) — 코스닥 비중만 제한",
+      minCashReservePct: 30,
+      allowedMarkets: ["KOSPI", "KOSDAQ"],
+      kosdaqMaxRatio: 0.1,
+      requireLargeCapKospi: false,
+      minLiquidity: 15_000_000_000,
       minMarketCap: 0,
     };
   }

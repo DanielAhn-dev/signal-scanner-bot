@@ -350,7 +350,23 @@ test("detectAutoTradeMarketPolicy: 고변동 구간은 대형주 방어 모드�
   assert.deepEqual(policy.allowedMarkets, ["KOSPI"]);
 });
 
-test("detectAutoTradeMarketPolicy: breadth 악화도 방어 모드 트리거에 포함한다", () => {
+test("detectAutoTradeMarketPolicy: 위험신호 2건 이상 동시 발생하면 방어 모드로 전환한다", () => {
+  const policy = detectAutoTradeMarketPolicy({
+    overview: {
+      vix: { price: 20 },
+      fearGreed: { score: 45 },
+      breadth: { advancingRatio: 28 },
+      usdkrw: { changeRate: 1.2 },
+      kospi: { changeRate: 0.1 },
+      kosdaq: { changeRate: 0.3 },
+    },
+  });
+
+  assert.equal(policy.mode, "large-cap-defense");
+  assert.equal(policy.minCashReservePct, 35);
+});
+
+test("detectAutoTradeMarketPolicy: 위험신호 1건만 감지되면 신규매수는 막지 않고 코스닥 비중만 제한한다", () => {
   const policy = detectAutoTradeMarketPolicy({
     overview: {
       vix: { price: 20 },
@@ -362,8 +378,9 @@ test("detectAutoTradeMarketPolicy: breadth 악화도 방어 모드 트리거에 
     },
   });
 
-  assert.equal(policy.mode, "large-cap-defense");
-  assert.equal(policy.minCashReservePct, 35);
+  assert.equal(policy.mode, "balanced");
+  assert.notEqual(policy.mode, "large-cap-defense");
+  assert.equal(policy.kosdaqMaxRatio, 0.1);
 });
 
 test("computeDynamicLargeCapFloor: 코스피 시총 상위 기준선을 계산한다", () => {
