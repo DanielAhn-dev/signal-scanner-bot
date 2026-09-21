@@ -1834,16 +1834,19 @@ async function fetchStockDailyHistoryForCodes(
     .toISOString()
     .slice(0, 10);
 
-  const { data } = await supabase
+  const { data, error } = await supabase
     .from("stock_daily")
-    .select("code, date, open, high, low, close, volume")
-    .in("code", uniqueCodes)
+    .select("ticker, date, open, high, low, close, volume")
+    .in("ticker", uniqueCodes)
     .gte("date", fromDate)
     .order("date", { ascending: true })
     .limit(uniqueCodes.length * (lookbackDays + 5));
+  if (error) {
+    console.error("[fetchStockDailyHistoryForCodes] stock_daily 조회 실패:", error.message);
+  }
 
   for (const row of (data ?? []) as Record<string, unknown>[]) {
-    const code = String(row.code ?? "").trim();
+    const code = String(row.ticker ?? "").trim();
     if (!code) continue;
     const list = result.get(code) ?? [];
     list.push({
