@@ -125,6 +125,8 @@ const SKIP_REASON_KO: Record<string, string> = {
   "within-range": "목표범위내",
   "stale-or-frozen-close": "시세동결",
   "regime-defense-no-new-buy": "방어장중지",
+  "event-risk-no-new-buy": "이벤트임박중지",
+  "event-risk-defensive-exit": "이벤트선제정리",
   "holdings-fetch-failed": "보유조회실패",
   "daily-holdings-fetch-failed": "일간보유조회실패",
   "daily-sell-failed": "매도실패",

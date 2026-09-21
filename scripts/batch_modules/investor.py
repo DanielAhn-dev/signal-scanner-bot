@@ -225,6 +225,31 @@ def fetch_investor_data(supabase: Client, trading_date: str) -> dict:
         status["reason"] = "disabled"
         return status
 
+    # 이미 당일 수급 데이터가 대부분 적재돼 있으면 재수집을 건너뛴다.
+    # (수동 재실행 + 스케줄 실행이 겹치면 KIS API 호출이 중복되어 트래픽/차단 위험이 커짐)
+    if os.environ.get("INVESTOR_FORCE_REFETCH", "").lower() not in ("1", "true", "yes"):
+        try:
+            universe_res = supabase.table("stocks") \
+                .select("code", count="exact") \
+                .in_("universe_level", ["core", "extended"]) \
+                .eq("is_active", True).execute()
+            universe_count = int(getattr(universe_res, "count", 0) or 0)
+            existing_res = supabase.table("investor_daily") \
+                .select("ticker", count="exact") \
+                .eq("date", trading_iso).limit(1).execute()
+            existing_count = int(getattr(existing_res, "count", 0) or 0)
+            if universe_count > 0 and existing_count >= universe_count * 0.9:
+                print(f"  이미 당일({trading_iso}) 수급 데이터 {existing_count}/{universe_count}건 적재됨 → 재수집 스킵")
+                status["ok"] = True
+                status["skipped"] = True
+                status["reason"] = "already_collected"
+                status["stored_count"] = existing_count
+                status["latest_date"] = trading_iso
+                status["stale_business_days"] = 0
+                return status
+        except Exception as e:
+            print(f"  [WARN] 기존 수급 데이터 확인 실패, 정상 수집 진행: {e}")
+
     app_key = os.environ.get("KOREA_APP_KEY", "")
     app_secret = os.environ.get("KOREA_APP_SECRET", "")
     if not app_key or not app_secret:

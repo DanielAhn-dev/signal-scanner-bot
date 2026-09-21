@@ -41,6 +41,7 @@ import {
   deriveEntryProfile,
   detectAutoTradeMarketPolicy,
   evaluateBuyRotationCandidate,
+  evaluateEventRiskGuard,
   isActionableTodayBuySignal,
   pickAutoTradeAddOnCandidates,
   pickAutoTradeCandidates,
@@ -59,6 +60,7 @@ import {
   type AutoTradeRunMode as SelectionAutoTradeRunMode,
   type AutoTradeRunType,
   type AutoTradeSellPerformance,
+  type NextCriticalEconomicEvent,
   type RankedCandidate,
   type RotationHeldPosition,
 } from "./virtualAutoTradeSelection";
@@ -1201,6 +1203,30 @@ async function fetchIndexSma200Ratios(
     };
   } catch {
     return { kospi: null, kosdaq: null };
+  }
+}
+
+/**
+ * 임박한 critical 경제이벤트(FOMC 금리결정/CPI 등) 중 가장 가까운 것을 찾는다.
+ * 이벤트 리스크 가드(evaluateEventRiskGuard)의 입력으로만 쓰이며, 실패해도 자동매매 흐름을 막지 않는다.
+ */
+async function fetchNextCriticalEconomicEvent(): Promise<NextCriticalEconomicEvent | null> {
+  try {
+    const { fetchUpcomingHighRiskEvents } = await import("../utils/fetchEconomicCalendar.js");
+    const events = await fetchUpcomingHighRiskEvents();
+    const nowMs = Date.now();
+    const upcomingCritical = events
+      .filter((e: { importance: string }) => e.importance === "critical")
+      .map((e: { name: string; scheduledAt: string }) => ({
+        name: e.name,
+        hoursUntil: (Date.parse(e.scheduledAt) - nowMs) / (60 * 60 * 1000),
+      }))
+      .filter((e: NextCriticalEconomicEvent) => Number.isFinite(e.hoursUntil) && e.hoursUntil >= 0)
+      .sort((a: NextCriticalEconomicEvent, b: NextCriticalEconomicEvent) => a.hoursUntil - b.hoursUntil);
+    return upcomingCritical[0] ?? null;
+  } catch (error) {
+    console.error("[fetchNextCriticalEconomicEvent] 조회 실패:", error);
+    return null;
   }
 }
 
@@ -4241,7 +4267,7 @@ async function executeAutoTradeSell(payload: {
   feeRate: number;
   taxRate: number;
   sellQty: number;
-  reason: "take-profit-partial" | "take-profit-final" | "stop-loss" | "loss-trim" | "rotation-sell";
+  reason: "take-profit-partial" | "take-profit-final" | "stop-loss" | "loss-trim" | "rotation-sell" | "event-risk-defensive-exit";
   stopLossContext?: string | null;
   profileLabel: string;
   strategyProfile: string;
@@ -4338,7 +4364,10 @@ async function executeAutoTradeSell(payload: {
   const taxAmount = Math.round(gross * payload.taxRate);
   const net = Math.max(0, gross - feeAmount - taxAmount);
   const pnl = net - soldCost;
-  const isTakeProfit = payload.reason !== "stop-loss" && payload.reason !== "rotation-sell";
+  const isTakeProfit =
+    payload.reason !== "stop-loss" &&
+    payload.reason !== "rotation-sell" &&
+    payload.reason !== "event-risk-defensive-exit";
 
   const sellOpKey = `${payload.chatId}:SELL:${payload.holding.code}:${Math.round(executionPrice)}:${sellQty}:${new Date().toISOString().slice(0,16)}`;
   const sellRegistered = await tryRegisterOperation({
@@ -4908,6 +4937,21 @@ async function runDailyReviewForUser(payload: {
   if (marketOverviewResult.skippedByBudget) {
     summary.notes.push("API 예산 보호: 시장 개요 조회 생략(기본 방어모드 규칙 사용)");
   }
+
+  // 이벤트 리스크 가드(옵트인): FOMC 금리결정/CPI 등 critical 경제이벤트가 임박하면
+  // 단기/스윙 포지션을 선제 정리하고 신규매수를 잠시 멈춘다. 기본은 비활성(기존 동작 유지).
+  const eventRiskGuardEnabled = process.env.AUTO_TRADE_EVENT_RISK_GUARD_ENABLED === "true";
+  const nextCriticalEvent = eventRiskGuardEnabled
+    ? await fetchNextCriticalEconomicEvent()
+    : null;
+  const accountEventGuard = evaluateEventRiskGuard({
+    nextCriticalEvent,
+    // 신규매수는 기본적으로 단기(SHORT_SWING/DEFAULT) 성격이라 장기 문턱보다 낮게 잡아 항상 가드 대상으로 본다
+    expectedHorizonDays: 5,
+  });
+  if (accountEventGuard.active && accountEventGuard.reason) {
+    summary.notes.push(accountEventGuard.reason);
+  }
   const dailyLossLimitPct = Math.max(0.5, toNumber(prefs.daily_loss_limit_pct, 5));
   const dailyRealizedPnl = await getDailyRealizedPnl({
     supabase: payload.supabase,
@@ -5010,6 +5054,56 @@ async function runDailyReviewForUser(payload: {
       baseStopLossPct,
       sellSplitCount,
     });
+
+    // 이벤트 리스크 가드: 임박한 critical 경제이벤트 앞에서 단기/스윙 포지션을 선제 정리(장기 보유는 제외)
+    const holdingEventGuard = evaluateEventRiskGuard({
+      nextCriticalEvent,
+      expectedHorizonDays: tradeProfile.expectedHorizonDays,
+    });
+    if (holdingEventGuard.active) {
+      const eventSellResult = await executeAutoTradeSell({
+        supabase: payload.supabase,
+        runId: payload.runId,
+        chatId,
+        holding,
+        close,
+        buyPrice,
+        feeRate,
+        taxRate,
+        sellQty: qty,
+        reason: "event-risk-defensive-exit",
+        profileLabel: getStrategyLabel(tradeProfile.profile) ?? tradeProfile.profile,
+        strategyProfile: tradeProfile.profile,
+        takeProfitTranchesDone: 0,
+        nextTakeProfitTranchesDone: 0,
+        dryRun: payload.dryRun,
+      });
+      if (eventSellResult.sold) {
+        realizedDelta += eventSellResult.realizedPnlDelta;
+        availableCash += eventSellResult.proceeds;
+        try {
+          await setUserInvestmentPrefs(chatId, {
+            virtual_realized_pnl: toNumber(prefs.virtual_realized_pnl, 0) + realizedDelta,
+            virtual_cash: Math.max(0, Math.round(availableCash)),
+          });
+        } catch (e) {
+          console.error("[autoTrade] update virtual cash/pnl after event-risk sell failed", e);
+        }
+        summary.sells += 1;
+        summary.notes.push(`${eventSellResult.note} · ${holdingEventGuard.reason}`);
+        await writeActionLog({
+          supabase: payload.supabase,
+          runId: payload.runId,
+          chatId,
+          code: holding.code,
+          actionType: "SELL",
+          reason: "event-risk-defensive-exit",
+          detail: { eventName: holdingEventGuard.eventName, hoursUntilEvent: holdingEventGuard.hoursUntilEvent },
+        });
+        continue;
+      }
+    }
+
     const pnlPct = ((close - buyPrice) / buyPrice) * 100;
     const holdingScoreRow = holdingFactorsByCode.get(holding.code);
     const holdingSignal = holdingScoreRow?.signal ?? null;
@@ -5463,15 +5557,29 @@ async function runDailyReviewForUser(payload: {
       summary.notes.push(`[레짐게이트] 대형주 방어 모드: 추가매수 중단 (${marketPolicy.reason})`);
     }
 
+    // 이벤트 리스크 가드(옵트인): critical 경제이벤트 임박 시 신규/추가 매수를 잠시 멈춘다.
+    const eventRiskBlockDaily = accountEventGuard.active;
+    if (eventRiskBlockDaily) {
+      summary.notes.push(`[레짐게이트] ${accountEventGuard.reason}`);
+      await writeActionLog({
+        supabase: payload.supabase,
+        runId: payload.runId,
+        chatId,
+        actionType: "SKIP",
+        reason: "event-risk-no-new-buy",
+        detail: { eventName: accountEventGuard.eventName, hoursUntilEvent: accountEventGuard.hoursUntilEvent },
+      });
+    }
+
     const addOnConstraint = applyStrategyBuyConstraint({
       selectedStrategy: payload.setting.selected_strategy,
-      requestedSlots: recoveryModeActive || regimeDefenseBlockDaily ? 0 : persistedGuard.requestedSlots,
+      requestedSlots: recoveryModeActive || regimeDefenseBlockDaily || eventRiskBlockDaily ? 0 : persistedGuard.requestedSlots,
       baseMinBuyScore: persistedGuard.baseMinBuyScore,
       activeCount: currentCount,
       maxPositions,
     });
 
-    if (!dailyBuyBlocked && !regimeDefenseBlockDaily && availableCash > 0 && addOnConstraint.buySlots > 0 && activeHoldings.length > 0) {
+    if (!dailyBuyBlocked && !regimeDefenseBlockDaily && !eventRiskBlockDaily && availableCash > 0 && addOnConstraint.buySlots > 0 && activeHoldings.length > 0) {
       const addOnSelectionRaw = await selectDailyAddOnCandidates({
         supabase: payload.supabase,
         holdings: activeHoldings,
@@ -5910,7 +6018,7 @@ async function runDailyReviewForUser(payload: {
     // 기존 monday_buy_slots를 회차당 신규매수 상한으로 재사용한다.
     const maxNewBuysPerRun = toPositiveInt(payload.setting.monday_buy_slots, 2);
     // 복구 모드 또는 대형주 방어 모드 시 신규 매수 슬롯을 0으로 강제
-    const rawBuySlots = recoveryModeActive || regimeDefenseBlockDaily ? 0 : Math.min(room, maxNewBuysPerRun);
+    const rawBuySlots = recoveryModeActive || regimeDefenseBlockDaily || eventRiskBlockDaily ? 0 : Math.min(room, maxNewBuysPerRun);
     const perfAdjustedRebalance = applyPerformanceBuyGuard({
       requestedSlots: rawBuySlots,
       baseMinBuyScore: toPositiveInt(payload.setting.min_buy_score, 72),

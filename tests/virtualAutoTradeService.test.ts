@@ -8,6 +8,7 @@ import {
   deriveAdaptiveMinBuyScore,
   evaluateBuyRotationCandidate,
   evaluateCloseFreshness,
+  evaluateEventRiskGuard,
   isActionableTodayBuySignal,
   isTakeProfitCooldownOverridable,
   pickAutoTradeAddOnCandidates,
@@ -1049,6 +1050,36 @@ test("evaluateCloseFreshness: 신선하고 정상적으로 변동하는 종가�
   const result = evaluateCloseFreshness(rows, { nowMs });
   assert.equal(result.ok, true);
   assert.equal(result.reason, null);
+});
+
+test("evaluateEventRiskGuard: 임박 이벤트가 없으면 비활성", () => {
+  const result = evaluateEventRiskGuard({ nextCriticalEvent: null, expectedHorizonDays: 3 });
+  assert.equal(result.active, false);
+});
+
+test("evaluateEventRiskGuard: 24시간 이내 critical 이벤트 + 단기 포지션이면 활성화", () => {
+  const result = evaluateEventRiskGuard({
+    nextCriticalEvent: { name: "FOMC 금리 결정", hoursUntil: 10 },
+    expectedHorizonDays: 3,
+  });
+  assert.equal(result.active, true);
+  assert.match(result.reason ?? "", /FOMC/);
+});
+
+test("evaluateEventRiskGuard: 장기 포지션(POSITION_CORE 수준)은 제외", () => {
+  const result = evaluateEventRiskGuard({
+    nextCriticalEvent: { name: "FOMC 금리 결정", hoursUntil: 10 },
+    expectedHorizonDays: 20,
+  });
+  assert.equal(result.active, false);
+});
+
+test("evaluateEventRiskGuard: 윈도우(24시간) 밖의 이벤트는 비활성", () => {
+  const result = evaluateEventRiskGuard({
+    nextCriticalEvent: { name: "FOMC 금리 결정", hoursUntil: 48 },
+    expectedHorizonDays: 3,
+  });
+  assert.equal(result.active, false);
 });
 
 test("applyAdaptiveExitGuard: 표본 10건 미만이면 조정하지 않는다", () => {

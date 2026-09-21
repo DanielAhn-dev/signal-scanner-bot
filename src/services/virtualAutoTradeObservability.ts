@@ -20,6 +20,7 @@ const SKIP_REASON_LABELS: Record<string, string> = {
   stale_or_frozen_close: "시세 동결/신선도 미달",
   strategy_blocked_buy: "전략 매수 차단",
   regime_defense_no_new_buy: "방어장 신규매수 중지",
+  event_risk_no_new_buy: "경제이벤트 임박 신규매수 중지",
   other: "기타",
 };
 
@@ -35,6 +36,7 @@ export function resolveAutoTradeSkipReasonCode(note: string): string | null {
   if (value === "stale-or-frozen-close") return "stale_or_frozen_close";
   if (value === "strategy-blocked-buy") return "strategy_blocked_buy";
   if (value === "regime-defense-no-new-buy") return "regime_defense_no_new_buy";
+  if (value === "event-risk-no-new-buy") return "event_risk_no_new_buy";
   return null;
 }
 

@@ -54,6 +54,24 @@ def fetch_credit_short_data(supabase: Client, trading_date: str):
             return
         print(f"  universe size: {len(codes)} tickers")
 
+        # 이미 당일 신용/공매도 데이터가 대부분 적재돼 있으면 재수집을 건너뛴다.
+        # (수동 재실행 + 스케줄 실행 중복 시 KRX 트래픽이 2배로 늘어 IP 차단 위험이 커짐 - 2026-08-31 사고 참고)
+        if os.environ.get("CREDIT_SHORT_FORCE_REFETCH", "").lower() not in ("1", "true", "yes"):
+            try:
+                existing_res = (
+                    supabase.table("stock_credit_short_daily")
+                    .select("code", count="exact")
+                    .eq("date", trading_iso)
+                    .limit(1)
+                    .execute()
+                )
+                existing_count = int(getattr(existing_res, "count", 0) or 0)
+                if existing_count >= len(codes) * 0.9:
+                    print(f"  이미 당일({trading_iso}) 신용/공매도 데이터 {existing_count}/{len(codes)}건 적재됨 → 재수집 스킵")
+                    return
+            except Exception as e:
+                print(f"  [WARN] 기존 신용/공매도 데이터 확인 실패, 정상 수집 진행: {e}")
+
         krx_ua = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
         krx_headers = {
             "User-Agent": krx_ua,

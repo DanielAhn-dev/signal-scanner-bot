@@ -443,6 +443,8 @@ function buildRecentMetricsLines(metrics: AutoTradeRecentMetrics | null): string
       "take-profit-final": "최종익절",
       "stale-or-frozen-close": "시세동결",
       "regime-defense-no-new-buy": "방어장중지",
+      "event-risk-no-new-buy": "이벤트임박중지",
+      "event-risk-defensive-exit": "이벤트선제정리",
     };
     lines.push(
       `- 미체결 상위 사유: ${metrics.topSkipReasons

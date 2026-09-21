@@ -65,6 +65,55 @@ export function resolveStatsSinceIso(rawSinceIso: string): string {
   return rawMs >= cutoffMs ? rawSinceIso : ADAPTIVE_STATS_EXCLUDE_BEFORE_ISO;
 }
 
+/**
+ * 경제지표(FOMC 금리결정/CPI 등 critical 이벤트) 발표 임박 시 단기/스윙 포지션을 선제 정리하는 가드.
+ * 주식은 심리싸움이라 큰 이벤트 앞에서는 정리했다가 발표 후(변동성 소화 후) 다시 진입하는 편이
+ * 단타/스윙에는 유리하지만, 장기(포지션코어/가치스윙) 보유는 노이즈에 흔들릴 필요가 없어 제외한다.
+ */
+export type NextCriticalEconomicEvent = { name: string; hoursUntil: number };
+
+export type EventRiskGuardResult = {
+  active: boolean;
+  reason: string | null;
+  hoursUntilEvent: number | null;
+  eventName: string | null;
+};
+
+/** 이 시간 이내로 임박한 critical 이벤트만 선제 정리 대상으로 본다 (발표 당일~하루 전 수준) */
+export const EVENT_RISK_GUARD_WINDOW_HOURS = 24;
+/** 목표보유기간이 이 값 이상(POSITION_CORE=20일, VALUE_SWING_CORE=30일)이면 장기로 보고 가드 제외 */
+export const EVENT_RISK_GUARD_MAX_HORIZON_DAYS = 15;
+
+export function evaluateEventRiskGuard(input: {
+  nextCriticalEvent?: NextCriticalEconomicEvent | null;
+  expectedHorizonDays: number;
+  windowHours?: number;
+  maxHorizonDays?: number;
+}): EventRiskGuardResult {
+  const event = input.nextCriticalEvent ?? null;
+  if (!event || !Number.isFinite(event.hoursUntil)) {
+    return { active: false, reason: null, hoursUntilEvent: null, eventName: null };
+  }
+
+  const windowHours = input.windowHours ?? EVENT_RISK_GUARD_WINDOW_HOURS;
+  const maxHorizonDays = input.maxHorizonDays ?? EVENT_RISK_GUARD_MAX_HORIZON_DAYS;
+
+  if (event.hoursUntil < 0 || event.hoursUntil > windowHours) {
+    return { active: false, reason: null, hoursUntilEvent: event.hoursUntil, eventName: event.name };
+  }
+  if (input.expectedHorizonDays >= maxHorizonDays) {
+    return { active: false, reason: null, hoursUntilEvent: event.hoursUntil, eventName: event.name };
+  }
+
+  return {
+    active: true,
+    reason: `[이벤트리스크] ${event.name} 발표 ${Math.max(0, Math.round(event.hoursUntil))}시간 전 — 단기/스윙 포지션 선제 정리`,
+    hoursUntilEvent: event.hoursUntil,
+    eventName: event.name,
+  };
+}
+
+
 export type AutoTradeSellPerformance = {
   windowDays: number;
   sellCount: number;
