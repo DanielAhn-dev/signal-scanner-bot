@@ -38,7 +38,7 @@ async function getLatestInvestorFlow(
   try {
     const { data, error } = await supabase
       .from("investor_daily")
-      .select("date, foreign_net, institution_net, retail_net")
+      .select("date, foreign, institution, personal")
       .order("date", { ascending: false })
       .limit(4);
 
@@ -51,11 +51,18 @@ async function getLatestInvestorFlow(
       return {};
     }
 
+    const normalized = data.map((row: Record<string, unknown>) => ({
+      date: String(row.date ?? ""),
+      foreign_net: Number(row.foreign ?? 0),
+      institution_net: Number(row.institution ?? 0),
+      retail_net: Number(row.personal ?? 0),
+    }));
+
     return {
-      foreign_net: data[0].foreign_net,
-      institution_net: data[0].institution_net,
-      retail_net: data[0].retail_net,
-      prev_days: data.slice(0, 3),
+      foreign_net: normalized[0].foreign_net,
+      institution_net: normalized[0].institution_net,
+      retail_net: normalized[0].retail_net,
+      prev_days: normalized.slice(0, 3),
     };
   } catch (error) {
     console.error("[riskSignalService] investor_daily 조회 예외:", error);

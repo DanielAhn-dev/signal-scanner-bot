@@ -35,10 +35,10 @@ type TableConfig = {
 
 const WATCHED_TABLES: TableConfig[] = [
   { key: 'ohlcv',       label: 'OHLCV (일별 시세)',       table: 'stock_daily',         dateColumn: 'date',    maxBizDays: 1 },
-  { key: 'indicators',  label: '기술지표',                 table: 'daily_indicators',    dateColumn: 'date',    maxBizDays: 1 },
+  { key: 'indicators',  label: '기술지표',                 table: 'daily_indicators',    dateColumn: 'trade_date', maxBizDays: 1 },
   { key: 'investor',    label: '수급(기관/외국인)',          table: 'investor_daily',      dateColumn: 'date',    maxBizDays: 1 },
-  { key: 'credit',      label: '신용/공매도',               table: 'credit_short_daily',  dateColumn: 'date',    maxBizDays: 2 },
-  { key: 'scores',      label: '종목 점수',                 table: 'scan_candidates',     dateColumn: 'created_at', maxBizDays: 1 },
+  { key: 'credit',      label: '신용/공매도',               table: 'stock_credit_short_daily', dateColumn: 'date', maxBizDays: 2 },
+  { key: 'scores',      label: '종목 점수',                 table: 'scores',              dateColumn: 'asof',    maxBizDays: 1 },
 ]
 
 async function fetchLatestDate(
@@ -53,7 +53,11 @@ async function fetchLatestDate(
     .limit(1)
     .maybeSingle()
 
-  if (error || !data) return null
+  if (error) {
+    console.error(`[dataFreshnessMonitor] ${table}.${column} 조회 실패:`, error.message)
+    return null
+  }
+  if (!data) return null
   const row = (data as unknown) as Record<string, unknown>
   const value = row[column]
   if (!value) return null

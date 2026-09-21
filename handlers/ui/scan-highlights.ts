@@ -41,8 +41,8 @@ async function fetchInvestorFlowByCode(
 
   const fromDate = shiftDateText(asOfDate, 35)
   const attempts: Array<{ codeCol: 'ticker' | 'code'; select: string }> = [
-    { codeCol: 'ticker', select: 'ticker,date,foreign_amount,institution_amount,foreign,institution,foreign_net,institution_net' },
-    { codeCol: 'code', select: 'code,date,foreign_amount,institution_amount,foreign,institution,foreign_net,institution_net' },
+    { codeCol: 'ticker', select: 'ticker,date,foreign_amount,institution_amount,foreign,institution' },
+    { codeCol: 'code', select: 'code,date,foreign_amount,institution_amount,foreign,institution' },
   ]
 
   for (const spec of attempts) {
