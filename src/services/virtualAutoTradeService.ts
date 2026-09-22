@@ -47,6 +47,7 @@ import {
   pickAutoTradeCandidates,
   evaluateCloseFreshness,
   isTakeProfitCooldownOverridable,
+  calculatePortfolioReturnPct,
   resolveDeployableCash,
   resolveExitPnlPct,
   resolveLossStreakSizeScale,
@@ -1989,7 +1990,8 @@ async function runCashSweepLiquidateStep(payload: {
   supabase: SupabaseClientAny;
   chatId: number;
   dryRun: boolean;
-}): Promise<{ notes: string[]; liquidated: boolean }> {
+  forceLiquidate?: boolean;
+}): Promise<{ notes: string[]; liquidated: boolean; releasedCash: number }> {
   const notes: string[] = [];
   try {
     const prefs = await getUserInvestmentPrefs(payload.chatId);
@@ -1998,7 +2000,7 @@ async function runCashSweepLiquidateStep(payload: {
       toNumber(prefs.virtual_seed_capital, toNumber(prefs.capital_krw, 0))
     );
     const availableCash = Math.max(0, toNumber(prefs.virtual_cash, 0));
-    if (seedCapital <= 0) return { notes, liquidated: false };
+    if (seedCapital <= 0) return { notes, liquidated: false, releasedCash: 0 };
 
     const { data: priceRows } = await payload.supabase
       .from("stocks")
@@ -2013,7 +2015,7 @@ async function runCashSweepLiquidateStep(payload: {
     const sweepCode = CASH_SWEEP_CANDIDATE_CODES.find(
       (code) => (priceByCode.get(code)?.close ?? 0) > 0
     );
-    if (!sweepCode) return { notes, liquidated: false };
+    if (!sweepCode) return { notes, liquidated: false, releasedCash: 0 };
     const sweepPrice = priceByCode.get(sweepCode)!.close;
     const sweepName = priceByCode.get(sweepCode)!.name || sweepCode;
 
@@ -2033,21 +2035,14 @@ async function runCashSweepLiquidateStep(payload: {
         .strategyId === CASH_SWEEP_STRATEGY_ID
         ? (sweepPositionRow as { id: number; quantity: number; invested_amount: number })
         : null;
-    if (!existingSweep) return { notes, liquidated: false };
+    if (!existingSweep) return { notes, liquidated: false, releasedCash: 0 };
 
     const sweepQty = Math.max(0, Math.floor(toNumber(existingSweep.quantity, 0)));
     const sweepInvested = Math.max(0, toNumber(existingSweep.invested_amount, 0));
     const sweepCurrentValue = sweepQty > 0 ? sweepQty * sweepPrice : 0;
 
-    if (!shouldLiquidateCashSweep({ availableCash, sweepPositionValue: sweepCurrentValue })) {
-      return { notes, liquidated: false };
-    }
-
-    if (payload.dryRun) {
-      notes.push(
-        `[유휴현금 스윕][테스트] ${sweepName} 전량 현금화 예정 (평가액 ${fmtKrw(sweepCurrentValue)})`
-      );
-      return { notes, liquidated: false };
+    if (!payload.forceLiquidate && !shouldLiquidateCashSweep({ availableCash, sweepPositionValue: sweepCurrentValue })) {
+      return { notes, liquidated: false, releasedCash: 0 };
     }
 
     const feeRate = toNumber(prefs.virtual_fee_rate, 0.00015);
@@ -2056,6 +2051,14 @@ async function runCashSweepLiquidateStep(payload: {
     const feeAmount = Math.round(gross * feeRate);
     const taxAmount = Math.round(gross * taxRate);
     const net = Math.max(0, gross - feeAmount - taxAmount);
+
+    if (payload.dryRun) {
+      notes.push(
+        `[유휴현금 스윕][테스트] ${sweepName} 전량 현금화 예정 (평가액 ${fmtKrw(sweepCurrentValue)})${payload.forceLiquidate ? " · 수동 학습 판단용" : ""}`
+      );
+      return { notes, liquidated: false, releasedCash: net };
+    }
+
     const pnl = net - sweepInvested;
 
     await payload.supabase
@@ -2092,12 +2095,12 @@ async function runCashSweepLiquidateStep(payload: {
     });
 
     notes.push(
-      `[유휴현금 스윕] ${sweepName} 전량 현금화 · 실거래 자금 확보 (${fmtKrw(net)}, 손익 ${pnl >= 0 ? "+" : ""}${fmtKrw(pnl)}) · 참고: 유휴현금 파킹용이며 투자 신호가 아닙니다`
+      `[유휴현금 스윕] ${sweepName} 전량 현금화 · 실거래 자금 확보 (${fmtKrw(net)}, 손익 ${pnl >= 0 ? "+" : ""}${fmtKrw(pnl)})${payload.forceLiquidate ? " · 수동 학습 판단용" : " · 참고: 유휴현금 파킹용이며 투자 신호가 아닙니다"}`
     );
-    return { notes, liquidated: true };
+    return { notes, liquidated: true, releasedCash: net };
   } catch (e) {
     console.error("[autoTrade] cash sweep liquidate step failed", e);
-    return { notes: [], liquidated: false };
+    return { notes: [], liquidated: false, releasedCash: 0 };
   }
 }
 
@@ -2113,6 +2116,7 @@ async function runCashSweepStep(payload: {
   supabase: SupabaseClientAny;
   chatId: number;
   dryRun: boolean;
+  disableParking?: boolean;
 }): Promise<{ notes: string[] }> {
   const notes: string[] = [];
   try {
@@ -2121,6 +2125,9 @@ async function runCashSweepStep(payload: {
       notes.push(...liquidateResult.notes);
     }
     if (liquidateResult.liquidated) {
+      return { notes };
+    }
+    if (payload.disableParking) {
       return { notes };
     }
 
@@ -4696,6 +4703,8 @@ async function runDailyReviewForUser(payload: {
   runId: number | null;
   dryRun: boolean;
   apiBudget?: ApiBudget;
+  manualLearning?: boolean;
+  simulatedSweepReleaseCash?: number;
 }): Promise<AutoTradeActionSummary> {
   const chatId = payload.setting.chat_id;
   const prefs = await getUserInvestmentPrefs(chatId);
@@ -4745,13 +4754,19 @@ async function runDailyReviewForUser(payload: {
   const persistedGuard = applyPersistedGateGuard({
     requestedSlots: perfGuard.requestedSlots,
     baseMinBuyScore: perfGuard.baseMinBuyScore,
-    gateStatus: persistedGateState?.status,
+    gateStatus:
+      payload.manualLearning && persistedGateState?.status === "watch"
+        ? "hold"
+        : persistedGateState?.status,
   });
   if (perfGuard.note) {
     summary.notes.push(perfGuard.note);
   }
   if (persistedGuard.note) {
     summary.notes.push(persistedGuard.note);
+  }
+  if (payload.manualLearning && persistedGateState?.status === "watch") {
+    summary.notes.push("[수동 학습] 표본 부족 관찰 게이트의 슬롯 감속은 이번 회차에만 해제 · 중단 게이트와 품질·위험 규칙은 유지");
   }
 
   if (selectedStrategy) {
@@ -4786,7 +4801,11 @@ async function runDailyReviewForUser(payload: {
 
   // 유휴현금 스윕(cash-sweep) 포지션은 실제 매매 베팅이 아니므로 손절/익절/비중조정 등
   // 일반 보유종목 처리 루프에서 제외한다 (별도의 runCashSweepStep에서만 관리).
-  const holdings = ((holdingsData ?? []) as HoldingRow[]).filter(
+  const allHoldings = (holdingsData ?? []) as HoldingRow[];
+  const sweepHoldings = allHoldings.filter(
+    (row) => parseStrategyMemo(row.memo).strategyId === CASH_SWEEP_STRATEGY_ID
+  );
+  const holdings = allHoldings.filter(
     (row) => parseStrategyMemo(row.memo).strategyId !== CASH_SWEEP_STRATEGY_ID
   );
   if (!holdings.length) {
@@ -4805,10 +4824,14 @@ async function runDailyReviewForUser(payload: {
     );
   }
 
+  const quotedCodes = Array.from(new Set([
+    ...codeList,
+    ...sweepHoldings.map((row) => row.code),
+  ]));
   const { data: stockRows, error: stockError } = await payload.supabase
     .from("stocks")
     .select("code, name, close, market, sector_id, is_sector_leader, updated_at")
-    .in("code", codeList);
+    .in("code", quotedCodes);
 
   if (stockError) {
     summary.errors += 1;
@@ -4919,6 +4942,11 @@ async function runDailyReviewForUser(payload: {
   }, 0);
   const derivedCash = Math.max(0, Math.round(seedCapital + realizedPnl - investedFromHoldings));
   let availableCash = storedCash ?? derivedCash;
+  const simulatedSweepReleaseCash = Math.max(0, toNumber(payload.simulatedSweepReleaseCash, 0));
+  if (payload.dryRun && simulatedSweepReleaseCash > 0) {
+    availableCash += simulatedSweepReleaseCash;
+    summary.notes.push(`수동 학습 점검: 스윕 현금화 예정액 ${fmtKrw(simulatedSweepReleaseCash)}을 가용현금에 반영`);
+  }
   if ((storedCash ?? 0) <= 0 && derivedCash > 0) {
     availableCash = derivedCash;
     summary.notes.push(`가상현금 보정 적용: ${Math.round(availableCash).toLocaleString("ko-KR")}원`);
@@ -4994,7 +5022,13 @@ async function runDailyReviewForUser(payload: {
     const invested = Math.max(0, toNumber(row.invested_amount, 0));
     return sum + (close > 0 && qty > 0 ? close * qty : invested);
   }, 0);
-  const totalPortfolioValue = totalHoldingsValue + availableCash;
+  const cashSweepValue = sweepHoldings.reduce((sum, row) => {
+    const qty = Math.max(0, Math.floor(toNumber(row.quantity, 0)));
+    const close = closeByCode.get(row.code) ?? 0;
+    const invested = Math.max(0, toNumber(row.invested_amount, 0));
+    return sum + (close > 0 && qty > 0 ? close * qty : invested);
+  }, 0);
+  const totalPortfolioValue = totalHoldingsValue + cashSweepValue + availableCash;
   // 비중 초과 감지 임계값: 단일 종목이 포트폴리오의 25% 이상이면 분할 매도
   const MAX_WEIGHT_PCT = 25;
   const TARGET_WEIGHT_PCT = 20;
@@ -5531,7 +5565,9 @@ async function runDailyReviewForUser(payload: {
     summary.notes.push(`매도 후 보유 재조회 실패: ${postHoldingsErrorMessage}`);
   } else {
     const activeHoldings = ((postHoldings ?? []) as HoldingRow[]).filter(
-      (row) => (row.status ?? "holding") !== "closed"
+      (row) =>
+        (row.status ?? "holding") !== "closed" &&
+        parseStrategyMemo(row.memo).strategyId !== CASH_SWEEP_STRATEGY_ID
     );
     const heldCodes = new Set(
       activeHoldings.map((row) => String(row.code))
@@ -5544,9 +5580,12 @@ async function runDailyReviewForUser(payload: {
 
     // 계좌 복구 모드: 포트폴리오 전체 수익률이 -5% 이하면 신규/추가 매수 차단
     const RECOVERY_MODE_THRESHOLD_PCT = -5;
-    const portfolioReturnPct = seedCapital > 0
-      ? ((totalHoldingsValue + availableCash - seedCapital) / seedCapital) * 100
-      : 0;
+    const portfolioReturnPct = calculatePortfolioReturnPct({
+      seedCapital,
+      availableCash,
+      holdingsValue: totalHoldingsValue,
+      cashSweepValue,
+    });
     const recoveryModeActive = portfolioReturnPct <= RECOVERY_MODE_THRESHOLD_PCT;
     if (recoveryModeActive) {
       summary.notes.push(
@@ -6018,8 +6057,11 @@ async function runDailyReviewForUser(payload: {
       }
     }
 
-    // 기존 monday_buy_slots를 회차당 신규매수 상한으로 재사용한다.
-    const maxNewBuysPerRun = toPositiveInt(payload.setting.monday_buy_slots, 2);
+    // 레거시 monday_buy_slots 설정값을 회차당 신규매수 상한으로 사용한다.
+    const maxNewBuysPerRun = Math.max(
+      toPositiveInt(payload.setting.monday_buy_slots, 2),
+      payload.manualLearning ? 3 : 0
+    );
     // 복구 모드 또는 대형주 방어 모드 시 신규 매수 슬롯을 0으로 강제
     const rawBuySlots = recoveryModeActive || regimeDefenseBlockDaily || eventRiskBlockDaily ? 0 : Math.min(room, maxNewBuysPerRun);
     const perfAdjustedRebalance = applyPerformanceBuyGuard({
@@ -6774,6 +6816,7 @@ export async function runVirtualAutoTradingForChat(input: {
   ensureEnabled?: boolean;
 }): Promise<ChatAutoTradeRunSummary> {
   const mode = input.mode ?? "auto";
+  const manualLearning = mode === "learning";
   let dryRun = Boolean(input.dryRun);
   const ensureEnabled = input.ensureEnabled !== false;
 
@@ -6838,8 +6881,13 @@ export async function runVirtualAutoTradingForChat(input: {
   const runId = runStart.runId;
 
   // 매수 판단 전에 스윕 포지션을 먼저 현금화해, 이번 회차 매수에도 그 자금을 쓸 수 있게 한다.
-  const preBuyLiquidate = await runCashSweepLiquidateStep({ supabase, chatId: input.chatId, dryRun }).catch(
-    () => ({ notes: [], liquidated: false })
+  const preBuyLiquidate = await runCashSweepLiquidateStep({
+    supabase,
+    chatId: input.chatId,
+    dryRun,
+    forceLiquidate: manualLearning,
+  }).catch(
+    () => ({ notes: [], liquidated: false, releasedCash: 0 })
   );
 
   const action = runType === "MONDAY_BUY"
@@ -6854,11 +6902,18 @@ export async function runVirtualAutoTradingForChat(input: {
         setting,
         runId,
         dryRun,
+        manualLearning,
+        simulatedSweepReleaseCash: manualLearning && dryRun ? preBuyLiquidate.releasedCash : 0,
       });
 
   action.notes.unshift(...preBuyLiquidate.notes);
 
-  const cashSweep = await runCashSweepStep({ supabase, chatId: input.chatId, dryRun }).catch(
+  const cashSweep = await runCashSweepStep({
+    supabase,
+    chatId: input.chatId,
+    dryRun,
+    disableParking: manualLearning,
+  }).catch(
     () => ({ notes: [] })
   );
   action.notes.push(...cashSweep.notes);

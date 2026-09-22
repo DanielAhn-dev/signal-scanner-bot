@@ -358,7 +358,7 @@ export type AutoTradeCandidateSelectionResult = {
   guardNote?: string;
 };
 
-export type AutoTradeRunMode = "auto" | "monday" | "daily";
+export type AutoTradeRunMode = "auto" | "monday" | "daily" | "learning";
 export type AutoTradeRunType = "MONDAY_BUY" | "DAILY_REVIEW" | "MANUAL";
 
 export type AutoTradeBuyConstraint = {
@@ -606,6 +606,26 @@ export function resolveDeployableCash(input: {
   return Math.max(0, availableCash - reserveAmount);
 }
 
+/**
+ * 현금·일반 보유·현금성 스윕을 모두 반영한 계좌 수익률이다.
+ * 스윕은 매매 슬롯에서는 제외하지만 계좌 자산에서는 제외하면 안 된다.
+ */
+export function calculatePortfolioReturnPct(input: {
+  seedCapital: number;
+  availableCash: number;
+  holdingsValue: number;
+  cashSweepValue?: number;
+}): number {
+  const seedCapital = Math.max(0, Number(input.seedCapital) || 0);
+  if (seedCapital <= 0) return 0;
+
+  const portfolioValue =
+    Math.max(0, Number(input.availableCash) || 0) +
+    Math.max(0, Number(input.holdingsValue) || 0) +
+    Math.max(0, Number(input.cashSweepValue) || 0);
+  return ((portfolioValue - seedCapital) / seedCapital) * 100;
+}
+
 function filterRowsByMarketPolicy(input: {
   rows: RankedCandidate[];
   policy?: AutoTradeMarketPolicy;
@@ -758,22 +778,14 @@ function takeRowsWithinMarketPolicy(input: {
   return result;
 }
 
-function kstNow(base = new Date()): Date {
-  return new Date(base.getTime() + 9 * 60 * 60 * 1000);
-}
-
-function isKstMonday(base = new Date()): boolean {
-  return kstNow(base).getUTCDay() === 1;
-}
-
 export function selectRunType(
   mode: AutoTradeRunMode,
-  now = new Date()
+  _now = new Date()
 ): AutoTradeRunType {
   if (mode === "monday") return "MONDAY_BUY";
-  if (mode === "daily") return "DAILY_REVIEW";
-  // auto: 월요일은 진입 중심, 나머지 영업일은 일일 대응 중심
-  return isKstMonday(now) ? "MONDAY_BUY" : "DAILY_REVIEW";
+  if (mode === "daily" || mode === "learning") return "DAILY_REVIEW";
+  // 기본 스윙 모드는 요일과 무관하게 매 회차 보유 관리와 신규 진입을 함께 판단한다.
+  return "DAILY_REVIEW";
 }
 
 export function applyStrategyBuyConstraint(input: {

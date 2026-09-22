@@ -31,6 +31,9 @@ function parseInput(rawInput: string): {
     if (["일", "daily", "주중", "데일리"].includes(token)) {
       mode = "daily";
     }
+    if (["학습", "learning", "learn"].includes(token)) {
+      mode = "learning";
+    }
     if (["auto", "자동", "기본"].includes(token)) {
       mode = "auto";
     }
@@ -71,6 +74,7 @@ function buildMetricsComparisonLines(
 function formatModeLabel(mode: AutoTradeRunMode): string {
   if (mode === "monday") return "진입 강제 실행";
   if (mode === "daily") return "일일 사이클";
+  if (mode === "learning") return "수동 학습 사이클";
   return "자동(매일 통합 사이클)";
 }
 
@@ -86,7 +90,15 @@ function buildModeGuide(mode: AutoTradeRunMode): string[] {
     return [
       "모드 설명",
       "- 진입 모드는 신규 진입 판단을 강제로 한 번 실행합니다.",
-      "- 주간 첫 진입이나 재진입 점검이 필요할 때만 쓰면 됩니다.",
+      "- 기본 일일 스윙 판단과 다르게 진입만 별도로 점검해야 할 때 사용합니다.",
+    ];
+  }
+  if (mode === "learning") {
+    return [
+      "모드 설명",
+      "- 수동 학습은 가상계좌에서만 실행되며, 수동 점검/실행 시마다 최신 신호를 다시 판단합니다.",
+      "- CD금리 스윕을 현금화하고 표본 부족 관찰 게이트의 슬롯 감속만 해제합니다.",
+      "- 데이터 신선도, 방어장, 일손실, 중단 게이트, 후보 품질 규칙은 그대로 적용됩니다.",
     ];
   }
   return [
@@ -105,6 +117,14 @@ function buildCommandExamples(mode: AutoTradeRunMode): string[] {
     ];
   }
 
+  if (mode === "learning") {
+    return [
+      "/자동사이클 점검 학습",
+      "/자동사이클 실행 학습",
+      "/자동사이클 점검 학습 상세",
+    ];
+  }
+
   return [
     "/자동사이클 점검",
     "/자동사이클 실행",
@@ -118,6 +138,8 @@ function buildRunModeDifferenceGuide(mode: AutoTradeRunMode, dryRun: boolean): s
     ? "진입(신규 진입 판단 강제)"
     : mode === "daily"
       ? "일일 대응(보유 중심)"
+      : mode === "learning"
+        ? "수동 학습(가상 현금 활용)"
       : "자동(매일 통합판단)";
 
   return [
@@ -125,6 +147,7 @@ function buildRunModeDifferenceGuide(mode: AutoTradeRunMode, dryRun: boolean): s
     `- 이번 요청: ${runLabel} + ${modeLabel}`,
     "- /자동사이클 실행: 오늘 기준으로 실제 반영",
     "- /자동사이클 실행 진입: 요일과 무관하게 신규 진입 판단을 강제 실행",
+    "- /자동사이클 실행 학습: 가상계좌의 스윕을 풀고 수동 학습 판단 실행",
     "- /자동사이클 점검: 실제 반영 없이 동일 로직 시뮬레이션",
   ];
 }

@@ -588,7 +588,7 @@ export default function OperationsPage() {
     }
   }
 
-  const runAutocycle = async (dryRun: boolean) => {
+  const runAutocycle = async (dryRun: boolean, learning = false) => {
     setAutocycleStatus('loading')
     setAutocycleResult(null)
     try {
@@ -596,12 +596,16 @@ export default function OperationsPage() {
         method: 'POST',
         cacheMs: 0,
         timeoutMs: 60_000,
-        body: JSON.stringify({ mode: 'autocycle', dry_run: dryRun }),
+        body: JSON.stringify({
+          mode: 'autocycle',
+          dry_run: dryRun,
+          trigger_mode: learning ? 'learning' : 'auto',
+        }),
       })
       if (json?.error) throw new Error(String(json.error))
       const jobId = String(json?.job_id || '').trim()
       if (!jobId) throw new Error('job_id가 비어 있습니다.')
-      const label = dryRun ? '점검(dry-run)' : '실행'
+      const label = `${learning ? '학습 ' : ''}${dryRun ? '점검(dry-run)' : '실행'}`
       if (json?.execution_error) {
         setAutocycleResult(`자동사이클 ${label} 실행 실패 - ${String(json.execution_error)}`)
         setAutocycleStatus('error')
@@ -610,7 +614,7 @@ export default function OperationsPage() {
         setAutocycleStatus('done')
       }
       if (!dryRun) setPendingDryRunApproval(null)
-      if (dryRun) setBannerDismissedForJobId(null)
+      if (dryRun && !learning) setBannerDismissedForJobId(null)
       addWatchingJob(jobId)
       void refreshJobSnapshot(jobId, false)
       toast.show(`자동사이클 ${label} 등록 완료`)
@@ -668,7 +672,7 @@ export default function OperationsPage() {
     const task = String(payload.task || '')
     if (task === 'virtualAutoTrade') {
       const dryRun = payload.dry_run !== false
-      await runAutocycle(dryRun)
+      await runAutocycle(dryRun, String(payload.trigger_mode || '').toLowerCase() === 'learning')
       return
     }
     if (task === 'virtualAutoTradeIntraday') {
@@ -711,6 +715,14 @@ export default function OperationsPage() {
       <div style={{ marginBottom: 'var(--space-6)' }}>
         <h1 className="title-xl">운영 패널</h1>
         <p className="muted">가상매수/매도 자동화의 실시간 진행 상태, 실행 요약, 최근 결과를 한 화면에서 확인합니다.</p>
+        <div style={{ display: 'flex', gap: 'var(--space-2)', flexWrap: 'wrap', marginTop: 'var(--space-3)' }}>
+          <Button variant="secondary" onClick={() => runAutocycle(true, true)} disabled={autocycleStatus === 'loading'}>
+            학습 점검
+          </Button>
+          <Button variant="primary" onClick={() => runAutocycle(false, true)} disabled={autocycleStatus === 'loading'}>
+            학습 실행
+          </Button>
+        </div>
       </div>
 
       {showStickyDryRunBanner && pendingDryRunApproval && (

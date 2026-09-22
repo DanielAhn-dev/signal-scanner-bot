@@ -624,7 +624,7 @@ export default function StrategyPage() {
                   <div className="title-lg">{settings.max_positions ?? 10}종목</div>
                 </div>
                 <div className="card">
-                  <div className="caption">월요일 매수 슬롯</div>
+                  <div className="caption">회차당 신규 매수 슬롯</div>
                   <div className="title-lg">{settings.monday_buy_slots ?? 2}개</div>
                 </div>
               </div>
@@ -1042,7 +1042,7 @@ export default function StrategyPage() {
                     onChange={(e: any) => setSettings({ ...settings, stop_loss_pct: Number(e.target.value) })}
                   />
                   <Input
-                    label="월요일 매수 슬롯"
+                    label="회차당 신규 매수 슬롯"
                     type="number"
                     value={settings?.monday_buy_slots ?? 2}
                     onChange={(e: any) => setSettings({ ...settings, monday_buy_slots: Number(e.target.value) })}

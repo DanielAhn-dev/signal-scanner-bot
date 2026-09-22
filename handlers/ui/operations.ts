@@ -2,7 +2,10 @@ import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { createClient, SupabaseClient } from '@supabase/supabase-js'
 import { resolveUiUserContext } from './_userContext'
 import { denyIfUnauthorizedRead } from './_accessControl'
-import { runVirtualAutoTradingCycle } from '../../src/services/virtualAutoTradeService'
+import {
+  runVirtualAutoTradingCycle,
+  runVirtualAutoTradingForChat,
+} from '../../src/services/virtualAutoTradeService'
 import { replaceTradeLotsForHolding } from '../../src/services/virtualLotService'
 import { parseStrategyMemo } from '../../src/lib/strategyMemo'
 import { syncVirtualPortfolio } from '../../src/services/portfolioService'
@@ -1464,20 +1467,41 @@ async function executeInlineCronDispatch(
       const intradayOnly = Boolean(payload.intraday_only)
       const windowMinutes = toPositiveInt(payload.window_minutes, 10)
       const maxUsers = toPositiveInt(payload.max_users, intradayOnly ? 60 : 200)
-      const run = await runVirtualAutoTradingCycle({
-        mode: 'auto',
-        dryRun,
-        intradayOnly,
-        windowMinutes,
-        maxUsers,
-      })
-      summary = {
-        buyCount: run.buyCount,
-        sellCount: run.sellCount,
-        skippedCount: run.skippedCount,
-        errorCount: run.errorCount,
-        runType: run.runType,
-        runKey: run.runKey,
+      const isLearning = String(payload.trigger_mode || '').toLowerCase() === 'learning'
+      if (isLearning) {
+        const chatId = Number(payload.chat_id)
+        if (!Number.isFinite(chatId) || chatId <= 0) throw new Error('학습 실행 대상 chat_id가 없습니다.')
+        const run = await runVirtualAutoTradingForChat({
+          chatId,
+          mode: 'learning',
+          dryRun,
+          ensureEnabled: true,
+        })
+        summary = {
+          buyCount: run.action.buys,
+          sellCount: run.action.sells,
+          skippedCount: run.action.skipped,
+          errorCount: run.action.errors,
+          runType: run.runType,
+          runKey: run.runKey,
+          learning: true,
+        }
+      } else {
+        const run = await runVirtualAutoTradingCycle({
+          mode: 'auto',
+          dryRun,
+          intradayOnly,
+          windowMinutes,
+          maxUsers,
+        })
+        summary = {
+          buyCount: run.buyCount,
+          sellCount: run.sellCount,
+          skippedCount: run.skippedCount,
+          errorCount: run.errorCount,
+          runType: run.runType,
+          runKey: run.runKey,
+        }
       }
     } else if (task === 'virtualAutoTradeIntraday') {
       const step = String(payload.step || 'intraday').toLowerCase()

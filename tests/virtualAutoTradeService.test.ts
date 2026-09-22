@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {
   applyAdaptiveExitGuard,
   applyStrategyBuyConstraint,
+  calculatePortfolioReturnPct,
   computeDynamicLargeCapFloor,
   detectAutoTradeMarketPolicy,
   deriveAdaptiveMinBuyScore,
@@ -37,14 +38,34 @@ import {
   kstWindowKey,
 } from "../src/services/virtualAutoTradeTiming";
 
-test("selectRunType: auto 모드는 한국시간 월요일이면 monday buy를 선택한다", () => {
+test("selectRunType: auto 모드는 한국시간 월요일에도 일일 스윙 판단을 선택한다", () => {
   const sundayUtc = new Date("2026-04-19T18:00:00.000Z");
-  assert.equal(selectRunType("auto", sundayUtc), "MONDAY_BUY");
+  assert.equal(selectRunType("auto", sundayUtc), "DAILY_REVIEW");
 });
 
 test("selectRunType: auto 모드는 한국시간 월요일 외에는 daily review를 선택한다", () => {
   const tuesdayUtc = new Date("2026-04-21T04:00:00.000Z");
   assert.equal(selectRunType("auto", tuesdayUtc), "DAILY_REVIEW");
+});
+
+test("selectRunType: 명시적 진입 모드만 기존 진입 경로를 선택한다", () => {
+  assert.equal(selectRunType("monday", new Date("2026-04-21T04:00:00.000Z")), "MONDAY_BUY");
+});
+
+test("selectRunType: 수동 학습 모드는 일일 스윙 판단 경로를 선택한다", () => {
+  assert.equal(selectRunType("learning", new Date("2026-04-21T04:00:00.000Z")), "DAILY_REVIEW");
+});
+
+test("calculatePortfolioReturnPct: 현금성 스윕도 계좌 자산으로 포함한다", () => {
+  const result = calculatePortfolioReturnPct({
+    seedCapital: 20_000_000,
+    availableCash: 2_921_351,
+    holdingsValue: 601_120,
+    cashSweepValue: 16_129_950,
+  });
+
+  assert.ok(result > -2 && result < -1);
+  assert.equal(Math.round(result * 10) / 10, -1.7);
 });
 
 test("deriveAdaptiveMinBuyScore: 현재 상위 점수대에 맞춰 기준을 완화한다", () => {
