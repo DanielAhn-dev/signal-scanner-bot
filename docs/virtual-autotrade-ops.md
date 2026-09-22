@@ -64,9 +64,11 @@ curl -H "Authorization: Bearer $CRON_SECRET" "https://signal-scanner-bot.vercel.
 
 ## 4-1) 장중 자동운영 기본값
 
-- 평일 장중(09:00~15:20 KST) 중 사용자가 버튼으로 수동 트리거하거나 `/자동사이클 실행` 명령으로 실행할 수 있습니다.
+- 무료 하이브리드 배치는 평일 KST 09:30, 13:30, 14:50에 자동사이클을 실행합니다. 오전·마감 전 실행은 GitHub Actions, 오후 실행은 Vercel Hobby Cron이 담당합니다.
+- 각 실행에서 가상 체결이 발생하면 Telegram으로 실행 알림과 MTS 따라하기 주문서를 보냅니다. 체결이 없으면 `따라 할 주문 없음`과 보류 사유를 보냅니다.
+- `AUTO_TRADE_CYCLE_STATUS_NOTIFY=false`를 설정하면 체결 없는 회차의 상태 알림만 끌 수 있습니다. 실제 체결 및 MTS 주문서 알림은 계속 발송됩니다.
+- 평일 장중(09:00~15:20 KST)에는 사용자가 버튼으로 수동 트리거하거나 `/자동사이클 실행` 명령으로 추가 실행할 수 있습니다.
 - 같은 사용자는 10분 창 기준으로 중복 실행되지 않습니다.
-- 무료 플랜 제약으로 자동 cron은 제공되지 않으며, 사용자 주도 수동 실행만 지원합니다.
 - `AUTO_TRADE_ALERT_CHAT_ID`를 지정하면 `duplicate_window` 급증, `out_of_session`, `error_count` 발생 시 운영자 채팅으로 요약 경보를 보냅니다.
 
 ## 4-2) 무료 플랜 하이브리드 트리거

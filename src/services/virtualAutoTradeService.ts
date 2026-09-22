@@ -87,6 +87,7 @@ import {
   kstWindowKey,
 } from "./virtualAutoTradeTiming";
 import {
+  buildAutoTradeCycleHoldAlert,
   buildAutoTradeExecutionButtons,
   pickExecutionLines,
 } from "./virtualAutoTradeAlert";
@@ -158,6 +159,8 @@ type ApiBudget = {
 };
 
 const AUTO_TRADE_STRATEGY_ID = "core.autotrade.v1";
+const AUTO_TRADE_CYCLE_STATUS_NOTIFY =
+  String(process.env.AUTO_TRADE_CYCLE_STATUS_NOTIFY ?? "true").toLowerCase() !== "false";
 
 type SignalTrustThresholds = {
   variant: "A" | "B" | "CUSTOM";
@@ -7269,6 +7272,16 @@ export async function runVirtualAutoTradingCycle(input?: {
           if (mirrorSheet) {
             await sendMessage(setting.chat_id, mirrorSheet).catch((err: unknown) => {
               console.error("[autoTrade] mirror order sheet send failed", err);
+            });
+          }
+        } else if (!userDryRun && AUTO_TRADE_CYCLE_STATUS_NOTIFY) {
+          const holdAlert = buildAutoTradeCycleHoldAlert({
+            runKey,
+            action: actionSummary,
+          });
+          if (holdAlert) {
+            await sendMessage(setting.chat_id, holdAlert).catch((err: unknown) => {
+              console.error("[autoTrade] cycle hold alert send failed", err);
             });
           }
         }
