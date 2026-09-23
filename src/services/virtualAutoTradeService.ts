@@ -113,6 +113,7 @@ import {
   resolveCashSweepTopUpQty,
   shouldLiquidateCashSweep,
 } from "./virtualAutoTradeCashSweep";
+import { resolveSeedRebase } from "./virtualAutoTradeSeedRebase";
 import {
   fetchStrategyGateState,
   upsertStrategyGateState,
@@ -7052,6 +7053,34 @@ export async function runVirtualAutoTradingForChat(input: {
   if (prefs.virtual_shadow_mode && !dryRun) {
     dryRun = true;
   }
+
+  // 시드 재계산(복리 반영): 실행할 때마다 확인하지만 내부적으로 7일 간격 게이트가 있어
+  // 실제 변경은 주 1회만 일어난다. dryRun(학습 모드)에서는 실제 수치를 건드리지 않는다.
+  let seedRebaseNote: string | null = null;
+  if (!dryRun) {
+    try {
+      const rebase = resolveSeedRebase({
+        seedCapital: toNumber(prefs.virtual_seed_capital, 0),
+        realizedPnl: toNumber(prefs.virtual_realized_pnl, 0),
+        lastRebaseAt: prefs.virtual_last_seed_rebase_at,
+      });
+      if (rebase.shouldRebase) {
+        const rebaseAt = new Date().toISOString();
+        await setUserInvestmentPrefs(input.chatId, {
+          virtual_seed_capital: rebase.nextSeedCapital,
+          virtual_realized_pnl: 0,
+          virtual_last_seed_rebase_at: rebaseAt,
+        });
+        prefs.virtual_seed_capital = rebase.nextSeedCapital;
+        prefs.virtual_realized_pnl = 0;
+        prefs.virtual_last_seed_rebase_at = rebaseAt;
+        seedRebaseNote = `[시드 재계산] 최근 실현손익 ${rebase.deltaApplied >= 0 ? "+" : ""}${fmtKrw(rebase.deltaApplied)}을 반영 · 새 시드 ${fmtKrw(rebase.nextSeedCapital)} (다음 포지션 사이징부터 적용)`;
+      }
+    } catch (e) {
+      console.error("[autoTrade] seed rebase failed", e);
+    }
+  }
+
   const defaultSetting = buildDefaultSettingForChat(input.chatId, prefs.risk_profile);
 
   const setting: AutoTradeSettingRow = {
@@ -7118,6 +7147,9 @@ export async function runVirtualAutoTradingForChat(input: {
       });
 
   action.notes.unshift(...preBuyLiquidate.notes);
+  if (seedRebaseNote) {
+    action.notes.unshift(seedRebaseNote);
+  }
 
   const cashSweep = await runCashSweepStep({
     supabase,

@@ -76,6 +76,8 @@ export type InvestmentPrefs = {
   virtual_seed_capital?: number;
   virtual_cash?: number;
   virtual_realized_pnl?: number;
+  /** 마지막으로 시드 재계산(복리 반영)이 실행된 시각 (ISO). resolveSeedRebase가 7일 간격을 판단하는 데 사용 */
+  virtual_last_seed_rebase_at?: string;
   virtual_target_positions?: number;
   virtual_fee_rate?: number;
   virtual_tax_rate?: number;
@@ -205,6 +207,9 @@ export async function getUserInvestmentPrefs(
   if (prefs.virtual_seed_capital != null && Number.isFinite(virtualSeed) && virtualSeed >= 0) out.virtual_seed_capital = virtualSeed;
   if (prefs.virtual_cash != null && Number.isFinite(virtualCash) && virtualCash >= 0) out.virtual_cash = virtualCash;
   if (Number.isFinite(virtualRealizedPnl)) out.virtual_realized_pnl = virtualRealizedPnl;
+  if (typeof prefs.virtual_last_seed_rebase_at === "string" && prefs.virtual_last_seed_rebase_at) {
+    out.virtual_last_seed_rebase_at = prefs.virtual_last_seed_rebase_at;
+  }
   if (Number.isFinite(virtualTargetPositions) && virtualTargetPositions > 0) {
     out.virtual_target_positions = Math.floor(virtualTargetPositions);
   }
@@ -341,6 +346,10 @@ export async function setUserInvestmentPrefs(
       virtual_realized_pnl:
         Number.isFinite(Number(merged.virtual_realized_pnl))
           ? Number(merged.virtual_realized_pnl)
+          : undefined,
+      virtual_last_seed_rebase_at:
+        typeof merged.virtual_last_seed_rebase_at === "string"
+          ? merged.virtual_last_seed_rebase_at
           : undefined,
       virtual_target_positions:
         Number.isFinite(Number(merged.virtual_target_positions))

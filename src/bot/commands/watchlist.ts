@@ -1049,7 +1049,7 @@ export async function handleWatchlistCommand(
             LINE,
             `<b>가상지갑</b> 원금 ${fmtInt(seedCapital)}원 · 잔액 ${fmtInt(cash)}원`,
             `평가자산 0원 · 총자산 ${fmtInt(cash)}원`,
-            `총손익 ${cash - seedCapital >= 0 ? "+" : ""}${fmtInt(cash - seedCapital)}원 · 실현 ${realized >= 0 ? "+" : ""}${fmtInt(realized)}원`,
+            `총손익 ${cash - seedCapital >= 0 ? "+" : ""}${fmtInt(cash - seedCapital)}원 · 실현(최근 시드 재계산 이후) ${realized >= 0 ? "+" : ""}${fmtInt(realized)}원`,
           ].join("\n")
         : "";
 
@@ -1247,7 +1247,7 @@ export async function handleWatchlistCommand(
           LINE,
           `<b>가상지갑</b> 원금 ${fmtInt(seedCapital)}원 · 잔액 ${fmtInt(cash)}원`,
           `평가자산 ${fmtInt(evalValue)}원 · 총자산 ${fmtInt(totalAsset)}원`,
-          `총손익 ${totalPnl >= 0 ? "+" : ""}${fmtInt(totalPnl)}원 · 실현 ${realized >= 0 ? "+" : ""}${fmtInt(realized)}원`,
+          `총손익 ${totalPnl >= 0 ? "+" : ""}${fmtInt(totalPnl)}원 · 실현(최근 시드 재계산 이후) ${realized >= 0 ? "+" : ""}${fmtInt(realized)}원`,
         ].join("\n")
       : "";
 
@@ -3010,7 +3010,7 @@ export async function handleWatchlistHistoryCommand(
     LINE,
     `매도 ${totalSell}건 · 승 ${winCount} · 패 ${loseCount} · 승률 ${winRate.toFixed(1)}%`,
     `가상 잔액 <code>${fmtInt(cash)}원</code>`,
-    `누적 실현손익 <code>${realized >= 0 ? "+" : ""}${fmtInt(realized)}원</code>`,
+    `실현손익(최근 시드 재계산 이후) <code>${realized >= 0 ? "+" : ""}${fmtInt(realized)}원</code>`,
     reliability
       ? `판단 신뢰도 <code>${reliability.trustScore == null ? "계산중" : `${reliability.trustScore}점`}</code> · 근거기록 ${reliability.explanationCoveragePct.toFixed(1)}% · 정책버전 ${reliability.strategyVersionCount}개`
       : "판단 신뢰도 집계 불가 (decision log 조회 실패)",
