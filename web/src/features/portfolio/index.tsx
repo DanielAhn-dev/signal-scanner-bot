@@ -1102,7 +1102,13 @@ export default function Portfolio() {
               </div>
             </td>
             <td className="xls-cell" colSpan={2} style={{ padding: '8px 10px' }}>
-              <div className="portfolio-head-maintenance" role="group" aria-label="포트폴리오 유지보수 작업" style={{ display: 'flex', gap: 'var(--space-2)', flexWrap: 'wrap', alignItems: 'center' }}>
+              <div
+                className="portfolio-head-maintenance"
+                role="group"
+                aria-label="포트폴리오 유지보수 작업"
+                style={{ display: 'flex', gap: 'var(--space-2)', flexWrap: 'wrap', alignItems: 'center', borderLeft: '1px solid var(--color-border-default)', paddingLeft: 'var(--space-2)' }}
+              >
+                <span className="caption muted" style={{ whiteSpace: 'nowrap' }}>유지보수</span>
                 <Button variant="ghost" size="sm" onClick={() => openMaintenanceModal('holdingrestore')} disabled={loading}>
                   계좌/보유 추가
                 </Button>
