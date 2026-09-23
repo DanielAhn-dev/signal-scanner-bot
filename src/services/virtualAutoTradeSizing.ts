@@ -102,6 +102,30 @@ function clampConviction(value: unknown): number {
   return Math.min(1.3, Math.max(0.7, n));
 }
 
+/**
+ * 시드 규모별 목표 보유 종목 수 상한. 소액일수록 종목 수를 줄여 한 번에 의미 있는 금액을 넣는다.
+ * (2천만원을 10종목으로 나누면 종목당 200만원·1차 진입 100만원 수준이라 수익이 나도 시드 증가가 더디다)
+ * 1회 손절 손실 한도(리스크예산)와 종목당 비중상한은 그대로라, 집중해도 한 번에 잃는 금액은 늘지 않는다.
+ */
+export function resolveSeedTargetPositionCap(seedCapital: number): number {
+  if (seedCapital < 30_000_000) return 5;
+  if (seedCapital < 100_000_000) return 7;
+  return Number.POSITIVE_INFINITY;
+}
+
+/**
+ * 확신도에 따라 분할 횟수를 조절한다. 사용자 설정(split_count)은 "보통 확신(1.0)"일 때의 기본값.
+ * 사람이 하듯 확신이 강한 자리는 덜 나눠 크게, 애매한 자리는 더 나눠 작게 들어간다.
+ *   확신 ≥ 1.2 → 기본 - 2 (최소 1), ≥ 1.1 → 기본 - 1, < 0.9 → 기본 + 1 (최대 5)
+ */
+export function resolveDynamicSplitCount(baseSplitCount: number, conviction: number): number {
+  const base = clampInt(baseSplitCount, 1, 5);
+  if (conviction >= 1.2) return Math.max(1, base - 2);
+  if (conviction >= 1.1) return Math.max(1, base - 1);
+  if (conviction < 0.9) return Math.min(5, base + 1);
+  return base;
+}
+
 /** 1차 진입 비율: 분할 1회면 전액, 2회면 60%, 3회 이상이면 50% */
 function firstTrancheRatio(splitCount: number): number {
   if (splitCount <= 1) return 1;
@@ -172,7 +196,10 @@ export function calculateAutoTradeBuySizing(
   const configuredTargetPositions = toPositiveNumber(input.prefs?.virtual_target_positions);
   const configuredSplitCount = resolveSplitCount(input.prefs?.split_count);
   const targetPositions = clampInt(
-    configuredTargetPositions ?? resolveDefaultTargetPositions(input.prefs?.risk_profile),
+    Math.min(
+      configuredTargetPositions ?? resolveDefaultTargetPositions(input.prefs?.risk_profile),
+      resolveSeedTargetPositionCap(seedCapital)
+    ),
     1,
     maxPositions
   );
@@ -238,7 +265,7 @@ export function calculateAutoTradeBuySizing(
     return buildResult(0, 0, 0, configuredSplitCount, "below-meaningful-size");
   }
 
-  let splitCount = configuredSplitCount;
+  let splitCount = resolveDynamicSplitCount(configuredSplitCount, conviction);
   let budget = Math.floor(totalBudget * firstTrancheRatio(splitCount));
   while (splitCount > 1 && budget < minOrderAmount) {
     splitCount -= 1;

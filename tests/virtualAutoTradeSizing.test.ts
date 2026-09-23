@@ -3,6 +3,8 @@ import assert from "node:assert/strict";
 import {
   calculateAutoTradeBuySizing,
   resolveConvictionScale,
+  resolveDynamicSplitCount,
+  resolveSeedTargetPositionCap,
 } from "../src/services/virtualAutoTradeSizing";
 
 const BASE_PREFS = {
@@ -232,4 +234,35 @@ test("resolveConvictionScale: 점수 40 미만 + 신뢰 D면 하한 0.7", () => 
 
 test("resolveConvictionScale: 점수 정보가 없으면 중립 1.0", () => {
   assert.equal(resolveConvictionScale({}), 1.0);
+});
+
+test("resolveSeedTargetPositionCap: 소액 시드일수록 목표 종목 수를 줄인다", () => {
+  assert.equal(resolveSeedTargetPositionCap(20_000_000), 5);
+  assert.equal(resolveSeedTargetPositionCap(50_000_000), 7);
+  assert.equal(resolveSeedTargetPositionCap(200_000_000), Number.POSITIVE_INFINITY);
+});
+
+test("resolveDynamicSplitCount: 확신이 강하면 덜 나누고 약하면 더 나눈다", () => {
+  assert.equal(resolveDynamicSplitCount(4, 1.25), 2);
+  assert.equal(resolveDynamicSplitCount(4, 1.1), 3);
+  assert.equal(resolveDynamicSplitCount(4, 1.0), 4);
+  assert.equal(resolveDynamicSplitCount(4, 0.8), 5);
+  assert.equal(resolveDynamicSplitCount(2, 1.3), 1);
+});
+
+test("sizing: 시드 2천만원·목표 10종목 설정이어도 5종목 기준으로 집중한다", () => {
+  const result = calculateAutoTradeBuySizing({
+    availableCash: 20_000_000,
+    price: 100_000,
+    slotsLeft: 5,
+    currentHoldingCount: 0,
+    maxPositions: 10,
+    stopLossPct: 4,
+    conviction: 1.2,
+    prefs: { virtual_seed_capital: 20_000_000, virtual_target_positions: 10, split_count: 4 },
+  });
+  assert.equal(result.targetPositions, 5);
+  // 확신 1.2 → 분할 4→2, 1차 60%
+  assert.equal(result.splitCount, 2);
+  assert.ok(result.investedAmount >= 2_000_000, `invested=${result.investedAmount}`);
 });
