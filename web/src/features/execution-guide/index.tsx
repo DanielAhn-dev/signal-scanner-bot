@@ -834,6 +834,7 @@ export default function ExecutionGuidePage() {
   const [candidateMode, setCandidateMode] = useState<CandidateMode>('balanced')
   const [scoreVersion, setScoreVersion] = useState<ScoreVersion>('v2')
   const [compactView, setCompactView] = useState(false)
+  const [showAutoFinder, setShowAutoFinder] = useState(false)
   const [snapshotReady, setSnapshotReady] = useState(false)
   const [lastSnapshotAt, setLastSnapshotAt] = useState<string | null>(null)
   const [pdfLoading, setPdfLoading] = useState(false)
@@ -1271,11 +1272,80 @@ export default function ExecutionGuidePage() {
       <section className="execution-guide-page" style={{ display: 'grid', gap: 'var(--space-3)' }}>
 
       <div className="card" style={{ padding: 'var(--space-3)' }}>
+        <div className="title-md">매매 계획 만들기</div>
+        <div className="caption" style={{ marginTop: 4 }}>종목 코드를 입력하고 가이드 생성을 누르면 진입/손절/목표 계획이 만들어집니다.</div>
+
+        <div className="execution-guide-form-block" style={{ marginTop: 'var(--space-3)', display: 'grid', gap: 'var(--space-3)' }}>
+          <Input
+            label="종목 코드(쉼표/공백 구분)"
+            textarea
+            value={codesText}
+            onChange={(e) => setCodesText(e.target.value)}
+            placeholder="005930, 000660, 272210"
+          />
+
+          <div className="execution-guide-form-grid" style={{ display: 'grid', gap: 'var(--space-2)', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))' }}>
+            <Input label="총 투자금" value={capital} onChange={(e) => setCapital(e.target.value)} />
+            <Input label="종목당 최대 비중(%)" value={maxWeightPct} onChange={(e) => setMaxWeightPct(e.target.value)} />
+            <Input label="분할 횟수(권장 3~5)" value={splitCount} onChange={(e) => setSplitCount(e.target.value)} />
+            <div className="ui-field">
+              <label className="ui-label">리스크 모드</label>
+              <select className="ui-input ui-text" value={riskMode} onChange={(e) => setRiskMode(e.target.value as RiskMode)}>
+                <option value="conservative">보수</option>
+                <option value="neutral">중립</option>
+                <option value="aggressive">공격</option>
+              </select>
+            </div>
+            <Input label="추천 출처" value={sourceLabel} onChange={(e) => setSourceLabel(e.target.value)} />
+            <div className="ui-field" style={{ display: 'flex', alignItems: 'flex-end' }}>
+              <Button onClick={buildGuide} disabled={loading || codeList.length === 0} style={{ width: '100%', minHeight: 38 }}>
+                {loading ? '가이드 생성 중…' : '가이드 생성'}
+              </Button>
+            </div>
+          </div>
+        </div>
+
+        <div className="execution-guide-meta-row" style={{ marginTop: 'var(--space-3)', display: 'flex', gap: 'var(--space-3)', alignItems: 'center', flexWrap: 'wrap' }}>
+          <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+            <input type="checkbox" checked={includeNews} onChange={(e) => setIncludeNews(e.target.checked)} />
+            뉴스 상위 3건 요약 포함
+          </label>
+          <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+            <input type="checkbox" checked={compactView} onChange={(e) => setCompactView(e.target.checked)} />
+            핵심만 보기
+          </label>
+          <span className="caption">코드 {codeList.length}개</span>
+          {generatedAt && <span className="caption">생성시각 {new Date(generatedAt).toLocaleString('ko-KR')}</span>}
+        </div>
+
+        {codeList.length > 0 && (
+          <div className="execution-guide-code-chip-row" style={{ marginTop: 'var(--space-2)', display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+            {codeList.slice(0, 12).map((code) => (
+              <span key={code} className="scan-grade-badge scan-grade-b" style={{ fontSize: 11 }}>
+                {code}
+              </span>
+            ))}
+            {codeList.length > 12 && <span className="caption">외 {codeList.length - 12}개</span>}
+          </div>
+        )}
+      </div>
+
+      <div>
+        <Button variant="ghost" onClick={() => setShowAutoFinder((v) => !v)}>
+          {showAutoFinder ? '자동 후보 찾기 접기 ▴' : `자동 후보 찾기 (고급)${autoCandidates.length > 0 ? ` · ${autoCandidates.length}건` : ''} ▾`}
+        </Button>
+      </div>
+
+      {(showAutoFinder || autoCandidates.length > 0 || autoLoading) && (
+      <div className="card" style={{ padding: 'var(--space-3)' }}>
         <div className="flex-between" style={{ gap: 'var(--space-2)', flexWrap: 'wrap' }}>
           <div>
             <div className="title-md">자동 후보 찾기</div>
             <div className="caption">눌림목/집행우선 데이터를 합쳐 퀵점수·적응점수·리드단계·수급액(5D/20D)·거래대금 중심으로 우선순위를 제시합니다.</div>
           </div>
+        </div>
+
+        <div style={{ marginTop: 'var(--space-2)', display: 'flex', flexDirection: 'column', gap: 8 }}>
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
             <Button
               variant={candidateMode === 'balanced' ? 'primary' : 'secondary'}
@@ -1298,6 +1368,8 @@ export default function ExecutionGuidePage() {
             >
               스윙 모드
             </Button>
+          </div>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
             <Button
               variant={scoreVersion === 'v2' ? 'primary' : 'secondary'}
               onClick={() => setScoreVersion('v2')}
@@ -1312,23 +1384,13 @@ export default function ExecutionGuidePage() {
             >
               점수 legacy
             </Button>
+          </div>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
             <Button variant="secondary" onClick={loadAutoCandidates} disabled={autoLoading}>
-              {autoLoading ? '후보 탐색 중…' : '자동 후보 찾기'}
+              {autoLoading ? '후보 탐색 중…' : '자동 후보 찾기 실행'}
             </Button>
             <Button variant="secondary" onClick={useAutoCandidatesAsCodes} disabled={autoCandidates.length === 0}>
               상위 후보 코드 반영
-            </Button>
-            <Button size="sm" onClick={buildGuide} disabled={loading || codeList.length === 0}>
-              {loading ? '생성 중…' : '가이드 생성'}
-            </Button>
-            <Button size="sm" variant="secondary" onClick={openExecutionGuideShare} disabled={shareManager.creating || rows.length === 0}>
-              {shareManager.creating ? '공유 준비 중…' : '공유'}
-            </Button>
-            <Button size="sm" variant="secondary" onClick={downloadExecutionGuidePdf} disabled={pdfLoading || rows.length === 0}>
-              {pdfLoading ? 'PDF 생성 중…' : '리포트 PDF'}
-            </Button>
-            <Button size="sm" variant="secondary" onClick={openExecutionGuideShareManager}>
-              공유 관리
             </Button>
           </div>
         </div>
@@ -1336,8 +1398,6 @@ export default function ExecutionGuidePage() {
         <div className="caption" style={{ marginTop: 8 }}>
           자동 후보 모드: {candidateMode === 'multibagger' ? '멀티배거(수급 20D·리드·상승여력 강화)' : candidateMode === 'swing' ? '스윙(눌림·추세·안전성·20D수급 우선 / 당일급등 제외)' : '밸런스(단기 집행 안정성 중심)'}
           {' · '}점수 버전: {scoreVersion === 'v2' ? 'v2(상승잠재-리스크 분리)' : 'legacy(기존 가중합)'}
-          {' · '}스냅샷: {snapshotReady ? '준비됨' : '미준비'}
-          {lastSnapshotAt ? ` · 최근 저장 ${new Date(lastSnapshotAt).toLocaleString('ko-KR')}` : ''}
         </div>
 
         {autoError && <div className="caption" style={{ color: 'var(--color-error)', marginTop: 8 }}>{autoError}</div>}
@@ -1383,61 +1443,8 @@ export default function ExecutionGuidePage() {
             ))}
           </div>
         )}
-
-        <div className="execution-guide-form-block" style={{ display: 'grid', gap: 'var(--space-3)' }}>
-          <Input
-            label="종목 코드(쉼표/공백 구분)"
-            textarea
-            value={codesText}
-            onChange={(e) => setCodesText(e.target.value)}
-            placeholder="005930, 000660, 272210"
-          />
-
-          <div className="execution-guide-form-grid" style={{ display: 'grid', gap: 'var(--space-2)', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))' }}>
-            <Input label="총 투자금" value={capital} onChange={(e) => setCapital(e.target.value)} />
-            <Input label="종목당 최대 비중(%)" value={maxWeightPct} onChange={(e) => setMaxWeightPct(e.target.value)} />
-            <Input label="분할 횟수(권장 3~5)" value={splitCount} onChange={(e) => setSplitCount(e.target.value)} />
-            <div className="ui-field">
-              <label className="ui-label">리스크 모드</label>
-              <select className="ui-input ui-text" value={riskMode} onChange={(e) => setRiskMode(e.target.value as RiskMode)}>
-                <option value="conservative">보수</option>
-                <option value="neutral">중립</option>
-                <option value="aggressive">공격</option>
-              </select>
-            </div>
-            <Input label="추천 출처" value={sourceLabel} onChange={(e) => setSourceLabel(e.target.value)} />
-            <div className="ui-field" style={{ display: 'flex', alignItems: 'flex-end' }}>
-              <Button onClick={buildGuide} disabled={loading} style={{ width: '100%', minHeight: 38 }}>
-                {loading ? '가이드 생성 중…' : '가이드 생성'}
-              </Button>
-            </div>
-          </div>
-        </div>
-
-        <div className="execution-guide-meta-row" style={{ marginTop: 'var(--space-3)', display: 'flex', gap: 'var(--space-3)', alignItems: 'center', flexWrap: 'wrap' }}>
-          <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-            <input type="checkbox" checked={includeNews} onChange={(e) => setIncludeNews(e.target.checked)} />
-            뉴스 상위 3건 요약 포함
-          </label>
-          <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-            <input type="checkbox" checked={compactView} onChange={(e) => setCompactView(e.target.checked)} />
-            핵심만 보기
-          </label>
-          <span className="caption">코드 {codeList.length}개</span>
-          {generatedAt && <span className="caption">생성시각 {new Date(generatedAt).toLocaleString('ko-KR')}</span>}
-        </div>
-
-        {codeList.length > 0 && (
-          <div className="execution-guide-code-chip-row" style={{ marginTop: 'var(--space-2)', display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-            {codeList.slice(0, 12).map((code) => (
-              <span key={code} className="scan-grade-badge scan-grade-b" style={{ fontSize: 11 }}>
-                {code}
-              </span>
-            ))}
-            {codeList.length > 12 && <span className="caption">외 {codeList.length - 12}개</span>}
-          </div>
-        )}
       </div>
+      )}
 
       {error && <div className="card" style={{ color: 'var(--color-error)' }}>{error}</div>}
 
@@ -1561,10 +1568,27 @@ export default function ExecutionGuidePage() {
         </div>
       </div>
 
-      <div className="card" style={{ display: 'flex', gap: 'var(--space-3)', flexWrap: 'wrap' }}>
-        <div>총 계획 금액: {formatKrw(totalPlanned)}</div>
-        <div>잔여 현금: {formatKrw(Math.max(0, totalCapital - totalPlanned))}</div>
-        <div>출처: {sourceLabel}</div>
+      <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
+        <div style={{ display: 'flex', gap: 'var(--space-3)', flexWrap: 'wrap' }}>
+          <div>총 계획 금액: {formatKrw(totalPlanned)}</div>
+          <div>잔여 현금: {formatKrw(Math.max(0, totalCapital - totalPlanned))}</div>
+          <div>출처: {sourceLabel}</div>
+        </div>
+        <div className="caption muted">
+          스냅샷: {snapshotReady ? '준비됨' : '미준비'}
+          {lastSnapshotAt ? ` · 최근 저장 ${new Date(lastSnapshotAt).toLocaleString('ko-KR')}` : ''}
+        </div>
+        <div style={{ display: 'flex', gap: 'var(--space-2)', flexWrap: 'wrap' }}>
+          <Button size="sm" variant="secondary" onClick={openExecutionGuideShare} disabled={shareManager.creating || rows.length === 0}>
+            {shareManager.creating ? '공유 준비 중…' : '공유'}
+          </Button>
+          <Button size="sm" variant="secondary" onClick={downloadExecutionGuidePdf} disabled={pdfLoading || rows.length === 0}>
+            {pdfLoading ? 'PDF 생성 중…' : '리포트 PDF'}
+          </Button>
+          <Button size="sm" variant="secondary" onClick={openExecutionGuideShareManager}>
+            공유 관리
+          </Button>
+        </div>
       </div>
 
       <ShareModal
