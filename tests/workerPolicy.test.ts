@@ -34,7 +34,7 @@ test("resolveCommandCategoryFromCallbackData: 주요 콜백을 카테고리로 �
 test("resolveJobTimeoutByCategory: 카테고리별 타임아웃을 반환한다", () => {
   assert.equal(resolveJobTimeoutByCategory("default"), 20000);
   assert.equal(resolveJobTimeoutByCategory("trade"), 45000);
-  assert.equal(resolveJobTimeoutByCategory("autocycle"), 30000);
+  assert.equal(resolveJobTimeoutByCategory("autocycle"), 50000);
   assert.equal(resolveJobTimeoutByCategory("opstrigger"), 58000);
   assert.equal(resolveJobTimeoutByCategory("weekly"), 54000);
   assert.equal(resolveJobTimeoutByCategory("briefing"), 50000);

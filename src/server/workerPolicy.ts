@@ -31,7 +31,10 @@ export const DEFAULT_WORKER_TIMEOUTS: WorkerTimeouts = {
       default: 20000,
       trade: 45000,
       scan: 45000,
-      autocycle: 30000,
+      // 실측 DAILY_REVIEW 실행시간이 보통 45~57초라 기존 30초 예산은 정상 완료되는 회차도
+      // "중단되었습니다"로 오조기 통보하는 경우가 잦았다. api/worker.ts maxDuration(60s) 안쪽으로
+      // 여유를 남기면서 실측 범위를 대부분 커버하도록 50초로 상향.
+      autocycle: 50000,
       opstrigger: 58000,
       weekly: 54000,
       briefing: 50000,
