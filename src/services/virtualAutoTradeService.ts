@@ -4888,12 +4888,12 @@ async function runDailyReviewForUser(payload: {
   // (2026-06-12~07-10 pykrx 다운그레이드로 일부 종목 종가가 수일간 고정됐던 사고 재발 방지)
   // 이 히스토리는 P2(ATR 기반 손절)에서도 재사용한다.
   const priceHistoryByCode = await fetchStockDailyHistoryForCodes(payload.supabase, codeList, 60);
-  const staleOrFrozenCodes = new Set<string>();
+  const staleOrFrozenCodes = new Map<string, ReturnType<typeof evaluateCloseFreshness>>();
   for (const code of codeList) {
     const history = priceHistoryByCode.get(code) ?? [];
     const freshness = evaluateCloseFreshness(history);
     if (!freshness.ok) {
-      staleOrFrozenCodes.add(code);
+      staleOrFrozenCodes.set(code, freshness);
     }
   }
 
@@ -5070,8 +5070,11 @@ async function runDailyReviewForUser(payload: {
     }
 
     if (staleOrFrozenCodes.has(holding.code)) {
+      const freshness = staleOrFrozenCodes.get(holding.code);
       summary.skipped += 1;
-      summary.notes.push(`[종가 신선도 가드] ${holding.code} 종가 오래됨/동결 → 매도 판단 스킵`);
+      summary.notes.push(
+        `[종가 신선도 가드] ${holding.code} 종가 오래됨/동결(${freshness?.reason ?? "unknown"}) → 매도 판단 스킵`
+      );
       await writeActionLog({
         supabase: payload.supabase,
         runId: payload.runId,
@@ -5079,6 +5082,10 @@ async function runDailyReviewForUser(payload: {
         code: holding.code,
         actionType: "SKIP",
         reason: "stale-or-frozen-close",
+        detail: {
+          freshnessReason: freshness?.reason ?? null,
+          staleDays: freshness?.staleDays ?? null,
+        },
       });
       continue;
     }
