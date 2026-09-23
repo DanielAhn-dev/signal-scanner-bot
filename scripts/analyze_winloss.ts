@@ -5,9 +5,15 @@ function fmt(n: number): string {
   return Math.round(n).toLocaleString("ko-KR");
 }
 
-function parseArgs(argv: string[]): { chatId?: number; days: number } {
+// 2026-06-23~07-10: stock_daily 종가 고정(freeze) 버그로 가짜 익절 신호가 반복 발생해
+// 승률/손익 통계가 오염된 구간 (커밋 4753406에서 진단·부분수정). 기본적으로 통계에서 제외한다.
+const CONTAMINATED_START = "2026-06-23";
+const CONTAMINATED_END = "2026-07-10";
+
+function parseArgs(argv: string[]): { chatId?: number; days: number; includeContaminated: boolean } {
   let chatId: number | undefined;
   let days = 365;
+  let includeContaminated = false;
   for (let i = 0; i < argv.length; i += 1) {
     const key = argv[i];
     const next = argv[i + 1];
@@ -19,19 +25,27 @@ function parseArgs(argv: string[]): { chatId?: number; days: number } {
       const n = Number(next);
       if (Number.isFinite(n) && n > 0) days = Math.floor(n);
       i += 1;
+    } else if (key === "--includeContaminated") {
+      includeContaminated = true;
     }
   }
-  return { chatId, days };
+  return { chatId, days, includeContaminated };
 }
 
 async function main() {
-  const { chatId, days } = parseArgs(process.argv.slice(2));
+  const { chatId, days, includeContaminated } = parseArgs(process.argv.slice(2));
   const url = process.env.SUPABASE_URL;
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY ?? process.env.SUPABASE_ANON_KEY;
   if (!url || !key) throw new Error("SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY required");
 
   const supabase = createClient(url, key);
   const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
+
+  if (!includeContaminated) {
+    console.log(
+      `[안내] 종가 동결 오염구간(${CONTAMINATED_START} ~ ${CONTAMINATED_END})을 통계에서 제외합니다. 포함하려면 --includeContaminated 플래그를 사용하세요.\n`
+    );
+  }
 
   // 1) Stop-loss / take-profit executions (with holding-period join via position_id)
   let execQuery = supabase
@@ -41,6 +55,9 @@ async function main() {
     .order("executed_at", { ascending: true })
     .limit(10000);
   if (chatId) execQuery = execQuery.eq("chat_id", chatId);
+  if (!includeContaminated) {
+    execQuery = execQuery.or(`executed_at.lt.${CONTAMINATED_START},executed_at.gt.${CONTAMINATED_END}`);
+  }
   const { data: execs, error: execErr } = await execQuery;
   if (execErr) throw new Error(`stop_loss_take_profit_executions query failed: ${execErr.message}`);
 
@@ -103,6 +120,9 @@ async function main() {
     .order("traded_at", { ascending: true })
     .limit(10000);
   if (chatId) tradeQuery = tradeQuery.eq("chat_id", chatId);
+  if (!includeContaminated) {
+    tradeQuery = tradeQuery.or(`traded_at.lt.${CONTAMINATED_START},traded_at.gt.${CONTAMINATED_END}`);
+  }
   const { data: trades, error: tradeErr } = await tradeQuery;
   if (tradeErr) throw new Error(`virtual_trades query failed: ${tradeErr.message}`);
 
