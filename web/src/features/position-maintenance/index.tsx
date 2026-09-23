@@ -22,6 +22,22 @@ type RestoreForm = {
   quantity: string
 }
 
+type ConsistencyIssue = {
+  code: string
+  name: string | null
+  kind: 'mismatch' | 'missing_lots' | 'orphan_lots'
+  position_id: number | null
+  position_qty: number
+  lot_qty: number
+  detail: string
+}
+
+type ConsistencyReport = {
+  checked_count: number
+  issue_count: number
+  issues: ConsistencyIssue[]
+}
+
 async function callMaintenance(body: Record<string, unknown>): Promise<MaintenanceResult> {
   const chatId = getCurrentChatIdFromStore()
   const result = await apiFetch('/api/ui/positions-maintenance', {
@@ -231,6 +247,100 @@ function HoldingRestoreCard() {
   )
 }
 
+// ── FIFO 정합성 점검/복구 ─────────────────────────────────
+function ConsistencyPanel() {
+  const toast = useToast()
+  const [report, setReport] = useState<ConsistencyReport | null>(null)
+  const [loading, setLoading] = useState(false)
+  const [repairing, setRepairing] = useState(false)
+
+  const loadConsistency = useCallback(async () => {
+    setLoading(true)
+    try {
+      const json = await apiFetch('/api/ui/operations?view=consistency', { cacheMs: 0, timeoutMs: 20_000 })
+      setReport((json?.data || null) as ConsistencyReport | null)
+    } catch (e: any) {
+      toast.show('정합성 점검 조회 실패: ' + String(e?.message || e))
+    } finally {
+      setLoading(false)
+    }
+  }, [toast])
+
+  const repairConsistency = useCallback(async (code?: string) => {
+    setRepairing(true)
+    try {
+      const json = await apiFetch('/api/ui/operations', {
+        method: 'POST',
+        cacheMs: 0,
+        timeoutMs: 60_000,
+        body: JSON.stringify({ mode: 'consistency_repair', code: code || null }),
+      })
+      if (json?.error) throw new Error(String(json.error))
+      const repaired = Number(json?.data?.repaired_count || 0)
+      toast.show(repaired > 0 ? `정합성 복구 완료: ${repaired}건` : '복구할 항목이 없습니다.')
+      await loadConsistency()
+    } catch (e: any) {
+      toast.show('정합성 복구 실패: ' + String(e?.message || e))
+    } finally {
+      setRepairing(false)
+    }
+  }, [loadConsistency, toast])
+
+  return (
+    <section className="card" style={{ marginBottom: 'var(--space-4)' }}>
+      <h2 className="title-md" style={{ marginBottom: 'var(--space-2)' }}>FIFO 정합성 점검/복구</h2>
+      <p style={{ fontSize: 13, color: 'var(--color-text-secondary)', marginBottom: 'var(--space-4)' }}>
+        보유수량과 FIFO lot 잔량이 다르면 자동매도 실패가 발생할 수 있습니다. 점검 후 필요한 종목만 복구하거나 전체 복구할 수 있습니다.
+      </p>
+      <div style={{ display: 'flex', gap: 'var(--space-2)', flexWrap: 'wrap' }}>
+        <Button variant="ghost" onClick={() => { void loadConsistency() }} disabled={loading || repairing}>
+          {loading ? '점검 중...' : '정합성 점검'}
+        </Button>
+        <Button variant="secondary" onClick={() => { void repairConsistency() }} disabled={loading || repairing}>
+          {repairing ? '복구 중...' : '전체 복구'}
+        </Button>
+      </div>
+
+      {report && (
+        <div style={{ marginTop: 'var(--space-3)' }}>
+          <p style={{ fontSize: 13, color: 'var(--color-text-secondary)' }}>
+            점검 대상 {report.checked_count}건 · 이슈 {report.issue_count}건
+          </p>
+
+          {report.issue_count === 0 ? (
+            <div style={{ marginTop: 'var(--space-2)', padding: 'var(--space-3)', background: '#F7FCF9', border: '1px solid #CBEAD9', borderRadius: 8 }}>
+              <p style={{ fontSize: 13, color: '#0F766E' }}>현재 보유수량과 FIFO lot 잔량이 일치합니다.</p>
+            </div>
+          ) : (
+            <div style={{ marginTop: 'var(--space-2)', display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' }}>
+              {report.issues.map((issue) => (
+                <div
+                  key={`${issue.kind}-${issue.code}-${issue.position_id ?? 'none'}`}
+                  className="card"
+                  style={{ borderColor: issue.kind === 'orphan_lots' ? '#FFD6D9' : '#FFE1B3' }}
+                >
+                  <div style={{ display: 'flex', justifyContent: 'space-between', gap: 'var(--space-2)', flexWrap: 'wrap' }}>
+                    <div>
+                      <div className="font-medium">{issue.name || issue.code}{issue.name ? ` (${issue.code})` : ''}</div>
+                      <div style={{ fontSize: 12, color: 'var(--color-text-secondary)', marginTop: 4 }}>{issue.detail}</div>
+                      <div style={{ fontSize: 12, color: 'var(--color-text-secondary)', marginTop: 4 }}>보유 {issue.position_qty}주 · lot {issue.lot_qty}주</div>
+                    </div>
+                    <div>
+                      <Button variant="ghost" onClick={() => { void repairConsistency(issue.code) }} disabled={repairing}>
+                        이 종목 복구
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+    </section>
+  )
+}
+
 // ── 전체 매도 ──────────────────────────────────────────────
 function LiquidateAllCard() {
   const toast = useToast()
@@ -303,6 +413,7 @@ export default function PositionMaintenancePage() {
       <WatchResetCard />
       <HoldingEditCard />
       <HoldingRestoreCard />
+      <ConsistencyPanel />
       <LiquidateAllCard />
     </div>
   )

@@ -9,7 +9,7 @@
  */
 import React, { lazy, Suspense, useCallback, useEffect, useMemo, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { ShieldCheck, ShieldAlert, ChevronDown, ChevronUp } from 'lucide-react'
+import { ShieldCheck, ShieldAlert, ChevronDown, ChevronUp, Activity, Database, Wrench } from 'lucide-react'
 import { supabase, isSupabaseConfigured } from '../../lib/supabase'
 import { formatKrw } from '../../lib/format'
 import Button from '../../components/ui/Button'
@@ -20,10 +20,10 @@ const DataPanel = lazy(() => import('../dbView'))
 const MaintenancePanel = lazy(() => import('../position-maintenance'))
 
 const CONTROL_TABS = [
-  { key: 'audit', label: '검산' },
-  { key: 'operations', label: '운영' },
-  { key: 'data', label: '데이터' },
-  { key: 'maintenance', label: '유지보수' },
+  { key: 'audit', label: '검산', icon: ShieldCheck },
+  { key: 'operations', label: '운영', icon: Activity },
+  { key: 'data', label: '데이터', icon: Database },
+  { key: 'maintenance', label: '유지보수', icon: Wrench },
 ] as const
 
 type ControlTabKey = typeof CONTROL_TABS[number]['key']
@@ -320,16 +320,21 @@ export default function ControlPage() {
           <p className="muted">검산·운영·데이터·유지보수를 한 화면에서 점검합니다.</p>
         </div>
 
-        <div style={{ display: 'flex', gap: 'var(--space-2)', flexWrap: 'wrap', marginBottom: 'var(--space-4)' }}>
-          {CONTROL_TABS.map((tab) => (
-            <Button
-              key={tab.key}
-              variant={activeTab === tab.key ? 'primary' : 'ghost'}
-              onClick={() => selectTab(tab.key)}
-            >
-              {tab.label}
-            </Button>
-          ))}
+        <div className="control-tab-bar" style={{ display: 'flex', gap: 'var(--space-2)', flexWrap: 'wrap', marginBottom: 'var(--space-4)' }}>
+          {CONTROL_TABS.map((tab) => {
+            const Icon = tab.icon
+            return (
+              <Button
+                key={tab.key}
+                variant={activeTab === tab.key ? 'primary' : 'ghost'}
+                onClick={() => selectTab(tab.key)}
+                style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}
+              >
+                <Icon size={14} />
+                {tab.label}
+              </Button>
+            )
+          })}
         </div>
 
         {activeTab === 'audit' && <IntegrityAuditPanel />}

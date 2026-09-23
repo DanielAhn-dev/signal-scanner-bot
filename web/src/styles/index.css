@@ -5088,6 +5088,115 @@ a:focus-visible {
 }
 
 /* ================================================================
+   CONTROL PAGE (관제)
+   ================================================================ */
+@media (max-width: 640px) {
+  .control-tab-bar {
+    position: sticky;
+    top: 0;
+    z-index: 30;
+    background: var(--color-bg-default, #fff);
+    padding: 8px 0;
+    flex-wrap: nowrap !important;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+  }
+
+  .control-tab-bar::-webkit-scrollbar {
+    display: none;
+  }
+
+  .control-tab-bar .ui-button {
+    flex-shrink: 0;
+  }
+}
+
+/* ================================================================
+   OPERATIONS PAGE (관제 > 운영)
+   ================================================================ */
+
+/* 필터 pill 버튼 — 터치 타겟 확대 */
+.ops-filter-pill {
+  border-radius: 999px;
+  padding: 6px 12px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  min-height: 32px;
+  cursor: pointer;
+}
+
+@media (max-width: 640px) {
+  .container-app.operations-page {
+    padding-left: var(--space-3);
+    padding-right: var(--space-3);
+  }
+
+  .ops-kpi-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  }
+
+  /* 비교/스캔 테이블: 좁은 화면에서는 표 대신 세로 카드 목록으로 */
+  .ops-compare-table {
+    overflow-x: visible !important;
+  }
+
+  .ops-compare-table table,
+  .ops-compare-table thead,
+  .ops-compare-table tbody,
+  .ops-compare-table th,
+  .ops-compare-table td,
+  .ops-compare-table tr {
+    display: block;
+    width: 100%;
+  }
+
+  .ops-compare-table thead {
+    position: absolute;
+    left: -9999px;
+  }
+
+  .ops-compare-table tr {
+    border: 1px solid var(--color-border-default, #E4E7EC);
+    border-radius: 8px;
+    padding: 8px;
+    margin-bottom: 8px;
+  }
+
+  .ops-compare-table td {
+    display: flex !important;
+    justify-content: space-between;
+    align-items: center;
+    gap: 8px;
+    text-align: right !important;
+    border-bottom: none !important;
+    white-space: normal !important;
+    min-width: 0 !important;
+    padding: 4px 2px !important;
+  }
+
+  .ops-compare-table td[data-th]::before {
+    content: attr(data-th);
+    font-size: 0.72rem;
+    color: var(--color-text-tertiary, #98A2B3);
+    font-weight: 600;
+    text-align: left;
+    flex-shrink: 0;
+  }
+
+  .ops-filter-pills {
+    overflow-x: auto;
+    flex-wrap: nowrap !important;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+  }
+
+  .ops-filter-pills::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+/* ================================================================
    AUTH STATUS — Microsoft 365 스타일
    ================================================================ */
 .auth-status-main {
