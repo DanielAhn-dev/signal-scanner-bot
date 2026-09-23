@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   resolveCashSweepIdleAmount,
+  resolveCashSweepTopUpQty,
   shouldLiquidateCashSweep,
   CASH_SWEEP_LIQUIDATE_THRESHOLD,
 } from "../src/services/virtualAutoTradeCashSweep";
@@ -50,5 +51,41 @@ test("shouldLiquidateCashSweep: 실거래 현금이 임계값 이상이면 유�
       sweepPositionValue: 1_000_000,
     }),
     false
+  );
+});
+
+test("resolveCashSweepTopUpQty: 부족분만큼만 매도 수량을 계산한다(전량 아님)", () => {
+  // 필요 440만원, 보유현금 200만원 → 부족 240만원, 단가 107만원 → 3주(321만원)면 충분
+  const qty = resolveCashSweepTopUpQty({
+    cashNeeded: 4_400_000,
+    availableCash: 2_000_000,
+    sweepQty: 14,
+    sweepPrice: 1_070_000,
+  });
+  assert.equal(qty, 3);
+  assert.ok(qty < 14, "스윕 잔량 전체를 매도하면 안 된다");
+});
+
+test("resolveCashSweepTopUpQty: 이미 충분한 현금이 있으면 매도하지 않는다", () => {
+  assert.equal(
+    resolveCashSweepTopUpQty({
+      cashNeeded: 1_000_000,
+      availableCash: 2_000_000,
+      sweepQty: 14,
+      sweepPrice: 1_070_000,
+    }),
+    0
+  );
+});
+
+test("resolveCashSweepTopUpQty: 스윕 보유수량을 넘겨서 매도하지 않는다", () => {
+  assert.equal(
+    resolveCashSweepTopUpQty({
+      cashNeeded: 100_000_000,
+      availableCash: 0,
+      sweepQty: 14,
+      sweepPrice: 1_070_000,
+    }),
+    14
   );
 });

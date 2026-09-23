@@ -110,6 +110,7 @@ import {
   CASH_SWEEP_CANDIDATE_CODES,
   CASH_SWEEP_STRATEGY_ID,
   resolveCashSweepIdleAmount,
+  resolveCashSweepTopUpQty,
   shouldLiquidateCashSweep,
 } from "./virtualAutoTradeCashSweep";
 import {
@@ -2105,6 +2106,143 @@ async function runCashSweepLiquidateStep(payload: {
 }
 
 /**
+ * 다른 필터를 모두 통과한 실제 매수 후보가 현금 부족으로만 막혔을 때 호출한다.
+ * 전량 현금화(runCashSweepLiquidateStep)와 달리 부족분만큼만 스윕 포지션을 매도해,
+ * 나머지 잔량은 계속 이자를 태우게 하고 매매(수수료 발생) 빈도는 실제 매수 성사 빈도에만 비례하게 한다.
+ * 즉 후보가 없으면(=지금처럼 드문드문 매수가 나오는 상황) 이 경로는 거의 호출되지 않는다.
+ */
+async function topUpCashSweepForBuy(payload: {
+  supabase: SupabaseClientAny;
+  chatId: number;
+  dryRun: boolean;
+  cashNeeded: number;
+  availableCash: number;
+}): Promise<{ notes: string[]; releasedCash: number }> {
+  const notes: string[] = [];
+  try {
+    const { data: priceRows } = await payload.supabase
+      .from("stocks")
+      .select("code, name, close")
+      .in("code", CASH_SWEEP_CANDIDATE_CODES);
+    const priceByCode = new Map(
+      ((priceRows ?? []) as Record<string, unknown>[]).map((row) => [
+        String(row.code ?? ""),
+        { close: toNumber(row.close, 0), name: String(row.name ?? "") },
+      ])
+    );
+    const sweepCode = CASH_SWEEP_CANDIDATE_CODES.find(
+      (code) => (priceByCode.get(code)?.close ?? 0) > 0
+    );
+    if (!sweepCode) return { notes, releasedCash: 0 };
+    const sweepPrice = priceByCode.get(sweepCode)!.close;
+    const sweepName = priceByCode.get(sweepCode)!.name || sweepCode;
+
+    const { data: sweepPositionRow } = await payload.supabase
+      .from(PORTFOLIO_TABLES.positions)
+      .select("id, code, quantity, invested_amount, memo")
+      .eq("chat_id", payload.chatId)
+      .eq("code", sweepCode)
+      .eq("status", "holding")
+      .is("broker_name", null)
+      .is("account_name", null)
+      .maybeSingle();
+
+    const existingSweep =
+      sweepPositionRow &&
+      parseStrategyMemo((sweepPositionRow as Record<string, unknown>).memo as string | null)
+        .strategyId === CASH_SWEEP_STRATEGY_ID
+        ? (sweepPositionRow as { id: number; quantity: number; invested_amount: number })
+        : null;
+    if (!existingSweep) return { notes, releasedCash: 0 };
+
+    const sweepQty = Math.max(0, Math.floor(toNumber(existingSweep.quantity, 0)));
+    const sweepInvested = Math.max(0, toNumber(existingSweep.invested_amount, 0));
+    if (sweepQty <= 0) return { notes, releasedCash: 0 };
+
+    const sellQty = resolveCashSweepTopUpQty({
+      cashNeeded: payload.cashNeeded,
+      availableCash: payload.availableCash,
+      sweepQty,
+      sweepPrice,
+    });
+    if (sellQty <= 0) return { notes, releasedCash: 0 };
+
+    const prefs = await getUserInvestmentPrefs(payload.chatId);
+    const feeRate = toNumber(prefs.virtual_fee_rate, 0.00015);
+    const taxRate = toNumber(prefs.virtual_tax_rate, 0.0018);
+    const gross = Math.round(sweepPrice * sellQty);
+    const feeAmount = Math.round(gross * feeRate);
+    const taxAmount = Math.round(gross * taxRate);
+    const net = Math.max(0, gross - feeAmount - taxAmount);
+
+    if (payload.dryRun) {
+      notes.push(
+        `[유휴현금 스윕][테스트] ${sweepName} ${sellQty}주 부분 현금화 예정 (신규매수 자금 보충, 평가액 ${fmtKrw(gross)})`
+      );
+      return { notes, releasedCash: net };
+    }
+
+    const avgBuyPrice = sweepQty > 0 ? sweepInvested / sweepQty : sweepPrice;
+    const soldInvested = Math.round(avgBuyPrice * sellQty);
+    const pnl = net - soldInvested;
+    const remainingQty = sweepQty - sellQty;
+
+    if (remainingQty <= 0) {
+      await payload.supabase
+        .from(PORTFOLIO_TABLES.positions)
+        .delete()
+        .eq("chat_id", payload.chatId)
+        .eq("id", existingSweep.id);
+    } else {
+      const remainingInvested = Math.max(0, sweepInvested - soldInvested);
+      await payload.supabase
+        .from(PORTFOLIO_TABLES.positions)
+        .update({
+          quantity: remainingQty,
+          invested_amount: remainingInvested,
+        })
+        .eq("chat_id", payload.chatId)
+        .eq("id", existingSweep.id);
+    }
+
+    await appendTradeLog({
+      supabase: payload.supabase,
+      chatId: payload.chatId,
+      code: sweepCode,
+      side: "SELL",
+      price: sweepPrice,
+      quantity: sellQty,
+      grossAmount: gross,
+      netAmount: net,
+      feeAmount,
+      taxAmount,
+      pnlAmount: pnl,
+      memo: buildStrategyMemo({
+        strategyId: CASH_SWEEP_STRATEGY_ID,
+        event: "sweep-topup",
+        note: "cash-sweep-partial-topup-for-buy",
+      }),
+      source: "AUTO",
+      brokerName: null,
+      accountName: null,
+    });
+
+    await setUserInvestmentPrefs(payload.chatId, {
+      virtual_cash: Math.max(0, Math.round(payload.availableCash + net)),
+      virtual_realized_pnl: toNumber(prefs.virtual_realized_pnl, 0) + pnl,
+    });
+
+    notes.push(
+      `[유휴현금 스윕] ${sweepName} ${sellQty}주 부분 현금화 · 신규매수 자금 보충 (${fmtKrw(net)}, 손익 ${pnl >= 0 ? "+" : ""}${fmtKrw(pnl)})`
+    );
+    return { notes, releasedCash: net };
+  } catch (e) {
+    console.error("[autoTrade] cash sweep top-up step failed", e);
+    return { notes: [], releasedCash: 0 };
+  }
+}
+
+/**
  * 유휴현금 스윕 실행 단계. 매수/매도 판단이 모두 끝난 뒤 마지막에 한 번 호출한다.
  * - 실거래용 현금이 부족하면(CASH_SWEEP_LIQUIDATE_THRESHOLD 미만) 스윕 포지션을 전량 현금화해
  *   다음 회차 매수 자금으로 돌려준다. (매수 판단 전에도 runCashSweepLiquidateStep으로 선(先)현금화하지만,
@@ -3814,7 +3952,7 @@ async function runMondayBuyForUser(payload: {
         continue;
       }
 
-      const sizing = calculateAutoTradeBuySizing({
+      let sizing = calculateAutoTradeBuySizing({
         availableCash: deployableCash,
         price: executionPrice,
         slotsLeft,
@@ -3830,6 +3968,39 @@ async function runMondayBuyForUser(payload: {
         }),
         prefs,
       });
+
+      // 다른 필터를 다 통과한 후보가 유휴현금 스윕(CD금리 ETF)이 현금을 다 묶어놓은 탓에만
+      // 매수 불가면, 스윕 포지션에서 부족분만 부분 매도해 자금을 보충한다.
+      if (sizing.quantity <= 0 && deployableCash < sizing.minOrderAmount) {
+        const topUp = await topUpCashSweepForBuy({
+          supabase: payload.supabase,
+          chatId,
+          dryRun: payload.dryRun,
+          cashNeeded: sizing.minOrderAmount,
+          availableCash: deployableCash,
+        }).catch(() => ({ notes: [], releasedCash: 0 }));
+        if (topUp.releasedCash > 0) {
+          availableCash += topUp.releasedCash;
+          deployableCash += topUp.releasedCash;
+          summary.notes.push(...topUp.notes);
+          sizing = calculateAutoTradeBuySizing({
+            availableCash: deployableCash,
+            price: executionPrice,
+            slotsLeft,
+            currentHoldingCount: plannedHoldingCount,
+            maxPositions,
+            stopLossPct: Math.abs(toNumber(payload.setting.stop_loss_pct, 4)),
+            riskBudgetScale: dailyRiskBudget.scale * mondayBuySizeScale,
+            conviction: resolveConvictionScale({
+              score: candidate.score,
+              trustGrade: signalGate.grade,
+              isSectorLeader: candidate.isSectorLeader,
+              adaptiveDelta: adaptive.delta,
+            }),
+            prefs,
+          });
+        }
+      }
 
       if (!sizingNoteAdded) {
         const riskCapText = sizing.maxBudgetByRisk
@@ -6361,7 +6532,7 @@ async function runDailyReviewForUser(payload: {
           continue;
         }
 
-        const sizing = calculateAutoTradeBuySizing({
+        let sizing = calculateAutoTradeBuySizing({
           availableCash: deployableCash,
           price: executionPrice,
           slotsLeft,
@@ -6377,6 +6548,39 @@ async function runDailyReviewForUser(payload: {
           }),
           prefs,
         });
+
+        // 다른 필터를 다 통과한 후보가 유휴현금 스윕(CD금리 ETF)이 현금을 다 묶어놓은 탓에만
+        // 매수 불가면, 스윕 포지션에서 부족분만 부분 매도해 자금을 보충한다.
+        if (sizing.quantity <= 0 && deployableCash < sizing.minOrderAmount) {
+          const topUp = await topUpCashSweepForBuy({
+            supabase: payload.supabase,
+            chatId,
+            dryRun: payload.dryRun,
+            cashNeeded: sizing.minOrderAmount,
+            availableCash: deployableCash,
+          }).catch(() => ({ notes: [], releasedCash: 0 }));
+          if (topUp.releasedCash > 0) {
+            availableCash += topUp.releasedCash;
+            deployableCash += topUp.releasedCash;
+            summary.notes.push(...topUp.notes);
+            sizing = calculateAutoTradeBuySizing({
+              availableCash: deployableCash,
+              price: executionPrice,
+              slotsLeft,
+              currentHoldingCount: plannedHoldingCount,
+              maxPositions,
+              stopLossPct: adjustedEntryProfile.stopLossPct,
+              riskBudgetScale: dailyRiskBudget.scale * adaptiveExitGuard.buySizeScale,
+              conviction: resolveConvictionScale({
+                score: candidate.score,
+                trustGrade: signalGate.grade,
+                isSectorLeader: candidate.isSectorLeader,
+                adaptiveDelta: rebalanceAdaptive.delta,
+              }),
+              prefs,
+            });
+          }
+        }
 
         if (!sizingNoteAdded) {
           const riskCapText = sizing.maxBudgetByRisk

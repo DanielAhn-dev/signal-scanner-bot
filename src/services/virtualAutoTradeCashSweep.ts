@@ -51,3 +51,21 @@ export function shouldLiquidateCashSweep(input: {
   if (input.sweepPositionValue <= 0) return false;
   return input.availableCash < CASH_SWEEP_LIQUIDATE_THRESHOLD;
 }
+
+/**
+ * 다른 필터를 모두 통과한 실제 매수 후보가 현금 부족으로만 막혔을 때, 스윕 포지션 전량이 아니라
+ * 부족분만큼만 매도하기 위한 수량을 계산한다. 전량 청산(runCashSweepLiquidateStep)과 달리
+ * 이 경로는 실제 매수가 성사될 후보가 있을 때만 호출되므로, 매매 빈도는 실제 매수 빈도에 비례하고
+ * 나머지 스윕 잔량은 계속 이자를 태운다.
+ */
+export function resolveCashSweepTopUpQty(input: {
+  cashNeeded: number;
+  availableCash: number;
+  sweepQty: number;
+  sweepPrice: number;
+}): number {
+  if (input.sweepQty <= 0 || input.sweepPrice <= 0) return 0;
+  const shortfall = Math.max(0, input.cashNeeded - input.availableCash);
+  if (shortfall <= 0) return 0;
+  return Math.min(input.sweepQty, Math.ceil(shortfall / input.sweepPrice));
+}
