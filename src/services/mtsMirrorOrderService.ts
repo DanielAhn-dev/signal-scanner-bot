@@ -37,6 +37,8 @@ export type MirrorOrderEntry = {
   virtualRemainQuantity?: number | null;
   /** 매도 전용: 손익률 (%) */
   pnlPct?: number | null;
+  /** 매수 전용: 가격 구조 기반 목표 레벨(참고용, resolveStructuralTargets) */
+  structuralTargets?: Array<{ label: string; price: number; pct: number }> | null;
 };
 
 export type MirrorScale = {
@@ -258,6 +260,13 @@ export function buildMirrorOrderSheet(input: {
     }
     if (entry.takeProfitPrice) {
       lines.push(`- 익절 감시매도 ${fmtKrw(entry.takeProfitPrice)} (${fmtSignedPct(entry.takeProfitPct ?? 0)})`);
+    }
+    if (entry.structuralTargets?.length) {
+      lines.push(
+        `- 구조 저항(참고·자동매도 기준 아님): ${entry.structuralTargets
+          .map((level) => `${level.label} ${fmtKrw(roundToKrxTick(level.price, "floor"))}(${fmtSignedPct(level.pct)})`)
+          .join(" · ")}`
+      );
     }
   });
 

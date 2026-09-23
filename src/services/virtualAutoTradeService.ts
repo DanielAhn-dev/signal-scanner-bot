@@ -107,6 +107,7 @@ import {
   type MirrorOrderEntry,
   type MirrorSellKind,
 } from "./mtsMirrorOrderService";
+import { resolveStructuralTargets } from "./structuralTargets";
 import {
   buildAutoTradeSkipReasonStats,
   type AutoTradeSkipReasonStat,
@@ -1934,6 +1935,61 @@ async function fetchStockDailyHistoryForCodes(
     result.set(code, list);
   }
   return result;
+}
+
+/**
+ * 매수 주문서 항목에 가격 구조 기반 목표(박스 상단·박스 목표·직전 고점대)를 붙인다. 표시 전용(참고)이며
+ * 자동 익절 규칙은 바꾸지 않는다. 실패해도 주문서 발송을 막지 않는다.
+ */
+async function attachStructuralTargets(
+  supabase: SupabaseClientAny,
+  entries: MirrorOrderEntry[]
+): Promise<MirrorOrderEntry[]> {
+  const buyCodes = [...new Set(entries.filter((e) => e.side === "BUY").map((e) => e.code))];
+  if (!buyCodes.length) return entries;
+  try {
+    const PRIOR_HIGH_SESSIONS = 120;
+    const factorsByCode = new Map<string, Record<string, unknown>>();
+    const priorHighByCode = new Map<string, number>();
+    await Promise.all(
+      buyCodes.map(async (code) => {
+        const [{ data: scoreRow }, { data: bars }] = await Promise.all([
+          supabase
+            .from("scores")
+            .select("factors")
+            .eq("code", code)
+            .order("asof", { ascending: false })
+            .limit(1)
+            .maybeSingle(),
+          supabase
+            .from("stock_daily")
+            .select("high")
+            .eq("ticker", code)
+            .order("date", { ascending: false })
+            .limit(PRIOR_HIGH_SESSIONS),
+        ]);
+        factorsByCode.set(code, ((scoreRow as Record<string, unknown> | null)?.factors ?? {}) as Record<string, unknown>);
+        const highs = ((bars ?? []) as Array<{ high: unknown }>).map((b) => toNumber(b.high, 0)).filter((v) => v > 0);
+        if (highs.length) priorHighByCode.set(code, Math.max(...highs));
+      })
+    );
+    return entries.map((entry) => {
+      if (entry.side !== "BUY") return entry;
+      const factors = factorsByCode.get(entry.code) ?? {};
+      const targets = resolveStructuralTargets({
+        entryPrice: entry.limitPrice,
+        boxHigh: toNumber(factors.stable_box_high, 0) || null,
+        boxLow: toNumber(factors.stable_box_low, 0) || null,
+        priorHigh: priorHighByCode.get(entry.code) ?? null,
+      });
+      return targets.length
+        ? { ...entry, structuralTargets: targets.map(({ label, price, pct }) => ({ label, price, pct })) }
+        : entry;
+    });
+  } catch (e) {
+    console.error("[autoTrade] structural targets failed", e);
+    return entries;
+  }
 }
 
 type StaleGuardEscalation = {
@@ -7938,8 +7994,9 @@ export async function runVirtualAutoTradingCycle(input?: {
           });
 
           // MTS 따라하기 주문서 (Phase 3): 체결 내역을 실계좌 주문 형태로 환산해 발송
+          const mirrorEntries = await attachStructuralTargets(supabase, actionSummary.mirrorOrders ?? []);
           const mirrorSheet = buildMirrorOrderSheet({
-            entries: actionSummary.mirrorOrders ?? [],
+            entries: mirrorEntries,
             scale: resolveMirrorScale({
               realCapitalKrw: prefs.capital_krw,
               virtualSeedCapital: prefs.virtual_seed_capital ?? prefs.capital_krw,
