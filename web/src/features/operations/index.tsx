@@ -966,15 +966,15 @@ export default function OperationsPage() {
                   스캔 TOP 원본 (점수순)
                 </div>
                 {autocycleInsights.scan_top_rows.length > 0 ? (
-                  <div style={{ overflowX: 'auto', marginBottom: 'var(--space-3)' }}>
-                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.82rem' }}>
+                  <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch', marginBottom: 'var(--space-3)' }}>
+                    <table style={{ minWidth: '100%', borderCollapse: 'collapse', fontSize: '0.82rem' }}>
                       <thead>
                         <tr>
-                          <th style={{ textAlign: 'left', padding: '8px', borderBottom: '1px solid var(--color-border-default)' }}>종목</th>
-                          <th style={{ textAlign: 'right', padding: '8px', borderBottom: '1px solid var(--color-border-default)' }}>점수</th>
-                          <th style={{ textAlign: 'left', padding: '8px', borderBottom: '1px solid var(--color-border-default)' }}>신호</th>
-                          <th style={{ textAlign: 'left', padding: '8px', borderBottom: '1px solid var(--color-border-default)' }}>집행후보 포함</th>
-                          <th style={{ textAlign: 'left', padding: '8px', borderBottom: '1px solid var(--color-border-default)' }}>미포함/차단 추정</th>
+                          <th style={{ textAlign: 'left', padding: '8px', borderBottom: '1px solid var(--color-border-default)', whiteSpace: 'nowrap' }}>종목</th>
+                          <th style={{ textAlign: 'right', padding: '8px', borderBottom: '1px solid var(--color-border-default)', whiteSpace: 'nowrap' }}>점수</th>
+                          <th style={{ textAlign: 'left', padding: '8px', borderBottom: '1px solid var(--color-border-default)', whiteSpace: 'nowrap' }}>신호</th>
+                          <th style={{ textAlign: 'left', padding: '8px', borderBottom: '1px solid var(--color-border-default)', whiteSpace: 'nowrap' }}>집행후보 포함</th>
+                          <th style={{ textAlign: 'left', padding: '8px', borderBottom: '1px solid var(--color-border-default)', whiteSpace: 'nowrap', minWidth: 200 }}>미포함/차단 추정</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -986,15 +986,15 @@ export default function OperationsPage() {
                             : (row.exclusion_reason || estimateMissingReason({ signal: row.signal, latest: autocycleInsights.latest }))
                           return (
                             <tr key={`scan-top-${idx}`}>
-                              <td style={{ padding: '8px', borderBottom: '1px solid #F0F2F5' }}>{row.name || row.code}{row.name ? ` (${row.code})` : ''}</td>
-                              <td style={{ padding: '8px', borderBottom: '1px solid #F0F2F5', textAlign: 'right' }}>{row.score.toFixed(1)}</td>
-                              <td style={{ padding: '8px', borderBottom: '1px solid #F0F2F5' }}>{row.signal || '-'}</td>
-                              <td style={{ padding: '8px', borderBottom: '1px solid #F0F2F5' }}>
+                              <td style={{ padding: '8px', borderBottom: '1px solid #F0F2F5', whiteSpace: 'nowrap' }}>{row.name || row.code}{row.name ? ` (${row.code})` : ''}</td>
+                              <td style={{ padding: '8px', borderBottom: '1px solid #F0F2F5', textAlign: 'right', whiteSpace: 'nowrap' }}>{row.score.toFixed(1)}</td>
+                              <td style={{ padding: '8px', borderBottom: '1px solid #F0F2F5', whiteSpace: 'nowrap' }}>{row.signal || '-'}</td>
+                              <td style={{ padding: '8px', borderBottom: '1px solid #F0F2F5', whiteSpace: 'nowrap' }}>
                                 <span className="caption" style={{ borderRadius: 999, padding: '2px 8px', background: included ? '#E8F7F3' : '#F5F7FA', color: included ? '#0F766E' : '#667085', fontWeight: 700 }}>
                                   {included ? '포함' : '미포함'}
                                 </span>
                               </td>
-                              <td style={{ padding: '8px', borderBottom: '1px solid #F0F2F5', color: 'var(--color-text-secondary)' }}>{estimatedReason}</td>
+                              <td style={{ padding: '8px', borderBottom: '1px solid #F0F2F5', color: 'var(--color-text-secondary)', minWidth: 200 }}>{estimatedReason}</td>
                             </tr>
                           )
                         })}
@@ -1070,15 +1070,15 @@ export default function OperationsPage() {
                       }
 
                       return (
-                  <div style={{ overflowX: 'auto' }}>
-                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.82rem' }}>
+                  <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
+                    <table style={{ minWidth: '100%', borderCollapse: 'collapse', fontSize: '0.82rem' }}>
                       <thead>
                         <tr>
-                          <th style={{ textAlign: 'left', padding: '8px', borderBottom: '1px solid var(--color-border-default)' }}>종목</th>
-                          <th style={{ textAlign: 'left', padding: '8px', borderBottom: '1px solid var(--color-border-default)' }}>결과</th>
-                          <th style={{ textAlign: 'left', padding: '8px', borderBottom: '1px solid var(--color-border-default)' }}>사유</th>
-                          <th style={{ textAlign: 'right', padding: '8px', borderBottom: '1px solid var(--color-border-default)' }}>점수</th>
-                          <th style={{ textAlign: 'right', padding: '8px', borderBottom: '1px solid var(--color-border-default)' }}>신뢰도</th>
+                          <th style={{ textAlign: 'left', padding: '8px', borderBottom: '1px solid var(--color-border-default)', whiteSpace: 'nowrap' }}>종목</th>
+                          <th style={{ textAlign: 'left', padding: '8px', borderBottom: '1px solid var(--color-border-default)', whiteSpace: 'nowrap' }}>결과</th>
+                          <th style={{ textAlign: 'left', padding: '8px', borderBottom: '1px solid var(--color-border-default)', whiteSpace: 'nowrap', minWidth: 200 }}>사유</th>
+                          <th style={{ textAlign: 'right', padding: '8px', borderBottom: '1px solid var(--color-border-default)', whiteSpace: 'nowrap' }}>점수</th>
+                          <th style={{ textAlign: 'right', padding: '8px', borderBottom: '1px solid var(--color-border-default)', whiteSpace: 'nowrap' }}>신뢰도</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -1091,13 +1091,13 @@ export default function OperationsPage() {
                             : '-'
                           return (
                             <tr key={`compare-row-${idx}`}>
-                              <td style={{ padding: '8px', borderBottom: '1px solid #F0F2F5' }}>{row.code}</td>
-                              <td style={{ padding: '8px', borderBottom: '1px solid #F0F2F5' }}>
+                              <td style={{ padding: '8px', borderBottom: '1px solid #F0F2F5', whiteSpace: 'nowrap' }}>{row.code}</td>
+                              <td style={{ padding: '8px', borderBottom: '1px solid #F0F2F5', whiteSpace: 'nowrap' }}>
                                 <span className="caption" style={{ borderRadius: 999, padding: '2px 8px', background: tone.bg, color: tone.color, fontWeight: 700 }}>{row.decision}</span>
                               </td>
-                              <td style={{ padding: '8px', borderBottom: '1px solid #F0F2F5', color: 'var(--color-text-secondary)' }}>{row.reason}</td>
-                              <td style={{ padding: '8px', borderBottom: '1px solid #F0F2F5', textAlign: 'right' }}>{row.score != null ? row.score.toFixed(1) : '-'}</td>
-                              <td style={{ padding: '8px', borderBottom: '1px solid #F0F2F5', textAlign: 'right' }}>{trustText}</td>
+                              <td style={{ padding: '8px', borderBottom: '1px solid #F0F2F5', color: 'var(--color-text-secondary)', minWidth: 200 }}>{row.reason}</td>
+                              <td style={{ padding: '8px', borderBottom: '1px solid #F0F2F5', textAlign: 'right', whiteSpace: 'nowrap' }}>{row.score != null ? row.score.toFixed(1) : '-'}</td>
+                              <td style={{ padding: '8px', borderBottom: '1px solid #F0F2F5', textAlign: 'right', whiteSpace: 'nowrap' }}>{trustText}</td>
                             </tr>
                           )
                         })}
@@ -1216,15 +1216,15 @@ export default function OperationsPage() {
                             }
 
                             return (
-                              <div style={{ overflowX: 'auto' }}>
-                                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.8rem' }}>
+                              <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
+                                <table style={{ minWidth: '100%', borderCollapse: 'collapse', fontSize: '0.8rem' }}>
                                   <thead>
                                     <tr>
-                                      <th style={{ textAlign: 'left', padding: '6px', borderBottom: '1px solid #E4E7EC' }}>종목</th>
-                                      <th style={{ textAlign: 'left', padding: '6px', borderBottom: '1px solid #E4E7EC' }}>결과</th>
-                                      <th style={{ textAlign: 'left', padding: '6px', borderBottom: '1px solid #E4E7EC' }}>사유</th>
-                                      <th style={{ textAlign: 'right', padding: '6px', borderBottom: '1px solid #E4E7EC' }}>점수</th>
-                                      <th style={{ textAlign: 'right', padding: '6px', borderBottom: '1px solid #E4E7EC' }}>신뢰도</th>
+                                      <th style={{ textAlign: 'left', padding: '6px', borderBottom: '1px solid #E4E7EC', whiteSpace: 'nowrap' }}>종목</th>
+                                      <th style={{ textAlign: 'left', padding: '6px', borderBottom: '1px solid #E4E7EC', whiteSpace: 'nowrap' }}>결과</th>
+                                      <th style={{ textAlign: 'left', padding: '6px', borderBottom: '1px solid #E4E7EC', whiteSpace: 'nowrap', minWidth: 180 }}>사유</th>
+                                      <th style={{ textAlign: 'right', padding: '6px', borderBottom: '1px solid #E4E7EC', whiteSpace: 'nowrap' }}>점수</th>
+                                      <th style={{ textAlign: 'right', padding: '6px', borderBottom: '1px solid #E4E7EC', whiteSpace: 'nowrap' }}>신뢰도</th>
                                     </tr>
                                   </thead>
                                   <tbody>
@@ -1237,13 +1237,13 @@ export default function OperationsPage() {
                                         : '-'
                                       return (
                                         <tr key={`run-compare-${run.id}-${idx}`}>
-                                          <td style={{ padding: '6px', borderBottom: '1px solid #F0F2F5' }}>{row.code}</td>
-                                          <td style={{ padding: '6px', borderBottom: '1px solid #F0F2F5' }}>
+                                          <td style={{ padding: '6px', borderBottom: '1px solid #F0F2F5', whiteSpace: 'nowrap' }}>{row.code}</td>
+                                          <td style={{ padding: '6px', borderBottom: '1px solid #F0F2F5', whiteSpace: 'nowrap' }}>
                                             <span className="caption" style={{ borderRadius: 999, padding: '2px 8px', background: tone.bg, color: tone.color, fontWeight: 700 }}>{row.decision}</span>
                                           </td>
-                                          <td style={{ padding: '6px', borderBottom: '1px solid #F0F2F5', color: 'var(--color-text-secondary)' }}>{row.reason}</td>
-                                          <td style={{ padding: '6px', borderBottom: '1px solid #F0F2F5', textAlign: 'right' }}>{row.score != null ? row.score.toFixed(1) : '-'}</td>
-                                          <td style={{ padding: '6px', borderBottom: '1px solid #F0F2F5', textAlign: 'right' }}>{trustText}</td>
+                                          <td style={{ padding: '6px', borderBottom: '1px solid #F0F2F5', color: 'var(--color-text-secondary)', minWidth: 180 }}>{row.reason}</td>
+                                          <td style={{ padding: '6px', borderBottom: '1px solid #F0F2F5', textAlign: 'right', whiteSpace: 'nowrap' }}>{row.score != null ? row.score.toFixed(1) : '-'}</td>
+                                          <td style={{ padding: '6px', borderBottom: '1px solid #F0F2F5', textAlign: 'right', whiteSpace: 'nowrap' }}>{trustText}</td>
                                         </tr>
                                       )
                                     })}

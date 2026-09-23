@@ -314,7 +314,7 @@ export default function ControlPage() {
 
   return (
     <div>
-      <section className="container-app" style={{ paddingBottom: 0 }}>
+      <section className="container-app" style={{ paddingBottom: 0, minHeight: 'auto' }}>
         <div style={{ marginBottom: 'var(--space-4)' }}>
           <h1 className="title-xl">관제</h1>
           <p className="muted">검산·운영·데이터·유지보수를 한 화면에서 점검합니다.</p>
