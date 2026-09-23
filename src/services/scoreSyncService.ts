@@ -103,12 +103,16 @@ function countConsecutivePositive(values: number[]): number {
 async function fetchDailySeriesFromDb(
   supabase: SupabaseClient,
   code: string,
-  lookback: number
+  lookback: number,
+  /** 지정 시 이 날짜(포함)까지의 일봉만 사용한다 (과거 시점 재계산용, 미래 데이터 누수 방지) */
+  untilDate?: string
 ): Promise<StockOHLCV[]> {
-  const { data, error } = await supabase
+  let query = supabase
     .from("stock_daily")
     .select("date,open,high,low,close,volume,value")
-    .eq("ticker", code)
+    .eq("ticker", code);
+  if (untilDate) query = query.lte("date", untilDate);
+  const { data, error } = await query
     .order("date", { ascending: false })
     .limit(Math.max(lookback, 200));
 
@@ -139,7 +143,8 @@ async function fetchDailySeriesFromDb(
 
 async function fetchInvestorFlowByCodes(
   supabase: SupabaseClient,
-  codes: string[]
+  codes: string[],
+  untilDate?: string
 ): Promise<Map<string, {
   foreign5d: number;
   institution5d: number;
@@ -155,7 +160,8 @@ async function fetchInvestorFlowByCodes(
 
   if (!codes.length) return map;
 
-  const since30 = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)
+  const anchorMs = untilDate ? Date.parse(`${untilDate}T00:00:00Z`) : Date.now();
+  const since30 = new Date(anchorMs - 30 * 24 * 60 * 60 * 1000)
     .toISOString()
     .slice(0, 10);
 
@@ -169,6 +175,7 @@ async function fetchInvestorFlowByCodes(
           .select("ticker, date, foreign, institution")
           .in("ticker", codeChunk)
           .gte("date", since30)
+          .lte("date", untilDate ?? "9999-12-31")
           .order("date", { ascending: false })
           .range(from, to)
           .returns<InvestorDailyRow[]>(),
@@ -265,9 +272,17 @@ export async function syncScoresFromEngine(
     };
   }
 
-  const marketOverview = await fetchAllMarketData().catch(() => ({} as Awaited<ReturnType<typeof fetchAllMarketData>>));
+  // 과거 날짜 재계산(point-in-time): 일봉·수급은 asof까지만 쓰고, 과거 시점을 알 수 없는 실시간
+  // 시장지표(VIX·공포탐욕·환율)는 쓰지 않는다. 예전엔 asof를 받아도 최신 데이터로 계산해
+  // 과거 점수를 다시 만들면 미래 정보가 섞였다.
+  const todayKst = new Date(Date.now() + 9 * 60 * 60 * 1000).toISOString().slice(0, 10);
+  const pointInTime = asof < todayKst;
+  const marketOverview = pointInTime
+    ? ({} as Awaited<ReturnType<typeof fetchAllMarketData>>)
+    : await fetchAllMarketData().catch(() => ({} as Awaited<ReturnType<typeof fetchAllMarketData>>));
   const marketEnv = resolveMarketEnv(marketOverview);
-  const investorFlowByCode = await fetchInvestorFlowByCodes(supabase, codes);
+  const untilDate = pointInTime ? asof : undefined;
+  const investorFlowByCode = await fetchInvestorFlowByCodes(supabase, codes, untilDate);
 
   const existingScoreResult = await fetchLatestScoresByCodes(supabase, codes);
   const existingValueScoreByCode = new Map<string, number>();
@@ -294,7 +309,7 @@ export async function syncScoresFromEngine(
       const code = codes[index];
 
       try {
-        const series = await fetchDailySeriesFromDb(supabase, code, lookback);
+        const series = await fetchDailySeriesFromDb(supabase, code, lookback, untilDate);
         if (!series || series.length < 200) {
           skippedInsufficientSeries += 1;
           continue;
@@ -335,7 +350,8 @@ export async function syncScoresFromEngine(
           momentum_score: momentumScore,
           liquidity_score: liquidityScore,
           value_score: valueScore,
-          factors: scored.factors,
+          // 점수 생성 경로 표시: Python 폴백(legacy_fallback)과 섞인 이력을 학습·백테스트에서 구분하기 위함
+          factors: { ...scored.factors, score_source: pointInTime ? "engine_pit" : "engine" },
         });
         processedCount += 1;
       } catch {

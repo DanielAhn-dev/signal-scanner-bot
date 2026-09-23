@@ -17,6 +17,7 @@
  *   pnpm dlx tsx scripts/backtest_entry_signals.ts
  *   pnpm dlx tsx scripts/backtest_entry_signals.ts --from=2025-10-01 --split=2026-06-01 --minScore=50
  *   옵션: --to  --maxHold=20  --stop=4  --tp=8  --costPct=0.45  --cooldown=5  --minN=40  --requireFactors=false
+ *         --source=engine|legacy|all (engine = TS 엔진/과거 재계산 점수만)
  */
 import "dotenv/config";
 import { createClient } from "@supabase/supabase-js";
@@ -155,6 +156,9 @@ function extractFeatures(input: {
     instSignal: String(f.institutional_signal ?? "n/a"),
     avwapRegime: String(f.avwap_regime ?? "n/a"),
     netBuy5d: band(num(f.net_buying_pressure_5d), [0], ["<=0", ">0"]),
+    accumulation: f.stable_accumulation === true ? "yes" : f.stable_accumulation === false ? "no" : "n/a",
+    accDays: band(num(f.stable_accumulation_days), [1, 3, 6], ["0", "1-2", "3-5", "6+"]),
+    stableAboveAvg: f.stable_above_avg === true ? "yes" : f.stable_above_avg === false ? "no" : "n/a",
     market: input.market || "n/a",
     mktTrend: input.regime.trend,
     mktRet20: input.regime.ret20,
@@ -178,6 +182,8 @@ async function main() {
   const cooldown = numArg("cooldown", 5);
   const minN = numArg("minN", 40);
   const requireFactors = arg("requireFactors", "true") !== "false";
+  // engine: TS 엔진 점수(실시간 engine + 과거 재계산 engine_pit)만 사용. legacy: Python 폴백만. all: 전부
+  const sourceFilter = arg("source", "all");
 
   // 1) 점수 이력
   type ScoreRow = { code: string; asof: string; score: number; signal: string; factors: Record<string, unknown> };
@@ -248,6 +254,12 @@ async function main() {
   const lastKeptIdx = new Map<string, number>();
   const dropped = { noBars: 0, partialFactors: 0, contaminated: 0, stale: 0, cooldown: 0, incomplete: 0 };
   for (const row of scoreRows) {
+    const scoreSource = String(row.factors.score_source ?? "legacy_fallback");
+    const isEngine = scoreSource === "engine" || scoreSource === "engine_pit";
+    if ((sourceFilter === "engine" && !isEngine) || (sourceFilter === "legacy" && isEngine)) {
+      dropped.partialFactors += 1;
+      continue;
+    }
     if (requireFactors && row.factors.sma200 == null) {
       dropped.partialFactors += 1;
       continue;
