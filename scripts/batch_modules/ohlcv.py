@@ -36,7 +36,7 @@ def fetch_ohlcv_per_ticker(supabase: Client, trading_date: str) -> bool:
     from_dt = datetime.strptime(latest_date, "%Y-%m-%d") + timedelta(days=1)
 
     # 증분 시작점이 "전체 최신 날짜 다음날"이라, 어떤 날 일부 종목만 수집되면(차단·타임아웃) 그 종목의
-    # 빈 날짜가 영영 채워지지 않았다(예: 2026-07-17 전 종목 누락, 05-22 66종목만 수집).
+    # 빈 날짜가 영영 채워지지 않았다(예: 2026-05-22 66종목만 수집, 09-22 core 3종목 누락).
     # 종목당 API 호출은 기간과 무관하게 1회이므로, 최근 REFETCH_DAYS를 항상 다시 받아 구멍을 자가복구한다.
     # 단, 이미 target까지 수집된 상태의 재실행은 기존처럼 스킵한다(KRX 대량조회 차단 위험 방지).
     REFETCH_DAYS = 10
