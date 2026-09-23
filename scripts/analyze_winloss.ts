@@ -1,14 +1,25 @@
 import "dotenv/config";
 import { createClient } from "@supabase/supabase-js";
+import {
+  DATA_CONTAMINATION_WINDOWS,
+  isInContaminationWindow,
+} from "../src/services/virtualAutoTradeSelection";
 
 function fmt(n: number): string {
   return Math.round(n).toLocaleString("ko-KR");
 }
 
-// 2026-06-23~07-10: stock_daily 종가 고정(freeze) 버그로 가짜 익절 신호가 반복 발생해
-// 승률/손익 통계가 오염된 구간 (커밋 4753406에서 진단·부분수정). 기본적으로 통계에서 제외한다.
-const CONTAMINATED_START = "2026-06-23";
-const CONTAMINATED_END = "2026-07-10";
+// 오염 구간은 DATA_CONTAMINATION_WINDOWS(virtualAutoTradeSelection.ts) 한 곳에서 관리한다.
+// 체결 시각(KST 날짜)이 "trades" 오염 구간에 속하면 기본적으로 통계에서 제외한다.
+function toKstDateKey(iso: string): string {
+  const ts = Date.parse(iso);
+  if (!Number.isFinite(ts)) return "";
+  return new Date(ts + 9 * 60 * 60 * 1000).toISOString().slice(0, 10);
+}
+
+function isContaminatedTrade(iso: string): boolean {
+  return isInContaminationWindow(toKstDateKey(iso), "trades");
+}
 
 function parseArgs(argv: string[]): { chatId?: number; days: number; includeContaminated: boolean } {
   let chatId: number | undefined;
@@ -42,8 +53,11 @@ async function main() {
   const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
 
   if (!includeContaminated) {
+    const windows = DATA_CONTAMINATION_WINDOWS.filter((w) => w.scopes.includes("trades"))
+      .map((w) => `${w.from}~${w.to}`)
+      .join(", ");
     console.log(
-      `[안내] 종가 동결 오염구간(${CONTAMINATED_START} ~ ${CONTAMINATED_END})을 통계에서 제외합니다. 포함하려면 --includeContaminated 플래그를 사용하세요.\n`
+      `[안내] 데이터 오염구간(${windows})의 거래를 통계에서 제외합니다. 포함하려면 --includeContaminated 플래그를 사용하세요.\n`
     );
   }
 
@@ -55,11 +69,11 @@ async function main() {
     .order("executed_at", { ascending: true })
     .limit(10000);
   if (chatId) execQuery = execQuery.eq("chat_id", chatId);
-  if (!includeContaminated) {
-    execQuery = execQuery.or(`executed_at.lt.${CONTAMINATED_START},executed_at.gt.${CONTAMINATED_END}`);
-  }
-  const { data: execs, error: execErr } = await execQuery;
+  const { data: rawExecs, error: execErr } = await execQuery;
   if (execErr) throw new Error(`stop_loss_take_profit_executions query failed: ${execErr.message}`);
+  const execs = (rawExecs ?? []).filter(
+    (e: any) => includeContaminated || !isContaminatedTrade(String(e.executed_at ?? ""))
+  );
 
   const positionIds = [...new Set((execs ?? []).map((e: any) => e.position_id).filter(Boolean))];
   const buyDateByPosition = new Map<number, string>();
@@ -120,13 +134,12 @@ async function main() {
     .order("traded_at", { ascending: true })
     .limit(10000);
   if (chatId) tradeQuery = tradeQuery.eq("chat_id", chatId);
-  if (!includeContaminated) {
-    tradeQuery = tradeQuery.or(`traded_at.lt.${CONTAMINATED_START},traded_at.gt.${CONTAMINATED_END}`);
-  }
   const { data: trades, error: tradeErr } = await tradeQuery;
   if (tradeErr) throw new Error(`virtual_trades query failed: ${tradeErr.message}`);
 
-  const allSells = trades ?? [];
+  const allSells = (trades ?? []).filter(
+    (t: any) => includeContaminated || !isContaminatedTrade(String(t.traded_at ?? ""))
+  );
   const wins = allSells.filter((t: any) => Number(t.pnl_amount) > 0).length;
   const losses = allSells.filter((t: any) => Number(t.pnl_amount) < 0).length;
   const totalPnl = allSells.reduce((acc: number, t: any) => acc + (Number(t.pnl_amount) || 0), 0);

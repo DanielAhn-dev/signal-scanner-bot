@@ -1008,11 +1008,16 @@ test("isTakeProfitCooldownOverridable: 손실정리(loss-trim)는 오버라이�
 test("resolveStatsSinceIso: 오염기간 컷오프보다 이른 since는 컷오프로 당겨진다", () => {
   assert.equal(
     resolveStatsSinceIso("2026-01-01T00:00:00.000Z"),
-    "2026-07-11T00:00:00+09:00"
+    "2026-09-23T00:00:00+09:00"
   );
+  // 가드 장애 구간(07-11~09-22)도 제외
   assert.equal(
     resolveStatsSinceIso("2026-08-01T00:00:00.000Z"),
-    "2026-08-01T00:00:00.000Z"
+    "2026-09-23T00:00:00+09:00"
+  );
+  assert.equal(
+    resolveStatsSinceIso("2026-10-01T00:00:00.000Z"),
+    "2026-10-01T00:00:00.000Z"
   );
 });
 

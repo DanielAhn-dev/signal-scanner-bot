@@ -1180,12 +1180,14 @@ async function fetchExecutionPriceMap(
 
 /**
  * KODEX 200 (069500) / KODEX KOSDAQ150 (229200) 를 프록시로 사용해
- * 코스피/코스닥 200일선 대비 현재가 비율을 계산한다.
+ * 코스피/코스닥 200일선(및 코스피 50일선) 대비 현재가 비율을 계산한다.
  * 실패 시 null 반환 (마켓 레짐 판단에서 무시).
+ * 2026-09 이전엔 프록시 일봉이 23행뿐이라 항상 null이었고 200일선 하락장 게이트가 한 번도 작동하지
+ * 않았다(경고도 없음). 이력이 모자라면 이제 경고를 남긴다.
  */
 async function fetchIndexSma200Ratios(
   supabase: SupabaseClientAny
-): Promise<{ kospi: number | null; kosdaq: number | null }> {
+): Promise<{ kospi: number | null; kosdaq: number | null; kospiSma50: number | null }> {
   const KOSPI_PROXY = "069500";  // KODEX 200
   const KOSDAQ_PROXY = "229200"; // KODEX KOSDAQ 150
   try {
@@ -1212,12 +1214,25 @@ async function fetchIndexSma200Ratios(
       if (sma200 <= 0) return null;
       return current / sma200;
     };
+    const calcSma50Ratio = (rows: { close: number }[] | null): number | null => {
+      const closes = (rows ?? []).map((r) => Number(r.close)).filter((v) => Number.isFinite(v) && v > 0);
+      if (closes.length < 51) return null;
+      const sma50 = closes.slice(1, 51).reduce((s, v) => s + v, 0) / 50;
+      return sma50 > 0 ? closes[0] / sma50 : null;
+    };
+    for (const [label, res] of [["069500", kospiRes], ["229200", kosdaqRes]] as const) {
+      const count = res.data?.length ?? 0;
+      if (count < 201) {
+        console.warn(`[autoTrade] 지수 프록시 ${label} 일봉 ${count}행(<201) — 200일선 레짐 게이트 비활성`);
+      }
+    }
     return {
       kospi: calcRatio(kospiRes.data),
       kosdaq: calcRatio(kosdaqRes.data),
+      kospiSma50: calcSma50Ratio(kospiRes.data),
     };
   } catch {
-    return { kospi: null, kosdaq: null };
+    return { kospi: null, kosdaq: null, kospiSma50: null };
   }
 }
 
@@ -1254,11 +1269,14 @@ async function fetchMarketOverviewWithBudget(input: {
   }
   const [overview, sma200Ratios] = await Promise.all([
     fetchAllMarketData().catch(() => null),
-    input.supabase ? fetchIndexSma200Ratios(input.supabase).catch(() => ({ kospi: null, kosdaq: null })) : Promise.resolve({ kospi: null, kosdaq: null }),
+    input.supabase
+      ? fetchIndexSma200Ratios(input.supabase).catch(() => ({ kospi: null, kosdaq: null, kospiSma50: null }))
+      : Promise.resolve({ kospi: null, kosdaq: null, kospiSma50: null }),
   ]);
   if (overview && sma200Ratios) {
     (overview as Record<string, unknown>).kospiSma200Ratio = sma200Ratios.kospi;
     (overview as Record<string, unknown>).kosdaqSma200Ratio = sma200Ratios.kosdaq;
+    (overview as Record<string, unknown>).kospiSma50Ratio = sma200Ratios.kospiSma50;
   }
   return { overview, skippedByBudget: false };
 }
@@ -4156,7 +4174,7 @@ async function runMondayBuyForUser(payload: {
         currentHoldingCount: plannedHoldingCount,
         maxPositions,
         stopLossPct: Math.abs(toNumber(payload.setting.stop_loss_pct, 4)),
-        riskBudgetScale: dailyRiskBudget.scale * mondayBuySizeScale,
+        riskBudgetScale: dailyRiskBudget.scale * mondayBuySizeScale * (marketPolicy.buySizeScale ?? 1),
         conviction: resolveConvictionScale({
           score: candidate.score,
           trustGrade: signalGate.grade,
@@ -4188,7 +4206,7 @@ async function runMondayBuyForUser(payload: {
             currentHoldingCount: plannedHoldingCount,
             maxPositions,
             stopLossPct: Math.abs(toNumber(payload.setting.stop_loss_pct, 4)),
-            riskBudgetScale: dailyRiskBudget.scale * mondayBuySizeScale,
+            riskBudgetScale: dailyRiskBudget.scale * mondayBuySizeScale * (marketPolicy.buySizeScale ?? 1),
             conviction: resolveConvictionScale({
               score: candidate.score,
               trustGrade: signalGate.grade,
@@ -6271,7 +6289,7 @@ async function runDailyReviewForUser(payload: {
           currentHoldingCount: Math.max(0, currentCount - 1),
           maxPositions: Math.max(1, maxPositions),
           stopLossPct: holdingProfile.stopLossPct,
-          riskBudgetScale: dailyRiskBudget.scale * adaptiveExitGuard.buySizeScale,
+          riskBudgetScale: dailyRiskBudget.scale * adaptiveExitGuard.buySizeScale * (marketPolicy.buySizeScale ?? 1),
           conviction: resolveConvictionScale({
             score: candidate.score,
             trustGrade: signalGate.grade,
@@ -6878,7 +6896,7 @@ async function runDailyReviewForUser(payload: {
           currentHoldingCount: plannedHoldingCount,
           maxPositions,
           stopLossPct: adjustedEntryProfile.stopLossPct,
-          riskBudgetScale: dailyRiskBudget.scale * adaptiveExitGuard.buySizeScale,
+          riskBudgetScale: dailyRiskBudget.scale * adaptiveExitGuard.buySizeScale * (marketPolicy.buySizeScale ?? 1),
           conviction: resolveConvictionScale({
             score: candidate.score,
             trustGrade: signalGate.grade,
@@ -6910,7 +6928,7 @@ async function runDailyReviewForUser(payload: {
               currentHoldingCount: plannedHoldingCount,
               maxPositions,
               stopLossPct: adjustedEntryProfile.stopLossPct,
-              riskBudgetScale: dailyRiskBudget.scale * adaptiveExitGuard.buySizeScale,
+              riskBudgetScale: dailyRiskBudget.scale * adaptiveExitGuard.buySizeScale * (marketPolicy.buySizeScale ?? 1),
               conviction: resolveConvictionScale({
                 score: candidate.score,
                 trustGrade: signalGate.grade,

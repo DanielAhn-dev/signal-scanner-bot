@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {
   countConsecutiveStaleGuardDays,
   detectAutoTradeMarketPolicy,
+  isInContaminationWindow,
   resolveGuardFallbackHardStop,
   resolveProfileStopCapPct,
   resolveProfitLockTrailingStop,
@@ -93,4 +94,31 @@ test("detectAutoTradeMarketPolicy: 중립 구간 최소현금 20%", () => {
   const policy = detectAutoTradeMarketPolicy({ overview: null });
   assert.equal(policy.label, "균형");
   assert.equal(policy.minCashReservePct, 20);
+});
+
+test("isInContaminationWindow: scope별 오염 구간 판정", () => {
+  assert.equal(isInContaminationWindow("2026-06-20", "prices"), true);
+  assert.equal(isInContaminationWindow("2026-08-10", "prices"), false);
+  assert.equal(isInContaminationWindow("2026-08-10", "trades"), true);
+  assert.equal(isInContaminationWindow("2026-09-23", "trades"), false);
+});
+
+test("detectAutoTradeMarketPolicy: 코스피 50일선 하방이면 신규 매수 규모 50%", () => {
+  const below = detectAutoTradeMarketPolicy({ overview: { kospiSma50Ratio: 0.97 } });
+  assert.equal(below.buySizeScale, 0.5);
+  assert.match(below.reason, /50일선 하방/);
+  const above = detectAutoTradeMarketPolicy({ overview: { kospiSma50Ratio: 1.05 } });
+  assert.equal(above.buySizeScale, 1);
+  // 방어 모드는 이미 신규매수를 막으므로 배수를 덧붙이지 않는다
+  const defense = detectAutoTradeMarketPolicy({
+    overview: { kospiSma200Ratio: 0.9, kosdaqSma200Ratio: 0.9, kospiSma50Ratio: 0.9 },
+  });
+  assert.equal(defense.mode, "large-cap-defense");
+  assert.equal(defense.buySizeScale, 1);
+});
+
+test("detectAutoTradeMarketPolicy: 코스닥만 200일선 하방이면 코스닥 비중 제한", () => {
+  const policy = detectAutoTradeMarketPolicy({ overview: { kospiSma200Ratio: 1.18, kosdaqSma200Ratio: 0.84 } });
+  assert.equal(policy.label, "코스닥 약세");
+  assert.equal(policy.kosdaqMaxRatio, 0.1);
 });

@@ -50,11 +50,51 @@ export function evaluateCloseFreshness(
 }
 
 /**
- * 종가 파이프라인 동결 사고(2026-06-12~07-10, pykrx 다운그레이드, 4eee429에서 수정) 기간의
- * 매도 기록은 실제 전략 성과가 아니라 오염된 종가로 판단한 가짜 손익이다.
- * 적응형 성과게이트/승률 통계는 이 시각 이후 데이터만 사용해야 한다.
+ * 데이터 오염 구간 레지스트리. 원장(virtual_trades 등)은 현금·실현손익·FIFO 정합성 때문에 지우지 않고,
+ * 통계·학습·분석에서만 이 목록으로 격리한다. 새 사고가 나면 여기에 추가하고 컷오프를 옮긴다.
+ * - scope "prices": 해당 기간 시세로 계산된 지표·신호(pullback_signals 등)도 신뢰 불가
+ * - scope "trades": 해당 기간에 보유/체결된 거래의 손익이 전략 성과를 반영하지 않음
  */
-export const ADAPTIVE_STATS_EXCLUDE_BEFORE_ISO = "2026-07-11T00:00:00+09:00";
+export type DataContaminationWindow = {
+  id: string;
+  /** KST 날짜(포함) */
+  from: string;
+  /** KST 날짜(포함) */
+  to: string;
+  scopes: Array<"prices" | "trades">;
+  reason: string;
+};
+
+export const DATA_CONTAMINATION_WINDOWS: DataContaminationWindow[] = [
+  {
+    id: "close-freeze-2026-06",
+    from: "2026-06-12",
+    to: "2026-07-10",
+    scopes: ["prices", "trades"],
+    reason: "pykrx 다운그레이드로 stock_daily 종가 동결 → 가짜 익절/손절 반복 (4eee429에서 수정, 종가는 이후 재수집됨)",
+  },
+  {
+    id: "stale-guard-outage-2026-07",
+    from: "2026-07-11",
+    to: "2026-09-22",
+    scopes: ["trades"],
+    reason: "종가 신선도 가드 조회 컬럼 오류로 보유종목 매도판단이 전면 중단 → 이 기간 보유 포지션의 청산 손익 왜곡 (062bd4a에서 수정)",
+  },
+];
+
+/** 날짜(YYYY-MM-DD, KST)가 주어진 scope의 오염 구간에 속하는지 */
+export function isInContaminationWindow(dateKey: string, scope: "prices" | "trades"): boolean {
+  const key = String(dateKey ?? "").slice(0, 10);
+  return DATA_CONTAMINATION_WINDOWS.some(
+    (window) => window.scopes.includes(scope) && key >= window.from && key <= window.to
+  );
+}
+
+/**
+ * 적응형 성과게이트/승률 통계는 마지막 거래 오염 구간 다음날(KST 0시) 이후 데이터만 사용한다.
+ * 그 이전 매매는 전략이 아니라 데이터/가드 버그를 측정한 것이다.
+ */
+export const ADAPTIVE_STATS_EXCLUDE_BEFORE_ISO = "2026-09-23T00:00:00+09:00";
 
 /** since와 오염기간 컷오프 중 더 늦은(=더 짧은 조회 구간) 시각을 반환한다. */
 export function resolveStatsSinceIso(rawSinceIso: string): string {
@@ -410,6 +450,11 @@ export type AutoTradeMarketPolicy = {
   requireLargeCapKospi: boolean;
   minLiquidity: number;
   minMarketCap: number;
+  /**
+   * 신규/추가 매수 규모 배수 (기본 1). 코스피가 50일선 아래면 0.5.
+   * 사이징의 riskBudgetScale에 곱해진다.
+   */
+  buySizeScale?: number;
 };
 
 type MarketOverviewLike = {
@@ -423,7 +468,35 @@ type MarketOverviewLike = {
   kospiSma200Ratio?: number | null;
   /** 코스닥 현재가 / 200일 SMA 비율 */
   kosdaqSma200Ratio?: number | null;
+  /** 코스피 현재가 / 50일 SMA 비율 */
+  kospiSma50Ratio?: number | null;
 };
+
+/** 코스피 50일선 하방일 때 신규 매수 규모 배수 */
+export const BELOW_SMA50_BUY_SIZE_SCALE = 0.5;
+
+/**
+ * 시장 레짐 정책. 기본 정책(detectBaseMarketPolicy)에 단기 추세(코스피 50일선) 사이징 배수를 덧붙인다.
+ *
+ * 50일선 규칙 근거 (scripts/backtest_entry_signals.ts, 2025-10~2026-09 점수 이력 1.9천건, 동일가중 지수 기준):
+ * 학습/검증 분할을 4월·6월 두 번 바꿔도 검증 구간에서 "지수 50일선 위" 진입이 "아래" 진입보다
+ * 평균 2~4%p 좋았다(+1.58% vs -2.38%, -2.01% vs -3.94%). 개별 팩터 조합은 분할마다 결론이 뒤집혔지만
+ * 시장 추세만 일관됐다. 매수를 끊지는 않고 규모만 절반으로 줄인다.
+ */
+export function detectAutoTradeMarketPolicy(input?: {
+  overview?: MarketOverviewLike | null;
+}): AutoTradeMarketPolicy {
+  const policy = detectBaseMarketPolicy(input);
+  const kospiSma50Ratio = input?.overview?.kospiSma50Ratio ?? null;
+  if (kospiSma50Ratio != null && kospiSma50Ratio < 1 && policy.mode !== "large-cap-defense") {
+    return {
+      ...policy,
+      reason: `${policy.reason} · 코스피 50일선 하방(신규 매수 규모 ${Math.round(BELOW_SMA50_BUY_SIZE_SCALE * 100)}%)`,
+      buySizeScale: BELOW_SMA50_BUY_SIZE_SCALE,
+    };
+  }
+  return { ...policy, buySizeScale: 1 };
+}
 
 export type AutoTradeCandidateSelectionMode =
   | "signal-preferred"
@@ -580,7 +653,7 @@ export function deriveAdaptiveMinBuyScore(
   return Math.max(dynamicFloor, Math.min(preferred, topScore - 3));
 }
 
-export function detectAutoTradeMarketPolicy(input?: {
+function detectBaseMarketPolicy(input?: {
   overview?: MarketOverviewLike | null;
 }): AutoTradeMarketPolicy {
   const overview = input?.overview;
@@ -601,6 +674,8 @@ export function detectAutoTradeMarketPolicy(input?: {
   const clearBearMarket = kospiBelow200 && kosdaqBelow200;
   // 코스피만 200일선 하방 → 주의 구간
   const cautionZone = kospiBelow200 && !kosdaqBelow200;
+  // 코스닥만 200일선 하방 → 코스닥 비중만 제한 (예전엔 이 조합을 처리하는 분기가 없어 그냥 중립으로 갔다)
+  const kosdaqWeakZone = kosdaqBelow200 && !kospiBelow200;
 
   // 방어모드 하드 트리거를 단일 신호가 아니라 "동시에 2건 이상"으로 완화한다.
   // 단일 신호(예: breadth만 살짝 나쁨)만으로 코스닥 전면 배제 + 신규매수 전면중단까지 가면
@@ -682,6 +757,20 @@ export function detectAutoTradeMarketPolicy(input?: {
 
   // 중립 구간 현금하한 30% → 20%: 분할매수 2차 트랜치(40%) 여력만 남기면 충분하다.
   // 30%일 땐 2/10종목 보유 상태에서도 신규매수가 "현금 하한 유지"로 막히며 시드 대부분이 CD금리 ETF에 묶였다.
+  if (kosdaqWeakZone) {
+    return {
+      mode: "balanced",
+      label: "코스닥 약세",
+      reason: "코스닥 200일선 하방 — 코스닥 비중 제한",
+      minCashReservePct: 20,
+      allowedMarkets: ["KOSPI", "KOSDAQ"],
+      kosdaqMaxRatio: 0.1,
+      requireLargeCapKospi: false,
+      minLiquidity: 12_000_000_000,
+      minMarketCap: 0,
+    };
+  }
+
   return {
     mode: "balanced",
     label: "균형",
