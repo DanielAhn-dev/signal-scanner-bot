@@ -1133,7 +1133,7 @@ export default function BacktestPage() {
                     {showAllFeatureRows ? '유의미한 값만 보기' : '전체보기'}
                   </button>
                 </div>
-              <div style={{ overflowX: 'auto', margin: '0 calc(-1 * var(--space-4))' }}>
+              <div className="mobile-card-table" style={{ overflowX: 'auto', margin: '0 calc(-1 * var(--space-4))' }}>
                 <table className="bt-table" style={{ minWidth: 940 }}>
                   <thead>
                     <tr>
@@ -1150,22 +1150,22 @@ export default function BacktestPage() {
                     {visibleFeatureStats.length > 0 ? (
                       visibleFeatureStats.map((row) => (
                         <tr key={row.key}>
-                          <td>
+                          <td data-th="특징">
                             <span>{row.label}</span>
                             <span className={`bt-check-match-badge ${confidenceMeta(Math.min(row.baselineMatches, row.riserMatches)).cls}`} style={{ marginLeft: 8 }}>
                               {confidenceMeta(Math.min(row.baselineMatches, row.riserMatches)).label}
                             </span>
                           </td>
-                          <td className="bt-table-num" style={{ textAlign: 'right' }}>{row.baselineMatches.toLocaleString('ko-KR')}</td>
-                          <td className="bt-table-num" style={{ textAlign: 'right' }}>{pct(row.baselineRatePct)}</td>
-                          <td className="bt-table-num" style={{ textAlign: 'right' }}>{row.riserMatches.toLocaleString('ko-KR')}</td>
-                          <td className="bt-table-num" style={{ textAlign: 'right' }}>{pct(row.riserRatePct)}</td>
-                          <td style={{ textAlign: 'right' }}>
+                          <td className="bt-table-num" style={{ textAlign: 'right' }} data-th="Baseline 수">{row.baselineMatches.toLocaleString('ko-KR')}</td>
+                          <td className="bt-table-num" style={{ textAlign: 'right' }} data-th="Baseline 비중">{pct(row.baselineRatePct)}</td>
+                          <td className="bt-table-num" style={{ textAlign: 'right' }} data-th="Riser 수">{row.riserMatches.toLocaleString('ko-KR')}</td>
+                          <td className="bt-table-num" style={{ textAlign: 'right' }} data-th="Riser 비중">{pct(row.riserRatePct)}</td>
+                          <td style={{ textAlign: 'right' }} data-th="Lift">
                             <span className={row.liftPct >= 0 ? 'bt-table-return-pos' : 'bt-table-return-neg'}>
                               {signedPct(row.liftPct)}
                             </span>
                           </td>
-                          <td className="bt-table-num" style={{ textAlign: 'right' }}>{pct(row.supportPct)}</td>
+                          <td className="bt-table-num" style={{ textAlign: 'right' }} data-th="Support">{pct(row.supportPct)}</td>
                         </tr>
                       ))
                     ) : (
@@ -1195,7 +1195,7 @@ export default function BacktestPage() {
                 <div style={{ marginBottom: 'var(--space-3)', fontSize: 12, color: 'var(--color-text-tertiary)' }}>
                   지표 기반 자동 순위: 실제 급등 정확도(Precision) 중심으로 정렬됨. 행 클릭 시 선택 가능.
                 </div>
-                <div style={{ overflowX: 'auto', margin: '0 calc(-1 * var(--space-4))' }}>
+                <div className="mobile-card-table" style={{ overflowX: 'auto', margin: '0 calc(-1 * var(--space-4))' }}>
                   <table className="bt-table" style={{ minWidth: 860 }}>
                     <thead>
                       <tr>
@@ -1222,7 +1222,7 @@ export default function BacktestPage() {
                                 : 'transparent',
                           }}
                         >
-                          <td>
+                          <td data-th="룰">
                             <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                             {idx === 0 && (
                               <span
@@ -1246,10 +1246,10 @@ export default function BacktestPage() {
                             </span>
                             </div>
                           </td>
-                          <td className="bt-table-num" style={{ textAlign: 'right' }}>
+                          <td className="bt-table-num" style={{ textAlign: 'right' }} data-th="Support">
                             {pct(row.supportPct)}
                           </td>
-                          <td style={{ textAlign: 'right' }}>
+                          <td style={{ textAlign: 'right' }} data-th="Lift">
                             <span className={row.liftPct >= 0 ? 'bt-table-return-pos' : 'bt-table-return-neg'}>
                               {signedPct(row.liftPct)}
                             </span>
@@ -1261,13 +1261,14 @@ export default function BacktestPage() {
                               fontWeight: idx === 0 ? 700 : 400,
                               color: idx === 0 ? 'var(--color-success)' : 'var(--color-text-secondary)',
                             }}
+                            data-th="Precision"
                           >
                             {pct(row.precisionPct)}
                           </td>
-                          <td className="bt-table-num" style={{ textAlign: 'right' }}>
+                          <td className="bt-table-num" style={{ textAlign: 'right' }} data-th="매칭 이벤트">
                             {row.matchedEvents.toLocaleString('ko-KR')}
                           </td>
-                          <td className="bt-table-num" style={{ textAlign: 'right' }}>
+                          <td className="bt-table-num" style={{ textAlign: 'right' }} data-th="급등 매칭">
                             {row.riserMatches.toLocaleString('ko-KR')}
                           </td>
                         </tr>
@@ -1347,7 +1348,7 @@ export default function BacktestPage() {
                         return rule?.precisionPct.toFixed(1) || '0'
                       })()}%가 어떻게 나왔는지" 직관적으로 검증할 수 있습니다.
                     </div>
-                    <div style={{ overflowX: 'auto' }}>
+                    <div className="mobile-card-table" style={{ overflowX: 'auto' }}>
                       <table className="bt-table" style={{ minWidth: 680 }}>
                         <thead>
                           <tr>
@@ -1368,30 +1369,30 @@ export default function BacktestPage() {
                                 selectStock({ code: row.code, name: row.name || row.code })
                               }
                             >
-                              <td>
+                              <td data-th="종목">
                                 <span className="bt-table-stock-name">{row.name || row.code}</span>
                                 {row.name && (
                                   <span className="bt-table-stock-code">{row.code}</span>
                                 )}
                               </td>
-                              <td className="bt-table-num">{row.asof}</td>
-                              <td style={{ textAlign: 'right' }}>
+                              <td className="bt-table-num" data-th="기준일">{row.asof}</td>
+                              <td style={{ textAlign: 'right' }} data-th="Horizon 수익률">
                                 <span className={row.forwardReturnPct >= 0 ? 'bt-table-return-pos' : 'bt-table-return-neg'}>
                                   {row.forwardReturnPct > 0 ? '+' : ''}
                                   {pct(row.forwardReturnPct, 2)}
                                 </span>
                               </td>
-                              <td style={{ textAlign: 'right' }} className="bt-table-num">
+                              <td style={{ textAlign: 'right' }} className="bt-table-num" data-th="점수">
                                 {row.totalScore.toFixed(1)}
                               </td>
-                              <td>
+                              <td data-th="시그널">
                                 {row.signal ? (
                                   <span className={signalCls(row.signal)}>{row.signal}</span>
                                 ) : (
                                   <span className="bt-table-num">-</span>
                                 )}
                               </td>
-                              <td style={{ textAlign: 'right' }} className="bt-table-num">
+                              <td style={{ textAlign: 'right' }} className="bt-table-num" data-th="RSI14">
                                 {row.rsi14 == null ? '-' : row.rsi14.toFixed(1)}
                               </td>
                             </tr>
@@ -1886,7 +1887,7 @@ export default function BacktestPage() {
                 조건에 맞는 급등 이벤트가 없습니다. 기간/기준을 완화해 보세요.
               </p>
             ) : (
-              <div style={{ overflowX: 'auto', margin: '0 calc(-1 * var(--space-4))' }}>
+              <div className="mobile-card-table" style={{ overflowX: 'auto', margin: '0 calc(-1 * var(--space-4))' }}>
                 <table className="bt-table" style={{ minWidth: 680 }}>
                   <thead>
                     <tr>
@@ -1916,30 +1917,30 @@ export default function BacktestPage() {
                         }
                         title={`${row.name || row.code} 패턴 점검`}
                       >
-                        <td>
+                        <td data-th="종목">
                           <span className="bt-table-stock-name">{row.name || row.code}</span>
                           {row.name && (
                             <span className="bt-table-stock-code">{row.code}</span>
                           )}
                         </td>
-                        <td className="bt-table-num">{row.asof}</td>
-                        <td style={{ textAlign: 'right' }}>
+                        <td className="bt-table-num" data-th="기준일">{row.asof}</td>
+                        <td style={{ textAlign: 'right' }} data-th="Horizon 수익률">
                           <span className={row.forwardReturnPct >= 0 ? 'bt-table-return-pos' : 'bt-table-return-neg'}>
                             {row.forwardReturnPct > 0 ? '+' : ''}
                             {pct(row.forwardReturnPct, 2)}
                           </span>
                         </td>
-                        <td style={{ textAlign: 'right' }} className="bt-table-num">
+                        <td style={{ textAlign: 'right' }} className="bt-table-num" data-th="점수">
                           {row.totalScore.toFixed(1)}
                         </td>
-                        <td>
+                        <td data-th="시그널">
                           {row.signal ? (
                             <span className={signalCls(row.signal)}>{row.signal}</span>
                           ) : (
                             <span className="bt-table-num">-</span>
                           )}
                         </td>
-                        <td style={{ textAlign: 'right' }} className="bt-table-num">
+                        <td style={{ textAlign: 'right' }} className="bt-table-num" data-th="RSI14">
                           {row.rsi14 == null ? '-' : row.rsi14.toFixed(1)}
                         </td>
                       </tr>

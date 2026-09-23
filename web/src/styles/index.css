@@ -5088,6 +5088,68 @@ a:focus-visible {
 }
 
 /* ================================================================
+   SHARED: mobile card-list table conversion
+   640px 이하에서 넓은 데이터 테이블을 세로 카드 리스트로 전환.
+   사용법: 표 wrapper div에 className="mobile-card-table" 추가하고
+   각 <td>에 data-th="컬럼명" 지정.
+   ================================================================ */
+@media (max-width: 640px) {
+  .mobile-card-table {
+    overflow-x: visible !important;
+  }
+
+  .mobile-card-table table,
+  .mobile-card-table thead,
+  .mobile-card-table tbody,
+  .mobile-card-table th,
+  .mobile-card-table td,
+  .mobile-card-table tr {
+    display: block;
+    width: 100%;
+    min-width: 0 !important;
+  }
+
+  .mobile-card-table thead {
+    position: absolute;
+    left: -9999px;
+  }
+
+  .mobile-card-table tbody tr {
+    border: 1px solid var(--color-border-default);
+    border-radius: var(--radius-sm, 8px);
+    padding: 8px;
+    margin-bottom: 8px;
+  }
+
+  .mobile-card-table tbody td {
+    display: flex !important;
+    justify-content: space-between;
+    align-items: center;
+    gap: 8px;
+    text-align: right !important;
+    border-bottom: none !important;
+    white-space: normal !important;
+    min-width: 0 !important;
+    padding: 4px 2px !important;
+  }
+
+  .mobile-card-table tbody td:first-child,
+  .mobile-card-table tbody td:last-child {
+    padding-left: 2px !important;
+    padding-right: 2px !important;
+  }
+
+  .mobile-card-table tbody td[data-th]::before {
+    content: attr(data-th);
+    font-size: 0.72rem;
+    color: var(--color-text-tertiary);
+    font-weight: 600;
+    text-align: left;
+    flex-shrink: 0;
+  }
+}
+
+/* ================================================================
    CONTROL PAGE (관제)
    ================================================================ */
 @media (max-width: 640px) {
@@ -5149,6 +5211,7 @@ a:focus-visible {
   .ops-compare-table tr {
     display: block;
     width: 100%;
+    min-width: 0 !important;
   }
 
   .ops-compare-table thead {
