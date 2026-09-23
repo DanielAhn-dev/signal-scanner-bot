@@ -54,6 +54,13 @@ import {
   resolveStatsSinceIso,
   resolveTakeProfitCooldownDays,
   resolveVolatilityAdjustedStopPct,
+  resolveProfileStopCapPct,
+  enforceMinRewardRisk,
+  resolveProfitLockTrailingStop,
+  PROFIT_LOCK_ARM_PCT,
+  resolveGuardFallbackHardStop,
+  countConsecutiveStaleGuardDays,
+  STALE_GUARD_ESCALATION_DAYS,
   selectRunType,
   shouldOverrideTakeProfitCooldown,
   type AutoTradeCandidateSelectionResult,
@@ -960,14 +967,8 @@ function resolveAdaptiveExitThreshold(input: {
   takeProfitPct = Number(clamp(takeProfitPct, 3, 14).toFixed(1));
   // 상한 12: ATR 기반 변동성 확장(resolveVolatilityAdjustedStopPct)이 여기서 다시 깎이지 않도록.
   stopLossPct = Number(clamp(stopLossPct, 1.5, 12).toFixed(1));
-  if (takeProfitPct < stopLossPct + 1.5) {
-    takeProfitPct = Number(Math.min(14, stopLossPct + 1.5).toFixed(1));
-  }
-
-  return {
-    takeProfitPct,
-    stopLossPct,
-  };
+  // 손익비 하한 1.5: 예전엔 "익절 ≥ 손절+1.5%p"만 보장해 손절 12%/익절 13.5%(≈1.1:1)가 나왔다.
+  return enforceMinRewardRisk({ takeProfitPct, stopLossPct });
 }
 
 function normalizeLongTermRatio(value: unknown, fallback = 70): number {
@@ -1361,8 +1362,9 @@ function buildResponseGuideNote(input: {
   const stopLossPrice = Math.max(0, Math.round(basePrice * (1 - stopLossPct / 100)));
   const addOnLowPrice = Math.max(0, Math.round(basePrice * (1 + addOnLowerPct / 100)));
   const addOnHighPrice = Math.max(0, Math.round(basePrice * (1 + addOnUpperPct / 100)));
-  const trailingArmedPrice = Math.max(0, Math.round(basePrice * 1.05));
-  const trailingExitPrice = Math.max(0, Math.round(trailingArmedPrice * 0.98));
+  // resolveProfitLockTrailingStop 기준: 고점 +8% 도달 시 고점 수익의 40%(=+3.2%) 잠금
+  const trailingArmedPrice = Math.max(0, Math.round(basePrice * (1 + PROFIT_LOCK_ARM_PCT / 100)));
+  const trailingExitPrice = Math.max(0, Math.round(basePrice * (1 + (PROFIT_LOCK_ARM_PCT * 0.4) / 100)));
   const quantity = Math.max(0, Math.floor(toNumber(input.quantity, 0)));
   const investedAmount = Math.max(0, Math.round(toNumber(input.investedAmount, quantity * basePrice)));
   const stopLossRiskAmount = Math.max(0, Math.round(Math.max(0, basePrice - stopLossPrice) * quantity));
@@ -1379,7 +1381,7 @@ function buildResponseGuideNote(input: {
     `손절 ${stopLossPct.toFixed(1)}%(${fmtKrw(stopLossPrice)})`,
     `예상손실 ${fmtKrw(stopLossRiskAmount)}`,
     `추가매수밴드 ${addOnLowerPct.toFixed(1)}~${addOnUpperPct.toFixed(1)}%(${fmtKrw(addOnLowPrice)}~${fmtKrw(addOnHighPrice)})`,
-    `트레일링 +5.0%(${fmtKrw(trailingArmedPrice)}) 도달 후 고점대비 -2.0% 이탈 시 1차익절 기준(${fmtKrw(trailingExitPrice)})`,
+    `수익잠금 +${PROFIT_LOCK_ARM_PCT.toFixed(1)}%(${fmtKrw(trailingArmedPrice)}) 도달 후 고점수익의 40~65% 잠금 · 최초 잠금선 ${fmtKrw(trailingExitPrice)}`,
     `투입비중 ${positionWeightPct.toFixed(1)}%`,
   ].join(" · ");
 }
@@ -1866,18 +1868,31 @@ async function fetchStockDailyHistoryForCodes(
     .toISOString()
     .slice(0, 10);
 
-  const { data, error } = await supabase
-    .from("stock_daily")
-    .select("ticker, date, open, high, low, close, volume")
-    .in("ticker", uniqueCodes)
-    .gte("date", fromDate)
-    .order("date", { ascending: true })
-    .limit(uniqueCodes.length * (lookbackDays + 5));
-  if (error) {
-    console.error("[fetchStockDailyHistoryForCodes] stock_daily 조회 실패:", error.message);
+  // PostgREST 응답 상한(1000행)에 걸리면 뒤쪽 행이 잘린다. 예전엔 날짜 오름차순이라 "최신 종가"가
+  // 잘려나가 신선도 가드가 멀쩡한 종목을 stale-date로 오판할 수 있었다.
+  // 종목을 상한 안에 들어오게 나눠 조회하고, 혹시 잘리더라도 오래된 행이 잘리도록 최신순으로 받는다.
+  const rowsPerCode = lookbackDays + 5;
+  const codesPerChunk = Math.max(1, Math.floor(1000 / rowsPerCode));
+  const rows: Record<string, unknown>[] = [];
+  for (let i = 0; i < uniqueCodes.length; i += codesPerChunk) {
+    const chunk = uniqueCodes.slice(i, i + codesPerChunk);
+    const { data, error } = await supabase
+      .from("stock_daily")
+      .select("ticker, date, open, high, low, close, volume")
+      .in("ticker", chunk)
+      .gte("date", fromDate)
+      .order("date", { ascending: false })
+      .limit(chunk.length * rowsPerCode);
+    if (error) {
+      console.error("[fetchStockDailyHistoryForCodes] stock_daily 조회 실패:", error.message);
+      continue;
+    }
+    rows.push(...((data ?? []) as Record<string, unknown>[]));
   }
+  // 호출측(ATR 계산 등)은 날짜 오름차순을 기대한다.
+  rows.sort((a, b) => String(a.date ?? "").localeCompare(String(b.date ?? "")));
 
-  for (const row of (data ?? []) as Record<string, unknown>[]) {
+  for (const row of rows) {
     const code = String(row.ticker ?? "").trim();
     if (!code) continue;
     const list = result.get(code) ?? [];
@@ -1892,6 +1907,112 @@ async function fetchStockDailyHistoryForCodes(
     result.set(code, list);
   }
   return result;
+}
+
+type StaleGuardEscalation = {
+  code: string;
+  name: string | null;
+  days: number;
+  reason: string | null;
+  pnlPct: number | null;
+};
+
+/**
+ * 종가 신선도 가드에 걸린 보유종목용 보조 데이터를 한 번에 준비한다.
+ * - 가드 우회 경직손절용 실시간가 (API 예산 1회)
+ * - 연속 스킵 일수 계산용 과거 스킵 기록
+ * - 오늘 이미 경보를 보냈는지 (하루 여러 회차 실행 시 알림 폭주 방지)
+ */
+async function prepareStaleGuardFallback(payload: {
+  supabase: SupabaseClientAny;
+  chatId: number;
+  codes: string[];
+  apiBudget?: ApiBudget;
+}): Promise<{
+  realtimeByCode: Record<string, RealtimeStockData>;
+  priorSkipDateKeysByCode: Map<string, string[]>;
+  alreadyAlertedToday: boolean;
+  escalations: StaleGuardEscalation[];
+}> {
+  const realtimeByCode = tryConsumeApiBudget(payload.apiBudget, "realtime_price_batch", 1)
+    ? await fetchExecutionPriceMap(payload.codes)
+    : {};
+
+  const priorSkipDateKeysByCode = new Map<string, string[]>();
+  const sinceIso = new Date(Date.now() - 21 * 24 * 60 * 60 * 1000).toISOString();
+  const { data: skipRows, error: skipError } = await payload.supabase
+    .from("virtual_autotrade_actions")
+    .select("code, created_at")
+    .eq("chat_id", payload.chatId)
+    .eq("reason", "stale-or-frozen-close")
+    .in("code", payload.codes)
+    .gte("created_at", sinceIso)
+    .limit(1000);
+  if (skipError) {
+    console.error("[autoTrade] stale guard history lookup failed", skipError.message);
+  }
+  for (const row of (skipRows ?? []) as Record<string, unknown>[]) {
+    const code = String(row.code ?? "");
+    const ts = Date.parse(String(row.created_at ?? ""));
+    if (!code || !Number.isFinite(ts)) continue;
+    const list = priorSkipDateKeysByCode.get(code) ?? [];
+    list.push(kstDateKey(new Date(ts)));
+    priorSkipDateKeysByCode.set(code, list);
+  }
+
+  const { data: alertRows } = await payload.supabase
+    .from("virtual_autotrade_actions")
+    .select("id")
+    .eq("chat_id", payload.chatId)
+    .eq("reason", "stale-guard-escalation")
+    .gte("created_at", `${kstDateKey()}T00:00:00+09:00`)
+    .limit(1);
+
+  return {
+    realtimeByCode,
+    priorSkipDateKeysByCode,
+    alreadyAlertedToday: (alertRows ?? []).length > 0,
+    escalations: [],
+  };
+}
+
+/** 같은 보유종목이 며칠째 가드에 막혀 매도판단이 멈춘 상태를 텔레그램으로 경보한다 (하루 1회). */
+async function escalateStaleGuard(payload: {
+  supabase: SupabaseClientAny;
+  runId: number | null;
+  chatId: number;
+  dryRun: boolean;
+  alreadyAlertedToday: boolean;
+  escalations: StaleGuardEscalation[];
+  notes: string[];
+}): Promise<void> {
+  const lines = payload.escalations.map((item) => {
+    const pnlText = item.pnlPct != null ? ` · 실시간 손익 ${item.pnlPct.toFixed(1)}%` : " · 대체 가격 없음";
+    return `- ${item.name ?? item.code}(${item.code}) ${item.days}일 연속 스킵 (${item.reason ?? "unknown"})${pnlText}`;
+  });
+  payload.notes.push(
+    `[종가 신선도 가드 경보] 매도판단 ${STALE_GUARD_ESCALATION_DAYS}일+ 연속 중단 ${payload.escalations.length}종목`
+  );
+  if (payload.dryRun || payload.alreadyAlertedToday) return;
+
+  await writeActionLog({
+    supabase: payload.supabase,
+    runId: payload.runId,
+    chatId: payload.chatId,
+    actionType: "SKIP",
+    reason: "stale-guard-escalation",
+    detail: { escalations: payload.escalations },
+  });
+  const message = [
+    "[자동매매 경보] 보유종목 매도판단이 멈춰 있습니다",
+    ...lines,
+    "",
+    "종가 데이터(stock_daily) 갱신 상태를 확인하세요. 해결 전까지 익절·일반손절은 실행되지 않고,",
+    "실시간가 기준 경직손절(-10%)만 작동합니다.",
+  ].join("\n");
+  await sendMessage(payload.chatId, message).catch((err: unknown) => {
+    console.error("[autoTrade] stale guard escalation send failed", err);
+  });
 }
 
 async function fetchLegacyVirtualPositionsForChat(payload: {
@@ -2240,6 +2361,70 @@ async function topUpCashSweepForBuy(payload: {
   } catch (e) {
     console.error("[autoTrade] cash sweep top-up step failed", e);
     return { notes: [], releasedCash: 0 };
+  }
+}
+
+/** 수수료·슬리피지 여유분. 매수 체결액이 순수 현금을 넘지 않도록 이만큼 더 확보한다. */
+const BUY_CASH_BUFFER = 1.005;
+
+/**
+ * 현금하한(deployableCash)은 스윕 포지션 평가액까지 유동자금으로 보고 계산하므로, 사이징된 매수액이
+ * 순수 현금(virtual_cash)보다 클 수 있다. 그 경우 스윕에서 부족분만 부분 매도해 현금을 맞춘다.
+ * 보충 후에도 모자라면 호출측이 순수 현금 기준으로 매수 규모를 줄인다.
+ */
+async function ensureCashForBuy(payload: {
+  supabase: SupabaseClientAny;
+  chatId: number;
+  dryRun: boolean;
+  requiredCash: number;
+  availableCash: number;
+}): Promise<{ notes: string[]; releasedCash: number }> {
+  const requiredCash = Math.ceil(Math.max(0, payload.requiredCash) * BUY_CASH_BUFFER);
+  if (requiredCash <= payload.availableCash) return { notes: [], releasedCash: 0 };
+  return topUpCashSweepForBuy({
+    supabase: payload.supabase,
+    chatId: payload.chatId,
+    dryRun: payload.dryRun,
+    cashNeeded: requiredCash,
+    availableCash: payload.availableCash,
+  }).catch(() => ({ notes: [], releasedCash: 0 }));
+}
+
+/** 현재 보유 중인 유휴현금 스윕 포지션 평가액 (없으면 0) */
+async function fetchCashSweepPositionValue(
+  supabase: SupabaseClientAny,
+  chatId: number
+): Promise<number> {
+  try {
+    const { data: positionRows } = await supabase
+      .from(PORTFOLIO_TABLES.positions)
+      .select("code, quantity, memo")
+      .eq("chat_id", chatId)
+      .in("code", CASH_SWEEP_CANDIDATE_CODES)
+      .eq("status", "holding")
+      .is("broker_name", null)
+      .is("account_name", null);
+    const sweepRows = ((positionRows ?? []) as Record<string, unknown>[]).filter(
+      (row) => parseStrategyMemo(row.memo as string | null).strategyId === CASH_SWEEP_STRATEGY_ID
+    );
+    if (!sweepRows.length) return 0;
+    const { data: priceRows } = await supabase
+      .from("stocks")
+      .select("code, close")
+      .in("code", sweepRows.map((row) => String(row.code ?? "")));
+    const closeByCode = new Map(
+      ((priceRows ?? []) as Record<string, unknown>[]).map((row) => [
+        String(row.code ?? ""),
+        toNumber(row.close, 0),
+      ])
+    );
+    return sweepRows.reduce((sum, row) => {
+      const qty = Math.max(0, Math.floor(toNumber(row.quantity, 0)));
+      return sum + qty * (closeByCode.get(String(row.code ?? "")) ?? 0);
+    }, 0);
+  } catch (e) {
+    console.error("[autoTrade] cash sweep value lookup failed", e);
+    return 0;
   }
 }
 
@@ -3499,8 +3684,11 @@ async function runMondayBuyForUser(payload: {
   });
   const marketOverview = marketOverviewResult.overview;
   const marketPolicy = detectAutoTradeMarketPolicy({ overview: marketOverview });
+  // 스윕(CD금리 ETF)은 언제든 현금화 가능한 유동자금이다. 예전엔 순수 현금만으로 현금하한을 따져서,
+  // 스윕이 현금을 시드 10%까지 파킹한 직후엔 하한(20~35%)에 항상 걸려 신규매수가 원천 차단됐다.
+  const cashSweepLiquidValue = await fetchCashSweepPositionValue(payload.supabase, chatId);
   let deployableCash = resolveDeployableCash({
-    availableCash,
+    availableCash: availableCash + cashSweepLiquidValue,
     seedCapital,
     minCashReservePct: marketPolicy.minCashReservePct,
   });
@@ -3970,22 +4158,23 @@ async function runMondayBuyForUser(payload: {
         prefs,
       });
 
-      // 다른 필터를 다 통과한 후보가 유휴현금 스윕(CD금리 ETF)이 현금을 다 묶어놓은 탓에만
-      // 매수 불가면, 스윕 포지션에서 부족분만 부분 매도해 자금을 보충한다.
-      if (sizing.quantity <= 0 && deployableCash < sizing.minOrderAmount) {
-        const topUp = await topUpCashSweepForBuy({
+      // 현금하한은 스윕 평가액을 포함해 계산하므로, 매수액이 순수 현금보다 크면 스윕에서 부족분만
+      // 부분 매도해 보충한다. 보충 후에도 모자라면 순수 현금 기준으로 다시 사이징한다.
+      if (sizing.quantity > 0) {
+        const topUp = await ensureCashForBuy({
           supabase: payload.supabase,
           chatId,
           dryRun: payload.dryRun,
-          cashNeeded: sizing.minOrderAmount,
-          availableCash: deployableCash,
-        }).catch(() => ({ notes: [], releasedCash: 0 }));
+          requiredCash: sizing.investedAmount,
+          availableCash,
+        });
         if (topUp.releasedCash > 0) {
           availableCash += topUp.releasedCash;
-          deployableCash += topUp.releasedCash;
           summary.notes.push(...topUp.notes);
+        }
+        if (Math.ceil(sizing.investedAmount * BUY_CASH_BUFFER) > availableCash) {
           sizing = calculateAutoTradeBuySizing({
-            availableCash: deployableCash,
+            availableCash: Math.min(deployableCash, Math.floor(availableCash / BUY_CASH_BUFFER)),
             price: executionPrice,
             slotsLeft,
             currentHoldingCount: plannedHoldingCount,
@@ -4456,6 +4645,8 @@ async function executeAutoTradeSell(payload: {
   takeProfitTranchesDone: number;
   nextTakeProfitTranchesDone: number;
   dryRun: boolean;
+  /** 보유 중 최고가. 부분 매도 후 남은 포지션 memo에 보존한다. */
+  peakPrice?: number | null;
 }): Promise<{
   sold: boolean;
   partial: boolean;
@@ -4626,6 +4817,8 @@ async function executeAutoTradeSell(payload: {
       note: "autotrade-partial-take-profit",
       profile: payload.strategyProfile,
       takeProfitTranchesDone: payload.nextTakeProfitTranchesDone,
+      // 부분익절 후에도 수익잠금 트레일링이 고점 기준을 잃지 않도록 유지
+      peakPrice: payload.peakPrice ?? null,
     });
     const { error: updateError } = await payload.supabase
       .from(PORTFOLIO_TABLES.positions)
@@ -5068,6 +5261,14 @@ async function runDailyReviewForUser(payload: {
       staleOrFrozenCodes.set(code, freshness);
     }
   }
+  const guardFallback = staleOrFrozenCodes.size
+    ? await prepareStaleGuardFallback({
+        supabase: payload.supabase,
+        chatId,
+        codes: [...staleOrFrozenCodes.keys()],
+        apiBudget: payload.apiBudget,
+      })
+    : null;
 
   // 섹터 등급 맵: 보유 종목 섹터 강도 체크용 (Grade C 하락 시 리밸런싱 트리거)
   const sectorGradeById = await (async () => {
@@ -5129,8 +5330,11 @@ async function runDailyReviewForUser(payload: {
   });
   const marketOverview = marketOverviewResult.overview;
   const marketPolicy = detectAutoTradeMarketPolicy({ overview: marketOverview });
+  // 스윕(CD금리 ETF)은 언제든 현금화 가능한 유동자금이다. 예전엔 순수 현금만으로 현금하한을 따져서,
+  // 스윕이 현금을 시드 10%까지 파킹한 직후엔 하한(20~35%)에 항상 걸려 신규매수가 원천 차단됐다.
+  const cashSweepLiquidValue = await fetchCashSweepPositionValue(payload.supabase, chatId);
   let deployableCash = resolveDeployableCash({
-    availableCash,
+    availableCash: availableCash + cashSweepLiquidValue,
     seedCapital,
     minCashReservePct: marketPolicy.minCashReservePct,
   });
@@ -5243,6 +5447,94 @@ async function runDailyReviewForUser(payload: {
 
     if (staleOrFrozenCodes.has(holding.code)) {
       const freshness = staleOrFrozenCodes.get(holding.code);
+      const guardProfile = resolvePositionTradeProfile({
+        accountStrategy: selectedStrategy,
+        positionMemo: holding.memo,
+        baseTakeProfitPct,
+        baseStopLossPct,
+        sellSplitCount,
+      });
+      // 가드가 막아도 경직 손절선(-10%, 가치스윙 -15%)은 신뢰 가능한 대체 가격으로 계속 판단한다.
+      const fallbackStop = resolveGuardFallbackHardStop({
+        freshnessReason: freshness?.reason ?? null,
+        realtimePrice: toNumber(guardFallback?.realtimeByCode[holding.code]?.price, 0) || null,
+        lastHistoryClose: (() => {
+          const history = priceHistoryByCode.get(holding.code) ?? [];
+          return history.length ? history[history.length - 1].close : null;
+        })(),
+        buyPrice,
+        catastrophicStopPct: guardProfile.profile === "VALUE_SWING_CORE" ? 15 : 10,
+      });
+      if (fallbackStop.triggered && fallbackStop.price != null) {
+        try {
+          const fallbackSell = await executeAutoTradeSell({
+            supabase: payload.supabase,
+            runId: payload.runId,
+            chatId,
+            holding,
+            close: fallbackStop.price,
+            buyPrice,
+            feeRate,
+            taxRate,
+            sellQty: qty,
+            reason: "stop-loss",
+            stopLossContext: `guard-fallback-hard-stop:${fallbackStop.source}`,
+            profileLabel: getStrategyLabel(guardProfile.profile) || guardProfile.profile,
+            strategyProfile: guardProfile.profile,
+            takeProfitTranchesDone: 0,
+            nextTakeProfitTranchesDone: 0,
+            dryRun: payload.dryRun,
+          });
+          if (fallbackSell.sold) {
+            realizedDelta += fallbackSell.realizedPnlDelta;
+            availableCash += fallbackSell.proceeds;
+            try {
+              await setUserInvestmentPrefs(chatId, {
+                virtual_realized_pnl: toNumber(prefs.virtual_realized_pnl, 0) + realizedDelta,
+                virtual_cash: Math.max(0, Math.round(availableCash)),
+              });
+            } catch (e) {
+              console.error("[autoTrade] update virtual cash/pnl after guard-fallback stop failed", e);
+            }
+            stopLossCount += 1;
+            summary.sells += 1;
+            summary.notes.push(
+              `${fallbackSell.note} · 손익률 ${(fallbackStop.pnlPct ?? 0).toFixed(2)}%`,
+              `[가드 우회 경직손절] ${holding.code} 종가 ${freshness?.reason ?? "unknown"} 상태지만 ${fallbackStop.source === "realtime" ? "실시간가" : "마지막 종가"} 기준 경직 손절선 이탈 → 전량 청산`
+            );
+            (summary.mirrorOrders ??= []).push(
+              buildSellMirrorOrder({
+                kind: "stop-loss",
+                code: holding.code,
+                name: nameByCode.get(holding.code) ?? null,
+                quantity: qty,
+                limitPrice: fallbackStop.price,
+                remainQuantity: 0,
+                pnlPct: fallbackStop.pnlPct ?? 0,
+              })
+            );
+            continue;
+          }
+        } catch (error: unknown) {
+          const message = extractErrorMessage(error);
+          summary.errors += 1;
+          summary.notes.push(`${holding.code} 가드 우회 손절 실패: ${message}`);
+        }
+      }
+
+      const consecutiveSkipDays = countConsecutiveStaleGuardDays(
+        guardFallback?.priorSkipDateKeysByCode.get(holding.code) ?? [],
+        kstDateKey()
+      );
+      if (consecutiveSkipDays >= STALE_GUARD_ESCALATION_DAYS) {
+        (guardFallback?.escalations ?? []).push({
+          code: holding.code,
+          name: nameByCode.get(holding.code) ?? null,
+          days: consecutiveSkipDays,
+          reason: freshness?.reason ?? null,
+          pnlPct: fallbackStop.pnlPct,
+        });
+      }
       summary.skipped += 1;
       summary.notes.push(
         `[종가 신선도 가드] ${holding.code} 종가 오래됨/동결(${freshness?.reason ?? "unknown"}) → 매도 판단 스킵`
@@ -5257,6 +5549,10 @@ async function runDailyReviewForUser(payload: {
         detail: {
           freshnessReason: freshness?.reason ?? null,
           staleDays: freshness?.staleDays ?? null,
+          consecutiveSkipDays,
+          fallbackPrice: fallbackStop.price,
+          fallbackSource: fallbackStop.source,
+          fallbackPnlPct: fallbackStop.pnlPct != null ? Number(fallbackStop.pnlPct.toFixed(2)) : null,
         },
       });
       continue;
@@ -5336,6 +5632,7 @@ async function runDailyReviewForUser(payload: {
     const volatilityAdjustedStopLossPct = resolveVolatilityAdjustedStopPct({
       baseStopLossPct: tradeProfile.stopLossPct,
       atrPct: holdingAtr?.atrPct ?? null,
+      maxStopPct: resolveProfileStopCapPct(tradeProfile.stopLossPct),
     });
     const adaptiveExitThreshold = resolveAdaptiveExitThreshold({
       takeProfitPct: tradeProfile.takeProfitPct,
@@ -5357,16 +5654,15 @@ async function runDailyReviewForUser(payload: {
       halfExitStopPct: tradeProfile.profile === "VALUE_SWING_CORE" ? 12 : 7,
     });
 
-    // 트레일링 스탑: 보유 중 최고가 추적 → 고점 대비 -10% 이탈 시 익절
+    // 수익잠금 트레일링: 보유 중 최고가(종가 기준) 추적 → 고점 수익의 일정 비율 아래로 밀리면 청산
     const prevPeak = strategyState.peakPrice;
     const updatedPeakPrice = prevPeak != null ? Math.max(prevPeak, close) : close;
-    const TRAILING_STOP_FROM_PEAK_PCT = 10; // 고점 대비 하락 퍼센트
-    const TRAILING_STOP_ARM_PCT = 5;       // 트레일링 활성화 최소 수익 (평단 +5% 이상일 때만)
-    const trailingArmed = pnlPct >= TRAILING_STOP_ARM_PCT;
-    const trailingStopBreached =
-      trailingArmed &&
-      updatedPeakPrice > buyPrice &&
-      close < updatedPeakPrice * (1 - TRAILING_STOP_FROM_PEAK_PCT / 100);
+    const profitLock = resolveProfitLockTrailingStop({
+      buyPrice,
+      peakPrice: updatedPeakPrice,
+      currentPrice: close,
+    });
+    const trailingStopBreached = profitLock.breached;
 
     // 시장 레짐이 대형주 방어 모드일 때 KOSDAQ 보유 종목의 익절 기준 선제 적용
     const regimeEarlyExit =
@@ -5584,7 +5880,7 @@ async function runDailyReviewForUser(payload: {
     // 매도 이유 노트 (signal/regime/time-stop/overweight 기반이면 명시)
     const exitReasonLabel: string = (() => {
       if (plannedReviewExitTriggered) return `[예정검토일 도달] 기대 보유기간 종료 + 목표 미달 · 수익률 ${pnlPct.toFixed(2)}% → 정리`;
-      if (trailingStopBreached) return `[트레일링익절] 고점(${fmtKrw(updatedPeakPrice)}) 대비 -${TRAILING_STOP_FROM_PEAK_PCT}% 이탈 · 수익률 ${pnlPct.toFixed(2)}%`;
+      if (trailingStopBreached) return `[수익잠금 익절] 고점(${fmtKrw(updatedPeakPrice)}, +${profitLock.peakGainPct.toFixed(1)}%) 대비 잠금선 +${(profitLock.lockedGainPct ?? 0).toFixed(1)}% 이탈 · 수익률 ${pnlPct.toFixed(2)}%`;
       if (trendExitSignal.reason === "signal-strong-sell") return "[신호청산] STRONG_SELL 전환";
       if (trendExitSignal.reason === "signal-sell") return pnlPct > 0 ? "[신호익절] SELL 전환 + 수익 중" : "[신호손절] SELL 전환 + 손실 구간";
       if (trendExitSignal.reason === "trend-break-sma200") return "[추세이탈] SMA200 하향이탈";
@@ -5640,6 +5936,7 @@ async function runDailyReviewForUser(payload: {
         takeProfitTranchesDone: strategyState.takeProfitTranchesDone,
         nextTakeProfitTranchesDone: finalExitPlan.nextTakeProfitTranchesDone,
         dryRun: payload.dryRun,
+        peakPrice: updatedPeakPrice,
       });
 
       if (!result.sold) {
@@ -5711,6 +6008,18 @@ async function runDailyReviewForUser(payload: {
         detail: { error: message },
       });
     }
+  }
+
+  if (guardFallback?.escalations.length) {
+    await escalateStaleGuard({
+      supabase: payload.supabase,
+      runId: payload.runId,
+      chatId,
+      dryRun: payload.dryRun,
+      alreadyAlertedToday: guardFallback.alreadyAlertedToday,
+      escalations: guardFallback.escalations,
+      notes: summary.notes,
+    });
   }
 
   if (holdCount > 0 && takeProfitCount === 0 && stopLossCount === 0) {
@@ -5970,9 +6279,30 @@ async function runDailyReviewForUser(payload: {
         if (addOnBudget > 0 && addOnBudget < sizing.minOrderAmount) {
           continue;
         }
-        const addOnQty = Math.max(0, Math.floor(addOnBudget / executionPrice));
+        let addOnQty = Math.max(0, Math.floor(addOnBudget / executionPrice));
         if (addOnQty <= 0) {
           continue;
+        }
+        // deployableCash는 스윕 평가액을 포함하므로 순수 현금이 모자라면 스윕에서 부족분만 보충한다.
+        {
+          const topUp = await ensureCashForBuy({
+            supabase: payload.supabase,
+            chatId,
+            dryRun: payload.dryRun,
+            requiredCash: addOnQty * executionPrice,
+            availableCash,
+          });
+          if (topUp.releasedCash > 0) {
+            availableCash += topUp.releasedCash;
+            summary.notes.push(...topUp.notes);
+          }
+          const cashCapQty = Math.floor(availableCash / (executionPrice * BUY_CASH_BUFFER));
+          if (addOnQty > cashCapQty) {
+            addOnQty = cashCapQty;
+            if (addOnQty <= 0 || addOnQty * executionPrice < sizing.minOrderAmount) {
+              continue;
+            }
+          }
         }
 
         const addOnInvested = Math.round(addOnQty * executionPrice);
@@ -6550,22 +6880,23 @@ async function runDailyReviewForUser(payload: {
           prefs,
         });
 
-        // 다른 필터를 다 통과한 후보가 유휴현금 스윕(CD금리 ETF)이 현금을 다 묶어놓은 탓에만
-        // 매수 불가면, 스윕 포지션에서 부족분만 부분 매도해 자금을 보충한다.
-        if (sizing.quantity <= 0 && deployableCash < sizing.minOrderAmount) {
-          const topUp = await topUpCashSweepForBuy({
+        // 현금하한은 스윕 평가액을 포함해 계산하므로, 매수액이 순수 현금보다 크면 스윕에서 부족분만
+        // 부분 매도해 보충한다. 보충 후에도 모자라면 순수 현금 기준으로 다시 사이징한다.
+        if (sizing.quantity > 0) {
+          const topUp = await ensureCashForBuy({
             supabase: payload.supabase,
             chatId,
             dryRun: payload.dryRun,
-            cashNeeded: sizing.minOrderAmount,
-            availableCash: deployableCash,
-          }).catch(() => ({ notes: [], releasedCash: 0 }));
+            requiredCash: sizing.investedAmount,
+            availableCash,
+          });
           if (topUp.releasedCash > 0) {
             availableCash += topUp.releasedCash;
-            deployableCash += topUp.releasedCash;
             summary.notes.push(...topUp.notes);
+          }
+          if (Math.ceil(sizing.investedAmount * BUY_CASH_BUFFER) > availableCash) {
             sizing = calculateAutoTradeBuySizing({
-              availableCash: deployableCash,
+              availableCash: Math.min(deployableCash, Math.floor(availableCash / BUY_CASH_BUFFER)),
               price: executionPrice,
               slotsLeft,
               currentHoldingCount: plannedHoldingCount,

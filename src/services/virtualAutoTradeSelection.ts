@@ -66,6 +66,69 @@ export function resolveStatsSinceIso(rawSinceIso: string): string {
 }
 
 /**
+ * 종가 신선도 가드가 같은 종목을 며칠째 연속으로 막고 있는지 판단한다.
+ * 2026-07~09 stock_daily 조회 컬럼 오류로 보유종목 매도판단이 44영업일 연속 스킵됐는데
+ * SKIP 로그만 쌓이고 아무 알림이 없어 -28%까지 방치됐다. 이 일수 이상이면 운영 경보를 낸다.
+ */
+export const STALE_GUARD_ESCALATION_DAYS = 3;
+
+/**
+ * @param priorSkipDateKeys 이전 회차들의 가드 스킵 날짜(KST YYYY-MM-DD, 중복 허용)
+ * @param todayKey 오늘 KST 날짜 — 오늘도 스킵 중이므로 연속일수에 포함한다
+ * @returns 오늘 포함 연속 스킵 영업일수 (주말 등 기록 없는 날은 건너뛰고, 스킵 기록 사이 공백이 4일 초과면 끊긴 것으로 본다)
+ */
+export function countConsecutiveStaleGuardDays(priorSkipDateKeys: string[], todayKey: string): number {
+  const dayMs = 24 * 60 * 60 * 1000;
+  const days = [...new Set([...priorSkipDateKeys, todayKey])]
+    .map((key) => ({ key, ms: Date.parse(`${key}T00:00:00Z`) }))
+    .filter((item) => Number.isFinite(item.ms) && item.key <= todayKey)
+    .sort((a, b) => b.ms - a.ms);
+  if (!days.length || days[0].key !== todayKey) return 0;
+  let count = 1;
+  for (let i = 1; i < days.length; i += 1) {
+    // 주말/연휴(최대 4일 공백)는 연속으로 간주
+    if (days[i - 1].ms - days[i].ms > 4 * dayMs) break;
+    count += 1;
+  }
+  return count;
+}
+
+/**
+ * 종가 신선도 가드에 막힌 보유종목도 "파국적 손실"만큼은 판단한다.
+ * 가드는 잘못된 가격으로 매매하지 않으려는 장치지만, 가드 자체가 오작동하면(2026-07~09 사고)
+ * 손절선이 통째로 꺼져 손실이 무한정 커진다. 신뢰 가능한 대체 가격이 있으면 경직 손절선만 적용한다.
+ * - 1순위: 장중 실시간가 (종가 파이프라인과 독립)
+ * - 2순위: stale-date일 때 stock_daily의 마지막 종가 (오래됐지만 실제로 찍힌 가격)
+ * - frozen-close의 마지막 종가는 신뢰할 수 없으므로 사용하지 않는다.
+ */
+export function resolveGuardFallbackHardStop(input: {
+  freshnessReason: CloseFreshnessResult["reason"];
+  realtimePrice: number | null;
+  lastHistoryClose: number | null;
+  buyPrice: number;
+  catastrophicStopPct: number;
+}): { triggered: boolean; price: number | null; source: "realtime" | "last-close" | null; pnlPct: number | null } {
+  const buyPrice = Number(input.buyPrice);
+  const realtime = Number(input.realtimePrice);
+  const lastClose = Number(input.lastHistoryClose);
+  let price: number | null = null;
+  let source: "realtime" | "last-close" | null = null;
+  if (Number.isFinite(realtime) && realtime > 0) {
+    price = realtime;
+    source = "realtime";
+  } else if (input.freshnessReason === "stale-date" && Number.isFinite(lastClose) && lastClose > 0) {
+    price = lastClose;
+    source = "last-close";
+  }
+  if (price == null || !Number.isFinite(buyPrice) || buyPrice <= 0) {
+    return { triggered: false, price, source, pnlPct: null };
+  }
+  const pnlPct = ((price - buyPrice) / buyPrice) * 100;
+  const threshold = Math.abs(Number(input.catastrophicStopPct) || 10);
+  return { triggered: pnlPct <= -threshold, price, source, pnlPct };
+}
+
+/**
  * 경제지표(FOMC 금리결정/CPI 등 critical 이벤트) 발표 임박 시 단기/스윙 포지션을 선제 정리하는 가드.
  * 주식은 심리싸움이라 큰 이벤트 앞에서는 정리했다가 발표 후(변동성 소화 후) 다시 진입하는 편이
  * 단타/스윙에는 유리하지만, 장기(포지션코어/가치스윙) 보유는 노이즈에 흔들릴 필요가 없어 제외한다.
@@ -190,15 +253,101 @@ export function applyAdaptiveExitGuard(input: {
 /**
  * 변동성(ATR%) 기반 손절폭 보정.
  * 고정 손절폭(예: 2~3%)은 종목의 일봉 변동성보다 좁을 수 있어 정상 노이즈에도 끊긴다.
- * ATR%가 있으면 기준 손절폭과 "2.2 * ATR%" 중 더 넓은 쪽을 쓴다 (상한 12%).
+ * ATR%가 있으면 기준 손절폭과 "2.2 * ATR%" 중 더 넓은 쪽을 쓴다 (상한 maxStopPct, 기본 12%).
  */
 export function resolveVolatilityAdjustedStopPct(input: {
   baseStopLossPct: number;
   atrPct: number | null;
+  /** 확장 상한. 전략 프로필 의도를 지키려면 resolveProfileStopCapPct()를 넘긴다. */
+  maxStopPct?: number;
 }): number {
   const base = Math.abs(input.baseStopLossPct);
   if (input.atrPct == null || !Number.isFinite(input.atrPct) || input.atrPct <= 0) return base;
-  return Math.max(base, Math.min(12, 2.2 * input.atrPct));
+  const cap = Math.max(base, Math.min(12, Math.abs(Number(input.maxStopPct ?? 12)) || 12));
+  return Number(Math.max(base, Math.min(cap, 2.2 * input.atrPct)).toFixed(2));
+}
+
+/**
+ * 전략 프로필 손절폭 대비 ATR 확장 허용 상한.
+ * 예전엔 ATR 확장이 무조건 최대 12%까지 가서, "타이트 손절(2%)" 전략을 골라도 실제 손절이 10~12%로
+ * 적용되며 익절(~12%)과 손익비가 1:1까지 무너졌다. 프로필 손절의 2.5배(최소 +3%p)까지만 넓힌다.
+ * 예) 2% → 5%, 3% → 7.5%, 4% → 10%, 12%(가치스윙) → 12%
+ */
+export function resolveProfileStopCapPct(baseStopLossPct: number): number {
+  const base = Math.abs(Number(baseStopLossPct) || 0);
+  if (base <= 0) return 12;
+  return Number(Math.min(12, Math.max(base * 2.5, base + 3)).toFixed(2));
+}
+
+/** 익절폭이 손절폭의 이 배수 이상이 되도록 강제 (승률 40%에서도 기대값 ≥ 0) */
+export const MIN_REWARD_RISK_RATIO = 1.5;
+/** 손익비 보정으로 늘어난 익절폭의 상한 */
+export const MAX_REWARD_RISK_TAKE_PROFIT_PCT = 18;
+
+/**
+ * 손익비 하한 강제. 익절폭 < 손절폭 × 1.5이면 익절폭을 올린다(상한 18%).
+ * 상한에 막혀도 손익비가 부족하면 손절폭을 익절폭/1.5로 좁힌다.
+ */
+export function enforceMinRewardRisk(input: {
+  takeProfitPct: number;
+  stopLossPct: number;
+  minRatio?: number;
+  maxTakeProfitPct?: number;
+}): { takeProfitPct: number; stopLossPct: number } {
+  const minRatio = Math.max(1, Number(input.minRatio ?? MIN_REWARD_RISK_RATIO));
+  const maxTp = Math.max(1, Number(input.maxTakeProfitPct ?? MAX_REWARD_RISK_TAKE_PROFIT_PCT));
+  let takeProfitPct = Math.abs(Number(input.takeProfitPct) || 0);
+  let stopLossPct = Math.abs(Number(input.stopLossPct) || 0);
+  if (stopLossPct <= 0) return { takeProfitPct, stopLossPct };
+  if (takeProfitPct < stopLossPct * minRatio) {
+    takeProfitPct = Math.min(maxTp, stopLossPct * minRatio);
+  }
+  if (takeProfitPct < stopLossPct * minRatio) {
+    stopLossPct = takeProfitPct / minRatio;
+  }
+  return {
+    takeProfitPct: Number(takeProfitPct.toFixed(1)),
+    stopLossPct: Number(stopLossPct.toFixed(1)),
+  };
+}
+
+/**
+ * 수익 잠금 트레일링 스탑.
+ * 예전 방식(평단 +5% 이상일 때 고점 대비 -10% 이탈)은 고점 수익이 +16.7% 이상이어야만 발동해서,
+ * +8~15%까지 갔다가 되돌림을 맞는 흔한 경우엔 수익을 거의 다 반납하거나 손절로 끝났다
+ * (실측: 005930 고점 +8.5% → 청산 +0.2%, 204320 고점 +13.4% → 손실 청산).
+ * 고점 수익이 커질수록 더 많은 비율을 잠근다.
+ *   고점 +8% 이상  → 고점 수익의 40% 잠금
+ *   고점 +15% 이상 → 55% 잠금
+ *   고점 +25% 이상 → 65% 잠금
+ * 현재 수익률이 잠금 수익률 이하로 내려오면 청산한다.
+ */
+export const PROFIT_LOCK_ARM_PCT = 8;
+
+export function resolveProfitLockTrailingStop(input: {
+  buyPrice: number;
+  peakPrice: number | null;
+  currentPrice: number;
+}): { armed: boolean; breached: boolean; peakGainPct: number; lockedGainPct: number | null } {
+  const buyPrice = Number(input.buyPrice);
+  const current = Number(input.currentPrice);
+  const peak = Math.max(Number(input.peakPrice ?? 0) || 0, current);
+  if (!(buyPrice > 0) || !(current > 0)) {
+    return { armed: false, breached: false, peakGainPct: 0, lockedGainPct: null };
+  }
+  const peakGainPct = ((peak - buyPrice) / buyPrice) * 100;
+  if (peakGainPct < PROFIT_LOCK_ARM_PCT) {
+    return { armed: false, breached: false, peakGainPct, lockedGainPct: null };
+  }
+  const lockRatio = peakGainPct >= 25 ? 0.65 : peakGainPct >= 15 ? 0.55 : 0.4;
+  const lockedGainPct = peakGainPct * lockRatio;
+  const currentGainPct = ((current - buyPrice) / buyPrice) * 100;
+  return {
+    armed: true,
+    breached: currentGainPct <= lockedGainPct,
+    peakGainPct: Number(peakGainPct.toFixed(2)),
+    lockedGainPct: Number(lockedGainPct.toFixed(2)),
+  };
 }
 
 /**
@@ -524,7 +673,7 @@ export function detectAutoTradeMarketPolicy(input?: {
       mode: "rotation",
       label: "순환매 확장",
       reason: "코스닥 상대강도 우위 + 변동성 안정",
-      minCashReservePct: 20,
+      minCashReservePct: 15,
       allowedMarkets: ["KOSPI", "KOSDAQ"],
       kosdaqMaxRatio: 0.2,
       requireLargeCapKospi: false,
@@ -539,7 +688,7 @@ export function detectAutoTradeMarketPolicy(input?: {
       mode: "balanced",
       label: "경계",
       reason: "위험신호 1건 감지(VIX/환율/심리/breadth/지수급락 중 1건) — 코스닥 비중만 제한",
-      minCashReservePct: 30,
+      minCashReservePct: 25,
       allowedMarkets: ["KOSPI", "KOSDAQ"],
       kosdaqMaxRatio: 0.1,
       requireLargeCapKospi: false,
@@ -554,7 +703,7 @@ export function detectAutoTradeMarketPolicy(input?: {
       mode: "balanced",
       label: "주의-균형",
       reason: "코스피 200일선 하방 — 코스닥 비중 제한",
-      minCashReservePct: 35,
+      minCashReservePct: 30,
       allowedMarkets: ["KOSPI", "KOSDAQ"],
       kosdaqMaxRatio: 0.1,
       requireLargeCapKospi: false,
@@ -563,11 +712,13 @@ export function detectAutoTradeMarketPolicy(input?: {
     };
   }
 
+  // 중립 구간 현금하한 30% → 20%: 분할매수 2차 트랜치(40%) 여력만 남기면 충분하다.
+  // 30%일 땐 2/10종목 보유 상태에서도 신규매수가 "현금 하한 유지"로 막히며 시드 대부분이 CD금리 ETF에 묶였다.
   return {
     mode: "balanced",
     label: "균형",
     reason: "레짐 중립 구간",
-    minCashReservePct: 30,
+    minCashReservePct: 20,
     allowedMarkets: ["KOSPI", "KOSDAQ"],
     kosdaqMaxRatio: 0.2,
     requireLargeCapKospi: false,
