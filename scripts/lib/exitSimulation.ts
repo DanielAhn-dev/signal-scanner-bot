@@ -70,13 +70,35 @@ export function simulateExit(
   rule: RuleName,
   bars: Bar[],
   entryIdx: number,
-  opts: { baseTp: number; baseStop: number; maxHold: number; costPct: number }
+  opts: {
+    baseTp: number;
+    baseStop: number;
+    maxHold: number;
+    costPct: number;
+    /**
+     * 분할 익절 사다리(%). k번째 분할은 ladder[k]에서 판다(부족하면 마지막 값).
+     * 지정하지 않으면 규칙의 익절폭 하나로 모든 분할을 판단한다(운영 로직과 동일: 1차 익절 후 다음 점검에서
+     * 여전히 목표 위면 나머지도 바로 팔린다).
+     */
+    takeProfitLadderPct?: number[] | null;
+    /** 규칙 익절폭에 곱할 분할별 배수 (예: [1, 2] → 1차 목표, 2차는 목표의 2배). ladderPct보다 우선순위 낮음 */
+    takeProfitLadderMultipliers?: number[] | null;
+  }
 ): { result: TradeResult; exitIdx: number } | null {
   const entry = bars[entryIdx].open > 0 ? bars[entryIdx].open : bars[entryIdx].close;
   if (!(entry > 0)) return null;
   const history = bars.slice(Math.max(0, entryIdx - 40), entryIdx);
   const atr = calcATR(history.map((b) => ({ ...b, code: "", amount: 0 })));
-  const { takeProfitPct, stopLossPct } = resolveThresholds(rule, opts.baseTp, opts.baseStop, atr?.atrPct ?? null);
+  const thresholds = resolveThresholds(rule, opts.baseTp, opts.baseStop, atr?.atrPct ?? null);
+  const stopLossPct = thresholds.stopLossPct;
+  const ladder = (
+    opts.takeProfitLadderPct ??
+    (opts.takeProfitLadderMultipliers ?? []).map((m) => thresholds.takeProfitPct * m)
+  )
+    .filter((v) => Number.isFinite(v))
+    .map((v) => Math.max(3, v));
+  const takeProfitFor = (tranche: number): number =>
+    ladder.length ? ladder[Math.min(tranche, ladder.length - 1)] : thresholds.takeProfitPct;
 
   const UNITS = 100;
   let units = UNITS;
@@ -107,7 +129,7 @@ export function simulateExit(
       const plan = planAutoTradeExit({
         quantity: units,
         pnlPct,
-        takeProfitPct,
+        takeProfitPct: takeProfitFor(tranchesDone),
         stopLossPct,
         takeProfitSplitCount: 2,
         takeProfitTranchesDone: tranchesDone,
