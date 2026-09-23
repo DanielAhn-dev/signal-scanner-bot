@@ -364,6 +364,7 @@ export default function DiscoveryPage() {
   const [appliedSectorMode, setAppliedSectorMode] = useState<SectorFilterMode>('all')
   const [funnel, setFunnel] = useState<DiscoveryFunnel | null>(null)
   const [showAllPresets, setShowAllPresets] = useState(false)
+  const [showFunnel, setShowFunnel] = useState(false)
 
   async function fetchSectors() {
     try {
@@ -753,14 +754,22 @@ export default function DiscoveryPage() {
         </div>
       </div>
 
-      {/* 필터 퍼널 */}
+      {/* 필터 퍼널 — 왜 이 후보만 남았는지 확인하고 싶을 때만 펼쳐보는 진단 정보 */}
       {funnel && (
         <div className="bt-section">
-          <div className="bt-section-title">필터 퍼널</div>
-          <p style={{ fontSize: 12, color: 'var(--color-text-tertiary)', margin: 0, lineHeight: 1.8 }}>
-            연간 재무 유니버스 {funnel.annualUniverse}개 → 시총 통과 {funnel.afterMarketCap}개 → 가치 통과 {funnel.afterValue}개 →
-            PEG 조건 통과 {funnel.afterPeg}개 → 최근 2분기 데이터 보유 {funnel.afterTrendData}개 → 최종 성장 조건 통과 {funnel.afterGrowth}개
-          </p>
+          <button
+            className="sim-btn sim-btn--ghost"
+            style={{ minHeight: 30, padding: '6px 10px' }}
+            onClick={() => setShowFunnel((v) => !v)}
+          >
+            {showFunnel ? '필터 퍼널 접기 ▴' : '필터 퍼널 보기 (왜 이 후보만 남았는지) ▾'}
+          </button>
+          {showFunnel && (
+            <p style={{ fontSize: 12, color: 'var(--color-text-tertiary)', margin: '8px 0 0', lineHeight: 1.8 }}>
+              연간 재무 유니버스 {funnel.annualUniverse}개 → 시총 통과 {funnel.afterMarketCap}개 → 가치 통과 {funnel.afterValue}개 →
+              PEG 조건 통과 {funnel.afterPeg}개 → 최근 2분기 데이터 보유 {funnel.afterTrendData}개 → 최종 성장 조건 통과 {funnel.afterGrowth}개
+            </p>
+          )}
         </div>
       )}
 
