@@ -7,6 +7,7 @@ import {
   resolveGuardFallbackHardStop,
   resolveProfileStopCapPct,
   resolveProfitLockTrailingStop,
+  resolveRecoveryMode,
   resolveVolatilityAdjustedStopPct,
 } from "../src/services/virtualAutoTradeSelection";
 
@@ -121,4 +122,11 @@ test("detectAutoTradeMarketPolicy: 코스닥만 200일선 하방이면 코스닥
   const policy = detectAutoTradeMarketPolicy({ overview: { kospiSma200Ratio: 1.18, kosdaqSma200Ratio: 0.84 } });
   assert.equal(policy.label, "코스닥 약세");
   assert.equal(policy.kosdaqMaxRatio, 0.1);
+});
+
+test("resolveRecoveryMode: 평가액·장부 수익률이 모두 임계값 이하일 때만 복구모드", () => {
+  // 2026-07~09 사고: 평가액 계산 -77%, 장부 -2% → 복구모드 끄고 불일치 경고
+  assert.deepEqual(resolveRecoveryMode({ valuationReturnPct: -77, ledgerReturnPct: -2 }), { active: false, mismatch: true });
+  assert.deepEqual(resolveRecoveryMode({ valuationReturnPct: -8, ledgerReturnPct: -7 }), { active: true, mismatch: false });
+  assert.deepEqual(resolveRecoveryMode({ valuationReturnPct: 1, ledgerReturnPct: 0.5 }), { active: false, mismatch: false });
 });

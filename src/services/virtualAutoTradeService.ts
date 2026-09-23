@@ -58,6 +58,7 @@ import {
   resolveProfitLockTrailingStop,
   PROFIT_LOCK_ARM_PCT,
   resolveGuardFallbackHardStop,
+  resolveRecoveryMode,
   countConsecutiveStaleGuardDays,
   STALE_GUARD_ESCALATION_DAYS,
   selectRunType,
@@ -6100,7 +6101,28 @@ async function runDailyReviewForUser(payload: {
       holdingsValue: totalHoldingsValue,
       cashSweepValue,
     });
-    const recoveryModeActive = portfolioReturnPct <= RECOVERY_MODE_THRESHOLD_PCT;
+    // 장부 기준 수익률: 실현손익(이번 회차 매도분 포함) + 남은 보유분 평가손익
+    const unrealizedPnl = activeHoldings.reduce((sum, row) => {
+      const qty = Math.max(0, Math.floor(toNumber(row.quantity, 0)));
+      const buyPrice = toNumber(row.buy_price, 0);
+      const close = closeByCode.get(row.code) ?? 0;
+      return sum + (qty > 0 && buyPrice > 0 && close > 0 ? (close - buyPrice) * qty : 0);
+    }, 0);
+    const ledgerReturnPct =
+      seedCapital > 0
+        ? ((toNumber(prefs.virtual_realized_pnl, 0) + realizedDelta + unrealizedPnl) / seedCapital) * 100
+        : 0;
+    const recoveryMode = resolveRecoveryMode({
+      valuationReturnPct: portfolioReturnPct,
+      ledgerReturnPct,
+      thresholdPct: RECOVERY_MODE_THRESHOLD_PCT,
+    });
+    if (recoveryMode.mismatch) {
+      summary.notes.push(
+        `[데이터 점검] 평가액 기준 수익률 ${portfolioReturnPct.toFixed(1)}% vs 장부 기준 ${ledgerReturnPct.toFixed(1)}% 불일치 — 현금/스윕/보유 평가 계산 확인 필요`
+      );
+    }
+    const recoveryModeActive = recoveryMode.active;
     if (recoveryModeActive) {
       summary.notes.push(
         `[복구모드] 전체 수익률 ${portfolioReturnPct.toFixed(1)}% · 신규/추가 매수 차단 · 기존 포지션 정리 우선`

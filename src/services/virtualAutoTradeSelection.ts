@@ -834,6 +834,30 @@ export function calculatePortfolioReturnPct(input: {
   return ((portfolioValue - seedCapital) / seedCapital) * 100;
 }
 
+/**
+ * 계좌 복구모드 판정(신규/추가 매수 차단).
+ * 평가액 기반 수익률과 장부(실현손익 + 보유 평가손익) 기반 수익률이 "둘 다" 임계값 이하일 때만 켠다.
+ * 2026-07-15~09-22 평가액 계산이 유휴현금 스윕(CD금리 ETF)을 빠뜨려 실제로는 약 -2%인 계좌가 -77%로
+ * 계산됐고, 복구모드가 두 달간 신규매수를 막았다(원익IPS 10만원대 BUY 신호도 이때 놓침).
+ * 두 계산이 크게 어긋나면(mismatch) 데이터 문제로 보고 매수를 막지 않되 경고를 남긴다.
+ */
+export function resolveRecoveryMode(input: {
+  valuationReturnPct: number;
+  ledgerReturnPct: number;
+  thresholdPct?: number;
+  mismatchTolerancePct?: number;
+}): { active: boolean; mismatch: boolean } {
+  const threshold = Number(input.thresholdPct ?? -5);
+  const tolerance = Math.abs(Number(input.mismatchTolerancePct ?? 5));
+  const valuation = Number(input.valuationReturnPct);
+  const ledger = Number(input.ledgerReturnPct);
+  if (!Number.isFinite(valuation) || !Number.isFinite(ledger)) return { active: false, mismatch: true };
+  return {
+    active: valuation <= threshold && ledger <= threshold,
+    mismatch: Math.abs(valuation - ledger) > tolerance,
+  };
+}
+
 function filterRowsByMarketPolicy(input: {
   rows: RankedCandidate[];
   policy?: AutoTradeMarketPolicy;
