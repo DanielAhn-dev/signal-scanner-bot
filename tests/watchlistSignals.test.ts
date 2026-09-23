@@ -103,4 +103,6 @@ test("resolveWatchDecision: TAKE_PROFIT 신호 + 트리거 없음이면 HOLD로 
 
   assert.equal(decision.action, "HOLD");
   assert.equal(decision.executionGuardPassed, false);
+  assert.equal(decision.blockedTakeProfit, true);
+  assert.equal(decision.blockedStopLoss, false);
 });

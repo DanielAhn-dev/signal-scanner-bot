@@ -2228,12 +2228,19 @@ export async function handleWatchlistResponseCommand(
         ? "  재진입 감시: 손실권이지만 수급/거래대금 트리거가 회복돼 1회 분할 재진입 후보입니다."
         : null;
 
-    // 2-3: 손절 미이행 경고
-    const blockedStopLossLines: string[] = [];
+    // 2-3: 손절/익절 미이행 경고
+    const blockedExitLines: string[] = [];
     if (decision.blockedStopLoss) {
-      blockedStopLossLines.push("  ⚠️ <b>손절 미이행 주의</b> — 손절 조건 충족이지만 트리거 미충족으로 억제됨");
+      blockedExitLines.push("  ⚠️ <b>손절 미이행 주의</b> — 손절 조건 충족이지만 트리거 미충족으로 억제됨");
       if (elapsedTradingDays >= 3) {
-        blockedStopLossLines.push(`  🔴 장기 미이행 (약 ${elapsedTradingDays}거래일) — 즉시 점검 권고`);
+        blockedExitLines.push(`  🔴 장기 미이행 (약 ${elapsedTradingDays}거래일) — 즉시 점검 권고`);
+      }
+    }
+    // 2-4: 익절 미이행 경고 (목표가 도달 후 트리거 미충족으로 수익 실현이 억제된 경우)
+    if (decision.blockedTakeProfit) {
+      blockedExitLines.push("  ⚠️ <b>익절 미이행 주의</b> — 목표가 도달이지만 트리거 미충족으로 억제됨");
+      if (elapsedTradingDays >= 3) {
+        blockedExitLines.push(`  🟡 장기 미이행 (약 ${elapsedTradingDays}거래일) — 반전 위험 점검 권고`);
       }
     }
 
@@ -2270,7 +2277,7 @@ export async function handleWatchlistResponseCommand(
         `  [대응카드] 사유 ${decision.reason} · 트리거 ${decision.triggerReasons.length ? decision.triggerReasons.join(", ") : "대기"} · 신뢰도 ${decision.confidence}% · 우선순위 ${priority}`,
         ...(maturityWarningLine ? [maturityWarningLine] : []),
         ...(reentryWatch ? [reentryWatch] : []),
-        ...blockedStopLossLines,
+        ...blockedExitLines,
       ].join("\n"),
     });
   }

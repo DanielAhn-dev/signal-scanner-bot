@@ -46,6 +46,8 @@ export interface WatchDecision {
   confidence: number;
     /** STOP_LOSS 조건은 충족했지만 수급/거래대금 트리거 미충족으로 억제된 경우 true */
     blockedStopLoss?: boolean;
+    /** TAKE_PROFIT 조건은 충족했지만 수급/거래대금 트리거 미충족으로 억제된 경우 true */
+    blockedTakeProfit?: boolean;
 }
 
 function toNum(v: unknown): number {
@@ -188,7 +190,10 @@ export function resolveWatchDecision(payload: {
       triggerReasons: [],
       executionGuardPassed: false,
         confidence,
+        // stopLossBypass가 true면 이 분기에 진입하지 않으므로 base.action은 여기서 STOP_LOSS일 수 없다.
+        // (항상 false였던 blockedStopLoss 대신, 실제로 억제되는 TAKE_PROFIT을 구분해 남긴다.)
         blockedStopLoss: base.action === "STOP_LOSS",
+        blockedTakeProfit: base.action === "TAKE_PROFIT",
     };
   }
 
@@ -222,6 +227,8 @@ export async function fetchWatchMicroSignalsByCodes(
   const dailyRows: StockDailyRow[] = [];
   const flowRows: InvestorDailyRow[] = [];
 
+  let partialData = false;
+
   for (const codeChunk of chunkArray(uniqCodes, CODE_CHUNK_SIZE)) {
     for (let offset = 0; ; offset += PAGE_SIZE) {
       const { data, error } = await supabase
@@ -231,7 +238,15 @@ export async function fetchWatchMicroSignalsByCodes(
         .gte("date", since90)
         .order("date", { ascending: false })
         .range(offset, offset + PAGE_SIZE - 1);
-      if (error) break;
+      if (error) {
+        // 조용히 중단하면 거래대금 데이터가 일부만 로드된 채로 매도 판단(TAKE_PROFIT 트리거 등)에
+        // 쓰여도 알 수 없다. 경고 로그를 남기고 부분 데이터임을 표시한다.
+        console.warn(
+          `[watchlistSignals] stock_daily fetch partial failure (offset=${offset}, codes=${codeChunk.length}): ${error.message}`
+        );
+        partialData = true;
+        break;
+      }
       const rows = (data ?? []) as StockDailyRow[];
       dailyRows.push(...rows);
       if (rows.length < PAGE_SIZE) break;
@@ -245,11 +260,23 @@ export async function fetchWatchMicroSignalsByCodes(
         .gte("date", since30)
         .order("date", { ascending: false })
         .range(offset, offset + PAGE_SIZE - 1);
-      if (error) break;
+      if (error) {
+        console.warn(
+          `[watchlistSignals] investor_daily fetch partial failure (offset=${offset}, codes=${codeChunk.length}): ${error.message}`
+        );
+        partialData = true;
+        break;
+      }
       const rows = (data ?? []) as InvestorDailyRow[];
       flowRows.push(...rows);
       if (rows.length < PAGE_SIZE) break;
     }
+  }
+
+  if (partialData) {
+    console.warn(
+      `[watchlistSignals] micro signals computed from partial data for ${uniqCodes.length} code(s) — sell-trigger decisions may be less reliable this run`
+    );
   }
 
   const dailyByCode = new Map<string, StockDailyRow[]>();

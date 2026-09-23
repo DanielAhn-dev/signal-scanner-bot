@@ -1268,6 +1268,7 @@ export function pickAutoTradeAddOnCandidates(input: {
     marketPolicy: Math.max(0, initialCount - marketPolicyRows.length),
     invalidOrNotHeld: Math.max(0, marketPolicyRows.length - rows.length),
     addOnDisabled: 0,
+    invalidBuyPrice: 0,
     scoreThreshold: 0,
     liquidity: 0,
     rsi: 0,
@@ -1285,9 +1286,14 @@ export function pickAutoTradeAddOnCandidates(input: {
         rejectedByReason.addOnDisabled += 1;
         return false;
       }
+      if (!(holding.buyPrice > 0)) {
+        // buyPrice<=0(데이터 오류/레거시 레코드)은 pullbackPct가 0으로 기본 처리되어
+        // -6~+3% 밴드를 항상 통과해버리는 버그가 있었다. 이런 포지션은 추가매수 대상에서 제외한다.
+        rejectedByReason.invalidBuyPrice += 1;
+        return false;
+      }
 
-      const pullbackPct =
-        holding.buyPrice > 0 ? ((row.close - holding.buyPrice) / holding.buyPrice) * 100 : 0;
+      const pullbackPct = ((row.close - holding.buyPrice) / holding.buyPrice) * 100;
       const withinAddOnBand = pullbackPct >= -6 && pullbackPct <= 3;
       const strongContinuation =
         (isPreferredBuySignal(row.signal) || isStableBullTurn(row.stableTurn)) &&
