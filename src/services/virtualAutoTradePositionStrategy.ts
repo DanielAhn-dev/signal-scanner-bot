@@ -187,6 +187,77 @@ export function buildPositionStrategyMemo(input: {
   return parts.join(";");
 }
 
+export type EntryPriceGuideVerdict = "ok" | "caution" | "stale";
+
+export type EntryPriceGuide = {
+  verdict: EntryPriceGuideVerdict;
+  gapPct: number;
+  bandLowPct: number;
+  bandHighPct: number;
+  message: string;
+};
+
+// 프로파일별 "신호 발생가 대비 여전히 매수해도 되는" 허용 갭 범위. SHORT_SWING은 신호 소멸이 빨라 가장 좁게 잡는다.
+const ENTRY_PRICE_GUIDE_BANDS: Record<PositionStrategyProfile, { low: number; high: number }> = {
+  SHORT_SWING: { low: -3, high: 2 },
+  SWING: { low: -6, high: 3 },
+  POSITION_CORE: { low: -10, high: 5 },
+  VALUE_SWING_CORE: { low: -10, high: 5 },
+  DEFAULT: { low: -6, high: 3 },
+  HOLD_SAFE: { low: -6, high: 3 },
+  REDUCE_TIGHT: { low: -6, high: 3 },
+  WAIT_AND_DIP_BUY: { low: -6, high: 3 },
+};
+
+/** 봇이 기록한 매수가로 지금(익일 등) 실제 매수를 진행해도 되는지 판단 가이드 */
+export function evaluateEntryPriceGuide(input: {
+  profile: PositionStrategyProfile;
+  buyPrice: number;
+  currentPrice: number;
+  holdDays?: number | null;
+}): EntryPriceGuide {
+  const band = ENTRY_PRICE_GUIDE_BANDS[input.profile] ?? ENTRY_PRICE_GUIDE_BANDS.DEFAULT;
+  const gapPct = input.buyPrice > 0 ? ((input.currentPrice - input.buyPrice) / input.buyPrice) * 100 : 0;
+  const withinBand = gapPct >= band.low && gapPct <= band.high;
+  const holdDays = Math.max(0, toNumber(input.holdDays, 0));
+  const isShortSwingAged = input.profile === "SHORT_SWING" && holdDays >= 2;
+
+  if (isShortSwingAged) {
+    return {
+      verdict: "stale",
+      gapPct,
+      bandLowPct: band.low,
+      bandHighPct: band.high,
+      message: "단기 스윙 신호는 2일 이상 지나 신뢰도가 낮습니다. 재검토 후 진입하세요.",
+    };
+  }
+  if (withinBand) {
+    return {
+      verdict: "ok",
+      gapPct,
+      bandLowPct: band.low,
+      bandHighPct: band.high,
+      message: "신호 발생가 대비 허용 범위 내입니다. 현재가 매수 진행 가능합니다.",
+    };
+  }
+  if (gapPct > band.high) {
+    return {
+      verdict: "caution",
+      gapPct,
+      bandLowPct: band.low,
+      bandHighPct: band.high,
+      message: `신호 발생가보다 ${gapPct.toFixed(1)}% 높습니다. 추격 매수보다 눌림 대기를 권장합니다.`,
+    };
+  }
+  return {
+    verdict: "stale",
+    gapPct,
+    bandLowPct: band.low,
+    bandHighPct: band.high,
+    message: `신호 발생가보다 ${Math.abs(gapPct).toFixed(1)}% 낮습니다. 하락 사유 재확인 후 진입하세요.`,
+  };
+}
+
 export function classifyAutoTradeEntryProfile(input: {
   accountStrategy?: string | null;
   riskProfile?: string | null;

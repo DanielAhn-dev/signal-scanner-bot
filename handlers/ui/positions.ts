@@ -6,6 +6,10 @@ import {
   logRealtimeCoverageMetric,
   type RealtimeStockData,
 } from '../../src/utils/fetchRealtimePrice'
+import {
+  evaluateEntryPriceGuide,
+  parsePositionStrategyState,
+} from '../../src/services/virtualAutoTradePositionStrategy'
 
 const POSITIONS_CACHE_TTL_MS = Math.max(0, Number(process.env.UI_POSITIONS_CACHE_TTL_MS || 8_000))
 const POSITIONS_LOTS_TIMEOUT_MS = Math.max(120, Number(process.env.UI_POSITIONS_LOTS_TIMEOUT_MS || 300))
@@ -350,6 +354,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const lots = lotsByPosition[pid] ?? []
       const score = scoreByCode.get(code)
       const pullback = pullbackByCode.get(code)
+      const entryPriceGuide = (buyPrice != null && close != null)
+        ? evaluateEntryPriceGuide({
+            profile: parsePositionStrategyState(row.memo).profile,
+            buyPrice,
+            currentPrice: close,
+            holdDays,
+          })
+        : null
 
       // recommended additional buy based on invested_amount target
       let recommended_buy_qty: number | null = null
@@ -401,6 +413,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         lots,
         recommended_buy_qty,
         recommended_buy_amount,
+        entry_price_guide: entryPriceGuide,
       }
     })
 

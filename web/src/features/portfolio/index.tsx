@@ -1676,7 +1676,20 @@ export default function Portfolio() {
           const reasonOpen = openReasonKey === reasonKey
 
           // 판정근거 배지 계산
-          const reasonBadges: { label: string; type: 'partial' | 'add' | 'warn' | 'ok' | 'neutral' }[] = []
+          const reasonBadges: { label: string; type: 'partial' | 'add' | 'warn' | 'ok' | 'neutral'; title?: string }[] = []
+          const entryGuide = r?.entry_price_guide as { verdict: 'ok' | 'caution' | 'stale'; gapPct: number; message: string } | null | undefined
+          if (entryGuide) {
+            const guideLabel = entryGuide.verdict === 'ok'
+              ? '지금 매수 무방'
+              : entryGuide.verdict === 'caution'
+                ? `추격주의 ${entryGuide.gapPct >= 0 ? '+' : ''}${entryGuide.gapPct.toFixed(1)}%`
+                : `재검토 필요 ${entryGuide.gapPct >= 0 ? '+' : ''}${entryGuide.gapPct.toFixed(1)}%`
+            reasonBadges.push({
+              label: guideLabel,
+              type: entryGuide.verdict === 'ok' ? 'ok' : 'warn',
+              title: entryGuide.message,
+            })
+          }
           if (holdingState === 'partial') {
             reasonBadges.push({ label: '익절구간', type: 'partial' })
             if (['SELL', 'HOLD'].includes(scoreSignal)) reasonBadges.push({ label: scoreSignal === 'SELL' ? '매도신호' : '보유신호', type: 'warn' })
@@ -1763,7 +1776,7 @@ export default function Portfolio() {
                   <span
                     key={i}
                     className={`portfolio-reason-badge portfolio-reason-badge--${b.type}`}
-                    title={BADGE_TOOLTIPS[b.label] || b.label}
+                    title={b.title || BADGE_TOOLTIPS[b.label] || b.label}
                   >
                     {b.label}
                   </span>
