@@ -26,20 +26,24 @@ def fetch_ohlcv_per_ticker(supabase: Client, trading_date: str) -> bool:
     
     print(f"  DB latest stock_daily: {latest_date} (target: {trading_date})")
     
-    # If gap is too large, reset table for safe recovery
+    # 공백이 커도 테이블을 비우지 않는다. 예전엔 30일 초과 공백이면 stock_daily 전체를 삭제했는데,
+    # 백테스트·지표·학습이 모두 이 테이블의 과거 이력에 의존하므로 복구 불가능한 손실이 된다.
+    # 아래 180일 상한으로 재수집 범위만 제한하고, 기존 행은 upsert로 덮어쓴다.
     days_gap = (trading_dt - latest_dt).days
     if days_gap > 30:
-        print(f"   Warning: DB gap is {days_gap} days (latest: {latest_date}, target: {trading_date})")
-        print(f"   Reinitializing stock_daily and rebuilding a recent 180-day window...")
-        try:
-            supabase.table("stock_daily").delete().gte("date", "2000-01-01").execute()
-            latest_date = "2025-01-01"
-            print(f"   stock_daily table reset complete")
-        except Exception as e:
-            print(f"   Reset failed: {e}, continuing without reset...")
+        print(f"   Warning: DB gap is {days_gap} days (latest: {latest_date}, target: {trading_date}) — refetching without reset")
 
     from_dt = datetime.strptime(latest_date, "%Y-%m-%d") + timedelta(days=1)
-    
+
+    # 증분 시작점이 "전체 최신 날짜 다음날"이라, 어떤 날 일부 종목만 수집되면(차단·타임아웃) 그 종목의
+    # 빈 날짜가 영영 채워지지 않았다(예: 2026-07-17 전 종목 누락, 05-22 66종목만 수집).
+    # 종목당 API 호출은 기간과 무관하게 1회이므로, 최근 REFETCH_DAYS를 항상 다시 받아 구멍을 자가복구한다.
+    # 단, 이미 target까지 수집된 상태의 재실행은 기존처럼 스킵한다(KRX 대량조회 차단 위험 방지).
+    REFETCH_DAYS = 10
+    refetch_from = datetime.combine(trading_dt - timedelta(days=REFETCH_DAYS), datetime.min.time())
+    if from_dt.date() <= trading_dt and from_dt > refetch_from:
+        from_dt = refetch_from
+
     cutoff_dt = trading_dt - timedelta(days=180)
     if from_dt.date() < cutoff_dt:
         from_dt = datetime.combine(cutoff_dt, datetime.min.time())

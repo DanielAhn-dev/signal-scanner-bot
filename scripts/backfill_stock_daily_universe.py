@@ -83,14 +83,22 @@ def detect_last_trading_date() -> str:
 
 
 def fetch_target_codes(supabase: Client, universe: str) -> list[tuple[str, str]]:
-    query = supabase.table("stocks").select("code,name,is_active,universe_level")
-
-    if universe == "active":
-        query = query.eq("is_active", True)
-    elif universe == "core-extended":
-        query = query.eq("is_active", True).in_("universe_level", ["core", "extended"])
-
-    rows = query.execute().data or []
+    # PostgREST 응답 상한(1000행) 때문에 active(4천+종목) 조회가 조용히 잘려 --codes로 지정한 종목도
+    # 대상에서 빠지는 문제가 있었다. 페이지 단위로 끝까지 읽는다.
+    rows: list[dict] = []
+    page_size = 1000
+    offset = 0
+    while True:
+        query = supabase.table("stocks").select("code,name,is_active,universe_level")
+        if universe == "active":
+            query = query.eq("is_active", True)
+        elif universe == "core-extended":
+            query = query.eq("is_active", True).in_("universe_level", ["core", "extended"])
+        page = query.order("code").range(offset, offset + page_size - 1).execute().data or []
+        rows.extend(page)
+        if len(page) < page_size:
+            break
+        offset += page_size
 
     out: list[tuple[str, str]] = []
     for row in rows:
