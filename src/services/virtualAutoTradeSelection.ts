@@ -279,38 +279,6 @@ export function resolveProfileStopCapPct(baseStopLossPct: number): number {
   return Number(Math.min(12, Math.max(base * 2.5, base + 3)).toFixed(2));
 }
 
-/** 익절폭이 손절폭의 이 배수 이상이 되도록 강제 (승률 40%에서도 기대값 ≥ 0) */
-export const MIN_REWARD_RISK_RATIO = 1.5;
-/** 손익비 보정으로 늘어난 익절폭의 상한 */
-export const MAX_REWARD_RISK_TAKE_PROFIT_PCT = 18;
-
-/**
- * 손익비 하한 강제. 익절폭 < 손절폭 × 1.5이면 익절폭을 올린다(상한 18%).
- * 상한에 막혀도 손익비가 부족하면 손절폭을 익절폭/1.5로 좁힌다.
- */
-export function enforceMinRewardRisk(input: {
-  takeProfitPct: number;
-  stopLossPct: number;
-  minRatio?: number;
-  maxTakeProfitPct?: number;
-}): { takeProfitPct: number; stopLossPct: number } {
-  const minRatio = Math.max(1, Number(input.minRatio ?? MIN_REWARD_RISK_RATIO));
-  const maxTp = Math.max(1, Number(input.maxTakeProfitPct ?? MAX_REWARD_RISK_TAKE_PROFIT_PCT));
-  let takeProfitPct = Math.abs(Number(input.takeProfitPct) || 0);
-  let stopLossPct = Math.abs(Number(input.stopLossPct) || 0);
-  if (stopLossPct <= 0) return { takeProfitPct, stopLossPct };
-  if (takeProfitPct < stopLossPct * minRatio) {
-    takeProfitPct = Math.min(maxTp, stopLossPct * minRatio);
-  }
-  if (takeProfitPct < stopLossPct * minRatio) {
-    stopLossPct = takeProfitPct / minRatio;
-  }
-  return {
-    takeProfitPct: Number(takeProfitPct.toFixed(1)),
-    stopLossPct: Number(stopLossPct.toFixed(1)),
-  };
-}
-
 /**
  * 수익 잠금 트레일링 스탑.
  * 예전 방식(평단 +5% 이상일 때 고점 대비 -10% 이탈)은 고점 수익이 +16.7% 이상이어야만 발동해서,

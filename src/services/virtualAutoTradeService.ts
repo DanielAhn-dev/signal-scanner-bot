@@ -55,7 +55,6 @@ import {
   resolveTakeProfitCooldownDays,
   resolveVolatilityAdjustedStopPct,
   resolveProfileStopCapPct,
-  enforceMinRewardRisk,
   resolveProfitLockTrailingStop,
   PROFIT_LOCK_ARM_PCT,
   resolveGuardFallbackHardStop,
@@ -967,8 +966,17 @@ function resolveAdaptiveExitThreshold(input: {
   takeProfitPct = Number(clamp(takeProfitPct, 3, 14).toFixed(1));
   // 상한 12: ATR 기반 변동성 확장(resolveVolatilityAdjustedStopPct)이 여기서 다시 깎이지 않도록.
   stopLossPct = Number(clamp(stopLossPct, 1.5, 12).toFixed(1));
-  // 손익비 하한 1.5: 예전엔 "익절 ≥ 손절+1.5%p"만 보장해 손절 12%/익절 13.5%(≈1.1:1)가 나왔다.
-  return enforceMinRewardRisk({ takeProfitPct, stopLossPct });
+  // 손익비 1.5 강제(익절 상향)도 검토했으나 백테스트(scripts/backtest_exit_params.ts, 2026-03~09
+  // pullback A 신호 1.7천건)에서 모든 파라미터 조합에 대해 익절 도달률이 떨어져 성과가 악화됐다.
+  // 손익비는 손절 확장 상한(resolveProfileStopCapPct)과 수익잠금 트레일링으로 관리한다.
+  if (takeProfitPct < stopLossPct + 1.5) {
+    takeProfitPct = Number(Math.min(14, stopLossPct + 1.5).toFixed(1));
+  }
+
+  return {
+    takeProfitPct,
+    stopLossPct,
+  };
 }
 
 function normalizeLongTermRatio(value: unknown, fallback = 70): number {

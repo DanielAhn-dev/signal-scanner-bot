@@ -3,7 +3,6 @@ import assert from "node:assert/strict";
 import {
   countConsecutiveStaleGuardDays,
   detectAutoTradeMarketPolicy,
-  enforceMinRewardRisk,
   resolveGuardFallbackHardStop,
   resolveProfileStopCapPct,
   resolveProfitLockTrailingStop,
@@ -74,27 +73,6 @@ test("resolveProfileStopCapPct / resolveVolatilityAdjustedStopPct: ATR 확장이
   );
   // cap 미지정 시 기존 동작(상한 12%) 유지
   assert.equal(resolveVolatilityAdjustedStopPct({ baseStopLossPct: 3, atrPct: 5 }), 11);
-});
-
-test("enforceMinRewardRisk: 익절폭이 손절폭의 1.5배 이상이 되도록 보정한다", () => {
-  assert.deepEqual(enforceMinRewardRisk({ takeProfitPct: 13.5, stopLossPct: 10 }), {
-    takeProfitPct: 15,
-    stopLossPct: 10,
-  });
-  // 익절 상한(18%)에 막히면 손절을 좁힌다
-  assert.deepEqual(enforceMinRewardRisk({ takeProfitPct: 13.5, stopLossPct: 12 }), {
-    takeProfitPct: 18,
-    stopLossPct: 12,
-  });
-  assert.deepEqual(enforceMinRewardRisk({ takeProfitPct: 14, stopLossPct: 12, maxTakeProfitPct: 15 }), {
-    takeProfitPct: 15,
-    stopLossPct: 10,
-  });
-  // 이미 충분하면 그대로
-  assert.deepEqual(enforceMinRewardRisk({ takeProfitPct: 8, stopLossPct: 4 }), {
-    takeProfitPct: 8,
-    stopLossPct: 4,
-  });
 });
 
 test("resolveProfitLockTrailingStop: 고점 수익의 일정 비율 아래로 밀리면 청산", () => {
