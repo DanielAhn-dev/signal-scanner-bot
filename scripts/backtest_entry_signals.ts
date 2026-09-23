@@ -17,7 +17,7 @@
  *   pnpm dlx tsx scripts/backtest_entry_signals.ts
  *   pnpm dlx tsx scripts/backtest_entry_signals.ts --from=2025-10-01 --split=2026-06-01 --minScore=50
  *   옵션: --to  --maxHold=20  --stop=4  --tp=8  --costPct=0.45  --cooldown=5  --minN=40  --requireFactors=false
- *         --source=engine|legacy|all (engine = TS 엔진/과거 재계산 점수만)
+ *         --source=engine|legacy|all (engine = TS 엔진 팩터가 있는 행: engine, engine_pit, 하이브리드)
  */
 import "dotenv/config";
 import { createClient } from "@supabase/supabase-js";
@@ -255,7 +255,9 @@ async function main() {
   const dropped = { noBars: 0, partialFactors: 0, contaminated: 0, stale: 0, cooldown: 0, incomplete: 0 };
   for (const row of scoreRows) {
     const scoreSource = String(row.factors.score_source ?? "legacy_fallback");
-    const isEngine = scoreSource === "engine" || scoreSource === "engine_pit";
+    // 하이브리드(legacy 점수 + 엔진 팩터) 행도 팩터는 엔진 것이므로 engine 집단으로 본다
+    const isEngine =
+      scoreSource === "engine" || scoreSource === "engine_pit" || scoreSource === "legacy_score+engine_factors";
     if ((sourceFilter === "engine" && !isEngine) || (sourceFilter === "legacy" && isEngine)) {
       dropped.partialFactors += 1;
       continue;

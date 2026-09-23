@@ -30,18 +30,22 @@ def run_engine_score_sync(asof: str) -> bool:
 
 
 def calculate_stock_scores(supabase: Client, trading_date: str) -> dict:
-    """Calculate stock scores (engine first, legacy fallback)."""
+    """
+    Calculate stock scores: 하이브리드 (엔진 팩터 + 기존 점수 스케일).
+
+    1) TS 엔진이 같은 asof에 전체 팩터(매집·AVWAP·거래량비율·MACD 등)를 먼저 저장하고
+    2) 아래 legacy 점수가 그 팩터를 합쳐(merged_factors) 점수·신호만 기존 스케일로 덮어쓴다.
+    엔진 점수는 스케일이 달라(중앙값 15~25, 72점 이상이 하루 0~2종목) 그대로 쓰면 매수 기준(min_buy_score)과
+    맞지 않는다. 점수 스케일은 유지하고, 매수 신뢰도 게이트가 기본값 대신 실제 팩터로 판단하게 한다.
+    엔진이 실패하면 팩터 없이 legacy 점수만 저장된다(source=legacy).
+    """
     from .utils import to_iso
     asof = to_iso(trading_date)
     print(f"\n[5/7] Calculating stock scores...")
 
-    if run_engine_score_sync(asof):
-        print("   engine score sync completed")
-        return {
-            "ok": True,
-            "source": "engine",
-            "rows": 0,
-        }
+    engine_ok = run_engine_score_sync(asof)
+    if engine_ok:
+        print("   engine factor sync completed → legacy score will merge engine factors")
 
     try:
         trading_iso = asof
@@ -178,7 +182,7 @@ def calculate_stock_scores(supabase: Client, trading_date: str) -> dict:
             existing_factors = existing_score.get("factors") if isinstance(existing_score.get("factors"), dict) else {}
             merged_factors = dict(existing_factors)
             merged_factors.update({
-                "score_source": "legacy_fallback",
+                "score_source": "legacy_score+engine_factors" if engine_ok and existing_factors.get("score_source") in ("engine", "engine_pit") else "legacy_fallback",
                 "rsi14": round(rsi, 2),
                 "roc14": round(roc14, 2),
                 "roc21": round(roc21, 2),
@@ -214,7 +218,7 @@ def calculate_stock_scores(supabase: Client, trading_date: str) -> dict:
             print(f"   stored {len(upserts)} score rows")
             return {
                 "ok": True,
-                "source": "legacy",
+                "source": "hybrid" if engine_ok else "legacy",
                 "rows": len(upserts),
             }
         print("   no score rows generated")

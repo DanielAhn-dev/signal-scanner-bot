@@ -402,13 +402,20 @@ def main():
         score_source = str(score_result.get("source") or "unknown")
         mark_stage("StockScores", score_ok, stage_times["StockScores"], score_result)
 
+        if score_ok and score_source != "hybrid":
+            # 엔진 실패 → 점수에 엔진 팩터가 붙지 않아 매수 게이트가 기본값으로 판단한다. 조용히 넘기지 않는다.
+            send_telegram_alert(
+                f"[배치 경고] {trading_date} 점수 엔진 실패 → 엔진 팩터 없이 폴백 점수만 저장됨(source={score_source}). "
+                "매집/AVWAP/거래량 팩터가 비어 매수 판단 품질이 떨어집니다. Actions 로그의 sync:scores 오류를 확인하세요."
+            )
+
         if not score_ok:
             print("[WARN] Stock score stage failed (engine and fallback unavailable)")
             if require_score_sync:
                 print("[ERROR] BATCH_REQUIRE_SCORE_SYNC=true and score stage failed")
                 return finalize("failed", "score_stage_failed", 3)
 
-        if score_ok and require_engine_score and score_source != "engine":
+        if score_ok and require_engine_score and score_source != "hybrid":
             print("[ERROR] BATCH_REQUIRE_ENGINE_SCORE=true but engine sync was not used")
             return finalize("failed", f"engine_required_but_used_{score_source}", 4)
         
