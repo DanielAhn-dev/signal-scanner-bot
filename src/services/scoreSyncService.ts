@@ -314,6 +314,13 @@ export async function syncScoresFromEngine(
           skippedInsufficientSeries += 1;
           continue;
         }
+        // 상장폐지·거래정지 등으로 일봉이 멈춘 종목은 과거 데이터로 오늘자 팩터를 만들지 않는다
+        // (예: 더존비즈온 012510 — 2026-06-25 이후 시세 없음에도 매일 점수가 생성됐다)
+        const latestBarMs = Date.parse(String(series[0]?.date ?? ""));
+        if (!Number.isFinite(latestBarMs) || Date.parse(asof) - latestBarMs > 7 * 24 * 60 * 60 * 1000) {
+          skippedInsufficientSeries += 1;
+          continue;
+        }
 
         const investorFlow = investorFlowByCode.get(code);
         const scored = calculateScore(series, {

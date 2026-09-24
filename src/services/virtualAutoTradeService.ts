@@ -1262,6 +1262,42 @@ async function fetchNextCriticalEconomicEvent(): Promise<NextCriticalEconomicEve
   }
 }
 
+/**
+ * 유니버스(core+extended, stock_daily 수집 대상) 전일 대비 상승 종목 비율(%).
+ * detectAutoTradeMarketPolicy의 위험신호 중 breadth(≤30%)는 예전엔 값을 채우는 곳이 없어
+ * 항상 기본값 50으로 고정된 죽은 입력이었다. 최근 2거래일 종가로 계산한다(장중이면 전일 기준).
+ */
+async function fetchUniverseBreadth(supabase: SupabaseClientAny): Promise<number | null> {
+  const { data: dateRows } = await supabase
+    .from("stock_daily")
+    .select("date")
+    .eq("ticker", "005930")
+    .order("date", { ascending: false })
+    .limit(2);
+  const dates = ((dateRows ?? []) as Array<{ date: string }>).map((r) => String(r.date).slice(0, 10));
+  if (dates.length < 2) return null;
+  const { data: rows } = await supabase
+    .from("stock_daily")
+    .select("ticker, date, close")
+    .in("date", dates)
+    .limit(1000);
+  const byTicker = new Map<string, { cur?: number; prev?: number }>();
+  for (const row of (rows ?? []) as Array<{ ticker: string; date: string; close: number }>) {
+    const entry = byTicker.get(row.ticker) ?? {};
+    if (String(row.date).slice(0, 10) === dates[0]) entry.cur = toNumber(row.close, 0);
+    else entry.prev = toNumber(row.close, 0);
+    byTicker.set(row.ticker, entry);
+  }
+  let advancing = 0;
+  let total = 0;
+  for (const { cur, prev } of byTicker.values()) {
+    if (!cur || !prev) continue;
+    total += 1;
+    if (cur > prev) advancing += 1;
+  }
+  return total >= 50 ? Number(((advancing / total) * 100).toFixed(1)) : null;
+}
+
 async function fetchMarketOverviewWithBudget(input: {
   apiBudget?: ApiBudget;
   supabase?: SupabaseClientAny;
@@ -1269,12 +1305,20 @@ async function fetchMarketOverviewWithBudget(input: {
   if (!tryConsumeApiBudget(input.apiBudget, "market_overview", 1)) {
     return { overview: null, skippedByBudget: true };
   }
-  const [overview, sma200Ratios] = await Promise.all([
+  const [overview, sma200Ratios, breadthPct] = await Promise.all([
     fetchAllMarketData().catch(() => null),
     input.supabase
       ? fetchIndexSma200Ratios(input.supabase).catch(() => ({ kospi: null, kosdaq: null, kospiSma50: null }))
       : Promise.resolve({ kospi: null, kosdaq: null, kospiSma50: null }),
+    input.supabase ? fetchUniverseBreadth(input.supabase).catch(() => null) : Promise.resolve(null),
   ]);
+  if (overview && breadthPct != null) {
+    (overview as Record<string, unknown>).breadth = {
+      advancingRatio: breadthPct,
+      source: "stock_daily-universe",
+      fetchedAt: new Date().toISOString(),
+    };
+  }
   if (overview && sma200Ratios) {
     (overview as Record<string, unknown>).kospiSma200Ratio = sma200Ratios.kospi;
     (overview as Record<string, unknown>).kosdaqSma200Ratio = sma200Ratios.kosdaq;

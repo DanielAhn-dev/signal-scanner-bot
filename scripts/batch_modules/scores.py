@@ -114,9 +114,15 @@ def calculate_stock_scores(supabase: Client, trading_date: str) -> dict:
         }
 
         upserts = []
+        skipped_no_indicator = 0
         for s in all_stocks:
             code = s["code"]
-            ind = indicators_map.get(code, {})
+            ind = indicators_map.get(code)
+            if not ind:
+                # 당일 지표가 없는 종목(상장폐지·거래정지·수집 누락)은 RSI 50 같은 기본값으로 가짜 점수를
+                # 만들지 않는다. 예전엔 시세가 몇 달째 없는 종목도 매일 점수가 저장됐다.
+                skipped_no_indicator += 1
+                continue
             sec_info = sector_score_map.get(s.get("sector_id", ""), {})
 
             value_score = 50
@@ -202,6 +208,8 @@ def calculate_stock_scores(supabase: Client, trading_date: str) -> dict:
                 "total_score": int(total_score),
             })
 
+        if skipped_no_indicator:
+            print(f"  -> skipped {skipped_no_indicator} stocks without indicators for {trading_iso}")
         if upserts:
             print(f"  -> upserting {len(upserts)} score rows...")
             for i in range(0, len(upserts), 200):
