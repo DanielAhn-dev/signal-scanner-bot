@@ -4747,6 +4747,20 @@ function getStrategyLabel(strategy?: string | null): string | null {
   return strategyLabels[strategy] || strategy;
 }
 
+/**
+ * 실현손익을 이번 매도분(delta)만큼 최신 값에 더한다.
+ * 예전엔 "실행 시작 때 읽은 값 + 이번 실행 누적분"을 통째로 써서, 그 사이 다른 단계(현금 스윕 매도)나
+ * 겹친 실행이 쓴 손익이 사라지거나 두 번 반영됐다 (2026-09-22 −85,372원 이중 반영 · 09-24 −2,007원 누락).
+ * 현금은 실행 끝의 syncVirtualPortfolio(시드 + 실현손익 − 보유 투자금)로 다시 맞춰진다.
+ */
+async function applyRealizedPnlDelta(chatId: number, delta: number, availableCash?: number): Promise<void> {
+  const fresh = await getUserInvestmentPrefs(chatId);
+  await setUserInvestmentPrefs(chatId, {
+    virtual_realized_pnl: Math.round(toNumber(fresh.virtual_realized_pnl, 0) + delta),
+    ...(availableCash != null ? { virtual_cash: Math.max(0, Math.round(availableCash)) } : {}),
+  });
+}
+
 async function executeAutoTradeSell(payload: {
   supabase: SupabaseClientAny;
   runId: number | null;
@@ -5608,10 +5622,7 @@ async function runDailyReviewForUser(payload: {
             realizedDelta += fallbackSell.realizedPnlDelta;
             availableCash += fallbackSell.proceeds;
             try {
-              await setUserInvestmentPrefs(chatId, {
-                virtual_realized_pnl: toNumber(prefs.virtual_realized_pnl, 0) + realizedDelta,
-                virtual_cash: Math.max(0, Math.round(availableCash)),
-              });
+              await applyRealizedPnlDelta(chatId, fallbackSell.realizedPnlDelta, availableCash);
             } catch (e) {
               console.error("[autoTrade] update virtual cash/pnl after guard-fallback stop failed", e);
             }
@@ -5713,10 +5724,7 @@ async function runDailyReviewForUser(payload: {
         realizedDelta += eventSellResult.realizedPnlDelta;
         availableCash += eventSellResult.proceeds;
         try {
-          await setUserInvestmentPrefs(chatId, {
-            virtual_realized_pnl: toNumber(prefs.virtual_realized_pnl, 0) + realizedDelta,
-            virtual_cash: Math.max(0, Math.round(availableCash)),
-          });
+          await applyRealizedPnlDelta(chatId, eventSellResult.realizedPnlDelta, availableCash);
         } catch (e) {
           console.error("[autoTrade] update virtual cash/pnl after event-risk sell failed", e);
         }
@@ -6067,10 +6075,7 @@ async function runDailyReviewForUser(payload: {
       availableCash += result.proceeds;
       // 즉시 가상현금 및 실현손익 갱신
       try {
-        await setUserInvestmentPrefs(chatId, {
-          virtual_realized_pnl: toNumber(prefs.virtual_realized_pnl, 0) + realizedDelta,
-          virtual_cash: Math.max(0, Math.round(availableCash)),
-        });
+        await applyRealizedPnlDelta(chatId, result.realizedPnlDelta, availableCash);
       } catch (e) {
         console.error("[autoTrade] update virtual cash/pnl after sell failed", e);
       }
@@ -7424,8 +7429,9 @@ async function runDailyReviewForUser(payload: {
   }
 
   if (!payload.dryRun) {
+    // 실현손익은 매도마다 applyRealizedPnlDelta로 이미 반영했다. 여기서 "시작 시점 값 + 누적분"으로
+    // 다시 덮어쓰면 그 사이 현금 스윕 매도가 반영한 손익이 사라진다(2026-09-24 −2,007원 누락).
     await setUserInvestmentPrefs(chatId, {
-      virtual_realized_pnl: toNumber(prefs.virtual_realized_pnl, 0) + realizedDelta,
       virtual_cash: Math.max(0, Math.round(availableCash)),
     });
     await syncVirtualPortfolio(chatId, chatId);

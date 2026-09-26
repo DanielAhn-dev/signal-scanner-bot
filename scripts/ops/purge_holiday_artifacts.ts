@@ -13,6 +13,10 @@
  *   - BUY: 그 매수로 새로 생긴 포지션(수량·매수일 일치)이고 이후 같은 종목 거래가 없을 때 → 포지션·로트·결정로그 삭제
  *   - 현금 스윕 SELL(lot match 없음): 스윕 포지션 수량·투자금 복원, 실현손익에서 제외
  *   현금은 두 거래가 바꾼 만큼만 되돌린다(전체 재계산 syncVirtualPortfolio는 쓰지 않음).
+ *
+ * 3) 원장 보정: 시드 재계산 이력이 없는 계정은 실현손익 = 거래기록 매도손익 합, 현금 = 시드 + 실현손익 − 보유 투자금
+ *    으로 맞춘다. 예전 실현손익 갱신 방식(실행 시작 값 + 누적분 덮어쓰기)이 2026-09-22에 −85,372원을
+ *    이중 반영하고 09-24에 스윕 손익 −2,007원을 누락해 현금이 83,365원 적게 잡혀 있었다.
  */
 import "dotenv/config";
 import { mkdirSync, writeFileSync } from "node:fs";
@@ -207,10 +211,49 @@ async function revertHolidayTrades(): Promise<void> {
   }
 }
 
+async function reconcileLedger(): Promise<void> {
+  console.log("=== 3) 원장 보정 (실현손익·현금) ===");
+  const { data: settings, error } = await supabase.from("virtual_autotrade_settings").select("chat_id");
+  if (error) throw new Error(`virtual_autotrade_settings 조회 실패: ${error.message}`);
+  for (const chatId of (settings ?? []).map((r: any) => Number(r.chat_id))) {
+    const { data: user } = await supabase.from("users").select("prefs").eq("tg_id", chatId).maybeSingle();
+    const prefs = ((user?.prefs ?? {}) as Record<string, unknown>) ?? {};
+    const seed = Number(prefs.virtual_seed_capital ?? 0);
+    if (!(seed > 0)) continue;
+    if (prefs.virtual_last_seed_rebase_at) {
+      console.log(`  [${chatId}] 시드 재계산 이력이 있어 거래기록 합으로 검산할 수 없음 — 건너뜀`);
+      continue;
+    }
+    const [{ data: trades, error: tErr }, { data: positions, error: pErr }] = await Promise.all([
+      supabase.from(PORTFOLIO_TABLES.trades).select("side, pnl_amount").eq("chat_id", chatId).limit(10000),
+      supabase.from(PORTFOLIO_TABLES.positions).select("invested_amount, status").eq("chat_id", chatId),
+    ]);
+    if (tErr || pErr) throw new Error(`원장 조회 실패: ${tErr?.message ?? pErr?.message}`);
+    const realized = Math.round((trades ?? []).filter((t: any) => t.side === "SELL").reduce((s: number, t: any) => s + Number(t.pnl_amount ?? 0), 0));
+    const invested = Math.round((positions ?? []).filter((p: any) => (p.status ?? "holding") === "holding").reduce((s: number, p: any) => s + Number(p.invested_amount ?? 0), 0));
+    const cash = Math.max(0, seed + realized - invested);
+    const curRealized = Number(prefs.virtual_realized_pnl ?? 0);
+    const curCash = Number(prefs.virtual_cash ?? 0);
+    if (Math.abs(curRealized - realized) < 1 && Math.abs(curCash - cash) < 1) {
+      console.log(`  [${chatId}] 일치 (현금 ${curCash}, 실현손익 ${curRealized})`);
+      continue;
+    }
+    console.log(`  [${chatId}] 실현손익 ${curRealized} → ${realized} · 현금 ${curCash} → ${cash}${APPLY ? "" : " (2단계 되돌리기 반영 전 기준 — --apply 시 반영 후 값으로 다시 계산)"}`);
+    if (!APPLY) continue;
+    backup(`ledger_${chatId}`, { prefs });
+    const upd = await supabase
+      .from("users")
+      .update({ prefs: { ...prefs, virtual_realized_pnl: realized, virtual_cash: cash } })
+      .eq("tg_id", chatId);
+    if (upd.error) throw new Error(`원장 보정 실패: ${upd.error.message}`);
+  }
+}
+
 async function main(): Promise<void> {
   console.log(APPLY ? `[적용 모드] 백업: ${backupDir}` : "[미리보기] 반영하려면 --apply");
   await purgeHolidayRows();
   await revertHolidayTrades();
+  await reconcileLedger();
   console.log(APPLY ? "완료" : "미리보기 끝 — 변경 없음");
 }
 
