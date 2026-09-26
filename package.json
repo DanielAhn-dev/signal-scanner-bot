@@ -35,6 +35,7 @@
     "ops:stable-maintenance:dry": "tsx scripts/ops/stable_maintenance_daily.ts --dryRun=true",
     "autotrade:enable": "tsx scripts/ops/virtual_autotrade_enable.ts",
     "ops:rollback-trade": "tsx scripts/ops/rollback_virtual_trade.ts",
+    "ops:purge-holiday": "tsx scripts/ops/purge_holiday_artifacts.ts",
     "report:strategy-live": "tsx scripts/strategy_leaderboard.ts",
     "report:local": "tsx scripts/generate_local_reports.ts",
     "setWebhook": "node scripts/ops/setWebhook.mjs https://signal-scanner-bot.vercel.app/api/telegram",
