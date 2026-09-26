@@ -9,6 +9,7 @@
  */
 
 import type { StockOHLCV } from "../data/types";
+import { countKrxTradingDaysBetween, toKstDateKey } from "./krxCalendar";
 
 /** 전일 대비 허용 최대 배율 (한국 가격제한폭 30% + 여유분) */
 const MAX_DAILY_RATIO = 1.8;
@@ -64,7 +65,7 @@ export function sanitizeOHLCV(data: StockOHLCV[]): StockOHLCV[] {
 /**
  * 가장 최근 데이터가 maxBizDays 영업일 이상 오래됐으면 stale로 판단
  *
- * 영업일 기준 (토·일 제외) 으로 계산.
+ * KRX 거래일 기준 (주말·휴장일 제외) 으로 계산.
  * today 미지정 시 현재 날짜 기준.
  */
 export function isOHLCVStale(
@@ -77,21 +78,8 @@ export function isOHLCVStale(
   const latest = data.reduce((best, d) =>
     d.date > best.date ? d : best
   );
-  const latestDate = new Date(latest.date);
   const ref = today ?? new Date();
-
-  // 영업일 계산 (토=6, 일=0 제외)
-  let bizDays = 0;
-  const cursor = new Date(latestDate);
-  cursor.setDate(cursor.getDate() + 1); // 다음날부터 카운트
-
-  while (cursor <= ref) {
-    const day = cursor.getDay();
-    if (day !== 0 && day !== 6) bizDays++;
-    cursor.setDate(cursor.getDate() + 1);
-    if (bizDays > maxBizDays) return true; // early exit
-  }
-
+  const bizDays = countKrxTradingDaysBetween(String(latest.date).slice(0, 10), toKstDateKey(ref));
   return bizDays > maxBizDays;
 }
 

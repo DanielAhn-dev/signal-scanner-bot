@@ -4,6 +4,7 @@ import { calculateScore, type MarketEnv } from "../score/engine";
 import { fetchAllMarketData } from "../utils/fetchMarketData";
 import { fetchLatestScoresByCodes } from "./scoreSourceService";
 import { chunkValues, selectPaged } from "./supabasePaging";
+import { isKrxTradingDate, previousKrxTradingDate, toKstDateKey } from "../lib/krxCalendar";
 
 type InvestorDailyRow = {
   ticker: string;
@@ -231,7 +232,11 @@ export async function syncScoresFromEngine(
   supabase: SupabaseClient,
   options: ScoreSyncOptions = {}
 ): Promise<ScoreSyncSummary> {
-  const asof = options.asof ?? new Date().toISOString().slice(0, 10);
+  // 기본 기준일: KST 오늘이 거래일이면 오늘, 휴장일이면 직전 거래일.
+  // 예전엔 UTC 날짜를 써서 KST 00~09시엔 전날로, 휴장일엔 휴장일 날짜로 점수가 저장됐다(2026-05-05·05-25 scores).
+  const todayKstKey = toKstDateKey();
+  const asof =
+    options.asof ?? (isKrxTradingDate(todayKstKey) ? todayKstKey : previousKrxTradingDate(todayKstKey));
   const fastMode = Boolean(options.fastMode);
   const effectiveLimit = Math.max(
     1,

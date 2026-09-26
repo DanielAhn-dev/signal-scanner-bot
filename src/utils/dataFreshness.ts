@@ -1,3 +1,5 @@
+import { countKrxTradingDaysBetween } from "../lib/krxCalendar";
+
 function parseYmd(value?: string | null): Date | null {
   if (!value) return null;
   const m = value.trim().match(/^(\d{4})-(\d{2})-(\d{2})/);
@@ -20,30 +22,13 @@ function kstTodayUtcBase(): Date {
   return new Date(Date.UTC(kst.getUTCFullYear(), kst.getUTCMonth(), kst.getUTCDate()));
 }
 
-function addDays(date: Date, days: number): Date {
-  const copied = new Date(date.getTime());
-  copied.setUTCDate(copied.getUTCDate() + days);
-  return copied;
-}
-
-function isWeekday(date: Date): boolean {
-  const day = date.getUTCDay();
-  return day >= 1 && day <= 5;
-}
-
 export function businessDaysBehind(value?: string | null): number | null {
   const base = parseYmd(value);
   if (!base) return null;
   const today = kstTodayUtcBase();
   if (base.getTime() >= today.getTime()) return 0;
-
-  let cursor = addDays(base, 1);
-  let count = 0;
-  while (cursor.getTime() <= today.getTime()) {
-    if (isWeekday(cursor)) count += 1;
-    cursor = addDays(cursor, 1);
-  }
-  return count;
+  // 주말뿐 아니라 KRX 휴장일도 뺀다 (연휴 직후 "3영업일 지연"으로 매수가 막히던 문제)
+  return countKrxTradingDaysBetween(base.toISOString().slice(0, 10), today.toISOString().slice(0, 10));
 }
 
 export function isBusinessStale(value: string | null | undefined, maxBusinessDays = 1): boolean {

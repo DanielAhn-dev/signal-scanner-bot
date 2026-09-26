@@ -81,12 +81,18 @@ function resolveDueTasks(now = new Date()): DueTask[] {
   if (CRON_HOBBY_DAILY_MODE) {
     const dailyTasks: DueTask[] = [];
 
-    // KST 13:30 (아침은 GitHub Actions virtual_autotrade_morning.yml 에서 처리)
-    if (ENABLE_INTRADAY_AGENT_CYCLE && isWeekday && isUtcTime(4, 30)) {
-      dailyTasks.push({
-        name: "virtualAutoTradeAfternoon",
-        path: TASK_PATHS.virtualAutoTradeAfternoon,
-      });
+    // 무료(Hobby) 플랜 크론은 지정한 시(hour) 안 임의의 분에 호출된다(±59분). 예전엔 분까지 일치해야
+    // 실행해서 "30 4 * * 1-5"(KST 13:30) 호출이 거의 매번 no_due_task로 끝났다 → 시 단위로 매칭한다.
+    // vercel.json 크론: UTC 0시(KST 09시대) 아침 · 4시(13시대) 오후 · 5시(14시대) 마감 전.
+    // GitHub Actions 스케줄은 매일 4~5시간씩 늦게 실행돼(09:30 → 14시대, 14:50 → 19시대) 주 경로로 쓰지 않는다.
+    if (ENABLE_INTRADAY_AGENT_CYCLE && isWeekday) {
+      if (hour === 0) {
+        dailyTasks.push({ name: "virtualAutoTradeMorning", path: TASK_PATHS.virtualAutoTradeMorning });
+      } else if (hour === 4) {
+        dailyTasks.push({ name: "virtualAutoTradeAfternoon", path: TASK_PATHS.virtualAutoTradeAfternoon });
+      } else if (hour === 5) {
+        dailyTasks.push({ name: "virtualAutoTradeClose", path: TASK_PATHS.virtualAutoTradeClose });
+      }
     }
 
     if (CRON_HOBBY_INCLUDE_AUTOTRADE && isUtcTime(23, 45)) {
@@ -350,7 +356,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     const baseUrl = getBaseUrl(req);
-    const nowIsoMinuteKey = new Date().toISOString().slice(0, 16);
+    // 무료 플랜 자동 디스패치는 시 단위로 중복을 막는다 (같은 시간대 재호출 시 한 번만 실행)
+    const nowIsoMinuteKey = new Date().toISOString().slice(0, !forceTask && CRON_HOBBY_DAILY_MODE ? 13 : 16);
 
     const results: Array<{
       task: string;

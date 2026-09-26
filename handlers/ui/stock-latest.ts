@@ -7,6 +7,7 @@ import { getFundamentalSnapshot } from '../../src/services/fundamentalService'
 import { fetchCreditShortSnapshot } from '../../src/utils/fetchCreditShortData'
 import { fetchRealtimeStockData } from '../../src/utils/fetchRealtimePrice'
 import { denyIfUnauthorizedRead } from './_accessControl'
+import { isKrxRegularSession } from '../../src/lib/krxCalendar'
 
 const ORIGIN = process.env.UI_CORS_ORIGIN || '*'
 
@@ -319,11 +320,7 @@ function resolveTwoStageAction(input: {
 }
 
 function isKrxIntradaySession(base = new Date()): boolean {
-  const kst = new Date(base.getTime() + 9 * 60 * 60 * 1000)
-  const day = kst.getUTCDay()
-  if (day === 0 || day === 6) return false
-  const minutes = kst.getUTCHours() * 60 + kst.getUTCMinutes()
-  return minutes >= 9 * 60 && minutes < 15 * 60 + 30
+  return isKrxRegularSession(base)
 }
 
 function asNum(v: unknown): number | null {

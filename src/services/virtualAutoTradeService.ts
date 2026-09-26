@@ -91,6 +91,7 @@ import { sendMessage } from "../telegram/api";
 import { actionButtons } from "../bot/messages/layout";
 import {
   isKrxIntradayAutoTradeWindow,
+  isKrxMarketDay,
   kstDateKey,
   kstWindowKey,
 } from "./virtualAutoTradeTiming";
@@ -1535,10 +1536,11 @@ function buildAutoTradeFilterReason(candidate: {
   return [...reasons.slice(0, 2), ...flowParts].filter(Boolean).join(" · ");
 }
 
+// Vercel 크론(vercel.json)은 무료 플랜이라 지정한 시(hour) 안 임의 시각에 호출된다
 const AUTO_TRADE_CHECKPOINTS_KST = [
-  { hour: 9, minute: 8, label: "09:08" },
-  { hour: 10, minute: 35, label: "10:35" },
-  { hour: 14, minute: 10, label: "14:10" },
+  { hour: 9, minute: 0, label: "09시대" },
+  { hour: 13, minute: 0, label: "13시대" },
+  { hour: 14, minute: 0, label: "14시대" },
 ];
 
 function resolveExecutionPriorityLine(action: AutoTradeActionSummary): string {
@@ -1553,11 +1555,9 @@ function resolveExecutionPriorityLine(action: AutoTradeActionSummary): string {
 
 function resolveNextAutoTradeCheckpoint(base = new Date()): string {
   const kst = new Date(base.getTime() + 9 * 60 * 60 * 1000);
-  const day = kst.getUTCDay();
   const minutesNow = kst.getUTCHours() * 60 + kst.getUTCMinutes();
-  const isWeekday = day >= 1 && day <= 5;
 
-  if (isWeekday) {
+  if (isKrxMarketDay(base)) {
     for (const slot of AUTO_TRADE_CHECKPOINTS_KST) {
       const slotMinutes = slot.hour * 60 + slot.minute;
       if (minutesNow < slotMinutes) {
@@ -1677,14 +1677,6 @@ async function buildRealHoldingResponseSnippet(input: {
   return lines.join("\n");
 }
 
-function isKrxIntradaySession(base = new Date()): boolean {
-  const kst = new Date(base.getTime() + 9 * 60 * 60 * 1000);
-  const day = kst.getUTCDay();
-  if (day === 0 || day === 6) return false;
-  const minutes = kst.getUTCHours() * 60 + kst.getUTCMinutes();
-  return minutes >= 9 * 60 && minutes < 15 * 60 + 30;
-}
-
 async function resolveBuyExecutionPrices(
   candidates: RankedCandidate[],
   options?: { apiBudget?: ApiBudget }
@@ -1702,7 +1694,7 @@ async function resolveBuyExecutionPrices(
     }
   }
 
-  if (!isKrxIntradaySession()) {
+  if (!isKrxIntradayAutoTradeWindow()) {
     return {
       priceByCode,
       marketPhase: "after-close",
@@ -7532,6 +7524,13 @@ export async function runVirtualAutoTradingForChat(input: {
   if (prefs.virtual_shadow_mode && !dryRun) {
     dryRun = true;
   }
+  // 휴장일(주말·공휴일)엔 체결하지 않는다. 예전엔 추석(2026-09-24)에도 전일 종가로 매수가 체결됐다.
+  // 수동 실행은 분석 결과를 볼 수 있게 모의 실행으로 바꾼다.
+  const holidayNote =
+    !dryRun && !isKrxMarketDay()
+      ? "[휴장일] 오늘은 KRX 휴장일이라 체결 없이 모의 실행으로 점검했습니다 (다음 거래일에 실제 매매)"
+      : null;
+  if (holidayNote) dryRun = true;
 
   // 시드 재계산(복리 반영): 실행할 때마다 확인하지만 내부적으로 7일 간격 게이트가 있어
   // 실제 변경은 주 1회만 일어난다. dryRun(학습 모드)에서는 실제 수치를 건드리지 않는다.
@@ -7626,6 +7625,9 @@ export async function runVirtualAutoTradingForChat(input: {
       });
 
   action.notes.unshift(...preBuyLiquidate.notes);
+  if (holidayNote) {
+    action.notes.unshift(holidayNote);
+  }
   if (seedRebaseNote) {
     action.notes.unshift(seedRebaseNote);
   }
@@ -7819,6 +7821,23 @@ export async function runVirtualAutoTradingCycle(input?: {
       skipReasonStats: [
         { code: "out_of_session", label: "장중 외 시간 스킵", count: 1 },
       ],
+      actions: [],
+    };
+  }
+
+  // 휴장일(주말·공휴일·연말 휴장)엔 크론/일괄 실행을 하지 않는다 (dryRun 점검은 허용)
+  if (!dryRun && !isKrxMarketDay(now)) {
+    return {
+      mode,
+      runType,
+      runKey,
+      totalUsers: 0,
+      processedUsers: 0,
+      buyCount: 0,
+      sellCount: 0,
+      skippedCount: 0,
+      errorCount: 0,
+      skipReasonStats: [{ code: "market_holiday", label: "KRX 휴장일 스킵", count: 1 }],
       actions: [],
     };
   }

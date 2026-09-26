@@ -15,7 +15,7 @@ import requests
 from datetime import date, timedelta
 from typing import Optional
 from supabase import Client
-from .utils import to_iso, safe_int
+from .utils import to_iso, safe_int, is_krx_trading_day
 
 
 KIS_BASE = "https://openapi.koreainvestment.com:9443"
@@ -24,7 +24,7 @@ _token_cache: dict = {}
 
 
 def _business_days_between(start_iso: str, end_iso: str) -> Optional[int]:
-    """Return business-day lag between two ISO dates (Mon-Fri only)."""
+    """Return KRX trading-day lag between two ISO dates (weekends and KRX holidays excluded)."""
     try:
         start_d = date.fromisoformat(start_iso)
         end_d = date.fromisoformat(end_iso)
@@ -37,7 +37,7 @@ def _business_days_between(start_iso: str, end_iso: str) -> Optional[int]:
     cur = start_d + timedelta(days=1)
     days = 0
     while cur <= end_d:
-        if cur.weekday() < 5:
+        if is_krx_trading_day(cur):
             days += 1
         cur += timedelta(days=1)
     return days

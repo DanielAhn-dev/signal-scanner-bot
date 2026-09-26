@@ -1,9 +1,8 @@
 name: Virtual AutoTrade Close (KST 14:50)
 
 on:
-  schedule:
-    # KST 14:50 = UTC 05:50 (월~금) — 장마감 40분 전 마지막 매수/매도
-    - cron: "50 5 * * 1-5"
+  # 스케줄 제거: KST 14:50 예정이 GitHub 지연으로 매일 19~20시대에 실행돼 장외 시간 스킵만 반복했다.
+  # 마감 전 점검은 Vercel 크론(vercel.json "0 5 * * 1-5", KST 14시대)이 담당한다. 필요하면 수동 실행.
   workflow_dispatch:
 
 jobs:

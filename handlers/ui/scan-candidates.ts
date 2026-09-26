@@ -4,6 +4,7 @@ import { applyAdaptiveOverlayToPullbackCandidate, getAdaptiveStrategyInsights } 
 import { scoreLeadAccumulationCandidate } from '../../src/services/accumulationSignalService'
 import { fetchRealtimePriceBatch } from '../../src/utils/fetchRealtimePrice'
 import { denyIfUnauthorizedRead } from './_accessControl'
+import { isKrxRegularSession } from '../../src/lib/krxCalendar'
 
 const ORIGIN = process.env.UI_CORS_ORIGIN || '*'
 const SCAN_CACHE_TTL_MS = Math.max(0, Number(process.env.UI_SCAN_CANDIDATES_CACHE_TTL_MS || 15_000))
@@ -37,11 +38,7 @@ type PromotionSummaryRow = {
 const scanCache = new Map<string, ScanCacheEntry>()
 
 function isKrxIntradaySession(base = new Date()): boolean {
-  const kst = new Date(base.getTime() + 9 * 60 * 60 * 1000)
-  const day = kst.getUTCDay()
-  if (day === 0 || day === 6) return false
-  const minutes = kst.getUTCHours() * 60 + kst.getUTCMinutes()
-  return minutes >= 9 * 60 && minutes < 15 * 60 + 30
+  return isKrxRegularSession(base)
 }
 
 function clamp(value: number, min: number, max: number): number {

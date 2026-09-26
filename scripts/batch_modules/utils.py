@@ -13,6 +13,26 @@ from datetime import datetime, date, timedelta
 from zoneinfo import ZoneInfo
 from typing import Optional
 
+# KRX 휴장일 (주말 제외). src/lib/krxCalendar.ts의 KRX_HOLIDAYS_BY_YEAR와 같은 목록을 유지한다.
+# 2027은 공휴일 기준 추정치 — 거래소 휴장일 공지 후 갱신.
+KRX_HOLIDAYS = frozenset([
+    "2025-01-01", "2025-01-27", "2025-01-28", "2025-01-29", "2025-01-30", "2025-03-03",
+    "2025-05-01", "2025-05-05", "2025-05-06", "2025-06-03", "2025-06-06", "2025-08-15",
+    "2025-10-03", "2025-10-06", "2025-10-07", "2025-10-08", "2025-10-09", "2025-12-25",
+    "2025-12-31",
+    "2026-01-01", "2026-02-16", "2026-02-17", "2026-02-18", "2026-03-02", "2026-05-01",
+    "2026-05-05", "2026-05-25", "2026-06-03", "2026-07-17", "2026-08-17", "2026-09-24",
+    "2026-09-25", "2026-10-05", "2026-10-09", "2026-12-25", "2026-12-31",
+    "2027-01-01", "2027-02-08", "2027-02-09", "2027-03-01", "2027-05-03", "2027-05-05",
+    "2027-05-13", "2027-07-19", "2027-08-16", "2027-09-14", "2027-09-15", "2027-09-16",
+    "2027-10-04", "2027-10-11", "2027-12-27", "2027-12-31",
+])
+
+
+def is_krx_trading_day(d: date) -> bool:
+    """주말·KRX 휴장일이 아니면 True."""
+    return d.weekday() < 5 and d.isoformat() not in KRX_HOLIDAYS
+
 
 def safe_float(x, default=0.0):
     """Safely parse numeric-like values into float.
@@ -100,6 +120,8 @@ def get_last_trading_date() -> str:
     
     for i in range(0, 60):
         d = today - timedelta(days=i)
+        if not is_krx_trading_day(d):
+            continue  # 주말·휴장일은 KRX 조회 없이 건너뛴다 (연휴마다 불필요한 요청 → 차단 위험)
         d_str = d.strftime("%Y%m%d")
         
         valid_count = 0
@@ -117,8 +139,13 @@ def get_last_trading_date() -> str:
             print(f"   Latest trading date detected: {d_str} ({valid_count}/{len(test_tickers)})", flush=True)
             return d_str
     
-    print(f"   Trading date auto-detect failed, fallback to today: {today.strftime('%Y%m%d')}", flush=True)
-    return today.strftime("%Y%m%d")
+    # KRX 조회가 모두 실패해도 "오늘"로 폴백하지 않는다 — 휴장일이면 휴장일 날짜로 점수·신호가 저장된다
+    # (2026-05-05·05-25 scores/scan_signal_history). 캘린더상 가장 최근 거래일로 폴백한다.
+    fallback = today
+    while not is_krx_trading_day(fallback):
+        fallback -= timedelta(days=1)
+    print(f"   Trading date auto-detect failed, fallback to calendar trading day: {fallback.strftime('%Y%m%d')}", flush=True)
+    return fallback.strftime("%Y%m%d")
 
 
 def run_python_script(script_path: str, args: list[str], label: str) -> bool:

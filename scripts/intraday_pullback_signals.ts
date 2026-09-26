@@ -8,6 +8,7 @@
 
 import { createClient } from "@supabase/supabase-js";
 import { fetchRealtimePriceBatch } from "../src/utils/fetchRealtimePrice";
+import { isKrxTradingDay } from "../src/lib/krxCalendar";
 
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -200,6 +201,13 @@ function computeIntradayPullbackSignal(history: StockDailyRow[]): Omit<PullbackS
  */
 async function generateIntradayPullbackSignals(): Promise<void> {
   console.log(`\n📊 [Intraday] Pullback Signal Generation: ${new Date().toISOString()}`);
+
+  // 휴장일엔 실시간 가격이 전일 종가라 같은 신호가 휴장일 날짜로 복제 저장된다
+  // (2026-06-03·07-17·08-17·09-24·09-25 pullback_signals). 거래일에만 실행한다.
+  if (!isKrxTradingDay()) {
+    console.log("  -> KRX 휴장일(주말·공휴일) — 장중 신호 생성 생략");
+    return;
+  }
 
   try {
     // 오늘 날짜 (KST)

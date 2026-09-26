@@ -1,3 +1,4 @@
+import { previousKrxTradingDate } from "./krxCalendar";
 // src/lib/normalize.ts
 
 export function toNumberSafe(series: any[], date: string): number | undefined {
@@ -23,15 +24,9 @@ export function clamp(x: number, lo: number, hi: number) {
 }
 
 export function getBizDaysAgo(iso: string, n: number) {
-  // 간단 영업일 역산(주말 제외)
-  const d = new Date(iso);
-  let k = n;
-  while (k > 0) {
-    d.setDate(d.getDate() - 1);
-    const day = d.getDay();
-    if (day !== 0 && day !== 6) k--;
-  }
-  return d.toISOString().slice(0, 10);
+  // KRX 거래일 역산(주말·휴장일 제외)
+  if (n <= 0) return String(iso).slice(0, 10);
+  return previousKrxTradingDate(String(iso).slice(0, 10), n);
 }
 
 export const fmtPct = (x: number) => `${(x * 100).toFixed(1)}%`;

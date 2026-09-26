@@ -2,6 +2,7 @@ import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { createClient } from "@supabase/supabase-js";
 import { syncScoresFromEngine } from "../../src/services/scoreSyncService";
 import { parsePositiveInt } from "../../src/server/cronQuery";
+import { isKrxRegularSession } from "../../src/lib/krxCalendar";
 
 const CRON_SECRET = process.env.CRON_SECRET;
 const SUPABASE_URL = process.env.SUPABASE_URL;
@@ -12,13 +13,7 @@ export const config = {
 };
 
 function isKrxSessionKstNow(now = new Date()): boolean {
-  const kst = new Date(now.getTime() + 9 * 60 * 60 * 1000);
-  const day = kst.getUTCDay();
-  if (day === 0 || day === 6) return false;
-  const minutes = kst.getUTCHours() * 60 + kst.getUTCMinutes();
-  const open = 9 * 60;
-  const close = 15 * 60 + 30;
-  return minutes >= open && minutes <= close;
+  return isKrxRegularSession(now, { inclusiveClose: true });
 }
 
 function parseBooleanLike(value: unknown): boolean | undefined {

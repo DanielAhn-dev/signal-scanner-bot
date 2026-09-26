@@ -10,6 +10,7 @@ import {
   fetchRealtimePriceBatch,
 } from "../../utils/fetchRealtimePrice";
 import { buildInvestmentPlan } from "../../lib/investPlan";
+import { countKrxTradingDaysBetween, isKrxRegularSession, toKstDateKey } from "../../lib/krxCalendar";
 import { scaleScoreFactorsToReferencePrice } from "../../lib/priceScale";
 import { buildStrategyMemo } from "../../lib/strategyMemo";
 import {
@@ -213,13 +214,7 @@ function buildConcentrationWarning(
 }
 
 function isKstMarketOpen(now = new Date()): boolean {
-  const kst = new Date(now.getTime() + 9 * 60 * 60 * 1000);
-  const day = kst.getUTCDay();
-  if (day === 0 || day === 6) return false;
-  const minutes = kst.getUTCHours() * 60 + kst.getUTCMinutes();
-  const open = 9 * 60;
-  const close = 15 * 60 + 30;
-  return minutes >= open && minutes <= close;
+  return isKrxRegularSession(now, { inclusiveClose: true });
 }
 
 function estimateElapsedTradingDays(raw?: string | null, now = new Date()): number {
@@ -227,18 +222,8 @@ function estimateElapsedTradingDays(raw?: string | null, now = new Date()): numb
   const start = new Date(raw);
   if (Number.isNaN(start.getTime()) || start.getTime() > now.getTime()) return 0;
 
-  const dayMs = 24 * 60 * 60 * 1000;
-  const startUtcMidnight = Date.UTC(start.getUTCFullYear(), start.getUTCMonth(), start.getUTCDate());
-  const endUtcMidnight = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
-
-  let elapsed = 0;
-  for (let t = startUtcMidnight; t <= endUtcMidnight; t += dayMs) {
-    const day = new Date(t).getUTCDay();
-    if (day !== 0 && day !== 6) elapsed += 1;
-  }
-
-  // 진입 당일은 제외하고 경과 거래일로 계산한다.
-  return Math.max(0, elapsed - 1);
+  // 진입 당일은 제외하고 경과 거래일(주말·휴장일 제외, KST 기준)로 계산한다.
+  return countKrxTradingDaysBetween(toKstDateKey(start), toKstDateKey(now));
 }
 
 function formatEtfMonthList(months: number[]): string {
