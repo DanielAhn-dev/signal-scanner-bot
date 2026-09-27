@@ -8,14 +8,22 @@
 
 ## 1. 요약
 
-| 테이블 | 보유 기간 | 목적 | 최소 요구사항 |
+> 2026-09-27 개정: 데이터 누적(백테스트·학습)을 위해 다시 구할 수 없는 원본의 보존 기간을 늘렸다.
+> 설정은 `scripts/batch_modules/cleanup.py`의 `RETENTION_DAYS`(환경변수로 조정, 최소 400일).
+> 과거 백필 깊이(`STOCK_DAILY_BACKFILL_DAYS`, 기본 400일)는 보존 기간과 분리돼 있어 KRX에서 몇 년치를 한 번에 받지 않는다.
+
+| 테이블 | 보유 기간 | 목적 | 재계산 가능 |
 |--------|---------|------|------------|
-| `stock_daily` | **400일** | OHLCV 데이터 | ✅ 52주 + 여유 |
-| `daily_indicators` | **550일** (1.5년) | 기술적 지표 (SMA200, RSI14 등) | ✅ 계절성 비교 가능 |
-| `investor_daily` | **400일** | 투자자 수급 트렌드 | ✅ 52주 + 여유 |
-| `sector_daily` | **400일** | 섹터 수익률 트렌드 | ✅ 52주 + 여우 |
-| `pullback_signals` | **400일** | 눌림목 신호 | ✅ 최근 패턴 유지 |
-| `jobs` | **30일** | 배치 작업 로그 | ✅ 월간 모니터링 |
+| `stock_daily` | **1095일** (3년) | OHLCV 원본 | ❌ 원본 |
+| `sector_daily` | **1095일** (3년) | 섹터 수익률 | ❌ 원본 |
+| `investor_daily` | **730일** (2년) | 투자자 수급 | ❌ KIS 과거 재수집 어려움 |
+| `scores` | **730일** (2년) | 시점 점수(학습용) | △ engine_pit로 재계산 가능 |
+| `daily_indicators` | **730일** | 기술적 지표 | ✅ stock_daily로 재계산 |
+| `pullback_signals` | **400일** | 눌림목 신호 | ✅ stock_daily로 재계산 |
+| `jobs` | **30일** | 배치 작업 로그 | - |
+
+용량 추정(2026-09, 유니버스 218종목): 연 +40~70MB 증가. 무료 플랜 500MB 한도에 가까워지면 Supabase 대시보드
+(Database → Usage)에서 확인하고 `SCORES_RETENTION_DAYS`·`INVESTOR_DAILY_RETENTION_DAYS`부터 줄인다.
 
 **결론**: ✅ 모든 테이블이 **52주(364일) 이상** 보장, **무료 플랜 최적화**
 

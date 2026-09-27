@@ -8,6 +8,7 @@ import os
 from datetime import datetime, timedelta, date
 from typing import Optional
 from supabase import Client
+from .cleanup import resolve_retention_days
 from .utils import safe_int, run_python_script
 
 
@@ -268,8 +269,10 @@ def auto_backfill_missing_dates(supabase: Client, trading_date: str) -> bool:
         backfilled = True
 
     # 2) Historical fill for retention window
-    stock_retention_days = safe_int(os.environ.get("STOCK_DAILY_RETENTION_DAYS", 400), 400)
-    stock_retention_days = max(400, stock_retention_days)
+    # 과거 백필 깊이는 보존 기간과 분리한다. 보존 기간을 늘려도(cleanup.RETENTION_DAYS) 몇 년치를
+    # 한 번에 KRX에서 받지 않도록 기본 400일까지만 채운다(그 이후는 매일 쌓이는 데이터로 늘어난다).
+    backfill_days = max(400, safe_int(os.environ.get("STOCK_DAILY_BACKFILL_DAYS", 400), 400))
+    stock_retention_days = min(backfill_days, resolve_retention_days("stock_daily"))
     # 정리 단계(cleanup.py)와 같은 기준(오늘 - 보존일)을 쓴다. 예전엔 처리 거래일 기준이라 연휴·지연 배치마다
     # 며칠치를 받아 오자마자 정리 단계가 지우는 일이 매일 반복됐다(2026-09: 2025-08-19 하루치 213종목 KRX 요청).
     # 보존 경계 근처 며칠 차이는 무시한다.
