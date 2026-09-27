@@ -47,3 +47,11 @@ test("krxCalendar: 올해와 내년 휴장일 목록이 있어야 한다 (연말
   assert.equal(isKrxCalendarCovered(year), true, `${year}년 KRX 휴장일 목록 누락`);
   assert.equal(isKrxCalendarCovered(year + 1), true, `${year + 1}년 KRX 휴장일 목록 누락 — krxCalendar.ts·utils.py 갱신`);
 });
+
+test("isDailySeriesStale: 오름차순 일봉의 마지막 봉으로 판정 (첫 봉을 보면 전 종목 스킵되던 버그)", async () => {
+  const { isDailySeriesStale } = await import("../src/services/scoreSyncService");
+  const series = [{ date: "2025-08-22" }, { date: "2026-09-22" }, { date: "2026-09-23" }];
+  assert.equal(isDailySeriesStale(series, "2026-09-23"), false);
+  assert.equal(isDailySeriesStale(series, "2026-09-28"), false);
+  assert.equal(isDailySeriesStale([{ date: "2026-05-01" }, { date: "2026-06-25" }], "2026-09-23"), true);
+});

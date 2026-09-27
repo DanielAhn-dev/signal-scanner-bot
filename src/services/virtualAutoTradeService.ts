@@ -128,7 +128,7 @@ import {
   upsertStrategyGateState,
   resolveStrategyGateStatus,
 } from "./strategyGateStateService";
-import { businessDaysBehind } from "../utils/dataFreshness";
+import { businessDaysBehindExpected } from "../utils/dataFreshness";
 import { checkAutotradeBuyBlock } from "./macroEventWarningService";
 import { fetchStockNews } from "../utils/fetchNews";
 import { analyzeNewsSentiment, analyzeOrderIntakeSignal } from "../lib/newsSentiment";
@@ -3447,7 +3447,7 @@ async function selectMondayCandidates(payload: {
     };
   }
 
-  const staleBusinessDays = businessDaysBehind(latestAsof);
+  const staleBusinessDays = businessDaysBehindExpected(latestAsof);
   if (staleBusinessDays == null || staleBusinessDays > 1) {
     return {
       candidates: [],
@@ -3475,7 +3475,7 @@ async function selectMondayCandidates(payload: {
       : toPositiveInt(payload.minBuyScore, 70);
 
   const latestInvestorAsof = await getLatestInvestorAsof(payload.supabase);
-  const investorStaleBusinessDays = businessDaysBehind(latestInvestorAsof);
+  const investorStaleBusinessDays = businessDaysBehindExpected(latestInvestorAsof);
   const dataQuality = assessAutoTradeDataQuality({
     scoreStaleBusinessDays: staleBusinessDays,
     investorStaleBusinessDays,

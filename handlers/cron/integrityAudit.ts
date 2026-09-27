@@ -33,6 +33,7 @@ type UserPrefsRow = {
   virtual_cash: number | null;
   capital_krw: number | null;
 };
+type UserRow = { tg_id: number; prefs: Record<string, unknown> | null };
 type TradeRow = AuditTradeRow & { chat_id: number };
 type PositionRow = AuditPositionRow & { chat_id: number };
 
@@ -85,10 +86,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     const [usersResult, tradesResult, positionsResult] = await Promise.all([
       supabase
+        // 시드·현금은 users 컬럼이 아니라 prefs JSON 안에 있다 (예전엔 컬럼으로 조회해 매일 500 에러)
         .from("users")
-        .select("id, virtual_seed_capital, virtual_cash, capital_krw")
-        .in("id", chatIds)
-        .returns<UserPrefsRow[]>(),
+        .select("tg_id, prefs")
+        .in("tg_id", chatIds)
+        .returns<UserRow[]>(),
       supabase
         .from("virtual_trades")
         .select("chat_id, code, side, quantity, net_amount")
@@ -109,7 +111,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     const prefsByChat = new Map<number, UserPrefsRow>();
-    for (const row of usersResult.data ?? []) prefsByChat.set(Number(row.id), row);
+    for (const row of usersResult.data ?? []) {
+      const prefs = (row.prefs ?? {}) as Record<string, unknown>;
+      const num = (v: unknown) => (v == null || !Number.isFinite(Number(v)) ? null : Number(v));
+      prefsByChat.set(Number(row.tg_id), {
+        id: Number(row.tg_id),
+        virtual_seed_capital: num(prefs.virtual_seed_capital),
+        virtual_cash: num(prefs.virtual_cash),
+        capital_krw: num(prefs.capital_krw),
+      });
+    }
 
     const tradesByChat = new Map<number, AuditTradeRow[]>();
     for (const row of tradesResult.data ?? []) {

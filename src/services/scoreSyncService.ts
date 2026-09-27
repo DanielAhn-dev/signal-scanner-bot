@@ -228,6 +228,15 @@ async function upsertRowsByBatch(supabase: SupabaseClient, rows: ScoreUpsertRow[
   }
 }
 
+/** 일봉 최신 봉(오름차순 배열의 마지막)이 기준일보다 7일 넘게 오래됐으면 true */
+export function isDailySeriesStale(series: Array<{ date: string }>, asof: string, maxGapDays = 7): boolean {
+  // fetchDailySeriesFromDb는 날짜 오름차순으로 돌려준다. 예전엔 series[0](가장 오래된 봉)을 봐서
+  // 2026-09-23~25 배치에서 218종목이 전부 스킵되고 엔진 팩터가 비었다.
+  const latestBarMs = Date.parse(String(series[series.length - 1]?.date ?? ""));
+  if (!Number.isFinite(latestBarMs)) return true;
+  return Date.parse(asof) - latestBarMs > maxGapDays * 24 * 60 * 60 * 1000;
+}
+
 export async function syncScoresFromEngine(
   supabase: SupabaseClient,
   options: ScoreSyncOptions = {}
@@ -321,8 +330,7 @@ export async function syncScoresFromEngine(
         }
         // 상장폐지·거래정지 등으로 일봉이 멈춘 종목은 과거 데이터로 오늘자 팩터를 만들지 않는다
         // (예: 더존비즈온 012510 — 2026-06-25 이후 시세 없음에도 매일 점수가 생성됐다)
-        const latestBarMs = Date.parse(String(series[0]?.date ?? ""));
-        if (!Number.isFinite(latestBarMs) || Date.parse(asof) - latestBarMs > 7 * 24 * 60 * 60 * 1000) {
+        if (isDailySeriesStale(series, asof)) {
           skippedInsufficientSeries += 1;
           continue;
         }

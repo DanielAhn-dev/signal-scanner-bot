@@ -270,7 +270,11 @@ def auto_backfill_missing_dates(supabase: Client, trading_date: str) -> bool:
     # 2) Historical fill for retention window
     stock_retention_days = safe_int(os.environ.get("STOCK_DAILY_RETENTION_DAYS", 400), 400)
     stock_retention_days = max(400, stock_retention_days)
-    target_start_dt = trading_dt - timedelta(days=stock_retention_days)
+    # 정리 단계(cleanup.py)와 같은 기준(오늘 - 보존일)을 쓴다. 예전엔 처리 거래일 기준이라 연휴·지연 배치마다
+    # 며칠치를 받아 오자마자 정리 단계가 지우는 일이 매일 반복됐다(2026-09: 2025-08-19 하루치 213종목 KRX 요청).
+    # 보존 경계 근처 며칠 차이는 무시한다.
+    HIST_TOLERANCE_DAYS = 10
+    target_start_dt = date.today() - timedelta(days=stock_retention_days)
 
     earliest_date = get_earliest_stock_daily_date(supabase)
     if not earliest_date:
@@ -278,7 +282,7 @@ def auto_backfill_missing_dates(supabase: Client, trading_date: str) -> bool:
         return backfilled
 
     earliest_dt = datetime.strptime(earliest_date, "%Y-%m-%d").date()
-    if earliest_dt > target_start_dt:
+    if earliest_dt > target_start_dt + timedelta(days=HIST_TOLERANCE_DAYS):
         hist_start = target_start_dt.strftime("%Y%m%d")
         hist_end = (earliest_dt - timedelta(days=1)).strftime("%Y%m%d")
         missing_days = (earliest_dt - target_start_dt).days

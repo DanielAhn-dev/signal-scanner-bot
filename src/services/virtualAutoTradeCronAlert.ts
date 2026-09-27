@@ -1,7 +1,9 @@
 import type { AutoTradeRunSummary } from "./virtualAutoTradeService";
+import { isKrxTradingDay } from "../lib/krxCalendar";
 
 type CronAlertOptions = {
   duplicateWindowThreshold?: number;
+  now?: Date;
 };
 
 function findSkipReasonCount(summary: AutoTradeRunSummary, code: string): number {
@@ -14,7 +16,10 @@ export function buildAutoTradeCronAlertMessage(
 ): string | null {
   const duplicateWindowThreshold = Math.max(1, Math.floor(options?.duplicateWindowThreshold ?? 3));
   const duplicateWindowCount = findSkipReasonCount(summary, "duplicate_window");
-  const outOfSessionCount = findSkipReasonCount(summary, "out_of_session");
+  // 장외 호출은 거래일일 때만 알린다(크론 시각 설정 오류 탐지용). 주말·휴장일 호출은 정상 스킵이다.
+  const outOfSessionCount = isKrxTradingDay(options?.now ?? new Date())
+    ? findSkipReasonCount(summary, "out_of_session")
+    : 0;
   const hasErrors = summary.errorCount > 0;
   const shouldAlert =
     hasErrors || outOfSessionCount > 0 || duplicateWindowCount >= duplicateWindowThreshold;

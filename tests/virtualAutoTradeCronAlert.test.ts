@@ -35,11 +35,12 @@ test("buildAutoTradeCronAlertMessage: duplicate_window 임계치 이상이면 �
   assert.match(message, /수동 실행\/중복 호출 여부를 확인하세요/);
 });
 
-test("buildAutoTradeCronAlertMessage: 장외 실행이나 오류도 즉시 알린다", () => {
+test("buildAutoTradeCronAlertMessage: 거래일 장외 실행이나 오류도 즉시 알린다", () => {
   const outOfSessionMessage = buildAutoTradeCronAlertMessage(
     makeSummary({
       skipReasonStats: [{ code: "out_of_session", label: "장중 시간 외 스킵", count: 1 }],
-    })
+    }),
+    { now: new Date("2026-09-23T10:30:00.000Z") } // 수요일 19:30 KST
   );
   const errorMessage = buildAutoTradeCronAlertMessage(
     makeSummary({
@@ -52,4 +53,12 @@ test("buildAutoTradeCronAlertMessage: 장외 실행이나 오류도 즉시 알�
   assert.match(outOfSessionMessage, /장중 cron 시각 또는 intradayOnly 호출 경로를 확인하세요/);
   assert.ok(errorMessage);
   assert.match(errorMessage, /오류 로그와 virtual_autotrade_runs 상세를 우선 확인하세요/);
+});
+
+test("buildAutoTradeCronAlertMessage: 주말·휴장일 장외 호출은 알리지 않는다", () => {
+  const summary = makeSummary({
+    skipReasonStats: [{ code: "out_of_session", label: "장중 시간 외 스킵", count: 1 }],
+  });
+  assert.equal(buildAutoTradeCronAlertMessage(summary, { now: new Date("2026-09-27T02:00:00.000Z") }), null); // 일요일
+  assert.equal(buildAutoTradeCronAlertMessage(summary, { now: new Date("2026-09-24T10:30:00.000Z") }), null); // 추석
 });

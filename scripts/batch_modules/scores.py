@@ -19,10 +19,19 @@ def run_engine_score_sync(asof: str) -> bool:
     try:
         print("  -> running engine score sync...", " ".join(cmd))
         result = subprocess.run(cmd, check=True, capture_output=True, text=True)
+        last = ""
         if result.stdout:
             lines = [line for line in result.stdout.splitlines() if line.strip()]
             if lines:
-                print(f"   {lines[-1]}")
+                last = lines[-1]
+                print(f"   {last}")
+        # 명령이 성공해도 한 종목도 저장하지 못했으면 실패로 본다
+        # (2026-09-23~25: 판정 버그로 218종목 전부 skipped인데 "완료"로 넘어가 엔진 팩터가 비었다)
+        import re
+        m = re.search(r"upserted=(\d+)", last)
+        if m and int(m.group(1)) == 0:
+            print("   engine score sync upserted 0 rows → treat as failure (legacy only)")
+            return False
         return True
     except Exception as e:
         print(f"   engine score sync failed, fallback to legacy scoring: {e}")
