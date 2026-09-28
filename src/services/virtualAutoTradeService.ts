@@ -90,6 +90,7 @@ import {
 import { sendMessage } from "../telegram/api";
 import { resolveSellTaxRate } from "../lib/securitiesTax";
 import { fetchBenchmarkComparison, formatBenchmarkLine } from "./virtualAutoTradeBenchmark";
+import { fetchHeavyNetSellingCodes } from "./investorFlowFilter";
 import { actionButtons } from "../bot/messages/layout";
 import {
   isKrxIntradayAutoTradeWindow,
@@ -3649,7 +3650,16 @@ async function selectMondayCandidates(payload: {
       })
       .map(([code]) => code)
   );
-  const finalHeldCodes = new Set<string>([...heldAndCooldownCodes, ...activeTakeProfitCooldownCodes]);
+  // 수급 이탈(최근 5일 외국인+기관 강한 순매도) 종목은 신규 매수에서 제외 (investorFlowFilter 백테스트 근거)
+  const heavyNetSelling = await fetchHeavyNetSellingCodes(
+    payload.supabase,
+    scoredRows.map((row) => row.code)
+  ).catch(() => new Map<string, number>());
+  const finalHeldCodes = new Set<string>([
+    ...heldAndCooldownCodes,
+    ...activeTakeProfitCooldownCodes,
+    ...heavyNetSelling.keys(),
+  ]);
 
   const selection = pickAutoTradeCandidates({
     rows: scoredRows,
@@ -3689,7 +3699,7 @@ async function selectMondayCandidates(payload: {
             discoveryProfile === "BLEND"
               ? ` · 하이라이트 ${highlightCodes.size} · 눌림목 ${pullbackCandidateCodes?.size ?? 0} · 멀티배거 ${multibaggerCodes?.size ?? 0} · 백테스트 ${backtestEdgeCodes?.size ?? 0}`
               : ""
-          } · 데이터품질 ${dataQuality.band.toUpperCase()}(${dataQuality.qualityScore}) · ${dataQuality.note} · 교집합(2+) ${overlap2Count}종목 · 교집합(3+) ${overlap3Count}종목 · 오늘매수강신호 ${strongTodayBuyCount}종목 · 즉시제외 ${immediateExcludeCount}종목${cooldownCodes.size > 0 ? ` · 스탑로스 쿨다운 ${cooldownCodes.size}종목 제외` : ""}`,
+          } · 데이터품질 ${dataQuality.band.toUpperCase()}(${dataQuality.qualityScore}) · ${dataQuality.note} · 교집합(2+) ${overlap2Count}종목 · 교집합(3+) ${overlap3Count}종목 · 오늘매수강신호 ${strongTodayBuyCount}종목 · 즉시제외 ${immediateExcludeCount}종목${cooldownCodes.size > 0 ? ` · 스탑로스 쿨다운 ${cooldownCodes.size}종목 제외` : ""}${heavyNetSelling.size > 0 ? ` · 수급이탈 ${heavyNetSelling.size}종목 제외` : ""}`,
   };
 }
 
