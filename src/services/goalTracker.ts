@@ -4,7 +4,7 @@
  *
  *   - 계획선: 시작 평가액에서 연 planAnnualPct(기본 8%) 복리 + 월 추가 입금
  *   - 필요 시드: 목표 월 평균 수익 ÷ 계획 월 수익률 (예: 월 100만원 ÷ 0.643% ≈ 1.56억)
- *   - 이번 달 수익률: 날짜별 평가액을 이어 붙이되, 시드가 바뀐 날(입금·시드 재설정)은 수익 0으로 본다
+ *   - 이번 달 수익률: 날짜별 평가액을 이어 붙이되, 입금·출금이 있던 날은 수익 0으로 본다(isCapitalFlow)
  *   - 정상 범위: 코스피 50일선 규칙의 과거 월별 수익 분포 — 마이너스 달이 "흔한 달"인지 알려 준다
  */
 
@@ -26,7 +26,26 @@ export type GoalSettings = {
   monthlyContribution: number;
 };
 
-export type EquityPoint = { date: string; seed: number; total: number };
+export type EquityPoint = {
+  date: string;
+  seed: number;
+  total: number;
+  /** 그날 기록 시점의 누적 확정 손익(virtual_realized_pnl) — 시드 재계산과 입금을 구분하는 데 쓴다 */
+  realized?: number;
+};
+
+/**
+ * 두 기록 사이에 외부 자금 이동(입금·출금·시드 수동 변경)이 있었는지.
+ * 봇의 주간 시드 재계산은 "새 시드 = 이전 시드 + 이전 누적 확정 손익"이라 자금 이동이 아니다 — 그날 수익은 그대로 센다.
+ */
+export function isCapitalFlow(prev: EquityPoint, cur: EquityPoint): boolean {
+  if (prev.seed === cur.seed) return false;
+  if (prev.realized != null && cur.realized != null) {
+    const tolerance = Math.max(10_000, cur.seed * 0.002);
+    if (Math.abs(cur.seed - (prev.seed + prev.realized)) <= tolerance) return false;
+  }
+  return true;
+}
 
 export type GoalTrackerFile = { settings: GoalSettings; history: EquityPoint[] };
 
@@ -92,13 +111,13 @@ export function monthsToReach(input: {
   return null;
 }
 
-/** 기간 수익률: 날짜별 평가액을 이어 붙이고, 시드가 바뀐 날은 수익 0으로 본다 */
+/** 기간 수익률: 날짜별 평가액을 이어 붙이고, 입금·출금이 있던 날은 수익 0으로 본다 */
 export function chainedReturn(points: EquityPoint[]): number | null {
   const pts = [...points].filter((p) => p.total > 0 && p.seed > 0).sort((a, b) => a.date.localeCompare(b.date));
   if (pts.length < 2) return null;
   let g = 1;
   for (let i = 1; i < pts.length; i += 1) {
-    if (pts[i].seed === pts[i - 1].seed) g *= pts[i].total / pts[i - 1].total;
+    if (!isCapitalFlow(pts[i - 1], pts[i])) g *= pts[i].total / pts[i - 1].total;
   }
   return g - 1;
 }
@@ -136,6 +155,7 @@ export async function fetchAccountEquity(
   const prefs = ((user as any)?.prefs ?? {}) as Record<string, unknown>;
   const seed = Number(prefs.virtual_seed_capital ?? prefs.capital_krw);
   const cash = Number(prefs.virtual_cash);
+  const realized = Number(prefs.virtual_realized_pnl ?? 0);
   if (!(seed > 0) || !Number.isFinite(cash)) return null;
   const { data: positions } = await supabase
     .from("virtual_positions")
@@ -150,7 +170,14 @@ export async function fetchAccountEquity(
     const price = Number(stock?.close) > 0 ? Number(stock.close) : Number(row.buy_price ?? 0);
     holdings += Math.max(0, Math.floor(Number(row.quantity ?? 0))) * Math.max(0, price);
   }
-  return { date, seed, total: Math.round(cash + holdings), cash: Math.round(cash), holdings: Math.round(holdings) };
+  return {
+    date,
+    seed,
+    total: Math.round(cash + holdings),
+    realized: Number.isFinite(realized) ? Math.round(realized) : undefined,
+    cash: Math.round(cash),
+    holdings: Math.round(holdings),
+  };
 }
 
 /** 이번 달 확정 손익: 스윙(개별 종목) / 유휴현금 스윕 */

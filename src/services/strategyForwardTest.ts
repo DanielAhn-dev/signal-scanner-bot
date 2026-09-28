@@ -13,6 +13,8 @@
  * 봇 실제 계좌는 매일 저장한 평가액(forward-test/bot-equity/{날짜}.json)으로 계산한다.
  */
 
+import { isCapitalFlow, type EquityPoint } from "./goalTracker";
+
 export type DailyBar = { date: string; open: number; close: number; volume: number; high?: number; low?: number };
 export type ScoreRow = { code: string; score: number };
 
@@ -69,7 +71,7 @@ export const FORWARD_TEST_GATE_DIR = "forward-test/gate";
 export const FORWARD_TEST_BOT_EQUITY_DIR = "forward-test/bot-equity";
 
 export type GateSnapshot = { asof: string; pass: string[]; fail: string[] };
-export type BotEquitySnapshot = { date: string; seed: number; total: number };
+export type BotEquitySnapshot = EquityPoint;
 
 /** asof 이하 가장 최근 스냅샷. 없으면(측정 첫 주) 가장 이른 스냅샷 — 분기 실적은 며칠 사이 거의 안 바뀐다 */
 export function pickSnapshotOnOrBefore<T extends { asof: string }>(snapshots: T[], asof: string): T | null {
@@ -80,7 +82,7 @@ export function pickSnapshotOnOrBefore<T extends { asof: string }>(snapshots: T[
 }
 
 /**
- * 봇 계좌 수익: 날짜별 평가액/시드 비율을 이어 붙인다. 시드가 바뀐 날(입출금·시드 재설정)은 그날 수익을 0으로 본다.
+ * 봇 계좌 수익: 날짜별 평가액을 이어 붙인다. 입출금이 있던 날(isCapitalFlow)은 그날 수익을 0으로 본다 — 주간 시드 재계산은 입출금이 아니다.
  */
 export function simulateBotAccount(input: { points: BotEquitySnapshot[]; startDate: string }): StrategyResult | null {
   const pts = input.points
@@ -89,8 +91,7 @@ export function simulateBotAccount(input: { points: BotEquitySnapshot[]; startDa
   if (pts.length < 2) return null;
   const equity = [1];
   for (let i = 1; i < pts.length; i += 1) {
-    const sameSeed = pts[i].seed === pts[i - 1].seed;
-    const r = sameSeed ? pts[i].total / pts[i - 1].total - 1 : 0;
+    const r = isCapitalFlow(pts[i - 1], pts[i]) ? 0 : pts[i].total / pts[i - 1].total - 1;
     equity.push(equity[equity.length - 1] * (1 + r));
   }
   return {

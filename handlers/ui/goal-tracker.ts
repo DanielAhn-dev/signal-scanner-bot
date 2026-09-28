@@ -40,7 +40,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
     const now = await fetchAccountEquity(supabase, chatId, today)
     if (!now) return res.status(200).json({ ok: true, data: null, reason: '가상 계좌(시드) 설정이 없습니다. /투자금 으로 시드를 설정하세요.' })
-    const file = await recordGoalEquity(supabase, chatId, { date: now.date, seed: now.seed, total: now.total })
+    const file = await recordGoalEquity(supabase, chatId, { date: now.date, seed: now.seed, total: now.total, realized: now.realized })
     const realized = await fetchMonthRealized(supabase, chatId, today)
     return res.status(200).json({ ok: true, data: buildGoalTrackerView({ file, now, realized }) })
   } catch (e: any) {

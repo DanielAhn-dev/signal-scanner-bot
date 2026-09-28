@@ -10,6 +10,7 @@ import {
 import {
   getUserInvestmentPrefs,
   setUserInvestmentPrefs,
+  type InvestmentPrefs,
 } from "./userService";
 import { syncVirtualPortfolio } from "./portfolioService";
 import { buildStrategyMemo } from "../lib/strategyMemo";
@@ -7738,6 +7739,36 @@ function buildDefaultSettingForChat(chatId: number, riskProfile?: "safe" | "bala
   };
 }
 
+/**
+ * 시드 재계산(복리 반영): 확정 손익을 주 1회 시드에 합쳐 다음 매수 금액 기준을 키운다(손실이면 줄인다).
+ * 수동 실행(runVirtualAutoTradingForChat)과 자동 사이클(runVirtualAutoTradingCycle) 모두 여기서만 처리한다.
+ * 예전엔 수동 경로에만 있어서, 자동 사이클만 도는 날엔 복리가 반영되지 않았다. 모의 실행에서는 호출하지 않는다.
+ * prefs 객체도 갱신해 같은 실행의 사이징이 새 시드를 쓰게 한다.
+ */
+async function applySeedRebaseIfDue(chatId: number, prefs: InvestmentPrefs): Promise<string | null> {
+  try {
+    const rebase = resolveSeedRebase({
+      seedCapital: toNumber(prefs.virtual_seed_capital, 0),
+      realizedPnl: toNumber(prefs.virtual_realized_pnl, 0),
+      lastRebaseAt: prefs.virtual_last_seed_rebase_at,
+    });
+    if (!rebase.shouldRebase) return null;
+    const rebaseAt = new Date().toISOString();
+    await setUserInvestmentPrefs(chatId, {
+      virtual_seed_capital: rebase.nextSeedCapital,
+      virtual_realized_pnl: 0,
+      virtual_last_seed_rebase_at: rebaseAt,
+    });
+    prefs.virtual_seed_capital = rebase.nextSeedCapital;
+    prefs.virtual_realized_pnl = 0;
+    prefs.virtual_last_seed_rebase_at = rebaseAt;
+    return `[시드 재계산] 최근 실현손익 ${rebase.deltaApplied >= 0 ? "+" : ""}${fmtKrw(rebase.deltaApplied)}을 반영 · 새 시드 ${fmtKrw(rebase.nextSeedCapital)} (다음 포지션 사이징부터 적용)`;
+  } catch (e) {
+    console.error("[autoTrade] seed rebase failed", e);
+    return null;
+  }
+}
+
 export async function runVirtualAutoTradingForChat(input: {
   chatId: number;
   mode?: RunMode;
@@ -7778,32 +7809,7 @@ export async function runVirtualAutoTradingForChat(input: {
       : null;
   if (holidayNote) dryRun = true;
 
-  // 시드 재계산(복리 반영): 실행할 때마다 확인하지만 내부적으로 7일 간격 게이트가 있어
-  // 실제 변경은 주 1회만 일어난다. dryRun(학습 모드)에서는 실제 수치를 건드리지 않는다.
-  let seedRebaseNote: string | null = null;
-  if (!dryRun) {
-    try {
-      const rebase = resolveSeedRebase({
-        seedCapital: toNumber(prefs.virtual_seed_capital, 0),
-        realizedPnl: toNumber(prefs.virtual_realized_pnl, 0),
-        lastRebaseAt: prefs.virtual_last_seed_rebase_at,
-      });
-      if (rebase.shouldRebase) {
-        const rebaseAt = new Date().toISOString();
-        await setUserInvestmentPrefs(input.chatId, {
-          virtual_seed_capital: rebase.nextSeedCapital,
-          virtual_realized_pnl: 0,
-          virtual_last_seed_rebase_at: rebaseAt,
-        });
-        prefs.virtual_seed_capital = rebase.nextSeedCapital;
-        prefs.virtual_realized_pnl = 0;
-        prefs.virtual_last_seed_rebase_at = rebaseAt;
-        seedRebaseNote = `[시드 재계산] 최근 실현손익 ${rebase.deltaApplied >= 0 ? "+" : ""}${fmtKrw(rebase.deltaApplied)}을 반영 · 새 시드 ${fmtKrw(rebase.nextSeedCapital)} (다음 포지션 사이징부터 적용)`;
-      }
-    } catch (e) {
-      console.error("[autoTrade] seed rebase failed", e);
-    }
-  }
+  const seedRebaseNote = dryRun ? null : await applySeedRebaseIfDue(input.chatId, prefs);
 
   const defaultSetting = buildDefaultSettingForChat(input.chatId, prefs.risk_profile);
 
@@ -8167,6 +8173,7 @@ export async function runVirtualAutoTradingCycle(input?: {
 
       const prefs = await getUserInvestmentPrefs(setting.chat_id);
       const userDryRun = dryRun || Boolean(prefs.virtual_shadow_mode);
+      const cycleSeedRebaseNote = userDryRun ? null : await applySeedRebaseIfDue(setting.chat_id, prefs);
 
       // 매수 판단 전에 스윕 포지션을 먼저 현금화해, 이번 회차 매수에도 그 자금을 쓸 수 있게 한다.
       const preBuyLiquidate = await runCashSweepLiquidateStep({
@@ -8195,6 +8202,7 @@ export async function runVirtualAutoTradingCycle(input?: {
           });
 
       actionSummary.notes.unshift(...preBuyLiquidate.notes);
+      if (cycleSeedRebaseNote) actionSummary.notes.unshift(cycleSeedRebaseNote);
 
       const cashSweep = await runCashSweepStep({
         supabase,

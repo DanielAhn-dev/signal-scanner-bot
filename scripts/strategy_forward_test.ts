@@ -126,7 +126,7 @@ async function readBotEquity(date: string): Promise<BotEquitySnapshot | null> {
   const chatId = adminChatId();
   if (!chatId) return null;
   const eq = await fetchAccountEquity(supabase, chatId, date);
-  return eq ? { date, seed: eq.seed, total: eq.total } : null;
+  return eq ? { date, seed: eq.seed, total: eq.total, realized: eq.realized } : null;
 }
 
 async function main(): Promise<void> {
@@ -375,7 +375,7 @@ async function main(): Promise<void> {
     if (now) {
       // 기록 모드가 아니면(로컬 확인) 저장하지 않고 읽기만 한다
       const file = RECORD
-        ? await recordGoalEquity(supabase, goalChat, { date: now.date, seed: now.seed, total: now.total }).catch(() => null)
+        ? await recordGoalEquity(supabase, goalChat, { date: now.date, seed: now.seed, total: now.total, realized: now.realized }).catch(() => null)
         : await loadGoalFile(supabase, goalChat).catch(() => null);
       if (file) {
         const realized = await fetchMonthRealized(supabase, goalChat, endDate);
