@@ -8,6 +8,7 @@ import { useCurrentChatId } from '../../stores/profileStore'
 import EconomicEventBadge from '../../components/EconomicEventBadge'
 import SheetHeaderBar from '../../components/SheetHeaderBar'
 import { FLOW_STEPS } from '../../navigation'
+import GoalTrackerCard from './GoalTrackerCard'
 
 type SectorItem = {
   name?: string
@@ -126,6 +127,7 @@ export default function Dashboard({ onNavigate }: { onNavigate?: (r: string) => 
 
   return (
     <div className="dashboard-sheet" style={{ flex: 1, overflow: 'auto', width: '100%', minWidth: 0 }}>
+      <GoalTrackerCard />
       <table className="xls-table" style={{ width: '100%', tableLayout: 'fixed' }}>
         <colgroup>{colWidths.map((width, index) => (
           <col key={index} style={width == null ? undefined : { width }} />

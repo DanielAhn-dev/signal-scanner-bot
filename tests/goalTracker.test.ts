@@ -1,0 +1,75 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import {
+  assessMonth,
+  buildGoalTrackerView,
+  chainedReturn,
+  monthlyRate,
+  monthsToReach,
+  monthToDateReturn,
+  planValueAt,
+  requiredSeed,
+  sanitizeGoalSettings,
+  type GoalSettings,
+} from "../src/services/goalTracker";
+
+const settings: GoalSettings = {
+  startDate: "2026-09-29",
+  startEquity: 20_000_000,
+  planAnnualPct: 8,
+  targetMonthlyProfit: 1_000_000,
+  monthlyContribution: 0,
+};
+
+test("requiredSeed: 월 100만원 ÷ 연 8% 월 복리 수익률 ≈ 1.56억", () => {
+  assert.ok(Math.abs(monthlyRate(8) - 0.006434) < 1e-5);
+  const need = requiredSeed(1_000_000, 8);
+  assert.ok(need > 155_000_000 && need < 156_000_000, String(need));
+});
+
+test("planValueAt·monthsToReach: 12개월 뒤 8%, 2천만→1.56억은 입금 없으면 약 27년", () => {
+  assert.ok(Math.abs(planValueAt(settings, 12) - 21_600_000) < 1);
+  const n = monthsToReach({ fromEquity: 20_000_000, target: requiredSeed(1_000_000, 8), planAnnualPct: 8, monthlyContribution: 0 });
+  assert.ok(n != null && n > 300 && n < 340, String(n));
+  const withContrib = monthsToReach({ fromEquity: 20_000_000, target: requiredSeed(1_000_000, 8), planAnnualPct: 8, monthlyContribution: 1_000_000 });
+  assert.ok(withContrib != null && withContrib < 110, String(withContrib));
+});
+
+test("chainedReturn·monthToDateReturn: 입금으로 시드가 바뀐 날은 수익에서 뺀다", () => {
+  const history = [
+    { date: "2026-09-30", seed: 20_000_000, total: 20_000_000 },
+    { date: "2026-10-05", seed: 20_000_000, total: 21_000_000 }, // +5%
+    { date: "2026-10-06", seed: 30_000_000, total: 31_000_000 }, // 1천만 입금 — 무시
+    { date: "2026-10-07", seed: 30_000_000, total: 31_310_000 }, // +1%
+  ];
+  const r = monthToDateReturn(history, "2026-10-07");
+  assert.ok(r != null && Math.abs(r - (1.05 * 1.01 - 1)) < 1e-9);
+  assert.equal(chainedReturn([history[0]]), null);
+});
+
+test("assessMonth: 마이너스 달도 과거 분포로 흔한 달인지 구분", () => {
+  assert.equal(assessMonth(1.2)?.level, "good");
+  assert.equal(assessMonth(-1.0)?.level, "normal");
+  assert.equal(assessMonth(-3.0)?.level, "weak");
+  assert.equal(assessMonth(-9.0)?.level, "rare");
+  assert.equal(assessMonth(null), null);
+});
+
+test("sanitizeGoalSettings: 범위를 벗어난 값은 잘라내고 빈 값은 유지", () => {
+  const s = sanitizeGoalSettings({ planAnnualPct: 40, targetMonthlyProfit: "" as any, monthlyContribution: -5 }, settings);
+  assert.equal(s.planAnnualPct, 15);
+  assert.equal(s.targetMonthlyProfit, 1_000_000);
+  assert.equal(s.monthlyContribution, 0);
+});
+
+test("buildGoalTrackerView: 진행률·계획선·이번 달 기대 수익", () => {
+  const v = buildGoalTrackerView({
+    file: { settings, history: [{ date: "2026-09-30", seed: 20_000_000, total: 20_000_000 }, { date: "2026-10-15", seed: 20_000_000, total: 20_400_000 }] },
+    now: { date: "2026-10-15", seed: 20_000_000, total: 20_400_000, cash: 1_000_000, holdings: 19_400_000 },
+    realized: { swing: 150_000, sweep: 20_000, sells: 3, wins: 2 },
+  });
+  assert.ok(v.target.progressPct > 13 && v.target.progressPct < 13.2);
+  assert.equal(v.thisMonth.expectedProfit, Math.round(20_000_000 * monthlyRate(8)));
+  assert.ok(v.thisMonth.returnPct != null && Math.abs(v.thisMonth.returnPct - 2) < 1e-9);
+  assert.ok(v.plan.gapPct > 1);
+});

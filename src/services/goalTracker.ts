@@ -1,0 +1,337 @@
+/**
+ * 목표 트래커 — "시드를 넣고 스윙으로 월 평균 수익을 내며, 수익은 전부 재투자해 시드를 키운다"는 목표의 진행 상황.
+ * 매매 로직은 건드리지 않는다. 웹 홈(/api/ui/goal-tracker)과 금요일 텔레그램 보고가 같은 계산을 쓴다.
+ *
+ *   - 계획선: 시작 평가액에서 연 planAnnualPct(기본 8%) 복리 + 월 추가 입금
+ *   - 필요 시드: 목표 월 평균 수익 ÷ 계획 월 수익률 (예: 월 100만원 ÷ 0.643% ≈ 1.56억)
+ *   - 이번 달 수익률: 날짜별 평가액을 이어 붙이되, 시드가 바뀐 날(입금·시드 재설정)은 수익 0으로 본다
+ *   - 정상 범위: 코스피 50일선 규칙의 과거 월별 수익 분포 — 마이너스 달이 "흔한 달"인지 알려 준다
+ */
+
+type SupabaseClientAny = any;
+
+const BUCKET = "market-snapshots";
+export const GOAL_TRACKER_DIR = "goal-tracker";
+
+export type GoalSettings = {
+  /** 목표 추적 시작일 (YYYY-MM-DD) */
+  startDate: string;
+  /** 시작일 평가액 */
+  startEquity: number;
+  /** 계획 연 수익률 % (보수적 기본 8) */
+  planAnnualPct: number;
+  /** 목표 월 평균 수익 (원) */
+  targetMonthlyProfit: number;
+  /** 매달 추가 입금 (원, 없으면 0) */
+  monthlyContribution: number;
+};
+
+export type EquityPoint = { date: string; seed: number; total: number };
+
+export type GoalTrackerFile = { settings: GoalSettings; history: EquityPoint[] };
+
+export const DEFAULT_PLAN_ANNUAL_PCT = 8;
+export const DEFAULT_TARGET_MONTHLY_PROFIT = 1_000_000;
+
+/**
+ * 코스피 50일선 규칙(봇 지수 스윕과 같은 규칙)의 과거 월별 수익 분포 — 1997~2026-09 일봉으로 계산.
+ * (2016년 이후만 보면 플러스 59%, 하위 10% -3.4%로 거의 같다)
+ * 개별 종목 스윙은 이보다 흔들림이 크다 — "이 정도 마이너스는 흔한 달인가"를 가늠하는 기준으로만 쓴다.
+ */
+export const NORMAL_MONTHLY_RANGE = {
+  plusMonthsPct: 61,
+  p10: -4.0,
+  p25: -1.7,
+  median: 0.2,
+  p90: 6.5,
+  worst: -15.5,
+  maxLosingStreak: 4,
+  source: "코스피 50일선 규칙 1997~2026 월별",
+};
+
+export function monthlyRate(annualPct: number): number {
+  return (1 + annualPct / 100) ** (1 / 12) - 1;
+}
+
+/** 목표 월 평균 수익을 내는 데 필요한 시드 */
+export function requiredSeed(targetMonthlyProfit: number, planAnnualPct: number): number {
+  const m = monthlyRate(planAnnualPct);
+  return m > 0 ? targetMonthlyProfit / m : Infinity;
+}
+
+export function monthsBetween(fromDate: string, toDate: string): number {
+  const a = new Date(`${fromDate.slice(0, 10)}T00:00:00Z`);
+  const b = new Date(`${toDate.slice(0, 10)}T00:00:00Z`);
+  const whole = (b.getUTCFullYear() - a.getUTCFullYear()) * 12 + (b.getUTCMonth() - a.getUTCMonth());
+  const dayFrac = (b.getUTCDate() - a.getUTCDate()) / 30;
+  return Math.max(0, whole + dayFrac);
+}
+
+/** 계획선: n개월 뒤 평가액 */
+export function planValueAt(settings: GoalSettings, months: number): number {
+  const m = monthlyRate(settings.planAnnualPct);
+  const g = (1 + m) ** months;
+  const contrib = settings.monthlyContribution > 0 ? (settings.monthlyContribution * (g - 1)) / m : 0;
+  return settings.startEquity * g + contrib;
+}
+
+/** 지금 평가액에서 목표 금액까지 걸리는 개월 수 (계획 수익률 + 월 입금). 50년 넘으면 null */
+export function monthsToReach(input: {
+  fromEquity: number;
+  target: number;
+  planAnnualPct: number;
+  monthlyContribution: number;
+}): number | null {
+  if (input.fromEquity >= input.target) return 0;
+  const m = monthlyRate(input.planAnnualPct);
+  let v = input.fromEquity;
+  for (let n = 1; n <= 600; n += 1) {
+    v = v * (1 + m) + Math.max(0, input.monthlyContribution);
+    if (v >= input.target) return n;
+  }
+  return null;
+}
+
+/** 기간 수익률: 날짜별 평가액을 이어 붙이고, 시드가 바뀐 날은 수익 0으로 본다 */
+export function chainedReturn(points: EquityPoint[]): number | null {
+  const pts = [...points].filter((p) => p.total > 0 && p.seed > 0).sort((a, b) => a.date.localeCompare(b.date));
+  if (pts.length < 2) return null;
+  let g = 1;
+  for (let i = 1; i < pts.length; i += 1) {
+    if (pts[i].seed === pts[i - 1].seed) g *= pts[i].total / pts[i - 1].total;
+  }
+  return g - 1;
+}
+
+/** 이번 달 수익률 = 지난달 마지막 기록부터 오늘까지 */
+export function monthToDateReturn(history: EquityPoint[], today: string): number | null {
+  const month = today.slice(0, 7);
+  const sorted = [...history].sort((a, b) => a.date.localeCompare(b.date));
+  const before = sorted.filter((p) => p.date.slice(0, 7) < month).pop();
+  const inMonth = sorted.filter((p) => p.date.slice(0, 7) === month);
+  return chainedReturn(before ? [before, ...inMonth] : inMonth);
+}
+
+export type MonthAssessment = { level: "good" | "normal" | "weak" | "rare"; text: string };
+
+export function assessMonth(returnPct: number | null): MonthAssessment | null {
+  if (returnPct == null || !Number.isFinite(returnPct)) return null;
+  const r = NORMAL_MONTHLY_RANGE;
+  if (returnPct >= 0) return { level: "good", text: `플러스 달 — 과거 ${r.plusMonthsPct}%의 달이 플러스였습니다.` };
+  if (returnPct >= r.p25) return { level: "normal", text: "흔한 마이너스 달 — 과거 4달 중 1달은 이보다 나빴습니다." };
+  if (returnPct >= r.p10) return { level: "weak", text: "약한 달 — 과거 10달 중 1~2달 수준입니다. 규칙을 바꿀 이유는 아닙니다." };
+  return {
+    level: "rare",
+    text: `드문 약세 달 — 과거 10달 중 1달 미만 수준입니다(최악 ${r.worst}%). 코스피 50일선 아래(신규 매수 중단)인지 확인하세요.`,
+  };
+}
+
+/** 계좌 평가액 = 현금 + 보유 종목(유휴현금 스윕 포함) 종가 평가 */
+export async function fetchAccountEquity(
+  supabase: SupabaseClientAny,
+  chatId: number,
+  date: string
+): Promise<(EquityPoint & { cash: number; holdings: number }) | null> {
+  const { data: user } = await supabase.from("users").select("prefs").eq("tg_id", chatId).maybeSingle();
+  const prefs = ((user as any)?.prefs ?? {}) as Record<string, unknown>;
+  const seed = Number(prefs.virtual_seed_capital ?? prefs.capital_krw);
+  const cash = Number(prefs.virtual_cash);
+  if (!(seed > 0) || !Number.isFinite(cash)) return null;
+  const { data: positions } = await supabase
+    .from("virtual_positions")
+    .select("code, quantity, buy_price, status, stock:stocks(close)")
+    .eq("chat_id", chatId)
+    .is("broker_name", null)
+    .is("account_name", null);
+  let holdings = 0;
+  for (const row of (positions ?? []) as any[]) {
+    if (String(row.status ?? "holding") === "closed") continue;
+    const stock = Array.isArray(row.stock) ? row.stock[0] : row.stock;
+    const price = Number(stock?.close) > 0 ? Number(stock.close) : Number(row.buy_price ?? 0);
+    holdings += Math.max(0, Math.floor(Number(row.quantity ?? 0))) * Math.max(0, price);
+  }
+  return { date, seed, total: Math.round(cash + holdings), cash: Math.round(cash), holdings: Math.round(holdings) };
+}
+
+/** 이번 달 확정 손익: 스윙(개별 종목) / 유휴현금 스윕 */
+export async function fetchMonthRealized(
+  supabase: SupabaseClientAny,
+  chatId: number,
+  today: string
+): Promise<{ swing: number; sweep: number; sells: number; wins: number }> {
+  const monthStart = `${today.slice(0, 7)}-01T00:00:00+09:00`;
+  const { data } = await supabase
+    .from("virtual_trades")
+    .select("pnl_amount, memo")
+    .eq("chat_id", chatId)
+    .eq("side", "SELL")
+    .is("broker_name", null)
+    .gte("traded_at", monthStart)
+    .limit(2000);
+  let swing = 0;
+  let sweep = 0;
+  let sells = 0;
+  let wins = 0;
+  for (const row of (data ?? []) as Array<{ pnl_amount: number | null; memo: string | null }>) {
+    const pnl = Number(row.pnl_amount ?? 0);
+    if (String(row.memo ?? "").includes("cash-sweep")) sweep += pnl;
+    else {
+      swing += pnl;
+      sells += 1;
+      if (pnl > 0) wins += 1;
+    }
+  }
+  return { swing: Math.round(swing), sweep: Math.round(sweep), sells, wins };
+}
+
+async function downloadJson<T>(supabase: SupabaseClientAny, path: string): Promise<T | null> {
+  const { data, error } = await supabase.storage.from(BUCKET).download(path);
+  if (error || !data) return null;
+  try {
+    return JSON.parse(await data.text()) as T;
+  } catch {
+    return null;
+  }
+}
+
+async function uploadJson(supabase: SupabaseClientAny, path: string, value: unknown): Promise<void> {
+  await supabase.storage.from(BUCKET).upload(path, JSON.stringify(value), { upsert: true, contentType: "application/json" });
+}
+
+export async function loadGoalFile(supabase: SupabaseClientAny, chatId: number): Promise<GoalTrackerFile | null> {
+  return downloadJson<GoalTrackerFile>(supabase, `${GOAL_TRACKER_DIR}/${chatId}.json`);
+}
+
+/** 오늘 평가액을 기록한다(같은 날은 덮어씀). 설정이 없으면 오늘 평가액으로 기본 목표를 만든다 */
+export async function recordGoalEquity(
+  supabase: SupabaseClientAny,
+  chatId: number,
+  point: EquityPoint
+): Promise<GoalTrackerFile> {
+  const file = (await loadGoalFile(supabase, chatId)) ?? {
+    settings: {
+      startDate: point.date,
+      startEquity: point.total,
+      planAnnualPct: DEFAULT_PLAN_ANNUAL_PCT,
+      targetMonthlyProfit: DEFAULT_TARGET_MONTHLY_PROFIT,
+      monthlyContribution: 0,
+    },
+    history: [],
+  };
+  file.history = [...file.history.filter((p) => p.date !== point.date), point].sort((a, b) => a.date.localeCompare(b.date));
+  await uploadJson(supabase, `${GOAL_TRACKER_DIR}/${chatId}.json`, file);
+  return file;
+}
+
+export function sanitizeGoalSettings(input: Partial<GoalSettings>, current: GoalSettings): GoalSettings {
+  const num = (v: unknown, fallback: number, min: number, max: number) => {
+    const n = Number(v);
+    return v != null && v !== "" && Number.isFinite(n) ? Math.min(max, Math.max(min, n)) : fallback;
+  };
+  return {
+    startDate: /^\d{4}-\d{2}-\d{2}$/.test(String(input.startDate ?? "")) ? String(input.startDate) : current.startDate,
+    startEquity: num(input.startEquity, current.startEquity, 0, 1e12),
+    planAnnualPct: num(input.planAnnualPct, current.planAnnualPct, 1, 15),
+    targetMonthlyProfit: num(input.targetMonthlyProfit, current.targetMonthlyProfit, 10_000, 1e9),
+    monthlyContribution: num(input.monthlyContribution, current.monthlyContribution, 0, 1e9),
+  };
+}
+
+export async function saveGoalSettings(
+  supabase: SupabaseClientAny,
+  chatId: number,
+  settings: Partial<GoalSettings>
+): Promise<GoalTrackerFile | null> {
+  const file = await loadGoalFile(supabase, chatId);
+  if (!file) return null;
+  file.settings = sanitizeGoalSettings(settings, file.settings);
+  await uploadJson(supabase, `${GOAL_TRACKER_DIR}/${chatId}.json`, file);
+  return file;
+}
+
+export type GoalTrackerView = {
+  today: string;
+  settings: GoalSettings;
+  equity: number;
+  seed: number;
+  cash: number;
+  holdings: number;
+  plan: { monthsElapsed: number; planValue: number; gapPct: number };
+  target: { requiredSeed: number; progressPct: number; monthsToReach: number | null; etaMonth: string | null };
+  thisMonth: {
+    expectedProfit: number;
+    returnPct: number | null;
+    realizedSwing: number;
+    realizedSweep: number;
+    sells: number;
+    wins: number;
+    assessment: MonthAssessment | null;
+  };
+  normalRange: typeof NORMAL_MONTHLY_RANGE;
+};
+
+export function buildGoalTrackerView(input: {
+  file: GoalTrackerFile;
+  now: EquityPoint & { cash: number; holdings: number };
+  realized: { swing: number; sweep: number; sells: number; wins: number };
+}): GoalTrackerView {
+  const { file, now, realized } = input;
+  const s = file.settings;
+  const monthsElapsed = monthsBetween(s.startDate, now.date);
+  const planValue = planValueAt(s, monthsElapsed);
+  const need = requiredSeed(s.targetMonthlyProfit, s.planAnnualPct);
+  const months = monthsToReach({
+    fromEquity: now.total,
+    target: need,
+    planAnnualPct: s.planAnnualPct,
+    monthlyContribution: s.monthlyContribution,
+  });
+  let etaMonth: string | null = null;
+  if (months != null) {
+    const d = new Date(`${now.date}T00:00:00Z`);
+    d.setUTCMonth(d.getUTCMonth() + months);
+    etaMonth = d.toISOString().slice(0, 7);
+  }
+  const mtd = monthToDateReturn(file.history, now.date);
+  const monthStartEquity =
+    [...file.history]
+      .filter((p) => p.date.slice(0, 7) < now.date.slice(0, 7))
+      .sort((a, b) => a.date.localeCompare(b.date))
+      .pop()?.total ?? now.total;
+  return {
+    today: now.date,
+    settings: s,
+    equity: now.total,
+    seed: now.seed,
+    cash: now.cash,
+    holdings: now.holdings,
+    plan: { monthsElapsed, planValue: Math.round(planValue), gapPct: planValue > 0 ? (now.total / planValue - 1) * 100 : 0 },
+    target: {
+      requiredSeed: Math.round(need),
+      progressPct: Number.isFinite(need) && need > 0 ? (now.total / need) * 100 : 0,
+      monthsToReach: months,
+      etaMonth,
+    },
+    thisMonth: {
+      expectedProfit: Math.round(monthStartEquity * monthlyRate(s.planAnnualPct)),
+      returnPct: mtd == null ? null : mtd * 100,
+      realizedSwing: realized.swing,
+      realizedSweep: realized.sweep,
+      sells: realized.sells,
+      wins: realized.wins,
+      assessment: assessMonth(mtd == null ? null : mtd * 100),
+    },
+    normalRange: NORMAL_MONTHLY_RANGE,
+  };
+}
+
+/** 금요일 텔레그램 보고용 요약 */
+export function formatGoalLine(v: GoalTrackerView): string {
+  const man = (x: number) => `${Math.round(x / 10_000).toLocaleString("ko-KR")}만`;
+  const mtd = v.thisMonth.returnPct == null ? "-" : `${v.thisMonth.returnPct >= 0 ? "+" : ""}${v.thisMonth.returnPct.toFixed(1)}%`;
+  return [
+    `[목표] 월 평균 ${man(v.settings.targetMonthlyProfit)}원 → 필요 시드 ${man(v.target.requiredSeed)}원 · 현재 ${man(v.equity)}원 (${v.target.progressPct.toFixed(0)}%)`,
+    `  이번 달 ${mtd} · 스윙 확정 ${man(v.thisMonth.realizedSwing)}원 · 계획 월 평균 ${man(v.thisMonth.expectedProfit)}원 · 계획선 대비 ${v.plan.gapPct >= 0 ? "+" : ""}${v.plan.gapPct.toFixed(1)}%`,
+    `  예상 도달 ${v.target.etaMonth ?? "50년 이상"} (연 ${v.settings.planAnnualPct}% 재투자${v.settings.monthlyContribution > 0 ? ` + 월 ${man(v.settings.monthlyContribution)}원 입금` : ""})`,
+  ].join("\n");
+}

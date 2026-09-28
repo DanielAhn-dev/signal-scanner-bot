@@ -13,6 +13,14 @@ import { computeFlowScore, pickHeavyNetSelling } from "../src/services/investorF
 import { fetchFundamentalGateResults } from "../src/services/fundamentalQualityGate";
 import { buildPromotionKeyboard } from "../src/services/strategyPromotion";
 import {
+  buildGoalTrackerView,
+  fetchAccountEquity,
+  fetchMonthRealized,
+  formatGoalLine,
+  loadGoalFile,
+  recordGoalEquity,
+} from "../src/services/goalTracker";
+import {
   GATE_CORE_SLOTS,
   planGateCoreRebalance,
   resolveGateCoreSlotBudget,
@@ -108,29 +116,17 @@ async function uploadJson(path: string, value: unknown): Promise<void> {
   if (error) console.warn(`저장 실패 ${path}: ${error.message}`);
 }
 
-/** 관리자 봇 계좌 평가액 = 현금 + 보유 종목(스윕 포함) 종가 평가 */
+/** 관리자 봇 계좌 평가액 — 목표 트래커와 같은 계산(goalTracker.fetchAccountEquity) */
+function adminChatId(): number | null {
+  const id = Number(process.env.TELEGRAM_ADMIN_CHAT_ID);
+  return Number.isFinite(id) && id !== 0 ? id : null;
+}
+
 async function readBotEquity(date: string): Promise<BotEquitySnapshot | null> {
-  const chatId = Number(process.env.TELEGRAM_ADMIN_CHAT_ID);
-  if (!Number.isFinite(chatId) || chatId === 0) return null;
-  const { data: user } = await supabase.from("users").select("prefs").eq("tg_id", chatId).maybeSingle();
-  const prefs = ((user as any)?.prefs ?? {}) as Record<string, unknown>;
-  const seed = Number(prefs.virtual_seed_capital ?? prefs.capital_krw);
-  const cash = Number(prefs.virtual_cash);
-  if (!(seed > 0) || !Number.isFinite(cash)) return null;
-  const { data: positions } = await supabase
-    .from("virtual_positions")
-    .select("code, quantity, buy_price, status, stock:stocks(close)")
-    .eq("chat_id", chatId)
-    .is("broker_name", null)
-    .is("account_name", null);
-  let holdings = 0;
-  for (const row of (positions ?? []) as any[]) {
-    if (String(row.status ?? "holding") === "closed") continue;
-    const stock = Array.isArray(row.stock) ? row.stock[0] : row.stock;
-    const price = Number(stock?.close) > 0 ? Number(stock.close) : Number(row.buy_price ?? 0);
-    holdings += Math.max(0, Math.floor(Number(row.quantity ?? 0))) * Math.max(0, price);
-  }
-  return { date, seed, total: Math.round(cash + holdings) };
+  const chatId = adminChatId();
+  if (!chatId) return null;
+  const eq = await fetchAccountEquity(supabase, chatId, date);
+  return eq ? { date, seed: eq.seed, total: eq.total } : null;
 }
 
 async function main(): Promise<void> {
@@ -285,6 +281,8 @@ async function main(): Promise<void> {
     const today = await readBotEquity(endDate);
     if (today) {
       await uploadJson(`${FORWARD_TEST_BOT_EQUITY_DIR}/${endDate}.json`, today);
+      // 목표 트래커도 같은 평가액을 매일 쌓는다
+      await recordGoalEquity(supabase, adminChatId()!, today).catch((e) => console.warn(`목표 기록 실패: ${e}`));
       const i = botPoints.findIndex((p) => p.date === endDate);
       if (i >= 0) botPoints[i] = today;
       else botPoints.push(today);
@@ -369,7 +367,29 @@ async function main(): Promise<void> {
     results.push(simulateOrderSheetStrategy({ sheets, tradingDates, barsByCode }));
   }
   const review = reviewStrategies({ results, measuredDays: inRange.length - 1 });
-  const report = [formatForwardTestReport({ startDate: START, endDate, results }), "", "[승격·퇴출 판정]", ...review.lines].join("\n");
+  // 목표 트래커 요약 (관리자 계좌)
+  let goalLine = "";
+  const goalChat = adminChatId();
+  if (goalChat) {
+    const now = await fetchAccountEquity(supabase, goalChat, endDate);
+    if (now) {
+      // 기록 모드가 아니면(로컬 확인) 저장하지 않고 읽기만 한다
+      const file = RECORD
+        ? await recordGoalEquity(supabase, goalChat, { date: now.date, seed: now.seed, total: now.total }).catch(() => null)
+        : await loadGoalFile(supabase, goalChat).catch(() => null);
+      if (file) {
+        const realized = await fetchMonthRealized(supabase, goalChat, endDate);
+        goalLine = formatGoalLine(buildGoalTrackerView({ file, now, realized }));
+      }
+    }
+  }
+  const report = [
+    ...(goalLine ? [goalLine, ""] : []),
+    formatForwardTestReport({ startDate: START, endDate, results }),
+    "",
+    "[승격·퇴출 판정]",
+    ...review.lines,
+  ].join("\n");
   console.log(report);
 
   // 웹 전략 화면이 읽을 수 있게 최신 결과를 저장한다 (운영 실행)
