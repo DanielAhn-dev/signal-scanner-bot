@@ -88,6 +88,7 @@ import {
   evaluateAutoTradeSignalGate,
 } from "./virtualAutoTradeSignalGate";
 import { sendMessage } from "../telegram/api";
+import { resolveSellTaxRate } from "../lib/securitiesTax";
 import { actionButtons } from "../bot/messages/layout";
 import {
   isKrxIntradayAutoTradeWindow,
@@ -2288,7 +2289,8 @@ async function runCashSweepLiquidateStep(payload: {
     }
 
     const feeRate = toNumber(prefs.virtual_fee_rate, 0.00015);
-    const taxRate = toNumber(prefs.virtual_tax_rate, 0.0018);
+    // 현금 스윕 종목은 ETF라 매도 증권거래세가 없다 (resolveSellTaxRate)
+    const taxRate = resolveSellTaxRate({ code: sweepCode, baseRate: toNumber(prefs.virtual_tax_rate, 0.0018) });
     const gross = Math.round(sweepPrice * sweepQty);
     const feeAmount = Math.round(gross * feeRate);
     const taxAmount = Math.round(gross * taxRate);
@@ -2410,7 +2412,7 @@ async function topUpCashSweepForBuy(payload: {
 
     const prefs = await getUserInvestmentPrefs(payload.chatId);
     const feeRate = toNumber(prefs.virtual_fee_rate, 0.00015);
-    const taxRate = toNumber(prefs.virtual_tax_rate, 0.0018);
+    const taxRate = resolveSellTaxRate({ code: sweepCode, baseRate: toNumber(prefs.virtual_tax_rate, 0.0018) });
     const gross = Math.round(sweepPrice * sellQty);
     const feeAmount = Math.round(gross * feeRate);
     const taxAmount = Math.round(gross * taxRate);
@@ -4867,7 +4869,18 @@ async function executeAutoTradeSell(payload: {
   const executionPrice = execution.executionPrice;
   const gross = Math.round(executionPrice * sellQty);
   const feeAmount = Math.round(gross * payload.feeRate);
-  const taxAmount = Math.round(gross * payload.taxRate);
+  // ETF·ETN은 증권거래세 면제 — 보유 종목이 ETF인지 이름으로 확인한다
+  const { data: stockNameRow } = await payload.supabase
+    .from("stocks")
+    .select("name")
+    .eq("code", payload.holding.code)
+    .maybeSingle();
+  const effectiveTaxRate = resolveSellTaxRate({
+    code: payload.holding.code,
+    name: (stockNameRow as { name?: string } | null)?.name ?? null,
+    baseRate: payload.taxRate,
+  });
+  const taxAmount = Math.round(gross * effectiveTaxRate);
   const net = Math.max(0, gross - feeAmount - taxAmount);
   const pnl = net - soldCost;
   const isTakeProfit =
