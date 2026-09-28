@@ -480,7 +480,7 @@ export async function handlePreMarketPlanCommand(
   });
 
   const seedCapital = Math.max(0, toNumber(prefs.virtual_seed_capital, toNumber(prefs.capital_krw, 0)));
-  // 현금 스윕(CD금리 ETF)은 매수 시 자동매매가 팔아 쓰는 현금이라 가용현금에 더한다
+  // 현금 스윕(50일선 위 KODEX 200, 아래 CD금리 ETF)은 매수 시 자동매매가 팔아 쓰는 현금이라 가용현금에 더한다
   const sweep = await fetchCashSweepHolding(supabase, tgId).catch(() => ({ value: 0, codes: new Set<string>() }));
   const availableCash = Math.max(0, toNumber(prefs.virtual_cash, seedCapital)) + sweep.value;
   const marketOverview = await withIndexTrendRatios(supabase, await fetchAllMarketData().catch(() => null));
