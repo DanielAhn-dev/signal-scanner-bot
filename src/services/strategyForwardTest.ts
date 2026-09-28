@@ -161,7 +161,10 @@ export function reviewStrategies(input: { results: StrategyResult[]; measuredDay
         `승격 후보: ${c.label} ${fmtPct(c.totalReturnPct)} (낙폭 ${c.maxDrawdownPct.toFixed(1)}%) — 봇 ${fmtPct(bot.totalReturnPct)}, KODEX 200 ${fmtPct(kodex.totalReturnPct)}, CD ${fmtPct(cd.totalReturnPct)}를 모두 앞서고 낙폭도 봇 이하`
       );
     }
-    lines.push("승인하시면 이 전략을 봇에 적용하는 작업을 진행합니다. 자동으로 바뀌지는 않습니다.");
+    // 후보 전략은 측정용 계산이라 봇이 바로 갈아탈 수 없다 — 승인되면 그 전략을 봇 전략으로 구현하고 전환 버튼을 붙인다
+    lines.push(
+      "승인 방법: Claude Code 세션에서 \"전략 승격 적용: <전략 이름>\"을 요청하세요. 그 전략을 봇 전략으로 구현한 뒤 전환합니다. 자동으로 바뀌지는 않습니다."
+    );
   }
   if (bot.totalReturnPct < kodex.totalReturnPct && bot.totalReturnPct < cd.totalReturnPct) {
     if (status !== "propose") status = "warn-bot";
