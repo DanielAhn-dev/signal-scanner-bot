@@ -13,10 +13,17 @@ import { computeFlowScore, pickHeavyNetSelling } from "../src/services/investorF
 import { fetchFundamentalGateResults } from "../src/services/fundamentalQualityGate";
 import { buildPromotionKeyboard } from "../src/services/strategyPromotion";
 import {
+  GATE_CORE_SLOTS,
+  planGateCoreRebalance,
+  resolveGateCoreSlotBudget,
+  selectGateCoreTargets,
+} from "../src/services/gateCoreStrategy";
+import {
   firstTradingDaysOfWeeks,
   firstTradingDaysOfMonths,
   pickSnapshotOnOrBefore,
   simulateBotAccount,
+  simulateGateCore,
   reviewStrategies,
   FORWARD_TEST_GATE_DIR,
   FORWARD_TEST_BOT_EQUITY_DIR,
@@ -285,9 +292,52 @@ async function main(): Promise<void> {
   }
   const botResult = simulateBotAccount({ points: botPoints, startDate: START });
 
+  // 실적 관문 코어(봇 구현과 같은 함수): 점수 순서 전체가 필요해 상위 400개를 읽는다
+  const rankedCache = new Map<string, string[]>();
+  async function rankedScores(asof: string): Promise<string[]> {
+    if (rankedCache.has(asof)) return rankedCache.get(asof)!;
+    const { data } = await supabase
+      .from("scores")
+      .select("code, score")
+      .eq("asof", asof)
+      .order("score", { ascending: false })
+      .limit(400);
+    const codes = ((data ?? []) as any[]).map((r) => String(r.code)).filter((c) => universe.includes(c));
+    rankedCache.set(asof, codes);
+    return codes;
+  }
+  // 한 칸 예산은 관리자 봇 계좌 평가액 기준 (없으면 2천만원) — 1주 가격이 예산을 넘는 종목은 봇도 못 산다
+  const latestBot = [...botPoints].sort((a, b) => a.date.localeCompare(b.date)).pop();
+  const slotBudget = resolveGateCoreSlotBudget(latestBot?.total ?? 20_000_000);
+  const gateCoreTargets = new Map<string, string[]>();
+  for (const d0 of monthlyDates) {
+    const asof = prevTradingDate(d0);
+    if (!asof) continue;
+    const prices = new Map<string, number>();
+    for (const code of universe) {
+      const bar = barsByCode.get(code)?.get(asof);
+      if (bar && bar.close > 0) prices.set(code, bar.close);
+    }
+    gateCoreTargets.set(
+      d0,
+      selectGateCoreTargets({ rankedCodes: await rankedScores(asof), gatePass: new Set(gatePassAt(asof)), prices, slotBudget })
+    );
+  }
+
   const results: StrategyResult[] = [
     ...simulateIndexStrategies({ index, startDate: START }),
     ...(botResult ? [botResult] : []),
+    simulateGateCore({
+      rebalanceDates: monthlyDates,
+      targetsAt: (d) => gateCoreTargets.get(d) ?? [],
+      trendUpAt: (d) => {
+        const asof = prevTradingDate(d);
+        return asof ? trendUp(asof) : false;
+      },
+      barsByCode,
+      slots: GATE_CORE_SLOTS,
+      plan: planGateCoreRebalance,
+    }),
     simulateWeeklyStrategy({
       name: "gate-monthly",
       rebalanceDates: monthlyDates,

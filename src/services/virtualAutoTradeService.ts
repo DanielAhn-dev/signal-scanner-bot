@@ -94,6 +94,14 @@ import { fetchBenchmarkComparison, formatBenchmarkLine } from "./virtualAutoTrad
 import { fetchHeavyNetSellingCodes } from "./investorFlowFilter";
 import { fetchFundamentalGateResults, type FundamentalGateResult } from "./fundamentalQualityGate";
 import {
+  GATE_CORE_STRATEGY,
+  isGateCoreRebalanceDue,
+  planGateCoreRebalance,
+  resolveGateCoreSlotBudget,
+  selectGateCoreTargets,
+} from "./gateCoreStrategy";
+import { loadStrategyActivation } from "./strategyPromotion";
+import {
   fetchNegativeDisclosures,
   formatDisclosureFilterNote,
   type DisclosureFilterResult,
@@ -5182,6 +5190,265 @@ async function tryRotateForCashRoom(payload: {
   };
 }
 
+/** 실적 관문 코어의 마지막 교체 월 — 사용자별 Storage JSON (prefs 스키마를 늘리지 않으려고) */
+const GATE_CORE_STATE_DIR = "strategy-state/gate-core";
+
+async function loadGateCoreLastMonth(supabase: SupabaseClientAny, chatId: number): Promise<string | null> {
+  const { data } = await supabase.storage.from("market-snapshots").download(`${GATE_CORE_STATE_DIR}/${chatId}.json`);
+  if (!data) return null;
+  try {
+    return String(JSON.parse(await data.text()).lastRebalanceMonth ?? "") || null;
+  } catch {
+    return null;
+  }
+}
+
+async function saveGateCoreLastMonth(supabase: SupabaseClientAny, chatId: number, month: string): Promise<void> {
+  await supabase.storage
+    .from("market-snapshots")
+    .upload(`${GATE_CORE_STATE_DIR}/${chatId}.json`, JSON.stringify({ lastRebalanceMonth: month, at: new Date().toISOString() }), {
+      upsert: true,
+      contentType: "application/json",
+    });
+}
+
+/**
+ * 실적 관문 코어 전략 실행 (gateCoreStrategy.ts). 승격 승인으로 켜졌을 때만 기존 매수·일일점검 대신 호출된다.
+ * 달마다 한 번: 점수 순서대로 관문 통과 상위 20종목을 목표로, 빠진 종목 매도 · 50일선 위면 새 종목 매수.
+ * 교체일 사이에는 아무 매매도 하지 않는다 (남는 현금은 유휴현금 스윕이 처리).
+ */
+export async function runGateCoreForUser(payload: {
+  supabase: SupabaseClientAny;
+  setting: AutoTradeSettingRow;
+  runId: number | null;
+  dryRun: boolean;
+}): Promise<AutoTradeActionSummary> {
+  const chatId = payload.setting.chat_id;
+  const summary: AutoTradeActionSummary = { chatId, buys: 0, sells: 0, skipped: 0, errors: 0, notes: [] };
+  const todayKey = kstDateKey();
+  const lastMonth = await loadGateCoreLastMonth(payload.supabase, chatId).catch(() => null);
+  if (!isGateCoreRebalanceDue(todayKey, lastMonth)) {
+    summary.notes.push(`[실적 관문 코어] ${lastMonth} 교체 완료 — 다음 교체는 다음 달 첫 실행. 그 사이에는 매매하지 않습니다.`);
+    return summary;
+  }
+
+  const prefs = await getUserInvestmentPrefs(chatId);
+  const feeRate = toNumber(prefs.virtual_fee_rate, 0.00015);
+  const taxRate = resolveBaseSellTaxRate(prefs.virtual_tax_rate);
+  let availableCash = Math.max(0, toNumber(prefs.virtual_cash, 0));
+
+  const { data: holdingsData, error: holdingsError } = await fetchLegacyVirtualPositionsForChat({
+    supabase: payload.supabase,
+    chatId,
+    select: "id, code, buy_price, buy_date, created_at, quantity, invested_amount, status, memo, planned_review_at",
+    status: "holding",
+  });
+  if (holdingsError) {
+    summary.errors += 1;
+    summary.notes.push(`[실적 관문 코어] 보유 조회 실패: ${queryErrorMessage(holdingsError)}`);
+    return summary;
+  }
+  const holdings = ((holdingsData ?? []) as HoldingRow[]).filter(
+    (row) => parseStrategyMemo(row.memo).strategyId !== CASH_SWEEP_STRATEGY_ID
+  );
+
+  // 점수 순서 (ETF 제외)
+  const latestAsof = await getLatestScoreAsof(payload.supabase);
+  const { data: scoreRows } = latestAsof
+    ? await payload.supabase
+        .from("scores")
+        .select("code, stock:stocks!inner(name)")
+        .eq("asof", latestAsof)
+        .order("total_score", { ascending: false })
+        .limit(400)
+    : { data: [] };
+  const rankedCodes = ((scoreRows ?? []) as Array<{ code: string; stock?: { name?: string | null } | Array<{ name?: string | null }> }>)
+    .filter((row) => {
+      const stock = Array.isArray(row.stock) ? row.stock[0] : row.stock;
+      return !isExchangeTradedProduct(row.code, stock?.name ?? null);
+    })
+    .map((row) => String(row.code));
+
+  const priceCodes = [...new Set([...rankedCodes, ...holdings.map((h) => h.code)])];
+  const prices = new Map<string, number>();
+  const names = new Map<string, string>();
+  for (let i = 0; i < priceCodes.length; i += 200) {
+    const { data } = await payload.supabase
+      .from("stocks")
+      .select("code, name, close")
+      .in("code", priceCodes.slice(i, i + 200));
+    for (const row of (data ?? []) as Array<{ code: string; name: string | null; close: number | null }>) {
+      if (toNumber(row.close, 0) > 0) prices.set(row.code, toNumber(row.close, 0));
+      names.set(row.code, row.name ?? row.code);
+    }
+  }
+
+  const sweepValue = await fetchCashSweepPositionValue(payload.supabase, chatId);
+  const holdingsValue = holdings.reduce(
+    (sum, h) => sum + Math.max(0, Math.floor(toNumber(h.quantity, 0))) * (prices.get(h.code) ?? toNumber(h.buy_price, 0)),
+    0
+  );
+  const equity = availableCash + sweepValue + holdingsValue;
+  const slotBudget = resolveGateCoreSlotBudget(equity);
+
+  const gate = await fetchFundamentalGateResults(payload.supabase, rankedCodes).catch(() => new Map());
+  const gatePass = new Set([...gate].filter(([, g]) => g.status === "pass").map(([c]) => c));
+  const trend = await fetchIndexSma200Ratios(payload.supabase).catch(() => null);
+  const trendUp = trend?.kospiSma50 != null && trend.kospiSma50 >= 1;
+  const targets = selectGateCoreTargets({ rankedCodes, gatePass, prices, slotBudget });
+  const plan = planGateCoreRebalance({ heldCodes: holdings.map((h) => h.code), targets, trendUp });
+
+  summary.notes.push(
+    `[실적 관문 코어] ${todayKey.slice(0, 7)} 교체 · 평가액 ${fmtKrw(equity)} · 칸당 ${fmtKrw(slotBudget)} · 목표 ${targets.length}종목 · 코스피 50일선 ${trendUp ? "위(매수 가능)" : "아래(신규 매수 안 함)"} · 매도 ${plan.sell.length} · 유지 ${plan.keep.length} · 매수 ${plan.buy.length}`
+  );
+
+  // 1) 목록에서 빠진 종목 매도
+  for (const code of plan.sell) {
+    const holding = holdings.find((h) => h.code === code)!;
+    const qty = Math.max(0, Math.floor(toNumber(holding.quantity, 0)));
+    const price = prices.get(code) ?? 0;
+    if (qty <= 0 || !(price > 0)) {
+      summary.skipped += 1;
+      summary.notes.push(`${names.get(code) ?? code}(${code}) 매도 보류: 가격 없음`);
+      continue;
+    }
+    const result = await executeAutoTradeSell({
+      supabase: payload.supabase,
+      runId: payload.runId,
+      chatId,
+      holding,
+      close: price,
+      buyPrice: toNumber(holding.buy_price, price),
+      feeRate,
+      taxRate,
+      sellQty: qty,
+      reason: "rotation-sell",
+      profileLabel: "실적 관문 코어",
+      strategyProfile: "GATE_CORE",
+      takeProfitTranchesDone: 0,
+      nextTakeProfitTranchesDone: 0,
+      dryRun: payload.dryRun,
+    }).catch((e: unknown) => {
+      summary.errors += 1;
+      summary.notes.push(`${code} 매도 실패: ${e instanceof Error ? e.message : String(e)}`);
+      return null;
+    });
+    if (result?.sold) {
+      summary.sells += 1;
+      availableCash += result.proceeds;
+      summary.notes.push(`[교체 매도] ${names.get(code) ?? code}(${code}) ${qty}주 — 목표 목록에서 빠짐 · ${result.note}`);
+    }
+  }
+
+  // 2) 새 종목 매수 (칸당 같은 금액, 1주 단위)
+  for (const code of plan.buy) {
+    const price = prices.get(code) ?? 0;
+    let qty = price > 0 ? Math.floor(slotBudget / price) : 0;
+    if (qty <= 0) {
+      summary.skipped += 1;
+      continue;
+    }
+    if (payload.dryRun) {
+      summary.notes.push(`[테스트][교체 매수] ${names.get(code) ?? code}(${code}) ${qty}주 · ${fmtKrw(qty * price)}`);
+      continue;
+    }
+    const topUp = await ensureCashForBuy({
+      supabase: payload.supabase,
+      chatId,
+      dryRun: false,
+      requiredCash: qty * price,
+      availableCash,
+    });
+    summary.notes.push(...topUp.notes);
+    availableCash = Math.max(0, toNumber((await getUserInvestmentPrefs(chatId)).virtual_cash, availableCash));
+    qty = Math.min(qty, Math.floor(availableCash / (price * 1.005)));
+    if (qty <= 0) {
+      summary.skipped += 1;
+      summary.notes.push(`${names.get(code) ?? code}(${code}) 매수 보류: 현금 부족`);
+      continue;
+    }
+    const investedAmount = Math.round(qty * price);
+    const { data: upserted, error: upsertError } = await payload.supabase
+      .from(PORTFOLIO_TABLES.positions)
+      .upsert(
+        {
+          chat_id: chatId,
+          code,
+          buy_price: price,
+          buy_date: todayKey,
+          quantity: qty,
+          invested_amount: investedAmount,
+          bucket: "SWING",
+          status: "holding",
+          broker_name: null,
+          account_name: null,
+          memo: buildPositionStrategyMemo({
+            event: "gate-core-buy",
+            note: "gate-core-monthly-rebalance",
+            profile: "GATE_CORE",
+            takeProfitTranchesDone: 0,
+          }),
+        },
+        { onConflict: "chat_id,code", ignoreDuplicates: true }
+      )
+      .select("id, created_at, buy_date")
+      .maybeSingle();
+    if (upsertError || !upserted) {
+      summary.errors += 1;
+      summary.notes.push(`${code} 매수 실패: ${upsertError ? queryErrorMessage(upsertError) : "이미 보유 중"}`);
+      continue;
+    }
+    await appendTradeLog({
+      supabase: payload.supabase,
+      chatId,
+      code,
+      side: "BUY",
+      price,
+      quantity: qty,
+      grossAmount: investedAmount,
+      netAmount: investedAmount,
+      memo: buildStrategyMemo({ strategyId: AUTO_TRADE_STRATEGY_ID, event: "gate-core-buy", note: "gate-core-monthly-rebalance" }),
+      source: "AUTO",
+      brokerName: null,
+      accountName: null,
+    });
+    availableCash = Math.max(0, availableCash - investedAmount);
+    await setUserInvestmentPrefs(chatId, { virtual_cash: Math.round(availableCash) });
+    await ensureTradeLotsForHolding({
+      chatId,
+      watchlistId: Number((upserted as Record<string, unknown>).id ?? 0),
+      code,
+      quantity: qty,
+      investedAmount,
+      buyPrice: price,
+      acquiredAt: String((upserted as Record<string, unknown>).created_at ?? "") || null,
+      buyDate: String((upserted as Record<string, unknown>).buy_date ?? "") || null,
+    });
+    summary.buys += 1;
+    summary.notes.push(`[교체 매수] ${names.get(code) ?? code}(${code}) ${qty}주 · 매수가 ${fmtKrw(price)} · 투입 ${fmtKrw(investedAmount)} · 실적 관문 통과 · 점수 순위 목표`);
+    await writeActionLog({
+      supabase: payload.supabase,
+      runId: payload.runId,
+      chatId,
+      code,
+      actionType: "BUY",
+      reason: "gate-core-rebalance",
+      detail: { qty, price, slotBudget },
+    });
+  }
+
+  if (!payload.dryRun) await saveGateCoreLastMonth(payload.supabase, chatId, todayKey.slice(0, 7));
+  return summary;
+}
+
+/** 승격 승인으로 켜진 전략이 이 사용자에게 적용되는지 — 승인은 관리자 결정이라 관리자 계좌에만 적용 */
+async function resolveActivePromotedStrategy(supabase: SupabaseClientAny, chatId: number): Promise<string | null> {
+  const adminId = Number(process.env.TELEGRAM_ADMIN_CHAT_ID);
+  if (!Number.isFinite(adminId) || adminId !== chatId) return null;
+  const state = await loadStrategyActivation(supabase).catch(() => null);
+  return state?.active ?? null;
+}
+
 async function runDailyReviewForUser(payload: {
   supabase: SupabaseClientAny;
   setting: AutoTradeSettingRow;
@@ -7601,7 +7868,11 @@ export async function runVirtualAutoTradingForChat(input: {
     () => ({ notes: [], liquidated: false, releasedCash: 0 })
   );
 
-  const action = runType === "MONDAY_BUY"
+  // 승격 승인으로 켜진 전략이 있으면 기존 매수·일일점검 대신 그 전략을 실행한다 (strategyPromotion.ts)
+  const promotedStrategy = await resolveActivePromotedStrategy(supabase, input.chatId);
+  const action = promotedStrategy === GATE_CORE_STRATEGY
+    ? await runGateCoreForUser({ supabase, setting, runId, dryRun })
+    : runType === "MONDAY_BUY"
     ? await runMondayBuyForUser({
         supabase,
         setting,
@@ -7918,7 +8189,10 @@ export async function runVirtualAutoTradingCycle(input?: {
         dryRun: userDryRun,
       }).catch(() => ({ notes: [], liquidated: false }));
 
-      const actionSummary = runType === "MONDAY_BUY"
+      const promotedStrategy = await resolveActivePromotedStrategy(supabase, setting.chat_id);
+      const actionSummary = promotedStrategy === GATE_CORE_STRATEGY
+        ? await runGateCoreForUser({ supabase, setting, runId, dryRun: userDryRun })
+        : runType === "MONDAY_BUY"
         ? await runMondayBuyForUser({
             supabase,
             setting,

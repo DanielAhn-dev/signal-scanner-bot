@@ -22,7 +22,8 @@ export const STRATEGY_DECISIONS_PATH = "forward-test/decisions.json";
 export const PROMOTION_CALLBACK_PREFIX = "promo:";
 
 /** 봇 전략으로 구현돼 있어 승인 즉시 켤 수 있는 전략 */
-export const ACTIVATABLE_STRATEGIES: StrategyName[] = [];
+/** gate-top20 = gateCoreStrategy.ts (virtualAutoTradeService.runGateCoreForUser) */
+export const ACTIVATABLE_STRATEGIES: StrategyName[] = ["gate-top20"];
 
 export type StrategyDecisionAction = "approve" | "defer" | "deactivate";
 

@@ -27,6 +27,7 @@ export type StrategyName =
   | "order-sheet"
   | "gate-monthly"
   | "gate-monthly+trend50"
+  | "gate-top20"
   | "bot-account";
 
 export type StrategyResult = {
@@ -48,6 +49,7 @@ export const STRATEGY_LABELS: Record<StrategyName, string> = {
   "order-sheet": "금요일 주문표대로(1주 보유)",
   "gate-monthly": "실적 관문 통과 전 종목 동일비중(월 교체)",
   "gate-monthly+trend50": "실적 관문 통과 동일비중 + 50일선 아래 CD금리",
+  "gate-top20": "실적 관문 코어: 통과 종목 점수 상위 20 (월 교체·50일선, 봇 구현됨)",
   "bot-account": "봇 실제 계좌",
 };
 
@@ -339,6 +341,52 @@ export function simulateOrderSheetStrategy(input: {
   return {
     name: "order-sheet",
     label: STRATEGY_LABELS["order-sheet"],
+    totalReturnPct: (equity[equity.length - 1] - 1) * 100,
+    maxDrawdownPct: maxDrawdown(equity),
+    periods: equity.length - 1,
+  };
+}
+
+/**
+ * 실적 관문 코어(gateCoreStrategy.ts)와 같은 규칙으로 측정: 교체일에 목록에서 빠진 종목 매도,
+ * 50일선 위일 때만 새 종목 매수, 빈 칸은 CD금리. 칸마다 같은 비중(교체 때 비중을 다시 맞춘다고 가정).
+ */
+export function simulateGateCore(input: {
+  rebalanceDates: string[];
+  targetsAt: (rebalanceDate: string) => string[];
+  trendUpAt: (rebalanceDate: string) => boolean;
+  barsByCode: Map<string, Map<string, DailyBar>>;
+  slots: number;
+  plan: (input: { heldCodes: string[]; targets: string[]; trendUp: boolean; slots: number }) => {
+    sell: string[];
+    keep: string[];
+    buy: string[];
+  };
+}): StrategyResult {
+  const equity = [1];
+  let held: string[] = [];
+  for (let w = 0; w + 1 < input.rebalanceDates.length; w += 1) {
+    const d0 = input.rebalanceDates[w];
+    const d1 = input.rebalanceDates[w + 1];
+    const plan = input.plan({ heldCodes: held, targets: input.targetsAt(d0), trendUp: input.trendUpAt(d0), slots: input.slots });
+    held = [...plan.keep, ...plan.buy];
+    const days = Math.max(1, (Date.parse(`${d1}T00:00:00Z`) - Date.parse(`${d0}T00:00:00Z`)) / 86_400_000);
+    const cdPeriod = (1 + CD_ANNUAL) ** (days / 365) - 1;
+    let sum = 0;
+    for (const code of held) {
+      const b0 = input.barsByCode.get(code)?.get(d0);
+      const b1 = input.barsByCode.get(code)?.get(d1);
+      const p0 = b0 && b0.open > 0 ? b0.open : b0?.close;
+      const p1 = b1 && b1.open > 0 ? b1.open : b1?.close;
+      sum += p0 && p0 > 0 && p1 && p1 > 0 ? p1 / p0 - 1 : cdPeriod;
+    }
+    sum += (input.slots - held.length) * cdPeriod;
+    const cost = ((plan.sell.length + plan.buy.length) * STOCK_SIDE_COST) / input.slots;
+    equity.push(equity[equity.length - 1] * (1 + sum / input.slots - cost));
+  }
+  return {
+    name: "gate-top20",
+    label: STRATEGY_LABELS["gate-top20"],
     totalReturnPct: (equity[equity.length - 1] - 1) * 100,
     maxDrawdownPct: maxDrawdown(equity),
     periods: equity.length - 1,
