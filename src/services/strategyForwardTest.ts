@@ -9,7 +9,7 @@
  * 지수 코어는 전일 종가가 SMA100 위면 KODEX200, 아래면 CD금리. 주식 왕복비용 0.45%(편도 0.225%), ETF 편도 0.035%.
  */
 
-export type DailyBar = { date: string; open: number; close: number; volume: number };
+export type DailyBar = { date: string; open: number; close: number; volume: number; high?: number; low?: number };
 export type ScoreRow = { code: string; score: number };
 
 export type StrategyName =
@@ -19,7 +19,8 @@ export type StrategyName =
   | "score-top5"
   | "score-top5+trend"
   | "score-top5+flow"
-  | "momentum-top5";
+  | "momentum-top5"
+  | "order-sheet";
 
 export type StrategyResult = {
   name: StrategyName;
@@ -37,6 +38,7 @@ export const STRATEGY_LABELS: Record<StrategyName, string> = {
   "score-top5+trend": "점수 상위5 + 시장추세",
   "score-top5+flow": "점수 상위5 + 수급이탈 제외",
   "momentum-top5": "모멘텀(60일) 상위5",
+  "order-sheet": "금요일 주문표대로(1주 보유)",
 };
 
 const STOCK_SIDE_COST = 0.00225;
@@ -129,6 +131,83 @@ export function simulateWeeklyStrategy(input: {
   return {
     name: input.name,
     label: STRATEGY_LABELS[input.name],
+    totalReturnPct: (equity[equity.length - 1] - 1) * 100,
+    maxDrawdownPct: maxDrawdown(equity),
+    periods: equity.length - 1,
+  };
+}
+
+export type SavedOrderSheet = {
+  /** 주문표 기준 거래일 — 다음 거래일부터 주문이 유효 */
+  asof: string;
+  lines: Array<{ code: string; limitPrice: number; takeProfitPrice: number; stopPrice: number }>;
+};
+
+/**
+ * 금요일 주문표를 그대로 걸었을 때의 성과.
+ *   - 슬롯 5개 균등 비중, 빈 슬롯·미체결은 CD금리
+ *   - 체결: 시가 ≤ 지정가면 시가, 장중 저가 ≤ 지정가면 지정가
+ *   - 청산: 손절을 먼저 본다(같은 날 익절·손절 둘 다 닿으면 손절 — 보수적). 갭이면 시가 체결.
+ *     다음 주문표 기준일 종가까지 안 닿으면 종가 청산 (1주 보유)
+ */
+export function simulateOrderSheetStrategy(input: {
+  sheets: SavedOrderSheet[];
+  tradingDates: string[]; // 오름차순
+  barsByCode: Map<string, Map<string, DailyBar>>;
+  slots?: number;
+}): StrategyResult {
+  const slots = input.slots ?? 5;
+  const cdDaily = (1 + CD_ANNUAL) ** (1 / 252) - 1;
+  const sheets = [...input.sheets].sort((a, b) => a.asof.localeCompare(b.asof));
+  const lastDate = input.tradingDates[input.tradingDates.length - 1];
+  const equity = [1];
+  for (let i = 0; i < sheets.length; i += 1) {
+    const end = sheets[i + 1]?.asof ?? lastDate;
+    const days = input.tradingDates.filter((d) => d > sheets[i].asof && d <= end);
+    if (!days.length) continue;
+    const cdWindow = (1 + cdDaily) ** days.length - 1;
+    const slotReturns: number[] = [];
+    for (const line of sheets[i].lines.slice(0, slots)) {
+      const bars = input.barsByCode.get(line.code);
+      let entry: number | null = null;
+      let entryIdx = -1;
+      let exit: number | null = null;
+      for (let k = 0; k < days.length && exit == null; k += 1) {
+        const bar = bars?.get(days[k]);
+        if (!bar || !(bar.open > 0)) continue;
+        const low = bar.low ?? Math.min(bar.open, bar.close);
+        const high = bar.high ?? Math.max(bar.open, bar.close);
+        if (entry == null) {
+          if (bar.open <= line.limitPrice) entry = bar.open;
+          else if (low <= line.limitPrice) entry = line.limitPrice;
+          else continue;
+          entryIdx = k;
+          if (low <= line.stopPrice) exit = Math.min(line.stopPrice, entry);
+          else if (high >= line.takeProfitPrice && bar.close >= line.takeProfitPrice) exit = line.takeProfitPrice;
+          continue;
+        }
+        if (bar.open <= line.stopPrice) exit = bar.open;
+        else if (bar.open >= line.takeProfitPrice) exit = bar.open;
+        else if (low <= line.stopPrice) exit = line.stopPrice;
+        else if (high >= line.takeProfitPrice) exit = line.takeProfitPrice;
+      }
+      if (entry == null) {
+        slotReturns.push(cdWindow);
+        continue;
+      }
+      if (exit == null) {
+        const lastBar = [...days].reverse().map((d) => bars?.get(d)).find((b) => b && b.close > 0);
+        exit = lastBar?.close ?? entry;
+      }
+      // 체결 전 대기 일수만큼은 CD금리
+      slotReturns.push((1 + cdDaily) ** entryIdx * (exit / entry) - 1 - 2 * STOCK_SIDE_COST);
+    }
+    while (slotReturns.length < slots) slotReturns.push(cdWindow);
+    equity.push(equity[equity.length - 1] * (1 + slotReturns.reduce((a, b) => a + b, 0) / slots));
+  }
+  return {
+    name: "order-sheet",
+    label: STRATEGY_LABELS["order-sheet"],
     totalReturnPct: (equity[equity.length - 1] - 1) * 100,
     maxDrawdownPct: maxDrawdown(equity),
     periods: equity.length - 1,

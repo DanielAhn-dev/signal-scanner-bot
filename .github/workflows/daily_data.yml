@@ -33,6 +33,7 @@ jobs:
       # 배치 장애/점수엔진 폴백 알림(send_telegram_alert). 시크릿이 없으면 알림 없이 조용히 넘어간다.
       TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
       TELEGRAM_ADMIN_CHAT_ID: ${{ secrets.TELEGRAM_ADMIN_CHAT_ID }}
+      DART_API_KEY: ${{ secrets.DART_API_KEY }}
       TZ: "Asia/Seoul"
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
       # universe_level(core/extended/tail) 자동 갱신 — 이게 꺼져 있으면 종목이 tail로
@@ -102,6 +103,23 @@ jobs:
         run: |
           if [ "$(TZ=Asia/Seoul date +%u)" = "5" ] || [ "$(TZ=Asia/Seoul date +%u)" = "6" ]; then
             pnpm exec tsx scripts/strategy_forward_test.ts --telegram
+          else
+            echo "금요일 배치에서만 실행"
+          fi
+
+      # 종목 뉴스 헤드라인 일일 보관 — 매매에 쓰지 않고 2~3개월 뒤 효과 검증용 (src/services/newsArchive.ts)
+      - name: Archive stock news headlines
+        if: always()
+        continue-on-error: true
+        run: pnpm exec tsx scripts/collect_stock_news.ts
+
+      # 금요일 배치(눌림목 신호 갱신) 직후 다음 주 주문표 발송 — 눌림목 PDF + 지정가·익절·손절 텍스트
+      - name: Weekend order sheet (Fridays)
+        if: always()
+        continue-on-error: true
+        run: |
+          if [ "$(TZ=Asia/Seoul date +%u)" = "5" ] || [ "$(TZ=Asia/Seoul date +%u)" = "6" ]; then
+            pnpm exec tsx scripts/send_weekend_order_sheet.ts --telegram
           else
             echo "금요일 배치에서만 실행"
           fi

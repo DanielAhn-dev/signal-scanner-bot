@@ -13,7 +13,9 @@ import {
   firstTradingDaysOfWeeks,
   formatForwardTestReport,
   simulateIndexStrategies,
+  simulateOrderSheetStrategy,
   simulateWeeklyStrategy,
+  type SavedOrderSheet,
   type DailyBar,
   type StrategyResult,
 } from "../src/services/strategyForwardTest";
@@ -41,6 +43,24 @@ function shiftDate(date: string, days: number): string {
   return new Date(Date.parse(`${date}T00:00:00Z`) + days * 86_400_000).toISOString().slice(0, 10);
 }
 
+async function loadOrderSheets(start: string): Promise<SavedOrderSheet[]> {
+  const bucket = supabase.storage.from("market-snapshots");
+  const { data: files } = await bucket.list("order-sheets", { limit: 1000 });
+  const sheets: SavedOrderSheet[] = [];
+  for (const f of files ?? []) {
+    const asof = f.name.replace(/\.json$/, "");
+    if (asof < shiftDate(start, -7)) continue; // 기준일 직전 금요일 주문표부터
+    const { data } = await bucket.download(`order-sheets/${f.name}`);
+    if (!data) continue;
+    try {
+      sheets.push(JSON.parse(await data.text()) as SavedOrderSheet);
+    } catch {
+      console.warn(`주문표 파싱 실패: ${f.name}`);
+    }
+  }
+  return sheets;
+}
+
 async function main(): Promise<void> {
   const loadFrom = shiftDate(START, -220);
   const { data: stocks } = await supabase
@@ -54,7 +74,7 @@ async function main(): Promise<void> {
   const priceRows = await fetchPaged<any>((a, b) =>
     supabase
       .from("stock_daily")
-      .select("ticker, date, open, close, volume")
+      .select("ticker, date, open, high, low, close, volume")
       .gte("date", loadFrom)
       .order("ticker")
       .order("date")
@@ -63,7 +83,14 @@ async function main(): Promise<void> {
   const barsByCode = new Map<string, Map<string, DailyBar>>();
   const seriesByCode = new Map<string, DailyBar[]>();
   for (const r of priceRows) {
-    const bar = { date: String(r.date).slice(0, 10), open: +r.open, close: +r.close, volume: +r.volume };
+    const bar = {
+      date: String(r.date).slice(0, 10),
+      open: +r.open,
+      high: +r.high,
+      low: +r.low,
+      close: +r.close,
+      volume: +r.volume,
+    };
     const m = barsByCode.get(r.ticker) ?? new Map<string, DailyBar>();
     m.set(bar.date, bar);
     barsByCode.set(r.ticker, m);
@@ -166,6 +193,11 @@ async function main(): Promise<void> {
       simulateWeeklyStrategy({ name, rebalanceDates, pick: (d) => picks.get(d)?.[name] ?? [], barsByCode })
     ),
   ];
+  // 금요일 주문표(send_weekend_order_sheet.ts가 저장) — 저장된 주문표가 있을 때만 측정
+  const sheets = await loadOrderSheets(START);
+  if (sheets.length) {
+    results.push(simulateOrderSheetStrategy({ sheets, tradingDates, barsByCode }));
+  }
   const report = formatForwardTestReport({ startDate: START, endDate, results });
   console.log(report);
 
