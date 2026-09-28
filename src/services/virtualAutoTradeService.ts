@@ -251,7 +251,8 @@ async function fetchBacktestEdgeProfile(input: {
   chatId: number;
   limit: number;
 }): Promise<BacktestEdgeProfile> {
-  const since = new Date(Date.now() - 120 * 24 * 60 * 60 * 1000).toISOString();
+  // 오염 구간 거래로 '백테스트 엣지'를 만들지 않는다
+  const since = resolveStatsSinceIso(new Date(Date.now() - 120 * 24 * 60 * 60 * 1000).toISOString());
   const { data, error } = await input.supabase
     .from(PORTFOLIO_TABLES.trades)
     .select("id,code,pnl_amount,memo,traded_at")

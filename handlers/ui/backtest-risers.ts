@@ -1,6 +1,7 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { createClient } from '@supabase/supabase-js'
 import { denyIfUnauthorizedRead } from './_accessControl'
+import { SCORE_SCALE_CONSISTENT_FROM } from '../../src/services/virtualAutoTradeSelection'
 
 const ORIGIN = process.env.UI_CORS_ORIGIN || '*'
 
@@ -483,6 +484,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         rsi14: asRsi14(row.factors),
       }))
       .filter((row) => row.code && row.asof)
+      // 9/24 이전 점수는 척도가 섞여 '점수≥70' 같은 규칙 통계가 왜곡된다 → 통일 이후만 쓴다
+      .filter((row) => row.asof >= SCORE_SCALE_CONSISTENT_FROM)
 
     // scoreRows와 availabilityScoreRows 동일 (priceIndex 구성 시 필요한 가격 있는 것만 자동 필터)
     const scoreRows = allScoreRows

@@ -1,5 +1,5 @@
 // src/bot/commands/market.ts
-// /시장 — 종합 시장 진단 & 하락장 대비 어드바이저
+// /시장 — 종합 시장 진단 (진단 로직은 services/marketDiagnosis.ts, 웹과 공용)
 
 import type { ChatContext } from "../router";
 import { createClient } from "@supabase/supabase-js";
@@ -17,127 +17,14 @@ import { buildPersonalizedGuidance } from "../../services/personalizedGuidanceSe
 import { buildMarketInsightLines } from "../../services/marketInsightService";
 import { esc, LINE } from "../messages/format";
 import { actionButtons, ACTIONS } from "../messages/layout";
+import { describeBotBuyGate, diagnoseMarket, regimeLabel } from "../../services/marketDiagnosis";
+import { withIndexTrendRatios } from "../../services/indexTrendRatios";
+import { detectAutoTradeMarketPolicy } from "../../services/virtualAutoTradeSelection";
 
 const supabase = createClient(
   process.env.SUPABASE_URL!,
   process.env.SUPABASE_ANON_KEY!
 );
-
-type MarketRegime =
-  | "strong_bull"
-  | "bull"
-  | "neutral"
-  | "bear"
-  | "strong_bear";
-
-function diagnoseMarket(data: MarketOverview): {
-  regime: MarketRegime;
-  riskScore: number;
-  signals: string[];
-  advice: string[];
-} {
-  const signals: string[] = [];
-  const advice: string[] = [];
-  let riskScore = 50;
-
-  // VIX
-  if (data.vix) {
-    if (data.vix.price >= 35) {
-      riskScore += 20;
-      signals.push("🔴 VIX 극단적 공포 구간 (35↑)");
-      advice.push("현금 비중 50% 이상 유지");
-      advice.push("추가 매수 자제, 보유 종목 손절 기준 엄수");
-    } else if (data.vix.price >= 25) {
-      riskScore += 10;
-      signals.push("🟡 VIX 경계 구간 (25~35)");
-      advice.push("신규 매수 비중 축소 (30% 이하)");
-    } else if (data.vix.price < 15) {
-      riskScore -= 5;
-      signals.push("🟢 VIX 안정 (15 미만)");
-    }
-  }
-
-  // Fear & Greed
-  if (data.fearGreed) {
-    if (data.fearGreed.score <= 20) {
-      riskScore += 5;
-      signals.push("🔴 극단적 공포 — 역발상 매수 기회 가능");
-      advice.push("우량주 분할 매수 시작 고려");
-    } else if (data.fearGreed.score >= 80) {
-      riskScore += 15;
-      signals.push("🟡 극단적 탐욕 — 차익실현 고려");
-      advice.push("보유 종목 일부 익절, 현금화 추천");
-    }
-  }
-
-  // 환율
-  if (data.usdkrw) {
-    if (data.usdkrw.price >= 1450) {
-      riskScore += 10;
-      signals.push("🔴 원화 급약세 (1,450↑) — 외국인 이탈 가능");
-      advice.push("외국인 순매도 종목 주의");
-    } else if (data.usdkrw.price >= 1350) {
-      riskScore += 5;
-      signals.push("🟡 원화 약세 (1,350↑)");
-    }
-  }
-
-  // 미국 금리
-  if (data.us10y) {
-    if (data.us10y.price >= 5.0) {
-      riskScore += 10;
-      signals.push("🔴 미국 10년물 5%↑ — 긴축 우려 극대");
-    } else if (data.us10y.price >= 4.5) {
-      riskScore += 5;
-      signals.push("🟡 미국 10년물 4.5%↑ — 고금리 지속");
-    }
-  }
-
-  // KOSPI 등락
-  if (data.kospi) {
-    if (data.kospi.changeRate <= -2) {
-      riskScore += 10;
-      signals.push("🔴 KOSPI 급락 (-2%↑)");
-    } else if (data.kospi.changeRate >= 1.5) {
-      riskScore -= 5;
-      signals.push("🟢 KOSPI 강세 (+1.5%↑)");
-    }
-  }
-
-  const usChanges = [data.sp500?.changeRate, data.nasdaq?.changeRate, data.dow?.changeRate]
-    .filter((value): value is number => Number.isFinite(value));
-  if (usChanges.length >= 2) {
-    const usAvg = usChanges.reduce((sum, value) => sum + value, 0) / usChanges.length;
-    if (usAvg <= -1.2) {
-      riskScore += 8;
-      signals.push("🔴 미국 3대 지수 동반 약세 — 리스크오프 가능성");
-      advice.push("개장 직후 추격 진입보다 1차 변동성 소화 후 분할 진입");
-    } else if (usAvg >= 1.2) {
-      riskScore -= 4;
-      signals.push("🟢 미국 3대 지수 동반 강세 — 위험선호 확산");
-      advice.push("주도 섹터 대표주 중심으로 단계적 비중 확대");
-    }
-  }
-
-  riskScore = Math.max(0, Math.min(100, riskScore));
-
-  let regime: MarketRegime;
-  if (riskScore <= 20) regime = "strong_bull";
-  else if (riskScore <= 40) regime = "bull";
-  else if (riskScore <= 60) regime = "neutral";
-  else if (riskScore <= 80) regime = "bear";
-  else regime = "strong_bear";
-
-  return { regime, riskScore, signals, advice };
-}
-
-const regimeLabel: Record<MarketRegime, string> = {
-  strong_bull: "강세장 — 적극 매수",
-  bull: "상승 추세 — 선별 매수",
-  neutral: "중립 — 관망 위주",
-  bear: "약세 — 방어 전략",
-  strong_bear: "하락장 — 현금 확보 우선",
-};
 
 function formatKstDateTimeLabel(iso?: string): string | null {
   if (!iso) return null;
@@ -165,6 +52,16 @@ function fmtKorMoney(n: number): string {
   return `${sign}${Math.abs(eok).toLocaleString("ko-KR")}억`;
 }
 
+/** 자동매매와 같은 시장 정책으로 봇 신규 매수 여부 (웹 시장진단과 같은 함수) */
+async function resolveBotGate(marketData: Awaited<ReturnType<typeof fetchAllMarketData>>) {
+  try {
+    const overview = await withIndexTrendRatios(supabase, { ...marketData });
+    return describeBotBuyGate(detectAutoTradeMarketPolicy({ overview: overview as any }));
+  } catch {
+    return null;
+  }
+}
+
 export async function handleMarketCommand(
   ctx: ChatContext,
   tgSend: any
@@ -182,6 +79,7 @@ export async function handleMarketCommand(
   ]);
 
   const diagnosis = diagnoseMarket(marketData);
+  const botGate = await resolveBotGate(marketData);
   const topSectors = getTopSectors(sectorScores).slice(0, 5);
   const nextSectors = getNextSectorCandidates(sectorScores, 3e9).slice(0, 5);
 
@@ -189,7 +87,11 @@ export async function handleMarketCommand(
 
   // 시장 상태
   msg += `<b>현재 국면</b> ${regimeLabel[diagnosis.regime]}\n`;
-  msg += `리스크 지수  <code>${diagnosis.riskScore}/100</code>\n\n`;
+  msg += `리스크 지수  <code>${diagnosis.riskScore}/100</code>\n`;
+  if (botGate) {
+    msg += `<b>${botGate.paused ? "⏸" : "▶"} ${botGate.label}</b>\n${esc(botGate.detail)}\n`;
+  }
+  msg += "\n";
 
   // 글로벌 지표 요약
   msg += `<b>글로벌 환경</b>\n`;
@@ -283,14 +185,13 @@ export async function handleMarketCommand(
     msg += "• 평소 전략 유지 (분할 매수/매도, 손절 -7%)\n";
   }
 
-  // 하락장 대응 가이드
+  // 위험지수가 높은 구간 가이드 — KOSPI 10년 검증: 이런 날 이후 20일 중앙값은 오히려 좋았고(+3.8%) 하락 폭도 컸다(하위 5% -13%)
   if (diagnosis.regime === "strong_bear" || diagnosis.regime === "bear") {
-    msg += `\n<b>하락장 대응 가이드</b>\n`;
-    msg += `1) 보유 종목 손절선 재점검 (-7%)\n`;
-    msg += `2) 현금 비중 최소 40% 유지\n`;
-    msg += `3) 방어주(배당/필수소비) 비중 확대\n`;
-    msg += `4) 신규 매수는 분할 (1/3씩)\n`;
-    msg += `5) 외국인 순매도 종목 우선 정리\n`;
+    msg += `\n<b>변동성 큰 구간 가이드</b>\n`;
+    msg += `1) 보유 종목 손절선 재점검\n`;
+    msg += `2) 신규 매수는 한 번에 하지 말고 나눠서 (1/3씩)\n`;
+    msg += `3) 과거엔 이런 구간 뒤 반등이 많았지만 추가 하락 폭도 컸습니다\n`;
+    msg += `4) 봇 매수 여부는 위 코스피 50일선 기준을 따릅니다\n`;
   }
 
   const personalLines = await buildPersonalizedGuidance({

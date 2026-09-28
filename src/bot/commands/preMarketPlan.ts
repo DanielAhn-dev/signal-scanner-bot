@@ -8,6 +8,7 @@ import {
   detectAutoTradeMarketPolicy,
   pickAutoTradeCandidates,
   resolveDeployableCash,
+  resolveStatsSinceIso,
   type RankedCandidate,
 } from "../../services/virtualAutoTradeSelection";
 import { calculateAutoTradeBuySizing } from "../../services/virtualAutoTradeSizing";
@@ -281,7 +282,8 @@ function buildOrderLines(input: {
 }
 
 async function getRecentPerformanceMetrics(chatId: number, windowDays = 14): Promise<RecentPerformanceMetrics | null> {
-  const since = new Date(Date.now() - Math.max(1, windowDays) * 24 * 60 * 60 * 1000).toISOString();
+  // 오염 구간 거래는 최근 성과·적응형 조정에 쓰지 않는다
+  const since = resolveStatsSinceIso(new Date(Date.now() - Math.max(1, windowDays) * 24 * 60 * 60 * 1000).toISOString());
 
   const [actionsResp, tradesResp] = await Promise.all([
     supabase

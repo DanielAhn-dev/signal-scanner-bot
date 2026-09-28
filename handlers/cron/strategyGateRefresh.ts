@@ -7,6 +7,7 @@ import {
   type StrategyGateMetrics,
 } from "../../src/services/strategyGateStateService";
 import { sendMessage } from "../../src/telegram/api";
+import { resolveStatsSinceIso } from "../../src/services/virtualAutoTradeSelection";
 
 const CRON_SECRET = process.env.CRON_SECRET;
 const SUPABASE_URL = process.env.SUPABASE_URL;
@@ -180,7 +181,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     });
 
     const windowDays = 45;
-    const since = new Date(Date.now() - windowDays * 24 * 60 * 60 * 1000).toISOString();
+    // 오염 구간(가드 장애로 손익이 왜곡된 기간) 매도는 게이트 판단에서 뺀다
+    const since = resolveStatsSinceIso(new Date(Date.now() - windowDays * 24 * 60 * 60 * 1000).toISOString());
 
     const { data: settings, error: settingsError } = await supabase
       .from("virtual_autotrade_settings")

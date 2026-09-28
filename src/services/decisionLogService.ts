@@ -129,9 +129,10 @@ export async function getDecisionReliabilitySummary(
   windowDays = 90
 ): Promise<DecisionReliabilitySummary | null> {
   const safeWindowDays = Math.max(7, Math.min(365, Math.floor(windowDays)));
-  const sinceIso = new Date(
-    Date.now() - safeWindowDays * 24 * 60 * 60 * 1000
-  ).toISOString();
+  // 판단 실현승률도 오염 구간 매매는 제외한다
+  const sinceIso = resolveStatsSinceIso(
+    new Date(Date.now() - safeWindowDays * 24 * 60 * 60 * 1000).toISOString()
+  );
 
   const decisionRows = await selectPaged<Record<string, unknown>>(
     async (from, to) =>

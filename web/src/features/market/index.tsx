@@ -89,6 +89,8 @@ interface MarketOverviewData {
     usdStrength: 'strengthening' | 'weakening' | 'neutral'
     emergingMarketsPressure: 'high' | 'moderate' | 'low'
   }
+  /** 자동매매의 실제 신규 매수 여부(코스피 50일선 기준). 위험지수와 별개 */
+  botBuyGate?: { paused: boolean; label: string; detail: string } | null
   tradingSignal: {
     shouldTrade: boolean
     confidence: number
@@ -468,7 +470,7 @@ function canTradeTextColor(shouldTrade: boolean): string {
 }
 
 function MarketSummaryTable({ data }: { data: MarketOverviewData }) {
-  const { diagnosis, topSectors, economicPhase, globalCorrelation, tradingSignal, indices, fetchedAt } = data
+  const { diagnosis, topSectors, economicPhase, globalCorrelation, tradingSignal, indices, fetchedAt, botBuyGate } = data
   const leadingSectors = topSectors.slice(0, 3).map((sector) => sector.name).join(' · ') || '—'
   const warningSignals = diagnosis.signals.slice(0, 2).join(' · ') || '—'
   const restrictions = tradingSignal.restrictions.slice(0, 2).join(' · ') || '없음'
@@ -506,6 +508,17 @@ function MarketSummaryTable({ data }: { data: MarketOverviewData }) {
             <div className="market-sheet__summary-sub">{economicPhase.description}</div>
           </td>
         </tr>
+        {botBuyGate && (
+          <tr className="xls-row">
+            <td className="xls-cell">봇 매수</td>
+            <td className="xls-cell" colSpan={5}>
+              <div className="market-sheet__summary-value" style={{ color: botBuyGate.paused ? 'var(--color-error)' : 'var(--color-success)' }}>
+                {botBuyGate.label}
+              </div>
+              <div className="market-sheet__summary-sub">{botBuyGate.detail}</div>
+            </td>
+          </tr>
+        )}
         <tr className="xls-row xls-row--even">
           <td className="xls-cell">리스크</td>
           <td className="xls-cell" colSpan={2}>

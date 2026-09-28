@@ -61,7 +61,7 @@ export type DataContaminationWindow = {
   from: string;
   /** KST 날짜(포함) */
   to: string;
-  scopes: Array<"prices" | "trades">;
+  scopes: Array<"prices" | "trades" | "scores">;
   reason: string;
 };
 
@@ -80,10 +80,20 @@ export const DATA_CONTAMINATION_WINDOWS: DataContaminationWindow[] = [
     scopes: ["trades"],
     reason: "종가 신선도 가드 조회 컬럼 오류로 보유종목 매도판단이 전면 중단 → 이 기간 보유 포지션의 청산 손익 왜곡 (062bd4a에서 수정)",
   },
+  {
+    id: "score-scale-mix-2025-2026",
+    from: "2025-04-11",
+    to: "2026-09-23",
+    scopes: ["scores"],
+    reason: "scores 척도 혼재(legacy 정수 점수와 TS 엔진 점수가 날짜마다 섞임) → 같은 '70점'이 날마다 다른 의미. 9/24 하이브리드 점수(ed8913b)부터 통일",
+  },
 ];
 
+/** 점수 이력으로 통계를 낼 때 이 날짜(포함) 이후 점수만 쓴다. 그 전은 척도가 섞였다. */
+export const SCORE_SCALE_CONSISTENT_FROM = "2026-09-24";
+
 /** 날짜(YYYY-MM-DD, KST)가 주어진 scope의 오염 구간에 속하는지 */
-export function isInContaminationWindow(dateKey: string, scope: "prices" | "trades"): boolean {
+export function isInContaminationWindow(dateKey: string, scope: "prices" | "trades" | "scores"): boolean {
   const key = String(dateKey ?? "").slice(0, 10);
   return DATA_CONTAMINATION_WINDOWS.some(
     (window) => window.scopes.includes(scope) && key >= window.from && key <= window.to
