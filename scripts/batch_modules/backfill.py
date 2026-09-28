@@ -220,7 +220,7 @@ def heal_stock_daily_gaps(supabase: Client, trading_date: str) -> bool:
 
 # KRX 일일 가격제한폭은 ±30%라 연속 거래일 사이에 이보다 크게 움직였다면 액면분할·무상증자 등으로
 # 과거 가격이 수정되지 않은 것이다(원주가·수정주가 혼재).
-PRICE_LIMIT_JUMP = 0.305
+PRICE_LIMIT_JUMP = 0.35  # 제한폭 30% + 사후 수정주가 오차 여유 (삼현 437730 2026-09-15 +33%는 KRX 원본도 동일)
 
 
 def find_unadjusted_price_jumps(

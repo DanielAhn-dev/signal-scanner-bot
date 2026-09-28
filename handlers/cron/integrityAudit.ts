@@ -12,6 +12,7 @@ import {
   checkDataFreshness,
   buildFreshnessDigest,
 } from "../../src/services/dataFreshnessMonitorService";
+import { checkDataQuality } from "../../src/services/dataQualityService";
 import { sendMessage } from "../../src/telegram/api";
 
 const CRON_SECRET = process.env.CRON_SECRET;
@@ -162,25 +163,33 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (heldCodes.size > 0) {
       const codes = [...heldCodes];
       const { data: priceRows, error: priceError } = await supabase
+        // stock_daily의 종목 컬럼은 ticker (예전엔 code로 조회해 이 단계에서 실패했다)
         .from("stock_daily")
-        .select("code")
-        .in("code", codes)
+        .select("ticker")
+        .in("ticker", codes)
         .gte("date", priceCutoffYmd())
         .limit(20000);
       if (priceError) throw new Error(`stock_daily fetch failed: ${priceError.message}`);
-      const available = new Set((priceRows ?? []).map((row) => String(row.code).trim()));
+      const available = new Set((priceRows ?? []).map((row: { ticker: string }) => String(row.ticker).trim()));
       staleHoldingCodes = codes.filter((code) => !available.has(code)).sort();
     }
 
     const freshness = await checkDataFreshness(supabase);
+    const dataQuality = await checkDataQuality(supabase).catch((e: unknown) => ({
+      issues: [`데이터 품질 검사 실패: ${e instanceof Error ? e.message : String(e)}`],
+      summary: "❌ 데이터 품질 검사 실패",
+    }));
     const ymd = kstYmd();
-    const message = buildIntegrityReportMessage({
-      ymd,
-      results,
-      staleHoldingCodes,
-      freshnessDigest: buildFreshnessDigest(freshness),
-    });
-    const issueCount = countIntegrityIssues({ results, staleHoldingCodes });
+    const message = [
+      buildIntegrityReportMessage({
+        ymd,
+        results,
+        staleHoldingCodes,
+        freshnessDigest: buildFreshnessDigest(freshness),
+      }),
+      dataQuality.summary,
+    ].join("\n");
+    const issueCount = countIntegrityIssues({ results, staleHoldingCodes }) + dataQuality.issues.length;
     const isHealthy = issueCount === 0 && freshness.isHealthy;
 
     const { error: insertError } = await supabase.from("integrity_audit_results").insert({
@@ -193,6 +202,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         results,
         staleHoldingCodes,
         freshness: { isHealthy: freshness.isHealthy, staleItems: freshness.staleItems },
+        dataQuality: dataQuality.issues,
       },
     });
     if (insertError) {
