@@ -10,6 +10,7 @@ import Modal from '../../components/Modal'
 import StockSearchInput from '../../components/StockSearchInput'
 import { EmptyState, ErrorState } from '../../components/StateViews'
 import { useToast } from '../../components/ToastProvider'
+import { resolveSellCostPct } from '../../lib/tradeCost'
 import Pagination from '../../components/Pagination'
 import EconomicEventBadge from '../../components/EconomicEventBadge'
 import SheetHeaderBar from '../../components/SheetHeaderBar'
@@ -106,6 +107,7 @@ function pickLatestActiveShare(items: PortfolioShareHistoryItem[]): PortfolioSha
 }
 
 const PORTFOLIO_RULES_STORAGE_KEY = 'portfolio.holdingRules.v1'
+const PORTFOLIO_COST_STORAGE_KEY = 'portfolio.tradeCost.v1'
 const PORTFOLIO_ASSET_OVERVIEW_STORAGE_KEY = 'portfolio.assetOverview.v1'
 const DEFAULT_INITIAL_CAPITAL = 10_000_000
 
@@ -169,9 +171,26 @@ export default function Portfolio() {
   const [policyAccordionOpen, setPolicyAccordionOpen] = useState(false)
   const [performanceAccordionOpen, setPerformanceAccordionOpen] = useState(false)
   const [filterAccordionOpen, setFilterAccordionOpen] = useState(false)
-  const [includeCost, setIncludeCost] = useState(true)
-  const [buyFeeRatePct, setBuyFeeRatePct] = useState(0.015)  // 매수수수료 %
-  const [sellFeeRatePct, setSellFeeRatePct] = useState(0.195) // 매도수수료+거래세 %
+  // 매매비용 표시 설정은 브라우저에 기억한다 (예전엔 새로 열 때마다 기본값으로 돌아갔다)
+  const storedCost = (() => {
+    try {
+      return JSON.parse(window.localStorage.getItem(PORTFOLIO_COST_STORAGE_KEY) || 'null') as
+        | { includeCost?: boolean; buyFeeRatePct?: number; sellFeeRatePct?: number }
+        | null
+    } catch {
+      return null
+    }
+  })()
+  const [includeCost, setIncludeCost] = useState(storedCost?.includeCost ?? true)
+  const [buyFeeRatePct, setBuyFeeRatePct] = useState(storedCost?.buyFeeRatePct ?? 0.015)  // 매수수수료 %
+  const [sellFeeRatePct, setSellFeeRatePct] = useState(storedCost?.sellFeeRatePct ?? 0.195) // 매도수수료+거래세 %
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(PORTFOLIO_COST_STORAGE_KEY, JSON.stringify({ includeCost, buyFeeRatePct, sellFeeRatePct }))
+    } catch {
+      // 저장 불가 환경(시크릿 모드 등)에서는 기본값으로 동작
+    }
+  }, [includeCost, buyFeeRatePct, sellFeeRatePct])
   const [error, setError] = useState<string | null>(null)
 
   const [modalOpen, setModalOpen] = useState(false)
@@ -680,7 +699,8 @@ export default function Portfolio() {
     const invested = Number(r.quantity || 0) * Number(r.avg_price || 0)
     const currentValue = invested + Number(r.unrealized_pnl || 0)
     const buyCost = invested * (buyFeeRatePct / 100)
-    const sellCost = currentValue > 0 ? currentValue * (sellFeeRatePct / 100) : 0
+    const sellPct = resolveSellCostPct({ code: r.code ?? r.ticker, name: r.stock_name, sellRatePct: sellFeeRatePct, feeRatePct: buyFeeRatePct })
+    const sellCost = currentValue > 0 ? currentValue * (sellPct / 100) : 0
     return acc + buyCost + sellCost
   }, 0)
   const adjustedUnrealized = includeCost ? totalUnrealized - totalTradeCost : totalUnrealized
@@ -1617,7 +1637,7 @@ export default function Portfolio() {
                   />
                 </div>
                 <div className="caption muted" style={{ marginTop: 'var(--space-1)' }}>
-                  기본값 매수 0.015% · 매도 0.195% (수수료 0.015% + KOSPI 거래세 0.18%). 실제 증권사 수수료나 시장별 세율이 다르면 직접 조정하세요.
+                  기본값 매수 0.015% · 매도 0.195% (수수료 0.015% + 거래세 0.18%). ETF·ETN은 거래세가 없어 매도 시 수수료만 반영합니다. 설정은 이 브라우저에 저장됩니다.
                 </div>
               </div>
             )}
@@ -1724,7 +1744,8 @@ export default function Portfolio() {
                     if (includeCost && rawPnl != null) {
                       const inv = Number(r.quantity || 0) * Number(r.avg_price || 0)
                       const curVal = inv + rawPnl
-                      const cost = inv * (buyFeeRatePct / 100) + (curVal > 0 ? curVal * (sellFeeRatePct / 100) : 0)
+                      const sellPct = resolveSellCostPct({ code: r.code ?? r.ticker, name: r.stock_name, sellRatePct: sellFeeRatePct, feeRatePct: buyFeeRatePct })
+                      const cost = inv * (buyFeeRatePct / 100) + (curVal > 0 ? curVal * (sellPct / 100) : 0)
                       displayPnl = rawPnl - cost
                       displayPct = inv > 0 ? (displayPnl / inv) * 100 : null
                     }
