@@ -89,6 +89,7 @@ import {
 } from "./virtualAutoTradeSignalGate";
 import { sendMessage } from "../telegram/api";
 import { resolveSellTaxRate } from "../lib/securitiesTax";
+import { fetchBenchmarkComparison, formatBenchmarkLine } from "./virtualAutoTradeBenchmark";
 import { actionButtons } from "../bot/messages/layout";
 import {
   isKrxIntradayAutoTradeWindow,
@@ -8052,6 +8053,17 @@ export async function runVirtualAutoTradingCycle(input?: {
 
       // 실행 알림: 실제 체결 또는 섀도우 모드 체결 시 모두 발송
       {
+        // 성과 기준선(계좌 vs 지수·CD금리 보유) 한 줄 — 실패해도 알림은 보낸다
+        const benchmarkLine = await (async () => {
+          const fresh = await getUserInvestmentPrefs(setting.chat_id);
+          const cmp = await fetchBenchmarkComparison({
+            supabase,
+            chatId: setting.chat_id,
+            seedCapital: toNumber(fresh.virtual_seed_capital, toNumber(fresh.capital_krw, 0)),
+            cash: toNumber(fresh.virtual_cash, 0),
+          });
+          return cmp ? formatBenchmarkLine(cmp) : null;
+        })().catch(() => null);
         const executionAlert = buildAutoTradeExecutionAlert({
           runType,
           action: actionSummary,
@@ -8063,9 +8075,7 @@ export async function runVirtualAutoTradingCycle(input?: {
             chatId: setting.chat_id,
             overweightReducedCodes: actionSummary.overweightReducedCodes,
           }).catch(() => null);
-          const combinedAlert = holdingSnippet
-            ? `${executionAlert}\n\n${holdingSnippet}`
-            : executionAlert;
+          const combinedAlert = [executionAlert, holdingSnippet, benchmarkLine].filter(Boolean).join("\n\n");
 
           await sendMessage(
             setting.chat_id,
@@ -8096,7 +8106,8 @@ export async function runVirtualAutoTradingCycle(input?: {
             action: actionSummary,
           });
           if (holdAlert) {
-            await sendMessage(setting.chat_id, holdAlert).catch((err: unknown) => {
+            const holdText = benchmarkLine ? `${holdAlert}\n\n${benchmarkLine}` : holdAlert;
+            await sendMessage(setting.chat_id, holdText).catch((err: unknown) => {
               console.error("[autoTrade] cycle hold alert send failed", err);
             });
           }
