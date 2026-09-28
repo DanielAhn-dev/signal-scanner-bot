@@ -88,7 +88,7 @@ import {
   evaluateAutoTradeSignalGate,
 } from "./virtualAutoTradeSignalGate";
 import { sendMessage } from "../telegram/api";
-import { isExchangeTradedProduct, resolveSellTaxRate } from "../lib/securitiesTax";
+import { isExchangeTradedProduct, resolveBaseSellTaxRate, resolveSellTaxRate } from "../lib/securitiesTax";
 import { fetchBenchmarkComparison, formatBenchmarkLine } from "./virtualAutoTradeBenchmark";
 import { fetchHeavyNetSellingCodes } from "./investorFlowFilter";
 import {
@@ -2298,7 +2298,7 @@ async function runCashSweepLiquidateStep(payload: {
 
     const feeRate = toNumber(prefs.virtual_fee_rate, 0.00015);
     // 현금 스윕 종목은 ETF라 매도 증권거래세가 없다 (resolveSellTaxRate)
-    const taxRate = resolveSellTaxRate({ code: sweepCode, baseRate: toNumber(prefs.virtual_tax_rate, 0.0018) });
+    const taxRate = resolveSellTaxRate({ code: sweepCode, baseRate: resolveBaseSellTaxRate(prefs.virtual_tax_rate) });
     const gross = Math.round(sweepPrice * sweepQty);
     const feeAmount = Math.round(gross * feeRate);
     const taxAmount = Math.round(gross * taxRate);
@@ -2420,7 +2420,7 @@ async function topUpCashSweepForBuy(payload: {
 
     const prefs = await getUserInvestmentPrefs(payload.chatId);
     const feeRate = toNumber(prefs.virtual_fee_rate, 0.00015);
-    const taxRate = resolveSellTaxRate({ code: sweepCode, baseRate: toNumber(prefs.virtual_tax_rate, 0.0018) });
+    const taxRate = resolveSellTaxRate({ code: sweepCode, baseRate: resolveBaseSellTaxRate(prefs.virtual_tax_rate) });
     const gross = Math.round(sweepPrice * sellQty);
     const feeAmount = Math.round(gross * feeRate);
     const taxAmount = Math.round(gross * taxRate);
@@ -5459,7 +5459,7 @@ async function runDailyReviewForUser(payload: {
   })();
 
   const feeRate = toNumber(prefs.virtual_fee_rate, 0.00015);
-  const taxRate = toNumber(prefs.virtual_tax_rate, 0.0018);
+  const taxRate = resolveBaseSellTaxRate(prefs.virtual_tax_rate);
   const rawBaseStopLossPct = Math.abs(toNumber(payload.setting.stop_loss_pct, 4));
   const rawBaseTakeProfitPct = Math.abs(toNumber(payload.setting.take_profit_pct, 8));
   const sellSplitCount = Math.max(1, Math.min(4, toPositiveInt(prefs.virtual_sell_split_count, 2)));

@@ -23,6 +23,22 @@ export function isExchangeTradedProduct(code: string, name?: string | null): boo
   return ETF_BRAND_PATTERN.test(trimmed) || ETN_PATTERN.test(trimmed);
 }
 
+/**
+ * 주식 매도 증권거래세 (2026-01-01 이후 양도분): 코스피 거래세 0.05% + 농특세 0.15%, 코스닥 0.20% — 둘 다 0.20%.
+ * 2024년 0.18%, 2025년 0.15%였다.
+ */
+export const KRX_SELL_TAX_RATE = 0.002;
+/** 예전 코드 기본값이 prefs에 그대로 저장된 값 — 사용자가 고른 게 아니라 당시 법정세율이라 현재 세율로 본다 */
+const LEGACY_DEFAULT_TAX_RATES = [0.0018, 0.0015, 0.0023, 0.0025];
+
+/** prefs.virtual_tax_rate → 적용할 기본 세율 (미설정·예전 기본값이면 현재 법정세율) */
+export function resolveBaseSellTaxRate(stored: unknown): number {
+  const n = Number(stored);
+  if (stored == null || stored === "" || !Number.isFinite(n) || n < 0) return KRX_SELL_TAX_RATE;
+  if (LEGACY_DEFAULT_TAX_RATES.some((r) => Math.abs(r - n) < 1e-9)) return KRX_SELL_TAX_RATE;
+  return n;
+}
+
 /** 매도 세율: ETF·ETN이면 0, 아니면 기본 세율 */
 export function resolveSellTaxRate(input: { code: string; name?: string | null; baseRate: number }): number {
   return isExchangeTradedProduct(input.code, input.name) ? 0 : input.baseRate;

@@ -183,7 +183,10 @@ export default function Portfolio() {
   })()
   const [includeCost, setIncludeCost] = useState(storedCost?.includeCost ?? true)
   const [buyFeeRatePct, setBuyFeeRatePct] = useState(storedCost?.buyFeeRatePct ?? 0.015)  // 매수수수료 %
-  const [sellFeeRatePct, setSellFeeRatePct] = useState(storedCost?.sellFeeRatePct ?? 0.195) // 매도수수료+거래세 %
+  const [sellFeeRatePct, setSellFeeRatePct] = useState(
+    // 0.195 = 예전 기본값(거래세 0.18%) — 2026년 거래세 0.20%로 올려 읽는다
+    storedCost?.sellFeeRatePct == null || storedCost.sellFeeRatePct === 0.195 ? 0.215 : storedCost.sellFeeRatePct
+  ) // 매도수수료+거래세 %
   useEffect(() => {
     try {
       window.localStorage.setItem(PORTFOLIO_COST_STORAGE_KEY, JSON.stringify({ includeCost, buyFeeRatePct, sellFeeRatePct }))
@@ -1633,11 +1636,11 @@ export default function Portfolio() {
                     label="매도수수료+거래세 (%)"
                     type="number"
                     value={String(sellFeeRatePct)}
-                    onChange={(e: any) => setSellFeeRatePct(Math.max(0, Number(e?.target?.value ?? 0.195)))}
+                    onChange={(e: any) => setSellFeeRatePct(Math.max(0, Number(e?.target?.value ?? 0.215)))}
                   />
                 </div>
                 <div className="caption muted" style={{ marginTop: 'var(--space-1)' }}>
-                  기본값 매수 0.015% · 매도 0.195% (수수료 0.015% + 거래세 0.18%). ETF·ETN은 거래세가 없어 매도 시 수수료만 반영합니다. 설정은 이 브라우저에 저장됩니다.
+                  기본값 매수 0.015% · 매도 0.215% (수수료 0.015% + 거래세 0.20%, 2026년~). ETF·ETN은 거래세가 없어 매도 시 수수료만 반영합니다. 설정은 이 브라우저에 저장됩니다.
                 </div>
               </div>
             )}

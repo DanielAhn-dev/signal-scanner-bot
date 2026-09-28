@@ -51,6 +51,7 @@ import {
 } from "../../services/decisionLogService";
 import { buildPersonalizedGuidance } from "../../services/personalizedGuidanceService";
 import { ACTIONS, actionButtons } from "../messages/layout";
+import { resolveBaseSellTaxRate } from "../../lib/securitiesTax";
 import {
   buildTradeHistoryInputGuide,
   parseTradeHistoryInput,
@@ -59,7 +60,6 @@ import {
 const MAX_ITEMS = 20; // 사용자당 최대 관심종목 수
 const DEFAULT_TARGET_POSITIONS = 10;
 const DEFAULT_FEE_RATE = 0.00015;
-const DEFAULT_TAX_RATE = 0.0018;
 const CORE_PLAN_STRATEGY_ID = "core.plan.v1";
 const DECISION_MODEL_VERSION = "2026.04.19-mvp1";
 const ETF_NAME_HINT = /^(ETF|KODEX|TIGER|KOSEF|KBSTAR|ACE|RISE|SOL|HANARO|ARIRANG|PLUS|TIMEFOLIO|WOORI|WON)\b/i;
@@ -1640,7 +1640,7 @@ export async function handleWatchlistRemove(
     const exitPrice = toPositiveNumber(rt) ?? toPositiveNumber(fallbackClose) ?? buyPrice;
 
     const feeRate = toPositiveNumber(prefs.virtual_fee_rate) ?? DEFAULT_FEE_RATE;
-    const taxRate = toPositiveNumber(prefs.virtual_tax_rate) ?? DEFAULT_TAX_RATE;
+    const taxRate = resolveBaseSellTaxRate(prefs.virtual_tax_rate);
     const gross = sellQty * exitPrice;
     const feeAmount = Math.round(gross * feeRate);
     const taxAmount = Math.round(gross * taxRate);
