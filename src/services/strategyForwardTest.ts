@@ -105,7 +105,73 @@ export type ForwardTestSnapshot = {
   endDate: string;
   generatedAt: string;
   results: StrategyResult[];
+  review?: StrategyReview;
 };
+
+/** 승격·퇴출 판단에 필요한 최소 측정 거래일 (8주) */
+export const MIN_REVIEW_TRADING_DAYS = 40;
+
+export type StrategyReview = {
+  status: "too-early" | "no-bot-data" | "propose" | "warn-bot" | "hold";
+  measuredDays: number;
+  /** 사람이 읽는 판정 문장 */
+  lines: string[];
+  /** 승격 후보 전략 이름 */
+  candidates: StrategyName[];
+};
+
+const fmtPct = (v: number) => `${v >= 0 ? "+" : ""}${v.toFixed(1)}%`;
+
+/**
+ * 전략 승격·퇴출 판정 — 미리 정한 기준으로만 제안하고, 전환은 사람이 승인한다(자동 전환 없음).
+ *   승격 후보: 8주 이상 측정 + 봇 실제 계좌·KODEX 200·CD금리를 모두 앞섬 + 최대 낙폭이 봇보다 나쁘지 않음
+ *   봇 경고: 8주 이상 측정 + 봇이 KODEX 200과 CD금리 둘 다에 못 미침
+ */
+export function reviewStrategies(input: { results: StrategyResult[]; measuredDays: number }): StrategyReview {
+  const { results, measuredDays } = input;
+  const byName = new Map(results.map((r) => [r.name, r]));
+  const bot = byName.get("bot-account");
+  const kodex = byName.get("kodex200-hold");
+  const cd = byName.get("cd-only");
+  if (measuredDays < MIN_REVIEW_TRADING_DAYS) {
+    return {
+      status: "too-early",
+      measuredDays,
+      lines: [`측정 ${measuredDays}거래일 — ${MIN_REVIEW_TRADING_DAYS}거래일(8주) 전에는 전략을 바꾸지 않습니다.`],
+      candidates: [],
+    };
+  }
+  if (!bot || !kodex || !cd) {
+    return { status: "no-bot-data", measuredDays, lines: ["봇 계좌 또는 기준 데이터가 없어 판정하지 않습니다."], candidates: [] };
+  }
+  const candidates = results.filter(
+    (r) =>
+      !NON_CANDIDATE_STRATEGIES.includes(r.name) &&
+      r.totalReturnPct > bot.totalReturnPct &&
+      r.totalReturnPct > kodex.totalReturnPct &&
+      r.totalReturnPct > cd.totalReturnPct &&
+      r.maxDrawdownPct >= bot.maxDrawdownPct
+  );
+  const lines: string[] = [];
+  let status: StrategyReview["status"] = "hold";
+  if (candidates.length) {
+    status = "propose";
+    for (const c of candidates) {
+      lines.push(
+        `승격 후보: ${c.label} ${fmtPct(c.totalReturnPct)} (낙폭 ${c.maxDrawdownPct.toFixed(1)}%) — 봇 ${fmtPct(bot.totalReturnPct)}, KODEX 200 ${fmtPct(kodex.totalReturnPct)}, CD ${fmtPct(cd.totalReturnPct)}를 모두 앞서고 낙폭도 봇 이하`
+      );
+    }
+    lines.push("승인하시면 이 전략을 봇에 적용하는 작업을 진행합니다. 자동으로 바뀌지는 않습니다.");
+  }
+  if (bot.totalReturnPct < kodex.totalReturnPct && bot.totalReturnPct < cd.totalReturnPct) {
+    if (status !== "propose") status = "warn-bot";
+    lines.push(
+      `봇 경고: 봇 ${fmtPct(bot.totalReturnPct)}가 KODEX 200 ${fmtPct(kodex.totalReturnPct)}과 CD금리 ${fmtPct(cd.totalReturnPct)} 모두에 못 미칩니다.`
+    );
+  }
+  if (!lines.length) lines.push("기준을 모두 넘은 후보가 없습니다 — 현재 봇을 유지합니다.");
+  return { status, measuredDays, lines, candidates: candidates.map((c) => c.name) };
+}
 
 function sma(values: number[], end: number, window: number): number | null {
   if (end + 1 < window) return null;

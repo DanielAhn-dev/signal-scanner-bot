@@ -14,6 +14,7 @@ type ForwardTestSnapshot = {
   endDate: string
   generatedAt: string
   results: StrategyResult[]
+  review?: { status: string; measuredDays: number; lines: string[] }
 }
 
 // 비교 기준 — 후보 전략이 현재 봇·KODEX 200·CD금리보다 모두 나아야 바꿀 이유가 있다
@@ -83,6 +84,25 @@ export default function ForwardTestPanel() {
         {snap.startDate} ~ {snap.endDate} · 매매비용 포함 · 측정 시작 뒤 실제로 지나간 기간만 씁니다.
         기간이 짧을수록 우연의 영향이 크니, 몇 달 쌓인 뒤 판단하세요.
       </div>
+      {snap.review && (
+        <div
+          style={{
+            marginBottom: 8,
+            padding: '6px 8px',
+            borderRadius: 4,
+            lineHeight: 1.5,
+            background:
+              snap.review.status === 'propose' || snap.review.status === 'warn-bot'
+                ? 'var(--color-warning-bg)'
+                : 'var(--color-bg-sunken, rgba(0,0,0,0.03))',
+          }}
+        >
+          <strong>승격·퇴출 판정</strong> (측정 {snap.review.measuredDays}거래일, 8주=40거래일부터 판정)
+          {snap.review.lines.map((line) => (
+            <div key={line}>{line}</div>
+          ))}
+        </div>
+      )}
       <div style={{ overflowX: 'auto' }}>
         <table style={{ borderCollapse: 'collapse', width: '100%', minWidth: 480 }}>
           <thead>

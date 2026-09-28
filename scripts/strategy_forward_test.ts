@@ -16,6 +16,7 @@ import {
   firstTradingDaysOfMonths,
   pickSnapshotOnOrBefore,
   simulateBotAccount,
+  reviewStrategies,
   FORWARD_TEST_GATE_DIR,
   FORWARD_TEST_BOT_EQUITY_DIR,
   INDEX_CORE_SMA_WINDOW,
@@ -316,12 +317,13 @@ async function main(): Promise<void> {
   if (sheets.length) {
     results.push(simulateOrderSheetStrategy({ sheets, tradingDates, barsByCode }));
   }
-  const report = formatForwardTestReport({ startDate: START, endDate, results });
+  const review = reviewStrategies({ results, measuredDays: inRange.length - 1 });
+  const report = [formatForwardTestReport({ startDate: START, endDate, results }), "", "[승격·퇴출 판정]", ...review.lines].join("\n");
   console.log(report);
 
   // 웹 전략 화면이 읽을 수 있게 최신 결과를 저장한다 (운영 실행)
   if (RECORD) {
-    const snapshot: ForwardTestSnapshot = { startDate: START, endDate, generatedAt: new Date().toISOString(), results };
+    const snapshot: ForwardTestSnapshot = { startDate: START, endDate, generatedAt: new Date().toISOString(), results, review };
     await uploadJson(FORWARD_TEST_RESULT_PATH, snapshot);
   }
 
