@@ -116,7 +116,7 @@ export async function shareToKakaotalk(data: ShareData): Promise<void> {
     content: {
       title: `${data.title} (${data.code})`,
       description,
-      imageUrl: 'https://signal-scanner-web.vercel.app/icon-192.png',
+      imageUrl: 'https://stocksweb-seven.vercel.app/icons/icon-192.png',
       link: {
         mobileWebUrl: url,
         webUrl: url,
@@ -146,7 +146,7 @@ export async function shareFeedToKakaotalk(data: KakaoFeedShareData): Promise<vo
     content: {
       title: String(data.title || 'Signal Scanner').trim(),
       description,
-      imageUrl: String(data.imageUrl || 'https://signal-scanner-web.vercel.app/icon-192.png'),
+      imageUrl: String(data.imageUrl || 'https://stocksweb-seven.vercel.app/icons/icon-192.png'),
       link: {
         mobileWebUrl: url,
         webUrl: url,

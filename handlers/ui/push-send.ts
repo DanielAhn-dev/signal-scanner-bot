@@ -6,8 +6,13 @@ import { resolveUiUserContext } from './_userContext'
 
 function getFirebaseAdmin() {
   if (getApps().length) return getApps()[0]!
-  const raw = process.env.FIREBASE_SERVICE_ACCOUNT_JSON
+  let raw = String(process.env.FIREBASE_SERVICE_ACCOUNT_JSON || '').trim()
   if (!raw) return null
+  // Vercel 환경변수 UI는 dotenv와 달리 따옴표를 벗겨주지 않는다 — 로컬 .env.local(작은따옴표로
+  // 감싼 형태)에서 그대로 복사해 붙여넣으면 앞뒤 따옴표까지 값에 포함돼 JSON.parse가 깨진다.
+  if ((raw.startsWith("'") && raw.endsWith("'")) || (raw.startsWith('"') && raw.endsWith('"'))) {
+    raw = raw.slice(1, -1)
+  }
   const serviceAccount = JSON.parse(raw)
   return initializeApp({ credential: cert(serviceAccount) })
 }

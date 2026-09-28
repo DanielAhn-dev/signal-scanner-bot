@@ -4,6 +4,7 @@ import { invalidateCache } from '../lib/api'
 import { useToast } from './ToastProvider'
 import { apiFetch } from '../lib/api'
 import { useProfileStore } from '../stores/profileStore'
+import { PushNotificationToggle } from './PushNotificationToggle'
 
 interface Props {
   isOpen: boolean
@@ -343,6 +344,12 @@ export default function ProfileModal({
               3) 조회 실패 시 먼저 텔레그램에서 봇과 대화를 시작했는지 확인해 주세요.
             </div>
           </details>
+        </section>
+
+        {/* ── 섹션: 알림 ── */}
+        <section className="profile-section">
+          <div className="profile-section-title">알림</div>
+          <PushNotificationToggle isSignedIn={isSignedIn} />
         </section>
 
         {/* ── 저장 메시지 ── */}

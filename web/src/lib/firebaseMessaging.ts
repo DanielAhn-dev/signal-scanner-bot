@@ -80,16 +80,23 @@ function attachForegroundListenerOnce(
 const PUSH_SCOPE = '/firebase-cloud-messaging-push-scope'
 const SW_PATH = '/firebase-messaging-sw.js'
 
-/** 알림 권한 요청 + FCM 토큰 발급. 미지원 환경(인앱 브라우저 등)이면 null 반환 */
+/** 알림 권한 요청 + FCM 토큰 발급.
+ *  반환값 null은 "사용자가 권한을 거부/보류했다"는 정상적인 경우만 의미한다 — 그 외
+ *  설정 누락이나 미지원 브라우저 같은 실제 문제는 Error를 던져서 호출부가 원인을 알 수 있게 한다. */
 export async function requestFcmToken(): Promise<string | null> {
-  if (typeof window === 'undefined') return null
-  if (!('Notification' in window) || !('serviceWorker' in navigator)) return null
-  if (!firebaseConfig.apiKey || !VAPID_KEY) return null
+  if (typeof window === 'undefined' || !('Notification' in window) || !('serviceWorker' in navigator)) {
+    throw new Error('이 브라우저는 웹 푸시 알림을 지원하지 않습니다')
+  }
+  if (!firebaseConfig.apiKey || !VAPID_KEY) {
+    throw new Error('Firebase 설정이 누락되었습니다 (VITE_FIREBASE_* 환경변수 확인 필요)')
+  }
 
   const { appModule, messagingModule } = await loadFirebaseModules()
   const { getMessaging, getToken, isSupported, onMessage } = messagingModule
 
-  if (!(await isSupported().catch(() => false))) return null
+  if (!(await isSupported().catch(() => false))) {
+    throw new Error('이 브라우저는 FCM을 지원하지 않습니다')
+  }
 
   const permission = await Notification.requestPermission()
   if (permission !== 'granted') return null
@@ -102,5 +109,6 @@ export async function requestFcmToken(): Promise<string | null> {
     vapidKey: VAPID_KEY,
     serviceWorkerRegistration: registration,
   })
-  return token || null
+  if (!token) throw new Error('FCM 토큰 발급에 실패했습니다')
+  return token
 }

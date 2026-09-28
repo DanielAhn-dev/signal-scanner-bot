@@ -516,6 +516,9 @@ a:focus-visible {
 .profile-modal .profile-avatar-wrap {
   margin-top: 14px;
 }
+.profile-modal .profile-actions {
+  margin-bottom: 16px;
+}
 .profile-avatar-wrap {
   @apply flex flex-col items-center;
   @apply mb-4;

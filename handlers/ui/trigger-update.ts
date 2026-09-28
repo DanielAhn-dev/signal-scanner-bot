@@ -9,7 +9,7 @@ function resolveCorsOrigin(req: VercelRequest): string {
   const trustedOrigins = String(
     process.env.UI_TRUSTED_WEB_ORIGINS ||
     process.env.UI_CORS_ORIGIN ||
-    'https://signal-scanner-web.vercel.app,http://localhost:5173',
+    'https://signal-scanner-web.vercel.app,https://stocksweb-seven.vercel.app,http://localhost:5173',
   )
     .split(',')
     .map((v) => v.trim())
