@@ -155,7 +155,7 @@ import { businessDaysBehindExpected } from "../utils/dataFreshness";
 import { checkAutotradeBuyBlock } from "./macroEventWarningService";
 import { fetchStockNews } from "../utils/fetchNews";
 import { analyzeNewsSentiment, analyzeOrderIntakeSignal } from "../lib/newsSentiment";
-import { scoreSectors, getTopSectors, getNextSectorCandidates } from "../lib/sectors";
+import { scoreSectors } from "../lib/sectors";
 
 type RunMode = SelectionAutoTradeRunMode;
 type RunType = AutoTradeRunType;
@@ -3560,22 +3560,11 @@ async function selectMondayCandidates(payload: {
   const strongTodayBuyCount = scoredRows.filter((row) => toNumber(row.todayBuyScore, 0) >= 75).length;
   const immediateExcludeCount = scoredRows.filter((row) => row.immediateExcludeSignal === true).length;
 
-  // 섹터 부스트 맵: 유망섹터(Grade A) +10, Grade B +5, 다음섹터(순환매 후보) +6
-  const sectorBoostById = await (async () => {
-    try {
-      const sectorScores = await scoreSectors(kstDateKey());
-      const boostMap = new Map<string, number>();
-      for (const s of getTopSectors(sectorScores)) {
-        boostMap.set(s.id, s.grade === "A" ? 10 : 5);
-      }
-      for (const s of getNextSectorCandidates(sectorScores, 3e9)) {
-        if (!boostMap.has(s.id)) boostMap.set(s.id, 6);
-      }
-      return boostMap;
-    } catch {
-      return new Map<string, number>();
-    }
-  })();
+  // 섹터 가산점 없음. 예전엔 유망섹터 +10/+5, 다음섹터(순환매 후보) +6을 줬지만, 2026-09-28 생존편향 없는 검증
+  // (2015~2026, 상장폐지 포함, KSIC 업종)에서 강한 업종을 사는 것(월 -0.2~+0.05%)도, 덜 오른 업종을 사는 것
+  // (1개월 -0.29%, 3개월 -0.59% t=-2.5)도 평균보다 낫지 않았고, 순환매 쪽은 오히려 부진했다.
+  // 보유 섹터 집중 제한(heldSectorCounts)과 섹터 약세 정리 매도는 위험 관리라 유지한다.
+  const sectorBoostById = new Map<string, number>();
 
   // 보유 종목의 섹터 카운트 — scoredRows에서 held 코드를 역조회 (best-effort)
   const heldSectorCounts = new Map<string, number>();

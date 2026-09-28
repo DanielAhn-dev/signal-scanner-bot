@@ -1140,7 +1140,7 @@ export default function SectorsPage({ onNavigate }: { onNavigate?: (r: string) =
             </p>
           ) : (
             <p className="muted" style={{ margin: 0 }}>
-              최근 5일 외국인/기관 수급과 단기 등락률을 함께 반영한 <strong>순환매 후보 섹터</strong>입니다.
+              최근 5일 외국인/기관 수급과 단기 등락률을 함께 반영한 <strong>순환매 후보 섹터</strong>입니다. 참고용 — 11년 검증에서 덜 오른 업종을 미리 사는 방식은 평균보다 부진했고, 봇은 이 목록으로 매수하지 않습니다.
             </p>
           )}
         </div>

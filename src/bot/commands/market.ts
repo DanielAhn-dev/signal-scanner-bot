@@ -146,7 +146,7 @@ export async function handleMarketCommand(
 
   // 순환매 후보
   if (nextSectors.length) {
-    msg += `<b>순환매 후보</b> (수급 유입 시작)\n`;
+    msg += `<b>순환매 후보</b> (수급 유입 시작 · 참고용, 봇 매수에 안 씀)\n`;
     nextSectors.slice(0, 3).forEach((s) => {
       const flows: string[] = [];
       if (s.flowF5) flows.push(`외 ${fmtKorMoney(s.flowF5)}`);

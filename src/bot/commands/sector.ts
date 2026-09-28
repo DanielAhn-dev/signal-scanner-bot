@@ -187,7 +187,7 @@ export async function handleNextSectorCommand(
     });
   }
 
-  const text = buildSectorListMessage("수급 급등(Next) 섹터", next);
+  const text = `${buildSectorListMessage("수급 급등(Next) 섹터", next)}\n\n참고용 — 11년 검증에서 덜 오른 업종을 미리 사는 방식은 평균보다 부진했고, 봇은 이 목록으로 매수하지 않습니다.`;
 
   const buttons = next
     .slice(0, 4)
