@@ -1,8 +1,5 @@
 // src/utils/fetchNews.ts
-// 네이버 뉴스 조회 (모바일 API + HTML 스크래핑)
-
-import * as cheerio from "cheerio";
-import iconv from "iconv-lite";
+// 네이버 뉴스 조회 (모바일 주식 API)
 
 export interface NewsItem {
   title: string;
@@ -20,8 +17,6 @@ const NEWS_FETCH_TIMEOUT_MS = 3000;
 type FetchLikeResponse = {
   ok: boolean;
   json(): Promise<unknown>;
-  text(): Promise<string>;
-  arrayBuffer(): Promise<ArrayBuffer>;
 };
 
 async function fetchWithTimeout(
@@ -79,101 +74,54 @@ export async function fetchStockNews(
   }
 }
 
-/** 시장 전체 주요 뉴스 — 네이버 금융 HTML 스크래핑 */
+/** 네이버 모바일 주요뉴스 API 응답 한 건 */
+type MainNewsRow = { oid?: string; aid?: string; ohnm?: string; tit?: string; dt?: string };
+
+/** 주요뉴스 API 응답 → NewsItem (중복·빈 제목 제거) */
+export function parseMainNewsRows(rows: unknown, seen = new Set<string>()): NewsItem[] {
+  if (!Array.isArray(rows)) return [];
+  const items: NewsItem[] = [];
+  for (const row of rows as MainNewsRow[]) {
+    const title = String(row?.tit ?? "").trim();
+    const oid = String(row?.oid ?? "").trim();
+    const aid = String(row?.aid ?? "").trim();
+    if (title.length < 5 || !oid || !aid) continue;
+    const link = `https://n.news.naver.com/mnews/article/${oid}/${aid}`;
+    if (seen.has(link)) continue;
+    seen.add(link);
+    items.push({
+      title,
+      link,
+      source: String(row?.ohnm ?? "").trim() || undefined,
+      date: formatNewsDate(String(row?.dt ?? "")) || undefined,
+    });
+  }
+  return items;
+}
+
+/**
+ * 시장 전체 주요 뉴스 — 네이버 모바일 주식 API.
+ * (예전 finance.naver.com/news/mainnews.naver HTML은 2026-09 stock.naver.com 이전으로 302 리다이렉트만 돌려줘
+ *  스크래핑 결과가 항상 0건이었다 — 웹 뉴스 피드·/뉴스 명령이 빈 채로 나감)
+ */
 export async function fetchMarketNews(limit = 7): Promise<NewsItem[]> {
+  const pageSize = 20;
+  const maxPages = Math.min(16, Math.max(1, Math.ceil(limit / pageSize)));
+  const items: NewsItem[] = [];
+  const seen = new Set<string>();
   try {
-    const items: NewsItem[] = [];
-    const seen = new Set<string>();
-    const maxPages = Math.min(30, Math.max(2, Math.ceil(limit / 20) + 2));
-
-    const pushIfValid = (titleRaw: string, hrefRaw: string, sourceRaw?: string, dateRaw?: string) => {
-      const title = String(titleRaw || "").trim();
-      const href = String(hrefRaw || "").trim();
-      if (!title || title.length < 5 || !href) return;
-
-      const fullLink = href.startsWith("http")
-        ? href
-        : `https://finance.naver.com${href}`;
-      const key = `${title}|${fullLink}`;
-      if (seen.has(key)) return;
-      seen.add(key);
-
-      const source = String(sourceRaw || "").trim();
-      const date = String(dateRaw || "").trim();
-      items.push({
-        title,
-        link: fullLink,
-        source: source || undefined,
-        date: date || undefined,
-      });
-    };
-
     for (let page = 1; page <= maxPages && items.length < limit; page += 1) {
-      const url = `https://finance.naver.com/news/mainnews.naver?page=${page}`;
+      const url = `https://m.stock.naver.com/api/news/list?category=mainnews&pageSize=${pageSize}&page=${page}`;
       const res = await fetchWithTimeout(url);
       if (!res.ok) break;
-
-      const ab = await res.arrayBuffer();
-      let html: string;
-      try {
-        html = iconv.decode(Buffer.from(ab), "euc-kr");
-      } catch {
-        html = new TextDecoder("utf-8").decode(ab);
-      }
-
-      const $ = cheerio.load(html);
-      const beforeCount = items.length;
-
-      // 1) li 단위 파싱
-      $(".mainNewsList .newsList li").each((_, li) => {
-        if (items.length >= limit) return;
-        const $li = $(li);
-        const $titleAnchor = $li.find(".articleSubject a").first();
-        const title = $titleAnchor.text().trim();
-        const href = $titleAnchor.attr("href") || "";
-        const source = $li.find(".articleSummary .press").first().text().trim();
-        const date = $li.find(".articleSummary .wdate").first().text().trim();
-        pushIfValid(title, href, source, date);
-      });
-
-      // 2) 폴백
-      if (items.length < limit) {
-        $(".articleSubject a").each((_, el) => {
-          if (items.length >= limit) return;
-          const $a = $(el);
-          const title = $a.text().trim();
-          const href = $a.attr("href") || "";
-          const $li = $a.closest("li");
-          const source = $li.find(".articleSummary .press").text().trim()
-            || $li.find(".press").text().trim()
-            || "";
-          const date = $li.find(".articleSummary .wdate").text().trim()
-            || $li.find(".wdate").text().trim()
-            || "";
-          pushIfValid(title, href, source, date);
-        });
-      }
-
-      // 3) 구버전 구조 폴백
-      if (items.length < limit) {
-        $("dl dt a").each((_, el) => {
-          if (items.length >= limit) return;
-          const $a = $(el);
-          const title = $a.text().trim();
-          const href = $a.attr("href") || "";
-          pushIfValid(title, href);
-        });
-      }
-
-      // 해당 페이지에서 신규 뉴스가 전혀 없으면 순회 종료
-      if (items.length === beforeCount) break;
+      const parsed = parseMainNewsRows(await res.json(), seen);
+      if (!parsed.length) break;
+      items.push(...parsed);
     }
-
-    return items.slice(0, limit);
   } catch (e) {
     console.error("시장 뉴스 조회 실패:", e);
-    return [];
   }
+  return items.slice(0, limit);
 }
 
 /** yyyyMMddHHmm → MM.dd HH:mm */
