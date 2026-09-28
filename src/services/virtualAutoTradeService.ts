@@ -91,6 +91,7 @@ import { sendMessage } from "../telegram/api";
 import { isExchangeTradedProduct, resolveSellTaxRate } from "../lib/securitiesTax";
 import { fetchBenchmarkComparison, formatBenchmarkLine } from "./virtualAutoTradeBenchmark";
 import { fetchHeavyNetSellingCodes } from "./investorFlowFilter";
+import { fetchNegativeDisclosureCodes, type DisclosureHit } from "./dartDisclosureFilter";
 import { actionButtons } from "../bot/messages/layout";
 import {
   isKrxIntradayAutoTradeWindow,
@@ -3651,10 +3652,14 @@ async function selectMondayCandidates(payload: {
       .map(([code]) => code)
   );
   // 수급 이탈(최근 5일 외국인+기관 강한 순매도) 종목은 신규 매수에서 제외 (investorFlowFilter 백테스트 근거)
-  const heavyNetSelling = await fetchHeavyNetSellingCodes(
-    payload.supabase,
-    scoredRows.map((row) => row.code)
-  ).catch(() => new Map<string, number>());
+  // 공시 악재(유상증자·감자·CB/BW·횡령배임 등, 최근 5일) 종목도 제외 — DART_API_KEY 없으면 빈 결과
+  const [heavyNetSelling, negativeDisclosures] = await Promise.all([
+    fetchHeavyNetSellingCodes(
+      payload.supabase,
+      scoredRows.map((row) => row.code)
+    ).catch(() => new Map<string, number>()),
+    fetchNegativeDisclosureCodes().catch(() => new Map<string, DisclosureHit>()),
+  ]);
   // ETF·ETN(현금 스윕용 CD금리·KOFR, 지수 ETF)은 가격 추적용으로 유니버스에 있지만 개별 종목 전략의 매수 대상이 아니다
   const etfCodes = scoredRows.filter((row) => isExchangeTradedProduct(row.code, row.name)).map((row) => row.code);
   const finalHeldCodes = new Set<string>([
@@ -3662,6 +3667,7 @@ async function selectMondayCandidates(payload: {
     ...activeTakeProfitCooldownCodes,
     ...heavyNetSelling.keys(),
     ...etfCodes,
+    ...negativeDisclosures.keys(),
   ]);
 
   const selection = pickAutoTradeCandidates({
@@ -3702,7 +3708,7 @@ async function selectMondayCandidates(payload: {
             discoveryProfile === "BLEND"
               ? ` · 하이라이트 ${highlightCodes.size} · 눌림목 ${pullbackCandidateCodes?.size ?? 0} · 멀티배거 ${multibaggerCodes?.size ?? 0} · 백테스트 ${backtestEdgeCodes?.size ?? 0}`
               : ""
-          } · 데이터품질 ${dataQuality.band.toUpperCase()}(${dataQuality.qualityScore}) · ${dataQuality.note} · 교집합(2+) ${overlap2Count}종목 · 교집합(3+) ${overlap3Count}종목 · 오늘매수강신호 ${strongTodayBuyCount}종목 · 즉시제외 ${immediateExcludeCount}종목${cooldownCodes.size > 0 ? ` · 스탑로스 쿨다운 ${cooldownCodes.size}종목 제외` : ""}${heavyNetSelling.size > 0 ? ` · 수급이탈 ${heavyNetSelling.size}종목 제외` : ""}`,
+          } · 데이터품질 ${dataQuality.band.toUpperCase()}(${dataQuality.qualityScore}) · ${dataQuality.note} · 교집합(2+) ${overlap2Count}종목 · 교집합(3+) ${overlap3Count}종목 · 오늘매수강신호 ${strongTodayBuyCount}종목 · 즉시제외 ${immediateExcludeCount}종목${cooldownCodes.size > 0 ? ` · 스탑로스 쿨다운 ${cooldownCodes.size}종목 제외` : ""}${heavyNetSelling.size > 0 ? ` · 수급이탈 ${heavyNetSelling.size}종목 제외` : ""}${negativeDisclosures.size > 0 ? ` · 공시악재 ${negativeDisclosures.size}종목 제외` : ""}`,
   };
 }
 
