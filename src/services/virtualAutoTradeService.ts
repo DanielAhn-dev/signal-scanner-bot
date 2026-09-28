@@ -88,7 +88,7 @@ import {
   evaluateAutoTradeSignalGate,
 } from "./virtualAutoTradeSignalGate";
 import { sendMessage } from "../telegram/api";
-import { resolveSellTaxRate } from "../lib/securitiesTax";
+import { isExchangeTradedProduct, resolveSellTaxRate } from "../lib/securitiesTax";
 import { fetchBenchmarkComparison, formatBenchmarkLine } from "./virtualAutoTradeBenchmark";
 import { fetchHeavyNetSellingCodes } from "./investorFlowFilter";
 import { actionButtons } from "../bot/messages/layout";
@@ -3655,10 +3655,13 @@ async function selectMondayCandidates(payload: {
     payload.supabase,
     scoredRows.map((row) => row.code)
   ).catch(() => new Map<string, number>());
+  // ETF·ETN(현금 스윕용 CD금리·KOFR, 지수 ETF)은 가격 추적용으로 유니버스에 있지만 개별 종목 전략의 매수 대상이 아니다
+  const etfCodes = scoredRows.filter((row) => isExchangeTradedProduct(row.code, row.name)).map((row) => row.code);
   const finalHeldCodes = new Set<string>([
     ...heldAndCooldownCodes,
     ...activeTakeProfitCooldownCodes,
     ...heavyNetSelling.keys(),
+    ...etfCodes,
   ]);
 
   const selection = pickAutoTradeCandidates({

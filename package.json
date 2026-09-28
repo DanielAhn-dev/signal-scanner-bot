@@ -37,6 +37,7 @@
     "ops:rollback-trade": "tsx scripts/ops/rollback_virtual_trade.ts",
     "ops:purge-holiday": "tsx scripts/ops/purge_holiday_artifacts.ts",
     "ops:fix-etf-tax": "tsx scripts/ops/fix_etf_sell_tax.ts",
+    "ops:forward-test": "tsx scripts/strategy_forward_test.ts",
     "report:strategy-live": "tsx scripts/strategy_leaderboard.ts",
     "report:local": "tsx scripts/generate_local_reports.ts",
     "setWebhook": "node scripts/ops/setWebhook.mjs https://signal-scanner-bot.vercel.app/api/telegram",

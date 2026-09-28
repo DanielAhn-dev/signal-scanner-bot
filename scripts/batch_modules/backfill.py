@@ -218,6 +218,83 @@ def heal_stock_daily_gaps(supabase: Client, trading_date: str) -> bool:
     return bool(ok_indicators)
 
 
+# KRX 일일 가격제한폭은 ±30%라 연속 거래일 사이에 이보다 크게 움직였다면 액면분할·무상증자 등으로
+# 과거 가격이 수정되지 않은 것이다(원주가·수정주가 혼재).
+PRICE_LIMIT_JUMP = 0.305
+
+
+def find_unadjusted_price_jumps(
+    closes_by_ticker: dict[str, dict[str, float]], calendar: list[str]
+) -> dict[str, list[str]]:
+    """연속 거래일 종가 변화가 가격제한폭을 넘는 (종목 → 날짜들)."""
+    out: dict[str, list[str]] = {}
+    for ticker, closes in closes_by_ticker.items():
+        for prev_d, d in zip(calendar, calendar[1:]):
+            a, b = closes.get(prev_d), closes.get(d)
+            if not a or not b or a <= 0 or b <= 0:
+                continue
+            if abs(b / a - 1) > PRICE_LIMIT_JUMP:
+                out.setdefault(ticker, []).append(d)
+    return out
+
+
+def repair_unadjusted_price_history(supabase: Client, trading_date: str) -> bool:
+    """
+    원주가·수정주가가 섞인 종목의 보관 기간 전체를 수정주가로 다시 받는다.
+
+    일일 수집은 날짜별 원주가인데, 기업 이벤트(분할·무상증자) 뒤에도 과거 행이 조정되지 않아 가짜 폭락·폭등이
+    남았다(예: 티엘비 356860 2026-07-16 -56%, 큐리오시스 494120 07-15 -40%). 구멍 복구가 일부 기간만 수정주가로
+    받아 넣으면 경계에 새 점프가 생기기도 했다. 종목당 KRX 호출 1회로 전체 기간을 받아 일관성을 맞춘다.
+    """
+    max_tickers = max(0, safe_int(os.environ.get("PRICE_REPAIR_MAX_TICKERS", 15), 15))
+    if max_tickers <= 0:
+        return False
+    earliest = get_earliest_stock_daily_date(supabase)
+    if not earliest:
+        return False
+    trading_dt = datetime.strptime(trading_date, "%Y%m%d").date()
+    earliest_dt = datetime.strptime(earliest, "%Y-%m-%d").date()
+    # 달력은 YYYYMMDD, stock_daily.date는 YYYY-MM-DD
+    calendar = [f"{d[:4]}-{d[4:6]}-{d[6:8]}" for d in get_trading_dates_between(earliest_dt, trading_dt)]
+    if len(calendar) < 2:
+        return False
+    codes = fetch_universe_codes(supabase)
+    closes_by_ticker: dict[str, dict[str, float]] = {}
+    for i in range(0, len(codes), 20):
+        chunk = codes[i:i + 20]
+        offset = 0
+        while True:
+            res = supabase.table("stock_daily").select("ticker,date,close")                 .in_("ticker", chunk).gte("date", earliest).order("ticker").order("date")                 .range(offset, offset + 999).execute()
+            rows = res.data or []
+            for r in rows:
+                closes_by_ticker.setdefault(r["ticker"], {})[str(r["date"])[:10]] = float(r.get("close") or 0)
+            if len(rows) < 1000:
+                break
+            offset += 1000
+    jumps = find_unadjusted_price_jumps(closes_by_ticker, calendar)
+    if not jumps:
+        print(f"   Price adjustment check: no limit-breaking jumps across {len(closes_by_ticker)} tickers")
+        return False
+    targets = sorted(jumps.keys())[:max_tickers]
+    print(
+        f"   Price adjustment repair: {len(jumps)} tickers with >{PRICE_LIMIT_JUMP*100:.1f}% day jumps "
+        f"(e.g. {', '.join(f'{t}@{jumps[t][0]}' for t in targets[:5])}) → refetch full history for {len(targets)}"
+    )
+    start = earliest_dt.strftime("%Y%m%d")
+    ok_stock = run_python_script(
+        "scripts/backfill_stock_daily_universe.py",
+        ["--start", start, "--end", trading_date, "--universe", "core-extended", "--codes", ",".join(targets), "--sleep", "0.6"],
+        "stock_daily adjusted-price repair",
+    )
+    if not ok_stock:
+        return False
+    return bool(run_python_script(
+        "scripts/backfill_daily_indicators.py",
+        ["--start", start, "--end", trading_date],
+        "daily_indicators adjusted-price repair",
+    ))
+
+
 def auto_backfill_missing_dates(supabase: Client, trading_date: str) -> bool:
     """Auto-backfill forward/history gaps for stock_daily and indicators."""
     latest_date = get_latest_stock_daily_date(supabase)
@@ -266,6 +343,10 @@ def auto_backfill_missing_dates(supabase: Client, trading_date: str) -> bool:
 
     # 1.5) 내부 구멍 복구: 종목 단위 누락을 하루 할당량만큼만 천천히 메운다 (heal_stock_daily_gaps 참고)
     if heal_stock_daily_gaps(supabase, trading_date):
+        backfilled = True
+
+    # 1.6) 수정주가 불일치 복구: 가격제한폭을 넘는 가짜 점프가 있는 종목의 전체 이력을 다시 받는다
+    if repair_unadjusted_price_history(supabase, trading_date):
         backfilled = True
 
     # 2) Historical fill for retention window
