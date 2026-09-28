@@ -1239,3 +1239,27 @@ test("evaluateBuyRotationCandidate: 손실 중 + 점수 최저 + 격차 15점 �
   assert.equal(result.reason, "rotation-approved");
   assert.equal(result.target?.code, "000001");
 });
+test("planAutoTradeExit: 손절선(-4%)이 절반청산선(-7%)보다 좁으면 -8%에서 전량 손절 (역전 방지)", () => {
+  const plan = planAutoTradeExit({
+    quantity: 10,
+    pnlPct: -8,
+    takeProfitPct: 8,
+    stopLossPct: 4,
+    takeProfitSplitCount: 2,
+    takeProfitTranchesDone: 0,
+  });
+  assert.equal(plan.action, "STOP_LOSS");
+  assert.equal(plan.quantityToSell, 10);
+});
+
+test("planAutoTradeExit: 손절선(-9%)이 넓으면 -7.5%에서 절반 청산", () => {
+  const plan = planAutoTradeExit({
+    quantity: 10,
+    pnlPct: -7.5,
+    takeProfitPct: 12,
+    stopLossPct: 9,
+    takeProfitSplitCount: 2,
+    takeProfitTranchesDone: 0,
+  });
+  assert.equal(plan.quantityToSell, 5);
+});

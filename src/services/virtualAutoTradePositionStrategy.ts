@@ -576,7 +576,9 @@ export function planAutoTradeExit(input: {
     };
   }
   // halfExitStopPct 초과 → 절반 청산 (손실 한정 + 추가 하락 여지 확보, 기본 -7%)
-  if (pnlPct <= -halfExitStopPct) {
+  // 손절선이 절반 청산선보다 넓을 때(ATR 확장 손절 등)만 적용한다. 예전엔 손절선이 -4%여도 이 분기가 먼저
+  // 잡혀서 -5%에선 전량, 더 깊은 -8%에선 절반만 파는 역전이 있었다.
+  if (pnlPct <= -halfExitStopPct && stopLossPct > halfExitStopPct) {
     const halfQty = Math.max(1, Math.ceil(quantity / 2));
     return {
       action: "TAKE_PROFIT",
