@@ -21,6 +21,8 @@ import portfolioShared from '../handlers/ui/portfolio-shared'
 import portfolioRealtime from './ui/portfolio-realtime'
 import preRallyPatterns from '../handlers/ui/pre-rally-patterns'
 import profile from '../handlers/ui/profile'
+import pushToken from '../handlers/ui/push-token'
+import pushSend from '../handlers/ui/push-send'
 import reportPdf from '../handlers/ui/report-pdf'
 import reportShare from '../handlers/ui/report-share'
 import reportShared from '../handlers/ui/report-shared'
@@ -74,6 +76,8 @@ const ROUTES: Record<string, UiHandler> = {
   positions,
   'positions-maintenance': positionsMaintenance,
   profile,
+  'push-token': pushToken,
+  'push-send': pushSend,
   'report-pdf': reportPdf,
   'report-share': reportShare,
   'report-shared': reportShared,
