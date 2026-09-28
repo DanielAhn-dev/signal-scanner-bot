@@ -736,6 +736,22 @@ export default function AnalyzePage({ onNavigate }: { onNavigate?: (r: string) =
               { label: 'BPS', val: result.bps != null ? formatKrw(result.bps) : '—' },
               { label: 'ROE', val: result.roe != null ? formatNumber(result.roe, 2) + '%' : '—' },
               { label: '부채비율', val: result.debt_ratio != null ? formatNumber(result.debt_ratio, 2) + '%' : '—' },
+              {
+                // 봇 신규 매수 제외 기준과 같은 판정 (src/services/fundamentalQualityGate.ts)
+                label: '봇 실적 관문',
+                val:
+                  result?.fundamental_gate?.status === 'pass'
+                    ? '통과'
+                    : result?.fundamental_gate?.status === 'fail'
+                      ? '봇 매수 제외'
+                      : result?.fundamental_gate?.status === 'unknown'
+                        ? '판정 불가'
+                        : '—',
+                hint:
+                  result?.fundamental_gate?.status === 'pass'
+                    ? '최근 4분기 흑자 · 최근 분기 영업이익이 1년 전보다 증가'
+                    : result?.fundamental_gate?.reason ?? '적자·영업이익 감소 종목은 8년 검증에서 평균보다 부진',
+              },
             ] as { label: string; val: string; tag?: string | null; hint?: string }[]).map(({ label, val, tag, hint }) => (
               <div key={label}>
                 <div className="stat-label" style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-1)' }}>

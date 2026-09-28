@@ -1,5 +1,6 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { createClient } from '@supabase/supabase-js'
+import { fetchFundamentalGateResults } from '../../src/services/fundamentalQualityGate'
 import { buildInvestmentPlan } from '../../src/lib/investPlan'
 import { fetchLatestScoresByCodes } from '../../src/services/scoreSourceService'
 import { scaleScoreFactorsToReferencePrice } from '../../src/lib/priceScale'
@@ -1252,7 +1253,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (!code) return res.status(400).json({ error: 'Missing code parameter' })
 
   try {
-    const [series, stock, fundamentalsResp, flow, realtimeData, indicatorSnapshot, latestCreditShortDaily] = await Promise.all([
+    const [series, stock, fundamentalsResp, flow, realtimeData, indicatorSnapshot, latestCreditShortDaily, fundamentalGate] = await Promise.all([
       fetchTimeSeries(supabase, code),
       fetchStockProfile(supabase, code),
       supabase
@@ -1265,6 +1266,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       fetchRealtimeStockData(code).catch(() => null),
       fetchLatestIndicators(supabase, code),
       fetchLatestCreditShortDaily(supabase, code),
+      // 봇 매수 제외 기준과 같은 판정 (fundamentalQualityGate)
+      fetchFundamentalGateResults(supabase, [code])
+        .then((m) => m.get(code) ?? null)
+        .catch(() => null),
     ])
 
     let fund: any = fundamentalsResp.data?.[0] || null
@@ -1626,6 +1631,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             fundamentals_as_of: fund?.as_of ?? null,
             roe: asNum(fund?.roe),
             debt_ratio: asNum(fund?.debt_ratio),
+            fundamental_gate: fundamentalGate,
             sma20: resolvedSma20,
             sma50: resolvedSma50,
             sma200: resolvedSma200,
