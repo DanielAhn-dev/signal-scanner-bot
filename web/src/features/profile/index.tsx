@@ -2,116 +2,127 @@ import React from 'react'
 import { useToast } from '../../components/ToastProvider'
 import { normalizeTelegramChatId } from '../../lib/userContext'
 import { useAuthStore } from '../../stores/authStore'
+import { useProfileStore } from '../../stores/profileStore'
+import { apiFetch } from '../../lib/api'
 import { PushNotificationToggle } from '../../components/PushNotificationToggle'
 
-type Profile = {
-  fullName: string
-  email: string
-  telegramId?: string
-  notifications: boolean
-  apiKey?: string
-  avatar?: string | null
-}
+const STATUS_IDLE    = 'idle'
+const STATUS_LOADING = 'loading'
+const STATUS_OK      = 'ok'
+const STATUS_ERR     = 'error'
 
-const DEFAULT: Profile = {
-  fullName: '',
-  email: 'user@example.com',
-  telegramId: '',
-  notifications: true,
-  apiKey: '',
-  avatar: null
-}
+type VerifyStatus = typeof STATUS_IDLE | typeof STATUS_LOADING | typeof STATUS_OK | typeof STATUS_ERR
 
-const STORAGE_KEY = 'profile'
-
+// 헤더의 ProfileModal과 동일한 useProfileStore(서버 동기화)를 사용한다.
+// 예전에는 이 페이지가 별도 localStorage['profile']을 자체 스키마로 썼는데,
+// ProfileModal/설정 페이지가 쓰는 같은 키를 다른 스키마로 덮어써서
+// 로그인/새로고침마다 서로의 저장값을 지우는 문제가 있었다.
 export default function ProfilePage(){
   const toast = useToast()
   const { isSignedIn, authEmail, authName } = useAuthStore()
-  const [profile, setProfile] = React.useState<Profile>(DEFAULT)
-  const [showApi, setShowApi] = React.useState(false)
+  const profile = useProfileStore((s) => s.profile)
+  const syncError = useProfileStore((s) => s.syncError)
+  const setProfile = useProfileStore((s) => s.setProfile)
+  const clearState = useProfileStore((s) => s.clearState)
+
+  const [telegramId, setTelegramId] = React.useState('')
+  const [nickname, setNickname]     = React.useState('')
+  const [tgName, setTgName]         = React.useState('')
+  const [tgUsername, setTgUsername] = React.useState('')
+
+  const [verifyStatus, setVerifyStatus] = React.useState<VerifyStatus>(STATUS_IDLE)
+  const [verifyMsg, setVerifyMsg]       = React.useState('')
+  const [saving, setSaving]             = React.useState(false)
+  const [saveMsg, setSaveMsg]           = React.useState('')
 
   React.useEffect(() => {
+    setTelegramId(profile?.telegramId ?? '')
+    setNickname(profile?.nickname ?? '')
+    setTgName(profile?.telegramName ?? '')
+    setTgUsername(profile?.telegramUsername ?? '')
+    setVerifyStatus(profile?.telegramId ? STATUS_OK : STATUS_IDLE)
+  }, [profile])
+
+  const handleVerify = async () => {
+    if (!isSignedIn) {
+      setVerifyStatus(STATUS_ERR)
+      setVerifyMsg('Google 로그인 후 텔레그램 연동을 진행해 주세요.')
+      return
+    }
+    const id = normalizeTelegramChatId(telegramId)
+    if (!id) { setVerifyMsg('숫자 Chat ID를 입력해 주세요.'); setVerifyStatus(STATUS_ERR); return }
+    setVerifyStatus(STATUS_LOADING)
+    setVerifyMsg('')
     try {
-      const raw = localStorage.getItem(STORAGE_KEY)
-      if (raw) setProfile(JSON.parse(raw))
-    } catch (e) {
-      // ignore
+      const json = await apiFetch(`/api/ui/telegram-profile?chatId=${encodeURIComponent(id)}`, {
+        cacheMs: 0,
+        timeoutMs: 10_000,
+        retries: 0,
+      })
+      if (json?.error) {
+        setVerifyStatus(STATUS_ERR)
+        setVerifyMsg(json?.error || '조회 실패 — Chat ID를 다시 확인해 주세요.')
+        return
+      }
+      const name = [json?.first_name, json?.last_name].filter(Boolean).join(' ').trim()
+      setTgName(name)
+      setTgUsername(json?.username ?? '')
+      setVerifyStatus(STATUS_OK)
+      setVerifyMsg(`✓ ${name || '사용자'}${json?.username ? ' (@' + json.username + ')' : ''} 확인 완료`)
+    } catch (e: any) {
+      setVerifyStatus(STATUS_ERR)
+      setVerifyMsg('네트워크 오류: ' + (e?.message ?? String(e)))
     }
-  }, [])
-
-  const update = (patch: Partial<Profile>) => setProfile(p => ({...p, ...patch}))
-
-  const handleAvatar = (f?: File) => {
-    if (!f) return
-    const reader = new FileReader()
-    reader.onload = () => update({ avatar: reader.result as string })
-    reader.readAsDataURL(f)
   }
 
-  const save = () => {
-    if (!profile.fullName) return toast.show('이름을 입력하세요')
-    const telegramId = normalizeTelegramChatId(profile.telegramId)
-    if (profile.telegramId && !telegramId) {
-      return toast.show('텔레그램 Chat ID는 숫자만 입력해 주세요')
+  const handleSave = async () => {
+    if (!isSignedIn) {
+      setSaveMsg('Google 로그인 후 저장할 수 있습니다.')
+      return
     }
-    localStorage.setItem(STORAGE_KEY, JSON.stringify({ ...profile, telegramId: telegramId || undefined }))
-    toast.show('프로필이 저장되었습니다')
+    setSaving(true)
+    setSaveMsg('')
+    const nextTelegramId = normalizeTelegramChatId(telegramId)
+    try {
+      const result = await setProfile({
+        telegramId: nextTelegramId || undefined,
+        nickname: nickname.trim() || undefined,
+        telegramName: tgName || undefined,
+        telegramUsername: tgUsername || undefined,
+      })
+      if (!result.synced) {
+        setSaveMsg(`저장 실패: ${result.error || '서버 프로필 저장에 실패했습니다.'}`)
+        return
+      }
+      setSaveMsg('저장됐습니다.')
+      toast.show('프로필이 저장되었습니다')
+    } catch {
+      setSaveMsg('저장에 실패했습니다.')
+    } finally {
+      setSaving(false)
+    }
   }
 
-  const reset = () => {
-    setProfile(DEFAULT)
-    localStorage.removeItem(STORAGE_KEY)
+  const handleReset = () => {
+    clearState()
+    setTelegramId('')
+    setNickname('')
+    setTgName('')
+    setTgUsername('')
+    setVerifyStatus(STATUS_IDLE)
+    setVerifyMsg('')
+    setSaveMsg('')
     toast.show('프로필을 초기화했습니다')
   }
 
-  const exportJson = () => {
-    const blob = new Blob([JSON.stringify(profile, null, 2)], { type: 'application/json' })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = 'profile.json'
-    a.click()
-    URL.revokeObjectURL(url)
-  }
-
-  const [tgLoading, setTgLoading] = React.useState(false)
-  const [tgError, setTgError] = React.useState<string | null>(null)
-  const [fetchedTg, setFetchedTg] = React.useState<any | null>(null)
-
-  const fetchTelegramProfile = async (id: string) => {
-    const telegramId = normalizeTelegramChatId(id)
-    if (!telegramId) {
-      setTgError('숫자 Chat ID를 입력해 주세요')
-      toast.show('숫자 Chat ID를 입력해 주세요')
-      return
-    }
-    setTgLoading(true)
-    setTgError(null)
-    setFetchedTg(null)
-    try {
-      const res = await fetch(`/api/ui?route=telegram-profile&chatId=${encodeURIComponent(telegramId)}`)
-      if (!res.ok) {
-        const body = await res.json().catch(() => ({}))
-        throw new Error(body?.error || 'failed')
-      }
-      const data = await res.json()
-      setFetchedTg(data)
-      if (data?.source === 'users') {
-        toast.show('DB에서 사용자 정보를 불러왔습니다')
-      } else {
-        toast.show('텔레그램 프로필을 불러왔습니다')
-      }
-    } catch (e: any) {
-      setTgError(String(e?.message || e))
-      toast.show('텔레그램 프로필 불러오기 실패')
-    } finally {
-      setTgLoading(false)
-    }
-  }
+  const displayName = nickname.trim() || tgName || authName || '?'
+  const initials = displayName.split(' ').map(w => w[0]).join('').toUpperCase().slice(0, 2)
+  const isConnected = isSignedIn && verifyStatus === STATUS_OK && !!normalizeTelegramChatId(telegramId)
 
   return (
     <div className="max-w-3xl">
       <h2 className="title-xl">프로필</h2>
+
       <div className="card mb-4">
         <div className="ui-field">
           <label className="ui-label">Google 계정</label>
@@ -126,74 +137,97 @@ export default function ProfilePage(){
           )}
         </div>
       </div>
-      <div className="card mb-4">
-        <div style={{display:'flex', gap: 16, alignItems:'center'}}>
-          <div style={{width:96, height:96, borderRadius:12, overflow:'hidden', background:'#f3f4f6'}}>
-            {profile.avatar ? (
-              <img alt="avatar" src={profile.avatar} style={{width:'100%', height:'100%', objectFit:'cover'}} />
-            ) : (
-              <div style={{width:'100%', height:'100%', display:'flex', alignItems:'center', justifyContent:'center', color:'#6b7280'}}>아바타</div>
-            )}
-          </div>
-          <div style={{flex:1}}>
-            <div className="ui-field">
-              <label className="ui-label">이름</label>
-              <input className="ui-text" value={profile.fullName} onChange={(e) => update({ fullName: e.target.value })} />
-            </div>
-            <div className="ui-field mt-1">
-              <label className="ui-label">이메일</label>
-              <input className="ui-text" value={profile.email} onChange={(e) => update({ email: e.target.value })} />
-            </div>
-            <div style={{marginTop:8}}>
-              <label className="ui-label">아바타 업로드</label>
-              <input type="file" accept="image/*" onChange={(e) => handleAvatar(e.target.files?.[0])} />
-            </div>
+
+      {isSignedIn && !!syncError && (
+        <div className="card mb-4">
+          <div className="muted" style={{ color: 'var(--color-stock-up, #F04452)' }}>
+            프로필 동기화 오류: {syncError}
           </div>
         </div>
+      )}
+
+      <div className="card mb-4">
+        <div className="profile-avatar-wrap" style={{ alignItems: 'flex-start' }}>
+          <div className={`profile-avatar${isConnected ? ' profile-avatar--connected' : ''}`}>
+            {initials}
+          </div>
+          {isConnected && <span className="profile-badge-connected">연동됨</span>}
+        </div>
+
+        <section className="profile-section">
+          <div className="profile-section-title">기본 정보</div>
+          <label className="profile-field-label">닉네임</label>
+          <input
+            className="ui-text"
+            placeholder="표시될 이름을 입력하세요"
+            value={nickname}
+            maxLength={20}
+            onChange={(e) => setNickname(e.target.value)}
+          />
+          <p className="profile-hint">앱 내에서만 사용되며, 텔레그램 이름과 별개입니다.</p>
+        </section>
       </div>
 
       <div className="card mb-4">
-            <div className="ui-field">
-              <label className="ui-label">텔레그램 알림용 Chat ID</label>
-              <div style={{display:'flex', gap:8, alignItems:'center'}}>
-                <input className="ui-text" value={profile.telegramId} onChange={(e) => update({ telegramId: e.target.value })} placeholder="예: 123456789" />
-                <button className="ui-button ui-btn-ghost" onClick={() => fetchTelegramProfile(profile.telegramId || '')} disabled={!profile.telegramId || tgLoading}>선택적 확인</button>
-              </div>
-              <div className="muted mt-1">웹 기본 기능은 Google 로그인으로 동작하고, 텔레그램 ID는 알림 전송에만 사용합니다.</div>
-              {tgLoading && <div className="muted mt-1">불러오는 중…</div>}
-              {tgError && <div className="muted mt-1">에러: {tgError}</div>}
-              {fetchedTg && (
-                <div style={{marginTop:8}}>
-                  <div><strong>이름:</strong> {fetchedTg.first_name || '-'} {fetchedTg.last_name || ''}</div>
-                  <div><strong>유저네임:</strong> {fetchedTg.username || '-'}</div>
-                  <div><strong>타입:</strong> {fetchedTg.type}</div>
-                </div>
-              )}
-            </div>
-        <div className="ui-field mt-1">
-          <label className="ui-label">알림</label>
-          <div style={{display:'flex', flexDirection:'column', gap:8}}>
-            <label style={{display:'flex', alignItems:'center', gap:8}}>
-              <input type="checkbox" checked={profile.notifications} onChange={(e) => update({ notifications: e.target.checked })} />
-              <span className="muted">텔레그램으로 알림 전송</span>
-            </label>
-            <PushNotificationToggle isSignedIn={isSignedIn} />
+        <section className="profile-section">
+          <div className="profile-section-title">텔레그램 연동</div>
+          <p className="profile-hint">
+            텔레그램 봇에서 <strong>/내정보</strong> 또는 <strong>/start</strong> 명령을 보내면
+            Chat ID를 확인할 수 있습니다.
+          </p>
+          <p className="profile-hint" style={{ marginTop: 6 }}>
+            선택 입력 항목입니다. 웹 기본 기능은 Chat ID 없이도 사용할 수 있습니다.
+          </p>
+          <label className="profile-field-label">Chat ID</label>
+          <div className="profile-field-row">
+            <input
+              className="ui-text"
+              placeholder="예: 123456789"
+              value={telegramId}
+              disabled={!isSignedIn}
+              onChange={(e) => {
+                setTelegramId(e.target.value)
+                setVerifyStatus(STATUS_IDLE)
+                setVerifyMsg('')
+              }}
+              inputMode="numeric"
+            />
+            <button
+              className="ui-button ui-btn-ghost"
+              onClick={handleVerify}
+              disabled={!isSignedIn || !telegramId || verifyStatus === STATUS_LOADING}
+            >
+              {verifyStatus === STATUS_LOADING ? '확인 중…' : '확인'}
+            </button>
           </div>
-        </div>
+
+          {verifyMsg && (
+            <p className={`profile-verify-msg${verifyStatus === STATUS_ERR ? ' profile-verify-msg--err' : ' profile-verify-msg--ok'}`}>
+              {verifyMsg}
+            </p>
+          )}
+
+          {isConnected && (
+            <div className="profile-tg-info">
+              <span className="profile-tg-icon">✈</span>
+              <span>{tgName}{tgUsername && <span className="muted"> @{tgUsername}</span>}</span>
+            </div>
+          )}
+        </section>
+
+        <section className="profile-section">
+          <div className="profile-section-title">알림</div>
+          <PushNotificationToggle isSignedIn={isSignedIn} />
+        </section>
       </div>
 
       <div className="card mb-4">
-        <div className="ui-field">
-          <label className="ui-label">API 키</label>
-          <div style={{display:'flex', gap:8, alignItems:'center'}}>
-            <input className="ui-text" value={showApi ? (profile.apiKey || '') : (profile.apiKey ? '••••••••••' : '')} onChange={(e) => update({ apiKey: e.target.value })} />
-            <button className="ui-button ui-btn-ghost" onClick={() => setShowApi(s => !s)}>{showApi ? '숨기기' : '표시'}</button>
-          </div>
-        </div>
-        <div style={{marginTop:12, display:'flex', gap:8}}>
-          <button className="ui-button ui-btn-primary" onClick={save}>저장</button>
-          <button className="ui-button ui-btn-secondary" onClick={exportJson}>내보내기</button>
-          <button className="ui-button ui-btn-ghost" onClick={reset}>초기화</button>
+        {saveMsg && <p className="profile-save-msg">{saveMsg}</p>}
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button className="ui-button ui-btn-primary" onClick={handleSave} disabled={!isSignedIn || saving}>
+            {saving ? '저장 중…' : '저장'}
+          </button>
+          <button className="ui-button ui-btn-ghost" onClick={handleReset}>초기화</button>
         </div>
       </div>
     </div>

@@ -258,6 +258,14 @@
   margin-left: 4px;
 }
 
+/* PWA로 설치되어 실행 중이면 OS/브라우저가 실제 창 컨트롤(최소화/최대화/닫기)을
+   이미 그려주므로, 흉내낸 가짜 버튼은 중복이라 숨긴다. */
+@media (display-mode: standalone), (display-mode: window-controls-overlay), (display-mode: minimal-ui) {
+  .excel-titlebar__window-btns {
+    display: none;
+  }
+}
+
 .excel-titlebar__win-btn {
   display: inline-flex;
   align-items: center;
@@ -274,6 +282,13 @@
 .excel-titlebar__win-btn:hover {
   background: rgba(255,255,255,0.15);
   color: #fff;
+}
+.excel-titlebar__win-btn:disabled {
+  cursor: not-allowed;
+  color: rgba(255,255,255,0.35);
+}
+.excel-titlebar__win-btn:disabled:hover {
+  background: transparent;
 }
 .excel-titlebar__win-btn--close:hover {
   background: #c42b1c;

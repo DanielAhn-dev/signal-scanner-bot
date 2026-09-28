@@ -313,6 +313,24 @@ export default function ExcelShell({
   const [isUltraCompact, setIsUltraCompact] = useState(false)
   const isSearchVisible = !isUltraCompact || mobileSearchOpen
 
+  // '최대화' 버튼 — 브라우저 탭에서는 OS 창 자체를 최대화할 API가 없으므로
+  // 실제로 동작 가능한 전체화면(Fullscreen API) 전환으로 대체한다.
+  const [isFullscreen, setIsFullscreen] = useState(() =>
+    typeof document !== 'undefined' && !!document.fullscreenElement
+  )
+  useEffect(() => {
+    const handler = () => setIsFullscreen(!!document.fullscreenElement)
+    document.addEventListener('fullscreenchange', handler)
+    return () => document.removeEventListener('fullscreenchange', handler)
+  }, [])
+  const toggleFullscreen = useCallback(() => {
+    if (document.fullscreenElement) {
+      void document.exitFullscreen().catch(() => {})
+    } else {
+      void document.documentElement.requestFullscreen?.().catch(() => {})
+    }
+  }, [])
+
   const routeByMenuQuery = useCallback((query: string) => {
     const normalized = query.trim().toLowerCase()
     if (!normalized) return ''
@@ -640,9 +658,9 @@ export default function ExcelShell({
           )}
           {!isUltraCompact && (
             <div className="excel-titlebar__window-btns">
-              <button className="excel-titlebar__win-btn" aria-label="최소화">─</button>
-              <button className="excel-titlebar__win-btn" aria-label="최대화">□</button>
-              <button className="excel-titlebar__win-btn excel-titlebar__win-btn--close" aria-label="닫기">✕</button>
+              <button className="excel-titlebar__win-btn" aria-label="최소화" disabled title="브라우저 탭에서는 지원되지 않습니다">─</button>
+              <button className="excel-titlebar__win-btn" aria-label={isFullscreen ? '전체화면 종료' : '전체화면'} onClick={toggleFullscreen}>{isFullscreen ? '❐' : '□'}</button>
+              <button className="excel-titlebar__win-btn excel-titlebar__win-btn--close" aria-label="닫기" disabled title="브라우저 탭에서는 지원되지 않습니다">✕</button>
             </div>
           )}
         </div>
