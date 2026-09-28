@@ -73,6 +73,8 @@ import {
 import { fetchLatestScoresByCodes } from "./scoreSourceService";
 import type { ScoreSnapshotResult } from "./scoreSourceService";
 import { getUserInvestmentPrefs, type InvestmentPrefs } from "./userService";
+import { fetchBuyExclusions } from "./buyExclusionFilter";
+import { fetchCashSweepHolding, isCashSweepCode } from "./cashSweepBalance";
 
 export { describeWeeklyReportFailure } from "./weeklyReportErrors";
 
@@ -539,8 +541,17 @@ async function buildPullbackWeeklyReportData(
     }
   }
 
-  const aggregated = [...grouped.values()];
-  const availableCash = Math.max(0, toNum(prefs.virtual_cash ?? prefs.virtual_seed_capital ?? prefs.capital_krw));
+  // 자동매매 신규 매수와 같은 제외 기준 — 리포트가 봇이 사지 않을 종목을 권하지 않도록
+  // (ETF·ETN, 최근 5일 외국인+기관 강한 순매도, 최근 5일 악재 공시)
+  const buyExclusions = await fetchBuyExclusions(
+    supabase,
+    [...grouped.values()].map((item) => ({ code: item.code, name: item.name }))
+  );
+  const aggregated = [...grouped.values()].filter((item) => !buyExclusions.codes.has(item.code));
+
+  // 현금 스윕(CD금리 ETF)은 매수 시 자동매매가 팔아 쓰는 현금이라 가용현금에 더한다
+  const sweep = await fetchCashSweepHolding(supabase, chatId).catch(() => ({ value: 0, codes: new Set<string>() }));
+  const availableCash = Math.max(0, toNum(prefs.virtual_cash ?? prefs.virtual_seed_capital ?? prefs.capital_krw)) + sweep.value;
   const seedCapital = Math.max(0, toNum(prefs.virtual_seed_capital ?? prefs.capital_krw ?? availableCash));
   const maxPositions = Math.max(1, Math.floor(prefs.virtual_target_positions ?? resolveDefaultTargetPositions(riskProfile)));
   const slotsLeft = Math.max(1, Math.min(3, maxPositions - currentHoldingCount));
@@ -694,7 +705,10 @@ async function buildPullbackWeeklyReportData(
     meta: {
       rangeLabel: recentDates.length > 1 ? `${recentDates[recentDates.length - 1]} ~ ${recentDates[0]}` : recentDates[0],
       riskProfileLabel: riskProfileLabel(riskProfile),
-      availableCashLabel: availableCash > 0 ? `${availableCash.toLocaleString("ko-KR")}원` : "미설정",
+      availableCashLabel:
+        availableCash > 0
+          ? `${availableCash.toLocaleString("ko-KR")}원${sweep.value > 0 ? ` (CD금리 ETF ${sweep.value.toLocaleString("ko-KR")}원 포함)` : ""}`
+          : "미설정",
       seedCapitalLabel: seedCapital > 0 ? `${seedCapital.toLocaleString("ko-KR")}원` : "미설정",
       holdingCount: currentHoldingCount,
     },
@@ -885,14 +899,15 @@ export async function createWeeklyReportPdf(
       runReportStep("watchlist_query", async () => {
         const { data, error } = await supabase
           .from("virtual_positions")
-          .select("buy_price, quantity")
+          .select("code, buy_price, quantity")
           .eq("chat_id", chatId);
 
         if (error) {
           throw new WeeklyReportError("watchlist_query", `watchlist 조회 실패: ${error.message}`, error);
         }
 
-        return ((data ?? []) as Array<{ buy_price: number | null; quantity: number | null }>).filter((row) => {
+        return ((data ?? []) as Array<{ code: string; buy_price: number | null; quantity: number | null }>).filter((row) => {
+          if (isCashSweepCode(row.code)) return false; // 현금 스윕 ETF는 보유 종목이 아니라 현금
           const buyPrice = toNum(row.buy_price);
           const quantity = Math.max(0, Math.floor(toNum(row.quantity)));
           return buyPrice > 0 && quantity > 0;

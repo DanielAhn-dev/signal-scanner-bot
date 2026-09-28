@@ -10,6 +10,8 @@ import {
   type RankedCandidate,
 } from "../../services/virtualAutoTradeSelection";
 import { calculateAutoTradeBuySizing } from "../../services/virtualAutoTradeSizing";
+import { fetchBuyExclusions } from "../../services/buyExclusionFilter";
+import { fetchCashSweepHolding, isCashSweepCode } from "../../services/cashSweepBalance";
 import {
   resolveMirrorScale,
   scaleMirrorQuantity,
@@ -461,6 +463,8 @@ export async function handlePreMarketPlanCommand(
   const heldCodes = new Set(
     ((holdingsData ?? []) as Array<{ code: string; status?: string | null }>)
       .filter((row) => (row.status ?? "holding") !== "closed")
+      // 현금 스윕 ETF는 보유 종목이 아니라 현금 — 슬롯을 차지하지 않는다
+      .filter((row) => !isCashSweepCode(row.code))
       .map((row) => String(row.code))
   );
   const activeCount = heldCodes.size;
@@ -473,7 +477,9 @@ export async function handlePreMarketPlanCommand(
   });
 
   const seedCapital = Math.max(0, toNumber(prefs.virtual_seed_capital, toNumber(prefs.capital_krw, 0)));
-  const availableCash = Math.max(0, toNumber(prefs.virtual_cash, seedCapital));
+  // 현금 스윕(CD금리 ETF)은 매수 시 자동매매가 팔아 쓰는 현금이라 가용현금에 더한다
+  const sweep = await fetchCashSweepHolding(supabase, tgId).catch(() => ({ value: 0, codes: new Set<string>() }));
+  const availableCash = Math.max(0, toNumber(prefs.virtual_cash, seedCapital)) + sweep.value;
   const marketOverview = await fetchAllMarketData().catch(() => null);
   const marketPolicy = detectAutoTradeMarketPolicy({ overview: marketOverview });
   const recentMetrics = await getRecentPerformanceMetrics(tgId, 14);
@@ -525,11 +531,16 @@ export async function handlePreMarketPlanCommand(
     35,
     90
   );
+  // 자동매매 신규 매수와 같은 제외 기준 (ETF·ETN, 수급이탈, 공시악재)
+  const buyExclusions = await fetchBuyExclusions(
+    supabase,
+    rows.map((row: any) => ({ code: String(row.code), name: row.name ?? null }))
+  ).catch(() => ({ codes: new Set<string>(), reasons: new Map<string, string>() }));
   const selection = pickAutoTradeCandidates({
     rows,
     preferredMinBuyScore: adjustedMinBuyScore,
     limit: Math.max(12, buyConstraint.buySlots * 4),
-    heldCodes,
+    heldCodes: new Set<string>([...heldCodes, ...buyExclusions.codes]),
     marketPolicy,
   });
 

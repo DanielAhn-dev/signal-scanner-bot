@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { fetchBuyExclusions } from "./buyExclusionFilter";
 import { applyAdaptiveOverlayToPullbackCandidate, getAdaptiveStrategyInsights, type AdaptiveStrategyInsights } from "./adaptiveStrategyService";
 import type { SectorScore } from "../lib/sectors";
 import { getUserInvestmentPrefs } from "./userService";
@@ -1411,6 +1412,18 @@ export async function createDailyCandidatePlanningReportResult(
   let visiblePullbackItems = visiblePullbackItemsByOverlap.filter((item) => !blockedByNews.has(item.code));
   let visibleKospiPicks = visibleKospiPicksByOverlap.filter((item) => !blockedByNews.has(item.code));
   let visibleKosdaqPicks = visibleKosdaqPicksByOverlap.filter((item) => !blockedByNews.has(item.code));
+
+  // 자동매매 신규 매수와 같은 제외 기준 (ETF·ETN, 수급이탈, 공시악재) — 봇이 사지 않을 종목은 권하지 않는다
+  const buyExclusions = await fetchBuyExclusions(
+    supabase,
+    [...visiblePullbackItems, ...visibleKospiPicks, ...visibleKosdaqPicks].map((item: any) => ({
+      code: String(item.code),
+      name: item.name ?? item.stock?.name ?? null,
+    }))
+  ).catch(() => ({ codes: new Set<string>(), reasons: new Map<string, string>() }));
+  visiblePullbackItems = visiblePullbackItems.filter((item) => !buyExclusions.codes.has(item.code));
+  visibleKospiPicks = visibleKospiPicks.filter((item) => !buyExclusions.codes.has(item.code));
+  visibleKosdaqPicks = visibleKosdaqPicks.filter((item) => !buyExclusions.codes.has(item.code));
 
   let hiddenByHoldingCount = 0
   if (options?.excludeHoldingCodes && options?.chatId) {
