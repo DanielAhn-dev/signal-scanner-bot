@@ -3748,7 +3748,7 @@ async function runMondayBuyForUser(payload: {
   });
 
   summary.notes.push(
-    `페이싱: 월수익 ${pacingMetrics.monthReturnPct.toFixed(2)}% / 목표 ${pacingMetrics.targetMonthlyPct.toFixed(2)}% (${pacingMetrics.state})`
+    `페이싱: 월수익 ${pacingMetrics.monthReturnPct.toFixed(2)}% / 목표 ${pacingMetrics.targetMonthlyPct.toFixed(2)}% (${pacingMetrics.state}, 참고용 — 매수 기준에 영향 없음)`
   );
 
   const activeCount = heldCodes.size;
@@ -3827,9 +3827,9 @@ async function runMondayBuyForUser(payload: {
     );
   }
 
-  if (rawRemainSlots <= 0 && pacingMetrics.relaxLevel >= 2 && activeCount <= 0) {
-    rawRemainSlots = 1;
-  }
+  // 페이싱(월 목표 대비 진행)은 참고 기록만 한다. 예전엔 목표에 뒤처지면 매수 기준점수를 2~4점 낮추고
+  // 빈 슬롯을 억지로 열었는데, "목표를 쫓아 기준을 낮추는" 동작이라 근거가 없고(점수는 수익을 예측하지 못함),
+  // 확정 수익으로 월 0.83%를 채우기 어려워 사실상 항상 켜져 있었다. 목표 진행은 goalTracker가 보여 준다.
 
   const mondaySellPerf = await getRecentAutoTradeSellPerformance({
     supabase: payload.supabase,
@@ -3868,7 +3868,7 @@ async function runMondayBuyForUser(payload: {
     requestedSlots: persistedGuardForMonday.requestedSlots,
     baseMinBuyScore: persistedGuardForMonday.baseMinBuyScore,
     activeCount,
-    pacingRelaxLevel: pacingMetrics.relaxLevel,
+    pacingRelaxLevel: 0,
     maxPositions,
   });
 
@@ -3879,9 +3879,6 @@ async function runMondayBuyForUser(payload: {
     summary.notes.push(persistedGuardForMonday.note);
   }
 
-  if (pacingMetrics.relaxLevel > 0) {
-    summary.notes.push(`페이싱 보정: 기준점수 완화 레벨 ${pacingMetrics.relaxLevel}`);
-  }
 
   const marketRegimeGuard = applyMarketRegimeBuyGuard({
     baseMinBuyScore: buyConstraint.minBuyScore,
@@ -4126,7 +4123,7 @@ async function runMondayBuyForUser(payload: {
         pullbackCandidatesUsed: candidateSelection.pullbackCandidatesUsed ?? 0,
         aggressiveCandidatesUsed: candidateSelection.aggressiveCandidatesUsed ?? 0,
         target_pacing_state: pacingMetrics.state,
-        fallback_relax_level: pacingMetrics.relaxLevel,
+        fallback_relax_level: 0, // 페이싱 완화는 쓰지 않는다
       },
     });
     return summary;
