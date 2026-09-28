@@ -101,10 +101,12 @@ export function isInContaminationWindow(dateKey: string, scope: "prices" | "trad
 }
 
 /**
- * 적응형 성과게이트/승률 통계는 마지막 거래 오염 구간 다음날(KST 0시) 이후 데이터만 사용한다.
- * 그 이전 매매는 전략이 아니라 데이터/가드 버그를 측정한 것이다.
+ * 적응형 성과게이트/승률 통계는 이 시각 이후 매매만 사용한다.
+ *   - ~2026-09-22: 데이터/가드 버그 오염 구간 (전략이 아니라 버그를 측정한 매매)
+ *   - 2026-09-23~28: 규칙 확정 전 매매 (실적 관문·50일선 지수 스윕 도입 전)
+ * 2026-09-29부터 현재 규칙(실적 관문, 50일선 매수 중단·지수 스윕, 검증된 매도 규칙)으로 쌓인 매매만 센다.
  */
-export const ADAPTIVE_STATS_EXCLUDE_BEFORE_ISO = "2026-09-23T00:00:00+09:00";
+export const ADAPTIVE_STATS_EXCLUDE_BEFORE_ISO = "2026-09-29T00:00:00+09:00";
 
 /** since와 오염기간 컷오프 중 더 늦은(=더 짧은 조회 구간) 시각을 반환한다. */
 export function resolveStatsSinceIso(rawSinceIso: string): string {
