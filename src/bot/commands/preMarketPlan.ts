@@ -1,4 +1,5 @@
 import { createClient } from "@supabase/supabase-js";
+import { withIndexTrendRatios } from "../../services/indexTrendRatios";
 import type { ChatContext } from "../router";
 import { PORTFOLIO_TABLES } from "../../db/portfolioSchema";
 import { getUserInvestmentPrefs } from "../../services/userService";
@@ -480,7 +481,7 @@ export async function handlePreMarketPlanCommand(
   // 현금 스윕(CD금리 ETF)은 매수 시 자동매매가 팔아 쓰는 현금이라 가용현금에 더한다
   const sweep = await fetchCashSweepHolding(supabase, tgId).catch(() => ({ value: 0, codes: new Set<string>() }));
   const availableCash = Math.max(0, toNumber(prefs.virtual_cash, seedCapital)) + sweep.value;
-  const marketOverview = await fetchAllMarketData().catch(() => null);
+  const marketOverview = await withIndexTrendRatios(supabase, await fetchAllMarketData().catch(() => null));
   const marketPolicy = detectAutoTradeMarketPolicy({ overview: marketOverview });
   const recentMetrics = await getRecentPerformanceMetrics(tgId, 14);
   const adaptiveProfile = derivePreMarketAdaptiveProfile({
@@ -496,6 +497,22 @@ export async function handlePreMarketPlanCommand(
     seedCapital,
     minCashReservePct: marketPolicy.minCashReservePct,
   });
+
+  // 자동매매와 같은 기준: 대형주 방어 모드나 코스피 50일선 하방이면 봇이 신규·추가 매수를 하지 않는다.
+  if (marketPolicy.mode === "large-cap-defense" || marketPolicy.blockNewBuys) {
+    await tgSend("sendMessage", {
+      chat_id: ctx.chatId,
+      text: [
+        "<b>장전 주문 플랜</b>",
+        LINE,
+        "오늘은 신규 주문을 만들지 않았습니다 — 자동매매도 신규·추가 매수를 쉽니다.",
+        `사유: ${esc(marketPolicy.reason)}`,
+        "코스피가 50일선 아래인 구간은 과거 30년간 현금보다 성과가 낮았습니다. 보유 종목 관리만 하세요.",
+      ].join("\n"),
+      parse_mode: "HTML",
+    });
+    return;
+  }
 
   if (buyConstraint.buySlots <= 0) {
     await tgSend("sendMessage", {

@@ -1,5 +1,6 @@
 import type { ChatContext } from "../router";
 import { createClient } from "@supabase/supabase-js";
+import { withIndexTrendRatios } from "../../services/indexTrendRatios";
 import { fetchRealtimePriceBatch } from "../../utils/fetchRealtimePrice";
 import { fetchAllMarketData, type MarketOverview } from "../../utils/fetchMarketData";
 import { fmtKRW } from "../../lib/normalize";
@@ -633,7 +634,7 @@ async function runMarketPickCommand(
 ): Promise<void> {
   const prefs = await getUserInvestmentPrefs(ctx.from?.id ?? ctx.chatId);
   const riskProfile = (prefs.risk_profile ?? "safe") as RiskProfile;
-  const marketOverview = await fetchAllMarketData().catch(() => null);
+  const marketOverview = await withIndexTrendRatios(supabase, await fetchAllMarketData().catch(() => null));
   const regime = detectRegime(marketOverview);
   const marketPolicy = detectAutoTradeMarketPolicy({ overview: marketOverview });
 

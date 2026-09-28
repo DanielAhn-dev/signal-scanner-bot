@@ -9,6 +9,9 @@ import { createWeeklyReportPdf } from "../src/services/weeklyReportService";
 import { buildOrderSheetLines, formatOrderSheetText } from "../src/services/weekendOrderSheet";
 import { sendDocument, tg } from "../src/telegram/api";
 import { isKrxTradingDate, previousKrxTradingDate, toKstDateKey } from "../src/lib/krxCalendar";
+import { fetchAllMarketData } from "../src/utils/fetchMarketData";
+import { withIndexTrendRatios } from "../src/services/indexTrendRatios";
+import { detectAutoTradeMarketPolicy } from "../src/services/virtualAutoTradeSelection";
 
 /** 전략 경쟁 측정이 다음 주에 체결을 재현하도록 주문표를 Storage에 남긴다 (market_snapshot.py와 같은 버킷) */
 const SHEET_BUCKET = "market-snapshots";
@@ -30,10 +33,21 @@ async function main() {
   const asof = isKrxTradingDate(today) ? today : previousKrxTradingDate(today);
   let saved = false;
 
+  // 자동매매와 같은 시장 정책: 매수를 쉬는 구간이면 주문표 맨 위에 알린다.
+  const overview = await withIndexTrendRatios(supabase, await fetchAllMarketData().catch(() => null));
+  const policy = detectAutoTradeMarketPolicy({ overview });
+  const buyPaused = policy.mode === "large-cap-defense" || policy.blockNewBuys === true;
+  const pauseNotice = buyPaused
+    ? `⚠️ ${policy.reason}
+자동매매는 지금 신규·추가 매수를 쉽니다. 월요일에 코스피가 50일선 위로 돌아오기 전에는 아래 주문을 넣지 마세요.
+
+`
+    : "";
+
   for (const chatId of chatIds) {
     const report = await createWeeklyReportPdf(supabase, { chatId, topic: "pullback" });
     const lines = buildOrderSheetLines((report.pullbackCandidates ?? []) as any[]);
-    const text = formatOrderSheetText({
+    const text = pauseNotice + formatOrderSheetText({
       dateLabel: report.pullbackMeta?.rangeLabel ?? "-",
       cashLabel: report.pullbackMeta?.availableCashLabel ?? "-",
       lines,

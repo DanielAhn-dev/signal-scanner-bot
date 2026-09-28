@@ -16,6 +16,7 @@ import { buildStrategyMemo } from "../lib/strategyMemo";
 import { parseStrategyMemo } from "../lib/strategyMemo";
 import { appendVirtualDecisionLog } from "./decisionLogService";
 import { calculateAutoTradeBuySizing, resolveConvictionScale } from "./virtualAutoTradeSizing";
+import { attachIndexTrendRatios, fetchIndexSma200Ratios } from "./indexTrendRatios";
 import {
   getAdaptiveConvictionRule,
   resolveAdaptiveAdjustment,
@@ -1197,57 +1198,6 @@ async function fetchExecutionPriceMap(
  * 2026-09 이전엔 프록시 일봉이 23행뿐이라 항상 null이었고 200일선 하락장 게이트가 한 번도 작동하지
  * 않았다(경고도 없음). 이력이 모자라면 이제 경고를 남긴다.
  */
-async function fetchIndexSma200Ratios(
-  supabase: SupabaseClientAny
-): Promise<{ kospi: number | null; kosdaq: number | null; kospiSma50: number | null }> {
-  const KOSPI_PROXY = "069500";  // KODEX 200
-  const KOSDAQ_PROXY = "229200"; // KODEX KOSDAQ 150
-  try {
-    const [kospiRes, kosdaqRes] = await Promise.all([
-      supabase
-        .from("stock_daily")
-        .select("close")
-        .eq("ticker", KOSPI_PROXY)
-        .order("date", { ascending: false })
-        .limit(201),
-      supabase
-        .from("stock_daily")
-        .select("close")
-        .eq("ticker", KOSDAQ_PROXY)
-        .order("date", { ascending: false })
-        .limit(201),
-    ]);
-    const calcRatio = (rows: { close: number }[] | null): number | null => {
-      if (!rows || rows.length < 201) return null;
-      const closes = rows.map((r) => r.close).filter(Number.isFinite);
-      if (closes.length < 201) return null;
-      const current = closes[0];
-      const sma200 = closes.slice(1, 201).reduce((s, v) => s + v, 0) / 200;
-      if (sma200 <= 0) return null;
-      return current / sma200;
-    };
-    const calcSma50Ratio = (rows: { close: number }[] | null): number | null => {
-      const closes = (rows ?? []).map((r) => Number(r.close)).filter((v) => Number.isFinite(v) && v > 0);
-      if (closes.length < 51) return null;
-      const sma50 = closes.slice(1, 51).reduce((s, v) => s + v, 0) / 50;
-      return sma50 > 0 ? closes[0] / sma50 : null;
-    };
-    for (const [label, res] of [["069500", kospiRes], ["229200", kosdaqRes]] as const) {
-      const count = res.data?.length ?? 0;
-      if (count < 201) {
-        console.warn(`[autoTrade] 지수 프록시 ${label} 일봉 ${count}행(<201) — 200일선 레짐 게이트 비활성`);
-      }
-    }
-    return {
-      kospi: calcRatio(kospiRes.data),
-      kosdaq: calcRatio(kosdaqRes.data),
-      kospiSma50: calcSma50Ratio(kospiRes.data),
-    };
-  } catch {
-    return { kospi: null, kosdaq: null, kospiSma50: null };
-  }
-}
-
 /**
  * 임박한 critical 경제이벤트(FOMC 금리결정/CPI 등) 중 가장 가까운 것을 찾는다.
  * 이벤트 리스크 가드(evaluateEventRiskGuard)의 입력으로만 쓰이며, 실패해도 자동매매 흐름을 막지 않는다.
@@ -1329,11 +1279,7 @@ async function fetchMarketOverviewWithBudget(input: {
       fetchedAt: new Date().toISOString(),
     };
   }
-  if (overview && sma200Ratios) {
-    (overview as Record<string, unknown>).kospiSma200Ratio = sma200Ratios.kospi;
-    (overview as Record<string, unknown>).kosdaqSma200Ratio = sma200Ratios.kosdaq;
-    (overview as Record<string, unknown>).kospiSma50Ratio = sma200Ratios.kospiSma50;
-  }
+  if (overview && sma200Ratios) attachIndexTrendRatios(overview, sma200Ratios);
   return { overview, skippedByBudget: false };
 }
 
@@ -3954,11 +3900,11 @@ async function runMondayBuyForUser(payload: {
 
   // 대형주 방어 모드: 하락장에서 현금 보유가 전략이 되도록 신규 매수를 완전 차단하고
   // 기존 포지션 관리(손절/익절/리밸런싱)만 수행한다.
-  const regimeDefenseBlock = marketPolicy.mode === "large-cap-defense";
+  const regimeDefenseBlock = marketPolicy.mode === "large-cap-defense" || marketPolicy.blockNewBuys === true;
   const remainSlots = regimeDefenseBlock ? 0 : buyConstraint.buySlots;
 
   if (regimeDefenseBlock) {
-    summary.notes.push(`[레짐게이트] 대형주 방어 모드: 신규 매수 중단 (${marketPolicy.reason}) · 기존 포지션 관리만`);
+    summary.notes.push(`[레짐게이트] ${marketPolicy.mode === "large-cap-defense" ? "대형주 방어 모드" : "코스피 50일선 하방"}: 신규 매수 중단 (${marketPolicy.reason}) · 기존 포지션 관리만`);
   } else if (buyConstraint.note) {
     summary.notes.push(buyConstraint.note);
   }
@@ -6272,9 +6218,9 @@ async function runDailyReviewForUser(payload: {
     }
 
     // 대형주 방어 모드: 하락장에서 현금 보유가 전략이 되도록 신규 매수뿐 아니라 추가매수도 차단한다.
-    const regimeDefenseBlockDaily = marketPolicy.mode === "large-cap-defense";
+    const regimeDefenseBlockDaily = marketPolicy.mode === "large-cap-defense" || marketPolicy.blockNewBuys === true;
     if (regimeDefenseBlockDaily) {
-      summary.notes.push(`[레짐게이트] 대형주 방어 모드: 추가매수 중단 (${marketPolicy.reason})`);
+      summary.notes.push(`[레짐게이트] ${marketPolicy.mode === "large-cap-defense" ? "대형주 방어 모드" : "코스피 50일선 하방"}: 추가매수 중단 (${marketPolicy.reason})`);
     }
 
     // 이벤트 리스크 가드(옵트인): critical 경제이벤트 임박 시 신규/추가 매수를 잠시 멈춘다.

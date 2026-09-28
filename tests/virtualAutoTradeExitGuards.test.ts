@@ -104,12 +104,14 @@ test("isInContaminationWindow: scope별 오염 구간 판정", () => {
   assert.equal(isInContaminationWindow("2026-09-23", "trades"), false);
 });
 
-test("detectAutoTradeMarketPolicy: 코스피 50일선 하방이면 신규 매수 규모 50%", () => {
+test("detectAutoTradeMarketPolicy: 코스피 50일선 하방이면 신규·추가 매수 중단", () => {
   const below = detectAutoTradeMarketPolicy({ overview: { kospiSma50Ratio: 0.97 } });
-  assert.equal(below.buySizeScale, 0.5);
+  assert.equal(below.blockNewBuys, true);
+  assert.equal(below.buySizeScale, 1);
   assert.match(below.reason, /50일선 하방/);
   const above = detectAutoTradeMarketPolicy({ overview: { kospiSma50Ratio: 1.05 } });
   assert.equal(above.buySizeScale, 1);
+  assert.notEqual(above.blockNewBuys, true);
   // 방어 모드는 이미 신규매수를 막으므로 배수를 덧붙이지 않는다
   const defense = detectAutoTradeMarketPolicy({
     overview: { kospiSma200Ratio: 0.9, kosdaqSma200Ratio: 0.9, kospiSma50Ratio: 0.9 },

@@ -12,6 +12,7 @@ import type { MarketOverview } from "../utils/fetchMarketData";
 import { fetchAllMarketData, fetchReportMarketData } from "../utils/fetchMarketData";
 import type { AutoTradeMarketPolicy } from "./virtualAutoTradeSelection";
 import { chunkValues, selectPaged } from "./supabasePaging";
+import { withIndexTrendRatios } from "./indexTrendRatios";
 import {
   describeForecastDistribution,
   entryGradeBucketKey,
@@ -1386,7 +1387,7 @@ export async function createDailyCandidatePlanningReportResult(
 ): Promise<DailyCandidatePlanningReportResult> {
   const riskProfile = options?.riskProfile ?? "safe";
   const mode = options?.mode ?? "full";
-  const marketOverview = await fetchReportMarketData().catch(() => null);
+  const marketOverview = await withIndexTrendRatios(supabase, await fetchReportMarketData().catch(() => null));
   const marketPolicy = detectAutoTradeMarketPolicy({ overview: marketOverview });
   const planningConstraints = await resolvePlanningConstraints(supabase, {
     chatId: options?.chatId,
@@ -1538,6 +1539,9 @@ export async function createDailyCandidatePlanningReportResult(
   const forecastLines = forecasts.length
     ? [
         "",
+        ...(marketPolicy.mode === "large-cap-defense" || marketPolicy.blockNewBuys
+          ? [`⚠️ ${marketPolicy.reason} — 자동매매는 지금 신규·추가 매수를 쉽니다. 아래 후보는 참고용입니다.`]
+          : []),
         "<b>과거 분포 (예측 아님)</b>",
         "과거 10년 비슷한 조건 종목들의 20거래일 뒤 수익 분포입니다. 점수·등급은 이 분포를 의미 있게 바꾸지 못했습니다.",
         ...forecasts.map((item, index) =>

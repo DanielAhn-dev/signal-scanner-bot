@@ -451,10 +451,11 @@ export type AutoTradeMarketPolicy = {
   minLiquidity: number;
   minMarketCap: number;
   /**
-   * 신규/추가 매수 규모 배수 (기본 1). 코스피가 50일선 아래면 0.5.
-   * 사이징의 riskBudgetScale에 곱해진다.
+   * 신규/추가 매수 규모 배수 (기본 1). 사이징의 riskBudgetScale에 곱해진다.
    */
   buySizeScale?: number;
+  /** true면 신규·추가 매수를 하지 않는다(기존 포지션 관리만). 코스피 50일선 하방일 때. */
+  blockNewBuys?: boolean;
 };
 
 type MarketOverviewLike = {
@@ -472,8 +473,6 @@ type MarketOverviewLike = {
   kospiSma50Ratio?: number | null;
 };
 
-/** 코스피 50일선 하방일 때 신규 매수 규모 배수 */
-export const BELOW_SMA50_BUY_SIZE_SCALE = 0.5;
 
 /**
  * 시장 레짐 정책. 기본 정책(detectBaseMarketPolicy)에 단기 추세(코스피 50일선) 사이징 배수를 덧붙인다.
@@ -481,7 +480,15 @@ export const BELOW_SMA50_BUY_SIZE_SCALE = 0.5;
  * 50일선 규칙 근거 (scripts/backtest_entry_signals.ts, 2025-10~2026-09 점수 이력 1.9천건, 동일가중 지수 기준):
  * 학습/검증 분할을 4월·6월 두 번 바꿔도 검증 구간에서 "지수 50일선 위" 진입이 "아래" 진입보다
  * 평균 2~4%p 좋았다(+1.58% vs -2.38%, -2.01% vs -3.94%). 개별 팩터 조합은 분할마다 결론이 뒤집혔지만
- * 시장 추세만 일관됐다. 매수를 끊지는 않고 규모만 절반으로 줄인다.
+ * 시장 추세만 일관됐다.
+ *
+ * 2026-09-28 KOSPI 30년 검증(1996-12~2026-09, 전환당 비용 0.05%, 현금 연 3%):
+ *   매수 후 보유            연 8.2%  최대낙폭 -64.7%
+ *   50일선 아래 50%(예전)    연 10.9% 최대낙폭 -44.2%
+ *   50일선 아래 0%           연 12.4% 최대낙폭 -34.8%
+ * 97-06·07-16·17-26 세 구간 모두 0%가 낙폭이 가장 작았고 수익은 같거나 높았다(07-16만 -0.4%p).
+ * 그래서 50일선 아래에서는 신규·추가 매수를 하지 않는다. 기존 포지션을 파는 규칙은 아니다
+ * (개별주 왕복 비용 0.25%를 넣으면 보유분까지 매매하는 효과는 ±2% 완충대를 둬야 겨우 남는다).
  */
 export function detectAutoTradeMarketPolicy(input?: {
   overview?: MarketOverviewLike | null;
@@ -491,8 +498,9 @@ export function detectAutoTradeMarketPolicy(input?: {
   if (kospiSma50Ratio != null && kospiSma50Ratio < 1 && policy.mode !== "large-cap-defense") {
     return {
       ...policy,
-      reason: `${policy.reason} · 코스피 50일선 하방(신규 매수 규모 ${Math.round(BELOW_SMA50_BUY_SIZE_SCALE * 100)}%)`,
-      buySizeScale: BELOW_SMA50_BUY_SIZE_SCALE,
+      reason: `${policy.reason} · 코스피 50일선 하방(신규·추가 매수 중단)`,
+      buySizeScale: 1,
+      blockNewBuys: true,
     };
   }
   return { ...policy, buySizeScale: 1 };
