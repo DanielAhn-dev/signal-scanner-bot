@@ -95,16 +95,16 @@ jobs:
           python scripts/daily_batch.py $ARGS
           echo "🏁 Finished: $(date)"
 
-      # 전략 경쟁 측정(전향 검증): 금요일 배치 뒤 운영 시작일(2026-09-28) 이후 전략별 성과를 계산해 텔레그램으로 보낸다.
-      # 결과 저장 없이 쌓인 가격·점수로 매번 다시 계산한다 (scripts/strategy_forward_test.ts).
-      - name: Strategy forward test (Fridays)
+      # 전략 경쟁 측정(전향 검증): 매일 그날의 실적 관문 판정·봇 계좌 평가액을 저장하고(--record) 웹 결과를 갱신한다.
+      # 텔레그램 보고는 금요일 배치에서만 (scripts/strategy_forward_test.ts).
+      - name: Strategy forward test
         if: always()
         continue-on-error: true
         run: |
           if [ "$(TZ=Asia/Seoul date +%u)" = "5" ] || [ "$(TZ=Asia/Seoul date +%u)" = "6" ]; then
             pnpm exec tsx scripts/strategy_forward_test.ts --telegram
           else
-            echo "금요일 배치에서만 실행"
+            pnpm exec tsx scripts/strategy_forward_test.ts --record
           fi
 
       # 종목 뉴스 헤드라인 일일 보관 — 매매에 쓰지 않고 2~3개월 뒤 효과 검증용 (src/services/newsArchive.ts)

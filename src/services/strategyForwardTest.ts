@@ -6,7 +6,11 @@
  * 과거로 두면 백테스트다.
  *
  * 규칙: 주간 전략은 매주 첫 거래일 시가에 전 거래일 점수로 종목을 골라 다음 주 첫 거래일 시가까지 동일비중 보유.
- * 지수 코어는 전일 종가가 SMA100 위면 KODEX200, 아래면 CD금리. 주식 왕복비용 0.45%(편도 0.225%), ETF 편도 0.035%.
+ * 지수 코어는 전일 종가가 SMA50 위면 KODEX200, 아래면 CD금리. 주식 왕복비용 0.45%(편도 0.225%), ETF 편도 0.035%.
+ *
+ * 실적 관문 전략은 그날그날 저장한 판정(forward-test/gate/{날짜}.json)으로 다시 계산한다 — 분기 실적 테이블은
+ * 주간 ETL이 덮어쓰므로 과거 시점의 판정을 나중에 다시 만들 수 없다.
+ * 봇 실제 계좌는 매일 저장한 평가액(forward-test/bot-equity/{날짜}.json)으로 계산한다.
  */
 
 export type DailyBar = { date: string; open: number; close: number; volume: number; high?: number; low?: number };
@@ -20,7 +24,10 @@ export type StrategyName =
   | "score-top5+trend"
   | "score-top5+flow"
   | "momentum-top5"
-  | "order-sheet";
+  | "order-sheet"
+  | "gate-monthly"
+  | "gate-monthly+trend50"
+  | "bot-account";
 
 export type StrategyResult = {
   name: StrategyName;
@@ -39,7 +46,13 @@ export const STRATEGY_LABELS: Record<StrategyName, string> = {
   "score-top5+flow": "점수 상위5 + 수급이탈 제외",
   "momentum-top5": "모멘텀(60일) 상위5",
   "order-sheet": "금요일 주문표대로(1주 보유)",
+  "gate-monthly": "실적 관문 통과 전 종목 동일비중(월 교체)",
+  "gate-monthly+trend50": "실적 관문 통과 동일비중 + 50일선 아래 CD금리",
+  "bot-account": "봇 실제 계좌",
 };
+
+/** 비교 기준(벤치마크)과 현재 봇 — 승격 후보가 아니다 */
+export const NON_CANDIDATE_STRATEGIES: StrategyName[] = ["kodex200-hold", "cd-only", "bot-account"];
 
 const STOCK_SIDE_COST = 0.00225;
 const ETF_SIDE_COST = 0.00035;
@@ -48,6 +61,44 @@ const CD_ANNUAL = 0.028;
 export const INDEX_CORE_SMA_WINDOW = 50;
 /** 웹(전략 화면)이 읽는 최신 결과 위치 — Storage market-snapshots 버킷 */
 export const FORWARD_TEST_RESULT_PATH = "forward-test/latest.json";
+/** 날짜별 실적 관문 판정 스냅샷 폴더 */
+export const FORWARD_TEST_GATE_DIR = "forward-test/gate";
+/** 날짜별 봇 계좌 평가액 스냅샷 폴더 */
+export const FORWARD_TEST_BOT_EQUITY_DIR = "forward-test/bot-equity";
+
+export type GateSnapshot = { asof: string; pass: string[]; fail: string[] };
+export type BotEquitySnapshot = { date: string; seed: number; total: number };
+
+/** asof 이하 가장 최근 스냅샷. 없으면(측정 첫 주) 가장 이른 스냅샷 — 분기 실적은 며칠 사이 거의 안 바뀐다 */
+export function pickSnapshotOnOrBefore<T extends { asof: string }>(snapshots: T[], asof: string): T | null {
+  const sorted = [...snapshots].sort((a, b) => a.asof.localeCompare(b.asof));
+  let found: T | null = null;
+  for (const snap of sorted) if (snap.asof <= asof) found = snap;
+  return found ?? sorted[0] ?? null;
+}
+
+/**
+ * 봇 계좌 수익: 날짜별 평가액/시드 비율을 이어 붙인다. 시드가 바뀐 날(입출금·시드 재설정)은 그날 수익을 0으로 본다.
+ */
+export function simulateBotAccount(input: { points: BotEquitySnapshot[]; startDate: string }): StrategyResult | null {
+  const pts = input.points
+    .filter((p) => p.date >= input.startDate && p.seed > 0 && p.total > 0)
+    .sort((a, b) => a.date.localeCompare(b.date));
+  if (pts.length < 2) return null;
+  const equity = [1];
+  for (let i = 1; i < pts.length; i += 1) {
+    const sameSeed = pts[i].seed === pts[i - 1].seed;
+    const r = sameSeed ? pts[i].total / pts[i - 1].total - 1 : 0;
+    equity.push(equity[equity.length - 1] * (1 + r));
+  }
+  return {
+    name: "bot-account",
+    label: STRATEGY_LABELS["bot-account"],
+    totalReturnPct: (equity[equity.length - 1] - 1) * 100,
+    maxDrawdownPct: maxDrawdown(equity),
+    periods: equity.length - 1,
+  };
+}
 
 export type ForwardTestSnapshot = {
   startDate: string;
@@ -114,8 +165,10 @@ export function simulateWeeklyStrategy(input: {
   pick: (rebalanceDate: string) => string[]; // 그날 시가에 살 종목 (빈 배열이면 CD금리)
   barsByCode: Map<string, Map<string, DailyBar>>;
   topN?: number;
+  /** 교체 주기 — 빈 기간의 CD금리 계산용 (주간 52, 월간 12) */
+  periodsPerYear?: number;
 }): StrategyResult {
-  const cdWeekly = (1 + CD_ANNUAL) ** (1 / 52) - 1;
+  const cdWeekly = (1 + CD_ANNUAL) ** (1 / (input.periodsPerYear ?? 52)) - 1;
   const equity = [1];
   let prev = new Set<string>();
   for (let w = 0; w + 1 < input.rebalanceDates.length; w += 1) {
@@ -223,6 +276,19 @@ export function simulateOrderSheetStrategy(input: {
     maxDrawdownPct: maxDrawdown(equity),
     periods: equity.length - 1,
   };
+}
+
+/** 각 달의 첫 거래일 */
+export function firstTradingDaysOfMonths(dates: string[]): string[] {
+  const out: string[] = [];
+  let lastMonth = "";
+  for (const d of [...dates].sort()) {
+    if (d.slice(0, 7) !== lastMonth) {
+      out.push(d);
+      lastMonth = d.slice(0, 7);
+    }
+  }
+  return out;
 }
 
 /** 각 주의 첫 거래일 */

@@ -16,8 +16,8 @@ type ForwardTestSnapshot = {
   results: StrategyResult[]
 }
 
-// 비교 기준 — 봇 후보 전략이 이 둘보다 나아야 쓸 이유가 있다
-const BENCHMARKS = new Set(['kodex200-hold', 'cd-only'])
+// 비교 기준 — 후보 전략이 현재 봇·KODEX 200·CD금리보다 모두 나아야 바꿀 이유가 있다
+const BENCHMARKS = new Set(['kodex200-hold', 'cd-only', 'bot-account'])
 
 const pct = (v: number) => `${v >= 0 ? '+' : ''}${v.toFixed(2)}%`
 
@@ -63,9 +63,11 @@ export default function ForwardTestPanel() {
 
   const kodex = snap.results.find((r) => r.name === 'kodex200-hold')
   const cd = snap.results.find((r) => r.name === 'cd-only')
+  const bot = snap.results.find((r) => r.name === 'bot-account')
   const verdict = (r: StrategyResult) => {
     if (BENCHMARKS.has(r.name)) return '기준'
     const parts: string[] = []
+    if (bot) parts.push(r.totalReturnPct >= bot.totalReturnPct ? '봇 앞섬' : '봇 못 미침')
     if (kodex) parts.push(r.totalReturnPct >= kodex.totalReturnPct ? 'KODEX 200 앞섬' : 'KODEX 200 못 미침')
     if (cd) parts.push(r.totalReturnPct >= cd.totalReturnPct ? 'CD 앞섬' : 'CD 못 미침')
     return parts.join(' · ')

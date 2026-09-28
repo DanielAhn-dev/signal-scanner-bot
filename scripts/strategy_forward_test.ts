@@ -3,14 +3,24 @@
  *
  *   pnpm ops:forward-test                          # 운영 시작일(2026-09-28) 이후 전향 검증
  *   pnpm ops:forward-test -- --start=2025-11-03    # 과거 기준일(백테스트)
- *   pnpm ops:forward-test -- --telegram            # 결과를 TELEGRAM_ADMIN_CHAT_ID로 전송
+ *   pnpm ops:forward-test -- --record              # 오늘 실적 관문 판정·봇 평가액 저장 + 웹 결과 갱신 (매일)
+ *   pnpm ops:forward-test -- --telegram            # --record + 결과를 TELEGRAM_ADMIN_CHAT_ID로 전송 (금요일)
  */
 import "dotenv/config";
 import { createClient } from "@supabase/supabase-js";
 import { isExchangeTradedProduct } from "../src/lib/securitiesTax";
 import { computeFlowScore, pickHeavyNetSelling } from "../src/services/investorFlowFilter";
+import { fetchFundamentalGateResults } from "../src/services/fundamentalQualityGate";
 import {
   firstTradingDaysOfWeeks,
+  firstTradingDaysOfMonths,
+  pickSnapshotOnOrBefore,
+  simulateBotAccount,
+  FORWARD_TEST_GATE_DIR,
+  FORWARD_TEST_BOT_EQUITY_DIR,
+  INDEX_CORE_SMA_WINDOW,
+  type GateSnapshot,
+  type BotEquitySnapshot,
   formatForwardTestReport,
   simulateIndexStrategies,
   simulateOrderSheetStrategy,
@@ -26,6 +36,7 @@ const arg = (name: string, fallback: string) =>
   process.argv.find((x) => x.startsWith(`--${name}=`))?.split("=")[1] ?? fallback;
 const START = arg("start", "2026-09-28");
 const SEND_TELEGRAM = process.argv.includes("--telegram");
+const RECORD = SEND_TELEGRAM || process.argv.includes("--record");
 
 const supabase = createClient(process.env.SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!, {
   auth: { persistSession: false },
@@ -61,6 +72,56 @@ async function loadOrderSheets(start: string): Promise<SavedOrderSheet[]> {
     }
   }
   return sheets;
+}
+
+/** Storage 폴더의 날짜별 JSON 스냅샷을 모두 읽는다 */
+async function loadDatedSnapshots<T>(dir: string, from: string): Promise<T[]> {
+  const bucket = supabase.storage.from("market-snapshots");
+  const { data: files } = await bucket.list(dir, { limit: 1000 });
+  const out: T[] = [];
+  for (const f of files ?? []) {
+    if (f.name.replace(/\.json$/, "") < from) continue;
+    const { data } = await bucket.download(`${dir}/${f.name}`);
+    if (!data) continue;
+    try {
+      out.push(JSON.parse(await data.text()) as T);
+    } catch {
+      console.warn(`스냅샷 파싱 실패: ${dir}/${f.name}`);
+    }
+  }
+  return out;
+}
+
+async function uploadJson(path: string, value: unknown): Promise<void> {
+  const { error } = await supabase.storage
+    .from("market-snapshots")
+    .upload(path, JSON.stringify(value), { upsert: true, contentType: "application/json" });
+  if (error) console.warn(`저장 실패 ${path}: ${error.message}`);
+}
+
+/** 관리자 봇 계좌 평가액 = 현금 + 보유 종목(스윕 포함) 종가 평가 */
+async function readBotEquity(date: string): Promise<BotEquitySnapshot | null> {
+  const chatId = Number(process.env.TELEGRAM_ADMIN_CHAT_ID);
+  if (!Number.isFinite(chatId) || chatId === 0) return null;
+  const { data: user } = await supabase.from("users").select("prefs").eq("tg_id", chatId).maybeSingle();
+  const prefs = ((user as any)?.prefs ?? {}) as Record<string, unknown>;
+  const seed = Number(prefs.virtual_seed_capital ?? prefs.capital_krw);
+  const cash = Number(prefs.virtual_cash);
+  if (!(seed > 0) || !Number.isFinite(cash)) return null;
+  const { data: positions } = await supabase
+    .from("virtual_positions")
+    .select("code, quantity, buy_price, status, stock:stocks(close)")
+    .eq("chat_id", chatId)
+    .is("broker_name", null)
+    .is("account_name", null);
+  let holdings = 0;
+  for (const row of (positions ?? []) as any[]) {
+    if (String(row.status ?? "holding") === "closed") continue;
+    const stock = Array.isArray(row.stock) ? row.stock[0] : row.stock;
+    const price = Number(stock?.close) > 0 ? Number(stock.close) : Number(row.buy_price ?? 0);
+    holdings += Math.max(0, Math.floor(Number(row.quantity ?? 0))) * Math.max(0, price);
+  }
+  return { date, seed, total: Math.round(cash + holdings) };
 }
 
 async function main(): Promise<void> {
@@ -142,11 +203,12 @@ async function main(): Promise<void> {
     return codes;
   }
 
+  // 봇 신규 매수 기준과 같은 코스피 50일선 (당일 종가 vs 직전 50일 평균)
   const trendUp = (asof: string): boolean => {
     const i = tradingDates.indexOf(asof);
-    if (i < 100) return false;
-    const closes = index.slice(i - 99, i + 1).map((b) => b.close);
-    return index[i].close > closes.reduce((s, v) => s + v, 0) / closes.length;
+    if (i < INDEX_CORE_SMA_WINDOW) return false;
+    const prev = index.slice(i - INDEX_CORE_SMA_WINDOW, i).map((b) => b.close);
+    return index[i].close > prev.reduce((s, v) => s + v, 0) / prev.length;
   };
 
   const heavySellingAt = (asof: string): Set<string> => {
@@ -189,8 +251,62 @@ async function main(): Promise<void> {
     });
   }
 
+  // 실적 관문 스냅샷: 운영 실행이면 오늘 판정을 먼저 저장한다
+  const gateSnapshots = await loadDatedSnapshots<GateSnapshot>(FORWARD_TEST_GATE_DIR, shiftDate(START, -10));
+  if (RECORD) {
+    const gate = await fetchFundamentalGateResults(supabase, universe, `${endDate}T12:00:00+09:00`);
+    const snap: GateSnapshot = {
+      asof: endDate,
+      pass: [...gate].filter(([, g]) => g.status === "pass").map(([c]) => c),
+      fail: [...gate].filter(([, g]) => g.status === "fail").map(([c]) => c),
+    };
+    await uploadJson(`${FORWARD_TEST_GATE_DIR}/${endDate}.json`, snap);
+    const i = gateSnapshots.findIndex((g) => g.asof === endDate);
+    if (i >= 0) gateSnapshots[i] = snap;
+    else gateSnapshots.push(snap);
+    console.log(`실적 관문 스냅샷 ${endDate}: 통과 ${snap.pass.length} · 탈락 ${snap.fail.length}`);
+  }
+  const gatePassAt = (asof: string): string[] => pickSnapshotOnOrBefore(gateSnapshots, asof)?.pass ?? [];
+  const monthlyDates = firstTradingDaysOfMonths(inRange);
+  if (monthlyDates[monthlyDates.length - 1] !== endDate) monthlyDates.push(endDate);
+
+  // 봇 실제 계좌
+  const botPoints = await loadDatedSnapshots<BotEquitySnapshot>(FORWARD_TEST_BOT_EQUITY_DIR, START);
+  if (RECORD) {
+    const today = await readBotEquity(endDate);
+    if (today) {
+      await uploadJson(`${FORWARD_TEST_BOT_EQUITY_DIR}/${endDate}.json`, today);
+      const i = botPoints.findIndex((p) => p.date === endDate);
+      if (i >= 0) botPoints[i] = today;
+      else botPoints.push(today);
+    }
+  }
+  const botResult = simulateBotAccount({ points: botPoints, startDate: START });
+
   const results: StrategyResult[] = [
     ...simulateIndexStrategies({ index, startDate: START }),
+    ...(botResult ? [botResult] : []),
+    simulateWeeklyStrategy({
+      name: "gate-monthly",
+      rebalanceDates: monthlyDates,
+      pick: (d) => (prevTradingDate(d) ? gatePassAt(prevTradingDate(d)) : []),
+      barsByCode,
+      topN: 10_000,
+      periodsPerYear: 12,
+    }),
+    simulateWeeklyStrategy({
+      name: "gate-monthly+trend50",
+      rebalanceDates,
+      // 종목 목록은 달이 바뀔 때만 갱신, 50일선 판정은 매주
+      pick: (d) => {
+        const asof = prevTradingDate(d);
+        if (!asof || !trendUp(asof)) return [];
+        const monthStart = [...monthlyDates].reverse().find((m) => m <= d) ?? d;
+        return gatePassAt(prevTradingDate(monthStart) ?? asof);
+      },
+      barsByCode,
+      topN: 10_000,
+    }),
     ...(["score-top5", "score-top5+trend", "score-top5+flow", "momentum-top5"] as const).map((name) =>
       simulateWeeklyStrategy({ name, rebalanceDates, pick: (d) => picks.get(d)?.[name] ?? [], barsByCode })
     ),
@@ -203,13 +319,10 @@ async function main(): Promise<void> {
   const report = formatForwardTestReport({ startDate: START, endDate, results });
   console.log(report);
 
-  // 웹 전략 화면이 읽을 수 있게 최신 결과를 저장한다 (텔레그램 전송 때만 = 운영 실행)
-  if (SEND_TELEGRAM) {
+  // 웹 전략 화면이 읽을 수 있게 최신 결과를 저장한다 (운영 실행)
+  if (RECORD) {
     const snapshot: ForwardTestSnapshot = { startDate: START, endDate, generatedAt: new Date().toISOString(), results };
-    const { error: upErr } = await supabase.storage
-      .from("market-snapshots")
-      .upload(FORWARD_TEST_RESULT_PATH, JSON.stringify(snapshot), { upsert: true, contentType: "application/json" });
-    if (upErr) console.warn(`전향검증 결과 저장 실패: ${upErr.message}`);
+    await uploadJson(FORWARD_TEST_RESULT_PATH, snapshot);
   }
 
   if (SEND_TELEGRAM) {
