@@ -46,6 +46,7 @@ from batch_modules.sectors import update_sector_data, populate_sector_daily, cal
 from batch_modules.scores import calculate_stock_scores
 from batch_modules.signals import save_pullback_signals
 from batch_modules.cleanup import cleanup_old_data
+from batch_modules.market_snapshot import collect_market_snapshot
 
 
 def send_telegram_alert(text: str) -> bool:
@@ -452,6 +453,9 @@ def main():
     print("\n[7/7] Cleaning up old data...")
     step_start = time.time()
     cleanup_old_data(supabase)
+
+    # 전 종목 시세 스냅샷(Storage): 유니버스 밖 종목까지 데이터 누적 — 실패해도 배치는 계속
+    collect_market_snapshot(supabase)
     print(f"   Completed in {time.time() - step_start:.1f}s")
     stage_times["Cleanup"] = time.time() - step_start
     mark_stage("Cleanup", True, stage_times["Cleanup"])
