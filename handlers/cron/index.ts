@@ -28,6 +28,7 @@ type CronTaskName =
   | "virtualAutoTradeAfternoon"
   | "virtualAutoTradeClose"
   | "virtualAutoTradeIntraday"
+  | "virtualAutoTradeHourly"
   | "strategyGateRefresh";
 
 type DueTask = {
@@ -48,6 +49,9 @@ const TASK_PATHS: Record<CronTaskName, string> = {
     "/api/cron/virtualAutoTrade?mode=auto&intradayOnly=true&windowMinutes=30&maxUsers=40",
   virtualAutoTradeIntraday:
     "/api/cron/virtualAutoTrade?mode=auto&intradayOnly=true&windowMinutes=10&maxUsers=60",
+  // 무료 플랜 매시간 점검(09~14시대): 시간마다 실행 구간 키가 달라야 서로 "이미 처리됨"으로 겹치지 않는다
+  virtualAutoTradeHourly:
+    "/api/cron/virtualAutoTrade?mode=auto&intradayOnly=true&windowMinutes=60&maxUsers=60",
   strategyGateRefresh: "/api/cron/strategyGateRefresh",
 };
 
@@ -83,16 +87,10 @@ function resolveDueTasks(now = new Date()): DueTask[] {
 
     // 무료(Hobby) 플랜 크론은 지정한 시(hour) 안 임의의 분에 호출된다(±59분). 예전엔 분까지 일치해야
     // 실행해서 "30 4 * * 1-5"(KST 13:30) 호출이 거의 매번 no_due_task로 끝났다 → 시 단위로 매칭한다.
-    // vercel.json 크론: UTC 0시(KST 09시대) 아침 · 4시(13시대) 오후 · 5시(14시대) 마감 전.
+    // vercel.json 크론: UTC 0~5시(KST 09~14시대) 매시간 1회. 무료 플랜은 크론마다 하루 1회라 시간대별로 하나씩 둔다.
     // GitHub Actions 스케줄은 매일 4~5시간씩 늦게 실행돼(09:30 → 14시대, 14:50 → 19시대) 주 경로로 쓰지 않는다.
-    if (ENABLE_INTRADAY_AGENT_CYCLE && isWeekday) {
-      if (hour === 0) {
-        dailyTasks.push({ name: "virtualAutoTradeMorning", path: TASK_PATHS.virtualAutoTradeMorning });
-      } else if (hour === 4) {
-        dailyTasks.push({ name: "virtualAutoTradeAfternoon", path: TASK_PATHS.virtualAutoTradeAfternoon });
-      } else if (hour === 5) {
-        dailyTasks.push({ name: "virtualAutoTradeClose", path: TASK_PATHS.virtualAutoTradeClose });
-      }
+    if (ENABLE_INTRADAY_AGENT_CYCLE && isWeekday && hour >= 0 && hour <= 5) {
+      dailyTasks.push({ name: "virtualAutoTradeHourly", path: TASK_PATHS.virtualAutoTradeHourly });
     }
 
     if (CRON_HOBBY_INCLUDE_AUTOTRADE && isUtcTime(23, 45)) {

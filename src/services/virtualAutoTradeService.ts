@@ -1539,12 +1539,12 @@ function buildAutoTradeFilterReason(candidate: {
   return [...reasons.slice(0, 2), ...flowParts].filter(Boolean).join(" · ");
 }
 
-// Vercel 크론(vercel.json)은 무료 플랜이라 지정한 시(hour) 안 임의 시각에 호출된다
-const AUTO_TRADE_CHECKPOINTS_KST = [
-  { hour: 9, minute: 0, label: "09시대" },
-  { hour: 13, minute: 0, label: "13시대" },
-  { hour: 14, minute: 0, label: "14시대" },
-];
+// Vercel 크론(vercel.json)은 무료 플랜이라 지정한 시(hour) 안 임의 시각에 호출된다 — 09~14시대 매시간
+const AUTO_TRADE_CHECKPOINTS_KST = [9, 10, 11, 12, 13, 14].map((hour) => ({
+  hour,
+  minute: 0,
+  label: `${String(hour).padStart(2, "0")}시대`,
+}));
 
 function resolveExecutionPriorityLine(action: AutoTradeActionSummary): string {
   if (action.sells > 0) {
