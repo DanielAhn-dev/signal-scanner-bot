@@ -1139,7 +1139,7 @@ export default function StrategyPage() {
                       <div className="muted" style={{ fontSize: 'var(--font-size-sm)', lineHeight: 1.6 }}>
                         <strong>기본 전략:</strong> 보수적 진입<br/>
                         <strong>권장 설정:</strong> 기본(base) 2~3종목 | 강세장 ×1.3 | 약세장 ×0.7<br/>
-                        <strong>동작:</strong> 신뢰도 높은 신호만 진입. 강세장이면 3~4종목, 약세장이면 1~2종목으로 조정
+                        <strong>동작:</strong> 기준을 높여 진입 수를 줄임. 강세장이면 3~4종목, 약세장이면 1~2종목으로 조정
                       </div>
                     )}
                     {option.id === 'REDUCE_TIGHT' && (
@@ -1153,7 +1153,7 @@ export default function StrategyPage() {
                       <div className="muted" style={{ fontSize: 'var(--font-size-sm)', lineHeight: 1.6 }}>
                         <strong>기본 전략:</strong> 기회 대기형<br/>
                         <strong>권장 설정:</strong> 기본(base) 1~2종목 | 강세장 ×1.5 | 약세장 ×0.2<br/>
-                        <strong>동작:</strong> 높은 신뢰도만 진입. 강세 확정 후 분할 진입, 약세 지속 시 현금 보유
+                        <strong>동작:</strong> 기준을 가장 높게. 강세 확정 후 분할 진입, 약세 지속 시 현금 보유
                       </div>
                     )}
                   </div>

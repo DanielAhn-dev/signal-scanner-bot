@@ -536,9 +536,9 @@ export default function DiscoveryPage() {
       {/* 헤더 */}
       <div className="bt-header">
         <div>
-          <h1 className="bt-title">멀티배거 발굴</h1>
+          <h1 className="bt-title">중장기 후보 발굴</h1>
           <p className="bt-desc">
-            펀더멘털(PBR·ROE·PEG·QoQ) × 스마트머니(12주 수급) × 섹터 복합 점수 기반 중장기 후보
+            펀더멘털(PBR·ROE·PEG·QoQ) × 스마트머니(12주 수급) × 섹터 복합 점수 기반 중장기 후보 — 과거 성과 검증 전(참고용)
           </p>
         </div>
         <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>

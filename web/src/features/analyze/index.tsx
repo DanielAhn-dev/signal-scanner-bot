@@ -387,7 +387,7 @@ export default function AnalyzePage({ onNavigate }: { onNavigate?: (r: string) =
 
     if (advisor?.statusLabel || advisor?.finalScore != null) {
       const advisorParts = [
-        advisor?.statusLabel ? `AI 판정 ${advisor.statusLabel}` : null,
+        advisor?.statusLabel ? `규칙 판정 ${advisor.statusLabel}` : null,
         advisor?.finalScore != null ? `${formatNumber(advisor.finalScore, 1)}점` : null,
         advisor?.twoStage?.actionLabel ? `실행 ${advisor.twoStage.actionLabel}` : null,
       ].filter(Boolean) as string[]
@@ -428,7 +428,7 @@ export default function AnalyzePage({ onNavigate }: { onNavigate?: (r: string) =
   const signalText = useMemo(() => {
     if (advisor?.twoStage?.actionLabel) return `${advisor.twoStage.actionLabel} (${advisor?.statusLabel || '대기'})`
     const status = String(advisor?.status || '').toLowerCase()
-    if (status === 'strong_buy' || status === 'buy-now') return '강력매수'
+    if (status === 'strong_buy' || status === 'buy-now') return '매수+'
     if (status === 'buy' || status === 'buy-on-pullback') return '매수'
     if (status === 'add_buy' || status === 'add-buy' || status === 'additional_buy' || status === 'additional-buy' || status === 'scale_in' || status === 'scale-in') return '추가매수'
     if (status === 'partial_sell') return '익절'
@@ -1111,7 +1111,7 @@ export default function AnalyzePage({ onNavigate }: { onNavigate?: (r: string) =
 
                 {/* 판정 배지 */}
                 <div style={{ marginBottom: 'var(--space-3)' }}>
-                  <div className="stat-label">판정</div>
+                  <div className="stat-label" title="점수·진입구간·손익비 고정 규칙으로 정한 판정입니다. 10년 검증에서 점수는 종목 간 수익 차이를 예측하지 못했습니다.">규칙 판정</div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', marginTop: 'var(--space-1)', marginBottom: 'var(--space-1)' }}>
                     <span style={{
                       display: 'inline-block',
@@ -1162,7 +1162,10 @@ export default function AnalyzePage({ onNavigate }: { onNavigate?: (r: string) =
                   {advisor.summary && <div className="caption">{advisor.summary}</div>}
                 </div>
 
-                {/* 진입구간 / 손절 / 목표 */}
+                {/* 진입구간 / 손절 / 목표 — 고정 규칙(손절 5.5~8%·목표 3~18%)으로 만든 가격이며 예측이 아니다 */}
+                <div className="caption" style={{ marginBottom: 'var(--space-2)' }}>
+                  아래 가격은 고정 규칙(손절 5.5~8%, 목표 +3~18%)으로 정한 관리 기준입니다. 도달 확률을 뜻하지 않습니다.
+                </div>
                 <div className="cards-grid cols-2" style={{ marginBottom: 'var(--space-3)' }}>
                   <div style={{
                     background: 'var(--color-success-bg)',

@@ -1,3 +1,4 @@
+import { empiricalWinProb } from '../../lib/tpSlBaseRates'
 export const HIGHLIGHT_SIM_PLAN_KEY = 'highlight_simulation_plan_v1'
 
 export type HighlightPlanItem = {
@@ -45,7 +46,8 @@ export function defaultPlanItem(input: {
     amount: Number(input.amount ?? 1_000_000),
     targetPct: 5,
     stopPct: 3,
-    winProb: 58,
+    // 예전 기본값 58%는 근거 없는 가정이었다. 목표 +5%/손절 -3%의 5거래일 실측 환산 승률.
+    winProb: empiricalWinProb(5, 3),
     split1: 40,
     split2: 35,
     split3: 25,

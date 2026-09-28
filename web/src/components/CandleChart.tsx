@@ -786,7 +786,7 @@ export default function CandleChart({
             position: 'belowBar',
             color: '#22c55e',
             shape: 'arrowUp',
-            text: isAddBuy ? '추가매수' : isStrongBuy ? '강력매수' : '매수',
+            text: isAddBuy ? '추가매수' : isStrongBuy ? '매수+' : '매수',
           })
         }
       }
@@ -862,7 +862,7 @@ export default function CandleChart({
 
   const signalLabel = (() => {
     const s = String(tradeSignal || '').toLowerCase()
-    if (s === 'strong_buy' || s === 'buy-now') return '강력매수'
+    if (s === 'strong_buy' || s === 'buy-now') return '매수+'
     if (s === 'buy' || s === 'buy-on-pullback') return '매수'
     if (s === 'add_buy' || s === 'add-buy' || s === 'additional_buy' || s === 'additional-buy' || s === 'scale_in' || s === 'scale-in') return '추가매수'
     if (s === 'partial_sell') return '익절'

@@ -32,7 +32,7 @@ type BacktestResponse = {
   params: { horizonBars: number; lookbackDays: number; rallyThresholdPct: number; topN: number }
   availableHorizons?: number[]
   horizonAvailability?: Record<string, number>
-  baseline: { labelableEvents: number; score70RatePct: number; buySignalRatePct: number }
+  baseline: { labelableEvents: number; score70RatePct: number; buySignalRatePct: number; avgForwardReturnPct?: number }
   riserSummary: { riserEvents: number; avgForwardReturnPct: number }
   commonFeatures: {
     score70RatePct: number
@@ -59,6 +59,8 @@ type BacktestResponse = {
     precisionPct: number
     matchedEvents: number
     riserMatches: number
+    /** 규칙에 맞은 모든 사례(급등 여부 무관)의 평균 수익 */
+    matchedAvgReturnPct?: number
     filter?: {
       scoreMin?: number
       buyOnly?: boolean
@@ -265,23 +267,10 @@ function estimateExpectedReturnPct(input: {
   tier: AutoPickTier
   profile: ReturnProfileKey
 }): number {
-  const isConservative = input.profile === 'conservative'
-  
-  // 하락장에서도 기술적 신호 품질로만 평가하도록,
-  // 과거 수익률이 음수/낮으면 고정값(5%)으로 사용
-  const baseReturn = Math.max(5, input.baseReturnPct)
-  
-  const tierFactor = input.tier === 'now'
-    ? 1.0
-    : input.tier === 'prepare'
-      ? (isConservative ? 0.62 : 0.78)
-      : (isConservative ? 0.35 : 0.52)
-  const coreFactor = (isConservative ? 0.46 : 0.54) + input.coreMatchCount * (isConservative ? 0.14 : 0.17)
-  const ruleBonus = input.ruleMatched ? (isConservative ? 0.1 : 0.14) : 0
-  const scoreBonus = clampNumber((input.score - 55) / (isConservative ? 140 : 110), -0.12, isConservative ? 0.16 : 0.22)
-  const momentumBonus = clampNumber(input.shortMomentumPct / (isConservative ? 36 : 25), -0.14, isConservative ? 0.14 : 0.2)
-  const raw = baseReturn * (tierFactor * coreFactor + ruleBonus + scoreBonus + momentumBonus)
-  return Number(clampNumber(raw, 1.5, 40).toFixed(1))
+  // 예전엔 "급등 종목들의 평균 수익(최소 5%)"에 등급·점수·모멘텀 가산 계수를 곱해 1.5~40%로 만들었다.
+  // 급등한 종목만 모은 평균은 결과를 알고 고른 값이라 기대수익이 될 수 없다. 이제 규칙에 맞은 모든 과거 사례의
+  // 평균(규칙 미충족이면 전체 사례 평균)을 그대로 쓴다. 가산 계수는 근거가 없어 쓰지 않는다.
+  return Number(input.baseReturnPct.toFixed(1))
 }
 
 const HORIZONS = [20, 40, 60, 90, 120] as const
@@ -388,7 +377,8 @@ export default function BacktestPage() {
     totalScanned: 0,
   })
   const [returnProfile, setReturnProfile] = useState<ReturnProfileKey>('strict')
-  const [minExpectedReturnPct, setMinExpectedReturnPct] = useState(6)
+  // 기대수익 = 규칙 일치 과거 사례 평균(모든 후보 동일). 0이면 과거 평균이 플러스인 규칙만 통과.
+  const [minExpectedReturnPct, setMinExpectedReturnPct] = useState(0)
   const [minShortMomentumPct, setMinShortMomentumPct] = useState(-2)
   const [minLiquidityEok, setMinLiquidityEok] = useState(50)
   const [investAmount, setInvestAmount] = useState(1_000_000)
@@ -518,7 +508,9 @@ export default function BacktestPage() {
               : inferredMomentum
 
             const expectedReturnPct = estimateExpectedReturnPct({
-              baseReturnPct: Number(data.riserSummary.avgForwardReturnPct || 0),
+              baseReturnPct: Number(
+                (ruleMatched ? selectedRule.matchedAvgReturnPct : data.baseline.avgForwardReturnPct) ?? 0,
+              ),
               coreMatchCount: ranked.coreMatchCount,
               ruleMatched,
               score: Number(indicator.total_score ?? 0),
@@ -736,19 +728,19 @@ export default function BacktestPage() {
   const applyReturnProfile = (profile: ReturnProfileKey) => {
     setReturnProfile(profile)
     if (profile === 'strict') {
-      setMinExpectedReturnPct(6)
+      setMinExpectedReturnPct(1)
       setMinShortMomentumPct(-2)
       setMinLiquidityEok(50)
       return
     }
     if (profile === 'conservative') {
-      setMinExpectedReturnPct(4)
+      setMinExpectedReturnPct(0)
       setMinShortMomentumPct(-5)
       setMinLiquidityEok(30)
       return
     }
     // 공격형: 필터 거의 없음 (기술지표 신호 품질만 봄)
-    setMinExpectedReturnPct(2)
+    setMinExpectedReturnPct(-100)
     setMinShortMomentumPct(-10)
     setMinLiquidityEok(10)
   }
@@ -815,7 +807,8 @@ export default function BacktestPage() {
 
   const investSim = useMemo(() => {
     if (!data || investAmount <= 0) return null
-    const avgReturn = data.riserSummary.avgForwardReturnPct
+    // 급등 종목 평균이 아니라 모든 과거 사례 평균 — 무작위로 샀을 때의 기준선
+    const avgReturn = Number(data.baseline.avgForwardReturnPct ?? 0)
     const patternReturn = selectedStockAutoPick?.expectedReturnPct ?? null
     const avgGain = investAmount * (avgReturn / 100)
     const patternGain = patternReturn != null ? investAmount * (patternReturn / 100) : null
@@ -1074,7 +1067,7 @@ export default function BacktestPage() {
                 </span>
               </div>
               <div className="bt-summary-item">
-                <span className="bt-summary-label">급등 평균 수익률</span>
+                <span className="bt-summary-label" title="급등한 종목만의 평균(사후 선택). 기대수익이 아닙니다.">급등 종목 평균(사후)</span>
                 <span className="bt-summary-value" style={{ color: 'var(--color-success)' }}>
                   +{pct(data.riserSummary.avgForwardReturnPct, 2)}
                 </span>
@@ -1487,11 +1480,11 @@ export default function BacktestPage() {
                     <input
                       className="sim-input"
                       type="number"
-                      min={1}
+                      min={-100}
                       max={30}
                       value={minExpectedReturnPct}
                       onChange={(e) =>
-                        setMinExpectedReturnPct(Math.max(1, Math.min(30, Number(e.target.value) || 1)))
+                        setMinExpectedReturnPct(Math.max(-100, Math.min(30, Number(e.target.value) || 0)))
                       }
                     />
                   </label>
@@ -1807,7 +1800,7 @@ export default function BacktestPage() {
 
                     {/* 투자 시뮬레이션 */}
                     <div className="bt-check-invest">
-                      <p className="bt-check-invest-title">투자 시뮬레이션 (역추적 평균 수익률 기준)</p>
+                      <p className="bt-check-invest-title">투자 시뮬레이션 (모든 과거 사례 평균 기준)</p>
                       <div className="bt-check-invest-row">
                         <div className="sim-input-row" style={{ maxWidth: 200 }}>
                           <input
@@ -1826,19 +1819,19 @@ export default function BacktestPage() {
                           <div style={{ display: 'flex', gap: 'var(--space-4)', flexWrap: 'wrap' }}>
                             <div className="bt-check-invest-result">
                               <span className="bt-check-invest-desc">
-                                급등 평균 수익률 <strong>+{pct(investSim.avgReturn, 2)}</strong> ({horizon}일)
+                                전체 사례 평균 <strong>{investSim.avgReturn >= 0 ? '+' : ''}{pct(investSim.avgReturn, 2)}</strong> ({horizon}일)
                               </span>
                               <span className="bt-check-invest-gain">
-                                +{Math.round(investSim.avgGain).toLocaleString('ko-KR')}원
+                                {investSim.avgGain >= 0 ? '+' : ''}{Math.round(investSim.avgGain).toLocaleString('ko-KR')}원
                               </span>
                             </div>
                             {investSim.patternReturn != null && investSim.patternGain != null && (
                               <div className="bt-check-invest-result">
                                 <span className="bt-check-invest-desc">
-                                  패턴 기반 예상 <strong>+{pct(investSim.patternReturn, 1)}</strong>
+                                  규칙 일치 사례 평균 <strong>{investSim.patternReturn >= 0 ? '+' : ''}{pct(investSim.patternReturn, 1)}</strong>
                                 </span>
                                 <span className="bt-check-invest-gain">
-                                  +{Math.round(investSim.patternGain).toLocaleString('ko-KR')}원
+                                  {investSim.patternGain >= 0 ? '+' : ''}{Math.round(investSim.patternGain).toLocaleString('ko-KR')}원
                                 </span>
                               </div>
                             )}
@@ -1846,7 +1839,7 @@ export default function BacktestPage() {
                         )}
                       </div>
                       <p className="bt-check-invest-note">
-                        ※ 급등 평균은 과거 이벤트 기준, 패턴 기반은 현재 종목의 조건 일치도·점수·모멘텀을 반영한 추정값입니다.
+                        ※ 급등한 종목만의 평균(+{pct(data.riserSummary.avgForwardReturnPct, 1)})은 결과를 알고 고른 값이라 기대수익이 아닙니다. 위 수치는 급등 여부와 무관한 모든 과거 사례의 평균입니다.
                       </p>
                     </div>
 

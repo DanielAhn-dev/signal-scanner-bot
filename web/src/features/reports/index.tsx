@@ -50,7 +50,7 @@ const REPORT_ACTIONS: ReportAction[] = [
   {
     key: 'conviction-candidate-pdf',
     label: '집행우선 종목',
-    desc: '눌림목·점수·리스크를 종합한 확신 후보 집행우선 리포트를 생성합니다. (/리포트 확신추천 대응)',
+    desc: '점수 상위 후보와 과거 20일 분포를 담은 집행우선 리포트를 생성합니다. (/리포트 확신추천 대응)',
     kind: 'download',
     endpoint: '/api/ui/report-pdf?topic=확신추천',
     method: 'GET',

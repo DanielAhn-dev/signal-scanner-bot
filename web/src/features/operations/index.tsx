@@ -384,7 +384,7 @@ function normalizeDecisionFilter(
 
 function reasonCategoryFromText(reason: string): string {
   const text = String(reason || '').toLowerCase()
-  if (/신뢰도|signal|trust/.test(text)) return '신뢰도 게이트'
+  if (/신뢰도|기술관문|signal|trust/.test(text)) return '기술관문'
   if (/현금|자금|주문 가능 금액/.test(text)) return '자금/현금'
   if (/일손실|리스크|복구모드|슬롯|정책/.test(text)) return '리스크/정책'
   if (/후보 없음|후보|필터/.test(text)) return '후보 부족'
@@ -1337,7 +1337,7 @@ export default function OperationsPage() {
                           <th style={{ textAlign: 'left', padding: '8px', borderBottom: '1px solid var(--color-border-default)', whiteSpace: 'nowrap' }}>결과</th>
                           <th style={{ textAlign: 'left', padding: '8px', borderBottom: '1px solid var(--color-border-default)', whiteSpace: 'nowrap', minWidth: 200 }}>사유</th>
                           <th style={{ textAlign: 'right', padding: '8px', borderBottom: '1px solid var(--color-border-default)', whiteSpace: 'nowrap' }}>점수</th>
-                          <th style={{ textAlign: 'right', padding: '8px', borderBottom: '1px solid var(--color-border-default)', whiteSpace: 'nowrap' }}>신뢰도</th>
+                          <th style={{ textAlign: 'right', padding: '8px', borderBottom: '1px solid var(--color-border-default)', whiteSpace: 'nowrap' }}>기술관문</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -1356,7 +1356,7 @@ export default function OperationsPage() {
                               </td>
                               <td style={{ padding: '8px', borderBottom: '1px solid #F0F2F5', color: 'var(--color-text-secondary)', minWidth: 200 }} data-th="사유">{row.reason}</td>
                               <td style={{ padding: '8px', borderBottom: '1px solid #F0F2F5', textAlign: 'right', whiteSpace: 'nowrap' }} data-th="점수">{row.score != null ? row.score.toFixed(1) : '-'}</td>
-                              <td style={{ padding: '8px', borderBottom: '1px solid #F0F2F5', textAlign: 'right', whiteSpace: 'nowrap' }} data-th="신뢰도">{trustText}</td>
+                              <td style={{ padding: '8px', borderBottom: '1px solid #F0F2F5', textAlign: 'right', whiteSpace: 'nowrap' }} data-th="기술관문">{trustText}</td>
                             </tr>
                           )
                         })}</tbody>
@@ -1478,7 +1478,7 @@ export default function OperationsPage() {
                                       <th style={{ textAlign: 'left', padding: '6px', borderBottom: '1px solid #E4E7EC', whiteSpace: 'nowrap' }}>결과</th>
                                       <th style={{ textAlign: 'left', padding: '6px', borderBottom: '1px solid #E4E7EC', whiteSpace: 'nowrap', minWidth: 180 }}>사유</th>
                                       <th style={{ textAlign: 'right', padding: '6px', borderBottom: '1px solid #E4E7EC', whiteSpace: 'nowrap' }}>점수</th>
-                                      <th style={{ textAlign: 'right', padding: '6px', borderBottom: '1px solid #E4E7EC', whiteSpace: 'nowrap' }}>신뢰도</th>
+                                      <th style={{ textAlign: 'right', padding: '6px', borderBottom: '1px solid #E4E7EC', whiteSpace: 'nowrap' }}>기술관문</th>
                                     </tr>
                                   </thead>
                                   <tbody>
@@ -1497,7 +1497,7 @@ export default function OperationsPage() {
                                           </td>
                                           <td style={{ padding: '6px', borderBottom: '1px solid #F0F2F5', color: 'var(--color-text-secondary)', minWidth: 180 }} data-th="사유">{row.reason}</td>
                                           <td style={{ padding: '6px', borderBottom: '1px solid #F0F2F5', textAlign: 'right', whiteSpace: 'nowrap' }} data-th="점수">{row.score != null ? row.score.toFixed(1) : '-'}</td>
-                                          <td style={{ padding: '6px', borderBottom: '1px solid #F0F2F5', textAlign: 'right', whiteSpace: 'nowrap' }} data-th="신뢰도">{trustText}</td>
+                                          <td style={{ padding: '6px', borderBottom: '1px solid #F0F2F5', textAlign: 'right', whiteSpace: 'nowrap' }} data-th="기술관문">{trustText}</td>
                                         </tr>
                                       )
                                     })}

@@ -177,8 +177,9 @@ function resolveAdvisorSignal(input: {
   if (strongBuyOk) {
     return {
       status: 'strong_buy',
-      statusLabel: '강력매수',
-      reason: `진입구간 내 + 고점수(${score.toFixed(1)}/${tech.toFixed(1)}) + 손익비/확신도 충족`,
+      // 점수 76↑ 조건이지만 점수에 예측력이 없어(10년 검증) "강력"이라 부르지 않는다.
+      statusLabel: '매수(조건 모두 충족)',
+      reason: `진입구간 내 + 점수(${score.toFixed(1)}/${tech.toFixed(1)}) + 손익비 조건 충족`,
     }
   }
 

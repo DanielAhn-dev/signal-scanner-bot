@@ -490,7 +490,7 @@ function SectorSummaryTable({
           label="섹터 요약"
           value={
             <div className="sector-sheet__summary-meta">
-              <span className="caption">탭 {tab === "guide" ? "가이드" : tab === "all" ? "전체" : tab === "next" ? "다음" : "유망"} · 전체 {all.length}개</span>
+              <span className="caption">탭 {tab === "guide" ? "가이드" : tab === "all" ? "전체" : tab === "next" ? "다음" : "상위"} · 전체 {all.length}개</span>
               <div className="sector-sheet__summary-actions">
                 <span className="caption muted">마지막 갱신 {formatKoDateTimeLong(latestUpdatedAt)}</span>
                 {tab !== "guide" && onRefresh ? (
@@ -511,7 +511,7 @@ function SectorSummaryTable({
           </td>
           <td className="xls-cell">탭 현황</td>
           <td className="xls-cell" colSpan={2}>
-            <div className="sector-sheet__summary-value">유망 {promisingCount} · 다음 {nextCount}</div>
+            <div className="sector-sheet__summary-value">상위 {promisingCount} · 다음 {nextCount}</div>
             <div className="sector-sheet__summary-sub">점수와 수급을 함께 반영한 후보군</div>
           </td>
         </tr>
@@ -521,7 +521,7 @@ function SectorSummaryTable({
             <div className="sector-sheet__summary-value">{topNames}</div>
             <div className="sector-sheet__summary-sub">점수 기준 상위 섹터</div>
           </td>
-          <td className="xls-cell">신뢰도</td>
+          <td className="xls-cell" title="확률이 아니라 1·2위 국면 점수 격차와 거시 국면 일치 여부로 만든 판별 강도입니다">판별 강도</td>
           <td className="xls-cell" colSpan={2}>
             <div className="sector-sheet__summary-value">{detected.confidence}% · {detected.confidenceLabel}</div>
             <div className="sector-sheet__summary-sub">{detected.basisLabel}</div>
@@ -719,7 +719,7 @@ function SectorGuideView({ detected }: { detected: PhaseDetectionResult }) {
                 </span>
               </div>
               <div className="caption muted">
-                {detected.basisLabel} · 신뢰도 {detected.confidence}% ({detected.confidenceLabel}) · 주도 섹터 범주: {activePhaseData.sectorCategories.join(" · ")}
+                {detected.basisLabel} · 판별 강도 {detected.confidence}% ({detected.confidenceLabel}) · 주도 섹터 범주: {activePhaseData.sectorCategories.join(" · ")}
               </div>
             </div>
           </div>
@@ -926,7 +926,7 @@ function SectorGuideView({ detected }: { detected: PhaseDetectionResult }) {
             { step: 1, title: "거시경제 분석",       desc: "GDP 성장률·금리 방향·인플레이션·환율 등 거시지표로 현재 경기 국면을 파악합니다." },
             { step: 2, title: "경기 국면 판단",       desc: "회복기·호황기·둔화기·침체기 중 어디에 있는지 확인합니다. ISM 제조업 지수, 장단기금리차, 실업률을 참고합니다." },
             { step: 3, title: "유리한 섹터 선별",     desc: "현재 국면에서 아웃퍼폼 가능성이 높은 섹터를 위 가이드를 참고해 선별합니다." },
-            { step: 4, title: "섹터 ETF·종목 선정",  desc: "'유망 섹터' 탭에서 점수 상위 섹터를 확인하고, 대장주 TOP 3에서 구체적 종목을 검토합니다." },
+            { step: 4, title: "섹터 ETF·종목 선정",  desc: "'상위 섹터' 탭에서 점수 상위 섹터를 확인하고, 대장주 TOP 3에서 구체적 종목을 검토합니다." },
             { step: 5, title: "3~6개월 단위 재조정", desc: "경기 국면이 변화하면 섹터 비중을 재조정합니다. 단기 매매보다 국면 전환 타이밍에 집중합니다." },
           ].map(({ step, title, desc }) => (
             <div key={step} className="sector-guide-process-step">
@@ -1069,7 +1069,7 @@ export default function SectorsPage({ onNavigate }: { onNavigate?: (r: string) =
   }, [displayed, loadSectorLeaders, tab])
 
   const TAB_ITEMS: { key: Tab; label: string }[] = [
-    { key: "promising", label: "유망 섹터" },
+    { key: "promising", label: "상위 섹터" },
     { key: "next",      label: "다음 섹터" },
     { key: "all",       label: "전체 섹터" },
     { key: "guide",     label: "섹터 가이드" },

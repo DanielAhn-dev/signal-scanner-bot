@@ -395,8 +395,13 @@ function createRuleCandidates(labelableEvents: EventRow[], riserUniverse: EventR
   const minimumMatches = Math.max(5, Math.floor(baselineCount * 0.01))
   const candidates = rules
     .map((rule) => {
-      const matchedEvents = labelableEvents.filter(rule.test).length
+      const matched = labelableEvents.filter(rule.test)
+      const matchedEvents = matched.length
       const riserMatches = riserUniverse.filter(rule.test).length
+      // 급등 여부와 무관하게 규칙에 맞은 모든 사례의 평균 수익. 급등 종목만의 평균은 결과를 알고 고른 값이라 기대수익이 될 수 없다.
+      const matchedAvgReturnPct = matchedEvents > 0
+        ? matched.reduce((acc, row) => acc + row.forwardReturnPct, 0) / matchedEvents
+        : 0
       const baselineRatePct = rate(matchedEvents, baselineCount)
       const supportPct = rate(riserMatches, riserCount)
       const liftPct = supportPct - baselineRatePct
@@ -409,6 +414,7 @@ function createRuleCandidates(labelableEvents: EventRow[], riserUniverse: EventR
         precisionPct,
         matchedEvents,
         riserMatches,
+        matchedAvgReturnPct,
       }
     })
     .filter((row) => row.matchedEvents >= minimumMatches)
@@ -432,6 +438,7 @@ function createRuleCandidates(labelableEvents: EventRow[], riserUniverse: EventR
     precisionPct: Number(row.precisionPct.toFixed(1)),
     matchedEvents: row.matchedEvents,
     riserMatches: row.riserMatches,
+    matchedAvgReturnPct: Number(row.matchedAvgReturnPct.toFixed(2)),
     filter: ruleMap.get(row.key),
   }))
 }
@@ -576,6 +583,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       ? (riserUniverse.filter((row) => row.rsi14 != null && row.rsi14 >= 45 && row.rsi14 <= 65).length / riserCount) * 100
       : 0
 
+    const baselineAvgReturn = baselineCount > 0
+      ? labelableEvents.reduce((acc, row) => acc + row.forwardReturnPct, 0) / baselineCount
+      : 0
+
     const avgForwardReturn = riserCount > 0
       ? riserUniverse.reduce((acc, row) => acc + row.forwardReturnPct, 0) / riserCount
       : 0
@@ -597,6 +608,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           labelableEvents: baselineCount,
           score70RatePct: Number(baselineScore70.toFixed(1)),
           buySignalRatePct: Number(baselineBuySignal.toFixed(1)),
+          avgForwardReturnPct: Number(baselineAvgReturn.toFixed(2)),
         },
         riserSummary: {
           riserEvents: riserCount,

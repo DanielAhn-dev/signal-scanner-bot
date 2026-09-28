@@ -7,6 +7,7 @@ import { apiFetch } from '../../lib/api'
 import { useToast } from '../../components/ToastProvider'
 import { searchStocks } from '../../lib/stockCache'
 import StockDetailModal from '../../components/StockDetailModal'
+import { empiricalWinProb, lookupTpSlBaseRate, TP_SL_HORIZON_DAYS } from '../../lib/tpSlBaseRates'
 import {
   defaultPlanItem,
   readSimulationPlan,
@@ -629,28 +630,12 @@ export default function SimulatorPage() {
         const grade = String(row.entry_grade || '').toUpperCase()
         if (grade === 'D') continue
         
-        // entry_grade에 따라 수익/손절 설정
-        let targetPct = 5, stopPct = 3, winProb = 58
-        if (grade === 'A') {
-          targetPct = 8
-          stopPct = 2.5
-          winProb = 70
-        } else if (grade === 'B') {
-          targetPct = 5
-          stopPct = 3
-          winProb = 58
-        } else {
-          // C 등급
-          targetPct = 3
-          stopPct = 4
-          winProb = 52
-        }
-        
-        // adaptive_score를 활용한 winProb 미세조정 (30~70%)
-        const baseScore = Number(row.adaptive_score ?? 50)
-        if (baseScore > 0) {
-          winProb = Math.max(30, Math.min(70, 50 + (baseScore / 100) * 20))
-        }
+        // 예전엔 진입등급별로 승률을 가정했다(A: 목표+8%/손절-2.5%/승률 70%). 실측하면 이 조합은 5거래일 안에
+        // 목표 도달 15%, 손절 58%였고, 10년 검증에서 진입 A가 오히려 가장 부진했다. 등급과 무관하게
+        // 기본 목표·손절을 두고 승률은 실측 환산값을 쓴다.
+        const targetPct = 5
+        const stopPct = 3
+        const winProb = empiricalWinProb(targetPct, stopPct)
         
         // 가격 정보 저장 (current_price 우선, 없으면 close, 둘 다 없으면 기본값 50,000원)
         const currentPrice = Number(row.current_price ?? row.close ?? 0) || 50000
@@ -684,9 +669,10 @@ export default function SimulatorPage() {
         if (!code || !name) continue
         
         // 하이라이트 데이터: upside/downside 직접 사용
-        let targetPct = Number(row.expected_upside_pct ?? 8) || 8
-        let stopPct = Math.abs(Number(row.expected_drawdown_pct ?? 2.5) || 2.5)
-        let winProb = Math.max(30, Math.min(70, Number(row.confidence_pct ?? 58) || 58))
+        // expected_* 는 20거래일 과거 분포라 주 1사이클 목표·손절로 쓰지 않는다.
+        const targetPct = 5
+        const stopPct = 3
+        const winProb = empiricalWinProb(targetPct, stopPct)
         
         // 하이라이트와 후보가 중복되면, 하이라이트 신호 정보를 우선 반영
         if (code in merged) {
@@ -1395,6 +1381,24 @@ export default function SimulatorPage() {
                                 onChange={(e) => updateItem(idx, { winProb: clampPercent(Number(e.target.value || 0), 0, 100) })} />
                               <span className="sim-input-suffix">%</span>
                             </div>
+                            {(() => {
+                              const rate = lookupTpSlBaseRate(row.targetPct, row.stopPct)
+                              const fair = empiricalWinProb(row.targetPct, row.stopPct)
+                              return (
+                                <div className="caption" style={{ marginTop: 4, lineHeight: 1.5 }}>
+                                  과거 실측(목표+{rate.target}%/손절-{rate.stop}%, {TP_SL_HORIZON_DAYS}거래일): 목표 {rate.win}% · 손절 {rate.loss}% · 미결 {rate.none}% → 환산 승률 {fair}%
+                                  {row.winProb > fair + 5 && (
+                                    <button
+                                      type="button"
+                                      style={{ marginLeft: 6, background: 'none', border: 'none', padding: 0, color: 'var(--color-brand)', cursor: 'pointer', textDecoration: 'underline' }}
+                                      onClick={() => updateItem(idx, { winProb: fair })}
+                                    >
+                                      실측값으로
+                                    </button>
+                                  )}
+                                </div>
+                              )
+                            })()}
                           </div>
                         </div>
 
@@ -1473,7 +1477,9 @@ export default function SimulatorPage() {
       {items.filter(i => i.code !== 'CASH').length > 0 && monthlyProfitTarget > 0 && (
         <div className="sim-section">
           <span className="sim-section-label">목표 달성 경로</span>
-          <p className="sim-section-desc">승률 가정 기반 · 주 1사이클(월~금) 기준</p>
+          <p className="sim-section-desc">
+            승률 가정 기반 · 주 1사이클(월~금) 기준 — 과거 10년 실측에서 주 단위 목표/손절 매매의 비용 차감 기대값은 목표·손절 조합과 무관하게 0% 안팎이었습니다.
+          </p>
           <div className="sim-goal-plan">
             <div className="sim-goal-row">
               <span className="sim-goal-label">1사이클 기대수익</span>

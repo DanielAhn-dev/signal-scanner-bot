@@ -603,7 +603,7 @@ function SignalBadge({ signal }: { signal: string | null | undefined }) {
   const s = String(signal).toUpperCase().trim()
   if (!s || s === 'NEUTRAL' || s === 'NONE') return null
   const cls = s === 'STRONG_BUY' ? 'scan-grade-a' : s === 'BUY' ? 'scan-grade-b' : s === 'WATCH' ? 'scan-grade-c' : 'scan-grade-other'
-  const label = s === 'STRONG_BUY' ? '강력매수' : s === 'BUY' ? '매수' : s === 'SELL' ? '매도' : s === 'WATCH' ? '관찰' : s
+  const label = s === 'STRONG_BUY' ? '매수+' : s === 'BUY' ? '매수' : s === 'SELL' ? '매도' : s === 'WATCH' ? '관찰' : s
   return <span className={`scan-grade-badge ${cls}`} title="종합시그널">{label}</span>
 }
 
