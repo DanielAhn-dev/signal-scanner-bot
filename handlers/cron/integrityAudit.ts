@@ -13,6 +13,7 @@ import {
   buildFreshnessDigest,
 } from "../../src/services/dataFreshnessMonitorService";
 import { checkDataQuality } from "../../src/services/dataQualityService";
+import { fetchNegativeDisclosures, formatDisclosureFilterNote } from "../../src/services/dartDisclosureFilter";
 import { sendMessage } from "../../src/telegram/api";
 
 const CRON_SECRET = process.env.CRON_SECRET;
@@ -179,6 +180,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       issues: [`데이터 품질 검사 실패: ${e instanceof Error ? e.message : String(e)}`],
       summary: "❌ 데이터 품질 검사 실패",
     }));
+    // 공시 필터가 키 누락·오류로 조용히 꺼져 있지 않은지 (키가 없으면 요청하지 않음)
+    const disclosureFilter = await fetchNegativeDisclosures();
+    const disclosureIssue = disclosureFilter.status === "ok" ? 0 : 1;
     const ymd = kstYmd();
     const message = [
       buildIntegrityReportMessage({
@@ -188,8 +192,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         freshnessDigest: buildFreshnessDigest(freshness),
       }),
       dataQuality.summary,
+      `${disclosureIssue ? "❌" : "✅"} ${formatDisclosureFilterNote(disclosureFilter)}`,
     ].join("\n");
-    const issueCount = countIntegrityIssues({ results, staleHoldingCodes }) + dataQuality.issues.length;
+    const issueCount = countIntegrityIssues({ results, staleHoldingCodes }) + dataQuality.issues.length + disclosureIssue;
     const isHealthy = issueCount === 0 && freshness.isHealthy;
 
     const { error: insertError } = await supabase.from("integrity_audit_results").insert({
@@ -203,6 +208,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         staleHoldingCodes,
         freshness: { isHealthy: freshness.isHealthy, staleItems: freshness.staleItems },
         dataQuality: dataQuality.issues,
+        disclosureFilter: { status: disclosureFilter.status, error: disclosureFilter.error ?? null },
       },
     });
     if (insertError) {

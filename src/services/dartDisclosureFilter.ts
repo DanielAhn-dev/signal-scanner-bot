@@ -33,36 +33,75 @@ function ymd(date: Date): string {
   return new Date(date.getTime() + 9 * 60 * 60 * 1000).toISOString().slice(0, 10).replace(/-/g, "");
 }
 
+/**
+ * 필터 동작 상태 — 키 누락·키 오류가 "악재 0건"과 구분되지 않아 조용히 꺼져 있는 걸 막는다.
+ *   off   = DART_API_KEY 없음
+ *   ok    = 조회 성공 (hits가 비어 있으면 최근 악재 공시 없음)
+ *   error = 키 오류(010·011·020 등)·네트워크 오류 — 이 경우 필터가 동작하지 않은 것
+ */
+export type DisclosureFilterStatus = "off" | "ok" | "error";
+
+export type DisclosureFilterResult = {
+  status: DisclosureFilterStatus;
+  hits: Map<string, DisclosureHit>;
+  error?: string;
+};
+
+/** 최근 lookbackDays 동안 악재 공시가 난 상장 종목(6자리 코드) + 필터 상태 */
+export async function fetchNegativeDisclosures(
+  lookbackDays = DISCLOSURE_LOOKBACK_DAYS,
+  apiKey = process.env.DART_API_KEY,
+  fetchImpl: typeof fetch = fetch
+): Promise<DisclosureFilterResult> {
+  const hits = new Map<string, DisclosureHit>();
+  if (!apiKey) return { status: "off", hits };
+  const end = new Date();
+  const start = new Date(end.getTime() - lookbackDays * 24 * 60 * 60 * 1000);
+  try {
+    for (let page = 1; page <= 10; page += 1) {
+      const url =
+        `${DART_LIST_URL}?crtfc_key=${encodeURIComponent(apiKey)}&bgn_de=${ymd(start)}&end_de=${ymd(end)}` +
+        `&pblntf_ty=B&page_no=${page}&page_count=100`;
+      const res = await fetchImpl(url, { signal: AbortSignal.timeout(8000) });
+      if (!res.ok) return { status: "error", hits, error: `HTTP ${res.status}` };
+      const json = (await res.json()) as {
+        status?: string;
+        message?: string;
+        total_page?: number;
+        list?: Array<{ stock_code?: string; report_nm?: string; rcept_dt?: string; corp_cls?: string }>;
+      };
+      if (json.status === "013") break; // 조회 결과 없음 = 정상
+      if (json.status !== "000") {
+        // 010 미등록 키, 011 사용할 수 없는 키, 020 요청 제한 초과 등
+        return { status: "error", hits, error: `${json.status ?? "?"} ${json.message ?? ""}`.trim() };
+      }
+      for (const item of json.list ?? []) {
+        const code = String(item.stock_code ?? "").trim();
+        if (!/^\d{6}$/.test(code) || !["Y", "K"].includes(String(item.corp_cls))) continue; // 유가·코스닥만
+        const label = classifyNegativeDisclosure(String(item.report_nm ?? ""));
+        if (label && !hits.has(code)) {
+          hits.set(code, { code, label, reportName: String(item.report_nm), date: String(item.rcept_dt ?? "") });
+        }
+      }
+      if (!json.total_page || page >= json.total_page) break;
+    }
+  } catch (e) {
+    return { status: "error", hits, error: e instanceof Error ? e.message : String(e) };
+  }
+  return { status: "ok", hits };
+}
+
+/** 후보 선정 메모·점검 리포트에 붙는 한 줄 */
+export function formatDisclosureFilterNote(result: DisclosureFilterResult): string {
+  if (result.status === "off") return "공시필터 꺼짐(DART_API_KEY 없음)";
+  if (result.status === "error") return `공시필터 오류(${result.error ?? "알 수 없음"})`;
+  return result.hits.size > 0 ? `공시악재 ${result.hits.size}종목 제외` : "공시필터 정상(악재 0)";
+}
+
 /** 최근 lookbackDays 동안 악재 공시가 난 상장 종목(6자리 코드) */
 export async function fetchNegativeDisclosureCodes(
   lookbackDays = DISCLOSURE_LOOKBACK_DAYS,
   apiKey = process.env.DART_API_KEY
 ): Promise<Map<string, DisclosureHit>> {
-  const hits = new Map<string, DisclosureHit>();
-  if (!apiKey) return hits;
-  const end = new Date();
-  const start = new Date(end.getTime() - lookbackDays * 24 * 60 * 60 * 1000);
-  for (let page = 1; page <= 10; page += 1) {
-    const url =
-      `${DART_LIST_URL}?crtfc_key=${encodeURIComponent(apiKey)}&bgn_de=${ymd(start)}&end_de=${ymd(end)}` +
-      `&pblntf_ty=B&page_no=${page}&page_count=100`;
-    const res = await fetch(url, { signal: AbortSignal.timeout(8000) });
-    if (!res.ok) break;
-    const json = (await res.json()) as {
-      status?: string;
-      total_page?: number;
-      list?: Array<{ stock_code?: string; report_nm?: string; rcept_dt?: string; corp_cls?: string }>;
-    };
-    if (json.status !== "000") break; // 013 = 조회 결과 없음, 그 외는 키·한도 오류
-    for (const item of json.list ?? []) {
-      const code = String(item.stock_code ?? "").trim();
-      if (!/^\d{6}$/.test(code) || !["Y", "K"].includes(String(item.corp_cls))) continue; // 유가·코스닥만
-      const label = classifyNegativeDisclosure(String(item.report_nm ?? ""));
-      if (label && !hits.has(code)) {
-        hits.set(code, { code, label, reportName: String(item.report_nm), date: String(item.rcept_dt ?? "") });
-      }
-    }
-    if (!json.total_page || page >= json.total_page) break;
-  }
-  return hits;
+  return (await fetchNegativeDisclosures(lookbackDays, apiKey)).hits;
 }
