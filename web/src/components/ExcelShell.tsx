@@ -26,6 +26,7 @@ import { useAuthStore } from '../stores/authStore'
 import { useProfileStore } from '../stores/profileStore'
 import { PRIMARY_NAV_ITEMS, CONTROL_NAV_ITEM, TOOL_NAV_GROUPS, TOOL_NAV_ITEMS, ALL_NAV_ITEMS } from '../navigation'
 import ExcelContentArea from './ExcelContentArea'
+import BotUsageBanner from './BotUsageBanner'
 
 // ── 타입 ─────────────────────────────────────────────────────────
 
@@ -752,6 +753,7 @@ export default function ExcelShell({
 
         {/* 중앙 패널 (현재 페이지) */}
         <div className="excel-center-panel">
+          <BotUsageBanner route={activeRoute} />
           <ExcelContentArea isNativeGrid={contentMode === 'native'}>
             {children}
           </ExcelContentArea>

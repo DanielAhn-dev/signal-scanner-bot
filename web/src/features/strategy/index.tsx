@@ -5,6 +5,7 @@ import Input from '../../components/ui/Input'
 import Checkbox from '../../components/ui/Checkbox'
 import Skeleton from '../../components/Skeleton'
 import { EmptyState, ErrorState } from '../../components/StateViews'
+import ForwardTestPanel from './ForwardTestPanel'
 
 type DecisionRow = {
   id?: number
@@ -569,6 +570,8 @@ export default function StrategyPage() {
           새로고침
         </Button>
       </div>
+
+      <ForwardTestPanel />
 
       <div style={{ display: 'flex', gap: 8, marginBottom: 20, flexWrap: 'wrap' }}>
         {tabs.map((item) => (

@@ -15,6 +15,8 @@ import {
   simulateIndexStrategies,
   simulateOrderSheetStrategy,
   simulateWeeklyStrategy,
+  FORWARD_TEST_RESULT_PATH,
+  type ForwardTestSnapshot,
   type SavedOrderSheet,
   type DailyBar,
   type StrategyResult,
@@ -200,6 +202,15 @@ async function main(): Promise<void> {
   }
   const report = formatForwardTestReport({ startDate: START, endDate, results });
   console.log(report);
+
+  // 웹 전략 화면이 읽을 수 있게 최신 결과를 저장한다 (텔레그램 전송 때만 = 운영 실행)
+  if (SEND_TELEGRAM) {
+    const snapshot: ForwardTestSnapshot = { startDate: START, endDate, generatedAt: new Date().toISOString(), results };
+    const { error: upErr } = await supabase.storage
+      .from("market-snapshots")
+      .upload(FORWARD_TEST_RESULT_PATH, JSON.stringify(snapshot), { upsert: true, contentType: "application/json" });
+    if (upErr) console.warn(`전향검증 결과 저장 실패: ${upErr.message}`);
+  }
 
   if (SEND_TELEGRAM) {
     const token = process.env.TELEGRAM_BOT_TOKEN;

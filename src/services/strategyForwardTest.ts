@@ -31,7 +31,7 @@ export type StrategyResult = {
 };
 
 export const STRATEGY_LABELS: Record<StrategyName, string> = {
-  "index-core": "지수 추세 코어(SMA100)",
+  "index-core": "지수 추세 코어(SMA50, 봇 매수 기준과 동일)",
   "kodex200-hold": "KODEX200 보유",
   "cd-only": "CD금리만",
   "score-top5": "점수 상위5 주간교체",
@@ -44,6 +44,17 @@ export const STRATEGY_LABELS: Record<StrategyName, string> = {
 const STOCK_SIDE_COST = 0.00225;
 const ETF_SIDE_COST = 0.00035;
 const CD_ANNUAL = 0.028;
+/** 지수 코어 추세선. 자동매매 신규 매수 기준(detectAutoTradeMarketPolicy, 코스피 50일선)과 같은 규칙을 측정한다. */
+export const INDEX_CORE_SMA_WINDOW = 50;
+/** 웹(전략 화면)이 읽는 최신 결과 위치 — Storage market-snapshots 버킷 */
+export const FORWARD_TEST_RESULT_PATH = "forward-test/latest.json";
+
+export type ForwardTestSnapshot = {
+  startDate: string;
+  endDate: string;
+  generatedAt: string;
+  results: StrategyResult[];
+};
 
 function sma(values: number[], end: number, window: number): number | null {
   if (end + 1 < window) return null;
@@ -76,7 +87,7 @@ export function simulateIndexStrategies(input: {
   let inIndex = false;
   for (let i = startIdx; i < bars.length; i += 1) {
     const ret = bars[i].close / bars[i - 1].close - 1;
-    const m = sma(closes, i - 1, 100);
+    const m = sma(closes, i - 1, INDEX_CORE_SMA_WINDOW);
     const wantIndex = m != null && closes[i - 1] > m;
     const switchCost = wantIndex !== inIndex ? ETF_SIDE_COST * 2 : 0;
     inIndex = wantIndex;

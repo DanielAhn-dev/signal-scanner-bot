@@ -1,12 +1,13 @@
 /**
  * Dashboard — 중앙 패널: 엑셀 셀 병합 스타일 대시보드
- * 오늘의 플로우 / 포트폴리오 요약 / 유망 섹터 Top 8
+ * 오늘의 플로우 / 포트폴리오 요약 / 점수 상위 섹터 Top 8
  */
 import React, { useEffect, useState } from 'react'
 import { apiFetch } from '../../lib/api'
 import { useCurrentChatId } from '../../stores/profileStore'
 import EconomicEventBadge from '../../components/EconomicEventBadge'
 import SheetHeaderBar from '../../components/SheetHeaderBar'
+import { FLOW_STEPS } from '../../navigation'
 
 type SectorItem = {
   name?: string
@@ -20,12 +21,7 @@ type PortfolioSummary = {
   positions?: unknown[]
 }
 
-const FLOW_STEPS = [
-  { num: '01', title: '시장 확인',  desc: '거시변동성·섹터 흐름부터 먼저 본다.',      link: '경제 / 시장 열기 →', route: 'market'    },
-  { num: '02', title: '후보 압축',  desc: '스캔과 놓임목으로 3~5개만 남긴다.',        link: '스캔 열기 →',       route: 'scan'      },
-  { num: '03', title: '종목 검증',  desc: '분석·수급·재무로 진입 전 걸러낸다.',       link: '분석 열기 →',       route: 'analyze'   },
-  { num: '04', title: '실행 / 복기',desc: '포트폴리오와 리포트로 실행을 담는다.',      link: '포트폴리오 보기 →', route: 'portfolio' },
-]
+// 오늘의 플로우는 navigation.ts FLOW_STEPS(탭 순서와 같은 정의)에서 그린다
 
 // 셀 스타일 헬퍼
 const S = {
@@ -186,51 +182,22 @@ export default function Dashboard({ onNavigate }: { onNavigate?: (r: string) => 
             </td>
           </tr>
 
-          {/* 플로우 — 번호 + 타이틀 */}
-          <tr className="xls-row xls-row--even">
-            <td className="xls-row-num">{rowNum()}</td>
-            {FLOW_STEPS.map((s, i) => (
-              <td
-                key={s.num}
-                className="xls-cell"
-                colSpan={i < 2 ? 2 : 1}
-                style={{ ...S.header, ...(i === 1 ? S.midBorder : {}), borderLeft: i === 2 ? '1px solid var(--color-excel-grid-border)' : undefined }}
-              >
-                <span style={{ color: 'var(--color-text-tertiary)', fontWeight: 400, marginRight: 4, fontSize: 10 }}>{s.num}</span>
-                <span style={{ color: 'var(--color-brand)', fontWeight: 700, fontSize: 10 }}>{s.title}</span>
+          {/* 플로우 — 단계별 한 줄 (navigation.ts FLOW_STEPS) */}
+          {FLOW_STEPS.map((s, i) => (
+            <tr key={s.key} className={`xls-row${i % 2 === 0 ? ' xls-row--even' : ''}`}>
+              <td className="xls-row-num">{rowNum()}</td>
+              <td className="xls-cell" colSpan={2} style={{ ...S.header, ...S.midBorder }}>
+                <span style={{ color: 'var(--color-text-tertiary)', fontWeight: 400, marginRight: 4, fontSize: 10 }}>{s.step}</span>
+                <span style={{ color: 'var(--color-brand)', fontWeight: 700, fontSize: 10 }}>{s.label}</span>
               </td>
-            ))}
-          </tr>
-
-          {/* 플로우 — 설명 */}
-          <tr className="xls-row">
-            <td className="xls-row-num">{rowNum()}</td>
-            {FLOW_STEPS.map((s, i) => (
-              <td
-                key={s.num}
-                className="xls-cell"
-                colSpan={i < 2 ? 2 : 1}
-                style={{ fontSize: 10, color: 'var(--color-text-secondary)', whiteSpace: 'normal', lineHeight: 1.5, ...(i === 1 ? S.midBorder : {}) }}
-              >
+              <td className="xls-cell" colSpan={3} style={{ fontSize: 10, color: 'var(--color-text-secondary)', whiteSpace: 'normal', lineHeight: 1.5 }}>
                 {s.desc}
               </td>
-            ))}
-          </tr>
-
-          {/* 플로우 — 링크 */}
-          <tr className="xls-row xls-row--even">
-            <td className="xls-row-num">{rowNum()}</td>
-            {FLOW_STEPS.map((s, i) => (
-              <td
-                key={s.num}
-                className="xls-cell"
-                colSpan={i < 2 ? 2 : 1}
-                style={{ ...(i === 1 ? S.midBorder : {}) }}
-              >
-                <span style={S.link} onClick={() => nav(s.route)}>{s.link}</span>
+              <td className="xls-cell">
+                <span style={S.link} onClick={() => nav(s.key)}>열기 →</span>
               </td>
-            ))}
-          </tr>
+            </tr>
+          ))}
 
           {/* ── 구분선 ── */}
           <tr className="xls-row">
