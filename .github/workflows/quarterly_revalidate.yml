@@ -1,0 +1,46 @@
+name: Quarterly Rule Revalidation
+
+# 채택한 매매 규칙(실적 관문·적자 제외·코스피 50일선·매도 규칙)이 새 데이터에서도 통하는지 분기마다 확인한다.
+# 규칙을 새로 맞추지 않고, 약해진 규칙만 텔레그램으로 알린다 (scripts/research/revalidate_rules.py).
+# 분기 실적 공시 마감(3/31 사업보고서, 5/15·8/14·11/14 분기보고서) 직후에 돈다.
+
+permissions:
+  contents: read
+
+on:
+  schedule:
+    - cron: "0 1 10 4 *"        # 4/10 10:00 KST
+    - cron: "0 1 20 5,8,11 *"   # 5/20·8/20·11/20 10:00 KST
+  workflow_dispatch:
+
+jobs:
+  revalidate:
+    runs-on: ubuntu-latest
+    environment: production
+    timeout-minutes: 120
+    env:
+      DART_API_KEY: ${{ secrets.DART_API_KEY }}
+      TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+      TELEGRAM_ADMIN_CHAT_ID: ${{ secrets.TELEGRAM_ADMIN_CHAT_ID }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install numpy
+
+      # DART 재무 캐시(작년 이전 연도분)를 분기 사이에 재사용해 호출 수를 줄인다
+      - name: Restore research cache
+        uses: actions/cache@v4
+        with:
+          path: .research-cache/fin
+          key: research-fin-${{ github.run_id }}
+          restore-keys: research-fin-
+
+      - name: Revalidate rules
+        run: python scripts/research/revalidate_rules.py --telegram

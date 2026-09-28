@@ -163,3 +163,6 @@ __pycache__/
 *.pyo
 scripts/batch_modules/_kis_token_cache.json
 scripts/ops/_backups/
+
+# 분기 규칙 재검증 데이터 캐시 (scripts/research/revalidate_rules.py)
+.research-cache/
