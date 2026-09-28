@@ -10,6 +10,8 @@ import { handleSectorDetailCommand } from "./commands/sector";
 import type { ChatContext } from "./routing/types";
 import { renderMenu } from "./menu/renderMenu";
 import { routeMessage } from "./router";
+import { parsePromotionCallback, recordStrategyDecision } from "../services/strategyPromotion";
+import { createClient } from "@supabase/supabase-js";
 
 export async function sendPromptForCommand(
   kind: string,
@@ -299,6 +301,28 @@ export async function routeCallbackData(
         return;
       }
     }
+  }
+
+  // 전략 승격 승인·보류·해제 버튼 (관리자만)
+  const promotion = parsePromotionCallback(data);
+  if (promotion) {
+    const adminId = Number(process.env.TELEGRAM_ADMIN_CHAT_ID);
+    if (!Number.isFinite(adminId) || adminId !== ctx.chatId) {
+      await tgSend("sendMessage", { chat_id: ctx.chatId, text: "전략 승격 결정은 관리자만 할 수 있습니다." });
+      return;
+    }
+    // 결정 기록은 Storage 쓰기가 필요해 서비스 키를 쓴다 (src/db/client는 anon 키)
+    const serviceSupabase = createClient(process.env.SUPABASE_URL as string, process.env.SUPABASE_SERVICE_ROLE_KEY as string, {
+      auth: { persistSession: false },
+    });
+    const result = await recordStrategyDecision(serviceSupabase, {
+      strategy: promotion.strategy,
+      action: promotion.action,
+      by: String(ctx.chatId),
+      source: "telegram",
+    }).catch((e: unknown) => ({ ok: false, message: `처리 실패: ${e instanceof Error ? e.message : String(e)}` }));
+    await tgSend("sendMessage", { chat_id: ctx.chatId, text: result.message });
+    return;
   }
 
   if (data.startsWith("KRX:")) {

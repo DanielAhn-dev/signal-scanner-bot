@@ -11,6 +11,7 @@ import { createClient } from "@supabase/supabase-js";
 import { isExchangeTradedProduct } from "../src/lib/securitiesTax";
 import { computeFlowScore, pickHeavyNetSelling } from "../src/services/investorFlowFilter";
 import { fetchFundamentalGateResults } from "../src/services/fundamentalQualityGate";
+import { buildPromotionKeyboard } from "../src/services/strategyPromotion";
 import {
   firstTradingDaysOfWeeks,
   firstTradingDaysOfMonths,
@@ -334,7 +335,14 @@ async function main(): Promise<void> {
       await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ chat_id: chatId, text: report }),
+        body: JSON.stringify({
+          chat_id: chatId,
+          text: report,
+          // 승격 후보가 있을 때만 [승인] [보류] 버튼 (strategyPromotion.ts)
+          ...(review.status === "propose" && review.candidates.length
+            ? { reply_markup: { inline_keyboard: buildPromotionKeyboard(review.candidates) } }
+            : {}),
+        }),
       });
     } else {
       console.log("TELEGRAM_BOT_TOKEN / TELEGRAM_ADMIN_CHAT_ID 없음 — 전송 생략");

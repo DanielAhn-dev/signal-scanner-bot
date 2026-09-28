@@ -1,5 +1,6 @@
-import React, { useEffect, useState } from 'react'
+import React, { useCallback, useEffect, useState } from 'react'
 import { apiFetch } from '../../lib/api'
+import Button from '../../components/ui/Button'
 
 type StrategyResult = {
   name: string
@@ -14,7 +15,13 @@ type ForwardTestSnapshot = {
   endDate: string
   generatedAt: string
   results: StrategyResult[]
-  review?: { status: string; measuredDays: number; lines: string[] }
+  review?: { status: string; measuredDays: number; lines: string[]; candidates?: string[] }
+}
+
+type Activation = {
+  active: string | null
+  approvedPendingImplementation: string[]
+  decisions: Array<{ strategy: string; action: string; at: string; source: string }>
 }
 
 // 비교 기준 — 후보 전략이 현재 봇·KODEX 200·CD금리보다 모두 나아야 바꿀 이유가 있다
@@ -24,29 +31,53 @@ const pct = (v: number) => `${v >= 0 ? '+' : ''}${v.toFixed(2)}%`
 
 /**
  * 전략 경쟁 측정(전향검증) — scripts/strategy_forward_test.ts 가 매일 저장한 최신 결과.
- * 봇 후보 전략을 KODEX 200 보유·CD금리와 같은 기간·같은 비용으로 비교한다.
+ * 봇 후보 전략을 봇 실제 계좌·KODEX 200·CD금리와 같은 기간·같은 비용으로 비교하고,
+ * 판정이 승격 후보를 내면 관리자가 승인·보류한다 (텔레그램 버튼과 같은 기록, strategyPromotion.ts).
  */
 export default function ForwardTestPanel() {
   const [snap, setSnap] = useState<ForwardTestSnapshot | null>(null)
+  const [activation, setActivation] = useState<Activation | null>(null)
+  const [canDecide, setCanDecide] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [loaded, setLoaded] = useState(false)
+  const [busy, setBusy] = useState(false)
+  const [notice, setNotice] = useState<string | null>(null)
 
-  useEffect(() => {
-    let alive = true
-    apiFetch('/api/ui/forward-test', { cacheMs: 60_000 })
-      .then((res: { data?: ForwardTestSnapshot | null }) => {
-        if (alive) setSnap(res?.data ?? null)
-      })
-      .catch((e: unknown) => {
-        if (alive) setError(e instanceof Error ? e.message : String(e))
-      })
-      .finally(() => {
-        if (alive) setLoaded(true)
-      })
-    return () => {
-      alive = false
+  const load = useCallback(async () => {
+    try {
+      const res = await apiFetch('/api/ui/forward-test', { cacheMs: 0 })
+      setSnap(res?.data ?? null)
+      setActivation(res?.activation ?? null)
+      setCanDecide(Boolean(res?.canDecide))
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : String(e))
+    } finally {
+      setLoaded(true)
     }
   }, [])
+
+  useEffect(() => {
+    void load()
+  }, [load])
+
+  const decide = async (strategy: string, action: 'approve' | 'defer' | 'deactivate') => {
+    setBusy(true)
+    setNotice(null)
+    try {
+      const res = await apiFetch('/api/ui/forward-test', {
+        method: 'POST',
+        cacheMs: 0,
+        timeoutMs: 15_000,
+        body: JSON.stringify({ strategy, action }),
+      })
+      setNotice(res?.message ?? res?.error ?? '처리됨')
+      await load()
+    } catch (e: unknown) {
+      setNotice(e instanceof Error ? e.message : String(e))
+    } finally {
+      setBusy(false)
+    }
+  }
 
   const box: React.CSSProperties = {
     border: '1px solid var(--color-border-default)',
@@ -62,6 +93,7 @@ export default function ForwardTestPanel() {
     return <div style={box}>전략 비교 결과가 아직 없습니다. 매일 배치(전향검증)가 돌면 채워집니다.</div>
   }
 
+  const labelOf = (name: string) => snap.results.find((r) => r.name === name)?.label ?? name
   const kodex = snap.results.find((r) => r.name === 'kodex200-hold')
   const cd = snap.results.find((r) => r.name === 'cd-only')
   const bot = snap.results.find((r) => r.name === 'bot-account')
@@ -73,6 +105,7 @@ export default function ForwardTestPanel() {
     if (cd) parts.push(r.totalReturnPct >= cd.totalReturnPct ? 'CD 앞섬' : 'CD 못 미침')
     return parts.join(' · ')
   }
+  const candidates = snap.review?.status === 'propose' ? snap.review.candidates ?? [] : []
 
   const th: React.CSSProperties = { textAlign: 'left', padding: '4px 8px', borderBottom: '1px solid var(--color-border-default)' }
   const td: React.CSSProperties = { padding: '4px 8px', borderBottom: '1px solid var(--color-border-subtle, var(--color-border-default))' }
@@ -84,6 +117,28 @@ export default function ForwardTestPanel() {
         {snap.startDate} ~ {snap.endDate} · 매매비용 포함 · 측정 시작 뒤 실제로 지나간 기간만 씁니다.
         기간이 짧을수록 우연의 영향이 크니, 몇 달 쌓인 뒤 판단하세요.
       </div>
+
+      <div style={{ marginBottom: 8, lineHeight: 1.6 }}>
+        <strong>봇이 따르는 전략</strong>:{' '}
+        {activation?.active ? (
+          <>
+            {labelOf(activation.active)} (승격 승인됨){' '}
+            {canDecide && (
+              <Button size="sm" variant="secondary" disabled={busy} onClick={() => void decide(activation.active!, 'deactivate')}>
+                해제 — 기존 방식으로
+              </Button>
+            )}
+          </>
+        ) : (
+          '기존 봇 방식 (점수 후보 + 실적 관문 + 50일선 + 매도 규칙)'
+        )}
+        {activation?.approvedPendingImplementation?.length ? (
+          <div style={{ color: 'var(--color-text-secondary)' }}>
+            승인됐지만 봇 구현 대기: {activation.approvedPendingImplementation.map(labelOf).join(', ')}
+          </div>
+        ) : null}
+      </div>
+
       {snap.review && (
         <div
           style={{
@@ -101,8 +156,32 @@ export default function ForwardTestPanel() {
           {snap.review.lines.map((line) => (
             <div key={line}>{line}</div>
           ))}
+          {candidates.map((name) => (
+            <div key={name} style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap', marginTop: 6 }}>
+              <span>{labelOf(name)}</span>
+              {canDecide ? (
+                <>
+                  <Button size="sm" disabled={busy || activation?.active === name} onClick={() => void decide(name, 'approve')}>
+                    승인
+                  </Button>
+                  <Button size="sm" variant="secondary" disabled={busy} onClick={() => void decide(name, 'defer')}>
+                    보류
+                  </Button>
+                </>
+              ) : (
+                <span style={{ color: 'var(--color-text-tertiary)' }}>승인은 관리자만</span>
+              )}
+            </div>
+          ))}
+          {!candidates.length && (
+            <div style={{ color: 'var(--color-text-tertiary)', marginTop: 4 }}>
+              승인 버튼은 판정 규칙을 통과한 후보가 있을 때만 나타납니다.
+            </div>
+          )}
         </div>
       )}
+      {notice && <div style={{ marginBottom: 8, color: 'var(--color-brand)' }}>{notice}</div>}
+
       <div style={{ overflowX: 'auto' }}>
         <table style={{ borderCollapse: 'collapse', width: '100%', minWidth: 480 }}>
           <thead>
@@ -116,7 +195,10 @@ export default function ForwardTestPanel() {
           <tbody>
             {snap.results.map((r) => (
               <tr key={r.name} style={BENCHMARKS.has(r.name) ? { color: 'var(--color-text-secondary)' } : undefined}>
-                <td style={td}>{r.label}</td>
+                <td style={td}>
+                  {r.label}
+                  {activation?.active === r.name ? ' · 봇 적용 중' : ''}
+                </td>
                 <td style={{ ...td, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{pct(r.totalReturnPct)}</td>
                 <td style={{ ...td, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{r.maxDrawdownPct.toFixed(2)}%</td>
                 <td style={td}>{verdict(r)}</td>
