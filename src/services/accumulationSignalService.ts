@@ -46,14 +46,14 @@ export function scoreLeadAccumulationCandidate(item: ScanCandidateLike): LeadAcc
 
   if (distGrade >= 4) {
     score += 18
-    reasons.push('매집 등급 우수')
+    reasons.push('21일선 이격 적정')
   } else if (distGrade === 3) {
     score += 10
   }
 
   if (pivotGrade >= 4) {
     score += 18
-    reasons.push('세력선 등급 우수')
+    reasons.push('10일 저점 근접')
   } else if (pivotGrade === 3) {
     score += 10
   }

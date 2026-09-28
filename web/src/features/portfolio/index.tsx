@@ -121,14 +121,14 @@ const WARN_REASON_LABELS: Array<{ key: string; label: string }> = [
   { key: 'warn_overheat', label: '이격 과열(21일선 대비 +7% 초과)' },
   { key: 'warn_vol_spike', label: '거래량 급증(20일 평균 대비 2배 초과)' },
   { key: 'warn_atr_spike', label: '변동성 급증(ATR14 > ATR20 평균 x 1.5)' },
-  { key: 'warn_rsi_ob', label: 'RSI 과매수(70 초과)' },
+  { key: 'warn_rsi_ob', label: 'RSI 극단(70 초과 또는 30 미만)' },
   { key: 'warn_ma_break', label: '21일선 이탈(종가 < MA21)' },
   { key: 'warn_dead_cross', label: '데드크로스(MA21 < MA50)' },
 ]
 
 const BADGE_TOOLTIPS: Record<string, string> = {
   '점수부족': '추가매수 기준 점수 미달. 점수가 오르거나 기준 완화 시 추가진입 신호가 생성됩니다.',
-  '경고있음': '기술적 경고 지표 발생 (이격과열·거래량급증·RSI 과매수 등). 판정근거 보기에서 상세 확인.',
+  '경고있음': '기술적 경고 지표 발생 (이격과열·거래량급증·RSI 극단 등). 판정근거 보기에서 상세 확인.',
   '매도신호': '종합 점수 기반 매도 신호 발생. 현재 보통 보유 상태이나 주의 관찰 필요.',
   '관망': '추가매수·부분청산 조건 모두 미충족. 현재 포지션 유지 권장.',
   '익절구간': '수익률이 부분청산 기준에 도달. 일부 매도를 검토하세요.',
@@ -1319,7 +1319,7 @@ export default function Portfolio() {
               {advisorPerfLoading
                 ? '성과 데이터 조회 중...'
                 : advisorPerf?.summary
-                  ? `신뢰점수 ${advisorPerf.summary.trustScore ?? '—'} · 의사결정 ${advisorPerf.summary.totalDecisions ?? 0}건`
+                  ? `실현승률 ${advisorPerf.summary.trustScore != null ? `${advisorPerf.summary.trustScore}%` : '표본 부족'} · 의사결정 ${advisorPerf.summary.totalDecisions ?? 0}건`
                   : '데이터 없음'
               }
             </div>
@@ -1334,7 +1334,7 @@ export default function Portfolio() {
             ) : advisorPerf?.summary ? (
               <>
                 <div className="portfolio-performance-grid">
-                  <div className="portfolio-performance-metric"><span>신뢰 점수</span><strong>{advisorPerf.summary.trustScore ?? '—'}</strong></div>
+                  <div className="portfolio-performance-metric"><span title="실현 매도 10건 이상부터 계산">실현 승률</span><strong>{advisorPerf.summary.trustScore != null ? `${advisorPerf.summary.trustScore}%` : '표본 부족'}</strong></div>
                   <div className="portfolio-performance-metric"><span>의사결정 수</span><strong>{advisorPerf.summary.totalDecisions ?? 0}</strong></div>
                   <div className="portfolio-performance-metric"><span>매도 승률</span><strong>{advisorPerf.summary.linkedSellWinRatePct != null ? `${formatNumber(advisorPerf.summary.linkedSellWinRatePct, 1)}%` : '—'}</strong></div>
                   <div className="portfolio-performance-metric"><span>누적 실현손익</span><strong>{formatKrw(Number(advisorPerf.summary.linkedRealizedPnl || 0))}</strong></div>

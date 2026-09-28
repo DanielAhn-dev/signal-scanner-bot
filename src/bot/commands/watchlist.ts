@@ -2997,8 +2997,8 @@ export async function handleWatchlistHistoryCommand(
     `가상 잔액 <code>${fmtInt(cash)}원</code>`,
     `실현손익(최근 시드 재계산 이후) <code>${realized >= 0 ? "+" : ""}${fmtInt(realized)}원</code>`,
     reliability
-      ? `판단 신뢰도 <code>${reliability.trustScore == null ? "계산중" : `${reliability.trustScore}점`}</code> · 근거기록 ${reliability.explanationCoveragePct.toFixed(1)}% · 정책버전 ${reliability.strategyVersionCount}개`
-      : "판단 신뢰도 집계 불가 (decision log 조회 실패)",
+      ? `판단 실현승률 <code>${reliability.trustScore == null ? `표본 부족(매도 ${reliability.linkedSellCount}건, 10건부터)` : `${reliability.trustScore}% (매도 ${reliability.linkedSellCount}건)`}</code> · 정책버전 ${reliability.strategyVersionCount}개`
+      : "판단 결과 집계 불가 (decision log 조회 실패)",
   ].join("\n");
 
   await tgSend("sendMessage", {

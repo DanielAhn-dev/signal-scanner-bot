@@ -12,6 +12,13 @@ import type { MarketOverview } from "../utils/fetchMarketData";
 import { fetchAllMarketData, fetchReportMarketData } from "../utils/fetchMarketData";
 import type { AutoTradeMarketPolicy } from "./virtualAutoTradeSelection";
 import { chunkValues, selectPaged } from "./supabasePaging";
+import {
+  describeForecastDistribution,
+  entryGradeBucketKey,
+  lookupForecastBaseRate,
+  momentumBucketKey,
+  type ForecastBaseRate,
+} from "./forecastBaseRates";
 
 export type SectorFlowInsightRow = {
   name: string;
@@ -415,20 +422,31 @@ function normalizePullbackWarnToPct(rawWarn: number): number {
   return clampDailyCandidateValue(safe * 20, 0, 100);
 }
 
+// 예상 수익·손실·신뢰도는 예전엔 점수로 만든 일차식(예: 신뢰도 = 52 + 강도×34, 최대 92%)이었다.
+// 10년 검증에서 점수·등급에 예측력이 없어 근거 없는 숫자였으므로, 같은 조건 종목들의 실제 20일 수익 분포로 바꾼다.
+// 필드 의미: base=중앙값, upside=상위 25%, drawdown=하위 10%의 손실폭(양수), confidence=20일 뒤 상승 마감 비율.
+function baseRateForecastFields(rate: ForecastBaseRate): {
+  expectedBasePct: number;
+  expectedUpsidePct: number;
+  expectedDrawdownPct: number;
+  confidencePct: number;
+} {
+  return {
+    expectedBasePct: rate.median,
+    expectedUpsidePct: rate.p75,
+    expectedDrawdownPct: Math.abs(Math.min(0, rate.p10)),
+    confidencePct: rate.upProb,
+  };
+}
+
 function estimateForecastFromMarketPick(input: {
   pick: PickCandidate;
   budgetPerCandidate: number;
   sizingBaseCapital: number;
 }): DailyCandidateForecast {
-  const scoreStrength = clampDailyCandidateValue((input.pick.score - 55) / 35, 0, 1);
-  const rsiRisk = clampDailyCandidateValue(Math.abs(input.pick.rsi14 - 55) / 30, 0, 1);
-  const trendBoost = input.pick.trendLabel === "정배열 상승" ? 0.12 : input.pick.trendLabel === "상승 우위" ? 0.07 : 0;
-  const strength = clampDailyCandidateValue(scoreStrength + trendBoost, 0, 1);
-
-  const expectedBasePct = round1(clampDailyCandidateValue(1.6 + strength * 8.8 - rsiRisk * 1.8, -3.5, 14));
-  const expectedUpsidePct = round1(clampDailyCandidateValue(expectedBasePct + 3.8 + strength * 2.8, 0.5, 20));
-  const expectedDrawdownPct = round1(clampDailyCandidateValue(2.2 + (1 - strength) * 4.2 + rsiRisk * 2.1, 1.2, 11));
-  const confidencePct = round1(clampDailyCandidateValue(52 + strength * 34 - rsiRisk * 14, 35, 92));
+  const { expectedBasePct, expectedUpsidePct, expectedDrawdownPct, confidencePct } = baseRateForecastFields(
+    lookupForecastBaseRate(momentumBucketKey(input.pick.momentumScore))
+  );
 
   const quantity = resolveSuggestedQuantity({
     entryPrice: input.pick.price,
@@ -468,13 +486,9 @@ function estimateForecastFromPullback(input: {
   const entryScorePct = normalizePullbackScoreToPct(Number(input.item.entry_score ?? 0));
   const warnScorePct = normalizePullbackWarnToPct(Number(input.item.warn_score ?? 0));
   const safetyPct = 100 - warnScorePct;
-  const strength = clampDailyCandidateValue((entryScorePct * 0.62 + safetyPct * 0.38) / 100, 0, 1);
-  const riskPenalty = clampDailyCandidateValue(warnScorePct / 100, 0, 1);
-
-  const expectedBasePct = round1(clampDailyCandidateValue(1.2 + strength * 7.6 - riskPenalty * 1.6, -2, 12));
-  const expectedUpsidePct = round1(clampDailyCandidateValue(expectedBasePct + 3.6 + strength * 2.3 - riskPenalty * 0.8, 0.8, 18));
-  const expectedDrawdownPct = round1(clampDailyCandidateValue(2.8 + (1 - strength) * 3.9 + riskPenalty * 2.1, 1.2, 10));
-  const confidencePct = round1(clampDailyCandidateValue(48 + strength * 30 - riskPenalty * 15, 32, 88));
+  const { expectedBasePct, expectedUpsidePct, expectedDrawdownPct, confidencePct } = baseRateForecastFields(
+    lookupForecastBaseRate(entryGradeBucketKey(input.item.entry_grade))
+  );
 
   const quantity = resolveSuggestedQuantity({
     entryPrice: price,
@@ -1524,10 +1538,10 @@ export async function createDailyCandidatePlanningReportResult(
   const forecastLines = forecasts.length
     ? [
         "",
-        "<b>예측 시나리오 (백테스트 아님)</b>",
-        "과거 유사구간(점수·추세·리스크) 기반 추정이며, 실전 체결/슬리피지에 따라 달라질 수 있습니다.",
+        "<b>과거 분포 (예측 아님)</b>",
+        "과거 10년 비슷한 조건 종목들의 20거래일 뒤 수익 분포입니다. 점수·등급은 이 분포를 의미 있게 바꾸지 못했습니다.",
         ...forecasts.map((item, index) =>
-          `${index + 1}. ${item.name}(${item.code}) · 기준가 ${fmtDailyCandidateInt(item.entryPrice)}원 · 권장 ${item.suggestedQuantity > 0 ? `${item.suggestedQuantity}주` : "수량 산출 불가"} · 예상손실 -${item.expectedDrawdownPct.toFixed(1)}% · 기준 +${item.expectedBasePct.toFixed(1)}% · 상단 +${item.expectedUpsidePct.toFixed(1)}% · 신뢰 ${item.confidencePct.toFixed(1)}%`
+          `${index + 1}. ${item.name}(${item.code}) · 기준가 ${fmtDailyCandidateInt(item.entryPrice)}원 · 권장 ${item.suggestedQuantity > 0 ? `${item.suggestedQuantity}주` : "수량 산출 불가"} · ${describeForecastDistribution(item)}`
         ),
       ]
     : [];
@@ -1596,7 +1610,7 @@ export async function createDailyCandidatePlanningReportResult(
         ? [
             "  예측",
             ...forecasts.slice(0, 2).map((item) =>
-              `  ▸ ${item.name}(${item.code}) · -${item.expectedDrawdownPct.toFixed(1)}% / +${item.expectedBasePct.toFixed(1)}% / 상단 +${item.expectedUpsidePct.toFixed(1)}%`
+              `  ▸ ${item.name}(${item.code}) · ${describeForecastDistribution(item)}`
             ),
           ]
         : []),

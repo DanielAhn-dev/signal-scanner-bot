@@ -12,6 +12,21 @@ from supabase import Client
 from .utils import safe_float, safe_int, derive_signal, run_python_script
 
 
+# 신호 보정 (2026-09-28 점검)
+# 대형주(코어·거래대금 500억↑)는 가치 65 고정 + 유동성 90이라 모멘텀이 상한(100)에 닿으면 총점이 87로 몰린다.
+# 2015~2026 10년 검증에서 모멘텀 고득점(90↑)은 같은 날 다른 종목보다 나은 성과가 없었다(-0.37%p, 8구간 중 2구간만 양수).
+# BUY보다 낫다는 근거가 없으므로 이 경우 STRONG_BUY(강력매수)라고 부르지 않는다. 점수·매수 기준은 그대로다.
+# (시장 과열 폭 기준 하향도 검토했으나 10년 검증에서 근거가 없어 넣지 않았다.)
+MOMENTUM_SATURATED = 100
+
+
+def adjust_signal(signal: str, momentum_score: int) -> tuple:
+    """총점 기반 신호에 검증된 보정만 적용한다. (최종 신호, 보정 사유 목록)"""
+    if signal == "STRONG_BUY" and momentum_score >= MOMENTUM_SATURATED:
+        return "BUY", ["momentum_saturated"]
+    return signal, []
+
+
 def run_engine_score_sync(asof: str) -> bool:
     """Run score sync via engine command."""
     pnpm_bin = "pnpm.cmd" if os.name == "nt" else "pnpm"
@@ -205,11 +220,13 @@ def calculate_stock_scores(supabase: Client, trading_date: str) -> dict:
                 "institution_5d": institution_5d,
                 "foreign_5d": foreign_5d,
             })
+            signal, signal_adjustments = adjust_signal(derive_signal(total_score), momentum_score)
+            merged_factors["signal_adjustments"] = signal_adjustments
 
             upserts.append({
                 "code": code, "asof": asof,
                 "score": float(total_score),
-                "signal": derive_signal(total_score),
+                "signal": signal,
                 "factors": merged_factors,
                 "value_score": int(value_score),
                 "momentum_score": int(momentum_score),

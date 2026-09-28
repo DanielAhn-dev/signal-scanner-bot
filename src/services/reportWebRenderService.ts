@@ -1,6 +1,7 @@
 import type { DailyCandidateForecast } from './marketInsightService'
 import type { PullbackCandidateSectionItem, PullbackSectionMeta } from './weeklyReportSections'
 import type { WeeklyWebPayload } from './weeklyReportService'
+import { describeForecastDistribution, FORECAST_BASE_RATE_NOTE } from './forecastBaseRates'
 
 export const HTML_BODY_PREFIX = '__HTML__\n'
 
@@ -454,10 +455,8 @@ export function renderBodyText(bodyText: string, topic?: string): string {
 // 모든 카드 동일한 중립 스타일 — 순위 배지만 1위는 브랜드 블루, 나머지 그레이
 const CONVICTION_RANK_BADGE = ['#0060FF', '#8B95A1', '#8B95A1', '#8B95A1', '#8B95A1'] as const
 
-function convictionConfidenceLevel(pct: number): { label: string; color: string } {
-  if (pct >= 78) return { label: '높음', color: '#007B5F' }
-  if (pct >= 65) return { label: '보통', color: '#C85700' }
-  return { label: '낮음', color: '#F04452' }
+function signedPct(value: number): string {
+  return `${value > 0 ? '+' : ''}${value.toFixed(1)}%`
 }
 
 function convictionScoreBar(score: number, colorHigh: string): string {
@@ -487,42 +486,13 @@ function convictionStrategyInfo(label: string): StrategyInfo {
 }
 
 function convictionRationalePoints(item: DailyCandidateForecast): string[] {
-  const points: string[] = []
-  const edge = item.expectedUpsidePct - item.expectedDrawdownPct
+  // 점수별 "추가 상승 여력 충분/하방 리스크 제한" 같은 해석은 10년 검증에서 근거가 없어 쓰지 않는다.
   const strat = convictionStrategyInfo(item.strategyLabel)
-  points.push(strat.description)
-
-  if (item.scoreComponents.momentum >= 75) {
-    points.push(`모멘텀 ${item.scoreComponents.momentum.toFixed(0)}점 — 강한 상승 추세가 지속되고 있어 추가 상승 여력이 충분합니다.`)
-  } else if (item.scoreComponents.momentum >= 60) {
-    points.push(`모멘텀 ${item.scoreComponents.momentum.toFixed(0)}점 — 우상향 방향성이 유지되고 있습니다.`)
-  } else {
-    points.push(`모멘텀 ${item.scoreComponents.momentum.toFixed(0)}점 — 현재 추세를 재확인한 후 진입 타이밍을 잡으세요.`)
-  }
-
-  if (item.scoreComponents.value >= 70) {
-    points.push(`밸류 ${item.scoreComponents.value.toFixed(0)}점 — 내재가치 대비 저평가 구간으로 상승 여력이 풍부합니다.`)
-  } else if (item.scoreComponents.value >= 55) {
-    points.push(`밸류 ${item.scoreComponents.value.toFixed(0)}점 — 적정 밸류에이션 수준으로 과열 부담이 없습니다.`)
-  }
-
-  if (item.scoreComponents.safety >= 72) {
-    points.push(`안전성 ${item.scoreComponents.safety.toFixed(0)}점 — 하방 리스크가 제한적이고 변동성이 안정적입니다.`)
-  } else if (item.scoreComponents.safety >= 55) {
-    points.push(`안전성 ${item.scoreComponents.safety.toFixed(0)}점 — 기본 리스크 관리 조건을 충족합니다.`)
-  } else {
-    points.push(`안전성 ${item.scoreComponents.safety.toFixed(0)}점 — 변동성이 있어 진입 비중을 줄이고 분할 매수를 권장합니다.`)
-  }
-
-  if (edge >= 8) {
-    points.push(`기대 여지 +${edge.toFixed(1)}% — 예상 손실 대비 기대 수익 비율(손익비)이 우수합니다.`)
-  } else if (edge >= 5) {
-    points.push(`기대 여지 +${edge.toFixed(1)}% — 리스크 대비 적절한 수익 기대치로 진입 매력이 있습니다.`)
-  } else {
-    points.push(`기대 여지 +${edge.toFixed(1)}% — 손익비가 낮으므로 초기 진입 비중을 보수적으로 조절하세요.`)
-  }
-
-  return points.slice(0, 5)
+  return [
+    strat.description,
+    `점수: 모멘텀 ${item.scoreComponents.momentum.toFixed(0)} · 밸류 ${item.scoreComponents.value.toFixed(0)} · 안전성 ${item.scoreComponents.safety.toFixed(0)} — 후보 순서를 정하는 데 쓰였고, 종목 간 수익 차이를 예측하지는 못했습니다.`,
+    `${describeForecastDistribution(item)} — 한 번에 사지 말고 나눠서, 여러 종목에 분산하세요.`,
+  ]
 }
 
 function convictionEntryBand(entryPrice: number, strategyLabel: string): { low: number; high: number } {
@@ -552,9 +522,9 @@ function convictionAdvisorSection(item: DailyCandidateForecast): string {
 
   const rows = [
     { label: '진입 구간',  value: `${fmt(band.low)} ~ ${fmt(band.high)}원`,                          color: '#191F28' },
-    { label: '손절 기준',  value: `${fmt(stopPrice)}원 (${pct(-expectedDrawdownPct)})`,               color: '#1478FF' },
-    { label: '1차 목표',   value: `${fmt(target1)}원 (${pct(expectedBasePct)})`,                     color: '#F04452' },
-    { label: '2차 목표',   value: `${fmt(target2)}원 (${pct(expectedUpsidePct)})`,                   color: '#F04452' },
+    { label: '과거 하위10%',  value: `${fmt(stopPrice)}원 (${pct(-expectedDrawdownPct)})`,           color: '#1478FF' },
+    { label: '과거 중앙',     value: `${fmt(target1)}원 (${pct(expectedBasePct)})`,                 color: '#191F28' },
+    { label: '과거 상위25%',  value: `${fmt(target2)}원 (${pct(expectedUpsidePct)})`,               color: '#F04452' },
   ]
 
   const cells = rows.map(r =>
@@ -566,12 +536,12 @@ function convictionAdvisorSection(item: DailyCandidateForecast): string {
 
   // 전략 요약 한 줄
   const adviceMap: Record<string, string> = {
-    '눌림분할': '진입 구간 진입 시 2~3회 분할 매수. 손절가 이탈 시 즉시 정리하세요.',
-    '추세분할': '추세 확인 후 분할 진입. 1차 목표 도달 시 절반 익절, 잔여 2차 목표 유지.',
-    '지지매수': '지지선 하단 매수, 이탈 확정 시 손절. 반등 확인 후 추가 비중.',
-    '확인매수': '확인 신호 이후 진입. 무릎에서 사고 어깨에서 파는 전략으로 목표 고정 후 진입.',
+    '눌림분할': '진입 구간에서 2~3회 나눠 매수하세요. 위 가격은 과거 분포이지 목표·손절가가 아닙니다.',
+    '추세분할': '나눠서 진입하세요. 위 가격은 과거 분포이지 목표·손절가가 아닙니다.',
+    '지지매수': '나눠서 진입하세요. 위 가격은 과거 분포이지 목표·손절가가 아닙니다.',
+    '확인매수': '나눠서 진입하세요. 위 가격은 과거 분포이지 목표·손절가가 아닙니다.',
   }
-  const advice = adviceMap[strategyLabel] ?? '분할 진입 후 손절가와 목표가를 고정하고 대응하세요.'
+  const advice = adviceMap[strategyLabel] ?? '나눠서 진입하세요. 위 가격은 과거 분포이지 목표·손절가가 아닙니다.'
 
   return `<div style="border-top:1px solid #F2F4F6;background:#FAFBFC">
   <div style="display:flex;flex-wrap:wrap;border-bottom:1px solid #F2F4F6">
@@ -586,12 +556,8 @@ function convictionAdvisorSection(item: DailyCandidateForecast): string {
 
 function buildConvictionCard(item: DailyCandidateForecast, index: number): string {
   const badgeColor = CONVICTION_RANK_BADGE[Math.min(index, CONVICTION_RANK_BADGE.length - 1)]
-  const conf = convictionConfidenceLevel(item.confidencePct)
-  const strat = convictionStrategyInfo(item.strategyLabel)
   const rationale = convictionRationalePoints(item)
-  const edge = item.expectedUpsidePct - item.expectedDrawdownPct
   const entryFmt = Math.round(item.entryPrice).toLocaleString('ko-KR')
-  const edgeColor = edge >= 7 ? '#007B5F' : edge >= 4 ? '#C85700' : '#F04452'
 
   return `<div style="margin-bottom:16px;border:1px solid #E5E8EB;border-radius:12px;background:#FFFFFF;overflow:hidden;box-shadow:0 1px 4px rgba(0,0,0,0.04)">
 
@@ -605,9 +571,9 @@ function buildConvictionCard(item: DailyCandidateForecast, index: number): strin
       </div>
     </div>
     <div style="text-align:right;flex-shrink:0">
-      <div style="font-size:10px;color:#8B95A1;letter-spacing:0.06em;text-transform:uppercase;margin-bottom:3px">종합 신뢰도</div>
-      <div style="font-size:26px;font-weight:800;color:${conf.color};line-height:1">${item.confidencePct.toFixed(1)}<span style="font-size:13px;font-weight:500">%</span></div>
-      <div style="font-size:11px;font-weight:600;color:${conf.color};margin-top:2px">${conf.label}</div>
+      <div style="font-size:10px;color:#8B95A1;letter-spacing:0.06em;margin-bottom:3px">과거 상승확률</div>
+      <div style="font-size:26px;font-weight:800;color:#4A5568;line-height:1">${item.confidencePct.toFixed(0)}<span style="font-size:13px;font-weight:500">%</span></div>
+      <div style="font-size:11px;font-weight:600;color:#8B95A1;margin-top:2px">20거래일 기준</div>
     </div>
   </div>
 
@@ -617,16 +583,16 @@ function buildConvictionCard(item: DailyCandidateForecast, index: number): strin
       <div style="font-size:14px;font-weight:700;color:#191F28">${entryFmt}<span style="font-size:10px;font-weight:400;color:#8B95A1">원</span></div>
     </div>
     <div style="padding:11px 10px;text-align:center;border-right:1px solid #F2F4F6">
-      <div style="font-size:10px;color:#8B95A1;margin-bottom:4px">기대 수익</div>
-      <div style="font-size:14px;font-weight:700;color:#F04452">+${item.expectedBasePct.toFixed(1)}<span style="font-size:10px">%</span></div>
+      <div style="font-size:10px;color:#8B95A1;margin-bottom:4px">과거 중앙</div>
+      <div style="font-size:14px;font-weight:700;color:#191F28">${signedPct(item.expectedBasePct)}</div>
     </div>
     <div style="padding:11px 10px;text-align:center;border-right:1px solid #F2F4F6">
-      <div style="font-size:10px;color:#8B95A1;margin-bottom:4px">상단 목표</div>
-      <div style="font-size:14px;font-weight:700;color:#F04452">+${item.expectedUpsidePct.toFixed(1)}<span style="font-size:10px">%</span></div>
+      <div style="font-size:10px;color:#8B95A1;margin-bottom:4px">과거 상위25%</div>
+      <div style="font-size:14px;font-weight:700;color:#F04452">${signedPct(item.expectedUpsidePct)}</div>
     </div>
     <div style="padding:11px 10px;text-align:center">
-      <div style="font-size:10px;color:#8B95A1;margin-bottom:4px">예상 손실</div>
-      <div style="font-size:14px;font-weight:700;color:#1478FF">-${item.expectedDrawdownPct.toFixed(1)}<span style="font-size:10px">%</span></div>
+      <div style="font-size:10px;color:#8B95A1;margin-bottom:4px">과거 하위10%</div>
+      <div style="font-size:14px;font-weight:700;color:#1478FF">${signedPct(-item.expectedDrawdownPct)}</div>
     </div>
   </div>
 
@@ -651,14 +617,11 @@ function buildConvictionCard(item: DailyCandidateForecast, index: number): strin
           <span style="font-size:12px;font-weight:700;color:#191F28;width:26px;text-align:right;flex-shrink:0">${item.scoreComponents.safety.toFixed(0)}</span>
         </div>
       </div>
-      <div style="margin-top:12px;padding:9px 11px;background:#F9FAFB;border-radius:8px;border:1px solid #E5E8EB;display:flex;align-items:center;justify-content:space-between">
-        <span style="font-size:11px;color:#8B95A1">기대 여지</span>
-        <span style="font-size:16px;font-weight:800;color:${edgeColor}">+${edge.toFixed(1)}<span style="font-size:11px;font-weight:500">%</span></span>
-      </div>
+
     </div>
 
     <div>
-      <div style="font-size:10px;color:#8B95A1;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;margin-bottom:9px">매수 확신 근거</div>
+      <div style="font-size:10px;color:#8B95A1;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;margin-bottom:9px">선정 근거</div>
       <div style="display:flex;flex-direction:column;gap:5px">
         ${rationale.map((r) => `<div style="font-size:11.5px;color:#191F28;line-height:1.6;padding:6px 10px;background:#F9FAFB;border-radius:6px;border-left:2px solid #E5E8EB">${escapeHtml(r)}</div>`).join('')}
       </div>
@@ -673,38 +636,30 @@ export function buildConvictionWebHtml(
   forecasts: DailyCandidateForecast[],
   limit = 10,
 ): string {
-  const ranked = [...forecasts]
-    .sort((a, b) => {
-      if (b.confidencePct !== a.confidencePct) return b.confidencePct - a.confidencePct
-      const aEdge = a.expectedUpsidePct - a.expectedDrawdownPct
-      const bEdge = b.expectedUpsidePct - b.expectedDrawdownPct
-      return bEdge - aEdge
-    })
-    .slice(0, Math.max(1, limit))
+  // 후보 풀 순서(점수 기준)를 유지한다. 신뢰도 필드는 과거 분포라 순위 근거가 아니다.
+  const ranked = forecasts.slice(0, Math.max(1, limit))
 
   if (!ranked.length) {
-    return '<p style="color:#718096;padding:24px 0;text-align:center;font-size:14px">현재 조건에서 확신 후보를 찾지 못했습니다.<br>시장 변동성이 낮아지면 추천 리포트로 다시 확인하세요.</p>'
+    return '<p style="color:#718096;padding:24px 0;text-align:center;font-size:14px">현재 조건에서 후보를 찾지 못했습니다.<br>추천 리포트로 다시 확인하세요.</p>'
   }
 
   const cards = ranked.map((item, i) => buildConvictionFocusedCard(item, i)).join('\n')
 
   return `<div style="margin-bottom:16px;padding:13px 15px;background:linear-gradient(135deg,#EBF3FF 0%,#E6FAF5 100%);border-radius:10px;border:1px solid #C2D6FF">
-  <div style="font-size:13px;font-weight:700;color:#191F28;margin-bottom:3px">눌림목·점수·리스크를 종합한 확신 후보 ${ranked.length}개 종목 — 신뢰도 높은 순 정렬</div>
-  <div style="font-size:11px;color:#8B95A1">과거 유사 구간 기반 추정치입니다. 실전 체결·슬리피지에 따라 실제 결과는 달라질 수 있습니다.</div>
+  <div style="font-size:13px;font-weight:700;color:#191F28;margin-bottom:3px">점수 상위 후보 ${ranked.length}개 종목</div>
+  <div style="font-size:11px;color:#8B95A1">${escapeHtml(FORECAST_BASE_RATE_NOTE)}</div>
 </div>
 ${cards}
 <div style="padding:14px 16px;background:#F9FAFB;border-radius:10px;border:1px solid #E5E8EB;font-size:12px;line-height:1.85;color:#6B7280">
-  <strong style="color:#191F28">매수 원칙</strong>&nbsp; 상위 1~2개에 우선 집중하고, 추격 진입보다 분할 매수로 평단을 낮추세요. 진입 전 손절가와 익절가를 먼저 고정하는 습관이 중요합니다.<br>
+  <strong style="color:#191F28">매수 원칙</strong>&nbsp; 점수 상위라고 더 오른다는 근거는 없습니다. 한 종목에 몰지 말고 여러 종목에 나눠서, 한 번에 사지 말고 여러 번에 걸쳐 진입하세요.<br>
   <span style="color:#8B95A1;font-size:11px">이 리포트는 SSB의 복합 지표 모델이 자동 생성합니다. 투자 판단은 최종적으로 본인 책임 하에 이루어져야 합니다.</span>
 </div>`
 }
 
 function buildConvictionFocusedCard(item: DailyCandidateForecast, index: number): string {
-  const conf = convictionConfidenceLevel(item.confidencePct)
-  const edge = item.expectedUpsidePct - item.expectedDrawdownPct
-  const edgeColor = edge >= 7 ? '#007B5F' : edge >= 4 ? '#C85700' : '#F04452'
-  const entryLow = Math.round(item.entryPrice * (1 - item.expectedDrawdownPct / 100)).toLocaleString('ko-KR')
-  const entryHigh = Math.round(item.entryPrice * (1 + Math.max(0.8, item.expectedBasePct) / 100)).toLocaleString('ko-KR')
+  const band = convictionEntryBand(item.entryPrice, item.strategyLabel)
+  const entryLow = band.low.toLocaleString('ko-KR')
+  const entryHigh = band.high.toLocaleString('ko-KR')
   const t1 = Math.round(item.entryPrice * (1 + item.expectedBasePct / 100)).toLocaleString('ko-KR')
   const t2 = Math.round(item.entryPrice * (1 + item.expectedUpsidePct / 100)).toLocaleString('ko-KR')
   const stop = Math.round(item.entryPrice * (1 - item.expectedDrawdownPct / 100)).toLocaleString('ko-KR')
@@ -722,17 +677,17 @@ function buildConvictionFocusedCard(item: DailyCandidateForecast, index: number)
       <div style="margin-top:6px;font-size:12px;color:#36527a">${escapeHtml(item.strategyLabel)} · ${escapeHtml(strat.description)}</div>
     </div>
     <div style="text-align:right;min-width:118px">
-      <div style="font-size:11px;color:#6b7c96">종합 신뢰도</div>
-      <div style="font-size:30px;line-height:1;font-weight:900;color:${conf.color};margin-top:3px">${item.confidencePct.toFixed(1)}<span style="font-size:13px;font-weight:700">%</span></div>
-      <div style="font-size:11px;font-weight:700;color:${conf.color};margin-top:2px">${conf.label}</div>
+      <div style="font-size:11px;color:#6b7c96">과거 상승확률</div>
+      <div style="font-size:30px;line-height:1;font-weight:900;color:#4f5f79;margin-top:3px">${item.confidencePct.toFixed(0)}<span style="font-size:13px;font-weight:700">%</span></div>
+      <div style="font-size:11px;font-weight:700;color:#6b7c96;margin-top:2px">20거래일 기준</div>
     </div>
   </header>
 
   <section style="padding:12px 16px;border-bottom:1px solid #eef2f7;display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px">
     <div style="padding:10px 10px;border:1px solid #e6ebf2;border-radius:10px;background:#fff"><div style="font-size:10px;color:#6b7c96">진입 구간</div><div style="margin-top:3px;font-size:13px;font-weight:800;color:#1f2f49">${entryLow} ~ ${entryHigh}원</div></div>
-    <div style="padding:10px 10px;border:1px solid #e6ebf2;border-radius:10px;background:#fff"><div style="font-size:10px;color:#6b7c96">1차 목표</div><div style="margin-top:3px;font-size:13px;font-weight:800;color:#d14343">${t1}원</div></div>
-    <div style="padding:10px 10px;border:1px solid #e6ebf2;border-radius:10px;background:#fff"><div style="font-size:10px;color:#6b7c96">2차 목표</div><div style="margin-top:3px;font-size:13px;font-weight:800;color:#c72c2c">${t2}원</div></div>
-    <div style="padding:10px 10px;border:1px solid #e6ebf2;border-radius:10px;background:#fff"><div style="font-size:10px;color:#6b7c96">손절 기준</div><div style="margin-top:3px;font-size:13px;font-weight:800;color:#1b64d8">${stop}원</div></div>
+    <div style="padding:10px 10px;border:1px solid #e6ebf2;border-radius:10px;background:#fff"><div style="font-size:10px;color:#6b7c96">과거 중앙</div><div style="margin-top:3px;font-size:13px;font-weight:800;color:#1f2f49">${t1}원</div></div>
+    <div style="padding:10px 10px;border:1px solid #e6ebf2;border-radius:10px;background:#fff"><div style="font-size:10px;color:#6b7c96">과거 상위25%</div><div style="margin-top:3px;font-size:13px;font-weight:800;color:#c72c2c">${t2}원</div></div>
+    <div style="padding:10px 10px;border:1px solid #e6ebf2;border-radius:10px;background:#fff"><div style="font-size:10px;color:#6b7c96">과거 하위10%</div><div style="margin-top:3px;font-size:13px;font-weight:800;color:#1b64d8">${stop}원</div></div>
   </section>
 
   <section style="padding:14px 16px;display:grid;grid-template-columns:minmax(180px,1fr) minmax(220px,1.3fr);gap:14px">
@@ -743,14 +698,11 @@ function buildConvictionFocusedCard(item: DailyCandidateForecast, index: number)
         <div style="display:flex;align-items:center;gap:8px"><span style="width:44px;font-size:11px;color:#54647c">밸류</span>${convictionScoreBar(item.scoreComponents.value, '#f57f17')}<span style="width:26px;text-align:right;font-size:12px;font-weight:700;color:#13203a">${item.scoreComponents.value.toFixed(0)}</span></div>
         <div style="display:flex;align-items:center;gap:8px"><span style="width:44px;font-size:11px;color:#54647c">안전성</span>${convictionScoreBar(item.scoreComponents.safety, '#00a77e')}<span style="width:26px;text-align:right;font-size:12px;font-weight:700;color:#13203a">${item.scoreComponents.safety.toFixed(0)}</span></div>
       </div>
-      <div style="margin-top:10px;padding:9px 10px;border-radius:8px;background:#fff;border:1px solid #dbe4f3;display:flex;justify-content:space-between;align-items:center">
-        <span style="font-size:11px;color:#607089">기대 여지</span>
-        <strong style="font-size:17px;color:${edgeColor}">+${edge.toFixed(1)}%</strong>
-      </div>
+
     </div>
 
     <div>
-      <div style="font-size:11px;color:#5c6f8d;font-weight:700;margin-bottom:8px">매수 확신 근거</div>
+      <div style="font-size:11px;color:#5c6f8d;font-weight:700;margin-bottom:8px">선정 근거</div>
       <div style="display:flex;flex-direction:column;gap:6px">
         ${rationale.map((r) => `<div style="padding:8px 10px;border:1px solid #e7edf7;border-left:3px solid #2d66dc;border-radius:9px;background:#ffffff;font-size:12px;line-height:1.55;color:#1c2b45">${escapeHtml(r)}</div>`).join('')}
       </div>
@@ -767,14 +719,8 @@ export function buildPublicCandidateWebHtml(params: {
   limit?: number
 }): string {
   const { forecasts, title, subtitle, note, limit = 6 } = params
-  const ranked = [...(forecasts || [])]
-    .sort((a, b) => {
-      if (b.scoreComponents.safety !== a.scoreComponents.safety) return b.scoreComponents.safety - a.scoreComponents.safety
-      if (a.expectedDrawdownPct !== b.expectedDrawdownPct) return a.expectedDrawdownPct - b.expectedDrawdownPct
-      if (b.confidencePct !== a.confidencePct) return b.confidencePct - a.confidencePct
-      return b.expectedUpsidePct - a.expectedUpsidePct
-    })
-    .slice(0, Math.max(1, limit))
+  // 후보 풀 순서(점수 기준) 유지 — 안전성·예상손실 정렬은 근거 없는 값 기준이었다.
+  const ranked = (forecasts || []).slice(0, Math.max(1, limit))
 
   if (!ranked.length) {
     return '<p style="color:#718096;padding:24px 0;text-align:center;font-size:14px">현재 조건에서 공개 가능한 후보를 찾지 못했습니다.<br>잠시 후 다시 확인해 주세요.</p>'
@@ -783,8 +729,7 @@ export function buildPublicCandidateWebHtml(params: {
   const items = ranked.map((item, idx) => {
     const risk = item.expectedDrawdownPct
     const safety = item.scoreComponents.safety
-    const riskLabel = risk <= 4.5 ? '낮음' : risk <= 7 ? '보통' : '주의'
-    const riskColor = risk <= 4.5 ? '#0f9d76' : risk <= 7 ? '#c07a00' : '#d14343'
+    const riskColor = '#d14343'
     return `<article style="border:1px solid #e4eaf3;border-radius:12px;background:#fff;padding:12px 13px;display:grid;grid-template-columns:1.2fr 1fr 1fr 1fr;gap:8px;align-items:center">
       <div>
         <div style="display:flex;align-items:center;gap:7px;flex-wrap:wrap">
@@ -792,11 +737,11 @@ export function buildPublicCandidateWebHtml(params: {
           <strong style="font-size:16px;color:#12233f">${escapeHtml(item.name)}</strong>
           <code style="font-size:10px;padding:2px 7px;border-radius:999px;border:1px solid #dde5f3;background:#f8fbff;color:#5a6b84">${escapeHtml(item.code)}</code>
         </div>
-        <div style="margin-top:4px;font-size:11px;color:#64748b">${escapeHtml(item.strategyLabel)} · 신뢰 ${item.confidencePct.toFixed(1)}%</div>
+        <div style="margin-top:4px;font-size:11px;color:#64748b">${escapeHtml(item.strategyLabel)} · 과거 상승확률 ${item.confidencePct.toFixed(0)}%</div>
       </div>
       <div style="text-align:right"><div style="font-size:10px;color:#72839c">안전성</div><div style="font-size:18px;font-weight:800;color:#0f5f4a">${safety.toFixed(0)}</div></div>
-      <div style="text-align:right"><div style="font-size:10px;color:#72839c">예상 손실</div><div style="font-size:18px;font-weight:800;color:${riskColor}">-${risk.toFixed(1)}%</div></div>
-      <div style="text-align:right"><div style="font-size:10px;color:#72839c">리스크 등급</div><div style="font-size:13px;font-weight:800;color:${riskColor}">${riskLabel}</div></div>
+      <div style="text-align:right"><div style="font-size:10px;color:#72839c">과거 하위10%</div><div style="font-size:18px;font-weight:800;color:${riskColor}">${signedPct(-risk)}</div></div>
+      <div style="text-align:right"><div style="font-size:10px;color:#72839c">과거 중앙</div><div style="font-size:13px;font-weight:800;color:#4f5f79">${signedPct(item.expectedBasePct)}</div></div>
     </article>`
   }).join('')
 
@@ -1492,7 +1437,7 @@ export function buildStructuredWeeklyWebHtml(input: {
   const reliabilityHtml = payload?.reliability
     ? `<section style="margin-top:12px;display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:10px">
   ${[
-    { label: '판단 신뢰점수', value: payload.reliability.trustScore != null ? `${payload.reliability.trustScore}점` : '계산중', color: payload.reliability.trustScore != null && payload.reliability.trustScore >= 70 ? '#F04452' : payload.reliability.trustScore != null && payload.reliability.trustScore < 40 ? '#1478FF' : '#191f28' },
+    { label: '판단 실현승률', value: payload.reliability.trustScore != null ? `${payload.reliability.trustScore}%` : '표본 부족', color: '#191f28' },
     { label: '총 의사결정', value: `${payload.reliability.totalDecisions}건`, color: '#191f28' },
     { label: '근거 기록률', value: `${payload.reliability.explanationCoveragePct.toFixed(1)}%`, color: '#191f28' },
     { label: '연결 매도 승률', value: payload.reliability.linkedSellWinRatePct != null ? `${payload.reliability.linkedSellWinRatePct.toFixed(1)}%` : '-', color: '#191f28' },

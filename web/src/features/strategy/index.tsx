@@ -663,7 +663,7 @@ export default function StrategyPage() {
 
                   <div className="muted" style={{ fontSize: 'var(--font-size-sm)', lineHeight: 1.6, borderTop: '1px solid var(--color-border-default)', paddingTop: 12 }}>
                     <strong>동작 원리:</strong><br/>
-                    시장 국면(최근 {summary.topRegimes.length > 0 ? formatMarketRegimeLabel(summary.topRegimes[0]?.[0] ?? '') : '감지 중'})과 신호 신뢰도를 반영하여, 위 범위 내에서 실제 진입 종목 수가 자동으로 조정됩니다. 신뢰도가 {settings.min_confidence_pct ?? 65}% 미만이면 진입을 제한합니다.
+                    시장 국면(최근 {summary.topRegimes.length > 0 ? formatMarketRegimeLabel(summary.topRegimes[0]?.[0] ?? '') : '감지 중'})을 반영해 위 범위 내에서 진입 종목 수를 정하도록 설계됐지만, 아래 강세장/약세장 배수·최소 신뢰도·적응형 손익 조정 설정은 현재 봇이 읽지 않습니다(저장만 됨).
                   </div>
                 </div>
               )}
@@ -1079,21 +1079,21 @@ export default function StrategyPage() {
                       onChange={(e: any) => setSettings({ ...settings, base_max_positions: Number(e.target.value) })}
                     />
                     <Input
-                      label="강세장 배수 (×)"
+                      label="강세장 배수 (×) · 봇 미적용"
                       type="number"
                       step="0.1"
                       value={settings?.bull_multiplier ?? 1.5}
                       onChange={(e: any) => setSettings({ ...settings, bull_multiplier: Number(e.target.value) })}
                     />
                     <Input
-                      label="약세장 배수 (×)"
+                      label="약세장 배수 (×) · 봇 미적용"
                       type="number"
                       step="0.1"
                       value={settings?.bear_multiplier ?? 0.5}
                       onChange={(e: any) => setSettings({ ...settings, bear_multiplier: Number(e.target.value) })}
                     />
                     <Input
-                      label="최소 신뢰도 임계 (%)"
+                      label="최소 신뢰도 임계 (%) · 봇 미적용"
                       type="number"
                       value={settings?.min_confidence_pct ?? 65}
                       onChange={(e: any) => setSettings({ ...settings, min_confidence_pct: Number(e.target.value) })}
@@ -1102,12 +1102,12 @@ export default function StrategyPage() {
                 )}
 
                 <Checkbox
-                  label="적응형 손익 조정 사용"
+                  label="적응형 손익 조정 사용 · 봇 미적용"
                   checked={!!settings?.use_adaptive_exit}
                   onChange={(value) => setSettings({ ...settings, use_adaptive_exit: value })}
                 />
                 <div className="muted mt-2">
-                  활성화하면 변동성과 신호 신뢰도에 따라 손절·익절이 동적으로 조정됩니다.
+                  현재 봇 매매 로직은 이 설정을 읽지 않습니다(저장만 됨).
                 </div>
               </div>
 

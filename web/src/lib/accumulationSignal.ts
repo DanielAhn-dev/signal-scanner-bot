@@ -92,8 +92,9 @@ export function evaluateAccumulationSignal(candles: OhlcvCandle[]): Accumulation
 
   const latest = sorted[sorted.length - 1]
   const baseWindowSize = 20
-  const baseWindow = sorted.slice(-baseWindowSize)
-  const priorWindow = sorted.slice(-baseWindowSize - 20, -baseWindowSize)
+  // 박스는 오늘 봉을 뺀 직전 20봉. 오늘 고가가 박스 상단에 들어가면 "종가 ≥ 상단×1.02" 돌파가 성립할 수 없다.
+  const baseWindow = sorted.slice(-baseWindowSize - 1, -1)
+  const priorWindow = sorted.slice(-baseWindowSize - 21, -baseWindowSize - 1)
   const baseHigh = Math.max(...baseWindow.map((c) => Number(c.high)))
   const baseLow = Math.min(...baseWindow.map((c) => Number(c.low)))
   const baseRangePct = baseLow > 0 ? ((baseHigh - baseLow) / baseLow) * 100 : null
@@ -182,14 +183,14 @@ export function scoreLeadAccumulationCandidate(item: ScanCandidateLike): LeadAcc
 
   if (distGrade >= 4) {
     score += 18
-    reasons.push('매집 등급 우수')
+    reasons.push('21일선 이격 적정')
   } else if (distGrade === 3) {
     score += 10
   }
 
   if (pivotGrade >= 4) {
     score += 18
-    reasons.push('세력선 등급 우수')
+    reasons.push('10일 저점 근접')
   } else if (pivotGrade === 3) {
     score += 10
   }

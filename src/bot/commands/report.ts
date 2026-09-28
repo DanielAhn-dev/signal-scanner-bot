@@ -29,6 +29,8 @@ import { getUserInvestmentPrefs } from "../../services/userService";
 import { handlePreMarketPlanCommand } from "./preMarketPlan";
 import { ACTIONS, actionButtons, buildRecommendationActionButtons } from "../messages/layout";
 import { sendLongMessage } from "../lib/tgHelpers";
+import { selectForecastsForTopic } from "../../services/reportTopicForecasts";
+import { describeForecastDistribution } from "../../services/forecastBaseRates";
 
 const REPORT_TOPIC_GUIDE = [
   { command: "주간", aliases: ["주간", "종합", "전체", "full", "weekly"], description: "시장과 포트폴리오를 함께 보는 종합 PDF" },
@@ -86,48 +88,36 @@ export function buildConvictionRecommendationText(
   report: DailyCandidatePlanningReportResult,
   limit = 3
 ): string {
-  const ranked = [...(report.forecasts ?? [])]
-    .sort((a, b) => {
-      if (b.confidencePct !== a.confidencePct) return b.confidencePct - a.confidencePct;
-      const aEdge = a.expectedUpsidePct - a.expectedDrawdownPct;
-      const bEdge = b.expectedUpsidePct - b.expectedDrawdownPct;
-      return bEdge - aEdge;
-    })
-    .slice(0, Math.max(1, limit));
+  const ranked = selectForecastsForTopic("확신추천", report.forecasts ?? []).slice(0, Math.max(1, limit));
 
   if (!ranked.length) {
     return [
-      "<b>확신추천 하이라이트 3선</b>",
+      "<b>집행우선 3선</b>",
       "─────────────────",
-      "현재 조건에서 확신 후보를 찾지 못했습니다.",
+      "현재 조건에서 후보를 찾지 못했습니다.",
       "시장 변동성이 낮아지면 /리포트 추천 또는 /눌림목으로 다시 확인하세요.",
     ].join("\n");
   }
 
   const badge = ["🟥", "🟩", "🟦"];
   const lines = [
-    "<b>확신추천 하이라이트 3선</b>",
+    "<b>집행우선 3선</b>",
     "─────────────────",
-    "눌림목/점수/리스크를 함께 반영해 오늘 바로 볼 후보만 압축했습니다.",
+    "점수 상위 후보입니다. 아래 수치는 예측이 아니라 과거 10년 비슷한 조건 종목들의 20거래일 뒤 분포입니다.",
     "",
   ];
 
   for (let i = 0; i < ranked.length; i += 1) {
     const item = ranked[i];
-    const edge = item.expectedUpsidePct - item.expectedDrawdownPct;
+    lines.push(`${i + 1}. ${badge[i] ?? "•"} <b>${item.name}</b> <code>${item.code}</code> · 기준 ${fmtInt(item.entryPrice)}원`);
+    lines.push(`   ${describeForecastDistribution(item)}`);
     lines.push(
-      `${i + 1}. ${badge[i] ?? "•"} <b>${item.name}</b> <code>${item.code}</code> · 신뢰 <b>${item.confidencePct.toFixed(1)}%</b>`
-    );
-    lines.push(
-      `   기준 ${fmtInt(item.entryPrice)}원 · 예상손실 -${item.expectedDrawdownPct.toFixed(1)}% · 기준 +${item.expectedBasePct.toFixed(1)}% · 상단 +${item.expectedUpsidePct.toFixed(1)}%`
-    );
-    lines.push(
-      `   점수 모멘텀 ${item.scoreComponents.momentum.toFixed(0)} / 밸류 ${item.scoreComponents.value.toFixed(0)} / 안전성 ${item.scoreComponents.safety.toFixed(0)} · 기대여지 +${edge.toFixed(1)}%`
+      `   점수 모멘텀 ${item.scoreComponents.momentum.toFixed(0)} / 밸류 ${item.scoreComponents.value.toFixed(0)} / 안전성 ${item.scoreComponents.safety.toFixed(0)}`
     );
   }
 
   lines.push("");
-  lines.push("원칙: 상위 1~2개 우선, 추격보다 분할 진입, 손절/익절 가격을 먼저 고정하세요.");
+  lines.push("원칙: 한 번에 사지 말고 나눠서, 여러 종목에 분산하세요. 하위 10% 수준의 손실은 흔히 일어납니다.");
   return lines.join("\n");
 }
 
@@ -369,18 +359,15 @@ async function handleMonthlyReportCommand(
     if (reliability && reliability.totalDecisions > 0) {
       reliabilityLines.push("");
       reliabilityLines.push("─────────────────");
-      reliabilityLines.push("<b>판단 신뢰도 요약</b>");
+      reliabilityLines.push("<b>판단 결과 요약</b>");
       reliabilityLines.push(`총 의사결정: ${reliability.totalDecisions}건 (실행 ${reliability.executedDecisions}건)`);
       reliabilityLines.push(`근거 기록률: ${reliability.explanationCoveragePct.toFixed(1)}%`);
-      if (reliability.averageConfidencePct != null) {
-        reliabilityLines.push(`평균 신뢰도: ${reliability.averageConfidencePct.toFixed(1)}%`);
-      }
       if (reliability.linkedSellCount > 0) {
         reliabilityLines.push(`연결 매도 승률: ${reliability.linkedSellWinRatePct != null ? `${reliability.linkedSellWinRatePct.toFixed(1)}%` : "집계중"} (${reliability.linkedSellCount}건)`);
         reliabilityLines.push(`연결 실현손익: ${fmtSignedWon(reliability.linkedRealizedPnl)}`);
       }
-      if (reliability.trustScore != null) {
-        reliabilityLines.push(`판단 신뢰점수: <code>${reliability.trustScore}점</code>`);
+      if (reliability.trustScore == null && reliability.linkedSellCount > 0) {
+        reliabilityLines.push("실현 승률 판단: 매도 10건 이상부터 (표본 부족)");
       }
       if (reliability.strategyVersionCount > 1) {
         reliabilityLines.push(`전략 버전 수: ${reliability.strategyVersionCount}개`);
@@ -1047,14 +1034,8 @@ function drawCandidateSummaryTable(ctx: ReportContext, forecasts: DailyCandidate
 }
 
 function rankConvictionForecasts(forecasts: DailyCandidateForecast[], limit = 10): DailyCandidateForecast[] {
-  return [...(forecasts ?? [])]
-    .sort((a, b) => {
-      if (b.confidencePct !== a.confidencePct) return b.confidencePct - a.confidencePct;
-      const aEdge = a.expectedUpsidePct - a.expectedDrawdownPct;
-      const bEdge = b.expectedUpsidePct - b.expectedDrawdownPct;
-      return bEdge - aEdge;
-    })
-    .slice(0, Math.max(1, limit));
+  // 후보 풀 순서(점수 기준)를 유지한다. 신뢰도 필드는 과거 분포라 순위 근거가 아니다.
+  return (forecasts ?? []).slice(0, Math.max(1, limit));
 }
 
 function convictionStrategyDescription(label: string): string {
@@ -1092,42 +1073,12 @@ function convictionAdvice(strategyLabel: string): string {
 }
 
 function convictionRationalePoints(item: DailyCandidateForecast): string[] {
-  const points: string[] = [];
-  const edge = item.expectedUpsidePct - item.expectedDrawdownPct;
-
-  points.push(convictionStrategyDescription(item.strategyLabel));
-
-  if (item.scoreComponents.momentum >= 75) {
-    points.push(`모멘텀 ${item.scoreComponents.momentum.toFixed(0)}점: 강한 추세 지속 가능성`);
-  } else if (item.scoreComponents.momentum >= 60) {
-    points.push(`모멘텀 ${item.scoreComponents.momentum.toFixed(0)}점: 우상향 흐름 유지`);
-  } else {
-    points.push(`모멘텀 ${item.scoreComponents.momentum.toFixed(0)}점: 추세 재확인 후 진입 권장`);
-  }
-
-  if (item.scoreComponents.value >= 70) {
-    points.push(`밸류 ${item.scoreComponents.value.toFixed(0)}점: 저평가 구간 여지`);
-  } else if (item.scoreComponents.value >= 55) {
-    points.push(`밸류 ${item.scoreComponents.value.toFixed(0)}점: 과열 부담 낮은 적정 구간`);
-  }
-
-  if (item.scoreComponents.safety >= 72) {
-    points.push(`안전성 ${item.scoreComponents.safety.toFixed(0)}점: 하방 리스크 제한`);
-  } else if (item.scoreComponents.safety >= 55) {
-    points.push(`안전성 ${item.scoreComponents.safety.toFixed(0)}점: 기본 리스크 요건 충족`);
-  } else {
-    points.push(`안전성 ${item.scoreComponents.safety.toFixed(0)}점: 비중 축소/분할 진입 권장`);
-  }
-
-  if (edge >= 8) {
-    points.push(`기대 여지 +${edge.toFixed(1)}%: 손익비 우수`);
-  } else if (edge >= 5) {
-    points.push(`기대 여지 +${edge.toFixed(1)}%: 리스크 대비 기대수익 양호`);
-  } else {
-    points.push(`기대 여지 +${edge.toFixed(1)}%: 초기 진입 비중 보수 권장`);
-  }
-
-  return points.slice(0, 4);
+  // 점수별 "추세 지속 가능성/하방 리스크 제한" 같은 해석은 10년 검증에서 근거가 없어 쓰지 않는다.
+  return [
+    convictionStrategyDescription(item.strategyLabel),
+    `점수: 모멘텀 ${item.scoreComponents.momentum.toFixed(0)} · 밸류 ${item.scoreComponents.value.toFixed(0)} · 안전성 ${item.scoreComponents.safety.toFixed(0)} (종목 간 수익 차이를 예측하지는 못함)`,
+    describeForecastDistribution(item),
+  ];
 }
 
 function drawConvictionCard(ctx: ReportContext, item: DailyCandidateForecast, index: number) {
@@ -1136,7 +1087,6 @@ function drawConvictionCard(ctx: ReportContext, item: DailyCandidateForecast, in
   const lineHeight = 12;
   const boxX = ctx.ML;
   const boxW = ctx.BODY_W;
-  const edge = item.expectedUpsidePct - item.expectedDrawdownPct;
   const band = convictionEntryBand(item.entryPrice, item.strategyLabel);
   const stopPrice = Math.round(item.entryPrice * (1 - item.expectedDrawdownPct / 100));
   const target1 = Math.round(item.entryPrice * (1 + item.expectedBasePct / 100));
@@ -1147,9 +1097,9 @@ function drawConvictionCard(ctx: ReportContext, item: DailyCandidateForecast, in
   const topPadding = 14;
   const bottomPadding = 14;
   const title = `${index + 1}. ${item.name} (${item.code})`;
-  const sub = `${item.strategyLabel} · 신뢰 ${item.confidencePct.toFixed(1)}% · 기대여지 +${edge.toFixed(1)}%`;
+  const sub = `${item.strategyLabel} · 과거 상승확률 ${item.confidencePct.toFixed(0)}%`;
   const scores = `점수 모멘텀 ${item.scoreComponents.momentum.toFixed(0)} / 밸류 ${item.scoreComponents.value.toFixed(0)} / 안전성 ${item.scoreComponents.safety.toFixed(0)}`;
-  const prices = `진입 ${fmtInt(band.low)}~${fmtInt(band.high)}원 · 손절 ${fmtInt(stopPrice)}원 · 1차 ${fmtInt(target1)}원 · 2차 ${fmtInt(target2)}원`;
+  const prices = `진입 ${fmtInt(band.low)}~${fmtInt(band.high)}원 · 과거 분포 가격: 하위10% ${fmtInt(stopPrice)}원 · 중앙 ${fmtInt(target1)}원 · 상위25% ${fmtInt(target2)}원`;
   const advice = `어드바이스: ${convictionAdvice(item.strategyLabel)}`;
 
   const textLines = {
@@ -1157,7 +1107,7 @@ function drawConvictionCard(ctx: ReportContext, item: DailyCandidateForecast, in
     sub: wrapText(sub, innerWidth, ctx.font, bodySize).length,
     scores: wrapText(scores, innerWidth, ctx.fontLight, bodySize).length,
     prices: wrapText(prices, innerWidth, ctx.font, bodySize).length,
-    section: wrapText("매수 확신 근거", innerWidth, ctx.fontBold, bodySize).length,
+    section: wrapText("선정 근거", innerWidth, ctx.fontBold, bodySize).length,
     points: points.reduce((sum, point) => sum + wrapText(`• ${point}`, innerWidth - 2, ctx.font, bodySize).length, 0),
     advice: wrapText(advice, innerWidth, ctx.fontBold, bodySize).length,
   };
@@ -1190,7 +1140,7 @@ function drawConvictionCard(ctx: ReportContext, item: DailyCandidateForecast, in
   cursorY -= ctx.text(prices, left, cursorY, bodySize, rgb(0.12, 0.12, 0.16), boxW - 14) * lineHeight;
   cursorY -= 1;
 
-  cursorY -= ctx.textBold("매수 확신 근거", left, cursorY, bodySize, rgb(0.18, 0.26, 0.46), boxW - 14) * lineHeight;
+  cursorY -= ctx.textBold("선정 근거", left, cursorY, bodySize, rgb(0.18, 0.26, 0.46), boxW - 14) * lineHeight;
   for (const point of points) {
     cursorY -= ctx.text(`• ${point}`, left + 2, cursorY, bodySize, rgb(0.19, 0.19, 0.22), boxW - 16) * lineHeight;
   }
@@ -1203,10 +1153,10 @@ function drawConvictionCard(ctx: ReportContext, item: DailyCandidateForecast, in
 
 function drawConvictionCandidateSection(ctx: ReportContext, forecasts: DailyCandidateForecast[]) {
   const ranked = rankConvictionForecasts(forecasts, 10);
-  const intro = `눌림목·점수·리스크를 함께 반영한 확신 후보 ${ranked.length}개 종목(신뢰도 순)`;
+  const intro = `점수 상위 후보 ${ranked.length}개 종목 — 수치는 과거 10년 비슷한 조건의 20거래일 뒤 분포(예측 아님)`;
 
   ctx.ensureSpace(20);
-  ctx.textBold("확신추천 상세 카드", ctx.ML, ctx.y, 10, rgb(0.17, 0.30, 0.55), ctx.BODY_W);
+  ctx.textBold("집행우선 상세 카드", ctx.ML, ctx.y, 10, rgb(0.17, 0.30, 0.55), ctx.BODY_W);
   ctx.y -= 14;
   ctx.textLight(intro, ctx.ML, ctx.y, 8.5, rgb(0.36, 0.37, 0.42), ctx.BODY_W);
   ctx.y -= 14;

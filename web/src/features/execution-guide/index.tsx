@@ -97,7 +97,7 @@ function toExecutionGuideSnapshotText(input: {
   lines.push(`• 종목당 최대 비중: ${Math.max(1, Math.min(100, Number(input.maxWeightPct || 25)))}%`)
   lines.push(`• 분할 횟수: ${Math.max(3, Number(input.splitCount || 4))}`)
   lines.push(`• 리스크 모드: ${input.riskMode}`)
-  lines.push(`• 후보 점수 버전: ${input.scoreVersion === 'v2' ? 'v2(상승잠재-리스크 분리)' : 'legacy(기존 가중합)'}`)
+  lines.push(`• 후보 점수 버전: ${input.scoreVersion === 'v2' ? 'v2(후보점수-리스크 분리)' : 'legacy(기존 가중합)'}`)
   lines.push(`• 뉴스 요약 포함: ${input.includeNews ? '예' : '아니오'}`)
 
   if (input.autoCandidates.length > 0) {
@@ -113,7 +113,7 @@ function toExecutionGuideSnapshotText(input: {
       const detailParts = [
         `v2 ${formatNumber(item.score, 1)} / legacy ${formatNumber(item.scoreLegacy, 1)}`,
         `Δ ${formatNumber(scoreDelta, 1)}`,
-        `상승잠재 ${item.upsideSignal != null ? formatNumber(item.upsideSignal, 1) : '—'} / 리스크 ${item.riskSignal != null ? formatNumber(item.riskSignal, 1) : '—'}`,
+        `후보점수 ${item.upsideSignal != null ? formatNumber(item.upsideSignal, 1) : '—'} / 리스크 ${item.riskSignal != null ? formatNumber(item.riskSignal, 1) : '—'}`,
         item.reason,
       ]
       lines.push(`• ${item.name}(${item.code}) [${item.source === 'highlights' ? '집행우선' : '눌림목'}] 점수 ${formatNumber(displayScore, 1)} · ${detailParts.join(' · ')}`)
@@ -604,7 +604,7 @@ function rankScanCandidate(item: any, mode: CandidateMode): AutoCandidate {
   const legacyScore = clampValue(legacyBaseScore + stageBoost + longFlowBonus + theme.score - legacySwingPenalty, 0, 100)
   const modeLabel = mode === 'multibagger' ? '모드 멀티배거' : mode === 'swing' ? '모드 스윙' : '모드 밸런스'
   const reasons = [
-    `상승잠재 ${formatNumber(upsideSignal, 1)}`,
+    `후보점수 ${formatNumber(upsideSignal, 1)}`,
     `리스크 ${formatNumber(riskSignal, 1)}`,
     `퀵점수 ${formatNumber(quickPct, 1)}`,
     `적응점수 ${formatNumber(adaptivePct, 1)}`,
@@ -637,11 +637,13 @@ function rankScanCandidate(item: any, mode: CandidateMode): AutoCandidate {
 }
 
 function rankHighlightCandidate(item: any, mode: CandidateMode): AutoCandidate {
+  // confidence/expected_* 필드는 예측이 아니라 조건별 과거 20일 분포(src/services/forecastBaseRates.ts)라
+  // 후보별 우열 정보가 없다. 점수 계산에서는 중립값(50)으로 두고, 표시만 과거 분포로 보여준다.
   const confidence = Number(item?.confidence_pct ?? 0)
-  const confidencePct = clampValue(Number.isFinite(confidence) ? confidence : 0, 0, 100)
   const upsidePct = clampValue(Number(item?.expected_upside_pct ?? 0), -100, 200)
   const drawdownPct = clampValue(Number(item?.expected_drawdown_pct ?? 0), -100, 100)
-  const edgePct = clampValue(50 + (upsidePct - Math.abs(drawdownPct)) * 4, 0, 100)
+  const confidencePct = 50
+  const edgePct = 50
   const momentumPct = clampValue(Number(item?.score_momentum ?? 0), 0, 100)
   const safetyPct = clampValue(Number(item?.score_safety ?? 0), 0, 100)
   const leadPct = clampValue(Number(item?.lead_accumulation_score ?? 0), 0, 100)
@@ -652,9 +654,8 @@ function rankHighlightCandidate(item: any, mode: CandidateMode): AutoCandidate {
   const stageBoost = mode === 'swing'
     ? (leadStage === '리드 축적' ? 7 : (leadStage === '리드 돌파' ? 2 : 0))
     : (leadStage === '리드 돌파' ? 4 : (leadStage === '리드 축적' ? 2 : 0))
-  const drawdownAbs = Math.abs(drawdownPct)
-  const drawdownRisk = clampValue(drawdownAbs * 11.5, 0, 100)
-  const confidenceRisk = clampValue((70 - confidencePct) * 1.25, 0, 100)
+  const drawdownRisk = 50
+  const confidenceRisk = 50
   const upsideSignal = clampValue(
     confidencePct * 0.23 +
     edgePct * 0.28 +
@@ -727,16 +728,15 @@ function rankHighlightCandidate(item: any, mode: CandidateMode): AutoCandidate {
   const longFlowBonus = flow.net20d != null && (mode === 'multibagger' || mode === 'swing')
     ? clampValue((flow.net20d / 1_000_000_000) * (mode === 'swing' ? 0.85 : 0.45), -8, 12)
     : 0
-  const weakEdgePenalty = upsidePct < drawdownAbs * 1.4 ? clampValue((drawdownAbs * 1.4 - upsidePct) * 1.6, 0, 18) : 0
-  const finalScore = clampValue(baseScore + stageBoost + longFlowBonus + theme.score * 0.5 - weakEdgePenalty, 0, 100)
+  const finalScore = clampValue(baseScore + stageBoost + longFlowBonus + theme.score * 0.5, 0, 100)
   const legacyScore = clampValue(legacyBaseScore + stageBoost + longFlowBonus + theme.score * 0.5, 0, 100)
   const modeLabel = mode === 'multibagger' ? '모드 멀티배거' : mode === 'swing' ? '모드 스윙' : '모드 밸런스'
   const reasons = [
-    `상승잠재 ${formatNumber(upsideSignal, 1)}`,
+    `후보점수 ${formatNumber(upsideSignal, 1)}`,
     `리스크 ${formatNumber(riskSignal, 1)}`,
     `전략 ${String(item?.strategy_label || '집행우선')}`,
-    `신뢰도 ${Number.isFinite(confidence) ? `${formatNumber(confidence, 1)}%` : '—'}`,
-    `기대상승 ${formatNumber(upsidePct, 1)}% / 기대낙폭 ${formatNumber(Math.abs(drawdownPct), 1)}%`,
+    `과거 상승확률 ${Number.isFinite(confidence) ? `${formatNumber(confidence, 0)}%` : '—'}`,
+    `과거 20일 상위25% ${formatNumber(upsidePct, 1)}% / 하위10% -${formatNumber(Math.abs(drawdownPct), 1)}%`,
     `모멘텀 ${formatNumber(momentumPct, 1)}`,
     `리드단계 ${leadStage}`,
     modeLabel,
@@ -1397,7 +1397,7 @@ export default function ExecutionGuidePage() {
 
         <div className="caption" style={{ marginTop: 8 }}>
           자동 후보 모드: {candidateMode === 'multibagger' ? '멀티배거(수급 20D·리드·상승여력 강화)' : candidateMode === 'swing' ? '스윙(눌림·추세·안전성·20D수급 우선 / 당일급등 제외)' : '밸런스(단기 집행 안정성 중심)'}
-          {' · '}점수 버전: {scoreVersion === 'v2' ? 'v2(상승잠재-리스크 분리)' : 'legacy(기존 가중합)'}
+          {' · '}점수 버전: {scoreVersion === 'v2' ? 'v2(후보점수-리스크 분리)' : 'legacy(기존 가중합)'}
         </div>
 
         {autoError && <div className="caption" style={{ color: 'var(--color-error)', marginTop: 8 }}>{autoError}</div>}
@@ -1430,7 +1430,7 @@ export default function ExecutionGuidePage() {
                   </span>
                 </div>
                 <div className="caption" style={{ marginTop: 4 }}>
-                  상승잠재 {row.upsideSignal != null ? formatNumber(row.upsideSignal, 1) : '—'} · 리스크 {row.riskSignal != null ? formatNumber(row.riskSignal, 1) : '—'}
+                  후보점수 {row.upsideSignal != null ? formatNumber(row.upsideSignal, 1) : '—'} · 리스크 {row.riskSignal != null ? formatNumber(row.riskSignal, 1) : '—'}
                 </div>
                 <div className="caption" style={{ marginTop: 2 }}>
                   v2 {formatNumber(row.score, 1)} / legacy {formatNumber(row.scoreLegacy, 1)}

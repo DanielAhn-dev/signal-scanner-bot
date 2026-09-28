@@ -165,7 +165,8 @@ def save_pullback_signals(supabase: Client, trading_date: str):
             print("   No stocks found")
             return
 
-        from_date_hist = (date.today() - timedelta(days=100)).isoformat()
+        # 기준일(trading_date)로 창을 잡는다. date.today() 기준이면 과거 날짜 재계산 때 이후 시세가 섞였다.
+        from_date_hist = (date.fromisoformat(trading_iso) - timedelta(days=100)).isoformat()
         upserts = []
         fail_count = 0
 
@@ -175,6 +176,7 @@ def save_pullback_signals(supabase: Client, trading_date: str):
                     .select("date, open, high, low, close, volume, value") \
                     .eq("ticker", code) \
                     .gte("date", from_date_hist) \
+                    .lte("date", trading_iso) \
                     .order("date", desc=False) \
                     .limit(100).execute()
                 if h_res.data and len(h_res.data) >= 21:

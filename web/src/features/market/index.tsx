@@ -83,6 +83,7 @@ interface MarketOverviewData {
   }
   globalCorrelation: {
     kospiToSp500Correlation: number | null
+    direction?: 'same_up' | 'same_down' | 'diverged' | 'flat'
     kospiSp500Spread: number | null
     americanFuturesSignal: 'bullish' | 'bearish' | 'neutral'
     usdStrength: 'strengthening' | 'weakening' | 'neutral'
@@ -494,9 +495,10 @@ function MarketSummaryTable({ data }: { data: MarketOverviewData }) {
           <td className="xls-cell">시장 판단</td>
           <td className="xls-cell" colSpan={2}>
             <div className="market-sheet__summary-value" style={{ color: canTradeTextColor(tradingSignal.shouldTrade) }}>
-              {tradingSignal.shouldTrade ? '매매 가능' : '매매 제한'}
+              {tradingSignal.shouldTrade ? '진입 가능' : '고위험 · 분할 진입'}
             </div>
             <div className="market-sheet__summary-sub">{tradingSignal.recommendation}</div>
+            <div className="market-sheet__summary-sub">{MARKET_DIAGNOSIS_SCOPE_NOTE}</div>
           </td>
           <td className="xls-cell">경제 국면</td>
           <td className="xls-cell" colSpan={2}>
@@ -510,7 +512,7 @@ function MarketSummaryTable({ data }: { data: MarketOverviewData }) {
             <div className="market-sheet__summary-value" style={{ color: riskColor(diagnosis.riskScore) }}>{diagnosis.riskScore}/100</div>
             <div className="market-sheet__summary-sub">권장 현금 {diagnosis.riskScore >= 80 ? '50%+' : diagnosis.riskScore >= 60 ? '30~50%' : diagnosis.riskScore >= 40 ? '20~30%' : '10~20%'}</div>
           </td>
-          <td className="xls-cell">신뢰도</td>
+          <td className="xls-cell" title={ENTRY_FITNESS_NOTE}>진입 적합도</td>
           <td className="xls-cell" colSpan={2}>
             <div className="market-sheet__summary-value">{tradingSignal.confidence}%</div>
             <div className="market-sheet__summary-sub">제한 {restrictions}</div>
@@ -564,11 +566,12 @@ function DiagnosisTab({ data }: { data: MarketOverviewData }) {
               <StatusDot color={canTrade ? 'var(--color-success)' : 'var(--color-error)'} />
               <div>
                 <div className="market-sheet__signal-title" style={{ color: canTrade ? 'var(--color-success)' : 'var(--color-error)' }}>
-                  {canTrade ? '매매 가능' : '매매 제한'}
+                  {canTrade ? '진입 가능' : '고위험 · 분할 진입'}
                 </div>
                 <div className="market-sheet__signal-sub">
-                  {canTrade && diagnosis.riskScore >= 60 ? '주의사항 확인 후 진입' : canTrade ? '양호한 진입 환경' : '현금 비중 먼저 확대'}
+                  {canTrade && diagnosis.riskScore >= 60 ? '주의사항 확인 후 진입' : canTrade ? '양호한 진입 환경' : '변동성 큰 구간 — 한 번에 사지 말고 나눠서'}
                 </div>
+                <div className="market-sheet__signal-sub">{MARKET_DIAGNOSIS_SCOPE_NOTE}</div>
               </div>
             </div>
           </td>
@@ -576,15 +579,15 @@ function DiagnosisTab({ data }: { data: MarketOverviewData }) {
             <div className="market-sheet__signal-confidence-value" style={{ color: canTrade ? 'var(--color-success)' : 'var(--color-error)' }}>
               {tradingSignal.confidence}<span>%</span>
             </div>
-            <div className="market-sheet__signal-confidence-label">신뢰도</div>
+            <div className="market-sheet__signal-confidence-label" title={ENTRY_FITNESS_NOTE}>진입 적합도</div>
           </td>
         </tr>
 
-        <SheetSectionHeader label="핵심 진단" value={<span className="caption">경제국면 · 미국선물 · 리스크 · 공포탐욕</span>} />
+        <SheetSectionHeader label="핵심 진단" value={<span className="caption">경제국면 · 미국증시 · 리스크 · 공포탐욕</span>} />
         <tr className="xls-row">
           <td className="xls-cell">경제국면</td>
           <td className="xls-cell" colSpan={2}><EconomicPhaseChip phase={economicPhase.phase} /></td>
-          <td className="xls-cell">미국 선물</td>
+          <td className="xls-cell" title="선물 시세가 아니라 전일 S&P500·나스닥·다우 평균 등락입니다">미국 증시(전일)</td>
           <td className="xls-cell" colSpan={2}><FuturesValue signal={globalCorrelation.americanFuturesSignal} /></td>
         </tr>
         <tr className="xls-row xls-row--even">
@@ -600,8 +603,8 @@ function DiagnosisTab({ data }: { data: MarketOverviewData }) {
         <tr className="xls-row">
           <td className="xls-cell">경제심각도</td>
           <td className="xls-cell"><span style={{ color: riskColor(economicPhase.severity), fontWeight: 700 }}>{economicPhase.severity}</span></td>
-          <td className="xls-cell">한미 동조도</td>
-          <td className="xls-cell">{globalCorrelation.kospiToSp500Correlation !== null ? `${(globalCorrelation.kospiToSp500Correlation * 100).toFixed(0)}%` : '—'}</td>
+          <td className="xls-cell" title="당일 KOSPI와 미국 3대 지수의 등락 방향 비교 (상관계수 아님)">한미 방향</td>
+          <td className="xls-cell">{formatMarketDirection(globalCorrelation.direction)}</td>
           <td className="xls-cell">신흥압박</td>
           <td className="xls-cell">{globalCorrelation.emergingMarketsPressure === 'high' ? '높음' : globalCorrelation.emergingMarketsPressure === 'moderate' ? '중간' : '낮음'}</td>
         </tr>
@@ -931,6 +934,17 @@ function EconomicPhaseChip({ phase }: { phase: string }) {
   }
   const m = map[phase] ?? map.unknown
   return <Chip label={m.label} color={m.color} bg={m.bg} />
+}
+
+const MARKET_DIAGNOSIS_SCOPE_NOTE = '참고용 판단 — 봇 매수는 코스피 50일선·시장 과열 비율 기준으로 따로 정합니다'
+const ENTRY_FITNESS_NOTE = '통계적 신뢰도가 아니라 국면·리스크 규칙으로 매긴 진입 적합도(0~100)입니다. 과거 검증 전 규칙입니다.'
+
+function formatMarketDirection(direction?: 'same_up' | 'same_down' | 'diverged' | 'flat'): string {
+  if (direction === 'same_up') return '동반 상승'
+  if (direction === 'same_down') return '동반 하락'
+  if (direction === 'diverged') return '엇갈림'
+  if (direction === 'flat') return '보합'
+  return '—'
 }
 
 function FuturesValue({ signal }: { signal: 'bullish' | 'bearish' | 'neutral' }) {

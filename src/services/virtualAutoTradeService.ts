@@ -1485,7 +1485,7 @@ function buildTodaySignalReasonNote(input: {
   else if (stableTurn === "bull-weak") parts.push("Stable 상승 턴");
 
   if (input.signalGate) {
-    parts.push(`신뢰도 ${input.signalGate.grade}(${input.signalGate.trustScore}점)`);
+    parts.push(`기술관문 ${input.signalGate.grade}(${input.signalGate.trustScore}점)`);
   }
 
   return parts.length ? `[오늘신호] ${parts.join(" · ")}` : "";

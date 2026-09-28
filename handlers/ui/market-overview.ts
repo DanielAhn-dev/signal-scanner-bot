@@ -50,7 +50,9 @@ interface CpiIndicator {
 }
 
 interface GlobalCorrelation {
-  kospiToSp500Correlation: number | null // -1 to 1
+  // 실제 상관계수가 아니다(당일 등락 방향만 비교). 화면은 direction 을 쓴다. 구버전 호환용으로만 남긴다.
+  kospiToSp500Correlation: number | null
+  direction: 'same_up' | 'same_down' | 'diverged' | 'flat'
   kospiSp500Spread: number | null // KOSPI% - SP500%
   americanFuturesSignal: 'bullish' | 'bearish' | 'neutral'
   usdStrength: 'strengthening' | 'weakening' | 'neutral'
@@ -98,7 +100,7 @@ function resolveCpiIndicator(): CpiIndicator {
   }
 }
 
-function diagnoseMarket(data: MarketOverview): MarketDiagnosis {
+export function diagnoseMarket(data: MarketOverview): MarketDiagnosis {
   const signals: string[] = []
   const advice: string[] = []
   let riskScore = 50
@@ -202,7 +204,7 @@ const regimeLabel: Record<MarketRegime, string> = {
   strong_bear: '하락장 — 현금 확보 우선',
 }
 
-function diagnoseEconomicPhase(data: MarketOverview, cpiYoy: number | null): EconomicPhase {
+export function diagnoseEconomicPhase(data: MarketOverview, cpiYoy: number | null): EconomicPhase {
   // 단일 임계치 기반 분기 대신, 다중 신호를 점수화해 국면을 판정한다.
   // 목표: 특정 지표 하나로 "스태그플레이션"이 과도하게 트리거되는 오탐을 줄이기.
 
@@ -217,13 +219,14 @@ function diagnoseEconomicPhase(data: MarketOverview, cpiYoy: number | null): Eco
     riskSentiment: 'neutral',
   }
 
-  // 금 추세 (역사적 평균 ~1800달러, 최근 2000~2100달러 범위)
-  const goldPrice = data.gold?.price ?? 0
-  const goldHigh = 2100
-  const goldLow = 1800
-  if (goldPrice > goldHigh) {
+  // 금 추세: 절대 가격대(예전 1,800~2,100달러 기준)는 금 시세가 4,000달러대가 되면서 항상 '상승'으로 잡혔다.
+  // 가격 이력이 없으므로 당일 등락으로만 판단한다.
+  const goldChange = data.gold?.changeRate
+  if (goldChange == null || !Number.isFinite(goldChange)) {
+    indicators.goldTrend = null
+  } else if (goldChange >= 1.5) {
     indicators.goldTrend = 'up'
-  } else if (goldPrice < goldLow) {
+  } else if (goldChange <= -1.5) {
     indicators.goldTrend = 'down'
   } else {
     indicators.goldTrend = 'neutral'
@@ -297,14 +300,10 @@ function diagnoseEconomicPhase(data: MarketOverview, cpiYoy: number | null): Eco
     else if (data.wtiOil.price <= 70) growthStress += 16
   }
 
-  if (data.gold && Number.isFinite(data.gold.price)) {
+  // 금 급등(당일 +1.5%↑)은 안전자산 쏠림으로만 본다. 가격 수준으로 인플레 압력을 매기지 않는다.
+  if (indicators.goldTrend != null) {
     evidenceCount += 1
-    if (data.gold.price >= 2100) {
-      inflationPressure += 10
-      riskOffBias += 8
-    } else if (data.gold.price <= 1850) {
-      inflationPressure -= 4
-    }
+    if (indicators.goldTrend === 'up') riskOffBias += 8
   }
 
   if (data.usdkrw && Number.isFinite(data.usdkrw.price)) {
@@ -403,7 +402,10 @@ function diagnoseEconomicPhase(data: MarketOverview, cpiYoy: number | null): Eco
     },
     normal: {
       label: '정상 국면',
-      description: '인플레/금리 안정적. 성장주 진입 기회.',
+      description:
+        policyTightness >= 22
+          ? `물가·성장은 안정적이나 미국 10년물 ${data.us10y?.price?.toFixed(2)}% — 금리 부담으로 성장주 밸류에이션 압박.`
+          : '물가·금리 안정적. 성장주 진입 기회.',
     },
     unknown: {
       label: '판단 어려움',
@@ -420,7 +422,7 @@ function diagnoseEconomicPhase(data: MarketOverview, cpiYoy: number | null): Eco
   }
 }
 
-function analyzeGlobalCorrelation(data: MarketOverview): GlobalCorrelation {
+export function analyzeGlobalCorrelation(data: MarketOverview): GlobalCorrelation {
   // 미국 증시 신호
   const sp500Change = data.sp500?.changeRate ?? 0
   const nasdaqChange = data.nasdaq?.changeRate ?? 0
@@ -431,13 +433,21 @@ function analyzeGlobalCorrelation(data: MarketOverview): GlobalCorrelation {
   const kospiChange = data.kospi?.changeRate ?? 0
   const kosdaqChange = data.kosdaq?.changeRate ?? 0
 
-  // 상관도 추정 (간단한 휴리스틱)
+  // 당일 방향 비교 (상관계수가 아니다 — 하루치 등락으로는 상관을 계산할 수 없다)
   const correlation = kospiChange > 0 && americanAvg > 0 ? 0.8 : kospiChange < 0 && americanAvg < 0 ? 0.7 : 0.3
+  const direction: GlobalCorrelation['direction'] =
+    Math.abs(kospiChange) < 0.2 && Math.abs(americanAvg) < 0.2
+      ? 'flat'
+      : kospiChange > 0 && americanAvg > 0
+        ? 'same_up'
+        : kospiChange < 0 && americanAvg < 0
+          ? 'same_down'
+          : 'diverged'
 
   // 스프레드 (미국이 더 강한지 약한지)
   const spread = kospiChange - americanAvg
 
-  // 미국 선물 신호
+  // 미국 증시 신호 — 선물 시세가 아니라 전일 현물 3대 지수 평균 등락이다 (필드명은 호환 때문에 유지)
   let americanFuturesSignal: 'bullish' | 'bearish' | 'neutral' = 'neutral'
   if (americanAvg >= 1.0) americanFuturesSignal = 'bullish'
   else if (americanAvg <= -1.0) americanFuturesSignal = 'bearish'
@@ -457,6 +467,7 @@ function analyzeGlobalCorrelation(data: MarketOverview): GlobalCorrelation {
 
   return {
     kospiToSp500Correlation: correlation,
+    direction,
     kospiSp500Spread: spread,
     americanFuturesSignal,
     usdStrength,
@@ -464,7 +475,7 @@ function analyzeGlobalCorrelation(data: MarketOverview): GlobalCorrelation {
   }
 }
 
-function generateTradingSignal(
+export function generateTradingSignal(
   diagnosis: MarketDiagnosis,
   economicPhase: EconomicPhase,
   correlation: GlobalCorrelation
@@ -497,7 +508,7 @@ function generateTradingSignal(
   // 글로벌 상관도별 제약
   if (correlation.americanFuturesSignal === 'bearish') {
     confidence -= 10
-    restrictions.push('미국 선물 약세: 한국 증시 동반 약세 가능성')
+    restrictions.push('미국 증시 전일 약세: 한국 증시 동반 약세 가능성')
   }
 
   if (correlation.emergingMarketsPressure === 'high') {
@@ -509,20 +520,23 @@ function generateTradingSignal(
   if (diagnosis.riskScore >= 75) {
     shouldTrade = false
     confidence = 30
-    restrictions.push('극단적 공포: 매매 중단, 손절 기준 엄수')
+    restrictions.push('극단적 공포: 변동성 최대 — 한 번에 사지 말고 여러 번 나눠 진입, 손절 기준 엄수')
   } else if (diagnosis.riskScore >= 60) {
     confidence -= 10
-    restrictions.push('높은 위험 수준: 비중 축소, 분할 진입만')
+    restrictions.push('높은 위험 수준: 변동성 확대 — 분할 진입만')
   }
 
   confidence = Math.max(0, Math.min(100, confidence))
 
+  // 2026-09-28 KOSPI 10년 검증(2016-09~2026-08, 공포탐욕 제외): 이 규칙의 "매매 제한"인 날(31개 구간)의
+  // 이후 20일 KOSPI는 중앙값 +3.8%(가능한 날 +0.6%)로 오히려 좋았고, 하위 5%는 -13.1%(가능한 날 -7.3%)로 더 나빴다.
+  // → 고위험 = 매매 중단이 아니라 "변동성이 큰 구간, 나눠서 진입"으로 안내한다.
   const recommendation =
     shouldTrade && confidence >= 60
-      ? `매매 진행 가능 (신뢰도 ${confidence}%) — ${restrictions.length > 0 ? '다만 제약사항 확인 필요' : '양호한 진입 환경'}`
+      ? `진입 환경 양호 (적합도 ${confidence}%) — ${restrictions.length > 0 ? '다만 제약사항 확인 필요' : '양호한 진입 환경'}`
       : shouldTrade && confidence >= 40
-        ? `제한적 매매 (신뢰도 ${confidence}%) — ${restrictions.length > 0 ? restrictions.slice(0, 2).join(', ') : '보수적 접근 권고'}`
-        : `매매 제한 권고 (신뢰도 ${confidence}%) — ${restrictions[0] || '현금 비중 확대 우선'}`
+        ? `주의 구간 (적합도 ${confidence}%) — ${restrictions.length > 0 ? restrictions.slice(0, 2).join(', ') : '보수적 접근 권고'}`
+        : `고위험 구간 (적합도 ${confidence}%) — 한 번에 사지 말고 나눠서. 과거 10년 이런 날 이후 20일 KOSPI 중앙값 +3.8%, 최악 5%는 -13%`
 
   return {
     shouldTrade: shouldTrade && confidence >= 50,

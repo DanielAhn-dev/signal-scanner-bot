@@ -265,12 +265,6 @@ function renderHighlightsShared(payload: any): string {
     ? new Date(payload.generatedAt).toLocaleString('ko-KR', { hour12: false })
     : '-'
 
-  const confLevel = (pct: number): { label: string; color: string } => {
-    if (pct >= 78) return { label: '높음', color: '#007B5F' }
-    if (pct >= 65) return { label: '보통', color: '#C85700' }
-    return { label: '주의', color: '#F04452' }
-  }
-
   const scoreBar = (label: string, valueRaw: unknown, colorHigh: string): string => {
     const v = Math.max(0, Math.min(100, Number(valueRaw) || 0))
     const fill = v >= 70 ? colorHigh : v >= 50 ? '#FF8A00' : '#C5C8CE'
@@ -293,7 +287,6 @@ function renderHighlightsShared(payload: any): string {
     const confNum = Number(item?.confidence_pct || 0)
     const strategy = String(item?.strategy_label || '-')
     const warnGrade = String(item?.warn_grade || 'SAFE')
-    const edge = upside - drawdown
 
     const fmt = (n: number) => n > 0 ? Math.round(n).toLocaleString('ko-KR') : '-'
     const entryFmt = fmt(entry)
@@ -302,7 +295,7 @@ function renderHighlightsShared(payload: any): string {
     const t2Fmt = entry > 0 ? fmt(entry * (1 + upside / 100)) : '-'
 
     const rankColor = RANK_COLOR[Math.min(idx, RANK_COLOR.length - 1)]
-    const conf = confLevel(confNum)
+    const signed = (n: number) => `${n > 0 ? '+' : ''}${n.toFixed(1)}%`
 
     return `<div style="margin-bottom:12px;background:#fff;border:1px solid #E5E8EB;border-radius:16px;overflow:hidden">
 
@@ -320,8 +313,8 @@ function renderHighlightsShared(payload: any): string {
       </div>
     </div>
     <div style="text-align:right;flex-shrink:0">
-      <div style="font-size:22px;font-weight:800;color:${conf.color};line-height:1;letter-spacing:-0.02em">${confNum.toFixed(1)}<span style="font-size:12px;font-weight:500">%</span></div>
-      <div style="font-size:11px;color:${conf.color};font-weight:600;margin-top:2px">${conf.label}</div>
+      <div style="font-size:22px;font-weight:800;color:#4A5568;line-height:1;letter-spacing:-0.02em">${confNum.toFixed(0)}<span style="font-size:12px;font-weight:500">%</span></div>
+      <div style="font-size:11px;color:#8B95A1;font-weight:600;margin-top:2px">과거 상승확률</div>
     </div>
   </div>
 
@@ -333,30 +326,27 @@ function renderHighlightsShared(payload: any): string {
       <div style="font-size:10px;color:#8B95A1;margin-top:1px">원</div>
     </div>
     <div style="padding:12px 10px;text-align:center;border-right:1px solid #F2F4F6;background:#FAFBFC">
-      <div style="font-size:10px;color:#8B95A1;margin-bottom:5px">기대 수익</div>
-      <div style="font-size:15px;font-weight:700;color:#F04452">+${base.toFixed(1)}%</div>
+      <div style="font-size:10px;color:#8B95A1;margin-bottom:5px">과거 중앙</div>
+      <div style="font-size:15px;font-weight:700;color:#191F28">${signed(base)}</div>
     </div>
     <div style="padding:12px 10px;text-align:center;border-right:1px solid #F2F4F6;background:#FAFBFC">
-      <div style="font-size:10px;color:#8B95A1;margin-bottom:5px">상단 목표</div>
-      <div style="font-size:15px;font-weight:700;color:#F04452">+${upside.toFixed(1)}%</div>
+      <div style="font-size:10px;color:#8B95A1;margin-bottom:5px">과거 상위25%</div>
+      <div style="font-size:15px;font-weight:700;color:#F04452">${signed(upside)}</div>
     </div>
     <div style="padding:12px 10px;text-align:center;background:#FAFBFC">
-      <div style="font-size:10px;color:#8B95A1;margin-bottom:5px">예상 손실</div>
-      <div style="font-size:15px;font-weight:700;color:#1478FF">-${drawdown.toFixed(1)}%</div>
+      <div style="font-size:10px;color:#8B95A1;margin-bottom:5px">과거 하위10%</div>
+      <div style="font-size:15px;font-weight:700;color:#1478FF">${signed(-drawdown)}</div>
     </div>
   </div>
 
-  <!-- 점수 + 기대여지 -->
+  <!-- 점수 (수치는 과거 10년 비슷한 조건의 20거래일 뒤 분포, 예측 아님) -->
   <div style="padding:14px 18px;border-top:1px solid #F2F4F6;display:flex;gap:20px;align-items:flex-start;flex-wrap:wrap">
     <div style="flex:1;min-width:160px;display:flex;flex-direction:column;gap:7px">
       ${scoreBar('모멘텀', item?.score_momentum, '#F04452')}
       ${scoreBar('밸류', item?.score_value, '#0060FF')}
       ${scoreBar('안전성', item?.score_safety, '#00B493')}
     </div>
-    <div style="padding:10px 14px;background:#F9FAFB;border-radius:10px;border:1px solid #E5E8EB;display:flex;flex-direction:column;align-items:center;justify-content:center;min-width:80px">
-      <div style="font-size:10px;color:#8B95A1;margin-bottom:3px">기대 여지</div>
-      <div style="font-size:20px;font-weight:800;color:${edge >= 7 ? '#007B5F' : edge >= 4 ? '#C85700' : '#F04452'}">+${edge.toFixed(1)}<span style="font-size:11px;font-weight:500">%</span></div>
-    </div>
+    <div style="flex:1;min-width:160px;font-size:11px;color:#8B95A1;line-height:1.6">위 수치는 과거 10년 비슷한 조건 종목들의 20거래일 뒤 수익 분포입니다. 예측이 아니며, 점수·등급은 이 분포를 의미 있게 바꾸지 못했습니다.</div>
   </div>
 
   <!-- 가격 구간 -->
@@ -366,15 +356,15 @@ function renderHighlightsShared(payload: any): string {
       <div style="font-size:13px;font-weight:700;color:#191F28">${entryFmt}원</div>
     </div>
     <div style="flex:1;padding:10px 14px;border-right:1px solid #F2F4F6">
-      <div style="font-size:10px;color:#8B95A1;margin-bottom:3px">손절 기준</div>
+      <div style="font-size:10px;color:#8B95A1;margin-bottom:3px">과거 하위10%</div>
       <div style="font-size:13px;font-weight:700;color:#1478FF">${stopFmt}원</div>
     </div>
     <div style="flex:1;padding:10px 14px;border-right:1px solid #F2F4F6">
-      <div style="font-size:10px;color:#8B95A1;margin-bottom:3px">1차 목표</div>
-      <div style="font-size:13px;font-weight:700;color:#F04452">${t1Fmt}원</div>
+      <div style="font-size:10px;color:#8B95A1;margin-bottom:3px">과거 중앙</div>
+      <div style="font-size:13px;font-weight:700;color:#191F28">${t1Fmt}원</div>
     </div>
     <div style="flex:1;padding:10px 14px">
-      <div style="font-size:10px;color:#8B95A1;margin-bottom:3px">2차 목표</div>
+      <div style="font-size:10px;color:#8B95A1;margin-bottom:3px">과거 상위25%</div>
       <div style="font-size:13px;font-weight:700;color:#F04452">${t2Fmt}원</div>
     </div>
   </div>

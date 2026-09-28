@@ -57,16 +57,22 @@ function StrategyBadge({ label }: { label: string }) {
   )
 }
 
+// 예상 수익·손실·신뢰도 필드는 이제 예측이 아니라 과거 10년 같은 조건 종목들의 20일 수익 분포다
+// (base=중앙값, upside=상위 25%, drawdown=하위 10% 손실폭, confidence=상승 마감 비율). src/services/forecastBaseRates.ts
+const BASE_RATE_NOTE = '과거 10년 비슷한 조건 종목들의 20거래일 뒤 수익 분포입니다. 예측이 아니며, 어떤 점수·등급도 이 분포를 의미 있게 바꾸지 못했습니다.'
+
+function signedPct(value: number): string {
+  return `${value > 0 ? '+' : ''}${formatNumber(value, 1)}%`
+}
+
 function ConfidenceLabel({ pct }: { pct: number }) {
-  const level = pct >= 75 ? '높음' : pct >= 60 ? '보통' : '주의'
-  const color = pct >= 75 ? 'var(--color-stock-up)' : pct >= 60 ? 'var(--color-text-secondary)' : 'var(--color-stock-down)'
   return (
-    <div style={{ textAlign: 'right', flexShrink: 0 }}>
-      <div style={{ fontSize: 11, color: 'var(--color-text-tertiary)' }}>종합 신뢰도</div>
-      <div style={{ fontSize: 20, fontWeight: 700, color, lineHeight: 1.2 }}>
+    <div style={{ textAlign: 'right', flexShrink: 0 }} title={BASE_RATE_NOTE}>
+      <div style={{ fontSize: 11, color: 'var(--color-text-tertiary)' }}>과거 상승 확률</div>
+      <div style={{ fontSize: 20, fontWeight: 700, color: 'var(--color-text-secondary)', lineHeight: 1.2 }}>
         {formatNumber(pct, 1)}<span style={{ fontSize: 13 }}>%</span>
       </div>
-      <div style={{ fontSize: 11, color }}>{level}</div>
+      <div style={{ fontSize: 11, color: 'var(--color-text-tertiary)' }}>20거래일 기준</div>
     </div>
   )
 }
@@ -115,6 +121,7 @@ function PriceCell({ label, value, pct, color }: { label: string; value?: string
 function calcPrices(item: HighlightItem) {
   const p = item.entry_price
   if (!p || p <= 0) return null
+  // 과거 분포 기준 가격(하위 10% / 중앙 / 상위 25%). 권장 손절·목표가가 아니다.
   const stop = Math.round(p * (1 - item.expected_drawdown_pct / 100))
   const t1 = Math.round(p * (1 + item.expected_base_pct / 100))
   const t2 = Math.round(p * (1 + item.expected_upside_pct / 100))
@@ -402,9 +409,9 @@ export default function HighlightsPage({ onNavigate }: { onNavigate?: (r: string
                   marginBottom: 'var(--space-4)',
                 }}>
                   <PriceCell label="기준 진입가" value={row.entry_price ? `${formatKrw(row.entry_price)}` : '-'} />
-                  <PriceCell label="기대 수익" pct={`+${formatNumber(row.expected_base_pct, 1)}%`} color="var(--color-stock-up)" />
-                  <PriceCell label="상단 목표" pct={`+${formatNumber(row.expected_upside_pct, 1)}%`} color="var(--color-stock-up)" />
-                  <PriceCell label="예상 손실" pct={`-${formatNumber(row.expected_drawdown_pct, 1)}%`} color="var(--color-stock-down)" />
+                  <PriceCell label="과거 중앙값" pct={signedPct(row.expected_base_pct)} />
+                  <PriceCell label="과거 상위 25%" pct={signedPct(row.expected_upside_pct)} color="var(--color-stock-up)" />
+                  <PriceCell label="과거 하위 10%" pct={signedPct(-row.expected_drawdown_pct)} color="var(--color-stock-down)" />
                 </div>
 
                 {/* 점수 지표 + 매수 근거 */}
@@ -414,19 +421,16 @@ export default function HighlightsPage({ onNavigate }: { onNavigate?: (r: string
                     <ScoreBar label="모멘텀" value={row.score_momentum} color="#ef4444" />
                     <ScoreBar label="밸류" value={row.score_value} color="#f97316" />
                     <ScoreBar label="안전성" value={row.score_safety} color="#22c55e" />
-                    <div style={{
-                      marginTop: 8, fontSize: 12, color: 'var(--color-stock-up)', fontWeight: 600,
-                    }}>
-                      기대 여지 +{formatNumber(row.expected_base_pct, 1)}%
+                    <div style={{ marginTop: 8, fontSize: 11, color: 'var(--color-text-tertiary)', lineHeight: 1.5 }}>
+                      {BASE_RATE_NOTE}
                     </div>
                   </div>
                   <div>
-                    <div style={{ fontSize: 11, color: 'var(--color-text-tertiary)', marginBottom: 8, fontWeight: 500, letterSpacing: '0.02em' }}>매수 확신 근거</div>
+                    <div style={{ fontSize: 11, color: 'var(--color-text-tertiary)', marginBottom: 8, fontWeight: 500, letterSpacing: '0.02em' }}>선정 근거</div>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
                       {(reasons ?? [
-                        `모멘텀 ${Math.round(row.score_momentum)}점 — 진입 강도 기반 추세 분석.`,
-                        `안전성 ${Math.round(row.score_safety)}점 — 하방 리스크 제한적입니다.`,
-                        `기대 여지 +${formatNumber(row.expected_base_pct, 1)}% — 예상 손실 대비 기대 수익 비율이 우수합니다.`,
+                        `모멘텀 ${Math.round(row.score_momentum)}점 · 안전성 ${Math.round(row.score_safety)}점 기준 상위 후보입니다.`,
+                        `과거 같은 조건에서 20거래일 뒤 하위 10%는 ${signedPct(-row.expected_drawdown_pct)}였습니다 — 한 번에 사지 말고 나눠서.`,
                       ]).slice(0, 4).map((r, i) => (
                         <div key={i} style={{ fontSize: 12, color: 'var(--color-text-secondary)', lineHeight: 1.6 }}>{r}</div>
                       ))}
@@ -446,21 +450,21 @@ export default function HighlightsPage({ onNavigate }: { onNavigate?: (r: string
                       <div style={{ fontSize: 12, fontWeight: 600, marginTop: 2 }}>{formatKrw(prices.entryLow)} ~ {formatKrw(prices.entryHigh)}</div>
                     </div>
                     <div>
-                      <div style={{ fontSize: 11, color: 'var(--color-text-tertiary)' }}>손절 기준</div>
+                      <div style={{ fontSize: 11, color: 'var(--color-text-tertiary)' }}>과거 하위 10% 가격</div>
                       <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--color-stock-down)', marginTop: 2 }}>
-                        {formatKrw(prices.stop)} (-{formatNumber(row.expected_drawdown_pct, 1)}%)
+                        {formatKrw(prices.stop)} ({signedPct(-row.expected_drawdown_pct)})
                       </div>
                     </div>
                     <div>
-                      <div style={{ fontSize: 11, color: 'var(--color-text-tertiary)' }}>1차 목표</div>
-                      <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--color-stock-up)', marginTop: 2 }}>
-                        {formatKrw(prices.t1)} (+{formatNumber(row.expected_base_pct, 1)}%)
+                      <div style={{ fontSize: 11, color: 'var(--color-text-tertiary)' }}>과거 중앙값 가격</div>
+                      <div style={{ fontSize: 12, fontWeight: 600, marginTop: 2 }}>
+                        {formatKrw(prices.t1)} ({signedPct(row.expected_base_pct)})
                       </div>
                     </div>
                     <div>
-                      <div style={{ fontSize: 11, color: 'var(--color-text-tertiary)' }}>2차 목표</div>
+                      <div style={{ fontSize: 11, color: 'var(--color-text-tertiary)' }}>과거 상위 25% 가격</div>
                       <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--color-stock-up)', marginTop: 2 }}>
-                        {formatKrw(prices.t2)} (+{formatNumber(row.expected_upside_pct, 1)}%)
+                        {formatKrw(prices.t2)} ({signedPct(row.expected_upside_pct)})
                       </div>
                     </div>
                   </div>
@@ -523,11 +527,11 @@ export default function HighlightsPage({ onNavigate }: { onNavigate?: (r: string
                             </div>
                           )}
                           <div className="highlights-compact-metric">
-                            <div style={{ fontSize: 10, color: 'var(--color-text-tertiary)' }}>기대수익</div>
-                            <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--color-stock-up)' }}>+{formatNumber(row.expected_base_pct, 1)}%</div>
+                            <div style={{ fontSize: 10, color: 'var(--color-text-tertiary)' }}>과거 중앙값</div>
+                            <div style={{ fontSize: 12, fontWeight: 600 }}>{signedPct(row.expected_base_pct)}</div>
                           </div>
                           <div className="highlights-compact-metric">
-                            <div style={{ fontSize: 10, color: 'var(--color-text-tertiary)' }}>신뢰도</div>
+                            <div style={{ fontSize: 10, color: 'var(--color-text-tertiary)' }}>과거 상승확률</div>
                             <div style={{ fontSize: 12, fontWeight: 600 }}>{formatNumber(row.confidence_pct, 1)}%</div>
                           </div>
                           <WarnBadge grade={row.warn_grade} />

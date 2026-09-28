@@ -76,6 +76,10 @@ function toGrade(score: number): SignalGateResult["grade"] {
   return "D";
 }
 
+// 기술관문: 200일선·50일선·AVWAP·거래량·RSI·MACD·Stable 턴을 합산한 매수 필터.
+// 2026-09-28 10년 검증(2015~2026, 214종목)에서 통과 종목은 같은 날 다른 종목과 20일 수익 차이가 없었다(+0.01%p).
+// 종목을 더 잘 고르는 근거는 없으므로 "신뢰도"라고 부르지 않는다. 매도 규칙(detectTrendBreakExitSignal)은
+// 손실 절단 효과까지 봐야 해 보유 기간 전체를 따라가는 모의매매로 따로 검증해야 한다.
 export function evaluateAutoTradeSignalGate(input: {
   currentPrice: number;
   score: number;
@@ -150,7 +154,7 @@ export function evaluateAutoTradeSignalGate(input: {
   if (!stableAboveAvg) reasons.push("가격이 세력 평단 아래");
   if (volRatio < 0.9) reasons.push("거래량 신뢰도 부족");
   if (rsi14 > 74) reasons.push("RSI 과열");
-  if (trustScore < minTrustScore) reasons.push(`신뢰도 ${trustScore}점 < 기준 ${minTrustScore}점`);
+  if (trustScore < minTrustScore) reasons.push(`기술관문 ${trustScore}점 < 기준 ${minTrustScore}점`);
 
   const passed =
     trustScore >= minTrustScore &&

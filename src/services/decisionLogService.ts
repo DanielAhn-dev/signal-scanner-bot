@@ -31,8 +31,11 @@ export type DecisionReliabilitySummary = {
   linkedSellWinRatePct: number | null;
   linkedRealizedPnl: number;
   strategyVersionCount: number;
+  /** 실현 매도 승률(%). 실현 매도가 MIN_SELLS_FOR_TRUST 건 미만이면 null */
   trustScore: number | null;
 };
+
+const MIN_SELLS_FOR_TRUST = 10;
 
 const supabase = createClient(
   process.env.SUPABASE_URL!,
@@ -238,13 +241,11 @@ export async function getDecisionReliabilitySummary(
       .filter(Boolean)
   ).size;
 
-  const confidenceComponent = averageConfidencePct == null ? 0 : averageConfidencePct * 0.3;
-  const explanationComponent = explanationCoveragePct * 0.3;
-  const outcomeComponent = (linkedSellWinRatePct ?? 0) * 0.4;
-  const trustScoreRaw = confidenceComponent + explanationComponent + outcomeComponent;
+  // 예전엔 봇이 스스로 매긴 신뢰도 30% + 근거 문구 유무 30% + 승률 40%였다. 앞의 둘은 결과와 무관하므로
+  // 실제 결과(실현 매도 승률)만 쓰고, 표본이 적으면 계산하지 않는다.
   const trustScore =
-    linkedSellCount > 0 || executedDecisions > 0
-      ? Math.max(0, Math.min(100, Math.round(trustScoreRaw)))
+    linkedSellCount >= MIN_SELLS_FOR_TRUST && linkedSellWinRatePct != null
+      ? Math.round(linkedSellWinRatePct)
       : null;
 
   return {

@@ -2,6 +2,7 @@
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
 import { createDailyCandidatePlanningReportResult } from '../../src/services/marketInsightService'
 import { scoreLeadAccumulationCandidate } from '../../src/services/accumulationSignalService'
+import { selectForecastsForTopic } from '../../src/services/reportTopicForecasts'
 import { denyIfUnauthorizedRead } from './_accessControl'
 
 const ORIGIN = process.env.UI_CORS_ORIGIN || '*'
@@ -199,13 +200,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.status(200).json({ ok: true, cached: false, data: [] })
     }
 
-    // 확신추천과 동일한 정렬: confidencePct desc → edge(upside-drawdown) desc
-    const ranked = [...forecasts].sort((a, b) => {
-      if (b.confidencePct !== a.confidencePct) return b.confidencePct - a.confidencePct
-      const aEdge = a.expectedUpsidePct - a.expectedDrawdownPct
-      const bEdge = b.expectedUpsidePct - b.expectedDrawdownPct
-      return bEdge - aEdge
-    }).slice(0, 5)
+    // 확신추천(집행우선) 리포트와 같은 선정
+    const ranked = selectForecastsForTopic('확신추천', forecasts).slice(0, 5)
     const rankedCodes = ranked.map((f) => f.code)
     const asOfDate = new Date().toISOString().slice(0, 10)
     const investorFlowByCode = await fetchInvestorFlowByCode(supabase, rankedCodes, asOfDate)

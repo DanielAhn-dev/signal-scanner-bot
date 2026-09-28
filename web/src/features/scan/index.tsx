@@ -609,8 +609,9 @@ function SignalBadge({ signal }: { signal: string | null | undefined }) {
 
 function AccumulationBadge({ stage }: { stage: 'lead' | 'breakout' | null | undefined }) {
   if (!stage) return null
-  const label = stage === 'breakout' ? '매집 돌파' : '매집형'
-  const title = stage === 'breakout' ? '매집 구간 돌파 후보' : '매집 선행 후보'
+  // 이격·저점근접·추세·경고 등급을 합산한 눌림 점수 배지. 차트의 박스권 매집 판정과는 다른 계산이다.
+  const label = stage === 'breakout' ? '눌림 강함' : '눌림형'
+  const title = '이격·저점근접·추세·경고 등급 합산 눌림 점수 (거래량 기반 매집 판정 아님)'
   return (
     <span
       className="scan-grade-badge scan-grade-b"
@@ -2254,8 +2255,8 @@ export default function ScanPage({ onNavigate }: { onNavigate?: (r: string) => v
                     <div className="scan-highlight-mobile-card__grades">
                       <GradeBadge grade={c.entry_grade} label="진입" />
                       <GradeBadge grade={c.trend_grade} label="추세" />
-                      <GradeBadge grade={c.dist_grade} label="매집" />
-                      {c.pivot_grade && <GradeBadge grade={c.pivot_grade} label="세력" />}
+                      <GradeBadge grade={c.dist_grade} label="이격" />
+                      {c.pivot_grade && <GradeBadge grade={c.pivot_grade} label="저점" />}
                       {c.signal && <SignalBadge signal={c.signal} />}
                     </div>
                     <div className="scan-highlight-mobile-card__meta">
@@ -2383,8 +2384,8 @@ export default function ScanPage({ onNavigate }: { onNavigate?: (r: string) => v
                           }}>
                             <GradeBadge grade={c.entry_grade} label="진입" />
                             <GradeBadge grade={c.trend_grade} label="추세" />
-                            <GradeBadge grade={c.dist_grade} label="매집" />
-                            {c.pivot_grade && <GradeBadge grade={c.pivot_grade} label="세력" />}
+                            <GradeBadge grade={c.dist_grade} label="이격" />
+                            {c.pivot_grade && <GradeBadge grade={c.pivot_grade} label="저점" />}
                             <AccumulationBadge stage={c.leadAccumulationStage === 'none' ? null : c.leadAccumulationStage} />
                             {c.signal && <SignalBadge signal={c.signal} />}
                           </div>
@@ -2464,12 +2465,12 @@ export default function ScanPage({ onNavigate }: { onNavigate?: (r: string) => v
                   <th className="xls-th">{renderSortableHeader('종목명', 'name')}</th>
                   <th className="xls-th">{renderSortableHeader('섹터', 'sector_id')}</th>
                   <th className="xls-th">{renderSortableHeader('우선순위▼', 'priority_score')}</th>
-                  <th className="xls-th">{renderSortableHeader('선행매집', 'lead_accumulation_score')}</th>
+                  <th className="xls-th">{renderSortableHeader('눌림점수', 'lead_accumulation_score')}</th>
                   <th className="xls-th">{renderSortableHeader('진입', 'entry_grade')}</th>
                   <th className="xls-th">{renderSortableHeader('진입점수', 'entry_score')}</th>
                   <th className="xls-th">{renderSortableHeader('추세', 'trend_grade')}</th>
-                  <th className="xls-th">{renderSortableHeader('매집', 'dist_grade')}</th>
-                  <th className="xls-th">{renderSortableHeader('세력선', 'pivot_grade')}</th>
+                  <th className="xls-th">{renderSortableHeader('이격', 'dist_grade')}</th>
+                  <th className="xls-th">{renderSortableHeader('저점근접', 'pivot_grade')}</th>
                   <th className="xls-th">{renderSortableHeader('경고', 'warn_score')}</th>
                   <th className="xls-th">{renderSortableHeader('유동성', 'liquidity')}</th>
                   <th className="xls-th">전략</th>
@@ -2536,7 +2537,7 @@ export default function ScanPage({ onNavigate }: { onNavigate?: (r: string) => v
                           {formatNumber(s.priorityScore, 1)}
                         </span>
                       </td>
-                      {/* 선행매집 */}
+                      {/* 눌림점수 (이격·저점근접·추세·경고 등급 합산) */}
                       <td className="xls-cell xls-cell--num">
                         <div style={{ display: 'flex', alignItems: 'center', gap: 4, justifyContent: 'center', flexWrap: 'wrap' }}>
                           <span className={s.leadAccumulationScore >= 75 ? 'scan-grade-badge scan-grade-a' : s.leadAccumulationScore >= 55 ? 'scan-grade-badge scan-grade-b' : 'scan-grade-label'}>

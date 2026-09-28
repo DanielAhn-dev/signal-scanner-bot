@@ -138,6 +138,13 @@ function getAccumulationBackdropStyle(signal: AccumulationSignal, isDark: boolea
   }
 }
 
+// 2026-09-28 검증: 2015~2026 10년, 214종목, 같은 날 다른 종목 대비 20일 수익 (8개 장세 구간)
+const FORCE_LINE_WARMUP_BARS = 60
+const FORCE_LINE_NOTE =
+  '세력선↑ 표시는 참고용입니다. 10년 검증에서 장세마다 결과가 엇갈려 매수 근거가 되지 못했습니다.'
+const ACCUMULATION_STAGE_NOTE =
+  '박스권 판정은 참고용입니다. 10년 검증에서 선행·돌파는 근거 없음, 진행형은 오히려 평균보다 부진(-1.0%p)했습니다.'
+
 function relativeGap(a: number, b: number): number {
   const base = Math.max(Math.abs(a), Math.abs(b), 1)
   return Math.abs(a - b) / base
@@ -606,27 +613,26 @@ export default function CandleChart({
           s.setData(seg.data)
         })
 
-        // 매집 마커 감지: 세력선이 빨강→초록 전환 + 거래량 급증 구간
+        // 세력선 빨강→초록 전환 + 거래량 1.5배 구간 표시 (참고용 — FORCE_LINE_NOTE 참고, 매수 신호 아님)
+        // 세력선은 불러온 첫 봉부터 누적한 VWAP이라 앵커 직후엔 색이 자주 뒤집힌다 → 워밍업 구간은 표시하지 않는다.
         const accumMarkers: any[] = []
-        for (let i = 1; i < force.center.length; i++) {
+        const indexByTime = new Map<unknown, number>(sorted.map((c, idx) => [toTimestamp(c.date), idx]))
+        for (let i = FORCE_LINE_WARMUP_BARS; i < force.center.length; i++) {
           const prev = force.center[i - 1]
           const cur = force.center[i]
-          const prevColor = prev.color || ''
-          const curColor2 = cur.color || ''
-          if (prevColor === '#ef4444' && curColor2 === '#22c55e') {
-            // 거래량 확인
-            const candle = sorted.find((c) => (toTimestamp(c.date) as any) === cur.time)
-            const vol = candle ? Number(candle.volume) : 0
-            const avgVol = sorted.slice(Math.max(0, i - 20), i).reduce((s, c) => s + Number(c.volume), 0) / Math.min(i, 20)
-            if (vol >= avgVol * 1.5) {
-              accumMarkers.push({
-                time: cur.time,
-                position: 'belowBar',
-                color: '#a855f7',
-                shape: 'circle',
-                text: '매집',
-              })
-            }
+          if (prev.color !== '#ef4444' || cur.color !== '#22c55e') continue
+          const candleIdx = indexByTime.get(cur.time)
+          if (candleIdx == null || candleIdx < 1) continue
+          const window = sorted.slice(Math.max(0, candleIdx - 20), candleIdx)
+          const avgVol = window.reduce((s, c) => s + Number(c.volume), 0) / window.length
+          if (Number(sorted[candleIdx].volume) >= avgVol * 1.5) {
+            accumMarkers.push({
+              time: cur.time,
+              position: 'belowBar',
+              color: '#a855f7',
+              shape: 'circle',
+              text: '세력선↑',
+            })
           }
         }
         if (accumMarkers.length) {
@@ -664,7 +670,7 @@ export default function CandleChart({
         color: accumulationSignal.stage === 'breakout' ? '#a855f7' : '#8b5cf6',
         lineWidth: 1,
         lineStyle: 2,
-        title: accumulationSignal.stage === 'breakout' ? '매집 돌파선' : '매집 상단',
+        title: accumulationSignal.stage === 'breakout' ? '박스 돌파선' : '박스 상단',
       })
 
       const accumulationMarkers: any[] = []
@@ -674,7 +680,7 @@ export default function CandleChart({
           position: 'belowBar',
           color: '#a855f7',
           shape: 'circle',
-          text: '매집 추정',
+          text: '박스 시작',
         })
       }
       if (accumulationSignal.baseEndDate) {
@@ -683,7 +689,7 @@ export default function CandleChart({
           position: 'belowBar',
           color: '#a855f7',
           shape: 'circle',
-          text: accumulationSignal.stage === 'breakout' ? '돌파 직전' : '매집 종료',
+          text: '박스 끝',
         })
       }
 
@@ -699,7 +705,7 @@ export default function CandleChart({
             position: 'belowBar',
             color: '#a855f7',
             shape: 'circle',
-            text: accumulationSignal.stage === 'breakout' ? '매집 돌파' : '매집 선행',
+            text: accumulationSignal.stage === 'breakout' ? '박스 돌파' : accumulationSignal.stage === 'lead' ? '상단 근접' : '박스 횡보',
           },
         ])
       }
@@ -882,17 +888,21 @@ export default function CandleChart({
           <div className="chart-hud-panel__chips">
             {showMaEmaOverlay && <span className="chart-hud-panel__chip chart-hud-panel__chip--ma">EMA21 · SMA50 · SMA200</span>}
             {showTradeMarkers && <span className="chart-hud-panel__chip chart-hud-panel__chip--marker">신호 마커</span>}
-            {showForceLine && <span className="chart-hud-panel__chip chart-hud-panel__chip--force">세력선</span>}
+            {showForceLine && (
+              <span className="chart-hud-panel__chip chart-hud-panel__chip--force" title={FORCE_LINE_NOTE}>
+                세력선(참고)
+              </span>
+            )}
             {accumulationSignal.stage !== 'none' && (
               <span
                 className="chart-hud-panel__chip chart-hud-panel__chip--marker"
-                title={accumulationSignal.reasons.join(' · ')}
+                title={[...accumulationSignal.reasons, ACCUMULATION_STAGE_NOTE].join(' · ')}
               >
                 {accumulationSignal.stage === 'lead'
-                  ? '매집 선행형'
+                  ? '박스 상단 근접(참고)'
                   : accumulationSignal.stage === 'breakout'
-                    ? '매집 돌파'
-                    : '매집 진행형'}
+                    ? '박스 돌파(참고)'
+                    : '박스권 횡보(참고)'}
               </span>
             )}
           </div>
