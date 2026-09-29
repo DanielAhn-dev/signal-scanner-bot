@@ -68,6 +68,8 @@ function renderPortfolioSummary(payload: PortfolioSharePayload): string {
   const totals = payload.totals || {}
   const generatedAt = payload.generatedAt
     ? new Date(payload.generatedAt).toLocaleString('ko-KR', {
+      // 서버(Vercel)는 UTC라 시간대를 지정하지 않으면 9시간 이른 시각이 찍힌다
+      timeZone: 'Asia/Seoul',
       year: 'numeric',
       month: '2-digit',
       day: '2-digit',

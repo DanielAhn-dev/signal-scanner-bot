@@ -2001,7 +2001,7 @@ export default function Portfolio() {
             {shareHistory.length === 0 ? (
               <div className="caption muted">공유 이력이 없습니다.</div>
             ) : (
-              <div style={{ display: 'grid', gap: 'var(--space-2)' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr)', gap: 'var(--space-2)' }}>
                 {shareHistory.map((item) => {
                   const isRevoked = Boolean(item.revokedAt)
                   const isExpired = new Date(item.expiresAt).getTime() <= Date.now()

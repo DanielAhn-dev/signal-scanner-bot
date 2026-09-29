@@ -102,7 +102,7 @@ function sharedResponsiveStyles(): string {
 function renderScanShared(payload: any): string {
   const rows = Array.isArray(payload?.rows) ? payload.rows : []
   const generatedAt = payload?.generatedAt
-    ? new Date(payload.generatedAt).toLocaleString('ko-KR', { hour12: false })
+    ? new Date(payload.generatedAt).toLocaleString('ko-KR', { hour12: false, timeZone: 'Asia/Seoul' })
     : '-'
   const latestDate = String(payload?.latestDate || '-')
   const phase = String(payload?.marketPhase || 'after-close') === 'intraday' ? '장중' : '종가'
@@ -262,7 +262,7 @@ function renderHighlightsShared(payload: any): string {
   const selectedCount = Number(payload?.selectedCount || 0)
   const totalCount = Number(payload?.totalCount || 0)
   const generatedAt = payload?.generatedAt
-    ? new Date(payload.generatedAt).toLocaleString('ko-KR', { hour12: false })
+    ? new Date(payload.generatedAt).toLocaleString('ko-KR', { hour12: false, timeZone: 'Asia/Seoul' })
     : '-'
 
   const scoreBar = (label: string, valueRaw: unknown, colorHigh: string): string => {
@@ -387,7 +387,7 @@ function renderAnalyzeShared(payload: any): string {
   const advisor = payload?.advisor || {}
   const summaryLines = Array.isArray(payload?.summaryLines) ? payload.summaryLines : []
   const generatedAt = payload?.generatedAt
-    ? new Date(payload.generatedAt).toLocaleString('ko-KR', { hour12: false })
+    ? new Date(payload.generatedAt).toLocaleString('ko-KR', { hour12: false, timeZone: 'Asia/Seoul' })
     : '-'
   const name = String(stock?.name || stock?.code || '종목')
   const code = String(stock?.code || '-')

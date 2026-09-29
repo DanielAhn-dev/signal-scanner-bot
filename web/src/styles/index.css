@@ -2051,6 +2051,8 @@ a:focus-visible {
   border: 1px solid var(--color-border-muted);
   border-radius: var(--radius-md);
   padding: var(--space-2);
+  /* grid 항목은 기본 min-width:auto라 긴 URL만큼 늘어나 카드 밖으로 넘친다 — 0으로 두면 URL이 말줄임된다 */
+  min-width: 0;
 }
 
 .portfolio-share-history-head {
@@ -2088,6 +2090,8 @@ a:focus-visible {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  min-width: 0;
+  max-width: 100%;
 }
 
 .portfolio-share-history-actions {
