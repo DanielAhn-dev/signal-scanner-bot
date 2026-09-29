@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import { clearProfile, loadProfileFromServer, readProfile, saveProfile, type SaveProfileOptions, type SaveProfileResult, type StoredProfile } from '../lib/userContext'
+import { clearProfile, linkedTelegramId, loadProfileFromServer, readProfile, saveProfile, type SaveProfileOptions, type SaveProfileResult, type StoredProfile } from '../lib/userContext'
 
 type ProfileState = {
   profile: StoredProfile
@@ -20,7 +20,8 @@ type ProfileActions = {
 export const selectProfile = (state: ProfileState) => state.profile
 export const selectCurrentClientId = (state: ProfileState) => state.profile.clientId || ''
 export const selectCurrentChatId = (state: ProfileState) => state.profile.telegramId || ''
-export const selectIsTelegramLinked = (state: ProfileState) => !!state.profile.telegramId
+// 계정 ID(telegramId)는 웹 전용일 수 있다 — 텔레그램 기능은 실제 연결일 때만
+export const selectIsTelegramLinked = (state: ProfileState) => !!linkedTelegramId(state.profile)
 
 export const useProfileStore = create<ProfileState & ProfileActions>((set) => ({
   profile: readProfile() ?? {},

@@ -4,6 +4,8 @@ export type StoredProfile = {
   nickname?: string
   telegramUsername?: string
   telegramName?: string
+  /** 텔레그램 미연결 — telegramId는 서버가 만든 웹 전용 계정 ID (src/services/webAccount.ts) */
+  webOnly?: boolean
 }
 
 export type SaveProfileOptions = {
@@ -18,6 +20,18 @@ export type SaveProfileResult = {
 }
 
 import { supabase } from './supabase'
+
+/** 서버 src/services/webAccount.ts와 같은 예약 번호대 (9e12 ~ 1e13) */
+export function isWebOnlyChatId(raw: unknown): boolean {
+  const n = Number(raw)
+  return Number.isFinite(n) && n >= 9_000_000_000_000 && n < 10_000_000_000_000
+}
+
+/** 실제로 연결된 텔레그램 ID — 웹 전용 계정이면 빈 문자열 */
+export function linkedTelegramId(profile: StoredProfile | null | undefined): string {
+  const id = normalizeTelegramChatId(profile?.telegramId)
+  return id && !isWebOnlyChatId(id) ? id : ''
+}
 
 export function normalizeTelegramChatId(raw: unknown): string {
   const value = String(raw ?? '').trim().replace(/\s+/g, '')
@@ -53,6 +67,8 @@ function normalizeStoredProfile(profile: StoredProfile): StoredProfile {
   if (profile.nickname) next.nickname = String(profile.nickname).trim()
   if (profile.telegramUsername) next.telegramUsername = String(profile.telegramUsername).trim()
   if (profile.telegramName) next.telegramName = String(profile.telegramName).trim()
+  // 웹 전용 여부는 번호대로만 판단 — 저장된 표시를 믿으면 텔레그램을 새로 연결해도 남는다
+  if (isWebOnlyChatId(telegramId)) next.webOnly = true
   return next
 }
 
@@ -72,7 +88,8 @@ async function syncProfileToServer(profile: StoredProfile): Promise<{ synced: bo
     const clientId = String(profile.clientId || identity.userId || '')
     if (!clientId) return { synced: false, error: 'client_id missing' }
 
-    const telegramId = normalizeTelegramChatId(profile.telegramId)
+    // 웹 전용 계정 ID는 서버가 정하는 값이라 보내지 않는다 (비우면 서버가 같은 ID를 다시 붙인다)
+    const telegramId = linkedTelegramId(profile)
 
     const base = getApiBase() || ''
     const url = base ? `${base.replace(/\/$/, '')}/api/ui/profile` : `/api/ui/profile`
@@ -167,6 +184,7 @@ export async function loadProfileFromServer(): Promise<StoredProfile | null> {
   const telegramId = normalizeTelegramChatId(data?.telegram_id)
   if (telegramId) {
     mapped.telegramId = telegramId
+    if (isWebOnlyChatId(telegramId)) mapped.webOnly = true
   }
   if (data?.nickname != null && String(data.nickname).trim() !== '') {
     mapped.nickname = String(data.nickname)

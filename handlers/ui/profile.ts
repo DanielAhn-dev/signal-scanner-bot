@@ -1,5 +1,6 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { createClient } from '@supabase/supabase-js'
+import { ensureWebAccountChatId, ensureWebAccountUserRow, isWebOnlyChatId, webAccountIdFor } from '../../src/services/webAccount'
 
 function errorMessage(error: unknown): string {
   return String((error as { message?: string })?.message || error || '')
@@ -101,7 +102,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         return res.status(200).json({ data: null })
       }
       if (error) return res.status(500).json({ error: error.message })
-      return res.status(200).json({ data: data && data[0] ? data[0] : null })
+      const row = data && data[0] ? data[0] : null
+      // 텔레그램은 선택 — 로그인한 계정에 연결이 없으면 웹 전용 계정 ID를 만들어 돌려준다
+      if (authenticatedUserId && !row?.telegram_id) {
+        const chatId = await ensureWebAccountChatId(supabase, clientId)
+        return res.status(200).json({
+          data: { client_id: clientId, telegram_id: chatId, nickname: row?.nickname ?? null, web_only: true },
+        })
+      }
+      return res.status(200).json({ data: row ? { ...row, web_only: isWebOnlyChatId(row.telegram_id) } : null })
     }
 
     if (req.method === 'POST') {
@@ -115,9 +124,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         return res.status(400).json({ error: 'telegram_id must be a numeric Chat ID' })
       }
 
+      // 텔레그램 연결을 비우면 같은 웹 전용 계정 ID로 돌아간다 (로그인 계정마다 고정 값)
+      const webChatId = authenticatedUserId ? webAccountIdFor(clientId) : null
+      if (webChatId && !telegramId) await ensureWebAccountUserRow(supabase, webChatId)
       const payload: any = {
         client_id: clientId,
-        telegram_id: telegramId ? Number(telegramId) : null,
+        telegram_id: telegramId ? Number(telegramId) : webChatId,
         nickname: body.nickname || null,
       }
 
@@ -128,7 +140,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       if (error && isMissingColumnError(error, 'nickname')) {
         const fallbackPayload = {
           client_id: clientId,
-          telegram_id: telegramId ? Number(telegramId) : null,
+          telegram_id: telegramId ? Number(telegramId) : webChatId,
         }
         const fallback = await supabase
           .from('web_user_profiles')

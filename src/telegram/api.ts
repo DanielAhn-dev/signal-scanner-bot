@@ -1,4 +1,5 @@
 import { TELEGRAM_BOT_COMMANDS } from "../bot/commandCatalog";
+import { isWebOnlyChatId } from "../services/webAccount";
 
 // src/telegram/api.ts
 const token = process.env.TELEGRAM_BOT_TOKEN || "";
@@ -6,10 +7,31 @@ const base = `https://api.telegram.org/bot${token}`;
 
 type TgResponse = { ok?: boolean; result?: any; description?: string };
 
+/**
+ * 웹 전용 계정(텔레그램 미연결, src/services/webAccount.ts)으로 가는 메시지는 텔레그램 대신 FCM 푸시로 보낸다.
+ * 텍스트 알림(sendMessage)·문서 캡션(sendDocument)만 옮기고, 그 밖의 호출은 보낼 곳이 없어 건너뛴다.
+ */
+async function routeWebOnly(method: string, body: any, isMultipart: boolean): Promise<TgResponse | null> {
+  const chatId = isMultipart ? body.get("chat_id") : body?.chat_id;
+  if (!isWebOnlyChatId(chatId)) return null;
+  const text = method === "sendMessage" ? body?.text : method === "sendDocument" ? body.get("caption") : null;
+  if (!text) return { ok: false, description: "web-only account: no telegram" };
+  // firebase-admin은 무거워서 웹 전용 계정일 때만 불러온다
+  const { sendPushToChatId } = await import("../services/webPush.js");
+  const r = await sendPushToChatId(Number(chatId), { body: String(text) }).catch((e: any) => ({
+    ok: false,
+    sent: 0,
+    description: String(e?.message || e),
+  }));
+  return { ok: r.ok, description: r.description ?? "sent via web push" };
+}
+
 export async function tg(method: string, body: any): Promise<TgResponse> {
+  const isMultipart = typeof FormData !== "undefined" && body instanceof FormData;
+  const routed = await routeWebOnly(method, body, isMultipart);
+  if (routed) return routed;
   if (!token) return { ok: false };
 
-  const isMultipart = typeof FormData !== "undefined" && body instanceof FormData;
   const req: RequestInit = {
     method: "POST",
   };

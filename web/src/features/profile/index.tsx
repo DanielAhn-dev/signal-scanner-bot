@@ -1,6 +1,6 @@
 import React from 'react'
 import { useToast } from '../../components/ToastProvider'
-import { normalizeTelegramChatId } from '../../lib/userContext'
+import { linkedTelegramId, normalizeTelegramChatId } from '../../lib/userContext'
 import { useAuthStore } from '../../stores/authStore'
 import { useProfileStore } from '../../stores/profileStore'
 import { apiFetch } from '../../lib/api'
@@ -36,11 +36,11 @@ export default function ProfilePage(){
   const [saveMsg, setSaveMsg]           = React.useState('')
 
   React.useEffect(() => {
-    setTelegramId(profile?.telegramId ?? '')
+    setTelegramId(linkedTelegramId(profile))
     setNickname(profile?.nickname ?? '')
     setTgName(profile?.telegramName ?? '')
     setTgUsername(profile?.telegramUsername ?? '')
-    setVerifyStatus(profile?.telegramId ? STATUS_OK : STATUS_IDLE)
+    setVerifyStatus(linkedTelegramId(profile) ? STATUS_OK : STATUS_IDLE)
   }, [profile])
 
   const handleVerify = async () => {

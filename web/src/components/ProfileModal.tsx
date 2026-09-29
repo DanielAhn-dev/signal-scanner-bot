@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react'
-import { normalizeTelegramChatId, type StoredProfile } from '../lib/userContext'
+import { linkedTelegramId, normalizeTelegramChatId, type StoredProfile } from '../lib/userContext'
 import { invalidateCache } from '../lib/api'
 import { useToast } from './ToastProvider'
 import { apiFetch } from '../lib/api'
@@ -62,11 +62,11 @@ export default function ProfileModal({
   /* ── 열릴 때 localStorage에서 현재 값 로드 ── */
   useEffect(() => {
     if (!isOpen) return
-    setTelegramId(profile?.telegramId ?? '')
+    setTelegramId(linkedTelegramId(profile))
     setNickname(profile?.nickname ?? '')
     setTgName(profile?.telegramName ?? '')
     setTgUsername(profile?.telegramUsername ?? '')
-    setVerifyStatus(profile?.telegramId ? STATUS_OK : STATUS_IDLE)
+    setVerifyStatus(linkedTelegramId(profile) ? STATUS_OK : STATUS_IDLE)
     setVerifyMsg(syncError ? `프로필 동기화 오류: ${syncError}` : '')
     setSaveMsg(syncError ? '서버 프로필 동기화 상태를 확인해 주세요.' : '')
     setAutoResolved(false)
@@ -169,7 +169,7 @@ export default function ProfileModal({
     }
     setSaving(true)
     setSaveMsg('')
-    const previousTelegramId = normalizeTelegramChatId(profile?.telegramId)
+    const previousTelegramId = linkedTelegramId(profile)
     const nextTelegramId = normalizeTelegramChatId(telegramId)
     const patch: StoredProfile = {
       telegramId:       nextTelegramId || undefined,

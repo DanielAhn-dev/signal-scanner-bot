@@ -94,14 +94,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         virtual_seed_capital: newSeedCapital,
       }
 
-      if (resetCash) {
+      // 처음 시드를 정하는 계정은 현금도 시드로 시작한다 — 비어 있으면 계좌로 인식되지 않는다
+      if (resetCash || currentPrefs.virtual_cash == null) {
         updatedPrefs.virtual_cash = newSeedCapital
       }
 
+      // update는 행이 없으면 0건 갱신으로 조용히 끝난다 — 웹 전용 계정처럼 행이 아직 없을 수 있어 upsert
       const { error: upsertError } = await supabase
         .from('users')
-        .update({ prefs: updatedPrefs })
-        .eq('tg_id', targetChatId)
+        .upsert({ tg_id: targetChatId, prefs: updatedPrefs }, { onConflict: 'tg_id' })
 
       if (upsertError) return res.status(500).json({ error: upsertError.message })
 

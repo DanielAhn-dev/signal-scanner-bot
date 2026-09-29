@@ -5,10 +5,12 @@ import Checkbox from '../../components/ui/Checkbox'
 import { apiFetch } from '../../lib/api'
 import TelegramLinkCallout from '../../components/TelegramLinkCallout'
 import { requestOpenProfileModal } from '../../lib/profileModal'
-import { useCurrentChatId } from '../../stores/profileStore'
+import { useCurrentChatId, useIsTelegramLinked } from '../../stores/profileStore'
 
 export default function Settings(){
   const currentChatId = useCurrentChatId()
+  // 텔레그램은 선택 — 미연결이면 currentChatId는 웹 전용 계정 ID다
+  const telegramLinked = useIsTelegramLinked()
   const [chatId, setChatId] = useState<string>('')
   const [message, setMessage] = useState<string>('테스트 알림입니다.')
   const [status, setStatus] = useState<string|undefined>()
@@ -317,18 +319,18 @@ export default function Settings(){
               설정 / 알림
             </td>
             <td className="xls-cell" colSpan={2} style={{ textAlign: 'right' }}>
-              {!chatId && (
+              {!telegramLinked && (
                 <Button variant="secondary" onClick={() => requestOpenProfileModal()}>
-                  Chat ID 연결
+                  텔레그램 연결(선택)
                 </Button>
               )}
             </td>
           </tr>
-          {!chatId && (
+          {!telegramLinked && (
             <tr className="xls-row">
               <td className="xls-cell" colSpan={6} style={{ padding: '10px' }}>
                 <TelegramLinkCallout
-                  description="Chat ID를 연결하면 테스트 알림과 텔레그램 연동 기능을 바로 사용할 수 있습니다."
+                  description="웹 전용 계정으로 모든 기능을 쓸 수 있고, 알림은 앱 푸시로 받습니다. 텔레그램을 연결하면 텔레그램 명령어와 텔레그램 알림도 쓸 수 있습니다."
                   onAction={() => requestOpenProfileModal()}
                 />
               </td>
@@ -337,7 +339,11 @@ export default function Settings(){
           <tr className="xls-row xls-row--even">
             <td className="xls-cell" colSpan={2} style={{ fontSize: 13, fontWeight: 600 }}>Telegram Chat ID</td>
             <td className="xls-cell" colSpan={4} style={{ padding: '8px 10px' }}>
-              <Input label="Telegram Chat ID (선택)" value={chatId} onChange={(e:any) => setChatId(e.target.value)} placeholder="예: 123456789" />
+              {telegramLinked ? (
+                <Input label="Telegram Chat ID (선택)" value={chatId} onChange={(e:any) => setChatId(e.target.value)} placeholder="예: 123456789" />
+              ) : (
+                <div style={{ fontSize: 13 }}>웹 전용 계정 · 텔레그램 미연결 (연결은 프로필에서)</div>
+              )}
               <div className="text-xs muted mt-2">웹 기본 기능에는 필수가 아닙니다. 알림 전송/텔레그램 연동 기능에만 사용됩니다.</div>
               <div className="text-xs muted mt-2">참고: 서버에 DEFAULT_TELEGRAM_CHAT_ID가 설정되어 있으면 기본값으로 불러옵니다.</div>
               <div className="text-xs muted mt-2">

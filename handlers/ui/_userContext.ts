@@ -1,5 +1,6 @@
 import type { VercelRequest } from '@vercel/node'
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
+import { ensureWebAccountChatId } from '../../src/services/webAccount'
 
 export type UiUserContext = {
   clientId: string | null
@@ -59,7 +60,8 @@ export async function resolveUiUserContext(req: VercelRequest): Promise<UiUserCo
               .select('telegram_id')
               .eq('client_id', clientId)
               .maybeSingle()
-            const chatId = toChatId(data?.telegram_id)
+            // 텔레그램은 선택 — 연결 전에는 웹 전용 계정 ID를 만들어 쓴다 (src/services/webAccount.ts)
+            const chatId = toChatId(data?.telegram_id) ?? (await ensureWebAccountChatId(supabase, clientId))
             return { clientId, chatId, source: 'auth' }
           }
         }
