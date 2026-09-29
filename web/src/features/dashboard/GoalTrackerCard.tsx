@@ -32,6 +32,12 @@ type View = {
   schedule: Array<{ month: string; months: number; contribution: number; isTarget: boolean }>
   normalRange: { plusMonthsPct: number; p10: number; worst: number; maxLosingStreak: number; source: string }
   contributionLinked?: boolean
+  progress?: {
+    principal: number
+    growth: number
+    growthPct: number
+    crossover: { monthlyExpected: number; contribution: number; ratioPct: number; months: number | null; month: string | null } | null
+  }
 }
 
 const man = (v: number) => `${Math.round(v / 10_000).toLocaleString('ko-KR')}만원`
@@ -178,6 +184,41 @@ export default function GoalTrackerCard() {
         현재 {man(view.equity)} · 달성 {view.target.progressPct.toFixed(0)}% · 예상 도달 {view.target.etaMonth ?? '50년 이상'}
         {' '}(연 {view.settings.planAnnualPct}% 재투자{view.settings.monthlyContribution > 0 ? ` + 월 ${man(view.settings.monthlyContribution)} 입금` : ''})
       </div>
+      {view.progress && (
+        <div style={{ margin: '6px 0', padding: '8px 10px', background: 'var(--color-bg-subtle, rgba(127,127,127,0.06))', borderRadius: 4 }}>
+          <div>
+            넣은 원금 {man(view.progress.principal)} · 불어난 돈{' '}
+            <span style={{ color: view.progress.growth >= 0 ? 'var(--color-stock-up)' : 'var(--color-stock-down)', fontWeight: 600 }}>
+              {signed(view.progress.growth)} ({view.progress.growthPct >= 0 ? '+' : ''}
+              {view.progress.growthPct.toFixed(1)}%)
+            </span>
+          </div>
+          {view.progress.crossover && (
+            <>
+              <div style={{ marginTop: 4 }}>
+                복리 vs 입금: 계획상 월 수익 {man(view.progress.crossover.monthlyExpected)} / 월 입금 {man(view.progress.crossover.contribution)}
+                {' '}({Math.min(999, view.progress.crossover.ratioPct).toFixed(0)}%)
+              </div>
+              <div
+                role="progressbar"
+                aria-valuenow={Math.round(Math.min(100, view.progress.crossover.ratioPct))}
+                aria-valuemin={0}
+                aria-valuemax={100}
+                style={{ height: 6, borderRadius: 3, background: 'var(--color-border-default)', margin: '4px 0', overflow: 'hidden' }}
+              >
+                <div style={{ width: `${Math.min(100, view.progress.crossover.ratioPct)}%`, height: '100%', background: 'var(--color-brand, #2f6f68)' }} />
+              </div>
+              <div style={{ color: 'var(--color-text-secondary)' }}>
+                {view.progress.crossover.months === 0
+                  ? '복리가 월 입금을 넘었습니다 — 이제 불어나는 돈이 넣는 돈보다 큽니다.'
+                  : view.progress.crossover.months != null
+                    ? `계획대로면 ${view.progress.crossover.month}(약 ${(view.progress.crossover.months / 12).toFixed(1)}년 뒤) 복리가 월 입금을 넘습니다. 그 전까지는 수익률보다 매달 넣는 것이 결과를 정합니다.`
+                    : '계획 수익률로는 50년 안에 복리가 월 입금을 넘지 않습니다.'}
+              </div>
+            </>
+          )}
+        </div>
+      )}
       <div>
         계획선 {man(view.plan.planValue)} 대비{' '}
         <span style={{ color: view.plan.gapPct >= 0 ? 'var(--color-stock-up)' : 'var(--color-stock-down)' }}>

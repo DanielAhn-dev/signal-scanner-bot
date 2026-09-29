@@ -4,6 +4,7 @@ import {
   assessMonth,
   buildGoalTrackerView,
   chainedReturn,
+  compoundingCrossover,
   monthlyRate,
   monthsToReach,
   monthToDateReturn,
@@ -120,4 +121,14 @@ test("buildGoalTrackerView: 월 자동 입금을 설정한 계정은 그 금액�
   assert.equal(saving.contributionLinked, true);
   assert.equal(saving.settings.monthlyContribution, 300_000);
   assert.ok((saving.target.monthsToReach ?? Infinity) < (lumpSum.target.monthsToReach ?? Infinity) || settings.monthlyContribution >= 300_000);
+});
+
+test("compoundingCrossover: 100만 + 월 50만, 연 10%면 약 7.2년 뒤 월 수익이 월 입금을 넘는다", () => {
+  const c = compoundingCrossover({ equity: 1_000_000, planAnnualPct: 10, monthlyContribution: 500_000 });
+  assert.ok(c);
+  assert.equal(Math.round(c!.months! / 12 * 10) / 10, 7.2);
+  assert.ok(c!.ratioPct < 2);
+  // 이미 넘은 계좌는 0개월, 입금이 없으면 null
+  assert.equal(compoundingCrossover({ equity: 100_000_000, planAnnualPct: 10, monthlyContribution: 500_000 })!.months, 0);
+  assert.equal(compoundingCrossover({ equity: 20_000_000, planAnnualPct: 8, monthlyContribution: 0 }), null);
 });

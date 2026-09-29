@@ -80,6 +80,31 @@ export function monthlyRate(annualPct: number): number {
   return (1 + annualPct / 100) ** (1 / 12) - 1;
 }
 
+/**
+ * 복리가 월 입금을 추월하는 시점 — 초반 몇 년은 입금이 불어나는 돈보다 커서 효과가 안 보인다.
+ * 지금 평가액의 계획 월 수익이 월 입금의 몇 %인지, 계획대로면 몇 달 뒤 넘는지. 입금이 없으면 null.
+ */
+export function compoundingCrossover(input: {
+  equity: number;
+  planAnnualPct: number;
+  monthlyContribution: number;
+}): { monthlyExpected: number; ratioPct: number; months: number | null } | null {
+  const c = input.monthlyContribution;
+  if (!(c > 0)) return null;
+  const mr = monthlyRate(input.planAnnualPct);
+  let v = Math.max(0, input.equity);
+  const monthlyExpected = v * mr;
+  let months: number | null = null;
+  for (let k = 0; k <= 600; k += 1) {
+    if (v * mr >= c) {
+      months = k;
+      break;
+    }
+    v = v * (1 + mr) + c;
+  }
+  return { monthlyExpected: Math.round(monthlyExpected), ratioPct: (monthlyExpected / c) * 100, months };
+}
+
 /** 원금을 지키며 매달 목표 금액을 꺼내 쓰는 데 필요한 시드 (연 인출률 기준) */
 export function requiredSeed(targetMonthlyProfit: number, withdrawalPct: number): number {
   return withdrawalPct > 0 ? (targetMonthlyProfit * 12) / (withdrawalPct / 100) : Infinity;
@@ -189,7 +214,7 @@ export async function fetchAccountEquity(
   supabase: SupabaseClientAny,
   chatId: number,
   date: string
-): Promise<(EquityPoint & { cash: number; holdings: number; monthlyDeposit: number | null }) | null> {
+): Promise<(EquityPoint & { cash: number; holdings: number; monthlyDeposit: number | null; principal: number | null }) | null> {
   const { data: user } = await supabase.from("users").select("prefs").eq("tg_id", chatId).maybeSingle();
   const prefs = ((user as any)?.prefs ?? {}) as Record<string, unknown>;
   const seed = Number(prefs.virtual_seed_capital ?? prefs.capital_krw);
@@ -220,6 +245,8 @@ export async function fetchAccountEquity(
     monthlyDeposit: prefs.virtual_monthly_deposit != null && Number.isFinite(Number(prefs.virtual_monthly_deposit))
       ? Math.max(0, Math.round(Number(prefs.virtual_monthly_deposit)))
       : null,
+    // 시작 시드 + 월 입금 누적 (monthlyDeposit.ts). 기록이 없는 거치식 계정은 null → 목표 트래커 시작 금액을 쓴다
+    principal: Number(prefs.virtual_total_deposited) > 0 ? Math.round(Number(prefs.virtual_total_deposited)) : null,
   };
 }
 
@@ -358,11 +385,18 @@ export type GoalTrackerView = {
   normalRange: typeof NORMAL_MONTHLY_RANGE;
   /** 월 입금이 계정의 월 자동 입금 설정에서 온 값인지 (그러면 목표 트래커에서 따로 바꾸지 않는다) */
   contributionLinked: boolean;
+  /** 눈에 보이는 진행: 넣은 원금 vs 불어난 돈, 복리가 월 입금을 추월하는 시점 */
+  progress: {
+    principal: number;
+    growth: number;
+    growthPct: number;
+    crossover: { monthlyExpected: number; contribution: number; ratioPct: number; months: number | null; month: string | null } | null;
+  };
 };
 
 export function buildGoalTrackerView(input: {
   file: GoalTrackerFile;
-  now: EquityPoint & { cash: number; holdings: number; monthlyDeposit?: number | null };
+  now: EquityPoint & { cash: number; holdings: number; monthlyDeposit?: number | null; principal?: number | null };
   realized: { swing: number; sweep: number; sells: number; wins: number };
 }): GoalTrackerView {
   const { file, now, realized } = input;
@@ -446,6 +480,22 @@ export function buildGoalTrackerView(input: {
     schedule,
     normalRange: NORMAL_MONTHLY_RANGE,
     contributionLinked,
+    progress: (() => {
+      const principal = Math.round(now.principal ?? s.startEquity);
+      const cross = compoundingCrossover({ equity: now.total, planAnnualPct: s.planAnnualPct, monthlyContribution: s.monthlyContribution });
+      return {
+        principal,
+        growth: Math.round(now.total - principal),
+        growthPct: principal > 0 ? (now.total / principal - 1) * 100 : 0,
+        crossover: cross
+          ? {
+              ...cross,
+              contribution: s.monthlyContribution,
+              month: cross.months != null ? addMonths(now.date, cross.months) : null,
+            }
+          : null,
+      };
+    })(),
   };
 }
 
