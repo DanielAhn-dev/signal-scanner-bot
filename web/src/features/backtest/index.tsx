@@ -693,7 +693,7 @@ export default function BacktestPage() {
     const newItem = defaultPlanItem(stock)
     const items = [...(existing?.items ?? []), newItem]
     saveSimulationPlan({
-      ...(existing ?? { totalCapital: 10_000_000, notes: '' }),
+      ...(existing ?? { totalCapital: 0, notes: '' }), // 0이면 시뮬레이터가 내 시드로 채운다
       createdAt: Date.now(),
       items,
     })
@@ -718,7 +718,7 @@ export default function BacktestPage() {
     }
 
     saveSimulationPlan({
-      ...(existing ?? { totalCapital: 10_000_000, notes: '' }),
+      ...(existing ?? { totalCapital: 0, notes: '' }), // 0이면 시뮬레이터가 내 시드로 채운다
       createdAt: Date.now(),
       items: [...prevItems, ...newItems],
     })

@@ -14,6 +14,7 @@ import SheetHeaderBar from '../../components/SheetHeaderBar'
 import { LayoutDashboard, TrendingUp, Flag, Activity, Search, Link2, HelpCircle } from 'lucide-react'
 import type { OhlcvCandle } from '../../lib/types'
 import { useCurrentChatId } from '../../stores/profileStore'
+import { defaultPlanItem, readSimulationPlan, saveSimulationPlan } from '../simulator/planStore'
 
 type SignalTone = 'positive' | 'warning' | 'negative' | 'neutral'
 type NarrativeSignal = { label: string; detail: string; tone: SignalTone }
@@ -197,6 +198,39 @@ export default function AnalyzePage({ onNavigate }: { onNavigate?: (r: string) =
   const [recentSearches, pushRecentSearch] = useRecentSearches()
   const inputRef = useRef<HTMLInputElement>(null)
   const toast = useToast()
+
+  const goRoute = (route: string) => {
+    if (onNavigate) return onNavigate(route)
+    try {
+      window.history.pushState({}, '', `/${route}`)
+      window.dispatchEvent(new PopStateEvent('popstate'))
+    } catch {
+      // ignore
+    }
+  }
+
+  /** 분석한 종목을 시뮬레이터 계획에 더한다 (이미 있으면 그대로) — 투자금이 없으면 시뮬레이터가 시드로 채운다 */
+  const addResultToSimulator = () => {
+    if (!result?.code) return
+    const existing = readSimulationPlan()
+    const items = existing?.items ?? []
+    if (!items.some((row) => row.code === result.code)) {
+      items.push(defaultPlanItem({ code: String(result.code), name: String(result.name ?? result.code) }))
+    }
+    saveSimulationPlan({ createdAt: Date.now(), totalCapital: existing?.totalCapital ?? 0, notes: existing?.notes ?? '분석에서 추가', items })
+    toast.show(`${result.name ?? result.code}을(를) 시뮬레이터 계획에 추가했습니다 (${items.length}종목).`)
+    goRoute('simulator')
+  }
+
+  const sendResultToExecutionGuide = () => {
+    if (!result?.code) return
+    try {
+      sessionStorage.setItem('execution_guide_pending_v1', JSON.stringify({ codes: [String(result.code)], source: 'analyze' }))
+    } catch {
+      // ignore
+    }
+    goRoute('execution-guide')
+  }
   const shareManager = useShareManager({
     endpoint: '/api/ui/route-share',
     scopeKey: 'kind',
@@ -596,6 +630,20 @@ export default function AnalyzePage({ onNavigate }: { onNavigate?: (r: string) =
                       {s.name}
                     </button>
                   ))}
+                </div>
+              </td>
+            </tr>
+          )}
+          {/* 흐름 4→5·6: 예전엔 분석 뒤 누를 게 없어 여기서 흐름이 끊겼다 */}
+          {result?.code && !loading && (
+            <tr className="xls-row">
+              <td className="xls-cell" colSpan={2} style={{ color: 'var(--color-text-secondary)', fontSize: 11, fontWeight: 600 }}>
+                다음 단계
+              </td>
+              <td className="xls-cell" colSpan={4} style={{ padding: '6px 10px' }}>
+                <div style={{ display: 'flex', gap: 'var(--space-2)', flexWrap: 'wrap' }}>
+                  <Button size="sm" onClick={() => addResultToSimulator()}>5 시뮬레이터에 추가</Button>
+                  <Button size="sm" variant="secondary" onClick={() => sendResultToExecutionGuide()}>6 실행가이드로</Button>
                 </div>
               </td>
             </tr>

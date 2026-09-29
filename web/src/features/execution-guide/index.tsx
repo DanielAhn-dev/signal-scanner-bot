@@ -1,4 +1,6 @@
-import React, { useEffect, useMemo, useState } from 'react'
+import { useSeedCapital } from '../../lib/useSeedCapital'
+import { readSimulationPlan } from '../simulator/planStore'
+import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { apiFetch } from '../../lib/api'
 import { formatKrw, formatNumber } from '../../lib/format'
 import Button from '../../components/ui/Button'
@@ -222,6 +224,9 @@ function normalizeSourceLabel(input: string | null | undefined): string {
   if (value === 'scan') return '스캔 연동'
   if (value === 'highlights') return '집행우선 연동'
   if (value === 'execution-guide') return '실행가이드'
+  if (value === 'analyze') return '분석 연동'
+  if (value === 'backtest') return '백테스트 연동'
+  if (value === 'discovery') return '발굴 연동'
   return String(input || '').trim()
 }
 
@@ -817,7 +822,14 @@ export default function ExecutionGuidePage() {
   const chatId = useCurrentChatId()
   const toast = useToast()
   const [codesText, setCodesText] = useState('')
-  const [capital, setCapital] = useState('10000000')
+  // 투자금: 시뮬레이터 계획 → 내 시드 순으로 채운다 (예전엔 1천만원 고정). 직접 입력하면 유지.
+  const seedCapital = useSeedCapital()
+  const [capital, setCapitalRaw] = useState('10000000')
+  const capitalEditedRef = useRef(false)
+  const setCapital = (v: string) => {
+    capitalEditedRef.current = true
+    setCapitalRaw(v)
+  }
   const [maxWeightPct, setMaxWeightPct] = useState('25')
   const [splitCount, setSplitCount] = useState('4')
   const [riskMode, setRiskMode] = useState<RiskMode>('neutral')
@@ -1003,11 +1015,26 @@ export default function ExecutionGuidePage() {
         }
         if (parsed?.source) setSourceLabel(normalizeSourceLabel(String(parsed.source)))
         sessionStorage.removeItem(EXECUTION_GUIDE_PENDING_KEY)
+      } else if (!urlCodes) {
+        // 5단계 시뮬레이터에서 "다음"으로 오면 넘겨받은 종목이 없어 빈 화면이었다 — 최근 시뮬레이터 계획을 이어받는다
+        const plan = readSimulationPlan()
+        const planCodes = (plan?.items ?? []).map((row) => String(row.code || '')).filter((code) => code && code !== 'CASH')
+        if (planCodes.length > 0) {
+          setCodesText(parseCodes(planCodes.join(',')).join(', '))
+          setSourceLabel('시뮬레이터 계획')
+          setHydratedByPending(true)
+        }
+        if (plan && plan.totalCapital > 0 && !capitalEditedRef.current) setCapitalRaw(String(plan.totalCapital))
       }
     } catch {
       // ignore
     }
   }, [])
+
+  useEffect(() => {
+    // 시뮬레이터 계획의 투자금이 없을 때만 시드로
+    if (seedCapital && !capitalEditedRef.current && !(readSimulationPlan()?.totalCapital ?? 0)) setCapitalRaw(String(seedCapital))
+  }, [seedCapital])
 
   const codeList = useMemo(() => parseCodes(codesText), [codesText])
   const visibleAutoCandidates = useMemo(
