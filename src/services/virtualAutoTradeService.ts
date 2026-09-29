@@ -106,6 +106,16 @@ import { loadStrategyActivation } from "./strategyPromotion";
 import { checkKrxLiveSession } from "../lib/krxLiveSession";
 import { applyDeposit, isDepositDue, readDepositSettings } from "./monthlyDeposit";
 import {
+  KODEX_FUND_IDS,
+  computeDistributionCredit,
+  dueDistributions,
+  eligibleQuantity,
+  exDividendDate,
+  fetchEtfDistributions,
+  readDistributionLog,
+  type DistributionRecord,
+} from "./etfDistribution";
+import {
   INDEX_HOLD_DESCRIPTION,
   INDEX_HOLD_MODE,
   INDEX_HOLD_STRATEGY_ID,
@@ -8135,6 +8145,57 @@ async function applyMonthlyDepositIfDue(supabase: SupabaseClientAny, chatId: num
   }
 }
 
+/**
+ * ETF 분배금 (etfDistribution.ts) — 지급일이 지난 첫 실행 때 락일 전 보유 수량만큼 세후 금액을 현금·확정 수익에 넣는다.
+ * 확정 수익에 넣으므로 매주 시드 재계산 때 시드로 들어가 재투자된다.
+ */
+async function applyEtfDistributionsIfDue(supabase: SupabaseClientAny, chatId: number): Promise<string[]> {
+  const notes: string[] = [];
+  try {
+    const todayKey = toKstDateKey();
+    for (const code of Object.keys(KODEX_FUND_IDS)) {
+      const { data: userRow } = await supabase.from("users").select("prefs").eq("tg_id", chatId).maybeSingle();
+      const raw = ((userRow?.prefs as Record<string, unknown>) || {}) as Record<string, unknown>;
+      const credited = readDistributionLog(raw);
+      const due = dueDistributions(await fetchEtfDistributions(code), todayKey, credited);
+      if (!due.length) continue;
+      const { data: tradeRows } = await supabase
+        .from(PORTFOLIO_TABLES.trades)
+        .select("side, quantity, traded_at")
+        .eq("chat_id", chatId)
+        .eq("code", code)
+        .is("broker_name", null)
+        .is("account_name", null)
+        .limit(5000);
+      const trades = ((tradeRows ?? []) as Array<{ side: string; quantity: number; traded_at: string }>).map((t) => ({
+        side: String(t.side),
+        quantity: Math.max(0, Math.floor(toNumber(t.quantity, 0))),
+        tradedDate: toKstDateKey(new Date(t.traded_at)),
+      }));
+      const records: DistributionRecord[] = [];
+      for (const d of due) {
+        const qty = eligibleQuantity(trades, exDividendDate(d.recordDate));
+        if (qty > 0) records.push(computeDistributionCredit(d, qty));
+      }
+      if (!records.length) continue;
+      const net = records.reduce((s, r) => s + r.net, 0);
+      await setUserInvestmentPrefs(chatId, {
+        virtual_cash: Math.round(Math.max(0, toNumber(raw.virtual_cash, 0)) + net),
+        virtual_realized_pnl: toNumber(raw.virtual_realized_pnl, 0) + net,
+        virtual_distribution_log: [...credited, ...records].slice(-80),
+      } as InvestmentPrefs);
+      for (const r of records) {
+        notes.push(
+          `[분배금] ${code} 기준일 ${r.recordDate} · ${r.quantity}주 × 주당 ${fmtKrw(r.gross / r.quantity)} = ${fmtKrw(r.gross)} − 세금 ${fmtKrw(r.tax)} → ${fmtKrw(r.net)} 입금 (재투자)`
+        );
+      }
+    }
+  } catch (e) {
+    console.error("[autoTrade] etf distribution failed", e);
+  }
+  return notes;
+}
+
 export async function runVirtualAutoTradingForChat(input: {
   chatId: number;
   mode?: RunMode;
@@ -8183,7 +8244,8 @@ export async function runVirtualAutoTradingForChat(input: {
 
   const seedRebaseNote = dryRun ? null : await applySeedRebaseIfDue(input.chatId, prefs);
   const depositNote = dryRun ? null : await applyMonthlyDepositIfDue(supabase, input.chatId);
-  if (depositNote) Object.assign(prefs, await getUserInvestmentPrefs(input.chatId));
+  const distributionNotes = dryRun ? [] : await applyEtfDistributionsIfDue(supabase, input.chatId);
+  if (depositNote || distributionNotes.length) Object.assign(prefs, await getUserInvestmentPrefs(input.chatId));
 
   const defaultSetting = buildDefaultSettingForChat(input.chatId, prefs.risk_profile);
 
@@ -8268,6 +8330,9 @@ export async function runVirtualAutoTradingForChat(input: {
   action.notes.unshift(...indexRelease.notes);
   if (holidayNote) {
     action.notes.unshift(holidayNote);
+  }
+  if (distributionNotes.length) {
+    action.notes.unshift(...distributionNotes);
   }
   if (depositNote) {
     action.notes.unshift(depositNote);
@@ -8570,7 +8635,8 @@ export async function runVirtualAutoTradingCycle(input?: {
       const userDryRun = dryRun || Boolean(prefs.virtual_shadow_mode);
       const cycleSeedRebaseNote = userDryRun ? null : await applySeedRebaseIfDue(setting.chat_id, prefs);
       const cycleDepositNote = userDryRun ? null : await applyMonthlyDepositIfDue(supabase, setting.chat_id);
-      if (cycleDepositNote) Object.assign(prefs, await getUserInvestmentPrefs(setting.chat_id));
+      const cycleDistributionNotes = userDryRun ? [] : await applyEtfDistributionsIfDue(supabase, setting.chat_id);
+      if (cycleDepositNote || cycleDistributionNotes.length) Object.assign(prefs, await getUserInvestmentPrefs(setting.chat_id));
 
       // 지수 보유 모드 계정은 종목 매매·유휴현금 스윕 없이 그 모드만 실행한다 (indexHoldStrategy.ts)
       const indexMode = normalizeStrategyMode(prefs.virtual_strategy_mode) === INDEX_HOLD_MODE;
@@ -8610,6 +8676,7 @@ export async function runVirtualAutoTradingCycle(input?: {
 
       actionSummary.notes.unshift(...preBuyLiquidate.notes);
       actionSummary.notes.unshift(...indexRelease.notes);
+      if (cycleDistributionNotes.length) actionSummary.notes.unshift(...cycleDistributionNotes);
       if (cycleDepositNote) actionSummary.notes.unshift(cycleDepositNote);
       if (cycleSeedRebaseNote) actionSummary.notes.unshift(cycleSeedRebaseNote);
 

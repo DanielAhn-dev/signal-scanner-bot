@@ -106,6 +106,8 @@ export type InvestmentPrefs = {
   /** 시작 시드 + 입금 누적 (넣은 원금) */
   virtual_total_deposited?: number;
   virtual_deposit_log?: Array<{ date: string; amount: number; cashAfter: number }>;
+  /** 받은 ETF 분배금 (etfDistribution.ts) */
+  virtual_distribution_log?: Array<{ code: string; recordDate: string; payDate: string; quantity: number; gross: number; tax: number; net: number }>;
 };
 
 function resolveDefaultAutoTradeStrategy(
