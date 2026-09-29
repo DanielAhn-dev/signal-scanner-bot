@@ -330,7 +330,7 @@ export default function Dashboard({ onNavigate }: { onNavigate?: (r: string) => 
                 </td>
 
                 {/* 섹터 1 점수 */}
-                <td className="xls-cell" style={{ fontSize: 10, ...S.midBorder }}>
+                <td className="xls-cell xls-cell--wrap" style={{ fontSize: 10, ...S.midBorder }}>
                   {s1 ? (
                     <>
                       <span style={{ color: 'var(--color-brand)', fontWeight: 600 }}>{s1.score}점</span>
@@ -352,7 +352,7 @@ export default function Dashboard({ onNavigate }: { onNavigate?: (r: string) => 
                 </td>
 
                 {/* 섹터 2 점수 */}
-                <td className="xls-cell" style={{ fontSize: 10 }}>
+                <td className="xls-cell xls-cell--wrap" style={{ fontSize: 10 }}>
                   {s2 ? (
                     <>
                       <span style={{ color: 'var(--color-brand)', fontWeight: 600 }}>{s2.score}점</span>

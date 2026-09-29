@@ -139,7 +139,7 @@ const MENU_TABS = ALL_NAV_ITEMS.map(item => ({
 // ── 3패널 리사이즈 ────────────────────────────────────────────────
 
 const MIN_LEFT  = 240  // px
-const MIN_MID   = 300  // px
+const MIN_MID   = 480  // px
 const MIN_RIGHT = 280  // px
 const RECENT_MENU_STORAGE_KEY = 'excel-shell:recent-menu-routes:v1'
 const ZOOM_STORAGE_KEY = 'excel-shell:zoom:v1'
@@ -477,8 +477,9 @@ export default function ExcelShell({
     const update = () => {
       const w = window.innerWidth
       setIsUltraCompact(w < 640)
-      if (w < 640)       setVisiblePanels('center-only')
-      else if (w < 1024) setVisiblePanels('no-right')
+      // 가운데 시트가 최소 ~700px 은 확보되도록: 양쪽 패널(300+360)은 넓은 화면에서만
+      if (w < 1024)      setVisiblePanels('center-only')
+      else if (w < 1360) setVisiblePanels('no-right')
       else               setVisiblePanels('all')
       if (w >= 640) setMobileSearchOpen(false)
     }
@@ -738,7 +739,7 @@ export default function ExcelShell({
       <div className="excel-main-panels" ref={containerRef}>
 
         {/* 좌측 패널 (시세) */}
-        {leftPanel && visiblePanels === 'all' && (
+        {leftPanel && visiblePanels !== 'center-only' && (
           <>
             <div className="excel-side-panel excel-side-panel--left" style={{ width: leftW, minWidth: leftW, maxWidth: leftW }}>
               {leftPanel}

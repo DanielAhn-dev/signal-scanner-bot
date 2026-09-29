@@ -69,7 +69,7 @@ export default function FeedPage() {
             </td>
           </tr>
           <tr className="xls-row">
-            <td className="xls-cell" colSpan={6} style={{ color: 'var(--color-text-secondary)', fontSize: 11 }}>
+            <td className="xls-cell xls-cell--wrap" colSpan={6} style={{ color: 'var(--color-text-secondary)', fontSize: 11 }}>
               최근 자동매매 의사결정 30개를 표시합니다. 종목명, 자동/수동 구분, 매수·매도 사유와 상세 근거를 함께 확인할 수 있습니다.
             </td>
           </tr>

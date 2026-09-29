@@ -7784,9 +7784,9 @@ a:focus-visible {
 }
 
 .sector-sheet__cell-summary {
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  white-space: normal;
+  word-break: keep-all;
+  overflow-wrap: anywhere;
 }
 
 .sector-sheet__detail-row .xls-cell {

@@ -353,10 +353,10 @@ export default function Settings(){
         </colgroup>
         <tbody>
           <tr className="xls-row xls-row--even">
-            <td className="xls-cell" colSpan={4} style={{ fontSize: 18, fontWeight: 700, color: 'var(--color-brand)' }}>
+            <td className="xls-cell" colSpan={3} style={{ fontSize: 18, fontWeight: 700, color: 'var(--color-brand)' }}>
               설정 / 알림
             </td>
-            <td className="xls-cell" colSpan={2} style={{ textAlign: 'right' }}>
+            <td className="xls-cell" colSpan={3} style={{ textAlign: 'right' }}>
               {!telegramLinked && (
                 <Button variant="secondary" onClick={() => requestOpenProfileModal()}>
                   텔레그램 연결(선택)

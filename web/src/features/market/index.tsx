@@ -683,7 +683,7 @@ function DiagnosisTab({ data }: { data: MarketOverviewData }) {
             ))}
             <tr className="xls-row xls-row--even">
               <td className="xls-cell">경제 국면</td>
-              <td className="xls-cell" colSpan={5}>{economicPhase.description}</td>
+              <td className="xls-cell xls-cell--wrap" colSpan={5}>{economicPhase.description}</td>
             </tr>
             {diagnosis.signals.slice(0, 5).map((sig, i) => (
               <tr className={`xls-row${i % 2 === 1 ? ' xls-row--even' : ''}`} key={sig}>

@@ -329,7 +329,7 @@ export default function ReportsPage() {
         <tbody>
           <tr className="xls-row xls-row--even">
             <td className="xls-cell" style={{ fontSize: 18, fontWeight: 700, color: 'var(--color-brand)' }}>리포트</td>
-            <td className="xls-cell" style={{ color: 'var(--color-text-secondary)', fontSize: 11 }}>
+            <td className="xls-cell xls-cell--wrap" style={{ color: 'var(--color-text-secondary)', fontSize: 11 }}>
               텔레그램 명령(/리포트, /브리핑, /guidepdf)에 대응하는 기능을 웹에서 실행/다운로드합니다.
             </td>
           </tr>
@@ -368,9 +368,9 @@ export default function ReportsPage() {
       <table className="xls-table reports-sheet__list" style={{ width: '100%', tableLayout: 'fixed' }}>
         <colgroup>
           <col style={{ width: '22%' }} />
-          <col style={{ width: '52%' }} />
+          <col style={{ width: '50%' }} />
           <col style={{ width: '16%' }} />
-          <col style={{ width: '10%' }} />
+          <col style={{ width: '12%' }} />
         </colgroup>
         <thead>
           <tr className="xls-header-row">
@@ -386,8 +386,8 @@ export default function ReportsPage() {
             const rowNo = idx + 1
             return (
               <tr key={r.key} className={`xls-row${rowNo % 2 === 0 ? ' xls-row--even' : ''}`}>
-                <td className="xls-cell" style={{ fontWeight: 600 }}>{r.label}</td>
-                <td className="xls-cell">{r.desc}</td>
+                <td className="xls-cell xls-cell--wrap" style={{ fontWeight: 600 }}>{r.label}</td>
+                <td className="xls-cell xls-cell--wrap">{r.desc}</td>
                 <td className="xls-cell">
                   {r.kind === 'download' ? (
                     <div className="reports-action-btns">

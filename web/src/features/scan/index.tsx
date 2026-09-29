@@ -1695,8 +1695,8 @@ export default function ScanPage({ onNavigate }: { onNavigate?: (r: string) => v
             </td>
           </tr>
           <tr className="xls-row">
-            <td className="xls-cell" colSpan={4}
-              style={{ color: 'var(--color-text-secondary)', fontSize: 11, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            <td className="xls-cell xls-cell--wrap" colSpan={4}
+              style={{ color: 'var(--color-text-secondary)', fontSize: 11 }}>
               <span className="scan-stat-count">{sortedCandidates.length}</span>개 후보 ·
               최신 기준일 {latestDate ?? '—'} · {marketPhase === 'intraday' ? `장중 현재가 반영(${realtimeAppliedCount}건)` : '종가 기준'} · 텔레그램 pullback 신호 기반 · 종목 클릭 시 상세 분석으로 이동
               {conditionFilter === 'confirm' && (

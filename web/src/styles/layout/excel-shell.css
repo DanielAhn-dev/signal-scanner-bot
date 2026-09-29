@@ -2032,6 +2032,13 @@
   line-height: var(--xls-grid-cell-line-height);
   background: var(--color-gray-0); /* 배경 패턴이 투명 셀을 통해 비치지 않도록 */
 }
+/* 설명 문장처럼 잘리면 안 되는 셀: 줄바꿈 허용 */
+.xls-cell.xls-cell--wrap {
+  white-space: normal;
+  text-overflow: clip;
+  word-break: keep-all;
+  overflow-wrap: anywhere;
+}
 .xls-cell--num {
   font-variant-numeric: tabular-nums;
   font-feature-settings: "tnum";
@@ -2627,6 +2634,19 @@
   padding-bottom: var(--xls-grid-cell-padding-y);
 }
 
+/* 요약표는 설명 문장이 들어가므로 폭이 좁아져도 잘리지 않고 줄바꿈 */
+.market-sheet__summary-table .xls-cell,
+.market-sheet__summary-table .market-sheet__summary-value,
+.market-sheet__summary-table .market-sheet__summary-sub,
+.sector-sheet__summary-table .xls-cell,
+.sector-sheet__summary-table .sector-sheet__summary-value,
+.sector-sheet__summary-table .sector-sheet__summary-sub {
+  white-space: normal;
+  text-overflow: clip;
+  word-break: keep-all;
+  overflow-wrap: anywhere;
+}
+
 .market-sheet--excel .market-sheet__summary-table .xls-row,
 .market-sheet--excel .market-sheet__table .xls-row {
   height: var(--xls-grid-row-height-double);
@@ -3191,14 +3211,6 @@
     padding-left: 8px;
     padding-right: 8px;
     box-sizing: border-box;
-    white-space: normal;
-    word-break: keep-all;
-  }
-
-  .market-sheet__summary-table .market-sheet__summary-value,
-  .market-sheet__summary-table .market-sheet__summary-sub {
-    white-space: normal;
-    word-break: keep-all;
   }
 
   .market-sheet__summary-scroll {
