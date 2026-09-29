@@ -1,10 +1,12 @@
 /**
- * 거시경제 이벤트 사전 경고 서비스
+ * 거시경제 이벤트 사전 경고 서비스 — 일정을 알려 주기만 하고 매수를 막지 않는다.
  *
- * D-5: "주의" — 이벤트 예보, 포지션 점검 권고
- * D-3: "경계" — 신규 진입 자제 권고
- * D-1: "위험" — 신규 매수 차단, 수익 포지션 정리 권고
- * D-0: "당일" — 장중 변동성 최고, 매매 자제
+ * 예전엔 D-1·당일에 신규 매수를 차단하고 "매매 자제·익절 우선"을 권했다. 코스피로 검증한 결과(2026-09-29):
+ *   - FOMC(1997~, 232회)·CPI(1999~, 325회) 차단일은 전체 거래일의 14.4%인데, 그날 매수한 1·5·20일 수익이
+ *     평소와 차이 없음(t=+0.6/-0.3/+0.5). 구간별로 보이던 차이는 방향이 뒤집혀(FOMC 전체 1일 t=+2.6, 2010~ 5일 t=-2.0) 우연.
+ *   - 만기일(옵션·네마녀·미국 쿼드위칭)도 차이 없음 (marketEventCalendar.ts blockBuyDays 주석).
+ *   - CPI 다음 날은 변동폭이 조금 크다(1.21% vs 1.04%) — 알려 줄 가치는 있지만 매수를 피할 근거는 아니다.
+ * 검증 스크립트·발표일 출처: 연준 FOMC 연도별 기록, BLS CPI 발표 아카이브.
  */
 
 import { getUpcomingMarketEvents, daysUntil, type MarketEvent } from '../utils/marketEventCalendar'
@@ -46,31 +48,24 @@ function resolveUrgency(days: number, importance: 'critical' | 'high'): WarningU
   return null
 }
 
-function shouldBlockBuy(urgency: WarningUrgency, importance: 'critical' | 'high'): boolean {
-  if (urgency === 'today') return true
-  if (urgency === 'danger' && importance === 'critical') return true
-  return false
-}
 
 function urgencyRank(u: WarningUrgency): number {
   return { today: 4, danger: 3, caution: 2, watch: 1 }[u]
 }
 
-function resolveAction(urgency: WarningUrgency, importance: 'critical' | 'high'): string {
-  switch (urgency) {
-    case 'today':
-      return importance === 'critical'
-        ? '매매 자제 · 수익 포지션 익절 우선'
-        : '장중 변동성 주의'
-    case 'danger':
-      return importance === 'critical'
-        ? '신규 매수 차단 · 수익 포지션 일부 정리 권고'
-        : '신규 진입 자제'
-    case 'caution':
-      return '포지션 규모 축소 · 손절선 재확인'
-    case 'watch':
-      return '포지션 점검 · 이벤트 결과 모니터링 준비'
+/**
+ * 행동 지시 대신 사실만 — 매매 규칙은 이벤트와 무관하게 그대로 간다.
+ * "영향 없음"은 검증한 이벤트(FOMC 금리 결정·CPI)에만 쓴다. 나머지는 검증 전이라 일정만 알린다.
+ */
+function resolveAction(urgency: WarningUrgency, name: string): string {
+  const verified = /FOMC 금리|CPI/.test(name)
+  const near = urgency === 'today' || urgency === 'danger'
+  if (verified) {
+    return near
+      ? '발표 뒤 등락이 평소보다 조금 클 수 있음 · 과거 매수 타이밍 영향 없음(규칙대로 진행)'
+      : '일정 참고 · 과거 매수 타이밍 영향 없음'
   }
+  return '일정 참고 (매수 차단 안 함 · 시장 영향 미검증)'
 }
 
 function urgencyEmoji(urgency: WarningUrgency): string {
@@ -104,8 +99,8 @@ export async function getMacroWarnings(now?: Date): Promise<MacroWarningResult> 
       label: event.name,
       date: eventDate,
       importance,
-      action: resolveAction(urgency, importance),
-      blockBuy: shouldBlockBuy(urgency, importance),
+      action: resolveAction(urgency, event.name),
+      blockBuy: false,
     })
   }
 
@@ -114,16 +109,14 @@ export async function getMacroWarnings(now?: Date): Promise<MacroWarningResult> 
     const urgency = resolveUrgency(days, event.importance)
     if (!urgency) continue
 
-    // 만기일 이벤트는 매수 차단 근거가 없다(30년 검증, marketEventCalendar.ts blockBuyDays 주석) — 참고 경고만
-    const blockBuy = event.blockBuyDays > 0 && days <= event.blockBuyDays && shouldBlockBuy(urgency, event.importance)
     warnings.push({
       daysUntil: days,
       urgency,
       label: event.label,
       date: event.date,
       importance: event.importance,
-      action: blockBuy ? resolveAction(urgency, event.importance) : '참고 — 과거 30년 코스피 영향 없음(매수 차단 안 함)',
-      blockBuy,
+      action: '참고 — 과거 30년 코스피 영향 없음',
+      blockBuy: false,
     })
   }
 
@@ -179,8 +172,8 @@ function buildAutotradeNote(warnings: EventWarning[], hasBlockBuy: boolean): str
 }
 
 /**
- * 가상매매에서 신규 매수 차단 여부 판단
- * blockBuyDays 이내 critical 이벤트 존재 시 차단
+ * 가상매매 신규 매수 차단 여부 — 검증 결과 차단할 이벤트가 없어 지금은 항상 통과한다.
+ * 새 이벤트 차단을 넣으려면 먼저 같은 방식(차단일 매수 vs 평소)으로 검증하고 blockBuy를 켠다.
  */
 export async function checkAutotradeBuyBlock(now?: Date): Promise<{
   blocked: boolean

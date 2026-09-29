@@ -194,7 +194,12 @@ export type EventRiskGuardResult = {
   eventName: string | null;
 };
 
-/** 이 시간 이내로 임박한 critical 이벤트만 선제 정리 대상으로 본다 (발표 당일~하루 전 수준) */
+/**
+ * 이 시간 이내로 임박한 critical 이벤트만 선제 정리 대상으로 본다 (발표 당일~하루 전 수준).
+ * 기본 꺼짐(AUTO_TRADE_EVENT_RISK_GUARD_ENABLED). 켜기 전에 알아 둘 것 — 2026-09-29 코스피 검증에서 FOMC·CPI
+ * 발표 다음 날 평균 등락은 평소와 차이 없음(합산 t=0.0), 변동폭만 조금 큼. 발표 전에 정리할 근거는 찾지 못했다
+ * (macroEventWarningService.ts 머리 주석).
+ */
 export const EVENT_RISK_GUARD_WINDOW_HOURS = 24;
 /** 목표보유기간이 이 값 이상(POSITION_CORE=20일, VALUE_SWING_CORE=30일)이면 장기로 보고 가드 제외 */
 export const EVENT_RISK_GUARD_MAX_HORIZON_DAYS = 15;

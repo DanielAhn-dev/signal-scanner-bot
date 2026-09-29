@@ -27,7 +27,7 @@ const MAJOR_ECONOMIC_EVENTS: EconomicEvent[] = [
     country: 'US',
     category: 'inflation',
     importance: 'critical',
-    scheduledAt: '2026-05-13T12:30:00Z', // 동부 8:30 AM
+    scheduledAt: '2026-05-12T12:30:00Z', // 동부 8:30 AM (BLS 공식 5/12)
     forecastValue: 3.2,
     actualValue: 3.8,                    // 2026-05-13 발표됨
     unit: '%',
@@ -47,7 +47,7 @@ const MAJOR_ECONOMIC_EVENTS: EconomicEvent[] = [
     country: 'US',
     category: 'inflation',
     importance: 'critical',
-    scheduledAt: '2026-06-11T12:30:00Z',
+    scheduledAt: '2026-06-10T12:30:00Z', // BLS 공식 6/10
     forecastValue: 3.5,
     unit: '%',
     source: 'BLS',
@@ -200,7 +200,7 @@ const MAJOR_ECONOMIC_EVENTS: EconomicEvent[] = [
     country: 'US',
     category: 'interest_rate',
     importance: 'critical',
-    scheduledAt: '2026-06-18T18:00:00Z', // 동부 오후 2시
+    scheduledAt: '2026-06-17T18:00:00Z', // 동부 오후 2시 (공식 6/16-17)
     source: 'Fed',
     historicalImpacts: [
       { date: '2024-01-31', eventName: 'FOMC 금리 결정', expectedVsForecast: 0, marketReactionKospi: 1.8, marketReactionSp500: 0.9, volatilityChange: -1.2, dominantTheme: '금리 동결에 안도' },
@@ -248,7 +248,7 @@ const MAJOR_ECONOMIC_EVENTS: EconomicEvent[] = [
     id: 'us-cpi-may-2026-rev',
     name: '미국 CPI (YoY)',
     country: 'US', category: 'inflation', importance: 'critical',
-    scheduledAt: '2026-06-11T12:30:00Z',
+    scheduledAt: '2026-06-10T12:30:00Z', // BLS 공식 6/10
     forecastValue: 3.5, unit: '%', source: 'BLS',
     averageKospiReaction: -0.15, averageVolatilityIncrease: 2.1, impactSeverity: 95,
   },
@@ -288,7 +288,7 @@ const MAJOR_ECONOMIC_EVENTS: EconomicEvent[] = [
     id: 'us-cpi-oct-2026',
     name: '미국 CPI (YoY)',
     country: 'US', category: 'inflation', importance: 'critical',
-    scheduledAt: '2026-11-12T13:30:00Z',
+    scheduledAt: '2026-11-10T13:30:00Z', // BLS 공식 11/10
     forecastValue: 3.0, unit: '%', source: 'BLS',
     averageKospiReaction: -0.15, averageVolatilityIncrease: 2.1, impactSeverity: 95,
   },
@@ -319,10 +319,10 @@ const MAJOR_ECONOMIC_EVENTS: EconomicEvent[] = [
     averageKospiReaction: 0.5, averageVolatilityIncrease: -0.8, impactSeverity: 98,
   },
   {
-    id: 'us-fomc-nov-2026',
+    id: 'us-fomc-oct-2026',
     name: 'FOMC 금리 결정',
     country: 'US', category: 'interest_rate', importance: 'critical',
-    scheduledAt: '2026-11-04T19:00:00Z',
+    scheduledAt: '2026-10-28T18:00:00Z', // 공식 10/27-28 (예전 값 11/4는 틀렸다)
     source: 'Fed',
     averageKospiReaction: 0.5, averageVolatilityIncrease: -0.8, impactSeverity: 98,
   },
@@ -330,7 +330,7 @@ const MAJOR_ECONOMIC_EVENTS: EconomicEvent[] = [
     id: 'us-fomc-dec-2026',
     name: 'FOMC 금리 결정',
     country: 'US', category: 'interest_rate', importance: 'critical',
-    scheduledAt: '2026-12-16T19:00:00Z',
+    scheduledAt: '2026-12-09T19:00:00Z', // 공식 12/8-9 (예전 값 12/16은 틀렸다)
     source: 'Fed',
     averageKospiReaction: 0.5, averageVolatilityIncrease: -0.8, impactSeverity: 98,
   },
@@ -419,6 +419,42 @@ const MAJOR_ECONOMIC_EVENTS: EconomicEvent[] = [
     averageKospiReaction: 0.3, averageVolatilityIncrease: 1.2, impactSeverity: 85,
   },
 ]
+
+/**
+ * 2027 FOMC 금리 결정 — 연준 공식 일정(federalreserve.gov/monetarypolicy/fomccalendars.htm, 2026-09-29 확인).
+ * 발표 동부 14:00 = 서머타임(3/14~11/6) 18:00Z, 그 외 19:00Z.
+ * 2027 CPI는 BLS가 아직 공개하지 않았다 — 공개되면 같은 방식으로 추가 (ECONOMIC_CALENDAR_COVERAGE 경고가 알려 준다).
+ */
+const FOMC_2027: Array<[string, string]> = [
+  ['2027-01-27', '19:00'], ['2027-03-17', '18:00'], ['2027-04-28', '18:00'], ['2027-06-09', '18:00'],
+  ['2027-07-28', '18:00'], ['2027-09-15', '18:00'], ['2027-10-27', '18:00'], ['2027-12-08', '19:00'],
+]
+for (const [date, utc] of FOMC_2027) {
+  MAJOR_ECONOMIC_EVENTS.push({
+    id: `us-fomc-${date}`,
+    name: 'FOMC 금리 결정',
+    country: 'US',
+    category: 'interest_rate',
+    importance: 'critical',
+    scheduledAt: `${date}T${utc}:00Z`,
+    source: 'Fed',
+    impactSeverity: 98,
+  })
+}
+
+/**
+ * 이 일정표가 어디까지 채워져 있는지 — 이벤트별 마지막 날짜. 하드코딩 일정이라 끝나면 경고·표시가 조용히 사라진다.
+ * 무결성 점검(handlers/cron/integrityAudit.ts)이 60일 안에 끝나는 항목을 관리자에게 알린다.
+ */
+export function economicCalendarCoverage(): Array<{ name: string; lastDate: string }> {
+  const last = new Map<string, string>()
+  for (const e of MAJOR_ECONOMIC_EVENTS) {
+    const d = e.scheduledAt.slice(0, 10)
+    if ((last.get(e.name) ?? '') < d) last.set(e.name, d)
+  }
+  return [...last.entries()].map(([name, lastDate]) => ({ name, lastDate })).sort((a, b) => a.lastDate.localeCompare(b.lastDate))
+}
+
 
 function marketEventToEconomicEvent(e: MarketEvent): EconomicEvent {
   return {

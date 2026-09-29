@@ -15,6 +15,7 @@ import {
 import { checkDataQuality } from "../../src/services/dataQualityService";
 import { fetchNegativeDisclosures, formatDisclosureFilterNote } from "../../src/services/dartDisclosureFilter";
 import { sendMessage } from "../../src/telegram/api";
+import { economicCalendarCoverage } from "../../src/utils/fetchEconomicCalendar";
 
 const CRON_SECRET = process.env.CRON_SECRET;
 const SUPABASE_URL = process.env.SUPABASE_URL;
@@ -184,6 +185,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const disclosureFilter = await fetchNegativeDisclosures();
     const disclosureIssue = disclosureFilter.status === "ok" ? 0 : 1;
     const ymd = kstYmd();
+    // 경제 일정은 하드코딩이라 끝나면 경고가 조용히 사라진다 — 60일 안에 끝나는 항목을 알린다
+    const calendarLimit = new Date(Date.now() + 60 * 86_400_000).toISOString().slice(0, 10);
+    const calendarEnding = economicCalendarCoverage().filter((c) => c.lastDate < calendarLimit);
+    const calendarIssue = calendarEnding.some((c) => /FOMC 금리|CPI/.test(c.name)) ? 1 : 0;
+    const calendarNote = calendarEnding.length
+      ? `${calendarIssue ? "❌" : "⚠️"} 경제 일정 갱신 필요(src/utils/fetchEconomicCalendar.ts): ${calendarEnding.map((c) => `${c.name} ~${c.lastDate}`).join(", ")}`
+      : "✅ 경제 일정 60일 이상 채워짐";
     const message = [
       buildIntegrityReportMessage({
         ymd,
@@ -193,8 +201,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       }),
       dataQuality.summary,
       `${disclosureIssue ? "❌" : "✅"} ${formatDisclosureFilterNote(disclosureFilter)}`,
+      calendarNote,
     ].join("\n");
-    const issueCount = countIntegrityIssues({ results, staleHoldingCodes }) + dataQuality.issues.length + disclosureIssue;
+    const issueCount =
+      countIntegrityIssues({ results, staleHoldingCodes }) + dataQuality.issues.length + disclosureIssue + calendarIssue;
     const isHealthy = issueCount === 0 && freshness.isHealthy;
 
     const { error: insertError } = await supabase.from("integrity_audit_results").insert({
