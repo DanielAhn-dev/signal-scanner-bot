@@ -31,6 +31,7 @@ type View = {
   currentMonthlyWithdrawal: number
   schedule: Array<{ month: string; months: number; contribution: number; isTarget: boolean }>
   normalRange: { plusMonthsPct: number; p10: number; worst: number; maxLosingStreak: number; source: string }
+  contributionLinked?: boolean
 }
 
 const man = (v: number) => `${Math.round(v / 10_000).toLocaleString('ko-KR')}만원`
@@ -141,7 +142,13 @@ export default function GoalTrackerCard() {
           인출률(%)
           <input style={inputStyle} value={form.withdrawPct} onChange={(e) => setForm({ ...form, withdrawPct: e.target.value })} />
           월 추가 입금(만원)
-          <input style={inputStyle} value={form.contribMan} onChange={(e) => setForm({ ...form, contribMan: e.target.value })} />
+          {view?.contributionLinked ? (
+            <span className="muted" style={{ fontSize: 12 }}>
+              {Math.round((view.settings.monthlyContribution ?? 0) / 10_000).toLocaleString('ko-KR')}만원 — 설정의 "월 자동 입금"에서 바꿉니다
+            </span>
+          ) : (
+            <input style={inputStyle} value={form.contribMan} onChange={(e) => setForm({ ...form, contribMan: e.target.value })} />
+          )}
           필요 시드 도달 목표 시점
           <input
             type="month"

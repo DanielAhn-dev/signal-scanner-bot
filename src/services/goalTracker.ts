@@ -189,7 +189,7 @@ export async function fetchAccountEquity(
   supabase: SupabaseClientAny,
   chatId: number,
   date: string
-): Promise<(EquityPoint & { cash: number; holdings: number }) | null> {
+): Promise<(EquityPoint & { cash: number; holdings: number; monthlyDeposit: number | null }) | null> {
   const { data: user } = await supabase.from("users").select("prefs").eq("tg_id", chatId).maybeSingle();
   const prefs = ((user as any)?.prefs ?? {}) as Record<string, unknown>;
   const seed = Number(prefs.virtual_seed_capital ?? prefs.capital_krw);
@@ -216,6 +216,10 @@ export async function fetchAccountEquity(
     realized: Number.isFinite(realized) ? Math.round(realized) : undefined,
     cash: Math.round(cash),
     holdings: Math.round(holdings),
+    // 계정에 월 자동 입금을 설정했으면 그 값 (설정한 적 없으면 null — 거치식 계정은 목표 트래커 값 그대로)
+    monthlyDeposit: prefs.virtual_monthly_deposit != null && Number.isFinite(Number(prefs.virtual_monthly_deposit))
+      ? Math.max(0, Math.round(Number(prefs.virtual_monthly_deposit)))
+      : null,
   };
 }
 
@@ -352,15 +356,19 @@ export type GoalTrackerView = {
   /** 시점별 필요 월 입금 — 1·2·3·5년과 설정한 목표 시점. 2차면 빈 배열 */
   schedule: Array<{ month: string; months: number; contribution: number; isTarget: boolean }>;
   normalRange: typeof NORMAL_MONTHLY_RANGE;
+  /** 월 입금이 계정의 월 자동 입금 설정에서 온 값인지 (그러면 목표 트래커에서 따로 바꾸지 않는다) */
+  contributionLinked: boolean;
 };
 
 export function buildGoalTrackerView(input: {
   file: GoalTrackerFile;
-  now: EquityPoint & { cash: number; holdings: number };
+  now: EquityPoint & { cash: number; holdings: number; monthlyDeposit?: number | null };
   realized: { swing: number; sweep: number; sells: number; wins: number };
 }): GoalTrackerView {
   const { file, now, realized } = input;
-  const s = file.settings;
+  // 월 자동 입금을 설정한 계정은 실제 입금액이 계획의 월 입금이다 (두 곳에 따로 넣지 않게)
+  const contributionLinked = now.monthlyDeposit != null;
+  const s = contributionLinked ? { ...file.settings, monthlyContribution: now.monthlyDeposit as number } : file.settings;
   const monthsElapsed = monthsBetween(s.startDate, now.date);
   const planValue = planValueAt(s, monthsElapsed);
   const withdrawalPct = s.withdrawalPct ?? DEFAULT_WITHDRAWAL_PCT;
@@ -437,6 +445,7 @@ export function buildGoalTrackerView(input: {
     currentMonthlyWithdrawal: Math.round((now.total * withdrawalPct) / 100 / 12),
     schedule,
     normalRange: NORMAL_MONTHLY_RANGE,
+    contributionLinked,
   };
 }
 

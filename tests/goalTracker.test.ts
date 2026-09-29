@@ -106,3 +106,18 @@ test("sanitizeGoalSettings: 목표 시점은 YYYY-MM만, 빈 문자열은 해제
   assert.equal(sanitizeGoalSettings({ targetDate: "내년" }, { ...settings, targetDate: "2028-09" }).targetDate, "2028-09");
   assert.equal(sanitizeGoalSettings({ targetDate: "" }, { ...settings, targetDate: "2028-09" }).targetDate, undefined);
 });
+
+test("buildGoalTrackerView: 월 자동 입금을 설정한 계정은 그 금액이 계획의 월 입금, 없으면 목표 트래커 값(거치식)", () => {
+  const base = {
+    file: { settings, history: [{ date: "2026-09-30", seed: 20_000_000, total: 20_000_000 }] },
+    realized: { swing: 0, sweep: 0, sells: 0, wins: 0 },
+  };
+  const now = { date: "2026-10-15", seed: 20_000_000, total: 20_000_000, cash: 20_000_000, holdings: 0 };
+  const lumpSum = buildGoalTrackerView({ ...base, now: { ...now, monthlyDeposit: null } });
+  assert.equal(lumpSum.contributionLinked, false);
+  assert.equal(lumpSum.settings.monthlyContribution, settings.monthlyContribution);
+  const saving = buildGoalTrackerView({ ...base, now: { ...now, monthlyDeposit: 300_000 } });
+  assert.equal(saving.contributionLinked, true);
+  assert.equal(saving.settings.monthlyContribution, 300_000);
+  assert.ok((saving.target.monthsToReach ?? Infinity) < (lumpSum.target.monthsToReach ?? Infinity) || settings.monthlyContribution >= 300_000);
+});
