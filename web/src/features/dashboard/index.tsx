@@ -15,6 +15,8 @@ type SectorItem = {
   score?: number
   change?: number
   changeRate?: number
+  /** 섹터 API가 실제로 주는 필드 — changeRate/change만 읽어서 등락률이 한 번도 안 보였다 */
+  change_rate?: number
 }
 
 type PortfolioSummary = {
@@ -179,17 +181,6 @@ export default function Dashboard({ onNavigate }: { onNavigate?: (r: string) => 
             </td>
           </tr>
 
-          {/* ── 이벤트 배너 ── */}
-          <tr className="xls-row">
-            <td className="xls-row-num">{rowNum()}</td>
-            <td className="xls-cell" colSpan={6} style={{ background: 'var(--color-warning-bg)', color: 'var(--color-warning)', fontWeight: 600, fontSize: 11 }}>
-              📌 미국 PPI (YoY) · 발표값 과거 반응: -0.40%
-              <span style={{ float: 'right', fontSize: 10, fontWeight: 400 }}>
-                <span style={S.link} onClick={() => nav('market')}>📅 캘린더</span>
-              </span>
-            </td>
-          </tr>
-
           {/* 빈 행 */}
           <tr className="xls-row xls-row--even">
             <td className="xls-row-num">{rowNum()}</td>
@@ -240,7 +231,8 @@ export default function Dashboard({ onNavigate }: { onNavigate?: (r: string) => 
           <tr className="xls-row xls-row--even">
             <td className="xls-row-num">{rowNum()}</td>
             <td className="xls-cell" colSpan={3} style={{ ...S.midBorder, fontSize: 20, fontWeight: 700, lineHeight: 1.2, padding: '4px 6px' }}>
-              {posCount > 0 ? posCount : '—'}
+              {/* 불러온 뒤 보유가 0이면 0 — '—'는 아직 못 불러온 상태만 */}
+              {portfolio ? posCount : '—'}
               <span style={{ fontSize: 10, fontWeight: 400, color: 'var(--color-text-secondary)', marginLeft: 4 }}>종목</span>
             </td>
             <td className="xls-cell" colSpan={3} style={{ fontSize: 20, fontWeight: 700, lineHeight: 1.2, padding: '4px 6px', color: pnlColor }}>
@@ -321,8 +313,8 @@ export default function Dashboard({ onNavigate }: { onNavigate?: (r: string) => 
           {Array.from({ length: 4 }, (_, i) => {
             const s1 = sectors[i * 2]
             const s2 = sectors[i * 2 + 1]
-            const c1 = s1?.changeRate ?? s1?.change
-            const c2 = s2?.changeRate ?? s2?.change
+            const c1 = s1?.change_rate ?? s1?.changeRate ?? s1?.change
+            const c2 = s2?.change_rate ?? s2?.changeRate ?? s2?.change
             return (
               <tr key={i} className={`xls-row${i % 2 === 0 ? '' : ' xls-row--even'}`}>
                 <td className="xls-row-num">{rowNum()}</td>

@@ -9,6 +9,7 @@ import {
   Sprout,
   TrendingDown,
   TrendingUp,
+  type LucideIcon,
 } from "lucide-react"
 import { apiFetch } from "../../lib/api"
 import Button from "../../components/ui/Button"
@@ -1075,7 +1076,7 @@ export default function SectorsPage({ onNavigate }: { onNavigate?: (r: string) =
     { key: "guide",     label: "섹터 가이드" },
   ]
 
-  const TAB_ICON: Record<Tab, React.ComponentType<{ size?: number; strokeWidth?: number }>> = {
+  const TAB_ICON: Record<Tab, LucideIcon> = {
     promising: Compass,
     next: TrendingUp,
     all: Layers3,

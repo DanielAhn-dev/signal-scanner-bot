@@ -121,6 +121,10 @@ select {
 .ui-btn-primary:hover:not(:disabled)  { background: var(--btn-primary-bg-hover); }
 .ui-btn-primary:active:not(:disabled) { background: var(--btn-primary-bg-active); }
 
+/* 되돌리기 어려운 동작(삭제·초기화) — 예전엔 variant="danger"를 넘겨도 클래스가 없어 기본 버튼으로 보였다 */
+.ui-btn-danger  { background: var(--color-error); color: #fff; }
+.ui-btn-danger:hover:not(:disabled)  { filter: brightness(0.92); }
+
 .ui-btn-secondary {
   background: var(--btn-secondary-bg);
   color: var(--btn-secondary-text);

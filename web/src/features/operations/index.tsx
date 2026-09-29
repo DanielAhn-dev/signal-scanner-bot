@@ -1246,11 +1246,13 @@ export default function OperationsPage() {
                       </thead>
                       <tbody>
                         {autocycleInsights.scan_top_rows.map((row, idx) => {
-                          const compareEntry = autocycleInsights.latest.compare_rows.find((item) => item.code === row.code)
+                          // 실행 기록(latest)이 아직 없어도 스캔 상위는 있을 수 있다 — 예전엔 여기서 null을 읽어 화면이 멈췄다
+                          const latestRun = autocycleInsights.latest
+                          const compareEntry = latestRun?.compare_rows.find((item) => item.code === row.code)
                           const included = Boolean(compareEntry)
                           const estimatedReason = compareEntry
                             ? compareEntry.reason
-                            : (row.exclusion_reason || estimateMissingReason({ signal: row.signal, latest: autocycleInsights.latest }))
+                            : (row.exclusion_reason || (latestRun ? estimateMissingReason({ signal: row.signal, latest: latestRun }) : '실행 기록 없음'))
                           return (
                             <tr key={`scan-top-${idx}`} data-label={row.name || row.code}>
                               <td style={{ padding: '8px', borderBottom: '1px solid #F0F2F5', whiteSpace: 'nowrap' }} data-th="종목">{row.name || row.code}{row.name ? ` (${row.code})` : ''}</td>

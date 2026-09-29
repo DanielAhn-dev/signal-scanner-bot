@@ -96,7 +96,7 @@ export default function FeedPage() {
           </thead>
           <tbody>
             {!loading && decisions.map((d: DecisionRow, i: number) => {
-              const key = d.link || `${d.id ?? i}`
+              const key = `${d.id ?? i}`
               return (
                 <React.Fragment key={key}>
                   <tr
@@ -109,7 +109,7 @@ export default function FeedPage() {
                       setDetailOpen(true)
                     }}
                   >
-                    <td className="scan-td" style={{ fontWeight: 'var(--font-weight-bold)', color: ACTION_COLOR[d.action] ?? 'inherit' }}>{d.action || '—'}</td>
+                    <td className="scan-td" style={{ fontWeight: 'var(--font-weight-bold)', color: (d.action && ACTION_COLOR[d.action]) || 'inherit' }}>{d.action || '—'}</td>
                     <td className="scan-td">{d.stock_name ?? d.code}</td>
                     <td className="scan-td" style={{ color: d.is_auto ? 'var(--color-primary)' : 'var(--color-text-tertiary)' }}>{d.is_auto ? '시스템 자동' : '수동/기타'}</td>
                     <td className="scan-td">{d.created_at ? new Date(d.created_at).toLocaleString('ko-KR', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—'}</td>
