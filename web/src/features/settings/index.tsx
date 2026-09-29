@@ -38,6 +38,9 @@ export default function Settings(){
   const [depositDay, setDepositDay] = useState<string>('')
   const [savingDeposit, setSavingDeposit] = useState(false)
   const [depositStatus, setDepositStatus] = useState<string | undefined>()
+  const [notifyChannel, setNotifyChannel] = useState<'telegram' | 'push' | null>(null)
+  const [savingChannel, setSavingChannel] = useState(false)
+  const [channelStatus, setChannelStatus] = useState<string | undefined>()
   const [savingMode, setSavingMode] = useState(false)
   const [modeStatus, setModeStatus] = useState<string | undefined>()
   const [saving, setSaving] = useState(false)
@@ -72,6 +75,7 @@ export default function Settings(){
         if (cash != null) setVirtualCash(cash)
         setStrategyMode(json?.data?.strategy_mode === 'index_hold' ? 'index_hold' : 'stock')
         applyDepositInfo(json?.data)
+        setNotifyChannel(json?.data?.notify_channel === 'push' ? 'push' : 'telegram')
       } catch (e) {
         // ignore
       }
@@ -194,6 +198,26 @@ export default function Settings(){
     setDeposit(info)
     setDepositMan(info.monthly_deposit > 0 ? String(info.monthly_deposit / 10_000) : '0')
     setDepositDay(String(info.deposit_day))
+  }
+
+  const saveNotifyChannel = async (next: 'telegram' | 'push') => {
+    if (next === notifyChannel) return
+    setSavingChannel(true)
+    setChannelStatus(undefined)
+    try {
+      const json = await apiFetch('/api/ui/investment-prefs', {
+        method: 'POST',
+        cacheMs: 0,
+        timeoutMs: 10_000,
+        body: JSON.stringify({ notify_channel: next }),
+      })
+      setNotifyChannel(json?.data?.notify_channel === 'push' ? 'push' : 'telegram')
+      setChannelStatus(next === 'push' ? '저장 완료 — 이제 알림은 브라우저 푸시로만 옵니다' : '저장 완료 — 이제 알림은 텔레그램으로만 옵니다')
+    } catch (e: any) {
+      setChannelStatus(String(e?.message || e))
+    } finally {
+      setSavingChannel(false)
+    }
   }
 
   const saveDeposit = async () => {
@@ -667,6 +691,40 @@ export default function Settings(){
               <div className="text-xs muted mt-2">
                 권장 순서: 저장 후 점검 1회 → 결과 확인 → 저장 후 실행 1회
               </div>
+            </td>
+          </tr>
+          <tr className="xls-row">
+            <td className="xls-cell" colSpan={2} style={{ fontSize: 13, fontWeight: 600 }}>알림 받을 곳</td>
+            <td className="xls-cell" colSpan={4} style={{ padding: '8px 10px' }}>
+              {telegramLinked ? (
+                <>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center' }}>
+                    <Button
+                      variant={notifyChannel === 'telegram' ? 'primary' : 'secondary'}
+                      disabled={savingChannel || notifyChannel == null}
+                      onClick={() => void saveNotifyChannel('telegram')}
+                    >
+                      텔레그램
+                    </Button>
+                    <Button
+                      variant={notifyChannel === 'push' ? 'primary' : 'secondary'}
+                      disabled={savingChannel || notifyChannel == null}
+                      onClick={() => void saveNotifyChannel('push')}
+                    >
+                      브라우저 푸시 (PWA)
+                    </Button>
+                    {channelStatus && <div className="muted">{channelStatus}</div>}
+                  </div>
+                  <div className="text-xs muted mt-2" style={{ whiteSpace: 'normal', wordBreak: 'keep-all' }}>
+                    자동매매·리포트 알림을 고른 한 곳으로만 보냅니다 (중복 없음). 텔레그램에서 직접 입력한 명령의 답장과 [승인]·[보류] 같은 버튼 메시지, 파일은 항상 텔레그램으로 갑니다.
+                    브라우저 푸시는 이 기기에서 프로필의 "브라우저 푸시 알림"을 켜 둬야 오고, 켜진 기기가 없으면 텔레그램으로 대신 보냅니다.
+                  </div>
+                </>
+              ) : (
+                <div className="muted" style={{ whiteSpace: 'normal', wordBreak: 'keep-all' }}>
+                  텔레그램이 연결되지 않은 계정이라 모든 알림을 브라우저 푸시로 받습니다. 프로필에서 "브라우저 푸시 알림"을 켜 두세요.
+                </div>
+              )}
             </td>
           </tr>
           <tr className="xls-row xls-row--even">

@@ -11,6 +11,7 @@ import {
   resolveLastDepositMonthOnSave,
 } from '../../src/services/monthlyDeposit'
 import { toKstDateKey } from '../../src/lib/krxCalendar'
+import { normalizeNotifyChannel } from '../../src/services/notifyChannel'
 
 function toPositiveInt(raw: unknown): number | null {
   const num = Number(String(raw ?? '').trim())
@@ -92,6 +93,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           virtual_cash: virtualCash != null && Number.isFinite(virtualCash) && virtualCash >= 0 ? virtualCash : null,
           capital_krw: Number.isFinite(capitalKrw) && capitalKrw > 0 ? capitalKrw : null,
           strategy_mode: normalizeStrategyMode(prefs.virtual_strategy_mode),
+          notify_channel: normalizeNotifyChannel(prefs.notify_channel),
           ...depositView(prefs),
         }
       })
@@ -101,6 +103,18 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       if (!targetChatId) return res.status(400).json({ error: 'chat_id required' })
 
       const body = req.body || {}
+
+      // 알림 받을 곳만 바꾸는 요청 (src/services/notifyChannel.ts)
+      if (body.notify_channel !== undefined && body.virtual_seed_capital === undefined) {
+        if (body.notify_channel !== 'telegram' && body.notify_channel !== 'push') {
+          return res.status(400).json({ error: 'notify_channel must be telegram or push' })
+        }
+        const { data: chRow } = await supabase.from('users').select('prefs').eq('tg_id', targetChatId).maybeSingle()
+        const chPrefs = { ...((chRow?.prefs as Record<string, unknown>) || {}), notify_channel: body.notify_channel }
+        const { error: chError } = await supabase.from('users').upsert({ tg_id: targetChatId, prefs: chPrefs }, { onConflict: 'tg_id' })
+        if (chError) return res.status(500).json({ error: chError.message })
+        return res.status(200).json({ data: { notify_channel: body.notify_channel } })
+      }
 
       // 월 자동 입금 설정만 바꾸는 요청 (src/services/monthlyDeposit.ts)
       if (body.monthly_deposit !== undefined && body.virtual_seed_capital === undefined) {

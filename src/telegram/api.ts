@@ -26,9 +26,25 @@ async function routeWebOnly(method: string, body: any, isMultipart: boolean): Pr
   return { ok: r.ok, description: r.description ?? "sent via web push" };
 }
 
+/**
+ * 텔레그램이 연결된 계정이 "브라우저 푸시로 받기"를 골랐으면 자동 알림(sendMessage)을 푸시로만 보낸다 (notifyChannel.ts).
+ * 명령 답장·버튼 메시지·파일은 텔레그램에 둔다. 푸시를 못 보내면(기기 미등록 등) null → 텔레그램으로 보낸다.
+ */
+async function routeLinkedToPush(method: string, body: any, isMultipart: boolean): Promise<TgResponse | null> {
+  if (method !== "sendMessage" || isMultipart || !body?.text) return null;
+  const chatId = Number(body.chat_id);
+  if (!Number.isFinite(chatId) || chatId <= 0 || isWebOnlyChatId(chatId)) return null;
+  const { hasInlineKeyboard, isTelegramReplyContext, resolveNotifyChannel } = await import("../services/notifyChannel.js");
+  if (isTelegramReplyContext() || hasInlineKeyboard(body.reply_markup)) return null;
+  if ((await resolveNotifyChannel(chatId)) !== "push") return null;
+  const { sendPushToChatId } = await import("../services/webPush.js");
+  const r = await sendPushToChatId(chatId, { body: String(body.text) }).catch(() => ({ ok: false, sent: 0 }));
+  return r.ok ? { ok: true, description: "sent via web push" } : null;
+}
+
 export async function tg(method: string, body: any): Promise<TgResponse> {
   const isMultipart = typeof FormData !== "undefined" && body instanceof FormData;
-  const routed = await routeWebOnly(method, body, isMultipart);
+  const routed = (await routeWebOnly(method, body, isMultipart)) ?? (await routeLinkedToPush(method, body, isMultipart));
   if (routed) return routed;
   if (!token) return { ok: false };
 

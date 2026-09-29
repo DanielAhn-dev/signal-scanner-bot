@@ -2,6 +2,7 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { createClient } from "@supabase/supabase-js";
 import { routeCallbackData } from "../src/bot/callbackRouter";
+import { runAsTelegramReply } from "../src/services/notifyChannel";
 const { routeMessage } = require("../src/bot/router") as {
   routeMessage: (
     text: string,
@@ -551,7 +552,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         if (job.type === "WATCH_SECTOR") {
           await handleWatchSectorJob(job);
         } else if (job.type === "telegram_update") {
-          await handleTelegramUpdateJob(job);
+          // 명령·버튼 처리 중 보내는 메시지는 답장이라 알림 채널 설정과 무관하게 텔레그램으로 (notifyChannel.ts)
+          await runAsTelegramReply(() => handleTelegramUpdateJob(job));
         }
 
         await supa()
