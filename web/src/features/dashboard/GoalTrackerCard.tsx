@@ -5,7 +5,14 @@ import { useCurrentChatId } from '../../stores/profileStore'
 
 type View = {
   today: string
-  settings: { startDate: string; startEquity: number; planAnnualPct: number; targetMonthlyProfit: number; monthlyContribution: number }
+  settings: {
+    startDate: string
+    startEquity: number
+    planAnnualPct: number
+    targetMonthlyProfit: number
+    monthlyContribution: number
+    targetDate?: string
+  }
   equity: number
   plan: { monthsElapsed: number; planValue: number; gapPct: number }
   target: { requiredSeed: number; progressPct: number; monthsToReach: number | null; etaMonth: string | null }
@@ -18,6 +25,9 @@ type View = {
     wins: number
     assessment: { level: string; text: string } | null
   }
+  phase: { stage: 1 | 2; title: string; text: string }
+  currentMonthlyProfit: number
+  schedule: Array<{ month: string; months: number; contribution: number; isTarget: boolean }>
   normalRange: { plusMonthsPct: number; p10: number; worst: number; maxLosingStreak: number; source: string }
 }
 
@@ -33,7 +43,7 @@ export default function GoalTrackerCard() {
   const [view, setView] = useState<View | null>(null)
   const [reason, setReason] = useState<string | null>(null)
   const [editing, setEditing] = useState(false)
-  const [form, setForm] = useState({ targetMan: '', planPct: '', contribMan: '' })
+  const [form, setForm] = useState({ targetMan: '', planPct: '', contribMan: '', targetDate: '' })
   const [busy, setBusy] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
 
@@ -60,6 +70,7 @@ export default function GoalTrackerCard() {
       targetMan: String(Math.round(view.settings.targetMonthlyProfit / 10_000)),
       planPct: String(view.settings.planAnnualPct),
       contribMan: String(Math.round(view.settings.monthlyContribution / 10_000)),
+      targetDate: view.settings.targetDate ?? '',
     })
     setSaveError(null)
     setEditing(true)
@@ -74,6 +85,7 @@ export default function GoalTrackerCard() {
         targetMonthlyProfit: Number(form.targetMan) * 10_000,
         planAnnualPct: Number(form.planPct),
         monthlyContribution: Number(form.contribMan) * 10_000,
+        targetDate: form.targetDate,
       }),
     })
     setBusy(false)
@@ -123,6 +135,13 @@ export default function GoalTrackerCard() {
           <input style={inputStyle} value={form.planPct} onChange={(e) => setForm({ ...form, planPct: e.target.value })} />
           월 추가 입금(만원)
           <input style={inputStyle} value={form.contribMan} onChange={(e) => setForm({ ...form, contribMan: e.target.value })} />
+          필요 시드 도달 목표 시점
+          <input
+            type="month"
+            style={{ ...inputStyle, width: 130 }}
+            value={form.targetDate}
+            onChange={(e) => setForm({ ...form, targetDate: e.target.value })}
+          />
           <Button size="sm" disabled={busy} onClick={() => void save()}>
             저장
           </Button>
@@ -136,6 +155,9 @@ export default function GoalTrackerCard() {
         </div>
       )}
 
+      <div style={{ margin: '4px 0' }}>
+        <strong>{view.phase.title}</strong> — {view.phase.text}
+      </div>
       <div>
         현재 {man(view.equity)} · 달성 {view.target.progressPct.toFixed(0)}% · 예상 도달 {view.target.etaMonth ?? '50년 이상'}
         {' '}(연 {view.settings.planAnnualPct}% 재투자{view.settings.monthlyContribution > 0 ? ` + 월 ${man(view.settings.monthlyContribution)} 입금` : ''})
@@ -153,6 +175,20 @@ export default function GoalTrackerCard() {
         스윙 확정 {signed(t.realizedSwing)}({t.sells}건 중 익절 {t.wins}) · 지수·현금 스윕 {signed(t.realizedSweep)}
       </div>
       {t.assessment && <div style={{ color: levelColor }}>{t.assessment.text}</div>}
+      {view.schedule.length > 0 && (
+        <div style={{ marginTop: 4 }}>
+          지금 시드로는 계획상 월 평균 {man(view.currentMonthlyProfit)}. 필요 시드 {man(view.target.requiredSeed)}에 닿으려면 매달 넣어야
+          할 금액(연 {view.settings.planAnnualPct}% 재투자 가정):
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '2px 12px' }}>
+            {view.schedule.map((r) => (
+              <span key={r.months} style={r.isTarget ? { fontWeight: 600, color: 'var(--color-text-primary)' } : undefined}>
+                {r.month}({r.months % 12 === 0 ? `${r.months / 12}년` : `${r.months}개월`}
+                {r.isTarget ? ' · 목표' : ''}) 월 {man(r.contribution)}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
       <div style={{ color: 'var(--color-text-tertiary)', marginTop: 4 }}>
         매달 고르게 나오지 않습니다 — {view.normalRange.source}: 플러스 달 {view.normalRange.plusMonthsPct}%, 10달 중 1달은{' '}
         {view.normalRange.p10}% 이하, 마이너스 달 최장 {view.normalRange.maxLosingStreak}개월 연속. 누적으로 계획선을 따라가는지를 보세요.

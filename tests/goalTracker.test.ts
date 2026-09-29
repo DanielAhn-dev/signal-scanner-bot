@@ -7,7 +7,9 @@ import {
   monthlyRate,
   monthsToReach,
   monthToDateReturn,
+  monthsUntil,
   planValueAt,
+  requiredMonthlyContribution,
   requiredSeed,
   sanitizeGoalSettings,
   type GoalSettings,
@@ -72,4 +74,34 @@ test("buildGoalTrackerView: 진행률·계획선·이번 달 기대 수익", () 
   assert.equal(v.thisMonth.expectedProfit, Math.round(20_000_000 * monthlyRate(8)));
   assert.ok(v.thisMonth.returnPct != null && Math.abs(v.thisMonth.returnPct - 2) < 1e-9);
   assert.ok(v.plan.gapPct > 1);
+});
+
+test("requiredMonthlyContribution: planValueAt으로 되돌리면 정확히 필요 시드", () => {
+  const need = requiredSeed(500_000, 8);
+  const c = requiredMonthlyContribution({ fromEquity: 20_000_000, target: need, planAnnualPct: 8, months: 24 });
+  const back = planValueAt({ ...settings, startEquity: 20_000_000, monthlyContribution: c }, 24);
+  assert.ok(Math.abs(back - need) < 1, String(back - need));
+  assert.equal(requiredMonthlyContribution({ fromEquity: need, target: need, planAnnualPct: 8, months: 12 }), 0);
+  assert.equal(monthsUntil("2026-09-29", "2028-09"), 24);
+});
+
+test("buildGoalTrackerView: 1차 단계·목표 시점 필요 입금, 도달하면 2차", () => {
+  const base = {
+    file: { settings: { ...settings, targetMonthlyProfit: 500_000, targetDate: "2028-03" }, history: [] },
+    realized: { swing: 0, sweep: 0, sells: 0, wins: 0 },
+  };
+  const v = buildGoalTrackerView({ ...base, now: { date: "2026-09-29", seed: 20_000_000, total: 20_000_000, cash: 0, holdings: 0 } });
+  assert.equal(v.phase.stage, 1);
+  assert.deepEqual(v.schedule.map((r) => r.months), [12, 18, 24, 36, 60]);
+  assert.equal(v.schedule.find((r) => r.isTarget)?.month, "2028-03");
+  assert.ok(v.schedule[0].contribution > v.schedule[4].contribution);
+  const v2 = buildGoalTrackerView({ ...base, now: { date: "2026-09-29", seed: 90_000_000, total: 90_000_000, cash: 0, holdings: 0 } });
+  assert.equal(v2.phase.stage, 2);
+  assert.equal(v2.schedule.length, 0);
+});
+
+test("sanitizeGoalSettings: 목표 시점은 YYYY-MM만, 빈 문자열은 해제", () => {
+  assert.equal(sanitizeGoalSettings({ targetDate: "2028-09" }, settings).targetDate, "2028-09");
+  assert.equal(sanitizeGoalSettings({ targetDate: "내년" }, { ...settings, targetDate: "2028-09" }).targetDate, "2028-09");
+  assert.equal(sanitizeGoalSettings({ targetDate: "" }, { ...settings, targetDate: "2028-09" }).targetDate, undefined);
 });

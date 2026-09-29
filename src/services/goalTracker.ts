@@ -24,6 +24,8 @@ export type GoalSettings = {
   targetMonthlyProfit: number;
   /** 매달 추가 입금 (원, 없으면 0) */
   monthlyContribution: number;
+  /** 필요 시드에 닿고 싶은 시점 (YYYY-MM, 없으면 1·2·3·5년만 보여 준다) */
+  targetDate?: string;
 };
 
 export type EquityPoint = {
@@ -109,6 +111,38 @@ export function monthsToReach(input: {
     if (v >= input.target) return n;
   }
   return null;
+}
+
+/** 두 날짜 사이의 개월 수 (월 단위) — "2026-09-29" → "2028-09"는 24 */
+export function monthsUntil(today: string, targetMonth: string): number {
+  const [y1, m1] = today.slice(0, 7).split("-").map(Number);
+  const [y2, m2] = targetMonth.slice(0, 7).split("-").map(Number);
+  return (y2 - y1) * 12 + (m2 - m1);
+}
+
+function addMonths(today: string, months: number): string {
+  const d = new Date(`${today.slice(0, 10)}T00:00:00Z`);
+  d.setUTCMonth(d.getUTCMonth() + months);
+  return d.toISOString().slice(0, 7);
+}
+
+/**
+ * n개월 뒤 필요 시드에 닿으려면 매달 넣어야 하는 금액 (계획 수익률로 재투자, 월말 입금).
+ * planValueAt과 같은 식을 입금액에 대해 푼 것. 입금 없이도 닿으면 0.
+ */
+export function requiredMonthlyContribution(input: {
+  fromEquity: number;
+  target: number;
+  planAnnualPct: number;
+  months: number;
+}): number {
+  if (!(input.months > 0) || !Number.isFinite(input.target)) return 0;
+  const m = monthlyRate(input.planAnnualPct);
+  const g = (1 + m) ** input.months;
+  const grown = input.fromEquity * g;
+  if (grown >= input.target) return 0;
+  const factor = m > 0 ? (g - 1) / m : input.months;
+  return (input.target - grown) / factor;
 }
 
 /** 기간 수익률: 날짜별 평가액을 이어 붙이고, 입금·출금이 있던 날은 수익 0으로 본다 */
@@ -272,6 +306,13 @@ export function sanitizeGoalSettings(input: Partial<GoalSettings>, current: Goal
     planAnnualPct: num(input.planAnnualPct, current.planAnnualPct, 1, 15),
     targetMonthlyProfit: num(input.targetMonthlyProfit, current.targetMonthlyProfit, 10_000, 1e9),
     monthlyContribution: num(input.monthlyContribution, current.monthlyContribution, 0, 1e9),
+    // 빈 문자열은 목표 시점 해제
+    targetDate:
+      input.targetDate === ""
+        ? undefined
+        : /^\d{4}-\d{2}$/.test(String(input.targetDate ?? ""))
+          ? String(input.targetDate)
+          : current.targetDate,
   };
 }
 
@@ -293,6 +334,15 @@ export type GoalTrackerView = {
     wins: number;
     assessment: MonthAssessment | null;
   };
+  /**
+   * 1차: 필요 시드까지 모으기(수익 전부 재투자) / 2차: 필요 시드 도달 후 월 수익 받기.
+   * 단계는 표시일 뿐 매매 규칙을 바꾸지 않는다(목표가 매수 기준을 낮추면 안 된다 — e021a69).
+   */
+  phase: { stage: 1 | 2; title: string; text: string };
+  /** 지금 평가액으로 계획 수익률이면 월 평균 얼마 */
+  currentMonthlyProfit: number;
+  /** 시점별 필요 월 입금 — 1·2·3·5년과 설정한 목표 시점. 2차면 빈 배열 */
+  schedule: Array<{ month: string; months: number; contribution: number; isTarget: boolean }>;
   normalRange: typeof NORMAL_MONTHLY_RANGE;
 };
 
@@ -312,12 +362,38 @@ export function buildGoalTrackerView(input: {
     planAnnualPct: s.planAnnualPct,
     monthlyContribution: s.monthlyContribution,
   });
-  let etaMonth: string | null = null;
-  if (months != null) {
-    const d = new Date(`${now.date}T00:00:00Z`);
-    d.setUTCMonth(d.getUTCMonth() + months);
-    etaMonth = d.toISOString().slice(0, 7);
+  const etaMonth = months != null ? addMonths(now.date, months) : null;
+  const reached = Number.isFinite(need) && now.total >= need;
+  const phase: GoalTrackerView["phase"] = reached
+    ? {
+        stage: 2,
+        title: "2차 — 월 수익 받기",
+        text: "필요 시드에 도달했습니다. 인출은 계획 월 평균 이내로 하고, 마이너스 달이 몇 달 이어져도 버틸 3~6개월치 현금을 따로 두세요.",
+      }
+    : {
+        stage: 1,
+        title: "1차 — 시드 모으기",
+        text: "수익은 전부 재투자합니다. 도달 시점을 앞당기는 가장 큰 방법은 매매 수익률보다 추가 입금입니다.",
+      };
+  const horizons = [12, 24, 36, 60].map((months) => ({ months, isTarget: false }));
+  const targetMonths = s.targetDate ? monthsUntil(now.date, s.targetDate) : 0;
+  if (targetMonths > 0) {
+    const i = horizons.findIndex((h) => h.months === targetMonths);
+    if (i >= 0) horizons[i].isTarget = true;
+    else horizons.push({ months: targetMonths, isTarget: true });
   }
+  const schedule = reached
+    ? []
+    : horizons
+        .sort((a, b) => a.months - b.months)
+        .map((h) => ({
+          month: addMonths(now.date, h.months),
+          months: h.months,
+          contribution: Math.round(
+            requiredMonthlyContribution({ fromEquity: now.total, target: need, planAnnualPct: s.planAnnualPct, months: h.months })
+          ),
+          isTarget: h.isTarget,
+        }));
   const mtd = monthToDateReturn(file.history, now.date);
   const monthStartEquity =
     [...file.history]
@@ -347,17 +423,22 @@ export function buildGoalTrackerView(input: {
       wins: realized.wins,
       assessment: assessMonth(mtd == null ? null : mtd * 100),
     },
+    phase,
+    currentMonthlyProfit: Math.round(now.total * monthlyRate(s.planAnnualPct)),
+    schedule,
     normalRange: NORMAL_MONTHLY_RANGE,
   };
 }
 
 /** 금요일 텔레그램 보고용 요약 */
 export function formatGoalLine(v: GoalTrackerView): string {
+  const target = v.schedule.find((r) => r.isTarget);
   const man = (x: number) => `${Math.round(x / 10_000).toLocaleString("ko-KR")}만`;
   const mtd = v.thisMonth.returnPct == null ? "-" : `${v.thisMonth.returnPct >= 0 ? "+" : ""}${v.thisMonth.returnPct.toFixed(1)}%`;
   return [
     `[목표] 월 평균 ${man(v.settings.targetMonthlyProfit)}원 → 필요 시드 ${man(v.target.requiredSeed)}원 · 현재 ${man(v.equity)}원 (${v.target.progressPct.toFixed(0)}%)`,
     `  이번 달 ${mtd} · 스윙 확정 ${man(v.thisMonth.realizedSwing)}원 · 계획 월 평균 ${man(v.thisMonth.expectedProfit)}원 · 계획선 대비 ${v.plan.gapPct >= 0 ? "+" : ""}${v.plan.gapPct.toFixed(1)}%`,
     `  예상 도달 ${v.target.etaMonth ?? "50년 이상"} (연 ${v.settings.planAnnualPct}% 재투자${v.settings.monthlyContribution > 0 ? ` + 월 ${man(v.settings.monthlyContribution)}원 입금` : ""})`,
+    target ? `  ${v.phase.title} · ${target.month}까지 닿으려면 월 ${man(target.contribution)}원 입금 필요` : `  ${v.phase.title}`,
   ].join("\n");
 }
