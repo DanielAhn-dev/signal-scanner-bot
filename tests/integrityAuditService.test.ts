@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   reconcileChatLedger,
+  reconstructCashBaseline,
   buildIntegrityReportMessage,
   countIntegrityIssues,
 } from "../src/services/integrityAuditService";
@@ -136,6 +137,26 @@ test("reconcile: 배당금·분배금 누적액을 반영하면 오탐이 사라
 
   assert.equal(result.cashStatus, "ok");
   assert.equal(result.issues.length, 0);
+});
+
+test("reconstructCashBaseline: 시드 재계산으로 흔들린 계좌를 현재 원장으로 역산 복원", () => {
+  // 실제 사례: 시드 20,000,000에서 시작해 실현손실 267,581원이 매주 시드 재계산으로 시드에 반영돼
+  // virtual_seed_capital=19,732,419가 됐다. 이 값을 검산 기준으로 쓰면 항상 267,581원 오탐이 난다.
+  const trades = [
+    { code: "240810", side: "BUY", quantity: 100, net_amount: 60_210_110 },
+    { code: "240810", side: "SELL", quantity: 90, net_amount: 42_236_999 },
+  ];
+  const baseline = reconstructCashBaseline({ actualCash: 2_026_889, trades });
+  assert.equal(baseline, 20_000_000);
+
+  const result = reconcileChatLedger({
+    chatId: CHAT_ID,
+    seedCapital: baseline,
+    virtualCash: 2_026_889,
+    trades,
+    positions: [],
+  });
+  assert.equal(result.cashStatus, "ok");
 });
 
 test("report: 이상이 없으면 ✅ 한 줄 요약", () => {

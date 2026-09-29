@@ -97,6 +97,7 @@ export function applyDeposit(input: {
   const cash = Math.max(0, Number(input.prefs.virtual_cash) || 0);
   const seed = Math.max(0, Number(input.prefs.virtual_seed_capital) || 0);
   const totalDeposited = Number(input.prefs.virtual_total_deposited);
+  const cashBaseline = Number(input.prefs.virtual_cash_baseline);
   const cashAfter = Math.round(cash + input.amount);
   const log = [...readDepositLog(input.prefs), { date: input.todayKey, amount: input.amount, cashAfter }];
   return {
@@ -104,6 +105,8 @@ export function applyDeposit(input: {
     virtual_seed_capital: Math.round(seed + input.amount),
     // 예전 계정은 총 원금 기록이 없다 — 지금 시드를 시작 원금으로 본다
     virtual_total_deposited: Math.round((Number.isFinite(totalDeposited) && totalDeposited > 0 ? totalDeposited : seed) + input.amount),
+    // 원장 검산 기준선도 입금만큼 같이 올린다 (시드 재계산과 달리 이건 실제 현금 유입이라 기준선을 옮겨도 된다)
+    virtual_cash_baseline: Math.round((Number.isFinite(cashBaseline) && cashBaseline > 0 ? cashBaseline : seed) + input.amount),
     virtual_last_deposit_month: input.todayKey.slice(0, 7),
     virtual_deposit_log: log.slice(-DEPOSIT_LOG_LIMIT),
   };

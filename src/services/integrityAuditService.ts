@@ -49,6 +49,30 @@ function toNum(value: unknown, fallback = 0): number {
   return Number.isFinite(n) ? n : fallback;
 }
 
+/**
+ * 원장 검산에 쓸 "불변 기준 현금"을 복원한다.
+ *
+ * virtual_seed_capital은 매주 시드 재계산(복리 반영)에서 실현손익만큼 오르내리는 값이라 검산 기준으로 쓰면 안 된다 —
+ * 실현손익은 이미 매도 net_amount를 통해 실제 현금에 반영돼 있는데, 재계산이 시드까지 같은 손익만큼 옮겨버리면
+ * 검산식이 그 손익을 두 번 반영해 허위 불일치를 만든다(실현손실 계좌는 기대현금이 실제보다 낮게, 실현이익 계좌는 높게 나옴).
+ * 그래서 재계산에 물들지 않는 기준선(virtual_cash_baseline)이 없는 계좌는 현재 원장으로 역산해 한 번만 복원한다.
+ */
+export function reconstructCashBaseline(input: {
+  actualCash: number;
+  trades: AuditTradeRow[];
+  dividendIncome?: number;
+}): number {
+  let buyTotal = 0;
+  let sellTotal = 0;
+  for (const trade of input.trades) {
+    const side = String(trade.side ?? "").trim().toUpperCase();
+    const net = toNum(trade.net_amount);
+    if (side === "BUY") buyTotal += net;
+    else if (side === "SELL") sellTotal += net;
+  }
+  return Math.round(Math.max(0, toNum(input.actualCash)) + buyTotal - sellTotal - toNum(input.dividendIncome));
+}
+
 export function reconcileChatLedger(input: {
   chatId: number;
   seedCapital: number;

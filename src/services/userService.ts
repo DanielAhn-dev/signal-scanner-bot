@@ -105,6 +105,11 @@ export type InvestmentPrefs = {
   virtual_last_deposit_month?: string | null;
   /** 시작 시드 + 입금 누적 (넣은 원금) */
   virtual_total_deposited?: number;
+  /**
+   * 원장 검산 전용 불변 기준선 — 시작 시드 + 입금 누적, 매주 시드 재계산(복리 반영)에는 영향받지 않는다.
+   * integrityAuditService.reconcileChatLedger의 seedCapital로 이 값을 쓴다 (없으면 현재 원장으로 역산해 한 번만 채움).
+   */
+  virtual_cash_baseline?: number;
   virtual_deposit_log?: Array<{ date: string; amount: number; cashAfter: number }>;
   /** 받은 ETF 분배금·종목 배당금 (etfDistribution.ts, stockDividend.ts) */
   virtual_distribution_log?: Array<{

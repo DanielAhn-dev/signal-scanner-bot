@@ -2,6 +2,7 @@ import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { createClient } from "@supabase/supabase-js";
 import {
   reconcileChatLedger,
+  reconstructCashBaseline,
   buildIntegrityReportMessage,
   countIntegrityIssues,
   type AuditTradeRow,
@@ -36,6 +37,8 @@ type UserPrefsRow = {
   virtual_seed_capital: number | null;
   virtual_cash: number | null;
   capital_krw: number | null;
+  /** 원장 검산 기준선 — 없으면(예전 계정) 현재 원장으로 역산해 한 번만 채운다 */
+  virtual_cash_baseline: number | null;
   dividendIncome: number;
 };
 type UserRow = { tg_id: number; prefs: Record<string, unknown> | null };
@@ -116,8 +119,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     const prefsByChat = new Map<number, UserPrefsRow>();
+    const rawPrefsByChat = new Map<number, Record<string, unknown>>();
     for (const row of usersResult.data ?? []) {
       const prefs = (row.prefs ?? {}) as Record<string, unknown>;
+      rawPrefsByChat.set(Number(row.tg_id), prefs);
       const num = (v: unknown) => (v == null || !Number.isFinite(Number(v)) ? null : Number(v));
       // ETF 분배금·종목 배당금은 virtual_trades에 남지 않고 virtual_cash에 바로 더해진다 —
       // 원장 검산에서 빼먹으면 배당 받은 계좌마다 매번 오탐(cash-mismatch)이 뜬다.
@@ -131,6 +136,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         virtual_seed_capital: num(prefs.virtual_seed_capital),
         virtual_cash: num(prefs.virtual_cash),
         capital_krw: num(prefs.capital_krw),
+        virtual_cash_baseline: num(prefs.virtual_cash_baseline),
         dividendIncome,
       });
     }
@@ -155,18 +161,43 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     const results: ChatLedgerResult[] = [];
+    // virtual_seed_capital은 매주 시드 재계산에서 실현손익만큼 흔들리는 값이라 검산 기준으로 못 쓴다 —
+    // virtual_cash_baseline(재계산에 물들지 않는 기준선)이 없는 계좌는 현재 원장으로 역산해 한 번만 채운다.
+    const baselineBackfills: Array<{ chatId: number; baseline: number }> = [];
     for (const chatId of chatIds) {
       const prefs = prefsByChat.get(chatId);
-      const seedCapital = Number(prefs?.virtual_seed_capital ?? prefs?.capital_krw ?? 0);
-      const virtualCash = Number(prefs?.virtual_cash ?? seedCapital);
+      const fallbackSeed = Number(prefs?.virtual_seed_capital ?? prefs?.capital_krw ?? 0);
+      const virtualCash = Number(prefs?.virtual_cash ?? fallbackSeed);
+      const trades = tradesByChat.get(chatId) ?? [];
+      const dividendIncome = prefs?.dividendIncome ?? 0;
+      let seedCapital = prefs?.virtual_cash_baseline;
+      if (seedCapital == null || !Number.isFinite(seedCapital) || seedCapital <= 0) {
+        seedCapital = reconstructCashBaseline({ actualCash: virtualCash, trades, dividendIncome });
+        baselineBackfills.push({ chatId, baseline: seedCapital });
+      }
       results.push(
         reconcileChatLedger({
           chatId,
           seedCapital,
           virtualCash,
-          trades: tradesByChat.get(chatId) ?? [],
+          trades,
           positions: positionsByChat.get(chatId) ?? [],
-          dividendIncome: prefs?.dividendIncome ?? 0,
+          dividendIncome,
+        })
+      );
+    }
+
+    if (baselineBackfills.length) {
+      await Promise.all(
+        baselineBackfills.map(({ chatId, baseline }) => {
+          const rawPrefs = rawPrefsByChat.get(chatId) ?? {};
+          return supabase
+            .from("users")
+            .update({ prefs: { ...rawPrefs, virtual_cash_baseline: baseline } })
+            .eq("tg_id", chatId)
+            .then(({ error }) => {
+              if (error) console.error(`baseline backfill failed for chat ${chatId}: ${error.message}`);
+            });
         })
       );
     }
