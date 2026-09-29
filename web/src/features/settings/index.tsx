@@ -21,6 +21,9 @@ export default function Settings(){
   const [virtualCash, setVirtualCash] = useState<number | null>(null)
   const [seedCapitalStatus, setSeedCapitalStatus] = useState<string | undefined>()
   const [savingSeed, setSavingSeed] = useState(false)
+  const [strategyMode, setStrategyMode] = useState<'stock' | 'index_lev15' | null>(null)
+  const [savingMode, setSavingMode] = useState(false)
+  const [modeStatus, setModeStatus] = useState<string | undefined>()
   const [saving, setSaving] = useState(false)
   const [resettingAutoOnly, setResettingAutoOnly] = useState(false)
   const [runningDryRun, setRunningDryRun] = useState(false)
@@ -51,6 +54,7 @@ export default function Settings(){
         if (seed != null) setSeedCapital(String(Math.round(seed)))
         const cash = json?.data?.virtual_cash
         if (cash != null) setVirtualCash(cash)
+        setStrategyMode(json?.data?.strategy_mode === 'index_lev15' ? 'index_lev15' : 'stock')
       } catch (e) {
         // ignore
       }
@@ -186,6 +190,40 @@ export default function Settings(){
     }
   }
 
+  const saveStrategyMode = async (next: 'stock' | 'index_lev15') => {
+    if (next === strategyMode) return
+    const confirmed = window.confirm(
+      next === 'index_lev15'
+        ? [
+            '지수 1.5배 모드로 바꿉니다.',
+            '다음 자동매매 실행 때 종목 봇이 산 보유 종목을 모두 팔고, 코스피 50일선 위면 KODEX 200과 레버리지를 반반, 아래면 금리 ETF로 옮깁니다.',
+            '계속할까요?',
+          ].join(String.fromCharCode(10))
+        : [
+            '종목 매매 봇으로 되돌립니다.',
+            '다음 실행 때 레버리지 ETF는 팔고, KODEX 200·금리 ETF는 유휴현금으로 넘겨 종목 봇이 이어서 씁니다.',
+            '계속할까요?',
+          ].join(String.fromCharCode(10))
+    )
+    if (!confirmed) return
+    setSavingMode(true)
+    setModeStatus(undefined)
+    try {
+      const json = await apiFetch('/api/ui/investment-prefs', {
+        method: 'POST',
+        cacheMs: 0,
+        timeoutMs: 10_000,
+        body: JSON.stringify({ strategy_mode: next }),
+      })
+      setStrategyMode(json?.data?.strategy_mode === 'index_lev15' ? 'index_lev15' : 'stock')
+      setModeStatus('저장 완료 — 다음 자동매매 실행부터 적용됩니다')
+    } catch (e: any) {
+      setModeStatus(`저장 실패: ${String(e?.message || e)}`)
+    } finally {
+      setSavingMode(false)
+    }
+  }
+
   const saveSettings = async (): Promise<boolean> => {
     setSaving(true)
     try {
@@ -224,7 +262,7 @@ export default function Settings(){
 
   const resetAutoTradeOnly = async () => {
     const confirmed = window.confirm(
-      '자동매매로 생성된 이력/로그만 초기화합니다.\\n직접 추가한 수동 보유/거래는 유지됩니다.\\n계속할까요?'
+      ['자동매매로 생성된 이력/로그만 초기화합니다.', '직접 추가한 수동 보유/거래는 유지됩니다.', '계속할까요?'].join(String.fromCharCode(10))
     )
     if (!confirmed) return
 
@@ -294,7 +332,7 @@ export default function Settings(){
 
   const resetAndRunLiveOnce = async () => {
     const confirmed = window.confirm(
-      '자동매매(AUTO) 데이터 초기화 후 즉시 1회 실행합니다.\\n직접 추가한 수동 데이터는 유지됩니다. 진행할까요?'
+      ['자동매매(AUTO) 데이터 초기화 후 즉시 1회 실행합니다.', '직접 추가한 수동 데이터는 유지됩니다. 진행할까요?'].join(String.fromCharCode(10))
     )
     if (!confirmed) return
 
@@ -402,6 +440,39 @@ export default function Settings(){
               <div className="text-xs muted mt-2">
                 잔여 현금 초기화: 자동매매로 누적된 매수/매도 내역을 리셋하고 현금을 시드 자본금으로 복원합니다. 포트폴리오 초기화 없이 예산만 재설정할 때 사용하세요.
               </div>
+            </td>
+          </tr>
+          <tr className="xls-row">
+            <td className="xls-cell" colSpan={2} style={{ fontSize: 13, fontWeight: 600 }}>자동매매 방식</td>
+            <td className="xls-cell" colSpan={4} style={{ padding: '8px 10px' }}>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center' }}>
+                <Button
+                  variant={strategyMode === 'stock' ? 'primary' : 'secondary'}
+                  disabled={savingMode || strategyMode == null}
+                  onClick={() => void saveStrategyMode('stock')}
+                >
+                  종목 매매 봇 (기본)
+                </Button>
+                <Button
+                  variant={strategyMode === 'index_lev15' ? 'primary' : 'secondary'}
+                  disabled={savingMode || strategyMode == null}
+                  onClick={() => void saveStrategyMode('index_lev15')}
+                >
+                  지수 1.5배
+                </Button>
+                {modeStatus && <div className="muted">{modeStatus}</div>}
+              </div>
+              <div className="text-xs muted mt-2">
+                지수 1.5배: 코스피 50일선 위에서는 KODEX 200 50% + KODEX 레버리지 50%, 아래에서는 금리 ETF. 종목을 고르지 않고 50일선을 넘나들 때만 매매합니다.
+              </div>
+              <div className="text-xs muted mt-1">
+                30년(1996~2026) 검증: 연 13.2%·최대 낙폭 -51% (50일선 1배 10.5%·-34%, 계속 보유 9.8%·-64%). 2007~2016년처럼 레버리지 이득이 없던 10년도 있어, 소액 실험 계정용입니다.
+              </div>
+              {strategyMode === 'index_lev15' && (
+                <div className="text-xs mt-1" style={{ color: 'var(--color-brand)' }}>
+                  이 계정은 지수 1.5배 모드입니다 — 아래 종목 봇 설정(슬롯·점수·익절·손절)은 쓰이지 않고, "활성화"와 실행 버튼만 적용됩니다.
+                </div>
+              )}
             </td>
           </tr>
           <tr className="xls-row">

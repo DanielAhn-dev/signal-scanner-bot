@@ -79,6 +79,12 @@ REGIME_PROXY_WHITELIST_CODES = {
     "229200",  # KODEX 코스닥150 (코스닥 200일선 프록시)
 }
 
+# 지수 1.5배 모드(src/services/indexLeverageStrategy.ts)가 KODEX 200과 반반 담는 2배 레버리지 ETF.
+# 이 모드를 켠 계정이 처음 사기 전에도 종가가 있어야 하므로 예외로 허용한다.
+INDEX_MODE_WHITELIST_CODES = {
+    "122630",  # KODEX 레버리지
+}
+
 EXCLUDED_NAME_REGEX = [re.compile(pat, re.IGNORECASE) for pat in EXCLUDED_NAME_PATTERNS]
 
 
@@ -333,7 +339,7 @@ def build_universe_level(rank: int, close_price: int, cfg: UniverseConfig) -> st
 
 
 def is_eligible_candidate(code: str, name: str, market: str, close_price: int, market_cap: int, liquidity: int, cfg: UniverseConfig) -> bool:
-    if code in CASH_SWEEP_WHITELIST_CODES or code in REGIME_PROXY_WHITELIST_CODES:
+    if code in CASH_SWEEP_WHITELIST_CODES or code in REGIME_PROXY_WHITELIST_CODES or code in INDEX_MODE_WHITELIST_CODES:
         return True
     if should_exclude_name(name):
         return False
@@ -518,8 +524,8 @@ def main() -> int:
         existing = fetch_existing_map(supabase)
         listed_codes = set(frame.index.astype(str).tolist())
         held_codes = fetch_held_position_codes(supabase)
-        # tail로 강등되지 않도록 보호할 코드 전체 (스윕 ETF + 레짐 프록시 ETF + 사용자 보유 종목)
-        protected_codes = CASH_SWEEP_WHITELIST_CODES | REGIME_PROXY_WHITELIST_CODES | held_codes
+        # tail로 강등되지 않도록 보호할 코드 전체 (스윕 ETF + 레짐 프록시 ETF + 지수 모드 ETF + 사용자 보유 종목)
+        protected_codes = CASH_SWEEP_WHITELIST_CODES | REGIME_PROXY_WHITELIST_CODES | INDEX_MODE_WHITELIST_CODES | held_codes
 
         upserts: List[dict] = []
         promoted_to_core = 0

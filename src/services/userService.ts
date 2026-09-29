@@ -97,6 +97,8 @@ export type InvestmentPrefs = {
   signal_trust_rebalance?: number;
   virtual_shadow_mode?: boolean;
   discovery_profile?: "BLEND" | "HIGHLIGHT" | "PULLBACK" | "MULTIBAGGER" | "BACKTEST_EDGE";
+  /** 자동매매 방식: 종목 매매 봇(기본) 또는 지수 1.5배 모드 (indexLeverageStrategy.ts) */
+  virtual_strategy_mode?: "stock" | "index_lev15";
 };
 
 function resolveDefaultAutoTradeStrategy(
@@ -266,6 +268,9 @@ export async function getUserInvestmentPrefs(
   }
   if (discoveryProfile) {
     out.discovery_profile = discoveryProfile;
+  }
+  if (prefs.virtual_strategy_mode === "stock" || prefs.virtual_strategy_mode === "index_lev15") {
+    out.virtual_strategy_mode = prefs.virtual_strategy_mode;
   }
 
   return out;

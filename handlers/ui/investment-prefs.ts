@@ -66,6 +66,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           virtual_seed_capital: Number.isFinite(virtualSeedCapital) && virtualSeedCapital > 0 ? virtualSeedCapital : null,
           virtual_cash: virtualCash != null && Number.isFinite(virtualCash) && virtualCash >= 0 ? virtualCash : null,
           capital_krw: Number.isFinite(capitalKrw) && capitalKrw > 0 ? capitalKrw : null,
+          strategy_mode: prefs.virtual_strategy_mode === 'index_lev15' ? 'index_lev15' : 'stock',
         }
       })
     }
@@ -74,6 +75,24 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       if (!targetChatId) return res.status(400).json({ error: 'chat_id required' })
 
       const body = req.body || {}
+
+      // 자동매매 방식만 바꾸는 요청 (종목 봇 ↔ 지수 1.5배, src/services/indexLeverageStrategy.ts)
+      if (body.strategy_mode !== undefined && body.virtual_seed_capital === undefined) {
+        const mode = body.strategy_mode === 'index_lev15' ? 'index_lev15' : body.strategy_mode === 'stock' ? 'stock' : null
+        if (!mode) return res.status(400).json({ error: 'strategy_mode must be stock or index_lev15' })
+        const { data: modeRow } = await supabase
+          .from('users')
+          .select('prefs')
+          .eq('tg_id', targetChatId)
+          .maybeSingle()
+        const modePrefs = { ...((modeRow?.prefs as Record<string, unknown>) || {}), virtual_strategy_mode: mode }
+        const { error: modeError } = await supabase
+          .from('users')
+          .upsert({ tg_id: targetChatId, prefs: modePrefs }, { onConflict: 'tg_id' })
+        if (modeError) return res.status(500).json({ error: modeError.message })
+        return res.status(200).json({ data: { strategy_mode: mode } })
+      }
+
       const newSeedCapital = toPositiveInt(body.virtual_seed_capital)
       const resetCash = body.reset_cash === true || body.reset_cash === 'true'
 
