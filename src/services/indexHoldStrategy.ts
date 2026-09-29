@@ -71,6 +71,10 @@ export function planIndexHoldRebalance(input: {
   const feeRate = Math.max(0, input.feeRate ?? 0.00015);
   const holdings = input.holdings.filter((h) => h.quantity > 0 && h.price > 0);
   const priced = (code: string) => (input.prices.get(code) ?? 0) > 0;
+  // 들고 있는 지수 ETF의 실시간가가 없으면 이번엔 쉰다 — 다른 지수 ETF로 새로 사면 두 종목으로 갈라진다
+  if (input.holdings.some((h) => h.quantity > 0 && INDEX_SWEEP_CODES.includes(h.code) && !priced(h.code))) {
+    return { target: null, sell: [], buy: [], notes: ["보유 지수 ETF의 실시간가가 없어 이번에는 매매하지 않습니다 (다음 회차에 다시)"] };
+  }
   const heldIndex = holdings.find((h) => INDEX_SWEEP_CODES.includes(h.code) && priced(h.code));
   const target = heldIndex?.code ?? INDEX_SWEEP_CODES.find(priced) ?? null;
   if (!target) {

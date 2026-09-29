@@ -73,3 +73,16 @@ test("지수 ETF 가격이 없으면 매매하지 않는다", () => {
   assert.deepEqual(plan.sell, []);
   assert.deepEqual(plan.buy, []);
 });
+
+test("들고 있는 지수 ETF의 실시간가가 없으면 다른 지수 ETF로 사지 않고 쉰다", () => {
+  const noKodex = new Map(prices);
+  noKodex.set("069500", 0); // 장중 실시간가 조회 실패
+  const plan = planIndexHoldRebalance({
+    cash: 1_000_000,
+    holdings: [{ code: "069500", quantity: 10, price: 0 }],
+    prices: noKodex,
+  });
+  assert.equal(plan.target, null);
+  assert.deepEqual(plan.buy, []);
+  assert.deepEqual(plan.sell, []);
+});

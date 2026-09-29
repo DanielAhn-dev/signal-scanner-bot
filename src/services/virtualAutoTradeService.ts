@@ -1232,7 +1232,9 @@ async function fetchExecutionPriceMap(
 /**
  * 장중이면 stocks.close(전날 종가)를 실시간가로 덮어쓴다 — 따라 하는 사람이 실제로 살 수 있는 가격으로 체결하기 위해.
  * 예전엔 스윕·지수 모드·실적 관문 코어가 전날 종가로 체결돼, 6/1~9/29 스윕 11건이 모두 그날 거래 범위 밖이었다
- * (50일선 신호를 본 그 가격에 사는 셈이라 가상 계좌만 따라 할 수 없는 수익을 얻는다). 실시간가를 못 받은 종목은 그대로 둔다.
+ * (50일선 신호를 본 그 가격에 사는 셈이라 가상 계좌만 따라 할 수 없는 수익을 얻는다).
+ * 실시간가를 못 받은 종목은 가격을 지운다(0) — 호출하는 쪽은 "가격 없음"으로 그 종목 매매를 이번 회차에 보류하고
+ * 다음 회차에 다시 본다. 전날 종가로 체결하면 따라 하는 사람이 그 가격에 살 수 없다.
  */
 async function overlayIntradayPrices(prices: Map<string, number>, codes: string[]): Promise<number> {
   if (!codes.length || !isKrxIntradayAutoTradeWindow()) return 0;
@@ -1243,6 +1245,8 @@ async function overlayIntradayPrices(prices: Map<string, number>, codes: string[
     if (price > 0) {
       prices.set(code, price);
       applied += 1;
+    } else {
+      prices.set(code, 0);
     }
   }
   return applied;
@@ -1717,6 +1721,8 @@ async function resolveBuyExecutionPrices(
   }
 
   if (!tryConsumeApiBudget(options?.apiBudget, "realtime_price_batch", 1)) {
+    // 실시간가를 조회할 수 없으면 이번 회차엔 사지 않는다
+    priceByCode.clear();
     return {
       priceByCode,
       marketPhase: "intraday",
@@ -1725,8 +1731,10 @@ async function resolveBuyExecutionPrices(
     };
   }
 
-  const realtimeByCode = await fetchRealtimePriceBatch(candidates.map((candidate) => candidate.code));
+  const realtimeByCode = await fetchExecutionPriceMap(candidates.map((candidate) => candidate.code));
   let realtimeAppliedCount = 0;
+  // 장중엔 실시간가가 있는 종목만 산다 — 전날 종가 체결은 따라 할 수 없다 (호출하는 쪽이 가격 없는 후보를 건너뛴다)
+  priceByCode.clear();
 
   for (const candidate of candidates) {
     const realtimePrice = Number(realtimeByCode[candidate.code]?.price ?? 0);
@@ -2256,12 +2264,7 @@ async function loadSweepPrices(
   );
 }
 
-/** 현재 보유 중인 스윕 포지션 (지수형·금리형 어느 쪽이든, 종가가 있는 첫 번째) */
-async function loadSweepHolding(
-  supabase: SupabaseClientAny,
-  chatId: number,
-  prices: Map<string, { close: number; name: string }>
-): Promise<SweepHolding | null> {
+async function loadSweepPositionRows(supabase: SupabaseClientAny, chatId: number): Promise<Record<string, unknown>[]> {
   const { data: rows } = await supabase
     .from(PORTFOLIO_TABLES.positions)
     .select("id, code, quantity, invested_amount, memo")
@@ -2270,8 +2273,29 @@ async function loadSweepHolding(
     .eq("status", "holding")
     .is("broker_name", null)
     .is("account_name", null);
-  for (const row of (rows ?? []) as Record<string, unknown>[]) {
-    if (parseStrategyMemo(row.memo as string | null).strategyId !== CASH_SWEEP_STRATEGY_ID) continue;
+  return ((rows ?? []) as Record<string, unknown>[]).filter(
+    (row) => parseStrategyMemo(row.memo as string | null).strategyId === CASH_SWEEP_STRATEGY_ID
+  );
+}
+
+/** 들고 있는 스윕 ETF 중 (장중 실시간가를 못 받아) 가격이 없는 것이 있는지 — 있으면 그 회차 스윕을 쉰다 */
+async function hasUnpricedSweepHolding(
+  supabase: SupabaseClientAny,
+  chatId: number,
+  prices: Map<string, { close: number; name: string }>
+): Promise<boolean> {
+  const rows = await loadSweepPositionRows(supabase, chatId);
+  return rows.some((row) => toNumber(row.quantity, 0) > 0 && !((prices.get(String(row.code ?? ""))?.close ?? 0) > 0));
+}
+
+/** 현재 보유 중인 스윕 포지션 (지수형·금리형 어느 쪽이든, 종가가 있는 첫 번째) */
+async function loadSweepHolding(
+  supabase: SupabaseClientAny,
+  chatId: number,
+  prices: Map<string, { close: number; name: string }>
+): Promise<SweepHolding | null> {
+  const rows = await loadSweepPositionRows(supabase, chatId);
+  for (const row of rows) {
     const code = String(row.code ?? "");
     const price = prices.get(code)?.close ?? 0;
     const quantity = Math.max(0, Math.floor(toNumber(row.quantity, 0)));
@@ -2582,6 +2606,11 @@ async function runCashSweepStep(payload: {
     if (seedCapital <= 0) return { notes };
 
     const prices = await loadSweepPrices(payload.supabase);
+    // 들고 있는 스윕 ETF의 실시간가가 없으면 쉰다 — 다른 지수 ETF를 새로 사면 두 종목으로 갈라진다
+    if (await hasUnpricedSweepHolding(payload.supabase, payload.chatId, prices)) {
+      notes.push("[유휴현금 스윕] 보유 ETF의 실시간가가 없어 이번 회차는 쉽니다 (다음 회차에 다시)");
+      return { notes };
+    }
     // 50일선과 무관하게 항상 지수 ETF (2026-09-29 검증: 적립·거치 모두 보유가 하위 10% 결과까지 앞섬 — virtualAutoTradeCashSweep.ts)
     const targetCodes = INDEX_SWEEP_CODES;
     const targetLabel = "지수 보유";
@@ -4116,12 +4145,12 @@ async function runMondayBuyForUser(payload: {
 
   if (buyPriceResolution.marketPhase === "intraday") {
     if (buyPriceResolution.realtimeSkippedByBudget) {
-      summary.notes.push("매수가 기준: API 예산 보호로 장중 종가 스냅샷 기준 적용");
+      summary.notes.push("매수 보류: API 예산 보호로 실시간가를 조회하지 않아 이번 회차엔 사지 않습니다");
     } else {
       summary.notes.push(
         buyPriceResolution.realtimeAppliedCount > 0
           ? `매수가 기준: 장중 실시간가 우선 (${buyPriceResolution.realtimeAppliedCount}/${candidates.length}종목 반영)`
-          : "매수가 기준: 장중 실시간가 조회 실패로 종가 기준 적용"
+          : "매수 보류: 장중 실시간가 조회 실패 — 이번 회차엔 사지 않고 다음 회차에 다시 봅니다"
       );
     }
   } else {
@@ -4195,8 +4224,13 @@ async function runMondayBuyForUser(payload: {
 
     try {
       const executionEntry = buyPriceResolution.priceByCode.get(candidate.code);
-      const executionPrice = executionEntry?.price ?? candidate.close;
-      const executionSource = executionEntry?.source ?? "close";
+      if (!executionEntry) {
+        // 장중 실시간가가 없으면 사지 않는다 (전날 종가 체결은 따라 할 수 없다) — 다음 회차에 다시 본다
+        summary.notes.push(`${candidate.name || candidate.code}(${candidate.code}) 매수 보류: 실시간가 없음`);
+        continue;
+      }
+      const executionPrice = executionEntry.price;
+      const executionSource = executionEntry.source;
       const scoreRow = mondayFactorsByCode.get(candidate.code);
       const stableTurn = scoreRow?.factors
         ? String(((scoreRow.factors as Record<string, unknown>).stable_turn ?? "")).trim()
@@ -5978,6 +6012,25 @@ async function runDailyReviewForUser(payload: {
     if (code) isSectorLeaderByCode.set(code, isSectorLeader);
   }
 
+  // 장중이면 보유 종목 판단·체결을 실시간가로 한다. stocks.close는 배치가 늦으면 전날 종가라
+  // 9/22 088350은 전날 종가(5,780)로 매도됐다 — 따라 하는 사람이 그 가격에 팔 수 없다.
+  // 실시간가를 못 받은 종목은 이번 회차엔 매매하지 않고 다음 회차에 다시 본다 (사람도 가격을 모르면 기다린다).
+  const noRealtimeCodes = new Set<string>();
+  if (isKrxIntradayAutoTradeWindow() && codeList.length) {
+    const realtimeHoldings = new Map<string, number>();
+    await overlayIntradayPrices(realtimeHoldings, codeList);
+    for (const code of codeList) {
+      const price = realtimeHoldings.get(code);
+      if (price && price > 0) closeByCode.set(code, price);
+      else noRealtimeCodes.add(code);
+    }
+    if (noRealtimeCodes.size) {
+      summary.notes.push(
+        `[실시간가 없음] ${[...noRealtimeCodes].map((c) => nameByCode.get(c) || c).join(", ")} — 따라 할 수 있는 가격이 없어 이번 회차엔 매매하지 않고 다음 회차에 다시 봅니다`
+      );
+    }
+  }
+
   // 종목별 종가 신선도/동결 가드: 계정 단위 가드(위 STALE_PRICE_GUARD_MS)를 통과해도
   // 특정 종목만 파이프라인이 멈춘 채 동결된 종가로 매도 판단하는 사고를 막는다.
   // (2026-06-12~07-10 pykrx 다운그레이드로 일부 종목 종가가 수일간 고정됐던 사고 재발 방지)
@@ -6161,6 +6214,19 @@ async function runDailyReviewForUser(payload: {
     const qty = Math.max(0, Math.floor(toNumber(holding.quantity, 0)));
     const buyPrice = toNumber(holding.buy_price, 0);
     const close = closeByCode.get(holding.code) ?? 0;
+
+    if (noRealtimeCodes.has(holding.code)) {
+      summary.skipped += 1;
+      await writeActionLog({
+        supabase: payload.supabase,
+        runId: payload.runId,
+        chatId,
+        code: holding.code,
+        actionType: "SKIP",
+        reason: "no-realtime-price",
+      });
+      continue;
+    }
 
     if (qty <= 0 || buyPrice <= 0 || close <= 0) {
       summary.skipped += 1;
@@ -6897,12 +6963,12 @@ async function runDailyReviewForUser(payload: {
       if (addOnSelection.candidates.length > 0) {
         if (addOnBuyPriceResolution.marketPhase === "intraday") {
           if (addOnBuyPriceResolution.realtimeSkippedByBudget) {
-            summary.notes.push("추가매수 매수가 기준: API 예산 보호로 장중 종가 스냅샷 기준 적용");
+            summary.notes.push("추가매수 보류: API 예산 보호로 실시간가를 조회하지 않아 이번 회차엔 사지 않습니다");
           } else {
             summary.notes.push(
               addOnBuyPriceResolution.realtimeAppliedCount > 0
                 ? `추가매수 매수가 기준: 장중 실시간가 우선 (${addOnBuyPriceResolution.realtimeAppliedCount}/${addOnSelection.candidates.length}종목 반영)`
-                : "추가매수 매수가 기준: 장중 실시간가 조회 실패로 종가 기준 적용"
+                : "추가매수 보류: 장중 실시간가 조회 실패 — 다음 회차에 다시 봅니다"
             );
           }
         } else {
@@ -6920,8 +6986,13 @@ async function runDailyReviewForUser(payload: {
         const holding = activeHoldings.find((item) => item.code === candidate.code);
         if (!holding) continue;
         const executionEntry = addOnBuyPriceResolution.priceByCode.get(candidate.code);
-        const executionPrice = executionEntry?.price ?? candidate.close;
-        const executionSource = executionEntry?.source ?? "close";
+        if (!executionEntry) {
+          // 장중 실시간가가 없으면 사지 않는다 (전날 종가 체결은 따라 할 수 없다) — 다음 회차에 다시 본다
+          summary.notes.push(`${candidate.name || candidate.code}(${candidate.code}) 매수 보류: 실시간가 없음`);
+          continue;
+        }
+        const executionPrice = executionEntry.price;
+        const executionSource = executionEntry.source;
         const scoreRow = addOnFactorsByCode.get(candidate.code);
         const signalGate = evaluateAutoTradeSignalGate({
           currentPrice: executionPrice,
@@ -7484,12 +7555,12 @@ async function runDailyReviewForUser(payload: {
       if (candidates.length > 0) {
         if (rebalanceBuyPriceResolution.marketPhase === "intraday") {
           if (rebalanceBuyPriceResolution.realtimeSkippedByBudget) {
-            summary.notes.push("신규매수 매수가 기준: API 예산 보호로 장중 종가 스냅샷 기준 적용");
+            summary.notes.push("신규매수 보류: API 예산 보호로 실시간가를 조회하지 않아 이번 회차엔 사지 않습니다");
           } else {
             summary.notes.push(
               rebalanceBuyPriceResolution.realtimeAppliedCount > 0
                 ? `신규매수 매수가 기준: 장중 실시간가 우선 (${rebalanceBuyPriceResolution.realtimeAppliedCount}/${candidates.length}종목 반영)`
-                : "신규매수 매수가 기준: 장중 실시간가 조회 실패로 종가 기준 적용"
+                : "신규매수 보류: 장중 실시간가 조회 실패 — 다음 회차에 다시 봅니다"
             );
           }
         } else {
@@ -7547,8 +7618,13 @@ async function runDailyReviewForUser(payload: {
         });
         const profileLabel = getStrategyLabel(adjustedEntryProfile.profile) || adjustedEntryProfile.profile;
         const executionEntry = rebalanceBuyPriceResolution.priceByCode.get(candidate.code);
-        const executionPrice = executionEntry?.price ?? candidate.close;
-        const executionSource = executionEntry?.source ?? "close";
+        if (!executionEntry) {
+          // 장중 실시간가가 없으면 사지 않는다 (전날 종가 체결은 따라 할 수 없다) — 다음 회차에 다시 본다
+          summary.notes.push(`${candidate.name || candidate.code}(${candidate.code}) 매수 보류: 실시간가 없음`);
+          continue;
+        }
+        const executionPrice = executionEntry.price;
+        const executionSource = executionEntry.source;
         const signalGate = evaluateAutoTradeSignalGate({
           currentPrice: executionPrice,
           score: candidate.score,
