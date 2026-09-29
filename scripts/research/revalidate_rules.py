@@ -14,8 +14,9 @@
 검사 (근거: 2026-09-28 검증):
   C1 실적 관문 통과 종목 — 전 종목 평균 대비 월 초과수익 > 0, t >= 2. 최근 3년만 따로 봐서 0 이하면 경고
   C2 최근 4분기 적자 종목 — 전 종목 평균 대비 월 초과수익 < 0, t <= -2
-  C3 코스피 50일선 규칙 — 신호 다음 날 체결·전환 비용 0.05% 기준으로, 전체(1997~)와 최근 10년 모두
-     최대 낙폭이 계속 보유보다 작고, 연수익이 계속 보유보다 1%p 넘게 뒤지지 않음
+  C3 지수 계속 보유 vs 코스피 50일선 (2026-09-29 스윕을 계속 보유로 바꾼 판정 기준) — 1997~ 모든 월말 시작점에서
+     100만+월 50만 적립 10년과 2천만 거치 10년의 하위 10% 최종금액이 모두 보유 ≥ 50일선.
+     다음 날 체결·전환 비용 0.05%·배당 1.7%·CD 세후 반영. 50일선이 앞서면 스윕·지수 보유 규칙을 재검토한다
   C4 봇 매도 규칙 — 6개월 추적에서 평균/표준편차가 계속 보유 이상이고, 최악 5% 손실이 더 작음
 
 사용:
@@ -300,6 +301,49 @@ def kospi_rule(kospi, since, lag=1, switch_cost=0.0005):
     return eq ** (1 / yrs) - 1, mdd, eh ** (1 / yrs) - 1, mddh
 
 
+# 91일 CD 연평균(%) 근사값 — 50일선 아래 구간의 현금 수익. 목록 밖 연도는 2.5%
+CD_BY_YEAR = {1996: 12.6, 1997: 13.4, 1998: 15.2, 1999: 6.8, 2000: 7.1, 2001: 5.3, 2002: 4.8, 2003: 4.3, 2004: 3.8,
+              2005: 3.7, 2006: 4.6, 2007: 5.2, 2008: 5.5, 2009: 2.6, 2010: 2.7, 2011: 3.4, 2012: 3.3, 2013: 2.7,
+              2014: 2.5, 2015: 1.8, 2016: 1.5, 2017: 1.4, 2018: 1.7, 2019: 1.7, 2020: 0.9, 2021: 0.9, 2022: 2.7,
+              2023: 3.7, 2024: 3.5, 2025: 2.8, 2026: 2.6}
+
+
+def hold_vs_trend_windows(kospi, years, seed, monthly):
+    """모든 월말 시작점에서 years년 굴린 최종금액의 하위 10%: 계속 보유 vs 50일선 규칙.
+    다음 날 체결·전환 비용 0.05%·보유 중 배당 연 1.7%·현금은 CD금리에서 이자소득세 15.4%를 뺀 값.
+    (2026-09-29 스윕 규칙을 50일선 → 계속 보유로 바꾼 판정 기준 그대로)"""
+    d = [x[0] for x in kospi]
+    c = np.array([x[1] for x in kospi], float)
+    n = len(c)
+    rets = {}
+    for timed in (False, True):
+        r = np.zeros(n)
+        prev = None
+        for i in range(1, n):
+            j = i - 2  # i-1일 종가에 체결되는 노출 = i-2일 종가 신호
+            on = (not timed) or (j >= 50 and c[j] > c[j - 50:j].mean())
+            cd = CD_BY_YEAR.get(int(d[i][:4]), 2.5) / 100 / 252 * (1 - 0.154)
+            x = (c[i] / c[i - 1] - 1 + 0.017 / 252) if on else cd
+            if timed and prev is not None and on != prev:
+                x -= 0.0005
+            prev = on
+            r[i] = x
+        rets[timed] = r
+    me = [i for i in range(1, n) if i == n - 1 or d[i + 1][:6] != d[i][:6]]
+    out = {}
+    for timed, r in rets.items():
+        finals = []
+        for k in range(len(me) - years * 12):
+            v = seed
+            for s in range(years * 12):
+                v *= float(np.prod(1 + r[me[k + s] + 1: me[k + s + 1] + 1]))
+                v += monthly
+            finals.append(v)
+        finals.sort()
+        out[timed] = (finals[int(0.1 * (len(finals) - 1))], len(finals))
+    return out[False][0], out[True][0], out[False][1]
+
+
 def exit_rules_check(rows, px, dates):
     """관문 통과 종목을 월말에 사서 126거래일 추적 — 봇 매도 규칙 vs 그냥 보유"""
     di = {d: i for i, d in enumerate(dates)}
@@ -416,14 +460,16 @@ def main():
     ok_all &= c2
     lines.append(f"{'✅' if c2 else '⚠️'} C2 적자 종목: 평균 대비 월 {m*100:+.2f}% (t={t:.1f}) 장세 {regime_signs(ex)}")
 
+    # C3: 지수는 계속 보유(유휴현금 스윕·지수 보유 모드)가 50일선보다 나쁜 경우까지 나은지 — 뒤집히면 재검토
     c3_ok = True
-    for label, since in (("1997~", "19970101"), ("최근 10년", f"{int(dates[-1][:4]) - 10}{dates[-1][4:]}")):
-        rc, rm, hc, hm = kospi_rule(kospi, since)
-        rc0, _, _, _ = kospi_rule(kospi, since, lag=0, switch_cost=0.0)
-        ok = rm > hm and rc >= hc - 0.01
+    for label, seed, monthly in (("100만+월50만 적립 10년", 1e6, 5e5), ("2천만 거치 10년", 2e7, 0)):
+        hold_p10, trend_p10, n_starts = hold_vs_trend_windows(kospi, 10, seed, monthly)
+        ok = hold_p10 >= trend_p10
         c3_ok &= ok
-        lines.append(f"{'✅' if ok else '⚠️'} C3 코스피 50일선 {label} (다음 날 체결): 규칙 연 {rc*100:.1f}%·낙폭 {rm*100:.0f}% vs 보유 연 {hc*100:.1f}%·낙폭 {hm*100:.0f}%"
-                     f" · 참고: 당일 종가 체결 가정 {rc0*100:.1f}%")
+        lines.append(f"{'✅' if ok else '⚠️'} C3 지수 계속 보유 vs 50일선, {label} 하위 10%: 보유 {hold_p10/1e4:,.0f}만 vs 50일선 {trend_p10/1e4:,.0f}만"
+                     f" (시작점 {n_starts}){'' if ok else ' ← 50일선이 앞섬, 스윕 규칙 재검토'}")
+    rc, rm, hc, hm = kospi_rule(kospi, "19970101")
+    lines.append(f"   참고: 30년 연수익 50일선 {rc*100:.1f}%·낙폭 {rm*100:.0f}% vs 보유 {hc*100:.1f}%·낙폭 {hm*100:.0f}% (다음 날 체결, 배당 제외)")
     ok_all &= c3_ok
 
     e = exit_rules_check(rows, px, dates)
