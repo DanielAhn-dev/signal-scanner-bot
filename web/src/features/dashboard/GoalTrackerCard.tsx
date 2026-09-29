@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react'
 import { apiFetch } from '../../lib/api'
 import Button from '../../components/ui/Button'
+import { useCurrentChatId } from '../../stores/profileStore'
 
 type View = {
   today: string
@@ -28,6 +29,7 @@ const signed = (v: number) => `${v >= 0 ? '+' : ''}${man(v)}`
  * 계산은 src/services/goalTracker.ts (금요일 텔레그램 보고와 같은 값). 매매 로직과는 무관하다.
  */
 export default function GoalTrackerCard() {
+  const chatId = useCurrentChatId()
   const [view, setView] = useState<View | null>(null)
   const [reason, setReason] = useState<string | null>(null)
   const [editing, setEditing] = useState(false)
@@ -44,9 +46,10 @@ export default function GoalTrackerCard() {
     }
   }, [])
 
+  // 프로필 스토어 hydration 전에 부르면 chat_id 없이 400이 난다
   useEffect(() => {
-    void load()
-  }, [load])
+    if (chatId) void load()
+  }, [chatId, load])
 
   const startEdit = () => {
     if (!view) return
