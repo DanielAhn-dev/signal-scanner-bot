@@ -1217,6 +1217,25 @@ async function fetchExecutionPriceMap(
 }
 
 /**
+ * 장중이면 stocks.close(전날 종가)를 실시간가로 덮어쓴다 — 따라 하는 사람이 실제로 살 수 있는 가격으로 체결하기 위해.
+ * 예전엔 스윕·지수 모드·실적 관문 코어가 전날 종가로 체결돼, 6/1~9/29 스윕 11건이 모두 그날 거래 범위 밖이었다
+ * (50일선 신호를 본 그 가격에 사는 셈이라 가상 계좌만 따라 할 수 없는 수익을 얻는다). 실시간가를 못 받은 종목은 그대로 둔다.
+ */
+async function overlayIntradayPrices(prices: Map<string, number>, codes: string[]): Promise<number> {
+  if (!codes.length || !isKrxIntradayAutoTradeWindow()) return 0;
+  const realtime = await fetchExecutionPriceMap([...new Set(codes)]);
+  let applied = 0;
+  for (const code of codes) {
+    const price = toNumber(realtime[code]?.price, 0);
+    if (price > 0) {
+      prices.set(code, price);
+      applied += 1;
+    }
+  }
+  return applied;
+}
+
+/**
  * KODEX 200 (069500) / KODEX KOSDAQ150 (229200) 를 프록시로 사용해
  * 코스피/코스닥 200일선(및 코스피 50일선) 대비 현재가 비율을 계산한다.
  * 실패 시 null 반환 (마켓 레짐 판단에서 무시).
@@ -2213,10 +2232,13 @@ async function loadSweepPrices(
     .from("stocks")
     .select("code, name, close")
     .in("code", CASH_SWEEP_CANDIDATE_CODES);
+  const rows = (priceRows ?? []) as Record<string, unknown>[];
+  const closes = new Map(rows.map((row) => [String(row.code ?? ""), toNumber(row.close, 0)] as [string, number]));
+  await overlayIntradayPrices(closes, [...closes.keys()]);
   return new Map(
-    ((priceRows ?? []) as Record<string, unknown>[]).map((row) => [
+    rows.map((row) => [
       String(row.code ?? ""),
-      { close: toNumber(row.close, 0), name: String(row.name ?? "") },
+      { close: closes.get(String(row.code ?? "")) ?? 0, name: String(row.name ?? "") },
     ])
   );
 }
@@ -5304,6 +5326,8 @@ export async function runGateCoreForUser(payload: {
   const trend = await fetchIndexSma200Ratios(payload.supabase).catch(() => null);
   const trendUp = trend?.kospiSma50 != null && trend.kospiSma50 >= 1;
   const targets = selectGateCoreTargets({ rankedCodes, gatePass, prices, slotBudget });
+  // 고르는 건 전날 종가로, 체결은 장중 실시간가로 (보유·목표 종목만 조회)
+  await overlayIntradayPrices(prices, [...targets, ...holdings.map((h) => h.code)]);
   const plan = planGateCoreRebalance({ heldCodes: holdings.map((h) => h.code), targets, trendUp });
 
   summary.notes.push(
@@ -5507,6 +5531,7 @@ async function runIndexLeverageForUser(payload: {
     if (toNumber(row.close, 0) > 0) prices.set(row.code, toNumber(row.close, 0));
     names.set(row.code, row.name ?? row.code);
   }
+  await overlayIntradayPrices(prices, priceCodes);
   const label = (code: string) => `${names.get(code) ?? code}(${code})`;
 
   // 1) 종목 봇 보유분 정리
