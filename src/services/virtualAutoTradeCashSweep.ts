@@ -5,15 +5,12 @@
  * 시드 대비 항상 남겨두는 최소 현금(FLAT_RESERVE_PCT)을 넘는 유휴현금을 ETF로 옮겨 둔다.
  * 실거래 매수에 현금이 필요해지면 스윕 포지션에서 자금을 돌려준다.
  *
- * 어디에 둘지 = 봇 신규 매수 기준과 같은 코스피 50일선:
- *   - 50일선 위 → 지수 ETF(KODEX 200). 30년(1997~2026) 코스피 일봉, 신호 다음 날 체결·전환비용 0.05%:
- *     연 9.3%·최대낙폭 -41% (계속 보유 8.3%·-65%). 최근 10년은 10.2%·-32% vs 보유 13.3%·-44%.
- *     (예전 주석의 11.8%·13.4%는 신호 당일 종가 체결을 가정한 값 — 따라 할 수 없는 수익이 섞였다. 2026-09-29 정정)
- *     수익 우위는 1997~2002(외환위기·닷컴)에서만 나왔다 — 2010년 이후 KODEX 200 실제 가격으로는 보유보다 연 4~5%p 낮다
- *     (2010~2026 다음 날 시가 체결 8.3% vs 보유 12.6%, 가격 기준). 이 규칙의 가치는 수익이 아니라 낙폭(-30% vs -41%).
- *     완충 구간(±1~3%)·100/200일선은 데이터·구간마다 결과가 엇갈려 채택하지 않음 (2026-09-29 검증).
- *     체결: 가상 계좌는 전날 종가로 체결되지만 다음 날 시가 체결과 연 0.1%p 차이 — 봇이 오후로 밀리면 약 1%p 손해.
- *   - 50일선 아래·판정 불가 → CD금리/KOFR ETF.
+ * 어디에 둘지 = 항상 지수 ETF(KODEX 200). 금리 ETF는 지수 ETF 가격이 없을 때만 대신 쓴다.
+ *   2026-09-29 검증(100만+월 50만 적립 10년·2천만 거치 5/10년, 모든 월말 시작점, 다음 날 체결·배당·CD 세후):
+ *     하위 10% 최종금액 — 코스피 1996~ 적립 보유 7,237만 vs 50일선 5,887만 / KODEX200 2002~ 7,768만 vs 6,610만,
+ *     거치 10년 보유 2,943만 vs 2,119만 / 3,509만 vs 2,633만. 최악의 경우도 보유가 같거나 앞섰다.
+ *     50일선이 앞선 건 도중 낙폭뿐(원금 대비 최저 82~91% vs 57~74%). 예전의 "50일선 30년 연 11.8%"는 신호 당일 종가
+ *     체결을 가정한 값이었다. 그래서 50일선에 따라 지수↔금리를 오가던 규칙(099bfd0)을 뺐다.
  *   예전엔 항상 CD금리 ETF였다 — 봇 자금 대부분(2026-09 기준 약 95%)이 연 2~3%에 묶여 있었다.
  *
  * 시장 레짐별 현금 하한(minCashReservePct)과는 별개의 고정 비율을 쓴다 — 레짐 로직에 얽히면
@@ -38,16 +35,6 @@ export const INDEX_SWEEP_CODES = [
 
 /** 스윕에 쓰일 수 있는 모든 ETF — 보유분 조회·현금 취급용 */
 export const CASH_SWEEP_CANDIDATE_CODES = [...INDEX_SWEEP_CODES, ...RATE_SWEEP_CODES];
-
-/**
- * 스윕을 어디에 둘지. kospiSma50Ratio = KODEX 200 종가 / 직전 50일 평균 (fetchIndexSma200Ratios, 봇 매수 기준과 같은 값).
- * 판정할 수 없으면 금리형에 둔다.
- */
-export function resolveSweepTargetCodes(kospiSma50Ratio: number | null | undefined): string[] {
-  return kospiSma50Ratio != null && Number.isFinite(kospiSma50Ratio) && kospiSma50Ratio >= 1
-    ? INDEX_SWEEP_CODES
-    : RATE_SWEEP_CODES;
-}
 
 export function isIndexSweepCode(code: string | null | undefined): boolean {
   return INDEX_SWEEP_CODES.includes(String(code ?? "").trim());

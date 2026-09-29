@@ -1,6 +1,7 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { createClient } from '@supabase/supabase-js'
 import { resolveUiUserContext } from './_userContext'
+import { INDEX_HOLD_MODE, normalizeStrategyMode } from '../../src/services/indexHoldStrategy'
 
 function toPositiveInt(raw: unknown): number | null {
   const num = Number(String(raw ?? '').trim())
@@ -66,7 +67,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           virtual_seed_capital: Number.isFinite(virtualSeedCapital) && virtualSeedCapital > 0 ? virtualSeedCapital : null,
           virtual_cash: virtualCash != null && Number.isFinite(virtualCash) && virtualCash >= 0 ? virtualCash : null,
           capital_krw: Number.isFinite(capitalKrw) && capitalKrw > 0 ? capitalKrw : null,
-          strategy_mode: prefs.virtual_strategy_mode === 'index_lev15' ? 'index_lev15' : 'stock',
+          strategy_mode: normalizeStrategyMode(prefs.virtual_strategy_mode),
         }
       })
     }
@@ -76,10 +77,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
       const body = req.body || {}
 
-      // 자동매매 방식만 바꾸는 요청 (종목 봇 ↔ 지수 1.5배, src/services/indexLeverageStrategy.ts)
+      // 자동매매 방식만 바꾸는 요청 (종목 봇 ↔ 지수 보유, src/services/indexHoldStrategy.ts)
       if (body.strategy_mode !== undefined && body.virtual_seed_capital === undefined) {
-        const mode = body.strategy_mode === 'index_lev15' ? 'index_lev15' : body.strategy_mode === 'stock' ? 'stock' : null
-        if (!mode) return res.status(400).json({ error: 'strategy_mode must be stock or index_lev15' })
+        const mode = body.strategy_mode === INDEX_HOLD_MODE ? INDEX_HOLD_MODE : body.strategy_mode === 'stock' ? 'stock' : null
+        if (!mode) return res.status(400).json({ error: 'strategy_mode must be stock or index_hold' })
         const { data: modeRow } = await supabase
           .from('users')
           .select('prefs')

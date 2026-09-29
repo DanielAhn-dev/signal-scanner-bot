@@ -13,7 +13,7 @@ const KNOWN_ETF_CODES = new Set([
   "069500", // KODEX 200
   "102110", // TIGER 200
   "229200", // KODEX 코스닥150
-  "122630", // KODEX 레버리지 — 지수 1.5배 모드
+  "122630", // KODEX 레버리지 — 예전 지수 1.5배 모드
 ]);
 
 const ETF_BRAND_PATTERN =

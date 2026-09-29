@@ -104,14 +104,15 @@ import {
 } from "./gateCoreStrategy";
 import { loadStrategyActivation } from "./strategyPromotion";
 import {
-  INDEX_LEVERAGE_MODE,
-  INDEX_LEVERAGE_STRATEGY_ID,
+  INDEX_HOLD_DESCRIPTION,
+  INDEX_HOLD_MODE,
+  INDEX_HOLD_STRATEGY_ID,
   INDEX_MODE_CODES,
-  describeIndexModeRegime,
+  INDEX_MODE_STRATEGY_IDS,
   isLeverageEtfCode,
   normalizeStrategyMode,
-  planIndexModeRebalance,
-} from "./indexLeverageStrategy";
+  planIndexHoldRebalance,
+} from "./indexHoldStrategy";
 import {
   fetchNegativeDisclosures,
   formatDisclosureFilterNote,
@@ -151,7 +152,6 @@ import {
   INDEX_SWEEP_CODES,
   RATE_SWEEP_CODES,
   isIndexSweepCode,
-  resolveSweepTargetCodes,
   resolveCashSweepIdleAmount,
   resolveCashSweepTopUpQty,
   shouldLiquidateCashSweep,
@@ -2537,7 +2537,7 @@ async function fetchCashSweepPositionValue(
  * - 실거래용 현금이 부족하면(CASH_SWEEP_LIQUIDATE_THRESHOLD 미만) 스윕 포지션을 전량 현금화해
  *   다음 회차 매수 자금으로 돌려준다. (매수 판단 전에도 runCashSweepLiquidateStep으로 선(先)현금화하지만,
  *   매수/매도 이후 현금이 다시 임계값 밑으로 떨어지는 경우를 대비해 여기서도 동일 점검을 유지한다.)
- * - 스윕을 둘 곳은 코스피 50일선(봇 신규 매수 기준과 같은 값)으로 정한다: 위면 지수 ETF, 아래면 금리 ETF.
+ * - 스윕은 항상 지수 ETF(KODEX 200)에 둔다. 예전 금리 ETF 보유분은 지수 ETF로 갈아탄다.
  *   보유 중인 스윕이 반대쪽이면 전량 팔아 갈아탄다.
  * - 유휴현금이 충분히 쌓였으면 그쪽 ETF를 매수(또는 추가매수 평단 갱신)한다.
  * 매매 실패는 자동매매 본 로직에 영향을 주지 않도록 통째로 삼킨다(best-effort).
@@ -2569,18 +2569,11 @@ async function runCashSweepStep(payload: {
     if (seedCapital <= 0) return { notes };
 
     const prices = await loadSweepPrices(payload.supabase);
-    const trend = await fetchIndexSma200Ratios(payload.supabase).catch(() => null);
-    // 판정 불가(조회 실패·일봉 부족)는 데이터 문제 — 지수 스윕을 금리로 갈아타거나 새로 넣지 않고 이번 회차는 건너뛴다
-    if (trend?.kospiSma50 == null || !Number.isFinite(trend.kospiSma50)) {
-      notes.push("[유휴현금 스윕] 코스피 50일선 판정 불가 — 이번에는 스윕 매매를 하지 않습니다 (보유 유지)");
-      return { notes };
-    }
-    const targetCodes = resolveSweepTargetCodes(trend.kospiSma50);
-    const targetLabel = targetCodes === INDEX_SWEEP_CODES ? "코스피 50일선 위 → 지수" : "코스피 50일선 아래 → 금리";
-    // 배치가 아직 해당 ETF 종가를 추적하지 않으면 금리형으로 대체, 그것도 없으면 조용히 건너뜀
-    const sweepCode =
-      targetCodes.find((code) => (prices.get(code)?.close ?? 0) > 0) ??
-      RATE_SWEEP_CODES.find((code) => (prices.get(code)?.close ?? 0) > 0);
+    // 50일선과 무관하게 항상 지수 ETF (2026-09-29 검증: 적립·거치 모두 보유가 하위 10% 결과까지 앞섬 — virtualAutoTradeCashSweep.ts)
+    const targetCodes = INDEX_SWEEP_CODES;
+    const targetLabel = "지수 보유";
+    // 지수 ETF 가격이 없으면 이번 회차는 건너뛴다 (금리형으로 대체하면 들고 있던 지수 스윕을 팔아 버린다)
+    const sweepCode = targetCodes.find((code) => (prices.get(code)?.close ?? 0) > 0);
     if (!sweepCode) return { notes };
     const sweepPrice = prices.get(sweepCode)!.close;
     const sweepName = prices.get(sweepCode)!.name || sweepCode;
@@ -5481,19 +5474,19 @@ async function resolveActivePromotedStrategy(supabase: SupabaseClientAny, chatId
   return state?.active ?? null;
 }
 
-/** 봇이 산 지수·레버리지·금리 ETF 보유분 (유휴현금 스윕 또는 지수 1.5배 모드로 산 것만 — 사용자가 직접 산 같은 ETF는 제외) */
+/** 봇이 산 지수·레버리지·금리 ETF 보유분 (유휴현금 스윕 또는 지수 보유·예전 1.5배 모드로 산 것만 — 사용자가 직접 산 같은 ETF는 제외) */
 function isBotIndexEtfRow(row: HoldingRow): boolean {
   if (!INDEX_MODE_CODES.includes(String(row.code))) return false;
   const strategyId = parseStrategyMemo(row.memo).strategyId;
-  return strategyId === CASH_SWEEP_STRATEGY_ID || strategyId === INDEX_LEVERAGE_STRATEGY_ID;
+  return strategyId === CASH_SWEEP_STRATEGY_ID || INDEX_MODE_STRATEGY_IDS.includes(strategyId ?? "");
 }
 
 /**
- * 지수 1.5배 모드 실행 (indexLeverageStrategy.ts). 계정 설정으로 켜면 종목 매수·일일점검·유휴현금 스윕 대신 호출된다.
+ * 지수 보유 모드 실행 (indexHoldStrategy.ts). 계정 설정으로 켜면 종목 매수·일일점검·유휴현금 스윕 대신 호출된다.
  * 1) 종목 봇이 산 보유분이 남아 있으면 정리 (모드를 켠 직후 한 번)
- * 2) 코스피 50일선 위/아래에 맞지 않는 ETF는 팔고, 새 현금은 목표 비중보다 모자란 쪽부터 산다
+ * 2) 지수 ETF가 아닌 보유분(예전 1.5배 모드의 레버리지·금리 ETF)은 팔고, 현금은 전부 KODEX 200
  */
-async function runIndexLeverageForUser(payload: {
+async function runIndexHoldForUser(payload: {
   supabase: SupabaseClientAny;
   setting: AutoTradeSettingRow;
   runId: number | null;
@@ -5501,7 +5494,7 @@ async function runIndexLeverageForUser(payload: {
 }): Promise<AutoTradeActionSummary> {
   const chatId = payload.setting.chat_id;
   const summary: AutoTradeActionSummary = { chatId, buys: 0, sells: 0, skipped: 0, errors: 0, notes: [] };
-  const tag = "[지수 1.5배]";
+  const tag = "[지수 보유]";
   const prefs = await getUserInvestmentPrefs(chatId);
   const feeRate = toNumber(prefs.virtual_fee_rate, 0.00015);
   const taxRate = resolveBaseSellTaxRate(prefs.virtual_tax_rate);
@@ -5554,8 +5547,8 @@ async function runIndexLeverageForUser(payload: {
       taxRate,
       sellQty: qty,
       reason: "rotation-sell",
-      profileLabel: "지수 1.5배 모드 전환",
-      strategyProfile: "INDEX_LEV15",
+      profileLabel: "지수 보유 모드 전환",
+      strategyProfile: "INDEX_HOLD",
       takeProfitTranchesDone: 0,
       nextTakeProfitTranchesDone: 0,
       dryRun: payload.dryRun,
@@ -5572,13 +5565,11 @@ async function runIndexLeverageForUser(payload: {
     }
   }
 
-  // 2) 50일선에 맞춰 ETF 조정 (정리 매도로 늘어난 현금을 다시 읽는다)
+  // 2) 지수 ETF로 맞추기 (정리 매도로 늘어난 현금을 다시 읽는다)
   const cash = payload.dryRun
     ? Math.max(0, toNumber(prefs.virtual_cash, 0))
     : Math.max(0, toNumber((await getUserInvestmentPrefs(chatId)).virtual_cash, 0));
-  const trend = await fetchIndexSma200Ratios(payload.supabase).catch(() => null);
-  const plan = planIndexModeRebalance({
-    kospiSma50Ratio: trend?.kospiSma50 ?? null,
+  const plan = planIndexHoldRebalance({
     cash,
     holdings: etfRows.map((row) => ({
       code: row.code,
@@ -5588,8 +5579,7 @@ async function runIndexLeverageForUser(payload: {
     prices,
     feeRate,
   });
-  const ratioText = trend?.kospiSma50 != null ? ` (50일선 대비 ${((trend.kospiSma50 - 1) * 100).toFixed(1)}%)` : "";
-  summary.notes.push(`${tag} ${describeIndexModeRegime(plan.regime)}${ratioText} · 매도 ${plan.sell.length} · 매수 ${plan.buy.length}`);
+  summary.notes.push(`${tag} ${INDEX_HOLD_DESCRIPTION} · 매도 ${plan.sell.length} · 매수 ${plan.buy.length}`);
   summary.notes.push(...plan.notes.map((note) => `${tag} ${note}`));
 
   for (const order of plan.sell) {
@@ -5613,11 +5603,11 @@ async function runIndexLeverageForUser(payload: {
         holding,
         sellQty: order.quantity,
         event: "index-mode-rotate",
-        note: `index-lev15-${plan.regime}`,
-        strategyId: INDEX_LEVERAGE_STRATEGY_ID,
+        note: "index-hold-rotate",
+        strategyId: INDEX_HOLD_STRATEGY_ID,
       });
       summary.sells += 1;
-      summary.notes.push(`${tag} ${label(row.code)} ${order.quantity}주 전량 매도 (${fmtKrw(net)}, 손익 ${fmtSweepPnl(pnl)}) — ${describeIndexModeRegime(plan.regime)}`);
+      summary.notes.push(`${tag} ${label(row.code)} ${order.quantity}주 전량 매도 (${fmtKrw(net)}, 손익 ${fmtSweepPnl(pnl)}) — ${INDEX_HOLD_DESCRIPTION}`);
     } catch (e) {
       summary.errors += 1;
       summary.notes.push(`${tag} ${label(row.code)} 매도 실패: ${e instanceof Error ? e.message : String(e)}`);
@@ -5641,7 +5631,7 @@ async function runIndexLeverageForUser(payload: {
     }
     const amount = Math.round(quantity * price);
     const fee = Math.round(amount * feeRate);
-    const memo = buildStrategyMemo({ strategyId: INDEX_LEVERAGE_STRATEGY_ID, event: "index-mode-buy", note: `index-lev15-${plan.regime}` });
+    const memo = buildStrategyMemo({ strategyId: INDEX_HOLD_STRATEGY_ID, event: "index-mode-buy", note: "index-hold" });
     const existing = etfRows.find((row) => row.code === order.code);
     const nextQty = Math.floor(toNumber(existing?.quantity, 0)) + quantity;
     const nextInvested = Math.round(toNumber(existing?.invested_amount, 0)) + amount + fee;
@@ -5691,15 +5681,15 @@ async function runIndexLeverageForUser(payload: {
     });
     await setUserInvestmentPrefs(chatId, { virtual_cash: Math.max(0, Math.round(available - amount - fee)) });
     summary.buys += 1;
-    summary.notes.push(`${tag} ${label(order.code)} ${quantity}주 매수 · ${fmtKrw(price)} · 투입 ${fmtKrw(amount)} — ${describeIndexModeRegime(plan.regime)}`);
+    summary.notes.push(`${tag} ${label(order.code)} ${quantity}주 매수 · ${fmtKrw(price)} · 투입 ${fmtKrw(amount)} — ${INDEX_HOLD_DESCRIPTION}`);
     await writeActionLog({
       supabase: payload.supabase,
       runId: payload.runId,
       chatId,
       code: order.code,
       actionType: "BUY",
-      reason: "index-lev15",
-      detail: { qty: quantity, price, regime: plan.regime, kospiSma50: trend?.kospiSma50 ?? null },
+      reason: "index-hold",
+      detail: { qty: quantity, price },
     });
   }
 
@@ -5710,8 +5700,8 @@ async function runIndexLeverageForUser(payload: {
 }
 
 /**
- * 지수 1.5배 모드를 끈 계정: 그 모드로 산 레버리지 ETF는 팔고, KODEX 200·금리 ETF는 유휴현금 스윕으로 넘긴다
- * (종목 봇의 스윕 단계가 50일선에 맞춰 이어서 관리). 해당 보유분이 없으면 아무것도 하지 않는다.
+ * 지수 보유 모드(또는 예전 1.5배 모드)를 끈 계정: 레버리지 ETF는 팔고, KODEX 200·금리 ETF는 유휴현금 스윕으로 넘긴다
+ * (종목 봇의 스윕 단계가 이어서 관리). 해당 보유분이 없으면 아무것도 하지 않는다.
  */
 async function releaseIndexModeHoldings(payload: {
   supabase: SupabaseClientAny;
@@ -5729,7 +5719,7 @@ async function releaseIndexModeHoldings(payload: {
       .is("broker_name", null)
       .is("account_name", null);
     const rows = ((data ?? []) as Record<string, unknown>[]).filter(
-      (row) => parseStrategyMemo(row.memo as string | null).strategyId === INDEX_LEVERAGE_STRATEGY_ID
+      (row) => INDEX_MODE_STRATEGY_IDS.includes(parseStrategyMemo(row.memo as string | null).strategyId ?? "")
     );
     if (!rows.length) return { notes };
     const { data: priceRows } = await payload.supabase
@@ -5749,20 +5739,20 @@ async function releaseIndexModeHoldings(payload: {
         if (!payload.dryRun) {
           await payload.supabase
             .from(PORTFOLIO_TABLES.positions)
-            .update({ memo: buildStrategyMemo({ strategyId: CASH_SWEEP_STRATEGY_ID, event: "sweep-buy", note: "from-index-lev15" }) })
+            .update({ memo: buildStrategyMemo({ strategyId: CASH_SWEEP_STRATEGY_ID, event: "sweep-buy", note: "from-index-mode" }) })
             .eq("chat_id", payload.chatId)
             .eq("id", toNumber(row.id, 0));
         }
-        notes.push(`[지수 1.5배 해제] ${info?.name ?? code} 보유분을 유휴현금 스윕으로 넘김`);
+        notes.push(`[지수 모드 해제] ${info?.name ?? code} 보유분을 유휴현금 스윕으로 넘김`);
         continue;
       }
       const quantity = Math.max(0, Math.floor(toNumber(row.quantity, 0)));
       if (!info || info.close <= 0 || quantity <= 0) {
-        notes.push(`[지수 1.5배 해제] ${info?.name ?? code} 매도 보류: 가격 없음`);
+        notes.push(`[지수 모드 해제] ${info?.name ?? code} 매도 보류: 가격 없음`);
         continue;
       }
       if (payload.dryRun) {
-        notes.push(`[지수 1.5배 해제][테스트] ${info.name} ${quantity}주 매도 예정`);
+        notes.push(`[지수 모드 해제][테스트] ${info.name} ${quantity}주 매도 예정`);
         continue;
       }
       const { net, pnl } = await sellSweepPosition({
@@ -5778,10 +5768,10 @@ async function releaseIndexModeHoldings(payload: {
         },
         sellQty: quantity,
         event: "index-mode-release",
-        note: "index-lev15-off",
-        strategyId: INDEX_LEVERAGE_STRATEGY_ID,
+        note: "index-mode-off",
+        strategyId: String(parseStrategyMemo(row.memo as string | null).strategyId ?? INDEX_HOLD_STRATEGY_ID),
       });
-      notes.push(`[지수 1.5배 해제] ${info.name} ${quantity}주 매도 (${fmtKrw(net)}, 손익 ${fmtSweepPnl(pnl)})`);
+      notes.push(`[지수 모드 해제] ${info.name} ${quantity}주 매도 (${fmtKrw(net)}, 손익 ${fmtSweepPnl(pnl)})`);
     }
   } catch (e) {
     console.error("[autoTrade] index mode release failed", e);
@@ -8203,8 +8193,8 @@ export async function runVirtualAutoTradingForChat(input: {
   });
   const runId = runStart.runId;
 
-  // 지수 1.5배 모드 계정은 종목 매매·유휴현금 스윕 없이 그 모드만 실행한다 (indexLeverageStrategy.ts)
-  const indexMode = normalizeStrategyMode(prefs.virtual_strategy_mode) === INDEX_LEVERAGE_MODE;
+  // 지수 보유 모드 계정은 종목 매매·유휴현금 스윕 없이 그 모드만 실행한다 (indexHoldStrategy.ts)
+  const indexMode = normalizeStrategyMode(prefs.virtual_strategy_mode) === INDEX_HOLD_MODE;
   const indexRelease = indexMode
     ? { notes: [] as string[] }
     : await releaseIndexModeHoldings({ supabase, chatId: input.chatId, dryRun });
@@ -8224,7 +8214,7 @@ export async function runVirtualAutoTradingForChat(input: {
   // 승격 승인으로 켜진 전략이 있으면 기존 매수·일일점검 대신 그 전략을 실행한다 (strategyPromotion.ts)
   const promotedStrategy = indexMode ? null : await resolveActivePromotedStrategy(supabase, input.chatId);
   const action = indexMode
-    ? await runIndexLeverageForUser({ supabase, setting, runId, dryRun })
+    ? await runIndexHoldForUser({ supabase, setting, runId, dryRun })
     : promotedStrategy === GATE_CORE_STRATEGY
     ? await runGateCoreForUser({ supabase, setting, runId, dryRun })
     : runType === "MONDAY_BUY"
@@ -8541,8 +8531,8 @@ export async function runVirtualAutoTradingCycle(input?: {
       const userDryRun = dryRun || Boolean(prefs.virtual_shadow_mode);
       const cycleSeedRebaseNote = userDryRun ? null : await applySeedRebaseIfDue(setting.chat_id, prefs);
 
-      // 지수 1.5배 모드 계정은 종목 매매·유휴현금 스윕 없이 그 모드만 실행한다 (indexLeverageStrategy.ts)
-      const indexMode = normalizeStrategyMode(prefs.virtual_strategy_mode) === INDEX_LEVERAGE_MODE;
+      // 지수 보유 모드 계정은 종목 매매·유휴현금 스윕 없이 그 모드만 실행한다 (indexHoldStrategy.ts)
+      const indexMode = normalizeStrategyMode(prefs.virtual_strategy_mode) === INDEX_HOLD_MODE;
       const indexRelease = indexMode
         ? { notes: [] as string[] }
         : await releaseIndexModeHoldings({ supabase, chatId: setting.chat_id, dryRun: userDryRun });
@@ -8558,7 +8548,7 @@ export async function runVirtualAutoTradingCycle(input?: {
 
       const promotedStrategy = indexMode ? null : await resolveActivePromotedStrategy(supabase, setting.chat_id);
       const actionSummary = indexMode
-        ? await runIndexLeverageForUser({ supabase, setting, runId, dryRun: userDryRun })
+        ? await runIndexHoldForUser({ supabase, setting, runId, dryRun: userDryRun })
         : promotedStrategy === GATE_CORE_STRATEGY
         ? await runGateCoreForUser({ supabase, setting, runId, dryRun: userDryRun })
         : runType === "MONDAY_BUY"

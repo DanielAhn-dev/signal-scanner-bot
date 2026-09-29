@@ -5,7 +5,6 @@ import {
   resolveCashSweepTopUpQty,
   shouldLiquidateCashSweep,
   CASH_SWEEP_LIQUIDATE_THRESHOLD,
-  resolveSweepTargetCodes,
   INDEX_SWEEP_CODES,
   RATE_SWEEP_CODES,
   CASH_SWEEP_CANDIDATE_CODES,
@@ -94,12 +93,6 @@ test("resolveCashSweepTopUpQty: 스윕 보유수량을 넘겨서 매도하지 �
   );
 });
 
-test("resolveSweepTargetCodes: 코스피 50일선 위면 지수 ETF, 아래·판정 불가면 금리 ETF", () => {
-  assert.equal(resolveSweepTargetCodes(1.02), INDEX_SWEEP_CODES);
-  assert.equal(resolveSweepTargetCodes(1), INDEX_SWEEP_CODES);
-  assert.equal(resolveSweepTargetCodes(0.98), RATE_SWEEP_CODES);
-  assert.equal(resolveSweepTargetCodes(null), RATE_SWEEP_CODES);
-  assert.equal(resolveSweepTargetCodes(Number.NaN), RATE_SWEEP_CODES);
-  // 보유분 조회는 양쪽 모두를 본다
+test("스윕 후보 ETF: 지수형·금리형 모두 보유분 조회 대상", () => {
   for (const code of [...INDEX_SWEEP_CODES, ...RATE_SWEEP_CODES]) assert.ok(CASH_SWEEP_CANDIDATE_CODES.includes(code));
 });

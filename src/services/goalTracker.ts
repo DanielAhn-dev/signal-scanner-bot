@@ -60,19 +60,20 @@ export const DEFAULT_WITHDRAWAL_PCT = 4;
 export const DEFAULT_TARGET_MONTHLY_PROFIT = 1_000_000;
 
 /**
- * 코스피 50일선 규칙(봇 지수 스윕과 같은 규칙)의 과거 월별 수익 분포 — 1997~2026-09 일봉으로 계산.
- * (2016년 이후만 보면 플러스 59%, 하위 10% -3.4%로 거의 같다)
- * 개별 종목 스윙은 이보다 흔들림이 크다 — "이 정도 마이너스는 흔한 달인가"를 가늠하는 기준으로만 쓴다.
+ * 코스피 계속 보유(배당 연 1.7% 포함, 봇 지수 스윕·지수 보유 모드와 같은 방식)의 과거 월별 수익 분포 — 1997~2026-09.
+ * (2016년 이후만 보면 플러스 60%, 하위 10% -5.3%, 최악 -22.0%)
+ * 2026-09-29까지는 50일선 규칙 분포(하위 10% -4.0%, 최악 -15.5%)였다 — 스윕을 계속 보유로 바꾸며 교체.
+ * "이 정도 마이너스는 흔한 달인가"를 가늠하는 기준으로만 쓴다.
  */
 export const NORMAL_MONTHLY_RANGE = {
-  plusMonthsPct: 61,
-  p10: -4.0,
-  p25: -1.7,
-  median: 0.2,
-  p90: 6.5,
-  worst: -15.5,
-  maxLosingStreak: 4,
-  source: "코스피 50일선 규칙 1997~2026 월별",
+  plusMonthsPct: 56,
+  p10: -8.0,
+  p25: -2.7,
+  median: 0.9,
+  p90: 9.8,
+  worst: -27.1,
+  maxLosingStreak: 6,
+  source: "코스피 계속 보유 1997~2026 월별",
 };
 
 export function monthlyRate(annualPct: number): number {

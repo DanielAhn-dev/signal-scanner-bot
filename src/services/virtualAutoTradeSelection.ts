@@ -105,6 +105,7 @@ export function isInContaminationWindow(dateKey: string, scope: "prices" | "trad
  *   - ~2026-09-22: 데이터/가드 버그 오염 구간 (전략이 아니라 버그를 측정한 매매)
  *   - 2026-09-23~28: 규칙 확정 전 매매 (실적 관문·50일선 지수 스윕 도입 전)
  * 2026-09-29부터 현재 규칙(실적 관문, 50일선 매수 중단·지수 스윕, 검증된 매도 규칙)으로 쌓인 매매만 센다.
+ * (같은 날 스윕을 50일선 연동에서 계속 보유로 바꿨다 — 종목 매매 통계에는 영향 없음)
  */
 export const ADAPTIVE_STATS_EXCLUDE_BEFORE_ISO = "2026-09-29T00:00:00+09:00";
 
