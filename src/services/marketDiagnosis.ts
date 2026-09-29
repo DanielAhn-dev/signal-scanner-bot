@@ -531,7 +531,7 @@ export function describeBotBuyGate(policy: AutoTradeMarketPolicy): BotBuyGate {
     paused,
     label: paused ? '봇 신규 매수 중단' : '봇 신규 매수 진행',
     detail: paused
-      ? `${policy.reason} — 보유 종목 관리만 합니다. 코스피 50일선 아래 구간은 과거 30년간 현금보다 성과가 낮았습니다.`
+      ? `${policy.reason} — 보유 종목 관리만 하고, 남는 돈은 지수(KODEX 200)에 둡니다. 이 구간에 종목을 사도 지수보다 낫지 않았습니다(2017~2026).`
       : `${policy.reason} — 코스피가 50일선 위라 평소대로 매수합니다.`,
   }
 }

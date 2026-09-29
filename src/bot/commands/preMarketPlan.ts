@@ -509,7 +509,7 @@ export async function handlePreMarketPlanCommand(
         LINE,
         "오늘은 신규 주문을 만들지 않았습니다 — 자동매매도 신규·추가 매수를 쉽니다.",
         `사유: ${esc(marketPolicy.reason)}`,
-        "코스피가 50일선 아래인 구간은 과거 30년간 현금보다 성과가 낮았습니다. 보유 종목 관리만 하세요.",
+        "코스피 50일선 아래에서는 새 종목 대신 남는 돈을 지수(KODEX 200)에 둡니다 — 이 구간에 종목을 사도 지수보다 낫지 않았습니다(2017~2026). 보유 종목 관리만 하세요.",
       ].join("\n"),
       parse_mode: "HTML",
     });
