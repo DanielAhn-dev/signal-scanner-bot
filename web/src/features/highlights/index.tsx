@@ -63,6 +63,8 @@ function StrategyBadge({ label }: { label: string }) {
 const BASE_RATE_NOTE = '과거 10년 비슷한 조건 종목들의 20거래일 뒤 수익 분포입니다. 예측이 아니며, 어떤 점수·등급도 이 분포를 의미 있게 바꾸지 못했습니다.'
 
 function signedPct(value: number): string {
+  // 과거 분포가 없는 종목은 값이 비어 있다 — "NaN%" 대신 "—"
+  if (!Number.isFinite(value)) return '—'
   return `${value > 0 ? '+' : ''}${formatNumber(value, 1)}%`
 }
 
@@ -97,14 +99,16 @@ function SelectCircle({ selected }: { selected: boolean }) {
   )
 }
 
-function ScoreBar({ label, value, color }: { label: string; value: number; color: string }) {
+function ScoreBar({ label, value: raw, color }: { label: string; value: number; color: string }) {
+  const known = Number.isFinite(raw)
+  const value = known ? raw : 0
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 5 }}>
       <span style={{ width: 38, fontSize: 12, color: 'var(--color-text-secondary)', flexShrink: 0 }}>{label}</span>
       <div style={{ flex: 1, height: 6, borderRadius: 3, background: 'var(--color-border-default)' }}>
         <div style={{ width: `${Math.min(100, Math.max(0, value))}%`, height: '100%', borderRadius: 3, background: color, transition: 'width 0.4s ease' }} />
       </div>
-      <span style={{ width: 26, fontSize: 12, textAlign: 'right', color: 'var(--color-text-primary)' }}>{Math.round(value)}</span>
+      <span style={{ width: 26, fontSize: 12, textAlign: 'right', color: 'var(--color-text-primary)' }}>{known ? Math.round(value) : '—'}</span>
     </div>
   )
 }
@@ -437,8 +441,12 @@ export default function HighlightsPage({ onNavigate }: { onNavigate?: (r: string
                     <div style={{ fontSize: 11, color: 'var(--color-text-tertiary)', marginBottom: 8, fontWeight: 500, letterSpacing: '0.02em' }}>선정 근거</div>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
                       {(reasons ?? [
-                        `모멘텀 ${Math.round(row.score_momentum)}점 · 안전성 ${Math.round(row.score_safety)}점 기준 상위 후보입니다.`,
-                        `과거 같은 조건에서 20거래일 뒤 하위 10%는 ${signedPct(-row.expected_drawdown_pct)}였습니다 — 한 번에 사지 말고 나눠서.`,
+                        Number.isFinite(row.score_momentum) && Number.isFinite(row.score_safety)
+                          ? `모멘텀 ${Math.round(row.score_momentum)}점 · 안전성 ${Math.round(row.score_safety)}점 기준 상위 후보입니다.`
+                          : '점수 정보가 없는 후보입니다.',
+                        Number.isFinite(row.expected_drawdown_pct)
+                          ? `과거 같은 조건에서 20거래일 뒤 하위 10%는 ${signedPct(-row.expected_drawdown_pct)}였습니다 — 한 번에 사지 말고 나눠서.`
+                          : '과거 분포가 없는 종목입니다 — 한 번에 사지 말고 나눠서.',
                       ]).slice(0, 4).map((r, i) => (
                         <div key={i} style={{ fontSize: 12, color: 'var(--color-text-secondary)', lineHeight: 1.6 }}>{r}</div>
                       ))}
