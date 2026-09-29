@@ -3,7 +3,9 @@
  * 매매 로직은 건드리지 않는다. 웹 홈(/api/ui/goal-tracker)과 금요일 텔레그램 보고가 같은 계산을 쓴다.
  *
  *   - 계획선: 시작 평가액에서 연 planAnnualPct(기본 8%) 복리 + 월 추가 입금
- *   - 필요 시드: 목표 월 평균 수익 ÷ 계획 월 수익률 (예: 월 100만원 ÷ 0.643% ≈ 1.56억)
+ *   - 필요 시드: 원금을 지키며 매년 꺼내 쓸 수 있는 인출률(기본 4%)로 계산 (예: 월 50만원 × 12 ÷ 4% = 1.5억)
+ *     성장 가정(8%)으로 나누면 안 된다 — 코스피 1997~2026에서 연 8%(물가 반영)씩 20년 인출하면 대부분 원금이 줄었다.
+ *     50일선 규칙 기준 20년 원금 유지 비율: 4% 87% · 5% 68% · 6% 50% (보유 1배는 4% 97%). 고배당 ETF 배당률도 4~5%대.
  *   - 이번 달 수익률: 날짜별 평가액을 이어 붙이되, 입금·출금이 있던 날은 수익 0으로 본다(isCapitalFlow)
  *   - 정상 범위: 코스피 50일선 규칙의 과거 월별 수익 분포 — 마이너스 달이 "흔한 달"인지 알려 준다
  */
@@ -18,8 +20,10 @@ export type GoalSettings = {
   startDate: string;
   /** 시작일 평가액 */
   startEquity: number;
-  /** 계획 연 수익률 % (보수적 기본 8) */
+  /** 계획 연 수익률 % (보수적 기본 8) — 1차(시드 모으기) 성장 가정 */
   planAnnualPct: number;
+  /** 2차에 원금을 지키며 매년 꺼내 쓸 비율 % (기본 4) — 필요 시드 계산에 쓴다. 없던 파일은 기본값 */
+  withdrawalPct?: number;
   /** 목표 월 평균 수익 (원) */
   targetMonthlyProfit: number;
   /** 매달 추가 입금 (원, 없으면 0) */
@@ -52,6 +56,7 @@ export function isCapitalFlow(prev: EquityPoint, cur: EquityPoint): boolean {
 export type GoalTrackerFile = { settings: GoalSettings; history: EquityPoint[] };
 
 export const DEFAULT_PLAN_ANNUAL_PCT = 8;
+export const DEFAULT_WITHDRAWAL_PCT = 4;
 export const DEFAULT_TARGET_MONTHLY_PROFIT = 1_000_000;
 
 /**
@@ -74,10 +79,9 @@ export function monthlyRate(annualPct: number): number {
   return (1 + annualPct / 100) ** (1 / 12) - 1;
 }
 
-/** 목표 월 평균 수익을 내는 데 필요한 시드 */
-export function requiredSeed(targetMonthlyProfit: number, planAnnualPct: number): number {
-  const m = monthlyRate(planAnnualPct);
-  return m > 0 ? targetMonthlyProfit / m : Infinity;
+/** 원금을 지키며 매달 목표 금액을 꺼내 쓰는 데 필요한 시드 (연 인출률 기준) */
+export function requiredSeed(targetMonthlyProfit: number, withdrawalPct: number): number {
+  return withdrawalPct > 0 ? (targetMonthlyProfit * 12) / (withdrawalPct / 100) : Infinity;
 }
 
 export function monthsBetween(fromDate: string, toDate: string): number {
@@ -304,6 +308,7 @@ export function sanitizeGoalSettings(input: Partial<GoalSettings>, current: Goal
     startDate: /^\d{4}-\d{2}-\d{2}$/.test(String(input.startDate ?? "")) ? String(input.startDate) : current.startDate,
     startEquity: num(input.startEquity, current.startEquity, 0, 1e12),
     planAnnualPct: num(input.planAnnualPct, current.planAnnualPct, 1, 15),
+    withdrawalPct: num(input.withdrawalPct, current.withdrawalPct ?? DEFAULT_WITHDRAWAL_PCT, 2, 8),
     targetMonthlyProfit: num(input.targetMonthlyProfit, current.targetMonthlyProfit, 10_000, 1e9),
     monthlyContribution: num(input.monthlyContribution, current.monthlyContribution, 0, 1e9),
     // 빈 문자열은 목표 시점 해제
@@ -339,8 +344,10 @@ export type GoalTrackerView = {
    * 단계는 표시일 뿐 매매 규칙을 바꾸지 않는다(목표가 매수 기준을 낮추면 안 된다 — e021a69).
    */
   phase: { stage: 1 | 2; title: string; text: string };
-  /** 지금 평가액으로 계획 수익률이면 월 평균 얼마 */
+  /** 지금 평가액으로 계획 수익률이면 월 평균 얼마 (재투자하는 1차 기준) */
   currentMonthlyProfit: number;
+  /** 지금 평가액에서 원금을 지키며 매달 꺼내 쓸 수 있는 금액 (인출률 기준) */
+  currentMonthlyWithdrawal: number;
   /** 시점별 필요 월 입금 — 1·2·3·5년과 설정한 목표 시점. 2차면 빈 배열 */
   schedule: Array<{ month: string; months: number; contribution: number; isTarget: boolean }>;
   normalRange: typeof NORMAL_MONTHLY_RANGE;
@@ -355,7 +362,8 @@ export function buildGoalTrackerView(input: {
   const s = file.settings;
   const monthsElapsed = monthsBetween(s.startDate, now.date);
   const planValue = planValueAt(s, monthsElapsed);
-  const need = requiredSeed(s.targetMonthlyProfit, s.planAnnualPct);
+  const withdrawalPct = s.withdrawalPct ?? DEFAULT_WITHDRAWAL_PCT;
+  const need = requiredSeed(s.targetMonthlyProfit, withdrawalPct);
   const months = monthsToReach({
     fromEquity: now.total,
     target: need,
@@ -368,7 +376,7 @@ export function buildGoalTrackerView(input: {
     ? {
         stage: 2,
         title: "2차 — 월 수익 받기",
-        text: "필요 시드에 도달했습니다. 인출은 계획 월 평균 이내로 하고, 마이너스 달이 몇 달 이어져도 버틸 3~6개월치 현금을 따로 두세요.",
+        text: `필요 시드에 도달했습니다. 원금은 두고 연 ${withdrawalPct}% 이내로 꺼내 쓰세요(좋은 달 수익은 CMA·파킹통장에 두었다가 나눠 쓰기). 마이너스 달이 이어져도 버틸 3~6개월치 현금을 따로 두세요.`,
       }
     : {
         stage: 1,
@@ -425,6 +433,7 @@ export function buildGoalTrackerView(input: {
     },
     phase,
     currentMonthlyProfit: Math.round(now.total * monthlyRate(s.planAnnualPct)),
+    currentMonthlyWithdrawal: Math.round((now.total * withdrawalPct) / 100 / 12),
     schedule,
     normalRange: NORMAL_MONTHLY_RANGE,
   };
@@ -436,7 +445,7 @@ export function formatGoalLine(v: GoalTrackerView): string {
   const man = (x: number) => `${Math.round(x / 10_000).toLocaleString("ko-KR")}만`;
   const mtd = v.thisMonth.returnPct == null ? "-" : `${v.thisMonth.returnPct >= 0 ? "+" : ""}${v.thisMonth.returnPct.toFixed(1)}%`;
   return [
-    `[목표] 월 평균 ${man(v.settings.targetMonthlyProfit)}원 → 필요 시드 ${man(v.target.requiredSeed)}원 · 현재 ${man(v.equity)}원 (${v.target.progressPct.toFixed(0)}%)`,
+    `[목표] 월 ${man(v.settings.targetMonthlyProfit)}원 인출(연 ${v.settings.withdrawalPct ?? DEFAULT_WITHDRAWAL_PCT}%) → 필요 시드 ${man(v.target.requiredSeed)}원 · 현재 ${man(v.equity)}원 (${v.target.progressPct.toFixed(0)}%)`,
     `  이번 달 ${mtd} · 스윙 확정 ${man(v.thisMonth.realizedSwing)}원 · 계획 월 평균 ${man(v.thisMonth.expectedProfit)}원 · 계획선 대비 ${v.plan.gapPct >= 0 ? "+" : ""}${v.plan.gapPct.toFixed(1)}%`,
     `  예상 도달 ${v.target.etaMonth ?? "50년 이상"} (연 ${v.settings.planAnnualPct}% 재투자${v.settings.monthlyContribution > 0 ? ` + 월 ${man(v.settings.monthlyContribution)}원 입금` : ""})`,
     target ? `  ${v.phase.title} · ${target.month}까지 닿으려면 월 ${man(target.contribution)}원 입금 필요` : `  ${v.phase.title}`,

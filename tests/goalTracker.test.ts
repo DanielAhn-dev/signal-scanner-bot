@@ -23,17 +23,17 @@ const settings: GoalSettings = {
   monthlyContribution: 0,
 };
 
-test("requiredSeed: 월 100만원 ÷ 연 8% 월 복리 수익률 ≈ 1.56억", () => {
+test("requiredSeed: 인출률 기준 — 월 50만원 × 12 ÷ 4% = 1.5억", () => {
   assert.ok(Math.abs(monthlyRate(8) - 0.006434) < 1e-5);
-  const need = requiredSeed(1_000_000, 8);
-  assert.ok(need > 155_000_000 && need < 156_000_000, String(need));
+  assert.equal(requiredSeed(500_000, 4), 150_000_000);
+  assert.equal(requiredSeed(1_000_000, 8), 150_000_000);
 });
 
 test("planValueAt·monthsToReach: 12개월 뒤 8%, 2천만→1.56억은 입금 없으면 약 27년", () => {
   assert.ok(Math.abs(planValueAt(settings, 12) - 21_600_000) < 1);
-  const n = monthsToReach({ fromEquity: 20_000_000, target: requiredSeed(1_000_000, 8), planAnnualPct: 8, monthlyContribution: 0 });
+  const n = monthsToReach({ fromEquity: 20_000_000, target: requiredSeed(1_000_000, 7.7), planAnnualPct: 8, monthlyContribution: 0 });
   assert.ok(n != null && n > 300 && n < 340, String(n));
-  const withContrib = monthsToReach({ fromEquity: 20_000_000, target: requiredSeed(1_000_000, 8), planAnnualPct: 8, monthlyContribution: 1_000_000 });
+  const withContrib = monthsToReach({ fromEquity: 20_000_000, target: requiredSeed(1_000_000, 7.7), planAnnualPct: 8, monthlyContribution: 1_000_000 });
   assert.ok(withContrib != null && withContrib < 110, String(withContrib));
 });
 
@@ -70,14 +70,15 @@ test("buildGoalTrackerView: 진행률·계획선·이번 달 기대 수익", () 
     now: { date: "2026-10-15", seed: 20_000_000, total: 20_400_000, cash: 1_000_000, holdings: 19_400_000 },
     realized: { swing: 150_000, sweep: 20_000, sells: 3, wins: 2 },
   });
-  assert.ok(v.target.progressPct > 13 && v.target.progressPct < 13.2);
+  // 월 100만원 × 12 ÷ 4% = 3억 → 2,040만 / 3억 = 6.8%
+  assert.ok(Math.abs(v.target.progressPct - 6.8) < 1e-9, String(v.target.progressPct));
   assert.equal(v.thisMonth.expectedProfit, Math.round(20_000_000 * monthlyRate(8)));
   assert.ok(v.thisMonth.returnPct != null && Math.abs(v.thisMonth.returnPct - 2) < 1e-9);
   assert.ok(v.plan.gapPct > 1);
 });
 
 test("requiredMonthlyContribution: planValueAt으로 되돌리면 정확히 필요 시드", () => {
-  const need = requiredSeed(500_000, 8);
+  const need = requiredSeed(500_000, 4);
   const c = requiredMonthlyContribution({ fromEquity: 20_000_000, target: need, planAnnualPct: 8, months: 24 });
   const back = planValueAt({ ...settings, startEquity: 20_000_000, monthlyContribution: c }, 24);
   assert.ok(Math.abs(back - need) < 1, String(back - need));
@@ -95,7 +96,7 @@ test("buildGoalTrackerView: 1차 단계·목표 시점 필요 입금, 도달하�
   assert.deepEqual(v.schedule.map((r) => r.months), [12, 18, 24, 36, 60]);
   assert.equal(v.schedule.find((r) => r.isTarget)?.month, "2028-03");
   assert.ok(v.schedule[0].contribution > v.schedule[4].contribution);
-  const v2 = buildGoalTrackerView({ ...base, now: { date: "2026-09-29", seed: 90_000_000, total: 90_000_000, cash: 0, holdings: 0 } });
+  const v2 = buildGoalTrackerView({ ...base, now: { date: "2026-09-29", seed: 150_000_000, total: 150_000_000, cash: 0, holdings: 0 } });
   assert.equal(v2.phase.stage, 2);
   assert.equal(v2.schedule.length, 0);
 });

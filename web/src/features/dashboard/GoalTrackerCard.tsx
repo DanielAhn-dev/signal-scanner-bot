@@ -9,6 +9,7 @@ type View = {
     startDate: string
     startEquity: number
     planAnnualPct: number
+    withdrawalPct?: number
     targetMonthlyProfit: number
     monthlyContribution: number
     targetDate?: string
@@ -27,6 +28,7 @@ type View = {
   }
   phase: { stage: 1 | 2; title: string; text: string }
   currentMonthlyProfit: number
+  currentMonthlyWithdrawal: number
   schedule: Array<{ month: string; months: number; contribution: number; isTarget: boolean }>
   normalRange: { plusMonthsPct: number; p10: number; worst: number; maxLosingStreak: number; source: string }
 }
@@ -43,7 +45,7 @@ export default function GoalTrackerCard() {
   const [view, setView] = useState<View | null>(null)
   const [reason, setReason] = useState<string | null>(null)
   const [editing, setEditing] = useState(false)
-  const [form, setForm] = useState({ targetMan: '', planPct: '', contribMan: '', targetDate: '' })
+  const [form, setForm] = useState({ targetMan: '', planPct: '', withdrawPct: '', contribMan: '', targetDate: '' })
   const [busy, setBusy] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
 
@@ -69,6 +71,7 @@ export default function GoalTrackerCard() {
     setForm({
       targetMan: String(Math.round(view.settings.targetMonthlyProfit / 10_000)),
       planPct: String(view.settings.planAnnualPct),
+      withdrawPct: String(view.settings.withdrawalPct ?? 4),
       contribMan: String(Math.round(view.settings.monthlyContribution / 10_000)),
       targetDate: view.settings.targetDate ?? '',
     })
@@ -84,6 +87,7 @@ export default function GoalTrackerCard() {
       body: JSON.stringify({
         targetMonthlyProfit: Number(form.targetMan) * 10_000,
         planAnnualPct: Number(form.planPct),
+        withdrawalPct: Number(form.withdrawPct),
         monthlyContribution: Number(form.contribMan) * 10_000,
         targetDate: form.targetDate,
       }),
@@ -118,7 +122,8 @@ export default function GoalTrackerCard() {
     <div style={box}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
         <strong>
-          목표: 월 평균 {man(view.settings.targetMonthlyProfit)} → 필요 시드 {man(view.target.requiredSeed)}
+          목표: 월 {man(view.settings.targetMonthlyProfit)} 인출(연 {view.settings.withdrawalPct ?? 4}%) → 필요 시드{' '}
+          {man(view.target.requiredSeed)}
         </strong>
         {!editing && (
           <Button size="sm" variant="secondary" onClick={startEdit}>
@@ -129,10 +134,12 @@ export default function GoalTrackerCard() {
 
       {editing && (
         <div style={{ margin: '6px 0', display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 4 }}>
-          목표 월 평균 수익(만원)
+          목표 월 인출(만원)
           <input style={inputStyle} value={form.targetMan} onChange={(e) => setForm({ ...form, targetMan: e.target.value })} />
           계획 연 수익률(%)
           <input style={inputStyle} value={form.planPct} onChange={(e) => setForm({ ...form, planPct: e.target.value })} />
+          인출률(%)
+          <input style={inputStyle} value={form.withdrawPct} onChange={(e) => setForm({ ...form, withdrawPct: e.target.value })} />
           월 추가 입금(만원)
           <input style={inputStyle} value={form.contribMan} onChange={(e) => setForm({ ...form, contribMan: e.target.value })} />
           필요 시드 도달 목표 시점
@@ -150,7 +157,9 @@ export default function GoalTrackerCard() {
           </Button>
           {saveError && <div style={{ width: '100%', color: 'var(--color-error)' }}>{saveError}</div>}
           <div style={{ width: '100%', color: 'var(--color-text-tertiary)' }}>
-            계획 수익률은 보수적으로 잡으세요 — 검증된 규칙의 과거 수익은 연 11~13%, 기본 8%는 그보다 낮춘 값입니다(1~15% 허용).
+            계획 수익률은 시드를 모으는 동안의 성장 가정입니다 — 검증된 규칙의 과거 수익은 연 10~13%, 기본 8%는 그보다 낮춘 값(1~15%).
+            인출률은 원금을 지키며 매년 꺼내 쓸 비율로 필요 시드를 정합니다 — 코스피 30년 데이터에서 물가 반영 20년 인출 시 원금 유지 비율이
+            4% 87% · 5% 68% · 6% 50%라 기본 4%(2~8%). 고배당 ETF 배당률도 4~5%대입니다.
           </div>
         </div>
       )}
@@ -177,7 +186,8 @@ export default function GoalTrackerCard() {
       {t.assessment && <div style={{ color: levelColor }}>{t.assessment.text}</div>}
       {view.schedule.length > 0 && (
         <div style={{ marginTop: 4 }}>
-          지금 시드로는 계획상 월 평균 {man(view.currentMonthlyProfit)}. 필요 시드 {man(view.target.requiredSeed)}에 닿으려면 매달 넣어야
+          지금 시드로는 계획상 월 평균 {man(view.currentMonthlyProfit)} 수익(재투자), 원금을 지키며 꺼내 쓰면 월{' '}
+          {man(view.currentMonthlyWithdrawal)}. 필요 시드 {man(view.target.requiredSeed)}에 닿으려면 매달 넣어야
           할 금액(연 {view.settings.planAnnualPct}% 재투자 가정):
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: '2px 12px' }}>
             {view.schedule.map((r) => (
