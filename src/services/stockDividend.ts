@@ -9,6 +9,7 @@
  * - DART는 동시 요청을 끊으므로 차례대로 부른다. 종목별 결과는 6시간 캐시.
  */
 import { readZipEntries } from "../lib/zipReader";
+import { isExchangeTradedProduct } from "../lib/securitiesTax";
 import corpCodes from "../data/dartCorpCodes.json";
 import type { EtfDistribution } from "./etfDistribution";
 
@@ -22,7 +23,51 @@ const DART = "https://opendart.fss.or.kr/api";
 /** 이 기간 안에 난 배당결정 공시를 본다 (1월 말 결산배당 결정 → 4월 지급까지 포함) */
 export const DIVIDEND_DISCLOSURE_LOOKBACK_DAYS = 200;
 
-const CORP_CODES = corpCodes as Record<string, string>;
+/**
+ * 종목코드 → DART 회사 코드. 저장소의 표(pnpm gen:dart-corps로 다시 만든다)에 없는 종목(새 상장)이 나오면
+ * DART corpCode.xml을 받아 채운다 — 하루 한 번까지, 인스턴스 메모리에만.
+ */
+const CORP_CODES: Record<string, string> = { ...(corpCodes as Record<string, string>) };
+const CORP_REFRESH_MS = 24 * 60 * 60 * 1000;
+let corpRefreshedAt = 0;
+
+/** corpCode.xml → 상장사만 { 종목코드: 회사코드 } */
+export function parseCorpCodeXml(xml: string): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const [, blk] of xml.matchAll(/<list>([\s\S]*?)<\/list>/g)) {
+    const stock = blk.match(/<stock_code>\s*(\w{6})\s*<\/stock_code>/)?.[1];
+    const corp = blk.match(/<corp_code>\s*(\d{8})\s*<\/corp_code>/)?.[1];
+    if (stock && corp) out[stock] = corp;
+  }
+  return out;
+}
+
+/** DART가 3.6MB를 3~16초에 준다 — 자동매매 실행 중엔 짧게(20초), 스크립트에선 길게 */
+export async function downloadCorpCodes(
+  apiKey: string,
+  fetchImpl: typeof fetch = fetch,
+  timeoutMs = 20_000
+): Promise<Record<string, string>> {
+  const res = await fetchImpl(`${DART}/corpCode.xml?crtfc_key=${encodeURIComponent(apiKey)}`, { signal: AbortSignal.timeout(timeoutMs) });
+  if (!res.ok) throw new Error(`corpCode.xml HTTP ${res.status}`);
+  const buf = Buffer.from(await res.arrayBuffer());
+  const entry = readZipEntries(buf).find((e) => /corpcode\.xml$/i.test(e.name));
+  if (!entry) throw new Error("corpCode.xml: zip entry not found");
+  return parseCorpCodeXml(entry.data.toString("utf8"));
+}
+
+/** 표에 없는 종목이 나왔을 때 — 하루 한 번까지만 DART에서 표를 새로 받는다. 받았으면 true */
+async function refreshCorpCodesOnMiss(apiKey: string, fetchImpl: typeof fetch): Promise<boolean> {
+  if (Date.now() - corpRefreshedAt < CORP_REFRESH_MS) return false;
+  corpRefreshedAt = Date.now(); // 실패해도 하루 동안 다시 시도하지 않는다 (3.6MB 다운로드)
+  try {
+    Object.assign(CORP_CODES, await downloadCorpCodes(apiKey, fetchImpl));
+    return true;
+  } catch (e) {
+    console.error("[stockDividend] corpCode refresh failed", e);
+    return false;
+  }
+}
 
 /** 우선주(005935 등)는 공시가 보통주 회사 코드로 나므로 끝자리를 0으로 바꿔 찾는다 */
 export function resolveCorpCode(code: string): { corpCode: string; preferred: boolean } | null {
@@ -104,8 +149,10 @@ export async function fetchStockDividends(
   fetchImpl: typeof fetch = fetch
 ): Promise<StockDividend[]> {
   if (!apiKey) return [];
-  const corp = resolveCorpCode(code);
-  if (!corp) return []; // ETF·상장폐지 등 DART 회사 코드가 없는 종목
+  let corp = resolveCorpCode(code);
+  // ETF·ETN은 DART 회사가 아니다 — 표를 새로 받아도 없다
+  if (!corp && !isExchangeTradedProduct(code) && (await refreshCorpCodesOnMiss(apiKey, fetchImpl))) corp = resolveCorpCode(code);
+  if (!corp) return [];
   const hit = cache.get(code);
   if (hit && Date.now() - hit.at < CACHE_MS) return hit.list;
   try {

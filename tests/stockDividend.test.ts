@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { deflateRawSync } from "node:zlib";
-import { parseDividendDecision, resolveCorpCode, fetchStockDividends } from "../src/services/stockDividend";
+import { parseDividendDecision, resolveCorpCode, fetchStockDividends, parseCorpCodeXml } from "../src/services/stockDividend";
 import { readZipEntries } from "../src/lib/zipReader";
 
 // DART 배당결정 공시 본문(표) 모양만 줄여서 — 실제 삼성전자 2026-07-30 분기배당 / 2026-01-29 결산배당
@@ -134,4 +134,28 @@ test("공시 목록 → 본문을 차례대로 받아 정정 공시가 같은 �
   assert.equal(list.length, 1);
   assert.equal(list[0].perShare, 380);
   assert.equal(calls.filter((c) => c.includes("document.xml")).length, 2);
+});
+
+test("corpCode.xml에서 상장사만 뽑는다 (비상장은 stock_code가 공백)", () => {
+  const xml = `<result><list><corp_code>00126380</corp_code><corp_name>삼성전자</corp_name><stock_code>005930</stock_code></list>
+<list><corp_code>00999999</corp_code><corp_name>비상장</corp_name><stock_code> </stock_code></list>
+<list><corp_code>01234567</corp_code><corp_name>새상장</corp_name><stock_code>0088K0</stock_code></list></result>`;
+  assert.deepEqual(parseCorpCodeXml(xml), { "005930": "00126380", "0088K0": "01234567" });
+});
+
+test("표에 없는 종목은 DART에서 표를 새로 받아 찾는다 (ETF는 받지 않는다)", async () => {
+  const calls: string[] = [];
+  const fakeFetch = (async (url: string) => {
+    calls.push(url);
+    if (url.includes("corpCode.xml")) {
+      return new Response(makeZip("CORPCODE.xml", "<list><corp_code>07777777</corp_code><stock_code>999990</stock_code></list>"));
+    }
+    return new Response(JSON.stringify({ status: "013" }));
+  }) as typeof fetch;
+  await fetchStockDividends("069500", "2026-09-29", "key", fakeFetch);
+  assert.equal(calls.length, 0);
+  await fetchStockDividends("999990", "2026-09-29", "key", fakeFetch);
+  assert.ok(calls[0].includes("corpCode.xml"));
+  assert.ok(calls[1].includes("corp_code=07777777"));
+  assert.deepEqual(resolveCorpCode("999990"), { corpCode: "07777777", preferred: false });
 });
