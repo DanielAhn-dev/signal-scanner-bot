@@ -35,14 +35,17 @@ export default function GoalTrackerCard() {
   const [editing, setEditing] = useState(false)
   const [form, setForm] = useState({ targetMan: '', planPct: '', contribMan: '' })
   const [busy, setBusy] = useState(false)
+  const [saveError, setSaveError] = useState<string | null>(null)
 
-  const load = useCallback(async (init?: { method: string; body: string }) => {
+  const load = useCallback(async (init?: { method: string; body: string }): Promise<boolean> => {
     try {
       const res = await apiFetch('/api/ui/goal-tracker', { cacheMs: 0, timeoutMs: 15_000, ...(init ?? {}) })
       setView(res?.data ?? null)
       setReason(res?.data ? null : res?.reason ?? res?.error ?? null)
+      return Boolean(res?.data)
     } catch (e: unknown) {
       setReason(e instanceof Error ? e.message : String(e))
+      return false
     }
   }, [])
 
@@ -58,12 +61,14 @@ export default function GoalTrackerCard() {
       planPct: String(view.settings.planAnnualPct),
       contribMan: String(Math.round(view.settings.monthlyContribution / 10_000)),
     })
+    setSaveError(null)
     setEditing(true)
   }
 
   const save = async () => {
     setBusy(true)
-    await load({
+    setSaveError(null)
+    const ok = await load({
       method: 'POST',
       body: JSON.stringify({
         targetMonthlyProfit: Number(form.targetMan) * 10_000,
@@ -72,7 +77,9 @@ export default function GoalTrackerCard() {
       }),
     })
     setBusy(false)
-    setEditing(false)
+    // 실패하면 편집을 닫지 않는다 — 닫으면 옛 값이 그대로 보여 저장된 것처럼 착각한다
+    if (ok) setEditing(false)
+    else setSaveError('저장하지 못했습니다. 잠시 뒤 다시 시도하세요.')
   }
 
   const box: React.CSSProperties = {
@@ -122,6 +129,7 @@ export default function GoalTrackerCard() {
           <Button size="sm" variant="ghost" onClick={() => setEditing(false)}>
             취소
           </Button>
+          {saveError && <div style={{ width: '100%', color: 'var(--color-error)' }}>{saveError}</div>}
           <div style={{ width: '100%', color: 'var(--color-text-tertiary)' }}>
             계획 수익률은 보수적으로 잡으세요 — 검증된 규칙의 과거 수익은 연 11~13%, 기본 8%는 그보다 낮춘 값입니다(1~15% 허용).
           </div>

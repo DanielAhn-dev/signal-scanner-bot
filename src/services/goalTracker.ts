@@ -211,8 +211,9 @@ export async function fetchMonthRealized(
   return { swing: Math.round(swing), sweep: Math.round(sweep), sells, wins };
 }
 
+// Storage CDN이 덮어쓴 파일의 옛 내용을 돌려주면 저장 직후 읽기가 옛 설정을 다시 올려 덮어쓴다 — 매번 캐시를 우회한다
 async function downloadJson<T>(supabase: SupabaseClientAny, path: string): Promise<T | null> {
-  const { data, error } = await supabase.storage.from(BUCKET).download(path);
+  const { data, error } = await supabase.storage.from(BUCKET).download(path, { cacheNonce: String(Date.now()) });
   if (error || !data) return null;
   try {
     return JSON.parse(await data.text()) as T;
@@ -222,18 +223,27 @@ async function downloadJson<T>(supabase: SupabaseClientAny, path: string): Promi
 }
 
 async function uploadJson(supabase: SupabaseClientAny, path: string, value: unknown): Promise<void> {
-  await supabase.storage.from(BUCKET).upload(path, JSON.stringify(value), { upsert: true, contentType: "application/json" });
+  const { error } = await supabase.storage.from(BUCKET).upload(path, JSON.stringify(value), {
+    upsert: true,
+    contentType: "application/json",
+    cacheControl: "0",
+  });
+  if (error) throw new Error(`목표 파일 저장 실패: ${error.message}`);
 }
 
 export async function loadGoalFile(supabase: SupabaseClientAny, chatId: number): Promise<GoalTrackerFile | null> {
   return downloadJson<GoalTrackerFile>(supabase, `${GOAL_TRACKER_DIR}/${chatId}.json`);
 }
 
-/** 오늘 평가액을 기록한다(같은 날은 덮어씀). 설정이 없으면 오늘 평가액으로 기본 목표를 만든다 */
+/**
+ * 오늘 평가액을 기록한다(같은 날은 덮어씀). 설정이 없으면 오늘 평가액으로 기본 목표를 만든다.
+ * settingsPatch가 있으면 같은 읽기·쓰기 한 번에 설정도 바꾼다 — 따로 저장하면 뒤따르는 기록이 옛 설정으로 덮어쓸 수 있다.
+ */
 export async function recordGoalEquity(
   supabase: SupabaseClientAny,
   chatId: number,
-  point: EquityPoint
+  point: EquityPoint,
+  settingsPatch?: Partial<GoalSettings>
 ): Promise<GoalTrackerFile> {
   const file = (await loadGoalFile(supabase, chatId)) ?? {
     settings: {
@@ -245,6 +255,7 @@ export async function recordGoalEquity(
     },
     history: [],
   };
+  if (settingsPatch) file.settings = sanitizeGoalSettings(settingsPatch, file.settings);
   file.history = [...file.history.filter((p) => p.date !== point.date), point].sort((a, b) => a.date.localeCompare(b.date));
   await uploadJson(supabase, `${GOAL_TRACKER_DIR}/${chatId}.json`, file);
   return file;
@@ -262,18 +273,6 @@ export function sanitizeGoalSettings(input: Partial<GoalSettings>, current: Goal
     targetMonthlyProfit: num(input.targetMonthlyProfit, current.targetMonthlyProfit, 10_000, 1e9),
     monthlyContribution: num(input.monthlyContribution, current.monthlyContribution, 0, 1e9),
   };
-}
-
-export async function saveGoalSettings(
-  supabase: SupabaseClientAny,
-  chatId: number,
-  settings: Partial<GoalSettings>
-): Promise<GoalTrackerFile | null> {
-  const file = await loadGoalFile(supabase, chatId);
-  if (!file) return null;
-  file.settings = sanitizeGoalSettings(settings, file.settings);
-  await uploadJson(supabase, `${GOAL_TRACKER_DIR}/${chatId}.json`, file);
-  return file;
 }
 
 export type GoalTrackerView = {

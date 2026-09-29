@@ -8,7 +8,6 @@ import {
   fetchAccountEquity,
   fetchMonthRealized,
   recordGoalEquity,
-  saveGoalSettings,
 } from '../../src/services/goalTracker'
 
 // 목표 트래커 (src/services/goalTracker.ts) — GET: 오늘 평가액을 기록하고 진행 상황 반환 / POST: 목표 설정 변경
@@ -33,14 +32,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   try {
     const today = kstDateKey()
-    if (req.method === 'POST') {
-      const body = (typeof req.body === 'string' ? JSON.parse(req.body || '{}') : req.body) ?? {}
-      const saved = await saveGoalSettings(supabase, chatId, body)
-      if (!saved) return res.status(409).json({ error: '목표 기록이 아직 없습니다. 화면을 새로고침한 뒤 다시 저장하세요.' })
-    }
+    const patch =
+      req.method === 'POST' ? ((typeof req.body === 'string' ? JSON.parse(req.body || '{}') : req.body) ?? {}) : undefined
     const now = await fetchAccountEquity(supabase, chatId, today)
     if (!now) return res.status(200).json({ ok: true, data: null, reason: '가상 계좌(시드) 설정이 없습니다. /투자금 으로 시드를 설정하세요.' })
-    const file = await recordGoalEquity(supabase, chatId, { date: now.date, seed: now.seed, total: now.total, realized: now.realized })
+    // 설정 변경과 오늘 기록을 한 번에 쓴다 — 따로 쓰면 뒤의 기록이 옛 설정으로 덮어쓴다
+    const file = await recordGoalEquity(supabase, chatId, { date: now.date, seed: now.seed, total: now.total, realized: now.realized }, patch)
     const realized = await fetchMonthRealized(supabase, chatId, today)
     return res.status(200).json({ ok: true, data: buildGoalTrackerView({ file, now, realized }) })
   } catch (e: any) {
