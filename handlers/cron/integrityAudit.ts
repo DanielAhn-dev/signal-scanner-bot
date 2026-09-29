@@ -36,6 +36,7 @@ type UserPrefsRow = {
   virtual_seed_capital: number | null;
   virtual_cash: number | null;
   capital_krw: number | null;
+  dividendIncome: number;
 };
 type UserRow = { tg_id: number; prefs: Record<string, unknown> | null };
 type TradeRow = AuditTradeRow & { chat_id: number };
@@ -118,11 +119,19 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     for (const row of usersResult.data ?? []) {
       const prefs = (row.prefs ?? {}) as Record<string, unknown>;
       const num = (v: unknown) => (v == null || !Number.isFinite(Number(v)) ? null : Number(v));
+      // ETF 분배금·종목 배당금은 virtual_trades에 남지 않고 virtual_cash에 바로 더해진다 —
+      // 원장 검산에서 빼먹으면 배당 받은 계좌마다 매번 오탐(cash-mismatch)이 뜬다.
+      const distributionLog = Array.isArray(prefs.virtual_distribution_log) ? prefs.virtual_distribution_log : [];
+      const dividendIncome = distributionLog.reduce(
+        (sum: number, r: { net?: unknown }) => sum + (Number.isFinite(Number(r?.net)) ? Number(r.net) : 0),
+        0
+      );
       prefsByChat.set(Number(row.tg_id), {
         id: Number(row.tg_id),
         virtual_seed_capital: num(prefs.virtual_seed_capital),
         virtual_cash: num(prefs.virtual_cash),
         capital_krw: num(prefs.capital_krw),
+        dividendIncome,
       });
     }
 
@@ -157,6 +166,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           virtualCash,
           trades: tradesByChat.get(chatId) ?? [],
           positions: positionsByChat.get(chatId) ?? [],
+          dividendIncome: prefs?.dividendIncome ?? 0,
         })
       );
     }

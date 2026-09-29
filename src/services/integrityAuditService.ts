@@ -55,10 +55,13 @@ export function reconcileChatLedger(input: {
   virtualCash: number;
   trades: AuditTradeRow[];
   positions: AuditPositionRow[];
+  /** ETF 분배금·종목 배당금 누적 순입금액 — virtual_trades에 남지 않고 virtual_cash에 직접 더해진다 */
+  dividendIncome?: number;
 }): ChatLedgerResult {
   const issues: LedgerIssue[] = [];
   const seedCapital = Math.max(0, toNum(input.seedCapital));
   const actualCash = Math.max(0, toNum(input.virtualCash));
+  const dividendIncome = toNum(input.dividendIncome);
 
   let buyTotal = 0;
   let sellTotal = 0;
@@ -84,7 +87,7 @@ export function reconcileChatLedger(input: {
     }
   }
 
-  const expectedCash = Math.round(seedCapital - buyTotal + sellTotal);
+  const expectedCash = Math.round(seedCapital - buyTotal + sellTotal + dividendIncome);
   const cashDiff = Math.round(actualCash - expectedCash);
   const cashTolerance = Math.max(1_000, Math.round(seedCapital * 0.001));
 

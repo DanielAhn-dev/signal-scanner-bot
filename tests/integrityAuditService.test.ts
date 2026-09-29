@@ -123,6 +123,21 @@ test("reconcile: ADJUST 이력이 있으면 현금은 추정치, 해당 종목 �
   assert.equal(result.issues.length, 0);
 });
 
+test("reconcile: 배당금·분배금 누적액을 반영하면 오탐이 사라진다", () => {
+  const result = reconcileChatLedger({
+    chatId: CHAT_ID,
+    seedCapital: 20_000_000,
+    // 매수만 3M, 배당 267,581원 입금 → 현금 = 20M − 3M + 267,581
+    virtualCash: 17_267_581,
+    trades: [{ code: "005930", side: "BUY", quantity: 40, net_amount: 3_000_000 }],
+    positions: [{ code: "005930", quantity: 40, status: "holding" }],
+    dividendIncome: 267_581,
+  });
+
+  assert.equal(result.cashStatus, "ok");
+  assert.equal(result.issues.length, 0);
+});
+
 test("report: 이상이 없으면 ✅ 한 줄 요약", () => {
   const healthy = reconcileChatLedger({
     chatId: CHAT_ID,
