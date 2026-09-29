@@ -22,7 +22,8 @@ jobs:
   fetch-and-process:
     runs-on: ubuntu-latest
     environment: production
-    timeout-minutes: 30
+    # 평소 23~30분 걸려 30분 제한에 걸려 취소됨(2026-09-28) → 여유를 둔다
+    timeout-minutes: 60
     env:
       SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
       SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
@@ -92,7 +93,7 @@ jobs:
             ARGS="$ARGS --date ${{ github.event.inputs.trading_date }}"
             echo "   📅 기준일 지정: ${{ github.event.inputs.trading_date }}"
           fi
-          python scripts/daily_batch.py $ARGS
+          python -u scripts/daily_batch.py $ARGS
           echo "🏁 Finished: $(date)"
 
       # 전략 경쟁 측정(전향 검증): 매일 그날의 실적 관문 판정·봇 계좌 평가액을 저장하고(--record) 웹 결과를 갱신한다.
