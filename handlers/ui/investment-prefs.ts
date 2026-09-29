@@ -2,6 +2,15 @@ import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { createClient } from '@supabase/supabase-js'
 import { resolveUiUserContext } from './_userContext'
 import { INDEX_HOLD_MODE, normalizeStrategyMode } from '../../src/services/indexHoldStrategy'
+import {
+  nextDepositDate,
+  normalizeDepositDay,
+  normalizeMonthlyDeposit,
+  readDepositLog,
+  readDepositSettings,
+  resolveLastDepositMonthOnSave,
+} from '../../src/services/monthlyDeposit'
+import { toKstDateKey } from '../../src/lib/krxCalendar'
 
 function toPositiveInt(raw: unknown): number | null {
   const num = Number(String(raw ?? '').trim())
@@ -20,6 +29,21 @@ function resolveTargetChatId(req: VercelRequest, userChatId: number | null): num
     || toPositiveInt(body.chatId)
     || null
   )
+}
+
+/** 설정 화면에 보여 줄 월 입금 정보 */
+function depositView(prefs: Record<string, unknown>) {
+  const settings = readDepositSettings(prefs)
+  const seed = Number(prefs.virtual_seed_capital)
+  const total = Number(prefs.virtual_total_deposited)
+  return {
+    monthly_deposit: settings.monthlyDeposit,
+    deposit_day: settings.depositDay,
+    next_deposit_date: nextDepositDate(settings, toKstDateKey()),
+    // 예전 계정은 총 원금 기록이 없다 — 시드를 원금으로 보여 준다
+    total_deposited: Number.isFinite(total) && total > 0 ? total : Number.isFinite(seed) && seed > 0 ? seed : null,
+    deposit_log: readDepositLog(prefs).slice(-12).reverse(),
+  }
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
@@ -68,6 +92,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           virtual_cash: virtualCash != null && Number.isFinite(virtualCash) && virtualCash >= 0 ? virtualCash : null,
           capital_krw: Number.isFinite(capitalKrw) && capitalKrw > 0 ? capitalKrw : null,
           strategy_mode: normalizeStrategyMode(prefs.virtual_strategy_mode),
+          ...depositView(prefs),
         }
       })
     }
@@ -76,6 +101,28 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       if (!targetChatId) return res.status(400).json({ error: 'chat_id required' })
 
       const body = req.body || {}
+
+      // 월 자동 입금 설정만 바꾸는 요청 (src/services/monthlyDeposit.ts)
+      if (body.monthly_deposit !== undefined && body.virtual_seed_capital === undefined) {
+        const amount = normalizeMonthlyDeposit(body.monthly_deposit)
+        if (amount === null) return res.status(400).json({ error: '월 입금액은 0(적립 안 함) 또는 1만원 이상이어야 합니다' })
+        const depositDay = normalizeDepositDay(body.deposit_day)
+        const { data: depRow } = await supabase.from('users').select('prefs').eq('tg_id', targetChatId).maybeSingle()
+        const current = ((depRow?.prefs as Record<string, unknown>) || {}) as Record<string, unknown>
+        const next: Record<string, unknown> = {
+          ...current,
+          virtual_monthly_deposit: amount,
+          virtual_deposit_day: depositDay,
+          virtual_last_deposit_month: resolveLastDepositMonthOnSave({
+            depositDay,
+            previousLastDepositMonth: readDepositSettings(current).lastDepositMonth,
+            todayKey: toKstDateKey(),
+          }),
+        }
+        const { error: depError } = await supabase.from('users').upsert({ tg_id: targetChatId, prefs: next }, { onConflict: 'tg_id' })
+        if (depError) return res.status(500).json({ error: depError.message })
+        return res.status(200).json({ data: depositView(next) })
+      }
 
       // 자동매매 방식만 바꾸는 요청 (종목 봇 ↔ 지수 보유, src/services/indexHoldStrategy.ts)
       if (body.strategy_mode !== undefined && body.virtual_seed_capital === undefined) {
@@ -115,8 +162,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       }
 
       // 처음 시드를 정하는 계정은 현금도 시드로 시작한다 — 비어 있으면 계좌로 인식되지 않는다
+      // 새로 시작하는 것이므로 넣은 원금·입금 내역도 시드부터 다시 센다
       if (resetCash || currentPrefs.virtual_cash == null) {
         updatedPrefs.virtual_cash = newSeedCapital
+        updatedPrefs.virtual_total_deposited = newSeedCapital
+        updatedPrefs.virtual_deposit_log = []
       }
 
       // update는 행이 없으면 0건 갱신으로 조용히 끝난다 — 웹 전용 계정처럼 행이 아직 없을 수 있어 upsert

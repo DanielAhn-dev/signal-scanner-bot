@@ -7,6 +7,14 @@ import TelegramLinkCallout from '../../components/TelegramLinkCallout'
 import { requestOpenProfileModal } from '../../lib/profileModal'
 import { useCurrentChatId, useIsTelegramLinked } from '../../stores/profileStore'
 
+type DepositInfo = {
+  monthly_deposit: number
+  deposit_day: number
+  next_deposit_date: string | null
+  total_deposited: number | null
+  deposit_log: Array<{ date: string; amount: number; cashAfter: number }>
+}
+
 export default function Settings(){
   const currentChatId = useCurrentChatId()
   // 텔레그램은 선택 — 미연결이면 currentChatId는 웹 전용 계정 ID다
@@ -22,6 +30,11 @@ export default function Settings(){
   const [seedCapitalStatus, setSeedCapitalStatus] = useState<string | undefined>()
   const [savingSeed, setSavingSeed] = useState(false)
   const [strategyMode, setStrategyMode] = useState<'stock' | 'index_hold' | null>(null)
+  const [deposit, setDeposit] = useState<DepositInfo | null>(null)
+  const [depositMan, setDepositMan] = useState<string>('')
+  const [depositDay, setDepositDay] = useState<string>('')
+  const [savingDeposit, setSavingDeposit] = useState(false)
+  const [depositStatus, setDepositStatus] = useState<string | undefined>()
   const [savingMode, setSavingMode] = useState(false)
   const [modeStatus, setModeStatus] = useState<string | undefined>()
   const [saving, setSaving] = useState(false)
@@ -55,6 +68,7 @@ export default function Settings(){
         const cash = json?.data?.virtual_cash
         if (cash != null) setVirtualCash(cash)
         setStrategyMode(json?.data?.strategy_mode === 'index_hold' ? 'index_hold' : 'stock')
+        applyDepositInfo(json?.data)
       } catch (e) {
         // ignore
       }
@@ -162,6 +176,49 @@ export default function Settings(){
       setStatus(String(e))
     } finally {
       setLoading(false)
+    }
+  }
+
+  const applyDepositInfo = (data: any) => {
+    if (!data || data.monthly_deposit === undefined) return
+    const info: DepositInfo = {
+      monthly_deposit: Number(data.monthly_deposit) || 0,
+      deposit_day: Number(data.deposit_day) || 1,
+      next_deposit_date: data.next_deposit_date ?? null,
+      total_deposited: data.total_deposited ?? null,
+      deposit_log: Array.isArray(data.deposit_log) ? data.deposit_log : [],
+    }
+    setDeposit(info)
+    setDepositMan(info.monthly_deposit > 0 ? String(info.monthly_deposit / 10_000) : '0')
+    setDepositDay(String(info.deposit_day))
+  }
+
+  const saveDeposit = async () => {
+    const man = Number(depositMan.replace(/,/g, '').trim())
+    const day = Number(depositDay.trim())
+    if (!Number.isFinite(man) || man < 0 || (man > 0 && man < 1)) {
+      setDepositStatus('월 입금액은 0(적립 안 함) 또는 1만원 이상으로 입력하세요')
+      return
+    }
+    if (!Number.isInteger(day) || day < 1 || day > 28) {
+      setDepositStatus('입금일은 1~28일 중에서 고르세요')
+      return
+    }
+    setSavingDeposit(true)
+    setDepositStatus(undefined)
+    try {
+      const json = await apiFetch('/api/ui/investment-prefs', {
+        method: 'POST',
+        cacheMs: 0,
+        timeoutMs: 10_000,
+        body: JSON.stringify({ monthly_deposit: Math.round(man * 10_000), deposit_day: day }),
+      })
+      applyDepositInfo(json?.data)
+      setDepositStatus(man > 0 ? '저장 완료' : '저장 완료 — 월 적립을 하지 않습니다')
+    } catch (e: any) {
+      setDepositStatus(String(e?.message || e))
+    } finally {
+      setSavingDeposit(false)
     }
   }
 
@@ -425,7 +482,7 @@ export default function Settings(){
                   type="number"
                   value={seedCapital}
                   onChange={(e: any) => setSeedCapital(String(e?.target?.value || ''))}
-                  placeholder="예: 10000000"
+                  placeholder="내가 감당할 수 있는 금액"
                 />
               </div>
               <div className="mt-2" style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', alignItems: 'center' }}>
@@ -440,6 +497,53 @@ export default function Settings(){
               <div className="text-xs muted mt-2">
                 잔여 현금 초기화: 자동매매로 누적된 매수/매도 내역을 리셋하고 현금을 시드 자본금으로 복원합니다. 포트폴리오 초기화 없이 예산만 재설정할 때 사용하세요.
               </div>
+            </td>
+          </tr>
+          <tr className="xls-row">
+            <td className="xls-cell" colSpan={2} style={{ fontSize: 13, fontWeight: 600 }}>월 자동 입금</td>
+            <td className="xls-cell" colSpan={4} style={{ padding: '8px 10px' }}>
+              <div className="muted" style={{ whiteSpace: 'normal', wordBreak: 'keep-all' }}>
+                실제로 매달 자동이체할 금액을 정하면, 가상 계좌에도 입금일에 같은 금액이 들어옵니다 (주말·휴일이면 다음 거래일). 입금은 수익률에 섞이지 않습니다.
+              </div>
+              <div className="mt-2 grid-two">
+                <Input
+                  label="월 입금액 (만원, 0이면 적립 안 함)"
+                  type="number"
+                  value={depositMan}
+                  onChange={(e: any) => setDepositMan(String(e?.target?.value || ''))}
+                  placeholder="예: 30"
+                />
+                <Input
+                  label="입금일 (1~28일)"
+                  type="number"
+                  value={depositDay}
+                  onChange={(e: any) => setDepositDay(String(e?.target?.value || ''))}
+                  placeholder="예: 25"
+                />
+              </div>
+              <div className="mt-2" style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center' }}>
+                <Button onClick={() => void saveDeposit()} disabled={savingDeposit} variant="primary">
+                  {savingDeposit ? '저장중…' : '입금 설정 저장'}
+                </Button>
+                {depositStatus && <div className="muted">{depositStatus}</div>}
+              </div>
+              {deposit && (
+                <div className="text-xs mt-2" style={{ lineHeight: 1.6 }}>
+                  <div>
+                    넣은 원금 누적: <strong>{deposit.total_deposited != null ? `${deposit.total_deposited.toLocaleString('ko-KR')}원` : '시드 미설정'}</strong>
+                    {' · '}
+                    {deposit.monthly_deposit > 0
+                      ? <>매월 {deposit.deposit_day}일 {deposit.monthly_deposit.toLocaleString('ko-KR')}원 · 다음 입금 {deposit.next_deposit_date ?? '-'}</>
+                      : '월 적립 안 함'}
+                  </div>
+                  {deposit.deposit_log.length > 0 && (
+                    <div className="mt-1 muted">
+                      최근 입금:{' '}
+                      {deposit.deposit_log.map((r) => `${r.date.slice(5)} +${(r.amount / 10_000).toLocaleString('ko-KR')}만 → 현금 ${r.cashAfter.toLocaleString('ko-KR')}원`).join(' · ')}
+                    </div>
+                  )}
+                </div>
+              )}
             </td>
           </tr>
           <tr className="xls-row">
@@ -463,7 +567,7 @@ export default function Settings(){
                 {modeStatus && <div className="muted">{modeStatus}</div>}
               </div>
               <div className="text-xs muted mt-2">
-                지수 보유: KODEX 200을 계속 들고, 새로 들어온 돈도 KODEX 200을 삽니다. 파는 조건이 없어 100만원 + 월 적립으로 그대로 따라 하기 쉽습니다.
+                지수 보유: KODEX 200을 계속 들고, 월 자동 입금으로 들어온 돈도 KODEX 200을 삽니다. 파는 조건이 없어 내가 정한 시드 + 월 적립으로 그대로 따라 하기 쉽습니다.
               </div>
               <div className="text-xs muted mt-1">
                 검증(100만 + 월 50만 × 10년, 2002~2026 모든 시작 시점): 나쁜 경우 10%도 계속 보유 7,768만 vs 50일선 매매 6,610만 (원금 6,100만). 대신 도중에 원금의 73%까지 내려가는 구간을 견뎌야 합니다 (50일선은 91%). 떨어질 때 팔지 않고 적립을 이어가는 것이 전제입니다.
@@ -481,6 +585,9 @@ export default function Settings(){
               <label className="block muted">가상 자동매매 설정</label>
               <div className="mt-2">
                 <Checkbox label="활성화" checked={!!settings?.is_enabled} onChange={(v) => setSettings({...settings, is_enabled: v})} />
+              </div>
+              <div className="text-xs muted mt-1">
+                순서: ① 시드 자본금 저장 → ② 월 자동 입금 설정(선택) → ③ 활성화 후 저장. 시드를 정하기 전에는 켤 수 없습니다.
               </div>
               <div className="mt-2 grid-two">
                 <div>

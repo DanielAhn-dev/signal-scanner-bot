@@ -103,6 +103,7 @@ import {
   selectGateCoreTargets,
 } from "./gateCoreStrategy";
 import { loadStrategyActivation } from "./strategyPromotion";
+import { applyDeposit, isDepositDue, readDepositSettings } from "./monthlyDeposit";
 import {
   INDEX_HOLD_DESCRIPTION,
   INDEX_HOLD_MODE,
@@ -8112,6 +8113,27 @@ async function applySeedRebaseIfDue(chatId: number, prefs: InvestmentPrefs): Pro
   }
 }
 
+/**
+ * 월 자동 입금 (monthlyDeposit.ts) — 사용자가 정한 금액을 입금일이 지난 첫 실행 때 가상 현금·시드에 더한다.
+ * 시드 재계산 뒤에 호출한다 (재계산이 "시드 + 확정손익"으로 덮어쓰기 전에 입금이 들어가면 입금분이 두 번 셈되지 않게 순서 고정).
+ */
+async function applyMonthlyDepositIfDue(supabase: SupabaseClientAny, chatId: number): Promise<string | null> {
+  try {
+    const { data } = await supabase.from("users").select("prefs").eq("tg_id", chatId).maybeSingle();
+    const raw = ((data?.prefs as Record<string, unknown>) || {}) as Record<string, unknown>;
+    const settings = readDepositSettings(raw);
+    const todayKey = toKstDateKey();
+    if (!isDepositDue(settings, todayKey)) return null;
+    const patch = applyDeposit({ prefs: raw, amount: settings.monthlyDeposit, todayKey });
+    const saved = await setUserInvestmentPrefs(chatId, patch as InvestmentPrefs);
+    if (!saved.ok) return null;
+    return `[월 입금] ${fmtKrw(settings.monthlyDeposit)} 입금 · 가상 현금 ${fmtKrw(Number(patch.virtual_cash))} · 넣은 원금 누적 ${fmtKrw(Number(patch.virtual_total_deposited))}`;
+  } catch (e) {
+    console.error("[autoTrade] monthly deposit failed", e);
+    return null;
+  }
+}
+
 export async function runVirtualAutoTradingForChat(input: {
   chatId: number;
   mode?: RunMode;
@@ -8153,6 +8175,8 @@ export async function runVirtualAutoTradingForChat(input: {
   if (holidayNote) dryRun = true;
 
   const seedRebaseNote = dryRun ? null : await applySeedRebaseIfDue(input.chatId, prefs);
+  const depositNote = dryRun ? null : await applyMonthlyDepositIfDue(supabase, input.chatId);
+  if (depositNote) Object.assign(prefs, await getUserInvestmentPrefs(input.chatId));
 
   const defaultSetting = buildDefaultSettingForChat(input.chatId, prefs.risk_profile);
 
@@ -8237,6 +8261,9 @@ export async function runVirtualAutoTradingForChat(input: {
   action.notes.unshift(...indexRelease.notes);
   if (holidayNote) {
     action.notes.unshift(holidayNote);
+  }
+  if (depositNote) {
+    action.notes.unshift(depositNote);
   }
   if (seedRebaseNote) {
     action.notes.unshift(seedRebaseNote);
@@ -8530,6 +8557,8 @@ export async function runVirtualAutoTradingCycle(input?: {
       const prefs = await getUserInvestmentPrefs(setting.chat_id);
       const userDryRun = dryRun || Boolean(prefs.virtual_shadow_mode);
       const cycleSeedRebaseNote = userDryRun ? null : await applySeedRebaseIfDue(setting.chat_id, prefs);
+      const cycleDepositNote = userDryRun ? null : await applyMonthlyDepositIfDue(supabase, setting.chat_id);
+      if (cycleDepositNote) Object.assign(prefs, await getUserInvestmentPrefs(setting.chat_id));
 
       // 지수 보유 모드 계정은 종목 매매·유휴현금 스윕 없이 그 모드만 실행한다 (indexHoldStrategy.ts)
       const indexMode = normalizeStrategyMode(prefs.virtual_strategy_mode) === INDEX_HOLD_MODE;
@@ -8569,6 +8598,7 @@ export async function runVirtualAutoTradingCycle(input?: {
 
       actionSummary.notes.unshift(...preBuyLiquidate.notes);
       actionSummary.notes.unshift(...indexRelease.notes);
+      if (cycleDepositNote) actionSummary.notes.unshift(cycleDepositNote);
       if (cycleSeedRebaseNote) actionSummary.notes.unshift(cycleSeedRebaseNote);
 
       const cashSweep = indexMode

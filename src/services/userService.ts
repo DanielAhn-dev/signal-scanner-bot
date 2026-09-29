@@ -99,6 +99,13 @@ export type InvestmentPrefs = {
   discovery_profile?: "BLEND" | "HIGHLIGHT" | "PULLBACK" | "MULTIBAGGER" | "BACKTEST_EDGE";
   /** 자동매매 방식: 종목 매매 봇(기본) 또는 지수 보유 모드 (indexHoldStrategy.ts). index_lev15는 예전 값 — 지수 보유로 본다 */
   virtual_strategy_mode?: "stock" | "index_hold" | "index_lev15";
+  /** 월 자동 입금 (monthlyDeposit.ts) — 0이면 적립 안 함 */
+  virtual_monthly_deposit?: number;
+  virtual_deposit_day?: number;
+  virtual_last_deposit_month?: string | null;
+  /** 시작 시드 + 입금 누적 (넣은 원금) */
+  virtual_total_deposited?: number;
+  virtual_deposit_log?: Array<{ date: string; amount: number; cashAfter: number }>;
 };
 
 function resolveDefaultAutoTradeStrategy(

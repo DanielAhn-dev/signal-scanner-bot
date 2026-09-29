@@ -60,6 +60,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const body = req.body || {}
       if (!targetChatId) return res.status(400).json({ error: 'chat_id required' })
 
+      // 활성화는 시드를 정한 뒤에만 — 내가 감당할 수 있는 금액을 먼저 정하고 시작한다
+      if (body.is_enabled === true || body.is_enabled === 'true') {
+        const { data: userRow } = await supabase.from('users').select('prefs').eq('tg_id', targetChatId).maybeSingle()
+        const prefs = ((userRow?.prefs as Record<string, unknown>) || {}) as Record<string, unknown>
+        if (!(Number(prefs.virtual_seed_capital) > 0) || prefs.virtual_cash == null) {
+          return res.status(400).json({ error: '시드(시작 금액)를 먼저 저장한 뒤 활성화하세요' })
+        }
+      }
+
       const VALID_STRATEGIES = ['HOLD_SAFE', 'REDUCE_TIGHT', 'WAIT_AND_DIP_BUY']
       const rawStrategy = String(body.selected_strategy || '').trim().toUpperCase()
 
