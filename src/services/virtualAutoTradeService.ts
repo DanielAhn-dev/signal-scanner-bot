@@ -8168,10 +8168,13 @@ export async function runVirtualAutoTradingForChat(input: {
   }
   // 휴장일(주말·공휴일)엔 체결하지 않는다. 예전엔 추석(2026-09-24)에도 전일 종가로 매수가 체결됐다.
   // 수동 실행은 분석 결과를 볼 수 있게 모의 실행으로 바꾼다.
+  // 장 시간(09:00~15:30) 밖도 같다 — 장 마감 뒤엔 그날 종가, 장 시작 전엔 전날 종가로 체결돼 따라 하는 사람이 그 가격에 살 수 없다.
   const holidayNote =
     !dryRun && !isKrxMarketDay()
       ? "[휴장일] 오늘은 KRX 휴장일이라 체결 없이 모의 실행으로 점검했습니다 (다음 거래일에 실제 매매)"
-      : null;
+      : !dryRun && !isKrxIntradayAutoTradeWindow()
+        ? "[장 시간 외] 지금은 정규장(09:00~15:30)이 아니라 체결 없이 모의 실행으로 점검했습니다 (장중 실행 때 실시간 가격으로 실제 매매)"
+        : null;
   if (holidayNote) dryRun = true;
 
   const seedRebaseNote = dryRun ? null : await applySeedRebaseIfDue(input.chatId, prefs);
