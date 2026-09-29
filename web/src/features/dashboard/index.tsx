@@ -71,11 +71,33 @@ function changeColor(v?: number): string | undefined {
   return v >= 0 ? 'var(--color-stock-up)' : 'var(--color-stock-down)'
 }
 
+/** "9/28 기준 · 9/29 19:13 갱신" — 스캔 기준 거래일 + 섹터 점수 갱신 시각(KST) */
+function formatLastScan(scan: { tradeDate: string | null; updatedAt: string | null } | null): string {
+  if (!scan?.tradeDate && !scan?.updatedAt) return '—'
+  const parts: string[] = []
+  if (scan.tradeDate) {
+    const [, m, d] = scan.tradeDate.slice(0, 10).split('-')
+    parts.push(`${Number(m)}/${Number(d)} 기준`)
+  }
+  if (scan.updatedAt) {
+    const t = new Date(scan.updatedAt)
+    if (!Number.isNaN(t.getTime())) {
+      const kst = new Intl.DateTimeFormat('ko-KR', {
+        timeZone: 'Asia/Seoul', month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false,
+      }).formatToParts(t)
+      const get = (type: string) => kst.find((p) => p.type === type)?.value ?? ''
+      parts.push(`${get('month')}/${get('day')} ${get('hour')}:${get('minute')} 갱신`)
+    }
+  }
+  return parts.join(' · ')
+}
+
 export default function Dashboard({ onNavigate }: { onNavigate?: (r: string) => void }) {
   const chatId = useCurrentChatId()
   const [portfolio, setPortfolio] = useState<PortfolioSummary | null>(null)
   const [sectors, setSectors]     = useState<SectorItem[]>([])
   const [topSector, setTopSector] = useState<string>('')
+  const [lastScan, setLastScan] = useState<{ tradeDate: string | null; updatedAt: string | null } | null>(null)
   const [fillerRows, setFillerRows] = useState(0)
 
   // chatId가 준비되면 포트폴리오 로드 (스토어 hydration 완료 후 실행)
@@ -95,6 +117,7 @@ export default function Dashboard({ onNavigate }: { onNavigate?: (r: string) => 
       const list: SectorItem[] = res?.data ?? res?.sectors ?? []
       setSectors(list)
       if (list.length > 0) setTopSector(list[0]?.name ?? '')
+      if (res?.lastScan) setLastScan(res.lastScan)
     }).catch(() => {})
   }, [])
 
@@ -251,10 +274,10 @@ export default function Dashboard({ onNavigate }: { onNavigate?: (r: string) => 
           <tr className="xls-row xls-row--even">
             <td className="xls-row-num">{rowNum()}</td>
             <td className="xls-cell" colSpan={3} style={{ ...S.midBorder, fontSize: 14, fontWeight: 700, padding: '4px 6px' }}>
-              5. 12. 오전 02:29
+              {formatLastScan(lastScan)}
             </td>
             <td className="xls-cell" colSpan={3} style={{ fontSize: 14, fontWeight: 700, padding: '4px 6px', color: 'var(--color-brand)' }}>
-              {topSector || '반도체'}
+              {topSector || '—'}
             </td>
           </tr>
 

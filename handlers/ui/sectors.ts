@@ -91,11 +91,19 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     // default: return all sectors
       let q = supabase
         .from('sectors')
-        .select('id,name,score,change_rate,metrics')
+        .select('id,name,score,change_rate,metrics,updated_at')
         .order('score', { ascending: false })
       if (top > 0) q = q.limit(top)
-      const { data, error } = await q
+      const [{ data, error }, { data: latestScan }] = await Promise.all([
+        q,
+        supabase.from('pullback_signals').select('trade_date').order('trade_date', { ascending: false }).limit(1),
+      ])
     if (error) return res.status(500).json({ error: error.message })
+    // 홈 "마지막 스캔" 표시용 — 스캔 기준 거래일과 섹터 점수 갱신 시각
+    const lastScan = {
+      tradeDate: (latestScan as any[] | null)?.[0]?.trade_date ?? null,
+      updatedAt: (data ?? []).reduce<string | null>((max, s: any) => (s.updated_at && (!max || s.updated_at > max) ? s.updated_at : max), null),
+    }
     
     // 수주 신호 상위 섹터 조회
     const orderSignalBoost = await fetchRecentSectorOrderSignalBoost()
@@ -119,6 +127,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const payload = { 
       data: data ?? [],
       orderSignalTopSectors,
+      lastScan,
     }
 
     if (!bypassCache && SECTORS_CACHE_TTL_MS > 0) {
