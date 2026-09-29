@@ -14,8 +14,8 @@
 검사 (근거: 2026-09-28 검증):
   C1 실적 관문 통과 종목 — 전 종목 평균 대비 월 초과수익 > 0, t >= 2. 최근 3년만 따로 봐서 0 이하면 경고
   C2 최근 4분기 적자 종목 — 전 종목 평균 대비 월 초과수익 < 0, t <= -2
-  C3 코스피 50일선 규칙 — 전체(1997~)와 최근 10년 모두 최대 낙폭이 계속 보유보다 작고,
-     연수익이 계속 보유보다 1%p 넘게 뒤지지 않음
+  C3 코스피 50일선 규칙 — 신호 다음 날 체결·전환 비용 0.05% 기준으로, 전체(1997~)와 최근 10년 모두
+     최대 낙폭이 계속 보유보다 작고, 연수익이 계속 보유보다 1%p 넘게 뒤지지 않음
   C4 봇 매도 규칙 — 6개월 추적에서 평균/표준편차가 계속 보유 이상이고, 최악 5% 손실이 더 작음
 
 사용:
@@ -275,17 +275,24 @@ def screen_excess(rows, cond, since="20180427"):
     return v.mean() if len(v) else 0.0, t, ex
 
 
-def kospi_rule(kospi, since):
+def kospi_rule(kospi, since, lag=1, switch_cost=0.0005):
+    """lag=1: i일 종가 신호를 i+1일 종가에 체결 — 실제로 따라 할 수 있는 방식.
+    lag=0(신호 당일 종가 체결)은 체결 불가능한 수익을 더해 30년 연 12.9% vs 8.4%로 부풀렸다 (2026-09-29 발견)."""
     d = [x[0] for x in kospi]
     c = np.array([x[1] for x in kospi], float)
-    i0 = max(51, bisect.bisect_left(d, since))
+    i0 = max(51 + lag, bisect.bisect_left(d, since))
     eq = eh = pk = pkh = 1.0
     mdd = mddh = 0.0
     cd = 0.025 / 252
+    prev = None
     for i in range(i0, len(c) - 1):
-        on = c[i] > c[i - 50:i].mean()
+        j = i - lag
+        on = c[j] > c[j - 50:j].mean()
         r = c[i + 1] / c[i] - 1
         eq *= (1 + r) if on else (1 + cd)
+        if prev is not None and on != prev:
+            eq *= 1 - switch_cost
+        prev = on
         eh *= 1 + r
         pk, pkh = max(pk, eq), max(pkh, eh)
         mdd, mddh = min(mdd, eq / pk - 1), min(mddh, eh / pkh - 1)
@@ -412,9 +419,11 @@ def main():
     c3_ok = True
     for label, since in (("1997~", "19970101"), ("최근 10년", f"{int(dates[-1][:4]) - 10}{dates[-1][4:]}")):
         rc, rm, hc, hm = kospi_rule(kospi, since)
+        rc0, _, _, _ = kospi_rule(kospi, since, lag=0, switch_cost=0.0)
         ok = rm > hm and rc >= hc - 0.01
         c3_ok &= ok
-        lines.append(f"{'✅' if ok else '⚠️'} C3 코스피 50일선 {label}: 규칙 연 {rc*100:.1f}%·낙폭 {rm*100:.0f}% vs 보유 연 {hc*100:.1f}%·낙폭 {hm*100:.0f}%")
+        lines.append(f"{'✅' if ok else '⚠️'} C3 코스피 50일선 {label} (다음 날 체결): 규칙 연 {rc*100:.1f}%·낙폭 {rm*100:.0f}% vs 보유 연 {hc*100:.1f}%·낙폭 {hm*100:.0f}%"
+                     f" · 참고: 당일 종가 체결 가정 {rc0*100:.1f}%")
     ok_all &= c3_ok
 
     e = exit_rules_check(rows, px, dates)
