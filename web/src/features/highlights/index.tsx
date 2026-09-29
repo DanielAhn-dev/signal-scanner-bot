@@ -1,3 +1,4 @@
+import { useSeedCapital } from '../../lib/useSeedCapital'
 import React, { useMemo, useState } from 'react'
 import { apiFetch } from '../../lib/api'
 import { formatKrw, formatNumber } from '../../lib/format'
@@ -148,7 +149,17 @@ export default function HighlightsPage({ onNavigate }: { onNavigate?: (r: string
   const [error, setError] = React.useState<string | null>(null)
   const [selectedCodes, setSelectedCodes] = useState<string[]>([])
   const [amountByCode, setAmountByCode] = useState<Record<string, string>>({})
-  const [totalCapital, setTotalCapital] = useState('10000000')
+  // 시드(설정 > 시드 자본금)로 시작 — 예전엔 1천만원 고정이라 시드 100만원이어도 1천만원 기준 계획이 나왔다
+  const seedCapital = useSeedCapital()
+  const [totalCapital, setTotalCapitalRaw] = useState('10000000')
+  const capitalEditedRef = React.useRef(false)
+  const setTotalCapital = (v: string) => {
+    capitalEditedRef.current = true
+    setTotalCapitalRaw(v)
+  }
+  React.useEffect(() => {
+    if (seedCapital && !capitalEditedRef.current) setTotalCapitalRaw(String(seedCapital))
+  }, [seedCapital])
   const [isSaving, setIsSaving] = useState(false)
   const toast = useToast()
   const shareManager = useShareManager({
@@ -167,13 +178,6 @@ export default function HighlightsPage({ onNavigate }: { onNavigate?: (r: string
       setSelectedCodes((prev) => {
         if (prev.length > 0) return prev.filter(code => nextItems.some((row) => row.code === code))
         return nextItems.slice(0, Math.min(3, nextItems.length)).map((row) => row.code)
-      })
-      setAmountByCode((prev) => {
-        const clone = { ...prev }
-        for (const row of nextItems) {
-          if (!clone[row.code]) clone[row.code] = '1000000'
-        }
-        return clone
       })
     } catch (e: any) {
       const msg = e?.message || String(e)
@@ -195,9 +199,13 @@ export default function HighlightsPage({ onNavigate }: { onNavigate?: (r: string
   }, [load])
 
   const selectedItems = useMemo(() => items.filter((row) => selectedCodes.includes(row.code)), [items, selectedCodes])
+  // 종목별 투입 금액 기본값 = 총 투자금 ÷ 선택 종목 수 (1만원 단위). 직접 입력한 값은 그대로 둔다.
+  // 예전엔 종목마다 100만원 고정이라 시드 100만원에 3종목을 고르면 300만원(초과)이 됐다.
+  const defaultAmount = Math.floor(Number(totalCapital || 0) / Math.max(1, selectedCodes.length) / 10_000) * 10_000
+  const amountOf = (code: string): string => amountByCode[code] ?? String(defaultAmount)
   const totalPlannedAmount = useMemo(
-    () => selectedItems.reduce((acc, row) => acc + Number(amountByCode[row.code] || 0), 0),
-    [selectedItems, amountByCode],
+    () => selectedItems.reduce((acc, row) => acc + Number(amountOf(row.code) || 0), 0),
+    [selectedItems, amountByCode, defaultAmount],
   )
   const remaining = Number(totalCapital || 0) - totalPlannedAmount
 
@@ -239,7 +247,7 @@ export default function HighlightsPage({ onNavigate }: { onNavigate?: (r: string
     setIsSaving(true)
     try {
       const rows: HighlightPlanItem[] = selectedItems.map((row) => {
-        const amount = Math.max(0, Number(amountByCode[row.code] || 0))
+        const amount = Math.max(0, Number(amountOf(row.code) || 0))
         return defaultPlanItem({
           code: row.code,
           name: row.name,
@@ -355,7 +363,7 @@ export default function HighlightsPage({ onNavigate }: { onNavigate?: (r: string
           {/* TOP 3: 풀 카드 */}
           {items.slice(0, 3).map((row, index) => {
             const selected = selectedCodes.includes(row.code)
-            const amount = amountByCode[row.code] || '0'
+            const amount = amountOf(row.code)
             const prices = calcPrices(row)
             const reasons = Array.isArray(row.adaptive_reasons) && row.adaptive_reasons.length > 0 ? row.adaptive_reasons : null
             return (
@@ -496,7 +504,7 @@ export default function HighlightsPage({ onNavigate }: { onNavigate?: (r: string
               <div className="highlights-compact-list">
                 {items.slice(3).map((row, i) => {
                   const selected = selectedCodes.includes(row.code)
-                  const amount = amountByCode[row.code] || '0'
+                  const amount = amountOf(row.code)
                   return (
                     <div
                       key={row.code}

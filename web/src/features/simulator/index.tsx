@@ -1,3 +1,4 @@
+import { useSeedCapital } from '../../lib/useSeedCapital'
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { LucideIcon } from '../../components/LucideIcon'
 import { useCurrentChatId } from '../../stores/profileStore'
@@ -267,7 +268,15 @@ export default function SimulatorPage() {
   const chatId = useCurrentChatId()
   const initialPlan = useMemo(() => readSimulationPlan(), [])
   const [totalCapital, setTotalCapital] = useState(initialPlan?.totalCapital ?? 10_000_000)
-  const [items, setItems] = useState<HighlightPlanItem[]>([]) // 항상 빈 배열로 시작
+  // 집행우선·백테스트가 넘긴 종목으로 시작한다. 예전엔 "항상 빈 배열"이라 투자금만 넘어오고 종목은 버려져
+  // 시뮬레이터가 비어 있었다(계획에 종목이 있으면 서버 불러오기도 건너뛰어 아무것도 안 보였다).
+  const [items, setItems] = useState<HighlightPlanItem[]>(() => (Array.isArray(initialPlan?.items) ? initialPlan!.items : []))
+  // 넘겨받은 계획이 없으면 투자금을 내 시드로 (1천만원 고정 대신)
+  const seedCapital = useSeedCapital()
+  useEffect(() => {
+    if (!initialPlan && seedCapital) setTotalCapital(seedCapital)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [seedCapital])
   const [monthlyProfitTarget, setMonthlyProfitTarget] = useState(500_000) // 월 500만원 기본값
   const [fillRatePct, setFillRatePct] = useState(100)
   const [feePct, setFeePct] = useState(0.15)
@@ -1006,7 +1015,14 @@ export default function SimulatorPage() {
               </span>
             </div>
           </div>
-          <button 
+          {/* 계산은 맞지만 60% 같은 숫자를 그대로 보여 주면 달성 가능한 목표처럼 읽힌다 */}
+          {calcRequiredAnnualReturn(monthlyProfitTarget, totalCapital) > 15 && (
+            <p style={{ margin: '6px 0', fontSize: 12, color: 'var(--color-error)' }}>
+              이 목표는 투자금에 비해 큽니다 — 검증된 규칙의 과거 수익은 연 10~13%입니다. 이 투자금이면 월{' '}
+              {formatKrw(Math.round((totalCapital * 0.08) / 12))} 안팎이 현실적입니다(연 8% 가정). 필요한 시드는 홈의 목표 트래커에서 확인하세요.
+            </p>
+          )}
+          <button
             className="sim-btn sim-btn--primary" 
             onClick={generateRecommendation}
             disabled={monthlyProfitTarget <= 0 || 
