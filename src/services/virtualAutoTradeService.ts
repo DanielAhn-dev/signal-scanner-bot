@@ -103,6 +103,7 @@ import {
   selectGateCoreTargets,
 } from "./gateCoreStrategy";
 import { loadStrategyActivation } from "./strategyPromotion";
+import { checkKrxLiveSession } from "../lib/krxLiveSession";
 import { applyDeposit, isDepositDue, readDepositSettings } from "./monthlyDeposit";
 import {
   INDEX_HOLD_DESCRIPTION,
@@ -8169,9 +8170,12 @@ export async function runVirtualAutoTradingForChat(input: {
   // 휴장일(주말·공휴일)엔 체결하지 않는다. 예전엔 추석(2026-09-24)에도 전일 종가로 매수가 체결됐다.
   // 수동 실행은 분석 결과를 볼 수 있게 모의 실행으로 바꾼다.
   // 장 시간(09:00~15:30) 밖도 같다 — 장 마감 뒤엔 그날 종가, 장 시작 전엔 전날 종가로 체결돼 따라 하는 사람이 그 가격에 살 수 없다.
+  const liveSession = !dryRun ? await checkKrxLiveSession() : null;
   const holidayNote =
-    !dryRun && !isKrxMarketDay()
-      ? "[휴장일] 오늘은 KRX 휴장일이라 체결 없이 모의 실행으로 점검했습니다 (다음 거래일에 실제 매매)"
+    !dryRun && (!isKrxMarketDay() || liveSession?.closed)
+      ? liveSession?.closed
+        ? `[휴장 감지] 코스피 마지막 체결일이 ${liveSession.lastTradedDate}이라 오늘은 휴장으로 보고 모의 실행으로 점검했습니다`
+        : "[휴장일] 오늘은 KRX 휴장일이라 체결 없이 모의 실행으로 점검했습니다 (다음 거래일에 실제 매매)"
       : !dryRun && !isKrxIntradayAutoTradeWindow()
         ? "[장 시간 외] 지금은 정규장(09:00~15:30)이 아니라 체결 없이 모의 실행으로 점검했습니다 (장중 실행 때 실시간 가격으로 실제 매매)"
         : null;
@@ -8468,7 +8472,12 @@ export async function runVirtualAutoTradingCycle(input?: {
   }
 
   // 휴장일(주말·공휴일·연말 휴장)엔 크론/일괄 실행을 하지 않는다 (dryRun 점검은 허용)
-  if (!dryRun && !isKrxMarketDay(now)) {
+  // 목록에 없는 휴장(임시공휴일·선거일 등)은 코스피 마지막 체결일이 오늘이 아닌 것으로 잡는다 (krxLiveSession.ts)
+  const liveSession = !dryRun && isKrxMarketDay(now) ? await checkKrxLiveSession(now) : null;
+  if (liveSession?.closed) {
+    console.warn(`[autoTrade] 휴장 감지: 코스피 마지막 체결일 ${liveSession.lastTradedDate} — 휴장일 목록(src/lib/krxCalendar.ts)에 오늘을 추가할 것`);
+  }
+  if (!dryRun && (!isKrxMarketDay(now) || liveSession?.closed)) {
     return {
       mode,
       runType,

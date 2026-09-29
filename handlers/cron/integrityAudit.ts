@@ -16,6 +16,7 @@ import { checkDataQuality } from "../../src/services/dataQualityService";
 import { fetchNegativeDisclosures, formatDisclosureFilterNote } from "../../src/services/dartDisclosureFilter";
 import { sendMessage } from "../../src/telegram/api";
 import { economicCalendarCoverage } from "../../src/utils/fetchEconomicCalendar";
+import { krxCalendarStatus, toKstDateKey } from "../../src/lib/krxCalendar";
 
 const CRON_SECRET = process.env.CRON_SECRET;
 const SUPABASE_URL = process.env.SUPABASE_URL;
@@ -192,6 +193,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const calendarNote = calendarEnding.length
       ? `${calendarIssue ? "❌" : "⚠️"} 경제 일정 갱신 필요(src/utils/fetchEconomicCalendar.ts): ${calendarEnding.map((c) => `${c.name} ~${c.lastDate}`).join(", ")}`
       : "✅ 경제 일정 60일 이상 채워짐";
+    // 휴장일 목록도 하드코딩 — 빠지면 휴장일에 매매한다 (장중 실행은 krxLiveSession이 한 번 더 막는다)
+    const krxCal = krxCalendarStatus(toKstDateKey());
+    const krxCalIssue = krxCal.level === "error" ? 1 : 0;
+    const krxCalNote = `${krxCal.level === "error" ? "❌" : krxCal.level === "warn" ? "⚠️" : "✅"} ${krxCal.note}`;
     const message = [
       buildIntegrityReportMessage({
         ymd,
@@ -202,9 +207,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       dataQuality.summary,
       `${disclosureIssue ? "❌" : "✅"} ${formatDisclosureFilterNote(disclosureFilter)}`,
       calendarNote,
+      krxCalNote,
     ].join("\n");
     const issueCount =
-      countIntegrityIssues({ results, staleHoldingCodes }) + dataQuality.issues.length + disclosureIssue + calendarIssue;
+      countIntegrityIssues({ results, staleHoldingCodes }) + dataQuality.issues.length + disclosureIssue + calendarIssue + krxCalIssue;
     const isHealthy = issueCount === 0 && freshness.isHealthy;
 
     const { error: insertError } = await supabase.from("integrity_audit_results").insert({

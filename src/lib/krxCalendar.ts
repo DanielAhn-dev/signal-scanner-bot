@@ -30,6 +30,8 @@ const KRX_HOLIDAYS_BY_YEAR: Record<number, string[]> = {
 
 const KRX_HOLIDAYS = new Set(Object.values(KRX_HOLIDAYS_BY_YEAR).flat());
 export const KRX_CALENDAR_COVERED_YEARS = Object.keys(KRX_HOLIDAYS_BY_YEAR).map(Number);
+/** 거래소 공지로 확인하지 않은 추정 목록 — 매년 12월 KRX 휴장일 공지가 나오면 확인 후 여기서 뺀다 */
+export const KRX_CALENDAR_ESTIMATED_YEARS = [2027];
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const KST_OFFSET_MS = 9 * 60 * 60 * 1000;
@@ -115,4 +117,25 @@ export function countKrxTradingDaysBetween(fromKey: string, toKey: string): numb
 /** 캘린더가 해당 연도를 다루는지 (연초에 목록 갱신이 빠지면 경고용) */
 export function isKrxCalendarCovered(year: number): boolean {
   return KRX_CALENDAR_COVERED_YEARS.includes(year);
+}
+
+/**
+ * 무결성 점검용: 올해·내년 휴장일 목록 상태. 올해가 없으면 ❌(휴장일에 매매함),
+ * 11월부터 내년이 없거나 추정치면 ⚠️(12월 거래소 공지로 갱신할 때).
+ */
+export function krxCalendarStatus(todayKey: string): { level: "ok" | "warn" | "error"; note: string } {
+  const year = Number(todayKey.slice(0, 4));
+  const month = Number(todayKey.slice(5, 7));
+  if (!isKrxCalendarCovered(year)) {
+    return { level: "error", note: `KRX 휴장일 목록에 ${year}년이 없음 — src/lib/krxCalendar.ts·scripts/batch_modules/utils.py 갱신 필요` };
+  }
+  if (month >= 11) {
+    if (!isKrxCalendarCovered(year + 1)) {
+      return { level: "warn", note: `KRX 휴장일 목록에 ${year + 1}년 추가 필요 (거래소 12월 공지 확인)` };
+    }
+    if (KRX_CALENDAR_ESTIMATED_YEARS.includes(year + 1)) {
+      return { level: "warn", note: `KRX ${year + 1}년 휴장일은 추정치 — 거래소 12월 공지와 대조 후 확정할 것` };
+    }
+  }
+  return { level: "ok", note: `KRX 휴장일 목록 ${KRX_CALENDAR_COVERED_YEARS.join("·")}년` };
 }
