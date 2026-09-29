@@ -1,3 +1,4 @@
+import { toKstDateKey } from "../lib/krxCalendar";
 import { createClient } from "@supabase/supabase-js";
 import { PORTFOLIO_TABLES } from "../db/portfolioSchema";
 import {
@@ -1223,7 +1224,8 @@ async function fetchNextCriticalEconomicEvent(): Promise<NextCriticalEconomicEve
     const events = await fetchUpcomingHighRiskEvents();
     const nowMs = Date.now();
     const upcomingCritical = events
-      .filter((e: { importance: string }) => e.importance === "critical")
+      // 만기일 이벤트(id "market-…")는 선제 정리 근거가 없다 (marketEventCalendar.ts blockBuyDays 주석)
+      .filter((e: { id?: string; importance: string }) => e.importance === "critical" && !String(e.id ?? "").startsWith("market-"))
       .map((e: { name: string; scheduledAt: string }) => ({
         name: e.name,
         hoursUntil: (Date.parse(e.scheduledAt) - nowMs) / (60 * 60 * 1000),
@@ -2600,7 +2602,7 @@ async function runCashSweepStep(payload: {
         chat_id: payload.chatId,
         code: sweepCode,
         buy_price: sweepPrice,
-        buy_date: new Date().toISOString().slice(0, 10),
+        buy_date: toKstDateKey(),
         quantity: buyQty,
         invested_amount: buyInvested,
         bucket: "SWING",
@@ -4494,7 +4496,7 @@ async function runMondayBuyForUser(payload: {
         chat_id: chatId,
         code: candidate.code,
         buy_price: executionPrice,
-        buy_date: new Date().toISOString().slice(0, 10),
+        buy_date: toKstDateKey(),
         quantity: qty,
         invested_amount: investedAmount,
         bucket: resolvePositionBucketFromProfile(tradeProfile.profile),
@@ -7475,7 +7477,7 @@ async function runDailyReviewForUser(payload: {
             chat_id: chatId,
             code: candidate.code,
             buy_price: executionPrice,
-            buy_date: new Date().toISOString().slice(0, 10),
+            buy_date: toKstDateKey(),
             quantity: qty,
             invested_amount: investedAmount,
             bucket: resolvePositionBucketFromProfile(adjustedEntryProfile.profile),

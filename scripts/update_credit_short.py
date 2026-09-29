@@ -567,7 +567,7 @@ def update_stocks_latest(
 
 # ── 메인 ──────────────────────────────────────────────────
 def main() -> int:
-    print(f"[START] 공매도 ETL 시작: {datetime.now().isoformat()}")
+    print(f"[START] 공매도 ETL 시작: {datetime.now().astimezone().isoformat()}")
     run_status = load_run_status()
 
     # 기준 거래일 결정
@@ -622,7 +622,7 @@ def main() -> int:
         upsert_daily_records(trading_iso, short_map)
         update_stocks_latest(short_map)
         run_status.update({
-            "last_run_at": datetime.now().isoformat(),
+            "last_run_at": datetime.now().astimezone().isoformat(),
             "last_status": "success",
             "last_reason": "ok",
             "last_success_date": trading_iso,
@@ -636,7 +636,7 @@ def main() -> int:
         reason = "krx_blocked" if _krx_blocked else "empty_result"
         consecutive = int(run_status.get("consecutive_failures") or 0) + 1
         run_status.update({
-            "last_run_at": datetime.now().isoformat(),
+            "last_run_at": datetime.now().astimezone().isoformat(),
             "last_status": "failed",
             "last_reason": reason,
             "consecutive_failures": consecutive,
@@ -654,7 +654,7 @@ def main() -> int:
 
         exit_code = 2 if reason == "krx_blocked" else 1
 
-    print(f"\n[END] 완료: {datetime.now().isoformat()}")
+    print(f"\n[END] 완료: {datetime.now().astimezone().isoformat()}")
     return exit_code
 
 

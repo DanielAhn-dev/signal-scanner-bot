@@ -1,3 +1,4 @@
+import { toKstDateKey } from "../../src/lib/krxCalendar";
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { createClient } from "@supabase/supabase-js";
 import { fetchCreditShortSnapshot } from "../../src/utils/fetchCreditShortData";
@@ -191,8 +192,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     // Normalize date to today if not provided
     if (!opts.date) {
-      const now = new Date();
-      opts.date = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+      opts.date = toKstDateKey();
     }
 
     console.log(`[dailyDataSync] Starting: date=${opts.date}, dryRun=${opts.dryRun}`);

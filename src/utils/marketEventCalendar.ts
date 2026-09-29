@@ -16,7 +16,13 @@ export type MarketEvent = {
   label: string;
   importance: "critical" | "high";
   warningDays: number; // 이 일수 전부터 경고 시작
-  blockBuyDays: number; // 이 일수 이내에는 신규 매수 차단
+  /**
+   * 이 일수 이내에는 신규 매수 차단. 만기일 이벤트는 모두 0 — 코스피 1997-07~2026 검증에서
+   * 만기일 당일·전날 매수 후 1·5·20일 수익이 평소와 차이 없음(|t|<2), 당일 등락도 평균 플러스
+   * (네마녀 +0.33%, 옵션만기 +0.12%, 미국 쿼드위칭 +0.15% vs 평소 +0.05%), 변동폭도 평소 수준.
+   * 예전 값(-0.9/-0.4/-0.6%)은 출처 없는 가정이었고 실측과 방향이 반대였다. (2026-09-29)
+   */
+  blockBuyDays: number;
   averageKospiReaction: number;
   impactSeverity: number;
 };
@@ -71,8 +77,8 @@ export function getMarketEventsForYear(year: number): MarketEvent[] {
         label: "한국 네마녀의 날 (선물·옵션 동시만기)",
         importance: "critical",
         warningDays: 5,
-        blockBuyDays: 1,
-        averageKospiReaction: -0.9,
+        blockBuyDays: 0,
+        averageKospiReaction: 0.33,
         impactSeverity: 85,
       });
     } else {
@@ -83,7 +89,7 @@ export function getMarketEventsForYear(year: number): MarketEvent[] {
         importance: "high",
         warningDays: 3,
         blockBuyDays: 0,
-        averageKospiReaction: -0.4,
+        averageKospiReaction: 0.12,
         impactSeverity: 60,
       });
     }
@@ -96,8 +102,8 @@ export function getMarketEventsForYear(year: number): MarketEvent[] {
       label: "미국 Quad Witching (글로벌 변동성)",
       importance: "critical",
       warningDays: 5,
-      blockBuyDays: 1,
-      averageKospiReaction: -0.6,
+      blockBuyDays: 0,
+      averageKospiReaction: 0.15,
       impactSeverity: 78,
     });
   }

@@ -1,3 +1,4 @@
+import { toKstDateKey } from "../lib/krxCalendar";
 import { createClient } from '@supabase/supabase-js';
 import { analyzeOrderIntakeSignal, type OrderIntakeSignalResult } from '../lib/newsSentiment';
 
@@ -39,7 +40,7 @@ function clamp(value: number, min: number, max: number): number {
 function toDateKey(input?: Date | string): string {
   const d = input ? new Date(input) : new Date();
   if (Number.isNaN(d.getTime())) {
-    return new Date().toISOString().slice(0, 10);
+    return toKstDateKey();
   }
   return d.toISOString().slice(0, 10);
 }

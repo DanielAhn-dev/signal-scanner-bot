@@ -79,10 +79,8 @@ function formatShortDate(raw?: string | null): string {
   if (!raw) return "--.--.--";
   const d = new Date(raw);
   if (Number.isNaN(d.getTime())) return "--.--.--";
-  const yy = String(d.getFullYear()).slice(-2);
-  const mm = String(d.getMonth() + 1).padStart(2, "0");
-  const dd = String(d.getDate()).padStart(2, "0");
-  return `${yy}.${mm}.${dd}`;
+  const [y, mm, dd] = toKstDateKey(d).split("-");
+  return `${y.slice(-2)}.${mm}.${dd}`;
 }
 
 function toPositiveNumber(value: unknown): number | null {
@@ -1346,7 +1344,7 @@ export async function handleWatchlistAdd(
         chat_id: ctx.chatId,
         code,
         buy_price: buyPrice,
-        buy_date: new Date().toISOString().slice(0, 10),
+        buy_date: toKstDateKey(),
         quantity,
         invested_amount: investedAmount,
       },
@@ -2526,7 +2524,7 @@ export async function handleWatchlistRestoreCommand(
   }
 
   const investedAmount = Math.round(buyPrice * qty);
-  const today = new Date().toISOString().slice(0, 10);
+  const today = toKstDateKey();
   const { data: existing } = await supabaseRead
     .from("virtual_positions")
     .select("id, buy_date, created_at")
@@ -2710,7 +2708,7 @@ export async function handleWatchlistQuickAdd(
       chat_id: ctx.chatId,
       code,
       buy_price: price && Number.isFinite(price) ? price : null,
-      buy_date: new Date().toISOString().slice(0, 10),
+      buy_date: toKstDateKey(),
       quantity: alloc.quantity,
       invested_amount: alloc.investedAmount,
     });

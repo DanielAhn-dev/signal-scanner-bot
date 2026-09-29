@@ -1,3 +1,4 @@
+import { toKstDateKey } from '../../src/lib/krxCalendar'
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { createClient, SupabaseClient } from '@supabase/supabase-js'
 import { resolveUiUserContext } from './_userContext'
@@ -133,7 +134,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       }
 
       const close = stock.close != null ? Number(stock.close) : null
-      const today = new Date().toISOString().slice(0, 10)
+      const today = toKstDateKey()
       const { data: inserted, error: insErr } = await supabase
         .from('virtual_positions')
         .insert([{

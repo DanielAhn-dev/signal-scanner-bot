@@ -1,3 +1,4 @@
+import { toKstDateKey } from '../../src/lib/krxCalendar'
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import {
   fetchAllMarketData,
@@ -108,7 +109,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     // 시장 데이터 조회
-    const todayStr = new Date().toISOString().slice(0, 10)
+    const todayStr = toKstDateKey()
     const [marketData, sectorScores] = await Promise.all([
       Promise.race([
         fetchAllMarketData(),

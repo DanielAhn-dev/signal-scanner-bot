@@ -1,4 +1,5 @@
 // src/lib/stocks.ts
+import { toKstDateKey } from "./krxCalendar";
 import { fetchStockPriceSeries, StockPriceRow } from "./source"; // source.ts에서 시세 조회 함수 가져오기
 
 export type StockScore = {
@@ -25,7 +26,7 @@ function calculateScore(series: StockPriceRow[]): number {
 export async function scoreStocksInSector(
   sectorId: string
 ): Promise<StockScore[]> {
-  const today = new Date().toISOString().slice(0, 10);
+  const today = toKstDateKey();
   const seriesByStock = await fetchStockPriceSeries(today, sectorId);
 
   const scores: StockScore[] = [];

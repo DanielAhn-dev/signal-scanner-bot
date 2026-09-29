@@ -84,7 +84,7 @@ def update_sector_data(supabase: Client, trading_date: str):
                 "avg_change_rate": round(avg_change, 4),
                 "change_rate": round(avg_change, 4),
                 "metrics": new_metrics,
-                "updated_at": datetime.now().isoformat(),
+                "updated_at": datetime.now().astimezone().isoformat(),
             })
 
         if sector_updates:
@@ -190,7 +190,7 @@ def populate_sector_daily(supabase: Client):
                     "date": dt,
                     "close": new_close,
                     "value": total_value,
-                    "updated_at": datetime.now().isoformat(),
+                    "updated_at": datetime.now().astimezone().isoformat(),
                 })
 
                 last_known[sid] = {"date": dt, "close": new_close, "value": total_value}
@@ -401,7 +401,7 @@ def calculate_sector_scores(supabase: Client):
             
             updates.append({
                 "id": sid, "name": sname, "score": total_score,
-                "updated_at": datetime.now().isoformat(),
+                "updated_at": datetime.now().astimezone().isoformat(),
             })
 
         if updates:

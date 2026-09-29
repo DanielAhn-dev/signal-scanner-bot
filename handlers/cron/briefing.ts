@@ -1,3 +1,4 @@
+import { toKstDateKey } from '../../src/lib/krxCalendar';
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { createBriefingReport } from "../../src/services/briefingService";
 import { createDailyCandidatePlanningReportResult } from "../../src/services/marketInsightService";
@@ -183,7 +184,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       
       const marketOverview = await fetchAllMarketData();
       const riskSignals = await calculateRiskSignals(supabase, marketOverview as any);
-      const today = new Date().toISOString().split("T")[0];
+      const today = toKstDateKey();
       
       const { error: upsertError } = await supabase.from("risk_signals").upsert({
         signal_date: today,

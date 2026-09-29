@@ -121,7 +121,7 @@ def calculate_indicators(supabase: Client, trading_date: str):
                 "roc14": n(last.get("roc14")),
                 "roc21": n(last.get("roc21")),
                 "avwap_breakout": n(avwap_val) if avwap_val else None,
-                "updated_at": datetime.now().isoformat(),
+                "updated_at": datetime.now().astimezone().isoformat(),
             })
             total_success += 1
 
@@ -177,7 +177,7 @@ def _sync_stocks_indicators(supabase: Client, trading_date: str):
                     "close": safe_int(row.get("close")),
                     "sma20": safe_float(row.get("sma20")) if row.get("sma20") else None,
                     "rsi14": safe_float(row.get("rsi14")) if row.get("rsi14") else None,
-                    "updated_at": datetime.now().isoformat(),
+                    "updated_at": datetime.now().astimezone().isoformat(),
                 })
             if updates:
                 supabase.table("stocks").upsert(updates).execute()

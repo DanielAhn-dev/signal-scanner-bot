@@ -196,7 +196,7 @@ def _update_stocks_close(supabase: Client, trading_date: str):
             "code": r["ticker"],
             "name": valid_stocks[r["ticker"]],
             "close": safe_int(r["close"]),
-            "updated_at": datetime.now().isoformat(),
+            "updated_at": datetime.now().astimezone().isoformat(),
         } for r in daily_rows if r["ticker"] in valid_stocks]
 
         for i in range(0, len(updates), 200):

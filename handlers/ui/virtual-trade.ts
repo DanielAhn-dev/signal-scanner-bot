@@ -1,3 +1,4 @@
+import { toKstDateKey } from '../../src/lib/krxCalendar'
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { createClient } from '@supabase/supabase-js'
 import { resolveUiUserContext } from './_userContext'
@@ -104,7 +105,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const nextQty = prevQty + qty
       const nextInvested = prevInvested + gross
       const nextAvg = nextQty > 0 ? Math.round(nextInvested / nextQty) : Math.round(pr)
-      const defaultBuyDate = new Date().toISOString().slice(0, 10)
+      const defaultBuyDate = toKstDateKey()
 
       if (positionRow?.id) {
         const { error: upErr } = await supabase

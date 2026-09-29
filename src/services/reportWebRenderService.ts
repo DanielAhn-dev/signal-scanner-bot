@@ -1,3 +1,4 @@
+import { toKstDateKey } from '../lib/krxCalendar'
 import type { DailyCandidateForecast } from './marketInsightService'
 import type { PullbackCandidateSectionItem, PullbackSectionMeta } from './weeklyReportSections'
 import type { WeeklyWebPayload } from './weeklyReportService'
@@ -906,7 +907,8 @@ function fmtAddedDate(raw?: string | null): string {
   if (!raw) return '-'
   const d = new Date(raw)
   if (Number.isNaN(d.getTime())) return '-'
-  return `${d.getMonth() + 1}/${d.getDate()}`
+  const [, m, day] = toKstDateKey(d).split('-')
+  return `${Number(m)}/${Number(day)}`
 }
 
 function toStatusLabel(raw?: string | null): string {
@@ -1043,7 +1045,8 @@ function fmtReviewDate(raw?: string | null): string {
   const d = new Date(raw)
   if (Number.isNaN(d.getTime())) return '-'
   const daysLeft = Math.ceil((d.getTime() - Date.now()) / (24 * 60 * 60 * 1000))
-  const label = `${d.getMonth() + 1}/${d.getDate()}`
+  const [, m, day] = toKstDateKey(d).split('-')
+  const label = `${Number(m)}/${Number(day)}`
   if (daysLeft <= 0) return `<span style="color:#F04452;font-weight:600">${label} 리뷰필요</span>`
   if (daysLeft <= 2) return `<span style="color:#FF8A00;font-weight:600">${label} (${daysLeft}일)</span>`
   return `<span style="color:#8B95A1">${label}</span>`

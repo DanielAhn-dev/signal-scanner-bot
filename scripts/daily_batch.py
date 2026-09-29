@@ -175,7 +175,7 @@ def main():
     print("[DEBUG] Supabase client initialized", flush=True)
     sys.stdout.flush()
     
-    print(f"[START] Daily Batch Start: {datetime.now().isoformat()}", flush=True)
+    print(f"[START] Daily Batch Start: {datetime.now().astimezone().isoformat()}", flush=True)
     sys.stdout.flush()
     print(f"   Using individual API mode (KRX batch API unavailable)", flush=True)
     print(f"\n   Options:", flush=True)
@@ -194,7 +194,7 @@ def main():
     investor_max_stale_business_days = int(os.environ.get("INVESTOR_MAX_STALE_BUSINESS_DAYS", "1"))
 
     run_id = f"daily-batch-{datetime.now().strftime('%Y%m%d%H%M%S')}-{uuid.uuid4().hex[:8]}"
-    run_started_at = datetime.now().isoformat()
+    run_started_at = datetime.now().astimezone().isoformat()
     run_status = {
         "run_id": run_id,
         "started_at": run_started_at,
@@ -229,7 +229,7 @@ def main():
         nonlocal finalized
         if finalized:
             return code
-        finished_at = datetime.now().isoformat()
+        finished_at = datetime.now().astimezone().isoformat()
         run_status["finished_at"] = finished_at
         run_status["status"] = status
         run_status["reason"] = reason
@@ -478,7 +478,7 @@ def main():
         "stage_times": {k: round(v, 3) for k, v in stage_times.items()},
     }
 
-    print(f"\n[END] Daily Batch End: {datetime.now().isoformat()}")
+    print(f"\n[END] Daily Batch End: {datetime.now().astimezone().isoformat()}")
     return finalize("success", "", 0)
 
 

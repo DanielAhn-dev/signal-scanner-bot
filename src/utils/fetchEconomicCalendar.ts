@@ -452,7 +452,12 @@ export async function fetchEconomicCalendar(
     const daysAhead = Math.ceil((end.getTime() - start.getTime()) / (24 * 60 * 60 * 1000)) + 1
     const marketEvents = getUpcomingMarketEvents(daysAhead, start).map(marketEventToEconomicEvent)
 
-    const allEvents = [...MAJOR_ECONOMIC_EVENTS, ...marketEvents]
+    // MAJOR_ECONOMIC_EVENTS의 과거 반응 수치(averageKospiReaction·historicalImpacts)는 출처 없는 값이라
+    // 검증 전까지 내보내지 않는다 — 만기일 이벤트의 같은 종류 수치는 실측과 방향이 반대였다 (2026-09-29)
+    const allEvents = [
+      ...MAJOR_ECONOMIC_EVENTS.map(({ averageKospiReaction: _r, historicalImpacts: _h, ...rest }) => rest as EconomicEvent),
+      ...marketEvents,
+    ]
 
     const filteredEvents = allEvents.filter(event => {
       const eventDate = new Date(event.scheduledAt)

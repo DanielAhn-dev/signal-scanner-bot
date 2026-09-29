@@ -1,3 +1,4 @@
+import { toKstDateKey } from "../../lib/krxCalendar";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { ChatContext } from "../router";
 import { actionButtons } from "../messages/layout";
@@ -58,7 +59,7 @@ export async function handleStrategyCallback(
 
   try {
     const chatId = ctx.chatId;
-    const today = new Date().toISOString().split("T")[0];
+    const today = toKstDateKey();
 
     // 1. virtual_autotrade_settings upsert
     const { error: updateError } = await supabase

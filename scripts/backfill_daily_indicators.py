@@ -230,7 +230,7 @@ def process_ticker_indicators(ticker: str, df_ticker: pd.DataFrame) -> list:
                 "roc14": normalize_numeric(row.get("roc14")),
                 "roc21": normalize_numeric(row.get("roc21")),
                 "avwap_breakout": avwap_val,
-                "updated_at": datetime.now().isoformat(),
+                "updated_at": datetime.now().astimezone().isoformat(),
             })
     except Exception as e:
         print(f"  ⚠️ {ticker} 계산 실패: {e}")

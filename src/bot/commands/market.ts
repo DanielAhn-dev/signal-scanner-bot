@@ -1,6 +1,7 @@
 // src/bot/commands/market.ts
 // /시장 — 종합 시장 진단 (진단 로직은 services/marketDiagnosis.ts, 웹과 공용)
 
+import { toKstDateKey } from "../../lib/krxCalendar";
 import type { ChatContext } from "../router";
 import { createClient } from "@supabase/supabase-js";
 import {
@@ -71,7 +72,7 @@ export async function handleMarketCommand(
     text: "시장 종합 진단 분석 중...",
   });
 
-  const todayStr = new Date().toISOString().slice(0, 10);
+  const todayStr = toKstDateKey();
 
   const [marketData, sectorScores] = await Promise.all([
     fetchAllMarketData(),

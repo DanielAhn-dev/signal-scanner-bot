@@ -1,3 +1,4 @@
+import { toKstDateKey } from '../../src/lib/krxCalendar'
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { createClient, SupabaseClient } from '@supabase/supabase-js'
 import { resolveUiUserContext } from './_userContext'
@@ -92,7 +93,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const code = normalizeCode(body.code)
       const buyPrice = asPositiveNumber(body.buy_price)
       const quantity = Math.max(1, Math.trunc(Number(body.quantity || 1)))
-      const buyDate = normalizeYmdDate(body.buy_date) || new Date().toISOString().slice(0, 10)
+      const buyDate = normalizeYmdDate(body.buy_date) || toKstDateKey()
       const brokerName = normalizeLabel(body.broker_name)
       const accountName = normalizeLabel(body.account_name)
 
@@ -299,7 +300,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const code = normalizeCode(body.code)
       const buyPrice = asPositiveNumber(body.buy_price)
       const quantity = Math.max(1, Math.trunc(Number(body.quantity || 1)))
-      const buyDate = normalizeYmdDate(body.buy_date) || new Date().toISOString().slice(0, 10)
+      const buyDate = normalizeYmdDate(body.buy_date) || toKstDateKey()
       const brokerName = normalizeLabel(body.broker_name)
       const accountName = normalizeLabel(body.account_name)
 

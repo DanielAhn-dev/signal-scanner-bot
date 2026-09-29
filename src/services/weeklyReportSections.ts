@@ -1,3 +1,4 @@
+import { toKstDateKey } from "../lib/krxCalendar";
 import type { PDFFont } from "pdf-lib";
 import { fetchAllMarketData, fetchReportMarketData } from "../utils/fetchMarketData";
 import type { TradeWindows, WindowSummary } from "./weeklyReportData";
@@ -327,7 +328,7 @@ export function drawPortfolioSection(
       const reviewAt = new Date(String(item.plannedReviewAt));
       const time = Number.isNaN(reviewAt.getTime())
         ? "-"
-        : `${reviewAt.getFullYear()}-${String(reviewAt.getMonth() + 1).padStart(2, "0")}-${String(reviewAt.getDate()).padStart(2, "0")}`;
+        : toKstDateKey(reviewAt);
       const daysLeft = Number.isNaN(reviewAt.getTime())
         ? null
         : Math.ceil((reviewAt.getTime() - Date.now()) / (24 * 60 * 60 * 1000));

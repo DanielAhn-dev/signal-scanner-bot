@@ -89,6 +89,9 @@ export async function getMacroWarnings(now?: Date): Promise<MacroWarningResult> 
   const warnings: EventWarning[] = []
 
   for (const event of economicEvents) {
+    // 경제 일정 API는 만기일 이벤트(id "market-…")도 섞어 준다 — 만기일은 아래 루프에서만 다룬다
+    // (여기서 받으면 critical로 매수 차단되고, 같은 이름이라 중복 제거에서도 차단 쪽이 남았다)
+    if (String(event.id ?? '').startsWith('market-')) continue
     const eventDate = event.scheduledAt.slice(0, 10)
     const days = daysUntil(eventDate, base)
     const importance = event.importance === 'critical' ? 'critical' : 'high'
@@ -111,14 +114,16 @@ export async function getMacroWarnings(now?: Date): Promise<MacroWarningResult> 
     const urgency = resolveUrgency(days, event.importance)
     if (!urgency) continue
 
+    // 만기일 이벤트는 매수 차단 근거가 없다(30년 검증, marketEventCalendar.ts blockBuyDays 주석) — 참고 경고만
+    const blockBuy = event.blockBuyDays > 0 && days <= event.blockBuyDays && shouldBlockBuy(urgency, event.importance)
     warnings.push({
       daysUntil: days,
       urgency,
       label: event.label,
       date: event.date,
       importance: event.importance,
-      action: resolveAction(urgency, event.importance),
-      blockBuy: shouldBlockBuy(urgency, event.importance),
+      action: blockBuy ? resolveAction(urgency, event.importance) : '참고 — 과거 30년 코스피 영향 없음(매수 차단 안 함)',
+      blockBuy,
     })
   }
 

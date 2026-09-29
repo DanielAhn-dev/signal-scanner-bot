@@ -439,7 +439,7 @@ def apply_inactive_updates(supabase: Client, codes: List[str]) -> int:
                 {
                     "is_active": False,
                     "universe_level": "tail",
-                    "updated_at": datetime.now().isoformat(),
+                    "updated_at": datetime.now().astimezone().isoformat(),
                 }
             ).in_("code", chunk).execute()
             updated += len(chunk)
@@ -482,7 +482,7 @@ def main() -> int:
 
     status = {
         "run_id": run_id,
-        "started_at": datetime.now().isoformat(),
+        "started_at": datetime.now().astimezone().isoformat(),
         "finished_at": None,
         "status": "running",
         "reason": "",
@@ -588,7 +588,7 @@ def main() -> int:
                     "liquidity": liquidity,
                     "universe_level": universe_level,
                     "is_active": True,
-                    "updated_at": datetime.now().isoformat(),
+                    "updated_at": datetime.now().astimezone().isoformat(),
                 }
             )
 
@@ -608,7 +608,7 @@ def main() -> int:
                 miss_count = int(prev_info.get("missing_runs", 0)) + 1
                 next_tracker[code] = {
                     "missing_runs": miss_count,
-                    "last_missing_at": datetime.now().isoformat(),
+                    "last_missing_at": datetime.now().astimezone().isoformat(),
                 }
                 if inactivation_guard and miss_count > cfg.missing_grace_runs:
                     missing_active_codes.append(code)
@@ -660,7 +660,7 @@ def main() -> int:
         print(f"[universe-refresh] failed: {e}")
         return 1
     finally:
-        status["finished_at"] = datetime.now().isoformat()
+        status["finished_at"] = datetime.now().astimezone().isoformat()
         write_status(status)
 
 

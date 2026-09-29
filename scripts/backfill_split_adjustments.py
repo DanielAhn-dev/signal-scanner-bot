@@ -141,7 +141,7 @@ def backfill_code(code: str, start_date: str, end_date: str):
         "rsi14": round(safe_float(last.get("rsi14")), 4) or None,
         "roc14": round(safe_float(last.get("roc14")), 4) or None,
         "roc21": round(safe_float(last.get("roc21")), 4) or None,
-        "updated_at": datetime.now().isoformat(),
+        "updated_at": datetime.now().astimezone().isoformat(),
     }
     supabase.table("daily_indicators").upsert(daily_indicator_row).execute()
 
@@ -150,7 +150,7 @@ def backfill_code(code: str, start_date: str, end_date: str):
         "sma20": round(safe_float(last.get("sma20")), 2) or None,
         "sma50": round(safe_float(last.get("sma50")), 2) or None,
         "rsi14": round(safe_float(last.get("rsi14")), 2) or None,
-        "updated_at": datetime.now().isoformat(),
+        "updated_at": datetime.now().astimezone().isoformat(),
     }
     supabase.table("stocks").update(stock_update).eq("code", code).execute()
     print(f"{code}: stock_daily/daily_indicators/stocks 갱신 완료")

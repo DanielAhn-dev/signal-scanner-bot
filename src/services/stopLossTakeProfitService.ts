@@ -1,6 +1,7 @@
 // src/services/stopLossTakeProfitService.ts
 // 손절/익절 자동 실행 서비스
 
+import { toKstDateKey } from "../lib/krxCalendar";
 import { createClient } from '@supabase/supabase-js'
 type VirtualPosition = {
   id?: number
@@ -301,7 +302,7 @@ export class StopLossTakeProfitService {
         [
           {
             chat_id: chatId,
-            snapshot_date: new Date().toISOString().slice(0, 10),
+            snapshot_date: toKstDateKey(),
             total_invested: totalInvested,
             total_current_value: totalCurrent,
             total_pnl: totalPnL,

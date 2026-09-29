@@ -1,4 +1,5 @@
 ﻿import type { VercelRequest, VercelResponse } from '@vercel/node'
+import { toKstDateKey } from '../../src/lib/krxCalendar'
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
 import { createDailyCandidatePlanningReportResult } from '../../src/services/marketInsightService'
 import { scoreLeadAccumulationCandidate } from '../../src/services/accumulationSignalService'
@@ -203,7 +204,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     // 확신추천(집행우선) 리포트와 같은 선정
     const ranked = selectForecastsForTopic('확신추천', forecasts).slice(0, 5)
     const rankedCodes = ranked.map((f) => f.code)
-    const asOfDate = new Date().toISOString().slice(0, 10)
+    const asOfDate = toKstDateKey()
     const investorFlowByCode = await fetchInvestorFlowByCode(supabase, rankedCodes, asOfDate)
 
     // ranked 코드에 대한 grade 데이터 조회

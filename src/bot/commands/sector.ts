@@ -1,3 +1,4 @@
+import { toKstDateKey } from "../../lib/krxCalendar";
 import type { ChatContext } from "../router";
 import { createClient } from "@supabase/supabase-js";
 import {
@@ -107,7 +108,7 @@ export async function handleSectorCommand(
   let sectors: SectorScore[] = [];
 
   try {
-    const todayStr = new Date().toISOString().slice(0, 10);
+    const todayStr = toKstDateKey();
     const refDate = getBizDaysAgo(todayStr, 1); // 전 영업일
     sectors = await scoreSectors(refDate); // ✅ 재선언 없이 대입만
   } catch (e) {
@@ -164,7 +165,7 @@ export async function handleNextSectorCommand(
   tgSend: any,
   minFlow: number = 5_000_000_000 // 기본 50억 (순환매 초기에는 수급 작을 수 있음)
 ): Promise<void> {
-  const today = new Date().toISOString().slice(0, 10);
+  const today = toKstDateKey();
   let sectors: SectorScore[] = [];
 
   try {

@@ -177,7 +177,7 @@ def build_indicator_rows(code: str, df: pd.DataFrame) -> list[dict]:
                 "roc14": nf(row.get("roc14")),
                 "roc21": nf(row.get("roc21")),
                 "avwap_breakout": nf(avwap_val),
-                "updated_at": datetime.now().isoformat(),
+                "updated_at": datetime.now().astimezone().isoformat(),
             }
         )
     return out

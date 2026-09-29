@@ -1,3 +1,4 @@
+import { toKstDateKey } from "../lib/krxCalendar";
 import { rgb, type RGB } from "pdf-lib";
 
 export const C = {
@@ -85,11 +86,9 @@ export function shiftDays(base: Date, days: number): Date {
 }
 
 export function lineDate(raw: string): string {
-  const d = new Date(raw);
-  const yy = String(d.getFullYear()).slice(-2);
-  const mm = String(d.getMonth() + 1).padStart(2, "0");
-  const dd = String(d.getDate()).padStart(2, "0");
-  return `${yy}.${mm}.${dd}`;
+  // 서버는 UTC — 현지 시각 함수로 만들면 한국 시각 오전 9시 전 기록이 전날로 찍힌다
+  const [y, mm, dd] = toKstDateKey(new Date(raw)).split("-");
+  return `${y.slice(-2)}.${mm}.${dd}`;
 }
 
 export function pnlColor(v: number): RGB {
