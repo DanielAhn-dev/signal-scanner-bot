@@ -143,6 +143,7 @@ const MIN_MID   = 480  // px
 const MIN_RIGHT = 280  // px
 const RECENT_MENU_STORAGE_KEY = 'excel-shell:recent-menu-routes:v1'
 const ZOOM_STORAGE_KEY = 'excel-shell:zoom:v1'
+const QS_VISIBLE_STORAGE_KEY = 'excel-shell:qs-visible:v1'
 const MAX_RECENT_MENU_ITEMS = 6
 const ZOOM_MIN = 50
 const ZOOM_MAX = 200
@@ -187,6 +188,33 @@ function readInitialZoom() {
   }
 
   return 100
+}
+
+const QS_ITEMS_META = [
+  { key: 'watchlist', label: '즐겨찾기 목록' },
+  { key: 'quicksave', label: '현재 화면 저장' },
+  { key: 'control', label: '관제' },
+  { key: 'undo', label: '실행 취소' },
+  { key: 'redo', label: '다시 실행' },
+] as const
+
+type QsKey = typeof QS_ITEMS_META[number]['key']
+type QsVisibleMap = Record<QsKey, boolean>
+
+const QS_VISIBLE_DEFAULTS: QsVisibleMap = {
+  watchlist: true, quicksave: true, control: true, undo: true, redo: true,
+}
+
+function readQsVisible(): QsVisibleMap {
+  if (typeof window === 'undefined') return QS_VISIBLE_DEFAULTS
+  try {
+    const raw = window.localStorage.getItem(QS_VISIBLE_STORAGE_KEY)
+    if (!raw) return QS_VISIBLE_DEFAULTS
+    const parsed = JSON.parse(raw) as Partial<QsVisibleMap>
+    return { ...QS_VISIBLE_DEFAULTS, ...parsed }
+  } catch {
+    return QS_VISIBLE_DEFAULTS
+  }
 }
 
 function getDefaultPanelWidths(viewportWidth: number) {
@@ -276,6 +304,9 @@ export default function ExcelShell({
   const [ribbonScrollHint, setRibbonScrollHint] = useState({ left: false, right: false })
   const [toolsDrawerOpen, setToolsDrawerOpen] = useState(false)
   const toolsDrawerRef = useRef<HTMLDivElement>(null)
+  const [qsVisible, setQsVisible] = useState<QsVisibleMap>(readQsVisible)
+  const [qsCustomizeOpen, setQsCustomizeOpen] = useState(false)
+  const qsCustomizeRef = useRef<HTMLDivElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
   const ribbonBodyRef = useRef<HTMLDivElement>(null)
   const searchContainerRef = useRef<HTMLDivElement>(null)
@@ -432,6 +463,26 @@ export default function ExcelShell({
   }, [toolsDrawerOpen])
 
   useEffect(() => {
+    if (!qsCustomizeOpen) return
+    const handleClickOutside = (e: MouseEvent) => {
+      if (!qsCustomizeRef.current) return
+      if (!qsCustomizeRef.current.contains(e.target as Node)) setQsCustomizeOpen(false)
+    }
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [qsCustomizeOpen])
+
+  const toggleQsVisible = useCallback((key: QsKey) => {
+    setQsVisible(prev => {
+      const visibleCount = QS_ITEMS_META.reduce((n, item) => n + (prev[item.key] ? 1 : 0), 0)
+      if (prev[key] && visibleCount <= 1) return prev
+      const next = { ...prev, [key]: !prev[key] }
+      try { window.localStorage.setItem(QS_VISIBLE_STORAGE_KEY, JSON.stringify(next)) } catch { /* ignore */ }
+      return next
+    })
+  }, [])
+
+  useEffect(() => {
     if (!isUltraCompact || !mobileSearchOpen) return
     const tid = window.setTimeout(() => {
       searchInputRef.current?.focus()
@@ -548,13 +599,58 @@ export default function ExcelShell({
           <div className="excel-titlebar__app-icon" aria-label="Excel">
             <span className="excel-titlebar__app-icon-x">X</span>
           </div>
-          <div className="excel-titlebar__qs">
-            <button className="excel-titlebar__qs-btn excel-tooltip-target" data-tooltip="즐겨찾기 목록" onClick={() => onNavigate('watchlist')}><Star size={13}/></button>
-            <button className="excel-titlebar__qs-btn excel-tooltip-target" data-tooltip={quickSaveTooltip || '현재 화면 저장'} onClick={() => void handleQuickSave()}><Save size={13}/></button>
-            <button className="excel-titlebar__qs-btn excel-tooltip-target" data-tooltip="관제" onClick={() => onNavigate('control')}><Shield size={13}/></button>
-            <button className="excel-titlebar__qs-btn excel-tooltip-target" data-tooltip="실행 취소" onClick={() => window.history.back()}><Undo2 size={13}/></button>
-            <button className="excel-titlebar__qs-btn excel-tooltip-target" data-tooltip="다시 실행" onClick={() => window.history.forward()}><Redo2 size={13}/></button>
-            <button className="excel-titlebar__qs-chevron" aria-label="빠른 실행 도구 모음 사용자 지정"><ChevronDown size={10}/></button>
+          <div className="excel-titlebar__qs" style={{ position: 'relative' }} ref={qsCustomizeRef}>
+            {qsVisible.watchlist && <button className="excel-titlebar__qs-btn excel-tooltip-target" data-tooltip="즐겨찾기 목록" onClick={() => onNavigate('watchlist')}><Star size={13}/></button>}
+            {qsVisible.quicksave && <button className="excel-titlebar__qs-btn excel-tooltip-target" data-tooltip={quickSaveTooltip || '현재 화면 저장'} onClick={() => void handleQuickSave()}><Save size={13}/></button>}
+            {qsVisible.control && <button className="excel-titlebar__qs-btn excel-tooltip-target" data-tooltip="관제" onClick={() => onNavigate('control')}><Shield size={13}/></button>}
+            {qsVisible.undo && <button className="excel-titlebar__qs-btn excel-tooltip-target" data-tooltip="실행 취소" onClick={() => window.history.back()}><Undo2 size={13}/></button>}
+            {qsVisible.redo && <button className="excel-titlebar__qs-btn excel-tooltip-target" data-tooltip="다시 실행" onClick={() => window.history.forward()}><Redo2 size={13}/></button>}
+            <button
+              className="excel-titlebar__qs-chevron"
+              aria-label="빠른 실행 도구 모음 사용자 지정"
+              aria-haspopup="menu"
+              aria-expanded={qsCustomizeOpen}
+              title="빠른 실행 도구 모음 사용자 지정"
+              onClick={() => setQsCustomizeOpen(prev => !prev)}
+            >
+              <ChevronDown size={10}/>
+            </button>
+            {qsCustomizeOpen && (
+              <div
+                role="menu"
+                aria-label="빠른 실행 도구 모음 사용자 지정"
+                style={{
+                  position: 'absolute',
+                  top: '100%',
+                  left: 0,
+                  marginTop: 4,
+                  zIndex: 320,
+                  minWidth: 200,
+                  background: 'var(--color-bg-elevated, #fff)',
+                  border: '1px solid var(--color-excel-grid-border)',
+                  borderRadius: 6,
+                  boxShadow: '0 8px 24px rgba(16, 24, 40, 0.16)',
+                  padding: 'var(--space-2, 8px)',
+                }}
+              >
+                <div className="caption muted" style={{ padding: '2px 6px 6px', fontWeight: 700 }}>빠른 실행 도구 모음 사용자 지정</div>
+                {QS_ITEMS_META.map(item => (
+                  <label
+                    key={item.key}
+                    role="menuitemcheckbox"
+                    aria-checked={qsVisible[item.key]}
+                    style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '4px 6px', fontSize: 12, cursor: 'pointer', color: 'var(--color-text-primary)' }}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={qsVisible[item.key]}
+                      onChange={() => toggleQsVisible(item.key)}
+                    />
+                    {item.label}
+                  </label>
+                ))}
+              </div>
+            )}
           </div>
         </div>
 
@@ -671,7 +767,7 @@ export default function ExcelShell({
 
       {/* ── 2. 리본 탭 ── */}
       <div className="excel-ribbon-tabs" role="tablist">
-        <button className="excel-ribbon-tab" aria-label="파일 메뉴"> {/* excel-ribbon-tab--file */}
+        <button className="excel-ribbon-tab excel-ribbon-tab--file" disabled aria-label="파일 메뉴" title="파일 메뉴는 아직 지원하지 않습니다">
           파일
         </button>
         {RIBBON_TABS.map(t => (
@@ -722,7 +818,7 @@ export default function ExcelShell({
       <div className="excel-formula-bar">
         <div className="excel-formula-bar__name-box">{nameBox}</div>
         <div className="excel-formula-bar__divider">
-          <button className="excel-formula-bar__fn-btn excel-tooltip-target" data-tooltip="함수">
+          <button className="excel-formula-bar__fn-btn" disabled title="함수 편집은 아직 지원하지 않습니다">
             <em style={{ fontFamily: 'Georgia,serif', fontStyle: 'italic' }}>f</em>
             <span style={{ fontStyle: 'normal', fontSize: 9 }}>x</span>
           </button>

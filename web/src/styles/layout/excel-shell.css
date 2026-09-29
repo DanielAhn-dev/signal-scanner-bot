@@ -478,6 +478,13 @@
   color: #FFFFFF;
 }
 .excel-ribbon-tab--file::after { display: none; }
+.excel-ribbon-tab--file:disabled {
+  cursor: not-allowed;
+  opacity: 0.75;
+}
+.excel-ribbon-tab--file:disabled:hover {
+  background: var(--color-excel-title-bar);
+}
 
 /* ================================================================
    RIBBON BODY — 리본 버튼 영역
@@ -1038,6 +1045,14 @@
 .excel-formula-bar__fn-btn:hover {
   background: var(--color-gray-100);
   color: var(--color-brand);
+}
+.excel-formula-bar__fn-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+.excel-formula-bar__fn-btn:disabled:hover {
+  background: transparent;
+  color: var(--color-text-secondary);
 }
 
 .excel-formula-bar__input {
