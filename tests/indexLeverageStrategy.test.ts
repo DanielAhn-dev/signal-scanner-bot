@@ -50,10 +50,20 @@ test("50일선 아래: 지수·레버리지 전량 매도, 소액 계좌는 살 
   assert.equal(plan.buy[0].quantity, 18);
 });
 
-test("50일선 판정 불가도 금리 쪽", () => {
-  const plan = planIndexModeRebalance({ kospiSma50Ratio: null, cash: 500_000, holdings: [], prices });
+test("50일선 판정 불가면 보유를 그대로 두고 매매하지 않는다 (데이터 문제로 1.5배 포지션을 팔지 않음)", () => {
+  const plan = planIndexModeRebalance({
+    kospiSma50Ratio: null,
+    cash: 500_000,
+    holdings: [
+      { code: "069500", quantity: 4, price: 100_000 },
+      { code: "122630", quantity: 20, price: 20_000 },
+    ],
+    prices,
+  });
   assert.equal(plan.regime, "unknown");
-  assert.equal(plan.buy[0].code, "357870");
+  assert.deepEqual(plan.sell, []);
+  assert.deepEqual(plan.buy, []);
+  assert.equal(planIndexModeRebalance({ kospiSma50Ratio: Number.NaN, cash: 500_000, holdings: [], prices }).buy.length, 0);
 });
 
 test("구간 안에서는 비율이 틀어져도 팔지 않고, 새 현금만 모자란 쪽에 넣는다", () => {

@@ -2,13 +2,18 @@
  * 지수 1.5배 모드 — 계정별로 켜는 공격형 전략 (종목 매매 봇 대신 실행).
  *
  * 규칙: 코스피 50일선 위 → KODEX 200 50% + KODEX 레버리지(2배) 50% (합쳐서 지수 약 1.5배)
- *       50일선 아래·판정 불가 → CD금리 ETF (전부 파킹)
+ *       50일선 아래 → CD금리 ETF (전부 파킹) · 판정 불가 → 매매하지 않음(보유 유지)
  * 판정 값은 봇 신규 매수·유휴현금 스윕과 같은 kospiSma50 (KODEX 200 종가 / 직전 50일 평균).
  *
  * 근거 (코스피 1996~2026 일봉, 다음 날 체결, 선물형 레버리지 모델 — 2026-09-29 검증):
  *   50일선 1배 연 10.5%·최대낙폭 -34% / 50일선 1.5배 13.2%·-51% / 50일선 2배 15.0%·-64% / 계속 보유 9.8%·-64%.
  *   2007~2016에는 1배·1.5배·2배 모두 연 3.4~3.6%로 레버리지 이득이 없었다 — 수익이 늘 거라는 보장이 아니라
  *   "오를 때 더 벌고 낙폭도 그만큼 큰" 선택이다. 그래서 관리자 계좌 기본값이 아니라 소액 실험 계정용 옵션이다.
+ * 세금 반영 재검증 (2026-09-29, 실제 KODEX 200·KODEX 레버리지 가격 2010-02~2026-09, 다음 날 종가 체결):
+ *   레버리지는 기타 ETF라 팔 때 이익에 15.4%가 붙고 손실은 상계되지 않는다 (KODEX 200은 비과세, 일반 계좌 기준).
+ *   50일선 1.5배 세전 10.4% → 세후 7.9%·낙폭 -47% / 50일선 1배 세후 8.2%·-29% / KODEX 200 보유 14.1%·-41%.
+ *   2010~2017은 1.5배 세후 0.5%. 일반 계좌에서는 1배보다 낫다는 근거가 없다 — 가상 계좌도 이 세금을 뺀다
+ *   (securitiesTax.resolveOtherEtfGainTax).
  *   50일선 구간 안에서 반반 비율을 다시 맞추는 것(±5%p·±10%p·매일)은 구간 진입 때만 맞추는 것과
  *   연수익·낙폭 차이가 0.1%p 안팎이고 매매만 10배 늘어서, 50일선을 넘나들 때와 새 현금이 생겼을 때만 매매한다.
  */
@@ -79,6 +84,13 @@ export function planIndexModeRebalance(input: {
   const holdings = input.holdings.filter((h) => h.quantity > 0 && h.price > 0);
   const notes: string[] = [];
 
+  // 판정 불가(지수 일봉 조회 실패·부족)는 시장 신호가 아니라 데이터 문제 — 들고 있는 것을 그대로 둔다.
+  // 예전엔 금리 ETF로 전량 갈아타서, 조회 한 번 실패하면 1.5배 포지션을 팔았다가 다음 날 다시 샀다.
+  if (regime === "unknown") {
+    notes.push("코스피 50일선을 판정할 수 없어 이번에는 매매하지 않습니다 (보유 유지)");
+    return { regime, targets: [], sell: [], buy: [], notes };
+  }
+
   let targets: Array<{ code: string; weight: number }>;
   if (regime === "up") {
     const indexCode = pickPriced(INDEX_SWEEP_CODES, input.prices);
@@ -133,5 +145,5 @@ export function planIndexModeRebalance(input: {
 export function describeIndexModeRegime(regime: IndexModePlan["regime"]): string {
   if (regime === "up") return "코스피 50일선 위 → KODEX 200 50% + 레버리지 50% (지수 약 1.5배)";
   if (regime === "down") return "코스피 50일선 아래 → 금리 ETF";
-  return "50일선 판정 불가 → 금리 ETF";
+  return "50일선 판정 불가 → 보유 유지";
 }

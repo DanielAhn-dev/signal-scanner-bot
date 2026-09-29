@@ -91,7 +91,7 @@ import {
   evaluateAutoTradeSignalGate,
 } from "./virtualAutoTradeSignalGate";
 import { sendMessage } from "../telegram/api";
-import { isExchangeTradedProduct, resolveBaseSellTaxRate, resolveSellTaxRate } from "../lib/securitiesTax";
+import { isExchangeTradedProduct, resolveBaseSellTaxRate, resolveOtherEtfGainTax, resolveSellTaxRate } from "../lib/securitiesTax";
 import { fetchBenchmarkComparison, formatBenchmarkLine } from "./virtualAutoTradeBenchmark";
 import { fetchHeavyNetSellingCodes } from "./investorFlowFilter";
 import { fetchFundamentalGateResults, type FundamentalGateResult } from "./fundamentalQualityGate";
@@ -2267,10 +2267,8 @@ async function sellSweepPosition(payload: {
   const { holding, sellQty } = payload;
   const prefs = await getUserInvestmentPrefs(payload.chatId);
   const availableCash = Math.max(0, toNumber(prefs.virtual_cash, 0));
-  const { net } = estimateSweepSell(prefs, holding, sellQty);
+  const { net, feeAmount, taxAmount, soldInvested } = estimateSweepSell(prefs, holding, sellQty);
   const gross = Math.round(holding.price * sellQty);
-  const avgBuyPrice = holding.quantity > 0 ? holding.invested_amount / holding.quantity : holding.price;
-  const soldInvested = Math.round(avgBuyPrice * sellQty);
   const pnl = net - soldInvested;
   const remainingQty = holding.quantity - sellQty;
 
@@ -2291,7 +2289,6 @@ async function sellSweepPosition(payload: {
       .eq("id", holding.id);
   }
 
-  const { feeAmount, taxAmount } = estimateSweepSell(prefs, holding, sellQty);
   await appendTradeLog({
     supabase: payload.supabase,
     chatId: payload.chatId,
@@ -2321,18 +2318,24 @@ async function sellSweepPosition(payload: {
   return { net, pnl };
 }
 
-/** 스윕 매도 비용 계산 — 스윕 종목은 ETF라 매도 증권거래세가 없다 (resolveSellTaxRate) */
+/**
+ * 스윕 매도 비용 계산 — 스윕 종목은 ETF라 매도 증권거래세가 없다 (resolveSellTaxRate).
+ * 대신 레버리지·CD금리 같은 기타 ETF는 이익에 15.4%가 붙는다 (resolveOtherEtfGainTax).
+ */
 function estimateSweepSell(
   prefs: Record<string, unknown>,
   holding: SweepHolding,
   sellQty: number
-): { net: number; feeAmount: number; taxAmount: number } {
+): { net: number; feeAmount: number; taxAmount: number; soldInvested: number } {
   const feeRate = toNumber(prefs.virtual_fee_rate, 0.00015);
   const taxRate = resolveSellTaxRate({ code: holding.code, baseRate: resolveBaseSellTaxRate(prefs.virtual_tax_rate as number | null | undefined) });
   const gross = Math.round(holding.price * sellQty);
   const feeAmount = Math.round(gross * feeRate);
-  const taxAmount = Math.round(gross * taxRate);
-  return { net: Math.max(0, gross - feeAmount - taxAmount), feeAmount, taxAmount };
+  const avgBuyPrice = holding.quantity > 0 ? holding.invested_amount / holding.quantity : holding.price;
+  const soldInvested = Math.round(avgBuyPrice * sellQty);
+  const gainTax = resolveOtherEtfGainTax({ code: holding.code, gain: gross - feeAmount - soldInvested });
+  const taxAmount = Math.round(gross * taxRate) + gainTax;
+  return { net: Math.max(0, gross - feeAmount - taxAmount), feeAmount, taxAmount, soldInvested };
 }
 
 const fmtSweepPnl = (pnl: number) => `${pnl >= 0 ? "+" : ""}${fmtKrw(pnl)}`;
@@ -2545,8 +2548,13 @@ async function runCashSweepStep(payload: {
 
     const prices = await loadSweepPrices(payload.supabase);
     const trend = await fetchIndexSma200Ratios(payload.supabase).catch(() => null);
-    const targetCodes = resolveSweepTargetCodes(trend?.kospiSma50 ?? null);
-    const targetLabel = targetCodes === INDEX_SWEEP_CODES ? "코스피 50일선 위 → 지수" : "코스피 50일선 아래(또는 판정 불가) → 금리";
+    // 판정 불가(조회 실패·일봉 부족)는 데이터 문제 — 지수 스윕을 금리로 갈아타거나 새로 넣지 않고 이번 회차는 건너뛴다
+    if (trend?.kospiSma50 == null || !Number.isFinite(trend.kospiSma50)) {
+      notes.push("[유휴현금 스윕] 코스피 50일선 판정 불가 — 이번에는 스윕 매매를 하지 않습니다 (보유 유지)");
+      return { notes };
+    }
+    const targetCodes = resolveSweepTargetCodes(trend.kospiSma50);
+    const targetLabel = targetCodes === INDEX_SWEEP_CODES ? "코스피 50일선 위 → 지수" : "코스피 50일선 아래 → 금리";
     // 배치가 아직 해당 ETF 종가를 추적하지 않으면 금리형으로 대체, 그것도 없으면 조용히 건너뜀
     const sweepCode =
       targetCodes.find((code) => (prices.get(code)?.close ?? 0) > 0) ??
