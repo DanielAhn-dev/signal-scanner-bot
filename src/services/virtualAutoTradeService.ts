@@ -115,6 +115,7 @@ import {
   readDistributionLog,
   type DistributionRecord,
 } from "./etfDistribution";
+import { fetchStockDividends } from "./stockDividend";
 import {
   INDEX_HOLD_DESCRIPTION,
   INDEX_HOLD_MODE,
@@ -8149,7 +8150,7 @@ async function applyMonthlyDepositIfDue(supabase: SupabaseClientAny, chatId: num
  * ETF 분배금 (etfDistribution.ts) — 지급일이 지난 첫 실행 때 락일 전 보유 수량만큼 세후 금액을 현금·확정 수익에 넣는다.
  * 확정 수익에 넣으므로 매주 시드 재계산 때 시드로 들어가 재투자된다.
  */
-async function applyEtfDistributionsIfDue(supabase: SupabaseClientAny, chatId: number): Promise<string[]> {
+async function applyDistributionsIfDue(supabase: SupabaseClientAny, chatId: number): Promise<string[]> {
   const notes: string[] = [];
   try {
     const todayKey = toKstDateKey();
@@ -8192,6 +8193,83 @@ async function applyEtfDistributionsIfDue(supabase: SupabaseClientAny, chatId: n
     }
   } catch (e) {
     console.error("[autoTrade] etf distribution failed", e);
+  }
+  return [...notes, ...(await applyStockDividendsIfDue(supabase, chatId))];
+}
+
+/** 보유했거나 최근에 거래한 종목만 DART에서 배당결정 공시를 찾는다 (이 기간 밖 거래만 있는 종목은 받을 배당이 없다) */
+const STOCK_DIVIDEND_TRADE_LOOKBACK_DAYS = 260;
+
+/**
+ * 개별 종목 배당금 (stockDividend.ts) — 공시된 1주당 배당금 × 배당락일 전 보유 수량, 세후 금액을 현금·확정 수익에 넣는다.
+ * DART 조회는 하루 한 번(virtual_dividend_checked_on), 종목별로 차례대로.
+ */
+async function applyStockDividendsIfDue(supabase: SupabaseClientAny, chatId: number): Promise<string[]> {
+  const notes: string[] = [];
+  try {
+    const todayKey = toKstDateKey();
+    const { data: userRow } = await supabase.from("users").select("prefs").eq("tg_id", chatId).maybeSingle();
+    const raw = ((userRow?.prefs as Record<string, unknown>) || {}) as Record<string, unknown>;
+    if (!process.env.DART_API_KEY || raw.virtual_dividend_checked_on === todayKey) return notes;
+
+    const { data: tradeRows } = await supabase
+      .from(PORTFOLIO_TABLES.trades)
+      .select("code, side, quantity, traded_at")
+      .eq("chat_id", chatId)
+      .is("broker_name", null)
+      .is("account_name", null)
+      .limit(5000);
+    const since = new Date(Date.now() - STOCK_DIVIDEND_TRADE_LOOKBACK_DAYS * 86_400_000).toISOString();
+    const byCode = new Map<string, Array<{ side: string; quantity: number; tradedDate: string }>>();
+    const recent = new Set<string>();
+    for (const t of (tradeRows ?? []) as Array<{ code: string; side: string; quantity: number; traded_at: string }>) {
+      const code = String(t.code ?? "");
+      if (!/^[0-9A-Z]{6}$/.test(code) || KODEX_FUND_IDS[code]) continue;
+      const list = byCode.get(code) ?? [];
+      list.push({
+        side: String(t.side),
+        quantity: Math.max(0, Math.floor(toNumber(t.quantity, 0))),
+        tradedDate: toKstDateKey(new Date(t.traded_at)),
+      });
+      byCode.set(code, list);
+      if (String(t.traded_at) >= since) recent.add(code);
+    }
+    const credited = readDistributionLog(raw);
+    const records: DistributionRecord[] = [];
+    for (const [code, trades] of byCode) {
+      const holding = eligibleQuantity(trades, "9999-12-31") > 0;
+      if (!holding && !recent.has(code)) continue;
+      // 차례대로 — DART는 동시 요청을 끊는다
+      const due = dueDistributions(await fetchStockDividends(code, todayKey), todayKey, [...credited, ...records]);
+      for (const d of due) {
+        const qty = eligibleQuantity(trades, exDividendDate(d.recordDate));
+        if (qty <= 0) continue;
+        records.push({
+          ...computeDistributionCredit(d, qty),
+          kind: "stock",
+          ...((d as { payDateEstimated?: boolean }).payDateEstimated ? { payDateEstimated: true } : {}),
+        } as DistributionRecord);
+      }
+    }
+    const net = records.reduce((s, r) => s + r.net, 0);
+    await setUserInvestmentPrefs(chatId, {
+      virtual_dividend_checked_on: todayKey,
+      ...(records.length
+        ? {
+            virtual_cash: Math.round(Math.max(0, toNumber(raw.virtual_cash, 0)) + net),
+            virtual_realized_pnl: toNumber(raw.virtual_realized_pnl, 0) + net,
+            virtual_distribution_log: [...credited, ...records].slice(-80),
+          }
+        : {}),
+    } as InvestmentPrefs);
+    for (const r of records) {
+      notes.push(
+        `[배당금] ${r.code} 기준일 ${r.recordDate} · ${r.quantity}주 × 주당 ${fmtKrw(r.gross / r.quantity)} = ${fmtKrw(r.gross)} − 세금 ${fmtKrw(r.tax)} → ${fmtKrw(r.net)} 입금 (재투자)` +
+          ((r as { payDateEstimated?: boolean }).payDateEstimated ? " · 지급일은 공시에 없어 추정" : "")
+      );
+    }
+  } catch (e) {
+    console.error("[autoTrade] stock dividend failed", e);
   }
   return notes;
 }
@@ -8244,7 +8322,7 @@ export async function runVirtualAutoTradingForChat(input: {
 
   const seedRebaseNote = dryRun ? null : await applySeedRebaseIfDue(input.chatId, prefs);
   const depositNote = dryRun ? null : await applyMonthlyDepositIfDue(supabase, input.chatId);
-  const distributionNotes = dryRun ? [] : await applyEtfDistributionsIfDue(supabase, input.chatId);
+  const distributionNotes = dryRun ? [] : await applyDistributionsIfDue(supabase, input.chatId);
   if (depositNote || distributionNotes.length) Object.assign(prefs, await getUserInvestmentPrefs(input.chatId));
 
   const defaultSetting = buildDefaultSettingForChat(input.chatId, prefs.risk_profile);
@@ -8635,7 +8713,7 @@ export async function runVirtualAutoTradingCycle(input?: {
       const userDryRun = dryRun || Boolean(prefs.virtual_shadow_mode);
       const cycleSeedRebaseNote = userDryRun ? null : await applySeedRebaseIfDue(setting.chat_id, prefs);
       const cycleDepositNote = userDryRun ? null : await applyMonthlyDepositIfDue(supabase, setting.chat_id);
-      const cycleDistributionNotes = userDryRun ? [] : await applyEtfDistributionsIfDue(supabase, setting.chat_id);
+      const cycleDistributionNotes = userDryRun ? [] : await applyDistributionsIfDue(supabase, setting.chat_id);
       if (cycleDepositNote || cycleDistributionNotes.length) Object.assign(prefs, await getUserInvestmentPrefs(setting.chat_id));
 
       // 지수 보유 모드 계정은 종목 매매·유휴현금 스윕 없이 그 모드만 실행한다 (indexHoldStrategy.ts)
