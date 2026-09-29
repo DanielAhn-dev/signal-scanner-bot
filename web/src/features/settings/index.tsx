@@ -7,6 +7,9 @@ import TelegramLinkCallout from '../../components/TelegramLinkCallout'
 import { requestOpenProfileModal } from '../../lib/profileModal'
 import { useCurrentChatId, useIsTelegramLinked } from '../../stores/profileStore'
 
+/** 종목 매매 봇을 권하지 않는 시드 기준 — 2026-09-29 시드 크기 검증: 100만 -9.3%p, 300만 -1.9%p, 1천만 이상 차이 0.2%p 이내 */
+const SMALL_SEED_LIMIT = 10_000_000
+
 type DepositInfo = {
   monthly_deposit: number
   deposit_day: number
@@ -572,6 +575,12 @@ export default function Settings(){
               <div className="text-xs muted mt-1">
                 검증(100만 + 월 50만 × 10년, 2002~2026 모든 시작 시점): 나쁜 경우 10%도 계속 보유 7,768만 vs 50일선 매매 6,610만 (원금 6,100만). 대신 도중에 원금의 73%까지 내려가는 구간을 견뎌야 합니다 (50일선은 91%). 떨어질 때 팔지 않고 적립을 이어가는 것이 전제입니다.
               </div>
+              {strategyMode === 'stock' && Number(seedCapital) > 0 && Number(seedCapital) < SMALL_SEED_LIMIT && (
+                <div className="text-xs mt-1" style={{ color: '#c0392b', whiteSpace: 'normal', wordBreak: 'keep-all' }}>
+                  ⚠ 시드 {Number(seedCapital).toLocaleString('ko-KR')}원으로는 종목 매매 봇이 불리합니다. 과거 검증(2017~2026, 1주 단위 체결)에서 같은 20종목 전략이
+                  시드 100만원이면 연 9.3%p, 300만원이면 1.9%p 손해였습니다 (한 칸 예산으로 살 수 있는 싼 종목만 골라짐). 1천만원 미만이면 지수 보유를 권합니다.
+                </div>
+              )}
               {strategyMode === 'index_hold' && (
                 <div className="text-xs mt-1" style={{ color: 'var(--color-brand)' }}>
                   이 계정은 지수 보유 모드입니다 — 아래 종목 봇 설정(슬롯·점수·익절·손절)은 쓰이지 않고, "활성화"와 실행 버튼만 적용됩니다.
