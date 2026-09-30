@@ -117,6 +117,7 @@ def fetch_quarterly(code: str) -> list[dict]:
         for ev, et in zip(eps_cols[1][1:], eps_titles):
             eps_map[et.get("key", "")] = _safe_int(ev)
 
+    collected_at = datetime.now(timezone.utc).isoformat()
     result = []
     for i, qkey in enumerate(keys):
         pd = _quarter_to_date(qkey)
@@ -125,6 +126,8 @@ def fetch_quarterly(code: str) -> list[dict]:
             "period_end": pd,
             "period_type": "quarter",
             "as_of": f"{pd}T00:00:00+09:00",
+            "available_at": collected_at,
+            "availability_basis": "collection_time",
             "sales": _safe_int(revenues[i] if i < len(revenues) else None),
             "operating_income": _safe_int(op_incs[i] if i < len(op_incs) else None),
             "eps": eps_map.get(qkey),
@@ -132,6 +135,7 @@ def fetch_quarterly(code: str) -> list[dict]:
             "computed": {
                 "is_consensus": consensus.get(qkey, False),
                 "quarter_key": qkey,
+                "availability_basis": "collection_time",
             },
         })
     return result
@@ -187,6 +191,8 @@ def build_trend_records(records: list[dict]) -> list[dict]:
             "rev_acceleration": computed.get("rev_acceleration"),
             "op_acceleration": computed.get("op_acceleration"),
             "source": rec.get("source") or "naver-mobile-api",
+            "available_at": rec.get("available_at"),
+            "availability_basis": rec.get("availability_basis") or "collection_time",
             "computed": computed,
             "updated_at": now_iso,
         })

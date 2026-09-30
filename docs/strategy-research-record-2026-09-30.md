@@ -74,6 +74,15 @@
 - 스냅샷이 없는 기간은 기존 `stocks` 조회로 폴백해 구형 데이터와 호환
 - 검증: `python -m py_compile scripts/refresh_universe_membership.py`, `pnpm build`, 전략 테스트 통과
 
+### 완료: point-in-time 재무 가용 시각 기반 추가
+
+- 대상: [db/migrations/014_add_fundamental_availability.sql](../db/migrations/014_add_fundamental_availability.sql), [src/services/fundamentalStore.ts](../src/services/fundamentalStore.ts), [scripts/etl_fundamentals.ts](../scripts/etl_fundamentals.ts), [scripts/etl_quarterly.py](../scripts/etl_quarterly.py)
+- `fundamentals`와 `fundamental_trends`에 `available_at`, `availability_basis` 추가
+- 현재 네이버 원천에는 공시 접수일이 없으므로 `collection_time`을 보수적 기준으로 저장
+- `getLatestFundamentalSnapshotAsOf(code, availableAt)` 추가: 기준 시각 이후 수집된 재무값은 조회하지 않음
+- 기존 최신 재무 조회 API는 하위 호환을 위해 유지
+- 검증: `pnpm build`, `python -m py_compile scripts/etl_quarterly.py` 통과
+
 ### 즉시 진행
 
 1. 전략 성과에 다음 지표를 공통 적용한다.

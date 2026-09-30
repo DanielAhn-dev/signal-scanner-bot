@@ -66,6 +66,8 @@ function sleep(ms: number) {
         const storeRec: StoreSnapshot = {
           code,
           as_of: new Date().toISOString(),
+          available_at: new Date().toISOString(),
+          availability_basis: "collection_time",
           period_type: "annual",
           period_end: null,
           sales: s.sales ?? null,

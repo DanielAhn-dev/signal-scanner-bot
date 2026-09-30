@@ -11,6 +11,8 @@ export const FUNDAMENTALS_TABLE = "fundamentals";
 export type FundamentalSnapshot = {
   code: string; // 종목 코드
   as_of: string; // ISO date of the snapshot (period end or collection time)
+  available_at?: string | null; // 시스템에서 사용 가능해진 시각
+  availability_basis?: "filing_date" | "collection_time" | string | null;
   period_type?: "annual" | "quarter" | "ttm" | null;
   period_end?: string | null;
   sales?: number | null;
@@ -92,6 +94,33 @@ export async function getLatestFundamentalSnapshot(
   }
 }
 
+/** 기준 시각에 이미 수집돼 있던 재무 스냅샷만 조회한다. */
+export async function getLatestFundamentalSnapshotAsOf(
+  code: string,
+  availableAt: string
+): Promise<FundamentalSnapshot | null> {
+  try {
+    const { data, error } = await supabase
+      .from(FUNDAMENTALS_TABLE)
+      .select("*")
+      .eq("code", code)
+      .not("available_at", "is", null)
+      .lte("available_at", availableAt)
+      .order("available_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (error) {
+      console.error("getLatestFundamentalSnapshotAsOf query error:", error);
+      return null;
+    }
+    return (data as FundamentalSnapshot | null) ?? null;
+  } catch (e) {
+    console.error("getLatestFundamentalSnapshotAsOf exception:", e);
+    return null;
+  }
+}
+
 export async function getFundamentalSnapshotsForCodes(
   codes: string[]
 ): Promise<Record<string, FundamentalSnapshot | null>> {
@@ -167,6 +196,7 @@ export default {
   upsertFundamentalSnapshot,
   bulkUpsertFundamentalSnapshots,
   getLatestFundamentalSnapshot,
+  getLatestFundamentalSnapshotAsOf,
   getFundamentalSnapshotsForCodes,
   getStockClosePrices,
 };
