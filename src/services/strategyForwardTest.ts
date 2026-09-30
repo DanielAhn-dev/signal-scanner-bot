@@ -14,6 +14,7 @@
  */
 
 import { isCapitalFlow, type EquityPoint } from "./goalTracker";
+import { computeDistributionCredit, exDividendDate, type EtfDistribution } from "./etfDistribution";
 
 export type DailyBar = { date: string; open: number; close: number; volume: number; high?: number; low?: number };
 export type ScoreRow = { code: string; score: number };
@@ -194,28 +195,56 @@ function maxDrawdown(equity: number[]): number {
   return mdd * 100;
 }
 
+/**
+ * ETF 분배금 내역 → 분배락일(가격이 실제로 빠지는 날) 기준 세후 주당 금액 지도.
+ * 종가 수익률만으로는 분배금이 빠져 kodex200-hold·index-core가 실제보다 낮게 나온다
+ * (etfDistribution.ts 참고 — 예전에 봇 실계좌 쪽에서 한 번 고친 것과 같은 문제).
+ */
+export function buildDistributionNetPerShareByDate(distributions: EtfDistribution[]): Map<string, number> {
+  const map = new Map<string, number>();
+  for (const d of distributions) {
+    const date = exDividendDate(d.recordDate);
+    const net = computeDistributionCredit(d, 1).net;
+    map.set(date, (map.get(date) ?? 0) + net);
+  }
+  return map;
+}
+
 /** 지수 코어·보유·CD: 일별 */
 export function simulateIndexStrategies(input: {
   index: DailyBar[]; // KODEX200 (시작 전 100봉 이상 포함)
   startDate: string;
+  /** KODEX200 분배락일 → 세후 주당 분배금. 없으면 분배금 없이(세전 가격수익률만) 계산 */
+  distributionNetPerShareByDate?: Map<string, number>;
+  /** 실제 CD/금리 ETF 가격(예: KODEX CD금리액티브). 없으면 CD_ANNUAL 고정값으로 대체 */
+  cd?: DailyBar[];
 }): StrategyResult[] {
   const bars = input.index.filter((b) => b.close > 0);
   const closes = bars.map((b) => b.close);
   const startIdx = bars.findIndex((b) => b.date >= input.startDate);
   if (startIdx < 1) return [];
-  const cdDaily = (1 + CD_ANNUAL) ** (1 / 250) - 1;
+  const distByDate = input.distributionNetPerShareByDate ?? new Map<string, number>();
+  const cdCloseByDate = new Map((input.cd ?? []).filter((b) => b.close > 0).map((b) => [b.date, b.close]));
+  const cdDailyFallback = (1 + CD_ANNUAL) ** (1 / 250) - 1;
+  const cdReturnOn = (date: string, prevDate: string): number => {
+    const cur = cdCloseByDate.get(date);
+    const prev = cdCloseByDate.get(prevDate);
+    return cur && prev ? cur / prev - 1 : cdDailyFallback;
+  };
   const eq = { core: [1], hold: [1], cd: [1] };
   let inIndex = false;
   for (let i = startIdx; i < bars.length; i += 1) {
-    const ret = bars[i].close / bars[i - 1].close - 1;
+    const distYield = (distByDate.get(bars[i].date) ?? 0) / bars[i - 1].close;
+    const ret = bars[i].close / bars[i - 1].close - 1 + distYield;
+    const cdRet = cdReturnOn(bars[i].date, bars[i - 1].date);
     const m = sma(closes, i - 1, INDEX_CORE_SMA_WINDOW);
     const wantIndex = m != null && closes[i - 1] > m;
     const switchCost = wantIndex !== inIndex ? ETF_SIDE_COST * 2 : 0;
     inIndex = wantIndex;
     const last = (k: keyof typeof eq) => eq[k][eq[k].length - 1];
-    eq.core.push(last("core") * (1 + (inIndex ? ret : cdDaily) - switchCost));
+    eq.core.push(last("core") * (1 + (inIndex ? ret : cdRet) - switchCost));
     eq.hold.push(last("hold") * (1 + ret));
-    eq.cd.push(last("cd") * (1 + cdDaily));
+    eq.cd.push(last("cd") * (1 + cdRet));
   }
   const n = bars.length - startIdx;
   const mk = (name: StrategyName, e: number[]): StrategyResult => ({

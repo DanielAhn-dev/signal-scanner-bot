@@ -9,6 +9,7 @@
 import "dotenv/config";
 import { createClient } from "@supabase/supabase-js";
 import { isExchangeTradedProduct } from "../src/lib/securitiesTax";
+import { fetchEtfDistributions } from "../src/services/etfDistribution";
 import { computeFlowScore, pickHeavyNetSelling } from "../src/services/investorFlowFilter";
 import { fetchFundamentalGateResults } from "../src/services/fundamentalQualityGate";
 import { buildPromotionKeyboard } from "../src/services/strategyPromotion";
@@ -39,6 +40,7 @@ import {
   type GateSnapshot,
   type BotEquitySnapshot,
   formatForwardTestReport,
+  buildDistributionNetPerShareByDate,
   simulateIndexStrategies,
   simulateOrderSheetStrategy,
   simulateWeeklyStrategy,
@@ -167,6 +169,9 @@ async function main(): Promise<void> {
     seriesByCode.set(r.ticker, s);
   }
   const index = seriesByCode.get("069500") ?? [];
+  const cdSeries = seriesByCode.get("459580") ?? []; // KODEX CD금리액티브(합성) 실제 가격
+  const kodex200Distributions = await fetchEtfDistributions("069500").catch(() => []);
+  const distributionNetPerShareByDate = buildDistributionNetPerShareByDate(kodex200Distributions);
   const tradingDates = index.map((b) => b.date);
   const endDate = tradingDates[tradingDates.length - 1];
   const inRange = tradingDates.filter((d) => d >= START);
@@ -323,7 +328,7 @@ async function main(): Promise<void> {
   }
 
   const results: StrategyResult[] = [
-    ...simulateIndexStrategies({ index, startDate: START }),
+    ...simulateIndexStrategies({ index, startDate: START, distributionNetPerShareByDate, cd: cdSeries }),
     ...(botResult ? [botResult] : []),
     simulateGateCore({
       rebalanceDates: monthlyDates,

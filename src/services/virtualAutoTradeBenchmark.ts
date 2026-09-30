@@ -4,7 +4,15 @@
  * 봇이 "그냥 지수를 들고 있거나 현금을 CD금리에 넣어 두는 것"보다 나은지 매일 확인하려고,
  * 첫 거래일 이후 계좌 수익률과 같은 기간 KODEX200·KODEX 코스닥150·CD금리 ETF 보유 수익률을 나란히 보여 준다.
  * (2026-06-09 ~ 09-23: 계좌 약 −1.2% vs KODEX200 −12.9% — 현금 비중 덕분에 지수보다 덜 잃었다)
+ *
+ * KODEX200은 종가 수익률만으로는 분배금이 빠져 실제보다 낮게 나온다(etfDistribution.ts 참고 —
+ * 봇 실계좌 쪽에서 한 번 고친 것과 같은 문제). 이 기준선 계산에도 세후 분배금을 더해 봇 계좌와
+ * 같은 기준(총수익)으로 비교한다. CD금리 ETF는 이자가 분배 없이 가격에 그대로 쌓이는 합성 ETF라
+ * 가격 수익률 자체가 총수익이고, 코스닥150은 분배금 데이터 출처가 없어 가격 수익률 그대로 쓴다.
  */
+
+import { computeDistributionCredit, exDividendDate, fetchEtfDistributions, KODEX_FUND_IDS, type EtfDistribution } from "./etfDistribution";
+import { toKstDateKey } from "../lib/krxCalendar";
 
 type SupabaseClientAny = any;
 
@@ -39,6 +47,16 @@ export function formatBenchmarkLine(input: BenchmarkComparison): string {
 export function computeReturnPct(start: number, end: number): number | null {
   if (!(start > 0) || !(end > 0)) return null;
   return ((end - start) / start) * 100;
+}
+
+/** sinceDate 이후 분배락일 + 지급 완료(payDate<=todayKey) 조건을 만족하는 분배금의 세후 주당 합 */
+export function sumEtfDistributionNetPerShare(distributions: EtfDistribution[], sinceDate: string, todayKey: string): number {
+  let netPerShare = 0;
+  for (const d of distributions) {
+    if (d.payDate > todayKey || exDividendDate(d.recordDate) < sinceDate) continue;
+    netPerShare += computeDistributionCredit(d, 1).net;
+  }
+  return netPerShare;
 }
 
 export async function fetchBenchmarkComparison(input: {
@@ -91,7 +109,12 @@ export async function fetchBenchmarkComparison(input: {
         .limit(1);
       start = Number(firstRows?.[0]?.close ?? 0);
     }
-    const ret = computeReturnPct(start, Number(endRows?.[0]?.close ?? 0));
+    let ret = computeReturnPct(start, Number(endRows?.[0]?.close ?? 0));
+    if (ret != null && start > 0 && KODEX_FUND_IDS[code]) {
+      const distributions = await fetchEtfDistributions(code).catch(() => []);
+      const netPerShare = sumEtfDistributionNetPerShare(distributions, sinceDate, toKstDateKey());
+      ret += (netPerShare / start) * 100;
+    }
     if (ret != null) benchmarks.push({ label, returnPct: ret });
   }
   if (!benchmarks.length) return null;
