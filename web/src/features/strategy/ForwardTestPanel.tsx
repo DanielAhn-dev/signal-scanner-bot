@@ -189,6 +189,7 @@ export default function ForwardTestPanel() {
               <th style={th}>전략</th>
               <th style={{ ...th, textAlign: 'right' }}>누적 수익</th>
               <th style={{ ...th, textAlign: 'right' }}>최대 낙폭</th>
+              <th style={{ ...th, textAlign: 'right' }}>측정 기간</th>
               <th style={th}>기준 대비</th>
             </tr>
           </thead>
@@ -201,6 +202,9 @@ export default function ForwardTestPanel() {
                 </td>
                 <td style={{ ...td, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{pct(r.totalReturnPct)}</td>
                 <td style={{ ...td, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{r.maxDrawdownPct.toFixed(2)}%</td>
+                <td style={{ ...td, textAlign: 'right', fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }}>
+                  {r.periods}일{r.periods < 40 ? ' · 표본 부족' : ''}
+                </td>
                 <td style={td}>{verdict(r)}</td>
               </tr>
             ))}
