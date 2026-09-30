@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import type { VercelRequest, VercelResponse } from '@vercel/node'
-import handler, { normalizeEntry, normalizeRecord } from '../handlers/ui/seed-builder'
+import handler, { isDeleteAllConfirmed, normalizeEntry, normalizeRecord } from '../handlers/ui/seed-builder'
 
 const record = {
   month: '2026-09', household: 'dual-income', ownIncome: 3000000, partnerIncome: 2000000,
@@ -55,4 +55,11 @@ test('확보 내역은 이번 달 이하, 양수 금액, 월 안의 날짜, 금�
   assert.equal(normalizeEntry({ ...entry, date: '2026-09-31' }, now), null)
   assert.equal(normalizeEntry({ ...entry, memo: 'a'.repeat(101) }, now), null)
   assert.equal(normalizeEntry({ month: '2026-09', date: '2026-09-01', amount: 1000 }, now)?.deposited_amount, 0)
+})
+
+test('전체 삭제는 명시적 확인 값이 있을 때만 허용한다', () => {
+  assert.equal(isDeleteAllConfirmed({ confirm: 'delete-all' }), true)
+  assert.equal(isDeleteAllConfirmed({}), false)
+  assert.equal(isDeleteAllConfirmed(null), false)
+  assert.equal(isDeleteAllConfirmed({ confirm: true }), false)
 })

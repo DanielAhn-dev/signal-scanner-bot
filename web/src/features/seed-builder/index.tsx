@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { ArrowRight, ChevronLeft, ChevronRight, Save, Wallet } from 'lucide-react'
+import { ArrowRight, ChevronLeft, ChevronRight, Eye, EyeOff, Save, Wallet } from 'lucide-react'
 import { apiFetch } from '../../lib/api'
 import { useCurrentClientId } from '../../stores/profileStore'
 import './seed-builder.css'
@@ -52,7 +52,21 @@ const emptyRecord = (): MonthRecord => ({
   reserve: 0, plan: 0,
 })
 
-const krw = (amount: number) => `${Math.round(amount).toLocaleString('ko-KR')}원`
+// 금액 가리기: 렌더 시작마다 컴포넌트가 값을 맞춰 두고, 모든 금액 문자열이 krw()를 거쳐 가려진다.
+let amountMask = false
+const krw = (amount: number) => amountMask ? '•••••원' : `${Math.round(amount).toLocaleString('ko-KR')}원`
+const koreanAmount = (amount: number) => {
+  const value = Math.round(amount)
+  if (amountMask || value < 10_000) return krw(value)
+  const eok = Math.floor(value / 100_000_000)
+  const man = Math.floor((value % 100_000_000) / 10_000)
+  const rest = value % 10_000
+  return `${[eok ? `${eok}억` : '', man ? `${man.toLocaleString('ko-KR')}만` : '', rest ? rest.toLocaleString('ko-KR') : ''].filter(Boolean).join(' ')}원`
+}
+const oneOffKeys: ExpenseKey[] = ['water', 'gas', 'residentTax', 'propertyTax', 'vehicleTax', 'taxAdjustment', 'card']
+const readStore = (key: string) => { try { return window.localStorage.getItem(key) } catch { return null } }
+const writeStore = (key: string, value: string) => { try { window.localStorage.setItem(key, value) } catch { /* 저장소를 못 쓰는 환경에서는 세션 동안만 유지 */ } }
+const quickSteps = [10_000, 50_000, 100_000]
 const activeEntries = (list: Entry[] | undefined) => (list ?? []).filter((entry) => !entry.cancelled)
 const entriesSaved = (list: Entry[] | undefined) => activeEntries(list).reduce((sum, entry) => sum + entry.amount, 0)
 const entriesDeposited = (list: Entry[] | undefined) => activeEntries(list).reduce((sum, entry) => sum + entry.deposited, 0)
@@ -64,6 +78,14 @@ const monthIncome = (record: MonthRecord) => record.ownIncome + (record.househol
 // 여력은 0으로 자르지 않는다. 적자 규모를 그대로 보여줘야 이번 달 목표를 쉬어갈지 판단할 수 있다.
 const monthAvailable = (record: MonthRecord) => monthIncome(record) - sumValues(record.expenses) - record.reserve
 const monthKey = (date: Date) => date.toLocaleDateString('sv-SE', { timeZone: 'Asia/Seoul', year: 'numeric', month: '2-digit' }).slice(0, 7)
+
+function AmountHint({ id, value }: { id: string; value: number }) {
+  return <small className="seed-hint" id={id}>{value > 0 ? `약 ${koreanAmount(value)}` : ' '}</small>
+}
+
+function QuickAdd({ label, onAdd }: { label: string; onAdd: (amount: number) => void }) {
+  return <span className="seed-quick" role="group" aria-label={`${label} 빠른 증가`}>{quickSteps.map((step) => <button key={step} type="button" aria-label={`${label}에 ${step / 10_000}만 원 더하기`} onClick={() => onAdd(step)}>+{step / 10_000}만</button>)}</span>
+}
 
 export default function SeedBuilderPage() {
   const navigate = useNavigate()
@@ -84,6 +106,15 @@ export default function SeedBuilderPage() {
   const [entries, setEntries] = useState<Record<string, Entry[]>>({})
   const [entryForm, setEntryForm] = useState({ date: '', amount: '', memo: '' })
   const [entryBusy, setEntryBusy] = useState(false)
+  const [masked, setMasked] = useState(() => readStore('seed-builder-mask') === '1')
+  const [onboardDone, setOnboardDone] = useState(() => readStore('seed-builder-onboarded') === '1')
+  const [onboardStep, setOnboardStep] = useState(0)
+  const [showAllChanges, setShowAllChanges] = useState(false)
+  const [showTable, setShowTable] = useState(false)
+  const [annualGoal, setAnnualGoal] = useState('')
+  const [confirmTransfer, setConfirmTransfer] = useState(false)
+  const [confirmDeleteAll, setConfirmDeleteAll] = useState(false)
+  amountMask = masked
 
   const year = Number(selectedMonth.slice(0, 4))
   const month = Number(selectedMonth.slice(5))
@@ -133,7 +164,9 @@ export default function SeedBuilderPage() {
   const expenseChanges = currentSaved && previous
     ? expenseLabels.map(({ key, label }) => ({ label, key, current: currentSaved.expenses[key], previous: previous.expenses[key], difference: currentSaved.expenses[key] - previous.expenses[key] }))
     : []
-  const subscriptionChange = expenseChanges.find((entry) => entry.key === 'subscriptions')
+  const changedRows = expenseChanges.filter((entry) => entry.previous > 0 || entry.current > 0).sort((a, b) => Math.abs(b.difference) - Math.abs(a.difference))
+  const visibleRows = showAllChanges ? changedRows : changedRows.slice(0, 3)
+  const riseTip = changedRows.filter((entry) => entry.difference > 0 && !oneOffKeys.includes(entry.key) && entry.key !== 'tax').sort((a, b) => b.difference - a.difference)[0]
   const currentKey = monthKey(new Date())
   const nextKey = monthKey(new Date(Number(currentKey.slice(0, 4)), Number(currentKey.slice(5)), 15))
   const isFuture = selectedMonth > currentKey
@@ -143,6 +176,20 @@ export default function SeedBuilderPage() {
   const annualSaved = Object.keys(entries).filter((key) => key.startsWith(`${year}-`)).reduce((sum, key) => sum + savedOf(key), 0)
   const maxBar = Math.max(1, ...Array.from({ length: 12 }, (_, index) => { const key = `${year}-${String(index + 1).padStart(2, '0')}`; return Math.max(savedOf(key), records[key]?.plan ?? 0) }))
   const canSkip = !records[selectedMonth] && !isFuture && !dirty && (entries[selectedMonth] ?? []).length === 0
+  const hasAnyRecord = Object.keys(records).length > 0 || Object.keys(entries).length > 0
+  const onboarding = !onboardDone && !!clientId && !loadError && (loading || !hasAnyRecord)
+  const finishOnboarding = () => { setOnboardDone(true); writeStore('seed-builder-onboarded', '1') }
+  const ratioGoal = available > 0 ? Math.floor(available * 0.3 / 1000) * 1000 : 0
+  const annualGoalValue = Number(annualGoal)
+  const remainingMonths = 13 - month
+  const annualPerMonth = annualGoal !== '' && Number.isSafeInteger(annualGoalValue) && annualGoalValue > 0
+    ? Math.ceil(Math.max(0, annualGoalValue - (annualSaved - savedNow)) / remainingMonths / 1000) * 1000 : null
+  const reserveMonths = expenseTotal > 0 ? draft.reserve / expenseTotal : null
+  const conservativeAvailable = (() => {
+    const values = [1, 2, 3].map((back) => records[monthKey(new Date(year, month - 1 - back, 15))]).filter((record): record is MonthRecord => !!record && record.status === 'recorded' && monthIncome(record) > 0)
+      .map((record) => monthAvailable(record) - sumValues(record.extraIncome))
+    return values.length >= 2 ? Math.min(...values) : null
+  })()
   const cash = Number(confirmedCash)
   const price = Number(sharePrice)
   const canCompare = confirmedCash !== '' && sharePrice !== '' && Number.isSafeInteger(cash) && cash >= 0 && Number.isSafeInteger(price) && price > 0
@@ -204,6 +251,30 @@ export default function SeedBuilderPage() {
     }
   }
 
+  const toggleMask = () => { setMasked((current) => { writeStore('seed-builder-mask', current ? '0' : '1'); return !current }) }
+  const exportYear = () => {
+    const payload = { year, exportedAt: new Date().toISOString(), months: Object.entries(records).map(([key, record]) => ({ month: key, ...record, entries: entries[key] ?? [] })) }
+    const url = URL.createObjectURL(new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' }))
+    const link = document.createElement('a')
+    link.href = url
+    link.download = `seed-builder-${year}.json`
+    link.click()
+    URL.revokeObjectURL(url)
+  }
+  const deleteAll = async () => {
+    if (!clientId || loading) return
+    setSaving(true)
+    try {
+      await apiFetch('/api/ui/seed-builder', { method: 'DELETE', body: JSON.stringify({ confirm: 'delete-all' }), cacheMs: 0 })
+      setRecords({}); setEntries({}); setDraft(emptyRecord()); setConfirmDeleteAll(false)
+      setNotice('시드 만들기 기록을 모두 삭제했습니다. 가상 시드·자동 입금·자동매매는 그대로입니다.')
+    } catch (error) {
+      setNotice(`삭제 실패: ${error instanceof Error ? error.message : String(error)}`)
+    } finally {
+      setSaving(false)
+    }
+  }
+
   const skipMonth = async () => {
     if (!clientId || loading || loadError || !canSkip) return
     setSaving(true)
@@ -257,10 +328,17 @@ export default function SeedBuilderPage() {
     setNotice('입금 기록을 저장했습니다. 계좌 잔고를 확인한 값은 아닙니다.')
   }
 
+  const householdButtons = (
+    <div className="seed-segments" role="group" aria-label="가구 형태">
+                  {([['solo', '혼자'], ['single-income', '외벌이'], ['dual-income', '맞벌이']] as const).map(([value, label]) => <button key={value} type="button" className={draft.household === value ? 'is-active' : ''} aria-pressed={draft.household === value} onClick={() => setDraft((current) => ({ ...current, household: value, partnerIncome: value === 'dual-income' ? current.partnerIncome : 0, partnerPayday: value === 'dual-income' ? current.partnerPayday : null }))}>{label}</button>)}
+    </div>
+  )
+
   return (
-    <main className="seed-builder">
+    <main className={`seed-builder${masked ? ' is-masked' : ''}`}>
       <header className="seed-header">
         <div><span className="seed-eyebrow">투자 전 단계</span><h1>시드 만들기</h1><p>큰 돈의 흐름을 보고, 이번 달 모을 수 있는 금액을 정합니다.</p></div>
+        <div className="seed-header-tools"><button type="button" className="seed-mask-button" aria-pressed={masked} onClick={toggleMask}>{masked ? <EyeOff size={15} /> : <Eye size={15} />} 금액 가리기</button></div>
         <div className="seed-month-nav" aria-label="기록 월 선택">
           <button type="button" title="이전 달" aria-label="이전 달" onClick={() => changeMonth(-1)}><ChevronLeft size={18} /></button>
           <strong>{year}년 {month}월</strong>
@@ -302,44 +380,91 @@ export default function SeedBuilderPage() {
           })}
         </div>
         <p className="seed-chart-legend">실선 막대 = 확보 내역 합계 · 가로선 = 그달 계획 · “0” = 기록했지만 모으지 않은 달 · “–” = 건너뜀 · 빈 점선 = 기록 없음 · 채운 점선 = 다음 달 계획(예정)</p>
+        <button type="button" className="seed-link-button" aria-expanded={showTable} onClick={() => setShowTable(!showTable)}>{showTable ? '표 접기' : '표로 보기'}</button>
+        {showTable && <div className="seed-table-wrap"><table className="seed-table"><caption>{year}년 월별 시드</caption><thead><tr><th scope="col">월</th><th scope="col">상태</th><th scope="col">계획</th><th scope="col">확보</th><th scope="col">입금 기록</th></tr></thead><tbody>
+          {Array.from({ length: 12 }, (_, index) => { const key = `${year}-${String(index + 1).padStart(2, '0')}`; const record = records[key]; const state = key > currentKey ? (record?.plan ? '계획(예정)' : '기록 없음') : record?.status === 'skipped' ? '건너뜀' : record ? '기록됨' : '기록 없음'; return <tr key={key}><th scope="row">{index + 1}월</th><td>{state}</td><td>{krw(record?.plan ?? 0)}</td><td>{krw(savedOf(key))}</td><td>{krw(entriesDeposited(entries[key]))}</td></tr> })}
+        </tbody></table></div>}
         {annualSaved === 0 && <p className="seed-empty">첫 금액을 저장하면 이곳에서 시드가 쌓이는 추이를 볼 수 있습니다.</p>}
       </section>
 
+      {onboarding ? (loading ? <section className="seed-editor"><p className="seed-empty">기록을 불러오는 중입니다.</p></section> : <section className="seed-onboarding" aria-label="처음 시작하기">
+        <div className="seed-section-title"><div><h2>처음 시작하기 · {onboardStep + 1}/3</h2><p>세 가지만 대략 적으면 이번 달 시작할 수 있어요. 언제든 건너뛸 수 있고 정확하지 않아도 됩니다.</p></div></div>
+        {onboardStep === 0 && <div className="seed-input-group">
+          <h3>수입</h3>
+          {householdButtons}
+          <label>{draft.household === 'solo' ? '월수입' : '본인 월수입'} <input type="number" inputMode="numeric" min="0" step="1000" value={draft.ownIncome || ''} placeholder="0" aria-describedby="hint-ob-own" onChange={(event) => updateAmount('ownIncome', event.target.value)} /> <span>원</span></label>
+          <AmountHint id="hint-ob-own" value={draft.ownIncome} />
+          {draft.household === 'dual-income' && <><label>배우자 월수입 <input type="number" inputMode="numeric" min="0" step="1000" value={draft.partnerIncome || ''} placeholder="0" aria-describedby="hint-ob-partner" onChange={(event) => updateAmount('partnerIncome', event.target.value)} /> <span>원</span></label><AmountHint id="hint-ob-partner" value={draft.partnerIncome} /></>}
+        </div>}
+        {onboardStep === 1 && <div className="seed-input-group">
+          <h3>이번 달 큰 지출</h3>
+          <label>한 달 지출 합계(대략) <input type="number" inputMode="numeric" min="0" step="10000" value={draft.expenses.other || ''} placeholder="0" aria-describedby="hint-ob-expense" onChange={(event) => { const value = Number(event.target.value); setDraft((current) => ({ ...current, expenses: { ...current.expenses, other: Number.isFinite(value) ? value : 0 } })) }} /> <span>원</span></label>
+          <AmountHint id="hint-ob-expense" value={draft.expenses.other} />
+          <p className="seed-payday-help">항목을 나누지 않고 합계만 적어도 됩니다. 지금은 &lsquo;기타&rsquo;로 기록되고, 나중에 항목별로 나눌 수 있습니다. 카드대금까지 포함한 대략의 금액이면 충분합니다.</p>
+        </div>}
+        {onboardStep === 2 && <div className="seed-input-group">
+          <h3>이번 달 시드 목표</h3>
+          <p className="seed-payday-help">월수입 {krw(income)} − 지출 {krw(expenseTotal)} = 참고 여력 <strong className={isDeficit ? 'seed-negative' : ''}>{signedKrw(available)}</strong>. 0원도 정상적인 목표입니다.</p>
+          <label>시작 목표 <input type="number" inputMode="numeric" min="0" step="1000" value={draft.plan || ''} placeholder="0" aria-describedby="hint-ob-plan" onChange={(event) => updateAmount('plan', event.target.value)} /> <span>원</span></label>
+          <AmountHint id="hint-ob-plan" value={draft.plan} />
+          <QuickAdd label="시작 목표" onAdd={(step) => updateAmount('plan', String(draft.plan + step))} />
+          {isDeficit && <p className="seed-warning">이번 달은 지출이 수입보다 많습니다. 목표를 0원으로 두고 쉬어가도 괜찮습니다.</p>}
+        </div>}
+        <div className="seed-actions">
+          <button type="button" className="seed-link-button" onClick={() => { finishOnboarding() }}>자세히 직접 입력하기</button>
+          <p role="status">{notice}</p>
+          {onboardStep > 0 && <button type="button" className="seed-secondary" onClick={() => setOnboardStep(onboardStep - 1)}>이전</button>}
+          {onboardStep < 2 ? <button type="button" className="seed-primary" onClick={() => setOnboardStep(onboardStep + 1)}>{onboardStep === 1 && draft.expenses.other === 0 ? '건너뛰기' : '다음'}</button>
+            : <button type="button" className="seed-primary" disabled={saving} onClick={async () => { if (await save()) finishOnboarding() }}><Save size={16} /> 저장하고 시작</button>}
+        </div>
+      </section>) : <>
       <section className="seed-editor">
         <div className="seed-section-title"><div><h2>이번 달 돈의 흐름</h2><p>큰 금액만 입력해도 됩니다. 항목별 거래 내역은 필요하지 않습니다.</p></div></div>
         {previous && <div className="seed-fill-row"><button type="button" className="seed-secondary" onClick={fillFromPrevious}>지난달 값 채우기</button><span>수입·급여일·식비 등 반복 항목만 채웁니다. 일시 항목은 복사하지 않습니다.</span></div>}
         <div className="seed-form-grid">
           <div className="seed-input-group">
             <h3>수입</h3>
-            <div className="seed-segments" role="group" aria-label="가구 형태">
-              {([['solo', '혼자'], ['single-income', '외벌이'], ['dual-income', '맞벌이']] as const).map(([value, label]) => <button key={value} type="button" className={draft.household === value ? 'is-active' : ''} aria-pressed={draft.household === value} onClick={() => setDraft((current) => ({ ...current, household: value, partnerIncome: value === 'dual-income' ? current.partnerIncome : 0, partnerPayday: value === 'dual-income' ? current.partnerPayday : null }))}>{label}</button>)}
-            </div>
-            <label> {draft.household === 'solo' ? '월수입' : '본인 월수입'} <input type="number" min="0" step="1000" value={draft.ownIncome || ''} placeholder="0" onChange={(event) => updateAmount('ownIncome', event.target.value)} /> <span>원</span></label>
-            {draft.household === 'dual-income' && <label>배우자 월수입 <input type="number" min="0" step="1000" value={draft.partnerIncome || ''} placeholder="0" onChange={(event) => updateAmount('partnerIncome', event.target.value)} /> <span>원</span></label>}
+            {householdButtons}
+            <label> {draft.household === 'solo' ? '월수입' : '본인 월수입'} <input type="number" inputMode="numeric" min="0" step="1000" value={draft.ownIncome || ''} placeholder="0" aria-describedby="hint-own-income" onChange={(event) => updateAmount('ownIncome', event.target.value)} /> <span>원</span></label>
+            <AmountHint id="hint-own-income" value={draft.ownIncome} />
+            {draft.household === 'dual-income' && <label>배우자 월수입 <input type="number" inputMode="numeric" min="0" step="1000" value={draft.partnerIncome || ''} placeholder="0" aria-describedby="hint-partner-income" onChange={(event) => updateAmount('partnerIncome', event.target.value)} /> <span>원</span></label>}
+            {draft.household === 'dual-income' && <AmountHint id="hint-partner-income" value={draft.partnerIncome} />}
             <div className="seed-paydays">
-              <label>본인 급여일 <input type="number" min="1" max="31" value={draft.ownPayday ?? ''} placeholder="선택" onChange={(event) => { setDraft((current) => ({ ...current, ownPayday: event.target.value === '' ? null : Number(event.target.value) })); setNotice('') }} /> <span>일</span></label>
-              {draft.household === 'dual-income' && <label>배우자 급여일 <input type="number" min="1" max="31" value={draft.partnerPayday ?? ''} placeholder="선택" onChange={(event) => { setDraft((current) => ({ ...current, partnerPayday: event.target.value === '' ? null : Number(event.target.value) })); setNotice('') }} /> <span>일</span></label>}
+              <label>본인 급여일 <input type="number" inputMode="numeric" min="1" max="31" value={draft.ownPayday ?? ''} placeholder="선택" onChange={(event) => { setDraft((current) => ({ ...current, ownPayday: event.target.value === '' ? null : Number(event.target.value) })); setNotice('') }} /> <span>일</span></label>
+              {draft.household === 'dual-income' && <label>배우자 급여일 <input type="number" inputMode="numeric" min="1" max="31" value={draft.partnerPayday ?? ''} placeholder="선택" onChange={(event) => { setDraft((current) => ({ ...current, partnerPayday: event.target.value === '' ? null : Number(event.target.value) })); setNotice('') }} /> <span>일</span></label>}
             </div>
             {paydays.length > 0 && <p className="seed-payday-summary">{paydays.map((entry) => `${entry.day}일 ${entry.label} ${krw(entry.amount)}`).join(' · ')}</p>}
             <button className="seed-link-button" type="button" onClick={() => setShowExtraIncome(!showExtraIncome)}>{showExtraIncome ? '추가 수입 접기' : '인센티브·휴가비 등 추가 수입'}</button>
-            {showExtraIncome && <div className="seed-optional-inputs">{extraIncomeLabels.map(({ key, label }) => <label key={key}>{label}<input type="number" min="0" step="1000" value={draft.extraIncome[key] || ''} placeholder="0" onChange={(event) => { const value = Number(event.target.value); setDraft((current) => ({ ...current, extraIncome: { ...current.extraIncome, [key]: Number.isFinite(value) ? value : 0 } })); setNotice('') }} /><span>원</span></label>)}</div>}
+            {showExtraIncome && <div className="seed-optional-inputs">{extraIncomeLabels.map(({ key, label }) => <label key={key}>{label}<input type="number" inputMode="numeric" min="0" step="1000" value={draft.extraIncome[key] || ''} placeholder="0" onChange={(event) => { const value = Number(event.target.value); setDraft((current) => ({ ...current, extraIncome: { ...current.extraIncome, [key]: Number.isFinite(value) ? value : 0 } })); setNotice('') }} /><span>원</span></label>)}</div>}
             <p className="seed-payday-help">월수입 합계 {krw(income)}{extraIncomeTotal > 0 ? ` (일시 수입 ${krw(extraIncomeTotal)} 포함)` : ''}. 아직 받지 않은 급여·일시 수입을 월초 투자 현금으로 계산하지 않습니다.</p>
           </div>
           <div className="seed-input-group">
             <h3>지출 <span>{krw(expenseTotal)}</span></h3>
-            {expenseLabels.slice(0, showExpenses ? 8 : 4).map(({ key, label }) => <label key={key}>{label}<input type="number" min="0" step="1000" value={draft.expenses[key] || ''} placeholder="0" onChange={(event) => { const value = Number(event.target.value); setDraft((current) => ({ ...current, expenses: { ...current.expenses, [key]: Number.isFinite(value) ? value : 0 } })); setNotice('') }} /><span>원</span></label>)}
+            {expenseLabels.slice(0, showExpenses ? 8 : 4).map(({ key, label }) => <label key={key}>{label}<input type="number" inputMode="numeric" min="0" step="1000" value={draft.expenses[key] || ''} placeholder="0" onChange={(event) => { const value = Number(event.target.value); setDraft((current) => ({ ...current, expenses: { ...current.expenses, [key]: Number.isFinite(value) ? value : 0 } })); setNotice('') }} /><span>원</span></label>)}
             <button className="seed-link-button" type="button" onClick={() => setShowExpenses(!showExpenses)}>{showExpenses ? '간단히 보기' : '세금·카드대금 등도 입력'}</button>
             {showExpenses && <p className="seed-payday-help">카드대금은 위 항목에 이미 적은 사용액을 제외한 미분류 금액만 입력하세요. 중복 입력하면 지출이 두 번 계산됩니다.</p>}
             {showExpenses && <button className="seed-link-button" type="button" onClick={() => setShowIrregular(!showIrregular)}>{showIrregular ? '비정기 지출 접기' : '수도·가스·계절성 세금 입력'}</button>}
-            {showExpenses && showIrregular && <div className="seed-optional-inputs">{expenseLabels.slice(8).map(({ key, label }) => <label key={key}>{label}<input type="number" min="0" step="1000" value={draft.expenses[key] || ''} placeholder="0" onChange={(event) => { const value = Number(event.target.value); setDraft((current) => ({ ...current, expenses: { ...current.expenses, [key]: Number.isFinite(value) ? value : 0 } })); setNotice('') }} /><span>원</span></label>)}<p className="seed-payday-help">2개월치 공과금은 납부한 달에 전액 적습니다. 세금·보험에 이미 포함한 금액은 다시 넣지 마세요.</p></div>}
+            {showExpenses && showIrregular && <div className="seed-optional-inputs">{expenseLabels.slice(8).map(({ key, label }) => <label key={key}>{label}<input type="number" inputMode="numeric" min="0" step="1000" value={draft.expenses[key] || ''} placeholder="0" onChange={(event) => { const value = Number(event.target.value); setDraft((current) => ({ ...current, expenses: { ...current.expenses, [key]: Number.isFinite(value) ? value : 0 } })); setNotice('') }} /><span>원</span></label>)}<p className="seed-payday-help">2개월치 공과금은 납부한 달에 전액 적습니다. 세금·보험에 이미 포함한 금액은 다시 넣지 마세요.</p></div>}
             {previousExpense !== null && <p className="seed-compare">지난달 총지출 {krw(previousExpense)} · 이번 달 {krw(Math.abs(expenseTotal - previousExpense))} {expenseTotal >= previousExpense ? '증가' : '감소'}</p>}
           </div>
         </div>
         <div className="seed-plan-row">
           <div><h3>시드 계획</h3><p>월수입 - 지출 - 남겨둘 생활·비상자금 = 월간 참고 여력 <strong className={isDeficit ? 'seed-negative' : ''}>{isDeficit ? `적자 ${krw(Math.abs(available))}` : krw(available)}</strong>. 투자 시기는 급여 입금과 다음 필수 지출을 확인해 결정합니다.</p></div>
-          <label>남겨둘 돈 <input type="number" min="0" step="1000" value={draft.reserve || ''} placeholder="0" onChange={(event) => updateAmount('reserve', event.target.value)} /> 원</label>
-          <label>이번 달 목표 <input type="number" min="0" step="1000" value={draft.plan || ''} placeholder="0" onChange={(event) => updateAmount('plan', event.target.value)} /> 원</label>
+          <div className="seed-plan-field"><label>남겨둘 돈 <input type="number" inputMode="numeric" min="0" step="1000" value={draft.reserve || ''} placeholder="0" aria-describedby="hint-reserve" onChange={(event) => updateAmount('reserve', event.target.value)} /> 원</label><AmountHint id="hint-reserve" value={draft.reserve} /><QuickAdd label="여유금" onAdd={(step) => updateAmount('reserve', String(draft.reserve + step))} /></div>
+          <div className="seed-plan-field"><label>이번 달 목표 <input type="number" inputMode="numeric" min="0" step="1000" value={draft.plan || ''} placeholder="0" aria-describedby="hint-plan" onChange={(event) => updateAmount('plan', event.target.value)} /> 원</label><AmountHint id="hint-plan" value={draft.plan} /><QuickAdd label="계획금" onAdd={(step) => updateAmount('plan', String(draft.plan + step))} /></div>
         </div>
+        <div className="seed-goal-tools" aria-label="목표 정하기 도움">
+          <strong>목표 정하기 도움 <small>제안값일 뿐이며 누르기 전에는 바뀌지 않습니다. 최종 금액은 직접 정합니다.</small></strong>
+          <div>
+            {ratioGoal > 0 && <button type="button" className="seed-secondary" onClick={() => updateAmount('plan', String(ratioGoal))}>여력의 30% 채우기 ({krw(ratioGoal)})</button>}
+            {previous && previous.plan > 0 && <button type="button" className="seed-secondary" onClick={() => updateAmount('plan', String(previous.plan))}>지난달 목표 그대로 ({krw(previous.plan)})</button>}
+            <label>올해 목표 총액 <input type="number" inputMode="numeric" min="0" step="10000" value={annualGoal} placeholder="선택" onChange={(event) => setAnnualGoal(event.target.value)} /> 원</label>
+            {annualPerMonth !== null && <button type="button" className="seed-secondary" onClick={() => updateAmount('plan', String(annualPerMonth))}>연 목표 역산으로 채우기 ({krw(annualPerMonth)})</button>}
+          </div>
+          <p className="seed-payday-help">연 목표 역산은 올해 이미 확보한 돈을 뺀 나머지를 이번 달 포함 남은 {remainingMonths}개월로 나눈 값입니다. 못 모은 달의 부족분을 자동으로 다음 달에 더하지는 않습니다.</p>
+        </div>
+        {reserveMonths !== null && <p className="seed-payday-help" id="seed-buffer">안전 완충 {reserveMonths.toFixed(1)}개월치 (남겨둘 돈 ÷ 이번 달 지출). 정해진 기준은 없으며 참고용입니다. 미달이어도 확보를 막지 않습니다.</p>}
+        {conservativeAvailable !== null && <p className="seed-payday-help">최근 3개월 중 가장 낮은 달 기준 보수적 여력 {signedKrw(conservativeAvailable)} (일시 수입 제외). 소득이 들쭉날쭉하면 목표의 참고로 쓰세요.</p>}
         {availableChange !== null && <p className="seed-compare seed-available-change">지난달 대비 투자 여력 <strong className={availableChange >= 0 ? 'seed-positive' : 'seed-negative'}>{availableChange >= 0 ? '+' : '-'}{krw(Math.abs(availableChange))}</strong> · 이번 달 입력값 기준이며 지출·수입이 바뀌면 다시 계산됩니다.</p>}
         {isDeficit && <div className="seed-rest-box" role="status">
           <p><strong>이번 달은 지출이 수입보다 {krw(Math.abs(available))} 많습니다.</strong> 이런 달은 시드 목표를 쉬어가도 괜찮습니다. 쉬어도 기록은 정상적으로 남습니다.</p>
@@ -362,40 +487,60 @@ export default function SeedBuilderPage() {
               {entry.cancelled
                 ? <button type="button" className="seed-link-button" disabled={entryBusy} onClick={() => void toggleCancel(entry)}>되돌리기</button>
                 : <span className="seed-entry-actions">
-                  <label>입금 <input type="number" min="0" max={entry.amount} step="1000" defaultValue={entry.deposited || ''} placeholder="0" aria-label={`${entry.date} 입금 기록 금액`} onBlur={(event) => { if (Number(event.target.value || 0) !== entry.deposited) void applyDeposit(entry, event.target.value === '' ? '0' : event.target.value) }} /> 원</label>
+                  <label>입금 <input type="number" inputMode="numeric" min="0" max={entry.amount} step="1000" defaultValue={entry.deposited || ''} placeholder="0" aria-label={`${entry.date} 입금 기록 금액`} onBlur={(event) => { if (Number(event.target.value || 0) !== entry.deposited) void applyDeposit(entry, event.target.value === '' ? '0' : event.target.value) }} /> 원</label>
                   <button type="button" className="seed-link-button" disabled={entryBusy} onClick={() => void toggleCancel(entry)}>취소</button>
                 </span>}
             </li>)}
           </ul>}
           <div className="seed-entry-form">
             <label>날짜 <input type="date" min={`${selectedMonth}-01`} max={selectedMonth === currentKey ? todayKst() : `${selectedMonth}-31`} value={entryForm.date || (selectedMonth === currentKey ? todayKst() : `${selectedMonth}-01`)} onChange={(event) => setEntryForm((current) => ({ ...current, date: event.target.value }))} /></label>
-            <label>확보 금액 <input type="number" min="1" step="1000" value={entryForm.amount} placeholder="0" onChange={(event) => setEntryForm((current) => ({ ...current, amount: event.target.value }))} /> 원</label>
+            <label>확보 금액 <input type="number" inputMode="numeric" min="1" step="1000" value={entryForm.amount} placeholder="0" aria-describedby="hint-entry" onChange={(event) => setEntryForm((current) => ({ ...current, amount: event.target.value }))} /> 원</label>
+            <span className="seed-plan-field"><AmountHint id="hint-entry" value={Number(entryForm.amount) || 0} /><QuickAdd label="기록액" onAdd={(step) => setEntryForm((current) => ({ ...current, amount: String((Number(current.amount) || 0) + step) }))} /></span>
             <label>메모 <input type="text" maxLength={100} value={entryForm.memo} placeholder="선택" onChange={(event) => setEntryForm((current) => ({ ...current, memo: event.target.value }))} /></label>
             <button type="button" className="seed-secondary" disabled={entryBusy || !clientId || loading || !!loadError} onClick={() => void addEntry()}>+ 확보 기록</button>
+            {savedNow > 0 && <button type="button" className="seed-link-button" onClick={() => document.getElementById('seed-next-step')?.scrollIntoView?.({ behavior: 'smooth' })}>다음 행동 보기 <ArrowRight size={14} /></button>}
           </div>
         </>}
       </section>
       <section className="seed-insights">
         <div className="seed-section-title"><div><h2>지출 변화 보기</h2><p>저장된 큰 항목을 비교합니다. 필요한 지출을 줄이라고 판단하지 않습니다.</p></div></div>
         {currentSaved && <p className="seed-insight-tip">이번 달 지출 {krw(Object.values(currentSaved.expenses).reduce((sum, value) => sum + value, 0))} · 월간 계산상 여력 {signedKrw(savedAvailable)} · 실제 시드 확보 {krw(savedNow)}. {savedAvailable > savedNow ? `차이 ${krw(savedAvailable - savedNow)}은 계획을 돌아볼 참고값이며 모두 써버린 돈이라는 뜻은 아닙니다.` : '필요한 생활비와 추가 입금 여부를 함께 확인하세요.'}</p>}
-        {expenseChanges.length > 0 ? <>
+        {changedRows.length > 0 ? <>
           <div className="seed-expense-rows">
-            {expenseChanges.map((entry) => <div key={entry.key}><strong>{entry.label}</strong><span>{krw(entry.previous)} → {krw(entry.current)}</span><span className={entry.difference > 0 ? 'seed-rise' : ''}>{entry.difference === 0 ? '변동 없음' : `${entry.difference > 0 ? '+' : '-'}${krw(Math.abs(entry.difference))}`}</span></div>)}
+            {visibleRows.map((entry) => <div key={entry.key}><strong>{entry.label}{oneOffKeys.includes(entry.key) && <em className="seed-oneoff">일시</em>}</strong><span>{krw(entry.previous)} → {krw(entry.current)}</span><span className={entry.difference > 0 && !oneOffKeys.includes(entry.key) ? 'seed-rise' : ''}>{entry.difference === 0 ? '변동 없음' : `${entry.difference > 0 ? '+' : '-'}${krw(Math.abs(entry.difference))}`}</span></div>)}
           </div>
-          {subscriptionChange && subscriptionChange.difference > 0 && <p className="seed-insight-tip">통신·구독 지출이 지난달보다 {krw(subscriptionChange.difference)} 늘었습니다. 반복되는 지출인지 확인해 보세요. 이 중 월 {krw(Math.min(subscriptionChange.difference, 10_000))}을 실제로 줄여 시드로 확보한다면 1년 추가 원금은 {krw(Math.min(subscriptionChange.difference, 10_000) * 12)}입니다. 자동으로 모인 돈은 아닙니다.</p>}
+          {changedRows.length > 3 && <button type="button" className="seed-link-button" aria-expanded={showAllChanges} onClick={() => setShowAllChanges(!showAllChanges)}>{showAllChanges ? '변동 큰 3개만 보기' : `전체 ${changedRows.length}개 항목 보기`}</button>}
+          {riseTip && <p className="seed-insight-tip">{riseTip.label} 지출이 지난달보다 {krw(riseTip.difference)} 늘었습니다. 반복되는 지출인지 확인해 보세요. 이 중 월 {krw(Math.min(riseTip.difference, 10_000))}을 실제로 줄여 시드로 확보한다면 1년 추가 원금은 {krw(Math.min(riseTip.difference, 10_000) * 12)}입니다. 자동으로 모인 돈은 아닙니다. 세금·공과금 같은 일시 항목은 반복 지출로 판단하지 않습니다.</p>}
         </> : <p className="seed-empty">이번 달과 지난달 기록을 저장하면 항목별 변화가 보입니다.</p>}
       </section>
       <p className="seed-next-note">지난달 기록은 변화 비교에만 사용합니다. 새 달 수입·카드대금·고정비·비정기 항목은 자동으로 가져오지 않으며, 그달 금액을 직접 입력한 뒤 투자 여력을 확인합니다.</p>
-      <section className="seed-next-step">
+      <section className="seed-next-step" id="seed-next-step">
         <div className="seed-section-title"><div><h2>시드에 맞는 다음 행동</h2><p>저렴한 종목을 억지로 고르지 않아도 됩니다. 매수하지 않고 모으는 것도 선택입니다.</p></div></div>
         <div className="seed-next-inputs">
-          <label>증권계좌에서 직접 확인한 가용 현금 <input type="number" min="0" step="1000" value={confirmedCash} placeholder="0" onChange={(event) => setConfirmedCash(event.target.value)} /> 원</label>
-          <label>관심 종목 또는 ETF의 현재 1주 가격 <input type="number" min="1" step="1" value={sharePrice} placeholder="선택 입력" onChange={(event) => setSharePrice(event.target.value)} /> 원</label>
+          <label>증권계좌에서 직접 확인한 가용 현금 <input type="number" inputMode="numeric" min="0" step="1000" value={confirmedCash} placeholder="0" onChange={(event) => setConfirmedCash(event.target.value)} /> 원</label>
+          <label>관심 종목 또는 ETF의 현재 1주 가격 <input type="number" inputMode="numeric" min="1" step="1" value={sharePrice} placeholder="선택 입력" onChange={(event) => setSharePrice(event.target.value)} /> 원</label>
         </div>
         {canCompare && <p className="seed-buy-check">{cash < price ? `현재 금액으로는 1주를 살 수 없습니다. 가격 기준으로 ${krw(price - cash)}이 더 필요합니다. 기다리거나, 투자 근거가 있는 다른 선택지를 검토하세요.` : `가격만 비교하면 최대 ${Math.floor(cash / price).toLocaleString('ko-KR')}주입니다. 수수료·가격 변동·남겨둘 현금을 빼면 실제 가능 수량은 더 적을 수 있습니다.`}</p>}
+        {canCompare && cash < price && (records[selectedMonth]?.plan ?? 0) > 0 && <p className="seed-next-note">적립 주기 계산: 이번 달 계획 {krw(records[selectedMonth]?.plan ?? 0)}을 매달 모두 모은다고 가정하면 부족분 {krw(price - cash)}을 채우는 데 약 {Math.ceil((price - cash) / (records[selectedMonth]?.plan ?? 1))}개월 걸립니다. 그동안 가격이 바뀔 수 있고, 종목 추천이 아니라 단순 산술입니다.</p>}
         <p className="seed-next-note">ETF도 가격뿐 아니라 추종 대상·위험·비용을 확인해야 합니다. 잦은 매매는 작은 시드를 빠르게 키운다는 보장이 없으며 비용과 손실 위험이 있습니다.</p>
-        <button type="button" className="seed-secondary" disabled={!Number.isSafeInteger(cash) || cash <= 0 || confirmedCash === ''} onClick={() => navigate('/simulator', { state: { seedBuilderCapital: cash } })}><ArrowRight size={16} /> 확인한 금액으로 시뮬레이터 보기</button>
+        <button type="button" className="seed-secondary" disabled={!Number.isSafeInteger(cash) || cash <= 0 || confirmedCash === ''} onClick={() => setConfirmTransfer(true)}><ArrowRight size={16} /> 확인한 금액으로 시뮬레이터 보기</button>
+        {confirmTransfer && <div className="seed-transfer-sheet" role="alertdialog" aria-label="시뮬레이터로 전달할 값 확인">
+          <p><strong>전달되는 값:</strong> 증권계좌에서 확인했다고 입력한 가용 현금 {krw(cash)} (이번 화면 이동에만 사용)</p>
+          <p><strong>전달하지 않는 것:</strong> 수입·지출 기록, 확보 내역, 입금 기록, 목표. 가상 시드·저장된 계획·자동매매도 바뀌지 않습니다.</p>
+          <div><button type="button" className="seed-primary" onClick={() => navigate('/simulator', { state: { seedBuilderCapital: cash } })}>확인하고 이동</button><button type="button" className="seed-link-button" onClick={() => setConfirmTransfer(false)}>취소</button></div>
+        </div>}
         <p className="seed-next-note">이 금액은 이번 화면 이동에만 전달됩니다. 가상 시드·기존 저장 계획·자동매매는 바뀌지 않습니다.</p>
+      </section>
+      </>}
+      <section className="seed-manage" aria-label="내 기록 관리">
+        <strong>내 기록 관리</strong>
+        <p>이 기록은 본인 계정에서만 조회되며, 지워도 가상 시드·자동 입금·자동매매 설정은 바뀌지 않습니다.</p>
+        <div>
+          <button type="button" className="seed-secondary" onClick={exportYear} disabled={Object.keys(records).length === 0}>{year}년 기록 내려받기 (JSON)</button>
+          {!confirmDeleteAll
+            ? <button type="button" className="seed-link-button" onClick={() => setConfirmDeleteAll(true)} disabled={!clientId || loading}>시드 만들기 기록 전체 삭제</button>
+            : <span className="seed-delete-confirm" role="alertdialog" aria-label="전체 삭제 확인">모든 연도의 월 기록과 확보 내역이 삭제되며 되돌릴 수 없습니다. <button type="button" className="seed-primary" disabled={saving} onClick={() => void deleteAll()}>삭제</button> <button type="button" className="seed-link-button" onClick={() => setConfirmDeleteAll(false)}>취소</button></span>}
+        </div>
       </section>
       <p className="seed-disclaimer"><Wallet size={15} /> 이 기록은 가상 시드·자동 입금·자동매매에 반영되지 않습니다. 투자 원금과 수익도 구분됩니다.</p>
     </main>

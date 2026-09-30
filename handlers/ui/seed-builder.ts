@@ -64,6 +64,10 @@ export function normalizeRecord(body: any) {
 
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
+export function isDeleteAllConfirmed(body: any): boolean {
+  return body?.confirm === 'delete-all'
+}
+
 export function kstMonth(now = new Date()): string {
   return now.toLocaleDateString('sv-SE', { timeZone: 'Asia/Seoul', year: 'numeric', month: '2-digit' }).slice(0, 7)
 }
@@ -115,10 +119,10 @@ async function handleEntryAction(supabase: any, clientId: string, body: any, res
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
-  setUiCorsHeaders(req, res, 'GET,PUT,POST,OPTIONS')
+  setUiCorsHeaders(req, res, 'GET,PUT,POST,DELETE,OPTIONS')
   res.setHeader('Cache-Control', 'private, no-store')
   if (req.method === 'OPTIONS') return res.status(204).end()
-  if (req.method !== 'GET' && req.method !== 'PUT' && req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' })
+  if (!['GET', 'PUT', 'POST', 'DELETE'].includes(req.method ?? '')) return res.status(405).json({ error: 'Method not allowed' })
 
   const user = await resolveUiUserContext(req)
   if (!user.authenticated || !user.clientId) return res.status(401).json({ error: 'Login required' })
@@ -166,6 +170,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   const input = typeof req.body === 'string' ? (() => { try { return JSON.parse(req.body) } catch { return null } })() : req.body
+  if (req.method === 'DELETE') {
+    // 가이드 기록만 지운다. 가상 계좌·자동 입금·매매 데이터는 다른 테이블이라 건드리지 않는다.
+    if (!isDeleteAllConfirmed(input)) return res.status(400).json({ error: 'Confirmation required' })
+    const { error: entryDeleteError } = await supabase.from('seed_builder_entries').delete().eq('client_id', user.clientId)
+    if (entryDeleteError) return res.status(500).json({ error: entryDeleteError.message })
+    const { error: monthDeleteError } = await supabase.from('seed_builder_months').delete().eq('client_id', user.clientId)
+    if (monthDeleteError) return res.status(500).json({ error: monthDeleteError.message })
+    return res.status(200).json({ ok: true })
+  }
   if (req.method === 'POST') return handleEntryAction(supabase, user.clientId, input, res)
   const record = normalizeRecord(input)
   if (!record) return res.status(400).json({ error: 'Invalid monthly record' })
