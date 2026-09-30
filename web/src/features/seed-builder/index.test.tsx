@@ -92,4 +92,34 @@ describe('시드 만들기', () => {
     expect(screen.queryByText(/참고 예산/)).not.toBeInTheDocument()
     expect(screen.getByText(/월수입 합계 2,200,000원/)).toBeInTheDocument()
   })
+
+  it('지출이 수입보다 많으면 적자를 그대로 보여주고 목표 0원으로 쉬게 한다', async () => {
+    render(<MemoryRouter><SeedBuilderPage /></MemoryRouter>)
+    await waitFor(() => expect(screen.getByRole('button', { name: '이번 달 저장' })).toBeEnabled())
+    fireEvent.change(screen.getByLabelText(/월수입/), { target: { value: '1000000' } })
+    fireEvent.change(screen.getByLabelText(/식비·생활/), { target: { value: '1300000' } })
+    fireEvent.change(screen.getByLabelText(/이번 달 목표/), { target: { value: '50000' } })
+    expect(screen.getByText(/적자 300,000원/)).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: '이번 달 목표 0원으로 쉬기' }))
+    expect(screen.getByLabelText(/이번 달 목표/)).toHaveValue(null)
+  })
+
+  it('저장하지 않은 입력이 있으면 월 이동 전에 인라인으로 묻고 취소할 수 있다', async () => {
+    render(<MemoryRouter><SeedBuilderPage /></MemoryRouter>)
+    await waitFor(() => expect(screen.getByRole('button', { name: '이번 달 저장' })).toBeEnabled())
+    fireEvent.change(screen.getByLabelText(/이번 달 목표/), { target: { value: '50000' } })
+    expect(screen.getByText('저장 안 됨')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: '이전 달' }))
+    expect(screen.getByRole('alertdialog')).toHaveTextContent('저장하지 않은 입력이 있습니다')
+    fireEvent.click(screen.getByRole('button', { name: '취소' }))
+    expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument()
+    expect(screen.getByLabelText(/이번 달 목표/)).toHaveValue(50000)
+  })
+
+  it('기록 없음과 0원 확보를 차트에서 구분한다', async () => {
+    const key = new Date().toLocaleDateString('sv-SE', { timeZone: 'Asia/Seoul', year: 'numeric', month: '2-digit' }).slice(0, 7)
+    apiFetchMock.mockResolvedValue({ data: [{ month: key, household: 'solo', ownIncome: 0, partnerIncome: 0, expenses: {}, reserve: 0, plan: 0, saved: 0 }] })
+    render(<MemoryRouter><SeedBuilderPage /></MemoryRouter>)
+    await waitFor(() => expect(screen.getByRole('img', { name: /기록 없음/ })).toHaveAccessibleName(/\d+월 0원/))
+  })
 })
