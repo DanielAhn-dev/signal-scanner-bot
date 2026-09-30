@@ -14,6 +14,8 @@ from typing import Any
 import requests
 from supabase import Client, create_client
 
+from _env import load_env
+
 DART_LIST_URL = "https://opendart.fss.or.kr/api/list.json"
 EVENT_PATTERNS = [
     ("capital_increase", re.compile(r"유상증자|무상증자")),
@@ -24,19 +26,6 @@ EVENT_PATTERNS = [
     ("major_holder", re.compile(r"최대주주변경")),
     ("trading_risk", re.compile(r"영업정지|부도|회생|파산|횡령|배임")),
 ]
-
-
-def load_env(filepath: str = ".env") -> None:
-    try:
-        with open(filepath, encoding="utf-8-sig") as handle:
-            for line in handle:
-                line = line.strip()
-                if not line or line.startswith("#") or "=" not in line:
-                    continue
-                key, value = line.split("=", 1)
-                os.environ.setdefault(key.strip(), value.strip().strip('"').strip("'"))
-    except FileNotFoundError:
-        pass
 
 
 def classify(report_name: str) -> str | None:

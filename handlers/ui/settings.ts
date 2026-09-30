@@ -3,23 +3,9 @@ import { createClient } from '@supabase/supabase-js'
 import { setUiCorsHeaders } from './_accessControl'
 import { resolveUiUserContext } from './_userContext'
 
-function toPositiveInt(raw: unknown): number | null {
-  const num = Number(String(raw ?? '').trim())
-  if (!Number.isFinite(num) || num <= 0) return null
-  return Math.trunc(num)
-}
-
-function resolveTargetChatId(req: VercelRequest, userChatId: number | null): number | null {
-  const body = (req.body || {}) as any
-  return (
-    userChatId
-    || toPositiveInt(req.headers['x-user-chat-id'])
-    || toPositiveInt(req.query.chat_id)
-    || toPositiveInt(req.query.chatId)
-    || toPositiveInt(body.chat_id)
-    || toPositiveInt(body.chatId)
-    || null
-  )
+function resolveTargetChatId(userChatId: number | null): number | null {
+  // 인증된 세션의 chatId만 신뢰한다. 요청이 넘기는 chat_id는 사용하지 않는다.
+  return userChatId
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
@@ -40,7 +26,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   try {
     const user = await resolveUiUserContext(req)
     if (!user.authenticated) return res.status(401).json({ error: 'Authenticated session required' })
-    const targetChatId = resolveTargetChatId(req, user.chatId)
+    const targetChatId = resolveTargetChatId(user.chatId)
 
     if (req.method === 'GET') {
       if (!targetChatId) return res.status(200).json({ data: null })

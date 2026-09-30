@@ -158,10 +158,27 @@ async function main(): Promise<void> {
     codes.push(String(row.code));
     membershipByDate.set(date, codes);
   }
-  const universeAt = (asof: string): string[] => {
-    const dates = [...membershipByDate.keys()].filter((date) => date <= asof).sort();
-    return dates.length ? membershipByDate.get(dates[dates.length - 1])! : universe;
+  const membershipDates = [...membershipByDate.keys()].sort();
+  const membershipSets = new Map<string, Set<string>>();
+  const universeFallback = new Set(universe);
+  const universeAtCache = new Map<string, Set<string>>();
+  const universeSetAt = (asof: string): Set<string> => {
+    const cached = universeAtCache.get(asof);
+    if (cached) return cached;
+    let snapshot: string | undefined;
+    for (const date of membershipDates) {
+      if (date > asof) break;
+      snapshot = date;
+    }
+    let set = universeFallback;
+    if (snapshot) {
+      set = membershipSets.get(snapshot) ?? new Set(membershipByDate.get(snapshot)!);
+      membershipSets.set(snapshot, set);
+    }
+    universeAtCache.set(asof, set);
+    return set;
   };
+  const universeAt = (asof: string): string[] => [...universeSetAt(asof)];
 
   const priceRows = await fetchPaged<any>((a, b) =>
     supabase
@@ -232,7 +249,7 @@ async function main(): Promise<void> {
       .eq("asof", asof)
       .order("score", { ascending: false })
       .limit(80);
-    const codes = ((data ?? []) as any[]).map((r) => String(r.code)).filter((c) => universeAt(asof).includes(c));
+    const codes = ((data ?? []) as any[]).map((r) => String(r.code)).filter((c) => universeSetAt(asof).has(c));
     scoreCache.set(asof, codes);
     return codes;
   }
@@ -356,7 +373,7 @@ async function main(): Promise<void> {
       .eq("asof", asof)
       .order("score", { ascending: false })
       .limit(400);
-    const codes = ((data ?? []) as any[]).map((r) => String(r.code)).filter((c) => universeAt(asof).includes(c));
+    const codes = ((data ?? []) as any[]).map((r) => String(r.code)).filter((c) => universeSetAt(asof).has(c));
     rankedCache.set(asof, codes);
     return codes;
   }
