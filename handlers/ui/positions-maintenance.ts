@@ -3,6 +3,8 @@ import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { createClient, SupabaseClient } from '@supabase/supabase-js'
 import { resolveUiUserContext } from './_userContext'
 import { denyIfUnauthorizedRead } from './_accessControl'
+import { resolveBaseSellTaxRate, resolveSellTaxRate } from '../../src/lib/securitiesTax'
+import { getUserInvestmentPrefs, setUserInvestmentPrefs } from '../../src/services/userService'
 
 let _supabase: SupabaseClient | null = null
 function getSupabase(): SupabaseClient {
@@ -196,7 +198,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (mode === 'liquidateall') {
       const { data: holdings, error: holdErr } = await supabase
         .from('virtual_positions')
-        .select('id,code,quantity,buy_price,status,broker_name,account_name,stock:stocks(close)')
+        .select('id,code,quantity,buy_price,status,broker_name,account_name,stock:stocks(close,name)')
         .eq('chat_id', chatId)
         .gt('quantity', 0)
 
@@ -204,11 +206,27 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const rows = Array.isArray(holdings) ? holdings : []
       if (rows.length === 0) return res.status(200).json({ ok: true, mode, soldCount: 0 })
 
+      const prefs = await getUserInvestmentPrefs(chatId)
+      // 실계좌 자동매매 엔진(virtualAutoTradeSizing.ts)과 같은 기본값 — 매도세·수수료 없이 전량 현금화하면
+      // 실제 계좌보다 좋아 보이고, 정합성 검산(cash-mismatch)도 항상 어긋난다.
+      const feeRate = Number.isFinite(Number(prefs.virtual_fee_rate)) && Number(prefs.virtual_fee_rate) >= 0
+        ? Number(prefs.virtual_fee_rate)
+        : 0.00015
+      const baseTaxRate = resolveBaseSellTaxRate(prefs.virtual_tax_rate)
+
       const nowIso = new Date().toISOString()
+      let totalNet = 0
+      let totalCost = 0
       const trades = rows.map((row: any) => {
         const qty = Math.max(0, Number(row.quantity || 0))
         const px = asPositiveNumber(row?.stock?.close) || asPositiveNumber(row.buy_price) || 0
-        const gross = qty * px
+        const gross = Math.round(qty * px)
+        const taxRate = resolveSellTaxRate({ code: String(row.code), name: row?.stock?.name ?? null, baseRate: baseTaxRate })
+        const feeAmount = Math.round(gross * feeRate)
+        const taxAmount = Math.round(gross * taxRate)
+        const net = Math.max(0, gross - feeAmount - taxAmount)
+        totalNet += net
+        totalCost += Math.round(Math.max(0, Number(row.buy_price || 0)) * qty)
         return {
           chat_id: chatId,
           code: String(row.code),
@@ -216,9 +234,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           price: px,
           quantity: qty,
           gross_amount: gross,
-          net_amount: gross,
-          fee_amount: 0,
-          tax_amount: 0,
+          net_amount: net,
+          fee_amount: feeAmount,
+          tax_amount: taxAmount,
+          pnl_amount: net - Math.round(Math.max(0, Number(row.buy_price || 0)) * qty),
           broker_name: String(row?.broker_name || '').trim() || null,
           account_name: String(row?.account_name || '').trim() || null,
           memo: '웹 전체매도',
@@ -245,7 +264,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         .in('code', rows.map((r: any) => String(r.code)))
         .gt('remaining_quantity', 0)
 
-      return res.status(200).json({ ok: true, mode, soldCount: rows.length })
+      // 매도 대금을 실제 가상 현금에 반영 — 이게 빠지면 포지션은 0인데 현금은 그대로라
+      // 정합성 검산(현금 원장)이 항상 어긋나고, 판 돈으로 다음 매수를 할 수도 없었다.
+      const cashBefore = Math.max(0, Number(prefs.virtual_cash) || 0)
+      await setUserInvestmentPrefs(chatId, {
+        virtual_cash: Math.round(cashBefore + totalNet),
+        virtual_realized_pnl: Math.round((Number(prefs.virtual_realized_pnl) || 0) + (totalNet - totalCost)),
+      })
+
+      return res.status(200).json({ ok: true, mode, soldCount: rows.length, netProceeds: totalNet })
     }
 
     if (mode === 'holdingdelete') {
