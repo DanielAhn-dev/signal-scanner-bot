@@ -113,7 +113,10 @@
 - KRX 상장주식수·시가총액: 유니버스 갱신일별 `share_float_history`에 저장
 - 유통주식수 원천이 없을 때는 추정하지 않고 NULL 유지
 - 실행: `pnpm collect:corporate-actions -- --days 30`
-- 상태: 코드·문법·빌드 검증 완료, migration 017 적용 후 실제 적재 필요
+- 실실행 확인: DART 최근 30일 기업 이벤트 52건 저장
+- 유니버스 재실행 확인: 2026-09-29 기준 stocks 4,199건·membership snapshot 4,199건·share float snapshot 4,199건 저장
+- pykrx 시총 API 실패 시 기존 DB fallback을 사용하며, 내부용 상장주식수 필드가 stocks upsert를 깨뜨리지 않도록 분리
+- 상태: migration 017 적용 및 실제 적재 완료
 
 ### 즉시 진행
 

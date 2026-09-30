@@ -419,7 +419,10 @@ def apply_upserts(supabase: Client, rows: List[dict]) -> int:
         return 0
     upserted = 0
     for i in range(0, len(rows), 300):
-        batch = rows[i : i + 300]
+        batch = [
+            {key: value for key, value in row.items() if key != "shares_outstanding"}
+            for row in rows[i : i + 300]
+        ]
         try:
             supabase.table("stocks").upsert(batch).execute()
             upserted += len(batch)
@@ -683,6 +686,8 @@ def main() -> int:
                     missing_active_codes.append(code)
 
         upserted = len(upserts) if args.dry_run else apply_upserts(supabase, upserts)
+        if not args.dry_run and upserts and upserted == 0:
+            raise RuntimeError("stocks upsert failed for all rows")
         membership_snapshot = len(upserts) if args.dry_run else apply_membership_snapshot(supabase, trading_date, upserts)
         share_float_snapshot = len(upserts) if args.dry_run else apply_share_float_snapshot(supabase, trading_date, upserts)
         inactivated = len(missing_active_codes) if args.dry_run else apply_inactive_updates(supabase, missing_active_codes)
