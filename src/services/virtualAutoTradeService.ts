@@ -8350,7 +8350,75 @@ async function applyStockDividendsIfDue(supabase: SupabaseClientAny, chatId: num
   return notes;
 }
 
+const CHAT_RUN_LOCK_STALE_MS = 10 * 60 * 1000;
+
+/**
+ * 계정 단위 실행은 수동 실행·텔레그램 명령·브리핑 크론이 함께 쓴다.
+ * 겹치면 월 입금·분배금(읽고→수정)과 매수가 두 번 반영될 수 있어 계정별로 한 번에 하나만 돌린다.
+ * 비정상 종료로 잠금이 남아도 10분 뒤엔 풀린다. 모의 실행(dryRun)은 상태를 바꾸지 않아 잠그지 않는다.
+ */
 export async function runVirtualAutoTradingForChat(input: {
+  chatId: number;
+  mode?: RunMode;
+  dryRun?: boolean;
+  ensureEnabled?: boolean;
+}): Promise<ChatAutoTradeRunSummary> {
+  if (input.dryRun) return runVirtualAutoTradingForChatUnlocked(input);
+
+  const lockSupabase: SupabaseClientAny = createClient(
+    process.env.SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!,
+    { auth: { persistSession: false } }
+  );
+  const lockKey = `chat-run:${input.chatId}`;
+  let acquired = false;
+  try {
+    acquired = await tryAcquireRunLock(lockSupabase, lockKey);
+    if (!acquired) {
+      const { data: held } = await lockSupabase
+        .from("virtual_autotrade_locks")
+        .select("acquired_at")
+        .eq("op_key", lockKey)
+        .maybeSingle();
+      const heldAt = held?.acquired_at ? Date.parse(String(held.acquired_at)) : NaN;
+      if (Number.isFinite(heldAt) && Date.now() - heldAt > CHAT_RUN_LOCK_STALE_MS) {
+        await releaseRunLock(lockSupabase, lockKey);
+        acquired = await tryAcquireRunLock(lockSupabase, lockKey);
+      }
+    }
+  } catch (err) {
+    // 잠금 테이블 장애로 매매가 멈추지 않게 한다 — 예전(잠금 없음)과 같은 동작으로 진행
+    console.error("[autoTrade] chat run lock failed, proceeding unlocked", err);
+    return runVirtualAutoTradingForChatUnlocked(input);
+  }
+
+  if (!acquired) {
+    const mode = input.mode ?? "auto";
+    return {
+      mode,
+      runType: selectRunType(mode),
+      runKey: `${kstDateKey()}-locked`,
+      dryRun: true,
+      action: {
+        chatId: input.chatId,
+        buys: 0,
+        sells: 0,
+        skipped: 1,
+        errors: 0,
+        notes: ["[동시 실행] 같은 계정의 다른 실행이 진행 중이라 이번 회차는 건너뛰었습니다"],
+      },
+      recentMetrics: null,
+    };
+  }
+
+  try {
+    return await runVirtualAutoTradingForChatUnlocked(input);
+  } finally {
+    await releaseRunLock(lockSupabase, lockKey).catch(() => null);
+  }
+}
+
+async function runVirtualAutoTradingForChatUnlocked(input: {
   chatId: number;
   mode?: RunMode;
   dryRun?: boolean;
