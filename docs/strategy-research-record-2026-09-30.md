@@ -83,6 +83,16 @@
 - 기존 최신 재무 조회 API는 하위 호환을 위해 유지
 - 검증: `pnpm build`, `python -m py_compile scripts/etl_quarterly.py` 통과
 
+### 완료: DART 실제 접수일 선택 보강
+
+- 대상: [scripts/etl_quarterly.py](../scripts/etl_quarterly.py)
+- `DART_PIT_ENRICH=true`일 때 종목코드·분기말에 맞는 DART 분기/반기/사업보고서의 `rcept_dt`를 조회
+- 매칭 성공 시 `available_at`을 실제 접수일로 저장하고 `availability_basis=filing_date`로 표시
+- API 키 없음·회사코드 없음·매칭 실패·API 오류는 `collection_time`으로 안전하게 폴백
+- 보고서명은 연도와 `분기보고서`·`반기보고서`·`사업보고서` 유형을 함께 확인하고, `2025.06`·상반기·제2분기 표기를 지원
+- 기본값은 비활성(`false`)으로 기존 ETL 호출량과 동작을 보존
+- 검증: `python -m py_compile scripts/etl_quarterly.py`, `pnpm build` 통과
+
 ### 즉시 진행
 
 1. 전략 성과에 다음 지표를 공통 적용한다.

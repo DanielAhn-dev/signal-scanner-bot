@@ -15,9 +15,10 @@ from __future__ import annotations
 import json
 import calendar
 import os
+import re
 import sys
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Optional
 
@@ -62,7 +63,10 @@ _session.headers.update({
 })
 
 FINANCE_SUMMARY_URL = "https://m.stock.naver.com/api/stock/{code}/finance/summary"
+DART_LIST_URL = "https://opendart.fss.or.kr/api/list.json"
 _trend_table_missing_warned = False
+_dart_corp_codes: Optional[dict[str, str]] = None
+_dart_filing_cache: dict[tuple[str, str], Optional[str]] = {}
 
 
 def _last_day_of_month(year: int, month: int) -> int:
@@ -84,6 +88,100 @@ def _quarter_to_date(key: str) -> str:
     month = int(key[4:6])
     day = _last_day_of_month(year, month)
     return f"{year}-{month:02d}-{day:02d}"
+
+
+def _load_dart_corp_codes() -> dict[str, str]:
+    global _dart_corp_codes
+    if _dart_corp_codes is not None:
+        return _dart_corp_codes
+    path = Path(__file__).parent.parent / "src" / "data" / "dartCorpCodes.json"
+    try:
+        raw = json.loads(path.read_text("utf-8"))
+        _dart_corp_codes = {str(k): str(v) for k, v in raw.items()}
+    except Exception as e:
+        print(f"  DART 회사코드 표 로드 실패: {e}")
+        _dart_corp_codes = {}
+    return _dart_corp_codes
+
+
+def _matches_period_report(report_name: str, end_date) -> bool:
+    """DART report name이 대상 회계기간을 가리키는지 확인한다."""
+    name = str(report_name or "")
+    year = str(end_date.year)
+    month = int(end_date.strftime("%m"))
+    if year not in name or not re.search(r"분기보고서|반기보고서|사업보고서", name):
+        return False
+    period_key = end_date.strftime("%Y%m")
+    digits = re.sub(r"[^0-9]", "", name)
+    if period_key in digits:
+        return True
+    if month == 3:
+        return bool(re.search(r"1\s*분기", name))
+    if month == 6:
+        return bool(re.search(r"2\s*분기|반기", name))
+    if month == 9:
+        return bool(re.search(r"3\s*분기", name))
+    if month == 12:
+        return bool(re.search(r"사업보고서|4\s*분기", name))
+    return False
+
+
+def _dart_filing_date(code: str, period_end: str) -> Optional[str]:
+    """분기말과 보고서 기간이 일치하는 DART 접수일을 반환한다.
+
+    DART 보강은 선택 기능이다. 공시일을 찾지 못하면 None을 반환해
+    collection_time 기준으로 안전하게 남긴다.
+    """
+    cache_key = (code, period_end)
+    if cache_key in _dart_filing_cache:
+        return _dart_filing_cache[cache_key]
+    api_key = str(os.environ.get("DART_API_KEY", "")).strip()
+    corp_code = _load_dart_corp_codes().get(code)
+    if not api_key or not corp_code:
+        _dart_filing_cache[cache_key] = None
+        return None
+    try:
+        end_date = datetime.strptime(period_end, "%Y-%m-%d").date()
+        bgn_de = (end_date - timedelta(days=15)).strftime("%Y%m%d")
+        end_de = (end_date + timedelta(days=150)).strftime("%Y%m%d")
+        response = _session.get(
+            DART_LIST_URL,
+            params={
+                "crtfc_key": api_key,
+                "corp_code": corp_code,
+                "bgn_de": bgn_de,
+                "end_de": end_de,
+                "pblntf_ty": "A",
+                "page_no": 1,
+                "page_count": 100,
+            },
+            timeout=10,
+        )
+        response.raise_for_status()
+        payload = response.json()
+        if payload.get("status") != "000":
+            _dart_filing_cache[cache_key] = None
+            return None
+        candidates: list[str] = []
+        for item in payload.get("list") or []:
+            report_name = str(item.get("report_nm") or "")
+            if not _matches_period_report(report_name, end_date):
+                continue
+            receipt = str(item.get("rcept_dt") or "")
+            # 분기말 당일 접수도 유효한 데이터로 허용한다.
+            if re.fullmatch(r"\d{8}", receipt) and receipt >= end_date.strftime("%Y%m%d"):
+                candidates.append(receipt)
+        if not candidates:
+            _dart_filing_cache[cache_key] = None
+            return None
+        receipt = min(candidates)
+        value = f"{receipt[:4]}-{receipt[4:6]}-{receipt[6:8]}T23:59:59+09:00"
+        _dart_filing_cache[cache_key] = value
+        return value
+    except Exception as e:
+        print(f"  [{code} {period_end}] DART 접수일 조회 실패: {e}")
+        _dart_filing_cache[cache_key] = None
+        return None
 
 
 def fetch_quarterly(code: str) -> list[dict]:
@@ -118,16 +216,20 @@ def fetch_quarterly(code: str) -> list[dict]:
             eps_map[et.get("key", "")] = _safe_int(ev)
 
     collected_at = datetime.now(timezone.utc).isoformat()
+    enrich_with_dart = str(os.environ.get("DART_PIT_ENRICH", "false")).lower() in ("1", "true", "yes")
     result = []
     for i, qkey in enumerate(keys):
         pd = _quarter_to_date(qkey)
+        filing_date = _dart_filing_date(code, pd) if enrich_with_dart else None
+        available_at = filing_date or collected_at
+        availability_basis = "filing_date" if filing_date else "collection_time"
         result.append({
             "code": code,
             "period_end": pd,
             "period_type": "quarter",
             "as_of": f"{pd}T00:00:00+09:00",
-            "available_at": collected_at,
-            "availability_basis": "collection_time",
+            "available_at": available_at,
+            "availability_basis": availability_basis,
             "sales": _safe_int(revenues[i] if i < len(revenues) else None),
             "operating_income": _safe_int(op_incs[i] if i < len(op_incs) else None),
             "eps": eps_map.get(qkey),
@@ -135,7 +237,7 @@ def fetch_quarterly(code: str) -> list[dict]:
             "computed": {
                 "is_consensus": consensus.get(qkey, False),
                 "quarter_key": qkey,
-                "availability_basis": "collection_time",
+                "availability_basis": availability_basis,
             },
         })
     return result
