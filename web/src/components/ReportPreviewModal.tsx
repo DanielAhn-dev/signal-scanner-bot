@@ -6,14 +6,16 @@ import { formatKstDateTime } from '../lib/format'
 type Props = {
   open: boolean
   onClose: () => void
+  /** 빈 문자열이면 리포트를 생성 중인 상태로 본다. */
   url: string
   title: string
   generatedAt?: string
+  error?: string
 }
 
-export default function ReportPreviewModal({ open, onClose, url, title, generatedAt }: Props) {
-  const [loading, setLoading] = useState(true)
-  const [loadError, setLoadError] = useState<string | null>(null)
+export default function ReportPreviewModal({ open, onClose, url, title, generatedAt, error }: Props) {
+  const [frameLoading, setFrameLoading] = useState(true)
+  const [frameError, setFrameError] = useState<string | null>(null)
 
   const generatedLabel = useMemo(() => {
     if (!generatedAt) return ''
@@ -22,8 +24,8 @@ export default function ReportPreviewModal({ open, onClose, url, title, generate
 
   useEffect(() => {
     if (!open) return
-    setLoading(true)
-    setLoadError(null)
+    setFrameLoading(true)
+    setFrameError(null)
   }, [open, url])
 
   useEffect(() => {
@@ -35,10 +37,22 @@ export default function ReportPreviewModal({ open, onClose, url, title, generate
     return () => window.removeEventListener('keydown', handleKeyDown)
   }, [open, onClose])
 
+  const fetching = !url && !error
+  const loading = fetching || (!!url && frameLoading)
+  const errorMessage = error || frameError
+
   const loadingHint = useMemo(() => {
-    if (title.includes('눌림목')) return '눌림목 후보를 조회 중입니다...'
-    return '리포트 데이터를 불러오는 중입니다...'
-  }, [title])
+    if (!fetching) return '미리보기를 표시하는 중입니다...'
+    if (title.includes('눌림목')) return '눌림목 후보를 조회해 리포트를 만드는 중입니다...'
+    return '최신 데이터로 리포트를 만드는 중입니다...'
+  }, [fetching, title])
+
+  // blob URL은 noopener로 열면 Chromium에서 빈 창이 되므로 opener만 끊고 연다.
+  const openInNewWindow = () => {
+    if (!url) return
+    const win = window.open(url, '_blank')
+    if (win) win.opener = null
+  }
 
   if (!open || typeof document === 'undefined') return null
 
@@ -46,73 +60,65 @@ export default function ReportPreviewModal({ open, onClose, url, title, generate
     <div className="modal-overlay" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
       <div className="modal report-preview-modal" role="dialog" aria-modal="true" aria-labelledby="report-preview-title">
         <div className="report-preview-modal__header">
-          <div>
+          <div className="report-preview-modal__heading">
             <div className="report-preview-modal__eyebrow">공유 전 확인</div>
             <div id="report-preview-title" className="report-preview-modal__title">{title}</div>
-            <div style={{ marginTop: 8, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-              <span className="report-preview-modal__status">최신 데이터 미리보기</span>
-              {generatedLabel && (
+            <div className="report-preview-modal__meta">
+              <span className="report-preview-modal__status" data-state={errorMessage ? 'error' : loading ? 'loading' : 'ready'}>
+                {errorMessage ? '불러오기 실패' : fetching ? '리포트 생성 중' : '최신 데이터 미리보기'}
+              </span>
+              {generatedLabel && !fetching && (
                 <span className="report-preview-modal__generated">생성 {generatedLabel}</span>
               )}
             </div>
           </div>
           <div className="report-preview-modal__actions">
-            <button className="ui-button ui-btn-secondary ui-btn-sm" onClick={() => window.open(url, '_blank', 'noopener,noreferrer')}>
+            <button
+              type="button"
+              className="ui-button ui-btn-secondary ui-btn-sm"
+              onClick={openInNewWindow}
+              disabled={!url}
+              title={url ? '새 창에서 열기' : '리포트 생성 후 사용할 수 있습니다'}
+            >
               <ExternalLink size={14} /> 새 창
             </button>
-            <button className="modal-close" onClick={onClose} title="닫기" aria-label="미리보기 닫기"><X size={17} /></button>
+            <button type="button" className="modal-close" onClick={onClose} title="닫기" aria-label="미리보기 닫기"><X size={17} /></button>
           </div>
         </div>
         <div className="report-preview-modal__viewport" aria-busy={loading}>
-          <iframe
-            src={url}
-            title={title}
-            onLoad={() => setLoading(false)}
-            onError={() => {
-              setLoading(false)
-              setLoadError('미리보기를 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.')
-            }}
-            className="report-preview-modal__frame"
-          />
-          {loading && (
-            <div style={{
-              position: 'absolute',
-              inset: 0,
-              background: 'linear-gradient(180deg, #f8fafc 0%, #f2f4f6 100%)',
-              padding: 18,
-              display: 'flex',
-              flexDirection: 'column',
-              gap: 12,
-            }}>
-              <style>{`@keyframes report-preview-skeleton { 0% { opacity: 0.45; } 50% { opacity: 1; } 100% { opacity: 0.45; } }`}</style>
-              <div style={{ fontSize: 12, color: '#6b7280', fontWeight: 600 }}>{loadingHint}</div>
-              <div style={{ height: 26, width: '42%', borderRadius: 8, background: '#dbe3ea', animation: 'report-preview-skeleton 1.25s ease-in-out infinite' }} />
-              <div style={{ height: 16, width: '88%', borderRadius: 6, background: '#e4e9ef', animation: 'report-preview-skeleton 1.25s ease-in-out infinite' }} />
-              <div style={{ height: 16, width: '78%', borderRadius: 6, background: '#e4e9ef', animation: 'report-preview-skeleton 1.25s ease-in-out infinite' }} />
-              <div style={{ height: 16, width: '67%', borderRadius: 6, background: '#e4e9ef', animation: 'report-preview-skeleton 1.25s ease-in-out infinite' }} />
-              <div style={{ marginTop: 8, borderRadius: 10, border: '1px solid #d8e2ef', background: '#ffffff', padding: 12 }}>
-                <div style={{ height: 14, width: '52%', borderRadius: 6, background: '#e8edf3', animation: 'report-preview-skeleton 1.25s ease-in-out infinite' }} />
-                <div style={{ marginTop: 8, height: 13, width: '95%', borderRadius: 6, background: '#edf1f6', animation: 'report-preview-skeleton 1.25s ease-in-out infinite' }} />
-                <div style={{ marginTop: 6, height: 13, width: '92%', borderRadius: 6, background: '#edf1f6', animation: 'report-preview-skeleton 1.25s ease-in-out infinite' }} />
-                <div style={{ marginTop: 6, height: 13, width: '75%', borderRadius: 6, background: '#edf1f6', animation: 'report-preview-skeleton 1.25s ease-in-out infinite' }} />
+          {url && (
+            <iframe
+              key={url}
+              src={url}
+              title={title}
+              onLoad={() => setFrameLoading(false)}
+              onError={() => {
+                setFrameLoading(false)
+                setFrameError('미리보기를 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.')
+              }}
+              className="report-preview-modal__frame"
+            />
+          )}
+          {loading && !errorMessage && (
+            <div className="report-preview-modal__skeleton" role="status" aria-live="polite">
+              <div className="report-preview-modal__hint">
+                <span className="report-preview-modal__spinner" aria-hidden="true" />
+                {loadingHint}
+              </div>
+              <div className="report-preview-modal__bar" style={{ height: 26, width: '42%' }} />
+              <div className="report-preview-modal__bar" style={{ width: '88%' }} />
+              <div className="report-preview-modal__bar" style={{ width: '78%' }} />
+              <div className="report-preview-modal__bar" style={{ width: '67%' }} />
+              <div className="report-preview-modal__skeleton-card">
+                <div className="report-preview-modal__bar" style={{ height: 14, width: '52%' }} />
+                <div className="report-preview-modal__bar" style={{ width: '95%' }} />
+                <div className="report-preview-modal__bar" style={{ width: '92%' }} />
+                <div className="report-preview-modal__bar" style={{ width: '75%' }} />
               </div>
             </div>
           )}
-          {!!loadError && (
-            <div style={{
-              position: 'absolute',
-              left: 16,
-              right: 16,
-              bottom: 16,
-              borderRadius: 10,
-              padding: '10px 12px',
-              background: '#fff8f8',
-              border: '1px solid #f7caca',
-              color: '#9f3a38',
-              fontSize: 12,
-            }}>
-              {loadError}
-            </div>
+          {!!errorMessage && (
+            <div className="report-preview-modal__error" role="alert">{errorMessage}</div>
           )}
         </div>
       </div>

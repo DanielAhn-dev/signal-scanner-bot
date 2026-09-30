@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useRef, useState } from 'react'
 import { apiFetch, getAuthHeaders } from '../../lib/api'
 import Button from '../../components/ui/Button'
 import { useToast } from '../../components/ToastProvider'
@@ -188,7 +188,9 @@ export default function ReportsPage() {
   const toast = useToast()
   const [simPlan, setSimPlan] = useState<HighlightSimulationPlan | null>(null)
   const [simSending, setSimSending] = useState(false)
-  const [preview, setPreview] = useState<{ open: boolean; title: string; url: string; generatedAt?: string }>({ open: false, title: '', url: '' })
+  const [preview, setPreview] = useState<{ open: boolean; title: string; url: string; generatedAt?: string; error?: string }>({ open: false, title: '', url: '' })
+  const previewAbortRef = useRef<AbortController | null>(null)
+  const previewUrlRef = useRef<string | null>(null)
   const shareManager = useShareManager({
     endpoint: '/api/ui/report-share',
     scopeKey: 'topic',
@@ -197,6 +199,12 @@ export default function ReportsPage() {
 
   useEffect(() => {
     setSimPlan(readSimulationPlan())
+  }, [])
+
+  // 페이지를 벗어나면 진행 중인 미리보기 요청을 끊고 blob URL을 해제한다.
+  useEffect(() => () => {
+    previewAbortRef.current?.abort()
+    if (previewUrlRef.current) URL.revokeObjectURL(previewUrlRef.current)
   }, [])
 
   const buildUiRequest = async (endpoint: string): Promise<{ url: string; headers: Record<string, string> }> => {
@@ -339,16 +347,34 @@ export default function ReportsPage() {
       toast.show('미리보기를 지원하지 않는 항목입니다.')
       return
     }
-    const request = await buildUiRequest(`/api/ui/report-web?topic=${encodeURIComponent(topic)}&fresh=1`)
+    // 생성에 수 초가 걸리므로 모달을 먼저 띄워 로딩을 보여주고, 이전 요청은 취소한다.
+    previewAbortRef.current?.abort()
+    const controller = new AbortController()
+    previewAbortRef.current = controller
+    setPreview({ open: true, title, url: '' })
     try {
+      const request = await buildUiRequest(`/api/ui/report-web?topic=${encodeURIComponent(topic)}&fresh=1`)
       // iframe은 Authorization 헤더를 보낼 수 없어, 인증 헤더로 받아온 HTML을 blob URL로 연다.
-      const res = await fetch(request.url, { headers: request.headers })
+      const res = await fetch(request.url, { headers: request.headers, signal: controller.signal })
       if (!res.ok) throw new Error(`미리보기 실패 (${res.status})`)
-      const blobUrl = URL.createObjectURL(new Blob([await res.text()], { type: 'text/html;charset=utf-8' }))
+      const html = await res.text()
+      if (controller.signal.aborted) return
+      if (previewUrlRef.current) URL.revokeObjectURL(previewUrlRef.current)
+      const blobUrl = URL.createObjectURL(new Blob([html], { type: 'text/html;charset=utf-8' }))
+      previewUrlRef.current = blobUrl
       setPreview({ open: true, title, url: blobUrl, generatedAt: new Date().toISOString() })
     } catch (e: any) {
-      toast.show(String(e?.message || e))
+      if (controller.signal.aborted) return
+      setPreview({ open: true, title, url: '', error: String(e?.message || e) })
+    } finally {
+      if (previewAbortRef.current === controller) previewAbortRef.current = null
     }
+  }
+
+  const closePreview = () => {
+    previewAbortRef.current?.abort()
+    previewAbortRef.current = null
+    setPreview((prev) => ({ ...prev, open: false }))
   }
 
   return (
@@ -509,10 +535,11 @@ export default function ReportsPage() {
       />
       <ReportPreviewModal
         open={preview.open}
-        onClose={() => setPreview((prev) => ({ ...prev, open: false }))}
+        onClose={closePreview}
         title={preview.title}
         url={preview.url}
         generatedAt={preview.generatedAt}
+        error={preview.error}
       />
     </section>
   )

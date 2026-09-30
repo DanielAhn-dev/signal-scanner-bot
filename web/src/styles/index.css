@@ -1381,6 +1381,150 @@ a:focus-visible {
   overflow: hidden;
 }
 
+/* 리포트 미리보기: 헤더 + iframe 뷰포트가 모달 높이를 채운다. */
+.modal-overlay .modal.report-preview-modal {
+  display: flex;
+  flex-direction: column;
+  width: min(960px, calc(100vw - 48px));
+  max-width: min(960px, calc(100vw - 48px));
+  height: min(88vh, 1000px);
+  max-height: min(88vh, 1000px);
+  padding: 0;
+  overflow: hidden;
+}
+.report-preview-modal__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 12px 12px 16px;
+  background: var(--color-excel-cell-header);
+  border-bottom: 1px solid var(--color-excel-grid-border);
+  flex-shrink: 0;
+}
+.report-preview-modal__heading { min-width: 0; }
+.report-preview-modal__eyebrow {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--color-text-tertiary);
+}
+.report-preview-modal__title {
+  margin-top: 2px;
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--color-text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.report-preview-modal__meta {
+  margin-top: 6px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  font-size: 12px;
+}
+.report-preview-modal__status {
+  padding: 1px 8px;
+  border-radius: 999px;
+  font-weight: 600;
+  background: var(--color-success-bg);
+  color: var(--color-success);
+}
+.report-preview-modal__status[data-state='loading'] { background: var(--color-info-bg); color: var(--color-info); }
+.report-preview-modal__status[data-state='error'] { background: var(--color-error-bg); color: var(--color-error); }
+.report-preview-modal__generated { color: var(--color-text-secondary); }
+.report-preview-modal__actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+.report-preview-modal__actions .ui-button { white-space: nowrap; }
+.report-preview-modal__actions .ui-button:disabled { opacity: 0.5; cursor: not-allowed; }
+.report-preview-modal__viewport {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+  background: var(--color-bg-sunken);
+}
+.report-preview-modal__frame {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border: 0;
+  background: #fff;
+}
+.report-preview-modal__skeleton {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 18px;
+  background: var(--color-bg-sunken);
+}
+.report-preview-modal__hint {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-text-secondary);
+}
+.report-preview-modal__spinner {
+  width: 14px;
+  height: 14px;
+  border: 2px solid var(--color-border-default);
+  border-top-color: var(--color-excel-title-bar);
+  border-radius: 50%;
+  animation: report-preview-spin 0.8s linear infinite;
+}
+.report-preview-modal__bar {
+  height: 16px;
+  border-radius: 6px;
+  background: var(--color-border-subtle);
+  animation: report-preview-pulse 1.25s ease-in-out infinite;
+}
+.report-preview-modal__skeleton-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 8px;
+  padding: 12px;
+  border-radius: 10px;
+  border: 1px solid var(--color-border-default);
+  background: var(--color-bg-elevated);
+}
+.report-preview-modal__error {
+  position: absolute;
+  left: 16px;
+  right: 16px;
+  top: 16px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--color-border-error);
+  background: var(--color-error-bg);
+  color: var(--color-error);
+  font-size: 12px;
+}
+@keyframes report-preview-spin { to { transform: rotate(360deg); } }
+@keyframes report-preview-pulse { 0%, 100% { opacity: 0.45; } 50% { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) {
+  .report-preview-modal__spinner, .report-preview-modal__bar { animation: none; }
+}
+@media (max-width: 639px) {
+  .modal-overlay .modal.report-preview-modal {
+    width: 100%;
+    max-width: 100%;
+    height: min(92dvh, calc(100dvh - 24px));
+    max-height: min(92dvh, calc(100dvh - 24px));
+    padding-bottom: env(safe-area-inset-bottom, 0);
+  }
+  .report-preview-modal__header { padding-top: 16px; }
+}
+
 .share-modal__header {
   position: static !important;
   margin: 0 !important;
