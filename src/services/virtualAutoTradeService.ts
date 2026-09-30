@@ -28,15 +28,9 @@ import {
   applyDynamicTradeProfileAdjustments,
   classifyAutoTradeEntryProfile,
   buildPositionStrategyMemo,
-  evaluatePlannedReviewExit,
-  evaluateSectorRotationExit,
-  evaluateTimeStop,
   parsePositionStrategyState,
-  planAutoTradeExit,
-  planOverweightReduction,
   resolvePositionBucketFromProfile,
   resolvePositionTradeProfile,
-  type PlannedAutoTradeExit,
 } from "./virtualAutoTradePositionStrategy";
 import {
   applyAdaptiveExitGuard,
@@ -56,9 +50,6 @@ import {
   resolveLossStreakSizeScale,
   resolveStatsSinceIso,
   resolveTakeProfitCooldownDays,
-  resolveVolatilityAdjustedStopPct,
-  resolveProfileStopCapPct,
-  resolveProfitLockTrailingStop,
   PROFIT_LOCK_ARM_PCT,
   resolveGuardFallbackHardStop,
   resolveRecoveryMode,
@@ -85,11 +76,8 @@ import {
 import { resolveVirtualExecutionPrice } from "./virtualAutoTradeExecution";
 import { describeScanFilterReasons } from "../bot/commands/scanFilters";
 import { fetchAllMarketData } from "../utils/fetchMarketData";
-import { fetchLatestScoresByCodes } from "./scoreSourceService";
-import {
-  detectTrendBreakExitSignal,
-  evaluateAutoTradeSignalGate,
-} from "./virtualAutoTradeSignalGate";
+import { fetchLatestScoresByCodes, type ScoreSnapshotRow } from "./scoreSourceService";
+import { evaluateAutoTradeSignalGate } from "./virtualAutoTradeSignalGate";
 import { sendMessage } from "../telegram/api";
 import { isExchangeTradedProduct, resolveBaseSellTaxRate } from "../lib/securitiesTax";
 import { fetchBenchmarkComparison, formatBenchmarkLine } from "./virtualAutoTradeBenchmark";
@@ -149,11 +137,11 @@ import {
   type AutoTradeSkipReasonStat,
 } from "./virtualAutoTradeObservability";
 import { runLongTermCoachForChat } from "./longTermCoachService";
-import { calcATR } from "../indicators/atr";
 import { CASH_SWEEP_STRATEGY_ID } from "./virtualAutoTradeCashSweep";
 import { BUY_CASH_BUFFER, createCashSweepSteps } from "./virtualAutoTradeCashSweepStep";
 import { createIndexHoldSteps } from "./virtualAutoTradeIndexHoldStep";
 import { createAutoTradeBuyStep } from "./virtualAutoTradeBuyStep";
+import { decideHoldingExit, extractScoreFactors } from "./virtualAutoTradeExitDecision";
 import { createAutoTradeSellStep, type HoldingRow } from "./virtualAutoTradeSellStep";
 import { resolveSeedRebase } from "./virtualAutoTradeSeedRebase";
 import {
@@ -914,10 +902,6 @@ function tryConsumeApiBudget(
   return true;
 }
 
-function normalizeSignalValue(signal: unknown): string {
-  return String(signal ?? "").trim().toUpperCase();
-}
-
 function resolveTargetHorizon(input: {
   profile: string;
   expectedHorizonDays: number;
@@ -939,67 +923,6 @@ function resolvePlannedReviewAt(expectedHorizonDays: number): string {
   const d = new Date();
   d.setUTCDate(d.getUTCDate() + clampedDays);
   return d.toISOString();
-}
-
-function resolveAdaptiveExitThreshold(input: {
-  takeProfitPct: number;
-  stopLossPct: number;
-  signal?: string | null;
-  market?: string | null;
-  marketPolicy: AutoTradeMarketPolicy;
-  pnlPct: number;
-}): {
-  takeProfitPct: number;
-  stopLossPct: number;
-} {
-  let takeProfitPct = Math.max(2, Math.abs(toNumber(input.takeProfitPct, 8)));
-  let stopLossPct = Math.max(1, Math.abs(toNumber(input.stopLossPct, 4)));
-  const signal = normalizeSignalValue(input.signal);
-  const market = String(input.market ?? "").trim().toUpperCase();
-
-  if (input.marketPolicy.mode === "rotation" && (signal === "BUY" || signal === "STRONG_BUY")) {
-    takeProfitPct += 1.2;
-    stopLossPct += 0.3;
-  }
-
-  if (signal === "STRONG_BUY") {
-    takeProfitPct += 0.8;
-    stopLossPct += 0.2;
-  } else if (signal === "SELL") {
-    takeProfitPct -= 1.2;
-    stopLossPct -= 0.4;
-  } else if (signal === "STRONG_SELL") {
-    takeProfitPct -= 2.2;
-    stopLossPct -= 0.8;
-  }
-
-  if (input.marketPolicy.mode === "large-cap-defense") {
-    takeProfitPct -= 0.8;
-    stopLossPct -= 0.3;
-    if (market === "KOSDAQ") {
-      takeProfitPct -= 0.7;
-      stopLossPct -= 0.3;
-    }
-  }
-
-  if (input.pnlPct >= Math.max(2, takeProfitPct * 0.5) && (signal === "BUY" || signal === "STRONG_BUY")) {
-    takeProfitPct += 0.6;
-  }
-
-  takeProfitPct = Number(clamp(takeProfitPct, 3, 14).toFixed(1));
-  // 상한 12: ATR 기반 변동성 확장(resolveVolatilityAdjustedStopPct)이 여기서 다시 깎이지 않도록.
-  stopLossPct = Number(clamp(stopLossPct, 1.5, 12).toFixed(1));
-  // 손익비 1.5 강제(익절 상향)도 검토했으나 백테스트(scripts/backtest_exit_params.ts, 2026-03~09
-  // pullback A 신호 1.7천건)에서 모든 파라미터 조합에 대해 익절 도달률이 떨어져 성과가 악화됐다.
-  // 손익비는 손절 확장 상한(resolveProfileStopCapPct)과 수익잠금 트레일링으로 관리한다.
-  if (takeProfitPct < stopLossPct + 1.5) {
-    takeProfitPct = Number(Math.min(14, stopLossPct + 1.5).toFixed(1));
-  }
-
-  return {
-    takeProfitPct,
-    stopLossPct,
-  };
 }
 
 function normalizeLongTermRatio(value: unknown, fallback = 70): number {
@@ -1759,16 +1682,6 @@ function normalizeStock(input: ScoreCandidateRow["stock"]): {
     sectorId: String((row as Record<string, unknown>).sector_id ?? "") || null,
   };
 }
-
-function extractScoreFactors(
-  factors: unknown
-): Record<string, unknown> | null {
-  if (!factors || typeof factors !== "object" || Array.isArray(factors)) {
-    return null;
-  }
-  return factors as Record<string, unknown>;
-}
-
 
 function isMissingScoresSignalColumn(error: unknown): boolean {
   if (!error || typeof error !== "object") return false;
@@ -4297,7 +4210,7 @@ async function tryRotateForCashRoom(payload: {
   runId: number | null;
   chatId: number;
   activeHoldings: HoldingRow[];
-  holdingFactorsByCode: Map<string, { score?: number | null }>;
+  holdingFactorsByCode: Map<string, Pick<ScoreSnapshotRow, "total_score">>;
   closeByCode: Map<string, number>;
   feeRate: number;
   taxRate: number;
@@ -4322,7 +4235,7 @@ async function tryRotateForCashRoom(payload: {
   const heldPositions: RotationHeldPosition[] = payload.activeHoldings
     .map((h) => ({
       code: h.code,
-      score: toNumber(payload.holdingFactorsByCode.get(h.code)?.score, 0),
+      score: toNumber(payload.holdingFactorsByCode.get(h.code)?.total_score, 0),
       buyPrice: toNumber(h.buy_price, 0),
       currentClose: toNumber(payload.closeByCode.get(h.code), 0),
     }))
@@ -4795,7 +4708,8 @@ async function runDailyReviewForUser(payload: {
   const holdingScoreSnapshot = codeList.length
     ? await fetchLatestScoresByCodes(payload.supabase, codeList).catch(() => null)
     : null;
-  const holdingFactorsByCode = holdingScoreSnapshot?.byCode ?? new Map();
+  // 타입을 명시한다 — 예전엔 new Map()이 any로 추론돼 없는 필드(.score)를 읽어도 컴파일이 통과했다
+  const holdingFactorsByCode: Map<string, ScoreSnapshotRow> = holdingScoreSnapshot?.byCode ?? new Map();
 
   if ((holdingScoreSnapshot?.fallbackCodes?.length ?? 0) > 0) {
     summary.notes.push(
@@ -5038,10 +4952,6 @@ async function runDailyReviewForUser(payload: {
     return sum + (close > 0 && qty > 0 ? close * qty : invested);
   }, 0);
   const totalPortfolioValue = totalHoldingsValue + cashSweepValue + availableCash;
-  // 비중 초과 감지 임계값: 단일 종목이 포트폴리오의 25% 이상이면 분할 매도
-  const MAX_WEIGHT_PCT = 25;
-  const TARGET_WEIGHT_PCT = 20;
-
   // 섹터별 보유 비중(원화 기준): 신규 매수 후보 선정 시 섹터 몰빵을 리더 예외 없이 차단하기 위함
   // (예: 대형 보험주 2종목이 모두 "섹터 리더"로 마킹돼 종목수 기준 상한을 무력화하는 문제 방지)
   const heldSectorWeightPct = new Map<string, number>();
@@ -5248,198 +5158,36 @@ async function runDailyReviewForUser(payload: {
       }
     }
 
-    const pnlPct = ((close - buyPrice) / buyPrice) * 100;
-    const holdingScoreRow = holdingFactorsByCode.get(holding.code);
-    const holdingSignal = holdingScoreRow?.signal ?? null;
     const holdingMarket = marketByCode.get(holding.code) ?? "";
-    // 변동성(ATR%) 기반 손절폭 보정: 고정 손절폭이 종목 일봉 변동성보다 좁으면
-    // 정상 노이즈에도 끊기므로, ATR% 기반 하한을 적용한다.
-    const holdingAtr = calcATR(
-      (priceHistoryByCode.get(holding.code) ?? []).map((row) => ({
-        ...row,
-        code: holding.code,
-        amount: 0,
-      }))
-    );
-    const volatilityAdjustedStopLossPct = resolveVolatilityAdjustedStopPct({
-      baseStopLossPct: tradeProfile.stopLossPct,
-      atrPct: holdingAtr?.atrPct ?? null,
-      maxStopPct: resolveProfileStopCapPct(tradeProfile.stopLossPct),
-    });
-    const adaptiveExitThreshold = resolveAdaptiveExitThreshold({
-      takeProfitPct: tradeProfile.takeProfitPct,
-      stopLossPct: volatilityAdjustedStopLossPct,
-      signal: holdingSignal,
+    const holdingSectorId = sectorIdByCode.get(holding.code);
+    const {
+      pnlPct,
+      signal,
+      adaptiveExitThreshold,
+      trendExitSignal,
+      finalExitPlan,
+      prevPeak,
+      updatedPeakPrice,
+      plannedReviewExtensionAt,
+      exitReasonLabel,
+      stopLossContext,
+    } = decideHoldingExit({
+      holding,
+      qty,
+      buyPrice,
+      close,
+      tradeProfile,
+      strategyState,
+      scoreRow: holdingFactorsByCode.get(holding.code),
       market: holdingMarket,
       marketPolicy,
-      pnlPct,
+      priceHistory: priceHistoryByCode.get(holding.code) ?? [],
+      rebalanceTrustThreshold: signalTrustThresholds.rebalance,
+      totalPortfolioValue,
+      sectorId: holdingSectorId,
+      sectorGrade: holdingSectorId ? sectorGradeById.get(holdingSectorId) : undefined,
+      isSectorLeader: isSectorLeaderByCode.get(holding.code) === true,
     });
-    const baseExitPlan = planAutoTradeExit({
-      quantity: qty,
-      pnlPct,
-      takeProfitPct: adaptiveExitThreshold.takeProfitPct,
-      stopLossPct: adaptiveExitThreshold.stopLossPct,
-      takeProfitSplitCount: tradeProfile.takeProfitSplitCount,
-      takeProfitTranchesDone: strategyState.takeProfitTranchesDone,
-      // 가치투자+스윙(VALUE_SWING_CORE)은 단기 노이즈에 흔들리지 않도록 경직 손절선을 넓게 적용
-      catastrophicStopPct: tradeProfile.profile === "VALUE_SWING_CORE" ? 15 : 10,
-      halfExitStopPct: tradeProfile.profile === "VALUE_SWING_CORE" ? 12 : 7,
-    });
-
-    // 수익잠금 트레일링: 보유 중 최고가(종가 기준) 추적 → 고점 수익의 일정 비율 아래로 밀리면 청산
-    const prevPeak = strategyState.peakPrice;
-    const updatedPeakPrice = prevPeak != null ? Math.max(prevPeak, close) : close;
-    const profitLock = resolveProfitLockTrailingStop({
-      buyPrice,
-      peakPrice: updatedPeakPrice,
-      currentPrice: close,
-    });
-    const trailingStopBreached = profitLock.breached;
-
-    // 시장 레짐이 대형주 방어 모드일 때 KOSDAQ 보유 종목의 익절 기준 선제 적용
-    const regimeEarlyExit =
-      marketPolicy.mode === "large-cap-defense" &&
-      holdingMarket.toUpperCase() === "KOSDAQ" &&
-      pnlPct > 1.0;
-    const trendExitSignal = detectTrendBreakExitSignal({
-      currentPrice: close,
-      pnlPct,
-      factors: extractScoreFactors(holdingScoreRow?.factors),
-      signal: holdingSignal,
-      trustScore: evaluateAutoTradeSignalGate({
-        currentPrice: close,
-        score: toNumber(holdingScoreRow?.score, 0),
-        factors: extractScoreFactors(holdingScoreRow?.factors),
-        minTrustScore: signalTrustThresholds.rebalance,
-        requireAboveSma200: false,
-      }).trustScore,
-      minTrustForOverride: Math.max(signalTrustThresholds.rebalance, 72),
-    });
-    const exitPlan: PlannedAutoTradeExit =
-      trailingStopBreached
-        ? {
-            action: "TAKE_PROFIT",
-            quantityToSell: qty,
-            isPartial: false,
-            nextTakeProfitTranchesDone: strategyState.takeProfitTranchesDone,
-            reason: "take-profit-final",
-          }
-        : regimeEarlyExit && trendExitSignal.exitAction === "HOLD"
-        ? {
-            action: "TAKE_PROFIT",
-            quantityToSell: qty,
-            isPartial: false,
-            nextTakeProfitTranchesDone: strategyState.takeProfitTranchesDone,
-            reason: "take-profit-final",
-          }
-        : trendExitSignal.exitAction === "STOP_LOSS"
-      ? {
-          action: "STOP_LOSS",
-          quantityToSell: qty,
-          isPartial: false,
-          nextTakeProfitTranchesDone: strategyState.takeProfitTranchesDone,
-          reason: "stop-loss",
-        }
-      : trendExitSignal.exitAction === "TAKE_PROFIT"
-        ? {
-            action: "TAKE_PROFIT",
-            quantityToSell: qty,
-            isPartial: false,
-            nextTakeProfitTranchesDone: strategyState.takeProfitTranchesDone,
-            reason: "take-profit-final",
-          }
-        : baseExitPlan;
-
-    // 가치투자 스윙(VALUE_SWING_CORE)은 단기 물림을 장기 손실로 오판하지 않도록 시간손절 기준을 늘림
-    const timeStopParams = tradeProfile.profile === "VALUE_SWING_CORE"
-      ? { phase1Days: 60, phase2Days: 90, lossThresholdPct: -15 }
-      : {};
-
-    // 예정 검토일(planned_review_at) 재평가 결과를 finalExitPlan IIFE 밖(HOLD 분기)에서도
-    // 참조해야 하므로 루프 스코프 변수로 선언한다.
-    let plannedReviewExtensionAt: string | null = null;
-    let plannedReviewExitTriggered = false;
-
-    // 비중 초과 감지 + 시간 기반 손절: HOLD인 경우에만 체크 (이미 다른 exit이 결정된 종목은 제외)
-    const finalExitPlan: PlannedAutoTradeExit = (() => {
-      if (exitPlan.action !== "HOLD") return exitPlan;
-
-      // 1) 시간 기반 손절 (Time-Stop): 장기 물림 손실 종목 단계적 정리
-      const timeStop = evaluateTimeStop({
-        quantity: qty,
-        pnlPct,
-        buyDate: holding.buy_date ?? holding.created_at,
-        ...timeStopParams,
-      });
-      if (timeStop.triggered) {
-        return {
-          action: timeStop.phase === "full" ? "STOP_LOSS" : "TAKE_PROFIT",
-          quantityToSell: timeStop.quantityToSell,
-          isPartial: timeStop.phase === "partial",
-          nextTakeProfitTranchesDone: strategyState.takeProfitTranchesDone,
-          reason: timeStop.phase === "full" ? "stop-loss" : pnlPct >= 0 ? "take-profit-partial" : "loss-trim",
-        } as PlannedAutoTradeExit;
-      }
-
-      // 2) 비중 초과 감지: 포트폴리오 내 단일 종목 비중이 MAX_WEIGHT_PCT 초과 시 분할 매도
-      if (totalPortfolioValue <= 0) return exitPlan;
-      const currentValue = close * qty;
-      const currentWeightPct = (currentValue / totalPortfolioValue) * 100;
-      if (currentWeightPct > MAX_WEIGHT_PCT) {
-        return planOverweightReduction({
-          currentWeightPct,
-          maxWeightPct: MAX_WEIGHT_PCT,
-          targetWeightPct: TARGET_WEIGHT_PCT,
-          quantity: qty,
-          currentPrice: close,
-          totalPortfolioValue,
-          takeProfitTranchesDone: strategyState.takeProfitTranchesDone,
-        });
-      }
-
-      // 3) 섹터 강도 하락 리밸런싱: 섹터가 Grade C로 하락 + 손실 -3% 이내 → 전량 매도
-      // 섹터 리더는 예외 (대표주는 섹터 부진에도 보유 유지)
-      const holdingSectorId = sectorIdByCode.get(holding.code);
-      const sectorRotation = evaluateSectorRotationExit({
-        quantity: qty,
-        pnlPct,
-        isSectorLeader: isSectorLeaderByCode.get(holding.code) === true,
-        sectorGrade: holdingSectorId ? sectorGradeById.get(holdingSectorId) : undefined,
-      });
-      if (sectorRotation.triggered) {
-        return {
-          action: "SECTOR_ROTATION",
-          quantityToSell: sectorRotation.quantityToSell,
-          isPartial: false,
-          nextTakeProfitTranchesDone: strategyState.takeProfitTranchesDone,
-          reason: "sector-rotation",
-          sectorGrade: "C",
-        } as PlannedAutoTradeExit;
-      }
-
-      // 4) 예정 검토일(planned_review_at) 도달: 매수 시점에 세운 기대 보유기간이 끝났는데도
-      // 목표수익에 못 미치면, 자본을 무기한 묶어두지 않고 정리하거나(모멘텀 소진) 검토일을
-      // 연장한다(신호가 아직 살아있음). 지금까지 다른 손절/익절/리밸런싱 조건에 걸리지 않은
-      // 경우에만(=이 시점까지 HOLD인 경우에만) 평가한다.
-      const reviewResult = evaluatePlannedReviewExit({
-        plannedReviewAt: holding.planned_review_at,
-        pnlPct,
-        takeProfitPct: adaptiveExitThreshold.takeProfitPct,
-        signal: holdingSignal,
-        score: holdingScoreRow?.score,
-        quantity: qty,
-        takeProfitTranchesDone: strategyState.takeProfitTranchesDone,
-        expectedHorizonDays: tradeProfile.expectedHorizonDays,
-      });
-      if (reviewResult.action === "extend") {
-        plannedReviewExtensionAt = reviewResult.nextReviewAt;
-      } else if (reviewResult.action === "exit") {
-        plannedReviewExitTriggered = true;
-        return reviewResult.plan;
-      }
-
-      return exitPlan;
-    })();
 
     if (finalExitPlan.action === "HOLD") {
       holdCount += 1;
@@ -5472,7 +5220,7 @@ async function runDailyReviewForUser(payload: {
       }
       if (plannedReviewExtensionAt) {
         summary.notes.push(
-          `[예정검토일 연장] ${holding.code} · 목표 미달이지만 신호(${holdingSignal ?? "-"}) 유지로 검토일 재설정 (~${plannedReviewExtensionAt.slice(0, 10)})`
+          `[예정검토일 연장] ${holding.code} · 목표 미달이지만 신호(${signal ?? "-"}) 유지로 검토일 재설정 (~${plannedReviewExtensionAt.slice(0, 10)})`
         );
       }
       await writeActionLog({
@@ -5492,7 +5240,7 @@ async function runDailyReviewForUser(payload: {
           buyPrice,
           close,
           pnlPct: Number(pnlPct.toFixed(2)),
-          signal: holdingSignal,
+          signal: signal,
           market: holdingMarket,
           marketMode: marketPolicy.mode,
           overrideDetails:
@@ -5509,46 +5257,7 @@ async function runDailyReviewForUser(payload: {
       continue;
     }
 
-    // 매도 이유 노트 (signal/regime/time-stop/overweight 기반이면 명시)
-    const exitReasonLabel: string = (() => {
-      if (plannedReviewExitTriggered) return `[예정검토일 도달] 기대 보유기간 종료 + 목표 미달 · 수익률 ${pnlPct.toFixed(2)}% → 정리`;
-      if (trailingStopBreached) return `[수익잠금 익절] 고점(${fmtKrw(updatedPeakPrice)}, +${profitLock.peakGainPct.toFixed(1)}%) 대비 잠금선 +${(profitLock.lockedGainPct ?? 0).toFixed(1)}% 이탈 · 수익률 ${pnlPct.toFixed(2)}%`;
-      if (trendExitSignal.reason === "signal-strong-sell") return "[신호청산] STRONG_SELL 전환";
-      if (trendExitSignal.reason === "signal-sell") return pnlPct > 0 ? "[신호익절] SELL 전환 + 수익 중" : "[신호손절] SELL 전환 + 손실 구간";
-      if (trendExitSignal.reason === "trend-break-sma200") return "[추세이탈] SMA200 하향이탈";
-      if (trendExitSignal.reason === "trend-break-sma50") return "[추세익절] SMA50 하향이탈";
-      if (regimeEarlyExit) return "[레짐익절] 방어모드 KOSDAQ 선익절";
-      // time-stop: baseExitPlan이 HOLD였다가 finalExitPlan에서 변경된 경우
-      if (exitPlan.action === "HOLD" && (finalExitPlan.action === "STOP_LOSS" || finalExitPlan.action === "TAKE_PROFIT")) {
-        const timeStop = evaluateTimeStop({ quantity: qty, pnlPct, buyDate: holding.buy_date ?? holding.created_at, ...timeStopParams });
-        if (timeStop.triggered) {
-          return `[시간손절] ${timeStop.reason}`;
-        }
-      }
-      if (finalExitPlan.action === "OVERWEIGHT_REDUCTION") {
-        const currentWeightPct = totalPortfolioValue > 0
-          ? ((close * qty) / totalPortfolioValue * 100).toFixed(1)
-          : "?";
-        return `[비중조정] ${currentWeightPct}% 초과 → ${(finalExitPlan as { targetWeightPct: number }).targetWeightPct}%로 분할 매도`;
-      }
-      if (finalExitPlan.action === "SECTOR_ROTATION") {
-        const sid = sectorIdByCode.get(holding.code) ?? "미분류";
-        return `[섹터리밸런싱] 섹터 Grade C 하락(${sid}) · 손익률 ${pnlPct.toFixed(2)}% → 비손실 청산`;
-      }
-      return "";
-    })();
-
     try {
-      const stopLossContext = finalExitPlan.action === "STOP_LOSS"
-        ? ((): string => {
-            if (plannedReviewExitTriggered) return "planned-review-miss";
-            if (trendExitSignal.reason === "signal-strong-sell") return "signal-strong-sell";
-            if (trendExitSignal.reason === "signal-sell") return "signal-reversal";
-            if (trendExitSignal.reason === "trend-break-sma200") return "trend-break-major";
-            if (trendExitSignal.reason === "trend-break-sma50") return "trend-break-minor";
-            return "hard-stop";
-          })()
-        : null;
       const result = await executeAutoTradeSell({
         supabase: payload.supabase,
         runId: payload.runId,
