@@ -22,7 +22,7 @@ function normalizeUiUrl(url: string): string {
 }
 
 function needsAuthHeader(url: string): boolean {
-  return /\/api\/ui\/(profile|positions|positions-maintenance|watchlist|virtual-trade|decisions|summary|settings|notify|push-token|push-send|access-users|operations|portfolio-share|simulation-plan|account-policies|advisor-performance|portfolio-realtime|stop-loss-take-profit|investment-prefs|goal-tracker)(\?|$)|\/api\/ui\?route=(profile|positions|positions-maintenance|watchlist|virtual-trade|decisions|summary|settings|notify|push-token|push-send|access-users|operations|portfolio-share|simulation-plan|account-policies|advisor-performance|portfolio-realtime|stop-loss-take-profit|investment-prefs|goal-tracker)(&|$)/.test(url)
+  return /\/api\/ui\/(profile|positions|positions-maintenance|watchlist|virtual-trade|decisions|summary|settings|notify|push-token|push-send|access-users|operations|portfolio-share|simulation-plan|account-policies|advisor-performance|portfolio-realtime|stop-loss-take-profit|investment-prefs|goal-tracker|report-pdf|report-share|report-snapshot|report-web|route-share|trigger-update|trigger-briefing|sync-history|sync-status)(\?|$)|\/api\/ui\?route=(profile|positions|positions-maintenance|watchlist|virtual-trade|decisions|summary|settings|notify|push-token|push-send|access-users|operations|portfolio-share|simulation-plan|account-policies|advisor-performance|portfolio-realtime|stop-loss-take-profit|investment-prefs|goal-tracker|report-pdf|report-share|report-snapshot|report-web|route-share|trigger-update|trigger-briefing|sync-history|sync-status)(&|$)/.test(url)
 }
 
 function appendQueryParam(url: string, key: string, value: string): string {
@@ -69,6 +69,12 @@ function computeRetryDelay(attempt: number): number {
 }
 
 let __tokenCache: { token: string; ts: number } = { token: '', ts: 0 }
+
+/** apiFetch를 거치지 않는 직접 fetch용 인증 헤더. */
+export async function getAuthHeaders(): Promise<Record<string, string>> {
+  const token = await getAccessToken()
+  return token ? { authorization: `Bearer ${token}` } : {}
+}
 
 async function getAccessToken(): Promise<string> {
   if (!supabase) return ''

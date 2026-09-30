@@ -33,6 +33,10 @@ function toClientId(raw: unknown): string | null {
   return v ? v : null
 }
 
+function isStrictIdentity(): boolean {
+  return ['1', 'true', 'yes'].includes(String(process.env.UI_STRICT_IDENTITY || '').trim().toLowerCase())
+}
+
 export async function resolveUiUserContext(req: VercelRequest): Promise<UiUserContext> {
   const authHeader = String(req.headers.authorization || '').trim()
   const bearer = authHeader.toLowerCase().startsWith('bearer ')
@@ -71,6 +75,11 @@ export async function resolveUiUserContext(req: VercelRequest): Promise<UiUserCo
         return { clientId: null, chatId: null, authenticated: false, source: 'none' }
       }
     }
+    return { clientId: null, chatId: null, authenticated: false, source: 'none' }
+  }
+
+  // 엄격 모드: 로그인 세션 없이 호출자가 넘긴 chat_id/client_id/서버 기본값은 신원으로 쓰지 않는다.
+  if (isStrictIdentity()) {
     return { clientId: null, chatId: null, authenticated: false, source: 'none' }
   }
 

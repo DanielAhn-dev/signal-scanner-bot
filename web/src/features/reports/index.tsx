@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react'
-import { apiFetch } from '../../lib/api'
+import { apiFetch, getAuthHeaders } from '../../lib/api'
 import Button from '../../components/ui/Button'
 import { useToast } from '../../components/ToastProvider'
 import ReportPreviewModal from '../../components/ReportPreviewModal'
@@ -175,7 +175,7 @@ export default function ReportsPage() {
     setSimPlan(readSimulationPlan())
   }, [])
 
-  const buildUiRequest = (endpoint: string): { url: string; headers: Record<string, string> } => {
+  const buildUiRequest = async (endpoint: string): Promise<{ url: string; headers: Record<string, string> }> => {
     const base = import.meta.env.VITE_API_BASE || ''
     const uiKey = import.meta.env.VITE_UI_READ_KEY
     let resolvedEndpoint = endpoint
@@ -185,7 +185,7 @@ export default function ReportsPage() {
     const url = base
       ? `${base.replace(/\/$/, '')}${resolvedEndpoint.startsWith('/') ? resolvedEndpoint : `/${resolvedEndpoint}`}`
       : resolvedEndpoint
-    const headers: Record<string, string> = {}
+    const headers: Record<string, string> = { ...(await getAuthHeaders()) }
     if (uiKey) headers['x-ui-key'] = uiKey
     if (chatId) headers['x-user-chat-id'] = chatId
     return { url, headers }
@@ -263,7 +263,7 @@ export default function ReportsPage() {
   const runDownload = async (key: string, endpoint: string, fileName = 'report.pdf') => {
     setStates(s => ({ ...s, [key]: { loading: true } }))
     try {
-      const request = buildUiRequest(endpoint)
+      const request = await buildUiRequest(endpoint)
 
       const res = await fetch(request.url, { method: 'GET', headers: request.headers })
       if (!res.ok) {
@@ -308,15 +308,23 @@ export default function ReportsPage() {
     }
   }
 
-  const runPreview = (endpoint: string, title: string) => {
+  const runPreview = async (endpoint: string, title: string) => {
     const topicMatch = endpoint.match(/topic=([^&]+)/)
     const topic = topicMatch ? decodeURIComponent(topicMatch[1]) : ''
     if (!topic) {
       toast.show('미리보기를 지원하지 않는 항목입니다.')
       return
     }
-    const request = buildUiRequest(`/api/ui/report-web?topic=${encodeURIComponent(topic)}&fresh=1`)
-    setPreview({ open: true, title, url: request.url, generatedAt: new Date().toISOString() })
+    const request = await buildUiRequest(`/api/ui/report-web?topic=${encodeURIComponent(topic)}&fresh=1`)
+    try {
+      // iframe은 Authorization 헤더를 보낼 수 없어, 인증 헤더로 받아온 HTML을 blob URL로 연다.
+      const res = await fetch(request.url, { headers: request.headers })
+      if (!res.ok) throw new Error(`미리보기 실패 (${res.status})`)
+      const blobUrl = URL.createObjectURL(new Blob([await res.text()], { type: 'text/html;charset=utf-8' }))
+      setPreview({ open: true, title, url: blobUrl, generatedAt: new Date().toISOString() })
+    } catch (e: any) {
+      toast.show(String(e?.message || e))
+    }
   }
 
   return (

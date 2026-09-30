@@ -233,34 +233,35 @@ export default function ProfileModal({
       aria-labelledby="profile-modal-title"
     >
       <div className="modal profile-modal">
-        {/* ── 헤더 ── */}
         <div className="modal-header">
           <h2 className="modal-title" id="profile-modal-title">내 프로필</h2>
           <button className="modal-close" onClick={onClose} aria-label="닫기">✕</button>
         </div>
 
-        {/* ── 아바타 ── */}
-        <div className="profile-avatar-wrap">
-          <div className={`profile-avatar${isConnected ? ' profile-avatar--connected' : ''}`}>
-            {initials}
+        <div className="profile-modal-body">
+          <div className="profile-avatar-wrap">
+            <div className={`profile-avatar${isConnected ? ' profile-avatar--connected' : ''}`}>
+              {initials}
+            </div>
+            <div className="profile-identity">
+              <strong className="profile-identity-name">{displayName}</strong>
+              <span className={`profile-status${isConnected ? ' profile-status--connected' : ''}`}>
+                {isConnected ? '텔레그램 연동됨' : '텔레그램 미연동'}
+              </span>
+            </div>
           </div>
-          {isConnected && (
-            <span className="profile-badge-connected">연동됨</span>
-          )}
-        </div>
 
-        {/* ── 섹션: 기본 정보 ── */}
         <section className="profile-section">
           <div className="profile-section-title">계정</div>
           {isSignedIn ? (
             <>
-              <p className="profile-hint" style={{ marginBottom: 8 }}>
-                Google 계정으로 로그인됨
-              </p>
-              <p className="profile-hint" style={{ marginBottom: 10 }}>
-                {authName ? `${authName} · ` : ''}{authEmail || '이메일 정보 없음'}
-              </p>
-              <button className="ui-button ui-btn-ghost" onClick={onSignOut}>로그아웃</button>
+              <div className="profile-account-row">
+                <div className="profile-account-details">
+                  <span className="profile-account-provider">Google 계정</span>
+                  <span className="profile-account-email">{authEmail || '이메일 정보 없음'}</span>
+                </div>
+                <button className="profile-text-button" onClick={onSignOut}>로그아웃</button>
+              </div>
             </>
           ) : (
             <>
@@ -274,7 +275,6 @@ export default function ProfileModal({
           )}
         </section>
 
-        {/* ── 섹션: 기본 정보 ── */}
         <section className="profile-section">
           <div className="profile-section-title">기본 정보</div>
           <label className="profile-field-label">닉네임</label>
@@ -288,7 +288,6 @@ export default function ProfileModal({
           <p className="profile-hint">앱 내에서만 사용되며, 텔레그램 이름과 별개입니다.</p>
         </section>
 
-        {/* ── 섹션: 텔레그램 연동 ── */}
         <section className="profile-section">
           <div className="profile-section-title">텔레그램 연동</div>
           <p className="profile-hint">
@@ -346,27 +345,26 @@ export default function ProfileModal({
           </details>
         </section>
 
-        {/* ── 섹션: 알림 ── */}
         <section className="profile-section">
           <div className="profile-section-title">알림</div>
           <PushNotificationToggle isSignedIn={isSignedIn} />
         </section>
+        </div>
 
-        {/* ── 저장 메시지 ── */}
-        {saveMsg && <p className="profile-save-msg">{saveMsg}</p>}
-
-        {/* ── 하단 버튼 ── */}
-        <div className="profile-actions">
-          <button className="ui-button ui-btn-ghost" onClick={handleClear}>
-            초기화
-          </button>
-          <button
-            className="ui-button ui-btn-primary"
-            onClick={handleSave}
-            disabled={!isSignedIn || saving}
-          >
-            {saving ? '저장 중…' : '저장'}
-          </button>
+        <div className="profile-modal-footer">
+          {saveMsg && <p className="profile-save-msg">{saveMsg}</p>}
+          <div className="profile-actions">
+            <button className="ui-button ui-btn-ghost" onClick={handleClear}>
+              초기화
+            </button>
+            <button
+              className="ui-button ui-btn-primary"
+              onClick={handleSave}
+              disabled={!isSignedIn || saving}
+            >
+              {saving ? '저장 중…' : '저장'}
+            </button>
+          </div>
         </div>
       </div>
     </div>

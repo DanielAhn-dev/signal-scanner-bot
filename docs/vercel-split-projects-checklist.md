@@ -26,6 +26,7 @@
 - `SUPABASE_URL`
 - `SUPABASE_SERVICE_ROLE_KEY`
 - `UI_READ_KEY`
+- `UI_STRICT_IDENTITY=true` (선택, 권장): 로그인 세션 없이 넘긴 chat_id/client_id/서버 기본 chat을 신원으로 인정하지 않음. 켜기 전 웹 로그인 상태에서 리포트·공유·포지션 화면 확인
 - `CRON_SECRET`
 
 ### web 프로젝트

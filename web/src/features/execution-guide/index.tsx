@@ -1,7 +1,7 @@
 import { useSeedCapital } from '../../lib/useSeedCapital'
 import { readSimulationPlan } from '../simulator/planStore'
 import React, { useEffect, useMemo, useRef, useState } from 'react'
-import { apiFetch } from '../../lib/api'
+import { apiFetch, getAuthHeaders } from '../../lib/api'
 import { formatKrw, formatNumber } from '../../lib/format'
 import Button from '../../components/ui/Button'
 import Input from '../../components/ui/Input'
@@ -926,7 +926,7 @@ export default function ExecutionGuidePage() {
     return `${url}${url.includes('?') ? '&' : '?'}${encodeURIComponent(key)}=${encodeURIComponent(value)}`
   }
 
-  const buildUiRequest = (endpoint: string): { url: string; headers: Record<string, string> } => {
+  const buildUiRequest = async (endpoint: string): Promise<{ url: string; headers: Record<string, string> }> => {
     const base = import.meta.env.VITE_API_BASE || ''
     const uiKey = import.meta.env.VITE_UI_READ_KEY
     const clientId = getCurrentClientIdFromStore()
@@ -940,7 +940,7 @@ export default function ExecutionGuidePage() {
       ? `${base.replace(/\/$/, '')}${resolvedEndpoint.startsWith('/') ? resolvedEndpoint : `/${resolvedEndpoint}`}`
       : resolvedEndpoint
 
-    const headers: Record<string, string> = {}
+    const headers: Record<string, string> = { ...(await getAuthHeaders()) }
     if (uiKey) headers['x-ui-key'] = uiKey
     if (chatId) headers['x-user-chat-id'] = chatId
     return { url, headers }
@@ -965,7 +965,7 @@ export default function ExecutionGuidePage() {
         setLastSnapshotAt(new Date().toISOString())
       }
 
-      const request = buildUiRequest('/api/ui/report-pdf?topic=실행가이드')
+      const request = await buildUiRequest('/api/ui/report-pdf?topic=실행가이드')
       const res = await fetch(request.url, { method: 'GET', headers: request.headers })
       if (!res.ok) {
         const text = await res.text().catch(() => '')

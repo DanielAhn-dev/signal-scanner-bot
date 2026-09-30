@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
+import { getAuthHeaders } from '../lib/api'
 import { useToast } from '../components/ToastProvider'
 import { getCurrentChatIdFromStore, getCurrentClientIdFromStore } from '../stores/profileStore'
 
@@ -33,7 +34,7 @@ function appendQueryParam(url: string, key: string, value: string): string {
   return `${url}${url.includes('?') ? '&' : '?'}${encodeURIComponent(key)}=${encodeURIComponent(value)}`
 }
 
-function buildUiRequest(endpoint: string) {
+async function buildUiRequest(endpoint: string) {
   const base = import.meta.env.VITE_API_BASE || ''
   const uiKey = import.meta.env.VITE_UI_READ_KEY
   const clientId = getCurrentClientIdFromStore()
@@ -48,7 +49,7 @@ function buildUiRequest(endpoint: string) {
     ? `${base.replace(/\/$/, '')}${resolvedEndpoint.startsWith('/') ? resolvedEndpoint : `/${resolvedEndpoint}`}`
     : resolvedEndpoint
 
-  const headers: Record<string, string> = {}
+  const headers: Record<string, string> = { ...(await getAuthHeaders()) }
   if (uiKey) headers['x-ui-key'] = uiKey
   if (chatId) headers['x-user-chat-id'] = chatId
   return { url, headers }
@@ -75,7 +76,7 @@ export function useShareManager(options: UseShareManagerOptions) {
       const params = new URLSearchParams()
       params.set(scopeKey, nextScope)
       if (nextIncludeAll) params.set('all', '1')
-      const request = buildUiRequest(`${endpoint}?${params.toString()}`)
+      const request = await buildUiRequest(`${endpoint}?${params.toString()}`)
       const res = await fetch(request.url, { headers: request.headers })
       const json = await res.json()
       if (!res.ok) throw new Error(json?.error || '공유 목록 조회 실패')
@@ -91,7 +92,7 @@ export function useShareManager(options: UseShareManagerOptions) {
     setCreating(true)
     try {
       setScope(nextScope)
-      const request = buildUiRequest(endpoint)
+      const request = await buildUiRequest(endpoint)
       const headers = { ...request.headers, 'Content-Type': 'application/json' }
       const payload = {
         ...body,
@@ -134,7 +135,7 @@ export function useShareManager(options: UseShareManagerOptions) {
     if (!scope) return
     setRevokingId(shareId)
     try {
-      const request = buildUiRequest(`${endpoint}?shareId=${encodeURIComponent(shareId)}&${scopeKey}=${encodeURIComponent(scope)}`)
+      const request = await buildUiRequest(`${endpoint}?shareId=${encodeURIComponent(shareId)}&${scopeKey}=${encodeURIComponent(scope)}`)
       const res = await fetch(request.url, { method: 'DELETE', headers: request.headers })
       const json = await res.json()
       if (!res.ok) throw new Error(json?.error || '공유 철회 실패')
@@ -151,7 +152,7 @@ export function useShareManager(options: UseShareManagerOptions) {
     if (!scope) return
     setRevokingAll(true)
     try {
-      const request = buildUiRequest(`${endpoint}?all=1&${scopeKey}=${encodeURIComponent(scope)}`)
+      const request = await buildUiRequest(`${endpoint}?all=1&${scopeKey}=${encodeURIComponent(scope)}`)
       const res = await fetch(request.url, { method: 'DELETE', headers: request.headers })
       const json = await res.json()
       if (!res.ok) throw new Error(json?.error || '공유 일괄 철회 실패')
