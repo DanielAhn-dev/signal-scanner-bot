@@ -2,6 +2,8 @@ import { toKstDateKey } from '../../src/lib/krxCalendar'
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { createClient } from '@supabase/supabase-js'
 import { resolveUiUserContext } from './_userContext'
+import { resolveBaseSellTaxRate, resolveSellTaxRate } from '../../src/lib/securitiesTax'
+import { getUserInvestmentPrefs, setUserInvestmentPrefs } from '../../src/services/userService'
 
 const ORIGIN = process.env.UI_CORS_ORIGIN || '*'
 
@@ -52,17 +54,37 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       accountName = String((pos as any)?.account_name || '').trim() || null
     }
 
-    const insertResp = await supabase.from('virtual_trades').insert([{ 
+    // broker_name/account_name이 둘 다 없으면 봇 자체 가상계좌 거래다 — 이때만 virtual_cash를 움직인다.
+    // (다른 증권사 계좌를 여기서 함께 기록하는 건 그 계좌의 실제 거래를 참고용으로 남기는 것일 뿐,
+    //  봇 가상 현금과는 무관하므로 섞으면 안 된다.)
+    const isBotAccount = !brokerName && !accountName
+    const prefs = user.chatId ? await getUserInvestmentPrefs(user.chatId) : {}
+    const feeRate = Number.isFinite(Number(prefs.virtual_fee_rate)) && Number(prefs.virtual_fee_rate) >= 0
+      ? Number(prefs.virtual_fee_rate)
+      : 0.00015
+    const feeAmount = Math.round(gross * feeRate)
+    const sideUpper = String(side).toUpperCase()
+    let taxAmount = 0
+    let netAmount = gross + feeAmount // BUY: 매수수수료만 부담
+    if (sideUpper === 'SELL') {
+      const { data: stockRow } = await supabase.from('stocks').select('name').eq('code', String(code)).maybeSingle()
+      const baseTaxRate = resolveBaseSellTaxRate(prefs.virtual_tax_rate)
+      const taxRate = resolveSellTaxRate({ code: String(code), name: (stockRow as any)?.name ?? null, baseRate: baseTaxRate })
+      taxAmount = Math.round(gross * taxRate)
+      netAmount = Math.max(0, gross - feeAmount - taxAmount)
+    }
+
+    const insertResp = await supabase.from('virtual_trades').insert([{
       chat_id: user.chatId ?? null,
       client_id: user.clientId ?? null,
       code: String(code),
-      side: String(side).toUpperCase(),
+      side: sideUpper,
       price: pr,
       quantity: qty,
       gross_amount: gross,
-      net_amount: gross,
-      fee_amount: 0,
-      tax_amount: 0,
+      net_amount: netAmount,
+      fee_amount: feeAmount,
+      tax_amount: taxAmount,
       broker_name: brokerName,
       account_name: accountName,
       memo: memo || null,
@@ -153,6 +175,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         acquired_at: new Date().toISOString(),
       }])
       if (lotInsertErr) return res.status(500).json({ error: String(lotInsertErr.message || lotInsertErr) })
+
+      if (isBotAccount && user.chatId) {
+        const cashBefore = Math.max(0, Number(prefs.virtual_cash) || 0)
+        await setUserInvestmentPrefs(user.chatId, { virtual_cash: Math.max(0, Math.round(cashBefore - netAmount)) })
+      }
     }
 
     // If SELL, match against virtual_trade_lots FIFO and record lot matches
@@ -275,6 +302,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
         // update trade with realized pnl
         await supabase.from('virtual_trades').update({ pnl_amount: realized }).eq('id', trade.id)
+
+        if (isBotAccount && user.chatId) {
+          const cashBefore = Math.max(0, Number(prefs.virtual_cash) || 0)
+          await setUserInvestmentPrefs(user.chatId, {
+            virtual_cash: Math.round(cashBefore + netAmount),
+            virtual_realized_pnl: Math.round((Number(prefs.virtual_realized_pnl) || 0) + (realized - feeAmount - taxAmount)),
+          })
+        }
       } catch (e) {
         console.warn('SELL lot matching warning:', e)
       }
