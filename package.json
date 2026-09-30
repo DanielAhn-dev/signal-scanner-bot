@@ -55,6 +55,7 @@
     "backfill:stock-daily:core": "python scripts/backfill_stock_daily_universe.py --universe=core-extended",
     "universe:refresh": "python scripts/refresh_universe_membership.py",
     "backfill:investor-daily": "python scripts/backfill_investor_daily.py",
+    "aggregate:market-breadth": "python scripts/aggregate_market_breadth.py",
     "monitor:data-retention": "python scripts/monitor_data_retention.py",
     "monitor:data-retention:detailed": "python scripts/monitor_data_retention.py --show-counts",
     "analyze:edge": "tsx scripts/analyze_recommendation_edge.ts",

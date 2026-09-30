@@ -95,6 +95,16 @@
 - 실실행 확인: `python scripts/etl_quarterly.py --limit 50` → 50/50 성공, fundamentals 169개·fundamental_trends 169개 저장
 - 검증: `python -m py_compile scripts/etl_quarterly.py`, `pnpm build` 통과
 
+### 진행: 시장 breadth 원장·집계 추가
+
+- 대상: [db/migrations/016_create_market_breadth_daily.sql](../db/migrations/016_create_market_breadth_daily.sql), [scripts/aggregate_market_breadth.py](../scripts/aggregate_market_breadth.py), [package.json](../package.json)
+- 적재 지표: 상승·하락·보합 수, 신고가·신저가 수, 20일선·60일선 위 종목 비율, 표본 수
+- 기준: 날짜별 유니버스 스냅샷 우선, 없으면 현재 core/extended 활성 유니버스 폴백
+- 실행: `pnpm aggregate:market-breadth` 또는 `python scripts/aggregate_market_breadth.py --date YYYYMMDD`
+- 미확인 시장(`UNKNOWN`)은 투자 판단에서 제외하고 기존 행도 기준일 재실행 시 정리
+- 실실행 확인: 2026-09-29 기준 KOSPI·KOSDAQ 2개 시장, 213개 종목 표본 저장
+- 상태: 코드·문법·빌드 검증 및 migration 016 적용 후 실제 적재 완료
+
 ### 즉시 진행
 
 1. 전략 성과에 다음 지표를 공통 적용한다.
