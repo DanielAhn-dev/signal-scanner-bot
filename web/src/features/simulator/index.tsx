@@ -1,6 +1,6 @@
 import { useSeedCapital } from '../../lib/useSeedCapital'
 import React, { useEffect, useMemo, useRef, useState } from 'react'
-import { useLocation } from 'react-router-dom'
+import { useLocation, useNavigate } from 'react-router-dom'
 import { LucideIcon } from '../../components/LucideIcon'
 import { useCurrentChatId } from '../../stores/profileStore'
 import { EmptyState } from '../../components/StateViews'
@@ -268,6 +268,7 @@ function ComparePanel({
 export default function SimulatorPage() {
   const chatId = useCurrentChatId()
   const location = useLocation()
+  const navigate = useNavigate()
   const proposedCapital = Number((location.state as { seedBuilderCapital?: number } | null)?.seedBuilderCapital)
   const fromSeedBuilder = Number.isSafeInteger(proposedCapital) && proposedCapital > 0
   const initialPlan = useMemo(() => readSimulationPlan(), [])
@@ -863,6 +864,12 @@ export default function SimulatorPage() {
 
   return (
     <div className="sim-page">
+      {fromSeedBuilder && (
+        <div role="status" style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 10, padding: '10px 14px', marginBottom: 12, border: '1px solid var(--color-border-default)', background: 'var(--color-bg-sunken)', fontSize: 13 }}>
+          <span>시드 만들기에서 확인한 가용 현금 {formatKrw(proposedCapital)}으로 시작했습니다. 저장된 계획과 가상 시드는 바뀌지 않았습니다.</span>
+          <button type="button" onClick={() => navigate('/seed-builder')} style={{ border: 0, background: 'none', color: 'var(--color-brand)', cursor: 'pointer', font: 'inherit', padding: 0 }}>시드 만들기로 돌아가기</button>
+        </div>
+      )}
       {/* ── 헤더 ── */}
       <div className="sim-header">
         <div>
