@@ -3513,7 +3513,7 @@ async function runMondayBuyForUser(payload: {
         () => null
       )
     : null;
-  const mondayFactorsByCode = mondayScoreSnapshot?.byCode ?? new Map();
+  const mondayFactorsByCode: Map<string, ScoreSnapshotRow> = mondayScoreSnapshot?.byCode ?? new Map();
 
   if ((mondayScoreSnapshot?.fallbackCodes?.length ?? 0) > 0) {
     summary.notes.push(
@@ -5504,7 +5504,7 @@ async function runDailyReviewForUser(payload: {
             addOnSelection.candidates.map((candidate) => candidate.code)
           ).catch(() => null)
         : null;
-      const addOnFactorsByCode = addOnScoreSnapshot?.byCode ?? new Map();
+      const addOnFactorsByCode: Map<string, ScoreSnapshotRow> = addOnScoreSnapshot?.byCode ?? new Map();
 
       if (addOnSelection.candidates.length > 0) {
         if (addOnBuyPriceResolution.marketPhase === "intraday") {
@@ -6050,7 +6050,7 @@ async function runDailyReviewForUser(payload: {
             () => null
           )
         : null;
-      const rebalanceFactorsByCode = rebalanceScoreSnapshot?.byCode ?? new Map();
+      const rebalanceFactorsByCode: Map<string, ScoreSnapshotRow> = rebalanceScoreSnapshot?.byCode ?? new Map();
 
       if (candidateSelection.latestAsof) {
         summary.notes.push(`점수 기준일: ${candidateSelection.latestAsof}`);
