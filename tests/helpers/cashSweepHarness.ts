@@ -28,6 +28,7 @@ export function createHarness(options: {
         eq: () => builder,
         in: () => builder,
         is: () => builder,
+        maybeSingle: () => builder,
         insert: (v: unknown) => ((op = "insert"), (values = v), builder),
         update: (v: unknown) => ((op = "update"), (values = v), builder),
         delete: () => ((op = "delete"), builder),

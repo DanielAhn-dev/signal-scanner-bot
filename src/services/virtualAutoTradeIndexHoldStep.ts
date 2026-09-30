@@ -36,11 +36,13 @@ export type IndexHoldRow = {
 
 export type IndexHoldDeps = {
   getPrefs: (chatId: number) => Promise<Record<string, unknown>>;
+  /** 실패 시 예외 대신 ok:false를 돌려준다 (setUserInvestmentPrefs와 같은 계약) */
+  setPrefs: (chatId: number, patch: Record<string, number>) => Promise<{ ok: boolean }>;
   /** 장중이면 가격을 실시간가로 덮어쓰고, 실시간가를 못 받은 종목은 0으로 지운다 */
   overlayIntradayPrices: (prices: Map<string, number>, codes: string[]) => Promise<unknown>;
   /** 봇 계좌(브로커·계좌명 없음)의 보유 중 포지션 */
   fetchHoldings: (supabase: SupabaseClientAny, chatId: number) => Promise<{ data: IndexHoldRow[] | null; error: unknown }>;
-  /** 종목 봇이 산 보유분 전량 매도 (자동매매 일반 매도 경로) */
+  /** 종목 봇이 산 보유분 전량 매도 (자동매매 일반 매도 경로 — 포지션·실현손익은 반영하지만 현금은 호출측 몫) */
   sellStockBotHolding: (input: {
     supabase: SupabaseClientAny;
     runId: number | null;
@@ -51,7 +53,7 @@ export type IndexHoldDeps = {
     feeRate: number;
     taxRate: number;
     dryRun: boolean;
-  }) => Promise<{ sold: boolean; note: string }>;
+  }) => Promise<{ sold: boolean; note: string; proceeds: number }>;
   sellSweepPosition: CashSweepSteps["sellSweepPosition"];
   commitEtfTrade: CashSweepSteps["commitEtfTrade"];
   writeActionLog: (payload: {
@@ -159,7 +161,17 @@ export function createIndexHoldSteps(deps: IndexHoldDeps) {
           summary.notes.push(`${tag} ${label(holding.code)} 정리 실패: ${errorMessage(e)}`);
           return null;
         });
-      if (result?.sold) {
+      if (result?.sold && !payload.dryRun) {
+        // 매도 대금을 현금에 넣는다 — 이 모드는 실행 끝의 포트폴리오 재계산을 거치지 않아서, 예전엔
+        // 대금이 현금에 안 들어간 채 아래 지수 ETF 매수가 진행됐다
+        const fresh = await deps.getPrefs(chatId);
+        const saved = await deps.setPrefs(chatId, {
+          virtual_cash: Math.max(0, Math.round(toNumber(fresh.virtual_cash, 0) + result.proceeds)),
+        });
+        if (!saved.ok) {
+          summary.errors += 1;
+          summary.notes.push(`${tag} ${label(holding.code)} 매도 대금 현금 반영 실패 (포트폴리오 재계산 때 맞춰짐)`);
+        }
         summary.sells += 1;
         summary.notes.push(`${tag}[모드 전환 정리] ${label(holding.code)} ${qty}주 — 종목 봇 보유분 · ${result.note}`);
       } else if (result && payload.dryRun) {

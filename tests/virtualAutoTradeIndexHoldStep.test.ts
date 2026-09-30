@@ -14,12 +14,13 @@ function createIndexHarness(options: Parameters<typeof createHarness>[0] & { fai
   const actionLogs: unknown[] = [];
   const steps = createIndexHoldSteps({
     getPrefs: h.deps.getPrefs,
+    setPrefs: h.deps.setPrefs,
     overlayIntradayPrices: h.deps.overlayIntradayPrices,
     fetchHoldings: async () => ({ data: (options.positions ?? []) as IndexHoldRow[], error: null }),
     sellStockBotHolding: async (input) => {
       if (options.failStockBotSell) throw new Error("sell failed");
       stockBotSells.push({ code: input.holding.code, qty: input.qty });
-      return { sold: true, note: "sold" };
+      return { sold: true, note: "sold", proceeds: 210_000 };
     },
     sellSweepPosition: h.steps.sellSweepPosition,
     commitEtfTrade: h.steps.commitEtfTrade,
@@ -83,7 +84,7 @@ test("runIndexHoldForUser: 예전 레버리지 ETF는 팔고 그 대금으로 KO
   assert.deepEqual(h.tradeLogs.map((log) => log.side), ["SELL", "BUY"]);
 });
 
-test("runIndexHoldForUser: 종목 봇 보유분은 일반 매도 경로로 정리한다", async () => {
+test("runIndexHoldForUser: 종목 봇 보유분은 일반 매도 경로로 정리하고 그 대금으로 지수 ETF를 산다", async () => {
   const h = createIndexHarness({
     prefs: { virtual_cash: 0 },
     stocks: [kodex200, { code: "005930", name: "삼성전자", close: 70_000 }],
@@ -93,6 +94,9 @@ test("runIndexHoldForUser: 종목 봇 보유분은 일반 매도 경로로 정�
 
   assert.deepEqual(h.stockBotSells, [{ code: "005930", qty: 3 }]);
   assert.equal(summary.sells, 1);
+  // 매도 대금 21만원이 현금에 들어가 KODEX 200 5주(20만원)를 산다
+  assert.equal(summary.buys, 1);
+  assert.equal((h.writes[0].values as Record<string, unknown>).quantity, 5);
 });
 
 test("releaseIndexModeHoldings: 한 종목이 실패해도 나머지를 처리하고, 실패를 성공으로 알리지 않는다", async () => {

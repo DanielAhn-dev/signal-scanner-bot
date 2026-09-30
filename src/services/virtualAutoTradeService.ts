@@ -91,7 +91,7 @@ import {
   evaluateAutoTradeSignalGate,
 } from "./virtualAutoTradeSignalGate";
 import { sendMessage } from "../telegram/api";
-import { isExchangeTradedProduct, resolveBaseSellTaxRate, resolveSellTaxRate } from "../lib/securitiesTax";
+import { isExchangeTradedProduct, resolveBaseSellTaxRate } from "../lib/securitiesTax";
 import { fetchBenchmarkComparison, formatBenchmarkLine } from "./virtualAutoTradeBenchmark";
 import { fetchHeavyNetSellingCodes } from "./investorFlowFilter";
 import { fetchFundamentalGateResults, type FundamentalGateResult } from "./fundamentalQualityGate";
@@ -153,6 +153,7 @@ import { calcATR } from "../indicators/atr";
 import { CASH_SWEEP_STRATEGY_ID } from "./virtualAutoTradeCashSweep";
 import { BUY_CASH_BUFFER, createCashSweepSteps } from "./virtualAutoTradeCashSweepStep";
 import { createIndexHoldSteps } from "./virtualAutoTradeIndexHoldStep";
+import { createAutoTradeSellStep, type HoldingRow } from "./virtualAutoTradeSellStep";
 import { resolveSeedRebase } from "./virtualAutoTradeSeedRebase";
 import {
   fetchStrategyGateState,
@@ -807,19 +808,6 @@ function toGateLabel(status: "promote" | "hold" | "watch" | "pause"): string {
   if (status === "watch") return "관찰";
   return "유지";
 }
-
-type HoldingRow = {
-  id: number;
-  code: string;
-  buy_price: number | null;
-  buy_date?: string | null;
-  created_at?: string | null;
-  quantity: number | null;
-  invested_amount: number | null;
-  status?: string | null;
-  memo?: string | null;
-  planned_review_at?: string | null;
-};
 
 type ScoreCandidateRow = {
   code: string;
@@ -4316,344 +4304,25 @@ function getStrategyLabel(strategy?: string | null): string | null {
 }
 
 /**
- * 실현손익을 이번 매도분(delta)만큼 최신 값에 더한다.
- * 예전엔 "실행 시작 때 읽은 값 + 이번 실행 누적분"을 통째로 써서, 그 사이 다른 단계(현금 스윕 매도)나
- * 겹친 실행이 쓴 손익이 사라지거나 두 번 반영됐다 (2026-09-22 −85,372원 이중 반영 · 09-24 −2,007원 누락).
+ * 매도 직후 가상현금만 저장한다. 실현손익은 executeAutoTradeSell이 매도와 함께 이미 반영한다.
+ * dryRun에서는 부르지 않는다 — 예전엔 테스트 실행(휴장일 강제·그림자 모드·브리핑 미리보기)의 매도안도
+ * 실현손익·현금을 실제로 더해, 나중에 진짜 매도할 때 손익이 두 번 잡혔다.
  * 현금은 실행 끝의 syncVirtualPortfolio(시드 + 실현손익 − 보유 투자금)로 다시 맞춰진다.
  */
-async function applyRealizedPnlDelta(chatId: number, delta: number, availableCash?: number): Promise<void> {
-  const fresh = await getUserInvestmentPrefs(chatId);
-  await setUserInvestmentPrefs(chatId, {
-    virtual_realized_pnl: Math.round(toNumber(fresh.virtual_realized_pnl, 0) + delta),
-    ...(availableCash != null ? { virtual_cash: Math.max(0, Math.round(availableCash)) } : {}),
-  });
+async function saveVirtualCashAfterSell(chatId: number, availableCash: number, context: string): Promise<void> {
+  const saved = await setUserInvestmentPrefs(chatId, { virtual_cash: Math.max(0, Math.round(availableCash)) });
+  if (!saved.ok) console.error(`[autoTrade] update virtual cash after ${context} failed`);
 }
 
-async function executeAutoTradeSell(payload: {
-  supabase: SupabaseClientAny;
-  runId: number | null;
-  chatId: number;
-  holding: HoldingRow;
-  close: number;
-  buyPrice: number;
-  feeRate: number;
-  taxRate: number;
-  sellQty: number;
-  reason: "take-profit-partial" | "take-profit-final" | "stop-loss" | "loss-trim" | "rotation-sell" | "event-risk-defensive-exit";
-  stopLossContext?: string | null;
-  profileLabel: string;
-  strategyProfile: string;
-  takeProfitTranchesDone: number;
-  nextTakeProfitTranchesDone: number;
-  dryRun: boolean;
-  /** 보유 중 최고가. 부분 매도 후 남은 포지션 memo에 보존한다. */
-  peakPrice?: number | null;
-}): Promise<{
-  sold: boolean;
-  partial: boolean;
-  proceeds: number;
-  realizedPnlDelta: number;
-  note: string;
-}> {
-  const qty = Math.max(0, Math.floor(toNumber(payload.holding.quantity, 0)));
-  const invested = Math.max(
-    0,
-    toNumber(payload.holding.invested_amount, qty * payload.buyPrice)
-  );
-  const sellQty = Math.max(0, Math.min(qty, Math.floor(payload.sellQty)));
-  const isFullExit = sellQty >= qty;
-  const remainQty = Math.max(0, qty - sellQty);
-
-  if (qty <= 0 || sellQty <= 0) {
-    return {
-      sold: false,
-      partial: false,
-      proceeds: 0,
-      realizedPnlDelta: 0,
-      note: `${payload.holding.code} 매도 스킵: 수량 계산 오류`,
-    };
-  }
-
-  await ensureTradeLotsForHolding({
-    chatId: payload.chatId,
-    watchlistId: payload.holding.id,
-    code: payload.holding.code,
-    quantity: qty,
-    investedAmount: invested,
-    buyPrice: payload.buyPrice,
-    acquiredAt: payload.holding.created_at,
-    buyDate: payload.holding.buy_date,
-  });
-
-  let fifo;
-  try {
-    fifo = await previewFifoSale({
-      chatId: payload.chatId,
-      code: payload.holding.code,
-      quantity: sellQty,
-    });
-  } catch (fifoError) {
-    try {
-      await replaceTradeLotsForHolding({
-        chatId: payload.chatId,
-        watchlistId: payload.holding.id,
-        code: payload.holding.code,
-        quantity: qty,
-        investedAmount: invested,
-        buyPrice: payload.buyPrice,
-        acquiredAt: payload.holding.created_at,
-        buyDate: payload.holding.buy_date,
-        note: "autotrade-fifo-rebuild-before-sell",
-      });
-
-      fifo = await previewFifoSale({
-        chatId: payload.chatId,
-        code: payload.holding.code,
-        quantity: sellQty,
-      });
-    } catch (repairError) {
-      const message = repairError instanceof Error ? repairError.message : String(repairError)
-      return {
-        sold: false,
-        partial: false,
-        proceeds: 0,
-        realizedPnlDelta: 0,
-        note: `${payload.holding.code} 매도 중단: FIFO 정합성 자동 복구 실패 (${message})`,
-      }
-    }
-  }
-  const soldCost = fifo.totalCost;
-  const remainInvested = Math.max(0, invested - soldCost);
-  const nextBuyPrice =
-    remainQty > 0 && remainInvested > 0
-      ? Number((remainInvested / remainQty).toFixed(4))
-      : null;
-  const execution = resolveVirtualExecutionPrice({
-    referencePrice: payload.close,
-    side: "SELL",
-  });
-  const executionPrice = execution.executionPrice;
-  const gross = Math.round(executionPrice * sellQty);
-  const feeAmount = Math.round(gross * payload.feeRate);
-  // ETF·ETN은 증권거래세 면제 — 보유 종목이 ETF인지 이름으로 확인한다
-  const { data: stockNameRow } = await payload.supabase
-    .from("stocks")
-    .select("name")
-    .eq("code", payload.holding.code)
-    .maybeSingle();
-  const effectiveTaxRate = resolveSellTaxRate({
-    code: payload.holding.code,
-    name: (stockNameRow as { name?: string } | null)?.name ?? null,
-    baseRate: payload.taxRate,
-  });
-  const taxAmount = Math.round(gross * effectiveTaxRate);
-  const net = Math.max(0, gross - feeAmount - taxAmount);
-  const pnl = net - soldCost;
-  const isTakeProfit =
-    payload.reason !== "stop-loss" &&
-    payload.reason !== "rotation-sell" &&
-    payload.reason !== "event-risk-defensive-exit";
-
-  const sellOpKey = `${payload.chatId}:SELL:${payload.holding.code}:${Math.round(executionPrice)}:${sellQty}:${new Date().toISOString().slice(0,16)}`;
-  const sellRegistered = await tryRegisterOperation({
-    supabase: payload.supabase,
-    opKey: sellOpKey,
-    chatId: payload.chatId,
-    strategy: AUTO_TRADE_STRATEGY_ID,
-    meta: { event: payload.reason, holdingId: payload.holding.id, runId: payload.runId },
-  }).catch((err) => { throw err; });
-
-  if (!sellRegistered) {
-    await writeActionLog({
-      supabase: payload.supabase,
-      runId: payload.runId,
-      chatId: payload.chatId,
-      code: payload.holding.code,
-      actionType: "SKIP",
-      reason: "duplicate-execution",
-      detail: { opKey: sellOpKey },
-    });
-    return {
-      sold: false,
-      partial: false,
-      proceeds: 0,
-      realizedPnlDelta: 0,
-      note: `${payload.holding.code} 매도 스킵: 중복 실행`,
-    };
-  }
-
-  if (payload.dryRun) {
-    await writeActionLog({
-      supabase: payload.supabase,
-      runId: payload.runId,
-      chatId: payload.chatId,
-      code: payload.holding.code,
-      actionType: "SELL",
-      reason: `dry-run-${payload.reason}`,
-      detail: {
-        qty: sellQty,
-        remainQty,
-        buyPrice: payload.buyPrice,
-        close: payload.close,
-        executionPrice,
-        slippageBps: execution.slippageBps,
-        pnl,
-        isFullExit,
-        stopLossContext: payload.reason === "stop-loss" ? payload.stopLossContext ?? null : null,
-        takeProfitTranchesDone: payload.takeProfitTranchesDone,
-        nextTakeProfitTranchesDone: payload.nextTakeProfitTranchesDone,
-      },
-    });
-    return {
-      sold: true,
-      partial: !isFullExit,
-      proceeds: net,
-      realizedPnlDelta: pnl,
-      note: isFullExit
-        ? `[테스트 매도안] ${payload.holding.code} ${sellQty}주 전량매도 · 전략 ${payload.profileLabel} · 손익률 ${(((executionPrice - payload.buyPrice) / payload.buyPrice) * 100).toFixed(2)}%`
-        : `[테스트 부분익절안] ${payload.holding.code} ${sellQty}주 매도 · 잔여 ${remainQty}주 · 전략 ${payload.profileLabel}`,
-    };
-  }
-
-  if (isFullExit) {
-    const { error: deleteError } = await payload.supabase
-      .from(PORTFOLIO_TABLES.positions)
-      .delete()
-      .eq("chat_id", payload.chatId)
-      .eq("id", payload.holding.id);
-
-    if (deleteError) throw deleteError;
-  } else {
-    const nextMemo = buildPositionStrategyMemo({
-      event: "partial-take-profit",
-      note: "autotrade-partial-take-profit",
-      profile: payload.strategyProfile,
-      takeProfitTranchesDone: payload.nextTakeProfitTranchesDone,
-      // 부분익절 후에도 수익잠금 트레일링이 고점 기준을 잃지 않도록 유지
-      peakPrice: payload.peakPrice ?? null,
-    });
-    const { error: updateError } = await payload.supabase
-      .from(PORTFOLIO_TABLES.positions)
-      .update({
-        quantity: remainQty,
-        invested_amount: remainInvested,
-        buy_price: nextBuyPrice,
-        memo: nextMemo,
-        status: "holding",
-      })
-      .eq("chat_id", payload.chatId)
-      .eq("id", payload.holding.id);
-
-    if (updateError) throw updateError;
-  }
-
-  const tradeId = await appendTradeLog({
-    supabase: payload.supabase,
-    chatId: payload.chatId,
-    code: payload.holding.code,
-    side: "SELL",
-    price: executionPrice,
-    quantity: sellQty,
-    grossAmount: gross,
-    netAmount: net,
-    feeAmount,
-    taxAmount,
-    pnlAmount: pnl,
-    memo: buildStrategyMemo({
-      strategyId: AUTO_TRADE_STRATEGY_ID,
-      event: payload.reason,
-      note: payload.reason,
-    }),
-    source: "AUTO",
-    brokerName: null,
-    accountName: null,
-  });
-
-  try {
-    await applyFifoSale({
-      chatId: payload.chatId,
-      code: payload.holding.code,
-      exitPrice: executionPrice,
-      tradeId,
-      allocations: fifo.allocations,
-    });
-  } catch (lotError) {
-    await replaceTradeLotsForHolding({
-      chatId: payload.chatId,
-      watchlistId: isFullExit ? null : payload.holding.id,
-      code: payload.holding.code,
-      quantity: remainQty,
-      investedAmount: isFullExit ? 0 : remainInvested,
-      buyPrice: isFullExit ? null : nextBuyPrice,
-      acquiredAt: payload.holding.created_at,
-      buyDate: payload.holding.buy_date,
-      note: "autotrade-fifo-rebuilt-after-sell",
-    }).catch(() => undefined)
-    throw lotError
-  }
-
-  await writeActionLog({
-    supabase: payload.supabase,
-    runId: payload.runId,
-    chatId: payload.chatId,
-    code: payload.holding.code,
-    actionType: "SELL",
-    reason: payload.reason,
-    detail: {
-      qty: sellQty,
-      remainQty,
-      buyPrice: payload.buyPrice,
-      close: payload.close,
-      executionPrice,
-      slippageBps: execution.slippageBps,
-      gross,
-      net,
-      pnl,
-      isFullExit,
-      stopLossContext: payload.reason === "stop-loss" ? payload.stopLossContext ?? null : null,
-      takeProfitTranchesDone: payload.takeProfitTranchesDone,
-      nextTakeProfitTranchesDone: payload.nextTakeProfitTranchesDone,
-      tradeId,
-    },
-  });
-
-  appendVirtualDecisionLog({
-    chatId: payload.chatId,
-    code: payload.holding.code,
-    action: "SELL",
-    strategyId: AUTO_TRADE_STRATEGY_ID,
-    strategyVersion: "v1",
-    confidence: isTakeProfit ? 80 : 70,
-    expectedHorizonDays: isTakeProfit ? 3 : 1,
-    reasonSummary: isTakeProfit
-      ? !isFullExit
-        ? `자동 부분익절 (${payload.profileLabel})`
-        : `자동 익절 완료 (${payload.profileLabel})`
-      : `자동 손절 (${payload.profileLabel})`,
-    reasonDetails: {
-      trigger: payload.reason,
-      stopLossContext: payload.reason === "stop-loss" ? payload.stopLossContext ?? null : null,
-      sellQty,
-      remainQty,
-      buyPrice: payload.buyPrice,
-      sellPrice: executionPrice,
-      referencePrice: payload.close,
-      slippageBps: execution.slippageBps,
-      pnl,
-    },
-    linkedTradeId: tradeId ?? undefined,
-  }).catch((err: unknown) => console.error("[autoTrade] decision log SELL failed", err));
-
-  return {
-    sold: true,
-    partial: !isFullExit,
-    proceeds: net,
-    realizedPnlDelta: pnl,
-    note: isFullExit
-      ? `[실행 매도] ${payload.holding.code} ${sellQty}주 · 전략 ${payload.profileLabel} · 매도가 ${fmtKrw(executionPrice)}`
-      : `[실행 부분익절] ${payload.holding.code} ${sellQty}주 · 잔여 ${remainQty}주 · 전략 ${payload.profileLabel} · 매도가 ${fmtKrw(executionPrice)}`,
-  };
-}
+const { executeAutoTradeSell } = createAutoTradeSellStep({
+  getPrefs: getUserInvestmentPrefs,
+  setPrefs: setUserInvestmentPrefs,
+  appendTradeLog,
+  tryRegisterOperation,
+  writeActionLog,
+  appendVirtualDecisionLog,
+  lots: { ensureTradeLotsForHolding, previewFifoSale, replaceTradeLotsForHolding, applyFifoSale },
+});
 
 /** 로테이션 기능 자체를 켤지 여부. 실계좌 미러링에 영향을 주는 새 매도 트리거라 기본 비활성(옵트인). */
 const AUTO_TRADE_ROTATION_ENABLED = String(process.env.AUTO_TRADE_ROTATION_ENABLED ?? "").trim().toLowerCase() === "true";
@@ -4922,6 +4591,8 @@ export async function runGateCoreForUser(payload: {
     if (result?.sold) {
       summary.sells += 1;
       availableCash += result.proceeds;
+      // 아래 매수가 현금을 prefs에서 다시 읽으므로 매도 대금을 바로 저장한다 (예전엔 대금이 빠진 채 다시 읽혔다)
+      if (!payload.dryRun) await saveVirtualCashAfterSell(chatId, availableCash, "gate-core sell");
       summary.notes.push(`[교체 매도] ${names.get(code) ?? code}(${code}) ${qty}주 — 목표 목록에서 빠짐 · ${result.note}`);
     }
   }
@@ -5037,6 +4708,7 @@ async function resolveActivePromotedStrategy(supabase: SupabaseClientAny, chatId
 
 const { runIndexHoldForUser, releaseIndexModeHoldings } = createIndexHoldSteps({
   getPrefs: getUserInvestmentPrefs,
+  setPrefs: setUserInvestmentPrefs,
   overlayIntradayPrices,
   fetchHoldings: async (supabase, chatId) => {
     const { data, error } = await fetchLegacyVirtualPositionsForChat({
@@ -5528,11 +5200,7 @@ async function runDailyReviewForUser(payload: {
           if (fallbackSell.sold) {
             realizedDelta += fallbackSell.realizedPnlDelta;
             availableCash += fallbackSell.proceeds;
-            try {
-              await applyRealizedPnlDelta(chatId, fallbackSell.realizedPnlDelta, availableCash);
-            } catch (e) {
-              console.error("[autoTrade] update virtual cash/pnl after guard-fallback stop failed", e);
-            }
+            if (!payload.dryRun) await saveVirtualCashAfterSell(chatId, availableCash, "guard-fallback stop");
             stopLossCount += 1;
             summary.sells += 1;
             summary.notes.push(
@@ -5630,11 +5298,7 @@ async function runDailyReviewForUser(payload: {
       if (eventSellResult.sold) {
         realizedDelta += eventSellResult.realizedPnlDelta;
         availableCash += eventSellResult.proceeds;
-        try {
-          await applyRealizedPnlDelta(chatId, eventSellResult.realizedPnlDelta, availableCash);
-        } catch (e) {
-          console.error("[autoTrade] update virtual cash/pnl after event-risk sell failed", e);
-        }
+        if (!payload.dryRun) await saveVirtualCashAfterSell(chatId, availableCash, "event-risk sell");
         summary.sells += 1;
         summary.notes.push(`${eventSellResult.note} · ${holdingEventGuard.reason}`);
         await writeActionLog({
@@ -5980,12 +5644,7 @@ async function runDailyReviewForUser(payload: {
 
       realizedDelta += result.realizedPnlDelta;
       availableCash += result.proceeds;
-      // 즉시 가상현금 및 실현손익 갱신
-      try {
-        await applyRealizedPnlDelta(chatId, result.realizedPnlDelta, availableCash);
-      } catch (e) {
-        console.error("[autoTrade] update virtual cash/pnl after sell failed", e);
-      }
+      if (!payload.dryRun) await saveVirtualCashAfterSell(chatId, availableCash, "sell");
       if (finalExitPlan.action === "STOP_LOSS") {
         stopLossCount += 1;
       } else {
