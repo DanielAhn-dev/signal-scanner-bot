@@ -454,6 +454,40 @@ def apply_inactive_updates(supabase: Client, codes: List[str]) -> int:
     return updated
 
 
+def apply_membership_snapshot(supabase: Client, trade_date: str, rows: List[dict]) -> int:
+    """Persist the point-in-time listed universe used by this refresh run."""
+    if not rows:
+        return 0
+    snapshot = []
+    iso_date = datetime.strptime(trade_date, "%Y%m%d").date().isoformat()
+    for row in rows:
+        snapshot.append(
+            {
+                "trade_date": iso_date,
+                "code": row["code"],
+                "name": row.get("name"),
+                "market": row.get("market"),
+                "mcap_rank": row.get("mcap_rank"),
+                "market_cap": row.get("market_cap"),
+                "close": row.get("close"),
+                "liquidity": row.get("liquidity"),
+                "universe_level": row.get("universe_level", "tail"),
+                "is_active": bool(row.get("is_active", True)),
+                "source": "universe_refresh",
+            }
+        )
+    stored = 0
+    for i in range(0, len(snapshot), 500):
+        try:
+            supabase.table("universe_membership_daily").upsert(
+                snapshot[i : i + 500], on_conflict="trade_date,code"
+            ).execute()
+            stored += len(snapshot[i : i + 500])
+        except Exception as e:
+            print(f"[WARN] membership snapshot save failed: {e}")
+    return stored
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Refresh stocks universe membership")
     parser.add_argument("--date", type=str, help="Trading date YYYYMMDD")
@@ -620,6 +654,7 @@ def main() -> int:
                     missing_active_codes.append(code)
 
         upserted = len(upserts) if args.dry_run else apply_upserts(supabase, upserts)
+        membership_snapshot = len(upserts) if args.dry_run else apply_membership_snapshot(supabase, trading_date, upserts)
         inactivated = len(missing_active_codes) if args.dry_run else apply_inactive_updates(supabase, missing_active_codes)
         if not args.dry_run:
             save_missing_tracker(next_tracker)
@@ -628,6 +663,7 @@ def main() -> int:
         status["summary"] = {
             "listed_count": len(listed_codes),
             "upserted": upserted,
+            "membership_snapshot": membership_snapshot,
             "inactivated_missing": inactivated,
             "promoted_to_core": promoted_to_core,
             "promoted_to_extended": promoted_to_extended,
