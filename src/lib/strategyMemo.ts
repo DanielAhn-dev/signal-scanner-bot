@@ -12,6 +12,8 @@ export interface ParsedStrategyMemo {
 }
 
 export const DEFAULT_STRATEGY_ID = "legacy.unknown";
+/** 종목 자동매매 봇이 산 포지션·거래에 붙는 전략 ID */
+export const AUTO_TRADE_STRATEGY_ID = "core.autotrade.v1";
 
 function sanitizeValue(value: string): string {
   return String(value).replace(/[;\n\r]/g, " ").trim();

@@ -137,14 +137,14 @@ export function createCashSweepSteps(deps: CashSweepDeps) {
   }
 
   /**
-   * 스윕 매매 한 건을 자산(현금+포지션)이 어긋나지 않게 반영한다. DB 트랜잭션이 없어서 순서로 보완한다.
+   * 봇 ETF 매매(유휴현금 스윕·지수 보유 모드) 한 건을 자산(현금+포지션)이 어긋나지 않게 반영한다. DB 트랜잭션이 없어서 순서로 보완한다.
    * 1) 현금(prefs) 반영 — 실패하면 아무것도 바뀌지 않은 채 예외
    * 2) 포지션 반영 — 실패하면 1)을 되돌리고 예외 (되돌리기마저 실패하면 불일치를 로그로 남긴다)
    * 3) 거래기록 — 이력일 뿐이라 실패해도 자산은 맞으므로 로그만 남기고 진행한다
    * 예전엔 포지션 → 거래기록 → 현금 순서였고 포지션 쓰기 오류를 확인하지 않았다. 그래서 포지션 삭제가 실패해도
    * 현금이 들어와 자산이 두 번 잡히거나(매도), 포지션 생성이 실패해도 현금만 빠져 돈이 사라질 수 있었다(매수).
    */
-  async function commitSweepTrade(input: {
+  async function commitEtfTrade(input: {
     chatId: number;
     cashPatch: Record<string, number>;
     revertCashPatch: Record<string, number>;
@@ -152,7 +152,7 @@ export function createCashSweepSteps(deps: CashSweepDeps) {
     tradeLog: CashSweepTradeLog;
   }): Promise<void> {
     const cashResult = await deps.setPrefs(input.chatId, input.cashPatch);
-    if (!cashResult.ok) throw new Error("cash sweep: 현금 반영 실패 — 포지션은 그대로 둠");
+    if (!cashResult.ok) throw new Error("현금 반영 실패 — 포지션은 그대로 둠");
 
     const { error: positionError } = await input.writePosition();
     if (positionError) {
@@ -197,7 +197,7 @@ export function createCashSweepSteps(deps: CashSweepDeps) {
     const remainingQty = holding.quantity - sellQty;
     const positions = () => payload.supabase.from(PORTFOLIO_TABLES.positions);
 
-    await commitSweepTrade({
+    await commitEtfTrade({
       chatId: payload.chatId,
       cashPatch: {
         virtual_cash: Math.max(0, Math.round(availableCash + net)),
@@ -519,7 +519,7 @@ export function createCashSweepSteps(deps: CashSweepDeps) {
       const positions = () => payload.supabase.from(PORTFOLIO_TABLES.positions);
       const nextQty = sweepQty + buyQty;
       const nextInvested = sweepInvested + buyInvested;
-      await commitSweepTrade({
+      await commitEtfTrade({
         chatId: payload.chatId,
         cashPatch: { virtual_cash: Math.max(0, Math.round(availableCash - buyInvested)) },
         revertCashPatch: { virtual_cash: availableCash },
@@ -581,6 +581,7 @@ export function createCashSweepSteps(deps: CashSweepDeps) {
   }
 
   return {
+    commitEtfTrade,
     sellSweepPosition,
     runCashSweepLiquidateStep,
     ensureCashForBuy,
@@ -588,3 +589,5 @@ export function createCashSweepSteps(deps: CashSweepDeps) {
     runCashSweepStep,
   };
 }
+
+export type CashSweepSteps = ReturnType<typeof createCashSweepSteps>;

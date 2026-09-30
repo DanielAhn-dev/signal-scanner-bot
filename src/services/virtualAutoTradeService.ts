@@ -15,7 +15,7 @@ import {
 } from "./userService";
 import { syncVirtualPortfolio } from "./portfolioService";
 import { buildStrategyMemo } from "../lib/strategyMemo";
-import { parseStrategyMemo } from "../lib/strategyMemo";
+import { AUTO_TRADE_STRATEGY_ID, parseStrategyMemo } from "../lib/strategyMemo";
 import { appendVirtualDecisionLog } from "./decisionLogService";
 import { calculateAutoTradeBuySizing, resolveConvictionScale } from "./virtualAutoTradeSizing";
 import { attachIndexTrendRatios, fetchIndexSma200Ratios } from "./indexTrendRatios";
@@ -116,16 +116,7 @@ import {
   type DistributionRecord,
 } from "./etfDistribution";
 import { fetchStockDividends } from "./stockDividend";
-import {
-  INDEX_HOLD_DESCRIPTION,
-  INDEX_HOLD_MODE,
-  INDEX_HOLD_STRATEGY_ID,
-  INDEX_MODE_CODES,
-  INDEX_MODE_STRATEGY_IDS,
-  isLeverageEtfCode,
-  normalizeStrategyMode,
-  planIndexHoldRebalance,
-} from "./indexHoldStrategy";
+import { INDEX_HOLD_MODE, normalizeStrategyMode } from "./indexHoldStrategy";
 import {
   fetchNegativeDisclosures,
   formatDisclosureFilterNote,
@@ -160,12 +151,8 @@ import {
 import { runLongTermCoachForChat } from "./longTermCoachService";
 import { calcATR } from "../indicators/atr";
 import { CASH_SWEEP_STRATEGY_ID } from "./virtualAutoTradeCashSweep";
-import {
-  BUY_CASH_BUFFER,
-  createCashSweepSteps,
-  fmtSweepPnl,
-  type SweepHolding,
-} from "./virtualAutoTradeCashSweepStep";
+import { BUY_CASH_BUFFER, createCashSweepSteps } from "./virtualAutoTradeCashSweepStep";
+import { createIndexHoldSteps } from "./virtualAutoTradeIndexHoldStep";
 import { resolveSeedRebase } from "./virtualAutoTradeSeedRebase";
 import {
   fetchStrategyGateState,
@@ -214,7 +201,6 @@ type ApiBudget = {
   usageByScope: Record<ApiBudgetScope, number>;
 };
 
-const AUTO_TRADE_STRATEGY_ID = "core.autotrade.v1";
 const AUTO_TRADE_CYCLE_STATUS_NOTIFY =
   String(process.env.AUTO_TRADE_CYCLE_STATUS_NOTIFY ?? "true").toLowerCase() !== "false";
 
@@ -2241,6 +2227,7 @@ async function appendTradeLog(payload: {
 }
 
 const {
+  commitEtfTrade,
   sellSweepPosition,
   runCashSweepLiquidateStep,
   ensureCashForBuy,
@@ -5048,310 +5035,40 @@ async function resolveActivePromotedStrategy(supabase: SupabaseClientAny, chatId
   return state?.active ?? null;
 }
 
-/** 봇이 산 지수·레버리지·금리 ETF 보유분 (유휴현금 스윕 또는 지수 보유·예전 1.5배 모드로 산 것만 — 사용자가 직접 산 같은 ETF는 제외) */
-function isBotIndexEtfRow(row: HoldingRow): boolean {
-  if (!INDEX_MODE_CODES.includes(String(row.code))) return false;
-  const strategyId = parseStrategyMemo(row.memo).strategyId;
-  return strategyId === CASH_SWEEP_STRATEGY_ID || INDEX_MODE_STRATEGY_IDS.includes(strategyId ?? "");
-}
-
-/**
- * 지수 보유 모드 실행 (indexHoldStrategy.ts). 계정 설정으로 켜면 종목 매수·일일점검·유휴현금 스윕 대신 호출된다.
- * 1) 종목 봇이 산 보유분이 남아 있으면 정리 (모드를 켠 직후 한 번)
- * 2) 지수 ETF가 아닌 보유분(예전 1.5배 모드의 레버리지·금리 ETF)은 팔고, 현금은 전부 KODEX 200
- */
-async function runIndexHoldForUser(payload: {
-  supabase: SupabaseClientAny;
-  setting: AutoTradeSettingRow;
-  runId: number | null;
-  dryRun: boolean;
-}): Promise<AutoTradeActionSummary> {
-  const chatId = payload.setting.chat_id;
-  const summary: AutoTradeActionSummary = { chatId, buys: 0, sells: 0, skipped: 0, errors: 0, notes: [] };
-  const tag = "[지수 보유]";
-  const prefs = await getUserInvestmentPrefs(chatId);
-  const feeRate = toNumber(prefs.virtual_fee_rate, 0.00015);
-  const taxRate = resolveBaseSellTaxRate(prefs.virtual_tax_rate);
-
-  const { data: holdingsData, error: holdingsError } = await fetchLegacyVirtualPositionsForChat({
-    supabase: payload.supabase,
-    chatId,
-    select: "id, code, buy_price, buy_date, created_at, quantity, invested_amount, status, memo, planned_review_at",
-    status: "holding",
-  });
-  if (holdingsError) {
-    summary.errors += 1;
-    summary.notes.push(`${tag} 보유 조회 실패: ${queryErrorMessage(holdingsError)}`);
-    return summary;
-  }
-  const rows = (holdingsData ?? []) as HoldingRow[];
-  const etfRows = rows.filter(isBotIndexEtfRow);
-  const stockBotRows = rows.filter(
-    (row) => !isBotIndexEtfRow(row) && parseStrategyMemo(row.memo).strategyId === AUTO_TRADE_STRATEGY_ID
-  );
-
-  const priceCodes = [...new Set([...INDEX_MODE_CODES, ...stockBotRows.map((row) => row.code)])];
-  const { data: priceRows } = await payload.supabase.from("stocks").select("code, name, close").in("code", priceCodes);
-  const prices = new Map<string, number>();
-  const names = new Map<string, string>();
-  for (const row of (priceRows ?? []) as Array<{ code: string; name: string | null; close: number | null }>) {
-    if (toNumber(row.close, 0) > 0) prices.set(row.code, toNumber(row.close, 0));
-    names.set(row.code, row.name ?? row.code);
-  }
-  await overlayIntradayPrices(prices, priceCodes);
-  const label = (code: string) => `${names.get(code) ?? code}(${code})`;
-
-  // 1) 종목 봇 보유분 정리
-  for (const holding of stockBotRows) {
-    const qty = Math.max(0, Math.floor(toNumber(holding.quantity, 0)));
-    const price = prices.get(holding.code) ?? 0;
-    if (qty <= 0 || !(price > 0)) {
-      summary.skipped += 1;
-      summary.notes.push(`${tag} ${label(holding.code)} 정리 보류: 가격 없음`);
-      continue;
-    }
-    const result = await executeAutoTradeSell({
-      supabase: payload.supabase,
-      runId: payload.runId,
+const { runIndexHoldForUser, releaseIndexModeHoldings } = createIndexHoldSteps({
+  getPrefs: getUserInvestmentPrefs,
+  overlayIntradayPrices,
+  fetchHoldings: async (supabase, chatId) => {
+    const { data, error } = await fetchLegacyVirtualPositionsForChat({
+      supabase,
       chatId,
-      holding,
-      close: price,
-      buyPrice: toNumber(holding.buy_price, price),
-      feeRate,
-      taxRate,
-      sellQty: qty,
+      select: "id, code, buy_price, buy_date, created_at, quantity, invested_amount, status, memo, planned_review_at",
+      status: "holding",
+    });
+    return { data: data as HoldingRow[] | null, error };
+  },
+  sellStockBotHolding: (input) =>
+    executeAutoTradeSell({
+      supabase: input.supabase,
+      runId: input.runId,
+      chatId: input.chatId,
+      holding: input.holding,
+      close: input.price,
+      buyPrice: toNumber(input.holding.buy_price, input.price),
+      feeRate: input.feeRate,
+      taxRate: input.taxRate,
+      sellQty: input.qty,
       reason: "rotation-sell",
       profileLabel: "지수 보유 모드 전환",
       strategyProfile: "INDEX_HOLD",
       takeProfitTranchesDone: 0,
       nextTakeProfitTranchesDone: 0,
-      dryRun: payload.dryRun,
-    }).catch((e: unknown) => {
-      summary.errors += 1;
-      summary.notes.push(`${tag} ${label(holding.code)} 정리 실패: ${e instanceof Error ? e.message : String(e)}`);
-      return null;
-    });
-    if (result?.sold) {
-      summary.sells += 1;
-      summary.notes.push(`${tag}[모드 전환 정리] ${label(holding.code)} ${qty}주 — 종목 봇 보유분 · ${result.note}`);
-    } else if (result && payload.dryRun) {
-      summary.notes.push(`${tag}[테스트] ${label(holding.code)} ${qty}주 정리 예정 (종목 봇 보유분)`);
-    }
-  }
-
-  // 2) 지수 ETF로 맞추기 (정리 매도로 늘어난 현금을 다시 읽는다)
-  const cash = payload.dryRun
-    ? Math.max(0, toNumber(prefs.virtual_cash, 0))
-    : Math.max(0, toNumber((await getUserInvestmentPrefs(chatId)).virtual_cash, 0));
-  const plan = planIndexHoldRebalance({
-    cash,
-    holdings: etfRows.map((row) => ({
-      code: row.code,
-      quantity: Math.max(0, Math.floor(toNumber(row.quantity, 0))),
-      price: prices.get(row.code) ?? 0,
-    })),
-    prices,
-    feeRate,
-  });
-  summary.notes.push(`${tag} ${INDEX_HOLD_DESCRIPTION} · 매도 ${plan.sell.length} · 매수 ${plan.buy.length}`);
-  summary.notes.push(...plan.notes.map((note) => `${tag} ${note}`));
-
-  for (const order of plan.sell) {
-    const row = etfRows.find((r) => r.code === order.code)!;
-    const holding: SweepHolding = {
-      id: toNumber(row.id, 0),
-      code: row.code,
-      name: names.get(row.code) ?? row.code,
-      price: prices.get(row.code) ?? 0,
-      quantity: order.quantity,
-      invested_amount: Math.max(0, toNumber(row.invested_amount, 0)),
-    };
-    if (payload.dryRun) {
-      summary.notes.push(`${tag}[테스트] ${label(row.code)} ${order.quantity}주 전량 매도 예정 (평가액 ${fmtKrw(order.quantity * holding.price)})`);
-      continue;
-    }
-    try {
-      const { net, pnl } = await sellSweepPosition({
-        supabase: payload.supabase,
-        chatId,
-        holding,
-        sellQty: order.quantity,
-        event: "index-mode-rotate",
-        note: "index-hold-rotate",
-        strategyId: INDEX_HOLD_STRATEGY_ID,
-      });
-      summary.sells += 1;
-      summary.notes.push(`${tag} ${label(row.code)} ${order.quantity}주 전량 매도 (${fmtKrw(net)}, 손익 ${fmtSweepPnl(pnl)}) — ${INDEX_HOLD_DESCRIPTION}`);
-    } catch (e) {
-      summary.errors += 1;
-      summary.notes.push(`${tag} ${label(row.code)} 매도 실패: ${e instanceof Error ? e.message : String(e)}`);
-    }
-  }
-
-  for (const order of plan.buy) {
-    const price = prices.get(order.code) ?? 0;
-    const invested = Math.round(order.quantity * price);
-    if (payload.dryRun) {
-      summary.notes.push(`${tag}[테스트] ${label(order.code)} ${order.quantity}주 매수 예정 (${fmtKrw(invested)})`);
-      continue;
-    }
-    // 매도 반영 뒤 현금을 다시 읽어, 현금보다 많이 사지 않는다
-    const available = Math.max(0, toNumber((await getUserInvestmentPrefs(chatId)).virtual_cash, 0));
-    const quantity = Math.min(order.quantity, Math.floor(available / (price * (1 + feeRate))));
-    if (quantity <= 0) {
-      summary.skipped += 1;
-      summary.notes.push(`${tag} ${label(order.code)} 매수 보류: 현금 부족`);
-      continue;
-    }
-    const amount = Math.round(quantity * price);
-    const fee = Math.round(amount * feeRate);
-    const memo = buildStrategyMemo({ strategyId: INDEX_HOLD_STRATEGY_ID, event: "index-mode-buy", note: "index-hold" });
-    const existing = etfRows.find((row) => row.code === order.code);
-    const nextQty = Math.floor(toNumber(existing?.quantity, 0)) + quantity;
-    const nextInvested = Math.round(toNumber(existing?.invested_amount, 0)) + amount + fee;
-    const { error: positionError } = existing
-      ? await payload.supabase
-          .from(PORTFOLIO_TABLES.positions)
-          .update({
-            quantity: nextQty,
-            invested_amount: nextInvested,
-            buy_price: Number((nextInvested / nextQty).toFixed(4)),
-            memo,
-          })
-          .eq("chat_id", chatId)
-          .eq("id", existing.id)
-      : await payload.supabase.from(PORTFOLIO_TABLES.positions).insert({
-          chat_id: chatId,
-          code: order.code,
-          buy_price: price,
-          buy_date: toKstDateKey(),
-          quantity,
-          invested_amount: nextInvested,
-          bucket: "SWING",
-          status: "holding",
-          broker_name: null,
-          account_name: null,
-          memo,
-        });
-    if (positionError) {
-      summary.errors += 1;
-      summary.notes.push(`${tag} ${label(order.code)} 매수 실패: ${queryErrorMessage(positionError)}`);
-      continue;
-    }
-    await appendTradeLog({
-      supabase: payload.supabase,
-      chatId,
-      code: order.code,
-      side: "BUY",
-      price,
-      quantity,
-      grossAmount: amount,
-      netAmount: amount + fee,
-      feeAmount: fee,
-      memo,
-      source: "AUTO",
-      brokerName: null,
-      accountName: null,
-    });
-    await setUserInvestmentPrefs(chatId, { virtual_cash: Math.max(0, Math.round(available - amount - fee)) });
-    summary.buys += 1;
-    summary.notes.push(`${tag} ${label(order.code)} ${quantity}주 매수 · ${fmtKrw(price)} · 투입 ${fmtKrw(amount)} — ${INDEX_HOLD_DESCRIPTION}`);
-    await writeActionLog({
-      supabase: payload.supabase,
-      runId: payload.runId,
-      chatId,
-      code: order.code,
-      actionType: "BUY",
-      reason: "index-hold",
-      detail: { qty: quantity, price },
-    });
-  }
-
-  if (!plan.sell.length && !plan.buy.length && !stockBotRows.length) {
-    summary.skipped += 1;
-  }
-  return summary;
-}
-
-/**
- * 지수 보유 모드(또는 예전 1.5배 모드)를 끈 계정: 레버리지 ETF는 팔고, KODEX 200·금리 ETF는 유휴현금 스윕으로 넘긴다
- * (종목 봇의 스윕 단계가 이어서 관리). 해당 보유분이 없으면 아무것도 하지 않는다.
- */
-async function releaseIndexModeHoldings(payload: {
-  supabase: SupabaseClientAny;
-  chatId: number;
-  dryRun: boolean;
-}): Promise<{ notes: string[] }> {
-  const notes: string[] = [];
-  try {
-    const { data } = await payload.supabase
-      .from(PORTFOLIO_TABLES.positions)
-      .select("id, code, quantity, invested_amount, memo")
-      .eq("chat_id", payload.chatId)
-      .in("code", INDEX_MODE_CODES)
-      .eq("status", "holding")
-      .is("broker_name", null)
-      .is("account_name", null);
-    const rows = ((data ?? []) as Record<string, unknown>[]).filter(
-      (row) => INDEX_MODE_STRATEGY_IDS.includes(parseStrategyMemo(row.memo as string | null).strategyId ?? "")
-    );
-    if (!rows.length) return { notes };
-    const { data: priceRows } = await payload.supabase
-      .from("stocks")
-      .select("code, name, close")
-      .in("code", rows.map((row) => String(row.code)));
-    const priceMap = new Map(
-      ((priceRows ?? []) as Record<string, unknown>[]).map((row) => [
-        String(row.code),
-        { close: toNumber(row.close, 0), name: String(row.name ?? row.code) },
-      ])
-    );
-    for (const row of rows) {
-      const code = String(row.code);
-      const info = priceMap.get(code);
-      if (!isLeverageEtfCode(code)) {
-        if (!payload.dryRun) {
-          await payload.supabase
-            .from(PORTFOLIO_TABLES.positions)
-            .update({ memo: buildStrategyMemo({ strategyId: CASH_SWEEP_STRATEGY_ID, event: "sweep-buy", note: "from-index-mode" }) })
-            .eq("chat_id", payload.chatId)
-            .eq("id", toNumber(row.id, 0));
-        }
-        notes.push(`[지수 모드 해제] ${info?.name ?? code} 보유분을 유휴현금 스윕으로 넘김`);
-        continue;
-      }
-      const quantity = Math.max(0, Math.floor(toNumber(row.quantity, 0)));
-      if (!info || info.close <= 0 || quantity <= 0) {
-        notes.push(`[지수 모드 해제] ${info?.name ?? code} 매도 보류: 가격 없음`);
-        continue;
-      }
-      if (payload.dryRun) {
-        notes.push(`[지수 모드 해제][테스트] ${info.name} ${quantity}주 매도 예정`);
-        continue;
-      }
-      const { net, pnl } = await sellSweepPosition({
-        supabase: payload.supabase,
-        chatId: payload.chatId,
-        holding: {
-          id: toNumber(row.id, 0),
-          code,
-          name: info.name,
-          price: info.close,
-          quantity,
-          invested_amount: Math.max(0, toNumber(row.invested_amount, 0)),
-        },
-        sellQty: quantity,
-        event: "index-mode-release",
-        note: "index-mode-off",
-        strategyId: String(parseStrategyMemo(row.memo as string | null).strategyId ?? INDEX_HOLD_STRATEGY_ID),
-      });
-      notes.push(`[지수 모드 해제] ${info.name} ${quantity}주 매도 (${fmtKrw(net)}, 손익 ${fmtSweepPnl(pnl)})`);
-    }
-  } catch (e) {
-    console.error("[autoTrade] index mode release failed", e);
-  }
-  return { notes };
-}
+      dryRun: input.dryRun,
+    }),
+  sellSweepPosition,
+  commitEtfTrade,
+  writeActionLog,
+});
 
 async function runDailyReviewForUser(payload: {
   supabase: SupabaseClientAny;

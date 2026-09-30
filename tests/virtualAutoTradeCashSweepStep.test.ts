@@ -2,76 +2,11 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { buildStrategyMemo } from "../src/lib/strategyMemo";
 import { CASH_SWEEP_STRATEGY_ID } from "../src/services/virtualAutoTradeCashSweep";
-import {
-  createCashSweepSteps,
-  type CashSweepTradeLog,
-  type SweepHolding,
-} from "../src/services/virtualAutoTradeCashSweepStep";
-
-// 스윕 매매는 현금(prefs)·포지션·거래기록을 따로 쓴다. DB 트랜잭션이 없으므로
-// 중간 단계가 실패해도 "현금 + 포지션" 자산이 어긋나지 않는지를 가짜 DB로 검증한다.
+import { type SweepHolding } from "../src/services/virtualAutoTradeCashSweepStep";
+import { createHarness } from "./helpers/cashSweepHarness";
 
 const CHAT_ID = 1;
 const SWEEP_MEMO = buildStrategyMemo({ strategyId: CASH_SWEEP_STRATEGY_ID, event: "sweep-buy", note: "t" });
-
-type Write = { table: string; op: "insert" | "update" | "delete"; values?: unknown };
-
-function createHarness(options: {
-  prefs: Record<string, unknown>;
-  positions?: Record<string, unknown>[];
-  stocks?: Record<string, unknown>[];
-  failPositionWrite?: boolean;
-  failSetPrefsCall?: number; // n번째(1부터) setPrefs 호출을 실패시킨다
-  failTradeLog?: boolean;
-}) {
-  const prefs = { ...options.prefs };
-  const writes: Write[] = [];
-  const tradeLogs: CashSweepTradeLog[] = [];
-  let setPrefsCalls = 0;
-
-  const supabase = {
-    from(table: string) {
-      let op: Write["op"] | null = null;
-      let values: unknown;
-      const builder = {
-        select: () => builder,
-        eq: () => builder,
-        in: () => builder,
-        is: () => builder,
-        insert: (v: unknown) => ((op = "insert"), (values = v), builder),
-        update: (v: unknown) => ((op = "update"), (values = v), builder),
-        delete: () => ((op = "delete"), builder),
-        then(resolve: (r: { data: unknown; error: unknown }) => unknown) {
-          if (op) {
-            if (options.failPositionWrite) return Promise.resolve({ data: null, error: new Error("write failed") }).then(resolve);
-            writes.push({ table, op, values });
-            return Promise.resolve({ data: null, error: null }).then(resolve);
-          }
-          const data = table === "stocks" ? options.stocks ?? [] : options.positions ?? [];
-          return Promise.resolve({ data, error: null }).then(resolve);
-        },
-      };
-      return builder;
-    },
-  };
-
-  const steps = createCashSweepSteps({
-    getPrefs: async () => ({ ...prefs }),
-    setPrefs: async (_chatId, patch) => {
-      setPrefsCalls += 1;
-      if (setPrefsCalls === options.failSetPrefsCall) return { ok: false };
-      Object.assign(prefs, patch);
-      return { ok: true };
-    },
-    appendTradeLog: async (log) => {
-      if (options.failTradeLog) throw new Error("trade log failed");
-      tradeLogs.push(log);
-    },
-    overlayIntradayPrices: async () => 0,
-  });
-
-  return { steps, supabase, prefs, writes, tradeLogs };
-}
 
 const holding: SweepHolding = {
   id: 7,
