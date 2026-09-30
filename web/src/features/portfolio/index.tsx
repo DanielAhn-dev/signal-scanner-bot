@@ -10,7 +10,7 @@ import Modal from '../../components/Modal'
 import StockSearchInput from '../../components/StockSearchInput'
 import { EmptyState, ErrorState } from '../../components/StateViews'
 import { useToast } from '../../components/ToastProvider'
-import { resolveSellCostPct } from '../../lib/tradeCost'
+import { resolveSellCostPct, loadTradeCostSettings, TRADE_COST_STORAGE_KEY } from '../../lib/tradeCost'
 import Pagination from '../../components/Pagination'
 import EconomicEventBadge from '../../components/EconomicEventBadge'
 import SheetHeaderBar from '../../components/SheetHeaderBar'
@@ -107,7 +107,6 @@ function pickLatestActiveShare(items: PortfolioShareHistoryItem[]): PortfolioSha
 }
 
 const PORTFOLIO_RULES_STORAGE_KEY = 'portfolio.holdingRules.v1'
-const PORTFOLIO_COST_STORAGE_KEY = 'portfolio.tradeCost.v1'
 const PORTFOLIO_ASSET_OVERVIEW_STORAGE_KEY = 'portfolio.assetOverview.v1'
 const DEFAULT_INITIAL_CAPITAL = 10_000_000
 
@@ -172,24 +171,13 @@ export default function Portfolio() {
   const [performanceAccordionOpen, setPerformanceAccordionOpen] = useState(false)
   const [filterAccordionOpen, setFilterAccordionOpen] = useState(false)
   // 매매비용 표시 설정은 브라우저에 기억한다 (예전엔 새로 열 때마다 기본값으로 돌아갔다)
-  const storedCost = (() => {
-    try {
-      return JSON.parse(window.localStorage.getItem(PORTFOLIO_COST_STORAGE_KEY) || 'null') as
-        | { includeCost?: boolean; buyFeeRatePct?: number; sellFeeRatePct?: number }
-        | null
-    } catch {
-      return null
-    }
-  })()
-  const [includeCost, setIncludeCost] = useState(storedCost?.includeCost ?? true)
-  const [buyFeeRatePct, setBuyFeeRatePct] = useState(storedCost?.buyFeeRatePct ?? 0.015)  // 매수수수료 %
-  const [sellFeeRatePct, setSellFeeRatePct] = useState(
-    // 0.195 = 예전 기본값(거래세 0.18%) — 2026년 거래세 0.20%로 올려 읽는다
-    storedCost?.sellFeeRatePct == null || storedCost.sellFeeRatePct === 0.195 ? 0.215 : storedCost.sellFeeRatePct
-  ) // 매도수수료+거래세 %
+  const storedCost = loadTradeCostSettings()
+  const [includeCost, setIncludeCost] = useState(storedCost.includeCost)
+  const [buyFeeRatePct, setBuyFeeRatePct] = useState(storedCost.buyFeeRatePct)  // 매수수수료 %
+  const [sellFeeRatePct, setSellFeeRatePct] = useState(storedCost.sellFeeRatePct) // 매도수수료+거래세 %
   useEffect(() => {
     try {
-      window.localStorage.setItem(PORTFOLIO_COST_STORAGE_KEY, JSON.stringify({ includeCost, buyFeeRatePct, sellFeeRatePct }))
+      window.localStorage.setItem(TRADE_COST_STORAGE_KEY, JSON.stringify({ includeCost, buyFeeRatePct, sellFeeRatePct }))
     } catch {
       // 저장 불가 환경(시크릿 모드 등)에서는 기본값으로 동작
     }

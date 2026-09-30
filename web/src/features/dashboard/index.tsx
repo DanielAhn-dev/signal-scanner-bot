@@ -9,6 +9,7 @@ import EconomicEventBadge from '../../components/EconomicEventBadge'
 import SheetHeaderBar from '../../components/SheetHeaderBar'
 import { FLOW_STEPS } from '../../navigation'
 import GoalTrackerCard from './GoalTrackerCard'
+import { loadTradeCostSettings, resolveSellCostPct } from '../../lib/tradeCost'
 
 type SectorItem = {
   name?: string
@@ -142,7 +143,19 @@ export default function Dashboard({ onNavigate }: { onNavigate?: (r: string) => 
   const nav = (r: string) => onNavigate?.(r)
 
   const posCount = portfolio?.positions?.length ?? 0
-  const pnl = portfolio?.total_pnl
+  // 포트폴리오 화면의 매매비용 설정(차감 여부·요율)을 그대로 따른다
+  const pnl = (() => {
+    if (!portfolio) return undefined
+    const { includeCost, buyFeeRatePct, sellFeeRatePct } = loadTradeCostSettings()
+    const cost = (portfolio.positions ?? []).reduce((acc: number, p: any) => {
+      const invested = Number(p.invested_amount || 0)
+      const value = Number(p.current_value || 0)
+      const sellPct = resolveSellCostPct({ code: p.code, sellRatePct: sellFeeRatePct, feeRatePct: buyFeeRatePct })
+      return acc + invested * (buyFeeRatePct / 100) + (value > 0 ? value * (sellPct / 100) : 0)
+    }, 0)
+    const gross = (portfolio.positions ?? []).reduce((acc: number, p: any) => acc + Number(p.pnl_amount || 0), 0)
+    return includeCost ? gross - cost : gross
+  })()
   const pnlColor = pnl == null ? undefined : pnl >= 0 ? 'var(--color-stock-up)' : 'var(--color-stock-down)'
   const colWidths: Array<number | string | undefined> = [28, '17%', '17%', '17%', '17%', '20%', undefined]
 
@@ -246,7 +259,7 @@ export default function Dashboard({ onNavigate }: { onNavigate?: (r: string) => 
               <span style={S.link} onClick={() => nav('portfolio')}>가상 포트폴리오 →</span>
             </td>
             <td className="xls-cell" colSpan={3} style={{ fontSize: 10, color: 'var(--color-text-tertiary)' }}>
-              평가손익 합계 (수수료·세금 반영)
+              평가손익 합계 ({loadTradeCostSettings().includeCost ? '수수료·세금 반영' : '보유 포지션 기준'})
             </td>
           </tr>
 
