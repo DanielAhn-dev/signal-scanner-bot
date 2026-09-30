@@ -5,6 +5,12 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Nexora</title>
 
+    <!-- 본문 폰트: tokens.css의 --font-family-sans가 'Pretendard Variable'을 1순위로 쓰지만
+         실제로 로드하는 곳이 없어서, Segoe UI/시스템 폰트의 한글 대체 글리프가 안 걸리는 환경(임베디드
+         웹뷰 등)에서는 라벨 자리(레이아웃 공간)만 남고 글자가 안 보이는 문제가 생길 수 있다. -->
+    <link rel="stylesheet" as="style" crossorigin
+      href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable.css" />
+
     <!-- PWA manifest -->
     <link rel="manifest" href="/manifest.webmanifest" />
 
