@@ -11,7 +11,7 @@ import {
   saveReportBodySnapshot,
   type ReportTopic,
 } from '../../src/services/reportSnapshotService'
-import { resolveUiUserContext } from './_userContext'
+import { isStrictIdentity, resolveUiUserContext } from './_userContext'
 import {
   HTML_BODY_PREFIX,
   renderBodyText,
@@ -78,7 +78,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const freshRaw = String(req.query.fresh || '').trim().toLowerCase()
   const forceFreshFromQuery = freshRaw === '1' || freshRaw === 'true' || freshRaw === 'yes'
   const user = await resolveUiUserContext(req)
-  const chatId = user.chatId ?? parseChatId(req.query.chatId ?? req.query.chat_id ?? req.headers['x-user-chat-id'])
+  const chatId = user.chatId ?? (isStrictIdentity() ? null : parseChatId(req.query.chatId ?? req.query.chat_id ?? req.headers['x-user-chat-id']))
   const audienceKey = buildAudienceKey({ clientId: user.clientId, chatId })
   const forceFreshReportTopics = forceFreshFromQuery || topic === '추천' || topic === '확신추천' || topic === '공개추천' || topic === '눌림목'
   const cacheKey = buildCacheKey(topic, audienceKey)

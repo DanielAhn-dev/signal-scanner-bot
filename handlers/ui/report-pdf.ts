@@ -18,7 +18,7 @@ import {
 import { getUserInvestmentPrefs } from '../../src/services/userService'
 import { createWeeklyReportPdf } from '../../src/services/weeklyReportService'
 import { selectForecastsForTopic } from '../../src/services/reportTopicForecasts'
-import { resolveUiUserContext } from './_userContext'
+import { isStrictIdentity, resolveUiUserContext } from './_userContext'
 
 const ORIGIN = process.env.UI_CORS_ORIGIN || '*'
 
@@ -78,6 +78,7 @@ function asInt(value: unknown): number | null {
 }
 
 function resolveChatId(req: VercelRequest): number | null {
+  if (isStrictIdentity()) return null
   return asInt(req.query.chatId ?? req.query.chat_id ?? req.headers['x-user-chat-id'])
 }
 

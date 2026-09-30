@@ -10,7 +10,7 @@ import {
   resolveReportTopic,
   saveReportBodySnapshot,
 } from '../../src/services/reportSnapshotService'
-import { resolveUiUserContext } from './_userContext'
+import { isStrictIdentity, resolveUiUserContext } from './_userContext'
 
 const ORIGIN = process.env.UI_CORS_ORIGIN || '*'
 
@@ -30,7 +30,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   const topic = resolveReportTopic(req.body?.topic || req.query.topic)
   const user = await resolveUiUserContext(req)
-  const chatId = user.chatId ?? parseChatId(req.body?.chatId || req.body?.chat_id || req.query.chatId || req.query.chat_id || req.headers['x-user-chat-id'])
+  const chatId = user.chatId ?? (isStrictIdentity() ? null : parseChatId(req.body?.chatId || req.body?.chat_id || req.query.chatId || req.query.chat_id || req.headers['x-user-chat-id']))
 
   try {
     const customBodyText = String(req.body?.bodyText || '').trim()

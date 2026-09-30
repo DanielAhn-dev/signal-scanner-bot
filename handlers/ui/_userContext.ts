@@ -33,7 +33,8 @@ function toClientId(raw: unknown): string | null {
   return v ? v : null
 }
 
-function isStrictIdentity(): boolean {
+/** 엄격 모드에서는 요청에 실린 chat_id를 신원으로 쓰는 개별 핸들러 경로도 모두 막아야 한다. */
+export function isStrictIdentity(): boolean {
   return ['1', 'true', 'yes'].includes(String(process.env.UI_STRICT_IDENTITY || '').trim().toLowerCase())
 }
 

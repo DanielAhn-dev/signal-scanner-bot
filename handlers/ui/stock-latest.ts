@@ -9,6 +9,7 @@ import { fetchCreditShortSnapshot } from '../../src/utils/fetchCreditShortData'
 import { fetchRealtimeStockData } from '../../src/utils/fetchRealtimePrice'
 import { denyIfUnauthorizedRead } from './_accessControl'
 import { isKrxRegularSession } from '../../src/lib/krxCalendar'
+import { isStrictIdentity, resolveUiUserContext } from './_userContext'
 
 const ORIGIN = process.env.UI_CORS_ORIGIN || '*'
 
@@ -1249,7 +1250,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const supabase = createClient(url, key)
   const rawCode = String(req.query.code || '').trim().replace(/^A/i, '')
   const code = /^\d{1,6}$/.test(rawCode) ? rawCode.padStart(6, '0') : rawCode
-  const chatId = toSafeChatId(req.query.chat_id || req.headers['x-user-chat-id'])
+  const chatId = isStrictIdentity()
+    ? (await resolveUiUserContext(req)).chatId
+    : toSafeChatId(req.query.chat_id || req.headers['x-user-chat-id'])
   if (!code) return res.status(400).json({ error: 'Missing code parameter' })
 
   try {

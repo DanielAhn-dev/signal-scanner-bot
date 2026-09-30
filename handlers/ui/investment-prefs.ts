@@ -1,6 +1,6 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { createClient } from '@supabase/supabase-js'
-import { resolveUiUserContext } from './_userContext'
+import { isStrictIdentity, resolveUiUserContext } from './_userContext'
 import { INDEX_HOLD_MODE, normalizeStrategyMode } from '../../src/services/indexHoldStrategy'
 import {
   nextDepositDate,
@@ -20,6 +20,7 @@ function toPositiveInt(raw: unknown): number | null {
 }
 
 function resolveTargetChatId(req: VercelRequest, userChatId: number | null): number | null {
+  if (isStrictIdentity()) return userChatId
   const body = (req.body || {}) as any
   return (
     userChatId

@@ -1,6 +1,7 @@
 import React, { useState } from 'react'
 import Button from '../../components/ui/Button'
 import { useToast } from '../../components/ToastProvider'
+import { apiFetch } from '../../lib/api'
 
 /*
  * 알림 테스트 페이지 — 26열 그리드 정렬
@@ -32,14 +33,13 @@ export default function AlertsPage() {
     setSending(true)
     setResult(null)
     try {
-      const uiKey = import.meta.env.VITE_UI_READ_KEY || ''
-      const res = await fetch('/api/ui/notify', {
+      // apiFetch가 API 주소·로그인 토큰을 붙인다 (엄격 신원 모드에서 세션 없는 호출은 거부됨)
+      const json = await apiFetch('/api/ui/notify', {
         method: 'POST',
-        headers: { 'content-type': 'application/json', 'x-ui-key': uiKey },
         body: JSON.stringify({ message }),
+        cacheMs: 0,
       })
-      const json = await res.json()
-      if (res.ok && json?.ok) {
+      if (json?.ok) {
         toast.show('알림 전송 완료 ✓')
         setResult('✓ 텔레그램으로 전송되었습니다')
       } else {

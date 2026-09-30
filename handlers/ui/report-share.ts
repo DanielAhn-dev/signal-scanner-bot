@@ -9,7 +9,7 @@ import {
   resolveReportTopic,
   saveReportBodySnapshot,
 } from '../../src/services/reportSnapshotService'
-import { resolveUiUserContext } from './_userContext'
+import { isStrictIdentity, resolveUiUserContext } from './_userContext'
 import {
   createReportShare,
   listReportShares,
@@ -77,7 +77,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   try {
     const supabase = createSupabaseServiceClientFromEnv()
     const user = await resolveUiUserContext(req)
-    const resolvedChatId = user.chatId ?? parseChatId(req.body?.chatId || req.body?.chat_id || req.query.chatId || req.query.chat_id || req.headers['x-user-chat-id'])
+    const resolvedChatId = user.chatId ?? (isStrictIdentity() ? null : parseChatId(req.body?.chatId || req.body?.chat_id || req.query.chatId || req.query.chat_id || req.headers['x-user-chat-id']))
     const audienceKey = buildAudienceKey({ clientId: user.clientId, chatId: resolvedChatId })
 
     if (req.method === 'GET') {
