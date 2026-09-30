@@ -66,6 +66,14 @@
 - 기존 상태가 없는 과거 행은 하위 호환을 위해 허용
 - 검증: `pnpm build`, 전략 테스트, 수급·공매도 관련 Python 문법 검증 통과
 
+### 완료: 시점별 유니버스 원장과 전향 검증 연결
+
+- 대상: [db/migrations/013_create_universe_membership_daily.sql](../db/migrations/013_create_universe_membership_daily.sql), [scripts/refresh_universe_membership.py](../scripts/refresh_universe_membership.py), [scripts/strategy_forward_test.ts](../scripts/strategy_forward_test.ts)
+- 유니버스 갱신일별 상장 종목·시장·시총순위·등급·활성 상태를 `universe_membership_daily`에 저장
+- 전향 검증은 과거 날짜의 `core/extended` 스냅샷을 우선 사용
+- 스냅샷이 없는 기간은 기존 `stocks` 조회로 폴백해 구형 데이터와 호환
+- 검증: `python -m py_compile scripts/refresh_universe_membership.py`, `pnpm build`, 전략 테스트 통과
+
 ### 즉시 진행
 
 1. 전략 성과에 다음 지표를 공통 적용한다.

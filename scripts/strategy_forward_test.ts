@@ -140,6 +140,28 @@ async function main(): Promise<void> {
   const universe = (stocks ?? [])
     .filter((s: any) => !isExchangeTradedProduct(s.code, s.name))
     .map((s: any) => String(s.code));
+  const membershipRows = await fetchPaged<any>((a, b) =>
+    supabase
+      .from("universe_membership_daily")
+      .select("trade_date, code, name, universe_level, is_active")
+      .gte("trade_date", loadFrom)
+      .order("trade_date")
+      .order("code")
+      .range(a, b)
+  ).catch(() => []);
+  const membershipByDate = new Map<string, string[]>();
+  for (const row of membershipRows) {
+    if (!row.is_active || !["core", "extended"].includes(String(row.universe_level))) continue;
+    if (isExchangeTradedProduct(row.code, row.name)) continue;
+    const date = String(row.trade_date).slice(0, 10);
+    const codes = membershipByDate.get(date) ?? [];
+    codes.push(String(row.code));
+    membershipByDate.set(date, codes);
+  }
+  const universeAt = (asof: string): string[] => {
+    const dates = [...membershipByDate.keys()].filter((date) => date <= asof).sort();
+    return dates.length ? membershipByDate.get(dates[dates.length - 1])! : universe;
+  };
 
   const priceRows = await fetchPaged<any>((a, b) =>
     supabase
@@ -210,7 +232,7 @@ async function main(): Promise<void> {
       .eq("asof", asof)
       .order("score", { ascending: false })
       .limit(80);
-    const codes = ((data ?? []) as any[]).map((r) => String(r.code)).filter((c) => universe.includes(c));
+    const codes = ((data ?? []) as any[]).map((r) => String(r.code)).filter((c) => universeAt(asof).includes(c));
     scoreCache.set(asof, codes);
     return codes;
   }
@@ -225,7 +247,7 @@ async function main(): Promise<void> {
 
   const heavySellingAt = (asof: string): Set<string> => {
     const scores = new Map<string, number>();
-    for (const code of universe) {
+    for (const code of universeAt(asof)) {
       const flows = (flowsByCode.get(code) ?? []).filter((f) => f.date <= asof);
       const bars = (seriesByCode.get(code) ?? []).filter((b) => b.date <= asof).slice(-20);
       if (bars.length < 10) continue;
@@ -238,7 +260,7 @@ async function main(): Promise<void> {
 
   const momentumTop = (asof: string): string[] => {
     const ranked: Array<[string, number]> = [];
-    for (const code of universe) {
+    for (const code of universeAt(asof)) {
       const bars = (seriesByCode.get(code) ?? []).filter((b) => b.date <= asof);
       // 단기 반짝 상승을 피하고, 최근 21일을 제외한 63·126일 중기 모멘텀을 결합한다.
       if (bars.length < 149) continue;
@@ -255,7 +277,7 @@ async function main(): Promise<void> {
 
   const breakoutTop = (asof: string): string[] => {
     const ranked: Array<[string, number]> = [];
-    for (const code of universe) {
+    for (const code of universeAt(asof)) {
       const bars = (seriesByCode.get(code) ?? []).filter((b) => b.date <= asof);
       if (bars.length < 56) continue;
       const recent = bars[bars.length - 1];
@@ -334,7 +356,7 @@ async function main(): Promise<void> {
       .eq("asof", asof)
       .order("score", { ascending: false })
       .limit(400);
-    const codes = ((data ?? []) as any[]).map((r) => String(r.code)).filter((c) => universe.includes(c));
+    const codes = ((data ?? []) as any[]).map((r) => String(r.code)).filter((c) => universeAt(asof).includes(c));
     rankedCache.set(asof, codes);
     return codes;
   }
@@ -346,7 +368,7 @@ async function main(): Promise<void> {
     const asof = prevTradingDate(d0);
     if (!asof) continue;
     const prices = new Map<string, number>();
-    for (const code of universe) {
+    for (const code of universeAt(asof)) {
       const bar = barsByCode.get(code)?.get(asof);
       if (bar && bar.close > 0) prices.set(code, bar.close);
     }
