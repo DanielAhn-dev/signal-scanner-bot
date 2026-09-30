@@ -100,11 +100,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       p_buy_date: toKstDateKey(),
       p_memo: memo || null,
       p_is_bot_account: isBotAccount,
-      p_cash_before: Number(prefs.virtual_cash) || 0,
-      p_realized_before: Number(prefs.virtual_realized_pnl) || 0,
     })
 
-    if (tradeErr) return res.status(500).json({ error: tradeErr.message })
+    if (tradeErr) {
+      const rejected = /insufficient (holdings|virtual cash)/.test(tradeErr.message)
+      return res.status(rejected ? 422 : 500).json({ error: tradeErr.message })
+    }
     return res.status(200).json({ ok: true, trade })
   } catch (e: any) {
     return res.status(500).json({ error: String(e) })

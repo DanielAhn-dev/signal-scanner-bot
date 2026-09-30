@@ -94,8 +94,8 @@ def build_metric(code_rows: list[dict]) -> dict[str, Any] | None:
         "trade_date": current_day.isoformat(),
         "advancer": current_close > previous_close,
         "decliner": current_close < previous_close,
-        "above_sma20": bool(previous_20 and current_close > sum(previous_20) / len(previous_20)),
-        "above_sma60": bool(previous_60 and current_close > sum(previous_60) / len(previous_60)),
+        "above_sma20": bool(len(previous_20) >= 20 and current_close > sum(previous_20) / len(previous_20)),
+        "above_sma60": bool(len(previous_60) >= 60 and current_close > sum(previous_60) / len(previous_60)),
         "new_high": bool(len(previous_60) >= 20 and current_close >= max(previous_60)),
         "new_low": bool(len(previous_60) >= 20 and current_close <= min(previous_60)),
         "sample": sample,
@@ -119,16 +119,22 @@ def main() -> int:
         raise RuntimeError(f"{trade_date} 유니버스가 없습니다")
 
     start_date = (trade_dt - timedelta(days=100)).isoformat()
-    price_rows = fetch_all(
-        lambda a, b: supabase.table("stock_daily")
-        .select("ticker,date,close")
-        .gte("date", start_date)
-        .lte("date", trade_date)
-        .in_("ticker", list(universe.keys())[:1000])
-        .order("ticker")
-        .order("date")
-        .range(a, b)
-    )
+    codes = list(universe.keys())
+    price_rows: list[dict] = []
+    for i in range(0, len(codes), 150):
+        chunk = codes[i : i + 150]
+        price_rows.extend(
+            fetch_all(
+                lambda a, b, chunk=chunk: supabase.table("stock_daily")
+                .select("ticker,date,close")
+                .gte("date", start_date)
+                .lte("date", trade_date)
+                .in_("ticker", chunk)
+                .order("ticker")
+                .order("date")
+                .range(a, b)
+            )
+        )
     by_code: dict[str, list[dict]] = defaultdict(list)
     for row in price_rows:
         if str(row.get("ticker")) in universe:
