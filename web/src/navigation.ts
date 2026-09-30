@@ -49,6 +49,7 @@ export const TOOL_NAV_GROUPS: NavGroup[] = [
   {
     category: '보유 / 기록',
     items: [
+      { key: 'seed-builder', label: '시드 만들기' },
       { key: 'trades', label: '거래기록' },
       { key: 'watchlist', label: '감시목록' },
       { key: 'alerts', label: '알림' },

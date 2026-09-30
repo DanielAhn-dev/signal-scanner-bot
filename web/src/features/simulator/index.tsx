@@ -1,5 +1,6 @@
 import { useSeedCapital } from '../../lib/useSeedCapital'
 import React, { useEffect, useMemo, useRef, useState } from 'react'
+import { useLocation } from 'react-router-dom'
 import { LucideIcon } from '../../components/LucideIcon'
 import { useCurrentChatId } from '../../stores/profileStore'
 import { EmptyState } from '../../components/StateViews'
@@ -266,15 +267,18 @@ function ComparePanel({
 
 export default function SimulatorPage() {
   const chatId = useCurrentChatId()
+  const location = useLocation()
+  const proposedCapital = Number((location.state as { seedBuilderCapital?: number } | null)?.seedBuilderCapital)
+  const fromSeedBuilder = Number.isSafeInteger(proposedCapital) && proposedCapital > 0
   const initialPlan = useMemo(() => readSimulationPlan(), [])
-  const [totalCapital, setTotalCapital] = useState(initialPlan?.totalCapital || 10_000_000)
+  const [totalCapital, setTotalCapital] = useState(fromSeedBuilder ? proposedCapital : initialPlan?.totalCapital || 10_000_000)
   // 집행우선·백테스트가 넘긴 종목으로 시작한다. 예전엔 "항상 빈 배열"이라 투자금만 넘어오고 종목은 버려져
   // 시뮬레이터가 비어 있었다(계획에 종목이 있으면 서버 불러오기도 건너뛰어 아무것도 안 보였다).
   const [items, setItems] = useState<HighlightPlanItem[]>(() => (Array.isArray(initialPlan?.items) ? initialPlan!.items : []))
   // 넘겨받은 계획에 투자금이 없으면 내 시드로 (1천만원 고정 대신)
   const seedCapital = useSeedCapital()
   useEffect(() => {
-    if (!(initialPlan?.totalCapital) && seedCapital) setTotalCapital(seedCapital)
+    if (!fromSeedBuilder && !(initialPlan?.totalCapital) && seedCapital) setTotalCapital(seedCapital)
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [seedCapital])
   const [monthlyProfitTarget, setMonthlyProfitTarget] = useState(500_000) // 월 500만원 기본값
@@ -850,7 +854,7 @@ export default function SimulatorPage() {
   }
 
   useEffect(() => {
-    if (initialPlan?.items?.length) return
+    if (fromSeedBuilder || initialPlan?.items?.length) return
     void loadServer()
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
