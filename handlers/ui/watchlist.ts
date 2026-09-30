@@ -1,9 +1,8 @@
 import { toKstDateKey } from '../../src/lib/krxCalendar'
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { createClient, SupabaseClient } from '@supabase/supabase-js'
+import { setUiCorsHeaders } from './_accessControl'
 import { resolveUiUserContext } from './_userContext'
-
-const ORIGIN = process.env.UI_CORS_ORIGIN || '*'
 
 let _supabase: SupabaseClient | null = null
 function getSupabase(): SupabaseClient {
@@ -34,11 +33,7 @@ type WatchlistPositionRow = {
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
-  const origin = (req.headers.origin as string) || ORIGIN || '*'
-  res.setHeader('Access-Control-Allow-Origin', origin)
-  res.setHeader('Access-Control-Allow-Methods', 'GET,POST,DELETE,OPTIONS')
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type,x-ui-key,x-user-chat-id,x-user-client-id,Authorization')
-  res.setHeader('Access-Control-Allow-Credentials', 'true')
+  setUiCorsHeaders(req, res, 'GET,POST,DELETE,OPTIONS')
 
   if (req.method === 'OPTIONS') return res.status(204).end()
   if (!['GET', 'POST', 'DELETE'].includes(String(req.method || ''))) {
@@ -58,6 +53,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   const user = await resolveUiUserContext(req)
+  if (!user.authenticated) return res.status(401).json({ error: 'Authenticated session required' })
   const filterColumn = user.clientId ? 'client_id' : (user.chatId ? 'chat_id' : null)
   const filterValue = user.clientId || user.chatId || null
   if (!filterColumn || !filterValue) return res.status(400).json({ error: 'identity required (client_id or chat_id)' })

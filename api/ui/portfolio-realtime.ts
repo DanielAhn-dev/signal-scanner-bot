@@ -1,9 +1,8 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { createClient } from '@supabase/supabase-js'
+import { setUiCorsHeaders } from '../../handlers/ui/_accessControl'
 import { resolveUiUserContext } from '../../handlers/ui/_userContext'
 import { fetchRealtimePriceBatch, type RealtimeStockData } from '../../src/utils/fetchRealtimePrice'
-
-const ORIGIN = process.env.UI_CORS_ORIGIN || '*'
 
 const REALTIME_BATCH_TOTAL_TIMEOUT_MS = Math.max(1000, Number(process.env.UI_REALTIME_BATCH_TIMEOUT_MS || 4000))
 
@@ -13,10 +12,7 @@ const BUY_FEE_RATE_PCT = 0.015
 const SELL_FEE_RATE_PCT = 0.195
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
-  res.setHeader('Access-Control-Allow-Origin', ORIGIN)
-  res.setHeader('Access-Control-Allow-Methods', 'GET,POST,OPTIONS')
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type,x-ui-key,x-user-chat-id')
-  res.setHeader('Access-Control-Allow-Credentials', 'true')
+  setUiCorsHeaders(req, res, 'GET,POST,OPTIONS')
   if (req.method === 'OPTIONS') return res.status(204).end()
   if (req.method !== 'GET') return res.status(405).json({ error: 'Method not allowed' })
 
@@ -31,6 +27,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   const supabase = createClient(url, key)
   const user = await resolveUiUserContext(req)
+  if (!user.authenticated) {
+    return res.status(401).json({ error: 'Authenticated session required' })
+  }
   const chatId = user.chatId
 
   if (!chatId) {

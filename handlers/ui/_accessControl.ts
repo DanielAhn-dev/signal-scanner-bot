@@ -12,6 +12,30 @@ function parseTrustedOrigins(): string[] {
     .filter(Boolean)
 }
 
+function matchesTrustedOrigin(origin: string, pattern: string): boolean {
+  if (!pattern.includes('*')) return origin === pattern
+  const escaped = pattern.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/\\\*/g, '.*')
+  return new RegExp(`^${escaped}$`).test(origin)
+}
+
+export function setUiCorsHeaders(
+  req: VercelRequest,
+  res: VercelResponse,
+  methods: string,
+): void {
+  const requestOrigin = String(req.headers.origin || '').trim()
+  const trustedOrigins = parseTrustedOrigins()
+  const allowOrigin = requestOrigin && trustedOrigins.some((pattern) => matchesTrustedOrigin(requestOrigin, pattern))
+    ? requestOrigin
+    : trustedOrigins.find((pattern) => !pattern.includes('*')) || ''
+
+  if (allowOrigin) res.setHeader('Access-Control-Allow-Origin', allowOrigin)
+  res.setHeader('Access-Control-Allow-Methods', methods)
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type,x-ui-key,x-user-chat-id,x-user-client-id,Authorization')
+  res.setHeader('Access-Control-Allow-Credentials', allowOrigin ? 'true' : 'false')
+  res.setHeader('Vary', 'Origin')
+}
+
 /**
  * read-only 엔드포인트 공통 인증.
  * Origin/Referer 중 하나가 trusted origins에 포함되면 키 없이 통과.
@@ -103,7 +127,7 @@ export async function resolveRequesterChatId(req: VercelRequest): Promise<number
 
 export async function resolveRequesterIdentity(req: VercelRequest): Promise<AccessIdentity | null> {
   const user = await resolveUiUserContext(req)
-  if (user.source === 'env' || user.source === 'none') return null
+  if (!user.authenticated) return null
   return {
     clientId: user.clientId,
     chatId: user.chatId,

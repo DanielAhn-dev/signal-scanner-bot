@@ -5,6 +5,7 @@ import { ensureWebAccountChatId } from '../../src/services/webAccount'
 export type UiUserContext = {
   clientId: string | null
   chatId: number | null
+  authenticated: boolean
   source: 'auth' | 'header' | 'query' | 'body' | 'env' | 'none'
 }
 
@@ -62,13 +63,15 @@ export async function resolveUiUserContext(req: VercelRequest): Promise<UiUserCo
               .maybeSingle()
             // 텔레그램은 선택 — 연결 전에는 웹 전용 계정 ID를 만들어 쓴다 (src/services/webAccount.ts)
             const chatId = toChatId(data?.telegram_id) ?? (await ensureWebAccountChatId(supabase, clientId))
-            return { clientId, chatId, source: 'auth' }
+            return { clientId, chatId, authenticated: true, source: 'auth' }
           }
         }
       } catch {
-        // fall through to legacy sources
+        // Invalid bearer tokens must not fall through to caller-supplied identities.
+        return { clientId: null, chatId: null, authenticated: false, source: 'none' }
       }
     }
+    return { clientId: null, chatId: null, authenticated: false, source: 'none' }
   }
 
   const q = req.query || {}
@@ -82,20 +85,20 @@ export async function resolveUiUserContext(req: VercelRequest): Promise<UiUserCo
   )
 
   const fromHeader = toChatId(req.headers['x-user-chat-id'])
-  if (fromHeader) return { clientId, chatId: fromHeader, source: 'header' }
+  if (fromHeader) return { clientId, chatId: fromHeader, authenticated: false, source: 'header' }
 
   const fromQuery = toChatId((q as any).chat_id ?? (q as any).chatId)
-  if (fromQuery) return { clientId, chatId: fromQuery, source: 'query' }
+  if (fromQuery) return { clientId, chatId: fromQuery, authenticated: false, source: 'query' }
 
   const fromBody = toChatId(body.chat_id ?? body.chatId)
-  if (fromBody) return { clientId, chatId: fromBody, source: 'body' }
+  if (fromBody) return { clientId, chatId: fromBody, authenticated: false, source: 'body' }
 
   const fromEnv = toChatId(
     process.env.DEFAULT_TELEGRAM_CHAT_ID ||
     process.env.TELEGRAM_DEFAULT_CHAT_ID ||
     process.env.VITE_DEFAULT_TELEGRAM_CHAT_ID,
   )
-  if (fromEnv) return { clientId, chatId: fromEnv, source: 'env' }
+  if (fromEnv) return { clientId, chatId: fromEnv, authenticated: false, source: 'env' }
 
-  return { clientId, chatId: null, source: 'none' }
+  return { clientId, chatId: null, authenticated: false, source: 'none' }
 }

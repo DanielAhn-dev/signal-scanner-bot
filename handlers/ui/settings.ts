@@ -1,5 +1,6 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { createClient } from '@supabase/supabase-js'
+import { setUiCorsHeaders } from './_accessControl'
 import { resolveUiUserContext } from './_userContext'
 
 function toPositiveInt(raw: unknown): number | null {
@@ -22,11 +23,7 @@ function resolveTargetChatId(req: VercelRequest, userChatId: number | null): num
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
-  const origin = (req.headers.origin as string) || process.env.UI_CORS_ORIGIN || '*'
-  res.setHeader('Access-Control-Allow-Origin', origin)
-  res.setHeader('Access-Control-Allow-Methods', 'GET,POST,OPTIONS')
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type,x-ui-key,x-user-chat-id,x-user-client-id,Authorization')
-  res.setHeader('Access-Control-Allow-Credentials', 'true')
+  setUiCorsHeaders(req, res, 'GET,POST,OPTIONS')
   if (req.method === 'OPTIONS') return res.status(204).end()
 
   const readKey = req.headers['x-ui-key'] || req.query.ui_key || process.env.UI_READ_KEY || process.env.VITE_UI_READ_KEY
@@ -42,6 +39,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   try {
     const user = await resolveUiUserContext(req)
+    if (!user.authenticated) return res.status(401).json({ error: 'Authenticated session required' })
     const targetChatId = resolveTargetChatId(req, user.chatId)
 
     if (req.method === 'GET') {

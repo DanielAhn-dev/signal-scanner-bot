@@ -1,14 +1,10 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { createClient } from '@supabase/supabase-js'
+import { setUiCorsHeaders } from '../../handlers/ui/_accessControl'
 import { resolveUiUserContext } from '../../handlers/ui/_userContext'
 
-const ORIGIN = process.env.UI_CORS_ORIGIN || '*'
-
 export default async function handler(req: VercelRequest, res: VercelResponse) {
-  res.setHeader('Access-Control-Allow-Origin', ORIGIN)
-  res.setHeader('Access-Control-Allow-Methods', 'GET,POST,OPTIONS')
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type,x-ui-key,x-user-chat-id')
-  res.setHeader('Access-Control-Allow-Credentials', 'true')
+  setUiCorsHeaders(req, res, 'GET,POST,OPTIONS')
   if (req.method === 'OPTIONS') return res.status(204).end()
 
   const readKey = req.headers['x-ui-key'] || req.query.ui_key || process.env.UI_READ_KEY || process.env.VITE_UI_READ_KEY
@@ -22,6 +18,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   const supabase = createClient(url, key)
   const user = await resolveUiUserContext(req)
+  if (!user.authenticated) {
+    return res.status(401).json({ error: 'Authenticated session required' })
+  }
   const chatId = user.chatId
 
   if (!chatId) {

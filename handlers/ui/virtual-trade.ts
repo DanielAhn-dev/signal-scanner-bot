@@ -1,17 +1,13 @@
 import { toKstDateKey } from '../../src/lib/krxCalendar'
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { createClient } from '@supabase/supabase-js'
+import { setUiCorsHeaders } from './_accessControl'
 import { resolveUiUserContext } from './_userContext'
 import { resolveBaseSellTaxRate, resolveSellTaxRate } from '../../src/lib/securitiesTax'
-import { getUserInvestmentPrefs, setUserInvestmentPrefs } from '../../src/services/userService'
-
-const ORIGIN = process.env.UI_CORS_ORIGIN || '*'
+import { getUserInvestmentPrefs } from '../../src/services/userService'
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
-  res.setHeader('Access-Control-Allow-Origin', ORIGIN)
-  res.setHeader('Access-Control-Allow-Methods', 'GET,POST,OPTIONS')
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type,x-ui-key,x-user-chat-id,x-user-client-id,Authorization')
-  res.setHeader('Access-Control-Allow-Credentials', 'true')
+  setUiCorsHeaders(req, res, 'GET,POST,OPTIONS')
   if (req.method === 'OPTIONS') return res.status(204).end()
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' })
 
@@ -27,13 +23,24 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const { code, side, quantity, price, memo, broker_name, account_name } = req.body || {}
   if (!code || !side || !quantity || !price) return res.status(400).json({ error: 'Missing fields' })
 
-  const supabase = createClient(url, key)
-
   try {
     const qty = Number(quantity)
     const pr = Number(price)
-    const gross = qty * pr
+    const sideUpper = String(side).trim().toUpperCase()
+    if (!Number.isInteger(qty) || qty <= 0) {
+      return res.status(400).json({ error: 'quantity must be a positive integer' })
+    }
+    if (!Number.isFinite(pr) || pr <= 0) {
+      return res.status(400).json({ error: 'price must be a positive number' })
+    }
+    if (sideUpper !== 'BUY' && sideUpper !== 'SELL') {
+      return res.status(400).json({ error: 'side must be BUY or SELL' })
+    }
+
+    const supabase = createClient(url, key)
     const user = await resolveUiUserContext(req)
+    if (!user.authenticated) return res.status(401).json({ error: 'Authenticated session required' })
+
     const filterColumn = user.clientId ? 'client_id' : (user.chatId ? 'chat_id' : null)
     const filterValue = user.clientId || user.chatId || null
     if (!filterColumn || !filterValue) return res.status(400).json({ error: 'identity required (client_id or chat_id)' })
@@ -41,7 +48,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     let brokerName = String(broker_name || '').trim() || null
     let accountName = String(account_name || '').trim() || null
     if (!brokerName && !accountName) {
-      const { data: posRows } = await supabase
+      const { data: posRows, error: posErr } = await supabase
         .from('virtual_positions')
         .select('broker_name,account_name,quantity,status,id')
         .eq(filterColumn, filterValue)
@@ -49,274 +56,57 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         .order('quantity', { ascending: false })
         .order('id', { ascending: false })
         .limit(1)
+      if (posErr) return res.status(500).json({ error: posErr.message })
       const pos = Array.isArray(posRows) && posRows.length > 0 ? posRows[0] : null
       brokerName = String((pos as any)?.broker_name || '').trim() || null
       accountName = String((pos as any)?.account_name || '').trim() || null
     }
 
-    // broker_name/account_name이 둘 다 없으면 봇 자체 가상계좌 거래다 — 이때만 virtual_cash를 움직인다.
-    // (다른 증권사 계좌를 여기서 함께 기록하는 건 그 계좌의 실제 거래를 참고용으로 남기는 것일 뿐,
-    //  봇 가상 현금과는 무관하므로 섞으면 안 된다.)
     const isBotAccount = !brokerName && !accountName
     const prefs = user.chatId ? await getUserInvestmentPrefs(user.chatId) : {}
     const feeRate = Number.isFinite(Number(prefs.virtual_fee_rate)) && Number(prefs.virtual_fee_rate) >= 0
       ? Number(prefs.virtual_fee_rate)
       : 0.00015
+    const gross = qty * pr
     const feeAmount = Math.round(gross * feeRate)
-    const sideUpper = String(side).toUpperCase()
     let taxAmount = 0
-    let netAmount = gross + feeAmount // BUY: 매수수수료만 부담
+    let netAmount = gross + feeAmount
     if (sideUpper === 'SELL') {
-      const { data: stockRow } = await supabase.from('stocks').select('name').eq('code', String(code)).maybeSingle()
+      const { data: stockRow, error: stockErr } = await supabase
+        .from('stocks')
+        .select('name')
+        .eq('code', String(code))
+        .maybeSingle()
+      if (stockErr) return res.status(500).json({ error: stockErr.message })
       const baseTaxRate = resolveBaseSellTaxRate(prefs.virtual_tax_rate)
       const taxRate = resolveSellTaxRate({ code: String(code), name: (stockRow as any)?.name ?? null, baseRate: baseTaxRate })
       taxAmount = Math.round(gross * taxRate)
       netAmount = Math.max(0, gross - feeAmount - taxAmount)
     }
 
-    const insertResp = await supabase.from('virtual_trades').insert([{
-      chat_id: user.chatId ?? null,
-      client_id: user.clientId ?? null,
-      code: String(code),
-      side: sideUpper,
-      price: pr,
-      quantity: qty,
-      gross_amount: gross,
-      net_amount: netAmount,
-      fee_amount: feeAmount,
-      tax_amount: taxAmount,
-      broker_name: brokerName,
-      account_name: accountName,
-      memo: memo || null,
-    }]).select().single()
+    const { data: trade, error: tradeErr } = await supabase.rpc('execute_virtual_trade', {
+      p_client_id: user.clientId,
+      p_chat_id: user.chatId,
+      p_code: String(code),
+      p_side: sideUpper,
+      p_quantity: qty,
+      p_price: pr,
+      p_gross: gross,
+      p_net: netAmount,
+      p_fee: feeAmount,
+      p_tax: taxAmount,
+      p_broker_name: brokerName,
+      p_account_name: accountName,
+      p_buy_date: toKstDateKey(),
+      p_memo: memo || null,
+      p_is_bot_account: isBotAccount,
+      p_cash_before: Number(prefs.virtual_cash) || 0,
+      p_realized_before: Number(prefs.virtual_realized_pnl) || 0,
+    })
 
-    if (insertResp.error) return res.status(500).json({ error: String(insertResp.error) })
-
-    const trade = insertResp.data
-
-    const tradeSide = String(trade.side || '').toUpperCase()
-    const codeText = String(trade.code || '').trim().toUpperCase()
-
-    const applyAccountScope = <T extends { eq: Function; is: Function }>(query: T) => {
-      let scoped: any = query
-      if (brokerName) scoped = scoped.eq('broker_name', brokerName)
-      else scoped = scoped.is('broker_name', null)
-      if (accountName) scoped = scoped.eq('account_name', accountName)
-      else scoped = scoped.is('account_name', null)
-      return scoped
-    }
-
-    // Keep virtual_positions in sync so UI reflects quantity/avg immediately after BUY.
-    if (tradeSide === 'BUY') {
-      let positionRow: any = null
-      const positionSelectBase = supabase
-        .from('virtual_positions')
-        .select('id, quantity, invested_amount, buy_price, buy_date, broker_name, account_name')
-        .eq(filterColumn, filterValue)
-        .eq('code', codeText)
-      const positionSelect = applyAccountScope(positionSelectBase)
-      const { data: existingRows, error: posErr } = await positionSelect.order('id', { ascending: false }).limit(1)
-      if (posErr) return res.status(500).json({ error: String(posErr.message || posErr) })
-      positionRow = Array.isArray(existingRows) && existingRows.length > 0 ? existingRows[0] : null
-
-      const prevQty = Math.max(0, Number(positionRow?.quantity || 0))
-      const prevInvestedRaw = Number(positionRow?.invested_amount)
-      const prevInvested = Number.isFinite(prevInvestedRaw)
-        ? prevInvestedRaw
-        : (prevQty * Math.max(0, Number(positionRow?.buy_price || 0)))
-      const nextQty = prevQty + qty
-      const nextInvested = prevInvested + gross
-      const nextAvg = nextQty > 0 ? Math.round(nextInvested / nextQty) : Math.round(pr)
-      const defaultBuyDate = toKstDateKey()
-
-      if (positionRow?.id) {
-        const { error: upErr } = await supabase
-          .from('virtual_positions')
-          .update({
-            quantity: nextQty,
-            invested_amount: nextInvested,
-            buy_price: nextAvg,
-            status: 'holding',
-            buy_date: String(positionRow?.buy_date || defaultBuyDate),
-            broker_name: brokerName || positionRow?.broker_name || null,
-            account_name: accountName || positionRow?.account_name || null,
-          })
-          .eq('id', positionRow.id)
-        if (upErr) return res.status(500).json({ error: String(upErr.message || upErr) })
-      } else {
-        const { data: insertedPos, error: insErr } = await supabase
-          .from('virtual_positions')
-          .insert([{
-            chat_id: user.chatId ?? null,
-            client_id: user.clientId ?? null,
-            code: codeText,
-            quantity: qty,
-            invested_amount: gross,
-            buy_price: pr,
-            status: 'holding',
-            buy_date: defaultBuyDate,
-            broker_name: brokerName,
-            account_name: accountName,
-          }])
-          .select('id')
-          .single()
-        if (insErr) return res.status(500).json({ error: String(insErr.message || insErr) })
-        positionRow = insertedPos
-      }
-
-      const { error: lotInsertErr } = await supabase.from('virtual_trade_lots').insert([{
-        chat_id: user.chatId ?? null,
-        client_id: user.clientId ?? null,
-        code: codeText,
-        position_id: positionRow?.id || null,
-        acquired_price: pr,
-        acquired_quantity: qty,
-        remaining_quantity: qty,
-        acquired_at: new Date().toISOString(),
-      }])
-      if (lotInsertErr) return res.status(500).json({ error: String(lotInsertErr.message || lotInsertErr) })
-
-      if (isBotAccount && user.chatId) {
-        const cashBefore = Math.max(0, Number(prefs.virtual_cash) || 0)
-        await setUserInvestmentPrefs(user.chatId, { virtual_cash: Math.max(0, Math.round(cashBefore - netAmount)) })
-      }
-    }
-
-    // If SELL, match against virtual_trade_lots FIFO and record lot matches
-    if (tradeSide === 'SELL') {
-      try {
-        let remaining = Number(trade.quantity || 0)
-        let realized = 0
-
-        let scopedPositionIds: Array<number | string> = []
-        const scopedPosQueryBase = supabase
-          .from('virtual_positions')
-          .select('id')
-          .eq(filterColumn, filterValue)
-          .eq('code', codeText)
-        const scopedPosQuery = applyAccountScope(scopedPosQueryBase)
-        const { data: scopedPosRows } = await scopedPosQuery.limit(200)
-        scopedPositionIds = (scopedPosRows || []).map((r: any) => r.id).filter(Boolean)
-
-        let lotsQuery = supabase
-          .from('virtual_trade_lots')
-          .select('id, position_id, acquired_price, remaining_quantity')
-          .eq(filterColumn, filterValue)
-          .eq('code', codeText)
-          .gt('remaining_quantity', 0)
-        let lots: any[] = []
-        if (scopedPositionIds.length > 0) {
-          const { data } = await lotsQuery.in('position_id', scopedPositionIds).order('acquired_at', { ascending: true }).limit(200)
-          lots = data || []
-        }
-
-        if (lots && lots.length) {
-          for (const lot of lots) {
-            if (remaining <= 0) break
-            const lotRem = Number(lot.remaining_quantity || 0)
-            if (lotRem <= 0) continue
-            const take = Math.min(remaining, lotRem)
-            const unitCost = Number(lot.acquired_price || 0)
-            const costAmt = unitCost * take
-            const pnlPiece = (pr - unitCost) * take
-            realized += pnlPiece
-
-            // insert lot match
-            await supabase.from('virtual_trade_lot_matches').insert([{
-              trade_id: trade.id,
-              lot_id: lot.id,
-              chat_id: user.chatId ?? null,
-              client_id: user.clientId ?? null,
-              code: codeText,
-              quantity: take,
-              unit_cost: unitCost,
-              cost_amount: costAmt,
-              pnl_amount: pnlPiece,
-            }])
-
-            // decrement lot remaining_quantity
-            const newRem = lotRem - take
-            const upd: any = { remaining_quantity: newRem }
-            if (newRem <= 0) upd.closed_at = new Date().toISOString()
-            await supabase.from('virtual_trade_lots').update(upd).eq('id', lot.id)
-
-            // if linked to a position, decrement that position's quantity/invested_amount
-            if (lot.position_id) {
-              try {
-                const { data: pos } = await supabase.from('virtual_positions').select('id, quantity, invested_amount').eq('id', lot.position_id).single()
-                if (pos) {
-                  const newQty = Math.max(0, Number(pos.quantity || 0) - take)
-                  const newInvested = pos.invested_amount != null ? Number(pos.invested_amount) - costAmt : null
-                  await supabase
-                    .from('virtual_positions')
-                    .update({
-                      quantity: newQty,
-                      invested_amount: newInvested,
-                      status: newQty > 0 ? 'holding' : 'interest',
-                    })
-                    .eq('id', pos.id)
-                }
-              } catch (e) {
-                // ignore per-lot position update errors
-              }
-            }
-
-            remaining -= take
-          }
-        }
-
-        // Fallback for legacy rows without lots: still reduce virtual_positions quantity/invested_amount.
-        if (remaining > 0) {
-          const posQueryBase = supabase
-            .from('virtual_positions')
-            .select('id, quantity, invested_amount, buy_price')
-            .eq(filterColumn, filterValue)
-            .eq('code', codeText)
-          const posQuery = applyAccountScope(posQueryBase)
-          const { data: posRows } = await posQuery.order('id', { ascending: false }).limit(1)
-          const pos = Array.isArray(posRows) && posRows.length > 0 ? posRows[0] : null
-          if (pos) {
-            const posQty = Math.max(0, Number(pos.quantity || 0))
-            const take = Math.min(posQty, remaining)
-            if (take > 0) {
-              const invested = Number.isFinite(Number(pos.invested_amount))
-                ? Number(pos.invested_amount)
-                : posQty * Math.max(0, Number(pos.buy_price || 0))
-              const unitCost = posQty > 0 ? (invested / posQty) : Math.max(0, Number(pos.buy_price || 0))
-              const costAmt = unitCost * take
-              realized += (pr - unitCost) * take
-              const nextQty = posQty - take
-              const nextInvested = Math.max(0, invested - costAmt)
-              await supabase
-                .from('virtual_positions')
-                .update({
-                  quantity: nextQty,
-                  invested_amount: nextInvested,
-                  status: nextQty > 0 ? 'holding' : 'interest',
-                })
-                .eq('id', pos.id)
-              remaining -= take
-            }
-          }
-        }
-
-        // update trade with realized pnl
-        await supabase.from('virtual_trades').update({ pnl_amount: realized }).eq('id', trade.id)
-
-        if (isBotAccount && user.chatId) {
-          const cashBefore = Math.max(0, Number(prefs.virtual_cash) || 0)
-          await setUserInvestmentPrefs(user.chatId, {
-            virtual_cash: Math.round(cashBefore + netAmount),
-            virtual_realized_pnl: Math.round((Number(prefs.virtual_realized_pnl) || 0) + (realized - feeAmount - taxAmount)),
-          })
-        }
-      } catch (e) {
-        console.warn('SELL lot matching warning:', e)
-      }
-    }
-
-    return res.status(200).json({ ok: true, trade: insertResp.data })
-  } catch (e:any) {
+    if (tradeErr) return res.status(500).json({ error: tradeErr.message })
+    return res.status(200).json({ ok: true, trade })
+  } catch (e: any) {
     return res.status(500).json({ error: String(e) })
   }
 }
