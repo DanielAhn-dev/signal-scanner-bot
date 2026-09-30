@@ -46,7 +46,7 @@ export async function sendPushToChatId(
   if (tokens.length === 0) return { ok: false, sent: 0, description: "no push tokens" };
 
   const lines = toPushText(message.body).split("\n");
-  const title = message.title || lines[0] || "Signal Scanner";
+  const title = message.title || lines[0] || "Nexora";
   const body = message.title ? lines.join("\n") : lines.slice(1).join("\n") || lines[0] || "";
   const data: Record<string, string> = { title, body };
   if (message.path) data.path = message.path;

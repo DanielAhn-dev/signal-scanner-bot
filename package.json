@@ -1,9 +1,9 @@
 {
-  "name": "signal-scanner-bot",
+  "name": "nexora-bot",
   "type": "commonjs",
   "version": "1.0.2",
   "packageManager": "pnpm@10.0.0",
-  "description": "Telegram Stock Signal Scanner Bot with Vercel Functions",
+  "description": "Nexora — Telegram Stock Signal Scanner Bot with Vercel Functions",
   "private": true,
   "engines": {
     "node": ">=20 <23",
@@ -13,8 +13,8 @@
     "local": "vercel dev",
     "build": "tsc --noEmit",
     "test": "node scripts/run-tests.mjs",
-    "docs:guide:pdf": "tsx scripts/export_markdown_pdf.ts --input docs/user-operating-guide.md --output docs/generated/user-operating-guide.pdf --title \"Signal Scanner Bot 운영 가이드\"",
-    "docs:guide:pdf:check": "tsx scripts/export_markdown_pdf.ts --input docs/user-operating-guide.md --output docs/generated/user-operating-guide.pdf --title \"Signal Scanner Bot 운영 가이드\" --check",
+    "docs:guide:pdf": "tsx scripts/export_markdown_pdf.ts --input docs/user-operating-guide.md --output docs/generated/user-operating-guide.pdf --title \"Nexora 운영 가이드\"",
+    "docs:guide:pdf:check": "tsx scripts/export_markdown_pdf.ts --input docs/user-operating-guide.md --output docs/generated/user-operating-guide.pdf --title \"Nexora 운영 가이드\" --check",
     "verify:fundamental-parser": "tsx scripts/verify_fundamental_parser.ts",
     "audit:fundamental-live": "tsx scripts/audit_fundamental_live.ts",
     "verify:vercel": "pnpm build && pnpm --dir web typecheck",

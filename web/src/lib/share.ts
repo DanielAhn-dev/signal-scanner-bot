@@ -136,7 +136,7 @@ export async function shareToKakaotalk(data: ShareData): Promise<void> {
 
 export async function shareFeedToKakaotalk(data: KakaoFeedShareData): Promise<void> {
   const url = resolveShareUrl(data.url)
-  const description = String(data.description || '').trim() || 'Signal Scanner 공유'
+  const description = String(data.description || '').trim() || 'Nexora 공유'
 
   await loadKakaoSdk()
   initKakao()
@@ -144,7 +144,7 @@ export async function shareFeedToKakaotalk(data: KakaoFeedShareData): Promise<vo
   window.Kakao!.Share.sendDefault({
     objectType: 'feed',
     content: {
-      title: String(data.title || 'Signal Scanner').trim(),
+      title: String(data.title || 'Nexora').trim(),
       description,
       imageUrl: String(data.imageUrl || 'https://stocksweb-seven.vercel.app/icons/icon-192.png'),
       link: {

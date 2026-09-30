@@ -465,7 +465,7 @@ async function handleGuidePdfCommand(ctx: ChatContext, tgSend: any): Promise<voi
     const bytes = await readFile(guidePdfPath);
     const nowKst = new Date().toLocaleString("ko-KR", { timeZone: "Asia/Seoul", hour12: false });
     const caption = [
-      "Signal Scanner Bot 운영 가이드",
+      "Nexora 운영 가이드",
       `기준 문서: docs/user-operating-guide.md`,
       `전송 시각: ${nowKst} KST`,
       "문서 수정 후 /리포트 가이드 로 최신본을 다시 확인하세요.",
@@ -516,7 +516,7 @@ async function handleGuidePdfCommand(ctx: ChatContext, tgSend: any): Promise<voi
       const bytes = await readFile(guidePdfPath);
       const nowKst = new Date().toLocaleString("ko-KR", { timeZone: "Asia/Seoul", hour12: false });
       const caption = [
-        "Signal Scanner Bot 자동매매 명령어 운영 가이드",
+        "Nexora 자동매매 명령어 운영 가이드",
         `기준 문서: docs/automate-trade-command-guide.md`,
         `전송 시각: ${nowKst} KST`,
         "주요 명령어: /자동사이클 점검, /자동사이클 실행, /자동사이클 실행 진입, /보유대응",

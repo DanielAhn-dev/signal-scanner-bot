@@ -730,9 +730,9 @@ async function main() {
   const generatedAt = stable.label;
   const dateLabel = `기준일 ${generatedAt}`;
   pdf.setTitle(options.title);
-  pdf.setSubject("Signal Scanner Bot 운영 가이드 PDF");
-  pdf.setCreator("signal-scanner-bot docs exporter");
-  pdf.setProducer("signal-scanner-bot docs exporter");
+  pdf.setSubject("Nexora 운영 가이드 PDF");
+  pdf.setCreator("nexora docs exporter");
+  pdf.setProducer("nexora docs exporter");
   pdf.setCreationDate(stable.date);
   pdf.setModificationDate(stable.date);
 

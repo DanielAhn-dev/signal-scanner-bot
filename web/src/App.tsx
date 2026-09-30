@@ -220,7 +220,7 @@ function AppContent() {
     return (
       <div className="auth-status-main">
         <div className="auth-status-card">
-          <h1 className="auth-status-title">Signal Scanner에 로그인</h1>
+          <h1 className="auth-status-title">Nexora에 로그인</h1>
           <p className="auth-status-desc" style={{ marginBottom: 'var(--space-5)' }}>
             Microsoft 365 계정처럼 Google 계정으로 로그인하면<br />대시보드와 모든 기능을 사용할 수 있습니다.
           </p>

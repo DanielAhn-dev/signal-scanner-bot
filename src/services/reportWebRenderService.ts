@@ -33,7 +33,7 @@ export function topicTitle(topic: string): string {
   if (topic === '섹터') return '섹터 리포트'
   if (topic === '확신추천') return '집행우선 종목 리포트'
   if (topic === '공개추천') return '공유용 오늘의 투자 후보 리포트'
-  if (topic === '가이드') return 'Signal Scanner Bot 운영 가이드'
+  if (topic === '가이드') return 'Nexora 운영 가이드'
   if (topic === '자동매매') return '자동매매 명령어 운영 가이드'
   return '오늘의 투자 후보 리포트'
 }

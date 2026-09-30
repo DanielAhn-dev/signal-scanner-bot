@@ -3,7 +3,7 @@ import { buildHelpMessage, buildUnknownCommandMessage } from "../commandCatalog"
 
 export const KO_MESSAGES = {
   START:
-    "Signal Scanner Bot\n" +
+    "Nexora\n" +
     "─────────────────\n" +
     "명령어 목록\n" +
     "/주간코파일럿 — 브리핑·장전플랜·보유대응 일괄 실행\n" +

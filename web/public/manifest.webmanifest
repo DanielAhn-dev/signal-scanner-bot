@@ -1,7 +1,7 @@
 {
-  "name": "시그널 스캐너",
+  "name": "Nexora",
   "short_name": "Nexora",
-  "description": "국내 주식 시그널 스캐너 — 스캔, 분석, 포트폴리오, 리포트",
+  "description": "Nexora — 국내 주식 스캔·분석·포트폴리오·리포트",
   "start_url": "/",
   "id": "/",
   "display": "standalone",

@@ -112,7 +112,7 @@ export async function setCommandsKo(): Promise<TgResponse> {
     // 봇 짧은 설명 (프로필 옆에 표시)
     tg("setMyShortDescription", {
       short_description:
-        "한국 주식 시그널 스캐너 — 종목분석·수급·눌림목·가상 포트폴리오",
+        "Nexora — 한국 주식 종목분석·수급·눌림목·가상 포트폴리오",
       language_code: "ko",
     }),
   ]);
@@ -120,7 +120,7 @@ export async function setCommandsKo(): Promise<TgResponse> {
   // 추가: 봇 설명 (채팅 시작 전 프로필에서 보이는 텍스트)
   await tg("setMyDescription", {
     description:
-      "한국 주식 시그널 스캐너 봇\n\n" +
+      "Nexora — 한국 주식 시그널 스캐너 봇\n\n" +
       "- 주도 섹터 · 눌림목 스캔 · 종목분석\n" +
       "- 글로벌 경제지표 · 실시간 뉴스\n" +
       "- 가상 보유 포트폴리오 · 수익률 랭킹\n" +
