@@ -1630,6 +1630,73 @@
 .excel-sheet-tabs__nav-btn:hover { color: var(--color-text-primary); }
 .excel-sheet-tabs__nav-btn:disabled { opacity: 0.3; cursor: default; }
 
+.excel-tools-drawer-anchor {
+  position: relative;
+  z-index: 4;
+}
+
+.excel-tools-drawer {
+  position: absolute;
+  bottom: calc(100% + 5px);
+  left: 8px;
+  z-index: 320;
+  min-width: 220px;
+  max-width: min(420px, calc(100vw - 16px));
+  max-height: min(60vh, 440px);
+  padding: 8px;
+  overflow-y: auto;
+  background: var(--color-bg-elevated, #fff);
+  border: 1px solid var(--color-excel-grid-border);
+  border-radius: 6px;
+  box-shadow: 0 8px 24px rgba(16, 24, 40, 0.18), 0 1px 3px rgba(16, 24, 40, 0.12);
+}
+
+.excel-tools-drawer__group:not(:last-child) {
+  margin-bottom: 7px;
+}
+
+.excel-tools-drawer__label {
+  padding: 2px 6px 4px;
+  color: var(--color-text-tertiary);
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.excel-tools-drawer__items {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.excel-tools-drawer__item {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 26px;
+  padding: 4px 8px;
+  border: 1px solid var(--color-excel-grid-border);
+  border-radius: 4px;
+  background: var(--color-gray-100);
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-xs);
+  line-height: 1;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.excel-tools-drawer__item:hover {
+  border-color: var(--color-gray-400);
+  background: var(--color-gray-200);
+  color: var(--color-text-primary);
+}
+
+.excel-tools-drawer__item--active {
+  border-color: var(--color-brand);
+  background: var(--color-brand-subtle);
+  color: var(--color-brand);
+  font-weight: var(--font-weight-semibold);
+}
+
 /* ================================================================
    STATUS BAR — 최하단 상태 바
    ================================================================ */
@@ -2316,10 +2383,77 @@
   display: flex;
   flex-direction: column;
   gap: 0;
+  background: var(--color-bg-elevated);
+}
+
+.reports-output-header {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 24px;
+  min-height: 92px;
+  padding: 18px 20px 16px;
+  border: 1px solid var(--color-excel-grid-border);
+  border-bottom: 2px solid var(--color-brand);
+  background: var(--color-bg-elevated);
+}
+
+.reports-output-header__eyebrow {
+  margin-bottom: 3px;
+  color: var(--color-text-tertiary);
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.reports-output-header h1 {
+  margin: 0;
+  color: var(--color-text-primary);
+  font-size: 20px;
+  font-weight: 700;
+  letter-spacing: 0;
+}
+
+.reports-output-header p {
+  margin: 5px 0 0;
+  color: var(--color-text-secondary);
+  font-size: 11px;
+}
+
+.reports-output-header__meta {
+  flex: 0 0 auto;
+  padding-bottom: 2px;
+  color: var(--color-text-tertiary);
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
 }
 
 .reports-sheet .xls-table {
   margin: 0;
+}
+
+.reports-sheet .reports-plan-strip:empty {
+  display: none;
+}
+
+.reports-output-group__heading th {
+  padding: 7px 10px;
+  border: 1px solid var(--color-excel-grid-border);
+  border-top-width: 2px;
+  background: var(--color-gray-100);
+  color: var(--color-text-primary);
+  font-size: 11px;
+  text-align: left;
+}
+
+.reports-output-group:first-of-type .reports-output-group__heading th {
+  border-top-width: 1px;
+}
+
+.reports-output-group__heading small {
+  margin-left: 9px;
+  color: var(--color-text-tertiary);
+  font-size: 10px;
+  font-weight: 400;
 }
 
 .reports-sheet .xls-th,
@@ -2339,7 +2473,7 @@
 .reports-sheet .reports-action-btns {
   display: flex;
   gap: 4px;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
 }
 
 .reports-sheet .reports-action-btn {
@@ -2356,6 +2490,15 @@
 
 .reports-sheet .reports-action-btn .reports-action-btn__label {
   white-space: nowrap;
+}
+
+.reports-sheet .reports-sheet__list > thead .xls-th {
+  background: var(--color-bg-elevated);
+  border-bottom: 1px solid var(--color-excel-grid-border);
+}
+
+.reports-sheet .reports-sheet__list .xls-row:hover .xls-cell {
+  background: color-mix(in srgb, var(--color-brand) 4%, var(--color-bg-elevated));
 }
 
 .xls-content-data .xls-table {

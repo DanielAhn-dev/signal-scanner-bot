@@ -194,7 +194,6 @@ export default function AnalyzePage({ onNavigate }: { onNavigate?: (r: string) =
   const [showMaEmaOverlay, setShowMaEmaOverlay] = useLocalStorageBool('chart.showMaEma', false)
   const [showTradeMarkers, setShowTradeMarkers] = useLocalStorageBool('chart.showMarkers', true)
   const [showForceLine, setShowForceLine] = useLocalStorageBool('chart.showForce', false)
-  const [showPersonalized, setShowPersonalized] = useState(false)
   const [recentSearches, pushRecentSearch] = useRecentSearches()
   const inputRef = useRef<HTMLInputElement>(null)
   const toast = useToast()
@@ -262,6 +261,43 @@ export default function AnalyzePage({ onNavigate }: { onNavigate?: (r: string) =
       warnings,
     }
   }, [result, advisor])
+
+  const analysisCoverage = useMemo(() => {
+    if (!result) return { available: 0, total: 5, missing: [] as string[], creditIsProxy: false }
+    const checks = [
+      { label: '가격', ok: result.close != null && result.date != null },
+      { label: '재무', ok: result?.fundamental_gate?.status === 'pass' || result?.fundamental_gate?.status === 'fail' },
+      { label: '기술지표', ok: [result.sma20, result.sma50, result.rsi14].filter((value) => value != null).length >= 2 },
+      { label: '수급', ok: flow?.date != null && (flow?.foreign != null || flow?.institution != null) },
+      { label: '공매도/신용', ok: creditShort?.source === 'db' || creditShort?.source === 'live' },
+    ]
+    return {
+      available: checks.filter((item) => item.ok).length,
+      total: checks.length,
+      missing: checks.filter((item) => !item.ok).map((item) => item.label),
+      creditIsProxy: creditShort?.source === 'proxy',
+    }
+  }, [creditShort, flow, result])
+
+  const entryDecision = useMemo(() => {
+    if (!advisor || !result?.close) {
+      return { label: '판단 보류', reason: '현재가 또는 판정 데이터가 없습니다.', tone: 'neutral' as SignalTone }
+    }
+    if (!dataValidation.isReliable) {
+      return { label: '판단 보류', reason: '가격 기준의 동기화 검증이 필요합니다.', tone: 'warning' as SignalTone }
+    }
+    if (analysisCoverage.available <= 2) {
+      return { label: '데이터 부족', reason: '핵심 데이터가 부족해 진입 판단의 신뢰도가 낮습니다.', tone: 'warning' as SignalTone }
+    }
+    const action = String(advisor?.twoStage?.action || '').toLowerCase()
+    if (action === 'aggressive_buy' || action === 'pilot_buy') {
+      return { label: advisor.twoStage.actionLabel || '진입 검토', reason: advisor.twoStage.reason || advisor.signalReason || '규칙상 진입 검토 구간입니다.', tone: 'positive' as SignalTone }
+    }
+    if (action === 'reduce') {
+      return { label: advisor.twoStage.actionLabel || '비중 축소', reason: advisor.twoStage.reason || advisor.signalReason || '신규 진입보다 리스크 관리가 우선입니다.', tone: 'negative' as SignalTone }
+    }
+    return { label: advisor?.twoStage?.actionLabel || advisor.statusLabel || '관망', reason: advisor?.twoStage?.reason || advisor.signalReason || '현재는 진입 조건 확인이 더 필요합니다.', tone: 'warning' as SignalTone }
+  }, [advisor, analysisCoverage.available, dataValidation.isReliable, result?.close])
 
   // 서버에서 내려온 값을 직접 사용한다. 클라이언트 재계산은 서버와 불일치를 유발한다.
   const computedSma20 = result?.sma20 ?? null
@@ -695,6 +731,35 @@ export default function AnalyzePage({ onNavigate }: { onNavigate?: (r: string) =
             </tbody>
           </table>
 
+          <section className={`analyze-decision analyze-decision--${entryDecision.tone}`} aria-label="현재 진입 판단">
+            <div className="analyze-decision__primary">
+              <div className="analyze-decision__label">현재 판단</div>
+              <div className="analyze-decision__value">{entryDecision.label}</div>
+              <div className="analyze-decision__reason">{entryDecision.reason}</div>
+            </div>
+            <dl className="analyze-decision__facts">
+              <div>
+                <dt>규칙 판정</dt>
+                <dd>{advisor?.statusLabel || '판정 없음'}</dd>
+              </div>
+              <div>
+                <dt>진입 구간</dt>
+                <dd>{advisor?.entryLow != null && advisor?.entryHigh != null ? `${formatKrw(advisor.entryLow)} ~ ${formatKrw(advisor.entryHigh)}` : '산출 불가'}</dd>
+              </div>
+              <div>
+                <dt>데이터 충족도</dt>
+                <dd>{analysisCoverage.available}/{analysisCoverage.total}</dd>
+              </div>
+            </dl>
+            {(analysisCoverage.missing.length > 0 || analysisCoverage.creditIsProxy || dataValidation.warnings.length > 0) && (
+              <div className="analyze-decision__data-note">
+                {analysisCoverage.missing.length > 0 && <span>미확보: {analysisCoverage.missing.join(', ')}</span>}
+                {analysisCoverage.creditIsProxy && <span>공매도/신용은 실데이터 대신 프록시 반영</span>}
+                {dataValidation.warnings.length > 0 && <span>{dataValidation.warnings[0]}</span>}
+              </div>
+            )}
+          </section>
+
           {/* ── 일중 범위 바 ── */}
           {result.high != null && result.low != null && (
             <div style={{ marginBottom: 'var(--space-4)' }}>
@@ -1068,7 +1133,7 @@ export default function AnalyzePage({ onNavigate }: { onNavigate?: (r: string) =
             return (
               <>
                 {DIVIDER}
-                <div className="title-md" style={{ marginBottom: 'var(--space-3)' }}>현황 요약</div>
+                <div className="title-md" style={{ marginBottom: 'var(--space-3)' }}>판단 근거 요약</div>
                 <div className="cards-grid cols-3" style={{ marginBottom: summaryLine ? 'var(--space-3)' : undefined }}>
                   {signals.map(({ title, sig }) => {
                     const s = toneStyle(sig.tone)
@@ -1107,7 +1172,7 @@ export default function AnalyzePage({ onNavigate }: { onNavigate?: (r: string) =
             <>
               {DIVIDER}
               <div className="flex-between" style={{ marginBottom: 'var(--space-3)' }}>
-                <div className="title-md">Nexora 어드바이저</div>
+                <div className="title-md">상세 규칙 및 가격 관리</div>
                 <div style={{ display: 'flex', gap: 'var(--space-2)', alignItems: 'center', flexWrap: 'wrap' }}>
                   {dataValidation.warnings.length > 0 && (
                     <span
@@ -1125,54 +1190,9 @@ export default function AnalyzePage({ onNavigate }: { onNavigate?: (r: string) =
                       ⚠️ 데이터 검증 필요
                     </span>
                   )}
-                  {(Array.isArray(advisor.personalLines) && advisor.personalLines.length > 0) && (
-                    <button
-                      className="btn btn-sm"
-                      type="button"
-                      onClick={() => setShowPersonalized((v) => !v)}
-                      aria-pressed={showPersonalized}
-                      style={{ fontWeight: 'var(--font-weight-semibold)' }}
-                    >
-                      {showPersonalized ? '👤 MY 숨기기' : '👤 MY'}
-                    </button>
-                  )}
                 </div>
               </div>
               <div className="card" style={{ background: 'var(--color-bg-sunken)' }}>
-
-                {/* 점수 + 프로그레스 바 */}
-                <div className="cards-grid cols-3" style={{ marginBottom: 'var(--space-4)' }}>
-                  {([
-                    ['종합 점수', advisor.finalScore],
-                    ['기술 점수', advisor.technicalScore],
-                    ['재무 점수', advisor.fundamentalScore],
-                  ] as [string, number | null][]).map(([label, score]) => (
-                    <div key={label}>
-                      <div className="stat-label">{label}</div>
-                      <div style={{
-                        fontSize: 'var(--font-size-lg)',
-                        fontWeight: 'var(--font-weight-bold)',
-                        fontVariantNumeric: 'tabular-nums',
-                        color: scoreColor(score),
-                        marginBottom: 'var(--space-1)',
-                      }}>
-                        {score != null ? `${formatNumber(score, 1)}점` : '—'}
-                      </div>
-                      {score != null && (
-                        <div style={{ height: 4, background: 'var(--color-border-default)', borderRadius: 999, overflow: 'hidden' }}>
-                          <div style={{
-                            width: `${Math.max(0, Math.min(100, score))}%`,
-                            height: '100%',
-                            background: scoreColor(score),
-                            borderRadius: 999,
-                            transition: 'width 0.4s ease',
-                          }} />
-                        </div>
-                      )}
-                    </div>
-                  ))}
-                </div>
-
                 {/* 판정 배지 */}
                 <div style={{ marginBottom: 'var(--space-3)' }}>
                   <div className="stat-label" title="점수·진입구간·손익비 고정 규칙으로 정한 판정입니다. 10년 검증에서 점수는 종목 간 수익 차이를 예측하지 못했습니다.">규칙 판정</div>
@@ -1337,15 +1357,6 @@ export default function AnalyzePage({ onNavigate }: { onNavigate?: (r: string) =
                   </div>
                 )}
 
-                {/* 내 상황 제안 */}
-                {showPersonalized && Array.isArray(advisor.personalLines) && advisor.personalLines.length > 0 && (
-                  <div>
-                    <div className="stat-label">내 상황 제안</div>
-                    {advisor.personalLines.map((line: string, i: number) => (
-                      <div key={`p-${i}`} className="caption">- {line}</div>
-                    ))}
-                  </div>
-                )}
               </div>
             </>
           )}

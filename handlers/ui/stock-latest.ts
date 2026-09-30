@@ -1170,22 +1170,6 @@ async function buildAdvisorPayload(input: {
     sma50: asNum(fallbackFactors?.sma50),
   })
 
-  let personalLines: string[] = []
-  if (chatId) {
-    personalLines = await (async () => {
-      try {
-        const { buildPersonalizedGuidance } = await import('../../src/services/personalizedGuidanceService.js')
-        return await buildPersonalizedGuidance({
-          chatId,
-          focusCode: code,
-          context: 'buy',
-        })
-      } catch {
-        return []
-      }
-    })()
-  }
-
   return {
     technicalScore: fallbackScore ?? null,
     fundamentalScore,
@@ -1215,7 +1199,6 @@ async function buildAdvisorPayload(input: {
         ? [`신용/공매도 실데이터 부재: 프록시 과열 리스크 ${creditShortProxy.level === 'high' ? '높음' : '보통'}`]
         : []),
     ],
-    personalLines,
   }
 }
 

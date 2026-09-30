@@ -1337,11 +1337,11 @@ function toneColor(tone?: 'up' | 'down' | 'neutral'): string {
 }
 
 function dashboardName(topic: string): string {
-  if (topic === '주간') return 'Weekly Dashboard'
-  if (topic === '거시') return 'Macro Dashboard'
-  if (topic === '수급') return 'Flow Dashboard'
-  if (topic === '섹터') return 'Sector Dashboard'
-  return 'Report Dashboard'
+  if (topic === '주간') return '주간 시장 요약'
+  if (topic === '거시') return '거시 지표 요약'
+  if (topic === '수급') return '수급 동향 요약'
+  if (topic === '섹터') return '섹터 동향 요약'
+  return '리포트 요약'
 }
 
 export function buildStructuredWeeklyWebHtml(input: {
@@ -1503,8 +1503,8 @@ export function renderLayout(params: {
   <style>
     :root {
       color-scheme: light;
-      --color-blue-50: #EBF3FF;
-      --color-blue-500: #0060FF;
+      --color-blue-50: #F1F5F9;
+      --color-blue-500: #24543D;
       --color-gray-0: #FFFFFF;
       --color-gray-50: #F9FAFB;
       --color-gray-100: #F2F4F6;
@@ -1515,7 +1515,7 @@ export function renderLayout(params: {
       --color-gray-950: #0D1117;
       --color-brand: var(--color-blue-500);
       --color-brand-subtle: var(--color-blue-50);
-      --color-bg-page: var(--color-gray-100);
+      --color-bg-page: #ECEFED;
       --color-bg-surface: var(--color-gray-0);
       --color-border-default: var(--color-gray-200);
       --color-text-primary: var(--color-gray-900);
@@ -1530,19 +1530,18 @@ export function renderLayout(params: {
       --font-weight-medium: 500;
       --font-weight-semibold: 600;
       --font-weight-bold: 700;
-      --radius-sm: 6px;
-      --radius-md: 8px;
-      --radius-lg: 12px;
-      --radius-xl: 16px;
-      --shadow-sm: 0 1px 4px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04);
+      --radius-sm: 2px;
+      --radius-md: 2px;
+      --radius-lg: 3px;
+      --radius-xl: 3px;
+      --shadow-sm: 0 8px 28px rgba(19, 31, 24, 0.08);
       --code-bg: var(--color-gray-950);
       --code-text: #E2E8F0;
     }
     * { box-sizing: border-box; }
     html, body {
       margin: 0; padding: 0; min-height: 100%;
-      background: radial-gradient(circle at top right, rgba(0,96,255,0.14), transparent 28%),
-                  linear-gradient(180deg, #f8fafc 0%, var(--color-bg-page) 100%);
+      background: var(--color-bg-page);
       color: var(--color-text-primary);
     }
     body {
@@ -1555,31 +1554,31 @@ export function renderLayout(params: {
       padding: 24px 16px 40px;
     }
     .shell {
-      width: min(980px, 100%);
+      width: min(940px, 100%);
       margin: 0 auto;
-      background: color-mix(in srgb, var(--color-bg-surface) 94%, transparent);
-      border: 1px solid color-mix(in srgb, var(--color-border-default) 92%, transparent);
-      backdrop-filter: blur(14px);
+      background: var(--color-bg-surface);
+      border: 1px solid #D9DEDA;
       border-radius: var(--radius-xl);
       overflow: hidden;
       box-shadow: var(--shadow-sm);
     }
     .hero {
-      padding: 10px 22px;
-      border-bottom: 1px solid var(--color-border-default);
-      background: color-mix(in srgb, var(--color-brand-subtle) 28%, var(--color-bg-surface));
+      min-height: 76px;
+      padding: 16px 24px;
+      border-bottom: 2px solid #24372E;
+      background: var(--color-bg-surface);
       display: flex;
       align-items: center;
-      gap: 8px;
+      gap: 10px;
       flex-wrap: wrap;
     }
     .topic-pullback .hero {
-      background: color-mix(in srgb, #e7f0ff 40%, var(--color-bg-surface));
-      border-left: 3px solid #2a5bb8;
+      background: var(--color-bg-surface);
+      border-left: 0;
     }
     .topic-execution-guide .hero {
-      background: linear-gradient(90deg, #eef7ff 0%, #f5f9ff 45%, #f8fbff 100%);
-      border-left: 4px solid #1f6feb;
+      background: var(--color-bg-surface);
+      border-left: 0;
     }
     .topic-execution-guide .badge {
       color: #1954b8;
@@ -1603,32 +1602,34 @@ export function renderLayout(params: {
     }
     .badge {
       display: inline-block;
-      color: var(--color-brand);
-      background: var(--color-brand-subtle);
-      padding: 2px 10px;
-      border-radius: 20px;
-      font-size: 11px;
-      font-weight: var(--font-weight-semibold);
-      letter-spacing: 0.04em;
-      border: 1px solid color-mix(in srgb, var(--color-brand) 20%, transparent);
+      color: #526159;
+      background: transparent;
+      padding: 0 9px 0 0;
+      border-radius: 0;
+      border: 0;
+      border-right: 1px solid #C9D0CC;
+      font-size: 10px;
+      font-weight: var(--font-weight-bold);
+      letter-spacing: 0;
     }
     h1 {
       margin: 0;
-      font-size: 15px;
-      font-weight: var(--font-weight-semibold);
+      font-size: 18px;
+      font-weight: var(--font-weight-bold);
       line-height: 1.3;
-      letter-spacing: -0.01em;
+      letter-spacing: 0;
       color: var(--color-text-primary);
     }
-    .meta { margin-left: auto; color: var(--color-text-tertiary); font-size: 11px; }
-    .content { padding: 20px 22px; font-size: 15px; }
+    .meta { margin-left: auto; color: var(--color-text-tertiary); font-size: 10px; }
+    .content { padding: 24px; font-size: 14px; }
     .rich-share { display: flex; flex-direction: column; gap: 12px; }
     .report-section {
-      background: linear-gradient(180deg, #ffffff 0%, #fcfdff 100%);
-      border: 1px solid var(--color-border-default);
-      border-radius: 14px;
-      padding: 14px 14px 12px;
-      box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+      background: #ffffff;
+      border: 0;
+      border-top: 1px solid var(--color-border-default);
+      border-radius: 0;
+      padding: 16px 0 12px;
+      box-shadow: none;
     }
     .report-section + .report-section {
       margin-top: 14px;
@@ -1977,11 +1978,37 @@ export function renderLayout(params: {
       white-space: pre-wrap; word-break: break-word;
     }
     .footer {
-      padding: 14px 22px 22px;
+      padding: 14px 24px 20px;
       border-top: 1px solid var(--color-border-default);
       color: var(--color-text-secondary);
-      font-size: 12px;
-      background: color-mix(in srgb, var(--color-gray-50) 80%, transparent);
+      font-size: 11px;
+      background: var(--color-gray-50);
+    }
+    /* 토픽별 생성기가 가진 장식은 공용 문서 문법으로 정규화한다. */
+    .content [style*="linear-gradient"] { background: #ffffff !important; }
+    .content [style*="border-radius:999px"],
+    .content [style*="border-radius:20px"] { border-radius: 2px !important; }
+    .content [style*="border-radius:16px"],
+    .content [style*="border-radius:14px"],
+    .content [style*="border-radius:12px"],
+    .content [style*="border-radius:10px"] {
+      border-radius: 2px !important;
+      box-shadow: none !important;
+    }
+    .content section[style*="box-shadow"],
+    .content article[style*="box-shadow"] { box-shadow: none !important; }
+    .content table { font-variant-numeric: tabular-nums; }
+    .content th { background: #F6F7F6; color: #526159 !important; }
+    .content td, .content th { border-color: #E1E5E2 !important; }
+    @media print {
+      @page { size: A4; margin: 12mm; }
+      html, body { background: #ffffff; }
+      body { display: block; padding: 0; }
+      .shell { width: 100%; border: 0; box-shadow: none; }
+      .hero { padding: 0 0 12px; }
+      .content { padding: 16px 0; }
+      .footer { padding: 12px 0 0; }
+      .content section, .content article, .report-section { break-inside: avoid; }
     }
     @media (max-width: 720px) {
       body { padding: 10px 8px 32px; }

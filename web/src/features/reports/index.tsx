@@ -13,6 +13,7 @@ import { useCurrentChatId, useCurrentClientId } from '../../stores/profileStore'
 
 type ReportAction = {
   key: string
+  section: 'run' | 'decision' | 'portfolio' | 'market' | 'guide'
   label: string
   desc: string
   kind: 'trigger' | 'download'
@@ -24,6 +25,7 @@ type ReportAction = {
 const REPORT_ACTIONS: ReportAction[] = [
   {
     key: 'briefing',
+    section: 'run',
     label: '장전 브리핑',
     desc: '오늘 장전 핵심 브리핑을 큐에 등록합니다. (/브리핑)',
     kind: 'trigger',
@@ -32,6 +34,7 @@ const REPORT_ACTIONS: ReportAction[] = [
   },
   {
     key: 'update',
+    section: 'run',
     label: '데이터 업데이트',
     desc: '종목/지표 데이터 패치를 실행합니다.',
     kind: 'trigger',
@@ -40,6 +43,7 @@ const REPORT_ACTIONS: ReportAction[] = [
   },
   {
     key: 'candidate-pdf',
+    section: 'decision',
     label: '오늘 후보 리포트 PDF',
     desc: '웹에서 즉시 생성 후 PDF 파일로 다운로드합니다. (/리포트 추천 대응)',
     kind: 'download',
@@ -49,6 +53,7 @@ const REPORT_ACTIONS: ReportAction[] = [
   },
   {
     key: 'conviction-candidate-pdf',
+    section: 'decision',
     label: '집행우선 종목',
     desc: '점수 상위 후보와 과거 20일 분포를 담은 집행우선 리포트를 생성합니다. (/리포트 확신추천 대응)',
     kind: 'download',
@@ -58,6 +63,7 @@ const REPORT_ACTIONS: ReportAction[] = [
   },
   {
     key: 'execution-guide-report-pdf',
+    section: 'decision',
     label: '매매 실행 계획서 PDF',
     desc: '실행가이드 화면에서 생성한 자동추천 후보/진입계획 스냅샷을 PDF로 다운로드합니다.',
     kind: 'download',
@@ -67,6 +73,7 @@ const REPORT_ACTIONS: ReportAction[] = [
   },
   {
     key: 'public-candidate-pdf',
+    section: 'decision',
     label: '공유용 후보 PDF',
     desc: '개인 보유/자금 정보를 제거한 버전을 다운로드합니다. (/리포트 공개추천 대응)',
     kind: 'download',
@@ -76,6 +83,7 @@ const REPORT_ACTIONS: ReportAction[] = [
   },
   {
     key: 'weekly-report-pdf',
+    section: 'portfolio',
     label: '주간 리포트 PDF',
     desc: '시장+포트폴리오 종합 리포트를 다운로드합니다. (/리포트 주간 대응)',
     kind: 'download',
@@ -85,6 +93,7 @@ const REPORT_ACTIONS: ReportAction[] = [
   },
   {
     key: 'pullback-report-pdf',
+    section: 'portfolio',
     label: '눌림목(스윙/중기) 리포트 PDF',
     desc: '다음 주 선진입 후보 중심 리포트를 다운로드합니다. (/리포트 눌림목 대응)',
     kind: 'download',
@@ -94,6 +103,7 @@ const REPORT_ACTIONS: ReportAction[] = [
   },
   {
     key: 'portfolio-report-pdf',
+    section: 'portfolio',
     label: '포트폴리오 리포트 PDF',
     desc: '보유 종목/거래 중심 리포트를 다운로드합니다. (/리포트 포트폴리오 대응)',
     kind: 'download',
@@ -103,6 +113,7 @@ const REPORT_ACTIONS: ReportAction[] = [
   },
   {
     key: 'watchonly-report-pdf',
+    section: 'portfolio',
     label: '관심종목 리포트 PDF',
     desc: '관심 추적 종목 중심 리포트를 다운로드합니다. (/리포트 관심종목 대응)',
     kind: 'download',
@@ -112,6 +123,7 @@ const REPORT_ACTIONS: ReportAction[] = [
   },
   {
     key: 'macro-report-pdf',
+    section: 'market',
     label: '거시 리포트 PDF',
     desc: '금리/환율/변동성 중심 거시 리포트를 다운로드합니다. (/리포트 거시 대응)',
     kind: 'download',
@@ -121,6 +133,7 @@ const REPORT_ACTIONS: ReportAction[] = [
   },
   {
     key: 'flow-report-pdf',
+    section: 'market',
     label: '수급 리포트 PDF',
     desc: '외국인/기관 자금 흐름 리포트를 다운로드합니다. (/리포트 수급 대응)',
     kind: 'download',
@@ -130,6 +143,7 @@ const REPORT_ACTIONS: ReportAction[] = [
   },
   {
     key: 'sector-report-pdf',
+    section: 'market',
     label: '섹터 리포트 PDF',
     desc: '섹터 강도 랭킹 리포트를 다운로드합니다. (/리포트 섹터 대응)',
     kind: 'download',
@@ -139,6 +153,7 @@ const REPORT_ACTIONS: ReportAction[] = [
   },
   {
     key: 'guide-pdf',
+    section: 'guide',
     label: '운영 가이드 PDF',
     desc: '운영 가이드 문서를 웹에서 바로 다운로드합니다. (/guidepdf 대응)',
     kind: 'download',
@@ -148,6 +163,7 @@ const REPORT_ACTIONS: ReportAction[] = [
   },
   {
     key: 'auto-guide-pdf',
+    section: 'guide',
     label: '자동매매 가이드 PDF',
     desc: '자동매매 명령어 가이드를 다운로드합니다. (/리포트 자동매매 대응)',
     kind: 'download',
@@ -155,6 +171,14 @@ const REPORT_ACTIONS: ReportAction[] = [
     method: 'GET',
     fileName: 'automate-trade-command-guide.pdf',
   },
+]
+
+const REPORT_SECTIONS: Array<{ key: ReportAction['section']; label: string; desc: string }> = [
+  { key: 'run', label: '실행 작업', desc: '브리핑 발송과 원천 데이터 갱신' },
+  { key: 'decision', label: '오늘의 판단', desc: '후보 선정과 실제 주문 준비' },
+  { key: 'portfolio', label: '보유와 주간 점검', desc: '보유 상태, 눌림목, 주간 성과 검토' },
+  { key: 'market', label: '시장 배경', desc: '거시, 수급, 섹터 흐름 확인' },
+  { key: 'guide', label: '운영 문서', desc: '서비스와 자동매매 사용 기준' },
 ]
 
 export default function ReportsPage() {
@@ -329,18 +353,17 @@ export default function ReportsPage() {
 
   return (
     <section className="container-app reports-sheet" style={{ padding: 0, margin: 0, maxWidth: 'none', width: '100%' }}>
-      <table className="xls-table" style={{ width: '100%', tableLayout: 'fixed', marginBottom: 0 }}>
-        <colgroup>
-          <col style={{ width: '30%' }} />
-          <col style={{ width: '70%' }} />
-        </colgroup>
+      <header className="reports-output-header">
+        <div>
+          <div className="reports-output-header__eyebrow">출력 및 공유</div>
+          <h1>리포트</h1>
+          <p>매매 판단에 필요한 PDF를 미리 확인하고 내려받거나 공유합니다.</p>
+        </div>
+        <div className="reports-output-header__meta">PDF {REPORT_ACTIONS.filter((item) => item.kind === 'download').length}종 · 실행 작업 {REPORT_ACTIONS.filter((item) => item.kind === 'trigger').length}종</div>
+      </header>
+
+      <table className="xls-table reports-plan-strip" style={{ width: '100%', tableLayout: 'fixed', marginBottom: 0 }}>
         <tbody>
-          <tr className="xls-row xls-row--even">
-            <td className="xls-cell" style={{ fontSize: 18, fontWeight: 700, color: 'var(--color-brand)' }}>리포트</td>
-            <td className="xls-cell xls-cell--wrap" style={{ color: 'var(--color-text-secondary)', fontSize: 11 }}>
-              텔레그램 명령(/리포트, /브리핑, /guidepdf)에 대응하는 기능을 웹에서 실행/다운로드합니다.
-            </td>
-          </tr>
           {simPlan && simPlan.items?.length > 0 && (
             <tr className="xls-row">
               <td className="xls-cell" style={{ fontWeight: 600 }}>시뮬레이터 저장 계획</td>
@@ -375,10 +398,10 @@ export default function ReportsPage() {
 
       <table className="xls-table reports-sheet__list" style={{ width: '100%', tableLayout: 'fixed' }}>
         <colgroup>
-          <col style={{ width: '22%' }} />
-          <col style={{ width: '50%' }} />
-          <col style={{ width: '16%' }} />
-          <col style={{ width: '12%' }} />
+          <col style={{ width: '21%' }} />
+          <col style={{ width: '43%' }} />
+          <col style={{ width: '28%' }} />
+          <col style={{ width: '8%' }} />
         </colgroup>
         <thead>
           <tr className="xls-header-row">
@@ -388,12 +411,18 @@ export default function ReportsPage() {
             <th className="xls-th">상태</th>
           </tr>
         </thead>
-        <tbody>
-          {REPORT_ACTIONS.map((r, idx) => {
-            const s = states[r.key]
-            const rowNo = idx + 1
-            return (
-              <tr key={r.key} className={`xls-row${rowNo % 2 === 0 ? ' xls-row--even' : ''}`}>
+        {REPORT_SECTIONS.map((section) => (
+          <tbody key={section.key} className="reports-output-group">
+            <tr className="reports-output-group__heading">
+              <th colSpan={4}>
+                <span>{section.label}</span>
+                <small>{section.desc}</small>
+              </th>
+            </tr>
+            {REPORT_ACTIONS.filter((item) => item.section === section.key).map((r, idx) => {
+              const s = states[r.key]
+              return (
+                <tr key={r.key} className={`xls-row${idx % 2 === 1 ? ' xls-row--even' : ''}`}>
                 <td className="xls-cell xls-cell--wrap" style={{ fontWeight: 600 }}>{r.label}</td>
                 <td className="xls-cell xls-cell--wrap">{r.desc}</td>
                 <td className="xls-cell">
@@ -457,21 +486,11 @@ export default function ReportsPage() {
                 <td className="xls-cell" style={{ color: s?.msg ? 'var(--color-text-secondary)' : 'var(--color-text-tertiary)', fontSize: 10 }}>
                   {s?.msg || '대기'}
                 </td>
-              </tr>
-            )
-          })}
-          {Array.from({ length: Math.max(0, 24 - REPORT_ACTIONS.length) }, (_, idx) => {
-            const rowNo = REPORT_ACTIONS.length + idx + 1
-            return (
-              <tr key={`empty-${rowNo}`} className={`xls-row${rowNo % 2 === 0 ? ' xls-row--even' : ''}`}>
-                <td className="xls-cell xls-cell--empty" />
-                <td className="xls-cell xls-cell--empty" />
-                <td className="xls-cell xls-cell--empty" />
-                <td className="xls-cell xls-cell--empty" />
-              </tr>
-            )
-          })}
-        </tbody>
+                </tr>
+              )
+            })}
+          </tbody>
+        ))}
       </table>
       <ShareModal
         open={shareManager.open}

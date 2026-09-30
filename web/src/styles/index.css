@@ -1374,20 +1374,169 @@ a:focus-visible {
 }
 
 .share-modal {
-  width: min(860px, calc(100vw - 48px));
-  max-width: min(860px, calc(100vw - 48px));
+  width: min(780px, calc(100vw - 48px));
+  max-width: min(780px, calc(100vw - 48px));
   max-height: min(84vh, 900px);
+  padding: 0;
+  overflow: hidden;
 }
 
-.share-modal__recent-list {
-  max-height: clamp(180px, 34vh, 320px);
+.share-modal__header {
+  position: static !important;
+  margin: 0 !important;
+  padding: 14px 18px !important;
+  border-bottom: 2px solid var(--color-brand) !important;
+  background: var(--color-bg-elevated) !important;
+}
+
+.share-modal__eyebrow {
+  margin-bottom: 2px;
+  color: var(--color-text-tertiary);
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.share-modal__body {
+  max-height: calc(min(84vh, 900px) - 64px);
+  padding: 18px;
   overflow: auto;
 }
 
-.share-modal__item-actions {
+.share-modal__intro {
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-sm);
+  line-height: 1.55;
+}
+
+.share-modal__notice {
+  margin-top: 12px;
+  padding: 10px 12px;
+  border-left: 3px solid var(--color-brand);
+  background: var(--color-bg-sunken);
+}
+
+.share-modal__notice .muted {
+  margin-top: 3px;
+  line-height: 1.5;
+}
+
+.share-modal__field {
+  margin-top: 14px;
+}
+
+.share-modal__copy-row {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: minmax(0, 1fr) auto;
   gap: 8px;
+  margin-top: 6px;
+}
+
+.share-modal__copy-row .ui-text {
+  width: 100%;
+  min-width: 0;
+}
+
+.share-modal__copy-row .ui-button,
+.share-modal__item-actions .ui-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+}
+
+.share-modal__expires {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 14px;
+  padding: 9px 0;
+  border-top: 1px solid var(--color-border-muted);
+  border-bottom: 1px solid var(--color-border-muted);
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-sm);
+}
+
+.share-modal__history {
+  margin-top: 20px;
+}
+
+.share-modal__history-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.share-modal__history-header .muted {
+  margin-top: 3px;
+}
+
+.share-modal__icon-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border: 1px solid var(--color-border-default);
+  border-radius: 3px;
+  background: var(--color-bg-elevated);
+  color: var(--color-text-secondary);
+  cursor: pointer;
+}
+
+.share-modal__icon-button:hover {
+  border-color: var(--color-brand);
+  color: var(--color-brand);
+}
+
+.share-modal__filters {
+  display: grid;
+  grid-template-columns: minmax(120px, 1fr) minmax(120px, 1fr) auto;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.share-modal__filters .input {
+  width: 100%;
+}
+
+.share-modal__recent-list {
+  display: grid;
+  margin-top: 10px;
+  max-height: clamp(180px, 34vh, 320px);
+  overflow: auto;
+  border-top: 1px solid var(--color-border-default);
+}
+
+.share-modal__item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--color-border-muted);
+}
+
+.share-modal__item-meta {
+  min-width: 0;
+}
+
+.share-modal__item-meta .muted {
+  margin-top: 3px;
+  font-size: 11px;
+}
+
+.share-modal__item-actions {
+  display: flex;
+  gap: 8px;
+  flex: 0 0 auto;
+}
+
+.share-modal__empty {
+  padding: 28px 12px;
+  color: var(--color-text-tertiary);
+  text-align: center;
 }
 
 @media (max-width: 639px) {
@@ -1410,12 +1559,36 @@ a:focus-visible {
     max-height: calc(100vh - 24px);
   }
 
+  .share-modal__body {
+    max-height: calc(92dvh - 64px);
+    padding: 14px;
+  }
+
+  .share-modal__copy-row,
+  .share-modal__filters {
+    grid-template-columns: 1fr;
+  }
+
+  .share-modal__copy-row .ui-button,
+  .share-modal__filters .ui-button {
+    width: 100%;
+  }
+
   .share-modal__recent-list {
     max-height: 34vh;
   }
 
+  .share-modal__item {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
   .share-modal__item-actions {
-    grid-template-columns: 1fr;
+    width: 100%;
+  }
+
+  .share-modal__item-actions .ui-button {
+    flex: 1;
   }
 }
 

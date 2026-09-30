@@ -119,7 +119,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     const persistedBody = String(persisted?.bodyText || '')
     // 추천/확신추천/공개추천/눌림목은 사용자 기대(토픽별 분기/최신성)를 위해 항상 재생성한다.
-    const forceFreshCandidateTopics = forceFreshReportTopics
+    const forceFreshCandidateTopics = ['추천', '확신추천', '공개추천', '눌림목'].includes(topic)
     // 스냅샷이 HTML 형식이더라도 토픽별 고유 마커가 없으면 구 버전 스냅샷으로 간주해 재생성
     // (토픽 분기 렌더 적용 전 저장된 동일 내용 스냅샷 문제 해소)
     const needsRichRefresh = (
@@ -152,22 +152,22 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       topic === '주간'
       && Boolean(persistedBody)
       && persistedBody.startsWith(HTML_BODY_PREFIX)
-      && !persistedBody.includes('Weekly Dashboard')
+      && !persistedBody.includes('주간 시장 요약')
     ) || (
       topic === '거시'
       && Boolean(persistedBody)
       && persistedBody.startsWith(HTML_BODY_PREFIX)
-      && !persistedBody.includes('Macro Dashboard')
+      && !persistedBody.includes('거시 지표 요약')
     ) || (
       topic === '수급'
       && Boolean(persistedBody)
       && persistedBody.startsWith(HTML_BODY_PREFIX)
-      && !persistedBody.includes('Flow Dashboard')
+      && !persistedBody.includes('수급 동향 요약')
     ) || (
       topic === '섹터'
       && Boolean(persistedBody)
       && persistedBody.startsWith(HTML_BODY_PREFIX)
-      && !persistedBody.includes('Sector Dashboard')
+      && !persistedBody.includes('섹터 동향 요약')
     )
 
     if (persisted?.bodyText && !needsRichRefresh && !forceFreshCandidateTopics) {

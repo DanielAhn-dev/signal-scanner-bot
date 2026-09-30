@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import { createPortal } from 'react-dom'
+import { ExternalLink, X } from 'lucide-react'
 
 type Props = {
   open: boolean
@@ -26,6 +27,15 @@ export default function ReportPreviewModal({ open, onClose, url, title, generate
     setLoadError(null)
   }, [open, url])
 
+  useEffect(() => {
+    if (!open) return
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') onClose()
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [open, onClose])
+
   const loadingHint = useMemo(() => {
     if (title.includes('눌림목')) return '눌림목 후보를 조회 중입니다...'
     return '리포트 데이터를 불러오는 중입니다...'
@@ -34,36 +44,27 @@ export default function ReportPreviewModal({ open, onClose, url, title, generate
   if (!open || typeof document === 'undefined') return null
 
   return createPortal(
-    <div className="modal-overlay" role="dialog" aria-modal aria-label="리포트 미리보기">
-      <div className="modal card" style={{ width: 'min(1120px, 96vw)', maxHeight: '92vh', padding: 0, overflow: 'hidden' }}>
-        <div className="flex-between" style={{ padding: '12px 14px', borderBottom: '1px solid var(--color-border-muted, #e5e7eb)' }}>
+    <div className="modal-overlay" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
+      <div className="modal report-preview-modal" role="dialog" aria-modal="true" aria-labelledby="report-preview-title">
+        <div className="report-preview-modal__header">
           <div>
-            <div className="title-md" style={{ margin: 0 }}>공유 전 미리보기</div>
-            <div className="caption" style={{ marginTop: 4 }}>{title}</div>
+            <div className="report-preview-modal__eyebrow">공유 전 확인</div>
+            <div id="report-preview-title" className="report-preview-modal__title">{title}</div>
             <div style={{ marginTop: 8, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-              <span style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                padding: '2px 9px',
-                borderRadius: 999,
-                border: '1px solid #bfdbfe',
-                background: '#eff6ff',
-                color: '#1d4ed8',
-                fontSize: 11,
-                fontWeight: 700,
-              }}>
-                실시간 생성 미리보기
-              </span>
+              <span className="report-preview-modal__status">최신 데이터 미리보기</span>
               {generatedLabel && (
-                <span style={{ fontSize: 11, color: '#64748b' }}>
-                  생성 시각 {generatedLabel}
-                </span>
+                <span className="report-preview-modal__generated">생성 {generatedLabel}</span>
               )}
             </div>
           </div>
-          <button className="nav-item" onClick={onClose}>닫기</button>
+          <div className="report-preview-modal__actions">
+            <button className="ui-button ui-btn-secondary ui-btn-sm" onClick={() => window.open(url, '_blank', 'noopener,noreferrer')}>
+              <ExternalLink size={14} /> 새 창
+            </button>
+            <button className="modal-close" onClick={onClose} title="닫기" aria-label="미리보기 닫기"><X size={17} /></button>
+          </div>
         </div>
-        <div style={{ position: 'relative', width: '100%', height: 'calc(92vh - 64px)', background: '#f2f4f6' }} aria-busy={loading}>
+        <div className="report-preview-modal__viewport" aria-busy={loading}>
           <iframe
             src={url}
             title={title}
@@ -72,7 +73,7 @@ export default function ReportPreviewModal({ open, onClose, url, title, generate
               setLoading(false)
               setLoadError('미리보기를 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.')
             }}
-            style={{ width: '100%', height: '100%', border: 0, background: '#f2f4f6' }}
+            className="report-preview-modal__frame"
           />
           {loading && (
             <div style={{

@@ -872,44 +872,28 @@ export default function ExcelShell({
       </div>
 
       {/* ── 6. 시트 탭 ── */}
-      <div style={{ position: 'relative' }} ref={toolsDrawerRef}>
+      <div className="excel-tools-drawer-anchor" ref={toolsDrawerRef}>
         {toolsDrawerOpen && (
           <div
+            className="excel-tools-drawer"
             role="menu"
             aria-label="도구 메뉴"
-            style={{
-              position: 'absolute',
-              bottom: '100%',
-              left: 8,
-              marginBottom: 4,
-              zIndex: 320,
-              minWidth: 220,
-              maxWidth: 420,
-              maxHeight: '60vh',
-              overflowY: 'auto',
-              background: 'var(--color-bg-elevated, #fff)',
-              border: '1px solid var(--color-excel-grid-border)',
-              borderRadius: 6,
-              boxShadow: '0 8px 24px rgba(16, 24, 40, 0.16)',
-              padding: 'var(--space-2, 8px)',
-            }}
           >
             {TOOL_NAV_GROUPS.map(group => {
               const items = group.items.filter(item => !item.adminOnly)
               if (items.length === 0) return null
               return (
-                <div key={group.category} style={{ marginBottom: 6 }}>
-                  <div className="caption muted" style={{ padding: '2px 6px', fontWeight: 700 }}>{group.category}</div>
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+                <div key={group.category} className="excel-tools-drawer__group">
+                  <div className="excel-tools-drawer__label">{group.category}</div>
+                  <div className="excel-tools-drawer__items">
                     {items.map(item => (
                       <button
                         key={item.key}
                         role="menuitem"
-                        className={`excel-sheet-tab${activeRoute === item.key ? ' excel-sheet-tab--active' : ''}`}
-                        style={{ borderRadius: 4, padding: '4px 8px' }}
+                        className={`excel-tools-drawer__item${activeRoute === item.key ? ' excel-tools-drawer__item--active' : ''}`}
                         onClick={() => { onNavigate(item.key); setToolsDrawerOpen(false) }}
                       >
-                        {navIcon(item.key, 10)}<span className="excel-sheet-tab__label">{item.label}</span>
+                        {navIcon(item.key, 11)}<span>{item.label}</span>
                       </button>
                     ))}
                   </div>
