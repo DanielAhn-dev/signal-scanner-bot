@@ -2245,7 +2245,7 @@ async function appendTradeLog(payload: {
 
 type SweepHolding = { id: number; code: string; name: string; price: number; quantity: number; invested_amount: number };
 
-/** 스윕 ETF 종가·이름 */
+/** 스윕 ETF 후보의 종가(장중이면 실시간가로 덮어씀)·이름. 가격이 없으면 close=0 */
 async function loadSweepPrices(
   supabase: SupabaseClientAny
 ): Promise<Map<string, { close: number; name: string }>> {
@@ -2264,6 +2264,7 @@ async function loadSweepPrices(
   );
 }
 
+/** 봇이 보유 중인 스윕 포지션 행 (전략 메모가 CASH_SWEEP_STRATEGY_ID인 것만, 지수형·금리형 모두) */
 async function loadSweepPositionRows(supabase: SupabaseClientAny, chatId: number): Promise<Record<string, unknown>[]> {
   const { data: rows } = await supabase
     .from(PORTFOLIO_TABLES.positions)
@@ -2278,23 +2279,25 @@ async function loadSweepPositionRows(supabase: SupabaseClientAny, chatId: number
   );
 }
 
-/** 들고 있는 스윕 ETF 중 (장중 실시간가를 못 받아) 가격이 없는 것이 있는지 — 있으면 그 회차 스윕을 쉰다 */
-async function hasUnpricedSweepHolding(
-  supabase: SupabaseClientAny,
-  chatId: number,
+/**
+ * 보유 중인 스윕 ETF 중 (장중 실시간가를 못 받아) 가격이 없는 것이 있는지 — 있으면 그 회차 스윕을 쉰다.
+ * @param rows loadSweepPositionRows 결과 (호출측이 한 번 조회해 여러 함수에 재사용)
+ */
+function hasUnpricedSweepHolding(
+  rows: Record<string, unknown>[],
   prices: Map<string, { close: number; name: string }>
-): Promise<boolean> {
-  const rows = await loadSweepPositionRows(supabase, chatId);
+): boolean {
   return rows.some((row) => toNumber(row.quantity, 0) > 0 && !((prices.get(String(row.code ?? ""))?.close ?? 0) > 0));
 }
 
-/** 현재 보유 중인 스윕 포지션 (지수형·금리형 어느 쪽이든, 종가가 있는 첫 번째) */
-async function loadSweepHolding(
-  supabase: SupabaseClientAny,
-  chatId: number,
+/**
+ * 현재 보유 중인 스윕 포지션 (지수형·금리형 어느 쪽이든, 종가가 있는 첫 번째). 없으면 null.
+ * @param rows loadSweepPositionRows 결과
+ */
+function loadSweepHolding(
+  rows: Record<string, unknown>[],
   prices: Map<string, { close: number; name: string }>
-): Promise<SweepHolding | null> {
-  const rows = await loadSweepPositionRows(supabase, chatId);
+): SweepHolding | null {
   for (const row of rows) {
     const code = String(row.code ?? "");
     const price = prices.get(code)?.close ?? 0;
@@ -2421,7 +2424,10 @@ async function runCashSweepLiquidateStep(payload: {
     const availableCash = Math.max(0, toNumber(prefs.virtual_cash, 0));
     if (seedCapital <= 0) return { notes, liquidated: false, releasedCash: 0 };
 
-    const holding = await loadSweepHolding(payload.supabase, payload.chatId, await loadSweepPrices(payload.supabase));
+    const holding = loadSweepHolding(
+      await loadSweepPositionRows(payload.supabase, payload.chatId),
+      await loadSweepPrices(payload.supabase)
+    );
     if (!holding) return { notes, liquidated: false, releasedCash: 0 };
     const sweepCurrentValue = holding.quantity * holding.price;
 
@@ -2468,7 +2474,10 @@ async function topUpCashSweepForBuy(payload: {
 }): Promise<{ notes: string[]; releasedCash: number }> {
   const notes: string[] = [];
   try {
-    const holding = await loadSweepHolding(payload.supabase, payload.chatId, await loadSweepPrices(payload.supabase));
+    const holding = loadSweepHolding(
+      await loadSweepPositionRows(payload.supabase, payload.chatId),
+      await loadSweepPrices(payload.supabase)
+    );
     if (!holding) return { notes, releasedCash: 0 };
 
     const sellQty = resolveCashSweepTopUpQty({
@@ -2512,6 +2521,7 @@ const BUY_CASH_BUFFER = 1.005;
  * 현금하한(deployableCash)은 스윕 포지션 평가액까지 유동자금으로 보고 계산하므로, 사이징된 매수액이
  * 순수 현금(virtual_cash)보다 클 수 있다. 그 경우 스윕에서 부족분만 부분 매도해 현금을 맞춘다.
  * 보충 후에도 모자라면 호출측이 순수 현금 기준으로 매수 규모를 줄인다.
+ * topUpCashSweepForBuy가 내부에서 예외를 삼키고 빈 결과를 돌려주므로 여기서 따로 catch하지 않는다.
  */
 async function ensureCashForBuy(payload: {
   supabase: SupabaseClientAny;
@@ -2528,7 +2538,7 @@ async function ensureCashForBuy(payload: {
     dryRun: payload.dryRun,
     cashNeeded: requiredCash,
     availableCash: payload.availableCash,
-  }).catch(() => ({ notes: [], releasedCash: 0 }));
+  });
 }
 
 /** 현재 보유 중인 유휴현금 스윕 포지션 평가액 (없으면 0) */
@@ -2537,17 +2547,7 @@ async function fetchCashSweepPositionValue(
   chatId: number
 ): Promise<number> {
   try {
-    const { data: positionRows } = await supabase
-      .from(PORTFOLIO_TABLES.positions)
-      .select("code, quantity, memo")
-      .eq("chat_id", chatId)
-      .in("code", CASH_SWEEP_CANDIDATE_CODES)
-      .eq("status", "holding")
-      .is("broker_name", null)
-      .is("account_name", null);
-    const sweepRows = ((positionRows ?? []) as Record<string, unknown>[]).filter(
-      (row) => parseStrategyMemo(row.memo as string | null).strategyId === CASH_SWEEP_STRATEGY_ID
-    );
+    const sweepRows = await loadSweepPositionRows(supabase, chatId);
     if (!sweepRows.length) return 0;
     const { data: priceRows } = await supabase
       .from("stocks")
@@ -2606,8 +2606,9 @@ async function runCashSweepStep(payload: {
     if (seedCapital <= 0) return { notes };
 
     const prices = await loadSweepPrices(payload.supabase);
+    const sweepRows = await loadSweepPositionRows(payload.supabase, payload.chatId);
     // 들고 있는 스윕 ETF의 실시간가가 없으면 쉰다 — 다른 지수 ETF를 새로 사면 두 종목으로 갈라진다
-    if (await hasUnpricedSweepHolding(payload.supabase, payload.chatId, prices)) {
+    if (hasUnpricedSweepHolding(sweepRows, prices)) {
       notes.push("[유휴현금 스윕] 보유 ETF의 실시간가가 없어 이번 회차는 쉽니다 (다음 회차에 다시)");
       return { notes };
     }
@@ -2620,7 +2621,7 @@ async function runCashSweepStep(payload: {
     const sweepPrice = prices.get(sweepCode)!.close;
     const sweepName = prices.get(sweepCode)!.name || sweepCode;
 
-    let holding = await loadSweepHolding(payload.supabase, payload.chatId, prices);
+    let holding = loadSweepHolding(sweepRows, prices);
     let availableCash = Math.max(0, toNumber(prefs.virtual_cash, 0));
 
     // 1) 반대쪽 스윕을 들고 있으면 갈아탄다

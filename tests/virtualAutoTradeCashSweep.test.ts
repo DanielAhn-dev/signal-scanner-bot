@@ -11,19 +11,18 @@ import {
 } from "../src/services/virtualAutoTradeCashSweep";
 
 test("resolveCashSweepIdleAmount: 시드의 10% 초과 유휴현금만 스윕 대상이다", () => {
-  // 시드 2천만원 → 예약분 200만원. 현금 300만원 → 유휴 100만원 (최소 50만원 이상이라 스윕)
   assert.equal(
     resolveCashSweepIdleAmount({ availableCash: 3_000_000, seedCapital: 20_000_000 }),
     1_000_000
   );
 });
 
-test("resolveCashSweepIdleAmount: 유휴현금이 최소 스윕금액(50만원) 미만이면 0을 반환한다", () => {
-  // 예약분 200만원, 현금 220만원 → 유휴 20만원 < 최소 50만원
+test("resolveCashSweepIdleAmount: 유휴현금이 최소 스윕금액(100만원) 미만이면 0을 반환한다", () => {
   assert.equal(
-    resolveCashSweepIdleAmount({ availableCash: 2_200_000, seedCapital: 20_000_000 }),
+    resolveCashSweepIdleAmount({ availableCash: 2_999_999, seedCapital: 20_000_000 }),
     0
   );
+  assert.equal(resolveCashSweepIdleAmount({ availableCash: 3_000_000, seedCapital: 20_000_000 }), 1_000_000);
 });
 
 test("resolveCashSweepIdleAmount: 시드가 0이면 스윕하지 않는다", () => {
