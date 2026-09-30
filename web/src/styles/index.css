@@ -487,47 +487,65 @@ a:focus-visible {
    ================================================================ */
 .modal.profile-modal {
   @apply max-w-md;
+  display: flex;
+  flex-direction: column;
+  width: min(100%, 440px);
+  max-height: min(calc(100vh - 40px), 760px);
+  max-height: min(calc(100dvh - 40px), 760px);
   border: 1px solid var(--color-border-default);
-  border-radius: 2px;
+  border-radius: var(--radius-md);
   padding: 0;
   overflow: hidden;
 }
 .profile-modal .modal-header {
   margin: 0;
-  padding: 14px 16px;
+  min-height: 46px;
+  padding: 8px 16px;
   border-bottom: 1px solid var(--color-border-default);
-  background: linear-gradient(180deg, #fbfbfb 0%, #f3f3f3 100%);
+  background: var(--color-bg-surface);
+  flex: 0 0 auto;
 }
 .profile-modal .modal-title {
-  font-size: 16px;
+  font-size: 15px;
   font-weight: 600;
 }
 .profile-modal .modal-close {
-  min-width: 30px;
-  min-height: 30px;
+  min-width: 28px;
+  min-height: 28px;
+}
+.profile-modal-body {
+  min-height: 0;
+  flex: 1 1 auto;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  padding: 0 0 4px;
 }
 .profile-modal .profile-avatar-wrap,
-.profile-modal .profile-section,
-.profile-modal .profile-save-msg,
-.profile-modal .profile-actions {
-  margin-left: 16px;
-  margin-right: 16px;
+.profile-modal .profile-section {
+  margin-left: 20px;
+  margin-right: 20px;
 }
 .profile-modal .profile-avatar-wrap {
-  margin-top: 14px;
+  margin-top: 16px;
+  margin-bottom: 14px;
 }
-.profile-modal .profile-actions {
-  margin-bottom: 16px;
+.profile-modal-footer {
+  flex: 0 0 auto;
+  border-top: 1px solid var(--color-border-default);
+  background: var(--color-bg-surface);
+  padding: 10px 20px 14px;
 }
 .profile-avatar-wrap {
-  @apply flex flex-col items-center;
-  @apply mb-4;
-  gap: var(--space-2);
+  @apply flex items-center;
+  flex-direction: row;
+  gap: 12px;
 }
 .profile-avatar {
   @apply flex items-center justify-center;
-  width: 64px;
-  height: 64px;
+  width: 44px;
+  height: 44px;
+  flex: 0 0 44px;
   border-radius: 50%;
   background: var(--color-bg-sunken);
   color: var(--color-text-secondary);
@@ -540,27 +558,78 @@ a:focus-visible {
   border-color: var(--color-brand-muted, var(--color-blue-200));
   color: var(--color-brand, var(--color-blue-600));
 }
-.profile-badge-connected {
-  @apply text-xs;
-  @apply font-semibold;
-  color: var(--color-brand, var(--color-blue-600));
-  background: var(--color-brand-subtle, var(--color-blue-50));
-  border: 1px solid var(--color-brand-muted, var(--color-blue-200));
-  @apply rounded-full;
-  padding: 2px 10px;
+.profile-identity {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+}
+.profile-identity-name {
+  overflow: hidden;
+  max-width: 100%;
+  color: var(--color-text-primary);
+  font-size: 14px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.profile-status {
+  color: var(--color-text-tertiary);
+  font-size: 11px;
+  line-height: 1.4;
+}
+.profile-status--connected {
+  color: var(--color-brand);
 }
 .profile-section {
   @apply flex flex-col;
-  gap: var(--space-2);
-  @apply mb-4;
+  gap: 8px;
+  margin-bottom: 14px;
+  border-top: 1px solid var(--color-border-default);
+  padding-top: 12px;
 }
 .profile-section-title {
-  @apply text-sm;
-  @apply font-semibold;
+  color: var(--color-text-primary);
+  font-size: 13px;
+  font-weight: 600;
+  margin-bottom: 2px;
+}
+.profile-account-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.profile-account-details {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 3px;
+}
+.profile-account-provider {
   color: var(--color-text-secondary);
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  @apply mb-1;
+  font-size: 12px;
+}
+.profile-account-email {
+  overflow: hidden;
+  color: var(--color-text-tertiary);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.profile-text-button {
+  flex: 0 0 auto;
+  border: 0;
+  background: transparent;
+  color: var(--color-text-tertiary);
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+  padding: 6px 0 6px 8px;
+}
+.profile-text-button:hover {
+  color: var(--color-text-primary);
 }
 .profile-field-label {
   @apply text-sm;
@@ -599,13 +668,14 @@ a:focus-visible {
 .profile-save-msg {
   @apply text-sm;
   color: var(--color-brand, var(--color-blue-600));
-  @apply text-center;
-  @apply mb-2;
+  margin: 0 0 8px;
+  font-size: 12px;
 }
 .profile-actions {
   @apply flex items-center justify-between;
   gap: var(--space-3);
-  @apply mt-2;
+  justify-content: flex-end;
+  margin: 0;
 }
 
   /* ================================================================

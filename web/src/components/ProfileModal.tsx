@@ -257,7 +257,7 @@ export default function ProfileModal({
             <>
               <div className="profile-account-row">
                 <div className="profile-account-details">
-                  <span className="profile-account-provider">Google 계정</span>
+                  <span className="profile-account-provider">{authName || 'Google 계정'}</span>
                   <span className="profile-account-email">{authEmail || '이메일 정보 없음'}</span>
                 </div>
                 <button className="profile-text-button" onClick={onSignOut}>로그아웃</button>
