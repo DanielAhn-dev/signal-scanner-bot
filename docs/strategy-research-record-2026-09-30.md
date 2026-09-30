@@ -105,6 +105,16 @@
 - 실실행 확인: 2026-09-29 기준 KOSPI·KOSDAQ 2개 시장, 213개 종목 표본 저장
 - 상태: 코드·문법·빌드 검증 및 migration 016 적용 후 실제 적재 완료
 
+### 진행: 기업 이벤트·상장주식수 원장 추가
+
+- 대상: [db/migrations/017_create_corporate_actions_and_share_float.sql](../db/migrations/017_create_corporate_actions_and_share_float.sql), [scripts/collect_corporate_actions.py](../scripts/collect_corporate_actions.py), [scripts/refresh_universe_membership.py](../scripts/refresh_universe_membership.py)
+- DART 기업 이벤트: 유상·무상증자, 감자, CB/BW/EB, 합병·분할, 액면분할, 최대주주 변경, 거래·재무 위험 공시만 수집
+- 이벤트 원장: `rcept_no` 기준 중복 제거, 접수일과 `available_at` 저장
+- KRX 상장주식수·시가총액: 유니버스 갱신일별 `share_float_history`에 저장
+- 유통주식수 원천이 없을 때는 추정하지 않고 NULL 유지
+- 실행: `pnpm collect:corporate-actions -- --days 30`
+- 상태: 코드·문법·빌드 검증 완료, migration 017 적용 후 실제 적재 필요
+
 ### 즉시 진행
 
 1. 전략 성과에 다음 지표를 공통 적용한다.

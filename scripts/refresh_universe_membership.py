@@ -488,6 +488,34 @@ def apply_membership_snapshot(supabase: Client, trade_date: str, rows: List[dict
     return stored
 
 
+def apply_share_float_snapshot(supabase: Client, trade_date: str, rows: List[dict]) -> int:
+    """Persist KRX listed-share and market-cap values without inventing float shares."""
+    if not rows:
+        return 0
+    iso_date = datetime.strptime(trade_date, "%Y%m%d").date().isoformat()
+    snapshot = [
+        {
+            "trade_date": iso_date,
+            "code": row["code"],
+            "market": row.get("market"),
+            "shares_outstanding": row.get("shares_outstanding"),
+            "market_cap": row.get("market_cap"),
+            "source": "pykrx_market_cap",
+            "available_at": datetime.now().astimezone().isoformat(),
+        }
+        for row in rows
+    ]
+    stored = 0
+    for i in range(0, len(snapshot), 500):
+        batch = snapshot[i : i + 500]
+        try:
+            supabase.table("share_float_history").upsert(batch, on_conflict="trade_date,code").execute()
+            stored += len(batch)
+        except Exception as e:
+            print(f"[WARN] share float snapshot save failed: {e}")
+    return stored
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Refresh stocks universe membership")
     parser.add_argument("--date", type=str, help="Trading date YYYYMMDD")
@@ -626,6 +654,7 @@ def main() -> int:
                     "mcap_rank": rank,
                     "close": close_price,
                     "liquidity": liquidity,
+                    "shares_outstanding": int(row.get("상장주식수") or 0) or None,
                     "universe_level": universe_level,
                     "is_active": True,
                     "updated_at": datetime.now().astimezone().isoformat(),
@@ -655,6 +684,7 @@ def main() -> int:
 
         upserted = len(upserts) if args.dry_run else apply_upserts(supabase, upserts)
         membership_snapshot = len(upserts) if args.dry_run else apply_membership_snapshot(supabase, trading_date, upserts)
+        share_float_snapshot = len(upserts) if args.dry_run else apply_share_float_snapshot(supabase, trading_date, upserts)
         inactivated = len(missing_active_codes) if args.dry_run else apply_inactive_updates(supabase, missing_active_codes)
         if not args.dry_run:
             save_missing_tracker(next_tracker)
@@ -664,6 +694,7 @@ def main() -> int:
             "listed_count": len(listed_codes),
             "upserted": upserted,
             "membership_snapshot": membership_snapshot,
+            "share_float_snapshot": share_float_snapshot,
             "inactivated_missing": inactivated,
             "promoted_to_core": promoted_to_core,
             "promoted_to_extended": promoted_to_extended,
