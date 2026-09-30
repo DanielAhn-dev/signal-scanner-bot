@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react'
 import { apiFetch } from '../../lib/api'
+import { formatKstDateTime } from '../../lib/format'
 import Button from '../../components/ui/Button'
 import Skeleton from '../../components/Skeleton'
 import { ErrorState, EmptyState } from '../../components/StateViews'
@@ -112,7 +113,7 @@ export default function FeedPage() {
                     <td className="scan-td" style={{ fontWeight: 'var(--font-weight-bold)', color: (d.action && ACTION_COLOR[d.action]) || 'inherit' }}>{d.action || '—'}</td>
                     <td className="scan-td">{d.stock_name ?? d.code}</td>
                     <td className="scan-td" style={{ color: d.is_auto ? 'var(--color-primary)' : 'var(--color-text-tertiary)' }}>{d.is_auto ? '시스템 자동' : '수동/기타'}</td>
-                    <td className="scan-td">{d.created_at ? new Date(d.created_at).toLocaleString('ko-KR', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—'}</td>
+                    <td className="scan-td">{formatKstDateTime(d.created_at)}</td>
                     <td className="scan-td">{d.reason_summary || d.buy_reason || d.sell_reason || d.trigger_label || '—'}</td>
                   </tr>
                   {!!d.detail_lines?.length && (

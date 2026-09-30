@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import { apiFetch } from '../../lib/api'
+import { formatKstDateTime } from '../../lib/format'
 import Button from '../../components/ui/Button'
 import Input from '../../components/ui/Input'
 import Checkbox from '../../components/ui/Checkbox'
@@ -359,7 +360,7 @@ export default function StrategyPage() {
     let prevRegime = ''
 
     for (const row of rows) {
-      const created = row.created_at ? new Date(row.created_at).toLocaleString('ko-KR') : '-'
+      const created = formatKstDateTime(row.created_at)
       const version = String(row.strategy_version || '').trim()
       const regime = String(row.market_regime || '').trim()
       const action = String(row.action || '').toUpperCase()
@@ -635,7 +636,7 @@ export default function StrategyPage() {
               {settings?.use_dynamic_sizing && (
                 <div className="card mb-4" style={{ background: 'linear-gradient(135deg, rgba(59,130,246,0.05), rgba(16,185,129,0.05))' }}>
                   <div className="title-md" style={{ marginBottom: 'var(--space-3)' }}>
-                    📊 동적 포지션 사이징 — 예상 범위
+                    동적 포지션 사이징 · 설정값 참고 범위 (봇 미적용)
                   </div>
                   
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12, marginBottom: 'var(--space-3)' }}>
@@ -665,8 +666,8 @@ export default function StrategyPage() {
                   </div>
 
                   <div className="muted" style={{ fontSize: 'var(--font-size-sm)', lineHeight: 1.6, borderTop: '1px solid var(--color-border-default)', paddingTop: 12 }}>
-                    <strong>동작 원리:</strong><br/>
-                    시장 국면(최근 {summary.topRegimes.length > 0 ? formatMarketRegimeLabel(summary.topRegimes[0]?.[0] ?? '') : '감지 중'})을 반영해 위 범위 내에서 진입 종목 수를 정하도록 설계됐지만, 아래 강세장/약세장 배수·최소 신뢰도·적응형 손익 조정 설정은 현재 봇이 읽지 않습니다(저장만 됨).
+                    <strong>현재 자동매매에는 반영되지 않습니다.</strong><br/>
+                    위 숫자는 저장된 설정값으로 계산한 참고 범위입니다. 실제 보유 상한과 회차당 매수 수는 기본 설정의 최대 보유 종목과 신규 매수 슬롯을 따릅니다.
                   </div>
                 </div>
               )}
@@ -742,7 +743,7 @@ export default function StrategyPage() {
             <div className="flex-between" style={{ alignItems: 'baseline', marginBottom: 'var(--space-2)' }}>
               <div className="title-md">프리랠리 패턴 (웹 리포트)</div>
               {preRallyReport?.generatedAt && (
-                <div className="caption">생성 {new Date(preRallyReport.generatedAt).toLocaleString('ko-KR')}</div>
+                <div className="caption">생성 {formatKstDateTime(preRallyReport.generatedAt)}</div>
               )}
             </div>
             <div className="muted" style={{ marginBottom: 12, fontSize: 'var(--font-size-sm)' }}>
@@ -1063,20 +1064,20 @@ export default function StrategyPage() {
               </div>
 
               <div className="card">
-                <div className="title-md" style={{ marginBottom: 'var(--space-3)' }}>고급 설정 — 동적 포지션 사이징</div>
+                <div className="title-md" style={{ marginBottom: 'var(--space-3)' }}>저장 전용 설정 — 동적 포지션 사이징 (봇 미적용)</div>
                 <Checkbox
-                  label="동적 포지션 사이징 사용"
+                  label="동적 포지션 사이징 사용 · 현재 봇 미적용"
                   checked={!!settings?.use_dynamic_sizing}
                   onChange={(value) => setSettings({ ...settings, use_dynamic_sizing: value })}
                 />
                 <div className="muted mt-2" style={{ marginBottom: 'var(--space-3)' }}>
-                  활성화하면 시장 국면(강세/약세/횡보)에 따라 최대 보유 종목 수가 자동으로 조정됩니다.
+                  체크와 아래 값은 저장만 되며 현재 자동매매의 주문 규모나 보유 종목 수 계산에는 반영되지 않습니다.
                 </div>
 
                 {settings?.use_dynamic_sizing && (
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, background: 'var(--color-bg-sunken)', padding: 12, borderRadius: 'var(--radius-sm)', marginBottom: 'var(--space-3)' }}>
                     <Input
-                      label="기본 최대 종목 수 (base)"
+                      label="기본 최대 종목 수 (base) · 봇 미적용"
                       type="number"
                       value={settings?.base_max_positions ?? 3}
                       onChange={(e: any) => setSettings({ ...settings, base_max_positions: Number(e.target.value) })}

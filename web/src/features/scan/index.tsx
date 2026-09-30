@@ -1,6 +1,6 @@
 ﻿import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { apiFetch } from '../../lib/api'
-import { formatNumber } from '../../lib/format'
+import { formatKstDateTime, formatNumber } from '../../lib/format'
 import Button from '../../components/ui/Button'
 import Skeleton from '../../components/Skeleton'
 import { ErrorState, EmptyState } from '../../components/StateViews'
@@ -1418,24 +1418,8 @@ export default function ScanPage({ onNavigate }: { onNavigate?: (r: string) => v
     quickLiteAgeDays: signalAgeByCode.get(s.code)?.quickLiteAgeDays ?? null,
     intradayChangePct: typeof s.intraday_change_pct === 'number' ? s.intraday_change_pct : null,
     tradeDateText: s.trade_date ?? '—',
-    updatedAtText: s.stock_updated_at
-      ? new Date(s.stock_updated_at).toLocaleString('ko-KR', {
-        timeZone: 'Asia/Seoul',
-        year: 'numeric',
-        month: '2-digit',
-        day: '2-digit',
-        hour: '2-digit',
-        minute: '2-digit',
-      })
-      : null,
-    updatedDateText: s.stock_updated_at
-      ? new Date(s.stock_updated_at).toLocaleString('ko-KR', {
-        timeZone: 'Asia/Seoul',
-        year: 'numeric',
-        month: '2-digit',
-        day: '2-digit',
-      })
-      : '—',
+    updatedAtText: s.stock_updated_at ? formatKstDateTime(s.stock_updated_at) : null,
+    updatedDateText: formatKstDateTime(s.stock_updated_at, { hour: undefined, minute: undefined }),
     isExecutionPriority: !!s.isExecutionPriority,
     executionPriorityRank: s.executionPriorityRank,
   })), [pagedCandidates, signalAgeByCode])

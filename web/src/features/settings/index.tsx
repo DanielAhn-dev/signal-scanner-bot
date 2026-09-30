@@ -3,6 +3,7 @@ import Button from '../../components/ui/Button'
 import Input from '../../components/ui/Input'
 import Checkbox from '../../components/ui/Checkbox'
 import { apiFetch } from '../../lib/api'
+import { formatKrwCompact } from '../../lib/format'
 import TelegramLinkCallout from '../../components/TelegramLinkCallout'
 import { requestOpenProfileModal } from '../../lib/profileModal'
 import { useCurrentChatId, useIsTelegramLinked } from '../../stores/profileStore'
@@ -498,7 +499,7 @@ export default function Settings(){
                 {virtualCash == null
                   ? '현재 투자 가능 현금: 미초기화 — 아래 "저장 + 잔여 현금 초기화"로 설정하세요'
                   : <>
-                      현재 투자 가능 현금: {virtualCash.toLocaleString('ko-KR')}원
+                      현재 투자 가능 현금: {formatKrwCompact(virtualCash)}
                       {virtualCash < 100000 && <span style={{ marginLeft: 8, fontWeight: 400, color: '#c0392b' }}>⚠ 현금 부족 — 자동매매 실행 불가</span>}
                     </>
                 }

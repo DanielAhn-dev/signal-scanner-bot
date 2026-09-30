@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react'
 import { apiFetch } from '../../lib/api'
+import { formatKstDateTime } from '../../lib/format'
 import Skeleton from '../../components/Skeleton'
 import Pagination from '../../components/Pagination'
 import Button from '../../components/ui/Button'
@@ -207,7 +208,7 @@ export default function Trades() {
                     </span>
                   </div>
                 </div>
-                <div className="trades-log-time">{new Date(r.created_at).toLocaleString('ko-KR')}</div>
+                <div className="trades-log-time">{formatKstDateTime(r.created_at)}</div>
               </div>
               <div className="trades-log-reason">이유: {r.reason_summary ?? r.reason ?? r.notes ?? '-'}</div>
               {hasPnl && (

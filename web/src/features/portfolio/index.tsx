@@ -2,7 +2,7 @@
 import { useNavigate } from 'react-router-dom'
 import { Building2, AlertTriangle, TrendingDown, ShieldAlert, TrendingUp, PlusCircle, Eye, ChevronDown } from 'lucide-react'
 import { apiFetch, invalidateCache } from '../../lib/api'
-import { formatKrw, formatNumber } from '../../lib/format'
+import { formatKrw, formatKrwCompact, formatKstDateTime, formatNumber } from '../../lib/format'
 import Skeleton from '../../components/Skeleton'
 import Button from '../../components/ui/Button'
 import Input from '../../components/ui/Input'
@@ -1161,9 +1161,9 @@ export default function Portfolio() {
           </tr>
           <tr className="xls-row portfolio-summary-row portfolio-summary-row--value">
             <td className="xls-cell portfolio-cell-num" colSpan={2} style={{ fontSize: 18, fontWeight: 700 }}>{summaryRows.length}</td>
-            <td className="xls-cell portfolio-cell-num" colSpan={2} style={{ fontSize: 18, fontWeight: 700 }}>{formatKrw(totalInvested)}</td>
+            <td className="xls-cell portfolio-cell-num" colSpan={2} style={{ fontSize: 18, fontWeight: 700 }}>{formatKrwCompact(totalInvested)}</td>
             <td className="xls-cell portfolio-cell-num" colSpan={2} style={{ fontSize: 18, fontWeight: 700 }}>
-              <span className={adjustedUnrealized < 0 ? 'negative' : 'positive'}>{formatKrw(adjustedUnrealized)}</span>
+              <span className={adjustedUnrealized < 0 ? 'negative' : 'positive'}>{formatKrwCompact(adjustedUnrealized, { showPositiveSign: true })}</span>
             </td>
           </tr>
           <tr className="xls-row xls-row--even portfolio-summary-row portfolio-summary-row--note">
@@ -1174,7 +1174,7 @@ export default function Portfolio() {
             <td className="xls-cell portfolio-cell-num" colSpan={2} style={{ color: 'var(--color-text-tertiary)', fontSize: 11 }}>보유 수량×평균 매수가</td>
             <td className="xls-cell portfolio-cell-num" colSpan={2} style={{ color: 'var(--color-text-tertiary)', fontSize: 11 }}>
               {includeCost
-                ? `비용 ${formatKrw(Math.round(totalTradeCost))} 차감`
+                ? `비용 ${formatKrwCompact(Math.round(totalTradeCost))} 차감`
                 : '보유 포지션 기준'}
             </td>
           </tr>
@@ -1337,7 +1337,7 @@ export default function Portfolio() {
                   <div className="portfolio-performance-metric"><span title="실현 매도 10건 이상부터 계산">실현 승률</span><strong>{advisorPerf.summary.trustScore != null ? `${advisorPerf.summary.trustScore}%` : '표본 부족'}</strong></div>
                   <div className="portfolio-performance-metric"><span>의사결정 수</span><strong>{advisorPerf.summary.totalDecisions ?? 0}</strong></div>
                   <div className="portfolio-performance-metric"><span>매도 승률</span><strong>{advisorPerf.summary.linkedSellWinRatePct != null ? `${formatNumber(advisorPerf.summary.linkedSellWinRatePct, 1)}%` : '—'}</strong></div>
-                  <div className="portfolio-performance-metric"><span>누적 실현손익</span><strong>{formatKrw(Number(advisorPerf.summary.linkedRealizedPnl || 0))}</strong></div>
+                  <div className="portfolio-performance-metric"><span>누적 실현손익</span><strong>{formatKrwCompact(Number(advisorPerf.summary.linkedRealizedPnl || 0), { showPositiveSign: true })}</strong></div>
                 </div>
                 <div className="caption muted" style={{ marginTop: 'var(--space-3)' }}>
                   최근 액션 샘플: {(advisorPerf.recent ?? []).slice(0, 3).map((row) => `${row.code || '-'} ${row.action || '-'} (${row.confidence != null ? `${formatNumber(Number(row.confidence), 0)}%` : '신뢰도 없음'})`).join(' · ') || '없음'}
@@ -1382,23 +1382,23 @@ export default function Portfolio() {
             <div className="portfolio-asset-metrics">
               <div className="portfolio-asset-metric">
                 <div className="portfolio-capture-label">시드 자본금</div>
-                <div className="portfolio-capture-value">{formatKrw(initialCapital)}</div>
+                <div className="portfolio-capture-value">{formatKrwCompact(initialCapital)}</div>
               </div>
               <div className="portfolio-asset-metric">
                 <div className="portfolio-capture-label">보유 평가금</div>
-                <div className="portfolio-capture-value">{formatKrw(totalEvaluationValue)}</div>
+                <div className="portfolio-capture-value">{formatKrwCompact(totalEvaluationValue)}</div>
               </div>
               <div className="portfolio-asset-metric">
                 <div className="portfolio-capture-label">
                   {dbVirtualCash != null ? '잔여 현금 (자동매매)' : '추정 예수금'}
                 </div>
                 <div className={`portfolio-capture-value ${(dbVirtualCash ?? estimatedCash) < 0 ? 'negative' : ''}`}>
-                  {formatKrw(dbVirtualCash ?? estimatedCash)}
+                  {formatKrwCompact(dbVirtualCash ?? estimatedCash)}
                 </div>
               </div>
               <div className="portfolio-asset-metric">
                 <div className="portfolio-capture-label">총 자산(보유 평가금 + 예수금)</div>
-                <div className={`portfolio-capture-value ${totalAssetValue < 0 ? 'negative' : 'positive'}`}>{formatKrw(totalAssetValue)}</div>
+                <div className={`portfolio-capture-value ${totalAssetValue < 0 ? 'negative' : 'positive'}`}>{formatKrwCompact(totalAssetValue)}</div>
               </div>
             </div>
 
@@ -1407,7 +1407,7 @@ export default function Portfolio() {
                 <div className="portfolio-allocation-chart" style={{ background: allocationChartStyle }} />
                 <div className="portfolio-allocation-chart-center">
                   <div className="portfolio-allocation-center-label">총 자산</div>
-                  <div className="portfolio-allocation-center-value">{formatKrw(totalAssetValue)}</div>
+                  <div className="portfolio-allocation-center-value">{formatKrwCompact(totalAssetValue)}</div>
                 </div>
               </div>
 
@@ -1423,7 +1423,7 @@ export default function Portfolio() {
                       </div>
                       <div className="portfolio-allocation-item-values">
                         <span>{formatNumber(row.ratio, 1)}%</span>
-                        <span className="muted">{formatKrw(row.value)}</span>
+                        <span className="muted">{formatKrwCompact(row.value)}</span>
                       </div>
                     </div>
                   ))
@@ -1982,7 +1982,7 @@ export default function Portfolio() {
           </div>
           {shareExpiresAt && (
             <div className="caption muted" style={{ marginBottom: 'var(--space-3)' }}>
-              링크 만료: {new Date(shareExpiresAt).toLocaleString('ko-KR', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false })}
+              링크 만료: {formatKstDateTime(shareExpiresAt)}
             </div>
           )}
 
@@ -2009,8 +2009,8 @@ export default function Portfolio() {
                     <div key={item.shareId} className="portfolio-share-history-item">
                       <div className="portfolio-share-history-head">
                         <div className="caption">
-                          생성 {item.createdAt ? new Date(item.createdAt).toLocaleString('ko-KR', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false }) : '-'}
-                          {' · '}만료 {new Date(item.expiresAt).toLocaleString('ko-KR', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false })}
+                          생성 {formatKstDateTime(item.createdAt)}
+                          {' · '}만료 {formatKstDateTime(item.expiresAt)}
                           {' · '}조회 {Number(item.accessCount || 0)}회
                         </div>
                         <div className={`portfolio-share-history-status ${isRevoked ? 'is-revoked' : isExpired ? 'is-expired' : 'is-active'}`}>
@@ -2057,7 +2057,7 @@ export default function Portfolio() {
           <div className="portfolio-capture-metrics">
             <div className="portfolio-capture-metric">
               <div className="portfolio-capture-label">총 매수원금</div>
-              <div className="portfolio-capture-value">{formatKrw(totalInvested)}</div>
+              <div className="portfolio-capture-value">{formatKrwCompact(totalInvested)}</div>
             </div>
             <div className="portfolio-capture-metric">
               <div className="portfolio-capture-label">평가손익</div>

@@ -4,7 +4,7 @@ import { useLocation, useNavigate } from 'react-router-dom'
 import { LucideIcon } from '../../components/LucideIcon'
 import { useCurrentChatId } from '../../stores/profileStore'
 import { EmptyState } from '../../components/StateViews'
-import { formatKrw, formatNumber } from '../../lib/format'
+import { formatKrw, formatKrwCompact, formatKstDateTime, formatNumber } from '../../lib/format'
 import { apiFetch } from '../../lib/api'
 import { useToast } from '../../components/ToastProvider'
 import { searchStocks } from '../../lib/stockCache'
@@ -851,7 +851,7 @@ export default function SimulatorPage() {
     saveSimulationPlan(entry.plan)
     setLastServerSavedAt(entry.updatedAt)
     setHistoryOpen(false)
-    toast.show(`${new Date(entry.updatedAt).toLocaleString('ko-KR')} 계획을 불러왔습니다.`)
+    toast.show(`${formatKstDateTime(entry.updatedAt)} 계획을 불러왔습니다.`)
   }
 
   useEffect(() => {
@@ -1169,7 +1169,7 @@ export default function SimulatorPage() {
           </div>
 
           {lastServerSavedAt && (
-            <p className="sim-saved-at">서버 저장: {new Date(lastServerSavedAt).toLocaleString('ko-KR')}</p>
+            <p className="sim-saved-at">서버 저장: {formatKstDateTime(lastServerSavedAt)}</p>
           )}
 
           <div className="sim-settings-actions">
@@ -1205,7 +1205,7 @@ export default function SimulatorPage() {
                   return (
                     <button key={i} className="sim-history-row" onClick={() => loadFromHistory(entry)}>
                       <div>
-                        <div className="sim-history-date">{new Date(entry.updatedAt).toLocaleString('ko-KR')}</div>
+                        <div className="sim-history-date">{formatKstDateTime(entry.updatedAt)}</div>
                         <div className="sim-history-meta">{cap} · {cnt}개 종목{p?.notes ? ` · ${String(p.notes).slice(0, 30)}` : ''}</div>
                       </div>
                       <span className="sim-history-load">불러오기 →</span>

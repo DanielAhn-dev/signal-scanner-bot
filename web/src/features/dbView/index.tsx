@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { ClipboardList } from 'lucide-react'
 import { apiFetch } from '../../lib/api'
+import { formatKstDateTime } from '../../lib/format'
 import { getStocks, invalidateStockCache } from '../../lib/stockCache'
 import type { StockItem } from '../../lib/stockCache'
 import Button from '../../components/ui/Button'
@@ -617,7 +618,7 @@ export default function DBViewPage() {
             <div className="dbview-name">{r.name}</div>
             <div className="caption muted dbview-sector">{r.sector_id ? (sectorMap[r.sector_id] ?? r.sector_id) : '—'}</div>
             <div className="caption muted dbview-updated">
-              {r.updated_at ? new Date(r.updated_at).toLocaleString('ko-KR', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }) : '—'}
+              {formatKstDateTime(r.updated_at)}
             </div>
             <div className="dbview-row-actions">
               <Button variant="ghost" onClick={() => openDetail(r)}>시세</Button>

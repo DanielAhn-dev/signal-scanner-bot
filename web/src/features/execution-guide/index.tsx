@@ -2,7 +2,7 @@ import { useSeedCapital } from '../../lib/useSeedCapital'
 import { readSimulationPlan } from '../simulator/planStore'
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { apiFetch, getAuthHeaders } from '../../lib/api'
-import { formatKrw, formatNumber } from '../../lib/format'
+import { formatKrw, formatKstDateTime, formatNumber } from '../../lib/format'
 import Button from '../../components/ui/Button'
 import Input from '../../components/ui/Input'
 import SheetHeaderBar from '../../components/SheetHeaderBar'
@@ -79,7 +79,7 @@ function toExecutionGuideSnapshotText(input: {
   rows: GuideRow[]
 }): string {
   const lines: string[] = []
-  const generatedAtText = new Date(input.generatedAtIso).toLocaleString('ko-KR')
+  const generatedAtText = formatKstDateTime(input.generatedAtIso)
   const marketDateText = formatDateRangeLabel(input.rows.map((row) => row.marketDataDate))
   const newsDateText = formatDateRangeLabel(input.rows.map((row) => row.newsDataDate))
   const asOfParts = [
@@ -1342,7 +1342,7 @@ export default function ExecutionGuidePage() {
             핵심만 보기
           </label>
           <span className="caption">코드 {codeList.length}개</span>
-          {generatedAt && <span className="caption">생성시각 {new Date(generatedAt).toLocaleString('ko-KR')}</span>}
+          {generatedAt && <span className="caption">생성시각 {formatKstDateTime(generatedAt)}</span>}
         </div>
 
         {codeList.length > 0 && (
@@ -1603,7 +1603,7 @@ export default function ExecutionGuidePage() {
         </div>
         <div className="caption muted">
           스냅샷: {snapshotReady ? '준비됨' : '미준비'}
-          {lastSnapshotAt ? ` · 최근 저장 ${new Date(lastSnapshotAt).toLocaleString('ko-KR')}` : ''}
+          {lastSnapshotAt ? ` · 최근 저장 ${formatKstDateTime(lastSnapshotAt)}` : ''}
         </div>
         <div style={{ display: 'flex', gap: 'var(--space-2)', flexWrap: 'wrap' }}>
           <Button size="sm" variant="secondary" onClick={openExecutionGuideShare} disabled={shareManager.creating || rows.length === 0}>

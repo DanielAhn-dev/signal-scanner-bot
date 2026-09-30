@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { ExternalLink, X } from 'lucide-react'
+import { formatKstDateTime } from '../lib/format'
 
 type Props = {
   open: boolean
@@ -16,9 +17,7 @@ export default function ReportPreviewModal({ open, onClose, url, title, generate
 
   const generatedLabel = useMemo(() => {
     if (!generatedAt) return ''
-    const t = new Date(generatedAt)
-    if (Number.isNaN(t.getTime())) return ''
-    return t.toLocaleString('ko-KR', { hour12: false })
+    return formatKstDateTime(generatedAt)
   }, [generatedAt])
 
   useEffect(() => {

@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react'
 import Button from '../../components/ui/Button'
 import Input from '../../components/ui/Input'
 import { apiFetch } from '../../lib/api'
+import { formatKstDateTime } from '../../lib/format'
 
 type AccessInfo = {
   chat_id: number | null
@@ -39,10 +40,7 @@ type DirectoryPagination = {
 const DEFAULT_PAGE_SIZE = 50
 
 function formatLastActive(value?: string | null): string {
-  if (!value) return '-'
-  const d = new Date(value)
-  if (Number.isNaN(d.getTime())) return '-'
-  return d.toLocaleString('ko-KR')
+  return formatKstDateTime(value)
 }
 
 function displayName(row: DirectoryRow): string {

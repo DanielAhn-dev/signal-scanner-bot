@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react'
 import Modal from './Modal'
 import Skeleton from './Skeleton'
 import { apiFetch } from '../lib/api'
+import { formatKstDateTime } from '../lib/format'
 
 type DetailSeriesRow = {
   date: string
@@ -51,17 +52,7 @@ function asNum(v: unknown): number | null {
 }
 
 function formatDateKst(v: unknown): string {
-  if (!v) return '-'
-  const d = new Date(String(v))
-  if (Number.isNaN(d.getTime())) return String(v)
-  return d.toLocaleString('ko-KR', {
-    timeZone: 'Asia/Seoul',
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-  })
+  return formatKstDateTime(v)
 }
 
 function formatNumber(v: unknown, decimals?: number): string {

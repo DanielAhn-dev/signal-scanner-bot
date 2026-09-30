@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import { apiFetch } from '../../lib/api'
-import { formatKrw, formatNumber } from '../../lib/format'
+import { formatKrw, formatKstDateTime, formatNumber } from '../../lib/format'
 import Skeleton from '../../components/Skeleton'
 import Button from '../../components/ui/Button'
 import Modal from '../../components/Modal'
@@ -983,7 +983,7 @@ export default function OperationsPage() {
                 </span>
               </div>
               <div style={{ textAlign: 'right' }}>
-                <div className="caption muted">{new Date(row.created_at).toLocaleString('ko-KR')}</div>
+                <div className="caption muted">{formatKstDateTime(row.created_at)}</div>
                 {isRecent && <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-brand)', fontWeight: 'var(--font-weight-semibold)' }}>최근</div>}
               </div>
             </div>
@@ -1118,7 +1118,7 @@ export default function OperationsPage() {
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 'var(--space-2)', flexWrap: 'wrap' }}>
                 <div>
                   <div className="font-medium">최신 실행: {autocycleInsights.latest.run_type} · {autocycleInsights.latest.run_key}</div>
-                  <div className="caption muted" style={{ marginTop: 4 }}>{new Date(autocycleInsights.latest.started_at).toLocaleString('ko-KR')}</div>
+                  <div className="caption muted" style={{ marginTop: 4 }}>{formatKstDateTime(autocycleInsights.latest.started_at)}</div>
                 </div>
                 {(() => {
                   const tone = runStatusTone(autocycleInsights.latest.status)
@@ -1383,7 +1383,7 @@ export default function OperationsPage() {
                   <div key={`insight-run-${run.id}`} className="card" style={{ padding: 'var(--space-3)' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 'var(--space-2)', flexWrap: 'wrap' }}>
                       <div className="caption" style={{ color: 'var(--color-text-secondary)' }}>
-                        {run.run_type} · {run.run_key} · {new Date(run.started_at).toLocaleString('ko-KR')}
+                        {run.run_type} · {run.run_key} · {formatKstDateTime(run.started_at)}
                       </div>
                       <span className="caption" style={{ borderRadius: 999, padding: '2px 8px', background: tone.bg, color: tone.color, fontWeight: 700 }}>
                         {runStatusLabel(run.status)}
@@ -1554,7 +1554,7 @@ export default function OperationsPage() {
                           })()}
                           {event.label}
                         </span>
-                        <span className="caption muted">{new Date(event.ts).toLocaleString('ko-KR')}</span>
+                        <span className="caption muted">{formatKstDateTime(event.ts)}</span>
                       </div>
                     </div>
                   ))}

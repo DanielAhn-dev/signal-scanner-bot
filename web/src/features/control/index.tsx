@@ -11,7 +11,7 @@ import React, { lazy, Suspense, useCallback, useEffect, useMemo, useState } from
 import { useSearchParams } from 'react-router-dom'
 import { ShieldCheck, ShieldAlert, ChevronDown, ChevronUp, Activity, Database, Wrench } from 'lucide-react'
 import { supabase, isSupabaseConfigured } from '../../lib/supabase'
-import { formatKrw } from '../../lib/format'
+import { formatKrw, formatKstDateTime } from '../../lib/format'
 import Button from '../../components/ui/Button'
 import Skeleton from '../../components/Skeleton'
 
@@ -82,15 +82,7 @@ type AuditRow = {
 }
 
 function formatRunAt(value: string): string {
-  const d = new Date(value)
-  if (Number.isNaN(d.getTime())) return value
-  return d.toLocaleString('ko-KR', {
-    timeZone: 'Asia/Seoul',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-  })
+  return formatKstDateTime(value)
 }
 
 function healthBadge(healthy: boolean) {

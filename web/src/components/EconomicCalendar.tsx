@@ -2,6 +2,7 @@ import React, { useMemo, useState } from 'react'
 import { ChevronDown, ChevronUp, ArrowUp, ArrowDown, Minus, Clock, CheckCircle2 } from 'lucide-react'
 import type { EconomicEvent, EventImportance } from '../../../src/types/economics'
 import { calculateEventImpactScore, generateEventTradeRestriction } from '../../../src/utils/fetchEconomicCalendar'
+import { formatKstDateTime } from '../lib/format'
 import Skeleton from './Skeleton'
 
 interface EconomicCalendarProps {
@@ -412,7 +413,7 @@ export default function EconomicCalendar({ events, loading, fetchedAt }: Economi
         </div>
         {fetchedAt && (
           <div style={{ fontSize: 'var(--font-size-xs)' }}>
-            데이터 기준 시각: {new Date(fetchedAt).toLocaleString('ko-KR')}
+            데이터 기준 시각: {formatKstDateTime(fetchedAt)}
           </div>
         )}
       </div>

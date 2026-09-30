@@ -7,7 +7,7 @@ import ShareModal from '../../components/ShareModal'
 import { Download, Eye, FlaskConical, Play, Send, Share2 } from 'lucide-react'
 import { readSimulationPlan, type HighlightSimulationPlan } from '../simulator/planStore'
 import { buildTelegramMessage, calcExpectedValue, calcSplitInvested } from '../simulator/telegramFormat'
-import { formatKrw } from '../../lib/format'
+import { formatKrw, formatKrwCompact, formatKstDateTime } from '../../lib/format'
 import { useShareManager } from '../../hooks/useShareManager'
 import { useCurrentChatId, useCurrentClientId } from '../../stores/profileStore'
 
@@ -236,8 +236,8 @@ export default function ReportsPage() {
       const remaining = totalCapital - items.reduce((acc, row) => acc + (row.amount || 0), 0)
 
       const header = simPlan.notes
-        ? `저장: ${new Date(simPlan.createdAt).toLocaleString('ko-KR')} · 메모: ${String(simPlan.notes).slice(0, 60)}\n`
-        : `저장: ${new Date(simPlan.createdAt).toLocaleString('ko-KR')}\n`
+        ? `저장: ${formatKstDateTime(simPlan.createdAt)} · 메모: ${String(simPlan.notes).slice(0, 60)}\n`
+        : `저장: ${formatKstDateTime(simPlan.createdAt)}\n`
 
       const body = buildTelegramMessage({
         totalCapital,
@@ -371,7 +371,7 @@ export default function ReportsPage() {
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 'var(--space-2)', flexWrap: 'wrap' }}>
                   <div>
                     <div className="caption">
-                      {new Date(simPlan.createdAt).toLocaleString('ko-KR')} · 총 {formatKrw(simPlan.totalCapital)} · 종목 {simPlan.items.length}개
+                      {formatKstDateTime(simPlan.createdAt)} · 총 {formatKrwCompact(simPlan.totalCapital)} · 종목 {simPlan.items.length}개
                     </div>
                     {simPlan.notes && <div className="muted mt-1">{String(simPlan.notes).slice(0, 80)}</div>}
                     <div className="caption mt-1">
