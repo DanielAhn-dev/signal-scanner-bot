@@ -3699,6 +3699,12 @@
   .xls-row-num-strip { display: none; }
   .xls-col-header-strip { display: none; }
 
+  /* 네이티브 그리드(대시보드·감시목록 등이 각자 그리는 <thead><tr class="xls-letter-row">) —
+     위 xls-col-header-strip과 별개 구현이라 저 규칙만으로는 안 숨겨져 글자 하나에 60px+ 씩
+     차지하며 A~F 헤더 행이 그대로 남아 있었다. thead 행 전체를 숨기므로 colgroup 너비 정의와
+     충돌 없이 안전하다. */
+  .xls-letter-row { display: none; }
+
   /* 그리드: 행번호 숨기기
      display:none 을 쓰면 첫 열 매핑이 밀려 A/F 정렬이 깨질 수 있어
      테이블 레이아웃은 유지하고 시각적으로만 숨긴다. */
