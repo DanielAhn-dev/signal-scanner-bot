@@ -91,6 +91,8 @@
 - API 키 없음·회사코드 없음·매칭 실패·API 오류는 `collection_time`으로 안전하게 폴백
 - 보고서명은 연도와 `분기보고서`·`반기보고서`·`사업보고서` 유형을 함께 확인하고, `2025.06`·상반기·제2분기 표기를 지원
 - 기본값은 비활성(`false`)으로 기존 ETL 호출량과 동작을 보존
+- Windows 기본 `cp949`로 UTF-8 `.env`를 읽던 오류를 `utf-8-sig`로 수정
+- 실실행 확인: `python scripts/etl_quarterly.py --limit 50` → 50/50 성공, fundamentals 169개·fundamental_trends 169개 저장
 - 검증: `python -m py_compile scripts/etl_quarterly.py`, `pnpm build` 통과
 
 ### 즉시 진행

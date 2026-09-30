@@ -27,7 +27,7 @@ import requests
 
 def _load_env(filepath: str = ".env") -> None:
     try:
-        with open(filepath) as f:
+        with open(filepath, encoding="utf-8-sig") as f:
             for line in f:
                 line = line.strip()
                 if not line or line.startswith("#") or "=" not in line:
