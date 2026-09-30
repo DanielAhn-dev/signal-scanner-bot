@@ -8,7 +8,9 @@ import './seed-builder.css'
 type Household = 'solo' | 'single-income' | 'dual-income'
 type ExpenseKey = 'food' | 'housing' | 'vehicle' | 'education' | 'tax' | 'subscriptions' | 'other' | 'card' | 'water' | 'gas' | 'residentTax' | 'propertyTax' | 'vehicleTax' | 'taxAdjustment'
 type ExtraIncomeKey = 'incentive' | 'vacation' | 'taxRefund' | 'other'
+type Entry = { id: string; date: string; amount: number; deposited: number; memo: string; cancelled: boolean }
 type MonthRecord = {
+  status: 'recorded' | 'skipped'
   household: Household
   ownIncome: number
   partnerIncome: number
@@ -18,7 +20,6 @@ type MonthRecord = {
   extraIncome: Record<ExtraIncomeKey, number>
   reserve: number
   plan: number
-  saved: number
 }
 
 const expenseLabels: Array<{ key: ExpenseKey; label: string }> = [
@@ -45,13 +46,17 @@ const extraIncomeLabels: Array<{ key: ExtraIncomeKey; label: string }> = [
 ]
 
 const emptyRecord = (): MonthRecord => ({
-  household: 'solo', ownIncome: 0, partnerIncome: 0, ownPayday: null, partnerPayday: null,
+  status: 'recorded', household: 'solo', ownIncome: 0, partnerIncome: 0, ownPayday: null, partnerPayday: null,
   expenses: { food: 0, housing: 0, vehicle: 0, education: 0, tax: 0, subscriptions: 0, other: 0, card: 0, water: 0, gas: 0, residentTax: 0, propertyTax: 0, vehicleTax: 0, taxAdjustment: 0 },
   extraIncome: { incentive: 0, vacation: 0, taxRefund: 0, other: 0 },
-  reserve: 0, plan: 0, saved: 0,
+  reserve: 0, plan: 0,
 })
 
 const krw = (amount: number) => `${Math.round(amount).toLocaleString('ko-KR')}원`
+const activeEntries = (list: Entry[] | undefined) => (list ?? []).filter((entry) => !entry.cancelled)
+const entriesSaved = (list: Entry[] | undefined) => activeEntries(list).reduce((sum, entry) => sum + entry.amount, 0)
+const entriesDeposited = (list: Entry[] | undefined) => activeEntries(list).reduce((sum, entry) => sum + entry.deposited, 0)
+const todayKst = () => new Date().toLocaleDateString('sv-SE', { timeZone: 'Asia/Seoul' })
 const signedKrw = (amount: number) => `${amount < 0 ? '-' : ''}${krw(Math.abs(amount))}`
 const recurringExpenseKeys: ExpenseKey[] = ['food', 'housing', 'vehicle', 'education', 'tax', 'subscriptions', 'other']
 const sumValues = (values: Record<string, number>) => Object.values(values).reduce((sum, value) => sum + value, 0)
@@ -76,11 +81,15 @@ export default function SeedBuilderPage() {
   const [confirmedCash, setConfirmedCash] = useState('')
   const [sharePrice, setSharePrice] = useState('')
   const [pendingOffset, setPendingOffset] = useState<number | null>(null)
+  const [entries, setEntries] = useState<Record<string, Entry[]>>({})
+  const [entryForm, setEntryForm] = useState({ date: '', amount: '', memo: '' })
+  const [entryBusy, setEntryBusy] = useState(false)
 
   const year = Number(selectedMonth.slice(0, 4))
   const month = Number(selectedMonth.slice(5))
   useEffect(() => {
     setRecords({})
+    setEntries({})
     setDraft(emptyRecord())
     if (!clientId) { setLoading(false); return }
     let active = true
@@ -89,7 +98,9 @@ export default function SeedBuilderPage() {
     apiFetch(`/api/ui/seed-builder?year=${year}`, { cacheMs: 0, retries: 0 })
       .then((response) => {
         if (!active) return
-        const loaded = Object.fromEntries((response.data as Array<MonthRecord & { month: string }>).map(({ month: key, ...record }) => {
+        const rows = response.data as Array<MonthRecord & { month: string; entries?: Entry[] }>
+        setEntries(Object.fromEntries(rows.map((row) => [row.month, row.entries ?? []])))
+        const loaded = Object.fromEntries(rows.map(({ month: key, entries: _entries, ...record }) => {
           const defaults = emptyRecord()
           return [key, { ...defaults, ...record, expenses: { ...defaults.expenses, ...record.expenses }, extraIncome: { ...defaults.extraIncome, ...record.extraIncome } }]
         }))
@@ -123,8 +134,15 @@ export default function SeedBuilderPage() {
     ? expenseLabels.map(({ key, label }) => ({ label, key, current: currentSaved.expenses[key], previous: previous.expenses[key], difference: currentSaved.expenses[key] - previous.expenses[key] }))
     : []
   const subscriptionChange = expenseChanges.find((entry) => entry.key === 'subscriptions')
-  const annualSaved = Object.entries(records).filter(([key]) => key.startsWith(`${year}-`)).reduce((sum, [, record]) => sum + record.saved, 0)
-  const maxBar = Math.max(1, ...Array.from({ length: 12 }, (_, index) => records[`${year}-${String(index + 1).padStart(2, '0')}`]?.saved ?? 0))
+  const currentKey = monthKey(new Date())
+  const nextKey = monthKey(new Date(Number(currentKey.slice(0, 4)), Number(currentKey.slice(5)), 15))
+  const isFuture = selectedMonth > currentKey
+  const savedOf = (key: string) => entriesSaved(entries[key])
+  const savedNow = savedOf(selectedMonth)
+  const depositedNow = entriesDeposited(entries[selectedMonth])
+  const annualSaved = Object.keys(entries).filter((key) => key.startsWith(`${year}-`)).reduce((sum, key) => sum + savedOf(key), 0)
+  const maxBar = Math.max(1, ...Array.from({ length: 12 }, (_, index) => { const key = `${year}-${String(index + 1).padStart(2, '0')}`; return Math.max(savedOf(key), records[key]?.plan ?? 0) }))
+  const canSkip = !records[selectedMonth] && !isFuture && !dirty && (entries[selectedMonth] ?? []).length === 0
   const cash = Number(confirmedCash)
   const price = Number(sharePrice)
   const canCompare = confirmedCash !== '' && sharePrice !== '' && Number.isSafeInteger(cash) && cash >= 0 && Number.isSafeInteger(price) && price > 0
@@ -141,11 +159,12 @@ export default function SeedBuilderPage() {
     setPendingOffset(null)
     const next = monthKey(new Date(year, month - 1 + offset, 15))
     setSelectedMonth(next)
+    setEntryForm({ date: '', amount: '', memo: '' })
     setDraft(next.slice(0, 4) === selectedMonth.slice(0, 4) ? records[next] ?? emptyRecord() : emptyRecord())
     setNotice('')
   }
 
-  const updateAmount = (field: 'ownIncome' | 'partnerIncome' | 'reserve' | 'plan' | 'saved', value: string) => {
+  const updateAmount = (field: 'ownIncome' | 'partnerIncome' | 'reserve' | 'plan', value: string) => {
     const parsed = Number(value)
     setDraft((current) => ({ ...current, [field]: Number.isFinite(parsed) ? parsed : 0 }))
     setNotice('')
@@ -163,7 +182,7 @@ export default function SeedBuilderPage() {
 
   const save = async (): Promise<boolean> => {
     if (!clientId || loading || loadError) return false
-    if ([draft.ownIncome, draft.partnerIncome, draft.reserve, draft.plan, draft.saved, ...Object.values(draft.expenses), ...Object.values(draft.extraIncome)].some((amount) => !Number.isSafeInteger(amount) || amount < 0)
+    if ([draft.ownIncome, draft.partnerIncome, draft.reserve, draft.plan, ...Object.values(draft.expenses), ...Object.values(draft.extraIncome)].some((amount) => !Number.isSafeInteger(amount) || amount < 0)
       || [draft.ownPayday, draft.partnerPayday].some((day) => day !== null && (!Number.isInteger(day) || day < 1 || day > 31))) {
       setNotice('금액은 0원 이상의 정수로 입력해 주세요.')
       return false
@@ -171,8 +190,10 @@ export default function SeedBuilderPage() {
     setSaving(true)
     setNotice('')
     try {
-      await apiFetch('/api/ui/seed-builder', { method: 'PUT', body: JSON.stringify({ month: selectedMonth, ...draft }), cacheMs: 0 })
-      setRecords((current) => ({ ...current, [selectedMonth]: { ...draft, expenses: { ...draft.expenses }, extraIncome: { ...draft.extraIncome } } }))
+      const toSave: MonthRecord = { ...draft, status: 'recorded' }
+      await apiFetch('/api/ui/seed-builder', { method: 'PUT', body: JSON.stringify({ month: selectedMonth, ...toSave }), cacheMs: 0 })
+      setRecords((current) => ({ ...current, [selectedMonth]: { ...toSave, expenses: { ...draft.expenses }, extraIncome: { ...draft.extraIncome } } }))
+      setDraft(toSave)
       setNotice('이번 달 기록을 저장했습니다.')
       return true
     } catch (error) {
@@ -183,6 +204,59 @@ export default function SeedBuilderPage() {
     }
   }
 
+  const skipMonth = async () => {
+    if (!clientId || loading || loadError || !canSkip) return
+    setSaving(true)
+    try {
+      const skipped: MonthRecord = { ...emptyRecord(), status: 'skipped' }
+      await apiFetch('/api/ui/seed-builder', { method: 'PUT', body: JSON.stringify({ month: selectedMonth, ...skipped }), cacheMs: 0 })
+      setRecords((current) => ({ ...current, [selectedMonth]: skipped }))
+      setDraft(skipped)
+      setNotice('이 달을 건너뜀으로 표시했습니다. 금액을 입력하고 저장하면 기록된 달로 바뀝니다.')
+    } catch (error) {
+      setNotice(`저장 실패: ${error instanceof Error ? error.message : String(error)}`)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const entryRequest = async (body: Record<string, unknown>) => {
+    if (!clientId || loading || loadError) return null
+    setEntryBusy(true)
+    try {
+      return await apiFetch('/api/ui/seed-builder', { method: 'POST', body: JSON.stringify(body), cacheMs: 0 })
+    } catch (error) {
+      setNotice(`저장 실패: ${error instanceof Error ? error.message : String(error)}`)
+      return null
+    } finally {
+      setEntryBusy(false)
+    }
+  }
+  const patchEntry = (id: string, change: Partial<Entry>) => setEntries((current) => ({ ...current, [selectedMonth]: (current[selectedMonth] ?? []).map((entry) => entry.id === id ? { ...entry, ...change } : entry) }))
+
+  const addEntry = async () => {
+    const amount = Number(entryForm.amount)
+    if (entryForm.amount === '' || !Number.isSafeInteger(amount) || amount < 1) { setNotice('확보 금액은 1원 이상의 정수로 입력해 주세요.'); return }
+    const date = entryForm.date || (selectedMonth === currentKey ? todayKst() : `${selectedMonth}-01`)
+    const response = await entryRequest({ action: 'add-entry', month: selectedMonth, date, amount, memo: entryForm.memo.trim() })
+    if (!response) return
+    const entry: Entry = { id: String(response.id), date, amount, deposited: 0, memo: entryForm.memo.trim(), cancelled: false }
+    setEntries((current) => ({ ...current, [selectedMonth]: [...(current[selectedMonth] ?? []), entry].sort((a, b) => a.date.localeCompare(b.date)) }))
+    setEntryForm({ date: '', amount: '', memo: '' })
+    setNotice('확보 내역을 기록했습니다.')
+  }
+  const toggleCancel = async (entry: Entry) => {
+    if (!await entryRequest({ action: entry.cancelled ? 'restore-entry' : 'cancel-entry', id: entry.id })) return
+    patchEntry(entry.id, { cancelled: !entry.cancelled })
+  }
+  const applyDeposit = async (entry: Entry, value: string) => {
+    const deposited = Number(value)
+    if (value === '' || !Number.isSafeInteger(deposited) || deposited < 0 || deposited > entry.amount) { setNotice(`입금 기록은 0원 이상, 이 내역의 확보 금액(${krw(entry.amount)}) 이하로 입력해 주세요.`); return }
+    if (!await entryRequest({ action: 'set-deposit', id: entry.id, deposited })) return
+    patchEntry(entry.id, { deposited })
+    setNotice('입금 기록을 저장했습니다. 계좌 잔고를 확인한 값은 아닙니다.')
+  }
+
   return (
     <main className="seed-builder">
       <header className="seed-header">
@@ -190,7 +264,7 @@ export default function SeedBuilderPage() {
         <div className="seed-month-nav" aria-label="기록 월 선택">
           <button type="button" title="이전 달" aria-label="이전 달" onClick={() => changeMonth(-1)}><ChevronLeft size={18} /></button>
           <strong>{year}년 {month}월</strong>
-          <button type="button" title="다음 달" aria-label="다음 달" onClick={() => changeMonth(1)} disabled={selectedMonth >= monthKey(new Date())}><ChevronRight size={18} /></button>
+          <button type="button" title="다음 달" aria-label="다음 달" onClick={() => changeMonth(1)} disabled={selectedMonth >= nextKey}><ChevronRight size={18} /></button>
         </div>
       </header>
 
@@ -204,22 +278,30 @@ export default function SeedBuilderPage() {
       </div>}
 
       <section className="seed-overview" aria-label="시드 현황">
-        <div><span>이번 달 계획</span><strong>{krw(records[selectedMonth]?.plan ?? 0)}</strong></div>
-        <div><span>실제로 모은 돈</span><strong>{krw(records[selectedMonth]?.saved ?? 0)}</strong></div>
+        <div><span>{isFuture ? '계획 (예정)' : '이번 달 계획'}</span><strong>{krw(records[selectedMonth]?.plan ?? 0)}</strong></div>
+        <div><span>실제로 모은 돈</span><strong>{krw(savedNow)}</strong>{(records[selectedMonth]?.plan ?? 0) > 0 && !isFuture && <small>계획의 {Math.round(savedNow / (records[selectedMonth]?.plan ?? 1) * 100)}%</small>}</div>
+        <div><span>입금 기록</span><strong>{krw(depositedNow)}</strong></div>
         <div><span>올해 모은 돈</span><strong>{krw(annualSaved)}</strong></div>
       </section>
 
       <section className="seed-chart-section">
         <div className="seed-section-title"><div><h2>{year}년 월별 시드</h2><p>입력해 모은 금액만 실적으로 표시합니다.</p></div><span>사용자 기록 · 투자 수익 제외</span></div>
-        <div className="seed-chart" role="img" aria-label={`${year}년 월별 확보금: ${Array.from({ length: 12 }, (_, index) => { const record = records[`${year}-${String(index + 1).padStart(2, '0')}`]; return `${index + 1}월 ${record ? krw(record.saved) : '기록 없음'}` }).join(', ')}`}>
+        <div className="seed-chart" role="img" aria-label={`${year}년 월별 확보금: ${Array.from({ length: 12 }, (_, index) => { const key = `${year}-${String(index + 1).padStart(2, '0')}`; const record = records[key]; const label = key > currentKey ? (record?.plan ? `계획 ${krw(record.plan)}(예정)` : '기록 없음') : record?.status === 'skipped' ? '건너뜀' : record ? `${krw(savedOf(key))}${record.plan ? `, 계획 ${krw(record.plan)}` : ''}` : '기록 없음'; return `${index + 1}월 ${label}` }).join(', ')}`}>
           {Array.from({ length: 12 }, (_, index) => {
             const key = `${year}-${String(index + 1).padStart(2, '0')}`
             const record = records[key]
-            const saved = record?.saved ?? 0
-            return <div className={`seed-chart-column${selectedMonth === key ? ' is-selected' : ''}`} key={key}><div className="seed-bar-area">{record ? (saved ? <div className="seed-bar" style={{ height: `${Math.max(4, saved / maxBar * 100)}%` }} /> : <div className="seed-bar-zero">0</div>) : <div className="seed-bar-none" aria-hidden="true" />}</div><span>{index + 1}월</span></div>
+            const saved = savedOf(key)
+            const plan = record?.plan ?? 0
+            const future = key > currentKey
+            let bar
+            if (future) bar = plan > 0 ? <div className="seed-bar-future" style={{ height: `${Math.max(4, plan / maxBar * 100)}%` }} /> : <div className="seed-bar-none" aria-hidden="true" />
+            else if (record?.status === 'skipped') bar = <div className="seed-bar-skipped">–</div>
+            else if (record) bar = saved ? <div className="seed-bar" style={{ height: `${Math.max(4, saved / maxBar * 100)}%` }} /> : <div className="seed-bar-zero">0</div>
+            else bar = <div className="seed-bar-none" aria-hidden="true" />
+            return <div className={`seed-chart-column${selectedMonth === key ? ' is-selected' : ''}`} key={key}><div className="seed-bar-area">{bar}{!future && plan > 0 && record?.status !== 'skipped' && <div className="seed-plan-tick" aria-hidden="true" style={{ bottom: `${plan / maxBar * 100}%` }} />}</div><span>{index + 1}월</span></div>
           })}
         </div>
-        <p className="seed-chart-legend">실선 막대 = 기록한 확보금 · “0” = 기록했지만 모으지 않은 달 · 점선 = 아직 기록 없음</p>
+        <p className="seed-chart-legend">실선 막대 = 확보 내역 합계 · 가로선 = 그달 계획 · “0” = 기록했지만 모으지 않은 달 · “–” = 건너뜀 · 빈 점선 = 기록 없음 · 채운 점선 = 다음 달 계획(예정)</p>
         {annualSaved === 0 && <p className="seed-empty">첫 금액을 저장하면 이곳에서 시드가 쌓이는 추이를 볼 수 있습니다.</p>}
       </section>
 
@@ -257,7 +339,6 @@ export default function SeedBuilderPage() {
           <div><h3>시드 계획</h3><p>월수입 - 지출 - 남겨둘 생활·비상자금 = 월간 참고 여력 <strong className={isDeficit ? 'seed-negative' : ''}>{isDeficit ? `적자 ${krw(Math.abs(available))}` : krw(available)}</strong>. 투자 시기는 급여 입금과 다음 필수 지출을 확인해 결정합니다.</p></div>
           <label>남겨둘 돈 <input type="number" min="0" step="1000" value={draft.reserve || ''} placeholder="0" onChange={(event) => updateAmount('reserve', event.target.value)} /> 원</label>
           <label>이번 달 목표 <input type="number" min="0" step="1000" value={draft.plan || ''} placeholder="0" onChange={(event) => updateAmount('plan', event.target.value)} /> 원</label>
-          <label>실제로 모은 돈 <input type="number" min="0" step="1000" value={draft.saved || ''} placeholder="0" onChange={(event) => updateAmount('saved', event.target.value)} /> 원</label>
         </div>
         {availableChange !== null && <p className="seed-compare seed-available-change">지난달 대비 투자 여력 <strong className={availableChange >= 0 ? 'seed-positive' : 'seed-negative'}>{availableChange >= 0 ? '+' : '-'}{krw(Math.abs(availableChange))}</strong> · 이번 달 입력값 기준이며 지출·수입이 바뀌면 다시 계산됩니다.</p>}
         {isDeficit && <div className="seed-rest-box" role="status">
@@ -266,11 +347,37 @@ export default function SeedBuilderPage() {
         </div>}
         {!isDeficit && income > 0 && draft.plan > available && <p className="seed-warning">목표가 참고 여력을 넘습니다. 필요한 생활비를 먼저 확보했는지 확인해 주세요.</p>}
         {isTight && <p className="seed-warning">여력 대부분을 목표로 잡았습니다(빠듯함). 예상 밖 지출에 대비해 여유를 남겨 둘지 확인해 보세요.</p>}
-        <div className="seed-actions">{dirty && <span className="seed-dirty-badge">저장 안 됨</span>}<p role="status">{!clientId ? '로그인 정보가 확인되면 저장할 수 있습니다.' : loading ? '기록을 불러오는 중입니다.' : loadError ? `불러오기 실패: ${loadError}` : notice}</p><button type="button" className="seed-primary" onClick={() => void save()} disabled={!clientId || loading || saving || !!loadError}><Save size={16} /> {saving ? '저장 중' : '이번 달 저장'}</button></div>
+        {draft.status === 'skipped' && <p className="seed-empty">이 달은 건너뜀으로 표시되어 있습니다. 금액을 입력하고 저장하면 기록된 달로 바뀝니다.</p>}
+        {isFuture && <p className="seed-empty">다음 달은 계획만 입력할 수 있습니다. 확보와 입금 기록은 그 달이 된 뒤에 남길 수 있습니다.</p>}
+        <div className="seed-actions">{canSkip && <button type="button" className="seed-link-button" onClick={() => void skipMonth()} disabled={saving}>이 달은 건너뛰기</button>}{dirty && <span className="seed-dirty-badge">저장 안 됨</span>}<p role="status">{!clientId ? '로그인 정보가 확인되면 저장할 수 있습니다.' : loading ? '기록을 불러오는 중입니다.' : loadError ? `불러오기 실패: ${loadError}` : notice}</p><button type="button" className="seed-primary" onClick={() => void save()} disabled={!clientId || loading || saving || !!loadError}><Save size={16} /> {saving ? '저장 중' : '이번 달 저장'}</button></div>
+      </section>
+      <section className="seed-entries" aria-label="확보 내역">
+        <div className="seed-section-title"><div><h2>확보 내역</h2><p>실제로 따로 모아 둔 돈을 날짜별로 기록합니다. 내역은 바로 저장되고, 취소해도 기록은 남습니다.</p></div><span>입금 기록 = 증권계좌에 넣었다는 내 기록 (잔고 확인 아님)</span></div>
+        {isFuture ? <p className="seed-empty">다음 달에는 확보 내역을 기록할 수 없습니다.</p> : <>
+          {(entries[selectedMonth] ?? []).length === 0 ? <p className="seed-empty">아직 기록한 확보 내역이 없습니다. 0원인 달도 정상입니다.</p> : <ul className="seed-entry-list">
+            {(entries[selectedMonth] ?? []).map((entry) => <li key={entry.id} className={entry.cancelled ? 'is-cancelled' : ''}>
+              <span className="seed-entry-date">{entry.date.slice(5).replace('-', '/')}</span>
+              <strong>{krw(entry.amount)}</strong>
+              <span className="seed-entry-memo">{entry.memo}{entry.cancelled ? ' (취소됨)' : ''}</span>
+              {entry.cancelled
+                ? <button type="button" className="seed-link-button" disabled={entryBusy} onClick={() => void toggleCancel(entry)}>되돌리기</button>
+                : <span className="seed-entry-actions">
+                  <label>입금 <input type="number" min="0" max={entry.amount} step="1000" defaultValue={entry.deposited || ''} placeholder="0" aria-label={`${entry.date} 입금 기록 금액`} onBlur={(event) => { if (Number(event.target.value || 0) !== entry.deposited) void applyDeposit(entry, event.target.value === '' ? '0' : event.target.value) }} /> 원</label>
+                  <button type="button" className="seed-link-button" disabled={entryBusy} onClick={() => void toggleCancel(entry)}>취소</button>
+                </span>}
+            </li>)}
+          </ul>}
+          <div className="seed-entry-form">
+            <label>날짜 <input type="date" min={`${selectedMonth}-01`} max={selectedMonth === currentKey ? todayKst() : `${selectedMonth}-31`} value={entryForm.date || (selectedMonth === currentKey ? todayKst() : `${selectedMonth}-01`)} onChange={(event) => setEntryForm((current) => ({ ...current, date: event.target.value }))} /></label>
+            <label>확보 금액 <input type="number" min="1" step="1000" value={entryForm.amount} placeholder="0" onChange={(event) => setEntryForm((current) => ({ ...current, amount: event.target.value }))} /> 원</label>
+            <label>메모 <input type="text" maxLength={100} value={entryForm.memo} placeholder="선택" onChange={(event) => setEntryForm((current) => ({ ...current, memo: event.target.value }))} /></label>
+            <button type="button" className="seed-secondary" disabled={entryBusy || !clientId || loading || !!loadError} onClick={() => void addEntry()}>+ 확보 기록</button>
+          </div>
+        </>}
       </section>
       <section className="seed-insights">
         <div className="seed-section-title"><div><h2>지출 변화 보기</h2><p>저장된 큰 항목을 비교합니다. 필요한 지출을 줄이라고 판단하지 않습니다.</p></div></div>
-        {currentSaved && <p className="seed-insight-tip">이번 달 지출 {krw(Object.values(currentSaved.expenses).reduce((sum, value) => sum + value, 0))} · 월간 계산상 여력 {signedKrw(savedAvailable)} · 실제 시드 확보 {krw(currentSaved.saved)}. {savedAvailable > currentSaved.saved ? `차이 ${krw(savedAvailable - currentSaved.saved)}은 계획을 돌아볼 참고값이며 모두 써버린 돈이라는 뜻은 아닙니다.` : '필요한 생활비와 추가 입금 여부를 함께 확인하세요.'}</p>}
+        {currentSaved && <p className="seed-insight-tip">이번 달 지출 {krw(Object.values(currentSaved.expenses).reduce((sum, value) => sum + value, 0))} · 월간 계산상 여력 {signedKrw(savedAvailable)} · 실제 시드 확보 {krw(savedNow)}. {savedAvailable > savedNow ? `차이 ${krw(savedAvailable - savedNow)}은 계획을 돌아볼 참고값이며 모두 써버린 돈이라는 뜻은 아닙니다.` : '필요한 생활비와 추가 입금 여부를 함께 확인하세요.'}</p>}
         {expenseChanges.length > 0 ? <>
           <div className="seed-expense-rows">
             {expenseChanges.map((entry) => <div key={entry.key}><strong>{entry.label}</strong><span>{krw(entry.previous)} → {krw(entry.current)}</span><span className={entry.difference > 0 ? 'seed-rise' : ''}>{entry.difference === 0 ? '변동 없음' : `${entry.difference > 0 ? '+' : '-'}${krw(Math.abs(entry.difference))}`}</span></div>)}

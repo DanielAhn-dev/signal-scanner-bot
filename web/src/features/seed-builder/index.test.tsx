@@ -13,16 +13,54 @@ beforeEach(() => {
 })
 
 describe('시드 만들기', () => {
-  it('0원부터 시작해 실제 저장 후에만 올해 시드에 반영한다', async () => {
+  it('0원부터 시작해 확보 내역을 서버에 기록한 뒤에만 올해 시드에 반영한다', async () => {
+    apiFetchMock.mockImplementation((_path: string, options?: { method?: string }) => options?.method === 'POST' ? Promise.resolve({ ok: true, id: 'entry-1' }) : Promise.resolve({ data: [] }))
     render(<MemoryRouter><SeedBuilderPage /></MemoryRouter>)
     const save = await screen.findByRole('button', { name: '이번 달 저장' })
     await waitFor(() => expect(save).toBeEnabled())
     fireEvent.change(screen.getByLabelText(/이번 달 목표/), { target: { value: '50000' } })
-    fireEvent.change(screen.getByLabelText(/실제로 모은 돈/), { target: { value: '30000' } })
+    fireEvent.change(screen.getByLabelText(/확보 금액/), { target: { value: '30000' } })
     expect(screen.getByLabelText('시드 현황')).toHaveTextContent('올해 모은 돈0원')
-    fireEvent.click(save)
-    await waitFor(() => expect(apiFetchMock).toHaveBeenCalledWith('/api/ui/seed-builder', expect.objectContaining({ method: 'PUT' })))
+    fireEvent.click(screen.getByRole('button', { name: '+ 확보 기록' }))
+    await waitFor(() => expect(apiFetchMock).toHaveBeenCalledWith('/api/ui/seed-builder', expect.objectContaining({ method: 'POST', body: expect.stringContaining('"action":"add-entry"') })))
     await waitFor(() => expect(screen.getByLabelText('시드 현황')).toHaveTextContent('올해 모은 돈30,000원'))
+    fireEvent.click(screen.getByRole('button', { name: '취소' }))
+    await waitFor(() => expect(screen.getByLabelText('시드 현황')).toHaveTextContent('올해 모은 돈0원'))
+    fireEvent.click(screen.getByRole('button', { name: '되돌리기' }))
+    await waitFor(() => expect(screen.getByLabelText('시드 현황')).toHaveTextContent('올해 모은 돈30,000원'))
+  })
+
+  it('입금 기록은 확보 금액을 넘길 수 없고 저장 후 입금 카드에 반영된다', async () => {
+    const key = new Date().toLocaleDateString('sv-SE', { timeZone: 'Asia/Seoul', year: 'numeric', month: '2-digit' }).slice(0, 7)
+    apiFetchMock.mockImplementation((_path: string, options?: { method?: string }) => options?.method === 'POST' ? Promise.resolve({ ok: true }) : Promise.resolve({ data: [
+      { month: key, status: 'recorded', household: 'solo', ownIncome: 0, partnerIncome: 0, expenses: {}, reserve: 0, plan: 50000, entries: [{ id: 'e1', date: `${key}-05`, amount: 30000, deposited: 0, memo: '', cancelled: false }] },
+    ] }))
+    render(<MemoryRouter><SeedBuilderPage /></MemoryRouter>)
+    const deposit = await screen.findByLabelText(/입금 기록 금액/)
+    fireEvent.blur(deposit, { target: { value: '40000' } })
+    expect(await screen.findByText(/이 내역의 확보 금액\(30,000원\) 이하/)).toBeInTheDocument()
+    fireEvent.blur(deposit, { target: { value: '20000' } })
+    await waitFor(() => expect(screen.getByLabelText('시드 현황')).toHaveTextContent('입금 기록20,000원'))
+    expect(screen.getByLabelText('시드 현황')).toHaveTextContent('계획의 60%')
+  })
+
+  it('기록 없는 달은 건너뛰기로 표시할 수 있고 차트에서 0원과 구분된다', async () => {
+    render(<MemoryRouter><SeedBuilderPage /></MemoryRouter>)
+    const skip = await screen.findByRole('button', { name: '이 달은 건너뛰기' })
+    await waitFor(() => expect(skip).toBeEnabled())
+    fireEvent.click(skip)
+    await waitFor(() => expect(apiFetchMock).toHaveBeenCalledWith('/api/ui/seed-builder', expect.objectContaining({ method: 'PUT', body: expect.stringContaining('"status":"skipped"') })))
+    await waitFor(() => expect(screen.getByRole('img', { name: /건너뜀/ })).toBeInTheDocument())
+    expect(screen.queryByRole('button', { name: '이 달은 건너뛰기' })).not.toBeInTheDocument()
+  })
+
+  it('다음 달은 계획만 입력할 수 있고 확보 내역은 막는다', async () => {
+    render(<MemoryRouter><SeedBuilderPage /></MemoryRouter>)
+    await waitFor(() => expect(screen.getByRole('button', { name: '이번 달 저장' })).toBeEnabled())
+    fireEvent.click(screen.getByRole('button', { name: '다음 달' }))
+    expect(screen.getByText(/다음 달은 계획만 입력할 수 있습니다/)).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '+ 확보 기록' })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '다음 달' })).toBeDisabled()
   })
 
   it('현금보다 1주 가격이 높으면 대기를 안내한다', async () => {
@@ -50,7 +88,7 @@ describe('시드 만들기', () => {
     render(<MemoryRouter><SeedBuilderPage /></MemoryRouter>)
     const save = screen.getByRole('button', { name: '이번 달 저장' })
     await waitFor(() => expect(save).toBeEnabled())
-    fireEvent.change(screen.getByLabelText(/실제로 모은 돈/), { target: { value: '30000' } })
+    fireEvent.change(screen.getByLabelText(/이번 달 목표/), { target: { value: '30000' } })
     fireEvent.click(save)
     await screen.findByText(/저장 실패: 저장 오류/)
     expect(screen.getByLabelText('시드 현황')).toHaveTextContent('올해 모은 돈0원')
@@ -65,8 +103,8 @@ describe('시드 만들기', () => {
     const previousMonth = `${year}-${String(month - 1).padStart(2, '0')}`
     const expenses = { food: 100000, housing: 0, vehicle: 0, education: 0, tax: 0, subscriptions: 10000, other: 0 }
     apiFetchMock.mockResolvedValue({ data: [
-      { month: previousMonth, household: 'solo', ownIncome: 2000000, partnerIncome: 0, expenses, reserve: 0, plan: 50000, saved: 20000 },
-      { month: currentMonth, household: 'solo', ownIncome: 2000000, partnerIncome: 0, expenses: { ...expenses, subscriptions: 30000 }, reserve: 0, plan: 50000, saved: 30000 },
+      { month: previousMonth, household: 'solo', ownIncome: 2000000, partnerIncome: 0, expenses, reserve: 0, plan: 50000, entries: [{ id: 'a', date: `${previousMonth}-10`, amount: 20000, deposited: 0, memo: '', cancelled: false }] },
+      { month: currentMonth, household: 'solo', ownIncome: 2000000, partnerIncome: 0, expenses: { ...expenses, subscriptions: 30000 }, reserve: 0, plan: 50000, entries: [{ id: 'b', date: `${currentMonth}-10`, amount: 30000, deposited: 0, memo: '', cancelled: false }] },
     ] })
     render(<MemoryRouter><SeedBuilderPage /></MemoryRouter>)
     await screen.findByText(/통신·구독 지출이 지난달보다 20,000원 늘었습니다/)
@@ -83,7 +121,7 @@ describe('시드 만들기', () => {
     const year = today.getFullYear()
     const currentMonth = `${year}-${String(today.getMonth() + 1).padStart(2, '0')}`
     const previousMonth = `${year}-${String(today.getMonth()).padStart(2, '0')}`
-    const base = { household: 'solo', ownIncome: 2000000, partnerIncome: 0, reserve: 0, plan: 0, saved: 0,
+    const base = { household: 'solo', ownIncome: 2000000, partnerIncome: 0, reserve: 0, plan: 0, status: 'recorded', entries: [],
       expenses: { food: 100000, housing: 0, vehicle: 0, education: 0, tax: 0, subscriptions: 0, other: 0, card: 0 }, extraIncome: { incentive: 0, vacation: 0, taxRefund: 0, other: 0 } }
     apiFetchMock.mockResolvedValue({ data: [{ ...base, month: previousMonth }, { ...base, month: currentMonth,
       extraIncome: { ...base.extraIncome, incentive: 200000 }, expenses: { ...base.expenses, water: 50000 } }] })
@@ -118,7 +156,7 @@ describe('시드 만들기', () => {
 
   it('기록 없음과 0원 확보를 차트에서 구분한다', async () => {
     const key = new Date().toLocaleDateString('sv-SE', { timeZone: 'Asia/Seoul', year: 'numeric', month: '2-digit' }).slice(0, 7)
-    apiFetchMock.mockResolvedValue({ data: [{ month: key, household: 'solo', ownIncome: 0, partnerIncome: 0, expenses: {}, reserve: 0, plan: 0, saved: 0 }] })
+    apiFetchMock.mockResolvedValue({ data: [{ month: key, household: 'solo', ownIncome: 0, partnerIncome: 0, expenses: {}, reserve: 0, plan: 0, entries: [] }] })
     render(<MemoryRouter><SeedBuilderPage /></MemoryRouter>)
     await waitFor(() => expect(screen.getByRole('img', { name: /기록 없음/ })).toHaveAccessibleName(/\d+월 0원/))
   })
