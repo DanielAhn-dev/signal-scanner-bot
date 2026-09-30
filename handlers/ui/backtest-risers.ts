@@ -16,6 +16,7 @@ type ScoreRow = {
 type PriceRow = {
   code: string
   tradeDate: string
+  open: number
   close: number
 }
 
@@ -26,6 +27,8 @@ type EventRow = {
   totalScore: number
   signal: string
   rsi14: number | null
+  entryDate: string
+  grossForwardReturnPct: number
   forwardReturnPct: number
 }
 
@@ -67,6 +70,12 @@ function parsePositiveInt(value: unknown, fallback: number, min: number, max: nu
   const n = Math.floor(parseNum(value, fallback))
   if (!Number.isFinite(n)) return fallback
   return Math.min(max, Math.max(min, n))
+}
+
+function parsePct(value: unknown, fallback: number): number {
+  const n = Number(value)
+  if (!Number.isFinite(n)) return fallback
+  return Math.min(5, Math.max(0, n))
 }
 
 function normalizeCode(value: unknown): string {
@@ -142,7 +151,7 @@ async function fetchPriceRows(supabase: any, codes: string[], fromDate: string):
         for (let offset = 0; ; offset += PAGE_SIZE) {
           const { data, error } = await supabase
             .from('stock_daily')
-            .select('ticker,date,close')
+            .select('ticker,date,open,close')
             .in('ticker', chunk)
             .gte('date', fromDate)
             .order('date', { ascending: true })
@@ -154,8 +163,9 @@ async function fetchPriceRows(supabase: any, codes: string[], fromDate: string):
           for (const row of rows) {
             const code = normalizeCode(row.ticker)
             const tradeDate = normalizeDate(row.date)
+            const open = parseNum(row.open, 0)
             const close = parseNum(row.close, 0)
-            if (code && tradeDate && close > 0) out.push({ code, tradeDate, close })
+            if (code && tradeDate && open > 0 && close > 0) out.push({ code, tradeDate, open, close })
           }
 
           if (rows.length < PAGE_SIZE) break
@@ -167,21 +177,28 @@ async function fetchPriceRows(supabase: any, codes: string[], fromDate: string):
   return out
 }
 
-function buildPriceIndex(rows: PriceRow[]): Map<string, { dates: string[]; closes: number[]; indexByDate: Map<string, number> }> {
+function buildPriceIndex(rows: PriceRow[]): Map<string, { dates: string[]; opens: number[]; closes: number[]; indexByDate: Map<string, number> }> {
   const byCode = new Map<string, Map<string, number>>()
 
   for (const row of rows) {
     if (!byCode.has(row.code)) byCode.set(row.code, new Map<string, number>())
-    byCode.get(row.code)!.set(row.tradeDate, row.close)
+    byCode.get(row.code)!.set(row.tradeDate, row.open)
   }
 
-  const out = new Map<string, { dates: string[]; closes: number[]; indexByDate: Map<string, number> }>()
+  const closeByCode = new Map<string, Map<string, number>>()
+  for (const row of rows) {
+    if (!closeByCode.has(row.code)) closeByCode.set(row.code, new Map<string, number>())
+    closeByCode.get(row.code)!.set(row.tradeDate, row.close)
+  }
+
+  const out = new Map<string, { dates: string[]; opens: number[]; closes: number[]; indexByDate: Map<string, number> }>()
   for (const [code, dateMap] of byCode) {
     const dates = Array.from(dateMap.keys()).sort((a, b) => a.localeCompare(b))
-    const closes = dates.map((d) => Number(dateMap.get(d) || 0))
+    const opens = dates.map((d) => Number(dateMap.get(d) || 0))
+    const closes = dates.map((d) => Number(closeByCode.get(code)?.get(d) || 0))
     const indexByDate = new Map<string, number>()
     dates.forEach((d, i) => indexByDate.set(d, i))
-    out.set(code, { dates, closes, indexByDate })
+    out.set(code, { dates, opens, closes, indexByDate })
   }
 
   return out
@@ -192,9 +209,10 @@ function parseParams(req: VercelRequest) {
   const horizonBars = parsePositiveInt(req.query.horizon, 20, 5, 180)
   const lookbackDays = parsePositiveInt(req.query.lookbackDays, 120, 60, 365)
   const rallyThresholdPct = parseNum(req.query.rallyPct, 20)
+  const sideCostPct = parsePct(req.query.sideCostPct, 0.225)
   const topN = parsePositiveInt(req.query.topN, 30, 5, 100)
   const maxRows = parsePositiveInt(req.query.maxRows, 3000, 500, 5000)
-  return { horizonBars, lookbackDays, rallyThresholdPct, topN, maxRows }
+  return { horizonBars, lookbackDays, rallyThresholdPct, sideCostPct, topN, maxRows }
 }
 
 function createFeature(
@@ -223,8 +241,9 @@ function createFeature(
 
 function buildLabelableEvents(
   scoreRows: Array<{ code: string; asof: string; totalScore: number; signal: string; rsi14: number | null }>,
-  priceIndex: Map<string, { dates: string[]; closes: number[]; indexByDate: Map<string, number> }>,
+  priceIndex: Map<string, { dates: string[]; opens: number[]; closes: number[]; indexByDate: Map<string, number> }>,
   horizonBars: number,
+  sideCostPct: number,
 ): EventRow[] {
   const labelableEvents: EventRow[] = []
 
@@ -233,20 +252,25 @@ function buildLabelableEvents(
     if (!idx) continue
     const anchorIndex = idx.indexByDate.get(row.asof)
     if (anchorIndex == null) continue
+    const entryIndex = anchorIndex + 1
     const targetIndex = anchorIndex + horizonBars
+    if (entryIndex >= idx.opens.length) continue
     if (targetIndex >= idx.closes.length) continue
 
-    const entry = idx.closes[anchorIndex]
+    const entry = idx.opens[entryIndex]
     const exit = idx.closes[targetIndex]
     if (!(entry > 0 && exit > 0)) continue
 
-    const forwardReturnPct = Number((((exit - entry) / entry) * 100).toFixed(2))
+    const grossForwardReturnPct = ((exit - entry) / entry) * 100
+    const forwardReturnPct = Number((grossForwardReturnPct - sideCostPct * 2).toFixed(2))
     labelableEvents.push({
       code: row.code,
       asof: row.asof,
       totalScore: Number(row.totalScore.toFixed(2)),
       signal: row.signal,
       rsi14: row.rsi14,
+      entryDate: idx.dates[entryIndex],
+      grossForwardReturnPct: Number(grossForwardReturnPct.toFixed(2)),
       forwardReturnPct,
     })
   }
@@ -524,9 +548,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const priceIndex = buildPriceIndex(priceRows)
     const priceIndexCodes = Array.from(priceIndex.keys()).length
 
-    const labelableEvents = buildLabelableEvents(scoreRows, priceIndex, params.horizonBars)
+    const labelableEvents = buildLabelableEvents(scoreRows, priceIndex, params.horizonBars, params.sideCostPct)
     const horizonAvailability = Object.fromEntries(
-      SUPPORTED_HORIZONS.map((h) => [String(h), buildLabelableEvents(availabilityScoreRows, priceIndex, h).length]),
+      SUPPORTED_HORIZONS.map((h) => [String(h), buildLabelableEvents(availabilityScoreRows, priceIndex, h, params.sideCostPct).length]),
     ) as Record<string, number>
     const availableHorizons = SUPPORTED_HORIZONS.filter((h) => h <= 60 || (horizonAvailability[String(h)] ?? 0) > 0)
 
@@ -541,6 +565,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       labelableEventsCount: labelableEvents.length,
       riserUniverseCount: riserUniverse.length,
       rallyThresholdPct: params.rallyThresholdPct,
+      sideCostPct: params.sideCostPct,
       horizonBars: params.horizonBars,
     }
 

@@ -27,6 +27,7 @@ export type StrategyName =
   | "score-top5+trend"
   | "score-top5+flow"
   | "momentum-top5"
+  | "breakout-top5"
   | "order-sheet"
   | "gate-monthly"
   | "gate-monthly+trend50"
@@ -48,7 +49,8 @@ export const STRATEGY_LABELS: Record<StrategyName, string> = {
   "score-top5": "점수 상위5 주간교체",
   "score-top5+trend": "점수 상위5 + 시장추세",
   "score-top5+flow": "점수 상위5 + 수급이탈 제외",
-  "momentum-top5": "모멘텀(60일) 상위5",
+  "momentum-top5": "중기 모멘텀(63/126일, 최근21일 제외) 상위5",
+  "breakout-top5": "55일 고점 돌파 + 거래량 확장 상위5",
   "order-sheet": "금요일 주문표대로(1주 보유)",
   "gate-monthly": "실적 관문 통과 전 종목 동일비중(월 교체)",
   "gate-monthly+trend50": "실적 관문 통과 동일비중 + 50일선 아래 CD금리",

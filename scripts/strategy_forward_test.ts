@@ -186,16 +186,18 @@ async function main(): Promise<void> {
   const flowRows = await fetchPaged<any>((a, b) =>
     supabase
       .from("investor_daily")
-      .select("ticker, date, foreign_amount, institution_amount")
+      .select("ticker, date, foreign_amount, institution_amount, collection_status")
       .gte("date", shiftDate(START, -40))
       .order("ticker")
       .order("date")
       .range(a, b)
   );
-  const flowsByCode = new Map<string, Array<{ date: string; foreign: number; institution: number }>>();
+  const flowsByCode = new Map<string, Array<{ date: string; foreign: number; institution: number; collectionStatus: string | null }>>();
   for (const r of flowRows) {
     const list = flowsByCode.get(r.ticker) ?? [];
-    list.push({ date: String(r.date).slice(0, 10), foreign: +(r.foreign_amount ?? 0), institution: +(r.institution_amount ?? 0) });
+    const collectionStatus = r.collection_status == null ? null : String(r.collection_status);
+    if (collectionStatus && collectionStatus !== "ok") continue;
+    list.push({ date: String(r.date).slice(0, 10), foreign: +(r.foreign_amount ?? 0), institution: +(r.institution_amount ?? 0), collectionStatus });
     flowsByCode.set(r.ticker, list);
   }
 
@@ -238,11 +240,37 @@ async function main(): Promise<void> {
     const ranked: Array<[string, number]> = [];
     for (const code of universe) {
       const bars = (seriesByCode.get(code) ?? []).filter((b) => b.date <= asof);
-      if (bars.length < 66) continue;
+      // 단기 반짝 상승을 피하고, 최근 21일을 제외한 63·126일 중기 모멘텀을 결합한다.
+      if (bars.length < 149) continue;
       const tv = bars.slice(-20).reduce((s, b) => s + b.close * b.volume, 0) / 20;
       if (tv < 3e9) continue; // 하루 평균 거래대금 30억 미만 제외
-      const ret = bars[bars.length - 6].close / bars[bars.length - 66].close - 1; // 60일 수익(최근 5일 제외)
+      const recentEnd = bars.length - 22;
+      const return63 = bars[recentEnd].close / bars[recentEnd - 63].close - 1;
+      const return126 = bars[recentEnd].close / bars[recentEnd - 126].close - 1;
+      const ret = return63 * 0.6 + return126 * 0.4;
       ranked.push([code, ret]);
+    }
+    return ranked.sort((a, b) => b[1] - a[1]).map(([c]) => c);
+  };
+
+  const breakoutTop = (asof: string): string[] => {
+    const ranked: Array<[string, number]> = [];
+    for (const code of universe) {
+      const bars = (seriesByCode.get(code) ?? []).filter((b) => b.date <= asof);
+      if (bars.length < 56) continue;
+      const recent = bars[bars.length - 1];
+      const prior = bars.slice(-56, -1);
+      const breakoutLevel = Math.max(...prior.map((b) => b.high ?? b.close));
+      const avgVolume = bars.slice(-21, -1).reduce((s, b) => s + b.volume, 0) / 20;
+      if (!(recent.close > breakoutLevel) || !(avgVolume > 0) || recent.volume < avgVolume * 1.5) continue;
+      const trueRanges = bars.slice(-15).map((b, i, sample) => {
+        const previousClose = sample[i - 1]?.close ?? b.close;
+        return Math.max(b.high ?? b.close, previousClose) - Math.min(b.low ?? b.close, previousClose);
+      });
+      const atr = trueRanges.reduce((s, value) => s + value, 0) / trueRanges.length;
+      const atrPct = recent.close > 0 ? atr / recent.close : 0;
+      if (!(atrPct > 0) || atrPct > 0.12) continue;
+      ranked.push([code, (recent.close / breakoutLevel - 1) + Math.min(recent.volume / avgVolume, 4) * 0.01]);
     }
     return ranked.sort((a, b) => b[1] - a[1]).map(([c]) => c);
   };
@@ -258,6 +286,7 @@ async function main(): Promise<void> {
       "score-top5+trend": asof && trendUp(asof) ? scored.slice(0, 5) : [],
       "score-top5+flow": scored.filter((c) => !heavy.has(c)).slice(0, 5),
       "momentum-top5": asof ? momentumTop(asof).slice(0, 5) : [],
+      "breakout-top5": asof ? breakoutTop(asof).slice(0, 5) : [],
     });
   }
 
@@ -362,7 +391,7 @@ async function main(): Promise<void> {
       barsByCode,
       topN: 10_000,
     }),
-    ...(["score-top5", "score-top5+trend", "score-top5+flow", "momentum-top5"] as const).map((name) =>
+    ...(["score-top5", "score-top5+trend", "score-top5+flow", "momentum-top5", "breakout-top5"] as const).map((name) =>
       simulateWeeklyStrategy({ name, rebalanceDates, pick: (d) => picks.get(d)?.[name] ?? [], barsByCode })
     ),
   ];

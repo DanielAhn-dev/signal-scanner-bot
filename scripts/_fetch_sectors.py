@@ -260,6 +260,8 @@ def upsert_investor_daily():
                     "personal_volume": personal_vol,
                     "foreign_volume": foreign_vol,
                     "institution_volume": inst_vol,
+                    "collection_status": "fallback",
+                    "missing_reason": "naver_sector_batch",
                 })
         except Exception:
             continue

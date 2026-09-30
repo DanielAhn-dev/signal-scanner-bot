@@ -127,6 +127,8 @@ def fetch_credit_short_data(supabase: Client, trading_date: str):
             short_balance = None
             vol_query_ok = False
             bal_query_ok = False
+            volume_status = "api_error"
+            balance_status = "api_error"
 
             # Short-selling volume only. short_ratio column is reserved for balance ratio.
             payload, ok = post_json_with_retry(
@@ -146,8 +148,11 @@ def fetch_credit_short_data(supabase: Client, trading_date: str):
                         matched = True
                         break
                 if not matched:
-                    # 정상 응답이지만 해당일 데이터가 없으면 0으로 저장
+                    # 정상 응답이지만 해당일 데이터가 없다는 사실을 0과 구분해 보존한다.
                     short_volume = 0
+                    volume_status = "no_row"
+                else:
+                    volume_status = "ok"
 
             # Short balance and balance ratio
             payload, ok = post_json_with_retry(
@@ -170,8 +175,20 @@ def fetch_credit_short_data(supabase: Client, trading_date: str):
                 if not matched:
                     short_balance = 0
                     short_ratio = 0.0
+                    balance_status = "no_row"
+                else:
+                    balance_status = "ok"
 
             if short_volume is not None or short_ratio is not None or short_balance is not None or vol_query_ok or bal_query_ok:
+                if volume_status == "ok" and balance_status == "ok":
+                    collection_status = "ok"
+                    missing_reason = None
+                elif volume_status == "api_error" or balance_status == "api_error":
+                    collection_status = "partial"
+                    missing_reason = "volume_api_error" if volume_status == "api_error" else "balance_api_error"
+                else:
+                    collection_status = "no_data"
+                    missing_reason = "no_row_for_trading_date"
                 cs_rows.append({
                     "code": code,
                     "date": trading_iso,
@@ -179,6 +196,10 @@ def fetch_credit_short_data(supabase: Client, trading_date: str):
                     "short_ratio": short_ratio,
                     "short_balance": short_balance,
                     "short_volume": short_volume,
+                    "collection_status": collection_status,
+                    "missing_reason": missing_reason,
+                    "volume_status": volume_status,
+                    "balance_status": balance_status,
                 })
                 success_count += 1
             else:

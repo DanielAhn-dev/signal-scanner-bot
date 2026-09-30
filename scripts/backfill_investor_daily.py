@@ -173,6 +173,10 @@ def upsert_rows(supabase: Client, rows: list[dict]) -> int:
     if not rows:
         return 0
 
+    for row in rows:
+        row.setdefault("collection_status", "fallback")
+        row.setdefault("missing_reason", "naver_backfill")
+
     upserted = 0
     for i in range(0, len(rows), 500):
         batch = rows[i:i + 500]

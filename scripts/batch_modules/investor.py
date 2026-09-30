@@ -340,6 +340,8 @@ def fetch_investor_data(supabase: Client, trading_date: str) -> dict:
                 "foreign_amount": result["foreign"],
                 "personal": result["personal"],
                 "personal_amount": result["personal"],
+                "collection_status": "ok",
+                "missing_reason": None,
             })
 
         time.sleep(0.12)  # ~8 req/sec (KIS 제한 여유있게)
