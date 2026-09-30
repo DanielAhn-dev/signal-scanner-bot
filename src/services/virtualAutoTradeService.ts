@@ -153,6 +153,7 @@ import { calcATR } from "../indicators/atr";
 import { CASH_SWEEP_STRATEGY_ID } from "./virtualAutoTradeCashSweep";
 import { BUY_CASH_BUFFER, createCashSweepSteps } from "./virtualAutoTradeCashSweepStep";
 import { createIndexHoldSteps } from "./virtualAutoTradeIndexHoldStep";
+import { createAutoTradeBuyStep } from "./virtualAutoTradeBuyStep";
 import { createAutoTradeSellStep, type HoldingRow } from "./virtualAutoTradeSellStep";
 import { resolveSeedRebase } from "./virtualAutoTradeSeedRebase";
 import {
@@ -1777,21 +1778,6 @@ function isMissingScoresSignalColumn(error: unknown): boolean {
   return (
     code === "42703" ||
     (message.includes("scores.signal") && message.includes("does not exist"))
-  );
-}
-
-function isMissingVirtualPositionHorizonColumns(error: unknown): boolean {
-  if (!error || typeof error !== "object") return false;
-  const rec = error as Record<string, unknown>;
-  const code = String(rec.code ?? "").trim();
-  const message = String(rec.message ?? rec.details ?? "").toLowerCase();
-  if (code !== "42703") return false;
-  return (
-    message.includes("target_horizon") ||
-    message.includes("horizon_reason") ||
-    message.includes("macro_context_at_entry") ||
-    message.includes("news_context_at_entry") ||
-    message.includes("planned_review_at")
   );
 }
 
@@ -4109,83 +4095,32 @@ async function runMondayBuyForUser(payload: {
         planned_review_at: resolvePlannedReviewAt(tradeProfile.expectedHorizonDays),
       };
 
-      let upserted: Record<string, unknown> | null = null;
-      const upsertTry = await payload.supabase
-        .from(PORTFOLIO_TABLES.positions)
-        .upsert(positionUpsertPayload, { onConflict: "chat_id,code", ignoreDuplicates: true })
-        .select("id, created_at, buy_date")
-        .maybeSingle();
-
-      if (upsertTry.error && isMissingVirtualPositionHorizonColumns(upsertTry.error)) {
-        const fallbackPayload = { ...positionUpsertPayload };
-        delete fallbackPayload.target_horizon;
-        delete fallbackPayload.horizon_reason;
-        delete fallbackPayload.macro_context_at_entry;
-        delete fallbackPayload.news_context_at_entry;
-        delete fallbackPayload.planned_review_at;
-
-        const fallbackTry = await payload.supabase
-          .from(PORTFOLIO_TABLES.positions)
-          .upsert(fallbackPayload, { onConflict: "chat_id,code", ignoreDuplicates: true })
-          .select("id, created_at, buy_date")
-          .maybeSingle();
-        if (fallbackTry.error) {
-          throw fallbackTry.error;
-        }
-        upserted = (fallbackTry.data as Record<string, unknown> | null) ?? null;
-      } else {
-        if (upsertTry.error) {
-          throw upsertTry.error;
-        }
-        upserted = (upsertTry.data as Record<string, unknown> | null) ?? null;
+      const position = await insertNewPosition(payload.supabase, positionUpsertPayload);
+      if (!position) {
+        summary.skipped += 1;
+        summary.notes.push(`${candidate.name}(${candidate.code}) 매수 건너뜀: 이미 보유 중 (겹친 실행)`);
+        continue;
       }
-
-      const tradeId = await appendTradeLog({
+      availableCash = Math.max(0, availableCash - investedAmount);
+      deployableCash = Math.max(0, deployableCash - investedAmount);
+      await saveVirtualCash(chatId, availableCash, "monday buy");
+      const tradeId = await recordBuyAfterPosition({
         supabase: payload.supabase,
         chatId,
         code: candidate.code,
-        side: "BUY",
         price: executionPrice,
         quantity: qty,
-        grossAmount: investedAmount,
-        netAmount: investedAmount,
+        investedAmount,
         memo: buildStrategyMemo({
           strategyId: AUTO_TRADE_STRATEGY_ID,
           event: "monday-buy",
           note: "autotrade-monday-buy",
         }),
-        source: "AUTO",
-        brokerName: null,
-        accountName: null,
+        lot: { kind: "new", position },
       });
-
-      // 즉시 가상현금 업데이트 (원자 트랜잭션은 향후 DB 함수로 개선 가능)
-      try {
-        await setUserInvestmentPrefs(chatId, {
-          virtual_cash: Math.max(0, Math.round(availableCash)),
-        });
-      } catch (e) {
-        console.error("[autoTrade] update virtual_cash after buy failed", e);
-      }
-
-      const positionId = Number((upserted as Record<string, unknown> | null)?.id ?? 0) || null;
-      if (positionId) {
-        await ensureTradeLotsForHolding({
-          chatId,
-          watchlistId: positionId,
-          code: candidate.code,
-          quantity: qty,
-          investedAmount,
-          buyPrice: executionPrice,
-          acquiredAt: String((upserted as Record<string, unknown> | null)?.created_at ?? "") || null,
-          buyDate: String((upserted as Record<string, unknown> | null)?.buy_date ?? "") || null,
-        });
-      }
 
       summary.buys += 1;
       plannedHoldingCount += 1;
-      availableCash = Math.max(0, availableCash - investedAmount);
-      deployableCash = Math.max(0, deployableCash - investedAmount);
       summary.notes.push(
         `[실행 매수] ${candidate.name}(${candidate.code}) ${qty}주 · 전략 ${profileLabel} · 매수가 ${fmtKrw(executionPrice)} · 투입 ${fmtKrw(investedAmount)} · 점수 ${candidate.score.toFixed(1)} · ${formatPriceSourceLabel(executionSource)}${todaySignalReason ? ` · ${todaySignalReason}` : ""}${filterReason ? ` · 필터근거 ${filterReason}` : ""}`
       );
@@ -4304,12 +4239,13 @@ function getStrategyLabel(strategy?: string | null): string | null {
 }
 
 /**
- * 매도 직후 가상현금만 저장한다. 실현손익은 executeAutoTradeSell이 매도와 함께 이미 반영한다.
+ * 매수·매도 직후 가상현금만 저장한다 (같은 실행의 다른 단계가 prefs에서 현금을 다시 읽으므로).
+ * 매도의 실현손익은 executeAutoTradeSell이 매도와 함께 이미 반영한다.
  * dryRun에서는 부르지 않는다 — 예전엔 테스트 실행(휴장일 강제·그림자 모드·브리핑 미리보기)의 매도안도
  * 실현손익·현금을 실제로 더해, 나중에 진짜 매도할 때 손익이 두 번 잡혔다.
  * 현금은 실행 끝의 syncVirtualPortfolio(시드 + 실현손익 − 보유 투자금)로 다시 맞춰진다.
  */
-async function saveVirtualCashAfterSell(chatId: number, availableCash: number, context: string): Promise<void> {
+async function saveVirtualCash(chatId: number, availableCash: number, context: string): Promise<void> {
   const saved = await setUserInvestmentPrefs(chatId, { virtual_cash: Math.max(0, Math.round(availableCash)) });
   if (!saved.ok) console.error(`[autoTrade] update virtual cash after ${context} failed`);
 }
@@ -4322,6 +4258,11 @@ const { executeAutoTradeSell } = createAutoTradeSellStep({
   writeActionLog,
   appendVirtualDecisionLog,
   lots: { ensureTradeLotsForHolding, previewFifoSale, replaceTradeLotsForHolding, applyFifoSale },
+});
+
+const { insertNewPosition, recordBuyAfterPosition } = createAutoTradeBuyStep({
+  appendTradeLog,
+  lots: { ensureTradeLotsForHolding, appendTradeLotsForHolding },
 });
 
 /** 로테이션 기능 자체를 켤지 여부. 실계좌 미러링에 영향을 주는 새 매도 트리거라 기본 비활성(옵트인). */
@@ -4592,7 +4533,7 @@ export async function runGateCoreForUser(payload: {
       summary.sells += 1;
       availableCash += result.proceeds;
       // 아래 매수가 현금을 prefs에서 다시 읽으므로 매도 대금을 바로 저장한다 (예전엔 대금이 빠진 채 다시 읽혔다)
-      if (!payload.dryRun) await saveVirtualCashAfterSell(chatId, availableCash, "gate-core sell");
+      if (!payload.dryRun) await saveVirtualCash(chatId, availableCash, "gate-core sell");
       summary.notes.push(`[교체 매도] ${names.get(code) ?? code}(${code}) ${qty}주 — 목표 목록에서 빠짐 · ${result.note}`);
     }
   }
@@ -4655,31 +4596,24 @@ export async function runGateCoreForUser(payload: {
       summary.notes.push(`${code} 매수 실패: ${upsertError ? queryErrorMessage(upsertError) : "이미 보유 중"}`);
       continue;
     }
-    await appendTradeLog({
+    availableCash = Math.max(0, availableCash - investedAmount);
+    await saveVirtualCash(chatId, availableCash, "gate-core buy");
+    await recordBuyAfterPosition({
       supabase: payload.supabase,
       chatId,
       code,
-      side: "BUY",
       price,
       quantity: qty,
-      grossAmount: investedAmount,
-      netAmount: investedAmount,
-      memo: buildStrategyMemo({ strategyId: AUTO_TRADE_STRATEGY_ID, event: "gate-core-buy", note: "gate-core-monthly-rebalance" }),
-      source: "AUTO",
-      brokerName: null,
-      accountName: null,
-    });
-    availableCash = Math.max(0, availableCash - investedAmount);
-    await setUserInvestmentPrefs(chatId, { virtual_cash: Math.round(availableCash) });
-    await ensureTradeLotsForHolding({
-      chatId,
-      watchlistId: Number((upserted as Record<string, unknown>).id ?? 0),
-      code,
-      quantity: qty,
       investedAmount,
-      buyPrice: price,
-      acquiredAt: String((upserted as Record<string, unknown>).created_at ?? "") || null,
-      buyDate: String((upserted as Record<string, unknown>).buy_date ?? "") || null,
+      memo: buildStrategyMemo({ strategyId: AUTO_TRADE_STRATEGY_ID, event: "gate-core-buy", note: "gate-core-monthly-rebalance" }),
+      lot: {
+        kind: "new",
+        position: {
+          id: Number((upserted as Record<string, unknown>).id ?? 0),
+          created_at: String((upserted as Record<string, unknown>).created_at ?? "") || null,
+          buy_date: String((upserted as Record<string, unknown>).buy_date ?? "") || null,
+        },
+      },
     });
     summary.buys += 1;
     summary.notes.push(`[교체 매수] ${names.get(code) ?? code}(${code}) ${qty}주 · 매수가 ${fmtKrw(price)} · 투입 ${fmtKrw(investedAmount)} · 실적 관문 통과 · 점수 순위 목표`);
@@ -5200,7 +5134,7 @@ async function runDailyReviewForUser(payload: {
           if (fallbackSell.sold) {
             realizedDelta += fallbackSell.realizedPnlDelta;
             availableCash += fallbackSell.proceeds;
-            if (!payload.dryRun) await saveVirtualCashAfterSell(chatId, availableCash, "guard-fallback stop");
+            if (!payload.dryRun) await saveVirtualCash(chatId, availableCash, "guard-fallback stop");
             stopLossCount += 1;
             summary.sells += 1;
             summary.notes.push(
@@ -5298,7 +5232,7 @@ async function runDailyReviewForUser(payload: {
       if (eventSellResult.sold) {
         realizedDelta += eventSellResult.realizedPnlDelta;
         availableCash += eventSellResult.proceeds;
-        if (!payload.dryRun) await saveVirtualCashAfterSell(chatId, availableCash, "event-risk sell");
+        if (!payload.dryRun) await saveVirtualCash(chatId, availableCash, "event-risk sell");
         summary.sells += 1;
         summary.notes.push(`${eventSellResult.note} · ${holdingEventGuard.reason}`);
         await writeActionLog({
@@ -5644,7 +5578,7 @@ async function runDailyReviewForUser(payload: {
 
       realizedDelta += result.realizedPnlDelta;
       availableCash += result.proceeds;
-      if (!payload.dryRun) await saveVirtualCashAfterSell(chatId, availableCash, "sell");
+      if (!payload.dryRun) await saveVirtualCash(chatId, availableCash, "sell");
       if (finalExitPlan.action === "STOP_LOSS") {
         stopLossCount += 1;
       } else {
@@ -6134,55 +6068,24 @@ async function runDailyReviewForUser(payload: {
             throw updateError;
           }
 
-          const tradeId = await appendTradeLog({
+          // 예전엔 차감 전 현금을 두 번 저장했다 (복사 흔적) — 차감 후 한 번만 저장한다
+          availableCash = Math.max(0, availableCash - addOnInvested);
+          deployableCash = Math.max(0, deployableCash - addOnInvested);
+          await saveVirtualCash(chatId, availableCash, "add-on buy");
+          const tradeId = await recordBuyAfterPosition({
             supabase: payload.supabase,
             chatId,
             code: candidate.code,
-            side: "BUY",
             price: executionPrice,
             quantity: addOnQty,
-            grossAmount: addOnInvested,
-            netAmount: addOnInvested,
+            investedAmount: addOnInvested,
             memo: buildStrategyMemo({
               strategyId: AUTO_TRADE_STRATEGY_ID,
               event: "add-on-buy",
               note: "autotrade-add-on-buy",
             }),
-            source: "AUTO",
-            brokerName: null,
-            accountName: null,
+            lot: { kind: "add-on", holdingId: holding.id, note: "autotrade-add-on-buy" },
           });
-
-          try {
-            await setUserInvestmentPrefs(chatId, {
-              virtual_cash: Math.max(0, Math.round(availableCash)),
-            });
-          } catch (e) {
-            console.error("[autoTrade] update virtual_cash after add-on buy failed", e);
-          }
-
-          try {
-            await setUserInvestmentPrefs(chatId, {
-              virtual_cash: Math.max(0, Math.round(availableCash)),
-            });
-          } catch (e) {
-            console.error("[autoTrade] update virtual_cash after rebalance buy failed", e);
-          }
-
-          await appendTradeLotsForHolding({
-            chatId,
-            watchlistId: holding.id,
-            code: candidate.code,
-            quantity: addOnQty,
-            investedAmount: addOnInvested,
-            buyPrice: executionPrice,
-            acquiredAt: new Date().toISOString(),
-            note: "autotrade-add-on-buy",
-            sourceTradeId: tradeId,
-          });
-
-          availableCash = Math.max(0, availableCash - addOnInvested);
-          deployableCash = Math.max(0, deployableCash - addOnInvested);
           addOnBuyCount += 1;
           summary.buys += 1;
           summary.notes.push(
@@ -6840,72 +6743,29 @@ async function runDailyReviewForUser(payload: {
             planned_review_at: resolvePlannedReviewAt(adjustedEntryProfile.expectedHorizonDays),
           };
 
-          let upserted: Record<string, unknown> | null = null;
-          const upsertTry = await payload.supabase
-            .from(PORTFOLIO_TABLES.positions)
-            .upsert(positionUpsertPayload, { onConflict: "chat_id,code", ignoreDuplicates: true })
-            .select("id, created_at, buy_date")
-            .maybeSingle();
-
-          if (upsertTry.error && isMissingVirtualPositionHorizonColumns(upsertTry.error)) {
-            const fallbackPayload = { ...positionUpsertPayload };
-            delete fallbackPayload.target_horizon;
-            delete fallbackPayload.horizon_reason;
-            delete fallbackPayload.macro_context_at_entry;
-            delete fallbackPayload.news_context_at_entry;
-            delete fallbackPayload.planned_review_at;
-
-            const fallbackTry = await payload.supabase
-              .from(PORTFOLIO_TABLES.positions)
-              .upsert(fallbackPayload, { onConflict: "chat_id,code", ignoreDuplicates: true })
-              .select("id, created_at, buy_date")
-              .maybeSingle();
-            if (fallbackTry.error) {
-              throw fallbackTry.error;
-            }
-            upserted = (fallbackTry.data as Record<string, unknown> | null) ?? null;
-          } else {
-            if (upsertTry.error) {
-              throw upsertTry.error;
-            }
-            upserted = (upsertTry.data as Record<string, unknown> | null) ?? null;
+          const position = await insertNewPosition(payload.supabase, positionUpsertPayload);
+          if (!position) {
+            summary.skipped += 1;
+            summary.notes.push(`${candidate.name}(${candidate.code}) 매수 건너뜀: 이미 보유 중 (겹친 실행)`);
+            continue;
           }
-
-          const tradeId = await appendTradeLog({
+          availableCash = Math.max(0, availableCash - investedAmount);
+          deployableCash = Math.max(0, deployableCash - investedAmount);
+          await saveVirtualCash(chatId, availableCash, "rebalance buy");
+          const tradeId = await recordBuyAfterPosition({
             supabase: payload.supabase,
             chatId,
             code: candidate.code,
-            side: "BUY",
             price: executionPrice,
             quantity: qty,
-            grossAmount: investedAmount,
-            netAmount: investedAmount,
+            investedAmount,
             memo: buildStrategyMemo({
               strategyId: AUTO_TRADE_STRATEGY_ID,
               event: "rebalance-buy",
               note: "autotrade-rebalance-buy",
             }),
-            source: "AUTO",
-            brokerName: null,
-            accountName: null,
+            lot: { kind: "new", position },
           });
-
-          const positionId = Number((upserted as Record<string, unknown> | null)?.id ?? 0) || null;
-          if (positionId) {
-            await ensureTradeLotsForHolding({
-              chatId,
-              watchlistId: positionId,
-              code: candidate.code,
-              quantity: qty,
-              investedAmount,
-              buyPrice: executionPrice,
-              acquiredAt: String((upserted as Record<string, unknown> | null)?.created_at ?? "") || null,
-              buyDate: String((upserted as Record<string, unknown> | null)?.buy_date ?? "") || null,
-            });
-          }
-
-          availableCash = Math.max(0, availableCash - investedAmount);
-          deployableCash = Math.max(0, deployableCash - investedAmount);
           plannedHoldingCount += 1;
           rebalanceBuyCount += 1;
           summary.buys += 1;
