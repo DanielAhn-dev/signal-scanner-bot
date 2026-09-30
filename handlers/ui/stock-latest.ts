@@ -53,6 +53,11 @@ type InvestorFlowRow = {
   personal_volume: number | null
   foreign_volume: number | null
   institution_volume: number | null
+  history: Array<{
+    date: string | null
+    foreign_amount: number | null
+    institution_amount: number | null
+  }>
 }
 
 type IndicatorSnapshot = {
@@ -675,7 +680,7 @@ async function fetchInvestorFlow(supabase: any, code: string): Promise<InvestorF
         .select(spec.select)
         .eq(spec.codeCol, code)
         .order(spec.dateCol, { ascending: false })
-        .limit(1)
+        .limit(10)
 
       if (!error && data && data.length) {
         const row = data[0] as any
@@ -708,6 +713,11 @@ async function fetchInvestorFlow(supabase: any, code: string): Promise<InvestorF
           personal_volume: personalVolume,
           foreign_volume: foreignVolume,
           institution_volume: institutionVolume,
+          history: data.map((item: any) => ({
+            date: item?.date ?? null,
+            foreign_amount: asNum(item?.foreign_amount ?? item?.foreign ?? item?.foreign_net),
+            institution_amount: asNum(item?.institution_amount ?? item?.institution ?? item?.institution_net),
+          })),
         }
       }
     } catch {
@@ -1648,6 +1658,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             personal_volume: asNum(flow.personal_volume),
             foreign_volume: asNum(flow.foreign_volume),
             institution_volume: asNum(flow.institution_volume),
+            history: flow.history,
           }
         : null,
       creditShort: creditShort
