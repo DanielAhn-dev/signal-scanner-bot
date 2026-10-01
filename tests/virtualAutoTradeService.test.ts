@@ -1301,7 +1301,7 @@ test("planAutoTradeExit: 손절선(-4%)이 절반청산선(-7%)보다 좁으면 
   assert.equal(plan.quantityToSell, 10);
 });
 
-test("planAutoTradeExit: 손절선(-9%)이 넓으면 -7.5%에서 절반 청산", () => {
+test("planAutoTradeExit: 손절선(-9%)이 넓으면 -7.5%에서 절반 청산 (손절로 분류 — 예전엔 TAKE_PROFIT로 잘못 돌려줘 손실 매도가 '부분익절'로 보였다)", () => {
   const plan = planAutoTradeExit({
     quantity: 10,
     pnlPct: -7.5,
@@ -1311,4 +1311,7 @@ test("planAutoTradeExit: 손절선(-9%)이 넓으면 -7.5%에서 절반 청산",
     takeProfitTranchesDone: 0,
   });
   assert.equal(plan.quantityToSell, 5);
+  assert.equal(plan.action, "STOP_LOSS");
+  assert.equal(plan.isPartial, true);
+  assert.equal(plan.reason, "stop-loss");
 });

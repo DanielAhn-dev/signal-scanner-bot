@@ -54,7 +54,8 @@ export type PlannedAutoTradeExit =
   | {
       action: "STOP_LOSS";
       quantityToSell: number;
-      isPartial: false;
+      /** 경직 손절(-10%)은 전량(false), 1차 방어선(halfExitStopPct)은 절반만(true) */
+      isPartial: boolean;
       nextTakeProfitTranchesDone: number;
       reason: "stop-loss";
     }
@@ -578,14 +579,16 @@ export function planAutoTradeExit(input: {
   // halfExitStopPct 초과 → 절반 청산 (손실 한정 + 추가 하락 여지 확보, 기본 -7%)
   // 손절선이 절반 청산선보다 넓을 때(ATR 확장 손절 등)만 적용한다. 예전엔 손절선이 -4%여도 이 분기가 먼저
   // 잡혀서 -5%에선 전량, 더 깊은 -8%에선 절반만 파는 역전이 있었다.
+  // action·reason은 손절이다 — 예전엔 TAKE_PROFIT/take-profit-partial로 돌려줘서 손실 중인 매도가
+  // MTS 따라하기 주문서·거래기록에 "부분익절"로 보였다(2026-10-01, S-Oil -8.4%인데 부분익절로 표시됨).
   if (pnlPct <= -halfExitStopPct && stopLossPct > halfExitStopPct) {
     const halfQty = Math.max(1, Math.ceil(quantity / 2));
     return {
-      action: "TAKE_PROFIT",
+      action: "STOP_LOSS",
       quantityToSell: halfQty,
       isPartial: halfQty < quantity,
       nextTakeProfitTranchesDone: takeProfitTranchesDone,
-      reason: "take-profit-partial",
+      reason: "stop-loss",
     };
   }
 
