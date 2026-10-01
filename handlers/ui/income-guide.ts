@@ -7,8 +7,11 @@ import { loadGoalFile } from '../../src/services/goalTracker'
 import { fetchRealtimePriceBatch, type RealtimeStockData } from '../../src/utils/fetchRealtimePrice'
 import {
   DEFAULT_INCOME_GUIDE_SETTINGS,
+  appendHistory,
   buildIncomeGuideView,
   sanitizeIncomeGuideSettings,
+  toHistoryEntry,
+  type GuideHistoryEntry,
   type GuideHolding,
   type IncomeGuideSettings,
 } from '../../src/lib/incomeGuide'
@@ -16,7 +19,11 @@ import {
 const BUCKET = 'market-snapshots'
 const DIR = 'income-guide'
 
-// 실계좌 리밸런싱 가이드 (src/lib/incomeGuide.ts) — GET: 계좌 보유로 안내 계산 / POST: 가이드 설정 변경
+type GuideFile = { settings: IncomeGuideSettings; history: GuideHistoryEntry[] }
+
+// 실계좌 리밸런싱 가이드 (src/lib/incomeGuide.ts)
+//   GET  ?contribution=원 — 계좌 보유로 안내 계산 (넣을 돈이 있으면 모자란 바구니부터 채우는 안도)
+//   POST { ...설정 } — 가이드 설정 변경 / POST { action: 'record', note } — 오늘 비중을 점검 기록에 남김
 // 계좌 보유 = virtual_positions 중 증권사·계좌명이 있는 행("계좌/보유 추가"로 입력). 봇 가상 계좌는 넣지 않는다.
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   const origin = (req.headers.origin as string) || process.env.UI_CORS_ORIGIN || '*'
@@ -39,24 +46,24 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   try {
     const path = `${DIR}/${chatId}.json`
-    let settings = await loadSettings(supabase, path)
-    if (!settings) {
-      // 처음 열면 목표 트래커의 월 목표·목표 시점을 기본값으로 쓴다 (따로 두 번 입력하지 않게)
+    let file = await loadFile(supabase, path)
+    if (!file) {
+      // 처음 열면 목표 트래커의 월 목표를 기본값으로 쓴다 (따로 두 번 입력하지 않게)
       const goal = await loadGoalFile(supabase, chatId).catch(() => null)
-      settings = {
-        ...DEFAULT_INCOME_GUIDE_SETTINGS,
-        ...(goal?.settings.targetMonthlyProfit ? { monthlyNeed: goal.settings.targetMonthlyProfit } : {}),
+      file = {
+        settings: {
+          ...DEFAULT_INCOME_GUIDE_SETTINGS,
+          ...(goal?.settings.targetMonthlyProfit ? { monthlyNeed: goal.settings.targetMonthlyProfit } : {}),
+        },
+        history: [],
       }
     }
-    if (req.method === 'POST') {
-      const patch = (typeof req.body === 'string' ? JSON.parse(req.body || '{}') : req.body) ?? {}
-      settings = sanitizeIncomeGuideSettings(patch, settings)
-      const { error } = await supabase.storage.from(BUCKET).upload(path, JSON.stringify({ settings }), {
-        upsert: true,
-        contentType: 'application/json',
-        cacheControl: '0',
-      })
-      if (error) return res.status(500).json({ error: `가이드 설정 저장 실패: ${error.message}` })
+    const body = req.method === 'POST' ? ((typeof req.body === 'string' ? JSON.parse(req.body || '{}') : req.body) ?? {}) : {}
+    const isRecord = req.method === 'POST' && body.action === 'record'
+    if (req.method === 'POST' && !isRecord) {
+      file.settings = sanitizeIncomeGuideSettings(body, file.settings)
+      const saveErr = await saveFile(supabase, path, file)
+      if (saveErr) return res.status(500).json({ error: `가이드 설정 저장 실패: ${saveErr}` })
     }
 
     const { data, error } = await supabase
@@ -90,26 +97,47 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         name: String(stock?.name ?? code),
         quantity: Math.max(0, Math.floor(Number(r.quantity ?? 0))),
         price,
+        avgPrice: buy > 0 ? buy : null,
         accountKey: `${broker}|${account}`,
         accountLabel: label || '계좌',
       }
     })
 
-    const view = buildIncomeGuideView({ holdings, settings, today: kstDateKey() })
-    return res.status(200).json({ ok: true, data: { ...view, priceFallbacks } })
+    const contribution = Number((req.query?.contribution as string) ?? body.contribution ?? 0)
+    const view = buildIncomeGuideView({ holdings, settings: file.settings, today: kstDateKey(), contribution })
+    if (isRecord) {
+      if (view.total <= 0) return res.status(400).json({ error: '기록할 계좌 보유가 없습니다.' })
+      file.history = appendHistory(file.history ?? [], toHistoryEntry(view, typeof body.note === 'string' ? body.note : undefined))
+      const saveErr = await saveFile(supabase, path, file)
+      if (saveErr) return res.status(500).json({ error: `점검 기록 저장 실패: ${saveErr}` })
+    }
+    return res.status(200).json({ ok: true, data: { ...view, priceFallbacks, history: file.history ?? [] } })
   } catch (e: any) {
     return res.status(500).json({ error: String(e?.message || e) })
   }
 }
 
-async function loadSettings(supabase: any, path: string): Promise<IncomeGuideSettings | null> {
+async function loadFile(supabase: any, path: string): Promise<GuideFile | null> {
   // Storage CDN이 옛 내용을 돌려주지 않게 매번 캐시를 우회한다 (goalTracker와 같은 이유)
   const { data, error } = await supabase.storage.from(BUCKET).download(path, { cacheNonce: String(Date.now()) })
   if (error || !data) return null
   try {
-    const parsed = JSON.parse(await data.text()) as { settings?: Partial<IncomeGuideSettings> }
-    return parsed.settings ? sanitizeIncomeGuideSettings(parsed.settings, DEFAULT_INCOME_GUIDE_SETTINGS) : null
+    const parsed = JSON.parse(await data.text()) as { settings?: Partial<IncomeGuideSettings>; history?: GuideHistoryEntry[] }
+    if (!parsed.settings) return null
+    return {
+      settings: sanitizeIncomeGuideSettings(parsed.settings, DEFAULT_INCOME_GUIDE_SETTINGS),
+      history: Array.isArray(parsed.history) ? parsed.history : [],
+    }
   } catch {
     return null
   }
+}
+
+async function saveFile(supabase: any, path: string, file: GuideFile): Promise<string | null> {
+  const { error } = await supabase.storage.from(BUCKET).upload(path, JSON.stringify(file), {
+    upsert: true,
+    contentType: 'application/json',
+    cacheControl: '0',
+  })
+  return error ? String(error.message) : null
 }

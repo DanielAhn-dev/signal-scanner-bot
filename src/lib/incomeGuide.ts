@@ -118,12 +118,40 @@ export type IncomeGuideSettings = {
   satelliteCapPct: number;
   /** 성장 바구니 안에서 해외 지수 목표 비중 % */
   overseasPct: number;
+  /**
+   * 직접 정한 목표 비중 % — 엑셀로 관리하던 비중을 그대로 쓰고 싶을 때. 넣은 바구니만 단계 기본값 대신 쓰고,
+   * 성장은 나머지로 채운다(위성은 상한으로만 다룬다). 비우면 단계 기본값.
+   */
+  customTargets?: { income?: number; cash?: number };
+  /**
+   * 일반 계좌에서 받을 과세 금융소득(이자·분배금) 연 상한 (원). 기본 1천만 — 건강보험 지역가입자는 금융소득이 연 1천만원을
+   * 넘으면 전액이 보험료 소득에 잡히고, 연 2천만원을 넘으면 종합과세·피부양자 탈락 기준이 된다(기준은 해마다 확인 필요).
+   * ISA·연금 계좌 안의 분배금은 여기에 넣지 않는다.
+   */
+  financialIncomeCap: number;
 };
 
 export const DEFAULT_INCOME_GUIDE_SETTINGS: IncomeGuideSettings = {
   monthlyNeed: 500_000,
   satelliteCapPct: 10,
   overseasPct: 50,
+  financialIncomeCap: 10_000_000,
+};
+
+/**
+ * 바구니별 연 분배율 가정 % — 과세 금융소득 추정용. 2022~2025 실제 분배 기록 기준:
+ * 국내 고배당 4~6%, 커버드콜ATM 8~9%, 맥쿼리인프라 6~7%, KODEX 200 약 2%, S&P500 ETF 약 1%, 채권·CD금리 3% 안팎.
+ */
+export const BUCKET_YIELD_PCT: Record<AssetBucket, number> = {
+  kr_index: 2,
+  global_index: 1.2,
+  dividend: 4.5,
+  covered_call: 8.5,
+  reit_infra: 6.5,
+  bond_cash: 3,
+  leveraged: 0,
+  stock: 2,
+  other_etf: 1,
 };
 
 export function sanitizeIncomeGuideSettings(input: Partial<IncomeGuideSettings>, current: IncomeGuideSettings): IncomeGuideSettings {
@@ -131,7 +159,22 @@ export function sanitizeIncomeGuideSettings(input: Partial<IncomeGuideSettings>,
     const n = Number(v);
     return v != null && v !== "" && Number.isFinite(n) ? Math.min(max, Math.max(min, n)) : fallback;
   };
+  // 목표 비중: 빈 값("")·null은 그 바구니를 단계 기본값으로 되돌린다
+  const customIn = (input.customTargets ?? undefined) as Record<string, unknown> | undefined;
+  const customCur = current.customTargets ?? {};
+  const pick = (key: "income" | "cash"): number | undefined => {
+    if (!customIn || !(key in customIn)) return customCur[key];
+    const v = customIn[key];
+    if (v == null || v === "") return undefined;
+    const n = Number(v);
+    return Number.isFinite(n) ? Math.min(90, Math.max(0, n)) : customCur[key];
+  };
+  const income = pick("income");
+  let cash = pick("cash");
+  if (income != null && cash != null && income + cash > 100) cash = 100 - income;
+  const customTargets = income != null || cash != null ? { ...(income != null ? { income } : {}), ...(cash != null ? { cash } : {}) } : undefined;
   return {
+    customTargets,
     monthlyNeed: num(input.monthlyNeed, current.monthlyNeed, 0, 1e9),
     incomeStart:
       input.incomeStart === ""
@@ -141,6 +184,7 @@ export function sanitizeIncomeGuideSettings(input: Partial<IncomeGuideSettings>,
           : current.incomeStart,
     satelliteCapPct: num(input.satelliteCapPct, current.satelliteCapPct, 0, 50),
     overseasPct: num(input.overseasPct, current.overseasPct, 0, 100),
+    financialIncomeCap: num(input.financialIncomeCap, current.financialIncomeCap ?? DEFAULT_INCOME_GUIDE_SETTINGS.financialIncomeCap, 0, 1e10),
   };
 }
 
@@ -151,7 +195,25 @@ export type GuideHolding = {
   price: number;
   accountKey: string;
   accountLabel: string;
+  /** 평균 매수가 — 팔 때 확정되는 손익 계산용 (없으면 손익을 보여 주지 않는다) */
+  avgPrice?: number | null;
 };
+
+export type GuideOrder = {
+  side: "sell" | "buy";
+  code: string;
+  name: string;
+  accountLabel: string;
+  group: BucketGroup;
+  price: number;
+  shares: number;
+  amount: number;
+  /** 매도로 확정되는 손익 (평균 매수가를 알 때만) */
+  realizedGain: number | null;
+};
+
+/** 보유 종목이 없는 바구니라 새 상품을 골라 사야 하는 금액 */
+export type UnfilledBuy = { group: BucketGroup; bucket?: AssetBucket; amount: number };
 
 export type GuideStage = "accumulate" | "transition" | "income";
 
@@ -194,6 +256,35 @@ export type IncomeGuideView = {
     /** 성장 바구니 안 국내↔해외 조정 (목표 성장 금액 기준, 1만원 미만이면 null) */
     growthShift: { to: "global_index" | "kr_index"; amount: number } | null;
     trims: Array<{ group: BucketGroup; holdings: Array<{ code: string; name: string; accountLabel: string; value: number }> }>;
+    /** 종목별 주문안 (엑셀로 하던 "몇 주 팔고 몇 주 살지") — 매도가 먼저, 매도 대금으로 매수 */
+    orders: GuideOrder[];
+    unfilled: UnfilledBuy[];
+    /** 매도로 확정되는 손익 합계 (평균 매수가를 아는 종목만) */
+    realizedGainTotal: number;
+  };
+  /** 새로 넣을 돈을 모자란 바구니부터 채우는 안 (팔지 않고 맞추기). 넣을 돈이 없으면 null */
+  contribution: {
+    amount: number;
+    allocations: Array<{ group: BucketGroup; amount: number }>;
+    orders: GuideOrder[];
+    unfilled: UnfilledBuy[];
+    /** 넣은 뒤에도 ±밴드를 넘는 바구니가 남는지 */
+    stillOutOfBand: boolean;
+  } | null;
+  /** 목표 비중이 단계 기본값인지, 직접 정한 값인지 */
+  targetSource: "stage" | "custom";
+  /**
+   * 예상 분배금 (바구니별 분배율 가정). 과세 = 일반 계좌, 절세 = ISA·연금 계좌.
+   * 여유 = 상한 − 과세 분배금, 여유를 고배당(4.5%)으로 채우려면 필요한 금액.
+   */
+  distributions: {
+    taxableAnnual: number;
+    shelteredAnnual: number;
+    cap: number;
+    headroom: number;
+    headroomAsDividendCapital: number;
+    /** 일반 계좌 과세 분배금 중 커버드콜 몫 */
+    taxableFromCoveredCall: number;
   };
   warnings: GuideWarning[];
   accounts: Array<{
@@ -258,10 +349,96 @@ const STAGE_TEXT: Record<GuideStage, { title: string; text: string }> = {
   },
 };
 
+/** 점검 기록 한 줄 — "리밸런싱함" 버튼을 누른 날의 비중과 목표 (엑셀 시트의 이력 탭 역할) */
+export type GuideHistoryEntry = {
+  date: string;
+  total: number;
+  groups: Array<{ group: BucketGroup; actualPct: number; targetPct: number }>;
+  note?: string;
+};
+
+export function toHistoryEntry(view: IncomeGuideView, note?: string): GuideHistoryEntry {
+  return {
+    date: view.today,
+    total: view.total,
+    groups: view.groups.map((g) => ({ group: g.group, actualPct: Math.round(g.actualPct * 10) / 10, targetPct: Math.round(g.targetPct * 10) / 10 })),
+    ...(note ? { note: String(note).slice(0, 200) } : {}),
+  };
+}
+
+/** 같은 날 기록은 덮어쓰고, 최근 120개만 남긴다 */
+export function appendHistory(history: GuideHistoryEntry[], entry: GuideHistoryEntry): GuideHistoryEntry[] {
+  return [...history.filter((h) => h.date !== entry.date), entry].sort((a, b) => a.date.localeCompare(b.date)).slice(-120);
+}
+
+type PlanKey = "kr" | "global" | "income" | "satellite" | "cash";
+const PLAN_GROUP: Record<PlanKey, BucketGroup> = { kr: "growth", global: "growth", income: "income", satellite: "satellite", cash: "cash" };
+const PLAN_BUCKET: Partial<Record<PlanKey, AssetBucket>> = { kr: "kr_index", global: "global_index", cash: "bond_cash" };
+const planKeyOf = (bucket: AssetBucket): PlanKey =>
+  bucket === "kr_index" ? "kr" : bucket === "global_index" ? "global" : (BUCKET_GROUP[bucket] as PlanKey);
+/** 더 사 넣지 않는 종목 — 커버드콜(장기 연 4~11%p 뒤처짐)과 개별 리츠, 레버리지·개별주·테마 */
+const isBuyable = (r: { bucket: AssetBucket; code: string; name: string }) =>
+  r.bucket !== "covered_call" && BUCKET_GROUP[r.bucket] !== "satellite" && !(r.bucket === "reit_infra" && /리츠/.test(r.name) && !isExchangeTradedProduct(r.code, r.name));
+
+type PlanRow = GuideHolding & { value: number; bucket: AssetBucket; group: BucketGroup };
+
+/** 바구니별 금액 변화(+ 매수 / − 매도)를 종목별 주수로 바꾼다. 매도는 큰 종목부터, 매수는 이미 가진 종목에 비중대로 */
+function toOrders(rows: PlanRow[], deltas: Record<PlanKey, number>): { orders: GuideOrder[]; unfilled: UnfilledBuy[] } {
+  const orders: GuideOrder[] = [];
+  const unfilled: UnfilledBuy[] = [];
+  for (const key of Object.keys(deltas) as PlanKey[]) {
+    const delta = deltas[key];
+    if (Math.abs(delta) < 10_000) continue;
+    const members = rows.filter((r) => planKeyOf(r.bucket) === key);
+    if (delta < 0) {
+      let remaining = -delta;
+      for (const r of [...members].sort((a, b) => b.value - a.value)) {
+        if (remaining <= 0) break;
+        const shares = Math.min(r.quantity, Math.ceil(remaining / r.price));
+        if (shares <= 0) continue;
+        const amount = Math.round(shares * r.price);
+        orders.push({
+          side: "sell",
+          code: r.code,
+          name: r.name,
+          accountLabel: r.accountLabel,
+          group: r.group,
+          price: r.price,
+          shares,
+          amount,
+          realizedGain: r.avgPrice && r.avgPrice > 0 ? Math.round((r.price - r.avgPrice) * shares) : null,
+        });
+        remaining -= amount;
+      }
+    } else {
+      const buyable = members.filter(isBuyable);
+      const base = buyable.reduce((s, r) => s + r.value, 0);
+      let spent = 0;
+      for (const r of buyable) {
+        const alloc = base > 0 ? (delta * r.value) / base : 0;
+        const shares = Math.floor(alloc / r.price);
+        if (shares <= 0) continue;
+        const amount = Math.round(shares * r.price);
+        spent += amount;
+        orders.push({ side: "buy", code: r.code, name: r.name, accountLabel: r.accountLabel, group: r.group, price: r.price, shares, amount, realizedGain: null });
+      }
+      const left = delta - spent;
+      // 가진 종목이 없거나(새 상품 필요) 1주 단위로 남은 돈이 큰 경우
+      if (buyable.length === 0 || left >= Math.max(10_000, delta * 0.2)) {
+        unfilled.push({ group: PLAN_GROUP[key], ...(PLAN_BUCKET[key] ? { bucket: PLAN_BUCKET[key] } : {}), amount: Math.round(left) });
+      }
+    }
+  }
+  orders.sort((a, b) => (a.side === b.side ? b.amount - a.amount : a.side === "sell" ? -1 : 1));
+  return { orders, unfilled };
+}
+
 export function buildIncomeGuideView(input: {
   holdings: GuideHolding[];
   settings: IncomeGuideSettings;
   today: string;
+  /** 이번에 새로 넣을 돈 — 모자란 바구니부터 채우는 안을 만든다 */
+  contribution?: number;
 }): IncomeGuideView {
   const { settings, today } = input;
   const rows = input.holdings
@@ -282,7 +459,14 @@ export function buildIncomeGuideView(input: {
   const byGroup = sumBy((r) => r.group);
   const gv = (g: BucketGroup) => byGroup.get(g) ?? 0;
 
-  const targets = resolveStageTargets({ settings, total, today });
+  const stageTargets = resolveStageTargets({ settings, total, today });
+  const custom = settings.customTargets;
+  const targetSource: IncomeGuideView["targetSource"] = custom && (custom.income != null || custom.cash != null) ? "custom" : "stage";
+  const targets = {
+    ...stageTargets,
+    incomePct: custom?.income ?? stageTargets.incomePct,
+    cashPct: custom?.cash ?? stageTargets.cashPct,
+  };
   const satelliteActualPct = pct(gv("satellite"));
   // 위성은 상한일 뿐 채워 넣을 목표가 아니다 — 상한 아래면 지금 비중을 그대로 목표로 둔다
   const satelliteTargetPct = Math.min(satelliteActualPct, settings.satelliteCapPct);
@@ -354,6 +538,70 @@ export function buildIncomeGuideView(input: {
     }))
     .filter((t) => t.holdings.length > 0);
 
+  // 종목별 주문안: 리밸런싱 뒤 목표 금액과 지금 금액의 차이 (성장은 국내·해외로 나눠서)
+  const targetValues = (base: number, satelliteValue: number): Record<PlanKey, number> => {
+    const satT = Math.min(satelliteValue, (settings.satelliteCapPct / 100) * base);
+    const incomeT = (targets.incomePct / 100) * base;
+    const cashT = (targets.cashPct / 100) * base;
+    const growthT = Math.max(0, base - incomeT - cashT - satT);
+    return {
+      kr: growthT * (1 - settings.overseasPct / 100),
+      global: growthT * (settings.overseasPct / 100),
+      income: incomeT,
+      satellite: satT,
+      cash: cashT,
+    };
+  };
+  const current: Record<PlanKey, number> = { kr: krValue, global: globalValue, income: gv("income"), satellite: gv("satellite"), cash: gv("cash") };
+  const tv = targetValues(total, current.satellite);
+  const rebalanceDeltas = Object.fromEntries((Object.keys(current) as PlanKey[]).map((k) => [k, tv[k] - current[k]])) as Record<PlanKey, number>;
+  const rebalanceOrders = total > 0 ? toOrders(rows, rebalanceDeltas) : { orders: [], unfilled: [] };
+  const realizedGainTotal = rebalanceOrders.orders.reduce((s, o) => s + (o.side === "sell" ? o.realizedGain ?? 0 : 0), 0);
+
+  // 새로 넣을 돈: 모자란 곳부터 채우고(팔지 않음), 다 채우고 남으면 성장에 목표 비율로
+  const contributionAmount = Math.max(0, Math.round(Number(input.contribution ?? 0)));
+  let contribution: IncomeGuideView["contribution"] = null;
+  if (contributionAmount >= 10_000) {
+    const newTotal = total + contributionAmount;
+    const tvNew = targetValues(newTotal, current.satellite);
+    const gaps = Object.fromEntries(
+      (Object.keys(current) as PlanKey[]).map((k) => [k, k === "satellite" ? 0 : Math.max(0, tvNew[k] - current[k])])
+    ) as Record<PlanKey, number>;
+    const gapSum = Object.values(gaps).reduce((s, v) => s + v, 0);
+    const alloc = Object.fromEntries((Object.keys(gaps) as PlanKey[]).map((k) => [k, 0])) as Record<PlanKey, number>;
+    if (gapSum >= contributionAmount) {
+      for (const k of Object.keys(gaps) as PlanKey[]) alloc[k] = (contributionAmount * gaps[k]) / gapSum;
+    } else {
+      for (const k of Object.keys(gaps) as PlanKey[]) alloc[k] = gaps[k];
+      const rest = contributionAmount - gapSum;
+      alloc.kr += rest * (1 - settings.overseasPct / 100);
+      alloc.global += rest * (settings.overseasPct / 100);
+    }
+    const c = toOrders(rows, alloc);
+    const byG = new Map<BucketGroup, number>();
+    for (const k of Object.keys(alloc) as PlanKey[]) byG.set(PLAN_GROUP[k], (byG.get(PLAN_GROUP[k]) ?? 0) + alloc[k]);
+    const after = (g: BucketGroup) => ((gv(g) + (byG.get(g) ?? 0)) / newTotal) * 100;
+    const tgtNew: Record<BucketGroup, number> = {
+      growth: ((tvNew.kr + tvNew.global) / newTotal) * 100,
+      income: (tvNew.income / newTotal) * 100,
+      satellite: (tvNew.satellite / newTotal) * 100,
+      cash: (tvNew.cash / newTotal) * 100,
+    };
+    contribution = {
+      amount: contributionAmount,
+      allocations: [...byG.entries()].filter(([, v]) => v >= 10_000).map(([group, v]) => ({ group, amount: Math.round(v) })),
+      orders: c.orders,
+      unfilled: c.unfilled,
+      // 리밸런싱 판단과 같은 기준: 바구니 ±10%p, 성장 안 국내·해외 ±20%p
+      stillOutOfBand:
+        (["growth", "income", "satellite", "cash"] as BucketGroup[]).some((g) => Math.abs(after(g) - tgtNew[g]) > REBALANCE_BAND_PP) ||
+        (() => {
+          const g = krValue + globalValue + alloc.kr + alloc.global;
+          return g > 0 && Math.abs(((globalValue + alloc.global) / g) * 100 - settings.overseasPct) > REBALANCE_BAND_PP * 2;
+        })(),
+    };
+  }
+
   // 경고
   const warnings: GuideWarning[] = [];
   const annual = settings.monthlyNeed * 12;
@@ -367,7 +615,7 @@ export function buildIncomeGuideView(input: {
       level,
       title: `필요 인출률 ${ratePct.toFixed(1)}%`,
       text: evidence
-        ? `지금 자산에서 월 ${Math.round(settings.monthlyNeed / 10_000)}만원을 꺼내면 연 ${ratePct.toFixed(1)}%입니다. 과거 국내·미국 반반에서 연 ${evidence.ratePct}%를 15년 꺼내 쓴 경우 물가를 뺀 원금이 남은 비율은 ${evidence.mixKeepPct}%(코스피만은 ${evidence.krOnlyKeepPct}%)였습니다.${ratePct > 6 ? " 분배율이 높은 상품으로 맞추기보다 시작 시점을 늦추거나 생활비를 나눠 받는 쪽이 원금을 지킵니다." : ""}`
+        ? `지금 자산에서 월 ${Math.round(settings.monthlyNeed / 10_000)}만원을 꺼내면 연 ${ratePct.toFixed(1)}%입니다. 과거 국내·미국 반반에서 연 ${evidence.ratePct}%${ratePct > evidence.ratePct ? "만 꺼내도" : "를 15년 꺼내 쓴 경우"}${ratePct > evidence.ratePct ? " 15년 뒤" : ""} 물가를 뺀 원금이 남은 비율은 ${evidence.mixKeepPct}%(코스피만은 ${evidence.krOnlyKeepPct}%)였습니다.${ratePct > 6 ? " 분배율이 높은 상품으로 맞추기보다 시작 시점을 늦추거나 생활비를 나눠 받는 쪽이 원금을 지킵니다." : ""}`
         : "",
     });
   }
@@ -453,14 +701,42 @@ export function buildIncomeGuideView(input: {
       text: "해외 지수·분배형·채권 ETF는 일반 계좌에서 매매차익과 분배금에 15.4%가 붙습니다. 국내 주식형 ETF(코스피200 등)는 매매차익이 비과세입니다. ISA·연금 계좌가 있다면 과세 ETF를 그쪽에, 국내 지수를 일반 계좌에 두는 편이 유리합니다.",
     });
   }
-  const taxableIncomeValue = rows
-    .filter((r) => !isTaxAdvantagedAccount(r.accountLabel) && (r.group === "income" || r.bucket === "bond_cash"))
-    .reduce((s, r) => s + r.value, 0);
-  if (taxableIncomeValue * (DISTRIBUTION_YIELD_PCT / 100) > 20_000_000) {
+  // 금융소득 상한: 일반 계좌 분배금만 센다 (ISA·연금 안은 제외)
+  let taxableAnnual = 0;
+  let shelteredAnnual = 0;
+  let taxableFromCoveredCall = 0;
+  for (const r of rows) {
+    const d = (r.value * BUCKET_YIELD_PCT[r.bucket]) / 100;
+    if (isTaxAdvantagedAccount(r.accountLabel)) shelteredAnnual += d;
+    else {
+      taxableAnnual += d;
+      if (r.bucket === "covered_call") taxableFromCoveredCall += d;
+    }
+  }
+  const cap = settings.financialIncomeCap;
+  const headroom = cap - taxableAnnual;
+  const distributions: IncomeGuideView["distributions"] = {
+    taxableAnnual: Math.round(taxableAnnual),
+    shelteredAnnual: Math.round(shelteredAnnual),
+    cap,
+    headroom: Math.round(headroom),
+    headroomAsDividendCapital: Math.max(0, Math.round(headroom / (BUCKET_YIELD_PCT.dividend / 100))),
+    taxableFromCoveredCall: Math.round(taxableFromCoveredCall),
+  };
+  if (cap > 0 && taxableAnnual > cap) {
     warnings.push({
-      level: "warn",
-      title: "금융소득 종합과세 가능성",
-      text: `일반 계좌 분배형 예상 분배금이 연 2천만원을 넘습니다(분배율 ${DISTRIBUTION_YIELD_PCT}% 가정). 넘는 부분은 종합과세됩니다.`,
+      level: taxableAnnual > 20_000_000 ? "alert" : "warn",
+      title: `일반 계좌 예상 분배금 연 ${Math.round(taxableAnnual / 10_000).toLocaleString("ko-KR")}만원 — 상한 ${Math.round(cap / 10_000).toLocaleString("ko-KR")}만원 초과`,
+      text:
+        "금융소득이 연 1천만원을 넘으면 지역가입자 건강보험료에 전액 반영되고, 2천만원을 넘으면 종합과세·피부양자 탈락 기준이 됩니다(기준은 해마다 확인). " +
+        "분배율이 높은 상품부터 ISA·연금 계좌로 옮기거나, 일반 계좌는 분배가 적은 지수형(KODEX 200 TR 등)으로 바꾸면 같은 자산으로 과세 소득을 줄일 수 있습니다.",
+    });
+  }
+  if (taxableFromCoveredCall > 0) {
+    warnings.push({
+      level: "info",
+      title: `일반 계좌 커버드콜 분배금 연 ${Math.round(taxableFromCoveredCall / 10_000).toLocaleString("ko-KR")}만원`,
+      text: `금융소득 상한이 있으면 과세 분배금 1원이 아깝습니다. 커버드콜은 분배율(약 ${BUCKET_YIELD_PCT.covered_call}%)이 고배당(${BUCKET_YIELD_PCT.dividend}%)의 두 배 가까운데 총수익은 더 낮아, 일반 계좌에서는 상한을 가장 빨리 채웁니다. 쓴다면 ISA·연금 계좌 안에 두세요.`,
     });
   }
 
@@ -483,7 +759,19 @@ export function buildIncomeGuideView(input: {
     buckets: [...byBucket.entries()]
       .map(([bucket, value]) => ({ bucket, label: BUCKET_LABEL[bucket], value, pct: pct(value) }))
       .sort((a, b) => b.value - a.value),
-    rebalance: { needed, reason, moves, growthShift, trims },
+    rebalance: {
+      needed,
+      reason,
+      moves,
+      growthShift,
+      trims,
+      orders: rebalanceOrders.orders,
+      unfilled: rebalanceOrders.unfilled,
+      realizedGainTotal,
+    },
+    contribution,
+    targetSource,
+    distributions,
     warnings,
     accounts,
     holdings: rows.map((r) => ({ ...r, pct: pct(r.value) })).sort((a, b) => b.value - a.value),

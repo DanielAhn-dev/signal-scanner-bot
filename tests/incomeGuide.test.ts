@@ -126,6 +126,107 @@ test("buildIncomeGuideView: 보유가 없으면 옮길 것도 없다", () => {
   assert.deepEqual(view.rebalance.moves, []);
 });
 
+test("buildIncomeGuideView: 종목별 주문안 — 넘친 종목은 주 단위로 팔고 확정 손익을 보여 주며, 대금으로 모자란 종목을 산다", () => {
+  const view = buildIncomeGuideView({
+    holdings: [
+      { code: "069500", name: "KODEX 200", quantity: 100, price: 50_000, avgPrice: 40_000, accountKey: "a", accountLabel: "키움 / 일반" },
+      { code: "433330", name: "SOL 미국S&P500", quantity: 100, price: 20_000, accountKey: "b", accountLabel: "미래 / ISA" },
+      { code: "161510", name: "PLUS 고배당주", quantity: 100, price: 10_000, accountKey: "b", accountLabel: "미래 / ISA" },
+      { code: "475720", name: "RISE 200위클리커버드콜", quantity: 100, price: 10_000, accountKey: "a", accountLabel: "키움 / 일반" },
+    ],
+    settings: { ...DEFAULT_INCOME_GUIDE_SETTINGS },
+    today: "2026-10-01",
+  });
+  // 총 900만: 목표 인컴 10%=90만(현재 200만 → 110만 매도), 성장 810만 → 국내·해외 405만씩
+  const sells = view.rebalance.orders.filter((o) => o.side === "sell");
+  const buys = view.rebalance.orders.filter((o) => o.side === "buy");
+  const k200 = sells.find((o) => o.code === "069500");
+  assert.equal(k200?.shares, 19); // 500만 − 405만 = 95만 → 50,000원 × 19주
+  assert.equal(k200?.realizedGain, 19 * 10_000);
+  assert.ok(sells.some((o) => o.code === "161510" || o.code === "475720"));
+  // 커버드콜은 더 사지 않고, 해외 지수는 가진 종목(SOL)에 산다
+  assert.ok(!buys.some((o) => o.code === "475720"));
+  assert.equal(buys.find((o) => o.code === "433330")?.shares, 102); // 405만 − 200만 = 205만 → 20,000원 × 102주
+  assert.equal(view.rebalance.realizedGainTotal, 190_000);
+});
+
+test("buildIncomeGuideView: 새로 넣을 돈은 모자란 바구니부터 채우고, 가진 상품이 없으면 새 상품 금액으로 남긴다", () => {
+  const view = buildIncomeGuideView({
+    holdings: [h("069500", "KODEX 200", 9_000_000)],
+    settings: { ...DEFAULT_INCOME_GUIDE_SETTINGS },
+    today: "2026-10-01",
+    contribution: 1_000_000,
+  });
+  // 새 총액 1,000만: 인컴 목표 100만, 해외 목표 450만 → 모자란 합 550만 > 넣는 돈 100만 → 비례 배분
+  const c = view.contribution!;
+  assert.equal(c.amount, 1_000_000);
+  const alloc = Object.fromEntries(c.allocations.map((a) => [a.group, a.amount]));
+  assert.equal(alloc.income, Math.round((1_000_000 * 1_000_000) / 5_500_000));
+  assert.equal(alloc.growth, Math.round((1_000_000 * 4_500_000) / 5_500_000));
+  assert.ok(c.unfilled.some((u) => u.group === "income"));
+  assert.ok(c.unfilled.some((u) => u.bucket === "global_index"));
+  assert.equal(c.stillOutOfBand, true);
+});
+
+test("buildIncomeGuideView: 직접 정한 목표 비중이 단계 기본값보다 우선한다", () => {
+  const view = buildIncomeGuideView({
+    holdings: [h("069500", "KODEX 200", 6_000_000), h("161510", "PLUS 고배당주", 4_000_000)],
+    settings: { ...DEFAULT_INCOME_GUIDE_SETTINGS, customTargets: { income: 40 } },
+    today: "2026-10-01",
+  });
+  assert.equal(view.targetSource, "custom");
+  const g = Object.fromEntries(view.groups.map((r) => [r.group, r]));
+  assert.equal(g.income.targetPct, 40);
+  assert.equal(g.growth.targetPct, 60);
+  assert.equal(g.income.diffAmount, 0);
+});
+
+test("buildIncomeGuideView: 일반 계좌 분배금만 금융소득 상한에 세고, 커버드콜이 상한을 빨리 채운다고 알린다", () => {
+  const view = buildIncomeGuideView({
+    holdings: [
+      h("475720", "RISE 200위클리커버드콜", 100_000_000), // 일반: 8.5% → 850만
+      h("161510", "PLUS 고배당주", 40_000_000), // 일반: 4.5% → 180만
+      h("402970", "ACE 미국배당다우존스", 50_000_000, "미래에셋 / ISA"), // 절세: 4.5% → 225만
+    ],
+    settings: { ...DEFAULT_INCOME_GUIDE_SETTINGS },
+    today: "2026-10-01",
+  });
+  assert.equal(view.distributions.taxableAnnual, 10_300_000);
+  assert.equal(view.distributions.shelteredAnnual, 2_250_000);
+  assert.equal(view.distributions.headroom, -300_000);
+  assert.equal(view.distributions.headroomAsDividendCapital, 0);
+  assert.equal(view.distributions.taxableFromCoveredCall, 8_500_000);
+  assert.ok(view.warnings.some((w) => w.level === "warn" && w.title.includes("상한 1,000만원 초과")));
+  assert.ok(view.warnings.some((w) => w.title.startsWith("일반 계좌 커버드콜 분배금 연 850만원")));
+  // 상한을 3천만으로 올리면 초과 경고는 사라지고 여유를 고배당 금액으로 환산한다
+  const roomy = buildIncomeGuideView({
+    holdings: [h("161510", "PLUS 고배당주", 40_000_000)],
+    settings: { ...DEFAULT_INCOME_GUIDE_SETTINGS, financialIncomeCap: 3_600_000 },
+    today: "2026-10-01",
+  });
+  assert.equal(roomy.distributions.headroom, 1_800_000);
+  assert.equal(roomy.distributions.headroomAsDividendCapital, 40_000_000);
+});
+
+test("toHistoryEntry·appendHistory: 같은 날은 덮어쓰고 날짜순으로 쌓는다", async () => {
+  const { toHistoryEntry, appendHistory } = await import("../src/lib/incomeGuide");
+  const view = buildIncomeGuideView({ holdings: [h("069500", "KODEX 200", 1_000_000)], settings: { ...DEFAULT_INCOME_GUIDE_SETTINGS }, today: "2026-10-01" });
+  const e1 = toHistoryEntry(view, "첫 점검");
+  let hist = appendHistory([{ date: "2027-01-02", total: 1, groups: [] }], e1);
+  hist = appendHistory(hist, { ...e1, note: "다시" });
+  assert.deepEqual(hist.map((x) => x.date), ["2026-10-01", "2027-01-02"]);
+  assert.equal(hist[0].note, "다시");
+  assert.equal(hist[0].groups.find((g) => g.group === "growth")?.actualPct, 100);
+});
+
+test("sanitizeIncomeGuideSettings: 목표 비중 빈 칸은 단계 기본값으로 되돌리고, 합이 100을 넘지 않게 자른다", () => {
+  const cur = { ...DEFAULT_INCOME_GUIDE_SETTINGS, customTargets: { income: 30, cash: 10 } };
+  assert.deepEqual(sanitizeIncomeGuideSettings({ customTargets: { income: "" as unknown as number } }, cur).customTargets, { cash: 10 });
+  assert.equal(sanitizeIncomeGuideSettings({ customTargets: { income: "", cash: "" } as never }, cur).customTargets, undefined);
+  assert.deepEqual(sanitizeIncomeGuideSettings({ customTargets: { income: 80, cash: 40 } }, cur).customTargets, { income: 80, cash: 20 });
+  assert.deepEqual(sanitizeIncomeGuideSettings({ monthlyNeed: 1 }, cur).customTargets, { income: 30, cash: 10 });
+});
+
 test("sanitizeIncomeGuideSettings: 범위를 넘는 값은 자르고, 빈 시작 월은 해제한다", () => {
   const cur = { ...DEFAULT_INCOME_GUIDE_SETTINGS, incomeStart: "2035-01" };
   const next = sanitizeIncomeGuideSettings({ monthlyNeed: -5, satelliteCapPct: 90, overseasPct: 30, incomeStart: "" }, cur);
