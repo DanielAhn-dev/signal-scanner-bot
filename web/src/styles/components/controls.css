@@ -540,3 +540,6 @@ input[type='radio']:focus-visible { @apply outline-none; box-shadow: var(--shado
 .sim-summary-item .sim-input { width: 100%; min-width: 0; }
 .sim-summary-more { margin-top: 8px; }
 .sim-summary-more > summary { cursor: pointer; font-size: var(--font-size-sm); padding: 4px 0; }
+
+/* 포트폴리오: 참고 정보 묶음 머리글 */
+.portfolio-reference-head { margin: var(--space-5, 20px) 0 var(--space-2, 8px); }
