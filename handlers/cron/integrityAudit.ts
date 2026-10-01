@@ -18,6 +18,10 @@ import { fetchNegativeDisclosures, formatDisclosureFilterNote } from "../../src/
 import { sendMessage } from "../../src/telegram/api";
 import { economicCalendarCoverage } from "../../src/utils/fetchEconomicCalendar";
 import { krxCalendarStatus, toKstDateKey } from "../../src/lib/krxCalendar";
+import { findMislabeledSells, type SellActionRow } from "../../src/lib/sellLabelAudit";
+
+/** 매도 사유 기록 수정(섹터 정리·비중 축소 사유 분리) 배포 뒤부터 검산한다 */
+const SELL_LABEL_AUDIT_SINCE = "2026-10-01T15:00:00+09:00";
 
 const CRON_SECRET = process.env.CRON_SECRET;
 const SUPABASE_URL = process.env.SUPABASE_URL;
@@ -222,6 +226,23 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       staleHoldingCodes = codes.filter((code) => !available.has(code)).sort();
     }
 
+    // 매도 사유 검산: 최근 14일 익절로 기록됐는데 실제 손익이 마이너스인 매도 (금액이 맞아도 사유가 틀릴 수 있다)
+    const { data: sellRows, error: sellRowsError } = await supabase
+      .from("virtual_autotrade_actions")
+      .select("chat_id, code, reason, created_at, detail")
+      .in("chat_id", chatIds)
+      .eq("action_type", "SELL")
+      // 10/01 한미약품 건은 원인을 고친 알려진 기록이라 그 뒤부터만 센다 (매일 같은 ❌ 알림 방지)
+      .gte("created_at", new Date(Math.max(Date.now() - 14 * 86_400_000, Date.parse(SELL_LABEL_AUDIT_SINCE))).toISOString())
+      .limit(5000);
+    const mislabeled = sellRowsError ? [] : findMislabeledSells((sellRows ?? []) as SellActionRow[]);
+    const labelIssue = sellRowsError || mislabeled.length > 0 ? 1 : 0;
+    const labelNote = sellRowsError
+      ? `❌ 매도 사유 검산 실패: ${sellRowsError.message}`
+      : mislabeled.length
+        ? `❌ 익절로 기록됐지만 손실인 매도 ${mislabeled.length}건: ${mislabeled.slice(0, 5).map((m) => `${m.code} ${m.at} ${m.pnl.toLocaleString("ko-KR")}원`).join(", ")}`
+        : "✅ 매도 사유 기록 일치 (최근 14일)";
+
     const freshness = await checkDataFreshness(supabase);
     const dataQuality = await checkDataQuality(supabase).catch((e: unknown) => ({
       issues: [`데이터 품질 검사 실패: ${e instanceof Error ? e.message : String(e)}`],
@@ -253,9 +274,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       `${disclosureIssue ? "❌" : "✅"} ${formatDisclosureFilterNote(disclosureFilter)}`,
       calendarNote,
       krxCalNote,
+      labelNote,
     ].join("\n");
     const issueCount =
-      countIntegrityIssues({ results, staleHoldingCodes }) + dataQuality.issues.length + disclosureIssue + calendarIssue + krxCalIssue;
+      countIntegrityIssues({ results, staleHoldingCodes }) +
+      dataQuality.issues.length +
+      disclosureIssue +
+      calendarIssue +
+      krxCalIssue +
+      labelIssue;
     const isHealthy = issueCount === 0 && freshness.isHealthy;
 
     const { error: insertError } = await supabase.from("integrity_audit_results").insert({
