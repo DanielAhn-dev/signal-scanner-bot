@@ -27,6 +27,7 @@ import {
   parsePositionStrategyState,
   resolvePositionBucketFromProfile,
   resolvePositionTradeProfile,
+  type ResolvedPositionTradeProfile,
 } from "./virtualAutoTradePositionStrategy";
 import {
   applyAdaptiveExitGuard,
@@ -73,6 +74,8 @@ import { resolveVirtualExecutionPrice } from "./virtualAutoTradeExecution";
 import { describeScanFilterReasons } from "../bot/commands/scanFilters";
 import { fetchAllMarketData } from "../utils/fetchMarketData";
 import { fetchLatestScoresByCodes, type ScoreSnapshotRow } from "./scoreSourceService";
+import type { SignalGateResult } from "./virtualAutoTradeSignalGate";
+import type { AutoTradeSizingResult } from "./virtualAutoTradeSizing";
 import { sendMessage } from "../telegram/api";
 import { isExchangeTradedProduct, resolveBaseSellTaxRate } from "../lib/securitiesTax";
 import { fetchBenchmarkComparison, formatBenchmarkLine } from "./virtualAutoTradeBenchmark";
@@ -3147,6 +3150,275 @@ async function selectMondayCandidates(payload: {
   };
 }
 
+type NewEntryBuyKind = "monday" | "rebalance";
+
+const NEW_ENTRY_BUY_LABELS: Record<
+  NewEntryBuyKind,
+  { event: string; actionReason: string; decisionSummary: string; cashContext: string }
+> = {
+  monday: {
+    event: "monday-buy",
+    actionReason: "monday-score-candidate",
+    decisionSummary: "자동 월요일 매수",
+    cashContext: "monday buy",
+  },
+  rebalance: {
+    event: "rebalance-buy",
+    actionReason: "rebalance-buy",
+    decisionSummary: "자동 리밸런싱 재매수",
+    cashContext: "rebalance buy",
+  },
+};
+
+/**
+ * 신규 종목 매수 실행 (월요일 매수·일일점검 신규 매수 공통). 판단(planNewEntry)·사이징·스윕 현금 보충이
+ * 끝난 뒤 호출한다. dryRun이면 매수안만 알리고, 아니면 중복 실행 방지 → 실계좌 코드 충돌 확인 →
+ * 포지션 생성 → 현금 저장 → 거래기록 → 알림·로그 순서로 반영한다.
+ * 쓰기 오류는 예외로 올린다 (호출측이 경로별 실패 로그를 남긴다).
+ * @returns skipped면 매수하지 않음. dry-run/bought면 매수 후 현금 (호출측이 슬롯·보유 수와 함께 갱신)
+ */
+async function executeNewEntryBuy(input: {
+  kind: NewEntryBuyKind;
+  supabase: SupabaseClientAny;
+  runId: number | null;
+  chatId: number;
+  dryRun: boolean;
+  candidate: RankedCandidate;
+  executionPrice: number;
+  executionSource: BuyPriceSource;
+  sizing: AutoTradeSizingResult;
+  /** 포지션에 저장하는 프로필 (보유 기간·예정 검토일·버킷) */
+  profile: ResolvedPositionTradeProfile;
+  /** 안내 문구·따라하기 주문·결정로그에 보여 주는 익절/손절·보유 기간의 기준 프로필 */
+  guideProfile: ResolvedPositionTradeProfile;
+  profileLabel: string;
+  newsBias: ReturnType<typeof resolveNewsBiasFromFactors>;
+  marketPolicy: AutoTradeMarketPolicy;
+  signalGate: SignalGateResult;
+  todaySignalReason: string;
+  filterReason: string;
+  availableCash: number;
+  deployableCash: number;
+  summary: AutoTradeActionSummary;
+}): Promise<{ outcome: "skipped" } | { outcome: "dry-run" | "bought"; availableCash: number; deployableCash: number }> {
+  const { candidate, executionPrice, executionSource, sizing, profile, guideProfile, marketPolicy, signalGate, summary } = input;
+  const labels = NEW_ENTRY_BUY_LABELS[input.kind];
+  const qty = sizing.quantity;
+  const investedAmount = sizing.investedAmount;
+  const availableCash = Math.max(0, input.availableCash - investedAmount);
+  const deployableCash = Math.max(0, input.deployableCash - investedAmount);
+  const signalSuffix = `${formatPriceSourceLabel(executionSource)}${input.todaySignalReason ? ` · ${input.todaySignalReason}` : ""}${input.filterReason ? ` · 필터근거 ${input.filterReason}` : ""}`;
+  const signalTrust = { score: signalGate.trustScore, grade: signalGate.grade, metrics: signalGate.metrics };
+  const pushGuide = () => {
+    summary.notes.push(
+      buildResponseGuideNote({
+        actionType: "new-buy",
+        code: candidate.code,
+        basePrice: executionPrice,
+        quantity: qty,
+        investedAmount,
+        takeProfitPct: guideProfile.takeProfitPct,
+        stopLossPct: guideProfile.stopLossPct,
+      })
+    );
+    (summary.mirrorOrders ??= []).push(
+      buildBuyMirrorOrder({
+        kind: "new-buy",
+        code: candidate.code,
+        name: candidate.name,
+        quantity: qty,
+        limitPrice: executionPrice,
+        takeProfitPct: guideProfile.takeProfitPct,
+        stopLossPct: guideProfile.stopLossPct,
+      })
+    );
+  };
+
+  if (input.dryRun) {
+    const targetPct = Math.abs(toNumber(guideProfile.takeProfitPct, 8));
+    const targetPrice = Math.round(executionPrice * (1 + targetPct / 100));
+    const expectedPnl = Math.max(0, Math.round((targetPrice - executionPrice) * qty));
+    summary.buys += 1;
+    summary.notes.push(
+      `[테스트 매수안] ${candidate.name}(${candidate.code}) ${qty}주 · 전략 ${input.profileLabel} · 매수가 ${fmtKrw(executionPrice)} · 투입 ${fmtKrw(investedAmount)} · 목표가 ${fmtKrw(targetPrice)} · 기대수익 ${fmtKrw(expectedPnl)} (${targetPct.toFixed(1)}%) · ${signalSuffix}`
+    );
+    pushGuide();
+    await writeActionLog({
+      supabase: input.supabase,
+      runId: input.runId,
+      chatId: input.chatId,
+      code: candidate.code,
+      actionType: "BUY",
+      reason: `dry-run-${labels.event}`,
+      detail: {
+        qty,
+        price: executionPrice,
+        priceSource: executionSource,
+        investedAmount,
+        totalBudget: sizing.totalBudget,
+        splitCount: sizing.splitCount,
+        score: candidate.score,
+        strategyProfile: profile.profile,
+        targetPrice,
+        expectedPnl,
+        signalTrust,
+      },
+    });
+    return { outcome: "dry-run", availableCash, deployableCash };
+  }
+
+  const opKey = `${input.chatId}:BUY:${candidate.code}:${Math.round(executionPrice)}:${qty}:${new Date().toISOString().slice(0, 16)}`;
+  const registered = await tryRegisterOperation({
+    supabase: input.supabase,
+    opKey,
+    chatId: input.chatId,
+    strategy: AUTO_TRADE_STRATEGY_ID,
+    meta: { event: labels.event, profile: profile.profile, runId: input.runId },
+  });
+  if (!registered) {
+    summary.skipped += 1;
+    await writeActionLog({
+      supabase: input.supabase,
+      runId: input.runId,
+      chatId: input.chatId,
+      code: candidate.code,
+      actionType: "SKIP",
+      reason: "duplicate-execution",
+      detail: { opKey },
+    });
+    return { outcome: "skipped" };
+  }
+
+  const { data: existingPositionForCode, error: existingPositionForCodeError } = await fetchLegacyPositionByCode({
+    supabase: input.supabase,
+    chatId: input.chatId,
+    code: candidate.code,
+  });
+  if (existingPositionForCodeError) throw existingPositionForCodeError;
+  if (existingPositionForCode && (existingPositionForCode.broker_name != null || existingPositionForCode.account_name != null)) {
+    summary.skipped += 1;
+    summary.notes.push(`${candidate.code} 신규 매수 스킵: 실계좌 보유 종목과 코드 충돌(가상 전용 보호)`);
+    await writeActionLog({
+      supabase: input.supabase,
+      runId: input.runId,
+      chatId: input.chatId,
+      code: candidate.code,
+      actionType: "SKIP",
+      reason: "non-virtual-position-exists",
+      detail: { opKey, existingPositionId: Number(existingPositionForCode.id ?? 0) || null },
+    });
+    return { outcome: "skipped" };
+  }
+
+  const targetHorizon = resolveTargetHorizon({ profile: profile.profile, expectedHorizonDays: profile.expectedHorizonDays });
+  const horizonReason = `profile=${profile.profile};market=${marketPolicy.mode};news=${input.newsBias};signal=${String(candidate.signal ?? "").trim() || "NA"}`;
+  const position = await insertNewPosition(input.supabase, {
+    chat_id: input.chatId,
+    code: candidate.code,
+    buy_price: executionPrice,
+    buy_date: toKstDateKey(),
+    quantity: qty,
+    invested_amount: investedAmount,
+    bucket: resolvePositionBucketFromProfile(profile.profile),
+    status: "holding",
+    broker_name: null,
+    account_name: null,
+    memo: buildPositionStrategyMemo({
+      event: labels.event,
+      note: `autotrade-${labels.event}`,
+      profile: profile.profile,
+      takeProfitTranchesDone: 0,
+    }),
+    target_horizon: targetHorizon,
+    horizon_reason: horizonReason,
+    macro_context_at_entry: {
+      mode: marketPolicy.mode,
+      label: marketPolicy.label,
+      reason: marketPolicy.reason,
+      minCashReservePct: marketPolicy.minCashReservePct,
+    },
+    news_context_at_entry: {
+      bias: input.newsBias,
+      signal: candidate.signal ?? null,
+      stableTurn: candidate.stableTurn ?? null,
+      stableTrust: candidate.stableTrust ?? null,
+    },
+    planned_review_at: resolvePlannedReviewAt(profile.expectedHorizonDays),
+  });
+  if (!position) {
+    summary.skipped += 1;
+    summary.notes.push(`${candidate.name}(${candidate.code}) 매수 건너뜀: 이미 보유 중 (겹친 실행)`);
+    return { outcome: "skipped" };
+  }
+  await saveVirtualCash(input.chatId, availableCash, labels.cashContext);
+  const tradeId = await recordBuyAfterPosition({
+    supabase: input.supabase,
+    chatId: input.chatId,
+    code: candidate.code,
+    price: executionPrice,
+    quantity: qty,
+    investedAmount,
+    memo: buildStrategyMemo({ strategyId: AUTO_TRADE_STRATEGY_ID, event: labels.event, note: `autotrade-${labels.event}` }),
+    lot: { kind: "new", position },
+  });
+
+  summary.buys += 1;
+  summary.notes.push(
+    `[실행 매수] ${candidate.name}(${candidate.code}) ${qty}주 · 전략 ${input.profileLabel} · 매수가 ${fmtKrw(executionPrice)} · 투입 ${fmtKrw(investedAmount)} · 점수 ${candidate.score.toFixed(1)} · ${signalSuffix}`
+  );
+  pushGuide();
+  await writeActionLog({
+    supabase: input.supabase,
+    runId: input.runId,
+    chatId: input.chatId,
+    code: candidate.code,
+    actionType: "BUY",
+    reason: labels.actionReason,
+    detail: {
+      score: candidate.score,
+      price: executionPrice,
+      priceSource: executionSource,
+      qty,
+      investedAmount,
+      totalBudget: sizing.totalBudget,
+      splitCount: sizing.splitCount,
+      strategyProfile: guideProfile.profile,
+      tradeId,
+      cashAfter: availableCash,
+      deployableCashAfter: deployableCash,
+      marketMode: marketPolicy.mode,
+      marketReason: marketPolicy.reason,
+      targetHorizon,
+      horizonReason,
+      signalTrust,
+    },
+  });
+  appendVirtualDecisionLog({
+    chatId: input.chatId,
+    code: candidate.code,
+    action: "BUY",
+    strategyId: AUTO_TRADE_STRATEGY_ID,
+    strategyVersion: "v1",
+    confidence: Math.min(100, Math.max(0, candidate.score)),
+    expectedHorizonDays: guideProfile.expectedHorizonDays,
+    reasonSummary: `${labels.decisionSummary} (${input.profileLabel}, 점수 ${candidate.score.toFixed(1)})`,
+    reasonDetails: {
+      score: candidate.score,
+      price: executionPrice,
+      priceSource: executionSource,
+      qty,
+      investedAmount,
+      totalBudget: sizing.totalBudget,
+      splitCount: sizing.splitCount,
+      strategyProfile: guideProfile.profile,
+      trigger: labels.actionReason,
+      signalTrust,
+    },
+    linkedTradeId: tradeId ?? undefined,
+  }).catch((err: unknown) => console.error(`[autoTrade] decision log ${labels.event} BUY failed`, err));
+  return { outcome: "bought", availableCash, deployableCash };
+}
+
 async function runMondayBuyForUser(payload: {
   supabase: SupabaseClientAny;
   setting: AutoTradeSettingRow;
@@ -3778,260 +4050,32 @@ async function runMondayBuyForUser(payload: {
         continue;
       }
 
-      if (payload.dryRun) {
-        const targetPct = Math.abs(toNumber(tradeProfile.takeProfitPct, 8));
-        const targetPrice = Math.round(executionPrice * (1 + targetPct / 100));
-        const expectedPnl = Math.max(0, Math.round((targetPrice - executionPrice) * qty));
-        summary.buys += 1;
-        summary.notes.push(
-          `[테스트 매수안] ${candidate.name}(${candidate.code}) ${qty}주 · 전략 ${profileLabel} · 매수가 ${fmtKrw(executionPrice)} · 투입 ${fmtKrw(investedAmount)} · 목표가 ${fmtKrw(targetPrice)} · 기대수익 ${fmtKrw(expectedPnl)} (${targetPct.toFixed(1)}%) · ${formatPriceSourceLabel(executionSource)}${todaySignalReason ? ` · ${todaySignalReason}` : ""}${filterReason ? ` · 필터근거 ${filterReason}` : ""}`
-        );
-        summary.notes.push(
-          buildResponseGuideNote({
-            actionType: "new-buy",
-            code: candidate.code,
-            basePrice: executionPrice,
-            quantity: qty,
-            investedAmount,
-            takeProfitPct: tradeProfile.takeProfitPct,
-            stopLossPct: tradeProfile.stopLossPct,
-          })
-        );
-        (summary.mirrorOrders ??= []).push(
-          buildBuyMirrorOrder({
-            kind: "new-buy",
-            code: candidate.code,
-            name: candidate.name,
-            quantity: qty,
-            limitPrice: executionPrice,
-            takeProfitPct: tradeProfile.takeProfitPct,
-            stopLossPct: tradeProfile.stopLossPct,
-          })
-        );
-        await writeActionLog({
-          supabase: payload.supabase,
-          runId: payload.runId,
-          chatId,
-          code: candidate.code,
-          actionType: "BUY",
-          reason: "dry-run-monday-buy",
-          detail: {
-            price: executionPrice,
-            priceSource: executionSource,
-            score: candidate.score,
-            quantity: qty,
-            investedAmount,
-            totalBudget: sizing.totalBudget,
-            splitCount: sizing.splitCount,
-            strategyProfile: tradeProfile.profile,
-            targetPrice,
-            expectedPnl,
-            signalTrust: {
-              score: signalGate.trustScore,
-              grade: signalGate.grade,
-              metrics: signalGate.metrics,
-            },
-          },
-        });
-        plannedHoldingCount += 1;
-        availableCash = Math.max(0, availableCash - investedAmount);
-        deployableCash = Math.max(0, deployableCash - investedAmount);
-        slotsLeft -= 1;
-        continue;
-      }
-
-      const opKey = `${chatId}:BUY:${candidate.code}:${Math.round(executionPrice)}:${qty}:${new Date().toISOString().slice(0,16)}`;
-      const registered = await tryRegisterOperation({
-        supabase: payload.supabase,
-        opKey,
-        chatId,
-        strategy: AUTO_TRADE_STRATEGY_ID,
-        meta: { event: "monday-buy", profile: tradeProfile.profile, runId: payload.runId },
-      }).catch((err) => {
-        throw err;
-      });
-
-      if (!registered) {
-        summary.skipped += 1;
-        await writeActionLog({
-          supabase: payload.supabase,
-          runId: payload.runId,
-          chatId,
-          code: candidate.code,
-          actionType: "SKIP",
-          reason: "duplicate-execution",
-          detail: { opKey },
-        });
-        continue;
-      }
-
-      const { data: existingPositionForCode, error: existingPositionForCodeError } = await fetchLegacyPositionByCode({
-        supabase: payload.supabase,
-        chatId,
-        code: candidate.code,
-      });
-
-      if (existingPositionForCodeError) {
-        throw existingPositionForCodeError;
-      }
-
-      const hasNonVirtualPositionForCode =
-        !!existingPositionForCode &&
-        (existingPositionForCode.broker_name != null || existingPositionForCode.account_name != null);
-
-      if (hasNonVirtualPositionForCode) {
-        summary.skipped += 1;
-        summary.notes.push(
-          `${candidate.code} 신규 매수 스킵: 실계좌 보유 종목과 코드 충돌(가상 전용 보호)`
-        );
-        await writeActionLog({
-          supabase: payload.supabase,
-          runId: payload.runId,
-          chatId,
-          code: candidate.code,
-          actionType: "SKIP",
-          reason: "non-virtual-position-exists",
-          detail: {
-            opKey,
-            existingPositionId: Number(existingPositionForCode.id ?? 0) || null,
-          },
-        });
-        continue;
-      }
-
-      const targetHorizon = resolveTargetHorizon({
-        profile: tradeProfile.profile,
-        expectedHorizonDays: tradeProfile.expectedHorizonDays,
-      });
-      const horizonReason = `profile=${tradeProfile.profile};market=${marketPolicy.mode};news=${newsBias};signal=${String(candidate.signal ?? "").trim() || "NA"}`;
-      const positionUpsertPayload: Record<string, unknown> = {
-        chat_id: chatId,
-        code: candidate.code,
-        buy_price: executionPrice,
-        buy_date: toKstDateKey(),
-        quantity: qty,
-        invested_amount: investedAmount,
-        bucket: resolvePositionBucketFromProfile(tradeProfile.profile),
-        status: "holding",
-        broker_name: null,
-        account_name: null,
-        memo: buildPositionStrategyMemo({
-          event: "monday-buy",
-          note: "autotrade-monday-buy",
-          profile: tradeProfile.profile,
-          takeProfitTranchesDone: 0,
-        }),
-        target_horizon: targetHorizon,
-        horizon_reason: horizonReason,
-        macro_context_at_entry: {
-          mode: marketPolicy.mode,
-          label: marketPolicy.label,
-          reason: marketPolicy.reason,
-          minCashReservePct: marketPolicy.minCashReservePct,
-        },
-        news_context_at_entry: {
-          bias: newsBias,
-          signal: candidate.signal ?? null,
-          stableTurn: candidate.stableTurn ?? null,
-          stableTrust: candidate.stableTrust ?? null,
-        },
-        planned_review_at: resolvePlannedReviewAt(tradeProfile.expectedHorizonDays),
-      };
-
-      const position = await insertNewPosition(payload.supabase, positionUpsertPayload);
-      if (!position) {
-        summary.skipped += 1;
-        summary.notes.push(`${candidate.name}(${candidate.code}) 매수 건너뜀: 이미 보유 중 (겹친 실행)`);
-        continue;
-      }
-      availableCash = Math.max(0, availableCash - investedAmount);
-      deployableCash = Math.max(0, deployableCash - investedAmount);
-      await saveVirtualCash(chatId, availableCash, "monday buy");
-      const tradeId = await recordBuyAfterPosition({
-        supabase: payload.supabase,
-        chatId,
-        code: candidate.code,
-        price: executionPrice,
-        quantity: qty,
-        investedAmount,
-        memo: buildStrategyMemo({
-          strategyId: AUTO_TRADE_STRATEGY_ID,
-          event: "monday-buy",
-          note: "autotrade-monday-buy",
-        }),
-        lot: { kind: "new", position },
-      });
-
-      summary.buys += 1;
-      plannedHoldingCount += 1;
-      summary.notes.push(
-        `[실행 매수] ${candidate.name}(${candidate.code}) ${qty}주 · 전략 ${profileLabel} · 매수가 ${fmtKrw(executionPrice)} · 투입 ${fmtKrw(investedAmount)} · 점수 ${candidate.score.toFixed(1)} · ${formatPriceSourceLabel(executionSource)}${todaySignalReason ? ` · ${todaySignalReason}` : ""}${filterReason ? ` · 필터근거 ${filterReason}` : ""}`
-      );
-      summary.notes.push(
-        buildResponseGuideNote({
-          actionType: "new-buy",
-          code: candidate.code,
-          basePrice: executionPrice,
-          quantity: qty,
-          investedAmount,
-          takeProfitPct: tradeProfile.takeProfitPct,
-          stopLossPct: tradeProfile.stopLossPct,
-        })
-      );
-      (summary.mirrorOrders ??= []).push(
-        buildBuyMirrorOrder({
-          kind: "new-buy",
-          code: candidate.code,
-          name: candidate.name,
-          quantity: qty,
-          limitPrice: executionPrice,
-          takeProfitPct: tradeProfile.takeProfitPct,
-          stopLossPct: tradeProfile.stopLossPct,
-        })
-      );
-      await writeActionLog({
+      const bought = await executeNewEntryBuy({
+        kind: "monday",
         supabase: payload.supabase,
         runId: payload.runId,
         chatId,
-        code: candidate.code,
-        actionType: "BUY",
-        reason: "monday-score-candidate",
-        detail: {
-          score: candidate.score,
-          price: executionPrice,
-          priceSource: executionSource,
-          qty,
-          investedAmount,
-          totalBudget: sizing.totalBudget,
-          splitCount: sizing.splitCount,
-          strategyProfile: tradeProfile.profile,
-          tradeId,
-          cashAfter: availableCash,
-          deployableCashAfter: deployableCash,
-          marketMode: marketPolicy.mode,
-          marketReason: marketPolicy.reason,
-          targetHorizon,
-          horizonReason,
-          signalTrust: {
-            score: signalGate.trustScore,
-            grade: signalGate.grade,
-            metrics: signalGate.metrics,
-          },
-        },
+        dryRun: payload.dryRun,
+        candidate,
+        executionPrice,
+        executionSource,
+        sizing,
+        profileLabel,
+        newsBias,
+        marketPolicy,
+        signalGate,
+        todaySignalReason,
+        filterReason,
+        availableCash,
+        deployableCash,
+        summary,
+        profile: tradeProfile,
+        guideProfile: tradeProfile,
       });
-      // 결정로그: 월요일 자동 매수
-      appendVirtualDecisionLog({
-        chatId,
-        code: candidate.code,
-        action: "BUY",
-        strategyId: AUTO_TRADE_STRATEGY_ID,
-        strategyVersion: "v1",
-        confidence: Math.min(100, Math.max(0, candidate.score)),
-        expectedHorizonDays: tradeProfile.expectedHorizonDays,
-        reasonSummary: `자동 월요일 매수 (${profileLabel}, 점수 ${candidate.score.toFixed(1)})`,
-        reasonDetails: { score: candidate.score, price: executionPrice, priceSource: executionSource, qty, investedAmount, totalBudget: sizing.totalBudget, splitCount: sizing.splitCount, strategyProfile: tradeProfile.profile, trigger: "monday-score-candidate", signalTrust: { score: signalGate.trustScore, grade: signalGate.grade, metrics: signalGate.metrics } },
-        linkedTradeId: tradeId ?? undefined,
-      }).catch((err: unknown) => console.error("[autoTrade] decision log BUY failed", err));
+      if (bought.outcome === "skipped") continue;
+      availableCash = bought.availableCash;
+      deployableCash = bought.deployableCash;
+      plannedHoldingCount += 1;
       slotsLeft -= 1;
     } catch (error: unknown) {
       const message = extractErrorMessage(error);
@@ -6107,7 +6151,6 @@ async function runDailyReviewForUser(payload: {
           continue;
         }
 
-        const investedAmount = sizing.investedAmount;
         const todaySignalReason = buildTodaySignalReasonNote({
           signal: candidate.signal,
           stableTurn: candidate.stableTurn,
@@ -6116,259 +6159,34 @@ async function runDailyReviewForUser(payload: {
         const filterReason = buildAutoTradeFilterReason(candidate);
 
         try {
-          if (payload.dryRun) {
-            const targetPct = Math.abs(toNumber(adjustedEntryProfile.takeProfitPct, 8));
-            const targetPrice = Math.round(executionPrice * (1 + targetPct / 100));
-            const expectedPnl = Math.max(0, Math.round((targetPrice - executionPrice) * qty));
-            rebalanceBuyCount += 1;
-            summary.buys += 1;
-            summary.notes.push(
-              `[테스트 매수안] ${candidate.name}(${candidate.code}) ${qty}주 · 전략 ${profileLabel} · 매수가 ${fmtKrw(executionPrice)} · 목표가 ${fmtKrw(targetPrice)} · 기대수익 ${fmtKrw(expectedPnl)} (${targetPct.toFixed(1)}%) · ${formatPriceSourceLabel(executionSource)}${todaySignalReason ? ` · ${todaySignalReason}` : ""}${filterReason ? ` · 필터근거 ${filterReason}` : ""}`
-            );
-            summary.notes.push(
-              buildResponseGuideNote({
-                actionType: "new-buy",
-                code: candidate.code,
-                basePrice: executionPrice,
-                quantity: qty,
-                investedAmount,
-                takeProfitPct: adjustedEntryProfile.takeProfitPct,
-                stopLossPct: adjustedEntryProfile.stopLossPct,
-              })
-            );
-            (summary.mirrorOrders ??= []).push(
-              buildBuyMirrorOrder({
-                kind: "new-buy",
-                code: candidate.code,
-                name: candidate.name,
-                quantity: qty,
-                limitPrice: executionPrice,
-                takeProfitPct: adjustedEntryProfile.takeProfitPct,
-                stopLossPct: adjustedEntryProfile.stopLossPct,
-              })
-            );
-            await writeActionLog({
-              supabase: payload.supabase,
-              runId: payload.runId,
-              chatId,
-              code: candidate.code,
-              actionType: "BUY",
-              reason: "dry-run-rebalance-buy",
-              detail: {
-                qty,
-                price: executionPrice,
-                priceSource: executionSource,
-                investedAmount,
-                totalBudget: sizing.totalBudget,
-                splitCount: sizing.splitCount,
-                score: candidate.score,
-                strategyProfile: adjustedEntryProfile.profile,
-                targetPrice,
-                expectedPnl,
-                signalTrust: {
-                  score: signalGate.trustScore,
-                  grade: signalGate.grade,
-                  metrics: signalGate.metrics,
-                },
-              },
-            });
-            plannedHoldingCount += 1;
-            availableCash = Math.max(0, availableCash - investedAmount);
-            deployableCash = Math.max(0, deployableCash - investedAmount);
-            slotsLeft -= 1;
-            continue;
-          }
-
-          const opKey = `${chatId}:BUY:${candidate.code}:${Math.round(executionPrice)}:${qty}:${new Date().toISOString().slice(0,16)}`;
-          const registered = await tryRegisterOperation({
-            supabase: payload.supabase,
-            opKey,
-            chatId,
-            strategy: AUTO_TRADE_STRATEGY_ID,
-            meta: { event: "rebalance-buy", profile: adjustedEntryProfile.profile, runId: payload.runId },
-          }).catch((err) => { throw err; });
-
-          if (!registered) {
-            summary.skipped += 1;
-            await writeActionLog({
-              supabase: payload.supabase,
-              runId: payload.runId,
-              chatId,
-              code: candidate.code,
-              actionType: "SKIP",
-              reason: "duplicate-execution",
-              detail: { opKey },
-            });
-            continue;
-          }
-
-          const { data: existingPositionForCode, error: existingPositionForCodeError } = await fetchLegacyPositionByCode({
-            supabase: payload.supabase,
-            chatId,
-            code: candidate.code,
-          });
-
-          if (existingPositionForCodeError) {
-            throw existingPositionForCodeError;
-          }
-
-          const hasNonVirtualPositionForCode =
-            !!existingPositionForCode &&
-            (existingPositionForCode.broker_name != null || existingPositionForCode.account_name != null);
-
-          if (hasNonVirtualPositionForCode) {
-            summary.skipped += 1;
-            summary.notes.push(
-              `${candidate.code} 신규 매수 스킵: 실계좌 보유 종목과 코드 충돌(가상 전용 보호)`
-            );
-            await writeActionLog({
-              supabase: payload.supabase,
-              runId: payload.runId,
-              chatId,
-              code: candidate.code,
-              actionType: "SKIP",
-              reason: "non-virtual-position-exists",
-              detail: {
-                opKey,
-                existingPositionId: Number(existingPositionForCode.id ?? 0) || null,
-              },
-            });
-            continue;
-          }
-
-          const targetHorizon = resolveTargetHorizon({
-            profile: adjustedEntryProfile.profile,
-            expectedHorizonDays: adjustedEntryProfile.expectedHorizonDays,
-          });
-          const horizonReason = `profile=${entryProfile.profile};market=${marketPolicy.mode};news=${newsBias};signal=${String(candidate.signal ?? "").trim() || "NA"}`;
-          const positionUpsertPayload: Record<string, unknown> = {
-            chat_id: chatId,
-            code: candidate.code,
-            buy_price: executionPrice,
-            buy_date: toKstDateKey(),
-            quantity: qty,
-            invested_amount: investedAmount,
-            bucket: resolvePositionBucketFromProfile(adjustedEntryProfile.profile),
-            broker_name: null,
-            account_name: null,
-            memo: buildPositionStrategyMemo({
-              event: "rebalance-buy",
-              note: "autotrade-rebalance-buy",
-              profile: adjustedEntryProfile.profile,
-              takeProfitTranchesDone: 0,
-            }),
-            status: "holding",
-            target_horizon: targetHorizon,
-            horizon_reason: horizonReason,
-            macro_context_at_entry: {
-              mode: marketPolicy.mode,
-              label: marketPolicy.label,
-              reason: marketPolicy.reason,
-              minCashReservePct: marketPolicy.minCashReservePct,
-            },
-            news_context_at_entry: {
-              bias: newsBias,
-              signal: candidate.signal ?? null,
-              stableTurn: candidate.stableTurn ?? null,
-              stableTrust: candidate.stableTrust ?? null,
-            },
-            planned_review_at: resolvePlannedReviewAt(adjustedEntryProfile.expectedHorizonDays),
-          };
-
-          const position = await insertNewPosition(payload.supabase, positionUpsertPayload);
-          if (!position) {
-            summary.skipped += 1;
-            summary.notes.push(`${candidate.name}(${candidate.code}) 매수 건너뜀: 이미 보유 중 (겹친 실행)`);
-            continue;
-          }
-          availableCash = Math.max(0, availableCash - investedAmount);
-          deployableCash = Math.max(0, deployableCash - investedAmount);
-          await saveVirtualCash(chatId, availableCash, "rebalance buy");
-          const tradeId = await recordBuyAfterPosition({
-            supabase: payload.supabase,
-            chatId,
-            code: candidate.code,
-            price: executionPrice,
-            quantity: qty,
-            investedAmount,
-            memo: buildStrategyMemo({
-              strategyId: AUTO_TRADE_STRATEGY_ID,
-              event: "rebalance-buy",
-              note: "autotrade-rebalance-buy",
-            }),
-            lot: { kind: "new", position },
-          });
-          plannedHoldingCount += 1;
-          rebalanceBuyCount += 1;
-          summary.buys += 1;
-          summary.notes.push(
-            `[실행 매수] ${candidate.name}(${candidate.code}) ${qty}주 · 전략 ${profileLabel} · 매수가 ${fmtKrw(executionPrice)} · 투입 ${fmtKrw(investedAmount)} · 점수 ${candidate.score.toFixed(1)} · ${formatPriceSourceLabel(executionSource)}${todaySignalReason ? ` · ${todaySignalReason}` : ""}${filterReason ? ` · 필터근거 ${filterReason}` : ""}`
-          );
-          summary.notes.push(
-            buildResponseGuideNote({
-              actionType: "new-buy",
-              code: candidate.code,
-              basePrice: executionPrice,
-              quantity: qty,
-              investedAmount,
-              takeProfitPct: entryProfile.takeProfitPct,
-              stopLossPct: entryProfile.stopLossPct,
-            })
-          );
-          (summary.mirrorOrders ??= []).push(
-            buildBuyMirrorOrder({
-              kind: "new-buy",
-              code: candidate.code,
-              name: candidate.name,
-              quantity: qty,
-              limitPrice: executionPrice,
-              takeProfitPct: entryProfile.takeProfitPct,
-              stopLossPct: entryProfile.stopLossPct,
-            })
-          );
-          await writeActionLog({
+          // 안내·따라하기 주문은 조정 전 프로필 기준 (예전엔 테스트 매수안만 조정 프로필을 보여 줘 실제 매수 알림과 숫자가 달랐다)
+          const bought = await executeNewEntryBuy({
+            kind: "rebalance",
             supabase: payload.supabase,
             runId: payload.runId,
             chatId,
-            code: candidate.code,
-            actionType: "BUY",
-            reason: "rebalance-buy",
-            detail: {
-              qty,
-              price: executionPrice,
-              priceSource: executionSource,
-              investedAmount,
-              totalBudget: sizing.totalBudget,
-              splitCount: sizing.splitCount,
-              score: candidate.score,
-              strategyProfile: entryProfile.profile,
-              tradeId,
-              cashAfter: availableCash,
-              deployableCashAfter: deployableCash,
-              marketMode: marketPolicy.mode,
-              marketReason: marketPolicy.reason,
-              targetHorizon,
-              horizonReason,
-              signalTrust: {
-                score: signalGate.trustScore,
-                grade: signalGate.grade,
-                metrics: signalGate.metrics,
-              },
-            },
+            dryRun: payload.dryRun,
+            candidate,
+            executionPrice,
+            executionSource,
+            sizing,
+            profileLabel,
+            newsBias,
+            marketPolicy,
+            signalGate,
+            todaySignalReason,
+            filterReason,
+            availableCash,
+            deployableCash,
+            summary,
+            profile: adjustedEntryProfile,
+            guideProfile: entryProfile,
           });
-          // 결정로그: 일일 리밸런싱 재매수
-          appendVirtualDecisionLog({
-            chatId,
-            code: candidate.code,
-            action: "BUY",
-            strategyId: AUTO_TRADE_STRATEGY_ID,
-            strategyVersion: "v1",
-            confidence: Math.min(100, Math.max(0, candidate.score)),
-            expectedHorizonDays: entryProfile.expectedHorizonDays,
-            reasonSummary: `자동 리밸런싱 재매수 (${profileLabel}, 점수 ${candidate.score.toFixed(1)})`,
-            reasonDetails: { score: candidate.score, price: executionPrice, priceSource: executionSource, qty, investedAmount, totalBudget: sizing.totalBudget, splitCount: sizing.splitCount, strategyProfile: entryProfile.profile, trigger: "rebalance-buy", signalTrust: { score: signalGate.trustScore, grade: signalGate.grade, metrics: signalGate.metrics } },
-            linkedTradeId: tradeId ?? undefined,
-          }).catch((err: unknown) => console.error("[autoTrade] decision log rebalance BUY failed", err));
+          if (bought.outcome === "skipped") continue;
+          availableCash = bought.availableCash;
+          deployableCash = bought.deployableCash;
+          plannedHoldingCount += 1;
+          rebalanceBuyCount += 1;
         } catch (error: unknown) {
           const message = extractErrorMessage(error);
           summary.errors += 1;
