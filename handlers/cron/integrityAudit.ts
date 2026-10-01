@@ -51,7 +51,7 @@ type UserPrefsRow = {
 };
 type UserRow = { tg_id: number; prefs: Record<string, unknown> | null };
 type TradeRow = AuditTradeRow & { chat_id: number };
-type PositionRow = AuditPositionRow & { chat_id: number };
+type PositionRow = AuditPositionRow & { chat_id: number; broker_name?: string | null; account_name?: string | null };
 
 function kstYmd(base = new Date()): string {
   const utcMs = base.getTime() + base.getTimezoneOffset() * 60 * 1000;
@@ -111,11 +111,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         .from("virtual_trades")
         .select("chat_id, code, side, quantity, net_amount")
         .in("chat_id", chatIds)
+        // 현금·수량 원장은 가상매매(종목봇)만 — 실계좌 입력 거래는 가상 현금과 무관하다
+        .is("broker_name", null)
         .limit(50000)
         .returns<TradeRow[]>(),
       supabase
         .from("virtual_positions")
-        .select("chat_id, code, quantity, status")
+        .select("chat_id, code, quantity, status, broker_name, account_name")
         .in("chat_id", chatIds)
         .returns<PositionRow[]>(),
     ]);
@@ -160,8 +162,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const heldCodes = new Set<string>();
     for (const row of positionsResult.data ?? []) {
       const chatId = Number(row.chat_id);
-      if (!positionsByChat.has(chatId)) positionsByChat.set(chatId, []);
-      positionsByChat.get(chatId)!.push(row);
+      // 실계좌 보유(증권사·계좌명 있음)는 가상 원장과 비교하지 않는다 — 거래 기록이 없어 매번 오탐이 된다.
+      // 시세 누락 점검(heldCodes)에는 실계좌 종목도 포함한다.
+      const isRealAccount = row.broker_name != null || row.account_name != null;
+      if (!isRealAccount) {
+        if (!positionsByChat.has(chatId)) positionsByChat.set(chatId, []);
+        positionsByChat.get(chatId)!.push(row);
+      }
       const status = String(row.status ?? "holding").toLowerCase();
       if (status === "holding" && Number(row.quantity) > 0) {
         heldCodes.add(String(row.code).trim());
