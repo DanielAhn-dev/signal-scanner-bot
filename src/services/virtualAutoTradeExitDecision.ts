@@ -293,6 +293,8 @@ export function decideHoldingExit(input: HoldingExitInput): HoldingExitDecision 
       pnlPct,
       isSectorLeader: input.isSectorLeader,
       sectorGrade: input.sectorId ? input.sectorGrade : undefined,
+      buyDate: holding.buy_date ?? holding.created_at,
+      now: input.now,
     });
     if (sectorRotation.triggered) {
       return {

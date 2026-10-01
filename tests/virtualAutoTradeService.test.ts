@@ -926,15 +926,34 @@ test("kstWindowKey: 장중 실행 키를 10분 창으로 버킷팅한다", () =>
   assert.equal(kstWindowKey(new Date("2026-04-24T01:19:00.000Z"), 10), "2026-04-24T10:10");
 });
 
-test("evaluateSectorRotationExit: 섹터 Grade C + 손실 -3% 이내면 전량 매도를 트리거한다", () => {
+const SECTOR_ROTATION_NOW = new Date("2026-10-01T00:00:00.000Z");
+const SECTOR_ROTATION_OLD_BUY_DATE = "2026-09-10T00:00:00.000Z"; // 21일 전 (최소 보유 14일 충족)
+const SECTOR_ROTATION_RECENT_BUY_DATE = "2026-09-29T00:00:00.000Z"; // 2일 전 (최소 보유 미달)
+
+test("evaluateSectorRotationExit: 섹터 Grade C + 손실 -3% 이내 + 최소 보유기간(14일) 지나면 전량 매도를 트리거한다", () => {
   const result = evaluateSectorRotationExit({
     quantity: 10,
     pnlPct: -1,
     isSectorLeader: false,
     sectorGrade: "C",
+    buyDate: SECTOR_ROTATION_OLD_BUY_DATE,
+    now: SECTOR_ROTATION_NOW,
   });
 
   assert.deepEqual(result, { triggered: true, quantityToSell: 10 });
+});
+
+test("evaluateSectorRotationExit: 매수 후 14일이 안 지났으면 트리거하지 않는다 (사자마자 파는 왕복 방지)", () => {
+  const result = evaluateSectorRotationExit({
+    quantity: 10,
+    pnlPct: -1,
+    isSectorLeader: false,
+    sectorGrade: "C",
+    buyDate: SECTOR_ROTATION_RECENT_BUY_DATE,
+    now: SECTOR_ROTATION_NOW,
+  });
+
+  assert.deepEqual(result, { triggered: false });
 });
 
 test("evaluateSectorRotationExit: 손실이 -3%를 초과하면 트리거하지 않는다 (손실 확정 방지)", () => {
@@ -943,6 +962,8 @@ test("evaluateSectorRotationExit: 손실이 -3%를 초과하면 트리거하지 
     pnlPct: -5,
     isSectorLeader: false,
     sectorGrade: "C",
+    buyDate: SECTOR_ROTATION_OLD_BUY_DATE,
+    now: SECTOR_ROTATION_NOW,
   });
 
   assert.deepEqual(result, { triggered: false });
@@ -954,6 +975,8 @@ test("evaluateSectorRotationExit: 섹터 리더는 Grade C여도 트리거하지
     pnlPct: 2,
     isSectorLeader: true,
     sectorGrade: "C",
+    buyDate: SECTOR_ROTATION_OLD_BUY_DATE,
+    now: SECTOR_ROTATION_NOW,
   });
 
   assert.deepEqual(result, { triggered: false });
@@ -961,15 +984,36 @@ test("evaluateSectorRotationExit: 섹터 리더는 Grade C여도 트리거하지
 
 test("evaluateSectorRotationExit: 섹터 등급이 A/B이거나 미상이면 트리거하지 않는다", () => {
   assert.deepEqual(
-    evaluateSectorRotationExit({ quantity: 10, pnlPct: 1, isSectorLeader: false, sectorGrade: "A" }),
+    evaluateSectorRotationExit({
+      quantity: 10,
+      pnlPct: 1,
+      isSectorLeader: false,
+      sectorGrade: "A",
+      buyDate: SECTOR_ROTATION_OLD_BUY_DATE,
+      now: SECTOR_ROTATION_NOW,
+    }),
     { triggered: false }
   );
   assert.deepEqual(
-    evaluateSectorRotationExit({ quantity: 10, pnlPct: 1, isSectorLeader: false, sectorGrade: "B" }),
+    evaluateSectorRotationExit({
+      quantity: 10,
+      pnlPct: 1,
+      isSectorLeader: false,
+      sectorGrade: "B",
+      buyDate: SECTOR_ROTATION_OLD_BUY_DATE,
+      now: SECTOR_ROTATION_NOW,
+    }),
     { triggered: false }
   );
   assert.deepEqual(
-    evaluateSectorRotationExit({ quantity: 10, pnlPct: 1, isSectorLeader: false, sectorGrade: undefined }),
+    evaluateSectorRotationExit({
+      quantity: 10,
+      pnlPct: 1,
+      isSectorLeader: false,
+      sectorGrade: undefined,
+      buyDate: SECTOR_ROTATION_OLD_BUY_DATE,
+      now: SECTOR_ROTATION_NOW,
+    }),
     { triggered: false }
   );
 });

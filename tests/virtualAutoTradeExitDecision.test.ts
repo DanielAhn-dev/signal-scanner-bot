@@ -69,10 +69,20 @@ test("decideHoldingExit: 한 종목이 포트폴리오의 25%를 넘으면 비�
   assert.match(decision.exitReasonLabel, /비중조정/);
 });
 
-test("decideHoldingExit: 섹터가 C등급으로 떨어지면 리더가 아닌 종목은 정리한다", () => {
-  const decision = decideHoldingExit(input({ sectorId: "semis", sectorGrade: "C" }));
+test("decideHoldingExit: 섹터가 C등급으로 떨어지면 리더가 아닌 종목은 정리한다 (매수 후 14일 이상 지난 경우)", () => {
+  const oldBuy = { code: "005930", buy_date: "2026-09-10", planned_review_at: null };
+  const decision = decideHoldingExit(input({ holding: oldBuy, sectorId: "semis", sectorGrade: "C" }));
   assert.equal(decision.finalExitPlan.action, "SECTOR_ROTATION");
-  assert.equal(decideHoldingExit(input({ sectorId: "semis", sectorGrade: "C", isSectorLeader: true })).finalExitPlan.action, "HOLD");
+  assert.equal(
+    decideHoldingExit(input({ holding: oldBuy, sectorId: "semis", sectorGrade: "C", isSectorLeader: true })).finalExitPlan.action,
+    "HOLD"
+  );
+});
+
+test("decideHoldingExit: 매수 후 14일이 안 지났으면 섹터 C등급이어도 정리하지 않는다 (사자마자 파는 왕복 방지)", () => {
+  // 기본 input()의 buy_date는 2026-09-20, now는 2026-09-30 — 10일로 최소 보유기간(14일) 미달
+  const decision = decideHoldingExit(input({ sectorId: "semis", sectorGrade: "C" }));
+  assert.equal(decision.finalExitPlan.action, "HOLD");
 });
 
 const reviewDue = { code: "005930", buy_date: "2026-09-01", planned_review_at: "2026-09-29T00:00:00Z" };

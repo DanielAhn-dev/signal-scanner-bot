@@ -799,18 +799,36 @@ export type SectorRotationResult =
 
 /** 섹터 강도 하락 리밸런싱: 섹터 등급이 C로 하락하고 손실이 -3% 이내일 때만 전량 청산 (불필요한 손실 확정 방지) */
 const SECTOR_ROTATION_LOSS_FLOOR_PCT = -3;
+/**
+ * 매수 후 이 기간(달력일) 안에는 섹터 등급 하락으로 정리하지 않는다.
+ * 매수는 섹터 등급을 보지 않아, 산 지 며칠 안 된 종목도 섹터가 C로 떨어지면 바로 팔려 수수료·세금만 내는
+ * 왕복이 생겼다(2026-10-01 한미약품: +0.4% 가격에 -3,181원 확정). 2026-09-28 업종 검증(덜 오른 업종
+ * 월 -0.59%p, t=-2.5)의 약세 섹터 드래그로 왕복 비용(수수료+거래세 ≈0.21%)을 벌충하려면 약 7~8거래일
+ * (~10~14일) 필요 — 10거래일(약 2주)로 잡아 안전마진을 둔다.
+ */
+const SECTOR_ROTATION_MIN_HOLDING_DAYS = 14;
 
 export function evaluateSectorRotationExit(input: {
   quantity: number;
   pnlPct: number;
   isSectorLeader: boolean;
   sectorGrade: "A" | "B" | "C" | undefined;
+  buyDate: string | null | undefined;
+  now?: Date;
 }): SectorRotationResult {
   const { quantity, pnlPct, isSectorLeader, sectorGrade } = input;
   if (quantity <= 0) return { triggered: false };
   if (isSectorLeader) return { triggered: false };
   if (sectorGrade !== "C") return { triggered: false };
   if (pnlPct < SECTOR_ROTATION_LOSS_FLOOR_PCT) return { triggered: false };
+
+  const rawBuyDate = String(input.buyDate ?? "").trim();
+  const buyTs = rawBuyDate ? Date.parse(rawBuyDate) : NaN;
+  if (!Number.isFinite(buyTs)) return { triggered: false };
+  const now = input.now ?? new Date();
+  const holdingDays = Math.floor((now.getTime() - buyTs) / (24 * 60 * 60 * 1000));
+  if (holdingDays < SECTOR_ROTATION_MIN_HOLDING_DAYS) return { triggered: false };
+
   return { triggered: true, quantityToSell: quantity };
 }
 
