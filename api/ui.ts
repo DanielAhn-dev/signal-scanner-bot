@@ -47,6 +47,7 @@ import stocks from '../handlers/ui/stocks'
 import strategyAdaptive from '../handlers/ui/strategy-adaptive'
 import forwardTest from '../handlers/ui/forward-test'
 import goalTracker from '../handlers/ui/goal-tracker'
+import incomeGuide from '../handlers/ui/income-guide'
 import summary from '../handlers/ui/summary'
 import syncHistory from '../handlers/ui/sync-history'
 import syncStatus from '../handlers/ui/sync-status'
@@ -105,6 +106,7 @@ const ROUTES: Record<string, UiHandler> = {
   'strategy-adaptive': strategyAdaptive,
   'forward-test': forwardTest,
   'goal-tracker': goalTracker,
+  'income-guide': incomeGuide,
   summary,
   'sync-history': syncHistory,
   'sync-status': syncStatus,
