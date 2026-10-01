@@ -48,7 +48,10 @@
    TITLE BAR — Excel 365 스타일 타이틀 바 (브랜드 그린 유지)
    ================================================================ */
 .excel-titlebar {
-  height: var(--header-height);
+  /* iOS 홈 화면 앱(black-translucent)은 콘텐츠가 상태바 밑까지 올라온다 — 노치·상태바 높이만큼 초록을 채운다. 일반 브라우저에선 0 */
+  box-sizing: border-box;
+  padding-top: env(safe-area-inset-top, 0px);
+  height: calc(var(--header-height) + env(safe-area-inset-top, 0px));
   background: var(--color-excel-title-bar);
   display: flex;
   align-items: center;
@@ -4116,40 +4119,49 @@
 }
 
 /* ================================================================
-   MOBILE CLEAN — 모바일은 엑셀 장식 중 열 문자(A·B·C·D)만 남기고(엑셀 정체성), 행 번호·격자·수식줄·줌은 뺀다.
-   표는 폭이 모자라면 줄바꿈 대신 가로로 스크롤한다.
+   MOBILE EXCEL GRID — 행 번호 거터 + 열 문자는 유지, 격자 배경만 제거, 표는 가로 스크롤
    ================================================================ */
 @media (max-width: 639px) {
-  .xls-row-num-strip,
-  .xls-col-header-strip__corner,
-  .xls-grid-bg,
-  .excel-formula-bar,
-  .excel-statusbar__zoom,
-  .excel-statusbar__item--datetime,
-  .excel-statusbar__item--market,
-  .excel-titlebar__window-btns {
-    display: none !important;
+  .xls-content-area {
+    --xls-grid-row-height: 26px;
+    --xls-m-gutter: 22px;
   }
 
-  /* 열 문자: 행 번호 거터가 없으니 첫 칸부터 A~E가 보이게 고정 폭 셀로 두고 넘치는 열은 잘라낸다 */
+  /* 열 문자: A~E 가 보이도록 고정 폭 셀, 넘치는 열은 잘라냄 */
   .xls-col-header-strip {
     display: grid;
-    grid-template-columns: repeat(26, 25%);
+    grid-template-columns: var(--xls-m-gutter) repeat(26, 25%);
     height: 20px;
     overflow: hidden;
     background: var(--color-excel-cell-header);
   }
-  .xls-col-header-strip__cell {
+  .xls-col-header-strip__cell,
+  .xls-col-header-strip__corner {
     font-size: 10px;
     font-weight: 500;
   }
 
-  /* 격자 배경 제거 — 표·카드 위로 가로줄이 지나가며 글자를 잘라 보이게 했다 */
-  .xls-content-data {
-    background-image: none !important;
+  /* 행 번호 거터: 콘텐츠 스크롤과 함께 움직이진 않지만 sticky 로 고정 */
+  .xls-row-num-strip {
+    display: block;
+    width: var(--xls-m-gutter);
+    background: var(--color-excel-cell-header);
+    border-right: 1px solid var(--color-excel-grid-border);
+    -webkit-mask-image: linear-gradient(to bottom, #000 85%, transparent);
+    mask-image: linear-gradient(to bottom, #000 85%, transparent);
   }
-  .xls-content-inner {
-    zoom: 1 !important;
+  .xls-row-num-strip__cell {
+    height: 26px;
+    line-height: 26px;
+    padding-right: 4px;
+    font-size: 9px;
+    text-align: center;
+    padding: 0;
+  }
+
+  /* 격자 배경만 제거 — 표·카드 위로 가로줄이 지나가며 글자를 잘라 보이게 했다. 열 문자·행 번호 거터는 엑셀 정체성으로 유지 */
+  .xls-content-data {
+    background-image: none;
   }
 
   /* 표: 줄바꿈 없이 가로 스크롤 (헤더가 세로로 쪼개지거나 잘리지 않게) */
