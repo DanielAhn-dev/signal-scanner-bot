@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import { apiFetch } from '../../lib/api'
 import { formatKstDateTime } from '../../lib/format'
+import Collapsible from '../../components/ui/Collapsible'
 import Button from '../../components/ui/Button'
 import Input from '../../components/ui/Input'
 import Checkbox from '../../components/ui/Checkbox'
@@ -1021,8 +1022,10 @@ export default function StrategyPage() {
                 <div className="muted mt-2">비활성화하면 스케줄 실행 시 매매 없이 분석만 수행합니다.</div>
               </div>
 
-              <div className="card">
-                <div className="title-md" style={{ marginBottom: 'var(--space-3)' }}>퀀트 파라미터</div>
+              <Collapsible title="세부 기준" hint="매수 점수·익절·손절 — 처음엔 기본값 그대로 두세요">
+                <div className="muted" style={{ marginBottom: 'var(--space-3)' }}>
+                  지난 10년 검증에서 매수 점수·익절·손절 값을 바꿔서 수익이 나아진 근거는 찾지 못했습니다. 바꾸고 싶을 때만 조정하세요.
+                </div>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
                   <Input
                     label="최소 매수 점수"
@@ -1064,10 +1067,9 @@ export default function StrategyPage() {
                 <div className="muted mt-2" style={{ fontSize: 'var(--font-size-sm)' }}>
                   최소 매수 점수는 스캔 컷오프, 익절·손절은 가상 자동매매 기준, 장기 포지션 비중은 장기 보유 목표 비율입니다.
                 </div>
-              </div>
+              </Collapsible>
 
-              <div className="card">
-                <div className="title-md" style={{ marginBottom: 'var(--space-3)' }}>저장 전용 설정 — 동적 포지션 사이징 (봇 미적용)</div>
+              <Collapsible title="저장만 되는 설정" hint="지금은 바꿔도 봇 매매가 달라지지 않습니다">
                 <Checkbox
                   label="동적 포지션 사이징 사용 · 현재 봇 미적용"
                   checked={!!settings?.use_dynamic_sizing}
@@ -1116,10 +1118,12 @@ export default function StrategyPage() {
                 <div className="muted mt-2">
                   현재 봇 매매 로직은 이 설정을 읽지 않습니다(저장만 됨).
                 </div>
-              </div>
+              </Collapsible>
 
-              <div className="card">
-                <div className="title-md" style={{ marginBottom: 'var(--space-3)' }}>각 전략별 동작 방식</div>
+              <Collapsible title="전략별 동작 방식" hint="세 전략이 각각 무엇을 하는지">
+                <div className="muted" style={{ marginBottom: 'var(--space-3)', fontSize: 'var(--font-size-sm)' }}>
+                  아래 "권장 설정"의 기본 종목 수·강세장/약세장 배수는 위 "저장만 되는 설정"의 값입니다. 지금은 저장만 되고 봇 매매에는 적용되지 않습니다.
+                </div>
                 
                 {STRATEGY_OPTIONS.map((option) => (
                   <div
@@ -1165,9 +1169,9 @@ export default function StrategyPage() {
                     )}
                   </div>
                 ))}
-              </div>
+              </Collapsible>
 
-              <div className="card">
+              <div className="card" style={{ position: 'sticky', bottom: 0, zIndex: 2 }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
                   <Button variant="primary" onClick={saveSettings} disabled={saving}>
                     {saving ? '저장 중…' : '설정 저장'}

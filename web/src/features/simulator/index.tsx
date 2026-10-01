@@ -874,7 +874,10 @@ export default function SimulatorPage() {
       <div className="sim-header">
         <div>
           <h1 className="sim-title">시뮬레이터</h1>
-          <p className="sim-desc">분할진입 · 기대수익 · 리스크 분석으로 최적 집행 계획을 수립합니다.</p>
+          <p className="sim-desc">넣을 돈과 종목을 정하면, 잘 풀릴 때와 안 풀릴 때 얼마가 되는지 미리 보여줍니다.</p>
+          <p className="sim-desc" style={{ marginTop: 4 }}>
+            ① 총 투자금 입력 → ② 종목 추가(고르기 어려우면 아래 "종목 추천받기") → ③ 맨 아래 시나리오 분석 확인
+          </p>
         </div>
         <button className="sim-settings-btn" onClick={() => setSettingsOpen((v) => !v)} aria-expanded={settingsOpen}>
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden>
@@ -889,8 +892,16 @@ export default function SimulatorPage() {
       <div className="sim-summary-card">
         <div className="sim-summary-grid">
           <div className="sim-summary-item">
-            <span className="sim-summary-label">총 투자금</span>
-            <span className="sim-summary-value">{formatKrw(totalCapital)}</span>
+            <label className="sim-summary-label" htmlFor="sim-total-capital">총 투자금 (원)</label>
+            <input
+              id="sim-total-capital"
+              className="sim-input"
+              type="number"
+              min={0}
+              inputMode="numeric"
+              value={totalCapital}
+              onChange={(e) => setTotalCapital(Math.max(0, Number(e.target.value || 0)))}
+            />
           </div>
           <div className="sim-summary-item">
             <span className="sim-summary-label">배분 합계</span>
@@ -902,22 +913,26 @@ export default function SimulatorPage() {
               {summary.remaining >= 0 ? '+' : ''}{formatKrw(summary.remaining)}
             </span>
           </div>
-          <div className="sim-summary-divider" />
           <div className="sim-summary-item">
-            <span className="sim-summary-label">기대손익 (월 목표 기준)</span>
-            <span className={`sim-summary-value sim-summary-value--lg${summary.evAfterCost >= 0 ? ' sim-pos' : ' sim-neg'}`}>
-              {summary.evAfterCost >= 0 ? '+' : ''}{formatKrw(summary.evAfterCost)}
-            </span>
-          </div>
-          <div className="sim-summary-item">
-            <span className="sim-summary-label">최대 손실 (월 목표 기준)</span>
+            <span className="sim-summary-label">최악일 때 손실</span>
             <span className="sim-summary-value sim-neg">{formatKrw(summary.maxLoss)}</span>
           </div>
-          <div className="sim-summary-item">
-            <span className="sim-summary-label">체결 반영 투자금</span>
-            <span className="sim-summary-value">{formatKrw(summary.splitInvested)}</span>
-          </div>
         </div>
+        <details className="sim-summary-more">
+          <summary className="muted">자세히 (기대손익 · 체결 반영 투자금)</summary>
+          <div className="sim-summary-grid" style={{ marginTop: 8 }}>
+            <div className="sim-summary-item">
+              <span className="sim-summary-label">기대손익 (월 목표 기준)</span>
+              <span className={`sim-summary-value${summary.evAfterCost >= 0 ? ' sim-pos' : ' sim-neg'}`}>
+                {summary.evAfterCost >= 0 ? '+' : ''}{formatKrw(summary.evAfterCost)}
+              </span>
+            </div>
+            <div className="sim-summary-item">
+              <span className="sim-summary-label">체결 반영 투자금</span>
+              <span className="sim-summary-value">{formatKrw(summary.splitInvested)}</span>
+            </div>
+          </div>
+        </details>
         {summary.remaining < 0 && (
           <div className="sim-warning-bar">
             배분 합계가 총 투자금을 {formatKrw(-summary.remaining)} 초과합니다.
@@ -926,10 +941,11 @@ export default function SimulatorPage() {
       </div>
 
       {/* ── 월 수익 목표 & 추천 ── */}
-      <div className="sim-section sim-monthly-target-section">
-        <div className="sim-section-head">
-          <span className="sim-section-label">월 수익 목표</span>
-        </div>
+      <details className="sim-section sim-monthly-target-section collapsible">
+        <summary className="collapsible__summary">
+          <span className="sim-section-label">종목 추천받기</span>
+          <span className="muted collapsible__hint">고르기 어려울 때만 — 월 목표 수익으로 후보와 배분을 제안합니다</span>
+        </summary>
         {/* 추천 소스 선택 */}
         <div className="sim-rec-source-group">
           <button
@@ -1040,9 +1056,9 @@ export default function SimulatorPage() {
               (items.length === 0 && 
                ((chatId && watchlistCandidates.length === 0) ||
                 (!chatId && algoCandidates.length === 0)))}
-            title="Half-Kelly Criterion: 장기 자본 성장 극대화, 변동성 관리를 위한 최적 배분 비율"
+            title="Half-Kelly 방식으로 종목별 배분 비율을 계산합니다. 입력한 승률·손익비 가정에 따라 달라지는 참고값입니다."
           >
-            최적 포트폴리오 추천 (Half-Kelly 기반)
+            추천 포트폴리오 만들기
           </button>
           {chatId && algoCandidates.length > 0 && watchlistCandidates.length > 0 && (
             <button
@@ -1141,7 +1157,7 @@ export default function SimulatorPage() {
             </div>
           </div>
         )}
-      </div>
+      </details>
 
       {/* ── 설정 패널 (접기/펼치기) ── */}
       {settingsOpen && (
@@ -1502,8 +1518,11 @@ export default function SimulatorPage() {
 
       {/* ── 목표 달성 경로 ── */}
       {items.filter(i => i.code !== 'CASH').length > 0 && monthlyProfitTarget > 0 && (
-        <div className="sim-section">
-          <span className="sim-section-label">목표 달성 경로</span>
+        <details className="sim-section collapsible">
+          <summary className="collapsible__summary">
+            <span className="sim-section-label">목표 달성 경로</span>
+            <span className="muted collapsible__hint">고급 — 가정 기반 참고용</span>
+          </summary>
           <p className="sim-section-desc">
             승률 가정 기반 · 주 1사이클(월~금) 기준 — 과거 10년 실측에서 주 단위 목표/손절 매매의 비용 차감 기대값은 목표·손절 조합과 무관하게 0% 안팎이었습니다.
           </p>
@@ -1575,7 +1594,7 @@ export default function SimulatorPage() {
               ))}
             </div>
           </div>
-        </div>
+        </details>
       )}
 
       {/* ── 시나리오 분석 ── */}

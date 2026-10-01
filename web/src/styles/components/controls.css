@@ -511,3 +511,32 @@ input[type='radio']:focus-visible { @apply outline-none; box-shadow: var(--shado
   }
 }
 }
+
+/* ── 접이식 카드 (Collapsible) ── */
+.collapsible__summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 10px;
+  padding-right: 24px;
+  cursor: pointer;
+  list-style: none;
+  position: relative;
+}
+.collapsible__summary::-webkit-details-marker { display: none; }
+.collapsible__summary::after {
+  content: '▾';
+  position: absolute;
+  right: 4px;
+  top: 0;
+  color: var(--color-text-tertiary);
+  transition: transform var(--duration-fast, 0.15s);
+}
+.collapsible[open] > .collapsible__summary::after { transform: rotate(180deg); }
+.collapsible__hint { font-size: var(--font-size-sm); }
+.collapsible__body { margin-top: var(--space-3, 12px); }
+
+/* 시뮬레이터 요약 카드: 총 투자금 입력 + 자세히 접이식 */
+.sim-summary-item .sim-input { width: 100%; min-width: 0; }
+.sim-summary-more { margin-top: 8px; }
+.sim-summary-more > summary { cursor: pointer; font-size: var(--font-size-sm); padding: 4px 0; }
