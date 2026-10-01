@@ -268,6 +268,9 @@ async function notifyDailyBundleSummary(input: {
   hasError: boolean;
 }): Promise<void> {
   if (AUTO_TRADE_ALERT_CHAT_ID <= 0) return;
+  // 매매 내역은 자동매매·MTS 주문서 알림으로 따로 간다 — 번들 요약은 실패했을 때만 보낸다
+  // (디버깅용으로 매번 받으려면 CRON_BUNDLE_NOTIFY_ALWAYS=true)
+  if (!input.hasError && String(process.env.CRON_BUNDLE_NOTIFY_ALWAYS ?? "").toLowerCase() !== "true") return;
 
   const lines: string[] = [];
   let buyTotal = 0;
