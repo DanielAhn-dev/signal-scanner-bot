@@ -140,6 +140,7 @@ import { BUY_CASH_BUFFER, createCashSweepSteps } from "./virtualAutoTradeCashSwe
 import { createIndexHoldSteps } from "./virtualAutoTradeIndexHoldStep";
 import { createAutoTradeBuyStep } from "./virtualAutoTradeBuyStep";
 import { decideHoldingExit, extractScoreFactors } from "./virtualAutoTradeExitDecision";
+import { buildHoldingQuoteMaps, evaluateQuoteStaleness, resolveReviewCash } from "./virtualAutoTradeDailyContext";
 import {
   ADD_ON_MIN_GAIN_PCT,
   capQuantityToCash,
@@ -4885,16 +4886,14 @@ async function runDailyReviewForUser(payload: {
   // 종가 데이터 신선도 가드: 배치(daily_data) 파이프라인이 조용히 멈춰
   // 오래된 종가로 손절/익절을 잘못 판단·기록하는 사고를 막기 위한 안전장치.
   // (2026-06-12~07-11 발생한 pykrx 다운그레이드로 인한 시세 정지 사고 재발 방지)
-  const STALE_PRICE_GUARD_MS = 3 * 24 * 60 * 60 * 1000;
-  const updatedAtValues = (stockRows ?? [])
-    .map((row: Record<string, unknown>) => Date.parse(String(row.updated_at ?? "")))
-    .filter((ts: number) => Number.isFinite(ts));
-  const freshestUpdatedAt = updatedAtValues.length ? Math.max(...updatedAtValues) : null;
-  if (holdings.length > 0 && (freshestUpdatedAt === null || Date.now() - freshestUpdatedAt > STALE_PRICE_GUARD_MS)) {
-    const staleDays = freshestUpdatedAt !== null ? Math.floor((Date.now() - freshestUpdatedAt) / (24 * 60 * 60 * 1000)) : null;
+  const staleness = evaluateQuoteStaleness({
+    rows: (stockRows ?? []) as Array<Record<string, unknown>>,
+    hasHoldings: holdings.length > 0,
+  });
+  if (staleness.stale) {
     summary.errors += 1;
     summary.notes.push(
-      `[시세 신선도 가드] stocks.close 최신화 ${staleDays ?? "알수없음"}일 경과 → 매도/익절 판단 스킵 (일일 배치 점검 필요)`
+      `[시세 신선도 가드] stocks.close 최신화 ${staleness.staleDays ?? "알수없음"}일 경과 → 매도/익절 판단 스킵 (일일 배치 점검 필요)`
     );
     await writeActionLog({
       supabase: payload.supabase,
@@ -4902,29 +4901,14 @@ async function runDailyReviewForUser(payload: {
       chatId,
       actionType: "ERROR",
       reason: "stale-price-data-guard",
-      detail: { staleDays, freshestUpdatedAt },
+      detail: { staleDays: staleness.staleDays, freshestUpdatedAt: staleness.freshestUpdatedAt },
     });
     return summary;
   }
 
-  const closeByCode = new Map<string, number>();
-  const nameByCode = new Map<string, string>();
-  const marketByCode = new Map<string, string>();
-  const sectorIdByCode = new Map<string, string>();
-  const isSectorLeaderByCode = new Map<string, boolean>();
-  for (const row of stockRows ?? []) {
-    const code = String((row as Record<string, unknown>).code ?? "");
-    const name = String((row as Record<string, unknown>).name ?? "").trim();
-    const close = toNumber((row as Record<string, unknown>).close, 0);
-    const market = String((row as Record<string, unknown>).market ?? "");
-    const sectorId = String((row as Record<string, unknown>).sector_id ?? "") || null;
-    const isSectorLeader = (row as Record<string, unknown>).is_sector_leader === true;
-    if (code && close > 0) closeByCode.set(code, close);
-    if (code && name) nameByCode.set(code, name);
-    if (code && market) marketByCode.set(code, market);
-    if (code && sectorId) sectorIdByCode.set(code, sectorId);
-    if (code) isSectorLeaderByCode.set(code, isSectorLeader);
-  }
+  const { closeByCode, nameByCode, marketByCode, sectorIdByCode, isSectorLeaderByCode } = buildHoldingQuoteMaps(
+    (stockRows ?? []) as Array<Record<string, unknown>>
+  );
 
   // 장중이면 보유 종목 판단·체결을 실시간가로 한다. stocks.close는 배치가 늦으면 전날 종가라
   // 9/22 088350은 전날 종가(5,780)로 매도됐다 — 따라 하는 사람이 그 가격에 팔 수 없다.
@@ -4996,30 +4980,24 @@ async function runDailyReviewForUser(payload: {
   }
 
   let realizedDelta = 0;
-  const storedCashRaw = Number(prefs.virtual_cash);
-  const storedCash = Number.isFinite(storedCashRaw) ? Math.max(0, storedCashRaw) : null;
   const seedCapital = Math.max(
     0,
     toNumber(prefs.virtual_seed_capital, toNumber(prefs.capital_krw, 0))
   );
-  const realizedPnl = toNumber(prefs.virtual_realized_pnl, 0);
-  const investedFromHoldings = holdings.reduce((sum, row) => {
-    const qty = Math.max(0, Math.floor(toNumber(row.quantity, 0)));
-    const buyPrice = Math.max(0, toNumber(row.buy_price, 0));
-    const investedAmount = Math.max(0, toNumber(row.invested_amount, 0));
-    const fallbackInvested = qty > 0 && buyPrice > 0 ? Math.round(qty * buyPrice) : 0;
-    return sum + Math.max(investedAmount, fallbackInvested);
-  }, 0);
-  const derivedCash = Math.max(0, Math.round(seedCapital + realizedPnl - investedFromHoldings));
-  let availableCash = storedCash ?? derivedCash;
-  const simulatedSweepReleaseCash = Math.max(0, toNumber(payload.simulatedSweepReleaseCash, 0));
-  if (payload.dryRun && simulatedSweepReleaseCash > 0) {
-    availableCash += simulatedSweepReleaseCash;
-    summary.notes.push(`수동 학습 점검: 스윕 현금화 예정액 ${fmtKrw(simulatedSweepReleaseCash)}을 가용현금에 반영`);
+  const simulatedSweepReleaseCash = payload.dryRun ? Math.max(0, toNumber(payload.simulatedSweepReleaseCash, 0)) : 0;
+  const reviewCash = resolveReviewCash({
+    storedCash: prefs.virtual_cash,
+    seedCapital,
+    realizedPnl: toNumber(prefs.virtual_realized_pnl, 0),
+    holdings: allHoldings,
+    simulatedSweepReleaseCash,
+  });
+  let availableCash = reviewCash.availableCash;
+  if (reviewCash.corrected) {
+    summary.notes.push(`가상현금 보정 적용: ${Math.round(availableCash - simulatedSweepReleaseCash).toLocaleString("ko-KR")}원`);
   }
-  if ((storedCash ?? 0) <= 0 && derivedCash > 0) {
-    availableCash = derivedCash;
-    summary.notes.push(`가상현금 보정 적용: ${Math.round(availableCash).toLocaleString("ko-KR")}원`);
+  if (simulatedSweepReleaseCash > 0) {
+    summary.notes.push(`수동 학습 점검: 스윕 현금화 예정액 ${fmtKrw(simulatedSweepReleaseCash)}을 가용현금에 반영`);
   }
   const marketOverviewResult = await fetchMarketOverviewWithBudget({
     apiBudget: payload.apiBudget,
