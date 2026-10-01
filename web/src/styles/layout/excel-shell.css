@@ -4116,12 +4116,12 @@
 }
 
 /* ================================================================
-   MOBILE CLEAN — 모바일은 엑셀 장식(열 문자·행 번호·격자·수식줄·줌)을 빼고 내용만 보인다.
-   엑셀다운 화면은 데스크탑에서만 쓴다. 표는 폭이 모자라면 줄바꿈 대신 가로로 스크롤한다.
+   MOBILE CLEAN — 모바일은 엑셀 장식 중 열 문자(A·B·C·D)만 남기고(엑셀 정체성), 행 번호·격자·수식줄·줌은 뺀다.
+   표는 폭이 모자라면 줄바꿈 대신 가로로 스크롤한다.
    ================================================================ */
 @media (max-width: 639px) {
-  .xls-col-header-strip,
   .xls-row-num-strip,
+  .xls-col-header-strip__corner,
   .xls-grid-bg,
   .excel-formula-bar,
   .excel-statusbar__zoom,
@@ -4129,6 +4129,19 @@
   .excel-statusbar__item--market,
   .excel-titlebar__window-btns {
     display: none !important;
+  }
+
+  /* 열 문자: 행 번호 거터가 없으니 첫 칸부터 A~E가 보이게 고정 폭 셀로 두고 넘치는 열은 잘라낸다 */
+  .xls-col-header-strip {
+    display: grid;
+    grid-template-columns: repeat(26, 25%);
+    height: 20px;
+    overflow: hidden;
+    background: var(--color-excel-cell-header);
+  }
+  .xls-col-header-strip__cell {
+    font-size: 10px;
+    font-weight: 500;
   }
 
   /* 격자 배경 제거 — 표·카드 위로 가로줄이 지나가며 글자를 잘라 보이게 했다 */
