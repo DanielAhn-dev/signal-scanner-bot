@@ -8,6 +8,7 @@ import {
   handleEtfCoreCommand,
   handleEtfThemeCommand,
 } from "./marketPicks";
+import { INDEX_BUY_GUIDE_FOOTNOTE, INDEX_BUY_GUIDE_LINES, INDEX_BUY_GUIDE_TITLE } from "../../lib/indexBuyGuide";
 import { esc, fmtInt, fmtPct, fmtPctFixed, LINE } from "../messages/format";
 import { actionButtons, ACTIONS, buildMessage, bullets, divider, header, section } from "../messages/layout";
 
@@ -74,6 +75,8 @@ function buildHubMessage(): string {
         "KODEX 최신 회차 금액, TIGER 연간 누적/연도별 추이를 함께 반영합니다.",
       ])
     ),
+    divider(),
+    section(INDEX_BUY_GUIDE_TITLE, bullets([...INDEX_BUY_GUIDE_LINES, INDEX_BUY_GUIDE_FOOTNOTE])),
   ]);
 }
 
