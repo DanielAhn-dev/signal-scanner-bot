@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { apiFetch } from '../../lib/api'
 import { searchStocks } from '../../lib/stockCache'
+import AnchoredDropdown from '../../components/AnchoredDropdown'
 import {
   defaultPlanItem,
   readSimulationPlan,
@@ -383,6 +384,7 @@ export default function BacktestPage() {
   const [minLiquidityEok, setMinLiquidityEok] = useState(50)
   const [investAmount, setInvestAmount] = useState(1_000_000)
   const checkDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const checkWrapRef = useRef<HTMLDivElement>(null)
 
   const load = async () => {
     setHasRun(true)
@@ -1615,7 +1617,7 @@ export default function BacktestPage() {
               </div>
             </div>
 
-            <div className="bt-check-search-wrap">
+            <div className="bt-check-search-wrap" ref={checkWrapRef}>
               <div className="sim-add-input-row">
                 <input
                   className="sim-add-input"
@@ -1646,7 +1648,7 @@ export default function BacktestPage() {
                 )}
               </div>
               {showCheckDropdown && (
-                <div className="sim-add-dropdown">
+                <AnchoredDropdown anchorRef={checkWrapRef} className="sim-add-dropdown">
                   {checkResults.slice(0, 6).map((s: any) => (
                     <button
                       key={s.code}
@@ -1659,7 +1661,7 @@ export default function BacktestPage() {
                       <span className="sim-add-result-code">{s.code}</span>
                     </button>
                   ))}
-                </div>
+                </AnchoredDropdown>
               )}
             </div>
 

@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react'
 import { getStocks, type StockItem } from '../lib/stockCache'
+import AnchoredDropdown from './AnchoredDropdown'
 
 interface StockSearchInputProps {
   value: string
@@ -22,6 +23,7 @@ export default function StockSearchInput({
   const [allStocks, setAllStocks] = useState<StockItem[]>([])
   const inputRef = useRef<HTMLInputElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
+  const dropdownRef = useRef<HTMLDivElement>(null)
 
   const normalizeSearchTerm = (text: string) => {
     return text
@@ -72,7 +74,9 @@ export default function StockSearchInput({
   // 외부 클릭 시 닫기
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
-      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+      const target = e.target as Node
+      // 목록은 body로 띄워 컨테이너 밖에 있으므로 그 안의 클릭도 '안쪽'으로 본다
+      if (containerRef.current && !containerRef.current.contains(target) && !dropdownRef.current?.contains(target)) {
         setIsOpen(false)
       }
     }
@@ -126,7 +130,7 @@ export default function StockSearchInput({
       />
 
       {isOpen && suggestions.length > 0 && (
-        <div className="stock-search-dropdown">
+        <AnchoredDropdown anchorRef={containerRef} dropdownRef={dropdownRef} className="stock-search-dropdown">
           {suggestions.map((stock, idx) => (
             <button
               key={stock.code}
@@ -138,7 +142,7 @@ export default function StockSearchInput({
               <div className="stock-search-code">{stock.code}</div>
             </button>
           ))}
-        </div>
+        </AnchoredDropdown>
       )}
     </div>
   )

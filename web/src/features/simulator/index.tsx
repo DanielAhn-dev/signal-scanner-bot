@@ -2,6 +2,7 @@ import { useSeedCapital } from '../../lib/useSeedCapital'
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { LucideIcon } from '../../components/LucideIcon'
+import AnchoredDropdown from '../../components/AnchoredDropdown'
 import { useCurrentChatId } from '../../stores/profileStore'
 import { EmptyState } from '../../components/StateViews'
 import { formatKrw, formatKrwCompact, formatKstDateTime, formatNumber } from '../../lib/format'
@@ -314,6 +315,7 @@ export default function SimulatorPage() {
   const [selectedStockCode, setSelectedStockCode] = useState<string>('')
   const [selectedStockName, setSelectedStockName] = useState<string>('')
   const addDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const addWrapRef = useRef<HTMLDivElement>(null)
   const toast = useToast()
 
   // 주식 검색 디바운스
@@ -1244,7 +1246,7 @@ export default function SimulatorPage() {
         </div>
 
         {/* 종목 검색 추가 */}
-        <div className="sim-add-wrap">
+        <div className="sim-add-wrap" ref={addWrapRef}>
           <div className="sim-add-input-row">
             <svg className="sim-add-icon" width="15" height="15" viewBox="0 0 16 16" fill="none" aria-hidden>
               <circle cx="8" cy="8" r="6.5" stroke="currentColor" strokeWidth="1.5"/>
@@ -1264,7 +1266,7 @@ export default function SimulatorPage() {
             <button className="sim-btn sim-btn--ghost sim-btn--sm" onClick={() => addRow()}>빈 행 추가</button>
           </div>
           {showAddDropdown && (
-            <div className="sim-add-dropdown">
+            <AnchoredDropdown anchorRef={addWrapRef} className="sim-add-dropdown">
               {addResults.length === 0
                 ? <div className="sim-add-empty">검색 결과 없음</div>
                 : addResults.slice(0, 6).map((s: any) => (
@@ -1275,7 +1277,7 @@ export default function SimulatorPage() {
                   </button>
                 ))
               }
-            </div>
+            </AnchoredDropdown>
           )}
         </div>
 

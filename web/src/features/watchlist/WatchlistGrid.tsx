@@ -2,7 +2,8 @@
  * WatchlistGrid — 감시목록 스프레드시트 뷰
  * 기존 watchlist API 데이터를 엑셀 그리드로 표시
  */
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import AnchoredDropdown from '../../components/AnchoredDropdown'
 import { apiFetch } from '../../lib/api'
 import { searchStocks } from '../../lib/stockCache'
 import { RefreshCw, Search, Plus, X } from 'lucide-react'
@@ -56,6 +57,7 @@ export default function WatchlistGrid() {
   const [selected, setSelected] = useState<number | null>(null)
   const [search, setSearch]   = useState('')
   const [addInput, setAddInput] = useState('')
+  const addBarRef = useRef<HTMLDivElement>(null)
   const [suggestions, setSuggestions] = useState<any[]>([])
   const [refreshing, setRefreshing] = useState(false)
 
@@ -157,7 +159,7 @@ export default function WatchlistGrid() {
       </div>
 
       {/* 종목 추가 바 */}
-      <div style={{
+      <div ref={addBarRef} style={{
         display: 'flex',
         alignItems: 'center',
         gap: 4,
@@ -184,16 +186,15 @@ export default function WatchlistGrid() {
         />
         {/* 자동완성 드롭다운 */}
         {suggestions.length > 0 && (
-          <div style={{
-            position: 'absolute',
-            top: '100%',
-            left: 0,
-            right: 0,
-            background: 'var(--color-gray-0)',
-            border: '1px solid var(--color-excel-grid-border)',
-            boxShadow: 'var(--shadow-md)',
-            zIndex: 100,
-          }}>
+          <AnchoredDropdown
+            anchorRef={addBarRef}
+            maxHeight={240}
+            style={{
+              background: 'var(--color-gray-0)',
+              border: '1px solid var(--color-excel-grid-border)',
+              boxShadow: 'var(--shadow-md)',
+            }}
+          >
             {suggestions.map((s: any) => (
               <button
                 key={s.code}
@@ -218,7 +219,7 @@ export default function WatchlistGrid() {
                 <span style={{ color: 'var(--color-text-tertiary)', fontFamily: 'var(--font-family-mono)', fontSize: 10 }}>{s.code}</span>
               </button>
             ))}
-          </div>
+          </AnchoredDropdown>
         )}
       </div>
 

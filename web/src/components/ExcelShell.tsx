@@ -27,6 +27,7 @@ import { useProfileStore } from '../stores/profileStore'
 import { PRIMARY_NAV_ITEMS, CONTROL_NAV_ITEM, TOOL_NAV_GROUPS, TOOL_NAV_ITEMS, ALL_NAV_ITEMS } from '../navigation'
 import ExcelContentArea from './ExcelContentArea'
 import BotUsageBanner from './BotUsageBanner'
+import { useVisualViewportVars } from '../hooks/useVisualViewportVars'
 
 // ── 타입 ─────────────────────────────────────────────────────────
 
@@ -293,6 +294,7 @@ export default function ExcelShell({
   leftPanel,
   rightPanel,
 }: Props) {
+  useVisualViewportVars()
   const { authName, authEmail, isSignedIn } = useAuthStore()
   const profile = useProfileStore(s => s.profile)
   const [ribbonTab, setRibbonTab] = useState<RibbonTabKey>('home')
