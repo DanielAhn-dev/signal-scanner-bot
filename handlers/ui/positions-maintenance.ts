@@ -4,6 +4,7 @@ import { createClient, SupabaseClient } from '@supabase/supabase-js'
 import { resolveUiUserContext } from './_userContext'
 import { denyIfUnauthorizedRead } from './_accessControl'
 import { resolveBaseSellTaxRate, resolveSellTaxRate } from '../../src/lib/securitiesTax'
+import { findPositionAccountConflict } from '../../src/lib/positionAccountGuard'
 import { getUserInvestmentPrefs, setUserInvestmentPrefs } from '../../src/services/userService'
 
 let _supabase: SupabaseClient | null = null
@@ -105,13 +106,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
       const { data: position, error: posErr } = await supabase
         .from('virtual_positions')
-        .select('id,code,chat_id,buy_price,quantity,buy_date')
+        .select('id,code,chat_id,buy_price,quantity,buy_date,status,broker_name,account_name')
         .eq('chat_id', chatId)
         .eq('code', code)
         .maybeSingle()
 
       if (posErr) return res.status(500).json({ error: posErr.message })
       if (!position) return res.status(404).json({ error: 'position not found' })
+      const editConflict = findPositionAccountConflict({ mode: 'holdingedit', existing: position as any, brokerName, accountName })
+      if (editConflict) return res.status(409).json({ error: editConflict })
 
       const investedAmount = buyPrice * quantity
       const acquiredAtIso = `${buyDate}T00:00:00.000Z`
@@ -351,11 +354,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       // 기존 포지션 조회 (없으면 신규 생성)
       const { data: existing, error: posErr } = await supabase
         .from('virtual_positions')
-        .select('id,code,chat_id')
+        .select('id,code,chat_id,quantity,status,broker_name,account_name')
         .eq('chat_id', chatId)
         .eq('code', code)
         .maybeSingle()
       if (posErr) return res.status(500).json({ error: posErr.message })
+      const restoreConflict = findPositionAccountConflict({ mode: 'holdingrestore', existing: existing as any, brokerName, accountName })
+      if (restoreConflict) return res.status(409).json({ error: restoreConflict })
 
       let positionId: string | number
 
