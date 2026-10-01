@@ -3187,9 +3187,13 @@ async function executeNewEntryBuy(input: {
   executionPrice: number;
   executionSource: BuyPriceSource;
   sizing: AutoTradeSizingResult;
-  /** 포지션에 저장하는 프로필 (보유 기간·예정 검토일·버킷) */
+  /** 종목 상황으로 조정한 프로필 — 포지션의 보유 기간·예정 검토일·버킷과 결정로그 보유 기간에 쓴다 */
   profile: ResolvedPositionTradeProfile;
-  /** 안내 문구·따라하기 주문·결정로그에 보여 주는 익절/손절·보유 기간의 기준 프로필 */
+  /**
+   * 안내 문구·따라하기 주문·테스트 매수안의 익절/손절 기준 — 조정 전 프로필.
+   * 보유 중 매도 판단(decideHoldingExit)이 포지션 메모의 프로필 이름으로 이 기본값을 다시 계산해 쓰므로
+   * 따라 하는 사람이 보는 숫자와 봇이 실제로 파는 기준이 같은 출발점이 된다.
+   */
   guideProfile: ResolvedPositionTradeProfile;
   profileLabel: string;
   newsBias: ReturnType<typeof resolveNewsBiasFromFactors>;
@@ -3400,7 +3404,7 @@ async function executeNewEntryBuy(input: {
     strategyId: AUTO_TRADE_STRATEGY_ID,
     strategyVersion: "v1",
     confidence: Math.min(100, Math.max(0, candidate.score)),
-    expectedHorizonDays: guideProfile.expectedHorizonDays,
+    expectedHorizonDays: profile.expectedHorizonDays,
     reasonSummary: `${labels.decisionSummary} (${input.profileLabel}, 점수 ${candidate.score.toFixed(1)})`,
     reasonDetails: {
       score: candidate.score,
@@ -3974,7 +3978,7 @@ async function runMondayBuyForUser(payload: {
         });
         continue;
       }
-      const { signalGate, profile: tradeProfile } = entryPlan;
+      const { signalGate, baseProfile: guideProfile, profile: tradeProfile } = entryPlan;
       const todaySignalReason = buildTodaySignalReasonNote({
         signal: candidate.signal,
         stableTurn,
@@ -4070,7 +4074,7 @@ async function runMondayBuyForUser(payload: {
         deployableCash,
         summary,
         profile: tradeProfile,
-        guideProfile: tradeProfile,
+        guideProfile,
       });
       if (bought.outcome === "skipped") continue;
       availableCash = bought.availableCash;
@@ -6159,7 +6163,6 @@ async function runDailyReviewForUser(payload: {
         const filterReason = buildAutoTradeFilterReason(candidate);
 
         try {
-          // 안내·따라하기 주문은 조정 전 프로필 기준 (예전엔 테스트 매수안만 조정 프로필을 보여 줘 실제 매수 알림과 숫자가 달랐다)
           const bought = await executeNewEntryBuy({
             kind: "rebalance",
             supabase: payload.supabase,
