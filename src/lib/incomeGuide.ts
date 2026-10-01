@@ -67,6 +67,22 @@ export const ACCUMULATE_INCOME_PCT = 10;
 /** 인컴 단계에서 분배형이 차지할 수 있는 최대 비중 — 나머지는 물가 대응·위기 완충용 성장형 */
 export const MAX_INCOME_PCT = 70;
 
+/**
+ * 나이대별 현금성(채권·CD·예금) 최소 비중 — "100 − 나이" 계열 관례를 구간 중앙값으로 옮긴 값이다(검증된 정답이 아니다).
+ * 근거는 2026-10-01 검증: 주식 100%는 10년 월 적립에서 최대 평가손실이 중앙 −29%·최악 −46%, 80:20은 −21%·−37%, 60:40은 −13%·−28%.
+ * 리밸런싱은 수익을 2~4% 내주고 낙폭·최악을 줄이는 도구이므로, 몇 대 몇인지는 "이번 7월(−39%)을 겪어도 안 팔 수 있는 비중"으로 정한다.
+ * 생년월일 대신 나이대만 받는다(개인정보 최소화). 인컴 단계는 생활비 기준 비중이 따로 있어 적용하지 않는다.
+ */
+export type AgeBand = "20s" | "30s" | "40s" | "50s" | "60s";
+export const AGE_BANDS: Record<AgeBand, { label: string; safePct: number; note: string }> = {
+  "20s": { label: "20대", safePct: 10, note: "시간이 길어 지수 위주로 모읍니다. 평가손실 −40%대가 와도 적립을 거르지 않는 것이 핵심입니다." },
+  "30s": { label: "30대", safePct: 25, note: "주식 70~80%. 목돈 지출(주택·결혼 등)이 5년 안에 있으면 그 몫은 현금성으로 따로 빼 두세요." },
+  "40s": { label: "40대", safePct: 35, note: "주식 60~70%. 자녀 교육·노후 준비가 겹치는 시기라 낙폭을 줄이는 쪽에 무게를 둡니다." },
+  "50s": { label: "50대", safePct: 45, note: "주식 50~60%. 인컴 시작 5년 전부터 분배형·현금성으로 옮기는 단계 전환을 같이 쓰세요." },
+  "60s": { label: "60대 이상", safePct: 60, note: "주식 30~40%. 최악의 해를 만나도 생활비 몇 년치가 남도록 현금성을 두텁게 둡니다." },
+};
+export const AGE_BAND_KEYS = Object.keys(AGE_BANDS) as AgeBand[];
+
 /** 필요 인출률별 15년 뒤 물가를 뺀 원금 유지 비율 (2003~2011 월말 시작 93개, 첫해 인출액 매년 2.5% 증액) */
 export const WITHDRAWAL_EVIDENCE: Array<{ ratePct: number; mixKeepPct: number; mixWorstPct: number; krOnlyKeepPct: number }> = [
   { ratePct: 3, mixKeepPct: 100, mixWorstPct: 126, krOnlyKeepPct: 71 },
@@ -129,6 +145,8 @@ export type IncomeGuideSettings = {
    * ISA·연금 계좌 안의 분배금은 여기에 넣지 않는다.
    */
   financialIncomeCap: number;
+  /** 나이대(선택). 있으면 모으기·전환 단계의 현금성 목표 비중에 나이대별 하한을 둔다 */
+  ageBand?: AgeBand;
 };
 
 export const DEFAULT_INCOME_GUIDE_SETTINGS: IncomeGuideSettings = {
@@ -185,6 +203,12 @@ export function sanitizeIncomeGuideSettings(input: Partial<IncomeGuideSettings>,
     satelliteCapPct: num(input.satelliteCapPct, current.satelliteCapPct, 0, 50),
     overseasPct: num(input.overseasPct, current.overseasPct, 0, 100),
     financialIncomeCap: num(input.financialIncomeCap, current.financialIncomeCap ?? DEFAULT_INCOME_GUIDE_SETTINGS.financialIncomeCap, 0, 1e10),
+    ageBand:
+      input.ageBand === ("" as unknown)
+        ? undefined
+        : AGE_BAND_KEYS.includes(input.ageBand as AgeBand)
+          ? (input.ageBand as AgeBand)
+          : current.ageBand,
   };
 }
 
@@ -273,6 +297,8 @@ export type IncomeGuideView = {
   } | null;
   /** 목표 비중이 단계 기본값인지, 직접 정한 값인지 */
   targetSource: "stage" | "custom";
+  /** 나이대 설정이 있을 때: 현금성 하한과 매매 방법 안내. 설정 없으면 null */
+  age: { band: AgeBand; label: string; safePct: number; applied: boolean; lines: string[] } | null;
   /**
    * 예상 분배금 (바구니별 분배율 가정). 과세 = 일반 계좌, 절세 = ISA·연금 계좌.
    * 여유 = 상한 − 과세 분배금, 여유를 고배당(4.5%)으로 채우려면 필요한 금액.
@@ -310,7 +336,7 @@ const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v
  * 인컴 단계 목표 = 생활비 × 12 ÷ 분배율 4.5% ÷ 자산 (10~70%), 현금성 = 생활비 12개월치 (5~25%).
  * 전환 단계는 인컴 시작 5년 전부터 모으기 비중에서 인컴 단계 비중으로 해마다 고르게 옮긴다.
  */
-export function resolveStageTargets(input: { settings: IncomeGuideSettings; total: number; today: string }): {
+function resolveBaseStageTargets(input: { settings: IncomeGuideSettings; total: number; today: string }): {
   stage: GuideStage;
   yearsToIncome: number | null;
   incomePct: number;
@@ -331,6 +357,36 @@ export function resolveStageTargets(input: { settings: IncomeGuideSettings; tota
     yearsToIncome: years,
     incomePct: ACCUMULATE_INCOME_PCT + (incomeAtStart - ACCUMULATE_INCOME_PCT) * step,
     cashPct: cashAtStart * step,
+  };
+}
+
+/** 단계 기본 목표에 나이대별 현금성 하한을 얹는다. 인컴 단계는 생활비 기준을 그대로 쓴다. */
+export function resolveStageTargets(input: { settings: IncomeGuideSettings; total: number; today: string }): ReturnType<typeof resolveBaseStageTargets> {
+  const base = resolveBaseStageTargets(input);
+  const band = input.settings.ageBand;
+  if (!band || !AGE_BANDS[band] || base.stage === "income") return base;
+  const floor = Math.min(AGE_BANDS[band].safePct, Math.max(0, 100 - base.incomePct));
+  return { ...base, cashPct: Math.max(base.cashPct, floor) };
+}
+
+function buildAgeGuide(band: AgeBand, stage: GuideStage, cashPct: number, cashCustom: boolean): NonNullable<IncomeGuideView["age"]> {
+  const b = AGE_BANDS[band];
+  const applied = stage !== "income" && !cashCustom;
+  return {
+    band,
+    label: b.label,
+    safePct: b.safePct,
+    applied,
+    lines: [
+      b.note,
+      applied
+        ? `현금성 목표 ${cashPct.toFixed(0)}% (나이대 하한 ${b.safePct}%). 채권·CD·예금처럼 하락장에서 꺼내 쓸 몫입니다.`
+        : stage === "income"
+          ? "인컴 단계는 생활비 기준 비중을 쓰므로 나이대 하한은 적용하지 않습니다."
+          : "내 목표(현금성)를 직접 넣어 두어 나이대 하한은 적용하지 않습니다.",
+      "새 돈은 팔지 않고 가장 모자란 바구니부터 채웁니다. 점검은 1년에 한 번, 목표에서 ±10%p를 넘을 때만 따로 맞춥니다(월 단위로 자주 맞춰도 낙폭 개선은 거의 같고 수익만 줄었습니다).",
+      "시장을 보고 비중을 바꾸지 않습니다. 비중을 바꾸는 이유는 나이·목표 시점이 바뀔 때뿐입니다.",
+    ],
   };
 }
 
@@ -792,6 +848,7 @@ export function buildIncomeGuideView(input: {
     },
     contribution,
     targetSource,
+    age: settings.ageBand && AGE_BANDS[settings.ageBand] ? buildAgeGuide(settings.ageBand, targets.stage, targets.cashPct, custom?.cash != null) : null,
     distributions,
     warnings,
     accounts,

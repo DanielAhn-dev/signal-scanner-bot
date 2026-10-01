@@ -27,8 +27,10 @@ type View = {
     overseasPct: number
     customTargets?: { income?: number; cash?: number }
     financialIncomeCap: number
+    ageBand?: string
   }
   targetSource: 'stage' | 'custom'
+  age: { band: string; label: string; safePct: number; applied: boolean; lines: string[] } | null
   distributions: {
     taxableAnnual: number
     shelteredAnnual: number
@@ -138,7 +140,7 @@ export default function IncomeGuidePage() {
   const [error, setError] = useState<string | null>(null)
   const [editing, setEditing] = useState(false)
   const [busy, setBusy] = useState(false)
-  const [form, setForm] = useState({ needMan: '', incomeStart: '', satCap: '', overseas: '', incomePct: '', cashPct: '', capMan: '' })
+  const [form, setForm] = useState({ needMan: '', incomeStart: '', satCap: '', overseas: '', incomePct: '', cashPct: '', capMan: '', ageBand: '' })
   const [contribMan, setContribMan] = useState('')
   const [appliedContrib, setAppliedContrib] = useState(0)
   const [note, setNote] = useState('')
@@ -175,6 +177,7 @@ export default function IncomeGuidePage() {
       incomePct: view.settings.customTargets?.income != null ? String(view.settings.customTargets.income) : '',
       cashPct: view.settings.customTargets?.cash != null ? String(view.settings.customTargets.cash) : '',
       capMan: String(Math.round((view.settings.financialIncomeCap ?? 10_000_000) / 10_000)),
+      ageBand: view.settings.ageBand ?? '',
     })
     setEditing(true)
   }
@@ -191,6 +194,7 @@ export default function IncomeGuidePage() {
           // 빈 칸은 단계 기본값으로 되돌린다
           customTargets: { income: form.incomePct, cash: form.cashPct },
           financialIncomeCap: Number(form.capMan) * 10_000,
+          ageBand: form.ageBand,
         }),
       },
       appliedContrib,
@@ -248,6 +252,16 @@ export default function IncomeGuidePage() {
           )}
         </div>
         <div style={{ margin: '4px 0' }}>{view.stage.text}</div>
+        {view.age ? (
+          <div style={{ margin: '4px 0' }}>
+            <strong>{view.age.label} 기준</strong>
+            {view.age.lines.map((line) => (
+              <div key={line} style={{ color: 'var(--color-text-secondary)' }}>
+                · {line}
+              </div>
+            ))}
+          </div>
+        ) : null}
         {editing && (
           <div style={{ margin: '6px 0', display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 4 }}>
             인컴 단계 월 목표 인컴(만원, 세후)
@@ -262,6 +276,15 @@ export default function IncomeGuidePage() {
             <input style={inputStyle} placeholder="단계 기본" value={form.incomePct} onChange={(e) => setForm({ ...form, incomePct: e.target.value })} />
             현금성(%)
             <input style={inputStyle} placeholder="단계 기본" value={form.cashPct} onChange={(e) => setForm({ ...form, cashPct: e.target.value })} />
+            나이대
+            <select style={{ ...inputStyle, width: 110 }} value={form.ageBand} onChange={(e) => setForm({ ...form, ageBand: e.target.value })}>
+              <option value="">선택 안 함</option>
+              <option value="20s">20대</option>
+              <option value="30s">30대</option>
+              <option value="40s">40대</option>
+              <option value="50s">50대</option>
+              <option value="60s">60대 이상</option>
+            </select>
             일반 계좌 금융소득 상한(만원/년)
             <input style={inputStyle} value={form.capMan} onChange={(e) => setForm({ ...form, capMan: e.target.value })} />
             <Button size="sm" disabled={busy} onClick={() => void save()}>
@@ -271,6 +294,7 @@ export default function IncomeGuidePage() {
               취소
             </Button>
             <div style={{ width: '100%', color: 'var(--color-text-tertiary)' }}>
+              나이대는 생년월일 대신 구간만 받습니다. 고르면 모으기·전환 단계의 현금성 목표 비중에 나이대별 하한(20대 10% … 60대 이상 60%)이 붙습니다.
               "내 목표"는 엑셀로 쓰던 비중이 있으면 넣으세요. 비우면 단계 기본값이고, 성장(지수)은 나머지로 채웁니다.
               인컴 시작 월을 비워 두면 계속 모으는 단계로 봅니다. 시작 5년 전부터 매년 한 번 분배형·현금성 비중을 계단식으로 늘립니다.
               해외 비중 기본 50%는 2003~2026 코스피·S&amp;P500(원화) 반반이 5년 최악을 가장 줄였기 때문입니다.

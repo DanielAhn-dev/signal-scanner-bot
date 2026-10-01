@@ -274,3 +274,31 @@ test("sanitizeIncomeGuideSettings: 범위를 넘는 값은 자르고, 빈 시작
   assert.equal(next.incomeStart, undefined);
   assert.equal(sanitizeIncomeGuideSettings({ incomeStart: "2030-13x" }, cur).incomeStart, "2035-01");
 });
+
+test("나이대: 설정 없으면 기존 단계 목표 그대로, 있으면 모으기 단계 현금성에 하한을 둔다", () => {
+  const base = { ...DEFAULT_INCOME_GUIDE_SETTINGS };
+  const today = "2026-10-01";
+  const none = resolveStageTargets({ settings: base, total: 100_000_000, today });
+  assert.equal(none.cashPct, 0);
+  const forty = resolveStageTargets({ settings: { ...base, ageBand: "40s" }, total: 100_000_000, today });
+  assert.equal(forty.cashPct, 35);
+  assert.equal(forty.incomePct, none.incomePct);
+  // 인컴 단계는 생활비 기준 비중이라 나이대 하한을 얹지 않는다
+  const incomeNone = resolveStageTargets({ settings: { ...base, incomeStart: "2026-01" }, total: 100_000_000, today });
+  const incomeAged = resolveStageTargets({ settings: { ...base, incomeStart: "2026-01", ageBand: "60s" }, total: 100_000_000, today });
+  assert.equal(incomeAged.cashPct, incomeNone.cashPct);
+});
+
+test("나이대: 인컴 + 현금성이 100%를 넘지 않게 하한을 줄이고, 잘못된 값은 무시한다", () => {
+  const today = "2026-10-01";
+  const t = resolveStageTargets({
+    settings: { ...DEFAULT_INCOME_GUIDE_SETTINGS, incomeStart: "2027-06", ageBand: "60s", monthlyNeed: 3_000_000 },
+    total: 100_000_000,
+    today,
+  });
+  assert.ok(t.incomePct + t.cashPct <= 100.0001);
+  const cur = { ...DEFAULT_INCOME_GUIDE_SETTINGS, ageBand: "30s" as const };
+  assert.equal(sanitizeIncomeGuideSettings({ ageBand: "70s" as never }, cur).ageBand, "30s");
+  assert.equal(sanitizeIncomeGuideSettings({ ageBand: "" as never }, cur).ageBand, undefined);
+  assert.equal(sanitizeIncomeGuideSettings({ ageBand: "50s" }, cur).ageBand, "50s");
+});
