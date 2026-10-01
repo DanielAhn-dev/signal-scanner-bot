@@ -68,7 +68,7 @@ export function createAutoTradeBuyStep(deps: AutoTradeBuyDeps) {
     const upsert = (values: Record<string, unknown>) =>
       supabase
         .from(PORTFOLIO_TABLES.positions)
-        .upsert(values, { onConflict: "chat_id,code", ignoreDuplicates: true })
+        .upsert(values, { onConflict: "chat_id,code,account_name", ignoreDuplicates: true })
         .select("id, created_at, buy_date")
         .maybeSingle();
 

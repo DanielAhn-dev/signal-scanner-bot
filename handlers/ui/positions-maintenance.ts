@@ -32,6 +32,12 @@ function normalizeLabel(input: unknown): string | null {
   return v ? v : null
 }
 
+/** virtual_positions가 이제 UNIQUE(chat_id, code, account_name)라, 조회도 account_name까지 같이 걸러야
+ * 다른 계좌(또는 종목봇)의 같은 종목 행을 잘못 집지 않는다. */
+function scopeByAccountName<T extends { is: Function; eq: Function }>(query: T, accountName: string | null): T {
+  return accountName == null ? query.is('account_name', null) : query.eq('account_name', accountName)
+}
+
 function normalizeYmdDate(input: unknown): string | null {
   const v = String(input || '').trim()
   if (!/^\d{4}-\d{2}-\d{2}$/.test(v)) return null
@@ -104,12 +110,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       if (!buyPrice) return res.status(400).json({ error: 'buy_price must be > 0' })
       if (!Number.isFinite(quantity) || quantity <= 0) return res.status(400).json({ error: 'quantity must be >= 1' })
 
-      const { data: position, error: posErr } = await supabase
-        .from('virtual_positions')
-        .select('id,code,chat_id,buy_price,quantity,buy_date,status,broker_name,account_name')
-        .eq('chat_id', chatId)
-        .eq('code', code)
-        .maybeSingle()
+      const { data: position, error: posErr } = await scopeByAccountName(
+        supabase
+          .from('virtual_positions')
+          .select('id,code,chat_id,buy_price,quantity,buy_date,status,broker_name,account_name')
+          .eq('chat_id', chatId)
+          .eq('code', code),
+        accountName
+      ).maybeSingle()
 
       if (posErr) return res.status(500).json({ error: posErr.message })
       if (!position) return res.status(404).json({ error: 'position not found' })
@@ -351,13 +359,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const nowIso = new Date().toISOString()
       const acquiredAtIso = `${buyDate}T00:00:00.000Z`
 
-      // 기존 포지션 조회 (없으면 신규 생성)
-      const { data: existing, error: posErr } = await supabase
-        .from('virtual_positions')
-        .select('id,code,chat_id,quantity,status,broker_name,account_name')
-        .eq('chat_id', chatId)
-        .eq('code', code)
-        .maybeSingle()
+      // 기존 포지션 조회 (없으면 신규 생성) — 같은 종목이어도 다른 계좌 행은 못 보게 account_name까지 건다
+      const { data: existing, error: posErr } = await scopeByAccountName(
+        supabase
+          .from('virtual_positions')
+          .select('id,code,chat_id,quantity,status,broker_name,account_name')
+          .eq('chat_id', chatId)
+          .eq('code', code),
+        accountName
+      ).maybeSingle()
       if (posErr) return res.status(500).json({ error: posErr.message })
       const restoreConflict = findPositionAccountConflict({ mode: 'holdingrestore', existing: existing as any, brokerName, accountName })
       if (restoreConflict) return res.status(409).json({ error: restoreConflict })

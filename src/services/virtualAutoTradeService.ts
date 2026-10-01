@@ -4651,7 +4651,7 @@ export async function runGateCoreForUser(payload: {
             takeProfitTranchesDone: 0,
           }),
         },
-        { onConflict: "chat_id,code", ignoreDuplicates: true }
+        { onConflict: "chat_id,code,account_name", ignoreDuplicates: true }
       )
       .select("id, created_at, buy_date")
       .maybeSingle();
