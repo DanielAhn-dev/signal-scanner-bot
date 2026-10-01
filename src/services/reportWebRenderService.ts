@@ -1653,11 +1653,8 @@ export function renderLayout(params: {
       color: #123257;
       font-size: 1.08rem;
     }
-    .topic-execution-guide .report-section {
-      border: 1px solid #dfe7f3;
-      background: linear-gradient(180deg, #ffffff 0%, #fbfdff 100%);
-      box-shadow: 0 2px 8px rgba(20, 80, 170, 0.05);
-    }
+    /* 실행 계획서도 공용 문서 문법(섹션 위쪽 선 하나)을 따른다 — 예전엔 사방 테두리를 덧씌워, 좌우 여백 0인 섹션 안에서
+       제목 밑줄·카드 테두리와 겹쳐 이중선으로 보였다 */
     .topic-execution-guide .report-section + .report-section {
       margin-top: 18px;
     }
@@ -2014,7 +2011,8 @@ export function renderLayout(params: {
       body { padding: 10px 8px 32px; }
       .hero, .content, .footer { padding-left: 14px; padding-right: 14px; }
       .content { padding-top: 16px; }
-      .report-section { padding: 12px 11px; border-radius: 12px; }
+      /* 섹션은 위쪽 선 하나뿐이라 둥근 모서리를 주면 선이 휘어 보인다 */
+      .report-section { padding: 12px 0; border-radius: 0; }
     }
     @media (max-width: 500px) {
       /* Conviction grid: stack to 2x2 on very small screens */
