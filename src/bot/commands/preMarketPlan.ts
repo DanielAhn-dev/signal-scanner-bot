@@ -464,7 +464,10 @@ export async function handlePreMarketPlanCommand(
   const { data: holdingsData } = await supabase
     .from(PORTFOLIO_TABLES.positions)
     .select("code, status")
-    .eq("chat_id", tgId);
+    .eq("chat_id", tgId)
+    // 종목봇 슬롯은 가상매매 보유만 센다 — 실계좌 입력 종목이 봇 슬롯을 차지하지 않게
+    .is("broker_name", null)
+    .is("account_name", null);
 
   const heldCodes = new Set(
     ((holdingsData ?? []) as Array<{ code: string; status?: string | null }>)

@@ -212,7 +212,10 @@ export async function syncVirtualPortfolio(
   const { data, error } = await supabase
     .from(PORTFOLIO_TABLES.positions)
     .select("id, quantity, buy_price, invested_amount, status")
-    .eq("chat_id", chatId);
+    .eq("chat_id", chatId)
+    // 가상매매(종목봇) 행만 — 실계좌 입력(증권사·계좌명 있음)까지 합치면 투입금이 시드를 넘어 가상 현금이 0으로 눌린다
+    .is("broker_name", null)
+    .is("account_name", null);
 
   if (error) {
     throw error;

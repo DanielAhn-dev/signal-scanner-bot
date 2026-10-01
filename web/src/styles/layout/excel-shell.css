@@ -35,6 +35,7 @@
   flex-direction: column;
   width: calc(100% / var(--excel-global-zoom));
   height: calc(100vh / var(--excel-global-zoom));
+  height: calc(100dvh / var(--excel-global-zoom));
   overflow: hidden;
   background: var(--color-excel-ribbon);
   font-family: var(--font-family-sans);
@@ -1704,13 +1705,15 @@
    STATUS BAR — 최하단 상태 바
    ================================================================ */
 .excel-statusbar {
-  height: var(--statusbar-height);
+  /* iOS 홈 화면 앱: 홈 인디케이터·화면 곡면 영역까지 초록으로 이어 채우고, 글자는 그 위쪽 정상 높이에 둔다 */
+  box-sizing: border-box;
+  height: calc(var(--statusbar-height) + env(safe-area-inset-bottom, 0px));
   background: var(--color-excel-title-bar);
   color: rgba(255,255,255,0.9);
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0 8px;
+  padding: 0 8px env(safe-area-inset-bottom, 0px);
   flex-shrink: 0;
   font-size: 10px;
   border-top: 1px solid rgba(0,0,0,0.1);
@@ -4186,7 +4189,6 @@
   .excel-sheet-tabs {
     height: calc(var(--sheet-tab-height) + 12px);
     padding: 0 2px;
-    padding-bottom: env(safe-area-inset-bottom, 0);
   }
   .excel-sheet-tab {
     min-width: 44px;
