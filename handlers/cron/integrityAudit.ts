@@ -24,8 +24,12 @@ const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 const AUTO_TRADE_ALERT_CHAT_ID = Number(process.env.AUTO_TRADE_ALERT_CHAT_ID || "0");
 /** 정상이어도 매일 ✅ 한 줄을 보낼지 (false면 이상 발견 시에만 발송) */
+/**
+ * 이상이 없어도 매일 알림을 보낼지. 기본은 보내지 않는다 — 문제(❌)나 경고(⚠️)가 있을 때만 보낸다.
+ * 결과는 매번 integrity_audit_results에 저장된다. 매일 받고 싶으면 INTEGRITY_NOTIFY_ALWAYS=true.
+ */
 const INTEGRITY_NOTIFY_ALWAYS =
-  String(process.env.INTEGRITY_NOTIFY_ALWAYS ?? "true").toLowerCase() !== "false";
+  String(process.env.INTEGRITY_NOTIFY_ALWAYS ?? "false").toLowerCase() === "true";
 
 export const config = {
   maxDuration: 60,
@@ -273,7 +277,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       console.error(`integrity audit insert failed: ${insertError.message}`);
     }
 
-    if (AUTO_TRADE_ALERT_CHAT_ID > 0 && (INTEGRITY_NOTIFY_ALWAYS || !isHealthy)) {
+    // 경고(⚠️)는 이상 건수에 들어가지 않지만 미리 손봐야 하는 항목이라 알린다 (경제 일정·휴장일 목록 만료 임박)
+    const hasWarning = (calendarEnding.length > 0 && !calendarIssue) || krxCal.level === "warn";
+    if (AUTO_TRADE_ALERT_CHAT_ID > 0 && (INTEGRITY_NOTIFY_ALWAYS || !isHealthy || hasWarning)) {
       await sendMessage(AUTO_TRADE_ALERT_CHAT_ID, message);
     }
 

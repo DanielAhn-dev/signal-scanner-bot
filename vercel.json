@@ -99,7 +99,7 @@
         },
         {
             "path": "/api/cron/integrityAudit",
-            "schedule": "0 16 * * 1-5"
+            "schedule": "10 7 * * 1-5"
         }
     ]
 }
