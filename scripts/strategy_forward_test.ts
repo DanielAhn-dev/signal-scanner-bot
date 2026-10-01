@@ -32,6 +32,7 @@ import {
   firstTradingDaysOfMonths,
   pickSnapshotOnOrBefore,
   simulateBotAccount,
+  computeBotCapture,
   simulateGateCore,
   reviewStrategies,
   FORWARD_TEST_GATE_DIR,
@@ -362,6 +363,8 @@ async function main(): Promise<void> {
     }
   }
   const botResult = simulateBotAccount({ points: botPoints, startDate: START });
+  const botCapture = botResult ? computeBotCapture({ points: botPoints, startDate: START, index }) : null;
+  if (botResult && botCapture) botResult.capture = botCapture;
 
   // 실적 관문 코어(봇 구현과 같은 함수): 점수 순서 전체가 필요해 상위 400개를 읽는다
   const rankedCache = new Map<string, string[]>();

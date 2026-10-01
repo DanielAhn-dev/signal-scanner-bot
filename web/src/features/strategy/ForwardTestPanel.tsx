@@ -8,6 +8,16 @@ type StrategyResult = {
   totalReturnPct: number
   maxDrawdownPct: number
   periods: number
+  capture?: {
+    downDays: number
+    botDownPct: number
+    indexDownPct: number
+    downCapturePct: number | null
+    upDays: number
+    botUpPct: number
+    indexUpPct: number
+    upCapturePct: number | null
+  }
 }
 
 type ForwardTestSnapshot = {
@@ -211,6 +221,28 @@ export default function ForwardTestPanel() {
           </tbody>
         </table>
       </div>
+      {bot?.capture ? (
+        <div style={{ marginTop: 8, lineHeight: 1.6 }}>
+          <strong>하락 때 얼마나 덜 빠졌나</strong>
+          {bot.capture.downCapturePct != null ? (
+            <div>
+              지수(KODEX 200)가 내린 {bot.capture.downDays}일을 이어 붙이면 지수 {pct(bot.capture.indexDownPct)}, 봇 {pct(bot.capture.botDownPct)} →{' '}
+              <strong>하락 포착률 {bot.capture.downCapturePct.toFixed(0)}%</strong> (100%보다 작을수록 덜 빠짐)
+              {bot.capture.upCapturePct != null
+                ? ` · 오른 ${bot.capture.upDays}일은 지수 ${pct(bot.capture.indexUpPct)}, 봇 ${pct(bot.capture.botUpPct)} → 상승 포착률 ${bot.capture.upCapturePct.toFixed(0)}%`
+                : ''}
+              {bot.capture.downDays < 20 ? ' · 하락일이 적어 아직 참고용입니다.' : ''}
+            </div>
+          ) : (
+            <div style={{ color: 'var(--color-text-secondary)' }}>
+              지수가 내린 날이 {bot.capture.downDays}일뿐이라 아직 비율을 내지 않습니다(최소 5일). 지수가 하락하는 구간이 쌓이면 표시됩니다.
+            </div>
+          )}
+          <div style={{ color: 'var(--color-text-tertiary)' }}>
+            수익이 지수와 비슷해도 하락 때 덜 빠졌다면 시스템이 낙폭을 줄인 것입니다. 반대로 오를 때 덜 오르는 건 그 대가입니다.
+          </div>
+        </div>
+      ) : null}
     </div>
   )
 }

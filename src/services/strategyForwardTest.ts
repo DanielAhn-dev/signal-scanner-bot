@@ -40,6 +40,21 @@ export type StrategyResult = {
   totalReturnPct: number;
   maxDrawdownPct: number;
   periods: number;
+  /** 봇 계좌만: 지수(KODEX200)가 내린 날·오른 날에 봇이 얼마나 같이 움직였나 */
+  capture?: CaptureStats;
+};
+
+export type CaptureStats = {
+  downDays: number;
+  /** 지수가 내린 날들만 이은 누적수익(%) — 봇 / 지수 */
+  botDownPct: number;
+  indexDownPct: number;
+  /** 봇 ÷ 지수. 100%보다 작을수록 하락 때 덜 빠졌다. 하락일이 부족하면 null */
+  downCapturePct: number | null;
+  upDays: number;
+  botUpPct: number;
+  indexUpPct: number;
+  upCapturePct: number | null;
 };
 
 export const STRATEGY_LABELS: Record<StrategyName, string> = {
@@ -103,6 +118,63 @@ export function simulateBotAccount(input: { points: BotEquitySnapshot[]; startDa
     totalReturnPct: (equity[equity.length - 1] - 1) * 100,
     maxDrawdownPct: maxDrawdown(equity),
     periods: equity.length - 1,
+  };
+}
+
+/** 하락·상승 포착률을 믿기 위한 최소 일수 — 이보다 적으면 비율을 내지 않는다 */
+export const MIN_CAPTURE_DAYS = 5;
+
+/**
+ * 봇 계좌 vs 지수(KODEX200 종가) 하락·상승 포착률. 봇 평가액의 연속한 두 기록(a→b)마다 같은 기간 지수 수익을 맞춰
+ * 지수가 내린 구간과 오른 구간으로 나눠 복리로 이어 붙인다. 입출금이 있던 구간(isCapitalFlow)은 뺀다.
+ * 종가 가격수익만 쓴다(분배금 제외) — 일 단위 방향 판정엔 영향이 작다.
+ */
+export function computeBotCapture(input: { points: BotEquitySnapshot[]; startDate: string; index: DailyBar[] }): CaptureStats | null {
+  const pts = input.points
+    .filter((p) => p.date >= input.startDate && p.seed > 0 && p.total > 0)
+    .sort((a, b) => a.date.localeCompare(b.date));
+  const bars = input.index.filter((b) => b.close > 0).sort((a, b) => a.date.localeCompare(b.date));
+  if (pts.length < 2 || bars.length < 2) return null;
+  const closeOnOrBefore = (date: string): number | null => {
+    let lo = 0;
+    let hi = bars.length - 1;
+    let ans = -1;
+    while (lo <= hi) {
+      const mid = (lo + hi) >> 1;
+      if (bars[mid].date <= date) {
+        ans = mid;
+        lo = mid + 1;
+      } else hi = mid - 1;
+    }
+    return ans >= 0 ? bars[ans].close : null;
+  };
+  const acc = { down: { bot: 1, idx: 1, n: 0 }, up: { bot: 1, idx: 1, n: 0 } };
+  for (let i = 1; i < pts.length; i += 1) {
+    if (isCapitalFlow(pts[i - 1], pts[i])) continue;
+    const a = closeOnOrBefore(pts[i - 1].date);
+    const b = closeOnOrBefore(pts[i].date);
+    if (a == null || b == null) continue;
+    const idxRet = b / a - 1;
+    if (idxRet === 0) continue;
+    const botRet = pts[i].total / pts[i - 1].total - 1;
+    const side = idxRet < 0 ? acc.down : acc.up;
+    side.bot *= 1 + botRet;
+    side.idx *= 1 + idxRet;
+    side.n += 1;
+  }
+  const ratio = (side: { bot: number; idx: number; n: number }): number | null => {
+    const idxPct = (side.idx - 1) * 100;
+    return side.n >= MIN_CAPTURE_DAYS && Math.abs(idxPct) > 1e-9 ? (((side.bot - 1) * 100) / idxPct) * 100 : null;
+  };
+  return {
+    downDays: acc.down.n,
+    botDownPct: (acc.down.bot - 1) * 100,
+    indexDownPct: (acc.down.idx - 1) * 100,
+    downCapturePct: ratio(acc.down),
+    upDays: acc.up.n,
+    botUpPct: (acc.up.bot - 1) * 100,
+    indexUpPct: (acc.up.idx - 1) * 100,
+    upCapturePct: ratio(acc.up),
   };
 }
 
@@ -461,5 +533,11 @@ export function formatForwardTestReport(input: { startDate: string; endDate: str
       `${i + 1}. ${r.label}: ${r.totalReturnPct >= 0 ? "+" : ""}${r.totalReturnPct.toFixed(1)}% · 최대낙폭 ${r.maxDrawdownPct.toFixed(1)}%`
     );
   });
+  const cap = input.results.find((r) => r.name === "bot-account")?.capture;
+  if (cap?.downCapturePct != null) {
+    lines.push(
+      `하락 포착률: 지수가 내린 ${cap.downDays}일 동안 지수 ${cap.indexDownPct.toFixed(1)}% · 봇 ${cap.botDownPct.toFixed(1)}% → ${cap.downCapturePct.toFixed(0)}% (100%보다 작을수록 덜 빠짐)`
+    );
+  }
   return lines.join("\n");
 }
