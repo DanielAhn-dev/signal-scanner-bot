@@ -55,10 +55,12 @@ function urgencyRank(u: WarningUrgency): number {
 
 /**
  * 행동 지시 대신 사실만 — 매매 규칙은 이벤트와 무관하게 그대로 간다.
- * "영향 없음"은 검증한 이벤트(FOMC 금리 결정·CPI)에만 쓴다. 나머지는 검증 전이라 일정만 알린다.
+ * "영향 없음"은 검증한 이벤트(FOMC 금리 결정·CPI·NFP)에만 쓴다. 나머지는 검증 전이라 일정만 알린다.
+ * NFP 검증(2026-10-01, scripts/research/validate_nfp_event.py, 코스피 1996~2026 357건):
+ * 발표 다음 거래일 1·5·20일 수익이 평소와 차이 없음(t=-0.04/0.02/0.06) — FOMC·CPI와 같은 결론.
  */
 function resolveAction(urgency: WarningUrgency, name: string): string {
-  const verified = /FOMC 금리|CPI/.test(name)
+  const verified = /FOMC 금리|CPI|비농업고용/.test(name)
   const near = urgency === 'today' || urgency === 'danger'
   if (verified) {
     return near
