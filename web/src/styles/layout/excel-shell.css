@@ -4116,50 +4116,45 @@
 }
 
 /* ================================================================
-   MOBILE EXCEL GRID — 카카오 챗봇 스타일처럼 행 번호 거터 + 열 문자 유지
-   (기존: 모바일에서 완전히 숨김 → 엑셀 느낌이 사라짐)
+   MOBILE CLEAN — 모바일은 엑셀 장식(열 문자·행 번호·격자·수식줄·줌)을 빼고 내용만 보인다.
+   엑셀다운 화면은 데스크탑에서만 쓴다. 표는 폭이 모자라면 줄바꿈 대신 가로로 스크롤한다.
    ================================================================ */
 @media (max-width: 639px) {
-  .xls-content-area {
-    --xls-grid-row-height: 26px;
-    --xls-m-gutter: 22px;
+  .xls-col-header-strip,
+  .xls-row-num-strip,
+  .xls-grid-bg,
+  .excel-formula-bar,
+  .excel-statusbar__zoom,
+  .excel-statusbar__item--datetime,
+  .excel-statusbar__item--market,
+  .excel-titlebar__window-btns {
+    display: none !important;
   }
 
-  /* 열 문자: A~E 가 보이도록 고정 폭 셀, 넘치는 열은 잘라냄 */
-  .xls-col-header-strip {
-    display: grid;
-    grid-template-columns: var(--xls-m-gutter) repeat(26, 25%);
-    height: 20px;
-    overflow: hidden;
-    background: var(--color-excel-cell-header);
-  }
-  .xls-col-header-strip__cell,
-  .xls-col-header-strip__corner {
-    font-size: 10px;
-    font-weight: 500;
-  }
-
-  /* 행 번호 거터: 콘텐츠 스크롤과 함께 움직이진 않지만 sticky 로 고정 */
-  .xls-row-num-strip {
-    display: block;
-    width: var(--xls-m-gutter);
-    background: var(--color-excel-cell-header);
-    border-right: 1px solid var(--color-excel-grid-border);
-    -webkit-mask-image: linear-gradient(to bottom, #000 85%, transparent);
-    mask-image: linear-gradient(to bottom, #000 85%, transparent);
-  }
-  .xls-row-num-strip__cell {
-    height: 26px;
-    line-height: 26px;
-    padding-right: 4px;
-    font-size: 9px;
-    text-align: center;
-    padding: 0;
-  }
-
-  /* 격자 배경: 5열 × 26px 행 */
+  /* 격자 배경 제거 — 표·카드 위로 가로줄이 지나가며 글자를 잘라 보이게 했다 */
   .xls-content-data {
-    background-size: 20% 26px;
+    background-image: none !important;
+  }
+  .xls-content-inner {
+    zoom: 1 !important;
+  }
+
+  /* 표: 줄바꿈 없이 가로 스크롤 (헤더가 세로로 쪼개지거나 잘리지 않게) */
+  .xls-content-inner table {
+    display: block;
+    max-width: 100%;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+  .xls-content-inner th,
+  .xls-content-inner td {
+    white-space: nowrap;
+    vertical-align: middle;
+  }
+  /* 첫 열(이름·설명)은 줄바꿈을 허용해야 읽기 좋다 */
+  .xls-content-inner td:first-child {
+    white-space: normal;
+    min-width: 120px;
   }
 
   /* 하단 시트탭: 터치 타깃 확대 + 활성 탭 초록 밑줄 */
