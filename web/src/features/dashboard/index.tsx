@@ -346,9 +346,9 @@ export default function Dashboard({ onNavigate }: { onNavigate?: (r: string) => 
                 <td className="xls-cell xls-cell--wrap" style={{ fontSize: 10, ...S.midBorder }}>
                   {s1 ? (
                     <>
-                      <span style={{ color: 'var(--color-brand)', fontWeight: 600 }}>{s1.score}점</span>
+                      <span style={{ display: 'block', color: 'var(--color-brand)', fontWeight: 600 }}>{s1.score}점</span>
                       {c1 != null && (
-                        <span style={{ color: changeColor(c1), marginLeft: 4, fontSize: 9 }}>{fmtChange(c1)}</span>
+                        <span style={{ display: 'block', color: changeColor(c1), fontSize: 9, whiteSpace: 'nowrap' }}>{fmtChange(c1)}</span>
                       )}
                     </>
                   ) : null}
@@ -368,9 +368,9 @@ export default function Dashboard({ onNavigate }: { onNavigate?: (r: string) => 
                 <td className="xls-cell xls-cell--wrap" style={{ fontSize: 10 }}>
                   {s2 ? (
                     <>
-                      <span style={{ color: 'var(--color-brand)', fontWeight: 600 }}>{s2.score}점</span>
+                      <span style={{ display: 'block', color: 'var(--color-brand)', fontWeight: 600 }}>{s2.score}점</span>
                       {c2 != null && (
-                        <span style={{ color: changeColor(c2), marginLeft: 4, fontSize: 9 }}>{fmtChange(c2)}</span>
+                        <span style={{ display: 'block', color: changeColor(c2), fontSize: 9, whiteSpace: 'nowrap' }}>{fmtChange(c2)}</span>
                       )}
                     </>
                   ) : null}
