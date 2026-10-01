@@ -142,6 +142,15 @@ import { BUY_CASH_BUFFER, createCashSweepSteps } from "./virtualAutoTradeCashSwe
 import { createIndexHoldSteps } from "./virtualAutoTradeIndexHoldStep";
 import { createAutoTradeBuyStep } from "./virtualAutoTradeBuyStep";
 import { decideHoldingExit, extractScoreFactors } from "./virtualAutoTradeExitDecision";
+import {
+  ADD_ON_MIN_GAIN_PCT,
+  capQuantityToCash,
+  computeAddOnPosition,
+  planAddOnBuy,
+  planNewEntry,
+  type BuySizingContext,
+  type ProfileBase,
+} from "./virtualAutoTradeBuyDecision";
 import { createAutoTradeSellStep, type HoldingRow } from "./virtualAutoTradeSellStep";
 import { resolveSeedRebase } from "./virtualAutoTradeSeedRebase";
 import {
@@ -5455,6 +5464,21 @@ async function runDailyReviewForUser(payload: {
       });
     }
 
+    // 추가매수·신규 진입 판단(virtualAutoTradeBuyDecision.ts)에 공통으로 넘기는 계좌 조건
+    const profileBase: ProfileBase = {
+      accountStrategy: payload.setting.selected_strategy,
+      baseTakeProfitPct,
+      baseStopLossPct,
+      sellSplitCount,
+    };
+    const sizingContext: BuySizingContext = {
+      maxPositions,
+      riskBudgetScale: dailyRiskBudget.scale * adaptiveExitGuard.buySizeScale * (marketPolicy.buySizeScale ?? 1),
+      prefs,
+    };
+    // 계정별 1회 캐시되는 값이라 루프 밖에서 한 번 읽는다
+    const adaptiveRule = await getAdaptiveConvictionRule(chatId);
+
     const addOnConstraint = applyStrategyBuyConstraint({
       selectedStrategy: payload.setting.selected_strategy,
       requestedSlots: recoveryModeActive || regimeDefenseBlockDaily || eventRiskBlockDaily ? 0 : persistedGuard.requestedSlots,
@@ -5539,135 +5563,86 @@ async function runDailyReviewForUser(payload: {
         }
         const executionPrice = executionEntry.price;
         const executionSource = executionEntry.source;
-        const scoreRow = addOnFactorsByCode.get(candidate.code);
-        const signalGate = evaluateAutoTradeSignalGate({
-          currentPrice: executionPrice,
-          score: candidate.score,
-          factors: extractScoreFactors(scoreRow?.factors),
+        const plan = planAddOnBuy({
+          holding,
+          candidate,
+          executionPrice,
+          factors: extractScoreFactors(addOnFactorsByCode.get(candidate.code)?.factors),
           minTrustScore: signalTrustThresholds.addOn,
-          requireAboveSma200: true,
+          profileBase,
+          adaptiveRule,
+          deployableCash,
+          currentHoldingCount: currentCount,
+          sizingContext,
         });
-
-        if (!signalGate.passed) {
-          summary.skipped += 1;
-          await writeActionLog({
-            supabase: payload.supabase,
-            runId: payload.runId,
-            chatId,
-            code: candidate.code,
-            actionType: "SKIP",
-            reason: "add-on-signal-gate-reject",
-            detail: {
-              score: candidate.score,
-              trustScore: signalGate.trustScore,
-              trustGrade: signalGate.grade,
-              reasons: signalGate.reasons,
-              metrics: signalGate.metrics,
-              price: executionPrice,
-              priceSource: executionSource,
-            },
-          });
+        if (plan.action === "skip") {
+          if (plan.reason === "add-on-signal-gate-reject") {
+            summary.skipped += 1;
+            await writeActionLog({
+              supabase: payload.supabase,
+              runId: payload.runId,
+              chatId,
+              code: candidate.code,
+              actionType: "SKIP",
+              reason: plan.reason,
+              detail: {
+                score: candidate.score,
+                trustScore: plan.signalGate.trustScore,
+                trustGrade: plan.signalGate.grade,
+                reasons: plan.signalGate.reasons,
+                metrics: plan.signalGate.metrics,
+                price: executionPrice,
+                priceSource: executionSource,
+              },
+            });
+          } else if (plan.reason === "add-on-anti-pyramiding") {
+            summary.skipped += 1;
+            await writeActionLog({
+              supabase: payload.supabase,
+              runId: payload.runId,
+              chatId,
+              code: candidate.code,
+              actionType: "SKIP",
+              reason: plan.reason,
+              detail: {
+                currentBuyPrice: Math.max(0, toNumber(holding.buy_price, 0)),
+                executionPrice,
+                addOnPnlPct: Math.round(plan.addOnPnlPct * 100) / 100,
+                requiredPct: ADD_ON_MIN_GAIN_PCT,
+              },
+            });
+          }
           continue;
         }
+        const { signalGate, holdingProfile, currentQty, currentInvested } = plan;
 
-        const currentQty = Math.max(0, Math.floor(toNumber(holding.quantity, 0)));
-        const currentBuyPrice = Math.max(0, toNumber(holding.buy_price, 0));
-        const currentInvested = Math.max(
-          0,
-          toNumber(holding.invested_amount, currentQty * currentBuyPrice)
-        );
-
-        // 역피라미딩 방지: 현재가가 평균단가 대비 +3% 이상 상승했을 때만 추매 허용.
-        // 손실 or 소폭 상승 상태에서 추매하면 평단 끌어내리기(물타기)가 되어 리스크 증폭.
-        const addOnPnlPct = currentBuyPrice > 0
-          ? ((executionPrice - currentBuyPrice) / currentBuyPrice) * 100
-          : 0;
-        const ADD_ON_MIN_GAIN_PCT = 3;
-        if (addOnPnlPct < ADD_ON_MIN_GAIN_PCT) {
-          summary.skipped += 1;
-          await writeActionLog({
-            supabase: payload.supabase,
-            runId: payload.runId,
-            chatId,
-            code: candidate.code,
-            actionType: "SKIP",
-            reason: "add-on-anti-pyramiding",
-            detail: {
-              currentBuyPrice,
-              executionPrice,
-              addOnPnlPct: Math.round(addOnPnlPct * 100) / 100,
-              requiredPct: ADD_ON_MIN_GAIN_PCT,
-            },
-          });
-          continue;
-        }
-
-        const holdingProfile = resolvePositionTradeProfile({
-          accountStrategy: payload.setting.selected_strategy,
-          positionMemo: holding.memo,
-          baseTakeProfitPct,
-          baseStopLossPct,
-          sellSplitCount,
-        });
-        // 적응형 피드백: 추매는 기존 보유 관리이므로 제외 없이 확신도 가감만 반영
-        const addOnAdaptive = resolveAdaptiveAdjustment(await getAdaptiveConvictionRule(chatId), {
-          score: candidate.score,
-          trustGrade: signalGate.grade,
-          profile: holdingProfile.profile,
-        });
-        const sizing = calculateAutoTradeBuySizing({
-          availableCash: deployableCash,
-          price: executionPrice,
-          slotsLeft: 1,
-          currentHoldingCount: Math.max(0, currentCount - 1),
-          maxPositions: Math.max(1, maxPositions),
-          stopLossPct: holdingProfile.stopLossPct,
-          riskBudgetScale: dailyRiskBudget.scale * adaptiveExitGuard.buySizeScale * (marketPolicy.buySizeScale ?? 1),
-          conviction: resolveConvictionScale({
-            score: candidate.score,
-            trustGrade: signalGate.grade,
-            isSectorLeader: candidate.isSectorLeader,
-            adaptiveDelta: addOnAdaptive.delta,
-          }),
-          prefs,
-        });
-        const addOnBudget = Math.max(
-          0,
-          Math.min(sizing.budget, sizing.totalBudget - currentInvested)
-        );
-        if (addOnBudget > 0 && addOnBudget < sizing.minOrderAmount) {
-          continue;
-        }
-        let addOnQty = Math.max(0, Math.floor(addOnBudget / executionPrice));
-        if (addOnQty <= 0) {
-          continue;
-        }
         // deployableCash는 스윕 평가액을 포함하므로 순수 현금이 모자라면 스윕에서 부족분만 보충한다.
-        {
-          const topUp = await ensureCashForBuy({
-            supabase: payload.supabase,
-            chatId,
-            dryRun: payload.dryRun,
-            requiredCash: addOnQty * executionPrice,
-            availableCash,
-          });
-          if (topUp.releasedCash > 0) {
-            availableCash += topUp.releasedCash;
-            summary.notes.push(...topUp.notes);
-          }
-          const cashCapQty = Math.floor(availableCash / (executionPrice * BUY_CASH_BUFFER));
-          if (addOnQty > cashCapQty) {
-            addOnQty = cashCapQty;
-            if (addOnQty <= 0 || addOnQty * executionPrice < sizing.minOrderAmount) {
-              continue;
-            }
-          }
+        const topUp = await ensureCashForBuy({
+          supabase: payload.supabase,
+          chatId,
+          dryRun: payload.dryRun,
+          requiredCash: plan.quantity * executionPrice,
+          availableCash,
+        });
+        if (topUp.releasedCash > 0) {
+          availableCash += topUp.releasedCash;
+          summary.notes.push(...topUp.notes);
         }
+        const addOnQty = capQuantityToCash({
+          quantity: plan.quantity,
+          availableCash,
+          price: executionPrice,
+          minOrderAmount: plan.minOrderAmount,
+          cashBuffer: BUY_CASH_BUFFER,
+        });
+        if (addOnQty <= 0) continue;
 
-        const addOnInvested = Math.round(addOnQty * executionPrice);
-        const nextQty = currentQty + addOnQty;
-        const nextInvested = currentInvested + addOnInvested;
-        const nextBuyPrice = Number((nextInvested / nextQty).toFixed(4));
+        const { addInvested: addOnInvested, nextQty, nextInvested, nextBuyPrice } = computeAddOnPosition({
+          currentQty,
+          currentInvested,
+          addQty: addOnQty,
+          price: executionPrice,
+        });
         const todaySignalReason = buildTodaySignalReasonNote({
           signal: candidate.signal,
           stableTurn: candidate.stableTurn,
@@ -6097,41 +6072,8 @@ async function runDailyReviewForUser(payload: {
       for (const candidate of candidates) {
         if (slotsLeft <= 0) break;
 
-        const scoreRow = rebalanceFactorsByCode.get(candidate.code);
-        const rebalanceFactors = extractScoreFactors(scoreRow?.factors);
+        const rebalanceFactors = extractScoreFactors(rebalanceFactorsByCode.get(candidate.code)?.factors);
         const newsBias = resolveNewsBiasFromFactors(rebalanceFactors);
-
-        const candidateProfile = classifyAutoTradeEntryProfile({
-          accountStrategy: payload.setting.selected_strategy,
-          riskProfile: prefs.risk_profile,
-          marketMode: marketPolicy.mode,
-          newsBias,
-          candidate: {
-            ...candidate,
-            stableTurn: candidate.stableTurn ?? null,
-            stableTrust: candidate.stableTrust ?? null,
-          },
-        });
-        const entryProfile = resolvePositionTradeProfile({
-          accountStrategy: candidateProfile,
-          baseTakeProfitPct,
-          baseStopLossPct,
-          sellSplitCount,
-        });
-        const adjustedEntryProfile = applyDynamicTradeProfileAdjustments({
-          tradeProfile: entryProfile,
-          context: {
-            score: candidate.score,
-            signal: candidate.signal,
-            rsi14: candidate.rsi14,
-            liquidity: candidate.liquidity,
-            stableTurn: candidate.stableTurn,
-            stableTrust: candidate.stableTrust,
-            marketMode: marketPolicy.mode,
-            isSectorLeader: candidate.isSectorLeader,
-          },
-        });
-        const profileLabel = getStrategyLabel(adjustedEntryProfile.profile) || adjustedEntryProfile.profile;
         const executionEntry = rebalanceBuyPriceResolution.priceByCode.get(candidate.code);
         if (!executionEntry) {
           // 장중 실시간가가 없으면 사지 않는다 (전날 종가 체결은 따라 할 수 없다) — 다음 회차에 다시 본다
@@ -6140,78 +6082,53 @@ async function runDailyReviewForUser(payload: {
         }
         const executionPrice = executionEntry.price;
         const executionSource = executionEntry.source;
-        const signalGate = evaluateAutoTradeSignalGate({
-          currentPrice: executionPrice,
-          score: candidate.score,
+        const entryPlan = planNewEntry({
+          candidate,
+          executionPrice,
           factors: rebalanceFactors,
+          newsBias,
+          riskProfile: prefs.risk_profile,
+          marketPolicy,
           minTrustScore: signalTrustThresholds.rebalance,
-          requireAboveSma200: true,
-        });
-
-        if (!signalGate.passed) {
-          summary.skipped += 1;
-          await writeActionLog({
-            supabase: payload.supabase,
-            runId: payload.runId,
-            chatId,
-            code: candidate.code,
-            actionType: "SKIP",
-            reason: "rebalance-signal-gate-reject",
-            detail: {
-              score: candidate.score,
-              trustScore: signalGate.trustScore,
-              trustGrade: signalGate.grade,
-              reasons: signalGate.reasons,
-              metrics: signalGate.metrics,
-              price: executionPrice,
-              priceSource: executionSource,
-            },
-          });
-          continue;
-        }
-
-        // 적응형 피드백: 리밸런싱 매수도 신규 진입이므로 반복 손실 패턴은 제외
-        const rebalanceAdaptive = resolveAdaptiveAdjustment(await getAdaptiveConvictionRule(chatId), {
-          score: candidate.score,
-          trustGrade: signalGate.grade,
-          profile: adjustedEntryProfile.profile,
-        });
-        if (rebalanceAdaptive.excluded) {
-          summary.skipped += 1;
-          await writeActionLog({
-            supabase: payload.supabase,
-            runId: payload.runId,
-            chatId,
-            code: candidate.code,
-            actionType: "SKIP",
-            reason: "rebalance-adaptive-pattern-exclude",
-            detail: {
-              score: candidate.score,
-              trustGrade: signalGate.grade,
-              adaptiveReasons: rebalanceAdaptive.reasons,
-              price: executionPrice,
-              priceSource: executionSource,
-            },
-          });
-          continue;
-        }
-
-        let sizing = calculateAutoTradeBuySizing({
-          availableCash: deployableCash,
-          price: executionPrice,
+          profileBase,
+          adaptiveRule,
           slotsLeft,
-          currentHoldingCount: plannedHoldingCount,
-          maxPositions,
-          stopLossPct: adjustedEntryProfile.stopLossPct,
-          riskBudgetScale: dailyRiskBudget.scale * adaptiveExitGuard.buySizeScale * (marketPolicy.buySizeScale ?? 1),
-          conviction: resolveConvictionScale({
-            score: candidate.score,
-            trustGrade: signalGate.grade,
-            isSectorLeader: candidate.isSectorLeader,
-            adaptiveDelta: rebalanceAdaptive.delta,
-          }),
-          prefs,
+          plannedHoldingCount,
+          sizingContext,
         });
+        if (entryPlan.action === "skip") {
+          summary.skipped += 1;
+          await writeActionLog({
+            supabase: payload.supabase,
+            runId: payload.runId,
+            chatId,
+            code: candidate.code,
+            actionType: "SKIP",
+            reason: entryPlan.reason,
+            detail:
+              entryPlan.reason === "rebalance-signal-gate-reject"
+                ? {
+                    score: candidate.score,
+                    trustScore: entryPlan.signalGate.trustScore,
+                    trustGrade: entryPlan.signalGate.grade,
+                    reasons: entryPlan.signalGate.reasons,
+                    metrics: entryPlan.signalGate.metrics,
+                    price: executionPrice,
+                    priceSource: executionSource,
+                  }
+                : {
+                    score: candidate.score,
+                    trustGrade: entryPlan.signalGate.grade,
+                    adaptiveReasons: entryPlan.adaptive.reasons,
+                    price: executionPrice,
+                    priceSource: executionSource,
+                  },
+          });
+          continue;
+        }
+        const { signalGate, baseProfile: entryProfile, profile: adjustedEntryProfile } = entryPlan;
+        const profileLabel = getStrategyLabel(adjustedEntryProfile.profile) || adjustedEntryProfile.profile;
+        let sizing = entryPlan.size(deployableCash);
 
         // 현금하한은 스윕 평가액을 포함해 계산하므로, 매수액이 순수 현금보다 크면 스윕에서 부족분만
         // 부분 매도해 보충한다. 보충 후에도 모자라면 순수 현금 기준으로 다시 사이징한다.
@@ -6228,22 +6145,7 @@ async function runDailyReviewForUser(payload: {
             summary.notes.push(...topUp.notes);
           }
           if (Math.ceil(sizing.investedAmount * BUY_CASH_BUFFER) > availableCash) {
-            sizing = calculateAutoTradeBuySizing({
-              availableCash: Math.min(deployableCash, Math.floor(availableCash / BUY_CASH_BUFFER)),
-              price: executionPrice,
-              slotsLeft,
-              currentHoldingCount: plannedHoldingCount,
-              maxPositions,
-              stopLossPct: adjustedEntryProfile.stopLossPct,
-              riskBudgetScale: dailyRiskBudget.scale * adaptiveExitGuard.buySizeScale * (marketPolicy.buySizeScale ?? 1),
-              conviction: resolveConvictionScale({
-                score: candidate.score,
-                trustGrade: signalGate.grade,
-                isSectorLeader: candidate.isSectorLeader,
-                adaptiveDelta: rebalanceAdaptive.delta,
-              }),
-              prefs,
-            });
+            sizing = entryPlan.size(Math.min(deployableCash, Math.floor(availableCash / BUY_CASH_BUFFER)));
           }
         }
 
