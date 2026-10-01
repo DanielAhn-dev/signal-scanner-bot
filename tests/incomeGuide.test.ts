@@ -150,6 +150,44 @@ test("buildIncomeGuideView: 종목별 주문안 — 넘친 종목은 주 단위�
   assert.equal(view.rebalance.realizedGainTotal, 190_000);
 });
 
+test("buildIncomeGuideView: 인컴 바구니를 줄일 땐 금액이 더 작아도 커버드콜부터 판다 (2026-10-01 다중시작점 검증 — 재투자 기준 고배당은 지수를 이기고 커버드콜은 진다)", () => {
+  // 총 610만(인컴 600만 + 성장 10만), 목표 인컴 85% → 줄일 금액 81.5만 — 커버드콜(100만) 하나로 충분해서
+  // 고배당(161510, 500만으로 더 크다)을 안 건드리고도 채워지는지로 우선순위를 가른다.
+  const view = buildIncomeGuideView({
+    holdings: [
+      { code: "161510", name: "PLUS 고배당주", quantity: 100, price: 50_000, accountKey: "a", accountLabel: "키움 / 일반" },
+      { code: "475720", name: "RISE 200위클리커버드콜", quantity: 100, price: 10_000, accountKey: "a", accountLabel: "키움 / 일반" },
+      { code: "069500", name: "KODEX 200", quantity: 10, price: 10_000, accountKey: "a", accountLabel: "키움 / 일반" },
+    ],
+    settings: { ...DEFAULT_INCOME_GUIDE_SETTINGS, customTargets: { income: 85 } },
+    today: "2026-10-01",
+  });
+  const sells = view.rebalance.orders.filter((o) => o.side === "sell");
+  const cc = sells.find((o) => o.code === "475720");
+  const div = sells.find((o) => o.code === "161510");
+  assert.ok(cc, "커버드콜을 팔아야 한다");
+  assert.ok(!div, "커버드콜만으로 채워지면 금액이 더 큰 고배당은 건드리지 않는다");
+});
+
+test("buildIncomeGuideView: 같은 바구니 안에서는 손실 중인 종목보다 이익·본전인 종목을 먼저 판다 (2026-10-01 사용자 — 인컴은 계속 들어오니 굳이 손실 보며 팔고 싶지 않다)", () => {
+  const view = buildIncomeGuideView({
+    holdings: [
+      // 둘 다 커버드콜, 손실 중인 쪽(475720)이 금액은 더 크다 — 그래도 이익 중인 489030을 먼저 판다
+      { code: "475720", name: "RISE 200위클리커버드콜", quantity: 100, price: 9_000, avgPrice: 10_000, accountKey: "a", accountLabel: "키움 / 일반" },
+      { code: "489030", name: "PLUS 고배당주위클리커버드콜", quantity: 50, price: 11_000, avgPrice: 10_000, accountKey: "a", accountLabel: "키움 / 일반" },
+      { code: "069500", name: "KODEX 200", quantity: 10, price: 10_000, accountKey: "a", accountLabel: "키움 / 일반" },
+    ],
+    // 총 155만(커버드콜 140만 + 성장 10만), 목표 인컴 90% → 줄일 금액 15.5만 — 이익 중인 489030(55만)만으로 충분
+    settings: { ...DEFAULT_INCOME_GUIDE_SETTINGS, customTargets: { income: 90 } },
+    today: "2026-10-01",
+  });
+  const sells = view.rebalance.orders.filter((o) => o.side === "sell");
+  const loss = sells.find((o) => o.code === "475720");
+  const gain = sells.find((o) => o.code === "489030");
+  assert.ok(gain, "이익 중인 종목을 팔아야 한다");
+  assert.ok(!loss, "손실 중인 종목은 이익 중인 종목으로 채워지면 건드리지 않는다");
+});
+
 test("buildIncomeGuideView: 새로 넣을 돈은 모자란 바구니부터 채우고, 가진 상품이 없으면 새 상품 금액으로 남긴다", () => {
   const view = buildIncomeGuideView({
     holdings: [h("069500", "KODEX 200", 9_000_000)],

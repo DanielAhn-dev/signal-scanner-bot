@@ -382,7 +382,15 @@ const isBuyable = (r: { bucket: AssetBucket; code: string; name: string }) =>
 
 type PlanRow = GuideHolding & { value: number; bucket: AssetBucket; group: BucketGroup };
 
-/** 바구니별 금액 변화(+ 매수 / − 매도)를 종목별 주수로 바꾼다. 매도는 큰 종목부터, 매수는 이미 가진 종목에 비중대로 */
+/**
+ * "인컴" 바구니를 줄일 때 먼저 팔 순서 — 낮을수록 먼저 판다. 2026-10-01 다중 시작점 검증(고배당 3종 vs
+ * 커버드콜 2종 실데이터)에서 재투자 기준 고배당이 지수를 꾸준히 이겼지만 커버드콜은 꾸준히 졌다
+ * (validate_income_multistart.py). 예전엔 바구니 안에서 그냥 "금액 큰 것부터" 팔아서, 가장 좋은
+ * 보유(고배당)가 금액이 크다는 이유만으로 가장 먼저 팔리고 나쁜 보유(커버드콜)가 남는 역전이 있었다.
+ */
+const SELL_PRIORITY: Partial<Record<AssetBucket, number>> = { covered_call: 0, reit_infra: 1, dividend: 2 };
+
+/** 바구니별 금액 변화(+ 매수 / − 매도)를 종목별 주수로 바꾼다. 매도는 (인컴 안에서는 커버드콜부터) 큰 종목 순, 매수는 이미 가진 종목에 비중대로 */
 function toOrders(rows: PlanRow[], deltas: Record<PlanKey, number>): { orders: GuideOrder[]; unfilled: UnfilledBuy[] } {
   const orders: GuideOrder[] = [];
   const unfilled: UnfilledBuy[] = [];
@@ -392,7 +400,20 @@ function toOrders(rows: PlanRow[], deltas: Record<PlanKey, number>): { orders: G
     const members = rows.filter((r) => planKeyOf(r.bucket) === key);
     if (delta < 0) {
       let remaining = -delta;
-      for (const r of [...members].sort((a, b) => b.value - a.value)) {
+      // 같은 우선순위 안에서는 평단보다 올라 있는(이익·본전) 종목부터 판다 — "인컴은 계속 들어오니 굳이
+      // 손실 보며 팔고 싶지 않다"(2026-10-01 사용자). 바꿀 바구니·상품이 같으면 전체 전략에는 큰 차이가
+      // 없어서, 심리적 저항이 적은 쪽을 먼저 쓰는 것으로 둔다 — 다만 그 바구니/대상 자체를 줄이기로
+      // 한 결정(커버드콜→고배당 등)은 그대로 유지된다(손실만 영구히 피하는 게 아니라 순서 문제).
+      const isLoss = (r: PlanRow) => (r.avgPrice && r.avgPrice > 0 ? r.price < r.avgPrice : false);
+      const sellOrder = [...members].sort((a, b) => {
+        const pa = SELL_PRIORITY[a.bucket] ?? 99;
+        const pb = SELL_PRIORITY[b.bucket] ?? 99;
+        if (pa !== pb) return pa - pb;
+        const la = isLoss(a) ? 1 : 0;
+        const lb = isLoss(b) ? 1 : 0;
+        return la !== lb ? la - lb : b.value - a.value;
+      });
+      for (const r of sellOrder) {
         if (remaining <= 0) break;
         const shares = Math.min(r.quantity, Math.ceil(remaining / r.price));
         if (shares <= 0) continue;
