@@ -15,6 +15,41 @@ import type { appendVirtualDecisionLog } from "./decisionLogService";
 
 type SupabaseClientAny = any;
 
+/**
+ * 자동 매도 사유. 섹터 정리·비중 축소는 예전에 손익 부호에 따라 take-profit-partial / loss-trim으로 기록돼
+ * 수수료 빼면 손실인 섹터 정리 매도가 "자동 익절 완료"로 보였다(2026-10-01 한미약품 +0.1% → −3,181원).
+ */
+export type AutoTradeSellReason =
+  | "take-profit-partial"
+  | "take-profit-final"
+  | "stop-loss"
+  | "loss-trim"
+  | "sector-rotation-sell"
+  | "overweight-trim"
+  | "rotation-sell"
+  | "event-risk-defensive-exit";
+
+/** 거래 기록·결정 로그에 남는 매도 이유 문구 */
+export function sellReasonSummary(reason: AutoTradeSellReason, isFullExit: boolean): string {
+  switch (reason) {
+    case "take-profit-partial":
+    case "take-profit-final":
+      return isFullExit ? "자동 익절 완료" : "자동 부분익절";
+    case "stop-loss":
+      return "자동 손절";
+    case "loss-trim":
+      return "자동 손실 축소";
+    case "sector-rotation-sell":
+      return "섹터 약세 정리 매도";
+    case "overweight-trim":
+      return "비중 초과 축소 매도";
+    case "rotation-sell":
+      return "교체 매도";
+    case "event-risk-defensive-exit":
+      return "이벤트 선제 정리";
+  }
+}
+
 export type HoldingRow = {
   id: number;
   code: string;
@@ -99,7 +134,7 @@ export function createAutoTradeSellStep(deps: AutoTradeSellDeps) {
     feeRate: number;
     taxRate: number;
     sellQty: number;
-    reason: "take-profit-partial" | "take-profit-final" | "stop-loss" | "loss-trim" | "rotation-sell" | "event-risk-defensive-exit";
+    reason: AutoTradeSellReason;
     stopLossContext?: string | null;
     profileLabel: string;
     strategyProfile: string;
@@ -209,10 +244,7 @@ export function createAutoTradeSellStep(deps: AutoTradeSellDeps) {
     const taxAmount = Math.round(gross * effectiveTaxRate);
     const net = Math.max(0, gross - feeAmount - taxAmount);
     const pnl = net - soldCost;
-    const isTakeProfit =
-      payload.reason !== "stop-loss" &&
-      payload.reason !== "rotation-sell" &&
-      payload.reason !== "event-risk-defensive-exit";
+    const isTakeProfit = payload.reason === "take-profit-partial" || payload.reason === "take-profit-final";
 
     const sellOpKey = `${payload.chatId}:SELL:${payload.holding.code}:${Math.round(executionPrice)}:${sellQty}:${new Date().toISOString().slice(0,16)}`;
     const sellRegistered = await deps.tryRegisterOperation({
@@ -404,11 +436,7 @@ export function createAutoTradeSellStep(deps: AutoTradeSellDeps) {
       strategyVersion: "v1",
       confidence: isTakeProfit ? 80 : 70,
       expectedHorizonDays: isTakeProfit ? 3 : 1,
-      reasonSummary: isTakeProfit
-        ? !isFullExit
-          ? `자동 부분익절 (${payload.profileLabel})`
-          : `자동 익절 완료 (${payload.profileLabel})`
-        : `자동 손절 (${payload.profileLabel})`,
+      reasonSummary: `${sellReasonSummary(payload.reason, isFullExit)} (${payload.profileLabel})`,
       reasonDetails: {
         trigger: payload.reason,
         stopLossContext: payload.reason === "stop-loss" ? payload.stopLossContext ?? null : null,

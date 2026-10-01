@@ -1003,6 +1003,11 @@ test("isTakeProfitCooldownOverridable: 손실정리(loss-trim)는 오버라이�
   assert.equal(isTakeProfitCooldownOverridable("take-profit-partial"), true);
   assert.equal(isTakeProfitCooldownOverridable("take-profit-final"), true);
   assert.equal(isTakeProfitCooldownOverridable("stop-loss"), false);
+  // 섹터 약세 정리는 신호가 강해도 바로 되사지 않는다, 비중 축소는 익절처럼 짧게
+  assert.equal(isTakeProfitCooldownOverridable("sector-rotation-sell"), false);
+  assert.equal(isTakeProfitCooldownOverridable("overweight-trim"), true);
+  assert.equal(resolveTakeProfitCooldownDays("sector-rotation-sell", 0.1), 5);
+  assert.equal(resolveTakeProfitCooldownDays("overweight-trim", 12), 2);
 });
 
 test("resolveStatsSinceIso: 규칙 확정일(9/29)보다 이른 since는 컷오프로 당겨진다", () => {

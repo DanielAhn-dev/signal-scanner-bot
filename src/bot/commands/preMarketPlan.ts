@@ -142,6 +142,9 @@ const SKIP_REASON_KO: Record<string, string> = {
   "stop-loss": "손절",
   "take-profit-partial": "부분익절",
   "take-profit-final": "최종익절",
+  "loss-trim": "손실축소",
+  "sector-rotation-sell": "섹터정리",
+  "overweight-trim": "비중축소",
   "default": "기본",
 };
 

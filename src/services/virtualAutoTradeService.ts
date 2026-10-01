@@ -1782,7 +1782,7 @@ async function fetchTakeProfitCooldownCodes(payload: {
     .select("code, created_at, detail, reason")
     .eq("chat_id", payload.chatId)
     .eq("action_type", "SELL")
-    .in("reason", ["take-profit-partial", "take-profit-final", "loss-trim"])
+    .in("reason", ["take-profit-partial", "take-profit-final", "loss-trim", "sector-rotation-sell", "overweight-trim"])
     .gte("created_at", since)
     .limit(500);
 
@@ -5396,9 +5396,12 @@ async function runDailyReviewForUser(payload: {
         feeRate,
         taxRate,
         sellQty: finalExitPlan.quantityToSell,
-        reason: (finalExitPlan.action === "OVERWEIGHT_REDUCTION" || finalExitPlan.action === "SECTOR_ROTATION")
-          ? (pnlPct >= 0 ? "take-profit-partial" : "loss-trim")
-          : finalExitPlan.reason,
+        // 섹터 정리·비중 축소는 손익과 무관한 사유라 그대로 남긴다 (예전엔 가격 손익 ≥0이면 익절로 기록)
+        reason: finalExitPlan.action === "OVERWEIGHT_REDUCTION"
+          ? "overweight-trim"
+          : finalExitPlan.action === "SECTOR_ROTATION"
+            ? "sector-rotation-sell"
+            : finalExitPlan.reason,
         stopLossContext,
         profileLabel: getStrategyLabel(tradeProfile.profile) || tradeProfile.profile,
         strategyProfile: tradeProfile.profile,

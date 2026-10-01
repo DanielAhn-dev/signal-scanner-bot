@@ -396,7 +396,9 @@ export function resolveTakeProfitCooldownDays(reason: string, pnlPct: number | n
     if (pnlPct != null && pnlPct <= -4) return 6;
     return 5;
   }
-  // take-profit-partial / take-profit-final: 실제 수익 실현이라 짧게만 유지
+  // 섹터 약세로 판 종목은 섹터가 그대로면 다시 사도 곧 또 판다 — 손실 정리와 같은 5일
+  if (reason === "sector-rotation-sell") return 5;
+  // take-profit-partial / take-profit-final / overweight-trim: 실제 수익 실현·비중 조정이라 짧게만 유지
   return 2;
 }
 
@@ -418,7 +420,7 @@ export function shouldOverrideTakeProfitCooldown(
  * 실현(take-profit-*) 이후 살아있는 추세의 재진입에만 허용한다.
  */
 export function isTakeProfitCooldownOverridable(reason: string): boolean {
-  return reason === "take-profit-partial" || reason === "take-profit-final";
+  return reason === "take-profit-partial" || reason === "take-profit-final" || reason === "overweight-trim";
 }
 
 export type RankedCandidate = {

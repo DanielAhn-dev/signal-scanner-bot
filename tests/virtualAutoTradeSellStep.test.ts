@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { createAutoTradeSellStep, type HoldingRow } from "../src/services/virtualAutoTradeSellStep";
+import { createAutoTradeSellStep, sellReasonSummary, type HoldingRow } from "../src/services/virtualAutoTradeSellStep";
 import { createHarness } from "./helpers/cashSweepHarness";
 
 // 종목 매도는 실현손익(prefs)·포지션·거래기록·FIFO 로트를 따로 쓴다. 현금은 실행 끝에
@@ -152,4 +152,14 @@ test("executeAutoTradeSell: 중복 실행이면 아무것도 바꾸지 않는다
   assert.equal(result.sold, false);
   assert.equal(h.writes.length, 0);
   assert.deepEqual(h.calls.actionLogs, ["duplicate-execution"]);
+});
+
+test("sellReasonSummary: 익절만 익절로 적고, 섹터 정리·비중 축소·손실 축소는 각자 이름으로 남긴다", () => {
+  assert.equal(sellReasonSummary("take-profit-partial", false), "자동 부분익절");
+  assert.equal(sellReasonSummary("take-profit-final", true), "자동 익절 완료");
+  // 2026-10-01 한미약품: 섹터 정리 전량 매도가 "자동 익절 완료"로 기록됐다
+  assert.equal(sellReasonSummary("sector-rotation-sell", true), "섹터 약세 정리 매도");
+  assert.equal(sellReasonSummary("overweight-trim", false), "비중 초과 축소 매도");
+  assert.equal(sellReasonSummary("loss-trim", false), "자동 손실 축소");
+  assert.equal(sellReasonSummary("stop-loss", true), "자동 손절");
 });
