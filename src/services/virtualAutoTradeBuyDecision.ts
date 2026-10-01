@@ -183,10 +183,10 @@ export type NewEntryCandidate = {
 } & Parameters<typeof classifyAutoTradeEntryProfile>[0]["candidate"];
 
 export type NewEntryPlan =
-  | { action: "skip"; reason: "rebalance-signal-gate-reject"; signalGate: SignalGateResult }
+  | { action: "skip"; reason: "signal-gate-reject"; signalGate: SignalGateResult }
   | {
       action: "skip";
-      reason: "rebalance-adaptive-pattern-exclude";
+      reason: "adaptive-pattern-exclude";
       signalGate: SignalGateResult;
       adaptive: AdaptiveAdjustment;
     }
@@ -205,7 +205,10 @@ export type NewEntryPlan =
       size: (deployableCash: number) => AutoTradeSizingResult;
     };
 
-/** 신규 종목 진입 판단. 통과하면 사이징 함수를 돌려준다 (수량 0이면 호출측이 현금 부족으로 처리) */
+/**
+ * 신규 종목 진입 판단 (월요일 매수·일일점검 신규 매수 공통). 통과하면 사이징 함수를 돌려준다
+ * (수량 0이면 호출측이 현금 부족으로 처리). 건너뛴 이유는 호출측이 경로별 로그 이름으로 바꿔 남긴다.
+ */
 export function planNewEntry(input: {
   candidate: NewEntryCandidate;
   executionPrice: number;
@@ -219,6 +222,11 @@ export function planNewEntry(input: {
   slotsLeft: number;
   plannedHoldingCount: number;
   sizingContext: BuySizingContext;
+  /**
+   * 사이징의 손절폭(손실 한도 예산 계산용). 기본은 조정한 프로필의 손절폭.
+   * 월요일 매수는 계좌 기본 손절폭을 쓴다 (예전부터의 동작 — 두 경로가 다른 이유는 기록에 없다).
+   */
+  sizingStopLossPct?: number;
 }): NewEntryPlan {
   const { candidate, marketPolicy } = input;
   const candidateProfile = classifyAutoTradeEntryProfile({
@@ -255,7 +263,7 @@ export function planNewEntry(input: {
     minTrustScore: input.minTrustScore,
     requireAboveSma200: true,
   });
-  if (!signalGate.passed) return { action: "skip", reason: "rebalance-signal-gate-reject", signalGate };
+  if (!signalGate.passed) return { action: "skip", reason: "signal-gate-reject", signalGate };
 
   // 적응형 피드백: 신규 진입이므로 반복 손실 패턴은 제외
   const adaptive = resolveAdaptiveAdjustment(input.adaptiveRule, {
@@ -264,7 +272,7 @@ export function planNewEntry(input: {
     profile: profile.profile,
   });
   if (adaptive.excluded) {
-    return { action: "skip", reason: "rebalance-adaptive-pattern-exclude", signalGate, adaptive };
+    return { action: "skip", reason: "adaptive-pattern-exclude", signalGate, adaptive };
   }
 
   const conviction = resolveConvictionScale({
@@ -280,7 +288,7 @@ export function planNewEntry(input: {
       slotsLeft: input.slotsLeft,
       currentHoldingCount: input.plannedHoldingCount,
       maxPositions: input.sizingContext.maxPositions,
-      stopLossPct: profile.stopLossPct,
+      stopLossPct: input.sizingStopLossPct ?? profile.stopLossPct,
       riskBudgetScale: input.sizingContext.riskBudgetScale,
       conviction,
       prefs: input.sizingContext.prefs,

@@ -17,16 +17,12 @@ import { syncVirtualPortfolio } from "./portfolioService";
 import { buildStrategyMemo } from "../lib/strategyMemo";
 import { AUTO_TRADE_STRATEGY_ID, parseStrategyMemo } from "../lib/strategyMemo";
 import { appendVirtualDecisionLog } from "./decisionLogService";
-import { calculateAutoTradeBuySizing, resolveConvictionScale } from "./virtualAutoTradeSizing";
 import { attachIndexTrendRatios, fetchIndexSma200Ratios } from "./indexTrendRatios";
 import {
   getAdaptiveConvictionRule,
-  resolveAdaptiveAdjustment,
   formatAdaptiveRuleSummary,
 } from "./adaptiveConvictionService";
 import {
-  applyDynamicTradeProfileAdjustments,
-  classifyAutoTradeEntryProfile,
   buildPositionStrategyMemo,
   parsePositionStrategyState,
   resolvePositionBucketFromProfile,
@@ -77,7 +73,6 @@ import { resolveVirtualExecutionPrice } from "./virtualAutoTradeExecution";
 import { describeScanFilterReasons } from "../bot/commands/scanFilters";
 import { fetchAllMarketData } from "../utils/fetchMarketData";
 import { fetchLatestScoresByCodes, type ScoreSnapshotRow } from "./scoreSourceService";
-import { evaluateAutoTradeSignalGate } from "./virtualAutoTradeSignalGate";
 import { sendMessage } from "../telegram/api";
 import { isExchangeTradedProduct, resolveBaseSellTaxRate } from "../lib/securitiesTax";
 import { fetchBenchmarkComparison, formatBenchmarkLine } from "./virtualAutoTradeBenchmark";
@@ -3626,6 +3621,17 @@ async function runMondayBuyForUser(payload: {
 
   // 적응형 피드백: 최근 90일 점수대·등급별 승률로 확신도를 가감하고, 반복 손실 패턴은 신규 매수에서 제외
   const adaptiveRule = await getAdaptiveConvictionRule(chatId);
+  const mondayProfileBase: ProfileBase = {
+    accountStrategy: selectedStrategy,
+    baseTakeProfitPct: Math.abs(toNumber(payload.setting.take_profit_pct, 8)),
+    baseStopLossPct: Math.abs(toNumber(payload.setting.stop_loss_pct, 4)),
+    sellSplitCount: Math.max(1, Math.min(4, toPositiveInt(prefs.virtual_sell_split_count, 2))),
+  };
+  const mondaySizingContext: BuySizingContext = {
+    maxPositions,
+    riskBudgetScale: dailyRiskBudget.scale * mondayBuySizeScale * (marketPolicy.buySizeScale ?? 1),
+    prefs,
+  };
   const adaptiveRuleNote = formatAdaptiveRuleSummary(adaptiveRule);
   if (adaptiveRuleNote) summary.notes.push(adaptiveRuleNote);
 
@@ -3642,104 +3648,68 @@ async function runMondayBuyForUser(payload: {
       const executionPrice = executionEntry.price;
       const executionSource = executionEntry.source;
       const scoreRow = mondayFactorsByCode.get(candidate.code);
-      const stableTurn = scoreRow?.factors
-        ? String(((scoreRow.factors as Record<string, unknown>).stable_turn ?? "")).trim()
-        : null;
-      const factors = extractScoreFactors((scoreRow as Record<string, unknown> | undefined)?.factors);
+      const factors = extractScoreFactors(scoreRow?.factors);
+      const stableTurn = factors ? String(factors.stable_turn ?? "").trim() : null;
       const newsBias = resolveNewsBiasFromFactors(factors);
-      const candidateProfile = classifyAutoTradeEntryProfile({
-        accountStrategy: selectedStrategy,
-        riskProfile: prefs.risk_profile,
-        marketMode: marketPolicy.mode,
-        newsBias,
-        candidate: {
-          ...candidate,
-          stableTurn: candidate.stableTurn ?? null,
-          stableTrust: candidate.stableTrust ?? null,
-        },
-      });
-      const signalGate = evaluateAutoTradeSignalGate({
-        currentPrice: executionPrice,
-        score: candidate.score,
-        factors: extractScoreFactors(scoreRow?.factors),
-        minTrustScore: signalTrustThresholds.newBuy,
-        requireAboveSma200: true,
-      });
-      const todaySignalReason = buildTodaySignalReasonNote({
-        signal: candidate.signal,
-        stableTurn,
-        signalGate: { trustScore: signalGate.trustScore, grade: signalGate.grade },
-      });
-      const filterReason = buildAutoTradeFilterReason(candidate);
 
       if (!trustGateNoteAdded) {
         summary.notes.push("진입게이트: 세력선(sma200) 상단 + 턴 신뢰도(거래량/RSI/MACD/AVWAP) 적용");
         trustGateNoteAdded = true;
       }
 
-      if (!signalGate.passed) {
-        summary.skipped += 1;
-        await writeActionLog({
-          supabase: payload.supabase,
-          runId: payload.runId,
-          chatId,
-          code: candidate.code,
-          actionType: "SKIP",
-          reason: "signal-gate-reject",
-          detail: {
-            score: candidate.score,
-            trustScore: signalGate.trustScore,
-            trustGrade: signalGate.grade,
-            reasons: signalGate.reasons,
-            metrics: signalGate.metrics,
-            price: executionPrice,
-            priceSource: executionSource,
-          },
-        });
-        continue;
-      }
-
-      const adaptive = resolveAdaptiveAdjustment(adaptiveRule, {
-        score: candidate.score,
-        trustGrade: signalGate.grade,
-        profile: candidateProfile,
-      });
-      if (adaptive.excluded) {
-        summary.skipped += 1;
-        await writeActionLog({
-          supabase: payload.supabase,
-          runId: payload.runId,
-          chatId,
-          code: candidate.code,
-          actionType: "SKIP",
-          reason: "adaptive-pattern-exclude",
-          detail: {
-            score: candidate.score,
-            trustGrade: signalGate.grade,
-            adaptiveReasons: adaptive.reasons,
-            price: executionPrice,
-            priceSource: executionSource,
-          },
-        });
-        continue;
-      }
-
-      let sizing = calculateAutoTradeBuySizing({
-        availableCash: deployableCash,
-        price: executionPrice,
+      const entryPlan = planNewEntry({
+        candidate,
+        executionPrice,
+        factors,
+        newsBias,
+        riskProfile: prefs.risk_profile,
+        marketPolicy,
+        minTrustScore: signalTrustThresholds.newBuy,
+        profileBase: mondayProfileBase,
+        adaptiveRule,
         slotsLeft,
-        currentHoldingCount: plannedHoldingCount,
-        maxPositions,
-        stopLossPct: Math.abs(toNumber(payload.setting.stop_loss_pct, 4)),
-        riskBudgetScale: dailyRiskBudget.scale * mondayBuySizeScale * (marketPolicy.buySizeScale ?? 1),
-        conviction: resolveConvictionScale({
-          score: candidate.score,
-          trustGrade: signalGate.grade,
-          isSectorLeader: candidate.isSectorLeader,
-          adaptiveDelta: adaptive.delta,
-        }),
-        prefs,
+        plannedHoldingCount,
+        sizingContext: mondaySizingContext,
+        sizingStopLossPct: mondayProfileBase.baseStopLossPct,
       });
+      if (entryPlan.action === "skip") {
+        summary.skipped += 1;
+        await writeActionLog({
+          supabase: payload.supabase,
+          runId: payload.runId,
+          chatId,
+          code: candidate.code,
+          actionType: "SKIP",
+          reason: entryPlan.reason,
+          detail:
+            entryPlan.reason === "signal-gate-reject"
+              ? {
+                  score: candidate.score,
+                  trustScore: entryPlan.signalGate.trustScore,
+                  trustGrade: entryPlan.signalGate.grade,
+                  reasons: entryPlan.signalGate.reasons,
+                  metrics: entryPlan.signalGate.metrics,
+                  price: executionPrice,
+                  priceSource: executionSource,
+                }
+              : {
+                  score: candidate.score,
+                  trustGrade: entryPlan.signalGate.grade,
+                  adaptiveReasons: entryPlan.adaptive.reasons,
+                  price: executionPrice,
+                  priceSource: executionSource,
+                },
+        });
+        continue;
+      }
+      const { signalGate, profile: tradeProfile } = entryPlan;
+      const todaySignalReason = buildTodaySignalReasonNote({
+        signal: candidate.signal,
+        stableTurn,
+        signalGate: { trustScore: signalGate.trustScore, grade: signalGate.grade },
+      });
+      const filterReason = buildAutoTradeFilterReason(candidate);
+      let sizing = entryPlan.size(deployableCash);
 
       // 현금하한은 스윕 평가액을 포함해 계산하므로, 매수액이 순수 현금보다 크면 스윕에서 부족분만
       // 부분 매도해 보충한다. 보충 후에도 모자라면 순수 현금 기준으로 다시 사이징한다.
@@ -3756,22 +3726,7 @@ async function runMondayBuyForUser(payload: {
           summary.notes.push(...topUp.notes);
         }
         if (Math.ceil(sizing.investedAmount * BUY_CASH_BUFFER) > availableCash) {
-          sizing = calculateAutoTradeBuySizing({
-            availableCash: Math.min(deployableCash, Math.floor(availableCash / BUY_CASH_BUFFER)),
-            price: executionPrice,
-            slotsLeft,
-            currentHoldingCount: plannedHoldingCount,
-            maxPositions,
-            stopLossPct: Math.abs(toNumber(payload.setting.stop_loss_pct, 4)),
-            riskBudgetScale: dailyRiskBudget.scale * mondayBuySizeScale * (marketPolicy.buySizeScale ?? 1),
-            conviction: resolveConvictionScale({
-              score: candidate.score,
-              trustGrade: signalGate.grade,
-              isSectorLeader: candidate.isSectorLeader,
-              adaptiveDelta: adaptive.delta,
-            }),
-            prefs,
-          });
+          sizing = entryPlan.size(Math.min(deployableCash, Math.floor(availableCash / BUY_CASH_BUFFER)));
         }
       }
 
@@ -3791,43 +3746,9 @@ async function runMondayBuyForUser(payload: {
 
       const qty = sizing.quantity;
       const investedAmount = sizing.investedAmount;
-      let tradeProfile = resolvePositionTradeProfile({
-        accountStrategy: candidateProfile,
-        baseTakeProfitPct: Math.abs(toNumber(payload.setting.take_profit_pct, 8)),
-        baseStopLossPct: Math.abs(toNumber(payload.setting.stop_loss_pct, 4)),
-        sellSplitCount: Math.max(1, Math.min(4, toPositiveInt(prefs.virtual_sell_split_count, 2))),
-      });
-      tradeProfile = applyDynamicTradeProfileAdjustments({
-        tradeProfile,
-        context: {
-          score: candidate.score,
-          signal: candidate.signal,
-          rsi14: candidate.rsi14,
-          liquidity: candidate.liquidity,
-          stableTurn: candidate.stableTurn,
-          stableTrust: candidate.stableTrust,
-          marketMode: marketPolicy.mode,
-          isSectorLeader: candidate.isSectorLeader,
-        },
-      });
-      // Adjust tradeProfile using ATR if available in score factors
-      try {
-        const atrPct = factors && Number.isFinite(Number(factors.atrPct)) ? Number(factors.atrPct) : null;
-        if (atrPct != null) {
-          // stopLossPct: at least base, or atrPct * 2; cap to 15%
-          const stopFromAtr = Math.min(15, Math.max(tradeProfile.stopLossPct, atrPct * 2));
-          // takeProfitPct: at least base, or atrPct * 4; cap to 50%
-          const takeFromAtr = Math.min(50, Math.max(tradeProfile.takeProfitPct, atrPct * 4));
-          tradeProfile = {
-            ...tradeProfile,
-            stopLossPct: Number(stopFromAtr.toFixed(2)),
-            takeProfitPct: Number(takeFromAtr.toFixed(2)),
-          };
-          summary.notes.push(`ATR 보정: ${candidate.code} ATR% ${atrPct.toFixed(2)} -> 손절 ${tradeProfile.stopLossPct}% / 익절 ${tradeProfile.takeProfitPct}%`);
-        }
-      } catch (e) {
-        // ignore and continue with default tradeProfile
-      }
+      // 예전엔 여기서 factors.atrPct로 익절/손절을 넓혔지만 점수 엔진은 atr_pct로 저장해 한 번도 실행되지 않았다.
+      // 살리면 안내·따라하기 주문에만 반영되고 실제 매도 판단(포지션 메모의 프로필)과 어긋나므로 지웠다.
+      // 변동성 손절 보정은 보유 중 매도 판단(decideHoldingExit의 ATR 하한)이 맡는다.
       const profileLabel = getStrategyLabel(tradeProfile.profile) || tradeProfile.profile;
       if (qty <= 0 || investedAmount <= 0) {
         summary.skipped += 1;
@@ -6104,9 +6025,9 @@ async function runDailyReviewForUser(payload: {
             chatId,
             code: candidate.code,
             actionType: "SKIP",
-            reason: entryPlan.reason,
+            reason: `rebalance-${entryPlan.reason}`,
             detail:
-              entryPlan.reason === "rebalance-signal-gate-reject"
+              entryPlan.reason === "signal-gate-reject"
                 ? {
                     score: candidate.score,
                     trustScore: entryPlan.signalGate.trustScore,

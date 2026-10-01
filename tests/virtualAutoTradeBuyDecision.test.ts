@@ -111,7 +111,7 @@ const entryInput = (overrides: Partial<Parameters<typeof planNewEntry>[0]> = {})
 
 test("planNewEntry: 신호 신뢰도 관문을 못 넘으면 진입하지 않는다", () => {
   const plan = planNewEntry(entryInput({ factors: weakFactors }));
-  assert.equal(plan.action === "skip" && plan.reason, "rebalance-signal-gate-reject");
+  assert.equal(plan.action === "skip" && plan.reason, "signal-gate-reject");
 });
 
 test("planNewEntry: 통과하면 사이징 함수를 돌려주고, 투자 가능 금액이 적을수록 적게 산다", () => {
@@ -122,4 +122,15 @@ test("planNewEntry: 통과하면 사이징 함수를 돌려주고, 투자 가능
   const small = plan.size(1_000_000);
   assert.ok(full.quantity > 0);
   assert.ok(small.investedAmount <= full.investedAmount);
+});
+
+test("planNewEntry: 사이징 손절폭을 따로 주면 그 값으로 손실 한도 예산을 계산한다 (월요일 매수 경로)", () => {
+  const wide = planNewEntry(entryInput({ sizingStopLossPct: 12 }));
+  const tight = planNewEntry(entryInput({ sizingStopLossPct: 2 }));
+  assert.ok(wide.action === "size" && tight.action === "size");
+  if (wide.action !== "size" || tight.action !== "size") return;
+  const wideCap = wide.size(10_000_000).maxBudgetByRisk;
+  const tightCap = tight.size(10_000_000).maxBudgetByRisk;
+  // 손절폭이 넓을수록 같은 손실 한도에서 살 수 있는 금액이 작다
+  assert.ok(wideCap != null && tightCap != null && wideCap < tightCap);
 });
