@@ -3423,6 +3423,178 @@ async function executeNewEntryBuy(input: {
   return { outcome: "bought", availableCash, deployableCash };
 }
 
+/**
+ * 보유 종목 추가매수 실행. 판단(planAddOnBuy)·스윕 현금 보충·현금 상한 적용이 끝난 뒤 호출한다.
+ * dryRun이면 매수안만 알리고, 아니면 중복 실행 방지 → 포지션 수량·원금·평단 갱신 → 현금 저장 → 거래기록 →
+ * 알림·로그 순서로 반영한다. 쓰기 오류는 예외로 올린다 (호출측이 실패 로그를 남긴다).
+ * @returns skipped면 매수하지 않음. dry-run/bought면 매수 후 현금
+ */
+async function executeAddOnBuy(input: {
+  supabase: SupabaseClientAny;
+  runId: number | null;
+  chatId: number;
+  dryRun: boolean;
+  holding: HoldingRow;
+  candidate: RankedCandidate;
+  executionPrice: number;
+  executionSource: BuyPriceSource;
+  addOnQty: number;
+  position: ReturnType<typeof computeAddOnPosition>;
+  /** 포지션 메모의 프로필 기준 — 안내·따라하기 주문의 익절/손절도 이 값 (신규 매수의 guideProfile과 같은 기준) */
+  holdingProfile: ResolvedPositionTradeProfile;
+  marketPolicy: AutoTradeMarketPolicy;
+  signalGate: SignalGateResult;
+  todaySignalReason: string;
+  filterReason: string;
+  availableCash: number;
+  deployableCash: number;
+  summary: AutoTradeActionSummary;
+}): Promise<{ outcome: "skipped" } | { outcome: "dry-run" | "bought"; availableCash: number; deployableCash: number }> {
+  const { holding, candidate, executionPrice, executionSource, addOnQty, holdingProfile, signalGate, summary } = input;
+  const { addInvested: addOnInvested, nextQty, nextInvested, nextBuyPrice } = input.position;
+  const availableCash = Math.max(0, input.availableCash - addOnInvested);
+  const deployableCash = Math.max(0, input.deployableCash - addOnInvested);
+  const signalSuffix = `${formatPriceSourceLabel(executionSource)}${input.todaySignalReason ? ` · ${input.todaySignalReason}` : ""}${input.filterReason ? ` · 필터근거 ${input.filterReason}` : ""}`;
+  const signalTrust = { score: signalGate.trustScore, grade: signalGate.grade, metrics: signalGate.metrics };
+  const positionDetail = { addOnQty, addOnInvested, price: executionPrice, priceSource: executionSource, nextQty, nextInvested, nextBuyPrice };
+  const pushGuide = () => {
+    summary.notes.push(
+      buildResponseGuideNote({
+        actionType: "add-on-buy",
+        code: candidate.code,
+        basePrice: nextBuyPrice,
+        quantity: nextQty,
+        investedAmount: nextInvested,
+        takeProfitPct: holdingProfile.takeProfitPct,
+        stopLossPct: holdingProfile.stopLossPct,
+      })
+    );
+    (summary.mirrorOrders ??= []).push(
+      buildBuyMirrorOrder({
+        kind: "add-on-buy",
+        code: candidate.code,
+        name: candidate.name,
+        quantity: addOnQty,
+        limitPrice: executionPrice,
+        exitBasePrice: nextBuyPrice,
+        takeProfitPct: holdingProfile.takeProfitPct,
+        stopLossPct: holdingProfile.stopLossPct,
+      })
+    );
+  };
+
+  if (input.dryRun) {
+    summary.buys += 1;
+    summary.notes.push(
+      `[테스트 추가매수안] ${candidate.name}(${candidate.code}) +${addOnQty}주 · 총 ${nextQty}주 · 평균단가 ${fmtKrw(nextBuyPrice)} · 투입 ${fmtKrw(addOnInvested)} · ${signalSuffix}`
+    );
+    pushGuide();
+    await writeActionLog({
+      supabase: input.supabase,
+      runId: input.runId,
+      chatId: input.chatId,
+      code: candidate.code,
+      actionType: "BUY",
+      reason: "dry-run-add-on-buy",
+      detail: { ...positionDetail, score: candidate.score, signalTrust },
+    });
+    return { outcome: "dry-run", availableCash, deployableCash };
+  }
+
+  const opKey = `${input.chatId}:BUY:${candidate.code}:${Math.round(executionPrice)}:${addOnQty}:${new Date().toISOString().slice(0, 16)}`;
+  const registered = await tryRegisterOperation({
+    supabase: input.supabase,
+    opKey,
+    chatId: input.chatId,
+    strategy: AUTO_TRADE_STRATEGY_ID,
+    meta: { event: "add-on-buy", profile: holdingProfile.profile, runId: input.runId },
+  });
+  if (!registered) {
+    summary.skipped += 1;
+    await writeActionLog({
+      supabase: input.supabase,
+      runId: input.runId,
+      chatId: input.chatId,
+      code: candidate.code,
+      actionType: "SKIP",
+      reason: "duplicate-execution",
+      detail: { opKey },
+    });
+    return { outcome: "skipped" };
+  }
+
+  const { error: updateError } = await input.supabase
+    .from(PORTFOLIO_TABLES.positions)
+    .update({
+      quantity: nextQty,
+      invested_amount: nextInvested,
+      buy_price: nextBuyPrice,
+      memo: buildPositionStrategyMemo({
+        event: "add-on-buy",
+        note: "autotrade-add-on-buy",
+        profile: holdingProfile.profile,
+        // 분할 익절 차수는 새 평단·수량 기준으로 다시 센다
+        takeProfitTranchesDone: 0,
+        // 보유 중 최고가는 이어 간다 — 예전엔 메모를 새로 쓰며 빠뜨려 추가매수마다 수익잠금 트레일링의 고점이
+        // 지워졌다 (부분 익절 경로는 고점을 보존한다)
+        peakPrice: parsePositionStrategyState(holding.memo).peakPrice,
+      }),
+      status: "holding",
+    })
+    .eq("chat_id", input.chatId)
+    .eq("id", holding.id);
+  if (updateError) throw updateError;
+
+  await saveVirtualCash(input.chatId, availableCash, "add-on buy");
+  const tradeId = await recordBuyAfterPosition({
+    supabase: input.supabase,
+    chatId: input.chatId,
+    code: candidate.code,
+    price: executionPrice,
+    quantity: addOnQty,
+    investedAmount: addOnInvested,
+    memo: buildStrategyMemo({ strategyId: AUTO_TRADE_STRATEGY_ID, event: "add-on-buy", note: "autotrade-add-on-buy" }),
+    lot: { kind: "add-on", holdingId: holding.id, note: "autotrade-add-on-buy" },
+  });
+
+  summary.buys += 1;
+  summary.notes.push(
+    `[실행 추가매수] ${candidate.name}(${candidate.code}) +${addOnQty}주 · 총 ${nextQty}주 · 평균단가 ${fmtKrw(nextBuyPrice)} · 투입 ${fmtKrw(addOnInvested)} · 점수 ${candidate.score.toFixed(1)} · ${signalSuffix}`
+  );
+  pushGuide();
+  await writeActionLog({
+    supabase: input.supabase,
+    runId: input.runId,
+    chatId: input.chatId,
+    code: candidate.code,
+    actionType: "BUY",
+    reason: "add-on-buy",
+    detail: {
+      ...positionDetail,
+      score: candidate.score,
+      tradeId,
+      cashAfter: availableCash,
+      deployableCashAfter: deployableCash,
+      marketMode: input.marketPolicy.mode,
+      marketReason: input.marketPolicy.reason,
+      signalTrust,
+    },
+  });
+  appendVirtualDecisionLog({
+    chatId: input.chatId,
+    code: candidate.code,
+    action: "BUY",
+    strategyId: AUTO_TRADE_STRATEGY_ID,
+    strategyVersion: "v1",
+    confidence: Math.min(100, Math.max(0, candidate.score)),
+    expectedHorizonDays: holdingProfile.expectedHorizonDays,
+    reasonSummary: `보유 종목 추가매수 (점수 ${candidate.score.toFixed(1)})`,
+    reasonDetails: { trigger: "add-on-buy", ...positionDetail, score: candidate.score, signalTrust },
+    linkedTradeId: tradeId ?? undefined,
+  }).catch((err: unknown) => console.error("[autoTrade] decision log add-on BUY failed", err));
+  return { outcome: "bought", availableCash, deployableCash };
+}
+
 async function runMondayBuyForUser(payload: {
   supabase: SupabaseClientAny;
   setting: AutoTradeSettingRow;
@@ -5606,12 +5778,6 @@ async function runDailyReviewForUser(payload: {
         });
         if (addOnQty <= 0) continue;
 
-        const { addInvested: addOnInvested, nextQty, nextInvested, nextBuyPrice } = computeAddOnPosition({
-          currentQty,
-          currentInvested,
-          addQty: addOnQty,
-          price: executionPrice,
-        });
         const todaySignalReason = buildTodaySignalReasonNote({
           signal: candidate.signal,
           stableTurn: candidate.stableTurn,
@@ -5620,207 +5786,30 @@ async function runDailyReviewForUser(payload: {
         const filterReason = buildAutoTradeFilterReason(candidate);
 
         try {
-          if (payload.dryRun) {
-            addOnBuyCount += 1;
-            summary.buys += 1;
-            summary.notes.push(
-              `[테스트 추가매수안] ${candidate.name}(${candidate.code}) +${addOnQty}주 · 총 ${nextQty}주 · 평균단가 ${fmtKrw(nextBuyPrice)} · 투입 ${fmtKrw(addOnInvested)} · ${formatPriceSourceLabel(executionSource)}${todaySignalReason ? ` · ${todaySignalReason}` : ""}${filterReason ? ` · 필터근거 ${filterReason}` : ""}`
-            );
-            summary.notes.push(
-              buildResponseGuideNote({
-                actionType: "add-on-buy",
-                code: candidate.code,
-                basePrice: nextBuyPrice,
-                quantity: nextQty,
-                investedAmount: nextInvested,
-                takeProfitPct: holdingProfile.takeProfitPct,
-                stopLossPct: holdingProfile.stopLossPct,
-              })
-            );
-            (summary.mirrorOrders ??= []).push(
-              buildBuyMirrorOrder({
-                kind: "add-on-buy",
-                code: candidate.code,
-                name: candidate.name,
-                quantity: addOnQty,
-                limitPrice: executionPrice,
-                exitBasePrice: nextBuyPrice,
-                takeProfitPct: holdingProfile.takeProfitPct,
-                stopLossPct: holdingProfile.stopLossPct,
-              })
-            );
-            await writeActionLog({
-              supabase: payload.supabase,
-              runId: payload.runId,
-              chatId,
-              code: candidate.code,
-              actionType: "BUY",
-              reason: "dry-run-add-on-buy",
-              detail: {
-                addOnQty,
-                addOnInvested,
-                price: executionPrice,
-                priceSource: executionSource,
-                nextQty,
-                nextInvested,
-                nextBuyPrice,
-                score: candidate.score,
-                signalTrust: {
-                  score: signalGate.trustScore,
-                  grade: signalGate.grade,
-                  metrics: signalGate.metrics,
-                },
-              },
-            });
-            availableCash = Math.max(0, availableCash - addOnInvested);
-            deployableCash = Math.max(0, deployableCash - addOnInvested);
-            continue;
-          }
-
-          const opKey = `${chatId}:BUY:${candidate.code}:${Math.round(executionPrice)}:${addOnQty}:${new Date().toISOString().slice(0,16)}`;
-          const registered = await tryRegisterOperation({
-            supabase: payload.supabase,
-            opKey,
-            chatId,
-            strategy: AUTO_TRADE_STRATEGY_ID,
-            meta: { event: "add-on-buy", profile: holdingProfile.profile, runId: payload.runId },
-          }).catch((err) => { throw err; });
-
-          if (!registered) {
-            summary.skipped += 1;
-            await writeActionLog({
-              supabase: payload.supabase,
-              runId: payload.runId,
-              chatId,
-              code: candidate.code,
-              actionType: "SKIP",
-              reason: "duplicate-execution",
-              detail: { opKey },
-            });
-            continue;
-          }
-
-          const { error: updateError } = await payload.supabase
-            .from(PORTFOLIO_TABLES.positions)
-            .update({
-              quantity: nextQty,
-              invested_amount: nextInvested,
-              buy_price: nextBuyPrice,
-              memo: buildPositionStrategyMemo({
-                event: "add-on-buy",
-                note: "autotrade-add-on-buy",
-                profile: holdingProfile.profile,
-                takeProfitTranchesDone: 0,
-              }),
-              status: "holding",
-            })
-            .eq("chat_id", chatId)
-            .eq("id", holding.id);
-
-          if (updateError) {
-            throw updateError;
-          }
-
-          // 예전엔 차감 전 현금을 두 번 저장했다 (복사 흔적) — 차감 후 한 번만 저장한다
-          availableCash = Math.max(0, availableCash - addOnInvested);
-          deployableCash = Math.max(0, deployableCash - addOnInvested);
-          await saveVirtualCash(chatId, availableCash, "add-on buy");
-          const tradeId = await recordBuyAfterPosition({
-            supabase: payload.supabase,
-            chatId,
-            code: candidate.code,
-            price: executionPrice,
-            quantity: addOnQty,
-            investedAmount: addOnInvested,
-            memo: buildStrategyMemo({
-              strategyId: AUTO_TRADE_STRATEGY_ID,
-              event: "add-on-buy",
-              note: "autotrade-add-on-buy",
-            }),
-            lot: { kind: "add-on", holdingId: holding.id, note: "autotrade-add-on-buy" },
-          });
-          addOnBuyCount += 1;
-          summary.buys += 1;
-          summary.notes.push(
-            `[실행 추가매수] ${candidate.name}(${candidate.code}) +${addOnQty}주 · 총 ${nextQty}주 · 평균단가 ${fmtKrw(nextBuyPrice)} · 투입 ${fmtKrw(addOnInvested)} · 점수 ${candidate.score.toFixed(1)} · ${formatPriceSourceLabel(executionSource)}${todaySignalReason ? ` · ${todaySignalReason}` : ""}${filterReason ? ` · 필터근거 ${filterReason}` : ""}`
-          );
-          summary.notes.push(
-            buildResponseGuideNote({
-              actionType: "add-on-buy",
-              code: candidate.code,
-              basePrice: nextBuyPrice,
-              quantity: nextQty,
-              investedAmount: nextInvested,
-              takeProfitPct: holdingProfile.takeProfitPct,
-              stopLossPct: holdingProfile.stopLossPct,
-            })
-          );
-          (summary.mirrorOrders ??= []).push(
-            buildBuyMirrorOrder({
-              kind: "add-on-buy",
-              code: candidate.code,
-              name: candidate.name,
-              quantity: addOnQty,
-              limitPrice: executionPrice,
-              exitBasePrice: nextBuyPrice,
-              takeProfitPct: holdingProfile.takeProfitPct,
-              stopLossPct: holdingProfile.stopLossPct,
-            })
-          );
-          await writeActionLog({
+          const bought = await executeAddOnBuy({
             supabase: payload.supabase,
             runId: payload.runId,
             chatId,
-            code: candidate.code,
-            actionType: "BUY",
-            reason: "add-on-buy",
-            detail: {
-              addOnQty,
-              addOnInvested,
-              price: executionPrice,
-              priceSource: executionSource,
-              nextQty,
-              nextInvested,
-              nextBuyPrice,
-              score: candidate.score,
-              tradeId,
-              cashAfter: availableCash,
-              deployableCashAfter: deployableCash,
-              marketMode: marketPolicy.mode,
-              marketReason: marketPolicy.reason,
-              signalTrust: {
-                score: signalGate.trustScore,
-                grade: signalGate.grade,
-                metrics: signalGate.metrics,
-              },
-            },
+            dryRun: payload.dryRun,
+            holding,
+            candidate,
+            executionPrice,
+            executionSource,
+            addOnQty,
+            position: computeAddOnPosition({ currentQty, currentInvested, addQty: addOnQty, price: executionPrice }),
+            holdingProfile,
+            marketPolicy,
+            signalGate,
+            todaySignalReason,
+            filterReason,
+            availableCash,
+            deployableCash,
+            summary,
           });
-          appendVirtualDecisionLog({
-            chatId,
-            code: candidate.code,
-            action: "BUY",
-            strategyId: AUTO_TRADE_STRATEGY_ID,
-            strategyVersion: "v1",
-            confidence: Math.min(100, Math.max(0, candidate.score)),
-            expectedHorizonDays: 5,
-            reasonSummary: `보유 종목 추가매수 (점수 ${candidate.score.toFixed(1)})`,
-            reasonDetails: {
-              trigger: "add-on-buy",
-              addOnQty,
-              addOnInvested,
-              price: executionPrice,
-              priceSource: executionSource,
-              nextQty,
-              nextBuyPrice,
-              score: candidate.score,
-              signalTrust: {
-                score: signalGate.trustScore,
-                grade: signalGate.grade,
-                metrics: signalGate.metrics,
-              },
-            },
-            linkedTradeId: tradeId ?? undefined,
-          }).catch((err: unknown) => console.error("[autoTrade] decision log add-on BUY failed", err));
+          if (bought.outcome === "skipped") continue;
+          availableCash = bought.availableCash;
+          deployableCash = bought.deployableCash;
+          addOnBuyCount += 1;
         } catch (error: unknown) {
           const message = extractErrorMessage(error);
           summary.errors += 1;
