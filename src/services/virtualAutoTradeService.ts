@@ -2137,6 +2137,15 @@ const {
   getPrefs: getUserInvestmentPrefs,
   setPrefs: setUserInvestmentPrefs,
   appendTradeLog,
+  appendDecisionLog: (log) =>
+    appendVirtualDecisionLog({
+      chatId: log.chatId,
+      code: log.code,
+      action: log.action,
+      strategyId: log.strategyId ?? undefined,
+      strategyVersion: "v1",
+      reasonSummary: log.reasonSummary,
+    }),
   overlayIntradayPrices,
 });
 

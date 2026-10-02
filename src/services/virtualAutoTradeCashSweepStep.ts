@@ -46,6 +46,14 @@ export type CashSweepDeps = {
   /** 실패 시 예외 대신 ok:false를 돌려준다 (setUserInvestmentPrefs와 같은 계약) */
   setPrefs: (chatId: number, patch: Record<string, number>) => Promise<{ ok: boolean }>;
   appendTradeLog: (payload: CashSweepTradeLog) => Promise<unknown>;
+  /** 거래 기록 화면(결정 로그)에도 남긴다 — 지수·스윕 매매가 종목 봇 경로를 거치지 않아 거기엔 기록이 없었다. 실패해도 매매는 유지 */
+  appendDecisionLog?: (payload: {
+    chatId: number;
+    code: string;
+    action: "BUY" | "SELL";
+    strategyId: string | null;
+    reasonSummary: string;
+  }) => Promise<unknown>;
   /** 장중이면 가격을 실시간가로 덮어쓰고, 실시간가를 못 받은 종목은 0으로 지운다 */
   overlayIntradayPrices: (prices: Map<string, number>, codes: string[]) => Promise<unknown>;
 };
@@ -173,6 +181,20 @@ export function createCashSweepSteps(deps: CashSweepDeps) {
       await deps.appendTradeLog(input.tradeLog);
     } catch (e) {
       console.error("[autoTrade] cash sweep: 거래기록 저장 실패 (현금·포지션은 반영됨)", e);
+    }
+
+    try {
+      const memo = parseStrategyMemo(input.tradeLog.memo ?? "");
+      const verb = input.tradeLog.side === "BUY" ? "매수" : "매도";
+      await deps.appendDecisionLog?.({
+        chatId: input.chatId,
+        code: input.tradeLog.code,
+        action: input.tradeLog.side,
+        strategyId: memo.strategyId ?? null,
+        reasonSummary: `지수 ETF ${verb} ${input.tradeLog.quantity}주 · ${Math.round(input.tradeLog.price).toLocaleString("ko-KR")}원${memo.note ? ` (${memo.note})` : ""}`,
+      });
+    } catch (e) {
+      console.error("[autoTrade] cash sweep: 결정 로그 저장 실패 (매매는 반영됨)", e);
     }
   }
 
