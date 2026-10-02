@@ -1,4 +1,5 @@
 import React, { useEffect, useRef } from 'react'
+import { createPortal } from 'react-dom'
 
 interface ModalProps {
   isOpen?: boolean
@@ -75,11 +76,12 @@ export default function Modal({ isOpen, open, title, onClose, children, size = '
     }
   }, [getFocusableElements, modalOpen])
 
-  if (!modalOpen) return null
+  if (!modalOpen || typeof document === 'undefined') return null
 
   const maxW = size === 'sm' ? '28rem' : size === 'lg' ? '48rem' : '36rem'
 
-  return (
+  // 본문 영역의 쌓임 맥락(스크롤 패널·시트탭) 안에 갇혀 하단 시트탭에 가려지지 않도록 body로 띄운다.
+  return createPortal(
     <div
       className="modal-overlay"
       ref={overlayRef}
@@ -101,6 +103,7 @@ export default function Modal({ isOpen, open, title, onClose, children, size = '
         </div>
         {children}
       </div>
-    </div>
+    </div>,
+    document.body,
   )
 }

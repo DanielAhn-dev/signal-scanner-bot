@@ -1709,10 +1709,9 @@
    STATUS BAR — 최하단 상태 바
    ================================================================ */
 .excel-statusbar {
-  /* iOS 홈 화면 앱: 글자가 둥근 화면 모서리에 가려지지 않게 바닥에서 조금만 띄운다.
-     안전영역(홈 인디케이터, 약 34px)을 전부 채우면 바가 너무 길어져서 상한을 둔다.
-     그 아래 남는 틈은 html/body 바탕색(초록)이 채운다. */
-  --statusbar-lift: min(env(safe-area-inset-bottom, 0px), 12px);
+  /* iOS 홈 화면 앱: 글자와 홈 인디케이터 사이, 인디케이터와 화면 끝 사이 여백이 비슷해지도록
+     안전영역(약 34px) 대신 상한을 둔다. 앱은 화면 끝까지 채운다. */
+  --statusbar-lift: min(env(safe-area-inset-bottom, 0px), 20px);
   box-sizing: border-box;
   height: calc(var(--statusbar-height) + var(--statusbar-lift));
   background: var(--color-excel-title-bar);
@@ -4261,6 +4260,6 @@
     position: fixed;
     top: var(--vv-top, 0px);
     left: 0;
-    height: calc(var(--app-vh, 100dvh) / var(--excel-global-zoom));
+    height: calc(var(--app-vh, 100%) / var(--excel-global-zoom));
   }
 }
