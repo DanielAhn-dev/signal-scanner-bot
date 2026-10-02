@@ -30,10 +30,12 @@ type PortfolioSummary = {
 // 관리자의 오늘의 플로우는 navigation.ts FLOW_STEPS(탭 순서와 같은 정의)에서 그린다
 // 일반 사용자는 시드 모으기 → 목표 확인 → 금액 넣어 시뮬레이션 → 따라 하기 순서만 안내한다
 const USER_TODO_STEPS: Array<{ key: string; label: string; desc: string }> = [
+  { key: 'start', label: '시작하기', desc: '수입·목표를 적고 가상 계좌로 시작' },
   { key: 'seed-builder', label: '시드 만들기', desc: '이번 달 얼마를 모을지 정하기' },
   { key: 'goal-tracker', label: '목표 확인', desc: '목표까지 얼마나 왔는지 보기' },
   { key: 'simulator', label: '시뮬레이터', desc: '투자금액을 넣고 결과 미리 보기' },
   { key: 'execution-guide', label: '실행가이드', desc: '정리된 주문을 따라 하기' },
+  { key: 'follow', label: '따라 사기', desc: '봇 거래를 따라 체결하고 결산 보기' },
   { key: 'portfolio', label: '내 포트폴리오', desc: '보유 종목과 손익 확인' },
 ]
 

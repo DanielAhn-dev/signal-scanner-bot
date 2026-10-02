@@ -49,6 +49,8 @@ export const TOOL_NAV_GROUPS: NavGroup[] = [
   {
     category: '보유 / 기록',
     items: [
+      { key: 'start', label: '시작하기' },
+      { key: 'follow', label: '따라 사기' },
       { key: 'goal-tracker', label: '목표 트래커' },
       { key: 'seed-builder', label: '시드 만들기' },
       { key: 'income-guide', label: '리밸런싱 가이드' },
@@ -103,6 +105,8 @@ export type NavKey = NavItem['key']
  */
 export const USER_NAV_KEYS: readonly string[] = [
   'dashboard',
+  'start',
+  'follow',
   'seed-builder',
   'simulator',
   'execution-guide',
