@@ -13,6 +13,9 @@ import { useDetailed } from '../../stores/viewModeStore'
 import GoalSummaryStrip from '../goal-tracker/GoalSummaryStrip'
 import { useGoalTracker } from '../goal-tracker/useGoalTracker'
 import { loadTradeCostSettings, resolveSellCostPct } from '../../lib/tradeCost'
+import { adviseHoldings, type Holding } from '../../lib/holdingAdvice'
+import { readUserState } from '../../lib/userState'
+import { personalSetup, type InvestorProfile } from '../../lib/startPlan'
 
 type SectorItem = {
   name?: string
@@ -39,6 +42,17 @@ const USER_TODO_STEPS: Array<{ key: string; label: string; desc: string }> = [
   { key: 'follow', label: '따라 사기', desc: '봇 거래를 따라 체결하고 결산 보기' },
   { key: 'portfolio', label: '내 포트폴리오', desc: '보유 종목과 손익 확인' },
 ]
+
+type MarketTileKey = 'kospi' | 'kosdaq' | 'sp500' | 'nasdaq' | 'usdkrw' | 'gold'
+const MARKET_TILES: Array<{ key: MarketTileKey; label: string }> = [
+  { key: 'kospi', label: '코스피' },
+  { key: 'kosdaq', label: '코스닥' },
+  { key: 'sp500', label: 'S&P 500' },
+  { key: 'nasdaq', label: '나스닥' },
+  { key: 'usdkrw', label: '원/달러' },
+  { key: 'gold', label: '금' },
+]
+const NEWS_LIMIT = 5
 
 // 셀 스타일 헬퍼
 const S = {
@@ -123,6 +137,9 @@ export default function Dashboard({ onNavigate }: { onNavigate?: (r: string) => 
   const [topSector, setTopSector] = useState<string>('')
   const [lastScan, setLastScan] = useState<{ tradeDate: string | null; updatedAt: string | null } | null>(null)
   const [fillerRows, setFillerRows] = useState(0)
+  const [indices, setIndices] = useState<Partial<Record<MarketTileKey, { price?: number; changeRate?: number }>> | null>(null)
+  const [realHoldings, setRealHoldings] = useState<Holding[] | null>(null)
+  const [news, setNews] = useState<Array<{ title: string; link?: string; source?: string }>>([])
 
   // chatId가 준비되면 포트폴리오 로드 (스토어 hydration 완료 후 실행)
   useEffect(() => {
@@ -135,6 +152,38 @@ export default function Dashboard({ onNavigate }: { onNavigate?: (r: string) => 
       if (res?.ok && res.data) setPortfolio(res.data)
     }).catch(() => {})
   }, [chatId])
+
+  // 실계좌로 직접 입력한 보유 종목 — 있으면 종목별 대응, 없으면 지수 따라 하기 예상치를 보여준다
+  useEffect(() => {
+    if (!chatId) return
+    const params = new URLSearchParams({ page: '1', pageSize: '50', includeLots: '0', positionType: 'holding' })
+    apiFetch(`/api/ui/positions?${params}`, { cacheMs: 30_000, timeoutMs: 15_000, retries: 0 })
+      .then((res) => {
+        const rows: any[] = Array.isArray(res?.data) ? res.data : []
+        setRealHoldings(rows.filter((r) => r?.account_kind === 'account').map((r) => ({
+          code: String(r.code ?? ''), name: String(r.stock_name ?? r.name ?? r.code ?? ''),
+          quantity: Number(r.quantity) || 0, avgPrice: Number(r.avg_price) || 0, currentPrice: Number(r.current_price) || 0,
+        })))
+      })
+      .catch(() => {})
+  }, [chatId])
+
+  // 오늘의 시장·뉴스: 누구에게나 보이는 사실 정보
+  useEffect(() => {
+    apiFetch('/api/market-overview', { cacheMs: 60_000, timeoutMs: 20_000, retries: 0 })
+      .then(res => { if (res?.data?.indices) setIndices(res.data.indices) })
+      .catch(() => {})
+    apiFetch('/api/ui/news?page=1&pageSize=8', { cacheMs: 60_000, timeoutMs: 12_000 })
+      .then(res => {
+        const rows: unknown[] = Array.isArray(res?.data) ? res.data : []
+        setNews(rows.map((r: any) => ({
+          title: String(r?.title ?? '').replace(/<[^>]+>/g, '').replace(/&quot;/g, '"').replace(/&amp;/g, '&').replace(/&#39;/g, "'").trim(),
+          link: String(r?.link ?? r?.url ?? '').trim() || undefined,
+          source: String(r?.source ?? '').trim() || undefined,
+        })).filter(n => n.title).slice(0, NEWS_LIMIT))
+      })
+      .catch(() => {})
+  }, [])
 
   useEffect(() => {
     apiFetch('/api/ui?route=sectors&top=8', { cacheMs: 300_000 }).then(res => {
@@ -162,6 +211,14 @@ export default function Dashboard({ onNavigate }: { onNavigate?: (r: string) => 
   }, [])
 
   const nav = (r: string) => onNavigate?.(r)
+
+  const advice = (() => {
+    if (!realHoldings) return null
+    const profile = readUserState<InvestorProfile>('investorProfile')
+    const level = profile ? personalSetup(profile, 0).level : 'safe'
+    const { buyFeeRatePct, sellFeeRatePct } = loadTradeCostSettings()
+    return adviseHoldings({ holdings: realHoldings, level, sellCostPct: (code) => resolveSellCostPct({ code, sellRatePct: sellFeeRatePct, feeRatePct: buyFeeRatePct }) })
+  })()
 
   const posCount = portfolio?.positions?.length ?? 0
   // 포트폴리오 화면의 매매비용 설정(차감 여부·요율)을 그대로 따른다
@@ -287,6 +344,128 @@ export default function Dashboard({ onNavigate }: { onNavigate?: (r: string) => 
           </tr>
 
           {/* ── 구분선 ── */}
+          <tr className="xls-row">
+            <td className="xls-row-num">{rowNum()}</td>
+            <td className="xls-cell" colSpan={6} style={S.divider} />
+          </tr>
+
+          {/* ── 내 대응: 실계좌 개별 종목이 있으면 종목별 할 일, 없으면 지수를 따라 했을 때의 예상 ── */}
+          {advice && (
+            <>
+              <tr className="xls-row">
+                <td className="xls-row-num">{rowNum()}</td>
+                <td className="xls-cell" colSpan={6} style={S.sectionTitle}>
+                  {advice.length > 0 ? '내 보유 종목, 이렇게 대응하세요' : '이대로 따라 하면'}
+                  <span style={{ float: 'right', color: 'var(--color-brand)', cursor: 'pointer', fontSize: 10, fontWeight: 400 }} onClick={() => nav(advice.length > 0 ? 'portfolio' : 'goal-tracker')}>
+                    {advice.length > 0 ? '보유 입력·수정 →' : '목표 자세히 →'}
+                  </span>
+                </td>
+              </tr>
+              {advice.length === 0 && (
+                <tr className="xls-row xls-row--even">
+                  <td className="xls-row-num">{rowNum()}</td>
+                  <td className="xls-cell" colSpan={6} style={{ whiteSpace: 'normal', lineHeight: 1.6, fontSize: 11, padding: '6px 8px' }}>
+                    {goalView ? (
+                      <>
+                        지금 목표 달성률 <strong>{goalView.target.progressPct.toFixed(0)}%</strong>
+                        {goalView.target.etaMonth
+                          ? <> · 매달 적립하며 과거 평균(연 {goalView.settings.planAnnualPct}%) 수익이 이어지면 <strong>{goalView.target.etaMonth}</strong> 무렵 도달 예상</>
+                          : <> · 지금 속도로는 도달 시점을 잡기 어렵습니다. 월 적립이나 목표를 조정해 보세요</>}
+                        <span style={{ display: 'block', color: 'var(--color-text-tertiary)', fontSize: 10 }}>과거 평균일 뿐 보장이 아닙니다. 개별 종목을 직접 사셨다면 포트폴리오에 입력하면 종목별 대응을 알려드려요.</span>
+                      </>
+                    ) : '시작하기를 마치면 예상 달성 시점을 보여드립니다.'}
+                  </td>
+                </tr>
+              )}
+              {advice.map((a, i) => (
+                <tr key={`adv${a.code}`} className={`xls-row${i % 2 === 0 ? ' xls-row--even' : ''}`}>
+                  <td className="xls-row-num">{rowNum()}</td>
+                  <td className="xls-cell" colSpan={6} style={{ whiteSpace: 'normal', lineHeight: 1.5, fontSize: 11, padding: '6px 8px' }}>
+                    <span style={{ fontWeight: 700 }}>{a.name}</span>
+                    <span style={{ marginLeft: 6, fontSize: 10, color: changeColor(a.pnlPct) }}>{fmtChange(a.pnlPct)}</span>
+                    <span style={{ marginLeft: 6, fontSize: 10, color: 'var(--color-text-tertiary)' }}>비중 {a.weightPct.toFixed(0)}%</span>
+                    <span style={{ display: 'block', color: 'var(--color-brand)', fontWeight: 700 }}>→ {a.headline}</span>
+                    <span style={{ display: 'block', color: 'var(--color-text-secondary)', fontSize: 10 }}>{a.detail}</span>
+                  </td>
+                </tr>
+              ))}
+              <tr className="xls-row">
+                <td className="xls-row-num">{rowNum()}</td>
+                <td className="xls-cell" colSpan={6} style={S.divider} />
+              </tr>
+            </>
+          )}
+
+          {/* ── 오늘의 시장: 지수·환율 (사실 정보만, 봇 판단 근거는 제외) ── */}
+          <tr className="xls-row">
+            <td className="xls-row-num">{rowNum()}</td>
+            <td className="xls-cell" colSpan={6} style={S.sectionTitle}>
+              오늘의 시장
+              <span style={{ float: 'right', color: 'var(--color-brand)', cursor: 'pointer', fontSize: 10, fontWeight: 400 }} onClick={() => nav('market')}>
+                더 보기 →
+              </span>
+            </td>
+          </tr>
+          {Array.from({ length: Math.ceil(MARKET_TILES.length / 2) }, (_, i) => (
+            <tr key={`mk${i}`} className={`xls-row${i % 2 === 0 ? ' xls-row--even' : ''}`}>
+              <td className="xls-row-num">{rowNum()}</td>
+              {[MARKET_TILES[i * 2], MARKET_TILES[i * 2 + 1]].map((tile, j) => {
+                const idx = tile ? indices?.[tile.key] : undefined
+                const rate = idx?.changeRate
+                return (
+                  <td key={j} className="xls-cell" colSpan={3} style={{ padding: '4px 6px', ...(j === 0 ? S.midBorder : {}) }}>
+                    {tile && (
+                      <>
+                        <span style={{ fontSize: 10, color: 'var(--color-text-secondary)' }}>{tile.label}</span>
+                        <span style={{ display: 'block', fontSize: 14, fontWeight: 700, lineHeight: 1.3 }}>
+                          {idx?.price != null ? idx.price.toLocaleString('ko-KR', { maximumFractionDigits: 2 }) : '—'}
+                          {rate != null && (
+                            <span style={{ fontSize: 10, fontWeight: 600, marginLeft: 6, color: changeColor(rate) }}>{fmtChange(rate)}</span>
+                          )}
+                        </span>
+                      </>
+                    )}
+                  </td>
+                )
+              })}
+            </tr>
+          ))}
+
+          <tr className="xls-row">
+            <td className="xls-row-num">{rowNum()}</td>
+            <td className="xls-cell" colSpan={6} style={S.divider} />
+          </tr>
+
+          {/* ── 주요 뉴스 ── */}
+          <tr className="xls-row">
+            <td className="xls-row-num">{rowNum()}</td>
+            <td className="xls-cell" colSpan={6} style={S.sectionTitle}>
+              주요 뉴스
+              <span style={{ float: 'right', color: 'var(--color-brand)', cursor: 'pointer', fontSize: 10, fontWeight: 400 }} onClick={() => nav('news')}>
+                전체 보기 →
+              </span>
+            </td>
+          </tr>
+          {news.length === 0 && (
+            <tr className="xls-row xls-row--even">
+              <td className="xls-row-num">{rowNum()}</td>
+              <td className="xls-cell" colSpan={6} style={{ fontSize: 10, color: 'var(--color-text-tertiary)' }}>
+                뉴스를 불러오는 중이거나 아직 없습니다
+              </td>
+            </tr>
+          )}
+          {news.map((n, i) => (
+            <tr key={`nw${i}`} className={`xls-row${i % 2 === 0 ? ' xls-row--even' : ''}`}>
+              <td className="xls-row-num">{rowNum()}</td>
+              <td className="xls-cell" colSpan={6} style={{ whiteSpace: 'normal', lineHeight: 1.5, fontSize: 11 }}>
+                {n.link ? (
+                  <a href={n.link} target="_blank" rel="noopener noreferrer" style={{ color: 'inherit', textDecoration: 'none' }}>{n.title}</a>
+                ) : n.title}
+                {n.source && <span style={{ marginLeft: 6, fontSize: 9, color: 'var(--color-text-tertiary)' }}>{n.source}</span>}
+              </td>
+            </tr>
+          ))}
+
           <tr className="xls-row">
             <td className="xls-row-num">{rowNum()}</td>
             <td className="xls-cell" colSpan={6} style={S.divider} />
