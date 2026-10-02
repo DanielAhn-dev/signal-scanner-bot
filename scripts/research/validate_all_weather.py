@@ -139,9 +139,9 @@ def main():
     retsu = {n: run(Rusd, w, rc, rb, dates) for n, (w, rb) in strat.items() if n in ("SPY 100%", "60/40 (SPY·IEF)", "올웨더(달리오 30/40/15/7.5/7.5)")}
     report("A'. 달러 기준(환 영향 제거)", dates, retsu, rc, cuts)
 
-    print("\n연도별 수익률(%, 원화)  SPY / 60·40 / 올웨더 / 영구")
+    print("\n연도별 수익률(%, 원화)  SPY / 60·40 / 올웨더 / 영구 / 주60·채20·금20")
     yrs = list(range(2007, 2027))
-    cols = [year_returns(dates, rets[k], yrs) for k in ("SPY 100%", "60/40 (SPY·IEF)", "올웨더(달리오 30/40/15/7.5/7.5)", "영구포트폴리오 25x4")]
+    cols = [year_returns(dates, rets[k], yrs) for k in ("SPY 100%", "60/40 (SPY·IEF)", "올웨더(달리오 30/40/15/7.5/7.5)", "영구포트폴리오 25x4", "주식 60·채권 20·금 20")]
     for y, *v in zip(yrs, *cols):
         print(f"  {y}  " + "  ".join(f"{x:7.1f}" for x in v))
 
