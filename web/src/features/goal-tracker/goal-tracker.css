@@ -29,7 +29,22 @@
 .goal-form { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; }
 .goal-field { display: flex; flex-direction: column; gap: 4px; }
 .goal-field label { font-size: 12px; font-weight: 600; }
-.goal-field input { width: 100%; box-sizing: border-box; }
+.goal-field input {
+  width: 100%;
+  box-sizing: border-box;
+  min-height: 40px;
+  padding: 8px 10px;
+  font-size: 16px; /* 16px 미만이면 iOS가 포커스 시 화면을 확대함 */
+  color: var(--color-text-primary, inherit);
+  background: var(--color-bg-subtle, rgba(127, 127, 127, 0.08));
+  border: 1px solid var(--color-border-strong, rgba(127, 127, 127, 0.55));
+  border-radius: 6px;
+}
+.goal-field input:focus {
+  outline: none;
+  border-color: var(--color-brand, #2f6f68);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-brand, #2f6f68) 30%, transparent);
+}
 .goal-field__hint { font-size: 11px; color: var(--color-text-secondary); }
 .goal-actions { display: flex; gap: 8px; margin-top: 12px; align-items: center; flex-wrap: wrap; }
 .goal-error { color: var(--color-error); }

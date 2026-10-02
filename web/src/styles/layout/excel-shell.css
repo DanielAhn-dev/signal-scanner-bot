@@ -1711,7 +1711,7 @@
 .excel-statusbar {
   /* iOS 홈 화면 앱: 글자와 홈 인디케이터 사이, 인디케이터와 화면 끝 사이 여백이 비슷해지도록
      안전영역(약 34px) 대신 상한을 둔다. 앱은 화면 끝까지 채운다. */
-  --statusbar-lift: min(env(safe-area-inset-bottom, 0px), 20px);
+  --statusbar-lift: min(env(safe-area-inset-bottom, 0px), 6px);
   box-sizing: border-box;
   height: calc(var(--statusbar-height) + var(--statusbar-lift));
   background: var(--color-excel-title-bar);

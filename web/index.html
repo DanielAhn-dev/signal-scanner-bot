@@ -2,7 +2,7 @@
 <html lang="ko">
   <head>
     <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
     <title>Nexora</title>
 
     <!-- 본문 폰트: tokens.css의 --font-family-sans가 'Pretendard Variable'을 1순위로 쓰지만
@@ -30,6 +30,12 @@
   </head>
   <body>
     <div id="root"></div>
+    <script>
+      // iOS Safari는 user-scalable=no를 무시하므로 핀치 제스처를 직접 막는다
+      ['gesturestart', 'gesturechange', 'gestureend'].forEach(function (t) {
+        document.addEventListener(t, function (e) { e.preventDefault() })
+      })
+    </script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
