@@ -105,6 +105,9 @@ export function calculateScore(
     // OHLCV 이상값 제거 후 날짜순 정렬
     const sorted = sanitizeOHLCV(data);
     if (sorted.length < 200) return null;
+    // 가장 최근 봉이 이상값으로 제거됐다면 그 이전 봉으로 점수를 만들게 되어 오늘자 점수가 아니다
+    const rawLatest = data.reduce((best, d) => (String(d.date) > best ? String(d.date) : best), "");
+    if (String(sorted[sorted.length - 1].date).slice(0, 10) < rawLatest.slice(0, 10)) return null;
     const closes = sorted.map((d) => d.close);
     const vols = sorted.map((d) => d.volume);
     const lastIdx = closes.length - 1;

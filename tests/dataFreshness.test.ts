@@ -18,3 +18,23 @@ test("dataFreshness: 오늘 기준 날짜는 stale 아님", () => {
 
   assert.equal(isBusinessStale(today, 1), false);
 });
+
+import { evaluateCoverage, buildFreshnessAlertMessage } from "../src/services/dataFreshnessMonitorService";
+
+test("evaluateCoverage: 직전 거래일의 85% 미만이면 부분 적재", () => {
+  assert.equal(evaluateCoverage(100, 1000).isLowCoverage, true);
+  assert.equal(evaluateCoverage(900, 1000).isLowCoverage, false);
+  assert.equal(evaluateCoverage(231, 230).isLowCoverage, false);
+});
+
+test("evaluateCoverage: 기준 표본이 작거나 조회 실패면 판정하지 않는다", () => {
+  assert.equal(evaluateCoverage(1, 10).isLowCoverage, false);
+  assert.equal(evaluateCoverage(null, 1000).isLowCoverage, false);
+});
+
+test("buildFreshnessAlertMessage: 부분 적재 행 수를 함께 알린다", () => {
+  const msg = buildFreshnessAlertMessage([
+    { key: "ohlcv", label: "OHLCV", latestDate: "2026-10-01", staleBizDays: 0, isStale: true, maxBizDays: 1, isLowCoverage: true, latestCount: 3, prevCount: 230 },
+  ]);
+  assert.ok(msg?.includes("3행 / 직전 거래일 230행"));
+});

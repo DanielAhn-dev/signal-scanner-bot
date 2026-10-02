@@ -39,6 +39,11 @@ export type ScoreSyncOptions = {
   limit?: number;
   concurrency?: number;
   fastMode?: boolean;
+  /**
+   * 과거 날짜(point-in-time) 재계산이 이미 기록된 점수 행을 덮어쓰게 허용한다. 기본은 false.
+   * 기본 동작은 당시 봇이 실제로 낸 점수·신호를 보존하고 비어 있던 팩터만 채운다(전향검증 오염 방지).
+   */
+  overwriteExisting?: boolean;
 };
 
 const DEFAULT_LIMIT = 1500;
@@ -215,7 +220,48 @@ async function fetchInvestorFlowByCodes(
   return map;
 }
 
-async function upsertRowsByBatch(supabase: SupabaseClient, rows: ScoreUpsertRow[]) {
+/**
+ * 이미 기록된 행의 팩터에 없는 키만 새 값으로 채운 팩터를 만든다(기존 값은 절대 바꾸지 않는다).
+ * 재계산·백필이 "당시 봇이 실제로 낸 점수"를 지금 기준 값으로 바꿔 전향검증을 오염시키는 것을 막는다.
+ */
+export function mergeAddOnlyFactors(
+  existing: Record<string, unknown> | null | undefined,
+  incoming: Record<string, unknown>
+): Record<string, unknown> {
+  const base = existing && typeof existing === "object" ? existing : {};
+  const merged: Record<string, unknown> = { ...base };
+  for (const [key, value] of Object.entries(incoming)) {
+    if (key === "score_source" || key === "last_bar_date") continue;
+    if (merged[key] === undefined || merged[key] === null) merged[key] = value;
+  }
+  return merged;
+}
+
+async function protectRecordedRows(
+  supabase: SupabaseClient,
+  asof: string,
+  rows: ScoreUpsertRow[]
+): Promise<{ rows: Array<ScoreUpsertRow | { code: string; asof: string; factors: Record<string, unknown> }>; preserved: number }> {
+  const existing = new Map<string, Record<string, unknown>>();
+  for (const codes of chunkValues(rows.map((r) => r.code), 200)) {
+    const { data, error } = await supabase.from("scores").select("code, factors").eq("asof", asof).in("code", codes);
+    if (error) throw new Error(`기존 점수 조회 실패(${asof}): ${error.message}`);
+    for (const row of (data ?? []) as Array<{ code: string; factors: Record<string, unknown> | null }>) {
+      existing.set(row.code, (row.factors ?? {}) as Record<string, unknown>);
+    }
+  }
+  let preserved = 0;
+  const out = rows.map((row) => {
+    const prev = existing.get(row.code);
+    // 행이 없거나, 앞선 재계산(engine_pit)이 만든 행이면 그대로 쓴다. 그 외는 실제 기록이므로 보존한다.
+    if (!prev || prev.score_source === "engine_pit") return row;
+    preserved += 1;
+    return { code: row.code, asof: row.asof, factors: mergeAddOnlyFactors(prev, row.factors) };
+  });
+  return { rows: out, preserved };
+}
+
+async function upsertRowsByBatch(supabase: SupabaseClient, rows: Array<Record<string, unknown>>) {
   const batchSize = 120;
   for (let i = 0; i < rows.length; i += batchSize) {
     const batch = rows.slice(i, i + batchSize);
@@ -371,7 +417,12 @@ export async function syncScoresFromEngine(
           liquidity_score: liquidityScore,
           value_score: valueScore,
           // 점수 생성 경로 표시: Python 폴백(legacy_fallback)과 섞인 이력을 학습·백테스트에서 구분하기 위함
-          factors: { ...scored.factors, score_source: pointInTime ? "engine_pit" : "engine" },
+          factors: {
+            ...scored.factors,
+            score_source: pointInTime ? "engine_pit" : "engine",
+            // 점수가 실제로 계산된 마지막 봉 날짜 — asof와 어긋나면 낡은 데이터로 계산된 점수임을 사후에 알 수 있다
+            last_bar_date: String(scored.date).slice(0, 10),
+          },
         });
         processedCount += 1;
       } catch {
@@ -382,7 +433,15 @@ export async function syncScoresFromEngine(
 
   await Promise.all(workers);
   if (upsertRows.length) {
-    await upsertRowsByBatch(supabase, upsertRows);
+    if (pointInTime && !options.overwriteExisting) {
+      const protectedRows = await protectRecordedRows(supabase, asof, upsertRows);
+      if (protectedRows.preserved > 0) {
+        console.log(`[scoreSync] ${asof} 기존 기록 ${protectedRows.preserved}건은 점수·신호를 보존하고 빈 팩터만 채움`);
+      }
+      await upsertRowsByBatch(supabase, protectedRows.rows);
+    } else {
+      await upsertRowsByBatch(supabase, upsertRows);
+    }
   }
 
   return {

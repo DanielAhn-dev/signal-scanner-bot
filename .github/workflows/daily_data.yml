@@ -96,6 +96,12 @@ jobs:
           python -u scripts/daily_batch.py $ARGS
           echo "🏁 Finished: $(date)"
 
+      # 배치가 끝났어도 일부 종목만 적재됐거나 오늘 날짜 데이터가 비어 있으면 즉시 알린다
+      # (정합성 크론·장 전 브리핑은 다음 날에야 알려준다). 이상이면 이 단계가 실패해 워크플로도 빨간불이 된다.
+      - name: Verify batch result
+        if: always()
+        run: pnpm exec tsx scripts/ops/verify_batch_result.ts
+
       # 전략 경쟁 측정(전향 검증): 매일 그날의 실적 관문 판정·봇 계좌 평가액을 저장하고(--record) 웹 결과를 갱신한다.
       # 텔레그램 보고는 금요일 배치에서만 (scripts/strategy_forward_test.ts).
       - name: Strategy forward test

@@ -140,6 +140,8 @@ import { BUY_CASH_BUFFER, createCashSweepSteps } from "./virtualAutoTradeCashSwe
 import { createIndexHoldSteps } from "./virtualAutoTradeIndexHoldStep";
 import { createAutoTradeBuyStep } from "./virtualAutoTradeBuyStep";
 import { decideHoldingExit, extractScoreFactors } from "./virtualAutoTradeExitDecision";
+import { assessAutoTradeDataQuality } from "./virtualAutoTradeDataQuality";
+import { getPartialLoadLabels } from "./dataFreshnessMonitorService";
 import { buildHoldingQuoteMaps, evaluateQuoteStaleness, resolveReviewCash } from "./virtualAutoTradeDailyContext";
 import {
   ADD_ON_MIN_GAIN_PCT,
@@ -2623,76 +2625,6 @@ async function getLatestInvestorAsof(
   return String((data as Record<string, unknown>).date ?? "") || null;
 }
 
-type AutoTradeDataQuality = {
-  qualityScore: number;
-  band: "high" | "medium" | "low";
-  limitScale: number;
-  minScoreBoost: number;
-  blockNewBuys: boolean;
-  note: string;
-  investorStaleBusinessDays: number | null;
-};
-
-function assessAutoTradeDataQuality(input: {
-  scoreStaleBusinessDays: number;
-  investorStaleBusinessDays: number | null;
-}): AutoTradeDataQuality {
-  const scoreLag = Math.max(0, Math.floor(toNumber(input.scoreStaleBusinessDays, 0)));
-  const invLag =
-    input.investorStaleBusinessDays == null
-      ? null
-      : Math.max(0, Math.floor(toNumber(input.investorStaleBusinessDays, 0)));
-
-  let qualityScore = 100;
-  qualityScore -= scoreLag * 12;
-  if (invLag == null) {
-    qualityScore -= 40;
-  } else {
-    qualityScore -= invLag * 8;
-  }
-  qualityScore = clamp(qualityScore, 0, 100);
-
-  if (scoreLag >= 2 || invLag == null || invLag >= 6) {
-    return {
-      qualityScore,
-      band: "low",
-      limitScale: 0.0,
-      minScoreBoost: 8,
-      blockNewBuys: true,
-      note:
-        invLag == null
-          ? "수급 기준일 확인 불가로 신규 매수 차단"
-          : `수급 기준일 지연(${invLag}영업일)으로 신규 매수 차단`,
-      investorStaleBusinessDays: invLag,
-    };
-  }
-
-  if (scoreLag >= 1 || (invLag != null && invLag >= 3)) {
-    return {
-      qualityScore,
-      band: "medium",
-      limitScale: 0.6,
-      minScoreBoost: 4,
-      blockNewBuys: false,
-      note:
-        invLag != null && invLag >= 3
-          ? `수급 지연(${invLag}영업일)으로 진입 수 축소(60%) + 최소점수 +4 보수화`
-          : "점수 기준일 1영업일 지연으로 진입 수 축소(60%) + 최소점수 +4 보수화",
-      investorStaleBusinessDays: invLag,
-    };
-  }
-
-  return {
-    qualityScore,
-    band: "high",
-    limitScale: 1,
-    minScoreBoost: 0,
-    blockNewBuys: false,
-    note: invLag == null ? "데이터 품질 판단 제한" : "데이터 품질 양호",
-    investorStaleBusinessDays: invLag,
-  };
-}
-
 async function fetchLatestRankedRows(payload: {
   supabase: SupabaseClientAny;
   limit: number;
@@ -2921,6 +2853,7 @@ async function selectMondayCandidates(payload: {
   const dataQuality = assessAutoTradeDataQuality({
     scoreStaleBusinessDays: staleBusinessDays,
     investorStaleBusinessDays,
+    partialLoadLabels: await getPartialLoadLabels(payload.supabase as never),
   });
 
   if (dataQuality.blockNewBuys) {

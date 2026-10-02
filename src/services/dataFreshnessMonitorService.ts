@@ -15,6 +15,12 @@ export type FreshnessItem = {
   staleBizDays: number | null
   isStale: boolean
   maxBizDays: number
+  /** 최신일 행 수 / 직전 거래일 행 수 (조회 실패·기준 표본 부족이면 null) */
+  coverageRatio?: number | null
+  latestCount?: number | null
+  prevCount?: number | null
+  /** 날짜는 최신인데 행 수가 급감한 경우(배치가 일부만 적재된 상태) */
+  isLowCoverage?: boolean
 }
 
 export type FreshnessReport = {
@@ -65,13 +71,81 @@ async function fetchLatestDate(
   return String(value).slice(0, 10)
 }
 
+/** 최신일 행 수가 직전 거래일 대비 이 비율 미만이면 부분 적재로 본다 */
+const MIN_COVERAGE_RATIO = 0.85
+/** 직전 거래일 행 수가 이보다 적으면 비교가 무의미해 판정하지 않는다 */
+const MIN_BASELINE_ROWS = 50
+
+function nextDay(ymd: string): string {
+  return new Date(Date.parse(`${ymd}T00:00:00.000Z`) + 86_400_000).toISOString().slice(0, 10)
+}
+
+async function countRowsOnDate(
+  supabase: SupabaseClient,
+  table: string,
+  column: string,
+  ymd: string
+): Promise<number | null> {
+  const { count, error } = await supabase
+    .from(table)
+    .select(column, { count: 'exact', head: true })
+    .gte(column, ymd)
+    .lt(column, nextDay(ymd))
+  if (error) return null
+  return count ?? null
+}
+
+export type CoverageResult = {
+  latestCount: number | null
+  prevCount: number | null
+  coverageRatio: number | null
+  isLowCoverage: boolean
+}
+
+/** 순수 판정 — 행 수 두 개로 부분 적재 여부를 결정한다 */
+export function evaluateCoverage(latestCount: number | null, prevCount: number | null): CoverageResult {
+  if (latestCount == null || prevCount == null || prevCount < MIN_BASELINE_ROWS) {
+    return { latestCount, prevCount, coverageRatio: null, isLowCoverage: false }
+  }
+  const coverageRatio = latestCount / prevCount
+  return { latestCount, prevCount, coverageRatio, isLowCoverage: coverageRatio < MIN_COVERAGE_RATIO }
+}
+
+async function checkCoverage(
+  supabase: SupabaseClient,
+  table: string,
+  column: string,
+  latestDate: string
+): Promise<CoverageResult> {
+  const { data } = await supabase
+    .from(table)
+    .select(column)
+    .lt(column, latestDate)
+    .order(column, { ascending: false })
+    .limit(1)
+    .maybeSingle()
+  const prevRaw = data ? (data as unknown as Record<string, unknown>)[column] : null
+  const prevDate = prevRaw ? String(prevRaw).slice(0, 10) : null
+  if (!prevDate) return evaluateCoverage(null, null)
+  const [latestCount, prevCount] = await Promise.all([
+    countRowsOnDate(supabase, table, column, latestDate),
+    countRowsOnDate(supabase, table, column, prevDate),
+  ])
+  return evaluateCoverage(latestCount, prevCount)
+}
+
 export async function checkDataFreshness(supabase: SupabaseClient): Promise<FreshnessReport> {
   const results = await Promise.all(
     WATCHED_TABLES.map(async (cfg) => {
       const latestDate = await fetchLatestDate(supabase, cfg.table, cfg.dateColumn).catch(() => null)
       const staleBizDays = businessDaysBehind(latestDate)
-      const isStale = isBusinessStale(latestDate, cfg.maxBizDays)
+      const dateStale = isBusinessStale(latestDate, cfg.maxBizDays)
+      const coverage = latestDate
+        ? await checkCoverage(supabase, cfg.table, cfg.dateColumn, latestDate).catch(() => evaluateCoverage(null, null))
+        : evaluateCoverage(null, null)
+      const isStale = dateStale || coverage.isLowCoverage
       return {
+        ...coverage,
         key: cfg.key,
         label: cfg.label,
         latestDate,
@@ -95,6 +169,21 @@ export async function checkDataFreshness(supabase: SupabaseClient): Promise<Fres
   }
 }
 
+let partialLoadCache: { at: number; labels: string[] } | null = null
+const PARTIAL_LOAD_CACHE_MS = 10 * 60 * 1000
+
+/**
+ * 최신일 행 수가 급감한(부분 적재) 핵심 테이블 이름. 사용자마다 호출되므로 10분간 캐시한다.
+ * 조회 실패는 차단 사유로 쓰지 않는다(빈 배열) — 감시 장애가 매매 중단으로 번지지 않게 한다.
+ */
+export async function getPartialLoadLabels(supabase: SupabaseClient, nowMs = Date.now()): Promise<string[]> {
+  if (partialLoadCache && nowMs - partialLoadCache.at < PARTIAL_LOAD_CACHE_MS) return partialLoadCache.labels
+  const report = await checkDataFreshness(supabase).catch(() => null)
+  const labels = report ? report.staleItems.filter((i) => i.isLowCoverage).map((i) => i.label) : []
+  partialLoadCache = { at: nowMs, labels }
+  return labels
+}
+
 export function buildFreshnessAlertMessage(staleItems: FreshnessItem[]): string | null {
   if (staleItems.length === 0) return null
 
@@ -109,6 +198,9 @@ export function buildFreshnessAlertMessage(staleItems: FreshnessItem[]): string 
         : `${item.staleBizDays}영업일 지연`
     const dateLabel = item.latestDate ?? '없음'
     lines.push(`• <b>${item.label}</b>: 최근 ${dateLabel} (${dayLabel}, 허용 ${item.maxBizDays}영업일)`)
+    if (item.isLowCoverage && item.latestCount != null && item.prevCount != null) {
+      lines.push(`  ↳ 부분 적재 의심: 최신일 ${item.latestCount}행 / 직전 거래일 ${item.prevCount}행`)
+    }
   }
 
   lines.push('\n→ 일별 배치가 정상 실행됐는지 GitHub Actions 로그를 확인하세요.')

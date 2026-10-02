@@ -16,6 +16,31 @@ const MAX_DAILY_RATIO = 1.8;
 /** 전일 대비 허용 최소 배율 */
 const MIN_DAILY_RATIO = 0.2;
 
+/** 이 일수보다 길게 비어 있으면 가격 수준 변화를 분할이 아닌 실제 변동으로 본다 */
+const LEVEL_SHIFT_MAX_GAP_DAYS = 10;
+
+function calendarGapDays(from: string, to: string): number {
+  const a = Date.parse(String(from).slice(0, 10));
+  const b = Date.parse(String(to).slice(0, 10));
+  if (!Number.isFinite(a) || !Number.isFinite(b)) return 0;
+  return Math.round((b - a) / 86_400_000);
+}
+
+/** 과거 봉을 새 가격 수준으로 환산한다(가격은 ratio배, 거래량은 1/ratio배) */
+function rescaleBars(bars: StockOHLCV[], ratio: number): void {
+  for (let i = 0; i < bars.length; i += 1) {
+    const b = bars[i];
+    bars[i] = {
+      ...b,
+      open: b.open * ratio,
+      high: b.high * ratio,
+      low: b.low * ratio,
+      close: b.close * ratio,
+      volume: b.volume / ratio,
+    };
+  }
+}
+
 /**
  * OHLCV 배열에서 명백한 오류 데이터를 제거하고 날짜순으로 정렬해 반환
  */
@@ -28,7 +53,8 @@ export function sanitizeOHLCV(data: StockOHLCV[]): StockOHLCV[] {
 
   const valid: StockOHLCV[] = [];
 
-  for (const bar of sorted) {
+  for (let i = 0; i < sorted.length; i += 1) {
+    const bar = sorted[i];
     // 기본 유효성: 핵심 가격 필드가 양수여야 함
     if (
       bar.close <= 0 ||
@@ -47,11 +73,22 @@ export function sanitizeOHLCV(data: StockOHLCV[]): StockOHLCV[] {
 
     // 전일 대비 스파이크 필터 (데이터 오류 탐지)
     if (valid.length > 0) {
-      const prevClose = valid[valid.length - 1].close;
-      if (prevClose > 0) {
-        const ratio = bar.close / prevClose;
-        if (ratio > MAX_DAILY_RATIO || ratio < MIN_DAILY_RATIO) {
-          continue; // 비정상 스파이크: 위험한 신호 오염 방지
+      const prev = valid[valid.length - 1];
+      const ratio = prev.close > 0 ? bar.close / prev.close : 1;
+      if (ratio > MAX_DAILY_RATIO || ratio < MIN_DAILY_RATIO) {
+        const gapDays = calendarGapDays(prev.date, bar.date);
+        const next = sorted[i + 1];
+        const nextRatio = next && bar.close > 0 ? next.close / bar.close : null;
+        const persists =
+          nextRatio !== null && nextRatio >= MIN_DAILY_RATIO && nextRatio <= MAX_DAILY_RATIO;
+        if (!persists) {
+          continue; // 하루짜리 비정상 스파이크(또는 확인할 다음 봉이 없음): 신호 오염 방지
+        }
+        // 다음 봉도 새 수준에 머문다 = 액면분할·병합으로 가격 수준이 바뀐 것.
+        // 이 봉만 버리면 기준 종가가 분할 전에 남아 이후 봉이 전부 버려지므로 과거 봉을 새 수준에 맞춰 환산한다.
+        // 거래 공백이 길면 실제 가격 변동일 수 있어 환산하지 않고 그대로 받아들인다.
+        if (gapDays <= LEVEL_SHIFT_MAX_GAP_DAYS) {
+          rescaleBars(valid, ratio);
         }
       }
     }
