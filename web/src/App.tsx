@@ -79,6 +79,7 @@ const IncomeGuidePage      = lazyWithRecovery(() => import('./features/income-gu
 const GoalTrackerPage      = lazyWithRecovery(() => import('./features/goal-tracker'))
 const ChoiceReviewPage     = lazyWithRecovery(() => import('./features/choice-review'))
 const AccumulatePage       = lazyWithRecovery(() => import('./features/accumulate'))
+const MixPage              = lazyWithRecovery(() => import('./features/mix'))
 const DiscoveryPage        = lazyWithRecovery(() => import('./features/discovery'))
 const BacktestPage         = lazyWithRecovery(() => import('./features/backtest'))
 const ControlPage          = lazyWithRecovery(() => import('./features/control'))
@@ -405,6 +406,7 @@ function AppContent() {
             <Route path="/goal-tracker"           element={<GoalTrackerPage />} />
             <Route path="/choices"                element={<ChoiceReviewPage />} />
             <Route path="/accumulate"             element={<AccumulatePage />} />
+            <Route path="/mix"                    element={<MixPage />} />
             <Route path="/discovery"              element={<DiscoveryPage />} />
             <Route path="/backtest"               element={<BacktestPage />} />
             <Route path="/control"                element={<ControlPage />} />

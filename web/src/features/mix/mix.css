@@ -1,0 +1,4 @@
+.mix-slider > span { display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; }
+.mix-slider b { color: var(--color-brand); min-width: 3ch; }
+.mix .acc-seg button small { color: var(--color-text-tertiary); font-weight: 400; }
+.mix ul { padding-left: 18px; line-height: 1.6; display: flex; flex-direction: column; gap: 6px; }

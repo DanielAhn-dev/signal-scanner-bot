@@ -51,6 +51,7 @@ export const TOOL_NAV_GROUPS: NavGroup[] = [
     items: [
       { key: 'start', label: '시작하기' },
       { key: 'accumulate', label: '모아가기' },
+      { key: 'mix', label: '섞어보기' },
       { key: 'follow', label: '따라 사기' },
       { key: 'goal-tracker', label: '목표 트래커' },
       { key: 'choices', label: '내 선택 돌아보기' },
@@ -109,6 +110,7 @@ export const USER_NAV_KEYS: readonly string[] = [
   'dashboard',
   'start',
   'accumulate',
+  'mix',
   'follow',
   'seed-builder',
   'simulator',
@@ -179,6 +181,8 @@ export const BOT_USAGE_NOTES: Record<string, string> = {
     '봇 매매와 별개입니다. 자동매매 방식을 바꾼 날부터 "안 바꿨다면"과 실제를 같은 출발점에서 비교합니다. 주문은 내지 않고, 30일이 지나야 숫자를 보여줍니다.',
   accumulate:
     '봇 매매와 별개입니다. 증권사 앱의 모아가기로 직접 사는 지수 ETF를 과거 실제 가격으로 시뮬레이션하고, 정한 금액을 꾸준히 이어가도록 돕습니다. 주문은 내지 않습니다.',
+  mix:
+    '봇 매매와 별개입니다. 코스피200·미국지수·채권·금을 원하는 비중으로 섞어 과거 실제 가격으로 수익과 낙폭을 비교합니다. 주문은 내지 않습니다.',
   'income-guide':
     '봇 매매와 별개입니다. 포트폴리오에서 직접 입력한 실계좌 보유만 보고, 모으기→전환→인컴 단계의 목표 비중과 옮길 금액을 안내합니다. 주문은 내지 않습니다.',
 }
