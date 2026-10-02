@@ -457,8 +457,9 @@ type PlanRow = GuideHolding & { value: number; bucket: AssetBucket; group: Bucke
 
 /**
  * "인컴" 바구니를 줄일 때 먼저 팔 순서 — 낮을수록 먼저 판다. 2026-10-01 다중 시작점 검증(고배당 3종 vs
- * 커버드콜 2종 실데이터)에서 재투자 기준 고배당이 지수를 꾸준히 이겼지만 커버드콜은 꾸준히 졌다
- * (validate_income_multistart.py). 예전엔 바구니 안에서 그냥 "금액 큰 것부터" 팔아서, 가장 좋은
+ * 커버드콜 2종 실데이터)에서 재투자 기준 고배당은 중앙값이 지수보다 높았고(10년 1.86~2.55배 vs 1.67배,
+ * 다만 승률은 41~68%로 꾸준하진 않음) 커버드콜은 5년 승률 0~18%로 졌다. 분배금을 가격에 또 더한 이중 계산
+ * 보정 후 수치다(validate_income_multistart.py, 2026-10-02). 예전엔 바구니 안에서 그냥 "금액 큰 것부터" 팔아서, 가장 좋은
  * 보유(고배당)가 금액이 크다는 이유만으로 가장 먼저 팔리고 나쁜 보유(커버드콜)가 남는 역전이 있었다.
  */
 const SELL_PRIORITY: Partial<Record<AssetBucket, number>> = { covered_call: 0, reit_infra: 1, dividend: 2 };

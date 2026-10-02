@@ -18,8 +18,13 @@
 모아 중앙값·하위10%·지수 대비 승률을 비교한다. 상품마다 시작일이 달라 호라이즌별로 표본 수가 다르다.
 """
 import json
+import sys
 
 import numpy as np
+
+# 2026-10-02 보정: 네이버 siseJson 가격은 분배금이 소급 반영된 수정주가라(분배락일 가격 계단 없음)
+# 분배금을 또 더하면 이중 계산이다. 기본은 보정(가격만 사용), --legacy 로 이전 이중 계산 결과를 재현한다.
+LEGACY = "--legacy" in sys.argv
 
 
 def load_monthly_price(path: str) -> tuple[list[str], np.ndarray]:
@@ -35,7 +40,7 @@ def load_monthly_price(path: str) -> tuple[list[str], np.ndarray]:
 def monthly_total_returns(months: list[str], closes: np.ndarray, div_path: str | None) -> np.ndarray:
     """월별 가격 시리즈 + (있으면) 실제 분배금 지급 이력으로 총수익(TR) 월간 수익률을 만든다."""
     div_by_month: dict[str, float] = {}
-    if div_path:
+    if div_path and LEGACY:
         divs = json.load(open(div_path, encoding="utf-8"))
         for d in divs:
             key = d["recordDate"][:4] + d["recordDate"][5:7]
@@ -76,7 +81,7 @@ PRODUCTS = [
 def main():
     idx_months, idx_closes = load_monthly_price(".research-cache/px_069500.json")
     idx_rets_raw = idx_closes[1:] / idx_closes[:-1] - 1
-    idx_rets = apply_flat_yield(idx_rets_raw, 2.3)
+    idx_rets = apply_flat_yield(idx_rets_raw, 2.3) if LEGACY else idx_rets_raw
     idx_months_r = idx_months[1:]
     idx_month_pos = {m: i for i, m in enumerate(idx_months_r)}
 
