@@ -17,8 +17,8 @@ async function routeWebOnly(method: string, body: any, isMultipart: boolean): Pr
   const text = method === "sendMessage" ? body?.text : method === "sendDocument" ? body.get("caption") : null;
   if (!text) return { ok: false, description: "web-only account: no telegram" };
   // firebase-admin은 무거워서 웹 전용 계정일 때만 불러온다
-  const { sendPushToChatId } = await import("../services/webPush.js");
-  const r = await sendPushToChatId(Number(chatId), { body: String(text) }).catch((e: any) => ({
+  const { sendPushToChatId, pushPathForText } = await import("../services/webPush.js");
+  const r = await sendPushToChatId(Number(chatId), { body: String(text), path: pushPathForText(String(text)) }).catch((e: any) => ({
     ok: false,
     sent: 0,
     description: String(e?.message || e),
@@ -37,8 +37,8 @@ async function routeLinkedToPush(method: string, body: any, isMultipart: boolean
   const { hasInlineKeyboard, isTelegramReplyContext, resolveNotifyChannel } = await import("../services/notifyChannel.js");
   if (isTelegramReplyContext() || hasInlineKeyboard(body.reply_markup)) return null;
   if ((await resolveNotifyChannel(chatId)) !== "push") return null;
-  const { sendPushToChatId } = await import("../services/webPush.js");
-  const r = await sendPushToChatId(chatId, { body: String(body.text) }).catch(() => ({ ok: false, sent: 0 }));
+  const { sendPushToChatId, pushPathForText } = await import("../services/webPush.js");
+  const r = await sendPushToChatId(chatId, { body: String(body.text), path: pushPathForText(String(body.text)) }).catch(() => ({ ok: false, sent: 0 }));
   return r.ok ? { ok: true, description: "sent via web push" } : null;
 }
 

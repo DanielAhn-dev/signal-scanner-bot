@@ -84,3 +84,11 @@ describe('따라 샀어요 결산', () => {
     expect(r.unpriced).toBe(1)
   })
 })
+
+describe('체결 알림 푸시 경로', () => {
+  it('자동사이클 체결 알림만 따라 사기로 연결한다', async () => {
+    const { pushPathForText } = await import('../src/services/webPush')
+    expect(pushPathForText('[자동사이클 체결 알림] 일일 대응\n매수 1건')).toBe('/follow')
+    expect(pushPathForText('시장 요약')).toBeUndefined()
+  })
+})

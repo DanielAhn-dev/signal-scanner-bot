@@ -32,6 +32,11 @@ export function toPushText(text: string, max = 300): string {
   return plain.length > max ? `${plain.slice(0, max - 1)}…` : plain;
 }
 
+/** 자동사이클 체결 알림은 눌렀을 때 따라 사기(/follow)로 열어, 봇 체결을 바로 기록할 수 있게 한다 */
+export function pushPathForText(text: string): string | undefined {
+  return /\[자동사이클 체결 알림\]/.test(String(text || "")) ? "/follow" : undefined;
+}
+
 export async function sendPushToChatId(
   chatId: number,
   message: { title?: string; body: string; path?: string }
