@@ -114,5 +114,70 @@ def main():
         print(f"B 기준 패닉 매도가 보유보다 나았던 비율: {helped:.0f}%")
 
 
+def simulate_dca(close, cash, dates, i0, i1, reentry):
+    """매월 첫 거래일 1을 납입하며 i1까지. 패닉 매도자는 -20%에서 보유분 전량 매도, 그동안의 납입금은 현금(CD91)에 쌓았다가 재진입 때 한 번에 투입."""
+    shares, cashv = 0.0, 0.0
+    in_mkt = True
+    peak = close[i0]
+    low = prior_peak = sold_i = None
+    paid = 0.0
+    for i in range(i0, i1 + 1):
+        if i > i0:
+            cashv *= 1 + cash[i]
+        if i == i0 or dates[i][:6] != dates[i - 1][:6]:
+            paid += 1.0
+            if in_mkt or reentry == "hold":
+                shares += 1.0 / close[i]
+            else:
+                cashv += 1.0
+        if reentry == "hold":
+            continue
+        if in_mkt:
+            peak = max(peak, close[i])
+            if close[i] / peak - 1 <= TRIGGER and i + 1 <= i1:
+                # 다음 거래일 종가 체결은 단순화를 위해 같은 날 종가로 처리(보유 쪽에 유리한 가정이 아니라 매도 쪽에 유리한 가정)
+                cashv += shares * close[i]
+                shares = 0.0
+                in_mkt = False
+                prior_peak, low, sold_i = peak, close[i], i
+        else:
+            low = min(low, close[i])
+            go = (reentry == "A" and i - sold_i >= 125) or (reentry == "B" and close[i] / low - 1 >= REBOUND) or (reentry == "C" and close[i] >= prior_peak)
+            if go:
+                shares += cashv / close[i]
+                cashv = 0.0
+                in_mkt = True
+                peak = close[i]
+    return (shares * close[i1] + cashv) / paid
+
+
+def main_dca():
+    dates, close, cash = load()
+    starts = [i for i in range(len(dates)) if i == 0 or dates[i][:6] != dates[i - 1][:6]]
+    print("\n##### 적립식(매월 1 납입) #####")
+    for years in (5, 10):
+        n = years * 250
+        rows = []
+        for i0 in starts:
+            i1 = i0 + n
+            if i1 >= len(dates):
+                continue
+            h = simulate_dca(close, cash, dates, i0, i1, "hold")
+            res = {k: simulate_dca(close, cash, dates, i0, i1, k) for k in "ABC"}
+            rows.append((dates[i0], h, res))
+        # 팔게 된 시작점: 보유 대비 결과가 달라진 경우(A 기준)
+        touched = [r for r in rows if abs(r[2]["A"] - r[1]) > 1e-9]
+        print(f"\n=== {years}년 적립, 월별 시작점 {len(rows)}개, 패닉 매도가 실제 발생한 시작점 {len(touched)}개 ===")
+        base = np.array([r[1] for r in touched])
+        print(f"{'구분':28s} {'납입 대비 배율 중앙값':>14s} {'하위10%':>8s} {'보유보다 나은 비율':>16s} {'최악 격차':>8s} {'최고 격차':>8s}")
+        print(f"{'계속 보유':28s} {np.median(base):14.2f} {np.percentile(base, 10):8.2f}")
+        for k, label in (("A", "A. 6개월 뒤 재매수"), ("B", "B. 저점 +20% 확인 후"), ("C", "C. 직전 고점 회복 후")):
+            v = np.array([r[2][k] for r in touched])
+            print(f"{label:28s} {np.median(v):14.2f} {np.percentile(v, 10):8.2f} {np.mean(v > base) * 100:15.0f}% {(v / base).min():8.2f} {(v / base).max():8.2f}")
+        helped = sorted(((r[2]["B"] / r[1], r[0]) for r in touched))
+        print("B 기준 최악:", [(d, round(x, 2)) for x, d in helped[:3]], " 최고:", [(d, round(x, 2)) for x, d in helped[-3:]])
+
+
 if __name__ == "__main__":
     main()
+    main_dca()
