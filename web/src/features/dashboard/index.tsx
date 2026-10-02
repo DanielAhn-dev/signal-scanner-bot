@@ -299,10 +299,11 @@ export default function Dashboard({ onNavigate }: { onNavigate?: (r: string) => 
                 <span style={{ color: 'var(--color-text-tertiary)', fontWeight: 400, marginRight: 4, fontSize: 10 }}>{i + 1}</span>
                 <span style={{ color: 'var(--color-brand)', fontWeight: 700, fontSize: 10 }}>{s.label.replace(/^\d+\s+/, '')}</span>
               </td>
-              <td className="xls-cell" colSpan={3} style={{ fontSize: 10, color: 'var(--color-text-secondary)', whiteSpace: 'normal', lineHeight: 1.5 }}>
+              <td className="xls-cell" colSpan={2} style={{ fontSize: 10, color: 'var(--color-text-secondary)', whiteSpace: 'normal', lineHeight: 1.5 }}>
                 {s.desc}
               </td>
-              <td className="xls-cell">
+              {/* 마지막 열(F)은 폭이 남는 만큼만이라 링크가 잘렸다 — E·F 두 칸을 묶어 "지금 하기 →"가 온전히 보이게 한다 */}
+              <td className="xls-cell" colSpan={2} style={{ whiteSpace: 'nowrap', textAlign: 'right' }}>
                 <span style={{ ...S.link, ...(s.key === nextTodoKey ? { fontWeight: 700 } : {}) }} onClick={() => nav(s.key)}>{s.key === nextTodoKey ? '지금 하기 →' : '열기 →'}</span>
               </td>
             </tr>

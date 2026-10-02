@@ -17,6 +17,7 @@ import { ErrorState } from '../../components/StateViews'
 import EconomicCalendar from '../../components/EconomicCalendar'
 import type { EconomicCalendarResponse } from '../../../../src/types/economics'
 import SheetHeaderBar from '../../components/SheetHeaderBar'
+import { useProfileStore } from '../../stores/profileStore'
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -816,6 +817,9 @@ export default function MarketPage() {
   const [error, setError] = useState<string | null>(null)
   const [calendarError, setCalendarError] = useState<string | null>(null)
   const [tab, setTab] = useState<Tab>('diagnosis')
+  // 진단 탭은 봇 위험지수·매수 관문 등 판단 근거라 관리자에게만 — 일반 사용자는 지표·캘린더만
+  const isAdmin = useProfileStore((s) => s.isAdmin)
+  const activeTab: Tab = !isAdmin && tab === 'diagnosis' ? 'indicators' : tab
 
   const load = async () => {
     setLoading(true)
@@ -899,25 +903,25 @@ export default function MarketPage() {
 
       <SegmentControl
         tabs={[
-          { key: 'diagnosis' as Tab, label: '진단' },
+          ...(isAdmin ? [{ key: 'diagnosis' as Tab, label: '진단' }] : []),
           { key: 'indicators' as Tab, label: '지표' },
           { key: 'calendar' as Tab, label: '캘린더' },
         ]}
-        active={tab}
+        active={activeTab}
         onChange={setTab}
       />
 
-      {tab === 'diagnosis' && (
+      {activeTab === 'diagnosis' && (
         <div className="market-sheet__table-scroll xls-scroll-frame" style={{ ['--xls-table-min-width' as any]: '720px' }}>
           <DiagnosisTab data={data} />
         </div>
       )}
-      {tab === 'indicators' && (
+      {activeTab === 'indicators' && (
         <div className="market-sheet__table-scroll xls-scroll-frame" style={{ ['--xls-table-min-width' as any]: '760px' }}>
           <IndicatorsTab data={data} />
         </div>
       )}
-      {tab === 'calendar' && (
+      {activeTab === 'calendar' && (
         calendarError ? (
           <ErrorState message={calendarError} onRetry={loadCalendar} />
         ) : (
