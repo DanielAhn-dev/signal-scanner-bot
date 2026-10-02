@@ -58,6 +58,7 @@
 .seed-next-inputs { display: flex; flex-wrap: wrap; gap: 12px 25px; }
 .seed-next-inputs label { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 .seed-next-inputs input { width: 135px; max-width: 100%; padding: 7px; border: 1px solid var(--color-border-default); border-radius: 3px; text-align: right; font: inherit; }
+.seed-next-step .seed-secondary { margin-top: 14px; }
 .seed-buy-check { padding: 12px 0; font-weight: 700; }
 .seed-next-note { color: var(--color-text-secondary); padding: 9px 0; }
 .seed-secondary { display: inline-flex; align-items: center; gap: 7px; border: 1px solid var(--color-brand); border-radius: 4px; padding: 8px 12px; background: var(--color-bg-surface); color: var(--color-brand); font: inherit; cursor: pointer; }
