@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react'
+import { userScopedKey } from '../../lib/userState'
 import { apiFetch } from '../../lib/api'
 import { formatKrw, formatNumber } from '../../lib/format'
 import { getStocks, type StockItem } from '../../lib/stockCache'
@@ -170,10 +171,11 @@ function useRecentSearches(): [
   Array<{ code: string; name: string }>,
   (stock: { code: string; name: string }) => void,
 ] {
-  const KEY = 'analyze.recentSearches'
+  // 사용자별 키 — 로그인 전(키 없음)에는 저장하지 않는다
+  const KEY = userScopedKey('analyze.recentSearches')
   const [list, setList] = useState<Array<{ code: string; name: string }>>(() => {
     try {
-      const raw = localStorage.getItem(KEY)
+      const raw = KEY ? localStorage.getItem(KEY) : null
       return raw ? (JSON.parse(raw) as Array<{ code: string; name: string }>) : []
     } catch {
       return []
@@ -183,7 +185,7 @@ function useRecentSearches(): [
     setList(prev => {
       const filtered = prev.filter(s => s.code !== stock.code)
       const next = [stock, ...filtered].slice(0, 5)
-      try { localStorage.setItem(KEY, JSON.stringify(next)) } catch { /* ignore */ }
+      try { if (KEY) localStorage.setItem(KEY, JSON.stringify(next)) } catch { /* ignore */ }
       return next
     })
   }, [])

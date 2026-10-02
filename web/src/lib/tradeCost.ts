@@ -1,3 +1,5 @@
+import { readUserState } from './userState'
+
 // 매도 비용 추정 — 국내 ETF·ETN은 증권거래세가 없어 수수료만 뗀다 (src/lib/securitiesTax.ts와 같은 판별)
 const ETF_BRAND_PATTERN =
   /^(KODEX|TIGER|KBSTAR|RISE|ACE|SOL|HANARO|KOSEF|ARIRANG|PLUS|KIWOOM|TIMEFOLIO|WOORI|BNK|UNICORN|FOCUS|TREX|VITA|마이다스|에셋플러스|히어로즈|파워|마이티|KTOP|1Q|DAISHIN343|WON)\b/i
@@ -14,18 +16,12 @@ export function resolveSellCostPct(input: { code?: string | null; name?: string 
   return isExchangeTradedProduct(input.code, input.name) ? input.feeRatePct : input.sellRatePct
 }
 
-// 포트폴리오·대시보드가 같은 매매비용 설정(브라우저 저장)을 읽도록 한 곳에 둔다
-export const TRADE_COST_STORAGE_KEY = 'portfolio.tradeCost.v1'
+// 포트폴리오·대시보드가 같은 매매비용 설정(사용자별 저장, lib/userState.ts)을 읽도록 한 곳에 둔다
 
 export interface TradeCostSettings { includeCost: boolean; buyFeeRatePct: number; sellFeeRatePct: number }
 
 export function loadTradeCostSettings(): TradeCostSettings {
-  let stored: Partial<TradeCostSettings> | null = null
-  try {
-    stored = JSON.parse(window.localStorage.getItem(TRADE_COST_STORAGE_KEY) || 'null')
-  } catch {
-    stored = null
-  }
+  const stored = readUserState<Partial<TradeCostSettings>>('tradeCost')
   return {
     includeCost: stored?.includeCost ?? true,
     buyFeeRatePct: stored?.buyFeeRatePct ?? 0.015,

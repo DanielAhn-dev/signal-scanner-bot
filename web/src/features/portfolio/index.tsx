@@ -12,7 +12,8 @@ import Modal from '../../components/Modal'
 import StockSearchInput from '../../components/StockSearchInput'
 import { EmptyState, ErrorState } from '../../components/StateViews'
 import { useToast } from '../../components/ToastProvider'
-import { resolveSellCostPct, loadTradeCostSettings, TRADE_COST_STORAGE_KEY } from '../../lib/tradeCost'
+import { resolveSellCostPct, loadTradeCostSettings } from '../../lib/tradeCost'
+import { useSyncedSettings } from '../../lib/userState'
 import Pagination from '../../components/Pagination'
 import EconomicEventBadge from '../../components/EconomicEventBadge'
 import SheetHeaderBar from '../../components/SheetHeaderBar'
@@ -108,8 +109,6 @@ function pickLatestActiveShare(items: PortfolioShareHistoryItem[]): PortfolioSha
   return null
 }
 
-const PORTFOLIO_RULES_STORAGE_KEY = 'portfolio.holdingRules.v1'
-const PORTFOLIO_ASSET_OVERVIEW_STORAGE_KEY = 'portfolio.assetOverview.v1'
 const DEFAULT_INITIAL_CAPITAL = 10_000_000
 
 function getTodayLocalYmd(): string {
@@ -172,18 +171,16 @@ export default function Portfolio() {
   const [policyAccordionOpen, setPolicyAccordionOpen] = useState(false)
   const [performanceAccordionOpen, setPerformanceAccordionOpen] = useState(false)
   const [filterAccordionOpen, setFilterAccordionOpen] = useState(false)
-  // 매매비용 표시 설정은 브라우저에 기억한다 (예전엔 새로 열 때마다 기본값으로 돌아갔다)
+  // 매매비용 표시 설정은 계정에 저장한다 (기기를 바꿔도 유지)
   const storedCost = loadTradeCostSettings()
   const [includeCost, setIncludeCost] = useState(storedCost.includeCost)
   const [buyFeeRatePct, setBuyFeeRatePct] = useState(storedCost.buyFeeRatePct)  // 매수수수료 %
   const [sellFeeRatePct, setSellFeeRatePct] = useState(storedCost.sellFeeRatePct) // 매도수수료+거래세 %
-  useEffect(() => {
-    try {
-      window.localStorage.setItem(TRADE_COST_STORAGE_KEY, JSON.stringify({ includeCost, buyFeeRatePct, sellFeeRatePct }))
-    } catch {
-      // 저장 불가 환경(시크릿 모드 등)에서는 기본값으로 동작
-    }
-  }, [includeCost, buyFeeRatePct, sellFeeRatePct])
+  useSyncedSettings('tradeCost', { includeCost, buyFeeRatePct, sellFeeRatePct }, { includeCost: true, buyFeeRatePct: 0.015, sellFeeRatePct: 0.215 }, (saved) => {
+    if (typeof saved.includeCost === 'boolean') setIncludeCost(saved.includeCost)
+    if (Number.isFinite(Number(saved.buyFeeRatePct))) setBuyFeeRatePct(Number(saved.buyFeeRatePct))
+    if (Number.isFinite(Number(saved.sellFeeRatePct))) setSellFeeRatePct(Number(saved.sellFeeRatePct))
+  })
   const [error, setError] = useState<string | null>(null)
 
   const [modalOpen, setModalOpen] = useState(false)
@@ -561,70 +558,30 @@ export default function Portfolio() {
     }
   }, [policyDraft, toast, loadAccountPolicies, load])
 
-  useEffect(() => {
-    if (typeof window === 'undefined') return
-    try {
-      const raw = window.localStorage.getItem(PORTFOLIO_RULES_STORAGE_KEY)
-      if (!raw) return
-      const parsed = JSON.parse(raw)
-      const nextA = Number(parsed?.gradeAThreshold)
-      const nextB = Number(parsed?.gradeBThreshold)
-      const nextAdd = Number(parsed?.addEntryMinScore)
-      const nextPartialPct = Number(parsed?.partialTakeProfitPct)
-      const nextPartialWarn = Number(parsed?.partialWarnScoreMin)
-      if (Number.isFinite(nextA)) setGradeAThreshold(nextA)
-      if (Number.isFinite(nextB)) setGradeBThreshold(nextB)
-      if (Number.isFinite(nextAdd)) setAddEntryMinScore(nextAdd)
-      if (Number.isFinite(nextPartialPct)) setPartialTakeProfitPct(nextPartialPct)
-      if (Number.isFinite(nextPartialWarn)) setPartialWarnScoreMin(nextPartialWarn)
-    } catch {
-      // ignore malformed local storage value
-    }
-  }, [])
+  useSyncedSettings(
+    'holdingRules',
+    { gradeAThreshold, gradeBThreshold, addEntryMinScore, partialTakeProfitPct, partialWarnScoreMin },
+    { gradeAThreshold: 80, gradeBThreshold: 65, addEntryMinScore: 70, partialTakeProfitPct: 8, partialWarnScoreMin: 3 },
+    (saved) => {
+      const num = (v: unknown) => (v != null && Number.isFinite(Number(v)) ? Number(v) : null)
+      const a = num(saved.gradeAThreshold); if (a != null) setGradeAThreshold(a)
+      const b = num(saved.gradeBThreshold); if (b != null) setGradeBThreshold(b)
+      const add = num(saved.addEntryMinScore); if (add != null) setAddEntryMinScore(add)
+      const pct = num(saved.partialTakeProfitPct); if (pct != null) setPartialTakeProfitPct(pct)
+      const warn = num(saved.partialWarnScoreMin); if (warn != null) setPartialWarnScoreMin(warn)
+    },
+  )
 
-  useEffect(() => {
-    if (typeof window === 'undefined') return
-    try {
-      window.localStorage.setItem(PORTFOLIO_RULES_STORAGE_KEY, JSON.stringify({
-        gradeAThreshold,
-        gradeBThreshold,
-        addEntryMinScore,
-        partialTakeProfitPct,
-        partialWarnScoreMin,
-      }))
-    } catch {
-      // ignore local storage write errors
-    }
-  }, [gradeAThreshold, gradeBThreshold, addEntryMinScore, partialTakeProfitPct, partialWarnScoreMin])
-
-  useEffect(() => {
-    if (typeof window === 'undefined') return
-    try {
-      const raw = window.localStorage.getItem(PORTFOLIO_ASSET_OVERVIEW_STORAGE_KEY)
-      if (!raw) return
-      const parsed = JSON.parse(raw)
-      const nextInitialCapital = Number(parsed?.initialCapital)
-      const nextOpen = parsed?.assetAccordionOpen
-      if (Number.isFinite(nextInitialCapital) && nextInitialCapital > 0) {
-        setInitialCapital(nextInitialCapital)
-      }
-      if (typeof nextOpen === 'boolean') setAssetAccordionOpen(nextOpen)
-    } catch {
-      // ignore malformed local storage value
-    }
-  }, [])
-
-  useEffect(() => {
-    if (typeof window === 'undefined') return
-    try {
-      window.localStorage.setItem(PORTFOLIO_ASSET_OVERVIEW_STORAGE_KEY, JSON.stringify({
-        initialCapital,
-        assetAccordionOpen,
-      }))
-    } catch {
-      // ignore local storage write errors
-    }
-  }, [initialCapital, assetAccordionOpen])
+  useSyncedSettings(
+    'assetOverview',
+    { initialCapital, assetAccordionOpen },
+    { initialCapital: DEFAULT_INITIAL_CAPITAL, assetAccordionOpen: false },
+    (saved) => {
+      const capital = Number(saved.initialCapital)
+      if (Number.isFinite(capital) && capital > 0) setInitialCapital(capital)
+      if (typeof saved.assetAccordionOpen === 'boolean') setAssetAccordionOpen(saved.assetAccordionOpen)
+    },
+  )
 
   // 클라이언트 사이드 파생 상태 – API 재호출 없이 즉시 필터링
   const holdingAll = useMemo(() => allRows.filter((r: any) => r.position_type === 'holding'), [allRows])

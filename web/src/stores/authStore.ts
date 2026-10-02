@@ -1,4 +1,5 @@
 import { create } from 'zustand'
+import { clearUserLocalData } from '../lib/userState'
 import type { Session } from '@supabase/supabase-js'
 import { supabase, isSupabaseConfigured } from '../lib/supabase'
 import { readProfile } from '../lib/userContext'
@@ -185,6 +186,8 @@ export const useAuthStore = create<AuthState & AuthActions>((set, get) => ({
 
   signOut: async () => {
     if (!supabase || !isSupabaseConfigured) return
+    // 서버 로그아웃이 실패해도 이 브라우저의 사용자 데이터는 먼저 지운다 — 다음 사람에게 보이면 안 된다
+    clearUserLocalData()
     try {
       await supabase.auth.signOut()
     } catch { /* ignore */ }

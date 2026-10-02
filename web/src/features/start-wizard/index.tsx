@@ -15,9 +15,11 @@ import {
   yearsToTarget,
   type LossReaction,
 } from '../../lib/startPlan'
+import { userScopedKey } from '../../lib/userState'
 import './start-wizard.css'
 
-const STORAGE_KEY = 'start-wizard:v1'
+// 월수입·대출 같은 민감한 입력이라 사용자별 키로만 보관하고 로그아웃 때 지운다 (lib/userState.ts)
+const storageKey = () => userScopedKey('start-wizard')
 const won = (v: number) => `${Math.round(v).toLocaleString('ko-KR')}원`
 const man = (v: number) => `${Math.round(v / 10_000).toLocaleString('ko-KR')}만원`
 const num = (v: string) => { const n = Number(v.replace(/,/g, '').trim()); return Number.isFinite(n) && n > 0 ? n : 0 }
@@ -30,7 +32,10 @@ type Form = {
 const empty: Form = { income: '', card: '', otherFixed: '', loanPayment: '', loanRate: '', years: '10', targetMonthly: '', initialSeed: '', monthly: '', reaction: 'hold' }
 
 function readForm(): Form {
-  try { return { ...empty, ...(JSON.parse(window.localStorage.getItem(STORAGE_KEY) || '{}') as Partial<Form>) } } catch { return empty }
+  try {
+    const key = storageKey()
+    return key ? { ...empty, ...(JSON.parse(window.localStorage.getItem(key) || '{}') as Partial<Form>) } : empty
+  } catch { return empty }
 }
 
 function MoneyField({ label, value, onChange, hint, placeholder = '0', suffix = '원' }: { label: string; value: string; onChange: (v: string) => void; hint?: string; placeholder?: string; suffix?: string }) {
@@ -58,7 +63,7 @@ export default function StartWizardPage() {
   const set = (patch: Partial<Form>) => setForm((cur) => ({ ...cur, ...patch }))
 
   useEffect(() => {
-    try { window.localStorage.setItem(STORAGE_KEY, JSON.stringify(form)) } catch { /* 저장 불가 환경은 이번 세션만 */ }
+    try { const key = storageKey(); if (key) window.localStorage.setItem(key, JSON.stringify(form)) } catch { /* 저장 불가 환경은 이번 세션만 */ }
   }, [form])
 
   useEffect(() => {
@@ -104,7 +109,7 @@ export default function StartWizardPage() {
         extraIncome: { incentive: 0, vacation: 0, taxRefund: 0, other: 0 }, reserve: 0, plan: Math.round(monthly),
       }, 'PUT')
       if (enableBot) await post('/api/ui/settings', { is_enabled: true })
-      try { window.localStorage.removeItem(STORAGE_KEY) } catch { /* 무시 */ }
+      try { const key = storageKey(); if (key) window.localStorage.removeItem(key) } catch { /* 무시 */ }
       setHasAccount(true)
       setDone(true)
     } catch (e) {

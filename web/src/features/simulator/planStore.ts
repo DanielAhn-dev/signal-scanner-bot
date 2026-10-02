@@ -1,5 +1,8 @@
 import { empiricalWinProb } from '../../lib/tpSlBaseRates'
-export const HIGHLIGHT_SIM_PLAN_KEY = 'highlight_simulation_plan_v1'
+import { userScopedKey } from '../../lib/userState'
+
+// 화면 간 전달용 작업본 — 사용자별 키라 계정을 바꿔도 섞이지 않고, 서버 저장본은 simulation-plan API가 따로 가진다
+const planKey = () => userScopedKey('highlight_simulation_plan')
 
 export type HighlightPlanItem = {
   id: string
@@ -56,7 +59,8 @@ export function defaultPlanItem(input: {
 
 export function readSimulationPlan(): HighlightSimulationPlan | null {
   try {
-    const raw = localStorage.getItem(HIGHLIGHT_SIM_PLAN_KEY)
+    const key = planKey()
+    const raw = key ? localStorage.getItem(key) : null
     if (!raw) return null
     const parsed = JSON.parse(raw)
     if (!parsed || !Array.isArray(parsed.items)) return null
@@ -73,7 +77,8 @@ export function readSimulationPlan(): HighlightSimulationPlan | null {
 
 export function saveSimulationPlan(plan: HighlightSimulationPlan) {
   try {
-    localStorage.setItem(HIGHLIGHT_SIM_PLAN_KEY, JSON.stringify(plan))
+    const key = planKey()
+    if (key) localStorage.setItem(key, JSON.stringify(plan))
   } catch {
     // ignore storage errors
   }

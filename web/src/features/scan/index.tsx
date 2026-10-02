@@ -1,4 +1,5 @@
 ﻿import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useSyncedSettings } from '../../lib/userState'
 import { apiFetch } from '../../lib/api'
 import { formatKstDateTime, formatNumber } from '../../lib/format'
 import Button from '../../components/ui/Button'
@@ -17,7 +18,6 @@ const SCAN_SNAPSHOT_KEY = 'scan_snapshot_v1'
 const ANALYZE_PENDING_CODE_KEY = 'analyze_pending_code'
 const EXECUTION_GUIDE_PENDING_KEY = 'execution_guide_pending_v1'
 const SCAN_SIGNAL_HISTORY_KEY = 'scan_signal_history_v1'
-const SCAN_BUYCHECK_SETTINGS_KEY = 'scan_buycheck_settings_v1'
 
 type MarketPhase = 'intraday' | 'after-close'
 type ConditionFilter =
@@ -1045,36 +1045,17 @@ export default function ScanPage({ onNavigate }: { onNavigate?: (r: string) => v
     }
   }, [conditionFilter, holdingCountUpdatedAt, holdingCountLoading, loadHoldingCount])
 
-  useEffect(() => {
-    if (typeof window === 'undefined') return
-    try {
-      const raw = window.localStorage.getItem(SCAN_BUYCHECK_SETTINGS_KEY)
-      if (!raw) return
-      const parsed = JSON.parse(raw)
-      const maxHoldings = Number(parsed?.maxHoldings)
-      const highlightTopN = Number(parsed?.highlightTopN)
-      if (Number.isFinite(maxHoldings)) {
-        setBuycheckMaxHoldings(Math.max(1, Math.min(30, Math.trunc(maxHoldings))))
-      }
-      if (Number.isFinite(highlightTopN)) {
-        setBuycheckHighlightTopN(Math.max(1, Math.min(15, Math.trunc(highlightTopN))))
-      }
-    } catch {
-      // ignore malformed local storage value
-    }
-  }, [])
-
-  useEffect(() => {
-    if (typeof window === 'undefined') return
-    try {
-      window.localStorage.setItem(SCAN_BUYCHECK_SETTINGS_KEY, JSON.stringify({
-        maxHoldings: buycheckMaxHoldings,
-        highlightTopN: buycheckHighlightTopN,
-      }))
-    } catch {
-      // ignore local storage write errors
-    }
-  }, [buycheckMaxHoldings, buycheckHighlightTopN])
+  useSyncedSettings(
+    'buycheck',
+    { maxHoldings: buycheckMaxHoldings, highlightTopN: buycheckHighlightTopN },
+    { maxHoldings: 8, highlightTopN: 5 },
+    (saved) => {
+      const maxHoldings = Number(saved.maxHoldings)
+      const highlightTopN = Number(saved.highlightTopN)
+      if (Number.isFinite(maxHoldings)) setBuycheckMaxHoldings(Math.max(1, Math.min(30, Math.trunc(maxHoldings))))
+      if (Number.isFinite(highlightTopN)) setBuycheckHighlightTopN(Math.max(1, Math.min(15, Math.trunc(highlightTopN))))
+    },
+  )
 
   useEffect(() => {
     setHighlightLoading(true)

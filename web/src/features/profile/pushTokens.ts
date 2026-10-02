@@ -1,9 +1,11 @@
 import { apiFetch } from '../../lib/api'
+import { userScopedKey } from '../../lib/userState'
 import { requestFcmToken } from '../../lib/firebaseMessaging'
 
-export const pushEnabledStorageKey = () => 'fcm_push_enabled'
+// 계정마다 따로 — 같은 브라우저에서 다른 계정이 켠 상태가 보이면 안 된다 (로그인 전에는 공용 키)
+export const pushEnabledStorageKey = () => userScopedKey('fcm_push_enabled') ?? 'fcm_push_enabled'
 /** 사용자가 종 아이콘에서 명시적으로 끈 경우에만 세팅 — 이 플래그가 있으면 로그인 시 자동 재요청/재구독을 하지 않는다 */
-export const pushOptOutStorageKey = () => 'fcm_push_optout'
+export const pushOptOutStorageKey = () => userScopedKey('fcm_push_optout') ?? 'fcm_push_optout'
 
 /** 이 브라우저(기기)의 안정적인 식별자 — device_id로 실어, FCM 토큰이 로테이션돼도 한 기기당
  *  토큰 행 하나로 수렴시킨다. localStorage를 못 쓰는 환경(사파리 프라이빗 등)이면 null. */
