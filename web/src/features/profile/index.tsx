@@ -1,3 +1,4 @@
+import Detail from '../../components/ui/Detail'
 import React from 'react'
 import { useToast } from '../../components/ToastProvider'
 import { linkedTelegramId, normalizeTelegramChatId } from '../../lib/userContext'
@@ -130,7 +131,7 @@ export default function ProfilePage(){
             <>
               <div className="muted">{authName || '이름 정보 없음'}</div>
               <div className="muted">{authEmail || '이메일 정보 없음'}</div>
-              <div className="muted mt-1">메인 로그인은 Google 계정이며, 텔레그램은 알림용 보조 연결입니다.</div>
+              <Detail><div className="muted mt-1">메인 로그인은 Google 계정이며, 텔레그램은 알림용 보조 연결입니다.</div></Detail>
             </>
           ) : (
             <div className="muted">Google 로그인 상태를 확인할 수 없습니다.</div>
@@ -164,13 +165,14 @@ export default function ProfilePage(){
             maxLength={20}
             onChange={(e) => setNickname(e.target.value)}
           />
-          <p className="profile-hint">앱 내에서만 사용되며, 텔레그램 이름과 별개입니다.</p>
+          <Detail><p className="profile-hint">앱 내에서만 사용되며, 텔레그램 이름과 별개입니다.</p></Detail>
         </section>
       </div>
 
       <div className="card mb-4">
         <section className="profile-section">
           <div className="profile-section-title">텔레그램 연동</div>
+          <Detail>
           <p className="profile-hint">
             텔레그램 봇에서 <strong>/내정보</strong> 또는 <strong>/start</strong> 명령을 보내면
             Chat ID를 확인할 수 있습니다.
@@ -178,6 +180,7 @@ export default function ProfilePage(){
           <p className="profile-hint" style={{ marginTop: 6 }}>
             선택 입력 항목입니다. 웹 기본 기능은 Chat ID 없이도 사용할 수 있습니다.
           </p>
+          </Detail>
           <label className="profile-field-label">Chat ID</label>
           <div className="profile-field-row">
             <input

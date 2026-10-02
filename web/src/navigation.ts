@@ -110,7 +110,6 @@ export const USER_NAV_KEYS: readonly string[] = [
   'income-guide',
   'portfolio',
   'trades',
-  'alerts',
   'settings',
   'profile',
 ]

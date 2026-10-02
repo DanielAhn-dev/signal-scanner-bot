@@ -1,3 +1,4 @@
+import Detail from '../../components/ui/Detail'
 import React, { useEffect, useRef, useState } from 'react'
 import { apiFetch } from '../../lib/api'
 import { formatKstDateTime } from '../../lib/format'
@@ -106,6 +107,7 @@ export default function Trades() {
       </div>
 
       <div className="card trades-filter-card">
+        <Detail>
         <div className="trades-filter-row">
           <input
             className="input trades-search-input"
@@ -137,6 +139,7 @@ export default function Trades() {
             초기화
           </Button>
         </div>
+        </Detail>
 
         <div className="trades-filter-tags" role="tablist" aria-label="거래 액션 필터">
           <button
@@ -162,6 +165,7 @@ export default function Trades() {
           </button>
         </div>
 
+        <Detail>
         <div className="trades-filter-tags" role="tablist" aria-label="자동/수동 필터">
           <button
             type="button"
@@ -186,6 +190,7 @@ export default function Trades() {
           </button>
           <span className="caption muted trades-filter-count">{total.toLocaleString('ko-KR')}건</span>
         </div>
+        </Detail>
       </div>
 
       <div className="cards-list trades-log-list">
@@ -217,6 +222,7 @@ export default function Trades() {
                   {pnlPct ? ` (${pnlAmount >= 0 ? '+' : ''}${pnlPct})` : ''}
                 </div>
               )}
+              <Detail>
               {detailLines.length > 0 && (
                 <div className="trades-log-details">
                   {detailLines
@@ -226,6 +232,7 @@ export default function Trades() {
                     ))}
                 </div>
               )}
+              </Detail>
             </div>
           )
         })}
