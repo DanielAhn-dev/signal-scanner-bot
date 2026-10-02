@@ -212,14 +212,7 @@ export default function ProfileModal({
     onSaved?.({})
   }
 
-  /* ── 아바타 이니셜 ── */
   const displayName = nickname.trim() || tgName || '?'
-  const initials = displayName
-    .split(' ')
-    .map(w => w[0])
-    .join('')
-    .toUpperCase()
-    .slice(0, 2)
 
   const isConnected = isSignedIn && verifyStatus === STATUS_OK && !!normalizeTelegramChatId(telegramId)
 
@@ -240,9 +233,6 @@ export default function ProfileModal({
 
         <div className="profile-modal-body">
           <div className="profile-avatar-wrap">
-            <div className={`profile-avatar${isConnected ? ' profile-avatar--connected' : ''}`}>
-              {initials}
-            </div>
             <div className="profile-identity">
               <strong className="profile-identity-name">{displayName}</strong>
               <span className={`profile-status${isConnected ? ' profile-status--connected' : ''}`}>

@@ -118,11 +118,10 @@ export default function ProfilePage(){
   }
 
   const displayName = nickname.trim() || tgName || authName || '?'
-  const initials = displayName.split(' ').map(w => w[0]).join('').toUpperCase().slice(0, 2)
   const isConnected = isSignedIn && verifyStatus === STATUS_OK && !!normalizeTelegramChatId(telegramId)
 
   return (
-    <div className="max-w-3xl">
+    <div className="profile-page max-w-3xl">
       <h2 className="title-xl">프로필</h2>
 
       <div className="card mb-4">
@@ -149,13 +148,6 @@ export default function ProfilePage(){
       )}
 
       <div className="card mb-4">
-        <div className="profile-avatar-wrap" style={{ alignItems: 'flex-start' }}>
-          <div className={`profile-avatar${isConnected ? ' profile-avatar--connected' : ''}`}>
-            {initials}
-          </div>
-          {isConnected && <span className="profile-badge-connected">연동됨</span>}
-        </div>
-
         <section className="profile-section">
           <div className="profile-section-title">기본 정보</div>
           <label className="profile-field-label">닉네임</label>

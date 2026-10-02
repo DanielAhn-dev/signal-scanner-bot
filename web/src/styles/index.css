@@ -589,6 +589,16 @@ a:focus-visible {
   border-top: 1px solid var(--color-border-default);
   padding-top: 12px;
 }
+/* 카드·모달 맨 위 구역은 위에 이어 붙일 내용이 없으므로 구분선을 두지 않는다 */
+.profile-section:first-child {
+  border-top: 0;
+  padding-top: 0;
+}
+/* 프로필 페이지는 화면 가장자리에 붙지 않게 좌우 여백을 둔다 */
+.profile-page {
+  padding: 12px 16px 24px;
+  margin: 0 auto;
+}
 .profile-section-title {
   color: var(--color-text-primary);
   font-size: 13px;
