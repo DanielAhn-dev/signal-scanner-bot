@@ -3489,9 +3489,10 @@ a:focus-visible {
 }
 .sim-summary-grid {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(4, 1fr);
   gap: 0;
 }
+.sim-summary-more .sim-summary-grid { grid-template-columns: repeat(2, 1fr); }
 .sim-summary-item {
   display: flex;
   flex-direction: column;
