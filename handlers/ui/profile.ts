@@ -1,5 +1,6 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { createClient } from '@supabase/supabase-js'
+import { mayCreateAccount } from '../../src/services/invites'
 import { ensureWebAccountChatId, ensureWebAccountUserRow, isWebOnlyChatId, webAccountIdFor } from '../../src/services/webAccount'
 
 function errorMessage(error: unknown): string {
@@ -103,6 +104,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       }
       if (error) return res.status(500).json({ error: error.message })
       const row = data && data[0] ? data[0] : null
+      // 초대 전용 모드: 아직 회원이 아니면 계정을 만들지 않고 비회원임을 알린다
+      if (authenticatedUserId && !row && !(await mayCreateAccount(supabase, clientId))) {
+        return res.status(200).json({ data: null, member: false })
+      }
       // 텔레그램은 선택 — 로그인한 계정에 연결이 없으면 웹 전용 계정 ID를 만들어 돌려준다
       if (authenticatedUserId && !row?.telegram_id) {
         const chatId = await ensureWebAccountChatId(supabase, clientId)
@@ -122,6 +127,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const telegramId = normalizeTelegramChatId(telegramIdInput)
       if (telegramIdInput != null && String(telegramIdInput).trim() !== '' && !telegramId) {
         return res.status(400).json({ error: 'telegram_id must be a numeric Chat ID' })
+      }
+
+      if (authenticatedUserId && !(await mayCreateAccount(supabase, clientId))) {
+        return res.status(403).json({ error: 'Invite required', member: false })
       }
 
       // 텔레그램 연결을 비우면 같은 웹 전용 계정 ID로 돌아간다 (로그인 계정마다 고정 값)

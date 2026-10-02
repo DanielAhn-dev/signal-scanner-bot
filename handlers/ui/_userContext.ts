@@ -1,6 +1,7 @@
 import type { VercelRequest } from '@vercel/node'
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
 import { ensureWebAccountChatId } from '../../src/services/webAccount'
+import { mayCreateAccount } from '../../src/services/invites'
 
 export type UiUserContext = {
   clientId: string | null
@@ -38,7 +39,11 @@ export function isStrictIdentity(): boolean {
   return ['1', 'true', 'yes'].includes(String(process.env.UI_STRICT_IDENTITY || '').trim().toLowerCase())
 }
 
-export async function resolveUiUserContext(req: VercelRequest): Promise<UiUserContext> {
+/**
+ * allowNonMember: 초대 전용 모드에서 아직 회원이 아닌 로그인 계정도 신원(clientId)만 돌려준다.
+ * 초대 가입 화면(invites 핸들러)만 쓴다. 그 밖의 핸들러는 비회원을 미인증으로 취급한다.
+ */
+export async function resolveUiUserContext(req: VercelRequest, opts: { allowNonMember?: boolean } = {}): Promise<UiUserContext> {
   const authHeader = String(req.headers.authorization || '').trim()
   const bearer = authHeader.toLowerCase().startsWith('bearer ')
     ? authHeader.slice(7).trim()
@@ -66,6 +71,12 @@ export async function resolveUiUserContext(req: VercelRequest): Promise<UiUserCo
               .select('telegram_id')
               .eq('client_id', clientId)
               .maybeSingle()
+            // 초대 전용 모드: 회원이 아니면 계정을 만들지 않는다 (가입은 초대 코드·승인으로만)
+            if (!data && !(await mayCreateAccount(supabase, clientId))) {
+              return opts.allowNonMember
+                ? { clientId, chatId: null, authenticated: true, source: 'auth' }
+                : { clientId: null, chatId: null, authenticated: false, source: 'none' }
+            }
             // 텔레그램은 선택 — 연결 전에는 웹 전용 계정 ID를 만들어 쓴다 (src/services/webAccount.ts)
             const chatId = toChatId(data?.telegram_id) ?? (await ensureWebAccountChatId(supabase, clientId))
             return { clientId, chatId, authenticated: true, source: 'auth' }

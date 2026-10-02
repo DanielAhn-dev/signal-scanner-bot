@@ -6,6 +6,7 @@ import { useAuthStore } from '../../stores/authStore'
 import { useProfileStore } from '../../stores/profileStore'
 import { apiFetch } from '../../lib/api'
 import { PushNotificationToggle } from '../../components/PushNotificationToggle'
+import InviteCard from '../invites/InviteCard'
 
 const STATUS_IDLE    = 'idle'
 const STATUS_LOADING = 'loading'
@@ -222,6 +223,8 @@ export default function ProfilePage(){
           <div className="profile-section-title">알림</div>
           <PushNotificationToggle isSignedIn={isSignedIn} />
         </section>
+
+        {isSignedIn && <InviteCard />}
       </div>
 
       <div className="card mb-4">

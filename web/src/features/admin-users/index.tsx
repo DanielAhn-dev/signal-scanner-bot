@@ -3,6 +3,7 @@ import Button from '../../components/ui/Button'
 import Input from '../../components/ui/Input'
 import { apiFetch } from '../../lib/api'
 import { formatKstDateTime } from '../../lib/format'
+import InviteAdminPanel from '../invites/InviteAdminPanel'
 
 type AccessInfo = {
   chat_id: number | null
@@ -254,6 +255,8 @@ export default function AdminUsers() {
           <div className="admin-users-stat-value admin-users-stat-blocked">{stats.blocked}</div>
         </div>
       </div>
+
+      {isAdmin && <InviteAdminPanel />}
 
       <div className="cards-list" style={{ marginTop: 12 }}>
         <div className="card">

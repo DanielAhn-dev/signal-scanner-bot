@@ -16,6 +16,16 @@ import { useProfileStore } from './stores/profileStore'
 import { onOpenProfileModal } from './lib/profileModal'
 import { apiFetch } from './lib/api'
 import { canSeeNav } from './navigation'
+import InviteGate from './features/invites/InviteGate'
+import { captureInviteFromUrl } from './lib/inviteStash'
+
+// 초대 링크(?invite=CODE)로 들어온 코드는 로그인 왕복 전에 보관한다
+captureInviteFromUrl()
+
+type Membership =
+  | { state: 'unknown' }
+  | { state: 'member' }
+  | { state: 'none'; request: 'pending' | 'approved' | 'rejected' | null; signupsOpen: boolean }
 
 const CHUNK_RELOAD_KEY = '__ssb_chunk_reload_once__'
 
@@ -86,7 +96,9 @@ function AppContent() {
   const { isSignedIn, isSigningIn, authReady, authError, authEmail, authName, initAuth, signIn, signOut } = useAuthStore()
   const profileSyncError  = useProfileStore((s) => s.syncError)
   const hydrateFromServer = useProfileStore((s) => s.hydrateFromServer)
-  useUserStateAutoSync(isSignedIn)
+  const [membership, setMembership] = useState<Membership>({ state: 'unknown' })
+  const isMember = membership.state === 'member'
+  useUserStateAutoSync(isSignedIn && isMember)
 
   const isAdmin      = useProfileStore((s) => s.isAdmin)
   const isAdminReady = useProfileStore((s) => s.isAdminReady)
@@ -126,9 +138,34 @@ function AppContent() {
 
   useEffect(() => { preloadStocks() }, [])
 
+  // 가입 상태 — 초대 전용 모드에서 회원이 아니면 초대 코드 화면을 보여준다. 조회 실패 시 막지 않는다(서버가 거절한다).
+  useEffect(() => {
+    if (!isSignedIn || isReview) {
+      setMembership({ state: 'unknown' })
+      return
+    }
+    let cancelled = false
+    void (async () => {
+      try {
+        const res = await apiFetch('/api/ui/invites?mode=status', { cacheMs: 0, timeoutMs: 10_000 })
+        const d = res?.data
+        if (cancelled) return
+        if (d && d.member === false) {
+          setMembership({ state: 'none', request: d.request ?? null, signupsOpen: d.signupsOpen !== false })
+        } else {
+          setMembership({ state: 'member' })
+        }
+      } catch {
+        if (!cancelled) setMembership({ state: 'member' })
+      }
+    })()
+    return () => { cancelled = true }
+  }, [isSignedIn, isReview])
+
   // 관리자 여부 — 메뉴 노출 범위를 정한다. 조회 실패 시 일반 사용자 화면으로 둔다.
   useEffect(() => {
     if (!isSignedIn && !isReview) return
+    if (isSignedIn && !isReview && !isMember) return
     let cancelled = false
     void (async () => {
       try {
@@ -139,7 +176,7 @@ function AppContent() {
       }
     })()
     return () => { cancelled = true }
-  }, [isSignedIn, isReview, setIsAdmin])
+  }, [isSignedIn, isReview, isMember, setIsAdmin])
 
   useEffect(() => {
     const WARM_KEY = '__api_warmed'
@@ -271,6 +308,29 @@ function AppContent() {
           </button>
         </div>
       </div>
+    )
+  }
+
+  if (isSignedIn && !isReview && membership.state === 'unknown') {
+    return (
+      <div className="auth-status-main">
+        <div className="auth-status-card">
+          <div className="auth-status-spinner" aria-hidden />
+          <h1 className="auth-status-title">가입 상태 확인 중</h1>
+        </div>
+      </div>
+    )
+  }
+
+  if (isSignedIn && !isReview && membership.state === 'none') {
+    return (
+      <InviteGate
+        email={authEmail}
+        request={membership.request}
+        signupsOpen={membership.signupsOpen}
+        onJoined={() => window.location.reload()}
+        onSignOut={() => { void signOut() }}
+      />
     )
   }
 
