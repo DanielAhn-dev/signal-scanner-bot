@@ -417,7 +417,8 @@ export default function GoalTrackerPage() {
                     {r.isTarget && <span className="goal-badge">목표</span>}
                   </td>
                   <td>{r.months % 12 === 0 ? `${r.months / 12}년` : `${r.months}개월`}</td>
-                  <td>{man(r.contribution)}</td>
+                  {/* "적용"이 만원 단위로 올려 저장하므로, 표도 같은 올림 금액을 보여 준다 */}
+                  <td>{man(view.contributionLinked ? Math.ceil(r.contribution / 10_000) * 10_000 : r.contribution)}</td>
                   {view.contributionLinked && (
                     <td>
                       <Button size="sm" disabled={autoBusy} onClick={() => void applyAutoDeposit(Math.ceil(r.contribution / 10_000) * 10_000)}>적용</Button>
