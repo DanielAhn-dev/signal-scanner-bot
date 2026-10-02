@@ -11,6 +11,7 @@ import { FLOW_STEPS } from '../../navigation'
 import { useProfileStore } from '../../stores/profileStore'
 import { useDetailed } from '../../stores/viewModeStore'
 import GoalSummaryStrip from '../goal-tracker/GoalSummaryStrip'
+import { useGoalTracker } from '../goal-tracker/useGoalTracker'
 import { loadTradeCostSettings, resolveSellCostPct } from '../../lib/tradeCost'
 
 type SectorItem = {
@@ -109,7 +110,13 @@ function formatLastScan(scan: { tradeDate: string | null; updatedAt: string | nu
 
 export default function Dashboard({ onNavigate }: { onNavigate?: (r: string) => void }) {
   const isAdmin = useProfileStore((s) => s.isAdmin)
-  const showMarketDetail = useDetailed() && isAdmin
+  const detailed = useDetailed()
+  const showMarketDetail = detailed && isAdmin
+  // 사용자 간단히 보기: 목표(=시작하기)가 있으면 이번 달 시드, 없으면 시작하기 한 가지만 안내한다
+  const { view: goalView, reason: goalReason } = useGoalTracker()
+  const goalLoaded = goalView !== null || goalReason !== null
+  const nextTodoKey = !goalLoaded ? null : goalView ? 'seed-builder' : 'start'
+  const todoSteps = isAdmin ? FLOW_STEPS : detailed ? USER_TODO_STEPS : USER_TODO_STEPS.filter((s) => s.key === nextTodoKey)
   const chatId = useCurrentChatId()
   const [portfolio, setPortfolio] = useState<PortfolioSummary | null>(null)
   const [sectors, setSectors]     = useState<SectorItem[]>([])
@@ -218,7 +225,7 @@ export default function Dashboard({ onNavigate }: { onNavigate?: (r: string) => 
           <tr className="xls-row">
             <td className="xls-row-num">{rowNum()}</td>
             <td className="xls-cell" colSpan={6} style={S.sectionTitle}>
-              {isAdmin ? '오늘의 플로우' : '오늘 할 일'}
+              {isAdmin ? '오늘의 플로우' : detailed ? '오늘 할 일' : '다음 할 일'}
               {isAdmin && (
                 <span style={{ float: 'right', color: 'var(--color-brand)', cursor: 'pointer', fontSize: 10, fontWeight: 400 }} onClick={() => nav('reports')}>
                   복기 보기 →
@@ -228,7 +235,7 @@ export default function Dashboard({ onNavigate }: { onNavigate?: (r: string) => 
           </tr>
 
           {/* 관리자: 봇 흐름 단계(navigation.ts FLOW_STEPS) · 사용자: 시드 모으기 가이드 */}
-          {(isAdmin ? FLOW_STEPS : USER_TODO_STEPS).map((s, i) => (
+          {todoSteps.map((s, i) => (
             <tr key={s.key} className={`xls-row${i % 2 === 0 ? ' xls-row--even' : ''}`}>
               <td className="xls-row-num">{rowNum()}</td>
               <td className="xls-cell" colSpan={2} style={{ ...S.header, ...S.midBorder }}>
@@ -239,7 +246,7 @@ export default function Dashboard({ onNavigate }: { onNavigate?: (r: string) => 
                 {s.desc}
               </td>
               <td className="xls-cell">
-                <span style={S.link} onClick={() => nav(s.key)}>열기 →</span>
+                <span style={{ ...S.link, ...(s.key === nextTodoKey ? { fontWeight: 700 } : {}) }} onClick={() => nav(s.key)}>{s.key === nextTodoKey ? '지금 하기 →' : '열기 →'}</span>
               </td>
             </tr>
           ))}
