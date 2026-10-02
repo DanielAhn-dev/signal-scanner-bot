@@ -1634,6 +1634,10 @@
 .excel-sheet-tabs__nav-btn:hover { color: var(--color-text-primary); }
 .excel-sheet-tabs__nav-btn:disabled { opacity: 0.3; cursor: default; }
 
+/* 시트 탭이 화면보다 길 때 가려진 쪽을 알려 주는 가장자리 화살표 (모바일에서만 보임) */
+.excel-sheet-tabs-wrap { position: relative; flex-shrink: 0; }
+.excel-sheet-tabs__edge { display: none; }
+
 .excel-tools-drawer-anchor {
   position: relative;
   z-index: 4;
@@ -4214,6 +4218,29 @@
     box-shadow: inset 0 -2px 0 var(--color-excel-title-bar);
   }
   .excel-sheet-tab svg { width: 16px; height: 16px; }
+  .excel-sheet-tabs__edge {
+    position: absolute;
+    top: 1px;
+    bottom: 0;
+    width: 30px;
+    display: flex;
+    align-items: center;
+    padding: 0;
+    border: 0;
+    color: var(--color-text-secondary);
+    cursor: pointer;
+    z-index: 2;
+  }
+  .excel-sheet-tabs__edge--left {
+    left: 0;
+    justify-content: flex-start;
+    background: linear-gradient(to right, var(--color-excel-ribbon) 55%, transparent);
+  }
+  .excel-sheet-tabs__edge--right {
+    right: 0;
+    justify-content: flex-end;
+    background: linear-gradient(to left, var(--color-excel-ribbon) 55%, transparent);
+  }
 
   /* 리본 아이콘 터치 타깃 */
   .ribbon-btn { min-width: 40px; }

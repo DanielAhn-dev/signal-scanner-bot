@@ -418,6 +418,38 @@ export default function ExcelShell({
     navigateSheetIndex(activeSheetIndex + offset)
   }, [activeSheetIndex, navigateSheetIndex])
 
+  // 시트 탭이 화면보다 길 때 — 가려진 쪽에 화살표를 띄우고, 활성 탭은 항상 보이게 맞춘다
+  const sheetTabsRef = useRef<HTMLDivElement>(null)
+  const [tabsOverflow, setTabsOverflow] = useState({ left: false, right: false })
+  const updateTabsOverflow = useCallback(() => {
+    const el = sheetTabsRef.current
+    if (!el) return
+    const left = el.scrollLeft > 4
+    const right = el.scrollLeft + el.clientWidth < el.scrollWidth - 4
+    setTabsOverflow(prev => (prev.left === left && prev.right === right ? prev : { left, right }))
+  }, [])
+  const scrollSheetTabs = useCallback((direction: -1 | 1) => {
+    const el = sheetTabsRef.current
+    if (el) el.scrollBy({ left: direction * el.clientWidth * 0.6, behavior: 'smooth' })
+  }, [])
+  useEffect(() => {
+    const el = sheetTabsRef.current
+    if (!el) return
+    updateTabsOverflow()
+    el.addEventListener('scroll', updateTabsOverflow, { passive: true })
+    const observer = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(updateTabsOverflow) : null
+    observer?.observe(el)
+    return () => { el.removeEventListener('scroll', updateTabsOverflow); observer?.disconnect() }
+  }, [updateTabsOverflow])
+  useEffect(() => {
+    const el = sheetTabsRef.current
+    const active = el?.querySelector<HTMLElement>('.excel-sheet-tab--active')
+    if (!el || !active) return
+    const pad = 36 // 가장자리 화살표에 가리지 않을 여유
+    if (active.offsetLeft - pad < el.scrollLeft) el.scrollTo({ left: Math.max(0, active.offsetLeft - pad), behavior: 'smooth' })
+    else if (active.offsetLeft + active.offsetWidth + pad > el.scrollLeft + el.clientWidth) el.scrollTo({ left: active.offsetLeft + active.offsetWidth + pad - el.clientWidth, behavior: 'smooth' })
+  }, [activeRoute, isToolRouteActive])
+
   const isAtFirstSheet = activeSheetIndex <= 0
   const isAtLastSheet = activeSheetIndex >= SHEET_TABS.length - 1
 
@@ -910,7 +942,8 @@ export default function ExcelShell({
             })}
           </div>
         )}
-        <div className="excel-sheet-tabs">
+        <div className="excel-sheet-tabs-wrap">
+        <div className="excel-sheet-tabs" ref={sheetTabsRef}>
           <div className="excel-sheet-tabs__nav-arrows">
             <button className="excel-sheet-tabs__nav-btn" onClick={() => navigateSheetIndex(0)} disabled={isAtFirstSheet} aria-label="첫 시트"><ChevronLeft size={10}/></button>
             <button className="excel-sheet-tabs__nav-btn" onClick={() => navigateSheetOffset(-1)} disabled={isAtFirstSheet} aria-label="이전 시트"><ChevronLeft size={10}/></button>
@@ -934,6 +967,13 @@ export default function ExcelShell({
           >
             <Wrench size={10}/><span className="excel-sheet-tab__label">도구</span>{toolsDrawerOpen ? <ChevronDown size={10}/> : <ChevronUp size={10}/>}
           </button>
+        </div>
+        {tabsOverflow.left && (
+          <button className="excel-sheet-tabs__edge excel-sheet-tabs__edge--left" onClick={() => scrollSheetTabs(-1)} aria-label="왼쪽 시트 더 보기"><ChevronLeft size={16}/></button>
+        )}
+        {tabsOverflow.right && (
+          <button className="excel-sheet-tabs__edge excel-sheet-tabs__edge--right" onClick={() => scrollSheetTabs(1)} aria-label="오른쪽 시트 더 보기"><ChevronRight size={16}/></button>
+        )}
         </div>
       </div>
 
