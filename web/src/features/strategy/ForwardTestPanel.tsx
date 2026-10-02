@@ -35,7 +35,7 @@ type Activation = {
 }
 
 // 비교 기준 — 후보 전략이 현재 봇·KODEX 200·CD금리보다 모두 나아야 바꿀 이유가 있다
-const BENCHMARKS = new Set(['kodex200-hold', 'cd-only', 'bot-account'])
+const BENCHMARKS = new Set(['kodex200-hold', 'cd-only', 'bot-account', 'sp500-hold'])
 
 const pct = (v: number) => `${v >= 0 ? '+' : ''}${v.toFixed(2)}%`
 

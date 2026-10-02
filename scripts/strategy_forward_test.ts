@@ -13,6 +13,7 @@ import { fetchEtfDistributions } from "../src/services/etfDistribution";
 import { computeFlowScore, pickHeavyNetSelling } from "../src/services/investorFlowFilter";
 import { fetchFundamentalGateResults } from "../src/services/fundamentalQualityGate";
 import { buildPromotionKeyboard } from "../src/services/strategyPromotion";
+import { PROFILE_CODES, fetchNaverCloses, simulateAllCoreProfiles, type CloseBar } from "../src/services/coreProfiles";
 import {
   buildGoalTrackerView,
   fetchAccountEquity,
@@ -441,6 +442,14 @@ async function main(): Promise<void> {
   const sheets = await loadOrderSheets(START);
   if (sheets.length) {
     results.push(simulateOrderSheetStrategy({ sheets, tradingDates, barsByCode }));
+  }
+  // 코어 프로필(자산배분 후보): 네이버 수정주가(총수익)로 기준일부터 측정. 실패해도 나머지 측정은 계속한다
+  try {
+    const closesByCode = new Map<string, CloseBar[]>();
+    for (const code of PROFILE_CODES) closesByCode.set(code, await fetchNaverCloses(code, shiftDate(START, -10)));
+    results.push(...simulateAllCoreProfiles(closesByCode, START));
+  } catch (e) {
+    console.log(`코어 프로필 측정 생략: ${e instanceof Error ? e.message : String(e)}`);
   }
   const review = reviewStrategies({ results, measuredDays: inRange.length - 1 });
   // 목표 트래커 요약 (관리자 계좌)

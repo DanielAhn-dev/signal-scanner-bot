@@ -32,7 +32,14 @@ export type StrategyName =
   | "gate-monthly"
   | "gate-monthly+trend50"
   | "gate-top20"
-  | "bot-account";
+  | "bot-account"
+  | "sp500-hold"
+  | "profile-growth-5050"
+  | "profile-balanced-4"
+  | "profile-allweather-kr"
+  | "profile-permanent"
+  | "profile-6040"
+  | "profile-domestic";
 
 export type StrategyResult = {
   name: StrategyName;
@@ -71,10 +78,29 @@ export const STRATEGY_LABELS: Record<StrategyName, string> = {
   "gate-monthly+trend50": "실적 관문 통과 동일비중 + 50일선 아래 CD금리",
   "gate-top20": "실적 관문 코어: 통과 종목 점수 상위 20 (월 교체·50일선, 봇 구현됨)",
   "bot-account": "봇 실제 계좌",
+  "sp500-hold": "TIGER 미국S&P500 보유",
+  "profile-growth-5050": "코어 성장형: 코스피200 50 + S&P500 50",
+  "profile-balanced-4": "코어 균형형: 코스피200 30·나스닥100 30·국고채 25·금 15",
+  "profile-allweather-kr": "코어 올웨더형: S&P500 30·미국30년채 40·미국10년채 15·금 15",
+  "profile-permanent": "코어 영구형: S&P500 25·미국30년채 25·금 25·CD 25",
+  "profile-6040": "코어 60/40: S&P500 60·미국10년채 40",
+  "profile-domestic": "코어 국내형: 코스피200 40·국고채 40·금 20",
 };
 
 /** 비교 기준(벤치마크)과 현재 봇 — 승격 후보가 아니다 */
-export const NON_CANDIDATE_STRATEGIES: StrategyName[] = ["kodex200-hold", "cd-only", "bot-account"];
+export const NON_CANDIDATE_STRATEGIES: StrategyName[] = [
+  "kodex200-hold",
+  "cd-only",
+  "bot-account",
+  "sp500-hold",
+  // 코어 프로필은 종목 봇 대체 후보가 아니라 별도 측정(coreProfiles.ts) — 종목 봇 승격 판정에 섞이지 않는다
+  "profile-growth-5050",
+  "profile-balanced-4",
+  "profile-allweather-kr",
+  "profile-permanent",
+  "profile-6040",
+  "profile-domestic",
+];
 
 const STOCK_SIDE_COST = 0.00225;
 const ETF_SIDE_COST = 0.00035;
@@ -259,7 +285,7 @@ function sma(values: number[], end: number, window: number): number | null {
   return s / window;
 }
 
-function maxDrawdown(equity: number[]): number {
+export function maxDrawdown(equity: number[]): number {
   let peak = equity[0] ?? 1;
   let mdd = 0;
   for (const v of equity) {
