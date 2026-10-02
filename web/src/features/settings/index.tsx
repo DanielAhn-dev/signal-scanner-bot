@@ -428,7 +428,7 @@ export default function Settings(){
 
   return (
     <section className="container-app">
-      <table className="xls-table" style={{ width: '100%', tableLayout: 'fixed', marginBottom: 'var(--space-4)' }}>
+      <table className="xls-table xls-fit xls-fit--stack" style={{ width: '100%', tableLayout: 'fixed', marginBottom: 'var(--space-4)' }}>
         <colgroup>
           <col style={{ width: '18%' }} />
           <col style={{ width: '18%' }} />

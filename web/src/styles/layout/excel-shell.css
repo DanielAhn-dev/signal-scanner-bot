@@ -4191,6 +4191,36 @@
     overflow-x: auto;
     -webkit-overflow-scrolling: touch;
   }
+  /* 이미 스크롤 틀(xls-scroll-frame) 안에 있는 표는 틀이 스크롤을 맡는다 — block이면 표가 내용 폭으로 쪼그라들어 꽉 차지 않는다 */
+  .xls-content-inner .xls-scroll-frame table {
+    display: table;
+    overflow-x: visible;
+  }
+  /* 폼처럼 화면 폭에 맞춰 줄바꿈해야 하는 표(xls-fit): 가로 스크롤 없이 폭 안에서 접는다 */
+  .xls-content-inner table.xls-fit {
+    display: table;
+    overflow-x: visible;
+  }
+  .xls-content-inner table.xls-fit th,
+  .xls-content-inner table.xls-fit td {
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+  /* 라벨 칸과 입력 칸이 6열을 나눠 쓰면 좁은 화면에서 입력 칸이 너무 좁다 — 라벨을 위, 내용을 아래로 쌓는다 */
+  .xls-content-inner table.xls-fit--stack,
+  .xls-content-inner table.xls-fit--stack tbody,
+  .xls-content-inner table.xls-fit--stack tr,
+  .xls-content-inner table.xls-fit--stack td {
+    display: block;
+    width: 100%;
+    box-sizing: border-box;
+  }
+  .xls-content-inner table.xls-fit--stack colgroup {
+    display: none;
+  }
+  .xls-content-inner table.xls-fit--stack td.xls-cell {
+    min-width: 0;
+  }
   .xls-content-inner th,
   .xls-content-inner td {
     white-space: nowrap;
