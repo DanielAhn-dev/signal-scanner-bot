@@ -12,7 +12,8 @@ import { preloadStocks } from './lib/stockCache'
 import { isSupabaseConfigured } from './lib/supabase'
 import { isReviewMode } from './lib/review-mode'
 import { useAuthStore } from './stores/authStore'
-import { useProfileStore } from './stores/profileStore'
+import { useProfileStore, useCurrentClientId } from './stores/profileStore'
+import { useNeedsStart } from './lib/useStartGate'
 import { onOpenProfileModal } from './lib/profileModal'
 import { apiFetch } from './lib/api'
 import { canSeeNav } from './navigation'
@@ -104,6 +105,10 @@ function AppContent() {
   const isAdmin      = useProfileStore((s) => s.isAdmin)
   const isAdminReady = useProfileStore((s) => s.isAdminReady)
   const setIsAdmin   = useProfileStore((s) => s.setIsAdmin)
+
+  const clientIdForGate = useCurrentClientId()
+  // 일반 사용자는 시작하기를 마치기 전엔 다른 화면으로 못 간다(프로필·설정 제외)
+  const needsStart = useNeedsStart(isMember && isAdminReady && !isAdmin, clientIdForGate)
 
   const [profileOpen, setProfileOpen]         = useState(false)
   const [focusChatIdField, setFocusChatIdField] = useState(false)
@@ -366,6 +371,9 @@ function AppContent() {
           {/* 일반 사용자는 허용된 화면만 — 주소로 직접 들어와도 홈으로 돌려보낸다 */}
           {isAdminReady && !isAdmin && !isPublicAnalyze && !isReview && !canSeeNav(activeRoute, false) && (
             <Navigate to="/dashboard" replace />
+          )}
+          {needsStart && !['/start', '/profile', '/settings'].includes(location.pathname) && (
+            <Navigate to="/start" replace />
           )}
           <Routes>
             <Route path="/"                       element={<Navigate to="/dashboard" replace />} />
