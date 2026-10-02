@@ -261,11 +261,11 @@ export default function GoalTrackerPage() {
           <div style={{ width: `${pct}%` }} />
         </div>
         <div className="goal-note">
-          <strong>{view.phase.title}</strong> — {view.phase.text}
+          <strong>{view.phase.title}</strong>: {view.phase.text}
         </div>
         {realism && (
           <div className="goal-note" role="status">
-            <strong>목표 현실성 ({realism.years}년 기준)</strong> — {realism.text}
+            <strong>목표 현실성 ({realism.years}년 기준)</strong>: {realism.text}
           </div>
         )}
       </section>

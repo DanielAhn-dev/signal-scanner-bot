@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react'
+import { formatKrwMan } from '../../lib/format'
 import { useNavigate } from 'react-router-dom'
 import { apiFetch } from '../../lib/api'
 import Button from '../../components/ui/Button'
@@ -83,13 +84,7 @@ const BUY_HINT: Record<Group, string> = {
   satellite: '새로 채우지 않습니다 (상한 안에서만 유지)',
   cash: '단기채권·CD금리 ETF 또는 파킹통장 — 1년치 생활비',
 }
-const man = (v: number) => {
-  const m = Math.round(v / 10_000)
-  const eok = Math.trunc(m / 10_000)
-  const rest = Math.abs(m % 10_000)
-  if (eok === 0) return `${m.toLocaleString('ko-KR')}만원`
-  return rest ? `${eok}억 ${rest.toLocaleString('ko-KR')}만원` : `${eok}억원`
-}
+const man = formatKrwMan
 const pct = (v: number) => `${v.toFixed(0)}%`
 
 function OrdersTable({ orders, th, td }: { orders: Order[]; th: React.CSSProperties; td: React.CSSProperties }) {

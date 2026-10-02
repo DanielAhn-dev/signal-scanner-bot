@@ -3,6 +3,7 @@
  * 시드·투자 성향·전략 방식·매도 시간대별로 가상 매매 성과를 묶어 보여 준다.
  * 표본이 적은 차이는 "참고 불가"로 표시해 전략에 바로 반영하지 않게 한다.
  */
+import { formatKrwMan } from '../../lib/format'
 import React, { useEffect, useState } from 'react'
 import { apiFetch } from '../../lib/api'
 import Skeleton from '../../components/Skeleton'
@@ -42,7 +43,7 @@ type Report = {
 
 const pct = (v: number | null, digits = 2, sign = false) =>
   v === null ? '—' : `${sign && v > 0 ? '+' : ''}${v.toFixed(digits)}%`
-const man = (v: number) => (v > 0 ? `${Math.round(v / 10_000).toLocaleString('ko-KR')}만원` : '미설정')
+const man = (v: number) => (v > 0 ? formatKrwMan(v) : '미설정')
 const color = (v: number | null) => (v === null || v === 0 ? undefined : v > 0 ? 'var(--color-stock-up)' : 'var(--color-stock-down)')
 const maskId = (id: number) => `…${String(id).slice(-4)}`
 

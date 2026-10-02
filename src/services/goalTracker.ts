@@ -418,12 +418,12 @@ export function buildGoalTrackerView(input: {
   const phase: GoalTrackerView["phase"] = reached
     ? {
         stage: 2,
-        title: "2차 — 월 수익 받기",
+        title: "2차 · 월 수익 받기",
         text: `필요 시드에 도달했습니다. 원금은 두고 연 ${withdrawalPct}% 이내로 꺼내 쓰세요(좋은 달 수익은 CMA·파킹통장에 두었다가 나눠 쓰기). 마이너스 달이 이어져도 버틸 3~6개월치 현금을 따로 두세요.`,
       }
     : {
         stage: 1,
-        title: "1차 — 시드 모으기",
+        title: "1차 · 시드 모으기",
         text: "수익은 전부 재투자합니다. 도달 시점을 앞당기는 가장 큰 방법은 매매 수익률보다 추가 입금입니다.",
       };
   const horizons = [12, 24, 36, 60].map((months) => ({ months, isTarget: false }));

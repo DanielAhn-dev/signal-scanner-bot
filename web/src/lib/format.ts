@@ -28,6 +28,17 @@ export function formatKrwCompact(value: unknown, options: { showPositiveSign?: b
   return `${sign}${formatNumber(abs)}원`
 }
 
+/** 만원 단위로 읽기 쉽게 — 15,000만원이 아니라 1억 5,000만원 (1억 미만은 1,992만원) */
+export function formatKrwMan(value: number): string {
+  const m = Math.round(value / 10_000)
+  const sign = m < 0 ? '-' : ''
+  const abs = Math.abs(m)
+  const eok = Math.trunc(abs / 10_000)
+  const rest = abs % 10_000
+  if (eok === 0) return `${sign}${abs.toLocaleString('ko-KR')}만원`
+  return rest ? `${sign}${eok.toLocaleString('ko-KR')}억 ${rest.toLocaleString('ko-KR')}만원` : `${sign}${eok.toLocaleString('ko-KR')}억원`
+}
+
 export function formatKstDateTime(value: unknown, options: Intl.DateTimeFormatOptions = {}): string {
   if (value == null || value === '') return '—'
   const date = value instanceof Date ? value : new Date(String(value))

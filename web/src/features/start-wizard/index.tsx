@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import { formatKrwMan } from '../../lib/format'
 import { useNavigate } from 'react-router-dom'
 import { ArrowRight, Check } from 'lucide-react'
 import { apiFetch } from '../../lib/api'
@@ -21,7 +22,7 @@ import './start-wizard.css'
 // 월수입·대출 같은 민감한 입력이라 사용자별 키로만 보관하고 로그아웃 때 지운다 (lib/userState.ts)
 const storageKey = () => userScopedKey('start-wizard')
 const won = (v: number) => `${Math.round(v).toLocaleString('ko-KR')}원`
-const man = (v: number) => `${Math.round(v / 10_000).toLocaleString('ko-KR')}만원`
+const man = formatKrwMan
 const num = (v: string) => { const n = Number(v.replace(/,/g, '').trim()); return Number.isFinite(n) && n > 0 ? n : 0 }
 const monthKeyKst = () => new Date().toLocaleDateString('sv-SE', { timeZone: 'Asia/Seoul', year: 'numeric', month: '2-digit' }).slice(0, 7)
 

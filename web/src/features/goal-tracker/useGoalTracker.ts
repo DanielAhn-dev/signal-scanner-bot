@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
+import { formatKrwMan } from '../../lib/format'
 import { apiFetch } from '../../lib/api'
 import { useCurrentChatId } from '../../stores/profileStore'
 
@@ -39,7 +40,7 @@ export type GoalView = {
   }
 }
 
-export const man = (v: number) => `${Math.round(v / 10_000).toLocaleString('ko-KR')}만원`
+export const man = formatKrwMan
 export const signed = (v: number) => `${v >= 0 ? '+' : ''}${man(v)}`
 
 /**
