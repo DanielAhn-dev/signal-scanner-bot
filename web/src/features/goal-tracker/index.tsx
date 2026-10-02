@@ -5,6 +5,8 @@ import Modal from '../../components/Modal'
 import { apiFetch } from '../../lib/api'
 import SheetHeaderBar from '../../components/SheetHeaderBar'
 import { man, signed, useGoalTracker } from './useGoalTracker'
+import { judgeRealism, requiredAnnualPct } from '../../lib/startPlan'
+import { monthsUntil } from '../../../../src/services/goalTracker'
 import './goal-tracker.css'
 
 const UP = 'var(--color-stock-up)'
@@ -118,6 +120,14 @@ export default function GoalTrackerPage() {
   const cross = p?.crossover ?? null
   const pct = Math.min(100, Math.max(0, view.target.progressPct))
   const withdrawPct = s.withdrawalPct ?? 4
+  // 아직 필요 시드에 못 닿았을 때만: 목표 시점(없으면 10년) 안에 닿으려면 연 몇 %가 필요한지
+  const realism = (() => {
+    if (view.equity >= view.target.requiredSeed) return null
+    const months = s.targetDate ? monthsUntil(view.today, s.targetDate) : 120
+    const years = Math.max(1, Math.round(months / 12))
+    const need = requiredAnnualPct({ seed: view.equity, monthly: s.monthlyContribution, years, target: view.target.requiredSeed })
+    return { years, ...judgeRealism(need) }
+  })()
   const assessColor =
     t.assessment?.level === 'good' ? UP : t.assessment?.level === 'rare' ? 'var(--color-error)' : 'var(--color-text-secondary)'
 
@@ -253,6 +263,11 @@ export default function GoalTrackerPage() {
         <div className="goal-note">
           <strong>{view.phase.title}</strong> — {view.phase.text}
         </div>
+        {realism && (
+          <div className="goal-note" role="status">
+            <strong>목표 현실성 ({realism.years}년 기준)</strong> — {realism.text}
+          </div>
+        )}
       </section>
 
       <section className="goal-card" aria-label="계획 대비">

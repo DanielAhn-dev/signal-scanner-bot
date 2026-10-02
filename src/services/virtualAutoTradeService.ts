@@ -1516,6 +1516,9 @@ function buildAutoTradeExecutionAlert(input: {
     ...pickExecutionLines(input.action.notes || []).map((line) => `- ${line}`),
     input.isShadow ? "※ 섀도우 모드: 실반영 없음. 실전 전환은 /섀도우 off" : "다음 점검: /보유 · /보유대응",
   ];
+  // 웹 주소가 설정돼 있으면 따라 한 체결을 바로 기록할 수 있게 링크를 붙인다 (텔레그램 버튼은 콜백만 지원)
+  const webBase = String(process.env.WEB_APP_URL || "").trim().replace(/\/+$/, "");
+  if (webBase && !input.isShadow) lines.push(`따라 체결했다면 기록: ${webBase}/follow`);
 
   return lines.join("\n");
 }
