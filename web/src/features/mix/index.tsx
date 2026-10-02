@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import { MIX_ASOF, MIX_ASSETS } from '../../data/mixData'
-import { MIX_PRESETS, fmtYm, normalize, simulateMix, type Rebalance, type Weights } from '../../lib/mix'
+import { MIX_PRESETS, STRESS_PRESETS, fmtYm, normalize, simulateMix, stressTest, type Rebalance, type Shocks, type Weights } from '../../lib/mix'
 import '../accumulate/accumulate.css'
 import './mix.css'
 
@@ -33,6 +33,8 @@ function Curve({ mix, base }: { mix: number[]; base: number[] | null }) {
 export default function MixPage() {
   const [weights, setWeights] = useState<Weights>(MIX_PRESETS[3].weights)
   const [rebalance, setRebalance] = useState<Rebalance>('year')
+  const [shocks, setShocks] = useState<Shocks>(STRESS_PRESETS[0].shocks)
+  const [tolerance, setTolerance] = useState(20)
   const total = Object.values(weights).reduce((s, v) => s + v, 0)
 
   const result = useMemo(() => simulateMix(weights, rebalance), [weights, rebalance])
@@ -52,6 +54,7 @@ export default function MixPage() {
     return { curve, cagr: curve[curve.length - 1] ** (1 / years) - 1, mdd }
   }, [result])
 
+  const stress = useMemo(() => stressTest(weights, shocks, tolerance / 100), [weights, shocks, tolerance])
   const set = (id: string, v: number) => setWeights({ ...weights, [id]: v })
   const picked = Object.keys(normalize(weights))
   const shortest = picked.map((id) => MIX_ASSETS.find((a) => a.id === id)!).sort((a, b) => b.first.localeCompare(a.first))[0]
@@ -119,6 +122,48 @@ export default function MixPage() {
       ) : (
         <section className="acc-card"><p className="acc-note">계산할 수 있는 기간이 부족합니다. 비중을 조정해 주세요.</p></section>
       )}
+
+      <section className="acc-card">
+        <h2>하락이 왔다고 가정해보기</h2>
+        <p className="acc-note">과거에 좋았던 조합을 고르면 미래도 좋을 거라는 보장이 없습니다. 하락이 <strong>온다고 예측하는 것이 아니라</strong>, 온다고 가정했을 때 내 조합이 버틸 수 있는지 미리 확인합니다. 하락 시점은 아무도 모르니 "이제 올 때가 됐다"는 판단은 근거가 되지 않지만, 대비는 언제 해도 됩니다.</p>
+        <div className="acc-seg">
+          {STRESS_PRESETS.map((p) => (
+            <button key={p.key} type="button" onClick={() => setShocks(p.shocks)}
+              className={JSON.stringify(p.shocks) === JSON.stringify(shocks) ? 'is-active' : ''}>
+              {p.label}<br /><small>{p.note}</small>
+            </button>
+          ))}
+        </div>
+        {([['equity', '주식(코스피·나스닥·S&P500)', -70, 0], ['bond', '채권', -40, 20], ['gold', '금', -40, 40]] as const).map(([k, label, min, max]) => (
+          <label key={k} className="acc-field mix-slider">
+            <span>{label} <b>{Math.round(shocks[k] * 100)}%</b></span>
+            <input type="range" min={min} max={max} step={5} value={Math.round(shocks[k] * 100)} onChange={(e) => setShocks({ ...shocks, [k]: Number(e.target.value) / 100 })} />
+          </label>
+        ))}
+        <label className="acc-field mix-slider">
+          <span>내가 버틸 수 있는 손실 <b>{tolerance}%</b> <small className="acc-code">이 이상 잃으면 팔고 싶어질 것 같은 선</small></span>
+          <input type="range" min={5} max={60} step={5} value={tolerance} onChange={(e) => setTolerance(Number(e.target.value))} />
+        </label>
+        {stress ? (
+          <>
+            <dl className="acc-tiles">
+              <div className="is-main"><dt>이 하락에서 내 조합</dt><dd>{pct(stress.loss, 0)}</dd><small>주식만 가졌다면 {pct(stress.equityOnly, 0)}</small></div>
+              <div><dt>원금으로 돌아오려면</dt><dd>{pct(stress.recoveryNeeded, 0)} 상승</dd><small>손실이 클수록 회복은 더 가파릅니다</small></div>
+            </dl>
+            {-stress.loss <= tolerance / 100 ? (
+              <p className="acc-summary">이 가정에서는 손실이 버틸 수 있는 선({tolerance}%) 안입니다. 손실이 선을 넘지 않아야 하락 중에 팔지 않고 계속 보유·적립을 이어가기 쉽습니다.</p>
+            ) : (
+              <p className="acc-warn">
+                이 가정에서는 손실 {pct(-stress.loss, 0)}로 버틸 수 있는 선({tolerance}%)을 넘습니다.
+                {stress.maxEquityShare != null
+                  ? ` 지금 주식 비중 ${pct(stress.equityShare, 0)}를 약 ${pct(stress.maxEquityShare, 0)} 이하로 낮추면(나머지 자산 구성은 그대로) 이 가정에서 선 안에 들어옵니다.`
+                  : ' 이 하락에서는 채권·금을 섞어도 줄지 않아, 방어 자산의 종류나 현금 비중을 다시 생각해야 합니다.'}
+              </p>
+            )}
+            <p className="acc-note">정해진 규칙 하나: 먼저 버틸 수 있는 손실을 정하고 거기서 주식 비중을 거꾸로 정합니다. 하락이 오면 이미 정한 비중으로 되돌리기(리밸런싱)와 적립 계속하기만 하고, 그때 가서 새로 판단하지 않습니다.</p>
+          </>
+        ) : null}
+      </section>
 
       <section className="acc-card">
         <h2>읽을 때 주의</h2>

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { normalize, simulateMix } from '../lib/mix'
+import { normalize, simulateMix, stressTest, STRESS_PRESETS } from '../lib/mix'
 import type { MixAsset } from '../data/mixData'
 
 const asset = (id: string, start: string, f: (i: number) => number, n = 72, dragPct = 0): MixAsset => {
@@ -51,5 +51,31 @@ describe('simulateMix', () => {
   it('없는 자산이나 12개월 미만이면 null', () => {
     expect(simulateMix({ zz: 100 }, 'month', [])).toBeNull()
     expect(simulateMix({ a: 100 }, 'month', [asset('a', '2010', () => 100, 8)])).toBeNull()
+  })
+})
+
+describe('stressTest', () => {
+  const crash = STRESS_PRESETS[0].shocks
+  it('주식만 가지면 충격만큼 잃고 회복에는 더 큰 수익이 필요하다', () => {
+    const r = stressTest({ kospi200: 100 }, crash, 0.2)!
+    expect(r.loss).toBeCloseTo(-0.4)
+    expect(r.recoveryNeeded).toBeCloseTo(0.6667, 3)
+  })
+
+  it('방어 자산을 섞으면 손실이 줄고, 감내 손실 안에 들어오는 주식 상한을 계산한다', () => {
+    const r = stressTest({ kospi200: 50, kbond10: 50 }, crash, 0.2)!
+    expect(r.loss).toBeCloseTo(-0.2)
+    expect(r.maxEquityShare).toBeCloseTo(0.5, 3)
+  })
+
+  it('채권도 같이 빠지면(2022형) 채권으로는 손실이 안 줄어든다', () => {
+    const rate = STRESS_PRESETS[1].shocks
+    const r = stressTest({ kospi200: 50, usbond20: 50 }, rate, 0.1)!
+    expect(r.loss).toBeCloseTo(-0.225)
+    expect(r.maxEquityShare).toBe(0)
+  })
+
+  it('비중이 없으면 null', () => {
+    expect(stressTest({}, crash, 0.2)).toBeNull()
   })
 })

@@ -19,6 +19,16 @@ describe('섞어보기 화면', () => {
   })
 })
 
+describe('하락 가정', () => {
+  it('하락 가정 결과와 버틸 수 있는 선 판정을 보여준다', () => {
+    render(<MixPage />)
+    expect(screen.getByText('하락이 왔다고 가정해보기')).toBeTruthy()
+    expect(screen.getByText('이 하락에서 내 조합')).toBeTruthy()
+    fireEvent.click(screen.getByText('최악 가정'))
+    expect(screen.getByText(/버틸 수 있는 선\(20%\)을 넘습니다/)).toBeTruthy()
+  })
+})
+
 describe('실제 데이터 점검', () => {
   it('한국 상장 4종 조합은 파이썬 검증(연 12.3%, 낙폭 -19%)과 비슷하다', () => {
     const r = simulateMix(MIX_PRESETS.find((p) => p.key === 'mix4')!.weights, 'month')!

@@ -98,3 +98,58 @@ export function simulateMix(weights: Weights, rebalance: Rebalance, assets: MixA
 export function fmtYm(ym: string): string {
   return `${ym.slice(0, 4)}-${ym.slice(4)}`
 }
+
+export type AssetClass = 'equity' | 'bond' | 'gold'
+export const ASSET_CLASS: Record<string, AssetClass> = {
+  kospi200: 'equity', nasdaq100: 'equity', sp500: 'equity', kbond10: 'bond', usbond20: 'bond', gold: 'gold',
+}
+/** 자산군별 충격(소수, 예: -0.4). 비중 큰 자산에도 같은 충격을 준다 — 개별 차이는 모른다고 가정 */
+export type Shocks = Record<AssetClass, number>
+
+export const STRESS_PRESETS: Array<{ key: string; label: string; note: string; shocks: Shocks }> = [
+  { key: 'crash', label: '일반 폭락', note: '주식만 -40%, 채권·금은 제자리', shocks: { equity: -0.4, bond: 0, gold: 0 } },
+  { key: 'rate', label: '금리 급등형', note: '주식 -25%, 채권 -20% (2022년처럼 같이 하락)', shocks: { equity: -0.25, bond: -0.2, gold: 0 } },
+  { key: 'stagflation', label: '인플레 충격형', note: '주식 -35%, 채권 -15%, 금 +10%', shocks: { equity: -0.35, bond: -0.15, gold: 0.1 } },
+  { key: 'severe', label: '최악 가정', note: '주식 -55%, 채권 -10%, 금 -10%', shocks: { equity: -0.55, bond: -0.1, gold: -0.1 } },
+]
+
+export type StressResult = {
+  /** 이 충격에서 내 조합의 손실(음수) */
+  loss: number
+  /** 같은 충격에서 주식(코스피200)만 가졌을 때 */
+  equityOnly: number
+  /** 원금으로 돌아오는 데 필요한 수익률 */
+  recoveryNeeded: number
+  /** 감내 손실 안에 들어오려면 주식군 비중의 상한(0~1). 방어 자산의 내부 비율은 그대로 */
+  maxEquityShare: number | null
+  equityShare: number
+}
+
+export function stressTest(weights: Weights, shocks: Shocks, tolerance: number): StressResult | null {
+  const w = normalize(weights)
+  const ids = Object.keys(w)
+  if (!ids.length) return null
+  let loss = 0
+  let eqW = 0, eqLoss = 0, otherW = 0, otherLoss = 0
+  for (const id of ids) {
+    const cls = ASSET_CLASS[id]
+    const s = shocks[cls]
+    loss += w[id] * s
+    if (cls === 'equity') { eqW += w[id]; eqLoss += w[id] * s } else { otherW += w[id]; otherLoss += w[id] * s }
+  }
+  // 주식군 평균 충격 eAvg, 나머지 oAvg: 비중 t일 때 손실 = t*eAvg + (1-t)*oAvg
+  const eAvg = eqW > 0 ? eqLoss / eqW : shocks.equity
+  const oAvg = otherW > 0 ? otherLoss / otherW : null
+  let maxEquityShare: number | null = null
+  if (eqW > 0 && eAvg < 0) {
+    if (oAvg == null) maxEquityShare = Math.min(1, -tolerance / eAvg) // 방어 자산이 없으면 현금(0%)을 가정
+    else if (oAvg >= eAvg) {
+      const t = (-tolerance - oAvg) / (eAvg - oAvg)
+      maxEquityShare = Math.max(0, Math.min(1, t))
+    }
+  }
+  return {
+    loss, equityOnly: shocks.equity, recoveryNeeded: loss < 0 ? 1 / (1 + loss) - 1 : 0,
+    maxEquityShare, equityShare: eqW,
+  }
+}
