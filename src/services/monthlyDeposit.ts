@@ -8,7 +8,8 @@
  * - 처음 설정한 달에 입금일이 이미 지났으면 다음 달부터 (설정하자마자 돈이 불어나지 않게).
  */
 
-export type DepositRecord = { date: string; amount: number; cashAfter: number };
+/** manual: 월 자동 입금이 아니라 사용자가 직접 넣은 입금 */
+export type DepositRecord = { date: string; amount: number; cashAfter: number; manual?: true };
 
 export const MAX_DEPOSIT_DAY = 28;
 export const MIN_MONTHLY_DEPOSIT = 10_000;
@@ -85,21 +86,23 @@ export function readDepositLog(prefs: Record<string, unknown>): DepositRecord[] 
   return raw
     .map((r) => r as Partial<DepositRecord>)
     .filter((r): r is DepositRecord => typeof r?.date === "string" && Number.isFinite(Number(r.amount)))
-    .map((r) => ({ date: r.date, amount: Number(r.amount), cashAfter: Number(r.cashAfter) || 0 }));
+    .map((r) => ({ date: r.date, amount: Number(r.amount), cashAfter: Number(r.cashAfter) || 0, ...(r.manual ? { manual: true as const } : {}) }));
 }
 
-/** 입금 반영 후 prefs에 쓸 값 */
-export function applyDeposit(input: {
-  prefs: Record<string, unknown>;
-  amount: number;
-  todayKey: string;
-}): Record<string, unknown> {
+/** 직접 입금 한 번의 금액: 1만원 이상 정수 (월 자동 입금과 같은 범위, 0은 불가) */
+export function normalizeManualDeposit(raw: unknown): number | null {
+  const n = normalizeMonthlyDeposit(raw);
+  return n != null && n > 0 ? n : null;
+}
+
+function depositPatch(input: { prefs: Record<string, unknown>; amount: number; todayKey: string; manual: boolean }): Record<string, unknown> {
   const cash = Math.max(0, Number(input.prefs.virtual_cash) || 0);
   const seed = Math.max(0, Number(input.prefs.virtual_seed_capital) || 0);
   const totalDeposited = Number(input.prefs.virtual_total_deposited);
   const cashBaseline = Number(input.prefs.virtual_cash_baseline);
   const cashAfter = Math.round(cash + input.amount);
-  const log = [...readDepositLog(input.prefs), { date: input.todayKey, amount: input.amount, cashAfter }];
+  const record: DepositRecord = { date: input.todayKey, amount: input.amount, cashAfter, ...(input.manual ? { manual: true as const } : {}) };
+  const log = [...readDepositLog(input.prefs), record];
   return {
     virtual_cash: cashAfter,
     virtual_seed_capital: Math.round(seed + input.amount),
@@ -107,7 +110,24 @@ export function applyDeposit(input: {
     virtual_total_deposited: Math.round((Number.isFinite(totalDeposited) && totalDeposited > 0 ? totalDeposited : seed) + input.amount),
     // 원장 검산 기준선도 입금만큼 같이 올린다 (시드 재계산과 달리 이건 실제 현금 유입이라 기준선을 옮겨도 된다)
     virtual_cash_baseline: Math.round((Number.isFinite(cashBaseline) && cashBaseline > 0 ? cashBaseline : seed) + input.amount),
-    virtual_last_deposit_month: input.todayKey.slice(0, 7),
     virtual_deposit_log: log.slice(-DEPOSIT_LOG_LIMIT),
   };
+}
+
+/** 월 자동 입금 반영 후 prefs에 쓸 값 — 그 달 입금을 처리한 것으로 표시한다 */
+export function applyDeposit(input: {
+  prefs: Record<string, unknown>;
+  amount: number;
+  todayKey: string;
+}): Record<string, unknown> {
+  return { ...depositPatch({ ...input, manual: false }), virtual_last_deposit_month: input.todayKey.slice(0, 7) };
+}
+
+/** 직접 입금 반영 후 prefs에 쓸 값 — "마지막 입금 달"은 건드리지 않는다 (건드리면 이번 달 자동 입금이 건너뛰어진다) */
+export function applyManualDeposit(input: {
+  prefs: Record<string, unknown>;
+  amount: number;
+  todayKey: string;
+}): Record<string, unknown> {
+  return depositPatch({ ...input, manual: true });
 }

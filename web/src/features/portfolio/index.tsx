@@ -1,6 +1,6 @@
 ﻿import React, { useEffect, useState, useRef, useCallback, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Building2, AlertTriangle, TrendingDown, ShieldAlert, TrendingUp, PlusCircle, Eye, ChevronDown } from 'lucide-react'
+import { Building2, AlertTriangle, TrendingDown, ShieldAlert, TrendingUp, PlusCircle, Eye, ChevronDown, ChevronRight } from 'lucide-react'
 import { apiFetch, invalidateCache } from '../../lib/api'
 import { formatKrw, formatKrwCompact, formatKstDateTime, formatNumber } from '../../lib/format'
 import Skeleton from '../../components/Skeleton'
@@ -1398,6 +1398,85 @@ export default function Portfolio() {
         </div>
       )}
 
+      <div className="card mb-4 portfolio-asset-overview-card">
+        <div className="portfolio-asset-overview-head">
+          <div>
+            <div className="title-md">가상 자산 구성 및 리밸런싱 기준</div>
+            <div className="caption muted">
+              {selectedAccountKey === 'all' 
+                ? '전체 가상 계좌의 예수금, 평가금, 현금, 종목별 비중을 확인합니다.'
+                : selectedAccountKey === 'virtual'
+                  ? '가상매매 보유분의 예수금, 평가금, 현금, 종목별 비중을 확인합니다.'
+                  : `${accountLabel(
+                      accountFolders.find(f => f.key === selectedAccountKey)?.brokerName,
+                      accountFolders.find(f => f.key === selectedAccountKey)?.accountName
+                    )} 계좌의 예수금, 평가금, 현금, 종목별 비중을 확인합니다.`
+              }
+            </div>
+          </div>
+        </div>
+
+        <div className="portfolio-asset-overview-body">
+
+            <div className="portfolio-asset-metrics">
+              <div className="portfolio-asset-metric">
+                <div className="portfolio-capture-label">시드 자본금</div>
+                <div className="portfolio-capture-value">{formatKrwCompact(initialCapital)}</div>
+              </div>
+              <div className="portfolio-asset-metric">
+                <div className="portfolio-capture-label">보유 평가금</div>
+                <div className="portfolio-capture-value">{formatKrwCompact(totalEvaluationValue)}</div>
+              </div>
+              <div className="portfolio-asset-metric">
+                <div className="portfolio-capture-label">
+                  {dbVirtualCash != null ? '잔여 현금 (자동매매)' : '추정 예수금'}
+                </div>
+                <div className={`portfolio-capture-value ${(dbVirtualCash ?? estimatedCash) < 0 ? 'negative' : ''}`}>
+                  {formatKrwCompact(dbVirtualCash ?? estimatedCash)}
+                </div>
+              </div>
+              <div className="portfolio-asset-metric">
+                <div className="portfolio-capture-label">총 자산(보유 평가금 + 예수금)</div>
+                <div className={`portfolio-capture-value ${totalAssetValue < 0 ? 'negative' : 'positive'}`}>{formatKrwCompact(totalAssetValue)}</div>
+              </div>
+            </div>
+
+            <div className="portfolio-allocation-wrap">
+              <div className="portfolio-allocation-chart-wrap">
+                <div className="portfolio-allocation-chart" style={{ background: allocationChartStyle }} />
+                <div className="portfolio-allocation-chart-center">
+                  <div className="portfolio-allocation-center-label">총 자산</div>
+                  <div className="portfolio-allocation-center-value">{formatKrwCompact(totalAssetValue)}</div>
+                </div>
+              </div>
+
+              <div className="portfolio-allocation-list">
+                {allocationRows.length === 0 ? (
+                  <div className="caption muted">비중을 계산할 데이터가 없습니다.</div>
+                ) : (
+                  allocationRows.map((row, idx) => (
+                    <div key={`${row.code}-${idx}`} className="portfolio-allocation-item">
+                      <div className="portfolio-allocation-item-name">
+                        <span className="portfolio-allocation-dot" style={{ background: allocationColors[idx % allocationColors.length] }} />
+                        <span>{row.name}</span>
+                      </div>
+                      <div className="portfolio-allocation-item-values">
+                        <span>{formatNumber(row.ratio, 1)}%</span>
+                        <span className="muted">{formatKrwCompact(row.value)}</span>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+            <div className="caption muted" style={{ marginTop: 'var(--space-2)' }}>
+              {dbSeedCapital != null
+                ? '시드 자본금은 설정 화면에서 변경할 수 있습니다. 자동매매 예산과 잔여 현금도 설정에서 관리하세요.'
+                : '시드 자본금을 설정 화면에서 입력하면 자동매매 예산이 정확하게 계산됩니다.'}
+            </div>
+          </div>
+      </div>
+
       <div className="cards-list portfolio-cards-list">
         {loading && rows.length === 0 && <div className="card portfolio-loading-card"><Skeleton lines={5} height={18} /></div>}
 
@@ -1565,17 +1644,17 @@ export default function Portfolio() {
               )}
 
               {/* ── 액션 버튼 ── */}
-              <div className="portfolio-actions-row" style={{ display: 'flex', gap: 'var(--space-2)', flexWrap: 'wrap', alignItems: 'center', marginTop: 'var(--space-2)' }}>
-                <Button className="portfolio-action-btn" variant="secondary" onClick={() => openTradeModal(r, 'buy')} style={{ flex: '1 1 auto', minWidth: '80px' }}>
+              <div className="portfolio-actions-row">
+                <Button className="portfolio-action-btn" variant="secondary" onClick={() => openTradeModal(r, 'buy')}>
                   <PlusCircle size={14} />추가매수
                 </Button>
-                <Button className="portfolio-action-btn" variant="secondary" onClick={() => openMaintenanceModal('holdingedit', r)} style={{ flex: '1 1 auto', minWidth: '80px' }}>
+                <Button className="portfolio-action-btn" variant="secondary" onClick={() => openMaintenanceModal('holdingedit', r)}>
                   보유 수정
                 </Button>
-                <Button className="portfolio-action-btn" variant="ghost" onClick={() => openTradeModal(r, 'sell')} style={{ flex: '1 1 auto', minWidth: '100px' }}>
+                <Button className="portfolio-action-btn" variant="secondary" onClick={() => openTradeModal(r, 'sell')}>
                   매도 · 수익기록
                 </Button>
-                <Button className="portfolio-action-btn" variant="ghost" onClick={() => openMaintenanceModal('holdingdelete', r)} style={{ flex: '1 1 auto', minWidth: '60px', color: 'var(--color-error)' }}>
+                <Button className="portfolio-action-btn" variant="secondary" onClick={() => openMaintenanceModal('holdingdelete', r)} style={{ color: 'var(--color-error)' }}>
                   삭제
                 </Button>
               </div>
@@ -1605,7 +1684,7 @@ export default function Portfolio() {
       {/* ── 참고 정보: 가끔 확인하는 것들은 목록 아래로 모으고 각각 접어 둔다 ── */}
       <div className="portfolio-reference-head">
         <div className="title-md">참고 정보</div>
-        <div className="caption muted">거시 지표 · 계좌별 위험정책 · 성과 · 자산 구성 — 매일 볼 필요는 없어 접어 두었습니다.</div>
+        <div className="caption muted">거시 지표 · 계좌별 위험정책 · 성과 — 매일 볼 필요는 없어 접어 두었습니다.</div>
       </div>
 
       <Collapsible
@@ -1629,8 +1708,8 @@ export default function Portfolio() {
         <button
           type="button"
           className="portfolio-policy-head"
-          onClick={() => setPolicyAccordionOpen((prev) => !prev)}
-          aria-expanded={policyAccordionOpen}
+          onClick={() => setPolicyAccordionOpen(true)}
+          aria-haspopup="dialog"
           style={{
             background: 'none',
             border: 'none',
@@ -1640,7 +1719,7 @@ export default function Portfolio() {
             display: 'flex',
             justifyContent: 'space-between',
             alignItems: 'center',
-            marginBottom: policyAccordionOpen ? 'var(--space-3)' : 0,
+            marginBottom: 0,
           }}
         >
           <div>
@@ -1654,11 +1733,11 @@ export default function Portfolio() {
               }
             </div>
           </div>
-          <ChevronDown size={20} style={{ transform: policyAccordionOpen ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.2s', flexShrink: 0 }} />
+          <ChevronRight size={20} style={{ flexShrink: 0 }} />
         </button>
 
-        {policyAccordionOpen && (
-          <div className="portfolio-policy-body" style={{ paddingTop: 'var(--space-3)' }}>
+        <Modal isOpen={policyAccordionOpen} title="계좌별 위험정책" onClose={() => setPolicyAccordionOpen(false)} size="sm">
+          <div className="portfolio-policy-body">
             {selectedAccountKey === 'all' ? (
               <div className="caption muted">계좌 폴더를 선택하면 해당 계좌의 정책(최대보유/일손실/현금비중/점수 가감)을 설정할 수 있습니다.</div>
             ) : selectedAccountKey === 'virtual' ? (
@@ -1722,7 +1801,7 @@ export default function Portfolio() {
               </>
             ) : null}
           </div>
-        )}
+        </Modal>
       </div>
 
       <div className="card mb-4 portfolio-performance-card">
@@ -1776,95 +1855,6 @@ export default function Portfolio() {
             ) : (
               <div className="caption muted">성과 데이터가 아직 없습니다. 거래/의사결정 로그가 쌓이면 자동 집계됩니다.</div>
             )}
-          </div>
-        )}
-      </div>
-
-      <div className="card mb-4 portfolio-asset-overview-card">
-        <button
-          type="button"
-          className="portfolio-asset-overview-head"
-          onClick={() => setAssetAccordionOpen((prev) => !prev)}
-          aria-expanded={assetAccordionOpen}
-        >
-          <div>
-            <div className="title-md">가상 자산 구성 및 리밸런싱 기준</div>
-            <div className="caption muted">
-              {selectedAccountKey === 'all' 
-                ? '전체 가상 계좌의 예수금, 평가금, 현금, 종목별 비중을 확인합니다.'
-                : selectedAccountKey === 'virtual'
-                  ? '가상매매 보유분의 예수금, 평가금, 현금, 종목별 비중을 확인합니다.'
-                  : `${accountLabel(
-                      accountFolders.find(f => f.key === selectedAccountKey)?.brokerName,
-                      accountFolders.find(f => f.key === selectedAccountKey)?.accountName
-                    )} 계좌의 예수금, 평가금, 현금, 종목별 비중을 확인합니다.`
-              }
-            </div>
-          </div>
-          <span className="portfolio-asset-overview-toggle" aria-hidden>
-            <ChevronDown size={20} style={{ transform: assetAccordionOpen ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.2s' }} />
-          </span>
-        </button>
-
-        {assetAccordionOpen && (
-          <div className="portfolio-asset-overview-body">
-
-            <div className="portfolio-asset-metrics">
-              <div className="portfolio-asset-metric">
-                <div className="portfolio-capture-label">시드 자본금</div>
-                <div className="portfolio-capture-value">{formatKrwCompact(initialCapital)}</div>
-              </div>
-              <div className="portfolio-asset-metric">
-                <div className="portfolio-capture-label">보유 평가금</div>
-                <div className="portfolio-capture-value">{formatKrwCompact(totalEvaluationValue)}</div>
-              </div>
-              <div className="portfolio-asset-metric">
-                <div className="portfolio-capture-label">
-                  {dbVirtualCash != null ? '잔여 현금 (자동매매)' : '추정 예수금'}
-                </div>
-                <div className={`portfolio-capture-value ${(dbVirtualCash ?? estimatedCash) < 0 ? 'negative' : ''}`}>
-                  {formatKrwCompact(dbVirtualCash ?? estimatedCash)}
-                </div>
-              </div>
-              <div className="portfolio-asset-metric">
-                <div className="portfolio-capture-label">총 자산(보유 평가금 + 예수금)</div>
-                <div className={`portfolio-capture-value ${totalAssetValue < 0 ? 'negative' : 'positive'}`}>{formatKrwCompact(totalAssetValue)}</div>
-              </div>
-            </div>
-
-            <div className="portfolio-allocation-wrap">
-              <div className="portfolio-allocation-chart-wrap">
-                <div className="portfolio-allocation-chart" style={{ background: allocationChartStyle }} />
-                <div className="portfolio-allocation-chart-center">
-                  <div className="portfolio-allocation-center-label">총 자산</div>
-                  <div className="portfolio-allocation-center-value">{formatKrwCompact(totalAssetValue)}</div>
-                </div>
-              </div>
-
-              <div className="portfolio-allocation-list">
-                {allocationRows.length === 0 ? (
-                  <div className="caption muted">비중을 계산할 데이터가 없습니다.</div>
-                ) : (
-                  allocationRows.map((row, idx) => (
-                    <div key={`${row.code}-${idx}`} className="portfolio-allocation-item">
-                      <div className="portfolio-allocation-item-name">
-                        <span className="portfolio-allocation-dot" style={{ background: allocationColors[idx % allocationColors.length] }} />
-                        <span>{row.name}</span>
-                      </div>
-                      <div className="portfolio-allocation-item-values">
-                        <span>{formatNumber(row.ratio, 1)}%</span>
-                        <span className="muted">{formatKrwCompact(row.value)}</span>
-                      </div>
-                    </div>
-                  ))
-                )}
-              </div>
-            </div>
-            <div className="caption muted" style={{ marginTop: 'var(--space-2)' }}>
-              {dbSeedCapital != null
-                ? '시드 자본금은 설정 화면에서 변경할 수 있습니다. 자동매매 예산과 잔여 현금도 설정에서 관리하세요.'
-                : '시드 자본금을 설정 화면에서 입력하면 자동매매 예산이 정확하게 계산됩니다.'}
-            </div>
           </div>
         )}
       </div>

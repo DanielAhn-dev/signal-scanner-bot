@@ -49,6 +49,7 @@ export const TOOL_NAV_GROUPS: NavGroup[] = [
   {
     category: '보유 / 기록',
     items: [
+      { key: 'goal-tracker', label: '목표 트래커' },
       { key: 'seed-builder', label: '시드 만들기' },
       { key: 'income-guide', label: '리밸런싱 가이드' },
       { key: 'trades', label: '거래기록' },
@@ -124,6 +125,8 @@ export const BOT_USAGE_NOTES: Record<string, string> = {
   trades: '봇·직접 매매의 체결 기록입니다. 봇의 성과 통계는 현재 규칙이 확정된 2026-09-29 이후 매매만 셉니다(그 전은 데이터 오류·규칙 변경 전).',
   watchlist: '관심 종목 목록입니다. 봇 매수 후보에는 직접 쓰이지 않습니다.',
   reports: '집행우선·시장·보유 리포트를 만듭니다. 수치는 과거 분포이며 예측이 아닙니다.',
+  'goal-tracker':
+    '봇 매매와 별개입니다. 목표 월 인출액에 필요한 시드와, 지금 계좌가 계획선을 따라가는지 보여줍니다. 주문은 내지 않습니다.',
   'income-guide':
     '봇 매매와 별개입니다. 포트폴리오에서 직접 입력한 실계좌 보유만 보고, 모으기→전환→인컴 단계의 목표 비중과 옮길 금액을 안내합니다. 주문은 내지 않습니다.',
 }

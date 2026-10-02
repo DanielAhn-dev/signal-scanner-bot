@@ -1915,9 +1915,20 @@
 }
 
 @media (max-width: 639px) {
+  /* 아이폰 홈 화면 앱: 100dvh가 화면 맨 아래(홈 인디케이터 영역)까지 닿지 않아 흰 띠가 남는다.
+     화면에 고정(fixed)해 바닥까지 채우고, 높이는 초록 상태바가 안전영역만큼 늘어나는 것으로 흡수한다.
+     혹시 남는 틈이 있어도 흰색이 아니라 초록이 되도록 바탕색을 맞춘다. */
+  html,
+  body {
+    background: var(--color-excel-title-bar);
+  }
+
   .excel-app {
-    height: 100dvh;
-    min-height: 100dvh;
+    position: fixed;
+    top: 0;
+    left: 0;
+    height: calc(100% / var(--excel-global-zoom));
+    min-height: 0;
     overflow: hidden;
     overflow-x: hidden;
   }

@@ -3,8 +3,10 @@ import { createClient } from '@supabase/supabase-js'
 import { isStrictIdentity, resolveUiUserContext } from './_userContext'
 import { INDEX_HOLD_MODE, normalizeStrategyMode } from '../../src/services/indexHoldStrategy'
 import {
+  applyManualDeposit,
   nextDepositDate,
   normalizeDepositDay,
+  normalizeManualDeposit,
   normalizeMonthlyDeposit,
   readDepositLog,
   readDepositSettings,
@@ -115,6 +117,22 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         const { error: chError } = await supabase.from('users').upsert({ tg_id: targetChatId, prefs: chPrefs }, { onConflict: 'tg_id' })
         if (chError) return res.status(500).json({ error: chError.message })
         return res.status(200).json({ data: { notify_channel: body.notify_channel } })
+      }
+
+      // 직접 입금: 금액이 들쭉날쭉한 추가 입금을 그때그때 가상 현금·시드에 더한다 (src/services/monthlyDeposit.ts)
+      if (body.manual_deposit !== undefined && body.virtual_seed_capital === undefined) {
+        const amount = normalizeManualDeposit(body.manual_deposit)
+        if (amount === null) return res.status(400).json({ error: '입금액은 1만원 이상 10억원 이하로 입력하세요' })
+        const { data: manRow } = await supabase.from('users').select('prefs').eq('tg_id', targetChatId).maybeSingle()
+        const current = ((manRow?.prefs as Record<string, unknown>) || {}) as Record<string, unknown>
+        // 시드가 없으면 입금할 계좌가 없다 — 입금이 시드를 새로 만들어 버리지 않게 막는다
+        if (!(Number(current.virtual_seed_capital) > 0) || current.virtual_cash == null) {
+          return res.status(400).json({ error: '가상 계좌(시드)가 아직 없습니다. 먼저 시드를 설정하세요' })
+        }
+        const next: Record<string, unknown> = { ...current, ...applyManualDeposit({ prefs: current, amount, todayKey: toKstDateKey() }) }
+        const { error: manError } = await supabase.from('users').upsert({ tg_id: targetChatId, prefs: next }, { onConflict: 'tg_id' })
+        if (manError) return res.status(500).json({ error: manError.message })
+        return res.status(200).json({ data: { ...depositView(next), virtual_cash: Number(next.virtual_cash), virtual_seed_capital: Number(next.virtual_seed_capital) } })
       }
 
       // 월 자동 입금 설정만 바꾸는 요청 (src/services/monthlyDeposit.ts)

@@ -2,10 +2,13 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   applyDeposit,
+  applyManualDeposit,
   isDepositDue,
   nextDepositDate,
   normalizeDepositDay,
+  normalizeManualDeposit,
   normalizeMonthlyDeposit,
+  readDepositLog,
   readDepositSettings,
   resolveLastDepositMonthOnSave,
 } from "../src/services/monthlyDeposit";
@@ -66,6 +69,27 @@ test("입금: 현금·시드·총 원금에 더하고 내역을 남긴다", () =
 test("총 원금 기록이 없던 계정은 지금 시드를 시작 원금으로 본다", () => {
   const next = applyDeposit({ prefs: { virtual_cash: 0, virtual_seed_capital: 20_000_000 }, amount: 1_000_000, todayKey: "2026-10-01" });
   assert.equal(next.virtual_total_deposited, 21_000_000);
+});
+
+test("직접 입금: 금액은 1만원 이상만 (0은 불가)", () => {
+  assert.equal(normalizeManualDeposit(300_000), 300_000);
+  assert.equal(normalizeManualDeposit(0), null);
+  assert.equal(normalizeManualDeposit(5_000), null);
+  assert.equal(normalizeManualDeposit("abc"), null);
+});
+
+test("직접 입금: 현금·시드·총 원금에 더하고 '직접' 표시를 남기되 이번 달 자동 입금은 건너뛰지 않는다", () => {
+  const prefs = { virtual_cash: 100_000, virtual_seed_capital: 1_000_000, virtual_total_deposited: 1_000_000, virtual_last_deposit_month: "2026-09" };
+  const next = applyManualDeposit({ prefs, amount: 300_000, todayKey: "2026-10-05" });
+  assert.equal(next.virtual_cash, 400_000);
+  assert.equal(next.virtual_seed_capital, 1_300_000);
+  assert.equal(next.virtual_total_deposited, 1_300_000);
+  assert.equal("virtual_last_deposit_month" in next, false);
+  assert.deepEqual(next.virtual_deposit_log, [{ date: "2026-10-05", amount: 300_000, cashAfter: 400_000, manual: true }]);
+  // 내역을 다시 읽어도 직접 입금 표시가 남는다
+  assert.equal(readDepositLog({ virtual_deposit_log: next.virtual_deposit_log })[0].manual, true);
+  // 자동 입금은 여전히 그 달 처리로 표시한다
+  assert.equal(applyDeposit({ prefs, amount: 500_000, todayKey: "2026-10-12" }).virtual_last_deposit_month, "2026-10");
 });
 
 test("prefs 읽기: 설정 없으면 적립 안 함", () => {

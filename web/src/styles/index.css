@@ -8248,3 +8248,33 @@ a:focus-visible {
     font-size: var(--font-size-xs);
   }
 }
+
+/* 포트폴리오: 표(셀) 아래 카드형 영역은 좌우 여백을 공통으로 둔다 */
+.container-app.portfolio-page > .portfolio-asset-overview-card,
+.container-app.portfolio-page > .portfolio-cards-list,
+.container-app.portfolio-page > .portfolio-error-wrap,
+.container-app.portfolio-page > .pagination-wrap,
+.container-app.portfolio-page > .portfolio-reference-head,
+.container-app.portfolio-page > .portfolio-macro-card,
+.container-app.portfolio-page > .portfolio-policy-card,
+.container-app.portfolio-page > .portfolio-performance-card {
+  margin-left: var(--space-3);
+  margin-right: var(--space-3);
+}
+
+/* 종목 카드 버튼: 2열 격자로 가지런히 (혼자 남는 버튼 없음) */
+.container-app.portfolio-page .portfolio-actions-row {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin-top: var(--space-2);
+}
+.container-app.portfolio-page .portfolio-actions-row .portfolio-action-btn {
+  width: 100%;
+  justify-content: center;
+}
+@media (min-width: 641px) {
+  .container-app.portfolio-page .portfolio-actions-row { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+}
+@media (max-width: 640px) {
+  .portfolio-asset-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
