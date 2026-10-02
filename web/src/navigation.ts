@@ -50,6 +50,7 @@ export const TOOL_NAV_GROUPS: NavGroup[] = [
     category: '보유 / 기록',
     items: [
       { key: 'start', label: '시작하기' },
+      { key: 'accumulate', label: '모아가기' },
       { key: 'follow', label: '따라 사기' },
       { key: 'goal-tracker', label: '목표 트래커' },
       { key: 'seed-builder', label: '시드 만들기' },
@@ -106,6 +107,7 @@ export type NavKey = NavItem['key']
 export const USER_NAV_KEYS: readonly string[] = [
   'dashboard',
   'start',
+  'accumulate',
   'follow',
   'seed-builder',
   'simulator',
@@ -169,6 +171,8 @@ export const BOT_USAGE_NOTES: Record<string, string> = {
   reports: '집행우선·시장·보유 리포트를 만듭니다. 수치는 과거 분포이며 예측이 아닙니다.',
   'goal-tracker':
     '봇 매매와 별개입니다. 목표 월 인출액에 필요한 시드와, 지금 계좌가 계획선을 따라가는지 보여줍니다. 주문은 내지 않습니다.',
+  accumulate:
+    '봇 매매와 별개입니다. 증권사 앱의 모아가기로 직접 사는 지수 ETF를 과거 실제 가격으로 시뮬레이션하고, 정한 금액을 꾸준히 이어가도록 돕습니다. 주문은 내지 않습니다.',
   'income-guide':
     '봇 매매와 별개입니다. 포트폴리오에서 직접 입력한 실계좌 보유만 보고, 모으기→전환→인컴 단계의 목표 비중과 옮길 금액을 안내합니다. 주문은 내지 않습니다.',
 }

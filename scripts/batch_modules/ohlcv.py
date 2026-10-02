@@ -12,6 +12,36 @@ from pykrx import stock
 from .utils import safe_float, safe_int, to_iso
 
 
+# 이력이 이만큼(일)보다 짧은 종목은 새로 유니버스에 들어온 것으로 보고 과거를 한 번에 채운다.
+# 증분 수집은 "DB 전체의 마지막 날짜"부터라 새 종목은 최근 며칠치만 쌓이고 과거는 영영 비었다
+# (KODEX 200TR 278530이 7일치만 있던 이유). 종목당 API 호출은 기간과 무관하게 1회라 비용은 같다.
+MIN_HISTORY_DAYS = 300
+BACKFILL_DAYS = 400  # 보존 기간(최소 400일, cleanup.py) 안
+
+
+def find_tickers_needing_backfill(supabase: Client, codes: list, trading_dt: date) -> list:
+    """MIN_HISTORY_DAYS 전 무렵에 시세가 없는 종목 = 이력이 짧은 종목. 조회 실패는 건너뛴다(수집 자체는 막지 않음)."""
+    probe_start = (trading_dt - timedelta(days=MIN_HISTORY_DAYS + 30)).isoformat()
+    probe_end = (trading_dt - timedelta(days=MIN_HISTORY_DAYS)).isoformat()
+    have = set()
+    try:
+        offset = 0
+        while True:
+            res = supabase.table("stock_daily").select("ticker")                 .gte("date", probe_start).lte("date", probe_end)                 .range(offset, offset + 999).execute()
+            rows = res.data or []
+            have.update(r["ticker"] for r in rows)
+            if len(rows) < 1000:
+                break
+            offset += 1000
+    except Exception as e:
+        print(f"   Backfill probe failed (skip): {e}")
+        return []
+    # 기준 구간에 데이터가 하나도 없으면(테이블이 비었거나 조회 이상) 전 종목을 다시 받지 않는다
+    if not have:
+        return []
+    return [c for c in codes if c not in have]
+
+
 def fetch_ohlcv_per_ticker(supabase: Client, trading_date: str) -> bool:
     """Fetch OHLCV for core/extended universe using per-ticker API."""
     trading_iso = to_iso(trading_date)
@@ -51,12 +81,6 @@ def fetch_ohlcv_per_ticker(supabase: Client, trading_date: str) -> bool:
     
     from_str = from_dt.strftime("%Y%m%d")
 
-    if from_str > trading_date:
-        print(f"   No new range to fetch. Skipping.")
-        return True
-
-    print(f"  Fetch range: {from_str} ~ {trading_date}")
-
     # Load core + extended universe
     res = supabase.table("stocks") \
         .select("code, name") \
@@ -70,6 +94,17 @@ def fetch_ohlcv_per_ticker(supabase: Client, trading_date: str) -> bool:
         return False
 
     print(f"  Universe size: {len(tickers)} tickers")
+
+    backfill_codes = set(find_tickers_needing_backfill(supabase, [c for c, _ in tickers], trading_dt))
+    backfill_from_str = (trading_dt - timedelta(days=BACKFILL_DAYS)).strftime("%Y%m%d")
+    if backfill_codes:
+        print(f"  Short-history tickers to backfill from {backfill_from_str}: {len(backfill_codes)}")
+
+    if from_str > trading_date and not backfill_codes:
+        print(f"   No new range to fetch. Skipping.")
+        return True
+
+    print(f"  Fetch range: {from_str} ~ {trading_date}")
 
     success = 0
     fail = 0
@@ -85,7 +120,7 @@ def fetch_ohlcv_per_ticker(supabase: Client, trading_date: str) -> bool:
 
         try:
             from _price_adjustment import adjust_ohlcv_for_splits
-            df = stock.get_market_ohlcv(from_str, trading_date, code)
+            df = stock.get_market_ohlcv(backfill_from_str if code in backfill_codes else from_str, trading_date, code)
             if df.empty:
                 continue
 

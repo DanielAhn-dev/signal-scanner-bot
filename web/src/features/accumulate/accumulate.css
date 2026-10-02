@@ -1,0 +1,67 @@
+.acc { max-width: 680px; margin: 0 auto; padding: 24px 16px 48px; color: var(--color-text-primary); background: var(--color-bg-surface); min-height: 100%; font-size: 14px; }
+.acc h1, .acc h2, .acc h3, .acc p, .acc dl, .acc dd, .acc ul { margin: 0; }
+.acc-eyebrow { color: var(--color-brand); font-weight: 700; font-size: 12px; }
+.acc header h1 { font-size: 24px; margin: 6px 0; }
+.acc header p { color: var(--color-text-secondary); line-height: 1.55; }
+.acc-card { margin-top: 20px; padding: 16px; border: 1px solid var(--color-border-default); border-radius: 8px; display: flex; flex-direction: column; gap: 12px; }
+.acc-card h2 { font-size: 16px; }
+.acc-card h3 { font-size: 14px; }
+.acc-seg { display: flex; gap: 8px; flex-wrap: wrap; }
+.acc-seg button { flex: 1 1 140px; padding: 11px 12px; border: 1px solid var(--color-border-default); border-radius: 8px; background: var(--color-bg-surface); color: var(--color-text-primary); font: inherit; cursor: pointer; text-align: left; }
+.acc-seg button.is-active { border-color: var(--color-brand); outline: 2px solid var(--color-brand); outline-offset: -1px; font-weight: 700; }
+.acc-pick { padding: 12px; border-radius: 6px; background: var(--color-bg-sunken); display: flex; flex-direction: column; gap: 8px; }
+.acc-pick ul { padding-left: 18px; line-height: 1.6; }
+.acc-pick-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.acc-badge { padding: 2px 8px; border-radius: 10px; background: var(--color-brand); color: var(--color-text-inverse); font-size: 12px; font-weight: 700; }
+.acc-badge-user { background: var(--color-text-secondary); }
+.acc-code { color: var(--color-text-tertiary); font-size: 12px; }
+.acc-note { color: var(--color-text-secondary); line-height: 1.55; }
+.acc-warn { color: var(--color-error); line-height: 1.55; }
+.acc-note strong, .acc-warn strong { color: var(--color-text-primary); }
+.acc-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; align-items: end; }
+.acc-field { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.acc-field > span { color: var(--color-text-secondary); font-size: 13px; }
+.acc-field input, .acc-field select { min-width: 0; padding: 10px 12px; border: 1px solid var(--color-border-default); border-radius: 6px; background: var(--color-bg-surface); color: var(--color-text-primary); font: inherit; font-size: 16px; }
+.acc-field input[type='range'] { padding: 0; accent-color: var(--color-brand); }
+.acc-field input:focus, .acc-field select:focus { outline: 2px solid var(--color-border-focus); outline-offset: 1px; }
+.acc-summary { padding: 12px; border-radius: 6px; background: var(--color-bg-sunken); line-height: 1.55; }
+.acc-facts { display: grid; gap: 1px; background: var(--color-border-default); border: 1px solid var(--color-border-default); border-radius: 6px; overflow: hidden; }
+.acc-facts > div { display: flex; justify-content: space-between; gap: 12px; padding: 10px 12px; background: var(--color-bg-surface); }
+.acc-facts dt { color: var(--color-text-secondary); flex: 0 0 auto; }
+.acc-facts dd { text-align: right; font-weight: 600; overflow-wrap: anywhere; }
+.acc-facts small { font-weight: 400; color: var(--color-text-tertiary); }
+.acc-tiles { display: grid; grid-template-columns: repeat(2, 1fr); gap: 1px; background: var(--color-border-default); border: 1px solid var(--color-border-default); border-radius: 6px; overflow: hidden; }
+.acc-tiles > div { padding: 12px; background: var(--color-bg-surface); }
+.acc-tiles dt { color: var(--color-text-secondary); font-size: 12px; }
+.acc-tiles dd { margin-top: 4px; font-size: 17px; font-weight: 700; overflow-wrap: anywhere; }
+.acc-tiles .is-main dd { color: var(--color-brand); font-size: 20px; }
+.acc-tiles small { color: var(--color-text-tertiary); }
+.acc-chart { width: 100%; height: auto; }
+.acc-grid { stroke: var(--color-border-default); stroke-width: 1; }
+.acc-axis { fill: var(--color-text-tertiary); font-size: 10px; }
+.acc-band { fill: var(--color-brand); opacity: .12; }
+.acc-line { fill: none; stroke-width: 2; }
+.acc-median { stroke: var(--color-brand); stroke-width: 3; }
+.acc-p10 { stroke: var(--color-warning, #ed6c02); }
+.acc-worst { stroke: var(--color-error, #d32f2f); }
+.acc-paid { stroke: var(--color-text-tertiary); stroke-dasharray: 4 4; }
+.acc-legend { color: var(--color-text-secondary); font-size: 12px; display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: center; }
+.acc-legend i { display: inline-block; width: 16px; height: 3px; margin-right: 4px; vertical-align: middle; }
+.acc-k-median { background: var(--color-brand); }
+.acc-k-p10 { background: var(--color-warning, #ed6c02); }
+.acc-k-worst { background: var(--color-error, #d32f2f); }
+.acc-k-paid { background: var(--color-text-tertiary); }
+.acc-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.acc-table th, .acc-table td { padding: 8px 6px; border-bottom: 1px solid var(--color-border-default); text-align: right; }
+.acc-table th:first-child, .acc-table td:first-child { text-align: left; }
+.acc-compare { display: flex; flex-direction: column; gap: 8px; }
+.acc-guide { padding: 12px; border-radius: 6px; border-left: 4px solid var(--color-border-default); background: var(--color-bg-sunken); display: flex; flex-direction: column; gap: 6px; line-height: 1.55; }
+.acc-guide.is-drop { border-left-color: var(--color-warning, #ed6c02); }
+.acc-guide.is-rally { border-left-color: var(--color-brand); }
+.acc-guide.is-normal { border-left-color: var(--color-success, #2e7d32); }
+.acc-guide.is-stale, .acc-guide.is-short { border-left-color: var(--color-error, #d32f2f); }
+.acc-primary { align-self: flex-start; padding: 11px 18px; border: 0; border-radius: 8px; background: var(--color-brand); color: var(--color-text-inverse); font: inherit; font-weight: 700; cursor: pointer; }
+.acc-primary:disabled { opacity: .4; cursor: not-allowed; }
+.acc-link { align-self: flex-start; border: 0; background: none; color: var(--color-text-secondary); font: inherit; cursor: pointer; text-decoration: underline; padding: 0; }
+.acc summary { cursor: pointer; color: var(--color-text-secondary); }
+@media (max-width: 420px) { .acc-seg button { flex-basis: 100%; } }

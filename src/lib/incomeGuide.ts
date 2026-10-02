@@ -172,6 +172,21 @@ export const BUCKET_YIELD_PCT: Record<AssetBucket, number> = {
   other_etf: 1,
 };
 
+/** 분배금 과세율(배당소득세, 지방세 포함) */
+const DISTRIBUTION_TAX = 0.154;
+
+/** 바구니별 평가금에 분배율 가정을 곱한 연 세전 분배금과 월 세후 추정 */
+export function estimateDistribution(byBucket: Map<AssetBucket, number>): IncomeGuideView["distribution"] {
+  let annualGross = 0;
+  for (const [bucket, value] of byBucket) annualGross += value * (BUCKET_YIELD_PCT[bucket] / 100);
+  return {
+    annualGross: Math.round(annualGross),
+    monthlyNet: Math.round((annualGross * (1 - DISTRIBUTION_TAX)) / 12),
+    taxRate: DISTRIBUTION_TAX,
+    isEstimate: true,
+  };
+}
+
 export function sanitizeIncomeGuideSettings(input: Partial<IncomeGuideSettings>, current: IncomeGuideSettings): IncomeGuideSettings {
   const num = (v: unknown, fallback: number, min: number, max: number) => {
     const n = Number(v);
@@ -273,6 +288,8 @@ export type IncomeGuideView = {
   groups: GroupRow[];
   growthSplit: { krValue: number; globalValue: number; globalPct: number; targetGlobalPct: number };
   buckets: Array<{ bucket: AssetBucket; label: string; value: number; pct: number }>;
+  /** 보유 바구니별 분배율 가정(BUCKET_YIELD_PCT)으로 낸 추정 — 실제 입금액이 아니다. 실제 기록이 있으면 그것을 우선한다 */
+  distribution: { annualGross: number; monthlyNet: number; taxRate: number; isEstimate: true };
   rebalance: {
     needed: boolean;
     reason: string;
@@ -833,6 +850,7 @@ export function buildIncomeGuideView(input: {
     },
     groups,
     growthSplit: { krValue, globalValue, globalPct, targetGlobalPct: settings.overseasPct },
+    distribution: estimateDistribution(byBucket),
     buckets: [...byBucket.entries()]
       .map(([bucket, value]) => ({ bucket, label: BUCKET_LABEL[bucket], value, pct: pct(value) }))
       .sort((a, b) => b.value - a.value),

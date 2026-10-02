@@ -76,6 +76,7 @@ const StartWizardPage      = lazyWithRecovery(() => import('./features/start-wiz
 const SeedBuilderPage      = lazyWithRecovery(() => import('./features/seed-builder'))
 const IncomeGuidePage      = lazyWithRecovery(() => import('./features/income-guide'))
 const GoalTrackerPage      = lazyWithRecovery(() => import('./features/goal-tracker'))
+const AccumulatePage       = lazyWithRecovery(() => import('./features/accumulate'))
 const DiscoveryPage        = lazyWithRecovery(() => import('./features/discovery'))
 const BacktestPage         = lazyWithRecovery(() => import('./features/backtest'))
 const ControlPage          = lazyWithRecovery(() => import('./features/control'))
@@ -393,6 +394,7 @@ function AppContent() {
             <Route path="/seed-builder"            element={<SeedBuilderPage />} />
             <Route path="/income-guide"           element={<IncomeGuidePage />} />
             <Route path="/goal-tracker"           element={<GoalTrackerPage />} />
+            <Route path="/accumulate"             element={<AccumulatePage />} />
             <Route path="/discovery"              element={<DiscoveryPage />} />
             <Route path="/backtest"               element={<BacktestPage />} />
             <Route path="/control"                element={<ControlPage />} />
