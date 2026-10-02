@@ -29,6 +29,17 @@ describe('하락 가정', () => {
   })
 })
 
+describe('하락 중에 팔았다면', () => {
+  it('조건에 따른 결과와 주의 문구를 보여준다', () => {
+    render(<MixPage />)
+    expect(screen.getByText('하락 중에 팔았다면')).toBeTruthy()
+    expect(screen.getByText(/보유보다 나았던 경우/)).toBeTruthy()
+    expect(screen.getByText(/몇 번의 큰 하락에 걸려 있습니다/)).toBeTruthy()
+    fireEvent.click(screen.getByText('매월 적립'))
+    expect(screen.getByText(/넣은 돈 대비/)).toBeTruthy()
+  })
+})
+
 describe('실제 데이터 점검', () => {
   it('한국 상장 4종 조합은 파이썬 검증(연 12.3%, 낙폭 -19%)과 비슷하다', () => {
     const r = simulateMix(MIX_PRESETS.find((p) => p.key === 'mix4')!.weights, 'month')!

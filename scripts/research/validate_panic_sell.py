@@ -120,6 +120,7 @@ def simulate_dca(close, cash, dates, i0, i1, reentry):
     in_mkt = True
     peak = close[i0]
     low = prior_peak = sold_i = None
+    pending = None
     paid = 0.0
     for i in range(i0, i1 + 1):
         if i > i0:
@@ -132,22 +133,29 @@ def simulate_dca(close, cash, dates, i0, i1, reentry):
                 cashv += 1.0
         if reentry == "hold":
             continue
+        # 일시금 계산과 같은 규칙: 판정은 종가로 하고 체결은 다음 거래일 종가
+        if pending == "sell":
+            cashv += shares * close[i]
+            shares = 0.0
+            in_mkt = False
+            low, sold_i, pending = close[i], i, None
+            continue
+        if pending == "buy":
+            shares += cashv / close[i]
+            cashv = 0.0
+            in_mkt = True
+            peak, pending = close[i], None
+            continue
         if in_mkt:
             peak = max(peak, close[i])
             if close[i] / peak - 1 <= TRIGGER and i + 1 <= i1:
-                # 다음 거래일 종가 체결은 단순화를 위해 같은 날 종가로 처리(보유 쪽에 유리한 가정이 아니라 매도 쪽에 유리한 가정)
-                cashv += shares * close[i]
-                shares = 0.0
-                in_mkt = False
-                prior_peak, low, sold_i = peak, close[i], i
+                prior_peak = peak
+                pending = "sell"
         else:
             low = min(low, close[i])
             go = (reentry == "A" and i - sold_i >= 125) or (reentry == "B" and close[i] / low - 1 >= REBOUND) or (reentry == "C" and close[i] >= prior_peak)
-            if go:
-                shares += cashv / close[i]
-                cashv = 0.0
-                in_mkt = True
-                peak = close[i]
+            if go and i + 1 <= i1:
+                pending = "buy"
     return (shares * close[i1] + cashv) / paid
 
 

@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 import { MIX_ASOF, MIX_ASSETS } from '../../data/mixData'
 import { MIX_PRESETS, STRESS_PRESETS, fmtYm, normalize, simulateMix, stressTest, type Rebalance, type Shocks, type Weights } from '../../lib/mix'
+import BehaviorGap from './BehaviorGap'
 import '../accumulate/accumulate.css'
 import './mix.css'
 
@@ -164,6 +165,8 @@ export default function MixPage() {
           </>
         ) : null}
       </section>
+
+      <BehaviorGap />
 
       <section className="acc-card">
         <h2>읽을 때 주의</h2>
