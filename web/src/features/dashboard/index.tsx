@@ -8,6 +8,8 @@ import { useCurrentChatId } from '../../stores/profileStore'
 import EconomicEventBadge from '../../components/EconomicEventBadge'
 import SheetHeaderBar from '../../components/SheetHeaderBar'
 import { FLOW_STEPS } from '../../navigation'
+import { useProfileStore } from '../../stores/profileStore'
+import { useDetailed } from '../../stores/viewModeStore'
 import GoalSummaryStrip from '../goal-tracker/GoalSummaryStrip'
 import { loadTradeCostSettings, resolveSellCostPct } from '../../lib/tradeCost'
 
@@ -25,7 +27,15 @@ type PortfolioSummary = {
   positions?: unknown[]
 }
 
-// 오늘의 플로우는 navigation.ts FLOW_STEPS(탭 순서와 같은 정의)에서 그린다
+// 관리자의 오늘의 플로우는 navigation.ts FLOW_STEPS(탭 순서와 같은 정의)에서 그린다
+// 일반 사용자는 시드 모으기 → 목표 확인 → 금액 넣어 시뮬레이션 → 따라 하기 순서만 안내한다
+const USER_TODO_STEPS: Array<{ key: string; label: string; desc: string }> = [
+  { key: 'seed-builder', label: '시드 만들기', desc: '이번 달 얼마를 모을지 정하기' },
+  { key: 'goal-tracker', label: '목표 확인', desc: '목표까지 얼마나 왔는지 보기' },
+  { key: 'simulator', label: '시뮬레이터', desc: '투자금액을 넣고 결과 미리 보기' },
+  { key: 'execution-guide', label: '실행가이드', desc: '정리된 주문을 따라 하기' },
+  { key: 'portfolio', label: '내 포트폴리오', desc: '보유 종목과 손익 확인' },
+]
 
 // 셀 스타일 헬퍼
 const S = {
@@ -96,6 +106,8 @@ function formatLastScan(scan: { tradeDate: string | null; updatedAt: string | nu
 }
 
 export default function Dashboard({ onNavigate }: { onNavigate?: (r: string) => void }) {
+  const isAdmin = useProfileStore((s) => s.isAdmin)
+  const showMarketDetail = useDetailed() && isAdmin
   const chatId = useCurrentChatId()
   const [portfolio, setPortfolio] = useState<PortfolioSummary | null>(null)
   const [sectors, setSectors]     = useState<SectorItem[]>([])
@@ -204,20 +216,22 @@ export default function Dashboard({ onNavigate }: { onNavigate?: (r: string) => 
           <tr className="xls-row">
             <td className="xls-row-num">{rowNum()}</td>
             <td className="xls-cell" colSpan={6} style={S.sectionTitle}>
-              오늘의 플로우
-              <span style={{ float: 'right', color: 'var(--color-brand)', cursor: 'pointer', fontSize: 10, fontWeight: 400 }} onClick={() => nav('reports')}>
-                복기 보기 →
-              </span>
+              {isAdmin ? '오늘의 플로우' : '오늘 할 일'}
+              {isAdmin && (
+                <span style={{ float: 'right', color: 'var(--color-brand)', cursor: 'pointer', fontSize: 10, fontWeight: 400 }} onClick={() => nav('reports')}>
+                  복기 보기 →
+                </span>
+              )}
             </td>
           </tr>
 
-          {/* 플로우 — 단계별 한 줄 (navigation.ts FLOW_STEPS) */}
-          {FLOW_STEPS.map((s, i) => (
+          {/* 관리자: 봇 흐름 단계(navigation.ts FLOW_STEPS) · 사용자: 시드 모으기 가이드 */}
+          {(isAdmin ? FLOW_STEPS : USER_TODO_STEPS).map((s, i) => (
             <tr key={s.key} className={`xls-row${i % 2 === 0 ? ' xls-row--even' : ''}`}>
               <td className="xls-row-num">{rowNum()}</td>
               <td className="xls-cell" colSpan={2} style={{ ...S.header, ...S.midBorder }}>
-                <span style={{ color: 'var(--color-text-tertiary)', fontWeight: 400, marginRight: 4, fontSize: 10 }}>{s.step}</span>
-                <span style={{ color: 'var(--color-brand)', fontWeight: 700, fontSize: 10 }}>{s.label}</span>
+                <span style={{ color: 'var(--color-text-tertiary)', fontWeight: 400, marginRight: 4, fontSize: 10 }}>{i + 1}</span>
+                <span style={{ color: 'var(--color-brand)', fontWeight: 700, fontSize: 10 }}>{s.label.replace(/^\d+\s+/, '')}</span>
               </td>
               <td className="xls-cell" colSpan={3} style={{ fontSize: 10, color: 'var(--color-text-secondary)', whiteSpace: 'normal', lineHeight: 1.5 }}>
                 {s.desc}
@@ -269,6 +283,8 @@ export default function Dashboard({ onNavigate }: { onNavigate?: (r: string) => 
             <td className="xls-cell" colSpan={6} style={S.divider} />
           </tr>
 
+          {/* 스캔·섹터는 봇 판단 근거라 관리자의 자세히 보기에서만 */}
+          {showMarketDetail && (<>
           {/* ── 마지막 스캔 | 1위 섹터 ── */}
           <tr className="xls-row">
             <td className="xls-row-num">{rowNum()}</td>
@@ -378,6 +394,8 @@ export default function Dashboard({ onNavigate }: { onNavigate?: (r: string) => 
               </tr>
             )
           })}
+
+          </>)}
 
           {/* ── 남는 높이만 채우는 빈 여백 ── */}
           {Array.from({ length: fillerRows }, (_, i) => (

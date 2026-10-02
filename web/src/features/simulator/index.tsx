@@ -1,3 +1,4 @@
+import Detail from '../../components/ui/Detail'
 import { useSeedCapital } from '../../lib/useSeedCapital'
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
@@ -1104,10 +1105,10 @@ export default function SimulatorPage() {
               <h3 className="sim-rec-title">🎯 추천 포트폴리오</h3>
               <button className="sim-btn sim-btn--ghost" onClick={() => setShowRecommendation(false)}>닫기</button>
             </div>
-            <p className="sim-rec-desc">
+<Detail>            <p className="sim-rec-desc">
               월 {formatKrw(monthlyProfitTarget)} 목표 달성을 위해 Kelly Criterion 기반으로 선정된 포트폴리오입니다.
               각 종목의 기대값과 위험도를 고려해 배분되었습니다.
-            </p>
+            </p></Detail>
             <div className="sim-rec-list">
               {recommendedPortfolio.map((rec, idx) => {
                 const weights = recommendedPortfolio.reduce((acc, r) => acc + calcAllocationWeight(r, recommendStyle), 0)
@@ -1139,6 +1140,7 @@ export default function SimulatorPage() {
                         <span className="sim-rec-label">비중</span>
                         <span className="sim-rec-value">{formatNumber(allocPct, 1)}%</span>
                       </div>
+                      <Detail>
                       <div className="sim-rec-metric">
                         <span className="sim-rec-label">R:R</span>
                         <span className="sim-rec-value">{formatNumber(rr, 1)}:1</span>
@@ -1148,6 +1150,7 @@ export default function SimulatorPage() {
                           {ev >= 0 ? '+' : ''}{formatKrw(ev)}
                         </span>
                       </div>
+                      </Detail>
                     </div>
                   </div>
                 )
@@ -1519,6 +1522,7 @@ export default function SimulatorPage() {
       </div>
 
       {/* ── 목표 달성 경로 ── */}
+      <Detail>
       {items.filter(i => i.code !== 'CASH').length > 0 && monthlyProfitTarget > 0 && (
         <details className="sim-section collapsible">
           <summary className="collapsible__summary">
@@ -1598,12 +1602,13 @@ export default function SimulatorPage() {
           </div>
         </details>
       )}
+      </Detail>
 
       {/* ── 시나리오 분석 ── */}
       {items.length > 0 && (
         <div className="sim-section">
           <span className="sim-section-label">시나리오 분석</span>
-          <p className="sim-section-desc">체결 반영 투자금 기준 · 수수료·세금 차감 순수익</p>
+          <Detail><p className="sim-section-desc">체결 반영 투자금 기준 · 수수료·세금 차감 순수익</p></Detail>
 
           <div className="sim-scenario-table-wrap">
             <table className="sim-scenario-table">
@@ -1643,6 +1648,7 @@ export default function SimulatorPage() {
                     </tr>
                   )
                 })}
+                <Detail>
                 {/* 기대값 행 */}
                 <tr className="sim-scenario-row sim-scenario-row--special sim-scenario-row--ev">
                   <td className="sim-scenario-td">
@@ -1655,6 +1661,7 @@ export default function SimulatorPage() {
                     {summary.allocated > 0 ? `${summary.evAfterCost >= 0 ? '+' : ''}${formatNumber((summary.evAfterCost / summary.allocated) * 100, 2)}%` : '—'}
                   </td>
                 </tr>
+                </Detail>
               </tbody>
             </table>
           </div>

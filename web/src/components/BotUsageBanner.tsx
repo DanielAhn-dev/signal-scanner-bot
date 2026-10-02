@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { BOT_USAGE_NOTES, FLOW_STEPS } from '../navigation'
+import { useProfileStore } from '../stores/profileStore'
+import { useDetailed } from '../stores/viewModeStore'
 
 const OPEN_KEY = (route: string) => `bot_usage_banner_open:${route}`
 
@@ -43,8 +45,11 @@ export default function BotUsageBanner({ route }: { route: string }) {
     if (initial) writeOpen(route, false)
   }, [route])
 
+  const isAdmin = useProfileStore((s) => s.isAdmin)
+  const detailed = useDetailed()
   const note = BOT_USAGE_NOTES[route]
-  if (!note) return null
+  // 봇 판단 근거는 관리자의 자세히 보기에서만 — 일반 사용자에게는 복잡하기만 하다
+  if (!note || !isAdmin || !detailed) return null
   const step = FLOW_STEPS.find((s) => s.key === route)
   const next = step ? FLOW_STEPS.find((s) => s.step === step.step + 1) : undefined
   const summary = firstSentence(note)

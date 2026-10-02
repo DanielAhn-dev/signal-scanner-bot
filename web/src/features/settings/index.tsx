@@ -1,3 +1,4 @@
+import Detail from '../../components/ui/Detail'
 import React, { useEffect, useState } from 'react'
 import Button from '../../components/ui/Button'
 import Input from '../../components/ui/Input'
@@ -459,6 +460,7 @@ export default function Settings(){
               </td>
             </tr>
           )}
+          <Detail>
           <tr className="xls-row xls-row--even">
             <td className="xls-cell" colSpan={2} style={{ fontSize: 13, fontWeight: 600 }}>Telegram Chat ID</td>
             <td className="xls-cell" colSpan={4} style={{ padding: '8px 10px' }}>
@@ -491,6 +493,7 @@ export default function Settings(){
               )}
             </td>
           </tr>
+          </Detail>
           <tr className="xls-row xls-row--even">
             <td className="xls-cell" colSpan={2} style={{ fontSize: 13, fontWeight: 600 }}>자동매매 시드 자본금</td>
             <td className="xls-cell" colSpan={4} style={{ padding: '8px 10px' }}>
@@ -522,9 +525,11 @@ export default function Settings(){
                 </Button>
                 {seedCapitalStatus && <div className="muted">{seedCapitalStatus}</div>}
               </div>
+              <Detail>
               <div className="text-xs muted mt-2">
                 잔여 현금 초기화: 자동매매로 누적된 매수/매도 내역을 리셋하고 현금을 시드 자본금으로 복원합니다. 포트폴리오 초기화 없이 예산만 재설정할 때 사용하세요.
               </div>
+              </Detail>
             </td>
           </tr>
           <tr className="xls-row">
@@ -597,9 +602,11 @@ export default function Settings(){
               <div className="text-xs muted mt-2">
                 지수 보유: KODEX 200을 계속 들고, 월 자동 입금으로 들어온 돈도 KODEX 200을 삽니다. 파는 조건이 없어 내가 정한 시드 + 월 적립으로 그대로 따라 하기 쉽습니다.
               </div>
+              <Detail>
               <div className="text-xs muted mt-1">
                 검증(100만 + 월 50만 × 10년, 2002~2026 모든 시작 시점): 나쁜 경우 10%도 계속 보유 7,768만 vs 50일선 매매 6,610만 (원금 6,100만). 대신 도중에 원금의 73%까지 내려가는 구간을 견뎌야 합니다 (50일선은 91%). 떨어질 때 팔지 않고 적립을 이어가는 것이 전제입니다.
               </div>
+              </Detail>
               {strategyMode === 'stock' && Number(seedCapital) > 0 && Number(seedCapital) < SMALL_SEED_LIMIT && (
                 <div className="text-xs mt-1" style={{ color: '#c0392b', whiteSpace: 'normal', wordBreak: 'keep-all' }}>
                   ⚠ 시드 {Number(seedCapital).toLocaleString('ko-KR')}원으로는 종목 매매 봇이 불리합니다. 과거 검증(2017~2026, 1주 단위 체결)에서 같은 20종목 전략이
@@ -623,6 +630,7 @@ export default function Settings(){
               <div className="text-xs muted mt-1">
                 순서: ① 시드 자본금 저장 → ② 월 자동 입금 설정(선택) → ③ 활성화 후 저장. 시드를 정하기 전에는 켤 수 없습니다.
               </div>
+              <Detail>
               <div className="mt-2 grid-two">
                 <div>
                   <Input label="회차당 신규 매수 슬롯" type="number" value={settings?.monday_buy_slots ?? 2} onChange={(e:any) => setSettings({...settings, monday_buy_slots: Number(e.target.value)})} />
@@ -647,18 +655,22 @@ export default function Settings(){
                   <Input label="손절(%)" type="number" value={settings?.stop_loss_pct ?? 4} onChange={(e:any) => setSettings({...settings, stop_loss_pct: Number(e.target.value)})} />
                 </div>
               </div>
+              </Detail>
 
               <div className="mt-4" style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', alignItems: 'center' }}>
                 <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
                   <Button onClick={saveSettings} disabled={saving} variant="primary">{saving ? '저장중…' : '저장'}</Button>
+                  <Detail>
                   <Button onClick={resetAutoTradeOnly} disabled={resettingAutoOnly} variant="ghost">
                     {resettingAutoOnly ? '초기화중…' : '자동매매 데이터만 초기화'}
                   </Button>
+                  </Detail>
                 </div>
                 {status && (
                   <div className="muted" style={{ minWidth: 0, marginLeft: 8, wordBreak: 'break-word' }}>{status}</div>
                 )}
               </div>
+              <Detail>
               <div className="text-xs muted mt-2">
                 안내: 이 버튼은 자동매매(AUTO)로 생성된 이력만 정리합니다. 직접 추가한 수동 보유/거래는 유지됩니다.
               </div>
@@ -692,6 +704,7 @@ export default function Settings(){
               <div className="text-xs muted mt-2">
                 권장 순서: 저장 후 점검 1회 → 결과 확인 → 저장 후 실행 1회
               </div>
+              </Detail>
             </td>
           </tr>
           <tr className="xls-row">
@@ -728,6 +741,7 @@ export default function Settings(){
               )}
             </td>
           </tr>
+          <Detail>
           <tr className="xls-row xls-row--even">
             <td className="xls-cell" colSpan={2} style={{ fontSize: 13, fontWeight: 600 }}>테스트 알림</td>
             <td className="xls-cell" colSpan={4} style={{ padding: '8px 10px' }}>
@@ -742,6 +756,7 @@ export default function Settings(){
               </div>
             </td>
           </tr>
+          </Detail>
           {accessInfo?.is_admin && (
             <tr className="xls-row">
               <td className="xls-cell" colSpan={6} style={{ padding: '8px 10px' }}>

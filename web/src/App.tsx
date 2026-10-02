@@ -14,6 +14,7 @@ import { useAuthStore } from './stores/authStore'
 import { useProfileStore } from './stores/profileStore'
 import { onOpenProfileModal } from './lib/profileModal'
 import { apiFetch } from './lib/api'
+import { canSeeNav } from './navigation'
 
 const CHUNK_RELOAD_KEY = '__ssb_chunk_reload_once__'
 
@@ -83,6 +84,10 @@ function AppContent() {
   const profileSyncError  = useProfileStore((s) => s.syncError)
   const hydrateFromServer = useProfileStore((s) => s.hydrateFromServer)
 
+  const isAdmin      = useProfileStore((s) => s.isAdmin)
+  const isAdminReady = useProfileStore((s) => s.isAdminReady)
+  const setIsAdmin   = useProfileStore((s) => s.setIsAdmin)
+
   const [profileOpen, setProfileOpen]         = useState(false)
   const [focusChatIdField, setFocusChatIdField] = useState(false)
 
@@ -116,6 +121,21 @@ function AppContent() {
   }, [])
 
   useEffect(() => { preloadStocks() }, [])
+
+  // 관리자 여부 — 메뉴 노출 범위를 정한다. 조회 실패 시 일반 사용자 화면으로 둔다.
+  useEffect(() => {
+    if (!isSignedIn && !isReview) return
+    let cancelled = false
+    void (async () => {
+      try {
+        const me = await apiFetch('/api/ui/access-users?mode=me', { cacheMs: 0, timeoutMs: 10_000 })
+        if (!cancelled) setIsAdmin(!!me?.data?.is_admin)
+      } catch {
+        if (!cancelled) setIsAdmin(false)
+      }
+    })()
+    return () => { cancelled = true }
+  }, [isSignedIn, isReview, setIsAdmin])
 
   useEffect(() => {
     const WARM_KEY = '__api_warmed'
@@ -278,6 +298,10 @@ function AppContent() {
             로딩 중...
           </div>
         }>
+          {/* 일반 사용자는 허용된 화면만 — 주소로 직접 들어와도 홈으로 돌려보낸다 */}
+          {isAdminReady && !isAdmin && !isPublicAnalyze && !isReview && !canSeeNav(activeRoute, false) && (
+            <Navigate to="/dashboard" replace />
+          )}
           <Routes>
             <Route path="/"                       element={<Navigate to="/dashboard" replace />} />
             <Route path="/dashboard"              element={<Dashboard onNavigate={handleNavigate} />} />

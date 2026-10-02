@@ -24,7 +24,8 @@ import {
 } from 'lucide-react'
 import { useAuthStore } from '../stores/authStore'
 import { useProfileStore } from '../stores/profileStore'
-import { PRIMARY_NAV_ITEMS, CONTROL_NAV_ITEM, TOOL_NAV_GROUPS, TOOL_NAV_ITEMS, ALL_NAV_ITEMS } from '../navigation'
+import { useDetailed, useViewModeStore } from '../stores/viewModeStore'
+import { PRIMARY_NAV_ITEMS, CONTROL_NAV_ITEM, TOOL_NAV_GROUPS, ALL_NAV_ITEMS, filterNavItems, filterNavGroups, plainNavItems } from '../navigation'
 import ExcelContentArea from './ExcelContentArea'
 import BotUsageBanner from './BotUsageBanner'
 import { useVisualViewportVars } from '../hooks/useVisualViewportVars'
@@ -93,15 +94,15 @@ type RibbonTabKey = typeof RIBBON_TABS[number]['key']
 type RibbonBtn = { key: string; label: string; icon: React.ReactNode; route?: string }
 type RibbonGroup = { label: string; buttons: RibbonBtn[] }
 
-function getRibbonGroups(tab: RibbonTabKey): RibbonGroup[] {
+function getRibbonGroups(tab: RibbonTabKey, isAdmin: boolean): RibbonGroup[] {
   switch (tab) {
     case 'home': return [
-      { label: '핵심 플로우', buttons: PRIMARY_NAV_ITEMS.map(item => ({
+      { label: isAdmin ? '핵심 플로우' : '바로가기', buttons: (isAdmin ? PRIMARY_NAV_ITEMS : plainNavItems(filterNavItems(PRIMARY_NAV_ITEMS, false))).map(item => ({
         key: item.key, label: item.label, icon: navIcon(item.key, 20), route: item.key,
       }))},
-      { label: '관제', buttons: [
+      ...(isAdmin ? [{ label: '관제', buttons: [
         { key: 'control', label: '관제', icon: <Shield size={20}/>, route: 'control' },
-      ]},
+      ]}] : []),
     ]
     case 'control': return [
       { label: '관제 바로가기', buttons: [
@@ -111,10 +112,9 @@ function getRibbonGroups(tab: RibbonTabKey): RibbonGroup[] {
         { key: 'control-maintenance', label: '유지보수', icon: <Wrench size={20}/>,      route: 'control?tab=maintenance' },
       ]},
     ]
-    case 'tools': return TOOL_NAV_GROUPS.map(group => ({
+    case 'tools': return filterNavGroups(TOOL_NAV_GROUPS, isAdmin).map(group => ({
       label: group.category,
       buttons: group.items
-        .filter(item => !item.adminOnly)
         .map(item => ({ key: item.key, label: item.label, icon: navIcon(item.key, 20), route: item.key })),
     }))
     default: return []
@@ -124,18 +124,18 @@ function getRibbonGroups(tab: RibbonTabKey): RibbonGroup[] {
 // ── 시트 탭 / 메뉴 정의 ───────────────────────────────────────────
 // 시트 탭은 핵심 6개 + 관제만 1차 노출, 나머지는 "도구" 서랍으로.
 
-const SHEET_TABS = [...PRIMARY_NAV_ITEMS, CONTROL_NAV_ITEM].map(item => ({
+const toTab = (item: { key: string; label: string }) => ({
   key: item.key,
   label: item.label,
   icon: navIcon(item.key, 10),
-}))
+})
+
+const ADMIN_SHEET_TABS = [...PRIMARY_NAV_ITEMS, CONTROL_NAV_ITEM].map(toTab)
+const USER_SHEET_TABS = plainNavItems(filterNavItems(PRIMARY_NAV_ITEMS, false)).map(toTab)
 
 /** 메뉴 검색용 전체 목록 (도구 서랍 포함) */
-const MENU_TABS = ALL_NAV_ITEMS.map(item => ({
-  key: item.key,
-  label: item.label,
-  icon: navIcon(item.key, 10),
-}))
+const ADMIN_MENU_TABS = ALL_NAV_ITEMS.map(toTab)
+const USER_MENU_TABS = plainNavItems(filterNavItems(ALL_NAV_ITEMS, false)).map(toTab)
 
 // ── 3패널 리사이즈 ────────────────────────────────────────────────
 
@@ -316,12 +316,19 @@ export default function ExcelShell({
   const { leftW, rightW, startDrag } = usePanelResize(containerRef)
 
   const displayName = profile.nickname || profile.telegramName || authName || authEmail || '사용자'
+  const isAdmin = useProfileStore(s => s.isAdmin)
+  const detailed = useDetailed()
+  const setViewMode = useViewModeStore(s => s.setMode)
+  const SHEET_TABS = isAdmin ? ADMIN_SHEET_TABS : USER_SHEET_TABS
+  const MENU_TABS = isAdmin ? ADMIN_MENU_TABS : USER_MENU_TABS
+  const toolGroups = useMemo(() => filterNavGroups(TOOL_NAV_GROUPS, isAdmin), [isAdmin])
+  const ribbonTabs = isAdmin ? RIBBON_TABS : RIBBON_TABS.filter(t => t.key !== 'control')
   const activeMenu = MENU_TABS.find(t => t.key === activeRoute)
-  const isToolRouteActive = TOOL_NAV_ITEMS.some(item => item.key === activeRoute)
+  const isToolRouteActive = toolGroups.some(g => g.items.some(item => item.key === activeRoute))
   const activeSheetIndex = Math.max(0, SHEET_TABS.findIndex(t => t.key === activeRoute))
   const pageLabel   = activeMenu?.label ?? activeRoute ?? ''
   const nameBox     = activeRoute ? activeRoute.toUpperCase().slice(0, 6) : 'A1'
-  const groups      = getRibbonGroups(ribbonTab)
+  const groups      = getRibbonGroups(ribbonTabs.some(t => t.key === ribbonTab) ? ribbonTab : 'home', isAdmin)
   const workbookTitle = useMemo(() => {
     const now = new Date()
     const y = now.getFullYear()
@@ -772,7 +779,7 @@ export default function ExcelShell({
         <button className="excel-ribbon-tab excel-ribbon-tab--file" disabled aria-label="파일 메뉴" title="파일 메뉴는 아직 지원하지 않습니다">
           파일
         </button>
-        {RIBBON_TABS.map(t => (
+        {ribbonTabs.map(t => (
           <button
             key={t.key}
             role="tab"
@@ -881,9 +888,8 @@ export default function ExcelShell({
             role="menu"
             aria-label="도구 메뉴"
           >
-            {TOOL_NAV_GROUPS.map(group => {
-              const items = group.items.filter(item => !item.adminOnly)
-              if (items.length === 0) return null
+            {toolGroups.map(group => {
+              const items = group.items
               return (
                 <div key={group.category} className="excel-tools-drawer__group">
                   <div className="excel-tools-drawer__label">{group.category}</div>
@@ -948,6 +954,14 @@ export default function ExcelShell({
               @{displayName}
             </span>
           )}
+          <button
+            type="button"
+            className="excel-statusbar__item excel-statusbar__item--clickable"
+            title="긴 설명과 보조 정보를 보이거나 숨깁니다"
+            onClick={() => setViewMode(detailed ? 'simple' : 'detailed')}
+          >
+            {detailed ? '자세히 보기' : '간단히 보기'}
+          </button>
           <span className="excel-statusbar__item excel-statusbar__item--datetime">{currentTime}</span>
           <span className="excel-statusbar__item excel-statusbar__item--market">국장 본장 / 미장 데이터핫</span>
           <div className="excel-statusbar__zoom">

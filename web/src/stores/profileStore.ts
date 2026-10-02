@@ -4,6 +4,8 @@ import { clearProfile, linkedTelegramId, loadProfileFromServer, readProfile, sav
 type ProfileState = {
   profile: StoredProfile
   isAdmin: boolean
+  /** 관리자 여부 조회가 끝났는지 — 끝나기 전에는 경로를 막지 않는다 */
+  isAdminReady: boolean
   syncError: string
   isHydrating: boolean
 }
@@ -26,6 +28,7 @@ export const selectIsTelegramLinked = (state: ProfileState) => !!linkedTelegramI
 export const useProfileStore = create<ProfileState & ProfileActions>((set) => ({
   profile: readProfile() ?? {},
   isAdmin: false,
+  isAdminReady: false,
   syncError: '',
   isHydrating: false,
 
@@ -53,10 +56,10 @@ export const useProfileStore = create<ProfileState & ProfileActions>((set) => ({
 
   clearState: () => {
     clearProfile()
-    set({ profile: {}, syncError: '', isHydrating: false })
+    set({ profile: {}, isAdmin: false, isAdminReady: false, syncError: '', isHydrating: false })
   },
 
-  setIsAdmin: (val) => set({ isAdmin: val }),
+  setIsAdmin: (val) => set({ isAdmin: val, isAdminReady: true }),
 
   refresh: () => set({ profile: readProfile() ?? {} }),
 

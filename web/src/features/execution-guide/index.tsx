@@ -8,6 +8,8 @@ import Input from '../../components/ui/Input'
 import SheetHeaderBar from '../../components/SheetHeaderBar'
 import EconomicEventBadge from '../../components/EconomicEventBadge'
 import ShareModal from '../../components/ShareModal'
+import Detail from '../../components/ui/Detail'
+import { useDetailed } from '../../stores/viewModeStore'
 import { useToast } from '../../components/ToastProvider'
 import { useShareManager } from '../../hooks/useShareManager'
 import { getCurrentClientIdFromStore, useCurrentChatId } from '../../stores/profileStore'
@@ -845,7 +847,10 @@ export default function ExecutionGuidePage() {
   const [autoError, setAutoError] = useState<string | null>(null)
   const [candidateMode, setCandidateMode] = useState<CandidateMode>('balanced')
   const [scoreVersion, setScoreVersion] = useState<ScoreVersion>('v2')
-  const [compactView, setCompactView] = useState(false)
+  const [compactViewChoice, setCompactView] = useState(false)
+  const detailed = useDetailed()
+  // 간단히 보기에서는 핵심(진입·손절·목표·수량)만 보인다
+  const compactView = compactViewChoice || !detailed
   const [showAutoFinder, setShowAutoFinder] = useState(false)
   const [snapshotReady, setSnapshotReady] = useState(false)
   const [lastSnapshotAt, setLastSnapshotAt] = useState<string | null>(null)
@@ -1323,7 +1328,7 @@ export default function ExecutionGuidePage() {
                 <option value="aggressive">공격</option>
               </select>
             </div>
-            <Input label="추천 출처" value={sourceLabel} onChange={(e) => setSourceLabel(e.target.value)} />
+            <Detail><Input label="추천 출처" value={sourceLabel} onChange={(e) => setSourceLabel(e.target.value)} /></Detail>
             <div className="ui-field" style={{ display: 'flex', alignItems: 'flex-end' }}>
               <Button onClick={buildGuide} disabled={loading || codeList.length === 0} style={{ width: '100%', minHeight: 38 }}>
                 {loading ? '가이드 생성 중…' : '가이드 생성'}
@@ -1333,14 +1338,16 @@ export default function ExecutionGuidePage() {
         </div>
 
         <div className="execution-guide-meta-row" style={{ marginTop: 'var(--space-3)', display: 'flex', gap: 'var(--space-3)', alignItems: 'center', flexWrap: 'wrap' }}>
-          <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-            <input type="checkbox" checked={includeNews} onChange={(e) => setIncludeNews(e.target.checked)} />
-            뉴스 상위 3건 요약 포함
-          </label>
-          <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-            <input type="checkbox" checked={compactView} onChange={(e) => setCompactView(e.target.checked)} />
-            핵심만 보기
-          </label>
+          <Detail>
+            <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+              <input type="checkbox" checked={includeNews} onChange={(e) => setIncludeNews(e.target.checked)} />
+              뉴스 상위 3건 요약 포함
+            </label>
+            <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+              <input type="checkbox" checked={compactViewChoice} onChange={(e) => setCompactView(e.target.checked)} />
+              핵심만 보기
+            </label>
+          </Detail>
           <span className="caption">코드 {codeList.length}개</span>
           {generatedAt && <span className="caption">생성시각 {formatKstDateTime(generatedAt)}</span>}
         </div>
@@ -1357,6 +1364,7 @@ export default function ExecutionGuidePage() {
         )}
       </div>
 
+      <Detail>
       <div>
         <Button variant="ghost" onClick={() => setShowAutoFinder((v) => !v)}>
           {showAutoFinder ? '자동 후보 찾기 접기 ▴' : `자동 후보 찾기 (고급)${autoCandidates.length > 0 ? ` · ${autoCandidates.length}건` : ''} ▾`}
@@ -1472,6 +1480,7 @@ export default function ExecutionGuidePage() {
         )}
       </div>
       )}
+      </Detail>
 
       {error && <div className="card" style={{ color: 'var(--color-error)' }}>{error}</div>}
 
@@ -1601,10 +1610,10 @@ export default function ExecutionGuidePage() {
           <div>잔여 현금: {formatKrw(Math.max(0, totalCapital - totalPlanned))}</div>
           <div>출처: {sourceLabel}</div>
         </div>
-        <div className="caption muted">
+        <Detail><div className="caption muted">
           스냅샷: {snapshotReady ? '준비됨' : '미준비'}
           {lastSnapshotAt ? ` · 최근 저장 ${formatKstDateTime(lastSnapshotAt)}` : ''}
-        </div>
+        </div></Detail>
         <div style={{ display: 'flex', gap: 'var(--space-2)', flexWrap: 'wrap' }}>
           <Button size="sm" variant="secondary" onClick={openExecutionGuideShare} disabled={shareManager.creating || rows.length === 0}>
             {shareManager.creating ? '공유 준비 중…' : '공유'}

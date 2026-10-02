@@ -97,6 +97,45 @@ export const ALL_NAV_ITEMS: NavItem[] = [
 export type NavKey = NavItem['key']
 
 /**
+ * 일반 사용자에게 보이는 화면 — 시드 모으기 가이드, 투자금액 넣고 시뮬레이션·따라 하기, 목표 예측, 내 계좌·기록.
+ * 전략 비교·분석·후보 탐색·관제처럼 봇의 판단 근거를 따지는 화면은 관리자에게만 보인다.
+ * 사용자 화면을 늘리려면 이 목록만 고친다.
+ */
+export const USER_NAV_KEYS: readonly string[] = [
+  'dashboard',
+  'seed-builder',
+  'simulator',
+  'execution-guide',
+  'goal-tracker',
+  'income-guide',
+  'portfolio',
+  'trades',
+  'alerts',
+  'settings',
+  'profile',
+]
+
+export function canSeeNav(key: string, isAdmin: boolean): boolean {
+  return isAdmin || USER_NAV_KEYS.includes(key)
+}
+
+/** 관리자는 전체, 일반 사용자는 USER_NAV_KEYS만 */
+export function filterNavItems<T extends { key: string }>(items: T[], isAdmin: boolean): T[] {
+  return items.filter((item) => canSeeNav(item.key, isAdmin))
+}
+
+/** 일반 사용자에게는 봇 흐름 번호("2 포트폴리오")를 빼고 이름만 보인다 */
+export function plainNavItems<T extends { label: string }>(items: T[]): T[] {
+  return items.map((item) => ({ ...item, label: item.label.replace(/^\d+\s+/, '') }))
+}
+
+export function filterNavGroups(groups: NavGroup[], isAdmin: boolean): NavGroup[] {
+  return groups
+    .map((g) => ({ ...g, items: g.items.filter((i) => (isAdmin || !i.adminOnly) && canSeeNav(i.key, isAdmin)) }))
+    .filter((g) => g.items.length > 0)
+}
+
+/**
  * 화면별 "봇이 이 화면 정보를 매매에 어떻게 쓰는지" — 모든 화면 상단에 한 줄로 나온다(BotUsageBanner).
  * 봇 로직이 바뀌면 여기만 고친다. 근거: 2026-09-28 10년·30년 검증.
  */

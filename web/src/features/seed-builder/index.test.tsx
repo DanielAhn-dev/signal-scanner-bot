@@ -5,7 +5,7 @@ import SeedBuilderPage from './index'
 
 const apiFetchMock = vi.fn()
 vi.mock('../../lib/api', () => ({ apiFetch: (...args: unknown[]) => apiFetchMock(...args) }))
-vi.mock('../../stores/profileStore', () => ({ useCurrentClientId: () => 'test-user' }))
+vi.mock('../../stores/profileStore', () => ({ useCurrentClientId: () => 'test-user', useProfileStore: (select: (state: { isAdmin: boolean }) => unknown) => select({ isAdmin: true }) }))
 
 beforeEach(() => {
   window.localStorage.clear()

@@ -4,6 +4,7 @@ import { Building2, AlertTriangle, TrendingDown, ShieldAlert, TrendingUp, PlusCi
 import { apiFetch, invalidateCache } from '../../lib/api'
 import { formatKrw, formatKrwCompact, formatKstDateTime, formatNumber } from '../../lib/format'
 import Skeleton from '../../components/Skeleton'
+import Detail from '../../components/ui/Detail'
 import Collapsible from '../../components/ui/Collapsible'
 import Button from '../../components/ui/Button'
 import Input from '../../components/ui/Input'
@@ -1604,6 +1605,7 @@ export default function Portfolio() {
                 )}
               </div>
 
+              <Detail>
               {/* ── 판정 배지 + 판정근거 토글 ── */}
               <div className="portfolio-card-badges-row">
                 {reasonBadges.map((b, i) => (
@@ -1643,6 +1645,7 @@ export default function Portfolio() {
                 </div>
               )}
 
+              </Detail>
               {/* ── 액션 버튼 ── */}
               <div className="portfolio-actions-row">
                 <Button className="portfolio-action-btn" variant="secondary" onClick={() => openTradeModal(r, 'buy')}>
@@ -1681,6 +1684,7 @@ export default function Portfolio() {
         </div>
       )}
 
+      <Detail>
       {/* ── 참고 정보: 가끔 확인하는 것들은 목록 아래로 모으고 각각 접어 둔다 ── */}
       <div className="portfolio-reference-head">
         <div className="title-md">참고 정보</div>
@@ -1858,6 +1862,7 @@ export default function Portfolio() {
           </div>
         )}
       </div>
+      </Detail>
 
       <Modal
         isOpen={modalOpen}

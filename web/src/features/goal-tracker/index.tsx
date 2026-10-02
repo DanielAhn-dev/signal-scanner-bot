@@ -1,3 +1,4 @@
+import Detail from '../../components/ui/Detail'
 import React, { useState } from 'react'
 import Button from '../../components/ui/Button'
 import Modal from '../../components/Modal'
@@ -290,9 +291,10 @@ export default function GoalTrackerPage() {
             </>
           )}
         </div>
-        <div className="goal-note">누적으로 계획선을 따라가는지를 보세요. 매달 고르게 나오지 않습니다.</div>
+        <Detail><div className="goal-note">누적으로 계획선을 따라가는지를 보세요. 매달 고르게 나오지 않습니다.</div></Detail>
       </section>
 
+      <Detail>
       <section className="goal-card" aria-label="이번 달">
         <h2>이번 달</h2>
         <div className="goal-tiles">
@@ -324,6 +326,7 @@ export default function GoalTrackerPage() {
         </div>
         {t.assessment && <div className="goal-note" style={{ color: assessColor }}>{t.assessment.text}</div>}
       </section>
+      </Detail>
 
       {cross && (
         <section className="goal-card" aria-label="복리와 입금">
