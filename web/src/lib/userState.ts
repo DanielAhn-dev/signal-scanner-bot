@@ -70,10 +70,15 @@ export function readUserState<T>(name: UserStateName): T | null {
 
 const saveTimers = new Map<string, ReturnType<typeof setTimeout>>()
 
+/** 서버 저장에 실패한 값 — 다음 조회 때 서버 값으로 덮지 않고 다시 올린다 */
+const unsaved = new Set<string>()
+
 async function pushToServer(name: UserStateName, value: unknown) {
+  const id = `${getCurrentClientIdFromStore()}:${name}`
   try {
     await apiFetch('/api/ui/user-state', { method: 'POST', body: JSON.stringify({ key: name, value }), cacheMs: 0, retries: 0, timeoutMs: 10_000 })
-  } catch { /* 로컬에는 남아 있고 다음 변경이나 로그인 때 다시 올라간다 */ }
+    unsaved.delete(id)
+  } catch { unsaved.add(id) }
 }
 
 export function writeUserState(name: UserStateName, value: unknown) {
@@ -108,6 +113,12 @@ async function doPull(clientId: string): Promise<void> {
     for (const name of Object.keys(LEGACY_KEYS) as UserStateName[]) {
       const local = readEntry(name)
       const remote = server[name]
+      const id = `${clientId}:${name}`
+      // 저장 대기 중이거나 저장에 실패한 값은 이 기기가 더 새로운 것 — 서버 값으로 덮지 않고 다시 올린다
+      if (local && (saveTimers.has(id) || unsaved.has(id))) {
+        if (!saveTimers.has(id)) void pushToServer(name, local.value)
+        continue
+      }
       if (remote && (!local || Number(remote.updatedAt) > local.updatedAt)) {
         writeEntry(name, { value: remote.value, updatedAt: Number(remote.updatedAt) || 0 })
         changed = true
@@ -123,6 +134,7 @@ async function doPull(clientId: string): Promise<void> {
 export function clearUserLocalData() {
   for (const t of saveTimers.values()) clearTimeout(t)
   saveTimers.clear()
+  unsaved.clear()
   try {
     for (const key of Object.keys(localStorage)) {
       if (key.startsWith(SCOPED_PREFIX)) localStorage.removeItem(key)
@@ -179,4 +191,23 @@ export function useSyncedSettings<T extends object>(name: UserStateName, current
     set(current)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [hydrated, currentJson])
+}
+
+const REFRESH_MIN_GAP_MS = 30_000
+
+/** 로그인 직후 서버 값을 미리 받아 두고, 다른 기기에서 쓰다 이 탭으로 돌아오면 다시 받아 온다 (App에서 한 번 호출) */
+export function useUserStateAutoSync(enabled: boolean) {
+  const clientId = useCurrentClientId()
+  useEffect(() => {
+    if (!enabled || !clientId) return
+    let last = Date.now()
+    void pullUserState()
+    const onVisible = () => {
+      if (document.visibilityState !== 'visible' || Date.now() - last < REFRESH_MIN_GAP_MS) return
+      last = Date.now()
+      void pullUserState()
+    }
+    document.addEventListener('visibilitychange', onVisible)
+    return () => document.removeEventListener('visibilitychange', onVisible)
+  }, [enabled, clientId])
 }

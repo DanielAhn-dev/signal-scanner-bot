@@ -49,3 +49,24 @@ describe('userState', () => {
     expect(localStorage.getItem('excel-shell:zoom:v1')).toBe('100')
   })
 })
+
+describe('userState 서버 조회', () => {
+  beforeEach(() => { localStorage.clear(); clientId.current = 'user-a' })
+
+  it('저장 대기 중인 값은 서버 값으로 덮지 않는다', async () => {
+    const { apiFetch } = await import('./api')
+    const { pullUserState } = await import('./userState')
+    writeUserState('tradeCost', { includeCost: false })
+    vi.mocked(apiFetch).mockResolvedValueOnce({ data: { tradeCost: { value: { includeCost: true }, updatedAt: Date.now() + 10_000 } } })
+    await pullUserState()
+    expect(readUserState('tradeCost')).toEqual({ includeCost: false })
+  })
+
+  it('서버 값이 더 새로우면 로컬을 덮는다', async () => {
+    const { apiFetch } = await import('./api')
+    const { pullUserState } = await import('./userState')
+    vi.mocked(apiFetch).mockResolvedValueOnce({ data: { buycheck: { value: { maxHoldings: 4 }, updatedAt: 5 } } })
+    await pullUserState()
+    expect(readUserState('buycheck')).toEqual({ maxHoldings: 4 })
+  })
+})

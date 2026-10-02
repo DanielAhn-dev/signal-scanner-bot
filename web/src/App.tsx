@@ -1,4 +1,5 @@
 import React, { lazy, Suspense, useEffect, useState } from 'react'
+import { useUserStateAutoSync } from './lib/userState'
 import { Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom'
 import ExcelShell from './components/ExcelShell'
 import ProfileModal from './components/ProfileModal'
@@ -85,6 +86,7 @@ function AppContent() {
   const { isSignedIn, isSigningIn, authReady, authError, authEmail, authName, initAuth, signIn, signOut } = useAuthStore()
   const profileSyncError  = useProfileStore((s) => s.syncError)
   const hydrateFromServer = useProfileStore((s) => s.hydrateFromServer)
+  useUserStateAutoSync(isSignedIn)
 
   const isAdmin      = useProfileStore((s) => s.isAdmin)
   const isAdminReady = useProfileStore((s) => s.isAdminReady)
