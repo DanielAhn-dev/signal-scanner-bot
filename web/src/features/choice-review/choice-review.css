@@ -1,0 +1,23 @@
+.choice-page { padding: 12px 16px 24px; max-width: 720px; color: var(--color-text-primary); font-size: 13px; line-height: 1.6; display: flex; flex-direction: column; gap: 12px; }
+.choice-lead { margin: 0; color: var(--color-text-secondary); }
+.choice-card { border: 1px solid var(--color-border-default); border-radius: 8px; padding: 14px; background: var(--color-bg-elevated, transparent); }
+.choice-card h2 { margin: 0 0 10px; font-size: 13px; font-weight: 700; }
+.choice-error { color: var(--color-error); }
+.choice-wait, .choice-note { margin: 0; color: var(--color-text-secondary); }
+.choice-note { margin-top: 8px; font-size: 11px; }
+.choice-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin: 0 0 10px; }
+.choice-stats div { padding: 8px 10px; border-radius: 6px; background: var(--color-bg-subtle, rgba(127, 127, 127, 0.08)); }
+.choice-stats dt { font-size: 11px; color: var(--color-text-secondary); }
+.choice-stats dd { margin: 2px 0 0; font-size: 16px; font-weight: 700; }
+.choice-stats dd.is-up { color: var(--color-stock-up); }
+.choice-stats dd.is-down { color: var(--color-stock-down); }
+.choice-chart { width: 100%; height: auto; display: block; }
+.choice-chart__base { stroke: var(--color-border-default); stroke-width: 1; stroke-dasharray: 2 3; }
+.choice-chart__tick { fill: var(--color-text-tertiary); font-size: 9px; }
+.choice-chart__actual { fill: none; stroke: var(--color-brand); stroke-width: 2; }
+.choice-chart__alt { fill: none; stroke: var(--color-text-secondary); stroke-width: 1.5; stroke-dasharray: 5 3; }
+.choice-legend { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 4px; font-size: 11px; color: var(--color-text-secondary); }
+.choice-legend i { display: inline-block; width: 18px; height: 0; vertical-align: middle; margin-right: 4px; border-top: 2px solid; }
+.choice-legend__actual { border-color: var(--color-brand); }
+.choice-legend__alt { border-color: var(--color-text-secondary); border-top-style: dashed !important; }
+.choice-legend__days { margin-left: auto; }

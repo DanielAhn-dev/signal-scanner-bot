@@ -48,6 +48,7 @@ import stocks from '../handlers/ui/stocks'
 import strategyAdaptive from '../handlers/ui/strategy-adaptive'
 import forwardTest from '../handlers/ui/forward-test'
 import goalTracker from '../handlers/ui/goal-tracker'
+import choiceReview from '../handlers/ui/choice-review'
 import followReport from '../handlers/ui/follow-report'
 import invites from '../handlers/ui/invites'
 import incomeGuide from '../handlers/ui/income-guide'
@@ -111,6 +112,7 @@ const ROUTES: Record<string, UiHandler> = {
   'strategy-adaptive': strategyAdaptive,
   'forward-test': forwardTest,
   'goal-tracker': goalTracker,
+  'choice-review': choiceReview,
   'follow-report': followReport,
   'income-guide': incomeGuide,
   invites,

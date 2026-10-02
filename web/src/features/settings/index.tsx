@@ -8,6 +8,7 @@ import { formatKrwCompact } from '../../lib/format'
 import TelegramLinkCallout from '../../components/TelegramLinkCallout'
 import { requestOpenProfileModal } from '../../lib/profileModal'
 import { useCurrentChatId, useIsTelegramLinked } from '../../stores/profileStore'
+import { recordSwitch } from '../../lib/switchHistory'
 
 /** 종목 매매 봇을 권하지 않는 시드 기준 — 2026-09-29 시드 크기 검증: 100만 -9.3%p, 300만 -1.9%p, 1천만 이상 차이 0.2%p 이내 */
 const SMALL_SEED_LIMIT = 10_000_000
@@ -295,6 +296,8 @@ export default function Settings(){
     setSavingMode(true)
     setModeStatus(undefined)
     try {
+      // 바꾸기 직전 보유를 남겨 둔다 — 나중에 "안 바꿨다면"과 비교하는 출발점 (내 선택 돌아보기)
+      await recordSwitch(strategyMode ?? 'stock', next)
       const json = await apiFetch('/api/ui/investment-prefs', {
         method: 'POST',
         cacheMs: 0,

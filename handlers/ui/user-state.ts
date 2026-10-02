@@ -8,10 +8,10 @@ import { buildAudienceKey, REPORT_SNAPSHOT_TABLE } from '../../src/services/repo
 // users.prefs에 쓰면 봇이 동시에 쓰는 가상 계좌 값과 서로 덮어쓸 수 있어 따로 둔다.
 const TOPIC = '사용자설정'
 const FIXED_DATE = '2000-01-01'
-const MAX_VALUE_BYTES = 4_000
+const MAX_VALUE_BYTES = 8_000
 
 /** 서버가 받는 키 — 이름과 크기를 제한해 임의 데이터 저장소로 쓰이지 않게 한다 */
-export const USER_STATE_KEYS = new Set(['holdingRules', 'assetOverview', 'tradeCost', 'buycheck', 'accumulate', 'investorProfile'])
+export const USER_STATE_KEYS = new Set(['holdingRules', 'assetOverview', 'tradeCost', 'buycheck', 'accumulate', 'investorProfile', 'switchHistory'])
 
 type StateMap = Record<string, { value: unknown; updatedAt: number }>
 
