@@ -28,6 +28,9 @@ export default function GoalTrackerPage() {
   const [depositBusy, setDepositBusy] = useState(false)
   const [depositError, setDepositError] = useState<string | null>(null)
   const [depositDone, setDepositDone] = useState<string | null>(null)
+  const [autoMan, setAutoMan] = useState('')
+  const [autoBusy, setAutoBusy] = useState(false)
+  const [autoMsg, setAutoMsg] = useState<string | null>(null)
 
   if (!view) {
     return (
@@ -67,6 +70,27 @@ export default function GoalTrackerPage() {
     // 실패하면 편집을 닫지 않는다 — 닫으면 옛 값이 그대로 보여 저장된 것처럼 착각한다
     if (ok) setEditing(false)
     else setSaveError('저장하지 못했습니다. 잠시 뒤 다시 시도하세요.')
+  }
+
+  /** 표의 필요 금액이나 직접 적은 금액을 실제 "월 자동 입금"으로 저장한다 (입금일은 지금 설정 유지) */
+  const applyAutoDeposit = async (amountWon: number) => {
+    if (!Number.isFinite(amountWon) || amountWon < 0 || (amountWon > 0 && amountWon < 10_000)) {
+      setAutoMsg('0(적립 안 함) 또는 1만원 이상으로 입력하세요')
+      return
+    }
+    setAutoBusy(true)
+    setAutoMsg(null)
+    try {
+      const prefs = await apiFetch('/api/ui/investment-prefs', { cacheMs: 0, retries: 0 })
+      const day = Number(prefs?.data?.deposit_day) || 1
+      await apiFetch('/api/ui/investment-prefs', { method: 'POST', body: JSON.stringify({ monthly_deposit: Math.round(amountWon), deposit_day: day }), cacheMs: 0, timeoutMs: 15_000 })
+      await load()
+      setAutoMsg(`월 자동 입금을 ${man(amountWon)}으로 저장했습니다`)
+    } catch (e) {
+      setAutoMsg(`저장하지 못했습니다: ${e instanceof Error ? e.message : String(e)}`)
+    } finally {
+      setAutoBusy(false)
+    }
   }
 
   const openDeposit = () => {
@@ -199,7 +223,7 @@ export default function GoalTrackerPage() {
               <div className="goal-field">
                 <span style={{ fontSize: 12, fontWeight: 600 }}>월 추가 입금</span>
                 <span>{man(s.monthlyContribution ?? 0)}</span>
-                <span className="goal-field__hint">설정의 "월 자동 입금"에서 바꿉니다</span>
+                <span className="goal-field__hint">아래 "필요 시드에 닿으려면" 표에서 바로 바꿀 수 있습니다</span>
               </div>
             ) : (
               field('contribMan', '월 추가 입금 (만원)', '매달 새로 넣는 돈')
@@ -382,6 +406,7 @@ export default function GoalTrackerPage() {
                 <th scope="col">도달 시점</th>
                 <th scope="col">기간</th>
                 <th scope="col">매달 넣을 금액</th>
+                {view.contributionLinked && <th scope="col">적용</th>}
               </tr>
             </thead>
             <tbody>
@@ -393,10 +418,33 @@ export default function GoalTrackerPage() {
                   </td>
                   <td>{r.months % 12 === 0 ? `${r.months / 12}년` : `${r.months}개월`}</td>
                   <td>{man(r.contribution)}</td>
+                  {view.contributionLinked && (
+                    <td>
+                      <Button size="sm" disabled={autoBusy} onClick={() => void applyAutoDeposit(Math.ceil(r.contribution / 10_000) * 10_000)}>적용</Button>
+                    </td>
+                  )}
                 </tr>
               ))}
             </tbody>
           </table>
+          {view.contributionLinked && (
+            <div style={{ marginTop: 12 }}>
+              <p className="goal-card__lead" style={{ marginBottom: 6 }}>
+                이 표는 계산 결과라 직접 고칠 수 없습니다. 지금 월 자동 입금은 {man(s.monthlyContribution ?? 0)}입니다.
+                행의 "적용"을 누르면 그 금액이 월 자동 입금이 되고, 아래에 원하는 금액을 직접 넣어도 됩니다.
+              </p>
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                <input
+                  type="number" inputMode="numeric" min="0" value={autoMan} placeholder="예: 60"
+                  onChange={(e) => setAutoMan(e.target.value)}
+                  aria-label="월 자동 입금 (만원)" style={{ width: 100, padding: '8px 10px', fontSize: 16 }}
+                />
+                <span>만원</span>
+                <Button size="sm" disabled={autoBusy || autoMan.trim() === ''} onClick={() => void applyAutoDeposit(Number(autoMan) * 10_000)}>월 자동 입금으로 저장</Button>
+              </div>
+              {autoMsg && <div className="goal-note" role="status" style={{ marginTop: 8 }}>{autoMsg}</div>}
+            </div>
+          )}
         </section>
       )}
 
