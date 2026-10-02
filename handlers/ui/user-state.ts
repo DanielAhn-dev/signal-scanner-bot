@@ -11,7 +11,7 @@ const FIXED_DATE = '2000-01-01'
 const MAX_VALUE_BYTES = 8_000
 
 /** 서버가 받는 키 — 이름과 크기를 제한해 임의 데이터 저장소로 쓰이지 않게 한다 */
-export const USER_STATE_KEYS = new Set(['holdingRules', 'assetOverview', 'tradeCost', 'buycheck', 'accumulate', 'investorProfile', 'switchHistory'])
+export const USER_STATE_KEYS = new Set(['holdingRules', 'assetOverview', 'tradeCost', 'buycheck', 'accumulate', 'investorProfile', 'switchHistory', 'dropPlan'])
 
 type StateMap = Record<string, { value: unknown; updatedAt: number }>
 

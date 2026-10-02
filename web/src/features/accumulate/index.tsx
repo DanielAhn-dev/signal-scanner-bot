@@ -4,6 +4,7 @@ import { formatKrwMan } from '../../lib/format'
 import { useCurrentClientId } from '../../stores/profileStore'
 import { useUserState } from '../../lib/userState'
 import StockSearchInput from '../../components/StockSearchInput'
+import { dropPlanLines, sanitizeDropPlan, type DropPlan } from '../../lib/dropPlan'
 import { ACCUMULATE_ASOF, INDEX_ETF_CANDIDATES } from '../../data/accumulateData'
 import {
   EMPTY_STATE,
@@ -68,6 +69,8 @@ function FanChart({ sim }: { sim: SimResult }) {
 export default function AccumulatePage() {
   const clientId = useCurrentClientId()
   const { value, set } = useUserState<AccumulateState>('accumulate')
+  const { value: dropPlanRaw } = useUserState<DropPlan>('dropPlan')
+  const dropPlan = sanitizeDropPlan(dropPlanRaw)
   const state: AccumulateState = { ...EMPTY_STATE, ...(value ?? {}) }
   const update = (patch: Partial<AccumulateState>) => set({ ...state, ...patch })
   const ym = currentYmKst()
@@ -297,6 +300,12 @@ export default function AccumulatePage() {
               <strong>{guide.title}</strong>
               <p>{guide.text}</p>
               {guide.note && <p className="acc-note">{guide.note}</p>}
+              {guide.state === 'drop' && dropPlan && (
+                <div className="acc-pick">
+                  <strong>하락 전에 내가 정해 둔 계획 ({dropPlan.savedAt})</strong>
+                  <ul>{dropPlanLines(dropPlan).map((l) => <li key={l}>{l}</li>)}</ul>
+                </div>
+              )}
               <p className="acc-note">기준: {isIndexTarget ? 'KODEX 200(같은 지수)' : targetName} 시세 {guide.lastDate ?? '없음'}{guide.drawdownPct != null ? ` · 1년 고점 대비 ${guide.drawdownPct.toFixed(1)}%` : ''}{guide.gain12mPct != null ? ` · 1년 수익 ${guide.gain12mPct.toFixed(0)}%` : ''}</p>
             </div>
           )}

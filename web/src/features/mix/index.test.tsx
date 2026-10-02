@@ -50,3 +50,14 @@ describe('실제 데이터 점검', () => {
     expect(r.mdd).toBeLessThan(-0.15)
   })
 })
+
+describe('하락 때 할 일 미리 정하기', () => {
+  it('항목과 저장 버튼을 보여주고, 모두 해제하면 저장할 수 없다', () => {
+    render(<MixPage />)
+    expect(screen.getByText('하락이 오면 내가 할 일, 미리 정해 두기')).toBeTruthy()
+    const save = screen.getByText('이 계획으로 정하기') as HTMLButtonElement
+    expect(save.disabled).toBe(false)
+    for (const box of screen.getAllByRole('checkbox')) fireEvent.click(box)
+    expect(save.disabled).toBe(true)
+  })
+})
