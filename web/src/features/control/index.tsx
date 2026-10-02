@@ -6,10 +6,11 @@
  *  - 운영: 자동매매 실행 인사이트·의사결정 로그 (기존 운영 패널)
  *  - 데이터: DB 종목 뷰 + 동기화 (기존 dbview)
  *  - 유지보수: 포지션 수동 수정·복구 (기존 position-maintenance)
+ *  - 사용자 비교: 시드·성향·전략 방식·시간대별 성과 비교 (관리자 전용, CohortPanel)
  */
 import React, { lazy, Suspense, useCallback, useEffect, useMemo, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { ShieldCheck, ShieldAlert, ChevronDown, ChevronUp, Activity, Database, Wrench } from 'lucide-react'
+import { ShieldCheck, ShieldAlert, ChevronDown, ChevronUp, Activity, Database, Wrench, Users } from 'lucide-react'
 import { supabase, isSupabaseConfigured } from '../../lib/supabase'
 import { formatKrw, formatKstDateTime } from '../../lib/format'
 import Button from '../../components/ui/Button'
@@ -18,12 +19,14 @@ import Skeleton from '../../components/Skeleton'
 const OperationsPanel = lazy(() => import('../operations'))
 const DataPanel = lazy(() => import('../dbView'))
 const MaintenancePanel = lazy(() => import('../position-maintenance'))
+const CohortPanel = lazy(() => import('./CohortPanel'))
 
 const CONTROL_TABS = [
   { key: 'audit', label: '검산', icon: ShieldCheck },
   { key: 'operations', label: '운영', icon: Activity },
   { key: 'data', label: '데이터', icon: Database },
   { key: 'maintenance', label: '유지보수', icon: Wrench },
+  { key: 'cohort', label: '사용자 비교', icon: Users },
 ] as const
 
 type ControlTabKey = typeof CONTROL_TABS[number]['key']
@@ -338,6 +341,7 @@ export default function ControlPage() {
           {activeTab === 'operations' && <OperationsPanel />}
           {activeTab === 'data' && <DataPanel />}
           {activeTab === 'maintenance' && <MaintenancePanel />}
+          {activeTab === 'cohort' && <section className="container-app"><CohortPanel /></section>}
         </Suspense>
       )}
     </div>

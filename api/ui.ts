@@ -2,6 +2,7 @@ import type { VercelRequest, VercelResponse } from '@vercel/node'
 import accountPolicies from '../handlers/ui/account-policies'
 import accessUsers from '../handlers/ui/access-users'
 import advisorPerformance from '../handlers/ui/advisor-performance'
+import cohortAnalysis from '../handlers/ui/cohort-analysis'
 import backtestRisers from '../handlers/ui/backtest-risers'
 import { ADVANCED_ROUTES, enforceAdvancedRouteAccess } from '../handlers/ui/_accessControl'
 
@@ -64,6 +65,7 @@ const ROUTES: Record<string, UiHandler> = {
   'account-policies': accountPolicies,
   'access-users': accessUsers,
   'advisor-performance': advisorPerformance,
+  'cohort-analysis': cohortAnalysis,
   'backtest-risers': backtestRisers,
   decisions,
   'discovery-picks': discoveryPicks,
