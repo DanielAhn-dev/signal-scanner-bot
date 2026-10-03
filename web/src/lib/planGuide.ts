@@ -5,6 +5,7 @@
  */
 import { CHILD_LONGRUN_REAL_MONTHLY as R } from '../data/childLongRunData'
 import { SAVINGS_REAL_ANNUAL } from './childProjection'
+import { SLEEVE_COST_DATA } from '../data/researchFacts'
 import { netCashPlan } from './retirementCash'
 
 /** 주식 비중별 "시작 후 5년 안 최대 낙폭" 나쁜 10% 값(%, 미국 주식+합성 10년 국채) */
@@ -180,17 +181,8 @@ export function planWithdrawal(i: WithdrawalInput): WithdrawalPlan | null {
   }
 }
 
-/**
- * 인컴(커버드콜) 슬리브 비중별 비용 — 지수만 들고 있을 때 대비 끝 자산 비율(%). 한국 커버드콜 2종(TIGER200CC·RISE200ATM)의
- * 2021-12~2026-10 수정주가 평균, 월 리밸런싱. 표본이 4.5년이고 한국 강세장이라 방향만 참고한다(docs/research-income-then-growth-2026-10-03.md).
- */
-export const SLEEVE_COST: ReadonlyArray<{ weight: number; endVsIndexPct: number }> = [
-  { weight: 0, endVsIndexPct: 100 },
-  { weight: 20, endVsIndexPct: 90 },
-  { weight: 40, endVsIndexPct: 80 },
-  { weight: 60, endVsIndexPct: 70 },
-  { weight: 100, endVsIndexPct: 50 },
-]
+/** 인컴(커버드콜) 몫 비중별 지수 대비 끝 자산 비율(%) — 스크립트가 생성한 값(data/researchFacts.ts), 한국 강세장 4~5년이라 방향만 참고 */
+export const SLEEVE_COST: ReadonlyArray<{ weight: number; endVsIndexPct: number }> = SLEEVE_COST_DATA
 
 export function sleeveCost(weightPct: number): number {
   const t = SLEEVE_COST
@@ -203,4 +195,14 @@ export function sleeveCost(weightPct: number): number {
     }
   }
   return t[t.length - 1].endVsIndexPct
+}
+
+/** 자료를 만든 지 이 일수가 넘으면 화면에 "다시 확인 필요"를 붙인다 */
+export const FACT_STALE_DAYS = 180
+
+/** generated가 날짜(YYYY-MM-DD)일 때 오래됐는지. 날짜가 아니면(화면 계산) false */
+export function isFactStale(generated: string, today: Date = new Date()): boolean {
+  const t = Date.parse(generated)
+  if (!Number.isFinite(t)) return false
+  return (today.getTime() - t) / 86_400_000 > FACT_STALE_DAYS
 }

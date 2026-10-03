@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { planWithdrawal, requiredMonthly, sleeveCost, stockCapFor, withdrawalFailure } from './planGuide'
+import { isFactStale, planWithdrawal, requiredMonthly, sleeveCost, stockCapFor, withdrawalFailure } from './planGuide'
 
 describe('감내 낙폭 → 주식 비중 상한', () => {
   it('연구 표의 구간과 같다 (−15→20, −20→40, −30→60, −40→80)', () => {
@@ -68,8 +68,18 @@ describe('은퇴 인출', () => {
 describe('인컴 슬리브 비용', () => {
   it('비중이 커질수록 끝 자산 비율이 줄고 표 사이는 직선', () => {
     expect(sleeveCost(0)).toBe(100)
-    expect(sleeveCost(30)).toBe(85)
-    expect(sleeveCost(100)).toBe(50)
+    expect(sleeveCost(30)).toBeGreaterThan(sleeveCost(40))
+    expect(sleeveCost(30)).toBeLessThan(sleeveCost(20))
+    expect(sleeveCost(100)).toBeLessThan(60)
     expect(sleeveCost(80)).toBeLessThan(sleeveCost(40))
+  })
+})
+
+describe('자료 기준 표시', () => {
+  it('만든 지 180일이 넘으면 낡은 자료, 날짜가 아니면 낡음 아님', () => {
+    const today = new Date('2027-01-01')
+    expect(isFactStale('2026-10-03', today)).toBe(false)
+    expect(isFactStale('2026-05-01', today)).toBe(true)
+    expect(isFactStale('화면에서 계산', today)).toBe(false)
   })
 })

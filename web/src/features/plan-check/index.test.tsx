@@ -29,4 +29,14 @@ describe('계획 점검', () => {
     expect(screen.getByText('계좌에서 매달 꺼낼 돈')).toBeTruthy()
     expect(screen.getByText(/바닥났던 수준/)).toBeTruthy()
   })
+
+  it('모든 표에는 자료 기준(기간·표본·한계)이 붙는다', () => {
+    const { container } = render(<PlanCheckPage />)
+    // 처음 넣는 법 탭: 감내 낙폭·시장 비교·재미 몫·분할·확인 빈도 = 5개
+    expect(container.querySelectorAll('.plan-basis').length).toBe(5)
+    fireEvent.click(screen.getByRole('tab', { name: '필요 월 적립' }))
+    expect(container.querySelectorAll('.plan-basis').length).toBe(1)
+    fireEvent.click(screen.getByRole('tab', { name: '은퇴 인출' }))
+    expect(container.querySelectorAll('.plan-basis').length).toBe(1)
+  })
 })
