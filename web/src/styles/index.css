@@ -8306,3 +8306,7 @@ details > summary::before {
   transition: transform var(--duration-fast, 120ms) ease-out;
 }
 details[open] > summary::before { transform: translateY(-0.2em) rotate(45deg); }
+
+.ui-more { margin: 4px 0; }
+.ui-more > summary { color: var(--color-brand); font-size: 13px; min-height: 32px; display: flex; align-items: center; }
+.ui-more[open] > summary { margin-bottom: 4px; }

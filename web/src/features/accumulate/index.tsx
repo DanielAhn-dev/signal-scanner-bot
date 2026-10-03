@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import More from '../../components/ui/More'
 import { apiFetch } from '../../lib/api'
 import { formatKrwMan } from '../../lib/format'
 import { useCurrentClientId } from '../../stores/profileStore'
@@ -257,7 +258,9 @@ export default function AccumulatePage() {
             <p className="acc-legend"><i className="acc-k-median" />중앙값 <i className="acc-k-p10" />하위10% <i className="acc-k-worst" />최악 <i className="acc-k-paid" />납입 · 음영은 하위10%~상위10%</p>
             <p className="acc-note">시작 시점 {sim.starts}가지(2002~)를 모두 해 본 결과입니다. 원금보다 적었던 경우 {summary.lossPct.toFixed(0)}%, 원금의 +20% 이상이었던 경우 {summary.over20Pct.toFixed(0)}%. 시작점이 겹쳐 서로 독립적이지는 않고, 최근 큰 상승장이 포함되어 있습니다.</p>
             {gain20.median != null && (
-              <p className="acc-note"><strong>의미 있는 상승</strong>의 한 기준으로, 원금 대비 +20%에 처음 닿기까지 중앙값 <strong>{Math.round(gain20.median)}개월</strong>(빠른 25% {Math.round(gain20.p25 ?? 0)}개월, 느린 25% {Math.round(gain20.p75 ?? 0)}개월, 최대 {Math.round(gain20.max ?? 0)}개월)이 걸렸습니다.</p>
+              <More>
+                <p className="acc-note"><strong>의미 있는 상승</strong>의 한 기준으로, 원금 대비 +20%에 처음 닿기까지 중앙값 <strong>{Math.round(gain20.median)}개월</strong>(빠른 25% {Math.round(gain20.p25 ?? 0)}개월, 느린 25% {Math.round(gain20.p75 ?? 0)}개월, 최대 {Math.round(gain20.max ?? 0)}개월)이 걸렸습니다.</p>
+              </More>
             )}
             {mode === 'income' && incomeAssets > 0 && (
               <p className="acc-summary">인컴 자산 {man(incomeAssets)}(지금 수준 유지 가정) + 성장 자산 중앙값 {man(summary.median)} = <strong>{man(incomeAssets + summary.median)}</strong> <small>(하위 10%라면 {man(incomeAssets + summary.p10)})</small></p>
@@ -306,7 +309,9 @@ export default function AccumulatePage() {
                   <ul>{dropPlanLines(dropPlan).map((l) => <li key={l}>{l}</li>)}</ul>
                 </div>
               )}
-              <p className="acc-note">기준: {isIndexTarget ? 'KODEX 200(같은 지수)' : targetName} 시세 {guide.lastDate ?? '없음'}{guide.drawdownPct != null ? ` · 1년 고점 대비 ${guide.drawdownPct.toFixed(1)}%` : ''}{guide.gain12mPct != null ? ` · 1년 수익 ${guide.gain12mPct.toFixed(0)}%` : ''}</p>
+              <More>
+                <p className="acc-note">기준: {isIndexTarget ? 'KODEX 200(같은 지수)' : targetName} 시세 {guide.lastDate ?? '없음'}{guide.drawdownPct != null ? ` · 1년 고점 대비 ${guide.drawdownPct.toFixed(1)}%` : ''}{guide.gain12mPct != null ? ` · 1년 수익 ${guide.gain12mPct.toFixed(0)}%` : ''}</p>
+              </More>
             </div>
           )}
         <p className="acc-note">이 안내는 수익을 올리는 규칙이 아닙니다. 과거 검증에서 "내리면 더 넣고 오르면 줄이기"가 꾸준히 넣는 것보다 나았다는 근거는 없었습니다. 흔들려서 멈추거나 몰아 넣는 실수를 막는 용도입니다.</p>

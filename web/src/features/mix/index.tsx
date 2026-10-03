@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react'
+import More from '../../components/ui/More'
 import { MIX_ASOF, MIX_ASSETS } from '../../data/mixData'
 import { MIX_PRESETS, STRESS_PRESETS, fmtYm, normalize, simulateMix, stressTest, type Rebalance, type Shocks, type Weights } from '../../lib/mix'
 import BehaviorGap from './BehaviorGap'
@@ -127,7 +128,9 @@ export default function MixPage() {
 
       <section className="acc-card">
         <h2>하락이 왔다고 가정해보기</h2>
-        <p className="acc-note">과거에 좋았던 조합을 고르면 미래도 좋을 거라는 보장이 없습니다. 하락이 <strong>온다고 예측하는 것이 아니라</strong>, 온다고 가정했을 때 내 조합이 버틸 수 있는지 미리 확인합니다. 하락 시점은 아무도 모르니 "이제 올 때가 됐다"는 판단은 근거가 되지 않지만, 대비는 언제 해도 됩니다.</p>
+        <More>
+          <p className="acc-note">과거에 좋았던 조합을 고르면 미래도 좋을 거라는 보장이 없습니다. 하락이 <strong>온다고 예측하는 것이 아니라</strong>, 온다고 가정했을 때 내 조합이 버틸 수 있는지 미리 확인합니다. 하락 시점은 아무도 모르니 "이제 올 때가 됐다"는 판단은 근거가 되지 않지만, 대비는 언제 해도 됩니다.</p>
+        </More>
         <div className="acc-seg">
           {STRESS_PRESETS.map((p) => (
             <button key={p.key} type="button" onClick={() => setShocks(p.shocks)}

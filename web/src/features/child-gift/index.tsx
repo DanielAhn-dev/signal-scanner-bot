@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react'
+import More from '../../components/ui/More'
 import { CHILD_ETF_DEFAULTS, childEtfCheck } from '../../lib/childEtf'
 import {
   MAX_CHILDREN, MAX_GIFTS_TOTAL, allowance, adultOn, approxAge, daysBetween, filingDeadline, pendingFilings, planGift, reliefDates, sanitizeChildState,
@@ -208,7 +209,9 @@ function ProjectionCard({ child, today }: { child: Child; today: string }) {
             <div><dt>운이 좋은 10%에서는</dt><dd>{man(result.p90)}</dd></div>
             <div><dt>가장 나빴던 시작</dt><dd>{man(result.worst)}</dd></div>
           </dl>
-          <p className="acc-note">미국 지수 1926~2023년의 모든 시작 시점 {result.windows}개를 겹쳐서 본 값이라 서로 독립된 표본은 훨씬 적습니다. 한국 상장 지수 ETF는 길게 보면 표본이 24년뿐이라 참고만 합니다. 세금·수수료는 빼지 않았고, 과거 결과이며 미래를 약속하지 않습니다.</p>
+          <More>
+            <p className="acc-note">미국 지수 1926~2023년의 모든 시작 시점 {result.windows}개를 겹쳐서 본 값이라 서로 독립된 표본은 훨씬 적습니다. 한국 상장 지수 ETF는 길게 보면 표본이 24년뿐이라 참고만 합니다. 세금·수수료는 빼지 않았고, 과거 결과이며 미래를 약속하지 않습니다.</p>
+          </More>
           {result.worst < result.invested && <p className="acc-warn">가장 나빴던 시작에서는 넣은 돈보다 줄었습니다. 그래서 이 돈을 20년 안에 써야 할 돈에 섞지 않는 게 중요합니다.</p>}
         </>
       )}

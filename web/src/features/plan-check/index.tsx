@@ -1,6 +1,7 @@
-import React, { useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
 import { formatKrwMan } from '../../lib/format'
 import { useProfileStore } from '../../stores/profileStore'
+import More from '../../components/ui/More'
 import {
   BAD10_DRAWDOWN, CHECK_FREQUENCY, SPLIT_OPTIONS, isFactStale, requiredMonthlyDetail, incomePlan, planWithdrawal, requiredMonthly, sleeveCost, stockCapFor,
 } from '../../lib/planGuide'
@@ -10,16 +11,6 @@ import './plan-check.css'
 
 const man = formatKrwMan
 const toWon = (manText: string) => { const n = Number(manText.replace(/,/g, '').trim()); return Number.isFinite(n) && n > 0 ? Math.round(n * 10_000) : 0 }
-/** 긴 해설은 접어 둔다 — 핵심 숫자와 경고만 먼저 보이게 */
-function More({ children }: { children: React.ReactNode }) {
-  return (
-    <details className="plan-more">
-      <summary>자세히 보기</summary>
-      {children}
-    </details>
-  )
-}
-
 /** 표·그래프 아래에 자료의 기간·표본·한계·생성일을 붙인다 — 숫자만 떼어 읽으면 오해하기 쉬우므로 */
 function Basis({ id }: { id: string }) {
   const isAdmin = useProfileStore((st) => st.isAdmin)
