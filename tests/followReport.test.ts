@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it } from './helpers/vitestShim'
 import { buildFollowMemo, compareFollow, parseFollowMemo, type FollowTrade } from '../src/services/followReport'
 
 const bot = (id: number, side: 'BUY' | 'SELL', price: number, day: string, code = '069500'): FollowTrade =>

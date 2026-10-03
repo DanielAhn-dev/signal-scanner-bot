@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it } from './helpers/vitestShim'
 import {
   ACTIVATION_DAYS,
   INVITE_TTL_DAYS,
