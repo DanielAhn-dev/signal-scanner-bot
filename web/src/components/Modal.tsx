@@ -1,4 +1,5 @@
 import React, { useEffect, useRef } from 'react'
+import { X } from 'lucide-react'
 import { createPortal } from 'react-dom'
 
 interface ModalProps {
@@ -99,7 +100,7 @@ export default function Modal({ isOpen, open, title, onClose, children, size = '
       <div className="modal" style={{ maxWidth: maxW }} ref={dialogRef}>
         <div className="modal-header">
           <h2 className="modal-title" id="modal-title">{title}</h2>
-          <button className="modal-close" onClick={onClose} aria-label="닫기">✕</button>
+          <button className="modal-close" onClick={onClose} aria-label="닫기"><X size={18} aria-hidden /></button>
         </div>
         {children}
       </div>

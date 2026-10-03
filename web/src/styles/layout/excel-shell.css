@@ -1742,6 +1742,7 @@
   align-items: center;
   gap: 4px;
   cursor: default;
+  white-space: nowrap;
 }
 .excel-statusbar__item--clickable {
   cursor: pointer;
@@ -3946,6 +3947,10 @@
   .excel-statusbar__left .excel-statusbar__item:not(:first-child) { display: none; }
   .excel-statusbar__item--market { display: none; }
   .excel-statusbar__zoom-slider { width: 40px; }
+  /* 좁은 화면에서는 글자가 세로로 꺾이지 않게 한 줄 고정하고, 공간을 차지하는 사용자명·시각은 숨긴다 */
+  .excel-statusbar { gap: 8px; }
+  .excel-statusbar__left, .excel-statusbar__right { gap: 8px; min-width: 0; flex-shrink: 0; }
+  .excel-statusbar__item--user, .excel-statusbar__item--datetime { display: none; }
 
   /* 모바일 리본은 가로 스크롤로 전체 아이콘에 접근 */
   .excel-ribbon-body {
@@ -4302,4 +4307,23 @@
     left: 0;
     height: calc(var(--app-vh, 100%) / var(--excel-global-zoom));
   }
+}
+
+/* 모바일 터치: 작은 컨트롤은 눈에 보이는 크기는 그대로 두고 누를 수 있는 영역만 키운다(가상 요소). 직접 누르는 버튼류는 최소 높이를 올린다. */
+@media (max-width: 639px) {
+  .excel-titlebar__qs-btn,
+  .excel-titlebar__star-btn,
+  .excel-titlebar__search-toggle,
+  .excel-titlebar__win-btn,
+  .excel-formula-bar__fn-btn,
+  .scan-sort-btn { position: relative; }
+  .excel-titlebar__qs-btn::after,
+  .excel-titlebar__star-btn::after,
+  .excel-titlebar__search-toggle::after,
+  .excel-titlebar__win-btn::after,
+  .excel-formula-bar__fn-btn::after,
+  .scan-sort-btn::after { content: ''; position: absolute; inset: -7px; }
+  .btn.btn-small, .tag, .sim-btn, .xls-toolbar-btn, .ui-button { min-height: 32px; }
+  .ui-checkbox, input[type="checkbox"], input[type="radio"] { min-width: 20px; min-height: 20px; }
+  svg { vertical-align: -0.15em; }
 }

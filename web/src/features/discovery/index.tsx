@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react'
+import { ChevronDown, ChevronUp } from 'lucide-react'
 import { apiFetch } from '../../lib/api'
 
 const ANALYZE_PENDING_CODE_KEY = 'analyze_pending_code'
@@ -762,7 +763,7 @@ export default function DiscoveryPage() {
             style={{ minHeight: 30, padding: '6px 10px' }}
             onClick={() => setShowFunnel((v) => !v)}
           >
-            {showFunnel ? '필터 퍼널 접기 ▴' : '필터 퍼널 보기 (왜 이 후보만 남았는지) ▾'}
+            {showFunnel ? <>필터 퍼널 접기 <ChevronUp size={14} aria-hidden /></> : <>필터 퍼널 보기 (왜 이 후보만 남았는지) <ChevronDown size={14} aria-hidden /></>}
           </button>
           {showFunnel && (
             <p style={{ fontSize: 12, color: 'var(--color-text-tertiary)', margin: '8px 0 0', lineHeight: 1.8 }}>

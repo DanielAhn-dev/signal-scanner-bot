@@ -5,6 +5,7 @@
  */
 import { CHILD_LONGRUN_REAL_MONTHLY as R } from '../data/childLongRunData'
 import { SAVINGS_REAL_ANNUAL } from './childProjection'
+import { CHILD_LONGRUN_START } from '../data/childLongRunData'
 import { CHECKING_TABLE, SLEEVE_COST_DATA, SPLIT_TABLE, TOLERANCE_TABLE, WITHDRAWAL_TABLE } from '../data/researchFacts'
 import { netCashPlan } from './retirementCash'
 
@@ -182,4 +183,29 @@ export function isFactStale(generated: string, today: Date = new Date()): boolea
   const t = Date.parse(generated)
   if (!Number.isFinite(t)) return false
   return (today.getTime() - t) / 86_400_000 > FACT_STALE_DAYS
+}
+
+export type SavingQuantiles = { windows: number; rows: Array<{ label: string; monthly: number }> }
+
+/**
+ * 관리자 점검용 — 시작 연도 범위를 좁혀 필요 월 적립액의 분포 전체(최선~최악)를 본다. 시작월 인덱스는 임베드 시리즈(1926-02~)의 월 순서.
+ * 일반 화면의 requiredMonthly와 같은 계산(월초 입금, 월말 수익, 미국 주식 100% 실질).
+ */
+export function requiredMonthlyDetail(targetWon: number, years: number, fromYear: number, toYear: number): SavingQuantiles | null {
+  const months = Math.round(years * 12)
+  if (!(targetWon > 0) || months < 60 || months > R.length) return null
+  const startYear = Number(CHILD_LONGRUN_START.slice(0, 4))
+  const startMonth = Number(CHILD_LONGRUN_START.slice(4, 6))
+  const need: number[] = []
+  for (let s = 0; s + months <= R.length; s += 1) {
+    const year = startYear + Math.floor((startMonth - 1 + s) / 12)
+    if (year < fromYear || year > toYear) continue
+    let f = 0
+    for (let t = 0; t < months; t += 1) f = (f + 1) * (1 + R[s + t])
+    need.push(targetWon / f)
+  }
+  if (need.length < 12) return null
+  need.sort((a, b) => a - b)
+  const rows = [['가장 유리한 시작', 0], ['상위 10%', 0.1], ['25%', 0.25], ['중앙값', 0.5], ['75%', 0.75], ['80%', 0.8], ['90%', 0.9], ['95%', 0.95], ['가장 불리한 시작', 1]] as const
+  return { windows: need.length, rows: rows.map(([label, q]) => ({ label, monthly: quantile(need, q) })) }
 }

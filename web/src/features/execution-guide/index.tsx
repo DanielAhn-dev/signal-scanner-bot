@@ -1,4 +1,5 @@
 import { useSeedCapital } from '../../lib/useSeedCapital'
+import { ChevronDown, ChevronUp } from 'lucide-react'
 import { readSimulationPlan } from '../simulator/planStore'
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { apiFetch, getAuthHeaders } from '../../lib/api'
@@ -990,7 +991,7 @@ export default function ExecutionGuidePage() {
       URL.revokeObjectURL(downloadUrl)
 
       setError(null)
-      toast.show('실행가이드 PDF 다운로드 완료 ✓')
+      toast.show('실행가이드 PDF 다운로드 완료')
     } catch (e: any) {
       const msg = String(e?.message || e)
       setError(`PDF 생성 실패: ${msg}`)
@@ -1367,7 +1368,7 @@ export default function ExecutionGuidePage() {
       <Detail>
       <div>
         <Button variant="ghost" onClick={() => setShowAutoFinder((v) => !v)}>
-          {showAutoFinder ? '자동 후보 찾기 접기 ▴' : `자동 후보 찾기 (고급)${autoCandidates.length > 0 ? ` · ${autoCandidates.length}건` : ''} ▾`}
+          {showAutoFinder ? <>자동 후보 찾기 접기 <ChevronUp size={14} aria-hidden /></> : <>{`자동 후보 찾기 (고급)${autoCandidates.length > 0 ? ` · ${autoCandidates.length}건` : ''}`} <ChevronDown size={14} aria-hidden /></>}
         </Button>
       </div>
 

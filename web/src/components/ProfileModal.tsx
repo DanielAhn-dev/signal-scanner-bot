@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react'
+import { X } from 'lucide-react'
 import { linkedTelegramId, normalizeTelegramChatId, type StoredProfile } from '../lib/userContext'
 import { invalidateCache } from '../lib/api'
 import { useToast } from './ToastProvider'
@@ -97,7 +98,7 @@ export default function ProfileModal({
         if (name) setTgName(name)
         if (json?.username) setTgUsername(String(json.username))
         setVerifyStatus(STATUS_OK)
-        setVerifyMsg(name ? `✓ ${name}${json?.username ? ` (@${json.username})` : ''}` : '연동 정보 확인 완료')
+        setVerifyMsg(name ? `${name}${json?.username ? ` (@${json.username})` : ''} 확인됨` : '연동 정보 확인 완료')
       } catch {
         if (disposed) return
         setVerifyStatus(STATUS_IDLE)
@@ -153,7 +154,7 @@ export default function ProfileModal({
       setTgName(name)
       setTgUsername(json?.username ?? '')
       setVerifyStatus(STATUS_OK)
-      setVerifyMsg(`✓ ${name || '사용자'}${json?.username ? ' (@' + json.username + ')' : ''} 확인 완료`)
+      setVerifyMsg(`${name || '사용자'}${json?.username ? ' (@' + json.username + ')' : ''} 확인 완료`)
       setAutoResolved(true)
     } catch (e: any) {
       setVerifyStatus(STATUS_ERR)
@@ -228,7 +229,7 @@ export default function ProfileModal({
       <div className="modal profile-modal">
         <div className="modal-header">
           <h2 className="modal-title" id="profile-modal-title">내 프로필</h2>
-          <button className="modal-close" onClick={onClose} aria-label="닫기">✕</button>
+          <button className="modal-close" onClick={onClose} aria-label="닫기"><X size={18} aria-hidden /></button>
         </div>
 
         <div className="profile-modal-body">

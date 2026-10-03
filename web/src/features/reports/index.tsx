@@ -286,7 +286,7 @@ export default function ReportsPage() {
       })
       const msg = res?.ok ? (res?.message || '완료') : (res?.error || '실패')
       setStates(s => ({ ...s, [key]: { loading: false, msg } }))
-      if (res?.ok) toast.show(`${key} 완료 ✓`)
+      if (res?.ok) toast.show(`${key} 완료`)
     } catch (e: any) {
       setStates(s => ({ ...s, [key]: { loading: false, msg: e?.message || String(e) } }))
     }
@@ -320,7 +320,7 @@ export default function ReportsPage() {
       URL.revokeObjectURL(downloadUrl)
 
       setStates(s => ({ ...s, [key]: { loading: false, msg: 'PDF 다운로드 완료' } }))
-      toast.show('PDF 다운로드 완료 ✓')
+      toast.show('PDF 다운로드 완료')
     } catch (e: any) {
       setStates(s => ({ ...s, [key]: { loading: false, msg: e?.message || String(e) } }))
     }

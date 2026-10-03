@@ -8289,3 +8289,20 @@ a:focus-visible {
 @media (max-width: 640px) {
   .portfolio-asset-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
+
+/* 펼침(details) 기본 검은 삼각형 대신 선으로 그린 화살표 — 모든 페이지 공통 */
+details > summary { list-style: none; cursor: pointer; }
+details > summary::-webkit-details-marker { display: none; }
+details > summary::before {
+  content: '';
+  display: inline-block;
+  width: 0.45em;
+  height: 0.45em;
+  margin-right: 0.55em;
+  border-right: 2px solid currentColor;
+  border-bottom: 2px solid currentColor;
+  opacity: 0.6;
+  transform: translateY(-0.12em) rotate(-45deg);
+  transition: transform var(--duration-fast, 120ms) ease-out;
+}
+details[open] > summary::before { transform: translateY(-0.2em) rotate(45deg); }

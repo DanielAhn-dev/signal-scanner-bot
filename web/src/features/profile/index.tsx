@@ -70,7 +70,7 @@ export default function ProfilePage(){
       setTgName(name)
       setTgUsername(json?.username ?? '')
       setVerifyStatus(STATUS_OK)
-      setVerifyMsg(`✓ ${name || '사용자'}${json?.username ? ' (@' + json.username + ')' : ''} 확인 완료`)
+      setVerifyMsg(`${name || '사용자'}${json?.username ? ' (@' + json.username + ')' : ''} 확인 완료`)
     } catch (e: any) {
       setVerifyStatus(STATUS_ERR)
       setVerifyMsg('네트워크 오류: ' + (e?.message ?? String(e)))

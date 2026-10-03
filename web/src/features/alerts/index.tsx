@@ -40,8 +40,8 @@ export default function AlertsPage() {
         cacheMs: 0,
       })
       if (json?.ok) {
-        toast.show('알림 전송 완료 ✓')
-        setResult('✓ 텔레그램으로 전송되었습니다')
+        toast.show('알림 전송 완료')
+        setResult('텔레그램으로 전송되었습니다')
       } else {
         setResult(String(json?.error || '전송 실패'))
       }
@@ -168,7 +168,7 @@ export default function AlertsPage() {
                 <span style={{
                   marginLeft: 10,
                   fontSize: 11,
-                  color: result.startsWith('✓') ? 'var(--color-success)' : 'var(--color-error)',
+                  color: result.startsWith('텔레그램으로 전송') ? 'var(--color-success)' : 'var(--color-error)',
                 }}>
                   {result}
                 </span>

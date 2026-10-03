@@ -1,4 +1,5 @@
 import React from 'react'
+import { ChevronRight } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { man, useGoalTracker } from './useGoalTracker'
 import './goal-tracker.css'
@@ -25,7 +26,7 @@ export default function GoalSummaryStrip() {
         계획 대비 {gap >= 0 ? '+' : ''}
         {gap.toFixed(1)}%
       </span>
-      <span className="goal-strip__more">자세히 ›</span>
+      <span className="goal-strip__more">자세히 <ChevronRight size={12} aria-hidden /></span>
     </button>
   )
 }

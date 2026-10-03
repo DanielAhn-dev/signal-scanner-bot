@@ -1,4 +1,5 @@
 import React, { useCallback, useState } from 'react'
+import { Check } from 'lucide-react'
 import { apiFetch } from '../../lib/api'
 import { formatKrw } from '../../lib/format'
 import Button from '../../components/ui/Button'
@@ -79,7 +80,7 @@ function WatchResetCard() {
       </p>
       {status === 'done' && (
         <p style={{ color: 'var(--color-success)', fontSize: 13, marginBottom: 'var(--space-3)' }}>
-          ✓ {removed}건 제거 완료
+          <Check size={14} aria-hidden /> {removed}건 제거 완료
         </p>
       )}
       <Button
@@ -171,7 +172,7 @@ function HoldingEditCard() {
       {status === 'done' && result && (
         <div style={{ marginTop: 'var(--space-3)', padding: 'var(--space-3)', background: 'var(--color-success-bg)', borderRadius: 8 }}>
           <p style={{ color: 'var(--color-success)', fontSize: 13 }}>
-            ✓ {result.code} — 단가 {formatKrw(result.buy_price)} × {result.quantity}주
+            <Check size={14} aria-hidden /> {result.code} — 단가 {formatKrw(result.buy_price)} × {result.quantity}주
           </p>
         </div>
       )}
@@ -241,7 +242,7 @@ function HoldingRestoreCard() {
         </Button>
       </form>
       {status === 'done' && (
-        <p style={{ marginTop: 'var(--space-2)', color: 'var(--color-success)', fontSize: 13 }}>✓ 복구 완료</p>
+        <p style={{ marginTop: 'var(--space-2)', color: 'var(--color-success)', fontSize: 13 }}><Check size={14} aria-hidden /> 복구 완료</p>
       )}
     </section>
   )
@@ -373,7 +374,7 @@ function LiquidateAllCard() {
       </p>
       {status === 'done' && (
         <p style={{ color: 'var(--color-success)', fontSize: 13, marginBottom: 'var(--space-3)' }}>
-          ✓ {soldCount}건 전체 매도 완료
+          <Check size={14} aria-hidden /> {soldCount}건 전체 매도 완료
         </p>
       )}
       <Button

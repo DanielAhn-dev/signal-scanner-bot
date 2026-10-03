@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react'
+import { ChevronDown, ChevronUp } from 'lucide-react'
 import { apiFetch } from '../../lib/api'
 import { formatKrw, formatKstDateTime, formatNumber } from '../../lib/format'
 import Skeleton from '../../components/Skeleton'
@@ -1020,7 +1021,7 @@ export default function OperationsPage() {
       {/* 고급 진단 — 검증/디버깅용 지표. 기본 접힘. 일상적인 매매 팔로우에는 필요 없음 */}
       <div style={{ marginBottom: 'var(--space-3)' }}>
         <Button variant="ghost" onClick={() => setShowAdvanced((v) => !v)}>
-          {showAdvanced ? '고급 진단 접기 ▴' : '고급 진단 보기 (실행 인사이트 · 자동매도 점검 · 학습 실행) ▾'}
+          {showAdvanced ? <>고급 진단 접기 <ChevronUp size={14} aria-hidden /></> : <>고급 진단 보기 (실행 인사이트 · 자동매도 점검 · 학습 실행) <ChevronDown size={14} aria-hidden /></>}
         </Button>
       </div>
 

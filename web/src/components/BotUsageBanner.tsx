@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { ChevronDown, ChevronRight } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { BOT_USAGE_NOTES, FLOW_STEPS } from '../navigation'
 import { useProfileStore } from '../stores/profileStore'
@@ -104,7 +105,7 @@ export default function BotUsageBanner({ route }: { route: string }) {
       >
         {hasMore && (
           <span aria-hidden style={{ display: 'inline-block', width: 12, color: 'var(--color-text-tertiary)' }}>
-            {open ? '▾' : '▸'}
+            {open ? <ChevronDown size={12} aria-hidden /> : <ChevronRight size={12} aria-hidden />}
           </span>
         )}
         <strong style={{ color: 'var(--color-text-primary)' }}>봇 연결</strong> · {open ? note : summary}

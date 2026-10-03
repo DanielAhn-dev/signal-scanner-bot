@@ -1,7 +1,8 @@
 import { useMemo, useState } from 'react'
 import { formatKrwMan } from '../../lib/format'
+import { useProfileStore } from '../../stores/profileStore'
 import {
-  BAD10_DRAWDOWN, CHECK_FREQUENCY, SPLIT_OPTIONS, isFactStale, planWithdrawal, requiredMonthly, sleeveCost, stockCapFor,
+  BAD10_DRAWDOWN, CHECK_FREQUENCY, SPLIT_OPTIONS, isFactStale, requiredMonthlyDetail, planWithdrawal, requiredMonthly, sleeveCost, stockCapFor,
 } from '../../lib/planGuide'
 import { FACT_META, MARKET_PICK } from '../../data/researchFacts'
 import '../accumulate/accumulate.css'
@@ -11,12 +12,15 @@ const man = formatKrwMan
 const toWon = (manText: string) => { const n = Number(manText.replace(/,/g, '').trim()); return Number.isFinite(n) && n > 0 ? Math.round(n * 10_000) : 0 }
 /** 표·그래프 아래에 자료의 기간·표본·한계·생성일을 붙인다 — 숫자만 떼어 읽으면 오해하기 쉬우므로 */
 function Basis({ id }: { id: string }) {
+  const isAdmin = useProfileStore((st) => st.isAdmin)
   const m = FACT_META[id]
   if (!m) return null
+  const stale = isFactStale(m.generated) && <span className="acc-warn"> 자료를 만든 지 6개월이 넘었습니다. 다시 확인이 필요합니다.</span>
+  // 일반 사용자: 기간과 한계만 쉬운 말로. 관리자: 표본·자료 끝·생성일·스크립트까지 전부
+  if (!isAdmin) return <p className="acc-note plan-basis">과거 자료({m.sample.split(',')[0]}) 기준이며 미래를 약속하지 않습니다. 한계: {m.caveat}{stale}</p>
   return (
     <p className="acc-note plan-basis">
-      <strong>자료 기준</strong> {m.sample} · 자료 끝 {m.asOf} · 생성 {m.generated} · 한계: {m.caveat}
-      {isFactStale(m.generated) && <span className="acc-warn"> 자료를 만든 지 6개월이 넘었습니다. 다시 확인이 필요합니다.</span>}
+      <strong>자료 기준</strong> {m.sample} · 자료 끝 {m.asOf} · 생성 {m.generated} · 스크립트 {m.script} · 한계: {m.caveat}{stale}
     </p>
   )
 }
@@ -32,6 +36,7 @@ const TABS: Array<{ key: Tab; label: string }> = [
 
 export default function PlanCheckPage() {
   const [tab, setTab] = useState<Tab>('first')
+  const isAdmin = useProfileStore((st) => st.isAdmin)
   return (
     <div className="acc plan">
       <header>
@@ -49,6 +54,7 @@ export default function PlanCheckPage() {
       {tab === 'first' && <><ToleranceCard /><MarketPickCard /><SleeveCard /><SplitCard /><CheckingCard /></>}
       {tab === 'save' && <SavingCard />}
       {tab === 'retire' && <RetireCard />}
+      {isAdmin && <AdminLab />}
       <p className="acc-note plan-foot">미국 주식·채권 1926~2023년(달러, 물가 반영) 자료를 겹쳐 본 값이라 독립 표본은 적고, 한국 사정(세금·환율·수수료)은 일부만 반영했습니다. 한국 자료는 24년뿐이라 참고로만 봅니다. 일반 증권 앱(절세계좌 없음)에서는 코스피200 ETF 매매차익이 비과세라 세금 면에서 유리하고, 국내 상장 미국 지수 ETF는 차익에 15.4%가 붙어 연금저축·IRP·ISA 같은 절세계좌에서 하는 편이 맞습니다(가입 조건은 증권사 안내로 확인). 이 화면의 장기 숫자는 미국 자료 기준이라 코스피200에 그대로 맞지 않을 수 있고, 코스피200은 반도체 비중이 커서 분배율도 고배당 ETF보다 훨씬 낮습니다.</p>
     </div>
   )
@@ -261,6 +267,41 @@ function RetireCard() {
           <Basis id="withdrawal" />
         </>
       )}
+    </section>
+  )
+}
+
+/** 관리자 전용 — 연구 원자료를 조건을 바꿔 가며 본다. 일반 사용자 화면에는 나오지 않는다 */
+function AdminLab() {
+  const [targetMan, setTargetMan] = useState('30000')
+  const [years, setYears] = useState(20)
+  const [from, setFrom] = useState(1926)
+  const [to, setTo] = useState(2003)
+  const d = useMemo(() => requiredMonthlyDetail(toWon(targetMan), years, from, to), [targetMan, years, from, to])
+  return (
+    <section className="acc-card plan-admin">
+      <h2>관리자 · 연구 원자료</h2>
+      <p className="acc-note">시작 연도 범위를 바꿔 필요 월 적립액의 분포 전체를 봅니다(미국 주식 100% 실질). 시대에 따라 결과가 얼마나 달라지는지 확인하는 용도입니다.</p>
+      <div className="acc-row">
+        <label className="acc-field"><span>목표 (만원)</span><input type="number" min="0" value={targetMan} onChange={(e) => setTargetMan(e.target.value)} /></label>
+        <label className="acc-field"><span>기간(년)</span><input type="number" min="5" max="40" value={years} onChange={(e) => setYears(Number(e.target.value) || 20)} /></label>
+        <label className="acc-field"><span>시작 연도 ~부터</span><input type="number" min="1926" max="2023" value={from} onChange={(e) => setFrom(Number(e.target.value) || 1926)} /></label>
+        <label className="acc-field"><span>~까지</span><input type="number" min="1926" max="2023" value={to} onChange={(e) => setTo(Number(e.target.value) || 2003)} /></label>
+      </div>
+      {d ? (
+        <table className="acc-table plan-table">
+          <thead><tr><th>시작 시점 운</th><th>필요 월 적립</th></tr></thead>
+          <tbody>{d.rows.map((r) => <tr key={r.label}><td>{r.label}</td><td>{manRound(r.monthly)}</td></tr>)}</tbody>
+        </table>
+      ) : <p className="acc-note">범위가 너무 좁거나 기간이 자료보다 깁니다(시작 월 12개 이상 필요).</p>}
+      {d && <p className="acc-note">시작월 {d.windows}개(겹치는 창). 범위를 1926~1945, 1946~1965처럼 바꿔 시대 편차를 비교하세요.</p>}
+      <details>
+        <summary>화면에 쓰이는 연구 표의 출처 전체</summary>
+        <table className="acc-table plan-table">
+          <thead><tr><th>표</th><th>표본</th><th>생성</th><th>스크립트</th></tr></thead>
+          <tbody>{Object.entries(FACT_META).map(([k, m]) => <tr key={k}><td>{m.title}</td><td>{m.sample}</td><td>{m.generated}</td><td>{m.script}</td></tr>)}</tbody>
+        </table>
+      </details>
     </section>
   )
 }

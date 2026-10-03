@@ -13,15 +13,7 @@
  *  └─ 상태바 ───────────────────────────────────────────────┘
  */
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react'
-import {
-  Save, Undo2, Redo2, Star,
-  ChevronLeft, ChevronRight, ChevronDown, ChevronUp, Minus, Plus,
-  LayoutDashboard, ScanSearch, BarChart2, FlaskConical,
-  BriefcaseBusiness, FileText, Globe2, Newspaper,
-  Bell, User, Settings, Database, Shield, ShieldCheck, Wrench,
-  Zap, History, Search,
-  PieChart, Activity, Target, Eye, List,
-} from 'lucide-react'
+import { Save, Undo2, Redo2, Star, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, Minus, Plus, LayoutDashboard, ScanSearch, BarChart2, FlaskConical, BriefcaseBusiness, FileText, Globe2, Newspaper, Bell, User, Settings, Database, Shield, ShieldCheck, Wrench, Zap, History, Search, PieChart, Activity, Target, Eye, List, Maximize2, Minimize2, X } from 'lucide-react'
 import { useAuthStore } from '../stores/authStore'
 import { useProfileStore } from '../stores/profileStore'
 import { useDetailed, useViewModeStore } from '../stores/viewModeStore'
@@ -798,8 +790,8 @@ export default function ExcelShell({
           {!isUltraCompact && (
             <div className="excel-titlebar__window-btns">
               <button className="excel-titlebar__win-btn" aria-label="최소화" disabled title="브라우저 탭에서는 지원되지 않습니다">─</button>
-              <button className="excel-titlebar__win-btn" aria-label={isFullscreen ? '전체화면 종료' : '전체화면'} onClick={toggleFullscreen}>{isFullscreen ? '❐' : '□'}</button>
-              <button className="excel-titlebar__win-btn excel-titlebar__win-btn--close" aria-label="닫기" disabled title="브라우저 탭에서는 지원되지 않습니다">✕</button>
+              <button className="excel-titlebar__win-btn" aria-label={isFullscreen ? '전체화면 종료' : '전체화면'} onClick={toggleFullscreen}>{isFullscreen ? <Minimize2 size={13} aria-hidden /> : <Maximize2 size={13} aria-hidden />}</button>
+              <button className="excel-titlebar__win-btn excel-titlebar__win-btn--close" aria-label="닫기" disabled title="브라우저 탭에서는 지원되지 않습니다"><X size={14} aria-hidden /></button>
             </div>
           )}
         </div>

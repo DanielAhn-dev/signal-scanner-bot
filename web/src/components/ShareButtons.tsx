@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react'
+import { X } from 'lucide-react'
 import { createPortal } from 'react-dom'
 import { shareToKakaotalk, preloadKakaoSdk, shareToTwitter, copyToClipboard, shareViaWebAPI, type ShareData } from '../lib/share'
 import { useToast } from './ToastProvider'
@@ -154,7 +155,7 @@ export default function ShareButtons({ data, variant = 'button', showLabel = tru
                 onClick={() => setIsOpen(false)}
                 aria-label="닫기"
               >
-                ✕
+                <X size={18} aria-hidden />
               </button>
             </div>
 
@@ -200,7 +201,7 @@ export default function ShareButtons({ data, variant = 'button', showLabel = tru
                   </svg>
                 </div>
                 <div className="share-option-text">
-                  <div className="share-option-label">{copied ? '✓ 복사됨' : '링크 복사'}</div>
+                  <div className="share-option-label">{copied ? '복사됨' : '링크 복사'}</div>
                   <div className="share-option-desc">클립보드에 저장</div>
                 </div>
               </button>

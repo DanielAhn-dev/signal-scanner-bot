@@ -1,6 +1,6 @@
 ﻿import React, { useEffect, useState, useRef, useCallback, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Building2, AlertTriangle, TrendingDown, ShieldAlert, TrendingUp, PlusCircle, Eye, ChevronDown, ChevronRight } from 'lucide-react'
+import { Building2, AlertTriangle, TrendingDown, ShieldAlert, TrendingUp, PlusCircle, Eye, ChevronDown, ChevronRight, ChevronUp, ArrowLeft } from 'lucide-react'
 import { apiFetch, invalidateCache } from '../../lib/api'
 import { formatKrw, formatKrwCompact, formatKstDateTime, formatNumber } from '../../lib/format'
 import Skeleton from '../../components/Skeleton'
@@ -813,11 +813,11 @@ export default function Portfolio() {
       } else if (maintMode === 'holdingrestore') {
         const label = json?.data?.stock_name || json?.data?.code || maintCode
         const action = json?.created ? '신규 추가' : '기존 포지션 수정'
-        toast.show(`${label} 계좌/보유 저장(${action}) 완료 ✓`)
+        toast.show(`${label} 계좌/보유 저장(${action}) 완료`)
       } else if (maintMode === 'holdingdelete') {
         toast.show(`${maintCode} 종목이 완전 삭제되었습니다 (기록 포함)`)
       } else {
-        toast.show('보유수정 완료 ✓')
+        toast.show('보유수정 완료')
       }
 
       invalidateCache('/api/ui/positions')
@@ -856,7 +856,7 @@ export default function Portfolio() {
       if (json?.error) {
         setTradeError(String(json?.error || '거래 실행 실패'))
       } else {
-        toast.show(`${modalSide === 'buy' ? '매수' : '매도'} 등록 완료 ✓`)
+        toast.show(`${modalSide === 'buy' ? '매수' : '매도'} 등록 완료`)
         invalidateCache('/api/ui/positions')
         setModalOpen(false)
         await load({ soft: true, force: true })
@@ -1169,7 +1169,7 @@ export default function Portfolio() {
             )}
           </div>
           <span style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)' }} aria-hidden>
-            {filterAccordionOpen ? '접기 ▲' : '펼치기 ▼'}
+            {filterAccordionOpen ? <>접기 <ChevronUp size={14} aria-hidden /></> : <>펼치기 <ChevronDown size={14} aria-hidden /></>}
           </span>
         </button>
 
@@ -2188,7 +2188,7 @@ export default function Portfolio() {
                       setMaintAccountMode('select')
                     }}
                   >
-                    ← 기존 계좌에서 선택
+                    <ArrowLeft size={14} aria-hidden /> 기존 계좌에서 선택
                   </button>
                 )}
                 <div className="grid-two" style={{ marginBottom: 'var(--space-3)' }}>
@@ -2287,7 +2287,7 @@ export default function Portfolio() {
               <Button variant="primary" onClick={runMaintenance} disabled={maintLoading}>
                 {maintLoading ? '저장 중…' : '종목 저장'}
               </Button>
-              <Button variant="secondary" onClick={() => { setMaintError(null); setMaintStep(1) }}>← 계좌 수정</Button>
+              <Button variant="secondary" onClick={() => { setMaintError(null); setMaintStep(1) }}><ArrowLeft size={14} aria-hidden /> 계좌 수정</Button>
               <Button variant="ghost" onClick={() => setMaintModalOpen(false)}>취소</Button>
             </div>
           </>

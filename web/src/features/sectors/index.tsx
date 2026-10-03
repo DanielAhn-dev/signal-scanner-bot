@@ -1,4 +1,5 @@
 import React, { useEffect, useState, useCallback, useMemo } from "react"
+import { RefreshCw } from 'lucide-react'
 import {
   ArrowRight,
   Compass,
@@ -496,7 +497,7 @@ function SectorSummaryTable({
                 <span className="caption muted">마지막 갱신 {formatKoDateTimeLong(latestUpdatedAt)}</span>
                 {tab !== "guide" && onRefresh ? (
                   <Button variant="secondary" onClick={onRefresh} disabled={!!refreshing}>
-                    {refreshing ? "⟳ 새로고침 중…" : "새로고침"}
+                    {refreshing ? <><RefreshCw size={14} aria-hidden /> 새로고침 중…</> : "새로고침"}
                   </Button>
                 ) : null}
               </div>

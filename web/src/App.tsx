@@ -262,12 +262,12 @@ function AppContent() {
     try {
       if (route === 'watchlist') {
         await runWatchlistExport()
-        toast.show('감시목록 CSV 내보내기 완료 ✓')
+        toast.show('감시목록 CSV 내보내기 완료')
         return
       }
       if (route === 'reports') {
         await runReportSnapshot()
-        toast.show('리포트 스냅샷 저장 완료 ✓')
+        toast.show('리포트 스냅샷 저장 완료')
         return
       }
       navigate('/reports')

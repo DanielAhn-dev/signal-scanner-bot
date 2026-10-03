@@ -40,3 +40,21 @@ describe('계획 점검', () => {
     expect(container.querySelectorAll('.plan-basis').length).toBe(1)
   })
 })
+
+describe('관리자·일반 사용자 구분', () => {
+  it('일반 사용자에게는 관리자 연구 원자료와 스크립트 경로가 보이지 않는다', async () => {
+    const { useProfileStore } = await import('../../stores/profileStore')
+    useProfileStore.setState({ isAdmin: false })
+    const { container } = render(<PlanCheckPage />)
+    expect(screen.queryByText('관리자 · 연구 원자료')).toBeNull()
+    expect(container.textContent).not.toContain('scripts/research')
+  })
+  it('관리자에게는 원자료 카드와 스크립트 출처가 보인다', async () => {
+    const { useProfileStore } = await import('../../stores/profileStore')
+    useProfileStore.setState({ isAdmin: true })
+    const { container } = render(<PlanCheckPage />)
+    expect(screen.getByText('관리자 · 연구 원자료')).toBeTruthy()
+    expect(container.textContent).toContain('scripts/research')
+    useProfileStore.setState({ isAdmin: false })
+  })
+})

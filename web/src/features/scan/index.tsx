@@ -1,5 +1,6 @@
 ﻿import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useSyncedSettings } from '../../lib/userState'
+import { ArrowDown, ArrowUp, TrendingUp, TrendingDown, Minus } from 'lucide-react'
 import { apiFetch } from '../../lib/api'
 import { formatKstDateTime, formatNumber } from '../../lib/format'
 import Button from '../../components/ui/Button'
@@ -1164,7 +1165,7 @@ export default function ScanPage({ onNavigate }: { onNavigate?: (r: string) => v
         } else if (runnerRequested && !runnerOk) {
           toast.show('DB 갱신 완료, 장중 신호 재계산 일부 실패(서버 로그 확인 필요)')
         } else {
-          toast.show('장중 눌림목 재계산 완료 ✓')
+          toast.show('장중 눌림목 재계산 완료')
         }
         await Promise.all([loadCandidates(), loadHoldingCount()])
       } else {
@@ -1562,7 +1563,7 @@ export default function ScanPage({ onNavigate }: { onNavigate?: (r: string) => v
     try {
       const result = await addToWatchlist(code)
       if (result === 'added') {
-        toast.show('관심 종목에 추가되었습니다 ✓')
+        toast.show('관심 종목에 추가되었습니다')
       } else if (result === 'exists') {
         toast.show('이미 관심 종목에 있습니다')
       }
@@ -1627,7 +1628,7 @@ export default function ScanPage({ onNavigate }: { onNavigate?: (r: string) => v
 
   const renderSortableHeader = (label: string, key: SortKey) => {
     const active = sortKey === key
-    const marker = active ? (sortDirection === 'asc' ? ' ▲' : ' ▼') : ''
+    const marker = active ? (sortDirection === 'asc' ? <ArrowUp size={12} aria-hidden /> : <ArrowDown size={12} aria-hidden />) : null
     return (
       <button
         type="button"
@@ -1689,7 +1690,7 @@ export default function ScanPage({ onNavigate }: { onNavigate?: (r: string) => v
                   {confirmPromotionMeta.trendDeltaPct != null && (
                     <>
                       {' '}
-                      ({confirmPromotionMeta.trendDeltaPct > 0 ? '↗' : confirmPromotionMeta.trendDeltaPct < 0 ? '↘' : '→'}
+                      ({confirmPromotionMeta.trendDeltaPct > 0 ? <TrendingUp size={12} aria-hidden /> : confirmPromotionMeta.trendDeltaPct < 0 ? <TrendingDown size={12} aria-hidden /> : <Minus size={12} aria-hidden />}
                       {' '}
                       {confirmPromotionMeta.trendDeltaPct > 0 ? '+' : ''}{formatNumber(confirmPromotionMeta.trendDeltaPct, 1)}%p)
                     </>
@@ -2429,7 +2430,7 @@ export default function ScanPage({ onNavigate }: { onNavigate?: (r: string) => v
                   <th className="xls-th">{renderSortableHeader('코드', 'code')}</th>
                   <th className="xls-th">{renderSortableHeader('종목명', 'name')}</th>
                   <th className="xls-th">{renderSortableHeader('섹터', 'sector_id')}</th>
-                  <th className="xls-th">{renderSortableHeader('우선순위▼', 'priority_score')}</th>
+                  <th className="xls-th">{renderSortableHeader('우선순위', 'priority_score')}</th>
                   <th className="xls-th">{renderSortableHeader('눌림점수', 'lead_accumulation_score')}</th>
                   <th className="xls-th">{renderSortableHeader('진입', 'entry_grade')}</th>
                   <th className="xls-th">{renderSortableHeader('진입점수', 'entry_score')}</th>

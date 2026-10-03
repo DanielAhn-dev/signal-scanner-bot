@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
+import { ArrowDown, ArrowUp, ArrowUpDown } from 'lucide-react'
 import { apiFetch } from '../../lib/api'
 import { searchStocks } from '../../lib/stockCache'
 import AnchoredDropdown from '../../components/AnchoredDropdown'
@@ -223,9 +224,9 @@ function autoTierLabel(tier: AutoPickTier): string {
 }
 
 function matchMeta(n: number): { label: string; cls: string } {
-  if (n >= 3) return { label: '패턴 일치 높음 ★★★', cls: 'bt-match--high' }
-  if (n >= 2) return { label: '패턴 일치 중간 ★★', cls: 'bt-match--mid' }
-  if (n >= 1) return { label: '패턴 일치 낮음 ★', cls: 'bt-match--low' }
+  if (n >= 3) return { label: '패턴 일치 높음 (3/3)', cls: 'bt-match--high' }
+  if (n >= 2) return { label: '패턴 일치 중간 (2/3)', cls: 'bt-match--mid' }
+  if (n >= 1) return { label: '패턴 일치 낮음 (1/3)', cls: 'bt-match--low' }
   return { label: '패턴 불일치', cls: 'bt-match--none' }
 }
 
@@ -839,7 +840,7 @@ export default function BacktestPage() {
 
   const sortIcon = (key: typeof sortKey) => {
     const active = sortKey === key
-    const icon = active ? (sortDir === 'desc' ? '▼' : '▲') : '⇅'
+    const icon = active ? (sortDir === 'desc' ? <ArrowDown size={12} aria-hidden /> : <ArrowUp size={12} aria-hidden />) : <ArrowUpDown size={12} aria-hidden />
     return <span className={`bt-sort-icon${active ? ' bt-sort-icon--active' : ''}`}>{icon}</span>
   }
 
