@@ -356,7 +356,7 @@ async function resetAutoTradeOnlyData(
 
   const remainingTradesRes = await supabase
     .from('virtual_trades')
-    .select('side,pnl_amount,fee_amount,tax_amount,buy_fee_amount')
+    .select('side,pnl_amount')
     .eq('chat_id', chatIdNum)
     .eq('side', 'SELL')
 
@@ -365,8 +365,8 @@ async function resetAutoTradeOnlyData(
   const realizedPnl = (Array.isArray(remainingTradesRes.data) ? remainingTradesRes.data : [])
     .reduce((sum, row) => {
       const r = row as Record<string, unknown>
-      // 계좌 누적 실현손익 = 가격차 − 매수 수수료 몫 − 매도 수수료 − 거래세 (가상매매 RPC와 같은 정의)
-      return sum + toFiniteNumber(r?.pnl_amount, 0) - toFiniteNumber(r?.buy_fee_amount, 0) - toFiniteNumber(r?.fee_amount, 0) - toFiniteNumber(r?.tax_amount, 0)
+      // pnl_amount는 수수료·세금을 반영한 순손익(자동매매·수동매매 공통 정의)
+      return sum + toFiniteNumber(r?.pnl_amount, 0)
     }, 0)
 
   const userRes = await supabase

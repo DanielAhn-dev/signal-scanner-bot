@@ -1008,10 +1008,10 @@ export default function OperationsPage() {
             )}
             {isSell && pnlAmt != null && (
               <div style={{ marginTop: 'var(--space-1)', fontSize: 'var(--font-size-xs)', fontWeight: 'var(--font-weight-semibold)', color: pnlAmt >= 0 ? 'var(--color-stock-up)' : 'var(--color-stock-down)' }}>
-                수수료 전 손익 {pnlAmt >= 0 ? '+' : ''}{formatKrw(pnlAmt)}
+                순손익 {pnlAmt >= 0 ? '+' : ''}{formatKrw(pnlAmt)}
                 {totalCost > 0 && (
                   <span style={{ fontWeight: 'var(--font-weight-regular)', color: 'var(--color-text-tertiary)', marginLeft: 'var(--space-2)' }}>
-                    (수수료·세금 반영 순손익 {pnlAmt - totalCost >= 0 ? '+' : ''}{formatKrw(pnlAmt - totalCost)})
+                    (수수료·세금 빼기 전 {pnlAmt + totalCost >= 0 ? '+' : ''}{formatKrw(pnlAmt + totalCost)})
                   </span>
                 )}
               </div>
