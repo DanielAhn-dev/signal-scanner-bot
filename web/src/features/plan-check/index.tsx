@@ -3,7 +3,7 @@ import { formatKrwMan } from '../../lib/format'
 import { useProfileStore } from '../../stores/profileStore'
 import More from '../../components/ui/More'
 import {
-  BAD10_DRAWDOWN, CHECK_FREQUENCY, SPLIT_OPTIONS, isFactStale, requiredMonthlyDetail, incomePlan, ratesLabels, planWithdrawal, requiredMonthly, sleeveCost, stockCapFor,
+  BAD10_DRAWDOWN, CHECK_FREQUENCY, SPLIT_OPTIONS, ccDownturnCase, isFactStale, requiredMonthlyDetail, incomePlan, ratesLabels, planWithdrawal, requiredMonthly, sleeveCost, stockCapFor,
 } from '../../lib/planGuide'
 import { FACT_META, MARKET_PICK, RATES_LONG, RATES_NOW, RATES_REGIMES, START_YIELD, DOWNTURN } from '../../data/researchFacts'
 import '../accumulate/accumulate.css'
@@ -296,6 +296,7 @@ function IncomeCard() {
   const [cc, setCc] = useState(50)
   const [ccType, setCcType] = useState<'gen1' | 'gen2' | 'gen3'>('gen1')
   const [targetMan, setTargetMan] = useState('50')
+  const ccWon = (toWon(principalMan) * cc) / 100
   const plan = useMemo(() => incomePlan({ principalWon: toWon(principalMan), ccSharePct: cc, targetNetMonthlyWon: toWon(targetMan), ccType }), [principalMan, cc, targetMan, ccType])
   return (
     <section className="acc-card">
@@ -343,6 +344,21 @@ function IncomeCard() {
                 })}
               </tbody>
             </table>
+            {ccWon > 0 && (
+              <>
+                <p className="acc-note">내 커버드콜 몫 {manRound(ccWon)}에 적용하면(고배당 몫 제외):</p>
+                <table className="acc-table plan-table">
+                  <thead><tr><th>구간</th><th>원금이 남는 금액</th><th>월 분배금(세후)</th></tr></thead>
+                  <tbody>
+                    {(['crisis2008', 'sideways', 'rates2022'] as const).map((k) => {
+                      const c = ccDownturnCase(ccWon, ccType, k)
+                      return <tr key={k}><td>{k === 'crisis2008' ? '2008 금융위기' : k === 'sideways' ? '2015~16 박스권' : '2022 금리 급등'}</td><td>{manRound(c.principalAfter)}</td><td>{manRound(c.netMonthly)}</td></tr>
+                    })}
+                  </tbody>
+                </table>
+                <p className="acc-note">분배금을 쓰지 않고 다시 투자하지 않으면 원금은 위 금액까지 줄고, 분배율은 모델 값이라 실제보다 높게 나옵니다. 월 분배금은 시작 원금 기준 단순 환산입니다.</p>
+              </>
+            )}
             <p className="acc-note">읽는 법: 하락장에서는 변동성이 커서 옵션 프리미엄이 커지므로 <strong>분배금은 줄지 않고 오히려 늘었습니다.</strong> 분배금이 줄어드는 때는 오히려 조용한 박스권입니다. 다만 <strong>원금(기준가)은 지수보다 더 크게 내려갔습니다.</strong> 분배금을 받아서 쓰기만 하면 원금이 지수보다 빨리 줄고, 분배금을 다시 투자하면 합계로는 지수보다 덜 잃었습니다. 실제 상품의 분배율(연 7~20%)은 이 모델(20~50%)보다 낮고, 한국 지수 옵션이 아니라 미국 S&P500 기준입니다.</p>
             <Basis id="downturn" />
           </More>

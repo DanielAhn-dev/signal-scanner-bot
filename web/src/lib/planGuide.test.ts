@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { ratesLabels, incomePlan, isFactStale, planWithdrawal, requiredMonthly, sleeveCost, stockCapFor, withdrawalFailure } from './planGuide'
+import { ccDownturnCase, ratesLabels, incomePlan, isFactStale, planWithdrawal, requiredMonthly, sleeveCost, stockCapFor, withdrawalFailure } from './planGuide'
 
 describe('감내 낙폭 → 주식 비중 상한', () => {
   it('연구 표의 구간과 같다 (−15→20, −20→40, −30→60, −40→80)', () => {
@@ -115,5 +115,10 @@ describe('금리 환경 이름', () => {
     const g1 = incomePlan({ principalWon: 100_000_000, ccSharePct: 100, targetNetMonthlyWon: 500_000, ccType: 'gen1' })!
     const g3 = incomePlan({ principalWon: 100_000_000, ccSharePct: 100, targetNetMonthlyWon: 500_000, ccType: 'gen3' })!
     expect(g3.typical.yieldPct).not.toBe(g1.typical.yieldPct)
+  })
+  it('커버드콜 하락 구간 환산은 원금이 줄고 분배금이 남는다', () => {
+    const c = ccDownturnCase(50_000_000, 'gen2', 'crisis2008')
+    expect(c.principalAfter).toBeLessThan(50_000_000)
+    expect(c.netMonthly).toBeGreaterThan(0)
   })
 })

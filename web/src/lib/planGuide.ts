@@ -6,7 +6,7 @@
 import { CHILD_LONGRUN_REAL_MONTHLY as R } from '../data/childLongRunData'
 import { SAVINGS_REAL_ANNUAL } from './childProjection'
 import { CHILD_LONGRUN_START } from '../data/childLongRunData'
-import { CHECKING_TABLE, INCOME_YIELD, SLEEVE_COST_DATA, SPLIT_TABLE, TOLERANCE_TABLE, WITHDRAWAL_TABLE } from '../data/researchFacts'
+import { CHECKING_TABLE, DOWNTURN, INCOME_YIELD, SLEEVE_COST_DATA, SPLIT_TABLE, TOLERANCE_TABLE, WITHDRAWAL_TABLE } from '../data/researchFacts'
 import { netCashPlan } from './retirementCash'
 
 /** 주식 비중별 "시작 후 5년 안 최대 낙폭" 나쁜 10% 값(%, 미국 주식+합성 10년 국채) */
@@ -259,4 +259,13 @@ export function ratesLabels(n: RatesNowInput): { short: '인상기' | '횡보' |
     long: n.longChg12 > 0.5 ? '상승' : n.longChg12 < -0.5 ? '하락' : '횡보',
     curve: n.spread < 0 ? '역전' : n.spread < 1 ? '평탄' : '정상',
   }
+}
+
+export type DownturnKey = keyof (typeof DOWNTURN)['gen1']
+/** 커버드콜 몫만 하락 구간 모델 결과(원금 변화·분배율)로 환산 — 합성 모델 가정, 고배당 몫은 포함하지 않는다 */
+export function ccDownturnCase(ccPrincipalWon: number, ccType: CcType, key: DownturnKey): { principalAfter: number; netMonthly: number; lossPct: number } {
+  const d = DOWNTURN[ccType][key]
+  const principalAfter = ccPrincipalWon * (1 + d.nav / 100)
+  const grossMonthly = (ccPrincipalWon * d.yield_) / 100 / 12
+  return { principalAfter, netMonthly: grossMonthly * (1 - DIVIDEND_TAX), lossPct: d.nav }
 }
