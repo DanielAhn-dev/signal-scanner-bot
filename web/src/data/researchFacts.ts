@@ -6,6 +6,9 @@ export const SPLIT_TABLE = [{"months": 1, "label": "한 번에", "avgCostPct": 0
 export const CHECKING_TABLE = [{"label": "매일", "kospi": 173, "sp500": 70}, {"label": "주 1회", "kospi": 35, "sp500": 14}, {"label": "월 1회", "kospi": 8, "sp500": 3}, {"label": "분기 1회", "kospi": 3, "sp500": 1}] as const
 export const WITHDRAWAL_TABLE = [{"ratePct": 3.33, "fail25": 0, "fail30": 0}, {"ratePct": 4.0, "fail25": 0, "fail30": 5}, {"ratePct": 4.67, "fail25": 10, "fail30": 16}, {"ratePct": 5.33, "fail25": 20, "fail30": 31}, {"ratePct": 6.67, "fail25": 43, "fail30": 53}] as const
 export const INCOME_YIELD = {"cc": {"period": "2023-04~2026-10", "months": 43, "min": 7.4, "p25": 8.1, "median": 8.4, "p75": 8.6, "max": 9.9, "last": 8.2}, "hd": {"period": "2016-04~2026-10", "months": 127, "min": 2.6, "p25": 3.4, "median": 4.4, "p75": 5.3, "max": 7.3, "last": 4.4}} as const
+export const RATES_REGIMES = {"period": "1962-01~2023-06", "hiking": {"months": 168, "stock": 5.4, "bond": 3.0, "cash": 7.1}, "flat": {"months": 401, "stock": 12.2, "bond": 4.3, "cash": 3.4}, "cutting": {"months": 157, "stock": 11.0, "bond": 14.0, "cash": 4.6}, "inverted": {"months": 75, "stock": 2.0, "bond": 9.2, "cash": 8.4}, "normal": {"months": 467, "stock": 10.8, "bond": 5.7, "cash": 3.7}} as const
+export const RATES_LONG = {"period": "2011-10~2026-08", "rising": {"months": 41, "kospi200": -6.5, "sp500": 8.1, "usbond20": -20.5, "kbond10": -4.5, "gold": -9.0}, "flat": {"months": 111, "kospi200": 20.2, "sp500": 19.1, "usbond20": 5.3, "kbond10": 3.5, "gold": 4.9}, "falling": {"months": 20, "kospi200": 11.2, "sp500": 17.0, "usbond20": 38.3, "kbond10": 9.7, "gold": 39.8}} as const
+export const RATES_NOW = {"asOf": "2026-10", "short": 3.99, "long": 5.28, "spread": 1.28, "shortChg12": 0.28, "longChg12": 1.18} as const
 export const SLEEVE_COST_DATA = [{"weight": 0, "endVsIndexPct": 100}, {"weight": 20, "endVsIndexPct": 91}, {"weight": 40, "endVsIndexPct": 80}, {"weight": 60, "endVsIndexPct": 69}, {"weight": 100, "endVsIndexPct": 48}] as const
 export const FACT_META: Record<string, FactMeta> = {
   "market": {
@@ -23,6 +26,22 @@ export const FACT_META: Record<string, FactMeta> = {
     "script": "scripts/research/build_research_facts.py",
     "sample": "커버드콜 2023-04~2026-10 / 고배당 2016-04~2026-10, 실제 분배금 이력과 역산 실제 가격",
     "caveat": "1세대형 상품만, 한국 강세장, 신형 이력 없음, 분배율은 시장 변동성에 따라 크게 변함"
+  },
+  "rates": {
+    "title": "금리 환경별 성과",
+    "asOf": "2026-10",
+    "generated": "2026-10-03",
+    "script": "scripts/research/build_research_facts.py (validate_rates_regimes.py와 같은 정의)",
+    "sample": "미국 1962-01~2023-06, 주식(S&P500 총수익)·10년 합성 국채·3개월물 현금성, 명목",
+    "caveat": "겹치는 창, 금리 변화는 경기·물가와 겹쳐 있어 인과가 아님, 인상기 168개월·역전 75개월로 표본 짧음"
+  },
+  "ratesLong": {
+    "title": "장기금리 방향별 자산 성과",
+    "asOf": "2026-08",
+    "generated": "2026-10-03",
+    "script": "scripts/research/build_research_facts.py (validate_rates_regimes.py C)",
+    "sample": "2011-10~2026-08 원화 환산, ^TNX 6개월 변화 기준",
+    "caveat": "상승 41개월·하락 20개월로 짧음, 금리 변화는 인과가 아님"
   },
   "sleeve": {
     "title": "인컴(커버드콜) 몫 비용",

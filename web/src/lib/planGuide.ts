@@ -247,3 +247,14 @@ export function incomePlan(i: IncomeInput): IncomePlan | null {
   const annualGrossTypical = typical.grossMonthly * 12
   return { low, typical, high, shortfallLowPct, principalForTarget, annualGrossTypical, over10m: annualGrossTypical > 10_000_000, over20m: annualGrossTypical > 20_000_000 }
 }
+
+export type RatesNowInput = { short: number; long: number; spread: number; shortChg12: number; longChg12: number }
+
+/** 현재 금리 스냅샷을 연구 표의 환경 이름으로 옮긴다 — 단기(3개월물 12개월 ±1%p), 장기(10년물 12개월 ±0.5%p), 장단기 금리차 */
+export function ratesLabels(n: RatesNowInput): { short: '인상기' | '횡보' | '인하기'; long: '상승' | '횡보' | '하락'; curve: '역전' | '평탄' | '정상' } {
+  return {
+    short: n.shortChg12 > 1 ? '인상기' : n.shortChg12 < -1 ? '인하기' : '횡보',
+    long: n.longChg12 > 0.5 ? '상승' : n.longChg12 < -0.5 ? '하락' : '횡보',
+    curve: n.spread < 0 ? '역전' : n.spread < 1 ? '평탄' : '정상',
+  }
+}

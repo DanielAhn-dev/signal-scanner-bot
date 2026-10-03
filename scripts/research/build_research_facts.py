@@ -130,10 +130,65 @@ income_yield = dict(
     hd=bucket([("161510", ".research-cache/px_161510.json"), ("104530", ".research-cache/dividend_etfs/px_104530.json"), ("210780", ".research-cache/dividend_etfs/px_210780.json")]),
 )
 
+# --- 금리 환경별 성과(1962~2023 미국) + 현재 금리 스냅샷 (validate_rates_regimes.py와 같은 정의)
+import xlrd  # noqa: E402
+from validate_long_run import R as LR, bond_returns  # noqa: E402
+
+def _shiller():
+    sh = xlrd.open_workbook(LR + "longrun/ie_data.xls").sheet_by_name("Data")
+    rows = {}
+    for r in range(8, sh.nrows):
+        v = sh.cell_value(r, 0)
+        if not isinstance(v, float): continue
+        y, m = int(v), int(round((v - int(v)) * 100))
+        if not 1 <= m <= 12: continue
+        vals = [sh.cell_value(r, c) for c in (1, 2, 6)]
+        if all(isinstance(x, float) for x in vals):
+            rows[f"{y}{m:02d}"] = dict(p=vals[0], d=vals[1], gs10=vals[2])
+    ms_ = sorted(rows)
+    b10 = bond_returns({m: rows[m]["gs10"] for m in ms_}, ms_, 10)
+    return {ms_[i]: dict(stock=rows[ms_[i]]["p"] / rows[ms_[i-1]]["p"] - 1 + rows[ms_[i]]["d"] / 12 / rows[ms_[i-1]]["p"], bond=b10[ms_[i]], gs10=rows[ms_[i]]["gs10"]) for i in range(1, len(ms_))}
+
+_S = _shiller()
+_irx = json.load(open(".research-cache/yh_IRX_me.json")); _tnx = json.load(open(".research-cache/yh_TNX_me.json"))
+_mB = [m for m in sorted(_S) if m >= "196201" and m in _irx]
+_st = np.array([_S[m]["stock"] for m in _mB]); _bd = np.array([_S[m]["bond"] for m in _mB]); _gs = np.array([_S[m]["gs10"] for m in _mB])
+_ir = np.array([_irx[m] for m in _mB]); _cash = _ir / 100 / 12
+_d12 = np.full(len(_mB), np.nan); _d12[12:] = _ir[12:] - _ir[:-12]
+_slope = _gs - _ir
+_ann = lambda a: float((np.prod(1 + a) ** (12 / len(a)) - 1) * 100)
+
+def _row(mask):
+    return dict(months=int(mask.sum()), stock=round(_ann(_st[mask]), 1), bond=round(_ann(_bd[mask]), 1), cash=round(_ann(_cash[mask]), 1))
+
+_ok = ~np.isnan(_d12)
+rates_regimes = dict(
+    period=f"{_mB[0][:4]}-{_mB[0][4:]}~{_mB[-1][:4]}-{_mB[-1][4:]}",
+    hiking=_row(_ok & (_d12 > 1.0)), flat=_row(_ok & (np.abs(_d12) <= 1.0)), cutting=_row(_ok & (_d12 < -1.0)),
+    inverted=_row(_slope < 0), normal=_row(_slope >= 1),
+)
+_ks = sorted(_irx)
+_last = _ks[-1]; _prev = _ks[-13]
+rates_now = dict(asOf=f"{_last[:4]}-{_last[4:]}", short=round(_irx[_last], 2), long=round(_tnx[_last], 2), spread=round(_tnx[_last] - _irx[_last], 2),
+                 shortChg12=round(_irx[_last] - _irx[_prev], 2), longChg12=round(_tnx[_last] - _tnx[_prev], 2))
+
+# --- 장기금리 6개월 변화별 원화 환산 자산 성과(2010-10~, mixData + ^TNX)
+_ids = ["kospi200", "sp500", "usbond20", "kbond10", "gold"]
+_mC = [m for m in sorted(assets["kospi200"]) if m >= "201010" and all(m in assets[i] for i in _ids) and m in _tnx]
+_rC = {i: np.array([assets[i][_mC[k]] / assets[i][_mC[k - 1]] - 1 for k in range(1, len(_mC))]) for i in _ids}
+_t10 = np.array([_tnx[m] for m in _mC])[1:]
+_c6 = np.full(len(_t10), np.nan); _c6[6:] = _t10[6:] - _t10[:-6]
+_vv = ~np.isnan(_c6)
+def _rowC(mask):
+    return dict(months=int(mask.sum()), **{i: round(_ann(_rC[i][mask]), 1) for i in _ids})
+rates_long = dict(period=f"{_mC[0][:4]}-{_mC[0][4:]}~{_mC[-1][:4]}-{_mC[-1][4:]}", rising=_rowC(_vv & (_c6 > 0.5)), flat=_rowC(_vv & (np.abs(_c6) <= 0.5)), falling=_rowC(_vv & (_c6 < -0.5)))
+
 today = datetime.date.today().isoformat()
 meta = {
     "market": dict(title="코스피200 대 S&P500", asOf=asof, generated=today, script="scripts/research/build_research_facts.py", sample=f"{market['period']} {n}개월, 원화 환산·분배금 반영", caveat="2025년 한국 급등 포함, 표본 짧음"),
     "income": dict(title="인컴 상품 12개월 분배율", asOf=asof, generated=today, script="scripts/research/build_research_facts.py", sample=f"커버드콜 {income_yield['cc']['period']} / 고배당 {income_yield['hd']['period']}, 실제 분배금 이력과 역산 실제 가격", caveat="1세대형 상품만, 한국 강세장, 신형 이력 없음, 분배율은 시장 변동성에 따라 크게 변함"),
+    "rates": dict(title="금리 환경별 성과", asOf=rates_now["asOf"], generated=today, script="scripts/research/build_research_facts.py (validate_rates_regimes.py와 같은 정의)", sample=f"미국 {rates_regimes['period']}, 주식(S&P500 총수익)·10년 합성 국채·3개월물 현금성, 명목", caveat="겹치는 창, 금리 변화는 경기·물가와 겹쳐 있어 인과가 아님, 인상기 168개월·역전 75개월로 표본 짧음"),
+    "ratesLong": dict(title="장기금리 방향별 자산 성과", asOf=rates_long["period"].split("~")[1], generated=today, script="scripts/research/build_research_facts.py (validate_rates_regimes.py C)", sample=f"{rates_long['period']} 원화 환산, ^TNX 6개월 변화 기준", caveat="상승 41개월·하락 20개월로 짧음, 금리 변화는 인과가 아님"),
     "sleeve": dict(title="인컴(커버드콜) 몫 비용", asOf=asof, generated=today, script="scripts/research/build_research_facts.py", sample="한국 커버드콜 2종 " + " / ".join(sleeve_periods), caveat="1세대형(전체 월물 커버) 기준 — 주간·데일리·OTM 최신 구조는 상승 참여가 훨씬 높음(docs 부록 4), 한국 강세장 4~5년, 방향만 참고"),
     "tolerance": dict(title="감내 낙폭 표", asOf="2023-06", generated=today, script="scripts/research/validate_lump_vs_split_tolerance.py", sample="미국 1926~2023, 주식+합성 10년 국채, 시작 후 5년", caveat="월 평균 가격이라 낙폭이 약간 얕음, 시작 시대에 따라 크게 다름"),
     "split": dict(title="일시금 대 분할", asOf="2023-06", generated=today, script="scripts/research/validate_lump_vs_split_tolerance.py", sample="미국 1926~2023 주식 100%, 시작 후 5년", caveat="겹치는 창"),
@@ -149,6 +204,9 @@ out += f"export const SPLIT_TABLE = {json.dumps(split, ensure_ascii=False)} as c
 out += f"export const CHECKING_TABLE = {json.dumps(checking, ensure_ascii=False)} as const\n"
 out += f"export const WITHDRAWAL_TABLE = {json.dumps(withdrawal)} as const\n"
 out += f"export const INCOME_YIELD = {json.dumps(income_yield)} as const\n"
+out += f"export const RATES_REGIMES = {json.dumps(rates_regimes)} as const\n"
+out += f"export const RATES_LONG = {json.dumps(rates_long)} as const\n"
+out += f"export const RATES_NOW = {json.dumps(rates_now)} as const\n"
 out += f"export const SLEEVE_COST_DATA = {json.dumps(sleeve)} as const\n"
 out += f"export const FACT_META: Record<string, FactMeta> = {json.dumps(meta, ensure_ascii=False, indent=2)}\n"
 open(OUT, "w", encoding="utf-8").write(out)

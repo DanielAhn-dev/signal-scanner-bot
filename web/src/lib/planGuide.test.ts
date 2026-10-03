@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { incomePlan, isFactStale, planWithdrawal, requiredMonthly, sleeveCost, stockCapFor, withdrawalFailure } from './planGuide'
+import { ratesLabels, incomePlan, isFactStale, planWithdrawal, requiredMonthly, sleeveCost, stockCapFor, withdrawalFailure } from './planGuide'
 
 describe('감내 낙폭 → 주식 비중 상한', () => {
   it('연구 표의 구간과 같다 (−15→20, −20→40, −30→60, −40→80)', () => {
@@ -102,5 +102,13 @@ describe('인컴 계좌 점검', () => {
     expect(p.principalForTarget).toBeGreaterThan(0)
     expect(p.over20m).toBe(true)
     expect(incomePlan({ principalWon: 0, ccSharePct: 50, targetNetMonthlyWon: 500_000 })).toBeNull()
+  })
+})
+
+describe('금리 환경 이름', () => {
+  it('단기 ±1%p, 장기 ±0.5%p, 금리차 0·1%p 기준으로 나눈다', () => {
+    expect(ratesLabels({ short: 4, long: 5.3, spread: 1.3, shortChg12: 0.3, longChg12: 1.2 })).toEqual({ short: '횡보', long: '상승', curve: '정상' })
+    expect(ratesLabels({ short: 5.3, long: 4.2, spread: -1.1, shortChg12: 1.5, longChg12: 0.2 })).toEqual({ short: '인상기', long: '횡보', curve: '역전' })
+    expect(ratesLabels({ short: 2, long: 2.5, spread: 0.5, shortChg12: -1.5, longChg12: -0.8 })).toEqual({ short: '인하기', long: '하락', curve: '평탄' })
   })
 })

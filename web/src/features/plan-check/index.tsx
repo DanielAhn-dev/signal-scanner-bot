@@ -3,9 +3,9 @@ import { formatKrwMan } from '../../lib/format'
 import { useProfileStore } from '../../stores/profileStore'
 import More from '../../components/ui/More'
 import {
-  BAD10_DRAWDOWN, CHECK_FREQUENCY, SPLIT_OPTIONS, isFactStale, requiredMonthlyDetail, incomePlan, planWithdrawal, requiredMonthly, sleeveCost, stockCapFor,
+  BAD10_DRAWDOWN, CHECK_FREQUENCY, SPLIT_OPTIONS, isFactStale, requiredMonthlyDetail, incomePlan, ratesLabels, planWithdrawal, requiredMonthly, sleeveCost, stockCapFor,
 } from '../../lib/planGuide'
-import { FACT_META, MARKET_PICK } from '../../data/researchFacts'
+import { FACT_META, MARKET_PICK, RATES_LONG, RATES_NOW, RATES_REGIMES } from '../../data/researchFacts'
 import '../accumulate/accumulate.css'
 import './plan-check.css'
 
@@ -28,11 +28,12 @@ function Basis({ id }: { id: string }) {
 
 const manRound = (won: number) => `${Math.round(won / 10_000).toLocaleString('ko-KR')}만원`
 
-type Tab = 'first' | 'save' | 'income' | 'retire'
+type Tab = 'first' | 'save' | 'income' | 'rates' | 'retire'
 const TABS: Array<{ key: Tab; label: string }> = [
   { key: 'first', label: '처음 넣는 법' },
   { key: 'save', label: '필요 월 적립' },
   { key: 'income', label: '인컴 점검' },
+  { key: 'rates', label: '금리 환경' },
   { key: 'retire', label: '은퇴 인출' },
 ]
 
@@ -56,6 +57,7 @@ export default function PlanCheckPage() {
       {tab === 'first' && <><ToleranceCard /><MarketPickCard /><SleeveCard /><SplitCard /><CheckingCard /></>}
       {tab === 'save' && <SavingCard />}
       {tab === 'income' && <IncomeCard />}
+      {tab === 'rates' && <RatesCard />}
       {tab === 'retire' && <RetireCard />}
       {isAdmin && <AdminLab />}
       <More>
@@ -228,6 +230,64 @@ function SavingCard() {
       )}
       {!r && <p className="acc-note">목표 금액을 적고 기간을 고르세요.</p>}
     </section>
+  )
+}
+
+function RatesCard() {
+  const lab = ratesLabels(RATES_NOW)
+  const r = RATES_REGIMES
+  const L = RATES_LONG
+  const pc = (v: number) => `${v.toFixed(1)}%`
+  const sg = (v: number) => `${v >= 0 ? '+' : ''}${v.toFixed(2)}%p`
+  const rows: Array<[string, { stock: number; bond: number; cash: number }, boolean]> = [
+    ['단기금리 인상기', r.hiking, lab.short === '인상기'], ['단기금리 횡보', r.flat, lab.short === '횡보'], ['단기금리 인하기', r.cutting, lab.short === '인하기'],
+    ['장단기 역전', r.inverted, lab.curve === '역전'], ['장단기 정상', r.normal, lab.curve === '정상'],
+  ]
+  return (
+    <>
+      <section className="acc-card">
+        <h2>지금 미국 금리 환경</h2>
+        <dl className="acc-tiles">
+          <div><dt>단기(3개월물)</dt><dd>{RATES_NOW.short.toFixed(2)}%</dd></div>
+          <div><dt>장기(10년물)</dt><dd>{RATES_NOW.long.toFixed(2)}%</dd></div>
+          <div><dt>단기 12개월 변화</dt><dd>{sg(RATES_NOW.shortChg12)}</dd></div>
+          <div><dt>장기 12개월 변화</dt><dd>{sg(RATES_NOW.longChg12)}</dd></div>
+        </dl>
+        <p className="acc-note">기준 {RATES_NOW.asOf}. 단기금리는 <strong>{lab.short}</strong>, 장기금리는 <strong>{lab.long}</strong>, 장단기 금리차는 {lab.curve}({sg(RATES_NOW.spread)})입니다. 단기금리와 장기금리는 따로 움직일 수 있어서 따로 봐야 합니다.</p>
+      </section>
+      <section className="acc-card">
+        <h2>금리 환경별로 과거에는 어땠나</h2>
+        <p className="acc-note">1년 수익(연환산). 현금성은 초단기채·CD처럼 가격이 거의 안 움직이는 자산입니다.</p>
+        <table className="acc-table plan-table">
+          <thead><tr><th>환경</th><th>주식</th><th>10년 국채</th><th>현금성</th></tr></thead>
+          <tbody>
+            {rows.map(([name, v, now]) => (
+              <tr key={name} className={now ? 'is-pick' : ''}><td>{name}{now ? ' (지금)' : ''}</td><td>{pc(v.stock)}</td><td>{pc(v.bond)}</td><td>{pc(v.cash)}</td></tr>
+            ))}
+          </tbody>
+        </table>
+        <More>
+          <p className="acc-note">읽는 법: 금리를 올리던 시기에는 <strong>현금성({pc(r.hiking.cash)})이 주식({pc(r.hiking.stock)})과 국채({pc(r.hiking.bond)})를 앞섰고</strong>, 장단기가 거꾸로 선 시기에는 주식이 {pc(r.inverted.stock)}에 그쳤습니다. 반대로 금리를 내리던 시기에는 국채({pc(r.cutting.bond)})가 좋았습니다. 금리가 내려간다고 주식이 오르는 것은 아니었습니다. 인하는 경기가 나빠서 하는 경우가 많았기 때문입니다. 이 표는 금리가 원인이라는 뜻이 아니라, 그런 환경에서 과거에 무슨 일이 있었는지 보여 줄 뿐입니다.</p>
+        </More>
+        <Basis id="rates" />
+      </section>
+      <section className="acc-card">
+        <h2>장기금리가 움직일 때 자산별로</h2>
+        <p className="acc-note">미국 10년 금리가 6개월 사이 0.5%p 넘게 오르는 구간과 내리는 구간의 연 수익입니다(원화 환산, {L.period}).</p>
+        <table className="acc-table plan-table">
+          <thead><tr><th>장기금리</th><th>개월</th><th>코스피200</th><th>S&P500</th><th>미국 장기채</th><th>금</th></tr></thead>
+          <tbody>
+            {([['오르는 구간', L.rising], ['횡보', L.flat], ['내리는 구간', L.falling]] as const).map(([name, v]) => (
+              <tr key={name}><td>{name}</td><td>{v.months}</td><td>{pc(v.kospi200)}</td><td>{pc(v.sp500)}</td><td>{pc(v.usbond20)}</td><td>{pc(v.gold)}</td></tr>
+            ))}
+          </tbody>
+        </table>
+        <More>
+          <p className="acc-note"><strong>장기채는 금리 방향이 곧 수익</strong>입니다. 장기금리가 오르는 구간에 미국 장기채는 연 {pc(L.rising.usbond20)}, 내리는 구간에 {pc(L.falling.usbond20)}였습니다. 초단기채는 금리가 오를수록 이자가 늘고 가격은 거의 안 움직이지만, 금리가 내리면 이자도 줄어듭니다(재투자 위험). 주식은 장기금리가 오를 때 코스피200이 {pc(L.rising.kospi200)}로 약했고 S&P500은 {pc(L.rising.sp500)}로 버텼습니다. 장기금리가 오르는 구간은 {L.rising.months}개월, 내리는 구간은 {L.falling.months}개월뿐이라 표본이 짧습니다.</p>
+        </More>
+        <Basis id="ratesLong" />
+      </section>
+    </>
   )
 }
 
