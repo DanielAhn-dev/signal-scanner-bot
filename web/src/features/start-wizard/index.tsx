@@ -166,6 +166,7 @@ export default function StartWizardPage() {
           <p>실제 돈은 들어가지 않습니다. {monthly >= 10_000 ? `매달 ${won(monthly)}씩 가상으로 적립하며 ` : '가상으로 넣어 둔 돈이 '}봇이 어떻게 움직이는지 먼저 지켜보세요. 믿을 만하다고 느껴지면 그때 실제 계좌로 넘어가면 됩니다.</p>
           <div className="start-actions">
             <button type="button" className="start-primary" onClick={() => navigate(targetMonthly > 0 ? '/goal-tracker' : '/dashboard')}>{targetMonthly > 0 ? '목표 확인하기' : '홈으로'} <ArrowRight size={15} /></button>
+            <button type="button" className="start-link" onClick={() => navigate('/plan')}>목돈이 크다면: 한 번에 넣을지 나눌지 점검하기</button>
             {targetMonthly > 0
               ? <button type="button" className="start-link" onClick={() => navigate('/dashboard')}>홈으로</button>
               : <button type="button" className="start-link" onClick={() => navigate('/goal-tracker')}>목표도 정해 볼까요? (선택, 나중에 해도 됩니다)</button>}
@@ -180,7 +181,7 @@ export default function StartWizardPage() {
       <header>
         <span className="start-eyebrow">시작하기 · {Math.min(step + 1, 4)}/4</span>
         <h1>{['내 돈의 흐름', `내 성향 (${q + 1}/${PROFILE_QUESTIONS.length})`, '금액과 목표 (목표는 선택)', '결과 확인'][step]}</h1>
-        <p>{['대략만 적어도 됩니다. 목돈만 가상으로 굴려 보고 싶다면 건너뛰어도 됩니다. 적으면 시드 만들기의 이번 달 기록으로 저장되고, 나중에 거기서 고칠 수 있습니다.', '정답은 없습니다. 답에 따라 적립 기본값과 주의 안내가 달라집니다.', '넣을 돈만 정하면 됩니다. 목표는 비워 둬도 되고, 적으면 얼마나 현실적인지 숫자로 알려 드립니다. 목돈만 굴려 보려면 매달 적립을 0으로 두세요.', '이 조건으로 시작해도 되는지 확인하세요.'][step]}</p>
+        <p>{['가계부처럼 적을 필요 없이 한 달 총액만 어렴풋이 적어도 됩니다. 목돈만 가상으로 굴려 보고 싶다면 건너뛰어도 됩니다. 적으면 시드 만들기의 이번 달 기록으로 저장되고, 나중에 거기서 고칠 수 있습니다.', '정답은 없습니다. 답에 따라 적립 기본값과 주의 안내가 달라집니다.', '넣을 돈만 정하면 됩니다. 목표는 비워 둬도 되고, 적으면 얼마나 현실적인지 숫자로 알려 드립니다. 목돈만 굴려 보려면 매달 적립을 0으로 두세요.', '이 조건으로 시작해도 되는지 확인하세요.'][step]}</p>
       </header>
 
       {step === 0 && <section className="start-card">

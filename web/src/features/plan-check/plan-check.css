@@ -1,0 +1,7 @@
+.plan .acc-seg button { white-space: nowrap; }
+.plan-slider input[type="range"] { width: 100%; accent-color: var(--color-brand); }
+.plan-slider b { color: var(--color-brand); }
+.plan-table td:not(:first-child), .plan-table th:not(:first-child) { text-align: right; }
+.plan-table tr.is-pick td { font-weight: 700; color: var(--color-brand); }
+.plan-foot { margin-top: 20px; font-size: 12px; }
+.plan a { color: var(--color-brand); }

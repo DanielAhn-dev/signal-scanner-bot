@@ -52,6 +52,7 @@ export const TOOL_NAV_GROUPS: NavGroup[] = [
       { key: 'start', label: '시작하기' },
       { key: 'accumulate', label: '모아가기' },
       { key: 'mix', label: '섞어보기' },
+      { key: 'plan', label: '계획 점검' },
       { key: 'child', label: '자녀 계좌' },
       { key: 'follow', label: '따라 사기' },
       { key: 'goal-tracker', label: '목표 트래커' },
@@ -112,6 +113,7 @@ export const USER_NAV_KEYS: readonly string[] = [
   'start',
   'accumulate',
   'mix',
+  'plan',
   'child',
   'follow',
   'seed-builder',
@@ -185,6 +187,8 @@ export const BOT_USAGE_NOTES: Record<string, string> = {
     '봇 매매와 별개입니다. 증권사 앱의 모아가기로 직접 사는 지수 ETF를 과거 실제 가격으로 시뮬레이션하고, 정한 금액을 꾸준히 이어가도록 돕습니다. 주문은 내지 않습니다.',
   mix:
     '봇 매매와 별개입니다. 코스피200·미국지수·채권·금을 원하는 비중으로 섞어 과거 실제 가격으로 수익과 낙폭을 비교합니다. 주문은 내지 않습니다.',
+  plan:
+    '봇 매매와 별개입니다. 버틸 수 있는 하락폭에 맞는 주식 비중, 일시금 대 분할, 목표에 필요한 월 적립액, 은퇴 때 세금·건보료를 뺀 인출 가능액을 과거 자료 범위로 보여줍니다. 주문은 내지 않습니다.',
   child:
     '봇 매매와 별개입니다. 자녀에게 준 돈의 증여 한도·신고 마감을 기록으로 정리하고 장기 보유 범위를 보여줍니다. 세무 판단은 하지 않으며 주문도 내지 않습니다.',
   'income-guide':

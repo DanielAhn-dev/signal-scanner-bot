@@ -81,6 +81,7 @@ const ChoiceReviewPage     = lazyWithRecovery(() => import('./features/choice-re
 const AccumulatePage       = lazyWithRecovery(() => import('./features/accumulate'))
 const MixPage              = lazyWithRecovery(() => import('./features/mix'))
 const ChildGiftPage        = lazyWithRecovery(() => import('./features/child-gift'))
+const PlanCheckPage        = lazyWithRecovery(() => import('./features/plan-check'))
 const DiscoveryPage        = lazyWithRecovery(() => import('./features/discovery'))
 const BacktestPage         = lazyWithRecovery(() => import('./features/backtest'))
 const ControlPage          = lazyWithRecovery(() => import('./features/control'))
@@ -409,6 +410,7 @@ function AppContent() {
             <Route path="/accumulate"             element={<AccumulatePage />} />
             <Route path="/mix"                    element={<MixPage />} />
             <Route path="/child"                  element={<ChildGiftPage />} />
+            <Route path="/plan"                   element={<PlanCheckPage />} />
             <Route path="/discovery"              element={<DiscoveryPage />} />
             <Route path="/backtest"               element={<BacktestPage />} />
             <Route path="/control"                element={<ControlPage />} />
