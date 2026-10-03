@@ -169,12 +169,12 @@ def _shiller():
         if not isinstance(v, float): continue
         y, m = int(v), int(round((v - int(v)) * 100))
         if not 1 <= m <= 12: continue
-        vals = [sh.cell_value(r, c) for c in (1, 2, 6)]
+        vals = [sh.cell_value(r, c) for c in (1, 2, 6, 4)]
         if all(isinstance(x, float) for x in vals):
-            rows[f"{y}{m:02d}"] = dict(p=vals[0], d=vals[1], gs10=vals[2])
+            rows[f"{y}{m:02d}"] = dict(p=vals[0], d=vals[1], gs10=vals[2], cpi=vals[3])
     ms_ = sorted(rows)
     b10 = bond_returns({m: rows[m]["gs10"] for m in ms_}, ms_, 10)
-    return {ms_[i]: dict(stock=rows[ms_[i]]["p"] / rows[ms_[i-1]]["p"] - 1 + rows[ms_[i]]["d"] / 12 / rows[ms_[i-1]]["p"], bond=b10[ms_[i]], gs10=rows[ms_[i]]["gs10"]) for i in range(1, len(ms_))}
+    return {ms_[i]: dict(stock=rows[ms_[i]]["p"] / rows[ms_[i-1]]["p"] - 1 + rows[ms_[i]]["d"] / 12 / rows[ms_[i-1]]["p"], bond=b10[ms_[i]], gs10=rows[ms_[i]]["gs10"], cpi=rows[ms_[i]]["cpi"] / rows[ms_[i-1]]["cpi"] - 1) for i in range(1, len(ms_))}
 
 _S = _shiller()
 _irx = json.load(open(".research-cache/yh_IRX_me.json")); _tnx = json.load(open(".research-cache/yh_TNX_me.json"))
@@ -199,6 +199,18 @@ _last = _ks[-1]; _prev = _ks[-13]
 rates_now = dict(asOf=f"{_last[:4]}-{_last[4:]}", short=round(_irx[_last], 2), long=round(_tnx[_last], 2), spread=round(_tnx[_last] - _irx[_last], 2),
                  shortChg12=round(_irx[_last] - _irx[_prev], 2), longChg12=round(_tnx[_last] - _tnx[_prev], 2))
 
+# --- 시작 시점 10년 금리 3분위별 60/40 30년 인출 실패율(실질, 비례 인출) — 1961~2023 미국
+_mS = [m for m in sorted(_S) if m >= "196102"]
+_gsS = np.array([_S[m]["gs10"] for m in _mS])
+_rsS = np.array([(1 + _S[m]["stock"]) / (1 + _S[m]["cpi"]) - 1 for m in _mS]); _rbS = np.array([(1 + _S[m]["bond"]) / (1 + _S[m]["cpi"]) - 1 for m in _mS])
+_gq = np.quantile(_gsS, [1 / 3, 2 / 3]); _months = 360
+_tiers = []
+for _nm, _lo, _hi in (("낮음", -1, _gq[0]), ("중간", _gq[0], _gq[1]), ("높음", _gq[1], 99)):
+    _idx = [i for i in range(0, len(_mS) - _months + 1) if _lo < _gsS[i] <= _hi]
+    _f = lambda rate: round(sum(vw.simulate(_rsS[i:i + _months], _rbS[i:i + _months], 0.6, rate, _months, "prop")[0] is not None for i in _idx) / len(_idx) * 100)
+    _tiers.append(dict(label=_nm, minYield=round(float(_gsS[_idx].min()), 1), maxYield=round(float(_gsS[_idx].max()), 1), starts=len(_idx), fail40=_f(4.0), fail45=_f(4.5)))
+start_yield = dict(period=f"{_mS[0][:4]}-{_mS[0][4:]}~{_mS[-1][:4]}-{_mS[-1][4:]}", tiers=_tiers)
+
 # --- 장기금리 6개월 변화별 원화 환산 자산 성과(2010-10~, mixData + ^TNX)
 _ids = ["kospi200", "sp500", "usbond20", "kbond10", "gold"]
 _mC = [m for m in sorted(assets["kospi200"]) if m >= "201010" and all(m in assets[i] for i in _ids) and m in _tnx]
@@ -216,6 +228,7 @@ meta = {
     "income": dict(title="인컴 상품 12개월 분배율", asOf=asof, generated=today, script="scripts/research/build_research_facts.py", sample=f"커버드콜 {income_yield['cc']['period']} / 고배당 {income_yield['hd']['period']}, 실제 분배금 이력과 역산 실제 가격", caveat="1세대형 상품만, 한국 강세장, 신형 이력 없음, 분배율은 시장 변동성에 따라 크게 변함"),
     "rates": dict(title="금리 환경별 성과", asOf=rates_now["asOf"], generated=today, script="scripts/research/build_research_facts.py (validate_rates_regimes.py와 같은 정의)", sample=f"미국 {rates_regimes['period']}, 주식(S&P500 총수익)·10년 합성 국채·3개월물 현금성, 명목", caveat="겹치는 창, 금리 변화는 경기·물가와 겹쳐 있어 인과가 아님, 인상기 168개월·역전 75개월로 표본 짧음"),
     "ratesLong": dict(title="장기금리 방향별 자산 성과", asOf=rates_long["period"].split("~")[1], generated=today, script="scripts/research/build_research_facts.py (validate_rates_regimes.py C)", sample=f"{rates_long['period']} 원화 환산, ^TNX 6개월 변화 기준", caveat="상승 41개월·하락 20개월로 짧음, 금리 변화는 인과가 아님"),
+    "startYield": dict(title="시작 금리별 인출 실패율", asOf="2023-06", generated=today, script="scripts/research/build_research_facts.py (validate_rates_rules.py와 같은 정의)", sample=f"미국 {start_yield['period']} 시작, 60/40 실질, 30년 비례 인출", caveat="중간 구간은 1966~82년 스태그플레이션 시작이 대부분이라 독립 표본이 2~3개, 겹치는 창"),
     "sleeve": dict(title="인컴(커버드콜) 몫 비용", asOf=asof, generated=today, script="scripts/research/build_research_facts.py", sample="한국 커버드콜 2종 " + " / ".join(sleeve_periods), caveat="1세대형(전체 월물 커버) 기준 — 주간·데일리·OTM 최신 구조는 상승 참여가 훨씬 높음(docs 부록 4), 한국 강세장 4~5년, 방향만 참고"),
     "tolerance": dict(title="감내 낙폭 표", asOf="2023-06", generated=today, script="scripts/research/validate_lump_vs_split_tolerance.py", sample="미국 1926~2023, 주식+합성 10년 국채, 시작 후 5년", caveat="월 평균 가격이라 낙폭이 약간 얕음, 시작 시대에 따라 크게 다름"),
     "split": dict(title="일시금 대 분할", asOf="2023-06", generated=today, script="scripts/research/validate_lump_vs_split_tolerance.py", sample="미국 1926~2023 주식 100%, 시작 후 5년", caveat="겹치는 창"),
@@ -233,6 +246,7 @@ out += f"export const WITHDRAWAL_TABLE = {json.dumps(withdrawal)} as const\n"
 out += f"export const INCOME_YIELD = {json.dumps(income_yield)} as const\n"
 out += f"export const RATES_REGIMES = {json.dumps(rates_regimes)} as const\n"
 out += f"export const RATES_LONG = {json.dumps(rates_long)} as const\n"
+out += f"export const START_YIELD = {json.dumps(start_yield)} as const\n"
 out += f"export const RATES_NOW = {json.dumps(rates_now)} as const\n"
 out += f"export const SLEEVE_COST_DATA = {json.dumps(sleeve)} as const\n"
 out += f"export const FACT_META: Record<string, FactMeta> = {json.dumps(meta, ensure_ascii=False, indent=2)}\n"

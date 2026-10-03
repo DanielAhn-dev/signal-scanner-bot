@@ -5,7 +5,7 @@ import More from '../../components/ui/More'
 import {
   BAD10_DRAWDOWN, CHECK_FREQUENCY, SPLIT_OPTIONS, isFactStale, requiredMonthlyDetail, incomePlan, ratesLabels, planWithdrawal, requiredMonthly, sleeveCost, stockCapFor,
 } from '../../lib/planGuide'
-import { FACT_META, MARKET_PICK, RATES_LONG, RATES_NOW, RATES_REGIMES } from '../../data/researchFacts'
+import { FACT_META, MARKET_PICK, RATES_LONG, RATES_NOW, RATES_REGIMES, START_YIELD } from '../../data/researchFacts'
 import '../accumulate/accumulate.css'
 import './plan-check.css'
 
@@ -377,6 +377,19 @@ function RetireCard() {
           {plan.dependentOk === true && <p className="acc-note">{plan.dependentReason}. 계산에는 건강보험료를 0원으로 두었습니다.</p>}
           <More>
             <p className="acc-note">연구 결과, 지출 조정과 연금·주택 같은 다른 소득원이 투자 수익률 개선보다 훨씬 큰 영향을 줍니다. 한국 주식형 ETF 매도 차익은 비과세로 가정했고 분배금은 연 2.5%로 가정해 15.4% 과세로 계산했습니다. 정확한 보험료는 <a href="https://www.nhis.or.kr" target="_blank" rel="noreferrer">국민건강보험공단</a> 모의계산으로 확인하세요. 세무·보험 판단이 아니라 대략의 규모를 보는 용도입니다.</p>
+          </More>
+          <More>
+            <p className="acc-note">출발할 때의 미국 10년 금리 수준도 인출 안전도를 크게 갈랐습니다. 60/40으로 30년 꺼냈을 때 바닥난 비율(미국 {START_YIELD.period} 시작):</p>
+            <table className="acc-table plan-table">
+              <thead><tr><th>시작 금리</th><th>연 4.0%</th><th>연 4.5%</th></tr></thead>
+              <tbody>
+                {START_YIELD.tiers.map((t) => (
+                  <tr key={t.label} className={RATES_NOW.long >= t.minYield && RATES_NOW.long <= t.maxYield ? 'is-pick' : ''}><td>{t.label} ({t.minYield}~{t.maxYield}%)</td><td>{t.fail40}%</td><td>{t.fail45}%</td></tr>
+                ))}
+              </tbody>
+            </table>
+            <p className="acc-note">지금 미국 10년 금리는 {RATES_NOW.long.toFixed(2)}%입니다. 금리가 높게 출발하면 채권이 앞으로 높은 수익을 주기 때문에 안전했지만, 중간 구간은 1966~82년 같은 긴 부진 시작이 대부분이라 표본이 사실상 2~3개뿐이어서 이 표를 인출률의 보증으로 읽으면 안 됩니다.</p>
+            <Basis id="startYield" />
           </More>
           <Basis id="withdrawal" />
         </>

@@ -8,6 +8,7 @@ export const WITHDRAWAL_TABLE = [{"ratePct": 3.33, "fail25": 0, "fail30": 0}, {"
 export const INCOME_YIELD = {"cc": {"period": "2023-04~2026-10", "months": 43, "min": 7.4, "p25": 8.1, "median": 8.4, "p75": 8.6, "max": 9.9, "last": 8.2}, "hd": {"period": "2016-04~2026-10", "months": 127, "min": 2.6, "p25": 3.4, "median": 4.4, "p75": 5.3, "max": 7.3, "last": 4.4}} as const
 export const RATES_REGIMES = {"period": "1962-01~2023-06", "hiking": {"months": 168, "stock": 5.4, "bond": 3.0, "cash": 7.1}, "flat": {"months": 401, "stock": 12.2, "bond": 4.3, "cash": 3.4}, "cutting": {"months": 157, "stock": 11.0, "bond": 14.0, "cash": 4.6}, "inverted": {"months": 75, "stock": 2.0, "bond": 9.2, "cash": 8.4}, "normal": {"months": 467, "stock": 10.8, "bond": 5.7, "cash": 3.7}} as const
 export const RATES_LONG = {"period": "2011-10~2026-08", "rising": {"months": 41, "kospi200": -6.5, "sp500": 8.1, "usbond20": -20.5, "kbond10": -4.5, "gold": -9.0}, "flat": {"months": 111, "kospi200": 20.2, "sp500": 19.1, "usbond20": 5.3, "kbond10": 3.5, "gold": 4.9}, "falling": {"months": 20, "kospi200": 11.2, "sp500": 17.0, "usbond20": 38.3, "kbond10": 9.7, "gold": 39.8}} as const
+export const START_YIELD = {"period": "1961-02~2023-06", "tiers": [{"label": "\ub0ae\uc74c", "minYield": 3.7, "maxYield": 4.2, "starts": 44, "fail40": 16, "fail45": 77}, {"label": "\uc911\uac04", "minYield": 4.2, "maxYield": 7.0, "starts": 109, "fail40": 34, "fail45": 68}, {"label": "\ub192\uc74c", "minYield": 7.0, "maxYield": 15.3, "starts": 237, "fail40": 0, "fail45": 0}]} as const
 export const RATES_NOW = {"asOf": "2026-10", "short": 3.99, "long": 5.28, "spread": 1.28, "shortChg12": 0.28, "longChg12": 1.18} as const
 export const SLEEVE_COST_DATA = [{"weight": 0, "endVsIndexPct": 100}, {"weight": 20, "endVsIndexPct": 91}, {"weight": 40, "endVsIndexPct": 80}, {"weight": 60, "endVsIndexPct": 69}, {"weight": 100, "endVsIndexPct": 48}] as const
 export const FACT_META: Record<string, FactMeta> = {
@@ -42,6 +43,14 @@ export const FACT_META: Record<string, FactMeta> = {
     "script": "scripts/research/build_research_facts.py (validate_rates_regimes.py C)",
     "sample": "2011-10~2026-08 원화 환산, ^TNX 6개월 변화 기준",
     "caveat": "상승 41개월·하락 20개월로 짧음, 금리 변화는 인과가 아님"
+  },
+  "startYield": {
+    "title": "시작 금리별 인출 실패율",
+    "asOf": "2023-06",
+    "generated": "2026-10-03",
+    "script": "scripts/research/build_research_facts.py (validate_rates_rules.py와 같은 정의)",
+    "sample": "미국 1961-02~2023-06 시작, 60/40 실질, 30년 비례 인출",
+    "caveat": "중간 구간은 1966~82년 스태그플레이션 시작이 대부분이라 독립 표본이 2~3개, 겹치는 창"
   },
   "sleeve": {
     "title": "인컴(커버드콜) 몫 비용",
