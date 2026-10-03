@@ -8,3 +8,6 @@
 .plan .acc-seg { flex-direction: row; flex-wrap: wrap; }
 .plan .acc-seg button { flex: 1 1 auto; }
 .plan-basis { font-size: 12px; color: var(--color-text-tertiary); border-top: 1px dashed var(--color-border-default, #ddd); padding-top: 8px; }
+.plan-more { margin: 4px 0; }
+.plan-more > summary { color: var(--color-brand); font-size: 13px; min-height: 32px; display: flex; align-items: center; }
+.plan-more[open] > summary { margin-bottom: 4px; }
