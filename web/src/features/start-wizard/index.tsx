@@ -121,7 +121,8 @@ export default function StartWizardPage() {
   // 가상 계좌에는 시작금이 있어야 한다 — 시작금을 비우면 첫 달 적립액으로 시작한다
   const seedToStart = initialSeed > 0 ? initialSeed : monthly
 
-  const canNext = step === 0 ? income > 0 : step === 1 ? !!form[question.key] : step === 2 ? targetMonthly > 0 : true
+  // 수입·목표는 건너뛸 수 있다 — 목돈만 가상으로 굴려 보려는 사람도 시작할 수 있어야 한다. 시작금은 있어야 한다
+  const canNext = step === 0 ? true : step === 1 ? !!form[question.key] : step === 2 ? hasAccount || seedToStart >= 10_000 : true
   const setup = personalSetup(form, monthly)
   const canStart = !!clientId && !busy && seedToStart >= 10_000 && profileComplete(form)
 
@@ -135,8 +136,8 @@ export default function StartWizardPage() {
       const exists = Number(prefs?.data?.virtual_seed_capital) > 0
       if (!exists) await post('/api/ui/investment-prefs', { virtual_seed_capital: Math.round(seedToStart), reset_cash: true })
       if (monthly >= 10_000) await post('/api/ui/investment-prefs', { monthly_deposit: Math.round(monthly), deposit_day: 1 })
-      await post('/api/ui/goal-tracker', { targetMonthlyProfit: Math.round(targetMonthly) })
-      await post('/api/ui/seed-builder', {
+      if (targetMonthly > 0) await post('/api/ui/goal-tracker', { targetMonthlyProfit: Math.round(targetMonthly) })
+      if (income > 0) await post('/api/ui/seed-builder', {
         month: monthKeyKst(), status: 'recorded', household: 'solo', ownIncome: income, partnerIncome: 0, ownPayday: null, partnerPayday: null,
         expenses: { food: 0, housing: 0, vehicle: 0, education: 0, tax: 0, subscriptions: 0, other: num(form.otherFixed) + num(form.loanPayment), card: num(form.card), water: 0, gas: 0, residentTax: 0, propertyTax: 0, vehicleTax: 0, taxAdjustment: 0 },
         extraIncome: { incentive: 0, vacation: 0, taxRefund: 0, other: 0 }, reserve: 0, plan: Math.round(monthly),
@@ -162,10 +163,10 @@ export default function StartWizardPage() {
         <div className="start-done">
           <Check size={28} aria-hidden />
           <h1>가상 계좌로 시작했어요</h1>
-          <p>실제 돈은 들어가지 않습니다. 매달 {won(monthly)}씩 가상으로 적립하며 봇이 어떻게 움직이는지 먼저 지켜보세요. 믿을 만하다고 느껴지면 그때 실제 계좌로 넘어가면 됩니다.</p>
+          <p>실제 돈은 들어가지 않습니다. {monthly >= 10_000 ? `매달 ${won(monthly)}씩 가상으로 적립하며 ` : '가상으로 넣어 둔 돈이 '}봇이 어떻게 움직이는지 먼저 지켜보세요. 믿을 만하다고 느껴지면 그때 실제 계좌로 넘어가면 됩니다.</p>
           <div className="start-actions">
-            <button type="button" className="start-primary" onClick={() => navigate('/goal-tracker')}>목표 확인하기 <ArrowRight size={15} /></button>
-            <button type="button" className="start-link" onClick={() => navigate('/dashboard')}>홈으로</button>
+            <button type="button" className="start-primary" onClick={() => navigate(targetMonthly > 0 ? '/goal-tracker' : '/dashboard')}>{targetMonthly > 0 ? '목표 확인하기' : '홈으로'} <ArrowRight size={15} /></button>
+            {targetMonthly > 0 && <button type="button" className="start-link" onClick={() => navigate('/dashboard')}>홈으로</button>}
           </div>
         </div>
       </main>
@@ -176,8 +177,8 @@ export default function StartWizardPage() {
     <main className="start-wizard">
       <header>
         <span className="start-eyebrow">시작하기 · {Math.min(step + 1, 4)}/4</span>
-        <h1>{['내 돈의 흐름', `내 성향 (${q + 1}/${PROFILE_QUESTIONS.length})`, '목표', '결과 확인'][step]}</h1>
-        <p>{['대략만 적어도 됩니다. 정확한 금액은 필요 없습니다. 시작하면 이 값이 시드 만들기의 이번 달 기록으로 저장되고, 나중에 거기서 고칠 수 있습니다.', '정답은 없습니다. 답에 따라 적립 기본값과 주의 안내가 달라집니다.', '말도 안 되는 목표여도 괜찮아요. 얼마나 현실적인지 숫자로 알려 드립니다.', '이 조건으로 시작해도 되는지 확인하세요.'][step]}</p>
+        <h1>{['내 돈의 흐름', `내 성향 (${q + 1}/${PROFILE_QUESTIONS.length})`, '금액과 목표 (목표는 선택)', '결과 확인'][step]}</h1>
+        <p>{['대략만 적어도 됩니다. 목돈만 가상으로 굴려 보고 싶다면 건너뛰어도 됩니다. 적으면 시드 만들기의 이번 달 기록으로 저장되고, 나중에 거기서 고칠 수 있습니다.', '정답은 없습니다. 답에 따라 적립 기본값과 주의 안내가 달라집니다.', '넣을 돈만 정하면 됩니다. 목표는 비워 둬도 되고, 적으면 얼마나 현실적인지 숫자로 알려 드립니다. 목돈만 굴려 보려면 매달 적립을 0으로 두세요.', '이 조건으로 시작해도 되는지 확인하세요.'][step]}</p>
       </header>
 
       {step === 0 && <section className="start-card">
@@ -203,25 +204,29 @@ export default function StartWizardPage() {
       </section>}
 
       {step === 2 && <section className="start-card">
-        <MoneyField label="투자로 받고 싶은 월 수입" value={form.targetMonthly} onChange={(v) => set({ targetMonthly: v })} />
-        <MoneyField label="투자 기간" value={form.years} onChange={(v) => set({ years: v })} suffix="년" placeholder="10" />
+        <MoneyField label="투자로 받고 싶은 월 수입(선택, 비워 두면 목표 없이 시작)" value={form.targetMonthly} onChange={(v) => set({ targetMonthly: v })} />
+        {targetMonthly > 0 && <MoneyField label="투자 기간" value={form.years} onChange={(v) => set({ years: v })} suffix="년" placeholder="10" />}
         <MoneyField label="처음에 넣을 금액(없으면 비워두세요)" value={form.initialSeed} onChange={(v) => set({ initialSeed: v })} />
-        <MoneyField label="매달 적립" value={form.monthly} onChange={(v) => set({ monthly: v })} placeholder={suggested ? String(suggested) : '0'} hint={suggested ? `여유액의 절반(${man(suggested)})을 기본으로 둡니다. 직접 바꿔도 됩니다.` : undefined} />
+        <MoneyField label="매달 적립" value={form.monthly} onChange={(v) => set({ monthly: v })} placeholder={suggested ? String(suggested) : '0'} hint={suggested ? `여유액의 절반(${man(suggested)})을 기본으로 둡니다. 직접 바꿔도 됩니다. 적립 없이 목돈만이면 0.` : '적립 없이 목돈만이면 0'} />
+        {!hasAccount && seedToStart < 10_000 && <p className="start-note">처음 넣을 금액이나 매달 적립 중 하나는 1만원 이상 적어 주세요.</p>}
       </section>}
 
       {step === 3 && <section className="start-card">
         <dl className="start-result">
-          <div><dt>월 투자 여유</dt><dd>{won(surplus)}</dd></div>
-          <div><dt>매달 적립</dt><dd>{won(monthly)}</dd></div>
-          <div><dt>목표 월 수입</dt><dd>{won(targetMonthly)}</dd></div>
-          <div><dt>그러려면 필요한 자산</dt><dd>{man(target)}</dd></div>
+          {income > 0 && <div><dt>월 투자 여유</dt><dd>{won(surplus)}</dd></div>}
+          <div><dt>처음 넣을 금액</dt><dd>{won(seedToStart)}</dd></div>
+          <div><dt>매달 적립</dt><dd>{monthly >= 10_000 ? won(monthly) : '없음 (목돈만)'}</dd></div>
+          {target > 0 && <><div><dt>목표 월 수입</dt><dd>{won(targetMonthly)}</dd></div>
+          <div><dt>그러려면 필요한 자산</dt><dd>{man(target)}</dd></div></>}
         </dl>
-        <p className={`start-realism is-${realism.level}`}>{years}년 안에 닿으려면: {realism.text}</p>
-        <p className="start-note">
-          지금 조건 그대로 지수 장기 평균(연 8%)이라면 {years}년 뒤 약 {man(outcome.wealth)}, 월 수입으로는 약 {man(outcome.monthlyIncome)}입니다.
-          {realism.level !== 'ok' && (reachYears ? ` 목표 자산에는 약 ${reachYears}년이 걸립니다.` : ' 목표 자산에는 50년 안에 닿기 어렵습니다.')}
-          {' '}과거 평균일 뿐 보장이 아닙니다.
-        </p>
+        {target > 0 ? <>
+          <p className={`start-realism is-${realism.level}`}>{years}년 안에 닿으려면: {realism.text}</p>
+          <p className="start-note">
+            지금 조건 그대로 지수 장기 평균(연 8%)이라면 {years}년 뒤 약 {man(outcome.wealth)}, 월 수입으로는 약 {man(outcome.monthlyIncome)}입니다.
+            {realism.level !== 'ok' && (reachYears ? ` 목표 자산에는 약 ${reachYears}년이 걸립니다.` : ' 목표 자산에는 50년 안에 닿기 어렵습니다.')}
+            {' '}과거 평균일 뿐 보장이 아닙니다.
+          </p>
+        </> : <p className="start-note">목표 없이 시작합니다. 얼마가 됐는지, 가장 많이 떨어졌을 때가 언제였는지만 보여 드립니다. 목표는 써 보고 나서 정해도 늦지 않습니다.</p>}
         {loanNote && <p className="start-warn">{loanNote}</p>}
         {profileComplete(form) && <><p className="start-question">내 답에 맞춰 이렇게 설정해 둘게요</p><ul className="start-note">{setup.summary.map((n) => <li key={n}>{n}</li>)}</ul></>}
         {hasAccount
@@ -234,7 +239,7 @@ export default function StartWizardPage() {
       <div className="start-actions">
         {(step > 0) && <button type="button" className="start-link" onClick={() => (step === 1 && q > 0 ? setQ(q - 1) : setStep(step - 1))}>이전</button>}
         {step < 3
-          ? <button type="button" className="start-primary" disabled={!canNext} onClick={() => (step === 1 && q < PROFILE_QUESTIONS.length - 1 ? setQ(q + 1) : setStep(step + 1))}>다음 <ArrowRight size={15} /></button>
+          ? <button type="button" className="start-primary" disabled={!canNext} onClick={() => (step === 1 && q < PROFILE_QUESTIONS.length - 1 ? setQ(q + 1) : setStep(step + 1))}>{step === 0 && income === 0 ? '건너뛰기' : '다음'} <ArrowRight size={15} /></button>
           : <button type="button" className="start-primary" disabled={!canStart} onClick={() => void start()}>{busy ? '만드는 중' : '가상 계좌로 시작'}</button>}
       </div>
     </main>
