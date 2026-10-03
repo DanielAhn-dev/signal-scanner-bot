@@ -42,6 +42,33 @@ market = dict(period=f"{ms[0][:4]}-{ms[0][4:]}~{ms[-1][:4]}-{ms[-1][4:]}", month
 y2025 = [i for i, m in enumerate(ms[1:]) if m[:4] == "2025"]
 market["kospi2025Pct"] = float((np.prod(1 + rk[y2025]) - 1) * 100) if len(y2025) == 12 else None
 
+# --- 환율 분해: S&P500 원화 환산 = 달러 총수익(SPY) + 원/달러 변동. 환율은 정상 확인된 일봉 파일의 월말값(야후 월봉 KRW=X는 이상값이 있어 쓰지 않음)
+import time as _time
+def _yh_adj(fn):
+    d = json.load(open(f".research-cache/yh_{fn}.json")); o = {}
+    for t, a in zip(d["t"], d["adj"]):
+        if a is not None: o[_time.strftime("%Y%m", _time.gmtime(t))] = a
+    return o
+_spy = _yh_adj("SPY")
+_fxd = json.load(open(".research-cache/allweather/us_KRW_X.json")); _fxd.sort(key=lambda r: r[0])
+_fx = {r[0][:6]: float(r[-1]) for r in _fxd}
+_mf = [m for m in ms if m in _spy and m in _fx]
+_i0 = [i for i, m in enumerate(ms) if m == _mf[0]][0]
+_ru = np.array([_spy[_mf[i]] / _spy[_mf[i-1]] - 1 for i in range(1, len(_mf))])
+_rf = np.array([_fx[_mf[i]] / _fx[_mf[i-1]] - 1 for i in range(1, len(_mf))])
+_rkrw = np.array([u[_mf[i]] / u[_mf[i-1]] - 1 for i in range(1, len(_mf))])
+_rkk = np.array([k[_mf[i]] / k[_mf[i-1]] - 1 for i in range(1, len(_mf))])
+_H = 120
+_win = lambda r: np.array([np.prod(1 + r[s:s + _H]) for s in range(len(r) - _H + 1)])
+_wu, _wk = _win(_ru), _win(_rkk)
+_worst = np.argsort(_ru)[:12]
+market["fx"] = dict(period=f"{_mf[0][:4]}-{_mf[0][4:]}~{_mf[-1][:4]}-{_mf[-1][4:]}", months=len(_ru),
+                    krwCagr=round(float((np.prod(1 + _rkrw) ** (12 / len(_rkrw)) - 1) * 100), 1),
+                    usdCagr=round(float((np.prod(1 + _ru) ** (12 / len(_ru)) - 1) * 100), 1),
+                    fxCagr=round(float((np.prod(1 + _rf) ** (12 / len(_rf)) - 1) * 100), 1),
+                    usdOnlyWinPct=round(float((_wu > _wk).mean() * 100)), corrFxUsd=round(float(np.corrcoef(_rf, _ru)[0, 1]), 2),
+                    worstUsdAvg=round(float(_ru[_worst].mean() * 100), 1), worstFxAvg=round(float(_rf[_worst].mean() * 100), 1), worstKrwAvg=round(float(_rkrw[_worst].mean() * 100), 1))
+
 # --- 인컴 슬리브 (커버드콜 2종 평균, 한국 강세장)
 idx = monthly(".research-cache/index_etfs/px_069500.json")
 cc_ratio = {w: [] for w in (0, 20, 40, 60, 100)}
