@@ -99,9 +99,41 @@ w25 = vw.sweep(wrs, wrb, 0.6, 25 * 12, "prop", rates)
 w30 = vw.sweep(wrs, wrb, 0.6, 30 * 12, "prop", rates)
 withdrawal = [dict(ratePct=r, fail25=round(w25[r]["fail"]), fail30=round(w30[r]["fail"])) for r in rates]
 
+# --- 인컴 상품 12개월 분배율(분배금 합 ÷ 당시 실제 가격) 분포 — 커버드콜 1세대형 2종 / 고배당 3종
+from validate_income_then_growth import reconstruct  # noqa: E402
+
+def yield12(code, path):
+    adj = monthly(path)
+    divs = json.load(open(f".research-cache/div_{code}.json", encoding="utf-8"))
+    first = min(x["recordDate"][:4] + x["recordDate"][5:7] for x in divs)
+    sub = {m: adj[m] for m in sorted(adj) if m >= first}
+    ms, real, _y = reconstruct(sub, divs)
+    by = {}
+    for x in divs:
+        k = x["recordDate"][:4] + x["recordDate"][5:7]
+        by[k] = by.get(k, 0) + x["amount"]
+    out = {}
+    for i in range(12, len(ms)):
+        out[ms[i]] = sum(by.get(m, 0) for m in ms[i - 11:i + 1]) / real[ms[i]] * 100
+    return out
+
+def bucket(items):
+    ys = [yield12(c, p) for c, p in items]
+    common = sorted(set.intersection(*[set(y) for y in ys]))
+    arr = np.array([np.mean([y[m] for y in ys]) for m in common])
+    return dict(period=f"{common[0][:4]}-{common[0][4:]}~{common[-1][:4]}-{common[-1][4:]}", months=len(common),
+                min=round(float(arr.min()), 1), p25=round(float(np.percentile(arr, 25)), 1), median=round(float(np.median(arr)), 1),
+                p75=round(float(np.percentile(arr, 75)), 1), max=round(float(arr.max()), 1), last=round(float(arr[-1]), 1))
+
+income_yield = dict(
+    cc=bucket([("289480", ".research-cache/dividend_etfs/px_289480.json"), ("290080", ".research-cache/dividend_etfs/px_290080.json")]),
+    hd=bucket([("161510", ".research-cache/px_161510.json"), ("104530", ".research-cache/dividend_etfs/px_104530.json"), ("210780", ".research-cache/dividend_etfs/px_210780.json")]),
+)
+
 today = datetime.date.today().isoformat()
 meta = {
     "market": dict(title="코스피200 대 S&P500", asOf=asof, generated=today, script="scripts/research/build_research_facts.py", sample=f"{market['period']} {n}개월, 원화 환산·분배금 반영", caveat="2025년 한국 급등 포함, 표본 짧음"),
+    "income": dict(title="인컴 상품 12개월 분배율", asOf=asof, generated=today, script="scripts/research/build_research_facts.py", sample=f"커버드콜 {income_yield['cc']['period']} / 고배당 {income_yield['hd']['period']}, 실제 분배금 이력과 역산 실제 가격", caveat="1세대형 상품만, 한국 강세장, 신형 이력 없음, 분배율은 시장 변동성에 따라 크게 변함"),
     "sleeve": dict(title="인컴(커버드콜) 몫 비용", asOf=asof, generated=today, script="scripts/research/build_research_facts.py", sample="한국 커버드콜 2종 " + " / ".join(sleeve_periods), caveat="1세대형(전체 월물 커버) 기준 — 주간·데일리·OTM 최신 구조는 상승 참여가 훨씬 높음(docs 부록 4), 한국 강세장 4~5년, 방향만 참고"),
     "tolerance": dict(title="감내 낙폭 표", asOf="2023-06", generated=today, script="scripts/research/validate_lump_vs_split_tolerance.py", sample="미국 1926~2023, 주식+합성 10년 국채, 시작 후 5년", caveat="월 평균 가격이라 낙폭이 약간 얕음, 시작 시대에 따라 크게 다름"),
     "split": dict(title="일시금 대 분할", asOf="2023-06", generated=today, script="scripts/research/validate_lump_vs_split_tolerance.py", sample="미국 1926~2023 주식 100%, 시작 후 5년", caveat="겹치는 창"),
@@ -116,6 +148,7 @@ out += f"export const TOLERANCE_TABLE = {json.dumps(tol)} as const\n"
 out += f"export const SPLIT_TABLE = {json.dumps(split, ensure_ascii=False)} as const\n"
 out += f"export const CHECKING_TABLE = {json.dumps(checking, ensure_ascii=False)} as const\n"
 out += f"export const WITHDRAWAL_TABLE = {json.dumps(withdrawal)} as const\n"
+out += f"export const INCOME_YIELD = {json.dumps(income_yield)} as const\n"
 out += f"export const SLEEVE_COST_DATA = {json.dumps(sleeve)} as const\n"
 out += f"export const FACT_META: Record<string, FactMeta> = {json.dumps(meta, ensure_ascii=False, indent=2)}\n"
 open(OUT, "w", encoding="utf-8").write(out)

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { isFactStale, planWithdrawal, requiredMonthly, sleeveCost, stockCapFor, withdrawalFailure } from './planGuide'
+import { incomePlan, isFactStale, planWithdrawal, requiredMonthly, sleeveCost, stockCapFor, withdrawalFailure } from './planGuide'
 
 describe('감내 낙폭 → 주식 비중 상한', () => {
   it('연구 표의 구간과 같다 (−15→20, −20→40, −30→60, −40→80)', () => {
@@ -81,5 +81,26 @@ describe('자료 기준 표시', () => {
     expect(isFactStale('2026-10-03', today)).toBe(false)
     expect(isFactStale('2026-05-01', today)).toBe(true)
     expect(isFactStale('화면에서 계산', today)).toBe(false)
+  })
+})
+
+describe('인컴 계좌 점검', () => {
+  it('커버드콜 비중이 높을수록 분배율과 월 분배금이 커진다', () => {
+    const a = incomePlan({ principalWon: 100_000_000, ccSharePct: 0, targetNetMonthlyWon: 500_000 })!
+    const b = incomePlan({ principalWon: 100_000_000, ccSharePct: 100, targetNetMonthlyWon: 500_000 })!
+    expect(b.typical.grossMonthly).toBeGreaterThan(a.typical.grossMonthly)
+    expect(a.low.grossMonthly).toBeLessThan(a.typical.grossMonthly)
+    expect(a.typical.grossMonthly).toBeLessThan(a.high.grossMonthly)
+  })
+  it('세후는 세전의 84.6%이고 목표에 모자라면 모자라는 비율을 준다', () => {
+    const p = incomePlan({ principalWon: 50_000_000, ccSharePct: 50, targetNetMonthlyWon: 1_000_000 })!
+    expect(p.typical.netMonthly / p.typical.grossMonthly).toBeCloseTo(0.846, 3)
+    expect(p.shortfallLowPct).toBeGreaterThan(0)
+  })
+  it('목표를 채우는 원금과 연 분배금 경계를 알려 준다', () => {
+    const p = incomePlan({ principalWon: 400_000_000, ccSharePct: 100, targetNetMonthlyWon: 500_000 })!
+    expect(p.principalForTarget).toBeGreaterThan(0)
+    expect(p.over20m).toBe(true)
+    expect(incomePlan({ principalWon: 0, ccSharePct: 50, targetNetMonthlyWon: 500_000 })).toBeNull()
   })
 })

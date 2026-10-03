@@ -5,6 +5,7 @@ export const TOLERANCE_TABLE = [{"stock": 0, "bad10": 11.1, "worst": 23.0}, {"st
 export const SPLIT_TABLE = [{"months": 1, "label": "한 번에", "avgCostPct": 0.0, "firstYearLowBad10": 0.81, "firstYearLowWorst": 0.36}, {"months": 3, "label": "3개월 분할", "avgCostPct": 0.5, "firstYearLowBad10": 0.83, "firstYearLowWorst": 0.37}, {"months": 6, "label": "6개월 분할", "avgCostPct": 1.2, "firstYearLowBad10": 0.84, "firstYearLowWorst": 0.43}, {"months": 12, "label": "12개월 분할", "avgCostPct": 2.4, "firstYearLowBad10": 0.9, "firstYearLowWorst": 0.56}] as const
 export const CHECKING_TABLE = [{"label": "매일", "kospi": 173, "sp500": 70}, {"label": "주 1회", "kospi": 35, "sp500": 14}, {"label": "월 1회", "kospi": 8, "sp500": 3}, {"label": "분기 1회", "kospi": 3, "sp500": 1}] as const
 export const WITHDRAWAL_TABLE = [{"ratePct": 3.33, "fail25": 0, "fail30": 0}, {"ratePct": 4.0, "fail25": 0, "fail30": 5}, {"ratePct": 4.67, "fail25": 10, "fail30": 16}, {"ratePct": 5.33, "fail25": 20, "fail30": 31}, {"ratePct": 6.67, "fail25": 43, "fail30": 53}] as const
+export const INCOME_YIELD = {"cc": {"period": "2023-04~2026-10", "months": 43, "min": 7.4, "p25": 8.1, "median": 8.4, "p75": 8.6, "max": 9.9, "last": 8.2}, "hd": {"period": "2016-04~2026-10", "months": 127, "min": 2.6, "p25": 3.4, "median": 4.4, "p75": 5.3, "max": 7.3, "last": 4.4}} as const
 export const SLEEVE_COST_DATA = [{"weight": 0, "endVsIndexPct": 100}, {"weight": 20, "endVsIndexPct": 91}, {"weight": 40, "endVsIndexPct": 80}, {"weight": 60, "endVsIndexPct": 69}, {"weight": 100, "endVsIndexPct": 48}] as const
 export const FACT_META: Record<string, FactMeta> = {
   "market": {
@@ -14,6 +15,14 @@ export const FACT_META: Record<string, FactMeta> = {
     "script": "scripts/research/build_research_facts.py",
     "sample": "2003-12~2026-08 272개월, 원화 환산·분배금 반영",
     "caveat": "2025년 한국 급등 포함, 표본 짧음"
+  },
+  "income": {
+    "title": "인컴 상품 12개월 분배율",
+    "asOf": "2026-08",
+    "generated": "2026-10-03",
+    "script": "scripts/research/build_research_facts.py",
+    "sample": "커버드콜 2023-04~2026-10 / 고배당 2016-04~2026-10, 실제 분배금 이력과 역산 실제 가격",
+    "caveat": "1세대형 상품만, 한국 강세장, 신형 이력 없음, 분배율은 시장 변동성에 따라 크게 변함"
   },
   "sleeve": {
     "title": "인컴(커버드콜) 몫 비용",

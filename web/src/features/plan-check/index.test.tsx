@@ -36,6 +36,8 @@ describe('계획 점검', () => {
     expect(container.querySelectorAll('.plan-basis').length).toBe(5)
     fireEvent.click(screen.getByRole('tab', { name: '필요 월 적립' }))
     expect(container.querySelectorAll('.plan-basis').length).toBe(1)
+    fireEvent.click(screen.getByRole('tab', { name: '인컴 점검' }))
+    expect(container.querySelectorAll('.plan-basis').length).toBe(1)
     fireEvent.click(screen.getByRole('tab', { name: '은퇴 인출' }))
     expect(container.querySelectorAll('.plan-basis').length).toBe(1)
   })

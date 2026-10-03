@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react'
 import { formatKrwMan } from '../../lib/format'
 import { useProfileStore } from '../../stores/profileStore'
 import {
-  BAD10_DRAWDOWN, CHECK_FREQUENCY, SPLIT_OPTIONS, isFactStale, requiredMonthlyDetail, planWithdrawal, requiredMonthly, sleeveCost, stockCapFor,
+  BAD10_DRAWDOWN, CHECK_FREQUENCY, SPLIT_OPTIONS, isFactStale, requiredMonthlyDetail, incomePlan, planWithdrawal, requiredMonthly, sleeveCost, stockCapFor,
 } from '../../lib/planGuide'
 import { FACT_META, MARKET_PICK } from '../../data/researchFacts'
 import '../accumulate/accumulate.css'
@@ -27,10 +27,11 @@ function Basis({ id }: { id: string }) {
 
 const manRound = (won: number) => `${Math.round(won / 10_000).toLocaleString('ko-KR')}만원`
 
-type Tab = 'first' | 'save' | 'retire'
+type Tab = 'first' | 'save' | 'income' | 'retire'
 const TABS: Array<{ key: Tab; label: string }> = [
   { key: 'first', label: '처음 넣는 법' },
   { key: 'save', label: '필요 월 적립' },
+  { key: 'income', label: '인컴 점검' },
   { key: 'retire', label: '은퇴 인출' },
 ]
 
@@ -53,6 +54,7 @@ export default function PlanCheckPage() {
       </section>
       {tab === 'first' && <><ToleranceCard /><MarketPickCard /><SleeveCard /><SplitCard /><CheckingCard /></>}
       {tab === 'save' && <SavingCard />}
+      {tab === 'income' && <IncomeCard />}
       {tab === 'retire' && <RetireCard />}
       {isAdmin && <AdminLab />}
       <p className="acc-note plan-foot">미국 주식·채권 1926~2023년(달러, 물가 반영) 자료를 겹쳐 본 값이라 독립 표본은 적고, 한국 사정(세금·환율·수수료)은 일부만 반영했습니다. 한국 자료는 24년뿐이라 참고로만 봅니다. 일반 증권 앱(절세계좌 없음)에서는 코스피200 ETF 매매차익이 비과세라 세금 면에서 유리하고, 국내 상장 미국 지수 ETF는 차익에 15.4%가 붙어 연금저축·IRP·ISA 같은 절세계좌에서 하는 편이 맞습니다(가입 조건은 증권사 안내로 확인). 이 화면의 장기 숫자는 미국 자료 기준이라 코스피200에 그대로 맞지 않을 수 있고, 코스피200은 반도체 비중이 커서 분배율도 고배당 ETF보다 훨씬 낮습니다.</p>
@@ -214,6 +216,43 @@ function SavingCard() {
         </>
       )}
       {!r && <p className="acc-note">목표 금액을 적고 기간을 고르세요.</p>}
+    </section>
+  )
+}
+
+function IncomeCard() {
+  const [principalMan, setPrincipalMan] = useState('10000')
+  const [cc, setCc] = useState(50)
+  const [targetMan, setTargetMan] = useState('50')
+  const plan = useMemo(() => incomePlan({ principalWon: toWon(principalMan), ccSharePct: cc, targetNetMonthlyWon: toWon(targetMan) }), [principalMan, cc, targetMan])
+  return (
+    <section className="acc-card">
+      <h2>인컴 계좌, 매달 얼마나 들어올까</h2>
+      <p className="acc-note">커버드콜과 고배당을 섞어 매달 분배금을 받는 계좌의 <strong>낮은 해·보통·높은 해</strong> 범위를 보여 줍니다. 분배금은 이자처럼 일정하지 않고 시장 변동성에 따라 움직입니다.</p>
+      <div className="acc-row">
+        <label className="acc-field"><span>인컴 계좌 원금 (만원)</span><input type="number" inputMode="numeric" min="0" value={principalMan} onChange={(e) => setPrincipalMan(e.target.value)} /></label>
+        <label className="acc-field"><span>월 실수령 목표 (만원)</span><input type="number" inputMode="numeric" min="0" value={targetMan} onChange={(e) => setTargetMan(e.target.value)} /></label>
+      </div>
+      <label className="acc-field plan-slider">
+        <span>커버드콜 비중 <b>{cc}%</b> <small>(나머지는 고배당)</small></span>
+        <input type="range" min={0} max={100} step={10} value={cc} onChange={(e) => setCc(Number(e.target.value))} />
+      </label>
+      {plan && (
+        <>
+          <dl className="acc-tiles">
+            <div><dt>낮은 해 (세후, 월)</dt><dd>{manRound(plan.low.netMonthly)}</dd></div>
+            <div className="is-main"><dt>보통 해 (세후, 월)</dt><dd>{manRound(plan.typical.netMonthly)}</dd></div>
+            <div><dt>높은 해 (세후, 월)</dt><dd>{manRound(plan.high.netMonthly)}</dd></div>
+            <div><dt>보통 해 분배율(연)</dt><dd>{plan.typical.yieldPct.toFixed(1)}%</dd></div>
+          </dl>
+          {plan.shortfallLowPct > 0 && <p className="acc-warn">분배금이 낮은 해에는 목표 실수령에서 약 {Math.round(plan.shortfallLowPct)}% 모자랍니다. 생활비 3~6개월치 현금을 완충으로 두거나, 목표를 낮은 해 기준으로 잡으세요.</p>}
+          {plan.principalForTarget > 0 && <p className="acc-note">보통 해 기준으로 월 {manRound(toWon(targetMan))}를 세후로 받으려면 원금 약 <strong>{manRound(plan.principalForTarget)}</strong>이 필요합니다.</p>}
+          {plan.over20m && <p className="acc-warn">연 분배금이 2,000만원을 넘어 금융소득 종합과세 대상이 됩니다. 절세계좌 활용을 같이 보세요.</p>}
+          {!plan.over20m && plan.over10m && <p className="acc-warn">연 분배금이 1,000만원을 넘습니다. 지역가입자는 이 금액부터 건강보험료가 늘 수 있습니다.</p>}
+          <p className="acc-note">숫자는 한국의 <strong>1세대형</strong> 커버드콜·고배당 ETF의 실제 분배 이력입니다. 주간·데일리 같은 신형 구조는 아직 이력이 짧아 반영하지 못했습니다. 분배금을 받는 것과 별개로 <strong>상품 가격이 내려가면 원금이 줄어듭니다</strong>(커버드콜 한 종은 같은 기간 실제 가격이 11% 내렸습니다). 고배당은 매달이 아니라 분기·4월에 몰려 지급되는 경우가 많아 월 현금 흐름을 맞추려면 월배당 상품과 섞게 됩니다. 세후는 분배금 15.4% 과세만 반영했습니다.</p>
+          <Basis id="income" />
+        </>
+      )}
     </section>
   )
 }

@@ -6,7 +6,7 @@
 import { CHILD_LONGRUN_REAL_MONTHLY as R } from '../data/childLongRunData'
 import { SAVINGS_REAL_ANNUAL } from './childProjection'
 import { CHILD_LONGRUN_START } from '../data/childLongRunData'
-import { CHECKING_TABLE, SLEEVE_COST_DATA, SPLIT_TABLE, TOLERANCE_TABLE, WITHDRAWAL_TABLE } from '../data/researchFacts'
+import { CHECKING_TABLE, INCOME_YIELD, SLEEVE_COST_DATA, SPLIT_TABLE, TOLERANCE_TABLE, WITHDRAWAL_TABLE } from '../data/researchFacts'
 import { netCashPlan } from './retirementCash'
 
 /** 주식 비중별 "시작 후 5년 안 최대 낙폭" 나쁜 10% 값(%, 미국 주식+합성 10년 국채) */
@@ -208,4 +208,42 @@ export function requiredMonthlyDetail(targetWon: number, years: number, fromYear
   need.sort((a, b) => a - b)
   const rows = [['가장 유리한 시작', 0], ['상위 10%', 0.1], ['25%', 0.25], ['중앙값', 0.5], ['75%', 0.75], ['80%', 0.8], ['90%', 0.9], ['95%', 0.95], ['가장 불리한 시작', 1]] as const
   return { windows: need.length, rows: rows.map(([label, q]) => ({ label, monthly: quantile(need, q) })) }
+}
+
+export const DIVIDEND_TAX = 0.154
+
+export type IncomeInput = { principalWon: number; ccSharePct: number; targetNetMonthlyWon: number }
+type IncomeCase = { yieldPct: number; grossMonthly: number; netMonthly: number }
+export type IncomePlan = {
+  /** 낮은 해 / 보통 / 높은 해의 월 분배금(세전·세후) */
+  low: IncomeCase
+  typical: IncomeCase
+  high: IncomeCase
+  /** 낮은 해에 목표 실수령에 모자라는 비율(%) — 0이면 모자라지 않음 */
+  shortfallLowPct: number
+  /** 보통 해에 목표를 채우려면 필요한 원금 */
+  principalForTarget: number
+  annualGrossTypical: number
+  /** 연 분배금(보통)이 금융소득 경계(1,000만·2,000만원)를 넘는가 */
+  over10m: boolean
+  over20m: boolean
+}
+
+/** 커버드콜·고배당을 섞은 인컴 계좌의 월 분배금 범위 — 12개월 분배율의 최저·중앙·최고(1세대형 한국 상품 실제 이력)를 비중대로 섞는다 */
+export function incomePlan(i: IncomeInput): IncomePlan | null {
+  if (!(i.principalWon > 0)) return null
+  const w = Math.min(100, Math.max(0, i.ccSharePct)) / 100
+  const mix = (cc: number, hd: number) => w * cc + (1 - w) * hd
+  const build = (yieldPct: number): IncomeCase => {
+    const gross = (i.principalWon * yieldPct) / 100 / 12
+    return { yieldPct, grossMonthly: gross, netMonthly: gross * (1 - DIVIDEND_TAX) }
+  }
+  const low = build(mix(INCOME_YIELD.cc.min, INCOME_YIELD.hd.min))
+  const typical = build(mix(INCOME_YIELD.cc.median, INCOME_YIELD.hd.median))
+  const high = build(mix(INCOME_YIELD.cc.max, INCOME_YIELD.hd.max))
+  const target = Math.max(0, i.targetNetMonthlyWon)
+  const shortfallLowPct = target > 0 && low.netMonthly < target ? ((target - low.netMonthly) / target) * 100 : 0
+  const principalForTarget = target > 0 ? (target * 12) / (1 - DIVIDEND_TAX) / (typical.yieldPct / 100) : 0
+  const annualGrossTypical = typical.grossMonthly * 12
+  return { low, typical, high, shortfallLowPct, principalForTarget, annualGrossTypical, over10m: annualGrossTypical > 10_000_000, over20m: annualGrossTypical > 20_000_000 }
 }
