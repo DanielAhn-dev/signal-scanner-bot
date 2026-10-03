@@ -17,7 +17,7 @@ bench = {"kospi200": monthly(".research-cache/index_etfs/px_069500.json"), "nasd
 P = [("289480", "TIGER200CC", 1, "kospi200"), ("290080", "RISE200고배당CC ATM", 1, "kospi200"), ("441680", "TIGER나스닥100CC(합성)", 1, "nasdaq100"),
      ("475720", "RISE200위클리CC", 2, "kospi200"), ("498400", "KODEX200타겟위클리CC", 2, "kospi200"),
      ("482730", "TIGER S&P500타겟데일리CC", 3, "sp500"), ("486290", "TIGER나스닥100타겟데일리CC", 3, "nasdaq100"), ("494300", "KODEX나스닥100데일리CC OTM", 3, "nasdaq100"),
-     ("458750", "TIGER 배당다우존스타겟CC 1호", 0, None), ("458760", "TIGER 배당다우존스타겟CC 2호", 0, None), ("483290", "KODEX 배당다우존스타겟CC", 0, None)]
+     ("458750", "TIGER 배당다우존스타겟CC 1호", 0, None), ("458760", "TIGER 배당다우존스타겟CC 2호", 0, None), ("483290", "KODEX 배당다우존스타겟CC", 0, None), ("498410", "KODEX 금융고배당TOP10 타겟위클리CC", 2, None)]
 def load(code):
     for d in (".research-cache/dividend_etfs", ".research-cache"):
         p = f"{d}/px_{code}.json"

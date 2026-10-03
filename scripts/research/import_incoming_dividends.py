@@ -9,7 +9,7 @@ if hasattr(sys.stdout, 'reconfigure'):
     sys.stdout.reconfigure(encoding='utf-8')
 import xlrd
 INC = ".research-cache/incoming"
-KODEX = {"KODEX_200타겟위클리커버드콜": "498400", "KODEX_미국나스닥100데일리커버드콜OTM": "494300", "KODEX_미국배당다우존스타겟커버드콜": "483290"}
+KODEX = {"KODEX_200타겟위클리커버드콜": "498400", "KODEX_금융고배당TOP10타겟위클리커버드콜": "498410", "KODEX_미국나스닥100데일리커버드콜OTM": "494300", "KODEX_미국배당다우존스타겟커버드콜": "483290"}
 
 def norm(d):
     d = str(d).strip().replace("/", "-")
@@ -19,8 +19,10 @@ def norm(d):
 out = {}
 for f in sorted(glob.glob(f"{INC}/*")):
     base = os.path.basename(f)
-    if base.startswith("KODEX_금융고배당TOP10"):
-        print("건너뜀(보유종목 표, 분배금 아님):", base); continue
+    if base.startswith("KODEX_") and base.endswith(".xls"):
+        _t = str(xlrd.open_workbook(f).sheet_by_index(0).cell_value(0, 0))
+        if "투자종목정보" in _t or "PDF" in _t:
+            print("건너뜀(보유종목 표, 분배금 아님):", base); continue
     rows = []; code = None
     if base.startswith("KODEX_"):
         code = next((c for k, c in KODEX.items() if base.startswith(k)), None)
