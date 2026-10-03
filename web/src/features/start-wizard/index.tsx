@@ -166,7 +166,9 @@ export default function StartWizardPage() {
           <p>실제 돈은 들어가지 않습니다. {monthly >= 10_000 ? `매달 ${won(monthly)}씩 가상으로 적립하며 ` : '가상으로 넣어 둔 돈이 '}봇이 어떻게 움직이는지 먼저 지켜보세요. 믿을 만하다고 느껴지면 그때 실제 계좌로 넘어가면 됩니다.</p>
           <div className="start-actions">
             <button type="button" className="start-primary" onClick={() => navigate(targetMonthly > 0 ? '/goal-tracker' : '/dashboard')}>{targetMonthly > 0 ? '목표 확인하기' : '홈으로'} <ArrowRight size={15} /></button>
-            {targetMonthly > 0 && <button type="button" className="start-link" onClick={() => navigate('/dashboard')}>홈으로</button>}
+            {targetMonthly > 0
+              ? <button type="button" className="start-link" onClick={() => navigate('/dashboard')}>홈으로</button>
+              : <button type="button" className="start-link" onClick={() => navigate('/goal-tracker')}>목표도 정해 볼까요? (선택, 나중에 해도 됩니다)</button>}
           </div>
         </div>
       </main>
