@@ -19,6 +19,7 @@ type TradeRow = {
   fee_amount?: number | null
   tax_amount?: number | null
   pnl_amount?: number | null
+  buy_fee_amount?: number | null
   memo: string | null
   created_at: string
 }
@@ -967,7 +968,8 @@ export default function OperationsPage() {
           const isRecent = idx === 0
           const feeAmt = Number(row.fee_amount ?? 0)
           const taxAmt = Number(row.tax_amount ?? 0)
-          const totalCost = feeAmt + taxAmt
+          const buyFeeAmt = Number(row.buy_fee_amount ?? 0)
+          const totalCost = feeAmt + taxAmt + buyFeeAmt
           const pnlAmt = row.pnl_amount != null ? Number(row.pnl_amount) : null
           const isSell = row.side === 'SELL'
           return (
@@ -1000,15 +1002,16 @@ export default function OperationsPage() {
               <div className="caption muted" style={{ marginTop: 'var(--space-1)', display: 'flex', gap: 'var(--space-3)' }}>
                 <span>수수료 {formatKrw(feeAmt)}</span>
                 {taxAmt > 0 && <span>거래세 {formatKrw(taxAmt)}</span>}
+                {isSell && buyFeeAmt > 0 && <span>매수 수수료 {formatKrw(buyFeeAmt)}</span>}
                 <span>총비용 {formatKrw(totalCost)}</span>
               </div>
             )}
             {isSell && pnlAmt != null && (
               <div style={{ marginTop: 'var(--space-1)', fontSize: 'var(--font-size-xs)', fontWeight: 'var(--font-weight-semibold)', color: pnlAmt >= 0 ? 'var(--color-stock-up)' : 'var(--color-stock-down)' }}>
-                실현손익 {pnlAmt >= 0 ? '+' : ''}{formatKrw(pnlAmt)}
+                수수료 전 손익 {pnlAmt >= 0 ? '+' : ''}{formatKrw(pnlAmt)}
                 {totalCost > 0 && (
                   <span style={{ fontWeight: 'var(--font-weight-regular)', color: 'var(--color-text-tertiary)', marginLeft: 'var(--space-2)' }}>
-                    (비용 포함 순수익 {pnlAmt - totalCost >= 0 ? '+' : ''}{formatKrw(pnlAmt - totalCost)})
+                    (수수료·세금 반영 순손익 {pnlAmt - totalCost >= 0 ? '+' : ''}{formatKrw(pnlAmt - totalCost)})
                   </span>
                 )}
               </div>

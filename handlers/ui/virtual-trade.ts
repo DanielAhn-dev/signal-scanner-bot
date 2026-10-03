@@ -41,6 +41,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const user = await resolveUiUserContext(req)
     if (!user.authenticated) return res.status(401).json({ error: 'Authenticated session required' })
 
+    // 웹 전용 계정 ID 발급이 일시 실패하면 현금·락 없이 체결되지 않도록 막는다
+    if (!user.chatId) return res.status(503).json({ error: 'account not ready, retry' })
+
     const filterColumn = user.clientId ? 'client_id' : (user.chatId ? 'chat_id' : null)
     const filterValue = user.clientId || user.chatId || null
     if (!filterColumn || !filterValue) return res.status(400).json({ error: 'identity required (client_id or chat_id)' })
