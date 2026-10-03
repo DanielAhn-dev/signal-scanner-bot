@@ -5,18 +5,11 @@
  */
 import { CHILD_LONGRUN_REAL_MONTHLY as R } from '../data/childLongRunData'
 import { SAVINGS_REAL_ANNUAL } from './childProjection'
-import { SLEEVE_COST_DATA } from '../data/researchFacts'
+import { CHECKING_TABLE, SLEEVE_COST_DATA, SPLIT_TABLE, TOLERANCE_TABLE, WITHDRAWAL_TABLE } from '../data/researchFacts'
 import { netCashPlan } from './retirementCash'
 
 /** 주식 비중별 "시작 후 5년 안 최대 낙폭" 나쁜 10% 값(%, 미국 주식+합성 10년 국채) */
-export const BAD10_DRAWDOWN: ReadonlyArray<{ stock: number; bad10: number; worst: number }> = [
-  { stock: 0, bad10: 11.1, worst: 23.0 },
-  { stock: 20, bad10: 11.9, worst: 21.7 },
-  { stock: 40, bad10: 17.1, worst: 44.3 },
-  { stock: 60, bad10: 27.0, worst: 61.0 },
-  { stock: 80, bad10: 38.9, worst: 73.1 },
-  { stock: 100, bad10: 47.7, worst: 81.8 },
-]
+export const BAD10_DRAWDOWN: ReadonlyArray<{ stock: number; bad10: number; worst: number }> = TOLERANCE_TABLE
 
 export type StockCap = { cap: number; recommended: number; bad10AtCap: number }
 
@@ -30,20 +23,10 @@ export function stockCapFor(tolerancePct: number): StockCap {
 }
 
 /** 100% 주식, 시작 후 5년 — 일시금 대비 비교(1.0 = 넣은 돈) */
-export const SPLIT_OPTIONS: ReadonlyArray<{ months: number; label: string; avgCostPct: number; firstYearLowBad10: number; firstYearLowWorst: number }> = [
-  { months: 1, label: '한 번에', avgCostPct: 0, firstYearLowBad10: 0.81, firstYearLowWorst: 0.36 },
-  { months: 3, label: '3개월 분할', avgCostPct: 0.5, firstYearLowBad10: 0.83, firstYearLowWorst: 0.37 },
-  { months: 6, label: '6개월 분할', avgCostPct: 1.2, firstYearLowBad10: 0.84, firstYearLowWorst: 0.43 },
-  { months: 12, label: '12개월 분할', avgCostPct: 2.4, firstYearLowBad10: 0.90, firstYearLowWorst: 0.56 },
-]
+export const SPLIT_OPTIONS: ReadonlyArray<{ months: number; label: string; avgCostPct: number; firstYearLowBad10: number; firstYearLowWorst: number }> = SPLIT_TABLE
 
 /** 확인 주기별 "원금 아래 화면"을 본 횟수(3년 보유, 중앙값) — 코스피·S&P500 */
-export const CHECK_FREQUENCY: ReadonlyArray<{ label: string; kospi: number; sp500: number }> = [
-  { label: '매일', kospi: 173, sp500: 70 },
-  { label: '주 1회', kospi: 35, sp500: 14 },
-  { label: '월 1회', kospi: 8, sp500: 3 },
-  { label: '분기 1회', kospi: 3, sp500: 1 },
-]
+export const CHECK_FREQUENCY: ReadonlyArray<{ label: string; kospi: number; sp500: number }> = CHECKING_TABLE
 
 function quantile(sorted: number[], q: number): number {
   const i = (sorted.length - 1) * q
@@ -91,13 +74,7 @@ export function requiredMonthly(targetWon: number, years: number): RequiredSavin
 }
 
 /** 미국 60/40, 월 실질 인출(시작 자산 대비 연 %) → 시작월 중 바닥난 비율(%) — 25년·30년 */
-export const WITHDRAWAL_FAILURE: ReadonlyArray<{ ratePct: number; fail25: number; fail30: number }> = [
-  { ratePct: 3.33, fail25: 0, fail30: 0 },
-  { ratePct: 4.0, fail25: 0, fail30: 5 },
-  { ratePct: 4.67, fail25: 10, fail30: 16 },
-  { ratePct: 5.33, fail25: 20, fail30: 31 },
-  { ratePct: 6.67, fail25: 43, fail30: 53 },
-]
+export const WITHDRAWAL_FAILURE: ReadonlyArray<{ ratePct: number; fail25: number; fail30: number }> = WITHDRAWAL_TABLE
 
 /** 표 사이는 직선으로 잇는다. 표 밖은 끝 값(3.33% 아래는 0, 6.67% 위는 마지막 값 이상으로 본다) */
 export function withdrawalFailure(ratePct: number, years: 25 | 30): number {
