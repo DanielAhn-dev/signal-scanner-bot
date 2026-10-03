@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import { formatKrwMan } from '../../lib/format'
 import {
-  BAD10_DRAWDOWN, CHECK_FREQUENCY, SPLIT_OPTIONS, planWithdrawal, requiredMonthly, stockCapFor,
+  BAD10_DRAWDOWN, CHECK_FREQUENCY, SPLIT_OPTIONS, planWithdrawal, requiredMonthly, sleeveCost, stockCapFor,
 } from '../../lib/planGuide'
 import '../accumulate/accumulate.css'
 import './plan-check.css'
@@ -33,7 +33,7 @@ export default function PlanCheckPage() {
           ))}
         </div>
       </section>
-      {tab === 'first' && <><ToleranceCard /><SplitCard /><CheckingCard /></>}
+      {tab === 'first' && <><ToleranceCard /><SleeveCard /><SplitCard /><CheckingCard /></>}
       {tab === 'save' && <SavingCard />}
       {tab === 'retire' && <RetireCard />}
       <p className="acc-note plan-foot">미국 주식·채권 1926~2023년(달러, 물가 반영) 자료를 겹쳐 본 값이라 독립 표본은 적고, 한국 사정(세금·환율·수수료)은 일부만 반영했습니다. 한국 자료는 24년뿐이라 참고로만 봅니다.</p>
@@ -68,6 +68,26 @@ function ToleranceCard() {
         </tbody>
       </table>
       <p className="acc-note">보유를 20년으로 늘려도 이 표는 거의 달라지지 않지만, 시작 시대에 따라 크게 갈립니다(주식 100%의 나쁜 10%가 1946~65년 시작은 −21%, 대공황 시기 시작은 −82%). 이 표는 폭락 가까이에서 시작하는 경우까지 담은 보수적 범위입니다. 한국 자료로는 같은 비중에서 하락이 더 깊게 나옵니다(−20%를 버틴다면 20% 안팎). 한국에서 시작한다면 더 낮은 쪽을 고르세요. 안전자산 쪽도 금리가 급등한 시기에는 −23%까지 내려간 적이 있습니다.</p>
+    </section>
+  )
+}
+
+function SleeveCard() {
+  const [w, setW] = useState(30)
+  const cost = Math.round(sleeveCost(w))
+  return (
+    <section className="acc-card">
+      <h2>지루하면 오래 못 갑니다 — 재미 몫을 정해 두기</h2>
+      <p className="acc-note">매달 분배금이 들어오는 커버드콜·고배당은 꾸준히 보게 만드는 힘이 있습니다. 문제는 오르는 장에서 포기하는 몫이 크다는 점입니다. 그래서 <strong>금지가 아니라 한도</strong>를 정해 두는 걸 권합니다. 지수를 기본으로 두고 재미 몫만 따로 떼어 두세요.</p>
+      <label className="acc-field plan-slider">
+        <span>재미(인컴) 몫 <b>{w}%</b></span>
+        <input type="range" min={0} max={100} step={10} value={w} onChange={(e) => setW(Number(e.target.value))} />
+      </label>
+      <dl className="acc-tiles">
+        <div><dt>지수만 들었을 때 대비 끝 자산</dt><dd>약 {cost}%</dd></div>
+        <div className="is-main"><dt>한도 제안</dt><dd>{w <= 40 ? '이 정도면 무난' : '40% 이하를 권장'}</dd></div>
+      </dl>
+      <p className="acc-note">한국 커버드콜 2종의 2021~2026년 실제 분배금 기록으로 본 값입니다. 이 기간은 한국 지수가 3배 가까이 오른 강세장이라 비용이 크게 나왔고, 하락이 긴 시기에는 다를 수 있습니다. 하락 방어는 상품마다 달랐습니다(한국 커버드콜 최대낙폭 −19%~−31% 대 지수 −22%, 미국은 QYLD −23% 대 −24%로 거의 방어가 없었고 JEPI는 −13%로 절반 가까이 줄었습니다). "커버드콜이라 방어된다"는 상품별로 확인해야 합니다. 인컴 상품 평가금이 오르면 파는 규칙을 정한다면 "수익률 50%"보다 <strong>"인컴 몫이 정해 둔 한도를 넘으면 넘는 만큼 지수로"</strong>가 실제로 작동했습니다(수익률 기준은 분배금을 쓰고 나면 한 번도 걸리지 않았습니다).</p>
     </section>
   )
 }

@@ -5,3 +5,5 @@
 .plan-table tr.is-pick td { font-weight: 700; color: var(--color-brand); }
 .plan-foot { margin-top: 20px; font-size: 12px; }
 .plan a { color: var(--color-brand); }
+.plan .acc-seg { flex-direction: row; flex-wrap: wrap; }
+.plan .acc-seg button { flex: 1 1 auto; }

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { planWithdrawal, requiredMonthly, stockCapFor, withdrawalFailure } from './planGuide'
+import { planWithdrawal, requiredMonthly, sleeveCost, stockCapFor, withdrawalFailure } from './planGuide'
 
 describe('감내 낙폭 → 주식 비중 상한', () => {
   it('연구 표의 구간과 같다 (−15→20, −20→40, −30→60, −40→80)', () => {
@@ -62,5 +62,14 @@ describe('은퇴 인출', () => {
   })
   it('입력이 비면 null', () => {
     expect(planWithdrawal({ assetsWon: 0, targetNetMonthlyWon: 500_000, publicPensionMonthlyWon: 0, insurance: 'regional', propertyBaseWon: 0 })).toBeNull()
+  })
+})
+
+describe('인컴 슬리브 비용', () => {
+  it('비중이 커질수록 끝 자산 비율이 줄고 표 사이는 직선', () => {
+    expect(sleeveCost(0)).toBe(100)
+    expect(sleeveCost(30)).toBe(85)
+    expect(sleeveCost(100)).toBe(50)
+    expect(sleeveCost(80)).toBeLessThan(sleeveCost(40))
   })
 })

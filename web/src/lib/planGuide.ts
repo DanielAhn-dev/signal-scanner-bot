@@ -179,3 +179,28 @@ export function planWithdrawal(i: WithdrawalInput): WithdrawalPlan | null {
     unreachable: base.plan.netMonthly < i.targetNetMonthlyWon,
   }
 }
+
+/**
+ * 인컴(커버드콜) 슬리브 비중별 비용 — 지수만 들고 있을 때 대비 끝 자산 비율(%). 한국 커버드콜 2종(TIGER200CC·RISE200ATM)의
+ * 2021-12~2026-10 수정주가 평균, 월 리밸런싱. 표본이 4.5년이고 한국 강세장이라 방향만 참고한다(docs/research-income-then-growth-2026-10-03.md).
+ */
+export const SLEEVE_COST: ReadonlyArray<{ weight: number; endVsIndexPct: number }> = [
+  { weight: 0, endVsIndexPct: 100 },
+  { weight: 20, endVsIndexPct: 90 },
+  { weight: 40, endVsIndexPct: 80 },
+  { weight: 60, endVsIndexPct: 70 },
+  { weight: 100, endVsIndexPct: 50 },
+]
+
+export function sleeveCost(weightPct: number): number {
+  const t = SLEEVE_COST
+  const w = Math.min(100, Math.max(0, weightPct))
+  for (let i = 1; i < t.length; i += 1) {
+    if (w <= t[i].weight) {
+      const a = t[i - 1]
+      const b = t[i]
+      return a.endVsIndexPct + ((b.endVsIndexPct - a.endVsIndexPct) * (w - a.weight)) / (b.weight - a.weight)
+    }
+  }
+  return t[t.length - 1].endVsIndexPct
+}

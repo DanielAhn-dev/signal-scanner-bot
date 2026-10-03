@@ -52,7 +52,7 @@ def reconstruct(adj, divs):
 
 
 def sim(strategy, cc_tr, cc_y, idx_tr, sigma, start, H):
-    V, I, cash = 1.0, 0.0, 0.0
+    V, I, cash, cum = 1.0, 0.0, 0.0, 0.0
     if strategy == "IDX":
         V, I = 0.0, 1.0
     spend = sigma / 12
@@ -61,6 +61,7 @@ def sim(strategy, cc_tr, cc_y, idx_tr, sigma, start, H):
         V *= 1 + cc_tr[t] - cc_y[t]
         I *= 1 + idx_tr[t]
         cash += pay
+        cum += pay
         need = spend
         if strategy == "IDX":
             I -= need
@@ -72,8 +73,15 @@ def sim(strategy, cc_tr, cc_y, idx_tr, sigma, start, H):
             V -= need
             if V < 0:
                 return 0.0
-        if strategy in ("HYB", "HYB+"):
+        if strategy in ("HYB", "HYB+", "TR150", "CAP60", "CAP40"):
             I += cash; cash = 0.0
+        if strategy == "TR150" and V + cum > 1.5:
+            mv = V / 12; V -= mv; I += mv  # 분배금 포함 총수익이 150%를 넘으면 매달 1/12씩 지수로
+        if strategy in ("CAP60", "CAP40"):
+            cap = 0.6 if strategy == "CAP60" else 0.4
+            tot = V + I
+            if tot > 0 and V / tot > cap:
+                mv = V - cap * tot; V -= mv; I += mv  # 인컴 비중을 상한 이하로 유지
         if strategy == "HYB+" and V > 1.5:
             I += V - 1.5; V = 1.5  # 평가금이 처음의 150%를 넘는 부분은 팔아서 지수로
     return V + I + cash
@@ -102,10 +110,10 @@ def main():
                 if H > n:
                     continue
                 starts = range(0, n - H + 1)
-                res = {s: np.array([sim(s, cc_tr, cc_y, idx_tr, sigma, st, H) for st in starts]) for s in ("IDX", "CC", "HYB", "HYB+")}
+                res = {s: np.array([sim(s, cc_tr, cc_y, idx_tr, sigma, st, H) for st in starts]) for s in ("IDX", "CC", "HYB", "HYB+", "TR150", "CAP60", "CAP40")}
                 win = (res["HYB"] > res["IDX"]).mean() * 100
-                print(f"  보유 {H:>2d}개월(시작 {len(list(starts))}개): 끝 자산 중앙값 IDX {np.median(res['IDX']):.2f} / CC {np.median(res['CC']):.2f} / HYB {np.median(res['HYB']):.2f} / HYB+ {np.median(res['HYB+']):.2f}"
-                      f"  | 최저 IDX {res['IDX'].min():.2f} CC {res['CC'].min():.2f} HYB {res['HYB'].min():.2f} HYB+ {res['HYB+'].min():.2f} | HYB가 IDX 이긴 비율 {win:.0f}%")
+                print(f"  보유 {H:>2d}개월(시작 {len(list(starts))}개): 끝 자산 중앙값 IDX {np.median(res['IDX']):.2f} / CC {np.median(res['CC']):.2f} / HYB {np.median(res['HYB']):.2f} / HYB+ {np.median(res['HYB+']):.2f} / TR150 {np.median(res['TR150']):.2f} / CAP60 {np.median(res['CAP60']):.2f} / CAP40 {np.median(res['CAP40']):.2f}"
+                      f"  | 최저 IDX {res['IDX'].min():.2f} CC {res['CC'].min():.2f} HYB {res['HYB'].min():.2f} HYB+ {res['HYB+'].min():.2f} TR150 {res['TR150'].min():.2f} CAP60 {res['CAP60'].min():.2f} CAP40 {res['CAP40'].min():.2f} | HYB가 IDX 이긴 비율 {win:.0f}%")
 
 
 if __name__ == "__main__":

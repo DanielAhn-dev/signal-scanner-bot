@@ -5,7 +5,7 @@ import PlanCheckPage from './index'
 describe('계획 점검', () => {
   it('감내 낙폭을 −30%로 올리면 주식 비중 상한 60%, 처음엔 40%를 보여준다', () => {
     render(<PlanCheckPage />)
-    fireEvent.change(screen.getByRole('slider'), { target: { value: '30' } })
+    fireEvent.change(screen.getAllByRole('slider')[0], { target: { value: '30' } })
     expect(screen.getByText('60%', { selector: 'dd' })).toBeTruthy()
     expect(screen.getByText('40%', { selector: 'dd' })).toBeTruthy()
   })
