@@ -37,7 +37,7 @@ describe('계획 점검', () => {
     fireEvent.click(screen.getByRole('tab', { name: '필요 월 적립' }))
     expect(container.querySelectorAll('.plan-basis').length).toBe(1)
     fireEvent.click(screen.getByRole('tab', { name: '인컴 점검' }))
-    expect(container.querySelectorAll('.plan-basis').length).toBe(1)
+    expect(container.querySelectorAll('.plan-basis').length).toBe(2)
     fireEvent.click(screen.getByRole('tab', { name: '금리 환경' }))
     expect(container.querySelectorAll('.plan-basis').length).toBe(2)
     expect(screen.getByText('지금 미국 금리 환경')).toBeTruthy()

@@ -213,6 +213,15 @@ for _nm, _lo, _hi in (("낮음", -1, _gq[0]), ("중간", _gq[0], _gq[1]), ("높�
     _tiers.append(dict(label=_nm, minYield=round(float(_gsS[_idx].min()), 1), maxYield=round(float(_gsS[_idx].max()), 1), starts=len(_idx), fail40=_f(4.0), fail45=_f(4.5)))
 start_yield = dict(period=f"{_mS[0][:4]}-{_mS[0][4:]}~{_mS[-1][:4]}-{_mS[-1][4:]}", tiers=_tiers)
 
+# --- 하락장·박스권 합성 분배금/원금(validate_cc_downturn_payout.py)
+import validate_cc_downturn_payout as _dp  # noqa: E402
+_want = {"2008~2009-03 금융위기": "crisis2008", "2015~2016 박스권": "sideways", "2022 금리 급등": "rates2022"}
+_struct = {"월물 ATM 100%(1세대형)": "gen1", "주간 ATM 50%(2세대형)": "gen2", "데일리 ATM 30%(3세대형 근사)": "gen3"}
+downturn = {}
+for _r in _dp.regime_rows():
+    if _r["regime"] in _want and _r["structure"] in _struct:
+        downturn.setdefault(_struct[_r["structure"]], {})[_want[_r["regime"]]] = dict(index=_r["index"], nav=_r["nav"], yield_=_r["yield_"], total=_r["total"])
+
 # --- 장기금리 6개월 변화별 원화 환산 자산 성과(2010-10~, mixData + ^TNX)
 _ids = ["kospi200", "sp500", "usbond20", "kbond10", "gold"]
 _mC = [m for m in sorted(assets["kospi200"]) if m >= "201010" and all(m in assets[i] for i in _ids) and m in _tnx]
@@ -231,6 +240,7 @@ meta = {
     "rates": dict(title="금리 환경별 성과", asOf=rates_now["asOf"], generated=today, script="scripts/research/build_research_facts.py (validate_rates_regimes.py와 같은 정의)", sample=f"미국 {rates_regimes['period']}, 주식(S&P500 총수익)·10년 합성 국채·3개월물 현금성, 명목", caveat="겹치는 창, 금리 변화는 경기·물가와 겹쳐 있어 인과가 아님, 인상기 168개월·역전 75개월로 표본 짧음"),
     "ratesLong": dict(title="장기금리 방향별 자산 성과", asOf=rates_long["period"].split("~")[1], generated=today, script="scripts/research/build_research_facts.py (validate_rates_regimes.py C)", sample=f"{rates_long['period']} 원화 환산, ^TNX 6개월 변화 기준", caveat="상승 41개월·하락 20개월로 짧음, 금리 변화는 인과가 아님"),
     "startYield": dict(title="시작 금리별 인출 실패율", asOf="2023-06", generated=today, script="scripts/research/build_research_facts.py (validate_rates_rules.py와 같은 정의)", sample=f"미국 {start_yield['period']} 시작, 60/40 실질, 30년 비례 인출", caveat="중간 구간은 1966~82년 스태그플레이션 시작이 대부분이라 독립 표본이 2~3개, 겹치는 창"),
+    "downturn": dict(title="신형 구조 하락장·박스권 분배금과 원금(합성)", asOf="2026-10", generated=today, script="scripts/research/validate_cc_downturn_payout.py", sample="S&P500 가격지수 1990~2026, 실제 VIX×0.9로 가격 매긴 옵션 프리미엄을 전부 분배한다고 가정", caveat="합성 모델(분배율이 실제보다 높음, 평활화·스큐 미반영), 한국 지수 옵션 아님, 방향만 참고"),
     "sleeve": dict(title="인컴(커버드콜) 몫 비용", asOf=asof, generated=today, script="scripts/research/build_research_facts.py", sample="한국 커버드콜 2종 " + " / ".join(sleeve_periods), caveat="1세대형(전체 월물 커버) 기준 — 주간·데일리·OTM 최신 구조는 상승 참여가 훨씬 높음(docs 부록 4), 한국 강세장 4~5년, 방향만 참고"),
     "tolerance": dict(title="감내 낙폭 표", asOf="2023-06", generated=today, script="scripts/research/validate_lump_vs_split_tolerance.py", sample="미국 1926~2023, 주식+합성 10년 국채, 시작 후 5년", caveat="월 평균 가격이라 낙폭이 약간 얕음, 시작 시대에 따라 크게 다름"),
     "split": dict(title="일시금 대 분할", asOf="2023-06", generated=today, script="scripts/research/validate_lump_vs_split_tolerance.py", sample="미국 1926~2023 주식 100%, 시작 후 5년", caveat="겹치는 창"),
@@ -249,6 +259,7 @@ out += f"export const INCOME_YIELD = {json.dumps(income_yield)} as const\n"
 out += f"export const RATES_REGIMES = {json.dumps(rates_regimes)} as const\n"
 out += f"export const RATES_LONG = {json.dumps(rates_long)} as const\n"
 out += f"export const START_YIELD = {json.dumps(start_yield)} as const\n"
+out += f"export const DOWNTURN = {json.dumps(downturn)} as const\n"
 out += f"export const RATES_NOW = {json.dumps(rates_now)} as const\n"
 out += f"export const SLEEVE_COST_DATA = {json.dumps(sleeve)} as const\n"
 out += f"export const FACT_META: Record<string, FactMeta> = {json.dumps(meta, ensure_ascii=False, indent=2)}\n"

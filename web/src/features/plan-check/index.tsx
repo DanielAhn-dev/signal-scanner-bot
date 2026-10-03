@@ -5,7 +5,7 @@ import More from '../../components/ui/More'
 import {
   BAD10_DRAWDOWN, CHECK_FREQUENCY, SPLIT_OPTIONS, isFactStale, requiredMonthlyDetail, incomePlan, ratesLabels, planWithdrawal, requiredMonthly, sleeveCost, stockCapFor,
 } from '../../lib/planGuide'
-import { FACT_META, MARKET_PICK, RATES_LONG, RATES_NOW, RATES_REGIMES, START_YIELD } from '../../data/researchFacts'
+import { FACT_META, MARKET_PICK, RATES_LONG, RATES_NOW, RATES_REGIMES, START_YIELD, DOWNTURN } from '../../data/researchFacts'
 import '../accumulate/accumulate.css'
 import './plan-check.css'
 
@@ -331,6 +331,20 @@ function IncomeCard() {
           {!plan.over20m && plan.over10m && <p className="acc-warn">연 분배금이 1,000만원을 넘습니다. 지역가입자는 이 금액부터 건강보험료가 늘 수 있습니다.</p>}
           <More>
             <p className="acc-note">숫자는 한국 상장 커버드콜·고배당 ETF의 실제 분배 이력입니다. <strong>신형(주간·데일리) 유형은 이력이 2년 안팎이라</strong> 분배율의 범위가 실제 변동보다 좁게 나옵니다. 월 분배금의 흔들림은 유형별로 달랐습니다(월물형 약 0.4, 한국 주간형 약 0.3, 미국 데일리형 약 0.07의 변동계수). 분배금을 받는 것과 별개로 <strong>상품 가격이 내려가면 원금이 줄어듭니다</strong>(커버드콜 한 종은 같은 기간 실제 가격이 11% 내렸습니다). 고배당은 매달이 아니라 분기·4월에 몰려 지급되는 경우가 많아 월 현금 흐름을 맞추려면 월배당 상품과 섞게 됩니다. 세후는 분배금 15.4% 과세만 반영했습니다.</p>
+          </More>
+          <More>
+            <p className="acc-note"><strong>하락장·박스권에서는?</strong> 신형 구조는 상장이 얼마 안 돼 하락장 기록이 없어서, 옵션 가격을 모델로 계산한 <strong>가정 결과</strong>입니다(선택한 유형과 비슷한 구조, 옵션 프리미엄을 전부 분배한다고 가정).</p>
+            <table className="acc-table plan-table">
+              <thead><tr><th>구간(지수)</th><th>원금(기준가)</th><th>연 분배율</th><th>분배 포함 합계</th></tr></thead>
+              <tbody>
+                {([['crisis2008', '2008 금융위기'], ['sideways', '2015~16 박스권'], ['rates2022', '2022 금리 급등']] as const).map(([k, label]) => {
+                  const d = DOWNTURN[ccType][k]
+                  return <tr key={k}><td>{label} ({d.index > 0 ? '+' : ''}{d.index}%)</td><td>{d.nav > 0 ? '+' : ''}{d.nav}%</td><td>{d.yield_.toFixed(0)}%</td><td>{d.total > 0 ? '+' : ''}{d.total}%</td></tr>
+                })}
+              </tbody>
+            </table>
+            <p className="acc-note">읽는 법: 하락장에서는 변동성이 커서 옵션 프리미엄이 커지므로 <strong>분배금은 줄지 않고 오히려 늘었습니다.</strong> 분배금이 줄어드는 때는 오히려 조용한 박스권입니다. 다만 <strong>원금(기준가)은 지수보다 더 크게 내려갔습니다.</strong> 분배금을 받아서 쓰기만 하면 원금이 지수보다 빨리 줄고, 분배금을 다시 투자하면 합계로는 지수보다 덜 잃었습니다. 실제 상품의 분배율(연 7~20%)은 이 모델(20~50%)보다 낮고, 한국 지수 옵션이 아니라 미국 S&P500 기준입니다.</p>
+            <Basis id="downturn" />
           </More>
           <Basis id="income" />
         </>

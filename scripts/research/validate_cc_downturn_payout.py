@@ -50,15 +50,32 @@ def period_change(arr, lo, hi):
     idx = [i for i, m in enumerate(months) if lo <= m <= hi]
     a = arr[idx[0] - 1] if idx[0] > 0 else arr[idx[0]]
     return (arr[idx[-1]] / a - 1) * 100
-for rn, lo, hi in REG:
-    idx = [i for i, m in enumerate(months) if lo <= m <= hi]
-    yrs = len(idx) / 252
-    print(f"\n### {rn} ({yrs:.1f}년) — 지수(가격) {period_change(px, lo, hi):+.0f}%")
-    print(f"{'구성':30s} {'기준가 변화':>10s} {'연 분배율 평균':>12s} {'월 분배율 최저(연환산)':>20s} {'분배율 평균의 50% 미만 달':>20s} {'기준가+누적분배 합':>16s}")
-    for nm, (nav, pay) in res.items():
-        my = monthly_yield(nav, pay); ks = [m for m in my if lo <= m <= hi]
-        ys = np.array([my[m] for m in ks])
-        navc = period_change(nav, lo, hi)
-        base = nav[[i for i, m in enumerate(months) if lo <= m <= hi][0] - 1] if idx[0] > 0 else 1.0
-        totp = pay[idx].sum() / base * 100
-        print(f"{nm:30s} {navc:+9.0f}% {ys.mean():11.1f}% {ys.min():19.1f}% {(ys < 0.5 * ys.mean()).mean() * 100:18.0f}% {navc + totp:+14.0f}%")
+def regime_rows(res_=None):
+    """구간·구성별 결과(기준가 변화, 연 분배율 평균, 분배 포함 합계, 지수 변화)를 딕셔너리로 돌려준다 — 화면용 데이터 생성에서 사용"""
+    res_ = res_ or res
+    out = []
+    for rn, lo, hi in REG:
+        idx = [i for i, m in enumerate(months) if lo <= m <= hi]
+        for nm, (nav, pay) in res_.items():
+            my = monthly_yield(nav, pay); ks = [m for m in my if lo <= m <= hi]
+            ys = np.array([my[m] for m in ks])
+            base = nav[idx[0] - 1] if idx[0] > 0 else 1.0
+            navc = period_change(nav, lo, hi)
+            out.append(dict(regime=rn, structure=nm, index=round(period_change(px, lo, hi)), nav=round(navc), yield_=round(float(ys.mean()), 1),
+                            minYield=round(float(ys.min()), 1), total=round(navc + pay[idx].sum() / base * 100)))
+    return out
+
+
+if __name__ == "__main__":
+    for rn, lo, hi in REG:
+        idx = [i for i, m in enumerate(months) if lo <= m <= hi]
+        yrs = len(idx) / 252
+        print(f"\n### {rn} ({yrs:.1f}년) — 지수(가격) {period_change(px, lo, hi):+.0f}%")
+        print(f"{'구성':30s} {'기준가 변화':>10s} {'연 분배율 평균':>12s} {'월 분배율 최저(연환산)':>20s} {'분배율 평균의 50% 미만 달':>20s} {'기준가+누적분배 합':>16s}")
+        for nm, (nav, pay) in res.items():
+            my = monthly_yield(nav, pay); ks = [m for m in my if lo <= m <= hi]
+            ys = np.array([my[m] for m in ks])
+            navc = period_change(nav, lo, hi)
+            base = nav[[i for i, m in enumerate(months) if lo <= m <= hi][0] - 1] if idx[0] > 0 else 1.0
+            totp = pay[idx].sum() / base * 100
+            print(f"{nm:30s} {navc:+9.0f}% {ys.mean():11.1f}% {ys.min():19.1f}% {(ys < 0.5 * ys.mean()).mean() * 100:18.0f}% {navc + totp:+14.0f}%")

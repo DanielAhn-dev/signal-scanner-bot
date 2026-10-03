@@ -9,6 +9,7 @@ export const INCOME_YIELD = {"cc": {"period": "2023-04~2026-10", "months": 43, "
 export const RATES_REGIMES = {"period": "1962-01~2023-06", "hiking": {"months": 168, "stock": 5.4, "bond": 3.0, "cash": 7.1}, "flat": {"months": 401, "stock": 12.2, "bond": 4.3, "cash": 3.4}, "cutting": {"months": 157, "stock": 11.0, "bond": 14.0, "cash": 4.6}, "inverted": {"months": 75, "stock": 2.0, "bond": 9.2, "cash": 8.4}, "normal": {"months": 467, "stock": 10.8, "bond": 5.7, "cash": 3.7}} as const
 export const RATES_LONG = {"period": "2011-10~2026-08", "rising": {"months": 41, "kospi200": -6.5, "sp500": 8.1, "usbond20": -20.5, "kbond10": -4.5, "gold": -9.0}, "flat": {"months": 111, "kospi200": 20.2, "sp500": 19.1, "usbond20": 5.3, "kbond10": 3.5, "gold": 4.9}, "falling": {"months": 20, "kospi200": 11.2, "sp500": 17.0, "usbond20": 38.3, "kbond10": 9.7, "gold": 39.8}} as const
 export const START_YIELD = {"period": "1961-02~2023-06", "tiers": [{"label": "\ub0ae\uc74c", "minYield": 3.7, "maxYield": 4.2, "starts": 44, "fail40": 16, "fail45": 77}, {"label": "\uc911\uac04", "minYield": 4.2, "maxYield": 7.0, "starts": 109, "fail40": 34, "fail45": 68}, {"label": "\ub192\uc74c", "minYield": 7.0, "maxYield": 15.3, "starts": 237, "fail40": 0, "fail45": 0}]} as const
+export const DOWNTURN = {"gen1": {"crisis2008": {"index": -46, "nav": -55, "yield_": 41.6, "total": -19}, "sideways": {"index": 9, "nav": -23, "yield_": 20.0, "total": 11}, "rates2022": {"index": -19, "nav": -38, "yield_": 30.7, "total": -14}}, "gen2": {"crisis2008": {"index": -46, "nav": -62, "yield_": 41.8, "total": -27}, "sideways": {"index": 9, "nav": -25, "yield_": 19.6, "total": 9}, "rates2022": {"index": -19, "nav": -37, "yield_": 30.8, "total": -13}}, "gen3": {"crisis2008": {"index": -46, "nav": -74, "yield_": 53.4, "total": -36}, "sideways": {"index": 9, "nav": -34, "yield_": 25.2, "total": 6}, "rates2022": {"index": -19, "nav": -47, "yield_": 40.2, "total": -17}}} as const
 export const RATES_NOW = {"asOf": "2026-10", "short": 3.99, "long": 5.28, "spread": 1.28, "shortChg12": 0.28, "longChg12": 1.18} as const
 export const SLEEVE_COST_DATA = [{"weight": 0, "endVsIndexPct": 100}, {"weight": 20, "endVsIndexPct": 91}, {"weight": 40, "endVsIndexPct": 80}, {"weight": 60, "endVsIndexPct": 69}, {"weight": 100, "endVsIndexPct": 48}] as const
 export const FACT_META: Record<string, FactMeta> = {
@@ -51,6 +52,14 @@ export const FACT_META: Record<string, FactMeta> = {
     "script": "scripts/research/build_research_facts.py (validate_rates_rules.py와 같은 정의)",
     "sample": "미국 1961-02~2023-06 시작, 60/40 실질, 30년 비례 인출",
     "caveat": "중간 구간은 1966~82년 스태그플레이션 시작이 대부분이라 독립 표본이 2~3개, 겹치는 창"
+  },
+  "downturn": {
+    "title": "신형 구조 하락장·박스권 분배금과 원금(합성)",
+    "asOf": "2026-10",
+    "generated": "2026-10-03",
+    "script": "scripts/research/validate_cc_downturn_payout.py",
+    "sample": "S&P500 가격지수 1990~2026, 실제 VIX×0.9로 가격 매긴 옵션 프리미엄을 전부 분배한다고 가정",
+    "caveat": "합성 모델(분배율이 실제보다 높음, 평활화·스큐 미반영), 한국 지수 옵션 아님, 방향만 참고"
   },
   "sleeve": {
     "title": "인컴(커버드콜) 몫 비용",
