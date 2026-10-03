@@ -56,6 +56,10 @@ describe('은퇴 인출', () => {
     expect(p.netMonthly).toBeGreaterThanOrEqual(1_000_000)
     expect(p.withdrawRange[1]).toBeGreaterThanOrEqual(p.withdrawRange[0])
   })
+  it('목표가 너무 크면 unreachable', () => {
+    const p = planWithdrawal({ assetsWon: 10_000_000, targetNetMonthlyWon: 3_000_000, publicPensionMonthlyWon: 0, insurance: 'regional', propertyBaseWon: 0 })!
+    expect(p.unreachable).toBe(true)
+  })
   it('입력이 비면 null', () => {
     expect(planWithdrawal({ assetsWon: 0, targetNetMonthlyWon: 500_000, publicPensionMonthlyWon: 0, insurance: 'regional', propertyBaseWon: 0 })).toBeNull()
   })

@@ -178,6 +178,7 @@ function RetireCard() {
         <label className="acc-field"><span>집·재산세 과세표준 (만원, 모르면 비움)</span><input type="number" inputMode="numeric" min="0" value={propertyMan} placeholder="0" onChange={(e) => setPropertyMan(e.target.value)} /></label>
       </div>
       <p className="acc-note">재산세 과세표준은 재산세 고지서에 있고, 자가 주택이면 대략 공시가격의 40~60%입니다. 전월세는 (보증금 + 월세×40)의 30% 정도로 반영됩니다.</p>
+      {plan?.unreachable && <p className="acc-warn">이 자산으로는 연 20%를 꺼내도 월 실수령 목표에 닿지 않습니다. 목표를 낮추거나 자산·연금을 다시 확인해 주세요. 아래 숫자는 연 20%까지 꺼냈을 때입니다.</p>}
       {plan && (
         <>
           <dl className="acc-tiles">

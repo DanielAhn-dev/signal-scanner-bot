@@ -140,6 +140,8 @@ export type WithdrawalPlan = {
   financialCliff: boolean
   /** 재산 과표 ±15% 가정 시 필요 인출액 범위 */
   withdrawRange: [number, number]
+  /** 연 20% 인출로도 목표 실수령에 못 닿아 계산을 멈춘 경우 */
+  unreachable: boolean
 }
 
 function solveWithdraw(i: WithdrawalInput, propertyBase: number): { w: number; plan: ReturnType<typeof netCashPlan> } {
@@ -174,5 +176,6 @@ export function planWithdrawal(i: WithdrawalInput): WithdrawalPlan | null {
     dependentReason: base.plan.dependent?.reason ?? '',
     financialCliff: i.insurance === 'regional' && dist > 10_000_000 * 0.9,
     withdrawRange: [Math.min(lo, hi), Math.max(lo, hi)],
+    unreachable: base.plan.netMonthly < i.targetNetMonthlyWon,
   }
 }
