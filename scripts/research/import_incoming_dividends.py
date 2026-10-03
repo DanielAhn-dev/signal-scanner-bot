@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-.research-cache/incoming/ 의 운용사 분배금 엑셀(KODEX .xls, TIGER 'PDF_DATA*.xls'(실제로는 HTML), RISE .xlsx)을
+.research-cache/incoming/ 의 운용사 분배금 엑셀(KODEX .xls, TIGER .xls(실제로는 HTML, 파일명 무관), RISE .xlsx)을
 .research-cache/div_<코드>.json({"recordDate": "YYYY-MM-DD", "amount": 원/주, "rate": 분배율% 또는 null})으로 변환한다.
 기간은 파일에 들어 있는 만큼(보통 상장 후 2~3년)이다. 보유종목 표(KODEX 금융고배당TOP10 PDF)는 분배금이 아니라 건너뛴다.
 """
@@ -39,7 +39,7 @@ for f in sorted(glob.glob(f"{INC}/*")):
             if vals and re.fullmatch(r"\d{4}-\d{2}-\d{2}", vals[0]):
                 rows.append((vals[0], float(vals[2]), float(vals[4])))
         code = "475720"  # RISE 200위클리커버드콜 (파일명 44G3은 운용사 내부 코드)
-    elif base.startswith("PDF_DATA"):
+    elif open(f, "rb").read(200).lstrip().lower().startswith((b"<html", b"<!doc")):  # 미래에셋 TIGER: 확장자는 .xls지만 HTML 표(파일명이 바뀌어도 내용으로 구분)
         t = open(f, encoding="utf-8", errors="replace").read()
         for rw in re.findall(r"<tr>(.*?)</tr>", t, re.S):
             c = [html.unescape(re.sub(r"<[^>]+>", "", x)).strip() for x in re.findall(r"<t[dh][^>]*>(.*?)</t[dh]>", rw, re.S)]
