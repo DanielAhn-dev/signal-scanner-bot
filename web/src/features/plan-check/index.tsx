@@ -33,7 +33,7 @@ export default function PlanCheckPage() {
           ))}
         </div>
       </section>
-      {tab === 'first' && <><ToleranceCard /><SleeveCard /><SplitCard /><CheckingCard /></>}
+      {tab === 'first' && <><ToleranceCard /><MarketPickCard /><SleeveCard /><SplitCard /><CheckingCard /></>}
       {tab === 'save' && <SavingCard />}
       {tab === 'retire' && <RetireCard />}
       <p className="acc-note plan-foot">미국 주식·채권 1926~2023년(달러, 물가 반영) 자료를 겹쳐 본 값이라 독립 표본은 적고, 한국 사정(세금·환율·수수료)은 일부만 반영했습니다. 한국 자료는 24년뿐이라 참고로만 봅니다. 일반 증권 앱(절세계좌 없음)에서는 코스피200 ETF 매매차익이 비과세라 세금 면에서 유리하고, 국내 상장 미국 지수 ETF는 차익에 15.4%가 붙어 연금저축·IRP·ISA 같은 절세계좌에서 하는 편이 맞습니다(가입 조건은 증권사 안내로 확인). 이 화면의 장기 숫자는 미국 자료 기준이라 코스피200에 그대로 맞지 않을 수 있고, 코스피200은 반도체 비중이 커서 분배율도 고배당 ETF보다 훨씬 낮습니다.</p>
@@ -68,6 +68,25 @@ function ToleranceCard() {
         </tbody>
       </table>
       <p className="acc-note">보유를 20년으로 늘려도 이 표는 거의 달라지지 않지만, 시작 시대에 따라 크게 갈립니다(주식 100%의 나쁜 10%가 1946~65년 시작은 −21%, 대공황 시기 시작은 −82%). 이 표는 폭락 가까이에서 시작하는 경우까지 담은 보수적 범위입니다. 한국 자료로는 같은 비중에서 하락이 더 깊게 나옵니다(−20%를 버틴다면 20% 안팎). 한국에서 시작한다면 더 낮은 쪽을 고르세요. 안전자산 쪽도 금리가 급등한 시기에는 −23%까지 내려간 적이 있습니다.</p>
+    </section>
+  )
+}
+
+function MarketPickCard() {
+  return (
+    <section className="acc-card">
+      <h2>코스피냐 미국이냐 — 고르기 어렵다면</h2>
+      <p className="acc-note">2003년 말~2026년 8월, 원화로 환산한 실제 가격(분배금 반영)으로 비교했습니다. 이 기간은 짧고 2025년 한국 급등이 포함돼 있습니다.</p>
+      <table className="acc-table plan-table">
+        <thead><tr><th>비교</th><th>코스피200</th><th>S&P500</th><th>반반</th></tr></thead>
+        <tbody>
+          <tr><td>전체 연 수익률</td><td>12.7%</td><td>11.6%</td><td>—</td></tr>
+          <tr><td>최대 낙폭</td><td>−46%</td><td>−22%</td><td>−31%</td></tr>
+          <tr><td>10년 보유 중앙값</td><td>1.68배</td><td>3.54배</td><td>2.50배</td></tr>
+          <tr><td>10년 보유 최저</td><td>1.25배</td><td>1.79배</td><td>1.97배</td></tr>
+        </tbody>
+      </table>
+      <p className="acc-note">전체 수익률은 비슷해서 "길게 보면 다르지 않다"는 느낌이 맞습니다. 다만 코스피는 몇 해에 몰아서 오르고 그 구간을 지나지 못한 시작에는 불리했습니다(10년 보유로 보면 미국이 86% 이겼습니다). 둘은 따로 움직여서(월 상관 0.36) <strong>반반이 가장 나쁜 경우가 덜 나빴습니다.</strong> 고르기 어렵다면 반반이 후회를 줄입니다. 일반 증권 앱에서는 코스피200, 절세계좌에서는 미국 지수로 나누는 방법도 있습니다. 환율 영향이 미국 쪽에 유리했던 구간이 포함돼 있습니다.</p>
     </section>
   )
 }
