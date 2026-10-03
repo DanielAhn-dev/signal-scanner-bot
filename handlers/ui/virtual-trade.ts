@@ -84,6 +84,23 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       netAmount = Math.max(0, gross - feeAmount - taxAmount)
     }
 
+    // 같은 주문이 5초 안에 다시 들어오면(더블클릭·재시도) 중복 체결로 보고 막는다
+    const dupSince = new Date(Date.now() - 5000).toISOString()
+    const { data: dupRows, error: dupErr } = await supabase
+      .from('virtual_trades')
+      .select('id')
+      .eq(filterColumn, filterValue)
+      .eq('code', String(code).trim().toUpperCase())
+      .eq('side', sideUpper)
+      .eq('quantity', qty)
+      .eq('price', pr)
+      .gte('traded_at', dupSince)
+      .limit(1)
+    if (dupErr) return res.status(500).json({ error: dupErr.message })
+    if (Array.isArray(dupRows) && dupRows.length > 0) {
+      return res.status(409).json({ error: 'duplicate order within 5 seconds' })
+    }
+
     const { data: trade, error: tradeErr } = await supabase.rpc('execute_virtual_trade', {
       p_client_id: user.clientId,
       p_chat_id: user.chatId,
