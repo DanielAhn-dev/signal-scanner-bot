@@ -59,6 +59,9 @@ export type RequiredSaving = {
   /** 10번 중 8번 닿으려면 / 9번 닿으려면 */
   eightOfTen: number
   nineOfTen: number
+  /** 시작 시대(20년 단위 묶음)별 중앙값의 최소·최대 — 같은 '보통'도 시대에 따라 이만큼 갈린다 */
+  eraMedianMin: number
+  eraMedianMax: number
   windows: number
 }
 
@@ -73,11 +76,17 @@ export function requiredMonthly(targetWon: number, years: number): RequiredSavin
     for (let t = 0; t < months; t += 1) f = (f + 1) * (1 + R[s + t])
     need.push(targetWon / f)
   }
+  const eraMeds: number[] = []
+  const eraSize = 240
+  for (let a = 0; a < need.length; a += eraSize) {
+    const part = need.slice(a, a + eraSize)
+    if (part.length >= 120) eraMeds.push(quantile([...part].sort((x, y) => x - y), 0.5))
+  }
   need.sort((a, b) => a - b)
   const m = (1 + SAVINGS_REAL_ANNUAL) ** (1 / 12) - 1
   let sf = 0
   for (let t = 0; t < months; t += 1) sf = (sf + 1) * (1 + m)
-  return { savings: targetWon / sf, median: quantile(need, 0.5), eightOfTen: quantile(need, 0.8), nineOfTen: quantile(need, 0.9), windows: need.length }
+  return { savings: targetWon / sf, median: quantile(need, 0.5), eightOfTen: quantile(need, 0.8), nineOfTen: quantile(need, 0.9), eraMedianMin: Math.min(...eraMeds), eraMedianMax: Math.max(...eraMeds), windows: need.length }
 }
 
 /** 미국 60/40, 월 실질 인출(시작 자산 대비 연 %) → 시작월 중 바닥난 비율(%) — 25년·30년 */

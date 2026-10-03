@@ -140,6 +140,7 @@ function SavingCard() {
             <div><dt>열 번 중 9번 닿으려면</dt><dd>{manRound(r.nineOfTen)}</dd></div>
           </dl>
           {r.nineOfTen > r.savings && <p className="acc-warn">이 조건에서는 투자로 "거의 확실하게" 닿으려면 적금보다 더 많이 넣어야 합니다. 기간이 짧을수록 투자는 보험이 아니라 도박에 가까워집니다.</p>}
+          <p className="acc-note">같은 "보통"도 <strong>어느 시대에 시작했느냐</strong>에 따라 크게 갈립니다. 20년 단위로 시작 시기를 묶어 보면 보통 필요액이 {manRound(r.eraMedianMin)}에서 {manRound(r.eraMedianMax)}까지 벌어집니다(대공황 직후 시작은 적게, 1946~65년 시작은 1966~82년의 긴 부진 때문에 많이). 지금이 어느 쪽인지는 아무도 모르니 "보통"보다 8/10·9/10 칸을 기준으로 잡는 편이 안전합니다.</p>
           <p className="acc-note">"투자하면 필요한 월 금액이 반으로 준다"는 말은 시작 시점 운이 보통일 때만 맞습니다. 40~50대 몇 억은 수익률보다 <strong>저축액이 먼저</strong>이고, 부족분을 레버리지·몰빵으로 메우려는 시도가 위험한 이유가 이 표에 있습니다. 미국 주식 100% 기준이라 비중을 낮추면 보통의 경우는 더 적어지고 하락은 얕아집니다. 세금·수수료·임금 상승은 반영하지 않았습니다.</p>
         </>
       )}
@@ -187,7 +188,7 @@ function RetireCard() {
           </dl>
           {plan.withdrawMonthly > 0 && plan.withdrawRange[1] > plan.withdrawRange[0] && <p className="acc-note">재산 과표가 ±15% 달라지면 꺼낼 돈은 {manRound(plan.withdrawRange[0])}~{manRound(plan.withdrawRange[1])} 사이입니다. 건보료 계산은 근사라 이 정도 오차가 있습니다.</p>}
           {plan.withdrawMonthly === 0 && <p className="acc-note">연금만으로 목표가 채워집니다. 금융자산은 비상금과 예비로 두면 됩니다.</p>}
-          {plan.ratePct > 4 && <p className="acc-warn">연 {plan.ratePct.toFixed(1)}%는 25년 기준 {Math.round(plan.fail25)}%, 30년 기준 {Math.round(plan.fail30)}%의 시작 시점에서 자산이 바닥났던 수준입니다(미국 주식60·채권40). 월 {manRound(plan.withdrawMonthly * 0.8)}로 줄이면 훨씬 안전해집니다.</p>}
+          {plan.ratePct > 3.5 && <p className="acc-warn">연 {plan.ratePct.toFixed(1)}%는 25년 기준 {Math.round(plan.fail25)}%, 30년 기준 {Math.round(plan.fail30)}%의 시작 시점에서 자산이 바닥났던 수준입니다(미국 주식60·채권40). 과거 시작월을 겹쳐 본 값이고, 10년 조각을 무작위로 이어 붙여 다시 보면 30년·4%에서도 약 7%로 더 나쁘게 나옵니다. 특히 1946~85년에 시작한 사람들은 4%에서도 8~10%가 바닥났습니다. 월 {manRound(plan.withdrawMonthly * 0.8)}로 줄이면 훨씬 안전해집니다.</p>}
           {plan.ratePct > 3.3 && <p className="acc-note"><strong>지출 줄이기 규칙을 미리 정해 두면</strong> 같은 자산에서 안전한 인출률이 4.0%에서 4.5~5.0%로 올라갑니다. 예: 자산이 처음의 75% 아래로 내려가면 인출을 20% 줄이고, 90%를 회복하면 되돌립니다. 대신 전체 기간의 약 4분의 1은 20% 줄여 살아야 합니다. 줄일 항목을 지금 정해 두세요.</p>}
           {plan.financialCliff && <p className="acc-warn">분배금·이자가 연 1,000만원에 가까워집니다. 지역가입자는 연 1,000만원을 넘으면 금융소득 <strong>전체</strong>가 건보료에 반영되어 보험료가 갑자기 뜁니다. 분배금이 적은 상품이나 연금계좌 활용도 비교해 보세요.</p>}
           {plan.dependentOk === false && <p className="acc-warn">피부양자 요건에서 벗어납니다({plan.dependentReason}). 이 경우 지역가입자로 보험료를 내는 것으로 계산해 두었습니다.</p>}
