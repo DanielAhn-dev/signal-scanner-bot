@@ -36,7 +36,7 @@ export default function PlanCheckPage() {
       {tab === 'first' && <><ToleranceCard /><SleeveCard /><SplitCard /><CheckingCard /></>}
       {tab === 'save' && <SavingCard />}
       {tab === 'retire' && <RetireCard />}
-      <p className="acc-note plan-foot">미국 주식·채권 1926~2023년(달러, 물가 반영) 자료를 겹쳐 본 값이라 독립 표본은 적고, 한국 사정(세금·환율·수수료)은 일부만 반영했습니다. 한국 자료는 24년뿐이라 참고로만 봅니다.</p>
+      <p className="acc-note plan-foot">미국 주식·채권 1926~2023년(달러, 물가 반영) 자료를 겹쳐 본 값이라 독립 표본은 적고, 한국 사정(세금·환율·수수료)은 일부만 반영했습니다. 한국 자료는 24년뿐이라 참고로만 봅니다. 일반 증권 앱(절세계좌 없음)에서는 코스피200 ETF 매매차익이 비과세라 세금 면에서 유리하고, 국내 상장 미국 지수 ETF는 차익에 15.4%가 붙어 연금저축·IRP·ISA 같은 절세계좌에서 하는 편이 맞습니다(가입 조건은 증권사 안내로 확인). 이 화면의 장기 숫자는 미국 자료 기준이라 코스피200에 그대로 맞지 않을 수 있고, 코스피200은 반도체 비중이 커서 분배율도 고배당 ETF보다 훨씬 낮습니다.</p>
     </div>
   )
 }
