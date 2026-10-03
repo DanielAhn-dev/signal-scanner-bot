@@ -21,7 +21,7 @@ export const FACT_META: Record<string, FactMeta> = {
     "generated": "2026-10-03",
     "script": "scripts/research/build_research_facts.py",
     "sample": "한국 커버드콜 2종 202204~202610 / 202112~202610",
-    "caveat": "한국 강세장 4~5년, 방향만 참고"
+    "caveat": "1세대형(전체 월물 커버) 기준 — 주간·데일리·OTM 최신 구조는 상승 참여가 훨씬 높음(docs 부록 4), 한국 강세장 4~5년, 방향만 참고"
   },
   "tolerance": {
     "title": "감내 낙폭 표",
