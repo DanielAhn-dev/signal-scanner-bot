@@ -1,0 +1,8 @@
+.child .acc-seg small { color: var(--color-text-tertiary); font-weight: 400; }
+.child-table td:last-child, .child-table th:last-child { text-align: right; }
+.child-table td:nth-child(3) { white-space: nowrap; }
+.child-over { color: var(--color-error); }
+.child-foot { margin-top: 20px; font-size: 12px; }
+.child .acc-link { background: none; border: 0; padding: 0; color: var(--color-brand); font: inherit; cursor: pointer; text-decoration: underline; text-align: left; }
+.child .mix-check { display: flex; gap: 10px; align-items: flex-start; line-height: 1.5; }
+.child .mix-check input { margin-top: 4px; accent-color: var(--color-brand); }
