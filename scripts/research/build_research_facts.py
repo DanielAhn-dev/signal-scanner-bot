@@ -154,6 +154,8 @@ def bucket(items):
 
 income_yield = dict(
     cc=bucket([("289480", ".research-cache/dividend_etfs/px_289480.json"), ("290080", ".research-cache/dividend_etfs/px_290080.json")]),
+    cc2=bucket([("475720", ".research-cache/dividend_etfs/px_475720.json"), ("498400", ".research-cache/dividend_etfs/px_498400.json")]),
+    cc3=bucket([("482730", ".research-cache/dividend_etfs/px_482730.json"), ("486290", ".research-cache/dividend_etfs/px_486290.json"), ("494300", ".research-cache/dividend_etfs/px_494300.json")]),
     hd=bucket([("161510", ".research-cache/px_161510.json"), ("104530", ".research-cache/dividend_etfs/px_104530.json"), ("210780", ".research-cache/dividend_etfs/px_210780.json")]),
 )
 
@@ -225,7 +227,7 @@ rates_long = dict(period=f"{_mC[0][:4]}-{_mC[0][4:]}~{_mC[-1][:4]}-{_mC[-1][4:]}
 today = datetime.date.today().isoformat()
 meta = {
     "market": dict(title="코스피200 대 S&P500", asOf=asof, generated=today, script="scripts/research/build_research_facts.py", sample=f"{market['period']} {n}개월, 원화 환산·분배금 반영", caveat="2025년 한국 급등 포함, 표본 짧음"),
-    "income": dict(title="인컴 상품 12개월 분배율", asOf=asof, generated=today, script="scripts/research/build_research_facts.py", sample=f"커버드콜 {income_yield['cc']['period']} / 고배당 {income_yield['hd']['period']}, 실제 분배금 이력과 역산 실제 가격", caveat="1세대형 상품만, 한국 강세장, 신형 이력 없음, 분배율은 시장 변동성에 따라 크게 변함"),
+    "income": dict(title="인컴 상품 12개월 분배율", asOf=asof, generated=today, script="scripts/research/build_research_facts.py", sample=f"1세대 한국 {income_yield['cc']['period']} / 2세대 한국 위클리 {income_yield['cc2']['period']} / 3세대 미국 데일리 {income_yield['cc3']['period']} / 고배당 {income_yield['hd']['period']}, 실제 분배금 이력과 역산 실제 가격", caveat="신형은 이력 2년 안팎(12개월 분배율 표본 10~12개, 범위가 실제보다 좁게 나옴), 한국 강세장, 분배율은 시장 변동성에 따라 크게 변함"),
     "rates": dict(title="금리 환경별 성과", asOf=rates_now["asOf"], generated=today, script="scripts/research/build_research_facts.py (validate_rates_regimes.py와 같은 정의)", sample=f"미국 {rates_regimes['period']}, 주식(S&P500 총수익)·10년 합성 국채·3개월물 현금성, 명목", caveat="겹치는 창, 금리 변화는 경기·물가와 겹쳐 있어 인과가 아님, 인상기 168개월·역전 75개월로 표본 짧음"),
     "ratesLong": dict(title="장기금리 방향별 자산 성과", asOf=rates_long["period"].split("~")[1], generated=today, script="scripts/research/build_research_facts.py (validate_rates_regimes.py C)", sample=f"{rates_long['period']} 원화 환산, ^TNX 6개월 변화 기준", caveat="상승 41개월·하락 20개월로 짧음, 금리 변화는 인과가 아님"),
     "startYield": dict(title="시작 금리별 인출 실패율", asOf="2023-06", generated=today, script="scripts/research/build_research_facts.py (validate_rates_rules.py와 같은 정의)", sample=f"미국 {start_yield['period']} 시작, 60/40 실질, 30년 비례 인출", caveat="중간 구간은 1966~82년 스태그플레이션 시작이 대부분이라 독립 표본이 2~3개, 겹치는 창"),

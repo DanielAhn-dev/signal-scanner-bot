@@ -212,7 +212,8 @@ export function requiredMonthlyDetail(targetWon: number, years: number, fromYear
 
 export const DIVIDEND_TAX = 0.154
 
-export type IncomeInput = { principalWon: number; ccSharePct: number; targetNetMonthlyWon: number }
+export type CcType = 'gen1' | 'gen2' | 'gen3'
+export type IncomeInput = { principalWon: number; ccSharePct: number; targetNetMonthlyWon: number; ccType?: CcType }
 type IncomeCase = { yieldPct: number; grossMonthly: number; netMonthly: number }
 export type IncomePlan = {
   /** 낮은 해 / 보통 / 높은 해의 월 분배금(세전·세후) */
@@ -238,9 +239,10 @@ export function incomePlan(i: IncomeInput): IncomePlan | null {
     const gross = (i.principalWon * yieldPct) / 100 / 12
     return { yieldPct, grossMonthly: gross, netMonthly: gross * (1 - DIVIDEND_TAX) }
   }
-  const low = build(mix(INCOME_YIELD.cc.min, INCOME_YIELD.hd.min))
-  const typical = build(mix(INCOME_YIELD.cc.median, INCOME_YIELD.hd.median))
-  const high = build(mix(INCOME_YIELD.cc.max, INCOME_YIELD.hd.max))
+  const cc = i.ccType === 'gen2' ? INCOME_YIELD.cc2 : i.ccType === 'gen3' ? INCOME_YIELD.cc3 : INCOME_YIELD.cc
+  const low = build(mix(cc.min, INCOME_YIELD.hd.min))
+  const typical = build(mix(cc.median, INCOME_YIELD.hd.median))
+  const high = build(mix(cc.max, INCOME_YIELD.hd.max))
   const target = Math.max(0, i.targetNetMonthlyWon)
   const shortfallLowPct = target > 0 && low.netMonthly < target ? ((target - low.netMonthly) / target) * 100 : 0
   const principalForTarget = target > 0 ? (target * 12) / (1 - DIVIDEND_TAX) / (typical.yieldPct / 100) : 0

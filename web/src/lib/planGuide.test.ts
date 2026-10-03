@@ -111,4 +111,9 @@ describe('금리 환경 이름', () => {
     expect(ratesLabels({ short: 5.3, long: 4.2, spread: -1.1, shortChg12: 1.5, longChg12: 0.2 })).toEqual({ short: '인상기', long: '횡보', curve: '역전' })
     expect(ratesLabels({ short: 2, long: 2.5, spread: 0.5, shortChg12: -1.5, longChg12: -0.8 })).toEqual({ short: '인하기', long: '하락', curve: '평탄' })
   })
+  it('커버드콜 유형을 바꾸면 분배율 범위가 달라진다', () => {
+    const g1 = incomePlan({ principalWon: 100_000_000, ccSharePct: 100, targetNetMonthlyWon: 500_000, ccType: 'gen1' })!
+    const g3 = incomePlan({ principalWon: 100_000_000, ccSharePct: 100, targetNetMonthlyWon: 500_000, ccType: 'gen3' })!
+    expect(g3.typical.yieldPct).not.toBe(g1.typical.yieldPct)
+  })
 })

@@ -294,8 +294,9 @@ function RatesCard() {
 function IncomeCard() {
   const [principalMan, setPrincipalMan] = useState('10000')
   const [cc, setCc] = useState(50)
+  const [ccType, setCcType] = useState<'gen1' | 'gen2' | 'gen3'>('gen1')
   const [targetMan, setTargetMan] = useState('50')
-  const plan = useMemo(() => incomePlan({ principalWon: toWon(principalMan), ccSharePct: cc, targetNetMonthlyWon: toWon(targetMan) }), [principalMan, cc, targetMan])
+  const plan = useMemo(() => incomePlan({ principalWon: toWon(principalMan), ccSharePct: cc, targetNetMonthlyWon: toWon(targetMan), ccType }), [principalMan, cc, targetMan, ccType])
   return (
     <section className="acc-card">
       <h2>인컴 계좌, 매달 얼마나 들어올까</h2>
@@ -304,6 +305,14 @@ function IncomeCard() {
         <label className="acc-field"><span>인컴 계좌 원금 (만원)</span><input type="number" inputMode="numeric" min="0" value={principalMan} onChange={(e) => setPrincipalMan(e.target.value)} /></label>
         <label className="acc-field"><span>월 실수령 목표 (만원)</span><input type="number" inputMode="numeric" min="0" value={targetMan} onChange={(e) => setTargetMan(e.target.value)} /></label>
       </div>
+      <label className="acc-field">
+        <span>커버드콜 유형</span>
+        <select value={ccType} onChange={(e) => setCcType(e.target.value as 'gen1' | 'gen2' | 'gen3')}>
+          <option value="gen1">월물형 (한국 코스피200 등, 옵션을 전부 팖)</option>
+          <option value="gen2">주간 옵션형 (한국 위클리·타겟)</option>
+          <option value="gen3">데일리·타겟형 (미국 지수, 월 분배 목표 설계)</option>
+        </select>
+      </label>
       <label className="acc-field plan-slider">
         <span>커버드콜 비중 <b>{cc}%</b> <small>(나머지는 고배당)</small></span>
         <input type="range" min={0} max={100} step={10} value={cc} onChange={(e) => setCc(Number(e.target.value))} />
@@ -321,7 +330,7 @@ function IncomeCard() {
           {plan.over20m && <p className="acc-warn">연 분배금이 2,000만원을 넘어 금융소득 종합과세 대상이 됩니다. 절세계좌 활용을 같이 보세요.</p>}
           {!plan.over20m && plan.over10m && <p className="acc-warn">연 분배금이 1,000만원을 넘습니다. 지역가입자는 이 금액부터 건강보험료가 늘 수 있습니다.</p>}
           <More>
-            <p className="acc-note">숫자는 한국의 <strong>1세대형</strong> 커버드콜·고배당 ETF의 실제 분배 이력입니다. 주간·데일리 같은 신형 구조는 아직 이력이 짧아 반영하지 못했습니다. 분배금을 받는 것과 별개로 <strong>상품 가격이 내려가면 원금이 줄어듭니다</strong>(커버드콜 한 종은 같은 기간 실제 가격이 11% 내렸습니다). 고배당은 매달이 아니라 분기·4월에 몰려 지급되는 경우가 많아 월 현금 흐름을 맞추려면 월배당 상품과 섞게 됩니다. 세후는 분배금 15.4% 과세만 반영했습니다.</p>
+            <p className="acc-note">숫자는 한국 상장 커버드콜·고배당 ETF의 실제 분배 이력입니다. <strong>신형(주간·데일리) 유형은 이력이 2년 안팎이라</strong> 분배율의 범위가 실제 변동보다 좁게 나옵니다. 월 분배금의 흔들림은 유형별로 달랐습니다(월물형 약 0.4, 한국 주간형 약 0.3, 미국 데일리형 약 0.07의 변동계수). 분배금을 받는 것과 별개로 <strong>상품 가격이 내려가면 원금이 줄어듭니다</strong>(커버드콜 한 종은 같은 기간 실제 가격이 11% 내렸습니다). 고배당은 매달이 아니라 분기·4월에 몰려 지급되는 경우가 많아 월 현금 흐름을 맞추려면 월배당 상품과 섞게 됩니다. 세후는 분배금 15.4% 과세만 반영했습니다.</p>
           </More>
           <Basis id="income" />
         </>
