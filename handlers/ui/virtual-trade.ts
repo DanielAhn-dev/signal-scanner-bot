@@ -62,6 +62,18 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       accountName = String((pos as any)?.account_name || '').trim() || null
     }
 
+    // 입력 가격이 최근 종가에서 상·하한가(±30%)를 벗어나면 오입력으로 보고 거절한다(종가를 모르는 종목은 통과)
+    const { data: closeRow, error: closeErr } = await supabase
+      .from('stocks')
+      .select('close')
+      .eq('code', String(code).trim().toUpperCase())
+      .maybeSingle()
+    if (closeErr) return res.status(500).json({ error: closeErr.message })
+    const lastClose = Number((closeRow as any)?.close)
+    if (Number.isFinite(lastClose) && lastClose > 0 && (pr > lastClose * 1.3 || pr < lastClose * 0.7)) {
+      return res.status(422).json({ error: `price out of range (last close ${lastClose}, allowed ±30%)` })
+    }
+
     const isBotAccount = !brokerName && !accountName
     const prefs = user.chatId ? await getUserInvestmentPrefs(user.chatId) : {}
     const feeRate = Number.isFinite(Number(prefs.virtual_fee_rate)) && Number(prefs.virtual_fee_rate) >= 0
