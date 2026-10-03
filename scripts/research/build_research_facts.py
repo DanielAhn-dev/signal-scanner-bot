@@ -29,8 +29,12 @@ def mdd(r):
 def hold(H):
     f = lambda r: np.array([np.prod(1 + r[s:s + H]) for s in range(n - H + 1)])
     a, b, c = f(rk), f(ru), f(rm)
+    # 일반계좌 세후: 코스피200은 매매차익 비과세·분배금(연 2.3% 가정)만 15.4% 과세, 국내 상장 미국 지수는 매도 시 차익의 15.4%(손익통산·종합과세 제외)
+    kt = np.array([np.prod(1 + rk[s:s + H] - 0.154 * 0.023 / 12) for s in range(n - H + 1)])
+    ut = np.where(b > 1, 1 + (b - 1) * (1 - 0.154), b)
     return dict(years=H // 12, starts=len(a), kMed=float(np.median(a)), uMed=float(np.median(b)), mixMed=float(np.median(c)),
-                kMin=float(a.min()), uMin=float(b.min()), mixMin=float(c.min()), usWinPct=float((b > a).mean() * 100))
+                kMin=float(a.min()), uMin=float(b.min()), mixMin=float(c.min()), usWinPct=float((b > a).mean() * 100),
+                kTaxMed=float(np.median(kt)), uTaxMed=float(np.median(ut)), kTaxMin=float(kt.min()), uTaxMin=float(ut.min()), usWinTaxPct=float((ut > kt).mean() * 100))
 
 market = dict(period=f"{ms[0][:4]}-{ms[0][4:]}~{ms[-1][:4]}-{ms[-1][4:]}", months=n,
               kCagr=float((np.prod(1 + rk) ** (12 / n) - 1) * 100), uCagr=float((np.prod(1 + ru) ** (12 / n) - 1) * 100),

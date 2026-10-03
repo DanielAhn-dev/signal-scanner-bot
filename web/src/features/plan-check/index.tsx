@@ -102,9 +102,10 @@ function MarketPickCard() {
           <tr><td>최대 낙폭</td><td>{p(d.mdd.k)}</td><td>{p(d.mdd.u)}</td><td>{p(d.mdd.mix)}</td></tr>
           <tr><td>10년 보유 중앙값</td><td>{x(h10.kMed)}</td><td>{x(h10.uMed)}</td><td>{x(h10.mixMed)}</td></tr>
           <tr><td>10년 보유 최저</td><td>{x(h10.kMin)}</td><td>{x(h10.uMin)}</td><td>{x(h10.mixMin)}</td></tr>
+          <tr><td>10년 보유 중앙값, 일반계좌 세후</td><td>{x(h10.kTaxMed)}</td><td>{x(h10.uTaxMed)}</td><td>—</td></tr>
         </tbody>
       </table>
-      <p className="acc-note">전체 수익률은 비슷해서 "길게 보면 다르지 않다"는 느낌이 맞습니다. 다만 코스피는 몇 해에 몰아서 오르고 그 구간을 지나지 못한 시작에는 불리했습니다(10년 보유로 보면 미국이 {Math.round(h10.usWinPct)}% 이겼습니다). 둘은 따로 움직여서(월 상관 {d.corr.toFixed(2)}) <strong>반반이 가장 나쁜 경우가 덜 나빴습니다.</strong> 고르기 어렵다면 반반이 후회를 줄입니다. 일반 증권 앱에서는 코스피200, 절세계좌에서는 미국 지수로 나누는 방법도 있습니다. 환율 영향이 미국 쪽에 유리했던 구간이 포함돼 있습니다.</p>
+      <p className="acc-note">전체 수익률은 비슷해서 "길게 보면 다르지 않다"는 느낌이 맞습니다. 다만 코스피는 몇 해에 몰아서 오르고 그 구간을 지나지 못한 시작에는 불리했습니다(10년 보유로 보면 미국이 {Math.round(h10.usWinPct)}% 이겼습니다). 둘은 따로 움직여서(월 상관 {d.corr.toFixed(2)}) <strong>반반이 가장 나쁜 경우가 덜 나빴습니다.</strong> 고르기 어렵다면 반반이 후회를 줄입니다. 일반 증권 앱(세후)에서도 10년 보유 중앙값은 미국 {x(h10.uTaxMed)}, 코스피 {x(h10.kTaxMed)}로 순서는 같았지만(세후로 보면 미국이 {Math.round(h10.usWinTaxPct)}% 이김) 격차는 조금 줄었습니다. 세후는 코스피200 분배금 연 2.3% 가정, 국내 상장 미국 지수는 매도 차익의 15.4%만 반영한 단순 계산이라 손익통산·종합과세는 빠져 있습니다. 절세계좌에서는 미국 지수 쪽 세금이 줄어듭니다. 환율 영향이 미국 쪽에 유리했던 구간이 포함돼 있습니다.</p>
       <Basis id="market" />
     </section>
   )
