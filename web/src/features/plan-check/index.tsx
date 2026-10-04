@@ -5,7 +5,7 @@ import More from '../../components/ui/More'
 import {
   BAD10_DRAWDOWN, CHECK_FREQUENCY, SPLIT_OPTIONS, ccDownturnCase, isFactStale, requiredMonthlyDetail, incomePlan, ratesLabels, planWithdrawal, requiredMonthly, sleeveCost, stockCapFor,
 } from '../../lib/planGuide'
-import { FACT_META, MARKET_PICK, RATES_LONG, RATES_NOW, RATES_REGIMES, START_YIELD, DOWNTURN } from '../../data/researchFacts'
+import { FACT_META, MARKET_PICK, RATES_LONG, RATES_NOW, RATES_REGIMES, START_YIELD, DOWNTURN, KR_RATES_FX } from '../../data/researchFacts'
 import '../accumulate/accumulate.css'
 import './plan-check.css'
 
@@ -237,6 +237,7 @@ function RatesCard() {
   const lab = ratesLabels(RATES_NOW)
   const r = RATES_REGIMES
   const L = RATES_LONG
+  const K = KR_RATES_FX
   const pc = (v: number) => `${v.toFixed(1)}%`
   const sg = (v: number) => `${v >= 0 ? '+' : ''}${v.toFixed(2)}%p`
   const rows: Array<[string, { stock: number; bond: number; cash: number }, boolean]> = [
@@ -270,6 +271,22 @@ function RatesCard() {
           <p className="acc-note">읽는 법: 금리를 올리던 시기에는 <strong>현금성({pc(r.hiking.cash)})이 주식({pc(r.hiking.stock)})과 국채({pc(r.hiking.bond)})를 앞섰고</strong>, 장단기가 거꾸로 선 시기에는 주식이 {pc(r.inverted.stock)}에 그쳤습니다. 반대로 금리를 내리던 시기에는 국채({pc(r.cutting.bond)})가 좋았습니다. 금리가 내려간다고 주식이 오르는 것은 아니었습니다. 인하는 경기가 나빠서 하는 경우가 많았기 때문입니다. 이 표는 금리가 원인이라는 뜻이 아니라, 그런 환경에서 과거에 무슨 일이 있었는지 보여 줄 뿐입니다.</p>
         </More>
         <Basis id="rates" />
+      </section>
+      <section className="acc-card">
+        <h2>한국 금리·환율이 움직일 때</h2>
+        <p className="acc-note">CD91(단기금리) 12개월 변화 ±0.75%p, 원/달러 12개월 변화 ±7%를 기준으로 나눈 연 수익입니다(원화 환산, {K.period}). 지금은 CD91 {K.now.cd91.toFixed(2)}%(12개월 {sg(K.now.cdChg12)}), 원/달러 12개월 {K.now.fxChg12 >= 0 ? '+' : ''}{K.now.fxChg12.toFixed(1)}%입니다(기준 {K.now.asOf}).</p>
+        <table className="acc-table plan-table">
+          <thead><tr><th>환경</th><th>개월</th><th>코스피200</th><th>S&P500(원화)</th><th>금(원화)</th><th>현금(CD)</th></tr></thead>
+          <tbody>
+            {([['금리 인상기', K.rate.hiking], ['금리 횡보', K.rate.flat], ['금리 인하기', K.rate.cutting], ['원화 약세', K.fx.weak], ['환율 횡보', K.fx.flat], ['원화 강세', K.fx.strong]] as const).map(([name, v]) => (
+              <tr key={name}><td>{name}</td><td>{v.months}</td><td>{pc(v.kospi)}</td><td>{pc(v.spy_krw)}</td><td>{pc(v.gold_krw)}</td><td>{pc(v.cash)}</td></tr>
+            ))}
+          </tbody>
+        </table>
+        <More>
+          <p className="acc-note">읽는 법: 한국에서도 단기금리를 올리던 시기에 코스피200은 연 {pc(K.rate.hiking.kospi)}로 약했고 현금({pc(K.rate.hiking.cash)})과 금({pc(K.rate.hiking.gold_krw)})이 버텼습니다. 원화가 약해질 때(원/달러 상승) 코스피200은 {pc(K.fx.weak.kospi)}였지만 달러 자산(S&P500 원화 {pc(K.fx.weak.spy_krw)}, 금 {pc(K.fx.weak.gold_krw)})이 완충했습니다. 금리 인하기의 높은 수익({pc(K.rate.cutting.kospi)})은 위기 직후 반등이 섞인 것이라 &quot;인하하면 오른다&quot;로 읽으면 안 됩니다. 인상기는 독립된 구간이 5개 안팎이라 표본이 짧습니다.</p>
+        </More>
+        <Basis id="krRatesFx" />
       </section>
       <section className="acc-card">
         <h2>장기금리가 움직일 때 자산별로</h2>

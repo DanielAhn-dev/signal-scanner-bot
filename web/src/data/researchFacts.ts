@@ -10,13 +10,14 @@ export const RATES_REGIMES = {"period": "1962-01~2023-06", "hiking": {"months": 
 export const RATES_LONG = {"period": "2011-10~2026-08", "rising": {"months": 41, "kospi200": -6.5, "sp500": 8.1, "usbond20": -20.5, "kbond10": -4.5, "gold": -9.0}, "flat": {"months": 111, "kospi200": 20.2, "sp500": 19.1, "usbond20": 5.3, "kbond10": 3.5, "gold": 4.9}, "falling": {"months": 20, "kospi200": 11.2, "sp500": 17.0, "usbond20": 38.3, "kbond10": 9.7, "gold": 39.8}} as const
 export const START_YIELD = {"period": "1961-02~2023-06", "tiers": [{"label": "\ub0ae\uc74c", "minYield": 3.7, "maxYield": 4.2, "starts": 44, "fail40": 16, "fail45": 77}, {"label": "\uc911\uac04", "minYield": 4.2, "maxYield": 7.0, "starts": 109, "fail40": 34, "fail45": 68}, {"label": "\ub192\uc74c", "minYield": 7.0, "maxYield": 15.3, "starts": 237, "fail40": 0, "fail45": 0}]} as const
 export const DOWNTURN = {"gen1": {"crisis2008": {"index": -46, "nav": -55, "yield_": 41.6, "total": -19}, "sideways": {"index": 9, "nav": -23, "yield_": 20.0, "total": 11}, "rates2022": {"index": -19, "nav": -38, "yield_": 30.7, "total": -14}}, "gen2": {"crisis2008": {"index": -46, "nav": -62, "yield_": 41.8, "total": -27}, "sideways": {"index": 9, "nav": -25, "yield_": 19.6, "total": 9}, "rates2022": {"index": -19, "nav": -37, "yield_": 30.8, "total": -13}}, "gen3": {"crisis2008": {"index": -46, "nav": -74, "yield_": 53.4, "total": -36}, "sideways": {"index": 9, "nav": -34, "yield_": 25.2, "total": 6}, "rates2022": {"index": -19, "nav": -47, "yield_": 40.2, "total": -17}}} as const
+export const KR_RATES_FX = {"period": "2005-11~2026-09", "rate": {"hiking": {"months": 38, "kospi": -7.5, "spy_krw": -0.0, "gold_krw": 21.2, "cash": 3.6}, "flat": {"months": 174, "kospi": 10.5, "spy_krw": 15.6, "gold_krw": 12.4, "cash": 2.7}, "cutting": {"months": 39, "kospi": 43.2, "spy_krw": 1.3, "gold_krw": 4.0, "cash": 2.2}}, "fx": {"weak": {"months": 60, "kospi": -6.8, "spy_krw": 2.9, "gold_krw": 21.4, "cash": 2.9}, "flat": {"months": 158, "kospi": 22.4, "spy_krw": 14.9, "gold_krw": 10.0, "cash": 2.7}, "strong": {"months": 33, "kospi": 2.3, "spy_krw": 6.2, "gold_krw": 7.7, "cash": 3.0}}, "now": {"cd91": 3.21, "cdChg12": 0.65, "fxChg12": -1.3, "asOf": "2026-09"}} as const
 export const RATES_NOW = {"asOf": "2026-10", "short": 3.99, "long": 5.28, "spread": 1.28, "shortChg12": 0.28, "longChg12": 1.18} as const
 export const SLEEVE_COST_DATA = [{"weight": 0, "endVsIndexPct": 100}, {"weight": 20, "endVsIndexPct": 91}, {"weight": 40, "endVsIndexPct": 80}, {"weight": 60, "endVsIndexPct": 69}, {"weight": 100, "endVsIndexPct": 48}] as const
 export const FACT_META: Record<string, FactMeta> = {
   "market": {
     "title": "코스피200 대 S&P500",
     "asOf": "2026-08",
-    "generated": "2026-10-03",
+    "generated": "2026-10-04",
     "script": "scripts/research/build_research_facts.py",
     "sample": "2003-12~2026-08 272개월, 원화 환산·분배금 반영",
     "caveat": "2025년 한국 급등 포함, 표본 짧음"
@@ -24,7 +25,7 @@ export const FACT_META: Record<string, FactMeta> = {
   "income": {
     "title": "인컴 상품 12개월 분배율",
     "asOf": "2026-08",
-    "generated": "2026-10-03",
+    "generated": "2026-10-04",
     "script": "scripts/research/build_research_facts.py",
     "sample": "1세대 한국 2023-04~2026-10 / 2세대 한국 위클리 2026-01~2026-10 / 3세대 미국 데일리 2025-11~2026-10 / 고배당 2016-04~2026-10, 실제 분배금 이력과 역산 실제 가격",
     "caveat": "신형은 이력 2년 안팎(12개월 분배율 표본 10~12개, 범위가 실제보다 좁게 나옴), 한국 강세장, 분배율은 시장 변동성에 따라 크게 변함"
@@ -32,7 +33,7 @@ export const FACT_META: Record<string, FactMeta> = {
   "rates": {
     "title": "금리 환경별 성과",
     "asOf": "2026-10",
-    "generated": "2026-10-03",
+    "generated": "2026-10-04",
     "script": "scripts/research/build_research_facts.py (validate_rates_regimes.py와 같은 정의)",
     "sample": "미국 1962-01~2023-06, 주식(S&P500 총수익)·10년 합성 국채·3개월물 현금성, 명목",
     "caveat": "겹치는 창, 금리 변화는 경기·물가와 겹쳐 있어 인과가 아님, 인상기 168개월·역전 75개월로 표본 짧음"
@@ -40,15 +41,23 @@ export const FACT_META: Record<string, FactMeta> = {
   "ratesLong": {
     "title": "장기금리 방향별 자산 성과",
     "asOf": "2026-08",
-    "generated": "2026-10-03",
+    "generated": "2026-10-04",
     "script": "scripts/research/build_research_facts.py (validate_rates_regimes.py C)",
     "sample": "2011-10~2026-08 원화 환산, ^TNX 6개월 변화 기준",
     "caveat": "상승 41개월·하락 20개월로 짧음, 금리 변화는 인과가 아님"
   },
+  "krRatesFx": {
+    "title": "한국 금리·환율 환경별 성과",
+    "asOf": "2026-09",
+    "generated": "2026-10-04",
+    "script": "scripts/research/validate_kr_rates_fx.py",
+    "sample": "2005-11~2026-09 월말 수정주가, 코스피200·S&P500(SPY×환율)·금(GLD×환율) 원화 환산, 현금=CD91",
+    "caveat": "12개월 변화 겹치는 구간, 금리 인상기는 독립 구간 5개 안팎, 경기와 겹쳐 인과 아님, 인하기 수익은 위기 직후 반등이 섞임"
+  },
   "startYield": {
     "title": "시작 금리별 인출 실패율",
     "asOf": "2023-06",
-    "generated": "2026-10-03",
+    "generated": "2026-10-04",
     "script": "scripts/research/build_research_facts.py (validate_rates_rules.py와 같은 정의)",
     "sample": "미국 1961-02~2023-06 시작, 60/40 실질, 30년 비례 인출",
     "caveat": "중간 구간은 1966~82년 스태그플레이션 시작이 대부분이라 독립 표본이 2~3개, 겹치는 창"
@@ -56,7 +65,7 @@ export const FACT_META: Record<string, FactMeta> = {
   "downturn": {
     "title": "신형 구조 하락장·박스권 분배금과 원금(합성)",
     "asOf": "2026-10",
-    "generated": "2026-10-03",
+    "generated": "2026-10-04",
     "script": "scripts/research/validate_cc_downturn_payout.py",
     "sample": "S&P500 가격지수 1990~2026, 실제 VIX×0.9로 가격 매긴 옵션 프리미엄을 전부 분배한다고 가정",
     "caveat": "합성 모델(분배율이 실제보다 높음, 평활화·스큐 미반영), 한국 지수 옵션 아님, 방향만 참고"
@@ -64,7 +73,7 @@ export const FACT_META: Record<string, FactMeta> = {
   "sleeve": {
     "title": "인컴(커버드콜) 몫 비용",
     "asOf": "2026-08",
-    "generated": "2026-10-03",
+    "generated": "2026-10-04",
     "script": "scripts/research/build_research_facts.py",
     "sample": "한국 커버드콜 2종 202204~202610 / 202112~202610",
     "caveat": "1세대형(전체 월물 커버) 기준 — 주간·데일리·OTM 최신 구조는 상승 참여가 훨씬 높음(docs 부록 4), 한국 강세장 4~5년, 방향만 참고"
@@ -72,7 +81,7 @@ export const FACT_META: Record<string, FactMeta> = {
   "tolerance": {
     "title": "감내 낙폭 표",
     "asOf": "2023-06",
-    "generated": "2026-10-03",
+    "generated": "2026-10-04",
     "script": "scripts/research/validate_lump_vs_split_tolerance.py",
     "sample": "미국 1926~2023, 주식+합성 10년 국채, 시작 후 5년",
     "caveat": "월 평균 가격이라 낙폭이 약간 얕음, 시작 시대에 따라 크게 다름"
@@ -80,7 +89,7 @@ export const FACT_META: Record<string, FactMeta> = {
   "split": {
     "title": "일시금 대 분할",
     "asOf": "2023-06",
-    "generated": "2026-10-03",
+    "generated": "2026-10-04",
     "script": "scripts/research/validate_lump_vs_split_tolerance.py",
     "sample": "미국 1926~2023 주식 100%, 시작 후 5년",
     "caveat": "겹치는 창"
@@ -88,7 +97,7 @@ export const FACT_META: Record<string, FactMeta> = {
   "checking": {
     "title": "확인 빈도",
     "asOf": "2026-09",
-    "generated": "2026-10-03",
+    "generated": "2026-10-04",
     "script": "scripts/research/validate_checking_frequency.py",
     "sample": "코스피·S&P500 3년 보유 창",
     "caveat": "일시금 보유만 본 값"
@@ -104,7 +113,7 @@ export const FACT_META: Record<string, FactMeta> = {
   "withdrawal": {
     "title": "인출 실패율",
     "asOf": "2023-06",
-    "generated": "2026-10-03",
+    "generated": "2026-10-04",
     "script": "scripts/research/validate_retirement_withdrawal.py",
     "sample": "미국 60/40 실질 1926~2023, 25·30년",
     "caveat": "부트스트랩으로 보면 더 나쁨, 건보 재산 점수 근사"

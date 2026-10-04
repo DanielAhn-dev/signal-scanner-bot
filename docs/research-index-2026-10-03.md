@@ -12,7 +12,7 @@
 ## 스크립트 (`scripts/research/`)
 - 은퇴·시작: `validate_retirement_withdrawal.py`, `validate_lump_vs_split_tolerance.py`, `validate_required_saving.py`, `validate_checking_frequency.py`, `validate_robustness_eras.py`, `validate_tolerance_horizon_eras.py`
 - 인컴: `validate_income_then_growth.py`, `validate_satellite_mix.py`, `validate_us_covered_call.py`, `validate_kospi_vs_us.py`, `validate_income_mix.py`, `validate_income_erosion.py`, `validate_cc_generations.py`, `validate_cc_synthetic.py`, `validate_distribution_stability.py`
-- 금리: `validate_rates_regimes.py`(금리 데이터는 `.research-cache/yh_IRX_me.json`·`yh_TNX_me.json` 월말값, 야후 일봉을 4~5년씩 나눠 받아 만든다 — 월봉은 분기 간격이라 쓰면 안 됨)
+- 금리: `validate_kr_rates_fx.py`(한국 CD91·원/달러 환경별, 부록 16, `/plan` 금리 환경 탭), `validate_rates_regimes.py`(금리 데이터는 `.research-cache/yh_IRX_me.json`·`yh_TNX_me.json` 월말값, 야후 일봉을 4~5년씩 나눠 받아 만든다 — 월봉은 분기 간격이라 쓰면 안 됨)
 - 화면 데이터 생성: `build_research_facts.py` → `web/src/data/researchFacts.ts`(화면이 읽는 모든 연구 숫자), `build_child_data.py` → `web/src/data/childLongRunData.ts`
 - 실행은 저장소 루트에서 (`python scripts/research/<이름>.py`). 캐시는 `.research-cache/`(private repo 동기화).
 
@@ -33,7 +33,7 @@
 4. 자녀 계좌 2단계(계정 연결)는 미성년 개인정보 법률 확인 후.
 5. 화면은 실제 로그인으로 서버 저장·기기 간 동기화(`childGifts`) 확인 필요.
 
-6. 금리 환경별 안전자산 비중 규칙(현금성↔장기채) 사전 고정 검증, 한국 기준금리·환율 연결, 은퇴 인출에서 시작 채권 금리의 영향.
+6. 금리 환경별 안전자산 비중 규칙(현금성↔장기채) 사전 고정 검증, 은퇴 인출에서 시작 채권 금리의 영향.
 
 ## 주의 (읽는 사람에게)
 - 대부분의 인컴·커버드콜 결과는 한국 강세장 4~5년 표본이고 1세대형 상품 중심이다. 긴 하락·박스권 경험이 없다.
