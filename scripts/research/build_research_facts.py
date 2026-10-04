@@ -237,8 +237,13 @@ def _rowC(mask):
     return dict(months=int(mask.sum()), **{i: round(_ann(_rC[i][mask]), 1) for i in _ids})
 rates_long = dict(period=f"{_mC[0][:4]}-{_mC[0][4:]}~{_mC[-1][:4]}-{_mC[-1][4:]}", rising=_rowC(_vv & (_c6 > 0.5)), flat=_rowC(_vv & (np.abs(_c6) <= 0.5)), falling=_rowC(_vv & (_c6 < -0.5)))
 
+# --- 사용 시점 계좌 단계 전환(글라이드 패스, validate_glide_path.py)
+import validate_glide_path as _gp  # noqa: E402
+glide = _gp.export()
+
 today = datetime.date.today().isoformat()
 meta = {
+    "glide": dict(title="사용 시점 단계 전환", asOf="2023-06", generated=today, script="scripts/research/validate_glide_path.py", sample=f"미국 {glide['markets']['us']['period']}(주식 총수익, 안전자산 연 3% 현금) / 한국 코스피 {glide['markets']['kr']['period']}(배당 제외), 일시금·월 리밸런싱", caveat="겹치는 창이라 독립 표본이 적음, 안전자산 연 3% 가정, 대공황 시작 15년 창에서는 폭락 뒤 비중을 내려 보유보다 나빴음(최악 0.78 대 0.95)"),
     "market": dict(title="코스피200 대 S&P500", asOf=asof, generated=today, script="scripts/research/build_research_facts.py", sample=f"{market['period']} {n}개월, 원화 환산·분배금 반영", caveat="2025년 한국 급등 포함, 표본 짧음"),
     "income": dict(title="인컴 상품 12개월 분배율", asOf=asof, generated=today, script="scripts/research/build_research_facts.py", sample=f"1세대 한국 {income_yield['cc']['period']} / 2세대 한국 위클리 {income_yield['cc2']['period']} / 3세대 미국 데일리 {income_yield['cc3']['period']} / 고배당 {income_yield['hd']['period']}, 실제 분배금 이력과 역산 실제 가격", caveat="신형은 이력 2년 안팎(12개월 분배율 표본 10~12개, 범위가 실제보다 좁게 나옴), 한국 강세장, 분배율은 시장 변동성에 따라 크게 변함"),
     "rates": dict(title="금리 환경별 성과", asOf=rates_now["asOf"], generated=today, script="scripts/research/build_research_facts.py (validate_rates_regimes.py와 같은 정의)", sample=f"미국 {rates_regimes['period']}, 주식(S&P500 총수익)·10년 합성 국채·3개월물 현금성, 명목", caveat="겹치는 창, 금리 변화는 경기·물가와 겹쳐 있어 인과가 아님, 인상기 168개월·역전 75개월로 표본 짧음"),
@@ -268,6 +273,7 @@ out += f"export const DOWNTURN = {json.dumps(downturn)} as const\n"
 out += f"export const KR_RATES_FX = {json.dumps(kr_rates_fx)} as const\n"
 out += f"export const RATES_NOW = {json.dumps(rates_now)} as const\n"
 out += f"export const SLEEVE_COST_DATA = {json.dumps(sleeve)} as const\n"
+out += f"export const GLIDE_FACTS = {json.dumps(glide, ensure_ascii=False)} as const\n"
 out += f"export const FACT_META: Record<string, FactMeta> = {json.dumps(meta, ensure_ascii=False, indent=2)}\n"
 open(OUT, "w", encoding="utf-8").write(out)
 print(json.dumps(market, ensure_ascii=False)[:600]); print(sleeve)

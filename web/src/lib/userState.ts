@@ -7,7 +7,7 @@ import { getCurrentClientIdFromStore, useCurrentClientId } from '../stores/profi
  * 서버(/api/ui/user-state)에도 저장해 기기를 바꿔도 따라오게 한다. 로컬은 즉시 읽기용 캐시다.
  * 서버가 받는 이름은 handlers/ui/user-state.ts의 USER_STATE_KEYS와 같아야 한다.
  */
-export type UserStateName = 'holdingRules' | 'assetOverview' | 'tradeCost' | 'buycheck' | 'accumulate' | 'investorProfile' | 'switchHistory' | 'dropPlan' | 'childGifts'
+export type UserStateName = 'holdingRules' | 'assetOverview' | 'tradeCost' | 'buycheck' | 'accumulate' | 'investorProfile' | 'switchHistory' | 'dropPlan' | 'childGifts' | 'accountGoals'
 
 const SCOPED_PREFIX = 'u:'
 /** 사용자 ID 없이 쓰던 예전 키 — 처음 읽을 때 현재 사용자 것으로 옮기고 지운다 */
@@ -21,6 +21,7 @@ const LEGACY_KEYS: Record<UserStateName, string> = {
   switchHistory: 'switch_history_v1',
   dropPlan: 'drop_plan_v1',
   childGifts: 'child_gifts_v1',
+  accountGoals: 'account_goals_v1',
 }
 /** 로그아웃 때 함께 지우는 사용자 데이터 키 (사용자 ID가 안 붙은 것) */
 const SIGN_OUT_LOCAL_KEYS = [

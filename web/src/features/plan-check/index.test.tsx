@@ -30,6 +30,14 @@ describe('계획 점검', () => {
     expect(screen.getByText(/바닥났던 수준/)).toBeTruthy()
   })
 
+  it('사용 시점 탭: 계좌가 없으면 지수 유지 안내와 과거 결과 표(자료 기준 포함)를 보여준다', () => {
+    const { container } = render(<PlanCheckPage />)
+    fireEvent.click(screen.getByRole('tab', { name: '사용 시점' }))
+    expect(screen.getByText(/정하지 않은 계좌는 지금처럼 지수만/)).toBeTruthy()
+    expect(screen.getByText('과거에는 이렇게 달랐습니다')).toBeTruthy()
+    expect(container.querySelectorAll('.plan-basis').length).toBe(1)
+  })
+
   it('모든 표에는 자료 기준(기간·표본·한계)이 붙는다', () => {
     const { container } = render(<PlanCheckPage />)
     // 처음 넣는 법 탭: 감내 낙폭·시장 비교·재미 몫·분할·확인 빈도 = 5개

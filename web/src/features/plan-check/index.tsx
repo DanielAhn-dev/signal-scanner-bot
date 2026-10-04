@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react'
 import { formatKrwMan } from '../../lib/format'
 import { useProfileStore } from '../../stores/profileStore'
 import More from '../../components/ui/More'
+import GoalCard from './GoalCard'
 import {
   BAD10_DRAWDOWN, CHECK_FREQUENCY, SPLIT_OPTIONS, ccDownturnCase, isFactStale, requiredMonthlyDetail, incomePlan, ratesLabels, planWithdrawal, requiredMonthly, sleeveCost, stockCapFor,
 } from '../../lib/planGuide'
@@ -28,10 +29,11 @@ function Basis({ id }: { id: string }) {
 
 const manRound = (won: number) => `${Math.round(won / 10_000).toLocaleString('ko-KR')}만원`
 
-type Tab = 'first' | 'save' | 'income' | 'rates' | 'retire'
+type Tab = 'first' | 'save' | 'goal' | 'income' | 'rates' | 'retire'
 const TABS: Array<{ key: Tab; label: string }> = [
   { key: 'first', label: '처음 넣는 법' },
   { key: 'save', label: '필요 월 적립' },
+  { key: 'goal', label: '사용 시점' },
   { key: 'income', label: '인컴 점검' },
   { key: 'rates', label: '금리 환경' },
   { key: 'retire', label: '은퇴 인출' },
@@ -56,6 +58,7 @@ export default function PlanCheckPage() {
       </section>
       {tab === 'first' && <><ToleranceCard /><MarketPickCard /><SleeveCard /><SplitCard /><CheckingCard /></>}
       {tab === 'save' && <SavingCard />}
+      {tab === 'goal' && <GoalCard basis={<Basis id="glide" />} />}
       {tab === 'income' && <IncomeCard />}
       {tab === 'rates' && <RatesCard />}
       {tab === 'retire' && <RetireCard />}
