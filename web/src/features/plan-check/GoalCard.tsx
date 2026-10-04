@@ -1,6 +1,6 @@
 import { useMemo, useState, type ReactNode } from 'react'
 import More from '../../components/ui/More'
-import { GLIDE_PROFILES, MAX_GOALS, glidePlan, sanitizeGoalState, type AccountGoal, type GlideProfile } from '../../lib/accountGoals'
+import { GLIDE_PROFILES, MAX_GOALS, TOLERANCE_OPTIONS, capFromTolerance, glidePlan, sanitizeGoalState, type AccountGoal, type GlideProfile } from '../../lib/accountGoals'
 import { todayKst } from '../../lib/dropPlan'
 import { formatKrwMan } from '../../lib/format'
 import { GLIDE_FACTS } from '../../data/researchFacts'
@@ -31,7 +31,7 @@ export default function GoalCard({ basis }: { basis: ReactNode }) {
 }
 
 function GoalItem({ goal, today, onChange, onRemove }: { goal: AccountGoal; today: string; onChange: (g: AccountGoal) => void; onRemove: () => void }) {
-  const p = glidePlan(goal, today)
+  const p = glidePlan(goal, today, capFromTolerance(goal.tolerancePct))
   const move = Math.abs(p.reduceWon)
   return (
     <section className="acc-card">
@@ -46,6 +46,7 @@ function GoalItem({ goal, today, onChange, onRemove }: { goal: AccountGoal; toda
         : p.reduceWon > 0
           ? <p className="acc-warn">권장 비중까지 맞추려면 주식 약 {man(move)}을 안전자산(현금성·단기채)으로 옮기는 것이 안내값입니다. 한꺼번에 팔 필요는 없고 몇 번에 나눠도 됩니다.</p>
           : <p className="acc-note">{p.reduceWon < 0 ? `이미 권장보다 안전하게 들고 있습니다(주식 ${man(move)}만큼 여유).` : '권장 비중과 같습니다.'}</p>}
+      {p.capped && <p className="acc-note">버틸 수 있는 하락폭 −{goal.tolerancePct}% 기준 상한 {p.recommendedPct}%가 전환표보다 낮아 이 값을 적용했습니다.</p>}
       {p.next && <p className="acc-note">다음 전환: <strong>{p.next.date}</strong>에 주식 {p.next.pct}%로.</p>}
       {!p.gliding && !p.due && <p className="acc-note">아직 10년 넘게 남아 표의 첫 구간입니다. 기본 방식(지수 꾸준히)을 그대로 유지하면 됩니다.</p>}
       <div className="acc-row">
@@ -56,6 +57,7 @@ function GoalItem({ goal, today, onChange, onRemove }: { goal: AccountGoal; toda
             {GLIDE_PROFILES.map((x) => <option key={x.key} value={x.key}>{x.label}</option>)}
           </select>
         </label>
+        <ToleranceSelect value={goal.tolerancePct} onChange={(t) => onChange(t === undefined ? { ...goal, tolerancePct: undefined } : { ...goal, tolerancePct: t })} />
       </div>
       <More>
         <p className="acc-note">폭락한 직후에 기계적으로 내리지 마세요. 연구에서 대공황 직전에 시작한 계좌는 폭락 뒤 비중을 내리는 바람에 끝까지 들고 있던 경우보다 결과가 나빴습니다(최악 0.78 대 0.95). 큰 하락 중이라면 전환 시점을 몇 달 늦추는 것을 고려하고, 사용 시점이 가까운 돈은 처음부터 낮은 비중이 맞습니다.</p>
@@ -71,6 +73,7 @@ function AddGoal({ today, onAdd }: { today: string; onAdd: (g: AccountGoal) => v
   const [valueMan, setValueMan] = useState('')
   const [stockPct, setStockPct] = useState('100')
   const [profile, setProfile] = useState<GlideProfile>('gentle')
+  const [tolerance, setTolerance] = useState<number | undefined>(undefined)
   const ok = targetDate > today && toWon(valueMan) > 0
   return (
     <section className="acc-card">
@@ -82,13 +85,25 @@ function AddGoal({ today, onAdd }: { today: string; onAdd: (g: AccountGoal) => v
       <div className="acc-row">
         <label className="acc-field"><span>지금 평가액 (만원)</span><input type="number" inputMode="numeric" min="0" value={valueMan} onChange={(e) => setValueMan(e.target.value)} /></label>
         <label className="acc-field"><span>주식(지수) 비중 %</span><input type="number" inputMode="numeric" min="0" max="100" value={stockPct} onChange={(e) => setStockPct(e.target.value)} /></label>
+        <ToleranceSelect value={tolerance} onChange={setTolerance} />
       </div>
       <div className="acc-seg" role="radiogroup" aria-label="전환 방식">
         {GLIDE_PROFILES.map((x) => <button key={x.key} type="button" role="radio" aria-checked={profile === x.key} className={profile === x.key ? 'is-active' : ''} onClick={() => setProfile(x.key)}>{x.label}</button>)}
       </div>
       <p className="acc-note">{GLIDE_PROFILES.find((x) => x.key === profile)?.note}</p>
-      <button type="button" className="acc-primary" disabled={!ok} onClick={() => { onAdd({ id: newId(), label: label.trim() || '계좌', targetDate, valueWon: toWon(valueMan), stockPct: Math.min(100, Math.max(0, Math.round(Number(stockPct) || 0))), profile }); setLabel(''); setTargetDate(''); setValueMan(''); setStockPct('100') }}>추가</button>
+      <button type="button" className="acc-primary" disabled={!ok} onClick={() => { onAdd({ id: newId(), label: label.trim() || '계좌', targetDate, valueWon: toWon(valueMan), stockPct: Math.min(100, Math.max(0, Math.round(Number(stockPct) || 0))), profile, ...(tolerance === undefined ? {} : { tolerancePct: tolerance }) }); setTolerance(undefined); setLabel(''); setTargetDate(''); setValueMan(''); setStockPct('100') }}>추가</button>
     </section>
+  )
+}
+
+function ToleranceSelect({ value, onChange }: { value?: number; onChange: (t: number | undefined) => void }) {
+  return (
+    <label className="acc-field"><span>버틸 하락폭</span>
+      <select value={value ?? ''} onChange={(e) => onChange(e.target.value === '' ? undefined : Number(e.target.value))}>
+        <option value="">정하지 않음</option>
+        {TOLERANCE_OPTIONS.map((t) => <option key={t} value={t}>−{t}%</option>)}
+      </select>
+    </label>
   )
 }
 

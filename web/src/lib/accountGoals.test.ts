@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { glidePlan, glideWeight, sanitizeGoalState, type AccountGoal } from './accountGoals'
+import { capFromTolerance, glidePlan, glideWeight, sanitizeGoalState, type AccountGoal } from './accountGoals'
 
 const goal = (over: Partial<AccountGoal> = {}): AccountGoal => ({ id: 'a', label: '전세', targetDate: '2031-10-04', valueWon: 100_000_000, stockPct: 100, profile: 'gentle', ...over })
 
@@ -50,6 +50,25 @@ describe('계좌 계획', () => {
     expect(p.recommendedPct).toBe(100)
     expect(p.gliding).toBe(false)
     expect(p.next?.pct).toBe(80)
+  })
+})
+
+describe('버틸 하락폭 상한', () => {
+  it('−20%를 버티면 상한 20%(표의 한 칸 낮은 제안)가 5년 남은 완만 60%보다 낮아 적용된다', () => {
+    const p = glidePlan(goal(), '2026-10-04', capFromTolerance(20))
+    expect(p.recommendedPct).toBe(20)
+    expect(p.capped).toBe(true)
+    expect(p.reduceWon).toBe(80_000_000)
+  })
+  it('상한이 전환표보다 높으면 전환표가 이긴다, 입력이 없으면 상한 없음', () => {
+    expect(glidePlan(goal(), '2026-10-04', capFromTolerance(40)).capped).toBe(false)
+    expect(capFromTolerance(undefined)).toBeUndefined()
+  })
+  it('저장값의 버틸 하락폭은 10~50만 받는다', () => {
+    const base = { id: 'x', targetDate: '2030-01-01', valueWon: 1, stockPct: 1 }
+    expect(sanitizeGoalState({ goals: [{ ...base, tolerancePct: 30 }] }).goals[0].tolerancePct).toBe(30)
+    expect(sanitizeGoalState({ goals: [{ ...base, tolerancePct: 90 }] }).goals[0].tolerancePct).toBeUndefined()
+    expect(sanitizeGoalState({ goals: [{ ...base }] }).goals[0].tolerancePct).toBeUndefined()
   })
 })
 

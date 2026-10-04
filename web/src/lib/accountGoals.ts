@@ -5,6 +5,7 @@
  */
 import { GLIDE_FACTS } from '../data/researchFacts'
 import { daysBetween } from './childGift'
+import { stockCapFor } from './planGuide'
 
 export type GlideProfile = 'gentle' | 'safe'
 export const GLIDE_PROFILES: ReadonlyArray<{ key: GlideProfile; label: string; note: string }> = [
@@ -12,7 +13,7 @@ export const GLIDE_PROFILES: ReadonlyArray<{ key: GlideProfile; label: string; n
   { key: 'safe', label: '보수', note: '더 일찍·더 많이 내립니다. 사용 직전엔 주식 0%입니다.' },
 ]
 
-export type AccountGoal = { id: string; label: string; targetDate: string; valueWon: number; stockPct: number; profile: GlideProfile }
+export type AccountGoal = { id: string; label: string; targetDate: string; valueWon: number; stockPct: number; profile: GlideProfile; tolerancePct?: number }
 export type AccountGoalState = { goals: AccountGoal[] }
 export const EMPTY_GOAL_STATE: AccountGoalState = { goals: [] }
 export const MAX_GOALS = 8
@@ -45,6 +46,8 @@ export type GlidePlan = {
   /** 전환 구간에 들어왔는가 (10년 이내) */
   gliding: boolean
   recommendedPct: number
+  /** 버틸 하락폭 상한이 전환표보다 낮아 상한이 적용됐는가 */
+  capped: boolean
   currentPct: number
   /** 양수=주식을 줄일 금액, 음수=주식을 늘릴 여지 */
   reduceWon: number
@@ -53,6 +56,12 @@ export type GlidePlan = {
 }
 
 /** 계좌 하나의 오늘 권장 비중과 옮길 금액. capPct(감내 낙폭 상한)가 있으면 둘 중 낮은 쪽 */
+export const TOLERANCE_OPTIONS = [10, 15, 20, 25, 30, 40, 50] as const
+/** 계좌에 적은 버틸 하락폭(%) → 주식 비중 상한. 계획 점검 표의 기본 제안(한 칸 낮게)과 같다. 없으면 상한 없음 */
+export function capFromTolerance(tolerancePct?: number): number | undefined {
+  return tolerancePct === undefined ? undefined : stockCapFor(tolerancePct).recommended
+}
+
 export function glidePlan(goal: AccountGoal, today: string, capPct?: number): GlidePlan {
   const days = daysBetween(today, goal.targetDate)
   const remainingYears = days / DAYS_PER_YEAR
@@ -70,7 +79,7 @@ export function glidePlan(goal: AccountGoal, today: string, capPct?: number): Gl
       next = { date: yearsBefore(goal.targetDate, edge), pct: capPct === undefined ? nextBase : Math.min(nextBase, capPct) }
     }
   }
-  return { remainingYears, due: days <= 0, gliding: remainingYears <= GLIDE_START_YEARS, recommendedPct, currentPct: goal.stockPct, reduceWon, next }
+  return { remainingYears, due: days <= 0, gliding: remainingYears <= GLIDE_START_YEARS, recommendedPct, capped: capPct !== undefined && capPct < base, currentPct: goal.stockPct, reduceWon, next }
 }
 
 const isDate = (v: unknown): v is string => typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v) && !Number.isNaN(Date.parse(`${v}T00:00:00Z`))
@@ -93,6 +102,7 @@ export function sanitizeGoalState(raw: unknown): AccountGoalState {
       valueWon: Math.round(value),
       stockPct: Math.min(100, Math.max(0, Math.round(stock))),
       profile: r.profile === 'safe' ? 'safe' : 'gentle',
+      ...(Number.isFinite(Number(r.tolerancePct)) && Number(r.tolerancePct) >= 10 && Number(r.tolerancePct) <= 50 ? { tolerancePct: Math.round(Number(r.tolerancePct)) } : {}),
     })
   }
   return { goals }
