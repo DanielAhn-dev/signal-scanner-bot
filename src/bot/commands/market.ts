@@ -19,6 +19,7 @@ import { buildMarketInsightLines } from "../../services/marketInsightService";
 import { esc, LINE } from "../messages/format";
 import { actionButtons, ACTIONS } from "../messages/layout";
 import { describeBotBuyGate, diagnoseMarket, regimeLabel } from "../../services/marketDiagnosis";
+import { fetchMarketFlowCaution } from "../../services/marketFlowCaution";
 import { withIndexTrendRatios } from "../../services/indexTrendRatios";
 import { detectAutoTradeMarketPolicy } from "../../services/virtualAutoTradeSelection";
 
@@ -80,7 +81,10 @@ export async function handleMarketCommand(
   ]);
 
   const diagnosis = diagnoseMarket(marketData);
-  const botGate = await resolveBotGate(marketData);
+  const [botGate, flowCaution] = await Promise.all([
+    resolveBotGate(marketData),
+    fetchMarketFlowCaution(supabase).catch(() => null),
+  ]);
   const topSectors = getTopSectors(sectorScores).slice(0, 5);
   const nextSectors = getNextSectorCandidates(sectorScores, 3e9).slice(0, 5);
 
@@ -91,6 +95,10 @@ export async function handleMarketCommand(
   msg += `리스크 지수  <code>${diagnosis.riskScore}/100</code>\n`;
   if (botGate) {
     msg += `<b>${botGate.paused ? "⏸" : "▶"} ${botGate.label}</b>\n${esc(botGate.detail)}\n`;
+  }
+  if (flowCaution?.active) {
+    // 안내용(매매 규칙 아님). 근거·한계는 src/services/marketFlowCaution.ts
+    msg += `<b>⚠️ 수급 경고 · 비중 점검</b>\n${esc(flowCaution.message)}\n`;
   }
   msg += "\n";
 

@@ -556,7 +556,7 @@ export async function handlePreMarketPlanCommand(
     35,
     90
   );
-  // 자동매매 신규 매수와 같은 제외 기준 (ETF·ETN, 수급이탈, 공시악재)
+  // 자동매매 신규 매수와 같은 제외 기준 (ETF·ETN, 수급이탈, 공시악재, 실적, 과열)
   const buyExclusions = await fetchBuyExclusions(
     supabase,
     rows.map((row: any) => ({ code: String(row.code), name: row.name ?? null }))

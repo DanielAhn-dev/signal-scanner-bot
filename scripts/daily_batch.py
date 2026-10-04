@@ -47,6 +47,7 @@ from batch_modules.scores import calculate_stock_scores
 from batch_modules.signals import save_pullback_signals
 from batch_modules.cleanup import cleanup_old_data
 from batch_modules.market_snapshot import collect_market_snapshot
+from batch_modules.market_investor_flow import collect_market_investor_flow
 
 
 def send_telegram_alert(text: str) -> bool:
@@ -351,6 +352,16 @@ def main():
         
         time.sleep(1)
         
+        # Step 2.55: 코스피 시장 전체 투자자 수급 (시장 수급 경고용, 실패해도 배치는 계속)
+        step_start = time.time()
+        try:
+            market_flow_status = collect_market_investor_flow(supabase)
+        except Exception as e:
+            market_flow_status = {"ok": False, "reason": str(e)[:200]}
+            print(f"[WARN] market investor flow failed: {e}")
+        stage_times["MarketInvestorFlow"] = time.time() - step_start
+        mark_stage("MarketInvestorFlow", bool(market_flow_status.get("ok")), stage_times["MarketInvestorFlow"], market_flow_status)
+
         # Step 2.6: Credit/short-selling data
         print("\n[2.6/7] Collecting credit/short data...")
         step_start = time.time()

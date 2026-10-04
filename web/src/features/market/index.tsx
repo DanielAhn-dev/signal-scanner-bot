@@ -12,6 +12,7 @@ import {
 } from 'lucide-react'
 import { apiFetch } from '../../lib/api'
 import { formatNumber } from '../../lib/format'
+import { isFactStale } from '../../lib/planGuide'
 import Skeleton from '../../components/Skeleton'
 import { ErrorState } from '../../components/StateViews'
 import EconomicCalendar from '../../components/EconomicCalendar'
@@ -92,6 +93,16 @@ interface MarketOverviewData {
   }
   /** 자동매매의 실제 신규 매수 여부(코스피 50일선 기준). 위험지수와 별개 */
   botBuyGate?: { paused: boolean; label: string; detail: string } | null
+  /** 코스피 고점 부근 + 외국인 1년 최대 순매도 경고(안내용, 매매 규칙 아님). 데이터 310거래일 미만이면 null */
+  marketFlowCaution?: {
+    asOf: string
+    active: boolean
+    activeToday: boolean
+    lastSignalDate: string | null
+    foreign60: number
+    message: string
+    evidence: { period: string; generatedAt: string; events: number; drop10Prob: number; baseDrop10Prob: number; limit: string }
+  } | null
   tradingSignal: {
     shouldTrade: boolean
     confidence: number
@@ -471,7 +482,7 @@ function canTradeTextColor(shouldTrade: boolean): string {
 }
 
 function MarketSummaryTable({ data }: { data: MarketOverviewData }) {
-  const { diagnosis, topSectors, economicPhase, globalCorrelation, tradingSignal, indices, fetchedAt, botBuyGate } = data
+  const { diagnosis, topSectors, economicPhase, globalCorrelation, tradingSignal, indices, fetchedAt, botBuyGate, marketFlowCaution } = data
   const leadingSectors = topSectors.slice(0, 3).map((sector) => sector.name).join(' · ') || '—'
   const warningSignals = diagnosis.signals.slice(0, 2).join(' · ') || '—'
   const restrictions = tradingSignal.restrictions.slice(0, 2).join(' · ') || '없음'
@@ -520,6 +531,25 @@ function MarketSummaryTable({ data }: { data: MarketOverviewData }) {
             </td>
           </tr>
         )}
+        <tr className="xls-row">
+          <td className="xls-cell">수급 경고</td>
+          <td className="xls-cell" colSpan={5}>
+            {marketFlowCaution ? (
+              <>
+                <div className="market-sheet__summary-value" style={{ color: marketFlowCaution.active ? 'var(--color-error)' : 'var(--color-success)' }}>
+                  {marketFlowCaution.active ? '비중 점검' : '경고 없음'}
+                </div>
+                <div className="market-sheet__summary-sub">{marketFlowCaution.message}</div>
+                <div className="market-sheet__summary-sub caption muted">
+                  근거 {marketFlowCaution.evidence.period} 코스피 투자자별 수급, 독립 사건 {marketFlowCaution.evidence.events}번 · {marketFlowCaution.evidence.limit} · 기준일 {marketFlowCaution.asOf} · 검증 {marketFlowCaution.evidence.generatedAt}
+                  {isFactStale(marketFlowCaution.evidence.generatedAt) && <span className="acc-warn"> 검증한 지 6개월이 넘었습니다. 다시 확인이 필요합니다.</span>}
+                </div>
+              </>
+            ) : (
+              <div className="market-sheet__summary-sub">시장 수급 데이터를 쌓는 중(310거래일 필요) — 일일 배치가 자동으로 채웁니다.</div>
+            )}
+          </td>
+        </tr>
         <tr className="xls-row xls-row--even">
           <td className="xls-cell">리스크</td>
           <td className="xls-cell" colSpan={2}>

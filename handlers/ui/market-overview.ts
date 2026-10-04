@@ -33,6 +33,7 @@ import {
 import { withIndexTrendRatios } from '../../src/services/indexTrendRatios'
 import { detectAutoTradeMarketPolicy } from '../../src/services/virtualAutoTradeSelection'
 import { createClient } from '@supabase/supabase-js'
+import { fetchMarketFlowCaution, MARKET_FLOW_EVIDENCE, type MarketFlowCaution } from '../../src/services/marketFlowCaution'
 
 interface MarketOverviewResponse {
   diagnosis: MarketDiagnosis
@@ -45,6 +46,8 @@ interface MarketOverviewResponse {
   globalCorrelation: GlobalCorrelation
   tradingSignal: TradingSignal
   botBuyGate: BotBuyGate | null
+  /** 신고가 부근 + 외국인 1년 최대 순매도 경고(안내용). 시장 수급 데이터가 310거래일 미만이면 null */
+  marketFlowCaution: (MarketFlowCaution & { evidence: typeof MARKET_FLOW_EVIDENCE }) | null
   fetchedAt: string
 }
 
@@ -54,6 +57,19 @@ type MarketCacheEntry = {
 }
 
 const marketCache = new Map<string, MarketCacheEntry>()
+
+async function resolveMarketFlowCaution(): Promise<MarketOverviewResponse['marketFlowCaution']> {
+  const url = process.env.SUPABASE_URL
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY
+  if (!url || !key) return null
+  try {
+    const supabase = createClient(url, key, { auth: { persistSession: false } })
+    const caution = await fetchMarketFlowCaution(supabase)
+    return caution ? { ...caution, evidence: MARKET_FLOW_EVIDENCE } : null
+  } catch {
+    return null
+  }
+}
 
 /** 자동매매와 같은 시장 정책(코스피 50일선·200일선)으로 봇의 신규 매수 여부를 알려준다. 실패하면 null */
 async function resolveBotBuyGate(marketData: MarketOverview): Promise<BotBuyGate | null> {
@@ -132,7 +148,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const economicPhase = diagnoseEconomicPhase(marketData, cpi.yoy)
     const globalCorrelation = analyzeGlobalCorrelation(marketData)
     const tradingSignal = generateTradingSignal(diagnosis, economicPhase, globalCorrelation)
-    const botBuyGate = await resolveBotBuyGate(marketData)
+    const [botBuyGate, marketFlowCaution] = await Promise.all([
+      resolveBotBuyGate(marketData),
+      resolveMarketFlowCaution(),
+    ])
 
     const payload: MarketOverviewResponse = {
       diagnosis,
@@ -145,6 +164,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       globalCorrelation,
       tradingSignal,
       botBuyGate,
+      marketFlowCaution,
       fetchedAt: new Date().toISOString(),
     }
 

@@ -80,6 +80,7 @@ import { sendMessage } from "../telegram/api";
 import { isExchangeTradedProduct, resolveBaseSellTaxRate } from "../lib/securitiesTax";
 import { fetchBenchmarkComparison, formatBenchmarkLine } from "./virtualAutoTradeBenchmark";
 import { fetchHeavyNetSellingCodes } from "./investorFlowFilter";
+import { fetchWeightCautions, type WeightCautionResult } from "./weightCautionSignal";
 import { fetchFundamentalGateResults, type FundamentalGateResult } from "./fundamentalQualityGate";
 import {
   GATE_CORE_STRATEGY,
@@ -3022,7 +3023,14 @@ async function selectMondayCandidates(payload: {
   // 수급 이탈(최근 5일 외국인+기관 강한 순매도) 종목은 신규 매수에서 제외 (investorFlowFilter 백테스트 근거)
   // 공시 악재(유상증자·감자·CB/BW·횡령배임 등, 최근 5일) 종목도 제외 — DART_API_KEY 없으면 빈 결과
   // 실적 관문(최근 4분기 적자·영업이익 감소)도 제외 — fundamentalQualityGate, 생존편향 없는 검증 근거
-  const [heavyNetSelling, disclosureFilter, fundamentalGate] = await Promise.all([
+  // 과열·고점 변동성 급등(200일선 +60% 또는 고점 부근 변동성 2배) 종목도 제외 — weightCautionSignal, 3개월 내 -20% 확률 52~63%(평소 34%)
+  // 1년치 종가를 종목마다 읽으므로 거래대금 100억 이상 점수 상위 80종목만 본다(최종 후보는 이 안에서 나온다)
+  const weightCautionCodes = scoredRows
+    .filter((row) => row.liquidity == null || row.liquidity >= 10_000_000_000)
+    .sort((a, b) => toNumber(b.score, 0) - toNumber(a.score, 0))
+    .slice(0, 80)
+    .map((row) => row.code);
+  const [heavyNetSelling, disclosureFilter, fundamentalGate, weightCautions] = await Promise.all([
     fetchHeavyNetSellingCodes(
       payload.supabase,
       scoredRows.map((row) => row.code)
@@ -3038,7 +3046,11 @@ async function selectMondayCandidates(payload: {
       payload.supabase,
       scoredRows.map((row) => row.code)
     ).catch(() => new Map<string, FundamentalGateResult>()),
+    fetchWeightCautions(payload.supabase, weightCautionCodes).catch(() => new Map<string, WeightCautionResult>()),
   ]);
+  const overheatedCodes = [...weightCautions.entries()]
+    .filter(([, caution]) => caution.level !== "none")
+    .map(([code]) => code);
   const negativeDisclosures = disclosureFilter.hits;
   const fundamentalFailCodes = [...fundamentalGate.entries()]
     .filter(([, gate]) => gate.status === "fail")
@@ -3052,6 +3064,7 @@ async function selectMondayCandidates(payload: {
     ...etfCodes,
     ...negativeDisclosures.keys(),
     ...fundamentalFailCodes,
+    ...overheatedCodes,
   ]);
 
   const selection = pickAutoTradeCandidates({
@@ -3092,7 +3105,7 @@ async function selectMondayCandidates(payload: {
             discoveryProfile === "BLEND"
               ? ` · 하이라이트 ${highlightCodes.size} · 눌림목 ${pullbackCandidateCodes?.size ?? 0} · 멀티배거 ${multibaggerCodes?.size ?? 0} · 백테스트 ${backtestEdgeCodes?.size ?? 0}`
               : ""
-          } · 데이터품질 ${dataQuality.band.toUpperCase()}(${dataQuality.qualityScore}) · ${dataQuality.note} · 교집합(2+) ${overlap2Count}종목 · 교집합(3+) ${overlap3Count}종목 · 오늘매수강신호 ${strongTodayBuyCount}종목 · 즉시제외 ${immediateExcludeCount}종목${cooldownCodes.size > 0 ? ` · 스탑로스 쿨다운 ${cooldownCodes.size}종목 제외` : ""}${heavyNetSelling.size > 0 ? ` · 수급이탈 ${heavyNetSelling.size}종목 제외` : ""}${fundamentalFailCodes.length > 0 ? ` · 실적(적자·영업이익 감소) ${fundamentalFailCodes.length}종목 제외` : ""} · ${formatDisclosureFilterNote(disclosureFilter)}`,
+          } · 데이터품질 ${dataQuality.band.toUpperCase()}(${dataQuality.qualityScore}) · ${dataQuality.note} · 교집합(2+) ${overlap2Count}종목 · 교집합(3+) ${overlap3Count}종목 · 오늘매수강신호 ${strongTodayBuyCount}종목 · 즉시제외 ${immediateExcludeCount}종목${cooldownCodes.size > 0 ? ` · 스탑로스 쿨다운 ${cooldownCodes.size}종목 제외` : ""}${heavyNetSelling.size > 0 ? ` · 수급이탈 ${heavyNetSelling.size}종목 제외` : ""}${fundamentalFailCodes.length > 0 ? ` · 실적(적자·영업이익 감소) ${fundamentalFailCodes.length}종목 제외` : ""}${overheatedCodes.length > 0 ? ` · 과열·고점 변동성 ${overheatedCodes.length}종목 제외` : ""} · ${formatDisclosureFilterNote(disclosureFilter)}`,
   };
 }
 
@@ -5596,6 +5609,13 @@ async function runDailyReviewForUser(payload: {
           ).catch(() => null)
         : null;
       const addOnFactorsByCode: Map<string, ScoreSnapshotRow> = addOnScoreSnapshot?.byCode ?? new Map();
+      // 과열·고점 변동성 급등 종목은 보유 중이어도 추가매수하지 않는다 (weightCautionSignal, 신규 매수 제외와 같은 기준)
+      const addOnWeightCautions = addOnSelection.candidates.length
+        ? await fetchWeightCautions(
+            payload.supabase,
+            addOnSelection.candidates.map((candidate) => candidate.code)
+          ).catch(() => new Map<string, WeightCautionResult>())
+        : new Map<string, WeightCautionResult>();
 
       if (addOnSelection.candidates.length > 0) {
         if (addOnBuyPriceResolution.marketPhase === "intraday") {
@@ -5626,6 +5646,25 @@ async function runDailyReviewForUser(payload: {
         if (!executionEntry) {
           // 장중 실시간가가 없으면 사지 않는다 (전날 종가 체결은 따라 할 수 없다) — 다음 회차에 다시 본다
           summary.notes.push(`${candidate.name || candidate.code}(${candidate.code}) 매수 보류: 실시간가 없음`);
+          continue;
+        }
+        const weightCaution = addOnWeightCautions.get(candidate.code);
+        if (weightCaution && weightCaution.level !== "none") {
+          summary.skipped += 1;
+          summary.notes.push(`${candidate.name || candidate.code}(${candidate.code}) 추가매수 보류: 과열·고점 변동성`);
+          await writeActionLog({
+            supabase: payload.supabase,
+            runId: payload.runId,
+            chatId,
+            code: candidate.code,
+            actionType: "SKIP",
+            reason: "add-on-weight-caution",
+            detail: {
+              level: weightCaution.level,
+              ma200GapPct: Math.round(weightCaution.ma200Gap * 1000) / 10,
+              volRatio: weightCaution.volRatio != null ? Math.round(weightCaution.volRatio * 100) / 100 : null,
+            },
+          });
           continue;
         }
         const executionPrice = executionEntry.price;

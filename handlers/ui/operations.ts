@@ -484,6 +484,7 @@ function reasonLabel(reason: string): string {
   const map: Record<string, string> = {
     'signal-gate-reject': '신뢰도 게이트 미통과',
     'add-on-signal-gate-reject': '추가매수 신뢰도 게이트 미통과',
+    'add-on-weight-caution': '추가매수 보류: 과열·고점 변동성',
     'rebalance-signal-gate-reject': '리밸런싱 신뢰도 게이트 미통과',
     'daily-loss-limit-reached': '일손실 한도 도달',
     'no-available-cash': '투자 가능 현금 부족',

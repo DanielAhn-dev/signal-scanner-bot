@@ -10,9 +10,12 @@ import {
   evaluateEntryPriceGuide,
   parsePositionStrategyState,
 } from '../../src/services/virtualAutoTradePositionStrategy'
+import { fetchWeightCautions, type WeightCautionResult } from '../../src/services/weightCautionSignal'
 
 const POSITIONS_CACHE_TTL_MS = Math.max(0, Number(process.env.UI_POSITIONS_CACHE_TTL_MS || 8_000))
 const POSITIONS_LOTS_TIMEOUT_MS = Math.max(120, Number(process.env.UI_POSITIONS_LOTS_TIMEOUT_MS || 300))
+// 비중 조절 경고는 종목마다 1년치 종가를 읽는다(30분 캐시). 첫 조회가 늦으면 경고 없이 응답한다.
+const POSITIONS_CAUTION_TIMEOUT_MS = Math.max(200, Number(process.env.UI_POSITIONS_CAUTION_TIMEOUT_MS || 1_500))
 
 type PositionsCacheEntry = {
   expiresAt: number
@@ -175,6 +178,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       ? await fetchRealtimePriceBatch(codes).catch(() => ({} as Record<string, RealtimeStockData>))
       : {}
 
+    // 점수·눌림목 조회와 겹쳐서 돌린다
+    const weightCautionPromise: Promise<Map<string, WeightCautionResult>> = codes.length > 0
+      ? Promise.race([
+          fetchWeightCautions(supabase, codes).catch(() => new Map<string, WeightCautionResult>()),
+          new Promise<Map<string, WeightCautionResult>>((resolve) =>
+            setTimeout(() => resolve(new Map()), POSITIONS_CAUTION_TIMEOUT_MS)),
+        ])
+      : Promise.resolve(new Map())
+
     const scoreByCode = new Map<string, { totalScore: number | null; signal: string | null }>()
     if (codes.length > 0) {
       const { data: latestScoreRows } = await supabase
@@ -323,6 +335,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       }
     }
 
+    const weightCautionByCode = await weightCautionPromise
     let fallbackToCloseCount = 0
     const mapped = (data ?? []).map((row: any) => {
       // 현재가 우선, 없으면 DB 종가 (폴백)
@@ -409,6 +422,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         warn_rsi_ob: pullback?.warnRsiOb ?? null,
         warn_ma_break: pullback?.warnMaBreak ?? null,
         warn_dead_cross: pullback?.warnDeadCross ?? null,
+        weight_caution: (() => {
+          const c = weightCautionByCode.get(code)
+          return c && c.level !== 'none'
+            ? { level: c.level, overheat: c.overheat, volSpike: c.volSpike, ma200Gap: c.ma200Gap, volRatio: c.volRatio, message: c.message }
+            : null
+        })(),
         position_type: (String(row.status || '').toLowerCase() === 'watch' || String(row.status || '').toLowerCase() === 'interest') ? 'interest' : (row.quantity ? 'holding' : 'interest'),
         lots,
         recommended_buy_qty,

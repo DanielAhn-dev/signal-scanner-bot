@@ -126,6 +126,10 @@ const WARN_REASON_LABELS: Array<{ key: string; label: string }> = [
   { key: 'warn_dead_cross', label: '데드크로스(MA21 < MA50)' },
 ]
 
+// 숫자는 scripts/research/validate_weight_caution.py 출력(src/services/weightCautionSignal.ts와 같은 값)
+const WEIGHT_CAUTION_SOURCE_NOTE =
+  '근거: 2015~2025 하루 거래대금 30억원 이상 종목(상장폐지 포함), 월 1회 표본. 고점 시점은 맞히지 못하며 신호 뒤에도 상위 10%는 3개월에 +40% 넘게 더 올랐다. 전부 매도가 아니라 추가매수 중단·비중 축소 검토용. 검증 2026-10-05.'
+
 const BADGE_TOOLTIPS: Record<string, string> = {
   '점수부족': '추가매수 기준 점수 미달. 점수가 오르거나 기준 완화 시 추가진입 신호가 생성됩니다.',
   '경고있음': '기술적 경고 지표 발생 (이격과열·거래량급증·RSI 극단 등). 판정근거 보기에서 상세 확인.',
@@ -321,7 +325,9 @@ export default function Portfolio() {
     }
 
     const score = getScoreValue(row)
-    const hasAddSignal = Number(row?.recommended_buy_qty || 0) > 0
+    // 비중 조절 경고(과열·고점 변동성 급등)가 켜진 종목은 추가매수를 권하지 않는다
+    const weightCaution = row?.weight_caution as { message?: string } | null | undefined
+    const hasAddSignal = Number(row?.recommended_buy_qty || 0) > 0 && !weightCaution
     const hasPullbackHint = Boolean(entryGrade || trendGrade || warnGrade)
     const entryTrendOk = !hasPullbackHint || (['A', 'B'].includes(entryGrade) && ['A', 'B'].includes(trendGrade))
     const riskOk = !warnGrade || ['SAFE', 'WATCH'].includes(warnGrade)
@@ -336,6 +342,7 @@ export default function Portfolio() {
       return { state: 'add', reasons }
     }
 
+    if (weightCaution?.message) reasons.push(`비중 점검: ${weightCaution.message}`)
     reasons.push('추가매수/부분청산 조건 미충족')
     if (Number.isFinite(pct)) reasons.push(`현재 수익률 ${formatNumber(pct, 2)}%`)
     if (warnScore != null) reasons.push(`경고점수 ${formatNumber(warnScore, 1)}`)
@@ -1479,6 +1486,15 @@ export default function Portfolio() {
               label: guideLabel,
               type: entryGuide.verdict === 'ok' ? 'ok' : 'warn',
               title: entryGuide.message,
+            })
+          }
+          const weightCaution = r?.weight_caution as { level: 'caution' | 'strong'; message: string | null } | null | undefined
+          if (weightCaution) {
+            reasonBadges.push({
+              label: weightCaution.level === 'strong' ? '비중 점검(강)' : '비중 점검',
+              type: 'warn',
+              title: `${weightCaution.message ?? ''}
+${WEIGHT_CAUTION_SOURCE_NOTE}`,
             })
           }
           if (holdingState === 'partial') {

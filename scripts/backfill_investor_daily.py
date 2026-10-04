@@ -5,10 +5,8 @@ import os
 import sys
 import time
 from datetime import date, datetime, timedelta
-from io import StringIO
 from typing import Optional
 
-import pandas as pd
 import requests
 from supabase import Client, create_client
 
@@ -60,66 +58,6 @@ def parse_signed_int(value) -> int:
         return 0
 
 
-def normalize_table_columns(df: pd.DataFrame) -> pd.DataFrame:
-    temp = df.copy()
-    if isinstance(temp.columns, pd.MultiIndex):
-        flat_cols = []
-        for col in temp.columns:
-            if isinstance(col, tuple):
-                flat = " ".join(str(x) for x in col if str(x) != "nan").strip()
-            else:
-                flat = str(col)
-            flat_cols.append(flat)
-        temp.columns = flat_cols
-    else:
-        temp.columns = [str(c).strip() for c in temp.columns]
-    return temp
-
-
-def extract_rows_from_table(df: pd.DataFrame, start_dt: date, end_dt: date, code: str) -> list[dict]:
-    temp = normalize_table_columns(df)
-
-    date_col = next((c for c in temp.columns if "날짜" in c), None)
-    inst_col = next((c for c in temp.columns if "기관" in c and "순매매" in c), None)
-    foreign_col = next((c for c in temp.columns if "외국인" in c and "순매매" in c), None)
-
-    if not date_col or not inst_col or not foreign_col:
-        return []
-
-    working = temp[[date_col, inst_col, foreign_col]].copy()
-    working = working.dropna(subset=[date_col])
-    if working.empty:
-        return []
-
-    rows: list[dict] = []
-    for _, row in working.iterrows():
-        raw_date = str(row.get(date_col) or "").strip()
-        if not raw_date or raw_date.lower() == "nan":
-            continue
-        try:
-            row_dt = datetime.strptime(raw_date.replace(".", "-").replace(" ", ""), "%Y-%m-%d").date()
-        except Exception:
-            continue
-        if row_dt < start_dt or row_dt > end_dt:
-            continue
-
-        institution = parse_signed_int(row.get(inst_col))
-        foreign = parse_signed_int(row.get(foreign_col))
-        if institution == 0 and foreign == 0:
-            continue
-
-        rows.append(
-            {
-                "date": to_iso(row_dt),
-                "ticker": code,
-                "institution": institution,
-                "foreign": foreign,
-            }
-        )
-
-    return rows
-
-
 def fetch_rows_for_code(
     session: requests.Session,
     code: str,
@@ -128,40 +66,43 @@ def fetch_rows_for_code(
     max_pages: int,
     sleep_seconds: float,
 ) -> list[dict]:
+    """외국인·기관 순매매량(주). 예전 finance.naver.com/item/frgn.naver 표는 2026-10 새 증권 사이트로
+    넘어가 사라져서 모바일 API(/api/stock/{code}/trend, 최신부터 60일씩, bizdate 이전으로 넘김)를 쓴다."""
     collected: dict[tuple[str, str], dict] = {}
+    bizdate = (end_dt + timedelta(days=1)).strftime("%Y%m%d")
 
-    for page in range(1, max_pages + 1):
-        url = f"https://finance.naver.com/item/frgn.naver?code={code}&page={page}"
+    for _ in range(max_pages):
+        url = f"https://m.stock.naver.com/api/stock/{code}/trend?pageSize=60&bizdate={bizdate}"
         resp = session.get(url, timeout=8)
         resp.raise_for_status()
-        tables = pd.read_html(StringIO(resp.text))
-
-        page_rows: list[dict] = []
-        for tbl in tables:
-            page_rows.extend(extract_rows_from_table(tbl, start_dt, end_dt, code))
-
-        for row in page_rows:
-            collected[(row["ticker"], row["date"])] = row
-
-        earliest_on_page: Optional[date] = None
-        for tbl in tables:
-            temp = normalize_table_columns(tbl)
-            date_col = next((c for c in temp.columns if "날짜" in c), None)
-            if not date_col:
-                continue
-            for raw in temp[date_col].dropna().tolist():
-                raw_s = str(raw).strip()
-                if not raw_s or raw_s.lower() == "nan":
-                    continue
-                try:
-                    dt = datetime.strptime(raw_s.replace(".", "-").replace(" ", ""), "%Y-%m-%d").date()
-                    if earliest_on_page is None or dt < earliest_on_page:
-                        earliest_on_page = dt
-                except Exception:
-                    continue
-
-        if earliest_on_page is not None and earliest_on_page < start_dt:
+        items = resp.json() or []
+        if not items:
             break
+
+        earliest = None
+        for item in items:
+            raw = str(item.get("bizdate") or "")
+            try:
+                row_dt = datetime.strptime(raw, "%Y%m%d").date()
+            except ValueError:
+                continue
+            earliest = raw if earliest is None or raw < earliest else earliest
+            if row_dt < start_dt or row_dt > end_dt:
+                continue
+            institution = parse_signed_int(item.get("organPureBuyQuant"))
+            foreign = parse_signed_int(item.get("foreignerPureBuyQuant"))
+            if institution == 0 and foreign == 0:
+                continue
+            collected[(code, to_iso(row_dt))] = {
+                "date": to_iso(row_dt),
+                "ticker": code,
+                "institution": institution,
+                "foreign": foreign,
+            }
+
+        if earliest is None or earliest >= bizdate or earliest < start_dt.strftime("%Y%m%d"):
+            break
+        bizdate = earliest
 
         if sleep_seconds > 0:
             time.sleep(sleep_seconds)
@@ -301,7 +242,6 @@ def main() -> int:
         {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
             "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-            "Referer": "https://finance.naver.com/",
             "Accept-Language": "ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7",
         }
     )

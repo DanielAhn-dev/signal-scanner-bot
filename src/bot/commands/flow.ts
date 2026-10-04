@@ -9,18 +9,14 @@ import { buildPersonalizedGuidance } from "../../services/personalizedGuidanceSe
 import { buildFlowInsightLines } from "../../services/marketInsightService";
 import { esc, fmtInt, LINE } from "../messages/format";
 import { actionButtons, ACTIONS } from "../messages/layout";
-import * as cheerio from "cheerio";
+import { parseInvestorTrend, type InvestorTrendRow } from "../../lib/naverInvestorTrend";
 
 const supabase = createClient(
   process.env.SUPABASE_URL!,
   process.env.SUPABASE_ANON_KEY!
 );
 
-interface InvestorRow {
-  date: string;
-  foreignNet: number;
-  instNet: number;
-}
+type InvestorRow = InvestorTrendRow;
 
 type FetchLikeResponse = {
   ok: boolean;
@@ -62,39 +58,17 @@ async function fetchWithTimeout(url: string, timeoutMs = 5500): Promise<string> 
   }
 }
 
-/** 네이버 금융 외국인/기관 일별 데이터 스크래핑 */
 async function fetchInvestorData(code: string): Promise<InvestorRow[]> {
-  const url = `https://finance.naver.com/item/frgn.naver?code=${code}`;
+  const url = `https://m.stock.naver.com/api/stock/${code}/trend?pageSize=10`;
 
   for (let attempt = 1; attempt <= 2; attempt++) {
     try {
-      const html = await fetchWithTimeout(url, 5500 + attempt * 1000);
-      const $ = cheerio.load(html);
-      const rows: InvestorRow[] = [];
-
-      $("table.type2 tr").each((_, el) => {
-        const tds = $(el).find("td");
-        if (tds.length < 9) return;
-
-        const dateText = $(tds[0]).text().trim();
-        if (!/\d{4}\.\d{2}\.\d{2}/.test(dateText)) return;
-
-        const parse = (idx: number) => {
-          const t = $(tds[idx]).text().trim().replace(/,/g, "");
-          return parseInt(t, 10) || 0;
-        };
-
-        rows.push({
-          date: dateText.replace(/\./g, "-"),
-          foreignNet: parse(5),
-          instNet: parse(6),
-        });
-      });
-
+      const body = await fetchWithTimeout(url, 5500 + attempt * 1000);
+      const rows = parseInvestorTrend(JSON.parse(body));
       if (rows.length > 0) return rows.slice(0, 10);
     } catch (e) {
       if (attempt === 2) {
-        console.error(`수급 스크래핑 실패 (${code}):`, e);
+        console.error(`수급 조회 실패 (${code}):`, e);
       }
     }
   }

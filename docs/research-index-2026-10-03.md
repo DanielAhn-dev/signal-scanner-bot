@@ -8,11 +8,13 @@
 | `research-retirement-and-starting-2026-10-03.md` | 은퇴 인출·세금·건보료, 일시금 대 분할, 감내 낙폭, 필요 월 적립, 확인 빈도, 강건성(시대·부트스트랩) |
 | `research-income-then-growth-2026-10-03.md` | 선 인컴 후 성장, 인컴 비중 비용, 미국 커버드콜, 코스피 대 미국, 인컴 계좌 구성, 세후·원금 잠식, 커버드콜 세대별, 합성 점검, 분배금 안정성 |
 | `plan-child-gift-account-2026-10-03.md` | 자녀 증여 계좌 기획(1단계 구현, 2단계 설계) |
+| `research-weight-caution-2026-10-05.md` | 비중 조절 경고: 종목 과열·변동성(채택), 시장 외국인 수급 F3(안내 채택), 금리·환율·VKOSPI·종목 수급(미채택) |
 
 ## 스크립트 (`scripts/research/`)
 - 은퇴·시작: `validate_retirement_withdrawal.py`, `validate_lump_vs_split_tolerance.py`, `validate_required_saving.py`, `validate_checking_frequency.py`, `validate_robustness_eras.py`, `validate_tolerance_horizon_eras.py`
 - 인컴: `validate_income_then_growth.py`, `validate_satellite_mix.py`, `validate_us_covered_call.py`, `validate_kospi_vs_us.py`, `validate_income_mix.py`, `validate_income_erosion.py`, `validate_cc_generations.py`, `validate_cc_synthetic.py`, `validate_distribution_stability.py`
 - 금리: `validate_kr_rates_fx.py`(한국 CD91·원/달러 환경별, 부록 16, `/plan` 금리 환경 탭), `validate_rates_regimes.py`(금리 데이터는 `.research-cache/yh_IRX_me.json`·`yh_TNX_me.json` 월말값, 야후 일봉을 4~5년씩 나눠 받아 만든다 — 월봉은 분기 간격이라 쓰면 안 됨)
+- 비중 조절 경고: `validate_weight_caution.py`, `validate_market_flow_caution.py`, `validate_stock_flow_caution.py`, 수집 `fetch_kospi_investor_flow.py`·`fetch_stock_investor_flow.py`
 - 화면 데이터 생성: `build_research_facts.py` → `web/src/data/researchFacts.ts`(화면이 읽는 모든 연구 숫자), `build_child_data.py` → `web/src/data/childLongRunData.ts`
 - 실행은 저장소 루트에서 (`python scripts/research/<이름>.py`). 캐시는 `.research-cache/`(private repo 동기화).
 
@@ -23,8 +25,9 @@
 
 ## 분기 재검증 때 할 일 (11/20경)
 1. 최신 가격·분배금 캐시를 받은 뒤 `build_research_facts.py` 재실행 → 커밋
-2. 시장 비교·인컴 분배율·재미 몫 비용의 변화를 `research-income-then-growth` 부록에 한 줄 추가
-3. 신형 커버드콜 분배금이 들어오면 아래 "남은 일" 1번 수행
+2. `validate_weight_caution.py`·`validate_market_flow_caution.py` 재실행 → 숫자가 바뀌면 `weightCautionSignal.ts`·`marketFlowCaution.ts` 근거 상수와 연구 문서 갱신
+3. 시장 비교·인컴 분배율·재미 몫 비용의 변화를 `research-income-then-growth` 부록에 한 줄 추가
+4. 신형 커버드콜 분배금이 들어오면 아래 "남은 일" 1번 수행
 
 ## 남은 일
 1. **신형 커버드콜 분배금 이력**: 9종 변환·분석 완료(부록 11, `import_incoming_dividends.py`). 남은 것은 KODEX 금융고배당TOP10타겟위클리커버드콜(498410) 분배금(파일이 보유종목 표였음)과 신형 상품 하락장 이력(없음).
