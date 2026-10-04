@@ -4327,3 +4327,14 @@
   .ui-checkbox, input[type="checkbox"], input[type="radio"] { min-width: 20px; min-height: 20px; }
   svg { vertical-align: -0.15em; }
 }
+
+/* 터치 기기: 제목줄·수식줄·상태줄의 작은 버튼을 손가락으로 누를 수 있는 크기로(보이는 모양은 거의 그대로) */
+@media (pointer: coarse) {
+  .excel-titlebar__qs-btn,
+  .excel-titlebar__star-btn,
+  .excel-titlebar__search-toggle { min-width: 32px; min-height: 32px; }
+  .excel-formula-bar__fn-btn { min-width: 32px; min-height: 28px; }
+  .excel-statusbar__zoom-btn,
+  .excel-statusbar__zoom-pct,
+  .excel-statusbar__item--clickable { min-width: 28px; min-height: 28px; display: inline-flex; align-items: center; justify-content: center; }
+}
