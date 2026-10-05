@@ -10,7 +10,7 @@ import "dotenv/config";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { checkDataFreshness } from "../../src/services/dataFreshnessMonitorService";
 import { evaluateDailyDistribution, type DailyBar } from "../../src/services/dataDistributionCheck";
-import { isKrxMarketDay } from "../../src/services/virtualAutoTradeTiming";
+import { expectedTradingDay } from "../../src/services/batchVerifyDay";
 
 /** 배치가 당일 거래일 값으로 채워야 하는 테이블. 수급·신용은 공급처 게시가 늦어 제외한다 */
 const MUST_BE_TODAY = new Set(["ohlcv", "indicators", "scores"]);
@@ -32,10 +32,9 @@ async function fetchBars(supabase: SupabaseClient, ymd: string): Promise<DailyBa
 }
 
 async function main() {
-  if (!isKrxMarketDay(new Date())) {
-    console.log("휴장일 — 검증 생략");
-    return;
-  }
+  // 배치가 자정을 넘겨 끝나거나 휴장일에 돌아도, 배치가 채웠어야 하는 거래일 기준으로 판단한다
+  const batchDay = expectedTradingDay(new Date());
+
   const url = process.env.SUPABASE_URL;
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!url || !key) throw new Error("SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY 가 필요합니다.");
@@ -55,7 +54,7 @@ async function main() {
     }
   }
   const problems = [...report.freshItems, ...report.staleItems].filter(
-    (i) => i.isLowCoverage || (MUST_BE_TODAY.has(i.key) && (i.staleBizDays ?? 99) > 0)
+    (i) => i.isLowCoverage || (MUST_BE_TODAY.has(i.key) && i.latestDate !== batchDay)
   );
   if (problems.length === 0 && distributionIssues.length === 0) {
     console.log("배치 결과 정상:", report.freshItems.map((i) => `${i.key}=${i.latestDate}(${i.latestCount ?? "?"}행)`).join(" "));

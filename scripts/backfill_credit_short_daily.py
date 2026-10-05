@@ -265,7 +265,34 @@ def backfill_credit_short_daily(
     batch_rows = []
     BATCH_SIZE = 500
 
+    # 이어받기: 범위 내 모든 거래일에 이미 거래량·잔고가 채워진 종목은 다시 요청하지 않는다(KRX 차단 완화)
+    done_codes: set = set()
+    if not dry_run and os.environ.get("BACKFILL_FORCE", "").lower() not in ("1", "true", "yes"):
+        try:
+            counts: dict = {}
+            for off in range(0, 20000, 1000):
+                res = (
+                    supabase.table("stock_credit_short_daily")
+                    .select("code")
+                    .gte("date", to_iso(trading_dates[0]))
+                    .lte("date", to_iso(trading_dates[-1]))
+                    .eq("collection_status", "ok")
+                    .range(off, off + 999)
+                    .execute()
+                )
+                for r in res.data or []:
+                    counts[r["code"]] = counts.get(r["code"], 0) + 1
+                if len(res.data or []) < 1000:
+                    break
+            done_codes = {c for c, n in counts.items() if n >= len(trading_dates)}
+            print(f"  이미 완료된 {len(done_codes)}종목은 건너뜀(이어받기)")
+        except Exception as e:
+            print(f"  [WARN] 이어받기 조회 실패, 전체 수집: {e}")
+
     for idx, code in enumerate(codes):
+        if code in done_codes:
+            success += 1
+            continue
         isin = isin_map.get(code)
         if not isin:
             fail += 1
@@ -291,6 +318,8 @@ def backfill_credit_short_daily(
                     "short_ratio": short_ratio,
                     "short_balance": short_balance,
                     "short_volume": short_volume,
+                    # 이어받기 기준(batch_modules/credit_short.py)과 맞춘다: 거래량·잔고가 모두 있으면 ok
+                    "collection_status": "ok" if (short_volume is not None and short_balance is not None) else "partial",
                 })
                 has_data = True
 
@@ -306,7 +335,8 @@ def backfill_credit_short_daily(
         if (idx + 1) % 50 == 0 or (idx + 1) == len(codes):
             print(f"    진행: {idx+1}/{len(codes)} | 성공: {success} | 실패: {fail} | 대기: {len(batch_rows)}건")
 
-        time.sleep(0.05)
+        # 0.05초 간격은 KRX 자동화 탐지(IP 차단)를 유발한 속도 — 기본 0.5초, BACKFILL_SLEEP_SEC로 조정
+        time.sleep(float(os.environ.get("BACKFILL_SLEEP_SEC", "0.5")))
 
     if batch_rows and not dry_run:
         _upsert_batch(batch_rows)

@@ -111,9 +111,53 @@ def fetch_credit_short_data(supabase: Client, trading_date: str):
         start_d = (datetime.strptime(trading_date, "%Y%m%d") - timedelta(days=7)).strftime("%Y%m%d")
         end_d = trading_date
 
+        # 이어받기: 같은 날 이미 정상(ok) 적재된 종목은 다시 요청하지 않는다(KRX 트래픽 최소화).
+        already_ok: set[str] = set()
+        if os.environ.get("CREDIT_SHORT_FORCE_REFETCH", "").lower() not in ("1", "true", "yes"):
+            try:
+                ex = (
+                    supabase.table("stock_credit_short_daily")
+                    .select("code")
+                    .eq("date", trading_iso)
+                    .eq("collection_status", "ok")
+                    .range(0, 4999)
+                    .execute()
+                )
+                already_ok = {r["code"] for r in (ex.data or [])}
+            except Exception as e:
+                print(f"  [WARN] 기존 정상 적재 종목 조회 실패, 전체 수집: {e}")
+        if already_ok:
+            print(f"  이미 정상 적재된 {len(already_ok)}종목은 건너뜀(이어받기)")
+
+        # KRX가 자동화 접속으로 보고 응답을 끊으면(2026-10-02: 68종목 뒤 165종목 연속 실패) 계속 두드릴수록 길어진다.
+        # 연속 실패가 이어지면 잠시 쉬었다가 재개하고, 쉬어도 안 풀리면 중단해 이미 모은 것만 저장한다(다음 실행이 이어받음).
+        cooldown_sec = int(os.environ.get("CREDIT_SHORT_COOLDOWN_SEC", "180"))
+        max_cooldowns = int(os.environ.get("CREDIT_SHORT_MAX_COOLDOWNS", "3"))
+        consecutive_fail_limit = int(os.environ.get("CREDIT_SHORT_CONSECUTIVE_FAILS", "10"))
+        consecutive_fail = 0
+        cooldowns_used = 0
+        aborted_codes: list[str] = []
+
         for idx, code in enumerate(codes):
+            if code in already_ok:
+                success_count += 1
+                continue
             if idx % 50 == 0 and idx > 0:
                 print(f"  progress: {idx}/{len(codes)} (success: {success_count}, fail: {fail_count})")
+
+            if consecutive_fail >= consecutive_fail_limit:
+                if cooldowns_used >= max_cooldowns:
+                    aborted_codes = [c for c in codes[idx:] if c not in already_ok]
+                    print(f"  KRX 연속 실패가 {max_cooldowns}회 쉰 뒤에도 풀리지 않아 중단: 남은 {len(aborted_codes)}종목은 다음 실행이 이어받음")
+                    break
+                cooldowns_used += 1
+                print(f"  KRX 연속 실패 {consecutive_fail}건 → {cooldown_sec}초 쉼({cooldowns_used}/{max_cooldowns})")
+                time.sleep(cooldown_sec)
+                consecutive_fail = 0
+                try:
+                    sess.get("https://data.krx.co.kr/", timeout=10)
+                except Exception:
+                    pass
 
             isin = isin_map.get(code)
             if not isin:
@@ -202,8 +246,10 @@ def fetch_credit_short_data(supabase: Client, trading_date: str):
                     "balance_status": balance_status,
                 })
                 success_count += 1
+                consecutive_fail = 0
             else:
                 fail_count += 1
+                consecutive_fail += 1
                 if code in isin_map:
                     fail_reasons["api_error"] += 1
                 else:
@@ -242,7 +288,7 @@ def fetch_credit_short_data(supabase: Client, trading_date: str):
                 except Exception:
                     pass
 
-            print(f"  Stored {len(cs_rows)} credit/short rows (success: {success_count}, fail: {fail_count})")
+            print(f"  Stored {len(cs_rows)} credit/short rows (success: {success_count}, fail: {fail_count}, 중단으로 미수집: {len(aborted_codes)})")
             if fail_count > 0:
                 print(
                     "  fail detail: "
