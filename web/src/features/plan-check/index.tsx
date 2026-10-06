@@ -3,6 +3,7 @@ import { formatKrwMan } from '../../lib/format'
 import { useProfileStore } from '../../stores/profileStore'
 import More from '../../components/ui/More'
 import GoalCard from './GoalCard'
+import { EARLY_WITHDRAWAL_TAX_RATE, PENSION_SAVING_LIMIT_WON, PENSION_TOTAL_LIMIT_WON, TAX_RULES_YEAR, creditRate, planTaxShelter, type IncomeBand } from '../../lib/taxShelter'
 import {
   BAD10_DRAWDOWN, CHECK_FREQUENCY, SPLIT_OPTIONS, ccDownturnCase, isFactStale, requiredMonthlyDetail, incomePlan, ratesLabels, planWithdrawal, requiredMonthly, sleeveCost, stockCapFor,
 } from '../../lib/planGuide'
@@ -29,7 +30,7 @@ function Basis({ id }: { id: string }) {
 
 const manRound = (won: number) => `${Math.round(won / 10_000).toLocaleString('ko-KR')}만원`
 
-type Tab = 'first' | 'save' | 'goal' | 'income' | 'rates' | 'retire'
+type Tab = 'first' | 'save' | 'goal' | 'income' | 'rates' | 'retire' | 'tax'
 const TABS: Array<{ key: Tab; label: string }> = [
   { key: 'first', label: '처음 넣는 법' },
   { key: 'save', label: '필요 월 적립' },
@@ -37,6 +38,7 @@ const TABS: Array<{ key: Tab; label: string }> = [
   { key: 'income', label: '인컴 점검' },
   { key: 'rates', label: '금리 환경' },
   { key: 'retire', label: '은퇴 인출' },
+  { key: 'tax', label: '절세 계좌' },
 ]
 
 export default function PlanCheckPage() {
@@ -62,6 +64,7 @@ export default function PlanCheckPage() {
       {tab === 'income' && <IncomeCard />}
       {tab === 'rates' && <RatesCard />}
       {tab === 'retire' && <RetireCard />}
+      {tab === 'tax' && <TaxShelterCard />}
       {isAdmin && <AdminLab />}
       <More>
         <p className="acc-note plan-foot">미국 주식·채권 1926~2023년(달러, 물가 반영) 자료를 겹쳐 본 값이라 독립 표본은 적고, 한국 사정(세금·환율·수수료)은 일부만 반영했습니다. 한국 자료는 24년뿐이라 참고로만 봅니다. 일반 증권 앱(절세계좌 없음)에서는 코스피200 ETF 매매차익이 비과세라 세금 면에서 유리하고, 국내 상장 미국 지수 ETF는 차익에 15.4%가 붙어 연금저축·IRP·ISA 같은 절세계좌에서 하는 편이 맞습니다(가입 조건은 증권사 안내로 확인). 이 화면의 장기 숫자는 미국 자료 기준이라 코스피200에 그대로 맞지 않을 수 있고, 코스피200은 반도체 비중이 커서 분배율도 고배당 ETF보다 훨씬 낮습니다.</p>
@@ -385,6 +388,38 @@ function IncomeCard() {
           <Basis id="income" />
         </>
       )}
+    </section>
+  )
+}
+
+function TaxShelterCard() {
+  const [band, setBand] = useState<IncomeBand>('low')
+  const [savingMan, setSavingMan] = useState('600')
+  const [irpMan, setIrpMan] = useState('300')
+  const plan = useMemo(() => planTaxShelter({ band, pensionSavingWon: toWon(savingMan), irpWon: toWon(irpMan) }), [band, savingMan, irpMan])
+  return (
+    <section className="acc-card">
+      <h2>연금저축·IRP에 넣으면 돌려받는 돈</h2>
+      <p className="acc-note">투자 수익과 별개로, <strong>넣는 순간 연말정산에서 세금을 돌려받습니다</strong>. 같은 돈을 일반 계좌에 두면 없는 혜택이라 가장 확실한 수익입니다. 단 연금으로 받기 전에 꺼내면 환급받은 세금(기타소득세 {(EARLY_WITHDRAWAL_TAX_RATE * 100).toFixed(1)}%)을 다시 내므로 오래 묶어 둘 돈만 넣으세요.</p>
+      <div className="acc-row">
+        <label className="acc-field">
+          <span>내 소득 구간</span>
+          <select value={band} onChange={(e) => setBand(e.target.value as IncomeBand)}>
+            <option value="low">총급여 5,500만원 이하 (종합소득 4,500만원 이하)</option>
+            <option value="high">총급여 5,500만원 초과</option>
+          </select>
+        </label>
+        <label className="acc-field"><span>올해 연금저축 납입 (만원)</span><input type="number" inputMode="numeric" min="0" value={savingMan} onChange={(e) => setSavingMan(e.target.value)} /></label>
+        <label className="acc-field"><span>올해 IRP 납입 (만원)</span><input type="number" inputMode="numeric" min="0" value={irpMan} onChange={(e) => setIrpMan(e.target.value)} /></label>
+      </div>
+      <dl className="acc-tiles">
+        <div className="is-main"><dt>연말정산 환급</dt><dd>{manRound(plan.refundWon)}</dd></div>
+        <div><dt>넣은 돈 대비</dt><dd>{plan.immediateReturnPct.toFixed(1)}%</dd></div>
+        <div><dt>공제 인정 금액</dt><dd>{manRound(plan.eligibleWon)}</dd></div>
+        <div><dt>더 넣으면 받을 환급</dt><dd>{manRound(plan.extraRefundPossibleWon)}</dd></div>
+      </dl>
+      {plan.overLimitWon > 0 && <p className="acc-warn">공제 한도(연금저축 {manRound(PENSION_SAVING_LIMIT_WON)}, 연금저축+IRP 합산 {manRound(PENSION_TOTAL_LIMIT_WON)})를 넘는 {manRound(plan.overLimitWon)}은 환급을 받지 못합니다. 한도를 넘는 돈은 일반 계좌나 ISA를 검토하세요.</p>}
+      <p className="acc-note">공제율은 {(creditRate(band) * 100).toFixed(1)}%(지방소득세 포함) 기준입니다. 총급여 1.2억원 초과 구간은 연금저축 한도가 줄어듭니다. {TAX_RULES_YEAR}년 기준이며 세법은 해마다 바뀌므로 가입·납입 전에 금융기관이나 국세청 안내로 확인하세요. 연금으로 받을 때는 연금소득세(나이에 따라 3.3~5.5%)가 붙습니다. ISA는 한도 개편이 논의 중이라 숫자를 적지 않았습니다.</p>
     </section>
   )
 }

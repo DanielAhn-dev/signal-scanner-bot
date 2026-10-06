@@ -70,4 +70,11 @@ describe('관리자·일반 사용자 구분', () => {
     expect(container.textContent).toContain('scripts/research')
     useProfileStore.setState({ isAdmin: false })
   })
+
+  it('절세 계좌 탭: 연금저축 600만 + IRP 300만이면 환급 149만원(반올림)과 한도 안내', () => {
+    render(<PlanCheckPage />)
+    fireEvent.click(screen.getByRole('tab', { name: '절세 계좌' }))
+    expect(screen.getByText('연말정산 환급')).toBeTruthy()
+    expect(screen.getByText('149만원', { selector: 'dd' })).toBeTruthy()
+  })
 })
