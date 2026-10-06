@@ -20,7 +20,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_KEY
   if (!url || !key) return res.status(500).json({ error: 'Server not configured' })
 
-  const { code, side, quantity, price, memo, broker_name, account_name } = req.body || {}
+  const { code, side, quantity, price, memo, broker_name, account_name, trade_date } = req.body || {}
   if (!code || !side || !quantity || !price) return res.status(400).json({ error: 'Missing fields' })
 
   try {
@@ -35,6 +35,17 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
     if (sideUpper !== 'BUY' && sideUpper !== 'SELL') {
       return res.status(400).json({ error: 'side must be BUY or SELL' })
+    }
+
+    // 체결일(KST): 비우면 오늘. 과거 날짜는 실계좌 매수만, 최근 7일까지(DB 함수가 다시 확인한다)
+    const todayKey = toKstDateKey()
+    const tradeDate = trade_date == null || String(trade_date).trim() === '' ? todayKey : String(trade_date).trim()
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(tradeDate)) return res.status(400).json({ error: 'trade_date must be YYYY-MM-DD' })
+    if (tradeDate > todayKey) return res.status(400).json({ error: '체결일은 오늘 이후일 수 없습니다' })
+    const isBackdated = tradeDate < todayKey
+    if (isBackdated && sideUpper !== 'BUY') return res.status(400).json({ error: '지난 날짜 기록은 매수만 가능합니다' })
+    if (isBackdated && tradeDate < toKstDateKey(new Date(Date.now() - 7 * 86_400_000))) {
+      return res.status(400).json({ error: '체결일은 최근 7일 이내만 가능합니다' })
     }
 
     const supabase = createClient(url, key)
@@ -65,19 +76,34 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       accountName = String((pos as any)?.account_name || '').trim() || null
     }
 
-    // 입력 가격이 최근 종가에서 상·하한가(±30%)를 벗어나면 오입력으로 보고 거절한다(종가를 모르는 종목은 통과)
-    const { data: closeRow, error: closeErr } = await supabase
-      .from('stocks')
-      .select('close')
-      .eq('code', String(code).trim().toUpperCase())
-      .maybeSingle()
-    if (closeErr) return res.status(500).json({ error: closeErr.message })
-    const lastClose = Number((closeRow as any)?.close)
+    const isBotAccount = !brokerName && !accountName
+    if (isBackdated && isBotAccount) return res.status(400).json({ error: '지난 날짜 기록은 실계좌(계좌 이름이 있는 보유)만 가능합니다' })
+
+    // 입력 가격이 기준 종가에서 상·하한가(±30%)를 벗어나면 오입력으로 보고 거절한다(종가를 모르는 종목은 통과)
+    // 지난 날짜면 그날 종가, 없으면 최근 종가를 기준으로 한다
+    let lastClose = NaN
+    if (isBackdated) {
+      const { data: dayRow } = await supabase
+        .from('stock_daily')
+        .select('close')
+        .eq('ticker', String(code).trim().toUpperCase())
+        .eq('date', tradeDate)
+        .maybeSingle()
+      lastClose = Number((dayRow as any)?.close)
+    }
+    if (!(lastClose > 0)) {
+      const { data: closeRow, error: closeErr } = await supabase
+        .from('stocks')
+        .select('close')
+        .eq('code', String(code).trim().toUpperCase())
+        .maybeSingle()
+      if (closeErr) return res.status(500).json({ error: closeErr.message })
+      lastClose = Number((closeRow as any)?.close)
+    }
     if (Number.isFinite(lastClose) && lastClose > 0 && (pr > lastClose * 1.3 || pr < lastClose * 0.7)) {
       return res.status(422).json({ error: `price out of range (last close ${lastClose}, allowed ±30%)` })
     }
 
-    const isBotAccount = !brokerName && !accountName
     const prefs = user.chatId ? await getUserInvestmentPrefs(user.chatId) : {}
     const feeRate = Number.isFinite(Number(prefs.virtual_fee_rate)) && Number(prefs.virtual_fee_rate) >= 0
       ? Number(prefs.virtual_fee_rate)
@@ -99,7 +125,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       netAmount = Math.max(0, gross - feeAmount - taxAmount)
     }
 
-    // 같은 주문이 5초 안에 다시 들어오면(더블클릭·재시도) 중복 체결로 보고 막는다
+    // 같은 주문이 5초 안에 다시 들어오면(더블클릭·재시도) 중복 체결로 보고 막는다(체결일이 과거일 수 있어 기록 시각 기준)
     const dupSince = new Date(Date.now() - 5000).toISOString()
     const { data: dupRows, error: dupErr } = await supabase
       .from('virtual_trades')
@@ -109,7 +135,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       .eq('side', sideUpper)
       .eq('quantity', qty)
       .eq('price', pr)
-      .gte('traded_at', dupSince)
+      .gte('created_at', dupSince)
       .limit(1)
     if (dupErr) return res.status(500).json({ error: dupErr.message })
     if (Array.isArray(dupRows) && dupRows.length > 0) {
@@ -132,6 +158,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       p_buy_date: toKstDateKey(),
       p_memo: memo || null,
       p_is_bot_account: isBotAccount,
+      // 오늘 체결은 인자를 빼서 026 마이그레이션 전 함수와도 맞는다
+      ...(isBackdated ? { p_trade_date: tradeDate } : {}),
     })
 
     if (tradeErr) {

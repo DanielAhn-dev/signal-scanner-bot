@@ -117,6 +117,19 @@ function getTodayLocalYmd(): string {
   return new Date(now.getTime() - tzOffsetMs).toISOString().slice(0, 10)
 }
 
+/** 서버 시각(UTC)을 KST 날짜(YYYY-MM-DD)로 */
+function toKstYmd(iso: string | null | undefined): string | null {
+  const t = iso ? new Date(iso).getTime() : NaN
+  return Number.isFinite(t) ? new Date(t + 9 * 3_600_000).toISOString().slice(0, 10) : null
+}
+
+/** 지난 날짜 매수 기록은 최근 7일까지만 받는다(서버와 같은 기준) */
+function shiftYmd(ymd: string, days: number): string {
+  const d = new Date(`${ymd}T00:00:00Z`)
+  d.setUTCDate(d.getUTCDate() + days)
+  return d.toISOString().slice(0, 10)
+}
+
 const WARN_REASON_LABELS: Array<{ key: string; label: string }> = [
   { key: 'warn_overheat', label: '이격 과열(21일선 대비 +7% 초과)' },
   { key: 'warn_vol_spike', label: '거래량 급증(20일 평균 대비 2배 초과)' },
@@ -192,6 +205,7 @@ export default function Portfolio() {
   const [modalSide, setModalSide] = useState<'buy' | 'sell'>('buy')
   const [tradeQty, setTradeQty] = useState(1)
   const [tradePrice, setTradePrice] = useState<number | ''>('')
+  const [tradeDate, setTradeDate] = useState<string>(getTodayLocalYmd())
   const [tradeLoading, setTradeLoading] = useState(false)
   const [tradeError, setTradeError] = useState<string | null>(null)
   const [shareModalOpen, setShareModalOpen] = useState(false)
@@ -753,6 +767,7 @@ export default function Portfolio() {
     setModalSide(side)
     setTradeQty(side === 'buy' ? (row.recommended_buy_qty || 1) : (row.quantity || 1))
     setTradePrice(row.stock?.close ?? row.avg_price ?? '')
+    setTradeDate(getTodayLocalYmd())
     setTradeError(null)
     setModalOpen(true)
   }
@@ -838,10 +853,16 @@ export default function Portfolio() {
     }
   }
 
+  // 지난 날짜 기록은 실계좌(계좌 이름이 있는 보유)의 매수만 — 봇 가상 계좌는 전향 기록을 지키려고 막는다
+  const canBackdateTrade = modalSide === 'buy'
+    && !!(String(modalRow?.broker_name || '').trim() || String(modalRow?.account_name || '').trim())
+
   const submitTrade = async () => {
     if (!modalRow) return
     if (!tradeQty || tradeQty <= 0) { setTradeError('수량은 1 이상이어야 합니다'); return }
     if (tradePrice !== '' && Number(tradePrice) <= 0) { setTradeError('가격은 0보다 커야 합니다'); return }
+    const backdated = canBackdateTrade && tradeDate && tradeDate < getTodayLocalYmd()
+    if (backdated && tradePrice === '') { setTradeError('지난 날짜로 기록할 때는 그날 체결가를 입력해 주세요'); return }
 
     setTradeLoading(true)
     setTradeError(null)
@@ -853,6 +874,7 @@ export default function Portfolio() {
         price: tradePrice !== '' ? Number(tradePrice) : (modalRow.stock?.close ?? modalRow.avg_price ?? 0),
         broker_name: String(modalRow?.broker_name || '').trim() || null,
         account_name: String(modalRow?.account_name || '').trim() || null,
+        ...(backdated ? { trade_date: tradeDate } : {}),
       }
       const json = await apiFetch('/api/ui/virtual-trade', {
         method: 'POST',
@@ -1858,7 +1880,7 @@ ${WEIGHT_CAUTION_SOURCE_NOTE}`,
                 {modalRow.lots.map((l: any, i: number) => (
                   <div key={i} className="portfolio-modal-lots-row">
                     {l.acquired_quantity}주 @ {formatKrw(l.acquired_price)}
-                    {l.acquired_date ? <span className="muted"> · {l.acquired_date}</span> : null}
+                    {toKstYmd(l.acquired_at) ? <span className="muted"> · {toKstYmd(l.acquired_at)}</span> : null}
                   </div>
                 ))}
               </div>
@@ -1884,6 +1906,22 @@ ${WEIGHT_CAUTION_SOURCE_NOTE}`,
                 onChange={(e: any) => setTradePrice(e.target.value === '' ? '' : Number(e.target.value))}
               />
             </div>
+
+            {canBackdateTrade && (
+              <div style={{ marginBottom: 'var(--space-4)' }}>
+                <Input
+                  label="체결일 (늦게 기록할 때만 변경)"
+                  type="date"
+                  value={tradeDate}
+                  min={shiftYmd(getTodayLocalYmd(), -7)}
+                  max={getTodayLocalYmd()}
+                  onChange={(e: any) => setTradeDate(String(e.target.value || getTodayLocalYmd()))}
+                />
+                <div className="caption muted" style={{ marginTop: 'var(--space-1)' }}>
+                  실계좌 매수만 최근 7일까지 지난 날짜로 기록할 수 있어요.
+                </div>
+              </div>
+            )}
 
             {tradeError && (
               <div className="state-error" style={{ marginBottom: 'var(--space-3)' }}>
