@@ -13,6 +13,7 @@ import StockSearchInput from '../../components/StockSearchInput'
 import { EmptyState, ErrorState } from '../../components/StateViews'
 import { useToast } from '../../components/ToastProvider'
 import { resolveSellCostPct, loadTradeCostSettings } from '../../lib/tradeCost'
+import { resolveHoldingAction, summarizeAccounts } from '../../lib/holdingAction'
 import { useSyncedSettings } from '../../lib/userState'
 import Pagination from '../../components/Pagination'
 import EconomicEventBadge from '../../components/EconomicEventBadge'
@@ -116,6 +117,9 @@ function getTodayLocalYmd(): string {
   const tzOffsetMs = now.getTimezoneOffset() * 60_000
   return new Date(now.getTime() - tzOffsetMs).toISOString().slice(0, 10)
 }
+
+const holdingAccountKey = (r: any) => `${String(r?.broker_name || '').trim()}|||${String(r?.account_name || '').trim()}`
+const holdingValue = (r: any) => Number(r?.quantity || 0) * Number(r?.stock?.close || r?.avg_price || 0)
 
 /** 서버 시각(UTC)을 KST 날짜(YYYY-MM-DD)로 */
 function toKstYmd(iso: string | null | undefined): string | null {
@@ -606,6 +610,13 @@ export default function Portfolio() {
 
   // 클라이언트 사이드 파생 상태 – API 재호출 없이 즉시 필터링
   const holdingAll = useMemo(() => allRows.filter((r: any) => r.position_type === 'holding'), [allRows])
+  // 카드의 "이 종목 대응"이 같은 계좌 안 비중을 쓰도록 계좌별로 묶는다(불러온 행 기준)
+  const accountSummary = useMemo(() => summarizeAccounts(holdingAll.map((r: any) => ({
+    accountKey: holdingAccountKey(r),
+    code: String(r.code ?? ''),
+    name: r.stock_name ?? null,
+    value: holdingValue(r),
+  }))), [holdingAll])
   const virtualHoldingRows = useMemo(() => holdingAll.filter((r: any) => isVirtualPositionRow(r)), [holdingAll])
 
   const sectors = useMemo(() => {
@@ -1494,6 +1505,16 @@ export default function Portfolio() {
           const warnScore = Number.isFinite(Number(r?.warn_score)) ? Number(r?.warn_score) : null
           const reasonKey = String(r?.id ?? r?.code ?? Math.random())
           const reasonOpen = openReasonKey === reasonKey
+          const rowAccountKey = holdingAccountKey(r)
+          const action = resolveHoldingAction({
+            code: String(r.code ?? ''),
+            name: r.stock_name ?? null,
+            pnlPct: r.unrealized_pct != null ? Number(r.unrealized_pct) : null,
+            accountWeightPct: accountSummary.weightPct(rowAccountKey, holdingValue(r)),
+            coveredCallShareOfIncomePct: accountSummary.coveredCallShareOfIncomePct(rowAccountKey),
+            weightCaution: r?.weight_caution ?? null,
+            isBotAccount: rowAccountKey === '|||',
+          })
 
           // 판정근거 배지 계산
           const reasonBadges: { label: string; type: 'partial' | 'add' | 'warn' | 'ok' | 'neutral'; title?: string }[] = []
@@ -1580,12 +1601,31 @@ ${WEIGHT_CAUTION_SOURCE_NOTE}`,
                 {r.quantity}주 · 평균가 {formatKrw(r.avg_price)}{r.buy_date ? ` · ${r.buy_date}` : ''}
               </div>
 
-              {/* ── 계좌 · 상태 · 등급 칩 ── */}
+              {/* ── 이 종목 대응: 사용자가 실제로 할 일 (봇 판정값은 아래 자세히 보기로) ── */}
+              <div className={`portfolio-action portfolio-action--${action.tone}`} role="note" aria-label="이 종목 대응">
+                <div className="portfolio-action-head">
+                  <span className="portfolio-action-verdict">{action.verdict}</span>
+                  <span className="caption muted">{action.role}</span>
+                </div>
+                <div className="portfolio-action-todo">{action.todo}</div>
+                <dl className="portfolio-action-lines">
+                  <div><dt>지금 상태</dt><dd>{action.now}</dd></div>
+                  <div><dt>언제 움직이나</dt><dd>{action.when}</dd></div>
+                </dl>
+              </div>
+
+              {/* ── 계좌 칩 ── */}
               <div className="portfolio-card-chips">
                 <span className="portfolio-account-chip">
                   <Building2 size={11} />
                   {accountLabel(r?.broker_name, r?.account_name)}
                 </span>
+              </div>
+
+              <Detail>
+              {/* ── 봇 판정값 (검증용): 상태 · 등급 칩 ── */}
+              <div className="portfolio-card-chips">
+                <span className="caption muted">봇 판정(검증용)</span>
                 <span className={`portfolio-state-chip portfolio-state-chip--${holdingState}`}>
                   {holdingState === 'partial' ? '부분청산 후보' : holdingState === 'add' ? '추가매수' : '보통 보유'}
                 </span>
@@ -1600,7 +1640,6 @@ ${WEIGHT_CAUTION_SOURCE_NOTE}`,
                 )}
               </div>
 
-              <Detail>
               {/* ── 판정 배지 + 판정근거 토글 ── */}
               <div className="portfolio-card-badges-row">
                 {reasonBadges.map((b, i) => (
@@ -1619,7 +1658,7 @@ ${WEIGHT_CAUTION_SOURCE_NOTE}`,
                     onClick={() => setOpenReasonKey(reasonOpen ? null : reasonKey)}
                     aria-expanded={reasonOpen}
                   >
-                    {reasonOpen ? '판정근거 접기' : '판정근거 보기'}
+                    {reasonOpen ? '봇 판정근거 접기' : '봇 판정근거 보기'}
                   </button>
                 )}
               </div>
