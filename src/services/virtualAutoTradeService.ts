@@ -82,6 +82,7 @@ import { isExchangeTradedProduct, resolveBaseSellTaxRate } from "../lib/securiti
 import { fetchBenchmarkComparison, formatBenchmarkLine } from "./virtualAutoTradeBenchmark";
 import { fetchHeavyNetSellingCodes } from "./investorFlowFilter";
 import { fetchWeightCautions, type WeightCautionResult } from "./weightCautionSignal";
+import { fetchChaseEntries, type ChaseEntryResult } from "./chaseEntrySignal";
 import { fetchFundamentalGateResults, type FundamentalGateResult } from "./fundamentalQualityGate";
 import {
   GATE_CORE_STRATEGY,
@@ -3049,7 +3050,8 @@ async function selectMondayCandidates(payload: {
     .sort((a, b) => toNumber(b.score, 0) - toNumber(a.score, 0))
     .slice(0, 80)
     .map((row) => row.code);
-  const [heavyNetSelling, disclosureFilter, fundamentalGate, weightCautions] = await Promise.all([
+  // 급등 다음날 추격 매수 금지(전날 +8%·거래량 5배·고가 근처 마감) — chaseEntrySignal, 20일 뒤 코스피 대비 평균 -4.3%
+  const [heavyNetSelling, disclosureFilter, fundamentalGate, weightCautions, chaseEntries] = await Promise.all([
     fetchHeavyNetSellingCodes(
       payload.supabase,
       scoredRows.map((row) => row.code)
@@ -3066,7 +3068,11 @@ async function selectMondayCandidates(payload: {
       scoredRows.map((row) => row.code)
     ).catch(() => new Map<string, FundamentalGateResult>()),
     fetchWeightCautions(payload.supabase, weightCautionCodes).catch(() => new Map<string, WeightCautionResult>()),
+    fetchChaseEntries(payload.supabase, weightCautionCodes, toKstDateKey()).catch(
+      () => new Map<string, ChaseEntryResult>()
+    ),
   ]);
+  const chaseCodes = [...chaseEntries.keys()];
   const overheatedCodes = [...weightCautions.entries()]
     .filter(([, caution]) => caution.level !== "none")
     .map(([code]) => code);
@@ -3084,6 +3090,7 @@ async function selectMondayCandidates(payload: {
     ...negativeDisclosures.keys(),
     ...fundamentalFailCodes,
     ...overheatedCodes,
+    ...chaseCodes,
   ]);
 
   const selection = pickAutoTradeCandidates({
@@ -3124,7 +3131,7 @@ async function selectMondayCandidates(payload: {
             discoveryProfile === "BLEND"
               ? ` · 하이라이트 ${highlightCodes.size} · 눌림목 ${pullbackCandidateCodes?.size ?? 0} · 멀티배거 ${multibaggerCodes?.size ?? 0} · 백테스트 ${backtestEdgeCodes?.size ?? 0}`
               : ""
-          } · 데이터품질 ${dataQuality.band.toUpperCase()}(${dataQuality.qualityScore}) · ${dataQuality.note} · 교집합(2+) ${overlap2Count}종목 · 교집합(3+) ${overlap3Count}종목 · 오늘매수강신호 ${strongTodayBuyCount}종목 · 즉시제외 ${immediateExcludeCount}종목${cooldownCodes.size > 0 ? ` · 스탑로스 쿨다운 ${cooldownCodes.size}종목 제외` : ""}${heavyNetSelling.size > 0 ? ` · 수급이탈 ${heavyNetSelling.size}종목 제외` : ""}${fundamentalFailCodes.length > 0 ? ` · 실적(적자·영업이익 감소) ${fundamentalFailCodes.length}종목 제외` : ""}${overheatedCodes.length > 0 ? ` · 과열·고점 변동성 ${overheatedCodes.length}종목 제외` : ""} · ${formatDisclosureFilterNote(disclosureFilter)}`,
+          } · 데이터품질 ${dataQuality.band.toUpperCase()}(${dataQuality.qualityScore}) · ${dataQuality.note} · 교집합(2+) ${overlap2Count}종목 · 교집합(3+) ${overlap3Count}종목 · 오늘매수강신호 ${strongTodayBuyCount}종목 · 즉시제외 ${immediateExcludeCount}종목${cooldownCodes.size > 0 ? ` · 스탑로스 쿨다운 ${cooldownCodes.size}종목 제외` : ""}${heavyNetSelling.size > 0 ? ` · 수급이탈 ${heavyNetSelling.size}종목 제외` : ""}${fundamentalFailCodes.length > 0 ? ` · 실적(적자·영업이익 감소) ${fundamentalFailCodes.length}종목 제외` : ""}${overheatedCodes.length > 0 ? ` · 과열·고점 변동성 ${overheatedCodes.length}종목 제외` : ""}${chaseCodes.length > 0 ? ` · 전날 급등 추격 ${chaseCodes.length}종목 제외` : ""} · ${formatDisclosureFilterNote(disclosureFilter)}`,
   };
 }
 
@@ -5635,6 +5642,13 @@ async function runDailyReviewForUser(payload: {
             addOnSelection.candidates.map((candidate) => candidate.code)
           ).catch(() => new Map<string, WeightCautionResult>())
         : new Map<string, WeightCautionResult>();
+      const addOnChaseEntries = addOnSelection.candidates.length
+        ? await fetchChaseEntries(
+            payload.supabase,
+            addOnSelection.candidates.map((candidate) => candidate.code),
+            toKstDateKey()
+          ).catch(() => new Map<string, ChaseEntryResult>())
+        : new Map<string, ChaseEntryResult>();
 
       if (addOnSelection.candidates.length > 0) {
         if (addOnBuyPriceResolution.marketPhase === "intraday") {
@@ -5682,6 +5696,25 @@ async function runDailyReviewForUser(payload: {
               level: weightCaution.level,
               ma200GapPct: Math.round(weightCaution.ma200Gap * 1000) / 10,
               volRatio: weightCaution.volRatio != null ? Math.round(weightCaution.volRatio * 100) / 100 : null,
+            },
+          });
+          continue;
+        }
+        const chase = addOnChaseEntries.get(candidate.code);
+        if (chase) {
+          summary.skipped += 1;
+          summary.notes.push(`${candidate.name || candidate.code}(${candidate.code}) 추가매수 보류: 전날 급등 추격`);
+          await writeActionLog({
+            supabase: payload.supabase,
+            runId: payload.runId,
+            chatId,
+            code: candidate.code,
+            actionType: "SKIP",
+            reason: "add-on-chase-entry",
+            detail: {
+              date: chase.date,
+              jumpPct: Math.round(chase.jump * 1000) / 10,
+              volumeRatio: Math.round(chase.volumeRatio * 10) / 10,
             },
           });
           continue;
