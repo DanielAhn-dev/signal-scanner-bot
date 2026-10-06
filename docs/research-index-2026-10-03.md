@@ -1,6 +1,6 @@
 # 연구 인덱스 (2026-10-03) — 재개용
 
-새 세션에서 이 문서만 읽으면 어디까지 했고 무엇이 남았는지 알 수 있게 정리한다.
+새 세션에서 이 문서와 `hypothesis-ledger.md`만 읽으면 어디까지 했고 무엇이 남았는지 알 수 있게 정리한다.
 
 ## 문서
 | 문서 | 내용 |
@@ -9,6 +9,8 @@
 | `research-income-then-growth-2026-10-03.md` | 선 인컴 후 성장, 인컴 비중 비용, 미국 커버드콜, 코스피 대 미국, 인컴 계좌 구성, 세후·원금 잠식, 커버드콜 세대별, 합성 점검, 분배금 안정성 |
 | `plan-child-gift-account-2026-10-03.md` | 자녀 증여 계좌 기획(1단계 구현, 2단계 설계) |
 | `research-weight-caution-2026-10-05.md` | 비중 조절 경고: 종목 과열·변동성(채택), 시장 외국인 수급 F3(안내 채택), 금리·환율·VKOSPI·종목 수급(미채택) |
+| `research-buy-cadence-and-crash-calls-2026-10-06.md` | 적립 간격의 꼬리 위험(매주=매일, 매달 하루는 첫 1년 편차 3~4배), 폭락 직전 고점 시작 매주 적립, CAPE와 1년 내 폭락 |
+| `hypothesis-ledger.md` | **가설 장부** — 진행 중 가설·사전 판정 기준·다음 점검일·기록 무결성 이력. 새 세션은 여기부터 |
 
 ## 스크립트 (`scripts/research/`)
 - 은퇴·시작: `validate_retirement_withdrawal.py`, `validate_lump_vs_split_tolerance.py`, `validate_required_saving.py`, `validate_checking_frequency.py`, `validate_robustness_eras.py`, `validate_tolerance_horizon_eras.py`
