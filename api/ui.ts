@@ -41,6 +41,7 @@ import sectorLeaders from '../handlers/ui/sector-leaders'
 import sectors from '../handlers/ui/sectors'
 import simulationPlan from '../handlers/ui/simulation-plan'
 import seedBuilder from '../handlers/ui/seed-builder'
+import moneyFlow from '../handlers/ui/money-flow'
 import investmentPrefs from '../handlers/ui/investment-prefs'
 import settings from '../handlers/ui/settings'
 import stockIndicators from '../handlers/ui/stock-indicators'
@@ -105,6 +106,7 @@ const ROUTES: Record<string, UiHandler> = {
   sectors,
   'simulation-plan': simulationPlan,
   'seed-builder': seedBuilder,
+  'money-flow': moneyFlow,
   'investment-prefs': investmentPrefs,
   settings,
   'stock-indicators': stockIndicators,
