@@ -2227,6 +2227,22 @@ a:focus-visible {
   .portfolio-action-lines > div { grid-template-columns: 1fr; gap: 0; }
 }
 
+.portfolio-action-more { margin-top: var(--space-2); }
+.portfolio-action-more > summary { cursor: pointer; color: var(--color-text-secondary); font-size: var(--font-size-xs); width: fit-content; }
+.portfolio-action-more > summary:hover { color: var(--color-text-primary); }
+.portfolio-action-more .portfolio-action-lines { margin-top: var(--space-1); }
+
+.portfolio-meta-account { display: inline-flex; align-items: center; gap: 3px; margin-left: 6px; }
+.portfolio-meta-account::before { content: '·'; margin-right: 3px; }
+
+.portfolio-bot-detail { margin-top: var(--space-2); }
+.portfolio-bot-detail > summary {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 6px;
+  cursor: pointer; color: var(--color-text-tertiary); font-size: var(--font-size-xs);
+}
+.portfolio-bot-detail > summary:hover { color: var(--color-text-secondary); }
+.portfolio-bot-detail > summary .portfolio-state-chip { margin-top: 0; }
+
 .portfolio-state-chip {
   display: inline-flex;
   align-items: center;
@@ -8295,7 +8311,7 @@ a:focus-visible {
   margin-right: var(--space-3);
 }
 
-/* 종목 카드 버튼: 2열 격자로 가지런히 (혼자 남는 버튼 없음) */
+/* 종목 카드 버튼: 사기·팔기 기록은 같은 폭 버튼 2개, 고치기·지우기는 오른쪽 작은 글자 버튼 */
 .container-app.portfolio-page .portfolio-actions-row {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -8305,8 +8321,15 @@ a:focus-visible {
   width: 100%;
   justify-content: center;
 }
+.portfolio-actions-minor {
+  grid-column: 1 / -1;
+  display: flex;
+  justify-content: flex-end;
+  gap: 4px;
+}
 @media (min-width: 641px) {
-  .container-app.portfolio-page .portfolio-actions-row { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .container-app.portfolio-page .portfolio-actions-row { grid-template-columns: repeat(2, minmax(0, 12rem)) 1fr; }
+  .portfolio-actions-minor { grid-column: auto; align-items: center; }
 }
 @media (max-width: 640px) {
   .portfolio-asset-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
