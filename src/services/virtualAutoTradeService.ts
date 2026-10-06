@@ -2272,6 +2272,8 @@ async function getRecentAutoTradeMetrics(payload: {
   const activeDayKeys = new Set<string>();
 
   for (const row of actions) {
+    // 사용자가 직접 바꾼 설정 기록(handlers/ui/_userDecisionLog.ts)은 봇 활동이 아니다
+    if (String(row.reason ?? "").startsWith("user-")) continue;
     const actionType = String(row.action_type ?? "").trim().toUpperCase();
     if (actionType === "BUY") buyActions += 1;
     if (actionType === "SELL") sellActions += 1;

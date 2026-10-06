@@ -2,6 +2,7 @@ import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { createClient } from '@supabase/supabase-js'
 import { setUiCorsHeaders } from './_accessControl'
 import { resolveUiUserContext } from './_userContext'
+import { changedFields, logUserDecision } from './_userDecisionLog'
 
 function resolveTargetChatId(userChatId: number | null): number | null {
   // 인증된 세션의 chatId만 신뢰한다. 요청이 넘기는 chat_id는 사용하지 않는다.
@@ -68,11 +69,20 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         selected_strategy: VALID_STRATEGIES.includes(rawStrategy) ? rawStrategy : undefined,
       }
 
+      const { data: prevSettings } = await supabase
+        .from('virtual_autotrade_settings')
+        .select('*')
+        .eq('chat_id', targetChatId)
+        .maybeSingle()
+
       const { error: upsertError } = await supabase
         .from('virtual_autotrade_settings')
         .upsert(payload, { onConflict: 'chat_id' })
 
       if (upsertError) return res.status(500).json({ error: upsertError.message })
+
+      const changed = changedFields(prevSettings as Record<string, unknown> | null, payload)
+      if (Object.keys(changed).length) await logUserDecision(supabase, targetChatId, 'settings', { changed })
 
       const { data, error } = await supabase
         .from('virtual_autotrade_settings')

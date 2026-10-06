@@ -2,6 +2,7 @@ import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { createClient } from '@supabase/supabase-js'
 import { isStrictIdentity, resolveUiUserContext } from './_userContext'
 import { INDEX_HOLD_MODE, normalizeStrategyMode } from '../../src/services/indexHoldStrategy'
+import { logUserDecision } from './_userDecisionLog'
 import {
   applyManualDeposit,
   nextDepositDate,
@@ -171,6 +172,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           .from('users')
           .upsert({ tg_id: targetChatId, prefs: modePrefs }, { onConflict: 'tg_id' })
         if (modeError) return res.status(500).json({ error: modeError.message })
+        const prevMode = normalizeStrategyMode((modeRow?.prefs as Record<string, unknown> | undefined)?.virtual_strategy_mode)
+        if (prevMode !== mode) await logUserDecision(supabase, targetChatId, 'mode-switch', { from: prevMode, to: mode })
         return res.status(200).json({ data: { strategy_mode: mode } })
       }
 
