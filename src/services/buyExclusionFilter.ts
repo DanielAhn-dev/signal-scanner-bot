@@ -6,7 +6,7 @@
  *   - 최근 5일 악재 공시 (dartDisclosureFilter, DART_API_KEY 필요)
  *   - 실적 관문: 최근 4분기 적자·영업이익 감소 (fundamentalQualityGate, 생존편향 없는 검증 근거)
  *   - 과열·고점 변동성 급등 (weightCautionSignal, 3개월 내 -20% 확률 52~63%·평소 34%)
- *   - 전날 급등 추격(+8%·거래량 5배·고가 근처 마감, chaseEntrySignal, 20일 뒤 코스피 대비 평균 -4.3%)
+ *   - 급등 추격(+8%·거래량 5배·고가 근처 마감 뒤 5거래일)·한 달 -15% 이하 급락 (chaseEntrySignal)
  *     리포트 후보는 유니버스(218종목) 안이라 전부 본다(동시 8개 조회). 자동매매는 매매 시간 때문에 점수 상위 80종목만 본다.
  */
 import { isExchangeTradedProduct } from "../lib/securitiesTax";
@@ -14,7 +14,7 @@ import { fetchHeavyNetSellingCodes } from "./investorFlowFilter";
 import { fetchNegativeDisclosureCodes } from "./dartDisclosureFilter";
 import { fetchFundamentalGateResults, type FundamentalGateResult } from "./fundamentalQualityGate";
 import { fetchWeightCautions, type WeightCautionResult } from "./weightCautionSignal";
-import { fetchChaseEntries, type ChaseEntryResult } from "./chaseEntrySignal";
+import { entryGuardLabel, fetchChaseEntries, type ChaseEntryResult } from "./chaseEntrySignal";
 import { toKstDateKey } from "../lib/krxCalendar";
 
 type SupabaseClientAny = any;
@@ -49,7 +49,7 @@ export async function fetchBuyExclusions(
       const gate = fundamentalGate.get(code);
       if (gate?.status === "fail") reasons.set(code, `실적(${gate.reason})`);
       else if ((weightCautions.get(code)?.level ?? "none") !== "none") reasons.set(code, "과열·고점 변동성");
-      else if (chaseEntries.has(code)) reasons.set(code, "전날 급등 추격");
+      else if (chaseEntries.has(code)) reasons.set(code, entryGuardLabel(chaseEntries.get(code)!.kind));
     }
   }
   return { codes: new Set(reasons.keys()), reasons };
