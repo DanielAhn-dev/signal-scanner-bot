@@ -1,6 +1,6 @@
 /**
  * Dashboard — 중앙 패널: 엑셀 셀 병합 스타일 대시보드
- * 오늘의 플로우 / 포트폴리오 요약 / 점수 상위 섹터 Top 8
+ * 오늘 점검 / 포트폴리오 요약 / 점수 상위 섹터 Top 8
  */
 import React, { useEffect, useState } from 'react'
 import { apiFetch } from '../../lib/api'
@@ -31,9 +31,16 @@ type PortfolioSummary = {
   positions?: unknown[]
 }
 
-// 관리자의 오늘의 플로우는 navigation.ts FLOW_STEPS(탭 순서와 같은 정의)에서 그린다
+// 관리자의 오늘 점검 — 2026-09-29 방향 전환(지수 적립·행동 실수 차단·위험 관리) 뒤 매일 볼 것만 둔다.
+// 종목 선별 흐름(FLOW_STEPS 1~7)은 '종목 연구' 탭과 각 화면 위 n/7 안내에 남기고 여기서는 링크 하나로 줄였다.
+const ADMIN_TODO_STEPS: Array<{ key: string; label: string; desc: string; route?: string }> = [
+  { key: 'control-audit', route: 'control?tab=audit', label: '관제 검산', desc: '어젯밤 배치·기록에 이상이 없는지 먼저 확인' },
+  { key: 'portfolio', label: '비중 경고', desc: '아래 보유 종목 대응(한도 초과분 KODEX 200으로)을 처리했는지 확인' },
+  { key: 'goal-tracker', label: '적립 진행', desc: '이번 달 입금이 들어갔고 계획선을 따라가는지 확인' },
+  { key: 'market', label: `종목 연구 (${FLOW_STEPS.length}단계)`, desc: '매일 볼 필요 없음 — 봇 판단 근거를 따질 때만 1 시장부터' },
+]
 // 일반 사용자는 시드 모으기 → 목표 확인 → 금액 넣어 시뮬레이션 → 따라 하기 순서만 안내한다
-const USER_TODO_STEPS: Array<{ key: string; label: string; desc: string }> = [
+const USER_TODO_STEPS: Array<{ key: string; label: string; desc: string; route?: string }> = [
   { key: 'start', label: '시작하기', desc: '수입·목표를 적고 가상 계좌로 시작' },
   { key: 'seed-builder', label: '시드 만들기', desc: '이번 달 얼마를 모을지 정하기' },
   { key: 'goal-tracker', label: '목표 확인', desc: '목표까지 얼마나 왔는지 보기' },
@@ -130,7 +137,7 @@ export default function Dashboard({ onNavigate }: { onNavigate?: (r: string) => 
   const { view: goalView, reason: goalReason } = useGoalTracker()
   const goalLoaded = goalView !== null || goalReason !== null
   const nextTodoKey = !goalLoaded ? null : goalView ? 'seed-builder' : 'start'
-  const todoSteps = isAdmin ? FLOW_STEPS : detailed ? USER_TODO_STEPS : USER_TODO_STEPS.filter((s) => s.key === nextTodoKey)
+  const todoSteps = isAdmin ? ADMIN_TODO_STEPS : detailed ? USER_TODO_STEPS : USER_TODO_STEPS.filter((s) => s.key === nextTodoKey)
   const chatId = useCurrentChatId()
   const [portfolio, setPortfolio] = useState<PortfolioSummary | null>(null)
   const [sectors, setSectors]     = useState<SectorItem[]>([])
@@ -282,7 +289,7 @@ export default function Dashboard({ onNavigate }: { onNavigate?: (r: string) => 
           <tr className="xls-row">
             <td className="xls-row-num">{rowNum()}</td>
             <td className="xls-cell" colSpan={6} style={S.sectionTitle}>
-              {isAdmin ? '오늘의 플로우' : detailed ? '오늘 할 일' : '다음 할 일'}
+              {isAdmin ? '오늘 점검' : detailed ? '오늘 할 일' : '다음 할 일'}
               {isAdmin && (
                 <span style={{ float: 'right', color: 'var(--color-brand)', cursor: 'pointer', fontSize: 10, fontWeight: 400 }} onClick={() => nav('reports')}>
                   복기 보기 →
@@ -291,7 +298,7 @@ export default function Dashboard({ onNavigate }: { onNavigate?: (r: string) => 
             </td>
           </tr>
 
-          {/* 관리자: 봇 흐름 단계(navigation.ts FLOW_STEPS) · 사용자: 시드 모으기 가이드 */}
+          {/* 관리자: 오늘 점검(ADMIN_TODO_STEPS) · 사용자: 시드 모으기 가이드 */}
           {todoSteps.map((s, i) => (
             <tr key={s.key} className={`xls-row${i % 2 === 0 ? ' xls-row--even' : ''}`}>
               <td className="xls-row-num">{rowNum()}</td>
@@ -304,7 +311,7 @@ export default function Dashboard({ onNavigate }: { onNavigate?: (r: string) => 
               </td>
               {/* 마지막 열(F)은 폭이 남는 만큼만이라 링크가 잘렸다 — E·F 두 칸을 묶어 "지금 하기 →"가 온전히 보이게 한다 */}
               <td className="xls-cell" colSpan={2} style={{ whiteSpace: 'nowrap', textAlign: 'right' }}>
-                <span style={{ ...S.link, ...(s.key === nextTodoKey ? { fontWeight: 700 } : {}) }} onClick={() => nav(s.key)}>{s.key === nextTodoKey ? '지금 하기 →' : '열기 →'}</span>
+                <span style={{ ...S.link, ...(s.key === nextTodoKey ? { fontWeight: 700 } : {}) }} onClick={() => nav(s.route ?? s.key)}>{s.key === nextTodoKey ? '지금 하기 →' : '열기 →'}</span>
               </td>
             </tr>
           ))}
