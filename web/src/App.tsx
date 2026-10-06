@@ -18,7 +18,7 @@ import { onOpenProfileModal } from './lib/profileModal'
 import { apiFetch } from './lib/api'
 import { canSeeNav } from './navigation'
 import InviteGate from './features/invites/InviteGate'
-import { captureInviteFromUrl } from './lib/inviteStash'
+import { captureInviteFromUrl, readStashedCouple } from './lib/inviteStash'
 
 // 초대 링크(?invite=CODE)로 들어온 코드는 로그인 왕복 전에 보관한다
 captureInviteFromUrl()
@@ -76,6 +76,7 @@ const FollowTradesPage     = lazyWithRecovery(() => import('./features/follow-tr
 const StartWizardPage      = lazyWithRecovery(() => import('./features/start-wizard'))
 const SeedBuilderPage      = lazyWithRecovery(() => import('./features/seed-builder'))
 const MoneyFlowPage        = lazyWithRecovery(() => import('./features/money-flow'))
+const FamilyPage           = lazyWithRecovery(() => import('./features/family'))
 const IncomeGuidePage      = lazyWithRecovery(() => import('./features/income-guide'))
 const GoalTrackerPage      = lazyWithRecovery(() => import('./features/goal-tracker'))
 const ChoiceReviewPage     = lazyWithRecovery(() => import('./features/choice-review'))
@@ -225,6 +226,11 @@ function AppContent() {
   }, [])
 
   const handleNavigate = (r: string) => navigate(`/${r}`)
+
+  // 이미 회원인데 부부 연결 링크(?couple=)로 들어왔으면 부부 연결 화면에서 수락을 묻는다
+  useEffect(() => {
+    if (isMember && readStashedCouple() && location.pathname !== '/family') navigate('/family')
+  }, [isMember]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const runWatchlistExport = async () => {
     const res = await apiFetch('/api/ui/watchlist', { cacheMs: 0, timeoutMs: 15_000 })
@@ -406,6 +412,7 @@ function AppContent() {
             <Route path="/start"                  element={<StartWizardPage />} />
             <Route path="/seed-builder"            element={<SeedBuilderPage />} />
             <Route path="/money-flow"             element={<MoneyFlowPage />} />
+            <Route path="/family"                 element={<FamilyPage />} />
             <Route path="/income-guide"           element={<IncomeGuidePage />} />
             <Route path="/goal-tracker"           element={<GoalTrackerPage />} />
             <Route path="/choices"                element={<ChoiceReviewPage />} />

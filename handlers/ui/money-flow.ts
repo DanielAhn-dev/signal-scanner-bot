@@ -2,6 +2,7 @@ import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { createClient } from '@supabase/supabase-js'
 import { setUiCorsHeaders } from './_accessControl'
 import { resolveUiUserContext } from './_userContext'
+import { partnerSharing } from '../../src/services/household'
 import { categoryById, learnKeyword, type FlowCheckInput, type FlowItem, type IrregularItem } from '../../src/lib/moneyFlow'
 
 const maxAmount = 100_000_000_000
@@ -87,8 +88,8 @@ export function normalizeFlowCheck(body: any, now = new Date()): { checked_on: s
 }
 
 const entryColumns = 'id,spent_on,amount,memo,category_id,cut_level,must_part,payment'
-const toEntry = (row: any) => ({
-  id: row.id, date: String(row.spent_on).slice(0, 10), amount: Number(row.amount), memo: row.memo, categoryId: row.category_id,
+const toEntry = (row: any, mine = true) => ({
+  id: row.id, mine, date: String(row.spent_on).slice(0, 10), amount: Number(row.amount), memo: row.memo, categoryId: row.category_id,
   cut: row.cut_level ?? null, mustPart: row.must_part === null ? null : Number(row.must_part), payment: row.payment,
 })
 
@@ -116,7 +117,7 @@ async function handlePost(supabase: any, clientId: string, body: any, res: Verce
         if (learnError) return res.status(500).json({ error: learnError.message })
       }
     }
-    return res.status(200).json({ ok: true, data: (data ?? []).map(toEntry) })
+    return res.status(200).json({ ok: true, data: (data ?? []).map((row: any) => toEntry(row)) })
   }
   if (action === 'save-check') {
     const check = normalizeFlowCheck(body)
@@ -164,17 +165,25 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const from = req.query.from
     const to = req.query.to
     if (!validDate(from) || !validDate(to) || from > to) return res.status(400).json({ error: 'Invalid range' })
-    const [entries, rules, checks] = await Promise.all([
+    // 부부 연결: 상대가 지출을 공유하면 상대 기록도 함께 준다(읽기만, mine: false). 고치기·지우기는 client_id로 묶여 자기 것만 된다
+    const partnerClientId = await partnerSharing(supabase, user.clientId, 'spending')
+    const [entries, rules, checks, partnerEntries] = await Promise.all([
       supabase.from('money_flow_entries').select(entryColumns).eq('client_id', user.clientId)
         .gte('spent_on', from).lte('spent_on', to).order('spent_on', { ascending: false }).order('created_at', { ascending: false }).limit(2000),
       supabase.from('money_flow_rules').select('keyword,category_id').eq('client_id', user.clientId).limit(1000),
       supabase.from('money_flow_checks').select('id,checked_on,label,input').eq('client_id', user.clientId)
         .order('checked_on', { ascending: false }).order('created_at', { ascending: false }).limit(24),
+      partnerClientId
+        ? supabase.from('money_flow_entries').select(entryColumns).eq('client_id', partnerClientId)
+          .gte('spent_on', from).lte('spent_on', to).order('spent_on', { ascending: false }).order('created_at', { ascending: false }).limit(2000)
+        : Promise.resolve({ data: [], error: null }),
     ])
-    const failed = [entries, rules, checks].find((result) => result.error)
+    const failed = [entries, rules, checks, partnerEntries].find((result) => result.error)
     if (failed) return res.status(500).json({ error: failed.error!.message })
     return res.status(200).json({
-      entries: (entries.data ?? []).map(toEntry),
+      entries: [...(entries.data ?? []).map((row: any) => toEntry(row)), ...(partnerEntries.data ?? []).map((row: any) => toEntry(row, false))]
+        .sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0)),
+      partnerShared: !!partnerClientId,
       rules: (rules.data ?? []).map((row: any) => ({ keyword: row.keyword, categoryId: row.category_id })),
       checks: (checks.data ?? []).map((row: any) => ({ id: row.id, date: String(row.checked_on).slice(0, 10), label: row.label, input: row.input })),
     })

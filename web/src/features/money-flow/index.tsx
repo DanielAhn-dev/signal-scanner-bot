@@ -9,7 +9,7 @@ import {
 import '../accumulate/accumulate.css'
 import './money-flow.css'
 
-type Entry = { id: string; date: string; amount: number; memo: string; categoryId: string; cut: CutLevel | null; mustPart: number | null; payment: Payment }
+type Entry = { id: string; mine?: boolean; date: string; amount: number; memo: string; categoryId: string; cut: CutLevel | null; mustPart: number | null; payment: Payment }
 type Draft = { key: string; amount: number; memo: string; categoryId: string; autoCategoryId: string; known: boolean; payment: Payment }
 type Tab = 'record' | 'month'
 
@@ -55,6 +55,8 @@ export default function MoneyFlowPage() {
   const [month, setMonth] = useState(thisMonth)
   const [entries, setEntries] = useState<Entry[]>([])
   const [rules, setRules] = useState<LearnedRule[]>([])
+  const [partnerShared, setPartnerShared] = useState(false)
+  const [scope, setScope] = useState<'home' | 'me'>('home')
   const [loading, setLoading] = useState(true)
   const [notice, setNotice] = useState('')
   const [text, setText] = useState('')
@@ -70,6 +72,7 @@ export default function MoneyFlowPage() {
       const res = await apiFetch(`/api/ui/money-flow?from=${shiftMonth(month, -12)}-01&to=${monthEnd(month)}`, { cacheMs: 0, retries: 0 })
       setEntries(Array.isArray(res?.entries) ? res.entries : [])
       setRules(Array.isArray(res?.rules) ? res.rules : [])
+      setPartnerShared(res?.partnerShared === true)
     } catch (error) {
       setNotice(`불러오기 실패: ${error instanceof Error ? error.message : String(error)}`)
     } finally {
@@ -78,11 +81,13 @@ export default function MoneyFlowPage() {
   }, [month])
   useEffect(() => { void load() }, [load])
 
-  const monthEntries = entries.filter((e) => e.date.startsWith(month))
+  // 부부 연결로 상대 기록이 오면 '우리 집'(합계)과 '나만'을 고를 수 있다. 상대 기록은 읽기만 한다
+  const scoped = partnerShared && scope === 'home' ? entries : entries.filter((e) => e.mine !== false)
+  const monthEntries = scoped.filter((e) => e.date.startsWith(month))
   // 기준 = 이 달 이전에 기록이 있는 가장 최근 달. 그사이 달을 건너뛰었어도 그 기록이 기준으로 남는다
-  const baseMonth = entries.map((e) => e.date.slice(0, 7)).filter((m) => m < month).sort().pop() ?? null
-  const baseEntries = baseMonth ? entries.filter((e) => e.date.startsWith(baseMonth)) : []
-  const suggestions = suggestCategories(entries.slice(0, 60).map((e) => e.categoryId))
+  const baseMonth = scoped.map((e) => e.date.slice(0, 7)).filter((m) => m < month).sort().pop() ?? null
+  const baseEntries = baseMonth ? scoped.filter((e) => e.date.startsWith(baseMonth)) : []
+  const suggestions = suggestCategories(entries.filter((e) => e.mine !== false).slice(0, 60).map((e) => e.categoryId))
 
   const readInput = () => {
     const { parsed, failed: bad } = parseQuickLines(text)
@@ -155,6 +160,16 @@ export default function MoneyFlowPage() {
         </div>
       </section>
 
+      {partnerShared && (
+        <section className="acc-card">
+          <div className="acc-seg" role="group" aria-label="누구 지출">
+            <button type="button" aria-pressed={scope === 'home'} className={scope === 'home' ? 'is-active' : ''} onClick={() => setScope('home')}>우리 집 합계</button>
+            <button type="button" aria-pressed={scope === 'me'} className={scope === 'me' ? 'is-active' : ''} onClick={() => setScope('me')}>나만</button>
+          </div>
+          <p className="acc-note">배우자가 공유한 기록도 함께 셉니다. 배우자 기록은 배우자만 고치거나 지울 수 있습니다.</p>
+        </section>
+      )}
+
       {notice && <p className="acc-note mf-notice" role="status">{notice}</p>}
 
       {tab === 'record' && (
@@ -217,13 +232,15 @@ export default function MoneyFlowPage() {
                   <li key={e.id}>
                     <div className="mf-list-main">
                       <span className="mf-date-cell">{e.date.slice(5).replace('-', '/')}</span>
-                      <span className="mf-memo">{e.memo || '메모 없음'}{e.payment !== 'cash' && <em className="mf-point">{e.payment === 'point_once' ? '포인트·이번만' : '포인트'}</em>}</span>
+                      <span className="mf-memo">{e.mine === false && <em className="mf-point mf-partner">배우자</em>}{e.memo || '메모 없음'}{e.payment !== 'cash' && <em className="mf-point">{e.payment === 'point_once' ? '포인트·이번만' : '포인트'}</em>}</span>
                       <strong>{krw(e.amount)}</strong>
                     </div>
-                    <div className="mf-list-tools">
-                      <CategorySelect label={`${e.memo || '메모 없음'} 분류 바꾸기`} value={e.categoryId} onChange={(id) => void changeCategory(e, id)} />
-                      <button type="button" className="mf-icon" aria-label={`${e.memo || '메모 없음'} 삭제`} onClick={() => void removeEntry(e)}><Trash2 size={15} /></button>
-                    </div>
+                    {e.mine === false ? <p className="mf-cut">{categoryById(e.categoryId)?.label}</p> : (
+                      <div className="mf-list-tools">
+                        <CategorySelect label={`${e.memo || '메모 없음'} 분류 바꾸기`} value={e.categoryId} onChange={(id) => void changeCategory(e, id)} />
+                        <button type="button" className="mf-icon" aria-label={`${e.memo || '메모 없음'} 삭제`} onClick={() => void removeEntry(e)}><Trash2 size={15} /></button>
+                      </div>
+                    )}
                   </li>
                 ))}
               </ul>
@@ -234,7 +251,7 @@ export default function MoneyFlowPage() {
 
       {tab === 'month' && <MonthView month={month} thisMonth={thisMonth} setMonth={setMonth} entries={monthEntries} baseMonth={baseMonth} baseEntries={baseEntries} loading={loading} />}
 
-      <p className="acc-note mf-foot">기록은 본인 계정에만 저장됩니다. 투자 가능액 계산은 <Link to="/seed-builder">시드 만들기</Link>에서 합니다.</p>
+      <p className="acc-note mf-foot">기록은 본인 계정에 저장되고, <Link to="/family">부부 연결</Link>에서 지출 공유를 켠 배우자만 함께 봅니다. 투자 가능액 계산은 <Link to="/seed-builder">시드 만들기</Link>에서 합니다.</p>
     </div>
   )
 }

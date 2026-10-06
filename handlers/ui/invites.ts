@@ -13,6 +13,7 @@ import {
   submitSignupRequest,
   writeConfig,
 } from '../../src/services/invites'
+import { COUPLE_REASON_MESSAGE, isCoupleCode, redeemCoupleSignup } from '../../src/services/household'
 
 // 초대 전용 가입 (src/services/invites.ts)
 // GET  ?mode=status  내 가입 상태 + (회원이면) 내 초대권 현황
@@ -72,6 +73,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     if (req.method === 'POST' && action === 'redeem') {
       if (member) return res.status(200).json({ ok: true, alreadyMember: true })
+      // 부부 연결 코드(같은 형식)면 초대권 없이 가입하면서 바로 연결한다 (src/services/household.ts)
+      if (await isCoupleCode(supabase, body.code)) {
+        const couple = await redeemCoupleSignup(supabase, clientId, body.code)
+        if (!couple.ok) return res.status(200).json({ ok: false, reason: couple.reason, error: COUPLE_REASON_MESSAGE[couple.reason] })
+        return res.status(200).json({ ok: true, coupled: true })
+      }
       const result = await redeemInvite(supabase, clientId, body.code)
       if (!result.ok) return res.status(200).json({ ok: false, reason: result.reason, error: REASON_MESSAGE[result.reason] })
       return res.status(200).json({ ok: true })

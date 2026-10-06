@@ -1,0 +1,15 @@
+.fam-msg { margin-top: 16px; padding: 10px 12px; border-radius: 6px; background: var(--color-bg-sunken); }
+.fam-code code { font-size: 24px; letter-spacing: .12em; font-weight: 700; }
+.fam-actions { display: flex; gap: 16px; align-items: center; flex-wrap: wrap; }
+.fam-shares { display: flex; flex-direction: column; gap: 10px; }
+.fam-share { display: flex; gap: 10px; align-items: flex-start; cursor: pointer; }
+.fam-share input { width: 20px; height: 20px; margin-top: 2px; accent-color: var(--color-brand); flex: 0 0 auto; }
+.fam-share span { display: flex; flex-direction: column; gap: 2px; }
+.fam-share small { color: var(--color-text-secondary); line-height: 1.5; }
+.fam-small { font-size: 13px !important; }
+.fam-children { list-style: none; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.fam-children li { padding: 10px 12px; border-radius: 6px; background: var(--color-bg-sunken); display: flex; flex-direction: column; gap: 4px; }
+.fam-children small { color: var(--color-text-tertiary); font-weight: 400; margin-left: 4px; }
+.fam-children span { color: var(--color-text-secondary); }
+.fam-danger { color: var(--color-error) !important; }
+.fam a { color: var(--color-brand); }

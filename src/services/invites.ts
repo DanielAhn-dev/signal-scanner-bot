@@ -123,15 +123,16 @@ export async function mayCreateAccount(supabase: SupabaseClientAny, clientId: st
   return isMember(supabase, clientId);
 }
 
-async function countMembers(supabase: SupabaseClientAny): Promise<number> {
+export async function countMembers(supabase: SupabaseClientAny): Promise<number> {
   const { count } = await supabase.from("web_user_profiles").select("client_id", { count: "exact", head: true });
   return count ?? 0;
 }
 
-async function admit(
+/** 회원으로 들인다. 부부 연결 코드 가입(src/services/household.ts)도 이걸 쓴다 */
+export async function admit(
   supabase: SupabaseClientAny,
   clientId: string,
-  via: { inviterClientId: string | null; joinedVia: "invite" | "approved" },
+  via: { inviterClientId: string | null; joinedVia: "invite" | "approved" | "couple" },
 ): Promise<number | null> {
   const chatId = await ensureWebAccountChatId(supabase, clientId);
   if (!chatId) return null;

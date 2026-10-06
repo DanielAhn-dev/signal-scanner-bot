@@ -95,4 +95,25 @@ describe('돈 흐름', () => {
     expect(screen.getByText('+30,000원')).toBeTruthy()
     expect(apiFetchMock.mock.calls[0][0]).toContain('from=')
   })
+
+  it('배우자가 지출을 공유하면 우리 집 합계로 보이고, 배우자 기록은 고치거나 지울 수 없다', async () => {
+    const month = today.slice(0, 7)
+    apiFetchMock.mockResolvedValue({
+      partnerShared: true, rules: [], checks: [],
+      entries: [
+        { id: 'a', mine: true, date: `${month}-02`, amount: 10000, memo: '우유', categoryId: 'grocery_basic', cut: null, mustPart: null, payment: 'cash' },
+        { id: 'b', mine: false, date: `${month}-01`, amount: 30000, memo: '배민', categoryId: 'delivery', cut: null, mustPart: null, payment: 'cash' },
+      ],
+    })
+    renderPage()
+    expect(await screen.findByText(/기록 2건/)).toBeTruthy()
+    expect(screen.getByText('배우자')).toBeTruthy()
+    expect(screen.queryByLabelText('배민 삭제')).toBeNull()
+    expect(screen.getByLabelText('우유 삭제')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: '나만' }))
+    expect(screen.getByText(/기록 1건/)).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: '우리 집 합계' }))
+    fireEvent.click(screen.getByRole('tab', { name: '이번 달 보기' }))
+    expect(screen.getByText('현금 지출').nextElementSibling?.textContent).toBe('40,000원')
+  })
 })

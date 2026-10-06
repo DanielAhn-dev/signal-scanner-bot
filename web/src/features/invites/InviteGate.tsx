@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react'
 import { apiFetch } from '../../lib/api'
-import { clearStashedInvite, readStashedInvite } from '../../lib/inviteStash'
+import { clearStashedCouple, clearStashedInvite, readStashedCouple, readStashedInvite } from '../../lib/inviteStash'
 
 type Props = {
   email: string
@@ -12,7 +12,8 @@ type Props = {
 
 /** 초대 전용 모드에서 아직 회원이 아닌 로그인 계정에게 보이는 화면 */
 export default function InviteGate({ email, request, signupsOpen, onJoined, onSignOut }: Props) {
-  const [code, setCode] = useState(() => readStashedInvite())
+  const [code, setCode] = useState(() => readStashedCouple() || readStashedInvite())
+  const fromCouple = !!readStashedCouple()
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [requestState, setRequestState] = useState(request)
@@ -29,6 +30,7 @@ export default function InviteGate({ email, request, signupsOpen, onJoined, onSi
       const res = await post({ action: 'redeem', code })
       if (res?.ok) {
         clearStashedInvite()
+        clearStashedCouple()
         onJoined()
         return
       }
@@ -62,7 +64,7 @@ export default function InviteGate({ email, request, signupsOpen, onJoined, onSi
         <h1 className="auth-status-title">초대받은 분만 이용할 수 있어요</h1>
         <p className="auth-status-desc" style={{ marginBottom: 'var(--space-4)' }}>
           {email ? `${email} 계정으로 로그인했습니다.` : '로그인했습니다.'}<br />
-          친구에게 받은 초대 코드를 입력하면 바로 시작할 수 있습니다.
+          {fromCouple ? '배우자가 보낸 연결 코드로 가입하면 바로 서로 연결됩니다.' : '친구에게 받은 초대 코드나 배우자의 연결 코드를 입력하면 바로 시작할 수 있습니다.'}
         </p>
 
         {!signupsOpen && (

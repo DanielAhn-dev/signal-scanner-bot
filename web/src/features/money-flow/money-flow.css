@@ -42,3 +42,4 @@
 .mf-changes .is-down { color: var(--color-success, #2e7d32); font-weight: 600; }
 .mf-foot { margin-top: 20px; font-size: 12px; }
 .mf a { color: var(--color-brand); }
+.mf-partner { margin: 0 6px 0 0; background: var(--color-brand); color: var(--color-text-inverse); }

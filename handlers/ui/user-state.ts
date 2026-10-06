@@ -31,6 +31,18 @@ function parseState(raw: unknown): StateMap {
   }
 }
 
+/** 다른 사용자의 저장 상태를 읽는다 — 부부 연결에서 상대가 공유한 자녀 기록을 볼 때만 쓴다(handlers/ui/household.ts) */
+export async function readUserStateFor(supabase: any, clientId: string): Promise<StateMap> {
+  const { data } = await supabase
+    .from(REPORT_SNAPSHOT_TABLE)
+    .select('body_text')
+    .eq('topic', TOPIC)
+    .eq('audience_key', buildAudienceKey({ clientId }))
+    .eq('report_date', FIXED_DATE)
+    .maybeSingle()
+  return parseState(data?.body_text)
+}
+
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   const origin = (req.headers.origin as string) || process.env.UI_CORS_ORIGIN || '*'
   res.setHeader('Access-Control-Allow-Origin', origin)
