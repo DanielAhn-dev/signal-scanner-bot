@@ -31,3 +31,27 @@ describe('연금계좌 세액공제', () => {
     expect(creditRate('low')).toBe(0.165)
   })
 })
+
+import { compareAccounts } from './taxShelter'
+
+describe('일반 계좌 vs 연금계좌', () => {
+  const base = { band: 'low' as const, yearlyWon: 6_000_000, years: 10, grossReturn: 0.06 }
+
+  it('분배율이 높을수록 연금계좌 쪽 이득이 커진다', () => {
+    const idx = compareAccounts({ ...base, distYield: 0.015 })
+    const cc = compareAccounts({ ...base, distYield: 0.12 })
+    expect(cc.diffWon).toBeGreaterThan(idx.diffWon)
+    expect(idx.diffWon).toBeGreaterThan(0)
+  })
+
+  it('수익률 0%이면 이득은 환급(16.5%)에서 연금소득세(5.5%)를 뺀 만큼 남는다', () => {
+    const r = compareAccounts({ ...base, grossReturn: 0, distYield: 0 })
+    expect(r.generalWon).toBe(60_000_000)
+    expect(r.pensionWon).toBeGreaterThan(60_000_000)
+    expect(r.diffWon).toBeCloseTo(60_000_000 * (0.165 - 0.055), -4)
+  })
+
+  it('납입 0이면 모두 0', () => {
+    expect(compareAccounts({ ...base, yearlyWon: 0, distYield: 0.05 }).pensionWon).toBe(0)
+  })
+})

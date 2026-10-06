@@ -63,3 +63,60 @@ export function planTaxShelter(i: TaxShelterInput): TaxShelterPlan {
     immediateReturnPct: paid > 0 ? (refundWon / paid) * 100 : 0,
   }
 }
+
+export const DIVIDEND_TAX_RATE = 0.154
+/** 연금 수령 시 연금소득세(만 55~69세 5.5% 가정, 나이가 많을수록 낮아짐) */
+export const PENSION_PAYOUT_TAX_RATE = 0.055
+
+export type AccountCompareInput = {
+  band: IncomeBand
+  /** 매년 초 넣는 금액 */
+  yearlyWon: number
+  years: number
+  /** 연 총수익률(가격+분배금), 예 0.06 */
+  grossReturn: number
+  /** 이 중 분배금으로 나오는 비율, 예 0.015(지수형)·0.05(고배당)·0.12(커버드콜) */
+  distYield: number
+}
+
+export type AccountCompare = {
+  /** 일반 계좌에만 넣었을 때 마지막 평가액(국내 주식형 ETF: 매매차익 비과세, 분배금만 15.4%) */
+  generalWon: number
+  /** 연금계좌(과세이연) 평가액에서 연금소득세를 뺀 값 + 환급을 일반 계좌에 같은 방식으로 굴린 값 */
+  pensionWon: number
+  diffWon: number
+  totalPaidWon: number
+}
+
+/**
+ * 같은 돈을 일반 계좌에 두는 경우와 연금계좌(연금저축·IRP)에 넣는 경우의 세후 마지막 평가액.
+ * 가정: 국내 상장 주식형 ETF(매매차익 비과세, 분배금 15.4%), 분배금은 재투자, 연금은 5.5%로 전액 수령,
+ * 세액공제 한도(900만원) 안의 납입분만 환급(환급은 일반 계좌에 같은 자산으로 재투자). 해외·채권 ETF는 매매차익도 과세라 연금계좌 이득이 더 크다.
+ */
+export function compareAccounts(i: AccountCompareInput): AccountCompare {
+  const d = Math.min(Math.max(i.distYield, 0), Math.max(i.grossReturn, 0))
+  const price = i.grossReturn - d
+  const generalStep = 1 + price + d * (1 - DIVIDEND_TAX_RATE)
+  const pensionStep = 1 + i.grossReturn
+  const eligible = Math.min(Math.max(i.yearlyWon, 0), PENSION_TOTAL_LIMIT_WON)
+  const refund = eligible * creditRate(i.band)
+  let general = 0
+  let pension = 0
+  let refundWealth = 0
+  for (let y = 0; y < i.years; y += 1) {
+    general = (general + i.yearlyWon) * generalStep
+    pension = (pension + i.yearlyWon) * pensionStep
+    // 환급은 다음 해 초에 받는다고 보고 한 해 늦게 굴린다
+    refundWealth = (refundWealth + (y > 0 ? refund : 0)) * generalStep
+  }
+  // 마지막 해 환급은 평가 시점에 현금으로 받는다
+  if (i.years > 0) refundWealth += refund
+  const pensionNet = pension * (1 - PENSION_PAYOUT_TAX_RATE)
+  const pensionTotal = pensionNet + refundWealth
+  return {
+    generalWon: Math.round(general),
+    pensionWon: Math.round(pensionTotal),
+    diffWon: Math.round(pensionTotal - general),
+    totalPaidWon: Math.round(i.yearlyWon * i.years),
+  }
+}

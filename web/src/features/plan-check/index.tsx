@@ -3,7 +3,7 @@ import { formatKrwMan } from '../../lib/format'
 import { useProfileStore } from '../../stores/profileStore'
 import More from '../../components/ui/More'
 import GoalCard from './GoalCard'
-import { EARLY_WITHDRAWAL_TAX_RATE, PENSION_SAVING_LIMIT_WON, PENSION_TOTAL_LIMIT_WON, TAX_RULES_YEAR, creditRate, planTaxShelter, type IncomeBand } from '../../lib/taxShelter'
+import { EARLY_WITHDRAWAL_TAX_RATE, PENSION_SAVING_LIMIT_WON, PENSION_TOTAL_LIMIT_WON, TAX_RULES_YEAR, compareAccounts, creditRate, planTaxShelter, type IncomeBand } from '../../lib/taxShelter'
 import {
   BAD10_DRAWDOWN, CHECK_FREQUENCY, SPLIT_OPTIONS, ccDownturnCase, isFactStale, requiredMonthlyDetail, incomePlan, ratesLabels, planWithdrawal, requiredMonthly, sleeveCost, stockCapFor,
 } from '../../lib/planGuide'
@@ -397,6 +397,13 @@ function TaxShelterCard() {
   const [savingMan, setSavingMan] = useState('600')
   const [irpMan, setIrpMan] = useState('300')
   const plan = useMemo(() => planTaxShelter({ band, pensionSavingWon: toWon(savingMan), irpWon: toWon(irpMan) }), [band, savingMan, irpMan])
+  const [assetKind, setAssetKind] = useState<'index' | 'dividend' | 'covered'>('index')
+  const [years, setYears] = useState('10')
+  const [retPct, setRetPct] = useState('6')
+  const distYield = assetKind === 'index' ? 0.015 : assetKind === 'dividend' ? 0.05 : 0.12
+  const compare = useMemo(() => compareAccounts({
+    band, yearlyWon: plan.eligibleWon, years: Math.max(0, Math.min(40, Math.round(Number(years) || 0))), grossReturn: (Number(retPct) || 0) / 100, distYield,
+  }), [band, plan.eligibleWon, years, retPct, distYield])
   return (
     <section className="acc-card">
       <h2>연금저축·IRP에 넣으면 돌려받는 돈</h2>
@@ -419,6 +426,25 @@ function TaxShelterCard() {
         <div><dt>더 넣으면 받을 환급</dt><dd>{manRound(plan.extraRefundPossibleWon)}</dd></div>
       </dl>
       {plan.overLimitWon > 0 && <p className="acc-warn">공제 한도(연금저축 {manRound(PENSION_SAVING_LIMIT_WON)}, 연금저축+IRP 합산 {manRound(PENSION_TOTAL_LIMIT_WON)})를 넘는 {manRound(plan.overLimitWon)}은 환급을 받지 못합니다. 한도를 넘는 돈은 일반 계좌나 ISA를 검토하세요.</p>}
+      <h3>같은 돈을 일반 계좌에 두면 얼마나 차이날까</h3>
+      <div className="acc-row">
+        <label className="acc-field">
+          <span>담는 자산</span>
+          <select value={assetKind} onChange={(e) => setAssetKind(e.target.value as 'index' | 'dividend' | 'covered')}>
+            <option value="index">지수형 (분배금 연 1.5%)</option>
+            <option value="dividend">고배당형 (분배금 연 5%)</option>
+            <option value="covered">커버드콜형 (분배금 연 12%)</option>
+          </select>
+        </label>
+        <label className="acc-field"><span>기간 (년)</span><input type="number" inputMode="numeric" min="1" max="40" value={years} onChange={(e) => setYears(e.target.value)} /></label>
+        <label className="acc-field"><span>연 총수익률 가정 (%)</span><input type="number" inputMode="decimal" step="0.5" value={retPct} onChange={(e) => setRetPct(e.target.value)} /></label>
+      </div>
+      <dl className="acc-tiles">
+        <div><dt>일반 계좌 (세후)</dt><dd>{manRound(compare.generalWon)}</dd></div>
+        <div className="is-main"><dt>연금계좌 + 환급 (세후)</dt><dd>{manRound(compare.pensionWon)}</dd></div>
+        <div><dt>차이</dt><dd>{compare.diffWon >= 0 ? '+' : '-'}{manRound(Math.abs(compare.diffWon))}</dd></div>
+      </dl>
+      <p className="acc-note">공제 인정 금액({manRound(plan.eligibleWon)})을 매년 초에 넣고, 분배금은 재투자한다고 가정했습니다. 일반 계좌는 국내 주식형 ETF라 매매차익은 비과세·분배금만 15.4%, 연금계좌는 세금을 미뤘다가 연금으로 받을 때 5.5%(나이가 많으면 더 낮음)를 냅니다. 환급받은 세금은 일반 계좌에 같은 자산으로 굴린다고 봤습니다. 수익률은 예측이 아니라 가정이며, 해외·채권 ETF는 매매차익도 과세라 연금계좌 쪽이 더 유리합니다. 55세 전에 꺼내면 이 계산이 맞지 않습니다.</p>
       <p className="acc-note">공제율은 {(creditRate(band) * 100).toFixed(1)}%(지방소득세 포함) 기준입니다. 총급여 1.2억원 초과 구간은 연금저축 한도가 줄어듭니다. {TAX_RULES_YEAR}년 기준이며 세법은 해마다 바뀌므로 가입·납입 전에 금융기관이나 국세청 안내로 확인하세요. 연금으로 받을 때는 연금소득세(나이에 따라 3.3~5.5%)가 붙습니다. ISA는 한도 개편이 논의 중이라 숫자를 적지 않았습니다.</p>
     </section>
   )
