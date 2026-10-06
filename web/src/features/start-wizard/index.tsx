@@ -21,6 +21,7 @@ import {
 } from '../../lib/startPlan'
 import { userScopedKey, writeUserState } from '../../lib/userState'
 import { START_DONE_EVENT } from '../../lib/useStartGate'
+import type { FlowCheckInput } from '../../../../src/lib/moneyFlow'
 import './start-wizard.css'
 
 // 월수입·대출 같은 민감한 입력이라 사용자별 키로만 보관하고 로그아웃 때 지운다 (lib/userState.ts)
@@ -31,6 +32,12 @@ const num = (v: string) => { const n = Number(v.replace(/,/g, '').trim()); retur
 // 시드 만들기는 지출을 항목별로 받고 마법사는 카드값과 '그 밖의 고정지출' 두 칸만 받는다 — 카드 외 항목 합이 '그 밖의 고정지출'에 해당한다
 const nonCardExpenses = (expenses: Record<string, unknown> | undefined) =>
   Object.entries(expenses ?? {}).reduce((sum, [k, v]) => (k === 'card' ? sum : sum + (Number(v) || 0)), 0)
+// 돈 흐름 '지금 상태 점검'을 마법사 칸으로 옮긴다: 고정지출 → 그 밖의 고정지출, 변동 + 비정기 월할 → 카드값 (현금 기준, 포인트 제외)
+export function wizardFromCheck(input: FlowCheckInput): { income: number; otherFixed: number; card: number } {
+  const cash = (items: Array<{ amount: number; payment?: string }>) => items.reduce((sum, i) => sum + ((i.payment ?? 'cash') === 'cash' ? i.amount : 0), 0)
+  const irregular = input.irregular.reduce((sum, i) => sum + ((i.payment ?? 'cash') === 'cash' ? Math.round(i.yearlyAmount / 12) : 0), 0)
+  return { income: input.monthlyIncome, otherFixed: cash(input.fixed), card: cash(input.variable) + irregular }
+}
 const monthKeyKst = () => new Date().toLocaleDateString('sv-SE', { timeZone: 'Asia/Seoul', year: 'numeric', month: '2-digit' }).slice(0, 7)
 
 type Household = 'solo' | 'single-income' | 'dual-income'
@@ -103,8 +110,21 @@ export default function StartWizardPage() {
     const year = Number(monthKeyKst().slice(0, 4))
     const latestWithIncome = (y: number) => apiFetch(`/api/ui/seed-builder?year=${y}`, { cacheMs: 0, retries: 0 })
       .then((res) => [...(Array.isArray(res?.data) ? res.data : [])].reverse().find((r: any) => Number(r?.ownIncome) > 0))
+    // 돈 흐름에서 '지금 상태 점검'을 해 뒀다면 그 값이 가장 자세하다 — 먼저 쓰고, 없으면 시드 만들기 기록
+    const today = new Date().toLocaleDateString('sv-SE', { timeZone: 'Asia/Seoul' })
+    apiFetch(`/api/ui/money-flow?from=${today}&to=${today}`, { cacheMs: 0, retries: 0 })
+      .then((res) => (Array.isArray(res?.checks) ? res.checks[0] : null))
+      .catch(() => null)
+      .then((check: { input?: FlowCheckInput } | null) => {
+        if (check?.input) {
+          const w = wizardFromCheck(check.input)
+          fillEmpty({ income: str(w.income), otherFixed: str(w.otherFixed), card: str(w.card) })
+          return
+        }
+        return seedFallback()
+      })
     // 1월에는 올해 기록이 아직 없으니 작년 마지막 기록을 가져온다
-    latestWithIncome(year)
+    const seedFallback = () => latestWithIncome(year)
       .then((m) => m ?? latestWithIncome(year - 1))
       .then((m: any) => {
         if (!m) return
@@ -217,6 +237,13 @@ export default function StartWizardPage() {
         <h1>{['내 돈의 흐름', `내 성향 (${q + 1}/${PROFILE_QUESTIONS.length})`, '금액과 목표 (목표는 선택)', '결과 확인'][step]}</h1>
         <p>{['가계부처럼 적을 필요 없이 한 달 총액만 어렴풋이 적어도 됩니다. 목돈만 가상으로 굴려 보고 싶다면 건너뛰어도 됩니다. 적으면 시드 만들기의 이번 달 기록으로 저장되고, 나중에 거기서 고칠 수 있습니다.', '정답은 없습니다. 답에 따라 적립 기본값과 주의 안내가 달라집니다.', '넣을 돈만 정하면 됩니다. 목표는 비워 둬도 되고, 적으면 얼마나 현실적인지 숫자로 알려 드립니다. 목돈만 굴려 보려면 매달 적립을 0으로 두세요.', '이 조건으로 시작해도 되는지 확인하세요.'][step]}</p>
       </header>
+
+      {step === 0 && <section className="start-card start-check-offer">
+        <p className="start-question">내 지출을 자세히 보고 시작할까요?</p>
+        <p className="start-note">고정지출·변동지출·1년에 몇 번 나가는 돈을 나눠 적으면, 줄일 수 없는 생활비와 실제로 투자할 수 있는 금액이 나옵니다. 5분 정도 걸리고, 끝나면 여기로 돌아와 그 값이 채워집니다.</p>
+        <button type="button" className="start-primary" onClick={() => navigate('/money-flow?tab=check&from=start')}>지출 자세히 점검하기 <ArrowRight size={15} /></button>
+        <p className="start-note">대략만 적고 넘어가려면 아래 칸에 한 달 총액을 적거나 건너뛰세요.</p>
+      </section>}
 
       {step === 0 && <section className="start-card">
         <div className="start-segment" role="group" aria-label="가구 형태">

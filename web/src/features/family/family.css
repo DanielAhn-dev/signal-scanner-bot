@@ -13,3 +13,4 @@
 .fam-children span { color: var(--color-text-secondary); }
 .fam-danger { color: var(--color-error) !important; }
 .fam a { color: var(--color-brand); }
+.fam-rules td, .fam-rules th { text-align: left !important; vertical-align: top; }

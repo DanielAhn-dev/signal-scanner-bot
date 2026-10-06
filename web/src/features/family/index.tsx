@@ -23,6 +23,27 @@ const SCOPES: Array<{ key: Scope; label: string; desc: string }> = [
   { key: 'children', label: '자녀 계좌', desc: '자녀 별칭·나이·증여 합계·남은 공제 한도.' },
 ]
 
+/** 공유 규칙 — 초대한 사람과 받은 사람의 권한은 같다. 바꾸려면 이 표와 서버(src/services/household.ts)를 함께 고친다 */
+export const SHARE_RULES: Array<[string, string, string]> = [
+  ['지출 기록(돈 흐름)', '적기·고치기·지우기', '보기만 (우리 집 합계에 함께 셈)'],
+  ['지금 상태 점검·시드 만들기', '본인만', '보이지 않음'],
+  ['투자(가상 계좌·실계좌·매매)', '본인만', '요약 보기만 (평가액·원금·월 적립)'],
+  ['자녀 계좌(증여 기록)', '등록한 사람만', '보기만 (나이·증여 합계·남은 한도)'],
+]
+
+function ShareRules() {
+  return (
+    <section className="acc-card">
+      <h2>무엇을 함께 보나</h2>
+      <table className="acc-table fam-rules" aria-label="공유 규칙">
+        <thead><tr><th>항목</th><th>내 것</th><th>배우자 것</th></tr></thead>
+        <tbody>{SHARE_RULES.map(([item, mine, theirs]) => <tr key={item}><td>{item}</td><td>{mine}</td><td>{theirs}</td></tr>)}</tbody>
+      </table>
+      <p className="acc-note">초대한 사람과 받은 사람의 권한은 같습니다. 배우자 것은 배우자가 공유를 켠 항목만 보이고, 누구도 상대 계좌로 매매하거나 상대 기록을 고칠 수 없습니다.</p>
+    </section>
+  )
+}
+
 const post = (body: Record<string, unknown>) => apiFetch('/api/ui/household', { method: 'POST', body: JSON.stringify(body), cacheMs: 0, retries: 0 })
 
 export default function FamilyPage() {
@@ -126,6 +147,7 @@ export default function FamilyPage() {
       )}
 
       {view?.status === 'active' && <Linked view={view} busy={busy} run={run} />}
+      {view && <ShareRules />}
     </div>
   )
 }

@@ -1,17 +1,18 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import { ChevronLeft, ChevronRight, Trash2 } from 'lucide-react'
 import { apiFetch } from '../../lib/api'
 import {
   FLOW_CATEGORIES, categoryById, classifyMemo, compareSummaries, parseQuickLines, suggestCategories, summarizeItems,
   type CutLevel, type FlowItem, type LearnedRule, type Payment,
 } from '../../../../src/lib/moneyFlow'
+import FlowCheck, { type SavedCheck } from './FlowCheck'
 import '../accumulate/accumulate.css'
 import './money-flow.css'
 
 type Entry = { id: string; mine?: boolean; date: string; amount: number; memo: string; categoryId: string; cut: CutLevel | null; mustPart: number | null; payment: Payment }
 type Draft = { key: string; date: string; amountGuessed: boolean; amount: number; memo: string; categoryId: string; autoCategoryId: string; known: boolean; payment: Payment }
-type Tab = 'record' | 'month'
+type Tab = 'record' | 'month' | 'check'
 
 const krw = (value: number) => `${Math.round(value).toLocaleString('ko-KR')}원`
 const kstToday = () => new Date().toLocaleDateString('sv-SE', { timeZone: 'Asia/Seoul' })
@@ -51,7 +52,11 @@ function CategorySelect({ value, onChange, label }: { value: string; onChange: (
 export default function MoneyFlowPage() {
   const today = kstToday()
   const thisMonth = today.slice(0, 7)
-  const [tab, setTab] = useState<Tab>('record')
+  const [params] = useSearchParams()
+  const [tab, setTab] = useState<Tab>(() => (params.get('tab') === 'check' ? 'check' : 'record'))
+  const fromStart = params.get('from') === 'start'
+  const [checks, setChecks] = useState<SavedCheck[]>([])
+  const [checksLoaded, setChecksLoaded] = useState(false)
   const [month, setMonth] = useState(thisMonth)
   const [entries, setEntries] = useState<Entry[]>([])
   const [rules, setRules] = useState<LearnedRule[]>([])
@@ -73,6 +78,8 @@ export default function MoneyFlowPage() {
       setEntries(Array.isArray(res?.entries) ? res.entries : [])
       setRules(Array.isArray(res?.rules) ? res.rules : [])
       setPartnerShared(res?.partnerShared === true)
+      setChecks(Array.isArray(res?.checks) ? res.checks : [])
+      setChecksLoaded(true)
     } catch (error) {
       setNotice(`불러오기 실패: ${error instanceof Error ? error.message : String(error)}`)
     } finally {
@@ -160,6 +167,7 @@ export default function MoneyFlowPage() {
         <div className="acc-seg" role="tablist">
           <button type="button" role="tab" aria-selected={tab === 'record'} className={tab === 'record' ? 'is-active' : ''} onClick={() => setTab('record')}>기록</button>
           <button type="button" role="tab" aria-selected={tab === 'month'} className={tab === 'month' ? 'is-active' : ''} onClick={() => setTab('month')}>이번 달 보기</button>
+          <button type="button" role="tab" aria-selected={tab === 'check'} className={tab === 'check' ? 'is-active' : ''} onClick={() => setTab('check')}>지금 상태 점검</button>
         </div>
       </section>
 
@@ -256,6 +264,10 @@ export default function MoneyFlowPage() {
           </section>
         </>
       )}
+
+      {tab === 'check' && (checksLoaded
+        ? <FlowCheck entries={scoped} checks={checks} onSaved={load} fromStart={fromStart} />
+        : <p className="acc-note mf-notice">불러오는 중…</p>)}
 
       {tab === 'month' && <MonthView month={month} thisMonth={thisMonth} setMonth={setMonth} entries={monthEntries} baseMonth={baseMonth} baseEntries={baseEntries} loading={loading} />}
 
