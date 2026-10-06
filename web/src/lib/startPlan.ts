@@ -182,7 +182,7 @@ const SAFE_PRESET: AutoTradePreset = { monday_buy_slots: 2, max_positions: 6, mi
 const BALANCED_PRESET: AutoTradePreset = { monday_buy_slots: 2, max_positions: 8, min_buy_score: 72, take_profit_pct: 9, stop_loss_pct: 4, long_term_ratio: 65, selected_strategy: 'SWING' }
 
 /** 성향 답 → 실제 설정. 초보가 설정 화면을 찾아다니지 않도록 시작할 때 한 번에 적용한다 */
-export function personalSetup(p: InvestorProfile, monthly: number): PersonalSetup {
+export function personalSetup(p: InvestorProfile, monthly: number, usedSuggestion = true): PersonalSetup {
   const score = (['sell', 'hold', 'buy'].indexOf(p.reaction))
     + (['short', 'mid', 'long'].indexOf(p.horizon))
     + (['none', 'some', 'enough'].indexOf(p.emergency))
@@ -192,7 +192,7 @@ export function personalSetup(p: InvestorProfile, monthly: number): PersonalSetu
   const level: PersonalSetup['level'] = p.horizon === 'short' || score <= 4 ? 'safe' : 'balanced'
   const summary = [
     '자동매매 방식: 종목을 고르지 않고 코스피200 ETF를 매달 적립해 보유 (검증에서 종목 매매가 지수를 이기지 못했습니다)',
-    `매달 가상 적립: ${Math.round(monthly).toLocaleString('ko-KR')}원${p.emergency === 'none' ? ' (비상금이 없어 기본 제안을 절반으로 낮췄습니다)' : ''}`,
+    `매달 가상 적립: ${Math.round(monthly).toLocaleString('ko-KR')}원${p.emergency === 'none' && usedSuggestion ? ' (비상금이 없어 기본 제안을 절반으로 낮췄습니다)' : ''}`,
     `종목 봇으로 바꿀 때의 기본값: ${level === 'safe' ? '안전형 (손절 4%, 최대 6종목)' : '균형형 (손절 4%, 최대 8종목)'}`,
   ]
   if (p.checking === 'often') summary.push('자주 확인하는 편이라 하락 때 팔지 않도록 규칙 안내를 크게 보여드립니다')

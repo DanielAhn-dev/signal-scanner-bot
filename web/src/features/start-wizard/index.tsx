@@ -28,6 +28,9 @@ const storageKey = () => userScopedKey('start-wizard')
 const won = (v: number) => `${Math.round(v).toLocaleString('ko-KR')}원`
 const man = formatKrwMan
 const num = (v: string) => { const n = Number(v.replace(/,/g, '').trim()); return Number.isFinite(n) && n > 0 ? n : 0 }
+// 시드 만들기는 지출을 항목별로 받고 마법사는 카드값과 '그 밖의 고정지출' 두 칸만 받는다 — 카드 외 항목 합이 '그 밖의 고정지출'에 해당한다
+const nonCardExpenses = (expenses: Record<string, unknown> | undefined) =>
+  Object.entries(expenses ?? {}).reduce((sum, [k, v]) => (k === 'card' ? sum : sum + (Number(v) || 0)), 0)
 const monthKeyKst = () => new Date().toLocaleDateString('sv-SE', { timeZone: 'Asia/Seoul', year: 'numeric', month: '2-digit' }).slice(0, 7)
 
 type Household = 'solo' | 'single-income' | 'dual-income'
@@ -97,16 +100,18 @@ export default function StartWizardPage() {
     apiFetch('/api/ui/goal-tracker', { cacheMs: 0, retries: 0 })
       .then((res) => fillEmpty({ targetMonthly: str(res?.data?.settings?.targetMonthlyProfit) }))
       .catch(() => {})
-    const year = monthKeyKst().slice(0, 4)
-    apiFetch(`/api/ui/seed-builder?year=${year}`, { cacheMs: 0, retries: 0 })
-      .then((res) => {
-        const rows: any[] = Array.isArray(res?.data) ? res.data : []
-        const m = [...rows].reverse().find((r) => Number(r?.ownIncome) > 0)
+    const year = Number(monthKeyKst().slice(0, 4))
+    const latestWithIncome = (y: number) => apiFetch(`/api/ui/seed-builder?year=${y}`, { cacheMs: 0, retries: 0 })
+      .then((res) => [...(Array.isArray(res?.data) ? res.data : [])].reverse().find((r: any) => Number(r?.ownIncome) > 0))
+    // 1월에는 올해 기록이 아직 없으니 작년 마지막 기록을 가져온다
+    latestWithIncome(year)
+      .then((m) => m ?? latestWithIncome(year - 1))
+      .then((m: any) => {
         if (!m) return
         // 시드 만들기에 맞벌이로 적어 둔 사람은 배우자 수입까지 가져와야 여유가 반쪽으로 잡히지 않는다
         const household: Household = HOUSEHOLDS.some(([h]) => h === m.household) ? m.household : 'solo'
         setForm((cur) => cur.income === '' && cur.household === empty.household ? { ...cur, household } : cur)
-        fillEmpty({ income: str(m.ownIncome), partnerIncome: household === 'dual-income' ? str(m.partnerIncome) : '', card: str(m.expenses?.card) })
+        fillEmpty({ income: str(m.ownIncome), partnerIncome: household === 'dual-income' ? str(m.partnerIncome) : '', card: str(m.expenses?.card), otherFixed: str(nonCardExpenses(m.expenses)) })
       })
       .catch(() => {})
   }, [clientId])
@@ -132,7 +137,7 @@ export default function StartWizardPage() {
 
   // 수입·목표는 건너뛸 수 있다 — 목돈만 가상으로 굴려 보려는 사람도 시작할 수 있어야 한다. 시작금은 있어야 한다
   const canNext = step === 0 ? true : step === 1 ? !!form[question.key] : step === 2 ? hasAccount || seedToStart >= 10_000 : true
-  const setup = personalSetup(form, monthly)
+  const setup = personalSetup(form, monthly, form.monthly === '')
   const canStart = !!clientId && !busy && seedToStart >= 10_000 && profileComplete(form)
 
   const start = async () => {
@@ -144,7 +149,9 @@ export default function StartWizardPage() {
       const prefs = await apiFetch('/api/ui/investment-prefs', { cacheMs: 0, retries: 0 })
       const exists = Number(prefs?.data?.virtual_seed_capital) > 0
       if (!exists) await post('/api/ui/investment-prefs', { virtual_seed_capital: Math.round(seedToStart), reset_cash: true })
-      if (monthly >= 10_000) await post('/api/ui/investment-prefs', { monthly_deposit: Math.round(monthly), deposit_day: 1 })
+      // 10,000원 미만은 화면에서 '없음 (목돈만)'으로 보여 준다 — 0을 보내야 기존 계좌의 자동 적립도 실제로 꺼진다
+      // 입금일은 기존 계좌라면 사용자가 정해 둔 날을 지킨다
+      await post('/api/ui/investment-prefs', { monthly_deposit: monthly >= 10_000 ? Math.round(monthly) : 0, deposit_day: exists ? Number(prefs?.data?.deposit_day) || 1 : 1 })
       if (targetMonthly > 0) await post('/api/ui/goal-tracker', { targetMonthlyProfit: Math.round(targetMonthly) })
       if (income > 0) {
         // 이번 달을 시드 만들기에서 이미 자세히 적었다면 그 항목(식비·급여일·일시 수입 등)은 지우지 않고 마법사가 묻는 칸만 덮는다
@@ -153,17 +160,26 @@ export default function StartWizardPage() {
           .then((res) => (Array.isArray(res?.data) ? res.data : [])).catch(() => [])
         const cur = rows.find((r) => r?.month === month)
         const dual = form.household === 'dual-income'
+        // 이번 달 상세 항목(식비·주거 등)은 남기고 '기타'로 합계를 맞춘다 — 시드 만들기 지출 합이 마법사에 적은 합과 같아야 두 화면의 여유가 같다
+        const fixedTotal = num(form.otherFixed) + num(form.loanPayment)
+        const details: Record<string, number> = Object.fromEntries(Object.entries(cur?.expenses ?? {}).filter(([k]) => k !== 'card' && k !== 'other').map(([k, v]) => [k, Number(v) || 0]))
+        const detailSum = nonCardExpenses(details)
+        // 마법사에 적은 합이 상세 항목 합보다 작으면 상세를 지키며 맞출 수 없다 — 사용자가 고친 합계를 우선한다
+        const keepDetails = detailSum <= fixedTotal
         await post('/api/ui/seed-builder', {
           month, status: 'recorded', household: form.household, ownIncome: num(form.income), partnerIncome,
           ownPayday: cur?.ownPayday ?? null, partnerPayday: dual ? cur?.partnerPayday ?? null : null,
-          expenses: { food: 0, housing: 0, vehicle: 0, education: 0, tax: 0, subscriptions: 0, water: 0, gas: 0, residentTax: 0, propertyTax: 0, vehicleTax: 0, taxAdjustment: 0, ...cur?.expenses, other: num(form.otherFixed) + num(form.loanPayment), card: num(form.card) },
+          expenses: { food: 0, housing: 0, vehicle: 0, education: 0, tax: 0, subscriptions: 0, water: 0, gas: 0, residentTax: 0, propertyTax: 0, vehicleTax: 0, taxAdjustment: 0, ...(keepDetails ? details : {}), other: keepDetails ? fixedTotal - detailSum : fixedTotal, card: num(form.card) },
           extraIncome: { incentive: 0, vacation: 0, taxRefund: 0, other: 0, ...cur?.extraIncome }, reserve: Number(cur?.reserve ?? 0), plan: Math.round(monthly),
         }, 'PUT')
       }
       writeUserState('investorProfile', { reaction: form.reaction, horizon: form.horizon, emergency: form.emergency, checking: form.checking, experience: form.experience } satisfies InvestorProfile)
-      // 성향 답으로 자동매매 방식과 기본값을 맞춘다 — 사용자가 설정 화면을 찾아가지 않아도 되게
-      await post('/api/ui/investment-prefs', { strategy_mode: setup.strategyMode })
-      await post('/api/ui/settings', { ...setup.preset, is_enabled: enableBot })
+      // 성향 답으로 자동매매 방식과 기본값을 맞춘다 — 사용자가 설정 화면을 찾아가지 않아도 되게.
+      // 이미 쓰던 계좌는 직접 고친 자동매매 설정·켜짐 여부를 덮지 않는다 (화면 안내도 '월 적립과 목표만 갱신')
+      if (!exists) {
+        await post('/api/ui/investment-prefs', { strategy_mode: setup.strategyMode })
+        await post('/api/ui/settings', { ...setup.preset, is_enabled: enableBot })
+      }
       try { const key = storageKey(); if (key) window.localStorage.removeItem(key) } catch { /* 무시 */ }
       setHasAccount(true)
       window.dispatchEvent(new Event(START_DONE_EVENT))
@@ -254,11 +270,11 @@ export default function StartWizardPage() {
           </p>
         </> : <p className="start-note">목표 없이 시작합니다. 얼마가 됐는지, 가장 많이 떨어졌을 때가 언제였는지만 보여 드립니다. 목표는 써 보고 나서 정해도 늦지 않습니다.</p>}
         {loanNote && <p className="start-warn">{loanNote}</p>}
-        {profileComplete(form) && <><p className="start-question">내 답에 맞춰 이렇게 설정해 둘게요</p><ul className="start-note">{setup.summary.map((n) => <li key={n}>{n}</li>)}</ul></>}
+        {profileComplete(form) && !hasAccount && <><p className="start-question">내 답에 맞춰 이렇게 설정해 둘게요</p><ul className="start-note">{setup.summary.map((n) => <li key={n}>{n}</li>)}</ul></>}
         {hasAccount
-          ? <p className="start-note">이미 가상 계좌가 있어 시작금은 건드리지 않고, 월 적립과 목표만 갱신합니다.</p>
+          ? <p className="start-note">이미 가상 계좌가 있어 시작금과 자동매매 설정은 건드리지 않고, 월 적립과 목표만 갱신합니다.</p>
           : <p className="start-note">가상 계좌 시작금: <strong>{won(seedToStart)}</strong>{initialSeed > 0 ? '' : ' (처음 넣을 금액이 없어 첫 달 적립액으로 시작)'}. 실제 돈은 들어가지 않습니다.</p>}
-        <label className="start-check"><input type="checkbox" checked={enableBot} onChange={(e) => setEnableBot(e.target.checked)} /> 봇 자동매매도 바로 켜기 (가상 계좌에서만 움직입니다)</label>
+        {!hasAccount && <label className="start-check"><input type="checkbox" checked={enableBot} onChange={(e) => setEnableBot(e.target.checked)} /> 봇 자동매매도 바로 켜기 (가상 계좌에서만 움직입니다)</label>}
         {error && <p className="start-warn" role="alert">저장 실패: {error}</p>}
       </section>}
 
