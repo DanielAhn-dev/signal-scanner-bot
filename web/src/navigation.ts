@@ -58,7 +58,7 @@ export const MENU_SECTIONS: MenuSection[] = [
     label: '홈',
     groups: [
       { category: '오늘', items: [{ key: 'dashboard', label: '홈' }, { key: 'portfolio', label: '포트폴리오' }, { key: 'market', label: '시장' }] },
-      { category: '적립', items: [{ key: 'accumulate', label: '모아가기' }, { key: 'seed-builder', label: '시드 만들기' }, { key: 'child', label: '자녀 계좌' }] },
+      { category: '적립', items: [{ key: 'accumulate', label: '모아가기' }, { key: 'money-flow', label: '돈 흐름' }, { key: 'seed-builder', label: '시드 만들기' }, { key: 'child', label: '자녀 계좌' }] },
       { category: '목표·계획', items: [{ key: 'goal-tracker', label: '목표 트래커' }, { key: 'plan', label: '계획 점검' }, { key: 'mix', label: '섞어보기' }, { key: 'income-guide', label: '리밸런싱 가이드' }] },
     ],
   },
@@ -139,6 +139,7 @@ export const USER_NAV_KEYS: readonly string[] = [
   'child',
   'follow',
   'seed-builder',
+  'money-flow',
   'simulator',
   'execution-guide',
   'goal-tracker',

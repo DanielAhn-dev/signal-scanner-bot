@@ -1,0 +1,44 @@
+.mf .acc-seg button { flex: 1 1 120px; text-align: center; }
+.mf-notice { margin-top: 12px; padding: 10px 12px; border-radius: 6px; background: var(--color-bg-sunken); }
+.mf-input { min-width: 0; padding: 10px 12px; border: 1px solid var(--color-border-default); border-radius: 6px; background: var(--color-bg-surface); color: var(--color-text-primary); font: inherit; font-size: 16px; resize: vertical; }
+.mf-input:focus { outline: 2px solid var(--color-border-focus); outline-offset: 1px; }
+.mf-row { display: flex; gap: 12px; align-items: flex-end; flex-wrap: wrap; }
+.mf-date { flex: 1 1 160px; }
+.mf-drafts { display: flex; flex-direction: column; gap: 10px; }
+.mf-draft { padding: 12px; border-radius: 6px; background: var(--color-bg-sunken); display: flex; flex-direction: column; gap: 8px; }
+.mf-draft-head { display: flex; justify-content: space-between; gap: 12px; }
+.mf-draft-head strong { overflow-wrap: anywhere; }
+.mf-draft-head span { font-weight: 700; white-space: nowrap; }
+.mf-draft-tools, .mf-list-tools { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.mf select { min-width: 0; max-width: 100%; padding: 8px 10px; border: 1px solid var(--color-border-default); border-radius: 6px; background: var(--color-bg-surface); color: var(--color-text-primary); font: inherit; font-size: 14px; }
+.mf-chips { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+.mf-chips button { padding: 6px 12px; border: 1px solid var(--color-border-default); border-radius: 16px; background: var(--color-bg-surface); color: var(--color-text-primary); font: inherit; font-size: 13px; cursor: pointer; }
+.mf-chips button.is-active { border-color: var(--color-brand); color: var(--color-brand); font-weight: 700; }
+.mf-cut { color: var(--color-text-tertiary); font-size: 12px; }
+.mf-month-nav { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.mf-month-nav button, .mf-icon { display: inline-flex; align-items: center; justify-content: center; min-width: 36px; min-height: 36px; border: 1px solid var(--color-border-default); border-radius: 6px; background: var(--color-bg-surface); color: var(--color-text-secondary); cursor: pointer; }
+.mf-month-nav button:disabled { opacity: .4; cursor: not-allowed; }
+.mf-list { list-style: none; padding: 0; display: flex; flex-direction: column; }
+.mf-list li { padding: 10px 0; border-bottom: 1px solid var(--color-border-default); display: flex; flex-direction: column; gap: 6px; }
+.mf-list-main { display: flex; gap: 10px; align-items: baseline; }
+.mf-date-cell { color: var(--color-text-tertiary); font-size: 12px; flex: 0 0 auto; }
+.mf-memo { flex: 1 1 auto; min-width: 0; overflow-wrap: anywhere; }
+.mf-list-main strong { white-space: nowrap; }
+.mf-point { margin-left: 6px; padding: 1px 6px; border-radius: 8px; background: var(--color-bg-sunken); color: var(--color-text-secondary); font-size: 11px; font-style: normal; }
+.mf-small { font-size: 13px !important; }
+.mf-bar { display: flex; height: 12px; border-radius: 6px; overflow: hidden; background: var(--color-bg-sunken); }
+.mf-bar span, .mf-key { background: var(--color-text-tertiary); }
+.mf-bar .is-must, .mf-key.is-must { background: var(--color-text-secondary); }
+.mf-bar .is-trim, .mf-key.is-trim { background: var(--color-warning, #ed6c02); }
+.mf-bar .is-drop, .mf-key.is-drop { background: var(--color-brand); }
+.mf-key { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 6px; vertical-align: -1px; }
+.mf-majors details { border-bottom: 1px solid var(--color-border-default); }
+.mf-majors summary { display: flex; justify-content: space-between; gap: 12px; padding: 10px 0; color: var(--color-text-primary) !important; }
+.mf-majors small, .mf-list small, .mf-majors li small { color: var(--color-text-tertiary); font-size: 11px; margin-left: 4px; }
+.mf-majors ul, .mf-changes { list-style: none; padding: 0 0 8px; display: flex; flex-direction: column; gap: 6px; }
+.mf-majors li, .mf-changes li { display: flex; justify-content: space-between; gap: 12px; color: var(--color-text-secondary); }
+.mf-majors ul { padding-left: 12px; }
+.mf-changes .is-up { color: var(--color-error); font-weight: 600; }
+.mf-changes .is-down { color: var(--color-success, #2e7d32); font-weight: 600; }
+.mf-foot { margin-top: 20px; font-size: 12px; }
+.mf a { color: var(--color-brand); }
