@@ -68,9 +68,9 @@ export async function fetchFundamentalGateResults(
   const unique = [...new Set(codes.map((c) => String(c).trim()).filter(Boolean))];
   const sinceIso = new Date(Date.parse(todayIso) - 800 * 86_400_000).toISOString().slice(0, 10);
   const byCode = new Map<string, QuarterRow[]>();
-  // 종목당 분기 행이 6개 안팎 — 100종목씩 나눠 1000행 제한 안에서 읽는다
-  for (let i = 0; i < unique.length; i += 100) {
-    const chunk = unique.slice(i, i + 100);
+  // 800일 창이면 종목당 분기 행이 9개 안팎(100종목이면 약 900행)이라 1000행 제한에 바짝 붙는다 — 50종목씩
+  for (let i = 0; i < unique.length; i += 50) {
+    const chunk = unique.slice(i, i + 50);
     const { data, error } = await supabase
       .from("fundamentals")
       .select("code, period_end, operating_income, eps, computed")

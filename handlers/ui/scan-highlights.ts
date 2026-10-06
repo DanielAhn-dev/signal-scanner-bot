@@ -5,6 +5,7 @@ import { createDailyCandidatePlanningReportResult } from '../../src/services/mar
 import { scoreLeadAccumulationCandidate } from '../../src/services/accumulationSignalService'
 import { selectForecastsForTopic } from '../../src/services/reportTopicForecasts'
 import { denyIfUnauthorizedRead } from './_accessControl'
+import { selectPaged } from '../../src/services/supabasePaging'
 
 const ORIGIN = process.env.UI_CORS_ORIGIN || '*'
 const CACHE_TTL_MS = 300_000 // 5분 (캐시 자주 갱신되지 않으므로)
@@ -49,15 +50,22 @@ async function fetchInvestorFlowByCode(
 
   for (const spec of attempts) {
     try {
-      const { data, error } = await supabase
-        .from('investor_daily')
-        .select(spec.select)
-        .in(spec.codeCol, codes)
-        .gte('date', fromDate)
-        .lte('date', asOfDate)
-        .order('date', { ascending: false })
+      // 종목이 40개를 넘으면 1000행 상한에 잘려 '20일 합계'가 며칠치였다 — 끝까지 받는다
+      const data = await selectPaged<any>(
+        async (from, to) =>
+          await supabase
+            .from('investor_daily')
+            .select(spec.select)
+            .in(spec.codeCol, codes)
+            .gte('date', fromDate)
+            .lte('date', asOfDate)
+            .order(spec.codeCol)
+            .order('date', { ascending: false })
+            .range(from, to),
+        { logLabel: 'ui.investorFlow' }
+      ).catch(() => null)
 
-      if (error || !Array.isArray(data)) continue
+      if (!Array.isArray(data)) continue
 
       const grouped = new Map<string, any[]>()
       for (const row of data) {

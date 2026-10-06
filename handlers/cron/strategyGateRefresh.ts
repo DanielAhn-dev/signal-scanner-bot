@@ -8,6 +8,7 @@ import {
 } from "../../src/services/strategyGateStateService";
 import { sendMessage } from "../../src/telegram/api";
 import { resolveStatsSinceIso } from "../../src/services/virtualAutoTradeSelection";
+import { selectPaged } from "../../src/services/supabasePaging";
 
 const CRON_SECRET = process.env.CRON_SECRET;
 const SUPABASE_URL = process.env.SUPABASE_URL;
@@ -202,14 +203,25 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.status(200).json({ ok: true, total: 0, refreshed: 0, tuned: 0 });
     }
 
-    const { data: sellRows, error: sellError } = await supabase
-      .from("virtual_trades")
-      .select("chat_id, pnl_amount, memo")
-      .eq("side", "SELL")
-      .gte("traded_at", since)
-      .in("chat_id", chatIds)
-      .limit(20000)
-      .returns<SellRow[]>();
+    // 응답 상한 1000행 — limit(20000)이어도 잘려 매도가 쌓이면 성과 게이트가 일부 표본으로 판단했을 것이다
+    let sellRows: SellRow[] | null = null;
+    let sellError: { message: string } | null = null;
+    try {
+      sellRows = await selectPaged<SellRow>(
+        async (from, to) =>
+          await supabase
+            .from("virtual_trades")
+            .select("chat_id, pnl_amount, memo")
+            .eq("side", "SELL")
+            .gte("traded_at", since)
+            .in("chat_id", chatIds)
+            .order("id")
+            .range(from, to),
+        { logLabel: "strategyGateRefresh.sells" }
+      );
+    } catch (e) {
+      sellError = { message: e instanceof Error ? e.message : String(e) };
+    }
 
     if (sellError) {
       throw new Error(`sell rows fetch failed: ${sellError.message}`);

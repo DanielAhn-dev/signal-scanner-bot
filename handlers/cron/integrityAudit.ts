@@ -19,6 +19,7 @@ import { sendMessage } from "../../src/telegram/api";
 import { economicCalendarCoverage } from "../../src/utils/fetchEconomicCalendar";
 import { krxCalendarStatus, toKstDateKey } from "../../src/lib/krxCalendar";
 import { findMislabeledSells, type SellActionRow } from "../../src/lib/sellLabelAudit";
+import { selectPaged } from "../../src/services/supabasePaging";
 
 /** 매도 사유 기록 수정(섹터 정리·비중 축소 사유 분리) 배포 뒤부터 검산한다 */
 const SELL_LABEL_AUDIT_SINCE = "2026-10-01T15:00:00+09:00";
@@ -107,14 +108,19 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         .select("tg_id, prefs")
         .in("tg_id", chatIds)
         .returns<UserRow[]>(),
-      supabase
-        .from("virtual_trades")
-        .select("chat_id, code, side, quantity, net_amount")
-        .in("chat_id", chatIds)
-        // 현금·수량 원장은 가상매매(종목봇)만 — 실계좌 입력 거래는 가상 현금과 무관하다
-        .is("broker_name", null)
-        .limit(50000)
-        .returns<TradeRow[]>(),
+      // 응답 상한이 1000행이라 limit(50000)이어도 잘린다 — 거래가 1000건을 넘으면 원장 검산이 틀어졌을 것이다. 끝까지 받는다
+      selectPaged<TradeRow>(
+        async (from, to) =>
+          await supabase
+            .from("virtual_trades")
+            .select("chat_id, code, side, quantity, net_amount")
+            .in("chat_id", chatIds)
+            // 현금·수량 원장은 가상매매(종목봇)만 — 실계좌 입력 거래는 가상 현금과 무관하다
+            .is("broker_name", null)
+            .order("id")
+            .range(from, to),
+        { logLabel: "integrityAudit.trades" }
+      ).then((data) => ({ data, error: null as { message: string } | null }), (e) => ({ data: null, error: { message: String(e?.message ?? e) } })),
       supabase
         .from("virtual_positions")
         .select("chat_id, code, quantity, status, broker_name, account_name")

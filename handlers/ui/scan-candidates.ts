@@ -4,6 +4,7 @@ import { applyAdaptiveOverlayToPullbackCandidate, getAdaptiveStrategyInsights } 
 import { scoreLeadAccumulationCandidate } from '../../src/services/accumulationSignalService'
 import { fetchRealtimePriceBatch } from '../../src/utils/fetchRealtimePrice'
 import { denyIfUnauthorizedRead } from './_accessControl'
+import { fetchRecentDistinctDates, selectPaged } from '../../src/services/supabasePaging'
 import { isKrxRegularSession } from '../../src/lib/krxCalendar'
 
 const ORIGIN = process.env.UI_CORS_ORIGIN || '*'
@@ -19,10 +20,6 @@ type SignalHistoryRow = {
   trade_date: string
   is_quick_strict: boolean
   is_quick_lite: boolean
-}
-
-type RecentSignalRow = {
-  trade_date: string
 }
 
 type PromotionSummaryRow = {
@@ -188,15 +185,22 @@ async function fetchInvestorFlowByCode(
 
   for (const spec of attempts) {
     try {
-      const { data, error } = await supabase
-        .from('investor_daily')
-        .select(spec.select)
-        .in(spec.codeCol, codes)
-        .gte('date', fromDate)
-        .lte('date', asOfDate)
-        .order('date', { ascending: false })
+      // 종목이 40개를 넘으면 1000행 상한에 잘려 '20일 합계'가 며칠치였다 — 끝까지 받는다
+      const data = await selectPaged<any>(
+        async (from, to) =>
+          await supabase
+            .from('investor_daily')
+            .select(spec.select)
+            .in(spec.codeCol, codes)
+            .gte('date', fromDate)
+            .lte('date', asOfDate)
+            .order(spec.codeCol)
+            .order('date', { ascending: false })
+            .range(from, to),
+        { logLabel: 'ui.investorFlow' }
+      ).catch(() => null)
 
-      if (error || !Array.isArray(data)) continue
+      if (!Array.isArray(data)) continue
 
       const grouped = new Map<string, any[]>()
       for (const row of data) {
@@ -348,21 +352,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       })
     }
 
-    const { data: recentRows, error: recentError } = await supabase
-      .from('pullback_signals')
-      .select('trade_date')
-      .order('trade_date', { ascending: false })
-      .limit(5000)
-
-    if (recentError) return res.status(500).json({ error: recentError.message })
-
-    const recentDates = Array.from(
-      new Set(
-        ((recentRows ?? []) as RecentSignalRow[])
-          .map((row) => String(row.trade_date || '').slice(0, 10))
-          .filter(Boolean)
-      )
-    )
+    // limit(5000)이어도 응답 상한 1000행에 잘려 약 4일치뿐이라 "최근 10일 추세"가 4일로 계산됐다
+    let recentDates: string[]
+    try {
+      recentDates = await fetchRecentDistinctDates(supabase, 'pullback_signals', 'trade_date', 10)
+    } catch (e) {
+      return res.status(500).json({ error: e instanceof Error ? e.message : String(e) })
+    }
 
     const promotionTrendDates = recentDates.slice(0, 10)
     const recentScanDates = recentDates.slice(0, 3)
@@ -384,13 +380,26 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     if (promotionTrendDates.length > 0) {
-      const { data: promotionRows, error: promotionError } = await supabase
-        .from('pullback_signals')
-        .select('trade_date,code,entry_grade,trend_grade,dist_grade,pivot_grade,warn_grade')
-        .in('trade_date', promotionTrendDates)
-        .neq('warn_grade', 'SELL')
-        .in('entry_grade', ['A', 'B'])
-        .order('trade_date', { ascending: false })
+      // 10일 × 하루 약 180행이라 1000행 상한에 잘려 오래된 날짜가 빠졌다 — 끝까지 받는다
+      let promotionRows: any[] | null = null
+      let promotionError: { message: string } | null = null
+      try {
+        promotionRows = await selectPaged<any>(
+          async (from, to) =>
+            await supabase
+              .from('pullback_signals')
+              .select('trade_date,code,entry_grade,trend_grade,dist_grade,pivot_grade,warn_grade')
+              .in('trade_date', promotionTrendDates)
+              .neq('warn_grade', 'SELL')
+              .in('entry_grade', ['A', 'B'])
+              .order('trade_date', { ascending: false })
+              .order('code')
+              .range(from, to),
+          { logLabel: 'ui.scanCandidates.promotion' }
+        )
+      } catch (e) {
+        promotionError = { message: e instanceof Error ? e.message : String(e) }
+      }
 
       if (!promotionError && Array.isArray(promotionRows)) {
         const groupedByDate = new Map<string, Map<string, PromotionSummaryRow>>()

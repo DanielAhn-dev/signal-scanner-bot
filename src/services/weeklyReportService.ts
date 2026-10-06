@@ -8,6 +8,7 @@ import { buildInvestmentPlan } from "../lib/investPlan";
 import { getSafetyPreferenceScore, pickSaferCandidates, type RiskProfile } from "../lib/investableUniverse";
 import { scaleScoreFactorsToReferencePrice } from "../lib/priceScale";
 import { calculateAutoTradeBuySizing } from "./virtualAutoTradeSizing";
+import { fetchRecentDistinctDates, selectPaged } from "./supabasePaging";
 import {
   asKstDate,
   getReportTheme,
@@ -145,10 +146,6 @@ type PullbackSignalWeekRow = {
         sma50?: number | null;
       }[]
     | null;
-};
-
-type TradeDateRow = {
-  trade_date: string | null;
 };
 
 type PullbackAggregateRow = {
@@ -426,24 +423,10 @@ async function buildPullbackWeeklyReportData(
   currentHoldingCount: number,
   market: Awaited<ReturnType<typeof fetchReportMarketData>>
 ): Promise<PullbackWeeklyReportData> {
-  const { data: dateRows, error: dateError } = await supabase
-    .from("pullback_signals")
-    .select("trade_date")
-    .order("trade_date", { ascending: false })
-    .limit(10)
-    .returns<TradeDateRow[]>();
-
-  if (dateError) {
-    throw new Error(`눌림목 기준일 조회 실패: ${dateError.message}`);
-  }
-
-  const recentDates: string[] = [
-    ...new Set(
-      ((dateRows ?? []) as TradeDateRow[])
-        .map((row: TradeDateRow) => row.trade_date)
-        .filter((row: string | null): row is string => Boolean(row))
-    ),
-  ].slice(0, 5);
+  // 예전엔 trade_date 10행만 받아 모두 최신일 하루였다 → "최근 5거래일" 후보가 항상 하루치
+  const recentDates = await fetchRecentDistinctDates(supabase, "pullback_signals", "trade_date", 5).catch((e) => {
+    throw new Error(`눌림목 기준일 조회 실패: ${e instanceof Error ? e.message : String(e)}`);
+  });
   if (!recentDates.length) {
     return {
       candidates: [],
@@ -457,16 +440,28 @@ async function buildPullbackWeeklyReportData(
     };
   }
 
-  const { data: signalRows, error: signalError } = await supabase
-    .from("pullback_signals")
-    .select(
-      "code, trade_date, entry_grade, entry_score, warn_grade, warn_score, stock:stocks!inner(name, close, market, sector_id, liquidity, universe_level, rsi14, sma20, sma50)"
-    )
-    .in("trade_date", recentDates)
-    .in("entry_grade", ["A", "B"])
-    .neq("warn_grade", "SELL")
-    .order("trade_date", { ascending: false })
-    .returns<PullbackSignalWeekRow[]>();
+  // 5일 × 하루 약 180행이면 1000행 상한에 걸린다 — 끝까지 받는다
+  let signalRows: PullbackSignalWeekRow[] | null = null;
+  let signalError: { message: string } | null = null;
+  try {
+    signalRows = await selectPaged<PullbackSignalWeekRow>(
+      async (from, to) =>
+        await supabase
+          .from("pullback_signals")
+          .select(
+            "code, trade_date, entry_grade, entry_score, warn_grade, warn_score, stock:stocks!inner(name, close, market, sector_id, liquidity, universe_level, rsi14, sma20, sma50)"
+          )
+          .in("trade_date", recentDates)
+          .in("entry_grade", ["A", "B"])
+          .neq("warn_grade", "SELL")
+          .order("trade_date", { ascending: false })
+          .order("code")
+          .range(from, to),
+      { logLabel: "weeklyReport.pullback_signals" }
+    );
+  } catch (e) {
+    signalError = { message: e instanceof Error ? e.message : String(e) };
+  }
 
   if (signalError) {
     throw new Error(`눌림목 후보 조회 실패: ${signalError.message}`);

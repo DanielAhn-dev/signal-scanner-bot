@@ -153,3 +153,31 @@ export async function selectPaged<T>(
 
   return out;
 }
+/**
+ * 표에서 최근 날짜 N개(중복 제거)를 최신순으로 돌려준다.
+ * 하루에 종목 수만큼 행이 있는 표에서 `.select(date).limit(N)`으로 날짜 N개를 뽑으면 N행이 모두 같은 날이라
+ * 항상 하루치만 나온다(2026-10-06: 주간 리포트·적응형 전략·스캔 통과율이 1일치로 계산됨). limit(5000)도
+ * 응답 상한 1000행에 잘려 4일치뿐이었다. 날짜 하나씩 직전 날짜를 찾아 내려간다(N번 조회, 각 1행).
+ */
+export async function fetchRecentDistinctDates(
+  supabase: any,
+  table: string,
+  column: string,
+  count: number,
+  options: { before?: string } = {}
+): Promise<string[]> {
+  const out: string[] = [];
+  let cursor = options.before ?? null;
+  for (let i = 0; i < Math.max(0, Math.floor(count)); i += 1) {
+    let query = supabase.from(table).select(column).order(column, { ascending: false }).limit(1);
+    if (cursor) query = query.lt(column, cursor);
+    const { data, error } = await query;
+    if (error) throw new Error(`${table}.${column} 최근 날짜 조회 실패: ${error.message}`);
+    const value = data?.[0]?.[column];
+    if (value == null) break;
+    const date = String(value).slice(0, 10);
+    out.push(date);
+    cursor = date;
+  }
+  return out;
+}

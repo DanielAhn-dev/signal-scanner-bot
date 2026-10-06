@@ -1,5 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
-import { chunkValues, selectPaged } from './supabasePaging'
+import { chunkValues, fetchRecentDistinctDates, selectPaged } from './supabasePaging'
 
 type FactorKey = 'entry_grade' | 'trend_grade' | 'pivot_grade' | 'warn_grade' | 'signal' | 'stable_turn' | 'market_regime'
 
@@ -118,22 +118,8 @@ function calcWeight(acc: FactorAccumulator): number {
 }
 
 async function getRecentTradeDates(supabase: SupabaseClient, limit: number): Promise<string[]> {
-  const { data, error } = await supabase
-    .from('pullback_signals')
-    .select('trade_date')
-    .order('trade_date', { ascending: false })
-    .limit(limit)
-
-  if (error) throw new Error(error.message)
-
-  const uniqueDates: string[] = Array.from(
-    new Set(
-      (data ?? [])
-        .map((row: unknown) => String((row as { trade_date?: string }).trade_date || ''))
-        .filter((value: string): value is string => Boolean(value))
-    )
-  )
-  return uniqueDates.slice(0, limit)
+  // 예전엔 trade_date를 limit(20)행만 받아 20행이 모두 최신일 하루라, 사후 수익률이 없는 하루치로 학습했다
+  return fetchRecentDistinctDates(supabase, 'pullback_signals', 'trade_date', limit)
 }
 
 async function getHistoricalPullbackRows(supabase: SupabaseClient, tradeDates: string[]): Promise<PullbackHistoryRow[]> {

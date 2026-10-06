@@ -11,6 +11,7 @@ import {
   parsePositionStrategyState,
 } from '../../src/services/virtualAutoTradePositionStrategy'
 import { fetchWeightCautions, type WeightCautionResult } from '../../src/services/weightCautionSignal'
+import { selectPaged } from '../../src/services/supabasePaging'
 
 const POSITIONS_CACHE_TTL_MS = Math.max(0, Number(process.env.UI_POSITIONS_CACHE_TTL_MS || 8_000))
 const POSITIONS_LOTS_TIMEOUT_MS = Math.max(120, Number(process.env.UI_POSITIONS_LOTS_TIMEOUT_MS || 300))
@@ -298,13 +299,20 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const minAddedDate = datesForAddedClose.reduce((min, cur) => (cur < min ? cur : min), datesForAddedClose[0])
       const maxAddedDate = datesForAddedClose.reduce((max, cur) => (cur > max ? cur : max), datesForAddedClose[0])
       const lookupStartDate = shiftDateKey(minAddedDate, -45)
-      const { data: addedCloseRows } = await supabase
-        .from('daily_indicators')
-        .select('code, trade_date, close')
-        .in('code', codesForAddedClose)
-        .gte('trade_date', lookupStartDate)
-        .lte('trade_date', maxAddedDate)
-        .order('trade_date', { ascending: true })
+      // 오래전 추가한 보유가 섞이면 기간이 길어 1000행 상한에 잘린다(오름차순이라 최근 추가분 날짜가 빠짐) — 끝까지 받는다
+      const addedCloseRows = await selectPaged<{ code: string; trade_date: string; close: number }>(
+        async (from, to) =>
+          await supabase
+            .from('daily_indicators')
+            .select('code, trade_date, close')
+            .in('code', codesForAddedClose)
+            .gte('trade_date', lookupStartDate)
+            .lte('trade_date', maxAddedDate)
+            .order('code')
+            .order('trade_date', { ascending: true })
+            .range(from, to),
+        { logLabel: 'ui.positions.added_close' }
+      ).catch(() => [])
 
       const closeSeriesByCode = new Map<string, Array<{ tradeDate: string; close: number }>>()
 

@@ -4,6 +4,7 @@ import { actionButtons } from "../messages/layout";
 import { discoverMultibaggerCandidates } from "../../services/discoveryService";
 import { parseStrategyMemo } from "../../lib/strategyMemo";
 import { getUserInvestmentPrefs, setUserInvestmentPrefs } from "../../services/userService";
+import { selectPaged } from "../../services/supabasePaging";
 
 type DiscoveryProfile = "BLEND" | "HIGHLIGHT" | "PULLBACK" | "MULTIBAGGER" | "BACKTEST_EDGE";
 
@@ -245,15 +246,21 @@ async function fetchFlowSignalProfilesByCode(input: {
 
   for (let i = 0; i < codeSet.length; i += 200) {
     const chunk = codeSet.slice(i, i + 200);
-    const { data } = await input.supabase
-      .from("daily_indicators")
-      .select("code,trade_date,close,volume,value_traded,sma20,sma50,rsi14,roc14,roc21")
-      .in("code", chunk)
-      .gte("trade_date", fromDate)
-      .order("trade_date", { ascending: true })
-      .limit(8000);
+    // 자동매매 쪽과 같은 결함: limit(8000) 오름차순이 1000행에 잘려 '최신' 지표가 한 달 전 값이었다
+    const data = await selectPaged<DailyIndicatorFlowRow>(
+      async (from, to) =>
+        await input.supabase
+          .from("daily_indicators")
+          .select("code,trade_date,close,volume,value_traded,sma20,sma50,rsi14,roc14,roc21")
+          .in("code", chunk)
+          .gte("trade_date", fromDate)
+          .order("code")
+          .order("trade_date", { ascending: true })
+          .range(from, to),
+      { logLabel: "discoveryProfile.flow_profiles" }
+    ).catch(() => [] as DailyIndicatorFlowRow[]);
 
-    for (const row of (data ?? []) as DailyIndicatorFlowRow[]) {
+    for (const row of data) {
       const code = String(row.code ?? "").trim();
       if (!code) continue;
       const list = grouped.get(code) ?? [];

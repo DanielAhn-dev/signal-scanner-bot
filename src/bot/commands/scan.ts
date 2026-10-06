@@ -9,6 +9,7 @@ import {
   getFundamentalSnapshot,
 } from "../../services/fundamentalService";
 import fundamentalStore from "../../services/fundamentalStore";
+import { fetchRecentDistinctDates } from "../../services/supabasePaging";
 import { pickSaferCandidates, type RiskProfile } from "../../lib/investableUniverse";
 import { getUserInvestmentPrefs } from "../../services/userService";
 import { analyzeNewsSentiment, formatSentimentLine } from "../../lib/newsSentiment";
@@ -135,14 +136,10 @@ async function fetchRecentFilterPassStats(
   sectorId: string | null,
   limitDays = 3
 ): Promise<RecentFilterPassStat[]> {
-  const { data: recentDates } = await supabaseClient
-    .from("pullback_signals")
-    .select("trade_date")
-    .order("trade_date", { ascending: false })
-    .limit(Math.max(limitDays, 1));
-
-  const uniqueDates = [...new Set((recentDates ?? []).map((row: { trade_date?: string }) => row.trade_date).filter(Boolean))]
-    .slice(0, limitDays) as string[];
+  // trade_date를 limitDays행만 받으면 모두 최신일 하루라 "최근 N일 통과율"이 하루치였다
+  const uniqueDates = await fetchRecentDistinctDates(supabaseClient, "pullback_signals", "trade_date", Math.max(limitDays, 1)).catch(
+    () => [] as string[]
+  );
 
   if (!uniqueDates.length) return [];
 
