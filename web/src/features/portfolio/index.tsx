@@ -344,7 +344,9 @@ export default function Portfolio() {
     const score = getScoreValue(row)
     // 비중 조절 경고(과열·고점 변동성 급등)가 켜진 종목은 추가매수를 권하지 않는다
     const weightCaution = row?.weight_caution as { message?: string } | null | undefined
-    const hasAddSignal = Number(row?.recommended_buy_qty || 0) > 0 && !weightCaution
+    // 급등 추격·긴 윗꼬리·한 달 급락도 봇이 추가매수를 막는 기준 — 화면도 같이 막는다
+    const entryGuard = row?.entry_guard as { label?: string; message?: string } | null | undefined
+    const hasAddSignal = Number(row?.recommended_buy_qty || 0) > 0 && !weightCaution && !entryGuard
     const hasPullbackHint = Boolean(entryGrade || trendGrade || warnGrade)
     const entryTrendOk = !hasPullbackHint || (['A', 'B'].includes(entryGrade) && ['A', 'B'].includes(trendGrade))
     const riskOk = !warnGrade || ['SAFE', 'WATCH'].includes(warnGrade)
@@ -360,6 +362,7 @@ export default function Portfolio() {
     }
 
     if (weightCaution?.message) reasons.push(`비중 점검: ${weightCaution.message}`)
+    if (entryGuard?.message) reasons.push(`매수 보류(${entryGuard.label ?? '진입 점검'}): ${entryGuard.message}`)
     reasons.push('추가매수/부분청산 조건 미충족')
     if (Number.isFinite(pct)) reasons.push(`현재 수익률 ${formatNumber(pct, 2)}%`)
     if (warnScore != null) reasons.push(`경고점수 ${formatNumber(warnScore, 1)}`)

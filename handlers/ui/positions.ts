@@ -11,6 +11,8 @@ import {
   parsePositionStrategyState,
 } from '../../src/services/virtualAutoTradePositionStrategy'
 import { fetchWeightCautions, type WeightCautionResult } from '../../src/services/weightCautionSignal'
+import { entryGuardLabel, fetchChaseEntries, type ChaseEntryResult } from '../../src/services/chaseEntrySignal'
+import { toKstDateKey } from '../../src/lib/krxCalendar'
 import { selectPaged } from '../../src/services/supabasePaging'
 
 const POSITIONS_CACHE_TTL_MS = Math.max(0, Number(process.env.UI_POSITIONS_CACHE_TTL_MS || 8_000))
@@ -188,6 +190,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         ])
       : Promise.resolve(new Map())
 
+    // 급등 추격·긴 윗꼬리·한 달 급락 — 봇이 신규·추가매수를 막는 기준과 같아야 화면이 어긋나지 않는다
+    const entryGuardPromise: Promise<Map<string, ChaseEntryResult>> = codes.length > 0
+      ? Promise.race([
+          fetchChaseEntries(supabase, codes, toKstDateKey()).catch(() => new Map<string, ChaseEntryResult>()),
+          new Promise<Map<string, ChaseEntryResult>>((resolve) =>
+            setTimeout(() => resolve(new Map()), POSITIONS_CAUTION_TIMEOUT_MS)),
+        ])
+      : Promise.resolve(new Map())
+
     const scoreByCode = new Map<string, { totalScore: number | null; signal: string | null }>()
     if (codes.length > 0) {
       const { data: latestScoreRows } = await supabase
@@ -344,6 +355,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     const weightCautionByCode = await weightCautionPromise
+    const entryGuardByCode = await entryGuardPromise
     let fallbackToCloseCount = 0
     const mapped = (data ?? []).map((row: any) => {
       // 현재가 우선, 없으면 DB 종가 (폴백)
@@ -435,6 +447,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           return c && c.level !== 'none'
             ? { level: c.level, overheat: c.overheat, volSpike: c.volSpike, ma200Gap: c.ma200Gap, volRatio: c.volRatio, message: c.message }
             : null
+        })(),
+        entry_guard: (() => {
+          const g = entryGuardByCode.get(code)
+          return g ? { kind: g.kind, label: entryGuardLabel(g.kind), message: g.message } : null
         })(),
         position_type: (String(row.status || '').toLowerCase() === 'watch' || String(row.status || '').toLowerCase() === 'interest') ? 'interest' : (row.quantity ? 'holding' : 'interest'),
         lots,
