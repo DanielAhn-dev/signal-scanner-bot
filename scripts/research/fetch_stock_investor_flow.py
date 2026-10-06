@@ -13,7 +13,8 @@ tv=[]
 for k,v in x.items():
     if len(v)>2000 and v[-1][0]>='20260901':
         tv.append((np.mean([r[4]*r[5] for r in v[-500:]]),k))
-codes=[k for _,k in sorted(tv,reverse=True)[:150]]
+N=int(sys.argv[1]) if len(sys.argv)>1 else 150  # 종목 수(기본 150, 10/07 확장 시 250)
+codes=[k for _,k in sorted(tv,reverse=True)[:N]]
 out=C+'stock_flow_hist.json'
 res=json.load(open(out)) if os.path.exists(out) else {}
 def num(s):
@@ -21,7 +22,7 @@ def num(s):
     except Exception: return None
 for n,c in enumerate(codes):
     if c in res: continue
-    rows={};bd='20261005'
+    rows={};bd=time.strftime('%Y%m%d')
     while bd>'20160101':
         j=None
         for t in range(3):
