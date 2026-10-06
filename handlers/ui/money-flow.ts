@@ -87,11 +87,24 @@ export function normalizeFlowCheck(body: any, now = new Date()): { checked_on: s
   }
 }
 
-const entryColumns = 'id,spent_on,amount,memo,category_id,cut_level,must_part,payment'
-const toEntry = (row: any, mine = true) => ({
-  id: row.id, mine, date: String(row.spent_on).slice(0, 10), amount: Number(row.amount), memo: row.memo, categoryId: row.category_id,
-  cut: row.cut_level ?? null, mustPart: row.must_part === null ? null : Number(row.must_part), payment: row.payment,
-})
+const entryColumns = 'id,client_id,spent_on,amount,memo,category_id,cut_level,must_part,payment,updated_by_client_id,deleted_at,deleted_by_client_id'
+
+/** 보는 사람 기준으로 바꾼다. client_id는 내보내지 않고 '나/배우자'로만 알린다. 기록한 사람이 아닌 쪽이 고쳤을 때만 editedBy를 준다 */
+export function toEntry(row: any, viewer: string) {
+  const who = (id: string | null) => (id ? (id === viewer ? 'me' : 'partner') : null)
+  return {
+    id: row.id, mine: row.client_id === viewer, date: String(row.spent_on).slice(0, 10), amount: Number(row.amount), memo: row.memo, categoryId: row.category_id,
+    cut: row.cut_level ?? null, mustPart: row.must_part == null ? null : Number(row.must_part), payment: row.payment,
+    editedBy: row.updated_by_client_id && row.updated_by_client_id !== row.client_id ? who(row.updated_by_client_id) : null,
+    deletedBy: row.deleted_at ? who(row.deleted_by_client_id ?? row.client_id) : null,
+  }
+}
+
+/** 고치거나 지울 수 있는 기록의 주인: 나, 그리고 지출을 공유한 배우자 */
+async function editableOwners(supabase: any, clientId: string): Promise<string[]> {
+  const partner = await partnerSharing(supabase, clientId, 'spending')
+  return partner ? [clientId, partner] : [clientId]
+}
 
 async function learn(supabase: any, clientId: string, memo: string, categoryId: string) {
   const keyword = learnKeyword(memo)
@@ -117,7 +130,7 @@ async function handlePost(supabase: any, clientId: string, body: any, res: Verce
         if (learnError) return res.status(500).json({ error: learnError.message })
       }
     }
-    return res.status(200).json({ ok: true, data: (data ?? []).map((row: any) => toEntry(row)) })
+    return res.status(200).json({ ok: true, data: (data ?? []).map((row: any) => toEntry(row, clientId)) })
   }
   if (action === 'save-check') {
     const check = normalizeFlowCheck(body)
@@ -130,22 +143,39 @@ async function handlePost(supabase: any, clientId: string, body: any, res: Verce
   if (action === 'update-entry') {
     const row = normalizeFlowEntry(body)
     if (!row) return res.status(400).json({ error: 'Invalid entry' })
-    const { data, error } = await supabase.from('money_flow_entries').update(row).eq('client_id', clientId).eq('id', body.id).select(entryColumns).maybeSingle()
+    const { data, error } = await supabase.from('money_flow_entries')
+      .update({ ...row, updated_at: new Date().toISOString(), updated_by_client_id: clientId })
+      .in('client_id', await editableOwners(supabase, clientId)).eq('id', body.id).is('deleted_at', null).select(entryColumns).maybeSingle()
     if (error) return res.status(500).json({ error: error.message })
     if (!data) return res.status(404).json({ error: 'Entry not found' })
     if (body.learn === true) {
       const learnError = await learn(supabase, clientId, row.memo, row.category_id)
       if (learnError) return res.status(500).json({ error: learnError.message })
     }
-    return res.status(200).json({ ok: true, data: toEntry(data) })
+    return res.status(200).json({ ok: true, data: toEntry(data, clientId) })
   }
-  if (action === 'delete-entry' || action === 'delete-check') {
-    const table = action === 'delete-entry' ? 'money_flow_entries' : 'money_flow_checks'
-    const { error } = await supabase.from(table).delete().eq('client_id', clientId).eq('id', body.id)
+  if (action === 'delete-entry' || action === 'restore-entry') {
+    // 지우기는 표시만 — 합계에서 빠지고, 둘 다 '지운 기록'에서 되돌릴 수 있다
+    const patch = action === 'delete-entry'
+      ? { deleted_at: new Date().toISOString(), deleted_by_client_id: clientId }
+      : { deleted_at: null, deleted_by_client_id: null, updated_at: new Date().toISOString(), updated_by_client_id: clientId }
+    const { data, error } = await supabase.from('money_flow_entries').update(patch)
+      .in('client_id', await editableOwners(supabase, clientId)).eq('id', body.id).select('id').maybeSingle()
+    if (error) return res.status(500).json({ error: error.message })
+    if (!data) return res.status(404).json({ error: 'Entry not found' })
+    return res.status(200).json({ ok: true })
+  }
+  if (action === 'delete-check') {
+    const { error } = await supabase.from('money_flow_checks').delete().eq('client_id', clientId).eq('id', body.id)
     if (error) return res.status(500).json({ error: error.message })
     return res.status(200).json({ ok: true })
   }
   return res.status(400).json({ error: 'Unknown action' })
+}
+
+/** 지운 기록은 합계에 넣지 않고 따로 준다 */
+export function splitDeleted<T extends { deletedBy: string | null }>(list: T[]): { entries: T[]; deleted: T[] } {
+  return { entries: list.filter((e) => !e.deletedBy), deleted: list.filter((e) => e.deletedBy) }
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
@@ -181,8 +211,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const failed = [entries, rules, checks, partnerEntries].find((result) => result.error)
     if (failed) return res.status(500).json({ error: failed.error!.message })
     return res.status(200).json({
-      entries: [...(entries.data ?? []).map((row: any) => toEntry(row)), ...(partnerEntries.data ?? []).map((row: any) => toEntry(row, false))]
-        .sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0)),
+      ...splitDeleted([...(entries.data ?? []), ...(partnerEntries.data ?? [])].map((row: any) => toEntry(row, user.clientId!))
+        .sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0))),
       partnerShared: !!partnerClientId,
       rules: (rules.data ?? []).map((row: any) => ({ keyword: row.keyword, categoryId: row.category_id })),
       checks: (checks.data ?? []).map((row: any) => ({ id: row.id, date: String(row.checked_on).slice(0, 10), label: row.label, input: row.input })),

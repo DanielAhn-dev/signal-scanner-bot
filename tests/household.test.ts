@@ -82,7 +82,9 @@ const member = (clientId: string) => ({ client_id: clientId, telegram_id: 1000 +
 
 test('공유 범위: 기본은 모두 공유, 명시적으로 false만 끈다. 변경 입력은 알려진 키·불리언만', () => {
   assert.deepEqual(normalizeShares(undefined), DEFAULT_SHARES)
-  assert.deepEqual(normalizeShares({ investing: false }), { spending: true, investing: false, children: true })
+  assert.deepEqual(normalizeShares({ investing: false }), { spending: true, investing: false, children: true, plan: true })
+  assert.equal(normalizeShares({ plan: false }).plan, false)
+  assert.deepEqual(parseSharesPatch({ plan: false }), { plan: false })
   assert.deepEqual(parseSharesPatch({ spending: false }), { spending: false })
   assert.equal(parseSharesPatch({ spending: 'no' }), null)
   assert.equal(parseSharesPatch({ secret: true }), null)
@@ -92,7 +94,7 @@ test('공유 범위: 기본은 모두 공유, 명시적으로 false만 끈다. �
 
 test('연결 행에서 나와 상대를 가르고, 상대의 공유 설정을 상대 칸에서 읽는다', () => {
   const row = { inviter_client_id: 'a', invitee_client_id: 'b', inviter_shares: { investing: false }, invitee_shares: { children: false } }
-  assert.deepEqual(sidesOf(row, 'a'), { partnerClientId: 'b', myShares: { spending: true, investing: false, children: true }, partnerShares: { spending: true, investing: true, children: false }, myColumn: 'inviter_shares' })
+  assert.deepEqual(sidesOf(row, 'a'), { partnerClientId: 'b', myShares: { spending: true, investing: false, children: true, plan: true }, partnerShares: { spending: true, investing: true, children: false, plan: true }, myColumn: 'inviter_shares' })
   assert.equal(sidesOf(row, 'b').partnerShares.investing, false)
   assert.equal(sidesOf(row, 'b').myColumn, 'invitee_shares')
   const now = Date.parse('2026-10-06T00:00:00Z')

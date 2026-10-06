@@ -5,7 +5,7 @@ import {
   FLOW_CATEGORIES, categoryById, classifyMemo, compareSummaries, evaluateFlowCheck, learnKeyword, parseAmountToken,
   parseLeadingDate, parseQuickLine, parseQuickLines, splitByCut, suggestCategories, summarizeItems, toSeedExpenses,
 } from '../src/lib/moneyFlow'
-import handler, { normalizeFlowCheck, normalizeFlowEntry } from '../handlers/ui/money-flow'
+import handler, { normalizeFlowCheck, normalizeFlowEntry, splitDeleted, toEntry } from '../handlers/ui/money-flow'
 
 test('분류표: id 중복 없음, 모든 소분류에 갈래·대분류·기본값·시드 항목이 있다', () => {
   const ids = FLOW_CATEGORIES.map((c) => c.id)
@@ -264,4 +264,23 @@ test('로그인 없는 돈 흐름 조회는 차단한다', async () => {
   }
   await handler({ method: 'GET', headers: {}, query: { from: '2026-10-01', to: '2026-10-31' } } as unknown as VercelRequest, response as unknown as VercelResponse)
   assert.equal(statusCode, 401)
+})
+
+test('보는 사람 기준 표시: 기록한 사람이 아닌 쪽이 고치면 고친 사람, 지우면 지운 사람. client_id는 내보내지 않는다', () => {
+  const base = { id: 'x', client_id: 'wife', spent_on: '2026-10-01', amount: 1000, memo: '우유', category_id: 'grocery_basic', cut_level: null, must_part: null, payment: 'cash', updated_by_client_id: null, deleted_at: null, deleted_by_client_id: null }
+  const own = toEntry(base, 'wife')
+  assert.equal(own.mine, true)
+  assert.equal(own.editedBy, null)
+  assert.equal('client_id' in own, false)
+  // 남편이 고침 → 아내 화면에선 "배우자가 고침", 남편 화면에선 "내가 고침"
+  const edited = { ...base, updated_by_client_id: 'husband' }
+  assert.equal(toEntry(edited, 'wife').editedBy, 'partner')
+  assert.equal(toEntry(edited, 'husband').editedBy, 'me')
+  assert.equal(toEntry(edited, 'husband').mine, false)
+  // 본인이 고친 건 표시하지 않는다
+  assert.equal(toEntry({ ...base, updated_by_client_id: 'wife' }, 'husband').editedBy, null)
+  const removed = toEntry({ ...base, deleted_at: '2026-10-06T00:00:00Z', deleted_by_client_id: 'husband' }, 'wife')
+  assert.equal(removed.deletedBy, 'partner')
+  const split = splitDeleted([own, removed])
+  assert.deepEqual([split.entries.length, split.deleted.length], [1, 1])
 })

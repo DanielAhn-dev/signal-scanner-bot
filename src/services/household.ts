@@ -5,8 +5,9 @@
  *  - 한 사람은 동시에 한 명과만 연결된다(household_members 기본키).
  *  - 연결 코드는 1회용, COUPLE_CODE_TTL_DAYS일 뒤 못 쓴다. 새 코드를 만들면 이전 대기 코드는 무효.
  *  - 아직 가입하지 않은 사람은 코드로 가입하면서 바로 연결된다(초대 전용 모드여도 초대권 없이). 이미 가입한 사람은 코드 입력 즉시 연결.
- *  - 무엇을 보여 줄지(지출·투자·자녀)는 각자 자기 것만 정한다. 기본은 모두 공유.
- *  - 서로의 데이터는 복사하지 않고 연결된 동안 읽기만 한다. 고치거나 지우는 건 자기 기록만. 끊으면 바로 안 보인다.
+ *  - 무엇을 보여 줄지(지출·투자·자녀·지금 상태 점검)는 각자 자기 것만 정한다. 기본은 모두 공유.
+ *  - 서로의 데이터는 복사하지 않고 연결된 동안만 본다. 예외는 지출 기록: 공유하면 서로 고치고 지울 수 있고 누가 했는지 남는다(030).
+ *    투자·자녀·점검은 보기만. 끊으면 바로 안 보인다.
  */
 import { admit, countMembers, generateInviteCode, isMember, normalizeInviteCode, readConfig } from "./invites";
 
@@ -15,14 +16,15 @@ type SupabaseClientAny = any;
 export const COUPLE_CODE_TTL_DAYS = 7;
 const DAY_MS = 86_400_000;
 
-export type ShareScope = "spending" | "investing" | "children";
+export type ShareScope = "spending" | "investing" | "children" | "plan";
 export type Shares = Record<ShareScope, boolean>;
-export const SHARE_SCOPES: ShareScope[] = ["spending", "investing", "children"];
-export const DEFAULT_SHARES: Shares = { spending: true, investing: true, children: true };
+export const SHARE_SCOPES: ShareScope[] = ["spending", "investing", "children", "plan"];
+// plan = 지금 상태 점검 결과. 029 이전에 만든 연결 행에는 키가 없어 기본(켬)으로 읽힌다
+export const DEFAULT_SHARES: Shares = { spending: true, investing: true, children: true, plan: true };
 
 export function normalizeShares(raw: unknown): Shares {
   const src = raw && typeof raw === "object" ? (raw as Record<string, unknown>) : {};
-  return { spending: src.spending !== false, investing: src.investing !== false, children: src.children !== false };
+  return { spending: src.spending !== false, investing: src.investing !== false, children: src.children !== false, plan: src.plan !== false };
 }
 
 /** 부분 변경 입력 검증: 알려진 키, 불리언만. 틀리면 null */

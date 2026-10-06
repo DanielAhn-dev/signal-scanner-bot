@@ -112,10 +112,42 @@ describe('돈 흐름', () => {
     expect(apiFetchMock.mock.calls[0][0]).toContain('from=')
   })
 
-  it('배우자가 지출을 공유하면 우리 집 합계로 보이고, 배우자 기록은 고치거나 지울 수 없다', async () => {
+  it('배우자가 지출을 공유하면 우리 집 합계로 보이고, 서로 고치거나 지울 수 있으며 누가 했는지 보인다', async () => {
+    const month = today.slice(0, 7)
+    apiFetchMock.mockImplementation((_p: string, o?: { method?: string }) => Promise.resolve(o?.method === 'POST' ? { ok: true } : {
+      partnerShared: true, rules: [], checks: [],
+      entries: [
+        { id: 'a', mine: true, editedBy: 'partner', date: `${month}-02`, amount: 10000, memo: '우유', categoryId: 'grocery_basic', cut: null, mustPart: null, payment: 'cash' },
+        { id: 'b', mine: false, editedBy: null, date: `${month}-01`, amount: 30000, memo: '배민', categoryId: 'delivery', cut: null, mustPart: null, payment: 'cash' },
+      ],
+      deleted: [
+        { id: 'c', mine: false, deletedBy: 'me', date: `${month}-01`, amount: 5000, memo: '편의점', categoryId: 'convenience', cut: null, mustPart: null, payment: 'cash' },
+      ],
+    }))
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    renderPage()
+    expect(await screen.findByText(/기록 2건/)).toBeTruthy()
+    expect(screen.getByText('배우자')).toBeTruthy()
+    expect(screen.getByText('배우자가 고침')).toBeTruthy()
+    // 배우자 기록도 지울 수 있다
+    fireEvent.click(screen.getByLabelText('배민 삭제'))
+    await waitFor(() => expect(postBodies()).toContainEqual({ action: 'delete-entry', id: 'b' }))
+    // 지운 기록은 되돌릴 수 있다
+    expect(screen.getByText('지운 기록 1건')).toBeTruthy()
+    expect(screen.getByText('내가 지움')).toBeTruthy()
+    fireEvent.click(screen.getByLabelText('편의점 되돌리기'))
+    await waitFor(() => expect(postBodies()).toContainEqual({ action: 'restore-entry', id: 'c' }))
+    // 금액 고치기
+    const amount = screen.getByLabelText('배민 금액 고치기')
+    fireEvent.change(amount, { target: { value: '25000' } })
+    fireEvent.blur(amount)
+    await waitFor(() => expect(postBodies().some((b) => b.action === 'update-entry' && b.id === 'b' && b.amount === 25000 && b.learn === false)).toBe(true))
+  })
+
+  it('나만 보기로 바꾸면 배우자 기록이 합계에서 빠진다', async () => {
     const month = today.slice(0, 7)
     apiFetchMock.mockResolvedValue({
-      partnerShared: true, rules: [], checks: [],
+      partnerShared: true, rules: [], checks: [], deleted: [],
       entries: [
         { id: 'a', mine: true, date: `${month}-02`, amount: 10000, memo: '우유', categoryId: 'grocery_basic', cut: null, mustPart: null, payment: 'cash' },
         { id: 'b', mine: false, date: `${month}-01`, amount: 30000, memo: '배민', categoryId: 'delivery', cut: null, mustPart: null, payment: 'cash' },
@@ -123,9 +155,6 @@ describe('돈 흐름', () => {
     })
     renderPage()
     expect(await screen.findByText(/기록 2건/)).toBeTruthy()
-    expect(screen.getByText('배우자')).toBeTruthy()
-    expect(screen.queryByLabelText('배민 삭제')).toBeNull()
-    expect(screen.getByLabelText('우유 삭제')).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: '나만' }))
     expect(screen.getByText(/기록 1건/)).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: '우리 집 합계' }))

@@ -57,3 +57,7 @@
 .mf-months button.is-active { border-color: var(--color-brand); color: var(--color-brand); font-weight: 700; }
 .mf-check-actions { display: flex; gap: 16px; align-items: center; flex-wrap: wrap; }
 .mf-basis { font-size: 12px; color: var(--color-text-tertiary); border-top: 1px dashed var(--color-border-default); padding-top: 8px; }
+.mf-edited { background: var(--color-warning, #ed6c02); color: var(--color-text-inverse); }
+.mf-amount-edit { width: 120px; min-width: 0; padding: 8px 10px; border: 1px solid var(--color-border-default); border-radius: 6px; background: var(--color-bg-surface); color: var(--color-text-primary); font: inherit; font-size: 16px; }
+.mf-deleted { margin-top: 8px; }
+.mf-deleted summary { color: var(--color-text-secondary); cursor: pointer; padding: 6px 0; }

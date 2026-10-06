@@ -3,30 +3,33 @@ import { Link } from 'react-router-dom'
 import { apiFetch } from '../../lib/api'
 import { buildCoupleLink, clearStashedCouple, readStashedCouple } from '../../lib/inviteStash'
 import { allowance, approxAge, sanitizeChildState } from '../../lib/childGift'
+import { evaluateFlowCheck, type FlowCheckInput } from '../../../../src/lib/moneyFlow'
 import '../accumulate/accumulate.css'
 import './family.css'
 
-type Scope = 'spending' | 'investing' | 'children'
+type Scope = 'spending' | 'investing' | 'children' | 'plan'
 type Shares = Record<Scope, boolean>
 type Investing = { seed: number; total: number; cash: number; holdings: number; monthlyDeposit: number | null; principal: number | null } | null
 type View =
   | { status: 'none'; ttlDays: number }
   | { status: 'pending'; code: string; expiresAt: string; ttlDays: number }
-  | { status: 'active'; since: string; myShares: Shares; partnerShares: Shares; partner: { nickname: string | null; investing?: Investing; children?: unknown } }
+  | { status: 'active'; since: string; myShares: Shares; partnerShares: Shares; partner: { nickname: string | null; investing?: Investing; children?: unknown; check?: { date: string; input: FlowCheckInput } | null } }
 
 const krw = (value: number) => `${Math.round(value).toLocaleString('ko-KR')}원`
 const kstToday = () => new Date().toLocaleDateString('sv-SE', { timeZone: 'Asia/Seoul' })
 const kstDate = (iso: string) => new Date(iso).toLocaleDateString('sv-SE', { timeZone: 'Asia/Seoul' })
 const SCOPES: Array<{ key: Scope; label: string; desc: string }> = [
-  { key: 'spending', label: '지출', desc: '돈 흐름에 적은 지출 기록. 배우자는 보기만 하고 고치거나 지울 수 없습니다.' },
+  { key: 'spending', label: '지출', desc: '돈 흐름에 적은 지출 기록. 서로 고치거나 지울 수 있고, 누가 했는지 표시되며 지운 기록은 되돌릴 수 있습니다.' },
+  { key: 'plan', label: '지금 상태 점검', desc: '가장 최근 점검 결과(투자 가능액·못 줄이는 생활비·고정지출 비율). 배우자는 보기만 합니다.' },
   { key: 'investing', label: '투자', desc: '가상 계좌 평가액·시드·월 적립 요약. 종목별 내역은 보여 주지 않습니다.' },
   { key: 'children', label: '자녀 계좌', desc: '자녀 별칭·나이·증여 합계·남은 공제 한도.' },
 ]
 
 /** 공유 규칙 — 초대한 사람과 받은 사람의 권한은 같다. 바꾸려면 이 표와 서버(src/services/household.ts)를 함께 고친다 */
 export const SHARE_RULES: Array<[string, string, string]> = [
-  ['지출 기록(돈 흐름)', '적기·고치기·지우기', '보기만 (우리 집 합계에 함께 셈)'],
-  ['지금 상태 점검·시드 만들기', '본인만', '보이지 않음'],
+  ['지출 기록(돈 흐름)', '적기·고치기·지우기', '보기·고치기·지우기 (누가 했는지 표시, 지운 기록 되돌리기)'],
+  ['지금 상태 점검', '본인만 작성', '결과 보기만'],
+  ['시드 만들기(월 기록·확보)', '본인만', '보이지 않음'],
   ['투자(가상 계좌·실계좌·매매)', '본인만', '요약 보기만 (평가액·원금·월 적립)'],
   ['자녀 계좌(증여 기록)', '등록한 사람만', '보기만 (나이·증여 합계·남은 한도)'],
 ]
@@ -39,7 +42,7 @@ function ShareRules() {
         <thead><tr><th>항목</th><th>내 것</th><th>배우자 것</th></tr></thead>
         <tbody>{SHARE_RULES.map(([item, mine, theirs]) => <tr key={item}><td>{item}</td><td>{mine}</td><td>{theirs}</td></tr>)}</tbody>
       </table>
-      <p className="acc-note">초대한 사람과 받은 사람의 권한은 같습니다. 배우자 것은 배우자가 공유를 켠 항목만 보이고, 누구도 상대 계좌로 매매하거나 상대 기록을 고칠 수 없습니다.</p>
+      <p className="acc-note">초대한 사람과 받은 사람의 권한은 같습니다. 배우자 것은 배우자가 공유를 켠 항목만 보이고, 지출 기록 말고는 누구도 상대 것을 고칠 수 없고, 상대 계좌로 매매할 수 없습니다.</p>
     </section>
   )
 }
@@ -152,6 +155,21 @@ export default function FamilyPage() {
   )
 }
 
+function PartnerCheck({ date, input }: { date: string; input: FlowCheckInput }) {
+  const r = evaluateFlowCheck(input)
+  return (
+    <>
+      <dl className="acc-tiles" aria-label="배우자 점검 결과">
+        <div className="is-main"><dt>투자 가능액(월)</dt><dd>{krw(r.available)}</dd></div>
+        <div><dt>못 줄이는 생활비(월)</dt><dd>{krw(r.mustMonthly)}</dd></div>
+        <div><dt>최대로 줄이면</dt><dd>{krw(r.maxIfCut)}</dd></div>
+        <div><dt>고정지출 비율</dt><dd>{r.fixedRatio === null ? '-' : `${Math.round(r.fixedRatio * 100)}%`}</dd></div>
+      </dl>
+      <p className="acc-note">{date} 점검 기준입니다. 같은 집 지출을 둘 다 점검했다면 합치지 말고 한 사람 것을 기준으로 보세요(중복으로 셀 수 있습니다).</p>
+    </>
+  )
+}
+
 function Linked({ view, busy, run }: { view: Extract<View, { status: 'active' }>; busy: boolean; run: (body: Record<string, unknown>, done?: string) => Promise<void> }) {
   const name = view.partner.nickname || '배우자'
   const today = kstToday()
@@ -184,6 +202,9 @@ function Linked({ view, busy, run }: { view: Extract<View, { status: 'active' }>
         {view.partnerShares.spending
           ? <p className="acc-note"><Link to="/money-flow">돈 흐름</Link>에서 "우리 집 합계"로 함께 봅니다. 지출은 각자 자기 계정으로 적습니다.</p>
           : <p className="acc-note">공유하지 않았습니다.</p>}
+
+        <h3>지금 상태 점검</h3>
+        {!view.partnerShares.plan ? <p className="acc-note">공유하지 않았습니다.</p> : !view.partner.check ? <p className="acc-note">아직 점검하지 않았습니다.</p> : <PartnerCheck date={view.partner.check.date} input={view.partner.check.input} />}
 
         <h3>투자</h3>
         {!view.partnerShares.investing ? <p className="acc-note">공유하지 않았습니다.</p> : !inv ? <p className="acc-note">아직 가상 계좌(시드)를 설정하지 않았습니다.</p> : (

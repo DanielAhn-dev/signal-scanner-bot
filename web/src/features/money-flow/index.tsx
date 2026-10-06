@@ -10,7 +10,7 @@ import FlowCheck, { type SavedCheck } from './FlowCheck'
 import '../accumulate/accumulate.css'
 import './money-flow.css'
 
-type Entry = { id: string; mine?: boolean; date: string; amount: number; memo: string; categoryId: string; cut: CutLevel | null; mustPart: number | null; payment: Payment }
+type Entry = { id: string; mine?: boolean; editedBy?: 'me' | 'partner' | null; deletedBy?: 'me' | 'partner' | null; date: string; amount: number; memo: string; categoryId: string; cut: CutLevel | null; mustPart: number | null; payment: Payment }
 type Draft = { key: string; date: string; amountGuessed: boolean; amount: number; memo: string; categoryId: string; autoCategoryId: string; known: boolean; payment: Payment }
 type Tab = 'record' | 'month' | 'check'
 
@@ -59,6 +59,7 @@ export default function MoneyFlowPage() {
   const [checksLoaded, setChecksLoaded] = useState(false)
   const [month, setMonth] = useState(thisMonth)
   const [entries, setEntries] = useState<Entry[]>([])
+  const [deleted, setDeleted] = useState<Entry[]>([])
   const [rules, setRules] = useState<LearnedRule[]>([])
   const [partnerShared, setPartnerShared] = useState(false)
   const [scope, setScope] = useState<'home' | 'me'>('home')
@@ -76,6 +77,7 @@ export default function MoneyFlowPage() {
       // 매달 적을 필요는 없다. 비교 기준(마지막으로 기록한 달)을 찾으려고 12개월 전부터 가져온다
       const res = await apiFetch(`/api/ui/money-flow?from=${shiftMonth(month, -12)}-01&to=${monthEnd(month)}`, { cacheMs: 0, retries: 0 })
       setEntries(Array.isArray(res?.entries) ? res.entries : [])
+      setDeleted(Array.isArray(res?.deleted) ? res.deleted : [])
       setRules(Array.isArray(res?.rules) ? res.rules : [])
       setPartnerShared(res?.partnerShared === true)
       setChecks(Array.isArray(res?.checks) ? res.checks : [])
@@ -134,9 +136,25 @@ export default function MoneyFlowPage() {
     }
   }
 
+  const updateEntry = (entry: Entry, patch: Partial<Entry>, learn: boolean) => {
+    const next = { ...entry, ...patch }
+    return apiFetch('/api/ui/money-flow', { method: 'POST', body: JSON.stringify({ action: 'update-entry', id: entry.id, date: next.date, amount: next.amount, memo: next.memo, categoryId: next.categoryId, payment: next.payment, cut: next.cut, mustPart: next.mustPart && next.mustPart <= next.amount ? next.mustPart : null, learn }), cacheMs: 0 })
+  }
+
+  const changeAmount = async (entry: Entry, amount: number) => {
+    if (!Number.isSafeInteger(amount) || amount < 1 || amount === entry.amount) return
+    try {
+      await updateEntry(entry, { amount }, false)
+      setNotice(`${entry.memo || '메모 없음'} 금액을 ${krw(amount)}으로 고쳤습니다.`)
+      void load()
+    } catch (error) {
+      setNotice(`수정 실패: ${error instanceof Error ? error.message : String(error)}`)
+    }
+  }
+
   const changeCategory = async (entry: Entry, categoryId: string) => {
     try {
-      await apiFetch('/api/ui/money-flow', { method: 'POST', body: JSON.stringify({ action: 'update-entry', id: entry.id, date: entry.date, amount: entry.amount, memo: entry.memo, categoryId, payment: entry.payment, cut: entry.cut, mustPart: entry.mustPart, learn: entry.memo !== '' }), cacheMs: 0 })
+      await updateEntry(entry, { categoryId }, entry.memo !== '')
       setEntries((list) => list.map((e) => e.id === entry.id ? { ...e, categoryId } : e))
       if (entry.memo) setNotice(`"${entry.memo}"은(는) 다음부터 ${categoryById(categoryId)?.label}(으)로 분류합니다.`)
       void load()
@@ -146,14 +164,27 @@ export default function MoneyFlowPage() {
   }
 
   const removeEntry = async (entry: Entry) => {
-    if (!window.confirm(`${entry.memo || '메모 없음'} ${krw(entry.amount)} 기록을 지울까요?`)) return
+    const whose = entry.mine === false ? ' 배우자가 적은 기록입니다. 배우자 화면에도 "배우자가 지움"으로 보이고 둘 다 되돌릴 수 있습니다.' : ''
+    if (!window.confirm(`${entry.memo || '메모 없음'} ${krw(entry.amount)} 기록을 지울까요?${whose}`)) return
     try {
       await apiFetch('/api/ui/money-flow', { method: 'POST', body: JSON.stringify({ action: 'delete-entry', id: entry.id }), cacheMs: 0 })
       setEntries((list) => list.filter((e) => e.id !== entry.id))
+      void load()
     } catch (error) {
       setNotice(`삭제 실패: ${error instanceof Error ? error.message : String(error)}`)
     }
   }
+
+  const restoreEntry = async (entry: Entry) => {
+    try {
+      await apiFetch('/api/ui/money-flow', { method: 'POST', body: JSON.stringify({ action: 'restore-entry', id: entry.id }), cacheMs: 0 })
+      setNotice(`${entry.memo || '메모 없음'} 기록을 되돌렸습니다.`)
+      void load()
+    } catch (error) {
+      setNotice(`되돌리기 실패: ${error instanceof Error ? error.message : String(error)}`)
+    }
+  }
+  const monthDeleted = deleted.filter((e) => e.date.startsWith(month) && (partnerShared && scope === 'home' ? true : e.mine !== false))
 
   return (
     <div className="acc mf">
@@ -177,7 +208,7 @@ export default function MoneyFlowPage() {
             <button type="button" aria-pressed={scope === 'home'} className={scope === 'home' ? 'is-active' : ''} onClick={() => setScope('home')}>우리 집 합계</button>
             <button type="button" aria-pressed={scope === 'me'} className={scope === 'me' ? 'is-active' : ''} onClick={() => setScope('me')}>나만</button>
           </div>
-          <p className="acc-note">배우자가 공유한 기록도 함께 셉니다. 배우자 기록은 배우자만 고치거나 지울 수 있습니다.</p>
+          <p className="acc-note">배우자가 공유한 기록도 함께 셉니다. 서로의 기록을 고치거나 지울 수 있고, 누가 고치고 지웠는지 표시됩니다. 지운 기록은 둘 다 되돌릴 수 있습니다.</p>
         </section>
       )}
 
@@ -248,18 +279,34 @@ export default function MoneyFlowPage() {
                   <li key={e.id}>
                     <div className="mf-list-main">
                       <span className="mf-date-cell">{e.date.slice(5).replace('-', '/')}</span>
-                      <span className="mf-memo">{e.mine === false && <em className="mf-point mf-partner">배우자</em>}{e.memo || '메모 없음'}{e.payment !== 'cash' && <em className="mf-point">{e.payment === 'point_once' ? '포인트·이번만' : '포인트'}</em>}</span>
+                      <span className="mf-memo">{e.mine === false && <em className="mf-point mf-partner">배우자</em>}{e.memo || '메모 없음'}{e.payment !== 'cash' && <em className="mf-point">{e.payment === 'point_once' ? '포인트·이번만' : '포인트'}</em>}{e.editedBy && <em className="mf-point mf-edited">{e.editedBy === 'me' ? '내가 고침' : '배우자가 고침'}</em>}</span>
                       <strong>{krw(e.amount)}</strong>
                     </div>
-                    {e.mine === false ? <p className="mf-cut">{categoryById(e.categoryId)?.label}</p> : (
-                      <div className="mf-list-tools">
-                        <CategorySelect label={`${e.memo || '메모 없음'} 분류 바꾸기`} value={e.categoryId} onChange={(id) => void changeCategory(e, id)} />
-                        <button type="button" className="mf-icon" aria-label={`${e.memo || '메모 없음'} 삭제`} onClick={() => void removeEntry(e)}><Trash2 size={15} /></button>
-                      </div>
-                    )}
+                    <div className="mf-list-tools">
+                      <CategorySelect label={`${e.memo || '메모 없음'} 분류 바꾸기`} value={e.categoryId} onChange={(id) => void changeCategory(e, id)} />
+                      <input key={`${e.id}-${e.amount}`} className="mf-amount-edit" type="number" inputMode="numeric" min="1" aria-label={`${e.memo || '메모 없음'} 금액 고치기`} defaultValue={e.amount} onBlur={(event) => void changeAmount(e, Math.round(Number(event.target.value)))} />
+                      <button type="button" className="mf-icon" aria-label={`${e.memo || '메모 없음'} 삭제`} onClick={() => void removeEntry(e)}><Trash2 size={15} /></button>
+                    </div>
                   </li>
                 ))}
               </ul>
+            )}
+            {monthDeleted.length > 0 && (
+              <details className="mf-deleted">
+                <summary>지운 기록 {monthDeleted.length}건</summary>
+                <ul className="mf-list">
+                  {monthDeleted.map((e) => (
+                    <li key={e.id}>
+                      <div className="mf-list-main">
+                        <span className="mf-date-cell">{e.date.slice(5).replace('-', '/')}</span>
+                        <span className="mf-memo">{e.memo || '메모 없음'} <em className="mf-point">{e.deletedBy === 'me' ? '내가 지움' : '배우자가 지움'}</em></span>
+                        <strong>{krw(e.amount)}</strong>
+                      </div>
+                      <button type="button" className="acc-link" aria-label={`${e.memo || '메모 없음'} 되돌리기`} onClick={() => void restoreEntry(e)}>되돌리기</button>
+                    </li>
+                  ))}
+                </ul>
+              </details>
             )}
           </section>
         </>

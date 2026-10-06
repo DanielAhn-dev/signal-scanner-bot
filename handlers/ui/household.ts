@@ -12,7 +12,7 @@ import {
 // 부부 연결 (src/services/household.ts)
 // GET                         내 연결 상태 + (연결됐으면) 상대가 공유한 투자 요약·자녀 기록
 // POST {action:'create-code'} 연결 코드 만들기 / 'cancel-code' / 'accept' {code} / 'end' / 'set-shares' {shares}
-async function partnerView(supabase: any, partnerClientId: string, shares: { investing: boolean; children: boolean }) {
+async function partnerView(supabase: any, partnerClientId: string, shares: { investing: boolean; children: boolean; plan: boolean }) {
   const { data: profile } = await supabase.from('web_user_profiles').select('nickname,telegram_id').eq('client_id', partnerClientId).maybeSingle()
   const out: Record<string, unknown> = { nickname: profile?.nickname || null }
   const chatId = Number(profile?.telegram_id)
@@ -21,6 +21,13 @@ async function partnerView(supabase: any, partnerClientId: string, shares: { inv
     out.investing = equity
       ? { seed: equity.seed, total: equity.total, cash: equity.cash, holdings: equity.holdings, monthlyDeposit: equity.monthlyDeposit, principal: equity.principal }
       : null
+  }
+  if (shares.plan) {
+    // 가장 최근 '지금 상태 점검' 입력. 결과는 화면이 같은 계산(evaluateFlowCheck)으로 만든다
+    const { data } = await supabase.from('money_flow_checks').select('checked_on,input').eq('client_id', partnerClientId)
+      .order('checked_on', { ascending: false }).order('created_at', { ascending: false }).limit(1)
+    const row = (data as Array<{ checked_on: string; input: unknown }> | null)?.[0]
+    out.check = row ? { date: String(row.checked_on).slice(0, 10), input: row.input } : null
   }
   if (shares.children) {
     const state = await readUserStateFor(supabase, partnerClientId)

@@ -11,11 +11,12 @@ const posts = () => apiFetchMock.mock.calls.filter(([, o]) => o?.method === 'POS
 
 const active = {
   status: 'active', since: '2026-10-06T00:00:00Z',
-  myShares: { spending: true, investing: true, children: true },
-  partnerShares: { spending: true, investing: true, children: false },
+  myShares: { spending: true, investing: true, children: true, plan: true },
+  partnerShares: { spending: true, investing: true, children: false, plan: true },
   partner: {
     nickname: '지은',
     investing: { seed: 10_000_000, total: 11_500_000, cash: 1_500_000, holdings: 10_000_000, monthlyDeposit: 500_000, principal: 12_000_000 },
+    check: { date: '2026-10-05', input: { monthlyIncome: 4_000_000, reserveMonthly: 0, fixed: [{ categoryId: 'rent', amount: 1_000_000 }], variable: [], irregular: [] } },
   },
 }
 
@@ -59,7 +60,9 @@ describe('부부 연결', () => {
     expect(screen.getByLabelText('배우자 투자 요약')).toHaveTextContent('12,000,000원')
     // 자녀는 공유하지 않음
     expect(screen.getAllByText('공유하지 않았습니다.')).toHaveLength(1)
-    fireEvent.click(screen.getByRole('checkbox', { name: /투자/ }))
+    // 배우자 점검 결과도 같은 계산으로 보인다
+    expect(screen.getByLabelText('배우자 점검 결과')).toHaveTextContent('투자 가능액(월)3,000,000원')
+    fireEvent.click(screen.getByRole('checkbox', { name: /^투자가상 계좌/ }))
     await waitFor(() => expect(posts()).toEqual([{ action: 'set-shares', shares: { investing: false } }]))
   })
 })
