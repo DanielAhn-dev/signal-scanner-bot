@@ -1,11 +1,14 @@
 /**
- * 단기 진입 금지 두 가지 — 급등 추격과 떨어지는 칼날. 둘 다 '사면 이후 지수보다 나빴다'가 확인된 상태다.
+ * 단기 진입 금지 세 가지 — 급등 추격, 긴 윗꼬리, 떨어지는 칼날. 모두 '사면 이후 지수보다 나빴다'가 확인된 상태다.
  *
- * 근거: scripts/research/validate_trader_paths.py --large (C16), validate_large_cap_trading.py (R1, R4b).
+ * 근거: scripts/research/validate_trader_paths.py --large (C16), validate_large_cap_trading.py (R1, R4b),
+ * validate_entry_features.py (F1, 15개 특징 10분위 스캔에서 유일하게 두 구간 모두 t < -3).
  * 판정 기준은 결과 보기 전에 docs/hypothesis-ledger.md에 고정했다. 2015~2026, 전날까지 20일 거래대금 상위 300종목
  * (상장폐지 포함·수정주가), KODEX 200 대비, 날짜 묶음 NW t.
  *   - 급등 추격: 하루 +8% 이상 · 거래량 직전 20일 평균의 5배 이상 · 종가가 고가의 95% 이상.
  *     그 뒤 1~5일째 어느 날 사도 20일 뒤 -2.9~-5.9%(2021년까지·2022년부터 모두 t < -3) → 사건 뒤 5거래일 동안 막는다.
+ *   - 긴 윗꼬리: 마지막 일봉 고가가 종가보다 6% 이상 높다(고가에서 크게 밀려 마감). 기준 6%는 2021년까지 표본의
+ *     날짜별 상위 10% 경계 중앙값. 다음날 사면 20일 뒤 같은 날 평균보다 -1.4%(~2021, t -3.3) / -3.0%(2022~, t -6.9).
  *   - 떨어지는 칼날: 21거래일 수익 -15% 이하. 다음날 사면 20일 뒤 -1.5%(~2021, t -3.7) / -3.7%(2022~, t -5.7).
  */
 type SupabaseClientAny = any;
@@ -15,6 +18,7 @@ export const CHASE_VOLUME_MULTIPLE = 5;
 export const CHASE_NEAR_HIGH = 0.95;
 /** 급등 사건 뒤 막는 거래일 수(사건일 포함 최근 완료 일봉 5개 안에 사건이 있으면 막는다) */
 export const CHASE_BLOCK_DAYS = 5;
+export const WICK_MIN_RATIO = 0.06;
 export const KNIFE_LOOKBACK = 21;
 export const KNIFE_MAX_RETURN = -0.15;
 /** 판단에 필요한 최소 일봉: 사건 탐색 5개 + 직전 20일 평균 + 전날 종가 */
@@ -44,15 +48,23 @@ export const FALLING_KNIFE_EVIDENCE = {
 
 export type DailyBar = { date: string; open: number; high: number; close: number; volume: number };
 
-export type EntryGuardKind = "chase" | "knife";
+export const UPPER_WICK_EVIDENCE = {
+  period: "2015~2026",
+  generatedAt: "2026-10-06",
+  universe: CHASE_ENTRY_EVIDENCE.universe,
+  excess20dBefore2022: -0.0138,
+  excess20dSince2022: -0.0296,
+} as const;
+
+export type EntryGuardKind = "chase" | "wick" | "knife";
 
 export type ChaseEntryResult = {
   kind: EntryGuardKind;
   /** 급등: 사건일 / 칼날: 마지막 일봉 날짜 */
   date: string;
-  /** 급등: 사건일 하루 수익 / 칼날: 21거래일 수익 */
+  /** 급등: 사건일 하루 수익 / 윗꼬리: 고가÷종가−1 / 칼날: 21거래일 수익 */
   jump: number;
-  /** 급등: 거래량 배수 / 칼날: null */
+  /** 급등: 거래량 배수 / 그 밖: null */
   volumeRatio: number | null;
   message: string;
 };
@@ -75,7 +87,7 @@ function chaseAt(bars: DailyBar[], i: number): { jump: number; volumeRatio: numb
 
 /**
  * bars: 오래된 것부터 최신까지 '완료된' 일봉. 오늘 사면 안 되는 이유가 있으면 결과, 없으면 null.
- * 급등 추격을 먼저 본다(최근 5개 일봉 중 가장 최근 사건).
+ * 급등 추격(최근 5개 일봉 중 가장 최근 사건) → 긴 윗꼬리(마지막 일봉) → 떨어지는 칼날 순서로 본다.
  */
 export function computeChaseEntry(bars: DailyBar[]): ChaseEntryResult | null {
   if (bars.length < CHASE_MIN_BARS) return null;
@@ -94,6 +106,20 @@ export function computeChaseEntry(bars: DailyBar[]): ChaseEntryResult | null {
         `${bars[i].date} +${(hit.jump * 100).toFixed(1)}% · 거래량 평소의 ${hit.volumeRatio.toFixed(1)}배로 급등(오늘이 ${day}일째) — ` +
         `과거 급등 뒤 1~5일째에 사면 20일 뒤 코스피보다 평균 ${(ev.excess20d * 100).toFixed(1)}%` +
         `(중앙 ${(ev.median20d * 100).toFixed(1)}%). 추격 매수하지 않습니다.`,
+    };
+  }
+  const lastBar = bars[n];
+  if (valid(lastBar) && lastBar.high / lastBar.close - 1 >= WICK_MIN_RATIO) {
+    const w = lastBar.high / lastBar.close - 1;
+    const ev = UPPER_WICK_EVIDENCE;
+    return {
+      kind: "wick",
+      date: lastBar.date,
+      jump: w,
+      volumeRatio: null,
+      message:
+        `${lastBar.date} 고가보다 ${(w * 100).toFixed(1)}% 밀려 마감(긴 윗꼬리) — 과거 같은 날 다음 날 사면 20일 뒤 ` +
+        `${(ev.excess20dBefore2022 * 100).toFixed(1)}%(~2021)·${(ev.excess20dSince2022 * 100).toFixed(1)}%(2022~). 하루 쉬고 다시 봅니다.`,
     };
   }
   if (bars.length > KNIFE_LOOKBACK) {
@@ -120,7 +146,7 @@ export function computeChaseEntry(bars: DailyBar[]): ChaseEntryResult | null {
 }
 
 export function entryGuardLabel(kind: EntryGuardKind): string {
-  return kind === "chase" ? "급등 추격" : "한 달 급락";
+  return kind === "chase" ? "급등 추격" : kind === "wick" ? "긴 윗꼬리" : "한 달 급락";
 }
 
 function daysBetween(a: string, b: string): number {

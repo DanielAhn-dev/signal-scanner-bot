@@ -6,7 +6,7 @@
  *   - 최근 5일 악재 공시 (dartDisclosureFilter, DART_API_KEY 필요)
  *   - 실적 관문: 최근 4분기 적자·영업이익 감소 (fundamentalQualityGate, 생존편향 없는 검증 근거)
  *   - 과열·고점 변동성 급등 (weightCautionSignal, 3개월 내 -20% 확률 52~63%·평소 34%)
- *   - 급등 추격(+8%·거래량 5배·고가 근처 마감 뒤 5거래일)·한 달 -15% 이하 급락 (chaseEntrySignal)
+ *   - 급등 추격(+8%·거래량 5배·고가 근처 마감 뒤 5거래일)·긴 윗꼬리(고가÷종가 6%↑)·한 달 -15% 이하 급락 (chaseEntrySignal)
  *     리포트 후보는 유니버스(218종목) 안이라 전부 본다(동시 8개 조회). 자동매매는 매매 시간 때문에 점수 상위 80종목만 본다.
  */
 import { isExchangeTradedProduct } from "../lib/securitiesTax";

@@ -3050,7 +3050,7 @@ async function selectMondayCandidates(payload: {
     .sort((a, b) => toNumber(b.score, 0) - toNumber(a.score, 0))
     .slice(0, 80)
     .map((row) => row.code);
-  // 급등 추격(+8%·거래량 5배·고가 근처 마감 뒤 5거래일)과 떨어지는 칼날(한 달 -15% 이하) 매수 금지 — chaseEntrySignal
+  // 급등 추격(+8%·거래량 5배·고가 근처 마감 뒤 5거래일)·긴 윗꼬리(고가÷종가 6%↑)·떨어지는 칼날(한 달 -15% 이하) 매수 금지 — chaseEntrySignal
   // 둘 다 사면 20일 뒤 코스피보다 나빴다(급등 뒤 -2.9~-5.9%, 칼날 -1.5~-3.7%, 2021년까지·2022년부터 모두 t < -3)
   const [heavyNetSelling, disclosureFilter, fundamentalGate, weightCautions, chaseEntries] = await Promise.all([
     fetchHeavyNetSellingCodes(
@@ -3132,7 +3132,7 @@ async function selectMondayCandidates(payload: {
             discoveryProfile === "BLEND"
               ? ` · 하이라이트 ${highlightCodes.size} · 눌림목 ${pullbackCandidateCodes?.size ?? 0} · 멀티배거 ${multibaggerCodes?.size ?? 0} · 백테스트 ${backtestEdgeCodes?.size ?? 0}`
               : ""
-          } · 데이터품질 ${dataQuality.band.toUpperCase()}(${dataQuality.qualityScore}) · ${dataQuality.note} · 교집합(2+) ${overlap2Count}종목 · 교집합(3+) ${overlap3Count}종목 · 오늘매수강신호 ${strongTodayBuyCount}종목 · 즉시제외 ${immediateExcludeCount}종목${cooldownCodes.size > 0 ? ` · 스탑로스 쿨다운 ${cooldownCodes.size}종목 제외` : ""}${heavyNetSelling.size > 0 ? ` · 수급이탈 ${heavyNetSelling.size}종목 제외` : ""}${fundamentalFailCodes.length > 0 ? ` · 실적(적자·영업이익 감소) ${fundamentalFailCodes.length}종목 제외` : ""}${overheatedCodes.length > 0 ? ` · 과열·고점 변동성 ${overheatedCodes.length}종목 제외` : ""}${chaseCodes.length > 0 ? ` · 급등 추격·한 달 급락 ${chaseCodes.length}종목 제외` : ""} · ${formatDisclosureFilterNote(disclosureFilter)}`,
+          } · 데이터품질 ${dataQuality.band.toUpperCase()}(${dataQuality.qualityScore}) · ${dataQuality.note} · 교집합(2+) ${overlap2Count}종목 · 교집합(3+) ${overlap3Count}종목 · 오늘매수강신호 ${strongTodayBuyCount}종목 · 즉시제외 ${immediateExcludeCount}종목${cooldownCodes.size > 0 ? ` · 스탑로스 쿨다운 ${cooldownCodes.size}종목 제외` : ""}${heavyNetSelling.size > 0 ? ` · 수급이탈 ${heavyNetSelling.size}종목 제외` : ""}${fundamentalFailCodes.length > 0 ? ` · 실적(적자·영업이익 감소) ${fundamentalFailCodes.length}종목 제외` : ""}${overheatedCodes.length > 0 ? ` · 과열·고점 변동성 ${overheatedCodes.length}종목 제외` : ""}${chaseCodes.length > 0 ? ` · 급등 추격·윗꼬리·한 달 급락 ${chaseCodes.length}종목 제외` : ""} · ${formatDisclosureFilterNote(disclosureFilter)}`,
   };
 }
 
@@ -5713,7 +5713,8 @@ async function runDailyReviewForUser(payload: {
             chatId,
             code: candidate.code,
             actionType: "SKIP",
-            reason: chase.kind === "chase" ? "add-on-chase-entry" : "add-on-falling-knife",
+            reason:
+              chase.kind === "chase" ? "add-on-chase-entry" : chase.kind === "wick" ? "add-on-upper-wick" : "add-on-falling-knife",
             detail: {
               date: chase.date,
               jumpPct: Math.round(chase.jump * 1000) / 10,

@@ -50,7 +50,8 @@ test("computeChaseEntry: 급등 뒤 5거래일까지 막고 6일째부터 풀림
 test("computeChaseEntry: 세 조건 중 하나라도 빠지면 막지 않음", () => {
   assert.equal(computeChaseEntry(withSurge(30, 0, { high: 107.5, close: 107, volume: 6000 })), null);
   assert.equal(computeChaseEntry(withSurge(30, 0, { high: 109, close: 108.5, volume: 4000 })), null);
-  assert.equal(computeChaseEntry(withSurge(30, 0, { high: 120, close: 108.5, volume: 6000 })), null);
+  // 고가에서 크게 밀린 마감은 급등 추격이 아니라 긴 윗꼬리로 막힌다
+  assert.equal(computeChaseEntry(withSurge(30, 0, { high: 120, close: 108.5, volume: 6000 }))?.kind, "wick");
 });
 
 test("computeChaseEntry: 한 달 -15% 이하면 떨어지는 칼날로 막음", () => {
@@ -73,4 +74,22 @@ test("computeChaseEntry: 0·결측 값이 있으면 그 봉은 판단하지 않�
   const bars = withSurge(30, 0, SURGE);
   bars[20] = { ...bars[20], volume: 0 };
   assert.equal(computeChaseEntry(bars), null);
+});
+
+test("computeChaseEntry: 마지막 봉 고가가 종가보다 6% 이상 높으면 긴 윗꼬리로 막음", () => {
+  const bars = flat(30);
+  bars[29] = { ...bars[29], high: 107, close: 100 };
+  const r = computeChaseEntry(bars);
+  assert.ok(r);
+  assert.equal(r.kind, "wick");
+  assert.ok(Math.abs(r.jump - 0.07) < 1e-9);
+});
+
+test("computeChaseEntry: 윗꼬리 5%는 막지 않고, 그 전날 윗꼬리는 보지 않음", () => {
+  const bars = flat(30);
+  bars[29] = { ...bars[29], high: 105, close: 100 };
+  assert.equal(computeChaseEntry(bars), null);
+  const prev = flat(30);
+  prev[28] = { ...prev[28], high: 110, close: 100 };
+  assert.equal(computeChaseEntry(prev), null);
 });
