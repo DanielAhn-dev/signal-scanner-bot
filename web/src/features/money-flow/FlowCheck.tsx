@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { apiFetch } from '../../lib/api'
 import { futureValue, REALISTIC_ANNUAL_PCT, suggestMonthly } from '../../lib/startPlan'
+import { useJourney } from '../../lib/journey'
 import {
   FLOW_CATEGORIES, categoryById, compareSummaries, evaluateFlowCheck, toSeedExpenses,
   type CutLevel, type FlowCheckInput, type FlowItem, type FlowKind, type IrregularItem, type Payment,
@@ -113,6 +114,8 @@ export default function FlowCheck({ entries, checks, onSaved, fromStart }: { ent
   const [notice, setNotice] = useState('')
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
+  // 저장하고 나면 길잡이의 다음 단계를 바로 보여 준다(시작하기에서 온 사람은 돌아가기 버튼이 그 역할)
+  const journey = useJourney(saved && !fromStart)
 
   // 처음 점검이면 시드 만들기의 최근 수입을 미리 채운다(비어 있을 때만)
   useEffect(() => {
@@ -277,6 +280,9 @@ export default function FlowCheck({ entries, checks, onSaved, fromStart }: { ent
             <button type="button" className="acc-link" onClick={() => void applyToSeed()}>시드 만들기 이번 달에 반영</button>
             {fromStart && <button type="button" className="acc-link" onClick={() => navigate('/start')}>시작하기로 돌아가기</button>}
           </div>
+          {journey && journey.next.key !== 'money' && (
+            <p className="acc-summary">다음 할 일: <strong>{journey.next.label}</strong> — {journey.next.desc} <Link to={`/${journey.next.route}`}>지금 하기 →</Link></p>
+          )}
         </section>
       )}
     </>

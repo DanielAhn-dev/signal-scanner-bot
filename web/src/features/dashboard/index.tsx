@@ -12,6 +12,7 @@ import { useProfileStore } from '../../stores/profileStore'
 import { useDetailed } from '../../stores/viewModeStore'
 import GoalSummaryStrip from '../goal-tracker/GoalSummaryStrip'
 import { useGoalTracker } from '../goal-tracker/useGoalTracker'
+import { useJourney } from '../../lib/journey'
 import { loadTradeCostSettings, resolveSellCostPct } from '../../lib/tradeCost'
 import { adviseHoldings, type Holding } from '../../lib/holdingAdvice'
 import { readUserState } from '../../lib/userState'
@@ -38,16 +39,6 @@ const ADMIN_TODO_STEPS: Array<{ key: string; label: string; desc: string; route?
   { key: 'portfolio', label: '비중 경고', desc: '아래 보유 종목 대응(한도 초과분 KODEX 200으로)을 처리했는지 확인' },
   { key: 'goal-tracker', label: '적립 진행', desc: '이번 달 입금이 들어갔고 계획선을 따라가는지 확인' },
   { key: 'market', label: `종목 연구 (${FLOW_STEPS.length}단계)`, desc: '매일 볼 필요 없음 — 봇 판단 근거를 따질 때만 1 시장부터' },
-]
-// 일반 사용자는 시드 모으기 → 목표 확인 → 금액 넣어 시뮬레이션 → 따라 하기 순서만 안내한다
-const USER_TODO_STEPS: Array<{ key: string; label: string; desc: string; route?: string }> = [
-  { key: 'start', label: '시작하기', desc: '수입·목표를 적고 가상 계좌로 시작' },
-  { key: 'seed-builder', label: '시드 만들기', desc: '이번 달 얼마를 모을지 정하기' },
-  { key: 'goal-tracker', label: '목표 확인', desc: '목표까지 얼마나 왔는지 보기' },
-  { key: 'simulator', label: '시뮬레이터', desc: '투자금액을 넣고 결과 미리 보기' },
-  { key: 'execution-guide', label: '실행가이드', desc: '정리된 주문을 따라 하기' },
-  { key: 'follow', label: '따라 사기', desc: '봇 거래를 따라 체결하고 결산 보기' },
-  { key: 'portfolio', label: '내 포트폴리오', desc: '보유 종목과 손익 확인' },
 ]
 
 type MarketTileKey = 'kospi' | 'kosdaq' | 'sp500' | 'nasdaq' | 'usdkrw' | 'gold'
@@ -133,11 +124,14 @@ export default function Dashboard({ onNavigate }: { onNavigate?: (r: string) => 
   const isAdmin = useProfileStore((s) => s.isAdmin)
   const detailed = useDetailed()
   const showMarketDetail = detailed && isAdmin
-  // 사용자 간단히 보기: 목표(=시작하기)가 있으면 이번 달 시드, 없으면 시작하기 한 가지만 안내한다
-  const { view: goalView, reason: goalReason } = useGoalTracker()
-  const goalLoaded = goalView !== null || goalReason !== null
-  const nextTodoKey = !goalLoaded ? null : goalView ? 'seed-builder' : 'start'
-  const todoSteps = isAdmin ? ADMIN_TODO_STEPS : detailed ? USER_TODO_STEPS : USER_TODO_STEPS.filter((s) => s.key === nextTodoKey)
+  const { view: goalView } = useGoalTracker()
+  // 일반 사용자: '다음 할 일' 길잡이(lib/journey.ts) — 내 돈 점검 → 시작하기 → 매달 넣기 → 떨어질 때 할 일 → 월 1회 확인.
+  // 끝난 단계는 ✓, 지금 할 단계에는 왜 하는지까지 붙인다
+  const journey = useJourney(!isAdmin)
+  const nextTodoKey: string | null = isAdmin ? null : journey?.next.key ?? null
+  const todoSteps = isAdmin ? ADMIN_TODO_STEPS : (journey?.steps ?? []).map((s) => ({
+    key: s.key, route: s.route, label: s.done ? `✓ ${s.label}` : s.label, desc: s.key === nextTodoKey ? `${s.desc} ${s.why}` : s.desc,
+  }))
   const chatId = useCurrentChatId()
   const [portfolio, setPortfolio] = useState<PortfolioSummary | null>(null)
   const [sectors, setSectors]     = useState<SectorItem[]>([])
