@@ -255,3 +255,19 @@ half = W // 2
 for lab, sl in [(f"전반 {weeks[1]}~{weeks[half]}", slice(1, half)), (f"후반 {weeks[half]}~{weeks[-1]}", slice(half, W))]:
     te = lambda a, b: (a - b)[sl].std(ddof=1) * np.sqrt(52) * 100
     print(f"{lab}: 종목5개 vs KODEX200 {te(p5a, r_k200):.1f}% · 종목20개 {te(p20, r_k200):.1f}% · 성장형 vs 60/40 {te(r_prof['성장형 K50/S50'], r_prof['60/40']):.1f}%")
+
+
+print("\n=== H2 코어 프로필: 기준 대비 잡음 범위(누적 수익 차이, 2σ√n주) — 이 범위 안의 차이는 순위로 읽지 않는다 ===")
+r_sp = r_us["SPY"]
+bases = [("KODEX200", r_k200), ("S&P500", r_sp), ("CD금리", cd_r)]
+print(f"{'프로필':16s} {'기준':9s} {'추적오차(연)':>10s} | {'40일':>7s} {'120일':>7s} {'250일':>7s}  (전반/후반 추적오차)")
+for name, r in list(r_prof.items()) + [("S&P500 보유", r_sp)]:
+    for bn, b in bases:
+        if r is b:
+            continue
+        d = (r - b)[1:]
+        te = d.std(ddof=1) * np.sqrt(52)
+        h = len(d) // 2
+        te1, te2 = d[:h].std(ddof=1) * np.sqrt(52), d[h:].std(ddof=1) * np.sqrt(52)
+        bands = [2 * te / np.sqrt(52) * np.sqrt(n) * 100 for _, n in HORIZONS]
+        print(f"{name:16s} {bn:9s} {te*100:9.1f}% | " + " ".join(f"{x:6.1f}%p" for x in bands) + f"  ({te1*100:.1f}/{te2*100:.1f})")
