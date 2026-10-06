@@ -1452,13 +1452,8 @@
   flex: 1;
   min-width: 0;
   overflow: auto;
+  /* 셀 격자 무늬는 카드·표 뒤로 비쳐 내용이 지저분해 보여서 뺐다. 열 문자·행 번호 띠만 남긴다. */
   background-color: var(--color-gray-0);
-  /* 26열 × 20px 행 — 실제 Excel 기본 셀 비율 (열 너비 ≈ 64px, 행 높이 = 20px) */
-  background-image:
-    linear-gradient(to right,  var(--color-excel-grid-border) 1px, transparent 1px),
-    linear-gradient(to bottom, var(--color-excel-grid-border) 1px, transparent 1px);
-  background-size: 64px var(--xls-grid-row-height);
-  background-attachment: local;
 }
 
 .xls-grid-bg { display: none; }
