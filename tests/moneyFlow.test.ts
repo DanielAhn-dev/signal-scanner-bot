@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import {
-  FLOW_CATEGORIES, categoryById, classifyMemo, compareSummaries, evaluateFlowCheck, learnKeyword, parseAmountToken,
+  FLOW_CATEGORIES, categoryById, classifyMemo, compareSummaries, evaluateFlowCheck, learnKeyword, needsItemName, parseAmountToken,
   parseLeadingDate, parseQuickLine, parseQuickLines, splitByCut, suggestCategories, summarizeItems, toSeedExpenses,
 } from '../src/lib/moneyFlow'
 import handler, { normalizeFlowCheck, normalizeFlowEntry, splitDeleted, toEntry } from '../handlers/ui/money-flow'
@@ -297,4 +297,10 @@ test('보는 사람 기준 표시: 기록한 사람이 아닌 쪽이 고치면 �
   assert.equal(removed.deletedBy, 'partner')
   const split = splitDeleted([own, removed])
   assert.deepEqual([split.entries.length, split.deleted.length], [1, 1])
+})
+
+test('통로 이름(간편결제·종합 쇼핑몰)만 적으면 산 물건을 묻는다', () => {
+  for (const memo of ['네이버페이', 'NAVERPAY 결제', '쿠팡(주)', '카카오페이 주문', 'G마켓', '11번가']) assert.equal(needsItemName(memo), true, memo)
+  // 물건이 함께 있거나, 통로 이름 뒤에 다른 가게 이름이 붙으면 묻지 않는다
+  for (const memo of ['쿠팡 물티슈', '쿠팡이츠', '네이버플러스 멤버십', 'CU(씨유)제기한신점', '', '알리오올리오']) assert.equal(needsItemName(memo), false, memo)
 })

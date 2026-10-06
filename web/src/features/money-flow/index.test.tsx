@@ -61,6 +61,32 @@ describe('돈 흐름', () => {
     expect(postBodies()[0].entries[0]).toMatchObject({ amount: 20000, memo: '피자', categoryId: 'eat_out', payment: 'point_once', learn: true })
   })
 
+  it('네이버페이·쿠팡처럼 통로 이름만 있으면 산 물건을 묻고, 적으면 다시 분류한다', async () => {
+    renderPage()
+    fireEvent.change(screen.getByLabelText(/무엇을 얼마에/), { target: { value: '네이버페이 32000원' } })
+    fireEvent.click(screen.getByRole('button', { name: '읽기' }))
+    expect(screen.getByText(/뭘 샀나요\?/)).toBeTruthy()
+    // 물건을 적기 전에는 분류 버튼을 띄우지 않는다
+    expect(screen.queryByText('어디에 넣을까요?')).toBeNull()
+    fireEvent.change(screen.getByLabelText('네이버페이 산 물건'), { target: { value: '물티슈' } })
+    expect((screen.getByLabelText('네이버페이 분류') as HTMLSelectElement).value).toBe('hygiene')
+    fireEvent.click(screen.getByRole('button', { name: '1건 저장' }))
+    await waitFor(() => expect(postBodies()).toHaveLength(1))
+    expect(postBodies()[0].entries[0]).toMatchObject({ memo: '네이버페이 물티슈', categoryId: 'hygiene', learn: false })
+  })
+
+  it('1만 원 미만인데 분류를 모르면 묻지 않고 접어 두며, 학습하지 않는다', async () => {
+    renderPage()
+    fireEvent.change(screen.getByLabelText(/무엇을 얼마에/), { target: { value: '맥모닝콤보 3500원\n동네 분식 4000원\n쿠팡 5000원' } })
+    fireEvent.click(screen.getByRole('button', { name: '읽기' }))
+    expect(screen.getByText(/묻지 않은 줄 2건/)).toBeTruthy()
+    expect(screen.queryByText('어디에 넣을까요?')).toBeNull()
+    expect(screen.queryByText(/뭘 샀나요\?/)).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: '3건 저장' }))
+    await waitFor(() => expect(postBodies()).toHaveLength(1))
+    expect(postBodies()[0].entries.map((e: any) => [e.memo, e.categoryId, e.learn])).toEqual([['맥모닝콤보', 'eat_out', false], ['동네 분식', 'etc', false], ['쿠팡', 'etc', false]])
+  })
+
   it('고친 기록이 있으면 그 분류를 먼저 쓴다', async () => {
     apiFetchMock.mockResolvedValue({ entries: [], rules: [{ keyword: '피자', categoryId: 'grocery_ready' }], checks: [] })
     renderPage()

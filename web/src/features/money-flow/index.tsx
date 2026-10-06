@@ -3,7 +3,7 @@ import { Link, useSearchParams } from 'react-router-dom'
 import { ChevronLeft, ChevronRight, Trash2 } from 'lucide-react'
 import { apiFetch } from '../../lib/api'
 import {
-  FLOW_CATEGORIES, categoryById, classifyMemo, compareSummaries, parseQuickLines, suggestCategories, summarizeItems,
+  FLOW_CATEGORIES, SMALL_UNKNOWN_LIMIT, categoryById, classifyMemo, compareSummaries, needsItemName, parseQuickLines, suggestCategories, summarizeItems,
   type CutLevel, type FlowItem, type LearnedRule, type Payment,
 } from '../../../../src/lib/moneyFlow'
 import FlowCheck, { type SavedCheck } from './FlowCheck'
@@ -11,7 +11,8 @@ import '../accumulate/accumulate.css'
 import './money-flow.css'
 
 type Entry = { id: string; mine?: boolean; editedBy?: 'me' | 'partner' | null; deletedBy?: 'me' | 'partner' | null; date: string; amount: number; memo: string; categoryId: string; cut: CutLevel | null; mustPart: number | null; payment: Payment }
-type Draft = { key: string; date: string; amountGuessed: boolean; amount: number; memo: string; categoryId: string; autoCategoryId: string; known: boolean; payment: Payment }
+// baseMemo = 붙여 넣은 그대로, item = 통로(네이버페이·쿠팡 등) 이름만 있을 때 덧붙인 산 물건, memo = 저장할 메모
+type Draft = { key: string; date: string; amountGuessed: boolean; amount: number; baseMemo: string; item: string; askItem: boolean; memo: string; categoryId: string; autoCategoryId: string; known: boolean; payment: Payment }
 type Tab = 'record' | 'month' | 'check'
 
 const krw = (value: number) => `${Math.round(value).toLocaleString('ko-KR')}원`
@@ -105,10 +106,20 @@ export default function MoneyFlowPage() {
     setDrafts(parsed.map((p, i) => {
       const result = classifyMemo(p.memo, rules)
       // 줄 맨 앞에 날짜(261001 등)가 있으면 그 날짜, 없으면 아래 날짜 칸
-      return { key: `${Date.now()}-${i}`, date: p.date ?? date, amountGuessed: p.amountGuessed, amount: p.amount, memo: p.memo, categoryId: result.categoryId, autoCategoryId: result.categoryId, known: result.source !== 'none', payment: 'cash' }
+      return { key: `${Date.now()}-${i}`, date: p.date ?? date, amountGuessed: p.amountGuessed, amount: p.amount, baseMemo: p.memo, item: '', askItem: needsItemName(p.memo), memo: p.memo, categoryId: result.categoryId, autoCategoryId: result.categoryId, known: result.source !== 'none', payment: 'cash' }
     }))
   }
   const updateDraft = (key: string, patch: Partial<Draft>) => setDrafts((list) => list.map((d) => d.key === key ? { ...d, ...patch } : d))
+  // 산 물건을 적으면 메모에 덧붙이고 다시 분류한다
+  const setDraftItem = (d: Draft, item: string) => {
+    const memo = `${d.baseMemo} ${item.trim()}`.trim()
+    const result = classifyMemo(memo, rules)
+    updateDraft(d.key, { item, memo, categoryId: result.categoryId, autoCategoryId: result.categoryId, known: result.source !== 'none' })
+  }
+  // 작은 금액은 분류를 몰라도 묻지 않는다(기타 생활로 두고, 접어 둔 목록에서 고칠 수 있다)
+  const isQuiet = (d: Draft) => !d.known && d.amount > 0 && d.amount < SMALL_UNKNOWN_LIMIT
+  const loudDrafts = drafts.filter((d) => !isQuiet(d))
+  const quietDrafts = drafts.filter(isQuiet)
 
   const saveDrafts = async () => {
     if (drafts.length === 0 || saving) return
@@ -118,8 +129,8 @@ export default function MoneyFlowPage() {
     try {
       const body = {
         action: 'add-entries',
-        // 자동 분류를 고쳤거나, 모르던 메모를 직접 고른 경우만 기억한다
-        entries: drafts.map((d) => ({ date: d.date, amount: d.amount, memo: d.memo, categoryId: d.categoryId, payment: d.payment, learn: d.memo !== '' && (!d.known || d.categoryId !== d.autoCategoryId) })),
+        // 자동 분류를 고쳤거나, 모르던 메모를 직접 고른 경우만 기억한다(소액이라 묻지 않고 넘긴 줄은 기억하지 않는다)
+        entries: drafts.map((d) => ({ date: d.date, amount: d.amount, memo: d.memo, categoryId: d.categoryId, payment: d.payment, learn: d.memo !== '' && ((!d.known && !isQuiet(d)) || d.categoryId !== d.autoCategoryId) })),
       }
       await apiFetch('/api/ui/money-flow', { method: 'POST', body: JSON.stringify(body), cacheMs: 0 })
       setNotice(`${drafts.length}건 기록했습니다.`)
@@ -186,6 +197,41 @@ export default function MoneyFlowPage() {
   }
   const monthDeleted = deleted.filter((e) => e.date.startsWith(month) && (partnerShared && scope === 'home' ? true : e.mine !== false))
 
+  const renderDraft = (d: Draft) => (
+    <div key={d.key} className="mf-draft">
+      <div className="mf-draft-head"><strong>{d.baseMemo || '메모 없음'}</strong></div>
+      <div className="mf-draft-fields">
+        <label><span>날짜</span><input type="date" aria-label={`${d.baseMemo || '메모 없음'} 날짜`} value={d.date} max={today} onChange={(event) => updateDraft(d.key, { date: event.target.value })} /></label>
+        <label className={d.amountGuessed ? 'is-guessed' : ''}><span>{d.amountGuessed ? '금액 확인' : '금액'}</span><input type="number" inputMode="numeric" min="1" aria-label={`${d.baseMemo || '메모 없음'} 금액`} value={d.amount || ''} onChange={(event) => updateDraft(d.key, { amount: Math.round(Number(event.target.value) || 0), amountGuessed: false })} /></label>
+      </div>
+      {d.amountGuessed && <p className="acc-warn mf-cut">"원"이 없고 숫자가 여러 개라 가장 큰 수를 금액으로 골랐습니다. 맞는지 확인해 주세요. 금액 뒤에 "원"을 붙이면 헷갈리지 않습니다.</p>}
+      {d.askItem && d.amount >= SMALL_UNKNOWN_LIMIT && (
+        <label className="acc-field mf-item">
+          <span>뭘 샀나요? 네이버페이·쿠팡처럼 뭐든 파는 곳은 이름만으로 분류할 수 없어요</span>
+          <input type="text" aria-label={`${d.baseMemo} 산 물건`} value={d.item} placeholder="예: 물티슈, 운동화" onChange={(event) => setDraftItem(d, event.target.value)} />
+        </label>
+      )}
+      {!d.known && !isQuiet(d) && !(d.askItem && !d.item.trim()) && (
+        <div className="mf-chips" role="group" aria-label="분류 고르기">
+          <span className="acc-note">어디에 넣을까요?</span>
+          {suggestions.map((id) => (
+            <button key={id} type="button" className={d.categoryId === id ? 'is-active' : ''} aria-pressed={d.categoryId === id} onClick={() => updateDraft(d.key, { categoryId: id })}>{categoryById(id)?.label}</button>
+          ))}
+        </div>
+      )}
+      <div className="mf-draft-tools">
+        <CategorySelect label={`${d.baseMemo || '메모 없음'} 분류`} value={d.categoryId} onChange={(id) => updateDraft(d.key, { categoryId: id })} />
+        <select aria-label={`${d.baseMemo || '메모 없음'} 결제 수단`} value={d.payment} onChange={(event) => updateDraft(d.key, { payment: event.target.value as Payment })}>
+          <option value="cash">카드·현금</option>
+          <option value="point_regular">포인트(매달 꾸준히)</option>
+          <option value="point_once">포인트(이번만)</option>
+        </select>
+        <button type="button" className="acc-link" onClick={() => setDrafts((list) => list.filter((x) => x.key !== d.key))}>빼기</button>
+      </div>
+      <p className="mf-cut">{KIND_LABEL[categoryById(d.categoryId)!.kind]} · {CUT_LABEL[categoryById(d.categoryId)!.cut]}</p>
+    </div>
+  )
+
   return (
     <div className="acc mf">
       <header>
@@ -220,8 +266,9 @@ export default function MoneyFlowPage() {
             <h2>빠른 기록</h2>
             <label className="acc-field">
               <span>무엇을 얼마에 (여러 줄 붙여넣기 가능)</span>
+              <small className="acc-note">가게 이름이면 충분해요. 네이버페이·쿠팡처럼 뭐든 파는 곳은 산 물건을 적어 주세요. 마트는 품목 없이 장보기로 한 번에 봅니다.</small>
               <textarea
-                className="mf-input" rows={2} value={text} placeholder={'261001 풀무원 노엣지피자 15170원\n배민 치킨 2만원'}
+                className="mf-input" rows={2} value={text} placeholder={'261002 CU제기점 1800원\n네이버페이 물티슈 12900원'}
                 onChange={(event) => setText(event.target.value)}
                 onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing && !text.includes('\n')) { event.preventDefault(); readInput() } }}
               />
@@ -234,34 +281,14 @@ export default function MoneyFlowPage() {
 
             {drafts.length > 0 && (
               <div className="mf-drafts" aria-label="저장 전 확인">
-                {drafts.map((d) => (
-                  <div key={d.key} className="mf-draft">
-                    <div className="mf-draft-head"><strong>{d.memo || '메모 없음'}</strong></div>
-                    <div className="mf-draft-fields">
-                      <label><span>날짜</span><input type="date" aria-label={`${d.memo || '메모 없음'} 날짜`} value={d.date} max={today} onChange={(event) => updateDraft(d.key, { date: event.target.value })} /></label>
-                      <label className={d.amountGuessed ? 'is-guessed' : ''}><span>{d.amountGuessed ? '금액 확인' : '금액'}</span><input type="number" inputMode="numeric" min="1" aria-label={`${d.memo || '메모 없음'} 금액`} value={d.amount || ''} onChange={(event) => updateDraft(d.key, { amount: Math.round(Number(event.target.value) || 0), amountGuessed: false })} /></label>
-                    </div>
-                    {d.amountGuessed && <p className="acc-warn mf-cut">"원"이 없고 숫자가 여러 개라 가장 큰 수를 금액으로 골랐습니다. 맞는지 확인해 주세요. 금액 뒤에 "원"을 붙이면 헷갈리지 않습니다.</p>}
-                    {!d.known && (
-                      <div className="mf-chips" role="group" aria-label="분류 고르기">
-                        <span className="acc-note">어디에 넣을까요?</span>
-                        {suggestions.map((id) => (
-                          <button key={id} type="button" className={d.categoryId === id ? 'is-active' : ''} aria-pressed={d.categoryId === id} onClick={() => updateDraft(d.key, { categoryId: id })}>{categoryById(id)?.label}</button>
-                        ))}
-                      </div>
-                    )}
-                    <div className="mf-draft-tools">
-                      <CategorySelect label={`${d.memo || '메모 없음'} 분류`} value={d.categoryId} onChange={(id) => updateDraft(d.key, { categoryId: id })} />
-                      <select aria-label={`${d.memo || '메모 없음'} 결제 수단`} value={d.payment} onChange={(event) => updateDraft(d.key, { payment: event.target.value as Payment })}>
-                        <option value="cash">카드·현금</option>
-                        <option value="point_regular">포인트(매달 꾸준히)</option>
-                        <option value="point_once">포인트(이번만)</option>
-                      </select>
-                      <button type="button" className="acc-link" onClick={() => setDrafts((list) => list.filter((x) => x.key !== d.key))}>빼기</button>
-                    </div>
-                    <p className="mf-cut">{KIND_LABEL[categoryById(d.categoryId)!.kind]} · {CUT_LABEL[categoryById(d.categoryId)!.cut]}</p>
-                  </div>
-                ))}
+                {loudDrafts.map(renderDraft)}
+                {quietDrafts.length > 0 && (
+                  <details className="mf-quiet">
+                    <summary>{(SMALL_UNKNOWN_LIMIT / 10000).toLocaleString('ko-KR')}만 원 미만이라 묻지 않은 줄 {quietDrafts.length}건 · 기타 생활로 넣습니다</summary>
+                    <p className="acc-note">작은 금액은 분류가 틀려도 점검 결론이 거의 바뀌지 않습니다. 고치고 싶으면 여기서 바꾸세요.</p>
+                    {quietDrafts.map(renderDraft)}
+                  </details>
+                )}
                 <button type="button" className="acc-primary" onClick={saveDrafts} disabled={saving}>{saving ? '저장 중…' : `${drafts.length}건 저장`}</button>
               </div>
             )}

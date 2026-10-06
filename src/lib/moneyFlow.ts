@@ -168,6 +168,26 @@ export function classifyMemo(memo: string, learned: LearnedRule[] = []): Classif
   return { categoryId: FALLBACK_CATEGORY_ID, source: "none" };
 }
 
+/**
+ * 뭐든 살 수 있는 '통로'(간편결제·종합 쇼핑몰). 이름만 있으면 무엇을 샀는지 몰라 분류가 안 되므로 산 물건을 묻는다.
+ * "쿠팡이츠"·"네이버플러스"처럼 통로 이름 뒤에 글자가 더 붙으면 다른 가게로 보고 묻지 않는다.
+ */
+const PASS_THROUGH = ["네이버페이", "naverpay", "npay", "네이버쇼핑", "스마트스토어", "카카오페이", "kakaopay", "토스페이", "tosspay", "페이코", "payco", "스마일페이", "쿠페이", "쿠팡", "11번가", "g마켓", "지마켓", "옥션", "ssg", "ssg.com", "위메프", "티몬", "알리익스프레스", "알리", "테무", "temu", "아마존", "amazon"];
+const PASS_THROUGH_NOISE = ["결제", "주문", "구매", "간편결제", "(주)", "주식회사"];
+
+/** 메모가 통로 이름뿐이라 "뭘 샀나요?"를 물어야 하는지. "네이버페이 32000" → true, "쿠팡 물티슈"·"쿠팡이츠" → false */
+export function needsItemName(memo: string): boolean {
+  let text = normalizeMemo(memo);
+  if (!text) return false;
+  const words = [...PASS_THROUGH].sort((a, b) => b.length - a.length);
+  if (!words.some((word) => contains(text, word))) return false;
+  for (const word of [...words, ...PASS_THROUGH_NOISE]) text = text.split(normalizeMemo(word)).join(" ");
+  return text.replace(/[\s()[\]{}.,·:/_-]+/g, "").length === 0;
+}
+
+/** 이 금액 미만인데 분류를 못 한 줄은 묻지 않고 '기타 생활'로 둔다. 작은 금액은 틀려도 점검 결론이 바뀌지 않는다 */
+export const SMALL_UNKNOWN_LIMIT = 10_000;
+
 /** 분류를 못 했을 때 보여 줄 버튼: 최근 기록에서 자주 쓴 소분류 순, 모자라면 흔한 소분류로 채운다. */
 export function suggestCategories(recentCategoryIds: string[], count = 3): string[] {
   const freq = new Map<string, number>();

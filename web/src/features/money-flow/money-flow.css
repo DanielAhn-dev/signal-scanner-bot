@@ -61,3 +61,7 @@
 .mf-amount-edit { width: 120px; min-width: 0; padding: 8px 10px; border: 1px solid var(--color-border-default); border-radius: 6px; background: var(--color-bg-surface); color: var(--color-text-primary); font: inherit; font-size: 16px; }
 .mf-deleted { margin-top: 8px; }
 .mf-deleted summary { color: var(--color-text-secondary); cursor: pointer; padding: 6px 0; }
+.mf-item input { min-width: 0; padding: 8px 10px; border: 1px solid var(--color-brand); border-radius: 6px; background: var(--color-bg-surface); color: var(--color-text-primary); font: inherit; font-size: 16px; }
+.mf-quiet { display: flex; flex-direction: column; gap: 8px; padding: 8px 10px; border: 1px dashed var(--color-border-default); border-radius: 6px; }
+.mf-quiet > summary { cursor: pointer; font-size: 13px; color: var(--color-text-secondary); }
+.mf-quiet > .mf-draft, .mf-quiet > p { margin-top: 8px; }
