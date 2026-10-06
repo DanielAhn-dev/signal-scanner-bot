@@ -21,3 +21,8 @@
 .choice-legend__actual { border-color: var(--color-brand); }
 .choice-legend__alt { border-color: var(--color-text-secondary); border-top-style: dashed !important; }
 .choice-legend__days { margin-left: auto; }
+.choice-health { width: 100%; border-collapse: collapse; margin-top: 8px; font-variant-numeric: tabular-nums; }
+.choice-health th, .choice-health td { padding: 4px 8px; text-align: right; white-space: nowrap; border-bottom: 1px solid var(--color-border-default); }
+.choice-health thead th { font-size: 11px; color: var(--color-text-secondary); font-weight: 600; }
+.choice-health tbody th { text-align: left; font-weight: 400; color: var(--color-text-secondary); }
+.choice-health td.is-warn { color: var(--color-error); font-weight: 600; }

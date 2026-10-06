@@ -441,9 +441,111 @@ export function toHistoryEntry(view: IncomeGuideView, note?: string): GuideHisto
   };
 }
 
-/** 같은 날 기록은 덮어쓰고, 최근 120개만 남긴다 */
+/** 바구니 비중이 모두 0.5%p 안이면 같은 상태로 본다 (가격이 조금 움직인 것만으로 새 기록이 되지 않게) */
+function sameMix(a: GuideHistoryEntry["groups"], b: GuideHistoryEntry["groups"]): boolean {
+  const pick = (gs: GuideHistoryEntry["groups"], g: BucketGroup) => gs.find((x) => x.group === g)?.actualPct ?? 0;
+  return (["growth", "income", "satellite", "cash"] as BucketGroup[]).every((g) => Math.abs(pick(a, g) - pick(b, g)) < 0.5);
+}
+
+/**
+ * 같은 날이라도 비중이 바뀌었으면 따로 남긴다 — 옮기기 전에 한 번, 옮긴 뒤에 한 번 눌러 전후를 비교할 수 있게.
+ * 같은 날 같은 비중이면 덮어쓴다(메모만 고친 경우). 날짜순, 최근 120개만 남긴다.
+ */
 export function appendHistory(history: GuideHistoryEntry[], entry: GuideHistoryEntry): GuideHistoryEntry[] {
-  return [...history.filter((h) => h.date !== entry.date), entry].sort((a, b) => a.date.localeCompare(b.date)).slice(-120);
+  const kept = history.filter((h) => !(h.date === entry.date && sameMix(h.groups, entry.groups)));
+  return [...kept, entry].sort((a, b) => a.date.localeCompare(b.date)).slice(-120);
+}
+
+/** 목표와의 거리 — 목표 비중에 맞추려면 전체 평가액의 몇 %를 옮겨야 하는지 (|실제 − 목표| 합의 절반) */
+export function distanceFromTarget(groups: Array<{ actualPct: number; targetPct: number }>): number {
+  return Math.round((groups.reduce((s, g) => s + Math.abs(g.actualPct - g.targetPct), 0) / 2) * 10) / 10;
+}
+
+/** 계좌 건강 한 시점 — 수익률은 넣지 않는다(몇 달 단위 수익은 잡음이고, 그 숫자를 보고 규칙을 흔들게 된다) */
+export type HealthPoint = {
+  date: string;
+  total: number;
+  distancePp: number;
+  /** 목표 ±10%p를 넘은 바구니 수 */
+  outOfBand: number;
+  satellitePct: number;
+  cashPct: number;
+  note?: string;
+};
+
+export function toHealthPoint(e: GuideHistoryEntry): HealthPoint {
+  const pick = (g: BucketGroup) => e.groups.find((x) => x.group === g)?.actualPct ?? 0;
+  return {
+    date: e.date,
+    total: e.total,
+    distancePp: distanceFromTarget(e.groups),
+    outOfBand: e.groups.filter((g) => Math.abs(g.actualPct - g.targetPct) > REBALANCE_BAND_PP).length,
+    satellitePct: pick("satellite"),
+    cashPct: pick("cash"),
+    ...(e.note ? { note: e.note } : {}),
+  };
+}
+
+export type GuideComparison = {
+  base: HealthPoint;
+  now: HealthPoint;
+  groups: Array<{ group: BucketGroup; beforePct: number; nowPct: number; targetPct: number }>;
+  verdict: "closer" | "farther" | "same";
+  text: string;
+};
+
+/**
+ * 직전 기록과 지금 비교 — "직전 점검 때 이랬는데 지금은 이렇다". 지금과 비중이 같은 기록(방금 누른 기록)은 건너뛰고
+ * 그 앞의 다른 상태와 비교한다. 매매와 시장 움직임이 합쳐진 결과이고, 앞으로 할 일은 늘 지금 상태로만 계산한다.
+ */
+export function compareWithHistory(view: IncomeGuideView, history: GuideHistoryEntry[]): GuideComparison | null {
+  if (view.total <= 0) return null;
+  const nowEntry = toHistoryEntry(view);
+  const base = [...history].reverse().find((h) => h.groups.length > 0 && !sameMix(h.groups, nowEntry.groups));
+  if (!base) return null;
+  const b = toHealthPoint(base);
+  const n = toHealthPoint(nowEntry);
+  const delta = n.distancePp - b.distancePp;
+  const verdict = Math.abs(delta) < 2 ? "same" : delta < 0 ? "closer" : "farther";
+  const head = `${base.date} 기록 때 목표와의 거리 ${b.distancePp.toFixed(0)}%p → 지금 ${n.distancePp.toFixed(0)}%p`;
+  const tail =
+    verdict === "closer"
+      ? "목표 비중에 가까워졌습니다."
+      : verdict === "farther"
+        ? "목표에서 더 멀어졌습니다. 시장이 움직였거나 목표와 반대로 사고판 경우입니다."
+        : "거의 그대로입니다.";
+  return {
+    base: b,
+    now: n,
+    groups: nowEntry.groups.map((g) => ({
+      group: g.group,
+      beforePct: base.groups.find((x) => x.group === g.group)?.actualPct ?? 0,
+      nowPct: g.actualPct,
+      targetPct: g.targetPct,
+    })),
+    verdict,
+    text: `${head}. ${tail}`,
+  };
+}
+
+/**
+ * 계좌 건강 흐름 — 처음 기록, 한 달쯤 전 기록, 지금. "내 선택 돌아보기"에서 월 1회 확인용으로 쓴다.
+ * 한 달 전 = 오늘보다 28일 이상 앞선 마지막 기록(처음 기록과 같으면 생략).
+ */
+export function healthTrend(view: IncomeGuideView, history: GuideHistoryEntry[]): { first: HealthPoint | null; monthAgo: HealthPoint | null; now: HealthPoint } | null {
+  if (view.total <= 0) return null;
+  const now = toHealthPoint(toHistoryEntry(view));
+  const valid = history.filter((h) => h.groups.length > 0);
+  const cutoff = new Date(`${view.today}T00:00:00Z`);
+  cutoff.setUTCDate(cutoff.getUTCDate() - 28);
+  const cut = cutoff.toISOString().slice(0, 10);
+  const firstEntry = valid[0] ?? null;
+  const monthEntry = [...valid].reverse().find((h) => h.date <= cut) ?? null;
+  return {
+    first: firstEntry ? toHealthPoint(firstEntry) : null,
+    monthAgo: monthEntry && monthEntry !== firstEntry ? toHealthPoint(monthEntry) : null,
+    now,
+  };
 }
 
 type PlanKey = "kr" | "global" | "income" | "satellite" | "cash";

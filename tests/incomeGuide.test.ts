@@ -246,7 +246,7 @@ test("buildIncomeGuideView: 일반 계좌 분배금만 금융소득 상한에 �
   assert.equal(roomy.distributions.headroomAsDividendCapital, 40_000_000);
 });
 
-test("toHistoryEntry·appendHistory: 같은 날은 덮어쓰고 날짜순으로 쌓는다", async () => {
+test("toHistoryEntry·appendHistory: 같은 날 같은 비중은 덮어쓰고 날짜순으로 쌓는다", async () => {
   const { toHistoryEntry, appendHistory } = await import("../src/lib/incomeGuide");
   const view = buildIncomeGuideView({ holdings: [h("069500", "KODEX 200", 1_000_000)], settings: { ...DEFAULT_INCOME_GUIDE_SETTINGS }, today: "2026-10-01" });
   const e1 = toHistoryEntry(view, "첫 점검");
@@ -255,6 +255,45 @@ test("toHistoryEntry·appendHistory: 같은 날은 덮어쓰고 날짜순으로 
   assert.deepEqual(hist.map((x) => x.date), ["2026-10-01", "2027-01-02"]);
   assert.equal(hist[0].note, "다시");
   assert.equal(hist[0].groups.find((g) => g.group === "growth")?.actualPct, 100);
+});
+
+test("appendHistory: 같은 날이라도 비중이 바뀌면 옮기기 전·후를 둘 다 남긴다", async () => {
+  const { toHistoryEntry, appendHistory } = await import("../src/lib/incomeGuide");
+  const settings = { ...DEFAULT_INCOME_GUIDE_SETTINGS };
+  const before = toHistoryEntry(buildIncomeGuideView({ holdings: [h("069500", "KODEX 200", 5_000_000), h("005930", "삼성전자", 5_000_000)], settings, today: "2026-10-06" }));
+  const after = toHistoryEntry(buildIncomeGuideView({ holdings: [h("069500", "KODEX 200", 9_000_000), h("005930", "삼성전자", 1_000_000)], settings, today: "2026-10-06" }));
+  const hist = appendHistory(appendHistory([], before), after);
+  assert.equal(hist.length, 2);
+});
+
+test("compareWithHistory: 직전의 다른 상태와 비교해 목표와의 거리가 줄었는지 알려 준다", async () => {
+  const { toHistoryEntry, appendHistory, compareWithHistory, distanceFromTarget } = await import("../src/lib/incomeGuide");
+  const settings = { ...DEFAULT_INCOME_GUIDE_SETTINGS };
+  const beforeView = buildIncomeGuideView({ holdings: [h("069500", "KODEX 200", 5_000_000), h("005930", "삼성전자", 5_000_000)], settings, today: "2026-09-01" });
+  const nowView = buildIncomeGuideView({ holdings: [h("069500", "KODEX 200", 9_000_000), h("005930", "삼성전자", 1_000_000)], settings, today: "2026-10-06" });
+  assert.equal(compareWithHistory(nowView, []), null);
+  // 방금 누른 지금 기록은 건너뛰고 그 앞 기록과 비교한다
+  const hist = appendHistory(appendHistory([], toHistoryEntry(beforeView, "옮기기 전")), toHistoryEntry(nowView));
+  const c = compareWithHistory(nowView, hist)!;
+  assert.equal(c.base.date, "2026-09-01");
+  assert.equal(c.base.note, "옮기기 전");
+  assert.equal(c.verdict, "closer");
+  assert.ok(c.base.distancePp > c.now.distancePp);
+  assert.equal(c.groups.find((g) => g.group === "satellite")?.beforePct, 50);
+  assert.equal(distanceFromTarget([{ actualPct: 60, targetPct: 80 }, { actualPct: 40, targetPct: 20 }]), 20);
+});
+
+test("healthTrend: 처음 기록·한 달 전 기록·지금을 돌려준다", async () => {
+  const { toHistoryEntry, healthTrend } = await import("../src/lib/incomeGuide");
+  const settings = { ...DEFAULT_INCOME_GUIDE_SETTINGS };
+  const v = (today: string, sat: number) =>
+    buildIncomeGuideView({ holdings: [h("069500", "KODEX 200", 10_000_000 - sat), h("005930", "삼성전자", sat)], settings, today });
+  const hist = [toHistoryEntry(v("2026-07-01", 4_000_000)), toHistoryEntry(v("2026-09-01", 2_000_000)), toHistoryEntry(v("2026-09-30", 1_500_000))];
+  const t = healthTrend(v("2026-10-06", 1_000_000), hist)!;
+  assert.equal(t.first?.date, "2026-07-01");
+  assert.equal(t.monthAgo?.date, "2026-09-01");
+  assert.equal(t.now.satellitePct, 10);
+  assert.equal(healthTrend(v("2026-10-06", 1_000_000), [hist[0]])?.monthAgo, null);
 });
 
 test("sanitizeIncomeGuideSettings: 목표 비중 빈 칸은 단계 기본값으로 되돌리고, 합이 100을 넘지 않게 자른다", () => {

@@ -18,6 +18,7 @@ type Order = {
   amount: number
   realizedGain: number | null
 }
+type HealthPoint = { date: string; total: number; distancePp: number; outOfBand: number; satellitePct: number; cashPct: number; note?: string }
 type Unfilled = { group: Group; bucket?: string; amount: number }
 type View = {
   today: string
@@ -48,6 +49,13 @@ type View = {
     stillOutOfBand: boolean
   } | null
   history?: Array<{ date: string; total: number; groups: Array<{ group: Group; actualPct: number; targetPct: number }>; note?: string }>
+  comparison?: {
+    base: HealthPoint
+    now: HealthPoint
+    groups: Array<{ group: Group; beforePct: number; nowPct: number; targetPct: number }>
+    verdict: 'closer' | 'farther' | 'same'
+    text: string
+  } | null
   total: number
   holdingCount: number
   priceFallbacks?: number
@@ -464,6 +472,52 @@ export default function IncomeGuidePage() {
             )}
           </div>
 
+          {view.comparison && (
+            <div style={box}>
+              <strong>직전 기록과 비교</strong>
+              <div
+                style={{
+                  color:
+                    view.comparison.verdict === 'closer'
+                      ? 'var(--color-stock-up)'
+                      : view.comparison.verdict === 'farther'
+                        ? 'var(--color-error)'
+                        : 'var(--color-text-secondary)',
+                }}
+              >
+                {view.comparison.text}
+              </div>
+              <div style={{ overflowX: 'auto' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', marginTop: 6 }}>
+                  <thead>
+                    <tr>
+                      <th style={th}>바구니</th>
+                      <th style={th}>{view.comparison.base.date}</th>
+                      <th style={th}>지금</th>
+                      <th style={th}>목표</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {view.comparison.groups.map((g) => (
+                      <tr key={g.group}>
+                        <td style={td}>{GROUP_LABEL[g.group]}</td>
+                        <td style={td}>{pct(g.beforePct)}</td>
+                        <td style={td}>{pct(g.nowPct)}</td>
+                        <td style={td}>{pct(g.targetPct)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              {view.comparison.base.note && (
+                <div style={{ color: 'var(--color-text-secondary)' }}>그때 메모: {view.comparison.base.note}</div>
+              )}
+              <div style={{ color: 'var(--color-text-secondary)', marginTop: 4 }}>
+                앞으로 할 일: {view.rebalance.reason} 비교는 내가 사고판 것과 시장 움직임이 합쳐진 결과이고, 할 일은 늘 지금 상태로만 계산합니다.
+              </div>
+            </div>
+          )}
+
           <div style={box}>
             <strong>점검 기록</strong>
             <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', marginTop: 4 }}>
@@ -473,6 +527,9 @@ export default function IncomeGuidePage() {
                 오늘 비중 기록
               </Button>
               {recordMsg && <span style={{ color: 'var(--color-text-secondary)' }}>{recordMsg}</span>}
+            </div>
+            <div style={{ color: 'var(--color-text-tertiary)' }}>
+              증권사에서 옮기기 전에 한 번, 옮기고 보유를 고친 뒤에 한 번 누르면 위에 전후 비교가 나옵니다.
             </div>
             {view.history && view.history.length > 0 ? (
               <div style={{ overflowX: 'auto' }}>
@@ -490,8 +547,8 @@ export default function IncomeGuidePage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {[...view.history].reverse().slice(0, 12).map((h) => (
-                    <tr key={h.date}>
+                  {[...view.history].reverse().slice(0, 12).map((h, i) => (
+                    <tr key={`${h.date}-${i}`}>
                       <td style={td}>{h.date}</td>
                       <td style={td}>{man(h.total)}</td>
                       {(['growth', 'income', 'satellite', 'cash'] as Group[]).map((g) => {

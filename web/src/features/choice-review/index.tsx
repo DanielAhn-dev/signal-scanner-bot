@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { apiFetch } from '../../lib/api'
+import { formatKrwMan } from '../../lib/format'
 import { readSwitchHistory, type SwitchEvent } from '../../lib/switchHistory'
 import { useCurrentClientId } from '../../stores/profileStore'
 import SheetHeaderBar from '../../components/SheetHeaderBar'
@@ -57,6 +59,87 @@ function Chart({ points }: { points: Point[] }) {
   )
 }
 
+type HealthPoint = { date: string; total: number; distancePp: number; outOfBand: number; satellitePct: number; cashPct: number }
+type Health = { first: HealthPoint | null; monthAgo: HealthPoint | null; now: HealthPoint }
+
+/**
+ * 계좌 건강 — 리밸런싱 가이드의 점검 기록으로 처음·한 달 전·지금을 나란히 본다. 수익률은 넣지 않는다:
+ * 몇 달 단위 수익은 잡음이라 그 숫자로 규칙을 흔들게 된다. 대신 "규칙대로 가고 있는지"만 본다.
+ */
+function HealthCard() {
+  const [state, setState] = useState<{ health: Health | null; satCap: number } | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  useEffect(() => {
+    let active = true
+    apiFetch('/api/ui/income-guide', { cacheMs: 0, timeoutMs: 20_000, retries: 0 })
+      .then((res) => {
+        if (!active) return
+        if (!res?.data) setError(res?.error ?? '불러오지 못했습니다.')
+        else setState({ health: res.data.health ?? null, satCap: Number(res.data.settings?.satelliteCapPct) || 10 })
+      })
+      .catch((e) => { if (active) setError(e instanceof Error ? e.message : String(e)) })
+    return () => { active = false }
+  }, [])
+
+  if (error) return <section className="choice-card choice-error" role="alert">계좌 건강을 불러오지 못했습니다: {error}</section>
+  if (!state) return <section className="choice-card">계좌 건강 불러오는 중…</section>
+  const h = state.health
+  if (!h) {
+    return (
+      <section className="choice-card">
+        <h2>계좌 건강</h2>
+        <p className="choice-wait">실제 계좌 보유를 넣으면 목표 비중에 맞게 가고 있는지 한 달마다 확인할 수 있습니다. <Link to="/portfolio">보유 넣기</Link></p>
+      </section>
+    )
+  }
+  const cols = [
+    h.first && { label: `처음 (${shortDate(h.first.date)})`, p: h.first },
+    h.monthAgo && { label: `한 달 전 (${shortDate(h.monthAgo.date)})`, p: h.monthAgo },
+    { label: '지금', p: h.now },
+  ].filter(Boolean) as Array<{ label: string; p: HealthPoint }>
+  const base = h.monthAgo ?? h.first
+  const diff = base ? h.now.distancePp - base.distancePp : 0
+  const summary = !base
+    ? '아직 비교할 기록이 없습니다. 리밸런싱 가이드에서 "오늘 비중 기록"을 눌러 두면 다음 달부터 비교됩니다.'
+    : Math.abs(diff) < 2
+      ? `${h.monthAgo ? '한 달 전' : '처음'}과 비슷합니다. 목표 ±10%p 안이면 할 일이 없습니다.`
+      : diff < 0
+        ? `${h.monthAgo ? '한 달 전' : '처음'}보다 목표에 ${Math.abs(diff).toFixed(0)}%p 가까워졌습니다.`
+        : `${h.monthAgo ? '한 달 전' : '처음'}보다 목표에서 ${diff.toFixed(0)}%p 멀어졌습니다. 리밸런싱 가이드에서 남은 일을 확인하세요.`
+  const rows: Array<{ label: string; fmt: (p: HealthPoint) => string; bad?: (p: HealthPoint) => boolean }> = [
+    { label: '목표와의 거리', fmt: (p) => `${p.distancePp.toFixed(0)}%p`, bad: (p) => p.outOfBand > 0 },
+    { label: '±10%p 넘은 바구니', fmt: (p) => `${p.outOfBand}개`, bad: (p) => p.outOfBand > 0 },
+    { label: `위성 비중 (상한 ${state.satCap}%)`, fmt: (p) => `${p.satellitePct.toFixed(0)}%`, bad: (p) => p.satellitePct > state.satCap },
+    { label: '현금성 비중', fmt: (p) => `${p.cashPct.toFixed(0)}%` },
+    { label: '평가액', fmt: (p) => formatKrwMan(p.total) },
+  ]
+  return (
+    <section className="choice-card" aria-label="계좌 건강">
+      <h2>계좌 건강 — 규칙대로 가고 있나요</h2>
+      <p className="choice-wait">{summary}</p>
+      <div style={{ overflowX: 'auto' }}>
+        <table className="choice-health">
+          <thead>
+            <tr><th />{cols.map((c) => <th key={c.label}>{c.label}</th>)}</tr>
+          </thead>
+          <tbody>
+            {rows.map((r) => (
+              <tr key={r.label}>
+                <th>{r.label}</th>
+                {cols.map((c) => <td key={c.label} className={r.bad?.(c.p) ? 'is-warn' : ''}>{r.fmt(c.p)}</td>)}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <p className="choice-note">
+        목표와의 거리 = 목표 비중에 맞추려면 전체의 몇 %를 옮겨야 하는지. 수익률은 일부러 넣지 않았습니다. 몇 달 수익은 운에 가깝고, 이 표는 규칙을 지켰는지만 봅니다.
+        기록은 <Link to="/income-guide">리밸런싱 가이드</Link>에서 "오늘 비중 기록"을 누른 날만 쌓입니다.
+      </p>
+    </section>
+  )
+}
+
 export default function ChoiceReviewPage() {
   const clientId = useCurrentClientId()
   const [reviews, setReviews] = useState<Review[] | null>(null)
@@ -76,8 +159,10 @@ export default function ChoiceReviewPage() {
     <main className="choice-page">
       <SheetHeaderBar title="내 선택 돌아보기" />
       <p className="choice-lead">
-        자동매매 방식을 바꾼 날부터 "안 바꿨다면"과 실제를 같은 출발점(100)에서 비교합니다. 어느 쪽이 정답이라는 뜻이 아니라, 내 선택이 결과를 얼마나 바꿨는지 확인하는 용도입니다.
+        한 달에 한 번, 내 계좌가 정한 규칙대로 가고 있는지와 내 선택이 결과를 얼마나 바꿨는지 확인합니다. 아래 방식 전환 비교는 자동매매 방식을 바꾼 날부터 "안 바꿨다면"과 실제를 같은 출발점(100)에서 봅니다.
       </p>
+
+      <HealthCard />
 
       {error && <section className="choice-card choice-error" role="alert">불러오지 못했습니다: {error}</section>}
       {!error && reviews === null && <section className="choice-card">불러오는 중…</section>}

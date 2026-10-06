@@ -9,6 +9,8 @@ import {
   DEFAULT_INCOME_GUIDE_SETTINGS,
   appendHistory,
   buildIncomeGuideView,
+  compareWithHistory,
+  healthTrend,
   sanitizeIncomeGuideSettings,
   toHistoryEntry,
   type GuideHistoryEntry,
@@ -111,7 +113,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const saveErr = await saveFile(supabase, path, file)
       if (saveErr) return res.status(500).json({ error: `점검 기록 저장 실패: ${saveErr}` })
     }
-    return res.status(200).json({ ok: true, data: { ...view, priceFallbacks, history: file.history ?? [] } })
+    const history = file.history ?? []
+    return res.status(200).json({
+      ok: true,
+      data: { ...view, priceFallbacks, history, comparison: compareWithHistory(view, history), health: healthTrend(view, history) },
+    })
   } catch (e: any) {
     return res.status(500).json({ error: String(e?.message || e) })
   }
