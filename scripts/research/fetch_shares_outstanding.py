@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
-"""DART 주식총수(보통주 유통주식수) 수집 — 거래대금 상위 300에 한 번이라도 든 종목 × 사업보고서 연도. 재개 가능.
+"""DART 주식총수(보통주 유통주식수) 수집 — 거래대금 상위 300에 한 번이라도 든 종목, 가장 최근 사업보고서(2025부터 거꾸로, 처음 값이 나오는 해).
+수정주가 × 최근 주식수 = 과거 시총 근사(분할은 수정주가에 이미 반영). 재개 가능.
 출력: .research-cache/shares/{corp_code}_{year}.json ({"common": 정수 또는 null, "rcept": 접수번호})"""
 import os, sys, json, time, urllib.request
 import numpy as np
@@ -20,19 +21,21 @@ for code in sorted(ever):
     cc = corps.get(code)
     if not cc:
         continue
-    for y in range(2014, 2026):
+    for y in range(2025, 2013, -1):
         fn = f"{OUT}/{cc}_{y}.json"
         if os.path.exists(fn):
+            if json.load(open(fn)).get("common"):
+                break
             continue
         u = f"https://opendart.fss.or.kr/api/stockTotqySttus.json?crtfc_key={KEY}&corp_code={cc}&bsns_year={y}&reprt_code=11011"
-        for attempt in range(3):
+        for attempt in range(8):
             try:
                 d = json.load(urllib.request.urlopen(u, timeout=30))
                 break
             except Exception:
-                time.sleep(2)
+                time.sleep(30 * (attempt + 1))  # 연결 차단 시 점점 길게 쉬었다 재시도
         else:
-            continue
+            print('연결 실패 반복, 중단', flush=True); sys.exit(1)
         if d.get("status") == "020":  # 일일 한도
             print("한도 도달, 중단", flush=True); sys.exit(0)
         common, rc = None, None
@@ -44,7 +47,9 @@ for code in sorted(ever):
                 except Exception:
                     pass
         json.dump({"common": common, "rcept": rc, "status": d.get("status")}, open(fn, "w"))
-        time.sleep(0.05)
+        time.sleep(0.25)
+        if common:
+            break
     done += 1
     if done % 50 == 0:
         print("진행", done, flush=True)
