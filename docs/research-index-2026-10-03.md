@@ -10,6 +10,7 @@
 | `plan-child-gift-account-2026-10-03.md` | 자녀 증여 계좌 기획(1단계 구현, 2단계 설계) |
 | `research-weight-caution-2026-10-05.md` | 비중 조절 경고: 종목 과열·변동성(채택), 시장 외국인 수급 F3(안내 채택), 금리·환율·VKOSPI·종목 수급(미채택) |
 | `research-buy-cadence-and-crash-calls-2026-10-06.md` | 적립 간격의 꼬리 위험(매주=매일, 매달 하루는 첫 1년 편차 3~4배), 폭락 직전 고점 시작 매주 적립, CAPE와 1년 내 폭락 |
+| `research-forward-test-power-2026-10-06.md` | 전향 검증 검정력(H11): 수익률로는 1년 안에 봇 판정 불가, 판정 규칙에 잡음 범위 추가 |
 | `hypothesis-ledger.md` | **가설 장부** — 진행 중 가설·사전 판정 기준·다음 점검일·기록 무결성 이력. 새 세션은 여기부터 |
 
 ## 스크립트 (`scripts/research/`)

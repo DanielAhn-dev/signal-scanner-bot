@@ -244,10 +244,23 @@ export type StrategyReview = {
 
 const fmtPct = (v: number) => `${v >= 0 ? "+" : ""}${v.toFixed(1)}%`;
 
+/** 종목 5개 포트폴리오 대 KODEX 200 추적오차(연) — 2014~2026 전·후반 30.1%·36.9% 중 낮은 값 (validate_forward_test_power.py) */
+export const STOCK_TRACKING_ERROR_ANNUAL = 0.3;
+
+/**
+ * 잡음 범위(누적 수익 차이, %p) = 2σ√n주. 실력이 같아도 이만큼은 우연으로 벌어진다.
+ * 이 범위가 없으면 모든 전략의 기대수익이 같을 때도 승격 후보가 60~66% 확률로 나온다(H11).
+ */
+export function noiseBandPct(measuredDays: number): number {
+  const weeks = Math.max(1, measuredDays / 5);
+  return 2 * (STOCK_TRACKING_ERROR_ANNUAL / Math.sqrt(52)) * Math.sqrt(weeks) * 100;
+}
+
 /**
  * 전략 승격·퇴출 판정 — 미리 정한 기준으로만 제안하고, 전환은 사람이 승인한다(자동 전환 없음).
- *   승격 후보: 8주 이상 측정 + 봇 실제 계좌·KODEX 200·CD금리를 모두 앞섬 + 최대 낙폭이 봇보다 나쁘지 않음
- *   봇 경고: 8주 이상 측정 + 봇이 KODEX 200과 CD금리 둘 다에 못 미침
+ *   승격 후보: 8주 이상 측정 + 봇 실제 계좌·KODEX 200·CD금리를 모두 잡음 범위 이상 앞섬 + 최대 낙폭이 봇보다 나쁘지 않음
+ *   봇 경고: 8주 이상 측정 + 봇이 KODEX 200과 CD금리 둘 다에 잡음 범위 이상 못 미침
+ * 잡음 범위 안에서 앞선 전략은 후보가 아니라 참고 문장으로만 알린다.
  */
 export function reviewStrategies(input: { results: StrategyResult[]; measuredDays: number }): StrategyReview {
   const { results, measuredDays } = input;
@@ -266,14 +279,13 @@ export function reviewStrategies(input: { results: StrategyResult[]; measuredDay
   if (!bot || !kodex || !cd) {
     return { status: "no-bot-data", measuredDays, lines: ["봇 계좌 또는 기준 데이터가 없어 판정하지 않습니다."], candidates: [] };
   }
-  const candidates = results.filter(
-    (r) =>
-      !NON_CANDIDATE_STRATEGIES.includes(r.name) &&
-      r.totalReturnPct > bot.totalReturnPct &&
-      r.totalReturnPct > kodex.totalReturnPct &&
-      r.totalReturnPct > cd.totalReturnPct &&
-      r.maxDrawdownPct >= bot.maxDrawdownPct
+  const band = noiseBandPct(measuredDays);
+  const bar = Math.max(bot.totalReturnPct, kodex.totalReturnPct, cd.totalReturnPct);
+  const ahead = results.filter(
+    (r) => !NON_CANDIDATE_STRATEGIES.includes(r.name) && r.totalReturnPct > bar && r.maxDrawdownPct >= bot.maxDrawdownPct
   );
+  const candidates = ahead.filter((r) => r.totalReturnPct > bar + band);
+  const withinNoise = ahead.filter((r) => r.totalReturnPct <= bar + band);
   const lines: string[] = [];
   let status: StrategyReview["status"] = "hold";
   if (candidates.length) {
@@ -286,13 +298,22 @@ export function reviewStrategies(input: { results: StrategyResult[]; measuredDay
     // 승인·보류는 텔레그램 버튼 또는 웹 전략 화면 (strategyPromotion.ts). 자동 전환 없음
     lines.push("승인 방법: 이 메시지의 [승인] 버튼 또는 웹 전략 화면의 승인 버튼(관리자). 자동으로 바뀌지는 않습니다.");
   }
-  if (bot.totalReturnPct < kodex.totalReturnPct && bot.totalReturnPct < cd.totalReturnPct) {
+  if (bot.totalReturnPct < kodex.totalReturnPct - band && bot.totalReturnPct < cd.totalReturnPct - band) {
     if (status !== "propose") status = "warn-bot";
     lines.push(
-      `봇 경고: 봇 ${fmtPct(bot.totalReturnPct)}가 KODEX 200 ${fmtPct(kodex.totalReturnPct)}과 CD금리 ${fmtPct(cd.totalReturnPct)} 모두에 못 미칩니다.`
+      `봇 경고: 봇 ${fmtPct(bot.totalReturnPct)}가 KODEX 200 ${fmtPct(kodex.totalReturnPct)}과 CD금리 ${fmtPct(cd.totalReturnPct)} 모두에 잡음 범위(${band.toFixed(1)}%p) 이상 못 미칩니다.`
+    );
+  } else if (bot.totalReturnPct < kodex.totalReturnPct && bot.totalReturnPct < cd.totalReturnPct) {
+    lines.push(
+      `참고: 봇 ${fmtPct(bot.totalReturnPct)}가 KODEX 200·CD금리보다 낮지만 잡음 범위(${band.toFixed(1)}%p) 안이라 우연과 구분되지 않습니다.`
     );
   }
-  if (!lines.length) lines.push("기준을 모두 넘은 후보가 없습니다 — 현재 봇을 유지합니다.");
+  for (const c of withinNoise) {
+    lines.push(
+      `참고: ${c.label} ${fmtPct(c.totalReturnPct)}가 앞섰지만 잡음 범위(${band.toFixed(1)}%p) 안이라 우연과 구분되지 않습니다 — 후보 아님.`
+    );
+  }
+  if (status === "hold") lines.push("기준을 모두 넘은 후보가 없습니다 — 현재 봇을 유지합니다.");
   return { status, measuredDays, lines, candidates: candidates.map((c) => c.name) };
 }
 
