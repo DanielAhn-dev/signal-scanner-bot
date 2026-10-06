@@ -83,6 +83,7 @@ import { fetchBenchmarkComparison, formatBenchmarkLine } from "./virtualAutoTrad
 import { fetchHeavyNetSellingCodes } from "./investorFlowFilter";
 import { fetchWeightCautions, type WeightCautionResult } from "./weightCautionSignal";
 import { entryGuardLabel, fetchChaseEntries, type ChaseEntryResult } from "./chaseEntrySignal";
+import { fetchQualityMetrics, rankQualityPreference, type QualityMetrics } from "./qualityPreferenceSignal";
 import { fetchFundamentalGateResults, type FundamentalGateResult } from "./fundamentalQualityGate";
 import {
   GATE_CORE_STRATEGY,
@@ -3073,6 +3074,15 @@ async function selectMondayCandidates(payload: {
       () => new Map<string, ChaseEntryResult>()
     ),
   ]);
+  // 선호 점수(저변동·52주 고가 근접) — 제외가 아니라 정렬 가산점(-3~+3). 근거·한계는 qualityPreferenceSignal.ts
+  const qualityMetrics = await fetchQualityMetrics(payload.supabase, weightCautionCodes, toKstDateKey()).catch(
+    () => new Map<string, QualityMetrics>()
+  );
+  const qualityPreference = rankQualityPreference(qualityMetrics);
+  const preferenceRows = scoredRows.map((row) => {
+    const pref = qualityPreference.get(row.code);
+    return pref ? { ...row, rankBoost: Number((toNumber(row.rankBoost, 0) + pref.boost).toFixed(3)) } : row;
+  });
   const chaseCodes = [...chaseEntries.keys()];
   const overheatedCodes = [...weightCautions.entries()]
     .filter(([, caution]) => caution.level !== "none")
@@ -3095,7 +3105,7 @@ async function selectMondayCandidates(payload: {
   ]);
 
   const selection = pickAutoTradeCandidates({
-    rows: scoredRows,
+    rows: preferenceRows,
     preferredMinBuyScore: qualityAdjustedMinBuyScore,
     limit: qualityAdjustedLimit,
     heldCodes: finalHeldCodes,
@@ -3132,7 +3142,7 @@ async function selectMondayCandidates(payload: {
             discoveryProfile === "BLEND"
               ? ` · 하이라이트 ${highlightCodes.size} · 눌림목 ${pullbackCandidateCodes?.size ?? 0} · 멀티배거 ${multibaggerCodes?.size ?? 0} · 백테스트 ${backtestEdgeCodes?.size ?? 0}`
               : ""
-          } · 데이터품질 ${dataQuality.band.toUpperCase()}(${dataQuality.qualityScore}) · ${dataQuality.note} · 교집합(2+) ${overlap2Count}종목 · 교집합(3+) ${overlap3Count}종목 · 오늘매수강신호 ${strongTodayBuyCount}종목 · 즉시제외 ${immediateExcludeCount}종목${cooldownCodes.size > 0 ? ` · 스탑로스 쿨다운 ${cooldownCodes.size}종목 제외` : ""}${heavyNetSelling.size > 0 ? ` · 수급이탈 ${heavyNetSelling.size}종목 제외` : ""}${fundamentalFailCodes.length > 0 ? ` · 실적(적자·영업이익 감소) ${fundamentalFailCodes.length}종목 제외` : ""}${overheatedCodes.length > 0 ? ` · 과열·고점 변동성 ${overheatedCodes.length}종목 제외` : ""}${chaseCodes.length > 0 ? ` · 급등 추격·윗꼬리·한 달 급락 ${chaseCodes.length}종목 제외` : ""} · ${formatDisclosureFilterNote(disclosureFilter)}`,
+          } · 데이터품질 ${dataQuality.band.toUpperCase()}(${dataQuality.qualityScore}) · ${dataQuality.note} · 교집합(2+) ${overlap2Count}종목 · 교집합(3+) ${overlap3Count}종목 · 오늘매수강신호 ${strongTodayBuyCount}종목 · 즉시제외 ${immediateExcludeCount}종목${cooldownCodes.size > 0 ? ` · 스탑로스 쿨다운 ${cooldownCodes.size}종목 제외` : ""}${heavyNetSelling.size > 0 ? ` · 수급이탈 ${heavyNetSelling.size}종목 제외` : ""}${fundamentalFailCodes.length > 0 ? ` · 실적(적자·영업이익 감소) ${fundamentalFailCodes.length}종목 제외` : ""}${overheatedCodes.length > 0 ? ` · 과열·고점 변동성 ${overheatedCodes.length}종목 제외` : ""}${chaseCodes.length > 0 ? ` · 급등 추격·윗꼬리·한 달 급락 ${chaseCodes.length}종목 제외` : ""}${qualityPreference.size > 0 ? ` · 선호점수 가산 ${qualityPreference.size}종목` : ""} · ${formatDisclosureFilterNote(disclosureFilter)}`,
   };
 }
 
