@@ -10,7 +10,7 @@ import '../accumulate/accumulate.css'
 import './money-flow.css'
 
 type Entry = { id: string; mine?: boolean; date: string; amount: number; memo: string; categoryId: string; cut: CutLevel | null; mustPart: number | null; payment: Payment }
-type Draft = { key: string; amount: number; memo: string; categoryId: string; autoCategoryId: string; known: boolean; payment: Payment }
+type Draft = { key: string; date: string; amountGuessed: boolean; amount: number; memo: string; categoryId: string; autoCategoryId: string; known: boolean; payment: Payment }
 type Tab = 'record' | 'month'
 
 const krw = (value: number) => `${Math.round(value).toLocaleString('ko-KR')}원`
@@ -90,32 +90,35 @@ export default function MoneyFlowPage() {
   const suggestions = suggestCategories(entries.filter((e) => e.mine !== false).slice(0, 60).map((e) => e.categoryId))
 
   const readInput = () => {
-    const { parsed, failed: bad } = parseQuickLines(text)
+    const { parsed, failed: bad } = parseQuickLines(text, today)
     setFailed(bad)
     setNotice('')
     setDrafts(parsed.map((p, i) => {
       const result = classifyMemo(p.memo, rules)
-      return { key: `${Date.now()}-${i}`, amount: p.amount, memo: p.memo, categoryId: result.categoryId, autoCategoryId: result.categoryId, known: result.source !== 'none', payment: 'cash' }
+      // 줄 맨 앞에 날짜(261001 등)가 있으면 그 날짜, 없으면 아래 날짜 칸
+      return { key: `${Date.now()}-${i}`, date: p.date ?? date, amountGuessed: p.amountGuessed, amount: p.amount, memo: p.memo, categoryId: result.categoryId, autoCategoryId: result.categoryId, known: result.source !== 'none', payment: 'cash' }
     }))
   }
   const updateDraft = (key: string, patch: Partial<Draft>) => setDrafts((list) => list.map((d) => d.key === key ? { ...d, ...patch } : d))
 
   const saveDrafts = async () => {
     if (drafts.length === 0 || saving) return
-    if (date > today) { setNotice('오늘 이후 날짜는 기록할 수 없습니다.'); return }
+    if (drafts.some((d) => !d.date || d.date > today)) { setNotice('날짜가 비었거나 오늘 이후인 줄이 있습니다.'); return }
+    if (drafts.some((d) => !Number.isSafeInteger(d.amount) || d.amount < 1)) { setNotice('금액이 비어 있는 줄이 있습니다.'); return }
     setSaving(true)
     try {
       const body = {
         action: 'add-entries',
         // 자동 분류를 고쳤거나, 모르던 메모를 직접 고른 경우만 기억한다
-        entries: drafts.map((d) => ({ date, amount: d.amount, memo: d.memo, categoryId: d.categoryId, payment: d.payment, learn: d.memo !== '' && (!d.known || d.categoryId !== d.autoCategoryId) })),
+        entries: drafts.map((d) => ({ date: d.date, amount: d.amount, memo: d.memo, categoryId: d.categoryId, payment: d.payment, learn: d.memo !== '' && (!d.known || d.categoryId !== d.autoCategoryId) })),
       }
       await apiFetch('/api/ui/money-flow', { method: 'POST', body: JSON.stringify(body), cacheMs: 0 })
       setNotice(`${drafts.length}건 기록했습니다.`)
       setDrafts([])
       setText('')
       setFailed([])
-      if (!date.startsWith(month)) setMonth(date.slice(0, 7))
+      const latest = drafts.map((d) => d.date).sort().pop()!
+      if (!latest.startsWith(month)) setMonth(latest.slice(0, 7))
       else await load()
     } catch (error) {
       setNotice(`저장 실패: ${error instanceof Error ? error.message : String(error)}`)
@@ -179,13 +182,13 @@ export default function MoneyFlowPage() {
             <label className="acc-field">
               <span>무엇을 얼마에 (여러 줄 붙여넣기 가능)</span>
               <textarea
-                className="mf-input" rows={2} value={text} placeholder={'냉동피자 4판 15170\n배민 치킨 2만원'}
+                className="mf-input" rows={2} value={text} placeholder={'261001 풀무원 노엣지피자 15170원\n배민 치킨 2만원'}
                 onChange={(event) => setText(event.target.value)}
                 onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing && !text.includes('\n')) { event.preventDefault(); readInput() } }}
               />
             </label>
             <div className="mf-row">
-              <label className="acc-field mf-date"><span>날짜</span><input type="date" value={date} max={today} onChange={(event) => setDate(event.target.value)} /></label>
+              <label className="acc-field mf-date"><span>날짜 (줄 앞에 날짜가 없을 때)</span><input type="date" value={date} max={today} onChange={(event) => setDate(event.target.value)} /></label>
               <button type="button" className="acc-primary" onClick={readInput} disabled={!text.trim()}>읽기</button>
             </div>
             {failed.length > 0 && <p className="acc-warn">금액을 못 찾은 줄: {failed.join(' / ')}. 금액을 숫자로 적어 주세요(예: 15170, 1.5만원).</p>}
@@ -194,7 +197,12 @@ export default function MoneyFlowPage() {
               <div className="mf-drafts" aria-label="저장 전 확인">
                 {drafts.map((d) => (
                   <div key={d.key} className="mf-draft">
-                    <div className="mf-draft-head"><strong>{d.memo || '메모 없음'}</strong><span>{krw(d.amount)}</span></div>
+                    <div className="mf-draft-head"><strong>{d.memo || '메모 없음'}</strong></div>
+                    <div className="mf-draft-fields">
+                      <label><span>날짜</span><input type="date" aria-label={`${d.memo || '메모 없음'} 날짜`} value={d.date} max={today} onChange={(event) => updateDraft(d.key, { date: event.target.value })} /></label>
+                      <label className={d.amountGuessed ? 'is-guessed' : ''}><span>{d.amountGuessed ? '금액 확인' : '금액'}</span><input type="number" inputMode="numeric" min="1" aria-label={`${d.memo || '메모 없음'} 금액`} value={d.amount || ''} onChange={(event) => updateDraft(d.key, { amount: Math.round(Number(event.target.value) || 0), amountGuessed: false })} /></label>
+                    </div>
+                    {d.amountGuessed && <p className="acc-warn mf-cut">"원"이 없고 숫자가 여러 개라 가장 큰 수를 금액으로 골랐습니다. 맞는지 확인해 주세요. 금액 뒤에 "원"을 붙이면 헷갈리지 않습니다.</p>}
                     {!d.known && (
                       <div className="mf-chips" role="group" aria-label="분류 고르기">
                         <span className="acc-note">어디에 넣을까요?</span>

@@ -3,7 +3,7 @@ import { test } from 'node:test'
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import {
   FLOW_CATEGORIES, categoryById, classifyMemo, compareSummaries, evaluateFlowCheck, learnKeyword, parseAmountToken,
-  parseQuickLine, parseQuickLines, splitByCut, suggestCategories, summarizeItems, toSeedExpenses,
+  parseLeadingDate, parseQuickLine, parseQuickLines, splitByCut, suggestCategories, summarizeItems, toSeedExpenses,
 } from '../src/lib/moneyFlow'
 import handler, { normalizeFlowCheck, normalizeFlowEntry } from '../handlers/ui/money-flow'
 
@@ -30,15 +30,57 @@ test('금액 토큰: 원·만·천·쉼표·₩를 읽고 0·음수·소수 원�
   assert.equal(parseAmountToken('12,34'), null)
 })
 
+const TODAY = '2026-10-06'
+
 test('한 줄 입력: 수량·용량·모델명 숫자는 금액으로 읽지 않는다', () => {
-  assert.deepEqual(parseQuickLine('냉동피자 4판 15170'), { amount: 15170, memo: '냉동피자 4판' })
-  assert.deepEqual(parseQuickLine('곰곰 신선한 1A 우유, 900ml, 2개 3690'), { amount: 3690, memo: '곰곰 신선한 1A 우유, 900ml, 2개' })
-  assert.deepEqual(parseQuickLine('카스 디지털 체중계 X15 21500'), { amount: 21500, memo: '카스 디지털 체중계 X15' })
+  assert.deepEqual(parseQuickLine('냉동피자 4판 15170', TODAY), { amount: 15170, memo: '냉동피자 4판', date: undefined, amountGuessed: false })
+  assert.deepEqual(parseQuickLine('곰곰 신선한 1A 우유, 900ml, 2개 3690', TODAY), { amount: 3690, memo: '곰곰 신선한 1A 우유, 900ml, 2개', date: undefined, amountGuessed: false })
+  assert.deepEqual(parseQuickLine('카스 디지털 체중계 X15 21500', TODAY), { amount: 21500, memo: '카스 디지털 체중계 X15', date: undefined, amountGuessed: false })
   // 단위가 붙은 금액은 앞에 있어도 이긴다
-  assert.deepEqual(parseQuickLine('1.2만원 배민 치킨 2'), { amount: 12000, memo: '배민 치킨 2' })
-  assert.deepEqual(parseQuickLine('5000'), { amount: 5000, memo: '' })
-  assert.equal(parseQuickLine('우유 900ml'), null)
-  assert.equal(parseQuickLine('   '), null)
+  assert.equal(parseQuickLine('1.2만원 배민 치킨 2', TODAY)?.amount, 12000)
+  assert.deepEqual(parseQuickLine('5000', TODAY), { amount: 5000, memo: '', date: undefined, amountGuessed: false })
+  assert.equal(parseQuickLine('우유 900ml', TODAY), null)
+  assert.equal(parseQuickLine('   ', TODAY), null)
+})
+
+test('원 표시 없이 맨숫자가 여럿이면 가장 큰 값을 금액으로 추정하고 표시한다', () => {
+  assert.deepEqual(parseQuickLine('21500 우유 2', TODAY), { amount: 21500, memo: '우유 2', date: undefined, amountGuessed: true })
+  assert.equal(parseQuickLine('냉동피자 4 15170', TODAY)?.amountGuessed, true)
+})
+
+test('사용자가 실제로 붙여넣는 형식: 맨 앞 날짜(YYMMDD) + 상품명 + 금액원', () => {
+  const { parsed, failed } = parseQuickLines([
+    '261001 카스 디지털 체중계 X15 21500원',
+    '261001 풀무원 노엣지피자 코리안 BBQ 15170원',
+    '261001 곰곰 신선한 1A 우유, 900ml, 2개 3690원',
+    '261001 콘칲 크라운 C콘칲 군옥수수맛, 70g, 1개 1290원',
+  ].join('\n'), TODAY)
+  assert.deepEqual(failed, [])
+  assert.deepEqual(parsed.map((p) => [p.date, p.amount, p.memo, p.amountGuessed]), [
+    ['2026-10-01', 21500, '카스 디지털 체중계 X15', false],
+    ['2026-10-01', 15170, '풀무원 노엣지피자 코리안 BBQ', false],
+    ['2026-10-01', 3690, '곰곰 신선한 1A 우유, 900ml, 2개', false],
+    ['2026-10-01', 1290, '콘칲 크라운 C콘칲 군옥수수맛, 70g, 1개', false],
+  ])
+  // 피자는 쓰임새가 갈려 사전에 없다 → 한 번 고르면 다음부터 기억
+  assert.deepEqual(parsed.map((p) => classifyMemo(p.memo).categoryId), ['gadget', 'etc', 'grocery_basic', 'grocery_snack'])
+  assert.equal(classifyMemo(parsed[1].memo).source, 'none')
+})
+
+test('맨 앞 날짜 형식들, 미래·없는 날짜는 날짜로 보지 않는다', () => {
+  assert.equal(parseLeadingDate('261001', TODAY), '2026-10-01')
+  assert.equal(parseLeadingDate('20261001', TODAY), '2026-10-01')
+  assert.equal(parseLeadingDate('2026-10-01', TODAY), '2026-10-01')
+  assert.equal(parseLeadingDate('26.10.1', TODAY), '2026-10-01')
+  assert.equal(parseLeadingDate('10/1', TODAY), '2026-10-01')
+  // 월/일만 썼는데 올해로는 미래면 작년
+  assert.equal(parseLeadingDate('12/30', TODAY), '2025-12-30')
+  assert.equal(parseLeadingDate('261231', TODAY), null)
+  assert.equal(parseLeadingDate('260231', TODAY), null)
+  assert.equal(parseLeadingDate('150000', TODAY), null)
+  assert.equal(parseLeadingDate('21500', TODAY), null)
+  // 날짜만 있는 줄은 날짜가 아니라 금액으로 본다
+  assert.equal(parseQuickLine('261001', TODAY)?.date, undefined)
 })
 
 test('여러 줄 붙여넣기: 금액 없는 줄은 failed로 돌려준다', () => {

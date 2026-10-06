@@ -83,7 +83,7 @@ const DICTIONARY: Record<string, string[]> = {
   dues: ["회비", "기부", "후원"],
   grocery_basic: ["우유", "쌀", "계란", "달걀", "두부", "채소", "야채", "과일", "사과", "바나나", "고기", "돼지고기", "소고기", "닭가슴살", "김치", "식빵", "이마트", "홈플러스", "롯데마트", "농협", "마트"],
   grocery_ready: ["냉동", "만두", "라면", "밀키트", "즉석", "햇반", "볶음밥", "냉동피자"],
-  grocery_snack: ["과자", "콘칩", "초콜릿", "아이스크림", "젤리", "음료", "콜라", "사이다", "탄산"],
+  grocery_snack: ["과자", "콘칩", "콘칲", "새우깡", "감자칩", "초콜릿", "아이스크림", "젤리", "음료", "콜라", "사이다", "탄산"],
   grocery_drink: ["생수", "삼다수", "원두", "캡슐", "커피믹스", "커피"],
   eat_out: ["외식", "식당", "회식"],
   delivery: ["배민", "배달의민족", "쿠팡이츠", "요기요", "배달"],
@@ -189,33 +189,72 @@ export function parseAmountToken(token: string): number | null {
   return value > 0 && value <= MAX_AMOUNT ? value : null;
 }
 
-export type ParsedQuick = { amount: number; memo: string };
+/** amountGuessed: "원" 같은 표시 없이 맨숫자가 여러 개라 금액을 추정했다 → 화면이 "금액 확인"을 띄운다 */
+export type ParsedQuick = { amount: number; memo: string; date?: string; amountGuessed: boolean };
+
+const pad2 = (n: number) => String(n).padStart(2, "0");
+const validYmd = (y: number, m: number, d: number) => {
+  if (m < 1 || m > 12 || d < 1) return null;
+  const date = new Date(Date.UTC(y, m - 1, d));
+  return date.getUTCMonth() === m - 1 && date.getUTCDate() === d ? `${y}-${pad2(m)}-${pad2(d)}` : null;
+};
 
 /**
- * 한 줄 입력 → 금액 + 메모. 금액은 "원·만·천·₩·쉼표"가 붙은 토큰을 우선, 없으면 맨 뒤의 맨숫자 토큰.
- * "냉동피자 4판 15170"의 4판, "우유 900ml 2개"의 900ml·2개, "체중계 X15"의 X15는 단위·글자가 붙어 금액이 아니다.
+ * 줄 맨 앞의 날짜 토큰. 261001 · 20261001 · 2026-10-01 · 26.10.01 · 10/1 · 10.1
+ * 오늘 이후가 되는 값은 날짜로 보지 않는다(월/일만 쓴 경우는 작년으로 본다: 1월에 12/30 입력).
  */
-export function parseQuickLine(line: string): ParsedQuick | null {
-  const tokens = line.trim().split(/\s+/).filter(Boolean);
+export function parseLeadingDate(token: string, today: string): string | null {
+  const year = Number(today.slice(0, 4));
+  let m: RegExpMatchArray | null;
+  let date: string | null = null;
+  if ((m = token.match(/^(\d{2})(\d{2})(\d{2})$/))) date = validYmd(2000 + Number(m[1]), Number(m[2]), Number(m[3]));
+  else if ((m = token.match(/^(20\d{2})(\d{2})(\d{2})$/))) date = validYmd(Number(m[1]), Number(m[2]), Number(m[3]));
+  else if ((m = token.match(/^(20\d{2}|\d{2})[-./](\d{1,2})[-./](\d{1,2})\.?$/))) date = validYmd(Number(m[1]) < 100 ? 2000 + Number(m[1]) : Number(m[1]), Number(m[2]), Number(m[3]));
+  else if ((m = token.match(/^(\d{1,2})[/.](\d{1,2})\.?$/))) {
+    date = validYmd(year, Number(m[1]), Number(m[2]));
+    if (date && date > today) date = validYmd(year - 1, Number(m[1]), Number(m[2]));
+    return date;
+  }
+  return date && date <= today ? date : null;
+}
+
+/**
+ * 한 줄 입력 → (날짜) + 금액 + 메모. 상품명을 그대로 붙여 넣어도 되게 한다.
+ *  - 맨 앞 토큰이 날짜 형식이면 그 줄의 날짜.
+ *  - 금액은 "원·만·천·₩·쉼표"가 붙은 토큰 중 맨 뒤. 없으면 맨숫자 중 가장 큰 값(여러 개면 추정 표시).
+ *  - "4판", "900ml,", "2개", "X15", "70g,"처럼 글자가 붙은 숫자는 금액이 아니다.
+ */
+export function parseQuickLine(line: string, today = new Date().toLocaleDateString("sv-SE", { timeZone: "Asia/Seoul" })): ParsedQuick | null {
+  let tokens = line.trim().split(/\s+/).filter(Boolean);
   if (tokens.length === 0) return null;
+  let date: string | undefined;
+  if (tokens.length > 1) {
+    const leading = parseLeadingDate(tokens[0], today);
+    if (leading) { date = leading; tokens = tokens.slice(1); }
+  }
   const marked = (token: string) => /^₩|원$|만|천|,/.test(token);
   let index = -1;
+  let amountGuessed = false;
   for (let i = tokens.length - 1; i >= 0; i--) if (marked(tokens[i]) && parseAmountToken(tokens[i]) !== null) { index = i; break; }
-  if (index < 0) for (let i = tokens.length - 1; i >= 0; i--) if (/^\d+$/.test(tokens[i]) && parseAmountToken(tokens[i]) !== null) { index = i; break; }
-  if (index < 0) return null;
+  if (index < 0) {
+    const bare = tokens.map((t, i) => [t, i] as const).filter(([t]) => /^\d+$/.test(t) && parseAmountToken(t) !== null);
+    if (bare.length === 0) return null;
+    index = bare.reduce((best, cur) => (Number(cur[0]) >= Number(best[0]) ? cur : best))[1];
+    amountGuessed = bare.length > 1;
+  }
   const amount = parseAmountToken(tokens[index])!;
-  const memo = tokens.filter((_, i) => i !== index).join(" ").slice(0, 100);
-  return { amount, memo };
+  const memo = tokens.filter((_, i) => i !== index).join(" ").replace(/[,\s]+$/, "").slice(0, 100);
+  return { amount, memo, date, amountGuessed };
 }
 
 /** 여러 줄 붙여넣기. 금액을 못 읽은 줄은 버리지 않고 failed로 돌려줘 화면에서 고치게 한다. */
-export function parseQuickLines(text: string): { parsed: ParsedQuick[]; failed: string[] } {
+export function parseQuickLines(text: string, today?: string): { parsed: ParsedQuick[]; failed: string[] } {
   const parsed: ParsedQuick[] = [];
   const failed: string[] = [];
   for (const raw of text.split(/\r?\n/)) {
     const line = raw.trim();
     if (!line) continue;
-    const result = parseQuickLine(line);
+    const result = parseQuickLine(line, today);
     if (result) parsed.push(result);
     else failed.push(line);
   }
