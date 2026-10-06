@@ -1496,6 +1496,8 @@ function buildAutoTradeExecutionAlert(input: {
   runType: RunType;
   action: AutoTradeActionSummary;
   isShadow?: boolean;
+  /** 운영 점검용 모의 실행(dryRun, 섀도우 아님) — 실제 체결 알림과 구분되게 표시한다 */
+  isTest?: boolean;
 }): string | null {
   const executedCount = input.action.buys + input.action.sells;
   if (executedCount <= 0) return null;
@@ -1507,21 +1509,25 @@ function buildAutoTradeExecutionAlert(input: {
         ? "일일 대응"
         : "수동 실행";
 
-  const shadowPrefix = input.isShadow ? "[섀도우] " : "";
+  const shadowPrefix = input.isShadow ? "[섀도우] " : input.isTest ? "[테스트·실제 체결 없음] " : "";
   const priorityLine = resolveExecutionPriorityLine(input.action);
   const nextCheckpointLine = resolveNextAutoTradeCheckpoint();
 
   const lines = [
-    `${shadowPrefix}[자동사이클 체결 알림] ${runLabel}`,
-    `매수 ${input.action.buys}건 · 매도 ${input.action.sells}건 · 미체결 ${input.action.skipped}건`,
+    `${shadowPrefix}[자동사이클 ${input.isTest ? "모의 실행" : "체결"} 알림] ${runLabel}`,
+    `${input.isTest ? "매수안" : "매수"} ${input.action.buys}건 · ${input.isTest ? "매도안" : "매도"} ${input.action.sells}건 · 미체결 ${input.action.skipped}건`,
     priorityLine,
     nextCheckpointLine,
     ...pickExecutionLines(input.action.notes || []).map((line) => `- ${line}`),
-    input.isShadow ? "※ 섀도우 모드: 실반영 없음. 실전 전환은 /섀도우 off" : "다음 점검: /보유 · /보유대응",
+    input.isShadow
+      ? "※ 섀도우 모드: 실반영 없음. 실전 전환은 /섀도우 off"
+      : input.isTest
+        ? "※ 운영 점검용 모의 실행: 계좌·보유에 반영되지 않았습니다. 따라 사지 마세요 — 실제 매매는 정기 실행 알림으로 따로 옵니다."
+        : "다음 점검: /보유 · /보유대응",
   ];
   // 웹 주소가 설정돼 있으면 따라 한 체결을 바로 기록할 수 있게 링크를 붙인다 (텔레그램 버튼은 콜백만 지원)
   const webBase = String(process.env.WEB_APP_URL || "").trim().replace(/\/+$/, "");
-  if (webBase && !input.isShadow) lines.push(`따라 체결했다면 기록: ${webBase}/follow`);
+  if (webBase && !input.isShadow && !input.isTest) lines.push(`따라 체결했다면 기록: ${webBase}/follow`);
 
   return lines.join("\n");
 }
@@ -6422,6 +6428,8 @@ async function applyStockDividendsIfDue(supabase: SupabaseClientAny, chatId: num
 
 const CHAT_RUN_LOCK_STALE_MS = 10 * 60 * 1000;
 
+const TEST_RUN_NOTE = "[모의 실행] 실제 체결 없음 — 매수·매도 건수는 계획안";
+
 /**
  * 계정 단위 실행은 수동 실행·텔레그램 명령·브리핑 크론이 함께 쓴다.
  * 겹치면 월 입금·분배금(읽고→수정)과 매수가 두 번 반영될 수 있어 계정별로 한 번에 하나만 돌린다.
@@ -6648,10 +6656,13 @@ async function runVirtualAutoTradingForChatUnlocked(input: {
   if (prefs.virtual_shadow_mode) {
     action.notes.unshift("[SHADOW] 실반영 없이 신호 동시 검증 모드");
   }
+  // 모의 실행은 실제 체결이 없으므로 실행 기록에 '성공'으로 남기지 않는다 (매수·매도 건수는 계획안)
+  const isTestRun = dryRun && !prefs.virtual_shadow_mode;
+  if (isTestRun) action.notes.unshift(TEST_RUN_NOTE);
 
   const status = action.errors > 0
     ? "FAILED"
-    : action.buys + action.sells > 0
+    : action.buys + action.sells > 0 && !isTestRun
       ? "SUCCESS"
       : "SKIPPED";
 
@@ -6988,10 +6999,13 @@ export async function runVirtualAutoTradingCycle(input?: {
       if (prefs.virtual_shadow_mode) {
         actionSummary.notes.unshift("[SHADOW] 실반영 없이 신호 동시 검증");
       }
+      // 모의 실행은 실제 체결이 없으므로 실행 기록에 '성공'으로 남기지 않는다 (매수·매도 건수는 계획안)
+      const isTestRun = userDryRun && !prefs.virtual_shadow_mode;
+      if (isTestRun) actionSummary.notes.unshift(TEST_RUN_NOTE);
 
       const status = actionSummary.errors > 0
         ? "FAILED"
-        : actionSummary.buys + actionSummary.sells > 0
+        : actionSummary.buys + actionSummary.sells > 0 && !isTestRun
           ? "SUCCESS"
           : "SKIPPED";
 
@@ -7079,6 +7093,7 @@ export async function runVirtualAutoTradingCycle(input?: {
           runType,
           action: actionSummary,
           isShadow: isShadowRun,
+          isTest: isTestRun,
         });
         if (executionAlert) {
           const holdingSnippet = await buildRealHoldingResponseSnippet({
@@ -7106,7 +7121,8 @@ export async function runVirtualAutoTradingCycle(input?: {
             }),
             isShadow: isShadowRun,
           });
-          if (mirrorSheet) {
+          // 모의 실행의 주문서는 실제로 따라 살 위험만 있어 보내지 않는다
+          if (mirrorSheet && !isTestRun) {
             await sendMessage(setting.chat_id, mirrorSheet).catch((err: unknown) => {
               console.error("[autoTrade] mirror order sheet send failed", err);
             });
