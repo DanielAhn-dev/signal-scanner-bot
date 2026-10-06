@@ -13,11 +13,11 @@
  *  └─ 상태바 ───────────────────────────────────────────────┘
  */
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react'
-import { Save, Undo2, Redo2, Star, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, Minus, Plus, LayoutDashboard, ScanSearch, BarChart2, FlaskConical, BriefcaseBusiness, FileText, Globe2, Newspaper, Bell, User, Settings, Database, Shield, ShieldCheck, Wrench, Zap, History, Search, PieChart, Activity, Target, Eye, List, Maximize2, Minimize2, X } from 'lucide-react'
+import { Save, Undo2, Redo2, Star, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, Minus, Plus, LayoutDashboard, ScanSearch, BarChart2, FlaskConical, BriefcaseBusiness, FileText, Globe2, Newspaper, Bell, User, Settings, Database, Shield, ShieldCheck, Wrench, Zap, History, Search, PieChart, Activity, Target, Eye, List, PiggyBank, Sprout, Flag, ClipboardCheck, Blend, Baby, Copy, RotateCcw, Scale, Rocket, LayoutGrid, Maximize2, Minimize2, X } from 'lucide-react'
 import { useAuthStore } from '../stores/authStore'
 import { useProfileStore } from '../stores/profileStore'
 import { useDetailed, useViewModeStore } from '../stores/viewModeStore'
-import { PRIMARY_NAV_ITEMS, CONTROL_NAV_ITEM, TOOL_NAV_GROUPS, ALL_NAV_ITEMS, filterNavItems, filterNavGroups, plainNavItems } from '../navigation'
+import { CONTROL_NAV_ITEM, ALL_NAV_ITEMS, SHEET_NAV_KEYS, filterNavItems, menuSectionsFor, plainNavItems, type MenuSection } from '../navigation'
 import ExcelContentArea from './ExcelContentArea'
 import BotUsageBanner from './BotUsageBanner'
 import { useVisualViewportVars } from '../hooks/useVisualViewportVars'
@@ -66,6 +66,16 @@ const NAV_ICON_COMPONENTS: Record<string, React.ComponentType<{ size?: number | 
   'settings': Settings,
   'profile': User,
   'admin-users': User,
+  'accumulate': PiggyBank,
+  'seed-builder': Sprout,
+  'goal-tracker': Flag,
+  'plan': ClipboardCheck,
+  'mix': Blend,
+  'child': Baby,
+  'follow': Copy,
+  'choices': RotateCcw,
+  'income-guide': Scale,
+  'start': Rocket,
 }
 
 function navIcon(key: string, size: number): React.ReactNode {
@@ -76,45 +86,32 @@ function navIcon(key: string, size: number): React.ReactNode {
 // ── 리본 정의 ────────────────────────────────────────────────────
 // 더미(준비 중) 버튼 없이 실제 동작하는 액션만 노출한다.
 
-const RIBBON_TABS = [
-  { key: 'home',    label: '홈' },
-  { key: 'control', label: '관제' },
-  { key: 'tools',   label: '도구' },
-] as const
-type RibbonTabKey = typeof RIBBON_TABS[number]['key']
+// 탭·그룹은 navigation.ts의 MENU_SECTIONS에서 나온다. 관제는 관리자 전용 탭으로 따로 둔다.
 
+type RibbonTabKey = string
 type RibbonBtn = { key: string; label: string; icon: React.ReactNode; route?: string }
 type RibbonGroup = { label: string; buttons: RibbonBtn[] }
 
-function getRibbonGroups(tab: RibbonTabKey, isAdmin: boolean): RibbonGroup[] {
-  switch (tab) {
-    case 'home': return [
-      { label: isAdmin ? '핵심 플로우' : '바로가기', buttons: (isAdmin ? PRIMARY_NAV_ITEMS : plainNavItems(filterNavItems(PRIMARY_NAV_ITEMS, false))).map(item => ({
-        key: item.key, label: item.label, icon: navIcon(item.key, 20), route: item.key,
-      }))},
-      ...(isAdmin ? [{ label: '관제', buttons: [
-        { key: 'control', label: '관제', icon: <Shield size={20}/>, route: 'control' },
-      ]}] : []),
-    ]
-    case 'control': return [
-      { label: '관제 바로가기', buttons: [
-        { key: 'control-audit',       label: '검산',     icon: <ShieldCheck size={20}/>, route: 'control?tab=audit' },
-        { key: 'control-operations',  label: '운영',     icon: <Activity size={20}/>,    route: 'control?tab=operations' },
-        { key: 'control-data',        label: '데이터',   icon: <Database size={20}/>,    route: 'control?tab=data' },
-        { key: 'control-maintenance', label: '유지보수', icon: <Wrench size={20}/>,      route: 'control?tab=maintenance' },
-      ]},
-    ]
-    case 'tools': return filterNavGroups(TOOL_NAV_GROUPS, isAdmin).map(group => ({
-      label: group.category,
-      buttons: group.items
-        .map(item => ({ key: item.key, label: item.label, icon: navIcon(item.key, 20), route: item.key })),
-    }))
-    default: return []
-  }
+const CONTROL_RIBBON_GROUPS: RibbonGroup[] = [
+  { label: '관제 바로가기', buttons: [
+    { key: 'control-audit',       label: '검산',     icon: <ShieldCheck size={20}/>, route: 'control?tab=audit' },
+    { key: 'control-operations',  label: '운영',     icon: <Activity size={20}/>,    route: 'control?tab=operations' },
+    { key: 'control-data',        label: '데이터',   icon: <Database size={20}/>,    route: 'control?tab=data' },
+    { key: 'control-maintenance', label: '유지보수', icon: <Wrench size={20}/>,      route: 'control?tab=maintenance' },
+  ]},
+]
+
+function getRibbonGroups(tab: RibbonTabKey, sections: MenuSection[]): RibbonGroup[] {
+  if (tab === 'control') return CONTROL_RIBBON_GROUPS
+  const section = sections.find((s) => s.key === tab) ?? sections[0]
+  return (section?.groups ?? []).map((group) => ({
+    label: group.category,
+    buttons: group.items.map((item) => ({ key: item.key, label: item.label, icon: navIcon(item.key, 20), route: item.key })),
+  }))
 }
 
 // ── 시트 탭 / 메뉴 정의 ───────────────────────────────────────────
-// 시트 탭은 핵심 6개 + 관제만 1차 노출, 나머지는 "도구" 서랍으로.
+// 시트 탭은 매일 여는 화면(SHEET_NAV_KEYS) + 관리자 관제만, 나머지는 리본과 "전체 메뉴" 서랍으로.
 
 const toTab = (item: { key: string; label: string }) => ({
   key: item.key,
@@ -122,10 +119,13 @@ const toTab = (item: { key: string; label: string }) => ({
   icon: navIcon(item.key, 10),
 })
 
-const ADMIN_SHEET_TABS = [...PRIMARY_NAV_ITEMS, CONTROL_NAV_ITEM].map(toTab)
-const USER_SHEET_TABS = plainNavItems(filterNavItems(PRIMARY_NAV_ITEMS, false)).map(toTab)
+const SHEET_NAV_ITEMS = SHEET_NAV_KEYS.map((key) => ALL_NAV_ITEMS.find((item) => item.key === key)!).filter(Boolean)
+const ADMIN_SHEET_TABS = [...SHEET_NAV_ITEMS, CONTROL_NAV_ITEM].map(toTab)
+const USER_SHEET_TABS = filterNavItems(SHEET_NAV_ITEMS, false).map(toTab)
+const ADMIN_SECTIONS = menuSectionsFor(true)
+const USER_SECTIONS = menuSectionsFor(false)
 
-/** 메뉴 검색용 전체 목록 (도구 서랍 포함) */
+/** 메뉴 검색용 전체 목록 (전체 메뉴 서랍 포함) */
 const ADMIN_MENU_TABS = ALL_NAV_ITEMS.map(toTab)
 const USER_MENU_TABS = plainNavItems(filterNavItems(ALL_NAV_ITEMS, false)).map(toTab)
 
@@ -313,14 +313,18 @@ export default function ExcelShell({
   const setViewMode = useViewModeStore(s => s.setMode)
   const SHEET_TABS = isAdmin ? ADMIN_SHEET_TABS : USER_SHEET_TABS
   const MENU_TABS = isAdmin ? ADMIN_MENU_TABS : USER_MENU_TABS
-  const toolGroups = useMemo(() => filterNavGroups(TOOL_NAV_GROUPS, isAdmin), [isAdmin])
-  const ribbonTabs = isAdmin ? RIBBON_TABS : RIBBON_TABS.filter(t => t.key !== 'control')
+  const sections = isAdmin ? ADMIN_SECTIONS : USER_SECTIONS
+  // '파일'은 Excel처럼 탭 줄 맨 앞의 초록 버튼으로 따로 그린다
+  const ribbonTabs = useMemo(() => [
+    ...sections.filter(s => s.key !== 'file').map(s => ({ key: s.key, label: s.label })),
+    ...(isAdmin ? [{ key: 'control', label: '관제' }] : []),
+  ], [sections, isAdmin])
   const activeMenu = MENU_TABS.find(t => t.key === activeRoute)
-  const isToolRouteActive = toolGroups.some(g => g.items.some(item => item.key === activeRoute))
+  const isToolRouteActive = !!activeRoute && !SHEET_TABS.some(t => t.key === activeRoute) && MENU_TABS.some(t => t.key === activeRoute)
   const activeSheetIndex = Math.max(0, SHEET_TABS.findIndex(t => t.key === activeRoute))
   const pageLabel   = activeMenu?.label ?? activeRoute ?? ''
   const nameBox     = activeRoute ? activeRoute.toUpperCase().slice(0, 6) : 'A1'
-  const groups      = getRibbonGroups(ribbonTabs.some(t => t.key === ribbonTab) ? ribbonTab : 'home', isAdmin)
+  const groups      = getRibbonGroups(ribbonTab === 'file' || ribbonTabs.some(t => t.key === ribbonTab) ? ribbonTab : 'home', sections)
   const workbookTitle = useMemo(() => {
     const now = new Date()
     const y = now.getFullYear()
@@ -800,7 +804,12 @@ export default function ExcelShell({
 
       {/* ── 2. 리본 탭 ── */}
       <div className="excel-ribbon-tabs" role="tablist">
-        <button className="excel-ribbon-tab excel-ribbon-tab--file" disabled aria-label="파일 메뉴" title="파일 메뉴는 아직 지원하지 않습니다">
+        <button
+          role="tab"
+          aria-selected={ribbonTab === 'file'}
+          className={`excel-ribbon-tab excel-ribbon-tab--file${ribbonTab === 'file' ? ' excel-ribbon-tab--active' : ''}`}
+          onClick={() => setRibbonTab('file')}
+        >
           파일
         </button>
         {ribbonTabs.map(t => (
@@ -809,7 +818,7 @@ export default function ExcelShell({
             role="tab"
             aria-selected={ribbonTab === t.key}
             className={`excel-ribbon-tab${ribbonTab === t.key ? ' excel-ribbon-tab--active' : ''}`}
-            onClick={() => setRibbonTab(t.key as RibbonTabKey)}
+            onClick={() => setRibbonTab(t.key)}
           >
             {t.label}
           </button>
@@ -910,13 +919,15 @@ export default function ExcelShell({
           <div
             className="excel-tools-drawer"
             role="menu"
-            aria-label="도구 메뉴"
+            aria-label="전체 메뉴"
           >
-            {toolGroups.map(group => {
-              const items = group.items
+            {sections.map(section => {
+              // 시트 탭에 이미 있는 화면은 빼고, 탭(섹션) 단위로 묶어 보여 준다
+              const items = section.groups.flatMap(g => g.items).filter(item => !SHEET_TABS.some(t => t.key === item.key))
+              if (items.length === 0) return null
               return (
-                <div key={group.category} className="excel-tools-drawer__group">
-                  <div className="excel-tools-drawer__label">{group.category}</div>
+                <div key={section.key} className="excel-tools-drawer__group">
+                  <div className="excel-tools-drawer__label">{section.label}</div>
                   <div className="excel-tools-drawer__items">
                     {items.map(item => (
                       <button
@@ -957,7 +968,7 @@ export default function ExcelShell({
             aria-expanded={toolsDrawerOpen}
             onClick={() => setToolsDrawerOpen(prev => !prev)}
           >
-            <Wrench size={10}/><span className="excel-sheet-tab__label">도구</span>{toolsDrawerOpen ? <ChevronDown size={10}/> : <ChevronUp size={10}/>}
+            <LayoutGrid size={10}/><span className="excel-sheet-tab__label">전체 메뉴</span>{toolsDrawerOpen ? <ChevronDown size={10}/> : <ChevronUp size={10}/>}
           </button>
         </div>
         {tabsOverflow.left && (

@@ -6,6 +6,8 @@ export type NavItem = {
 
 export type NavGroup = {
   category: string
+  /** 일반 사용자에게 보일 그룹 이름 */
+  userCategory?: string
   items: NavItem[]
 }
 
@@ -33,72 +35,92 @@ export const FLOW_STEPS: FlowStep[] = [
 
 const flowLabel = (s: FlowStep) => `${s.step} ${s.label}`
 
-/** 1차 노출 — 홈 + 흐름 7단계. 시트 탭과 홈 리본에 그대로 노출 */
-export const PRIMARY_NAV_ITEMS: NavItem[] = [
-  { key: 'dashboard', label: '홈' },
-  ...FLOW_STEPS.map((s) => ({ key: s.key, label: flowLabel(s) })),
-]
-
-export const PRIMARY_NAV_KEYS = PRIMARY_NAV_ITEMS.map((item) => item.key)
-
 /** 관제 — 검산·운영·데이터·유지보수 통합 페이지 */
 export const CONTROL_NAV_ITEM: NavItem = { key: 'control', label: '관제' }
 
-/** 흐름 밖 화면 — "도구" 서랍 */
-export const TOOL_NAV_GROUPS: NavGroup[] = [
+/**
+ * 메뉴 구조 — 리본 탭 하나가 섹션 하나, 리본 그룹이 group 하나다. '도구' 서랍(전체 메뉴)·메뉴 검색도 여기서 나온다.
+ * 2026-09-29 방향 전환(종목 선별 대신 지수 정기 적립·행동 실수 차단) 기준으로, 매일 쓰는 내 돈 화면을 '홈'에 두고
+ * 종목 선별 흐름(1~7)은 관리자가 근거를 따질 때 여는 '종목 연구'로 내렸다.
+ * 일반 사용자는 USER_NAV_KEYS로 걸러지고, 이미 앞 탭에 나온 화면은 다시 보이지 않는다(menuSectionsFor).
+ */
+export type MenuSection = {
+  key: string
+  label: string
+  /** 일반 사용자에게 보일 탭 이름 (걸러진 뒤 남는 화면 성격이 달라질 때) */
+  userLabel?: string
+  groups: NavGroup[]
+}
+
+export const MENU_SECTIONS: MenuSection[] = [
   {
-    category: '보유 / 기록',
-    items: [
-      { key: 'start', label: '시작하기' },
-      { key: 'accumulate', label: '모아가기' },
-      { key: 'mix', label: '섞어보기' },
-      { key: 'plan', label: '계획 점검' },
-      { key: 'child', label: '자녀 계좌' },
-      { key: 'follow', label: '따라 사기' },
-      { key: 'goal-tracker', label: '목표 트래커' },
-      { key: 'choices', label: '내 선택 돌아보기' },
-      { key: 'seed-builder', label: '시드 만들기' },
-      { key: 'income-guide', label: '리밸런싱 가이드' },
-      { key: 'trades', label: '거래기록' },
-      { key: 'watchlist', label: '감시목록' },
-      { key: 'alerts', label: '알림' },
-      { key: 'reports', label: '리포트' },
+    key: 'home',
+    label: '홈',
+    groups: [
+      { category: '오늘', items: [{ key: 'dashboard', label: '홈' }, { key: 'portfolio', label: '포트폴리오' }, { key: 'market', label: '시장' }] },
+      { category: '적립', items: [{ key: 'accumulate', label: '모아가기' }, { key: 'seed-builder', label: '시드 만들기' }, { key: 'child', label: '자녀 계좌' }] },
+      { category: '목표·계획', items: [{ key: 'goal-tracker', label: '목표 트래커' }, { key: 'plan', label: '계획 점검' }, { key: 'mix', label: '섞어보기' }, { key: 'income-guide', label: '리밸런싱 가이드' }] },
     ],
   },
   {
-    category: '후보 더 보기',
-    items: [
-      { key: 'scan', label: '스캔' },
-      { key: 'discovery', label: '발굴' },
-      { key: 'backtest', label: '백테스트' },
+    key: 'review',
+    label: '기록',
+    groups: [
+      { category: '돌아보기', items: [{ key: 'trades', label: '거래기록' }, { key: 'choices', label: '내 선택 돌아보기' }, { key: 'follow', label: '따라 사기' }] },
+      { category: '받아보기', items: [{ key: 'alerts', label: '알림' }, { key: 'reports', label: '리포트' }] },
     ],
   },
   {
-    category: '시장 공부',
-    items: [
-      { key: 'sectors', label: '섹터' },
-      { key: 'news', label: '뉴스' },
-      { key: 'economy', label: '경제지표' },
-      { key: 'feed', label: '피드' },
+    key: 'research',
+    label: '종목 연구',
+    userLabel: '직접 주문',
+    groups: [
+      { category: '봇 판단 흐름', userCategory: '계산·주문 정리', items: FLOW_STEPS.map((s) => ({ key: s.key, label: flowLabel(s) })) },
+      { category: '후보 더 보기', items: [{ key: 'scan', label: '스캔' }, { key: 'discovery', label: '발굴' }, { key: 'backtest', label: '백테스트' }, { key: 'watchlist', label: '감시목록' }] },
     ],
   },
   {
-    category: '설정',
-    items: [
-      { key: 'settings', label: '설정' },
-      { key: 'profile', label: '프로필' },
-      { key: 'admin-users', label: '사용자 관리', adminOnly: true },
+    key: 'learn',
+    label: '시장 공부',
+    groups: [
+      { category: '시장 공부', items: [{ key: 'sectors', label: '섹터' }, { key: 'news', label: '뉴스' }, { key: 'economy', label: '경제지표' }, { key: 'feed', label: '피드' }] },
+    ],
+  },
+  {
+    key: 'file',
+    label: '파일',
+    groups: [
+      { category: '처음 설정', items: [{ key: 'start', label: '처음 설정 다시 하기' }] },
+      { category: '설정', items: [{ key: 'settings', label: '설정' }, { key: 'profile', label: '프로필' }, { key: 'admin-users', label: '사용자 관리', adminOnly: true }] },
     ],
   },
 ]
 
-export const TOOL_NAV_ITEMS: NavItem[] = TOOL_NAV_GROUPS.flatMap((group) => group.items)
+/** 하단 시트 탭 — 매일 여는 화면만. 나머지는 리본·'전체 메뉴'로 연다 */
+export const SHEET_NAV_KEYS: readonly string[] = ['dashboard', 'portfolio', 'accumulate', 'seed-builder', 'goal-tracker', 'market']
 
-/** 검색·전체 메뉴 등에 쓰는 평탄화 목록 (핵심 → 관제 → 도구 순) */
+/** 권한으로 거르고, 일반 사용자는 앞 탭에 이미 나온 화면을 다시 보여 주지 않는다. 빈 그룹·빈 탭은 뺀다 */
+export function menuSectionsFor(isAdmin: boolean): MenuSection[] {
+  const seen = new Set<string>()
+  return MENU_SECTIONS.map((section) => ({
+    ...section,
+    label: isAdmin ? section.label : section.userLabel ?? section.label,
+    groups: filterNavGroups(section.groups, isAdmin)
+      .map((g) => {
+        const items = isAdmin ? g.items : plainNavItems(g.items.filter((i) => !seen.has(i.key)))
+        items.forEach((i) => seen.add(i.key))
+        return { ...g, category: isAdmin ? g.category : g.userCategory ?? g.category, items }
+      })
+      .filter((g) => g.items.length > 0),
+  })).filter((section) => section.groups.length > 0)
+}
+
+/** 검색·전체 메뉴 등에 쓰는 평탄화 목록 (중복 없이, 관제 포함) */
 export const ALL_NAV_ITEMS: NavItem[] = [
-  ...PRIMARY_NAV_ITEMS,
-  CONTROL_NAV_ITEM,
-  ...TOOL_NAV_ITEMS,
+  ...new Map(
+    [...MENU_SECTIONS.flatMap((s) => s.groups.flatMap((g) => g.items)), CONTROL_NAV_ITEM]
+      .map((item) => [item.key, item] as const),
+  ).values(),
 ]
 
 export type NavKey = NavItem['key']
