@@ -263,6 +263,7 @@ export async function fetchMonthRealized(
     .eq("chat_id", chatId)
     .eq("side", "SELL")
     .is("broker_name", null)
+    .is("account_name", null)
     .gte("traded_at", monthStart)
     .limit(2000);
   let swing = 0;

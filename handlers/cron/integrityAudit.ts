@@ -115,8 +115,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             .from("virtual_trades")
             .select("chat_id, code, side, quantity, net_amount")
             .in("chat_id", chatIds)
-            // 현금·수량 원장은 가상매매(종목봇)만 — 실계좌 입력 거래는 가상 현금과 무관하다
+            // 현금·수량 원장은 가상매매(종목봇)만 — 실계좌 입력 거래는 가상 현금과 무관하다.
+            // 계좌명만 있고 증권사가 빈 실계좌 입력도 있어 둘 다 비어야 가상매매다 (보유 쪽 isRealAccount와 같은 기준)
             .is("broker_name", null)
+            .is("account_name", null)
             .order("id")
             .range(from, to),
         { logLabel: "integrityAudit.trades" }
