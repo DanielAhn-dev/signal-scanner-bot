@@ -104,6 +104,10 @@ test('자동 분류: 물건 기준, 긴 단어 우선, 영문 약어는 단어 �
   assert.equal(classifyMemo('맥모닝콤보').categoryId, 'eat_out')
   assert.equal(classifyMemo('교통요금').categoryId, 'transit')
   assert.equal(classifyMemo('햄버거세트 쿠폰').categoryId, 'eat_out')
+  // 무인 아이스크림 가게는 사 먹은 간식, 마트에서 산 아이스크림은 쟁여 둔 과자
+  assert.equal(classifyMemo('아이스크림(무인)').categoryId, 'snack_out')
+  assert.equal(classifyMemo('무인 아이스크림 가게').categoryId, 'snack_out')
+  assert.equal(classifyMemo('아이스크림').categoryId, 'grocery_snack')
   assert.equal(classifyMemo('흑당라떼, 아이스초코').categoryId, 'cafe')
   // "cu"가 다른 영단어 속에 있으면 걸리지 않는다
   assert.equal(classifyMemo('cucumber').source, 'none')
