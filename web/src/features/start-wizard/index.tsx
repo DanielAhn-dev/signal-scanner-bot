@@ -30,11 +30,15 @@ const man = formatKrwMan
 const num = (v: string) => { const n = Number(v.replace(/,/g, '').trim()); return Number.isFinite(n) && n > 0 ? n : 0 }
 const monthKeyKst = () => new Date().toLocaleDateString('sv-SE', { timeZone: 'Asia/Seoul', year: 'numeric', month: '2-digit' }).slice(0, 7)
 
+type Household = 'solo' | 'single-income' | 'dual-income'
+const HOUSEHOLDS: ReadonlyArray<[Household, string]> = [['solo', '혼자'], ['single-income', '외벌이'], ['dual-income', '맞벌이']]
+
 type Form = {
+  household: Household; partnerIncome: string
   income: string; card: string; otherFixed: string; loanPayment: string; loanRate: string
   years: string; targetMonthly: string; initialSeed: string; monthly: string
 } & InvestorProfile
-const empty: Form = { income: '', card: '', otherFixed: '', loanPayment: '', loanRate: '', years: '10', targetMonthly: '', initialSeed: '', monthly: '', reaction: '', horizon: '', emergency: '', checking: '', experience: '' }
+const empty: Form = { household: 'solo', partnerIncome: '', income: '', card: '', otherFixed: '', loanPayment: '', loanRate: '', years: '10', targetMonthly: '', initialSeed: '', monthly: '', reaction: '', horizon: '', emergency: '', checking: '', experience: '' }
 
 function readForm(): Form {
   try {
@@ -98,12 +102,17 @@ export default function StartWizardPage() {
       .then((res) => {
         const rows: any[] = Array.isArray(res?.data) ? res.data : []
         const m = [...rows].reverse().find((r) => Number(r?.ownIncome) > 0)
-        if (m) fillEmpty({ income: str(m.ownIncome), card: str(m.expenses?.card) })
+        if (!m) return
+        // 시드 만들기에 맞벌이로 적어 둔 사람은 배우자 수입까지 가져와야 여유가 반쪽으로 잡히지 않는다
+        const household: Household = HOUSEHOLDS.some(([h]) => h === m.household) ? m.household : 'solo'
+        setForm((cur) => cur.income === '' && cur.household === empty.household ? { ...cur, household } : cur)
+        fillEmpty({ income: str(m.ownIncome), partnerIncome: household === 'dual-income' ? str(m.partnerIncome) : '', card: str(m.expenses?.card) })
       })
       .catch(() => {})
   }, [clientId])
 
-  const income = num(form.income)
+  const partnerIncome = form.household === 'dual-income' ? num(form.partnerIncome) : 0
+  const income = num(form.income) + partnerIncome
   const surplus = monthlySurplus({ income, card: num(form.card), otherFixed: num(form.otherFixed), loanPayment: num(form.loanPayment) })
   // 비상금이 없으면 적립 기본값을 절반으로 낮춘다 (직접 입력한 금액은 그대로 존중)
   const suggested = Math.floor((suggestMonthly(surplus) * emergencyMonthlyFactor(form.emergency)) / 10_000) * 10_000
@@ -137,11 +146,20 @@ export default function StartWizardPage() {
       if (!exists) await post('/api/ui/investment-prefs', { virtual_seed_capital: Math.round(seedToStart), reset_cash: true })
       if (monthly >= 10_000) await post('/api/ui/investment-prefs', { monthly_deposit: Math.round(monthly), deposit_day: 1 })
       if (targetMonthly > 0) await post('/api/ui/goal-tracker', { targetMonthlyProfit: Math.round(targetMonthly) })
-      if (income > 0) await post('/api/ui/seed-builder', {
-        month: monthKeyKst(), status: 'recorded', household: 'solo', ownIncome: income, partnerIncome: 0, ownPayday: null, partnerPayday: null,
-        expenses: { food: 0, housing: 0, vehicle: 0, education: 0, tax: 0, subscriptions: 0, other: num(form.otherFixed) + num(form.loanPayment), card: num(form.card), water: 0, gas: 0, residentTax: 0, propertyTax: 0, vehicleTax: 0, taxAdjustment: 0 },
-        extraIncome: { incentive: 0, vacation: 0, taxRefund: 0, other: 0 }, reserve: 0, plan: Math.round(monthly),
-      }, 'PUT')
+      if (income > 0) {
+        // 이번 달을 시드 만들기에서 이미 자세히 적었다면 그 항목(식비·급여일·일시 수입 등)은 지우지 않고 마법사가 묻는 칸만 덮는다
+        const month = monthKeyKst()
+        const rows: any[] = await apiFetch(`/api/ui/seed-builder?year=${month.slice(0, 4)}`, { cacheMs: 0, retries: 0 })
+          .then((res) => (Array.isArray(res?.data) ? res.data : [])).catch(() => [])
+        const cur = rows.find((r) => r?.month === month)
+        const dual = form.household === 'dual-income'
+        await post('/api/ui/seed-builder', {
+          month, status: 'recorded', household: form.household, ownIncome: num(form.income), partnerIncome,
+          ownPayday: cur?.ownPayday ?? null, partnerPayday: dual ? cur?.partnerPayday ?? null : null,
+          expenses: { food: 0, housing: 0, vehicle: 0, education: 0, tax: 0, subscriptions: 0, water: 0, gas: 0, residentTax: 0, propertyTax: 0, vehicleTax: 0, taxAdjustment: 0, ...cur?.expenses, other: num(form.otherFixed) + num(form.loanPayment), card: num(form.card) },
+          extraIncome: { incentive: 0, vacation: 0, taxRefund: 0, other: 0, ...cur?.extraIncome }, reserve: Number(cur?.reserve ?? 0), plan: Math.round(monthly),
+        }, 'PUT')
+      }
       writeUserState('investorProfile', { reaction: form.reaction, horizon: form.horizon, emergency: form.emergency, checking: form.checking, experience: form.experience } satisfies InvestorProfile)
       // 성향 답으로 자동매매 방식과 기본값을 맞춘다 — 사용자가 설정 화면을 찾아가지 않아도 되게
       await post('/api/ui/investment-prefs', { strategy_mode: setup.strategyMode })
@@ -185,7 +203,12 @@ export default function StartWizardPage() {
       </header>
 
       {step === 0 && <section className="start-card">
-        <MoneyField label="월 수입(세후)" value={form.income} onChange={(v) => set({ income: v })} />
+        <div className="start-segment" role="group" aria-label="가구 형태">
+          {HOUSEHOLDS.map(([value, label]) => <button key={value} type="button" className={form.household === value ? 'is-active' : ''} aria-pressed={form.household === value} onClick={() => set({ household: value })}>{label}</button>)}
+        </div>
+        <MoneyField label={form.household === 'solo' ? '월 수입(세후)' : '본인 월 수입(세후)'} value={form.income} onChange={(v) => set({ income: v })} />
+        {form.household === 'dual-income' && <MoneyField label="배우자 월 수입(세후)" value={form.partnerIncome} onChange={(v) => set({ partnerIncome: v })} />}
+        {form.household !== 'solo' && <p className="start-note">카드값·고정지출은 가족 전체 기준으로 적어 주세요.{form.household === 'dual-income' && partnerIncome > 0 ? ` 합산 수입 ${won(income)}.` : ''}</p>}
         <MoneyField label="카드값(월 평균)" value={form.card} onChange={(v) => set({ card: v })} />
         <MoneyField label="그 밖의 고정지출(월세·보험 등)" value={form.otherFixed} onChange={(v) => set({ otherFixed: v })} />
         <MoneyField label="대출 상환(월)" value={form.loanPayment} onChange={(v) => set({ loanPayment: v })} />
