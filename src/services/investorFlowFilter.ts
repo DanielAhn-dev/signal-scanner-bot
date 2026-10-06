@@ -6,7 +6,7 @@
  * 0.15~1.14%p 낮았다. 반대로 순매수 상위 종목의 초과수익은 구간마다 뒤집혀 매수 가점으로는 쓰지 않는다.
  * 시장 전체가 순매도인 날(연휴 전후 등)에 과하게 걸리지 않도록 절대값이 아니라 그날 상대 순위로 자른다.
  */
-import { chunkValues } from "./supabasePaging";
+import { chunkValues, selectPaged } from "./supabasePaging";
 
 type SupabaseClientAny = any;
 
@@ -49,21 +49,33 @@ export async function fetchHeavyNetSellingCodes(
   const since = new Date(Date.now() - 45 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
 
   for (const chunk of chunkValues(unique, 40)) {
-    const [{ data: flows }, { data: bars }] = await Promise.all([
-      supabase
-        .from("investor_daily")
-        .select("ticker, date, foreign_amount, institution_amount")
-        .in("ticker", chunk)
-        .gte("date", since)
-        .order("date", { ascending: true })
-        .limit(5000),
-      supabase
-        .from("stock_daily")
-        .select("ticker, date, close, volume")
-        .in("ticker", chunk)
-        .gte("date", since)
-        .order("date", { ascending: true })
-        .limit(5000),
+    // 응답은 최대 1000행이라 limit(5000)이어도 잘린다. 날짜 오름차순이라 잘리면 가장 최근 며칠이 빠졌다
+    // (2026-10-06 실측: 40종목 일봉이 9/29에서 끊겨 9/30~10/2 거래대금 누락). 끝까지 페이지로 받는다.
+    const [flows, bars] = await Promise.all([
+      selectPaged<any>(
+        async (from, to) =>
+          await supabase
+            .from("investor_daily")
+            .select("ticker, date, foreign_amount, institution_amount")
+            .in("ticker", chunk)
+            .gte("date", since)
+            .order("ticker")
+            .order("date", { ascending: true })
+            .range(from, to),
+        { logLabel: "investorFlowFilter.flows" }
+      ).catch(() => [] as any[]),
+      selectPaged<any>(
+        async (from, to) =>
+          await supabase
+            .from("stock_daily")
+            .select("ticker, date, close, volume")
+            .in("ticker", chunk)
+            .gte("date", since)
+            .order("ticker")
+            .order("date", { ascending: true })
+            .range(from, to),
+        { logLabel: "investorFlowFilter.bars" }
+      ).catch(() => [] as any[]),
     ]);
     const flowBy = new Map<string, Array<{ foreign: number; institution: number }>>();
     for (const r of (flows ?? []) as any[]) {

@@ -97,7 +97,8 @@ export async function checkDataQuality(supabase: SupabaseClientAny): Promise<Dat
 
   // 3) 가격제한폭 초과 점프 (최근 15거래일)
   const closesByTicker = new Map<string, Array<{ date: string; close: number }>>();
-  for (const chunk of chunkValues(universe, 60)) {
+  // 60종목 × 15거래일 ≈ 900행으로 응답 상한(1000행)에 바짝 붙어 있었다 — 정렬 없이 잘리면 일부 종목 날짜가 빠진다
+  for (const chunk of chunkValues(universe, 40)) {
     const { data } = await supabase
       .from("stock_daily")
       .select("ticker, date, close")

@@ -64,6 +64,7 @@ import {
   type RotationHeldPosition,
 } from "./virtualAutoTradeSelection";
 import { fetchLatestPullbackCandidateCodes } from "./virtualAutoTradePullbackIntegration";
+import { selectPaged } from "./supabasePaging";
 import { discoverMultibaggerCandidates } from "./discoveryService";
 import { computeAutoTradePacingMetrics } from "./virtualAutoTradePacingService";
 import {
@@ -718,15 +719,25 @@ async function fetchFlowSignalProfilesByCode(input: {
 
   const grouped = new Map<string, DailyIndicatorFlowRow[]>();
   for (const chunk of chunks) {
-    const { data } = await input.supabase
-      .from("daily_indicators")
-      .select("code,trade_date,close,volume,value_traded,sma20,sma50,rsi14,roc14,roc21")
-      .in("code", chunk)
-      .gte("trade_date", fromDate)
-      .order("trade_date", { ascending: true })
-      .limit(8000);
+    // 응답 상한(1000행) 때문에 limit(8000)이어도 잘렸다. 날짜 오름차순이라 잘리면 최신 행이 빠져, 후보 200종목이면
+    // "최신" 지표가 한 달 전 값이었다(2026-10-06 실측: 9/7까지만 수신). 끝까지 페이지로 받는다.
+    const data = await selectPaged<DailyIndicatorFlowRow>(
+      async (from, to) =>
+        await input.supabase
+          .from("daily_indicators")
+          .select("code,trade_date,close,volume,value_traded,sma20,sma50,rsi14,roc14,roc21")
+          .in("code", chunk)
+          .gte("trade_date", fromDate)
+          .order("code")
+          .order("trade_date", { ascending: true })
+          .range(from, to),
+      { logLabel: "virtualAutoTrade.flow_profiles" }
+    ).catch((error) => {
+      console.warn("virtualAutoTrade.flow_profiles fetch failed:", error);
+      return [] as DailyIndicatorFlowRow[];
+    });
 
-    for (const row of (data ?? []) as DailyIndicatorFlowRow[]) {
+    for (const row of data) {
       const code = String(row.code ?? "").trim();
       if (!code) continue;
       const list = grouped.get(code) ?? [];
